@@ -92,10 +92,10 @@ constants of `sim.js` (`PLANT`) and the calibrated room values.
 |---|---|
 | Run | The calibrated room with the real controller: 1 warm-up day, then the three design days. Simulation step 10 s. |
 | Size | The whole mix scaled by one factor; the ratios stay. |
-| Search | See "Pass window" below: the planned size first, then the estimate, ±15 %, then halving to 5 %. Usually 5–9 runs, about 1–2 s. |
+| Search | See "Pass window" below: the planned size first, then the estimate, ±15 %, then halving to 5 %. Usually 5–9 runs, about 1–6 s (nearly empty rooms simulate more slowly). |
 | Pass | On each design day: temperature within ±1 °C of the target ≥ 95 % of the day; RH at or above target − 3 % ≥ 90 % of the day; at most 60 min below the RH alarm level (target − 8 %); RH above 95 % (water film on the caps) at most 10 % of the day; CO₂ below the limit ≥ 98 %. Targets are the fixed common targets (not the VPD-adjusted RH target). The score uses the real room air from the simulation, not the sensors. |
 | Why RH is one-sided | Decided 2026-10-07 after a test: on humid and rainy days, outdoor air holds more water than the room target, so RH sits 3–8 % above target for hours even in an almost empty room. That does no harm to these crops. Only near-saturation does (above 95 %), and it happened in near-empty rooms of cool crops (golden, black oyster), where the AC hardly runs and so hardly dries. |
-| Controller settings in a trial | The present controller settings, with the harvest windows off (they lower RH on purpose). |
+| Controller settings in a trial | The default controller settings for the crop's fruiting stage, with the harvest windows off (they lower RH on purpose). A farmer's own tuning is not used, so rooms are compared on the same controller. |
 | Capacity | The largest size that passes all design days. |
 | Disagreement | If step 1 and step 2 differ by more than 15 %, the report says: "The simple balance and the simulation disagree; the simulation decides." |
 

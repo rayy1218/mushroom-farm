@@ -5,7 +5,8 @@
  *
  *   commonTargets(mix)                 -> { spT, spRH, co2Lim, crop } or { impossible: true, conflict }
  *   balance(room, mix, targets, region) -> step 1: { fan, ac, fog, estimate, limit }, most blocks per machine, instant
- *   trial(room, mix, targets, blocks)  -> step 2: one simulated run with the real controller, pass/fail per design day
+ *   trial(room, mix, targets, blocks, region, dt) -> step 2: { blocks, days, pass, side, kwhDay }, one simulated run
+ *                                        with the real controller, pass/fail per design day
  *   checkSteps(room, mix, opts)        -> generator for the full check; yields progress, returns the report
  *   check(room, mix, opts)             -> the same, run to the end
  *
@@ -106,6 +107,7 @@
   //   and the coil's water removal (at most latentMax of its output) is lost for cooling: S / (1 - latentMax).
   // Each day's worst hour is left out: the pass rule allows 5 % of the day out of band.
   function balance(room, mix, tg, region = 'my-lowland') {
+    if (!DESIGN_DAYS[region]) throw new Error(`Unknown region: ${region}`);
     const P = SIM.PLANT, R = roomOf(room), c = mixCo2(room, mix), rules = CC.defaultRules(tg.co2Lim);
     const leak = room.vent === 'exhaust' ? R.infAch * R.volume : 0;               // m³/h; supply fan: no leak in
     const fanBase = P.fan.levels[rules.baseFan.fruiting].m3h + leak;
@@ -137,6 +139,8 @@
   // ---------- 3. Trial (step 2) ----------
   // One run: a warm-up day (the first design day), then each design day. The real room air is scored.
   function trial(room, mix, tg, blocks, region = 'my-lowland', dt = 10) {
+    if (!DESIGN_DAYS[region]) throw new Error(`Unknown region: ${region}`);
+    if (!Number.isFinite(blocks)) throw new Error('blocks must be a finite number');
     const days = DESIGN_DAYS[region].days, seq = [days[0], ...days];
     const n = Math.max(0, Math.round(blocks));
     const e = structuredClone(SIM.DEFAULT_ENV);
@@ -153,7 +157,10 @@
     cfg.program.harvest.on = false;                       // harvest windows lower RH on purpose
     const sim = SIM.create(e);
     sim.setRoom({ T: tg.spT, RH: tg.spRH, CO2: tg.co2Lim - 200 });
-    const ctl = CC.create(cfg, null, null), io = RT.simIO(sim);
+    // Noise-free CO2 can sit at exactly one value, which the controller's frozen-sensor check calls a fault.
+    // A real sensor always moves a little: add a change far below its resolution.
+    const sio = RT.simIO(sim), ctl = CC.create(cfg, null, null);
+    const io = { ...sio, read: () => { const r = sio.read(); return r && { ...r, CO2: r.CO2 + (r.seq % 2) * 1e-6 }; } };
     const score = seq.map(() => ({ n: 0, inT: 0, tHi: 0, tLo: 0, rhOk: 0, lowRh: 0, wet: 0, co2Below: 0 }));
     let kwh0 = null, kwh1 = null;
     const rt = RT.createRuntime({ io, ctl, onReading: r => {

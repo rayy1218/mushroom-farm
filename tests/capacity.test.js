@@ -81,8 +81,9 @@ test('balance: grey oyster is limited by the AC, near the measured value', () =>
 // ---------- trial ----------
 test('trial: 2000 grey oyster pass all three design days', () => {
   const mix = [{ crop: 'oyster', blocks: 2000 }];
-  const r = CAP.trial(room, mix, CAP.commonTargets(mix), 2000);
+  const r = CAP.trial(room, mix, CAP.commonTargets(mix), 1999.6);
   assert.equal(r.pass, true, JSON.stringify(r.days));
+  assert.equal(r.blocks, 2000);
   assert.equal(r.days.length, 3);
   assert.ok(r.kwhDay > 5 && r.kwhDay < 30, `${r.kwhDay} kWh/day`);
 });
@@ -96,4 +97,17 @@ test('trial: too many blocks fail on temperature ("dense"); too few cool-crop bl
   const e = CAP.trial(room, golden, CAP.commonTargets(golden), 200);
   assert.equal(e.side, 'empty');
   assert.ok(e.days.some(x => x.fails.includes('humidity near saturation')));
+});
+
+test('trial: a nearly empty room is judged on the room, not on a false sensor fault', () => {
+  // Noise-free CO2 would sit at exactly 420 ppm and look like a frozen sensor; the trial must still label this "empty".
+  const golden = [{ crop: 'golden', blocks: 200 }];
+  assert.equal(CAP.trial(room, golden, CAP.commonTargets(golden), 0).side, 'empty');
+});
+
+test('trial: bad input is refused with a clear error; blocks are rounded', () => {
+  const mix = [{ crop: 'oyster', blocks: 2000 }], tg = CAP.commonTargets(mix);
+  assert.throws(() => CAP.trial(room, mix, tg, 2000, 'mars'), /Unknown region: mars/);
+  assert.throws(() => CAP.trial(room, mix, tg, NaN), /finite number/);
+  assert.throws(() => CAP.balance(room, mix, tg, 'mars'), /Unknown region: mars/);
 });
