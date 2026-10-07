@@ -326,7 +326,7 @@
   <section class="card capacity" aria-labelledby="hCap">
     <div class="rules-head">
       <h2 id="hCap">Room capacity</h2>
-      <span class="tag">How many blocks can a room carry in fruiting, on a hot-dry, a hot-humid and a rainy day? It uses the calibrated room values. The design days are estimates for lowland Peninsular Malaysia.</span>
+      <span class="tag">How many blocks can a room carry in fruiting, on a hot-dry, a hot-humid and a rainy day? It uses the room values saved with the room: calibrate first (under "Show test bench settings") for a real verdict. The design days are estimates for lowland Peninsular Malaysia.</span>
     </div>
     <div class="cal-row">
       <label for="capRoom">Room</label><select id="capRoom"></select>
@@ -343,8 +343,8 @@
       <button class="btn" id="capAdd">Add a crop</button>
       <label class="num" for="capEmpty">Too empty below <input type="number" id="capEmpty" min="10" max="90" step="5" value="50"> %</label>
       <button class="btn" id="capRun">Run check</button>
-      <progress id="capProg" max="1" value="0" hidden></progress>
-      <span class="tag" id="capMsg">Save a room, enter the crops, then run the check.</span>
+      <progress id="capProg" max="1" value="0" aria-label="Check progress" hidden></progress>
+      <span class="tag" id="capMsg" role="status">Save a room, enter the crops, then run the check.</span>
     </div>
     <div id="capReport" class="cap-report" aria-live="polite"></div>
     <p id="capFarm" class="cap-farm"></p>
