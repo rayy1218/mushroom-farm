@@ -30,3 +30,21 @@ test('no common range: impossible, and the message names both crops', () => {
 test('an empty mix is refused', () => {
   assert.equal(CAP.commonTargets([{ crop: 'oyster', blocks: 0 }]).impossible, true);
 });
+
+test('targets are clamped into the overlap of the ranges', () => {
+  // golden 24 °C × 1000 + abalone 27 °C × 10 = 24.03 °C; the overlap is [25, 26], so the target is 25
+  assert.deepEqual(CAP.commonTargets([{ crop: 'golden', blocks: 1000 }, { crop: 'abalone', blocks: 10 }]), { spT: 25, spRH: 88, co2Lim: 800, crop: 'golden' });
+});
+
+test('a crop row with 0 blocks does not count', () => {
+  assert.deepEqual(CAP.commonTargets([{ crop: 'oyster', blocks: 0 }, { crop: 'milky', blocks: 800 }]), { spT: 30, spRH: 85, co2Lim: 1000, crop: 'milky' });
+});
+
+test('equal CO2 limits: the crop with more blocks is named', () => {
+  assert.equal(CAP.commonTargets([{ crop: 'oyster', blocks: 500 }, { crop: 'pink', blocks: 1500 }]).crop, 'pink');
+});
+
+test('bad input gives a message, not a crash or a wrong target', () => {
+  assert.match(CAP.commonTargets([{ crop: 'truffle', blocks: 10 }]).conflict, /Unknown crop: truffle/);
+  assert.equal(CAP.commonTargets([{ crop: 'oyster', blocks: '1200' }]).impossible, true, 'a text block count is not used');
+});

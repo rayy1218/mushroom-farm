@@ -48,8 +48,10 @@
 
   // ---------- 1. Common targets ----------
   function commonTargets(mix) {
-    const items = mix.filter(m => m.blocks > 0);
+    const items = mix.filter(m => Number.isFinite(m.blocks) && m.blocks > 0);
     if (!items.length) return { impossible: true, conflict: 'Add at least one crop with blocks.' };
+    const unknown = items.find(m => !CC.CROPS[m.crop] || !CC.CROPS[m.crop].range);
+    if (unknown) return { impossible: true, conflict: `Unknown crop: ${unknown.crop}.` };
     const total = items.reduce((s, m) => s + m.blocks, 0);
     const crop = m => CC.CROPS[m.crop];
     const pick = (key, idx) => {
@@ -73,8 +75,9 @@
   // CO2 per block of the mix (block-weighted), mL/h.
   function mixCo2(room, mix) {
     const def = (room.calib && room.calib.co2PerBlock) || SIM.DEFAULT_ENV.co2PerBlock;
-    const total = mix.reduce((s, m) => s + m.blocks, 0);
-    return total ? mix.reduce((s, m) => s + m.blocks * (m.co2PerBlock || def), 0) / total : def;
+    const items = mix.filter(m => Number.isFinite(m.blocks) && m.blocks > 0);
+    const total = items.reduce((s, m) => s + m.blocks, 0);
+    return total ? items.reduce((s, m) => s + m.blocks * (m.co2PerBlock || def), 0) / total : def;
   }
   const roomOf = room => ({
     ...SIM.PLANT.room,
