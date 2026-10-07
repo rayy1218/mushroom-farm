@@ -63,3 +63,17 @@ test('balance: a cooler crop carries fewer blocks; milky is limited by the fogge
   assert.ok(est('golden').ac < est('oyster').ac && est('oyster').ac < est('pink').ac);
   assert.equal(est('milky').limit, 'fog');
 });
+
+test('balance: a fog need that is high when nearly empty still finds the upper limit', () => {
+  // A leaky exhaust room: the empty room needs slightly more fog than the fogger gives, but blocks add water.
+  const leaky = { ...room, vent: 'exhaust', calib: { ua: 80, infAch: 1, moistBuffer: 3, co2PerBlock: 45 } };
+  const mix = [{ crop: 'milky', blocks: 1 }];
+  assert.ok(CAP.balance(leaky, mix, CAP.commonTargets(mix)).fog > 4000);
+});
+
+test('balance: grey oyster is limited by the AC, near the measured value', () => {
+  const mix = [{ crop: 'oyster', blocks: 1 }];
+  const b = CAP.balance(room, mix, CAP.commonTargets(mix));
+  assert.equal(b.limit, 'ac');
+  assert.ok(b.ac > 3000 && b.ac < 3800, `${b.ac}`);
+});

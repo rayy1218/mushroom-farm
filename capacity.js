@@ -4,7 +4,7 @@
  * How many blocks of a crop mix can a room carry in fruiting, on the design days of its region?
  *
  *   commonTargets(mix)                 -> { spT, spRH, co2Lim, crop } or { impossible: true, conflict }
- *   balance(room, mix, targets)        -> step 1: most blocks per machine (fan, AC, fogger), instant estimate
+ *   balance(room, mix, targets, region) -> step 1: { fan, ac, fog, estimate, limit }, most blocks per machine, instant
  *   trial(room, mix, targets, blocks)  -> step 2: one simulated run with the real controller, pass/fail per design day
  *   checkSteps(room, mix, opts)        -> generator for the full check; yields progress, returns the report
  *   check(room, mix, opts)             -> the same, run to the end
@@ -86,11 +86,15 @@
   });
 
   // ---------- 2. Balance (step 1) ----------
-  // Largest n in [0, max] with need(n) <= cap. need(0) > cap gives 0; no limit up to max gives Infinity.
+  // Largest n in [0, max] with need(n) <= cap. The need can be U-shaped (the fog need falls with the first blocks,
+  // which add water, then rises with the fresh air), so a high need at n = 0 does not end the search.
+  // Never within the limit gives 0; no limit up to max gives Infinity.
   function maxBlocks(need, cap, max = 200000) {
-    if (need(0) > cap) return 0;
-    let ok = 0, bad = null;
-    for (let n = 100; n <= max; n *= 2) { if (need(n) > cap) { bad = n; break; } ok = n; }
+    let ok = need(0) <= cap ? 0 : null, bad = null;
+    for (let n = 100; n <= max; n *= 2) {
+      if (need(n) <= cap) ok = n; else if (ok != null) { bad = n; break; }
+    }
+    if (ok == null) return 0;
     if (bad == null) return Infinity;
     while (bad - ok > 1) { const m = Math.floor((ok + bad) / 2); if (need(m) > cap) bad = m; else ok = m; }
     return ok;
@@ -104,7 +108,7 @@
   function balance(room, mix, tg, region = 'my-lowland') {
     const P = SIM.PLANT, R = roomOf(room), c = mixCo2(room, mix), rules = CC.defaultRules(tg.co2Lim);
     const leak = room.vent === 'exhaust' ? R.infAch * R.volume : 0;               // m³/h; supply fan: no leak in
-    const fanBase = CC.MACHINES.fanM3h[rules.baseFan.fruiting] + leak;
+    const fanBase = P.fan.levels[rules.baseFan.fruiting].m3h + leak;
     const fanTop = P.fan.levels[P.fan.levels.length - 1].m3h + leak;
     const fogTop = P.fogger.levels[P.fogger.levels.length - 1].gph / 3600;         // g/s
     const dC = rules.fanOn - R.co2Out;                                              // CO2 held at the fan start level
@@ -121,7 +125,7 @@
       const S = R.ua * dT + q * 1206 * dT + P.loads.baseW + (x.lights ? P.loads.lightsW : 0) + x.sun * P.loads.solarPeakW + n * blockW;
       const G = q * (x.ah - ahT) + n * blockGps;
       const A1 = S + 2450 * G, L = latent(Math.max(0, A1));
-      return L >= G ? { ac: A1, fog: L - G } : { ac: S / (1 - share), fog: 0 };
+      return L >= G ? { ac: A1, fog: L - G } : { ac: S / (1 - Math.min(share, coilRate * 2450 / P.ac.capW)), fog: 0 };
     };
     const secondWorst = key => n => Math.max(...hours.map(day => day.map(x => at(n, x)[key]).sort((a, b) => b - a)[1]));
     const out = { fan: maxBlocks(n => n * c / dC, fanTop), ac: maxBlocks(secondWorst('ac'), P.ac.capW), fog: maxBlocks(secondWorst('fog'), fogTop) };
