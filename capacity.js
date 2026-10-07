@@ -272,7 +272,7 @@
     let min = 0, why = null;
     if (lo != null) {
       let a = lowFail;
-      if (a == null) { const low = yield* run(Math.max(1, Math.round(planned * SEARCH.lowAt))); if (!low.pass && low.side === 'empty') a = low.blocks; }
+      if (a == null) { const n = Math.max(1, Math.round(planned * SEARCH.lowAt)); const low = runs.find(r => r.blocks === n) || (yield* run(n)); if (!low.pass && low.side === 'empty') a = low.blocks; }
       if (a != null) {
         let b = runs.filter(r => r.pass).reduce((m, r) => Math.min(m, r.blocks), Infinity);
         for (let i = 0; i < SEARCH.minRuns && b - a > 1 && (b - a) / b > 0.1; i++) {
@@ -283,8 +283,8 @@
       }
     } else if (lowFail != null) {
       // A "too wet" failure: fewer blocks are wetter still, so a nearly empty run cannot help.
-      why = hi == null ? `Too wet (near saturation on the rainy day) at every size tried, up to ${lowFail} blocks.`
-        : `No size passes: ${lowFail} blocks are too wet on the rainy day, and ${hi} blocks already fail (see the limit).`;
+      why = hi == null ? `Too wet (near saturation) at every size tried, up to ${lowFail} blocks.`
+        : `No size passes: ${lowFail} blocks are too wet (near saturation), and ${hi} blocks already fail (see the limit).`;
     } else {
       const n = Math.max(1, Math.round(planned * SEARCH.lowAt));
       if (!runs.some(r => r.blocks <= n)) { const low = yield* run(n); if (low.pass) lo = low.blocks; }   // passes only when nearly empty
