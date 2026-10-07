@@ -225,5 +225,89 @@
     return { verdict: 'good', utilisation };
   }
 
-  global.ClimateCapacity = { commonTargets, balance, trial, calibStatus, verdictOf, DESIGN_DAYS, PASS, VERDICT, SEARCH };
+  // ---------- 6. Full check ----------
+  // opts: { region, emptyBelow, tariff (RM/kWh), cycleDays, now }
+  function* checkSteps(room, mix, opts = {}) {
+    const region = opts.region || 'my-lowland';
+    const counted = m => Number.isFinite(m.blocks) && m.blocks > 0;     // the same rows as commonTargets and mixCo2
+    const planned = mix.filter(counted).reduce((s, m) => s + m.blocks, 0);
+    const cal = calibStatus(room, opts.now);
+    const base = { room: room.name, mix: mix.map(m => ({ ...m })), planned, ...cal };
+    const tg = commonTargets(mix);
+    if (tg.impossible) return { ...base, verdict: 'impossible', why: tg.conflict, runs: [] };
+    const est = balance(room, mix, tg, region);
+    const runs = [];
+    const maxRuns = 1 + SEARCH.maxRuns + 1 + SEARCH.minRuns;
+    function* run(n) {
+      const r = trial(room, mix, tg, n, region);
+      runs.push(r);
+      yield { runs: runs.length, maxRuns, blocks: r.blocks, pass: r.pass };
+      return r;
+    }
+    // Upper end: the largest passing size, to 5 %.
+    const plan = yield* run(planned);
+    let lo = plan.pass ? plan.blocks : null, hi = plan.pass || plan.side === 'empty' ? null : plan.blocks;
+    let lowFail = plan.side === 'empty' ? plan.blocks : null;
+    // The first move jumps to the balance estimate. An estimate of 0 or no limit is no help: then step ±15 % from the plan.
+    const e = est.estimate > 0 && Number.isFinite(est.estimate) ? est.estimate : null;
+    const up = n => (e ? Math.max(e, n * SEARCH.step) : n * SEARCH.step), down = n => (e ? Math.min(e, n / SEARCH.step) : n / SEARCH.step);
+    let next = plan.pass || plan.side === 'empty' ? up(planned) : down(planned);
+    for (let i = 0; i < SEARCH.maxRuns; i++) {
+      if (lo != null && hi != null && (hi - lo) / lo <= SEARCH.resolution) break;
+      if (lo != null && hi != null) next = (lo + hi) / 2;
+      else if (lo != null && next <= lo) next = lo * SEARCH.step;
+      else if (hi != null && next >= hi) next = hi / SEARCH.step;
+      const r = yield* run(Math.max(1, next));
+      if (r.pass) { lo = r.blocks; next = r.blocks * SEARCH.step; }
+      else if (r.side === 'empty' && (lo == null || r.blocks < lo)) { lowFail = Math.max(lowFail ?? 0, r.blocks); next = hi != null ? (r.blocks + hi) / 2 : up(r.blocks); }
+      else { hi = r.blocks; next = r.blocks / SEARCH.step; }
+    }
+    // Lower end: does a nearly empty room fail (too wet, too cold)? Then find the smallest passing size, to 10 %.
+    let min = 0;
+    if (lo != null) {
+      let a = lowFail;
+      if (a == null) { const low = yield* run(Math.max(1, planned * SEARCH.lowAt)); if (!low.pass) a = low.blocks; }
+      if (a != null) {
+        let b = runs.filter(r => r.pass).reduce((m, r) => Math.min(m, r.blocks), Infinity);
+        for (let i = 0; i < SEARCH.minRuns && (b - a) / b > 0.1; i++) {
+          const r = yield* run((a + b) / 2);
+          if (r.pass) b = r.blocks; else a = r.blocks;
+        }
+        min = b;
+      }
+    } else {
+      const low = yield* run(Math.max(1, planned * SEARCH.lowAt));
+      if (low.pass) lo = low.blocks;                       // passes only when nearly empty
+    }
+    const cap = { max: lo || 0, hi, min, settled: lo != null && hi != null && (hi - lo) / lo <= SEARCH.resolution };
+    const failing = runs.filter(r => !r.pass && r.side === 'dense').sort((a, b) => a.blocks - b.blocks)[0];
+    const limit = failing ? failing.days.filter(d => !d.pass).map(d => ({ day: d.name, fails: d.fails })) : [];
+    const v = verdictOf(planned, cap, opts);
+    const tariff = opts.tariff ?? 0.57;
+    const P = CC.defaultProgram(), cycleDays = opts.cycleDays ?? P.days.fruiting * P.flushes + P.days.rest * (P.flushes - 1);
+    const total = planned || 1, share = m => (counted(m) ? m.blocks : 0) / total;
+    return {
+      ...base, targets: tg, balance: est, capacity: cap, limit, ...v,
+      perCrop: mix.map(m => ({ crop: m.crop, max: Math.floor(cap.max * share(m)), min: Math.ceil(cap.min * share(m)) })),
+      energy: { kwhDay: plan.kwhDay, rmPerBlockCycle: planned ? plan.kwhDay * tariff * cycleDays / planned : null, cycleDays, tariff },
+      disagree: cap.max > 0 && Number.isFinite(est.estimate) && Math.abs(est.estimate - cap.max) / cap.max > SEARCH.disagree,
+      runs: runs.map(r => ({ blocks: r.blocks, pass: r.pass, side: r.side, days: r.days })),
+    };
+  }
+  function check(room, mix, opts) {
+    const g = checkSteps(room, mix, opts);
+    for (;;) { const s = g.next(); if (s.done) return s.value; if (opts && opts.onStep) opts.onStep(s.value); }
+  }
+  // Same check; it gives the page a moment between runs and reports the progress.
+  async function checkAsync(room, mix, opts = {}) {
+    const g = checkSteps(room, mix, opts);
+    for (;;) {
+      const s = g.next();
+      if (s.done) return s.value;
+      if (opts.onProgress) opts.onProgress(s.value);
+      await new Promise(r => setTimeout(r, 0));
+    }
+  }
+
+  global.ClimateCapacity = { commonTargets, balance, trial, calibStatus, verdictOf, checkSteps, check, checkAsync, DESIGN_DAYS, PASS, VERDICT, SEARCH };
 })(typeof window !== 'undefined' ? window : globalThis);

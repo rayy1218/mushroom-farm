@@ -155,3 +155,57 @@ test('calibration status: a missing fit error or date is not trusted', () => {
   assert.equal(none.calibrated, false);
   assert.match(none.warnings[0], /not calibrated/);
 });
+
+// ---------- full check ----------
+test('check: the capacity is the real limit (passes at the capacity, fails 10 % above)', () => {
+  // A room with other walls, leaks and blocks than the default: the search must still find its limit.
+  const hidden = { ...room, calib: { ua: 140, infAch: 0.9, moistBuffer: 4, co2PerBlock: 60, rmse: { T: 0.2, RH: 1, CO2: 20 }, date: '2026-10-01T00:00:00Z' } };
+  const mix = [{ crop: 'oyster', blocks: 2000 }];
+  const t0 = Date.now();
+  const r = CAP.check(hidden, mix, { now: NOW });
+  assert.ok(Date.now() - t0 < 20000, 'a full check takes less than 20 s');
+  assert.ok(r.capacity.max > 0 && r.capacity.settled, JSON.stringify(r.capacity));
+  const tg = CAP.commonTargets(mix);
+  assert.equal(CAP.trial(hidden, mix, tg, r.capacity.max).pass, true);
+  assert.equal(CAP.trial(hidden, mix, tg, r.capacity.max * 1.1).pass, false);
+});
+
+test('check: 2000 grey oyster in the default room is good; 6000 is too dense', () => {
+  const good = CAP.check(room, [{ crop: 'oyster', blocks: 2000 }], { now: NOW });
+  assert.equal(good.verdict, 'good');
+  assert.equal(good.estimate, true, 'uncalibrated room: the report is an estimate');
+  assert.ok(good.energy.rmPerBlockCycle > 0);
+  assert.equal(good.limit[0].day, 'Hot-humid');
+  const dense = CAP.check(room, [{ crop: 'oyster', blocks: 6000 }], { now: NOW });
+  assert.equal(dense.verdict, 'too-dense');
+  assert.ok(dense.utilisation > 100);
+});
+
+test('check: 200 golden oyster is too empty (too wet), with a minimum and a maximum', () => {
+  const r = CAP.check(room, [{ crop: 'golden', blocks: 200 }], { now: NOW });
+  assert.equal(r.verdict, 'too-empty');
+  assert.equal(r.why, 'wet');
+  assert.ok(r.capacity.min > 200 && r.capacity.min < r.capacity.max, JSON.stringify(r.capacity));
+});
+
+test('check: an impossible mix runs no simulation', () => {
+  const r = CAP.check(room, [{ crop: 'oyster', blocks: 1200 }, { crop: 'milky', blocks: 800 }], { now: NOW });
+  assert.equal(r.verdict, 'impossible');
+  assert.equal(r.runs.length, 0);
+});
+
+test('check: the capacity is split over the crops in the mix ratios', () => {
+  const r = CAP.check(room, [{ crop: 'oyster', blocks: 1200 }, { crop: 'pink', blocks: 800 }], { now: NOW });
+  const [a, b] = r.perCrop;
+  assert.ok(a.max + b.max <= r.capacity.max && a.max + b.max >= r.capacity.max - 1);
+  assert.ok(Math.abs(a.max / b.max - 1.5) < 0.01);
+});
+
+test('check: a balance estimate of 0 does not send the search to 1 block', () => {
+  // A room that loses a lot of heat through its walls: the simple balance gives up (0), the simulation decides.
+  const warm = { ...room, calib: { ua: 200, infAch: 0.4, moistBuffer: 3, co2PerBlock: 45, rmse: { T: 0.2, RH: 1, CO2: 20 }, date: '2026-10-01T00:00:00Z' } };
+  const mix = [{ crop: 'black', blocks: 1000 }];
+  assert.equal(CAP.balance(warm, mix, CAP.commonTargets(mix)).estimate, 0, 'the balance gives up on this room');
+  const r = CAP.check(warm, mix, { now: NOW });
+  assert.ok(r.runs.every(x => x.blocks > 1), r.runs.map(x => x.blocks).join(','));
+});
