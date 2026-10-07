@@ -132,9 +132,26 @@ test('verdict thresholds', () => {
   assert.equal(v(500), 'good');
   assert.equal(v(894), 'good');                 // 89.4 % shows as 89 %
   assert.equal(v(896), 'tight');                // 89.6 % shows as 90 %
-  assert.equal(v(1004), 'tight');               // 100.4 % shows as 100 %
+  assert.equal(v(900), 'tight');
+  assert.equal(v(1000), 'tight');
+  assert.equal(v(1004), 'too-dense');           // above the capacity is too dense, even when 100.4 % rounds to 100 %
+  assert.equal(CAP.verdictOf(1004, cap).utilisation, 101, 'the number shown matches the verdict');
+  assert.equal(CAP.verdictOf(1200, { max: 2000, min: 600 }).verdict, 'good', 'above the minimum: not too wet');
   assert.equal(v(1006), 'too-dense');           // 100.6 % shows as 101 %
   assert.equal(CAP.verdictOf(400, cap, { emptyBelow: 30 }).verdict, 'good');
   assert.equal(CAP.verdictOf(500, { max: 0, min: 0 }).verdict, 'impossible');
   assert.deepEqual(CAP.verdictOf(500, { max: 2000, min: 600 }), { verdict: 'too-empty', why: 'wet', utilisation: 25 });
+});
+
+test('calibration status: a missing fit error or date is not trusted', () => {
+  const cal = { ua: 80, infAch: 0.4, moistBuffer: 3, co2PerBlock: 45, rmse: { T: 0.2, RH: 1.5, CO2: 30 }, date: '2026-10-01T00:00:00Z' };
+  const st = c => CAP.calibStatus({ ...room, calib: c }, NOW);
+  assert.equal(st({ ...cal, rmse: { T: 0.2, RH: 1, CO2: NaN } }).estimate, true, 'a log without CO2 readings');
+  assert.equal(st(JSON.parse(JSON.stringify({ ...cal, rmse: { T: 0.2, RH: 1, CO2: NaN } }))).estimate, true, 'the same after saving (NaN -> null)');
+  assert.equal(st({ ...cal, rmse: undefined }).estimate, true, 'no fit error at all');
+  assert.match(st({ ...cal, date: '' }).warnings.join(' '), /no valid date/);
+  assert.match(st({ ...cal, date: '2027-01-01T00:00:00Z' }).warnings.join(' '), /no valid date/, 'a date in the future');
+  const none = CAP.calibStatus(room, NOW);
+  assert.equal(none.calibrated, false);
+  assert.match(none.warnings[0], /not calibrated/);
 });

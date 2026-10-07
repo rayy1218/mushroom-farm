@@ -203,10 +203,12 @@
     if (!c) return { calibrated: false, estimate: true, warnings: ['Estimate: this room is not calibrated, so the check uses typical room values. Load a farm log in the calibration card.'] };
     const warnings = [];
     const r = c.rmse || {};
-    const poor = r.T > CALIB.maxT || r.RH > CALIB.maxRH || r.CO2 > CALIB.maxCO2;
+    const bad = (x, max) => !Number.isFinite(x) || x > max;     // a missing error (NaN, null) means not fitted
+    const poor = bad(r.T, CALIB.maxT) || bad(r.RH, CALIB.maxRH) || bad(r.CO2, CALIB.maxCO2);
     if (poor) warnings.push('Estimate: the calibration fits the log poorly. Calibrate again with a longer log (24–48 h).');
-    const ageDays = c.date ? (now - Date.parse(c.date)) / 86400000 : 0;
-    if (ageDays > CALIB.maxAgeDays) warnings.push(`The calibration is ${Math.round(ageDays)} days old: the room may have changed (season, insulation, leaks). Calibrate again.`);
+    const t = Date.parse(c.date), ageDays = (now - t) / 86400000;
+    if (!Number.isFinite(t) || ageDays < -1) warnings.push('The calibration has no valid date: calibrate again to be sure it still fits the room.');
+    else if (ageDays > CALIB.maxAgeDays) warnings.push(`The calibration is ${Math.round(ageDays)} days old: the room may have changed (season, insulation, leaks). Calibrate again.`);
     return { calibrated: true, estimate: poor, warnings };
   }
 
@@ -214,7 +216,8 @@
   function verdictOf(planned, cap, opts = {}) {
     const emptyBelow = opts.emptyBelow ?? VERDICT.emptyBelow;
     if (!cap.max) return { verdict: 'impossible', utilisation: null };
-    const utilisation = Math.round(planned / cap.max * 100);     // whole percent: the verdict matches the number shown
+    // Whole percent, so the verdict matches the number shown; above the capacity always shows as at least 101 %.
+    const raw = planned / cap.max * 100, utilisation = planned > cap.max ? Math.max(101, Math.round(raw)) : Math.round(raw);
     if (cap.min && planned < cap.min) return { verdict: 'too-empty', why: 'wet', utilisation };
     if (utilisation > VERDICT.dense) return { verdict: 'too-dense', utilisation };
     if (utilisation >= VERDICT.tight) return { verdict: 'tight', utilisation };
