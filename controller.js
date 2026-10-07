@@ -40,33 +40,34 @@
   // rest = rest between flushes: drier, less fresh air.
   // limits: alarm range for the air (tMin-tMax) and the block core (coreMax).
   // coreTarget: block core temperature that the AC holds in spawn run (with a block probe).
+  // range: the good fruiting band (T °C, RH %), narrower than the alarm limits; a mixed room needs targets inside every crop's range.
   // Only crops that fruit near tropical room temperature (a split AC cannot hold 16-21 °C on a 33 °C day).
   // Flags: casing (milky: soil casing before pinning, a manual step). Flags for other crops:
   // maxFog (no direct fog on the crop), noFogBoost, shock { T, hours } (cold shock at pinning), spawnLights (light in spawn run).
   const CROPS = {
     oyster:    { name: 'Grey oyster', spawn: [24, 70, 5000], pinning: [24, 92, 800], fruiting: [25, 88, 1000], rest: [25, 80, 2000],
-                 limits: { tMin: 20, tMax: 30, coreMax: 32 }, coreTarget: 28 },
+                 limits: { tMin: 20, tMax: 30, coreMax: 32 }, coreTarget: 28, range: { T: [23, 27], RH: [85, 92] } },
     // Dark-cap strain: cooler air and light give the darker cap colour.
     black:     { name: 'Black oyster', spawn: [25, 70, 5000], pinning: [23, 92, 800], fruiting: [23, 88, 900], rest: [24, 80, 2000],
-                 limits: { tMin: 16, tMax: 28, coreMax: 30 }, coreTarget: 27 },
+                 limits: { tMin: 16, tMax: 28, coreMax: 30 }, coreTarget: 27, range: { T: [21, 25], RH: [85, 92] } },
     // Fast and very tropical. Short shelf life; cold storage damages it.
     pink:      { name: 'Pink oyster', spawn: [27, 70, 5000], pinning: [26, 92, 800], fruiting: [26, 88, 1000], rest: [27, 80, 2000],
-                 limits: { tMin: 20, tMax: 32, coreMax: 33 }, coreTarget: 29 },
+                 limits: { tMin: 20, tMax: 32, coreMax: 33 }, coreTarget: 29, range: { T: [24, 29], RH: [85, 92] } },
     // Black spore stalks on the block surface are normal, not a mould.
     abalone:   { name: 'Abalone oyster', spawn: [27, 70, 5000], pinning: [26, 90, 1000], fruiting: [27, 87, 1000], rest: [27, 80, 2000],
-                 limits: { tMin: 22, tMax: 32, coreMax: 33 }, coreTarget: 29 },
+                 limits: { tMin: 22, tMax: 32, coreMax: 33 }, coreTarget: 29, range: { T: [25, 30], RH: [85, 90] } },
     // Very sensitive to CO2 (long thin stems); brittle caps.
     golden:    { name: 'Golden oyster', spawn: [26, 70, 5000], pinning: [24, 92, 700], fruiting: [24, 88, 800], rest: [25, 80, 2000],
-                 limits: { tMin: 18, tMax: 30, coreMax: 31 }, coreTarget: 27 },
+                 limits: { tMin: 18, tMax: 30, coreMax: 31 }, coreTarget: 27, range: { T: [22, 26], RH: [85, 92] } },
     // Takes more CO2 and direct water; needs light for a dark colour.
     woodear:   { name: 'Black jelly (wood ear)', spawn: [27, 70, 5000], pinning: [26, 92, 1500], fruiting: [26, 90, 1500], rest: [27, 80, 3000],
-                 limits: { tMin: 20, tMax: 32, coreMax: 33 }, coreTarget: 29 },
+                 limits: { tMin: 20, tMax: 32, coreMax: 33 }, coreTarget: 29, range: { T: [24, 29], RH: [88, 95] } },
     // Long cycle. CO2 sets the shape: below about 1000 ppm kidney caps, above 2000 ppm antlers.
     reishi:    { name: 'Reishi (lingzhi)', spawn: [28, 70, 5000], pinning: [27, 90, 1000], fruiting: [27, 88, 1000], rest: [27, 80, 2000],
-                 limits: { tMin: 22, tMax: 32, coreMax: 34 }, coreTarget: 29 },
+                 limits: { tMin: 22, tMax: 32, coreMax: 34 }, coreTarget: 29, range: { T: [25, 30], RH: [85, 92] } },
     // Heat-loving (30-35 °C). Held at 30 °C: the highest split AC setpoint.
     milky:     { name: 'Milky (Calocybe indica)', spawn: [30, 70, 5000], pinning: [30, 90, 1000], fruiting: [30, 85, 1000], rest: [30, 80, 2000],
-                 limits: { tMin: 25, tMax: 36, coreMax: 38 }, coreTarget: 32, casing: true },
+                 limits: { tMin: 25, tMax: 36, coreMax: 38 }, coreTarget: 32, range: { T: [28, 34], RH: [80, 90] }, casing: true },
   };
   const STAGES = { spawn: 'Spawn run', pinning: 'Pinning', fruiting: 'Fruiting', rest: 'Rest between flushes' };
   // Farms that buy ready-to-fruit blocks never have a spawn run or pinning in their rooms.

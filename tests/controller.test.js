@@ -331,6 +331,14 @@ test('every crop can be held by a split AC (16-30 °C) and its targets are insid
   }
 });
 
+test('every crop has a good range inside its alarm limits', () => {
+  for (const [k, c] of Object.entries(CC.CROPS)) {
+    if (k === 'flagTest') continue;
+    assert.ok(c.range.T[0] < c.fruiting[0] + 0.01 && c.fruiting[0] <= c.range.T[1], `${k}: target inside its T range`);
+    assert.ok(c.range.T[0] >= c.limits.tMin && c.range.T[1] <= c.limits.tMax, `${k}: T range inside the limits`);
+  }
+});
+
 test('lights follow the stage and the clock; the spawnLights flag adds light in spawn run', () => {
   const p = makeProg(); p.feed(0, { hour: 10 }); assert.equal(p.ctl.state.cmd.lights.on, true);       // fruiting, 10:00
   p.feed(30, { hour: 22 }); assert.equal(p.ctl.state.cmd.lights.on, false);                           // 22:00
