@@ -48,3 +48,18 @@ test('bad input gives a message, not a crash or a wrong target', () => {
   assert.match(CAP.commonTargets([{ crop: 'truffle', blocks: 10 }]).conflict, /Unknown crop: truffle/);
   assert.equal(CAP.commonTargets([{ crop: 'oyster', blocks: '1200' }]).impossible, true, 'a text block count is not used');
 });
+
+// ---------- balance ----------
+test('balance: the fan limit matches a hand calculation', () => {
+  // 900 m³/h × (900 - 420) ppm / 45 mL/h per block = 9600 blocks
+  const tg = CAP.commonTargets([{ crop: 'oyster', blocks: 1 }]);
+  assert.equal(CAP.balance(room, [{ crop: 'oyster', blocks: 1 }], tg).fan, 9600);
+  // An exhaust fan also gets the leakage air: (900 + 0.4 × 60) × 480 / 45 = 9856
+  assert.equal(CAP.balance({ ...room, vent: 'exhaust' }, [{ crop: 'oyster', blocks: 1 }], tg).fan, 9856);
+});
+
+test('balance: a cooler crop carries fewer blocks; milky is limited by the fogger', () => {
+  const est = crop => CAP.balance(room, [{ crop, blocks: 1 }], CAP.commonTargets([{ crop, blocks: 1 }]));
+  assert.ok(est('golden').ac < est('oyster').ac && est('oyster').ac < est('pink').ac);
+  assert.equal(est('milky').limit, 'fog');
+});

@@ -85,5 +85,50 @@
     volume: room.volume || SIM.PLANT.room.volume,
   });
 
-  global.ClimateCapacity = { commonTargets, DESIGN_DAYS, PASS, VERDICT, SEARCH };
+  // ---------- 2. Balance (step 1) ----------
+  // Largest n in [0, max] with need(n) <= cap. need(0) > cap gives 0; no limit up to max gives Infinity.
+  function maxBlocks(need, cap, max = 200000) {
+    if (need(0) > cap) return 0;
+    let ok = 0, bad = null;
+    for (let n = 100; n <= max; n *= 2) { if (need(n) > cap) { bad = n; break; } ok = n; }
+    if (bad == null) return Infinity;
+    while (bad - ok > 1) { const m = Math.floor((ok + bad) / 2); if (need(m) > cap) bad = m; else ok = m; }
+    return ok;
+  }
+  // Per hour of each design day, with the room at target + band (the pass rule allows the band edge):
+  //   S = sensible heat gain (W), G = water gain (g/s) from the outdoor air and the blocks.
+  //   The fog replaces the water the AC coil takes out, and its evaporation cools the air, so the AC
+  //   carries S + 2450·G. When the coil cannot take out G, the room runs wetter than the target (allowed)
+  //   and the coil's water removal (at most latentMax of its output) is lost for cooling: S / (1 - latentMax).
+  // Each day's worst hour is left out: the pass rule allows 5 % of the day out of band.
+  function balance(room, mix, tg, region = 'my-lowland') {
+    const P = SIM.PLANT, R = roomOf(room), c = mixCo2(room, mix), rules = CC.defaultRules(tg.co2Lim);
+    const leak = room.vent === 'exhaust' ? R.infAch * R.volume : 0;               // m³/h; supply fan: no leak in
+    const fanBase = CC.MACHINES.fanM3h[rules.baseFan.fruiting] + leak;
+    const fanTop = P.fan.levels[P.fan.levels.length - 1].m3h + leak;
+    const fogTop = P.fogger.levels[P.fogger.levels.length - 1].gph / 3600;         // g/s
+    const dC = rules.fanOn - R.co2Out;                                              // CO2 held at the fan start level
+    const air = n => Math.max(fanBase, n * c / dC) / 3600;                          // m³/s of outdoor air
+    const blockW = c / 60000 * P.resp.wPerLpm, blockGps = c / 60000 * P.resp.gpsPerLpm + P.transpGph / 3600;
+    const tRoom = tg.spT + CC.BANDS.T, ahT = tg.spRH / 100 * ahSat(tRoom), share = P.ac.latentMax.auto;
+    const coilRate = 0.14 * Math.max(0, ahT - ahSat(P.ac.coil.auto));              // g/s at full output
+    const latent = A => Math.min(coilRate * A / P.ac.capW, share * A / 2450);
+    const days = DESIGN_DAYS[region].days;
+    const hours = days.map(d => d.T.map((T, h) => ({ T, ah: d.RH[h] / 100 * ahSat(T),
+      sun: h > 7 && h < 19 ? Math.sin(Math.PI * (h - 7) / 12) : 0, lights: h >= 7 && h < 19 })));
+    const at = (n, x) => {
+      const q = air(n), dT = x.T - tRoom;
+      const S = R.ua * dT + q * 1206 * dT + P.loads.baseW + (x.lights ? P.loads.lightsW : 0) + x.sun * P.loads.solarPeakW + n * blockW;
+      const G = q * (x.ah - ahT) + n * blockGps;
+      const A1 = S + 2450 * G, L = latent(Math.max(0, A1));
+      return L >= G ? { ac: A1, fog: L - G } : { ac: S / (1 - share), fog: 0 };
+    };
+    const secondWorst = key => n => Math.max(...hours.map(day => day.map(x => at(n, x)[key]).sort((a, b) => b - a)[1]));
+    const out = { fan: maxBlocks(n => n * c / dC, fanTop), ac: maxBlocks(secondWorst('ac'), P.ac.capW), fog: maxBlocks(secondWorst('fog'), fogTop) };
+    out.estimate = Math.min(out.fan, out.ac, out.fog);
+    out.limit = ['fan', 'ac', 'fog'].find(k => out[k] === out.estimate);
+    return out;
+  }
+
+  global.ClimateCapacity = { commonTargets, balance, DESIGN_DAYS, PASS, VERDICT, SEARCH };
 })(typeof window !== 'undefined' ? window : globalThis);
