@@ -207,5 +207,16 @@ test('check: a balance estimate of 0 does not send the search to 1 block', () =>
   const mix = [{ crop: 'black', blocks: 1000 }];
   assert.equal(CAP.balance(warm, mix, CAP.commonTargets(mix)).estimate, 0, 'the balance gives up on this room');
   const r = CAP.check(warm, mix, { now: NOW });
-  assert.ok(r.runs.every(x => x.blocks > 1), r.runs.map(x => x.blocks).join(','));
+  assert.ok(r.runs[1].blocks > 500, `the second run is not a jump to 1 block: ${r.runs.map(x => x.blocks).join(',')}`);
+  assert.equal(r.verdict, 'impossible', 'too hot at every size, as the simulation shows');
+  assert.ok(r.limit.some(l => l.fails.includes('temperature too high')));
+});
+
+test('check: a too-wet plan with a low estimate still finds the pass window', () => {
+  // A large, tight room: 100 black oyster blocks are too wet, and the estimate (about 80) is below the plan.
+  const big = { ...room, volume: 120, calib: { ua: 150, infAch: 0.2, moistBuffer: 3, co2PerBlock: 45, rmse: { T: 0.2, RH: 1, CO2: 20 }, date: '2026-10-01T00:00:00Z' } };
+  const r = CAP.check(big, [{ crop: 'black', blocks: 100 }], { now: NOW });
+  assert.equal(r.verdict, 'too-empty', r.runs.map(x => x.blocks + (x.pass ? 'P' : x.side)).join(' '));
+  assert.equal(r.why, 'wet');
+  assert.ok(r.capacity.min > 100 && r.capacity.max > r.capacity.min, JSON.stringify(r.capacity));
 });

@@ -248,48 +248,61 @@
     const plan = yield* run(planned);
     let lo = plan.pass ? plan.blocks : null, hi = plan.pass || plan.side === 'empty' ? null : plan.blocks;
     let lowFail = plan.side === 'empty' ? plan.blocks : null;
-    // The first move jumps to the balance estimate. An estimate of 0 or no limit is no help: then step ±15 % from the plan.
+    // Moves before the limit is bracketed: the first one jumps to the balance estimate (when it is positive and
+    // finite); each further move in the search grows the step (×1.15, 1.32, 1.75, 3.06, then 4), so a poor estimate
+    // still reaches the pass window within the run budget.
     const e = est.estimate > 0 && Number.isFinite(est.estimate) ? est.estimate : null;
-    const up = n => (e ? Math.max(e, n * SEARCH.step) : n * SEARCH.step), down = n => (e ? Math.min(e, n / SEARCH.step) : n / SEARCH.step);
-    let next = plan.pass || plan.side === 'empty' ? up(planned) : down(planned);
+    let mult = SEARCH.step;
+    const grow = () => { const m = mult; mult = Math.min(mult * mult, 4); return m; };
+    let next = plan.pass || plan.side === 'empty' ? Math.max(e ?? 0, planned * grow()) : Math.min(e ?? Infinity, planned / grow());
     for (let i = 0; i < SEARCH.maxRuns; i++) {
-      if (lo != null && hi != null && (hi - lo) / lo <= SEARCH.resolution) break;
+      if (lo != null && hi != null && (hi - lo <= 1 || (hi - lo) / lo <= SEARCH.resolution)) break;
       if (lo != null && hi != null) next = (lo + hi) / 2;
-      else if (lo != null && next <= lo) next = lo * SEARCH.step;
-      else if (hi != null && next >= hi) next = hi / SEARCH.step;
-      const r = yield* run(Math.max(1, next));
-      if (r.pass) { lo = r.blocks; next = r.blocks * SEARCH.step; }
-      else if (r.side === 'empty' && (lo == null || r.blocks < lo)) { lowFail = Math.max(lowFail ?? 0, r.blocks); next = hi != null ? (r.blocks + hi) / 2 : up(r.blocks); }
-      else { hi = r.blocks; next = r.blocks / SEARCH.step; }
+      else if (lo != null && next <= lo) next = lo * grow();
+      else if (hi != null && next >= hi) next = hi / grow();
+      const n = Math.max(1, Math.round(next));
+      if (runs.some(r => r.blocks === n)) break;                    // no size twice
+      const r = yield* run(n);
+      if (r.pass) { lo = r.blocks; next = r.blocks * grow(); }
+      else if (r.side === 'empty' && (lo == null || r.blocks < lo)) { lowFail = Math.max(lowFail ?? 0, r.blocks); next = hi != null ? (r.blocks + hi) / 2 : r.blocks * grow(); }
+      else { hi = r.blocks; next = lowFail != null ? (lowFail + r.blocks) / 2 : r.blocks / grow(); }
     }
     // Lower end: does a nearly empty room fail (too wet, too cold)? Then find the smallest passing size, to 10 %.
-    let min = 0;
+    // The simulation is not quite monotonic near the minimum, so the minimum is approximate.
+    let min = 0, why = null;
     if (lo != null) {
       let a = lowFail;
-      if (a == null) { const low = yield* run(Math.max(1, planned * SEARCH.lowAt)); if (!low.pass) a = low.blocks; }
+      if (a == null) { const low = yield* run(Math.max(1, Math.round(planned * SEARCH.lowAt))); if (!low.pass && low.side === 'empty') a = low.blocks; }
       if (a != null) {
         let b = runs.filter(r => r.pass).reduce((m, r) => Math.min(m, r.blocks), Infinity);
-        for (let i = 0; i < SEARCH.minRuns && (b - a) / b > 0.1; i++) {
-          const r = yield* run((a + b) / 2);
+        for (let i = 0; i < SEARCH.minRuns && b - a > 1 && (b - a) / b > 0.1; i++) {
+          const r = yield* run(Math.round((a + b) / 2));
           if (r.pass) b = r.blocks; else a = r.blocks;
         }
         min = b;
       }
+    } else if (lowFail != null) {
+      // A "too wet" failure: fewer blocks are wetter still, so a nearly empty run cannot help.
+      why = hi == null ? `Too wet (near saturation on the rainy day) at every size tried, up to ${lowFail} blocks.`
+        : `No size passes: ${lowFail} blocks are too wet on the rainy day, and ${hi} blocks already fail (see the limit).`;
     } else {
-      const low = yield* run(Math.max(1, planned * SEARCH.lowAt));
-      if (low.pass) lo = low.blocks;                       // passes only when nearly empty
+      const n = Math.max(1, Math.round(planned * SEARCH.lowAt));
+      if (!runs.some(r => r.blocks <= n)) { const low = yield* run(n); if (low.pass) lo = low.blocks; }   // passes only when nearly empty
     }
-    const cap = { max: lo || 0, hi, min, settled: lo != null && hi != null && (hi - lo) / lo <= SEARCH.resolution };
-    const failing = runs.filter(r => !r.pass && r.side === 'dense').sort((a, b) => a.blocks - b.blocks)[0];
+    const cap = { max: lo || 0, hi, min, settled: lo != null && hi != null && (hi - lo <= 1 || (hi - lo) / lo <= SEARCH.resolution) };
+    // The failure that explains the limit: the smallest "dense" failure above the capacity; with no capacity and only
+    // "too wet" failures, the largest of those.
+    const failing = runs.filter(r => !r.pass && r.side === 'dense' && r.blocks > cap.max).sort((a, b) => a.blocks - b.blocks)[0]
+      || (cap.max ? null : runs.filter(r => !r.pass && r.side === 'empty').sort((a, b) => b.blocks - a.blocks)[0]);
     const limit = failing ? failing.days.filter(d => !d.pass).map(d => ({ day: d.name, fails: d.fails })) : [];
     const v = verdictOf(planned, cap, opts);
     const tariff = opts.tariff ?? 0.57;
     const P = CC.defaultProgram(), cycleDays = opts.cycleDays ?? P.days.fruiting * P.flushes + P.days.rest * (P.flushes - 1);
     const total = planned || 1, share = m => (counted(m) ? m.blocks : 0) / total;
     return {
-      ...base, targets: tg, balance: est, capacity: cap, limit, ...v,
+      ...base, targets: tg, balance: est, capacity: cap, limit, ...v, ...(why ? { why } : {}),
       perCrop: mix.map(m => ({ crop: m.crop, max: Math.floor(cap.max * share(m)), min: Math.ceil(cap.min * share(m)) })),
-      energy: { kwhDay: plan.kwhDay, rmPerBlockCycle: planned ? plan.kwhDay * tariff * cycleDays / planned : null, cycleDays, tariff },
+      energy: { kwhDay: plan.kwhDay, rmPerBlockCycle: planned ? plan.kwhDay * tariff * cycleDays / planned : null, cycleDays, tariff, planPass: plan.pass },
       disagree: cap.max > 0 && Number.isFinite(est.estimate) && Math.abs(est.estimate - cap.max) / cap.max > SEARCH.disagree,
       runs: runs.map(r => ({ blocks: r.blocks, pass: r.pass, side: r.side, days: r.days })),
     };

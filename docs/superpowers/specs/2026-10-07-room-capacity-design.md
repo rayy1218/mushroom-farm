@@ -121,8 +121,8 @@ dries the air, and RH stays above 95 % on the rainy day. More blocks give more h
 | Item | Rule |
 |---|---|
 | Failure side | A failed run is "empty" when every failure is "temperature too low" or "humidity near saturation"; otherwise "dense". |
-| Upper search | Starts at the planned size: after a pass or an "empty" failure it goes up, after a "dense" failure down (first jump to the balance estimate, then ±15 %), then halves the interval to 5 %. At most 8 runs after the planned run. |
-| Lower search | Uses an "empty" failure from the upper search, or runs 5 % of the planned blocks. If that fails, it halves the interval to the smallest passing size, to 10 %, at most 4 runs. No failure = no minimum. |
+| Upper search | Starts at the planned size: after a pass or an "empty" failure it goes up, after a "dense" failure down. The first move jumps to the balance estimate when that is positive and finite; until a pass and a failure bracket the limit, each move grows the step (×1.15, 1.32, 1.75, 3.06, then 4), so a poor estimate still reaches the window. Then it halves the interval to 5 % (or 1 block). No size runs twice. At most 8 runs after the planned run. |
+| Lower search | Uses an "empty" failure from the upper search, or runs 5 % of the planned blocks (only an "empty" failure there counts). It halves the interval to the smallest passing size, to 10 %, at most 4 runs. No "empty" failure = no minimum. The simulation is not quite monotonic near the minimum, so the minimum is approximate. After a "too wet" failure with no passing size, no 5 % run is made (fewer blocks are wetter still): the verdict is impossible with the reason "too wet at every size tried" or "no size passes between too wet and the limit". |
 | Utilisation | Rounded to a whole percent before the verdict, so the verdict matches the number shown. |
 
 ## 3. Parts and data flow
