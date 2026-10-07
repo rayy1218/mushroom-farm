@@ -323,6 +323,37 @@
     </details>
   </section>
 
+  <section class="card capacity" aria-labelledby="hCap">
+    <div class="rules-head">
+      <h2 id="hCap">Room capacity</h2>
+      <span class="tag">How many blocks can a room carry in fruiting, on a hot-dry, a hot-humid and a rainy day? It uses the calibrated room values. The design days are estimates for lowland Peninsular Malaysia.</span>
+    </div>
+    <div class="cal-row">
+      <label for="capRoom">Room</label><select id="capRoom"></select>
+      <input type="text" id="capName" placeholder="Name for a new room" aria-label="Name for a new room">
+      <button class="btn" id="capSave">Save the present room</button>
+      <button class="btn" id="capDelete">Delete room</button>
+      <span class="tag" id="capRoomInfo"></span>
+    </div>
+    <table class="cap-mix">
+      <thead><tr><th>Mushroom</th><th>Blocks</th><th>CO₂ per block, mL/h (optional)</th><th><span class="vh">Remove</span></th></tr></thead>
+      <tbody id="capMix"></tbody>
+    </table>
+    <div class="cal-row">
+      <button class="btn" id="capAdd">Add a crop</button>
+      <label class="num" for="capEmpty">Too empty below <input type="number" id="capEmpty" min="10" max="90" step="5" value="50"> %</label>
+      <button class="btn" id="capRun">Run check</button>
+      <progress id="capProg" max="1" value="0" hidden></progress>
+      <span class="tag" id="capMsg">Save a room, enter the crops, then run the check.</span>
+    </div>
+    <div id="capReport" class="cap-report" aria-live="polite"></div>
+    <p id="capFarm" class="cap-farm"></p>
+    <div class="cal-row">
+      <button class="btn" id="capExport">Export rooms</button>
+      <label class="btn" for="capImport">Import rooms</label><input type="file" id="capImport" accept=".json,application/json" class="vh">
+    </div>
+  </section>
+
   <!-- ================= CONTROLLER ================= -->
   <div class="section-head">
     <h2>Climate controller</h2>
@@ -717,6 +748,7 @@
 <script src="controller.js"></script>
 <script src="runtime.js"></script>
 <script src="calib.js"></script>
+<script src="capacity.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

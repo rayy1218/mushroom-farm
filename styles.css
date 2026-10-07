@@ -410,3 +410,20 @@ body[data-bench="off"] .mimic .mimic-svg { max-width: 980px; margin-inline: auto
 
 .crop-check[data-lvl="warning"] { color: var(--ink); border-left: 3px solid var(--warning); padding-left: 8px; }
 .crop-check[data-lvl="good"] { border-left: 3px solid var(--good); padding-left: 8px; }
+
+/* Room capacity */
+.capacity { grid-column: span 12; }
+.capacity h2 { font-size: 16px; font-weight: 600; }
+.cap-mix { max-width: 720px; margin-bottom: 10px; }
+.cap-mix input[type="number"] { width: 90px; }
+.cap-report { display: grid; gap: 8px; margin: 6px 0 10px; }
+.cap-report p { margin: 0; }
+.cap-report .warn { color: var(--warning); }
+.cap-report .note { color: var(--muted); font-size: 13px; }
+.cap-util { height: 8px; max-width: 480px; background: var(--band); border-radius: 4px; overflow: hidden; }
+.cap-util span { display: block; height: 100%; background: var(--lvl, var(--ink)); }
+.cap-util[data-lvl="good"] { --lvl: var(--good); }
+.cap-util[data-lvl="warning"] { --lvl: var(--warning); }
+.cap-util[data-lvl="serious"] { --lvl: var(--serious); }
+.cap-util[data-lvl="critical"] { --lvl: var(--critical); }
+.cap-farm { font-weight: 600; margin: 0 0 10px; }
