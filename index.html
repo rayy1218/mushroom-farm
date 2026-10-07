@@ -330,7 +330,7 @@
     </div>
     <div class="cal-row">
       <label for="capRoom">Room</label><select id="capRoom"></select>
-      <input type="text" id="capName" placeholder="Name for a new room" aria-label="Name for a new room">
+      <input type="text" id="capName" maxlength="60" placeholder="Name for a new room" aria-label="Name for a new room">
       <button class="btn" id="capSave">Save the present room</button>
       <button class="btn" id="capDelete">Delete room</button>
       <span class="tag" id="capRoomInfo"></span>
@@ -346,7 +346,7 @@
       <progress id="capProg" max="1" value="0" aria-label="Check progress" hidden></progress>
       <span class="tag" id="capMsg" role="status">Save a room, enter the crops, then run the check.</span>
     </div>
-    <div id="capReport" class="cap-report" aria-live="polite"></div>
+    <div id="capReport" class="cap-report"></div>
     <p id="capFarm" class="cap-farm"></p>
     <div class="cal-row">
       <button class="btn" id="capExport">Export rooms</button>

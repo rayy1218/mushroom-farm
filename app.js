@@ -1071,9 +1071,29 @@ function checkCrop() {
 // "mushroom-farm." key prefix. Spec: docs/superpowers/specs/2026-10-07-room-capacity-design.md
 const CAPY = window.ClimateCapacity;
 const ROOMS_KEY = 'mushroom-farm.rooms.v1';
-let rooms = loadRooms(), roomIdx = 0, capBusy = false;
+const LIM = { blocks: 200000, volume: [5, 5000], co2: [1, 1000] };      // plausible input ranges
+let rooms = [], roomIdx = 0, capBusy = false;
+const hasCrop = k => Object.hasOwn(CC.CROPS, k) && !!CC.CROPS[k].range;
+const inRange = (x, lo, hi) => Number.isFinite(x) && x >= lo && x <= hi;
+// Saved and imported rooms are not trusted: only valid fields are kept, so one bad room cannot stop the page.
+function normRoom(r, i) {
+  if (!r || typeof r !== 'object') return null;
+  const mix = (Array.isArray(r.mix) ? r.mix : []).filter(m => m && hasCrop(m.crop) && inRange(m.blocks, 0, LIM.blocks))
+    .map(m => ({ crop: m.crop, blocks: Math.round(m.blocks), ...(inRange(m.co2PerBlock, ...LIM.co2) ? { co2PerBlock: m.co2PerBlock } : {}) }));
+  const rep = r.report;
+  const report = rep && typeof rep === 'object' && VERDICT_CHIP[rep.verdict] && Array.isArray(rep.runs) ? rep : null;
+  return { id: String(r.id || `${Date.now().toString(36)}${i}`), name: String(r.name || 'Room').slice(0, 60),
+    volume: inRange(r.volume, ...LIM.volume) ? r.volume : PL.room.volume, vent: r.vent === 'exhaust' ? 'exhaust' : 'supply',
+    calib: validCalib(r.calib), mix, report, rev: 0 };
+}
+// A calibration must have all four values inside the calibration search limits, else the room is uncalibrated.
+function validCalib(c) {
+  if (!c || typeof c !== 'object') return null;
+  const ok = Object.entries(CAL.PARAMS).every(([k, P]) => inRange(c[k], P.min, P.max));
+  return ok ? { ua: c.ua, infAch: c.infAch, moistBuffer: c.moistBuffer, co2PerBlock: c.co2PerBlock, rmse: c.rmse || {}, date: String(c.date || '') } : null;
+}
 function loadRooms() {
-  try { const x = JSON.parse(localStorage.getItem(ROOMS_KEY)); return Array.isArray(x && x.rooms) ? x.rooms : []; } catch { return []; }
+  try { const x = JSON.parse(localStorage.getItem(ROOMS_KEY)); return Array.isArray(x && x.rooms) ? x.rooms.map(normRoom).filter(Boolean) : []; } catch { return []; }
 }
 function saveRooms() {
   try { localStorage.setItem(ROOMS_KEY, JSON.stringify({ version: 1, rooms })); }
@@ -1081,8 +1101,9 @@ function saveRooms() {
 }
 const curRoom = () => rooms[roomIdx] || null;
 const nf = n => Math.round(n).toLocaleString('en');
-const cropName = k => (CC.CROPS[k] ? CC.CROPS[k].name : k);
-const roomChanged = r => { r.report = null; saveRooms(); renderReport(); renderFarm(); };
+const cropName = k => (hasCrop(k) ? CC.CROPS[k].name : k);
+// An edit makes the saved report stale; the revision number lets a running check notice it.
+const roomChanged = r => { r.rev = (r.rev || 0) + 1; r.report = null; saveRooms(); renderReport(); renderFarm(); };
 function renderRooms() {
   const sel = $('#capRoom');
   sel.replaceChildren(...rooms.map((r, i) => { const o = document.createElement('option'); o.value = String(i); o.textContent = r.name; return o; }));
@@ -1091,27 +1112,32 @@ function renderRooms() {
   if (rooms.length) sel.value = String(roomIdx);
   const r = curRoom();
   set('capRoomInfo', !r ? '' : r.calib ? `${r.volume} m³ · calibrated ${r.calib.date ? r.calib.date.slice(0, 10) : '(no date)'}` : `${r.volume} m³ · not calibrated (typical values)`);
-  $('#capDelete').disabled = $('#capRun').disabled = $('#capAdd').disabled = !r;
+  $('#capDelete').disabled = $('#capAdd').disabled = !r;
+  $('#capRun').disabled = !r || capBusy;
   renderMix(); renderReport(); renderFarm();
 }
 function renderMix() {
   const r = curRoom(), body = $('#capMix');
   if (!r) { body.replaceChildren(); return; }
   const td = x => { const c = document.createElement('td'); c.append(x); return c; };
-  const num = (val, label, apply) => {
-    const el = document.createElement('input'); el.type = 'number'; el.min = '0'; el.step = '1'; el.value = val ?? ''; el.setAttribute('aria-label', label);
-    el.addEventListener('change', () => { apply(el.value === '' ? null : Math.max(0, Math.round(+el.value))); roomChanged(r); });
+  const num = (val, max, apply) => {
+    const el = document.createElement('input'); el.type = 'number'; el.min = '0'; el.max = String(max); el.step = '1'; el.value = val ?? '';
+    el.addEventListener('change', () => { apply(el.value === '' ? null : Math.min(max, Math.max(0, Math.round(+el.value)))); roomChanged(r); });
     return el;
   };
   body.replaceChildren(...r.mix.map((m, i) => {
     const sel = document.createElement('select'); sel.setAttribute('aria-label', 'Mushroom');
-    for (const [k, c] of Object.entries(CC.CROPS)) { if (!c.range) continue; const o = document.createElement('option'); o.value = k; o.textContent = c.name; sel.append(o); }
+    for (const k of Object.keys(CC.CROPS)) { if (!hasCrop(k)) continue; const o = document.createElement('option'); o.value = k; o.textContent = CC.CROPS[k].name; sel.append(o); }
     sel.value = m.crop;
-    const del = document.createElement('button'); del.className = 'btn'; del.textContent = 'Remove'; del.setAttribute('aria-label', `Remove ${cropName(m.crop)}`);
-    sel.addEventListener('change', () => { m.crop = sel.value; del.setAttribute('aria-label', `Remove ${cropName(m.crop)}`); roomChanged(r); });
+    const blocksIn = num(m.blocks, LIM.blocks, v => { m.blocks = v || 0; });
+    const co2In = num(m.co2PerBlock, LIM.co2[1], v => { m.co2PerBlock = v || undefined; });
+    const del = document.createElement('button'); del.className = 'btn'; del.textContent = 'Remove';
+    const label = () => { const n = cropName(m.crop); del.setAttribute('aria-label', `Remove ${n}`); blocksIn.setAttribute('aria-label', `Blocks of ${n}`); co2In.setAttribute('aria-label', `CO₂ per block of ${n}, mL/h`); };
+    label();
+    sel.addEventListener('change', () => { m.crop = sel.value; label(); roomChanged(r); });
     del.addEventListener('click', () => { r.mix.splice(i, 1); renderMix(); roomChanged(r); });
     const tr = document.createElement('tr');
-    tr.append(td(sel), td(num(m.blocks, 'Blocks', v => { m.blocks = v || 0; })), td(num(m.co2PerBlock, 'CO₂ per block, mL/h', v => { m.co2PerBlock = v || undefined; })), td(del));
+    tr.append(td(sel), td(blocksIn), td(co2In), td(del));
     return tr;
   }));
 }
@@ -1125,7 +1151,8 @@ const VERDICT_CHIP = {
 const LIMIT_WORD = { fan: 'the fan (fresh air for CO₂)', ac: 'the AC (heat)', fog: 'the fogger (water)' };
 function verdictText(rep) {
   const cap = rep.capacity, pct = rep.utilisation == null ? '' : ` (${Math.round(rep.utilisation)} %)`;
-  const holds = cap ? `Holds ${cap.settled ? '' : 'at least '}${nf(cap.max)} blocks` : '';
+  // An unsettled search gives a range (or a lower bound), not one number.
+  const holds = !cap ? '' : cap.settled ? `Holds ${nf(cap.max)} blocks` : cap.hi ? `Holds between ${nf(cap.max)} and ${nf(cap.hi)} blocks` : `Holds at least ${nf(cap.max)} blocks`;
   switch (rep.verdict) {
     case 'impossible': return rep.why || 'No size of this mix passes on all design days, even with almost no blocks.';
     case 'too-dense': return `${holds}; you plan ${nf(rep.planned)}${pct}.`;
@@ -1147,12 +1174,13 @@ function renderReport() {
   for (const w of rep.warnings || []) p(w, 'warn');
   if (!rep.capacity) return;                                   // no common targets: nothing was simulated
   if (rep.utilisation != null) {
-    const bar = document.createElement('div'); bar.className = 'cap-util'; bar.dataset.lvl = VERDICT_CHIP[rep.verdict].lvl;
+    const bar = document.createElement('div'); bar.className = 'cap-util'; bar.dataset.lvl = VERDICT_CHIP[rep.verdict].lvl; bar.setAttribute('aria-hidden', 'true');
     const fill = document.createElement('span'); fill.style.width = `${clamp(rep.utilisation, 0, 100)}%`; bar.append(fill); host.append(bar);
   }
   const t = rep.targets;
   p(`Targets: ${t.spT} °C, ${t.spRH} % RH, CO₂ limit ${nf(t.co2Lim)} ppm (${cropName(t.crop)} sets the CO₂ limit).`);
-  if (rep.perCrop.length > 1 && rep.capacity.max) p(`Capacity in the same mix: ${rep.perCrop.map(c => `${nf(c.max)} ${cropName(c.crop)}`).join(' + ')}.`);
+  const split = (rep.perCrop || []).filter(c => c.max > 0);
+  if (split.length > 1) p(`Capacity in the same mix: ${split.map(c => `${nf(c.max)} ${cropName(c.crop)}`).join(' + ')}.`);
   if (rep.capacity.min && rep.why !== 'wet') p(`Needs at least about ${nf(rep.capacity.min)} blocks: below that the room gets too wet (near saturation).`);
   if (rep.limit.length) p(`Limit: ${rep.limit.map(l => `${l.fails.join(', ')} on the ${l.day.toLowerCase()} day`).join('; ')}.`);
   if (rep.energy && rep.energy.rmPerBlockCycle != null) p(`Energy: ${rep.energy.kwhDay.toFixed(1)} kWh per day, RM ${rep.energy.rmPerBlockCycle.toFixed(2)} per block per cycle (${rep.energy.cycleDays} days at RM ${rep.energy.tariff.toFixed(2)}/kWh)${rep.energy.planPass === false ? ', at the planned size, which fails' : ''}.`);
@@ -1173,24 +1201,21 @@ function renderReport() {
 function renderFarm() {
   if (!rooms.length) { set('capFarm', ''); return; }
   const done = rooms.filter(r => r.report && r.report.capacity && r.report.capacity.max > 0);
+  const none = rooms.filter(r => r.report && !(r.report.capacity && r.report.capacity.max > 0)).length;
   const planned = rooms.reduce((s, r) => s + r.mix.reduce((a, m) => a + (m.blocks || 0), 0), 0);
   const cap = done.reduce((s, r) => s + r.report.capacity.max, 0), used = done.reduce((s, r) => s + r.report.planned, 0);
-  const missing = rooms.length - done.length, pl = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
-  set('capFarm', `Farm: ${pl(rooms.length, 'room')}, ${nf(planned)} blocks planned`
-    + (done.length ? `; capacity ${nf(cap)} blocks in ${pl(done.length, 'checked room')} (${Math.round(used / cap * 100)} % used)` : '')
-    + (missing ? `. ${pl(missing, 'room')} without a capacity yet.` : '.'));
-}
-// A calibration from a file is not trusted: all four values must be numbers, else the room is uncalibrated.
-function validCalib(c) {
-  if (!c || typeof c !== 'object') return null;
-  const ok = ['ua', 'infAch', 'moistBuffer', 'co2PerBlock'].every(k => Number.isFinite(c[k]) && c[k] > 0);
-  return ok ? { ua: c.ua, infAch: c.infAch, moistBuffer: c.moistBuffer, co2PerBlock: c.co2PerBlock, rmse: c.rmse || {}, date: String(c.date || '') } : null;
+  const missing = rooms.length - done.length - none, pl = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+  const parts = [`Farm: ${pl(rooms.length, 'room')}, ${nf(planned)} blocks planned`
+    + (done.length ? `; capacity ${nf(cap)} blocks in ${pl(done.length, 'checked room')} (${Math.round(used / cap * 100)} % used)` : '')];
+  if (none) parts.push(`${pl(none, 'room')} with no passing size`);
+  if (missing) parts.push(`${pl(missing, 'room')} not checked yet`);
+  set('capFarm', `${parts.join('. ')}.`);
 }
 $('#capRoom').addEventListener('change', e => { roomIdx = +e.target.value; renderRooms(); });
 $('#capSave').addEventListener('click', () => {
-  const name = $('#capName').value.trim() || `Room ${rooms.length + 1}`;
+  const name = $('#capName').value.trim().slice(0, 60) || `Room ${rooms.length + 1}`;
   rooms.push({ id: Date.now().toString(36), name, volume: (env.room && env.room.volume) || PL.room.volume, vent: env.vent,
-    calib: calApplied ? { ...calApplied } : null, mix: [{ crop: cfg.crop, blocks: env.blocks }], report: null });
+    calib: calApplied ? { ...calApplied } : null, mix: [{ crop: cfg.crop, blocks: clamp(Math.round(env.blocks), 0, LIM.blocks) }], report: null, rev: 0 });
   roomIdx = rooms.length - 1; $('#capName').value = '';
   saveRooms(); renderRooms();
   set('capMsg', calApplied ? `Saved "${name}" with the calibration of ${calApplied.date.slice(0, 10)}.` : `Saved "${name}" without a calibration: the check uses typical room values.`);
@@ -1198,7 +1223,7 @@ $('#capSave').addEventListener('click', () => {
 $('#capDelete').addEventListener('click', () => {
   const r = curRoom();
   if (!r || !confirm(`Delete the room "${r.name}"?`)) return;
-  rooms.splice(roomIdx, 1); roomIdx = 0; saveRooms(); renderRooms();
+  rooms.splice(roomIdx, 1); roomIdx = Math.min(roomIdx, rooms.length - 1); saveRooms(); renderRooms();
 });
 $('#capAdd').addEventListener('click', () => { const r = curRoom(); if (!r) return; r.mix.push({ crop: 'oyster', blocks: 500 }); renderMix(); roomChanged(r); });
 $('#capRun').addEventListener('click', () => {
@@ -1208,13 +1233,19 @@ $('#capRun').addEventListener('click', () => {
   const prog = $('#capProg'); prog.hidden = false; prog.value = 0;
   set('capMsg', 'Checking… (a few seconds)');
   const emptyBelow = clamp(+$('#capEmpty').value || 50, 10, 90);
-  CAPY.checkAsync(r, r.mix, { emptyBelow, tariff: input.tariff, onProgress: s => {
+  // The check works on a copy: an edit during the check makes its result stale instead of mixing two plans.
+  const rev = r.rev || 0, snap = structuredClone({ name: r.name, volume: r.volume, vent: r.vent, calib: r.calib, mix: r.mix });
+  CAPY.checkAsync(snap, snap.mix, { emptyBelow, tariff: input.tariff, onProgress: s => {
     prog.value = s.runs / s.maxRuns;
     set('capMsg', `Simulation run ${s.runs}: ${nf(s.blocks)} blocks, ${s.pass ? 'pass' : 'fail'}…`);
   } })
-    .then(rep => { r.report = rep; saveRooms(); set('capMsg', `Done after ${rep.runs.length} simulation runs.`); })
+    .then(rep => {
+      if (!rooms.includes(r) || (r.rev || 0) !== rev) { set('capMsg', 'The room changed during the check: run it again.'); return; }
+      r.report = rep; saveRooms();
+      set('capMsg', `Done after ${rep.runs.length} simulation runs: ${VERDICT_CHIP[rep.verdict].text}. ${verdictText(rep)}`);
+    })
     .catch(err => set('capMsg', `The check stopped: ${err.message}`))
-    .finally(() => { capBusy = false; $('#capRun').disabled = false; prog.hidden = true; renderReport(); renderFarm(); });
+    .finally(() => { capBusy = false; $('#capRun').disabled = !curRoom(); prog.hidden = true; renderReport(); renderFarm(); });
 });
 $('#capExport').addEventListener('click', () => {
   const blob = new Blob([JSON.stringify({ format: 'mushroom-farm-rooms', version: 1, saved: new Date().toISOString(), rooms }, null, 1)], { type: 'application/json' });
@@ -1226,17 +1257,17 @@ $('#capImport').addEventListener('change', e => {
   f.text().then(txt => {
     const x = JSON.parse(txt);
     if (!x || x.format !== 'mushroom-farm-rooms' || !Array.isArray(x.rooms)) throw new Error('this is not a rooms file of this page');
-    const ok = x.rooms.filter(r => r && typeof r.name === 'string' && Array.isArray(r.mix)
-      && r.mix.every(m => m && CC.CROPS[m.crop] && CC.CROPS[m.crop].range && Number.isFinite(m.blocks) && m.blocks >= 0));
+    const ok = x.rooms.map(normRoom).filter(r => r && r.mix.length);
+    if (!ok.length) throw new Error('it has no valid rooms');
     if (!confirm(`Replace the ${rooms.length} saved room(s) with ${ok.length} room(s) from the file?`)) return;
-    rooms = ok.map((r, i) => ({ id: String(r.id || `${Date.now().toString(36)}${i}`), name: r.name.slice(0, 60), volume: Number(r.volume) > 0 ? Number(r.volume) : PL.room.volume,
-      vent: r.vent === 'exhaust' ? 'exhaust' : 'supply', calib: validCalib(r.calib),
-      mix: r.mix.map(m => ({ crop: m.crop, blocks: Math.round(m.blocks), ...(Number.isFinite(m.co2PerBlock) && m.co2PerBlock > 0 ? { co2PerBlock: m.co2PerBlock } : {}) })), report: null }));
+    rooms = ok.map(r => ({ ...r, report: null }));
     roomIdx = 0; saveRooms(); renderRooms();
     set('capMsg', `Imported ${rooms.length} room(s)${ok.length < x.rooms.length ? `; ${x.rooms.length - ok.length} invalid room(s) skipped` : ''}. Run the check again for each room.`);
   }).catch(err => set('capMsg', `The file cannot be used: ${err.message}.`)).finally(() => { e.target.value = ''; });
 });
-renderRooms();
+// The rest of the page must start even if the saved rooms cannot be read.
+try { rooms = loadRooms(); renderRooms(); }
+catch (err) { rooms = []; renderRooms(); set('capMsg', 'The saved rooms could not be read and were ignored.'); }
 
 // ---------------- Settings level and test bench ----------------
 // Farmer: crop, stage, harvest times, auto/manual, alarms. Installer: the rules, the program, corrections; the targets unlock.
