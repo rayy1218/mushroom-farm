@@ -78,3 +78,10 @@ Suggested order: 3.1 → 3.8 (both need no hardware) → 3.2 → 3.3 → 3.4 →
   supply fan that always runs, the air leakage cannot be measured, and it has no effect.
 - **Dry weather:** with steady fresh air, CO₂ stays below the limit, but the fogger cannot add water as fast as the dry
   air removes it (RH in band about 53 % with 4,000 blocks and 55 % night humidity). A larger fogger is necessary there.
+- **Room capacity (2026-10-07):** a room passes between a minimum and a maximum number of blocks. In the default
+  room (uncalibrated, supply fan), grey oyster holds about 3,650 blocks (limit: temperature on the hot-humid day);
+  golden and black oyster also have an approximate minimum (about 600 and 1,170 blocks), because a nearly empty room
+  of a cool crop stays above 95 % RH on humid and rainy days. RH above the target is not a failure (outdoor air on
+  humid days is wetter than the target); near saturation is. The design days are estimates: replace them with
+  MetMalaysia data. The page keeps rooms in browser storage (`mushroom-farm.rooms.v1`); work item 3.1 should use
+  the same `mushroom-farm.` key prefix.

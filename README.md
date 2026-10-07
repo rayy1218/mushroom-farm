@@ -14,8 +14,9 @@ A climate controller for a mushroom fruiting room (temperature, humidity, CO₂)
 | `runtime.js` | Runtime | Connects an I/O adapter (simulation or hardware) to the controller. |
 | `sim.js` | Simulation | The room, the weather, the blocks, the machines, and the sensors. A farm replaces it with hardware. |
 | `calib.js` | Calibration | Fits the simulation to a farm log (CSV). |
+| `capacity.js` | Capacity check | How many blocks of a crop mix a room carries in fruiting on three design days; the pass window, verdict and utilisation. |
 | `app.js`, `index.html`, `styles.css` | Page | The dashboard. |
-| `tests/` | Tests | Unit tests, integration tests, settings tests, calibration tests, and test vectors. |
+| `tests/` | Tests | Unit tests, integration tests, settings tests, calibration tests, capacity tests, and test vectors. |
 | `tools/` | Tools | `make-vectors.js` (test vectors), `run-headless.js`. |
 | `docs/contract.md` | Contract | The reading, the commands, the adapter rules, the vector and settings formats. |
 | `docs/phase3-plan.md` | Plan | Phase 3 decisions, options, and work items. |
