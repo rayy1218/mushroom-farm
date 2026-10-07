@@ -77,3 +77,23 @@ test('balance: grey oyster is limited by the AC, near the measured value', () =>
   assert.equal(b.limit, 'ac');
   assert.ok(b.ac > 3000 && b.ac < 3800, `${b.ac}`);
 });
+
+// ---------- trial ----------
+test('trial: 2000 grey oyster pass all three design days', () => {
+  const mix = [{ crop: 'oyster', blocks: 2000 }];
+  const r = CAP.trial(room, mix, CAP.commonTargets(mix), 2000);
+  assert.equal(r.pass, true, JSON.stringify(r.days));
+  assert.equal(r.days.length, 3);
+  assert.ok(r.kwhDay > 5 && r.kwhDay < 30, `${r.kwhDay} kWh/day`);
+});
+
+test('trial: too many blocks fail on temperature ("dense"); too few cool-crop blocks fail near saturation ("empty")', () => {
+  const grey = [{ crop: 'oyster', blocks: 6000 }];
+  const d = CAP.trial(room, grey, CAP.commonTargets(grey), 6000);
+  assert.equal(d.side, 'dense');
+  assert.ok(d.days.some(x => x.fails.includes('temperature too high')));
+  const golden = [{ crop: 'golden', blocks: 200 }];
+  const e = CAP.trial(room, golden, CAP.commonTargets(golden), 200);
+  assert.equal(e.side, 'empty');
+  assert.ok(e.days.some(x => x.fails.includes('humidity near saturation')));
+});

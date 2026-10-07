@@ -134,5 +134,61 @@
     return out;
   }
 
-  global.ClimateCapacity = { commonTargets, balance, DESIGN_DAYS, PASS, VERDICT, SEARCH };
+  // ---------- 3. Trial (step 2) ----------
+  // One run: a warm-up day (the first design day), then each design day. The real room air is scored.
+  function trial(room, mix, tg, blocks, region = 'my-lowland', dt = 10) {
+    const days = DESIGN_DAYS[region].days, seq = [days[0], ...days];
+    const n = Math.max(0, Math.round(blocks));
+    const e = structuredClone(SIM.DEFAULT_ENV);
+    Object.assign(e, { startHour: 0, blocks: n, co2PerBlock: mixCo2(room, mix), blockStage: 'fruiting', vent: room.vent || e.vent,
+      noise: false, sensorQuality: 'ideal', harvestDoors: false, randomWeather: false, dailyCycle: false });
+    e.room = roomOf(room);
+    e.weatherSeries = [];
+    seq.forEach((d, k) => d.T.forEach((T, h) => e.weatherSeries.push({ t: (k * 24 + h) * 3600, T, RH: d.RH[h] })));
+    const last = days[days.length - 1];
+    e.weatherSeries.push({ t: seq.length * 86400, T: last.T[0], RH: last.RH[0] });
+    const cfg = CC.defaultSettings();
+    cfg.crop = tg.crop; cfg.stage = 'fruiting'; CC.applyProfile(cfg);
+    cfg.spT = tg.spT; cfg.spRH = tg.spRH;
+    cfg.program.harvest.on = false;                       // harvest windows lower RH on purpose
+    const sim = SIM.create(e);
+    sim.setRoom({ T: tg.spT, RH: tg.spRH, CO2: tg.co2Lim - 200 });
+    const ctl = CC.create(cfg, null, null), io = RT.simIO(sim);
+    const score = seq.map(() => ({ n: 0, inT: 0, tHi: 0, tLo: 0, rhOk: 0, lowRh: 0, wet: 0, co2Below: 0 }));
+    let kwh0 = null, kwh1 = null;
+    const rt = RT.createRuntime({ io, ctl, onReading: r => {
+      const k = Math.floor(r.t / 86400);
+      if (k < 1 || k >= seq.length) return;
+      const v = sim.view(), s = score[k];
+      if (!kwh0) kwh0 = { ...r.kwh };
+      kwh1 = r.kwh;
+      s.n++;
+      if (Math.abs(v.T - tg.spT) <= CC.BANDS.T) s.inT++; else if (v.T > tg.spT) s.tHi++; else s.tLo++;
+      if (v.RH >= tg.spRH - CC.BANDS.RH) s.rhOk++;
+      if (v.RH < tg.spRH - CC.BANDS.RHAlarm) s.lowRh++;
+      if (v.RH > PASS.wetRH) s.wet++;
+      if (v.CO2 <= tg.co2Lim) s.co2Below++;
+    } });
+    rt.poll();
+    for (let t = 0; t < seq.length * 86400; t += dt) { io.advance(dt); rt.poll(); }
+    const result = score.slice(1).map((s, i) => {
+      const pc = x => x / s.n * 100;
+      const d = { name: days[i].name, inT: pc(s.inT), rhOk: pc(s.rhOk), lowRhMin: s.lowRh / s.n * 1440, wet: pc(s.wet), co2Below: pc(s.co2Below) };
+      d.fails = [
+        d.inT < PASS.inT && (s.tHi >= s.tLo ? 'temperature too high' : 'temperature too low'),
+        d.rhOk < PASS.rhOk && 'humidity too low',
+        d.lowRhMin > PASS.lowRhMin && 'humidity at the low alarm',
+        d.wet > PASS.wetMax && 'humidity near saturation',
+        d.co2Below < PASS.co2Below && 'CO₂ above the limit',
+      ].filter(Boolean);
+      d.pass = d.fails.length === 0;
+      return d;
+    });
+    const kwhDay = kwh1 ? Object.keys(kwh1).reduce((sum, k) => sum + kwh1[k] - kwh0[k], 0) / days.length : 0;
+    const fails = result.flatMap(d => d.fails);
+    const side = !fails.length ? null : fails.every(f => EMPTY_REASONS.includes(f)) ? 'empty' : 'dense';
+    return { blocks: n, days: result, pass: !fails.length, side, kwhDay };
+  }
+
+  global.ClimateCapacity = { commonTargets, balance, trial, DESIGN_DAYS, PASS, VERDICT, SEARCH };
 })(typeof window !== 'undefined' ? window : globalThis);
