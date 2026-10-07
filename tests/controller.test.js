@@ -334,8 +334,12 @@ test('every crop can be held by a split AC (16-30 °C) and its targets are insid
 test('every crop has a good range inside its alarm limits', () => {
   for (const [k, c] of Object.entries(CC.CROPS)) {
     if (k === 'flagTest') continue;
-    assert.ok(c.range.T[0] < c.fruiting[0] + 0.01 && c.fruiting[0] <= c.range.T[1], `${k}: target inside its T range`);
-    assert.ok(c.range.T[0] >= c.limits.tMin && c.range.T[1] <= c.limits.tMax, `${k}: T range inside the limits`);
+    const [tLo, tHi] = c.range.T, [hLo, hHi] = c.range.RH;
+    assert.ok(tLo < tHi && hLo < hHi, `${k}: each range is low < high`);
+    assert.ok(tLo <= c.fruiting[0] && c.fruiting[0] <= tHi, `${k}: T target inside its T range`);
+    assert.ok(hLo <= c.fruiting[1] && c.fruiting[1] <= hHi, `${k}: RH target inside its RH range`);
+    assert.ok(tLo > c.limits.tMin && tHi < c.limits.tMax, `${k}: T range narrower than the alarm limits`);
+    assert.ok(hLo >= 50 && hHi <= 98, `${k}: RH range is plausible`);
   }
 });
 
