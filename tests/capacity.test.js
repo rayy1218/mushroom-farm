@@ -111,3 +111,30 @@ test('trial: bad input is refused with a clear error; blocks are rounded', () =>
   assert.throws(() => CAP.trial(room, mix, tg, NaN), /finite number/);
   assert.throws(() => CAP.balance(room, mix, tg, 'mars'), /Unknown region: mars/);
 });
+
+// ---------- calibration status ----------
+test('calibration status: none, good, poor, old', () => {
+  assert.equal(CAP.calibStatus(room, NOW).estimate, true);
+  const cal = { ua: 80, infAch: 0.4, moistBuffer: 3, co2PerBlock: 45, rmse: { T: 0.2, RH: 1.5, CO2: 30 }, date: '2026-10-01T00:00:00Z' };
+  assert.deepEqual(CAP.calibStatus({ ...room, calib: cal }, NOW), { calibrated: true, estimate: false, warnings: [] });
+  const poor = CAP.calibStatus({ ...room, calib: { ...cal, rmse: { T: 0.9, RH: 1, CO2: 20 } } }, NOW);
+  assert.equal(poor.estimate, true);
+  const old = CAP.calibStatus({ ...room, calib: { ...cal, date: '2026-05-01T00:00:00Z' } }, NOW);
+  assert.equal(old.estimate, false);
+  assert.match(old.warnings[0], /days old/);
+});
+
+// ---------- verdicts ----------
+test('verdict thresholds', () => {
+  const cap = { max: 1000, min: 0 };
+  const v = n => CAP.verdictOf(n, cap).verdict;
+  assert.equal(v(490), 'too-empty');
+  assert.equal(v(500), 'good');
+  assert.equal(v(894), 'good');                 // 89.4 % shows as 89 %
+  assert.equal(v(896), 'tight');                // 89.6 % shows as 90 %
+  assert.equal(v(1004), 'tight');               // 100.4 % shows as 100 %
+  assert.equal(v(1006), 'too-dense');           // 100.6 % shows as 101 %
+  assert.equal(CAP.verdictOf(400, cap, { emptyBelow: 30 }).verdict, 'good');
+  assert.equal(CAP.verdictOf(500, { max: 0, min: 0 }).verdict, 'impossible');
+  assert.deepEqual(CAP.verdictOf(500, { max: 2000, min: 600 }), { verdict: 'too-empty', why: 'wet', utilisation: 25 });
+});

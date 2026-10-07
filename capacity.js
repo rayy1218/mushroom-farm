@@ -197,5 +197,30 @@
     return { blocks: n, days: result, pass: !fails.length, side, kwhDay };
   }
 
-  global.ClimateCapacity = { commonTargets, balance, trial, DESIGN_DAYS, PASS, VERDICT, SEARCH };
+  // ---------- 4. Calibration status ----------
+  function calibStatus(room, now = Date.now()) {
+    const c = room.calib;
+    if (!c) return { calibrated: false, estimate: true, warnings: ['Estimate: this room is not calibrated, so the check uses typical room values. Load a farm log in the calibration card.'] };
+    const warnings = [];
+    const r = c.rmse || {};
+    const poor = r.T > CALIB.maxT || r.RH > CALIB.maxRH || r.CO2 > CALIB.maxCO2;
+    if (poor) warnings.push('Estimate: the calibration fits the log poorly. Calibrate again with a longer log (24–48 h).');
+    const ageDays = c.date ? (now - Date.parse(c.date)) / 86400000 : 0;
+    if (ageDays > CALIB.maxAgeDays) warnings.push(`The calibration is ${Math.round(ageDays)} days old: the room may have changed (season, insulation, leaks). Calibrate again.`);
+    return { calibrated: true, estimate: poor, warnings };
+  }
+
+  // ---------- 5. Verdict ----------
+  function verdictOf(planned, cap, opts = {}) {
+    const emptyBelow = opts.emptyBelow ?? VERDICT.emptyBelow;
+    if (!cap.max) return { verdict: 'impossible', utilisation: null };
+    const utilisation = Math.round(planned / cap.max * 100);     // whole percent: the verdict matches the number shown
+    if (cap.min && planned < cap.min) return { verdict: 'too-empty', why: 'wet', utilisation };
+    if (utilisation > VERDICT.dense) return { verdict: 'too-dense', utilisation };
+    if (utilisation >= VERDICT.tight) return { verdict: 'tight', utilisation };
+    if (utilisation < emptyBelow) return { verdict: 'too-empty', why: 'use', utilisation };
+    return { verdict: 'good', utilisation };
+  }
+
+  global.ClimateCapacity = { commonTargets, balance, trial, calibStatus, verdictOf, DESIGN_DAYS, PASS, VERDICT, SEARCH };
 })(typeof window !== 'undefined' ? window : globalThis);
