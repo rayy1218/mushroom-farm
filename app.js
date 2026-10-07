@@ -1242,7 +1242,7 @@ $('#capRun').addEventListener('click', () => {
     .then(rep => {
       if (!rooms.includes(r) || (r.rev || 0) !== rev) { set('capMsg', 'The room changed during the check: run it again.'); return; }
       r.report = rep; saveRooms();
-      set('capMsg', `Done after ${rep.runs.length} simulation runs: ${VERDICT_CHIP[rep.verdict].text}. ${verdictText(rep)}`);
+      set('capMsg', `Done (${r.name}) after ${rep.runs.length} simulation runs: ${VERDICT_CHIP[rep.verdict].text}. ${verdictText(rep)}`);
     })
     .catch(err => set('capMsg', `The check stopped: ${err.message}`))
     .finally(() => { capBusy = false; $('#capRun').disabled = !curRoom(); prog.hidden = true; renderReport(); renderFarm(); });
@@ -1257,7 +1257,7 @@ $('#capImport').addEventListener('change', e => {
   f.text().then(txt => {
     const x = JSON.parse(txt);
     if (!x || x.format !== 'mushroom-farm-rooms' || !Array.isArray(x.rooms)) throw new Error('this is not a rooms file of this page');
-    const ok = x.rooms.map(normRoom).filter(r => r && r.mix.length);
+    const ok = x.rooms.map(normRoom).filter(Boolean);
     if (!ok.length) throw new Error('it has no valid rooms');
     if (!confirm(`Replace the ${rooms.length} saved room(s) with ${ok.length} room(s) from the file?`)) return;
     rooms = ok.map(r => ({ ...r, report: null }));
@@ -1267,7 +1267,7 @@ $('#capImport').addEventListener('change', e => {
 });
 // The rest of the page must start even if the saved rooms cannot be read.
 try { rooms = loadRooms(); renderRooms(); }
-catch (err) { rooms = []; renderRooms(); set('capMsg', 'The saved rooms could not be read and were ignored.'); }
+catch (err) { rooms = rooms.map(r => ({ ...r, report: null })); renderRooms(); set('capMsg', 'Some saved results could not be read and were dropped: run the check again.'); }
 
 // ---------------- Settings level and test bench ----------------
 // Farmer: crop, stage, harvest times, auto/manual, alarms. Installer: the rules, the program, corrections; the targets unlock.
