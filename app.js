@@ -1107,8 +1107,8 @@ function renderMix() {
     const sel = document.createElement('select'); sel.setAttribute('aria-label', 'Mushroom');
     for (const [k, c] of Object.entries(CC.CROPS)) { if (!c.range) continue; const o = document.createElement('option'); o.value = k; o.textContent = c.name; sel.append(o); }
     sel.value = m.crop;
-    sel.addEventListener('change', () => { m.crop = sel.value; roomChanged(r); });
     const del = document.createElement('button'); del.className = 'btn'; del.textContent = 'Remove'; del.setAttribute('aria-label', `Remove ${cropName(m.crop)}`);
+    sel.addEventListener('change', () => { m.crop = sel.value; del.setAttribute('aria-label', `Remove ${cropName(m.crop)}`); roomChanged(r); });
     del.addEventListener('click', () => { r.mix.splice(i, 1); renderMix(); roomChanged(r); });
     const tr = document.createElement('tr');
     tr.append(td(sel), td(num(m.blocks, 'Blocks', v => { m.blocks = v || 0; })), td(num(m.co2PerBlock, 'CO₂ per block, mL/h', v => { m.co2PerBlock = v || undefined; })), td(del));
