@@ -956,6 +956,7 @@ $('#ciOn').addEventListener('change', e => { cfg.manual.circ.on = e.target.check
 // ---------------- Calibration (2.13) ----------------
 const CAL = window.ClimateCalib;
 let calRows = null, calFit = null, calBase = null;
+let calApplied = null;          // the last applied calibration, for the room capacity check
 const calParamsNow = () => CAL.paramsOf(env);
 function calLogFromSamples() {
   const t1 = reading.t, t0 = Math.max(0, t1 - 86400);
@@ -1036,6 +1037,7 @@ $('#calApply').addEventListener('click', () => {
   const P = calFit.params;
   env.room = { ...(env.room || {}), ua: P.ua, infAch: P.infAch, moistBuffer: P.moistBuffer };
   env.co2PerBlock = Math.round(P.co2PerBlock); $('#inPerBlock').value = env.co2PerBlock; paintBlocks();
+  calApplied = { ua: P.ua, infAch: P.infAch, moistBuffer: P.moistBuffer, co2PerBlock: env.co2PerBlock, rmse: calFit.result.rmse, date: new Date().toISOString() };
   onEvent({ t: reading.t, lvl: 'info', text: `Simulation calibrated: heat loss ${P.ua.toFixed(0)} W/K, leakage ${P.infAch.toFixed(2)}/h, moisture buffer ${P.moistBuffer.toFixed(1)}, CO₂ ${env.co2PerBlock} mL/h per block` });
   calBase = CAL.replay(calRows, env, calParamsNow()); calFit = null; $('#calApply').disabled = true;
   set('calMsg', 'The simulation now uses the fitted values.'); calRender();
@@ -1063,6 +1065,178 @@ function checkCrop() {
   else if (below / n > 0.1) { el.dataset.lvl = 'warning'; set('cropCheck', `Check: in the present weather, the room is too cold for ${Math.round(below / n * 24)} h a day (down to ${lo.toFixed(1)} °C, target ${cfg2.spT} °C). The AC cannot heat enough for ${name}.`); }
   else { el.dataset.lvl = 'good'; set('cropCheck', `Check: the room holds ${name} at ${cfg2.spT} °C in the present weather (${Math.round(inT / n * 100)} % of a simulated day in band).`); }
 }
+
+// ---------------- Room capacity ----------------
+// Rooms are kept in this browser (localStorage). Settings storage (work item 3.1) should use the same
+// "mushroom-farm." key prefix. Spec: docs/superpowers/specs/2026-10-07-room-capacity-design.md
+const CAPY = window.ClimateCapacity;
+const ROOMS_KEY = 'mushroom-farm.rooms.v1';
+let rooms = loadRooms(), roomIdx = 0, capBusy = false;
+function loadRooms() {
+  try { const x = JSON.parse(localStorage.getItem(ROOMS_KEY)); return Array.isArray(x && x.rooms) ? x.rooms : []; } catch { return []; }
+}
+function saveRooms() {
+  try { localStorage.setItem(ROOMS_KEY, JSON.stringify({ version: 1, rooms })); }
+  catch { set('capMsg', 'The browser did not save the rooms (storage full or blocked).'); }
+}
+const curRoom = () => rooms[roomIdx] || null;
+const nf = n => Math.round(n).toLocaleString('en');
+const cropName = k => (CC.CROPS[k] ? CC.CROPS[k].name : k);
+const roomChanged = r => { r.report = null; saveRooms(); renderReport(); renderFarm(); };
+function renderRooms() {
+  const sel = $('#capRoom');
+  sel.replaceChildren(...rooms.map((r, i) => { const o = document.createElement('option'); o.value = String(i); o.textContent = r.name; return o; }));
+  if (!rooms.length) { const o = document.createElement('option'); o.textContent = 'No rooms yet'; o.disabled = true; sel.append(o); }
+  roomIdx = clamp(roomIdx, 0, Math.max(0, rooms.length - 1));
+  if (rooms.length) sel.value = String(roomIdx);
+  const r = curRoom();
+  set('capRoomInfo', !r ? '' : r.calib ? `${r.volume} m³ · calibrated ${r.calib.date ? r.calib.date.slice(0, 10) : '(no date)'}` : `${r.volume} m³ · not calibrated (typical values)`);
+  $('#capDelete').disabled = $('#capRun').disabled = $('#capAdd').disabled = !r;
+  renderMix(); renderReport(); renderFarm();
+}
+function renderMix() {
+  const r = curRoom(), body = $('#capMix');
+  if (!r) { body.replaceChildren(); return; }
+  const td = x => { const c = document.createElement('td'); c.append(x); return c; };
+  const num = (val, label, apply) => {
+    const el = document.createElement('input'); el.type = 'number'; el.min = '0'; el.step = '1'; el.value = val ?? ''; el.setAttribute('aria-label', label);
+    el.addEventListener('change', () => { apply(el.value === '' ? null : Math.max(0, Math.round(+el.value))); roomChanged(r); });
+    return el;
+  };
+  body.replaceChildren(...r.mix.map((m, i) => {
+    const sel = document.createElement('select'); sel.setAttribute('aria-label', 'Mushroom');
+    for (const [k, c] of Object.entries(CC.CROPS)) { if (!c.range) continue; const o = document.createElement('option'); o.value = k; o.textContent = c.name; sel.append(o); }
+    sel.value = m.crop;
+    sel.addEventListener('change', () => { m.crop = sel.value; roomChanged(r); });
+    const del = document.createElement('button'); del.className = 'btn'; del.textContent = 'Remove'; del.setAttribute('aria-label', `Remove ${cropName(m.crop)}`);
+    del.addEventListener('click', () => { r.mix.splice(i, 1); renderMix(); roomChanged(r); });
+    const tr = document.createElement('tr');
+    tr.append(td(sel), td(num(m.blocks, 'Blocks', v => { m.blocks = v || 0; })), td(num(m.co2PerBlock, 'CO₂ per block, mL/h', v => { m.co2PerBlock = v || undefined; })), td(del));
+    return tr;
+  }));
+}
+const VERDICT_CHIP = {
+  impossible: { lvl: 'critical', icon: '◆', text: 'Impossible' },
+  'too-dense': { lvl: 'serious', icon: '▲', text: 'Too dense' },
+  tight: { lvl: 'warning', icon: '▲', text: 'Tight' },
+  good: { lvl: 'good', icon: '✓', text: 'Good' },
+  'too-empty': { lvl: 'warning', icon: '▼', text: 'Too empty' },
+};
+const LIMIT_WORD = { fan: 'the fan (fresh air for CO₂)', ac: 'the AC (heat)', fog: 'the fogger (water)' };
+function verdictText(rep) {
+  const cap = rep.capacity, pct = rep.utilisation == null ? '' : ` (${Math.round(rep.utilisation)} %)`;
+  const holds = cap ? `Holds ${cap.settled ? '' : 'at least '}${nf(cap.max)} blocks` : '';
+  switch (rep.verdict) {
+    case 'impossible': return rep.why || 'No size of this mix passes on all design days, even with almost no blocks.';
+    case 'too-dense': return `${holds}; you plan ${nf(rep.planned)}${pct}.`;
+    case 'tight': return `${holds}; you plan ${nf(rep.planned)}${pct}. It works, but there is no margin for a hotter week than the design days.`;
+    case 'good': return `${holds}; you plan ${nf(rep.planned)}${pct}.`;
+    case 'too-empty': return rep.why === 'wet'
+      ? `Below about ${nf(cap.min)} blocks the room is too wet (near saturation); you plan ${nf(rep.planned)}. ${holds}.`
+      : `You use ${Math.round(rep.utilisation)} % of the room. ${holds}; you plan ${nf(rep.planned)}.`;
+    default: return '';
+  }
+}
+function renderReport() {
+  const host = $('#capReport'), r = curRoom(), rep = r && r.report;
+  host.replaceChildren();
+  if (!rep) return;
+  const p = (txt, cls) => { const e = document.createElement('p'); e.textContent = txt; if (cls) e.className = cls; host.append(e); return e; };
+  const chip = document.createElement('span'); chip.className = 'chip'; paintChip(chip, VERDICT_CHIP[rep.verdict]);
+  const head = document.createElement('p'); head.append(chip, ` ${verdictText(rep)}`); host.append(head);
+  for (const w of rep.warnings || []) p(w, 'warn');
+  if (!rep.capacity) return;                                   // no common targets: nothing was simulated
+  if (rep.utilisation != null) {
+    const bar = document.createElement('div'); bar.className = 'cap-util'; bar.dataset.lvl = VERDICT_CHIP[rep.verdict].lvl;
+    const fill = document.createElement('span'); fill.style.width = `${clamp(rep.utilisation, 0, 100)}%`; bar.append(fill); host.append(bar);
+  }
+  const t = rep.targets;
+  p(`Targets: ${t.spT} °C, ${t.spRH} % RH, CO₂ limit ${nf(t.co2Lim)} ppm (${cropName(t.crop)} sets the CO₂ limit).`);
+  if (rep.perCrop.length > 1 && rep.capacity.max) p(`Capacity in the same mix: ${rep.perCrop.map(c => `${nf(c.max)} ${cropName(c.crop)}`).join(' + ')}.`);
+  if (rep.capacity.min && rep.why !== 'wet') p(`Needs at least about ${nf(rep.capacity.min)} blocks: below that the room gets too wet (near saturation).`);
+  if (rep.limit.length) p(`Limit: ${rep.limit.map(l => `${l.fails.join(', ')} on the ${l.day.toLowerCase()} day`).join('; ')}.`);
+  if (rep.energy && rep.energy.rmPerBlockCycle != null) p(`Energy: ${rep.energy.kwhDay.toFixed(1)} kWh per day, RM ${rep.energy.rmPerBlockCycle.toFixed(2)} per block per cycle (${rep.energy.cycleDays} days at RM ${rep.energy.tariff.toFixed(2)}/kWh)${rep.energy.planPass === false ? ', at the planned size, which fails' : ''}.`);
+  const b = rep.balance;
+  p(`Simple balance: ${Number.isFinite(b.estimate) ? nf(b.estimate) : 'no limit'} blocks, limit ${LIMIT_WORD[b.limit]}.${rep.disagree ? ' The simple balance and the simulation disagree; the simulation decides.' : ''}`, 'note');
+  const plan = rep.runs[0];
+  if (!plan) return;
+  const tbl = document.createElement('table'), thead = document.createElement('thead'), tb = document.createElement('tbody'), hr = document.createElement('tr');
+  for (const h of ['Design day', 'Temp in band', 'RH ≥ target − 3', 'RH > 95 %', 'CO₂ ≤ limit', `Result, ${nf(plan.blocks)} blocks`]) hr.append(cell('th', h));
+  thead.append(hr);
+  for (const d of plan.days) {
+    const tr = document.createElement('tr');
+    tr.append(cell('td', d.name), cell('td', `${d.inT.toFixed(0)} %`), cell('td', `${d.rhOk.toFixed(0)} %`), cell('td', `${d.wet.toFixed(0)} %`), cell('td', `${d.co2Below.toFixed(0)} %`), cell('td', d.pass ? 'Pass' : d.fails.join(', ')));
+    tb.append(tr);
+  }
+  tbl.append(thead, tb); host.append(tbl);
+}
+function renderFarm() {
+  if (!rooms.length) { set('capFarm', ''); return; }
+  const done = rooms.filter(r => r.report && r.report.capacity && r.report.capacity.max > 0);
+  const planned = rooms.reduce((s, r) => s + r.mix.reduce((a, m) => a + (m.blocks || 0), 0), 0);
+  const cap = done.reduce((s, r) => s + r.report.capacity.max, 0), used = done.reduce((s, r) => s + r.report.planned, 0);
+  const missing = rooms.length - done.length, pl = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+  set('capFarm', `Farm: ${pl(rooms.length, 'room')}, ${nf(planned)} blocks planned`
+    + (done.length ? `; capacity ${nf(cap)} blocks in ${pl(done.length, 'checked room')} (${Math.round(used / cap * 100)} % used)` : '')
+    + (missing ? `. ${pl(missing, 'room')} without a capacity yet.` : '.'));
+}
+// A calibration from a file is not trusted: all four values must be numbers, else the room is uncalibrated.
+function validCalib(c) {
+  if (!c || typeof c !== 'object') return null;
+  const ok = ['ua', 'infAch', 'moistBuffer', 'co2PerBlock'].every(k => Number.isFinite(c[k]) && c[k] > 0);
+  return ok ? { ua: c.ua, infAch: c.infAch, moistBuffer: c.moistBuffer, co2PerBlock: c.co2PerBlock, rmse: c.rmse || {}, date: String(c.date || '') } : null;
+}
+$('#capRoom').addEventListener('change', e => { roomIdx = +e.target.value; renderRooms(); });
+$('#capSave').addEventListener('click', () => {
+  const name = $('#capName').value.trim() || `Room ${rooms.length + 1}`;
+  rooms.push({ id: Date.now().toString(36), name, volume: (env.room && env.room.volume) || PL.room.volume, vent: env.vent,
+    calib: calApplied ? { ...calApplied } : null, mix: [{ crop: cfg.crop, blocks: env.blocks }], report: null });
+  roomIdx = rooms.length - 1; $('#capName').value = '';
+  saveRooms(); renderRooms();
+  set('capMsg', calApplied ? `Saved "${name}" with the calibration of ${calApplied.date.slice(0, 10)}.` : `Saved "${name}" without a calibration: the check uses typical room values.`);
+});
+$('#capDelete').addEventListener('click', () => {
+  const r = curRoom();
+  if (!r || !confirm(`Delete the room "${r.name}"?`)) return;
+  rooms.splice(roomIdx, 1); roomIdx = 0; saveRooms(); renderRooms();
+});
+$('#capAdd').addEventListener('click', () => { const r = curRoom(); if (!r) return; r.mix.push({ crop: 'oyster', blocks: 500 }); renderMix(); roomChanged(r); });
+$('#capRun').addEventListener('click', () => {
+  const r = curRoom();
+  if (!r || capBusy) return;
+  capBusy = true; $('#capRun').disabled = true;
+  const prog = $('#capProg'); prog.hidden = false; prog.value = 0;
+  set('capMsg', 'Checking… (a few seconds)');
+  const emptyBelow = clamp(+$('#capEmpty').value || 50, 10, 90);
+  CAPY.checkAsync(r, r.mix, { emptyBelow, tariff: input.tariff, onProgress: s => {
+    prog.value = s.runs / s.maxRuns;
+    set('capMsg', `Simulation run ${s.runs}: ${nf(s.blocks)} blocks, ${s.pass ? 'pass' : 'fail'}…`);
+  } })
+    .then(rep => { r.report = rep; saveRooms(); set('capMsg', `Done after ${rep.runs.length} simulation runs.`); })
+    .catch(err => set('capMsg', `The check stopped: ${err.message}`))
+    .finally(() => { capBusy = false; $('#capRun').disabled = false; prog.hidden = true; renderReport(); renderFarm(); });
+});
+$('#capExport').addEventListener('click', () => {
+  const blob = new Blob([JSON.stringify({ format: 'mushroom-farm-rooms', version: 1, saved: new Date().toISOString(), rooms }, null, 1)], { type: 'application/json' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'rooms.json'; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+});
+$('#capImport').addEventListener('change', e => {
+  const f = e.target.files[0]; if (!f) return;
+  f.text().then(txt => {
+    const x = JSON.parse(txt);
+    if (!x || x.format !== 'mushroom-farm-rooms' || !Array.isArray(x.rooms)) throw new Error('this is not a rooms file of this page');
+    const ok = x.rooms.filter(r => r && typeof r.name === 'string' && Array.isArray(r.mix)
+      && r.mix.every(m => m && CC.CROPS[m.crop] && CC.CROPS[m.crop].range && Number.isFinite(m.blocks) && m.blocks >= 0));
+    if (!confirm(`Replace the ${rooms.length} saved room(s) with ${ok.length} room(s) from the file?`)) return;
+    rooms = ok.map((r, i) => ({ id: String(r.id || `${Date.now().toString(36)}${i}`), name: r.name.slice(0, 60), volume: Number(r.volume) > 0 ? Number(r.volume) : PL.room.volume,
+      vent: r.vent === 'exhaust' ? 'exhaust' : 'supply', calib: validCalib(r.calib),
+      mix: r.mix.map(m => ({ crop: m.crop, blocks: Math.round(m.blocks), ...(Number.isFinite(m.co2PerBlock) && m.co2PerBlock > 0 ? { co2PerBlock: m.co2PerBlock } : {}) })), report: null }));
+    roomIdx = 0; saveRooms(); renderRooms();
+    set('capMsg', `Imported ${rooms.length} room(s)${ok.length < x.rooms.length ? `; ${x.rooms.length - ok.length} invalid room(s) skipped` : ''}. Run the check again for each room.`);
+  }).catch(err => set('capMsg', `The file cannot be used: ${err.message}.`)).finally(() => { e.target.value = ''; });
+});
+renderRooms();
 
 // ---------------- Settings level and test bench ----------------
 // Farmer: crop, stage, harvest times, auto/manual, alarms. Installer: the rules, the program, corrections; the targets unlock.
