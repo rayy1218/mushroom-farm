@@ -412,7 +412,7 @@ body[data-bench="off"] .mimic .mimic-svg { max-width: 980px; margin-inline: auto
 .crop-check[data-lvl="good"] { border-left: 3px solid var(--good); padding-left: 8px; }
 
 /* Room capacity */
-.capacity { grid-column: span 12; overflow-x: auto; }
+.capacity { grid-column: span 12; overflow-x: auto; position: relative; }
 .capacity h2 { font-size: 16px; font-weight: 600; }
 .cap-mix { max-width: 720px; margin-bottom: 10px; }
 .cap-mix input[type="number"] { width: 90px; }
