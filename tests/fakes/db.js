@@ -500,7 +500,7 @@ function openFakeDb(options) {
     requireRoom(roomId);
     checkFields(entry, ['report', 'run_at'], 'saveCapacityReport');
     const reportText = jsonColumn(entry.report, true, 'capacity_reports.report');
-    const verdict = numColumn(entry.report && entry.report.verdict, { type: 'TEXT', notNull: true, check: v => CAPACITY_VERDICTS.includes(v), name: 'capacity_reports.verdict' });
+    const verdict = numColumn(entry.report == null ? undefined : entry.report.verdict, { type: 'TEXT', notNull: true, check: v => CAPACITY_VERDICTS.includes(v), name: 'capacity_reports.verdict' });
     const rawUtilisation = entry.report ? entry.report.utilisation : undefined;
     const utilisation = numColumn(Number.isFinite(rawUtilisation) ? rawUtilisation : null, { type: 'INTEGER', notNull: false, name: 'capacity_reports.utilisation' });
     const run_at = numColumn(entry.run_at === undefined ? now() : entry.run_at, { type: 'INTEGER', notNull: true, name: 'capacity_reports.run_at' });

@@ -112,6 +112,13 @@ test('copies: results and arguments are independent of stored data', () => {
   const version = db.saveSettings(1, { settings: toSave, at: now() });
   toSave.spT = 111;
   assert.notEqual(db.getSettingsVersion(1, version.id).settings.spT, 111);
+
+  // Mutating a returned settings object (from currentSettings or getSettingsVersion) must not change what
+  // a later read returns.
+  db.currentSettings(1).settings.spT = 222;
+  assert.notEqual(db.currentSettings(1).settings.spT, 222);
+  db.getSettingsVersion(1, version.id).settings.spT = 333;
+  assert.notEqual(db.getSettingsVersion(1, version.id).settings.spT, 333);
 });
 
 test('saveSettings, settingsHistory, getSettingsVersion', () => {
@@ -122,6 +129,7 @@ test('saveSettings, settingsHistory, getSettingsVersion', () => {
   const v2 = db.saveSettings(1, { settings, note: 'n', at: 5 });
   assert.equal(v2.note, 'n');
   assert.equal(v2.id, db.currentSettings(1).id);
+  assert.deepEqual(db.getSettingsVersion(1, v2.id), { id: v2.id, room_id: 1, saved_at: 5, note: 'n', settings });
   const v3 = db.saveSettings(1, { settings });
   assert.equal(v3.note, null);
   const history = db.settingsHistory(1);
@@ -318,6 +326,15 @@ test('column rules: saveCapacityReport', () => {
   assertConstraint(() => db3.saveCapacityReport(1, {}), 1299, () => assert.equal(db3.latestCapacityReport(1), null));
 });
 
+test('column rules: saveCapacityReport verdict uses report?.verdict (a falsy report is NOT NULL, not CHECK)', () => {
+  // report?.verdict for a falsy primitive report is undefined (property access, not short-circuit), so the
+  // missing verdict is a NOT NULL violation (1299), not a CHECK failure (275) from the falsy value itself.
+  const db1 = freshDb();
+  assertConstraint(() => db1.saveCapacityReport(1, { report: 0 }), 1299, () => assert.equal(db1.latestCapacityReport(1), null));
+  const db2 = freshDb();
+  assertConstraint(() => db2.saveCapacityReport(1, { report: '' }), 1299, () => assert.equal(db2.latestCapacityReport(1), null));
+});
+
 test('column rules: saveCalibration', () => {
   const db1 = freshDb();
   assertConstraint(
@@ -411,10 +428,12 @@ test('raw range is inclusive; order by t (not by T); ties by insertion; other ro
   db.insertReading(1, validReading({ t: 20, T: 2 })); // first at t: 20
   db.insertReading(1, validReading({ t: 20, T: 3 })); // second at t: 20 (insertion order tie-break)
   db.insertReading(2, validReading({ t: 15, T: 99 }));
+  db.insertReading(1, validReading({ t: 9, T: 999 })); // just outside from: 9 < 10
+  db.insertReading(1, validReading({ t: 31, T: 999 })); // just outside to: 31 > 30
   const rows = db.queryReadings(1, { from: 10, to: 30 });
-  assert.deepEqual(rows.map(r => r.T), [4, 2, 3, 1]); // by t ascending, ties by insertion order
+  assert.deepEqual(rows.map(r => r.T), [4, 2, 3, 1]); // by t ascending, ties by insertion order; from-1/to+1 excluded
   const all = db.queryReadings(1, { from: 0, to: 100 });
-  assert.equal(all.length, 4);
+  assert.equal(all.length, 6);
 });
 
 test('bucket averaging', () => {
@@ -544,6 +563,8 @@ test('listAlarms ordering and recent limit', () => {
   assert.equal(all[1].alarm_key, 'b');
   assert.throws(() => db.listAlarms(1, { recent: 501 }), RangeError);
   assert.throws(() => db.listAlarms(1, { recent: -1 }), RangeError);
+  // recent: 0 with cleared rows present (a, b): only the open row (c) comes back.
+  assert.deepEqual(db.listAlarms(1, { recent: 0 }).map(a => a.alarm_key), ['c']);
 });
 
 test('listAlarms: open alarms order by raised_at desc, ties by id desc', () => {
@@ -597,6 +618,8 @@ test('calibrations', () => {
   assert.equal(db.currentCalibration(1).id, c2.id);
   db.applyCalibration(1, c1.id, 200);
   assert.equal(db.currentCalibration(1).id, c1.id);
+  db.applyCalibration(1, c2.id, 300); // re-applying c2 (already applied once, at 100) makes it current again
+  assert.equal(db.currentCalibration(1).id, c2.id);
   assert.throws(() => db.applyCalibration(1, 9999), err => err.code === 'NOT_FOUND' && err.what === 'calibration');
 
   const db2 = freshDb();
