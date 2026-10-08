@@ -8,18 +8,20 @@ const MENU_NAMES = { rooms: 'Rooms', simulator: 'Simulator', capacity: 'Capacity
 const ROOM_ID_RE = /^[1-9][0-9]{0,14}$/;
 
 // Parses location.hash into { name, params } (2.1), or null for an unknown hash (redirect to the default route).
+// The hash must start with '#/': a missing leading slash ('#rooms') or an empty segment ('#//simulator',
+// '#/rooms//3') is "anything else" (C5 2.1) and does not route.
 function parseHash(hash) {
   let h = hash || '';
-  if (h.startsWith('#')) h = h.slice(1);
+  if (!h.startsWith('#/')) return null;
+  h = h.slice(1);
   if (h.length > 1 && h.endsWith('/')) h = h.slice(0, -1);
-  if (h === '') return null;
-  const parts = h.split('/').filter(Boolean);
-  if (parts.length === 1) {
-    const name = parts[0];
+  const parts = h.split('/'); // h starts with '/', so parts[0] is always ''
+  if (parts.length === 2) {
+    const name = parts[1];
     if (name === 'rooms' || name === 'simulator' || name === 'capacity' || name === 'calibration') return { name, params: {} };
     return null;
   }
-  if (parts.length === 2 && parts[0] === 'rooms' && ROOM_ID_RE.test(parts[1])) return { name: 'rooms', params: { id: Number(parts[1]) } };
+  if (parts.length === 3 && parts[1] === 'rooms' && ROOM_ID_RE.test(parts[2])) return { name: 'rooms', params: { id: Number(parts[2]) } };
   return null;
 }
 function paramsEqual(a, b) {
