@@ -77,7 +77,7 @@ const BAND_T = 1, BAND_RH = 3;
 
 const TREND_DEFS = {
   T: { out: 'tOut', unit: '°C', dec: 1, minSpan: 3, label: 'Temperature', title: 'TT-101 · outdoor OT-104',
-    band: p => [p.spT - BAND_T, p.spT + BAND_T], ref: p => p.spT, sub: p => `Target ${UI.fmtNum(p.spT, 1)} °C ± ${BAND_T}` },
+    band: p => [p.spT - BAND_T, p.spT + BAND_T], ref: p => p.spT, sub: p => `Target ${global.FarmUi.fmtNum(p.spT, 1)} °C ± ${BAND_T}` },
   RH: { out: 'rhOut', unit: '%', dec: 0, minSpan: 12, label: 'Relative humidity', title: 'MT-102 · outdoor OT-104',
     band: p => [p.spRH - BAND_RH, p.spRH + BAND_RH], ref: p => p.spRH, sub: p => `Target ${p.spRH} % ± ${BAND_RH}` },
   C: { out: null, unit: 'ppm', dec: 0, minSpan: 300, label: 'CO₂ concentration', title: 'AT-103',
@@ -459,6 +459,6 @@ function createLadder(el) {
 
 global.FarmCharts = {
   lowerBound, nearest, aggregate, niceTicks, linePath, areaPath, barPath,
-  createTrendCharts, drawExhaustBars, drawCalibCharts, createLadder,
+  createTrendCharts, drawExhaustBars, drawCalibCharts, createLadder, TREND_DEFS,
 };
 })(typeof window !== 'undefined' ? window : globalThis);

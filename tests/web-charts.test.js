@@ -50,3 +50,12 @@ test('areaPath moved unchanged', () => {
 test('barPath moved unchanged', () => {
   assert.equal(FC.barPath(0, 0, 10, 20, 3), 'M0,20V3Q0,0 3,0H7Q10,0 10,3V20Z');
 });
+
+test('TREND_DEFS sub lines run with and without spT (finding 10 regression)', () => {
+  const D = FC.TREND_DEFS;
+  assert.equal(D.T.sub({ spT: 18 }), 'Target 18.0 °C ± 1');
+  assert.doesNotThrow(() => D.T.sub({}));
+  assert.equal(D.T.sub({}).includes('undefined'), false);
+  assert.equal(D.RH.sub({ spRH: 85 }), 'Target 85 % ± 3');
+  assert.equal(D.C.sub({ fanOff: 800, fanOn: 1000, co2Lim: 1200 }), 'Fan 800–1000 ppm · limit 1200');
+});
