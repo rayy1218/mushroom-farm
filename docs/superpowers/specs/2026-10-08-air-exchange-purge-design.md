@@ -1,6 +1,6 @@
 # Air exchange: short, powerful CO₂ purges: design
 
-Date: 2026-10-08. Status: approved in brainstorming; to be folded into the wave 2 contract amendments before the freeze.
+Date: 2026-10-08. Status: approved in brainstorming. Built as its own mini-wave before wave 2 (contract C9 in `docs/contracts/air.md`); plan in `docs/superpowers/plans/2026-10-08-air-exchange/`.
 
 ## Purpose
 
@@ -36,7 +36,7 @@ In Malaysia a purge does not always dry the room: outdoor air at 33 °C and 60 %
 | AC and fogger | Prepare before the purge (direction-aware), recover after it; no AC setback |
 | Old fresh-air modes | Both removed (`steady` with base levels, and on/off `purge` at a fixed level) |
 | Model | Approach B: a new on/off command `air.on` for the pair; fan levels removed everywhere |
-| When | Folded into the wave 2 contract amendments (drafts in `/tmp/wave2-draft/room-centred.md` and `/tmp/c8-draft/equipment.md`) as one more lead decision, before the freeze |
+| When | Its own mini-wave now, before wave 2: a frozen contract C9, its own database upgrade, parallel streams. Wave 2 builds on the new air model; the wave 2 and C8 drafts are amended to match (section 3). |
 
 ## 1. The room's air exchange (`sim.js`)
 
@@ -124,12 +124,12 @@ In Malaysia a purge does not always dry the room: outdoor air at 33 °C and 60 %
 | Place | Change |
 |---|---|
 | Command (`docs/contract.md`) | `fan.level` 0–3 → `air.on` true/false; `cmdFields` `fanLevel` → `air` |
-| Reading (C1 database, C3 API, C5 web) | Key `fan` (0–3) → `air` (0/1). Database upgrade 2 (already planned for wave 2) renames the column and converts old rows: level > 0 → 1. A bucket (averaged) row gives the fraction of time on. |
+| Reading (C1 database, C3 API, C5 web) | Key `fan` (0–3) → `air` (0/1). A new database upgrade (number 2; the upgrade wave 2 plans becomes number 3) renames the column and converts old rows: level > 0 → 1. A bucket (averaged) row gives the fraction of time on. |
 | Settings (C6) | `SETTINGS_VERSION` + 1. Importing an older file drops the removed keys (2.5) with a warning per key and keeps `fanOn` / `fanOff`. New keys validated with the ranges of 2.5. |
 | `RAMP_KEYS` | Drop `rules.acOff`, `rules.acOn`; keep the others |
 | Equipment (C8 draft) | `fan_m3h` → `air_m3h` (the pair's airflow, 50–10000 m³/h, default 1800). `FAN_SIZES` → `AIR_SIZES` `[600, 900, 1200, 1800, 2400, 3600]`. The steady-mode patch ("wet outdoor air" on the base level, C8 draft lines 279 and 316) is dropped. |
 | Test vectors | Regenerated with `npm run vectors` after the controller's unit tests pass; field `air` replaces `fanLevel` |
-| Lead decision | One new decision in the wave 2 list: "Air exchange: on/off intake + exhaust pair, short purges, this spec" |
+| Lead decision | One new decision in `docs/contracts/LEAD-DECISIONS.md`: "Air exchange: on/off intake + exhaust pair, short purges, this spec, contract C9"; the wave 2 drafts renumber their database upgrade to 3 |
 
 ## 4. Sizing and screens
 
@@ -166,7 +166,7 @@ In Malaysia a purge does not always dry the room: outdoor air at 33 °C and 60 %
 | `tests/integration.test.js` (append) | Balanced flow; leakage only with the dampers closed; power only while on; the positions feed the right zones |
 | Integration (2 simulated days) | 6,000 blocks at 1,800 m³/h: every purge ≤ 3 min and CO₂ never above `co2Lim`. 6,000 blocks at 900 m³/h: the alarm fires with an estimate of about 1,400 m³/h. Prepare on vs off: time outside the temperature and RH bands is lower with Prepare on. |
 | `tests/settings.test.js` (append) | An older settings file imports with one warning per removed key and keeps `fanOn` / `fanOff`; new keys reject values outside their ranges |
-| `tests/db.test.js` (append) | Upgrade 2 converts `fan` to `air` 0/1; a bucket row gives the fraction on |
+| `tests/db.test.js` (append) | The new upgrade converts `fan` to `air` 0/1; a bucket row gives the fraction on |
 | `tests/vectors.test.js` | Passes on the regenerated vectors |
 | `tests/web-mimic.test.js` (update) | `mimicLayout` places both fans by `inletAt` / `exhaustAt` |
 | Headless Chrome | Both fans spin during a purge; the status card and the glance panel show Prepare, Purge and Delayed |
@@ -175,10 +175,9 @@ In Malaysia a purge does not always dry the room: outdoor air at 33 °C and 60 %
 
 | Step | Who | Content |
 |---|---|---|
-| 1 | Lead | Amend the wave 2 drafts and the C8 draft (section 3), add the lead decision, freeze |
-| 2 | Air exchange stream (new) | `controller.js`, `sim.js`, `capacity.js` and the sizing function; regenerate the vectors |
-| 2 | Data 2 stream | Column rename and conversion in upgrade 2 |
-| 2 | Bench and drawing stream | Drawing, status card, test bench, glance panel |
-| 2 | Stream that owns `web/settings-panel.js` | Purge settings group, Machines On/Off |
-| 3 | C8 | Fan verdict uses the sizing rule of 4.1 |
-| 4 | Lead | Integrate, run section 5, browser checks |
+| 0 | Lead | Merge `fix/room-drawing` (the web stream edits the same drawing). Write contract C9 (`docs/contracts/air.md`) and the shared pure module `air.js` (`ClimateAir`: purge time, size recommendation, rise rate) with its tests; amend `docs/contract.md`, C1, C3, C5 and `LEAD-DECISIONS.md`; freeze |
+| 1 | Controller stream | `controller.js`: purge cycle, settings, import of older files |
+| 1 | Simulation stream | `sim.js`, `capacity.js`, `cycle.js`, `calib.js`, `tools/run-headless.js` |
+| 1 | Data stream | Database upgrade (`fan` → `air`), `server/rooms.js` reading mapping, fakes |
+| 1 | Web stream | Drawing, status card, glance panel, test bench, settings panel, Machines On/Off, charts |
+| 2 | Lead | Merge in order (simulation, controller, data, web), regenerate the vectors, run section 5, browser checks, amend the wave 2 and C8 drafts in `/tmp` and `~/Documents/mushroom-farm-drafts` |
