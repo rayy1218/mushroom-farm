@@ -75,12 +75,12 @@ const RAMP_PATHS = new Set(['spT', 'spRH', 'co2Lim', 'rules.fanOn', 'rules.fanOf
 const DEV_NAME = { ac: 'Air conditioner', hu: 'Fogger', fan: 'Exhaust fan', lights: 'Lights', circ: 'Circulation fan' };
 
 // ---------------- Per-mount state ----------------
-let mounted = false, el = null, mountGen = 0;
+let mounted = false, el = null;
 let benchFlag = 'off'; // closure variable, survives a module switch (6.1 "Simulator bench flag")
 let trendCharts = null, ladder = null, panel = null;
 let hoverT = null, chartsDirty = true, logDirty = true, windowS = 21600, speed = 600, paused = false;
 let lastStage = '', alarmKey = '', exhKey = '', cropCheckTimer = null;
-let rafId = null, last = 0, acc = 0, lastUi = 0, lastChart = 0;
+let rafId = null, last = 0, acc = 0, lastUi = 0, lastChart = 0, exhRo = null;
 
 function calParamsNow() { return CAL.paramsOf(env); }
 
@@ -151,7 +151,6 @@ const clock = () => UI.simClock(env.startHour);
 
 function updateUi() {
   const v = sim.view(), r = reading, st = ctl.state, R = cfg.rules;
-  const night = clock().hm; // unused placeholder to keep clock() referenced lazily
   const hourLocal = Math.floor((env.startHour * 3600 + v.t) % 86400 / 3600);
   const isNight = hourLocal >= 19 || hourLocal < 7;
 
@@ -354,7 +353,7 @@ function checkCrop() {
 }
 function paintProgram() {
   const P = ctl.programStatus(reading.t), H = cfg.program.harvest;
-  const key = `${cfg.farmType}|${cfg.stage}`;
+  const key = `${cfg.farmType}|${cfg.crop}|${cfg.stage}`;
   if (key !== lastStage) { lastStage = key; paintCaps(); if (panel) panel.set(cfg); }
   const days = P.days ? ` · day ${P.day} of ${P.days}` : '';
   const flush = cfg.stage === 'fruiting' || cfg.stage === 'rest' ? ` · flush ${P.flush} of ${P.flushes}` : '';
@@ -966,7 +965,17 @@ function wire() {
   for (const [id, k] of [['fT', 'T'], ['fRH', 'RH'], ['fCO2', 'CO2'], ['fOut', 'out']]) $('#' + id).value = env.faults[k];
   $('#inBoost').value = env.acStartBoostMin;
   $('#inTariff').value = input.tariff;
+  $('#inProbe').checked = env.probe;
+  $('#inDoors').checked = env.harvestDoors;
+  $('#inRandWx').checked = env.randomWeather;
   paintBlocks();
+
+  // ---- Toolbar and bench controls that survive a module switch (closure state, 6.1 "Simulator bench flag") ----
+  $('#pauseBtn').textContent = paused ? 'Resume' : 'Pause';
+  $('#speedSeg').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.speed === speed)));
+  $('#winSeg').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.win === windowS)));
+  $('#benchBtn').setAttribute('aria-expanded', String(benchFlag === 'on'));
+  $('#benchBtn').textContent = benchFlag === 'on' ? 'Hide test bench settings' : 'Show test bench settings';
 
   // ---- Settings panel (7.8) ----
   panel = global.FarmSettingsPanel.createSettingsPanel($('#panelHost'), {
@@ -1002,6 +1011,10 @@ function wire() {
     keys: ['T', 'RH', 'C'], power: true, clock: clock(), status: kind => ctl.status(kind),
   });
 
+  // A width change redraws the exhaust bar chart at its new size (today's behaviour), unmount() disconnects it.
+  exhRo = new ResizeObserver(() => { exhKey = ''; });
+  exhRo.observe($('#exhChart'));
+
   buildMimicExtras();
 }
 
@@ -1017,14 +1030,14 @@ function frame(now) {
     while (acc >= 1 && n < 4000) { tick(); acc -= 1; n++; }
   }
   animateMimic(dtReal);
-  if (now - lastUi > 150) { updateUi(); paintProgram(); lastUi = now; }
+  if (now - lastUi > 150) { updateUi(); lastUi = now; }
   if (chartsDirty && now - lastChart > 200) { drawCharts(); lastChart = now; }
   rafId = requestAnimationFrame(frame);
 }
 
 function mount(viewEl) {
   ensureState();
-  mounted = true; el = viewEl; mountGen++;
+  mounted = true; el = viewEl;
   el.dataset.bench = benchFlag;
   el.innerHTML = MARKUP;
   logDirty = true; chartsDirty = true; alarmKey = ''; exhKey = ''; lastStage = '';
@@ -1044,6 +1057,7 @@ function unmount() {
   mounted = false;
   stopFrame();
   clearTimeout(cropCheckTimer);
+  if (exhRo) { exhRo.disconnect(); exhRo = null; }
   if (trendCharts) { trendCharts.destroy(); trendCharts = null; }
   if (ladder) { ladder.destroy(); ladder = null; }
   if (panel) { panel.destroy(); panel = null; }
