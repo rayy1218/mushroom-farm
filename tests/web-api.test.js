@@ -288,6 +288,56 @@ test('watchdog: emits keep the connection alive', async (t) => {
   assert.equal(events.length, countBefore);
 });
 
+test('stream: close() inside the open handler leaves no timer and no later event', async (t) => {
+  const MS = 12345;
+  FarmApi.streamTimeoutMs = MS;
+  t.after(() => { FarmApi.streamTimeoutMs = 45000; });
+  const live = new Set();
+  const realSet = globalThis.setTimeout, realClear = globalThis.clearTimeout;
+  globalThis.setTimeout = (fn, ms, ...a) => {
+    const h = realSet(fn, ms, ...a);
+    if (ms === MS) live.add(h);
+    return h;
+  };
+  globalThis.clearTimeout = h => { live.delete(h); return realClear(h); };
+  t.after(() => { globalThis.setTimeout = realSet; globalThis.clearTimeout = realClear; });
+  const fake = await withFake(t, { retryMs: 50 });
+  const events = [];
+  let close;
+  close = FarmApi.stream((type, data) => { events.push([type, data]); if (type === 'open') close(); });
+  await waitFor(() => events.some(e => e[0] === 'open'));
+  await sleep(100);
+  fake.emit('reading', { room_id: 1, t: 1 });
+  await sleep(100);
+  assert.deepEqual(events.map(e => e[0]), ['open']);
+  assert.equal(live.size, 0, 'no watchdog timer left armed');
+  assert.equal(apiRequests(fake).filter(r => r.path === '/api/stream').length, 1);
+});
+
+test('stream: a 2xx reply without a body ends the connection with down, then reconnects', async (t) => {
+  const fake = await withFake(t);
+  fake.reply('GET', '/api/stream', 204);
+  const events = [];
+  const close = FarmApi.stream((type, data) => events.push([type, data]));
+  t.after(() => close());
+  await waitFor(() => events.some(e => e[0] === 'down'), 500);
+  assert.ok(events.some(e => e[0] === 'down'));
+  close();
+});
+
+test('stream: a negative or non-numeric retry value is ignored', async (t) => {
+  const fake = await withFake(t, { retryMs: -5 });
+  const events = [];
+  const close = FarmApi.stream((type, data) => events.push([type, data]));
+  t.after(() => close());
+  await waitFor(() => events.some(e => e[0] === 'open'));
+  fake.dropStreams();
+  await waitFor(() => events.some(e => e[0] === 'down'));
+  await sleep(300);
+  assert.equal(events.filter(e => e[0] === 'open').length, 1, 'default 3 s delay kept, no immediate reconnect');
+  close();
+});
+
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 async function waitFor(fn, timeoutMs = 1000) {
   const start = Date.now();
