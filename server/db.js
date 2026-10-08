@@ -504,8 +504,7 @@ function buildDb(conn, dbPath, version, now) {
     fields('saveControllerState', state, ['controller', 'sim', 'at']);
     const s = state || {};
     const controllerText = jsonVal(s.controller);
-    const simInput = s.sim === undefined ? null : s.sim;
-    const simText = jsonVal(simInput);
+    const simText = s.sim == null ? null : toJson(s.sim);
     const at = val(s.at === undefined ? now() : s.at);
     saveControllerStmt.run({ room_id: roomId, saved_at: at, controller: controllerText, sim: simText });
     return undefined;

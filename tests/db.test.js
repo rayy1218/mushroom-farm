@@ -324,12 +324,15 @@ both('updateRoom: fields, unchanged, unknown field, bad value', (t, open) => {
   assert.equal(db.updateRoom(room.id, { name: 'B' }).name, 'B');
   assert.equal(db.updateRoom(room.id, { volume: 80 }).volume, 80);
   assert.equal(db.updateRoom(room.id, { vent: 'exhaust' }).vent, 'exhaust');
-  assert.deepStrictEqual(db.updateRoom(room.id, {}), db.getRoom(room.id));
+  const beforeEmpty = db.getRoom(room.id);
+  assert.deepStrictEqual(db.updateRoom(room.id, {}), beforeEmpty);
+  const beforeUnknown = db.getRoom(room.id);
   assert.throws(() => db.updateRoom(room.id, { archived_at: 5 }), err => {
     assert.ok(err instanceof TypeError);
     assert.equal(err.message, 'updateRoom: unknown field "archived_at"');
     return true;
   });
+  assert.deepStrictEqual(db.getRoom(room.id), beforeUnknown);
   assertSql(() => db.updateRoom(room.id, { vent: 'north' }), 275);
   assert.equal(db.getRoom(room.id).vent, 'exhaust');
 });
@@ -390,7 +393,7 @@ both('settingsHistory: shape and order', (t, open) => {
   const hist = db.settingsHistory(room.id);
   assert.deepStrictEqual(hist.map(h => Object.keys(h).sort()), hist.map(() => ['id', 'note', 'saved_at'].sort()));
   assert.deepStrictEqual(hist.map(h => h.id), [v2.id, v2.id - 1]);
-  assert.equal(hist[0].id, v2.id);
+  assert.equal(hist[0].id, db.currentSettings(room.id).id);
 });
 
 both('getSettingsVersion: returns version; wrong ids throw', (t, open) => {
@@ -413,6 +416,7 @@ both('saveSettings: errors', (t, open) => {
   assertSql(() => db.saveSettings(room.id, {}), 1299);
   assert.equal(db.settingsHistory(room.id).length, before);
   assert.throws(() => db.saveSettings(room.id, { settings: {}, extra: 1 }), TypeError);
+  assert.equal(db.settingsHistory(room.id).length, before);
 });
 
 // ---------------------------------------------------------------------------
@@ -526,13 +530,17 @@ both('queryReadings: errors', (t, open) => {
   const db = open({ now: () => T0 });
   t.after(() => db.close());
   const roomId = makeRoom(db);
+  db.insertReading(roomId, reading(5));
   assert.throws(() => db.queryReadings(roomId, { from: 1.5, to: 10 }), RangeError);
   assert.throws(() => db.queryReadings(roomId, { from: 1 }), RangeError);
   assert.throws(() => db.queryReadings(roomId, { from: 10, to: 1 }), RangeError);
   assert.throws(() => db.queryReadings(roomId, { from: 1, to: 10, step: 0 }), RangeError);
   assert.throws(() => db.queryReadings(roomId, { from: 1, to: 10, step: 1.5 }), RangeError);
   assert.throws(() => db.queryReadings(roomId, { from: 1, to: 10, step: -60 }), RangeError);
-  assert.doesNotThrow(() => db.queryReadings(roomId, { from: 1, to: 10, step: null }));
+  assert.deepStrictEqual(
+    db.queryReadings(roomId, { from: 1, to: 10, step: null }),
+    db.queryReadings(roomId, { from: 1, to: 10 }),
+  );
   assert.throws(() => db.queryReadings(roomId, { from: 1, to: 10, limit: 5 }), TypeError);
 });
 
@@ -662,6 +670,18 @@ both('addEvent: constraints', (t, open) => {
   assert.equal(db.listEvents(roomId).length, 0);
 });
 
+both('addEvent: unknown field; nothing stored', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  assert.throws(() => db.addEvent(roomId, { t: T0, level: 'info', text: 'x', extra: 1 }), err => {
+    assert.ok(err instanceof TypeError);
+    assert.equal(err.message, 'addEvent: unknown field "extra"');
+    return true;
+  });
+  assert.deepStrictEqual(db.listEvents(roomId), []);
+});
+
 // ---------------------------------------------------------------------------
 // Task 8: Alarms (C1 section 6.8)
 // ---------------------------------------------------------------------------
@@ -775,6 +795,18 @@ both('raiseAlarm: constraints', (t, open) => {
   assertSql(() => db.raiseAlarm(roomId, { alarm_key: 'x', level: 'warning' }), 1299);
 });
 
+both('raiseAlarm: unknown field; nothing stored', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  assert.throws(() => db.raiseAlarm(roomId, { alarm_key: 'x', level: 'warning', label: 'x', extra: 1 }), err => {
+    assert.ok(err instanceof TypeError);
+    assert.equal(err.message, 'raiseAlarm: unknown field "extra"');
+    return true;
+  });
+  assert.deepStrictEqual(db.listAlarms(roomId, { recent: 500 }), []);
+});
+
 // ---------------------------------------------------------------------------
 // Task 9: Controller state and JSON (C1 section 5, 6.9)
 // ---------------------------------------------------------------------------
@@ -798,6 +830,17 @@ both('saveControllerState: shape; one row per room', (t, open) => {
   db.saveControllerState(roomId, { controller: { a: 2 }, sim: { b: 1 } });
   const loaded2 = db.loadControllerState(roomId);
   assert.deepStrictEqual(loaded2, { room_id: roomId, saved_at: T0 + 10, controller: { a: 2 }, sim: { b: 1 } });
+});
+
+test('real: saveControllerState stores sim as SQL NULL when left out', t => {
+  const file = tmpFile(t);
+  const db = openDb(file, { now: () => T0 });
+  const room = db.createRoom(roomInput());
+  db.saveControllerState(room.id, { controller: { a: 1 } });
+  db.close();
+  const raw = new DatabaseSync(file);
+  t.after(() => raw.close());
+  assert.equal(raw.prepare('SELECT sim FROM controller_state WHERE room_id = ?').get(room.id).sim, null);
 });
 
 both('saveControllerState: $num encoding of non-finite values', (t, open) => {
@@ -834,7 +877,9 @@ both('saveControllerState: errors', (t, open) => {
   t.after(() => db.close());
   const roomId = makeRoom(db);
   assertSql(() => db.saveControllerState(roomId, {}), 1299);
+  assert.equal(db.loadControllerState(roomId), null);
   assert.throws(() => db.saveControllerState(roomId, { controller: {}, extra: 1 }), TypeError);
+  assert.equal(db.loadControllerState(roomId), null);
 });
 
 // ---------------------------------------------------------------------------
@@ -917,6 +962,18 @@ both('saveCalibration: constraints', (t, open) => {
   assertSql(() => db.saveCalibration(roomId, calibRun({ run_at: 1.5 })), 3091);
 });
 
+both('saveCalibration: unknown field; nothing stored', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  assert.throws(() => db.saveCalibration(roomId, calibRun({ extra: 1 })), err => {
+    assert.ok(err instanceof TypeError);
+    assert.equal(err.message, 'saveCalibration: unknown field "extra"');
+    return true;
+  });
+  assert.deepStrictEqual(db.listCalibrations(roomId), []);
+});
+
 // ---------------------------------------------------------------------------
 // Task 11: Crop mix (C1 section 6.11)
 // ---------------------------------------------------------------------------
@@ -962,9 +1019,9 @@ both('replaceMix: all or nothing on a bad row', (t, open) => {
   const original = db.replaceMix(roomId, [{ crop: 'oyster', blocks: 10 }]);
   assertSql(() => db.replaceMix(roomId, [{ crop: 'a', blocks: 1 }, { crop: 'b', blocks: 1.5 }]), 3091);
   assert.deepStrictEqual(db.getMix(roomId), original);
-  assertSql(() => db.replaceMix(roomId, [{ crop: 'a', blocks: -1 }]), 275);
+  assertSql(() => db.replaceMix(roomId, [{ crop: 'a', blocks: 1 }, { crop: 'b', blocks: -1 }]), 275);
   assert.deepStrictEqual(db.getMix(roomId), original);
-  assertSql(() => db.replaceMix(roomId, [{ blocks: 1 }]), 1299);
+  assertSql(() => db.replaceMix(roomId, [{ crop: 'a', blocks: 1 }, { blocks: 1 }]), 1299);
   assert.deepStrictEqual(db.getMix(roomId), original);
 });
 
@@ -1044,6 +1101,7 @@ both('saveCapacityReport: unknown field', (t, open) => {
     assert.equal(err.message, 'saveCapacityReport: unknown field "room"');
     return true;
   });
+  assert.equal(db.latestCapacityReport(roomId), null);
 });
 
 // ---------------------------------------------------------------------------
