@@ -614,6 +614,9 @@ function createSettingsPanel(el, options) {
     setVal($('#fanLevelSel'), s.manual.fan.level);
     setVal($('#liOn'), s.manual.lights.on);
     setVal($('#ciOn'), s.manual.circ.on);
+    // Settings level (7.4): spT, spRH, co2Lim unlock for the installer only.
+    const installer = document.body.dataset.level === 'installer';
+    $$('input.lockable').forEach(inp => { inp.disabled = readOnly || !installer; });
   }
 
   function applyReadOnly() {
