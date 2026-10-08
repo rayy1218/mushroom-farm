@@ -61,13 +61,13 @@ test('default live summary; list and get; archived rooms', () => {
 test('setLive test helper; restart', () => {
   const { db, rooms, seen } = setup();
   const room = db.createRoom({ name: 'A', volume: 60, vent: 'supply', settings: CC.defaultSettings() });
+  const callsBefore = rooms.calls.length;
   rooms.setLive(room.id, { running: false, error: 'boom' });
+  // setLive itself is not recorded in calls (checked before any get() call below adds its own entry)
+  assert.equal(rooms.calls.length, callsBefore);
+  assert.equal(seen.length, 0); // setLive emits nothing
   assert.equal(rooms.get(room.id).live.running, false);
   assert.equal(rooms.get(room.id).live.error, 'boom');
-  const seenBefore = rooms.calls.length;
-  // setLive itself is not recorded in calls
-  assert.equal(rooms.calls.length, seenBefore);
-  assert.equal(seen.length, 0); // setLive emits nothing
 
   const eventsBefore = db.listEvents(room.id).length;
   const restarted = rooms.restart(room.id);
@@ -140,10 +140,12 @@ test('create: bad_input with all broken rules together; nothing stored or emitte
 });
 
 test('update: trims name, unknown field, archived room, unknown room', () => {
-  const { db, rooms } = setup();
+  const { db, rooms, seen } = setup();
   const room = db.createRoom({ name: 'A', volume: 60, vent: 'supply', settings: CC.defaultSettings() });
   const updated = rooms.update(room.id, { name: ' B ' });
   assert.equal(updated.name, 'B');
+  assert.deepEqual(seen.map(([name]) => name), ['room']); // exactly one room emit
+  assert.equal(seen[0][1].room.id, room.id);
   assert.throws(() => rooms.update(room.id, { colour: 1 }), err => err.details.includes('unknown field "colour"'));
   assert.equal(db.getRoom(room.id).name, 'B'); // nothing stored by the failed call
   db.archiveRoom(room.id);
@@ -245,7 +247,7 @@ test('ackAlarm: acknowledges unacknowledged rows, emits event then alarms', () =
 });
 
 test('listeners: a throwing listener is caught; off removes a listener; emit test helper', (t) => {
-  const { rooms } = setup();
+  const { rooms, seen } = setup();
   const errStub = t.mock.method(console, 'error', () => {});
   const calls = [];
   const bad = () => { throw new Error('boom'); };
@@ -259,4 +261,8 @@ test('listeners: a throwing listener is caught; off removes a listener; emit tes
   rooms.off('event', good);
   rooms.emit('event', { x: 2 });
   assert.deepEqual(calls, [{ x: 1 }]);
+
+  // emit('reading', p) reaches listeners (C2 7), not just 'event'; setup() already has a 'reading' listener.
+  rooms.emit('reading', { t: 5 });
+  assert.deepEqual(seen.filter(([name]) => name === 'reading'), [['reading', { t: 5 }]]);
 });
