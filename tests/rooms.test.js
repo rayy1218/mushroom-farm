@@ -867,3 +867,133 @@ test('Room summary', () => {
   assert.equal(log.filter(([n, p]) => n === 'room' && p.room.id === room.id).length, 0);
   assert.notEqual(mgr.get(room.id).live.status.T.text, statusBefore);
 });
+
+// ---------------------------------------------------------------------------
+// Task 8: Crashes, restart, ack while crashed (C2 section 11, 4 restart, 8.1/8.2)
+// ---------------------------------------------------------------------------
+
+function newEventTextsSince(db, roomId, beforeId) {
+  return db.listEvents(roomId, { limit: 1000 }).filter(e => e.id > beforeId).reverse().map(e => e.text);
+}
+function maxEventId(db, roomId) {
+  const rows = db.listEvents(roomId, { limit: 1 });
+  return rows.length ? rows[0].id : 0;
+}
+
+test('Crash isolation', () => {
+  const sa = scripted(), sb = scripted();
+  const factory = args => (args.room.name === 'A' ? sa.factory(args) : sb.factory(args));
+  const { db, mgr, log, step, now } = setup(factory);
+  mgr.create({ name: 'A', volume: 60, vent: 'supply' });
+  mgr.create({ name: 'B', volume: 60, vent: 'supply' });
+  mgr.start();
+  const savedBeforeA = db.loadControllerState(1).saved_at;
+
+  sa.knobs.failRead = true;
+  log.length = 0;
+  step(1);
+  const a = mgr.get(1);
+  assert.equal(a.live.running, false);
+  assert.equal(a.live.error, 'sensor bus down');
+  const ev = db.listEvents(1, { limit: 50 }).find(e => e.text === 'Stopped by an error: sensor bus down');
+  assert.ok(ev);
+  assert.equal(ev.level, 'serious');
+  assert.ok(log.some(([n, p]) => n === 'room' && p.room.id === 1));
+  assert.equal(db.loadControllerState(1).saved_at, savedBeforeA);
+
+  const bRowsBefore = db.queryReadings(2, { from: 0, to: now() }).length;
+  const aRowsBefore = db.queryReadings(1, { from: 0, to: now() }).length;
+  step(30);
+  assert.ok(db.queryReadings(2, { from: 0, to: now() }).length > bRowsBefore);
+  assert.equal(db.queryReadings(1, { from: 0, to: now() }).length, aRowsBefore);
+});
+
+test('Crash at loop start', () => {
+  const { db, mgr, step, now } = setup();
+  db.createRoom({ name: 'Bad', volume: 60, vent: 'supply', adapter: 'hw', settings: CC.defaultSettings(), note: 'Created', at: now() });
+  mgr.create({ name: 'Good', volume: 60, vent: 'supply' });
+  mgr.start();
+  const bad = mgr.get(1);
+  assert.equal(bad.live.running, false);
+  assert.equal(bad.live.error, 'Unknown adapter "hw"');
+  assert.equal(bad.live.stage, 'fruiting');
+  assert.equal(bad.live.targets, null);
+  assert.equal(bad.live.status, null);
+  assert.ok(db.listEvents(1, { limit: 50 }).some(e => e.text === 'Stopped by an error: Unknown adapter "hw"'));
+
+  const before = db.queryReadings(2, { from: 0, to: now() }).length;
+  step(30);
+  assert.ok(db.queryReadings(2, { from: 0, to: now() }).length > before);
+});
+
+test('Restart', () => {
+  const s = scripted();
+  const { db, mgr, log, step } = setup(s.factory);
+  mgr.start();
+  step(30);
+  s.knobs.failRead = true;
+  step(1); // crash
+  assert.equal(mgr.get(1).live.running, false);
+
+  s.knobs.failRead = false;
+  const beforeRestartId = maxEventId(db, 1);
+  log.length = 0;
+  const restarted = mgr.restart(1);
+  assert.equal(restarted.live.running, true);
+  assert.equal(restarted.live.error, null);
+  const textsAfterCrashRestart = newEventTextsSince(db, 1, beforeRestartId);
+  assert.ok(!textsAfterCrashRestart.includes('Stopped'));
+  assert.ok(log.some(([n]) => n === 'room'));
+
+  // Running room restart: Stopped, then Resumed after 0 min stopped.
+  const beforeRunningRestartId = maxEventId(db, 1);
+  mgr.restart(1);
+  const textsAfterRunningRestart = newEventTextsSince(db, 1, beforeRunningRestartId);
+  assert.ok(textsAfterRunningRestart.includes('Stopped'));
+  assert.ok(textsAfterRunningRestart.some(t => t.startsWith('Resumed after 0 min stopped')));
+
+  // Archived
+  const { room: archRoom } = mgr.create({ name: 'Arch', volume: 60, vent: 'supply' });
+  mgr.archive(archRoom.id);
+  try {
+    mgr.restart(archRoom.id);
+    assert.fail('expected bad_input');
+  } catch (err) {
+    assert.equal(err.code, 'bad_input');
+    assert.deepEqual(err.details, [`room ${archRoom.id} is archived`]);
+  }
+
+  // Unknown id
+  try {
+    mgr.restart(999);
+    assert.fail('expected not_found');
+  } catch (err) {
+    assert.equal(err.code, 'not_found');
+  }
+});
+
+test('Ack while crashed', () => {
+  const s = scripted();
+  const { db, mgr, step, jump } = setup(s.factory);
+  s.knobs.values = { RH: null };
+  mgr.start(); // reading 1, bad count 1
+  step(30); // reading 2, bad count 2
+  step(30); // reading 3, bad count 3 -> raises
+  assert.equal(mgr.get(1).live.alarms, 1);
+
+  jump(300 - 60); // advance to the next periodic save boundary (T0 + 300)
+  assert.equal(db.loadControllerState(1).saved_at, T0 + 300);
+
+  s.knobs.failRead = true;
+  step(1); // crash
+  assert.equal(mgr.get(1).live.running, false);
+
+  const savedBeforeAck = db.loadControllerState(1).saved_at;
+  mgr.ackAlarm(1, 'sensor_RH');
+  assert.equal(db.loadControllerState(1).saved_at, savedBeforeAck);
+
+  s.knobs.failRead = false;
+  mgr.restart(1);
+  mgr.stop();
+  assert.equal(db.loadControllerState(1).controller.alarms.sensor_RH.acked, true);
+});
