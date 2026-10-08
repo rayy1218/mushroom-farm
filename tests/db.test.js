@@ -629,3 +629,96 @@ both('addEvent: constraints', (t, open) => {
   assertSql(() => db.addEvent(roomId, { t: 1.5, level: 'info', text: 'x' }), 3091);
   assert.equal(db.listEvents(roomId).length, 0);
 });
+
+// ---------------------------------------------------------------------------
+// Task 8: Alarms (C1 section 6.8)
+// ---------------------------------------------------------------------------
+
+both('raiseAlarm: shape', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  const a = db.raiseAlarm(roomId, { alarm_key: 'rhHi', level: 'warning', label: 'High humidity', at: 100 });
+  assert.deepStrictEqual(a, {
+    id: a.id, room_id: roomId, alarm_key: 'rhHi', level: 'warning', label: 'High humidity',
+    raised_at: 100, cleared_at: null, acked_at: null,
+  });
+});
+
+both('raiseAlarm: idempotent while open', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  const first = db.raiseAlarm(roomId, { alarm_key: 'rhHi', level: 'warning', label: 'High humidity', at: 100 });
+  const second = db.raiseAlarm(roomId, { alarm_key: 'rhHi', level: 'serious', label: 'Other', at: 150 });
+  assert.deepStrictEqual(second, first);
+  assert.equal(db.listAlarms(roomId, { recent: 0 }).length, 1);
+});
+
+both('clearAlarm: clear, second clear null, new occurrence', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  const first = db.raiseAlarm(roomId, { alarm_key: 'rhHi', level: 'warning', label: 'High humidity', at: 100 });
+  const cleared = db.clearAlarm(roomId, 'rhHi', 200);
+  assert.equal(cleared.cleared_at, 200);
+  assert.equal(cleared.id, first.id);
+  assert.equal(db.clearAlarm(roomId, 'rhHi', 250), null);
+  const second = db.raiseAlarm(roomId, { alarm_key: 'rhHi', level: 'warning', label: 'High humidity', at: 300 });
+  assert.notEqual(second.id, first.id);
+});
+
+both('ackAlarm: acks all unacknowledged; idempotent; error', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  const first = db.raiseAlarm(roomId, { alarm_key: 'rhHi', level: 'warning', label: 'x', at: 100 });
+  db.clearAlarm(roomId, 'rhHi', 200);
+  const second = db.raiseAlarm(roomId, { alarm_key: 'rhHi', level: 'warning', label: 'x', at: 300 });
+  const acked = db.ackAlarm(roomId, 'rhHi', 400);
+  assert.equal(acked.id, second.id);
+  assert.equal(acked.acked_at, 400);
+  const rows1 = db.listAlarms(roomId, { recent: 20 });
+  assert.ok(rows1.every(r => r.acked_at === 400));
+  const again = db.ackAlarm(roomId, 'rhHi', 500);
+  assert.equal(again.acked_at, 400);
+  assertNotFound(() => db.ackAlarm(roomId, 'nope'), 'alarm', 'nope');
+});
+
+both('listAlarms: order, filter', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  db.raiseAlarm(roomId, { alarm_key: 'a', level: 'warning', label: 'a', at: 100 });
+  db.raiseAlarm(roomId, { alarm_key: 'b', level: 'warning', label: 'b', at: 200 });
+  for (let i = 0; i < 21; i++) {
+    db.raiseAlarm(roomId, { alarm_key: `c${i}`, level: 'warning', label: 'c', at: 10 + i });
+    db.clearAlarm(roomId, `c${i}`, 1000 + i);
+  }
+  const listed = db.listAlarms(roomId);
+  const openAlarms = listed.filter(a => a.cleared_at === null);
+  const cleared = listed.filter(a => a.cleared_at !== null);
+  assert.deepStrictEqual(openAlarms.map(a => a.alarm_key), ['b', 'a']);
+  assert.equal(cleared.length, 20);
+  for (let i = 1; i < cleared.length; i++) assert.ok(cleared[i - 1].cleared_at >= cleared[i].cleared_at);
+  const onlyOpen = db.listAlarms(roomId, { recent: 0 });
+  assert.deepStrictEqual(onlyOpen.map(a => a.alarm_key), ['b', 'a']);
+});
+
+both('listAlarms: errors', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  assert.throws(() => db.listAlarms(roomId, { recent: -1 }), RangeError);
+  assert.throws(() => db.listAlarms(roomId, { recent: 501 }), RangeError);
+  assert.throws(() => db.listAlarms(roomId, { recent: 1.5 }), RangeError);
+  assert.throws(() => db.listAlarms(roomId, { open: true }), TypeError);
+});
+
+both('raiseAlarm: constraints', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  assertSql(() => db.raiseAlarm(roomId, { alarm_key: 'x', level: 'info', label: 'x' }), 275);
+  assertSql(() => db.raiseAlarm(roomId, { alarm_key: 'x', level: 'warning' }), 1299);
+});

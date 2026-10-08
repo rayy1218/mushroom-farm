@@ -413,6 +413,67 @@ function buildDb(conn, dbPath, version, now) {
     return rows.map(plain);
   }
 
+  // Alarms (section 6.8)
+  const insertAlarmStmt = conn.prepare(
+    'INSERT INTO alarms (room_id, alarm_key, level, label, raised_at) VALUES (:room_id, :alarm_key, :level, :label, :raised_at)'
+  );
+  const getAlarmByIdStmt = conn.prepare('SELECT * FROM alarms WHERE id = :id');
+  const findOpenAlarmStmt = conn.prepare('SELECT * FROM alarms WHERE room_id = :room_id AND alarm_key = :alarm_key AND cleared_at IS NULL');
+  const clearAlarmStmt = conn.prepare('UPDATE alarms SET cleared_at = :at WHERE room_id = :room_id AND alarm_key = :alarm_key AND cleared_at IS NULL');
+  const ackAlarmStmt = conn.prepare('UPDATE alarms SET acked_at = :at WHERE room_id = :room_id AND alarm_key = :alarm_key AND acked_at IS NULL');
+  const alarmsByKeyStmt = conn.prepare('SELECT * FROM alarms WHERE room_id = :room_id AND alarm_key = :alarm_key');
+  const listOpenAlarmsStmt = conn.prepare('SELECT * FROM alarms WHERE room_id = :room_id AND cleared_at IS NULL ORDER BY raised_at DESC, id DESC');
+  const listClearedAlarmsStmt = conn.prepare(
+    'SELECT * FROM alarms WHERE room_id = :room_id AND cleared_at IS NOT NULL ORDER BY cleared_at DESC, id DESC LIMIT :recent'
+  );
+
+  function raiseAlarm(roomId, alarm) {
+    live();
+    roomCheck(roomId);
+    fields('raiseAlarm', alarm, ['alarm_key', 'level', 'label', 'at']);
+    const a = alarm || {};
+    const open = findOpenAlarmStmt.get({ room_id: roomId, alarm_key: a.alarm_key });
+    if (open) return plain(open);
+    const at = a.at === undefined ? now() : a.at;
+    const info = insertAlarmStmt.run({
+      room_id: roomId, alarm_key: val(a.alarm_key), level: val(a.level), label: val(a.label), raised_at: val(at),
+    });
+    return plain(getAlarmByIdStmt.get({ id: info.lastInsertRowid }));
+  }
+
+  function clearAlarm(roomId, alarmKey, at) {
+    live();
+    roomCheck(roomId);
+    const open = findOpenAlarmStmt.get({ room_id: roomId, alarm_key: alarmKey });
+    if (!open) return null;
+    const atVal = val(at === undefined ? now() : at);
+    clearAlarmStmt.run({ room_id: roomId, alarm_key: alarmKey, at: atVal });
+    return plain(getAlarmByIdStmt.get({ id: open.id }));
+  }
+
+  function ackAlarm(roomId, alarmKey, at) {
+    live();
+    roomCheck(roomId);
+    const atVal = val(at === undefined ? now() : at);
+    const rows = alarmsByKeyStmt.all({ room_id: roomId, alarm_key: alarmKey });
+    if (rows.length === 0) throw new NotFoundError('alarm', alarmKey);
+    ackAlarmStmt.run({ room_id: roomId, alarm_key: alarmKey, at: atVal });
+    const newestId = rows.reduce((a, b) => (b.id > a.id ? b : a)).id;
+    return plain(getAlarmByIdStmt.get({ id: newestId }));
+  }
+
+  function listAlarms(roomId, options) {
+    live();
+    roomCheck(roomId);
+    fields('listAlarms', options, ['recent']);
+    const o = options || {};
+    const recent = o.recent === undefined ? 20 : o.recent;
+    if (!Number.isInteger(recent) || recent < 0 || recent > 500) throw new RangeError('listAlarms: recent must be an integer from 0 to 500');
+    const open = listOpenAlarmsStmt.all({ room_id: roomId }).map(plain);
+    const cleared = listClearedAlarmsStmt.all({ room_id: roomId, recent }).map(plain);
+    return open.concat(cleared);
+  }
+
   function listRooms(options) {
     live();
     fields('listRooms', options, ['includeArchived']);
@@ -448,6 +509,10 @@ function buildDb(conn, dbPath, version, now) {
     latestReading,
     addEvent,
     listEvents,
+    raiseAlarm,
+    clearAlarm,
+    ackAlarm,
+    listAlarms,
   };
 }
 
