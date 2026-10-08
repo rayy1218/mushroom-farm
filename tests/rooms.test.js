@@ -1066,3 +1066,115 @@ test('Timer', async () => {
   await new Promise(r => setTimeout(r, 50));
   assert.equal(s2.knobs.reads, readsAfterFatal);
 });
+
+// ---------------------------------------------------------------------------
+// Task 10: applySettings basics (C2 section 9.1, 9.2 steps 1-4 and 10-13)
+// ---------------------------------------------------------------------------
+
+test('Settings at once', () => {
+  const spy = simSpyFactory();
+  const { db, mgr, log, step, now } = setup(spy.factory);
+  mgr.start();
+  const rowBefore = db.queryReadings(1, { from: 0, to: 10 ** 12 }).at(-1);
+
+  log.length = 0;
+  const result = mgr.applySettings(1, { spT: 20 }, '  colder  ');
+  assert.deepEqual(result.warnings, []);
+  assert.equal(result.version.note, 'colder');
+  assert.equal(result.settings.spT, 20);
+  assert.equal(spy.made[0].args.cfg.spT, 20);
+
+  const ev = db.listEvents(1, { limit: 50 }).find(e => e.text === `Settings saved (version ${result.version.id}): colder`);
+  assert.ok(ev);
+  assert.equal(db.loadControllerState(1).saved_at, now());
+
+  const settingsEmit = log.find(([n]) => n === 'settings');
+  assert.ok(settingsEmit);
+  assert.equal(settingsEmit[1].auto, false);
+  assert.deepEqual(settingsEmit[1].warnings, []);
+
+  step(30); // the next reading, 30 s after the last (the sensor period): the controller's trim has not drifted
+  const newRow = db.queryReadings(1, { from: 0, to: 10 ** 12 }).at(-1);
+  assert.notEqual(newRow.t, rowBefore.t);
+  assert.equal(newRow.ac_setpoint, 20);
+});
+
+test('Partial merge', () => {
+  const { db, mgr } = setup();
+  mgr.start();
+  const before = db.currentSettings(1).settings;
+  const result = mgr.applySettings(1, { spT: 20 });
+  const after = db.currentSettings(1).settings;
+  for (const k of Object.keys(before)) {
+    if (k === 'spT') assert.equal(after.spT, 20);
+    else assert.deepEqual(after[k], before[k], `key ${k} should be unchanged`);
+  }
+
+  const base = { a: { b: 1 } };
+  const input = { a: { c: 2 } };
+  const { settings: merged } = roomsCommon.cleanSettings(input, base);
+  assert.notEqual(merged, base);
+  assert.notEqual(merged, input);
+  assert.notEqual(merged.a, base.a);
+  assert.notEqual(merged.a, input.a);
+});
+
+test('Whole machine levels', () => {
+  const { db, mgr, step } = setup();
+  mgr.start();
+  const { room: a } = mgr.create({ name: 'A', volume: 60, vent: 'supply' });
+  const { room: b } = mgr.create({ name: 'B', volume: 60, vent: 'supply' });
+  mgr.applySettings(a.id, { manual: { hu: { auto: false, level: 1.5 } } });
+  mgr.applySettings(b.id, { rules: { baseFan: { fruiting: 5 }, rhLock: false } });
+
+  const fatalLog = [];
+  mgr.on('fatal', p => fatalLog.push(p));
+  step(30);
+
+  const rowA = db.queryReadings(a.id, { from: 0, to: 10 ** 12 }).at(-1);
+  const rowB = db.queryReadings(b.id, { from: 0, to: 10 ** 12 }).at(-1);
+  assert.equal(rowA.fog, 2);
+  assert.equal(rowB.fan, 3);
+  assert.equal(fatalLog.length, 0);
+});
+
+test('Settings: warnings and stopped rooms', () => {
+  const s = scripted();
+  const { db, mgr } = setup(s.factory);
+  mgr.start();
+
+  const result = mgr.applySettings(1, { spRH: 120 });
+  assert.ok(result.warnings.includes('"spRH" = 120 is outside 40–99: set to 99.'));
+  assert.equal(db.currentSettings(1).settings.spRH, 99);
+
+  // A crashed room stores the version (stored = next) with no state save.
+  s.knobs.failRead = true;
+  mgr.tick();
+  assert.equal(mgr.get(1).live.running, false);
+  const savedBefore = db.loadControllerState(1).saved_at;
+  const result2 = mgr.applySettings(1, { spT: 18 });
+  assert.equal(result2.settings.spT, 18);
+  assert.equal(db.loadControllerState(1).saved_at, savedBefore);
+
+  const expectErr = (fn, code, details) => {
+    try { fn(); assert.fail('expected an error'); } catch (err) {
+      assert.equal(err.code, code);
+      if (details) assert.deepEqual(err.details, details);
+    }
+  };
+  expectErr(() => mgr.applySettings(1, { spT: 1 }, 'x'.repeat(201)), 'bad_input', ['note must be text of at most 200 characters']);
+  expectErr(() => mgr.applySettings(1, null), 'bad_input', ['settings must be an object']);
+  expectErr(() => mgr.applySettings(1, []), 'bad_input', ['settings must be an object']);
+
+  const { room } = mgr.create({ name: 'Arch', volume: 60, vent: 'supply' });
+  mgr.archive(room.id);
+  expectErr(() => mgr.applySettings(room.id, { spT: 20 }), 'bad_input', [`room ${room.id} is archived`]);
+  expectErr(() => mgr.applySettings(999, { spT: 20 }), 'not_found');
+
+  const versionsBefore = db.settingsHistory(1).length;
+  try { mgr.applySettings(1, { spT: 1 }, 'x'.repeat(201)); } catch (e) { /* expected */ }
+  assert.equal(db.settingsHistory(1).length, versionsBefore);
+
+  const r = mgr.applySettings(1, { spT: 19 }, '   ');
+  assert.equal(r.version.note, null);
+});
