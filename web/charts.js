@@ -84,6 +84,7 @@ const TREND_DEFS = {
     band: p => [p.fanOff, p.fanOn], ref: p => p.co2Lim, sub: p => `Fan ${p.fanOff}–${p.fanOn} ppm · limit ${p.co2Lim}` },
 };
 const DEV = [['ac', 'AC'], ['hu', 'Fogger'], ['fan', 'Fan'], ['li', 'Lights'], ['ci', 'Circ.']];
+const LEGEND_NAME = { ac: 'Air conditioner', hu: 'Fogger', fan: 'Exhaust fan', li: 'Lights', ci: 'Circulation' };
 const sumTo = (p, n) => DEV.slice(0, n).reduce((a, [k]) => a + (p[k] || 0), 0);
 
 function createTrendCharts(el, opts) {
@@ -93,17 +94,23 @@ function createTrendCharts(el, opts) {
   const statusFn = opts.status || (() => null);
   el.classList.add('contents');
 
-  let view = null, hoverT = null, hoverChart = null, rafPending = false;
+  let view = null, hoverT = null, hoverChart = null, rafId = null;
   const cards = [];
 
-  function card(titleText, sub) {
+  // A hover, key move or resize redraws through one shared requestAnimationFrame (6.3): destroy() cancels it.
+  function scheduleRedraw() {
+    if (rafId != null) return;
+    rafId = requestAnimationFrame(() => { rafId = null; redraw(); });
+  }
+
+  function card(titleText, sub, headingTag) {
     const section = document.createElement('section'); section.className = 'card trend';
     const head = document.createElement('div'); head.className = 'ch-head';
     const left = document.createElement('div');
-    const h3 = document.createElement('h3'); h3.textContent = titleText;
+    const h3 = document.createElement(headingTag || 'h3'); h3.textContent = titleText;
     const tag = document.createElement('span'); tag.className = 'tag'; tag.textContent = sub || '';
     left.append(h3, tag);
-    const readv = document.createElement('div'); readv.className = 'readv';
+    const readv = document.createElement('div'); readv.className = 'readv'; readv.textContent = '--';
     head.append(left, readv);
     const chSub = document.createElement('div'); chSub.className = 'ch-sub';
     const subSpan = document.createElement('span'); const chip = document.createElement('span'); chip.className = 'chip';
@@ -113,8 +120,8 @@ function createTrendCharts(el, opts) {
     return { section, readv, subSpan, chip, host };
   }
 
-  function makeSvg(host, height) {
-    const svg = svgEl('svg', { class: 'chart', height, tabindex: 0, role: 'img', 'aria-label': `Chart. Use the left and right arrow keys to read values.` }, host);
+  function makeSvg(host, height, label) {
+    const svg = svgEl('svg', { class: 'chart', height, tabindex: 0, role: 'img', 'aria-label': `${label}. Use the left and right arrow keys to read values.` }, host);
     const c = { host, svg, height, w: host.clientWidth || 400 };
     c.nightG = svgEl('g', {}, svg);
     c.grid = svgEl('g', { class: 'grid' }, svg);
@@ -122,7 +129,7 @@ function createTrendCharts(el, opts) {
     c.body = svgEl('g', {}, svg);
     c.cross = svgEl('line', { class: 'cross', visibility: 'hidden' }, svg);
     c.over = svgEl('g', {}, svg);
-    const size = () => { c.w = Math.max(200, host.clientWidth); svg.setAttribute('width', c.w); svg.setAttribute('viewBox', `0 0 ${c.w} ${height}`); redraw(); };
+    const size = () => { c.w = Math.max(200, host.clientWidth); svg.setAttribute('width', c.w); svg.setAttribute('viewBox', `0 0 ${c.w} ${height}`); scheduleRedraw(); };
     const ro = new ResizeObserver(size);
     ro.observe(host);
     c.ro = ro;
@@ -131,19 +138,19 @@ function createTrendCharts(el, opts) {
       const r = svg.getBoundingClientRect(), pw = c.w - c.m.l - c.m.r;
       const t = view.t0 + (ev.clientX - r.left - c.m.l) / pw * (view.t1 - view.t0);
       const p = nearest(view.pts, t);
-      if (p && p.t !== hoverT) { hoverT = p.t; hoverChart = c; redraw(); }
+      if (p && p.t !== hoverT) { hoverT = p.t; hoverChart = c; scheduleRedraw(); }
     });
-    svg.addEventListener('pointerleave', () => { hoverT = null; redraw(); });
-    svg.addEventListener('blur', () => { hoverT = null; redraw(); });
+    svg.addEventListener('pointerleave', () => { hoverT = null; scheduleRedraw(); });
+    svg.addEventListener('blur', () => { hoverT = null; scheduleRedraw(); });
     svg.addEventListener('keydown', ev => {
       if (!view || !view.pts.length) return;
       const pts = view.pts;
       let i = hoverT == null ? pts.length - 1 : lowerBound(pts, hoverT);
       if (ev.key === 'ArrowLeft') i = Math.max(0, i - (ev.shiftKey ? 12 : 1));
       else if (ev.key === 'ArrowRight') i = Math.min(pts.length - 1, i + (ev.shiftKey ? 12 : 1));
-      else if (ev.key === 'Escape') { hoverT = null; redraw(); return; }
+      else if (ev.key === 'Escape') { hoverT = null; scheduleRedraw(); return; }
       else return;
-      ev.preventDefault(); hoverT = pts[i].t; hoverChart = c; redraw();
+      ev.preventDefault(); hoverT = pts[i].t; hoverChart = c; scheduleRedraw();
     });
     return c;
   }
@@ -152,7 +159,7 @@ function createTrendCharts(el, opts) {
   for (const key of keys) {
     const def = TREND_DEFS[key];
     const ui = card(def.label, def.title);
-    const c = makeSvg(ui.host, 160);
+    const c = makeSvg(ui.host, 160, `${def.label} trend`);
     c.m = { l: 46, r: def.out ? 58 : 12, t: 10, b: 22 };
     c.band = svgEl('path', { class: 'band' }, c.body);
     c.ref = svgEl('path', { class: 'ref' }, c.body);
@@ -167,20 +174,20 @@ function createTrendCharts(el, opts) {
 
   let powerCard = null;
   if (power) {
-    const ui = card('Power consumption', 'Power meters · stacked by machine');
+    const ui = card('Power consumption', 'Power meters · stacked by machine', 'h2');
     ui.section.className = 'card power';
     const legend = document.createElement('div'); legend.className = 'legend';
     const lg = {};
     for (const [k, name] of DEV) {
       const span = document.createElement('span'); span.style.setProperty('--key', `var(--s-${k === 'li' ? 'li' : k === 'ci' ? 'ci' : k})`);
       const i = document.createElement('i'); const b = document.createElement('b'); lg[k] = b;
-      span.append(i, document.createTextNode(name + ' '), b);
+      span.append(i, document.createTextNode(LEGEND_NAME[k] + ' '), b);
       legend.append(span);
     }
     ui.section.insertBefore(legend, ui.host);
     const tooltip = document.createElement('div'); tooltip.className = 'tooltip'; tooltip.setAttribute('role', 'status');
     ui.section.append(tooltip);
-    const c = makeSvg(ui.host, 220);
+    const c = makeSvg(ui.host, 220, 'Power consumption by machine, stacked');
     c.m = { l: 56, r: 84, t: 10, b: 22 };
     c.areas = Object.fromEntries(DEV.map(([k]) => [k, svgEl('path', { class: `area ${k}` }, c.body)]));
     c.gap = svgEl('path', { class: 'gap' }, c.body);
@@ -233,12 +240,12 @@ function createTrendCharts(el, opts) {
     c.grid.innerHTML = ticks.map(tk => `<line x1="${m.l}" x2="${w - m.r}" y1="${Y(tk).toFixed(1)}" y2="${Y(tk).toFixed(1)}"/><text x="${m.l - 6}" y="${(Y(tk) + 4).toFixed(1)}" text-anchor="end">${Number.isInteger(tk) ? tk : tk.toFixed(1)}</text>`).join('');
     xAxis(c, v, X);
     c.band.setAttribute('d', areaPath(pts, X, Y, p => def.band(p)[0], p => def.band(p)[1]));
-    c.ref.setAttribute('d', linePath(pts, X, Y, def.ref));
-    c.line.setAttribute('d', linePath(pts, X, Y, p => p[tc.key]));
+    c.ref.setAttribute('d', linePath(pts, X, Y, def.ref, v.gapS));
+    c.line.setAttribute('d', linePath(pts, X, Y, p => p[tc.key], v.gapS));
     c.labels.replaceChildren();
     if (def.out) {
-      c.outLine.setAttribute('d', linePath(pts, X, Y, p => p[def.out]));
-      if (c.coreLine) c.coreLine.setAttribute('d', linePath(pts, X, Y, p => p.core));
+      c.outLine.setAttribute('d', linePath(pts, X, Y, p => p[def.out], v.gapS));
+      if (c.coreLine) c.coreLine.setAttribute('d', linePath(pts, X, Y, p => p.core, v.gapS));
       const pIn = lastFinite(pts, tc.key), pOut = lastFinite(pts, def.out), xEnd = X(pts[pts.length - 1].t) + 6;
       if (pIn && pOut) {
         let yIn = Y(pIn[tc.key]), yOut = Y(pOut[def.out]);
@@ -274,7 +281,7 @@ function createTrendCharts(el, opts) {
     const lo = {}, hi = {};
     DEV.forEach(([k], i) => { lo[k] = p => sumTo(p, i); hi[k] = p => sumTo(p, i + 1); });
     for (const [k] of DEV) c.areas[k].setAttribute('d', areaPath(pts, X, Y, lo[k], hi[k]));
-    c.gap.setAttribute('d', pts.length > 1 ? DEV.slice(0, 4).map(([k]) => linePath(pts, X, Y, hi[k])).join('') : '');
+    c.gap.setAttribute('d', pts.length > 1 ? DEV.slice(0, 4).map(([k]) => linePath(pts, X, Y, hi[k], v.gapS)).join('') : '');
     for (const [k, val] of [['x1', m.l], ['x2', w - m.r], ['y1', Y(0)], ['y2', Y(0)]]) c.base.setAttribute(k, val);
     c.labels.replaceChildren();
     const last = pts[pts.length - 1];
@@ -314,8 +321,12 @@ function createTrendCharts(el, opts) {
     for (const tc of trendCards) drawTrend(tc, view, hp);
     drawPowerCard(view, hp);
   }
-  function draw(v) { view = v; redraw(); }
+  function draw(v) {
+    view = { t0: v.t0, t1: v.t1, pts: aggregate(v.pts, 700), gapS: v.gapS ?? Infinity };
+    redraw();
+  }
   function destroy() {
+    if (rafId != null) { cancelAnimationFrame(rafId); rafId = null; }
     for (const tc of trendCards) tc.c.ro.disconnect();
     if (powerCard) powerCard.c.ro.disconnect();
     el.replaceChildren();
@@ -406,9 +417,9 @@ function createLadder(el) {
 
   let ladScale = { lo: 400, hi: 1500 };
   const ladPos = v => `${clamp((v - ladScale.lo) / (ladScale.hi - ladScale.lo) * 100, 0, 100)}%`;
-  function layout(settings) {
-    const R = settings.rules;
-    const top = Math.max(R.fanOn, R.acOff, settings.co2Lim, R.co2Safety ? R.co2SafetyAt : 0, 0);
+  function layout(settings, co2) {
+    const R = settings.rules, now = Number.isFinite(co2) ? co2 : 0;
+    const top = Math.max(R.fanOn, R.acOff, settings.co2Lim, R.co2Safety ? R.co2SafetyAt : 0, now, 0);
     ladScale = { lo: 400, hi: Math.ceil((top + 250) / 250) * 250 };
     for (const row of rows) {
       const lo = row.lo(settings), hi = row.hi(settings);
@@ -425,7 +436,7 @@ function createLadder(el) {
     safe.style.left = ladPos(R.co2SafetyAt); safe.hidden = !R.co2Safety;
   }
   function draw(settings, co2, chips) {
-    layout(settings);
+    layout(settings, co2);
     const ok = Number.isFinite(co2);
     now.hidden = !ok;
     if (ok) { now.style.left = ladPos(co2); now.firstChild.textContent = `${Math.round(co2)} ppm`; }
