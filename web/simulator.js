@@ -66,8 +66,9 @@ function calLogFromSamples() {
 // straight into the live cfg, which FarmSettingsPanel.applyChanges (a pure copy) cannot do.
 function setPath(obj, path, value) {
   const parts = path.split('.');
+  if (parts.some(p => p === '__proto__' || p === 'constructor' || p === 'prototype')) throw new Error(`Setting "${path}" is not allowed.`);
   let o = obj;
-  for (let i = 0; i < parts.length - 1; i++) { const p = parts[i]; if (!o[p] || typeof o[p] !== 'object') o[p] = {}; o = o[p]; }
+  for (let i = 0; i < parts.length - 1; i++) { const p = parts[i]; if (!Object.hasOwn(o, p) || !o[p] || typeof o[p] !== 'object') o[p] = {}; o = o[p]; }
   o[parts[parts.length - 1]] = value;
 }
 
