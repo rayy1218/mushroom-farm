@@ -73,15 +73,17 @@ const FIELDS_ORDER = new Map(FIELDS.map((f, i) => [f.path, i]));
 const FIELDS_BY_PATH = new Map(FIELDS.map(f => [f.path, f]));
 
 // ---------------- Leaf walk ----------------
+const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 const isPlainObj = v => v && typeof v === 'object' && !Array.isArray(v);
 function collectLeafPaths(base, next, prefix, out) {
   const bKeys = isPlainObj(base) ? Object.keys(base) : [];
   const nKeys = isPlainObj(next) ? Object.keys(next) : [];
   const keys = new Set([...bKeys, ...nKeys]);
   for (const k of keys) {
+    if (UNSAFE_KEYS.has(k)) continue; // an own '__proto__' key (JSON.parse) must never become a path
     const path = prefix ? `${prefix}.${k}` : k;
-    const bv = isPlainObj(base) ? base[k] : undefined;
-    const nv = isPlainObj(next) ? next[k] : undefined;
+    const bv = isPlainObj(base) && Object.hasOwn(base, k) ? base[k] : undefined;
+    const nv = isPlainObj(next) && Object.hasOwn(next, k) ? next[k] : undefined;
     if (isPlainObj(bv) || isPlainObj(nv)) collectLeafPaths(bv, nv, path, out);
     else out.push(path);
   }
@@ -89,15 +91,16 @@ function collectLeafPaths(base, next, prefix, out) {
 function getPath(obj, path) {
   const parts = path.split('.');
   let v = obj;
-  for (const p of parts) { if (v == null) return undefined; v = v[p]; }
+  for (const p of parts) { if (v == null || !Object.hasOwn(Object(v), p)) return undefined; v = v[p]; }
   return v;
 }
 function setPath(obj, path, value) {
   const parts = path.split('.');
+  if (parts.some(p => UNSAFE_KEYS.has(p))) throw new Error(`Setting "${path}" is not allowed.`);
   let o = obj;
   for (let i = 0; i < parts.length - 1; i++) {
     const p = parts[i];
-    if (!isPlainObj(o[p])) o[p] = {};
+    if (!Object.hasOwn(o, p) || !isPlainObj(o[p])) o[p] = {};
     o = o[p];
   }
   o[parts[parts.length - 1]] = value;
@@ -148,7 +151,6 @@ function applyChanges(settings, changes) {
 }
 
 // ---------------- safeSettings (lead decision 6) ----------------
-const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 function cleanSettings(input, prefix, warnings) {
   if (Array.isArray(input)) return input.map((v, i) => cleanSettings(v, prefix ? `${prefix}.${i}` : String(i), warnings));
   if (input && typeof input === 'object') {
@@ -162,6 +164,7 @@ function cleanSettings(input, prefix, warnings) {
   return input;
 }
 function safeSettings(settings) {
+  if (settings === null || typeof settings !== 'object' || Array.isArray(settings)) throw new Error('This is not a settings file of this controller.');
   const warnings = [];
   const cleaned = cleanSettings(settings, '', warnings);
   const { settings: out, warnings: w2 } = CC.importSettings({ format: 'mushroom-climate-settings', version: CC.SETTINGS_VERSION, settings: cleaned });
@@ -694,10 +697,14 @@ function showChanges(changes, opts) {
     function finish(value) {
       if (settled) return;
       settled = true;
+      global.removeEventListener('hashchange', onLeave);
       dialog.close();
       dialog.remove();
       resolve(value);
     }
+    // Leaving the page closes the dialog and resolves null, so an unmounted module never receives a confirm.
+    const onLeave = () => finish(null);
+    global.addEventListener('hashchange', onLeave);
     confirmBtn.addEventListener('click', () => finish(noteInput ? noteInput.value.trim() : ''));
     cancelBtn.addEventListener('click', () => finish(null));
     dialog.addEventListener('cancel', e => { e.preventDefault(); finish(null); });

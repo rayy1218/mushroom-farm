@@ -81,11 +81,11 @@ function renderMix() {
     return inp;
   };
   body.replaceChildren(...r.mix.map((m, i) => {
-    const sel = document.createElement('select'); sel.setAttribute('aria-label', 'Mushroom');
+    const sel = document.createElement('select'); sel.setAttribute('aria-label', 'Mushroom'); sel.name = 'mixCrop';
     for (const k of Object.keys(CC.CROPS)) { if (!hasCrop(k)) continue; const o = document.createElement('option'); o.value = k; o.textContent = CC.CROPS[k].name; sel.append(o); }
     sel.value = m.crop;
-    const blocksIn = num(m.blocks, LIM.blocks, v => { m.blocks = v || 0; });
-    const co2In = num(m.co2PerBlock, LIM.co2[1], v => { m.co2PerBlock = v || undefined; });
+    const blocksIn = num(m.blocks, LIM.blocks, v => { m.blocks = v || 0; }); blocksIn.name = 'mixBlocks';
+    const co2In = num(m.co2PerBlock, LIM.co2[1], v => { m.co2PerBlock = v || undefined; }); co2In.name = 'mixCo2';
     const del = document.createElement('button'); del.className = 'btn'; del.textContent = 'Remove';
     const label = () => { const n = cropName(m.crop); del.setAttribute('aria-label', `Remove ${n}`); blocksIn.setAttribute('aria-label', `Blocks of ${n}`); co2In.setAttribute('aria-label', `CO₂ per block of ${n}, mL/h`); };
     label();
@@ -110,7 +110,16 @@ function verdictText(rep) {
     default: return '';
   }
 }
+// A stored report has only been shape-checked loosely (normRoom): if drawing it throws, drop it and say so.
 function renderReport() {
+  try { drawReport(); }
+  catch (err) {
+    const r = curRoom(); if (r) r.report = null;
+    el.querySelector('#capReport').replaceChildren();
+    UI.set('capMsg', 'The saved result of this room could not be read: run the check again.');
+  }
+}
+function drawReport() {
   const host = el.querySelector('#capReport'), r = curRoom(), rep = r && r.report;
   host.replaceChildren();
   if (!rep) return;
@@ -254,7 +263,7 @@ function wire(myGen) {
       rooms = ok.map(r => ({ ...r, report: null }));
       roomIdx = 0; saveRooms(); renderRooms();
       UI.set('capMsg', `Imported ${rooms.length} room(s)${ok.length < x.rooms.length ? `; ${x.rooms.length - ok.length} invalid room(s) skipped` : ''}. Run the check again for each room.`);
-    }).catch(err => UI.set('capMsg', `The file cannot be used: ${err.message}.`)).finally(() => { e.target.value = ''; });
+    }).catch(err => { if (!stale()) UI.set('capMsg', `The file cannot be used: ${err.message}.`); }).finally(() => { e.target.value = ''; });
   });
 }
 

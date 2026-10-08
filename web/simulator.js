@@ -26,7 +26,7 @@ function onEvent(ev) { events.unshift(ev); if (events.length > 300) events.pop()
 function reset() {
   sim = SIM.create(env);
   sim.setRoom({ T: cfg.spT, RH: cfg.spRH, CO2: 750 });
-  events = []; samples = []; hoverT = null;
+  events = []; samples = [];
   ctl = CC.create(cfg, null, onEvent);
   io = RT.simIO(sim);
   rt = RT.createRuntime({ io, ctl, onReading: (r, c) => { reading = r; cmd = c; sample(r); } });
@@ -66,8 +66,9 @@ function calLogFromSamples() {
 // straight into the live cfg, which FarmSettingsPanel.applyChanges (a pure copy) cannot do.
 function setPath(obj, path, value) {
   const parts = path.split('.');
+  if (parts.some(p => p === '__proto__' || p === 'constructor' || p === 'prototype')) throw new Error(`Setting "${path}" is not allowed.`);
   let o = obj;
-  for (let i = 0; i < parts.length - 1; i++) { const p = parts[i]; if (!o[p] || typeof o[p] !== 'object') o[p] = {}; o = o[p]; }
+  for (let i = 0; i < parts.length - 1; i++) { const p = parts[i]; if (!Object.hasOwn(o, p) || !o[p] || typeof o[p] !== 'object') o[p] = {}; o = o[p]; }
   o[parts[parts.length - 1]] = value;
 }
 
@@ -75,10 +76,10 @@ const RAMP_PATHS = new Set(['spT', 'spRH', 'co2Lim', 'rules.fanOn', 'rules.fanOf
 const DEV_NAME = { ac: 'Air conditioner', hu: 'Fogger', fan: 'Exhaust fan', lights: 'Lights', circ: 'Circulation fan' };
 
 // ---------------- Per-mount state ----------------
-let mounted = false, el = null;
+let mounted = false, el = null, mountGen = 0;
 let benchFlag = 'off'; // closure variable, survives a module switch (6.1 "Simulator bench flag")
 let trendCharts = null, ladder = null, panel = null;
-let hoverT = null, chartsDirty = true, logDirty = true, windowS = 21600, speed = 600, paused = false;
+let chartsDirty = true, logDirty = true, windowS = 21600, speed = 600, paused = false;
 let lastStage = '', alarmKey = '', exhKey = '', cropCheckTimer = null;
 let rafId = null, last = 0, acc = 0, lastUi = 0, lastChart = 0, exhRo = null;
 
@@ -959,7 +960,8 @@ function wire() {
   });
   $('#estBtn').addEventListener('click', e => {
     const btn = e.target; btn.disabled = true; btn.textContent = 'Running…';
-    setTimeout(() => { if (!mounted) return; renderTest(); btn.disabled = false; btn.textContent = 'Run 24 h test again'; }, 30);
+    const gen = mountGen;
+    setTimeout(() => { if (!mounted || gen !== mountGen) return; renderTest(); btn.disabled = false; btn.textContent = 'Run 24 h test again'; }, 30);
   });
 
   // ---- Simulation controls that mirror env/cfg (initial paint) ----
@@ -1046,7 +1048,7 @@ function frame(now) {
 
 function mount(viewEl) {
   ensureState();
-  mounted = true; el = viewEl;
+  mounted = true; el = viewEl; mountGen++;
   el.dataset.bench = benchFlag;
   el.innerHTML = MARKUP;
   logDirty = true; chartsDirty = true; alarmKey = ''; exhKey = ''; lastStage = '';

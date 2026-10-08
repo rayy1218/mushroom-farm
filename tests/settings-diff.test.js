@@ -127,3 +127,23 @@ test('FIELDS = C6 7.7', () => {
     assert.ok(f.options, `${p} is missing options`);
   }
 });
+
+test('diffSettings/applyChanges: an own __proto__ key on either side never pollutes Object.prototype', () => {
+  const polluted = JSON.parse('{"__proto__":{"polluted":"yes"}}');
+  const withProto = JSON.parse(JSON.stringify(d()).slice(0, -1) + ',"__proto__":{"polluted":"yes"},"program":{"__proto__":{"polluted":"yes"}}}');
+  assert.ok(Object.hasOwn(withProto, '__proto__'));
+  for (const [a, b] of [[d(), withProto], [withProto, d()], [withProto, withProto], [d(), polluted]]) {
+    const changes = SP.diffSettings(a, b);
+    assert.ok(changes.every(c => !c.path.includes('__proto__')));
+    SP.applyChanges(d(), changes);
+  }
+  assert.equal(({}).polluted, undefined);
+  assert.throws(() => SP.applyChanges(d(), [{ path: '__proto__.polluted', new: 'yes' }]), /not allowed/);
+  assert.equal(({}).polluted, undefined);
+});
+
+test('safeSettings: null, a non-object and an array throw the importSettings error', () => {
+  for (const bad of [null, undefined, [], 5, 'x', true]) {
+    assert.throws(() => SP.safeSettings(bad), { message: 'This is not a settings file of this controller.' });
+  }
+});

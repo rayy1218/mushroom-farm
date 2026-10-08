@@ -129,6 +129,8 @@ function stream(onEvent) {
     if (res.status < 200 || res.status >= 300) { endConnection(`HTTP ${res.status}`); return; }
     safeEvent('open', { reconnect: !isFirst });
     isFirst = false;
+    if (closed || ended) return; // onEvent('open') may have called close()
+    if (!res.body) { endConnection('The server sent no stream.'); return; }
     armWatchdog();
 
     const reader = res.body.getReader();
@@ -162,7 +164,7 @@ function stream(onEvent) {
           if (val.startsWith(' ')) val = val.slice(1);
           if (field === 'event') curEvent = val;
           else if (field === 'data') dataLines.push(val);
-          else if (field === 'retry') { const n = parseInt(val, 10); if (Number.isFinite(n)) delay = n; }
+          else if (field === 'retry') { if (/^\d+$/.test(val)) delay = parseInt(val, 10); }
           // id: ignored
         }
       }

@@ -70,7 +70,7 @@ function mount(viewEl) {
     f.text().then(txt => {
       if (stale()) return;
       try { calLoad(CAL.parseCsv(txt), f.name); } catch (err) { UI.set('calMsg', `The file cannot be used: ${err.message}`); }
-    });
+    }).catch(err => { if (!stale()) UI.set('calMsg', `The file cannot be read: ${err && err.message}`); });
   });
   el.querySelector('#calFit').addEventListener('click', e => {
     const btn = e.target; btn.disabled = true; UI.set('calMsg', 'Fitting… (this takes a few seconds)');
@@ -80,6 +80,8 @@ function mount(viewEl) {
       btn.disabled = false; el.querySelector('#calApply').disabled = false;
       UI.set('calMsg', `Fit done after ${calFit.evals} simulation runs. The air leakage is the least certain value.`);
       calRender();
+    }).catch(err => {
+      if (!stale()) { UI.set('calMsg', `The fit stopped: ${err && err.message}`); btn.disabled = false; }
     });
   });
   el.querySelector('#calApply').addEventListener('click', () => {

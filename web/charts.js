@@ -77,7 +77,7 @@ const BAND_T = 1, BAND_RH = 3;
 
 const TREND_DEFS = {
   T: { out: 'tOut', unit: '°C', dec: 1, minSpan: 3, label: 'Temperature', title: 'TT-101 · outdoor OT-104',
-    band: p => [p.spT - BAND_T, p.spT + BAND_T], ref: p => p.spT, sub: p => `Target ${p.spT.toFixed(1)} °C ± ${BAND_T}` },
+    band: p => [p.spT - BAND_T, p.spT + BAND_T], ref: p => p.spT, sub: p => `Target ${global.FarmUi.fmtNum(p.spT, 1)} °C ± ${BAND_T}` },
   RH: { out: 'rhOut', unit: '%', dec: 0, minSpan: 12, label: 'Relative humidity', title: 'MT-102 · outdoor OT-104',
     band: p => [p.spRH - BAND_RH, p.spRH + BAND_RH], ref: p => p.spRH, sub: p => `Target ${p.spRH} % ± ${BAND_RH}` },
   C: { out: null, unit: 'ppm', dec: 0, minSpan: 300, label: 'CO₂ concentration', title: 'AT-103',
@@ -92,7 +92,9 @@ function createTrendCharts(el, opts) {
   const power = !!opts.power;
   const clock = opts.clock;
   const statusFn = opts.status || (() => null);
+  const hadContents = el.classList.contains('contents');
   el.classList.add('contents');
+  const made = []; // the sections this call created: destroy() removes only these
 
   let view = null, hoverT = null, hoverChart = null, rafId = null;
   const cards = [];
@@ -171,7 +173,7 @@ function createTrendCharts(el, opts) {
     c.line = svgEl('path', { class: 'line' }, c.body);
     c.labels = svgEl('g', {}, c.body);
     c.dot = svgEl('circle', { class: 'dot', r: 4, visibility: 'hidden' }, c.over);
-    el.appendChild(ui.section);
+    el.appendChild(ui.section); made.push(ui.section);
     trendCards.push({ key, def, c, ui });
   }
 
@@ -196,7 +198,7 @@ function createTrendCharts(el, opts) {
     c.gap = svgEl('path', { class: 'gap' }, c.body);
     c.base = svgEl('line', { class: 'base' }, c.body);
     c.labels = svgEl('g', {}, c.body);
-    el.appendChild(ui.section);
+    el.appendChild(ui.section); made.push(ui.section);
     powerCard = { c, ui, legend: lg, tooltip };
   }
 
@@ -332,7 +334,9 @@ function createTrendCharts(el, opts) {
     if (rafId != null) { cancelAnimationFrame(rafId); rafId = null; }
     for (const tc of trendCards) tc.c.ro.disconnect();
     if (powerCard) powerCard.c.ro.disconnect();
-    el.replaceChildren();
+    for (const section of made) section.remove();
+    made.length = 0;
+    if (!hadContents) el.classList.remove('contents');
   }
   return { draw, destroy };
 }
@@ -455,6 +459,6 @@ function createLadder(el) {
 
 global.FarmCharts = {
   lowerBound, nearest, aggregate, niceTicks, linePath, areaPath, barPath,
-  createTrendCharts, drawExhaustBars, drawCalibCharts, createLadder,
+  createTrendCharts, drawExhaustBars, drawCalibCharts, createLadder, TREND_DEFS,
 };
 })(typeof window !== 'undefined' ? window : globalThis);
