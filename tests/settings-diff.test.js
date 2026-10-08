@@ -111,7 +111,14 @@ test('FIELDS = C6 7.7', () => {
     paths.add(f.path);
     const parts = f.path.split('.');
     let v = base;
-    for (const p of parts) { assert.ok(v && typeof v === 'object', `${f.path} is not reachable`); v = v[p]; }
+    for (const p of parts) {
+      assert.ok(v && typeof v === 'object', `${f.path} is not reachable`);
+      // Object.hasOwn on the parent, not just a type check on the result: a misspelt leaf (for example
+      // "program.flushs") would otherwise pass too, because v becomes undefined either way.
+      assert.ok(Object.hasOwn(v, p), `${f.path}: "${p}" is not a property of its parent`);
+      v = v[p];
+    }
+    assert.ok(v !== undefined, `${f.path} is not a leaf`);
     assert.ok(v === null || typeof v !== 'object' || Array.isArray(v), `${f.path} is not a leaf`);
   }
   const selectLike = ['farmType', 'crop', 'sensorMode', 'rules.rhAction', 'rules.airMode', 'rules.fanLevel', 'rules.acAction', 'manual.ac.mode', 'manual.hu.level', 'manual.fan.level'];
