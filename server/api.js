@@ -71,7 +71,7 @@ function parseJsonBody(buffer) {
 function getQueryInt(qp, name) {
   if (!qp.has(name)) return undefined;
   const raw = qp.get(name);
-  if (!QUERY_INT_RE.test(raw)) throw new HttpError(400, 'Invalid query', []);
+  if (!QUERY_INT_RE.test(raw)) throw new HttpError(400, 'Invalid query', [`${name}: must be an integer from 0`]);
   return Number(raw);
 }
 
@@ -198,7 +198,7 @@ function createApi(opts) {
     const problems = RULES.checkRoom(body, false);
     if (problems.length) throw new HttpError(400, 'Invalid room', problems);
     const settings = body.settings;
-    if (settings !== undefined && !isPlainObject(settings)) throw new HttpError(400, 'Invalid settings', []);
+    if (settings !== undefined && !isPlainObject(settings)) throw new HttpError(400, 'Invalid settings', ['settings: must be a plain object']);
     const result = rooms.create({ name: body.name, volume: body.volume, vent: body.vent, settings });
     sendJson(res, 201, result.room);
   }
@@ -217,7 +217,7 @@ function createApi(opts) {
   function h_getSettings({ res, id }) { sendJson(res, 200, db.currentSettings(id).settings); }
 
   function h_putSettings({ res, id, body }) {
-    if (!isPlainObject(body)) throw new HttpError(400, 'Invalid settings', []);
+    if (!isPlainObject(body)) throw new HttpError(400, 'Invalid settings', ['body: must be an object']);
     const problems = [];
     for (const k of Object.keys(body)) {
       if (k !== 'settings' && k !== 'note') problems.push(`${k}: unknown field`);
@@ -255,11 +255,13 @@ function createApi(opts) {
     const step = getQueryInt(qp, 'step');
     if (to === undefined) to = now();
     if (from === undefined) from = to - 3600;
-    if (from > to) throw new HttpError(400, 'Invalid query', []);
-    if (step !== undefined && step > 86400) throw new HttpError(400, 'Invalid query', []);
+    if (from > to) throw new HttpError(400, 'Invalid query', ['from: must be at most to']);
+    if (step !== undefined && step > 86400) throw new HttpError(400, 'Invalid query', ['step: must be at most 86400']);
     const range = to - from;
-    if (range > 2678400) throw new HttpError(400, 'Invalid query', []);
-    if ((step === undefined || step === 0) && range > 604800) throw new HttpError(400, 'Invalid query', []);
+    if (range > 2678400) throw new HttpError(400, 'Invalid query', ['from: range must be at most 2678400 seconds']);
+    if ((step === undefined || step === 0) && range > 604800) {
+      throw new HttpError(400, 'Invalid query', ['from: range must be at most 604800 seconds without step']);
+    }
     const rows = db.queryReadings(id, { from, to, step: step || null });
     sendJson(res, 200, rows);
   }
@@ -268,8 +270,8 @@ function createApi(opts) {
     let limit = getQueryInt(qp, 'limit');
     const before = getQueryInt(qp, 'before');
     if (limit === undefined) limit = 100;
-    if (limit < 1 || limit > 500) throw new HttpError(400, 'Invalid query', []);
-    if (before !== undefined && before < 1) throw new HttpError(400, 'Invalid query', []);
+    if (limit < 1 || limit > 500) throw new HttpError(400, 'Invalid query', ['limit: must be an integer from 1 to 500']);
+    if (before !== undefined && before < 1) throw new HttpError(400, 'Invalid query', ['before: must be an integer from 1']);
     const rows = db.listEvents(id, { limit, before: before ?? null });
     sendJson(res, 200, rows);
   }
