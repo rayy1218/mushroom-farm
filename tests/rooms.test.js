@@ -572,3 +572,133 @@ test('create on a started manager', () => {
   const after = db.queryReadings(room.id, { from: 0, to: now() }).length;
   assert.ok(after > before);
 });
+
+// ---------------------------------------------------------------------------
+// Task 5: Controller events and alarms (C2 section 10, 8.2 Record b and c)
+// ---------------------------------------------------------------------------
+
+test('Alarms', () => {
+  const s = scripted();
+  const { db, mgr, log, step, now } = setup(s.factory);
+  s.knobs.values = { RH: null };
+  mgr.start(); // reading 1 (bad RH, count 1)
+  log.length = 0;
+  step(30); // reading 2 (count 2)
+  step(30); // reading 3 (count 3) -> raises sensor_RH
+
+  const alarmRows = db.listAlarms(1, { recent: 10 });
+  const raised = alarmRows.find(a => a.alarm_key === 'sensor_RH');
+  assert.ok(raised);
+  assert.equal(raised.level, 'serious');
+  assert.equal(raised.label, 'Room humidity sensor fault: no reading');
+  const expectedT = now();
+  assert.equal(raised.raised_at, expectedT);
+
+  const raisedEmit = log.find(([n, p]) => n === 'alarm' && p.change === 'raised');
+  assert.ok(raisedEmit);
+  assert.deepEqual(raisedEmit[1].alarm, raised);
+
+  const alarmEvent = db.listEvents(1, { limit: 50 }).find(e => e.text === `Alarm: ${raised.label}`);
+  assert.ok(alarmEvent);
+  assert.equal(alarmEvent.t, expectedT);
+  assert.equal(alarmEvent.level, 'serious');
+
+  assert.equal(mgr.get(1).live.alarms, 1);
+
+  s.knobs.values = {};
+  step(30);
+  const cleared = db.listAlarms(1, { recent: 10 }).find(a => a.alarm_key === 'sensor_RH' && a.cleared_at !== null);
+  assert.ok(cleared);
+  assert.equal(cleared.cleared_at, now());
+  const clearedEmit = log.find(([n, p]) => n === 'alarm' && p.change === 'cleared');
+  assert.ok(clearedEmit);
+  assert.equal(mgr.get(1).live.alarms, 0);
+
+  log.length = 0;
+  const acked = mgr.ackAlarm(1, 'sensor_RH');
+  assert.equal(acked.acked_at, now());
+  const ackedEmits = log.filter(([n, p]) => n === 'alarm' && p.change === 'acked');
+  assert.equal(ackedEmits.length, 1);
+  const ackEvent = db.listEvents(1, { limit: 50 })[0];
+  assert.equal(ackEvent.text, 'Acknowledged: Room humidity sensor fault: no reading');
+
+  log.length = 0;
+  const acked2 = mgr.ackAlarm(1, 'sensor_RH');
+  assert.deepEqual(acked2, acked);
+  assert.equal(log.length, 0);
+});
+
+test('Alarms: ack every unacknowledged row', () => {
+  const s = scripted();
+  const { db, mgr, log, step } = setup(s.factory);
+  s.knobs.values = { RH: null };
+  mgr.start();
+  step(30);
+  step(30); // raise 1
+  s.knobs.values = {};
+  step(30); // clear 1
+  s.knobs.values = { RH: null };
+  step(30);
+  step(30);
+  step(30); // raise 2 (new row)
+
+  log.length = 0;
+  const latest = mgr.ackAlarm(1, 'sensor_RH');
+  const ackedEmits = log.filter(([n, p]) => n === 'alarm' && p.change === 'acked');
+  assert.equal(ackedEmits.length, 2);
+  const openRows = db.listAlarms(1, { recent: 10 }).filter(a => a.alarm_key === 'sensor_RH');
+  const newest = openRows.reduce((a, b) => (b.id > a.id ? b : a));
+  assert.deepEqual(latest, newest);
+});
+
+test('Alarms: bad keys', () => {
+  const { mgr } = setup();
+  mgr.start();
+  try {
+    mgr.ackAlarm(1, 'nope');
+    assert.fail('expected not_found');
+  } catch (err) {
+    assert.equal(err.code, 'not_found');
+    assert.equal(err.message, 'No alarm "nope" in room 1');
+    assert.deepEqual(err.details, []);
+  }
+  for (const bad of ['', 5]) {
+    try {
+      mgr.ackAlarm(1, bad);
+      assert.fail('expected bad_input');
+    } catch (err) {
+      assert.equal(err.code, 'bad_input');
+      assert.deepEqual(err.details, ['alarmKey must be a non-empty string']);
+    }
+  }
+  try {
+    mgr.ackAlarm(999, 'x');
+    assert.fail('expected not_found');
+  } catch (err) {
+    assert.equal(err.code, 'not_found');
+    assert.equal(err.message, 'Room 999 not found');
+  }
+});
+
+test('Alarms: state saved after ack', () => {
+  const s = scripted();
+  const { db, mgr, step } = setup(s.factory);
+  s.knobs.values = { RH: null };
+  mgr.start();
+  step(30);
+  step(30);
+  mgr.ackAlarm(1, 'sensor_RH');
+  const state = db.loadControllerState(1);
+  assert.equal(state.controller.alarms.sensor_RH.acked, true);
+});
+
+test('No frozen CO₂', () => {
+  const { db, mgr, jump } = setup();
+  mgr.start();
+  const { room } = mgr.create({ name: 'Circ', volume: 60, vent: 'supply', settings: { manual: { circ: { auto: false, on: true } } } });
+  for (let i = 0; i < 144; i++) jump(300); // 12 h
+  const co2Alarms = db.listAlarms(room.id, { recent: 500 }).filter(a => a.alarm_key === 'sensor_CO2');
+  assert.equal(co2Alarms.length, 0);
+  const frozenEvents = db.listEvents(room.id, { limit: 1000 }).filter(e => e.text.includes('value does not change (frozen)'));
+  assert.equal(frozenEvents.length, 0);
+});
