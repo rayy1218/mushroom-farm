@@ -285,3 +285,120 @@ test('rooms: nothing before start', () => {
   mgr.tick();
   assert.equal(callCount, 0);
 });
+
+// ---------------------------------------------------------------------------
+// Task 3: create and the demo room (C2 section 4, 6.1, 9.4, 8.5)
+// ---------------------------------------------------------------------------
+
+test('Demo room', () => {
+  const { db, mgr } = setup();
+  mgr.start();
+  const room = db.getRoom(1);
+  assert.equal(room.name, 'Room 1');
+  assert.equal(room.volume, 60);
+  assert.equal(room.vent, 'supply');
+  assert.equal(room.adapter, 'sim');
+  const version = db.currentSettings(1);
+  assert.equal(version.note, 'Created');
+  const base = CC.defaultSettings();
+  base.roomM3 = 60;
+  assert.deepEqual(version.settings, base);
+
+  // A second manager's start() on the same db creates nothing.
+  const mgr2 = rooms.createRoomManager({ db, now: () => T0, tickMs: 0, adapterFactory: rooms.defaultAdapterFactory });
+  mgr2.start();
+  assert.equal(db.listRooms({ includeArchived: true }).length, 1);
+});
+
+test('First settings', () => {
+  const { db, mgr, log } = setup();
+
+  // Key left out
+  let { room: room1, warnings: w1 } = mgr.create({ name: 'A', volume: 80, vent: 'supply' });
+  let v1 = db.currentSettings(room1.id);
+  assert.equal(v1.note, 'Created');
+  let base1 = CC.defaultSettings(); base1.roomM3 = 80;
+  assert.deepEqual(v1.settings, base1);
+  assert.deepEqual(w1, []);
+
+  // settings: undefined explicitly
+  const { room: room2, warnings: w2 } = mgr.create({ name: 'B', volume: 90, vent: 'supply', settings: undefined });
+  const v2 = db.currentSettings(room2.id);
+  assert.equal(v2.note, 'Created');
+  let base2 = CC.defaultSettings(); base2.roomM3 = 90;
+  assert.deepEqual(v2.settings, base2);
+  assert.deepEqual(w2, []);
+
+  // Emit order check, on a manager not started
+  log.length = 0;
+  const { room: room3 } = mgr.create({ name: 'C', volume: 70, vent: 'supply' });
+  assert.equal(log.length, 3);
+  assert.equal(log[0][0], 'settings');
+  assert.equal(log[0][1].auto, false);
+  assert.deepEqual(log[0][1].version, db.currentSettings(room3.id));
+  assert.deepEqual(log[0][1].warnings, []);
+  assert.equal(log[1][0], 'event');
+  assert.equal(log[1][1].event.text, 'Room created');
+  assert.equal(log[1][1].event.level, 'info');
+  assert.equal(log[1][1].event.t, T0);
+  assert.equal(log[2][0], 'room');
+
+  // Bad settings with warnings
+  const { warnings: w4 } = mgr.create({ name: 'D', volume: 60, vent: 'supply', settings: { spT: 99, bogus: 1 } });
+  const v4 = db.currentSettings(mgr.list().find(r => r.name === 'D').id);
+  assert.equal(v4.settings.spT, 35);
+  assert.ok(w4.includes('"spT" = 99 is outside 10–35: set to 35.'));
+  assert.ok(w4.includes('Unknown setting "bogus" is ignored.'));
+
+  // Merge over base with a given volume
+  const { room: room5 } = mgr.create({ name: 'E', volume: 200, vent: 'supply', settings: { crop: 'pink' } });
+  const v5 = db.currentSettings(room5.id);
+  assert.equal(v5.settings.roomM3, 200);
+  assert.equal(v5.settings.crop, 'pink');
+
+  // Given roomM3 wins
+  const { room: room6 } = mgr.create({ name: 'F', volume: 60, vent: 'supply', settings: { roomM3: 150 } });
+  const v6 = db.currentSettings(room6.id);
+  assert.equal(v6.settings.roomM3, 150);
+
+  // Name stored trimmed
+  const { room: room7 } = mgr.create({ name: '  Trimmed  ', volume: 60, vent: 'supply' });
+  assert.equal(db.getRoom(room7.id).name, 'Trimmed');
+});
+
+test('Errors: create input', () => {
+  const { db, mgr } = setup();
+  const before = db.listRooms({ includeArchived: true }).length;
+
+  function expectError(input, texts) {
+    try {
+      mgr.create(input);
+      assert.fail('expected a RoomError');
+    } catch (err) {
+      assert.equal(err.name, 'RoomError');
+      assert.equal(err.code, 'bad_input');
+      assert.equal(err.message, 'Bad input');
+      assert.ok(err instanceof roomsCommon.RoomError);
+      for (const text of texts) assert.ok(err.details.includes(text), `missing: ${text} in ${JSON.stringify(err.details)}`);
+    }
+  }
+
+  expectError({ name: '', volume: 60, vent: 'supply' }, ['name must be 1 to 60 characters']);
+  expectError({ name: 'x'.repeat(61), volume: 60, vent: 'supply' }, ['name must be 1 to 60 characters']);
+  expectError({ name: 'A', volume: 4.9, vent: 'supply' }, ['volume must be a number from 5 to 5000 (m³)']);
+  expectError({ name: 'A', volume: NaN, vent: 'supply' }, ['volume must be a number from 5 to 5000 (m³)']);
+  expectError({ name: 'A', volume: '60', vent: 'supply' }, ['volume must be a number from 5 to 5000 (m³)']);
+  expectError({ name: 'A', volume: 60, vent: 'side' }, ['vent must be "supply" or "exhaust"']);
+  expectError({ name: 'A', volume: 60, vent: 'supply', settings: [] }, ['settings must be an object']);
+  expectError({ name: 'A', volume: 60, vent: 'supply', settings: null }, ['settings must be an object']);
+  expectError({ name: 'A', volume: 60, vent: 'supply', settings: 5 }, ['settings must be an object']);
+
+  // Several broken rules, all texts, in table order
+  expectError({ name: '', volume: 4.9, vent: 'side' }, [
+    'name must be 1 to 60 characters',
+    'volume must be a number from 5 to 5000 (m³)',
+    'vent must be "supply" or "exhaust"',
+  ]);
+
+  assert.equal(db.listRooms({ includeArchived: true }).length, before);
+});
