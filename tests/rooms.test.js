@@ -10,8 +10,59 @@ const SIM = globalThis.ClimateSim;
 const { openFakeDb } = require('./fakes/db.js');
 const { fromJson, toJson } = require('../server/db-common.js');
 const { createSimAdapter, MAX_CATCH_UP_S, TZ_OFFSET_S, START_CO2 } = require('../server/sim-adapter.js');
+const rooms = require('../server/rooms.js');
+const roomsCommon = require('../server/rooms-common.js');
 
 const T0 = 1791424800; // 2026-10-08 10:00 farm time (outside the harvest windows)
+
+function setup() {
+  let clock = T0;
+  const now = () => clock;
+  const db = openFakeDb({ now });
+  const mgr = rooms.createRoomManager({ db, now, tickMs: 0, adapterFactory: rooms.defaultAdapterFactory });
+  const log = [];
+  for (const n of ['reading', 'event', 'alarm', 'settings', 'room', 'fatal']) mgr.on(n, p => log.push([n, p]));
+  const step = n => { for (let i = 0; i < n; i++) { clock += 1; mgr.tick(); } };
+  const jump = s => { clock += s; mgr.tick(); };
+  return { db, mgr, log, step, jump, now, advanceClock: ds => { clock += ds; } };
+}
+
+function scripted() {
+  const knobs = { failRead: false, values: {}, reads: 0 };
+  const factory = ({ cfg, snapshot, now }) => {
+    let t = now(), seq = snapshot ? snapshot.seq : 0, next = 0, r = null;
+    const sample = () => {
+      const w = ++seq % 2, v = knobs.values;
+      r = {
+        seq, t, hour: ((t + 28800) % 86400) / 3600,
+        T: 'T' in v ? v.T : cfg.spT + w * 0.1, RH: 'RH' in v ? v.RH : cfg.spRH + w * 0.5,
+        CO2: 'CO2' in v ? v.CO2 : cfg.co2Lim - 200 + w * 10, tOut: 30 + w * 0.1, rhOut: 70 + w * 0.5,
+      };
+      next = t + 30;
+    };
+    sample();
+    return {
+      io: {
+        read() { knobs.reads++; if (knobs.failRead) throw new Error('sensor bus down'); return r; },
+        write() {}, advance(dt) { if (dt <= 0) return; t += dt; if (t >= next) sample(); },
+      },
+      view: () => null, snapshot: () => ({ seq }),
+    };
+  };
+  return { factory, knobs };
+}
+
+function simSpyFactory() {
+  const made = [], writes = [];
+  const factory = args => {
+    const a = createSimAdapter(args);
+    const w = a.io.write;
+    a.io.write = c => { writes.push(c); w(c); };
+    made.push({ args, a });
+    return a;
+  };
+  return { factory, made, writes };
+}
 
 // ---------------------------------------------------------------------------
 // Task 1: Simulated adapter (C2 section 13, 12.1)
@@ -150,4 +201,87 @@ test('sim adapter: resume from a snapshot', () => {
   assert.equal(b.io.read().seq, oldSeq);
   assert.ok(b.io.read().t > a.io.read().t);
   assert.deepEqual(b.snapshot(), snap);
+});
+
+// ---------------------------------------------------------------------------
+// Task 2: Module surface, listeners, factory (C2 section 1, 3, 7, 12.2)
+// ---------------------------------------------------------------------------
+
+test('rooms: exports', () => {
+  assert.equal(typeof rooms.createRoomManager, 'function');
+  assert.equal(typeof rooms.defaultAdapterFactory, 'function');
+  assert.deepEqual(rooms.TARGET_KEYS, Object.keys(CC.profileTargets('oyster', 'fruiting')));
+  assert.equal(rooms.RoomError, roomsCommon.RoomError);
+  assert.equal(rooms.DEMO_ROOM, roomsCommon.DEMO_ROOM);
+  assert.equal(rooms.FIRST_NOTE, roomsCommon.FIRST_NOTE);
+  assert.equal(rooms.cleanSettings, roomsCommon.cleanSettings);
+
+  const roomsPath = require.resolve('../server/rooms.js');
+  const mod = require.cache[roomsPath];
+  for (const child of mod.children) {
+    assert.ok(/[\\/](controller|runtime|sim-adapter|rooms-common)\.js$/.test(child.id), `unexpected require: ${child.id}`);
+  }
+});
+
+test('rooms: defaultAdapterFactory', () => {
+  const cfg = CC.defaultSettings();
+  const a = rooms.defaultAdapterFactory({ room: { id: 1, volume: 60, vent: 'supply', adapter: 'sim' }, calib: null, blocks: null, cfg, snapshot: null, now: () => T0 });
+  assert.equal(typeof a.io.read, 'function');
+  assert.equal(typeof a.io.write, 'function');
+  assert.equal(typeof a.io.advance, 'function');
+  assert.equal(typeof a.view, 'function');
+  assert.equal(typeof a.snapshot, 'function');
+  assert.throws(() => rooms.defaultAdapterFactory({ room: { id: 1, volume: 60, vent: 'supply', adapter: 'hw' }, calib: null, blocks: null, cfg, snapshot: null, now: () => T0 }), /Unknown adapter "hw"/);
+});
+
+test('rooms: listeners', () => {
+  const { mgr } = setup();
+  const order = [];
+  const fn1 = () => order.push('1');
+  const fn2 = () => order.push('2');
+  mgr.on('event', fn1);
+  mgr.on('event', fn2);
+  mgr.tick(); // no-op before start, but exercise listeners directly below
+  // Fire manually through a method that emits 'event'
+  // (use create, which is available even before start())
+  mgr.create({ name: 'X', volume: 60, vent: 'supply' });
+  assert.ok(order.includes('1') && order.includes('2'));
+  const i1 = order.indexOf('1'), i2 = order.indexOf('2');
+  assert.ok(i1 < i2);
+
+  order.length = 0;
+  mgr.off('event', fn1);
+  mgr.create({ name: 'Y', volume: 60, vent: 'supply' });
+  assert.ok(!order.includes('1'));
+  assert.ok(order.includes('2'));
+
+  const origError = console.error;
+  let errorCalls = 0;
+  console.error = () => { errorCalls++; };
+  const throwing = () => { throw new Error('boom'); };
+  const after = () => order.push('after');
+  mgr.off('event', fn2);
+  mgr.on('event', throwing);
+  mgr.on('event', after);
+  order.length = 0;
+  mgr.create({ name: 'Z', volume: 60, vent: 'supply' });
+  console.error = origError;
+  assert.ok(errorCalls > 0);
+  assert.ok(order.includes('after'));
+});
+
+test('rooms: nothing before start', () => {
+  let clock = T0;
+  const db = openFakeDb({ now: () => clock });
+  let callCount = 0;
+  const countedDb = new Proxy(db, {
+    get(target, prop) {
+      const v = target[prop];
+      if (typeof v === 'function') return (...args) => { callCount++; return v.apply(target, args); };
+      return v;
+    },
+  });
+  const mgr = rooms.createRoomManager({ db: countedDb, now: () => clock, tickMs: 0, adapterFactory: rooms.defaultAdapterFactory });
+  mgr.tick();
+  assert.equal(callCount, 0);
 });
