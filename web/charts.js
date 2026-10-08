@@ -103,7 +103,7 @@ function createTrendCharts(el, opts) {
     rafId = requestAnimationFrame(() => { rafId = null; redraw(); });
   }
 
-  function card(titleText, sub, headingTag) {
+  function card(titleText, sub, headingTag, withSub) {
     const section = document.createElement('section'); section.className = 'card trend';
     const head = document.createElement('div'); head.className = 'ch-head';
     const left = document.createElement('div');
@@ -112,10 +112,13 @@ function createTrendCharts(el, opts) {
     left.append(h3, tag);
     const readv = document.createElement('div'); readv.className = 'readv'; readv.textContent = '--';
     head.append(left, readv);
+    const host = document.createElement('div'); host.className = 'ch-host';
+    // The power card has no per-key status chip or hover sub-line (drawPowerCard never sets them), so it
+    // gets no .ch-sub row: today's power card is head, legend, host, tooltip, with no blank line.
+    if (withSub === false) { section.append(head, host); return { section, readv, subSpan: null, chip: null, host }; }
     const chSub = document.createElement('div'); chSub.className = 'ch-sub';
     const subSpan = document.createElement('span'); const chip = document.createElement('span'); chip.className = 'chip';
     chSub.append(subSpan, chip);
-    const host = document.createElement('div'); host.className = 'ch-host';
     section.append(head, chSub, host);
     return { section, readv, subSpan, chip, host };
   }
@@ -174,7 +177,7 @@ function createTrendCharts(el, opts) {
 
   let powerCard = null;
   if (power) {
-    const ui = card('Power consumption', 'Power meters · stacked by machine', 'h2');
+    const ui = card('Power consumption', 'Power meters · stacked by machine', 'h2', false);
     ui.section.className = 'card power';
     const legend = document.createElement('div'); legend.className = 'legend';
     const lg = {};
