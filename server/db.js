@@ -319,6 +319,70 @@ function buildDb(conn, dbPath, version, now) {
     return settingsVersionToPublic(row);
   }
 
+  // Readings (section 6.6)
+  const READING_KEYS = ['room_id', 't', 'T', 'RH', 'CO2', 't_out', 'rh_out', 'ac_mode', 'ac_setpoint', 'fog', 'fan', 'lights', 'circ', 'power_w', 'kwh'];
+  const insertReadingStmt = conn.prepare(
+    'INSERT INTO readings (room_id, t, temp, RH, CO2, t_out, rh_out, ac_mode, ac_setpoint, fog, fan, lights, circ, power_w, kwh) ' +
+    'VALUES (:room_id, :t, :temp, :RH, :CO2, :t_out, :rh_out, :ac_mode, :ac_setpoint, :fog, :fan, :lights, :circ, :power_w, :kwh)'
+  );
+  const RAW_READINGS_COLS = 'room_id, t, temp AS T, RH, CO2, t_out, rh_out, ac_mode, ac_setpoint, fog, fan, lights, circ, power_w, kwh';
+  const rawReadingsStmt = conn.prepare(
+    `SELECT ${RAW_READINGS_COLS} FROM readings WHERE room_id = ? AND t >= ? AND t <= ? ORDER BY readings.t, readings.rowid`
+  );
+  const latestReadingStmt = conn.prepare(
+    `SELECT ${RAW_READINGS_COLS} FROM readings WHERE room_id = ? ORDER BY readings.t DESC, readings.rowid DESC LIMIT 1`
+  );
+  const bucketReadingsStmt = conn.prepare(`
+    SELECT room_id, b AS t, T, RH, CO2, t_out, rh_out, ac_mode, ac_setpoint, fog, fan, lights, circ, power_w, kwh
+    FROM (
+      SELECT room_id,
+             (t / CAST(:step AS INTEGER)) * CAST(:step AS INTEGER) AS b,
+             AVG(temp) AS T, AVG(RH) AS RH, AVG(CO2) AS CO2, AVG(t_out) AS t_out, AVG(rh_out) AS rh_out,
+             AVG(ac_setpoint) AS ac_setpoint, AVG(fog) AS fog, AVG(fan) AS fan,
+             AVG(lights) AS lights, AVG(circ) AS circ, AVG(power_w) AS power_w,
+             MAX(t) AS t_last, ac_mode, kwh
+      FROM readings
+      WHERE room_id = :room_id AND t >= :from AND t <= :to
+      GROUP BY b
+    )
+    ORDER BY b
+  `);
+
+  function insertReading(roomId, reading) {
+    live();
+    roomCheck(roomId);
+    fields('insertReading', reading, READING_KEYS);
+    const r = reading || {};
+    if (r.room_id !== undefined && r.room_id !== roomId) throw new TypeError('insertReading: room_id does not match roomId');
+    insertReadingStmt.run({
+      room_id: roomId, t: val(r.t), temp: val(r.T), RH: val(r.RH), CO2: val(r.CO2),
+      t_out: val(r.t_out), rh_out: val(r.rh_out), ac_mode: val(r.ac_mode), ac_setpoint: val(r.ac_setpoint),
+      fog: val(r.fog), fan: val(r.fan), lights: val(r.lights), circ: val(r.circ), power_w: val(r.power_w), kwh: val(r.kwh),
+    });
+    return undefined;
+  }
+
+  function queryReadings(roomId, query) {
+    live();
+    roomCheck(roomId);
+    fields('queryReadings', query, ['from', 'to', 'step']);
+    const q = query || {};
+    if (!Number.isInteger(q.from)) throw new RangeError('queryReadings: from must be an integer');
+    if (!Number.isInteger(q.to)) throw new RangeError('queryReadings: to must be an integer');
+    if (q.from > q.to) throw new RangeError('queryReadings: from must not be greater than to');
+    const hasStep = q.step !== undefined && q.step !== null;
+    if (hasStep && (!Number.isInteger(q.step) || q.step < 1)) throw new RangeError('queryReadings: step must be an integer of at least 1');
+    if (!hasStep) return rawReadingsStmt.all(roomId, q.from, q.to).map(plain);
+    return bucketReadingsStmt.all({ step: q.step, room_id: roomId, from: q.from, to: q.to }).map(plain);
+  }
+
+  function latestReading(roomId) {
+    live();
+    roomCheck(roomId);
+    const row = latestReadingStmt.get(roomId);
+    return row ? plain(row) : null;
+  }
+
   function listRooms(options) {
     live();
     fields('listRooms', options, ['includeArchived']);
@@ -349,6 +413,9 @@ function buildDb(conn, dbPath, version, now) {
     currentSettings,
     settingsHistory,
     getSettingsVersion,
+    insertReading,
+    queryReadings,
+    latestReading,
   };
 }
 

@@ -382,3 +382,124 @@ both('saveSettings: errors', (t, open) => {
   assert.equal(db.settingsHistory(room.id).length, before);
   assert.throws(() => db.saveSettings(room.id, { settings: {}, extra: 1 }), TypeError);
 });
+
+// ---------------------------------------------------------------------------
+// Task 5: Readings, raw and latest (C1 section 6.6)
+// ---------------------------------------------------------------------------
+
+function makeRoom(db) {
+  return db.createRoom(roomInput()).id;
+}
+
+both('insertReading: round trip, T <-> temp', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  const r = { room_id: roomId, t: T0, T: 18.5, RH: 88, CO2: 900, t_out: 31, rh_out: 60, ac_mode: 'cool', ac_setpoint: 17.5, fog: 1, fan: 2, lights: 1, circ: 0, power_w: 1400, kwh: 12.5 };
+  assert.equal(db.insertReading(roomId, r), undefined);
+  const got = db.queryReadings(roomId, { from: T0, to: T0 })[0];
+  assert.deepStrictEqual(got, r);
+  assert.deepStrictEqual(db.latestReading(roomId), r);
+  assert.doesNotThrow(() => db.insertReading(roomId, got));
+});
+
+both('insertReading: booleans come back 0/1', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  db.insertReading(roomId, reading(T0, { lights: true, circ: false }));
+  const got = db.latestReading(roomId);
+  assert.equal(got.lights, 1);
+  assert.equal(got.circ, 0);
+});
+
+both('insertReading: non-finite and missing values become null', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  const input = reading(T0, { T: NaN, RH: Infinity, CO2: -Infinity });
+  delete input.t_out; delete input.rh_out; delete input.ac_setpoint; delete input.power_w; delete input.kwh;
+  db.insertReading(roomId, input);
+  const got = db.latestReading(roomId);
+  for (const k of ['T', 'RH', 'CO2', 't_out', 'rh_out', 'ac_setpoint', 'power_w', 'kwh']) {
+    assert.equal(got[k], null, `${k} should be null`);
+  }
+});
+
+both('insertReading: unknown field throws and stores nothing', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  for (const key of ['temp', 'rh', 'co2', 'n']) {
+    assert.throws(() => db.insertReading(roomId, reading(T0, { [key]: 1 })), err => {
+      assert.ok(err instanceof TypeError);
+      assert.equal(err.message, `insertReading: unknown field "${key}"`);
+      return true;
+    });
+  }
+  assert.equal(db.latestReading(roomId), null);
+});
+
+both('insertReading: room_id rule', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  const otherId = makeRoom(db);
+  assert.throws(() => db.insertReading(roomId, reading(T0, { room_id: otherId })), TypeError);
+  assert.equal(db.latestReading(roomId), null);
+  assert.doesNotThrow(() => db.insertReading(roomId, reading(T0))); // room_id left out
+});
+
+both('queryReadings: inclusive range', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  const from = T0, to = T0 + 60;
+  db.insertReading(roomId, reading(from - 1));
+  db.insertReading(roomId, reading(from));
+  db.insertReading(roomId, reading(to));
+  db.insertReading(roomId, reading(to + 1));
+  const rows = db.queryReadings(roomId, { from, to });
+  assert.deepStrictEqual(rows.map(r => r.t), [from, to]);
+});
+
+both('queryReadings: raw order by t, then insertion', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  db.insertReading(roomId, reading(T0 + 300, { T: 10 }));
+  db.insertReading(roomId, reading(T0 + 100, { T: 30 }));
+  db.insertReading(roomId, reading(T0 + 200, { T: 20 }));
+  db.insertReading(roomId, reading(T0 + 400, { T: 25 }));
+  db.insertReading(roomId, reading(T0 + 400, { T: 15 }));
+  const rows = db.queryReadings(roomId, { from: T0, to: T0 + 500 });
+  assert.deepStrictEqual(rows.map(r => r.t), [T0 + 100, T0 + 200, T0 + 300, T0 + 400, T0 + 400]);
+  assert.deepStrictEqual(rows.slice(3).map(r => r.T), [25, 15]);
+});
+
+both('latestReading: largest t, ties by insertion; null for empty room', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  assert.equal(db.latestReading(roomId), null);
+  db.insertReading(roomId, reading(T0 + 100, { T: 30 }));
+  db.insertReading(roomId, reading(T0 + 200, { T: 10 }));
+  assert.equal(db.latestReading(roomId).t, T0 + 200);
+  db.insertReading(roomId, reading(T0 + 300, { T: 5 }));
+  db.insertReading(roomId, reading(T0 + 300, { T: 6 }));
+  assert.equal(db.latestReading(roomId).T, 6);
+});
+
+both('queryReadings: errors', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  assert.throws(() => db.queryReadings(roomId, { from: 1.5, to: 10 }), RangeError);
+  assert.throws(() => db.queryReadings(roomId, { from: 1 }), RangeError);
+  assert.throws(() => db.queryReadings(roomId, { from: 10, to: 1 }), RangeError);
+  assert.throws(() => db.queryReadings(roomId, { from: 1, to: 10, step: 0 }), RangeError);
+  assert.throws(() => db.queryReadings(roomId, { from: 1, to: 10, step: 1.5 }), RangeError);
+  assert.throws(() => db.queryReadings(roomId, { from: 1, to: 10, step: -60 }), RangeError);
+  assert.doesNotThrow(() => db.queryReadings(roomId, { from: 1, to: 10, step: null }));
+  assert.throws(() => db.queryReadings(roomId, { from: 1, to: 10, limit: 5 }), TypeError);
+});
