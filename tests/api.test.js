@@ -211,3 +211,145 @@ describe('server/api.js core: routing, check order, bodies', () => {
     assert.equal(r2.status, 201);
   });
 });
+
+describe('room routes 6.1, 6.2, 6.3, 6.19', () => {
+  let ctx;
+  test.before(async () => { ctx = startApi(); await ctx.ready; });
+  test.after(() => ctx.stop());
+
+  test('GET /api/rooms', async () => {
+    const r0 = await fetch(`${ctx.url}/api/rooms`);
+    assert.deepStrictEqual(await r0.json(), []);
+
+    const a = seedRoom(ctx.db, 'A');
+    const b = seedRoom(ctx.db, 'B');
+    const r1 = await fetch(`${ctx.url}/api/rooms`);
+    assert.equal(r1.status, 200);
+    assert.deepStrictEqual(await r1.json(), ctx.rooms.list());
+
+    ctx.rooms.archive(a);
+    const r2 = await fetch(`${ctx.url}/api/rooms`);
+    const ids = (await r2.json()).map(r => r.id);
+    assert.ok(!ids.includes(a));
+    assert.ok(ids.includes(b));
+  });
+
+  test('POST /api/rooms', async () => {
+    const r = await fetch(`${ctx.url}/api/rooms`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'New room', volume: 60, vent: 'supply' }),
+    });
+    assert.equal(r.status, 201);
+    const room = await r.json();
+    assert.ok(room.live);
+    const last = ctx.rooms.calls[ctx.rooms.calls.length - 1];
+    assert.equal(last.method, 'create');
+    assert.deepStrictEqual(last.args, [{ name: 'New room', volume: 60, vent: 'supply', settings: undefined }]);
+  });
+
+  test('POST with settings (C3 6.2, C2 9.4)', async () => {
+    const r1 = await fetch(`${ctx.url}/api/rooms`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Pink', volume: 200, vent: 'supply', settings: { crop: 'pink' } }),
+    });
+    assert.equal(r1.status, 201);
+    const room1 = await r1.json();
+    const s1 = await (await fetch(`${ctx.url}/api/rooms/${room1.id}/settings`)).json();
+    assert.equal(s1.crop, 'pink');
+    assert.equal(s1.roomM3, 200);
+    const defaults = globalThis.ClimateController.defaultSettings();
+    assert.equal(s1.spT, defaults.spT);
+
+    const r2 = await fetch(`${ctx.url}/api/rooms`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Pink2', volume: 200, vent: 'supply', settings: { crop: 'pink', roomM3: 90 } }),
+    });
+    const room2 = await r2.json();
+    const s2 = await (await fetch(`${ctx.url}/api/rooms/${room2.id}/settings`)).json();
+    assert.equal(s2.roomM3, 90);
+  });
+
+  test('POST 400s', async () => {
+    const callsBefore = ctx.rooms.calls.length;
+    const roomsBefore = ctx.db.listRooms();
+    const badBodies = [
+      {}, { name: '', volume: 60, vent: 'supply' }, { name: 'A', volume: 1, vent: 'supply' },
+      { name: 'A', volume: 60, vent: 'side' }, null, 'x', [],
+    ];
+    for (const body of badBodies) {
+      const r = await fetch(`${ctx.url}/api/rooms`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      });
+      assert.equal(r.status, 400, JSON.stringify(body));
+      assert.equal((await r.json()).error, 'Invalid room', JSON.stringify(body));
+    }
+    for (const settings of [null, [], 5]) {
+      const r = await fetch(`${ctx.url}/api/rooms`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'A', volume: 60, vent: 'supply', settings }),
+      });
+      assert.equal(r.status, 400, JSON.stringify(settings));
+      assert.equal((await r.json()).error, 'Invalid settings', JSON.stringify(settings));
+    }
+    assert.equal(ctx.rooms.calls.length, callsBefore);
+    assert.deepStrictEqual(ctx.db.listRooms(), roomsBefore);
+  });
+
+  test('PATCH', async () => {
+    const id = seedRoom(ctx.db, 'Patchable');
+    const r1 = await fetch(`${ctx.url}/api/rooms/${id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'B' }),
+    });
+    assert.equal(r1.status, 200);
+    const last1 = ctx.rooms.calls[ctx.rooms.calls.length - 1];
+    assert.equal(last1.method, 'update');
+    assert.deepStrictEqual(last1.args, [id, { name: 'B' }]);
+
+    const r2 = await fetch(`${ctx.url}/api/rooms/${id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ archived: true }),
+    });
+    assert.equal(r2.status, 200);
+    const body2 = await r2.json();
+    assert.equal(body2.archived_at, NOW);
+    assert.equal(body2.live, null);
+    const methodsCalled = ctx.rooms.calls.slice(-1).map(c => c.method);
+    assert.deepStrictEqual(methodsCalled, ['archive']);
+    const r2b = await fetch(`${ctx.url}/api/rooms/${id}/settings`);
+    assert.equal(r2b.status, 404);
+
+    const id2 = seedRoom(ctx.db, 'Patchable2');
+    const r3 = await fetch(`${ctx.url}/api/rooms/${id2}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ volume: 80, archived: true }),
+    });
+    const body3 = await r3.json();
+    assert.equal(body3.archived_at, NOW);
+    const recentMethods = ctx.rooms.calls.slice(-2).map(c => c.method);
+    assert.deepStrictEqual(recentMethods, ['update', 'archive']);
+  });
+
+  test('PATCH 400s', async () => {
+    const id = seedRoom(ctx.db, 'PatchBad');
+    const callsBefore = ctx.rooms.calls.length;
+    for (const body of [{}, { archived: false }, { colour: 1 }, { volume: 1 }]) {
+      const r = await fetch(`${ctx.url}/api/rooms/${id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      });
+      assert.equal(r.status, 400, JSON.stringify(body));
+      assert.equal((await r.json()).error, 'Invalid room', JSON.stringify(body));
+    }
+    assert.equal(ctx.rooms.calls.length, callsBefore);
+  });
+
+  test('POST /restart', async () => {
+    const id = seedRoom(ctx.db, 'Restartable');
+    ctx.rooms.setLive(id, { running: false, error: 'boom' });
+    const r = await fetch(`${ctx.url}/api/rooms/${id}/restart`, { method: 'POST' });
+    assert.equal(r.status, 200);
+    const last = ctx.rooms.calls[ctx.rooms.calls.length - 1];
+    assert.equal(last.method, 'restart');
+    assert.deepStrictEqual(last.args, [id]);
+    const body = await r.json();
+    assert.equal(body.live.running, true);
+    assert.equal(body.live.error, null);
+  });
+});
