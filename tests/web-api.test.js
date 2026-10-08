@@ -17,8 +17,9 @@ async function withFake(t, opts) {
 test('the 19 request functions: method, path, query, body, result', async (t) => {
   const fake = await withFake(t);
 
-  await FarmApi.listRooms();
+  const roomsList = await FarmApi.listRooms();
   assert.deepEqual(apiRequests(fake).at(-1), { method: 'GET', path: '/api/rooms', query: {}, body: null });
+  assert.deepEqual(roomsList, []);
 
   const room = { name: 'A', volume: 60, vent: 'supply' };
   const created = await FarmApi.createRoom(room);
@@ -32,8 +33,15 @@ test('the 19 request functions: method, path, query, body, result', async (t) =>
   assert.deepEqual(apiRequests(fake).at(-1), { method: 'POST', path: '/api/rooms/1/restart', query: {}, body: null });
   assert.deepEqual(r1, null);
 
-  await FarmApi.getSettings(1);
+  const restarted = { id: 2, name: 'Room 2', live: { running: true, error: null } };
+  fake.reply('POST', '/api/rooms/2/restart', 200, restarted);
+  const r2 = await FarmApi.restartRoom(2);
+  assert.deepEqual(apiRequests(fake).at(-1), { method: 'POST', path: '/api/rooms/2/restart', query: {}, body: null });
+  assert.deepEqual(r2, restarted);
+
+  const settingsNow = await FarmApi.getSettings(1);
   assert.deepEqual(apiRequests(fake).at(-1), { method: 'GET', path: '/api/rooms/1/settings', query: {}, body: null });
+  assert.deepEqual(settingsNow, {});
 
   const settings = { spT: 25 };
   await FarmApi.saveSettings(1, settings);
@@ -88,6 +96,11 @@ test('the 19 request functions: method, path, query, body, result', async (t) =>
   const savedReport = await FarmApi.saveCapacity(1, report);
   assert.deepEqual(apiRequests(fake).at(-1), { method: 'POST', path: '/api/rooms/1/capacity', query: {}, body: report });
   assert.deepEqual(savedReport, report);
+
+  fake.reply('GET', '/api/rooms/1/capacity', 200, report);
+  const gotReport = await FarmApi.getCapacity(1);
+  assert.deepEqual(apiRequests(fake).at(-1), { method: 'GET', path: '/api/rooms/1/capacity', query: {}, body: null });
+  assert.deepEqual(gotReport, report);
 });
 
 test('errors: ApiError for 400, 404, 500', async (t) => {
@@ -174,6 +187,9 @@ test('stream: delivers events, open/down/open, stops after close', async (t) => 
   assert.deepEqual(events.find(e => e[0] === 'open' && e[1].reconnect === true), ['open', { reconnect: true }]);
   assert.equal(apiRequests(fake).filter(r => r.method === 'GET' && r.path === '/api/stream').length, 2);
 
+  await sleep(100);
+  assert.equal(events.filter(e => e[0] === 'down').length, 1);
+
   close();
   const countBefore = events.length;
   await sleep(100);
@@ -193,13 +209,22 @@ test('stream: bad data skipped; onEvent throw does not stop the stream', async (
   t.after(() => close());
   await waitFor(() => events.some(e => e[0] === 'open'));
 
-  // Write a non-JSON data line directly to the stream connection via emit is JSON; simulate bad data with dropStreams+emit sequence not available,
-  // so rely on contract: emit sends valid JSON only. Instead verify throw-recovery using a valid event.
+  // A data: line that is not JSON (JSON.stringify(undefined) is undefined, so emit('bad', undefined) writes
+  // "data: undefined") is skipped: no onEvent call for it, and the connection stays open (no 'down').
+  fake.emit('bad', undefined);
+  await sleep(50);
+  assert.equal(events.some(e => e[0] === 'bad'), false);
+  assert.equal(events.some(e => e[0] === 'down'), false);
+  fake.emit('reading', { room_id: 1, t: 0 });
+  await waitFor(() => events.filter(e => e[0] === 'reading').length === 1);
+  assert.equal(events.some(e => e[0] === 'down'), false);
+  assert.equal(apiRequests(fake).filter(r => r.method === 'GET' && r.path === '/api/stream').length, 1);
+
   throwNext = true;
   fake.emit('reading', { room_id: 1, t: 1 });
-  await waitFor(() => events.filter(e => e[0] === 'reading').length === 1);
-  fake.emit('reading', { room_id: 1, t: 2 });
   await waitFor(() => events.filter(e => e[0] === 'reading').length === 2);
+  fake.emit('reading', { room_id: 1, t: 2 });
+  await waitFor(() => events.filter(e => e[0] === 'reading').length === 3);
 });
 
 test('watchdog: no data triggers down and reconnect', async (t) => {
