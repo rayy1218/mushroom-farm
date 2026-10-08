@@ -821,3 +821,49 @@ test('One reading shape', () => {
   mgr3.start();
   assert.equal(mgr3.get(1).live.reading, null);
 });
+
+// ---------------------------------------------------------------------------
+// Task 7: Room summary (C2 section 7 room rules, 8.2 step 4)
+// ---------------------------------------------------------------------------
+
+test('Room summary', () => {
+  const s = scripted();
+  const { mgr, log, step, jump } = setup(s.factory);
+  mgr.start();
+  log.length = 0;
+  step(1); // no new reading
+  assert.equal(log.filter(([n]) => n === 'room').length, 0);
+  step(30); // a new reading, but no summary change
+  assert.equal(log.filter(([n]) => n === 'room').length, 0);
+
+  log.length = 0;
+  s.knobs.values = { RH: null };
+  step(30); // bad count 1
+  step(30); // bad count 2
+  step(30); // bad count 3 -> raises sensor_RH
+  const raiseRoomEmits = log.filter(([n]) => n === 'room');
+  assert.equal(raiseRoomEmits.length, 1);
+  assert.equal(raiseRoomEmits[0][1].room.live.alarms, 1);
+  s.knobs.values = {};
+
+  const { room } = mgr.create({ name: 'Auto', volume: 60, vent: 'supply', settings: { program: { auto: true, days: { fruiting: 1 } } } });
+  log.length = 0;
+  jump(86400);
+  const stageRoomEmits = log.filter(([n, p]) => n === 'room' && p.room.id === room.id);
+  assert.equal(stageRoomEmits.length, 1);
+  assert.equal(stageRoomEmits[0][1].room.live.stage, 'rest');
+
+  const statusBefore = mgr.get(room.id).live.status.T.text;
+  const co2Before = mgr.get(room.id).live.targets.CO2;
+  log.length = 0;
+  step(300); // ramp moves the targets, no room
+  assert.equal(log.filter(([n, p]) => n === 'room' && p.room.id === room.id).length, 0);
+  const co2After = mgr.get(room.id).live.targets.CO2;
+  assert.notEqual(co2After, co2Before);
+
+  log.length = 0;
+  s.knobs.values.T = 26.5;
+  step(30); step(30); step(30); // the sensor spike filter needs 3 consistent readings before it accepts the jump
+  assert.equal(log.filter(([n, p]) => n === 'room' && p.room.id === room.id).length, 0);
+  assert.notEqual(mgr.get(room.id).live.status.T.text, statusBefore);
+});
