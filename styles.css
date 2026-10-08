@@ -53,6 +53,15 @@ button, input, select { font: inherit; color: inherit; }
   font-family: var(--font-cond); font-weight: 600; font-size: 13px; }
 .btn:hover, .seg button:hover:not([aria-pressed="true"]) { background: var(--band); }
 
+/* Menu */
+.menu { display: flex; gap: 4px; flex-wrap: wrap; }
+.menu a { padding: 6px 12px; border-radius: 6px; font: 600 13px var(--font-cond); letter-spacing: .02em; color: var(--ink-2); text-decoration: none; }
+.menu a:hover { background: var(--band); }
+.menu a[aria-current="page"] { background: var(--ink); color: var(--surface); }
+
+/* display: contents wrapper, so a module's child cards join the page's 12-column grid */
+.contents { display: contents; }
+
 /* Status chips: icon + label, colour never alone */
 .chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border);
   font: 600 12px/1.2 var(--font-cond); letter-spacing: .05em; text-transform: uppercase; color: var(--ink-2); white-space: nowrap; }
@@ -401,12 +410,35 @@ details.prog { margin: 6px 0 8px; }
 body[data-level="farmer"] .inst { display: none !important; }
 body[data-level="installer"] .farmer-only { display: none; }
 body[data-level="farmer"] .rules-grid { grid-template-columns: minmax(0, 1fr); }
-.section-head .level-seg, .section-head #benchBtn { margin-left: auto; }
+.section-head #benchBtn { margin-left: auto; }
 .txt-in { width: 130px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface); padding: 3px 6px; font: 500 14px var(--font-mono); }
 input.lockable:disabled { opacity: .45; }
-body[data-bench="off"] .simpanel, body[data-bench="off"] .simextra, body[data-bench="off"] .calib { display: none; }
-body[data-bench="off"] .mimic { grid-column: span 12; }
-body[data-bench="off"] .mimic .mimic-svg { max-width: 980px; margin-inline: auto; }
+[data-bench="off"] .simpanel, [data-bench="off"] .simextra { display: none; }
+[data-bench="off"] .mimic { grid-column: span 12; }
+[data-bench="off"] .mimic .mimic-svg { max-width: 980px; margin-inline: auto; }
+
+/* Simulator toolbar row: today's header clock, sky chip, alarm summary, speed, Pause, Reset */
+.sim-toolbar { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 20px; padding: 6px 2px 10px; }
+.sim-toolbar .spacer { flex: 1; }
+
+/* Machines card (settings panel, C5 3.3 "Five machine faceplates: Auto/Manual switch and manual outputs") */
+.card.machines { grid-column: span 4; display: grid; gap: 14px; }
+.card.machines .device { display: grid; gap: 6px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+.card.machines .device:last-child { border-bottom: 0; padding-bottom: 0; margin-bottom: 0; }
+.card.machines .device-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.card.machines .device-head h3 { font-size: 15px; font-weight: 600; }
+@media (max-width: 1100px) { .card.machines { grid-column: span 12; } }
+
+/* The settings change list dialog (C6 7.6 showChanges) */
+dialog.changes { border: 1px solid var(--border-strong); border-radius: 8px; padding: 16px 18px; max-width: 480px;
+  width: calc(100% - 32px); background: var(--surface); color: inherit; }
+dialog.changes::backdrop { background: rgba(0, 0, 0, .4); }
+dialog.changes h2 { font-size: 16px; margin: 0 0 10px; }
+dialog.changes ul { list-style: none; margin: 0 0 12px; padding: 0; max-height: 260px; overflow-y: auto; }
+dialog.changes li { padding: 4px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
+dialog.changes .field { margin: 10px 0; display: grid; gap: 4px; }
+dialog.changes .field input { border: 1px solid var(--border-strong); border-radius: 6px; background: var(--page); padding: 4px 8px; font: inherit; }
+dialog.changes .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 
 .crop-check[data-lvl="warning"] { color: var(--ink); border-left: 3px solid var(--warning); padding-left: 8px; }
 .crop-check[data-lvl="good"] { border-left: 3px solid var(--good); padding-left: 8px; }
