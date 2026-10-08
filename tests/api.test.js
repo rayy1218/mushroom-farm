@@ -353,3 +353,128 @@ describe('room routes 6.1, 6.2, 6.3, 6.19', () => {
     assert.equal(body.live.error, null);
   });
 });
+
+describe('settings routes 6.4-6.7', () => {
+  let ctx;
+  test.before(async () => { ctx = startApi(); await ctx.ready; });
+  test.after(() => ctx.stop());
+
+  test('GET /settings', async () => {
+    const id = seedRoom(ctx.db, 'S1');
+    const r = await fetch(`${ctx.url}/api/rooms/${id}/settings`);
+    assert.equal(r.status, 200);
+    assert.deepStrictEqual(await r.json(), ctx.db.currentSettings(id).settings);
+  });
+
+  test('PUT /settings', async () => {
+    const id = seedRoom(ctx.db, 'S2');
+    const before = ctx.db.currentSettings(id).settings;
+    const r = await fetch(`${ctx.url}/api/rooms/${id}/settings`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ settings: { spT: 20 }, note: '  x  ' }),
+    });
+    assert.equal(r.status, 200);
+    const body = await r.json();
+    assert.ok('settings' in body && 'warnings' in body);
+    assert.equal('version' in body, false);
+    const last = ctx.rooms.calls[ctx.rooms.calls.length - 1];
+    assert.equal(last.method, 'applySettings');
+    assert.deepStrictEqual(last.args, [id, { spT: 20 }, 'x']);
+
+    const after = await (await fetch(`${ctx.url}/api/rooms/${id}/settings`)).json();
+    assert.equal(after.spT, 20);
+    const expected = { ...before, spT: 20 };
+    assert.deepStrictEqual(after, expected);
+
+    for (const note of [null, undefined, '   ']) {
+      const b = note === undefined ? { settings: { spT: 21 } } : { settings: { spT: 21 }, note };
+      const rr = await fetch(`${ctx.url}/api/rooms/${id}/settings`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b),
+      });
+      assert.equal(rr.status, 200);
+      const call = ctx.rooms.calls[ctx.rooms.calls.length - 1];
+      assert.equal(call.args.length, 3, String(note));
+      assert.equal(call.args[2], undefined, String(note));
+    }
+  });
+
+  test('PUT /settings 400s', async () => {
+    const id = seedRoom(ctx.db, 'S3');
+    const callsBefore = ctx.rooms.calls.length;
+    const historyBefore = ctx.db.settingsHistory(id).length;
+    const badBodies = [
+      {}, { settings: null }, { settings: [] }, { settings: 'x' },
+      { settings: { spT: 20 }, note: 5 }, { settings: { spT: 20 }, note: '  ' + 'x'.repeat(201) },
+      { settings: { spT: 20 }, extra: 1 }, null, 'x',
+    ];
+    for (const body of badBodies) {
+      const r = await fetch(`${ctx.url}/api/rooms/${id}/settings`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      });
+      assert.equal(r.status, 400, JSON.stringify(body));
+      assert.equal((await r.json()).error, 'Invalid settings', JSON.stringify(body));
+    }
+    assert.equal(ctx.rooms.calls.length, callsBefore);
+    assert.equal(ctx.db.settingsHistory(id).length, historyBefore);
+  });
+
+  test('__proto__ pollution: PUT /settings and POST /api/rooms', async () => {
+    const id = seedRoom(ctx.db, 'S4');
+    const raw1 = '{"__proto__":{"polluted":1},"settings":{"__proto__":{"polluted":1},"spT":22},"note":null}';
+    const r1 = await fetch(`${ctx.url}/api/rooms/${id}/settings`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: raw1,
+    });
+    assert.equal(r1.status, 200);
+    assert.equal(({}).polluted, undefined);
+    assert.deepStrictEqual(Object.keys(Object.prototype), []);
+
+    const raw2 = '{"__proto__":{"polluted":1},"name":"PollutedRoom","volume":60,"vent":"supply"}';
+    const r2 = await fetch(`${ctx.url}/api/rooms`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: raw2,
+    });
+    assert.equal(r2.status, 201);
+    assert.equal(({}).polluted, undefined);
+    assert.deepStrictEqual(Object.keys(Object.prototype), []);
+  });
+
+  test('GET /settings/history', async () => {
+    const id = seedRoom(ctx.db, 'S5');
+    await fetch(`${ctx.url}/api/rooms/${id}/settings`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ settings: { spT: 23 } }),
+    });
+    const rows = await (await fetch(`${ctx.url}/api/rooms/${id}/settings/history`)).json();
+    assert.equal(rows.length, 2);
+    assert.ok(rows[0].id > rows[1].id);
+    for (const row of rows) assert.deepStrictEqual(Object.keys(row).sort(), ['id', 'note', 'room_id', 'saved_at']);
+  });
+
+  test('POST /settings/restore/:v', async () => {
+    const id = seedRoom(ctx.db, 'S6');
+    const v1 = ctx.db.currentSettings(id);
+    await fetch(`${ctx.url}/api/rooms/${id}/settings`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ settings: { spT: 24 } }),
+    });
+    const r = await fetch(`${ctx.url}/api/rooms/${id}/settings/restore/${v1.id}`, { method: 'POST' });
+    assert.equal(r.status, 200);
+    const body = await r.json();
+    assert.ok('settings' in body && 'warnings' in body);
+    const last = ctx.rooms.calls[ctx.rooms.calls.length - 1];
+    assert.equal(last.method, 'applySettings');
+    assert.deepStrictEqual(last.args, [id, v1.settings, `Restored version ${v1.id}`, { exact: true }]);
+    const history = await (await fetch(`${ctx.url}/api/rooms/${id}/settings/history`)).json();
+    assert.equal(history[0].note, `Restored version ${v1.id}`);
+  });
+
+  test('Restore 404s', async () => {
+    const id = seedRoom(ctx.db, 'S7');
+    const otherId = seedRoom(ctx.db, 'S8');
+    const otherVersion = ctx.db.currentSettings(otherId).id;
+    const callsBefore = ctx.rooms.calls.length;
+    for (const v of ['abc', '0', '999999', String(otherVersion)]) {
+      const r = await fetch(`${ctx.url}/api/rooms/${id}/settings/restore/${v}`, { method: 'POST' });
+      assert.equal(r.status, 404, v);
+      assert.equal((await r.json()).error, 'Unknown settings version', v);
+    }
+    assert.equal(ctx.rooms.calls.length, callsBefore);
+  });
+});
