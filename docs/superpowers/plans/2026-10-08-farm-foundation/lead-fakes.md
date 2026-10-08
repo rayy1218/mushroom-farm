@@ -229,7 +229,7 @@ The fake never writes `Started`, `Stopped`, `Resumed …`, `Settings: …`, `Tar
 | Reply bodies | Non-string → `JSON.stringify`, `Content-Type: application/json; charset=utf-8`. String → as it is, `text/plain; charset=utf-8`. `undefined` → empty body. |
 | Default array routes | `GET` whose path matches `^/api/rooms(/[^/]+/(settings/history\|readings\|events\|alarms\|calibrations\|mix))?$` → 200 `[]` |
 | Other defaults | Other `GET` under `/api/` → 200 `{}`. `POST`, `PUT`, `PATCH` under `/api/` → 200, the recorded body as JSON (`null` without a body). Anything else → 404 `{ "error": "Unknown route", "details": [] }`. |
-| Stream | Default `GET /api/stream`: `writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-store' })`, write `retry: <retryMs>\n\n` at once, keep `res` in a set, remove it on `req` `close`. Never `: ping`. |
+| Stream | Default `GET /api/stream`: `writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-store' })`, write `retry: <retryMs>\n\n` at once, keep `res` in a set, remove it on `res` `close` (lead decision 10). Never `: ping`. |
 | `emit(name, data)` | Writes `event: <name>\ndata: <JSON.stringify(data)>\n\n` to every open stream |
 | `dropStreams()` | `res.end()` on each open stream; clear the set |
 | `close()` | End every open stream, `server.close()`, then `server.closeAllConnections()` (Node's `fetch` keeps sockets alive); resolve when the server has closed |

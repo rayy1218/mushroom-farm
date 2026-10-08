@@ -828,7 +828,7 @@ for which it returns `null` are skipped), the Capacity module sends, in this ord
 | Heartbeat | The comment line `: ping\n\n` every 15 s (`heartbeatMs`) on every open connection (one shared timer), so proxies and phones keep the connection and a client can find a dead one. The client's watchdog is C5's (lead decision 4; C5 section 4.4): no event and no `: ping` for 45 s, and the client closes the connection and reconnects. |
 | Order | Messages of one room are sent in the order the room manager emits them. |
 | Slow client | If a connection's unsent data (`res.writableLength`) passes 1 MB, the server ends that connection; the client reconnects and reloads (10.4). |
-| Client gone | On the request's `close`, the server removes the connection. |
+| Client gone | On the response's `close` (`res.on('close')`), the server removes the connection (lead decision 10). |
 | Shutdown | `api.close()` ends every connection. |
 
 ### 10.2 Events
