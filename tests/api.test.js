@@ -708,3 +708,159 @@ describe('calibrations, mix, capacity (6.12-6.18)', () => {
     }
   });
 });
+
+function dbErr(errcode) {
+  return Object.assign(new Error('disk I/O error'), { code: 'ERR_SQLITE_ERROR', errcode });
+}
+
+async function withReplaced(obj, method, impl, fn) {
+  const original = obj[method];
+  obj[method] = impl;
+  try {
+    await fn();
+  } finally {
+    obj[method] = original;
+  }
+}
+
+describe('error mapping and the database-error stop (4.4)', () => {
+  let ctx, id;
+  test.before(async () => { ctx = startApi(); await ctx.ready; id = seedRoom(ctx.db, 'E1'); });
+  test.after(() => ctx.stop());
+
+  test('rooms.create bad_input -> 400 Invalid room with details', async () => {
+    await withReplaced(ctx.rooms, 'create', () => { throw new RoomError('bad_input', 'Bad input', ['name: x']); }, async () => {
+      const r = await fetch(`${ctx.url}/api/rooms`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'A', volume: 60, vent: 'supply' }),
+      });
+      assert.equal(r.status, 400);
+      const body = await r.json();
+      assert.equal(body.error, 'Invalid room');
+      assert.deepStrictEqual(body.details, ['name: x']);
+      assert.equal(ctx.fatals.length, 0);
+    });
+  });
+
+  test('rooms.update bad_input -> 400 Invalid room', async () => {
+    await withReplaced(ctx.rooms, 'update', () => { throw new RoomError('bad_input', 'Bad input', []); }, async () => {
+      const r = await fetch(`${ctx.url}/api/rooms/${id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'B' }),
+      });
+      assert.equal(r.status, 400);
+      assert.equal((await r.json()).error, 'Invalid room');
+    });
+  });
+
+  test('rooms.update, archive, restart, applySettings: not_found -> 404 Unknown room', async () => {
+    await withReplaced(ctx.rooms, 'update', () => { throw new RoomError('not_found', 'Room not found', []); }, async () => {
+      const r = await fetch(`${ctx.url}/api/rooms/${id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'B' }),
+      });
+      assert.equal(r.status, 404);
+      assert.equal((await r.json()).error, 'Unknown room');
+    });
+    await withReplaced(ctx.rooms, 'archive', () => { throw new RoomError('not_found', 'Room not found', []); }, async () => {
+      const r = await fetch(`${ctx.url}/api/rooms/${id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ archived: true }),
+      });
+      assert.equal(r.status, 404);
+      assert.equal((await r.json()).error, 'Unknown room');
+    });
+    await withReplaced(ctx.rooms, 'restart', () => { throw new RoomError('not_found', 'Room not found', []); }, async () => {
+      const r = await fetch(`${ctx.url}/api/rooms/${id}/restart`, { method: 'POST' });
+      assert.equal(r.status, 404);
+      assert.equal((await r.json()).error, 'Unknown room');
+    });
+    await withReplaced(ctx.rooms, 'applySettings', () => { throw new RoomError('not_found', 'Room not found', []); }, async () => {
+      const r = await fetch(`${ctx.url}/api/rooms/${id}/settings`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ settings: { spT: 20 } }),
+      });
+      assert.equal(r.status, 404);
+      assert.equal((await r.json()).error, 'Unknown room');
+    });
+  });
+
+  test('rooms.applySettings bad_input -> 400 Invalid settings', async () => {
+    await withReplaced(ctx.rooms, 'applySettings', () => { throw new RoomError('bad_input', 'Bad input', ['x']); }, async () => {
+      const r = await fetch(`${ctx.url}/api/rooms/${id}/settings`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ settings: { spT: 20 } }),
+      });
+      assert.equal(r.status, 400);
+      assert.equal((await r.json()).error, 'Invalid settings');
+    });
+  });
+
+  test('rooms.ackAlarm not_found and bad_input -> 404 Unknown alarm', async () => {
+    for (const code of ['not_found', 'bad_input']) {
+      await withReplaced(ctx.rooms, 'ackAlarm', () => { throw new RoomError(code, 'x', []); }, async () => {
+        const r = await fetch(`${ctx.url}/api/rooms/${id}/alarms/someKey/ack`, { method: 'POST' });
+        assert.equal(r.status, 404, code);
+        assert.equal((await r.json()).error, 'Unknown alarm', code);
+      });
+    }
+  });
+
+  test('db.currentSettings RangeError -> 500 Server fault', async () => {
+    await withReplaced(ctx.db, 'currentSettings', () => { throw new RangeError('x'); }, async () => {
+      const r = await fetch(`${ctx.url}/api/rooms/${id}/settings`);
+      assert.equal(r.status, 500);
+      const body = await r.json();
+      assert.equal(body.error, 'Server fault');
+      assert.deepStrictEqual(body.details, ['x']);
+      assert.equal(ctx.fatals.length, 0);
+    });
+  });
+
+  test('db.listEvents and db.getRoom non-constraint sqlite errors -> 500, onFatal once', async () => {
+    await withReplaced(ctx.db, 'listEvents', () => { throw dbErr(10); }, async () => {
+      const before = ctx.fatals.length;
+      const r = await fetch(`${ctx.url}/api/rooms/${id}/events`);
+      assert.equal(r.status, 500);
+      assert.equal(ctx.fatals.length, before + 1);
+      assert.equal(ctx.fatals[ctx.fatals.length - 1].message, 'disk I/O error');
+    });
+    await withReplaced(ctx.db, 'listEvents', () => { throw dbErr(13); }, async () => {
+      const before = ctx.fatals.length;
+      const r = await fetch(`${ctx.url}/api/rooms/${id}/events`);
+      assert.equal(r.status, 500);
+      assert.equal(ctx.fatals.length, before + 1);
+    });
+    const originalGetRoom = ctx.db.getRoom;
+    await withReplaced(ctx.db, 'getRoom', () => { throw dbErr(10); }, async () => {
+      const before = ctx.fatals.length;
+      const r = await fetch(`${ctx.url}/api/rooms/${id}/settings`);
+      assert.equal(r.status, 500);
+      assert.equal(ctx.fatals.length, before + 1);
+    });
+    assert.equal(ctx.db.getRoom, originalGetRoom);
+  });
+
+  test('db.replaceMix CHECK constraint -> 500, no onFatal', async () => {
+    await withReplaced(ctx.db, 'replaceMix', () => { throw dbErr(275); }, async () => {
+      const before = ctx.fatals.length;
+      const r = await fetch(`${ctx.url}/api/rooms/${id}/mix`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify([]),
+      });
+      assert.equal(r.status, 500);
+      assert.equal(ctx.fatals.length, before);
+    });
+  });
+
+  test('rooms.restart plain Error, and a thrown string -> 500, no onFatal', async () => {
+    await withReplaced(ctx.rooms, 'restart', () => { throw new Error('boom'); }, async () => {
+      const before = ctx.fatals.length;
+      const r = await fetch(`${ctx.url}/api/rooms/${id}/restart`, { method: 'POST' });
+      assert.equal(r.status, 500);
+      assert.deepStrictEqual((await r.json()).details, ['boom']);
+      assert.equal(ctx.fatals.length, before);
+    });
+    await withReplaced(ctx.rooms, 'list', () => { throw 'x'; }, async () => {
+      const before = ctx.fatals.length;
+      const r = await fetch(`${ctx.url}/api/rooms`);
+      assert.equal(r.status, 500);
+      assert.deepStrictEqual((await r.json()).details, ['x']);
+      assert.equal(ctx.fatals.length, before);
+    });
+  });
+});
