@@ -18,7 +18,9 @@ const ACK_SCAN = 500;
 const SETTINGS_FORMAT = 'mushroom-climate-settings';
 
 function isPlainObject(v) {
-  return v !== null && typeof v === 'object' && !Array.isArray(v);
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) return false;
+  const proto = Object.getPrototypeOf(v);
+  return proto === Object.prototype || proto === null;
 }
 
 function getPath(obj, k) {
@@ -223,7 +225,7 @@ function createRoomManager(options) {
     for (const [key, a] of active) {
       if (!open.has(key)) {
         let row = db.raiseAlarm(id, { alarm_key: a.id, level: a.lvl, label: a.label, at: Math.round(a.since) });
-        if (a.acked) row = db.ackAlarm(id, a.id, t);
+        if (a.acked) row = db.ackAlarm(id, a.id, now());
         open.set(a.id, row);
         emit('alarm', { roomId: id, change: 'raised', alarm: row });
       }
@@ -558,7 +560,9 @@ function createRoomManager(options) {
     return get(id);
   }
 
-  function applyToRunningRoom(id, loop, next, exact) {
+  // Steps 5-9 (C2 section 9.2): the controller and cfg work only. No db write happens here, so a crash in
+  // this part (section 11, "Error in steps 5-9") is the only case the caller of this function should catch.
+  function applyTargetsAndStage(loop, next, exact) {
     const cfg = loop.cfg, ctl = loop.ctl;
     const keep = {};
     for (const k of TARGET_KEYS) keep[k] = getPath(cfg, k);
@@ -583,14 +587,22 @@ function createRoomManager(options) {
       ctl.cancelRamp();
     }
 
+    return { pairWarnings, stageCallMade };
+  }
+
+  // Step 10 (C2 section 9.2): the controller events kept since step 5, the "Targets restored" event (with
+  // exact when step 9 made one of the three calls), then alarm changes. These are db writes and must not
+  // be swallowed by the crash-isolation catch around steps 5-9 (section 11: a db error inside a method is
+  // thrown to the caller, not turned into a room crash).
+  function recordTargetsAndStage(id, loop, exact, stageCallMade) {
+    const cfg = loop.cfg;
     const stored = structuredClone(cfg);
     flushPendingEvents(id, loop);
     if (exact && stageCallMade) {
       writeManagerEvent(id, 'info', `Targets restored: ${cfg.spT} °C, ${cfg.spRH} % RH, CO₂ limit ${cfg.co2Lim} ppm, no ramp.`);
     }
     syncAlarms(id, loop, now());
-
-    return { stored, pairWarnings };
+    return stored;
   }
 
   function applySettings(id, settingsInput, note, options) {
@@ -620,16 +632,20 @@ function createRoomManager(options) {
     if (!runningNow) {
       stored = next;
     } else {
+      let applied = null;
       try {
-        const result = applyToRunningRoom(id, loop, next, exact);
-        stored = result.stored;
-        warnings = warnings.concat(result.pairWarnings);
+        applied = applyTargetsAndStage(loop, next, exact);
       } catch (err) {
         flushPendingEvents(id, loop);
         writeManagerEvent(id, 'serious', `Stopped by an error: ${err.message}`);
         loop.running = false;
         loop.error = err.message;
         stored = next;
+      }
+      if (applied) {
+        // Step 10: outside the try, so a db error here propagates to the caller instead of crashing the room.
+        stored = recordTargetsAndStage(id, loop, exact, applied.stageCallMade);
+        warnings = warnings.concat(applied.pairWarnings);
       }
     }
 

@@ -129,7 +129,15 @@ test('sim adapter: new room at its targets', () => {
   assert.equal(a.view().CO2, 750);
 });
 
-test('sim adapter: one reading per 30 s', () => {
+test('sim adapter: one reading per 30 s', (t) => {
+  const origCreate = SIM.create;
+  let capturedEnv = null;
+  SIM.create = (env, snapshot) => {
+    capturedEnv = env;
+    return origCreate(env, snapshot);
+  };
+  t.after(() => { SIM.create = origCreate; });
+
   let clock = T0;
   const now = () => clock;
   const cfg = CC.defaultSettings();
@@ -141,10 +149,12 @@ test('sim adapter: one reading per 30 s', () => {
   assert.notEqual(r1.seq, r0.seq);
   assert.equal(r1.t, T0 + 30);
 
+  // C2 section 13.1 io.advance: env.blockStage = cfg.stage before each inner.advance(1), so a cfg.stage
+  // change between steps shows in the captured env.blockStage after the next step.
+  assert.equal(capturedEnv.blockStage, 'fruiting'); // the old stage, unmoved before the step
   cfg.stage = 'rest';
   clock += 1; a.io.advance(1);
-  // env.blockStage is internal; confirmed indirectly: no throw, and advancing still works.
-  assert.ok(true);
+  assert.equal(capturedEnv.blockStage, 'rest');
 });
 
 test('sim adapter: CO₂ jitter', (t) => {
@@ -228,6 +238,12 @@ test('rooms: exports', () => {
   for (const child of mod.children) {
     assert.ok(/[\\/](controller|runtime|sim-adapter|rooms-common)\.js$/.test(child.id), `unexpected require: ${child.id}`);
   }
+
+  // Requiring rooms.js loads no node:sqlite and no server/db.js (C2 section 17). node:sqlite is a
+  // built-in and is never a require.cache key at all (even when it has been required elsewhere), so this
+  // only rules out server/db.js being reachable through rooms.js's own require graph.
+  assert.ok(!('node:sqlite' in require.cache));
+  assert.ok(!Object.keys(require.cache).some(k => /[\\/]server[\\/]db\.js$/.test(k)));
 });
 
 test('rooms: defaultAdapterFactory', () => {
@@ -400,12 +416,17 @@ test('Errors: create input', () => {
   expectError({ name: 'A', volume: 60, vent: 'supply', settings: null }, ['settings must be an object']);
   expectError({ name: 'A', volume: 60, vent: 'supply', settings: 5 }, ['settings must be an object']);
 
-  // Several broken rules, all texts, in table order
-  expectError({ name: '', volume: 4.9, vent: 'side' }, [
-    'name must be 1 to 60 characters',
-    'volume must be a number from 5 to 5000 (m³)',
-    'vent must be "supply" or "exhaust"',
-  ]);
+  // Several broken rules, all texts, in table order (C2 section 6.1)
+  try {
+    mgr.create({ name: '', volume: 4.9, vent: 'side' });
+    assert.fail('expected a RoomError');
+  } catch (err) {
+    assert.deepStrictEqual(err.details, [
+      'name must be 1 to 60 characters',
+      'volume must be a number from 5 to 5000 (m³)',
+      'vent must be "supply" or "exhaust"',
+    ]);
+  }
 
   assert.equal(db.listRooms({ includeArchived: true }).length, before);
 });
@@ -416,8 +437,16 @@ test('Errors: create input', () => {
 
 const READING_KEYS = ['room_id', 't', 'T', 'RH', 'CO2', 't_out', 'rh_out', 'ac_mode', 'ac_setpoint', 'fog', 'fan', 'lights', 'circ', 'power_w', 'kwh'];
 
-test('Recording', () => {
+test('Recording', (t) => {
   const spy = simSpyFactory();
+  const origCreate = CC.create;
+  let capturedOnEvent = null;
+  CC.create = (cfg, snapshot, onEvent) => {
+    capturedOnEvent = onEvent;
+    return origCreate(cfg, snapshot, onEvent);
+  };
+  t.after(() => { CC.create = origCreate; });
+
   const { db, mgr: mgr2, log, step, now } = setup(spy.factory);
   mgr2.start();
 
@@ -470,6 +499,17 @@ test('Recording', () => {
     assert.equal(typeof live.status[k].icon, 'string');
     assert.equal(typeof live.status[k].text, 'string');
   }
+
+  // Controller events become rows: an event queued by the controller before the next Record is written
+  // through db.addEvent and emitted (C2 section 8.3, step d).
+  assert.ok(capturedOnEvent);
+  capturedOnEvent({ t: now(), lvl: 'info', text: 'Test controller event' });
+  const eventEmitsBefore = log.filter(([n]) => n === 'event').length;
+  step(30);
+  assert.ok(db.listEvents(1, { limit: 50 }).some(e => e.text === 'Test controller event'));
+  const eventEmits = log.filter(([n]) => n === 'event');
+  assert.ok(eventEmits.length > eventEmitsBefore);
+  assert.ok(eventEmits.some(([, p]) => p.event.text === 'Test controller event'));
 });
 
 test('Rounded humidity target', () => {
@@ -935,7 +975,7 @@ test('Crash at loop start', () => {
 
 test('Restart', () => {
   const s = scripted();
-  const { db, mgr, log, step } = setup(s.factory);
+  const { db, mgr, log, step, now } = setup(s.factory);
   mgr.start();
   step(30);
   s.knobs.failRead = true;
@@ -944,6 +984,7 @@ test('Restart', () => {
 
   s.knobs.failRead = false;
   const beforeRestartId = maxEventId(db, 1);
+  const rowsBeforeCrashRestart = db.queryReadings(1, { from: 0, to: now() });
   log.length = 0;
   const restarted = mgr.restart(1);
   assert.equal(restarted.live.running, true);
@@ -952,12 +993,36 @@ test('Restart', () => {
   assert.ok(!textsAfterCrashRestart.includes('Stopped'));
   assert.ok(log.some(([n]) => n === 'room'));
 
+  // Resumed from the last save: no reading is repeated or lost, and the live reading matches the resume
+  // point, exactly as a resume across managers does (the "Resume" tests).
+  assert.equal(db.queryReadings(1, { from: 0, to: now() }).length, rowsBeforeCrashRestart.length);
+  assert.deepEqual(mgr.get(1).live.reading, rowsBeforeCrashRestart.at(-1));
+  const lastTBeforeCrashRestart = rowsBeforeCrashRestart.at(-1).t;
+  step(30);
+  const rowsAfterCrashRestart = db.queryReadings(1, { from: 0, to: now() });
+  assert.equal(rowsAfterCrashRestart.length, rowsBeforeCrashRestart.length + 1);
+  assert.ok(rowsAfterCrashRestart.at(-1).t > lastTBeforeCrashRestart);
+
   // Running room restart: Stopped, then Resumed after 0 min stopped.
   const beforeRunningRestartId = maxEventId(db, 1);
+  const savedBeforeRunningRestart = db.loadControllerState(1).saved_at;
+  const rowsBeforeRunningRestart = db.queryReadings(1, { from: 0, to: now() });
   mgr.restart(1);
   const textsAfterRunningRestart = newEventTextsSince(db, 1, beforeRunningRestartId);
   assert.ok(textsAfterRunningRestart.includes('Stopped'));
   assert.ok(textsAfterRunningRestart.some(t => t.startsWith('Resumed after 0 min stopped')));
+
+  // The running room's state is saved (at now()) right before the stop, and the new loop resumes from it:
+  // no reading repeated or lost, and the sim continues forward from there.
+  assert.equal(db.loadControllerState(1).saved_at, now());
+  assert.notEqual(db.loadControllerState(1).saved_at, savedBeforeRunningRestart);
+  assert.equal(db.queryReadings(1, { from: 0, to: now() }).length, rowsBeforeRunningRestart.length);
+  assert.deepEqual(mgr.get(1).live.reading, rowsBeforeRunningRestart.at(-1));
+  const lastTBeforeRunningRestart = rowsBeforeRunningRestart.at(-1).t;
+  step(30);
+  const rowsAfterRunningRestart = db.queryReadings(1, { from: 0, to: now() });
+  assert.equal(rowsAfterRunningRestart.length, rowsBeforeRunningRestart.length + 1);
+  assert.ok(rowsAfterRunningRestart.at(-1).t > lastTBeforeRunningRestart);
 
   // Archived
   const { room: archRoom } = mgr.create({ name: 'Arch', volume: 60, vent: 'supply' });
@@ -996,8 +1061,11 @@ test('Ack while crashed', () => {
   assert.equal(mgr.get(1).live.running, false);
 
   const savedBeforeAck = db.loadControllerState(1).saved_at;
-  mgr.ackAlarm(1, 'sensor_RH');
+  const acked = mgr.ackAlarm(1, 'sensor_RH');
   assert.equal(db.loadControllerState(1).saved_at, savedBeforeAck);
+  assert.notEqual(acked.acked_at, null);
+  const ackedRow = db.listAlarms(1, { recent: 10 }).find(a => a.alarm_key === 'sensor_RH');
+  assert.notEqual(ackedRow.acked_at, null);
 
   s.knobs.failRead = false;
   mgr.restart(1);
@@ -1044,6 +1112,31 @@ test('Database error in a method', () => {
   db.saveSettings = origSave;
 });
 
+test('Database error during applySettings step 10 (running room)', () => {
+  // C2 section 9.2's "Error in steps 5-9" row only covers the controller/cfg work; step 10's db writes
+  // (flushPendingEvents, the "Targets restored" event, syncAlarms) are a db error inside a method
+  // (section 11): it must reach the caller, not be swallowed as a room crash.
+  const s = scripted();
+  const { db, mgr, log } = setup(s.factory);
+  mgr.start();
+  const A = mgr.applySettings(1, { spT: 23 }).version;
+  mgr.applySettings(1, { stage: 'pinning' });
+
+  const dbErr = Object.assign(new Error('disk I/O error'), { code: 'ERR_SQLITE_ERROR', errcode: 10, errstr: 'disk I/O error' });
+  const origAddEvent = db.addEvent;
+  db.addEvent = (id, ev) => {
+    if (ev.text && ev.text.startsWith('Targets restored')) throw dbErr;
+    return origAddEvent(id, ev);
+  };
+  log.length = 0;
+  assert.throws(() => mgr.applySettings(1, A.settings, `Restored version ${A.id}`, { exact: true }), err => err === dbErr);
+  assert.equal(mgr.get(1).live.running, true);
+  assert.equal(mgr.get(1).live.error, null);
+  assert.equal(log.filter(([n]) => n === 'fatal').length, 0);
+  assert.ok(!log.some(([n, p]) => n === 'event' && p.event && p.event.text && p.event.text.startsWith('Stopped by an error')));
+  db.addEvent = origAddEvent;
+});
+
 test('Timer', async () => {
   const s = scripted();
   const db = openFakeDb({ now: () => T0 });
@@ -1082,6 +1175,7 @@ test('Settings at once', () => {
   const spy = simSpyFactory();
   const { db, mgr, log, step, now } = setup(spy.factory);
   mgr.start();
+  step(600); // T0 + 600: the room has been running a while, not just at the moment it started
   const rowBefore = db.queryReadings(1, { from: 0, to: 10 ** 12 }).at(-1);
 
   log.length = 0;
@@ -1260,11 +1354,16 @@ test('Crop and farm type', () => {
   assert.equal(db.currentSettings(1).settings.crop, 'pink');
 
   const { room } = mgr.create({ name: 'FarmType', volume: 60, vent: 'supply' });
+  mgr.applySettings(room.id, { stage: 'pinning' }); // valid for the default farm type ('full')
   const before2 = maxEventId(db, room.id);
-  mgr.applySettings(room.id, { farmType: 'ready', stage: 'fruiting' });
+  // No "stage" key in this input: any stage change below is a side effect of setFarmType (not setStage or
+  // setCrop), which picks its farm type's first stage when the current one is not valid for it. "pinning"
+  // is not a stage of "ready" (C2 section 9.1), so this shows setFarmType ran, not the other two.
+  mgr.applySettings(room.id, { farmType: 'ready' });
   const texts2 = newEventTextsSince(db, room.id, before2);
   assert.ok(texts2.some(t => t.startsWith('Stage: ')));
   assert.equal(db.currentSettings(room.id).settings.farmType, 'ready');
+  assert.equal(db.currentSettings(room.id).settings.stage, 'fruiting');
 });
 
 // ---------------------------------------------------------------------------
@@ -1273,7 +1372,8 @@ test('Crop and farm type', () => {
 
 test('Pair correction', () => {
   const s = scripted();
-  const { mgr, jump } = setup(s.factory);
+  const cap = capture(s.factory);
+  const { db, mgr, jump } = setup(cap.factory);
   mgr.start();
   mgr.applySettings(1, { crop: 'golden', stage: 'pinning' });
   jump(14256); // f = 0.99 along the ramp: live fanOn 600, fanOff 450
@@ -1281,8 +1381,17 @@ test('Pair correction', () => {
   assert.equal(result.settings.rules.fanOff, 550);
   assert.equal(result.settings.rules.fanOn, 600);
   assert.deepEqual(result.warnings, ['"rules.fanOff" = 800 must be at least 50 ppm below "rules.fanOn" (600 now): set to 550.']);
+
+  // The correction reaches the live cfg (section 9.1 "Pairs") and the stored version, not just the
+  // returned settings.
+  assert.equal(cap.made[0].cfg.rules.fanOff, 550);
+  assert.equal(cap.made[0].cfg.rules.fanOn, 600);
+  assert.equal(db.currentSettings(1).settings.rules.fanOff, 550);
+  assert.equal(db.currentSettings(1).settings.rules.fanOn, 600);
+
   const imported = CC.importSettings({ format: 'mushroom-climate-settings', version: CC.SETTINGS_VERSION, settings: result.settings });
   assert.ok(!imported.warnings.some(w => w.includes('Fan stop level')));
+  assert.ok(!imported.warnings.some(w => w.includes('AC "until" level')));
 });
 
 // Note (contract gap, reported to the lead): the brief's own numbers for this test ("Same setup" as
@@ -1356,6 +1465,20 @@ test('update', () => {
     assert.deepEqual(err.details, ['name must be 1 to 60 characters']);
   }
 
+  try {
+    mgr.update(1, { volume: '90' });
+    assert.fail('expected bad_input');
+  } catch (err) {
+    assert.deepEqual(err.details, ['volume must be a number from 5 to 5000 (m³)']);
+  }
+
+  try {
+    mgr.update(1, { vent: 'side' });
+    assert.fail('expected bad_input');
+  } catch (err) {
+    assert.deepEqual(err.details, ['vent must be "supply" or "exhaust"']);
+  }
+
   const { room: arch } = mgr.create({ name: 'Arch', volume: 60, vent: 'supply' });
   mgr.archive(arch.id);
   try {
@@ -1378,12 +1501,17 @@ test('archive', () => {
   const { db, mgr, log, step, now } = setup();
   mgr.start();
   const { room } = mgr.create({ name: 'A', volume: 60, vent: 'supply' });
+  step(30); // let time pass so a genuine new save at archive is visible, not a coincidence of the creation save
+  const savedBeforeArchive = db.loadControllerState(room.id).saved_at;
 
   log.length = 0;
   const result = mgr.archive(room.id);
   assert.ok(db.listEvents(room.id, { limit: 10 }).some(e => e.text === 'Stopped'));
   assert.ok(db.listEvents(room.id, { limit: 10 }).some(e => e.text === 'Room archived'));
   assert.equal(db.getRoom(room.id).archived_at, now());
+  // The running room's state is saved (at now()) as part of the stop, before the archive.
+  assert.equal(db.loadControllerState(room.id).saved_at, now());
+  assert.notEqual(db.loadControllerState(room.id).saved_at, savedBeforeArchive);
   assert.equal(result.live, null);
   const roomEmits = log.filter(([n]) => n === 'room');
   assert.equal(roomEmits.length, 1);
