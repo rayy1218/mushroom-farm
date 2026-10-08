@@ -26,8 +26,9 @@ test('the 19 request functions: method, path, query, body, result', async (t) =>
   assert.deepEqual(apiRequests(fake).at(-1), { method: 'POST', path: '/api/rooms', query: {}, body: room });
   assert.deepEqual(created, room);
 
-  await FarmApi.updateRoom(1, { name: 'B' });
+  const updated = await FarmApi.updateRoom(1, { name: 'B' });
   assert.deepEqual(apiRequests(fake).at(-1), { method: 'PATCH', path: '/api/rooms/1', query: {}, body: { name: 'B' } });
+  assert.deepEqual(updated, { name: 'B' });
 
   const r1 = await FarmApi.restartRoom(1);
   assert.deepEqual(apiRequests(fake).at(-1), { method: 'POST', path: '/api/rooms/1/restart', query: {}, body: null });
@@ -44,48 +45,61 @@ test('the 19 request functions: method, path, query, body, result', async (t) =>
   assert.deepEqual(settingsNow, {});
 
   const settings = { spT: 25 };
-  await FarmApi.saveSettings(1, settings);
+  const saved1 = await FarmApi.saveSettings(1, settings);
   assert.deepEqual(apiRequests(fake).at(-1).body, { settings });
-  await FarmApi.saveSettings(1, settings, '');
+  assert.deepEqual(saved1, { settings });
+  const saved2 = await FarmApi.saveSettings(1, settings, '');
   assert.deepEqual(apiRequests(fake).at(-1).body, { settings });
-  await FarmApi.saveSettings(1, settings, 'x');
+  assert.deepEqual(saved2, { settings });
+  const saved3 = await FarmApi.saveSettings(1, settings, 'x');
   assert.deepEqual(apiRequests(fake).at(-1).body, { settings, note: 'x' });
+  assert.deepEqual(saved3, { settings, note: 'x' });
   assert.equal(apiRequests(fake).at(-1).method, 'PUT');
   assert.equal(apiRequests(fake).at(-1).path, '/api/rooms/1/settings');
 
-  await FarmApi.listSettingsHistory(1);
+  const history = await FarmApi.listSettingsHistory(1);
   assert.deepEqual(apiRequests(fake).at(-1), { method: 'GET', path: '/api/rooms/1/settings/history', query: {}, body: null });
+  assert.deepEqual(history, []);
 
-  await FarmApi.restoreSettings(1, 14);
+  const restored = await FarmApi.restoreSettings(1, 14);
   assert.deepEqual(apiRequests(fake).at(-1), { method: 'POST', path: '/api/rooms/1/settings/restore/14', query: {}, body: null });
+  assert.deepEqual(restored, null);
 
-  await FarmApi.getReadings(1, { from: 10, to: 20 });
+  const readings = await FarmApi.getReadings(1, { from: 10, to: 20 });
   assert.deepEqual(apiRequests(fake).at(-1), { method: 'GET', path: '/api/rooms/1/readings', query: { from: '10', to: '20' }, body: null });
+  assert.deepEqual(readings, []);
 
-  await FarmApi.getEvents(1);
+  const events1 = await FarmApi.getEvents(1);
   assert.deepEqual(apiRequests(fake).at(-1).query, {});
-  await FarmApi.getEvents(1, { limit: 100, before: 55 });
+  assert.deepEqual(events1, []);
+  const events2 = await FarmApi.getEvents(1, { limit: 100, before: 55 });
   assert.deepEqual(apiRequests(fake).at(-1), { method: 'GET', path: '/api/rooms/1/events', query: { limit: '100', before: '55' }, body: null });
+  assert.deepEqual(events2, []);
 
-  await FarmApi.getAlarms(1);
+  const alarms = await FarmApi.getAlarms(1);
   assert.deepEqual(apiRequests(fake).at(-1), { method: 'GET', path: '/api/rooms/1/alarms', query: {}, body: null });
+  assert.deepEqual(alarms, []);
 
-  await FarmApi.ackAlarm(1, 'rh Hi');
+  const acked = await FarmApi.ackAlarm(1, 'rh Hi');
   assert.deepEqual(apiRequests(fake).at(-1), { method: 'POST', path: '/api/rooms/1/alarms/rh%20Hi/ack', query: {}, body: null });
+  assert.deepEqual(acked, null);
 
-  await FarmApi.listCalibrations(1);
+  const calibs = await FarmApi.listCalibrations(1);
   assert.deepEqual(apiRequests(fake).at(-1), { method: 'GET', path: '/api/rooms/1/calibrations', query: {}, body: null });
+  assert.deepEqual(calibs, []);
 
   const run = { ua: 90 };
   const savedRun = await FarmApi.saveCalibration(1, run);
   assert.deepEqual(apiRequests(fake).at(-1), { method: 'POST', path: '/api/rooms/1/calibrations', query: {}, body: run });
   assert.deepEqual(savedRun, run);
 
-  await FarmApi.applyCalibration(1, 3);
+  const applied = await FarmApi.applyCalibration(1, 3);
   assert.deepEqual(apiRequests(fake).at(-1), { method: 'POST', path: '/api/rooms/1/calibrations/3/apply', query: {}, body: null });
+  assert.deepEqual(applied, null);
 
-  await FarmApi.getMix(1);
+  const mix = await FarmApi.getMix(1);
   assert.deepEqual(apiRequests(fake).at(-1), { method: 'GET', path: '/api/rooms/1/mix', query: {}, body: null });
+  assert.deepEqual(mix, []);
 
   const rows = [{ crop: 'oyster', blocks: 1 }];
   const savedMix = await FarmApi.saveMix(1, rows);
@@ -192,8 +206,10 @@ test('stream: delivers events, open/down/open, stops after close', async (t) => 
 
   close();
   const countBefore = events.length;
+  const requestsBefore = apiRequests(fake).filter(r => r.method === 'GET' && r.path === '/api/stream').length;
   await sleep(100);
   assert.equal(events.length, countBefore);
+  assert.equal(apiRequests(fake).filter(r => r.method === 'GET' && r.path === '/api/stream').length, requestsBefore);
 });
 
 test('stream: bad data skipped; onEvent throw does not stop the stream', async (t) => {
@@ -246,6 +262,9 @@ test('watchdog: no data triggers down and reconnect', async (t) => {
   assert.equal(apiRequests(fake).filter(r => r.method === 'GET' && r.path === '/api/stream').length, 2);
 
   close();
+  const requestsBefore = apiRequests(fake).filter(r => r.method === 'GET' && r.path === '/api/stream').length;
+  await sleep(100);
+  assert.equal(apiRequests(fake).filter(r => r.method === 'GET' && r.path === '/api/stream').length, requestsBefore);
 });
 
 test('watchdog: emits keep the connection alive', async (t) => {
