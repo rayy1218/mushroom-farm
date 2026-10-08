@@ -218,6 +218,21 @@ function buildDb(conn, dbPath, version, now) {
     return plain(getRoomStmt.get({ id }));
   }
 
+  // Settings versions (section 6.5)
+  const currentSettingsStmt = conn.prepare('SELECT * FROM room_settings WHERE room_id = :room_id ORDER BY id DESC LIMIT 1');
+
+  function settingsVersionToPublic(row) {
+    return row ? { id: row.id, room_id: row.room_id, saved_at: row.saved_at, note: row.note, settings: fromJson(row.settings) } : null;
+  }
+
+  function currentSettings(roomId) {
+    live();
+    roomCheck(roomId);
+    const row = currentSettingsStmt.get({ room_id: roomId });
+    if (!row) throw new NotFoundError('settings', roomId);
+    return settingsVersionToPublic(row);
+  }
+
   function listRooms(options) {
     live();
     fields('listRooms', options, ['includeArchived']);
@@ -241,6 +256,7 @@ function buildDb(conn, dbPath, version, now) {
     close,
     getRoom,
     listRooms,
+    currentSettings,
   };
 }
 

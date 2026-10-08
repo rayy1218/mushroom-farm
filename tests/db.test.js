@@ -129,3 +129,99 @@ both('close twice does not throw; calls after close throw', (t, open) => {
   assert.throws(() => db.getRoom(1), { message: 'database is not open' });
   assert.throws(() => db.listRooms(), { message: 'database is not open' });
 });
+
+// ---------------------------------------------------------------------------
+// Task 2: Upgrades and file database (all real only)
+// ---------------------------------------------------------------------------
+
+function tmpFile(t) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'farm-db-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  return path.join(dir, 'farm.db');
+}
+
+test('real: a file database uses WAL', t => {
+  const file = tmpFile(t);
+  const db = openDb(file, { now: () => T0 });
+  db.close();
+  const raw = new DatabaseSync(file);
+  t.after(() => raw.close());
+  assert.equal(raw.prepare('PRAGMA journal_mode').get().journal_mode, 'wal');
+});
+
+test('real: reopening a file applies no upgrade twice', t => {
+  const file = tmpFile(t);
+  const db1 = openDb(file, { now: () => T0 });
+  db1.close();
+  const db2 = openDb(file, { now: () => T0 + 100 });
+  db2.close();
+  const raw = new DatabaseSync(file);
+  t.after(() => raw.close());
+  assert.deepStrictEqual(raw.prepare('SELECT version, applied_at FROM schema_version').all().map(r => ({ ...r })), [
+    { version: 1, applied_at: T0 },
+  ]);
+});
+
+test('real: upgrades apply in order', t => {
+  const file = tmpFile(t);
+  const upgrades = [
+    ...UPGRADES,
+    { version: 2, sql: 'CREATE TABLE extra_a (x INTEGER) STRICT;' },
+    { version: 3, sql: 'ALTER TABLE extra_a ADD COLUMN y INTEGER;' },
+  ];
+  const db = openDb(file, { now: () => T0, upgrades });
+  assert.equal(db.version, 3);
+  db.close();
+  const raw = new DatabaseSync(file);
+  t.after(() => raw.close());
+  assert.deepStrictEqual(raw.prepare('SELECT version FROM schema_version ORDER BY version').all().map(r => ({ ...r })), [
+    { version: 1 }, { version: 2 }, { version: 3 },
+  ]);
+  const cols = raw.prepare('SELECT name FROM pragma_table_info(?)').all('extra_a').map(r => r.name);
+  assert.deepStrictEqual(cols, ['x', 'y']);
+});
+
+test('real: a failed upgrade leaves no trace; earlier upgrades stay', t => {
+  const file = tmpFile(t);
+  const upgrades = [
+    ...UPGRADES,
+    { version: 2, sql: 'CREATE TABLE fk_probe (room_id INTEGER REFERENCES rooms (id)) STRICT; INSERT INTO fk_probe VALUES (999);' },
+  ];
+  assert.throws(() => openDb(file, { now: () => T0, upgrades }), err => /^Schema upgrade 2 failed: /.test(err.message));
+
+  const db = openDb(file, { now: () => T0 });
+  assert.equal(db.version, 1);
+  db.close();
+  const raw = new DatabaseSync(file);
+  t.after(() => raw.close());
+  assert.deepStrictEqual(raw.prepare('SELECT version FROM schema_version ORDER BY version').all().map(r => ({ ...r })), [{ version: 1 }]);
+  assert.deepStrictEqual(raw.prepare("SELECT name FROM sqlite_master WHERE name = 'fk_probe'").all(), []);
+});
+
+test('real: a database newer than the app throws and changes nothing', t => {
+  const file = tmpFile(t);
+  const upgrades = [
+    ...UPGRADES,
+    { version: 2, sql: 'CREATE TABLE extra_a (x INTEGER) STRICT;' },
+    { version: 3, sql: 'ALTER TABLE extra_a ADD COLUMN y INTEGER;' },
+  ];
+  openDb(file, { now: () => T0, upgrades }).close();
+  assert.throws(() => openDb(file, { now: () => T0 }), {
+    message: `The database ${file} has schema version 3; this app knows up to 1. Use a newer version of the app.`,
+  });
+  const raw = new DatabaseSync(file);
+  t.after(() => raw.close());
+  assert.equal(raw.prepare('SELECT MAX(version) AS v FROM schema_version').get().v, 3);
+  assert.deepStrictEqual(raw.prepare("SELECT name FROM sqlite_master WHERE name = 'extra_a'").all().map(r => ({ ...r })), [{ name: 'extra_a' }]);
+});
+
+test('real: a room inserted with raw SQL has no settings', t => {
+  const file = tmpFile(t);
+  openDb(file, { now: () => T0 }).close();
+  const raw = new DatabaseSync(file);
+  raw.exec("INSERT INTO rooms (name, volume, vent, created_at) VALUES ('x', 10, 'supply', 1)");
+  raw.close();
+  const db = openDb(file, { now: () => T0 });
+  t.after(() => db.close());
+  assertNotFound(() => db.currentSettings(1), 'settings', 1);
+});
