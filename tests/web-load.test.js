@@ -39,15 +39,13 @@ test('L3: at most one global per file', () => {
 });
 
 test('L4: FarmShell.register recorder; FarmBench defined after web/simulator.js', () => {
-  // Extended by task 8 (calibration) and task 9 (capacity) as those files are added.
   const FarmShell = globalThis.FarmShell;
   const recorded = [];
   FarmShell.register = (name, mod) => recorded.push({ name, mod });
   require('../web/simulator.js');
-  try { require('../web/capacity.js'); } catch { /* not yet written */ }
-  try { require('../web/calibration.js'); } catch { /* not yet written */ }
-  const names = recorded.map(r => r.name);
-  assert.ok(names.includes('simulator'));
+  require('../web/capacity.js');
+  require('../web/calibration.js');
+  assert.deepEqual(recorded.map(r => r.name), ['simulator', 'capacity', 'calibration']);
   for (const r of recorded) {
     assert.equal(typeof r.mod.mount, 'function');
     assert.equal(typeof r.mod.unmount, 'function');
