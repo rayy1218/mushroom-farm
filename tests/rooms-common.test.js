@@ -35,7 +35,7 @@ test('cleanSettings drops __proto__, constructor, prototype at any depth with a 
   const { settings: s2 } = cleanSettings({ a: [{ prototype: 1, b: 2 }] });
   assert.deepEqual(s2, { a: [{ b: 2 }] });
   const { warnings: w2 } = cleanSettings({ a: [{ prototype: 1, b: 2 }] });
-  assert.ok(w2.some(w => w.includes('a.0.prototype')));
+  assert.deepEqual(w2, ['Setting "a.0.prototype" is not allowed: ignored.']);
 
   assert.equal(({}).polluted, undefined);
   assert.deepEqual(Object.keys(Object.prototype), []);
@@ -76,4 +76,14 @@ test('cleanSettings is pure and shares nothing with its arguments', () => {
   const own = new Set();
   collect(result, own);
   for (const v of own) assert.ok(!foreign.has(v), 'result must not share an object or array with an argument');
+});
+
+test('cleanSettings copies a null-prototype object too, instead of passing it through by reference', () => {
+  const nullProtoObj = Object.assign(Object.create(null), { x: 1 });
+  const { settings } = cleanSettings({ o: nullProtoObj });
+  assert.deepEqual(settings, { o: { x: 1 } });
+  assert.notEqual(settings.o, nullProtoObj); // a new, filtered copy, not the same object
+
+  const { settings: merged } = cleanSettings({ o: nullProtoObj }, { o: { x: 0, y: 2 } });
+  assert.deepEqual(merged, { o: { x: 1, y: 2 } }); // merged key by key, as any other plain object
 });

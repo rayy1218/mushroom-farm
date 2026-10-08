@@ -14,7 +14,9 @@ const DEMO_ROOM = Object.freeze({ name: 'Room 1', volume: 60, vent: 'supply' });
 const FIRST_NOTE = 'Created';
 
 function isPlainObject(v) {
-  return v !== null && typeof v === 'object' && !Array.isArray(v) && Object.getPrototypeOf(v) === Object.prototype;
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) return false;
+  const proto = Object.getPrototypeOf(v);
+  return proto === Object.prototype || proto === null;
 }
 
 const BANNED_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
