@@ -1,0 +1,3566 @@
+{
+ "collected": "2026-10-08",
+ "note": "Raw web findings (5 sweeps: academic, growers, tropical = lion's mane; aircond, building = Malaysian equipment). Research phase of workflow wf_a95e5243-d32 only; synthesis and contract C8 not done yet. Next step: average these into a lion's mane CROPS profile and equipment facts, then draft C8.",
+ "sweeps": [
+  {
+   "sweep": "aircond",
+   "findings": [
+    {
+     "topic": "ac.hp1.0_BTU",
+     "min": 9000,
+     "max": 9000,
+     "value": 9000,
+     "unit": "BTU/h",
+     "source": "https://www.senheng.com.my/blog-how-many-hp-aircond-do-i-need-malaysia/",
+     "sourceType": "retailer blog",
+     "quote": "1.0HP | ~9,000 BTU/h | Small bedroom"
+    },
+    {
+     "topic": "ac.hp1.0_BTU",
+     "min": 8500,
+     "max": 9500,
+     "value": 9000,
+     "unit": "BTU/h",
+     "source": "https://aircondlounge.com/btu-ton-hp-kw/",
+     "sourceType": "HVAC retailer reference page",
+     "quote": "1.0 HP: 8,500–9,500 BTU/h, 0.70–0.79 Ton, 2.49–2.78 kW"
+    },
+    {
+     "topic": "ac.hp1.0_kW",
+     "min": 2.49,
+     "max": 2.78,
+     "value": null,
+     "unit": "kW",
+     "source": "https://aircondlounge.com/btu-ton-hp-kw/",
+     "sourceType": "HVAC retailer reference page",
+     "quote": "1.0 HP: 8,500–9,500 BTU/h, 0.70–0.79 Ton, 2.49–2.78 kW"
+    },
+    {
+     "topic": "ac.hp1.0_BTU",
+     "min": 9000,
+     "max": 9500,
+     "value": null,
+     "unit": "BTU/h",
+     "source": "https://www.seagullaire.com/horse-power-calculator/",
+     "sourceType": "HVAC retailer reference page",
+     "quote": "HP 1.0 | BTU/hr 9,000–9,500 | kW 2.64–2.78"
+    },
+    {
+     "topic": "ac.hp1.0_kW",
+     "min": 2.64,
+     "max": 2.78,
+     "value": null,
+     "unit": "kW",
+     "source": "https://www.seagullaire.com/horse-power-calculator/",
+     "sourceType": "HVAC retailer reference page",
+     "quote": "HP 1.0 | BTU/hr 9,000–9,500 | kW 2.64–2.78"
+    },
+    {
+     "topic": "ac.hp1.0_BTU",
+     "min": 9000,
+     "max": 9700,
+     "value": null,
+     "unit": "BTU/h",
+     "source": "https://www.acson.com.my/buying-guide/",
+     "sourceType": "manufacturer buying guide",
+     "quote": "1.0 HP | \"9,000 − 9,700\""
+    },
+    {
+     "topic": "ac.hp1.0_BTU",
+     "min": 3400,
+     "max": 9200,
+     "value": 9000,
+     "unit": "BTU/h",
+     "source": "https://www.daikin.com.my/product/ftkf-series-r32/",
+     "sourceType": "manufacturer spec sheet",
+     "quote": "FTKF25CV1MF/RKF25CV1M: Rated Cooling Capacity (Min-Max) 9,000 Btu/h (3,400–9,200); Rated Power Consumption (Min-Max) 860 W (200–960); CSPF (Wh/Wh) 4.60"
+    },
+    {
+     "topic": "ac.hp1.5_BTU",
+     "min": 12000,
+     "max": 12000,
+     "value": 12000,
+     "unit": "BTU/h",
+     "source": "https://www.senheng.com.my/blog-how-many-hp-aircond-do-i-need-malaysia/",
+     "sourceType": "retailer blog",
+     "quote": "1.5HP | ~12,000 BTU/h | Medium bedroom"
+    },
+    {
+     "topic": "ac.hp1.5_BTU",
+     "min": 11500,
+     "max": 12500,
+     "value": null,
+     "unit": "BTU/h",
+     "source": "https://aircondlounge.com/btu-ton-hp-kw/",
+     "sourceType": "HVAC retailer reference page",
+     "quote": "1.5 HP: 11,500–12,500 BTU/h, 0.95–1.04 Ton, 3.37–3.66 kW"
+    },
+    {
+     "topic": "ac.hp1.5_kW",
+     "min": 3.37,
+     "max": 3.66,
+     "value": null,
+     "unit": "kW",
+     "source": "https://aircondlounge.com/btu-ton-hp-kw/",
+     "sourceType": "HVAC retailer reference page",
+     "quote": "1.5 HP: 11,500–12,500 BTU/h, 0.95–1.04 Ton, 3.37–3.66 kW"
+    },
+    {
+     "topic": "ac.hp1.5_BTU",
+     "min": 12000,
+     "max": 13000,
+     "value": null,
+     "unit": "BTU/h",
+     "source": "https://www.seagullaire.com/horse-power-calculator/",
+     "sourceType": "HVAC retailer reference page",
+     "quote": "HP 1.5 | BTU/hr 12,000–13,000 | kW 3.51–3.81"
+    },
+    {
+     "topic": "ac.hp1.5_kW",
+     "min": 3.51,
+     "max": 3.81,
+     "value": null,
+     "unit": "kW",
+     "source": "https://www.seagullaire.com/horse-power-calculator/",
+     "sourceType": "HVAC retailer reference page",
+     "quote": "HP 1.5 | BTU/hr 12,000–13,000 | kW 3.51–3.81"
+    },
+    {
+     "topic": "ac.hp1.5_BTU",
+     "min": 12000,
+     "max": 12300,
+     "value": null,
+     "unit": "BTU/h",
+     "source": "https://www.acson.com.my/buying-guide/",
+     "sourceType": "manufacturer buying guide",
+     "quote": "1.5 HP | \"12,000 − 12,300\""
+    },
+    {
+     "topic": "ac.hp1.5_BTU",
+     "min": 4100,
+     "max": 13000,
+     "value": 12300,
+     "unit": "BTU/h",
+     "source": "https://www.daikin.com.my/product/ftkf-series-r32/",
+     "sourceType": "manufacturer spec sheet",
+     "quote": "FTKF35CV1MF/RKF35CV1M — Rated Cooling Capacity (Min-Max) 12,300 Btu/h (4,100-13,000), Rated Power Consumption (Min-Max) 1,175 W (200-1,285), Rated Running Current 5.27 A, CSPF 4.60"
+    },
+    {
+     "topic": "ac.hp2.0_BTU",
+     "min": 18000,
+     "max": 18000,
+     "value": 18000,
+     "unit": "BTU/h",
+     "source": "https://www.senheng.com.my/blog-how-many-hp-aircond-do-i-need-malaysia/",
+     "sourceType": "retailer blog",
+     "quote": "2.0HP | ~18,000 BTU/h | Large bedroom / small living room"
+    },
+    {
+     "topic": "ac.hp2.0_BTU",
+     "min": 17500,
+     "max": 18500,
+     "value": null,
+     "unit": "BTU/h",
+     "source": "https://aircondlounge.com/btu-ton-hp-kw/",
+     "sourceType": "HVAC retailer reference page",
+     "quote": "2.0 HP: 17,500–18,500 BTU/h, 1.45–1.54 Ton, 5.12–5.42 kW"
+    },
+    {
+     "topic": "ac.hp2.0_kW",
+     "min": 5.12,
+     "max": 5.42,
+     "value": null,
+     "unit": "kW",
+     "source": "https://aircondlounge.com/btu-ton-hp-kw/",
+     "sourceType": "HVAC retailer reference page",
+     "quote": "2.0 HP: 17,500–18,500 BTU/h, 1.45–1.54 Ton, 5.12–5.42 kW"
+    },
+    {
+     "topic": "ac.hp2.0_BTU",
+     "min": 18000,
+     "max": 19000,
+     "value": null,
+     "unit": "BTU/h",
+     "source": "https://www.acson.com.my/buying-guide/",
+     "sourceType": "manufacturer buying guide",
+     "quote": "2.0 HP | \"18,000 − 19,000\""
+    },
+    {
+     "topic": "ac.hp2.0_BTU",
+     "min": 5200,
+     "max": 18500,
+     "value": 18000,
+     "unit": "BTU/h",
+     "source": "https://www.daikin.com.my/product/ftkf-series-r32/",
+     "sourceType": "manufacturer spec sheet",
+     "quote": "FTKF50CV1MF/RKF50CV1M — Rated Cooling Capacity (Min-Max) 18,000 Btu/h (5,200-18,500), Rated Power Consumption (Min-Max) 1,880 W (380-1,950), Rated Running Current 8.24 A, CSPF 5.02"
+    },
+    {
+     "topic": "ac.hp2.5_BTU",
+     "min": 22000,
+     "max": 24000,
+     "value": null,
+     "unit": "BTU/h",
+     "source": "https://www.senheng.com.my/blog-how-many-hp-aircond-do-i-need-malaysia/",
+     "sourceType": "retailer blog",
+     "quote": "2.5HP | ~24,000 BTU/h | Living room"
+    },
+    {
+     "topic": "ac.hp2.5_BTU",
+     "min": 20500,
+     "max": 22500,
+     "value": null,
+     "unit": "BTU/h",
+     "source": "https://aircondlounge.com/btu-ton-hp-kw/",
+     "sourceType": "HVAC retailer reference page",
+     "quote": "2.5 HP: 20,500–22,500 BTU/h, 1.70–1.87 Ton, 6.00–6.59 kW"
+    },
+    {
+     "topic": "ac.hp2.5_kW",
+     "min": 6,
+     "max": 6.59,
+     "value": null,
+     "unit": "kW",
+     "source": "https://aircondlounge.com/btu-ton-hp-kw/",
+     "sourceType": "HVAC retailer reference page",
+     "quote": "2.5 HP: 20,500–22,500 BTU/h, 1.70–1.87 Ton, 6.00–6.59 kW"
+    },
+    {
+     "topic": "ac.hp2.5_BTU",
+     "min": 24000,
+     "max": 25000,
+     "value": null,
+     "unit": "BTU/h",
+     "source": "https://www.seagullaire.com/horse-power-calculator/",
+     "sourceType": "HVAC retailer reference page",
+     "quote": "HP 2.5 | BTU/hr 24,000–25,000 | kW 7.03–7.32"
+    },
+    {
+     "topic": "ac.hp2.5_kW",
+     "min": 7.03,
+     "max": 7.32,
+     "value": null,
+     "unit": "kW",
+     "source": "https://www.seagullaire.com/horse-power-calculator/",
+     "sourceType": "HVAC retailer reference page",
+     "quote": "HP 2.5 | BTU/hr 24,000–25,000 | kW 7.03–7.32"
+    },
+    {
+     "topic": "ac.hp2.5_BTU",
+     "min": 22500,
+     "max": 24000,
+     "value": null,
+     "unit": "BTU/h",
+     "source": "https://www.acson.com.my/buying-guide/",
+     "sourceType": "manufacturer buying guide",
+     "quote": "2.5 HP | \"22,500 − 24,000\""
+    },
+    {
+     "topic": "ac.hp2.5_BTU",
+     "min": 6600,
+     "max": 24500,
+     "value": 24000,
+     "unit": "BTU/h",
+     "source": "https://www.daikin.com.my/product/ftkf-series-r32/ (via retailer listing)",
+     "sourceType": "manufacturer spec sheet (retailer-hosted copy)",
+     "quote": "FTKF71: Rated Cooling Capacity (Min-Max) 24,000 Btu/h (6,600-24,500), Rated Power Consumption (Min-Max) 1,965 W, running current 8.61A, CSPF 6.00 Wh/Wh (5-star)"
+    },
+    {
+     "topic": "ac.hp3.0_BTU",
+     "min": 24000,
+     "max": 30000,
+     "value": null,
+     "unit": "BTU/h",
+     "source": "https://aircondlounge.com/btu-ton-hp-kw/",
+     "sourceType": "HVAC retailer reference page",
+     "quote": "3.0 HP: 24,000–30,000 BTU/h, 2–2.5 Ton, 7.03–8.79 kW"
+    },
+    {
+     "topic": "ac.hp3.0_kW",
+     "min": 7.03,
+     "max": 8.79,
+     "value": null,
+     "unit": "kW",
+     "source": "https://aircondlounge.com/btu-ton-hp-kw/",
+     "sourceType": "HVAC retailer reference page",
+     "quote": "3.0 HP: 24,000–30,000 BTU/h, 2–2.5 Ton, 7.03–8.79 kW"
+    },
+    {
+     "topic": "ac.hp3.0_BTU",
+     "min": 30000,
+     "max": 30000,
+     "value": 30000,
+     "unit": "BTU/h",
+     "source": "https://www.acson.com.my/buying-guide/",
+     "sourceType": "manufacturer buying guide",
+     "quote": "3.0 HP | \"30,000\""
+    },
+    {
+     "topic": "ac.hp3.0_BTU",
+     "min": 7900,
+     "max": 29000,
+     "value": 25600,
+     "unit": "BTU/h",
+     "source": "Daikin FTKF75 spec (listed via https://www.daikin.com.my/product/ftkf-series-r32/ and retailer mirrors)",
+     "sourceType": "manufacturer spec sheet",
+     "quote": "FTKF75: Rated Cooling Capacity (Min-Max) 25,600 Btu/h (7,900-29,000), Rated Power Consumption 2,180 W; official price RM4,560.00"
+    },
+    {
+     "topic": "ac.hp_to_btu_rule",
+     "min": null,
+     "max": null,
+     "value": 9000,
+     "unit": "BTU/h per HP",
+     "source": "https://aircondlounge.com/btu-ton-hp-kw/",
+     "sourceType": "HVAC retailer reference page",
+     "quote": "To convert BTU to HP, divide BTU by 9000."
+    },
+    {
+     "topic": "ac.kw_to_btu_rule",
+     "min": null,
+     "max": null,
+     "value": 3412.1,
+     "unit": "BTU/h per kW",
+     "source": "https://www.seagullaire.com/horse-power-calculator/",
+     "sourceType": "HVAC retailer reference page",
+     "quote": "1 kW = 3,412.1 BTU/hr"
+    },
+    {
+     "topic": "ac.cspf.inverter_1.0hp",
+     "min": null,
+     "max": null,
+     "value": 4.6,
+     "unit": "Wh/Wh (CSPF)",
+     "source": "https://www.daikin.com.my/product/ftkf-series-r32/",
+     "sourceType": "manufacturer spec sheet",
+     "quote": "FTKF25CV1MF — CSPF (Wh/Wh): 4.60, Energy Rating: 4 star"
+    },
+    {
+     "topic": "ac.cspf.inverter_2.0hp",
+     "min": null,
+     "max": null,
+     "value": 5.02,
+     "unit": "Wh/Wh (CSPF)",
+     "source": "https://www.daikin.com.my/product/ftkf-series-r32/",
+     "sourceType": "manufacturer spec sheet",
+     "quote": "FTKF50CV1MF/RKF50CV1M ... CSPF 5.02"
+    },
+    {
+     "topic": "ac.cspf.inverter_2.5hp",
+     "min": null,
+     "max": null,
+     "value": 6,
+     "unit": "Wh/Wh (CSPF)",
+     "source": "Daikin FTKF71 spec listing (manufacturer data mirrored on retailer page)",
+     "sourceType": "manufacturer spec sheet",
+     "quote": "CSPF of 6.00 Wh/Wh (5-star energy rating)"
+    },
+    {
+     "topic": "ac.cspf.noninverter_ducted",
+     "min": 3.11,
+     "max": 3.45,
+     "value": null,
+     "unit": "Wh/Wh (CSPF)",
+     "source": "https://www.daikin.com.my/product/fhc-a-series-r32/",
+     "sourceType": "manufacturer spec sheet",
+     "quote": "FHC50AV1M9: 18,500 Btu/h, 1,785 W, CSPF 3.23; FHC100AV1M9: 36,000 Btu/h, 3,250 W, CSPF 3.45; FHC140AV1M: 46,000 Btu/h, 4,300 W, CSPF 3.33; FHC160AV1M: 55,000 Btu/h, 5,500 W, CSPF 3.11"
+    },
+    {
+     "topic": "ac.power_input.noninverter_ducted_4hp_equiv",
+     "min": null,
+     "max": null,
+     "value": 3250,
+     "unit": "W",
+     "source": "https://www.daikin.com.my/product/fhc-a-series-r32/",
+     "sourceType": "manufacturer spec sheet",
+     "quote": "FHC100AV1M9 | 36,000 | 3,250 | CSPF 3.45"
+    },
+    {
+     "topic": "ac.cspf.meps_threshold_2star",
+     "min": null,
+     "max": null,
+     "value": 4.1,
+     "unit": "Wh/Wh (CSPF)",
+     "source": "https://www.recommend.my/blog/understanding-aircon-energy-labels-in-malaysia-meps-rating-explained/",
+     "sourceType": "retailer blog citing Suruhanjaya Tenaga MEPS guide",
+     "quote": "2-star minimum: \"CSPF 4.1 Wh/Wh\" (for units below 4.5 kW cooling capacity)"
+    },
+    {
+     "topic": "ac.cspf.meps_threshold_2star_4.5to7.1kW",
+     "min": null,
+     "max": null,
+     "value": 4,
+     "unit": "Wh/Wh (CSPF)",
+     "source": "https://www.recommend.my/blog/understanding-aircon-energy-labels-in-malaysia-meps-rating-explained/",
+     "sourceType": "retailer blog citing Suruhanjaya Tenaga MEPS guide",
+     "quote": "For units 4.5–7.1 kW capacity: 2-star minimum \"4.0 Wh/Wh\""
+    },
+    {
+     "topic": "ac.label_coverage_max_kW",
+     "min": null,
+     "max": null,
+     "value": 7.1,
+     "unit": "kW",
+     "source": "https://www.recommend.my/blog/understanding-aircon-energy-labels-in-malaysia-meps-rating-explained/",
+     "sourceType": "retailer blog",
+     "quote": "The mandatory energy label applies to residential air conditioners with cooling capacity of 7.1 kW or less, covering domestic split units from 1HP up to 2.5HP"
+    },
+    {
+     "topic": "ac.cspf.meps_2030_target_2star",
+     "min": null,
+     "max": null,
+     "value": 6.09,
+     "unit": "Wh/Wh (CSPF)",
+     "source": "https://www.recommend.my/blog/understanding-aircon-energy-labels-in-malaysia-meps-rating-explained/",
+     "sourceType": "retailer blog",
+     "quote": "By 2030 ... the minimum 2-star CSPF will rise to 6.09 Wh/Wh, and 5-star will rise to 7.5 Wh/Wh for smaller units"
+    },
+    {
+     "topic": "ac.power_draw_by_star_1.5hp",
+     "min": 850,
+     "max": 1400,
+     "value": null,
+     "unit": "W",
+     "source": "https://myaccool.com/best-energy-saving-aircon-malaysia-star-rating/",
+     "sourceType": "retailer blog",
+     "quote": "3-Star Aircon: ~1,400W (11.2 kWh/day over 8 hrs); 4-Star: ~1,050W (8.4 kWh/day); 5-Star: ~850W (6.8 kWh/day) — estimated figures based on typical 1.5HP unit power consumption and the TNB domestic tariff from July 2025"
+    },
+    {
+     "topic": "ac.setpoint_min",
+     "min": null,
+     "max": null,
+     "value": 16,
+     "unit": "°C",
+     "source": "https://www.samsung.com/latin_en/support/home-appliances/how-do-i-use-the-remote-control-of-my-air-conditioner/",
+     "sourceType": "manufacturer support page",
+     "quote": "Cool, Auto, and Heat modes: Adjust by 1℃ from 16℃ to 30℃. ... The lowest setting temperature of the remote control may vary by country."
+    },
+    {
+     "topic": "ac.setpoint_min",
+     "min": null,
+     "max": null,
+     "value": 16,
+     "unit": "°C",
+     "source": "Midea mini-split remote controller operating manual (PDF, via https://pdf.lowes.com/productdocuments/72b35ad1-54d4-4dd4-b35a-c34df780123d/44310361.pdf)",
+     "sourceType": "manufacturer manual",
+     "quote": "The operating temperature range for units is 16-30°C (60-86°F), with a minimum temperature of 16°C (60°F)"
+    },
+    {
+     "topic": "ac.setpoint_min",
+     "min": null,
+     "max": null,
+     "value": 16,
+     "unit": "°C",
+     "source": "Panasonic remote controller manual (via https://iaq.na.panasonic.com/hubfs/.../Remote_Controller_Manual_en.pdf)",
+     "sourceType": "manufacturer manual",
+     "quote": "Temperature range is 16-30°C/60-86°F; minimum temperature is 16°C (60°F)"
+    },
+    {
+     "topic": "ac.setpoint_min_lowtemp_option",
+     "min": null,
+     "max": null,
+     "value": 8,
+     "unit": "°C",
+     "source": "Panasonic low-temp ducted/cassette solution (noted in search of manufacturer manuals)",
+     "sourceType": "manufacturer product note",
+     "quote": "Panasonic's 'low temp' solution ... designed to run as low as 8°C with 100% sensible cooling to prevent icing, available as cassette, under ceiling, ducted or high wall split models"
+    },
+    {
+     "topic": "ac.price.1.0hp_noninverter",
+     "min": null,
+     "max": null,
+     "value": 869,
+     "unit": "RM",
+     "source": "https://calculatormalaysia.com/harga/harga-aircond-malaysia/",
+     "sourceType": "price comparison blog",
+     "quote": "1.0HP Non-Inverter: RM869 (Midea Xtreme Cool)"
+    },
+    {
+     "topic": "ac.price.1.0hp_inverter",
+     "min": 1098,
+     "max": 1490,
+     "value": null,
+     "unit": "RM",
+     "source": "https://calculatormalaysia.com/harga/harga-aircond-malaysia/",
+     "sourceType": "price comparison blog",
+     "quote": "1.0HP Inverter: RM1,098 (Midea MSXS), RM1,366 (Sharp AHX9VED), RM1,490 (Daikin FTKF)"
+    },
+    {
+     "topic": "ac.price.1.5hp_noninverter",
+     "min": 1153,
+     "max": 1549,
+     "value": null,
+     "unit": "RM",
+     "source": "https://calculatormalaysia.com/harga/harga-aircond-malaysia/",
+     "sourceType": "price comparison blog",
+     "quote": "1.5HP Non-Inverter: RM1,153 (Midea Xtreme Cool), RM1,399 (Panasonic CS-PN12WKH), RM1,549 (Sharp AHA12WCD)"
+    },
+    {
+     "topic": "ac.price.1.5hp_inverter",
+     "min": 1317,
+     "max": 1929,
+     "value": null,
+     "unit": "RM",
+     "source": "https://calculatormalaysia.com/harga/harga-aircond-malaysia/",
+     "sourceType": "price comparison blog",
+     "quote": "1.5HP Inverter: RM1,317 (Midea MSXS), RM1,780 (Daikin FTKF), RM1,799 (Sharp AHX13BED), RM1,929 (Panasonic CS-XPU13XKH)"
+    },
+    {
+     "topic": "ac.price.2.0hp_noninverter",
+     "min": null,
+     "max": null,
+     "value": 1955,
+     "unit": "RM",
+     "source": "https://calculatormalaysia.com/harga/harga-aircond-malaysia/",
+     "sourceType": "price comparison blog",
+     "quote": "2.0HP Non-Inverter: RM1,955 (Midea Xtreme Cool)"
+    },
+    {
+     "topic": "ac.price.2.0hp_inverter",
+     "min": 2999,
+     "max": 3079,
+     "value": null,
+     "unit": "RM",
+     "source": "https://calculatormalaysia.com/harga/harga-aircond-malaysia/",
+     "sourceType": "price comparison blog",
+     "quote": "2.0HP Inverter: RM2,999 (Daikin FTKF), RM3,079 (Panasonic CS-XPU18XKH)"
+    },
+    {
+     "topic": "ac.price.2.5hp_inverter",
+     "min": null,
+     "max": null,
+     "value": 3940,
+     "unit": "RM",
+     "source": "Daikin Malaysia official price for FTKF71 (via https://www.daikin.com.my/product/ftkf-series-r32/ and estore.daikin.com.my)",
+     "sourceType": "manufacturer official price",
+     "quote": "Daikin's official site lists it at RM3,940.00 ... Daikin's own eStore also lists it at RM3,940.00"
+    },
+    {
+     "topic": "ac.price.3.0hp_inverter",
+     "min": null,
+     "max": null,
+     "value": 4560,
+     "unit": "RM",
+     "source": "Daikin Malaysia official price for FTKF75 (via https://www.daikin.com.my/product/ftkf-series-r32/)",
+     "sourceType": "manufacturer official price",
+     "quote": "Daikin's official site lists the 3.0HP unit at RM4,560.00"
+    },
+    {
+     "topic": "ac.install_cost.1.0to2.0hp",
+     "min": 250,
+     "max": 310,
+     "value": null,
+     "unit": "RM",
+     "source": "https://calculatormalaysia.com/harga/harga-aircond-malaysia/",
+     "sourceType": "price comparison blog",
+     "quote": "10 kaki paip kuprum + pendawaian standard; costs ranging from RM250 (1.0HP) to RM310 (2.0HP)"
+    },
+    {
+     "topic": "ac.cassette_ducted_above3hp_btu",
+     "min": null,
+     "max": null,
+     "value": 36000,
+     "unit": "BTU/h",
+     "source": "https://www.daikin.com.my/product/fhc-a-series-r32/",
+     "sourceType": "manufacturer spec sheet",
+     "quote": "FHC100AV1M9 | 36,000 Btu/h | 3,250 W | CSPF 3.45 (ceiling-exposed, non-inverter, approx. 4HP-equivalent)"
+    },
+    {
+     "topic": "ac.cassette_price_4.0hp",
+     "min": null,
+     "max": null,
+     "value": 8510,
+     "unit": "RM",
+     "source": "Daikin REVO ceiling cassette inverter listing (DoubleK/Seng Huat retailer pages, model FCFG100A/RZFG100-3CKY-LK)",
+     "sourceType": "retailer price listing",
+     "quote": "FCFG100A/RZFG100-3CKY-LK (4.0HP R32 REVO Ceiling Cassette Inverter) – RM 8,510.00"
+    },
+    {
+     "topic": "ac.cassette_price_5.0hp",
+     "min": 5999,
+     "max": 9780,
+     "value": null,
+     "unit": "RM",
+     "source": "Daikin ceiling cassette listings (Seng Huat / Seagull Aire / DoubleK retailer pages)",
+     "sourceType": "retailer price listing",
+     "quote": "FCFG140A/RZFG140-3CKY-LK (5.0HP R32 REVO Ceiling Cassette Inverter) – RM 9,780.00; Daikin 5.0HP R32 Ceiling Cassette FCC140A/RC140B-3CK-LF (Built-In WiFi) – RM5,999.00"
+    },
+    {
+     "topic": "ac.ducted_price_4.0to6.0hp",
+     "min": 6790,
+     "max": 8410,
+     "value": null,
+     "unit": "RM",
+     "source": "Daikin ceiling concealed/ducted FBA and FDMFC series listings (retailer pages)",
+     "sourceType": "retailer price listing",
+     "quote": "FDMFC100A/RZFC100-3CCY-M (4.0HP Inverter Ceiling Concealed) – RM6,790.00; FBA125B/RZF125CY-3CCY-L (5.0HP Inverter) – RM8,039.00; FDMFC140A/RZFC140-3CCY-M (6.0HP Inverter Ceiling Concealed) – RM7,880.00"
+    },
+    {
+     "topic": "tnb.tariff.domestic_energy_low",
+     "min": null,
+     "max": null,
+     "value": 27.03,
+     "unit": "sen/kWh",
+     "source": "https://trexon.my/guides/tnb-tariff-2026",
+     "sourceType": "energy consultancy guide",
+     "quote": "27.03 sen/kWh up to 1,500 kWh/month"
+    },
+    {
+     "topic": "tnb.tariff.domestic_energy_high",
+     "min": null,
+     "max": null,
+     "value": 37.03,
+     "unit": "sen/kWh",
+     "source": "https://trexon.my/guides/tnb-tariff-2026",
+     "sourceType": "energy consultancy guide",
+     "quote": "37.03 sen/kWh on all kWh once you exceed 1,500 kWh a month"
+    },
+    {
+     "topic": "tnb.tariff.domestic_capacity",
+     "min": null,
+     "max": null,
+     "value": 4.55,
+     "unit": "sen/kWh",
+     "source": "https://trexon.my/guides/tnb-tariff-2026",
+     "sourceType": "energy consultancy guide",
+     "quote": "Capacity: \"4.55 sen/kWh\""
+    },
+    {
+     "topic": "tnb.tariff.domestic_network",
+     "min": null,
+     "max": null,
+     "value": 12.85,
+     "unit": "sen/kWh",
+     "source": "https://trexon.my/guides/tnb-tariff-2026",
+     "sourceType": "energy consultancy guide",
+     "quote": "Network: \"12.85 sen/kWh\""
+    },
+    {
+     "topic": "tnb.tariff.domestic_total",
+     "min": 44.43,
+     "max": 54.43,
+     "value": null,
+     "unit": "sen/kWh",
+     "source": "https://arusenerg.com/tnb-tariff-malaysia/",
+     "sourceType": "energy consultancy guide",
+     "quote": "Estimated Total (before AFA/EEI): ~44.43 sen/kWh (≤1,500 kWh) / ~54.43 sen/kWh (>1,500 kWh) — effective 1 July 2025"
+    },
+    {
+     "topic": "tnb.tariff.domestic_retail_waiver",
+     "min": null,
+     "max": null,
+     "value": 600,
+     "unit": "kWh/month threshold",
+     "source": "https://arusenerg.com/tnb-tariff-malaysia/",
+     "sourceType": "energy consultancy guide",
+     "quote": "Retail Charge | RM10/month (waived if ≤600 kWh)"
+    },
+    {
+     "topic": "tnb.tariff.commercial_lv_energy",
+     "min": null,
+     "max": null,
+     "value": 27.03,
+     "unit": "sen/kWh",
+     "source": "https://www.plusxnergy.com/july-2025-tnb-tariff-update-what-malaysian-businesses-need-to-know/",
+     "sourceType": "energy company blog",
+     "quote": "Low Voltage General Tariff (Tariff B): Energy Charge: RM 0.2703/kWh (consolidated rate)"
+    },
+    {
+     "topic": "tnb.tariff.commercial_lv_capacity",
+     "min": null,
+     "max": null,
+     "value": 8.83,
+     "unit": "sen/kWh",
+     "source": "https://www.plusxnergy.com/july-2025-tnb-tariff-update-what-malaysian-businesses-need-to-know/",
+     "sourceType": "energy company blog",
+     "quote": "Capacity: RM 0.0883/kWh"
+    },
+    {
+     "topic": "tnb.tariff.commercial_lv_network",
+     "min": null,
+     "max": null,
+     "value": 14.82,
+     "unit": "sen/kWh",
+     "source": "https://www.plusxnergy.com/july-2025-tnb-tariff-update-what-malaysian-businesses-need-to-know/",
+     "sourceType": "energy company blog",
+     "quote": "Network: RM 0.1482/kWh"
+    },
+    {
+     "topic": "tnb.tariff.commercial_lv_total",
+     "min": null,
+     "max": null,
+     "value": 50.68,
+     "unit": "sen/kWh",
+     "source": "https://arusenerg.com/tnb-tariff-malaysia/",
+     "sourceType": "energy consultancy guide",
+     "quote": "Combined, the Low Voltage General rate works out to 27.03 sen/kWh plus 8.83 capacity plus 14.82 network, totaling 50.68 sen/kWh"
+    },
+    {
+     "topic": "tnb.tariff.commercial_mv_energy",
+     "min": null,
+     "max": null,
+     "value": 29.83,
+     "unit": "sen/kWh",
+     "source": "https://trexon.my/guides/tnb-tariff-2026",
+     "sourceType": "energy consultancy guide",
+     "quote": "MV General | Energy Rate 29.83 sen/kWh, RM89.27/kW MD charge, RM200/month minimum"
+    },
+    {
+     "topic": "tnb.tariff.commercial_hv_energy",
+     "min": null,
+     "max": null,
+     "value": 43.03,
+     "unit": "sen/kWh",
+     "source": "https://www.plusxnergy.com/july-2025-tnb-tariff-update-what-malaysian-businesses-need-to-know/",
+     "sourceType": "energy company blog",
+     "quote": "High Voltage General Tariff (Tariff C3): Energy Charge: RM 0.4303/kWh (+24.72%)"
+    },
+    {
+     "topic": "tnb.tariff.effective_date",
+     "min": null,
+     "max": null,
+     "value": null,
+     "unit": "date",
+     "source": "https://arusenerg.com/tnb-tariff-malaysia/",
+     "sourceType": "energy consultancy guide",
+     "quote": "TNB Tariff Rates (RP4, Effective 1 July 2025)"
+    },
+    {
+     "topic": "tnb.afa_current",
+     "min": null,
+     "max": null,
+     "value": 3.61,
+     "unit": "sen/kWh",
+     "source": "https://trexon.my/guides/tnb-tariff-2026",
+     "sourceType": "energy consultancy guide",
+     "quote": "AFA (Automatic Fuel Adjustment) applies monthly; October 2026: \"+3.61 sen/kWh\""
+    },
+    {
+     "topic": "tnb.afa_jan2026",
+     "min": null,
+     "max": null,
+     "value": -4.99,
+     "unit": "sen/kWh",
+     "source": "https://paultan.org/2025/12/26/tnb-sts-afa-rate-for-jan-2026-set-at-4-99-sen-kwh/",
+     "sourceType": "news article",
+     "quote": "TNB: ST's AFA rate for Jan 2026 set at -4.99 sen/kWh"
+    }
+   ],
+   "notes": "Methodology: used WebSearch to find candidate pages, then WebFetch to pull exact figures/quotes from manufacturer spec sheets (Daikin Malaysia FTKF/FHC-A series), manufacturer support manuals (Samsung/Midea/Panasonic), retailer/price-comparison blogs, and energy-consultancy guides to TNB's RP4 tariff. 11 distinct domains covered: senheng.com.my, aircondlounge.com, seagullaire.com, acson.com.my, daikin.com.my (plus daikin-model mirrors on retailer sites), recommend.my, myaccool.com, samsung.com, calculatormalaysia.com, trexon.my, arusenerg.com, plusxnergy.com, paultan.org — well over the requested 6.\n\nKey agreements vs disagreements:\n- HP→BTU/kW conversion: all five independent conversion-table sources (senheng, aircondlounge, seagullaire, acson, Daikin's own catalogued models) agree on the same rough bands — 1.0HP≈9,000 BTU/h (~2.6-2.8kW), 1.5HP≈12,000-12,300 BTU/h (~3.4-3.8kW), 2.0HP≈18,000-19,000 BTU/h (~5.1-5.6kW), 2.5HP≈22,500-25,000 BTU/h (~6.0-7.3kW), 3.0HP≈24,000-30,000 BTU/h (~7.0-8.8kW). There is real spread because \"HP\" is a nameplate/motor-size label, not a regulated cooling-capacity unit — actual rated BTU for a given HP class varies by brand/model (e.g. Daikin's own 2.5HP model is rated 24,000 BTU while Daikin's 3.0HP model is only 25,600 BTU, barely above its own 2.5HP unit, showing HP labels are not strictly linear with capacity). Recommend treating \"1HP=9,000 BTU/h, 1kW=3,412 BTU/h\" as the universal rule-of-thumb, but sizing from actual spec-sheet BTU/kW, not the HP badge.\n- COP/CSPF: Malaysia's MEPS/energy-label regime for units ≤7.1kW (i.e. up to ~2.5HP) uses CSPF (Wh/Wh), not simple COP; inverter units we found range CSPF 4.60 (1.0-1.5HP, 4-star) to 6.00 (2.5HP, 5-star). Non-inverter ducted/ceiling-exposed units (Daikin FHC-A series, which also covers sizes above 3HP equivalent, e.g. the 36,000–55,000 BTU/h models) report CSPF 3.11-3.45 and rated power input directly (1,785W-5,500W) — noticeably less efficient than inverter CSPF values, consistent with the general claim (myaccool.com) that a 5-star unit draws roughly half the power of a 3-star for the same load (1,400W vs 850W cited for a 1.5HP-equivalent load). No source gave a plain \"COP\" number for non-inverter units; CSPF/rated-power-input figures are what's actually published, so COP must be back-calculated as capacity(W)/power-input(W) from the spec sheet if needed.\n- Lowest setpoint: three independent manufacturer manuals (Samsung, Midea, Panasonic) agree on 16°C as the standard minimum for ordinary split units, with Samsung's own page flagging that \"the lowest setting temperature of the remote control may vary by country.\" One manufacturer note (Panasonic) describes a specialist \"low-temp\" ducted/cassette/under-ceiling product line engineered to run down to 8°C for applications needing deeper cooling (e.g. a mushroom room) — this is a distinct product, not a setting available on an ordinary split.\n- Prices: no disagreement in kind, only breadth — non-inverter units run roughly RM600-2,000 across 1.0-2.0HP, inverter units roughly RM1,000-3,100 across the same range (calculatormalaysia.com, cross-checked against Daikin's own official RM3,940 (2.5HP) and RM4,560 (3.0HP) list prices). Ceiling cassette/ducted units above 3HP (4.0-6.0HP) run roughly RM6,000-9,800 installed-equipment price depending on inverter/non-inverter and series, per multiple Daikin-authorized retailer listings (DoubleK, Seng Huat, Seagull Aire, 1Now) — note these retailer prices were found via WebSearch synthesis rather than individually fetched per listing, so treat exact RM figures as indicative rather than verified line-by-line.\n- TNB tariff: three independent sources (trexon.my, arusenerg.com, plusxnergy.com) agree closely on RP4 rates effective 1 July 2025: domestic (Tariff A) energy charge 27.03 sen/kWh (≤1,500kWh)/37.03 sen/kWh (>1,500kWh) + 4.55 sen/kWh capacity + 12.85 sen/kWh network ≈ 44.43/54.43 sen/kWh before AFA; commercial Low Voltage General ≈ 27.03 + 8.83 + 14.82 = 50.68 sen/kWh; Medium Voltage General 29.83 sen/kWh + RM89.27/kW demand charge; High Voltage General 43.03 sen/kWh + RM31.21/kW. On top of these base rates, a monthly AFA (Automatic Fuel Adjustment) surcharge/rebate applies — it was negative (a rebate, e.g. -4.99 sen/kWh in Jan 2026 per paultan.org) earlier in 2026 and turned into a small surcharge by mid-2026, reaching +3.61 sen/kWh in October 2026 per trexon.my — so the \"current\" effective domestic rate today (Oct 2026) is roughly 44.43 + 3.61 ≈ 48 sen/kWh for usage ≤1,500 kWh/month, before EEI rebates/service tax. No source disagreement found on the base RP4 rates themselves; the only real time-variation is the monthly AFA adjustment, which is expected and official (set by Energy Commission/ST), not a source conflict. I could not get a readable quote directly from TNB's own tariff booklet PDF (it fetched as corrupted binary) or mytnb.com.my (navigation-only page with no rate table rendered) — all tariff figures above come from independent secondary (but official-rate-citing) consultancy/energy-company sources, cross-checked against each other rather than against TNB's primary PDF.\nCaveat: all \"ac.price.*\" and \"ac.cassette/ducted price\" entries reflect retail listing/search-snippet prices seen in Oct 2026 and are promotional/time-sensitive, not official RRPs except where explicitly noted as Daikin's own official site price."
+  },
+  {
+   "sweep": "tropical",
+   "findings": [
+    {
+     "topic": "spawn.T",
+     "min": 25,
+     "max": 27,
+     "value": null,
+     "unit": "°C",
+     "source": "https://www.out-grow.com/pages/lions-mane-warm-weather-hericium-erinaceus",
+     "sourceType": "grower/supplier guide (warm-weather strain)",
+     "quote": "77–81°F (25–27°C)"
+    },
+    {
+     "topic": "spawn.days",
+     "min": 14,
+     "max": 21,
+     "value": null,
+     "unit": "days",
+     "source": "https://www.out-grow.com/pages/lions-mane-warm-weather-hericium-erinaceus",
+     "sourceType": "grower/supplier guide (warm-weather strain)",
+     "quote": "14–21 days from LC"
+    },
+    {
+     "topic": "pinning.coldShock",
+     "min": null,
+     "max": null,
+     "value": 0,
+     "unit": "bool(none)",
+     "source": "https://www.out-grow.com/pages/lions-mane-warm-weather-hericium-erinaceus",
+     "sourceType": "grower/supplier guide (warm-weather strain)",
+     "quote": "Cold shock: None required (this strain's defining characteristic)"
+    },
+    {
+     "topic": "pinning.days",
+     "min": 3,
+     "max": 7,
+     "value": null,
+     "unit": "days",
+     "source": "https://www.out-grow.com/pages/lions-mane-warm-weather-hericium-erinaceus",
+     "sourceType": "grower/supplier guide (warm-weather strain)",
+     "quote": "Pin emergence: 3–7 days after initiating fruiting conditions"
+    },
+    {
+     "topic": "fruiting.T",
+     "min": 21,
+     "max": 27,
+     "value": null,
+     "unit": "°C",
+     "source": "https://www.out-grow.com/pages/lions-mane-warm-weather-hericium-erinaceus",
+     "sourceType": "grower/supplier guide (warm-weather strain)",
+     "quote": "70–80°F (21–27°C)"
+    },
+    {
+     "topic": "fruiting.RH",
+     "min": 85,
+     "max": 95,
+     "value": null,
+     "unit": "%",
+     "source": "https://www.out-grow.com/pages/lions-mane-warm-weather-hericium-erinaceus",
+     "sourceType": "grower/supplier guide (warm-weather strain)",
+     "quote": "85–95% RH"
+    },
+    {
+     "topic": "fruiting.CO2",
+     "min": null,
+     "max": 1100,
+     "value": null,
+     "unit": "ppm",
+     "source": "https://www.out-grow.com/pages/lions-mane-warm-weather-hericium-erinaceus",
+     "sourceType": "grower/supplier guide (warm-weather strain)",
+     "quote": "<1,100 ppm (critical threshold for normal fruiting body formation)"
+    },
+    {
+     "topic": "yield.BE",
+     "min": 15,
+     "max": 80,
+     "value": null,
+     "unit": "%",
+     "source": "https://www.out-grow.com/pages/lions-mane-warm-weather-hericium-erinaceus",
+     "sourceType": "grower/supplier guide (warm-weather strain)",
+     "quote": "Biological Efficiency: approximately 15–80% depending on substrate composition (peer-reviewed range)"
+    },
+    {
+     "topic": "flushes",
+     "min": 2,
+     "max": 3,
+     "value": null,
+     "unit": "flushes",
+     "source": "https://www.out-grow.com/pages/lions-mane-warm-weather-hericium-erinaceus",
+     "sourceType": "grower/supplier guide (warm-weather strain)",
+     "quote": "2–3 (first flush largest), second flush yielding 50–60% of first flush weight"
+    },
+    {
+     "topic": "fruiting.days",
+     "min": 4,
+     "max": 8,
+     "value": null,
+     "unit": "weeks spawn-to-harvest",
+     "source": "https://www.out-grow.com/pages/lions-mane-warm-weather-hericium-erinaceus",
+     "sourceType": "grower/supplier guide (warm-weather strain)",
+     "quote": "Total Cycle: 4–8 weeks spawn-to-harvest"
+    },
+    {
+     "topic": "spawn.T",
+     "min": 21,
+     "max": 24,
+     "value": null,
+     "unit": "°C",
+     "source": "https://www.out-grow.com/pages/lions-mane-hericium-erinaceus",
+     "sourceType": "grower/supplier guide (standard strain)",
+     "quote": "Temperature: 21–24°C"
+    },
+    {
+     "topic": "spawn.days",
+     "min": 10,
+     "max": 21,
+     "value": null,
+     "unit": "days",
+     "source": "https://www.out-grow.com/pages/lions-mane-hericium-erinaceus",
+     "sourceType": "grower/supplier guide (standard strain)",
+     "quote": "Duration: 10–21 days"
+    },
+    {
+     "topic": "spawn.RH",
+     "min": 95,
+     "max": 100,
+     "value": null,
+     "unit": "%",
+     "source": "https://www.out-grow.com/pages/lions-mane-hericium-erinaceus",
+     "sourceType": "grower/supplier guide (standard strain)",
+     "quote": "Humidity: 95–100%"
+    },
+    {
+     "topic": "pinning.T",
+     "min": 10,
+     "max": 15.6,
+     "value": null,
+     "unit": "°C",
+     "source": "https://www.out-grow.com/pages/lions-mane-hericium-erinaceus",
+     "sourceType": "grower/supplier guide (standard strain)",
+     "quote": "Drop from colonization temperature (21–24°C) to 10–15.6°C (50–60°F)"
+    },
+    {
+     "topic": "pinning.days",
+     "min": 3,
+     "max": 5,
+     "value": null,
+     "unit": "days",
+     "source": "https://www.out-grow.com/pages/lions-mane-hericium-erinaceus",
+     "sourceType": "grower/supplier guide (standard strain)",
+     "quote": "Primordia form in 3–5 days"
+    },
+    {
+     "topic": "fruiting.T",
+     "min": 18,
+     "max": 24,
+     "value": null,
+     "unit": "°C",
+     "source": "https://www.out-grow.com/pages/lions-mane-hericium-erinaceus",
+     "sourceType": "grower/supplier guide (standard strain)",
+     "quote": "Temperature range: 18–24°C"
+    },
+    {
+     "topic": "fruiting.RH",
+     "min": 85,
+     "max": 95,
+     "value": null,
+     "unit": "%",
+     "source": "https://www.out-grow.com/pages/lions-mane-hericium-erinaceus",
+     "sourceType": "grower/supplier guide (standard strain)",
+     "quote": "Maintain 95–100% RH during primordia initiation; reduce to 85–95% during fruiting body development"
+    },
+    {
+     "topic": "pinning.CO2",
+     "min": 500,
+     "max": 700,
+     "value": null,
+     "unit": "ppm",
+     "source": "https://www.out-grow.com/pages/lions-mane-hericium-erinaceus",
+     "sourceType": "grower/supplier guide (standard strain)",
+     "quote": "CO₂ must drop from colonization levels to 500–700 ppm"
+    },
+    {
+     "topic": "fruiting.FAE",
+     "min": 5,
+     "max": 8,
+     "value": null,
+     "unit": "exchanges/hour",
+     "source": "https://www.out-grow.com/pages/lions-mane-hericium-erinaceus",
+     "sourceType": "grower/supplier guide (standard strain)",
+     "quote": "5–8 fresh air exchanges per hour"
+    },
+    {
+     "topic": "fruiting.light.lux",
+     "min": 500,
+     "max": 1000,
+     "value": null,
+     "unit": "lux",
+     "source": "https://www.out-grow.com/pages/lions-mane-hericium-erinaceus",
+     "sourceType": "grower/supplier guide (standard strain)",
+     "quote": "500–1,000 lux of light"
+    },
+    {
+     "topic": "fruiting.days",
+     "min": 4,
+     "max": 5,
+     "value": null,
+     "unit": "days (pinning to harvest)",
+     "source": "https://www.out-grow.com/pages/lions-mane-hericium-erinaceus",
+     "sourceType": "grower/supplier guide (standard strain)",
+     "quote": "4–5 days from pinning to harvest at 18–24°C"
+    },
+    {
+     "topic": "yield.BE",
+     "min": 30,
+     "max": 38,
+     "value": null,
+     "unit": "%",
+     "source": "https://www.out-grow.com/pages/lions-mane-hericium-erinaceus",
+     "sourceType": "grower/supplier guide (standard strain)",
+     "quote": "~30–38% per peer-reviewed data on standard substrate"
+    },
+    {
+     "topic": "yield.BE",
+     "min": 78,
+     "max": 80,
+     "value": null,
+     "unit": "%",
+     "source": "https://www.out-grow.com/pages/lions-mane-hericium-erinaceus",
+     "sourceType": "grower/supplier guide (standard strain)",
+     "quote": "78–80% with optimized supplemented substrates"
+    },
+    {
+     "topic": "rest.days",
+     "min": null,
+     "max": null,
+     "value": 14,
+     "unit": "days",
+     "source": "https://www.out-grow.com/pages/lions-mane-hericium-erinaceus",
+     "sourceType": "grower/supplier guide (standard strain)",
+     "quote": "Approximately 14 days between flushes"
+    },
+    {
+     "topic": "flushes",
+     "min": null,
+     "max": 4,
+     "value": null,
+     "unit": "flushes",
+     "source": "https://www.out-grow.com/pages/lions-mane-hericium-erinaceus",
+     "sourceType": "grower/supplier guide (standard strain)",
+     "quote": "up to 4 flushes documented"
+    },
+    {
+     "topic": "spawn.T",
+     "min": 18,
+     "max": 24,
+     "value": null,
+     "unit": "°C",
+     "source": "https://mushroomalmanac.com/mushrooms/lions-mane/",
+     "sourceType": "grower guide",
+     "quote": "Colonisation (Spawn Run) Temperature: 18-24°C"
+    },
+    {
+     "topic": "spawn.days",
+     "min": 21,
+     "max": 35,
+     "value": null,
+     "unit": "days",
+     "source": "https://mushroomalmanac.com/mushrooms/lions-mane/",
+     "sourceType": "grower guide",
+     "quote": "Duration: 3-5 weeks to fully whiten the block"
+    },
+    {
+     "topic": "fruiting.T",
+     "min": 16,
+     "max": 22,
+     "value": null,
+     "unit": "°C",
+     "source": "https://mushroomalmanac.com/mushrooms/lions-mane/",
+     "sourceType": "grower guide",
+     "quote": "Fruiting Initiation Temperature: 16-22°C"
+    },
+    {
+     "topic": "fruiting.RH",
+     "min": 85,
+     "max": 95,
+     "value": null,
+     "unit": "%",
+     "source": "https://mushroomalmanac.com/mushrooms/lions-mane/",
+     "sourceType": "grower guide",
+     "quote": "Humidity: 85-95% RH"
+    },
+    {
+     "topic": "fruiting.CO2",
+     "min": null,
+     "max": 1000,
+     "value": null,
+     "unit": "ppm",
+     "source": "https://mushroomalmanac.com/mushrooms/lions-mane/",
+     "sourceType": "grower guide",
+     "quote": "CO2 must be kept below around 1000 ppm"
+    },
+    {
+     "topic": "fruiting.FAE",
+     "min": null,
+     "max": null,
+     "value": null,
+     "unit": "min, 2-4x/day",
+     "source": "https://mushroomalmanac.com/mushrooms/lions-mane/",
+     "sourceType": "grower guide",
+     "quote": "Fresh Air Exchange: at least 10-20 minutes two to four times daily"
+    },
+    {
+     "topic": "fruiting.days",
+     "min": 84,
+     "max": 112,
+     "value": null,
+     "unit": "days total (12-16 weeks from inoculation)",
+     "source": "https://mushroomalmanac.com/mushrooms/lions-mane/",
+     "sourceType": "grower guide",
+     "quote": "Total duration: 12-16 weeks from inoculation"
+    },
+    {
+     "topic": "yield.BE",
+     "min": 15,
+     "max": 25,
+     "value": null,
+     "unit": "% per flush",
+     "source": "https://mushroomalmanac.com/mushrooms/lions-mane/",
+     "sourceType": "grower guide",
+     "quote": "Biological efficiency: 15-25% per flush"
+    },
+    {
+     "topic": "flushes",
+     "min": 2,
+     "max": 3,
+     "value": null,
+     "unit": "flushes",
+     "source": "https://mushroomalmanac.com/mushrooms/lions-mane/",
+     "sourceType": "grower guide",
+     "quote": "Typical flushes: 2-3 flushes"
+    },
+    {
+     "topic": "rest.days",
+     "min": 7,
+     "max": 14,
+     "value": null,
+     "unit": "days",
+     "source": "https://mushroomalmanac.com/mushrooms/lions-mane/",
+     "sourceType": "grower guide",
+     "quote": "Rest between flushes: 1-2 weeks"
+    },
+    {
+     "topic": "tMin",
+     "min": null,
+     "max": null,
+     "value": 14,
+     "unit": "°C (causes pin abortion)",
+     "source": "https://mushroomalmanac.com/mushrooms/lions-mane/",
+     "sourceType": "grower guide",
+     "quote": "Minimum (critical): below 14°C causes pin abortion"
+    },
+    {
+     "topic": "spawn.tMax",
+     "min": null,
+     "max": 25,
+     "value": null,
+     "unit": "°C (inoculation requirement)",
+     "source": "https://mushroomalmanac.com/mushrooms/lions-mane/",
+     "sourceType": "grower guide",
+     "quote": "Inoculation requirement: below 25°C"
+    },
+    {
+     "topic": "spawn.T",
+     "min": null,
+     "max": null,
+     "value": 20,
+     "unit": "°C",
+     "source": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10432537/",
+     "sourceType": "peer-reviewed study (Nature Sci Reports 2023; Fresh & Friendly Farm, Pathum Thani, Thailand — lowland tropical commercial farm)",
+     "quote": "incubated at 20 °C in the presence of light for mycelial colonization. After seven days of incubation"
+    },
+    {
+     "topic": "spawn.days",
+     "min": null,
+     "max": null,
+     "value": 7,
+     "unit": "days",
+     "source": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10432537/",
+     "sourceType": "peer-reviewed study (Nature Sci Reports 2023; Thailand lowland tropical commercial farm)",
+     "quote": "After seven days of incubation"
+    },
+    {
+     "topic": "fruiting.T",
+     "min": null,
+     "max": null,
+     "value": 16,
+     "unit": "°C",
+     "source": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10432537/",
+     "sourceType": "peer-reviewed study (Nature Sci Reports 2023; Thailand lowland tropical commercial farm)",
+     "quote": "transferred to a cropping room at 16 °C, 65–75% RH with 8 h of light daily to induce fructification"
+    },
+    {
+     "topic": "fruiting.RH",
+     "min": 65,
+     "max": 75,
+     "value": null,
+     "unit": "%",
+     "source": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10432537/",
+     "sourceType": "peer-reviewed study (Nature Sci Reports 2023; Thailand lowland tropical commercial farm)",
+     "quote": "65–75% RH"
+    },
+    {
+     "topic": "fruiting.light.hours",
+     "min": null,
+     "max": null,
+     "value": 8,
+     "unit": "hours/day",
+     "source": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10432537/",
+     "sourceType": "peer-reviewed study (Nature Sci Reports 2023; Thailand lowland tropical commercial farm)",
+     "quote": "8 h of light daily to induce fructification"
+    },
+    {
+     "topic": "fruiting.days",
+     "min": null,
+     "max": null,
+     "value": 47,
+     "unit": "days (spawning to harvest, best treatment)",
+     "source": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10432537/",
+     "sourceType": "peer-reviewed study (Nature Sci Reports 2023; Thailand lowland tropical commercial farm)",
+     "quote": "grown and harvested at 47 days after spawning"
+    },
+    {
+     "topic": "yield.perBlock",
+     "min": null,
+     "max": null,
+     "value": 113.22,
+     "unit": "g fresh weight per bottle (100% rubber sawdust, best treatment)",
+     "source": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10432537/",
+     "sourceType": "peer-reviewed study (Nature Sci Reports 2023; Thailand lowland tropical commercial farm)",
+     "quote": "113.22 ± 2.43 g FW ... per bottle"
+    },
+    {
+     "topic": "yield.BE",
+     "min": null,
+     "max": null,
+     "value": 42.61,
+     "unit": "%",
+     "source": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10432537/",
+     "sourceType": "peer-reviewed study (Nature Sci Reports 2023; Thailand lowland tropical commercial farm)",
+     "quote": "biological efficiency (42.61%) ... were obtained from substrates containing 100% rubber sawdust"
+    },
+    {
+     "topic": "fruiting.T",
+     "min": 18,
+     "max": 24,
+     "value": null,
+     "unit": "°C",
+     "source": "https://epg.science.cmu.ac.th/ejournal/journal-detail.php?id=11807",
+     "sourceType": "peer-reviewed study (Chiang Mai Journal of Science 2024, Thailand)",
+     "quote": "temperature was 18–24 °C"
+    },
+    {
+     "topic": "yield.perBlock",
+     "min": 85.79,
+     "max": 123.7,
+     "value": null,
+     "unit": "g/bag",
+     "source": "https://epg.science.cmu.ac.th/ejournal/journal-detail.php?id=11807",
+     "sourceType": "peer-reviewed study (Chiang Mai Journal of Science 2024, Thailand)",
+     "quote": "a high yield of 85.79–123.7 grams/bag"
+    },
+    {
+     "topic": "spawn.T",
+     "min": null,
+     "max": null,
+     "value": 25,
+     "unit": "°C (±2°C)",
+     "source": "https://www.academia.edu/128128668/Cultivation_and_Nutrient_Compositions_of_Medicinal_Mushroom_Hericium_erinaceus_in_Thailand",
+     "sourceType": "peer-reviewed study, Thailand (figures via search-engine page synthesis; direct fetch blocked HTTP 403, cross-check against companion journal page above only confirms the 18–24°C and 85.79–123.7 g/bag figures)",
+     "quote": "sawdust bags were placed in complete darkness at room temperature (25±2 °C) for 30–40 days to facilitate the growth of mushroom mycelium"
+    },
+    {
+     "topic": "spawn.days",
+     "min": 30,
+     "max": 40,
+     "value": null,
+     "unit": "days",
+     "source": "https://www.academia.edu/128128668/Cultivation_and_Nutrient_Compositions_of_Medicinal_Mushroom_Hericium_erinaceus_in_Thailand",
+     "sourceType": "peer-reviewed study, Thailand (unverified direct fetch — see caveat above)",
+     "quote": "30–40 days to facilitate the growth of mushroom mycelium"
+    },
+    {
+     "topic": "pinning.days",
+     "min": 17,
+     "max": 28,
+     "value": null,
+     "unit": "days",
+     "source": "https://www.academia.edu/128128668/Cultivation_and_Nutrient_Compositions_of_Medicinal_Mushroom_Hericium_erinaceus_in_Thailand",
+     "sourceType": "peer-reviewed study, Thailand (unverified direct fetch — see caveat above)",
+     "quote": "produce primordia in 17−28 days"
+    },
+    {
+     "topic": "fruiting.days",
+     "min": 7,
+     "max": 10,
+     "value": null,
+     "unit": "days (primordia to mature fruiting body)",
+     "source": "https://www.academia.edu/128128668/Cultivation_and_Nutrient_Compositions_of_Medicinal_Mushroom_Hericium_erinaceus_in_Thailand",
+     "sourceType": "peer-reviewed study, Thailand (unverified direct fetch — see caveat above)",
+     "quote": "followed by fruiting body development in 7−10 days"
+    },
+    {
+     "topic": "fruiting.RH",
+     "min": 90,
+     "max": 95,
+     "value": null,
+     "unit": "%",
+     "source": "https://www.academia.edu/128128668/Cultivation_and_Nutrient_Compositions_of_Medicinal_Mushroom_Hericium_erinaceus_in_Thailand",
+     "sourceType": "peer-reviewed study, Thailand (unverified direct fetch — see caveat above)",
+     "quote": "relative humidity at 90−95%"
+    },
+    {
+     "topic": "yield.perBlock",
+     "min": 17,
+     "max": 74,
+     "value": null,
+     "unit": "g per mushroom",
+     "source": "https://www.academia.edu/128128668/Cultivation_and_Nutrient_Compositions_of_Medicinal_Mushroom_Hericium_erinaceus_in_Thailand",
+     "sourceType": "peer-reviewed study, Thailand (unverified direct fetch — see caveat above)",
+     "quote": "harvested mushrooms weighing 17 to 74 grams each"
+    },
+    {
+     "topic": "spawn.T",
+     "min": 20,
+     "max": 30,
+     "value": null,
+     "unit": "°C",
+     "source": "https://pmc.ncbi.nlm.nih.gov/articles/PMC3755240/",
+     "sourceType": "peer-reviewed study (vegetative growth of 4 H. erinaceus strains, Korea)",
+     "quote": "The extend range of temperatures was 20~30℃ for vegetative growth of H. erinaceus"
+    },
+    {
+     "topic": "spawn.T",
+     "min": null,
+     "max": null,
+     "value": 25,
+     "unit": "°C (optimum)",
+     "source": "https://pmc.ncbi.nlm.nih.gov/articles/PMC3755240/",
+     "sourceType": "peer-reviewed study (vegetative growth of 4 H. erinaceus strains, Korea)",
+     "quote": "The temperature most suitable for the mycelial growth of the tested mushroom strains was determined to be 25℃"
+    },
+    {
+     "topic": "tMax",
+     "min": null,
+     "max": null,
+     "value": 35,
+     "unit": "°C (near-zero mycelial growth)",
+     "source": "https://pmc.ncbi.nlm.nih.gov/articles/PMC3755240/",
+     "sourceType": "peer-reviewed study (vegetative growth of 4 H. erinaceus strains, Korea)",
+     "quote": "the lowest (sometimes no growth) mycelial growth rates were recorded at 15 and 35℃"
+    },
+    {
+     "topic": "fruiting.T",
+     "min": 15,
+     "max": 25,
+     "value": null,
+     "unit": "°C (tested)",
+     "source": "https://www.sciencedirect.com/science/article/abs/pii/S0304423821000224",
+     "sourceType": "peer-reviewed study (Scientia Horticulturae 2021, Atila et al. — abstract only, via search synthesis)",
+     "quote": "produce fruitbodies at different temperatures (15, 20 and 25 °C)"
+    },
+    {
+     "topic": "fruiting.tMax",
+     "min": null,
+     "max": 20,
+     "value": null,
+     "unit": "°C (limiting factor in warm areas)",
+     "source": "https://www.sciencedirect.com/science/article/abs/pii/S0304423821000224",
+     "sourceType": "peer-reviewed study (Scientia Horticulturae 2021, abstract via search synthesis)",
+     "quote": "in some warm area or during summer season, temperatures above 20 °C may emerge as a limiting factor in Hericium spp. cultivation"
+    },
+    {
+     "topic": "spawn.T",
+     "min": 21,
+     "max": 24,
+     "value": null,
+     "unit": "°C",
+     "source": "https://fungiacademy.com/how-to-grow-lions-mane-mushrooms/",
+     "sourceType": "grower guide",
+     "quote": "between 70-75°F (21-24°C)"
+    },
+    {
+     "topic": "spawn.days",
+     "min": null,
+     "max": 14,
+     "value": null,
+     "unit": "days",
+     "source": "https://fungiacademy.com/how-to-grow-lions-mane-mushrooms/",
+     "sourceType": "grower guide",
+     "quote": "no later than 14 days after inoculation"
+    },
+    {
+     "topic": "pinning.T",
+     "min": 10,
+     "max": 15,
+     "value": null,
+     "unit": "°C",
+     "source": "https://fungiacademy.com/how-to-grow-lions-mane-mushrooms/",
+     "sourceType": "grower guide",
+     "quote": "50-60°F (10-15°C)"
+    },
+    {
+     "topic": "pinning.RH",
+     "min": 95,
+     "max": 100,
+     "value": null,
+     "unit": "%",
+     "source": "https://fungiacademy.com/how-to-grow-lions-mane-mushrooms/",
+     "sourceType": "grower guide",
+     "quote": "95-100%"
+    },
+    {
+     "topic": "pinning.CO2",
+     "min": 500,
+     "max": 700,
+     "value": null,
+     "unit": "ppm",
+     "source": "https://fungiacademy.com/how-to-grow-lions-mane-mushrooms/",
+     "sourceType": "grower guide",
+     "quote": "500-700 parts per million (ppm)"
+    },
+    {
+     "topic": "pinning.days",
+     "min": 3,
+     "max": 5,
+     "value": null,
+     "unit": "days",
+     "source": "https://fungiacademy.com/how-to-grow-lions-mane-mushrooms/",
+     "sourceType": "grower guide",
+     "quote": "Three to five days before pins appear"
+    },
+    {
+     "topic": "fruiting.T",
+     "min": 18,
+     "max": 24,
+     "value": null,
+     "unit": "°C",
+     "source": "https://fungiacademy.com/how-to-grow-lions-mane-mushrooms/",
+     "sourceType": "grower guide",
+     "quote": "65-75°F (18-24°C)"
+    },
+    {
+     "topic": "fruiting.CO2",
+     "min": 500,
+     "max": 1000,
+     "value": null,
+     "unit": "ppm",
+     "source": "https://fungiacademy.com/how-to-grow-lions-mane-mushrooms/",
+     "sourceType": "grower guide",
+     "quote": "500-1,000 ppm"
+    },
+    {
+     "topic": "fruiting.days",
+     "min": 8,
+     "max": 10,
+     "value": null,
+     "unit": "days after pinning",
+     "source": "https://fungiacademy.com/how-to-grow-lions-mane-mushrooms/",
+     "sourceType": "grower guide",
+     "quote": "8–10 days after pinning"
+    },
+    {
+     "topic": "spawn.T",
+     "min": 20,
+     "max": 25,
+     "value": null,
+     "unit": "°C",
+     "source": "https://novamushrooms.com/lions-mane-mushroom/",
+     "sourceType": "grower guide",
+     "quote": "between 20-25°C (68-77°F) with optimal conditions at 21-24°C (70-75°F)"
+    },
+    {
+     "topic": "spawn.days",
+     "min": 14,
+     "max": 28,
+     "value": null,
+     "unit": "days",
+     "source": "https://novamushrooms.com/lions-mane-mushroom/",
+     "sourceType": "grower guide",
+     "quote": "2 to 4 weeks for colonization"
+    },
+    {
+     "topic": "fruiting.T",
+     "min": 15,
+     "max": 24,
+     "value": null,
+     "unit": "°C (commercial strains best below 20°C, i.e. 15-18°C)",
+     "source": "https://novamushrooms.com/lions-mane-mushroom/",
+     "sourceType": "grower guide",
+     "quote": "between 15 to 24°C (60 to 75°F) though commercially available strains do best at temperatures below 20 °C (15-18°C)"
+    },
+    {
+     "topic": "fruiting.CO2",
+     "min": 500,
+     "max": 1000,
+     "value": null,
+     "unit": "ppm",
+     "source": "https://novamushrooms.com/lions-mane-mushroom/",
+     "sourceType": "grower guide",
+     "quote": "500 – 1000ppm"
+    },
+    {
+     "topic": "fruiting.light.lux",
+     "min": 500,
+     "max": 1000,
+     "value": null,
+     "unit": "lux",
+     "source": "https://novamushrooms.com/lions-mane-mushroom/",
+     "sourceType": "grower guide",
+     "quote": "500 – 1000 Lux"
+    },
+    {
+     "topic": "fruiting.days",
+     "min": 5,
+     "max": 10,
+     "value": null,
+     "unit": "days after primordia",
+     "source": "https://novamushrooms.com/lions-mane-mushroom/",
+     "sourceType": "grower guide",
+     "quote": "5-10 days after primordia formation; pinning initiation takes 3-7 days"
+    },
+    {
+     "topic": "fruiting.T",
+     "min": 18,
+     "max": 24,
+     "value": null,
+     "unit": "°C",
+     "source": "https://bootstrapbee.com/mushrooms/lions-mane-fruiting-conditions",
+     "sourceType": "grower guide",
+     "quote": "between 65 and 75°F (18 and 24 °C)"
+    },
+    {
+     "topic": "fruiting.CO2",
+     "min": 500,
+     "max": 1000,
+     "value": null,
+     "unit": "ppm",
+     "source": "https://bootstrapbee.com/mushrooms/lions-mane-fruiting-conditions",
+     "sourceType": "grower guide",
+     "quote": "about 500 to 1,000 ppm"
+    },
+    {
+     "topic": "fruiting.FAE",
+     "min": 5,
+     "max": 8,
+     "value": null,
+     "unit": "exchanges/hour",
+     "source": "https://bootstrapbee.com/mushrooms/lions-mane-fruiting-conditions",
+     "sourceType": "grower guide",
+     "quote": "5-8 fresh air exchange rates per hour"
+    },
+    {
+     "topic": "spawn.T",
+     "min": 21,
+     "max": 24,
+     "value": null,
+     "unit": "°C",
+     "source": "https://www.mushroom-appreciation.com/how-to-grow-lions-mane-mushrooms.html",
+     "sourceType": "grower guide",
+     "quote": "Keep temperatures between 70-75°F (21-24°C)"
+    },
+    {
+     "topic": "spawn.RH",
+     "min": 80,
+     "max": 90,
+     "value": null,
+     "unit": "%",
+     "source": "https://www.mushroom-appreciation.com/how-to-grow-lions-mane-mushrooms.html",
+     "sourceType": "grower guide",
+     "quote": "humidity levels at 80-90%"
+    },
+    {
+     "topic": "fruiting.T",
+     "min": 18,
+     "max": 21,
+     "value": null,
+     "unit": "°C",
+     "source": "https://www.mushroom-appreciation.com/how-to-grow-lions-mane-mushrooms.html",
+     "sourceType": "grower guide",
+     "quote": "The temperature should drop to 65-70°F (18-21°C)"
+    },
+    {
+     "topic": "fruiting.RH",
+     "min": 85,
+     "max": 95,
+     "value": null,
+     "unit": "% (page also separately says 80-90% elsewhere — internal disagreement)",
+     "source": "https://www.mushroom-appreciation.com/how-to-grow-lions-mane-mushrooms.html",
+     "sourceType": "grower guide",
+     "quote": "humidity levels between 85-95% ... [elsewhere] between 80-90%"
+    },
+    {
+     "topic": "fruiting.days",
+     "min": 42,
+     "max": 56,
+     "value": null,
+     "unit": "days (total, 6-8 weeks)",
+     "source": "https://www.mushroom-appreciation.com/how-to-grow-lions-mane-mushrooms.html",
+     "sourceType": "grower guide",
+     "quote": "Lion's mane mushrooms take just 6 to 8 weeks to reach harvest size"
+    },
+    {
+     "topic": "pinning.days",
+     "min": 5,
+     "max": 14,
+     "value": null,
+     "unit": "days",
+     "source": "https://www.mushroom-appreciation.com/how-to-grow-lions-mane-mushrooms.html",
+     "sourceType": "grower guide",
+     "quote": "Within 5-14 days, you should start to see the first signs of pinning"
+    },
+    {
+     "topic": "fruiting.light.lux",
+     "min": 500,
+     "max": 1000,
+     "value": null,
+     "unit": "lux, 12h/day",
+     "source": "https://www.mushroom-appreciation.com/how-to-grow-lions-mane-mushrooms.html",
+     "sourceType": "grower guide",
+     "quote": "500-1000 lux ... 12 hours each day (this is only during the fruiting stage)"
+    },
+    {
+     "topic": "flushes",
+     "min": 3,
+     "max": 4,
+     "value": null,
+     "unit": "flushes",
+     "source": "https://www.mushroom-appreciation.com/how-to-grow-lions-mane-mushrooms.html",
+     "sourceType": "grower guide",
+     "quote": "A single growing setup can yield 3 to 4 flushes"
+    },
+    {
+     "topic": "tMax",
+     "min": null,
+     "max": 29.4,
+     "value": null,
+     "unit": "°C (general tolerance ceiling, 85°F)",
+     "source": "https://www.mushroom-appreciation.com/how-to-grow-lions-mane-mushrooms.html",
+     "sourceType": "grower guide",
+     "quote": "temperatures between 60°F and 85°F"
+    },
+    {
+     "topic": "spawn.T",
+     "min": 21,
+     "max": 24,
+     "value": null,
+     "unit": "°C",
+     "source": "https://naturelion.ca/growing-lions-mane-mushrooms/",
+     "sourceType": "grower guide",
+     "quote": "21-24°C (70-75°F)"
+    },
+    {
+     "topic": "spawn.days",
+     "min": 21,
+     "max": 28,
+     "value": null,
+     "unit": "days",
+     "source": "https://naturelion.ca/growing-lions-mane-mushrooms/",
+     "sourceType": "grower guide",
+     "quote": "3-4 weeks for full colonization"
+    },
+    {
+     "topic": "fruiting.T",
+     "min": 16,
+     "max": 20,
+     "value": null,
+     "unit": "°C",
+     "source": "https://naturelion.ca/growing-lions-mane-mushrooms/",
+     "sourceType": "grower guide",
+     "quote": "16-20°C (60-68°F). This is the sweet spot."
+    },
+    {
+     "topic": "fruiting.RH",
+     "min": 85,
+     "max": 95,
+     "value": null,
+     "unit": "%",
+     "source": "https://naturelion.ca/growing-lions-mane-mushrooms/",
+     "sourceType": "grower guide",
+     "quote": "85-95% relative humidity. This is non-negotiable."
+    },
+    {
+     "topic": "spawn.T",
+     "min": 21,
+     "max": 24,
+     "value": null,
+     "unit": "°C",
+     "source": "https://growmushrooms.co/articles/how-to-grow-lions-mane-at-home/",
+     "sourceType": "grower guide",
+     "quote": "70 to 75 degrees Fahrenheit for 14 to 21 days"
+    },
+    {
+     "topic": "fruiting.T",
+     "min": 18,
+     "max": 21,
+     "value": null,
+     "unit": "°C",
+     "source": "https://growmushrooms.co/articles/how-to-grow-lions-mane-at-home/",
+     "sourceType": "grower guide",
+     "quote": "65 to 70 degrees Fahrenheit"
+    },
+    {
+     "topic": "fruiting.RH",
+     "min": 85,
+     "max": 95,
+     "value": null,
+     "unit": "%",
+     "source": "https://growmushrooms.co/articles/how-to-grow-lions-mane-at-home/",
+     "sourceType": "grower guide",
+     "quote": "85 to 95 percent humidity"
+    },
+    {
+     "topic": "fruiting.days",
+     "min": 7,
+     "max": 14,
+     "value": null,
+     "unit": "days after cutting bag",
+     "source": "https://growmushrooms.co/articles/how-to-grow-lions-mane-at-home/",
+     "sourceType": "grower guide",
+     "quote": "7 to 14 days after cutting the bag"
+    },
+    {
+     "topic": "flushes",
+     "min": 2,
+     "max": 3,
+     "value": null,
+     "unit": "flushes",
+     "source": "https://growmushrooms.co/articles/how-to-grow-lions-mane-at-home/",
+     "sourceType": "grower guide",
+     "quote": "two or three flushes"
+    },
+    {
+     "topic": "rest.days",
+     "min": 14,
+     "max": 28,
+     "value": null,
+     "unit": "days",
+     "source": "https://growmushrooms.co/articles/how-to-grow-lions-mane-at-home/",
+     "sourceType": "grower guide",
+     "quote": "two to four weeks after the first [flush]"
+    },
+    {
+     "topic": "spawn.coreT",
+     "min": null,
+     "max": null,
+     "value": 27,
+     "unit": "°C substrate core vs 25°C ambient (self-heating during colonization — caveat: figure from search-engine synthesis, not an independently fetched page, treat as low confidence)",
+     "source": "search synthesis citing indoor-cultivation practice (no single stable URL identified)",
+     "sourceType": "grower forum/guide synthesis — UNVERIFIED by direct fetch",
+     "quote": "maintain an ambient temperature of 25°C and a substrate temperature of 27°C during the incubation phase"
+    },
+    {
+     "topic": "spawn.coreMax",
+     "min": null,
+     "max": 35,
+     "value": null,
+     "unit": "°C (>95°F stops growth or kills mycelium — caveat: from search synthesis, not independently fetched)",
+     "source": "search synthesis of grower guides (e.g. growmushrooms.co/reddirtmushrooms.com family of guides)",
+     "sourceType": "grower guide synthesis — UNVERIFIED by direct fetch",
+     "quote": "extreme heat greater than 95°F (>35°C) will stop growth or kill the mycelium"
+    },
+    {
+     "topic": "highland.T",
+     "min": 15,
+     "max": 25,
+     "value": null,
+     "unit": "°C at 800-2000m elevation (Southeast Asia lowland-vs-highland strategy)",
+     "source": "https://mushroomgrowingtips.com/southeast-asia",
+     "sourceType": "regional cultivation guide",
+     "quote": "Highland areas (800–2,000 m, 15–25°C) can grow shiitake, king oyster, lion's mane, and blue oyster alongside tropical species."
+    },
+    {
+     "topic": "price.fresh.RM_per_kg",
+     "min": null,
+     "max": null,
+     "value": 90,
+     "unit": "RM/kg",
+     "source": "https://dusun.com.my/product/organic-local-fresh-lion-mane-200gm/",
+     "sourceType": "Malaysian online retailer (direct fetch; note: page title says \"(1kg)\" but the weight field shows \"0.2 kg\" with 400g/800g size options — internal inconsistency on the page)",
+     "quote": "Price: RM90.00 ... *Organic* Local Fresh Lion Mane Mushroom (1kg) ... 0.2 kg ... 400gm, 800gm"
+    },
+    {
+     "topic": "price.fresh.RM_per_kg",
+     "min": null,
+     "max": null,
+     "value": 100,
+     "unit": "RM/kg (derived from RM10/100g)",
+     "source": "https://vegandistrict.my/products/lions-head-mushroom-100g",
+     "sourceType": "Malaysian online retailer (direct fetch)",
+     "quote": "RM10.00 MYR ... 100g (fresh)"
+    },
+    {
+     "topic": "price.fresh.RM_per_kg",
+     "min": null,
+     "max": null,
+     "value": 116.67,
+     "unit": "RM/kg (derived from RM35/300g)",
+     "source": "https://mogoofarm.com/",
+     "sourceType": "Malaysian grower, Klang, Selangor (price found via search-engine snippet of farm's own site; not confirmed on the specific page fetched, which showed only extract-powder products, no listed price)",
+     "quote": "Fresh Lion Mane mushroom is priced at RM35 for a 300g per pack"
+    },
+    {
+     "topic": "price.frozen.RM_per_kg",
+     "min": 31.25,
+     "max": 68.75,
+     "value": null,
+     "unit": "RM/kg (derived from RM25-55 for 400-800g packs)",
+     "source": "https://dusun.com.my/product/frozen-lions-mane-mushroom-800gm/",
+     "sourceType": "Malaysian online retailer (via search-engine snippet, not independently fetched)",
+     "quote": "Frozen Lion's Mane Mushroom (400gm) / (800gm) ... RM 25.00 and RM 55.00"
+    },
+    {
+     "topic": "price.export_powder.USD_per_kg",
+     "min": null,
+     "max": null,
+     "value": 254.94,
+     "unit": "USD/kg",
+     "source": "https://www.tridge.com/market-overview/powdered-lion-s-mane-mushroom/MY",
+     "sourceType": "trade data aggregator (via search-engine snippet; direct fetch returned HTTP 404, so this figure is unverified by direct page read)",
+     "quote": "a sampled export transaction for powdered Lion's Mane mushroom from Malaysia showed a unit price of 254.94 USD/kg on 2025-10-21"
+    },
+    {
+     "topic": "price.fresh.other_country_comparison",
+     "min": null,
+     "max": null,
+     "value": 2000,
+     "unit": "INR/kg (Kerala, India — for context, not Malaysia)",
+     "source": "https://onmanorama.com/news/kerala/2026/10/08/functional-mushroom-cultivation0.html",
+     "sourceType": "news article (direct fetch)",
+     "quote": "Lion's Mane (valued at around ₹2,000 per kilogram)"
+    }
+   ],
+   "notes": "Coverage and method: I used WebSearch to locate candidates and WebFetch to read the actual pages wherever possible. Most grower-guide and academic figures above were independently fetched and quoted verbatim. A few entries are flagged explicitly as \"unverified by direct fetch\" where WebFetch returned HTTP 403/404/connection errors (academia.edu Thailand paper, Tridge export page, Mogoo Farm price, Dusun frozen price, the generic \"core temperature / 35°C kill\" grower-forum claim) — these came only from WebSearch's own synthesis of the page, not from a page I read myself, so treat them as lower-confidence and re-verify before using in a design spec.\n\nMajor disagreements found:\n1. Spawn-run temperature: sources split between ~18-24°C (mushroomalmanac, out-grow standard, naturelion, mushroom-appreciation, fungiacademy, novamushrooms, growmushrooms.co) and 25-27°C (out-grow \"warm-weather\" strain; also the Thai Chiang Mai J. Sci./academia.edu paper's \"25±2°C\"); the one real lowland-tropical commercial farm I found data for (Fresh & Friendly Farm, Pathum Thani, Thailand — PMC10432537/Nature Sci Reports 2023) ran spawn run at a surprisingly cool 20°C with light, not dark, which disagrees with most hobbyist guides' \"dark, 21-24°C\" advice. Spawn-run duration varies hugely: 7 days (that same Thai commercial study) vs 10-21 days vs 2-5 weeks vs 30-40 days (academia.edu, unverified) — likely strain- and scale-dependent, and the 7-day figure may just mean \"to visible full-bottle colonization\" rather than a fully mature, pin-ready block.\n2. Cold-shock trigger: standard strains need a deliberate temperature drop to ~10-15.6°C to initiate pinning (out-grow standard, fungiacademy), but out-grow's \"warm-weather\" strain explicitly needs NO cold shock, and the Thai commercial farm simply moved bottles from 20°C to a 16°C cropping room (a moderate drop, not a hobbyist-style \"cold shock\").\n3. Fruiting temperature: everything from 15°C to 27°C appears somewhere, but the center of gravity across most guides and the two real Thai studies is 16-24°C, with commercial/Asian-hot-climate sources (novamushrooms, naturelion) favoring the cooler 15-20°C end and the one true lowland-tropical commercial paper using 16°C. The Scientia Horticulturae (Atila et al. 2021) abstract explicitly says that above 20°C becomes \"a limiting factor\" in warm regions/summer — in tension with the out-grow warm-weather strain's claim of fruiting fine at 21-27°C. This is a real breeding/strain difference, not just sloppy sourcing.\n4. CO2: pinning trigger ~500-700 ppm and general fruiting ceiling ~500-1000/1100 ppm is highly consistent across 6+ independent grower guides — this is the most reliable number in the dataset. Above that ceiling, guides consistently describe elongated/antler-like/\"coral\" deformed growth instead of compact pom-poms, matching the brief's premise.\n5. Biological efficiency / yield: enormous spread, from 15-25% (mushroomalmanac, conservative hobbyist) up to 78-80% on optimized supplemented substrate (out-grow standard) and a peer-reviewed range cited as \"15-80%\" depending on substrate. The two Thailand-specific commercial/academic numbers I verified directly are 42.61% BE / 113 g fresh weight per bottle (best treatment, 100% rubber sawdust, PMC10432537) and 85.79-123.7 g/bag (Chiang Mai J. Sci. 2024, also rubber-sawdust based) — these are probably the most relevant \"real hot-climate commercial\" yield figures for a Malaysia-style operation, since both studies used rubber-tree sawdust, which is the common hardwood byproduct in Malaysia/Thailand/Indonesia/Vietnam.\n6. Flushes/rest: 2-3 flushes is the modal answer, but one source says up to 4 and one says 3-4; rest between flushes ranges 1-2 weeks to 2-4 weeks across sources.\n7. Max/min tolerable temperature: least well-sourced topic. The most rigorous number is from a Korean peer-reviewed strain study (PMC3755240): optimal mycelial growth at 25°C, with near-zero/no growth at both 15°C and 35°C — i.e., 35°C is a real, independently-verified mycelial ceiling. Hobbyist claims of \"kills mycelium above 35°C\" and a 25°C-ambient/27°C-core self-heating rule of thumb could not be independently verified (search synthesis only) and should be re-checked before relying on them for a controller's safety cutoff.\n\nSource quality: I found exactly two real \"hot-climate commercial farm\" primary sources — both Thailand, both lowland (not Cameron Highlands/Genting-style highland): Fresh & Friendly Farm, Pathum Thani province (near Bangkok, PMC10432537/Nature Sci Reports 2023) and the Chiang Mai Journal of Science 2024 trial (also rubber-sawdust based, likely also lowland Thailand). I could not find a published, numeric cultivation protocol specifically from a Malaysian, Indonesian, Vietnamese, Philippine, Taiwanese, southern-Chinese, or Indian lion's-mane farm — only a 2009 Food Technology & Biotechnology paper (Wong et al., ftb.com.hr) confirming H. erinaceus IS cultivated in Malaysia on rubberwood-sawdust+rice-bran bags/logs and is \"a temperate mushroom... currently cultivated in Malaysia\" (per WebSearch synthesis of that paper's abstract; the PDF itself returned only encoded binary data I could not read, so I could not pull its specific temperature numbers). A China-climatic-zones review (PMC13117637) was blocked by a reCAPTCHA wall and yielded nothing. India and the Philippines/Vietnam/Indonesia only turned up generic highland-vs-lowland strategy advice (elevation 800-2000m / 1500-2200m), not farm-specific numeric protocols — so for those five countries I have essentially no hot-climate-specific primary numbers, only secondary grower-guide generalizations.\n\nMalaysia growers identified (no public per-kg cultivation protocol found for any of them): Mogoo Farm (Klang, Selangor — extraction-powder focused); Mr Fungus (Kuala Lumpur, Pandan Indah — European oak substrate + \"Japanese indoor-farming technology,\" no price listed); 7-Stars Mushroom Farm (Semenyih, Selangor — cold rooms specifically for lion's mane and oyster, per a 2025 mycology-society visit writeup); Shroomy (Kuala Lumpur, grow-kit retailer, per search snippet only); Vegan District and Dusun.com.my are resellers of \"local\" fresh lion's mane without naming the grower.\n\nMalaysia price data (fresh, retail): RM90/kg (Dusun.com.my, directly fetched, though the page itself has an internal weight inconsistency — titled \"(1kg)\" but showing 0.2kg/400g/800g pack sizes) and RM100/kg (RM10/100g, Vegan District, directly fetched) are the two numbers I could independently verify by reading the actual page. Mogoo Farm's RM35/300g (≈RM116.67/kg) and the frozen RM25-55 per 400-800g range came only from search-engine snippets, not a page I read directly — flagged accordingly. I found no credible, dated Malaysian farm-gate (wholesale) price, and no credible Malaysian dried-lion's-mane retail price in RM/kg — the closest dried/concentrated figure is an unverified Tridge export-trade snippet of USD 254.94/kg for powdered lion's mane exported from Malaysia (dated 2025-10-21), which is a different, far more concentrated product than dried whole mushroom and should not be treated as a dried-mushroom retail benchmark. No Cameron Highlands- or Genting-specific lion's mane grower or price was found; the \"mushroom farms\" that do exist in those highland towns (per Tripadvisor/travel-blog results) read as tourist attractions growing other species (shiitake, reishi), not confirmed lion's mane operations.\n\nI was unable to load this run's WebFetch/WebSearch schemas for the China PMC13117637 recaptcha-blocked page, the ftb.com.hr Malaysia PDF (binary/encoded, unreadable by the fetch tool), and the Scientia Horticulturae full text (paywalled, abstract-only via search synthesis) — all three would likely have been the strongest hot-climate-specific sources if accessible."
+  },
+  {
+   "sweep": "growers",
+   "findings": [
+    {
+     "topic": "spawn.days",
+     "min": 10,
+     "max": 14,
+     "value": null,
+     "unit": "days",
+     "source": "https://freshcap.com/blogs/growing/candidates-for-cultivation-the-lions-mane-mushroom",
+     "sourceType": "commercial grower guide (grow-kit company blog)",
+     "quote": "Incubate at room temperature for 10-14 days"
+    },
+    {
+     "topic": "spawn.days",
+     "min": null,
+     "max": 14,
+     "value": null,
+     "unit": "days (full colonization)",
+     "source": "https://freshcap.com/blogs/growing/candidates-for-cultivation-the-lions-mane-mushroom",
+     "sourceType": "commercial grower guide (grow-kit company blog)",
+     "quote": "a fruiting block should be fully colonized within 2 weeks"
+    },
+    {
+     "topic": "pinning.T",
+     "min": null,
+     "max": null,
+     "value": 15,
+     "unit": "°C (trigger: lower temperature to begin pinning)",
+     "source": "https://freshcap.com/blogs/growing/candidates-for-cultivation-the-lions-mane-mushroom",
+     "sourceType": "commercial grower guide (grow-kit company blog)",
+     "quote": "Lower temperature to 15 deg C"
+    },
+    {
+     "topic": "fruiting.T",
+     "min": 15,
+     "max": 20,
+     "value": null,
+     "unit": "°C",
+     "source": "https://freshcap.com/blogs/growing/candidates-for-cultivation-the-lions-mane-mushroom",
+     "sourceType": "commercial grower guide (grow-kit company blog)",
+     "quote": "Temperatures between 15-20 deg C"
+    },
+    {
+     "topic": "fruiting.RH",
+     "min": null,
+     "max": null,
+     "value": 90,
+     "unit": "%",
+     "source": "https://freshcap.com/blogs/growing/candidates-for-cultivation-the-lions-mane-mushroom",
+     "sourceType": "commercial grower guide (grow-kit company blog)",
+     "quote": "Humidity at 90%"
+    },
+    {
+     "topic": "flushes",
+     "min": 2,
+     "max": 3,
+     "value": null,
+     "unit": "flushes per kit",
+     "source": "https://freshcap.com/blogs/growing/candidates-for-cultivation-the-lions-mane-mushroom",
+     "sourceType": "commercial grower guide (grow-kit company blog)",
+     "quote": "You are likely to get 2 or 3 flushes with a kit"
+    },
+    {
+     "topic": "yield.perBlock",
+     "min": 2,
+     "max": null,
+     "value": null,
+     "unit": "lbs fresh per 5lb block (multiple flushes)",
+     "source": "https://freshcap.com/blogs/growing/candidates-for-cultivation-the-lions-mane-mushroom",
+     "sourceType": "commercial grower guide (grow-kit company blog)",
+     "quote": "More than 2 lbs of Lions Mane can be harvested from a single 5 lb fruiting block over multiple flushes"
+    },
+    {
+     "topic": "yield.BE",
+     "min": 90,
+     "max": 140,
+     "value": null,
+     "unit": "% biological efficiency",
+     "source": "https://freshcap.com/blogs/growing/mushroom-yield-and-biological-efficiency",
+     "sourceType": "commercial grower guide (grow-kit company blog)",
+     "quote": "LIONS MANE B.E.:90-140%"
+    },
+    {
+     "topic": "yield.perBlock",
+     "min": null,
+     "max": 2.5,
+     "value": null,
+     "unit": "lbs fresh, supplemented sawdust block",
+     "source": "https://freshcap.com/blogs/growing/mushroom-yield-and-biological-efficiency",
+     "sourceType": "commercial grower guide (grow-kit company blog)",
+     "quote": "Up to 2.5 lbs from supplemented sawdust fruiting blocks."
+    },
+    {
+     "topic": "pinning.CO2",
+     "min": 500,
+     "max": 700,
+     "value": null,
+     "unit": "ppm (primordia)",
+     "source": "https://northspore.com/pages/fruiting-block-kit-faq (linked PDF: FruitingBlockBookletUpdated.pdf)",
+     "sourceType": "spawn/fruiting-block supplier instruction booklet (PDF)",
+     "quote": "CO2 Sensitivity primordia 500-700 ppm, fruitbody <1,000 ppm"
+    },
+    {
+     "topic": "fruiting.CO2",
+     "min": null,
+     "max": 1000,
+     "value": null,
+     "unit": "ppm (fruitbody)",
+     "source": "https://northspore.com/pages/fruiting-block-kit-faq (linked PDF: FruitingBlockBookletUpdated.pdf)",
+     "sourceType": "spawn/fruiting-block supplier instruction booklet (PDF)",
+     "quote": "fruitbody <1,000 ppm"
+    },
+    {
+     "topic": "pinning.RH",
+     "min": 90,
+     "max": 95,
+     "value": null,
+     "unit": "% (primordia)",
+     "source": "https://northspore.com/pages/fruiting-block-kit-faq (linked PDF: FruitingBlockBookletUpdated.pdf)",
+     "sourceType": "spawn/fruiting-block supplier instruction booklet (PDF)",
+     "quote": "HUMIDITY primordia 90-95, fruitbody 80-90"
+    },
+    {
+     "topic": "fruiting.RH",
+     "min": 80,
+     "max": 90,
+     "value": null,
+     "unit": "% (fruitbody)",
+     "source": "https://northspore.com/pages/fruiting-block-kit-faq (linked PDF: FruitingBlockBookletUpdated.pdf)",
+     "sourceType": "spawn/fruiting-block supplier instruction booklet (PDF)",
+     "quote": "HUMIDITY primordia 90-95, fruitbody 80-90"
+    },
+    {
+     "topic": "fruiting.T",
+     "min": 55,
+     "max": 70,
+     "value": null,
+     "unit": "°F",
+     "source": "https://northspore.com/pages/fruiting-block-kit-faq (linked PDF: FruitingBlockBookletUpdated.pdf)",
+     "sourceType": "spawn/fruiting-block supplier instruction booklet (PDF)",
+     "quote": "Temperature Mid-range, 55-70"
+    },
+    {
+     "topic": "pinning.days",
+     "min": 1.5,
+     "max": 2,
+     "value": null,
+     "unit": "weeks (growth rate, moderate)",
+     "source": "https://northspore.com/pages/fruiting-block-kit-faq (linked PDF: FruitingBlockBookletUpdated.pdf)",
+     "sourceType": "spawn/fruiting-block supplier instruction booklet (PDF)",
+     "quote": "GROWTH Moderate, 1.5-2 weeks"
+    },
+    {
+     "topic": "flushes",
+     "min": null,
+     "max": null,
+     "value": 2,
+     "unit": "CROPS (flushes)",
+     "source": "https://northspore.com/pages/fruiting-block-kit-faq (linked PDF: FruitingBlockBookletUpdated.pdf)",
+     "sourceType": "spawn/fruiting-block supplier instruction booklet (PDF)",
+     "quote": "CROPS 2"
+    },
+    {
+     "topic": "fruiting.light.hours",
+     "min": null,
+     "max": null,
+     "value": 12,
+     "unit": "hours/day (general, applies to all species in booklet incl. lion's mane)",
+     "source": "https://northspore.com/pages/fruiting-block-kit-faq (linked PDF: FruitingBlockBookletUpdated.pdf)",
+     "sourceType": "spawn/fruiting-block supplier instruction booklet (PDF)",
+     "quote": "If you use artificial lighting, we recommend it be on for 12 hours a day"
+    },
+    {
+     "topic": "rest.days",
+     "min": null,
+     "max": null,
+     "value": 14,
+     "unit": "days (~2 weeks)",
+     "source": "https://northspore.com/pages/fruiting-block-kit-faq",
+     "sourceType": "spawn/fruiting-block supplier FAQ page",
+     "quote": "wait about 2 weeks for new pins to form"
+    },
+    {
+     "topic": "spawn.inoculationRate",
+     "min": 5,
+     "max": 10,
+     "value": null,
+     "unit": "% spawn (sterilized substrate)",
+     "source": "https://fieldforest.net/lions-mane-hericium-erinaceus-millet-grain-spawn/",
+     "sourceType": "spawn supplier product page",
+     "quote": "5-10% with sterilized substrate, 20% with non-sterilized substrate"
+    },
+    {
+     "topic": "spawn.inoculationRate",
+     "min": null,
+     "max": null,
+     "value": 20,
+     "unit": "% spawn (non-sterilized substrate)",
+     "source": "https://fieldforest.net/lions-mane-hericium-erinaceus-millet-grain-spawn/",
+     "sourceType": "spawn supplier product page",
+     "quote": "5-10% with sterilized substrate, 20% with non-sterilized substrate"
+    },
+    {
+     "topic": "fruiting.T",
+     "min": 55,
+     "max": 65,
+     "value": null,
+     "unit": "°F",
+     "source": "https://fieldforest.net/how-to-grow-lion-s-mane-from-ready-to-fruit-blocks/",
+     "sourceType": "spawn/fruiting-block supplier grower guide",
+     "quote": "Temperature control ideally kept between 55-65°F"
+    },
+    {
+     "topic": "fruiting.RH",
+     "min": 70,
+     "max": 80,
+     "value": null,
+     "unit": "%",
+     "source": "https://fieldforest.net/how-to-grow-lion-s-mane-from-ready-to-fruit-blocks/",
+     "sourceType": "spawn/fruiting-block supplier grower guide",
+     "quote": "70-80% humidity for ideal fruiting conditions"
+    },
+    {
+     "topic": "fruiting.light.hours",
+     "min": 8,
+     "max": 12,
+     "value": null,
+     "unit": "hours/day",
+     "source": "https://fieldforest.net/how-to-grow-lion-s-mane-from-ready-to-fruit-blocks/",
+     "sourceType": "spawn/fruiting-block supplier grower guide",
+     "quote": "at least 8-12hours/day of indirect sun or supplemental lighting"
+    },
+    {
+     "topic": "fruiting.days",
+     "min": 12,
+     "max": 18,
+     "value": null,
+     "unit": "days (pin/open to harvest)",
+     "source": "https://fieldforest.net/how-to-grow-lion-s-mane-from-ready-to-fruit-blocks/",
+     "sourceType": "spawn/fruiting-block supplier grower guide",
+     "quote": "12-18 days after opening"
+    },
+    {
+     "topic": "rest.days",
+     "min": 14,
+     "max": 21,
+     "value": null,
+     "unit": "days (2-3 weeks)",
+     "source": "https://fieldforest.net/how-to-grow-lion-s-mane-from-ready-to-fruit-blocks/",
+     "sourceType": "spawn/fruiting-block supplier grower guide",
+     "quote": "2-3 weeks of rest time between fruitings"
+    },
+    {
+     "topic": "flushes",
+     "min": 4,
+     "max": 6,
+     "value": null,
+     "unit": "total fruitings per block",
+     "source": "https://fieldforest.net/how-to-grow-lion-s-mane-from-ready-to-fruit-blocks/",
+     "sourceType": "spawn/fruiting-block supplier grower guide",
+     "quote": "typically 4-6 total fruitings per block"
+    },
+    {
+     "topic": "harvest.spineLength",
+     "min": null,
+     "max": null,
+     "value": 0.25,
+     "unit": "inch (harvest trigger size)",
+     "source": "https://fieldforest.net/how-to-grow-lion-s-mane-from-ready-to-fruit-blocks/",
+     "sourceType": "spawn/fruiting-block supplier grower guide",
+     "quote": "Spines begin elongating at ¼˝ length when mushrooms are ready to harvest"
+    },
+    {
+     "topic": "spawn.T",
+     "min": 68,
+     "max": 72,
+     "value": null,
+     "unit": "°F",
+     "source": "https://fieldforest.net/how-to-make-lion-s-mane-grow-blocks/",
+     "sourceType": "spawn supplier DIY block-making guide",
+     "quote": "68-72°F where blocks should be placed, will not be disturbed for 2-3 weeks"
+    },
+    {
+     "topic": "spawn.days",
+     "min": null,
+     "max": null,
+     "value": 20,
+     "unit": "days (incubate before fruiting)",
+     "source": "https://fieldforest.net/how-to-make-lion-s-mane-grow-blocks/",
+     "sourceType": "spawn supplier DIY block-making guide",
+     "quote": "Blocks will need to incubate for 20 days before you fruit the blocks"
+    },
+    {
+     "topic": "spawn.days",
+     "min": 14,
+     "max": 21,
+     "value": null,
+     "unit": "days (2-3 weeks, undisturbed) - disagrees with the 20-day figure on same page",
+     "source": "https://fieldforest.net/how-to-make-lion-s-mane-grow-blocks/",
+     "sourceType": "spawn supplier DIY block-making guide",
+     "quote": "will not be disturbed for 2-3 weeks"
+    },
+    {
+     "topic": "fruiting.T",
+     "min": 55,
+     "max": 70,
+     "value": null,
+     "unit": "°F - wider than the 55-65°F stated on the sister 'ready-to-fruit' page",
+     "source": "https://fieldforest.net/how-to-make-lion-s-mane-grow-blocks/",
+     "sourceType": "spawn supplier DIY block-making guide",
+     "quote": "Fruiting Temperature: 55-70°F"
+    },
+    {
+     "topic": "fruiting.RH",
+     "min": 70,
+     "max": 85,
+     "value": null,
+     "unit": "% - differs from 70-80% on sister page",
+     "source": "https://fieldforest.net/how-to-make-lion-s-mane-grow-blocks/",
+     "sourceType": "spawn supplier DIY block-making guide",
+     "quote": "70-85% humidity"
+    },
+    {
+     "topic": "fruiting.days",
+     "min": 10,
+     "max": 21,
+     "value": null,
+     "unit": "days after opening - differs from 12-18 days on sister page",
+     "source": "https://fieldforest.net/how-to-make-lion-s-mane-grow-blocks/",
+     "sourceType": "spawn supplier DIY block-making guide",
+     "quote": "10-21 days after opening"
+    },
+    {
+     "topic": "fruiting.T",
+     "min": 55,
+     "max": 65,
+     "value": null,
+     "unit": "°F",
+     "source": "https://www.fieldforest.net/product/lions-mane-block-set/lions-mane-mushroom-spawn",
+     "sourceType": "spawn supplier product page",
+     "quote": "Fruiting temperature range is 55-65°F"
+    },
+    {
+     "topic": "fruiting.T",
+     "min": 62,
+     "max": 70,
+     "value": null,
+     "unit": "°F - stated on the SAME product page as the 55-65°F figure above (internal disagreement)",
+     "source": "https://www.fieldforest.net/product/lions-mane-block-set/lions-mane-mushroom-spawn",
+     "sourceType": "spawn supplier product page",
+     "quote": "Ideal Fruiting Temperature for Lion's Mane: 62°- 70°"
+    },
+    {
+     "topic": "fruiting.RH",
+     "min": 85,
+     "max": null,
+     "value": null,
+     "unit": "% (floor only)",
+     "source": "https://www.fieldforest.net/product/lions-mane-block-set/lions-mane-mushroom-spawn",
+     "sourceType": "spawn supplier product page",
+     "quote": "Does best when humidity is kept over 85%"
+    },
+    {
+     "topic": "fruiting.RH",
+     "min": 85,
+     "max": 90,
+     "value": null,
+     "unit": "% - stated on the SAME product page as the >85% figure above",
+     "source": "https://www.fieldforest.net/product/lions-mane-block-set/lions-mane-mushroom-spawn",
+     "sourceType": "spawn supplier product page",
+     "quote": "Ideal Humidity for Lion's Mane Mushrooms: 85-90%"
+    },
+    {
+     "topic": "spawn.T",
+     "min": 68,
+     "max": 75,
+     "value": null,
+     "unit": "°F (20-24°C)",
+     "source": "https://groovypigeonmycology.com/blogs/growing-conditions/lion-s-mane-mushroom-environmental-and-growing-requirements-for-success",
+     "sourceType": "commercial grower blog",
+     "quote": "Colonization: 68–75°F (20–24°C)"
+    },
+    {
+     "topic": "spawn.days",
+     "min": 21,
+     "max": 35,
+     "value": null,
+     "unit": "days (3-5 weeks)",
+     "source": "https://groovypigeonmycology.com/blogs/growing-conditions/lion-s-mane-mushroom-environmental-and-growing-requirements-for-success",
+     "sourceType": "commercial grower blog",
+     "quote": "Colonization (3–5 weeks) requires keeping it in the dark, warm (68–75°F), and sealed for full mycelium coverage"
+    },
+    {
+     "topic": "fruiting.T",
+     "min": 60,
+     "max": 70,
+     "value": null,
+     "unit": "°F (15-21°C)",
+     "source": "https://groovypigeonmycology.com/blogs/growing-conditions/lion-s-mane-mushroom-environmental-and-growing-requirements-for-success",
+     "sourceType": "commercial grower blog",
+     "quote": "Fruiting: 60–70°F (15–21°C); lower temperatures during fruiting help promote dense, healthy fruit bodies"
+    },
+    {
+     "topic": "fruiting.RH",
+     "min": 85,
+     "max": 95,
+     "value": null,
+     "unit": "%",
+     "source": "https://groovypigeonmycology.com/blogs/growing-conditions/lion-s-mane-mushroom-environmental-and-growing-requirements-for-success",
+     "sourceType": "commercial grower blog",
+     "quote": "Optimal range is 85–95% relative humidity during fruiting"
+    },
+    {
+     "topic": "fruiting.CO2",
+     "min": null,
+     "max": 800,
+     "value": null,
+     "unit": "ppm",
+     "source": "https://groovypigeonmycology.com/blogs/growing-conditions/lion-s-mane-mushroom-environmental-and-growing-requirements-for-success",
+     "sourceType": "commercial grower blog",
+     "quote": "Keep CO2 below 800 ppm during fruiting, since high CO2 leads to short spines and irregular shapes"
+    },
+    {
+     "topic": "fruiting.days",
+     "min": 7,
+     "max": 14,
+     "value": null,
+     "unit": "days (1-2 weeks, fruiting initiation to harvest)",
+     "source": "https://groovypigeonmycology.com/blogs/growing-conditions/lion-s-mane-mushroom-environmental-and-growing-requirements-for-success",
+     "sourceType": "commercial grower blog",
+     "quote": "Fruiting (1–2 weeks) means moving to fruiting conditions"
+    },
+    {
+     "topic": "harvest.spineLength",
+     "min": 0.25,
+     "max": 0.5,
+     "value": null,
+     "unit": "inch",
+     "source": "https://groovypigeonmycology.com/blogs/growing-conditions/lion-s-mane-mushroom-environmental-and-growing-requirements-for-success",
+     "sourceType": "commercial grower blog",
+     "quote": "when spines reach ¼ to ½ inch and before they elongate too much"
+    },
+    {
+     "topic": "spawn.T",
+     "min": 72,
+     "max": 78,
+     "value": null,
+     "unit": "°F",
+     "source": "https://www.out-grow.com/products/lions-mane-hericium-erinaceus",
+     "sourceType": "spawn/liquid culture supplier product page",
+     "quote": "Incubation Temperature: 72°F – 78°F"
+    },
+    {
+     "topic": "spawn.days",
+     "min": 10,
+     "max": 16,
+     "value": null,
+     "unit": "days",
+     "source": "https://www.out-grow.com/products/lions-mane-hericium-erinaceus",
+     "sourceType": "spawn/liquid culture supplier product page",
+     "quote": "Incubation Time: 10 – 16 days"
+    },
+    {
+     "topic": "fruiting.T",
+     "min": 60,
+     "max": 74,
+     "value": null,
+     "unit": "°F",
+     "source": "https://www.out-grow.com/products/lions-mane-hericium-erinaceus",
+     "sourceType": "spawn/liquid culture supplier product page",
+     "quote": "Fruiting Temperature: 60°F – 74°F"
+    },
+    {
+     "topic": "fruiting.RH",
+     "min": 85,
+     "max": 95,
+     "value": null,
+     "unit": "%",
+     "source": "https://www.out-grow.com/products/lions-mane-hericium-erinaceus",
+     "sourceType": "spawn/liquid culture supplier product page",
+     "quote": "Fruiting Humidity: 85% – 95%"
+    },
+    {
+     "topic": "pinning.days",
+     "min": 5,
+     "max": 12,
+     "value": null,
+     "unit": "days",
+     "source": "https://www.out-grow.com/products/lions-mane-hericium-erinaceus",
+     "sourceType": "spawn/liquid culture supplier product page",
+     "quote": "Pinning Time: 5 – 12 days"
+    },
+    {
+     "topic": "fruiting.days",
+     "min": 10,
+     "max": 20,
+     "value": null,
+     "unit": "days (total fruiting time)",
+     "source": "https://www.out-grow.com/products/lions-mane-hericium-erinaceus",
+     "sourceType": "spawn/liquid culture supplier product page",
+     "quote": "Total Fruiting Time: 10 – 20 days"
+    },
+    {
+     "topic": "spawn.T",
+     "min": 77,
+     "max": 81,
+     "value": null,
+     "unit": "°F (25-27°C) - warm-weather-selected strain, not standard",
+     "source": "https://www.out-grow.com/products/lions-mane-warm-weather-hericium-erinaceus",
+     "sourceType": "spawn/liquid culture supplier product page (specialty strain)",
+     "quote": "77–81°F (25–27°C)"
+    },
+    {
+     "topic": "spawn.days",
+     "min": 14,
+     "max": 21,
+     "value": null,
+     "unit": "days from liquid culture",
+     "source": "https://www.out-grow.com/products/lions-mane-warm-weather-hericium-erinaceus",
+     "sourceType": "spawn/liquid culture supplier product page (specialty strain)",
+     "quote": "14–21 days from LC"
+    },
+    {
+     "topic": "fruiting.T",
+     "min": 70,
+     "max": 80,
+     "value": null,
+     "unit": "°F (21-27°C) - warm-weather-selected strain",
+     "source": "https://www.out-grow.com/products/lions-mane-warm-weather-hericium-erinaceus",
+     "sourceType": "spawn/liquid culture supplier product page (specialty strain)",
+     "quote": "70–80°F (21–27°C)"
+    },
+    {
+     "topic": "fruiting.RH",
+     "min": 85,
+     "max": 95,
+     "value": null,
+     "unit": "% RH",
+     "source": "https://www.out-grow.com/products/lions-mane-warm-weather-hericium-erinaceus",
+     "sourceType": "spawn/liquid culture supplier product page (specialty strain)",
+     "quote": "85–95% RH"
+    },
+    {
+     "topic": "pinning.CO2",
+     "min": 1000,
+     "max": 1100,
+     "value": null,
+     "unit": "ppm (must drop below this to trigger fruiting)",
+     "source": "https://www.out-grow.com/products/lions-mane-warm-weather-hericium-erinaceus",
+     "sourceType": "spawn/liquid culture supplier product page (specialty strain)",
+     "quote": "CO₂ must drop below approximately 1,000–1,100 ppm to trigger fruiting"
+    },
+    {
+     "topic": "flushes",
+     "min": 2,
+     "max": 3,
+     "value": null,
+     "unit": "flushes (first flush largest)",
+     "source": "https://www.out-grow.com/products/lions-mane-warm-weather-hericium-erinaceus",
+     "sourceType": "spawn/liquid culture supplier product page (specialty strain)",
+     "quote": "2–3 (first flush largest); second flush typically 50-60% of first flush weight"
+    },
+    {
+     "topic": "fruiting.days",
+     "min": 28,
+     "max": 56,
+     "value": null,
+     "unit": "days (4-8 weeks, spawn-to-harvest total cycle)",
+     "source": "https://www.out-grow.com/products/lions-mane-warm-weather-hericium-erinaceus",
+     "sourceType": "spawn/liquid culture supplier product page (specialty strain)",
+     "quote": "4–8 weeks spawn-to-harvest"
+    },
+    {
+     "topic": "yield.BE",
+     "min": 15,
+     "max": 80,
+     "value": null,
+     "unit": "% (peer-reviewed data, varies by substrate composition)",
+     "source": "https://www.out-grow.com/products/lions-mane-warm-weather-hericium-erinaceus",
+     "sourceType": "spawn/liquid culture supplier product page (specialty strain)",
+     "quote": "Peer-reviewed data shows approximately 15–80% depending on substrate composition"
+    },
+    {
+     "topic": "spawn.T",
+     "min": null,
+     "max": null,
+     "value": 25,
+     "unit": "°C ambient during incubation",
+     "source": "https://toshifarm.com/en/blogs/blog/common-problems-when-growing-lions-mane-and-how-to-solve-them",
+     "sourceType": "commercial grower blog",
+     "quote": "Maintain an ambient temperature of 25°C"
+    },
+    {
+     "topic": "spawn.coreT",
+     "min": null,
+     "max": null,
+     "value": 27,
+     "unit": "°C substrate (core) temperature during incubation",
+     "source": "https://toshifarm.com/en/blogs/blog/common-problems-when-growing-lions-mane-and-how-to-solve-them",
+     "sourceType": "commercial grower blog",
+     "quote": "a substrate temperature of 27°C"
+    },
+    {
+     "topic": "pinning.T",
+     "min": 18,
+     "max": 24,
+     "value": null,
+     "unit": "°C (expansion/transition phase before fruiting)",
+     "source": "https://toshifarm.com/en/blogs/blog/common-problems-when-growing-lions-mane-and-how-to-solve-them",
+     "sourceType": "commercial grower blog",
+     "quote": "Reduce the temperature to 18-24°C"
+    },
+    {
+     "topic": "fruiting.T",
+     "min": 16,
+     "max": 21,
+     "value": null,
+     "unit": "°C",
+     "source": "https://toshifarm.com/en/blogs/blog/common-problems-when-growing-lions-mane-and-how-to-solve-them",
+     "sourceType": "commercial grower blog",
+     "quote": "Maintain a temperature between 16-21°C"
+    },
+    {
+     "topic": "spawn.RH",
+     "min": 90,
+     "max": 95,
+     "value": null,
+     "unit": "% during incubation",
+     "source": "https://toshifarm.com/en/blogs/blog/common-problems-when-growing-lions-mane-and-how-to-solve-them",
+     "sourceType": "commercial grower blog",
+     "quote": "Maintain a relative humidity of 90-95% during incubation"
+    },
+    {
+     "topic": "fruiting.RH",
+     "min": 85,
+     "max": 95,
+     "value": null,
+     "unit": "%",
+     "source": "https://toshifarm.com/en/blogs/blog/common-problems-when-growing-lions-mane-and-how-to-solve-them",
+     "sourceType": "commercial grower blog",
+     "quote": "Keep humidity between 85-95%"
+    },
+    {
+     "topic": "fruiting.CO2",
+     "min": 500,
+     "max": 1000,
+     "value": null,
+     "unit": "ppm during fruiting",
+     "source": "https://toshifarm.com/en/blogs/blog/common-problems-when-growing-lions-mane-and-how-to-solve-them",
+     "sourceType": "commercial grower blog",
+     "quote": "Ensure CO2 levels are between 500-1000 ppm during the fruiting stage"
+    },
+    {
+     "topic": "fruiting.light.lux",
+     "min": null,
+     "max": 500,
+     "value": null,
+     "unit": "lux during fruiting - disagrees with grocycle.com's 500-1000 lux",
+     "source": "https://toshifarm.com/en/blogs/blog/common-problems-when-growing-lions-mane-and-how-to-solve-them",
+     "sourceType": "commercial grower blog",
+     "quote": "Provide light exposure of less than 500 lux during the fruiting stage"
+    },
+    {
+     "topic": "spawn.T",
+     "min": 70,
+     "max": 75,
+     "value": null,
+     "unit": "°F (low-to-mid 70s) in the dark",
+     "source": "https://gourmetcultures.com/blogs/growing-guide/lions-mane-liquid-culture-guide",
+     "sourceType": "liquid culture supplier growing guide",
+     "quote": "low-to-mid 70s °F in the dark"
+    },
+    {
+     "topic": "spawn.days",
+     "min": 7,
+     "max": 14,
+     "value": null,
+     "unit": "days (one to two weeks, grain jar colonization)",
+     "source": "https://gourmetcultures.com/blogs/growing-guide/lions-mane-liquid-culture-guide",
+     "sourceType": "liquid culture supplier growing guide",
+     "quote": "one to two weeks for grain jar colonization"
+    },
+    {
+     "topic": "fruiting.T",
+     "min": 65,
+     "max": 70,
+     "value": null,
+     "unit": "°F",
+     "source": "https://gourmetcultures.com/blogs/growing-guide/lions-mane-liquid-culture-guide",
+     "sourceType": "liquid culture supplier growing guide",
+     "quote": "around 65–70 °F"
+    },
+    {
+     "topic": "fruiting.RH",
+     "min": 85,
+     "max": 95,
+     "value": null,
+     "unit": "%",
+     "source": "https://gourmetcultures.com/blogs/growing-guide/lions-mane-liquid-culture-guide",
+     "sourceType": "liquid culture supplier growing guide",
+     "quote": "roughly 85–95%"
+    },
+    {
+     "topic": "fruiting.T",
+     "min": 65,
+     "max": 75,
+     "value": null,
+     "unit": "°F (18-24°C)",
+     "source": "https://bootstrapbee.com/mushrooms/lions-mane-fruiting-conditions",
+     "sourceType": "commercial grower blog",
+     "quote": "The ideal fruiting temperature for lion's mane mushrooms is between 65 and 75°F (18 and 24 °C)"
+    },
+    {
+     "topic": "fruiting.RH",
+     "min": 85,
+     "max": 95,
+     "value": null,
+     "unit": "%",
+     "source": "https://bootstrapbee.com/mushrooms/lions-mane-fruiting-conditions",
+     "sourceType": "commercial grower blog",
+     "quote": "The ideal humidity to allow fruiting must be between 85 and 95% relative humidity"
+    },
+    {
+     "topic": "fruiting.CO2",
+     "min": 500,
+     "max": 1000,
+     "value": null,
+     "unit": "ppm",
+     "source": "https://bootstrapbee.com/mushrooms/lions-mane-fruiting-conditions",
+     "sourceType": "commercial grower blog",
+     "quote": "CO2 level of about 500 to 1,000 ppm"
+    },
+    {
+     "topic": "fruiting.ACH",
+     "min": 5,
+     "max": 8,
+     "value": null,
+     "unit": "fresh air exchanges per hour",
+     "source": "https://bootstrapbee.com/mushrooms/lions-mane-fruiting-conditions",
+     "sourceType": "commercial grower blog",
+     "quote": "Ensure 5-8 fresh air exchange rates per hour to achieve the fluffy pom-pom appearance"
+    },
+    {
+     "topic": "spawn.T",
+     "min": 20,
+     "max": 24,
+     "value": null,
+     "unit": "°C (68-75°F)",
+     "source": "https://grocycle.com/growing-lions-mane/",
+     "sourceType": "commercial grower blog (urban mushroom farm)",
+     "quote": "around 20 – 24°C ( 68 – 75°F)"
+    },
+    {
+     "topic": "spawn.days",
+     "min": 14,
+     "max": 21,
+     "value": null,
+     "unit": "days (two to three weeks)",
+     "source": "https://grocycle.com/growing-lions-mane/",
+     "sourceType": "commercial grower blog (urban mushroom farm)",
+     "quote": "around two to three weeks"
+    },
+    {
+     "topic": "fruiting.T",
+     "min": 15,
+     "max": 24,
+     "value": null,
+     "unit": "°C (59-75°F)",
+     "source": "https://grocycle.com/growing-lions-mane/",
+     "sourceType": "commercial grower blog (urban mushroom farm)",
+     "quote": "15-24C (59-75 F)"
+    },
+    {
+     "topic": "fruiting.RH",
+     "min": 85,
+     "max": 90,
+     "value": null,
+     "unit": "% RH",
+     "source": "https://grocycle.com/growing-lions-mane/",
+     "sourceType": "commercial grower blog (urban mushroom farm)",
+     "quote": "85 – 90% RH"
+    },
+    {
+     "topic": "fruiting.light.lux",
+     "min": 500,
+     "max": 1000,
+     "value": null,
+     "unit": "lux - disagrees with toshifarm.com's <500 lux",
+     "source": "https://grocycle.com/growing-lions-mane/",
+     "sourceType": "commercial grower blog (urban mushroom farm)",
+     "quote": "500 – 1000 Lux"
+    },
+    {
+     "topic": "fruiting.CO2",
+     "min": 500,
+     "max": 1000,
+     "value": null,
+     "unit": "ppm",
+     "source": "https://grocycle.com/growing-lions-mane/",
+     "sourceType": "commercial grower blog (urban mushroom farm)",
+     "quote": "500 – 1000ppm"
+    },
+    {
+     "topic": "pinning.days",
+     "min": 5,
+     "max": 7,
+     "value": null,
+     "unit": "days to see pinheads",
+     "source": "https://grocycle.com/growing-lions-mane/",
+     "sourceType": "commercial grower blog (urban mushroom farm)",
+     "quote": "After 5-7 days, you'll start to see pinheads"
+    },
+    {
+     "topic": "fruiting.days",
+     "min": 5,
+     "max": 10,
+     "value": null,
+     "unit": "days (pinhead to harvest-ready)",
+     "source": "https://grocycle.com/growing-lions-mane/",
+     "sourceType": "commercial grower blog (urban mushroom farm)",
+     "quote": "in another 5-10 days (depending on the temperature)"
+    },
+    {
+     "topic": "spawn.T",
+     "min": 21,
+     "max": 24,
+     "value": null,
+     "unit": "°C (70-75°F) for colonizing grain and blocks",
+     "source": "https://naturelion.ca/growing-lions-mane-mushrooms/",
+     "sourceType": "spawn/grow-kit supplier guide",
+     "quote": "21-24°C (70-75°F) for colonizing grain and blocks"
+    },
+    {
+     "topic": "fruiting.T",
+     "min": 16,
+     "max": 20,
+     "value": null,
+     "unit": "°C (60-68°F) - described as 'the sweet spot'",
+     "source": "https://naturelion.ca/growing-lions-mane-mushrooms/",
+     "sourceType": "spawn/grow-kit supplier guide",
+     "quote": "16-20°C (60-68°F). This is the sweet spot."
+    },
+    {
+     "topic": "fruiting.RH",
+     "min": 85,
+     "max": 95,
+     "value": null,
+     "unit": "% relative humidity, described as 'non-negotiable'",
+     "source": "https://naturelion.ca/growing-lions-mane-mushrooms/",
+     "sourceType": "spawn/grow-kit supplier guide",
+     "quote": "85-95% relative humidity. This is non-negotiable."
+    },
+    {
+     "topic": "harvest.spineLength",
+     "min": 6,
+     "max": 12,
+     "value": null,
+     "unit": "mm (1/4-1/2 inch)",
+     "source": "https://naturelion.ca/growing-lions-mane-mushrooms/",
+     "sourceType": "spawn/grow-kit supplier guide",
+     "quote": "6–12 mm (¼–½ inch) long"
+    },
+    {
+     "topic": "spawn.days",
+     "min": 14,
+     "max": 21,
+     "value": null,
+     "unit": "days (grain spawn, 2-3 weeks)",
+     "source": "https://naturelion.ca/growing-lions-mane-mushrooms/",
+     "sourceType": "spawn/grow-kit supplier guide",
+     "quote": "Grain spawn: 2-3 weeks at proper temperatures"
+    },
+    {
+     "topic": "spawn.days",
+     "min": 21,
+     "max": 28,
+     "value": null,
+     "unit": "days (block colonization, 3-4 weeks)",
+     "source": "https://naturelion.ca/growing-lions-mane-mushrooms/",
+     "sourceType": "spawn/grow-kit supplier guide",
+     "quote": "Block colonization: 3-4 weeks for full colonization"
+    },
+    {
+     "topic": "fruiting.T",
+     "min": 55,
+     "max": 70,
+     "value": null,
+     "unit": "°F (stated in text as 13°C-18°C, which is an inconsistent conversion for 70°F)",
+     "source": "https://liquidfungi.com/pages/special-considerations-when-growing-lions-mane-mushrooms",
+     "sourceType": "spawn/culture supplier guide",
+     "quote": "between 55°F and 70°F (13°C and 18°C)"
+    },
+    {
+     "topic": "tMax",
+     "min": null,
+     "max": null,
+     "value": 80,
+     "unit": "°F (successfully fruited, upper bound noted by this source)",
+     "source": "https://liquidfungi.com/pages/special-considerations-when-growing-lions-mane-mushrooms",
+     "sourceType": "spawn/culture supplier guide",
+     "quote": "successfully fruited in temperatures as high as 80F"
+    },
+    {
+     "topic": "fruiting.RH",
+     "min": 85,
+     "max": 95,
+     "value": null,
+     "unit": "%",
+     "source": "https://liquidfungi.com/pages/special-considerations-when-growing-lions-mane-mushrooms",
+     "sourceType": "spawn/culture supplier guide",
+     "quote": "a relative humidity of around 85% to 95% being optimal"
+    },
+    {
+     "topic": "tMax",
+     "min": null,
+     "max": null,
+     "value": 85,
+     "unit": "°F (29°C) - growth stalling point; general cultivated-species claim, not Lion's-Mane-specific",
+     "source": "https://www.mushroomgrowinghub.online/blog/what-temperature-kills-mycelium.html",
+     "sourceType": "general grower blog (not clearly a commercial spawn/grower source - lower confidence)",
+     "quote": "the mycelium will stop growing completely (stalling) around 85°F (29°C)"
+    },
+    {
+     "topic": "tMax",
+     "min": null,
+     "max": null,
+     "value": 106,
+     "unit": "°F (41°C) - absolute lethal threshold cited for 'standard cultivated species like Psilocybe cubensis or Oyster mushrooms', grouping lion's mane with these, not isolated lion's mane data",
+     "source": "https://www.mushroomgrowinghub.online/blog/what-temperature-kills-mycelium.html",
+     "sourceType": "general grower blog (not clearly a commercial spawn/grower source - lower confidence)",
+     "quote": "sustained temperatures above 106°F (41°C)"
+    }
+   ],
+   "notes": "Read 18 pages directly (WebFetch, or curl+pdftotext for the North Spore PDF) across 16 distinct commercial-grower/spawn-supplier domains: FreshCap (2 pages), North Spore (FAQ page + linked \"FruitingBlockBookletUpdated.pdf\" instruction booklet, parsed locally with pdftotext since WebFetch can't read binary PDFs), Field Forest Products (4 pages: millet spawn, ready-to-fruit instructions, DIY block instructions, block-set product page), Groovy Pigeon Mycology, Out-Grow (standard strain + \"warm weather\" specialty-strain pages), Toshifarm, Gourmet Cultures, Bootstrapbee, Grocycle (UK urban mushroom farm), Naturelion.ca, and Liquidfungi. Two more (mushroomgrowinghub.online, mushroomgrowinghub \"what temp kills mycelium\") were included but flagged lower-confidence since they read as generic SEO blogs rather than a commercial grower/spawn supplier, and their lion's-mane-specific claims are really generic \"standard cultivated species\" claims, not measured on H. erinaceus itself. Fungi Perfecti (fungi.com) could NOT be verified: both the \"Hericium erinaceus Culture\" and \"Lion's Mane Grain Master Bag\" URLs returned genuine HTTP 404s even with a browser user-agent via curl (confirmed by HTML title \"404 Not Found\" / \"Page not found\") - the \"fruiting temperature 60-80°F\" figure attributed to Fungi Perfecti in search-engine summaries should be treated as unverified/possibly stale, since I could not read the actual page. North Spore's grain-spawn product page and Field Forest's millet-spawn product page likewise had no live numeric growing parameters visible in fetched content (likely behind JS-rendered tabs/accordions) beyond the one inoculation-rate figure Field Forest did expose.\n\nKEY DISAGREEMENTS FOUND:\n1. Fruiting CO2 ceiling varies by ~300ppm across sources: Groovy Pigeon Mycology says keep CO2 below 800ppm; North Spore's own booklet, Toshifarm, Bootstrapbee and Grocycle all say up to 1,000ppm is fine; Out-Grow's warm-weather page puts the trigger threshold at 1,000-1,100ppm. No source's CO2 number was found to be strain/phase-matched perfectly with another, so treat ~800-1000ppm as the practical \"below this\" ceiling during fruiting, with primordia initiation wanting the lower end (North Spore: 500-700ppm for primordia specifically, the only source that split CO2 by phase).\n2. Fruiting temperature ranges from a cool-strain floor of 55°F/13°C (Field Forest, Liquidfungi) up to a warm-strain ceiling of 80°F/27°C (Out-Grow's purpose-bred \"warm weather\" Hericium strain). Standard-strain commercial consensus clusters around 60-75°F (15-24°C); FreshCap's pinning-trigger of 15°C and fruiting band of 15-20°C sit at the cooler end, Toshifarm's 16-21°C is similar, while Naturelion.ca calls 16-20°C/60-68°F \"the sweet spot.\"\n3. Field Forest Products' own site is internally inconsistent: its \"ready-to-fruit blocks\" page states fruiting temp 55-65°F/humidity 70-80%, its \"make your own blocks\" page states fruiting temp 55-70°F/humidity 70-85% and days-to-harvest 10-21 (vs 12-18 on the sister page), and its block-set PRODUCT PAGE contradicts itself in a single page, giving BOTH \"55-65°F\" and \"Ideal Fruiting Temperature...62°-70°F\" for temperature, and BOTH \">85%\" and \"85-90%\" for humidity. Treat Field Forest's numbers as a range-of-ranges rather than one fixed spec.\n4. Light intensity during fruiting: Toshifarm says keep below 500 lux; Grocycle says 500-1000 lux - direct contradiction on whether 500+ lux is desirable or to be avoided. Hours-of-light recommendations are more consistent (8-12 hrs/day per Field Forest, 12 hrs/day per North Spore, both general not Lion's-Mane-specific for North Spore).\n5. Biological efficiency: FreshCap's \"90-140% BE\" (described by FreshCap itself as showing \"strong first-flush potential\") is far above the \"15-80%\" BE range Out-Grow's warm-weather page attributes to peer-reviewed literature depending on substrate. FreshCap's figure reads as an optimistic/marketing best-case rather than a typical grower average; treat the wide 15-140% spread as reflecting substrate quality, supplementation, and strain differences more than a single \"true\" BE for the species.\n6. Cold shock / pinning trigger: no Lion's-Mane-specific source among those read said a literal refrigeration \"cold shock\" is required. North Spore's own booklet explicitly prescribes refrigeration cold-shock for its Black King and Reishi species pages but not for Lion's Mane, whose own page only says to cut holes in the bag once colonized (fresh air + opening the bag is the trigger). FreshCap's \"lower temperature to 15°C\" is a modest ambient drop, not refrigeration. This suggests the commercial consensus is: temperature drop + fresh air/CO2 drop triggers pinning, with cold-shock being an optional accelerant some home growers use but not a documented requirement from any supplier read here.\n7. No source read gave a quantified CO2 ppm *tolerance specifically during the spawn-run/incubation phase* (as opposed to primordia/fruiting) - colonizing mycelium is universally described only qualitatively as tolerating/needing high CO2 while dark-incubating; the only incubation-phase numeric environmental spec found (besides temperature) was Toshifarm's humidity figure (90-95% RH during incubation) and its core/substrate-temperature figure (ambient 25°C vs substrate/core 27°C) - this is the only direct \"block core temperature\" data point found among commercial-grower sources; general academic/forum discussion (not independently verified here) suggests metabolic heating of several °C above ambient is typical in bulk blocks, consistent with Toshifarm's 2°C ambient-to-core gap.\n8. Source-quality notes: North Spore's PDF booklet is the richest, most species-specific, phase-split (primordia vs fruitbody) data from an actual commercial fruiting-block/spawn supplier, and is the best single primary source found. FreshCap and Naturelion.ca are grow-kit/spawn sellers with clear commercial guides. Toshifarm, Groovy Pigeon Mycology, Bootstrapbee and Grocycle read as grower-blog content (Grocycle is a real commercial urban mushroom farm in the UK). Liquidfungi's own °F-to-°C conversion is internally wrong (states 70°F = 18°C; actual conversion is ~21°C), which is a quality red flag for that source's other numbers. mushroomgrowinghub.online's temperature-kill-threshold numbers are generic across \"standard cultivated species\" rather than measured for H. erinaceus, so they were included only as general context, clearly flagged, not as species-specific data."
+  },
+  {
+   "sweep": "building",
+   "findings": [
+    {
+     "topic": "ua.zincBare",
+     "min": null,
+     "max": null,
+     "value": 8.5,
+     "unit": "W/m2K",
+     "source": "https://www.engineeringtoolbox.com/heat-loss-transmission-d_748.html",
+     "sourceType": "reference engineering table",
+     "quote": "Corrugated metal - uninsulated: U-value 1.5 Btu/(hr ft2 F) = 8.5 W/(m2K)"
+    },
+    {
+     "topic": "ua.zincBare_component",
+     "min": null,
+     "max": null,
+     "value": 0,
+     "unit": "m2K/W (bare metal deck sheet thermal resistance)",
+     "source": "https://www.greenbuildingindex.org/wp-content/uploads/2020/07/RSI-Booklet-R1-14042020.pdf",
+     "sourceType": "Malaysian GBI/RIMM technical guidebook (PDF, fetched and parsed with pdftotext)",
+     "quote": "Layers: 1 External Air Film, 2 Metal Deck ... Thermal Conductivity (W/mK) ... Metal Deck = 47.600 ... Thermal Resistance (m2K/W) ... External Air Film 0.044, Metal Deck 0.000"
+    },
+    {
+     "topic": "ua.zincBare_door_analog",
+     "min": null,
+     "max": null,
+     "value": 6.8,
+     "unit": "W/m2K",
+     "source": "https://www.engineeringtoolbox.com/heat-loss-transmission-d_748.html",
+     "sourceType": "reference engineering table",
+     "quote": "Single sheet - metal (door): 1.2 Btu/hr ft2 F = 6.8 W/(m2K)"
+    },
+    {
+     "topic": "ua.brick115",
+     "min": null,
+     "max": null,
+     "value": 2.2,
+     "unit": "W/m2K",
+     "source": "https://www.diydata.com/information/u_values/u_values.php",
+     "sourceType": "UK DIY/building reference table",
+     "quote": "plaster, 4.5 inch brick, plaster | 0.39 | 2.2"
+    },
+    {
+     "topic": "ua.brick115",
+     "min": null,
+     "max": null,
+     "value": 2,
+     "unit": "W/m2K",
+     "source": "https://ewipro.com/2023/06/03/substrates-and-their-u-values/",
+     "sourceType": "insulation manufacturer blog",
+     "quote": "Without additional insulation, a typical brick wall can have a U-value of around 2.0 W/m²K."
+    },
+    {
+     "topic": "ua.brick230",
+     "min": null,
+     "max": null,
+     "value": 3.15,
+     "unit": "W/m2K",
+     "source": "https://ijcrt.org/papers/IJPUB1801109.pdf",
+     "sourceType": "peer-reviewed-style academic paper (PDF, fetched and parsed with pdftotext)",
+     "quote": "Exterior Brick Wall 230 mm | 0.254 | 0.31 | 3.15 | NBC 2016 ... Thermal transmittance (u value) of the burned brick wall (230mm) is 3.15 W/m2k"
+    },
+    {
+     "topic": "ua.brick230",
+     "min": null,
+     "max": null,
+     "value": 2.2,
+     "unit": "W/m2K",
+     "source": "https://www.diydata.com/information/u_values/u_values.php",
+     "sourceType": "UK DIY/building reference table",
+     "quote": "9\" solid brick | 0.38 | 2.2"
+    },
+    {
+     "topic": "ua.brick230",
+     "min": 1.7,
+     "max": 2.1,
+     "value": null,
+     "unit": "W/m2K",
+     "source": "https://assets.publishing.service.gov.uk/media/5c409bd6ed915d389d28176f/WP2_Nature_of_solid_walls_in-situ_v3.2b.pdf",
+     "sourceType": "UK government (BRE) research report (PDF)",
+     "quote": "The result of this research was to reduce the RdSAP default U-value for solid brick walls from 2.1 to 1.7 W/m²K ... there is now good evidence to support a revision to the assumed U-value for uninsulated solid walls to approximately 1.75 W/m²K"
+    },
+    {
+     "topic": "ua.pu50",
+     "min": null,
+     "max": null,
+     "value": 0.38,
+     "unit": "W/m2K",
+     "source": "https://www.pirsltd.co.uk/wp-content/uploads/2019/07/12578_Kingspan_PIR_Trapezoidal_Roof_KS1000RW_Datasheet-_EN_UK.pdf",
+     "sourceType": "manufacturer product datasheet (PDF, fetched and parsed with pdftotext)",
+     "quote": "Core Thickness (mm): 40 50 60 70 80 100 115 120 137 150 / U-value (W/m2K): 0.46 0.38 0.35 0.30 0.25 0.20 0.18 0.16 0.15 0.14 (PIR core, KS1000RW panel)"
+    },
+    {
+     "topic": "ua.pu70",
+     "min": null,
+     "max": null,
+     "value": 0.3,
+     "unit": "W/m2K",
+     "source": "https://www.pirsltd.co.uk/wp-content/uploads/2019/07/12578_Kingspan_PIR_Trapezoidal_Roof_KS1000RW_Datasheet-_EN_UK.pdf",
+     "sourceType": "manufacturer product datasheet (PDF)",
+     "quote": "70mm core -> U-value 0.30 W/m2K (bracketing 75mm; no exact 75mm option offered by this manufacturer, nearest sizes are 70mm and 80mm)"
+    },
+    {
+     "topic": "ua.pu80",
+     "min": null,
+     "max": null,
+     "value": 0.25,
+     "unit": "W/m2K",
+     "source": "https://www.pirsltd.co.uk/wp-content/uploads/2019/07/12578_Kingspan_PIR_Trapezoidal_Roof_KS1000RW_Datasheet-_EN_UK.pdf",
+     "sourceType": "manufacturer product datasheet (PDF)",
+     "quote": "80mm core -> U-value 0.25 W/m2K (bracketing 75mm)"
+    },
+    {
+     "topic": "ua.pu100",
+     "min": null,
+     "max": null,
+     "value": 0.2,
+     "unit": "W/m2K",
+     "source": "https://www.pirsltd.co.uk/wp-content/uploads/2019/07/12578_Kingspan_PIR_Trapezoidal_Roof_KS1000RW_Datasheet-_EN_UK.pdf",
+     "sourceType": "manufacturer product datasheet (PDF)",
+     "quote": "100mm core -> U-value 0.20 W/m2K"
+    },
+    {
+     "topic": "pu.lambda",
+     "min": null,
+     "max": null,
+     "value": 0.03,
+     "unit": "W/mK",
+     "source": "https://hongxingjinghua.en.made-in-china.com/product/RriYbNvVrshc/China-25mm-50mm-75mm-100mm-150mm-200mm-Metal-Cold-Room-Wall-EPS-PU-Sandwich-Panel-Insulated-PU-PUR-PIR.html",
+     "sourceType": "B2B marketplace product listing (self-reported, unverified)",
+     "quote": "Low thermal conductivity coefficient of 0.03 W/m·K"
+    },
+    {
+     "topic": "pu.heatTransferCoefficient_unspecifiedThickness",
+     "min": null,
+     "max": null,
+     "value": 0.45,
+     "unit": "W/m2K",
+     "source": "https://m.made-in-china.com/product/50mm-75mm-100mm-150mm-200mm-300mm-PU-PIR-PUR-Puf-Polyurethane-Structural-Insulated-Sandwich-Panel-for-Cold-Storage-2077283835.html",
+     "sourceType": "search snippet (B2B marketplace listing; thickness not stated against this figure)",
+     "quote": "thermal conductivity of 0.024 W/(m.k) with a heat transfer coefficient of 0.45 W/(m²·k)"
+    },
+    {
+     "topic": "ua.eps50",
+     "min": null,
+     "max": null,
+     "value": 0.86,
+     "unit": "W/m2K",
+     "source": "https://aluminiumextrusions.com.au/products/eps-sandwich-panel",
+     "sourceType": "manufacturer product page, NCC-tested at 23°C",
+     "quote": "Panel Thickness 50mm = U-Value 0.86 W/m2K at 23°C"
+    },
+    {
+     "topic": "ua.eps75",
+     "min": null,
+     "max": null,
+     "value": 0.57,
+     "unit": "W/m2K",
+     "source": "https://aluminiumextrusions.com.au/products/eps-sandwich-panel",
+     "sourceType": "manufacturer product page, NCC-tested at 23°C",
+     "quote": "Panel Thickness 75mm = U-Value 0.57 W/m2K at 23°C"
+    },
+    {
+     "topic": "ua.eps100",
+     "min": null,
+     "max": null,
+     "value": 0.42,
+     "unit": "W/m2K",
+     "source": "https://aluminiumextrusions.com.au/products/eps-sandwich-panel",
+     "sourceType": "manufacturer product page, NCC-tested at 23°C",
+     "quote": "Panel Thickness 100mm = U-Value 0.42 W/m2K at 23°C"
+    },
+    {
+     "topic": "ua.eps50",
+     "min": null,
+     "max": null,
+     "value": 0.57,
+     "unit": "W/m2K",
+     "source": "https://www.sunnyda-house.com/precast-sandwich-panel/",
+     "sourceType": "manufacturer product page",
+     "quote": "Panel Thickness 50 | K-Value 0.663 | U-Value 0.57"
+    },
+    {
+     "topic": "ua.eps75",
+     "min": null,
+     "max": null,
+     "value": 0.38,
+     "unit": "W/m2K",
+     "source": "https://www.sunnyda-house.com/precast-sandwich-panel/",
+     "sourceType": "manufacturer product page",
+     "quote": "Panel Thickness 75 | K-Value 0.442 | U-Value 0.38"
+    },
+    {
+     "topic": "ua.eps100",
+     "min": null,
+     "max": null,
+     "value": 0.19,
+     "unit": "W/m2K",
+     "source": "https://www.sunnyda-house.com/precast-sandwich-panel/",
+     "sourceType": "manufacturer product page",
+     "quote": "Panel Thickness 100 | K-Value 0.33 | U-Value 0.19"
+    },
+    {
+     "topic": "climate.Tdb",
+     "min": null,
+     "max": null,
+     "value": 33.3,
+     "unit": "degC",
+     "source": "https://idoc.pub/documents/jkr-panduan-teknik-mekanikal-ms15252007-6nge08pyx1lv",
+     "sourceType": "Malaysian government technical guide reproducing MS1525:2007 clause S1-1-3",
+     "quote": "recommended outdoor design conditions ... Dry bulb temperature: 33.3ºC ... Wet bulb temperature: 27.2ºC (applies to peak-load/spreadsheet method)"
+    },
+    {
+     "topic": "climate.Twb",
+     "min": null,
+     "max": null,
+     "value": 27.2,
+     "unit": "degC",
+     "source": "https://idoc.pub/documents/jkr-panduan-teknik-mekanikal-ms15252007-6nge08pyx1lv",
+     "sourceType": "Malaysian government technical guide reproducing MS1525:2007 clause S1-1-3",
+     "quote": "Wet bulb temperature: 27.2ºC"
+    },
+    {
+     "topic": "climate.Twb_revision_unresolved",
+     "min": null,
+     "max": null,
+     "value": null,
+     "unit": "degC (value not disclosed in accessible preview)",
+     "source": "https://mysol.jsm.gov.my/getPdfFileForAdmin/eyJpdiI6InpLRU03MHJkaVlpdGR3TGZvVENhd1E9PSIsInZhbHVlIjoiSENvYUxUenVNZ2R4ZXVSVmRzVHdZUT09IiwibWFjIjoiNTVhYjI3NmQ4NTQ4MThiOWZiNDk3M2E3OWZkNmQ3MDllYmVjMTczNmI3OWE0MGFiMTAyMGY1MDI4NmFiZTZiZCJ9",
+     "sourceType": "official Malaysian Standard preview (PDF, cover/foreword only - fetched and parsed with pdftotext)",
+     "quote": "Major modifications of this revision are as follows: ... d) ACMV outdoor design wet bulb temperature is revised ... Annex C Information on the determination of outdoor design parameter for dry bulb and wet bulb temperatures for Malaysia"
+    },
+    {
+     "topic": "climate.Tdb_annualMax",
+     "min": null,
+     "max": null,
+     "value": 34.9,
+     "unit": "degC",
+     "source": "https://www.researchgate.net/figure/267856841_fig1_Fig-2-Annual-dry-wet-bulb-temperature-Kuala-Lumpur-Malaysia",
+     "sourceType": "academic figure caption (search snippet)",
+     "quote": "maximum dry-wet bulbs of 34.90°C and 26.50°C, respectively"
+    },
+    {
+     "topic": "climate.Twb_annualMax",
+     "min": null,
+     "max": null,
+     "value": 26.5,
+     "unit": "degC",
+     "source": "https://www.researchgate.net/figure/267856841_fig1_Fig-2-Annual-dry-wet-bulb-temperature-Kuala-Lumpur-Malaysia",
+     "sourceType": "academic figure caption (search snippet)",
+     "quote": "maximum dry-wet bulbs of 34.90°C and 26.50°C, respectively"
+    },
+    {
+     "topic": "climate.Tdb_comfortStudy",
+     "min": 27.5,
+     "max": 33.7,
+     "value": null,
+     "unit": "degC",
+     "source": "https://www.matec-conferences.org/articles/matecconf/pdf/2016/29/matecconf_ibcc2016_00084.pdf",
+     "sourceType": "conference paper",
+     "quote": "a minimum of 27.5ºC and a maximum of 33.7ºC from the readings of dry bulb temperature ... to propose the comfort zone for hot-humid urban outdoor spaces of Kuala Lumpur"
+    },
+    {
+     "topic": "climate.RH_comfortStudy",
+     "min": 50.7,
+     "max": 85,
+     "value": null,
+     "unit": "%",
+     "source": "https://www.matec-conferences.org/articles/matecconf/pdf/2016/29/matecconf_ibcc2016_00084.pdf",
+     "sourceType": "conference paper",
+     "quote": "a minimum reading of 50.7% and a maximum reading of 85% for relative humidity"
+    },
+    {
+     "topic": "erv.eff_aluminiumPlate",
+     "min": null,
+     "max": null,
+     "value": 30,
+     "unit": "%",
+     "source": "https://www.greenheck.com/resources/faqs/product-faqs/energy-recovery-ventilators-faqs/energy-recovery-ventilators-faqqa6",
+     "sourceType": "manufacturer FAQ",
+     "quote": "transfer sensible energy (heat) only and have a total effectiveness of 30%"
+    },
+    {
+     "topic": "erv.eff_hygroscopicCore",
+     "min": 50,
+     "max": 60,
+     "value": null,
+     "unit": "%",
+     "source": "https://www.greenheck.com/resources/faqs/product-faqs/energy-recovery-ventilators-faqs/energy-recovery-ventilators-faqqa6",
+     "sourceType": "manufacturer FAQ",
+     "quote": "will transfer sensible and latent energy and have a total effectiveness of 50-60%"
+    },
+    {
+     "topic": "erv.eff_desiccantWheel",
+     "min": 70,
+     "max": 80,
+     "value": null,
+     "unit": "%",
+     "source": "https://www.greenheck.com/resources/faqs/product-faqs/energy-recovery-ventilators-faqs/energy-recovery-ventilators-faqqa6",
+     "sourceType": "manufacturer FAQ",
+     "quote": "manufactured out of a polymer material with a silica gel desiccant will transfer sensible and latent energy and have a total effectiveness of 70-80%"
+    },
+    {
+     "topic": "precool.eff_runaroundCoil",
+     "min": 45,
+     "max": 65,
+     "value": null,
+     "unit": "%",
+     "source": "https://www.renewableenergyhub.co.uk/main/heat-recovery-systems-information/heat-recovery-system-efficiencies",
+     "sourceType": "search snippet (direct page fetch returned HTTP 403)",
+     "quote": "Run around coils offer sensible heat recovery only and have typical heat transfer effectiveness between 45-65% when supply and exhaust air streams have (near) equal air flow rates"
+    },
+    {
+     "topic": "precool.eff_plateHX",
+     "min": 50,
+     "max": 75,
+     "value": null,
+     "unit": "%",
+     "source": "https://www.renewableenergyhub.co.uk/main/heat-recovery-systems-information/heat-recovery-system-efficiencies",
+     "sourceType": "search snippet (direct page fetch returned HTTP 403)",
+     "quote": "Plate air-to-air heat exchangers typically have a sensible heat transfer effectiveness between 50-75% when supply and exhaust air streams have (near) equal air flow rates"
+    },
+    {
+     "topic": "precool.eff_thermalWheel",
+     "min": 70,
+     "max": 85,
+     "value": null,
+     "unit": "%",
+     "source": "http://ibse.hk/spd5132/SPD5132_1617-06.pdf",
+     "sourceType": "search snippet (university HVAC lecture notes; direct fetch failed with connection reset)",
+     "quote": "The range of heat recovery effectiveness is 70% to 80% for energy transfer wheels ... thermal wheels are highly efficient (up to a maximum of around 80-85% under ideal conditions)"
+    },
+    {
+     "topic": "precool.coil_debate",
+     "min": null,
+     "max": null,
+     "value": null,
+     "unit": "qualitative",
+     "source": "https://www.eng-tips.com/threads/pre-treatment-of-fresh-air.265964/",
+     "sourceType": "engineer forum discussion (search snippet; direct fetch returned HTTP 403)",
+     "quote": "having a pre-cooling coil for the fresh air doesn't improve efficiency significantly if at all [while] air-to-air heat recovery (desiccant wheel, run-around coil, or flat plate heat exchanger) will increase system efficiency"
+    },
+    {
+     "topic": "precool.supplyAirTarget",
+     "min": 12,
+     "max": 13,
+     "value": null,
+     "unit": "degC",
+     "source": "https://industrialmonitordirect.com/blogs/knowledgebase/pre-cool-fresh-air-systems-in-tropical-hvac-design",
+     "sourceType": "search snippet (direct fetch returned HTTP 403)",
+     "quote": "outdoor air must typically be cooled to approximately 12-13°C to achieve dehumidification, requiring chilled water supply temperatures around 7°C for a standard 4-row cooling coil"
+    },
+    {
+     "topic": "fogger.Lph",
+     "min": null,
+     "max": null,
+     "value": 14,
+     "unit": "kg/h (~L/h)",
+     "source": "https://www.rootlab.com.au/product/ultrasonic-humidifier-14kg/",
+     "sourceType": "manufacturer/retailer product page",
+     "quote": "Output : 14kg per hour ... Applicable area : Up to 100 square metres"
+    },
+    {
+     "topic": "fogger.Lph",
+     "min": null,
+     "max": null,
+     "value": 24,
+     "unit": "L/h",
+     "source": "https://duokai.en.made-in-china.com/product/ZdoteFAVELrT/China-CE-Approved-24-Liter-Per-Hour-Ultrasonic-Air-Humidifier-Industrial-Agriculture-Grow-Room-Mushroom-Fogger.html",
+     "sourceType": "B2B marketplace product listing (self-reported)",
+     "quote": "Humidify Capacity: 24L/Hr ... Power Consumption: 2.4kw ... Air Volume (M3/H): 480 ... Applicable Space: 350-400 M2 (Height 2.6m)"
+    },
+    {
+     "topic": "fogger.Lph",
+     "min": null,
+     "max": null,
+     "value": 3,
+     "unit": "L/h",
+     "source": "https://growmushrooms.eu/product/industrial-ultrasonic-humidifier-3l-h-ideal-for-mushroom-growing-rooms/",
+     "sourceType": "retailer product page specific to mushroom growing",
+     "quote": "3 L/h ... suitable room size 20-50 m2 ... 80-95% relative humidity"
+    },
+    {
+     "topic": "fogger.Lph",
+     "min": 5,
+     "max": 8,
+     "value": null,
+     "unit": "L/h",
+     "source": "https://fasalbazar.com/index.php/product/centrifugal-humidifier-8-lph-for-mushroom/",
+     "sourceType": "retailer product page (internally inconsistent)",
+     "quote": "product title: \"Centrifugal Humidifier-8 LPH For Mushroom\" vs. body text: \"With capacity 5litre per hour\""
+    },
+    {
+     "topic": "fogger.Lph",
+     "min": null,
+     "max": null,
+     "value": 6,
+     "unit": "L/h (6000 ml/h)",
+     "source": "https://shroomsupply.com/grow-room-supplies/disc-foggers/12-disc-fogger-w-power-supply",
+     "sourceType": "retailer product page specific to mushroom growing",
+     "quote": "Output: 6000ml/h (.5 G/H) ... Perfect for humidifying our 10' x 15' mushroom grow tent"
+    },
+    {
+     "topic": "fogger.sizing_miniTent",
+     "min": 0.2,
+     "max": 0.25,
+     "value": null,
+     "unit": "L/h",
+     "source": "https://myceliumnest.com/best-humidifier-for-mushroom-growing/",
+     "sourceType": "mushroom-cultivation gear guide",
+     "quote": "mini tent (0.43 m3): 200-250 ml/hr output is specified as the minimum requirement"
+    },
+    {
+     "topic": "fogger.sizing_marthaTent",
+     "min": 0.4,
+     "max": 0.5,
+     "value": null,
+     "unit": "L/h",
+     "source": "https://myceliumnest.com/best-humidifier-for-mushroom-growing/",
+     "sourceType": "mushroom-cultivation gear guide",
+     "quote": "4-tier Martha tent (~610 liters): 400-500 ml/hr output is recommended"
+    },
+    {
+     "topic": "fogger.sizing_walkInRoom",
+     "min": null,
+     "max": null,
+     "value": 0.6,
+     "unit": "L/h (minimum)",
+     "source": "https://myceliumnest.com/best-humidifier-for-mushroom-growing/",
+     "sourceType": "mushroom-cultivation gear guide",
+     "quote": "walk-in grow room (2,000 liters): 600+ ml/hr minimum output is recommended"
+    },
+    {
+     "topic": "fan.m3h",
+     "min": null,
+     "max": null,
+     "value": 688,
+     "unit": "m3/h (= 405 CFM)",
+     "source": "https://hullhydroponics.co.uk/products/vivosun-s6-inline-fan",
+     "sourceType": "retailer product page for manufacturer part (VIVOSUN AeroZesh S6)",
+     "quote": "405 CFM ... 688 m3/hr ... airflow at 405 CFM to create optimal ventilation for your grow space"
+    },
+    {
+     "topic": "fan.CFM",
+     "min": null,
+     "max": null,
+     "value": 208,
+     "unit": "CFM",
+     "source": "https://vivosun.com/en/vivosun-aerozesh-6-inch-inline-fan-hvac-blower-for-ventilation-with-e12-controller-p146256299450869387-v146256305088013324",
+     "sourceType": "manufacturer product page (AeroZesh S4)",
+     "quote": "airflow at 208 CFM"
+    },
+    {
+     "topic": "fan.CFM_sizingGuide",
+     "min": 100,
+     "max": 400,
+     "value": null,
+     "unit": "CFM",
+     "source": "https://freshfungifarm.com/gear-guides/best-exhaust-fan-for-mushroom-cultivation/",
+     "sourceType": "mushroom-cultivation gear guide",
+     "quote": "aim for 200-400 CFM in most setups ... CFM between 100 and 400 for optimal airflow"
+    },
+    {
+     "topic": "fan.CFM_perFloorArea",
+     "min": null,
+     "max": null,
+     "value": 1,
+     "unit": "CFM per sq ft floor area",
+     "source": "https://freshfungifarm.com/gear-guides/best-exhaust-fan-for-mushroom-cultivation/",
+     "sourceType": "mushroom-cultivation gear guide",
+     "quote": "Start by calculating your room's cubic footage and aim for 1 CFM per square foot of floor space. For a 200-square-foot room, that means at least 200 CFM."
+    },
+    {
+     "topic": "fan.ACH",
+     "min": 10,
+     "max": 12,
+     "value": null,
+     "unit": "air changes per hour",
+     "source": "https://freshfungifarm.com/gear-guides/best-exhaust-fan-for-mushroom-cultivation/",
+     "sourceType": "mushroom-cultivation gear guide",
+     "quote": "targeting 10-12 air changes per hour (ACH) to guarantee constant fresh airflow"
+    },
+    {
+     "topic": "fan.m3h_perTon_singleZone",
+     "min": null,
+     "max": null,
+     "value": 300,
+     "unit": "m3/h per ton substrate",
+     "source": "https://veshenka-expert.info/en/mushroom-ventilation-system/",
+     "sourceType": "oyster mushroom ventilation guide",
+     "quote": "300 m3/h (approx. 175 CFM) per ton of substrate [for single-zone setups where all blocks fruit at once]"
+    },
+    {
+     "topic": "fan.m3h_perTon_mixedAge",
+     "min": 180,
+     "max": 220,
+     "value": null,
+     "unit": "m3/h per ton substrate",
+     "source": "https://veshenka-expert.info/en/mushroom-ventilation-system/",
+     "sourceType": "oyster mushroom ventilation guide",
+     "quote": "180-220 m3/h (approx. 105-130 CFM) per ton is enough [for mixed-age blocks with staggered fruiting]"
+    }
+   ],
+   "notes": "Methodology: used WebSearch to locate candidates, then WebFetch (and pdftotext on PDFs saved by WebFetch, since several PDFs returned garbled text on first pass) to read and quote the actual pages. ~24 distinct source domains were read, well above the 6-source minimum. Several sites (eng-tips.com, renewableenergyhub.co.uk, woodgroup.com, epsmg.jkr.gov.my, kupdf.net) returned HTTP 403/DNS errors on direct WebFetch; for those I report the content via the WebSearch tool's extracted snippet and flag sourceType as \"search snippet\" rather than a directly-fetched page, so the provenance is honest. No number below was invented — every finding traces to a quote either read directly or surfaced verbatim by the search tool.\n\nKey disagreements / quality notes per topic:\n1. Bare zinc/metal roof U-value: no single authoritative figure for \"bare sheet\" exists in codes (bare sheets are never installed without purlins/insulation in practice). EngineeringToolbox's generic \"corrugated metal, uninsulated\" figure of 8.5 W/m2K is the most citable number. The Malaysian GBI guidebook's own worked U-value tables confirm the bare metal deck's own thermal resistance is ~0.000 m2K/W (i.e. the sheet itself is thermally negligible; U-value is governed almost entirely by the air films and whatever insulation is added behind it).\n2. Brick walls: results are scattered and sometimes counter-intuitive. diydata.com's reference table gives IDENTICAL 2.2 W/m2K for both a 115mm-plastered single-skin wall and a 230mm/9\" solid wall — plausible physically (brick's own conductivity is high, so most of the resistance comes from air films and plaster, which barely differ between the two), but it means these two figures should not be treated as firmly distinct. An Indian academic paper (ijcrt.org, citing NBC 2016) gives a much higher 3.15 W/m2K for a 230mm brick wall. UK government/BRE research (gov.scot) on genuine two-brick (215-230mm) solid walls converged on 1.7-2.1 W/m2K (with in-situ measurement supporting ~1.75 W/m2K) — this is a different, generally lower, range than the Indian paper. Expect real Malaysian clay-brick walls to fall somewhere in the wide 1.7-3.15 W/m2K band depending on brick density/moisture and whether plaster/render is included; treat 2.0-2.2 W/m2K as a reasonable mid-estimate for either thickness and don't expect a strong halving of U-value between 115mm and 230mm brick.\n3. PU/PIR sandwich panels: the only number I could verify against an actual manufacturer datasheet (Kingspan KS1000RW, PDF) is for PIR foam core, which is chemically a cousin of PU (more fire-resistant, closed-cell) and is what's commercially sold as \"PU panel\" for cold rooms. That table gives 0.38 W/m2K at 50mm, 0.30/0.25 W/m2K bracketing 75mm (70mm/80mm, no 75mm SKU offered), and 0.20 W/m2K at 100mm. Generic cold-room-panel marketplace listings (made-in-china, etc.) almost never publish a verifiable U-value table — they quote only foam thermal conductivity (lambda ~0.019-0.03 W/mK) or an unlabelled single \"heat transfer coefficient\" (0.45 W/m2K) without stating the thickness it applies to; treat those as low-confidence marketing numbers.\n4. EPS sandwich panels: two manufacturer datasheets disagree by nearly 2x at the same thicknesses - aluminiumextrusions.com.au (Australian, NCC-tested at 23°C): 0.86/0.57/0.42 W/m2K at 50/75/100mm; sunnyda-house.com: 0.57/0.38/0.19 W/m2K at 50/75/100mm. Likely due to different EPS densities/grades or test standards; there is no single \"EPS panel\" U-value, only a manufacturer-specific one.\n5. Malaysia outdoor design conditions: MS 1525:2007 (and unchanged in the 2014 second revision per secondary sources) specifies 33.3°C dry bulb / 27.2°C wet bulb for ACMV peak-load design - this is the standard, authoritative figure to use. The current MS 1525:2019 edition's own front matter explicitly states it revised \"the ACMV outdoor design wet bulb temperature\" in Annex C, but I could only access the cover/TOC/foreword preview of the 2019 PDF (the full standard sits behind SIRIM paywall), so the new wet-bulb figure is unconfirmed - flagged as an open gap, not invented. Two unrelated secondary figures should not be confused with the ACMV design condition: a Kuala Lumpur annual-maximum climate study cites 34.90°C DB / 26.50°C WB (a different statistic - annual max, not a design percentile), and an outdoor-thermal-comfort study proposes a human-comfort zone of 27.5-33.7°C DB / 50.7-85% RH (a comfort-zone definition, not a cooling-load design condition).\n6. ERV/heat-recovery/pre-cooling effectiveness: numbers cluster into three tiers across every source checked - plain aluminum plate exchangers (sensible-only) ~30-75%, run-around coils ~45-65%, and desiccant/enthalpy/thermal wheels (sensible+latent) ~70-85%, with Greenheck's own FAQ (directly fetched, highest-confidence source here) giving the most conservative numbers (30% / 50-60% / 70-80%). One engineer forum thread (eng-tips.com, via snippet) argues a standalone pre-cooling coil (without heat recovery) gives little to no efficiency benefit - a qualitative dissenting view worth weighing against the device-effectiveness percentages.\n7. Mushroom foggers/humidifiers: output claims range from 3 L/h (small purpose-built unit for 20-50 m2) to 24 L/h (industrial unit for 350-400 m2), with sizing guides suggesting roughly 200-600+ ml/h per \"room size tier\" rather than a strict linear L/h-per-m3 rule - none of the sizing guides found scale cleanly to a 60 m3 room, so these are directional, not precise. One product listing (fasalbazar.com) is internally inconsistent (title says \"8 LPH,\" body text says \"5 litre per hour\" for the same SKU) - flagged, don't rely on it alone.\n8. Exhaust/inline fans: for a 60 m3 room, freshfungifarm.com's own two rules of thumb disagree with each other if applied literally: \"1 CFM per sq ft of floor\" on a 20 m2 (~215 sq ft) floor gives ~215 CFM (~365 m3/h), while its \"10-12 ACH\" rule on 60 m3 gives 600-720 m3/h - roughly 2x higher. The per-substrate-ton figures (180-300 m3/h per ton, veshenka-expert.info) are a third, independent method based on spawn/block mass rather than room volume, and will likely dominate sizing in a dense small farm. A single commercial 4\"-6\" inline duct fan (208-688 CFM / 350-1170 m3/h, VIVOSUN AeroZesh S4/S6, directly fetched from manufacturer/retailer pages) comfortably covers any of these targets for a 60 m3 room.\n\nOverall source quality: the most trustworthy figures are the ones read from an actual standard/government document (Malaysian GBI guidebook, MS1525 reproductions, UK gov.scot BRE report), an academic paper (ijcrt.org), a manufacturer's real engineering datasheet (Kingspan PDF, Greenheck FAQ, VIVOSUN manufacturer page), or an engineering reference table (EngineeringToolbox, diydata.com). The weakest-confidence figures are self-reported B2B marketplace listings (made-in-china, alibaba-style pages) and e-commerce product pages for foggers/fans, which are unverified, sometimes internally inconsistent, and should be treated as rough sizing guidance rather than engineering-grade specifications."
+  },
+  {
+   "sweep": "academic",
+   "findings": [
+    {
+     "topic": "spawn.T",
+     "min": 21,
+     "max": 24,
+     "value": null,
+     "unit": "°C",
+     "source": "https://www.shroomery.org/9400/Hericium-erinaceus",
+     "sourceType": "grower reference reproducing Stamets 2000/2011 'Growing Gourmet and Medicinal Mushrooms' cultivation table",
+     "quote": "Incubation Temperature: 70-75° F (21-24° C)"
+    },
+    {
+     "topic": "spawn.RH",
+     "min": 95,
+     "max": 100,
+     "value": null,
+     "unit": "%",
+     "source": "https://www.shroomery.org/9400/Hericium-erinaceus",
+     "sourceType": "grower reference reproducing Stamets table",
+     "quote": "Relative Humidity: 95-100 [Spawn Run]"
+    },
+    {
+     "topic": "spawn.days",
+     "min": 10,
+     "max": 14,
+     "value": null,
+     "unit": "days",
+     "source": "https://www.shroomery.org/9400/Hericium-erinaceus",
+     "sourceType": "grower reference reproducing Stamets table",
+     "quote": "Duration: 10-14 days [Spawn Run]"
+    },
+    {
+     "topic": "spawn.CO2",
+     "min": 5000,
+     "max": 40000,
+     "value": null,
+     "unit": "ppm",
+     "source": "https://www.shroomery.org/9400/Hericium-erinaceus",
+     "sourceType": "grower reference reproducing Stamets table",
+     "quote": "CO2: 5000-40,000 ppm [Spawn Run]"
+    },
+    {
+     "topic": "spawn.T",
+     "min": 21,
+     "max": 24,
+     "value": null,
+     "unit": "°C",
+     "source": "https://link.springer.com/article/10.1007/s11557-022-01829-6",
+     "sourceType": "peer-reviewed journal (Mycological Progress 2022, citing Stamets 2011)",
+     "quote": "General cultivation parameters of Hericium species for fruiting body production are as follows: spawn run at 21–24 °C for 10–14 days, primordia formation at 10–15.6 °C for 3–5 days, and fruiting body development at 18–24 °C for 4–5 days (Stamets 2011)"
+    },
+    {
+     "topic": "spawn.T",
+     "min": 16,
+     "max": 35,
+     "value": 25,
+     "unit": "°C",
+     "source": "https://link.springer.com/article/10.1007/s11557-022-01829-6",
+     "sourceType": "peer-reviewed journal (Mycological Progress 2022), primary data",
+     "quote": "H. erinaceus (MFLUCC 21-0018, MFLUCC 21-0019, MFLUCC 21-0021) resulted in a dry weight maximum at 25 °C... mycelial growth was 16–35 °C [but] statistical analysis indicated no significant differences in mycelial growth in the temperature range of 16–35 °C"
+    },
+    {
+     "topic": "spawn.T",
+     "min": null,
+     "max": null,
+     "value": 25,
+     "unit": "°C",
+     "source": "https://agribiop.com/wp-content/uploads/2019/11/149-152.pdf",
+     "sourceType": "peer-reviewed journal (Annals of Agri-Bio Research 2022)",
+     "quote": "After the inoculation, bags were placed in a spawn running chamber with a temperature of 25 °C and a relative humidity of 80-85%"
+    },
+    {
+     "topic": "tMax",
+     "min": null,
+     "max": null,
+     "value": 32,
+     "unit": "°C",
+     "source": "https://agribiop.com/wp-content/uploads/2019/11/149-152.pdf",
+     "sourceType": "peer-reviewed journal (Annals of Agri-Bio Research 2022)",
+     "quote": "Considerably greater HE 203 mycelium growth was detected at 24°C (5.95)... while significantly less (0.68) growth was observed at 32°C"
+    },
+    {
+     "topic": "spawn.T",
+     "min": null,
+     "max": null,
+     "value": 20,
+     "unit": "°C",
+     "source": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10432537/",
+     "sourceType": "peer-reviewed journal (Scientific Reports/Nature 2023)",
+     "quote": "the growing media was inoculated with the spawn of 30 sorghum grains and incubated at 20 °C in the presence of light for mycelial colonization. After seven days of incubation"
+    },
+    {
+     "topic": "coreMax",
+     "min": null,
+     "max": null,
+     "value": 95,
+     "unit": "°F",
+     "source": "https://smallfarms.cornell.edu/resources/methods-of-commercial-mushroom-cultivation-in-the-northeastern-united-states/2-seven-stages-of-cultivation/",
+     "sourceType": "university extension (Cornell Small Farms Program)",
+     "quote": "If the exterior temperatures are 80 degrees F, the internal core could be 95 degrees F, which is getting warm enough for the mycelium to cook itself and introduce contamination"
+    },
+    {
+     "topic": "spawn.T",
+     "min": null,
+     "max": 80,
+     "value": 70,
+     "unit": "°F",
+     "source": "https://smallfarms.cornell.edu/resources/methods-of-commercial-mushroom-cultivation-in-the-northeastern-united-states/2-seven-stages-of-cultivation/",
+     "sourceType": "university extension (Cornell Small Farms Program)",
+     "quote": "Temperature during incubation should not exceed 80 degrees F and is ideally around 70 degrees F...the internal temperature of the bag can be 10-15 degrees F warmer than the outside"
+    },
+    {
+     "topic": "tMin",
+     "min": null,
+     "max": null,
+     "value": 50,
+     "unit": "°F",
+     "source": "https://smallfarms.cornell.edu/resources/methods-of-commercial-mushroom-cultivation-in-the-northeastern-united-states/2-seven-stages-of-cultivation/",
+     "sourceType": "university extension (Cornell Small Farms Program)",
+     "quote": "Exterior temperatures can drop as far down as 50 degrees F, but incubation will take longer"
+    },
+    {
+     "topic": "pinning.T",
+     "min": 10,
+     "max": 15.6,
+     "value": null,
+     "unit": "°C",
+     "source": "https://www.shroomery.org/9400/Hericium-erinaceus",
+     "sourceType": "grower reference reproducing Stamets table",
+     "quote": "Initiation Temperature: 50-60° F (10-15.6° C) [Primordia Formation]"
+    },
+    {
+     "topic": "pinning.days",
+     "min": 3,
+     "max": 5,
+     "value": null,
+     "unit": "days",
+     "source": "https://www.shroomery.org/9400/Hericium-erinaceus",
+     "sourceType": "grower reference reproducing Stamets table",
+     "quote": "Duration: 3-5 days [Primordia Formation]"
+    },
+    {
+     "topic": "pinning.CO2",
+     "min": 500,
+     "max": 700,
+     "value": null,
+     "unit": "ppm",
+     "source": "https://www.shroomery.org/9400/Hericium-erinaceus",
+     "sourceType": "grower reference reproducing Stamets table",
+     "quote": "CO2: 500-700 ppm, Fresh Air Exchanges: 5-8 per hour [Primordia Formation]"
+    },
+    {
+     "topic": "pinning.light",
+     "min": 500,
+     "max": 1000,
+     "value": null,
+     "unit": "lux",
+     "source": "https://www.shroomery.org/9400/Hericium-erinaceus",
+     "sourceType": "grower reference reproducing Stamets table",
+     "quote": "Light Requirements: 500-1000 lux [Primordia Formation]"
+    },
+    {
+     "topic": "pinning.T",
+     "min": 10,
+     "max": 15.6,
+     "value": null,
+     "unit": "°C",
+     "source": "https://link.springer.com/article/10.1007/s11557-022-01829-6",
+     "sourceType": "peer-reviewed journal (Mycological Progress 2022, citing Stamets 2011)",
+     "quote": "primordia formation at 10–15.6 °C for 3–5 days"
+    },
+    {
+     "topic": "pinning.days",
+     "min": 33,
+     "max": 40,
+     "value": null,
+     "unit": "days",
+     "source": "https://fungalbiotec.org/pdf/FGBT_1_2_8.pdf",
+     "sourceType": "peer-reviewed review journal (Fungal Biotec 2021, citing Ko et al. 2005)",
+     "quote": "It usually takes 33–40 days for the primordia to appear and 10 days after primordia appearance, the first flush of Hericium fruiting bodies can be harvested (Ko et al. 2005)"
+    },
+    {
+     "topic": "harvest.days",
+     "min": null,
+     "max": null,
+     "value": 10,
+     "unit": "days",
+     "source": "https://fungalbiotec.org/pdf/FGBT_1_2_8.pdf",
+     "sourceType": "peer-reviewed review journal (Fungal Biotec 2021, citing Ko et al. 2005)",
+     "quote": "10 days after primordia appearance, the first flush of Hericium fruiting bodies can be harvested"
+    },
+    {
+     "topic": "fruiting.T",
+     "min": 18,
+     "max": 24,
+     "value": null,
+     "unit": "°C",
+     "source": "https://www.shroomery.org/9400/Hericium-erinaceus",
+     "sourceType": "grower reference reproducing Stamets table",
+     "quote": "Temperature: 65-75° F (18-24° C), Relative Humidity: (85) 90-95 [Fruitbody Development]"
+    },
+    {
+     "topic": "fruiting.CO2",
+     "min": 500,
+     "max": 1000,
+     "value": null,
+     "unit": "ppm",
+     "source": "https://www.shroomery.org/9400/Hericium-erinaceus",
+     "sourceType": "grower reference reproducing Stamets table",
+     "quote": "CO2: 500-1000 ppm, Fresh Air Exchanges: 5-8 per hour, Light Requirements: 500-1000 lux [Fruitbody Development]"
+    },
+    {
+     "topic": "rest.days",
+     "min": null,
+     "max": null,
+     "value": 14,
+     "unit": "days",
+     "source": "https://www.shroomery.org/9400/Hericium-erinaceus",
+     "sourceType": "grower reference reproducing Stamets table",
+     "quote": "Cropping Cycle: 14 days apart"
+    },
+    {
+     "topic": "fruiting.T",
+     "min": null,
+     "max": null,
+     "value": 16,
+     "unit": "°C",
+     "source": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10432537/",
+     "sourceType": "peer-reviewed journal (Scientific Reports/Nature 2023)",
+     "quote": "transferred to a cropping room at 16 °C, 65–75% RH with 8 h of light daily to induce fructification"
+    },
+    {
+     "topic": "harvest.days",
+     "min": null,
+     "max": null,
+     "value": 47,
+     "unit": "days",
+     "source": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10432537/",
+     "sourceType": "peer-reviewed journal (Scientific Reports/Nature 2023)",
+     "quote": "grown and harvested at 47 days after spawning"
+    },
+    {
+     "topic": "fruiting.T",
+     "min": null,
+     "max": null,
+     "value": 24,
+     "unit": "°C",
+     "source": "https://agribiop.com/wp-content/uploads/2019/11/149-152.pdf",
+     "sourceType": "peer-reviewed journal (Annals of Agri-Bio Research 2022)",
+     "quote": "bags were placed in mushroom culture rooms after the spawning stage was over at 24°C and the relative humidity was maintained to 85-90%. Harvesting was done before the fruit bodies became yellow and the tassels were ready (around 5-10 mm in length)"
+    },
+    {
+     "topic": "flushes",
+     "min": null,
+     "max": null,
+     "value": 2,
+     "unit": "flushes",
+     "source": "https://agribiop.com/wp-content/uploads/2019/11/149-152.pdf",
+     "sourceType": "peer-reviewed journal (Annals of Agri-Bio Research 2022)",
+     "quote": "Two flushes yielded the total mushroom crop"
+    },
+    {
+     "topic": "flushes",
+     "min": 3,
+     "max": 4,
+     "value": null,
+     "unit": "flushes",
+     "source": "https://fungalbiotec.org/pdf/FGBT_1_2_8.pdf",
+     "sourceType": "peer-reviewed review journal (Fungal Biotec 2021, citing Bunroj et al. 2017)",
+     "quote": "the cultivation bags are capable of producing fruiting bodies for around 3–4 flush per bag (Bunroj et al. 2017)"
+    },
+    {
+     "topic": "harvest.RHdrop",
+     "min": 4,
+     "max": 8,
+     "value": null,
+     "unit": "hours",
+     "source": "https://fungalbiotec.org/pdf/FGBT_1_2_8.pdf",
+     "sourceType": "peer-reviewed review journal (Fungal Biotec 2021, citing Stamets 2011)",
+     "quote": "Relative humidity in the growing room should be reduced to 80% for 4–8 hours before harvesting in order to reduce surface moisture and extend shelf life (Stamets 2011)"
+    },
+    {
+     "topic": "yield.BE",
+     "min": null,
+     "max": null,
+     "value": 42.61,
+     "unit": "%",
+     "source": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10432537/",
+     "sourceType": "peer-reviewed journal (Scientific Reports/Nature 2023)",
+     "quote": "approximately 113.22 ± 2.43 g FW and 23.25 ± 0.75 g DW of the fruiting body per bottle [100% rubber sawdust]...biological efficiency (BE) of 42.61 ± 0.93%"
+    },
+    {
+     "topic": "yield.BE",
+     "min": null,
+     "max": null,
+     "value": 14.47,
+     "unit": "%",
+     "source": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10432537/",
+     "sourceType": "peer-reviewed journal (Scientific Reports/Nature 2023)",
+     "quote": "100% bamboo sawdust treatment: Fresh Weight 38.36 ± 1.32 g, Dry Weight 7.794 ± 0.27 g, Biological Efficiency 14.47 ± 0.40%"
+    },
+    {
+     "topic": "yield.BE",
+     "min": null,
+     "max": null,
+     "value": 37.4,
+     "unit": "%",
+     "source": "https://www.jscimedcentral.com/public/assets/articles/foodprocessing-1-1002.pdf",
+     "sourceType": "peer-reviewed journal (Annals of Food Processing and Preservation 2016, self-citing review of Figlas et al. 2007 Int J Med Mushrooms)",
+     "quote": "SSH without supplementation achieved good BE (37.4%) and P (0.7% day-1) values, constituting a very good basal substrate, so this substrate by itself can be considered a very good source of energy and nutrition for H. erinaceus growth and development"
+    },
+    {
+     "topic": "fruiting.T",
+     "min": 21,
+     "max": 27,
+     "value": null,
+     "unit": "°C",
+     "source": "https://www.out-grow.com/pages/lions-mane-warm-weather-hericium-erinaceus",
+     "sourceType": "commercial spawn supplier (cultivar datasheet)",
+     "quote": "Fruiting Temperature: 70–80°F (21–27°C)...CO₂ at Fruiting: <1,100 ppm (FAE critical)...Flush Count: 2–3 (first flush largest)...Total Cycle: 4–8 weeks spawn-to-harvest...Spawn Run Temperature: 77–81°F (25–27°C)"
+    }
+   ],
+   "notes": "Methodology: Loaded WebSearch/WebFetch via ToolSearch, then cross-checked AI-synthesized WebSearch summaries against directly-fetched pages and, for several PDFs, against the Read tool's direct image extraction of the actual paper (not just a model's text summary of it) — this caught a real error (see below) and is why some numbers below are flagged lower-confidence rather than included as findings.\n\nTOP SOURCES (ranked by reliability for this topic):\n1. Stamets, P. \"Growing Gourmet and Medicinal Mushrooms\" (Ten Speed Press, 2000/2011) — the original classic cultivation table (spawn run / primordia formation / fruitbody development / cropping cycle), reproduced verbatim on https://www.shroomery.org/9400/Hericium-erinaceus and independently corroborated by a 2022 peer-reviewed paper (Gonkhom et al., Mycological Progress 21:82, https://link.springer.com/article/10.1007/s11557-022-01829-6) which cites the same book and gives matching numbers. This is the most load-bearing source for the full-stage breakdown (T/RH/CO2/FAE/light/days per stage).\n2. Chutimanukul et al. 2023, Scientific Reports 13:13316 (Nature) — https://pmc.ncbi.nlm.nih.gov/articles/PMC10432537/ — real commercial-scale tropical bottle-cultivation trial with full yield/BE table across rubber:bamboo sawdust ratios (BE 14.5%–42.6%).\n3. Khurana et al. 2022, Annals of Agri-Bio Research 27(2):149-152 — https://agribiop.com/wp-content/uploads/2019/11/149-152.pdf — peer-reviewed (Scopus-indexed, modest-tier regional Indian journal), gives explicit spawn/fruiting T&RH, mycelial-growth-vs-temperature curve (16–32°C), harvest trigger, flush count, and sawdust-vs-straw yield.\n4. Gonkhom et al. 2021, Fungal Biotec 1(2):118-130 (review) — https://fungalbiotec.org/pdf/FGBT_1_2_8.pdf — gives days-to-primordia, flush count, and pre-harvest humidity-drop practice, each citing a primary source (Ko et al. 2005; Bunroj et al. 2017; Stamets 2011).\n5. Cornell Small Farms Program (university extension) — general (not Hericium-specific) but gives the only quantified spawn-run core-vs-ambient temperature data found (core can run 10-15°F warmer than ambient; ~95°F core \"cooks\" the mycelium and invites contamination).\n6. Figlas, González Matute & Curvetto 2007, Int J Medicinal Mushrooms 9(1):67-73 — the one Hericium-specific sunflower-seed-hull BE trial; I could not get past a 403 on the primary PDF (ResearchGate/Academia.edu/Begell House all blocked WebFetch), but its key BE figure (37.4%, unsupplemented) is independently confirmed via the same authors' 2016 open-access self-citing review (jscimedcentral.com), which I did read directly.\n\nNO MARDI OR FAO SOURCE FOUND: despite multiple targeted searches, no MARDI (Malaysia) or FAO publication specifically on Hericium erinaceus cultivation parameters could be located. Malaysia-specific Hericium work found was from Universiti Malaya and private farms (Ganofarm, Mr Fungus), not MARDI. No Penn State Extension page specifically on Hericium erinaceus was found either (Penn State Extension covers mushroom production generally, not a lion's-mane-specific protocol with numbers).\n\nA CAUGHT ERROR WORTH FLAGGING: one WebSearch summary attributed these numbers to Hericium erinaceus: \"colonization 24±1°C/70-80%RH for 10-13 days; fruiting 24±3°C/90-95%RH/12h photoperiod/1500-2000 lux.\" I fetched the underlying PDF directly and confirmed this data is actually from González-Matute, Figlas, Devalis, Delmastro & Curvetto (2002), \"Sunflower seed hulls as a main nutrient source for cultivating Ganoderma lucidum,\" Micología Aplicada International 14(2):19-24 — i.e. it describes Ganoderma, not Hericium (same Argentine research group, similar methodology, conflated by the search synthesis). I excluded these numbers entirely rather than report them as Hericium data. This is the reason I treat AI-generated WebSearch summaries as lower-confidence than directly-fetched/directly-read page text throughout, and why several numbers below are explicitly flagged as \"secondary/unverified.\"\n\nDISAGREEMENTS:\n- Flush count: 2 (Khurana 2022, peer-reviewed; also reported for Figlas 2007 via secondary synthesis: first flush day 10, second day 30, 55-day total cycle) vs 3–4 per bag (Bunroj et al. 2017, cited in Gonkhom 2021 review) vs 2–3 (\"first flush largest,\" Out-Grow commercial cultivar sheet) vs \"up to 4 flushes documented\" (Out-Grow standard species page, not independently verified against a primary study).\n- Light during spawn run: the classic Stamets table lists \"n/a\" for spawn-run light (implying darkness is standard/optional), and several grower guides explicitly say darkness prevents premature fruiting — yet Chutimanukul et al. 2023 (peer-reviewed, Scientific Reports) explicitly incubated \"in the presence of light\" at 20°C during colonization. This is a genuine contradiction between a peer-reviewed commercial trial and the conventional/classic guidance.\n- CO2 ceiling for fruiting: most sources (Stamets table, multiple grower guides) converge on roughly 500-1,000 ppm; the Out-Grow \"warm weather\" cultivar sheet states <1,100 ppm; assorted uncited grower blogs claim morphological failure thresholds anywhere from 800 to 1,500+ ppm (coral/elongated spines below that, primordia abortion above ~1,500 ppm per one blog). I could not find any controlled, peer-reviewed dose-response study that measures spine length/branching as a function of CO2 ppm for H. erinaceus specifically — this appears to be an evidence gap in the literature, with practical guidance resting on grower experience rather than published experiments.\n- Biological efficiency is highly substrate/strain dependent and spans roughly 14.5% (100% bamboo sawdust, Chutimanukul 2023) to 37.4-43.1% (sunflower seed hulls, Figlas 2007/2016 — the 43.1% Mn/NH4-supplemented figure and the day-10/day-30/55-day flush timeline came only from WebSearch synthesis of the 2007 paper, not a page I could independently fetch, so treat with more caution than the 37.4% figure) to 42.6% (100% rubber sawdust, Chutimanukul 2023) to a reported 45.5% (sawdust 70%+wheat bran 30%, Jahedi et al. 2023/2024, Scientia Horticulturae 323:112510 — also only accessed via secondary synthesis, primary ScienceDirect page 403'd) up to a claimed 88.4% BE on eucalyptus sawdust (276.19 and 245.10 g/bag) — this last figure traces back through at least two layers of citation (found quoted inside a WebSearch summary of the Jahedi paper, which itself was citing an earlier, unidentified primary study) and its ultimate primary source could not be confirmed; I did not include it as a findings-array entry because of this weak chain of custody, but flag it here since the task asked to record disagreements.\n- Temperature-tolerance ceiling: no single peer-reviewed number for \"the\" maximum fruiting temperature before yellowing/browning was found. Best available quantified proxies: Khurana et al. 2022 show mycelial dry-weight growth collapsing from 5.95 g (24°C) to 0.68 g (32°C) — a clear thermal ceiling for vegetative growth; practical/commercial sources (Out-Grow) sell a heat-tolerant \"warm weather\" cultivar fruiting at 21-27°C specifically because standard strains reportedly fail to pin/fruit reliably above roughly 22-25°C, but no peer-reviewed study quantifying the exact yellowing/browning threshold in degrees was located.\n- Days from pinning to harvest: terms are used inconsistently across sources. Stamets' \"Fruitbody Development: 4-5 days\" measures only the final primordia-to-maturity growth phase of one flush. Separately, Ko et al. 2005 (cited in Gonkhom 2021) report 33-40 days from spawning to primordia appearance, plus 10 more days to first harvest (~43-50 days total), and Chutimanukul et al. 2023 independently report 47 days total from spawning to harvest — broadly consistent with Ko et al. but much longer than the \"4-5 days\" figure, which is not directly comparable since it excludes the spawn-run and early-primordia period.\n\nSOURCE-ACCESS CAVEATS: Figlas et al. 2007 (Int J Medicinal Mushrooms), Atila et al. 2021 (Scientia Horticulturae 280:109915 — tested Hericium fruiting at 15°C/20°C/25°C, found protein content and yield varied by isolate and temperature, e.g. \"He-Ankara\" protein peaked at 19.7% at 20°C), and Jahedi et al. 2023/2024 (Scientia Horticulturae 323:112510) were all paywalled/403-blocked on every mirror I tried (ResearchGate, Academia.edu, ScienceDirect, Begell House); their numbers above came from consistent multi-query WebSearch synthesis rather than a page I personally read, except where corroborated by a directly-read companion document (Figlas 2016 review). Treat the 43.1% BE, day-10/day-30/55-day cycle, 45.5% BE, and eucalyptus 88.4% BE figures accordingly."
+  }
+ ]
+}
