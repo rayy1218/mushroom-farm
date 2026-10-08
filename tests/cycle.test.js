@@ -49,13 +49,13 @@ test('E2 generator laziness; runCycleAsync rejects', async () => {
 test('I1 an impossible mix returns at once, no simulation', () => {
   const mix = [{ crop: 'oyster', blocks: 1200 }, { crop: 'milky', blocks: 800 }];
   const r = CY.runCycle(room, mix);
-  assert.deepEqual(Object.keys(r).sort(), ['verdict', 'why'].sort());
-  assert.equal(r.verdict, 'impossible');
+  assert.deepStrictEqual(r, { verdict: 'impossible', why: CAP.commonTargets(mix).conflict });
   assert.match(r.why, /Grey oyster needs at most 27 °C/);
   const g = CY.runCycleSteps(room, mix);
   let calls = 0;
   const first = g.next();
   assert.equal(first.done, true);
+  assert.deepStrictEqual(first.value, { verdict: 'impossible', why: CAP.commonTargets(mix).conflict });
   const r2 = CY.runCycle(room, mix, { onProgress: () => calls++ });
   assert.equal(calls, 0);
   assert.equal(r2.verdict, 'impossible');
@@ -121,7 +121,6 @@ test('R1 hours and series', () => {
 // ---------- R2 ----------
 test('R2 totals equal the sum of the segments', () => {
   const r = getShortFull();
-  near(r.totals.kwh, r.stages.reduce((s, x) => s + x.kwh, 0));
   assert.ok(near(r.totals.kwh, r.stages.reduce((s, x) => s + x.kwh, 0)));
   assert.ok(near(r.totals.rm, r.stages.reduce((s, x) => s + x.rm, 0)));
   for (const s of r.stages) {
