@@ -1,4 +1,4 @@
-// web/ui.js: formatting and small DOM helpers moved from app.js (docs/contracts/web.md section 5).
+// web/ui.js: formatting and small DOM helpers moved from the old dashboard script (docs/contracts/web.md section 5).
 (function (global) {
 'use strict';
 

@@ -1,4 +1,4 @@
-// web/charts.js: charts moved from app.js (docs/contracts/web.md section 6).
+// web/charts.js: charts moved from the old dashboard script (docs/contracts/web.md section 6).
 (function (global) {
 'use strict';
 
