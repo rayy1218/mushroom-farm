@@ -1,6 +1,6 @@
 # Farm app foundation: design
 
-Date: 2026-10-08. Status: design approved in conversation, waiting for spec review. Implementation not started.
+Date: 2026-10-08. Status: approved; contracts frozen in `docs/contracts/` (lead decisions in `docs/contracts/LEAD-DECISIONS.md`); workstream briefs in `docs/superpowers/plans/2026-10-08-farm-foundation/`.
 
 ## Purpose
 
@@ -73,7 +73,8 @@ This spec covers only sub-project 1. Each later one gets its own spec, plan and 
 | HTTP API and live feed | `server/api.js` | The routes in section 3 and the Server-Sent Events stream |
 | Static files | `server/static.js` | Serves `index.html`, `styles.css`, the shared modules and `web/` |
 | Shared modules | `controller.js`, `sim.js`, `runtime.js`, `capacity.js`, `calib.js` | Unchanged; they already run in both Node and the browser |
-| Web app | `index.html`, `web/*.js`, `styles.css` | Section 4 |
+| Web app | `index.html`, `web/*.js` (including `web/ui.js`), `styles.css` | Section 4 |
+| Configuration rules | `server/config.js` | Reads the configuration and picks the farm network address (pure; `main.js` calls it) |
 | Configuration | `farm.config.json` (optional) or environment variables `FARM_PORT`, `FARM_DB` | Port (default 8080) and database path (default `data/farm.db`) |
 
 ### Server restart
@@ -147,7 +148,7 @@ or 500 (server fault).
 | Part | Design |
 |---|---|
 | Shell | `index.html` with a top menu: **Rooms · Simulator · Capacity · Calibration**; hash addresses (`#/rooms`, `#/rooms/3`, `#/simulator`, `#/capacity`, `#/calibration`) |
-| Code split | Today's `app.js` (about 1,350 lines) becomes `web/api.js` (server calls, live feed), `web/charts.js` (existing charts), `web/settings-panel.js` (the settings editor), `web/rooms.js`, `web/simulator.js`, `web/capacity.js`, `web/calibration.js`, `web/shell.js` (menu and routing) |
+| Code split | Today's `app.js` (about 1,350 lines) becomes `web/api.js` (server calls, live feed), `web/charts.js` (existing charts), `web/settings-panel.js` (the settings editor), `web/rooms.js`, `web/simulator.js`, `web/capacity.js`, `web/calibration.js`, `web/shell.js` (menu and routing), `web/ui.js` (shared page helpers, C5 section 1.1) |
 | Rooms list | A card per room: name, crop and stage, T / RH / CO₂ now with status, machines, number of active alarms, "stopped" with the error if its loop crashed; button **New room** |
 | Room page | Live readings and machines; history charts (1 h, 6 h, 24 h, 7 days, from the database); alarms with Acknowledge; event log; settings editor (below); settings versions with Restore |
 | Settings editor | `web/settings-panel.js`: the Simulator's existing settings panels as one reusable part that edits a settings object. The Simulator uses it with its local controller; the room page with the live room's settings. |
@@ -174,7 +175,9 @@ or 500 (server fault).
 | The 8 recorded controller runs in `tests/vectors/` | Unchanged (the controller does not change) |
 | `tests/db.test.js` | Schema creation, upgrades, queries, on in-memory SQLite |
 | `tests/rooms.test.js` | A room loop saves readings, events and alarms; resumes after a restart from saved state; applies new settings |
-| `tests/api.test.js` | Each route against a real server on a random port with a temporary database: success, 400, 404 |
+| `tests/api.test.js` | Each route against a real HTTP server on a random port with the C1 and C2 fakes: success, 400, 404 (C3 section 12) |
+| `tests/api-real.test.js` | Each route once more against the real database (temporary file) and room manager, in wave 3 (C3 section 12.2) |
+| `tests/config.test.js`, `tests/room-rules.test.js` | The configuration rules and the shared room rules (C3 section 12) |
 | `tests/stream.test.js` | The live feed delivers readings and alarms |
 | Headless Chrome checks | Each module loads without errors; Rooms shows live values; a settings change with the change list and Restore works; the browser-storage import works |
 
@@ -182,7 +185,7 @@ or 500 (server fault).
 
 The work runs like a team: the lead (the main Claude session) writes the contracts first; then agents build the
 workstreams **in parallel**, each in its own git worktree, against the contracts; the lead integrates. Nobody waits for
-another stream's code: each stream tests against the contracts and against fakes that follow them.
+another stream's code inside a wave: each stream tests against the contracts and against fakes that follow them; wave 2 starts after the wave 1.5 gate.
 
 ### Contracts (written and frozen before any stream starts)
 
@@ -203,16 +206,17 @@ tells the affected streams.
 
 | Wave | Stream | Owns (files) | Builds against | Done when |
 |---|---|---|---|---|
-| 0 | Lead | `docs/contracts/*`, `tests/fakes/*`, `package.json` scripts, empty `server/` and `web/` folders; GitHub Pages off | – | Contracts reviewed and frozen |
+| 0 | Lead | `docs/contracts/*`, `tests/fakes/*`, `tests/fake-api-server.test.js`, `server/db-common.js`, `server/rooms-common.js`, the stubs `room-rules.js` and `web/rooms.js` (C5 section 1.5), `package.json` scripts, empty `server/` and `web/` folders; GitHub Pages off | – | Contracts reviewed and frozen |
 | 1 | Data | `server/db.js`, `tests/db.test.js` | C1 | All C1 functions pass their tests on in-memory SQLite |
 | 1 | Rooms | `server/rooms.js`, `server/sim-adapter.js`, `tests/rooms.test.js` | C1 (fake db), C2 | Loops save, resume after restart, apply settings, isolate a crashed room |
-| 1 | API | `server/api.js`, `server/static.js`, `server/main.js`, `room-rules.js` (shared `normRoom`, `validCalib`, used by the API and later the web modules), `tests/api.test.js`, `tests/stream.test.js` | C2 (fake rooms), C1 (fake db), C3, C4 | Every route and the stream pass against the fakes |
-| 1 | Web split | `index.html`, `web/shell.js`, `web/api.js`, `web/charts.js`, `web/simulator.js`, `web/settings-panel.js`, `web/capacity.js`, `web/calibration.js` (moved code only), `app.js` removed | C5, C6 | Today's features work unchanged behind the menu (headless Chrome), `web/api.js` passes against the fake API |
-| 2 | Rooms UI | `web/rooms.js` | C3, C4, C5, C6 | Rooms list and room page with live values, charts, alarms, events, full settings editing, change list, Restore |
+| 1 | API | `server/api.js`, `server/static.js`, `server/main.js` (with the real `openDb` and `createRoomManager` wiring), `server/config.js`, `room-rules.js` (shared `normRoom`, `validCalib`, used by the API and later the web modules), `tests/api.test.js`, `tests/stream.test.js`, `tests/config.test.js`, `tests/room-rules.test.js` | C2 (fake rooms), C1 (fake db), C3, C4 | Every route and the stream pass against the fakes; the `server/main.js` stub tests pass (C3 section 12.1) |
+| 1 | Web split | `index.html`, `styles.css`, `web/ui.js`, `tests/web-api.test.js`, `tests/settings-diff.test.js`, `web/shell.js`, `web/api.js`, `web/charts.js`, `web/simulator.js`, `web/settings-panel.js`, `web/capacity.js`, `web/calibration.js` (moved code only), `app.js` removed | C5, C6 | Today's features work unchanged behind the menu (headless Chrome), `web/api.js` passes against the fake API |
+| 1.5 | Lead: gate | – | C3 section 12.2 | Wave 1 merged; full test suite passes; the real server starts, `Room 1` records a reading, `/` serves the app, Ctrl+C exits cleanly |
+| 2 | Rooms UI | `web/rooms.js`, `styles.css` (appends a `/* Rooms */` section only) | C3, C4, C5, C6 | Rooms list and room page with live values, charts, alarms, events, full settings editing, change list, Restore |
 | 2 | Capacity and calibration | `web/capacity.js`, `web/calibration.js` | C3, C5, `room-rules.js` | Both modules on the API; browser-storage import; JSON export/import removed |
 | 2 | Simulator link | `web/simulator.js` | C3, C6 | Load settings from a room; Save settings to a room with the change list |
 | 2 | Docs | `README.md`, `docs/contract.md`, `docs/phase3-plan.md` | All | Install, start, open from a phone, back up; 3.1 and 3.3 marked covered |
-| 3 | Lead: integration | – | All | Streams merged; real db + rooms + API wired in `server/main.js`; end-to-end tests and headless Chrome checks pass; the 8 recorded controller runs unchanged |
+| 3 | Lead: integration | – | All | Streams merged; every test (with `tests/api-real.test.js`) and every headless Chrome check re-run on the final merge; the 8 recorded controller runs unchanged |
 
 | Rule | Detail |
 |---|---|
@@ -220,8 +224,9 @@ tells the affected streams.
 | Reviews | Every stream's result gets a spec-compliance review and a code-quality review before the lead merges it |
 | Models | Implementers on Sonnet, reviewers on Opus (as in the capacity check) |
 | Merging | Wave by wave into `master`; full test suite after each merge |
+| Wave 2 branch point | Each wave 2 stream branches from `master` after the wave 1.5 gate and runs its headless Chrome checks against the real server (C5 section 7.10) |
 
-Estimate: about 1.5–2 working days instead of 3, because waves 1 and 2 run in parallel.
+Estimate: about 2 working days: the waves run one after another, the streams inside a wave in parallel.
 
 ## Open items
 
