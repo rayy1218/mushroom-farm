@@ -8,7 +8,7 @@ const CAL = global.ClimateCalib;
 const UI = global.FarmUi;
 
 let calRows = null, calFit = null, calBase = null;
-let mounted = false, el = null;
+let mounted = false, el = null, mountGen = 0;
 
 function calParamsNow() { return CAL.paramsOf(global.FarmBench.env); }
 
@@ -59,18 +59,23 @@ const MARKUP = `
 </section>`;
 
 function mount(viewEl) {
-  mounted = true; el = viewEl;
+  mounted = true; el = viewEl; mountGen++;
+  const myGen = mountGen;
+  const stale = () => !mounted || myGen !== mountGen;
   calRows = null; calFit = null; calBase = null;
   el.innerHTML = MARKUP;
 
   el.querySelector('#calFile').addEventListener('change', e => {
     const f = e.target.files[0]; if (!f) return;
-    f.text().then(txt => { try { calLoad(CAL.parseCsv(txt), f.name); } catch (err) { UI.set('calMsg', `The file cannot be used: ${err.message}`); } });
+    f.text().then(txt => {
+      if (stale()) return;
+      try { calLoad(CAL.parseCsv(txt), f.name); } catch (err) { UI.set('calMsg', `The file cannot be used: ${err.message}`); }
+    });
   });
   el.querySelector('#calFit').addEventListener('click', e => {
     const btn = e.target; btn.disabled = true; UI.set('calMsg', 'Fitting… (this takes a few seconds)');
-    CAL.fitAsync(calRows, global.FarmBench.env, calParamsNow(), p => { if (mounted) UI.set('calMsg', `Fitting: run ${p.evals} of up to ${p.maxEval}, error score ${p.score.toFixed(2)}…`); }).then(res => {
-      if (!mounted) return;
+    CAL.fitAsync(calRows, global.FarmBench.env, calParamsNow(), p => { if (!stale()) UI.set('calMsg', `Fitting: run ${p.evals} of up to ${p.maxEval}, error score ${p.score.toFixed(2)}…`); }).then(res => {
+      if (stale()) return;
       calFit = res;
       btn.disabled = false; el.querySelector('#calApply').disabled = false;
       UI.set('calMsg', `Fit done after ${calFit.evals} simulation runs. The air leakage is the least certain value.`);
