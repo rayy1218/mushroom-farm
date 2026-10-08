@@ -997,3 +997,139 @@ both('saveCapacityReport: unknown field', (t, open) => {
     return true;
   });
 });
+
+// ---------------------------------------------------------------------------
+// Task 13: Sweeps
+// ---------------------------------------------------------------------------
+
+both('every function throws NotFoundError(room) for an unknown room', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  db.replaceMix(roomId, [{ crop: 'oyster', blocks: 1 }]);
+  db.saveCalibration(roomId, calibRun());
+  db.raiseAlarm(roomId, { alarm_key: 'a', level: 'warning', label: 'a' });
+  const calib = db.listCalibrations(roomId)[0];
+
+  const calls = [
+    ['getRoom', [999]],
+    ['updateRoom', [999, {}]],
+    ['archiveRoom', [999]],
+    ['saveSettings', [999, { settings: {} }]],
+    ['currentSettings', [999]],
+    ['settingsHistory', [999]],
+    ['getSettingsVersion', [999, 1]],
+    ['insertReading', [999, reading(T0)]],
+    ['queryReadings', [999, { from: T0, to: T0 }]],
+    ['latestReading', [999]],
+    ['addEvent', [999, { t: T0, level: 'info', text: 'x' }]],
+    ['listEvents', [999]],
+    ['raiseAlarm', [999, { alarm_key: 'a', level: 'warning', label: 'a' }]],
+    ['clearAlarm', [999, 'a']],
+    ['ackAlarm', [999, 'a']],
+    ['listAlarms', [999]],
+    ['saveControllerState', [999, { controller: {} }]],
+    ['loadControllerState', [999]],
+    ['saveCalibration', [999, calibRun()]],
+    ['listCalibrations', [999]],
+    ['applyCalibration', [999, calib.id]],
+    ['currentCalibration', [999]],
+    ['getMix', [999]],
+    ['replaceMix', [999, []]],
+    ['saveCapacityReport', [999, { report: report() }]],
+    ['latestCapacityReport', [999]],
+  ];
+  for (const [name, args] of calls) {
+    assertNotFound(() => db[name](...args), 'room', 999);
+  }
+});
+
+both('constraint rules: one row per rule, nothing stored', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+
+  // CHECK (275)
+  assertSql(() => db.updateRoom(roomId, { volume: 0 }), 275);
+  assertSql(() => db.updateRoom(roomId, { vent: 'north' }), 275);
+  assertSql(() => db.saveCapacityReport(roomId, { report: report({ verdict: 'ok' }) }), 275);
+  assertSql(() => db.replaceMix(roomId, [{ crop: 'a', blocks: -1 }]), 275);
+  assertSql(() => db.insertReading(roomId, reading(T0, { ac_mode: 'auto' })), 275);
+  assertSql(() => db.insertReading(roomId, reading(T0, { fog: 4 })), 275);
+  assertSql(() => db.insertReading(roomId, reading(T0, { fan: -1 })), 275);
+  assertSql(() => db.insertReading(roomId, reading(T0, { lights: 2 })), 275);
+  assertSql(() => db.insertReading(roomId, reading(T0, { circ: 2 })), 275);
+  assertSql(() => db.addEvent(roomId, { t: T0, level: 'debug', text: 'x' }), 275);
+  assertSql(() => db.raiseAlarm(roomId, { alarm_key: 'x', level: 'info', label: 'x' }), 275);
+
+  // NOT NULL (1299)
+  { const r = roomInput(); delete r.name; assertSql(() => db.createRoom(r), 1299); }
+  assertSql(() => db.updateRoom(roomId, { volume: NaN }), 1299);
+  { const r = roomInput(); delete r.vent; assertSql(() => db.createRoom(r), 1299); }
+  { const r = roomInput(); delete r.settings; assertSql(() => db.createRoom(r), 1299); }
+  { const r = reading(T0); delete r.t; assertSql(() => db.insertReading(roomId, r), 1299); }
+  { const r = reading(T0); delete r.ac_mode; assertSql(() => db.insertReading(roomId, r), 1299); }
+  { const r = reading(T0); delete r.fog; assertSql(() => db.insertReading(roomId, r), 1299); }
+  { const r = reading(T0); delete r.fan; assertSql(() => db.insertReading(roomId, r), 1299); }
+  { const r = reading(T0); delete r.lights; assertSql(() => db.insertReading(roomId, r), 1299); }
+  { const r = reading(T0); delete r.circ; assertSql(() => db.insertReading(roomId, r), 1299); }
+  assertSql(() => db.addEvent(roomId, { t: T0, level: 'info' }), 1299);
+  assertSql(() => db.raiseAlarm(roomId, { level: 'warning', label: 'x' }), 1299);
+  assertSql(() => db.raiseAlarm(roomId, { alarm_key: 'x', level: 'warning' }), 1299);
+  { const r = calibRun(); delete r.ua; assertSql(() => db.saveCalibration(roomId, r), 1299); }
+  assertSql(() => db.replaceMix(roomId, [{ blocks: 1 }]), 1299);
+  assertSql(() => db.saveCapacityReport(roomId, {}), 1299);
+  assertSql(() => db.saveControllerState(roomId, {}), 1299);
+
+  // Type (3091)
+  assertSql(() => db.insertReading(roomId, reading(T0, { t: 1.5 })), 3091);
+  assertSql(() => db.insertReading(roomId, reading(T0, { fog: 1.5 })), 3091);
+  assertSql(() => db.insertReading(roomId, reading(T0, { fan: 1.5 })), 3091);
+  assertSql(() => db.insertReading(roomId, reading('abc')), 3091);
+  assertSql(() => db.insertReading(roomId, reading(T0, { T: 'abc' })), 3091);
+  assertSql(() => db.addEvent(roomId, { t: 1.5, level: 'info', text: 'x' }), 3091);
+  assertSql(() => db.raiseAlarm(roomId, { alarm_key: 'x', level: 'warning', label: 'x', at: 1.5 }), 3091);
+  assertSql(() => db.saveCalibration(roomId, calibRun({ run_at: 1.5 })), 3091);
+  assertSql(() => db.saveCalibration(roomId, calibRun({ log_rows: 1.5 })), 3091);
+  assertSql(() => db.replaceMix(roomId, [{ crop: 'a', blocks: 1.5 }]), 3091);
+  assertSql(() => db.saveCapacityReport(roomId, { report: report({ utilisation: 74.5 }) }), 3091);
+});
+
+both('left-out at/run_at equals now(), clock moved between calls', (t, open) => {
+  let clock = T0;
+  const db = open({ now: () => clock });
+  t.after(() => db.close());
+
+  clock = T0 + 1;
+  const room = db.createRoom(roomInput());
+  assert.equal(room.created_at, T0 + 1);
+
+  clock = T0 + 2;
+  assert.equal(db.archiveRoom(room.id).archived_at, T0 + 2);
+
+  clock = T0 + 3;
+  assert.equal(db.saveSettings(room.id, { settings: { spT: 1 } }).saved_at, T0 + 3);
+
+  clock = T0 + 4;
+  assert.equal(db.raiseAlarm(room.id, { alarm_key: 'a', level: 'warning', label: 'a' }).raised_at, T0 + 4);
+
+  clock = T0 + 5;
+  assert.equal(db.clearAlarm(room.id, 'a').cleared_at, T0 + 5);
+
+  clock = T0 + 6;
+  assert.equal(db.ackAlarm(room.id, 'a').acked_at, T0 + 6);
+
+  clock = T0 + 7;
+  db.saveControllerState(room.id, { controller: { a: 1 } });
+  assert.equal(db.loadControllerState(room.id).saved_at, T0 + 7);
+
+  clock = T0 + 8;
+  const run = db.saveCalibration(room.id, calibRun());
+  assert.equal(run.run_at, T0 + 8);
+
+  clock = T0 + 9;
+  assert.equal(db.applyCalibration(room.id, run.id).applied_at, T0 + 9);
+
+  clock = T0 + 10;
+  assert.equal(db.saveCapacityReport(room.id, { report: report() }).run_at, T0 + 10);
+});

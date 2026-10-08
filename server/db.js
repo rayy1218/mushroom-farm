@@ -432,7 +432,7 @@ function buildDb(conn, dbPath, version, now) {
     roomCheck(roomId);
     fields('raiseAlarm', alarm, ['alarm_key', 'level', 'label', 'at']);
     const a = alarm || {};
-    const open = findOpenAlarmStmt.get({ room_id: roomId, alarm_key: a.alarm_key });
+    const open = findOpenAlarmStmt.get({ room_id: roomId, alarm_key: val(a.alarm_key) });
     if (open) return plain(open);
     const at = a.at === undefined ? now() : a.at;
     const info = insertAlarmStmt.run({
@@ -444,20 +444,22 @@ function buildDb(conn, dbPath, version, now) {
   function clearAlarm(roomId, alarmKey, at) {
     live();
     roomCheck(roomId);
-    const open = findOpenAlarmStmt.get({ room_id: roomId, alarm_key: alarmKey });
+    const key = val(alarmKey);
+    const open = findOpenAlarmStmt.get({ room_id: roomId, alarm_key: key });
     if (!open) return null;
     const atVal = val(at === undefined ? now() : at);
-    clearAlarmStmt.run({ room_id: roomId, alarm_key: alarmKey, at: atVal });
+    clearAlarmStmt.run({ room_id: roomId, alarm_key: key, at: atVal });
     return plain(getAlarmByIdStmt.get({ id: open.id }));
   }
 
   function ackAlarm(roomId, alarmKey, at) {
     live();
     roomCheck(roomId);
+    const key = val(alarmKey);
     const atVal = val(at === undefined ? now() : at);
-    const rows = alarmsByKeyStmt.all({ room_id: roomId, alarm_key: alarmKey });
+    const rows = alarmsByKeyStmt.all({ room_id: roomId, alarm_key: key });
     if (rows.length === 0) throw new NotFoundError('alarm', alarmKey);
-    ackAlarmStmt.run({ room_id: roomId, alarm_key: alarmKey, at: atVal });
+    ackAlarmStmt.run({ room_id: roomId, alarm_key: key, at: atVal });
     const newestId = rows.reduce((a, b) => (b.id > a.id ? b : a)).id;
     return plain(getAlarmByIdStmt.get({ id: newestId }));
   }
