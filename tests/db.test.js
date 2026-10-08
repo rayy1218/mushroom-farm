@@ -225,3 +225,102 @@ test('real: a room inserted with raw SQL has no settings', t => {
   t.after(() => db.close());
   assertNotFound(() => db.currentSettings(1), 'settings', 1);
 });
+
+// ---------------------------------------------------------------------------
+// Task 3: Rooms (C1 section 6.4)
+// ---------------------------------------------------------------------------
+
+both('createRoom: defaults, first settings version', (t, open) => {
+  let clock = T0;
+  const db = open({ now: () => clock });
+  t.after(() => db.close());
+  const room = db.createRoom(roomInput());
+  assert.deepStrictEqual(room, {
+    id: room.id, name: 'A', volume: 60, vent: 'supply', adapter: 'sim', created_at: T0, archived_at: null,
+  });
+  const settings = db.currentSettings(room.id);
+  assert.deepStrictEqual(settings, {
+    id: settings.id, room_id: room.id, saved_at: T0, note: 'Created', settings: { spT: 18 },
+  });
+});
+
+both('createRoom: explicit values are stored', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const room = db.createRoom(roomInput({ adapter: 'hw', note: 'x', at: 5 }));
+  assert.equal(room.adapter, 'hw');
+  assert.equal(room.created_at, 5);
+  const settings = db.currentSettings(room.id);
+  assert.equal(settings.saved_at, 5);
+  assert.equal(settings.note, 'x');
+});
+
+both('createRoom: missing settings is NOT NULL; no room stored', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const input = roomInput();
+  delete input.settings;
+  assertSql(() => db.createRoom(input), 1299);
+  assert.deepStrictEqual(db.listRooms({ includeArchived: true }), []);
+});
+
+both('createRoom: unknown field; nothing stored', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  assert.throws(() => db.createRoom(roomInput({ colour: 'red' })), err => {
+    assert.ok(err instanceof TypeError);
+    assert.equal(err.message, 'createRoom: unknown field "colour"');
+    return true;
+  });
+  assert.deepStrictEqual(db.listRooms({ includeArchived: true }), []);
+});
+
+both('listRooms: order, filter, unknown field', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const a = db.createRoom(roomInput({ name: 'A' }));
+  const b = db.createRoom(roomInput({ name: 'B' }));
+  assert.deepStrictEqual(db.listRooms().map(r => r.id), [a.id, b.id]);
+  db.archiveRoom(b.id);
+  assert.deepStrictEqual(db.listRooms().map(r => r.id), [a.id]);
+  assert.deepStrictEqual(db.listRooms({ includeArchived: true }).map(r => r.id), [a.id, b.id]);
+  assert.throws(() => db.listRooms({ all: true }), TypeError);
+});
+
+both('getRoom: unknown ids throw NotFoundError', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  db.createRoom(roomInput());
+  assertNotFound(() => db.getRoom(999), 'room', 999);
+  assertNotFound(() => db.getRoom(NaN), 'room', NaN);
+  assertNotFound(() => db.getRoom('1'), 'room', '1');
+  assertNotFound(() => db.getRoom(undefined), 'room', undefined);
+});
+
+both('updateRoom: fields, unchanged, unknown field, bad value', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const room = db.createRoom(roomInput());
+  assert.equal(db.updateRoom(room.id, { name: 'B' }).name, 'B');
+  assert.equal(db.updateRoom(room.id, { volume: 80 }).volume, 80);
+  assert.equal(db.updateRoom(room.id, { vent: 'exhaust' }).vent, 'exhaust');
+  assert.deepStrictEqual(db.updateRoom(room.id, {}), db.getRoom(room.id));
+  assert.throws(() => db.updateRoom(room.id, { archived_at: 5 }), err => {
+    assert.ok(err instanceof TypeError);
+    assert.equal(err.message, 'updateRoom: unknown field "archived_at"');
+    return true;
+  });
+  assertSql(() => db.updateRoom(room.id, { vent: 'north' }), 275);
+  assert.equal(db.getRoom(room.id).vent, 'exhaust');
+});
+
+both('archiveRoom: idempotent, keeps working', (t, open) => {
+  let clock = T0;
+  const db = open({ now: () => clock });
+  t.after(() => db.close());
+  const room = db.createRoom(roomInput());
+  assert.equal(db.archiveRoom(room.id).archived_at, T0);
+  assert.equal(db.archiveRoom(room.id, T0 + 50).archived_at, T0);
+  assert.deepStrictEqual(db.getRoom(room.id).archived_at, T0);
+  assert.doesNotThrow(() => db.getRoom(room.id));
+});

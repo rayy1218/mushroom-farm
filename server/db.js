@@ -202,8 +202,27 @@ function buildDb(conn, dbPath, version, now) {
     if (closed) throw new Error('database is not open');
   }
 
+  function tx(fn) {
+    conn.exec('BEGIN');
+    try {
+      const result = fn();
+      conn.exec('COMMIT');
+      return result;
+    } catch (err) {
+      conn.exec('ROLLBACK');
+      throw err;
+    }
+  }
+
   // Rooms (section 6.4)
   const getRoomStmt = conn.prepare('SELECT * FROM rooms WHERE id = :id');
+  const insertRoomStmt = conn.prepare(
+    'INSERT INTO rooms (name, volume, vent, adapter, created_at) VALUES (:name, :volume, :vent, :adapter, :created_at)'
+  );
+  const updateNameStmt = conn.prepare('UPDATE rooms SET name = :v WHERE id = :id');
+  const updateVolumeStmt = conn.prepare('UPDATE rooms SET volume = :v WHERE id = :id');
+  const updateVentStmt = conn.prepare('UPDATE rooms SET vent = :v WHERE id = :id');
+  const archiveRoomStmt = conn.prepare('UPDATE rooms SET archived_at = :at WHERE id = :id AND archived_at IS NULL');
 
   function roomExists(id) {
     return Number.isInteger(id) && !!getRoomStmt.get({ id });
@@ -218,7 +237,45 @@ function buildDb(conn, dbPath, version, now) {
     return plain(getRoomStmt.get({ id }));
   }
 
+  function createRoom(room) {
+    live();
+    fields('createRoom', room, ['name', 'volume', 'vent', 'adapter', 'settings', 'note', 'at']);
+    const r = room || {};
+    const adapter = r.adapter === undefined ? 'sim' : r.adapter;
+    const note = r.note === undefined ? 'Created' : r.note;
+    const at = r.at === undefined ? now() : r.at;
+    return tx(() => {
+      const info = insertRoomStmt.run({
+        name: val(r.name), volume: val(r.volume), vent: val(r.vent), adapter: val(adapter), created_at: val(at),
+      });
+      const id = info.lastInsertRowid;
+      insertSettingsStmt.run({ room_id: id, saved_at: val(at), settings: jsonVal(r.settings), note: val(note) });
+      return plain(getRoomStmt.get({ id }));
+    });
+  }
+
+  function updateRoom(id, changes) {
+    live();
+    roomCheck(id);
+    fields('updateRoom', changes, ['name', 'volume', 'vent']);
+    const c = changes || {};
+    if ('name' in c) updateNameStmt.run({ v: val(c.name), id });
+    if ('volume' in c) updateVolumeStmt.run({ v: val(c.volume), id });
+    if ('vent' in c) updateVentStmt.run({ v: val(c.vent), id });
+    return plain(getRoomStmt.get({ id }));
+  }
+
+  function archiveRoom(id, at) {
+    live();
+    roomCheck(id);
+    archiveRoomStmt.run({ at: val(at === undefined ? now() : at), id });
+    return plain(getRoomStmt.get({ id }));
+  }
+
   // Settings versions (section 6.5)
+  const insertSettingsStmt = conn.prepare(
+    'INSERT INTO room_settings (room_id, saved_at, settings, note) VALUES (:room_id, :saved_at, :settings, :note)'
+  );
   const currentSettingsStmt = conn.prepare('SELECT * FROM room_settings WHERE room_id = :room_id ORDER BY id DESC LIMIT 1');
 
   function settingsVersionToPublic(row) {
@@ -256,6 +313,9 @@ function buildDb(conn, dbPath, version, now) {
     close,
     getRoom,
     listRooms,
+    createRoom,
+    updateRoom,
+    archiveRoom,
     currentSettings,
   };
 }
