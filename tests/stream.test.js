@@ -244,8 +244,14 @@ describe('stream (C4)', () => {
     const timer = setInterval(() => {
       try { ctx.rooms.emit('room', { room: bigRoom }); } catch { /* ignore */ }
     }, 5);
-    await closed;
-    clearInterval(timer);
+    try {
+      await Promise.race([
+        closed,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('slow client was not closed within 10s')), 10000)),
+      ]);
+    } finally {
+      clearInterval(timer);
+    }
 
     const beforeCount = other.messages.length;
     ctx.rooms.emit('event', { roomId: 1, event: { id: 1, room_id: 1, t: NOW, level: 'info', text: 'still alive' } });
@@ -278,8 +284,17 @@ describe('stream (C4)', () => {
       assert.equal(off.fn, on.fn, off.name);
     }
 
+    // An emit after close() must write nothing to an already-ended connection.
+    let gotDataAfterClose = false;
+    c1.res.on('data', () => { gotDataAfterClose = true; });
     assert.doesNotThrow(() => ctx.rooms.emit('event', { roomId: 1, event: { id: 1, room_id: 1, t: NOW, level: 'info', text: 'x' } }));
+    await new Promise(r => setTimeout(r, 100));
+    assert.equal(gotDataAfterClose, false);
+
+    // A second close() does nothing: no further rooms.off calls.
     assert.doesNotThrow(() => ctx.api.close());
+    assert.equal(ctx.offCalls.length, 5);
+
     ctx.server.close();
   });
 });
