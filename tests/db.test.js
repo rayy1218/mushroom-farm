@@ -90,6 +90,22 @@ test('fake: openFakeDb rejects an unknown option', () => {
   assert.throws(() => openFakeDb({ upgrades: [] }), TypeError);
 });
 
+test('real: openDb rejects an unknown option before step 1 (nothing created)', t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'farm-db-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const file = path.join(dir, 'sub', 'farm.db');
+  assert.throws(() => openDb(file, { nope: 1 }), TypeError);
+  assert.ok(!fs.existsSync(path.join(dir, 'sub')), 'the folder was not created');
+  assert.ok(!fs.existsSync(file), 'the file was not created');
+});
+
+test('real: openDb(path, null) is treated as no options', t => {
+  const file = tmpFile(t);
+  const db = openDb(file, null);
+  t.after(() => db.close());
+  assert.equal(db.version, 1);
+});
+
 test('real: opening a file creates the folder, schema and indexes', t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'farm-db-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
@@ -318,6 +334,17 @@ both('updateRoom: fields, unchanged, unknown field, bad value', (t, open) => {
   assert.equal(db.getRoom(room.id).vent, 'exhaust');
 });
 
+both('updateRoom: all or nothing when a later field breaks a rule', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const room = db.createRoom(roomInput());
+  const before = db.getRoom(room.id);
+  assertSql(() => db.updateRoom(room.id, { name: 'B', vent: 'north' }), 275);
+  assert.deepStrictEqual(db.getRoom(room.id), before);
+  assertSql(() => db.updateRoom(room.id, { name: 'C', volume: 80, vent: 'north' }), 275);
+  assert.deepStrictEqual(db.getRoom(room.id), before);
+});
+
 both('archiveRoom: idempotent, keeps working', (t, open) => {
   let clock = T0;
   const db = open({ now: () => clock });
@@ -327,6 +354,7 @@ both('archiveRoom: idempotent, keeps working', (t, open) => {
   assert.equal(db.archiveRoom(room.id, T0 + 50).archived_at, T0);
   assert.deepStrictEqual(db.getRoom(room.id).archived_at, T0);
   assert.doesNotThrow(() => db.getRoom(room.id));
+  assert.doesNotThrow(() => db.saveSettings(room.id, { settings: { spT: 1 } }));
 });
 
 // ---------------------------------------------------------------------------
@@ -700,13 +728,33 @@ both('listAlarms: order, filter', (t, open) => {
     db.clearAlarm(roomId, `c${i}`, 1000 + i);
   }
   const listed = db.listAlarms(roomId);
-  const openAlarms = listed.filter(a => a.cleared_at === null);
-  const cleared = listed.filter(a => a.cleared_at !== null);
-  assert.deepStrictEqual(openAlarms.map(a => a.alarm_key), ['b', 'a']);
+  // The two open rows (raised_at desc) come first, then the 20 most recently cleared rows.
+  assert.equal(listed.length, 22);
+  assert.deepStrictEqual(listed.slice(0, 2).map(a => a.alarm_key), ['b', 'a']);
+  const cleared = listed.slice(2);
   assert.equal(cleared.length, 20);
+  assert.ok(cleared.every(a => a.cleared_at !== null), 'every row after the open ones is cleared');
   for (let i = 1; i < cleared.length; i++) assert.ok(cleared[i - 1].cleared_at >= cleared[i].cleared_at);
   const onlyOpen = db.listAlarms(roomId, { recent: 0 });
   assert.deepStrictEqual(onlyOpen.map(a => a.alarm_key), ['b', 'a']);
+
+  // Ties: larger id first.
+  const openTie1 = db.raiseAlarm(roomId, { alarm_key: 'tie-open-1', level: 'warning', label: 'x', at: 500 });
+  const openTie2 = db.raiseAlarm(roomId, { alarm_key: 'tie-open-2', level: 'warning', label: 'x', at: 500 });
+  assert.ok(openTie2.id > openTie1.id);
+  db.raiseAlarm(roomId, { alarm_key: 'tie-clear-1', level: 'warning', label: 'x', at: 5 });
+  db.raiseAlarm(roomId, { alarm_key: 'tie-clear-2', level: 'warning', label: 'x', at: 6 });
+  db.clearAlarm(roomId, 'tie-clear-1', 9000);
+  db.clearAlarm(roomId, 'tie-clear-2', 9000);
+  const full = db.listAlarms(roomId, { recent: 500 });
+  assert.deepStrictEqual(
+    full.filter(a => a.alarm_key === 'tie-open-1' || a.alarm_key === 'tie-open-2').map(a => a.alarm_key),
+    ['tie-open-2', 'tie-open-1'],
+  );
+  assert.deepStrictEqual(
+    full.filter(a => a.alarm_key === 'tie-clear-1' || a.alarm_key === 'tie-clear-2').map(a => a.alarm_key),
+    ['tie-clear-2', 'tie-clear-1'],
+  );
 });
 
 both('listAlarms: errors', (t, open) => {
@@ -1047,7 +1095,8 @@ both('every function throws NotFoundError(room) for an unknown room', (t, open) 
 both('constraint rules: one row per rule, nothing stored', (t, open) => {
   const db = open({ now: () => T0 });
   t.after(() => db.close());
-  const roomId = makeRoom(db);
+  const room = db.createRoom(roomInput());
+  const roomId = room.id;
 
   // CHECK (275)
   assertSql(() => db.updateRoom(roomId, { volume: 0 }), 275);
@@ -1093,6 +1142,17 @@ both('constraint rules: one row per rule, nothing stored', (t, open) => {
   assertSql(() => db.saveCalibration(roomId, calibRun({ log_rows: 1.5 })), 3091);
   assertSql(() => db.replaceMix(roomId, [{ crop: 'a', blocks: 1.5 }]), 3091);
   assertSql(() => db.saveCapacityReport(roomId, { report: report({ utilisation: 74.5 }) }), 3091);
+
+  // Every one of the rows above wrote nothing (C1 section 8 "Constraint errors ... stores nothing").
+  assert.equal(db.latestReading(roomId), null);
+  assert.deepStrictEqual(db.listEvents(roomId), []);
+  assert.deepStrictEqual(db.listAlarms(roomId, { recent: 500 }), []);
+  assert.deepStrictEqual(db.listCalibrations(roomId), []);
+  assert.deepStrictEqual(db.getMix(roomId), []);
+  assert.equal(db.latestCapacityReport(roomId), null);
+  assert.equal(db.loadControllerState(roomId), null);
+  assert.deepStrictEqual(db.listRooms({ includeArchived: true }), [room]);
+  assert.deepStrictEqual(db.getRoom(roomId), room);
 });
 
 both('left-out at/run_at equals now(), clock moved between calls', (t, open) => {
@@ -1143,8 +1203,10 @@ both('rows of every shape are plain objects', (t, open) => {
   t.after(() => db.close());
   const room = db.createRoom(roomInput());
   const settings = db.currentSettings(room.id);
+  const historyRow = db.settingsHistory(room.id)[0];
   db.insertReading(room.id, reading(T0));
   const readingRow = db.latestReading(room.id);
+  const bucketRow = db.queryReadings(room.id, { from: T0, to: T0, step: 60 })[0];
   const event = db.addEvent(room.id, { t: T0, level: 'info', text: 'x' });
   const alarm = db.raiseAlarm(room.id, { alarm_key: 'a', level: 'warning', label: 'a' });
   db.saveControllerState(room.id, { controller: { a: 1 } });
@@ -1153,7 +1215,9 @@ both('rows of every shape are plain objects', (t, open) => {
   const [mixRow] = db.replaceMix(room.id, [{ crop: 'oyster', blocks: 1 }]);
   const capacity = db.saveCapacityReport(room.id, { report: report() });
 
-  for (const row of [room, settings, readingRow, event, alarm, controllerState, calib, mixRow, capacity]) {
+  for (const row of [
+    room, settings, historyRow, readingRow, bucketRow, event, alarm, controllerState, calib, mixRow, capacity,
+  ]) {
     assert.equal(Object.getPrototypeOf(row), Object.prototype);
   }
 });

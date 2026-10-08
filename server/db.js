@@ -163,24 +163,31 @@ function applyUpgrades(conn, upgrades, dbPath, now) {
 }
 
 // --- openDb (C1 section 2). ---
+function checkOpenOptions(options) {
+  // A left-out or explicit null options argument is treated as {} (as the fake does).
+  const opts = options === undefined || options === null ? {} : options;
+  for (const k of Object.keys(opts)) {
+    if (k !== 'now' && k !== 'upgrades') throw new TypeError(`openDb: unknown field "${k}"`);
+  }
+  return opts;
+}
+
 function openDb(dbPath, options) {
+  // Checked before step 1, so an unknown option throws before anything is written (C1 section 1).
+  const opts = checkOpenOptions(options);
   if (dbPath !== ':memory:') {
     fs.mkdirSync(path.dirname(dbPath), { recursive: true }); // step 1
   }
   const conn = new DatabaseSync(dbPath); // step 2
   try {
-    return finishOpen(conn, dbPath, options);
+    return finishOpen(conn, dbPath, opts);
   } catch (err) {
     conn.close();
     throw err;
   }
 }
 
-function finishOpen(conn, dbPath, options) {
-  const opts = options === undefined ? {} : options;
-  for (const k of Object.keys(opts)) {
-    if (k !== 'now' && k !== 'upgrades') throw new TypeError(`openDb: unknown field "${k}"`);
-  }
+function finishOpen(conn, dbPath, opts) {
   const now = opts.now || (() => Math.floor(Date.now() / 1000));
   const upgradeList = opts.upgrades || UPGRADES;
 
@@ -261,10 +268,15 @@ function buildDb(conn, dbPath, version, now) {
     roomCheck(id);
     fields('updateRoom', changes, ['name', 'volume', 'vent']);
     const c = changes || {};
-    if ('name' in c) updateNameStmt.run({ v: val(c.name), id });
-    if ('volume' in c) updateVolumeStmt.run({ v: val(c.volume), id });
-    if ('vent' in c) updateVentStmt.run({ v: val(c.vent), id });
-    return plain(getRoomStmt.get({ id }));
+    // All or nothing (C1 section 1 "Validation"): a value that breaks one field's
+    // rule must leave every field as it was, even though each field is its own
+    // UPDATE statement.
+    return tx(() => {
+      if ('name' in c) updateNameStmt.run({ v: val(c.name), id });
+      if ('volume' in c) updateVolumeStmt.run({ v: val(c.volume), id });
+      if ('vent' in c) updateVentStmt.run({ v: val(c.vent), id });
+      return plain(getRoomStmt.get({ id }));
+    });
   }
 
   function archiveRoom(id, at) {
