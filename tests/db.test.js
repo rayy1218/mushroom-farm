@@ -1133,3 +1133,27 @@ both('left-out at/run_at equals now(), clock moved between calls', (t, open) => 
   clock = T0 + 10;
   assert.equal(db.saveCapacityReport(room.id, { report: report() }).run_at, T0 + 10);
 });
+
+// ---------------------------------------------------------------------------
+// Task 14: Final verification (plain rows of every shape)
+// ---------------------------------------------------------------------------
+
+both('rows of every shape are plain objects', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const room = db.createRoom(roomInput());
+  const settings = db.currentSettings(room.id);
+  db.insertReading(room.id, reading(T0));
+  const readingRow = db.latestReading(room.id);
+  const event = db.addEvent(room.id, { t: T0, level: 'info', text: 'x' });
+  const alarm = db.raiseAlarm(room.id, { alarm_key: 'a', level: 'warning', label: 'a' });
+  db.saveControllerState(room.id, { controller: { a: 1 } });
+  const controllerState = db.loadControllerState(room.id);
+  const calib = db.saveCalibration(room.id, calibRun());
+  const [mixRow] = db.replaceMix(room.id, [{ crop: 'oyster', blocks: 1 }]);
+  const capacity = db.saveCapacityReport(room.id, { report: report() });
+
+  for (const row of [room, settings, readingRow, event, alarm, controllerState, calib, mixRow, capacity]) {
+    assert.equal(Object.getPrototypeOf(row), Object.prototype);
+  }
+});

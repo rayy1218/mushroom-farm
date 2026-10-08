@@ -223,6 +223,8 @@ function buildDb(conn, dbPath, version, now) {
   const updateVolumeStmt = conn.prepare('UPDATE rooms SET volume = :v WHERE id = :id');
   const updateVentStmt = conn.prepare('UPDATE rooms SET vent = :v WHERE id = :id');
   const archiveRoomStmt = conn.prepare('UPDATE rooms SET archived_at = :at WHERE id = :id AND archived_at IS NULL');
+  const listRoomsActiveStmt = conn.prepare('SELECT * FROM rooms WHERE archived_at IS NULL ORDER BY id');
+  const listRoomsAllStmt = conn.prepare('SELECT * FROM rooms ORDER BY id');
 
   function roomExists(id) {
     return Number.isInteger(id) && !!getRoomStmt.get({ id });
@@ -277,6 +279,9 @@ function buildDb(conn, dbPath, version, now) {
     'INSERT INTO room_settings (room_id, saved_at, settings, note) VALUES (:room_id, :saved_at, :settings, :note)'
   );
   const currentSettingsStmt = conn.prepare('SELECT * FROM room_settings WHERE room_id = :room_id ORDER BY id DESC LIMIT 1');
+  const getSettingsByIdStmt = conn.prepare('SELECT * FROM room_settings WHERE id = :id');
+  const settingsHistoryStmt = conn.prepare('SELECT id, saved_at, note FROM room_settings WHERE room_id = :room_id ORDER BY id DESC');
+  const getSettingsVersionStmt = conn.prepare('SELECT * FROM room_settings WHERE id = :id AND room_id = :room_id');
 
   function settingsVersionToPublic(row) {
     return row ? { id: row.id, room_id: row.room_id, saved_at: row.saved_at, note: row.note, settings: fromJson(row.settings) } : null;
@@ -299,22 +304,20 @@ function buildDb(conn, dbPath, version, now) {
     const info = insertSettingsStmt.run({
       room_id: roomId, saved_at: val(at), settings: jsonVal(v.settings), note: val(v.note === undefined ? null : v.note),
     });
-    return settingsVersionToPublic(conn.prepare('SELECT * FROM room_settings WHERE id = :id').get({ id: info.lastInsertRowid }));
+    return settingsVersionToPublic(getSettingsByIdStmt.get({ id: info.lastInsertRowid }));
   }
 
   function settingsHistory(roomId) {
     live();
     roomCheck(roomId);
-    return conn.prepare('SELECT id, saved_at, note FROM room_settings WHERE room_id = :room_id ORDER BY id DESC')
-      .all({ room_id: roomId })
-      .map(plain);
+    return settingsHistoryStmt.all({ room_id: roomId }).map(plain);
   }
 
   function getSettingsVersion(roomId, versionId) {
     live();
     roomCheck(roomId);
     if (!Number.isInteger(versionId)) throw new NotFoundError('settings', versionId);
-    const row = conn.prepare('SELECT * FROM room_settings WHERE id = :id AND room_id = :room_id').get({ id: versionId, room_id: roomId });
+    const row = getSettingsVersionStmt.get({ id: versionId, room_id: roomId });
     if (!row) throw new NotFoundError('settings', versionId);
     return settingsVersionToPublic(row);
   }
@@ -626,10 +629,8 @@ function buildDb(conn, dbPath, version, now) {
     live();
     fields('listRooms', options, ['includeArchived']);
     const includeArchived = (options || {}).includeArchived === true;
-    const sql = includeArchived
-      ? 'SELECT * FROM rooms ORDER BY id'
-      : 'SELECT * FROM rooms WHERE archived_at IS NULL ORDER BY id';
-    return conn.prepare(sql).all().map(plain);
+    const stmt = includeArchived ? listRoomsAllStmt : listRoomsActiveStmt;
+    return stmt.all().map(plain);
   }
 
   function close() {
