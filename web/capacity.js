@@ -110,7 +110,16 @@ function verdictText(rep) {
     default: return '';
   }
 }
+// A stored report has only been shape-checked loosely (normRoom): if drawing it throws, drop it and say so.
 function renderReport() {
+  try { drawReport(); }
+  catch (err) {
+    const r = curRoom(); if (r) r.report = null;
+    el.querySelector('#capReport').replaceChildren();
+    UI.set('capMsg', 'The saved result of this room could not be read: run the check again.');
+  }
+}
+function drawReport() {
   const host = el.querySelector('#capReport'), r = curRoom(), rep = r && r.report;
   host.replaceChildren();
   if (!rep) return;
@@ -254,7 +263,7 @@ function wire(myGen) {
       rooms = ok.map(r => ({ ...r, report: null }));
       roomIdx = 0; saveRooms(); renderRooms();
       UI.set('capMsg', `Imported ${rooms.length} room(s)${ok.length < x.rooms.length ? `; ${x.rooms.length - ok.length} invalid room(s) skipped` : ''}. Run the check again for each room.`);
-    }).catch(err => UI.set('capMsg', `The file cannot be used: ${err.message}.`)).finally(() => { e.target.value = ''; });
+    }).catch(err => { if (!stale()) UI.set('capMsg', `The file cannot be used: ${err.message}.`); }).finally(() => { e.target.value = ''; });
   });
 }
 
