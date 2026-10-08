@@ -81,10 +81,15 @@ describe('normRoom', () => {
     assert.deepStrictEqual(out.mix, [{ crop: 'oyster', blocks: 10 }]);
   });
   test('keeps co2PerBlock only in 1-1000', () => {
-    const r = { mix: [{ crop: 'oyster', blocks: 1, co2PerBlock: 0 }, { crop: 'oyster', blocks: 1, co2PerBlock: 50 }] };
+    const r = { mix: [
+      { crop: 'oyster', blocks: 1, co2PerBlock: 0 },
+      { crop: 'oyster', blocks: 1, co2PerBlock: 50 },
+      { crop: 'oyster', blocks: 1, co2PerBlock: 1001 },
+    ] };
     const out = R.normRoom(r, 0);
     assert.equal('co2PerBlock' in out.mix[0], false);
     assert.equal(out.mix[1].co2PerBlock, 50);
+    assert.equal('co2PerBlock' in out.mix[2], false);
   });
   test('report kept only with a VERDICTS verdict and an array runs', () => {
     assert.equal(R.normRoom({ report: { verdict: 'good', runs: [] } }, 0).report !== null, true);
@@ -114,6 +119,8 @@ describe('normRoom', () => {
   test('calib = validCalib(r.calib); rev = 0', () => {
     assert.equal(R.normRoom({}, 0).calib, null);
     assert.equal(R.normRoom({}, 0).rev, 0);
+    const validCalibInput = { ua: 92, infAch: 0.3, moistBuffer: 3, co2PerBlock: 41, rmse: { T: 0.2 }, date: 'd' };
+    assert.deepStrictEqual(R.normRoom({ calib: validCalibInput }, 0).calib, R.validCalib(validCalibInput));
   });
 });
 
