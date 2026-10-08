@@ -1,0 +1,231 @@
+// tests/fakes/rooms.js: the fake C2 room manager (C2 section 16; lead-fakes brief task 8).
+const test = require('node:test');
+const assert = require('node:assert/strict');
+require('../controller.js');
+const CC = globalThis.ClimateController;
+const { openFakeDb } = require('./fakes/db.js');
+const { createFakeRoomManager } = require('./fakes/rooms.js');
+const { RoomError } = require('../server/rooms-common.js');
+
+let clock = 1791446400;
+const now = () => clock;
+
+function setup() {
+  clock = 1791446400;
+  const db = openFakeDb({ now });
+  const rooms = createFakeRoomManager({ db, now });
+  const seen = [];
+  for (const n of ['reading', 'event', 'alarm', 'settings', 'room']) rooms.on(n, p => seen.push([n, p]));
+  return { db, rooms, seen };
+}
+
+test('calls records every public method, including failed and internal-free calls', () => {
+  const { rooms } = setup();
+  rooms.start();
+  rooms.stop();
+  rooms.tick();
+  assert.deepEqual(rooms.calls.map(c => c.method), ['start', 'stop', 'tick']);
+
+  try { rooms.update(999, {}); } catch (e) { /* expected: a failed call is still recorded */ }
+  assert.equal(rooms.calls.at(-1).method, 'update');
+
+  const { room } = rooms.create({ name: 'A', volume: 60, vent: 'supply' });
+  rooms.calls.length = 0;
+  rooms.applySettings(room.id, { spT: 20 }, undefined);
+  const last = rooms.calls.at(-1);
+  assert.equal(last.method, 'applySettings');
+  assert.equal(last.args.length, 3);
+
+  rooms.calls.length = 0;
+  rooms.list();
+  assert.deepEqual(rooms.calls.map(c => c.method), ['list']);
+});
+
+test('default live summary; list and get; archived rooms', () => {
+  const { db, rooms } = setup();
+  const room = db.createRoom({ name: 'A', volume: 60, vent: 'supply', settings: CC.defaultSettings() });
+  db.raiseAlarm(room.id, { alarm_key: 'a', level: 'warning', label: 'A', at: 1 });
+  db.raiseAlarm(room.id, { alarm_key: 'b', level: 'warning', label: 'B', at: 1 });
+  const got = rooms.get(room.id);
+  assert.deepEqual(got.live, { reading: null, stage: 'fruiting', crop: 'oyster', targets: null, status: null, alarms: 2, running: true, error: null });
+  assert.ok(rooms.list().some(r => r.id === room.id));
+  assert.equal(rooms.get(999), null);
+  assert.equal(rooms.get('x'), null);
+
+  const archived = db.createRoom({ name: 'B', volume: 60, vent: 'supply', settings: CC.defaultSettings() });
+  db.archiveRoom(archived.id);
+  assert.equal(rooms.get(archived.id).live, null);
+  assert.ok(!rooms.list().some(r => r.id === archived.id));
+});
+
+test('setLive test helper; restart', () => {
+  const { db, rooms } = setup();
+  const room = db.createRoom({ name: 'A', volume: 60, vent: 'supply', settings: CC.defaultSettings() });
+  rooms.setLive(room.id, { running: false, error: 'boom' });
+  assert.equal(rooms.get(room.id).live.running, false);
+  assert.equal(rooms.get(room.id).live.error, 'boom');
+  const seenBefore = rooms.calls.length;
+  // setLive itself is not recorded in calls
+  assert.equal(rooms.calls.length, seenBefore);
+
+  const restarted = rooms.restart(room.id);
+  assert.equal(restarted.live.running, true);
+  assert.equal(restarted.live.error, null);
+});
+
+test('create: trims name, stores first settings, emits in order, returns warnings', () => {
+  const { rooms, seen } = setup();
+  const { room, warnings } = rooms.create({ name: ' North ', volume: 80, vent: 'exhaust' });
+  assert.equal(room.name, 'North');
+  assert.deepEqual(warnings, []);
+  const expected = CC.defaultSettings();
+  expected.roomM3 = 80;
+  assert.deepEqual(seen.map(([name]) => name), ['settings', 'event', 'room']);
+  assert.equal(seen[0][1].auto, false);
+  assert.deepEqual(seen[0][1].warnings, []);
+  assert.equal(seen[1][1].event.text, 'Room created');
+  assert.deepEqual(seen[2][1].room.id, room.id);
+
+  const { room: room2 } = rooms.create({ name: 'Same', volume: 80, vent: 'exhaust', settings: undefined });
+  assert.equal(room2.name, 'Same');
+});
+
+test('create: merges settings over the base; drops prototype-polluting keys', () => {
+  const { rooms } = setup();
+  const r1 = rooms.create({ name: 'A', volume: 200, vent: 'supply', settings: { crop: 'pink' } });
+  assert.equal(r1.room.live.crop, 'pink');
+
+  const r2 = rooms.create({ name: 'B', volume: 10, vent: 'supply', settings: { roomM3: 150 } });
+  assert.equal(r2.warnings.length, 0);
+
+  const r3 = rooms.create({ name: 'C', volume: 60, vent: 'supply', settings: { spT: 99 } });
+  assert.ok(r3.warnings.some(w => w.includes('"spT" = 99 is outside 10–35: set to 35.')));
+
+  const polluted = JSON.parse('{"__proto__":{"polluted":1},"spT":20}');
+  const r4 = rooms.create({ name: 'D', volume: 60, vent: 'supply', settings: polluted });
+  assert.ok(r4.warnings.some(w => w === 'Setting "__proto__" is not allowed: ignored.'));
+  assert.equal(({}).polluted, undefined);
+});
+
+test('create: bad_input with all broken rules together; nothing stored or emitted', () => {
+  const { rooms, seen } = setup();
+  assert.throws(() => rooms.create({}), err => {
+    assert.ok(err instanceof RoomError);
+    assert.equal(err.name, 'RoomError');
+    assert.equal(err.code, 'bad_input');
+    assert.equal(err.message, 'Bad input');
+    assert.ok(err.details.includes('name must be 1 to 60 characters'));
+    assert.ok(err.details.includes('volume must be a number from 5 to 5000 (m³)'));
+    assert.ok(err.details.includes('vent must be "supply" or "exhaust"'));
+    return true;
+  });
+  assert.equal(seen.length, 0);
+  assert.throws(() => rooms.create({ name: 'A', volume: 60, vent: 'supply', settings: [] }), err => err.details.includes('settings must be an object'));
+});
+
+test('update: trims name, unknown field, archived room, unknown room', () => {
+  const { db, rooms } = setup();
+  const room = db.createRoom({ name: 'A', volume: 60, vent: 'supply', settings: CC.defaultSettings() });
+  const updated = rooms.update(room.id, { name: ' B ' });
+  assert.equal(updated.name, 'B');
+  assert.throws(() => rooms.update(room.id, { colour: 1 }), err => err.details.includes('unknown field "colour"'));
+  db.archiveRoom(room.id);
+  assert.throws(() => rooms.update(room.id, { name: 'C' }), err => err.details.includes(`room ${room.id} is archived`));
+  assert.throws(() => rooms.update(999, {}), err => err.code === 'not_found' && err.message === 'Room 999 not found');
+});
+
+test('archive: sets archived_at, writes Room archived, emits event then room; twice is a no-op', () => {
+  const { rooms, seen } = setup();
+  const { room } = rooms.create({ name: 'A', volume: 60, vent: 'supply' });
+  seen.length = 0;
+  const archived = rooms.archive(room.id);
+  assert.equal(archived.archived_at, now());
+  assert.equal(archived.live, null);
+  assert.deepEqual(seen.map(([name]) => name), ['event', 'room']);
+  assert.equal(seen[0][1].event.text, 'Room archived');
+  seen.length = 0;
+  const again = rooms.archive(room.id);
+  assert.deepEqual(again, archived);
+  assert.equal(seen.length, 0);
+});
+
+test('applySettings: stores partial merge, writes event, emits event then settings', () => {
+  const { rooms, seen } = setup();
+  const { room } = rooms.create({ name: 'A', volume: 60, vent: 'supply' });
+  seen.length = 0;
+  const result = rooms.applySettings(room.id, { spT: 20 }, ' warmer ');
+  assert.equal(result.settings.spT, 20);
+  assert.deepEqual(seen.map(([name]) => name), ['event', 'settings']);
+  assert.ok(seen[0][1].event.text.startsWith('Settings saved (version'));
+  assert.ok(seen[0][1].event.text.endsWith(': warmer'));
+  assert.equal(seen[1][1].auto, false);
+
+  seen.length = 0;
+  const noNote = rooms.applySettings(room.id, { spT: 21 });
+  assert.ok(!seen[0][1].event.text.includes(':'));
+
+  const exact = rooms.applySettings(room.id, { spT: 22 }, undefined, { exact: true });
+  assert.equal(exact.settings.spT, 22);
+  assert.deepEqual(rooms.calls.at(-1).args[3], { exact: true }); // recorded in calls; no other effect (no controller)
+});
+
+test('applySettings: calls importSettings, never ClimateController.applySettings', (t) => {
+  const { rooms } = setup();
+  const { room } = rooms.create({ name: 'A', volume: 60, vent: 'supply' });
+  const applySpy = t.mock.method(CC, 'applySettings');
+  const importSpy = t.mock.method(CC, 'importSettings');
+  rooms.create({ name: 'B', volume: 60, vent: 'supply', settings: { spT: 10 } });
+  rooms.applySettings(room.id, { spT: 20 });
+  assert.equal(applySpy.mock.callCount(), 0);
+  assert.ok(importSpy.mock.callCount() >= 2);
+});
+
+test('applySettings: bad_input cases, nothing stored', () => {
+  const { db, rooms } = setup();
+  const room = db.createRoom({ name: 'A', volume: 60, vent: 'supply', settings: CC.defaultSettings() });
+  assert.throws(() => rooms.applySettings(room.id, null), err => err.details.includes('settings must be an object'));
+  assert.throws(() => rooms.applySettings(room.id, []), err => err.details.includes('settings must be an object'));
+  assert.throws(() => rooms.applySettings(room.id, {}, 'x'.repeat(201)), err => err.details.includes('note must be text of at most 200 characters'));
+  db.archiveRoom(room.id);
+  assert.throws(() => rooms.applySettings(room.id, {}), err => err.details.includes(`room ${room.id} is archived`));
+  assert.throws(() => rooms.applySettings(999, {}), err => err.code === 'not_found');
+});
+
+test('ackAlarm: acknowledges unacknowledged rows, emits event then alarms', () => {
+  const { db, rooms, seen } = setup();
+  const room = db.createRoom({ name: 'A', volume: 60, vent: 'supply', settings: CC.defaultSettings() });
+  db.raiseAlarm(room.id, { alarm_key: 'rhHi', level: 'warning', label: 'High humidity', at: 1 });
+  db.clearAlarm(room.id, 'rhHi', 2);
+  db.raiseAlarm(room.id, { alarm_key: 'rhHi', level: 'warning', label: 'High humidity', at: 3 });
+  seen.length = 0;
+  const latest = rooms.ackAlarm(room.id, 'rhHi');
+  assert.equal(latest.acked_at, now());
+  assert.deepEqual(seen.map(([name]) => name), ['event', 'alarm', 'alarm']);
+  assert.equal(seen[0][1].event.text, 'Acknowledged: High humidity');
+  assert.ok(seen.slice(1).every(([, p]) => p.change === 'acked'));
+
+  seen.length = 0;
+  const again = rooms.ackAlarm(room.id, 'rhHi');
+  assert.deepEqual(again, latest);
+  assert.equal(seen.length, 0);
+
+  assert.throws(() => rooms.ackAlarm(room.id, 'tHi'), err => err.code === 'not_found' && err.message === `No alarm "tHi" in room ${room.id}`);
+  assert.throws(() => rooms.ackAlarm(room.id, ''), err => err.code === 'bad_input');
+});
+
+test('listeners: a throwing listener is caught; off removes a listener; emit test helper', (t) => {
+  const { rooms } = setup();
+  const errStub = t.mock.method(console, 'error', () => {});
+  const calls = [];
+  const bad = () => { throw new Error('boom'); };
+  const good = p => calls.push(p);
+  rooms.on('event', bad);
+  rooms.on('event', good);
+  rooms.emit('event', { x: 1 });
+  assert.equal(errStub.mock.callCount(), 1);
+  assert.deepEqual(calls, [{ x: 1 }]);
+
+  rooms.off('event', good);
+  rooms.emit('event', { x: 2 });
+  assert.deepEqual(calls, [{ x: 1 }]);
+});
