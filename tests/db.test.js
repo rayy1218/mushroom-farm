@@ -932,3 +932,68 @@ both('replaceMix: unknown field; old mix stays', (t, open) => {
   });
   assert.deepStrictEqual(db.getMix(roomId), original);
 });
+
+// ---------------------------------------------------------------------------
+// Task 12: Capacity reports (C1 section 6.12)
+// ---------------------------------------------------------------------------
+
+both('latestCapacityReport: null for a new room', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  assert.equal(db.latestCapacityReport(roomId), null);
+});
+
+both('saveCapacityReport: copies, JSON', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  const rep = report({ balance: { estimate: Infinity } });
+  const c = db.saveCapacityReport(roomId, { report: rep });
+  assert.deepStrictEqual(c, { id: c.id, room_id: roomId, run_at: T0, verdict: 'good', utilisation: 70, report: rep });
+  assert.ok(Object.is(c.report.balance.estimate, Infinity));
+});
+
+both('saveCapacityReport: utilisation not finite -> null', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  const a = db.saveCapacityReport(roomId, { report: report({ utilisation: undefined, verdict: 'impossible' }) });
+  assert.equal(a.utilisation, null);
+  const b = db.saveCapacityReport(roomId, { report: report({ utilisation: NaN, verdict: 'impossible' }) });
+  assert.equal(b.utilisation, null);
+  const c = db.saveCapacityReport(roomId, { report: report({ utilisation: Infinity, verdict: 'impossible' }) });
+  assert.equal(c.utilisation, null);
+});
+
+both('saveCapacityReport: constraints, no rounding', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  assertSql(() => db.saveCapacityReport(roomId, { report: report({ utilisation: 74.5 }) }), 3091);
+  assertSql(() => db.saveCapacityReport(roomId, { report: report({ verdict: 'ok' }) }), 275);
+  assertSql(() => db.saveCapacityReport(roomId, {}), 1299);
+  assert.equal(db.latestCapacityReport(roomId), null);
+});
+
+both('saveCapacityReport: latest is larger id; explicit run_at', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  db.saveCapacityReport(roomId, { report: report() });
+  const second = db.saveCapacityReport(roomId, { report: report(), run_at: 5 });
+  const latest = db.latestCapacityReport(roomId);
+  assert.equal(latest.id, second.id);
+  assert.equal(latest.run_at, 5);
+});
+
+both('saveCapacityReport: unknown field', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  assert.throws(() => db.saveCapacityReport(roomId, { report: report(), room: 1 }), err => {
+    assert.ok(err instanceof TypeError);
+    assert.equal(err.message, 'saveCapacityReport: unknown field "room"');
+    return true;
+  });
+});

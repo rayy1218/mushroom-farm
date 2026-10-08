@@ -587,6 +587,39 @@ function buildDb(conn, dbPath, version, now) {
     });
   }
 
+  // Capacity reports (section 6.12)
+  const insertCapacityStmt = conn.prepare(
+    'INSERT INTO capacity_reports (room_id, run_at, verdict, utilisation, report) VALUES (:room_id, :run_at, :verdict, :utilisation, :report)'
+  );
+  const getCapacityByIdStmt = conn.prepare('SELECT * FROM capacity_reports WHERE id = :id');
+  const latestCapacityStmt = conn.prepare('SELECT * FROM capacity_reports WHERE room_id = :room_id ORDER BY id DESC LIMIT 1');
+
+  function capacityRowToPublic(row) {
+    return row ? { id: row.id, room_id: row.room_id, run_at: row.run_at, verdict: row.verdict, utilisation: row.utilisation, report: fromJson(row.report) } : null;
+  }
+
+  function saveCapacityReport(roomId, entry) {
+    live();
+    roomCheck(roomId);
+    fields('saveCapacityReport', entry, ['report', 'run_at']);
+    const e = entry || {};
+    const reportText = jsonVal(e.report);
+    const verdict = e.report ? e.report.verdict : undefined;
+    const rawUtilisation = e.report ? e.report.utilisation : undefined;
+    const utilisation = Number.isFinite(rawUtilisation) ? rawUtilisation : null;
+    const run_at = e.run_at === undefined ? now() : e.run_at;
+    const info = insertCapacityStmt.run({
+      room_id: roomId, run_at: val(run_at), verdict: val(verdict), utilisation: val(utilisation), report: reportText,
+    });
+    return capacityRowToPublic(getCapacityByIdStmt.get({ id: info.lastInsertRowid }));
+  }
+
+  function latestCapacityReport(roomId) {
+    live();
+    roomCheck(roomId);
+    return capacityRowToPublic(latestCapacityStmt.get({ room_id: roomId }));
+  }
+
   function listRooms(options) {
     live();
     fields('listRooms', options, ['includeArchived']);
@@ -634,6 +667,8 @@ function buildDb(conn, dbPath, version, now) {
     currentCalibration,
     getMix,
     replaceMix,
+    saveCapacityReport,
+    latestCapacityReport,
   };
 }
 
