@@ -1309,3 +1309,111 @@ test('Pair correction, high key', () => {
   assert.equal(result.settings.rules.acOn, 1690);
   assert.deepEqual(result.warnings, ['"rules.acOff" = 1650 must be at least 50 ppm above "rules.acOn" (1690 now): set to 1740.']);
 });
+
+// ---------------------------------------------------------------------------
+// Task 13: update and archive (C2 section 4, 6.1)
+// ---------------------------------------------------------------------------
+
+test('update', () => {
+  const spy = simSpyFactory();
+  const { db, mgr, log } = setup(spy.factory);
+  mgr.start();
+
+  log.length = 0;
+  const r1 = mgr.update(1, { name: '  New name  ' });
+  assert.equal(r1.name, 'New name');
+  assert.equal(db.getRoom(1).name, 'New name');
+  assert.equal(log.filter(([n]) => n === 'room').length, 1);
+  assert.ok(!db.listEvents(1, { limit: 10 }).some(e => e.text === 'Stopped'));
+
+  const roomM3Before = db.currentSettings(1).settings.roomM3;
+  log.length = 0;
+  const beforeId = maxEventId(db, 1);
+  const madeBefore = spy.made.length;
+  const r2 = mgr.update(1, { volume: 90 });
+  assert.equal(r2.volume, 90);
+  const texts = newEventTextsSince(db, 1, beforeId);
+  assert.ok(texts.includes('Stopped'));
+  assert.ok(texts.some(t => t.startsWith('Resumed after 0 min stopped')));
+  assert.equal(log.filter(([n]) => n === 'room').length, 1);
+  assert.equal(db.currentSettings(1).settings.roomM3, roomM3Before);
+  assert.ok(spy.made.length > madeBefore);
+  assert.equal(spy.made[spy.made.length - 1].args.room.volume, 90);
+
+  try {
+    mgr.update(1, { archived_at: 123 });
+    assert.fail('expected bad_input');
+  } catch (err) {
+    assert.equal(err.code, 'bad_input');
+    assert.deepEqual(err.details, ['unknown field "archived_at"']);
+  }
+
+  try {
+    mgr.update(1, { name: '' });
+    assert.fail('expected bad_input');
+  } catch (err) {
+    assert.deepEqual(err.details, ['name must be 1 to 60 characters']);
+  }
+
+  const { room: arch } = mgr.create({ name: 'Arch', volume: 60, vent: 'supply' });
+  mgr.archive(arch.id);
+  try {
+    mgr.update(arch.id, { name: 'X' });
+    assert.fail('expected bad_input');
+  } catch (err) {
+    assert.equal(err.code, 'bad_input');
+    assert.deepEqual(err.details, [`room ${arch.id} is archived`]);
+  }
+
+  try {
+    mgr.update(999, { name: 'X' });
+    assert.fail('expected not_found');
+  } catch (err) {
+    assert.equal(err.code, 'not_found');
+  }
+});
+
+test('archive', () => {
+  const { db, mgr, log, step, now } = setup();
+  mgr.start();
+  const { room } = mgr.create({ name: 'A', volume: 60, vent: 'supply' });
+
+  log.length = 0;
+  const result = mgr.archive(room.id);
+  assert.ok(db.listEvents(room.id, { limit: 10 }).some(e => e.text === 'Stopped'));
+  assert.ok(db.listEvents(room.id, { limit: 10 }).some(e => e.text === 'Room archived'));
+  assert.equal(db.getRoom(room.id).archived_at, now());
+  assert.equal(result.live, null);
+  const roomEmits = log.filter(([n]) => n === 'room');
+  assert.equal(roomEmits.length, 1);
+  assert.equal(roomEmits[0][1].room.live, null);
+
+  assert.ok(!mgr.list().some(r => r.id === room.id));
+  assert.equal(mgr.get(room.id).live, null);
+  const rowsBefore = db.queryReadings(room.id, { from: 0, to: now() }).length;
+  step(30);
+  assert.equal(db.queryReadings(room.id, { from: 0, to: now() }).length, rowsBefore);
+
+  log.length = 0;
+  const again = mgr.archive(room.id);
+  assert.deepEqual(again, result);
+  assert.equal(log.length, 0);
+
+  // Crashed room: no state save.
+  const s = scripted();
+  const { db: db2, mgr: mgr2 } = setup(s.factory);
+  mgr2.start();
+  s.knobs.failRead = true;
+  mgr2.tick();
+  assert.equal(mgr2.get(1).live.running, false);
+  const savedBefore = db2.loadControllerState(1).saved_at;
+  mgr2.archive(1);
+  assert.equal(db2.loadControllerState(1).saved_at, savedBefore);
+
+  try {
+    mgr.archive(999);
+    assert.fail('expected not_found');
+  } catch (err) {
+    assert.equal(err.code, 'not_found');
+  }
+});
