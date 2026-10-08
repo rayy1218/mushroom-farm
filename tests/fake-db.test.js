@@ -22,8 +22,8 @@ test('openFakeDb: shape, independence, unknown options', () => {
   const db2 = openFakeDb({ now: () => 1 });
   db2.createRoom({ name: 'X', volume: 10, vent: 'supply', settings: freshSettings() });
   assert.equal(db.listRooms().length, 0);
-  assert.throws(() => openFakeDb({ upgrades: [] }), TypeError);
-  assert.throws(() => openFakeDb({ foo: 1 }), TypeError);
+  assert.throws(() => openFakeDb({ upgrades: [] }), { name: 'TypeError', message: 'openFakeDb: unknown option "upgrades"' });
+  assert.throws(() => openFakeDb({ foo: 1 }), { name: 'TypeError', message: 'openFakeDb: unknown option "foo"' });
   assert.doesNotThrow(() => openFakeDb(null)); // a missing/null options argument is {}
 });
 
@@ -377,12 +377,12 @@ test('non-finite numbers stored as null; booleans of lights/circ', () => {
 
 test('TypeError for unknown fields; nothing stored', () => {
   const db1 = freshDb();
-  assert.throws(() => db1.createRoom({ name: 'B', volume: 10, vent: 'supply', settings: freshSettings(), colour: 'x' }), TypeError);
+  assert.throws(() => db1.createRoom({ name: 'B', volume: 10, vent: 'supply', settings: freshSettings(), colour: 'x' }), { name: 'TypeError', message: 'createRoom: unknown field "colour"' });
   assert.deepEqual(db1.listRooms().map(r => r.id), [1]);
 
   const db2 = freshDb();
   for (const key of ['temp', 'rh', 'co2', 'n']) {
-    assert.throws(() => db2.insertReading(1, validReading({ [key]: 1 })), TypeError);
+    assert.throws(() => db2.insertReading(1, validReading({ [key]: 1 })), { name: 'TypeError', message: `insertReading: unknown field "${key}"` });
   }
   assert.throws(() => db2.insertReading(1, validReading({ room_id: 2 })), TypeError);
   assert.equal(db2.queryReadings(1, { from: 0, to: 1000 }).length, 0);
@@ -390,14 +390,14 @@ test('TypeError for unknown fields; nothing stored', () => {
   assert.equal(db2.queryReadings(1, { from: 0, to: 1000 }).length, 1);
 
   const db3 = freshDb();
-  assert.throws(() => db3.replaceMix(1, [{ crop: 'oyster', blocks: 1, co2PerBlock: 1 }]), TypeError);
+  assert.throws(() => db3.replaceMix(1, [{ crop: 'oyster', blocks: 1, co2PerBlock: 1 }]), { name: 'TypeError', message: 'replaceMix: unknown field "co2PerBlock"' });
   assert.deepEqual(db3.getMix(1), []);
 
   const db4 = freshDb();
-  assert.throws(() => db4.queryReadings(1, { from: 0, to: 1, limit: 1 }), TypeError);
+  assert.throws(() => db4.queryReadings(1, { from: 0, to: 1, limit: 1 }), { name: 'TypeError', message: 'queryReadings: unknown field "limit"' });
 
   const db5 = freshDb();
-  assert.throws(() => db5.saveCapacityReport(1, { report: { verdict: 'good' }, verdict: 'good' }), TypeError);
+  assert.throws(() => db5.saveCapacityReport(1, { report: { verdict: 'good' }, verdict: 'good' }), { name: 'TypeError', message: 'saveCapacityReport: unknown field "verdict"' });
   assert.equal(db5.latestCapacityReport(1), null);
 });
 
@@ -452,6 +452,16 @@ test('bucket averaging', () => {
   assert.equal(b.ac_mode, 'off'); // the row with the largest t (95), even though it was inserted first
   assert.equal(b.ac_setpoint, 18); // average of the non-null values (the AC was on for one reading)
   assert.equal(b.kwh, null); // from the row with the largest t
+
+  // A null T is left out of the mean; lights 1, 0, 0, 1 average to 0.5.
+  const mixedDb = freshDb();
+  mixedDb.insertReading(1, validReading({ t: 60, T: 10, lights: 1 }));
+  mixedDb.insertReading(1, validReading({ t: 70, T: null, lights: 0 }));
+  mixedDb.insertReading(1, validReading({ t: 80, T: 20, lights: 0 }));
+  mixedDb.insertReading(1, validReading({ t: 90, lights: 1 }));
+  const mixed = mixedDb.queryReadings(1, { from: 60, to: 119, step: 60 })[0];
+  assert.equal(mixed.T, 15);
+  assert.equal(mixed.lights, 0.5);
 
   const allNullDb = freshDb();
   allNullDb.insertReading(1, validReading({ t: 60, T: undefined }));

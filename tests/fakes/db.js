@@ -60,7 +60,9 @@ function orEmpty(v) {
 
 function openFakeDb(options) {
   options = orEmpty(options);
-  checkFields(options, ['now'], 'openFakeDb');
+  for (const k of Object.keys(options)) {
+    if (k !== 'now') throw new TypeError(`openFakeDb: unknown option "${k}"`);
+  }
   const now = options.now || (() => Math.floor(Date.now() / 1000));
 
   let closed = false;
