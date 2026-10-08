@@ -15,11 +15,11 @@ const roomsCommon = require('../server/rooms-common.js');
 
 const T0 = 1791424800; // 2026-10-08 10:00 farm time (outside the harvest windows)
 
-function setup() {
+function setup(adapterFactory) {
   let clock = T0;
   const now = () => clock;
   const db = openFakeDb({ now });
-  const mgr = rooms.createRoomManager({ db, now, tickMs: 0, adapterFactory: rooms.defaultAdapterFactory });
+  const mgr = rooms.createRoomManager({ db, now, tickMs: 0, adapterFactory: adapterFactory || rooms.defaultAdapterFactory });
   const log = [];
   for (const n of ['reading', 'event', 'alarm', 'settings', 'room', 'fatal']) mgr.on(n, p => log.push([n, p]));
   const step = n => { for (let i = 0; i < n; i++) { clock += 1; mgr.tick(); } };
@@ -401,4 +401,174 @@ test('Errors: create input', () => {
   ]);
 
   assert.equal(db.listRooms({ includeArchived: true }).length, before);
+});
+
+// ---------------------------------------------------------------------------
+// Task 4: Loop start (fresh), tick, Record, state save (C2 section 8.1 fresh, 8.2-8.4, 5.2, 5.3)
+// ---------------------------------------------------------------------------
+
+const READING_KEYS = ['room_id', 't', 'T', 'RH', 'CO2', 't_out', 'rh_out', 'ac_mode', 'ac_setpoint', 'fog', 'fan', 'lights', 'circ', 'power_w', 'kwh'];
+
+test('Recording', () => {
+  const spy = simSpyFactory();
+  const { db, mgr: mgr2, log, step, now } = setup(spy.factory);
+  mgr2.start();
+
+  const rowsAfterStart = db.queryReadings(1, { from: 0, to: now() });
+  assert.equal(rowsAfterStart.length, 1);
+  assert.equal(rowsAfterStart[0].t, T0);
+  const stateAfterStart = db.loadControllerState(1);
+  assert.equal(stateAfterStart.saved_at, T0);
+  assert.notEqual(stateAfterStart.sim, null);
+  const startedEvents = db.listEvents(1, { limit: 50 });
+  assert.ok(startedEvents.some(e => e.text === 'Started'));
+
+  step(30);
+  const rowsAfter30 = db.queryReadings(1, { from: 0, to: now() });
+  assert.equal(rowsAfter30.length, 2);
+  const row = rowsAfter30[1];
+  assert.equal(row.t, T0 + 30);
+  assert.deepEqual(Object.keys(row).sort(), READING_KEYS.slice().sort());
+  assert.equal(row.room_id, 1);
+
+  const lastCmd = spy.writes[spy.writes.length - 1];
+  assert.equal(row.ac_mode, lastCmd.ac.power ? lastCmd.ac.mode : 'off');
+  assert.equal(row.ac_setpoint, lastCmd.ac.power ? lastCmd.ac.setpoint : null);
+  assert.equal(row.fog, Math.min(3, Math.max(0, Math.round(lastCmd.hu.level || 0))));
+  assert.equal(row.fan, Math.min(3, Math.max(0, Math.round(lastCmd.fan.level || 0))));
+  assert.equal(row.lights, lastCmd.lights.on ? 1 : 0);
+  assert.equal(row.circ, lastCmd.circ.on ? 1 : 0);
+
+  const r = spy.made[0].a.io.read();
+  const sumPower = Object.values(r.power).reduce((a, b) => a + b, 0);
+  const sumKwh = Object.values(r.kwh).reduce((a, b) => a + b, 0);
+  assert.ok(Math.abs(row.power_w - sumPower) < 1e-9);
+  assert.ok(Math.abs(row.kwh - sumKwh) < 1e-9);
+
+  const readingEmits = log.filter(([n]) => n === 'reading');
+  const last = readingEmits[readingEmits.length - 1][1];
+  assert.equal(last.roomId, 1);
+  assert.deepEqual(last.live.reading, db.latestReading(1));
+
+  const live = mgr2.get(1).live;
+  assert.equal(live.running, true);
+  assert.equal(live.error, null);
+  assert.equal(live.stage, 'fruiting');
+  assert.equal(live.crop, 'oyster');
+  assert.equal(live.targets.T, 25);
+  assert.equal(typeof live.targets.RH, 'number');
+  assert.equal(live.targets.CO2, 1000);
+  for (const k of ['T', 'RH', 'CO2']) {
+    assert.equal(typeof live.status[k].lvl, 'string');
+    assert.equal(typeof live.status[k].icon, 'string');
+    assert.equal(typeof live.status[k].text, 'string');
+  }
+});
+
+test('Rounded humidity target', () => {
+  let clock = T0;
+  const now = () => clock;
+  const db = openFakeDb({ now });
+  const spy = simSpyFactory();
+  const mgr = rooms.createRoomManager({ db, now, tickMs: 0, adapterFactory: spy.factory });
+  mgr.start();
+  for (let i = 0; i < 90; i++) { clock += 1; mgr.tick(); }
+  const x = mgr.get(1).live.targets.RH;
+  assert.ok(Math.abs(x * 10 - Math.round(x * 10)) < 1e-9);
+
+  const { room } = mgr.create({ name: 'RH', volume: 60, vent: 'supply', settings: { humMode: 'rh' } });
+  assert.equal(mgr.get(room.id).live.targets.RH, 88);
+});
+
+test('Catch-up', () => {
+  const spy = simSpyFactory();
+  const { db, mgr: mgr2, jump, now } = setup(spy.factory);
+  mgr2.start();
+  jump(300);
+  const rows = db.queryReadings(1, { from: 0, to: now() });
+  // 1 at start + 10 more from the 300 s jump
+  assert.equal(rows.length, 11);
+  for (let i = 1; i < rows.length; i++) assert.equal(rows[i].t - rows[i - 1].t, 30);
+  assert.equal(rows[rows.length - 1].t, now());
+});
+
+test('Gap', () => {
+  const spy = simSpyFactory();
+  const { db, mgr: mgr2, jump, step, now } = setup(spy.factory);
+  mgr2.start();
+  const before = db.queryReadings(1, { from: 0, to: now() });
+  jump(301);
+  const afterGap = db.queryReadings(1, { from: 0, to: now() });
+  assert.equal(afterGap.length, before.length);
+  let found = false;
+  for (let i = 0; i < 30; i++) {
+    step(1);
+    const rows = db.queryReadings(1, { from: 0, to: now() });
+    if (rows.length > afterGap.length) {
+      const newRow = rows[rows.length - 1];
+      assert.ok(newRow.t > before[before.length - 1].t);
+      assert.ok(newRow.t <= now());
+      found = true;
+      break;
+    }
+  }
+  assert.ok(found);
+});
+
+test('Periodic save', () => {
+  const spy = simSpyFactory();
+  const { db, mgr: mgr2, step } = setup(spy.factory);
+  mgr2.start();
+  assert.equal(db.loadControllerState(1).saved_at, T0);
+  step(299);
+  assert.equal(db.loadControllerState(1).saved_at, T0);
+  step(1);
+  assert.equal(db.loadControllerState(1).saved_at, T0 + 300);
+});
+
+test('Block count', () => {
+  let clock = T0;
+  const now = () => clock;
+  const db = openFakeDb({ now });
+  const spy = simSpyFactory();
+  const mgr = rooms.createRoomManager({ db, now, tickMs: 0, adapterFactory: spy.factory });
+  const { room: a } = mgr.create({ name: 'A', volume: 60, vent: 'supply' });
+  const { room: b } = mgr.create({ name: 'B', volume: 60, vent: 'supply' });
+  const { room: c } = mgr.create({ name: 'C', volume: 60, vent: 'supply' });
+  db.replaceMix(a.id, [{ crop: 'oyster', blocks: 300 }, { crop: 'golden', blocks: 200 }]);
+  db.replaceMix(c.id, [{ crop: 'oyster', blocks: 0 }]);
+  mgr.start();
+  const byRoom = new Map(spy.made.map(m => [m.args.room.id, m.args.blocks]));
+  assert.equal(byRoom.get(a.id), 500);
+  assert.equal(byRoom.get(b.id), null);
+  assert.equal(byRoom.get(c.id), null);
+});
+
+test('list and get', () => {
+  const { db, mgr } = setup();
+  mgr.create({ name: 'A', volume: 60, vent: 'supply' });
+  mgr.create({ name: 'B', volume: 60, vent: 'supply' });
+  const list = mgr.list();
+  assert.deepEqual(list.map(r => r.id), [1, 2]);
+  for (const r of list) assert.ok('live' in r);
+
+  assert.equal(mgr.get(1.5), null);
+  assert.equal(mgr.get('1'), null);
+  assert.equal(mgr.get(999), null);
+});
+
+test('create on a started manager', () => {
+  const { db, mgr, log, step, now } = setup();
+  mgr.start(); // creates the demo room (id 1)
+  log.length = 0;
+  const { room } = mgr.create({ name: 'Live', volume: 60, vent: 'supply' });
+  const names = log.map(([n]) => n);
+  assert.deepEqual(names, ['settings', 'event', 'event', 'reading', 'room']);
+  assert.equal(log[1][1].event.text, 'Room created');
+  assert.equal(log[2][1].event.text, 'Started');
+
+  const before = db.queryReadings(room.id, { from: 0, to: now() }).length;
+  step(30);
+  const after = db.queryReadings(room.id, { from: 0, to: now() }).length;
+  assert.ok(after > before);
 });
