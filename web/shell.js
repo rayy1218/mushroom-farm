@@ -50,12 +50,16 @@ function route() {
   });
   document.title = `${MENU_NAMES[name]} · Mushroom farm`;
   const module = registry[name];
-  current = { name, params, module };
+  const token = current = { name, params, module };
   if (!module) { showNotice(view, 'This part of the app is not installed.'); return; }
   try {
     const result = module.mount(view, params);
     if (result && typeof result.catch === 'function') {
-      result.catch(err => { console.error(err); showNotice(view, `This page could not be opened: ${err && err.message}`); });
+      result.catch(err => {
+        console.error(err);
+        if (current !== token) return; // the user moved on: do not touch the new module's view
+        showNotice(view, `This page could not be opened: ${err && err.message}`);
+      });
     }
   } catch (err) {
     console.error(err);
