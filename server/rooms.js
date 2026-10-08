@@ -410,6 +410,10 @@ function createRoomManager(options) {
       } catch (err) {
         active = false;
         stopTimer();
+        // C2 section 11: a database error during a tick is fatal for every room, not just this one.
+        // Mark every loop as halted so stop(), restart(), archive(), applySettings() and ackAlarm() see
+        // the same "not running" state a per-room crash leaves (no state save is tried, no "Stopped").
+        for (const l of loops.values()) l.running = false;
         emit('fatal', { error: err });
         return;
       }
@@ -518,7 +522,8 @@ function createRoomManager(options) {
 
     db.updateRoom(id, toApply);
     const loop = loops.get(id);
-    const volumeOrVentChanged = ('volume' in toApply) || ('vent' in toApply);
+    const volumeOrVentChanged = (('volume' in toApply) && toApply.volume !== room.volume) ||
+      (('vent' in toApply) && toApply.vent !== room.vent);
     if (volumeOrVentChanged && loop && loop.running) {
       restart(id);
     } else {

@@ -326,11 +326,13 @@ test('Demo room', () => {
   const base = CC.defaultSettings();
   base.roomM3 = 60;
   assert.deepEqual(version.settings, base);
+  assert.equal(db.settingsHistory(1).length, 1);
 
   // A second manager's start() on the same db creates nothing.
   const mgr2 = rooms.createRoomManager({ db, now: () => T0, tickMs: 0, adapterFactory: rooms.defaultAdapterFactory });
   mgr2.start();
   assert.equal(db.listRooms({ includeArchived: true }).length, 1);
+  assert.equal(db.settingsHistory(1).length, 1);
 });
 
 test('First settings', () => {
@@ -821,6 +823,13 @@ test('Resume: alarms carry on', () => {
   assert.equal(db.queryReadings(1, { from: 0, to: now() }).length, rowsBefore);
   assert.equal(log2.filter(p => p.change === 'raised').length, 0);
   assert.equal(mgr2.get(1).live.alarms, 1);
+
+  // RH is still null after resume: the next reading (where a re-raise would actually happen in
+  // syncAlarms) must not add a second sensor_RH row or re-raise the alarm.
+  clock += 30; mgr2.tick();
+  assert.equal(log2.filter(p => p.change === 'raised').length, 0);
+  assert.equal(db.listAlarms(1, { recent: 10 }).filter(a => a.alarm_key === 'sensor_RH').length, 1);
+  assert.equal(mgr2.get(1).live.alarms, 1);
 });
 
 test('Resume: alarm cleared while stopped', () => {
@@ -1099,6 +1108,40 @@ test('Database error', () => {
   db.insertReading = origInsert;
 });
 
+test('Database error: halted rooms stay halted (no state save, no Stopped) after fatal', () => {
+  // C2 section 11: a fatal halts every room, with no state save tried. Methods that gate a state save
+  // (and, for stop/restart/archive, the "Stopped" event) on a loop's "running" flag must see every loop
+  // as not running once a fatal has happened, not just the room whose tick actually threw.
+  const s = scripted();
+  const { db, mgr, log, step } = setup(s.factory);
+  mgr.start();
+  mgr.create({ name: 'B', volume: 60, vent: 'supply' });
+
+  const dbErr = Object.assign(new Error('disk I/O error'), { code: 'ERR_SQLITE_ERROR', errcode: 10, errstr: 'disk I/O error' });
+  const origInsert = db.insertReading;
+  db.insertReading = () => { throw dbErr; };
+  step(30);
+  db.insertReading = origInsert;
+
+  assert.equal(mgr.get(1).live.running, false);
+  assert.equal(mgr.get(2).live.running, false);
+
+  const saved1 = db.loadControllerState(1).saved_at;
+  const saved2 = db.loadControllerState(2).saved_at;
+
+  // applySettings on a halted room must not try a state save.
+  mgr.applySettings(1, { spT: 20 });
+  assert.equal(db.loadControllerState(1).saved_at, saved1);
+
+  // stop() must not save state or write "Stopped" for any halted room.
+  log.length = 0;
+  mgr.stop();
+  assert.equal(db.loadControllerState(1).saved_at, saved1);
+  assert.equal(db.loadControllerState(2).saved_at, saved2);
+  assert.ok(!db.listEvents(1, { limit: 10 }).some(e => e.text === 'Stopped'));
+  assert.ok(!db.listEvents(2, { limit: 10 }).some(e => e.text === 'Stopped'));
+});
+
 test('Database error in a method', () => {
   const s = scripted();
   const { db, mgr, log } = setup(s.factory);
@@ -1353,17 +1396,24 @@ test('Crop and farm type', () => {
   assert.ok(texts1.some(t => t.startsWith('Stage: ')));
   assert.equal(db.currentSettings(1).settings.crop, 'pink');
 
-  const { room } = mgr.create({ name: 'FarmType', volume: 60, vent: 'supply' });
-  mgr.applySettings(room.id, { stage: 'pinning' }); // valid for the default farm type ('full')
-  const before2 = maxEventId(db, room.id);
-  // No "stage" key in this input: any stage change below is a side effect of setFarmType (not setStage or
-  // setCrop), which picks its farm type's first stage when the current one is not valid for it. "pinning"
-  // is not a stage of "ready" (C2 section 9.1), so this shows setFarmType ran, not the other two.
-  mgr.applySettings(room.id, { farmType: 'ready' });
-  const texts2 = newEventTextsSince(db, room.id, before2);
+  // Room 1 is still at the default stage ('fruiting'). "ready" is a valid farm type for "fruiting"
+  // (C2 section 9.1), so this input (as the brief gives it) exercises setFarmType, not setStage or
+  // setCrop, while leaving the stage itself unchanged -- the "Stage: " event and new farmType below are
+  // proof applySettings called setFarmType.
+  const before2 = maxEventId(db, 1);
+  mgr.applySettings(1, { farmType: 'ready', stage: 'fruiting' });
+  const texts2 = newEventTextsSince(db, 1, before2);
   assert.ok(texts2.some(t => t.startsWith('Stage: ')));
-  assert.equal(db.currentSettings(room.id).settings.farmType, 'ready');
-  assert.equal(db.currentSettings(room.id).settings.stage, 'fruiting');
+  assert.equal(db.currentSettings(1).settings.farmType, 'ready');
+
+  // Step 10 (the Stage: event) is written before step 11 (Settings saved), for both the crop case above
+  // and the farm-type case here.
+  const stageIdx2 = texts2.findIndex(t => t.startsWith('Stage: '));
+  const savedIdx2 = texts2.findIndex(t => t.startsWith('Settings saved'));
+  assert.ok(stageIdx2 !== -1 && savedIdx2 !== -1 && stageIdx2 < savedIdx2);
+  const stageIdx1 = texts1.findIndex(t => t.startsWith('Stage: '));
+  const savedIdx1 = texts1.findIndex(t => t.startsWith('Settings saved'));
+  assert.ok(stageIdx1 !== -1 && savedIdx1 !== -1 && stageIdx1 < savedIdx1);
 });
 
 // ---------------------------------------------------------------------------
@@ -1449,6 +1499,17 @@ test('update', () => {
   assert.equal(db.currentSettings(1).settings.roomM3, roomM3Before);
   assert.ok(spy.made.length > madeBefore);
   assert.equal(spy.made[spy.made.length - 1].args.room.volume, 90);
+
+  // Sending the same volume (already 90) must not restart the room: no new "Stopped" or "Resumed"
+  // event, and no new adapter built.
+  log.length = 0;
+  const beforeId2 = maxEventId(db, 1);
+  const madeBefore2 = spy.made.length;
+  mgr.update(1, { volume: 90 });
+  const texts2 = newEventTextsSince(db, 1, beforeId2);
+  assert.ok(!texts2.includes('Stopped'));
+  assert.equal(spy.made.length, madeBefore2);
+  assert.equal(log.filter(([n]) => n === 'room').length, 1);
 
   try {
     mgr.update(1, { archived_at: 123 });
