@@ -134,9 +134,12 @@ Global `ClimateCapacity`. No page code; the same pattern as `calib.js`. Works in
 | Function | Job |
 |---|---|
 | `commonTargets(mix)` | Common targets, or `{ impossible, conflict }`. |
-| `balance(room, mix, day)` | Most blocks per machine for the worst hour of one design day (step 1). |
-| `trial(room, mix, scale)` | One simulated run at one size, scored pass/fail per design day. Uses the `runtime.js` loop. |
+| `balance(room, mix, targets, region)` | Step 1: `{ fan, ac, fog, estimate, limit }`, the most blocks per machine over all design days (each day's worst hour left out). |
+| `trial(room, mix, targets, blocks, region, dt)` | Step 2: `{ blocks, days, pass, side, kwhDay }`, one simulated run with the real controller. |
+| `calibStatus(room, now)` | `{ calibrated, estimate, warnings }`. |
+| `verdictOf(planned, capacity, opts)` | `{ verdict, why, utilisation }`. |
 | `checkSteps(room, mix, opts)` | Generator for the full check; yields progress after each run; returns the report. |
+| `check(room, mix, opts)`, `checkAsync(room, mix, opts)` | The same, run to the end (Node) or with a pause between runs (page); `opts.onProgress` gets each step. |
 | `DESIGN_DAYS` | The design days per region (below). |
 
 ### Design days (first region: lowland Peninsular Malaysia)
@@ -149,8 +152,8 @@ Each day is 24 hourly values of outdoor temperature and RH, given to the simulat
 | Hot-humid | 25–32 °C | 70–95 % | AC water removal and the fan |
 | Mild / rainy | 23–28 °C | 85–98 % | Too wet, and heat at night |
 
-These values are estimates. They are marked so on the page, can be replaced with MetMalaysia data, and the farmer can
-edit them.
+These values are estimates. They are marked so on the page and can be replaced with MetMalaysia data. Editing them
+on the page is not built yet (see Open items).
 
 ### Room record
 
@@ -210,4 +213,5 @@ edit them.
 |---|---|
 | Design-day values from MetMalaysia data, and more regions | Grower or developer |
 | Shared browser storage with work item 3.1 | Developer and Claude, before building |
+| Editable design days on the page | Later |
 | Measured CO₂ per block for each species | Farm measurements |

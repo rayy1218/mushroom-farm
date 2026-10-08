@@ -1106,8 +1106,8 @@ const cropName = k => (hasCrop(k) ? CC.CROPS[k].name : k);
 const roomChanged = r => { r.rev = (r.rev || 0) + 1; r.report = null; saveRooms(); renderReport(); renderFarm(); };
 function renderRooms() {
   const sel = $('#capRoom');
-  sel.replaceChildren(...rooms.map((r, i) => { const o = document.createElement('option'); o.value = String(i); o.textContent = r.name; return o; }));
-  if (!rooms.length) { const o = document.createElement('option'); o.textContent = 'No rooms yet'; o.disabled = true; sel.append(o); }
+  sel.replaceChildren(...rooms.map((r, i) => { const o = document.createElement('option'); o.value = String(i); o.textContent = `${r.name} · ${r.calib ? `calibrated ${r.calib.date ? r.calib.date.slice(0, 10) : '(no date)'}` : 'not calibrated'}`; return o; }));
+  if (!rooms.length) { const o = document.createElement('option'); o.textContent = 'No rooms yet'; o.disabled = true; o.selected = true; sel.append(o); }
   roomIdx = clamp(roomIdx, 0, Math.max(0, rooms.length - 1));
   if (rooms.length) sel.value = String(roomIdx);
   const r = curRoom();
@@ -1149,6 +1149,10 @@ const VERDICT_CHIP = {
   'too-empty': { lvl: 'warning', icon: '▼', text: 'Too empty' },
 };
 const LIMIT_WORD = { fan: 'the fan (fresh air for CO₂)', ac: 'the AC (heat)', fog: 'the fogger (water)' };
+// The machine behind each failure of a design day.
+const FAIL_MACHINE = { 'temperature too high': 'the AC cannot cool enough', 'temperature too low': 'the AC cannot heat enough',
+  'humidity too low': 'the fogger cannot keep up', 'humidity at the low alarm': 'the fogger cannot keep up',
+  'humidity near saturation': 'the AC cannot dry enough', 'CO₂ above the limit': 'the fan cannot bring enough fresh air' };
 function verdictText(rep) {
   const cap = rep.capacity, pct = rep.utilisation == null ? '' : ` (${Math.round(rep.utilisation)} %)`;
   // An unsettled search gives a range (or a lower bound), not one number.
@@ -1182,7 +1186,8 @@ function renderReport() {
   const split = (rep.perCrop || []).filter(c => c.max > 0);
   if (split.length > 1) p(`Capacity in the same mix: ${split.map(c => `${nf(c.max)} ${cropName(c.crop)}`).join(' + ')}.`);
   if (rep.capacity.min && rep.why !== 'wet') p(`Needs at least about ${nf(rep.capacity.min)} blocks: below that the room gets too wet (near saturation).`);
-  if (rep.limit.length) p(`Limit: ${rep.limit.map(l => `${l.fails.join(', ')} on the ${l.day.toLowerCase()} day`).join('; ')}.`);
+  // Name the machine that runs out, as the spec asks; on a too-wet verdict this is the upper end of the window.
+  if (rep.limit.length) p(`${rep.why === 'wet' ? 'Upper limit' : 'Limit'}: ${rep.limit.map(l => `${l.fails.map(f => `${f}${FAIL_MACHINE[f] ? ` (${FAIL_MACHINE[f]})` : ''}`).join(', ')} on the ${l.day.toLowerCase()} day`).join('; ')}.`);
   if (rep.energy && rep.energy.rmPerBlockCycle != null) p(`Energy: ${rep.energy.kwhDay.toFixed(1)} kWh per day, RM ${rep.energy.rmPerBlockCycle.toFixed(2)} per block per cycle (${rep.energy.cycleDays} days at RM ${rep.energy.tariff.toFixed(2)}/kWh)${rep.energy.planPass === false ? ', at the planned size, which fails' : ''}.`);
   const b = rep.balance;
   p(`Simple balance: ${Number.isFinite(b.estimate) ? nf(b.estimate) : 'no limit'} blocks, limit ${LIMIT_WORD[b.limit]}.${rep.disagree ? ' The simple balance and the simulation disagree; the simulation decides.' : ''}`, 'note');
@@ -1201,7 +1206,7 @@ function renderReport() {
 function renderFarm() {
   if (!rooms.length) { set('capFarm', ''); return; }
   const done = rooms.filter(r => r.report && r.report.capacity && r.report.capacity.max > 0);
-  const none = rooms.filter(r => r.report && !(r.report.capacity && r.report.capacity.max > 0)).length;
+  const none = rooms.filter(r => r.report && r.report.runs.length && !(r.report.capacity && r.report.capacity.max > 0)).length;
   const planned = rooms.reduce((s, r) => s + r.mix.reduce((a, m) => a + (m.blocks || 0), 0), 0);
   const cap = done.reduce((s, r) => s + r.report.capacity.max, 0), used = done.reduce((s, r) => s + r.report.planned, 0);
   const missing = rooms.length - done.length - none, pl = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
@@ -1229,6 +1234,7 @@ $('#capAdd').addEventListener('click', () => { const r = curRoom(); if (!r) retu
 $('#capRun').addEventListener('click', () => {
   const r = curRoom();
   if (!r || capBusy) return;
+  if (!r.mix.some(m => m.blocks > 0)) { set('capMsg', 'Add at least one crop with blocks.'); return; }   // spec: no check
   capBusy = true; $('#capRun').disabled = true;
   const prog = $('#capProg'); prog.hidden = false; prog.value = 0;
   set('capMsg', 'Checking… (a few seconds)');
@@ -1245,7 +1251,7 @@ $('#capRun').addEventListener('click', () => {
       set('capMsg', `Done (${r.name}) after ${rep.runs.length} simulation runs: ${VERDICT_CHIP[rep.verdict].text}. ${verdictText(rep)}`);
     })
     .catch(err => set('capMsg', `The check stopped: ${err.message}`))
-    .finally(() => { capBusy = false; $('#capRun').disabled = !curRoom(); prog.hidden = true; renderReport(); renderFarm(); });
+    .finally(() => { capBusy = false; $('#capRun').disabled = !curRoom(); prog.value = 1; prog.hidden = true; renderReport(); renderFarm(); });
 });
 $('#capExport').addEventListener('click', () => {
   const blob = new Blob([JSON.stringify({ format: 'mushroom-farm-rooms', version: 1, saved: new Date().toISOString(), rooms }, null, 1)], { type: 'application/json' });

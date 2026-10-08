@@ -23,7 +23,7 @@
 
   // Pass rules for one design day. RH is one-sided: above the target does no harm, near saturation does.
   const PASS = { inT: 95, rhOk: 90, lowRhMin: 60, wetRH: 95, wetMax: 10, co2Below: 98 };
-  const SEARCH = { step: 1.15, resolution: 0.05, maxRuns: 8, lowAt: 0.05, minRuns: 4, disagree: 0.15 };
+  const SEARCH = { step: 1.15, resolution: 0.05, maxRuns: 8, lowAt: 0.05, lowerRuns: 4, disagree: 0.15 };
   const VERDICT = { tight: 90, dense: 100, emptyBelow: 50 };
   const CALIB = { maxT: 0.5, maxRH: 5, maxCO2: 100, maxAgeDays: 90 };
   // Reasons that more blocks make worse ("dense") or fewer blocks make worse ("empty").
@@ -237,7 +237,7 @@
     if (tg.impossible) return { ...base, verdict: 'impossible', why: tg.conflict, runs: [] };
     const est = balance(room, mix, tg, region);
     const runs = [];
-    const maxRuns = 1 + SEARCH.maxRuns + 1 + SEARCH.minRuns;
+    const maxRuns = 1 + SEARCH.maxRuns + 1 + SEARCH.lowerRuns;
     function* run(n) {
       const r = trial(room, mix, tg, n, region);
       runs.push(r);
@@ -275,7 +275,7 @@
       if (a == null) { const n = Math.max(1, Math.round(planned * SEARCH.lowAt)); const low = runs.find(r => r.blocks === n) || (yield* run(n)); if (!low.pass && low.side === 'empty') a = low.blocks; }
       if (a != null) {
         let b = runs.filter(r => r.pass).reduce((m, r) => Math.min(m, r.blocks), Infinity);
-        for (let i = 0; i < SEARCH.minRuns && b - a > 1 && (b - a) / b > 0.1; i++) {
+        for (let i = 0; i < SEARCH.lowerRuns && b - a > 1 && (b - a) / b > 0.1; i++) {
           const r = yield* run(Math.round((a + b) / 2));
           if (r.pass) b = r.blocks; else a = r.blocks;
         }
@@ -309,7 +309,7 @@
   }
   function check(room, mix, opts) {
     const g = checkSteps(room, mix, opts);
-    for (;;) { const s = g.next(); if (s.done) return s.value; if (opts && opts.onStep) opts.onStep(s.value); }
+    for (;;) { const s = g.next(); if (s.done) return s.value; if (opts && opts.onProgress) opts.onProgress(s.value); }
   }
   // Same check; it gives the page a moment between runs and reports the progress.
   async function checkAsync(room, mix, opts = {}) {
