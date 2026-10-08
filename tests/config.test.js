@@ -61,9 +61,6 @@ describe('readConfig: bad configuration', () => {
 });
 
 describe('pickHosts', () => {
-  function iface(name, address, internal, family = 'IPv4') {
-    return { name, entries: [{ address, family, internal }] };
-  }
   function ifaceObj(...defs) {
     const out = {};
     for (const [name, address, internal, family] of defs) out[name] = [{ address, family: family || 'IPv4', internal }];
@@ -84,6 +81,21 @@ describe('pickHosts', () => {
       ['eth0', '203.0.113.5', false],
       ['eth1', '::1', false, 'IPv6'],
     );
+    assert.deepStrictEqual(pickHosts(ifaces), []);
+  });
+  test('internal alone rejects an otherwise-valid private address', () => {
+    // 10.1.1.1 is private and eth2 matches no skipped prefix; only `internal: true` should reject this entry.
+    const ifaces = ifaceObj(['eth2', '10.1.1.1', true]);
+    assert.deepStrictEqual(pickHosts(ifaces), []);
+  });
+  test('the IPv6 family alone rejects a private-looking address', () => {
+    // 10.1.1.1 would pass the private-address check; only the IPv6 family should reject this entry.
+    const ifaces = ifaceObj(['eth3', '10.1.1.1', false, 'IPv6']);
+    assert.deepStrictEqual(pickHosts(ifaces), []);
+  });
+  test('the lo name prefix alone rejects a non-internal private address', () => {
+    // Not internal, and 10.2.2.2 is private; only the `lo` name prefix should reject this entry.
+    const ifaces = ifaceObj(['lo0', '10.2.2.2', false]);
     assert.deepStrictEqual(pickHosts(ifaces), []);
   });
   test('keeps private addresses on normal interfaces, sorted by name', () => {
