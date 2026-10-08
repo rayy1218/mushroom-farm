@@ -269,7 +269,7 @@ test('watchdog: no data triggers down and reconnect', async (t) => {
 });
 
 test('watchdog: emits keep the connection alive', async (t) => {
-  FarmApi.streamTimeoutMs = 100;
+  FarmApi.streamTimeoutMs = 300;
   t.after(() => { FarmApi.streamTimeoutMs = 45000; });
   const fake = await startFakeApi({ retryMs: 50 });
   FarmApi.base = fake.url;
