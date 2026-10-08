@@ -123,6 +123,7 @@ test('stream: default retry is 3000', async (t) => {
   const api = await startFakeApi();
   t.after(() => api.close());
   const res = await fetch(api.url + '/api/stream');
+  assert.equal(res.headers.get('cache-control'), 'no-store');
   const reader = res.body.getReader();
   const { value } = await reader.read();
   assert.equal(Buffer.from(value).toString('utf8'), 'retry: 3000\n\n');
@@ -137,6 +138,7 @@ test('stream: retry line, emit, dropStreams, reconnect, reply override', async (
   const res1 = await fetch(api.url + '/api/stream', { signal: controller1.signal });
   assert.equal(res1.status, 200);
   assert.equal(res1.headers.get('content-type'), 'text/event-stream; charset=utf-8');
+  assert.equal(res1.headers.get('cache-control'), 'no-store');
   const reader1 = res1.body.getReader();
   const { value: v1 } = await reader1.read();
   assert.equal(Buffer.from(v1).toString('utf8'), 'retry: 50\n\n');
@@ -170,6 +172,30 @@ test('stream: retry line, emit, dropStreams, reconnect, reply override', async (
   assert.equal(res4.status, 503);
 });
 
+test('stream: a client-aborted stream is removed; emit and dropStreams after do not throw', async (t) => {
+  const api = await startFakeApi();
+  t.after(() => api.close());
+
+  const aborted = new AbortController();
+  const abortedRes = await fetch(api.url + '/api/stream', { signal: aborted.signal });
+  await abortedRes.body.getReader().read();
+  aborted.abort();
+  // Give the server a tick to notice the aborted connection before touching the still-open stream below.
+  await new Promise(r => setTimeout(r, 20));
+
+  const kept = await fetch(api.url + '/api/stream');
+  const keptReader = kept.body.getReader();
+  await keptReader.read();
+
+  assert.doesNotThrow(() => api.emit('reading', { t: 1 }));
+  const { value } = await keptReader.read();
+  assert.equal(Buffer.from(value).toString('utf8'), 'event: reading\ndata: {"t":1}\n\n'); // the live stream still works
+
+  assert.doesNotThrow(() => api.dropStreams());
+  const done = await keptReader.read();
+  assert.equal(done.done, true);
+});
+
 test('root: static files by C3 section 9 rules', async (t) => {
   const api = await startFakeApi({ root: ROOT });
   t.after(() => api.close());
@@ -188,10 +214,12 @@ test('root: static files by C3 section 9 rules', async (t) => {
   const roomRules = await fetch(api.url + '/room-rules.js');
   assert.equal(roomRules.status, 200);
   assert.equal(roomRules.headers.get('content-type'), 'text/javascript; charset=utf-8');
+  assert.ok(Buffer.from(await roomRules.arrayBuffer()).equals(fs.readFileSync(path.join(ROOT, 'room-rules.js'))));
 
   const webRooms = await fetch(api.url + '/web/rooms.js?v=2');
   assert.equal(webRooms.status, 200);
   assert.equal(webRooms.headers.get('content-type'), 'text/javascript; charset=utf-8');
+  assert.ok(Buffer.from(await webRooms.arrayBuffer()).equals(fs.readFileSync(path.join(ROOT, 'web', 'rooms.js'))));
 
   const head = await fetch(api.url + '/styles.css', { method: 'HEAD' });
   assert.equal(head.status, 200);

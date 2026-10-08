@@ -150,7 +150,9 @@ function startFakeApi(options = {}) {
     res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-store' });
     res.write(`retry: ${retryMs}\n\n`);
     openStreams.add(res);
-    req.on('close', () => openStreams.delete(res));
+    // res 'close' (not req 'close': by the time handle() has awaited readBody(req), a GET request's req
+    // has already closed, so a req listener added here would never fire).
+    res.on('close', () => openStreams.delete(res));
   }
 
   async function handle(req, res) {
