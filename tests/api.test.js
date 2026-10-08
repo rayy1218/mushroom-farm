@@ -579,3 +579,132 @@ describe('readings, events, alarms, ack (6.8-6.11)', () => {
     assert.equal((await r5.json()).error, 'Unknown alarm');
   });
 });
+
+describe('calibrations, mix, capacity (6.12-6.18)', () => {
+  let ctx;
+  test.before(async () => { ctx = startApi(); await ctx.ready; });
+  test.after(() => ctx.stop());
+
+  const fullCalib = { ua: 92, inf_ach: 0.3, moist_buffer: 3, co2_per_block: 41, rmse_t: 0.2, rmse_rh: 1, rmse_co2: 10, log_rows: 100 };
+
+  test('POST /calibrations', async () => {
+    const id = seedRoom(ctx.db, 'C1');
+    const r1 = await fetch(`${ctx.url}/api/rooms/${id}/calibrations`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(fullCalib),
+    });
+    assert.equal(r1.status, 201);
+    const body1 = await r1.json();
+    assert.equal(body1.applied_at, null);
+    assert.equal(body1.applied, false);
+    assert.equal(body1.run_at, NOW);
+
+    const r2 = await fetch(`${ctx.url}/api/rooms/${id}/calibrations`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...fullCalib, run_at: NOW - 500 }),
+    });
+    const body2 = await r2.json();
+    assert.equal(body2.run_at, NOW - 500);
+
+    const rowsBefore = ctx.db.listCalibrations(id).length;
+    for (const bad of [{ ...fullCalib, ua: 19.9 }, { ...fullCalib, log_rows: 1 }, null, { ...fullCalib, extra: 1 }]) {
+      const r = await fetch(`${ctx.url}/api/rooms/${id}/calibrations`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(bad),
+      });
+      assert.equal(r.status, 400, JSON.stringify(bad));
+      assert.equal((await r.json()).error, 'Invalid calibration', JSON.stringify(bad));
+    }
+    assert.equal(ctx.db.listCalibrations(id).length, rowsBefore);
+  });
+
+  test('GET /calibrations', async () => {
+    const id = seedRoom(ctx.db, 'C2');
+    const empty = await (await fetch(`${ctx.url}/api/rooms/${id}/calibrations`)).json();
+    assert.deepStrictEqual(empty, []);
+    const run1 = ctx.db.saveCalibration(id, { ...fullCalib, run_at: NOW - 100 });
+    const run2 = ctx.db.saveCalibration(id, { ...fullCalib, run_at: NOW });
+    await fetch(`${ctx.url}/api/rooms/${id}/calibrations/${run2.id}/apply`, { method: 'POST' });
+    const rows = await (await fetch(`${ctx.url}/api/rooms/${id}/calibrations`)).json();
+    assert.ok(rows[0].run_at >= rows[1].run_at);
+    assert.equal(rows.filter(r => r.applied).length, 1);
+    assert.equal(rows.find(r => r.id === run2.id).applied, true);
+  });
+
+  test('POST /calibrations/:run/apply', async () => {
+    const id = seedRoom(ctx.db, 'C3');
+    const run = ctx.db.saveCalibration(id, fullCalib);
+    const r = await fetch(`${ctx.url}/api/rooms/${id}/calibrations/${run.id}/apply`, { method: 'POST' });
+    assert.equal(r.status, 200);
+    const body = await r.json();
+    assert.equal(body.applied, true);
+    assert.equal(body.applied_at, NOW);
+    const last = ctx.rooms.calls[ctx.rooms.calls.length - 1];
+    assert.equal(last.method, 'restart');
+    assert.deepStrictEqual(last.args, [id]);
+
+    const otherId = seedRoom(ctx.db, 'C3b');
+    const otherRun = ctx.db.saveCalibration(otherId, fullCalib);
+    const callsBefore = ctx.rooms.calls.length;
+    for (const runId of ['x', '0', '999999', String(otherRun.id)]) {
+      const rr = await fetch(`${ctx.url}/api/rooms/${id}/calibrations/${runId}/apply`, { method: 'POST' });
+      assert.equal(rr.status, 404, runId);
+      assert.equal((await rr.json()).error, 'Unknown calibration run', runId);
+    }
+    assert.equal(ctx.rooms.calls.length, callsBefore);
+  });
+
+  test('Mix', async () => {
+    const id = seedRoom(ctx.db, 'M1');
+    const sent = [{ crop: 'oyster', blocks: 1200 }, { crop: 'pink', blocks: 300, co2_per_block: 55 }];
+    const r1 = await fetch(`${ctx.url}/api/rooms/${id}/mix`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(sent),
+    });
+    assert.equal(r1.status, 200);
+    const body1 = await r1.json();
+    assert.equal(body1[0].co2_per_block, null);
+    assert.equal(body1[1].co2_per_block, 55);
+    const got = await (await fetch(`${ctx.url}/api/rooms/${id}/mix`)).json();
+    assert.deepStrictEqual(got, body1);
+
+    const r2 = await fetch(`${ctx.url}/api/rooms/${id}/mix`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify([]),
+    });
+    assert.deepStrictEqual(await r2.json(), []);
+
+    const before = ctx.db.getMix(id);
+    for (const bad of ['not-array', [{ crop: 'shiitake', blocks: 1 }], [{ crop: 'oyster', blocks: -1 }]]) {
+      const r = await fetch(`${ctx.url}/api/rooms/${id}/mix`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(bad),
+      });
+      assert.equal(r.status, 400, JSON.stringify(bad));
+      assert.equal((await r.json()).error, 'Invalid crop mix', JSON.stringify(bad));
+    }
+    assert.deepStrictEqual(ctx.db.getMix(id), before);
+  });
+
+  test('Capacity', async () => {
+    const id = seedRoom(ctx.db, 'CAP1');
+    const r0 = await fetch(`${ctx.url}/api/rooms/${id}/capacity`);
+    assert.equal(r0.status, 404);
+    assert.equal((await r0.json()).error, 'No capacity report');
+
+    const report = { verdict: 'good', utilisation: 74, runs: [] };
+    const r1 = await fetch(`${ctx.url}/api/rooms/${id}/capacity`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(report),
+    });
+    assert.equal(r1.status, 201);
+    const body1 = await r1.json();
+    assert.equal(body1.verdict, 'good');
+    assert.equal(body1.utilisation, 74);
+    assert.equal(body1.run_at, NOW);
+
+    const r2 = await fetch(`${ctx.url}/api/rooms/${id}/capacity`);
+    assert.deepStrictEqual(await r2.json(), body1);
+
+    for (const bad of [{ verdict: 'bogus', runs: [] }, { verdict: 'good', runs: [], utilisation: 74.5 }]) {
+      const r = await fetch(`${ctx.url}/api/rooms/${id}/capacity`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(bad),
+      });
+      assert.equal(r.status, 400, JSON.stringify(bad));
+      assert.equal((await r.json()).error, 'Invalid capacity report', JSON.stringify(bad));
+    }
+  });
+});
