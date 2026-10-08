@@ -997,3 +997,72 @@ test('Ack while crashed', () => {
   mgr.stop();
   assert.equal(db.loadControllerState(1).controller.alarms.sensor_RH.acked, true);
 });
+
+// ---------------------------------------------------------------------------
+// Task 9: Database errors and the timer (C2 section 11, 3 tickMs)
+// ---------------------------------------------------------------------------
+
+test('Database error', () => {
+  const s = scripted();
+  const { db, mgr, log, step } = setup(s.factory);
+  mgr.start();
+  const dbErr = Object.assign(new Error('disk I/O error'), { code: 'ERR_SQLITE_ERROR', errcode: 10, errstr: 'disk I/O error' });
+  const origInsert = db.insertReading;
+  db.insertReading = () => { throw dbErr; };
+  log.length = 0;
+  step(30);
+  const fatalEmits = log.filter(([n]) => n === 'fatal');
+  assert.equal(fatalEmits.length, 1);
+  assert.equal(fatalEmits[0][1].error, dbErr);
+
+  const readsBefore = s.knobs.reads;
+  log.length = 0;
+  mgr.tick();
+  assert.equal(s.knobs.reads, readsBefore);
+  assert.equal(log.length, 0);
+
+  db.insertReading = origInsert;
+});
+
+test('Database error in a method', () => {
+  const s = scripted();
+  const { db, mgr, log } = setup(s.factory);
+  mgr.start();
+  const dbErr = Object.assign(new Error('disk I/O error'), { code: 'ERR_SQLITE_ERROR', errcode: 10, errstr: 'disk I/O error' });
+  const origSave = db.saveSettings;
+  db.saveSettings = () => { throw dbErr; };
+  log.length = 0;
+  assert.throws(() => mgr.applySettings(1, { spT: 20 }), err => err === dbErr);
+  assert.equal(log.filter(([n]) => n === 'fatal').length, 0);
+  db.saveSettings = origSave;
+});
+
+test('Timer', async () => {
+  const s = scripted();
+  const db = openFakeDb({ now: () => T0 });
+  const mgr = rooms.createRoomManager({ db, now: () => T0, tickMs: 10, adapterFactory: s.factory });
+  mgr.start();
+  await new Promise(r => setTimeout(r, 100));
+  assert.ok(s.knobs.reads > 0);
+  mgr.stop();
+  const readsAfterStop = s.knobs.reads;
+  await new Promise(r => setTimeout(r, 50));
+  assert.equal(s.knobs.reads, readsAfterStop);
+
+  // The timer also stops after a fatal. Use a clock compressed to 10 ms "seconds" so the scripted
+  // adapter's 30 s sensor period (and so a real db call from Record) happens within a short real wait.
+  const compressedNow = () => Math.floor(Date.now() / 10);
+  const s2 = scripted();
+  const db2 = openFakeDb({ now: compressedNow });
+  const mgr2 = rooms.createRoomManager({ db: db2, now: compressedNow, tickMs: 10, adapterFactory: s2.factory });
+  let fatalSeen = false;
+  mgr2.on('fatal', () => { fatalSeen = true; });
+  mgr2.start();
+  const dbErr = Object.assign(new Error('disk I/O error'), { code: 'ERR_SQLITE_ERROR', errcode: 10, errstr: 'disk I/O error' });
+  db2.insertReading = () => { throw dbErr; };
+  await new Promise(r => setTimeout(r, 600));
+  assert.ok(fatalSeen);
+  const readsAfterFatal = s2.knobs.reads;
+  await new Promise(r => setTimeout(r, 50));
+  assert.equal(s2.knobs.reads, readsAfterFatal);
+});
