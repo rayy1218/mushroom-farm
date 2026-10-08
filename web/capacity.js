@@ -81,11 +81,11 @@ function renderMix() {
     return inp;
   };
   body.replaceChildren(...r.mix.map((m, i) => {
-    const sel = document.createElement('select'); sel.setAttribute('aria-label', 'Mushroom');
+    const sel = document.createElement('select'); sel.setAttribute('aria-label', 'Mushroom'); sel.name = 'mixCrop';
     for (const k of Object.keys(CC.CROPS)) { if (!hasCrop(k)) continue; const o = document.createElement('option'); o.value = k; o.textContent = CC.CROPS[k].name; sel.append(o); }
     sel.value = m.crop;
-    const blocksIn = num(m.blocks, LIM.blocks, v => { m.blocks = v || 0; });
-    const co2In = num(m.co2PerBlock, LIM.co2[1], v => { m.co2PerBlock = v || undefined; });
+    const blocksIn = num(m.blocks, LIM.blocks, v => { m.blocks = v || 0; }); blocksIn.name = 'mixBlocks';
+    const co2In = num(m.co2PerBlock, LIM.co2[1], v => { m.co2PerBlock = v || undefined; }); co2In.name = 'mixCo2';
     const del = document.createElement('button'); del.className = 'btn'; del.textContent = 'Remove';
     const label = () => { const n = cropName(m.crop); del.setAttribute('aria-label', `Remove ${n}`); blocksIn.setAttribute('aria-label', `Blocks of ${n}`); co2In.setAttribute('aria-label', `CO₂ per block of ${n}, mL/h`); };
     label();
