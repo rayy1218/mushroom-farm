@@ -2,6 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
+const fs = require('node:fs');
 const path = require('node:path');
 const { startFakeApi } = require('./fakes/api-server.js');
 
@@ -101,6 +102,33 @@ test('reply() overrides, RegExp patterns, replacement, string/undefined bodies',
   assert.equal(await r5.text(), '');
 });
 
+test('reply(): of two patterns that both match the same path, the one set last wins', async (t) => {
+  const api = await startFakeApi();
+  t.after(() => api.close());
+
+  // Both the RegExp and the string pattern match '/api/rooms/9'; the RegExp was set first.
+  api.reply('GET', /^\/api\/rooms\/\d+$/, 200, { from: 'regexp' });
+  api.reply('GET', '/api/rooms/9', 200, { from: 'string' });
+  const r1 = await fetch(api.url + '/api/rooms/9');
+  assert.deepEqual(await r1.json(), { from: 'string' });
+
+  // Set again in the opposite order: now the RegExp (set last) wins.
+  api.reply('GET', '/api/rooms/9', 200, { from: 'string' });
+  api.reply('GET', /^\/api\/rooms\/\d+$/, 200, { from: 'regexp' });
+  const r2 = await fetch(api.url + '/api/rooms/9');
+  assert.deepEqual(await r2.json(), { from: 'regexp' });
+});
+
+test('stream: default retry is 3000', async (t) => {
+  const api = await startFakeApi();
+  t.after(() => api.close());
+  const res = await fetch(api.url + '/api/stream');
+  const reader = res.body.getReader();
+  const { value } = await reader.read();
+  assert.equal(Buffer.from(value).toString('utf8'), 'retry: 3000\n\n');
+  await reader.cancel();
+});
+
 test('stream: retry line, emit, dropStreams, reconnect, reply override', async (t) => {
   const api = await startFakeApi({ retryMs: 50 });
   t.after(() => api.close());
@@ -146,12 +174,15 @@ test('root: static files by C3 section 9 rules', async (t) => {
   const api = await startFakeApi({ root: ROOT });
   t.after(() => api.close());
 
+  const indexBytes = fs.readFileSync(path.join(ROOT, 'index.html'));
   for (const p of ['/', '/index.html']) {
     const res = await fetch(api.url + p);
     assert.equal(res.status, 200);
     assert.equal(res.headers.get('content-type'), 'text/html; charset=utf-8');
     assert.ok(res.headers.get('content-length'));
     assert.equal(res.headers.get('cache-control'), 'no-cache');
+    const body = Buffer.from(await res.arrayBuffer());
+    assert.ok(body.equals(indexBytes), `${p} body must be the bytes of index.html`);
   }
 
   const roomRules = await fetch(api.url + '/room-rules.js');
