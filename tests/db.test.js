@@ -788,3 +788,83 @@ both('saveControllerState: errors', (t, open) => {
   assertSql(() => db.saveControllerState(roomId, {}), 1299);
   assert.throws(() => db.saveControllerState(roomId, { controller: {}, extra: 1 }), TypeError);
 });
+
+// ---------------------------------------------------------------------------
+// Task 10: Calibrations (C1 section 6.10)
+// ---------------------------------------------------------------------------
+
+both('saveCalibration: defaults', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  const c = db.saveCalibration(roomId, calibRun());
+  assert.deepStrictEqual(c, {
+    id: c.id, room_id: roomId, run_at: T0, ua: 90, inf_ach: 0.3, moist_buffer: 3, co2_per_block: 40,
+    rmse_t: null, rmse_rh: null, rmse_co2: null, log_rows: null, applied_at: null,
+  });
+});
+
+both('saveCalibration: non-finite -> null; log_rows kept', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  const c = db.saveCalibration(roomId, calibRun({ rmse_t: NaN, rmse_rh: Infinity, log_rows: 1440 }));
+  assert.equal(c.rmse_t, null);
+  assert.equal(c.rmse_rh, null);
+  assert.equal(c.log_rows, 1440);
+});
+
+both('listCalibrations: run_at desc, then id desc', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  const a = db.saveCalibration(roomId, calibRun({ run_at: 100 }));
+  const b = db.saveCalibration(roomId, calibRun({ run_at: 100 }));
+  const c = db.saveCalibration(roomId, calibRun({ run_at: 200 }));
+  assert.deepStrictEqual(db.listCalibrations(roomId).map(r => r.id), [c.id, b.id, a.id]);
+});
+
+both('currentCalibration: current rule, history kept', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  const a = db.saveCalibration(roomId, calibRun());
+  const b = db.saveCalibration(roomId, calibRun());
+  assert.equal(db.currentCalibration(roomId), null);
+  db.applyCalibration(roomId, a.id, 100);
+  db.applyCalibration(roomId, b.id, 200);
+  assert.equal(db.currentCalibration(roomId).id, b.id);
+  db.applyCalibration(roomId, a.id, 300);
+  assert.equal(db.currentCalibration(roomId).id, a.id);
+  assert.equal(db.listCalibrations(roomId).find(r => r.id === b.id).applied_at, 200);
+  const c = db.saveCalibration(roomId, calibRun());
+  db.applyCalibration(roomId, a.id, 500);
+  db.applyCalibration(roomId, c.id, 500);
+  assert.equal(db.currentCalibration(roomId).id, c.id);
+});
+
+both('applyCalibration: clock, errors', (t, open) => {
+  let clock = T0;
+  const db = open({ now: () => clock });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  const otherId = makeRoom(db);
+  const run = db.saveCalibration(roomId, calibRun());
+  const otherRun = db.saveCalibration(otherId, calibRun());
+  clock = T0 + 99;
+  const applied = db.applyCalibration(roomId, run.id);
+  assert.equal(applied.applied_at, T0 + 99);
+  assertNotFound(() => db.applyCalibration(roomId, otherRun.id), 'calibration', otherRun.id);
+  assertNotFound(() => db.applyCalibration(roomId, 999), 'calibration', 999);
+  assertNotFound(() => db.applyCalibration(roomId, '1'), 'calibration', '1');
+});
+
+both('saveCalibration: constraints', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  const run = calibRun(); delete run.ua;
+  assertSql(() => db.saveCalibration(roomId, run), 1299);
+  assertSql(() => db.saveCalibration(roomId, calibRun({ log_rows: 1.5 })), 3091);
+  assertSql(() => db.saveCalibration(roomId, calibRun({ run_at: 1.5 })), 3091);
+});
