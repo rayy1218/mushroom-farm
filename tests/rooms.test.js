@@ -64,6 +64,12 @@ function simSpyFactory() {
   return { factory, made, writes };
 }
 
+// Wraps any factory to record the args (notably the live cfg object) given at each loop start.
+function capture(factory) {
+  const made = [];
+  return { factory: args => { made.push(args); return factory(args); }, made };
+}
+
 // ---------------------------------------------------------------------------
 // Task 1: Simulated adapter (C2 section 13, 12.1)
 // ---------------------------------------------------------------------------
@@ -1177,4 +1183,85 @@ test('Settings: warnings and stopped rooms', () => {
 
   const r = mgr.applySettings(1, { spT: 19 }, '   ');
   assert.equal(r.version.note, null);
+});
+
+// ---------------------------------------------------------------------------
+// Task 11: Targets, stages, ramps, automatic versions (C2 section 9.2 steps 5,6,8,9, 9.3)
+// ---------------------------------------------------------------------------
+
+test('Settings rules', () => {
+  const s = scripted();
+  const cap = capture(s.factory);
+  const { db, mgr, log, jump, now } = setup(cap.factory);
+  mgr.start();
+  const cfg = cap.made[0].cfg;
+
+  const result1 = mgr.applySettings(1, { stage: 'pinning' });
+  assert.equal(db.loadControllerState(1).controller.stage.ramp.to.spT, 24);
+  assert.equal(result1.version.settings.stage, 'pinning');
+  assert.equal(result1.version.settings.spT, 25); // the ramp's "from" (fruiting) value, unmoved yet
+
+  jump(3600); // a gap; an unrelated edit during the ramp does not stop it
+  mgr.applySettings(1, { offsets: { T: 0.5 } });
+  assert.notEqual(db.loadControllerState(1).controller.stage.ramp, null);
+
+  jump(1800);
+  const keep = {
+    spRH: cfg.spRH, co2Lim: cfg.co2Lim, fanOn: cfg.rules.fanOn, fanOff: cfg.rules.fanOff,
+    acOff: cfg.rules.acOff, acOn: cfg.rules.acOn, safetyAt: cfg.rules.co2SafetyAt,
+  };
+  mgr.applySettings(1, { spT: 20 });
+  assert.equal(cfg.spT, 20);
+  assert.equal(cfg.spRH, keep.spRH);
+  assert.equal(cfg.co2Lim, keep.co2Lim);
+  assert.equal(cfg.rules.fanOn, keep.fanOn);
+  assert.equal(cfg.rules.fanOff, keep.fanOff);
+  assert.equal(cfg.rules.acOff, keep.acOff);
+  assert.equal(cfg.rules.acOn, keep.acOn);
+  assert.equal(cfg.rules.co2SafetyAt, keep.safetyAt);
+  assert.equal(db.loadControllerState(1).controller.stage.ramp, null);
+
+  const { room } = mgr.create({ name: 'Ramp2', volume: 60, vent: 'supply' });
+  mgr.applySettings(room.id, { stage: 'pinning' });
+  log.length = 0;
+  jump(4 * 3600 + 30);
+  const versions = db.settingsHistory(room.id);
+  const latest = versions[0];
+  assert.equal(latest.note, 'Automatic: targets for Pinning reached');
+  assert.ok(db.listEvents(room.id, { limit: 50 }).some(e => e.text === `Settings saved (version ${latest.id}): Automatic: targets for Pinning reached`));
+  const autoEmit = log.find(([n, p]) => n === 'settings' && p.roomId === room.id && p.auto === true);
+  assert.ok(autoEmit);
+  assert.deepEqual(autoEmit[1].warnings, []);
+  assert.equal(db.loadControllerState(room.id).saved_at, now());
+});
+
+test('Automatic stage version', () => {
+  const s = scripted();
+  const { db, mgr, jump, step } = setup(s.factory);
+  mgr.start();
+  mgr.applySettings(1, { program: { auto: true, days: { fruiting: 1 } } });
+  jump(86400);
+  const versions = db.settingsHistory(1);
+  assert.equal(versions[0].note, 'Automatic: stage Rest between flushes');
+  const countAfterStageChange = versions.length;
+  step(30); step(30); step(30);
+  assert.equal(db.settingsHistory(1).length, countAfterStageChange);
+});
+
+test('Crop and farm type', () => {
+  const s = scripted();
+  const { db, mgr } = setup(s.factory);
+  mgr.start();
+  const before1 = maxEventId(db, 1);
+  mgr.applySettings(1, { crop: 'pink' });
+  const texts1 = newEventTextsSince(db, 1, before1);
+  assert.ok(texts1.some(t => t.startsWith('Stage: ')));
+  assert.equal(db.currentSettings(1).settings.crop, 'pink');
+
+  const { room } = mgr.create({ name: 'FarmType', volume: 60, vent: 'supply' });
+  const before2 = maxEventId(db, room.id);
+  mgr.applySettings(room.id, { farmType: 'ready', stage: 'fruiting' });
+  const texts2 = newEventTextsSince(db, room.id, before2);
+  assert.ok(texts2.some(t => t.startsWith('Stage: ')));
+  assert.equal(db.currentSettings(room.id).settings.farmType, 'ready');
 });
