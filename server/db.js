@@ -560,6 +560,33 @@ function buildDb(conn, dbPath, version, now) {
     return row ? plain(row) : null;
   }
 
+  // Crop mix (section 6.11)
+  const getMixStmt = conn.prepare('SELECT crop, blocks, co2_per_block FROM crop_mixes WHERE room_id = :room_id ORDER BY pos');
+  const deleteMixStmt = conn.prepare('DELETE FROM crop_mixes WHERE room_id = :room_id');
+  const insertMixRowStmt = conn.prepare(
+    'INSERT INTO crop_mixes (room_id, pos, crop, blocks, co2_per_block) VALUES (:room_id, :pos, :crop, :blocks, :co2_per_block)'
+  );
+
+  function getMix(roomId) {
+    live();
+    roomCheck(roomId);
+    return getMixStmt.all({ room_id: roomId }).map(plain);
+  }
+
+  function replaceMix(roomId, rows) {
+    live();
+    roomCheck(roomId);
+    const list = rows || [];
+    for (const row of list) fields('replaceMix', row, ['crop', 'blocks', 'co2_per_block']);
+    return tx(() => {
+      deleteMixStmt.run({ room_id: roomId });
+      list.forEach((row, pos) => {
+        insertMixRowStmt.run({ room_id: roomId, pos, crop: val(row.crop), blocks: val(row.blocks), co2_per_block: val(row.co2_per_block) });
+      });
+      return getMixStmt.all({ room_id: roomId }).map(plain);
+    });
+  }
+
   function listRooms(options) {
     live();
     fields('listRooms', options, ['includeArchived']);
@@ -605,6 +632,8 @@ function buildDb(conn, dbPath, version, now) {
     listCalibrations,
     applyCalibration,
     currentCalibration,
+    getMix,
+    replaceMix,
   };
 }
 

@@ -868,3 +868,67 @@ both('saveCalibration: constraints', (t, open) => {
   assertSql(() => db.saveCalibration(roomId, calibRun({ log_rows: 1.5 })), 3091);
   assertSql(() => db.saveCalibration(roomId, calibRun({ run_at: 1.5 })), 3091);
 });
+
+// ---------------------------------------------------------------------------
+// Task 11: Crop mix (C1 section 6.11)
+// ---------------------------------------------------------------------------
+
+both('getMix: [] for a new room', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  assert.deepStrictEqual(db.getMix(roomId), []);
+});
+
+both('replaceMix: pos order, default, duplicate crop allowed', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  const rows = [
+    { crop: 'oyster', blocks: 1200 },
+    { crop: 'pink', blocks: 300, co2_per_block: 55 },
+    { crop: 'oyster', blocks: 10 },
+  ];
+  const result = db.replaceMix(roomId, rows);
+  assert.deepStrictEqual(result, [
+    { crop: 'oyster', blocks: 1200, co2_per_block: null },
+    { crop: 'pink', blocks: 300, co2_per_block: 55 },
+    { crop: 'oyster', blocks: 10, co2_per_block: null },
+  ]);
+  assert.deepStrictEqual(db.getMix(roomId), result);
+});
+
+both('replaceMix: empties the mix', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  db.replaceMix(roomId, [{ crop: 'oyster', blocks: 10 }]);
+  assert.deepStrictEqual(db.replaceMix(roomId, []), []);
+  assert.deepStrictEqual(db.getMix(roomId), []);
+});
+
+both('replaceMix: all or nothing on a bad row', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  const original = db.replaceMix(roomId, [{ crop: 'oyster', blocks: 10 }]);
+  assertSql(() => db.replaceMix(roomId, [{ crop: 'a', blocks: 1 }, { crop: 'b', blocks: 1.5 }]), 3091);
+  assert.deepStrictEqual(db.getMix(roomId), original);
+  assertSql(() => db.replaceMix(roomId, [{ crop: 'a', blocks: -1 }]), 275);
+  assert.deepStrictEqual(db.getMix(roomId), original);
+  assertSql(() => db.replaceMix(roomId, [{ blocks: 1 }]), 1299);
+  assert.deepStrictEqual(db.getMix(roomId), original);
+});
+
+both('replaceMix: unknown field; old mix stays', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  const original = db.replaceMix(roomId, [{ crop: 'oyster', blocks: 10 }]);
+  assert.throws(() => db.replaceMix(roomId, [{ crop: 'a', blocks: 1 }, { crop: 'b', blocks: 1, co2PerBlock: 1 }]), err => {
+    assert.ok(err instanceof TypeError);
+    assert.equal(err.message, 'replaceMix: unknown field "co2PerBlock"');
+    return true;
+  });
+  assert.deepStrictEqual(db.getMix(roomId), original);
+});
