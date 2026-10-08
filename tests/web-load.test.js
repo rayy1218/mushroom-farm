@@ -32,10 +32,12 @@ test('L2: globals of C5 1.1', () => {
 test('L3: at most one global per file', () => {
   const before = globalThis.__webLoadBefore;
   const after = new Set(Object.keys(globalThis));
-  const added = [...after].filter(k => !before.has(k) && k !== '__webLoadBefore');
+  const added = new Set([...after].filter(k => !before.has(k) && k !== '__webLoadBefore'));
   const expected = new Set(['ClimateSim', 'ClimateController', 'ClimateRuntime', 'ClimateCalib', 'ClimateCapacity', 'ClimateRoomRules',
-    'FarmUi', 'FarmApi', 'FarmCharts', 'FarmSettingsPanel', 'FarmShell', 'FarmBench']);
-  for (const k of added) assert.ok(expected.has(k), `unexpected global ${k}`);
+    'FarmUi', 'FarmApi', 'FarmCharts', 'FarmSettingsPanel', 'FarmShell']);
+  // Exactly these 11 globals after L1: no more (FarmBench does not exist yet; web/simulator.js is not loaded).
+  assert.deepEqual(added, expected);
+  globalThis.__webLoadAfterL1 = expected;
 });
 
 test('L4: FarmShell.register recorder; FarmBench defined after web/simulator.js', () => {
@@ -51,4 +53,10 @@ test('L4: FarmShell.register recorder; FarmBench defined after web/simulator.js'
     assert.equal(typeof r.mod.unmount, 'function');
   }
   assert.equal(typeof globalThis.FarmBench, 'object');
+
+  // web/simulator.js defines FarmBench; web/capacity.js and web/calibration.js (today's cards) define no globals.
+  const before = globalThis.__webLoadBefore, afterL1 = globalThis.__webLoadAfterL1;
+  const afterAll = new Set(Object.keys(globalThis));
+  const addedSinceL1 = new Set([...afterAll].filter(k => !before.has(k) && !afterL1.has(k) && k !== '__webLoadBefore' && k !== '__webLoadAfterL1'));
+  assert.deepEqual(addedSinceL1, new Set(['FarmBench']));
 });
