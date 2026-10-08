@@ -324,3 +324,61 @@ both('archiveRoom: idempotent, keeps working', (t, open) => {
   assert.deepStrictEqual(db.getRoom(room.id).archived_at, T0);
   assert.doesNotThrow(() => db.getRoom(room.id));
 });
+
+// ---------------------------------------------------------------------------
+// Task 4: Settings versions (C1 section 6.5)
+// ---------------------------------------------------------------------------
+
+both('saveSettings: defaults, becomes current', (t, open) => {
+  let clock = T0;
+  const db = open({ now: () => clock });
+  t.after(() => db.close());
+  const room = db.createRoom(roomInput());
+  clock = T0 + 10;
+  const v = db.saveSettings(room.id, { settings: { spT: 20 } });
+  assert.deepStrictEqual(v, { id: v.id, room_id: room.id, saved_at: T0 + 10, note: null, settings: { spT: 20 } });
+  assert.deepStrictEqual(db.currentSettings(room.id), v);
+});
+
+both('saveSettings: explicit values', (t, open) => {
+  let clock = T0;
+  const db = open({ now: () => clock });
+  t.after(() => db.close());
+  const room = db.createRoom(roomInput());
+  const v = db.saveSettings(room.id, { settings: { spT: 20 }, note: 'n', at: 7 });
+  assert.equal(v.note, 'n');
+  assert.equal(v.saved_at, 7);
+});
+
+both('settingsHistory: shape and order', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const room = db.createRoom(roomInput());
+  const v2 = db.saveSettings(room.id, { settings: { spT: 20 } });
+  const hist = db.settingsHistory(room.id);
+  assert.deepStrictEqual(hist.map(h => Object.keys(h).sort()), hist.map(() => ['id', 'note', 'saved_at'].sort()));
+  assert.deepStrictEqual(hist.map(h => h.id), [v2.id, v2.id - 1]);
+  assert.equal(hist[0].id, v2.id);
+});
+
+both('getSettingsVersion: returns version; wrong ids throw', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const a = db.createRoom(roomInput());
+  const b = db.createRoom(roomInput());
+  const va = db.currentSettings(a.id);
+  assert.deepStrictEqual(db.getSettingsVersion(a.id, va.id), va);
+  assertNotFound(() => db.getSettingsVersion(a.id, db.currentSettings(b.id).id), 'settings', db.currentSettings(b.id).id);
+  assertNotFound(() => db.getSettingsVersion(a.id, 999), 'settings', 999);
+  assertNotFound(() => db.getSettingsVersion(a.id, '1'), 'settings', '1');
+});
+
+both('saveSettings: errors', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const room = db.createRoom(roomInput());
+  const before = db.settingsHistory(room.id).length;
+  assertSql(() => db.saveSettings(room.id, {}), 1299);
+  assert.equal(db.settingsHistory(room.id).length, before);
+  assert.throws(() => db.saveSettings(room.id, { settings: {}, extra: 1 }), TypeError);
+});

@@ -290,6 +290,35 @@ function buildDb(conn, dbPath, version, now) {
     return settingsVersionToPublic(row);
   }
 
+  function saveSettings(roomId, version) {
+    live();
+    roomCheck(roomId);
+    fields('saveSettings', version, ['settings', 'note', 'at']);
+    const v = version || {};
+    const at = v.at === undefined ? now() : v.at;
+    const info = insertSettingsStmt.run({
+      room_id: roomId, saved_at: val(at), settings: jsonVal(v.settings), note: val(v.note === undefined ? null : v.note),
+    });
+    return settingsVersionToPublic(conn.prepare('SELECT * FROM room_settings WHERE id = :id').get({ id: info.lastInsertRowid }));
+  }
+
+  function settingsHistory(roomId) {
+    live();
+    roomCheck(roomId);
+    return conn.prepare('SELECT id, saved_at, note FROM room_settings WHERE room_id = :room_id ORDER BY id DESC')
+      .all({ room_id: roomId })
+      .map(plain);
+  }
+
+  function getSettingsVersion(roomId, versionId) {
+    live();
+    roomCheck(roomId);
+    if (!Number.isInteger(versionId)) throw new NotFoundError('settings', versionId);
+    const row = conn.prepare('SELECT * FROM room_settings WHERE id = :id AND room_id = :room_id').get({ id: versionId, room_id: roomId });
+    if (!row) throw new NotFoundError('settings', versionId);
+    return settingsVersionToPublic(row);
+  }
+
   function listRooms(options) {
     live();
     fields('listRooms', options, ['includeArchived']);
@@ -316,7 +345,10 @@ function buildDb(conn, dbPath, version, now) {
     createRoom,
     updateRoom,
     archiveRoom,
+    saveSettings,
     currentSettings,
+    settingsHistory,
+    getSettingsVersion,
   };
 }
 
