@@ -571,3 +571,61 @@ both('queryReadings: bucket filters by room', (t, open) => {
   const rows = db.queryReadings(roomId, { from: T0, to: T0 + 300, step: 60 });
   assert.ok(rows.every(r => r.T !== 99));
 });
+
+// ---------------------------------------------------------------------------
+// Task 7: Events (C1 section 6.7)
+// ---------------------------------------------------------------------------
+
+both('addEvent: shape', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  const e = db.addEvent(roomId, { t: 5, level: 'warning', text: 'x' });
+  assert.deepStrictEqual(e, { id: e.id, room_id: roomId, t: 5, level: 'warning', text: 'x' });
+});
+
+both('listEvents: default limit, order, cursor', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  for (let i = 0; i < 101; i++) db.addEvent(roomId, { t: T0 + i, level: 'info', text: `e${i}` });
+  const page1 = db.listEvents(roomId);
+  assert.equal(page1.length, 100);
+  for (let i = 1; i < page1.length; i++) assert.ok(page1[i - 1].id > page1[i].id);
+  assert.equal(db.listEvents(roomId, { limit: 1000 }).length, 101);
+  const page2 = db.listEvents(roomId, { before: page1[page1.length - 1].id });
+  assert.equal(page2.length, 1);
+});
+
+both('listEvents: before null equals left out; other room not listed', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  const otherId = makeRoom(db);
+  db.addEvent(roomId, { t: T0, level: 'info', text: 'x' });
+  db.addEvent(otherId, { t: T0, level: 'info', text: 'y' });
+  assert.deepStrictEqual(db.listEvents(roomId, { before: null }), db.listEvents(roomId));
+  assert.equal(db.listEvents(roomId).length, 1);
+});
+
+both('listEvents: errors', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  assert.throws(() => db.listEvents(roomId, { limit: 0 }), RangeError);
+  assert.throws(() => db.listEvents(roomId, { limit: 1001 }), RangeError);
+  assert.throws(() => db.listEvents(roomId, { limit: 1.5 }), RangeError);
+  assert.throws(() => db.listEvents(roomId, { before: 1.5 }), RangeError);
+  assert.throws(() => db.listEvents(roomId, { before: '5' }), RangeError);
+  assert.throws(() => db.listEvents(roomId, { offset: 1 }), TypeError);
+});
+
+both('addEvent: constraints', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  assertSql(() => db.addEvent(roomId, { t: 1, level: 'debug', text: 'x' }), 275);
+  assertSql(() => db.addEvent(roomId, { t: 1, level: 'info' }), 1299);
+  assertSql(() => db.addEvent(roomId, { t: 1.5, level: 'info', text: 'x' }), 3091);
+  assert.equal(db.listEvents(roomId).length, 0);
+});

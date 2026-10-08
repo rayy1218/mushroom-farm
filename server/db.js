@@ -383,6 +383,36 @@ function buildDb(conn, dbPath, version, now) {
     return row ? plain(row) : null;
   }
 
+  // Events (section 6.7)
+  const insertEventStmt = conn.prepare('INSERT INTO events (room_id, t, level, text) VALUES (:room_id, :t, :level, :text)');
+  const getEventByIdStmt = conn.prepare('SELECT * FROM events WHERE id = :id');
+  const listEventsStmt = conn.prepare('SELECT * FROM events WHERE room_id = :room_id ORDER BY id DESC LIMIT :limit');
+  const listEventsBeforeStmt = conn.prepare('SELECT * FROM events WHERE room_id = :room_id AND id < :before ORDER BY id DESC LIMIT :limit');
+
+  function addEvent(roomId, event) {
+    live();
+    roomCheck(roomId);
+    fields('addEvent', event, ['t', 'level', 'text']);
+    const e = event || {};
+    const info = insertEventStmt.run({ room_id: roomId, t: val(e.t), level: val(e.level), text: val(e.text) });
+    return plain(getEventByIdStmt.get({ id: info.lastInsertRowid }));
+  }
+
+  function listEvents(roomId, options) {
+    live();
+    roomCheck(roomId);
+    fields('listEvents', options, ['limit', 'before']);
+    const o = options || {};
+    const limit = o.limit === undefined ? 100 : o.limit;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 1000) throw new RangeError('listEvents: limit must be an integer from 1 to 1000');
+    const before = o.before === undefined ? null : o.before;
+    if (before !== null && !Number.isInteger(before)) throw new RangeError('listEvents: before must be an integer or null');
+    const rows = before === null
+      ? listEventsStmt.all({ room_id: roomId, limit })
+      : listEventsBeforeStmt.all({ room_id: roomId, before, limit });
+    return rows.map(plain);
+  }
+
   function listRooms(options) {
     live();
     fields('listRooms', options, ['includeArchived']);
@@ -416,6 +446,8 @@ function buildDb(conn, dbPath, version, now) {
     insertReading,
     queryReadings,
     latestReading,
+    addEvent,
+    listEvents,
   };
 }
 
