@@ -144,3 +144,70 @@ describe('serveStatic called directly', () => {
     assert.equal(wrote, false);
   });
 });
+
+describe('server/api.js core: routing, check order, bodies', () => {
+  let ctx;
+  test.before(async () => { ctx = startApi(); await ctx.ready; });
+  test.after(() => ctx.stop());
+
+  test('unmatched method/path combinations give 404 Unknown route', async () => {
+    const cases = [
+      ['GET', '/api/nope'], ['DELETE', '/api/rooms/1'], ['PUT', '/api/rooms'],
+      ['HEAD', '/api/rooms'], ['GET', '/api/rooms/'], ['POST', '/api/stream'], ['GET', '/api/unknown'],
+    ];
+    for (const [method, p] of cases) {
+      const r = await rawGet(ctx.url, p, method);
+      assert.equal(r.status, 404, `${method} ${p}`);
+      assert.equal(r.headers['cache-control'], 'no-store', `${method} ${p}`);
+      if (method !== 'HEAD') assert.deepStrictEqual(JSON.parse(r.text), { error: 'Unknown route', details: [] }, `${method} ${p}`);
+    }
+  });
+
+  test('bad :id formats and unknown/archived rooms give 404 Unknown room', async () => {
+    const id = seedRoom(ctx.db, 'A');
+    const archivedId = seedRoom(ctx.db, 'B');
+    ctx.rooms.archive(archivedId);
+    const bad = ['0', '01', '1.5', 'abc', '9999999999999999', '999999', String(archivedId)];
+    for (const x of bad) {
+      const r = await fetch(`${ctx.url}/api/rooms/${x}/settings`);
+      assert.equal(r.status, 404, x);
+      assert.deepStrictEqual(await r.json(), { error: 'Unknown room', details: [] }, x);
+    }
+  });
+
+  test('room check comes before body parsing', async () => {
+    const r = await fetch(`${ctx.url}/api/rooms/999999/settings`, {
+      method: 'PUT', body: '{not json', headers: { 'Content-Type': 'application/json' },
+    });
+    assert.equal(r.status, 404);
+    assert.deepStrictEqual(await r.json(), { error: 'Unknown room', details: [] });
+  });
+
+  test('invalid JSON and an empty body give 400 Body is not valid JSON', async () => {
+    const id = seedRoom(ctx.db, 'C');
+    for (const body of ['{not json', '']) {
+      const r = await fetch(`${ctx.url}/api/rooms/${id}/mix`, { method: 'PUT', body });
+      assert.equal(r.status, 400);
+      assert.deepStrictEqual(await r.json(), { error: 'Body is not valid JSON', details: [] });
+    }
+  });
+
+  test('a body over 1 MB gives 400 and stores nothing; exactly 1 MB is accepted', async () => {
+    const id = seedRoom(ctx.db, 'D');
+    const big = JSON.stringify({ verdict: 'good', runs: [], pad: 'x'.repeat(1048577) });
+    const over = Buffer.byteLength(big) > 1048576 ? big : big + 'x'.repeat(1048577 - Buffer.byteLength(big) + 1);
+    assert.ok(Buffer.byteLength(over) > 1048576);
+    const r1 = await fetch(`${ctx.url}/api/rooms/${id}/capacity`, { method: 'POST', body: over });
+    assert.equal(r1.status, 400);
+    assert.deepStrictEqual(await r1.json(), { error: 'Body is larger than 1 MB', details: [] });
+    assert.equal(ctx.db.latestCapacityReport(id), null);
+
+    const base = { verdict: 'good', runs: [] };
+    const overhead = Buffer.byteLength(JSON.stringify({ ...base, pad: '' }));
+    const padLen = 1048576 - overhead;
+    const exact = JSON.stringify({ ...base, pad: 'x'.repeat(padLen) });
+    assert.equal(Buffer.byteLength(exact), 1048576);
+    const r2 = await fetch(`${ctx.url}/api/rooms/${id}/capacity`, { method: 'POST', body: exact });
+    assert.equal(r2.status, 201);
+  });
+});
