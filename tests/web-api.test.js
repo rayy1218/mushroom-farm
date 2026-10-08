@@ -125,6 +125,7 @@ test('errors: ApiError for 400, 404, 500', async (t) => {
       assert.ok(err instanceof FarmApi.ApiError);
       assert.equal(err.name, 'ApiError');
       assert.equal(err.message, 'Invalid query');
+      assert.equal(err.error, 'Invalid query');
       assert.equal(err.status, status);
       assert.deepEqual(err.details, ['from: bad']);
       return true;

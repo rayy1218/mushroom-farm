@@ -31,7 +31,9 @@ async function request(method, path, { query, body } = {}) {
   let res;
   try { res = await fetch(url, init); }
   catch (err) { throw new ApiError(0, 'The farm server cannot be reached.', [String((err && err.message) || err)]); }
-  const text = await res.text();
+  let text;
+  try { text = await res.text(); }
+  catch (err) { throw new ApiError(0, 'The farm server cannot be reached.', [String((err && err.message) || err)]); }
   if (res.ok) {
     if (res.status === 204 || text === '') return null;
     try { return JSON.parse(text); }

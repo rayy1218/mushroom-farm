@@ -232,8 +232,8 @@ function wire(myGen) {
       })
       .catch(err => { if (!stale()) UI.set('capMsg', `The check stopped: ${err.message}`); })
       .finally(() => {
-        capBusy = false;
         if (stale()) return;
+        capBusy = false;
         $('#capRun').disabled = !curRoom(); prog.value = 1; prog.hidden = true; renderReport(); renderFarm();
       });
   });
@@ -245,6 +245,7 @@ function wire(myGen) {
   $('#capImport').addEventListener('change', e => {
     const f = e.target.files[0]; if (!f) return;
     f.text().then(txt => {
+      if (stale()) return;
       const x = JSON.parse(txt);
       if (!x || x.format !== 'mushroom-farm-rooms' || !Array.isArray(x.rooms)) throw new Error('this is not a rooms file of this page');
       const ok = x.rooms.map(normRoom).filter(Boolean);

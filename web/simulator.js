@@ -963,7 +963,6 @@ function wire() {
   });
 
   // ---- Simulation controls that mirror env/cfg (initial paint) ----
-  root.querySelector('#inFixed').hidden = env.dailyCycle !== false;
   root.querySelector('#cycleFields').hidden = env.dailyCycle === false;
   root.querySelector('#fixedField').hidden = env.dailyCycle !== false;
   root.querySelector('#inCycle').checked = env.dailyCycle !== false;

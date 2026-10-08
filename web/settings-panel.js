@@ -150,7 +150,7 @@ function applyChanges(settings, changes) {
 // ---------------- safeSettings (lead decision 6) ----------------
 const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 function cleanSettings(input, prefix, warnings) {
-  if (Array.isArray(input)) return input.map(v => cleanSettings(v, prefix, warnings));
+  if (Array.isArray(input)) return input.map((v, i) => cleanSettings(v, prefix ? `${prefix}.${i}` : String(i), warnings));
   if (input && typeof input === 'object') {
     const out = {};
     for (const k of Object.keys(input)) {

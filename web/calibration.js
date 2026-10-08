@@ -36,7 +36,7 @@ function calLoad(rows, label) {
 }
 
 const MARKUP = `
-<section class="card calib" aria-labelledby="hCal">
+<section class="card sim calib" aria-labelledby="hCal">
   <div class="rules-head">
     <h2 id="hCal">Calibration with a farm log</h2>
     <span class="tag">Make the simulation agree with your room. The log must have the machine states at 1 min or less. With a supply fan that always runs, the air leakage cannot be measured (it also has no effect).</span>
