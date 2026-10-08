@@ -195,16 +195,18 @@ describe('server/api.js core: routing, check order, bodies', () => {
 
   test('a body over 1 MB gives 400 and stores nothing; exactly 1 MB is accepted', async () => {
     const id = seedRoom(ctx.db, 'D');
-    const big = JSON.stringify({ verdict: 'good', runs: [], pad: 'x'.repeat(1048577) });
-    const over = Buffer.byteLength(big) > 1048576 ? big : big + 'x'.repeat(1048577 - Buffer.byteLength(big) + 1);
-    assert.ok(Buffer.byteLength(over) > 1048576);
+    const base = { verdict: 'good', runs: [] };
+    const overhead = Buffer.byteLength(JSON.stringify({ ...base, pad: '' }));
+
+    // Exactly one byte past the limit (1,048,577 bytes), built the same way as the exact body below.
+    const overPadLen = 1048577 - overhead;
+    const over = JSON.stringify({ ...base, pad: 'x'.repeat(overPadLen) });
+    assert.equal(Buffer.byteLength(over), 1048577);
     const r1 = await fetch(`${ctx.url}/api/rooms/${id}/capacity`, { method: 'POST', body: over });
     assert.equal(r1.status, 400);
     assert.deepStrictEqual(await r1.json(), { error: 'Body is larger than 1 MB', details: [] });
     assert.equal(ctx.db.latestCapacityReport(id), null);
 
-    const base = { verdict: 'good', runs: [] };
-    const overhead = Buffer.byteLength(JSON.stringify({ ...base, pad: '' }));
     const padLen = 1048576 - overhead;
     const exact = JSON.stringify({ ...base, pad: 'x'.repeat(padLen) });
     assert.equal(Buffer.byteLength(exact), 1048576);
@@ -273,9 +275,22 @@ describe('room routes 6.1, 6.2, 6.3, 6.19', () => {
   test('POST 400s', async () => {
     const callsBefore = ctx.rooms.calls.length;
     const roomsBefore = ctx.db.listRooms();
+    // The full task 2 checkRoom(body, false) invalid-body list (room-rules.test.js), run over HTTP.
     const badBodies = [
-      {}, { name: '', volume: 60, vent: 'supply' }, { name: 'A', volume: 1, vent: 'supply' },
-      { name: 'A', volume: 60, vent: 'side' }, null, 'x', [],
+      { volume: 60, vent: 'supply' },                        // missing name
+      { name: 'A', vent: 'supply' },                          // missing volume
+      { name: 'A', volume: 60 },                              // missing vent
+      { name: '   ', volume: 60, vent: 'supply' },            // blank after trim
+      { name: 'x'.repeat(61), volume: 60, vent: 'supply' },   // too long
+      { name: 5, volume: 60, vent: 'supply' },                // not a string
+      { name: 'A', volume: 4.99, vent: 'supply' },
+      { name: 'A', volume: 5000.01, vent: 'supply' },
+      { name: 'A', volume: '60', vent: 'supply' },
+      { name: 'A', volume: null, vent: 'supply' },
+      { name: 'A', volume: 60, vent: 'side' },
+      { name: 'A', volume: 60, vent: 'supply', colour: 'red' },   // unknown field
+      { name: 'A', volume: 60, vent: 'supply', archived: true },  // archived on POST
+      {}, null, 'x', [],
     ];
     for (const body of badBodies) {
       const r = await fetch(`${ctx.url}/api/rooms`, {
@@ -306,6 +321,7 @@ describe('room routes 6.1, 6.2, 6.3, 6.19', () => {
     assert.equal(last1.method, 'update');
     assert.deepStrictEqual(last1.args, [id, { name: 'B' }]);
 
+    const before2 = ctx.rooms.calls.length;
     const r2 = await fetch(`${ctx.url}/api/rooms/${id}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ archived: true }),
     });
@@ -313,19 +329,21 @@ describe('room routes 6.1, 6.2, 6.3, 6.19', () => {
     const body2 = await r2.json();
     assert.equal(body2.archived_at, NOW);
     assert.equal(body2.live, null);
-    const methodsCalled = ctx.rooms.calls.slice(-1).map(c => c.method);
-    assert.deepStrictEqual(methodsCalled, ['archive']);
+    assert.deepStrictEqual(ctx.rooms.calls.slice(before2), [{ method: 'archive', args: [id] }]);
     const r2b = await fetch(`${ctx.url}/api/rooms/${id}/settings`);
     assert.equal(r2b.status, 404);
 
     const id2 = seedRoom(ctx.db, 'Patchable2');
+    const before3 = ctx.rooms.calls.length;
     const r3 = await fetch(`${ctx.url}/api/rooms/${id2}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ volume: 80, archived: true }),
     });
     const body3 = await r3.json();
     assert.equal(body3.archived_at, NOW);
-    const recentMethods = ctx.rooms.calls.slice(-2).map(c => c.method);
-    assert.deepStrictEqual(recentMethods, ['update', 'archive']);
+    assert.deepStrictEqual(ctx.rooms.calls.slice(before3), [
+      { method: 'update', args: [id2, { volume: 80 }] },
+      { method: 'archive', args: [id2] },
+    ]);
   });
 
   test('PATCH 400s', async () => {
@@ -606,7 +624,24 @@ describe('calibrations, mix, capacity (6.12-6.18)', () => {
     assert.equal(body2.run_at, NOW - 500);
 
     const rowsBefore = ctx.db.listCalibrations(id).length;
-    for (const bad of [{ ...fullCalib, ua: 19.9 }, { ...fullCalib, log_rows: 1 }, null, { ...fullCalib, extra: 1 }]) {
+    // The full task 2 checkCalibration invalid-body list (room-rules.test.js), run over HTTP.
+    const { rmse_t, ...fullCalibNoRmseT } = fullCalib;
+    const badCalibs = [
+      { ...fullCalib, ua: 19.9 },
+      { ...fullCalib, inf_ach: 3.1 },
+      { ...fullCalib, moist_buffer: 0.9 },
+      { ...fullCalib, co2_per_block: 4.9 },
+      fullCalibNoRmseT,
+      { ...fullCalib, rmse_rh: -0.1 },
+      { ...fullCalib, log_rows: 1 },
+      { ...fullCalib, log_rows: 2.5 },
+      { ...fullCalib, run_at: 0 },
+      { ...fullCalib, run_at: 1.5 },
+      { ...fullCalib, run_at: NOW + 61 },
+      { ...fullCalib, extra: 1 },
+      null, 'x',
+    ];
+    for (const bad of badCalibs) {
       const r = await fetch(`${ctx.url}/api/rooms/${id}/calibrations`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(bad),
       });
@@ -671,7 +706,21 @@ describe('calibrations, mix, capacity (6.12-6.18)', () => {
     assert.deepStrictEqual(await r2.json(), []);
 
     const before = ctx.db.getMix(id);
-    for (const bad of ['not-array', [{ crop: 'shiitake', blocks: 1 }], [{ crop: 'oyster', blocks: -1 }]]) {
+    // The full task 2 checkMix invalid-row list (room-rules.test.js), run over HTTP.
+    const badMixes = [
+      {},                                                     // not an array
+      ['x'],                                                  // a row not an object
+      [{ crop: 'shiitake', blocks: 1 }],                       // unknown crop
+      [{ crop: 'oyster', blocks: 1.5 }],
+      [{ crop: 'oyster', blocks: -1 }],
+      [{ crop: 'oyster', blocks: 200001 }],
+      [{ crop: 'oyster', blocks: '5' }],
+      [{ crop: 'oyster', blocks: 1, co2_per_block: 0 }],
+      [{ crop: 'oyster', blocks: 1, co2_per_block: 1001 }],
+      [{ crop: 'oyster', blocks: 1, co2_per_block: 'x' }],
+      [{ crop: 'oyster', blocks: 1, extra: 1 }],
+    ];
+    for (const bad of badMixes) {
       const r = await fetch(`${ctx.url}/api/rooms/${id}/mix`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(bad),
       });
@@ -728,6 +777,8 @@ describe('error mapping and the database-error stop (4.4)', () => {
   let ctx, id;
   test.before(async () => { ctx = startApi(); await ctx.ready; id = seedRoom(ctx.db, 'E1'); });
   test.after(() => ctx.stop());
+
+  const fullCalib = { ua: 92, inf_ach: 0.3, moist_buffer: 3, co2_per_block: 41 };
 
   test('rooms.create bad_input -> 400 Invalid room with details', async () => {
     await withReplaced(ctx.rooms, 'create', () => { throw new RoomError('bad_input', 'Bad input', ['name: x']); }, async () => {
@@ -792,6 +843,55 @@ describe('error mapping and the database-error stop (4.4)', () => {
     });
   });
 
+  test('rooms.restart bad_input -> 404 Unknown room (6.14 apply, and 6.19 restart)', async () => {
+    const run = ctx.db.saveCalibration(id, fullCalib);
+    await withReplaced(ctx.rooms, 'restart', () => { throw new RoomError('bad_input', 'Bad input', []); }, async () => {
+      const before = ctx.fatals.length;
+      const r1 = await fetch(`${ctx.url}/api/rooms/${id}/calibrations/${run.id}/apply`, { method: 'POST' });
+      assert.equal(r1.status, 404);
+      assert.equal((await r1.json()).error, 'Unknown room');
+      const r2 = await fetch(`${ctx.url}/api/rooms/${id}/restart`, { method: 'POST' });
+      assert.equal(r2.status, 404);
+      assert.equal((await r2.json()).error, 'Unknown room');
+      assert.equal(ctx.fatals.length, before);
+    });
+  });
+
+  test('rooms.restart not_found -> 404 Unknown room (6.14 apply, then restart)', async () => {
+    const run = ctx.db.saveCalibration(id, fullCalib);
+    await withReplaced(ctx.rooms, 'restart', () => { throw new RoomError('not_found', 'Room not found', []); }, async () => {
+      const before = ctx.fatals.length;
+      const r = await fetch(`${ctx.url}/api/rooms/${id}/calibrations/${run.id}/apply`, { method: 'POST' });
+      assert.equal(r.status, 404);
+      assert.equal((await r.json()).error, 'Unknown room');
+      assert.equal(ctx.fatals.length, before);
+    });
+  });
+
+  test('rooms.applySettings not_found -> 404 Unknown room (6.7 restore)', async () => {
+    const v = ctx.db.currentSettings(id);
+    await withReplaced(ctx.rooms, 'applySettings', () => { throw new RoomError('not_found', 'Room not found', []); }, async () => {
+      const before = ctx.fatals.length;
+      const r = await fetch(`${ctx.url}/api/rooms/${id}/settings/restore/${v.id}`, { method: 'POST' });
+      assert.equal(r.status, 404);
+      assert.equal((await r.json()).error, 'Unknown room');
+      assert.equal(ctx.fatals.length, before);
+    });
+  });
+
+  test('rooms.applySettings bad_input -> 400 Invalid settings (6.7 restore), with C2 details', async () => {
+    const v = ctx.db.currentSettings(id);
+    await withReplaced(ctx.rooms, 'applySettings', () => { throw new RoomError('bad_input', 'Bad input', ['x: y']); }, async () => {
+      const before = ctx.fatals.length;
+      const r = await fetch(`${ctx.url}/api/rooms/${id}/settings/restore/${v.id}`, { method: 'POST' });
+      assert.equal(r.status, 400);
+      const body = await r.json();
+      assert.equal(body.error, 'Invalid settings');
+      assert.deepStrictEqual(body.details, ['x: y']);
+      assert.equal(ctx.fatals.length, before);
+    });
+  });
+
   test('rooms.ackAlarm not_found and bad_input -> 404 Unknown alarm', async () => {
     for (const code of ['not_found', 'bad_input']) {
       await withReplaced(ctx.rooms, 'ackAlarm', () => { throw new RoomError(code, 'x', []); }, async () => {
@@ -814,25 +914,31 @@ describe('error mapping and the database-error stop (4.4)', () => {
   });
 
   test('db.listEvents and db.getRoom non-constraint sqlite errors -> 500, onFatal once', async () => {
-    await withReplaced(ctx.db, 'listEvents', () => { throw dbErr(10); }, async () => {
+    const err10 = dbErr(10);
+    await withReplaced(ctx.db, 'listEvents', () => { throw err10; }, async () => {
       const before = ctx.fatals.length;
       const r = await fetch(`${ctx.url}/api/rooms/${id}/events`);
       assert.equal(r.status, 500);
       assert.equal(ctx.fatals.length, before + 1);
-      assert.equal(ctx.fatals[ctx.fatals.length - 1].message, 'disk I/O error');
+      assert.equal(ctx.fatals.at(-1).message, 'disk I/O error');
+      assert.equal(ctx.fatals.at(-1), err10);
     });
-    await withReplaced(ctx.db, 'listEvents', () => { throw dbErr(13); }, async () => {
+    const err13 = dbErr(13);
+    await withReplaced(ctx.db, 'listEvents', () => { throw err13; }, async () => {
       const before = ctx.fatals.length;
       const r = await fetch(`${ctx.url}/api/rooms/${id}/events`);
       assert.equal(r.status, 500);
       assert.equal(ctx.fatals.length, before + 1);
+      assert.equal(ctx.fatals.at(-1), err13);
     });
     const originalGetRoom = ctx.db.getRoom;
-    await withReplaced(ctx.db, 'getRoom', () => { throw dbErr(10); }, async () => {
+    const errGetRoom = dbErr(10);
+    await withReplaced(ctx.db, 'getRoom', () => { throw errGetRoom; }, async () => {
       const before = ctx.fatals.length;
       const r = await fetch(`${ctx.url}/api/rooms/${id}/settings`);
       assert.equal(r.status, 500);
       assert.equal(ctx.fatals.length, before + 1);
+      assert.equal(ctx.fatals.at(-1), errGetRoom);
     });
     assert.equal(ctx.db.getRoom, originalGetRoom);
   });
