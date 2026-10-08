@@ -12,6 +12,7 @@ const { fromJson, toJson } = require('../server/db-common.js');
 const { createSimAdapter, MAX_CATCH_UP_S, TZ_OFFSET_S, START_CO2 } = require('../server/sim-adapter.js');
 const rooms = require('../server/rooms.js');
 const roomsCommon = require('../server/rooms-common.js');
+const { createFakeRoomManager } = require('./fakes/rooms.js');
 
 const T0 = 1791424800; // 2026-10-08 10:00 farm time (outside the harvest windows)
 
@@ -1415,5 +1416,153 @@ test('archive', () => {
     assert.fail('expected not_found');
   } catch (err) {
     assert.equal(err.code, 'not_found');
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Task 14: Restore, untrusted keys, error sweep, fake parity (C2 section 9.2 exact, 6.2, 6.3, 16)
+// ---------------------------------------------------------------------------
+
+function getPathTest(obj, k) { return k.startsWith('rules.') ? obj.rules[k.slice(6)] : obj[k]; }
+
+function runRestoreCase(mgr, db, roomId, setupChange) {
+  const A = mgr.applySettings(roomId, { spT: 23 }).version;
+  mgr.applySettings(roomId, setupChange);
+  const beforeId = maxEventId(db, roomId);
+  const result = mgr.applySettings(roomId, A.settings, `Restored version ${A.id}`, { exact: true });
+  assert.deepEqual(result.settings, A.settings);
+  assert.equal(result.version.note, `Restored version ${A.id}`);
+  assert.equal(db.currentSettings(roomId).settings.stage, 'fruiting');
+  for (const k of rooms.TARGET_KEYS) assert.equal(getPathTest(result.settings, k), getPathTest(A.settings, k));
+  assert.equal(db.loadControllerState(roomId).controller.stage.ramp, null);
+  const texts = newEventTextsSince(db, roomId, beforeId);
+  const stageIdx = texts.findIndex(t => t.startsWith('Stage: '));
+  const restoredIdx = texts.findIndex(t => t.startsWith('Targets restored: '));
+  assert.ok(stageIdx >= 0, 'expected a Stage: event');
+  assert.ok(restoredIdx >= 0, 'expected a Targets restored: event');
+  assert.ok(restoredIdx > stageIdx);
+}
+
+test('Restore exact', () => {
+  const s = scripted();
+  const { db, mgr } = setup(s.factory);
+  mgr.start();
+
+  runRestoreCase(mgr, db, 1, { stage: 'pinning' });
+
+  const { room } = mgr.create({ name: 'R2', volume: 60, vent: 'supply' });
+  runRestoreCase(mgr, db, room.id, { stage: 'pinning', program: { rampH: 0 } });
+
+  // Case 1 without exact: ramp.to.spT === 25, no Targets restored.
+  const A2 = mgr.applySettings(1, { spT: 23 }).version;
+  mgr.applySettings(1, { stage: 'pinning' });
+  const before2 = maxEventId(db, 1);
+  mgr.applySettings(1, A2.settings, 'x');
+  assert.equal(db.loadControllerState(1).controller.stage.ramp.to.spT, 25);
+  assert.ok(!newEventTextsSince(db, 1, before2).some(t => t.startsWith('Targets restored:')));
+
+  // { exact: 'yes' } acts as no exact.
+  const A3 = mgr.applySettings(1, { spT: 23 }).version;
+  mgr.applySettings(1, { stage: 'pinning' });
+  const before3 = maxEventId(db, 1);
+  mgr.applySettings(1, A3.settings, 'x', { exact: 'yes' });
+  assert.notEqual(db.loadControllerState(1).controller.stage.ramp, null);
+  assert.ok(!newEventTextsSince(db, 1, before3).some(t => t.startsWith('Targets restored:')));
+});
+
+test('Untrusted keys', (t) => {
+  const s = JSON.parse('{"__proto__":{"polluted":1},"rules":{"constructor":{"x":1}},"spT":20}');
+  const sCopy = JSON.parse(JSON.stringify(s));
+  const protoNamesBefore = Object.getOwnPropertyNames(Object.prototype);
+
+  const { db, mgr } = setup();
+  mgr.start();
+
+  const importedResults = [];
+  const appliedSecondArgs = [];
+  const origImport = CC.importSettings, origApply = CC.applySettings;
+  CC.importSettings = (...args) => { const r = origImport(...args); importedResults.push(r.settings); return r; };
+  CC.applySettings = (target, src) => { appliedSecondArgs.push(src); return origApply(target, src); };
+  t.after(() => { CC.importSettings = origImport; CC.applySettings = origApply; });
+
+  const result = mgr.applySettings(1, s);
+  assert.equal(({}).polluted, undefined);
+  assert.deepEqual(Object.getOwnPropertyNames(Object.prototype), protoNamesBefore);
+  assert.equal(result.settings.spT, 20);
+  assert.ok(result.warnings.includes('Setting "__proto__" is not allowed: ignored.'));
+  assert.ok(result.warnings.includes('Setting "rules.constructor" is not allowed: ignored.'));
+  assert.deepEqual(s, sCopy);
+
+  for (const src of appliedSecondArgs) assert.ok(importedResults.includes(src));
+  assert.ok(appliedSecondArgs.length > 0);
+
+  const { warnings: createWarnings } = mgr.create({ name: 'U', volume: 60, vent: 'supply', settings: s });
+  assert.equal(({}).polluted, undefined);
+  assert.deepEqual(Object.getOwnPropertyNames(Object.prototype), protoNamesBefore);
+  assert.ok(createWarnings.includes('Setting "__proto__" is not allowed: ignored.'));
+  assert.ok(createWarnings.includes('Setting "rules.constructor" is not allowed: ignored.'));
+  assert.deepEqual(s, sCopy);
+  assert.equal(db.currentSettings(2).settings.spT, 20);
+});
+
+test('Errors', () => {
+  const { mgr } = setup();
+  mgr.start();
+  const ids = [999, '1', 1.5];
+  const calls = [
+    id => mgr.update(id, { name: 'X' }),
+    id => mgr.archive(id),
+    id => mgr.restart(id),
+    id => mgr.applySettings(id, { spT: 20 }),
+    id => mgr.ackAlarm(id, 'x'),
+  ];
+  for (const id of ids) {
+    for (const call of calls) {
+      try {
+        call(id);
+        assert.fail(`expected not_found for id ${JSON.stringify(id)}`);
+      } catch (err) {
+        assert.equal(err.code, 'not_found');
+        assert.equal(err.message, `Room ${id} not found`);
+        assert.deepEqual(err.details, []);
+        assert.ok(err instanceof roomsCommon.RoomError);
+        assert.ok(err instanceof rooms.RoomError);
+      }
+    }
+  }
+});
+
+test('Fake parity', () => {
+  let clock = T0;
+  const now = () => clock;
+  const db = openFakeDb({ now });
+  const fake = createFakeRoomManager({ db, now });
+
+  const { room } = fake.create({ name: 'F', volume: 60, vent: 'supply' });
+  assert.equal(db.currentSettings(room.id).note, 'Created');
+
+  fake.applySettings(room.id, { spT: 20 });
+  assert.equal(db.settingsHistory(room.id).length, 2);
+
+  fake.archive(room.id);
+  assert.equal(db.getRoom(room.id).archived_at, now());
+
+  const { room: room2 } = fake.create({ name: 'G', volume: 60, vent: 'supply' });
+  fake.setLive(room2.id, { running: false, error: 'boom' });
+  const live = fake.get(room2.id).live;
+  assert.equal(live.running, false);
+  assert.equal(live.error, 'boom');
+
+  const protoNamesBefore = Object.getOwnPropertyNames(Object.prototype);
+  const s = JSON.parse('{"__proto__":{"polluted":1},"spT":20}');
+  fake.applySettings(room2.id, s);
+  assert.equal(({}).polluted, undefined);
+  assert.deepEqual(Object.getOwnPropertyNames(Object.prototype), protoNamesBefore);
+
+  try {
+    fake.update(999, { name: 'X' });
+    assert.fail('expected not_found');
+  } catch (err) {
+    assert.ok(err instanceof roomsCommon.RoomError);
   }
 });
