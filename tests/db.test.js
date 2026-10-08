@@ -503,3 +503,71 @@ both('queryReadings: errors', (t, open) => {
   assert.doesNotThrow(() => db.queryReadings(roomId, { from: 1, to: 10, step: null }));
   assert.throws(() => db.queryReadings(roomId, { from: 1, to: 10, limit: 5 }), TypeError);
 });
+
+// ---------------------------------------------------------------------------
+// Task 6: Readings, buckets (C1 section 6.6 "Bucket averaging")
+// ---------------------------------------------------------------------------
+
+function bucketFixture(db, roomId) {
+  db.insertReading(roomId, reading(T0, {
+    T: 20, RH: 80, CO2: null, ac_mode: 'cool', ac_setpoint: 18, fog: 1, lights: 1, kwh: 1,
+  }));
+  db.insertReading(roomId, reading(T0 + 30, {
+    T: null, RH: 90, CO2: null, ac_mode: 'off', ac_setpoint: null, fog: 2, lights: 0, kwh: 1.25,
+  }));
+  db.insertReading(roomId, reading(T0 + 150, {
+    T: 21, RH: 85, CO2: 900, ac_mode: 'cool', ac_setpoint: 18, fog: 3, lights: 1, kwh: 2,
+  }));
+}
+
+both('queryReadings: bucket averages, nulls, last ac_mode/kwh, empty bucket left out', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  bucketFixture(db, roomId);
+  const rows = db.queryReadings(roomId, { from: T0, to: T0 + 300, step: 60 });
+  assert.equal(rows.length, 2);
+  assert.deepStrictEqual(rows.map(r => r.t), [T0, T0 + 120]);
+  const [b0, b1] = rows;
+  assert.equal(b0.T, 20); assert.equal(b1.T, 21);
+  assert.equal(b0.RH, 85); assert.equal(b1.RH, 85);
+  assert.equal(b0.CO2, null); assert.equal(b1.CO2, 900);
+  assert.equal(b0.ac_mode, 'off'); assert.equal(b1.ac_mode, 'cool');
+  assert.equal(b0.ac_setpoint, 18); assert.equal(b1.ac_setpoint, 18);
+  assert.equal(b0.fog, 1.5); assert.equal(b1.fog, 3);
+  assert.equal(b0.lights, 0.5); assert.equal(b1.lights, 1);
+  assert.equal(b0.kwh, 1.25); assert.equal(b1.kwh, 2);
+});
+
+both('queryReadings: bucket row keys equal raw row keys', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  bucketFixture(db, roomId);
+  const raw = db.queryReadings(roomId, { from: T0, to: T0 })[0];
+  const bucket = db.queryReadings(roomId, { from: T0, to: T0 + 300, step: 60 })[0];
+  assert.deepStrictEqual(Object.keys(bucket).sort(), Object.keys(raw).sort());
+});
+
+both('queryReadings: buckets align to multiples of step', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  bucketFixture(db, roomId);
+  const rows = db.queryReadings(roomId, { from: T0 + 10, to: T0 + 59, step: 60 });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].t, T0);
+  assert.equal(rows[0].T, null);
+  assert.equal(rows[0].RH, 90);
+});
+
+both('queryReadings: bucket filters by room', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  const otherId = makeRoom(db);
+  bucketFixture(db, roomId);
+  db.insertReading(otherId, reading(T0, { T: 99 }));
+  const rows = db.queryReadings(roomId, { from: T0, to: T0 + 300, step: 60 });
+  assert.ok(rows.every(r => r.T !== 99));
+});
