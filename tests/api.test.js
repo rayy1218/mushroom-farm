@@ -478,3 +478,104 @@ describe('settings routes 6.4-6.7', () => {
     assert.equal(ctx.rooms.calls.length, callsBefore);
   });
 });
+
+describe('readings, events, alarms, ack (6.8-6.11)', () => {
+  let ctx;
+  test.before(async () => { ctx = startApi(); await ctx.ready; });
+  test.after(() => ctx.stop());
+
+  test('readings default', async () => {
+    const id = seedRoom(ctx.db, 'R1');
+    ctx.db.insertReading(id, reading(NOW - 3601));
+    ctx.db.insertReading(id, reading(NOW - 3600));
+    ctx.db.insertReading(id, reading(NOW));
+    const rows = await (await fetch(`${ctx.url}/api/rooms/${id}/readings`)).json();
+    assert.equal(rows.length, 2);
+    for (const row of rows) {
+      assert.deepStrictEqual(Object.keys(row).sort(), [
+        'CO2', 'RH', 'T', 'ac_mode', 'ac_setpoint', 'circ', 'fan', 'fog', 'kwh', 'lights', 'power_w', 'rh_out', 'room_id', 't', 't_out',
+      ]);
+    }
+    assert.deepStrictEqual(rows, ctx.db.queryReadings(id, { from: NOW - 3600, to: NOW, step: null }));
+  });
+
+  test('readings step', async () => {
+    const id = seedRoom(ctx.db, 'R2');
+    ctx.db.insertReading(id, reading(NOW - 100));
+    ctx.db.insertReading(id, reading(NOW));
+    const stepped = await (await fetch(`${ctx.url}/api/rooms/${id}/readings?step=60`)).json();
+    assert.deepStrictEqual(stepped, ctx.db.queryReadings(id, { from: NOW - 3600, to: NOW, step: 60 }));
+    const raw = await (await fetch(`${ctx.url}/api/rooms/${id}/readings?step=0`)).json();
+    assert.deepStrictEqual(raw, ctx.db.queryReadings(id, { from: NOW - 3600, to: NOW, step: null }));
+  });
+
+  test('readings 400', async () => {
+    const id = seedRoom(ctx.db, 'R3');
+    const bad = [
+      'from=abc', 'from=-1', 'to=1.5', 'from=', 'step=86401', `from=${NOW}&to=${NOW - 10}`,
+      `from=${NOW - 604801}&to=${NOW}`, `from=${NOW - 2678401}&to=${NOW}&step=900`,
+    ];
+    for (const q of bad) {
+      const r = await fetch(`${ctx.url}/api/rooms/${id}/readings?${q}`);
+      assert.equal(r.status, 400, q);
+      assert.equal((await r.json()).error, 'Invalid query', q);
+    }
+    const r2 = await fetch(`${ctx.url}/api/rooms/${id}/readings?foo=1`);
+    assert.equal(r2.status, 200);
+  });
+
+  test('events', async () => {
+    const id = seedRoom(ctx.db, 'R4');
+    for (let i = 0; i < 5; i++) ctx.db.addEvent(id, { t: NOW + i, level: 'info', text: `e${i}` });
+    const page1 = await (await fetch(`${ctx.url}/api/rooms/${id}/events?limit=2`)).json();
+    assert.equal(page1.length, 2);
+    assert.ok(page1[0].id > page1[1].id);
+    const smallest = page1[page1.length - 1].id;
+    const page2 = await (await fetch(`${ctx.url}/api/rooms/${id}/events?before=${smallest}`)).json();
+    assert.ok(page2.every(e => e.id < smallest));
+    const allPage = await (await fetch(`${ctx.url}/api/rooms/${id}/events`)).json();
+    assert.ok(allPage.length <= 100);
+
+    for (const q of ['limit=0', 'limit=501', 'before=0', 'before=x']) {
+      const r = await fetch(`${ctx.url}/api/rooms/${id}/events?${q}`);
+      assert.equal(r.status, 400, q);
+      assert.equal((await r.json()).error, 'Invalid query', q);
+    }
+  });
+
+  test('alarms', async () => {
+    const id = seedRoom(ctx.db, 'R5');
+    ctx.db.raiseAlarm(id, { alarm_key: 'rhHi', level: 'warning', label: 'High humidity', at: NOW });
+    const rows = await (await fetch(`${ctx.url}/api/rooms/${id}/alarms`)).json();
+    assert.deepStrictEqual(rows, ctx.db.listAlarms(id, { recent: 20 }));
+  });
+
+  test('ack', async () => {
+    const id = seedRoom(ctx.db, 'R6');
+    ctx.db.raiseAlarm(id, { alarm_key: 'sensor_RH', level: 'warning', label: 'Sensor', at: NOW });
+    const r1 = await fetch(`${ctx.url}/api/rooms/${id}/alarms/sensor_RH/ack`, { method: 'POST' });
+    assert.equal(r1.status, 200);
+    const body1 = await r1.json();
+    assert.equal(body1.acked_at, NOW);
+    const last = ctx.rooms.calls[ctx.rooms.calls.length - 1];
+    assert.equal(last.method, 'ackAlarm');
+    assert.deepStrictEqual(last.args, [id, 'sensor_RH']);
+
+    const r2 = await fetch(`${ctx.url}/api/rooms/${id}/alarms/sensor_RH/ack`, { method: 'POST' });
+    assert.equal(r2.status, 200);
+    assert.deepStrictEqual(await r2.json(), body1);
+
+    ctx.db.raiseAlarm(id, { alarm_key: 'rh Hi', level: 'warning', label: 'Spaced key', at: NOW });
+    const r3 = await fetch(`${ctx.url}/api/rooms/${id}/alarms/rh%20Hi/ack`, { method: 'POST' });
+    assert.equal(r3.status, 200);
+    assert.equal((await r3.json()).alarm_key, 'rh Hi');
+
+    const r4 = await fetch(`${ctx.url}/api/rooms/${id}/alarms/%E0%A4%A/ack`, { method: 'POST' });
+    assert.equal(r4.status, 404);
+    assert.equal((await r4.json()).error, 'Unknown alarm');
+
+    const r5 = await fetch(`${ctx.url}/api/rooms/${id}/alarms/noSuchKey/ack`, { method: 'POST' });
+    assert.equal(r5.status, 404);
+    assert.equal((await r5.json()).error, 'Unknown alarm');
+  });
+});
