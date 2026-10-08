@@ -696,10 +696,14 @@ function showChanges(changes, opts) {
     function finish(value) {
       if (settled) return;
       settled = true;
+      global.removeEventListener('hashchange', onLeave);
       dialog.close();
       dialog.remove();
       resolve(value);
     }
+    // Leaving the page closes the dialog and resolves null, so an unmounted module never receives a confirm.
+    const onLeave = () => finish(null);
+    global.addEventListener('hashchange', onLeave);
     confirmBtn.addEventListener('click', () => finish(noteInput ? noteInput.value.trim() : ''));
     cancelBtn.addEventListener('click', () => finish(null));
     dialog.addEventListener('cancel', e => { e.preventDefault(); finish(null); });
