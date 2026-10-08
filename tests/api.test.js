@@ -5,6 +5,7 @@ const http = require('node:http');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { spawn } = require('node:child_process');
 
 const { openFakeDb } = require('../tests/fakes/db.js');
 const { createFakeRoomManager } = require('../tests/fakes/rooms.js');
@@ -862,5 +863,273 @@ describe('error mapping and the database-error stop (4.4)', () => {
       assert.deepStrictEqual((await r.json()).details, ['x']);
       assert.equal(ctx.fatals.length, before);
     });
+  });
+});
+
+function freePort() {
+  return new Promise((resolve, reject) => {
+    const srv = http.createServer();
+    srv.listen(0, '127.0.0.1', () => {
+      const port = srv.address().port;
+      srv.close(() => resolve(port));
+    });
+    srv.on('error', reject);
+  });
+}
+
+function buildMainTmp() {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'farm-main-'));
+  const worktreeRoot = path.join(__dirname, '..');
+  fs.mkdirSync(path.join(tmp, 'server'), { recursive: true });
+  fs.copyFileSync(path.join(worktreeRoot, 'server', 'main.js'), path.join(tmp, 'server', 'main.js'));
+  fs.copyFileSync(path.join(worktreeRoot, 'server', 'config.js'), path.join(tmp, 'server', 'config.js'));
+
+  fs.writeFileSync(path.join(tmp, 'server', 'api.js'), `
+'use strict';
+const { createApi } = require(${JSON.stringify(path.join(worktreeRoot, 'server', 'api.js'))});
+module.exports = {
+  createApi(opts) {
+    const real = createApi(opts);
+    return {
+      handle: real.handle,
+      close: () => { console.log('stub: api.close'); return real.close(); },
+    };
+  },
+};
+`);
+
+  fs.writeFileSync(path.join(tmp, 'server', 'db.js'), `
+'use strict';
+const { openFakeDb } = require(${JSON.stringify(path.join(worktreeRoot, 'tests', 'fakes', 'db.js'))});
+module.exports = {
+  openDb(p) {
+    console.log('stub: openDb ' + p);
+    if (process.env.STUB_DB_THROW) throw new Error('stub cannot open');
+    const db = openFakeDb();
+    const originalClose = db.close;
+    db.close = function () { console.log('stub: db.close'); return originalClose(); };
+    return db;
+  },
+};
+`);
+
+  fs.writeFileSync(path.join(tmp, 'server', 'rooms.js'), `
+'use strict';
+const { createFakeRoomManager } = require(${JSON.stringify(path.join(worktreeRoot, 'tests', 'fakes', 'rooms.js'))});
+module.exports = {
+  createRoomManager({ db }) {
+    const rooms = createFakeRoomManager({ db });
+    const originalStop = rooms.stop;
+    const originalStart = rooms.start;
+    rooms.stop = function (...args) { console.log('stub: rooms.stop'); return originalStop(...args); };
+    rooms.start = function (...args) {
+      console.log('stub: rooms.start');
+      if (process.env.STUB_START_THROW === 'sqlite') {
+        throw Object.assign(new Error('stub disk I/O error'), { code: 'ERR_SQLITE_ERROR', errcode: 10 });
+      }
+      if (process.env.STUB_START_THROW === 'plain') {
+        throw new Error('stub start failed');
+      }
+      const result = originalStart(...args);
+      if (process.env.STUB_FATAL_MS) {
+        setTimeout(() => {
+          rooms.emit('fatal', { error: Object.assign(new Error('stub disk I/O error'), { code: 'ERR_SQLITE_ERROR', errcode: 10 }) });
+        }, Number(process.env.STUB_FATAL_MS));
+      }
+      return result;
+    };
+    return rooms;
+  },
+};
+`);
+
+  fs.writeFileSync(path.join(tmp, 'preload-os.js'), `
+'use strict';
+require('node:os').networkInterfaces = () => JSON.parse(process.env.STUB_IFACES || '{}');
+`);
+
+  fs.writeFileSync(path.join(tmp, 'index.html'), 'main-test-index');
+  return tmp;
+}
+
+function spawnMain(tmp, env) {
+  const cleanEnv = {};
+  for (const k of Object.keys(process.env)) {
+    if (!k.startsWith('FARM_') && !k.startsWith('STUB_')) cleanEnv[k] = process.env[k];
+  }
+  Object.assign(cleanEnv, env);
+  const child = spawn(process.execPath, ['-r', path.join(tmp, 'preload-os.js'), path.join(tmp, 'server', 'main.js')], { env: cleanEnv, cwd: tmp });
+  let out = '', err = '';
+  const waiters = [];
+  function checkWaiters() {
+    for (let i = waiters.length - 1; i >= 0; i--) {
+      if (waiters[i].test()) { waiters[i].resolve(); waiters.splice(i, 1); }
+    }
+  }
+  child.stdout.on('data', d => { out += d.toString('utf8'); checkWaiters(); });
+  child.stderr.on('data', d => { err += d.toString('utf8'); checkWaiters(); });
+  const exitPromise = new Promise(resolve => child.on('exit', code => resolve(code)));
+  const killTimer = setTimeout(() => child.kill('SIGKILL'), 10000);
+  exitPromise.then(() => clearTimeout(killTimer));
+
+  function waitFor(testFn, timeoutMs = 5000) {
+    if (testFn()) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error(`timeout; stdout=${out} stderr=${err}`)), timeoutMs);
+      waiters.push({ test: testFn, resolve: () => { clearTimeout(t); resolve(); } });
+    });
+  }
+  return {
+    child,
+    get stdout() { return out; },
+    get stderr() { return err; },
+    waitForStdout(text, timeoutMs) { return waitFor(() => out.includes(text), timeoutMs); },
+    waitForExit(timeoutMs) {
+      if (timeoutMs === undefined) return exitPromise;
+      return Promise.race([exitPromise, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout waiting for exit')), timeoutMs))]);
+    },
+  };
+}
+
+describe('server/main.js', () => {
+  test('FARM_PORT=abc -> Bad configuration', async () => {
+    const tmp = buildMainTmp();
+    const p = spawnMain(tmp, { FARM_PORT: 'abc', FARM_HOST: '127.0.0.1' });
+    const code = await p.waitForExit(10000);
+    assert.equal(code, 1);
+    assert.ok(p.stderr.startsWith('Bad configuration:'), p.stderr);
+  });
+
+  test('bad farm.config.json -> Bad configuration', async () => {
+    const tmp = buildMainTmp();
+    fs.writeFileSync(path.join(tmp, 'farm.config.json'), '{bad');
+    const p = spawnMain(tmp, { FARM_HOST: '127.0.0.1' });
+    const code = await p.waitForExit(10000);
+    assert.equal(code, 1);
+    assert.ok(p.stderr.startsWith('Bad configuration:'), p.stderr);
+  });
+
+  test('env FARM_PORT wins over farm.config.json port', async () => {
+    const tmp = buildMainTmp();
+    fs.writeFileSync(path.join(tmp, 'farm.config.json'), JSON.stringify({ port: 1 }));
+    const port = await freePort();
+    const p = spawnMain(tmp, { FARM_PORT: String(port), FARM_HOST: '127.0.0.1' });
+    await p.waitForStdout(`Open http://127.0.0.1:${port}`);
+    p.child.kill('SIGTERM');
+    await p.waitForExit(10000);
+  });
+
+  test('no FARM_HOST, no usable network address -> exit 1', async () => {
+    const tmp = buildMainTmp();
+    const ifaces = {
+      lo: [{ address: '127.0.0.1', family: 'IPv4', internal: true }],
+      eth0: [{ address: '203.0.113.5', family: 'IPv4', internal: false }],
+    };
+    const p = spawnMain(tmp, { STUB_IFACES: JSON.stringify(ifaces) });
+    const code = await p.waitForExit(10000);
+    assert.equal(code, 1);
+    assert.ok(p.stderr.includes('No farm network address found; set FARM_HOST (for example 127.0.0.1).'), p.stderr);
+  });
+
+  test('no FARM_HOST, multiple candidates, listen fails on an address this machine lacks', async () => {
+    const tmp = buildMainTmp();
+    const ifaces = {
+      wlan0: [{ address: '192.168.254.253', family: 'IPv4', internal: false }],
+      eth0: [{ address: '10.254.253.252', family: 'IPv4', internal: false }],
+    };
+    const p = spawnMain(tmp, { STUB_IFACES: JSON.stringify(ifaces) });
+    const code = await p.waitForExit(10000);
+    assert.ok(p.stdout.includes('Farm network addresses: 10.254.253.252 (eth0), 192.168.254.253 (wlan0)'), p.stdout);
+    assert.equal(code, 1);
+    assert.ok(/Cannot listen on 10\.254\.253\.252:\d+:/.test(p.stderr), p.stderr);
+    const order = ['stub: api.close', 'stub: rooms.stop', 'stub: db.close'].map(s => p.stdout.indexOf(s));
+    assert.ok(order[0] >= 0 && order[0] < order[1] && order[1] < order[2], p.stdout);
+  });
+
+  test('normal start with FARM_DB; serves the API and index.html', async () => {
+    const tmp = buildMainTmp();
+    const port = await freePort();
+    const p = spawnMain(tmp, { FARM_HOST: '127.0.0.1', FARM_PORT: String(port), FARM_DB: 'x/y.db' });
+    await p.waitForStdout(`Open http://127.0.0.1:${port}`);
+    assert.ok(p.stdout.includes(`stub: openDb ${path.join(tmp, 'x/y.db')}`), p.stdout);
+    const idxOpenDb = p.stdout.indexOf('stub: openDb');
+    const idxRoomsStart = p.stdout.indexOf('stub: rooms.start');
+    const idxOpen = p.stdout.indexOf(`Open http://127.0.0.1:${port}`);
+    assert.ok(idxOpenDb >= 0 && idxOpenDb < idxRoomsStart && idxRoomsStart < idxOpen, p.stdout);
+    const line = p.stdout.split('\n').find(l => l.startsWith('Open http://'));
+    assert.equal(line, `Open http://127.0.0.1:${port}`);
+
+    const r1 = await fetch(`http://127.0.0.1:${port}/api/rooms`);
+    assert.equal(r1.status, 200);
+    assert.deepStrictEqual(await r1.json(), []);
+    const r2 = await fetch(`http://127.0.0.1:${port}/`);
+    assert.equal(await r2.text(), fs.readFileSync(path.join(tmp, 'index.html'), 'utf8'));
+
+    p.child.kill('SIGTERM');
+    await p.waitForExit(10000);
+  });
+
+  test('no FARM_DB -> default db path', async () => {
+    const tmp = buildMainTmp();
+    const port = await freePort();
+    const p = spawnMain(tmp, { FARM_HOST: '127.0.0.1', FARM_PORT: String(port) });
+    await p.waitForStdout('Open http://');
+    assert.ok(p.stdout.includes(`stub: openDb ${path.join(tmp, 'data/farm.db')}`), p.stdout);
+    p.child.kill('SIGTERM');
+    await p.waitForExit(10000);
+  });
+
+  for (const sig of ['SIGTERM', 'SIGINT']) {
+    test(`${sig} after a normal start -> exit 0, ordered shutdown`, async () => {
+      const tmp = buildMainTmp();
+      const port = await freePort();
+      const p = spawnMain(tmp, { FARM_HOST: '127.0.0.1', FARM_PORT: String(port) });
+      await p.waitForStdout('Open http://');
+      p.child.kill(sig);
+      const code = await p.waitForExit(10000);
+      assert.equal(code, 0);
+      const order = ['stub: api.close', 'stub: rooms.stop', 'stub: db.close'].map(s => p.stdout.indexOf(s));
+      assert.ok(order[0] >= 0 && order[0] < order[1] && order[1] < order[2], p.stdout);
+    });
+  }
+
+  test('STUB_DB_THROW=1 -> Cannot open the database', async () => {
+    const tmp = buildMainTmp();
+    const p = spawnMain(tmp, { FARM_HOST: '127.0.0.1', STUB_DB_THROW: '1' });
+    const code = await p.waitForExit(10000);
+    assert.equal(code, 1);
+    assert.ok(p.stderr.includes('Cannot open the database: stub cannot open'), p.stderr);
+  });
+
+  test('STUB_START_THROW=sqlite -> Database error, no Cannot start the rooms', async () => {
+    const tmp = buildMainTmp();
+    const p = spawnMain(tmp, { FARM_HOST: '127.0.0.1', STUB_START_THROW: 'sqlite' });
+    const code = await p.waitForExit(10000);
+    assert.equal(code, 1);
+    assert.ok(p.stdout.includes('stub: db.close'), p.stdout);
+    assert.ok(p.stderr.includes('Database error: stub disk I/O error'), p.stderr);
+    assert.ok(!p.stderr.includes('Cannot start the rooms'), p.stderr);
+  });
+
+  test('STUB_START_THROW=plain -> Cannot start the rooms, with a stack, no Database error', async () => {
+    const tmp = buildMainTmp();
+    const p = spawnMain(tmp, { FARM_HOST: '127.0.0.1', STUB_START_THROW: 'plain' });
+    const code = await p.waitForExit(10000);
+    assert.equal(code, 1);
+    assert.ok(p.stdout.includes('stub: db.close'), p.stdout);
+    assert.ok(p.stderr.includes('Cannot start the rooms: stub start failed'), p.stderr);
+    assert.ok(p.stderr.split('\n').some(l => l.startsWith('    at ')), p.stderr);
+    assert.ok(!p.stderr.includes('Database error'), p.stderr);
+  });
+
+  test('STUB_FATAL_MS=100 after a normal start -> Database error, no rooms.stop', async () => {
+    const tmp = buildMainTmp();
+    const port = await freePort();
+    const p = spawnMain(tmp, { FARM_HOST: '127.0.0.1', FARM_PORT: String(port), STUB_FATAL_MS: '100' });
+    await p.waitForStdout('Open http://');
+    const code = await p.waitForExit(10000);
+    assert.equal(code, 1);
+    assert.ok(p.stderr.includes('Database error: stub disk I/O error'), p.stderr);
+    assert.ok(!p.stdout.includes('stub: rooms.stop'), p.stdout);
   });
 });
