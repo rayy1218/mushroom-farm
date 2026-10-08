@@ -164,6 +164,7 @@ function cleanSettings(input, prefix, warnings) {
   return input;
 }
 function safeSettings(settings) {
+  if (settings === null || typeof settings !== 'object' || Array.isArray(settings)) throw new Error('This is not a settings file of this controller.');
   const warnings = [];
   const cleaned = cleanSettings(settings, '', warnings);
   const { settings: out, warnings: w2 } = CC.importSettings({ format: 'mushroom-climate-settings', version: CC.SETTINGS_VERSION, settings: cleaned });

@@ -141,3 +141,9 @@ test('diffSettings/applyChanges: an own __proto__ key on either side never pollu
   assert.throws(() => SP.applyChanges(d(), [{ path: '__proto__.polluted', new: 'yes' }]), /not allowed/);
   assert.equal(({}).polluted, undefined);
 });
+
+test('safeSettings: null, a non-object and an array throw the importSettings error', () => {
+  for (const bad of [null, undefined, [], 5, 'x', true]) {
+    assert.throws(() => SP.safeSettings(bad), { message: 'This is not a settings file of this controller.' });
+  }
+});
