@@ -702,3 +702,122 @@ test('No frozen CO₂', () => {
   const frozenEvents = db.listEvents(room.id, { limit: 1000 }).filter(e => e.text.includes('value does not change (frozen)'));
   assert.equal(frozenEvents.length, 0);
 });
+
+// ---------------------------------------------------------------------------
+// Task 6: stop() and resume (C2 section 4 stop, 8.1 resumed path)
+// ---------------------------------------------------------------------------
+
+test('Resume: sim room', () => {
+  let clock = T0;
+  const now = () => clock;
+  const db = openFakeDb({ now });
+  const spy1 = simSpyFactory();
+  const mgr1 = rooms.createRoomManager({ db, now, tickMs: 0, adapterFactory: spy1.factory });
+  const log1 = [];
+  mgr1.on('room', p => log1.push(p));
+  mgr1.start();
+  for (let i = 0; i < 90; i++) { clock += 1; mgr1.tick(); }
+  const viewBeforeStop = spy1.made[0].a.view();
+
+  log1.length = 0;
+  mgr1.stop();
+  const state = db.loadControllerState(1);
+  assert.equal(state.saved_at, now());
+  assert.ok(db.listEvents(1, { limit: 50 }).some(e => e.text === 'Stopped'));
+  assert.equal(log1.length, 0);
+  const rowCountAfterStop = db.queryReadings(1, { from: 0, to: now() }).length;
+  mgr1.tick();
+  assert.equal(db.queryReadings(1, { from: 0, to: now() }).length, rowCountAfterStop);
+
+  clock += 600;
+  const spy2 = simSpyFactory();
+  const mgr2 = rooms.createRoomManager({ db, now, tickMs: 0, adapterFactory: spy2.factory });
+  const log2 = [];
+  mgr2.on('event', p => log2.push(p));
+  const rowsBefore = db.queryReadings(1, { from: 0, to: now() });
+  mgr2.start();
+  assert.ok(log2.some(p => p.event.text === 'Resumed after 10 min stopped'));
+  assert.equal(db.queryReadings(1, { from: 0, to: now() }).length, rowsBefore.length);
+  assert.deepEqual(mgr2.get(1).live.reading, db.latestReading(1));
+  const viewAfterResume = spy2.made[0].a.view();
+  assert.equal(viewAfterResume.T, viewBeforeStop.T);
+  assert.equal(viewAfterResume.RH, viewBeforeStop.RH);
+  assert.equal(viewAfterResume.CO2, viewBeforeStop.CO2);
+
+  const lastBeforeT = rowsBefore[rowsBefore.length - 1].t;
+  for (let i = 0; i < 30; i++) { clock += 1; mgr2.tick(); }
+  const rowsAfter = db.queryReadings(1, { from: 0, to: now() });
+  assert.equal(rowsAfter.length, rowsBefore.length + 1);
+  assert.ok(rowsAfter[rowsAfter.length - 1].t > lastBeforeT);
+
+  assert.equal(mgr2.get(1).live.stage, 'fruiting');
+});
+
+test('Resume: alarms carry on', () => {
+  const s = scripted();
+  let clock = T0;
+  const now = () => clock;
+  const db = openFakeDb({ now });
+  const mgr1 = rooms.createRoomManager({ db, now, tickMs: 0, adapterFactory: s.factory });
+  s.knobs.values = { RH: null };
+  mgr1.start();
+  clock += 30; mgr1.tick();
+  clock += 30; mgr1.tick(); // raises sensor_RH
+  assert.equal(mgr1.get(1).live.alarms, 1);
+  mgr1.stop();
+
+  const rowsBefore = db.queryReadings(1, { from: 0, to: now() }).length;
+  const log2 = [];
+  const mgr2 = rooms.createRoomManager({ db, now, tickMs: 0, adapterFactory: s.factory });
+  mgr2.on('alarm', p => log2.push(p));
+  mgr2.start();
+  assert.equal(db.queryReadings(1, { from: 0, to: now() }).length, rowsBefore);
+  assert.equal(log2.filter(p => p.change === 'raised').length, 0);
+  assert.equal(mgr2.get(1).live.alarms, 1);
+});
+
+test('Resume: alarm cleared while stopped', () => {
+  const s = scripted();
+  let clock = T0;
+  const now = () => clock;
+  const db = openFakeDb({ now });
+  const mgr1 = rooms.createRoomManager({ db, now, tickMs: 0, adapterFactory: s.factory });
+  s.knobs.values = { RH: null };
+  mgr1.start();
+  clock += 30; mgr1.tick();
+  clock += 30; mgr1.tick();
+  assert.equal(mgr1.get(1).live.alarms, 1);
+  mgr1.stop();
+
+  s.knobs.values = {};
+  const log2 = [];
+  const mgr2 = rooms.createRoomManager({ db, now, tickMs: 0, adapterFactory: s.factory });
+  mgr2.on('alarm', p => log2.push(p));
+  mgr2.start();
+  clock += 30; mgr2.tick();
+  assert.ok(log2.some(p => p.change === 'cleared'));
+  assert.equal(mgr2.get(1).live.alarms, 0);
+});
+
+test('One reading shape', () => {
+  let clock = T0;
+  const now = () => clock;
+  const db = openFakeDb({ now });
+  const spy1 = simSpyFactory();
+  const mgr1 = rooms.createRoomManager({ db, now, tickMs: 0, adapterFactory: spy1.factory });
+  mgr1.start();
+  mgr1.stop();
+
+  const mgr2 = rooms.createRoomManager({ db, now, tickMs: 0, adapterFactory: rooms.defaultAdapterFactory });
+  mgr2.start();
+  const live = mgr2.get(1).live;
+  const expected = db.queryReadings(1, { from: 0, to: now() }).at(-1);
+  assert.deepEqual(live.reading, expected);
+  assert.deepEqual(Object.keys(live.reading).sort(), READING_KEYS.slice().sort());
+  mgr2.stop();
+
+  clock += 3601;
+  const mgr3 = rooms.createRoomManager({ db, now, tickMs: 0, adapterFactory: rooms.defaultAdapterFactory });
+  mgr3.start();
+  assert.equal(mgr3.get(1).live.reading, null);
+});
