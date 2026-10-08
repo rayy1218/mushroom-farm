@@ -109,11 +109,16 @@ function createApi(opts) {
   // ---- live feed (C4) ----
 
   function writeToConnection(res, text) {
-    if (res.destroyed || res.writableEnded) return;
-    res.write(text);
+    if (res.destroyed || res.writableEnded) { connections.delete(res); return; }
+    try {
+      res.write(text);
+    } catch {
+      connections.delete(res);
+      return;
+    }
     if (res.writableLength > BODY_LIMIT) {
       connections.delete(res);
-      res.destroy();
+      try { res.destroy(); } catch { /* already gone */ }
     }
   }
 
@@ -152,6 +157,7 @@ function createApi(opts) {
     });
     res.write('retry: 3000\n\n');
     connections.add(res);
+    res.on('error', () => connections.delete(res));
     res.on('close', () => connections.delete(res));
   }
 
