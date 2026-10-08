@@ -553,11 +553,15 @@ const MIMIC_SVG = `
       <text x="346" y="317" class="m-small" id="mCo2Src">2,000 blocks</text>
     </svg>`;
 
+// C5 1.4 "Today's ids stay": today's faceplate heading ids are fpAcTitle, fpHuTitle, fpFanTitle, fpLiTitle,
+// fpCiTitle (not a lowercase device name), so faceplate() maps dev to that suffix when building the id.
+const FP_ID_SUFFIX = { ac: 'Ac', hu: 'Hu', fan: 'Fan', lights: 'Li', circ: 'Ci' };
 function faceplate(dev, title, tag, extraClass, body) {
-  return `<article class="card faceplate${extraClass ? ' ' + extraClass : ''}" style="--key:var(--s-${dev === 'lights' ? 'li' : dev === 'circ' ? 'ci' : dev})" aria-labelledby="fp${dev}Title">
+  const titleId = `fp${FP_ID_SUFFIX[dev]}Title`;
+  return `<article class="card faceplate${extraClass ? ' ' + extraClass : ''}" style="--key:var(--s-${dev === 'lights' ? 'li' : dev === 'circ' ? 'ci' : dev})" aria-labelledby="${titleId}">
     <header class="fp-head">
       <span class="key"></span>
-      <div><h3 id="fp${dev}Title">${title}</h3><span class="tag">${tag}</span></div>
+      <div><h3 id="${titleId}">${title}</h3><span class="tag">${tag}</span></div>
     </header>
     ${body}
   </article>`;
@@ -836,9 +840,15 @@ ${faceplate('circ', 'Circulation fan', 'CF-205 · 40 W', 'small', `
 
 // ---------------- Wiring (mount only) ----------------
 function bindRange(root, id, outId, fmt, apply) {
+  // Only add the listener here; do not call apply() yet. Each bound range's "Simulation controls that mirror
+  // env/cfg (initial paint)" section below calls setRange(..., env.x), which dispatches 'input' and runs upd()
+  // with the closure's own env value. Calling apply() here too would first push the freshly-remounted markup's
+  // default (for example inHigh="33") into env, overwriting a value the farmer set earlier (C5 3.1: the
+  // Simulator's run stays in the closure between mounts).
   const elIn = root.querySelector('#' + id), out = root.querySelector('#' + outId);
   const upd = () => { const v = parseFloat(elIn.value); apply(v); out.textContent = fmt(v); };
-  elIn.addEventListener('input', upd); upd();
+  elIn.addEventListener('input', upd);
+  out.textContent = fmt(parseFloat(elIn.value));
 }
 const setRange = (root, id, v) => { const elIn = root.querySelector('#' + id); elIn.value = v; elIn.dispatchEvent(new Event('input')); };
 
@@ -1043,8 +1053,7 @@ function mount(viewEl) {
   logDirty = true; chartsDirty = true; alarmKey = ''; exhKey = ''; lastStage = '';
   wire();
   updateLadderLive();
-  updateUi();
-  paintProgram();
+  updateUi(); // updateUi() already calls paintProgram()
   scheduleCropCheck();
   last = performance.now(); acc = 0; lastUi = 0; lastChart = 0;
   rafId = requestAnimationFrame(frame);
