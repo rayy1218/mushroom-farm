@@ -53,7 +53,13 @@ function checkFields(obj, allowed, label) {
   }
 }
 
-function openFakeDb(options = {}) {
+// A missing (undefined) or explicit null options/query argument is treated as {}.
+function orEmpty(v) {
+  return v == null ? {} : v;
+}
+
+function openFakeDb(options) {
+  options = orEmpty(options);
   checkFields(options, ['now'], 'openFakeDb');
   const now = options.now || (() => Math.floor(Date.now() / 1000));
 
@@ -144,8 +150,9 @@ function openFakeDb(options = {}) {
     return roomToPublic(roomRow);
   }
 
-  function listRooms(options = {}) {
+  function listRooms(options) {
     assertOpen();
+    options = orEmpty(options);
     checkFields(options, ['includeArchived'], 'listRooms');
     const includeArchived = options.includeArchived === true;
     return rooms
@@ -175,7 +182,9 @@ function openFakeDb(options = {}) {
   function archiveRoom(id, at) {
     assertOpen();
     const room = requireRoom(id);
-    if (room.archived_at === null) room.archived_at = at === undefined ? now() : at;
+    if (room.archived_at === null) {
+      room.archived_at = numColumn(at === undefined ? now() : at, { type: 'INTEGER', notNull: false, name: 'rooms.archived_at' });
+    }
     return roomToPublic(room);
   }
 
@@ -279,6 +288,7 @@ function openFakeDb(options = {}) {
   function queryReadings(roomId, query) {
     assertOpen();
     requireRoom(roomId);
+    query = orEmpty(query);
     checkFields(query, ['from', 'to', 'step'], 'queryReadings');
     if (!Number.isInteger(query.from)) throw new RangeError('queryReadings: from must be an integer');
     if (!Number.isInteger(query.to)) throw new RangeError('queryReadings: to must be an integer');
@@ -318,9 +328,10 @@ function openFakeDb(options = {}) {
     return eventToPublic(row);
   }
 
-  function listEvents(roomId, options = {}) {
+  function listEvents(roomId, options) {
     assertOpen();
     requireRoom(roomId);
+    options = orEmpty(options);
     checkFields(options, ['limit', 'before'], 'listEvents');
     const limit = options.limit === undefined ? 100 : options.limit;
     if (!Number.isInteger(limit) || limit < 1 || limit > 1000) throw new RangeError('listEvents: limit must be an integer from 1 to 1000');
@@ -355,24 +366,26 @@ function openFakeDb(options = {}) {
     requireRoom(roomId);
     const open = alarms.find(a => a.room_id === roomId && a.alarm_key === alarmKey && a.cleared_at === null);
     if (!open) return null;
-    open.cleared_at = at === undefined ? now() : at;
+    open.cleared_at = numColumn(at === undefined ? now() : at, { type: 'INTEGER', notNull: false, name: 'alarms.cleared_at' });
     return alarmToPublic(open);
   }
 
   function ackAlarm(roomId, alarmKey, at) {
     assertOpen();
     requireRoom(roomId);
+    // Column rule (check 6) before the alarmKey sub-id lookup (check 7).
+    const acked = numColumn(at === undefined ? now() : at, { type: 'INTEGER', notNull: false, name: 'alarms.acked_at' });
     const rows = alarms.filter(a => a.room_id === roomId && a.alarm_key === alarmKey);
     if (rows.length === 0) throw new NotFoundError('alarm', alarmKey);
-    const acked = at === undefined ? now() : at;
     for (const row of rows) if (row.acked_at === null) row.acked_at = acked;
     const newest = rows.reduce((a, b) => (b.id > a.id ? b : a));
     return alarmToPublic(newest);
   }
 
-  function listAlarms(roomId, options = {}) {
+  function listAlarms(roomId, options) {
     assertOpen();
     requireRoom(roomId);
+    options = orEmpty(options);
     checkFields(options, ['recent'], 'listAlarms');
     const recent = options.recent === undefined ? 20 : options.recent;
     if (!Number.isInteger(recent) || recent < 0 || recent > 500) throw new RangeError('listAlarms: recent must be an integer from 0 to 500');
@@ -440,9 +453,11 @@ function openFakeDb(options = {}) {
   function applyCalibration(roomId, runId, at) {
     assertOpen();
     requireRoom(roomId);
+    // Column rule (check 6) before the runId sub-id lookup (check 7).
+    const applied = numColumn(at === undefined ? now() : at, { type: 'INTEGER', notNull: false, name: 'calibrations.applied_at' });
     const row = calibrations.find(c => c.id === runId && c.room_id === roomId);
     if (!row) throw new NotFoundError('calibration', runId);
-    row.applied_at = at === undefined ? now() : at;
+    row.applied_at = applied;
     return calibrationToPublic(row);
   }
 
@@ -468,8 +483,9 @@ function openFakeDb(options = {}) {
   function replaceMix(roomId, rows) {
     assertOpen();
     requireRoom(roomId);
+    // Check 3 (unknown fields) over every row before check 6 (column rules) over every row (section 5.3 order).
+    for (const row of rows) checkFields(row, ['crop', 'blocks', 'co2_per_block'], 'replaceMix');
     const prepared = rows.map((row, pos) => {
-      checkFields(row, ['crop', 'blocks', 'co2_per_block'], 'replaceMix');
       const crop = numColumn(row.crop, { type: 'TEXT', notNull: true, name: 'crop_mixes.crop' });
       const blocks = numColumn(row.blocks, { type: 'INTEGER', notNull: true, check: v => v >= 0, name: 'crop_mixes.blocks' });
       const co2_per_block = numColumn(row.co2_per_block, { type: 'REAL', notNull: false, name: 'crop_mixes.co2_per_block' });
