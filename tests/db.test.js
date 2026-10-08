@@ -10,6 +10,10 @@ const { DatabaseSync } = require('node:sqlite');
 const { openDb, NotFoundError, UPGRADES } = require('../server/db.js');
 const { toJson, fromJson } = require('../server/db-common.js');
 const { openFakeDb } = require('./fakes/db.js');
+require('../sim.js');
+require('../controller.js');
+require('../runtime.js');
+const SIM = globalThis.ClimateSim, CC = globalThis.ClimateController, RT = globalThis.ClimateRuntime;
 
 const TARGETS = [
   ['real', o => openDb(':memory:', o)],
@@ -721,4 +725,66 @@ both('raiseAlarm: constraints', (t, open) => {
   const roomId = makeRoom(db);
   assertSql(() => db.raiseAlarm(roomId, { alarm_key: 'x', level: 'info', label: 'x' }), 275);
   assertSql(() => db.raiseAlarm(roomId, { alarm_key: 'x', level: 'warning' }), 1299);
+});
+
+// ---------------------------------------------------------------------------
+// Task 9: Controller state and JSON (C1 section 5, 6.9)
+// ---------------------------------------------------------------------------
+
+both('loadControllerState: null before any save', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  assert.equal(db.loadControllerState(roomId), null);
+});
+
+both('saveControllerState: shape; one row per room', (t, open) => {
+  let clock = T0;
+  const db = open({ now: () => clock });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  assert.equal(db.saveControllerState(roomId, { controller: { a: 1 } }), undefined);
+  const loaded = db.loadControllerState(roomId);
+  assert.deepStrictEqual(loaded, { room_id: roomId, saved_at: T0, controller: { a: 1 }, sim: null });
+  clock = T0 + 10;
+  db.saveControllerState(roomId, { controller: { a: 2 }, sim: { b: 1 } });
+  const loaded2 = db.loadControllerState(roomId);
+  assert.deepStrictEqual(loaded2, { room_id: roomId, saved_at: T0 + 10, controller: { a: 2 }, sim: { b: 1 } });
+});
+
+both('saveControllerState: $num encoding of non-finite values', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  const controller = { win: { min: Infinity, max: -Infinity }, x: NaN, list: [Infinity] };
+  db.saveControllerState(roomId, { controller });
+  const loaded = db.loadControllerState(roomId);
+  assert.ok(Object.is(loaded.controller.win.min, Infinity));
+  assert.ok(Object.is(loaded.controller.win.max, -Infinity));
+  assert.ok(Object.is(loaded.controller.x, NaN));
+  assert.ok(Object.is(loaded.controller.list[0], Infinity));
+});
+
+both('saveControllerState: real snapshot round-trips through toJson/fromJson', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  const sim = SIM.create(structuredClone(SIM.DEFAULT_ENV));
+  const ctl = CC.create(CC.defaultSettings(), null, null);
+  const io = RT.simIO(sim);
+  const rt = RT.createRuntime({ io, ctl });
+  rt.poll();
+  for (let s = 0; s < 120; s++) { io.advance(1); rt.poll(); }
+  const snapshot = ctl.snapshot();
+  db.saveControllerState(roomId, { controller: snapshot });
+  const loaded = db.loadControllerState(roomId);
+  assert.deepStrictEqual(loaded.controller, fromJson(toJson(snapshot)));
+});
+
+both('saveControllerState: errors', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  assertSql(() => db.saveControllerState(roomId, {}), 1299);
+  assert.throws(() => db.saveControllerState(roomId, { controller: {}, extra: 1 }), TypeError);
 });

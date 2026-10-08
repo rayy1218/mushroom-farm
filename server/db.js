@@ -474,6 +474,38 @@ function buildDb(conn, dbPath, version, now) {
     return open.concat(cleared);
   }
 
+  // Controller state (section 6.9)
+  const saveControllerStmt = conn.prepare(
+    'INSERT INTO controller_state (room_id, saved_at, controller, sim) VALUES (:room_id, :saved_at, :controller, :sim) ' +
+    'ON CONFLICT (room_id) DO UPDATE SET saved_at = :saved_at, controller = :controller, sim = :sim'
+  );
+  const loadControllerStmt = conn.prepare('SELECT * FROM controller_state WHERE room_id = :room_id');
+
+  function saveControllerState(roomId, state) {
+    live();
+    roomCheck(roomId);
+    fields('saveControllerState', state, ['controller', 'sim', 'at']);
+    const s = state || {};
+    const controllerText = jsonVal(s.controller);
+    const simInput = s.sim === undefined ? null : s.sim;
+    const simText = jsonVal(simInput);
+    const at = val(s.at === undefined ? now() : s.at);
+    saveControllerStmt.run({ room_id: roomId, saved_at: at, controller: controllerText, sim: simText });
+    return undefined;
+  }
+
+  function loadControllerState(roomId) {
+    live();
+    roomCheck(roomId);
+    const row = loadControllerStmt.get({ room_id: roomId });
+    if (!row) return null;
+    return {
+      room_id: row.room_id, saved_at: row.saved_at,
+      controller: fromJson(row.controller),
+      sim: row.sim === null ? null : fromJson(row.sim),
+    };
+  }
+
   function listRooms(options) {
     live();
     fields('listRooms', options, ['includeArchived']);
@@ -513,6 +545,8 @@ function buildDb(conn, dbPath, version, now) {
     clearAlarm,
     ackAlarm,
     listAlarms,
+    saveControllerState,
+    loadControllerState,
   };
 }
 
