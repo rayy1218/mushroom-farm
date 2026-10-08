@@ -398,13 +398,19 @@ function createSettingsPanel(el, options) {
     if (!CC.FARM_TYPES[settings.farmType].stages.includes(settings.stage)) settings.stage = CC.FARM_TYPES[settings.farmType].stages[0];
   }
 
-  function commit(mutate) {
+  // forceWriteEl: the control that triggered the in-progress commit, so repaint() can write the stored
+  // (clamped/parsed) value into it even though it still has focus (C6 7.4 "Field rewrite"). set() (7.2)
+  // never sets this, so it keeps skipping the focused control.
+  let forceWriteEl = null;
+  function commit(mutate, sourceEl) {
     if (readOnly) return;
     const before = structuredClone(settings);
     mutate();
     applyDerived();
     const changes = diffSettings(before, settings);
+    forceWriteEl = sourceEl || null;
     repaint();
+    forceWriteEl = null;
     if (changes.length && onChangeCb) onChangeCb(changes, structuredClone(settings));
   }
 
@@ -413,26 +419,26 @@ function createSettingsPanel(el, options) {
   const parseHM = s => { const m = /^(\d{1,2}):(\d{2})$/.exec(String(s).trim()); return m ? clamp(+m[1], 0, 23) * 60 + clamp(+m[2], 0, 59) : null; };
 
   // ---- Crop and stage ----
-  $('#inFarm').addEventListener('change', e => commit(() => { settings.farmType = e.target.value; }));
-  $('#inCrop').addEventListener('change', e => commit(() => { settings.crop = e.target.value; }));
+  $('#inFarm').addEventListener('change', e => commit(() => { settings.farmType = e.target.value; }, e.target));
+  $('#inCrop').addEventListener('change', e => commit(() => { settings.crop = e.target.value; }, e.target));
   $('#stageSeg').addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
-    commit(() => { settings.stage = b.dataset.stage; });
+    commit(() => { settings.stage = b.dataset.stage; }, b);
   });
-  $('#pgHarvest').addEventListener('change', e => commit(() => { settings.program.harvest.on = e.target.checked; }));
+  $('#pgHarvest').addEventListener('change', e => commit(() => { settings.program.harvest.on = e.target.checked; }, e.target));
   $('#pgTimes').addEventListener('change', e => commit(() => {
     const times = e.target.value.split(/[,\s]+/).map(x => /^(\d{1,2}):(\d{2})$/.exec(x)).filter(Boolean)
       .map(m => clamp(+m[1], 0, 23) * 60 + clamp(+m[2], 0, 59)).sort((a, b) => a - b);
     settings.program.harvest.times = times;
-  }));
+  }, e.target));
 
   // ---- Targets (range: input event, continuous) ----
-  $('#inSpT').addEventListener('input', e => commit(() => { settings.spT = +e.target.value; }));
-  $('#inSpRH').addEventListener('input', e => commit(() => { settings.spRH = +e.target.value; }));
-  $('#inCo2Lim').addEventListener('input', e => commit(() => { settings.co2Lim = +e.target.value; }));
+  $('#inSpT').addEventListener('input', e => commit(() => { settings.spT = +e.target.value; }, e.target));
+  $('#inSpRH').addEventListener('input', e => commit(() => { settings.spRH = +e.target.value; }, e.target));
+  $('#inCo2Lim').addEventListener('input', e => commit(() => { settings.co2Lim = +e.target.value; }, e.target));
 
   // ---- Installer: program and room ----
-  $('#pgAuto').addEventListener('change', e => commit(() => { settings.program.auto = e.target.checked; }));
+  $('#pgAuto').addEventListener('change', e => commit(() => { settings.program.auto = e.target.checked; }, e.target));
   // [id, path, lo, hi, fallback, zeroAlsoFallsBack, round]
   const PROGRAM_NUM_FIELDS = [
     ['pgDaysSpawn', 'program.days.spawn', 1, 90, 1, true, false],
@@ -452,66 +458,66 @@ function createSettingsPanel(el, options) {
       v = clamp(v, lo, hi);
       if (round) v = Math.round(v);
       setPath(settings, path, v);
-    }));
+    }, e.target));
   }
-  $('#pgLightOn').addEventListener('change', e => commit(() => { const v = parseHM(e.target.value); if (v !== null) settings.program.lights.on = v; }));
-  $('#pgLightOff').addEventListener('change', e => commit(() => { const v = parseHM(e.target.value); if (v !== null) settings.program.lights.off = v; }));
+  $('#pgLightOn').addEventListener('change', e => commit(() => { const v = parseHM(e.target.value); if (v !== null) settings.program.lights.on = v; }, e.target));
+  $('#pgLightOff').addEventListener('change', e => commit(() => { const v = parseHM(e.target.value); if (v !== null) settings.program.lights.off = v; }, e.target));
   for (const [id, st] of [['pgLSpawn', 'spawn'], ['pgLPin', 'pinning'], ['pgLFruit', 'fruiting'], ['pgLRest', 'rest']]) {
-    $('#' + id).addEventListener('change', e => commit(() => { settings.program.lights.stages[st] = e.target.checked; }));
+    $('#' + id).addEventListener('change', e => commit(() => { settings.program.lights.stages[st] = e.target.checked; }, e.target));
   }
-  $('#inSensMode').addEventListener('change', e => commit(() => { settings.sensorMode = e.target.value; }));
+  $('#inSensMode').addEventListener('change', e => commit(() => { settings.sensorMode = e.target.value; }, e.target));
   $('#inRoomM3').addEventListener('change', e => commit(() => {
     const v = parseFloat(e.target.value);
     settings.roomM3 = clamp(Number.isFinite(v) && v !== 0 ? v : settings.roomM3, 1, 100000);
-  }));
+  }, e.target));
   for (const [id, k, lo, hi] of [['oT', 'T', -5, 5], ['oRH', 'RH', -15, 15], ['oCO2', 'CO2', -500, 500]]) {
     $('#' + id).addEventListener('change', e => commit(() => {
       const v = parseFloat(e.target.value);
       settings.offsets[k] = clamp(Number.isFinite(v) ? v : 0, lo, hi);
-    }));
+    }, e.target));
   }
 
   // ---- Fan and CO2 rules ----
-  $('#rCo2Safety').addEventListener('change', e => commit(() => { settings.rules.co2Safety = e.target.checked; }));
-  $('#rCo2SafeAt').addEventListener('change', e => commit(() => { settings.rules.co2SafetyAt = numIn($('#rCo2SafeAt'), settings.rules.co2SafetyAt, 500, 20000); }));
-  $('#rRhLock').addEventListener('change', e => commit(() => { settings.rules.rhLock = e.target.checked; }));
+  $('#rCo2Safety').addEventListener('change', e => commit(() => { settings.rules.co2Safety = e.target.checked; }, e.target));
+  $('#rCo2SafeAt').addEventListener('change', e => commit(() => { settings.rules.co2SafetyAt = numIn($('#rCo2SafeAt'), settings.rules.co2SafetyAt, 500, 20000); }, e.target));
+  $('#rRhLock').addEventListener('change', e => commit(() => { settings.rules.rhLock = e.target.checked; }, e.target));
   $('#rRhStop').addEventListener('change', e => commit(() => {
     const R = settings.rules;
     R.rhStop = Math.round(numIn($('#rRhStop'), R.rhStop, 1, 20));
     if (R.rhResume > R.rhStop - 1) R.rhResume = R.rhStop - 1;
-  }));
+  }, e.target));
   $('#rRhResume').addEventListener('change', e => commit(() => {
     const R = settings.rules;
     R.rhResume = Math.round(numIn($('#rRhResume'), R.rhResume, 0, 19));
     if (R.rhStop < R.rhResume + 1) R.rhStop = R.rhResume + 1;
-  }));
-  $('#rRhAction').addEventListener('change', e => commit(() => { settings.rules.rhAction = e.target.value; }));
+  }, e.target));
+  $('#rRhAction').addEventListener('change', e => commit(() => { settings.rules.rhAction = e.target.value; }, e.target));
   // Keep at least 50 ppm between the "act" level and the "end" level (the field just edited wins).
   $('#rFanOn').addEventListener('change', e => commit(() => {
     const R = settings.rules;
     R.fanOn = Math.round(numIn($('#rFanOn'), R.fanOn, 450, 20000));
     if (R.fanOff > R.fanOn - 50) R.fanOff = R.fanOn - 50;
-  }));
+  }, e.target));
   $('#rFanOff').addEventListener('change', e => commit(() => {
     const R = settings.rules;
     R.fanOff = Math.round(numIn($('#rFanOff'), R.fanOff, 400, 19950));
     if (R.fanOn < R.fanOff + 50) R.fanOn = R.fanOff + 50;
-  }));
-  $('#rAirMode').addEventListener('change', e => commit(() => { settings.rules.airMode = e.target.value; }));
-  $('#rFanLevel').addEventListener('change', e => commit(() => { settings.rules.fanLevel = +e.target.value; }));
-  $('#rAcPurge').addEventListener('change', e => commit(() => { settings.rules.acPurge = e.target.checked; }));
-  $('#rAcAction').addEventListener('change', e => commit(() => { settings.rules.acAction = e.target.value; }));
-  $('#rSetbackC').addEventListener('change', e => commit(() => { settings.rules.acSetbackC = numIn($('#rSetbackC'), settings.rules.acSetbackC, 0.5, 6); }));
+  }, e.target));
+  $('#rAirMode').addEventListener('change', e => commit(() => { settings.rules.airMode = e.target.value; }, e.target));
+  $('#rFanLevel').addEventListener('change', e => commit(() => { settings.rules.fanLevel = +e.target.value; }, e.target));
+  $('#rAcPurge').addEventListener('change', e => commit(() => { settings.rules.acPurge = e.target.checked; }, e.target));
+  $('#rAcAction').addEventListener('change', e => commit(() => { settings.rules.acAction = e.target.value; }, e.target));
+  $('#rSetbackC').addEventListener('change', e => commit(() => { settings.rules.acSetbackC = numIn($('#rSetbackC'), settings.rules.acSetbackC, 0.5, 6); }, e.target));
   $('#rAcOff').addEventListener('change', e => commit(() => {
     const R = settings.rules;
     R.acOff = Math.round(numIn($('#rAcOff'), R.acOff, 450, 20000));
     if (R.acOn > R.acOff - 50) R.acOn = R.acOff - 50;
-  }));
+  }, e.target));
   $('#rAcOn').addEventListener('change', e => commit(() => {
     const R = settings.rules;
     R.acOn = Math.round(numIn($('#rAcOn'), R.acOn, 400, 19950));
     if (R.acOff < R.acOn + 50) R.acOff = R.acOn + 50;
-  }));
+  }, e.target));
 
   // ---- Machines: Auto/Manual with bumpless transfer (7.4), manual outputs ----
   function bumpless(dev) {
@@ -539,28 +545,41 @@ function createSettingsPanel(el, options) {
       commit(() => {
         if (!auto) bumpless(dev);
         settings.manual[dev].auto = auto;
-      });
+      }, b);
     });
   });
   $('#acModeSel').addEventListener('change', e => commit(() => {
     const m = settings.manual.ac, v = e.target.value;
     m.power = v !== 'off';
     if (m.power) m.mode = v;
-  }));
-  $('#acSetIn').addEventListener('input', e => commit(() => { settings.manual.ac.setpoint = +e.target.value; }));
-  $('#huLevelSel').addEventListener('change', e => commit(() => { settings.manual.hu.level = +e.target.value; }));
-  $('#fanLevelSel').addEventListener('change', e => commit(() => { settings.manual.fan.level = +e.target.value; }));
-  $('#liOn').addEventListener('change', e => commit(() => { settings.manual.lights.on = e.target.checked; }));
-  $('#ciOn').addEventListener('change', e => commit(() => { settings.manual.circ.on = e.target.checked; }));
+  }, e.target));
+  $('#acSetIn').addEventListener('input', e => commit(() => { settings.manual.ac.setpoint = +e.target.value; }, e.target));
+  $('#huLevelSel').addEventListener('change', e => commit(() => { settings.manual.hu.level = +e.target.value; }, e.target));
+  $('#fanLevelSel').addEventListener('change', e => commit(() => { settings.manual.fan.level = +e.target.value; }, e.target));
+  $('#liOn').addEventListener('change', e => commit(() => { settings.manual.lights.on = e.target.checked; }, e.target));
+  $('#ciOn').addEventListener('change', e => commit(() => { settings.manual.circ.on = e.target.checked; }, e.target));
 
   // ---------------- repaint ----------------
   function setVal(elIn, value) {
-    if (document.activeElement === elIn) return;
+    if (document.activeElement === elIn && elIn !== forceWriteEl) return;
     if (elIn.type === 'checkbox') elIn.checked = value;
     else elIn.value = String(value);
   }
+  // Rebuild the stage buttons only when farmType or readOnly changed (finding: a ramp's 150 ms repaints
+  // rebuilt every button each time, so mousedown and mouseup could land on different elements and lose
+  // the click). Otherwise just update aria-pressed and disabled on the existing buttons.
+  let stageSegKey = null;
   function renderStageSeg() {
     const seg = $('#stageSeg');
+    const key = `${settings.farmType}|${readOnly}`;
+    if (key === stageSegKey) {
+      seg.querySelectorAll('button').forEach(b => {
+        b.setAttribute('aria-pressed', String(b.dataset.stage === settings.stage));
+        b.disabled = readOnly;
+      });
+      return;
+    }
+    stageSegKey = key;
     const STAGE_SHORT = { spawn: 'Spawn run', pinning: 'Pinning', fruiting: 'Fruiting', rest: 'Rest' };
     seg.replaceChildren(...CC.FARM_TYPES[settings.farmType].stages.map(st => {
       const b = document.createElement('button'); b.dataset.stage = st; b.textContent = STAGE_SHORT[st];
@@ -574,7 +593,7 @@ function createSettingsPanel(el, options) {
     setVal($('#inFarm'), s.farmType); setVal($('#inCrop'), s.crop);
     renderStageSeg();
     setVal($('#pgHarvest'), s.program.harvest.on);
-    if (document.activeElement !== $('#pgTimes')) $('#pgTimes').value = s.program.harvest.times.map(CC.hhmm).join(', ');
+    { const elIn = $('#pgTimes'); if (document.activeElement !== elIn || elIn === forceWriteEl) elIn.value = s.program.harvest.times.map(CC.hhmm).join(', '); }
     setVal($('#inSpT'), s.spT); global.FarmUi.set($('#outSpT').id, `${s.spT.toFixed(1)} °C`);
     setVal($('#inSpRH'), s.spRH); global.FarmUi.set($('#outSpRH').id, `${s.spRH} %`);
     setVal($('#inCo2Lim'), s.co2Lim); global.FarmUi.set($('#outCo2Lim').id, `${s.co2Lim} ppm`);
@@ -585,8 +604,8 @@ function createSettingsPanel(el, options) {
     setVal($('#pgFlushes'), s.program.flushes); setVal($('#pgRampH'), s.program.rampH);
     setVal($('#pgDry'), s.program.harvest.dryMin); setVal($('#pgPick'), s.program.harvest.pickMin);
     setVal($('#pgFloor'), s.program.harvest.floorDrop);
-    if (document.activeElement !== $('#pgLightOn')) $('#pgLightOn').value = CC.hhmm(s.program.lights.on);
-    if (document.activeElement !== $('#pgLightOff')) $('#pgLightOff').value = CC.hhmm(s.program.lights.off);
+    { const elIn = $('#pgLightOn'); if (document.activeElement !== elIn || elIn === forceWriteEl) elIn.value = CC.hhmm(s.program.lights.on); }
+    { const elIn = $('#pgLightOff'); if (document.activeElement !== elIn || elIn === forceWriteEl) elIn.value = CC.hhmm(s.program.lights.off); }
     setVal($('#pgLSpawn'), s.program.lights.stages.spawn); setVal($('#pgLPin'), s.program.lights.stages.pinning);
     setVal($('#pgLFruit'), s.program.lights.stages.fruiting); setVal($('#pgLRest'), s.program.lights.stages.rest);
     setVal($('#inSensMode'), s.sensorMode);
