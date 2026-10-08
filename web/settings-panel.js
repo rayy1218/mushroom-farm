@@ -2,7 +2,9 @@
 (function (global) {
 'use strict';
 
-const CC = global.ClimateController;
+// C5 1.3 lists ClimateController as needed "at call time", not at load: this proxy reads global.ClimateController
+// on each access, so it works even if this file is required before controller.js.
+const CC = new Proxy({}, { get(_, k) { return global.ClimateController[k]; } });
 
 function optMap(pairs) { return Object.fromEntries(pairs); }
 const cropOptions = () => optMap(Object.keys(CC.CROPS).filter(k => CC.CROPS[k].range).map(k => [k, CC.CROPS[k].name]));
@@ -471,7 +473,7 @@ function createSettingsPanel(el, options) {
 
   // ---- Fan and CO2 rules ----
   $('#rCo2Safety').addEventListener('change', e => commit(() => { settings.rules.co2Safety = e.target.checked; }));
-  $('#rCo2SafeAt').addEventListener('change', e => commit(() => { settings.rules.co2SafetyAt = Math.round(numIn($('#rCo2SafeAt'), settings.rules.co2SafetyAt, 500, 20000)); }));
+  $('#rCo2SafeAt').addEventListener('change', e => commit(() => { settings.rules.co2SafetyAt = numIn($('#rCo2SafeAt'), settings.rules.co2SafetyAt, 500, 20000); }));
   $('#rRhLock').addEventListener('change', e => commit(() => { settings.rules.rhLock = e.target.checked; }));
   $('#rRhStop').addEventListener('change', e => commit(() => {
     const R = settings.rules;
