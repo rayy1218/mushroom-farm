@@ -313,6 +313,95 @@ describe('checkCalibration extension', () => {
   });
 });
 
+describe('checkSimulationRun and checkRunPatch', () => {
+  const CC = globalThis.ClimateController;
+  const inputs = (over = {}) => ({
+    mix: [{ crop: 'oyster', blocks: 2000, co2_per_block: null }], settings: CC.defaultSettings(), region: 'my-lowland', tariff: 0.57,
+    volume: 60, calibration: null, empty_below: null, equipment: null, ...over,
+  });
+  const cycleResult = () => ({ verdict: 'ok', totals: { days: 1, pass: true, kwh: 10, rm: 5.7, rmPerBlock: 0.003 }, stages: [{ stage: 'fruiting' }], series: Array.from({ length: 24 }, (_, h) => ({ h })) });
+  const cycle = (over = {}) => ({ kind: 'cycle', inputs: inputs(), result: cycleResult(), ...over });
+  const capacity = (over = {}) => ({ kind: 'capacity', inputs: inputs({ empty_below: 20 }), result: { verdict: 'good', runs: [], utilisation: 74 }, ...over });
+  const airPart = (over = {}) => ({ verdict: 'enough', own: 1800, capS: 180, needM3h: 800, recommended: null, margin: null, purgeS: 69, stage: 'pinning', text: 'Your 1,800 m³/h air exchange is enough.', ...over });
+  const eqReport = (air = airPart()) => ({ verdict: 'ok', ac: { verdict: 'too-small' }, air, runs: [{ kind: 'ac', ac_hp: 1 }], summary: ['x'] });
+  const equipment = (result = eqReport(), over = {}) => ({ kind: 'equipment', inputs: inputs({ equipment: { ...EQ.DEFAULTS } }), result, ...over });
+  const has = (body, text) => R.checkSimulationRun(body, NOW).some(p => p.startsWith(text));
+
+  test('checkSimulationRun: valid runs (C3 7.6)', () => {
+    assert.deepStrictEqual(R.checkSimulationRun(cycle(), NOW), []);
+    assert.deepStrictEqual(R.checkSimulationRun(cycle({ result: { ...cycleResult(), totals: { ...cycleResult().totals, pass: false } } }), NOW), []);
+    assert.deepStrictEqual(R.checkSimulationRun(cycle({ result: { verdict: 'impossible', why: 'x' } }), NOW), []);
+    assert.deepStrictEqual(R.checkSimulationRun(capacity(), NOW), []);
+    assert.deepStrictEqual(R.checkSimulationRun(equipment(), NOW), []);
+    assert.deepStrictEqual(R.checkSimulationRun(equipment({ verdict: 'impossible', why: 'x' }), NOW), []);
+    assert.deepStrictEqual(R.checkSimulationRun(cycle({ note: '  hello ' }), NOW), []);
+    assert.deepStrictEqual(R.checkSimulationRun(cycle({ note: null }), NOW), []);
+  });
+
+  test('checkSimulationRun: each broken rule (C3 7.6)', () => {
+    const r = cycleResult();
+    const cal = { id: 3, ua: 92, inf_ach: 0.3, moist_buffer: 3, co2_per_block: 41 };
+    const { mix, ...noMix } = inputs();
+    const broken = [
+      ['not an object', null, 'body'],
+      ['extra body key', { ...cycle(), extra: 1 }, 'extra'],
+      ['kind heat', cycle({ kind: 'heat' }), 'kind'],
+      ['inputs key missing', cycle({ inputs: noMix }), 'inputs.mix'],
+      ['inputs.vent', cycle({ inputs: inputs({ vent: 1 }) }), 'inputs.vent'],
+      ['inputs.mix', cycle({ inputs: inputs({ mix: [{ crop: 'shiitake', blocks: 1 }] }) }), 'inputs.mix'],
+      ['inputs.region', cycle({ inputs: inputs({ region: 'mars' }) }), 'inputs.region'],
+      ['inputs.tariff', cycle({ inputs: inputs({ tariff: 11 }) }), 'inputs.tariff'],
+      ['inputs.volume', cycle({ inputs: inputs({ volume: 4 }) }), 'inputs.volume'],
+      ['inputs.calibration extra key', cycle({ inputs: inputs({ calibration: { ...cal, rmse_t: 0.1 } }) }), 'inputs.calibration.rmse_t'],
+      ['inputs.calibration.id 0', cycle({ inputs: inputs({ calibration: { ...cal, id: 0 } }) }), 'inputs.calibration.id'],
+      ['empty_below null for capacity', capacity({ inputs: inputs({ empty_below: null }) }), 'inputs.empty_below'],
+      ['empty_below 5 for cycle', cycle({ inputs: inputs({ empty_below: 5 }) }), 'inputs.empty_below'],
+      ['equipment null for equipment', equipment(eqReport(), { inputs: inputs({ equipment: null }) }), 'inputs.equipment'],
+      ['series wrong length', cycle({ result: { ...r, series: r.series.slice(1) } }), 'result.series'],
+      ['series[3].h 2', cycle({ result: { ...r, series: r.series.map((x, i) => (i === 3 ? { h: 2 } : x)) } }), 'result.series'],
+      ['totals.days 0', cycle({ result: { ...r, totals: { ...r.totals, days: 0 } } }), 'result.totals.days'],
+      ['capacity verdict pass', capacity({ result: { verdict: 'pass', runs: [] } }), 'result.verdict'],
+      ['equipment ac.verdict pass', equipment({ ...eqReport(), ac: { verdict: 'pass' } }), 'result.ac.verdict'],
+      ['note of 201 characters', cycle({ note: 'x'.repeat(201) }), 'note'],
+    ];
+    for (const [name, body, text] of broken) {
+      const problems = R.checkSimulationRun(body, NOW);
+      assert.ok(problems.length > 0, name);
+      assert.ok(problems.some(p => p.startsWith(text)), `${name}: ${JSON.stringify(problems)}`);
+    }
+    assert.deepStrictEqual(R.checkSimulationRun(cycle({ inputs: inputs({ calibration: { ...cal, rmse_t: 0.1 } }) }), NOW).filter(p => p.includes('rmse_t')), ['inputs.calibration.rmse_t: unknown field']);
+    assert.deepStrictEqual(R.checkSimulationRun(cycle({ inputs: inputs({ calibration: cal }) }), NOW), []);
+  });
+
+  test('checkSimulationRun: the air part of an equipment report (C3 7.6, revision 9)', () => {
+    const { air, ...noAir } = eqReport();
+    assert.ok(has(equipment(noAir), 'result.air'));
+    assert.ok(has(equipment(eqReport(airPart({ verdict: 'fine' }))), 'result.air.verdict'));
+    assert.ok(has(equipment(eqReport(airPart({ own: null }))), 'result.air.own'));
+    assert.ok(has(equipment(eqReport(airPart({ stage: 'harvest' }))), 'result.air.stage'));
+    assert.ok(has(equipment(eqReport(airPart({ text: '' }))), 'result.air.text'));
+    assert.deepStrictEqual(R.checkSimulationRun(equipment(eqReport(airPart({ needM3h: null }))), NOW), []);
+    assert.deepStrictEqual(R.checkSimulationRun(equipment(eqReport(airPart({ recommended: null }))), NOW), []);
+    for (const verdict of ['enough', 'too-small', 'not-the-fix', 'oversized']) {
+      assert.deepStrictEqual(R.checkSimulationRun(equipment(eqReport(airPart({ verdict }))), NOW), [], verdict);
+    }
+  });
+
+  test('checkRunPatch (C3 7.6)', () => {
+    assert.ok(R.checkRunPatch({}, NOW).length > 0);
+    assert.deepStrictEqual(R.checkRunPatch({ note: null }, NOW), []);
+    assert.deepStrictEqual(R.checkRunPatch({ real_start: null }, NOW), []);
+    assert.deepStrictEqual(R.checkRunPatch({ real_start: NOW + 366 * 86400 }, NOW), []);
+    assert.deepStrictEqual(R.checkRunPatch({ note: 'x', real_start: 5 }, NOW), []);
+    for (const real_start of [0, 1.5, NOW + 366 * 86400 + 1]) {
+      assert.ok(R.checkRunPatch({ real_start }, NOW).some(p => p.startsWith('real_start')), String(real_start));
+    }
+    assert.ok(R.checkRunPatch({ note: 'x'.repeat(201) }, NOW).some(p => p.startsWith('note')));
+    assert.ok(R.checkRunPatch({ note: 'x', extra: 1 }, NOW).some(p => p.startsWith('extra')));
+    assert.ok(R.checkRunPatch(null, NOW).length > 0);
+  });
+});
+
 describe('checkReport', () => {
   test('a valid minimal report gives []', () => {
     assert.deepStrictEqual(R.checkReport({ verdict: 'good', runs: [] }), []);
