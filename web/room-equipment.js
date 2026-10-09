@@ -182,10 +182,9 @@ function mount(el, opts) {
     const st = opts.runInputs().settings, b = st ? st.airM3h : undefined;
     $('eqAirNote').textContent = airNote(savedAir, b === undefined ? savedAir : b);
   };
-  const impossible = () => { const m = opts.runInputs().mix; return Array.isArray(m) && !!global.ClimateCapacity.commonTargets(m).impossible; };
   const paintButtons = () => {
     $('eqSave').disabled = running;
-    $('eqCheck').disabled = running || impossible();
+    $('eqCheck').disabled = running;
     for (const id of FIELDS) $(id).disabled = running;
   };
   paintNote();
@@ -219,7 +218,7 @@ function mount(el, opts) {
     const eq = formValues(form);
     const problems = EQ.checkEquipment(eq);
     if (problems.length) { say(problems.join('; ')); return; }
-    if (global.ClimateCapacity.commonTargets(inp.mix).impossible) { say('This crop mix cannot share one room.'); return; }
+    if (!Array.isArray(inp.mix) || global.ClimateCapacity.commonTargets(inp.mix).impossible) { say('This crop mix cannot share one room.'); return; }
     running = true; paintButtons(); say(''); $('eqResult').replaceChildren();
     const prog = $('eqProgress');
     let report;

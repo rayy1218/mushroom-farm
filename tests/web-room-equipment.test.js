@@ -137,14 +137,17 @@ test('W9 the aircond Buy cell is empty when the recommended size is the own size
   assert.equal(helpers.machineRows(down())[0].buy, '2.5 hp');
 });
 
-test('W10 mount survives settings that are missing, and Check is disabled for an impossible mix', () => {
+test('W10 mount survives settings that are missing, and Check stays enabled for an impossible mix and says why', () => {
   const made = stubDom();
   globalThis.FarmApi = {}; globalThis.FarmUi = {};
   const mix = [{ crop: 'lionsmane', blocks: 500 }, { crop: 'pink', blocks: 500 }];
   globalThis.FarmEquipmentCard.mount(hostEl(), opts({ runInputs: () => ({ settings: undefined, mix }) }));
-  assert.equal(made[0].querySelector('#eqCheck').disabled, true);
+  assert.equal(made[0].querySelector('#eqCheck').disabled, false);
   assert.equal(made[0].querySelector('#eqAirNote').textContent, '');
   const made2 = stubDom();
   globalThis.FarmEquipmentCard.mount(hostEl(), opts({ runInputs: () => ({ settings: undefined, mix: lm(100) }) }));
   assert.equal(made2[0].querySelector('#eqCheck').disabled, false);
+  made[0].querySelector('#eqCheck').listeners.click();
+  assert.equal(made[0].querySelector('#eqMsg').textContent, 'This crop mix cannot share one room.');
+  assert.equal(made[0].querySelector('#eqCheck').disabled, false);
 });
