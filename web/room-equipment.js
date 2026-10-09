@@ -62,7 +62,7 @@ function machineRows(report) {
   const shell = e.walls !== null && e.roof !== null
     ? `Walls ${EQ.CONSTRUCTIONS[e.walls].label}, roof ${EQ.CONSTRUCTIONS[e.roof].label}` : 'Typical';
   return [
-    { machine: 'Aircond', yours: acText(report.ac.own, U), verdict: VERDICT_WORD[report.ac.verdict], buy: buy(report.ac.recommended, x => acText(x, U)) },
+    { machine: 'Aircond', yours: acText(report.ac.own, U), verdict: VERDICT_WORD[report.ac.verdict], buy: report.ac.recommended === report.ac.own ? '' : buy(report.ac.recommended, x => acText(x, U)) },
     { machine: 'Fogger', yours: `${report.fogger.own} L/h`, verdict: VERDICT_WORD[report.fogger.verdict], buy: buy(report.fogger.recommended, x => `${x} L/h`) },
     { machine: 'Air exchange', yours: `${int(report.air.own)} m³/h`, verdict: VERDICT_WORD[report.air.verdict], buy: buy(report.air.recommended, x => `${int(x)} m³/h`) },
     { machine: 'Walls and roof', yours: shell, verdict: VERDICT_WORD[report.insulation.verdict], buy: '' },
@@ -70,7 +70,7 @@ function machineRows(report) {
 }
 
 function heatRows(report) {
-  return report.breakdown.items.map(i => ({ key: i.key, label: i.label, kwh: Math.round(i.kwh), share: Math.round(i.share) }));
+  return report.breakdown.items.map(i => ({ key: i.key, label: i.label, kwh: Math.round(i.kwh), share: Math.floor(i.share) }));
 }
 
 // a = the saved Equipment's air_m3h or null (the room has none), b = the settings' airM3h.
@@ -121,9 +121,10 @@ function renderReport(el, report) {
     parts.push(table('run-list', ['Machine', 'Yours', 'Verdict', 'Buy'], machineRows(report).map(r => [r.machine, r.yours, r.verdict, r.buy])));
     parts.push(node('h4', `Where the heat comes from (fruiting hours, with ${acText(report.breakdown.ac_hp, report.ac.units)})`));
     parts.push(table('run-list', ['Source', 'kWh (heat)', 'Share'], heatRows(report).map(r => {
-      const bar = node('td'), span = node('span', undefined, 'equip-bar');
-      span.style.width = `${r.share}%`;
-      bar.append(span, ` ${r.share} %`);
+      const bar = node('td'), track = node('span', undefined, 'equip-bar'), fill = node('span');
+      fill.style.width = `${r.share}%`;
+      track.append(fill);
+      bar.append(track, ` ${r.share} %`);
       return [r.label, int(r.kwh), bar];
     })));
     const also = alsoTried(report);
@@ -178,25 +179,26 @@ function mount(el, opts) {
 
   const say = text => { $('eqMsg').textContent = text; };
   const paintNote = () => {
-    const b = opts.runInputs().settings.airM3h;
+    const st = opts.runInputs().settings, b = st ? st.airM3h : undefined;
     $('eqAirNote').textContent = airNote(savedAir, b === undefined ? savedAir : b);
   };
+  const impossible = () => { const m = opts.runInputs().mix; return Array.isArray(m) && !!global.ClimateCapacity.commonTargets(m).impossible; };
   const paintButtons = () => {
     $('eqSave').disabled = running;
-    $('eqCheck').disabled = running;
+    $('eqCheck').disabled = running || impossible();
     for (const id of FIELDS) $(id).disabled = running;
   };
   paintNote();
   paintButtons();
   // The tab does not tell the card when its settings change: repaint the note when the person comes back to the card.
-  const repaint = () => { if (!dead) paintNote(); };
+  const repaint = () => { if (!dead) { paintNote(); paintButtons(); } };
   section.addEventListener('focusin', repaint);
   section.addEventListener('pointerdown', repaint);
 
   async function save() {
     const eq = formValues(form);
     const problems = EQ.checkEquipment(eq);
-    if (problems.length) { say(problems[0]); return null; }
+    if (problems.length) { say(problems.join('; ')); return null; }
     try {
       const saved = await API.saveEquipment(opts.id, eq);
       if (dead) return null;
@@ -216,7 +218,7 @@ function mount(el, opts) {
     const inp = opts.runInputs();
     const eq = formValues(form);
     const problems = EQ.checkEquipment(eq);
-    if (problems.length) { say(problems[0]); return; }
+    if (problems.length) { say(problems.join('; ')); return; }
     if (global.ClimateCapacity.commonTargets(inp.mix).impossible) { say('This crop mix cannot share one room.'); return; }
     running = true; paintButtons(); say(''); $('eqResult').replaceChildren();
     const prog = $('eqProgress');

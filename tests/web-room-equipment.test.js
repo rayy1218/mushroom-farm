@@ -58,13 +58,13 @@ test('W3 runRows: one row per aircond run, with tags', () => {
 test('W4 machineRows and heatRows', () => {
   const r = wetRep();
   assert.deepEqual(helpers.machineRows(r), [
-    { machine: 'Aircond', yours: '2.5 hp', verdict: 'Enough', buy: '2.5 hp' },
+    { machine: 'Aircond', yours: '2.5 hp', verdict: 'Enough', buy: '' },
     { machine: 'Fogger', yours: '3 L/h', verdict: 'Enough', buy: '' },
     { machine: 'Air exchange', yours: '1,800 m³/h', verdict: 'Enough', buy: '' },
     { machine: 'Walls and roof', yours: 'Typical', verdict: 'Good', buy: '' },
   ]);
   assert.deepEqual(helpers.heatRows(r).map(x => [x.label, x.kwh, x.share]), [
-    ['Walls and roof (sun included)', 1, 24], ['Fresh air: heat', 1, 24], ['Fresh air: water', 1, 24], ['Blocks', 1, 24], ['Machines and lights', 0, 5]]);
+    ['Walls and roof (sun included)', 1, 23], ['Fresh air: heat', 1, 23], ['Fresh air: water', 1, 23], ['Blocks', 1, 23], ['Machines and lights', 0, 4]]);
 });
 
 test('W5 airNote', () => {
@@ -130,4 +130,21 @@ test('W8 a second mount into the same element replaces the first; the first neve
   release();
   await new Promise(r => setTimeout(r, 10));
   assert.deepEqual([first.length, second.length], [0, 0]);
+});
+
+test('W9 the aircond Buy cell is empty when the recommended size is the own size, set when it differs', () => {
+  assert.equal(helpers.machineRows(wetRep())[0].buy, '');
+  assert.equal(helpers.machineRows(down())[0].buy, '2.5 hp');
+});
+
+test('W10 mount survives settings that are missing, and Check is disabled for an impossible mix', () => {
+  const made = stubDom();
+  globalThis.FarmApi = {}; globalThis.FarmUi = {};
+  const mix = [{ crop: 'lionsmane', blocks: 500 }, { crop: 'pink', blocks: 500 }];
+  globalThis.FarmEquipmentCard.mount(hostEl(), opts({ runInputs: () => ({ settings: undefined, mix }) }));
+  assert.equal(made[0].querySelector('#eqCheck').disabled, true);
+  assert.equal(made[0].querySelector('#eqAirNote').textContent, '');
+  const made2 = stubDom();
+  globalThis.FarmEquipmentCard.mount(hostEl(), opts({ runInputs: () => ({ settings: undefined, mix: lm(100) }) }));
+  assert.equal(made2[0].querySelector('#eqCheck').disabled, false);
 });

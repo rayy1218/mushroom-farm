@@ -222,7 +222,7 @@ test('S-NONEOWN no size works and the own size is the best', () => {
   assert.equal(r.ac.text, "Your 6 hp aircond is too small for lion's mane. In fruiting 1 it keeps the room within 1 °C of 20 °C only 80 % of the time. No aircond in the list holds the temperature in this room for the whole cycle; none does better than yours (80 % of fruiting hours). Fix the room first (see the heat breakdown).");
 });
 
-test('S-OVER an aircond two steps above the recommendation is oversized', () => {
+test('S-OVER an aircond four steps above the recommendation is oversized', () => {
   const r = check(room({ ac_hp: 6 }), lm(2500), passFrom(2));
   assert.deepEqual(sizes(r), [1.5, 2, 2.5, 6]);
   assert.deepEqual([r.ac.min, r.ac.recommended, r.ac.verdict], [2, 2.5, 'oversized']);
@@ -462,10 +462,10 @@ test('DET the same arguments give a deep-equal Report', () => {
 });
 
 test("REAL1 the owner's example: 60 m³, 1000 lion's mane, 1 hp aircond", t => {
-  const t0 = Date.now();
+  const t0 = Date.now(), c0 = process.cpuUsage();
   const r = EQ.runCheck(room({ ac_hp: 1 }), lm(1000), { settings: LM() });
-  const ms = Date.now() - t0;
-  t.diagnostic(`owner's example: ${ms} ms`);
+  const ms = Date.now() - t0, cpu = process.cpuUsage(c0), cpuMs = (cpu.user + cpu.system) / 1000;
+  t.diagnostic(`owner's example: ${ms} ms wall, ${Math.round(cpuMs)} ms CPU`);
   for (const x of r.runs.filter(x => x.kind === 'ac')) t.diagnostic(`${x.ac_hp} hp: fruiting in band ${x.fruitingInT.toFixed(2)} %, ${x.kwhPerBlock.toFixed(3)} kWh per block, RM ${x.rmPerBlock.toFixed(3)} per block, pass ${x.pass}`);
   assert.deepEqual(sizes(r), [1, 1.5, 2]);
   assert.equal(r.ac.min, 1.5);
@@ -483,7 +483,7 @@ test("REAL1 the owner's example: 60 m³, 1000 lion's mane, 1 hp aircond", t => {
   const want = [39.8, 14.6, 21.5, 20.4, 3.6];
   r.breakdown.items.forEach((it, i) => assert.ok(Math.abs(it.share - want[i]) <= 1, `${it.key} ${it.share}`));
   assert.ok(Math.abs(r.runs.find(x => x.ac_hp === 2).fruitingInT - 99.4) <= 0.5);
-  assert.ok(ms < 120000, `${ms} ms`);
+  assert.ok(cpuMs < 120000, `${cpuMs} ms CPU`);   // CPU time: wall time flakes on a loaded machine
 });
 
 test('REAL2 a ready-to-fruit room with a short program runs and finds a minimum', () => {
@@ -491,4 +491,45 @@ test('REAL2 a ready-to-fruit room with a short program runs and finds a minimum'
   const r = EQ.runCheck(room({ ac_hp: 1 }), lm(1000), { settings: s });
   assert.equal(r.verdict, 'ok');
   assert.notEqual(r.ac.min, null);
+});
+
+// ---------- thresholds and rules the first tests did not pin ----------
+test('S-OVER2 one step above the recommendation is enough, two steps is oversized', () => {
+  const a = check(room({ ac_hp: 3 }), lm(2500), passFrom(2));
+  assert.deepEqual(sizes(a), [1.5, 2, 2.5, 3]);
+  assert.equal(a.ac.verdict, 'enough');
+  assert.equal(a.ac.text, "Your 3 hp aircond is enough for lion's mane: it keeps the room within 1 °C of 20 °C 99 % of fruiting hours.");
+  const b = check(room({ ac_hp: 4 }), lm(2500), passFrom(2));
+  assert.equal(b.ac.verdict, 'oversized');
+  assert.equal(b.ac.text, 'Your 4 hp aircond is bigger than this room needs: 2.5 hp is enough. It works, but a too-big aircond switches on and off more often and takes less water out of the air.');
+});
+
+test('S-EDGE a share just under the 40 % line is fair and prints floored', () => {
+  const r = check(room({ ac_hp: 2.5 }), lm(2500), from2(() => ({ heat: { walls: 2116 } })));
+  assert.ok(Math.abs(r.insulation.share - 39.8) < 0.05, r.insulation.share);
+  assert.equal(r.insulation.verdict, 'fair');
+  assert.ok(r.insulation.text.startsWith('Walls and roof: fair. They bring in 39 % of the heat.'), r.insulation.text);
+  assert.equal(r.breakdown.advice, 'bigger-ac');
+});
+
+test('LARGEST-OWN the own aircond is the largest minimum: enough, no reserve, summary has the breakdown', () => {
+  const r = check(room({ ac_hp: 6, walls: 'zinc', roof: 'zinc' }), lm(1000), passFrom(6), { settings: LM() });
+  assert.deepEqual([r.ac.verdict, r.ac.noReserve], ['enough', 'largest']);
+  assert.ok(r.ac.text.endsWith(' It has no reserve for the hottest days: fix the room first (see the heat breakdown).'), r.ac.text);
+  assert.equal(r.summary.length, 5);
+  assert.equal(r.summary[4], r.breakdown.text);
+});
+
+test('BUDGET the aircond walk stops at RUNS.ac sizes', () => {
+  const r = check(room({ ac_hp: 6 }), lm(200), passFrom(6));
+  assert.equal(r.estimate.hp, 1);
+  assert.deepEqual(sizes(r), [1, 1.5, 2, 2.5, 3, 6]);
+  assert.deepEqual([r.ac.min, r.ac.verdict], [6, 'enough']);
+});
+
+test('AIR-RUN2 the confirmation run uses the need size when it is above the own size', () => {
+  const r = air({ air_m3h: 900 }, oyster6000, (p, rm) => (rm.airM3h >= 1800 ? {} : { fails: CO2 }), READY);
+  const last = r.runs.at(-1);
+  assert.deepEqual([last.kind, last.air_m3h], ['air', 1800]);   // the need size, not the next step (1200)
+  assert.equal(r.air.verdict, 'too-small');
 });
