@@ -87,7 +87,7 @@
 | 61 | Connection (C10) | C1's db object exposes its `DatabaseSync` as `db.sqlite` for `server/harvest-db.js` only (the fake: `null`); one connection stays the rule. |
 | 62 | Extra routes (C10) | `createApi(opts.extraRoutes)` mounts C10's routes after C3's and before `/api/stream`, with C3's room check, body reading and fault handling; `HttpError` moves to `server/api-common.js`. |
 | 63 | Status codes (C10) | No 409: state conflicts are 400s with their own `error` texts (C10 7); C3 allows 400, 404, 500 only. |
-| 64 | Check order (C10) | An extra route checks its own `:batchId` / `:crateId` inside `run`, after the body is read (a bad id with a bad body answers 400). |
+| 64 | Check order (C10) | An extra route checks its own `:batchId` / `:crateId` inside `run`, after `createApi` has read the body: a bad id with a body that is not valid JSON or is over 1 MB answers 400; a bad id with valid JSON that breaks the field rules answers 404 (C3 4). Extra routes never use the reserved segment names `:versionId`, `:runId`, `:alarmKey`. |
 | 65 | Stylesheet (C10; with 32) | `web/harvest.css` belongs to Harvest web; decision 32 holds for `styles.css` (Room shell only). |
 | 66 | Bare layout (C10) | The shell sets `body[data-layout="bare"]` on `#/harvest/:id` and removes it on every other route; modules still never touch `document.body`. |
 | 67 | Today (C10) | "Today" starts at the farm device's local midnight; the service runs with `TZ=Asia/Kuala_Lumpur` (README, Docs stream). |

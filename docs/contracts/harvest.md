@@ -8,6 +8,7 @@ Folded into the wave 2 drafts on `wave2/contracts` (owner decision 2026-10-09): 
 
 | Section | Change |
 |---|---|
+| 7, 8.2, 8.4, 13 (lead rulings 2026-10-09) | Check order aligned with C3 (bad id + valid JSON breaking field rules → 404); reserved segment names; `openHarvest` failure at start-up; the Harvest web headless check mounts by hand on the gate 2.5 tree with `FARM_HOST=127.0.0.2` for the stickers, and the shell addresses move to the lead's wave 3 check (C5 7.10 wins). |
 | Header, 14 | Folded into C1, C3, C5, the wave 2 plan and the spec (every row of section 14 applied); written first against 07f63c6, now on the wave 2 drafts after the buildability round (upgrade numbers unchanged: upgrade 4 after upgrades 2 (C9) and 3 (wave 2), `db.version` 4). |
 | 15 | The proposals H1–H10 are recorded as lead decisions 59–68; every "H<n>" in this contract now names its decision. |
 
@@ -256,7 +257,8 @@ module.exports = { HttpError };
 
 | Rule | Detail |
 |---|---|
-| Order of checks | C3's order up to the body (route, room for `needsRoom`, body size and JSON), then inside `run`: the `:batchId` / `:crateId` check (404), the body rules (400), the state rules (400), the store call. A bad id with a bad body therefore answers 400, not 404 (lead decision 64). |
+| Order of checks | C3's order up to the body (route, room for `needsRoom`, body size and JSON), then inside `run`: the `:batchId` / `:crateId` check (404), the body rules (400), the state rules (400), the store call. So a bad id with a body that is not valid JSON or is over 1 MB answers 400 (`createApi` reads the body first), and a bad id with valid JSON that breaks the field rules answers 404 (lead decision 64; C3 4) |
+| Reserved segment names | An extra route never uses `:versionId`, `:runId` or `:alarmKey`: `createApi` checks those names on every matched route (C3 2.1) |
 | Requires | Node built-ins, `./api-common.js`, `./db-common.js`, `../controller.js` and `../harvest-rules.js` (through `globalThis` after `require`). Never `./db.js`, `./api.js`, `./harvest-db.js` (they come in through `opts`). |
 
 ### 8.3 Today
@@ -272,6 +274,10 @@ const { createHarvestRoutes } = require('./harvest-api.js');
 const harvest = openHarvest(db);
 const api = createApi({ db, rooms, root, onFatal: fatal, extraRoutes: createHarvestRoutes({ db, harvest }) });
 ```
+
+| Failure | Rule |
+|---|---|
+| `openHarvest` throws | As an `openDb` failure: `main.js` prints `Cannot open the harvest records: <message>` to stderr, `rooms.stop()`, `db.close()`, exit 1 (C3 2.2 step 4) |
 
 ## 9. Routes
 
@@ -408,7 +414,8 @@ No route sends a stream event (C4 unchanged): the phone and the batch pages relo
 | `tests/harvest-db.test.js` | Harvest data | Every case defined once and run on `openHarvest(openDb(':memory:'))` and `openFakeHarvest(openFakeDb())`: each function's shape, order, defaults and errors; each `CHECK` (275), `NOT NULL` (1299), wrong type (3091) with nothing stored; `deleteBatch` with crates → 787; `undoCrate` twice keeps the first time; `listCrates({ from })` inclusive. Real only: `openHarvest` on a version 3 db throws; upgrade 4 on a version 3 file (C1 test row of section 14) |
 | `tests/harvest-api.test.js` | Harvest API | `process.env.TZ = 'Asia/Kuala_Lumpur'` first. Each route's `run` against the fake db and fake store with a fixed `now`: reply status and shape; every 400 and 404 of section 9 with nothing stored; `startOfDay` (Malaysia midnight; a `t` one second before midnight belongs to the day before); RoomHarvest `today` and `flush`; a 404 for a non-integer id; a constraint error thrown by a replaced store function reaches `mapError` (rethrown, not an `HttpError`) |
 | `tests/web-batches.test.js`, `tests/web-harvest.test.js` | Harvest web | Node: every helper of 12.2 (`parseKg('12,5')` is 12.5, `parseKg('12kg')` is `null`; `summaryText` singular and plural; `isLocalHost`; `qrSvg` holds one path and `crispEdges`, and its module count matches `qrcodegen` for the same text) |
-| Headless Chrome, Harvest web | Harvest web (after gate 2.5, C5 7.10 rules) | At 390 × 844 on `#/harvest/1` against the real server with one placed batch: no menu bar; batch picked at once; a double tap on **Add crate** stores one crate; with the server stopped the value stays and the red line shows; Undo removes the crate. Two placed batches: the picker shows two buttons. `#/harvest/stickers` opened as `http://127.0.0.1:…`: Print disabled and `#stWarn` shown; opened on the farm address: one card per room. `#/batches`: create, place, see the crates and flushes, clear |
+| Headless Chrome, Harvest web | Harvest web (after gate 2.5, C5 7.10 and 3.9 rules) | On the gate 2.5 tree the wave 1 `web/shell.js` does not know the C10 routes, so the check mounts the registered modules by hand (as C5 7.10's Harvest web row says) and sets `data-layout="bare"` itself. At 390 × 844 with `{ view: 'record', id: 1 }` against the real server with one placed batch: `web/harvest.css` hides `.bar`; batch picked at once; a double tap on **Add crate** stores one crate; with the server stopped the value stays and the red line shows; Undo removes the crate. Two placed batches: the picker shows two buttons. Stickers (`{ view: 'stickers' }`): opened as `http://127.0.0.1:…`, Print disabled and `#stWarn` shown; with the server started with `FARM_HOST=127.0.0.2` and opened as `http://127.0.0.2:…`, one card per room. Batches (`{}`, then `{ id }`): create, place, see the crates and flushes, clear |
+| Headless Chrome, through the shell (wave 3) | Lead | The real addresses `#/batches`, `#/batches/:id`, `#/harvest/stickers`, `#/harvest/:id` through the Room shell's `web/shell.js`, with the shell's bare layout on `#/harvest/:id` |
 | `tests/api.test.js` (Server 2) | Server 2 | `createApi` with `opts.extraRoutes` of one test route: its `run` gets `ctx.id` after the room check (`needsRoom`), `ctx.body` parsed, the 1 MB limit, an `HttpError` answered with its status, `error` and `details`; a C3 route still wins over an extra route with the same path; `/harvest-rules.js` served |
 | `tests/api-real.test.js` (wave 3) | Lead | Each section 9 route once through the real server, db and store |
 | Phone check (wave 3) | Lead | A printed sticker scanned by a real phone on the farm Wi-Fi records two crates; one Undo; both seen on `#/batches/:id` |
