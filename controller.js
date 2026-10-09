@@ -472,7 +472,19 @@
         say(t, 'info', `Purge stopped at the time cap (${mss(runS)})`);
       } else if (capped === false) A.capRun = 0;
     }
-    // Rise rate and next purge, P1 CO2 safety level and the purge states. Runs before the AC and the fogger.
+    // Push of humidity (5.4): outdoor minus room absolute humidity (g/m³); null with an outdoor, T or RH fault.
+    const ahPush = (v, f) => (f.out || f.T || f.RH ? null : ahOf(v.tOut, v.rhOut) - ahOf(v.T, v.RH));
+    // P2 humidity first: RH low, the fogger at its maximum for FOG_FULL_S, and a purge that would dry the room.
+    // The lock holds a purge that has not started; a running purge goes on. The CO2 limit ends the wait.
+    function humidityFirst(v, f, t, pushAH) {
+      const R = cfg.rules, A = st.air;
+      const stopAt = st.rhT - R.rhStop, resumeAt = st.rhT - R.rhResume;
+      if (!R.rhLock || f.RH || st.harvestOn) st.rhLocked = false;
+      else if (!st.rhLocked && v.RH <= stopAt && st.fogFullSince != null && t - st.fogFullSince >= FOG_FULL_S && pushAH != null && pushAH <= -0.5) st.rhLocked = true;
+      else if (st.rhLocked && v.RH >= resumeAt) st.rhLocked = false;
+      A.delayed = st.rhLocked && A.state !== 'purge' && v.CO2 >= R.fanOn && v.CO2 < cfg.co2Lim;
+    }
+    // Rise rate and next purge, P1 CO2 safety level, P2 humidity first and the purge states. Runs before the AC and the fogger.
     function airPlan(v, f, t, prevOn) {
       const R = cfg.rules, A = st.air, AIR = global.ClimateAir;
       // Rise rate (5.4): the good CO2 readings since the last air run ended (at most AIR_POINTS)
@@ -494,6 +506,7 @@
         return;
       }
       A.nextPurgeS = v.CO2 >= R.fanOn ? 0 : rate > 0 ? (R.fanOn - v.CO2) / rate : null;   // shown to the grower (5.4)
+      humidityFirst(v, f, t, ahPush(v, f));
       // States (5.3). offFor: how long the air exchange has been off (0 while on).
       const on = st.cmd.air.on, offFor = on ? 0 : st.out.air.since == null ? Infinity : t - st.out.air.since;
       if (A.state === 'purge') {
@@ -502,7 +515,7 @@
         else if (runS >= R.purgeMaxS) endPurge(t, true);
       }
       if (A.state === 'after' && !on && offFor >= R.minOffS) setState('idle', t);
-      if (A.state === 'idle' && v.CO2 >= R.fanOn && (on || offFor >= R.minOffS)) startPurge(t);
+      if (A.state === 'idle' && v.CO2 >= R.fanOn && !A.delayed && (on || offFor >= R.minOffS)) startPurge(t);
     }
     // P4: AC by mode and setpoint.
     function airConditioner(v, f, dt) {
@@ -655,6 +668,7 @@
       const R = cfg.rules, A = st.air, t = st.lastT;
       if (reason === 'safety') return `CO₂ is ${ppm(v.CO2)} ppm, at or above the safety level ${R.co2SafetyAt}. The air exchange runs even when humidity is low.`;
       if (A.state === 'purge') return `Purging since ${mss(t - A.purgeStart)} (at most ${mss(R.purgeMaxS)}). It stops at ${R.fanOff} ppm.`;
+      if (A.delayed) return `Humidity first: RH ${v.RH.toFixed(1)} % is at or below ${(st.rhT - R.rhStop).toFixed(0)} % and outdoor air is drier. The purge waits until RH is ${(st.rhT - R.rhResume).toFixed(0)} % or CO₂ is ${cfg.co2Lim} ppm.`;
       if (reason === 'free cooling') return `Outdoor air is ${(v.T - v.tOut).toFixed(1)} °C cooler. The air exchange runs to help the AC.`;
       if (reason === 'drying') return 'Humidity is high and outdoor air is drier. The air exchange runs to dry the room.';
       if (A.state === 'after') {
@@ -816,6 +830,8 @@
       if (now.power !== p.power) say(t, 'info', (now.power ? 'AC on' : 'AC off') + man('ac'));
       if (now.mode !== p.mode) say(t, 'info', `AC mode: ${now.mode}` + man('ac'));
       if (now.safety !== p.safety) say(t, now.safety ? 'critical' : 'good', now.safety ? 'CO₂ safety level: the air exchange runs, ignoring the time cap' : 'CO₂ below the safety level');
+      if (now.delayed && !p.delayed) say(t, 'warning', 'Purge delayed: humidity first');
+      else if (!now.delayed && p.delayed && !st.rhLocked) say(t, 'good', 'Purge allowed again: humidity recovered');
       if (now.fogOn !== p.fogOn) say(t, 'info', (now.fogOn ? 'Fogger on' : 'Fogger off') + man('hu'));
       if (now.lights !== p.lights) say(t, 'info', now.lights ? 'Lights on' : 'Lights off');
       if (now.airOn && !p.airOn) say(t, 'info', `Air exchange on: ${now.airReason}`);
@@ -883,6 +899,7 @@
       if (alarmOn('co2Safe')) return { lvl: 'critical', icon: '◆', text: 'Safety level' };
       if (alarmOn('co2Hi')) return { lvl: 'warning', icon: '▲', text: 'Above limit' };
       if (st.airReason === 'safety') return { lvl: 'serious', icon: '◆', text: 'Safety run' };   // before the co2Safe alarm
+      if (st.air.delayed) return { lvl: 'info', icon: '❚❚', text: 'Purge delayed (RH)' };
       if (st.air.state === 'purge') return { lvl: 'info', icon: '▲', text: 'Purging' };
       return { lvl: 'good', icon: '✓', text: 'Below limit' };
     }

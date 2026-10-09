@@ -414,3 +414,41 @@ test('the rise rate uses only readings with the fans off', () => {
   for (let t = 180; t <= 30 * 40; t += 30) feed(t, { CO2: 690 + (t - 150) * 0.1 });
   assert.equal(ctl.state.airPts.length, 20, 'at most the last 20 readings');
 });
+
+// Drier outdoor air (30 °C, 40 %): a purge would dry the room. RH 83 % is 5 % under the target: fog level 3 (full).
+const DRY = { tOut: 30, rhOut: 40 };
+const lowRH = t => ({ RH: 83 + (t % 60 ? 0.01 : 0), ...DRY });
+
+test('humidity first: after 5 min of full fog a purge that would dry the room waits, at most until the CO2 limit', () => {
+  const { feed, ctl, events } = make();
+  for (let t = 0; t <= 270; t += 30) feed(t, { CO2: 850 + (t % 60 ? 1 : 0), ...lowRH(t) });
+  assert.equal(ctl.state.cmd.hu.level, 3);
+  assert.equal(ctl.state.rhLocked, false, 'fog more before less air');
+  feed(300, { CO2: 851, ...lowRH(300) });
+  assert.equal(ctl.state.rhLocked, true, 'after 5 min of full fog');
+  assert.equal(feed(330, { CO2: 950, ...lowRH(330) }).air.on, false, 'start level, but the purge waits');
+  assert.equal(ctl.state.air.delayed, true);
+  assert.deepEqual(ctl.status('CO2'), { lvl: 'info', icon: '❚❚', text: 'Purge delayed (RH)' });
+  assert.match(ctl.state.why.air, /^Humidity first: RH 83\.0 % is at or below 85 %/);
+  assert.ok(events.some(e => e.text === 'Purge delayed: humidity first'));
+  assert.equal(feed(360, { CO2: 1000, ...lowRH(360) }).air.on, true, 'CO2 limit: purge anyway');
+  assert.equal(ctl.state.air.delayed, false);
+  assert.equal(ctl.state.stats.delayedS, 30);
+});
+
+test('humidity first: the purge goes when RH recovers; a running purge is never stopped; wet outdoor air never delays', () => {
+  const a = make();
+  for (let t = 0; t <= 300; t += 30) a.feed(t, { CO2: 850 + (t % 60 ? 1 : 0), ...lowRH(t) });
+  assert.equal(a.feed(330, { CO2: 950, ...lowRH(330) }).air.on, false);
+  assert.equal(a.feed(360, { CO2: 950, RH: 87.2, ...DRY }).air.on, true, 'RH at the allow level 87 %');
+  assert.ok(a.events.some(e => e.text === 'Purge allowed again: humidity recovered'));
+  const b = make({ rules: { purgeMaxS: 600 } });
+  for (let t = 0; t <= 360; t += 30) b.feed(t, { CO2: 950 + (t % 60 ? 1 : 0), ...lowRH(t) });
+  assert.equal(b.ctl.state.rhLocked, true);
+  assert.equal(b.ctl.state.cmd.air.on, true, 'the purge that started before the lock goes on');
+  assert.equal(b.ctl.state.air.delayed, false);
+  const c = make();
+  for (let t = 0; t <= 300; t += 30) c.feed(t, { CO2: 850 + (t % 60 ? 1 : 0), RH: 83 + (t % 60 ? 0.01 : 0), tOut: 33, rhOut: 90 });
+  assert.equal(c.ctl.state.rhLocked, false, 'wetter outdoor air: a purge does not dry the room');
+  assert.equal(c.feed(330, { CO2: 950, RH: 83, tOut: 33, rhOut: 90 }).air.on, true);
+});
