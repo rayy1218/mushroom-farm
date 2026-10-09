@@ -6,8 +6,14 @@ require('../air.js');
 require('../controller.js');
 require('../sim.js');
 require('../runtime.js');
+require('../equipment.js');
 const CC = globalThis.ClimateController;
 const SIM = globalThis.ClimateSim;
+const EQ = globalThis.ClimateEquipment;
+
+// The prep 2.0 stub of equipment.js throws Error('stub') in plantOf; the tests that need the real one skip until gate 2.5.
+let STUB = false;
+try { EQ.plantOf(EQ.DEFAULTS, { volume: 60, calib: null }); } catch (e) { STUB = e.message === 'stub'; }
 
 const { openFakeDb } = require('./fakes/db.js');
 const { fromJson, toJson } = require('../server/db-common.js');
@@ -80,7 +86,7 @@ function capture(factory) {
 test('sim adapter: requires air.js before sim.js (C9 section 6.3)', () => {
   const mod = require.cache[require.resolve('../server/sim-adapter.js')];
   const names = mod.children.map(c => c.id.replace(/^.*[\\/]/, ''));
-  assert.deepEqual(names, ['air.js', 'sim.js', 'runtime.js']);
+  assert.deepEqual(names, ['air.js', 'sim.js', 'runtime.js', 'equipment.js']);
   assert.equal(typeof globalThis.ClimateAir.purgeTimeS, 'function');
 });
 
@@ -240,6 +246,52 @@ test('sim adapter: the simulated room runs with its own air exchange size (C9 se
   a.io.write({ ac: { power: true, mode: 'cool', setpoint: 25, fan: 'auto' }, hu: { level: 0 }, air: { on: true }, lights: { on: false }, circ: { on: false } });
   clock += 1; a.io.advance(1);
   assert.equal(a.view().airM3h, 900); // fans on: the pair's flow, no leakage (C9 4.2 view)
+});
+
+test('Equipment stub probe', () => {
+  if (STUB) {
+    assert.throws(() => EQ.plantOf(EQ.DEFAULTS, { volume: 60, calib: null }), e => e instanceof Error && e.message === 'stub');
+  } else {
+    const plant = EQ.plantOf(EQ.DEFAULTS, { volume: 60, calib: null });
+    assert.equal(typeof plant, 'object');
+    assert.ok('ac' in plant);
+  }
+});
+
+test('Room equipment', { skip: STUB && "plantOf throws 'stub' (prep 2.0 stub of equipment.js); runs at gate 2.5" }, (t) => {
+  const origCreate = SIM.create;
+  const seen = [];
+  SIM.create = (env, snap) => { seen.push(env); return origCreate(env, snap); };
+  t.after(() => { SIM.create = origCreate; });
+
+  const saved = { ac_hp: 3, ac_units: 1, fog_lph: 6, air_m3h: 600, walls: 'pu50', roof: 'pu50', height: 3 };
+  function startRoom(equipment, calibration) {
+    const { db, mgr } = setup(rooms.defaultAdapterFactory);
+    const { room } = mgr.create({ name: 'E', volume: 60 });
+    if (equipment) db.saveEquipment(room.id, equipment);
+    if (calibration) {
+      const run = db.saveCalibration(room.id, calibration);
+      db.applyCalibration(room.id, run.id);
+    }
+    mgr.start();
+    return seen.at(-1);
+  }
+  const calibration = { ua: 90, inf_ach: 0.4, moist_buffer: 3, co2_per_block: 41, rmse_t: 0.2, rmse_rh: 1, rmse_co2: 10, log_rows: 100 };
+
+  const plain = startRoom(saved, null);
+  assert.equal(plain.plant.ac.capW, 7910);
+  assert.ok(Math.abs(plain.plant.room.ua - 28.12) < 0.05, `ua ${plain.plant.room.ua}`);
+  assert.equal(plain.airM3h, 1800); // the settings' size, not the Equipment's 600
+
+  const calibrated = startRoom(saved, calibration);
+  assert.equal(calibrated.plant.ac.capW, 7910);
+  assert.ok(!('room' in calibrated.plant));
+  assert.equal(calibrated.airM3h, 1800);
+  assert.equal(calibrated.room.ua, 90);
+
+  const none = startRoom(null, null);
+  assert.equal(none.plant, undefined);
+  assert.equal(none.airM3h, 1800);
 });
 
 // ---------------------------------------------------------------------------
