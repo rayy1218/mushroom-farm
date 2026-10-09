@@ -252,9 +252,8 @@
     return s;
   }
   function upgradeOld(s) {
-    const on = !!(s.cmd.fan && s.cmd.fan.level > 0);
     for (const k of OLD_STATE) delete s[k];
-    for (const g of ['cmd', 'req']) { s[g].air = { on }; delete s[g].fan; }
+    for (const g of ['cmd', 'req']) { s[g].air = { on: false }; delete s[g].fan; }   // off: the next update decides (no run record to match)
     s.out.air = s.out.fan || { since: null }; delete s.out.fan;
     for (const g of ['hold', 'why']) { s[g].air = s[g].fan || ''; delete s[g].fan; }
     const hours = (s.exh && s.exh.hours) || [];

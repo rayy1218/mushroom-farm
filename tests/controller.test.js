@@ -572,7 +572,7 @@ test('an old snapshot (one fan with levels) is upgraded by create()', () => {
   const st = up.state;
   for (const k of ['fanCo2On', 'co2Timed', 'purgeHeld', 'purgeReduced', 'setbackReq', 'setbackOn', 'setbackS', 'setbackAlarmStop', 'setbackTimeStop',
     'fanReason', 'fanBlocked', 'airLevel', 'airStepT', 'timedOnS', 'timedSource', 'exh']) assert.equal(k in st, false, k);
-  assert.deepEqual([st.cmd.air, st.req.air, 'fan' in st.cmd, 'fan' in st.req], [{ on: true }, { on: true }, false, false]);
+  assert.deepEqual([st.cmd.air, st.req.air, 'fan' in st.cmd, 'fan' in st.req], [{ on: false }, { on: false }, false, false]);
   assert.deepEqual(st.air, { state: 'idle', since: null, purgeStart: null, capRun: 0, nextPurgeS: null, delayed: false, timed: false, timedK: null, timedFrom: null, sizeText: null });
   assert.deepEqual([st.out.air, st.hold.air, st.why.air, 'fan' in st.out, 'fan' in st.hold, 'fan' in st.why], [{ since: 0 }, '', 'CO₂ is 950 ppm. Purge at Medium.', false, false, false]);
   assert.deepEqual(up.purges(), { cur: null, events: [], hours: [{ h: 0, runS: 300, starts: 1, m3: 50, cappedN: 0, fogLS: 30, acHighS: 0, acLowS: 0 }] });
@@ -716,4 +716,20 @@ test('a timed run that is still on at a period boundary is not restarted: it nev
   assert.equal(onAt[0], 490);
   assert.ok(onAt.at(-1) - 490 < 180, `on until ${onAt.at(-1)}`);
   assert.equal(ctl.state.stats.longestPurgeS, 0, 'a timed run is not a purge');
+});
+
+test('an upgraded snapshot starts with the air exchange off; the next steps run a normal purge with a record', () => {
+  const { ctl, feed } = make(); feed(0); feed(30);
+  const s = ctl.snapshot();
+  delete s.air; delete s.airReason; delete s.airPts; delete s.airRate; delete s.purgeRec;
+  for (const g of ['cmd', 'req']) { delete s[g].air; s[g].fan = { level: 1 }; }
+  s.out.fan = { since: 0 }; delete s.out.air; s.hold.fan = ''; delete s.hold.air; s.why.fan = ''; delete s.why.air;
+  s.stats = { fanOnS: 10, fanStarts: 1, fogStarts: 0, acCmds: 0 };
+  s.exh = { cur: null, events: [], hours: [] };
+  const up = CC.create(CC.defaultSettings(), s, null);
+  assert.deepEqual([up.state.cmd.air.on, up.state.req.air.on, up.purges().cur, up.state.airReason], [false, false, null, null]);
+  let seq = 500;
+  const step = (t, CO2) => up.update({ seq: ++seq, t, T: 25 + (seq % 2) * 0.01, RH: 88 + (seq % 2) * 0.1, CO2, tOut: 30, rhOut: 70 });
+  assert.equal(step(60, 950).air.on, true);
+  assert.deepEqual([up.purges().cur.start, up.purges().cur.reason, up.state.airReason, up.state.air.state], [60, 'purge', 'purge', 'purge']);
 });
