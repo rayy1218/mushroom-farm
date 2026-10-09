@@ -514,7 +514,7 @@ describe('readings, events, alarms, ack (6.8-6.11)', () => {
     assert.equal(rows.length, 2);
     for (const row of rows) {
       assert.deepStrictEqual(Object.keys(row).sort(), [
-        'CO2', 'RH', 'T', 'ac_mode', 'ac_setpoint', 'air', 'circ', 'fog', 'kwh', 'lights', 'power_w', 'rh_out', 'room_id', 't', 't_out',
+        'CO2', 'RH', 'T', 'ac_fan', 'ac_mode', 'ac_setpoint', 'air', 'circ', 'core', 'fog', 'kwh', 'lights', 'power_w', 'rh_out', 'room_id', 'stage', 't', 't_out',
       ]);
     }
     assert.deepStrictEqual(rows, ctx.db.queryReadings(id, { from: NOW - 3600, to: NOW, step: null }));

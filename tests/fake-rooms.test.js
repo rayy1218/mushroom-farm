@@ -48,7 +48,8 @@ test('default live summary; list and get; archived rooms', () => {
   db.raiseAlarm(room.id, { alarm_key: 'a', level: 'warning', label: 'A', at: 1 });
   db.raiseAlarm(room.id, { alarm_key: 'b', level: 'warning', label: 'B', at: 1 });
   const got = rooms.get(room.id);
-  assert.deepEqual(got.live, { reading: null, stage: 'fruiting', crop: 'oyster', targets: null, status: null, alarms: 2, running: true, error: null });
+  assert.deepEqual(got.live, { reading: null, stage: 'fruiting', crop: 'oyster', targets: null, status: null, alarms: 2, running: true, error: null, flush: null, blocks: null, air: null });
+  assert.deepEqual(Object.keys(got.live), ['reading', 'stage', 'crop', 'targets', 'status', 'alarms', 'running', 'error', 'flush', 'blocks', 'air']); // C2 5.2, 16
   assert.ok(rooms.list().some(r => r.id === room.id));
   assert.equal(rooms.get(999), null);
   assert.equal(rooms.get('x'), null);
@@ -309,4 +310,21 @@ test('applySettings: the stored base is upgraded before the input is merged (rev
   const result = rooms.applySettings(room.id, { manual: { air: { auto: false, on: true } } });
   assert.deepEqual(db.currentSettings(room.id).settings.manual.air, { auto: false, on: true });
   assert.ok(result.warnings.includes(GONE), result.warnings.join('\n'));
+});
+
+test('setLive overrides flush, blocks and air; restart leaves them', () => {
+  const { rooms } = setup();
+  const room = rooms.create({ name: 'A', volume: 60 }).room;
+  const air = { on: true, state: 'purge', reason: 'purge', delayed: false, timed: false, manual: false, manualOn: false, nextPurgeS: null, purgeS: 12, why: null, today: { purges: 1, avgS: 12, capped: 0 } };
+  rooms.setLive(room.id, { flush: 2, blocks: 40, air, running: false, error: 'boom' });
+  const live = rooms.get(room.id).live;
+  assert.equal(live.flush, 2);
+  assert.equal(live.blocks, 40);
+  assert.deepEqual(live.air, air);
+  assert.equal(rooms.list()[0].live.blocks, 40);
+  const restarted = rooms.restart(room.id);
+  assert.equal(restarted.live.running, true);
+  assert.equal(restarted.live.error, null);
+  assert.equal(restarted.live.flush, 2); // restart clears only running and error
+  assert.equal(restarted.live.air.state, 'purge');
 });

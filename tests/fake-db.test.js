@@ -19,7 +19,8 @@ function freshSettings() {
 test('openFakeDb: shape, independence, unknown options', () => {
   const db = openFakeDb();
   assert.equal(db.path, ':memory:');
-  assert.equal(db.version, 2);
+  assert.equal(db.version, 4);
+  assert.equal(db.sqlite, null); // no SQLite in the fake (C1 6.3, 9.1)
   const db2 = openFakeDb({ now: () => 1 });
   db2.createRoom({ name: 'X', volume: 10, settings: freshSettings() });
   assert.equal(db.listRooms().length, 0);
@@ -35,8 +36,17 @@ test('close(): idempotent, functions throw, path/version stay readable', () => {
   assert.throws(() => db.listRooms(), { message: 'database is not open' });
   assert.throws(() => db.getRoom(1), { message: 'database is not open' });
   assert.throws(() => db.insertReading(1, { t: 1 }), { message: 'database is not open' });
+  for (const fn of [
+    () => db.saveSimulationRun(1, { kind: 'capacity', inputs: {}, result: { verdict: 'good' } }),
+    () => db.listSimulationRuns(1),
+    () => db.getSimulationRun(1, 1),
+    () => db.updateSimulationRun(1, 1, {}),
+    () => db.deleteSimulationRun(1, 1),
+    () => db.getEquipment(1),
+    () => db.saveEquipment(1, validEquipment()),
+  ]) assert.throws(fn, { message: 'database is not open' }, fn.toString());
   assert.equal(db.path, ':memory:');
-  assert.equal(db.version, 2);
+  assert.equal(db.version, 4);
 });
 
 test('createRoom and currentSettings', () => {
@@ -168,8 +178,15 @@ test('every room-id function throws NotFoundError(room) for an unknown room', ()
     () => db.replaceMix(99, []),
     () => db.saveCapacityReport(99, { report: { verdict: 'good' } }),
     () => db.latestCapacityReport(99),
+    () => db.saveSimulationRun(99, { kind: 'capacity', inputs: {}, result: { verdict: 'good' } }),
+    () => db.listSimulationRuns(99),
+    () => db.getSimulationRun(99, 1),
+    () => db.updateSimulationRun(99, 1, {}),
+    () => db.deleteSimulationRun(99, 1),
+    () => db.getEquipment(99),
+    () => db.saveEquipment(99, validEquipment()),
   ];
-  assert.equal(calls.length, 26);
+  assert.equal(calls.length, 33);
   for (const fn of calls) {
     assert.throws(fn, err => err.code === 'NOT_FOUND' && err.what === 'room', fn.toString());
   }
@@ -219,6 +236,12 @@ test('column rules: createRoom', () => {
   badCreate({ volume: 'abc' }, 3091);
 });
 
+const READING_KEYS_18 = ['room_id', 't', 'T', 'RH', 'CO2', 't_out', 'rh_out', 'ac_mode', 'ac_setpoint', 'fog', 'air', 'lights', 'circ', 'power_w', 'kwh', 'ac_fan', 'stage', 'core'];
+
+function validEquipment(over) {
+  return Object.assign({ ac_hp: 2, ac_units: 1, fog_lph: 5, air_m3h: 300, walls: 'zinc', roof: 'zinc', height: 3 }, over);
+}
+
 function validReading(over) {
   return Object.assign({ t: 1, ac_mode: 'off', fog: 0, air: 0, lights: 0, circ: 0 }, over);
 }
@@ -242,6 +265,8 @@ test('column rules: insertReading', () => {
   badReading({ air: undefined }, 1299);
   badReading({ lights: 2 }, 275);
   badReading({ T: 'abc' }, 3091);
+  badReading({ ac_fan: 'max' }, 275);
+  badReading({ core: 'abc' }, 3091);
 });
 
 test('column rules: addEvent, raiseAlarm', () => {
@@ -386,7 +411,7 @@ test('TypeError for unknown fields; nothing stored', () => {
   assert.deepEqual(db1.listRooms().map(r => r.id), [1]);
 
   const db2 = freshDb();
-  for (const key of ['temp', 'rh', 'co2', 'n']) {
+  for (const key of ['temp', 'rh', 'co2', 'n', 'fan']) {
     assert.throws(() => db2.insertReading(1, validReading({ [key]: 1 })), { name: 'TypeError', message: `insertReading: unknown field "${key}"` });
   }
   assert.throws(() => db2.insertReading(1, validReading({ room_id: 2 })), TypeError);
@@ -410,7 +435,8 @@ test('TypeError for unknown fields; nothing stored', () => {
 
 test('a full Reading round-trips; a minimal one gets null for the rest', () => {
   const db = freshDb();
-  const full = { room_id: 1, t: 10, T: 20, RH: 80, CO2: 700, t_out: 30, rh_out: 60, ac_mode: 'cool', ac_setpoint: 18, fog: 1, air: 1, lights: 1, circ: 0, power_w: 100, kwh: 1.5 };
+  const full = { room_id: 1, t: 10, T: 20, RH: 80, CO2: 700, t_out: 30, rh_out: 60, ac_mode: 'cool', ac_setpoint: 18, fog: 1, air: 1, lights: 1, circ: 0, power_w: 100, kwh: 1.5, ac_fan: 'auto', stage: 'fruiting', core: 21.5 };
+  assert.deepEqual(Object.keys(full), READING_KEYS_18); // the 18 keys, in the order of C1 6.2
   db.insertReading(1, full);
   assert.deepEqual(db.latestReading(1), full);
   assert.deepEqual(db.queryReadings(1, { from: 10, to: 10 })[0], full);
@@ -419,9 +445,12 @@ test('a full Reading round-trips; a minimal one gets null for the rest', () => {
   const db2 = freshDb();
   db2.insertReading(1, validReading({ t: 5 }));
   const row = db2.latestReading(1);
-  assert.deepEqual(Object.keys(row), ['room_id', 't', 'T', 'RH', 'CO2', 't_out', 'rh_out', 'ac_mode', 'ac_setpoint', 'fog', 'air', 'lights', 'circ', 'power_w', 'kwh']);
+  assert.deepEqual(Object.keys(row), READING_KEYS_18);
   assert.equal(row.T, null);
   assert.equal(row.RH, null);
+  assert.equal(row.ac_fan, null);
+  assert.equal(row.stage, null);
+  assert.equal(row.core, null);
 });
 
 test('raw range is inclusive; order by t (not by T); ties by insertion; other rooms excluded', () => {
@@ -679,4 +708,262 @@ test('capacity reports', () => {
   assert.equal(r3.utilisation, null); // null when utilisation is missing entirely
   assert.equal(r3.report.value, Infinity);
   assert.equal(db.latestCapacityReport(1).id, r3.id);
+});
+
+// ---------- Prep 2.0: C1 revision 6 (upgrade 3 keys, simulation runs, equipment) ----------
+
+test('readings, upgrade 3 keys: ac_fan, stage, core round-trip; a bucket takes the last ac_fan and stage and averages core', () => {
+  const db = freshDb();
+  db.insertReading(1, validReading({ t: 95, ac_fan: 'high', stage: 'fruiting', core: 24 }));
+  db.insertReading(1, validReading({ t: 65, ac_fan: 'low', stage: 'pinning', core: 20 }));
+  db.insertReading(1, validReading({ t: 70, core: null })); // a null core is left out of the mean
+  const raw = db.queryReadings(1, { from: 60, to: 119 });
+  assert.deepEqual(raw.map(r => [r.ac_fan, r.stage, r.core]), [['low', 'pinning', 20], [null, null, null], ['high', 'fruiting', 24]]);
+  const b = db.queryReadings(1, { from: 60, to: 119, step: 60 })[0];
+  assert.equal(b.ac_fan, 'high'); // the row with the largest t
+  assert.equal(b.stage, 'fruiting');
+  assert.equal(b.core, 22);
+  assert.deepEqual(Object.keys(b), READING_KEYS_18);
+  const allNull = freshDb();
+  allNull.insertReading(1, validReading({ t: 60 }));
+  const nb = allNull.queryReadings(1, { from: 60, to: 119, step: 60 })[0];
+  assert.equal(nb.core, null);
+  assert.equal(nb.ac_fan, null);
+  assert.equal(nb.stage, null);
+  db.insertReading(1, validReading({ t: 200, core: Infinity }));
+  assert.equal(db.latestReading(1).core, null); // non-finite -> null
+});
+
+test('calibrations, upgrade 3 fields: source, log_from, log_to, equipment', () => {
+  const db = freshDb();
+  const base = { ua: 1, inf_ach: 1, moist_buffer: 1, co2_per_block: 1 };
+  const plain = db.saveCalibration(1, base);
+  assert.deepEqual(Object.keys(plain), ['id', 'room_id', 'run_at', 'ua', 'inf_ach', 'moist_buffer', 'co2_per_block', 'rmse_t', 'rmse_rh', 'rmse_co2', 'log_rows', 'applied_at', 'source', 'log_from', 'log_to', 'equipment']);
+  assert.equal(plain.source, null);
+  assert.equal(plain.log_from, null);
+  assert.equal(plain.log_to, null);
+  assert.equal(plain.equipment, null);
+  const eq = validEquipment({ walls: null, roof: null });
+  const full = db.saveCalibration(1, Object.assign({}, base, { source: 'history', log_from: 100, log_to: 200, equipment: eq }));
+  assert.equal(full.source, 'history');
+  assert.equal(full.log_from, 100);
+  assert.equal(full.log_to, 200);
+  assert.deepEqual(full.equipment, eq);
+  assert.deepEqual(db.listCalibrations(1).find(c => c.id === full.id), full);
+  eq.height = 99; // stored data is independent
+  assert.equal(db.applyCalibration(1, full.id, 5).equipment.height, 3);
+  for (const source of ['csv', 'import']) assert.equal(db.saveCalibration(1, Object.assign({}, base, { source })).source, source);
+  const bad = freshDb();
+  assertConstraint(() => bad.saveCalibration(1, Object.assign({}, base, { source: 'web' })), 275, () => assert.equal(bad.listCalibrations(1).length, 0));
+  assertConstraint(() => bad.saveCalibration(1, Object.assign({}, base, { log_from: 1.5 })), 3091);
+  assertConstraint(() => bad.saveCalibration(1, Object.assign({}, base, { log_to: 'abc' })), 3091);
+  assert.equal(bad.listCalibrations(1).length, 0);
+});
+
+function mix(blocks) {
+  return { mix: [{ crop: 'oyster', blocks }, { crop: 'lionsmane', blocks: 2 }, { crop: 'x', blocks: 'n' }] };
+}
+
+test('simulation runs: summary columns by kind (C1 6.13)', () => {
+  const db = freshDb();
+  const passing = db.saveSimulationRun(1, { kind: 'cycle', inputs: mix(10), result: { totals: { pass: true, days: 30, kwh: 123.5, rm: 4.5 } }, at: 10 });
+  assert.deepEqual(passing, {
+    id: 1, room_id: 1, created_at: 10, kind: 'cycle', verdict: 'pass', blocks: 12, days: 30, kwh: 123.5, rm: 4.5,
+    utilisation: null, real_start: null, note: null, inputs: mix(10), result: { totals: { pass: true, days: 30, kwh: 123.5, rm: 4.5 } },
+  });
+  assert.deepEqual(Object.keys(passing), ['id', 'room_id', 'created_at', 'kind', 'verdict', 'blocks', 'days', 'kwh', 'rm', 'utilisation', 'real_start', 'note', 'inputs', 'result']);
+  const failing = db.saveSimulationRun(1, { kind: 'cycle', inputs: {}, result: { totals: { pass: false, days: 'x', kwh: Infinity, rm: 1 } } });
+  assert.equal(failing.verdict, 'fail');
+  assert.equal(failing.blocks, 0); // a missing mix
+  assert.equal(failing.created_at, clock);
+  assert.equal(failing.days, null);
+  assert.equal(failing.kwh, null);
+  assert.equal(failing.rm, 1);
+  const imp = db.saveSimulationRun(1, { kind: 'cycle', inputs: { mix: [] }, result: { verdict: 'impossible', totals: { pass: true } } });
+  assert.equal(imp.verdict, 'impossible'); // before totals.pass
+  assert.equal(imp.blocks, 0);
+  assert.equal(imp.days, null);
+  const noTotals = db.saveSimulationRun(1, { kind: 'cycle', inputs: {}, result: { totals: 5 } });
+  assert.equal(noTotals.verdict, 'fail');
+  assert.equal(noTotals.days, null);
+  const emptyResult = db.saveSimulationRun(1, { kind: 'cycle', inputs: {}, result: {} }); // LD 71: missing totals
+  assert.equal(emptyResult.verdict, 'fail');
+  assert.equal(emptyResult.days, null);
+  assert.equal(emptyResult.kwh, null);
+  assert.equal(emptyResult.rm, null);
+  const cap = db.saveSimulationRun(1, { kind: 'capacity', inputs: mix(1), result: { verdict: 'tight', utilisation: 88, totals: { days: 9 } } });
+  assert.equal(cap.verdict, 'tight');
+  assert.equal(cap.utilisation, 88);
+  assert.equal(cap.days, null); // capacity: days, kwh, rm null
+  const capNoUtil = db.saveSimulationRun(1, { kind: 'capacity', inputs: {}, result: { verdict: 'good', utilisation: Infinity } });
+  assert.equal(capNoUtil.utilisation, null);
+  const eq = db.saveSimulationRun(1, { kind: 'equipment', inputs: {}, result: { ac: { verdict: 'too-small' }, totals: { days: 3 } }, note: 'n', real_start: 77 });
+  assert.equal(eq.verdict, 'too-small');
+  assert.equal(eq.days, null);
+  assert.equal(eq.utilisation, null);
+  assert.equal(eq.note, 'n');
+  assert.equal(eq.real_start, 77);
+  const eqImp = db.saveSimulationRun(1, { kind: 'equipment', inputs: {}, result: { verdict: 'impossible', ac: { verdict: 'enough' } } });
+  assert.equal(eqImp.verdict, 'impossible');
+  const inf = db.saveSimulationRun(1, { kind: 'capacity', inputs: {}, result: { verdict: 'good', value: Infinity } });
+  assert.equal(inf.result.value, Infinity); // JSON keeps non-finite numbers
+});
+
+test('simulation runs: kind/verdict CHECKs and column rules store nothing', () => {
+  const db = freshDb();
+  const bad = (run, errcode) => assertConstraint(() => db.saveSimulationRun(1, run), errcode, () => assert.deepEqual(db.listSimulationRuns(1), []));
+  bad({ kind: 'capacity', inputs: {}, result: { verdict: 'pass' } }, 275);
+  bad({ kind: 'equipment', inputs: {}, result: { ac: { verdict: 'pass' } } }, 275);
+  bad({ kind: 'equipment', inputs: {}, result: { ac: { verdict: 'good' } } }, 275); // the pair CHECK
+  bad({ kind: 'heat', inputs: {}, result: { verdict: 'good' } }, 275);
+  bad({ kind: undefined, inputs: {}, result: { verdict: 'good' } }, 1299);
+  bad({ kind: 'equipment', inputs: {}, result: {} }, 1299); // a missing ac: verdict NULL
+  bad({ kind: 'capacity', inputs: {}, result: {} }, 1299);
+  bad({ kind: 'capacity', result: { verdict: 'good' } }, 1299);
+  bad({ kind: 'capacity', inputs: {} }, 1299);
+  bad({ kind: 'capacity', inputs: { mix: [{ blocks: 1.5 }] }, result: { verdict: 'good' } }, 3091); // blocks is a sum: INTEGER column
+  bad({ kind: 'capacity', inputs: { mix: [{ blocks: -1 }] }, result: { verdict: 'good' } }, 275);
+  bad({ kind: 'cycle', inputs: {}, result: { totals: { pass: true, days: 0 } } }, 275);
+  bad({ kind: 'cycle', inputs: {}, result: { totals: { pass: true, days: 2.5 } } }, 3091);
+  bad({ kind: 'capacity', inputs: {}, result: { verdict: 'good', utilisation: 50.5 } }, 3091);
+  bad({ kind: 'capacity', inputs: {}, result: { verdict: 'good' }, real_start: 1.5 }, 3091);
+  bad({ kind: 'capacity', inputs: {}, result: { verdict: 'good' }, at: 1.5 }, 3091);
+  assert.throws(() => db.saveSimulationRun(1, { kind: 'capacity', inputs: {}, result: { verdict: 'good' }, verdict: 'good' }), { name: 'TypeError', message: 'saveSimulationRun: unknown field "verdict"' });
+  assert.deepEqual(db.listSimulationRuns(1), []);
+  // A kind outside the list: the verdict is result.verdict as given, so a valid-looking one still fails on the kind CHECK.
+  bad({ kind: 'heat', inputs: {}, result: { verdict: 'pass' } }, 275);
+});
+
+test('simulation runs: list, get, update, delete', () => {
+  const db = freshDb();
+  db.createRoom({ name: 'B', volume: 60, settings: freshSettings() });
+  const ids = [];
+  for (let i = 0; i < 5; i++) ids.push(db.saveSimulationRun(1, { kind: 'capacity', inputs: { i }, result: { verdict: 'good', big: [i] } }).id);
+  const other = db.saveSimulationRun(2, { kind: 'capacity', inputs: {}, result: { verdict: 'good' } });
+  assert.deepEqual(ids, [1, 2, 3, 4, 5]);
+  const list = db.listSimulationRuns(1);
+  assert.deepEqual(list.map(r => r.id), [5, 4, 3, 2, 1]); // newest first
+  assert.deepEqual(Object.keys(list[0]), ['id', 'room_id', 'created_at', 'kind', 'verdict', 'blocks', 'days', 'kwh', 'rm', 'utilisation', 'real_start', 'note', 'inputs']); // no result
+  assert.deepEqual(list[0].inputs, { i: 4 });
+  assert.deepEqual(db.listSimulationRuns(1, { limit: 2 }).map(r => r.id), [5, 4]);
+  assert.deepEqual(db.listSimulationRuns(1, { limit: 2, before: 4 }).map(r => r.id), [3, 2]);
+  assert.deepEqual(db.listSimulationRuns(1, { before: null }).length, 5);
+  assert.deepEqual(db.listSimulationRuns(1, null).length, 5);
+  assert.throws(() => db.listSimulationRuns(1, { offset: 1 }), { name: 'TypeError', message: 'listSimulationRuns: unknown field "offset"' });
+  for (const o of [{ limit: 0 }, { limit: 201 }, { limit: 1.5 }, { before: 1.5 }, { before: 'x' }]) {
+    assert.throws(() => db.listSimulationRuns(1, o), RangeError, JSON.stringify(o));
+  }
+  assert.equal(db.listSimulationRuns(1, { limit: 200 }).length, 5);
+  assert.equal(db.listSimulationRuns(2).length, 1);
+
+  const run = db.getSimulationRun(1, ids[2]);
+  assert.deepEqual(run.result, { verdict: 'good', big: [2] });
+  assert.equal(Object.getPrototypeOf(run), Object.prototype);
+  for (const bad of [other.id, 99, 'x', undefined]) {
+    assert.throws(() => db.getSimulationRun(1, bad), err => err.code === 'NOT_FOUND' && err.what === 'simulation' && err.id === bad && err.message === `Unknown simulation ${bad}`);
+  }
+
+  const upd = db.updateSimulationRun(1, ids[2], { note: 'hello', real_start: 500 });
+  assert.equal(upd.note, 'hello');
+  assert.equal(upd.real_start, 500);
+  assert.equal('result' in upd, false);
+  assert.deepEqual(db.updateSimulationRun(1, ids[2], {}), upd); // {} changes nothing
+  assert.equal(db.updateSimulationRun(1, ids[2], { note: null }).note, null);
+  assert.equal(db.updateSimulationRun(1, ids[2], { note: 'k' }).real_start, 500); // untouched keys stay
+  assert.throws(() => db.updateSimulationRun(1, ids[2], { verdict: 'x' }), { name: 'TypeError', message: 'updateSimulationRun: unknown field "verdict"' });
+  assertConstraint(() => db.updateSimulationRun(1, ids[2], { real_start: 1.5 }), 3091, () => assert.equal(db.getSimulationRun(1, ids[2]).real_start, 500));
+  assert.throws(() => db.updateSimulationRun(1, other.id, {}), err => err.what === 'simulation');
+  assert.throws(() => db.updateSimulationRun(1, 99, { note: 'x' }), err => err.what === 'simulation');
+  assert.throws(() => db.listSimulationRuns(1, { limit: null }), RangeError); // LD 71, as listEvents
+  assertConstraint(() => db.updateSimulationRun(1, 99, { real_start: 1.5 }), 3091); // LD 71: column rules before the run check
+  assert.throws(() => db.updateSimulationRun(99, 99, { x: 1 }), err => err.code === 'NOT_FOUND' && err.what === 'room'); // LD 71: room before unknown fields
+  assert.throws(() => db.updateSimulationRun(1, 99, { x: 1 }), { name: 'TypeError', message: 'updateSimulationRun: unknown field "x"' }); // LD 71: unknown fields before the run check
+
+  const gone = db.deleteSimulationRun(1, ids[2]);
+  assert.equal(gone.id, ids[2]);
+  assert.equal(gone.note, 'k'); // read before the delete
+  assert.equal('result' in gone, false);
+  assert.throws(() => db.getSimulationRun(1, ids[2]), err => err.what === 'simulation');
+  assert.throws(() => db.deleteSimulationRun(1, ids[2]), err => err.what === 'simulation');
+  assert.throws(() => db.deleteSimulationRun(1, other.id), err => err.what === 'simulation');
+  assert.equal(db.listSimulationRuns(1).length, 4);
+  assert.equal(db.saveSimulationRun(1, { kind: 'capacity', inputs: {}, result: { verdict: 'good' } }).id, 7); // ids are not reused
+});
+
+test('simulation runs: stored data is independent of the caller and of results', () => {
+  const db = freshDb();
+  const inputs = { mix: [{ blocks: 3 }] };
+  const saved = db.saveSimulationRun(1, { kind: 'capacity', inputs, result: { verdict: 'good' } });
+  inputs.mix[0].blocks = 50;
+  saved.inputs.mix[0].blocks = 60;
+  assert.equal(db.getSimulationRun(1, 1).inputs.mix[0].blocks, 3);
+});
+
+test('equipment: get, save, replace', () => {
+  const db = freshDb();
+  assert.equal(db.getEquipment(1), null);
+  const first = db.saveEquipment(1, validEquipment({ at: 10 }));
+  assert.deepEqual(first, { room_id: 1, saved_at: 10, ac_hp: 2, ac_units: 1, fog_lph: 5, air_m3h: 300, walls: 'zinc', roof: 'zinc', height: 3 });
+  assert.deepEqual(Object.keys(first), ['room_id', 'saved_at', 'ac_hp', 'ac_units', 'fog_lph', 'air_m3h', 'walls', 'roof', 'height']);
+  assert.deepEqual(db.getEquipment(1), first);
+  assert.equal(db.saveEquipment(1, validEquipment()).saved_at, clock); // at left out
+  const second = db.saveEquipment(1, validEquipment({ ac_hp: 1.5, walls: null, roof: null, at: 20 }));
+  assert.equal(second.ac_hp, 1.5);
+  assert.equal(second.walls, null);
+  assert.deepEqual(db.getEquipment(1), second); // one row per room: replaced
+  assert.equal(db.getEquipment(1).saved_at, 20);
+  db.createRoom({ name: 'B', volume: 60, settings: freshSettings() });
+  assert.equal(db.getEquipment(2), null);
+  for (const hp of [1, 1.5, 2, 2.5, 3, 4, 5, 6]) assert.doesNotThrow(() => db.saveEquipment(1, validEquipment({ ac_hp: hp })));
+  for (const a of [50, 10000]) assert.equal(db.saveEquipment(1, validEquipment({ air_m3h: a })).air_m3h, a);
+  const e = db.getEquipment(1);
+  assert.equal(Object.getPrototypeOf(e), Object.prototype);
+  for (const [walls, roof] of [['brick115', 'zinc'], ['pu100', 'pu100'], ['eps50', 'eps75']]) assert.doesNotThrow(() => db.saveEquipment(1, validEquipment({ walls, roof })));
+});
+
+test('equipment: constraint errors store nothing', () => {
+  const db = freshDb();
+  const bad = (over, errcode) => assertConstraint(() => db.saveEquipment(1, validEquipment(over)), errcode, () => assert.equal(db.getEquipment(1), null));
+  bad({ ac_hp: 1.25 }, 275);
+  bad({ ac_units: 5 }, 275);
+  bad({ ac_units: 0 }, 275);
+  bad({ fog_lph: 0.4 }, 275);
+  bad({ fog_lph: 51 }, 275);
+  bad({ air_m3h: 40 }, 275);
+  bad({ air_m3h: 10001 }, 275);
+  bad({ walls: 'pu50', roof: null }, 275);
+  bad({ walls: null, roof: 'zinc' }, 275);
+  bad({ roof: 'brick115' }, 275);
+  bad({ walls: 'glass' }, 275);
+  bad({ height: 1.9 }, 275);
+  bad({ height: 6.1 }, 275);
+  bad({ ac_units: 1.5 }, 3091);
+  bad({ ac_hp: 'x' }, 3091);
+  bad({ air_m3h: 'x' }, 3091);
+  bad({ at: 1.5 }, 3091);
+  bad({ ac_hp: null }, 1299);
+  bad({ air_m3h: NaN }, 1299);
+  bad({ height: null }, 1299);
+  bad({ at: null }, 1299);
+});
+
+test('equipment: unknown and missing fields', () => {
+  const db = freshDb();
+  assert.throws(() => db.saveEquipment(1, validEquipment({ fan_m3h: 300 })), { name: 'TypeError', message: 'saveEquipment: unknown field "fan_m3h"' });
+  const noHeight = validEquipment();
+  delete noHeight.height;
+  assert.throws(() => db.saveEquipment(1, noHeight), { name: 'TypeError', message: 'saveEquipment: missing field "height"' });
+  assert.throws(() => db.saveEquipment(1, validEquipment({ height: undefined })), { name: 'TypeError', message: 'saveEquipment: missing field "height"' });
+  const two = validEquipment();
+  delete two.height;
+  delete two.fog_lph;
+  assert.throws(() => db.saveEquipment(1, two), { message: 'saveEquipment: missing field "fog_lph"' }); // field order
+  assert.throws(() => db.saveEquipment(1, validEquipment({ fan_m3h: 1, height: undefined })), { message: 'saveEquipment: unknown field "fan_m3h"' }); // unknown before missing
+  assert.throws(() => db.saveEquipment(1, {}), { message: 'saveEquipment: missing field "ac_hp"' });
+  assert.doesNotThrow(() => db.saveEquipment(1, validEquipment({ walls: null, roof: null }))); // null is not missing
+  const db2 = freshDb();
+  assert.throws(() => db2.saveEquipment(1, noHeight), TypeError);
+  assert.equal(db2.getEquipment(1), null);
+  // The room check comes first.
+  assert.throws(() => db2.saveEquipment(99, { fan_m3h: 1 }), err => err.code === 'NOT_FOUND' && err.what === 'room');
 });

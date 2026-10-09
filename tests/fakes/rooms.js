@@ -51,7 +51,7 @@ function createFakeRoomManager({ db, now = () => Math.floor(Date.now() / 1000) }
   function defaultLive(room) {
     const settings = db.currentSettings(room.id).settings;
     const alarms = db.listAlarms(room.id, { recent: 0 }).length;
-    return { reading: null, stage: settings.stage, crop: settings.crop, targets: null, status: null, alarms, running: true, error: null };
+    return { reading: null, stage: settings.stage, crop: settings.crop, targets: null, status: null, alarms, running: true, error: null, flush: null, blocks: null, air: null };
   }
 
   function rawGet(id) {
