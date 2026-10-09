@@ -181,8 +181,14 @@ function createFakeRoomManager({ db, now = () => Math.floor(Date.now() / 1000) }
     }
     if (details.length > 0) throw new RoomError('bad_input', 'Bad input', details);
 
-    const base = db.currentSettings(id).settings;
-    const { settings: next, warnings } = mergeAndImport(settings, base);
+    // The stored base is upgraded first, so the input merges over version 2 keys (review fix I1).
+    const CC = globalThis.ClimateController;
+    const fromDb = typeof CC.upgradeSettings === 'function'
+      ? CC.upgradeSettings(db.currentSettings(id).settings)
+      : { settings: db.currentSettings(id).settings, warnings: [] };
+    const merged = mergeAndImport(settings, fromDb.settings);
+    const next = merged.settings;
+    const warnings = fromDb.warnings.concat(merged.warnings);
     const version = db.saveSettings(id, { settings: next, note: trimmedNote, at: now() });
     const text = `Settings saved (version ${version.id})` + (trimmedNote ? `: ${trimmedNote}` : '');
     const event = db.addEvent(id, { t: now(), level: 'info', text });

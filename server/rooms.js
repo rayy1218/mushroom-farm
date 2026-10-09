@@ -78,12 +78,16 @@ function validateNote(note, details) {
 // C9 section 6.3: settings from the database (and given settings merged over them) may be version 1, so
 // ClimateController.upgradeSettings (C9 section 5.2) runs first; its warnings come before the import's own.
 // The typeof guard is for the time before the controller stream is merged (C9 step 2).
-function upgradeAndImport(settings) {
-  const upgraded = typeof ClimateController.upgradeSettings === 'function'
+function upgrade(settings) {
+  return typeof ClimateController.upgradeSettings === 'function'
     ? ClimateController.upgradeSettings(settings)
     : { settings, warnings: [] };
+}
+// upgradeWarnings is the upgrade's share of warnings, so a loop start can tell that it upgraded.
+function upgradeAndImport(settings) {
+  const upgraded = upgrade(settings);
   const imported = ClimateController.importSettings({ format: SETTINGS_FORMAT, version: ClimateController.SETTINGS_VERSION, settings: upgraded.settings });
-  return { settings: imported.settings, warnings: upgraded.warnings.concat(imported.warnings) };
+  return { settings: imported.settings, warnings: upgraded.warnings.concat(imported.warnings), upgradeWarnings: upgraded.warnings };
 }
 
 function buildReadingRow(roomId, r, cmd) {
@@ -308,6 +312,10 @@ function createRoomManager(options) {
       loop.cfg = imported.settings;
       warnings = imported.warnings;
       loop.base = structuredClone(loop.cfg);
+      // C9 6.3 "Upgrade saved once": the upgraded settings become the current version, so the next start upgrades nothing.
+      if (imported.upgradeWarnings.length > 0) {
+        db.saveSettings(id, { settings: loop.cfg, note: 'Upgraded: air exchange', at: t });
+      }
 
       const calib = calibRow ? { ua: calibRow.ua, infAch: calibRow.inf_ach, moistBuffer: calibRow.moist_buffer, co2PerBlock: calibRow.co2_per_block } : null;
       const sum = mix.reduce((s, m) => s + m.blocks, 0);
@@ -622,9 +630,10 @@ function createRoomManager(options) {
     if (details.length > 0) throw new RoomError('bad_input', 'Bad input', details);
 
     const loop = loops.get(id);
-    const base = loop && loop.base ? loop.base : db.currentSettings(id).settings;
+    // The stored base is upgraded first, so the input merges over version 2 keys (review fix I1).
+    const fromDb = loop && loop.base ? { settings: loop.base, warnings: [] } : upgrade(db.currentSettings(id).settings);
 
-    const { settings: merged, warnings: dropped } = cleanSettings(settingsInput, base);
+    const { settings: merged, warnings: dropped } = cleanSettings(settingsInput, fromDb.settings);
     let imported;
     try {
       imported = upgradeAndImport(merged);
@@ -632,7 +641,7 @@ function createRoomManager(options) {
       throw new RoomError('bad_input', 'Bad input', [err.message]);
     }
     const next = imported.settings;
-    let warnings = dropped.concat(imported.warnings);
+    let warnings = fromDb.warnings.concat(dropped, imported.warnings);
     const exact = !!(options && options.exact === true);
 
     let stored;

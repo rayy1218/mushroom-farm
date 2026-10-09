@@ -1802,6 +1802,88 @@ test('Settings upgrade: a stored version 1 settings object loads with warnings',
   assert.equal(cap.made[0].cfg.rules.fanOn, old.rules.fanOn);
 });
 
+// Review fix I1: applySettings upgrades the stored base before merging the input over it, so a version 1
+// manual.fan cannot overwrite the user's new manual.air.
+const FAN_GONE = 'Setting "manual.fan" was removed: fresh air now runs as short purges.';
+function stubFanToAir(t) {
+  const had = Object.hasOwn(CC, 'upgradeSettings'), orig = CC.upgradeSettings, origImport = CC.importSettings;
+  // The version 1 controller's importSettings drops manual.air, so it passes the object through here.
+  CC.importSettings = env => ({ settings: structuredClone(env.settings), warnings: [] });
+  CC.upgradeSettings = obj => {
+    const settings = structuredClone(obj), warnings = [];
+    if (settings.manual && 'fan' in settings.manual) {
+      delete settings.manual.fan;
+      settings.manual.air = { auto: true, on: false };
+      warnings.push(FAN_GONE);
+    }
+    return { settings, warnings };
+  };
+  t.after(() => { CC.importSettings = origImport; if (had) CC.upgradeSettings = orig; else delete CC.upgradeSettings; });
+}
+function storedV1() {
+  const old = CC.defaultSettings();
+  old.roomM3 = 60;
+  delete old.manual.air;
+  old.manual.fan = { auto: true, level: 0 };
+  return old;
+}
+
+test('Settings upgrade: applySettings on a stopped room keeps the new manual.air over a version 1 base', (t) => {
+  stubFanToAir(t);
+  const { db, mgr } = setup(scripted().factory);
+  db.createRoom({ name: 'Old', volume: 60, adapter: 'sim', settings: storedV1(), note: 'Created', at: T0 });
+  const result = mgr.applySettings(1, { manual: { air: { auto: false, on: true } } });
+  assert.deepEqual(db.currentSettings(1).settings.manual.air, { auto: false, on: true });
+  assert.ok(result.warnings.includes(FAN_GONE), result.warnings.join('\n'));
+});
+
+test('Settings upgrade: applySettings on a stopped room, real upgradeSettings', { skip: NEEDS_CTL }, (t) => {
+  const { db, mgr } = setup(scripted().factory);
+  db.createRoom({ name: 'Old', volume: 60, adapter: 'sim', settings: storedV1(), note: 'Created', at: T0 });
+  const result = mgr.applySettings(1, { manual: { air: { auto: false, on: true } } });
+  assert.deepEqual(db.currentSettings(1).settings.manual.air, { auto: false, on: true });
+  assert.ok(result.warnings.some(w => w.includes('manual.fan')), result.warnings.join('\n'));
+});
+
+// Review fix I2 (C9 6.3 "Upgrade saved once"): a loop start that upgraded saves the upgraded settings, so the
+// removal events are logged once, not at every start.
+test('Settings upgrade: the upgraded settings are saved once at loop start', (t) => {
+  stubUpgrade(t);
+  const { db, mgr } = setup(scripted().factory);
+  const stored = CC.defaultSettings();
+  stored.roomM3 = 60;
+  stored.rules.oldKey = 1;
+  db.createRoom({ name: 'Old', volume: 60, adapter: 'sim', settings: stored, note: 'Created', at: T0 });
+  mgr.start();
+  mgr.stop();
+  mgr.start();
+  const texts = db.listEvents(1, { limit: 50 }).map(e => e.text);
+  assert.equal(texts.filter(x => x === `Settings: ${REMOVED}`).length, 1, texts.join('\n'));
+  const history = db.settingsHistory(1);
+  assert.equal(history.length, 2);
+  assert.equal(history[0].note, 'Upgraded: air exchange');
+  assert.ok(!('oldKey' in db.currentSettings(1).settings.rules));
+});
+
+test('Settings upgrade: a stored version 1 room started twice logs the removals once', { skip: NEEDS_CTL }, () => {
+  const { db, mgr } = setup(scripted().factory);
+  db.createRoom({ name: 'Old', volume: 60, adapter: 'sim', settings: storedV1(), note: 'Created', at: T0 });
+  mgr.start();
+  mgr.stop();
+  mgr.start();
+  const texts = db.listEvents(1, { limit: 50 }).map(e => e.text);
+  assert.equal(texts.filter(x => x.includes('"manual.fan" was removed')).length, 1, texts.join('\n'));
+});
+
+// Minor 3: rooms.create ignores unknown keys (C2 4), so it ignores vent; the db and rooms.update reject it.
+test('create ignores vent (C9 section 6.3)', () => {
+  const { db, mgr } = setup(scripted().factory);
+  mgr.start();
+  const { room } = mgr.create({ name: 'B', volume: 60, vent: 'supply' });
+  assert.ok(!('vent' in room));
+  assert.ok(!('vent' in db.getRoom(room.id)));
+});
+
 test('Errors', () => {
   const { mgr } = setup();
   mgr.start();

@@ -286,3 +286,29 @@ test('create and applySettings: upgradeSettings runs before the import (C9 secti
   assert.deepEqual(applied.warnings, [REMOVED]);
   assert.ok(!('oldKey' in db.currentSettings(created.room.id).settings.rules));
 });
+
+test('applySettings: the stored base is upgraded before the input is merged (review fix I1)', (t) => {
+  const GONE = 'Setting "manual.fan" was removed: fresh air now runs as short purges.';
+  const had = Object.hasOwn(CC, 'upgradeSettings'), orig = CC.upgradeSettings, origImport = CC.importSettings;
+  // The version 1 controller's importSettings drops manual.air, so it passes the object through here.
+  CC.importSettings = env => ({ settings: structuredClone(env.settings), warnings: [] });
+  CC.upgradeSettings = obj => {
+    const settings = structuredClone(obj), warnings = [];
+    if (settings.manual && 'fan' in settings.manual) {
+      delete settings.manual.fan;
+      settings.manual.air = { auto: true, on: false };
+      warnings.push(GONE);
+    }
+    return { settings, warnings };
+  };
+  t.after(() => { CC.importSettings = origImport; if (had) CC.upgradeSettings = orig; else delete CC.upgradeSettings; });
+
+  const { db, rooms } = setup();
+  const old = CC.defaultSettings();
+  delete old.manual.air;
+  old.manual.fan = { auto: true, level: 0 };
+  const room = db.createRoom({ name: 'Old', volume: 60, settings: old });
+  const result = rooms.applySettings(room.id, { manual: { air: { auto: false, on: true } } });
+  assert.deepEqual(db.currentSettings(room.id).settings.manual.air, { auto: false, on: true });
+  assert.ok(result.warnings.includes(GONE), result.warnings.join('\n'));
+});

@@ -294,6 +294,7 @@ test('real: upgrade 2 turns fan 0-3 into air 0/1 and drops rooms.vent (C9 6.2)',
   assertSql(() => db.insertReading(1, reading(T0 + 150, { air: 2 })), 275);
   assert.equal(db.createRoom(roomInput({ name: 'New' })).id, 3);
   db.close();
+  openDb(file, { now: () => T0 + 1 }).close(); // a second open applies nothing more
 
   const raw = new DatabaseSync(file);
   t.after(() => raw.close());
@@ -310,6 +311,33 @@ test('real: upgrade 2 turns fan 0-3 into air 0/1 and drops rooms.vent (C9 6.2)',
   assert.deepStrictEqual(raw.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'readings'").all().map(r => r.name), ['readings_room_t']);
   assert.deepStrictEqual(raw.prepare('PRAGMA foreign_key_check').all(), []);
   assert.equal(raw.prepare('PRAGMA integrity_check').get().integrity_check, 'ok');
+});
+
+test('real: a failed upgrade 2 leaves the version 1 file as it was, and the next open upgrades it', t => {
+  const file = tmpFile(t);
+  writeVersion1File(file);
+  const upgrades = [UPGRADES[0], { version: 2, sql: UPGRADES[1].sql + 'SELECT * FROM no_such_table;' }];
+  assert.throws(() => openDb(file, { now: () => T0, upgrades }), err => /^Schema upgrade 2 failed: /.test(err.message));
+
+  const raw = new DatabaseSync(file);
+  const cols = table => raw.prepare('SELECT name FROM pragma_table_info(?)').all(table).map(r => r.name);
+  assert.ok(cols('rooms').includes('vent'));
+  assert.ok(cols('readings').includes('fan'));
+  assert.deepStrictEqual(raw.prepare("SELECT name FROM sqlite_master WHERE name = 'readings_new'").all(), []);
+  assert.deepStrictEqual(raw.prepare('SELECT version FROM schema_version').all().map(r => ({ ...r })), [{ version: 1 }]);
+  raw.close();
+
+  const db = openDb(file, { now: () => T0 });
+  t.after(() => db.close());
+  assert.equal(db.version, 2);
+  assert.deepStrictEqual(db.queryReadings(1, { from: T0, to: T0 + 90 }).map(r => r.air), [0, 1, 1, 1]);
+});
+
+both('createRoom: vent is an unknown field (C9 6.1)', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  assert.throws(() => db.createRoom(roomInput({ vent: 'supply' })), { name: 'TypeError', message: 'createRoom: unknown field "vent"' });
+  assert.deepStrictEqual(db.listRooms(), []);
 });
 
 // ---------------------------------------------------------------------------
