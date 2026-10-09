@@ -105,21 +105,23 @@ test('sim adapter: env', (t) => {
 
   const defaultEnvBefore = structuredClone(SIM.DEFAULT_ENV);
   const now = () => T0;
-  const room = { id: 1, volume: 80, vent: 'exhaust', adapter: 'sim' };
+  const room = { id: 1, volume: 80, adapter: 'sim' };
   const calib = { ua: 90, infAch: 0.4, moistBuffer: 3, co2PerBlock: 41.6 };
   const cfg = CC.defaultSettings();
   cfg.stage = 'pinning';
+  cfg.airM3h = 900;
 
   createSimAdapter({ room, calib, blocks: 500, cfg, snapshot: null, now });
   assert.ok(capturedEnv);
-  assert.equal(capturedEnv.vent, 'exhaust');
+  assert.equal(capturedEnv.vent, SIM.DEFAULT_ENV.vent); // C9 section 6.3: env.vent is no longer set
+  assert.equal(capturedEnv.airM3h, 900); // C9 section 6.3: the room's own size
   assert.deepEqual(capturedEnv.room, { volume: 80, ua: 90, infAch: 0.4, moistBuffer: 3 });
   assert.equal(capturedEnv.co2PerBlock, 42);
   assert.equal(capturedEnv.blocks, 500);
   assert.equal(capturedEnv.blockStage, 'pinning');
   assert.equal(capturedEnv.startHour, ((now() + TZ_OFFSET_S) % 86400) / 3600);
   for (const k of Object.keys(SIM.DEFAULT_ENV)) {
-    if (['vent', 'room', 'co2PerBlock', 'blocks', 'blockStage', 'startHour'].includes(k)) continue;
+    if (['airM3h', 'room', 'co2PerBlock', 'blocks', 'blockStage', 'startHour'].includes(k)) continue;
     assert.deepEqual(capturedEnv[k], SIM.DEFAULT_ENV[k], `key ${k}`);
   }
 
@@ -142,7 +144,7 @@ test('sim adapter: new room at its targets', () => {
   assert.equal(a.view().CO2, 750);
 });
 
-test('sim adapter: one reading per 30 s', (t) => {
+test('sim adapter: one reading per 30 s', { skip: NEEDS_SIM }, (t) => {
   const origCreate = SIM.create;
   let capturedEnv = null;
   SIM.create = (env, snapshot) => {
@@ -156,7 +158,7 @@ test('sim adapter: one reading per 30 s', (t) => {
   const cfg = CC.defaultSettings();
   const a = createSimAdapter({ room: { id: 1, volume: 60, vent: 'supply', adapter: 'sim' }, calib: null, blocks: null, cfg, snapshot: null, now });
   const r0 = a.io.read();
-  a.io.write({ ac: { power: true, mode: 'cool', setpoint: 25, fan: 'auto' }, hu: { level: 0 }, fan: { level: 0 }, lights: { on: false }, circ: { on: false } });
+  a.io.write({ ac: { power: true, mode: 'cool', setpoint: 25, fan: 'auto' }, hu: { level: 0 }, air: { on: false }, lights: { on: false }, circ: { on: false } });
   for (let i = 0; i < 30; i++) { clock += 1; a.io.advance(1); }
   const r1 = a.io.read();
   assert.notEqual(r1.seq, r0.seq);
@@ -170,7 +172,7 @@ test('sim adapter: one reading per 30 s', (t) => {
   assert.equal(capturedEnv.blockStage, 'rest');
 });
 
-test('sim adapter: CO₂ jitter', (t) => {
+test('sim adapter: CO₂ jitter', { skip: NEEDS_SIM }, (t) => {
   let clock = T0;
   const now = () => clock;
   const cfg = CC.defaultSettings();
@@ -179,7 +181,7 @@ test('sim adapter: CO₂ jitter', (t) => {
   SIM.create = (env, snapshot) => { capturedSim = origCreate(env, snapshot); return capturedSim; };
   t.after(() => { SIM.create = origCreate; });
   const a = createSimAdapter({ room: { id: 1, volume: 60, vent: 'supply', adapter: 'sim' }, calib: null, blocks: null, cfg, snapshot: null, now });
-  a.io.write({ ac: { power: true, mode: 'cool', setpoint: 25, fan: 'auto' }, hu: { level: 0 }, fan: { level: 0 }, lights: { on: false }, circ: { on: false } });
+  a.io.write({ ac: { power: true, mode: 'cool', setpoint: 25, fan: 'auto' }, hu: { level: 0 }, air: { on: false }, lights: { on: false }, circ: { on: false } });
   for (let i = 0; i < 5; i++) {
     clock += 1; a.io.advance(1);
     const r = a.io.read();
@@ -197,7 +199,7 @@ test('sim adapter: gap', () => {
   const now = () => clock;
   const cfg = CC.defaultSettings();
   const a = createSimAdapter({ room: { id: 1, volume: 60, vent: 'supply', adapter: 'sim' }, calib: null, blocks: null, cfg, snapshot: null, now });
-  a.io.write({ ac: { power: true, mode: 'cool', setpoint: 25, fan: 'auto' }, hu: { level: 0 }, fan: { level: 0 }, lights: { on: false }, circ: { on: false } });
+  a.io.write({ ac: { power: true, mode: 'cool', setpoint: 25, fan: 'auto' }, hu: { level: 0 }, air: { on: false }, lights: { on: false }, circ: { on: false } });
   const seqBefore = a.io.read().seq;
   clock += 301;
   a.io.advance(301);
@@ -211,12 +213,12 @@ test('sim adapter: gap', () => {
   assert.deepEqual(a.view(), viewBefore);
 });
 
-test('sim adapter: resume from a snapshot', () => {
+test('sim adapter: resume from a snapshot', { skip: NEEDS_SIM }, () => {
   let clock = T0;
   const now = () => clock;
   const cfg = CC.defaultSettings();
   const a = createSimAdapter({ room: { id: 1, volume: 60, vent: 'supply', adapter: 'sim' }, calib: null, blocks: null, cfg, snapshot: null, now });
-  a.io.write({ ac: { power: true, mode: 'cool', setpoint: 25, fan: 'auto' }, hu: { level: 0 }, fan: { level: 0 }, lights: { on: false }, circ: { on: false } });
+  a.io.write({ ac: { power: true, mode: 'cool', setpoint: 25, fan: 'auto' }, hu: { level: 0 }, air: { on: false }, lights: { on: false }, circ: { on: false } });
   for (let i = 0; i < 60; i++) { clock += 1; a.io.advance(1); }
   const oldView = a.view();
   const oldSeq = a.io.read().seq;
@@ -231,6 +233,17 @@ test('sim adapter: resume from a snapshot', () => {
   assert.equal(b.io.read().seq, oldSeq);
   assert.ok(b.io.read().t > a.io.read().t);
   assert.deepEqual(b.snapshot(), snap);
+});
+
+test('sim adapter: the simulated room runs with its own air exchange size (C9 section 6.3)', { skip: NEEDS_SIM }, () => {
+  let clock = T0;
+  const now = () => clock;
+  const cfg = CC.defaultSettings();
+  cfg.airM3h = 900;
+  const a = createSimAdapter({ room: { id: 1, volume: 60, adapter: 'sim' }, calib: null, blocks: null, cfg, snapshot: null, now });
+  a.io.write({ ac: { power: true, mode: 'cool', setpoint: 25, fan: 'auto' }, hu: { level: 0 }, air: { on: true }, lights: { on: false }, circ: { on: false } });
+  clock += 1; a.io.advance(1);
+  assert.equal(a.view().airM3h, 900); // fans on: the pair's flow, no leakage (C9 4.2 view)
 });
 
 // ---------------------------------------------------------------------------

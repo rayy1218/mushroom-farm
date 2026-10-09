@@ -22,7 +22,7 @@ function createSimAdapter({ room, calib, blocks, cfg, snapshot, now }) {
 
   // Step 1 (C2 13.1)
   const env = structuredClone(DEFAULT_ENV);
-  env.vent = room.vent;
+  env.airM3h = cfg.airM3h; // C9 section 6.3: the room's own air exchange size
   env.room = { volume: room.volume };
   if (calib) {
     env.room.ua = calib.ua;
