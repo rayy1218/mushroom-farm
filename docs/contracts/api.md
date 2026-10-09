@@ -790,7 +790,7 @@ for which it returns `null` are skipped), the Capacity module sends, in this ord
 |---|---|---|
 | `/` and `/index.html` | `index.html` | `text/html; charset=utf-8` |
 | `/styles.css` | `styles.css` | `text/css; charset=utf-8` |
-| `/controller.js`, `/sim.js`, `/runtime.js`, `/capacity.js`, `/calib.js`, `/room-rules.js` | the shared module of that name | `text/javascript; charset=utf-8` |
+| `/controller.js`, `/sim.js`, `/air.js` (C9), `/runtime.js`, `/capacity.js`, `/calib.js`, `/room-rules.js` | the shared module of that name | `text/javascript; charset=utf-8` |
 | `/web/<path>` | the file under `web/` (subfolders allowed) | by extension, below |
 
 | Extension (under `web/`) | `Content-Type` |

@@ -27,7 +27,7 @@ C9 replaces the one fresh-air fan (levels 0–3, `env.vent`, `rules.airMode`, AC
 | `controller.js`, `tests/controller.test.js`, `tests/settings.test.js`, `tests/vectors.test.js` (pack only), `tools/make-vectors.js` | Controller stream | Sections 5, 9 |
 | `server/db.js`, `server/rooms.js`, `server/rooms-common.js`, `server/sim-adapter.js`, `server/api.js`, `room-rules.js`, `tests/fakes/**`, `tests/db.test.js`, `tests/fake-db.test.js`, `tests/rooms.test.js`, `tests/fake-rooms.test.js`, `tests/rooms-common.test.js`, `tests/api.test.js`, `tests/stream.test.js`, `tests/room-rules.test.js` | Data stream | Section 6 |
 | `web/**`, `styles.css`, `tests/web-*.test.js`, `tests/settings-diff.test.js` | Web stream | Section 7 |
-| `index.html` | Lead (step 0) | One script line (section 7) |
+| `index.html`, `server/static.js` (+ its test row in `tests/api.test.js`) | Lead (step 0) | One script line (section 7); the static route `/air.js` (C3 section 9) |
 | `tests/integration.test.js`, `tests/harness.js`, `tests/vectors/*.json` | Lead (step 2) | Section 11 |
 
 No stream edits a file it does not own. A stream that needs a change elsewhere stops and reports to the lead.

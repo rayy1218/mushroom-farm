@@ -59,6 +59,7 @@ const root = fs.mkdtempSync(path.join(os.tmpdir(), 'farm-'));
 fs.writeFileSync(path.join(root, 'index.html'), '<html>farm</html>');
 fs.writeFileSync(path.join(root, 'styles.css'), 'body{}');
 fs.writeFileSync(path.join(root, 'sim.js'), '// sim');
+fs.writeFileSync(path.join(root, 'air.js'), '// air');
 fs.writeFileSync(path.join(root, 'room-rules.js'), '// room-rules');
 fs.mkdirSync(path.join(root, 'web', 'sub'), { recursive: true });
 fs.writeFileSync(path.join(root, 'web', 'a.js'), '// a');
@@ -94,6 +95,7 @@ describe('static files', () => {
     const cases = [
       ['/styles.css', 'text/css; charset=utf-8'],
       ['/sim.js?v=2', 'text/javascript; charset=utf-8'],
+      ['/air.js', 'text/javascript; charset=utf-8'],
       ['/room-rules.js', 'text/javascript; charset=utf-8'],
       ['/web/a.js', 'text/javascript; charset=utf-8'],
       ['/web/sub/b.css', 'text/css; charset=utf-8'],

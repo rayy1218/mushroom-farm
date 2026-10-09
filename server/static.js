@@ -9,6 +9,7 @@ const TOP_LEVEL = {
   '/styles.css': { file: 'styles.css', type: 'text/css; charset=utf-8' },
   '/controller.js': { file: 'controller.js', type: 'text/javascript; charset=utf-8' },
   '/sim.js': { file: 'sim.js', type: 'text/javascript; charset=utf-8' },
+  '/air.js': { file: 'air.js', type: 'text/javascript; charset=utf-8' },
   '/runtime.js': { file: 'runtime.js', type: 'text/javascript; charset=utf-8' },
   '/capacity.js': { file: 'capacity.js', type: 'text/javascript; charset=utf-8' },
   '/calib.js': { file: 'calib.js', type: 'text/javascript; charset=utf-8' },
