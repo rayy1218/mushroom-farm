@@ -45,7 +45,7 @@ commands). The adapter must send them as they are.
 | `ac.setpoint` | 16–30 °C, steps of 0.5 | The AC's own thermostat controls to this value. |
 | `ac.fan` | `low`, `auto`, `high` | High fan = warmer coil = less water out of the air. |
 | `hu.level` | 0–3 | Fogger level (0 = off). |
-| `fan.level` | 0–3 | Exhaust (or supply) fan level (0 = off). |
+| `air.on` | `true` / `false` | Air exchange: the intake fan (SF-203) and the exhaust fan (EF-206) on together, dampers open (C9). |
 | `lights.on` | `true` / `false` | |
 | `circ.on` | `true` / `false` | Circulation fan. |
 
@@ -56,7 +56,7 @@ commands). The adapter must send them as they are.
 3. **Safe state when the controller stops** (a watchdog in the adapter or the relay board). If the adapter receives no new
    command for 5 min:
    - fogger off (no flooding),
-   - exhaust fan at Low (fresh air and CO₂ removal),
+   - air exchange on (fresh air and CO₂ removal),
    - AC: leave it on; its own thermostat holds the last setpoint,
    - lights: off.
    These values are a proposal; confirm them for the farm.
@@ -69,7 +69,7 @@ commands). The adapter must send them as they are.
 {
   "format": "mushroom-climate-vectors", "version": 1, "name": "spikes", "description": "...",
   "settings": { ...the controller settings... },
-  "cmdFields": ["acPower", "acMode", "acSetpoint", "acFan", "fogLevel", "fanLevel", "lights", "circ"],
+  "cmdFields": ["acPower", "acMode", "acSetpoint", "acFan", "fogLevel", "air", "lights", "circ"],
   "actions": [ { "beforeStep": 120, "call": "setStage", "args": ["pinning"], "t": 3600 } ],
   "steps": [ { "r": { "seq": 1, "t": 0, "hour": 6, "T": 27.0, "...": "..." }, "c": [1, "cool", 25, "auto", 0, 0, 0, 1] } ]
 }
@@ -82,7 +82,7 @@ A port must:
 
 The scenarios: tropical fruiting with a harvest window, CO₂ sensor missing, spikes on all sensors, dry weather,
 two sensor sets with a failed main RH sensor, a black oyster stage change with ramps, cold weather (heat mode),
-and a crowded room in dry air (reduced purge, fan levels Low and High).
+a crowded room in dry air (purges delayed by humidity first), and purges that hit the time cap (C9 section 9).
 
 When an intended change of the JS controller changes the commands, make the vectors again (`npm run vectors`) and
 port the same change.
@@ -92,9 +92,9 @@ port the same change.
 `ClimateController.exportSettings(cfg)` gives:
 
 ```json
-{ "format": "mushroom-climate-settings", "version": 1, "saved": "2026-10-07T06:00:00.000Z", "settings": { ... } }
+{ "format": "mushroom-climate-settings", "version": 2, "saved": "2026-10-07T06:00:00.000Z", "settings": { ... } }
 ```
 
 `importSettings(file)` does not trust the file. It keeps only known settings, holds numbers inside their limits,
 accepts only known names for selections, corrects settings that disagree (for example a fan stop level above the
-start level), and gives a warning for each correction. The same file is the configuration of a farm device.
+start level), and gives a warning for each correction. A version 1 file goes through `upgradeSettings` first: each removed fresh-air setting gives a warning (C9 5.2). The same file is the configuration of a farm device.
