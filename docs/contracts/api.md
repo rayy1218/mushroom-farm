@@ -2,7 +2,7 @@
 
 Date: 2026-10-08. Status: **draft** (revision 9, not frozen; the lead freezes it with wave 2). Changes only through the lead; see `docs/contracts/LEAD-DECISIONS.md`.
 Spec: `docs/superpowers/specs/2026-10-08-farm-app-foundation-design.md`, sections 1-6.
-Binding: the lead decisions of `LEAD-DECISIONS.md` (1–55, cited as "lead decision N") override anything here. C9 (`docs/contracts/air.md`, frozen, lead decision 55) wins where it and this contract disagree.
+Binding: the lead decisions of `LEAD-DECISIONS.md` (1–58, cited as "lead decision N") override anything here. C9 (`docs/contracts/air.md`, frozen, lead decision 55) wins where it and this contract disagree.
 Owner of the code: the API stream (wave 1), the Server 2 stream (wave 2); every file is listed in section 2.3.
 Users: the Rooms UI, Capacity and calibration, Simulator link and Web split streams (`web/api.js`), and the lead (fakes); from revision 8 the wave 2 web streams (Room shell, Live tab, Simulate tab, Calibrate tab, Bench, the Equipment card).
 Builds against: C1 (`docs/contracts/db.md`, the fake db `tests/fakes/db.js`) and C2 (`docs/contracts/rooms.md`, the fake
@@ -199,7 +199,7 @@ against the real merged server; the fake API of C5 section 4.5 serves no page). 
 | Section 6, wave 1 Web split row | `index.html`, `web/shell.js`, … | Adds `web/ui.js`, `styles.css`, `tests/web-api.test.js`, `tests/settings-diff.test.js` (C5 sections 1.1 and 7.10). |
 | Section 6, new row | – | "1.5, Lead: gate": merge wave 1, full test suite, the gate of C3 section 12.2. Done when the gate passes. |
 | Section 6, wave 2 rows | Branch time not stated | Each branches from `master` after the gate; headless Chrome checks against the real server (C5 section 7.10). The Rooms UI row adds `styles.css` (appends a `/* Rooms */` section only). |
-| Section 6, wave 3 Lead row | "Streams merged; real db + rooms + API wired in `server/main.js`; end-to-end tests …" | "Streams merged; every test (with `tests/api-real.test.js`) and every headless Chrome check re-run on the final merge; the 8 recorded controller runs unchanged" (the wiring is done in wave 1). |
+| Section 6, wave 3 Lead row | "Streams merged; real db + rooms + API wired in `server/main.js`; end-to-end tests …" | "Streams merged; every test (with `tests/api-real.test.js`) and every headless Chrome check re-run on the final merge; the recorded controller runs: 8 vectors byte-identical, `stage-changes.json` regenerated (lead decision 56), plus `cool-crop.json` (10)" (the wiring is done in wave 1). |
 | Section 6, last sentence | "Estimate: about 1.5–2 working days instead of 3, because waves 1 and 2 run in parallel." | Removed. |
 
 | Wave | Who | What, as far as C3 is concerned | Starts when |
@@ -209,8 +209,8 @@ against the real merged server; the fake API of C5 section 4.5 serves no page). 
 | 1.5 | Lead: gate | Merges the four wave 1 streams into `master`, runs the full test suite, then the gate of section 12.2 | Every wave 1 stream is reviewed |
 | 2.0 | Lead: prep | The frozen contracts, the fakes (C1 revision 6, C2 revision 9, C5 4.5; the fake API server also serves `/air.js`, `/cycle.js` and `/equipment.js`, section 9), `index.html` (C5 1.2: every script tag of section 7.1), the `FarmApi` additions, the tab registry and stubs, the `equipment.js` stub (wave 2 plan, prep 2.0) | – |
 | 2 | Data 2, Equipment, Server 2, Room shell, Live tab, Simulate tab, Calibrate tab, Bench, Docs (the wave 2 plan) | Branch from `master` after prep 2.0. Server 2 builds this contract's revision 9 against the C1 and C2 fakes and the `equipment.js` stub. The web streams' headless Chrome checks run against the real server after gate 2.5 (C5 section 7.10) | Prep 2.0 is on `master` |
-| 2.5 | Lead: gate | Merges Data 2, Equipment, then Server 2; `npm test`; the gate of section 12.2 with a version 1 database file (upgrades 2 (C9) and 3 run, `Room 1` records readings with the 18 keys of 3.2) | Data 2, Equipment and Server 2 are reviewed |
-| 3 | Lead: integration | Merges wave 2 in the plan's order; writes and runs `tests/api-real.test.js` (section 12.2, with 6.20–6.26); runs every test and headless Chrome check again on the final merge; the 8 recorded controller runs unchanged plus `cool-crop.json` | Every wave 2 stream is reviewed |
+| 2.5 | Lead: gate | Merges Data 2, Equipment, then Server 2; `npm test`; the gate of section 12.2 with a copy of a version 1 database file and a copy of a version 2 file (wave 2 plan 5 step 0; upgrades 2 (C9) and 3 run on the first, 3 on the second, `Room 1` records readings with the 18 keys of 3.2) | Data 2, Equipment and Server 2 are reviewed |
+| 3 | Lead: integration | Merges wave 2 in the plan's order; writes and runs `tests/api-real.test.js` (section 12.2, with 6.20–6.26); runs every test and headless Chrome check again on the final merge; the recorded controller runs: 8 vectors byte-identical, `stage-changes.json` regenerated (lead decision 56), plus `cool-crop.json` (10) | Every wave 2 stream is reviewed |
 
 Every file this contract names has exactly one owner per wave. In wave 3 the lead owns every file (integration fixes).
 
@@ -345,7 +345,7 @@ The exact meaning of each column is C1's (`docs/contracts/db.md`) and C2's (sect
 |---|---|---|---|
 | `id` | int | – | One row per time an alarm is raised. |
 | `room_id` | int | – | |
-| `alarm_key` | str | the controller's alarm id: `tHi`, `tLo`, `tCrop`, `coreHi`, `rhHi`, `rhLo`, `co2Hi`, `co2Safe`, `disagree`, `acTooSmall`, `blocksDone`, `shockLimit`, `sensor_<key>` (for example `sensor_RH`) | Used in the ack path (URL-encoded by the client, URL-decoded by the server). |
+| `alarm_key` | str | the controller's alarm id: `tHi`, `tLo`, `tCrop`, `coreHi`, `rhHi`, `rhLo`, `co2Hi`, `co2Safe`, `disagree`, `acTooSmall`, `blocksDone`, `shockLimit`, `airTooSmall` (C9 5.5), `sensor_<key>` (for example `sensor_RH`) | Used in the ack path (URL-encoded by the client, URL-decoded by the server). |
 | `level` | str | `warning`, `serious`, `critical` | |
 | `label` | str | – | The controller's label, for example `High humidity`. |
 | `raised_at` | int | s | |
@@ -922,7 +922,7 @@ Exported as `ClimateRoomRules` on `window` or `globalThis`.
 |---|---|
 | Read at load | `global.ClimateSim`, `ClimateController`, `ClimateCalib` (as on `master`) and `ClimateCapacity.DESIGN_DAYS` (wave 2, for the `region` rule of 7.6; `calib.js` itself reads `ClimateSim` once when it loads, and `capacity.js` reads `ClimateAir` at load, C9 3) |
 | Read at call time | `global.ClimateEquipment`, only inside `checkEquipmentBody`, `checkCalibration` and `checkSimulationRun`, when they are called; never at load |
-| Without `cycle.js` and `equipment.js` | Loading `room-rules.js` must not throw: `tests/web-load.test.js` and `tests/web-bench.test.js` load it after `sim.js`, `air.js`, `controller.js`, `runtime.js`, `calib.js`, `capacity.js` only, and stay unchanged until wave 3 |
+| Without `cycle.js` and `equipment.js` | Loading `room-rules.js` must not throw: `tests/web-load.test.js`, `tests/web-bench.test.js`, `tests/web-air.test.js` and `tests/web-mimic.test.js` (C9's) load it after `sim.js`, `air.js`, `controller.js`, `runtime.js`, `calib.js`, `capacity.js` only; nobody changes them in wave 2 (the lead in wave 3, wave 2 plan 3.1) |
 
 | Environment | Load order |
 |---|---|

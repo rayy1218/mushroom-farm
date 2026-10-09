@@ -21,7 +21,7 @@ The air exchange of C9 (`docs/contracts/air.md`, frozen, lead decision 55) is on
 | 13.1, 13.2 | Line numbers re-checked on `master` 6a12852; `ClimateCapacity.airOf` added; the `capacity.js` export line now holds `airOf` too (C9 8). |
 | 14 | Test 22 (`AIR`, on `master`): the room's air exchange size reaches the simulation (C9 11). |
 | 15 | The air exchange model: C9. |
-| 16 (new) | Open items: the pinning CO₂ result of 12.6, closed by lead decision 56 (C9 revision 2). |
+| 8.2, 12.6, 16 | `co2Below` is `master`'s ramped-limit rule (d0cf07d); 12.6 is `master`'s re-measurement (every segment passes, 836 kWh); with lead decision 56 the default cycle still passes (pinning `co2Below` 99.9 %, measured on bd24755). Section 16 closed: the scoring fix is on `master`, the behaviour fix is lead decision 56. |
 
 ### Changes in revision 2
 
@@ -253,7 +253,7 @@ The runtime calls it after `ctl.update(r)` for each new reading. `v = sim.view()
 | `rhOk` | `v.RH >= g.spRH − BANDS.RH` |
 | `lowRh` | `v.RH < g.spRH − BANDS.RHAlarm` |
 | `wet` | `v.RH > wetLim` (revision 2): `wetLim = (CC.CROPS[tg.crop].wetRH && CC.CROPS[tg.crop].wetRH[stage]) ?? PASS.wetRH`, set once when the segment opens (an internal counter field, not part of the Segment). Only lion's mane sets `wetRH` (`{ pinning: 98 }`, lead decision 40); every other crop and stage uses 95. |
-| `co2Below` | `v.CO2 <= g.co2Lim` |
+| `co2Below` | `v.CO2 <= Math.max(g.co2Lim, cfg.co2Lim)` (`master` d0cf07d: CO₂ is judged against the limit the controller holds, the ramped limit during a stage ramp). With lead decision 56 a lowering change sets `cfg.co2Lim` to the stage limit at once, so the `max` matters only for raising ramps (rest → fruiting is lowering; fruiting → rest raising). The Equipment stream keeps this rule |
 | `maxCore` | Not a count: the largest `v.core` of the segment |
 
 ### 8.3 Segment values
@@ -387,6 +387,10 @@ Re-measured 2026-10-09 with the air exchange (C9). 2000 grey oyster, default roo
 
 CO₂ is judged against the limit the controller holds (C9 10): after the spawn run the CO₂ limit ramps from 5000 to 800 ppm over `rampH` (4 h), and purges on demand follow the ramp. The old model's `sensor_RH` alarm in pinning (a response-check false positive) no longer appears. 6000 grey oyster, farm type `ready`: each fruiting segment fails with `temperature too high` (`inT` 68–75 %, `acTooSmall` 6–7 raises); the rest segments pass.
 
+| Run | Result |
+|---|---|
+| With lead decision 56 (measured on bd24755, `/home/foqcus/Documents/mushroom-farm-c8/proto-c9/rev3-bd24755/`) | Every segment passes; pinning 1 `inT` 99.4, `rhOk` 96.4, `co2Below` 99.9, alarms `rhHi` 1; fruiting 3–4 `rhHi` 1–2; total 836 kWh; no `airTooSmall` |
+
 ## 13. What `cycle.js` uses
 
 ### 13.1 Calls into the shared modules (line numbers checked against `master` 6a12852)
@@ -468,4 +472,4 @@ The work brief lists them with exact inputs. Required coverage:
 
 | Item | Owner |
 |---|---|
-| C9: the stage ramp from spawn broke the 98 % CO₂ rule in pinning (12.6: the default cycle failed `CO₂ above the limit` in pinning 1, `co2Below` 96.0 %) | Closed (lead decision 56, C9 revision 2): the behaviour is fixed, not the scoring. A stage change that lowers the CO₂ limit applies it at once with one uncapped purge; measured, the default cycle passes again (pinning `co2Below` 99.9 %, fruiting 100 %, `totals.pass` true). The Equipment stream builds it; 12.6 is measured again by the lead at gate 2.5 |
+| C9: the stage ramp from spawn broke the 98 % CO₂ rule in pinning (`co2Below` 96.0 % on 6a12852) | Closed. The scoring fix is on `master` (d0cf07d: `co2Below` against the ramped limit, 8.2; 12.6 passes). The behaviour fix is lead decision 56 (C9 revision 2, built by the Equipment stream): a lowering change applies the lower limit at once with one uncapped purge; measured on bd24755 with it, the default cycle passes (pinning `co2Below` 99.9 %, 836 kWh). Both stay |

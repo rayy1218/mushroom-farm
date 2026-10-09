@@ -23,7 +23,7 @@ Wave 2 on top of C9 (the air exchange, on `master` 6a12852). C9 owns upgrade 2 (
 | 6.14 | `saveEquipment` takes `air_m3h`; a missing field has an exact message, checked in field order before anything is written (finding 23). |
 | 7 | C2 writes `air` (C9 6.3). |
 | 8 | Version 3; upgrade 2 and upgrade 3 tests; the master tests that number their test upgrades 3 and 4 move up; `air` `CHECK` (`air: 2` → 275); `vent` an unknown field; `air_m3h` range `CHECK`; the missing-field message (finding 23). |
-| 9 | The fake reports `version: 3`; `air` `CHECK IN (0, 1)`; no `vent`; `air_m3h` `CHECK` and type; the `saveEquipment` missing-field message. |
+| 9 | The fake reports `version: 3`; 9.2 names `air` with `lights` and `circ` among the booleans; `air` `CHECK IN (0, 1)`; no `vent`; `air_m3h` `CHECK` and type; the `saveEquipment` missing-field message. |
 
 ### Changes in revision 5
 
@@ -351,7 +351,7 @@ One row per alarm occurrence (raise to clear). The same key raised again after i
 |---|---|---|---|---|
 | `id` | INTEGER | no | – | Row id |
 | `room_id` | INTEGER | no | `rooms.id` | Room |
-| `alarm_key` | TEXT | no | Any string. The controller today raises 13 key forms: `tHi`, `tLo`, `tCrop`, `coreHi`, `rhHi`, `rhLo`, `co2Hi`, `co2Safe`, `disagree`, `acTooSmall`, `blocksDone`, `shockLimit`, and `sensor_<key>` with `<key>` a key of `ClimateController.SENSORS` (`T`, `RH`, `CO2`, `tOut`, `rhOut`, `core`, `T2`, `RH2`, `CO2b`; for example `sensor_RH`). The list is open: there is no `CHECK`, so a new controller alarm needs no upgrade, and readers must accept unknown keys. | Alarm `id` in the controller |
+| `alarm_key` | TEXT | no | Any string. The controller today raises 14 key forms: `tHi`, `tLo`, `tCrop`, `coreHi`, `rhHi`, `rhLo`, `co2Hi`, `co2Safe`, `disagree`, `acTooSmall`, `blocksDone`, `shockLimit`, `airTooSmall` (C9 5.5), and `sensor_<key>` with `<key>` a key of `ClimateController.SENSORS` (`T`, `RH`, `CO2`, `tOut`, `rhOut`, `core`, `T2`, `RH2`, `CO2b`; for example `sensor_RH`). The list is open: there is no `CHECK`, so a new controller alarm needs no upgrade, and readers must accept unknown keys. | Alarm `id` in the controller |
 | `level` | TEXT | no | `warning`, `serious`, `critical` | `lvl` when raised |
 | `label` | TEXT | no | – | `label` |
 | `raised_at` | INTEGER | no | s since 1970 UTC | When raised (`Math.round(since)`) |
@@ -831,7 +831,7 @@ Written by the lead in wave 0, so C2 and C3 can test before `server/db.js` exist
 | `errstr` of constraint errors; the error message text | SQLite detail; "real only" tests do not check them either |
 | Which bare row gives `ac_mode`, `kwh`, `ac_fan` and `stage` when two readings share a bucket's largest `t` | Not defined (section 6.6) |
 | `schema_version`, upgrades, PRAGMAs, files, WAL, `busy_timeout`, disk errors | No SQLite in the fake |
-| Numeric strings (for example `'5'`) in INTEGER or REAL columns, non-strings in TEXT columns, booleans outside `lights` and `circ`, objects, bigints | SQLite converts some of them silently; callers validate first, so the result is not part of this contract |
+| Numeric strings (for example `'5'`) in INTEGER or REAL columns, non-strings in TEXT columns, booleans outside `air`, `lights` and `circ`, objects, bigints | SQLite converts some of them silently; callers validate first, so the result is not part of this contract |
 
 A test of C2 or C3 that needs a database error the fake cannot make (C2 section 11: an error during a tick; C3 section 4.2: a non-constraint error that calls `onFatal`) replaces one function of the fake object with one that throws an error of the real shape, for example:
 
