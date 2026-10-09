@@ -536,7 +536,7 @@ function createApi(opts) {
     }
     const mapped = mapError(err);
     sendError(res, mapped.status, mapped.error, mapped.details);
-    console.error(err);
+    if (mapped.status >= 500) console.error(err); // a 404/400 from a known error is an answer, not a fault
     if (mapped.fatal) {
       try { onFatal(err); } catch (e) { console.error(e); }
     }
