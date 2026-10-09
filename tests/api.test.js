@@ -5,7 +5,7 @@ const http = require('node:http');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawn } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 
 const { openFakeDb } = require('../tests/fakes/db.js');
 const { createFakeRoomManager } = require('../tests/fakes/rooms.js');
@@ -1614,6 +1614,24 @@ module.exports = {
 };
 `);
 
+  // The harvest stand-ins of C3 12.1 (C10 8.4): main.js does not load them until the lead wires it at gate 2.5.
+  fs.writeFileSync(path.join(tmp, 'server', 'harvest-db.js'), `
+'use strict';
+const { openFakeHarvest } = require(${JSON.stringify(path.join(worktreeRoot, 'tests', 'fakes', 'harvest-db.js'))});
+module.exports = {
+  openHarvest(db) {
+    console.log('stub: openHarvest');
+    if (process.env.STUB_HARVEST_THROW) throw new Error('stub cannot open harvest');
+    return openFakeHarvest(db);
+  },
+};
+`);
+
+  fs.writeFileSync(path.join(tmp, 'server', 'harvest-api.js'), `
+'use strict';
+module.exports = { createHarvestRoutes() { return []; } };
+`);
+
   fs.writeFileSync(path.join(tmp, 'preload-os.js'), `
 'use strict';
 require('node:os').networkInterfaces = () => JSON.parse(process.env.STUB_IFACES || '{}');
@@ -1663,6 +1681,27 @@ function spawnMain(tmp, env) {
 }
 
 describe('server/main.js', () => {
+  test('the stub folder holds harvest-db.js and harvest-api.js (C3 12.1)', async () => {
+    const tmp = buildMainTmp();
+    const worktreeRoot = path.join(__dirname, '..');
+    const code = `
+      const { openFakeDb } = require(${JSON.stringify(path.join(worktreeRoot, 'tests', 'fakes', 'db.js'))});
+      const { openHarvest } = require(${JSON.stringify(path.join(tmp, 'server', 'harvest-db.js'))});
+      const { createHarvestRoutes } = require(${JSON.stringify(path.join(tmp, 'server', 'harvest-api.js'))});
+      const h = openHarvest(openFakeDb());
+      console.log(typeof h.createBatch);
+      console.log(JSON.stringify(createHarvestRoutes()));
+    `;
+    const clean = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('STUB_')));
+    const ok = spawnSync(process.execPath, ['-e', code], { encoding: 'utf8', env: clean });
+    assert.equal(ok.status, 0, ok.stderr);
+    assert.deepStrictEqual(ok.stdout.trim().split('\n'), ['stub: openHarvest', 'function', '[]']);
+    const bad = spawnSync(process.execPath, ['-e', code], { encoding: 'utf8', env: { ...clean, STUB_HARVEST_THROW: '1' } });
+    assert.notEqual(bad.status, 0);
+    assert.match(bad.stdout, /stub: openHarvest/);
+    assert.match(bad.stderr, /stub cannot open harvest/);
+  });
+
   test('FARM_PORT=abc -> Bad configuration', async () => {
     const tmp = buildMainTmp();
     const p = spawnMain(tmp, { FARM_PORT: 'abc', FARM_HOST: '127.0.0.1' });
