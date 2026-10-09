@@ -79,3 +79,32 @@ test('SM5 runInputs with machines', t => {
   assert.deepEqual(r.inputs.equipment, { ac_hp: 2.5, ac_units: 1, fog_lph: 3, air_m3h: 1200, walls: 'pu50', roof: 'pu50', height: 3 });
   assert.equal(r.room.airM3h, 900);
 });
+
+const seg = (stage, startDay, t, x) => ({ stage, flush: 1, startDay, days: 1, hours: 24, targets: t, lowRhMin: 0, wet: 0, ...x });
+const RES = { verdict: 'ok', targets: { spT: 25, spRH: 88, co2Lim: 1000, crop: 'oyster' },
+  inputs: { farmType: 'full', days: { spawn: 1, pinning: 1, fruiting: 1, rest: 1 }, flushes: 1, region: 'my-lowland', blocks: 2000, co2PerBlock: 45, tariff: 0.57, warnings: [] },
+  stages: [
+    seg('spawn', 0, { spT: 24, spRH: 70, co2Lim: 5000, coreMax: 32 }, { inT: 100, rhOk: 3.4, co2Below: 100, maxCore: 28.2, alarms: {}, kwh: 10.4, rm: 5.93, fails: [], pass: true }),
+    seg('fruiting', 1, { spT: 25, spRH: 88, co2Lim: 1000, coreMax: 32 }, { inT: 93.5, rhOk: 99.1, co2Below: 100, maxCore: 27.4, alarms: { rhHi: 2 }, kwh: 12.6, rm: 7.18, fails: ['temperature too high'], pass: false }),
+  ],
+  totals: { days: 2, kwh: 23, rm: 13.11, rmPerBlock: 0.006555, pass: false },
+  series: Array.from({ length: 48 }, (_, h) => ({ h, stage: h < 24 ? 'spawn' : 'fruiting', flush: 1, T: 24, RH: 80, CO2: 900, core: 27, kwh: 0.5 })) };
+
+test('SM6 cycle result', () => {
+  assert.deepEqual(H.cycleSummary(RES), { chip: { lvl: 'warning', icon: '✕', text: '1 stage(s) fail' },
+    line: '2 days · 1 flushes · 23 kWh · RM 13.11 · RM 0.01 per block' });
+  const pass = { ...RES, stages: RES.stages.map(s => ({ ...s, pass: true, fails: [] })) };
+  assert.deepEqual(H.cycleSummary(pass).chip, { lvl: 'good', icon: '✓', text: 'all stages pass' });
+  assert.deepEqual(H.cycleSummary({ verdict: 'impossible', why: 'Add at least one crop with blocks.' }),
+    { chip: { lvl: 'warning', icon: '✕', text: 'impossible' }, line: 'Add at least one crop with blocks.' });
+  assert.deepEqual(H.stageRows(RES), [
+    ['Spawn run', '1', '1', '100.0', 'not judged', 'not judged', '28.2', '–', '10', '5.93', 'Pass'],
+    ['Fruiting', '1', '1', '93.5', '99.1', '100.0', '27.4', 'rhHi ×2', '13', '7.18', 'temperature too high']]);
+  const pts = H.seriesPoints(RES);
+  assert.equal(pts.length, 48);
+  assert.deepEqual(pts[0], { t: 0, T: 24, RH: 80, C: 900, core: 27, spT: 24, spRH: 70, co2Lim: 5000 });
+  assert.equal(pts[30].t, 108000);
+  assert.equal(pts[30].spT, 25);
+  assert.equal(pts[30].spRH, 88);
+  assert.equal(pts[30].co2Lim, 1000);
+});

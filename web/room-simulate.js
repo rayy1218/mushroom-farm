@@ -29,9 +29,33 @@ function runInputs(kind, d) {
     equipment: d.equipment ? Object.fromEntries(FIELDS7.map(k => [k, d.equipment[k]])) : null };
   return { room, mix, settings: d.settings, region: d.region, tariff: d.tariff, emptyBelow: d.emptyBelow, inputs };
 }
+
+function cycleSummary(res) {
+  if (res.verdict === 'impossible') return { chip: { lvl: 'warning', icon: '✕', text: 'impossible' }, line: res.why };
+  const n = res.stages.filter(g => g.pass === false).length;
+  const chip = n === 0 ? { lvl: 'good', icon: '✓', text: 'all stages pass' } : { lvl: 'warning', icon: '✕', text: `${n} stage(s) fail` };
+  const t = res.totals;
+  return { chip, line: `${t.days} days · ${res.inputs.flushes} flushes · ${Math.round(t.kwh)} kWh · RM ${t.rm.toFixed(2)} · RM ${t.rmPerBlock.toFixed(2)} per block` };
+}
+function stageRows(res) {
+  return res.stages.map(g => {
+    const judged = g.stage !== 'spawn';
+    const alarms = Object.entries(g.alarms).map(([id, count]) => `${id} ×${count}`).join(', ');
+    return [global.ClimateController.STAGES[g.stage], String(g.flush), String(g.days), g.inT.toFixed(1),
+      judged ? g.rhOk.toFixed(1) : 'not judged', judged ? g.co2Below.toFixed(1) : 'not judged', g.maxCore.toFixed(1),
+      alarms || '–', String(Math.round(g.kwh)), g.rm.toFixed(2), g.pass ? 'Pass' : g.fails.join(', ')];
+  });
+}
+function seriesPoints(res) {
+  return res.series.map(p => {
+    const g = res.stages.find(x => x.stage === p.stage && x.flush === p.flush);
+    const t = g ? g.targets : null;
+    return { t: p.h * 3600, T: p.T, RH: p.RH, C: p.CO2, core: p.core, spT: t ? t.spT : NaN, spRH: t ? t.spRH : NaN, co2Lim: t ? t.co2Lim : NaN };
+  });
+}
 const stub = () => { throw new Error('not built yet'); };
-const helpers = { toCapacityMix, toMixRows, sameMix, appliedCalib, runInputs, cycleSummary: stub, stageRows: stub,
-  seriesPoints: stub, runRowTexts: stub, progressText: stub, machinesText: stub, clampBlocks: stub, clampCo2: stub, regionText: stub };
+const helpers = { toCapacityMix, toMixRows, sameMix, appliedCalib, runInputs, cycleSummary, stageRows,
+  seriesPoints, runRowTexts: stub, progressText: stub, machinesText: stub, clampBlocks: stub, clampCo2: stub, regionText: stub };
 
 function mount() {}
 function unmount() {}
