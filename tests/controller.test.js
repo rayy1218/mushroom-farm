@@ -705,3 +705,15 @@ test('CO2 at the stop level on the step where the time cap is reached is not a c
   assert.equal(feed(60, { CO2: 690 }).air.on, false);
   assert.deepEqual([ctl.state.air.state, ctl.state.air.capRun, ctl.state.stats.cappedPurges], ['after', 0, 0]);
 });
+
+test('a timed run that is still on at a period boundary is not restarted: it never lasts longer than purgeMaxS', () => {
+  const { feed, ctl } = make();
+  feed(400, { CO2: 800 });
+  for (const t of [430, 460]) feed(t, { CO2: null });
+  const onAt = [];
+  for (let t = 490; t <= 760; t += 30) if (feed(t, { CO2: null }).air.on) onAt.push(t);   // fault seen at 490; period 540, run 180
+  assert.equal(ctl.state.air.timed, true);
+  assert.equal(onAt[0], 490);
+  assert.ok(onAt.at(-1) - 490 < 180, `on until ${onAt.at(-1)}`);
+  assert.equal(ctl.state.stats.longestPurgeS, 0, 'a timed run is not a purge');
+});

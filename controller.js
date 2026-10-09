@@ -727,7 +727,7 @@
         const run = Math.min(R.purgeMaxS, Math.max(AIR_MIN_ON_S, share * P.timedPurgeEvery * 60)), period = Math.max(run / share, run + R.minOffS);
         // Each period starts its run at its first reading, so a reading time that never falls in a fixed window cannot skip it.
         const k = Math.floor(t / period);
-        if (A.timedK !== k) { A.timedK = k; A.timedFrom = t; }
+        if (A.timedK !== k) { A.timedK = k; if (A.timedFrom == null || t - A.timedFrom >= run) A.timedFrom = t; }   // a run in progress is not restarted
         timed = { on: t - A.timedFrom < run, run, period, learned: learned != null };
       } else { A.timedK = null; A.timedFrom = null; }
       const reason = st.co2SafetyOn ? 'safety' : A.state === 'purge' ? 'purge' : timed && timed.on ? 'timed'
