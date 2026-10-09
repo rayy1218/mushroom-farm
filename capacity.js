@@ -218,7 +218,7 @@
   // ---------- 4. Calibration status ----------
   function calibStatus(room, now = Date.now()) {
     const c = room.calib;
-    if (!c) return { calibrated: false, estimate: true, warnings: ['Estimate: this room is not calibrated, so the check uses typical room values. Load a farm log in the calibration card.'] };
+    if (!c) return { calibrated: false, estimate: true, warnings: ['Estimate: this room is not calibrated, so the check uses typical room values. Calibrate this room in its Calibrate tab.'] };
     const warnings = [];
     const r = c.rmse || {};
     const bad = (x, max) => !Number.isFinite(x) || x > max;     // a missing error (NaN, null) means not fitted
