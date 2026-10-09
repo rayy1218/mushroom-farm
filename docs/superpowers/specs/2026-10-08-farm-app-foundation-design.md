@@ -156,7 +156,7 @@ Replaced 2026-10-08 by the room-centred design (lead decision 14; C5 revision 7)
 
 | Part | Design |
 |---|---|
-| Shell | `index.html` with a top menu **Rooms · Test bench**. Hash addresses: `#/rooms`, `#/rooms/3/live`, `#/rooms/3/simulate`, `#/rooms/3/calibrate`, `#/simulator`. `#/rooms/3` opens the Live tab. |
+| Shell | `index.html` with a top menu **Rooms · Batches · Test bench** (Batches: C10). Hash addresses: `#/rooms`, `#/rooms/3/live`, `#/rooms/3/simulate`, `#/rooms/3/calibrate`, `#/simulator`. `#/rooms/3` opens the Live tab. |
 | Code split | `web/api.js` (server calls, live feed), `web/ui.js`, `web/charts.js`, `web/settings-panel.js`, `web/shell.js` (menu and routing), `web/rooms.js` (Rooms home and the room page frame), `web/room-tabs.js` (tab registry), `web/room-live.js`, `web/room-simulate.js`, `web/room-calibrate.js`, `web/room-equipment.js` (the **Your machines** card, C8), `web/simulator.js` (Test bench) |
 | Rooms (home) | A card per room: name, status chip, crop · stage · flush · blocks, T / RH / CO₂ now with status chips, machines, active alarms, "Stopped" with the error and **Restart**. **New room**. One-time **Import rooms from this browser**. A short line explains the loop Live → Calibrate → Simulate. |
 | Room page | Header: name, crop · stage · flush, blocks, volume, running or stopped with **Restart**, active alarms. Tabs **Live · Simulate · Calibrate**. |
@@ -214,6 +214,7 @@ another stream's code inside a wave: each stream tests against the contracts and
 | C7 | Crop cycle simulation | `docs/contracts/cycle.md` (revision 3; the lead freezes it with wave 2) | `cycle.js`: one whole crop cycle per room and mix; the room's air exchange size `room.airM3h`; `room.plant`, `opts.heat`, the per-stage wet line |
 | C8 | Equipment check | `docs/contracts/equipment.md` | `equipment.js`: the room's machines, the aircond size search, the air exchange verdict (`AIR_SIZES`), verdicts and heat breakdown; the changes to `sim.js`, `controller.js`, `capacity.js`, `cycle.js`; lion's mane |
 | C9 | Air exchange | `docs/contracts/air.md` (revision 1 frozen, on `master`; revision 2, wave 2: a lower CO₂ limit applies at once at a stage change, with one uncapped purge, lead decision 56) | `air.js` (`ClimateAir`): an intake fan and an exhaust fan that run together as short CO₂ purges; the reading key `air`, upgrade 2, no room `vent`; the sections of C1–C7 it overrides (C9 10) |
+| C10 | Batches and harvest by room QR | `docs/contracts/harvest.md` (folded into wave 2 by the owner's decision of 2026-10-09; lead decisions 59–68; spec `docs/superpowers/specs/2026-10-09-harvest-qr-design.md`) | `harvest-rules.js`, `server/harvest-db.js` (upgrade 4), `server/harvest-api.js` (routes through `createApi(opts.extraRoutes)`), the Batches pages, the phone page `#/harvest/:id` and the stickers page |
 | Fakes | Contract fakes | `tests/fakes/` | An in-memory `db` (C1) and a fake room manager (C2) and a fake API server (C3) so each stream can test alone |
 
 A contract changes only through the lead: the stream that needs a change reports it, the lead updates the contract and

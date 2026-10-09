@@ -1,19 +1,26 @@
 # C10: Batches and harvest by room QR
 
-Date: 2026-10-09. Status: **draft** (revision 1, not frozen; the lead freezes it with the wave 2 contracts). Changes only through the lead; see `docs/contracts/LEAD-DECISIONS.md`.
+Date: 2026-10-09. Status: **draft** (revision 2, not frozen; the lead freezes it with the wave 2 contracts, lead decision 59). Changes only through the lead; see `docs/contracts/LEAD-DECISIONS.md`.
 Spec: `docs/superpowers/specs/2026-10-09-harvest-qr-design.md`. Plan: `docs/superpowers/plans/2026-10-09-harvest-qr/README.md`.
-Written against the wave 2 drafts on `wave2/contracts` 07f63c6: C1 revision 6, C3 revision 9, C5 revision 8, the wave 2 plan revision 2, lead decisions 1–58. Section 14 lists what C10 needs in those contracts; the lead folds it in at the wave 2 freeze. Where C10 and those contracts disagree after the freeze, the folded contracts win.
+Folded into the wave 2 drafts on `wave2/contracts` (owner decision 2026-10-09): C1 revision 6, C3/C4 revision 9, C5/C6 revision 8, the wave 2 plan revision 2, lead decisions 1–68 (C10's are 59–68). Section 14 lists what C10 needed in those contracts; the lead folded every row in. Where C10 and those contracts disagree, the folded contracts win.
+
+### Changes in revision 2
+
+| Section | Change |
+|---|---|
+| Header, 14 | Folded into C1, C3, C5, the wave 2 plan and the spec (every row of section 14 applied); written first against 07f63c6, now on the wave 2 drafts after the buildability round (upgrade numbers unchanged: upgrade 4 after upgrades 2 (C9) and 3 (wave 2), `db.version` 4). |
+| 15 | The proposals H1–H10 are recorded as lead decisions 59–68; every "H<n>" in this contract now names its decision. |
 
 ## 1. General rules
 
 | Topic | Rule |
 |---|---|
 | Scope | Batches of bought, colonised blocks; harvest crates recorded from a phone opened by a room's QR sticker; flushes, g per block and BE %; the stickers page. Out of scope: spec "Out of scope". |
-| Build | Inside wave 2 (proposed lead decision H1): prep 2.0 adds the lead's harvest files (section 2); three more streams (Harvest data, Harvest API, Harvest web) run in parallel with the nine wave 2 streams. |
-| Own files | Harvest code lives in new files. A shared file gets only the registration lines of section 14, written by its wave 2 owner or by the lead (H2). |
+| Build | Inside wave 2 (lead decision 59): prep 2.0 adds the lead's harvest files (section 2); three more streams (Harvest data, Harvest API, Harvest web) run in parallel with the nine wave 2 streams. |
+| Own files | Harvest code lives in new files. A shared file gets only the registration lines of section 14, written by its wave 2 owner or by the lead (lead decision 60). |
 | Time | Integer seconds since 1970-01-01 00:00 UTC, as C1 and C3. Date-only values (received, placed, cleared, spawn) are local midnight of the farm device when the page sends a date. |
-| Today | From local midnight of the farm device (`startOfDay`, section 8.3). The farm device runs with `TZ=Asia/Kuala_Lumpur` (README, Docs stream) (H9). |
-| Status codes | C3's: 200, 201, 400, 404, 500 only. A state conflict is a 400 with its own `error` text (section 7) (H5). |
+| Today | From local midnight of the farm device (`startOfDay`, section 8.3). The farm device runs with `TZ=Asia/Kuala_Lumpur` (README, Docs stream) (lead decision 67). |
+| Status codes | C3's: 200, 201, 400, 404, 500 only. A state conflict is a 400 with its own `error` text (section 7) (lead decision 63). |
 | Field names | Database column names (`snake_case`), as C3. |
 | Validation | `harvest-rules.js` (section 4) and the route rules of section 9; the SQL constraints are the last guard (C1 section 1). |
 
@@ -110,7 +117,7 @@ The code of plan task 0.2. Same module pattern as `room-rules.js`. Load order: `
 
 | Rule | Detail |
 |---|---|
-| Connection | The store uses `db.sqlite`, the C1 connection (section 14, C1 row; H3), and prepares its statements once. It opens no connection of its own. |
+| Connection | The store uses `db.sqlite`, the C1 connection (section 14, C1 row; lead decision 61), and prepares its statements once. It opens no connection of its own. |
 | Like C1 | Section 1 of C1 applies: synchronous, plain-object rows, unknown keys throw `TypeError('<function>: unknown field "<key>"')` before writing, `undefined` and non-finite numbers bound as `NULL`, no business rules, SQL constraints as the last guard with C1's error codes |
 | Room check | `placeBatch` and `listBatches({ room_id })` call `db.getRoom` first (archived rooms count) and pass on its `NotFoundError('room')` |
 | Errors | `NotFoundError` from `server/db-common.js` with `what` `'batch'` (`Unknown batch <id>`) or `'crate'` (`Unknown crate <id>`) |
@@ -249,7 +256,7 @@ module.exports = { HttpError };
 
 | Rule | Detail |
 |---|---|
-| Order of checks | C3's order up to the body (route, room for `needsRoom`, body size and JSON), then inside `run`: the `:batchId` / `:crateId` check (404), the body rules (400), the state rules (400), the store call. A bad id with a bad body therefore answers 400, not 404 (H6). |
+| Order of checks | C3's order up to the body (route, room for `needsRoom`, body size and JSON), then inside `run`: the `:batchId` / `:crateId` check (404), the body rules (400), the state rules (400), the store call. A bad id with a bad body therefore answers 400, not 404 (lead decision 64). |
 | Requires | Node built-ins, `./api-common.js`, `./db-common.js`, `../controller.js` and `../harvest-rules.js` (through `globalThis` after `require`). Never `./db.js`, `./api.js`, `./harvest-db.js` (they come in through `opts`). |
 
 ### 8.3 Today
@@ -293,8 +300,8 @@ Every route can also answer 404 `Unknown route`, 400 `Body is not valid JSON` / 
 | 9.6 | Batch id; body has only `cleared_at`; `cleared_at` (default now) an integer, `<= now`; then the batch is placed (received: `Batch is not in a room`; cleared: `Batch is cleared`); then `cleared_at >= placed_at` | `clearBatch(id, cleared_at)` | 404 `Unknown batch`; 400 `Invalid batch`; 400 `Batch is not in a room`; 400 `Batch is cleared` |
 | 9.7 | Batch id; `countCrates(id) === 0` | `deleteBatch` | 404 `Unknown batch`; 400 `Batch has crates` |
 | 9.8 | Room check by `createApi` (`needsRoom`) | `listBatches({ state: 'placed', room_id: id })`, per batch `listCrates` | 404 `Unknown room` |
-| 9.9 | Batch id; `checkCrate(body)`; batch received → `Batch is not in a room`; cleared → `Batch is cleared`. A batch whose room was archived later still takes crates (H10) | `addCrate(id, { kg, picker, t: now })`, `listCrates` | 404 `Unknown batch`; 400 `Invalid crate`; 400 `Batch is not in a room`; 400 `Batch is cleared` |
-| 9.10 | Crate id; `deleted_at === null`. A crate of a cleared batch can be undone (H10) | `undoCrate(id, now)` | 404 `Unknown crate`; 400 `Crate is already undone` |
+| 9.9 | Batch id; `checkCrate(body)`; batch received → `Batch is not in a room`; cleared → `Batch is cleared`. A batch whose room was archived later still takes crates (lead decision 68) | `addCrate(id, { kg, picker, t: now })`, `listCrates` | 404 `Unknown batch`; 400 `Invalid crate`; 400 `Batch is not in a room`; 400 `Batch is cleared` |
+| 9.10 | Crate id; `deleted_at === null`. A crate of a cleared batch can be undone (lead decision 68) | `undoCrate(id, now)` | 404 `Unknown crate`; 400 `Crate is already undone` |
 
 No route sends a stream event (C4 unchanged): the phone and the batch pages reload after each change.
 
@@ -320,7 +327,7 @@ No route sends a stream event (C4 unchanged): the phone and the batch pages relo
 | Order | `#/harvest/stickers` is matched before `#/harvest/:id` (`stickers` is not an id anyway) |
 | Names | `FarmShell.register` accepts `batches` and `harvest`; `FarmShell.MENU_NAMES` adds `batches: 'Batches'`, `harvest: 'Harvest'` |
 | Menu link of `harvest` | `#/harvest/stickers` marks the **Batches** link; `#/harvest/:id` marks none |
-| Bare layout (H8) | At step 5 of C5 2.3 the shell sets `document.body.dataset.layout = 'bare'` for `#/harvest/:id` and deletes `data-layout` for every other route. `web/harvest.css` hides `.bar` under `body[data-layout="bare"]`. Modules never touch `document.body` (C5 3.1). |
+| Bare layout (lead decision 66) | At step 5 of C5 2.3 the shell sets `document.body.dataset.layout = 'bare'` for `#/harvest/:id` and deletes `data-layout` for every other route. `web/harvest.css` hides `.bar` under `body[data-layout="bare"]`. Modules never touch `document.body` (C5 3.1). |
 
 ## 12. Web modules (Harvest web stream)
 
@@ -406,18 +413,18 @@ No route sends a stream event (C4 unchanged): the phone and the batch pages relo
 | `tests/api-real.test.js` (wave 3) | Lead | Each section 9 route once through the real server, db and store |
 | Phone check (wave 3) | Lead | A printed sticker scanned by a real phone on the farm Wi-Fi records two crates; one Undo; both seen on `#/batches/:id` |
 
-## 14. Requests to the wave 2 contracts and plan
+## 14. What C10 needs in the wave 2 contracts and plan (folded)
 
-The lead folds these into the wave 2 drafts before the freeze (H1–H10).
+The lead folded these into the wave 2 drafts (revision 2; lead decisions 59–68).
 
 | Contract | Section | Change |
 |---|---|---|
 | C1 | 3 | `UPGRADES` gets `{ version: 4, sql: SCHEMA_V4_HARVEST }` (`require('./harvest-schema.js')`, the lead's prep 2.0 file); `db.version` is 4; "Later modules add their tables this way" now has its first case |
-| C1 | 6.3 | New member `db.sqlite`: the `DatabaseSync` connection, read-only, for `server/harvest-db.js` only (H3). Fake: `sqlite` is `null` |
+| C1 | 6.3 | New member `db.sqlite`: the `DatabaseSync` connection, read-only, for `server/harvest-db.js` only (lead decision 61). Fake: `sqlite` is `null` |
 | C1 | 8 | `Open ':memory:'`: version 4, `batches`, `harvest_crates` and their indexes exist. New row "Upgrade 4 from version 3": a file opened with `UPGRADES.slice(0, 3)` and given one room, reopened: version 4, both tables empty. The test upgrades move to 5 and 6; the newer-database message says `knows up to 4` |
 | C1 | 9.1 | The fake's `version` is 4 |
 | C3 | 1 | Status codes: `DELETE` is a known method on 6.24 and on C10 9.7 and 9.10 |
-| C3 | 2.1 | `createApi` takes `opts.extraRoutes` (optional `ExtraRoute[]`, C10 8.2), matched after the C3 routes and before `/api/stream`, with the same room check, body reading and fault handling; `HttpError` comes from `server/api-common.js` (C10 8.1) and replaces `api.js`'s own class (H4). Module table: `server/api.js` may require `./api-common.js`; `server/harvest-api.js` row (C10 8.2) |
+| C3 | 2.1 | `createApi` takes `opts.extraRoutes` (optional `ExtraRoute[]`, C10 8.2), matched after the C3 routes and before `/api/stream`, with the same room check, body reading and fault handling; `HttpError` comes from `server/api-common.js` (C10 8.1) and replaces `api.js`'s own class (lead decision 62). Module table: `server/api.js` may require `./api-common.js`; `server/harvest-api.js` row (C10 8.2) |
 | C3 | 2.2 | `main.js` start-up order step 4 becomes C10 8.4 (`openHarvest`, `extraRoutes`); `main.js` may require `./harvest-db.js` and `./harvest-api.js` |
 | C3 | 2.3 | Files: `server/api-common.js`, `server/harvest-schema.js` (lead, prep 2.0); `server/harvest-db.js`, `server/harvest-api.js` and their tests (Harvest data, Harvest API); `server/main.js` (lead, gate 2.5) |
 | C3 | 4 | The C10 7 error texts, by reference |
@@ -433,24 +440,24 @@ The lead folds these into the wave 2 drafts before the freeze (H1–H10).
 | C5 | 4.3 | The ten functions of C10 12.1; `tests/web-api.test.js` covers them (lead, prep 2.0) |
 | C5 | 4.5 | `GET /api/batches` answers `[]` by default; `/harvest-rules.js` served with `root` |
 | C5 | 7.10 | Rows for the Harvest web checks (C10 13) |
-| Lead decision 32 | – | `styles.css` stays Room shell's; `web/harvest.css` is Harvest web's own stylesheet (H7) |
+| Lead decision 32 | – | `styles.css` stays Room shell's; `web/harvest.css` is Harvest web's own stylesheet (lead decision 65) |
 | Wave 2 plan | 2 | Prep 2.0 adds C10 2's lead files (plan tasks 0.2, 0.3 and the rest of C10 2's prep column) |
 | Wave 2 plan | 3, 3.1 | Three streams: Harvest data (`stream/harvest-data`), Harvest API (`stream/harvest-api`), Harvest web (`stream/harvest-web`), with C10 2's files |
 | Wave 2 plan | 5 | Gate 2.5 also merges Harvest data and Harvest API, wires `main.js` (C10 8.4) and checks upgrade 4 on the version 1 and version 2 files (version 4 after) |
 | Wave 2 plan | 6 | Wave 3: `tests/api-real.test.js` covers C10 9; the phone check of C10 13 |
 | Docs stream | README | The stickers page, the fixed address advice, `TZ=Asia/Kuala_Lumpur` for the service, upgrade 4 |
 
-## 15. Proposed lead decisions
+## 15. Lead decisions (recorded as 59–68)
 
-| # | Subject | Proposal |
+| # | Subject | Decision |
 |---|---|---|
-| H1 | Build | Batches and harvest by room QR are built inside wave 2 (owner, 2026-10-09): C10 is frozen with the wave 2 contracts; three more streams; upgrade 4 |
-| H2 | Own files | Harvest code lives in new files; shared files get only the registration lines of C10 14 |
-| H3 | Connection | C1's db object exposes its `DatabaseSync` as `db.sqlite` for `server/harvest-db.js`; one connection stays the rule |
-| H4 | Extra routes | `createApi(opts.extraRoutes)` mounts C10's routes; `HttpError` moves to `server/api-common.js` |
-| H5 | Status codes | No 409: state conflicts are 400s with their own `error` texts (C10 7), because C3 allows 400, 404, 500 only |
-| H6 | Check order | An extra route checks its own `:batchId` / `:crateId` inside `run`, after the body is read |
-| H7 | Stylesheet | `web/harvest.css` belongs to Harvest web; lead decision 32 holds for `styles.css` |
-| H8 | Bare layout | The shell sets `body[data-layout="bare"]` on `#/harvest/:id`; modules still never touch `document.body` |
-| H9 | Today | "Today" is from the farm device's local midnight; the service runs with `TZ=Asia/Kuala_Lumpur` |
-| H10 | Archived and cleared | A placed batch keeps taking crates after its room is archived; a crate of a cleared batch can still be undone |
+| 59 | Build | Batches and harvest by room QR are built inside wave 2 (owner, 2026-10-09): C10 is frozen with the wave 2 contracts; three more streams; upgrade 4 |
+| 60 | Own files | Harvest code lives in new files; shared files get only the registration lines of C10 14 |
+| 61 | Connection | C1's db object exposes its `DatabaseSync` as `db.sqlite` for `server/harvest-db.js`; one connection stays the rule |
+| 62 | Extra routes | `createApi(opts.extraRoutes)` mounts C10's routes; `HttpError` moves to `server/api-common.js` |
+| 63 | Status codes | No 409: state conflicts are 400s with their own `error` texts (C10 7), because C3 allows 400, 404, 500 only |
+| 64 | Check order | An extra route checks its own `:batchId` / `:crateId` inside `run`, after the body is read |
+| 65 | Stylesheet | `web/harvest.css` belongs to Harvest web; lead decision 32 holds for `styles.css` |
+| 66 | Bare layout | The shell sets `body[data-layout="bare"]` on `#/harvest/:id`; modules still never touch `document.body` |
+| 67 | Today | "Today" is from the farm device's local midnight; the service runs with `TZ=Asia/Kuala_Lumpur` |
+| 68 | Archived and cleared | A placed batch keeps taking crates after its room is archived; a crate of a cleared batch can still be undone |

@@ -1,12 +1,12 @@
 # C1: Database contract (`server/db.js`)
 
-Date: 2026-10-08. Status: **draft** (revision 6, not frozen; the lead freezes it with wave 2). Changes only through the lead; see `docs/contracts/LEAD-DECISIONS.md`. Spec: `docs/superpowers/specs/2026-10-08-farm-app-foundation-design.md`. Air exchange: C9 `docs/contracts/air.md` (frozen, lead decision 55).
+Date: 2026-10-08. Status: **draft** (revision 6, not frozen; the lead freezes it with wave 2). Changes only through the lead; see `docs/contracts/LEAD-DECISIONS.md`. Spec: `docs/superpowers/specs/2026-10-08-farm-app-foundation-design.md`. Air exchange: C9 `docs/contracts/air.md` (frozen, lead decision 55). Batches and harvest: C10 `docs/contracts/harvest.md` (folded into wave 2, lead decision 59).
 
 This contract defines the SQLite schema (as exact SQL), the schema upgrade mechanism, every function of `server/db.js`, and the in-memory fake `tests/fakes/db.js` (section 9). The Data stream builds `server/db.js` against it. The Rooms stream (C2) and the API stream (C3) build against the fake, which follows this contract as section 9 states.
 
 ### Changes in revision 6
 
-Wave 2 on top of C9 (the air exchange, on `master` 6a12852). C9 owns upgrade 2 (`SCHEMA_V2_AIR`: `readings.fan` becomes `air` 0/1, `rooms.vent` is dropped); the whole wave 2 schema moves to upgrade 3 (lead decision 54, amended). C9 section 10 lists the C1 sections it overrides (3, 4, 4.2, 6.2, 6.4, 6.6, 9); they now say what C9 6.1 and 6.2 say.
+Wave 2 on top of C9 (the air exchange, on `master` 6a12852). C9 owns upgrade 2 (`SCHEMA_V2_AIR`: `readings.fan` becomes `air` 0/1, `rooms.vent` is dropped); the whole wave 2 schema moves to upgrade 3 (lead decision 54, amended). C9 section 10 lists the C1 sections it overrides (3, 4, 4.2, 6.2, 6.4, 6.6, 9); they now say what C9 6.1 and 6.2 say. C10 (batches and harvest by room QR) is folded into wave 2 (lead decision 59): it owns upgrade 4 (`SCHEMA_V4_HARVEST` in the lead's `server/harvest-schema.js`), and C10 section 14 lists its C1 changes (the rows marked "C10 14" below).
 
 | Section | Change |
 |---|---|
@@ -24,6 +24,13 @@ Wave 2 on top of C9 (the air exchange, on `master` 6a12852). C9 owns upgrade 2 (
 | 7 | C2 writes `air` (C9 6.3). |
 | 8 | Version 3; upgrade 2 and upgrade 3 tests; the master tests that number their test upgrades 3 and 4 move up; `air` `CHECK` (`air: 2` → 275); `vent` an unknown field; `air_m3h` range `CHECK`; the missing-field message (finding 23). |
 | 9 | The fake reports `version: 3`; 9.2 names `air` with `lights` and `circ` among the booleans; `air` `CHECK IN (0, 1)`; no `vent`; `air_m3h` `CHECK` and type; the `saveEquipment` missing-field message. |
+| 1 | C10 14, lead decisions 59 and 61: Transactions: upgrade 4 is one transaction too. One connection: `db.sqlite` shares it with `server/harvest-db.js`. |
+| 3 | C10 14, lead decision 59: `UPGRADES` gets `{ version: 4, sql: SCHEMA_V4_HARVEST }` (`require('./harvest-schema.js')`); `db.version` is 4; upgrade 4 is the first case of "later modules add their tables this way". |
+| 4.2, 4.5 (new) | C10 14, lead decision 59: tables `batches` and `harvest_crates` (columns by reference to C10 3); 4.5 holds the exact upgrade 4 SQL, copied from C10 3 (owned by C10 and `server/harvest-schema.js`). |
+| 6.3 | C10 14, lead decision 61: `db.version` is 4; new member `db.sqlite`, the `DatabaseSync` connection, for `server/harvest-db.js` only. |
+| 7 | C10 14, lead decision 61: caller row for `server/harvest-db.js` (C10 5). |
+| 8 | C10 14, lead decision 59: version 4; the two upgrade 4 tables and their two indexes exist; the version 3 results of the upgrade tests become version 4; new test "Upgrade 4 from version 3"; the test upgrades move to 5 and 6; the newer-database message says `knows up to 4`. |
+| 9 | C10 14, lead decisions 59 and 61: the fake reports `version: 4` and `sqlite: null`; it has no harvest tables (the harvest fake is C10 5.4). |
 
 ### Changes in revision 5
 
@@ -62,7 +69,7 @@ Room-centred app and C8 equipment, frozen together (lead decisions 18, 20, 23, 3
 | Engine | `node:sqlite` (`DatabaseSync`), Node.js 22.13 or newer (no flag needed from 22.13). No npm dependencies. The lead sets `package.json` `engines.node` to `">=22.13"`. |
 | Experimental warning | Node 22 prints `ExperimentalWarning: SQLite is an experimental feature` once per process. `server/main.js` is started, and the `npm test` script runs, with `node --disable-warning=ExperimentalWarning` (the lead sets the `test` script to `node --disable-warning=ExperimentalWarning --test tests/*.test.js`). db.js itself does not touch warnings. |
 | Synchronous | Every function is synchronous and returns its value directly (never a Promise). The fake db is synchronous too. |
-| One connection | The server opens the database once (`openDb`) and shares the object. |
+| One connection | The server opens the database once (`openDb`) and shares the object. `server/harvest-db.js` uses the same connection through `db.sqlite` (section 6.3, lead decision 61) and opens none of its own. |
 | Time | Every time value is an integer: seconds since 1970-01-01 00:00 UTC. Passing a time with a fraction fails (STRICT tables reject it). |
 | Clock | Arguments named `at` (and `run_at` where noted) are optional; when left out, db.js uses `now()` from `openDb`'s options (default `Math.floor(Date.now() / 1000)`). Reading and event times (`t`) are always given by the caller. |
 | Ids | Integers made by SQLite (`INTEGER PRIMARY KEY`). An id that matches no row (including `NaN`, a string, `undefined`) gives `NotFoundError`. |
@@ -74,7 +81,7 @@ Room-centred app and C8 equipment, frozen together (lead decisions 18, 20, 23, 3
 | Booleans | SQLite has none. `air`, `lights` and `circ` accept `true`, `false`, `0`, `1` and are returned as `0` or `1`. |
 | Validation | db.js does not apply business rules. The callers validate first. Settings: C2 stores only `ClimateController.defaultSettings()` or the `settings` result of `ClimateController.importSettings`, never settings received from HTTP or an import as they arrived (lead decision 6). Rooms, mixes and calibrations go through `room-rules.js` (`check*`); query options are checked in the API. The SQL constraints (types, `NOT NULL`, `CHECK`, foreign keys) are the last guard: a value that breaks one throws the node:sqlite error and stores nothing. |
 | Archived rooms | An archived room still exists: every function works on it (reads and writes). Stopping its loop and refusing edits are C2 and C3 decisions. |
-| Transactions | A function that writes more than one row (`createRoom`, `replaceMix`, each schema upgrade) runs in one transaction: all rows or none. Upgrade 2 (C9) and upgrade 3 are each one transaction (section 3). |
+| Transactions | A function that writes more than one row (`createRoom`, `replaceMix`, each schema upgrade) runs in one transaction: all rows or none. Upgrade 2 (C9), upgrade 3 and upgrade 4 (C10) are each one transaction (section 3). |
 | Demo room | Not a db.js matter: `openDb` makes only the schema. C2 `start()` creates the demo room (C2 section 4) through `createRoom`. |
 
 ## 2. Opening the database
@@ -104,14 +111,15 @@ Room-centred app and C8 equipment, frozen together (lead decisions 18, 20, 23, 3
 |---|---|
 | Table | `schema_version (version, applied_at)`: one row per applied upgrade. `openDb` creates it itself (it is not part of an upgrade): `CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL) STRICT;` |
 | Upgrade list | `UPGRADES` in `server/db.js`: an array of `{ version, sql }` with `version` = 1, 2, 3, … in order and no gaps; `sql` is SQL text run with `db.exec`. |
-| The three upgrades | `{ version: 1, sql: SCHEMA_V1 }` (section 4, released), `{ version: 2, sql: SCHEMA_V2_AIR }` (section 4.3, C9 6.2, on `master`), `{ version: 3, sql: SCHEMA_V3_ROOMS }` (section 4.4, wave 2). Wave 2 appends upgrade 3 and edits neither of the others. |
+| The four upgrades | `{ version: 1, sql: SCHEMA_V1 }` (section 4, released), `{ version: 2, sql: SCHEMA_V2_AIR }` (section 4.3, C9 6.2, on `master`), `{ version: 3, sql: SCHEMA_V3_ROOMS }` (section 4.4, wave 2), `{ version: 4, sql: SCHEMA_V4_HARVEST }` (section 4.5, C10 3, wave 2; lead decision 59). Wave 2 appends upgrades 3 and 4 and edits neither of the others. |
+| Where upgrade 4 comes from | db.js takes `SCHEMA_V4_HARVEST` from `require('./harvest-schema.js')` (the lead's prep 2.0 file, C10 2); db.js does not write that SQL itself. db.js prepares no statement on the upgrade 4 tables: `server/harvest-db.js` does (C10 5). |
 | Current version | `SELECT COALESCE(MAX(version), 0) AS version FROM schema_version` (0 = new, empty database). |
 | Apply | For each upgrade with `version` above the current version, in order: `BEGIN IMMEDIATE`; `exec(sql)`; `INSERT INTO schema_version (version, applied_at) VALUES (?, now())`; `COMMIT`. |
 | Failed upgrade | `ROLLBACK` (that upgrade leaves no trace; earlier upgrades stay applied), then throw `Error('Schema upgrade <version> failed: <SQLite message>')`. |
 | Newer database | If the current version is above the highest version in the list: throw `Error('The database <path> has schema version <n>; this app knows up to <m>. Use a newer version of the app.')` and change nothing. |
-| Released upgrades | Never edited. A change is always a new upgrade with the next number. Later modules (batches, harvest, …) add their tables this way. |
-| Table rebuilds | A later upgrade that rebuilds a table (SQLite cannot drop a `CHECK`) must follow SQLite's 12-step rebuild; `foreign_keys` cannot change inside a transaction, so such an upgrade needs an extra field in the upgrade object when another table references the rebuilt one. Upgrade 2 (C9) rebuilds `readings` without that field: no table references `readings`, and `ALTER TABLE rooms DROP COLUMN vent` works because `vent` has only its own `CHECK` (checked on Node 22.20, SQLite 3.50.4, inside `BEGIN IMMEDIATE` with `foreign_keys = ON`; C9 6.2). Upgrade 3 only adds columns (`ALTER TABLE … ADD COLUMN`) and tables. The `simulation_runs` `CHECK`s carry C8's kind `equipment` and its verdicts from the start, because SQLite cannot change a `CHECK` without rebuilding the table (lead decision 30). |
-| Result | `db.version` is the schema version after opening (3 for this contract: upgrades 1, 2 and 3, sections 4, 4.3 and 4.4). |
+| Released upgrades | Never edited. A change is always a new upgrade with the next number. Later modules add their tables this way; upgrade 4 (C10 batches and harvest, section 4.5) is the first case. |
+| Table rebuilds | A later upgrade that rebuilds a table (SQLite cannot drop a `CHECK`) must follow SQLite's 12-step rebuild; `foreign_keys` cannot change inside a transaction, so such an upgrade needs an extra field in the upgrade object when another table references the rebuilt one. Upgrade 2 (C9) rebuilds `readings` without that field: no table references `readings`, and `ALTER TABLE rooms DROP COLUMN vent` works because `vent` has only its own `CHECK` (checked on Node 22.20, SQLite 3.50.4, inside `BEGIN IMMEDIATE` with `foreign_keys = ON`; C9 6.2). Upgrade 3 only adds columns (`ALTER TABLE … ADD COLUMN`) and tables. Upgrade 4 only creates tables and their indexes (`CREATE TABLE`, `CREATE INDEX`). The `simulation_runs` `CHECK`s carry C8's kind `equipment` and its verdicts from the start, because SQLite cannot change a `CHECK` without rebuilding the table (lead decision 30). |
+| Result | `db.version` is the schema version after opening (4 for this contract: upgrades 1, 2, 3 and 4, sections 4, 4.3, 4.4 and 4.5). |
 
 ## 4. Schema version 1 (exact SQL)
 
@@ -404,6 +412,15 @@ One row per room: the room's machines and its walls and roof (`docs/contracts/eq
 | `roof` | TEXT | yes | keys with `roof: true`: `zinc`, `eps50`, `eps75`, `eps100`, `pu50`, `pu75`, `pu100` | `null` = not set; set both or neither |
 | `height` | REAL | no | m, 2–6 | Inside height |
 
+#### `batches` and `harvest_crates` (upgrade 4, C10)
+
+Owned by C10 (`docs/contracts/harvest.md`): the columns, types and constraints are the SQL of section 4.5 (C10 3); C10 3 and 5.2 give their meaning. db.js creates the tables through upgrade 4 and has no function on them; `server/harvest-db.js` reads and writes them through `db.sqlite` (section 6.3).
+
+| Table | Columns (C10 3) | Index | Meaning |
+|---|---|---|---|
+| `batches` | The 15 columns of C10 3, `id` to `created_at` (`BatchRow`, C10 5.2) | `batches_room` (`room_id`, `cleared_at`) | One row per batch of bought, colonised blocks: received, then placed in a room (`room_id` references `rooms (id)`), then cleared |
+| `harvest_crates` | The 6 columns of C10 3, `id` to `deleted_at` (`CrateRow`, C10 5.2) | `harvest_crates_batch` (`batch_id`, `t`) | One row per weighed crate of a batch (`batch_id` references `batches (id)`); `deleted_at` set = undone |
+
 #### `schema_version`
 
 | Column | Type | Null | Unit or values | Meaning |
@@ -512,6 +529,53 @@ CREATE TABLE room_equipment (
 | `calibrations.equipment` has no `CHECK` | A JSON column (section 5); C3 validates it with `checkEquipmentBody` (C3 7.4, 7.7) |
 | The `simulation_runs` `CHECK`s | The kind/verdict pair is a table `CHECK`: a verdict outside its kind's list gives 275 |
 
+### 4.5 Schema version 4 (upgrade 4, C10: exact SQL)
+
+`SCHEMA_V4_HARVEST`, the `sql` of upgrade 4, owned by C10 / `server/harvest-schema.js` (the lead's prep 2.0 file; lead decision 59). Copied from C10 3, byte for byte; C10 3 is the source, and db.js takes the text from `require('./harvest-schema.js')`. Run as one transaction by section 3. Only `CREATE TABLE` and `CREATE INDEX`; upgrades 1, 2 and 3 (sections 4, 4.3 and 4.4) are not touched.
+
+```sql
+-- Upgrade 4: batches and harvest by room QR (C10).
+
+CREATE TABLE batches (
+  id             INTEGER PRIMARY KEY,
+  crop           TEXT    NOT NULL,
+  strain         TEXT,
+  source         TEXT,
+  block_count    INTEGER NOT NULL CHECK (block_count >= 1),
+  block_wet_kg   REAL    NOT NULL CHECK (block_wet_kg > 0),
+  moisture_pct   REAL    NOT NULL CHECK (moisture_pct >= 0 AND moisture_pct < 100),
+  spawn_date     INTEGER,
+  received_at    INTEGER NOT NULL,
+  room_id        INTEGER REFERENCES rooms (id),
+  placed_at      INTEGER,
+  cleared_at     INTEGER,
+  flush_gap_days INTEGER NOT NULL DEFAULT 5 CHECK (flush_gap_days >= 1),
+  notes          TEXT,
+  created_at     INTEGER NOT NULL,
+  CHECK ((room_id IS NULL) = (placed_at IS NULL)),
+  CHECK (placed_at IS NULL OR placed_at >= received_at),
+  CHECK (cleared_at IS NULL OR (placed_at IS NOT NULL AND cleared_at >= placed_at))
+) STRICT;
+CREATE INDEX batches_room ON batches (room_id, cleared_at);
+
+CREATE TABLE harvest_crates (
+  id         INTEGER PRIMARY KEY,
+  batch_id   INTEGER NOT NULL REFERENCES batches (id),
+  t          INTEGER NOT NULL,
+  kg         REAL    NOT NULL CHECK (kg >= 0.01 AND kg <= 50),
+  picker     TEXT,
+  deleted_at INTEGER
+) STRICT;
+CREATE INDEX harvest_crates_batch ON harvest_crates (batch_id, t);
+```
+
+| Rule | Detail |
+|---|---|
+| Owner | C10 3 and `server/harvest-schema.js`. A change to this SQL is a C10 change, made through the lead; this section is then copied again |
+| Old databases | Upgrade 4 runs on a version 3 file (after upgrades 2 and 3 on older files); both tables start empty |
+| Checked | C10 3 (node:sqlite, Node 22.20, 2026-10-09): every `CHECK` and foreign key fires; a fraction in `t` gives 3091; an integer `kg` is stored as real |
+| No db.js functions | The upgrade 4 tables are read and written only by `server/harvest-db.js` (C10 5), through `db.sqlite` |
+
 ## 5. JSON columns
 
 | Rule | Detail |
@@ -582,7 +646,8 @@ Every function that takes a `roomId` first checks that the room exists (archived
 | Member | Type | Meaning | Errors |
 |---|---|---|---|
 | `db.path` | string | The path given to `openDb` (`':memory:'` for the fake) | – |
-| `db.version` | integer | Schema version after opening (3) | – |
+| `db.version` | integer | Schema version after opening (4) | – |
+| `db.sqlite` | `DatabaseSync` | The node:sqlite connection that `openDb` opened (lead decision 61). A read-only property: db.js never replaces it, and no caller may assign it. For `server/harvest-db.js` only (C10 5.1), which prepares its own statements on it; no other module uses it, and nobody closes it except `db.close()`. The fake has `sqlite: null` (section 9.1). | After `db.close()` the connection is closed: node:sqlite throws `Error('database is not open')` |
 | `db.close()` | → `undefined` | Closes the connection (WAL is checkpointed by SQLite). A second call does nothing. | – |
 
 ### 6.4 Rooms
@@ -772,6 +837,7 @@ Older reports are kept (no delete); only the latest is read in version 1. Writte
 | `server/main.js` | `openDb`, `close` |
 | C2 `server/rooms.js` (C2 section 15) | `listRooms` (`{ includeArchived: true }` for the empty-database check; no argument for the rooms to start and `list`), `getRoom`, `createRoom` (also the demo room in `start()`), `updateRoom`, `archiveRoom`, `currentSettings`, `saveSettings`, `currentCalibration` (sim adapter room values), `loadControllerState`, `saveControllerState`, `insertReading`, `queryReadings` (`{ from: now − 3600, to: now }`, raw rows, at loop start for `Live.reading`; no conversion), `addEvent`, `listAlarms` (`{ recent: 0 }` for the open alarms at loop start; `{ recent: 500 }` in `ackAlarm`), `raiseAlarm`, `clearAlarm`, `ackAlarm`, `getMix` (loop start, the block count; C2 revision 6), `getEquipment` (loop start, the room's machines for the simulated adapter; C2 revision 8). C2 does not call `getSettingsVersion` or `latestReading`. Revision 5: C2 writes the new Reading keys `ac_fan`, `stage`, `core` through `insertReading`. Revision 6: C2 writes `air` (`cmd.air && cmd.air.on ? 1 : 0`, C9 6.3) and creates rooms without `vent`. |
 | C3 `server/api.js` (C3 section 11) | Reads: `getRoom` (the room check of every route), `currentSettings`, `settingsHistory`, `getSettingsVersion` (restore), `queryReadings`, `listEvents`, `listAlarms`, `listCalibrations`, `currentCalibration`, `getMix`, `latestCapacityReport`. Revision 5 reads: `listSimulationRuns`, `getSimulationRun`, `getEquipment`. Writes the API makes itself: `saveCalibration`, `applyCalibration` (then C2 `restart`), `replaceMix`, `saveCapacityReport` (legacy), `saveSimulationRun`, `updateSimulationRun`, `deleteSimulationRun`, `saveEquipment`. Writes that change a running room go through C2 (settings, restore, ack, update, archive, create). Readings go to the browser as db.js returns them (no mapping). |
+| C10 `server/harvest-db.js` (C10 5.1) | `db.version` (it needs 4 or newer), `db.sqlite` (its statements on `batches` and `harvest_crates`; lead decision 61), `getRoom` (the room check of `placeBatch` and `listBatches`) |
 | Tests only | `latestReading`: C2's tests compare the recorded reading with it (C2 sections 5.3 and 17). No server code calls it in version 1. |
 
 ## 8. Tests (`tests/db.test.js`)
@@ -780,12 +846,13 @@ The file defines every test once and runs it twice: with `openDb(':memory:', opt
 
 | Test | Proves | Real only |
 |---|---|---|
-| Open `':memory:'` | `db.version === 3`; every table and index of sections 4, 4.3 and 4.4 exists (`simulation_runs`, its index, `room_equipment`, the seven new columns); `readings` has `air` and no `fan`; `rooms` has no `vent`; `foreign_keys` is on | yes |
-| Upgrade 2 (C9, on `master`) | The `master` tests of C9 6.2 stay, with two changes: where they open with the default list and assert the version 2 result (`db.version === 2`, `schema_version` rows 1 and 2, the 15 `readings` columns), they assert version 3 and the 18 columns instead (`openDb` prepares the statements of the current schema, so it cannot open a file that stops at version 2). They prove: a version 1 file with `fan` 0, 1, 2, 3 gives `air` 0, 1, 1, 1; `rooms` has no `vent`; the bucket `air` is the fraction on (0.75); `air: 2` is rejected (275); a failed upgrade 2 leaves the version 1 file as it was | yes |
-| Upgrade 3 from version 2 | Build a version 2 file with raw `DatabaseSync` (not `openDb`, which prepares the statements of the current schema): `CREATE TABLE schema_version …`, `exec(UPGRADES[0].sql)`, `exec(UPGRADES[1].sql)`, `schema_version` rows 1 and 2, then one room, one reading and one calibration inserted by SQL; close it and open it with `openDb` and the default list: `version === 3`, `schema_version` row 3 added, the old reading comes back with `ac_fan`, `stage`, `core` = `null`, the old calibration with `source`, `log_from`, `log_to`, `equipment` = `null` | yes |
-| Upgrade 1 to 3 in one open | A version 1 file (written as the `master` test's `writeVersion1File` does, `fan` 0–3) opened with the default list: `version === 3`, `schema_version` rows 1, 2, 3; each reading has `air` 0/1 and `ac_fan`, `stage`, `core` = `null` | yes |
+| Open `':memory:'` | `db.version === 4`; every table and index of sections 4, 4.3, 4.4 and 4.5 exists (`simulation_runs`, its index, `room_equipment`, the seven new columns; `batches`, `harvest_crates`, `batches_room`, `harvest_crates_batch`); `readings` has `air` and no `fan`; `rooms` has no `vent`; `foreign_keys` is on; `db.sqlite` is a `DatabaseSync` | yes |
+| Upgrade 2 (C9, on `master`) | The `master` tests of C9 6.2 stay, with two changes: where they open with the default list and assert the version 2 result (`db.version === 2`, `schema_version` rows 1 and 2, the 15 `readings` columns), they assert version 4 and the 18 columns instead (`openDb` prepares the statements of the current schema, so it cannot open a file that stops at version 2). They prove: a version 1 file with `fan` 0, 1, 2, 3 gives `air` 0, 1, 1, 1; `rooms` has no `vent`; the bucket `air` is the fraction on (0.75); `air: 2` is rejected (275); a failed upgrade 2 leaves the version 1 file as it was | yes |
+| Upgrade 3 from version 2 | Build a version 2 file with raw `DatabaseSync` (not `openDb`, which prepares the statements of the current schema): `CREATE TABLE schema_version …`, `exec(UPGRADES[0].sql)`, `exec(UPGRADES[1].sql)`, `schema_version` rows 1 and 2, then one room, one reading and one calibration inserted by SQL; close it and open it with `openDb` and the default list: `version === 4`, `schema_version` rows 3 and 4 added, the old reading comes back with `ac_fan`, `stage`, `core` = `null`, the old calibration with `source`, `log_from`, `log_to`, `equipment` = `null` | yes |
+| Upgrade 1 to 4 in one open | A version 1 file (written as the `master` test's `writeVersion1File` does, `fan` 0–3) opened with the default list: `version === 4`, `schema_version` rows 1, 2, 3, 4; each reading has `air` 0/1 and `ac_fan`, `stage`, `core` = `null`; `batches` and `harvest_crates` exist and are empty | yes |
+| Upgrade 4 from version 3 | A temporary file opened with `openDb(path, { upgrades: UPGRADES.slice(0, 3) })` (version 3; db.js prepares no harvest statement, so `openDb` can open a version 3 file) and given one room with `createRoom`; closed, then reopened with the default list: `version === 4`, `schema_version` row 4 added, the room unchanged, `batches` and `harvest_crates` exist and are empty (C10 3 "Old databases") | yes |
 | Open a temporary file | `journal_mode` is `wal`; reopening applies no upgrade twice | yes |
-| Upgrades | With `options.upgrades` of two test upgrades appended after `UPGRADES`: both applied in order; a failing upgrade rolls back and throws `Schema upgrade N failed`; a database with a higher version throws and is not changed (message `… this app knows up to 3. …`). The test upgrades are numbered 4 and 5 (the `master` tests number them 3 and 4, and the failing one 3: wave 2 moves them up by one) | yes |
+| Upgrades | With `options.upgrades` of two test upgrades appended after `UPGRADES`: both applied in order; a failing upgrade rolls back and throws `Schema upgrade N failed`; a database with a higher version throws and is not changed (message `… this app knows up to 4. …`). The test upgrades are numbered 5 and 6 (the `master` tests number them 3 and 4, and the failing one 3: wave 2 moves them up by two, past upgrades 3 and 4) | yes |
 | Each function | Its return shape, its order, its defaults, and each error listed above (including `NotFoundError` for an unknown room on reads, and `TypeError` for an unknown field with nothing stored) | no |
 | Constraint errors | Each `CHECK`, `NOT NULL` and type rule of section 9.2, with a row that breaks only that rule, throws an error with `code === 'ERR_SQLITE_ERROR'` and stores nothing | no |
 | `errcode` values | The errors of the previous test have `errcode` 275 for a `CHECK`, 1299 for a `NOT NULL` and 3091 for a wrong type, so `(errcode & 0xff) === 19`. This is the shared test of lead decision 3 (C3 section 4.2 relies on it). | no |
@@ -810,7 +877,7 @@ Written by the lead in wave 0, so C2 and C3 can test before `server/db.js` exist
 
 | Export | Arguments | Returns | Errors |
 |---|---|---|---|
-| `openFakeDb(options?)` | `options.now`: function returning integer seconds (default `() => Math.floor(Date.now() / 1000)`) | The db object of section 6, with `path = ':memory:'`, `version = 3` and `close()`; a new empty database on every call | `TypeError` (unknown option; `upgrades` is not accepted) |
+| `openFakeDb(options?)` | `options.now`: function returning integer seconds (default `() => Math.floor(Date.now() / 1000)`) | The db object of section 6, with `path = ':memory:'`, `version = 4`, `sqlite = null` (lead decision 61) and `close()`; a new empty database on every call | `TypeError` (unknown option; `upgrades` is not accepted) |
 
 ### 9.2 What the fake reproduces
 
@@ -835,6 +902,7 @@ Written by the lead in wave 0, so C2 and C3 can test before `server/db.js` exist
 | `errstr` of constraint errors; the error message text | SQLite detail; "real only" tests do not check them either |
 | Which bare row gives `ac_mode`, `kwh`, `ac_fan` and `stage` when two readings share a bucket's largest `t` | Not defined (section 6.6) |
 | `schema_version`, upgrades, PRAGMAs, files, WAL, `busy_timeout`, disk errors | No SQLite in the fake |
+| `db.sqlite` (it is `null`) and the upgrade 4 tables `batches`, `harvest_crates` | No SQLite in the fake; harvest tests use the harvest fake `openFakeHarvest(openFakeDb())` (C10 5.4, `tests/fakes/harvest-db.js`) |
 | Numeric strings (for example `'5'`) in INTEGER or REAL columns, non-strings in TEXT columns, booleans outside `air`, `lights` and `circ`, objects, bigints | SQLite converts some of them silently; callers validate first, so the result is not part of this contract |
 
 A test of C2 or C3 that needs a database error the fake cannot make (C2 section 11: an error during a tick; C3 section 4.2: a non-constraint error that calls `onFatal`) replaces one function of the fake object with one that throws an error of the real shape, for example:

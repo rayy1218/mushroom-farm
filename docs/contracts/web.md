@@ -3,11 +3,13 @@
 Date: 2026-10-08. Status: **draft** (revision 8, not frozen; the lead freezes it with wave 2). Changes only through the lead; see `docs/contracts/LEAD-DECISIONS.md`. Spec: `docs/superpowers/specs/2026-10-08-farm-app-foundation-design.md`.
 (sections 4, 5 and 6). Related contracts: C3 and C4 (`docs/contracts/api.md`) define every resource, route, status code and
 stream payload. This file does not repeat them. Where it names a C3 resource (Room, Reading, Event, Alarm,
-SettingsVersion, Calibration, MixRow, CapacityReport), C3's JSON is used unchanged.
+SettingsVersion, Calibration, MixRow, CapacityReport), C3's JSON is used unchanged. C10 (`docs/contracts/harvest.md`,
+batches and harvest by room QR) defines the harvest resources (Batch, BatchDetail, Crate, RoomHarvest, CrateSaved),
+routes and pages in the same way; this file holds only the C10 14 lines of C5.
 
 ### Changes in revision 8
 
-Wave 2 moved onto C9, the air exchange (`docs/contracts/air.md`, frozen, lead decision 55; its section 10 lists the C5 sections it overrides, with C9 7 as the new text), plus the freeze check findings for this file. Upgrade 2 is now C9's; wave 2's schema is upgrade 3.
+Wave 2 moved onto C9, the air exchange (`docs/contracts/air.md`, frozen, lead decision 55; its section 10 lists the C5 sections it overrides, with C9 7 as the new text), plus the freeze check findings for this file. Upgrade 2 is now C9's; wave 2's schema is upgrade 3. It also folds in C10's requests to C5 (C10 14; owner decision 2026-10-09, lead decisions 59–68): the rows below that name C10.
 
 | Section | Change |
 |---|---|
@@ -37,6 +39,19 @@ Wave 2 moved onto C9, the air exchange (`docs/contracts/air.md`, frozen, lead de
 | 7.8 | Ramp paths are C9's `RAMP_KEYS`; new `airM3h` row; event name `Air exchange`; the `PARAMS.ua` note text (finding 15); Node export `{ createRoomLink, airText, mimicLayout }`; the room drawing is C9's; `createRoomLink(deps)`, its members, steps and page wiring (finding 26) (C9 10 row 7.8) |
 | 7.9 | Command `air.on` from `r.air === 1`; the ladder chip from `live.air` (C9 10 row 7.9) |
 | 7.10 | No temporary-folder path; tab checks follow 3.9 (finding 13); fake file test row (finding 3); Live tab check stands in for the frame (finding 27) and checks the air card; Simulate check (findings 5, 16, 17); Calibrate check (findings 9, 15, 22); Bench check mounts with `{ roomId: 1 }` and leaves `#/simulator/1` to wave 3 (finding 14); Equipment check of the air size sync (C9 10 row 7.10) |
+| Header, Terms (C10 14, lead decisions 59, 60) | C10 (`docs/contracts/harvest.md`) is folded into wave 2; modules `batches` (menu **Batches**) and `harvest` (no menu link of its own) |
+| 1.1 (C10 14, lead decisions 59, 60, 65) | New rows `harvest-rules.js` (`FarmHarvestRules`), `web/vendor/qrcodegen.js` (`qrcodegen`), `web/batches.js`, `web/harvest.js`, `web/harvest.css` (C10 2); `index.html`, `web/api.js`, `web/shell.js`, `tests/fakes/api-server.js` rows name their C10 lines |
+| 1.2 (C10 14, lead decision 60) | `index.html` adds the `web/harvest.css` link after `styles.css`, the menu link **Batches** between Rooms and Test bench, and four script tags: `harvest-rules.js` after `room-rules.js`, `web/vendor/qrcodegen.js` after `web/settings-panel.js`, `web/batches.js` and `web/harvest.js` after `web/room-calibrate.js` |
+| 1.3 (C10 14, lead decision 60) | Rows for the four scripts (25 scripts): `harvest-rules.js` needs `ClimateController`; `web/batches.js` and `web/harvest.js` need `FarmShell` at load |
+| 1.4 (C10 2, lead decision 60) | `web/vendor/qrcodegen.js` is vendored unchanged: no 1.4 wrapper; Node tests load it with `node:vm` |
+| 1.7 (C10 14, lead decision 60) | Prep 2.0 adds `harvest-rules.js`, `web/vendor/qrcodegen.js` and the stubs `web/batches.js`, `web/harvest.js`, `web/harvest.css`; the fake serves `/harvest-rules.js` and answers `GET /api/batches` with `[]`; the start check lists the three stubs |
+| 2.1, 2.2, 2.3 (C10 14, C10 11, lead decision 66) | Routes `#/batches`, `#/batches/:id`, `#/harvest/stickers`, `#/harvest/:id`; `register` accepts `batches` and `harvest`; `MENU_NAMES` adds `batches: 'Batches'`, `harvest: 'Harvest'`; menu marking per route; the bare layout (`body[data-layout="bare"]` on `#/harvest/:id`) at step 5 |
+| 3.1 (C10 11, lead decision 66) | `data-layout` on `document.body` is the shell's; modules still never touch `document.body` |
+| 3.2 (C10 14, C10 12) | Module rows `batches` and `harvest` |
+| 3.8 (C10 14, lead decisions 32, 65) | `styles.css` stays the Room shell's (lead decision 32); `web/harvest.css` is the Harvest web stream's own stylesheet |
+| 4.1, 4.3 (C10 14, C10 12.1) | The ten harvest functions (lead, prep 2.0, tested in `tests/web-api.test.js`); batch and crate ids in the path; `state` is the one query value that is a string |
+| 4.5 (C10 14, lead decision 60) | `GET /api/batches` answers `[]` by default; `/harvest-rules.js` is one of the served shared modules |
+| 7.10 (C10 14, C10 13, lead decisions 59, 66) | Rows for the lead's prep 2.0 additions and the Harvest web checks; the Room shell check covers the four routes, the menu link **Batches** and the bare layout. The Harvest web headless check mounts its views by hand on the gate 2.5 tree (the Room shell's `web/shell.js` merges in wave 3); the addresses and the bare layout through the shell are the lead's wave 3 check |
 
 ### Changes in revision 7
 
@@ -97,7 +112,7 @@ The room-centred app (owner correction, lead decision 14) and C8 equipment, froz
 | Unix time | Integer seconds since 1970-01-01 00:00 UTC. All API times are Unix time. |
 | Simulation time | Seconds since the start of a Simulator run (the `t` of `sim.js` and `controller.js`). Not Unix time. |
 | Farm time | Malaysia time, UTC+8, no daylight saving. The page shows every Unix time in farm time. |
-| Module | One menu entry of the app: `rooms`, `simulator` (menu name **Test bench**). Revision 6 also had `capacity` and `calibration`; from revision 7 their parts are room tabs (3.3, "Room-centred moves") |
+| Module | One part of the app registered with the shell: `rooms`, `batches` (menu name **Batches**, C10), `simulator` (menu name **Test bench**), and `harvest` (C10: the phone page and the stickers page; no menu link of its own, 2.1). Revision 6 also had `capacity` and `calibration`; from revision 7 their parts are room tabs (3.3, "Room-centred moves") |
 | Tab | One view of a room page: `live`, `simulate`, `calibrate` (section 3.9) |
 
 ---
@@ -108,37 +123,52 @@ The room-centred app (owner correction, lead decision 14) and C8 equipment, froz
 
 | File | Global it defines | Owner (wave 0) | Owner (wave 1) | Owner (wave 2) | Content |
 |---|---|---|---|---|---|
-| `index.html` | – | – | Web split (C9 step 0: the lead added `air.js`) | Lead (prep 2.0, exactly 1.2), then nobody | The shell markup and the script tags (1.2). No module markup. |
-| `styles.css` | – | – | Web split | Room shell (appends one `/* Room page */` block only, lead decision 32) | Today's styles plus the menu, `.contents`, `dialog` and Machines card styles; from wave 2 every class the room files and the Equipment card use (3.8) |
+| `index.html` | – | – | Web split (C9 step 0: the lead added `air.js`) | Lead (prep 2.0, exactly 1.2, C10's lines included: lead decision 60), then nobody | The shell markup and the script tags (1.2). No module markup. |
+| `styles.css` | – | – | Web split | Room shell (appends one `/* Room page */` block only, lead decision 32) | Today's styles plus the menu, `.contents`, `dialog` and Machines card styles; from wave 2 every class the room files and the Equipment card use (3.8). The harvest classes are in `web/harvest.css`, not here (lead decision 65) |
+| `web/harvest.css` | – | – | – | Lead (prep 2.0 stub: one comment line), then Harvest web (replaces it; lead decision 65) | C10 12.2: every `.bt-*`, `.bd-*`, `.hv-*`, `.st-*` class, the bare layout rule (`body[data-layout="bare"] .bar` hidden, 2.3 step 5) and the print rules of C10 12.5 |
 | `room-rules.js` | `ClimateRoomRules` | Lead (stub, 1.5) | API (replaces the stub; exports in C3 section 7.1) | Server 2 (C3 7.6, 7.7) | Shared room, mix, calibration, simulation run and equipment rules. The web modules only read it. |
+| `harvest-rules.js` | `FarmHarvestRules` | – | – | Lead (prep 2.0, the real file, C10 plan task 0.2), then nobody | C10 4: batch and crate rules, flushes, totals. Shared by the server and the page; the web modules only read it. |
 | `air.js` | `ClimateAir` | – | Lead (C9 step 0, on `master`) | nobody (frozen C9) | C9 section 3 |
 | `cycle.js` | `ClimateCycle` | – | Cycle stream (C7) | Equipment (C7 revision 3, C8 5.3) | Loaded by the page from wave 2 |
 | `equipment.js` | `ClimateEquipment` | – | – | Lead (prep 2.0 stub, 1.7), then Equipment (replaces it) | C8 |
 | `sim.js`, `controller.js`, `capacity.js`, `tools/make-vectors.js` | `ClimateSim`, `ClimateController`, `ClimateCapacity`, – | – | – | Equipment | C8 5.1, 5.4, 5.2; one new recorded run |
 | `web/ui.js` | `FarmUi` | – | Web split | nobody | Formatting and small DOM helpers moved from `app.js` (section 5) |
-| `web/api.js` | `FarmApi` | – | Web split | Lead (prep 2.0, the 4.3 additions), then nobody | One function per C3 route, and `stream` (section 4) |
+| `web/api.js` | `FarmApi` | – | Web split | Lead (prep 2.0, the 4.3 additions, the ten C10 12.1 functions included), then nobody | One function per C3 and C10 route, and `stream` (section 4) |
 | `web/charts.js` | `FarmCharts` | – | Web split | Calibrate tab (the 6.2 `drawCalibCharts` options only) | The charts moved from `app.js` (section 6) |
 | `web/settings-panel.js` | `FarmSettingsPanel` | – | Web split (C9's air fields are on `master`) | Equipment (the one `#inCrop` lion's mane option only, lead decision 47) | The settings editor (section 7, C6) |
-| `web/shell.js` | `FarmShell` | – | Web split | Room shell | Menu, routing, settings level, theme (section 2) |
+| `web/vendor/qrcodegen.js` | `qrcodegen` | – | – | Lead (prep 2.0, vendored, C10 plan task 0.3), then nobody | Project Nayuki QR Code generator (MIT), pinned commit 3c6d0b3, compiled once; not edited (1.4) |
+| `web/shell.js` | `FarmShell` | – | Web split | Room shell (with C10 11: the four harvest routes, the two module names, the bare layout; lead decision 66) | Menu, routing, settings level, theme, layout (section 2) |
 | `web/room-tabs.js` | `FarmRoomTabs` | – | – | Lead (prep 2.0, the real file), then nobody | Tab registry (3.9) |
 | `web/rooms.js` | – (registers `rooms`) | Lead (stub, 1.5) | nobody (no wave 1 stream creates or changes it) | Room shell (replaces the stub) | Rooms home and room page frame (3.8) |
 | `web/room-live.js` | – (registers tab `live`) | – | – | Lead (prep 2.0 stub), then Live tab (replaces it) | 3.4, 7.9 |
 | `web/room-simulate.js` | – (registers tab `simulate`) | – | – | Lead (prep 2.0 stub), then Simulate tab (replaces it) | 3.10 |
 | `web/room-calibrate.js` | – (registers tab `calibrate`) | – | – | Lead (prep 2.0 stub), then Calibrate tab (replaces it) | 3.6, 3.11 |
 | `web/room-equipment.js` | `FarmEquipmentCard` | – | – | Equipment | The **Your machines** card (3.12, C8) |
+| `web/batches.js` | – (registers `batches`) | – | – | Lead (prep 2.0 stub, 1.7), then Harvest web (replaces it) | The Batches pages (C10 12.3; helpers C10 12.2) |
+| `web/harvest.js` | – (registers `harvest`) | – | – | Lead (prep 2.0 stub, 1.7), then Harvest web (replaces it) | The phone page and the stickers page (C10 12.4, 12.5; helpers C10 12.2) |
 | `web/simulator.js` | `FarmBench` (waves 1 and 2 only, section 3.5) | – | Web split | Bench (not the room drawing `mimicLayout` and not C9's air exchange card code) | Today's test bench (the Test bench); room link (7.8), `#/simulator/:id`, the calibration event text, the Node export of 7.8 |
 | `calib.js` | `ClimateCalib` | – | – | Bench | `PARAMS.ua` label and note (lead decision 28), `stage` per row in `replay` (3.11) |
 | `web/capacity.js` | – (registers `capacity`) | – | Web split | nobody (no longer loaded by `index.html`) | Today's capacity card; deleted by the lead in wave 3 (lead decision 29) |
 | `web/calibration.js` | – (registers `calibration`) | – | Web split | nobody (no longer loaded by `index.html`) | Today's calibration card; deleted by the lead in wave 3 |
-| `tests/fakes/api-server.js` | – (CommonJS export `startFakeApi`) | Lead | nobody | Lead (prep 2.0) | The fake API server (section 4.5); prep 2.0 adds `/air.js`, `/cycle.js`, `/equipment.js` to its served files (4.5) |
+| `tests/fakes/api-server.js` | – (CommonJS export `startFakeApi`) | Lead | nobody | Lead (prep 2.0) | The fake API server (section 4.5); prep 2.0 adds `/air.js`, `/cycle.js`, `/equipment.js`, `/harvest-rules.js` to its served files and the `GET /api/batches` default `[]` (4.5) |
 | `tests/fake-api-server.test.js` | – | Lead | nobody | Lead (prep 2.0) | The fake API server's own test (section 4.5) |
 | `tests/web-load.test.js`, `tests/web-bench.test.js` | – | – | Web split | nobody (the lead in wave 3, lead decision 29) | They load `room-rules.js` without `cycle.js` and `equipment.js` (1.3 row 9) |
 | `tests/web-air.test.js`, `tests/web-mimic.test.js` | – | – | Web stream (C9) | nobody (the lead in wave 3 if a merge needs it) | C9's `airText` and `mimicLayout` tests |
+| `tests/harvest-rules.test.js`, `tests/qrcodegen.test.js` | – | – | – | Lead (prep 2.0), then nobody | C10 13 |
+| `tests/web-batches.test.js`, `tests/web-harvest.test.js` | – | – | – | Harvest web | C10 13 (7.10) |
 | `app.js` | – | – | Web split (deletes it) | – | Removed |
 
 ### 1.2 index.html
 
-The page is the shell only. Each module builds its own markup inside `<main id="view">` when it mounts. The lead writes this file exactly as below in prep 2.0 (revision 8; it was the Room shell's in revision 7), and no wave 2 stream changes it: the menu has **Rooms** and **Test bench**; the script tags are those of 1.3 (`web/capacity.js` and `web/calibration.js` are no longer loaded; `air.js` is on `master` from C9).
+The page is the shell only. Each module builds its own markup inside `<main id="view">` when it mounts. The lead writes this file exactly as below in prep 2.0 (revision 8; it was the Room shell's in revision 7), and no wave 2 stream changes it: the menu has **Rooms**, **Batches** and **Test bench**; the script tags are those of 1.3 (`web/capacity.js` and `web/calibration.js` are no longer loaded; `air.js` is on `master` from C9).
+
+| C10 line (C10 14, lead decision 60) | Place |
+|---|---|
+| `<link rel="stylesheet" href="web/harvest.css">` | After the `styles.css` link |
+| `<a href="#/batches" data-module="batches">Batches</a>` | Menu, between Rooms and Test bench |
+| `<script src="harvest-rules.js"></script>` | After `room-rules.js` |
+| `<script src="web/vendor/qrcodegen.js"></script>` | After `web/settings-panel.js` |
+| `<script src="web/batches.js"></script>`, `<script src="web/harvest.js"></script>` | After `web/room-calibrate.js`, before `web/simulator.js` |
 
 The app loads nothing from the internet (spec: no internet needed). The three Google Fonts `<link>` elements of
 today's `index.html` (two preconnects and the stylesheet) are removed; the `font-family` lists in `styles.css`
@@ -152,12 +182,14 @@ today's `index.html` (two preconnects and the stylesheet) are removed; the `font
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Mushroom farm</title>
 <link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="web/harvest.css">
 </head>
 <body data-level="farmer">
 <header class="bar">
   <div><h1>Mushroom farm</h1></div>
   <nav class="menu" id="menu" aria-label="Main menu">
     <a href="#/rooms" data-module="rooms">Rooms</a>
+    <a href="#/batches" data-module="batches">Batches</a>
     <a href="#/simulator" data-module="simulator">Test bench</a>
   </nav>
   <div class="spacer"></div>
@@ -176,10 +208,12 @@ today's `index.html` (two preconnects and the stylesheet) are removed; the `font
 <script src="cycle.js"></script>
 <script src="equipment.js"></script>
 <script src="room-rules.js"></script>
+<script src="harvest-rules.js"></script>
 <script src="web/ui.js"></script>
 <script src="web/api.js"></script>
 <script src="web/charts.js"></script>
 <script src="web/settings-panel.js"></script>
+<script src="web/vendor/qrcodegen.js"></script>
 <script src="web/shell.js"></script>
 <script src="web/room-tabs.js"></script>
 <script src="web/rooms.js"></script>
@@ -187,6 +221,8 @@ today's `index.html` (two preconnects and the stylesheet) are removed; the `font
 <script src="web/room-equipment.js"></script>
 <script src="web/room-simulate.js"></script>
 <script src="web/room-calibrate.js"></script>
+<script src="web/batches.js"></script>
+<script src="web/harvest.js"></script>
 <script src="web/simulator.js"></script>
 </body>
 </html>
@@ -207,24 +243,29 @@ Plain `<script src>` tags at the end of `<body>`: no `defer`, no `async`, no `ty
 | 7 | `cycle.js` | `ClimateCycle` | `ClimateSim`, `ClimateController`, `ClimateRuntime`, `ClimateCapacity` (C7 1) |
 | 8 | `equipment.js` | `ClimateEquipment` | `ClimateSim` at load; `ClimateAir`, `ClimateController`, `ClimateCapacity`, `ClimateCycle` only when `estimate` or a run function is called (C8 1) |
 | 9 | `room-rules.js` | `ClimateRoomRules` (owned by the API stream in wave 1 and Server 2 in wave 2; its members are exactly those of C3 section 7.1, which is the authority: `LIM`, `VERDICTS`, `ALARM_KEYS`, `hasCrop`, `validCalib`, `normRoom`, `checkRoom`, `checkMix`, `checkCalibration`, `checkReport`, `checkSimulationRun`, `checkRunPatch`, `checkEquipmentBody`) | `ClimateSim`, `ClimateController`, `ClimateCalib` and `ClimateCapacity.DESIGN_DAYS` at load; `ClimateEquipment` only when `checkEquipmentBody`, `checkCalibration` or `checkSimulationRun` is called, never at load. Loading `room-rules.js` without `cycle.js` and `equipment.js` must not throw: `tests/web-load.test.js`, `tests/web-bench.test.js`, `tests/web-air.test.js` and `tests/web-mimic.test.js` load it that way; nobody changes them in wave 2 (the lead in wave 3) (C3 7.1). |
-| 10 | `web/ui.js` | `FarmUi` | – |
-| 11 | `web/api.js` | `FarmApi` | – |
-| 12 | `web/charts.js` | `FarmCharts` | `FarmUi` (at call time) |
-| 13 | `web/settings-panel.js` | `FarmSettingsPanel` | `FarmUi`, `ClimateController` (at call time) |
-| 14 | `web/shell.js` | `FarmShell` | – |
-| 15 | `web/room-tabs.js` | `FarmRoomTabs` | – |
-| 16 | `web/rooms.js` | nothing (registers `rooms`) | `FarmShell`, `FarmRoomTabs` (at call time) |
-| 17 | `web/room-live.js` | nothing (registers tab `live`) | `FarmRoomTabs` (it calls `FarmRoomTabs.register` at load) |
-| 18 | `web/room-equipment.js` | `FarmEquipmentCard` | – (it uses `ClimateEquipment`, `FarmApi` at call time); before `web/room-simulate.js` (C8 12.5) |
-| 19 | `web/room-simulate.js` | nothing (registers tab `simulate`) | `FarmRoomTabs` |
-| 20 | `web/room-calibrate.js` | nothing (registers tab `calibrate`) | `FarmRoomTabs` |
-| 21 | `web/simulator.js` | `FarmBench` (until wave 3, section 3.5) | `FarmShell` (it calls `FarmShell.register` at load) |
+| 10 | `harvest-rules.js` | `FarmHarvestRules` (C10 4) | `ClimateController` (it keeps the object at load and reads `CROPS` at call time, C10 4) |
+| 11 | `web/ui.js` | `FarmUi` | – |
+| 12 | `web/api.js` | `FarmApi` | – |
+| 13 | `web/charts.js` | `FarmCharts` | `FarmUi` (at call time) |
+| 14 | `web/settings-panel.js` | `FarmSettingsPanel` | `FarmUi`, `ClimateController` (at call time) |
+| 15 | `web/vendor/qrcodegen.js` | `qrcodegen` (C10 2) | – |
+| 16 | `web/shell.js` | `FarmShell` | – |
+| 17 | `web/room-tabs.js` | `FarmRoomTabs` | – |
+| 18 | `web/rooms.js` | nothing (registers `rooms`) | `FarmShell`, `FarmRoomTabs` (at call time) |
+| 19 | `web/room-live.js` | nothing (registers tab `live`) | `FarmRoomTabs` (it calls `FarmRoomTabs.register` at load) |
+| 20 | `web/room-equipment.js` | `FarmEquipmentCard` | – (it uses `ClimateEquipment`, `FarmApi` at call time); before `web/room-simulate.js` (C8 12.5) |
+| 21 | `web/room-simulate.js` | nothing (registers tab `simulate`) | `FarmRoomTabs` |
+| 22 | `web/room-calibrate.js` | nothing (registers tab `calibrate`) | `FarmRoomTabs` |
+| 23 | `web/batches.js` | nothing (registers `batches`, C10 12) | `FarmShell` (it calls `FarmShell.register` at load); any other global (`FarmApi`, `FarmUi`, `FarmHarvestRules`, `ClimateController`) only at call time |
+| 24 | `web/harvest.js` | nothing (registers `harvest`, C10 12) | `FarmShell` (it calls `FarmShell.register` at load); any other global (`FarmApi`, `FarmUi`, `FarmHarvestRules`, `qrcodegen`) only at call time |
+| 25 | `web/simulator.js` | `FarmBench` (until wave 3, section 3.5) | `FarmShell` (it calls `FarmShell.register` at load) |
 
 ### 1.4 Rules for every web file
 
 | Rule | Detail |
 |---|---|
 | Wrapper | `(function (global) { 'use strict'; ... })(typeof window !== 'undefined' ? window : globalThis);` like the shared modules, so Node tests can `require()` the file |
+| Vendored file | `web/vendor/qrcodegen.js` (C10 2) is the compiled Nayuki encoder with a 3-line header, never edited: it has no wrapper and defines `qrcodegen` with a top-level `var`, as a classic script. Node tests load it with `node:vm` (`tests/qrcodegen.test.js`, C10 13); the page reads `qrcodegen` only at call time. |
 | Globals | At most the one global of the table in 1.1. Module files define none; they only call `FarmShell.register`. Tab files (`web/room-live.js`, `web/room-simulate.js`, `web/room-calibrate.js`) define none; they only call `FarmRoomTabs.register`. |
 | No DOM at load | A file does no DOM work when it loads. DOM work starts in `mount`, in `create...` functions, or in the shell's `DOMContentLoaded` handler. |
 | Markup | Each module and the settings panel keep their markup as a template string in their own file, moved from today's `index.html` with the same ids and classes. It is set with `el.innerHTML` once per mount. Every dynamic text is set with `textContent`. |
@@ -275,16 +316,20 @@ So that every wave 2 stream's worktree loads the page without a 404, the lead co
 
 | File | Content in prep 2.0 | Replaced by |
 |---|---|---|
-| `index.html` | The real file, exactly 1.2 (menu **Rooms · Test bench**, every script tag of 1.3) | – (the lead's; nobody changes it in wave 2) |
+| `index.html` | The real file, exactly 1.2 (menu **Rooms · Batches · Test bench**, the `web/harvest.css` link, every script tag of 1.3) | – (the lead's; nobody changes it in wave 2) |
+| `harvest-rules.js`, `tests/harvest-rules.test.js` | The real files (C10 4, 13; C10 plan task 0.2) | – (the lead's; nobody changes them in wave 2) |
+| `web/vendor/qrcodegen.js`, `tests/qrcodegen.test.js` | The vendored encoder and its test (C10 2, 13; C10 plan task 0.3) | – (the lead's; nobody changes them in wave 2) |
+| `web/batches.js`, `web/harvest.js` | Stubs: the 1.4 wrapper, registering nothing (`(function (global) { 'use strict'; })(typeof window !== 'undefined' ? window : globalThis);`) | Harvest web |
+| `web/harvest.css` | Stub: one line, `/* Harvest pages (C10 12): written by the Harvest web stream. */` | Harvest web (lead decision 65) |
 | `web/room-tabs.js` | The real file (3.9) | – (the lead's; nobody changes it in wave 2) |
 | `web/room-live.js`, `web/room-simulate.js`, `web/room-calibrate.js` | Stubs: the 1.4 wrapper, registering nothing, so the frame shows `This tab is not installed.` | Live tab, Simulate tab, Calibrate tab |
 | `equipment.js` | Stub: the frozen C8 constants (`AC_SIZES`, `CONSTRUCTIONS`, `FOGGER_SIZES`, `AIR_SIZES`, `DEFAULTS`, `LIMITS`, `SOL_AIR_K`, `MARGIN`, `SHARE`, `RUNS`, `MAX_RUNS`, deep-frozen as C8 4.1) and the real `checkEquipment` (C8 4.3); `geometry`, `shell`, `plantOf`, `estimate`, `runCheckSteps`, `runCheck`, `runCheckAsync` throw `Error('stub')` | Equipment (merged at gate 2.5) |
-| `web/api.js`, `tests/web-api.test.js` | The 4.3 additions | – |
-| `tests/fakes/api-server.js`, `tests/fake-api-server.test.js` | The 4.5 defaults for the new routes, and the C3 section 9 file list: `/air.js`, `/cycle.js`, `/equipment.js` added to the served files (on `master` 6a12852 the list lacks all three), each tested for 200, `text/javascript; charset=utf-8` and the file bytes | – |
+| `web/api.js`, `tests/web-api.test.js` | The 4.3 additions (the revision 7 functions and the ten C10 12.1 functions) | – |
+| `tests/fakes/api-server.js`, `tests/fake-api-server.test.js` | The 4.5 defaults for the new routes (`GET /api/batches` → `[]` included), and the C3 section 9 file list: `/air.js`, `/cycle.js`, `/equipment.js`, `/harvest-rules.js` added to the served files (on `master` 6a12852 the list lacks all four), each tested for 200, `text/javascript; charset=utf-8` and the file bytes | – |
 
 | Rule | Detail |
 |---|---|
-| Start check of every wave 2 web stream | `ls web/room-tabs.js web/room-live.js web/room-simulate.js web/room-calibrate.js equipment.js` lists all five, and `grep -c 'web/room-tabs.js' index.html` prints `1`; otherwise the stream stops and reports to the lead |
+| Start check of every wave 2 web stream | `ls web/room-tabs.js web/room-live.js web/room-simulate.js web/room-calibrate.js equipment.js web/batches.js web/harvest.js web/harvest.css` lists all eight, and `grep -c 'web/room-tabs.js' index.html` prints `1`; otherwise the stream stops and reports to the lead |
 | `web/room-equipment.js` | Not a stub: the Equipment stream creates it, and it is on `master` from gate 2.5 (the Equipment merge). Until gate 2.5 its script tag in the prep 2.0 `index.html` gives a 404 (on the fake API and on the real server); no headless check runs before then. The web streams' headless checks run after gate 2.5 on a tree that holds `master` plus their own files (7.10), so the script tag never gives a 404 there |
 
 ## 2. Shell (`web/shell.js`)
@@ -299,11 +344,17 @@ So that every wave 2 stream's worktree loads the page without a 404, the lead co
 | `#/rooms/:id/calibrate/:runId` | `rooms` | `{ id: Number(id), tab: 'calibrate', runId: Number(runId) }` | Rooms |
 | `#/simulator` | `simulator` | `{}` | Test bench |
 | `#/simulator/:id` | `simulator` | `{ roomId: Number(id) }` | Test bench (the room is picked and its settings loaded; its machines are not: the Test bench uses `PLANT` machines in wave 2, 7.8) |
+| `#/batches` | `batches` | `{}` | Batches (C10 11) |
+| `#/batches/:id` | `batches` | `{ id: Number(id) }` (a batch id) | Batches (C10 11) |
+| `#/harvest/stickers` | `harvest` | `{ view: 'stickers' }` | Batches (C10 11) |
+| `#/harvest/:id` | `harvest` | `{ view: 'record', id: Number(id) }` (a room id: the address on the room's QR sticker) | none; bare layout (2.3 step 5; C10 11, lead decision 66) |
 | `#/capacity`, `#/calibration`, empty, `#`, `#/`, or anything else | – | – | The shell calls `location.replace('#/rooms')` (the default route; no history entry) |
 
 | Rule | Detail |
 |---|---|
 | Ids | `:id` and `:runId` match `^[1-9][0-9]{0,14}$` |
+| Order | `#/harvest/stickers` is matched before `#/harvest/:id` (`stickers` is not an id anyway) (C10 11) |
+| Menu link of `harvest` | The module has no menu link: `#/harvest/stickers` marks the **Batches** link; `#/harvest/:id` marks none (C10 11) |
 | Trailing `/` | Ignored (`#/rooms/` is `#/rooms`) |
 | Query strings | Not supported |
 | `parseHash` | The pure route parser becomes a member of the global: `FarmShell.parseHash(hash)` → `{ name, params }`, `{ redirect: '#/rooms/<id>/live' }` for `#/rooms/:id`, or `null` (an unknown hash: the shell replaces it with `#/rooms`). Tested in Node by `tests/web-shell.test.js` and `tests/web-rooms.test.js` (Room shell) |
@@ -312,8 +363,8 @@ So that every wave 2 stream's worktree loads the page without a 404, the lead co
 
 | Member | Signature | Contract |
 |---|---|---|
-| `FarmShell.register` | `(name: string, module: { mount, unmount, update? }) → void` | Called once by each module file at load. `name` is `rooms` or `simulator`. A second call with the same name replaces the first. |
-| `FarmShell.MENU_NAMES` | `{ rooms: 'Rooms', simulator: 'Test bench' }` (frozen) | Menu names, used for `document.title` |
+| `FarmShell.register` | `(name: string, module: { mount, unmount, update? }) → void` | Called once by each module file at load. `name` is `rooms`, `simulator`, `batches` or `harvest` (C10 11). A second call with the same name replaces the first. |
+| `FarmShell.MENU_NAMES` | `{ rooms: 'Rooms', simulator: 'Test bench', batches: 'Batches', harvest: 'Harvest' }` (frozen) | Menu names, used for `document.title` (`harvest` has no menu link; its name is used for the title only, C10 11) |
 | `FarmShell.level` | getter `→ 'farmer' \| 'installer'` | The settings level now (equals `document.body.dataset.level`) |
 
 ### 2.3 Switching modules
@@ -324,10 +375,10 @@ On `DOMContentLoaded` the shell wires the menu, the level and the theme, then ro
 | Step | Action |
 |---|---|
 | 1 | Parse the hash (2.1). An unknown hash redirects to `#/rooms` and stops here. |
-| 2 | Same module and same `params` as now: do nothing. Same module, other `params`, and the module has `update(params)`: call it; when it returns `true`, keep the module mounted, store the new `params`, set `aria-current` and `document.title` (step 5), and stop. Otherwise continue with step 3 (lead decision 15). |
+| 2 | Same module and same `params` as now: do nothing. Same module, other `params`, and the module has `update(params)`: call it; when it returns `true`, keep the module mounted, store the new `params`, set `aria-current`, `document.title` and the layout (step 5), and stop. Otherwise continue with step 3 (lead decision 15). |
 | 3 | Call `unmount()` of the current module (if any). An exception is caught and logged with `console.error`. |
 | 4 | Empty `<main id="view">` and remove every attribute except `id`. |
-| 5 | Set `aria-current="page"` on the menu link of the new module and remove it from the others. Set `document.title` to `<Menu name> · Mushroom farm`. |
+| 5 | Set `aria-current="page"` on the menu link that the route marks (2.1, column "Menu link marked") and remove it from the others (`#/harvest/:id` marks none). Set `document.title` to `<Menu name> · Mushroom farm` (`MENU_NAMES` of the new module). Layout (C10 11, lead decision 66): for `#/harvest/:id` set `document.body.dataset.layout = 'bare'`; for every other route delete `data-layout` from `document.body`. `web/harvest.css` hides `.bar` under `body[data-layout="bare"]`, so the phone page shows no menu bar. |
 | 6 | Module not registered: put `<p class="est-note">This part of the app is not installed.</p>` in `#view` and stop. |
 | 7 | Call `mount(view, params)`. If it throws, or returns a Promise that rejects, the shell logs the error and puts `This page could not be opened: <message>` in `#view` (a `<p class="est-note">`). The module stays current, so its `unmount()` still runs at the next switch. |
 
@@ -354,7 +405,7 @@ On `DOMContentLoaded` the shell wires the menu, the level and the theme, then ro
 
 | Rule | Detail |
 |---|---|
-| DOM scope | A module changes only `el` and its descendants, plus a `<dialog>` it opens (section 7.6). It never changes `document.body` attributes or the shell's elements. |
+| DOM scope | A module changes only `el` and its descendants, plus a `<dialog>` it opens (section 7.6). It never changes `document.body` attributes or the shell's elements. `body[data-layout]` is the shell's (2.3 step 5; C10 11, lead decision 66): the `harvest` module never sets it. |
 | Attributes on `el` | A module may set attributes on `el` (for example `data-bench`); the shell removes them before the next mount. |
 | State | The Simulator keeps its run (simulation, controller, samples, events, settings) in its closure between mounts; the run does not advance while unmounted. The other modules reload from the API at each mount. |
 | Errors from the API | Shown in the module's message line with `FarmUi.errorText(err)`; the module stays usable |
@@ -365,6 +416,8 @@ On `DOMContentLoaded` the shell wires the menu, the level and the theme, then ro
 |---|---|---|---|---|
 | `rooms` | `web/rooms.js` | `#/rooms`, `#/rooms/:id/<tab>`, `#/rooms/:id/calibrate/:runId` | The Rooms home and the room page frame with the tabs **Live · Simulate · Calibrate** (3.8, 3.9). Revision 6's Rooms list and room page content is now split between the home, the frame and the Live tab (3.4; table "Room-centred moves" in 3.3). | `FarmApi`, `FarmRoomTabs`, the tab files |
 | `simulator` | `web/simulator.js` | `#/simulator`, `#/simulator/:id` | The Test bench: today's test bench (3.3) with C9 7's air exchange (room drawing, status card, glance row, purge ladder, **Air exchange per hour** bars, `#inAirM3h`), **Load settings from room** and **Save settings to room** (7.8); opened from a room's **Open test bench** with that room picked | `ClimateSim`, `ClimateAir`, `ClimateController`, `ClimateRuntime`, `ClimateCalib.toCsv`, `FarmCharts`, `FarmSettingsPanel`, `FarmApi` |
+| `batches` | `web/batches.js` (Harvest web) | `#/batches`, `#/batches/:id` | The batch list with the **Received · Placed · Cleared** tabs, the new batch form and the batch detail (place, clear, delete, flushes, crates with Undo) (C10 12.3); helpers `dateToSeconds`, `secondsToDate`, `ageDays`, `batchBody` (C10 12.2) | `FarmApi` (the C10 12.1 functions, `listRooms`), `FarmUi`, `FarmHarvestRules`, `ClimateController.CROPS`; styles in `web/harvest.css` |
+| `harvest` | `web/harvest.js` (Harvest web) | `#/harvest/:id` (`view: 'record'`), `#/harvest/stickers` (`view: 'stickers'`) | The phone page opened by a room's QR sticker: batch picker, picker name, **Add crate**, today's crates with Undo (C10 12.4); the stickers page: one QR card per room, the address check, the advice, **Print** (C10 12.5); helpers `parseKg`, `summaryText`, `stickerLink`, `isLocalHost`, `qrSvg` (C10 12.2) | `FarmApi` (`getRoomHarvest`, `addCrate`, `undoCrate`, `listRooms`), `FarmUi`, `qrcodegen`, `localStorage['farm.picker']`; styles in `web/harvest.css` |
 
 Revision 6 had two more modules, `capacity` (`web/capacity.js`) and `calibration` (`web/calibration.js`). From revision 7 `index.html` does not load them; their parts are the Simulate and Calibrate tabs (3.10, 3.11) and the Rooms home's import (3.8); the lead deletes both files in wave 3 (lead decision 29).
 
@@ -547,7 +600,7 @@ import is on the Rooms home (3.8). Two parts of this section stay binding:
 | Frame: `update(params)` | Same `id`: unmount the current tab (its listeners removed), empty `#roomTab`, mark the new tab link, mount the new tab with a new context (`params.runId` included); return `true`. Another `id`: return `false` (the shell remounts). |
 | Frame: `unmount` | Unmount the tab, close the stream, clear the refresh timer |
 | Frame: Room updates | A stream `room` event of this room, the status refresh reply and the **Restart** reply repaint the header and are passed to the tab as `room` (3.9). An archived room: the "does not exist" content, stream closed. |
-| Classes added to `styles.css` (Room shell, one `/* Room page */` block; lead decision 32) | `.explain`, `.room-tabs` (and `[aria-current="page"]`), `.crumbs`, `.room-card`, `.room-new`, `.room-head`, `.room-live`, `.room-versions`, `.room-details`, `.room-msg`, `.rc-values`, `.rc-crop`, `.run-progress` (bar + `span`), `.run-list`, `.mix-table`, `.result-card`, `.fit-table`, `.pvr-card`, `.equip-form` (the 7 machine fields in two rows), `.equip-bar` (a share bar: `span` width = share %), `.room-air` (the Live tab's air exchange card and glance row, 3.4), `.cal-charts` (the host of each `drawCalibCharts` call, 3.11). No other wave 2 stream edits CSS. |
+| Classes added to `styles.css` (Room shell, one `/* Room page */` block; lead decision 32) | `.explain`, `.room-tabs` (and `[aria-current="page"]`), `.crumbs`, `.room-card`, `.room-new`, `.room-head`, `.room-live`, `.room-versions`, `.room-details`, `.room-msg`, `.rc-values`, `.rc-crop`, `.run-progress` (bar + `span`), `.run-list`, `.mix-table`, `.result-card`, `.fit-table`, `.pvr-card`, `.equip-form` (the 7 machine fields in two rows), `.equip-bar` (a share bar: `span` width = share %), `.room-air` (the Live tab's air exchange card and glance row, 3.4), `.cal-charts` (the host of each `drawCalibCharts` call, 3.11). No other wave 2 stream edits `styles.css`. The harvest pages' classes and the bare layout rule are in `web/harvest.css`, the Harvest web stream's own stylesheet (C10 12.2; lead decision 65: lead decision 32 holds for `styles.css`). |
 | `helpers` (Node, `tests/web-rooms.test.js`) | `cardTexts(room)`, `infoText(room)`, `statusChip(room)`, and the import helpers `readStored`, `importPlan`, `importRooms` |
 
 ### 3.9 Tab registry and context (`web/room-tabs.js`, lead, revision 7)
@@ -660,8 +713,8 @@ import is on the Rooms home (3.8). Two parts of this section stay binding:
 |---|---|
 | Base address | `FarmApi.base`, a string, default `''` (same origin). Tests set it to `http://127.0.0.1:<port>`. |
 | Request | `fetch(base + path, { method, headers, body })`. With a body: `Content-Type: application/json` and `body = JSON.stringify(body)`. Always `Accept: application/json`. |
-| Path values | Room ids, version ids and run ids are integers put in the path as decimal; `alarmKey` goes through `encodeURIComponent` |
-| Query values | Integers. A key whose value is `undefined` or `null` is left out of the query. |
+| Path values | Room ids, version ids, run ids, batch ids and crate ids (C10) are integers put in the path as decimal; `alarmKey` goes through `encodeURIComponent` |
+| Query values | Integers, except `state` of `listBatches`, a string (`received`, `placed` or `cleared`; C10 12.1). A key whose value is `undefined` or `null` is left out of the query. |
 | Success | Any 2xx status. Body parsed as JSON and returned unchanged. Status 204 or an empty body resolves `null`. |
 | Failure | Every function returns a Promise that rejects with an `ApiError` (4.2), except the one `getCapacity` case of 4.3. No retries, no time-out (the stream's watchdog, 4.4, is the only timer). |
 
@@ -677,7 +730,7 @@ import is on the Rooms home (3.8). Two parts of this section stay binding:
 
 ### 4.3 Functions (one per C3 route)
 
-`id` is a room id. Every argument and every result is the C3 JSON, passed through unchanged.
+`id` is a room id, `batchId` a batch id, `crateId` a crate id. Every argument and every result is the C3 or C10 JSON, passed through unchanged. The last ten rows before `stream` are C10 12.1 (C10 resources, C10 6; routes C10 9); the lead adds them in prep 2.0 and tests them in `tests/web-api.test.js` (7.10).
 
 | Function | Route | Arguments | Resolves to |
 |---|---|---|---|
@@ -707,6 +760,16 @@ import is on the Rooms home (3.8). Two parts of this section stay binding:
 | `deleteSimulation(id, runId)` | `DELETE /api/rooms/:id/simulations/:runId` | – | `SimulationRunInfo` |
 | `getEquipment(id)` | `GET /api/rooms/:id/equipment` | – | `Equipment` or `null` (C8) |
 | `saveEquipment(id, eq)` | `PUT /api/rooms/:id/equipment` | `eq`: the 7 Equipment fields (`ac_hp, ac_units, fog_lph, air_m3h, walls, roof, height`) | `Equipment` (the server also brings the room's settings `airM3h` in step, C3 6.26) |
+| `listBatches({ state, room })` | `GET /api/batches?state=&room=` | Both optional: `state` `received`, `placed` or `cleared`; `room` a room id. `listBatches()` sends no query | `Batch[]` (C10 6.1) |
+| `createBatch(fields)` | `POST /api/batches` | `fields`: the C10 batch fields | `Batch` |
+| `getBatch(batchId)` | `GET /api/batches/:batchId` | – | `BatchDetail` (C10 6.2) |
+| `updateBatch(batchId, fields)` | `PATCH /api/batches/:batchId` | `fields`: only the changed batch fields | `Batch` |
+| `placeBatch(batchId, body)` | `POST /api/batches/:batchId/place` | `body`: `{ room_id, placed_at? }` | `Batch` |
+| `clearBatch(batchId, body = {})` | `POST /api/batches/:batchId/clear` | `body`: `{ cleared_at? }`; always sends a body (`clearBatch(4)` sends `{}`) | `Batch` |
+| `deleteBatch(batchId)` | `DELETE /api/batches/:batchId` | – | `Batch` (as before the delete) |
+| `getRoomHarvest(id)` | `GET /api/rooms/:id/harvest` | – | `RoomHarvest` (C10 6.4) |
+| `addCrate(batchId, body)` | `POST /api/batches/:batchId/crates` | `body`: `{ kg, picker? }` | `CrateSaved` (C10 6.5) |
+| `undoCrate(crateId)` | `DELETE /api/crates/:crateId` | – | `Crate` (C10 6.3) |
 | `stream(onEvent)` | `GET /api/stream` | `onEvent(type, data)` | Returns a `close()` function at once (not a Promise) |
 
 Mapping between the API and the shared modules is done in the web module, not in `api.js`:
@@ -770,12 +833,12 @@ fake itself in `tests/fake-api-server.test.js` (wave 0), `root` included.
 | Request without a `reply` | Default answer |
 |---|---|
 | `GET /api/stream` | 200, `Content-Type: text/event-stream; charset=utf-8`, `Cache-Control: no-store`; writes `retry: <retryMs>\n\n` at once, then only what `emit` sends (no `: ping`, so a silent connection triggers the client's watchdog). The connection stays open until `dropStreams()`, `close()` or the client aborts. |
-| `GET` of a C3 route whose reply is an array: `/api/rooms`, `/api/rooms/:id/settings/history`, `/readings`, `/events`, `/alarms`, `/calibrations`, `/mix`, `/simulations` (revision 7) | 200, `[]` |
+| `GET` of a C3 route whose reply is an array: `/api/rooms`, `/api/rooms/:id/settings/history`, `/readings`, `/events`, `/alarms`, `/calibrations`, `/mix`, `/simulations` (revision 7), and the C10 route `/api/batches` (with or without a query; C10 14, prep 2.0) | 200, `[]` |
 | `GET /api/rooms/:id/equipment` (revision 7) | 200, `null` (a room without machines) |
 | Any other `GET` under `/api/` | 200, `{}` |
 | `POST`, `PUT`, `PATCH` under `/api/` | 200, the request body echoed as JSON (`null` when the request had no body). The fake has no route logic: a check that needs a server-made field (for example `room_id`, `saved_at`, `id`) sets it with `reply`. |
 | `DELETE` under `/api/` (revision 7) | 200, `{}` |
-| `GET` or `HEAD` of a path not under `/api/`, with `root` | The file under `root` by C3 section 9 (above). The served shared modules are `/controller.js`, `/sim.js`, `/air.js`, `/runtime.js`, `/capacity.js`, `/calib.js`, `/room-rules.js`, `/cycle.js`, `/equipment.js`: the list on `master` 6a12852 lacks `/air.js` (a C9 gap), `/cycle.js` and `/equipment.js`; the lead adds them in prep 2.0 (1.7), tested in `tests/fake-api-server.test.js` |
+| `GET` or `HEAD` of a path not under `/api/`, with `root` | The file under `root` by C3 section 9 (above). The served shared modules are `/controller.js`, `/sim.js`, `/air.js`, `/runtime.js`, `/capacity.js`, `/calib.js`, `/room-rules.js`, `/cycle.js`, `/equipment.js`, `/harvest-rules.js` (C10 10): the list on `master` 6a12852 lacks `/air.js` (a C9 gap), `/cycle.js`, `/equipment.js` and `/harvest-rules.js`; the lead adds them in prep 2.0 (1.7), tested in `tests/fake-api-server.test.js`. The other C10 files (`/web/harvest.css`, `/web/batches.js`, `/web/harvest.js`, `/web/vendor/qrcodegen.js`) are covered by C3 9's `/web/<path>` rule |
 | Any other method, or a path not under `/api/` (without `root`, or a method other than `GET` and `HEAD`) | 404, `{ "error": "Unknown route", "details": [] }` |
 
 Every request is recorded in `requests`, the file requests of `root` included; a check reads only the `/api/` entries.
@@ -1153,13 +1216,15 @@ server (`importSettings` in C2, section 9.2). `getCommand` builds the Command fr
 | `tests/web-api.test.js`, watchdog | With `FarmApi.streamTimeoutMs` = 100 and `startFakeApi({ retryMs: 50 })` (the fake sends no `: ping`): `open` (`reconnect: false`), then `down` with `error` `No data from the server for 0.1 s`, then `open` (`reconnect: true`), and `requests` holds a second `GET /api/stream`; an `emit` every 50 ms keeps the connection (no `down`); no `onEvent` call after `close()` | Web split |
 | `tests/settings-diff.test.js` (Node) | `diffSettings` (order, arrays, missing leaves, no change → `[]`), `applyChanges`, `formatValue`; `safeSettings`: `JSON.parse('{"__proto__":{"polluted":1},"rules":{"constructor":1}}')` gives two warnings and `({}).polluted` stays `undefined`, an unknown key is dropped with `importSettings`' warning, an out-of-limit `spT` is clamped, a missing key takes its default, a non-object throws | Web split |
 | Headless Chrome, wave 1 (spec section 5) | Each module mounts and unmounts without errors (with the wave 0 stubs `room-rules.js` and `web/rooms.js`, 1.5 and 1.6: no 404 and no console error; a 404 for `/favicon.ico` is ignored, and a 404 for `/web/rooms.js` or `/room-rules.js` fails the check); `#/rooms` shows `This part of the app is not installed.`; the Simulator runs as today with the panel. The check opens the Web split worktree's `index.html` over `file://` (wave 1 makes no API call), or over a throwaway static file server inside the test tool; `server/static.js` is the API stream's and is not in this worktree. | Web split |
-| Headless Chrome, how wave 2 checks run (revision 7) | Against the real server, after the lead's gate 2.5 (Data 2, Equipment, then Server 2 merged into `master`; wave 2 plan). Until then each web stream tests in Node against the fake API (4.5) and the prep 2.0 `equipment.js` stub. The check tree: `T=$(mktemp -d); git archive master \| tar -x -C $T` (the gate 2.5 `master`), then the stream's own changed files on top (`git archive HEAD -- <files changed since the merge base> \| tar -x -C $T`); the streams do not merge `master` into their branches (the lead merges). Command: `cd $T && FARM_HOST=127.0.0.1 FARM_PORT=<free port> FARM_DB=$T/check.db npm start`, then open `http://127.0.0.1:<port>/`. The empty database gets the demo room `Room 1`, which records a reading every 30 s. A check seeds what else it needs through the API or `localStorage`; a check that needs history writes it before `npm start` with a script kept outside the repo (its own `mktemp -d` folder; `openDb`, `createRoom`, `insertReading` on `$T/check.db`). Tab and card checks follow 3.9 "Headless checks of one tab" (the gate 2.5 `index.html` already loads every script; the tab is mounted by hand; no layout assertion). Wave 3 integration runs every check again through the real room page. | Every wave 2 web stream |
+| Headless Chrome, how wave 2 checks run (revision 7) | Against the real server, after the lead's gate 2.5 (Data 2, Equipment, then Server 2 merged into `master`, and with C10 also Harvest data and Harvest API, with `server/main.js` wired as C10 8.4; wave 2 plan, C10 14). Until then each web stream tests in Node against the fake API (4.5) and the prep 2.0 `equipment.js` stub. The check tree: `T=$(mktemp -d); git archive master \| tar -x -C $T` (the gate 2.5 `master`), then the stream's own changed files on top (`git archive HEAD -- <files changed since the merge base> \| tar -x -C $T`); the streams do not merge `master` into their branches (the lead merges). Command: `cd $T && FARM_HOST=127.0.0.1 FARM_PORT=<free port> FARM_DB=$T/check.db npm start`, then open `http://127.0.0.1:<port>/`. The empty database gets the demo room `Room 1`, which records a reading every 30 s. A check seeds what else it needs through the API or `localStorage`; a check that needs history writes it before `npm start` with a script kept outside the repo (its own `mktemp -d` folder; `openDb`, `createRoom`, `insertReading` on `$T/check.db`). Tab and card checks follow 3.9 "Headless checks of one tab" (the gate 2.5 `index.html` already loads every script; the tab is mounted by hand; no layout assertion). Wave 3 integration runs every check again through the real room page. | Every wave 2 web stream |
 | `tests/web-api.test.js`, revision 7 additions | The seven functions of 4.3 (`listSimulations`, `createSimulation`, `getSimulation`, `updateSimulation`, `deleteSimulation`, `getEquipment`, `saveEquipment`): method, path, query, body, result, against the fake; `DELETE` gets 200 `{}`; `getEquipment` gets `null` | Lead (prep 2.0) |
-| `tests/fake-api-server.test.js`, revision 8 additions | With `root`: `GET /air.js`, `/cycle.js`, `/equipment.js` each answer 200, `text/javascript; charset=utf-8` and the file bytes (4.5) | Lead (prep 2.0) |
-| `tests/web-shell.test.js`, `tests/web-rooms.test.js` + headless Chrome, Room shell | Node: the routes of 2.1 (`FarmShell.parseHash`), the `update(params)` rule of 2.3, `MENU_NAMES`, the home helpers and import helpers (3.8). Headless: the home shows cards with live values and `flush`/`blocks`; a card opens `#/rooms/1/live`; `#/rooms/1` replaces to `/live`; the three tab links switch tabs without a reload of the header (the frame's `GET /api/rooms` count does not grow on a tab switch) and show `This tab is not installed.` where a tab registers nothing; `#/capacity` and `#/calibration` go to `#/rooms`; the menu has Rooms and Test bench; the browser-storage import (with `mushroom-farm.rooms.v1` seeded with two rooms, one with a mix of two crops and a valid `calib`: both rooms, their mixes, an applied calibration with `source: 'import'`, the marker set, the button hidden after a reload); **Restart** against the fake (`startFakeApi({ root: <the check tree> })`, a stopped room `R` with `live.error: 'boom'`, the button sends exactly one `POST /api/rooms/1/restart` with no body and the card then shows the reply), on the home card and in the frame header; no console errors | Room shell |
+| `tests/fake-api-server.test.js`, revision 8 additions | With `root`: `GET /air.js`, `/cycle.js`, `/equipment.js`, `/harvest-rules.js` each answer 200, `text/javascript; charset=utf-8` and the file bytes; `GET /api/batches` answers 200 `[]` (4.5; C10 14) | Lead (prep 2.0) |
+| `tests/web-api.test.js`, C10 additions | The ten functions of 4.3 from C10 12.1, one test each against `startFakeApi()`: method, path, query (`listBatches({ state: 'placed', room: 2 })` sends `?state=placed&room=2`; `listBatches()` sends no query), body (`clearBatch(4)` sends `{}`), and the reply passed through (C10 14) | Lead (prep 2.0) |
+| `tests/web-shell.test.js`, `tests/web-rooms.test.js` + headless Chrome, Room shell | Node: the routes of 2.1 (`FarmShell.parseHash`, the four C10 routes included: `#/batches`, `#/batches/4`, `#/harvest/stickers` before `#/harvest/:id`, `#/harvest/3`), the `update(params)` rule of 2.3, `MENU_NAMES` (with `batches` and `harvest`), the home helpers and import helpers (3.8). Headless: the home shows cards with live values and `flush`/`blocks`; a card opens `#/rooms/1/live`; `#/rooms/1` replaces to `/live`; the three tab links switch tabs without a reload of the header (the frame's `GET /api/rooms` count does not grow on a tab switch) and show `This tab is not installed.` where a tab registers nothing; `#/capacity` and `#/calibration` go to `#/rooms`; the menu has Rooms, Batches and Test bench; `#/batches` and `#/harvest/stickers` mark the **Batches** link and `#/harvest/1` marks none; `#/harvest/1` sets `body[data-layout="bare"]` and a switch to `#/rooms` removes it (C10 11, lead decision 66; on this tree `web/batches.js`, `web/harvest.js` and `web/harvest.css` are the prep 2.0 stubs, so the pages show `This part of the app is not installed.` and the check makes no assertion on the bar's visibility); the browser-storage import (with `mushroom-farm.rooms.v1` seeded with two rooms, one with a mix of two crops and a valid `calib`: both rooms, their mixes, an applied calibration with `source: 'import'`, the marker set, the button hidden after a reload); **Restart** against the fake (`startFakeApi({ root: <the check tree> })`, a stopped room `R` with `live.error: 'boom'`, the button sends exactly one `POST /api/rooms/1/restart` with no body and the card then shows the reply), on the home card and in the frame header; no console errors | Room shell |
 | `tests/web-room-live.test.js` + headless Chrome, Live tab | Node: `airLive` (3.4, every row of "Air exchange on the Live tab"). Headless: the tab mounted alone with a hand-made `ctx` (3.9) whose `on` records the listeners. The check stands in for the frame: it opens `FarmApi.stream`, passes the `reading`, `event`, `alarm` and `settings` events of room 1 to the tab's listeners of that type, and after each reading calls `FarmApi.listRooms()` and passes room 1 to the `room` listeners (and makes `ctx.room()` return it). Live values and machines (the air exchange `On` / `Off`) from `reading`; the Air exchange card, glance row and ladder chip from `live.air`; the status chip changes after a reading that moves T out of band (the check saves the room's settings through the API with `spT` far from the room's T, then waits up to 65 s); charts, alarms and events load; a settings change shows the change list, saves, and Restore works; the `program-status` slot shows `flush <n>`; no console errors | Live tab |
 | `tests/web-room-simulate.test.js` + headless Chrome, Simulate tab | Node: the helpers of 3.10. Headless: a capacity check and a short cycle (settings with 1-day stages, 1 flush, `farmType: 'ready'`) finish, are stored (`listSimulations`), reopen (`getSimulation`), take a note and delete; the draft mix is saved only by **Save as this room's crop mix** (`getMix`); with saved machines (`saveEquipment` through the API first) the stored run's `inputs.equipment` holds them (with `air_m3h`); a stored run's `inputs.settings.airM3h` is the room's settings `airM3h` and `inputs.calibration` has exactly the keys `id`, `ua`, `inf_ach`, `moist_buffer`, `co2_per_block` (or is `null`); the Saved runs row of an equipment run shows its verdict chip and Energy `–`; the equipment slot sits after the Result card and before Saved runs. The headless check seeds one saved run of kind `equipment` (a small hand-made Report through `createSimulation`, as C3 6.21 accepts) so the Saved runs row `Equipment` and **Open** can be checked before the card is merged. | Simulate tab |
 | `tests/web-room-calibrate.test.js`, `tests/web-charts.test.js` (append) + headless Chrome, Calibrate tab | The headless check seeds readings 2 h back and uses the tab's default history range, which must cover them (the default `cbFrom` yesterday, `cbTo` today, 3.11). Node: `logFromReadings` (`air` from `r.air`), `pairSeries`, `differences`, `sameMachines` (`air_m3h`), `calibBody`, `envBaseFor` (`airM3h` from the settings; `plantOf` recorded, 3.11); the `drawCalibCharts` options and a `base` given as `{ series }`. No assertion on the `PARAMS` label or note text, nor on a fit result that needs `replay` to follow `stage` (3.11). Headless: a history fit stores a calibration with `source: 'history'`, `log_from`, `log_to` and `equipment` (2 h of readings written into the check database before `npm start`); a CSV fit stores `source: 'csv'`; after `saveEquipment` with other machines the warning `#cbStale` shows; Predicted vs real shows a short saved cycle against its readings and stores `real_start`; a start in the future shows `No real readings for this run yet.` with no `GET …/readings` | Calibrate tab |
 | `tests/web-room-link.test.js`, `tests/calib.test.js` (append) + headless Chrome, Test bench | The room link of 7.8 (`createRoomLink` from the Node export: every step of `load` and `save`, `dispose`); the registered simulator module's `mount(document.getElementById('view'), { roomId: 1 })`, called through a `FarmShell.register` spy or the recorded module, picks room 1 and shows the Load change list (the address `#/simulator/1` needs the Room shell's `parseHash`, so the lead checks it in wave 3); the calibration event text `heat through walls and roof`; `ClimateCalib.PARAMS.ua.label === 'Heat through walls and roof (W/K)'` and `PARAMS.ua.note` contains `outside is hotter`; `replay` follows a row's `stage` (a log switching from `fruiting` to `rest` replays with less CO₂ after the switch); every existing calib and bench test stays green | Bench |
 | `tests/web-room-equipment.test.js` + headless Chrome, Equipment card | Node: the card's helpers (3.12; `progressText` for kinds `ac`, `fogger`, `air`; `airNote`). Headless, after gate 2.5: the card mounted alone (3.9 "Headless checks of one tab") against the real server: save and reload the machines; after saving an `air_m3h` that differs from the room's settings `airM3h` the settings come in step and no note shows; changing the settings' `airM3h` afterwards (`saveSettings`) shows the air size note of 3.12, and saving the machines again brings the settings in step (`getSettings(1).airM3h` equals it after the save); a check with a short program (1-day stages, 1 flush, `ready`) finishes and is stored as kind `equipment` (`listSimulations(1)`). Fixes after gate 2.5 merge in wave 3 (lead decision 49). The card inside the Simulate tab is the lead's wave 3 check. | Equipment |
-| Headless Chrome, integration | Every row above on the merged code through the real room page; the Equipment card inside the Simulate tab (mount, **Check my machines** with a short program, the Saved runs row `Equipment`, **Open**) | Lead (wave 3) |
+| `tests/web-batches.test.js`, `tests/web-harvest.test.js` + headless Chrome, Harvest web (C10 13) | Node: every helper of C10 12.2 (`parseKg('12,5')` is 12.5, `parseKg('12kg')` is `null`; `summaryText` singular and plural; `isLocalHost`; `qrSvg` holds one `<path>` and `crispEdges`, and its module count matches `qrcodegen` for the same text). Headless, after gate 2.5, on the check tree of the row "how wave 2 checks run": that tree has the wave 1 `web/shell.js` (the Room shell's merges in wave 3), which does not know the C10 routes, so the check mounts the registered module by hand (through a `FarmShell.register` spy or the recorded module, as the Bench row) in an emptied `#view`, with the `params` of 2.1, and checks a link that changes the hash by its `href` instead of following it. Phone page, 390 × 844, `harvest` mounted with `{ view: 'record', id: 1 }` against the real server with one placed batch in room 1 (seeded with `createBatch` and `placeBatch`): with `document.body.dataset.layout = 'bare'` set by the check (standing in for 2.3 step 5) `.bar` is not displayed (`web/harvest.css`); the batch is picked at once; a double tap on **Add crate** stores one crate; with the server stopped the value stays and the red line shows; Undo removes the crate. Two placed batches: the picker shows two buttons. Stickers, `{ view: 'stickers' }`: opened as `http://127.0.0.1:<port>/`, **Print** is disabled and `#stWarn` shows; opened on an address `isLocalHost` does not list (for example the server started with `FARM_HOST=0.0.0.0` and opened as `http://127.0.0.2:<port>/`), one card per room. Batches, `{}` then `{ id }`: create, place, see the crates and flushes, clear. No console errors. The addresses through the shell (`#/batches`, `#/batches/:id`, `#/harvest/:id` with the shell's bare layout, `#/harvest/stickers`) are the lead's wave 3 check | Harvest web |
+| Headless Chrome, integration | Every row above on the merged code through the real room page; the Equipment card inside the Simulate tab (mount, **Check my machines** with a short program, the Saved runs row `Equipment`, **Open**); the Harvest web row through the shell's addresses: `#/harvest/1` shows no menu bar, `#/harvest/stickers` and `#/batches` mark **Batches** (C10 11, 13) | Lead (wave 3) |
