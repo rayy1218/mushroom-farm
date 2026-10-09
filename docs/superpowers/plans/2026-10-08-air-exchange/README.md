@@ -21,7 +21,7 @@
 | 1 | Controller stream | `controller.md` | C9 section 2, row "Controller stream" |
 | 1 | Data stream | `data.md` | C9 section 2, row "Data stream" |
 | 1 | Web stream | `web.md` | C9 section 2, row "Web stream" |
-| 2 | Lead | This file, tasks 2.1–2.7 | `tests/integration.test.js`, `tests/harness.js`, `tests/vectors/*.json`, `docs/contracts/cycle.md` (example numbers), `docs/ROADMAP.md`, `README.md`, the drafts in `~/Documents/mushroom-farm-drafts` |
+| 2 | Lead | This file, tasks 2.1–2.7 | `tests/integration.test.js`, `tests/harness.js`, `tests/vectors/*.json`, `docs/contracts/cycle.md` (example numbers), `docs/ROADMAP.md`, `README.md` |
 
 Merge order at step 2: simulation → controller → data → web. Each stream works from the step 0 commit (`<base>`). Worktrees live under `~/.config/superpowers/worktrees/mushroom-farm/` (never `/tmp`: it is wiped on reboot).
 
@@ -208,18 +208,18 @@ git add air.js tests/air.test.js
 git commit -m "feat(air): ClimateAir purge time, size recommendation, rise rate (C9 section 3)"
 ```
 
-### Task 0.3: Lead decision 14 and freeze C9
+### Task 0.3: Lead decision 55 and freeze C9
 
 **Files:** Modify `docs/contracts/LEAD-DECISIONS.md` (append a row), `docs/contracts/air.md` (status line).
 
 - [ ] **Step 1:** Append to the decisions table:
 
 ```markdown
-| 14 | Air exchange (C9) | The one fresh-air fan, its levels, `env.vent`, `rules.airMode`, `baseFan`, `fanLevel`, `rhAction`, `fogBoost` and the AC-during-purge rules are replaced by an on/off intake + exhaust pair (`air.on`) with short purges capped at `rules.purgeMaxS`, Prepare timed from the CO₂ rise rate, and the `airTooSmall` alarm. Contract C9 (`docs/contracts/air.md`) overrides the sections listed in its section 10. The reading key `fan` becomes `air`; database upgrade 2 is C9's, so wave 2's planned upgrade becomes 3. `SETTINGS_VERSION` 2 with `upgradeSettings` for older settings and stored room settings. |
+| 55 | Air exchange (C9; 14–54 are reserved by the parked wave 2 decisions on `wave2/contracts-folded`) | The one fresh-air fan, its levels, `env.vent`, `rules.airMode`, `baseFan`, `fanLevel`, `rhAction`, `fogBoost` and the AC-during-purge rules are replaced by an on/off intake + exhaust pair (`air.on`) with short purges capped at `rules.purgeMaxS`, Prepare timed from the CO₂ rise rate, and the `airTooSmall` alarm. Contract C9 (`docs/contracts/air.md`) overrides the sections listed in its section 10. The reading key `fan` becomes `air`; database upgrade 2 is C9's, so wave 2's planned upgrade becomes 3. `SETTINGS_VERSION` 2 with `upgradeSettings` for older settings and stored room settings. |
 ```
 
-- [ ] **Step 2:** In `docs/contracts/air.md`, change the status line to `Status: frozen (lead decision 14), <date>.`
-- [ ] **Step 3: Commit** `git commit -am "docs(contracts): freeze C9 air exchange (lead decision 14)"`
+- [ ] **Step 2:** In `docs/contracts/air.md`, change the status line to `Status: frozen (lead decision 55), <date>.`
+- [ ] **Step 3: Commit** `git commit -am "docs(contracts): freeze C9 air exchange (lead decision 55)"`
 
 ### Task 0.4: Load `air.js` in the browser
 
@@ -339,6 +339,6 @@ test('Prepare on vs off: more time in the temperature and RH bands with Prepare 
 
 - [ ] `README.md` file table: add `air.js`. `docs/ROADMAP.md`: row "Air exchange: short, powerful purges (C9)" ✅. Commit.
 
-### Task 2.7: Amend the drafts
+### Task 2.7: Hand over to the parked wave 2 branch
 
-- [ ] Apply C9 section 10 row "Wave 2 draft" to `~/Documents/mushroom-farm-drafts/snapshot-1559/wave2-draft/room-centred.md`. C8 must be drafted again (its draft was lost with `/tmp`); record in the project memory that a new C8 draft starts from C9's sizing rule.
+- [ ] Tell the owner of `wave2/contracts-folded` (project memory) that C9 is on `master`: that branch rebases and applies C9 section 10 rows "C8 `equipment.md`" and "Wave 2 contracts" (upgrade 3, `air`, no `vent`, `air_m3h`, `ClimateAir.sizeFor`).

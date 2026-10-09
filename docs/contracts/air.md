@@ -1,6 +1,6 @@
 # Contract C9: air exchange with short, powerful CO₂ purges
 
-Revision 1, 2026-10-08. Status: draft until the lead freezes it (lead decision 14). Design: `docs/superpowers/specs/2026-10-08-air-exchange-purge-design.md`.
+Revision 1, 2026-10-08. Status: draft until the lead freezes it (lead decision 55; decisions 14–54 are reserved by the parked wave 2 branch `wave2/contracts-folded`). Design: `docs/superpowers/specs/2026-10-08-air-exchange-purge-design.md`.
 
 C9 replaces the one fresh-air fan (levels 0–3, `env.vent`, `rules.airMode`, AC setback during a purge) with an intake fan and an exhaust fan that switch on and off together. Where C9 and an older contract disagree, C9 wins; section 10 lists every overridden section.
 
@@ -310,8 +310,8 @@ Checked on Node 22.20 (SQLite 3.50.4) inside `BEGIN IMMEDIATE` with `foreign_key
 | C3/C4 `api.md` | 3.1 (`vent`), 3.2 (`fan`), 5, 6.2, 6.3, 6.8, 7.1, 7.2, 8, 8.1, 10.2, 11 | 6.1, 6.3 |
 | C5/C6 `web.md` | 3.2, 3.3, 3.4, 3.6, 3.7, 4.3, 6.1, 6.2, 7.2, 7.3, 7.4, 7.7, 7.8, 7.9, 7.10 | Section 7 |
 | C7 `cycle.md` | "`sim.js`, `controller.js`, `runtime.js` not changed" (lines 17, 34, 380), 54, 96, 168, 258, the example numbers (337–346) | Section 8; the example numbers are re-measured by the lead at step 2 |
-| C8 (equipment check, not yet frozen) | The draft `equipment.md` was lost with `/tmp` on 2026-10-09; only its research files survive in `~/Documents/mushroom-farm-drafts/snapshot-1559/c8-draft/` | When C8 is drafted again it uses `air_m3h` (50–10000, default 1800), `ClimateAir.SIZES` and `ClimateAir.sizeFor`; no steady-mode or fan-level rules |
-| Wave 2 draft (`~/Documents/mushroom-farm-drafts/snapshot-1559/wave2-draft/room-centred.md`) | Database upgrade 2, reading keys | The wave 2 upgrade becomes number 3; reading key `air` |
+| C8 `equipment.md` (parked on branch `wave2/contracts-folded`, commit 75a2ad5, not frozen) | `fan_m3h` (Equipment fields, `DEFAULTS`, `LIMITS`, `calibrations.equipment` JSON), `FAN_SIZES`, `FAN_MIN_ACH`, the `fan.levels` scaling row (206), the fan verdict rows (423, 490, 495: "lowest speed", oversized) | `air_m3h` (50–10000, default 1800) everywhere `fan_m3h` stands; `ClimateAir.SIZES` for `FAN_SIZES`; the fan verdict is `too-small` when `ClimateAir.sizeFor(...).needM3h > air_m3h` (with `recommended = size`), else fine; no oversized rule (the pair is off between purges, so a bigger pair only shortens purges); the `fan.levels` row is dropped |
+| Wave 2 contracts (parked on `wave2/contracts-folded`: `db.md`, `api.md`, `rooms.md`, `web.md`, `cycle.md`, `LEAD-DECISIONS.md` 14–54) | Lead decision 54 ("upgrade 2 holds everything"), the reading key `fan`, `rooms.vent`, decision 51 (`mimicLayout({ vent, … })`) | Wave 2's upgrade becomes **3** (C9 owns 2); reading key `air`; no `vent`; `mimicLayout({ inletAt, exhaustAt })` (section 7). The parked branch is rebased on `master` after C9 merges and fixes these in its own contracts. |
 
 ## 11. Tests and gate
 
