@@ -81,9 +81,37 @@ function mergePoints(pts, p, from) {
   return out.sort((a, b) => a.t - b.t);
 }
 
-const helpers = { airLive, airSub, windowQuery, gapFor, reconnectQuery, chartTargets, toChartPoint, retarget, mergePoints };
+function readingTexts(r, clock) {
+  if (!r) return { T: '—', RH: '—', CO2: '—', at: 'No reading yet' };
+  const f = ui().fmtNum;
+  return { T: `${f(r.T, 1)} °C`, RH: `${f(r.RH, 0)} % RH`, CO2: `${f(r.CO2, 0)} ppm`, at: `Reading at ${clock.stamp(r.t)}` };
+}
+
+const AC_WORD = { cool: 'Cool', heat: 'Heat', dry: 'Dry', fan: 'Fan only' };
+function machineLines(r) {
+  if (!r) return [];
+  const lines = [];
+  lines.push(r.ac_mode === 'off' ? 'AC off' : `AC ${AC_WORD[r.ac_mode] ?? r.ac_mode} ${ui().fmtNum(r.ac_setpoint, 1)} °C`);
+  lines.push(r.fog > 0 ? `Fogger level ${r.fog}` : 'Fogger off');
+  lines.push(r.air === 1 ? 'Air exchange On' : 'Air exchange Off');
+  lines.push(r.lights === 1 ? 'Lights on' : 'Lights off');
+  lines.push(r.circ === 1 ? 'Circulation fan on' : 'Circulation fan off');
+  if (Number.isFinite(r.power_w)) lines.push(`Power ${ui().watts(r.power_w)}`);
+  return lines;
+}
+
+function programText(live) {
+  if (!live || !live.crop) return '';
+  const CC = global.ClimateController;
+  const crop = CC.CROPS[live.crop] ? CC.CROPS[live.crop].name : live.crop;
+  const stage = CC.STAGES[live.stage] ?? live.stage;
+  return `Running now: ${crop} · ${stage}` + (live.flush != null ? ` · flush ${live.flush}` : '');
+}
+
+const helpers = { airLive, airSub, windowQuery, gapFor, reconnectQuery, chartTargets, toChartPoint, retarget, mergePoints,
+  readingTexts, machineLines, programText };
 const todo = name => () => { throw new Error(`${name} is not built yet`); };
-for (const n of ['mergeEvent', 'readingTexts', 'machineLines', 'commandFromReading', 'programText', 'alarmTexts', 'detailChanges',
+for (const n of ['mergeEvent', 'commandFromReading', 'alarmTexts', 'detailChanges',
   'countText', 'changeLines', 'versionText', 'rebase']) helpers[n] = todo(n);
 
 function mount() {}

@@ -118,3 +118,15 @@ test('LV7 chart points', () => {
   assert.deepEqual(H.mergePoints(base, { t: 5 }, 20).map(x => x.t), [40]);
   assert.deepEqual(base, bc);
 });
+
+test('LV8 reading, machine and program texts', () => {
+  assert.deepEqual(H.readingTexts(READING, clock), { T: '18.2 °C', RH: '88 % RH', CO2: '812 ppm', at: 'Reading at 2026-10-08 17:00:00' });
+  assert.deepEqual(H.readingTexts(null, clock), { T: '—', RH: '—', CO2: '—', at: 'No reading yet' });
+  assert.deepEqual(H.machineLines(READING), ['AC Cool 17.5 °C', 'Fogger level 1', 'Air exchange Off', 'Lights on', 'Circulation fan off', 'Power 1.43 kW']);
+  assert.deepEqual(H.machineLines({ ...READING, ac_mode: 'off', ac_setpoint: null, fog: 0, air: 1, lights: 0, circ: 1, power_w: null }),
+    ['AC off', 'Fogger off', 'Air exchange On', 'Lights off', 'Circulation fan on']);
+  assert.deepEqual(H.machineLines(null), []);
+  assert.equal(H.programText({ crop: 'oyster', stage: 'fruiting', flush: 2 }), 'Running now: Grey oyster · Fruiting · flush 2');
+  assert.equal(H.programText({ crop: 'oyster', stage: 'fruiting', flush: null }), 'Running now: Grey oyster · Fruiting');
+  assert.equal(H.programText(null), ''); assert.equal(H.programText({ crop: null }), '');
+});
