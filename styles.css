@@ -359,6 +359,7 @@ th:first-child, td:first-child { text-align: left; }
 .gl-row:last-child { border-bottom: 0; }
 .gl-k { font-size: 13px; color: var(--ink-2); }
 .gl-v { font: 500 16px var(--font-mono); }
+.gl-v.txt { font: 600 14px var(--font-cond); }
 .gl-ico { text-align: center; font-size: 13px; color: var(--lvl, var(--muted)); }
 .gl-spark { grid-column: 1 / -1; width: 100%; height: 30px; margin-top: 4px; overflow: visible; }
 .gl-band { fill: var(--band); }

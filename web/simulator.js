@@ -237,7 +237,7 @@ function updateUi() {
   UI.set('mimicNote', dist.join(' · '));
 
   const c = st.cmd, hold = (why, h) => (h ? `${why} ${h}` : why);
-  UI.set('acState', !c.ac.power ? 'Off' : `${AC_WORD[c.ac.mode]} · set ${c.ac.setpoint.toFixed(1)} °C${st.setbackOn ? ` (setback +${R.acSetbackC})` : ''}`);
+  UI.set('acState', !c.ac.power ? 'Off' : `${AC_WORD[c.ac.mode]} · set ${c.ac.setpoint.toFixed(1)} °C`);
   UI.set('acPower', UI.watts(v.power.ac));
   el.querySelector('#acMeter').style.width = `${UI.clamp(v.power.ac / 1400, 0, 1) * 100}%`;
   UI.set('acWhy', hold(st.why.ac, st.hold.ac));
@@ -245,10 +245,10 @@ function updateUi() {
   UI.set('huPower', UI.watts(v.power.hu));
   el.querySelector('#huMeter').style.width = `${c.hu.level / 3 * 100}%`;
   UI.set('huWhy', hold(st.why.hu, st.hold.hu));
-  UI.set('fanState', c.fan.level > 0 ? `${CC.MACHINES.fanLevels[c.fan.level]} · level ${c.fan.level} of 3` : 'Off');
-  UI.set('fanPower', UI.watts(v.power.fan));
-  el.querySelector('#fanMeter').style.width = `${c.fan.level / 3 * 100}%`;
-  UI.set('fanWhy', hold(st.why.fan, st.hold.fan));
+  const air = airText({ st, cur: ctl.purges().cur, rules: R, manual: cfg.manual.air, t: v.t });
+  UI.set('airState', air.state);
+  UI.set('airPower', UI.watts(v.power.air));
+  UI.set('airWhy', hold(st.why.air, st.hold.air));
   UI.set('liState', c.lights.on ? 'On' : 'Off'); UI.set('liPower', UI.watts(v.power.lights)); UI.set('liWhy', st.why.lights);
   UI.set('ciState', c.circ.on ? 'On' : 'Off'); UI.set('ciPower', UI.watts(v.power.circ)); UI.set('ciWhy', st.why.circ);
   const dd = Math.max(r.t, 3600) / 86400;
@@ -268,17 +268,19 @@ function updateUi() {
     el.querySelector('#e' + id + 'Bar').style.width = `${share * 100}%`;
   }
   const S = st.stats, perDay = n => (r.t >= 3600 ? ` (${Math.round(n / days)}/day)` : '');
-  UI.set('dFanOn', UI.fmtDur(S.fanOnS));
-  UI.set('dFanOnL', r.t > 0 ? `fan run time (${Math.round(S.fanOnS / r.t * 100)} %)` : 'fan run time');
-  UI.set('dFanStarts', String(S.fanStarts)); UI.set('dFanStartsL', `fan starts${perDay(S.fanStarts)}`);
-  UI.set('dSetback', UI.fmtDur(S.setbackS));
+  UI.set('dPurges', String(S.purges)); UI.set('dPurgesL', `purges${perDay(S.purges)}`);
+  UI.set('dPurgeAvg', S.purges ? UI.fmtMinSec(Math.round(S.purgeS / S.purges)) : '–');
+  UI.set('dPurgeMax', S.purges ? UI.fmtMinSec(Math.round(S.longestPurgeS)) : '–');
+  UI.set('dCapped', String(S.cappedPurges));
+  UI.set('dAirOn', UI.fmtDur(S.airOnS));
+  UI.set('dAirOnL', r.t > 0 ? `air exchange run time (${Math.round(S.airOnS / r.t * 100)} %)` : 'air exchange run time');
+  UI.set('dDelayed', UI.fmtDur(S.delayedS));
   UI.set('dAcCmds', String(S.acCmds)); UI.set('dAcCmdsL', `AC commands${perDay(S.acCmds)}`);
-  UI.set('dFanBlocked', UI.fmtDur(S.fanBlockedS));
   UI.set('dFogStarts', String(S.fogStarts)); UI.set('dFogStartsL', `fogger starts${perDay(S.fogStarts)}`);
   updateLadderLive();
   renderExhaust();
   paintProgram();
-  paintGlance(list, tot, days);
+  paintGlance(list, tot, days, air);
 
   if (logDirty) renderLog();
 }
@@ -353,18 +355,9 @@ function renderExhaust() {
 // ---------------- Ladder (rules-side panel slot) ----------------
 function updateLadderLive() {
   if (!ladder) return;
-  const st = ctl.state, c = st.cmd, co2 = reading.CO2;
+  const st = ctl.state, co2 = reading.CO2;
   const ok = Number.isFinite(co2) && !st.f.CO2;
-  const chips = {
-    fan: st.fanBlocked ? { lvl: 'info', icon: '❚❚', text: 'Held (RH)' }
-      : c.fan.level > 0 ? { lvl: 'info', icon: '●', text: st.co2Timed ? 'Timed purge' : st.fanReason === 'CO₂ purge' ? 'Purging' : 'Running' }
-      : { lvl: 'none', icon: '○', text: 'Off' },
-    ac: !cfg.rules.acPurge ? { lvl: 'none', icon: '–', text: 'No rule' }
-      : st.setbackOn ? { lvl: 'info', icon: '▲', text: cfg.rules.acAction === 'off' ? 'AC off' : `+${cfg.rules.acSetbackC} °C` }
-      : st.setbackReq && (st.setbackAlarmStop || st.setbackTimeStop) ? { lvl: 'info', icon: '!', text: 'Cancelled' }
-      : { lvl: 'none', icon: '○', text: 'Normal' },
-  };
-  ladder.draw(cfg, ok ? co2 : NaN, chips);
+  ladder.draw(cfg, ok ? co2 : NaN, { air: airText({ st, cur: ctl.purges().cur, rules: cfg.rules, manual: cfg.manual.air, t: reading.t }).chip });
 }
 
 // ---------------- Stage program / crop check ----------------
@@ -429,7 +422,7 @@ function spark(id, key, lo, hi) {
   band.setAttribute('y', top); band.setAttribute('height', Math.max(0, bot - top));
   g.querySelector('.gl-line').setAttribute('d', use.length > 1 ? 'M' + use.map(p => `${x(p.t)} ${y(p[key])}`).join(' L') : '');
 }
-function paintGlance(alarms, kwhTot, days) {
+function paintGlance(alarms, kwhTot, days, air) {
   const r = reading, st = ctl.state, P = ctl.programStatus(r.t), H = cfg.program.harvest, B = CC.BANDS;
   UI.set('glCrop', `${CC.CROPS[cfg.crop].name} · ${CC.STAGES[cfg.stage]}`);
   UI.set('glStage', [P.days && `Day ${P.day} of ${P.days}`, (cfg.stage === 'fruiting' || cfg.stage === 'rest') && `flush ${P.flush} of ${P.flushes}`, P.done && 'last flush done'].filter(Boolean).join(' · '));
@@ -464,7 +457,9 @@ function paintGlance(alarms, kwhTot, days) {
   UI.set('glEnergy', full ? `${perDay(kwhTot).toFixed(1)} kWh` : '–');
   UI.set('glCost', full ? `RM ${(perDay(kwhTot) * input.tariff).toFixed(2)}` : '–');
   UI.set('glWater', full ? `${perDay(r.water.fogKg).toFixed(1)} L` : '–');
-  UI.set('glFan', r.t > 0 ? `${Math.round(st.stats.fanOnS / r.t * 100)} % of the time` : '–');
+  UI.set('glAirNow', air.glance);
+  const S = st.stats;
+  UI.set('glPurges', full ? `Purges ${Math.round(perDay(S.purges))} · average ${S.purges ? UI.fmtMinSec(Math.round(S.purgeS / S.purges)) : '–'}` : '–');
   const act = alarms.filter(a => a.active);
   const host = el.querySelector('#glAlarms'), akey = act.map(a => a.id).join('|') || 'none';
   if (host.dataset.key !== akey) {
@@ -707,15 +702,16 @@ function airText({ st, cur, rules, manual = { auto: true, on: false }, t }) {
   return { state: `Idle · purge in about ${m} min`, glance: `Next purge in about ${m} min`, chip };
 }
 
-// C5 1.4 "Today's ids stay": today's faceplate heading ids are fpAcTitle, fpHuTitle, fpFanTitle, fpLiTitle,
-// fpCiTitle (not a lowercase device name), so faceplate() maps dev to that suffix when building the id.
-const FP_ID_SUFFIX = { ac: 'Ac', hu: 'Hu', fan: 'Fan', lights: 'Li', circ: 'Ci' };
+// C5 1.4 "Today's ids stay": today's faceplate heading ids are fpAcTitle, fpHuTitle, fpLiTitle, fpCiTitle (not a
+// lowercase device name), so faceplate() maps dev to that suffix; the air exchange is fpAirTitle (C9 7). The tag gets
+// the id fp<suffix>Tag, so a size change can repaint it.
+const FP_ID_SUFFIX = { ac: 'Ac', hu: 'Hu', air: 'Air', lights: 'Li', circ: 'Ci' };
 function faceplate(dev, title, tag, extraClass, body) {
-  const titleId = `fp${FP_ID_SUFFIX[dev]}Title`;
-  return `<article class="card faceplate${extraClass ? ' ' + extraClass : ''}" style="--key:var(--s-${dev === 'lights' ? 'li' : dev === 'circ' ? 'ci' : dev})" aria-labelledby="${titleId}">
+  const id = FP_ID_SUFFIX[dev];
+  return `<article class="card faceplate${extraClass ? ' ' + extraClass : ''}" style="--key:var(--s-${dev === 'lights' ? 'li' : dev === 'circ' ? 'ci' : dev})" aria-labelledby="fp${id}Title">
     <header class="fp-head">
       <span class="key"></span>
-      <div><h3 id="${titleId}">${title}</h3><span class="tag">${tag}</span></div>
+      <div><h3 id="fp${id}Title">${title}</h3><span class="tag" id="fp${id}Tag">${tag}</span></div>
     </header>
     ${body}
   </article>`;
@@ -768,6 +764,7 @@ const MARKUP = `
       <div class="gl-row" id="glC"><span class="gl-k">CO₂</span><b class="gl-v">--</b><span class="gl-ico"></span>
         <svg class="gl-spark" viewBox="0 0 200 32" preserveAspectRatio="none" aria-hidden="true"><rect class="gl-band" x="0" width="200"/><path class="gl-line"/></svg>
         <span class="gl-t"></span></div>
+      <div class="gl-row" id="glAir"><span class="gl-k">Air exchange</span><b class="gl-v txt" id="glAirNow">Idle</b><span class="gl-ico" aria-hidden="true"></span></div>
       </section>
       <section>
         <h3 class="eyebrow">Per day</h3>
@@ -775,7 +772,7 @@ const MARKUP = `
           <dt>Energy</dt><dd id="glEnergy">–</dd>
           <dt>Cost</dt><dd id="glCost">–</dd>
           <dt>Fog water</dt><dd id="glWater">–</dd>
-          <dt>Fan runs</dt><dd id="glFan">–</dd>
+          <dt>Air exchange</dt><dd id="glPurges">–</dd>
         </dl>
       </section>
       <section>
@@ -932,10 +929,9 @@ ${faceplate('hu', 'Fogger', 'HU-202 · 3 levels', '', `
     <div class="fp-state"><span class="state" id="huState">Off</span><span class="pw" id="huPower">2 W</span></div>
     <div class="meter" aria-hidden="true"><span id="huMeter"></span></div>
     <p class="why" id="huWhy"></p>`)}
-${faceplate('fan', 'Exhaust fan', 'EF-203 · 3 levels', '', `
-    <div class="fp-state"><span class="state" id="fanState">Off</span><span class="pw" id="fanPower">0 W</span></div>
-    <div class="meter" aria-hidden="true"><span id="fanMeter"></span></div>
-    <p class="why" id="fanWhy"></p>`)}
+${faceplate('air', 'Air exchange', 'SF-203 + EF-206 · 1,800 m³/h', '', `
+    <div class="fp-state"><span class="state" id="airState">Idle</span><span class="pw" id="airPower">0 W</span></div>
+    <p class="why" id="airWhy"></p>`)}
 ${faceplate('lights', 'Lights', 'LT-204 · 80 W', 'small', `
     <div class="fp-state"><span class="state" id="liState">Off</span><span class="pw" id="liPower">0 W</span></div>
     <p class="why" id="liWhy"></p>`)}
@@ -1200,11 +1196,13 @@ function wire() {
   note.textContent = 'Solid: the rule acts. Hatched: the machine keeps its last state. Black line: CO₂ now. Dashed lines: CO₂ limit, and the safety level (red).';
   const duty = document.createElement('div'); duty.className = 'duty';
   duty.innerHTML = `
-    <div><span class="num" id="dFanOn">0 min</span><span class="lbl" id="dFanOnL">fan run time</span></div>
-    <div><span class="num" id="dFanStarts">0</span><span class="lbl" id="dFanStartsL">fan starts</span></div>
-    <div class="inst"><span class="num" id="dSetback">0 min</span><span class="lbl">AC setback time</span></div>
+    <div><span class="num" id="dPurges">0</span><span class="lbl" id="dPurgesL">purges</span></div>
+    <div><span class="num" id="dPurgeAvg">–</span><span class="lbl">average purge (min:s)</span></div>
+    <div><span class="num" id="dPurgeMax">–</span><span class="lbl">longest purge (min:s)</span></div>
+    <div><span class="num" id="dCapped">0</span><span class="lbl">purges stopped at the time cap</span></div>
+    <div><span class="num" id="dAirOn">0 min</span><span class="lbl" id="dAirOnL">air exchange run time</span></div>
+    <div><span class="num" id="dDelayed">0 min</span><span class="lbl">purges delayed by humidity</span></div>
     <div class="inst"><span class="num" id="dAcCmds">0</span><span class="lbl" id="dAcCmdsL">AC commands</span></div>
-    <div><span class="num" id="dFanBlocked">0 min</span><span class="lbl">fan stopped by humidity</span></div>
     <div class="inst"><span class="num" id="dFogStarts">0</span><span class="lbl" id="dFogStartsL">fogger starts</span></div>`;
   rulesSide.append(note, duty);
   ladder = global.FarmCharts.createLadder(ladderHost);
