@@ -13,8 +13,8 @@ require('../web/api.js');
 require('../web/charts.js');
 require('../web/settings-panel.js');
 require('../web/shell.js');
-require('../web/simulator.js');
-const SIM = globalThis.ClimateSim, { mimicLayout } = globalThis.FarmBench;
+const { mimicLayout } = require('../web/simulator.js');
+const SIM = globalThis.ClimateSim;
 
 const INTAKE = { kind: 'fan', tag: 'SF-203', label: 'Filtered intake' };
 const EXHAUST = { kind: 'fan', tag: 'EF-206', label: 'Exhaust' };

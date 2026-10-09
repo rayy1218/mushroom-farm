@@ -1,8 +1,6 @@
 // web/simulator.js: createRoomLink, the Test bench's Load / Save settings to a room (docs/contracts/web.md C5 7.8).
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
 require('../sim.js');
 require('../air.js');
 require('../controller.js');
@@ -45,9 +43,8 @@ async function setup(fn) {
   finally { await fake.close(); }
 }
 
-test('T1 the requires succeed and the bench is kept', () => {
+test('T1 the requires succeed', () => {
   assert.equal(typeof createRoomLink, 'function');
-  assert.ok(globalThis.FarmBench);
 });
 
 test('L1 same settings: no dialog', () => setup(async ({ fake, cfg, link, calls, events, api }) => {
@@ -269,7 +266,7 @@ test('C4 after dispose nothing runs', () => setup(async ({ link, api }) => {
 
 test('RL1 the Node export', () => {
   assert.deepEqual(Object.keys(require('../web/simulator.js')).sort(), ['airText', 'createRoomLink', 'mimicLayout']);
-  assert.equal(mimicLayout, globalThis.FarmBench.mimicLayout);
+  assert.equal(globalThis.FarmBench, undefined);
   assert.equal(mimicLayout({ inletAt: 'high', exhaustAt: 'low' }).inlet.tag, 'SF-203');
   assert.equal(typeof airText, 'function');
 });
@@ -287,9 +284,3 @@ test('RL2 a loaded air size is a change', () => setup(async ({ fake, cfg, link, 
     assert.equal(c[0].old, 1800); assert.equal(c[0].new, 900);
   }
 }));
-
-test('RL3 the calibration event text', () => {
-  const src = fs.readFileSync(path.join(__dirname, '../web/simulator.js'), 'utf8');
-  assert.ok(src.includes('Simulation calibrated: heat through walls and roof ${'));
-  assert.ok(!src.includes('heat loss ${'));
-});

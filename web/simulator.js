@@ -9,7 +9,6 @@ const PL = SIM.PLANT;
 let env = null, cfg = null, input = null;
 let sim = null, ctl = null, io = null, rt = null, reading = null, cmd = null;
 let samples = [], events = [];
-let calApplied = null;
 let blockFollow = true;
 const MAX_SAMPLES = 40000;
 
@@ -1425,27 +1424,6 @@ function unmount() {
   el = null;
 }
 
-// ---------------- FarmBench: wave 1 bridge (3.5) ----------------
-const FarmBench = {
-  get env() { ensureState(); return env; },
-  get cfg() { ensureState(); return cfg; },
-  get tariff() { ensureState(); return input.tariff; },
-  get calApplied() { return calApplied; },
-  mimicLayout,
-  applyCalib(params, rmse) {
-    ensureState();
-    env.room = { ...(env.room || {}), ua: params.ua, infAch: params.infAch, moistBuffer: params.moistBuffer };
-    env.co2PerBlock = Math.round(params.co2PerBlock);
-    calApplied = { ua: params.ua, infAch: params.infAch, moistBuffer: params.moistBuffer, co2PerBlock: env.co2PerBlock, rmse, date: new Date().toISOString() };
-    onEvent({ t: reading ? reading.t : 0, lvl: 'info', text: `Simulation calibrated: heat through walls and roof ${params.ua.toFixed(0)} W/K, leakage ${params.infAch.toFixed(2)}/h, moisture buffer ${params.moistBuffer.toFixed(1)}, CO₂ ${env.co2PerBlock} mL/h per block` });
-    if (mounted && el) {
-      const inPerBlock = el.querySelector('#inPerBlock');
-      if (inPerBlock) { inPerBlock.value = env.co2PerBlock; paintBlocks(); }
-    }
-  },
-};
-
-global.FarmBench = FarmBench;
 global.FarmShell.register('simulator', { mount, unmount });
 
 // Node only (tests/web-air.test.js, tests/web-room-link.test.js); adds no browser global.

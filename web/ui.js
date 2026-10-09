@@ -67,7 +67,8 @@ function farmClock() {
 
 function errorText(err) {
   if (err && err.name === 'ApiError') {
-    return (err.details && err.details.length) ? `${err.error}: ${err.details.join('; ')}` : err.error;
+    if (!(err.details && err.details.length)) return err.error;
+    return `${err.error}${/[.!?]$/.test(err.error) ? ' ' : ': '}${err.details.join('; ')}`;
   }
   return err.message;
 }
