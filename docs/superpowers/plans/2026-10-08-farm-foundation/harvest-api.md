@@ -1,10 +1,10 @@
 # Work brief: Wave 2, Harvest API stream (C10 revision 2): `server/harvest-api.js` and `tests/harvest-api.test.js`
 
-Revision 0, 2026-10-09 (C10 revision 2, C3 revision 9, C1 revision 6; `master` after prep 2.0). Change log in section 11. Stream: **Harvest API** (wave 2). You are the implementer; reviewers check the work before the lead merges it.
+Revision 1, 2026-10-09 (C10 revision 2, C3 revision 9, C1 revision 6, lead decision 74; `master` after prep 2.0). Change log in section 11. Stream: **Harvest API** (wave 2). You are the implementer; reviewers check the work before the lead merges it.
 
 | Binding source, in this order | Path | What it settles |
 |---|---|---|
-| Lead decisions 59–68 | `docs/contracts/LEAD-DECISIONS.md` | They override this brief and the contracts (62 extra routes, 63 no 409, 64 check order, 67 today, 68 archived and cleared) |
+| Lead decisions 59–68 and 74 | `docs/contracts/LEAD-DECISIONS.md` | They override this brief and the contracts (62 extra routes, 63 no 409, 64 check order, 67 today, 68 archived and cleared; 74, added on `master` after the wave 2 freeze, makes the rules of section 4.4 binding: 9.4 whenever `placed_at` is set, the flush of 9.9, the 9.5 / 9.6 body texts and explicit `null`, the id check by `HttpError(404)` before the body rules, the test file header) |
 | C10 revision 2 (batches and harvest) | `docs/contracts/harvest.md` | Sections 2, 4, 5.2, 5.4, 6, 7, 8.1–8.3, 9, 13 (row `tests/harvest-api.test.js`) |
 | C3 revision 9 (HTTP API) | `docs/contracts/api.md` | Section 1 (status codes, ids, trimming style), 2.1 (the `ExtraRoute` table: match order, `needsRoom`, `hasBody`, `run(ctx)`, fault handling; the module table row `server/harvest-api.js`), 4 (error body, check order of an extra route), 4.1 (C10 rows of the mapping), 4.2 (database errors stop the server) |
 | C1 revision 6 | `docs/contracts/db.md` | 6.1 (`NotFoundError`, node:sqlite error shape and codes); 7 (row `server/harvest-api.js`: `getRoom` only) |
@@ -266,3 +266,4 @@ Run one file with `node --disable-warning=ExperimentalWarning --test tests/harve
 | Revision | Date | Changes |
 |---|---|---|
 | 0 | 2026-10-09 | First brief, from C10 revision 2, C3 revision 9, C1 revision 6, lead decisions 59–68 and the wave 2 plan (prep 2.0 step 6, harvest plan task 0.5) |
+| 1 | 2026-10-09 | Lead decision 74 cited: the section 4.4 rules are binding |

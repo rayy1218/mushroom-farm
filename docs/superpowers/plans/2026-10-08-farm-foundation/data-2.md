@@ -1,10 +1,10 @@
 # Work brief: Wave 2, Data 2 stream (C1 revision 6): `server/db.js` and `tests/db.test.js`
 
-Revision 1, 2026-10-09 (C1 revision 6, lead decision 71, C10 revision 2, `master` after prep 2.0). Stream: **Data 2** (wave 2). You are the implementer; reviewers check the work before the lead merges it at gate 2.5.
+Revision 2, 2026-10-09 (C1 revision 6, lead decisions 71, 73, 74, C10 revision 2, `master` after prep 2.0). Stream: **Data 2** (wave 2). You are the implementer; reviewers check the work before the lead merges it at gate 2.5.
 
 | Binding source, in this order | Path | What it settles |
 |---|---|---|
-| Lead decisions 1–71 (here mainly 3, 18, 20, 23, 30, 33, 39, 50, 52, 54, 59, 61, 71; 70 and 71 were added on `master` after the wave 2 freeze, read them there) | `docs/contracts/LEAD-DECISIONS.md` | They override the contracts and this brief |
+| Lead decisions 1–74 (here mainly 3, 18, 20, 23, 30, 33, 39, 50, 52, 54, 59, 61, 71, 73, 74; 70–74 were added on `master` after the wave 2 freeze, read them there; lead decision 74 records the open points this brief settles as binding) | `docs/contracts/LEAD-DECISIONS.md` | They override the contracts and this brief |
 | C1 revision 6 (database) | `docs/contracts/db.md` | Everything you build: sections 1, 2.2, 3, 4.2, 4.4, 4.5, 5, 6.1–6.14, 8, 9.2 |
 | C10 revision 2, sections 3 and 14 (C1 rows) | `docs/contracts/harvest.md` | Upgrade 4 and `db.sqlite` |
 | C9 revision 2, sections 6.1, 6.2 (read only) | `docs/contracts/air.md` | Upgrade 2 (on `master`; you do not change it) |
@@ -108,7 +108,7 @@ Read C1 completely before task 1.
 | New factory `equipment(over)` | `Object.assign({ ac_hp: 2.5, ac_units: 1, fog_lph: 3, air_m3h: 1800, walls: null, roof: null, height: 3 }, over)` |
 | New helper `writeVersion2File(file)` | Raw `DatabaseSync` (not `openDb`, which prepares the statements of the current schema): `PRAGMA foreign_keys = ON`; `CREATE TABLE schema_version …` (the C1 3 text); `exec(UPGRADES[0].sql)`; `exec(UPGRADES[1].sql)`; rows `(1, T0 − 86400)` and `(2, T0 − 3600)`; then by SQL one room (`INSERT INTO rooms (id, name, volume, adapter, created_at) VALUES (1, 'Room 1', 60, 'sim', T0 − 86400)`), one reading (15 version 2 columns, `air` 1) and one calibration (the 12 version 1 columns) |
 | Raw checks of `':memory:'` | A second connection cannot see an in-memory database; read it through `db.sqlite` (the same connection) |
-| Never assert in shared tests | Which row gives `ac_mode`, `kwh`, `ac_fan`, `stage` when two readings share a bucket's largest `t`; node:sqlite message texts; anything under "Not reproduced" in C1 9.2; the order of checks inside one error class beyond C1 6.14's "Order of the checks" and lead decision 71; `listSimulationRuns` with `before: 0` (C1 does not define it); an `updateSimulationRun` call that breaks a column rule on an unknown run (lead decision 71 puts the column rules first, but an `UPDATE` that matches no row checks no constraint in SQLite, so the real db answers `NotFoundError('simulation')` there: test the two rules apart, and report the case) |
+| Never assert in shared tests | Which row gives `ac_mode`, `kwh`, `ac_fan`, `stage` when two readings share a bucket's largest `t`; node:sqlite message texts; anything under "Not reproduced" in C1 9.2; the order of checks inside one error class beyond C1 6.14's "Order of the checks" and lead decision 71; `listSimulationRuns` with `before: 0` (C1 does not define it); `saveSimulationRun` with `inputs: null` or `result: null` (both stores keep the JSON text `'null'`, no 1299; C3 rejects such a body first; lead decision 73: no test asserts it); an `updateSimulationRun` call that breaks a column rule on an unknown run (lead decision 71 puts the column rules first, but an `UPDATE` that matches no row checks no constraint in SQLite, so the real db answers `NotFoundError('simulation')` there: test the two rules apart, and report the case) |
 | `K` | 3, the prep 2.0 skips found by the start check |
 
 ## 6. Tasks (TDD: write the test, run it and see it fail for the right reason, then build, then see it pass, then commit)
@@ -201,3 +201,4 @@ Run one file with `node --disable-warning=ExperimentalWarning --test tests/db.te
 |---|---|---|
 | 0 | 2026-10-09 | First brief: C1 revision 6 (upgrade 3 after C9's upgrade 2), C10 14 C1 rows (upgrade 4, `db.sqlite`, version 4), wave 2 plan Data 2 row |
 | 1 | 2026-10-09 | Lead decision 71: five task 5 tests (51 new registered tests); the prep 2.0 skips as step 2b made them (`both(name, fn, fakeSkip)`, three calls, `K` = 3, the reason text) |
+| 2 | 2026-10-09 | Lead decisions 73 (JSON `null` in simulation runs: never asserted) and 74 (the points this brief settles) cited; the prep 2.0 skips confirmed on `master` as the start check expects (`K` = 3) |

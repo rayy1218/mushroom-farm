@@ -1,10 +1,10 @@
-# Work brief: Wave 2, Docs stream (revision 1)
+# Work brief: Wave 2, Docs stream (revision 2)
 
 Date: 2026-10-09. Stream: **Docs** (wave 2). You are the implementer; reviewers check the work before the lead merges it. This revision replaces the brief of 2026-10-08 (revision 0, written before the room-centred app, C9 and C10).
 
 | Binding source, in this order | Path | What it settles |
 |---|---|---|
-| Lead decisions 1–69 (notably 20 Reading keys, 27 Live air, 35 air exchange size, 54 upgrade numbers, 55 C9, 59 C10 build, 66 bare layout, 67 farm time zone) | `docs/contracts/LEAD-DECISIONS.md` | They override everything below |
+| Lead decisions 1–74 (notably 20 Reading keys, 27 Live air, 35 air exchange size, 54 upgrade numbers, 55 C9, 59 C10 build, 66 bare layout, 67 farm time zone, 74 (added on `master` after the wave 2 freeze): T4 and T12 hold before and after the merges; the steady-fan findings of `docs/phase3-plan.md` are replaced by C9) | `docs/contracts/LEAD-DECISIONS.md` | They override everything below |
 | C1 revision 6 (database) | `docs/contracts/db.md` | Schema, upgrades 2, 3, 4 (sections 3, 4.3–4.5), the 18 Reading keys (6.2), what is stored (4.2) |
 | C2 revision 9 (room manager) | `docs/contracts/rooms.md` | Demo room, loop, state saves, crash and Restart, adapter (12.1, 12.2, 13) |
 | C3 and C4 revision 9 (HTTP API, live feed) | `docs/contracts/api.md` | Configuration, messages, service, shutdown (2.2), static files (9), live feed (10) |
@@ -333,3 +333,4 @@ Decisions this brief makes beyond the contracts (the lead may strike them before
 |---|---|---|
 | 0 | 2026-10-08 | First brief (wave 2 before the room-centred app, C9 and C10): T1–T9 |
 | 1 | 2026-10-09 | Rewritten on the frozen wave 2 contracts (C1 6, C2 9, C3 9, C5 8, C8 3, C9 2, C10 2; lead decisions 1–69): worktree and branch `stream/docs` after prep 2.0, Docs merges 9th in wave 3, `master` stays green (conditional checks); README menu Rooms · Batches · Test bench, the room tabs, simulation runs, the equipment check, the air exchange, What is stored with the 18 Reading keys, Database upgrades 2, 3, 4, Harvest stickers, `Environment=TZ=Asia/Kuala_Lumpur` in the unit, `Cannot open the harvest records:`; T7 with the adapter-factory arguments `{ room, calib: null, blocks: null, equipment: null, cfg, snapshot: null, now }` and no `vent`; new T10–T12; `docs/contract.md` power and run-time keys with `air`, `ac_fan` recorded, the `equipment` factory argument; phase3 note on 3.6 |
+| 2 | 2026-10-09 | Lead decision 74 cited (the points this brief settles) |

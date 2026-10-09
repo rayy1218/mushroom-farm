@@ -1,10 +1,10 @@
 # Work brief: Wave 2, Server 2 stream (C2 revision 9, C3/C4 revision 9)
 
-Revision 1, 2026-10-09 (wave 2 contracts frozen on `master` e60dabf, lead decision 69). Stream: **Server 2** (wave 2). You are the implementer; two reviewers check the work before the lead merges it at gate 2.5.
+Revision 2, 2026-10-09 (wave 2 contracts frozen on `master` e60dabf, lead decision 69; lead decisions 72 and 74 added later on `master`). Stream: **Server 2** (wave 2). You are the implementer; two reviewers check the work before the lead merges it at gate 2.5.
 
 | Binding source, in this order | Path | What it settles |
 |---|---|---|
-| Lead decisions 1–69 (for you mainly 6, 20, 21, 22, 27, 35, 48, 52, 56, 62, 63, 64) | `docs/contracts/LEAD-DECISIONS.md` | They override every contract and this brief |
+| Lead decisions 1–74 (for you mainly 6, 20, 21, 22, 27, 35, 48, 52, 56, 62, 63, 64, 72, 74; 70–74 were added on `master` after the wave 2 freeze, read them there; 72: the stub's `checkEquipment` details your `checkEquipmentBody` tests see, and `tests/equipment-stub.test.js` is the Equipment stream's to delete, not yours; lead decision 74 records the open points this brief settles as binding) | `docs/contracts/LEAD-DECISIONS.md` | They override every contract and this brief |
 | C3 and C4 revision 9 (HTTP API, live feed) | `docs/contracts/api.md` | `server/api.js`, `server/static.js`, `room-rules.js`, `tests/api.test.js`, `tests/room-rules.test.js` |
 | C2 revision 9 (room manager) | `docs/contracts/rooms.md` | `server/rooms.js`, `server/sim-adapter.js`, `tests/rooms.test.js` |
 | C1 revision 6 (database), through the fake only | `docs/contracts/db.md`, `tests/fakes/db.js` | The db calls and shapes (sections 6, 9) |
@@ -243,3 +243,4 @@ Read C3 and C2 completely before task 1.
 |---|---|---|
 | 0 | 2026-10-09 | First brief, from the frozen C2 revision 9, C3/C4 revision 9, C1 revision 6, C9 revision 2 (6.3), C10 revision 2 and the wave 2 plan (Server 2 row, prep 2.0 step 6) |
 | 1 | 2026-10-09 | The prep 2.0 skips as step 2b made them: "Recording" and "One reading shape" in `tests/rooms.test.js`, none in `tests/api.test.js`, the reason text, `P` = 2 |
+| 2 | 2026-10-09 | Lead decisions 72 (equipment stub details) and 74 (the points this brief settles) cited; the prep 2.0 skips confirmed on `master` as the start check expects (`P` = 2) |

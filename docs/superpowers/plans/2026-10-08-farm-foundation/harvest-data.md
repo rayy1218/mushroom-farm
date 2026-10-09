@@ -1,10 +1,10 @@
 # Work brief: Wave 2, Harvest data stream (C10 revision 2): `server/harvest-db.js` and `tests/harvest-db.test.js`
 
-Revision 1, 2026-10-09 (C10 revision 2, lead decision 70, C1 revision 6, wave 2 plan as frozen on `master` e60dabf). Stream: **Harvest data** (wave 2). You are the implementer; reviewers check the work before the lead merges it.
+Revision 2, 2026-10-09 (C10 revision 2, lead decisions 70 and 74, C1 revision 6, wave 2 plan as frozen on `master` e60dabf). Stream: **Harvest data** (wave 2). You are the implementer; reviewers check the work before the lead merges it.
 
 | Binding source, in this order | Path | What it settles |
 |---|---|---|
-| Lead decisions 59–68 and 70 (and 1–58 where they apply: 3 the error codes, 7 the fakes) | `docs/contracts/LEAD-DECISIONS.md` | They override this brief. Lead decision 70 was added on `master` after the wave 2 freeze: read it there (section 4.3 below repeats it) |
+| Lead decisions 59–68, 70 and 74 (and 1–58 where they apply: 3 the error codes, 7 the fakes) | `docs/contracts/LEAD-DECISIONS.md` | They override this brief. Lead decisions 70 and 74 were added on `master` after the wave 2 freeze: read them there (section 4.3 below repeats 70; lead decision 74 records the open points this brief settles as binding: unknown room id 999 only, 3091 on INTEGER columns only, the `openHarvest` option check by class, C10 5.2's open cases not asserted) |
 | C10 revision 2 (batches and harvest by room QR) | `docs/contracts/harvest.md` | Sections 1, 2, 3, 5.1–5.4, 13 (row `tests/harvest-db.test.js`) |
 | C1 revision 6 (database) | `docs/contracts/db.md` | Section 1 (general rules, which C10 5.1 applies to the store), 6.1 (errors and `errcode` values), 6.3 (`db.sqlite`), 9.2 (what a fake reproduces) |
 | Wave 2 plan | `docs/superpowers/plans/2026-10-08-farm-foundation/wave2-plan.md` | Sections 3 (Harvest data row), 3.1, 4 (stream rules), 5 step 3b (your merge) |
@@ -232,3 +232,4 @@ Run one file with `node --disable-warning=ExperimentalWarning --test tests/harve
 |---|---|---|
 | 0 | 2026-10-09 | First brief, from C10 revision 2 (sections 3, 5, 13), C1 revision 6 (1, 6.1, 6.3, 9.2), the wave 2 plan (3, 3.1, 4, 5 step 3b) and the harvest plan (task 0.5, Step 1) |
 | 1 | 2026-10-09 | Lead decision 70: section 4.3 and six shared tests (`placeBatch` batch before room, explicit `undefined` in `updateBatch`, `clearBatch(id, null)`, `undoCrate(id, null)`, a null or non-finite `listCrates` `from` with the `(? IS NULL OR t >= ?)` filter, `listBatches({ room_id })` in every state); 85 new tests |
+| 2 | 2026-10-09 | Lead decision 74 cited (the points this brief settles) |
