@@ -1642,6 +1642,84 @@ both('saveSimulationRun: a fractional blocks sum is 3091, a negative sum 275 (LD
 });
 
 // ---------------------------------------------------------------------------
+// Task 12b: Room equipment (C1 section 6.14)
+// ---------------------------------------------------------------------------
+
+const EQUIPMENT_KEYS = ['room_id', 'saved_at', 'ac_hp', 'ac_units', 'fog_lph', 'air_m3h', 'walls', 'roof', 'height'];
+
+both('getEquipment: null for a new room; save then get; a second save replaces', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  assert.equal(db.getEquipment(roomId), null);
+  const saved = db.saveEquipment(roomId, equipment());
+  assert.deepStrictEqual(Object.keys(saved), EQUIPMENT_KEYS);
+  assert.deepStrictEqual(saved, { room_id: roomId, saved_at: T0, ...equipment() });
+  assert.deepStrictEqual(db.getEquipment(roomId), saved);
+  const second = db.saveEquipment(roomId, equipment({ ac_hp: 3, at: T0 + 5, walls: 'pu50', roof: 'pu75' }));
+  assert.equal(second.ac_hp, 3);
+  assert.equal(second.saved_at, T0 + 5);
+  assert.equal(second.walls, 'pu50');
+  assert.equal(second.roof, 'pu75');
+  assert.deepStrictEqual(db.getEquipment(roomId), second);
+});
+
+both('saveEquipment: CHECK and type rules, nothing stored', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  const cases = [
+    [{ ac_hp: 1.25 }, 275],
+    [{ ac_units: 5 }, 275],
+    [{ air_m3h: 40 }, 275],
+    [{ air_m3h: 10001 }, 275],
+    [{ walls: 'pu50', roof: null }, 275],
+    [{ roof: 'brick115', walls: 'brick115' }, 275],
+    [{ ac_units: 1.5 }, 3091],
+    [{ ac_hp: 'x' }, 3091],
+    [{ air_m3h: 'x' }, 3091],
+  ];
+  for (const [over, code] of cases) {
+    assertSql(() => db.saveEquipment(roomId, equipment(over)), code);
+    assert.equal(db.getEquipment(roomId), null, JSON.stringify(over));
+  }
+  assert.equal(db.saveEquipment(roomId, equipment({ air_m3h: 50 })).air_m3h, 50);
+  assert.equal(db.saveEquipment(roomId, equipment({ air_m3h: 10000 })).air_m3h, 10000);
+});
+
+both('saveEquipment: fan_m3h is an unknown field', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  const old = equipment({ fan_m3h: 900 });
+  delete old.air_m3h;
+  assert.throws(() => db.saveEquipment(roomId, old), { name: 'TypeError', message: 'saveEquipment: unknown field "fan_m3h"' });
+  assert.equal(db.getEquipment(roomId), null);
+});
+
+both('saveEquipment: missing field message and order', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  const noHeight = equipment();
+  delete noHeight.height;
+  assert.throws(() => db.saveEquipment(roomId, noHeight), { name: 'TypeError', message: 'saveEquipment: missing field "height"' });
+  assert.equal(db.getEquipment(roomId), null);
+  assert.throws(() => db.saveEquipment(roomId, equipment({ height: undefined })), { name: 'TypeError', message: 'saveEquipment: missing field "height"' });
+  assert.equal(db.getEquipment(roomId), null);
+  const two = equipment();
+  delete two.fog_lph;
+  delete two.height;
+  assert.throws(() => db.saveEquipment(roomId, two), { name: 'TypeError', message: 'saveEquipment: missing field "fog_lph"' });
+  assert.equal(db.getEquipment(roomId), null);
+  assertNotFound(() => db.saveEquipment(999, noHeight), 'room', 999);
+  assert.equal(db.getEquipment(roomId), null);
+  const stored = db.saveEquipment(roomId, equipment({ walls: null, roof: null }));
+  assert.equal(stored.walls, null);
+  assert.equal(stored.roof, null);
+});
+
+// ---------------------------------------------------------------------------
 // Task 13: Sweeps
 // ---------------------------------------------------------------------------
 

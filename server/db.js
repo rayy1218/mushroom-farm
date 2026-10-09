@@ -843,6 +843,38 @@ function buildDb(conn, dbPath, version, now) {
     return row;
   }
 
+  // Room equipment (section 6.14)
+  const EQUIPMENT_FIELDS = ['ac_hp', 'ac_units', 'fog_lph', 'air_m3h', 'walls', 'roof', 'height'];
+  const getEquipmentStmt = conn.prepare('SELECT * FROM room_equipment WHERE room_id = :room_id');
+  const saveEquipmentStmt = conn.prepare(
+    'INSERT INTO room_equipment (room_id, saved_at, ac_hp, ac_units, fog_lph, air_m3h, walls, roof, height) ' +
+    'VALUES (:room_id, :saved_at, :ac_hp, :ac_units, :fog_lph, :air_m3h, :walls, :roof, :height) ' +
+    'ON CONFLICT (room_id) DO UPDATE SET saved_at = :saved_at, ac_hp = :ac_hp, ac_units = :ac_units, fog_lph = :fog_lph, ' +
+    'air_m3h = :air_m3h, walls = :walls, roof = :roof, height = :height'
+  );
+
+  function getEquipment(roomId) {
+    live();
+    roomCheck(roomId);
+    return plain(getEquipmentStmt.get({ room_id: roomId }));
+  }
+
+  function saveEquipment(roomId, eq) {
+    live();
+    roomCheck(roomId);
+    fields('saveEquipment', eq, EQUIPMENT_FIELDS.concat('at'));
+    const e = eq || {};
+    for (const key of EQUIPMENT_FIELDS) {
+      if (e[key] === undefined) throw new TypeError(`saveEquipment: missing field "${key}"`);
+    }
+    saveEquipmentStmt.run({
+      room_id: roomId, saved_at: val(e.at === undefined ? now() : e.at),
+      ac_hp: val(e.ac_hp), ac_units: val(e.ac_units), fog_lph: val(e.fog_lph), air_m3h: val(e.air_m3h),
+      walls: val(e.walls), roof: val(e.roof), height: val(e.height),
+    });
+    return plain(getEquipmentStmt.get({ room_id: roomId }));
+  }
+
   function listRooms(options) {
     live();
     fields('listRooms', options, ['includeArchived']);
@@ -895,6 +927,8 @@ function buildDb(conn, dbPath, version, now) {
     getSimulationRun,
     updateSimulationRun,
     deleteSimulationRun,
+    getEquipment,
+    saveEquipment,
   };
   // The connection for server/harvest-db.js (C1 6.3, lead decision 61): read only, closed only by close().
   Object.defineProperty(db, 'sqlite', { value: conn, enumerable: true, writable: false, configurable: false });
