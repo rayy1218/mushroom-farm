@@ -6,11 +6,13 @@
  *
  * The `check*` functions REJECT bad input: they return a list of problems, store nothing. Used by server/api.js.
  *
- * Load order (section 7.1): sim.js, controller.js, runtime.js, calib.js[, capacity.js], then this file.
+ * Load order (section 7.1): sim.js, air.js, controller.js, runtime.js, calib.js, capacity.js, cycle.js, equipment.js, then this file.
+ * ClimateEquipment is read only when a check function that needs it is called, so this file loads without cycle.js and equipment.js.
  */
 (function (global) {
   'use strict';
   const SIM = global.ClimateSim, CC = global.ClimateController, CAL = global.ClimateCalib;
+  const DESIGN_DAYS = global.ClimateCapacity.DESIGN_DAYS;
 
   const LIM = { blocks: 200000, volume: [5, 5000], co2: [1, 1000], name: 60 };
   const VERDICTS = ['impossible', 'too-dense', 'tight', 'good', 'too-empty'];
@@ -99,10 +101,160 @@
     return problems;
   }
 
+  // C3 7.7. ClimateEquipment is read here, at call time, never at load.
+  const EQUIPMENT_FIELDS = ['ac_hp', 'ac_units', 'fog_lph', 'air_m3h', 'walls', 'roof', 'height'];
+  function checkEquipmentBody(body) {
+    if (!isPlainObject(body)) return ['equipment: must be an object'];
+    const problems = [];
+    for (const k of EQUIPMENT_FIELDS) if (!Object.hasOwn(body, k)) problems.push(`${k}: missing`);
+    return problems.concat(global.ClimateEquipment.checkEquipment(body));
+  }
+
+  // ---- simulation runs (C3 7.6) ----
+
+  const isNumOrNull = v => v === null || Number.isFinite(v);
+  const checkNote = (note, field) => (
+    note === null || (typeof note === 'string' && note.trim().length <= 200) ? [] : [`${field}: must be null or a string of at most 200 characters after trimming`]);
+
+  function checkImpossible(result, field) {
+    const problems = [];
+    for (const k of Object.keys(result)) if (k !== 'verdict' && k !== 'why') problems.push(`${field}.${k}: unknown field`);
+    if (typeof result.why !== 'string') problems.push(`${field}.why: must be a string`);
+    return problems;
+  }
+
+  function checkCycleResult(result) {
+    if (result.verdict === 'impossible') return checkImpossible(result, 'result');
+    if (result.verdict !== 'ok') return ['result.verdict: must be ok or impossible'];
+    const problems = [];
+    const t = result.totals;
+    let days = null;
+    if (!isPlainObject(t)) problems.push('result.totals: must be an object');
+    else {
+      if (Number.isInteger(t.days) && t.days >= 1 && t.days <= 1300) days = t.days;
+      else problems.push('result.totals.days: must be an integer from 1 to 1300');
+      if (typeof t.pass !== 'boolean') problems.push('result.totals.pass: must be true or false');
+      for (const k of ['kwh', 'rm', 'rmPerBlock']) if (!isNumOrNull(t[k])) problems.push(`result.totals.${k}: must be a number or null`);
+    }
+    if (!(Array.isArray(result.stages) && result.stages.length > 0 && result.stages.every(isPlainObject))) {
+      problems.push('result.stages: must be a non-empty array of objects');
+    }
+    if (!Array.isArray(result.series)) problems.push('result.series: must be an array');
+    else if (days !== null) {
+      if (result.series.length !== days * 24) problems.push(`result.series: must have ${days * 24} elements`);
+      else if (!result.series.every((e, i) => isPlainObject(e) && e.h === i)) problems.push('result.series: element i must be an object with h equal to i');
+    }
+    return problems;
+  }
+
+  function checkEquipmentResult(result) {
+    if (result.verdict === 'impossible') return checkImpossible(result, 'result');
+    if (result.verdict !== 'ok') return ['result.verdict: must be ok or impossible'];
+    const problems = [];
+    if (!(isPlainObject(result.ac) && ['enough', 'too-small', 'too-big', 'oversized'].includes(result.ac.verdict))) {
+      problems.push('result.ac.verdict: must be enough, too-small, too-big or oversized');
+    }
+    const a = result.air;
+    if (!isPlainObject(a)) problems.push('result.air: must be an object');
+    else {
+      if (!['enough', 'too-small', 'not-the-fix', 'oversized'].includes(a.verdict)) {
+        problems.push('result.air.verdict: must be enough, too-small, not-the-fix or oversized');
+      }
+      for (const k of ['own', 'capS']) if (!Number.isFinite(a[k])) problems.push(`result.air.${k}: must be a number`);
+      if (!isNumOrNull(a.needM3h)) problems.push('result.air.needM3h: must be a number or null');
+      for (const k of ['recommended', 'margin', 'purgeS']) if (!isNumOrNull(a[k])) problems.push(`result.air.${k}: must be a number or null`);
+      if (!(typeof a.stage === 'string' && Object.hasOwn(CC.STAGES, a.stage))) problems.push('result.air.stage: must be a stage');
+      if (!(typeof a.text === 'string' && a.text !== '')) problems.push('result.air.text: must be a non-empty string');
+    }
+    if (!(Array.isArray(result.runs) && result.runs.length > 0 && result.runs.every(isPlainObject))) {
+      problems.push('result.runs: must be a non-empty array of objects');
+    }
+    if (!(Array.isArray(result.summary) && result.summary.length > 0 && result.summary.every(x => typeof x === 'string'))) {
+      problems.push('result.summary: must be a non-empty array of strings');
+    }
+    return problems;
+  }
+
+  function checkRunInputs(inp, kind, now) {
+    if (!isPlainObject(inp)) return ['inputs: must be an object'];
+    const problems = [];
+    const keys = ['mix', 'settings', 'region', 'tariff', 'volume', 'calibration', 'empty_below', 'equipment'];
+    for (const k of Object.keys(inp)) if (!keys.includes(k)) problems.push(`inputs.${k}: unknown field`);
+    for (const k of keys) if (!Object.hasOwn(inp, k)) problems.push(`inputs.${k}: missing`);
+    if (Object.hasOwn(inp, 'mix')) for (const p of checkMix(inp.mix)) problems.push(`inputs.${p}`);
+    if (Object.hasOwn(inp, 'settings') && !isPlainObject(inp.settings)) problems.push('inputs.settings: must be an object');
+    if (Object.hasOwn(inp, 'region') && !(typeof inp.region === 'string' && Object.hasOwn(DESIGN_DAYS, inp.region))) {
+      problems.push('inputs.region: must be a known region');
+    }
+    if (Object.hasOwn(inp, 'tariff') && !inRange(inp.tariff, 0, 10)) problems.push('inputs.tariff: must be a number from 0 to 10');
+    if (Object.hasOwn(inp, 'volume') && !inRange(inp.volume, ...LIM.volume)) {
+      problems.push(`inputs.volume: must be a number from ${LIM.volume[0]} to ${LIM.volume[1]}`);
+    }
+    if (Object.hasOwn(inp, 'calibration') && inp.calibration !== null) {
+      const c = inp.calibration;
+      if (!isPlainObject(c)) problems.push('inputs.calibration: must be null or an object');
+      else {
+        const ck = ['id', 'ua', 'inf_ach', 'moist_buffer', 'co2_per_block'];
+        for (const k of Object.keys(c)) if (!ck.includes(k)) problems.push(`inputs.calibration.${k}: unknown field`);
+        if (!(Number.isInteger(c.id) && c.id >= 1)) problems.push('inputs.calibration.id: must be a positive integer');
+        for (const [f, pk] of [['ua', 'ua'], ['inf_ach', 'infAch'], ['moist_buffer', 'moistBuffer'], ['co2_per_block', 'co2PerBlock']]) {
+          const P = CAL.PARAMS[pk];
+          if (!inRange(c[f], P.min, P.max)) problems.push(`inputs.calibration.${f}: must be a number from ${P.min} to ${P.max}`);
+        }
+      }
+    }
+    if (Object.hasOwn(inp, 'empty_below')) {
+      if (kind === 'capacity') {
+        if (!inRange(inp.empty_below, 0, 100)) problems.push('inputs.empty_below: must be a number from 0 to 100 for a capacity run');
+      } else if (kind === 'cycle' || kind === 'equipment') {
+        if (inp.empty_below !== null) problems.push('inputs.empty_below: must be null unless the run is a capacity run');
+      }
+    }
+    if (Object.hasOwn(inp, 'equipment')) {
+      if (inp.equipment === null) {
+        if (kind === 'equipment') problems.push('inputs.equipment: must not be null for an equipment run');
+      } else {
+        for (const p of checkEquipmentBody(inp.equipment)) problems.push(p === 'equipment: must be an object' ? 'inputs.equipment: must be an object' : `inputs.equipment.${p}`);
+      }
+    }
+    return problems;
+  }
+
+  function checkSimulationRun(body, now) {
+    if (!isPlainObject(body)) return ['body: must be an object'];
+    const problems = [];
+    for (const k of Object.keys(body)) if (!['kind', 'inputs', 'result', 'note'].includes(k)) problems.push(`${k}: unknown field`);
+    const kind = body.kind;
+    if (!['cycle', 'capacity', 'equipment'].includes(kind)) problems.push('kind: must be cycle, capacity or equipment');
+    if (!Object.hasOwn(body, 'inputs')) problems.push('inputs: missing');
+    else problems.push(...checkRunInputs(body.inputs, kind, now));
+    if (!Object.hasOwn(body, 'result')) problems.push('result: missing');
+    else if (!isPlainObject(body.result)) problems.push('result: must be an object');
+    else if (kind === 'cycle') problems.push(...checkCycleResult(body.result));
+    else if (kind === 'capacity') problems.push(...checkReport(body.result).map(p => `result.${p}`));
+    else if (kind === 'equipment') problems.push(...checkEquipmentResult(body.result));
+    if (Object.hasOwn(body, 'note') && body.note !== undefined) problems.push(...checkNote(body.note, 'note'));
+    return problems;
+  }
+
+  function checkRunPatch(body, now) {
+    if (!isPlainObject(body)) return ['body: must be an object'];
+    const problems = [];
+    for (const k of Object.keys(body)) if (k !== 'note' && k !== 'real_start') problems.push(`${k}: unknown field`);
+    if (!Object.hasOwn(body, 'note') && !Object.hasOwn(body, 'real_start')) problems.push('body: at least one of note and real_start is required');
+    if (Object.hasOwn(body, 'note')) problems.push(...checkNote(body.note, 'note'));
+    if (Object.hasOwn(body, 'real_start') && body.real_start !== null) {
+      if (!(Number.isInteger(body.real_start) && body.real_start >= 1 && body.real_start <= now + 366 * 86400)) {
+        problems.push(`real_start: must be null or an integer from 1 to ${now + 366 * 86400}`);
+      }
+    }
+    return problems;
+  }
+
   function checkCalibration(body, now) {
     const problems = [];
     if (!isPlainObject(body)) { problems.push('body: must be an object'); return problems; }
-    const allowed = ['ua', 'inf_ach', 'moist_buffer', 'co2_per_block', 'rmse_t', 'rmse_rh', 'rmse_co2', 'log_rows', 'run_at'];
+    const allowed = ['ua', 'inf_ach', 'moist_buffer', 'co2_per_block', 'rmse_t', 'rmse_rh', 'rmse_co2', 'log_rows', 'run_at', 'source', 'log_from', 'log_to', 'equipment'];
     for (const k of Object.keys(body)) {
       if (!allowed.includes(k)) problems.push(`${k}: unknown field`);
     }
@@ -130,6 +282,23 @@
         problems.push(`run_at: must be an integer from 1 to ${now + 60}`);
       }
     }
+    const given = k => Object.hasOwn(body, k) && body[k] !== null;
+    if (Object.hasOwn(body, 'source') && body.source !== null && !['csv', 'history', 'import'].includes(body.source)) {
+      problems.push('source: must be left out, null, csv, history or import');
+    }
+    const timeOk = v => Number.isInteger(v) && v >= 1 && v <= now + 60;
+    if (given('log_from') !== given('log_to')) {
+      problems.push(`${given('log_from') ? 'log_to' : 'log_from'}: is required together with ${given('log_from') ? 'log_from' : 'log_to'}`);
+    } else if (given('log_from')) {
+      if (!timeOk(body.log_from)) problems.push(`log_from: must be an integer from 1 to ${now + 60}`);
+      if (!timeOk(body.log_to)) problems.push(`log_to: must be an integer from 1 to ${now + 60}`);
+      if (timeOk(body.log_from) && timeOk(body.log_to) && body.log_from > body.log_to) problems.push('log_from: must be at most log_to');
+    } else if (body.source === 'history') {
+      problems.push('log_from: is required when source is history');
+    }
+    if (given('equipment')) {
+      for (const p of checkEquipmentBody(body.equipment)) problems.push(p === 'equipment: must be an object' ? p : `equipment.${p}`);
+    }
     return problems;
   }
 
@@ -149,6 +318,6 @@
   global.ClimateRoomRules = {
     LIM, VERDICTS, ALARM_KEYS,
     hasCrop, validCalib, normRoom,
-    checkRoom, checkMix, checkCalibration, checkReport,
+    checkRoom, checkMix, checkCalibration, checkReport, checkEquipmentBody, checkSimulationRun, checkRunPatch,
   };
 })(typeof window !== 'undefined' ? window : globalThis);

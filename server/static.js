@@ -14,6 +14,9 @@ const TOP_LEVEL = {
   '/capacity.js': { file: 'capacity.js', type: 'text/javascript; charset=utf-8' },
   '/calib.js': { file: 'calib.js', type: 'text/javascript; charset=utf-8' },
   '/room-rules.js': { file: 'room-rules.js', type: 'text/javascript; charset=utf-8' },
+  '/cycle.js': { file: 'cycle.js', type: 'text/javascript; charset=utf-8' },
+  '/equipment.js': { file: 'equipment.js', type: 'text/javascript; charset=utf-8' },
+  '/harvest-rules.js': { file: 'harvest-rules.js', type: 'text/javascript; charset=utf-8' },
 };
 
 const WEB_EXT_TYPES = {

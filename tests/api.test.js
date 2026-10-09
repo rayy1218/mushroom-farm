@@ -5,16 +5,21 @@ const http = require('node:http');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawn } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 
 const { openFakeDb } = require('../tests/fakes/db.js');
 const { createFakeRoomManager } = require('../tests/fakes/rooms.js');
 const { createApi } = require('../server/api.js');
 const { RoomError } = require('../server/rooms-common.js');
+const { NotFoundError } = require('../server/db-common.js');
+const { HttpError } = require('../server/api-common.js');
 
 require('../air.js');
 require('../sim.js');
 require('../controller.js');
+require('../capacity.js');
+require('../cycle.js');
+require('../equipment.js');
 
 let NOW = 1791450000;
 const now = () => NOW;
@@ -62,6 +67,9 @@ fs.writeFileSync(path.join(root, 'styles.css'), 'body{}');
 fs.writeFileSync(path.join(root, 'sim.js'), '// sim');
 fs.writeFileSync(path.join(root, 'air.js'), '// air');
 fs.writeFileSync(path.join(root, 'room-rules.js'), '// room-rules');
+fs.writeFileSync(path.join(root, 'cycle.js'), '// cycle');
+fs.writeFileSync(path.join(root, 'equipment.js'), '// equipment');
+fs.writeFileSync(path.join(root, 'harvest-rules.js'), '// harvest-rules');
 fs.mkdirSync(path.join(root, 'web', 'sub'), { recursive: true });
 fs.writeFileSync(path.join(root, 'web', 'a.js'), '// a');
 fs.writeFileSync(path.join(root, 'web', 'sub', 'b.css'), '/* b */');
@@ -98,6 +106,9 @@ describe('static files', () => {
       ['/sim.js?v=2', 'text/javascript; charset=utf-8'],
       ['/air.js', 'text/javascript; charset=utf-8'],
       ['/room-rules.js', 'text/javascript; charset=utf-8'],
+      ['/cycle.js', 'text/javascript; charset=utf-8'],
+      ['/equipment.js', 'text/javascript; charset=utf-8'],
+      ['/harvest-rules.js', 'text/javascript; charset=utf-8'],
       ['/web/a.js', 'text/javascript; charset=utf-8'],
       ['/web/sub/b.css', 'text/css; charset=utf-8'],
     ];
@@ -775,6 +786,93 @@ async function withReplaced(obj, method, impl, fn) {
   }
 }
 
+const READING_KEYS = ['room_id', 't', 'T', 'RH', 'CO2', 't_out', 'rh_out', 'ac_mode', 'ac_setpoint', 'fog', 'air', 'lights', 'circ', 'power_w', 'kwh', 'ac_fan', 'stage', 'core'];
+
+describe('revision 8 and 9 shapes: readings, rooms, calibrations (C3 3.1, 3.2, 6.8, 6.13)', () => {
+  let ctx;
+  test.before(async () => { ctx = startApi(); await ctx.ready; });
+  test.after(() => ctx.stop());
+  const post = (u, body) => fetch(u, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+
+  test('readings: 18 keys in order, air and no fan (C3 3.2)', async () => {
+    const id = seedRoom(ctx.db, 'K1');
+    ctx.db.insertReading(id, { ...reading(NOW), ac_fan: 'auto', stage: 'fruiting', core: 19.1 });
+    const rows = await (await fetch(`${ctx.url}/api/rooms/${id}/readings`)).json();
+    assert.equal(rows.length, 1);
+    assert.deepStrictEqual(Object.keys(rows[0]), READING_KEYS);
+    assert.equal(rows[0].air, 1);
+    assert.equal('fan' in rows[0], false);
+    assert.equal(rows[0].stage, 'fruiting');
+  });
+
+  test('rooms: no vent; vent gives Invalid room (C3 3.1, 7.2)', async () => {
+    const id = seedRoom(ctx.db, 'V1');
+    const list = await (await fetch(`${ctx.url}/api/rooms`)).json();
+    for (const room of list) assert.equal('vent' in room, false);
+    const before = ctx.rooms.calls.length;
+    const r1 = await post(`${ctx.url}/api/rooms`, { name: 'A', volume: 60, vent: 'supply' });
+    assert.equal(r1.status, 400);
+    const b1 = await r1.json();
+    assert.equal(b1.error, 'Invalid room');
+    assert.ok(b1.details.includes('vent: unknown field'));
+    const r2 = await fetch(`${ctx.url}/api/rooms/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ vent: 'supply' }) });
+    assert.equal(r2.status, 400);
+    const b2 = await r2.json();
+    assert.equal(b2.error, 'Invalid room');
+    assert.ok(b2.details.includes('vent: unknown field'));
+    assert.equal(ctx.rooms.calls.length, before);
+  });
+
+  test('rooms: live relays flush, blocks and air (C3 3.1)', async () => {
+    const id = seedRoom(ctx.db, 'L1');
+    const find = async () => (await (await fetch(`${ctx.url}/api/rooms`)).json()).find(r => r.id === id);
+    const first = await find();
+    assert.equal(first.live.flush, null);
+    assert.equal(first.live.blocks, null);
+    assert.equal(first.live.air, null);
+    const air = { on: true, state: 'purge', reason: 'co2', delayed: false, timed: true, manual: false, manualOn: false, nextPurgeS: null, purgeS: 40, why: 'x', today: { purges: 3, avgS: 60, capped: 0 } };
+    ctx.rooms.setLive(id, { flush: 2, blocks: 500, air });
+    const live = (await find()).live;
+    assert.equal(live.flush, 2);
+    assert.equal(live.blocks, 500);
+    assert.deepStrictEqual(live.air, air);
+  });
+
+  test('readings range: step 3600 over 400 days, step 600 over 40 days (C3 6.8)', async () => {
+    const id = seedRoom(ctx.db, 'G1');
+    const day = 86400;
+    const q = (days, step) => fetch(`${ctx.url}/api/rooms/${id}/readings?from=${NOW - days * day}&to=${NOW}&step=${step}`);
+    assert.equal((await q(400, 3600)).status, 200);
+    const r = await q(40, 600);
+    assert.equal(r.status, 400);
+    assert.equal((await r.json()).error, 'Invalid query');
+    assert.equal((await q(1300, 3600)).status, 200);
+    assert.equal((await q(1301, 3600)).status, 400);
+    assert.equal((await q(1301, 86400)).status, 400);
+    assert.equal((await q(31, 3599)).status, 200);
+    assert.equal((await q(32, 3599)).status, 400);
+  });
+
+  test('POST /calibrations: source, log_from, log_to, equipment (C3 6.13)', async () => {
+    const id = seedRoom(ctx.db, 'Q1');
+    const base = { ua: 92, inf_ach: 0.3, moist_buffer: 3, co2_per_block: 41, rmse_t: 0.2, rmse_rh: 1, rmse_co2: 10, log_rows: 100 };
+    const r1 = await post(`${ctx.url}/api/rooms/${id}/calibrations`, { ...base, source: 'history' });
+    assert.equal(r1.status, 400);
+    assert.equal((await r1.json()).error, 'Invalid calibration');
+    assert.equal(ctx.db.listCalibrations(id).length, 0);
+    const eq = { ac_hp: 2.5, ac_units: 1, fog_lph: 3, air_m3h: 1800, walls: null, roof: null, height: 3 };
+    const r2 = await post(`${ctx.url}/api/rooms/${id}/calibrations`, { ...base, source: 'history', log_from: NOW - 5000, log_to: NOW - 100, equipment: eq });
+    assert.equal(r2.status, 201);
+    const rows = await (await fetch(`${ctx.url}/api/rooms/${id}/calibrations`)).json();
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].source, 'history');
+    assert.equal(rows[0].log_from, NOW - 5000);
+    assert.equal(rows[0].log_to, NOW - 100);
+    assert.deepStrictEqual(rows[0].equipment, eq);
+    assert.equal(rows[0].equipment.air_m3h, 1800);
+  });
+});
+
 describe('error mapping and the database-error stop (4.4)', () => {
   let ctx, id;
   test.before(async () => { ctx = startApi(); await ctx.ready; id = seedRoom(ctx.db, 'E1'); });
@@ -904,6 +1002,28 @@ describe('error mapping and the database-error stop (4.4)', () => {
     }
   });
 
+  test('HttpError comes from server/api-common.js (C3 2.1)', async () => {
+    const source = fs.readFileSync(path.join(__dirname, '..', 'server', 'api.js'), 'utf8');
+    assert.ok(!source.includes('class HttpError'));
+    assert.ok(!source.includes('errorText'));
+    await withReplaced(ctx.rooms, 'list', () => { throw new HttpError(400, 'Invalid thing', ['x: bad']); }, async () => {
+      const r = await fetch(`${ctx.url}/api/rooms`);
+      assert.equal(r.status, 400);
+      assert.deepStrictEqual(await r.json(), { error: 'Invalid thing', details: ['x: bad'] });
+      assert.equal(ctx.fatals.length, 0);
+    });
+  });
+
+  test('error mapping: NotFoundError simulation, batch, crate (C3 4.1)', async () => {
+    for (const [what, text] of [['simulation', 'Unknown simulation run'], ['batch', 'Unknown batch'], ['crate', 'Unknown crate']]) {
+      await withReplaced(ctx.rooms, 'list', () => { throw new NotFoundError(what, 7); }, async () => {
+        const r = await fetch(`${ctx.url}/api/rooms`);
+        assert.equal(r.status, 404);
+        assert.deepStrictEqual(await r.json(), { error: text, details: [] });
+      });
+    }
+  });
+
   test('db.currentSettings RangeError -> 500 Server fault', async () => {
     await withReplaced(ctx.db, 'currentSettings', () => { throw new RangeError('x'); }, async () => {
       const r = await fetch(`${ctx.url}/api/rooms/${id}/settings`);
@@ -971,6 +1091,461 @@ describe('error mapping and the database-error stop (4.4)', () => {
       assert.deepStrictEqual((await r.json()).details, ['x']);
       assert.equal(ctx.fatals.length, before);
     });
+  });
+});
+
+// ---- simulation runs and equipment (C3 6.20-6.26) ----
+
+const CC = globalThis.ClimateController;
+const EQ = globalThis.ClimateEquipment;
+const send = (url, method, body) => fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: typeof body === 'string' ? body : JSON.stringify(body) });
+
+function runInputs(over = {}) {
+  return { mix: [{ crop: 'oyster', blocks: 2000, co2_per_block: null }], settings: CC.defaultSettings(), region: 'my-lowland', tariff: 0.57, volume: 60, calibration: null, empty_below: null, equipment: null, ...over };
+}
+function cycleResult(pass = true) {
+  return { verdict: 'ok', totals: { days: 1, pass, kwh: 10, rm: 5.7, rmPerBlock: 0.003 }, stages: [{ stage: 'fruiting' }], series: Array.from({ length: 24 }, (_, h) => ({ h })) };
+}
+const cycleRun = (over = {}) => ({ kind: 'cycle', inputs: runInputs(), result: cycleResult(), ...over });
+function eqReport() {
+  return {
+    verdict: 'ok', ac: { verdict: 'too-small' },
+    air: { verdict: 'enough', own: 1800, capS: 180, needM3h: 800, recommended: null, margin: null, purgeS: 69, stage: 'pinning', text: 'Your 1,800 m³/h air exchange is enough: a purge takes at most 1.2 min (pinning), the limit is 3 min.' },
+    runs: [{ kind: 'ac', ac_hp: 1 }], summary: ['x'],
+  };
+}
+
+describe('simulation runs 6.20-6.24', () => {
+  let ctx;
+  test.before(async () => { ctx = startApi(); await ctx.ready; });
+  test.after(() => ctx.stop());
+
+  test('simulation runs: create, list, get, patch, delete (C3 6.20-6.24)', async () => {
+    const id = seedRoom(ctx.db, 'S1');
+    const base = `${ctx.url}/api/rooms/${id}/simulations`;
+    const r1 = await send(base, 'POST', cycleRun({ note: '  x  ' }));
+    assert.equal(r1.status, 201);
+    assert.equal(r1.headers.get('cache-control'), 'no-store');
+    const info1 = await r1.json();
+    assert.equal('result' in info1, false);
+    assert.equal(info1.kind, 'cycle');
+    assert.equal(info1.verdict, 'pass');
+    assert.equal(info1.blocks, 2000);
+    assert.equal(info1.days, 1);
+    assert.equal(info1.note, 'x');
+    assert.equal(info1.room_id, id);
+    const info2 = await (await send(base, 'POST', cycleRun({ note: '  ' }))).json();
+    assert.equal(info2.note, null);
+    const info3 = await (await send(base, 'POST', cycleRun())).json();
+    assert.equal(info3.note, null);
+
+    const list = await (await fetch(base)).json();
+    assert.deepStrictEqual(list.map(r => r.id), [info3.id, info2.id, info1.id]);
+    for (const row of list) assert.equal('result' in row, false);
+    const page = await (await fetch(`${base}?limit=1`)).json();
+    assert.deepStrictEqual(page.map(r => r.id), [info3.id]);
+    const page2 = await (await fetch(`${base}?limit=2&before=${info3.id}`)).json();
+    assert.deepStrictEqual(page2.map(r => r.id), [info2.id, info1.id]);
+
+    const full = await (await fetch(`${base}/${info1.id}`)).json();
+    assert.deepStrictEqual(full.result, cycleResult());
+    assert.equal(full.id, info1.id);
+
+    const rp = await send(`${base}/${info1.id}`, 'PATCH', { note: 'later', real_start: NOW - 86400 });
+    assert.equal(rp.status, 200);
+    const patched = await rp.json();
+    assert.equal('result' in patched, false);
+    assert.equal(patched.note, 'later');
+    assert.equal(patched.real_start, NOW - 86400);
+    const cleared = await (await send(`${base}/${info1.id}`, 'PATCH', { note: '   ' })).json();
+    assert.equal(cleared.note, null);
+
+    const rd = await fetch(`${base}/${info1.id}`, { method: 'DELETE' });
+    assert.equal(rd.status, 200);
+    const deleted = await rd.json();
+    assert.equal(deleted.id, info1.id);
+    assert.equal('result' in deleted, false);
+    const gone = await fetch(`${base}/${info1.id}`);
+    assert.equal(gone.status, 404);
+    assert.equal((await gone.json()).error, 'Unknown simulation run');
+    assert.deepStrictEqual((await (await fetch(base)).json()).map(r => r.id), [info3.id, info2.id]);
+  });
+
+  test('simulation runs: 400s and 404s (C3 6.20-6.24, 7.6)', async () => {
+    const id = seedRoom(ctx.db, 'S2');
+    const other = seedRoom(ctx.db, 'S2b');
+    const archived = seedRoom(ctx.db, 'S2c');
+    ctx.rooms.archive(archived);
+    const base = `${ctx.url}/api/rooms/${id}/simulations`;
+    const run = await (await send(base, 'POST', cycleRun())).json();
+    const rowsBefore = ctx.db.listSimulationRuns(id, {}).length;
+
+    for (const body of [null, JSON.stringify('x'), { ...cycleRun(), extra: 1 }, cycleRun({ kind: 'heat' }), cycleRun({ inputs: runInputs({ vent: 1 }) }), cycleRun({ note: 'x'.repeat(201) })]) {
+      const r = await send(base, 'POST', body);
+      assert.equal(r.status, 400, JSON.stringify(body)?.slice(0, 80));
+      assert.equal((await r.json()).error, 'Invalid simulation run');
+    }
+    for (const body of [{}, { extra: 1 }, { real_start: 0 }, { note: 5 }, [], null]) {
+      const r = await send(`${base}/${run.id}`, 'PATCH', body);
+      assert.equal(r.status, 400, JSON.stringify(body));
+      assert.equal((await r.json()).error, 'Invalid simulation run');
+    }
+    const rBad = await send(base, 'POST', '{not json');
+    assert.equal(rBad.status, 400);
+    assert.equal((await rBad.json()).error, 'Body is not valid JSON');
+    assert.equal(ctx.db.listSimulationRuns(id, {}).length, rowsBefore);
+    assert.equal(ctx.db.getSimulationRun(id, run.id).note, null);
+
+    for (const q of ['limit=0', 'limit=201', 'limit=abc', 'before=0', 'before=x']) {
+      const r = await fetch(`${base}?${q}`);
+      assert.equal(r.status, 400, q);
+      assert.equal((await r.json()).error, 'Invalid query', q);
+    }
+
+    const otherRun = await (await send(`${ctx.url}/api/rooms/${other}/simulations`, 'POST', cycleRun())).json();
+    for (const runId of ['0', 'abc', '99999', '01', String(otherRun.id)]) {
+      for (const [method, body] of [['GET', undefined], ['PATCH', { note: 'x' }], ['DELETE', undefined]]) {
+        const r = await fetch(`${base}/${runId}`, { method, ...(body ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}) });
+        assert.equal(r.status, 404, `${method} ${runId}`);
+        assert.deepStrictEqual(await r.json(), { error: 'Unknown simulation run', details: [] }, `${method} ${runId}`);
+      }
+    }
+    // the other room's run is untouched
+    assert.equal(ctx.db.getSimulationRun(other, otherRun.id).id, otherRun.id);
+
+    const ab = `${ctx.url}/api/rooms/${archived}/simulations`;
+    for (const [method, p] of [['GET', ''], ['POST', ''], ['GET', '/1'], ['PATCH', '/1'], ['DELETE', '/1']]) {
+      const r = await fetch(ab + p, { method, ...(method === 'POST' || method === 'PATCH' ? { body: '{}' } : {}) });
+      assert.equal(r.status, 404, `${method} ${p}`);
+      assert.equal((await r.json()).error, 'Unknown room');
+    }
+  });
+
+  test('simulation runs: body limits 8 MB on 6.21, 1 MB on 6.23', async () => {
+    const id = seedRoom(ctx.db, 'S3');
+    const base = `${ctx.url}/api/rooms/${id}/simulations`;
+    const padded = n => { const run = cycleRun(); run.result.pad = 'x'.repeat(n); return JSON.stringify(run); };
+    const ok = await send(base, 'POST', padded(7 * 1024 * 1024));
+    assert.equal(ok.status, 201);
+    const stored = ctx.db.listSimulationRuns(id, {}).length;
+    assert.equal(stored, 1);
+    const big = await send(base, 'POST', padded(9 * 1024 * 1024));
+    assert.equal(big.status, 400);
+    assert.deepStrictEqual(await big.json(), { error: 'Body is larger than 8 MB', details: [] });
+    assert.equal(ctx.db.listSimulationRuns(id, {}).length, stored);
+    const runId = ctx.db.listSimulationRuns(id, {})[0].id;
+    const patch = await send(`${base}/${runId}`, 'PATCH', JSON.stringify({ note: 'x'.repeat(2 * 1024 * 1024) }));
+    assert.equal(patch.status, 400);
+    assert.equal((await patch.json()).error, 'Body is larger than 1 MB');
+    // another route keeps the 1 MB limit
+    const put = await send(`${ctx.url}/api/rooms/${id}/mix`, 'PUT', JSON.stringify([{ crop: 'oyster', blocks: 1, pad: 'x'.repeat(2 * 1024 * 1024) }]));
+    assert.equal(put.status, 400);
+    assert.equal((await put.json()).error, 'Body is larger than 1 MB');
+  });
+
+  test('simulation runs: an equipment Report (C3 6.21)', async () => {
+    const id = seedRoom(ctx.db, 'S4');
+    const body = { kind: 'equipment', inputs: runInputs({ equipment: { ...EQ.DEFAULTS } }), result: eqReport() };
+    const r = await send(`${ctx.url}/api/rooms/${id}/simulations`, 'POST', body);
+    assert.equal(r.status, 201);
+    const info = await r.json();
+    assert.equal(info.kind, 'equipment');
+    assert.equal(info.verdict, 'too-small');
+  });
+
+  test('simulation errors: a NotFoundError from db.getSimulationRun gives 404 Unknown simulation run (C3 4.1)', async () => {
+    const id = seedRoom(ctx.db, 'S5');
+    await withReplaced(ctx.db, 'getSimulationRun', () => { throw new NotFoundError('simulation', 5); }, async () => {
+      const r = await fetch(`${ctx.url}/api/rooms/${id}/simulations/5`);
+      assert.equal(r.status, 404);
+      assert.equal((await r.json()).error, 'Unknown simulation run');
+    });
+  });
+
+  test('DELETE on another path gives Unknown route', async () => {
+    seedRoom(ctx.db, 'S6');
+    for (const p of ['/api/rooms/1', '/api/rooms/1/settings', '/api/rooms/1/simulations', '/api/rooms']) {
+      const r = await fetch(ctx.url + p, { method: 'DELETE' });
+      assert.equal(r.status, 404, p);
+      assert.deepStrictEqual(await r.json(), { error: 'Unknown route', details: [] }, p);
+    }
+  });
+});
+
+describe('equipment 6.25-6.26', () => {
+  let ctx;
+  test.before(async () => { ctx = startApi(); await ctx.ready; });
+  test.after(() => ctx.stop());
+
+  const body = (over = {}) => ({ ac_hp: 2.5, ac_units: 1, fog_lph: 3, air_m3h: 1800, walls: 'pu50', roof: 'pu50', height: 3, ...over });
+  const applyCalls = r => r.calls.filter(x => x.method === 'applySettings');
+
+  test('equipment: GET null then the saved row; PUT stores (C3 6.25, 6.26)', async () => {
+    const id = seedRoom(ctx.db, 'E1');
+    const url = `${ctx.url}/api/rooms/${id}/equipment`;
+    const r0 = await fetch(url);
+    assert.equal(r0.status, 200);
+    assert.equal(await r0.json(), null);
+    const r1 = await send(url, 'PUT', body());
+    assert.equal(r1.status, 200);
+    const eq = await r1.json();
+    assert.deepStrictEqual(Object.keys(eq), ['room_id', 'saved_at', 'ac_hp', 'ac_units', 'fog_lph', 'air_m3h', 'walls', 'roof', 'height']);
+    assert.equal(eq.room_id, id);
+    assert.equal(eq.saved_at, NOW);
+    assert.equal(eq.ac_hp, 2.5);
+    const again = await (await fetch(url)).json();
+    assert.deepStrictEqual(again, eq);
+    const replaced = await (await send(url, 'PUT', body({ ac_hp: 3, walls: null, roof: null }))).json();
+    assert.equal(replaced.ac_hp, 3);
+    assert.equal(replaced.walls, null);
+  });
+
+  test('equipment: an air_m3h that differs syncs the settings airM3h (lead decision 35)', async () => {
+    const id = seedRoom(ctx.db, 'E2');
+    const before = applyCalls(ctx.rooms).length;
+    assert.equal(ctx.db.currentSettings(id).settings.airM3h, 1800);
+    const r = await send(`${ctx.url}/api/rooms/${id}/equipment`, 'PUT', body({ air_m3h: 900 }));
+    assert.equal(r.status, 200);
+    const eq = await r.json();
+    assert.equal(eq.air_m3h, 900);
+    assert.equal('settings' in eq, false);
+    const calls = applyCalls(ctx.rooms);
+    assert.equal(calls.length, before + 1);
+    const call = calls.at(-1);
+    assert.deepStrictEqual(call.args, [id, { airM3h: 900 }, 'Air exchange size from Your machines']);
+    assert.equal(call.args.length, 3);
+    const settings = await (await fetch(`${ctx.url}/api/rooms/${id}/settings`)).json();
+    assert.equal(settings.airM3h, 900);
+  });
+
+  test('equipment: the same air_m3h makes no applySettings call', async () => {
+    const id = seedRoom(ctx.db, 'E3');
+    await send(`${ctx.url}/api/rooms/${id}/equipment`, 'PUT', body({ air_m3h: 900 }));
+    const calls = applyCalls(ctx.rooms).length;
+    const versions = ctx.db.settingsHistory(id).length;
+    const r = await send(`${ctx.url}/api/rooms/${id}/equipment`, 'PUT', body({ air_m3h: 900, ac_hp: 3 }));
+    assert.equal(r.status, 200);
+    assert.equal(applyCalls(ctx.rooms).length, calls);
+    assert.equal(ctx.db.settingsHistory(id).length, versions);
+    // the default size equals the default settings' airM3h: no call either
+    const id2 = seedRoom(ctx.db, 'E3b');
+    const c2 = applyCalls(ctx.rooms).length;
+    await send(`${ctx.url}/api/rooms/${id2}/equipment`, 'PUT', body({ air_m3h: 1800 }));
+    assert.equal(applyCalls(ctx.rooms).length, c2);
+  });
+
+  test('equipment: 400 Invalid equipment, nothing stored (C3 7.7)', async () => {
+    const id = seedRoom(ctx.db, 'E4');
+    const url = `${ctx.url}/api/rooms/${id}/equipment`;
+    const calls = applyCalls(ctx.rooms).length;
+    const { air_m3h, ...rest } = body();
+    const r = await send(url, 'PUT', { ...rest, fan_m3h: 900 });
+    assert.equal(r.status, 400);
+    const b = await r.json();
+    assert.equal(b.error, 'Invalid equipment');
+    assert.ok(b.details.includes('air_m3h: missing'));
+    assert.ok(b.details.includes('fan_m3h: unknown field'));
+    assert.equal(await (await fetch(url)).json(), null);
+    for (const bad of [body({ ac_hp: 1.25 }), [], null, JSON.stringify('x'), body({ walls: 'pu50', roof: null })]) {
+      const rb = await send(url, 'PUT', bad);
+      assert.equal(rb.status, 400, JSON.stringify(bad));
+      assert.equal((await rb.json()).error, 'Invalid equipment');
+      assert.equal(await (await fetch(url)).json(), null);
+    }
+    const rj = await send(url, 'PUT', '{nope');
+    assert.equal(rj.status, 400);
+    assert.equal((await rj.json()).error, 'Body is not valid JSON');
+    assert.equal(applyCalls(ctx.rooms).length, calls);
+  });
+
+  test('equipment: applySettings bad_input is a 500 Server fault (C3 4.1)', async () => {
+    const id = seedRoom(ctx.db, 'E5');
+    await withReplaced(ctx.rooms, 'applySettings', () => { throw new RoomError('bad_input', 'Bad input', ['x']); }, async () => {
+      const r = await send(`${ctx.url}/api/rooms/${id}/equipment`, 'PUT', body({ air_m3h: 900 }));
+      assert.equal(r.status, 500);
+      assert.equal((await r.json()).error, 'Server fault');
+      assert.equal(ctx.fatals.length, 0);
+    });
+  });
+
+  test('equipment: 404 for an unknown or archived room', async () => {
+    const archived = seedRoom(ctx.db, 'E6');
+    ctx.rooms.archive(archived);
+    for (const x of [archived, 99999]) {
+      for (const [method, b] of [['GET'], ['PUT', body()]]) {
+        const r = await fetch(`${ctx.url}/api/rooms/${x}/equipment`, { method, ...(b ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) } : {}) });
+        assert.equal(r.status, 404);
+        assert.equal((await r.json()).error, 'Unknown room');
+      }
+    }
+  });
+});
+
+describe('extra routes (C3 2.1, C10 13)', () => {
+  const seen = [];
+  let behaviour = () => ({ status: 201, body: { ok: true } });
+  const extraRoutes = [
+    { method: 'POST', segs: ['api', 'rooms', ':id', 'probe', ':thing'], needsRoom: true, hasBody: true, run: ctx => { seen.push(ctx); return behaviour(ctx); } },
+    { method: 'GET', segs: ['api', 'probes', ':thing'], needsRoom: false, hasBody: false, run: ctx => { seen.push(ctx); return behaviour(ctx); } },
+    { method: 'DELETE', segs: ['api', 'probes', ':probeId'], needsRoom: false, hasBody: false, run: ctx => { seen.push(ctx); return { status: 200, body: { deleted: ctx.params.probeId } }; } },
+    { method: 'GET', segs: ['api', 'rooms'], needsRoom: false, hasBody: false, run: ctx => { seen.push(ctx); return { status: 200, body: ['extra'] }; } },
+    { method: 'GET', segs: ['api', 'stream'], needsRoom: false, hasBody: false, run: ctx => { seen.push(ctx); return { status: 200, body: 'extra stream' }; } },
+  ];
+  let ctx;
+  test.before(async () => { ctx = startApi({ extraRoutes }); await ctx.ready; });
+  test.after(() => ctx.stop());
+  test.beforeEach(() => { seen.length = 0; behaviour = () => ({ status: 201, body: { ok: true } }); });
+  const probe = (id, thing, body, init = {}) => fetch(`${ctx.url}/api/rooms/${id}/probe/${thing}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: typeof body === 'string' ? body : JSON.stringify(body ?? {}), ...init });
+
+  test('needsRoom: run gets ctx.id after the room check; not called for an unknown or archived room', async () => {
+    const id = seedRoom(ctx.db, 'X1');
+    const archived = seedRoom(ctx.db, 'X2');
+    ctx.rooms.archive(archived);
+    const ok = await probe(id, 'a');
+    assert.equal(ok.status, 201);
+    assert.equal(seen.length, 1);
+    assert.equal(seen[0].id, id);
+    for (const x of [archived, 99999, 'abc', '0']) {
+      const r = await probe(x, 'a');
+      assert.equal(r.status, 404, String(x));
+      assert.deepStrictEqual(await r.json(), { error: 'Unknown room', details: [] });
+    }
+    assert.equal(seen.length, 1);
+  });
+
+  test('hasBody: ctx.body parsed with the __proto__ reviver', async () => {
+    const id = seedRoom(ctx.db, 'X3');
+    await probe(id, 'a', '{"__proto__":{"polluted":1},"a":1}');
+    assert.deepStrictEqual(seen[0].body, { a: 1 });
+    assert.equal(({}).polluted, undefined);
+    assert.equal(Object.hasOwn(seen[0].body, '__proto__'), false);
+  });
+
+  test('hasBody: over 1 MB and bad JSON answer 400 without calling run', async () => {
+    const id = seedRoom(ctx.db, 'X4');
+    const big = await probe(id, 'a', JSON.stringify({ pad: 'x'.repeat(1024 * 1024 + 10) }));
+    assert.equal(big.status, 400);
+    assert.deepStrictEqual(await big.json(), { error: 'Body is larger than 1 MB', details: [] });
+    const bad = await probe(id, 'a', '{nope');
+    assert.equal(bad.status, 400);
+    assert.deepStrictEqual(await bad.json(), { error: 'Body is not valid JSON', details: [] });
+    assert.equal(seen.length, 0);
+  });
+
+  test('ctx.params holds raw segments; ctx.query is the URLSearchParams', async () => {
+    const id = seedRoom(ctx.db, 'X5');
+    await fetch(`${ctx.url}/api/rooms/${id}/probe/a%20b?x=1`, { method: 'POST', body: '{}' });
+    assert.equal(seen[0].params.thing, 'a%20b');
+    assert.equal(seen[0].query.get('x'), '1');
+    assert.ok(seen[0].query instanceof URLSearchParams);
+    await fetch(`${ctx.url}/api/probes/zz%2F?y=2`);
+    assert.equal(seen[1].id, undefined);
+    assert.equal(seen[1].body, undefined);
+    assert.equal(seen[1].params.thing, 'zz%2F');
+    assert.equal(seen[1].query.get('y'), '2');
+  });
+
+  test("run's { status, body } is the reply", async () => {
+    const id = seedRoom(ctx.db, 'X6');
+    behaviour = () => ({ status: 201, body: { made: 1 } });
+    const r = await probe(id, 'a');
+    assert.equal(r.status, 201);
+    assert.equal(r.headers.get('content-type'), 'application/json; charset=utf-8');
+    assert.equal(r.headers.get('cache-control'), 'no-store');
+    assert.deepStrictEqual(await r.json(), { made: 1 });
+    behaviour = () => ({ status: 200, body: null });
+    const r2 = await probe(id, 'a');
+    assert.equal(r2.status, 200);
+    assert.equal(await r2.json(), null);
+  });
+
+  test('an HttpError from server/api-common.js is answered with status, error and details', async () => {
+    const id = seedRoom(ctx.db, 'X7');
+    behaviour = () => { throw new HttpError(404, 'Unknown batch', ['d']); };
+    const r = await probe(id, 'a');
+    assert.equal(r.status, 404);
+    assert.deepStrictEqual(await r.json(), { error: 'Unknown batch', details: ['d'] });
+    behaviour = () => { throw new HttpError(400, 'Batch is cleared'); };
+    const r2 = await probe(id, 'a');
+    assert.equal(r2.status, 400);
+    assert.deepStrictEqual(await r2.json(), { error: 'Batch is cleared', details: [] });
+    assert.equal(ctx.fatals.length, 0);
+  });
+
+  test('a constraint error gives 500 and no onFatal; a non-constraint sqlite error 500 and onFatal once', async () => {
+    const id = seedRoom(ctx.db, 'X8');
+    behaviour = () => { throw dbErr(275); };
+    const r = await probe(id, 'a');
+    assert.equal(r.status, 500);
+    assert.equal((await r.json()).error, 'Server fault');
+    assert.equal(ctx.fatals.length, 0);
+    const err = dbErr(10);
+    behaviour = () => { throw err; };
+    const r2 = await probe(id, 'a');
+    assert.equal(r2.status, 500);
+    assert.equal(ctx.fatals.length, 1);
+    assert.equal(ctx.fatals[0], err);
+    ctx.fatals.length = 0;
+    behaviour = () => { throw new NotFoundError('crate', 3); };
+    const r3 = await probe(id, 'a');
+    assert.equal(r3.status, 404);
+    assert.equal((await r3.json()).error, 'Unknown crate');
+  });
+
+  test('a DELETE extra route answers', async () => {
+    const r = await fetch(`${ctx.url}/api/probes/7`, { method: 'DELETE' });
+    assert.equal(r.status, 200);
+    assert.deepStrictEqual(await r.json(), { deleted: '7' });
+    const r2 = await fetch(`${ctx.url}/api/probes`, { method: 'DELETE' });
+    assert.equal(r2.status, 404);
+    assert.equal((await r2.json()).error, 'Unknown route');
+    const r3 = await fetch(`${ctx.url}/api/probes/7`, { method: 'PUT' });
+    assert.equal(r3.status, 404);
+    assert.equal((await r3.json()).error, 'Unknown route');
+  });
+
+  test('a C3 route wins over an extra route with the same method and path', async () => {
+    seedRoom(ctx.db, 'X9');
+    const r = await fetch(`${ctx.url}/api/rooms`);
+    assert.equal(r.status, 200);
+    assert.notDeepEqual(await r.json(), ['extra']);
+    assert.equal(seen.length, 0);
+  });
+
+  test('extra routes come before /api/stream', async () => {
+    // an extra GET api/stream is never reached: the C3 stream answers
+    const controller = new AbortController();
+    const r = await fetch(`${ctx.url}/api/stream`, { signal: controller.signal });
+    assert.equal(r.status, 200);
+    assert.equal(r.headers.get('content-type'), 'text/event-stream; charset=utf-8');
+    controller.abort();
+    assert.equal(seen.length, 0);
+    // a path no route has gives Unknown route
+    const r2 = await fetch(`${ctx.url}/api/nothing/here`);
+    assert.equal(r2.status, 404);
+    assert.equal((await r2.json()).error, 'Unknown route');
+  });
+
+  test('a pattern extra route does not take over /api/stream (lead decision 85)', async () => {
+    const pat = startApi({ extraRoutes: [{ method: 'GET', segs: ['api', ':thing'], needsRoom: false, hasBody: false, run: () => ({ status: 200, body: 'extra' }) }] });
+    await pat.ready;
+    try {
+      const controller = new AbortController();
+      const r = await fetch(`${pat.url}/api/stream`, { signal: controller.signal });
+      assert.equal(r.headers.get('content-type'), 'text/event-stream; charset=utf-8');
+      controller.abort();
+      assert.equal(await (await fetch(`${pat.url}/api/other`)).json(), 'extra');
+    } finally { pat.stop(); }
+  });
+
+  test('without extraRoutes the C3 routes are unchanged (default [])', async () => {
+    const plain = startApi();
+    await plain.ready;
+    try {
+      const r = await fetch(`${plain.url}/api/probes/1`);
+      assert.equal(r.status, 404);
+      assert.equal((await r.json()).error, 'Unknown route');
+    } finally { plain.stop(); }
   });
 });
 
@@ -1051,6 +1626,24 @@ module.exports = {
 };
 `);
 
+  // The harvest stand-ins of C3 12.1 (C10 8.4): main.js does not load them until the lead wires it at gate 2.5.
+  fs.writeFileSync(path.join(tmp, 'server', 'harvest-db.js'), `
+'use strict';
+const { openFakeHarvest } = require(${JSON.stringify(path.join(worktreeRoot, 'tests', 'fakes', 'harvest-db.js'))});
+module.exports = {
+  openHarvest(db) {
+    console.log('stub: openHarvest');
+    if (process.env.STUB_HARVEST_THROW) throw new Error('stub cannot open harvest');
+    return openFakeHarvest(db);
+  },
+};
+`);
+
+  fs.writeFileSync(path.join(tmp, 'server', 'harvest-api.js'), `
+'use strict';
+module.exports = { createHarvestRoutes() { return []; } };
+`);
+
   fs.writeFileSync(path.join(tmp, 'preload-os.js'), `
 'use strict';
 require('node:os').networkInterfaces = () => JSON.parse(process.env.STUB_IFACES || '{}');
@@ -1100,6 +1693,27 @@ function spawnMain(tmp, env) {
 }
 
 describe('server/main.js', () => {
+  test('the stub folder holds harvest-db.js and harvest-api.js (C3 12.1)', async () => {
+    const tmp = buildMainTmp();
+    const worktreeRoot = path.join(__dirname, '..');
+    const code = `
+      const { openFakeDb } = require(${JSON.stringify(path.join(worktreeRoot, 'tests', 'fakes', 'db.js'))});
+      const { openHarvest } = require(${JSON.stringify(path.join(tmp, 'server', 'harvest-db.js'))});
+      const { createHarvestRoutes } = require(${JSON.stringify(path.join(tmp, 'server', 'harvest-api.js'))});
+      const h = openHarvest(openFakeDb());
+      console.log(typeof h.createBatch);
+      console.log(JSON.stringify(createHarvestRoutes()));
+    `;
+    const clean = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('STUB_')));
+    const ok = spawnSync(process.execPath, ['-e', code], { encoding: 'utf8', env: clean });
+    assert.equal(ok.status, 0, ok.stderr);
+    assert.deepStrictEqual(ok.stdout.trim().split('\n'), ['stub: openHarvest', 'function', '[]']);
+    const bad = spawnSync(process.execPath, ['-e', code], { encoding: 'utf8', env: { ...clean, STUB_HARVEST_THROW: '1' } });
+    assert.notEqual(bad.status, 0);
+    assert.match(bad.stdout, /stub: openHarvest/);
+    assert.match(bad.stderr, /stub cannot open harvest/);
+  });
+
   test('FARM_PORT=abc -> Bad configuration', async () => {
     const tmp = buildMainTmp();
     const p = spawnMain(tmp, { FARM_PORT: 'abc', FARM_HOST: '127.0.0.1' });

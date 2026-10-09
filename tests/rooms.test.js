@@ -6,8 +6,14 @@ require('../air.js');
 require('../controller.js');
 require('../sim.js');
 require('../runtime.js');
+require('../equipment.js');
 const CC = globalThis.ClimateController;
 const SIM = globalThis.ClimateSim;
+const EQ = globalThis.ClimateEquipment;
+
+// The prep 2.0 stub of equipment.js throws Error('stub') in plantOf; the tests that need the real one skip until gate 2.5.
+let STUB = false;
+try { EQ.plantOf(EQ.DEFAULTS, { volume: 60, calib: null }); } catch (e) { STUB = e.message === 'stub'; }
 
 const { openFakeDb } = require('./fakes/db.js');
 const { fromJson, toJson } = require('../server/db-common.js');
@@ -80,7 +86,7 @@ function capture(factory) {
 test('sim adapter: requires air.js before sim.js (C9 section 6.3)', () => {
   const mod = require.cache[require.resolve('../server/sim-adapter.js')];
   const names = mod.children.map(c => c.id.replace(/^.*[\\/]/, ''));
-  assert.deepEqual(names, ['air.js', 'sim.js', 'runtime.js']);
+  assert.deepEqual(names, ['air.js', 'sim.js', 'runtime.js', 'equipment.js']);
   assert.equal(typeof globalThis.ClimateAir.purgeTimeS, 'function');
 });
 
@@ -240,6 +246,52 @@ test('sim adapter: the simulated room runs with its own air exchange size (C9 se
   a.io.write({ ac: { power: true, mode: 'cool', setpoint: 25, fan: 'auto' }, hu: { level: 0 }, air: { on: true }, lights: { on: false }, circ: { on: false } });
   clock += 1; a.io.advance(1);
   assert.equal(a.view().airM3h, 900); // fans on: the pair's flow, no leakage (C9 4.2 view)
+});
+
+test('Equipment stub probe', () => {
+  if (STUB) {
+    assert.throws(() => EQ.plantOf(EQ.DEFAULTS, { volume: 60, calib: null }), e => e instanceof Error && e.message === 'stub');
+  } else {
+    const plant = EQ.plantOf(EQ.DEFAULTS, { volume: 60, calib: null });
+    assert.equal(typeof plant, 'object');
+    assert.ok('ac' in plant);
+  }
+});
+
+test('Room equipment', { skip: STUB && "plantOf throws 'stub' (prep 2.0 stub of equipment.js); runs at gate 2.5" }, (t) => {
+  const origCreate = SIM.create;
+  const seen = [];
+  SIM.create = (env, snap) => { seen.push(env); return origCreate(env, snap); };
+  t.after(() => { SIM.create = origCreate; });
+
+  const saved = { ac_hp: 3, ac_units: 1, fog_lph: 6, air_m3h: 600, walls: 'pu50', roof: 'pu50', height: 3 };
+  function startRoom(equipment, calibration) {
+    const { db, mgr } = setup(rooms.defaultAdapterFactory);
+    const { room } = mgr.create({ name: 'E', volume: 60 });
+    if (equipment) db.saveEquipment(room.id, equipment);
+    if (calibration) {
+      const run = db.saveCalibration(room.id, calibration);
+      db.applyCalibration(room.id, run.id);
+    }
+    mgr.start();
+    return seen.at(-1);
+  }
+  const calibration = { ua: 90, inf_ach: 0.4, moist_buffer: 3, co2_per_block: 41, rmse_t: 0.2, rmse_rh: 1, rmse_co2: 10, log_rows: 100 };
+
+  const plain = startRoom(saved, null);
+  assert.equal(plain.plant.ac.capW, 7910);
+  assert.ok(Math.abs(plain.plant.room.ua - 28.12) < 0.05, `ua ${plain.plant.room.ua}`);
+  assert.equal(plain.airM3h, 1800); // the settings' size, not the Equipment's 600
+
+  const calibrated = startRoom(saved, calibration);
+  assert.equal(calibrated.plant.ac.capW, 7910);
+  assert.ok(!('room' in calibrated.plant));
+  assert.equal(calibrated.airM3h, 1800);
+  assert.equal(calibrated.room.ua, 90);
+
+  const none = startRoom(null, null);
+  assert.equal(none.plant, undefined);
+  assert.equal(none.airM3h, 1800);
 });
 
 // ---------------------------------------------------------------------------
@@ -466,9 +518,9 @@ test('Errors: create input', () => {
 // Task 4: Loop start (fresh), tick, Record, state save (C2 section 8.1 fresh, 8.2-8.4, 5.2, 5.3)
 // ---------------------------------------------------------------------------
 
-const READING_KEYS = ['room_id', 't', 'T', 'RH', 'CO2', 't_out', 'rh_out', 'ac_mode', 'ac_setpoint', 'fog', 'air', 'lights', 'circ', 'power_w', 'kwh'];
+const READING_KEYS = ['room_id', 't', 'T', 'RH', 'CO2', 't_out', 'rh_out', 'ac_mode', 'ac_setpoint', 'fog', 'air', 'lights', 'circ', 'power_w', 'kwh', 'ac_fan', 'stage', 'core'];
 
-test('Recording', { skip: 'C1 rev 6 / C2 rev 9 fake: Server 2 rewrites this test' }, (t) => {
+test('Recording', (t) => {
   const spy = simSpyFactory();
   const origCreate = CC.create;
   let capturedOnEvent = null;
@@ -495,7 +547,7 @@ test('Recording', { skip: 'C1 rev 6 / C2 rev 9 fake: Server 2 rewrites this test
   assert.equal(rowsAfter30.length, 2);
   const row = rowsAfter30[1];
   assert.equal(row.t, T0 + 30);
-  assert.deepEqual(Object.keys(row).sort(), READING_KEYS.slice().sort());
+  assert.deepEqual(Object.keys(row), READING_KEYS); // C2 5.3: the 18 keys, in this order
   assert.equal(row.room_id, 1);
 
   const lastCmd = spy.writes[spy.writes.length - 1];
@@ -505,6 +557,13 @@ test('Recording', { skip: 'C1 rev 6 / C2 rev 9 fake: Server 2 rewrites this test
   assert.equal(row.air, lastCmd.air && lastCmd.air.on ? 1 : 0);
   assert.equal(row.lights, lastCmd.lights.on ? 1 : 0);
   assert.equal(row.circ, lastCmd.circ.on ? 1 : 0);
+  assert.ok(row.air === 0 || row.air === 1);
+  assert.equal(row.ac_fan, lastCmd.ac.power ? (['low', 'auto', 'high'].includes(lastCmd.ac.fan) ? lastCmd.ac.fan : 'auto') : null);
+  if (row.ac_mode === 'off') assert.equal(row.ac_fan, null);
+  else assert.ok(['low', 'auto', 'high'].includes(row.ac_fan));
+  assert.equal(row.stage, mgr2.get(1).live.stage);
+  assert.equal(typeof row.core, 'number');
+  assert.ok(Number.isFinite(row.core));
 
   const r = spy.made[0].a.io.read();
   const sumPower = Object.values(r.power).reduce((a, b) => a + b, 0);
@@ -620,6 +679,25 @@ test('Block count', () => {
   assert.equal(byRoom.get(a.id), 500);
   assert.equal(byRoom.get(b.id), null);
   assert.equal(byRoom.get(c.id), null);
+});
+
+test('Room equipment: the adapter factory gets the saved row', () => {
+  const cap = capture(scripted().factory);
+  const { db, mgr } = setup(cap.factory);
+  const { room: a } = mgr.create({ name: 'A', volume: 60 });
+  const { room: b } = mgr.create({ name: 'B', volume: 60 });
+  const saved = { ac_hp: 3, ac_units: 1, fog_lph: 6, air_m3h: 600, walls: 'pu50', roof: 'pu50', height: 3 };
+  db.saveEquipment(a.id, saved);
+  mgr.start();
+  const byRoom = new Map(cap.made.map(args => [args.room.id, args.equipment]));
+  assert.deepEqual(byRoom.get(a.id), db.getEquipment(a.id));
+  assert.equal(byRoom.get(a.id).ac_hp, 3);
+  assert.equal(byRoom.get(b.id), null);
+  // a restart reads the row again (C2 8.1 step 1)
+  db.saveEquipment(a.id, { ...saved, ac_hp: 4 });
+  mgr.restart(a.id);
+  assert.deepEqual(cap.made.at(-1).equipment, db.getEquipment(a.id));
+  assert.equal(cap.made.at(-1).equipment.ac_hp, 4);
 });
 
 test('list and get', () => {
@@ -903,7 +981,7 @@ test('Resume: alarm cleared while stopped', () => {
   assert.equal(mgr2.get(1).live.alarms, 0);
 });
 
-test('One reading shape', { skip: 'C1 rev 6 / C2 rev 9 fake: Server 2 rewrites this test' }, () => {
+test('One reading shape', () => {
   let clock = T0;
   const now = () => clock;
   const db = openFakeDb({ now });
@@ -917,7 +995,7 @@ test('One reading shape', { skip: 'C1 rev 6 / C2 rev 9 fake: Server 2 rewrites t
   const live = mgr2.get(1).live;
   const expected = db.queryReadings(1, { from: 0, to: now() }).at(-1);
   assert.deepEqual(live.reading, expected);
-  assert.deepEqual(Object.keys(live.reading).sort(), READING_KEYS.slice().sort());
+  assert.deepEqual(Object.keys(live.reading), READING_KEYS);
   mgr2.stop();
 
   clock += 3601;
@@ -970,6 +1048,134 @@ test('Room summary', () => {
   step(30); step(30); step(30); // the sensor spike filter needs 3 consistent readings before it accepts the jump
   assert.equal(log.filter(([n, p]) => n === 'room' && p.room.id === room.id).length, 0);
   assert.notEqual(mgr.get(room.id).live.status.T.text, statusBefore);
+});
+
+// ---------------------------------------------------------------------------
+// Live flush, blocks and air exchange; the upgrade save error (C2 5.2, 8.1, 17)
+// ---------------------------------------------------------------------------
+
+const LIVE_AIR_KEYS = ['on', 'state', 'reason', 'delayed', 'timed', 'manual', 'manualOn', 'nextPurgeS', 'purgeS', 'why', 'today'];
+
+test('Live flush and blocks', () => {
+  const s = scripted();
+  const { db, mgr, log, step, jump } = setup(s.factory);
+  const { room: a } = mgr.create({ name: 'A', volume: 60 });
+  const { room: b } = mgr.create({ name: 'B', volume: 60 });
+  db.replaceMix(a.id, [{ crop: 'oyster', blocks: 300 }, { crop: 'golden', blocks: 200 }]);
+  mgr.start();
+  assert.equal(mgr.get(a.id).live.blocks, 500);
+  assert.equal(mgr.get(b.id).live.blocks, null);
+  assert.equal(mgr.get(a.id).live.flush, 1);
+  assert.equal(mgr.get(b.id).live.flush, 1);
+  // a room event carries Live (flush included); flush is not part of the summary
+  const roomEmit = log.filter(([n]) => n === 'room').at(-1)[1].room;
+  assert.equal(roomEmit.live.flush, 1);
+
+  // an automatic rest -> fruiting change raises the flush
+  const { room: c } = mgr.create({ name: 'Auto', volume: 60, settings: { program: { auto: true, days: { fruiting: 1, rest: 1 } } } });
+  assert.equal(mgr.get(c.id).live.flush, 1);
+  jump(86400);
+  assert.equal(mgr.get(c.id).live.stage, 'rest');
+  jump(86400);
+  assert.equal(mgr.get(c.id).live.stage, 'fruiting');
+  assert.equal(mgr.get(c.id).live.flush, 2);
+  const flushText = db.settingsHistory(c.id)[0].note;
+  assert.ok(flushText.startsWith('Automatic'), flushText);
+});
+
+test('Live flush and blocks: a change of only flush emits no room', (t) => {
+  let flush = 1;
+  const origCreate = CC.create;
+  CC.create = (cfg, snapshot, onEvent) => {
+    const ctl = origCreate(cfg, snapshot, onEvent);
+    const ps = ctl.programStatus;
+    ctl.programStatus = tt => ({ ...ps(tt), flush });
+    return ctl;
+  };
+  t.after(() => { CC.create = origCreate; });
+  const { mgr, log, step } = setup(scripted().factory);
+  mgr.start();
+  step(30);
+  assert.equal(mgr.get(1).live.flush, 1);
+  log.length = 0;
+  flush = 2;
+  step(30);
+  assert.equal(mgr.get(1).live.flush, 2);
+  assert.equal(log.filter(([n]) => n === 'reading').length, 1);
+  assert.equal(log.filter(([n]) => n === 'room').length, 0);
+});
+
+test('Live air exchange', () => {
+  const s = scripted();
+  const { mgr, log, step } = setup(s.factory);
+  mgr.start();
+  const air = mgr.get(1).live.air;
+  assert.deepEqual(Object.keys(air), LIVE_AIR_KEYS);
+  assert.ok(['idle', 'purge', 'after'].includes(air.state));
+  assert.equal(typeof air.on, 'boolean');
+  assert.equal(air.manual, false);
+  assert.equal(air.manualOn, false);
+  assert.ok(Number.isInteger(air.today.purges) && air.today.purges >= 0);
+  assert.equal(air.today.avgS, air.today.purges === 0 ? null : air.today.avgS);
+  assert.ok(Number.isInteger(air.today.capped));
+  assert.deepEqual(Object.keys(air.today), ['purges', 'avgS', 'capped']);
+  // the reading event carries the same live
+  assert.deepEqual(log.filter(([n]) => n === 'reading').at(-1)[1].live.air, air);
+
+  // manual On (through applySettings), after the next reading
+  mgr.applySettings(1, { manual: { air: { auto: false, on: true } } });
+  log.length = 0;
+  step(30);
+  const manual = mgr.get(1).live.air;
+  assert.equal(manual.on, true);
+  assert.equal(manual.manual, true);
+  assert.equal(manual.manualOn, true);
+  assert.equal(manual.reason, 'manual');
+  assert.equal(log.filter(([n]) => n === 'room').length, 0); // a change of live.air alone sends no room event
+
+  // a run held above rules.fanOn gives at least one purge today
+  mgr.applySettings(1, { manual: { air: { auto: true, on: false } } });
+  const rules = CC.defaultSettings().rules; // above fanOn, below the safety level: a CO2 purge, not a safety run
+  s.knobs.values = { CO2: rules.fanOn + Math.min(100, (rules.co2SafetyAt - rules.fanOn) / 2) };
+  for (let i = 0; i < 40; i++) step(30);
+  const held = mgr.get(1).live.air;
+  assert.ok(held.today.purges >= 1, JSON.stringify(held));
+  assert.ok(Number.isInteger(held.today.purges));
+  if (held.today.avgS !== null) assert.ok(held.today.avgS > 0);
+});
+
+function fatalDbError() {
+  return Object.assign(new Error('disk I/O error'), { code: 'ERR_SQLITE_ERROR', errcode: 10 });
+}
+
+test('Upgrade save error', () => {
+  const old = CC.defaultSettings();
+  old.roomM3 = 60;
+  old.rules.airMode = 'steady';
+  delete old.manual.air;
+  old.manual.fan = { auto: false, level: 2 };
+
+  // start(): a stored version 1 object and a failing save
+  const first = setup(scripted().factory);
+  first.db.createRoom({ name: 'Old', volume: 60, adapter: 'sim', settings: old, note: 'Created', at: T0 });
+  const err1 = fatalDbError();
+  first.db.saveSettings = () => { throw err1; };
+  assert.throws(() => first.mgr.start(), e => e === err1);
+  assert.notEqual(first.mgr.get(1).live.error, 'disk I/O error');
+  assert.equal(first.mgr.get(1).live.error, null);
+  assert.ok(!first.db.listEvents(1, { limit: 50 }).some(e => e.text.startsWith('Stopped by an error')));
+
+  // restart(): a room that started normally, then a version 1 settings row and a failing save
+  const second = setup(scripted().factory);
+  second.mgr.start();
+  const realSave = second.db.saveSettings;
+  second.db.saveSettings(1, { settings: old, note: 'older', at: T0 });
+  const err2 = fatalDbError();
+  second.db.saveSettings = () => { throw err2; };
+  assert.throws(() => second.mgr.restart(1), e => e === err2);
+  assert.equal(second.mgr.get(1).live.error, null);
+  assert.ok(!second.db.listEvents(1, { limit: 50 }).some(e => e.text.startsWith('Stopped by an error')));
+  second.db.saveSettings = realSave;
 });
 
 // ---------------------------------------------------------------------------
