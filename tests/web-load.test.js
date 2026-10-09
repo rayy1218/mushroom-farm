@@ -6,6 +6,7 @@ test('L1: load order, nothing throws', () => {
   const before = new Set(Object.keys(globalThis));
   assert.doesNotThrow(() => {
     require('../sim.js');
+    require('../air.js');
     require('../controller.js');
     require('../runtime.js');
     require('../calib.js');
@@ -33,9 +34,9 @@ test('L3: at most one global per file', () => {
   const before = globalThis.__webLoadBefore;
   const after = new Set(Object.keys(globalThis));
   const added = new Set([...after].filter(k => !before.has(k) && k !== '__webLoadBefore'));
-  const expected = new Set(['ClimateSim', 'ClimateController', 'ClimateRuntime', 'ClimateCalib', 'ClimateCapacity', 'ClimateRoomRules',
+  const expected = new Set(['ClimateSim', 'ClimateAir', 'ClimateController', 'ClimateRuntime', 'ClimateCalib', 'ClimateCapacity', 'ClimateRoomRules',
     'FarmUi', 'FarmApi', 'FarmCharts', 'FarmSettingsPanel', 'FarmShell']);
-  // Exactly these 11 globals after L1: no more (FarmBench does not exist yet; web/simulator.js is not loaded).
+  // Exactly these 12 globals after L1: no more (FarmBench does not exist yet; web/simulator.js is not loaded).
   assert.deepEqual(added, expected);
   globalThis.__webLoadAfterL1 = expected;
 });

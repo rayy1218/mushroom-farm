@@ -57,5 +57,57 @@ test('TREND_DEFS sub lines run with and without spT (finding 10 regression)', ()
   assert.doesNotThrow(() => D.T.sub({}));
   assert.equal(D.T.sub({}).includes('undefined'), false);
   assert.equal(D.RH.sub({ spRH: 85 }), 'Target 85 % ± 3');
-  assert.equal(D.C.sub({ fanOff: 800, fanOn: 1000, co2Lim: 1200 }), 'Fan 800–1000 ppm · limit 1200');
+  assert.equal(D.C.sub({ fanOff: 800, fanOn: 1000, co2Lim: 1200 }), 'Purge 800–1000 ppm · limit 1200');
+});
+
+// A small stand-in for the DOM, enough for createLadder and drawPurgeBars (Node has no document).
+class FakeEl {
+  constructor(tagName) {
+    this.tagName = tagName; this.children = []; this.attrs = {}; this.dataset = {};
+    this.className = ''; this.id = ''; this.textContent = ''; this.hidden = false; this.clientWidth = 600;
+    this.style = { setProperty(k, v) { this[k] = v; } };
+    const cls = new Set();
+    this.classList = { add: c => cls.add(c), remove: c => cls.delete(c), toggle: (c, on) => (on ? cls.add(c) : cls.delete(c)), contains: c => cls.has(c) };
+  }
+  setAttribute(k, v) { this.attrs[k] = String(v); }
+  appendChild(c) { this.children.push(c); return c; }
+  append(...cs) { for (const c of cs) this.children.push(typeof c === 'string' ? Object.assign(new FakeEl('#text'), { textContent: c }) : c); }
+  replaceChildren(...cs) { this.children = []; this.append(...cs); }
+  get firstChild() { return this.children[0] || null; }
+}
+const allOf = (e, out = []) => { out.push(e); for (const c of e.children) allOf(c, out); return out; };
+function fakeDocument(t) {
+  globalThis.document = { createElement: tag => new FakeEl(tag), createElementNS: (ns, tag) => new FakeEl(tag) };
+  t.after(() => { delete globalThis.document; });
+}
+
+test('aggregate: the air exchange power key is "air" (C9 4.2)', () => {
+  const out = FC.aggregate([{ t: 0, air: 144, fan: 1 }, { t: 10, air: 0, fan: 2 }], 1);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].air, 72);
+  assert.equal(out[0].fan, 2); // not a power key any more: taken from the bucket's last point
+});
+
+test('createLadder: one row "Purge" from the stop level to the start level (C9 7)', (t) => {
+  fakeDocument(t);
+  const el = new FakeEl('div');
+  const lad = FC.createLadder(el);
+  assert.deepEqual(allOf(el).filter(e => e.className === 'lad-name').map(e => e.textContent), ['Purge']);
+  lad.draw({ co2Lim: 1200, rules: { fanOn: 1000, fanOff: 800, co2Safety: false, co2SafetyAt: 3000 } }, 900, { air: { lvl: 'info', icon: '▲', text: 'Purging' } });
+  const pos = v => `${(v - 400) / (1500 - 400) * 100}%`; // scale 400 to ceil((1200 + 250) / 250) × 250 = 1500 ppm
+  assert.equal(allOf(el).find(e => e.className === 'lad-hys').style.left, pos(800));
+  assert.equal(allOf(el).find(e => e.className === 'lad-on').style.left, pos(1000));
+  assert.equal(allOf(el).find(e => e.className === 'chip').dataset.txt, 'Purging');
+});
+
+test('drawPurgeBars: purge bars titled with purges, m³ and capped purges (C9 7)', (t) => {
+  fakeDocument(t);
+  const host = new FakeEl('div');
+  const clock = { offset: 0, hm: s => `${String(Math.floor(s / 3600) % 24).padStart(2, '0')}:00` };
+  const hours = Array.from({ length: 24 }, (_, h) => ({ h, runS: 0, starts: 0, m3: 0, cappedN: 0 }));
+  hours[23] = { h: 23, runS: 180, starts: 2, m3: 90, cappedN: 1 };
+  assert.equal(FC.drawExhaustBars, undefined);
+  FC.drawPurgeBars(host, hours, clock);
+  assert.equal(host.children[0].attrs['aria-label'], 'Air exchange run minutes per hour, last 24 hours. The table below has the values.');
+  assert.deepEqual(allOf(host).filter(e => e.tagName === 'title').map(e => e.textContent), ['23:00–00:00: 3 min, 2 purges, 90 m³, 1 capped, hour not finished']);
 });

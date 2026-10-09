@@ -2,6 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 require('../sim.js');
+require('../air.js');
 require('../controller.js');
 require('../runtime.js');
 require('../calib.js');

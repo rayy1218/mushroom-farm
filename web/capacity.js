@@ -12,7 +12,7 @@ const UI = global.FarmUi;
 const PL = SIM.PLANT;
 
 const ROOMS_KEY = 'mushroom-farm.rooms.v1';
-const LIM = { blocks: 200000, volume: [5, 5000], co2: [1, 1000] };
+const LIM = { blocks: 200000, volume: [5, 5000], co2: [1, 1000], air: [50, 10000] };
 const hasCrop = k => Object.hasOwn(CC.CROPS, k) && !!CC.CROPS[k].range;
 const inRange = (x, lo, hi) => Number.isFinite(x) && x >= lo && x <= hi;
 const VERDICT_CHIP = {
@@ -22,20 +22,22 @@ const VERDICT_CHIP = {
   good: { lvl: 'good', icon: '✓', text: 'Good' },
   'too-empty': { lvl: 'warning', icon: '▼', text: 'Too empty' },
 };
-const LIMIT_WORD = { fan: 'the fan (fresh air for CO₂)', ac: 'the AC (heat)', fog: 'the fogger (water)' };
+const LIMIT_WORD = { air: 'the air exchange (CO₂ purges)', ac: 'the AC (heat)', fog: 'the fogger (water)' };
 const FAIL_MACHINE = { 'temperature too high': 'the AC cannot cool enough', 'temperature too low': 'the AC cannot heat enough',
   'humidity too low': 'the fogger cannot keep up', 'humidity at the low alarm': 'the fogger cannot keep up',
-  'humidity near saturation': 'the AC cannot dry enough', 'CO₂ above the limit': 'the fan cannot bring enough fresh air' };
+  'humidity near saturation': 'the AC cannot dry enough', 'CO₂ above the limit': 'the air exchange is too small for short purges' };
 
 // Saved and imported rooms are not trusted: only valid fields are kept, so one bad room cannot stop the page.
+// A report from before the air exchange (C9) names the balance limit 'fan': it is dropped, so the check runs again.
 function normRoom(r, i) {
   if (!r || typeof r !== 'object') return null;
   const mix = (Array.isArray(r.mix) ? r.mix : []).filter(m => m && hasCrop(m.crop) && inRange(m.blocks, 0, LIM.blocks))
     .map(m => ({ crop: m.crop, blocks: Math.round(m.blocks), ...(inRange(m.co2PerBlock, ...LIM.co2) ? { co2PerBlock: m.co2PerBlock } : {}) }));
   const rep = r.report;
-  const report = rep && typeof rep === 'object' && VERDICT_CHIP[rep.verdict] && Array.isArray(rep.runs) ? rep : null;
+  const report = rep && typeof rep === 'object' && VERDICT_CHIP[rep.verdict] && Array.isArray(rep.runs)
+    && !(rep.balance && !Object.hasOwn(LIMIT_WORD, rep.balance.limit)) ? rep : null;
   return { id: String(r.id || `${Date.now().toString(36)}${i}`), name: String(r.name || 'Room').slice(0, 60),
-    volume: inRange(r.volume, ...LIM.volume) ? r.volume : PL.room.volume, vent: r.vent === 'exhaust' ? 'exhaust' : 'supply',
+    volume: inRange(r.volume, ...LIM.volume) ? r.volume : PL.room.volume, ...(inRange(r.airM3h, ...LIM.air) ? { airM3h: r.airM3h } : {}),
     calib: validCalib(r.calib), mix, report, rev: 0 };
 }
 // A calibration must have all four values inside the calibration search limits, else the room is uncalibrated.
@@ -207,7 +209,8 @@ function wire(myGen) {
   $('#capSave').addEventListener('click', () => {
     const FB = global.FarmBench;
     const name = $('#capName').value.trim().slice(0, 60) || `Room ${rooms.length + 1}`;
-    rooms.push({ id: Date.now().toString(36), name, volume: (FB.env.room && FB.env.room.volume) || PL.room.volume, vent: FB.env.vent,
+    rooms.push({ id: Date.now().toString(36), name, volume: (FB.env.room && FB.env.room.volume) || PL.room.volume,
+      ...(Number.isFinite(FB.env.airM3h) ? { airM3h: FB.env.airM3h } : {}),
       calib: FB.calApplied ? { ...FB.calApplied } : null, mix: [{ crop: FB.cfg.crop, blocks: UI.clamp(Math.round(FB.env.blocks), 0, LIM.blocks) }], report: null, rev: 0 });
     roomIdx = rooms.length - 1; $('#capName').value = '';
     saveRooms(); renderRooms();
@@ -227,7 +230,7 @@ function wire(myGen) {
     const prog = $('#capProg'); prog.hidden = false; prog.value = 0;
     UI.set('capMsg', 'Checking… (a few seconds)');
     const emptyBelow = UI.clamp(+$('#capEmpty').value || 50, 10, 90);
-    const rev = r.rev || 0, snap = structuredClone({ name: r.name, volume: r.volume, vent: r.vent, calib: r.calib, mix: r.mix });
+    const rev = r.rev || 0, snap = structuredClone({ name: r.name, volume: r.volume, ...(r.airM3h != null ? { airM3h: r.airM3h } : {}), calib: r.calib, mix: r.mix });
     CAPY.checkAsync(snap, snap.mix, { emptyBelow, tariff: global.FarmBench.tariff, onProgress: s => {
       if (stale()) return;
       prog.value = s.runs / s.maxRuns;

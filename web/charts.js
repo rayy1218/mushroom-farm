@@ -16,7 +16,7 @@ function nearest(pts, t) {
   return t - pts[i - 1].t < pts[i].t - t ? pts[i - 1] : pts[i];
 }
 // Average readings into buckets so a long window draws fast. Gaps (NaN) are left out of the average.
-const AVG_KEYS = ['T', 'RH', 'C', 'tOut', 'rhOut', 'ac', 'hu', 'fan', 'li', 'ci', 'acSet', 'core', 'vpd'];
+const AVG_KEYS = ['T', 'RH', 'C', 'tOut', 'rhOut', 'ac', 'hu', 'air', 'li', 'ci', 'acSet', 'core', 'vpd'];
 function aggregate(pts, maxN) {
   if (pts.length <= maxN) return pts;
   const k = Math.ceil(pts.length / maxN), out = [];
@@ -64,7 +64,7 @@ function barPath(x, y, w, h, r) {
   return `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z`;
 }
 
-// ---------------- DOM charts (6.3, drawExhaustBars, drawCalibCharts, createLadder) ----------------
+// ---------------- DOM charts (6.3, drawPurgeBars, drawCalibCharts, createLadder) ----------------
 const NS = 'http://www.w3.org/2000/svg';
 function svgEl(tag, attrs, parent) {
   const e = document.createElementNS(NS, tag);
@@ -81,10 +81,10 @@ const TREND_DEFS = {
   RH: { out: 'rhOut', unit: '%', dec: 0, minSpan: 12, label: 'Relative humidity', title: 'MT-102 · outdoor OT-104',
     band: p => [p.spRH - BAND_RH, p.spRH + BAND_RH], ref: p => p.spRH, sub: p => `Target ${p.spRH} % ± ${BAND_RH}` },
   C: { out: null, unit: 'ppm', dec: 0, minSpan: 300, label: 'CO₂ concentration', title: 'AT-103',
-    band: p => [p.fanOff, p.fanOn], ref: p => p.co2Lim, sub: p => `Fan ${p.fanOff}–${p.fanOn} ppm · limit ${p.co2Lim}` },
+    band: p => [p.fanOff, p.fanOn], ref: p => p.co2Lim, sub: p => `Purge ${p.fanOff}–${p.fanOn} ppm · limit ${p.co2Lim}` },
 };
-const DEV = [['ac', 'AC'], ['hu', 'Fogger'], ['fan', 'Fan'], ['li', 'Lights'], ['ci', 'Circ.']];
-const LEGEND_NAME = { ac: 'Air conditioner', hu: 'Fogger', fan: 'Exhaust fan', li: 'Lights', ci: 'Circulation' };
+const DEV = [['ac', 'AC'], ['hu', 'Fogger'], ['air', 'Air'], ['li', 'Lights'], ['ci', 'Circ.']];
+const LEGEND_NAME = { ac: 'Air conditioner', hu: 'Fogger', air: 'Air exchange', li: 'Lights', ci: 'Circulation' };
 const sumTo = (p, n) => DEV.slice(0, n).reduce((a, [k]) => a + (p[k] || 0), 0);
 
 function createTrendCharts(el, opts) {
@@ -298,7 +298,7 @@ function createTrendCharts(el, opts) {
     const p = hp || last, total = sumTo(p, 5);
     const sm = document.createElement('small'); sm.textContent = total >= 1000 ? 'kW' : 'W';
     ui.readv.replaceChildren(document.createTextNode(UI.watts(total).replace(/ k?W$/, '')), sm);
-    legend.ac.textContent = UI.watts(p.ac || 0); legend.hu.textContent = UI.watts(p.hu || 0); legend.fan.textContent = UI.watts(p.fan || 0);
+    legend.ac.textContent = UI.watts(p.ac || 0); legend.hu.textContent = UI.watts(p.hu || 0); legend.air.textContent = UI.watts(p.air || 0);
     legend.li.textContent = UI.watts(p.li || 0); legend.ci.textContent = UI.watts(p.ci || 0);
     if (hp && hoverChart === c) {
       const rows = [document.createElement('div')];
@@ -310,7 +310,7 @@ function createTrendCharts(el, opts) {
         const s = document.createElement('span'); s.textContent = name;
         r.append(i, b, s); rows.push(r);
       };
-      row('ci', hp.ci || 0, 'Circulation'); row('li', hp.li || 0, 'Lights'); row('fan', hp.fan, 'Exhaust fan'); row('hu', hp.hu, 'Fogger'); row('ac', hp.ac, 'Air conditioner'); row(null, total, 'Total', 'total');
+      row('ci', hp.ci || 0, 'Circulation'); row('li', hp.li || 0, 'Lights'); row('air', hp.air || 0, 'Air exchange'); row('hu', hp.hu, 'Fogger'); row('ac', hp.ac, 'Air conditioner'); row(null, total, 'Total', 'total');
       tooltip.replaceChildren(...rows);
       tooltip.style.display = 'block';
       const x = X(hp.t) + ui.host.offsetLeft;
@@ -341,13 +341,14 @@ function createTrendCharts(el, opts) {
   return { draw, destroy };
 }
 
-// ---------------- drawExhaustBars ----------------
-function drawExhaustBars(host, { hours, nowH, vol, clock }) {
+// ---------------- drawPurgeBars: air exchange run minutes per hour (C9 7) ----------------
+function drawPurgeBars(host, hours, clock) {
+  const nowH = hours[hours.length - 1].h;
   host.replaceChildren();
   const w = Math.max(240, host.clientWidth), h = 150, m = { l: 34, r: 8, t: 14, b: 22 };
   const pw = w - m.l - m.r, ph = h - m.t - m.b, bw = pw / 24, gap = 2;
   const Y = min => m.t + (1 - min / 60) * ph;
-  const svg = svgEl('svg', { class: 'chart', width: w, height: h, viewBox: `0 0 ${w} ${h}`, role: 'img', 'aria-label': 'Exhaust fan run minutes per hour, last 24 hours. The table below has the values.' });
+  const svg = svgEl('svg', { class: 'chart', width: w, height: h, viewBox: `0 0 ${w} ${h}`, role: 'img', 'aria-label': 'Air exchange run minutes per hour, last 24 hours. The table below has the values.' });
   for (const tk of [0, 15, 30, 45, 60]) {
     svgEl('line', { x1: m.l, x2: w - m.r, y1: Y(tk), y2: Y(tk), class: tk === 0 ? 'base' : 'gridl' }, svg);
     const t = svgEl('text', { x: m.l - 6, y: Y(tk) + 4, 'text-anchor': 'end' }, svg); t.textContent = tk;
@@ -360,7 +361,7 @@ function drawExhaustBars(host, { hours, nowH, vol, clock }) {
       const g = svgEl('g', { class: 'xbar' + (b.h === nowH ? ' now' : '') }, svg);
       svgEl('path', { d: barPath(x, top, bw - gap, bh, 4) }, g);
       const title = svgEl('title', {}, g);
-      title.textContent = `${clock.hm(b.h * 3600)}–${clock.hm((b.h + 1) * 3600)}: ${Math.round(mins)} min, ${b.starts} purges, ${Math.round(b.m3)} m³ (${(b.m3 / vol).toFixed(1)} air changes)${b.h === nowH ? ', hour not finished' : ''}`;
+      title.textContent = `${clock.hm(b.h * 3600)}–${clock.hm((b.h + 1) * 3600)}: ${Math.round(mins)} min, ${b.starts} purges, ${Math.round(b.m3)} m³, ${b.cappedN} capped${b.h === nowH ? ', hour not finished' : ''}`;
       if (b === maxB) { const t = svgEl('text', { x: x + (bw - gap) / 2, y: top - 4, 'text-anchor': 'middle', class: 'xlab' }, svg); t.textContent = `${Math.round(mins)}`; }
     }
     if (((b.h + Math.round(clock.offset / 3600)) % 3 + 3) % 3 === 0) { const t = svgEl('text', { x: x + (bw - gap) / 2, y: h - 5, 'text-anchor': 'middle' }, svg); t.textContent = clock.hm(b.h * 3600); }
@@ -397,8 +398,7 @@ function drawCalibCharts(host, { rows, base, fit }) {
 
 // ---------------- createLadder ----------------
 const LADDER_ROWS = [
-  { key: 'fan', name: 'Fan purge', color: 'var(--s-fan)', hi: s => s.rules.fanOn, lo: s => s.rules.fanOff, on: s => true },
-  { key: 'ac', name: 'AC setback', color: 'var(--s-ac)', hi: s => s.rules.acOff, lo: s => s.rules.acOn, on: s => s.rules.acPurge },
+  { key: 'air', name: 'Purge', color: 'var(--s-air)', hi: s => s.rules.fanOn, lo: s => s.rules.fanOff, on: () => true },
 ];
 function createLadder(el) {
   el.classList.add('ladder');
@@ -426,7 +426,7 @@ function createLadder(el) {
   const ladPos = v => `${clamp((v - ladScale.lo) / (ladScale.hi - ladScale.lo) * 100, 0, 100)}%`;
   function layout(settings, co2) {
     const R = settings.rules, now = Number.isFinite(co2) ? co2 : 0;
-    const top = Math.max(R.fanOn, R.acOff, settings.co2Lim, R.co2Safety ? R.co2SafetyAt : 0, now, 0);
+    const top = Math.max(R.fanOn, settings.co2Lim, R.co2Safety ? R.co2SafetyAt : 0, now, 0);
     ladScale = { lo: 400, hi: Math.ceil((top + 250) / 250) * 250 };
     for (const row of rows) {
       const lo = row.lo(settings), hi = row.hi(settings);
@@ -459,6 +459,6 @@ function createLadder(el) {
 
 global.FarmCharts = {
   lowerBound, nearest, aggregate, niceTicks, linePath, areaPath, barPath,
-  createTrendCharts, drawExhaustBars, drawCalibCharts, createLadder, TREND_DEFS,
+  createTrendCharts, drawPurgeBars, drawCalibCharts, createLadder, TREND_DEFS,
 };
 })(typeof window !== 'undefined' ? window : globalThis);
