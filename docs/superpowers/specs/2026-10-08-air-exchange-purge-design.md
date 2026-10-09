@@ -106,7 +106,7 @@ Short, capped purges alone kept the room in band, so the owner dropped Prepare (
 | Key | Type | Range | Default | Meaning |
 |---|---|---|---|---|
 | `fanOn` (kept) | ppm | 450–20000 | `co2Lim − 100` | Purge starts at |
-| `fanOff` (kept) | ppm | 400–20000 | `max(450, co2Lim − 300)` | Purge stops at |
+| `fanOff` (kept) | ppm | 400–20000 | `min(co2Lim − 150, max(600, co2Lim − 300))` (revised 2026-10-09: a 500 ppm stop in pinning needed 244 s at 1800 m³/h) | Purge stops at |
 | `purgeMaxS` (new) | s | 60–900 | 180 | Time cap of one purge |
 | `minOffS` (new) | s | 30–600 | 60 | Minimum time the fans stay off after a purge |
 

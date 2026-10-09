@@ -224,12 +224,14 @@ test('check: 2000 grey oyster in the default room is good; 6000 is too dense', (
 });
 
 // Purges on demand (C9): few blocks bring in little outdoor air, so wetness now comes with crowding. Golden oyster's
-// warm target hardly runs the AC, so nothing dries the purged wet air: about 217 blocks fit (measured 2026-10-09).
+// warm target hardly runs the AC, so nothing dries the purged wet air: about 195 blocks fit (measured 2026-10-09,
+// purges 700 → 600 ppm). Known gap, left to C8: golden passes again near 2000 blocks (their heat makes the AC dry
+// the room), and the single-window search cannot see the wet band between (ROADMAP, C9 8).
 const wetAbove = r => r.limit.some(l => l.fails.includes('humidity near saturation'));
-test('check: 200 golden oyster fit, and too wet above them is named as the limit (too many blocks)', () => {
+test('check: about 200 golden oyster is the edge, and too wet above it is named as the limit (too many blocks)', () => {
   const r = CAP.check(room, [{ crop: 'golden', blocks: 200 }], { now: NOW });
-  assert.equal(r.verdict, 'tight', JSON.stringify(r.capacity));
-  assert.ok(r.capacity.max >= 200 && r.capacity.max < 300, JSON.stringify(r.capacity));
+  assert.ok(['tight', 'too-dense'].includes(r.verdict), `${r.verdict} ${JSON.stringify(r.capacity)}`);
+  assert.ok(r.capacity.max >= 150 && r.capacity.max < 300, JSON.stringify(r.capacity));
   assert.ok(wetAbove(r), JSON.stringify(r.limit));
   // a failed run above a passing size is "too many blocks", whatever its reason (position, not reason)
   for (const x of r.runs) if (!x.pass && x.blocks > r.capacity.max) assert.equal(x.side, 'dense', `${x.blocks}`);

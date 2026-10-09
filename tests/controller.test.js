@@ -733,3 +733,12 @@ test('an upgraded snapshot starts with the air exchange off; the next steps run 
   assert.equal(step(60, 950).air.on, true);
   assert.deepEqual([up.purges().cur.start, up.purges().cur.reason, up.state.airReason, up.state.air.state], [60, 'purge', 'purge', 'purge']);
 });
+
+test('default purge levels: the stop level is never below 600 ppm, and stays 50 below the start (owner decision 2026-10-09)', () => {
+  // Purging close to outdoor air (about 420 ppm) is slow: a 500 ppm stop needed 244 s at 1800 m³/h for 2000 blocks.
+  const levels = lim => { const R = CC.defaultRules(lim); return [R.fanOn, R.fanOff]; };
+  assert.deepEqual(levels(700), [600, 550]);
+  assert.deepEqual(levels(800), [700, 600]);
+  assert.deepEqual(levels(1000), [900, 700]);
+  assert.deepEqual(levels(5000), [4900, 4700]);
+});

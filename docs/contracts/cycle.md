@@ -376,20 +376,16 @@ The 8640th step of loop day `day` (section 7.2, 0 … D − 1) lands exactly on 
 
 ### 12.6 Example (defaults, measurement, not binding)
 
-C9 10 (row C7) asked the lead to re-measure these numbers at C9 step 2 (the air exchange changes every segment). They were re-measured with `ClimateCycle.runCycle` on `master` 6a12852 (C9 merged), Node 22.20: 2000 grey oyster (`crop: 'oyster'`), default room (`{ volume: 60, calib: null }`, no `airM3h`, so 1800 m³/h), default settings, `my-lowland`: 83 days, 9 segments, about 4.6 s with the weather window. `totals.pass` is `false`.
+Re-measured 2026-10-09 with the air exchange (C9). 2000 grey oyster, default room (`{ volume: 60, calib: null }`), default settings, `my-lowland`: 83 days, 9 segments, about 5 s in Node 22.20. Total 836 kWh (the old always-on fan: about 909 kWh).
 
 | Segment | `inT` | `rhOk` | `co2Below` | `maxCore` | `alarms` | ≈ kWh | Pass |
 |---|---|---|---|---|---|---|---|
 | spawn 1 (21 d) | 100 | 3.4 (not judged) | 100 | 28.2 | – | 225 | yes |
-| pinning 1 (4 d) | 98.8 | 94.1 | **96.0** | 28.1 | `tLo` 1, `airTooSmall` 6 | 69 | **no**: `CO₂ above the limit` |
-| fruiting 1–4 (7 d each) | 99.9–100 | 98.7–99.8 | 98.2–100 | 27.4 | 0–1 `rhHi` | 85–88 | yes |
-| rest 1–3 (10 d each) | 100 | 100 | 100 | 27.4 | – | 66–68 | yes |
+| pinning 1 (4 d) | 99.2 | 96.4 | 100 | 28.1 | `tLo` 1 | 60 | yes |
+| fruiting 1–4 (7 d each) | 99.9–100 | 98.8–99.8 | 100 | 27.4 | 0–1 `rhHi` | 85–88 | yes |
+| rest 1–3 (10 d each) | 100 | 100 | 100 | 27.4 | – | 66–69 | yes |
 
-| Note | Detail |
-|---|---|
-| Pinning fails on CO₂ | The stage ramp (`program.rampH` 4 h) from the spawn run's CO₂ limit (5000 ppm) down to the pinning limit (800 ppm) keeps CO₂ above the pinning limit long enough to break the 98 % rule (`co2Below` 96.0 %). With C9's short purges the size alarm `airTooSmall` rises 6 times in that segment. The scoring is not changed for this (section 16). Test 12 still holds: the spawn segment and every fruiting segment pass. |
-| Before C9 (revision 1 draft, for history) | Every segment passed: pinning 1 had `inT` 99.2, `rhOk` 96.3, `co2Below` 99.3, alarms `tLo` 1, `sensor_RH` 1. |
-| Dense case | 6000 grey oyster, farm type `ready`: each fruiting segment fails with `temperature too high` (`inT` 68–75 %, `acTooSmall` 6–7 raises, `tHi` 2–3); the rest segments pass. |
+CO₂ is judged against the limit the controller holds (C9 10): after the spawn run the CO₂ limit ramps from 5000 to 800 ppm over `rampH` (4 h), and purges on demand follow the ramp. The old model's `sensor_RH` alarm in pinning (a response-check false positive) no longer appears. 6000 grey oyster, farm type `ready`: each fruiting segment fails with `temperature too high` (`inT` 68–75 %, `acTooSmall` 6–7 raises); the rest segments pass.
 
 ## 13. What `cycle.js` uses
 

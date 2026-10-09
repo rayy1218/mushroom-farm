@@ -10,14 +10,16 @@ Legend: ✅ built · 🔨 wave 2 · 📋 owner's plan, not started · 💡 sugge
 
 | Part | Status |
 |---|---|
-| Climate controller (stages, fog, fan, AC, alarms, eight tropical crops) | ✅ |
+| Climate controller (stages, fog, air exchange, AC, alarms, eight tropical crops) | ✅ |
 | Server running every room 24/7, SQLite, live feed (wave 1) | ✅ |
 | Test bench simulator, capacity check, calibration from CSV | ✅ |
 | Full crop-cycle simulation (C7, `cycle.js`) | ✅ |
 | Rooms home; room tabs Live / Simulate / Calibrate; saved simulation runs; predicted vs real; calibration from the room's history | 🔨 |
-| Equipment check (C8): per-room AC hp, fogger, fan, walls; size search; blunt verdicts ("your 1 hp is too small, buy 3 hp"); heat breakdown | 🔨 |
+| Equipment check (C8): per-room AC hp, fogger, air exchange size (C9 sizing rule), walls; size search; blunt verdicts ("your 1 hp is too small, buy 3 hp"); heat breakdown | 🔨 |
 | Lion's mane crop profile and cold-room controller tuning (research: `docs/research/`) | 🔨 |
-| Room drawing: fan and opening placed by vent mode and positions, circulation fan CF-205, smaller text, more live values (power per machine, air changes, zones, core) | ✅ |
+| Room drawing: intake and exhaust fans by position, closed dampers, circulation fan CF-205, smaller text, more live values (power per machine, air changes, zones, core); at-a-glance panel; controller section grid | ✅ |
+| Air exchange (C9): intake + exhaust pair on demand, short purges capped at 3 min, stop level floored at 600 ppm, "air exchange too small" alarm with the size needed, sizing for the checks; the default 2000-block cycle passes every stage with about 8 % less energy than the old always-on fan | ✅ |
+| Capacity check: find every pass window (golden oyster is too wet from about 300 to 1600 blocks and passes again near 2000; the single-window search can miss the wet band). Belongs with C8. | 📋 |
 | "Wall heat transfer (W/K)" label | 🔨 |
 | Real sensors and machines (hardware adapter in place of the simulator) | 📋 |
 | Alarms to the phone (Telegram, WhatsApp or SMS) | 💡 |
