@@ -350,3 +350,93 @@ test('S-POOR poor walls and roof: insulate first', () => {
   assert.equal(r.breakdown.advice, 'insulate');
   assert.equal(r.breakdown.text, 'Most of the heat comes through the walls and roof (48 %). Insulate before you buy a bigger aircond.');
 });
+
+// ---------- air exchange (C8 8.4, 7.6), own aircond 1.5 hp, every run passes unless noted ----------
+const air = (eq, mix, fn = () => ({}), extra = {}) => check(room({ ac_hp: 1.5, ...eq }), mix, fn, extra);
+const oyster6000 = [{ crop: 'oyster', blocks: 6000 }];
+const READY = { settings: { ...CC.defaultSettings(), farmType: 'ready' } };
+
+test('AIR-INF outside air alone cannot bring CO₂ down to the stop level', () => {
+  const r = air({}, lm(7000000));
+  assert.equal(r.air.verdict, 'too-small');
+  assert.deepEqual([r.air.needM3h, r.air.recommended, r.air.stage, r.air.purgeS], [Infinity, null, 'pinning', Infinity]);
+  assert.equal(r.air.text, 'Your 1,800 m³/h air exchange cannot bring CO₂ down to 700 ppm in pinning: outside air alone cannot bring CO₂ this low. Raise the stop level.');
+});
+
+test('AIR-NEVER a purge never reaches the stop level (C8 8.4 example 1)', () => {
+  const r = air({ air_m3h: 900 }, oyster6000, undefined, READY);
+  assert.deepEqual([r.air.verdict, r.air.needM3h, r.air.recommended, r.air.margin, r.air.stage, r.air.capS], ['too-small', 1450, 1800, 2400, 'fruiting', 180]);
+  assert.equal(r.air.text, 'Your 900 m³/h air exchange is too small for 6,000 blocks in fruiting: a purge never brings CO₂ down to 700 ppm. Buy at least 1,450 m³/h; 1,800 m³/h gives a margin.');
+});
+
+test('AIR-SLOW a purge is too slow (example 2)', () => {
+  const r = air({ air_m3h: 1200 }, oyster6000, undefined, READY);
+  assert.ok(Math.abs(r.air.purgeS - 276) <= 1, r.air.purgeS);
+  assert.equal(r.air.text, 'Your 1,200 m³/h air exchange is too small for 6,000 blocks in fruiting: a purge takes 4.6 min, the limit is 3 min. Buy at least 1,450 m³/h; 1,800 m³/h gives a margin.');
+});
+
+test('AIR-MARGIN the margin is the step after the size when the size equals the need', () => {
+  const r = air({ air_m3h: 600 }, lm(2000));
+  assert.deepEqual([r.air.recommended, r.air.margin], [900, 1200]);
+  assert.equal(r.air.text, 'Your 600 m³/h air exchange is too small for 2,000 blocks in pinning: a purge takes 5.6 min, the limit is 3 min. Buy at least 900 m³/h; 1,200 m³/h gives a margin.');
+});
+
+test('AIR-NOSIZE no size in the list is big enough', () => {
+  const r = air({}, lm(25000));
+  assert.deepEqual([r.air.needM3h, r.air.recommended], [4150, null]);
+  assert.equal(r.air.text, 'Your 1,800 m³/h air exchange is too small for 25,000 blocks in pinning: a purge never brings CO₂ down to 700 ppm. Buy at least 4,150 m³/h.');
+});
+
+test('AIR-RUN a CO₂ failure is confirmed by one run with a bigger air exchange', () => {
+  const seen = [];
+  const r = air({}, lm(2500), (p, rm) => { seen.push(rm); return rm.airM3h >= 2400 ? {} : { fails: CO2 }; });
+  for (const rm of seen.filter(x => x.airM3h === 1800)) assert.equal('vent' in rm, false);
+  assert.deepEqual(r.runs.filter(x => x.kind === 'ac').map(x => x.air_m3h), r.runs.filter(x => x.kind === 'ac').map(() => 1800));
+  const last = r.runs.at(-1);
+  assert.deepEqual([last.kind, last.air_m3h], ['air', 2400]);
+  assert.equal(seen.at(-1).airM3h, 2400);
+  assert.deepEqual([r.air.verdict, r.air.recommended, r.air.tried], ['too-small', 2400, 2400]);
+  assert.equal(r.air.text, 'Your 1,800 m³/h air exchange is too small: CO₂ goes above the limit in fruiting. A 2,400 m³/h air exchange keeps it below.');
+});
+
+test('AIR-NOFIX a bigger air exchange does not fix the CO₂', () => {
+  const r = air({}, lm(2500), () => ({ fails: CO2 }));
+  assert.deepEqual([r.air.verdict, r.air.tried, r.air.recommended], ['not-the-fix', 2400, null]);
+  assert.equal(r.air.text, 'CO₂ goes above the limit in fruiting, and a 2,400 m³/h air exchange does not fix it.');
+});
+
+test('AIR-NOFIX0 no bigger size exists: not-the-fix before oversized', () => {
+  const r = air({ air_m3h: 3600 }, lm(2500), () => ({ fails: CO2 }));
+  assert.equal(r.runs.some(x => x.kind === 'air'), false);
+  assert.deepEqual([r.air.verdict, r.air.tried], ['not-the-fix', null]);
+  assert.equal(r.air.text, 'CO₂ goes above the limit in fruiting.');
+});
+
+const OVER = 'bigger than this room needs: 900 m³/h is enough. Each purge brings in a lot of hot, wet outside air at once.';
+test('AIR-OVER three steps above the need is oversized', () => {
+  const r = air({ air_m3h: 2400 }, lm(1000));
+  assert.deepEqual([r.air.verdict, r.air.recommended], ['oversized', 900]);
+  assert.equal(r.air.text, `Your 2,400 m³/h air exchange is ${OVER}`);
+});
+
+test('AIR-OVER36 (example 4)', () => {
+  assert.equal(air({ air_m3h: 3600 }, lm(1000)).air.text, `Your 3,600 m³/h air exchange is ${OVER}`);
+});
+
+test('AIR-OVERODD an odd size counts by the largest step not above it', () => {
+  const r = air({ air_m3h: 2500 }, lm(1000));
+  assert.equal(r.air.verdict, 'oversized');
+  assert.equal(r.air.text, `Your 2,500 m³/h air exchange is ${OVER}`);
+});
+
+test('AIR-2STEP two steps above the need is not oversized (example 3)', () => {
+  const r = air({ air_m3h: 1800 }, lm(1000));
+  assert.deepEqual([r.air.verdict, r.air.recommended, r.air.needM3h], ['enough', null, 800]);
+  assert.equal(r.air.text, 'Your 1,800 m³/h air exchange is enough: a purge takes at most 1.2 min (pinning), the limit is 3 min.');
+});
+
+test('AIR-900 (example 5)', () => {
+  const r = air({ air_m3h: 900 }, lm(1000));
+  assert.equal(r.air.verdict, 'enough');
+  assert.equal(r.air.text, 'Your 900 m³/h air exchange is enough: a purge takes at most 2.5 min (pinning), the limit is 3 min.');
+});
