@@ -238,6 +238,8 @@ Checked on Node 22.20 (SQLite 3.50.4) inside `BEGIN IMMEDIATE` with `foreign_key
 |---|---|
 | `buildReadingRow` | `air: cmd.air && cmd.air.on ? 1 : 0` in place of `fan` |
 | Stored settings | Every settings object read from the database goes through `ClimateController.upgradeSettings` before `importSettings` (rooms.js lines ~300, ~492, ~627); its warnings join the import warnings |
+| Base before merge | In `applySettings`, the stored base is upgraded BEFORE the input is merged over it (and the merged object is upgraded again for version 1 input), so a version 1 base never overwrites a `manual.air` the user just gave; real and fake manager |
+| Upgrade saved once | At loop start, when `upgradeSettings` gave warnings, the manager saves the upgraded settings once (`db.saveSettings`, note `Upgraded: air exchange`), so the "was removed" warnings are logged once, not at every start |
 | Controller and sim snapshots | Passed to `create` unchanged; the upgrades of 4.2 and 5.7 handle old ones |
 | Simulated size | `sim-adapter.js` sets `env.airM3h = settings.airM3h` when it builds the env, so a simulated room runs with its own size. A saved change of `airM3h` reaches the simulation no later than the next loop restart. |
 | Fake manager | `tests/fakes/rooms.js` runs `upgradeSettings` before its import too (C2 16), like the real manager |
