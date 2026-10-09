@@ -76,8 +76,8 @@ both('open gives path and version', (t, open) => {
   const db = open({ now });
   t.after(() => db.close());
   assert.equal(db.path, ':memory:');
-  assert.equal(db.version, 2);
-}, 'C1 rev 6 / C2 rev 9 fake: Data 2 rewrites this test');
+  assert.equal(db.version, 4);
+});
 
 test('real: openDb rejects an unknown option', () => {
   assert.throws(() => openDb(':memory:', { nope: 1 }), err => {
@@ -104,7 +104,7 @@ test('real: openDb(path, null) is treated as no options', t => {
   const file = tmpFile(t);
   const db = openDb(file, null);
   t.after(() => db.close());
-  assert.equal(db.version, 2);
+  assert.equal(db.version, 4);
 });
 
 test('real: opening a file creates the folder, schema and indexes', t => {
@@ -122,8 +122,9 @@ test('real: opening a file creates the folder, schema and indexes', t => {
     "SELECT name, strict FROM pragma_table_list() WHERE name NOT LIKE 'sqlite_%' ORDER BY name"
   ).all();
   const expectedTables = [
-    'alarms', 'calibrations', 'capacity_reports', 'controller_state', 'crop_mixes',
-    'events', 'readings', 'room_settings', 'rooms', 'schema_version',
+    'alarms', 'batches', 'calibrations', 'capacity_reports', 'controller_state', 'crop_mixes',
+    'events', 'harvest_crates', 'readings', 'room_equipment', 'room_settings', 'rooms', 'schema_version',
+    'simulation_runs',
   ];
   assert.deepStrictEqual(tables.map(r => r.name).sort(), expectedTables);
   for (const r of tables) assert.equal(r.strict, 1, `${r.name} is not strict`);
@@ -132,17 +133,57 @@ test('real: opening a file creates the folder, schema and indexes', t => {
     "SELECT name FROM sqlite_master WHERE type = 'index' AND name NOT LIKE 'sqlite_%' ORDER BY name"
   ).all().map(r => r.name);
   assert.deepStrictEqual(indexes, [
-    'alarms_open', 'alarms_room', 'calibrations_room', 'capacity_reports_room',
-    'events_room', 'readings_room_t', 'room_settings_room',
+    'alarms_open', 'alarms_room', 'batches_room', 'calibrations_room', 'capacity_reports_room',
+    'events_room', 'harvest_crates_batch', 'readings_room_t', 'room_settings_room', 'simulation_runs_room',
   ].sort());
 
   const cols = raw.prepare('SELECT name FROM pragma_table_info(?)').all('readings').map(r => r.name);
-  assert.deepStrictEqual(cols, [
-    'room_id', 't', 'temp', 'RH', 'CO2', 't_out', 'rh_out', 'ac_mode', 'ac_setpoint',
-    'fog', 'air', 'lights', 'circ', 'power_w', 'kwh',
-  ]);
+  assert.deepStrictEqual(cols, READINGS_COLUMNS);
   const roomCols = raw.prepare('SELECT name FROM pragma_table_info(?)').all('rooms').map(r => r.name);
   assert.deepStrictEqual(roomCols, ['id', 'name', 'volume', 'adapter', 'created_at', 'archived_at']);
+});
+
+const READINGS_COLUMNS = [
+  'room_id', 't', 'temp', 'RH', 'CO2', 't_out', 'rh_out', 'ac_mode', 'ac_setpoint',
+  'fog', 'air', 'lights', 'circ', 'power_w', 'kwh', 'ac_fan', 'stage', 'core',
+];
+const TABLES_V4 = [
+  'alarms', 'batches', 'calibrations', 'capacity_reports', 'controller_state', 'crop_mixes',
+  'events', 'harvest_crates', 'readings', 'room_equipment', 'room_settings', 'rooms', 'schema_version',
+  'simulation_runs',
+];
+const INDEXES_V4 = [
+  'alarms_open', 'alarms_room', 'batches_room', 'calibrations_room', 'capacity_reports_room',
+  'events_room', 'harvest_crates_batch', 'readings_room_t', 'room_settings_room', 'simulation_runs_room',
+];
+
+test("real: open ':memory:' has the version 4 schema", t => {
+  const db = openDb(':memory:', { now: () => T0 });
+  t.after(() => db.close());
+  const raw = db.sqlite;
+  const names = type => raw.prepare("SELECT name FROM sqlite_master WHERE type = ? AND name NOT LIKE 'sqlite_%' ORDER BY name").all(type).map(r => r.name);
+  assert.deepStrictEqual(names('table'), TABLES_V4);
+  assert.deepStrictEqual(names('index'), INDEXES_V4.slice().sort());
+  const cols = table => raw.prepare('SELECT name FROM pragma_table_info(?)').all(table).map(r => r.name);
+  assert.deepStrictEqual(cols('calibrations').slice(-4), ['source', 'log_from', 'log_to', 'equipment']);
+  assert.deepStrictEqual(cols('readings'), READINGS_COLUMNS);
+  assert.ok(!cols('readings').includes('fan'));
+  assert.ok(!cols('rooms').includes('vent'));
+  assert.equal(raw.prepare('PRAGMA foreign_keys').get().foreign_keys, 1);
+  assert.deepStrictEqual(raw.prepare('SELECT version FROM schema_version ORDER BY version').all().map(r => r.version), [1, 2, 3, 4]);
+  assert.equal(raw.prepare('SELECT COUNT(*) AS n FROM batches').get().n, 0);
+  assert.equal(raw.prepare('SELECT COUNT(*) AS n FROM harvest_crates').get().n, 0);
+});
+
+test('real: db.sqlite is the connection and cannot be replaced', () => {
+  const db = openDb(':memory:', { now: () => T0 });
+  const conn = db.sqlite;
+  assert.ok(conn instanceof DatabaseSync);
+  assert.equal(conn.prepare('SELECT COUNT(*) AS n FROM batches').get().n, 0);
+  assert.throws(() => { db.sqlite = null; }, TypeError);
+  assert.equal(db.sqlite, conn);
+  db.close();
+  assert.throws(() => db.sqlite.prepare('SELECT 1'), { message: 'database is not open' });
 });
 
 both('close twice does not throw; calls after close throw', (t, open) => {
@@ -181,7 +222,7 @@ test('real: reopening a file applies no upgrade twice', t => {
   const raw = new DatabaseSync(file);
   t.after(() => raw.close());
   assert.deepStrictEqual(raw.prepare('SELECT version, applied_at FROM schema_version').all().map(r => ({ ...r })), [
-    { version: 1, applied_at: T0 }, { version: 2, applied_at: T0 },
+    { version: 1, applied_at: T0 }, { version: 2, applied_at: T0 }, { version: 3, applied_at: T0 }, { version: 4, applied_at: T0 },
   ]);
 });
 
@@ -189,16 +230,16 @@ test('real: upgrades apply in order', t => {
   const file = tmpFile(t);
   const upgrades = [
     ...UPGRADES,
-    { version: 3, sql: 'CREATE TABLE extra_a (x INTEGER) STRICT;' },
-    { version: 4, sql: 'ALTER TABLE extra_a ADD COLUMN y INTEGER;' },
+    { version: 5, sql: 'CREATE TABLE extra_a (x INTEGER) STRICT;' },
+    { version: 6, sql: 'ALTER TABLE extra_a ADD COLUMN y INTEGER;' },
   ];
   const db = openDb(file, { now: () => T0, upgrades });
-  assert.equal(db.version, 4);
+  assert.equal(db.version, 6);
   db.close();
   const raw = new DatabaseSync(file);
   t.after(() => raw.close());
   assert.deepStrictEqual(raw.prepare('SELECT version FROM schema_version ORDER BY version').all().map(r => ({ ...r })), [
-    { version: 1 }, { version: 2 }, { version: 3 }, { version: 4 },
+    { version: 1 }, { version: 2 }, { version: 3 }, { version: 4 }, { version: 5 }, { version: 6 },
   ]);
   const cols = raw.prepare('SELECT name FROM pragma_table_info(?)').all('extra_a').map(r => r.name);
   assert.deepStrictEqual(cols, ['x', 'y']);
@@ -208,16 +249,16 @@ test('real: a failed upgrade leaves no trace; earlier upgrades stay', t => {
   const file = tmpFile(t);
   const upgrades = [
     ...UPGRADES,
-    { version: 3, sql: 'CREATE TABLE fk_probe (room_id INTEGER REFERENCES rooms (id)) STRICT; INSERT INTO fk_probe VALUES (999);' },
+    { version: 5, sql: 'CREATE TABLE fk_probe (room_id INTEGER REFERENCES rooms (id)) STRICT; INSERT INTO fk_probe VALUES (999);' },
   ];
-  assert.throws(() => openDb(file, { now: () => T0, upgrades }), err => /^Schema upgrade 3 failed: /.test(err.message));
+  assert.throws(() => openDb(file, { now: () => T0, upgrades }), err => /^Schema upgrade 5 failed: /.test(err.message));
 
   const db = openDb(file, { now: () => T0 });
-  assert.equal(db.version, 2);
+  assert.equal(db.version, 4);
   db.close();
   const raw = new DatabaseSync(file);
   t.after(() => raw.close());
-  assert.deepStrictEqual(raw.prepare('SELECT version FROM schema_version ORDER BY version').all().map(r => ({ ...r })), [{ version: 1 }, { version: 2 }]);
+  assert.deepStrictEqual(raw.prepare('SELECT version FROM schema_version ORDER BY version').all().map(r => ({ ...r })), [{ version: 1 }, { version: 2 }, { version: 3 }, { version: 4 }]);
   assert.deepStrictEqual(raw.prepare("SELECT name FROM sqlite_master WHERE name = 'fk_probe'").all(), []);
 });
 
@@ -225,16 +266,16 @@ test('real: a database newer than the app throws and changes nothing', t => {
   const file = tmpFile(t);
   const upgrades = [
     ...UPGRADES,
-    { version: 3, sql: 'CREATE TABLE extra_a (x INTEGER) STRICT;' },
-    { version: 4, sql: 'ALTER TABLE extra_a ADD COLUMN y INTEGER;' },
+    { version: 5, sql: 'CREATE TABLE extra_a (x INTEGER) STRICT;' },
+    { version: 6, sql: 'ALTER TABLE extra_a ADD COLUMN y INTEGER;' },
   ];
   openDb(file, { now: () => T0, upgrades }).close();
   assert.throws(() => openDb(file, { now: () => T0 }), {
-    message: `The database ${file} has schema version 4; this app knows up to 2. Use a newer version of the app.`,
+    message: `The database ${file} has schema version 6; this app knows up to 4. Use a newer version of the app.`,
   });
   const raw = new DatabaseSync(file);
   t.after(() => raw.close());
-  assert.equal(raw.prepare('SELECT MAX(version) AS v FROM schema_version').get().v, 4);
+  assert.equal(raw.prepare('SELECT MAX(version) AS v FROM schema_version').get().v, 6);
   assert.deepStrictEqual(raw.prepare("SELECT name FROM sqlite_master WHERE name = 'extra_a'").all().map(r => ({ ...r })), [{ name: 'extra_a' }]);
 });
 
@@ -276,7 +317,7 @@ test('real: upgrade 2 turns fan 0-3 into air 0/1 and drops rooms.vent (C9 6.2)',
   writeVersion1File(file);
 
   const db = openDb(file, { now: () => T0 });
-  assert.equal(db.version, 2);
+  assert.equal(db.version, 4);
   assert.deepStrictEqual(db.getRoom(1), { id: 1, name: 'Room 1', volume: 60, adapter: 'sim', created_at: T0 - 86400, archived_at: null });
   assert.equal(db.getRoom(2).archived_at, T0 - 3600);
   const rows = db.queryReadings(1, { from: T0, to: T0 + 90 });
@@ -299,14 +340,11 @@ test('real: upgrade 2 turns fan 0-3 into air 0/1 and drops rooms.vent (C9 6.2)',
   const raw = new DatabaseSync(file);
   t.after(() => raw.close());
   assert.deepStrictEqual(raw.prepare('SELECT version, applied_at FROM schema_version ORDER BY version').all().map(r => ({ ...r })), [
-    { version: 1, applied_at: T0 - 86400 }, { version: 2, applied_at: T0 },
+    { version: 1, applied_at: T0 - 86400 }, { version: 2, applied_at: T0 }, { version: 3, applied_at: T0 }, { version: 4, applied_at: T0 },
   ]);
   const cols = table => raw.prepare('SELECT name FROM pragma_table_info(?)').all(table).map(r => r.name);
   assert.deepStrictEqual(cols('rooms'), ['id', 'name', 'volume', 'adapter', 'created_at', 'archived_at']);
-  assert.deepStrictEqual(cols('readings'), [
-    'room_id', 't', 'temp', 'RH', 'CO2', 't_out', 'rh_out', 'ac_mode', 'ac_setpoint',
-    'fog', 'air', 'lights', 'circ', 'power_w', 'kwh',
-  ]);
+  assert.deepStrictEqual(cols('readings'), READINGS_COLUMNS);
   assert.equal(raw.prepare("SELECT strict FROM pragma_table_list() WHERE name = 'readings'").get().strict, 1);
   assert.deepStrictEqual(raw.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'readings'").all().map(r => r.name), ['readings_room_t']);
   assert.deepStrictEqual(raw.prepare('PRAGMA foreign_key_check').all(), []);
@@ -329,7 +367,7 @@ test('real: a failed upgrade 2 leaves the version 1 file as it was, and the next
 
   const db = openDb(file, { now: () => T0 });
   t.after(() => db.close());
-  assert.equal(db.version, 2);
+  assert.equal(db.version, 4);
   assert.deepStrictEqual(db.queryReadings(1, { from: T0, to: T0 + 90 }).map(r => r.air), [0, 1, 1, 1]);
 });
 

@@ -4,6 +4,7 @@ const { DatabaseSync } = require('node:sqlite');
 const fs = require('node:fs');
 const path = require('node:path');
 const { NotFoundError, toJson, fromJson } = require('./db-common.js');
+const { SCHEMA_V4_HARVEST } = require('./harvest-schema.js');
 
 // Schema version 1 (C1 section 4, verbatim).
 const SCHEMA_V1 = `
@@ -137,10 +138,66 @@ CREATE INDEX readings_room_t ON readings (room_id, t);
 ALTER TABLE rooms DROP COLUMN vent;
 `;
 
+// Schema version 3 (C1 section 4.4, verbatim): the wave 2 columns and tables.
+const SCHEMA_V3_ROOMS = `
+-- Upgrade 3: room-centred app and C8 equipment (lead decisions 18, 20, 23, 30, 33, 39, 50, 54).
+
+-- Readings: what calib.js needs to replay a live room, and what Calibrate compares with a simulation (LD 20).
+ALTER TABLE readings ADD COLUMN ac_fan TEXT CHECK (ac_fan IN ('low', 'auto', 'high'));
+ALTER TABLE readings ADD COLUMN stage  TEXT;
+ALTER TABLE readings ADD COLUMN core   REAL;
+
+-- Calibrations: where the fitted log came from (LD 23) and the machines it was fitted with (LD 50).
+ALTER TABLE calibrations ADD COLUMN source    TEXT CHECK (source IN ('csv', 'history', 'import'));
+ALTER TABLE calibrations ADD COLUMN log_from  INTEGER;
+ALTER TABLE calibrations ADD COLUMN log_to    INTEGER;
+ALTER TABLE calibrations ADD COLUMN equipment TEXT;
+
+-- Saved Simulate runs: capacity checks, full cycles and C8 equipment checks (LD 18, 39).
+CREATE TABLE simulation_runs (
+  id          INTEGER PRIMARY KEY,
+  room_id     INTEGER NOT NULL REFERENCES rooms (id),
+  created_at  INTEGER NOT NULL,
+  kind        TEXT    NOT NULL CHECK (kind IN ('cycle', 'capacity', 'equipment')),
+  verdict     TEXT    NOT NULL CHECK (verdict IN ('pass', 'fail', 'impossible', 'good', 'tight', 'too-dense', 'too-empty',
+                                                 'enough', 'too-small', 'too-big', 'oversized')),
+  blocks      INTEGER NOT NULL CHECK (blocks >= 0),
+  days        INTEGER CHECK (days >= 1),
+  kwh         REAL,
+  rm          REAL,
+  utilisation INTEGER,
+  real_start  INTEGER,
+  note        TEXT,
+  inputs      TEXT    NOT NULL,
+  result      TEXT    NOT NULL,
+  CHECK ((kind = 'cycle'     AND verdict IN ('pass', 'fail', 'impossible'))
+      OR (kind = 'capacity'  AND verdict IN ('good', 'tight', 'too-dense', 'too-empty', 'impossible'))
+      OR (kind = 'equipment' AND verdict IN ('enough', 'too-small', 'too-big', 'oversized', 'impossible')))
+) STRICT;
+CREATE INDEX simulation_runs_room ON simulation_runs (room_id, id);
+
+-- C8: the machines of each room (one row per room; replaced on save) (LD 33, 54).
+CREATE TABLE room_equipment (
+  room_id   INTEGER PRIMARY KEY REFERENCES rooms (id),
+  saved_at  INTEGER NOT NULL,
+  ac_hp     REAL    NOT NULL CHECK (ac_hp IN (1, 1.5, 2, 2.5, 3, 4, 5, 6)),
+  ac_units  INTEGER NOT NULL CHECK (ac_units BETWEEN 1 AND 4),
+  fog_lph   REAL    NOT NULL CHECK (fog_lph BETWEEN 0.5 AND 50),
+  air_m3h   REAL    NOT NULL CHECK (air_m3h BETWEEN 50 AND 10000),
+  walls     TEXT    CHECK (walls IN ('zinc', 'brick115', 'brick230', 'eps50', 'eps75', 'eps100', 'pu50', 'pu75', 'pu100')),
+  roof      TEXT    CHECK (roof IN ('zinc', 'eps50', 'eps75', 'eps100', 'pu50', 'pu75', 'pu100')),
+  height    REAL    NOT NULL CHECK (height BETWEEN 2 AND 6),
+  CHECK ((walls IS NULL) = (roof IS NULL))
+) STRICT;
+`;
+
 // Released upgrades are never edited; a new one is appended (C1 section 3).
+// Upgrade 4 (C10 3) lives in harvest-schema.js; db.js prepares no statement on its tables.
 const UPGRADES = [
   { version: 1, sql: SCHEMA_V1 },
   { version: 2, sql: SCHEMA_V2_AIR },
+  { version: 3, sql: SCHEMA_V3_ROOMS },
+  { version: 4, sql: SCHEMA_V4_HARVEST },
 ];
 
 // --- Section 4 binding helper: every bound value goes through this. ---
@@ -680,7 +737,7 @@ function buildDb(conn, dbPath, version, now) {
     return undefined;
   }
 
-  return {
+  const db = {
     path: dbPath,
     version,
     close,
@@ -713,6 +770,9 @@ function buildDb(conn, dbPath, version, now) {
     saveCapacityReport,
     latestCapacityReport,
   };
+  // The connection for server/harvest-db.js (C1 6.3, lead decision 61): read only, closed only by close().
+  Object.defineProperty(db, 'sqlite', { value: conn, enumerable: true, writable: false, configurable: false });
+  return db;
 }
 
 module.exports = { openDb, NotFoundError, UPGRADES };
