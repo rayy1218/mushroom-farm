@@ -21,7 +21,7 @@ test('the 19 request functions: method, path, query, body, result', async (t) =>
   assert.deepEqual(apiRequests(fake).at(-1), { method: 'GET', path: '/api/rooms', query: {}, body: null });
   assert.deepEqual(roomsList, []);
 
-  const room = { name: 'A', volume: 60, vent: 'supply' };
+  const room = { name: 'A', volume: 60 };
   const created = await FarmApi.createRoom(room);
   assert.deepEqual(apiRequests(fake).at(-1), { method: 'POST', path: '/api/rooms', query: {}, body: room });
   assert.deepEqual(created, room);

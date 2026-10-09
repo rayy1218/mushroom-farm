@@ -2,6 +2,7 @@
 // (docs/contracts/web.md C6 = C5 7.1-7.7, table 7.4).
 const test = require('node:test');
 const assert = require('node:assert/strict');
+require('../air.js');
 require('../controller.js');
 require('../web/ui.js');
 require('../web/settings-panel.js');
