@@ -265,7 +265,7 @@ Each stream's tests that depend on another stream's code use the contract's shap
 - [ ] For each of `stream/air-simulation`, `stream/air-controller`, `stream/air-data`, `stream/air-web`: `git merge --no-ff <branch>`, then `npm test`. Expected: the stream's own tests pass; failures in `tests/integration.test.js` and `tests/vectors.test.js` are expected until tasks 2.2–2.3.
 
 - [ ] After the controller merge, delete the simulation stream's test-only "C9 bridge" from `tests/capacity.test.js`, `tests/cycle.test.js` and `tests/calib.test.js` (brief `simulation.md` names it), and remove the `todo` option from the three tests it marked; run them. If cycle test FULL still fails, check the spike-filter rule (C9 5.6 "Sensor check") first.
-- [ ] Re-measure the capacity check "too wet with many blocks" result (simulation brief question 2: default room, 200 golden oyster, capacity 222 with no limit named). If the two capacity `todo` tests still fail with the C9 controller and Prepare, stop and bring it to the user as a design question (which side a near-saturation failure belongs to); do not loosen the tests.
+- [ ] Re-measure the capacity check "too wet with many blocks" result (simulation brief question 2: default room, 200 golden oyster, capacity 222 with no limit named). If the two capacity `todo` tests still fail with the C9 controller, stop and bring it to the user as a design question (which side a near-saturation failure belongs to); do not loosen the tests.
 
 ### Task 2.2: Regenerate the vectors
 
@@ -328,7 +328,7 @@ test('2000 blocks at 1800 m³/h: short purges keep the room in band', () => {
 ```
 
 - [ ] **Step 4:** `node --test tests/integration.test.js` → pass. If a test fails, record the numbers and stop: that is a design finding for the user, not a test to loosen.
-- [ ] **Step 5: Commit** `git commit -am "test(integration): air exchange purges, size alarm, Prepare benefit (C9 section 11)"`
+- [ ] **Step 5: Commit** `git commit -am "test(integration): air exchange purges, size alarm, short purges in band (C9 section 11)"`
 
 ### Task 2.4: Re-measure the C7 example numbers
 
@@ -336,7 +336,7 @@ test('2000 blocks at 1800 m³/h: short purges keep the room in band', () => {
 
 ### Task 2.5: Browser checks (headless Chrome against the real server)
 
-- [ ] Copy the live database (`~/.local/share/mushroom-farm/farm.db`) to `~/.local/share/mushroom-farm/air-check.db`, start the server on it on a spare port (`FARM_PORT=8092 FARM_DB=… node server/main.js`) and confirm: the upgrade runs (version 2), Room 1 reads with `air`, the Simulator shows both fans spinning during a purge, the status card cycles Idle → Prepare → Purge, the glance panel shows the next purge, the settings panel saves `rules.purgeMaxS` on a live room.
+- [ ] Copy the live database (`~/.local/share/mushroom-farm/farm.db`) to `~/.local/share/mushroom-farm/air-check.db`, start the server on it on a spare port (`FARM_PORT=8092 FARM_DB=… node server/main.js`) and confirm: the upgrade runs (version 2), Room 1 reads with `air`, the Simulator shows both fans spinning during a purge, the status card cycles Idle (next purge) → Purge, the glance panel shows the next purge, the settings panel saves `rules.purgeMaxS` on a live room.
 
 ### Task 2.6: Docs
 
