@@ -59,10 +59,31 @@ function reconnectQuery(windowS, lastT, now) {
   return { ...windowQuery(windowS, now), merge: false };
 }
 
-const helpers = { airLive, airSub, windowQuery, gapFor, reconnectQuery };
+function chartTargets(live, base) {
+  const rules = base && base.rules;
+  const src = live && live.targets ? { spT: live.targets.T, spRH: live.targets.RH, co2Lim: live.targets.CO2 } : base;
+  const pick = (o, k) => (o && o[k] != null ? o[k] : NaN);
+  return { spT: pick(src, 'spT'), spRH: pick(src, 'spRH'), co2Lim: pick(src, 'co2Lim'), fanOn: pick(rules, 'fanOn'), fanOff: pick(rules, 'fanOff') };
+}
+
+function toChartPoint(r, tg) {
+  const S = global.ClimateController.SENSORS;
+  const v = (x, k) => (x != null && Number.isFinite(x) && x >= S[k].min && x <= S[k].max ? x : NaN);
+  return { t: r.t, T: v(r.T, 'T'), RH: v(r.RH, 'RH'), C: v(r.CO2, 'CO2'), tOut: v(r.t_out, 'tOut'), rhOut: v(r.rh_out, 'rhOut'),
+    core: v(r.core, 'core'), spT: tg.spT, spRH: tg.spRH, co2Lim: tg.co2Lim, fanOn: tg.fanOn, fanOff: tg.fanOff };
+}
+
+const retarget = (pts, tg) => pts.map(p => ({ ...p, spT: tg.spT, spRH: tg.spRH, co2Lim: tg.co2Lim, fanOn: tg.fanOn, fanOff: tg.fanOff }));
+
+function mergePoints(pts, p, from) {
+  const out = pts.filter(q => q.t >= from && q.t !== p.t);
+  if (p.t >= from) out.push(p);
+  return out.sort((a, b) => a.t - b.t);
+}
+
+const helpers = { airLive, airSub, windowQuery, gapFor, reconnectQuery, chartTargets, toChartPoint, retarget, mergePoints };
 const todo = name => () => { throw new Error(`${name} is not built yet`); };
-for (const n of ['chartTargets', 'toChartPoint', 'retarget',
-  'mergePoints', 'mergeEvent', 'readingTexts', 'machineLines', 'commandFromReading', 'programText', 'alarmTexts', 'detailChanges',
+for (const n of ['mergeEvent', 'readingTexts', 'machineLines', 'commandFromReading', 'programText', 'alarmTexts', 'detailChanges',
   'countText', 'changeLines', 'versionText', 'rebase']) helpers[n] = todo(n);
 
 function mount() {}

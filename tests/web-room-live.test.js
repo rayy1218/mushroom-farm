@@ -95,3 +95,26 @@ test('LV6 windows and reconnect queries', () => {
   assert.deepEqual(H.reconnectQuery(3600, null, 10000), { from: 6400, to: 10000, step: undefined, merge: false });
   assert.deepEqual(H.reconnectQuery(86400, 9000, 10000), { from: -76400, to: 10000, step: 120, merge: false });
 });
+
+test('LV7 chart points', () => {
+  assert.deepEqual(H.chartTargets({ targets: { T: 18, RH: 88, CO2: 1000 } }, S), TG);
+  const fb = H.chartTargets({ targets: null }, S);
+  assert.equal(fb.spT, 25); assert.equal(fb.fanOn, 900);
+  const none = H.chartTargets(null, null);
+  for (const k of Object.keys(TG)) assert.ok(Number.isNaN(none[k]), k);
+  assert.deepEqual(H.toChartPoint(READING, TG), { t: 1791450000, T: 18.2, RH: 88.4, C: 812, tOut: 31.5, rhOut: 62, core: 19.1,
+    spT: 18, spRH: 88, co2Lim: 1000, fanOn: 900, fanOff: 700 });
+  const p = H.toChartPoint({ ...READING, T: null, CO2: 20000, rh_out: -5, core: null }, TG);
+  for (const k of ['T', 'C', 'rhOut', 'core']) assert.ok(Number.isNaN(p[k]), k);
+  assert.equal(p.RH, 88.4); assert.equal(p.tOut, 31.5);
+  const pts = [{ t: 1, spT: 1 }], copy = structuredClone(pts);
+  assert.deepEqual(H.retarget(pts, TG), [{ t: 1, ...TG }]);
+  assert.deepEqual(pts, copy);
+  const base = [{ t: 10 }, { t: 40 }], bc = structuredClone(base);
+  assert.deepEqual(H.mergePoints(base, { t: 25 }, 0).map(x => x.t), [10, 25, 40]);
+  const rep = H.mergePoints(base, { t: 40, T: 1 }, 0);
+  assert.equal(rep.length, 2); assert.equal(rep[1].T, 1);
+  assert.deepEqual(H.mergePoints(base, { t: 25 }, 20).map(x => x.t), [25, 40]);
+  assert.deepEqual(H.mergePoints(base, { t: 5 }, 20).map(x => x.t), [40]);
+  assert.deepEqual(base, bc);
+});
