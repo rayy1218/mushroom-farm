@@ -361,7 +361,8 @@
     }
 
     // ---------- 1. Sensor checks ----------
-    function validate(r) {
+    // co2FallFree (C9 5.6): the air exchange ran in the last interval or stopped at the last reading, so CO2 may fall fast.
+    function validate(r, co2FallFree) {
       const v = {}, f = {};
       for (const k of Object.keys(SENSORS)) {
         const L = SENSORS[k];
@@ -375,7 +376,9 @@
         else if (x < L.min || x > L.max) { ok = false; why = 'value out of range'; }
         else if (s.good != null && r.t > s.goodT) {
           const perMin = Math.abs(x - s.good) / ((r.t - s.goodT) / 60);
-          if (perMin > L.rate) {
+          // A purge really lowers CO2 faster than the rate limit (C9 5.6): a falling CO2 is not tested then.
+          const purgeFall = co2FallFree && (k === 'CO2' || k === 'CO2b') && x < s.good;
+          if (perMin > L.rate && !purgeFall) {
             // A real fast change stays; a spike does not. Accept the jump when 3 readings in a row agree.
             const agrees = s.pend != null && Math.abs(x - s.pend) <= L.rate * Math.max(0.25, (r.t - (s.lastT ?? r.t)) / 60);
             s.pendN = agrees ? s.pendN + 1 : 1;
@@ -901,6 +904,7 @@
     function update(r) {
       const dt = st.lastT == null ? 0 : Math.max(0, r.t - st.lastT);
       const prevOn = st.cmd.air.on, prevFog = st.cmd.hu.level, wasSafe = st.co2SafetyOn;
+      const co2FallFree = prevOn || (st.out.air.since != null && st.out.air.since === st.lastT);   // before st.lastT moves
       if (prevOn && dt > 0) addRun(st.lastT, r.t);
       if (prevFog > 0 && dt > 0) addFog(st.lastT, r.t, prevFog);
       if (dt > 0 && st.cmd.ac.power) addAcFan(st.lastT, r.t, st.cmd.ac.fan);
@@ -910,7 +914,7 @@
       if (st.air.delayed) st.stats.delayedS += dt;
 
       program(r);
-      const { v, f } = validate(r);
+      const { v, f } = validate(r, co2FallFree);
       st.v = v; st.f = f;
       // Humidity target now (2.5). In VPD mode it moves with the temperature, so the evaporation from the caps stays.
       st.vpdT = es(cfg.spT) * (1 - cfg.spRH / 100);

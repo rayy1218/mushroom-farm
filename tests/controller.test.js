@@ -580,3 +580,21 @@ test('an old snapshot (one fan with levels) is upgraded by create()', () => {
   const again = CC.create(CC.defaultSettings(), up.snapshot(), null);
   assert.deepEqual(again.state, up.state, 'a version 2 snapshot is not changed');
 });
+
+test('sensor check: a falling CO2 is no spike while the fans run and for one reading after; a rise still is', () => {
+  const { feed, ctl } = make({ rules: { co2Safety: false, purgeMaxS: 60 } });
+  feed(0, { CO2: 3000 });                                       // purge
+  feed(30, { CO2: 2400 });                                      // -1200 ppm/min with the fans on
+  assert.deepEqual([ctl.state.v.CO2, ctl.state.sensors.CO2.why], [2400, '']);
+  assert.equal(feed(60, { CO2: 1800 }).air.on, false, 'the cap: off at 60 s');
+  assert.equal(ctl.state.v.CO2, 1800);
+  feed(90, { CO2: 1200 });                                      // the one reading after the fans stopped
+  assert.equal(ctl.state.v.CO2, 1200);
+  feed(120, { CO2: 600 });                                      // the fans were off for a whole interval: tested again
+  assert.deepEqual([ctl.state.v.CO2, ctl.state.sensors.CO2.why], [1200, 'sudden jump (spike)']);
+  const b = make({ rules: { co2Safety: false } });
+  b.feed(0, { CO2: 1000 });
+  assert.equal(b.ctl.state.cmd.air.on, true);
+  b.feed(30, { CO2: 1700 });                                    // +1400 ppm/min with the fans on: a rise is still tested
+  assert.deepEqual([b.ctl.state.v.CO2, b.ctl.state.sensors.CO2.why], [1000, 'sudden jump (spike)']);
+});
