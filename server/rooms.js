@@ -67,11 +67,6 @@ function validateVolume(volume, details) {
   details.push('volume must be a number from 5 to 5000 (m³)');
   return undefined;
 }
-function validateVent(vent, details) {
-  if (vent === 'supply' || vent === 'exhaust') return vent;
-  details.push('vent must be "supply" or "exhaust"');
-  return undefined;
-}
 function validateNote(note, details) {
   if (note === undefined || note === null) return null;
   if (typeof note !== 'string') { details.push('note must be text of at most 200 characters'); return undefined; }
@@ -92,7 +87,7 @@ function buildReadingRow(roomId, r, cmd) {
     ac_mode: cmd.ac.power ? cmd.ac.mode : 'off',
     ac_setpoint: cmd.ac.power ? cmd.ac.setpoint : null,
     fog: clampLevel(cmd.hu.level),
-    fan: clampLevel(cmd.fan.level),
+    air: cmd.air && cmd.air.on ? 1 : 0,
     lights: cmd.lights.on ? 1 : 0,
     circ: cmd.circ.on ? 1 : 0,
     power_w: sumFinite(r.power),
@@ -475,7 +470,6 @@ function createRoomManager(options) {
     const details = [];
     const name = validateName(obj.name, details);
     const volume = validateVolume(obj.volume, details);
-    const vent = validateVent(obj.vent, details);
     const settingsInput = obj.settings;
     if (settingsInput !== undefined && !isPlainObject(settingsInput)) details.push('settings must be an object');
     if (details.length > 0) throw new RoomError('bad_input', 'Bad input', details);
@@ -498,7 +492,7 @@ function createRoomManager(options) {
       warnings = dropped.concat(imported.warnings);
     }
 
-    const room = db.createRoom({ name, volume, vent, adapter: 'sim', settings, note: FIRST_NOTE, at: now() });
+    const room = db.createRoom({ name, volume, adapter: 'sim', settings, note: FIRST_NOTE, at: now() });
     const version = db.currentSettings(room.id);
     emit('settings', { roomId: room.id, version, settings: version.settings, warnings, auto: false });
     writeManagerEvent(room.id, 'info', 'Room created');
@@ -516,16 +510,14 @@ function createRoomManager(options) {
     for (const key of Object.keys(changesInput)) {
       if (key === 'name') toApply.name = validateName(changesInput.name, details);
       else if (key === 'volume') toApply.volume = validateVolume(changesInput.volume, details);
-      else if (key === 'vent') toApply.vent = validateVent(changesInput.vent, details);
       else details.push(`unknown field "${key}"`);
     }
     if (details.length > 0) throw new RoomError('bad_input', 'Bad input', details);
 
     db.updateRoom(id, toApply);
     const loop = loops.get(id);
-    const volumeOrVentChanged = (('volume' in toApply) && toApply.volume !== room.volume) ||
-      (('vent' in toApply) && toApply.vent !== room.vent);
-    if (volumeOrVentChanged && loop && loop.running) {
+    const volumeChanged = ('volume' in toApply) && toApply.volume !== room.volume;
+    if (volumeChanged && loop && loop.running) {
       restart(id);
     } else {
       emitRoomAlways(id);

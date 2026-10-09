@@ -81,11 +81,6 @@ function createFakeRoomManager({ db, now = () => Math.floor(Date.now() / 1000) }
     details.push('volume must be a number from 5 to 5000 (m³)');
     return undefined;
   }
-  function validateVent(vent, details) {
-    if (vent === 'supply' || vent === 'exhaust') return vent;
-    details.push('vent must be "supply" or "exhaust"');
-    return undefined;
-  }
 
   function mergeAndImport(settingsInput, base) {
     const { settings: merged, warnings: dropped } = cleanSettings(settingsInput, base);
@@ -107,7 +102,6 @@ function createFakeRoomManager({ db, now = () => Math.floor(Date.now() / 1000) }
     const details = [];
     const name = validateName(obj.name, details);
     const volume = validateVolume(obj.volume, details);
-    const vent = validateVent(obj.vent, details);
     const settingsInput = obj.settings;
     if (settingsInput !== undefined && !isPlainObject(settingsInput)) details.push('settings must be an object');
     if (details.length > 0) throw new RoomError('bad_input', 'Bad input', details);
@@ -124,7 +118,7 @@ function createFakeRoomManager({ db, now = () => Math.floor(Date.now() / 1000) }
       warnings = result.warnings;
     }
 
-    const room = db.createRoom({ name, volume, vent, adapter: 'sim', settings, note: FIRST_NOTE, at: now() });
+    const room = db.createRoom({ name, volume, adapter: 'sim', settings, note: FIRST_NOTE, at: now() });
     const version = db.currentSettings(room.id);
     emit('settings', { roomId: room.id, version, settings: version.settings, warnings, auto: false });
     const event = db.addEvent(room.id, { t: now(), level: 'info', text: 'Room created' });
@@ -142,7 +136,6 @@ function createFakeRoomManager({ db, now = () => Math.floor(Date.now() / 1000) }
     for (const key of Object.keys(changes)) {
       if (key === 'name') toApply.name = validateName(changes.name, details);
       else if (key === 'volume') toApply.volume = validateVolume(changes.volume, details);
-      else if (key === 'vent') toApply.vent = validateVent(changes.vent, details);
       else details.push(`unknown field "${key}"`);
     }
     if (details.length > 0) throw new RoomError('bad_input', 'Bad input', details);

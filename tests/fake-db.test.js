@@ -19,9 +19,9 @@ function freshSettings() {
 test('openFakeDb: shape, independence, unknown options', () => {
   const db = openFakeDb();
   assert.equal(db.path, ':memory:');
-  assert.equal(db.version, 1);
+  assert.equal(db.version, 2);
   const db2 = openFakeDb({ now: () => 1 });
-  db2.createRoom({ name: 'X', volume: 10, vent: 'supply', settings: freshSettings() });
+  db2.createRoom({ name: 'X', volume: 10, settings: freshSettings() });
   assert.equal(db.listRooms().length, 0);
   assert.throws(() => openFakeDb({ upgrades: [] }), { name: 'TypeError', message: 'openFakeDb: unknown option "upgrades"' });
   assert.throws(() => openFakeDb({ foo: 1 }), { name: 'TypeError', message: 'openFakeDb: unknown option "foo"' });
@@ -36,14 +36,14 @@ test('close(): idempotent, functions throw, path/version stay readable', () => {
   assert.throws(() => db.getRoom(1), { message: 'database is not open' });
   assert.throws(() => db.insertReading(1, { t: 1 }), { message: 'database is not open' });
   assert.equal(db.path, ':memory:');
-  assert.equal(db.version, 1);
+  assert.equal(db.version, 2);
 });
 
 test('createRoom and currentSettings', () => {
   const db = openFakeDb({ now });
   const settings = freshSettings();
-  const room = db.createRoom({ name: 'A', volume: 60, vent: 'supply', settings });
-  assert.deepEqual(room, { id: 1, name: 'A', volume: 60, vent: 'supply', adapter: 'sim', created_at: clock, archived_at: null });
+  const room = db.createRoom({ name: 'A', volume: 60, settings });
+  assert.deepEqual(room, { id: 1, name: 'A', volume: 60, adapter: 'sim', created_at: clock, archived_at: null });
   assert.equal(Object.getPrototypeOf(room), Object.prototype);
   const version = db.currentSettings(1);
   assert.deepEqual(version, { id: 1, room_id: 1, saved_at: clock, note: 'Created', settings });
@@ -52,8 +52,8 @@ test('createRoom and currentSettings', () => {
 test('listRooms: ordering, includeArchived, unknown field', () => {
   const db = openFakeDb({ now });
   const settings = freshSettings();
-  db.createRoom({ name: 'A', volume: 60, vent: 'supply', settings });
-  const b = db.createRoom({ name: 'B', volume: 60, vent: 'supply', settings });
+  db.createRoom({ name: 'A', volume: 60, settings });
+  const b = db.createRoom({ name: 'B', volume: 60, settings });
   db.archiveRoom(b.id);
   assert.deepEqual(db.listRooms().map(r => r.id), [1]);
   assert.deepEqual(db.listRooms({ includeArchived: true }).map(r => r.id), [1, 2]);
@@ -72,7 +72,7 @@ test('getRoom: unknown ids', () => {
 test('updateRoom', () => {
   const db = openFakeDb({ now });
   const settings = freshSettings();
-  db.createRoom({ name: 'A', volume: 60, vent: 'supply', settings });
+  db.createRoom({ name: 'A', volume: 60, settings });
   const updated = db.updateRoom(1, { name: 'B' });
   assert.equal(updated.name, 'B');
   const unchanged = db.updateRoom(1, {});
@@ -85,15 +85,15 @@ test('updateRoom', () => {
 test('archiveRoom: keeps first archived_at, works on archived rooms', () => {
   const db = openFakeDb({ now });
   const settings = freshSettings();
-  db.createRoom({ name: 'A', volume: 60, vent: 'supply', settings });
+  db.createRoom({ name: 'A', volume: 60, settings });
   const archived = db.archiveRoom(1, 100);
   assert.equal(archived.archived_at, 100);
   const again = db.archiveRoom(1, 200);
   assert.equal(again.archived_at, 100);
-  const archivedRoom = db.createRoom({ name: 'C', volume: 60, vent: 'supply', settings });
+  const archivedRoom = db.createRoom({ name: 'C', volume: 60, settings });
   db.archiveRoom(archivedRoom.id);
   // Every function still works on an archived room (archiving only stops the loop; C1 does not gate on it).
-  assert.doesNotThrow(() => db.insertReading(archivedRoom.id, { t: 1, ac_mode: 'off', fog: 0, fan: 0, lights: false, circ: false }));
+  assert.doesNotThrow(() => db.insertReading(archivedRoom.id, { t: 1, ac_mode: 'off', fog: 0, air: 0, lights: false, circ: false }));
   assert.doesNotThrow(() => db.updateRoom(archivedRoom.id, { name: 'C2' }));
   assert.doesNotThrow(() => db.currentSettings(archivedRoom.id));
   assert.doesNotThrow(() => db.addEvent(archivedRoom.id, { t: 1, level: 'info', text: 'x' }));
@@ -104,7 +104,7 @@ test('archiveRoom: keeps first archived_at, works on archived rooms', () => {
 test('copies: results and arguments are independent of stored data', () => {
   const db = openFakeDb({ now });
   const settings = freshSettings();
-  const room = db.createRoom({ name: 'A', volume: 60, vent: 'supply', settings });
+  const room = db.createRoom({ name: 'A', volume: 60, settings });
   room.name = 'mutated';
   settings.spT = 999;
   assert.equal(db.getRoom(1).name, 'A');
@@ -125,8 +125,8 @@ test('copies: results and arguments are independent of stored data', () => {
 test('saveSettings, settingsHistory, getSettingsVersion', () => {
   const db = openFakeDb({ now });
   const settings = freshSettings();
-  db.createRoom({ name: 'A', volume: 60, vent: 'supply', settings });
-  db.createRoom({ name: 'B', volume: 60, vent: 'supply', settings });
+  db.createRoom({ name: 'A', volume: 60, settings });
+  db.createRoom({ name: 'B', volume: 60, settings });
   const v2 = db.saveSettings(1, { settings, note: 'n', at: 5 });
   assert.equal(v2.note, 'n');
   assert.equal(v2.id, db.currentSettings(1).id);
@@ -149,7 +149,7 @@ test('every room-id function throws NotFoundError(room) for an unknown room', ()
     () => db.currentSettings(99),
     () => db.settingsHistory(99),
     () => db.getSettingsVersion(99, 1),
-    () => db.insertReading(99, { t: 1, ac_mode: 'off', fog: 0, fan: 0, lights: 0, circ: 0 }),
+    () => db.insertReading(99, { t: 1, ac_mode: 'off', fog: 0, air: 0, lights: 0, circ: 0 }),
     () => db.queryReadings(99, { from: 0, to: 1 }),
     () => db.latestReading(99),
     () => db.addEvent(99, { t: 1, level: 'info', text: 'x' }),
@@ -177,7 +177,7 @@ test('every room-id function throws NotFoundError(room) for an unknown room', ()
 
 test('left-out at uses options.now()', () => {
   const db = openFakeDb({ now });
-  const room = db.createRoom({ name: 'A', volume: 60, vent: 'supply', settings: freshSettings() });
+  const room = db.createRoom({ name: 'A', volume: 60, settings: freshSettings() });
   assert.equal(room.created_at, clock);
   const version = db.saveSettings(1, { settings: freshSettings() });
   assert.equal(version.saved_at, clock);
@@ -189,7 +189,7 @@ test('left-out at uses options.now()', () => {
 
 function freshDb() {
   const db = openFakeDb({ now });
-  db.createRoom({ name: 'A', volume: 60, vent: 'supply', settings: freshSettings() });
+  db.createRoom({ name: 'A', volume: 60, settings: freshSettings() });
   return db;
 }
 
@@ -207,13 +207,12 @@ test('column rules: createRoom', () => {
   function badCreate(over, errcode) {
     const db = freshDb();
     assertConstraint(
-      () => db.createRoom(Object.assign({ name: 'B', volume: 10, vent: 'supply', settings: freshSettings() }, over)),
+      () => db.createRoom(Object.assign({ name: 'B', volume: 10, settings: freshSettings() }, over)),
       errcode,
       () => assert.deepEqual(db.listRooms().map(r => r.id), [1]) // the room from freshDb() only: nothing written
     );
   }
   badCreate({ volume: 0 }, 275);
-  badCreate({ vent: 'side' }, 275);
   badCreate({ name: undefined }, 1299);
   badCreate({ settings: undefined }, 1299);
   badCreate({ at: 1.5 }, 3091);
@@ -221,7 +220,7 @@ test('column rules: createRoom', () => {
 });
 
 function validReading(over) {
-  return Object.assign({ t: 1, ac_mode: 'off', fog: 0, fan: 0, lights: 0, circ: 0 }, over);
+  return Object.assign({ t: 1, ac_mode: 'off', fog: 0, air: 0, lights: 0, circ: 0 }, over);
 }
 
 test('column rules: insertReading', () => {
@@ -238,6 +237,9 @@ test('column rules: insertReading', () => {
   badReading({ t: undefined }, 1299);
   badReading({ t: 1.5 }, 3091);
   badReading({ ac_mode: 'auto' }, 275);
+  badReading({ air: 2 }, 275);
+  badReading({ air: 1.5 }, 3091);
+  badReading({ air: undefined }, 1299);
   badReading({ lights: 2 }, 275);
   badReading({ T: 'abc' }, 3091);
 });
@@ -378,7 +380,9 @@ test('non-finite numbers stored as null; booleans of lights/circ', () => {
 
 test('TypeError for unknown fields; nothing stored', () => {
   const db1 = freshDb();
-  assert.throws(() => db1.createRoom({ name: 'B', volume: 10, vent: 'supply', settings: freshSettings(), colour: 'x' }), { name: 'TypeError', message: 'createRoom: unknown field "colour"' });
+  assert.throws(() => db1.createRoom({ name: 'B', volume: 10, settings: freshSettings(), colour: 'x' }), { name: 'TypeError', message: 'createRoom: unknown field "colour"' });
+  assert.throws(() => db1.createRoom({ name: 'B', volume: 10, vent: 'supply', settings: freshSettings() }), { name: 'TypeError', message: 'createRoom: unknown field "vent"' });
+  assert.throws(() => db1.updateRoom(1, { vent: 'supply' }), { name: 'TypeError', message: 'updateRoom: unknown field "vent"' });
   assert.deepEqual(db1.listRooms().map(r => r.id), [1]);
 
   const db2 = freshDb();
@@ -406,7 +410,7 @@ test('TypeError for unknown fields; nothing stored', () => {
 
 test('a full Reading round-trips; a minimal one gets null for the rest', () => {
   const db = freshDb();
-  const full = { room_id: 1, t: 10, T: 20, RH: 80, CO2: 700, t_out: 30, rh_out: 60, ac_mode: 'cool', ac_setpoint: 18, fog: 1, fan: 2, lights: 1, circ: 0, power_w: 100, kwh: 1.5 };
+  const full = { room_id: 1, t: 10, T: 20, RH: 80, CO2: 700, t_out: 30, rh_out: 60, ac_mode: 'cool', ac_setpoint: 18, fog: 1, air: 1, lights: 1, circ: 0, power_w: 100, kwh: 1.5 };
   db.insertReading(1, full);
   assert.deepEqual(db.latestReading(1), full);
   assert.deepEqual(db.queryReadings(1, { from: 10, to: 10 })[0], full);
@@ -415,14 +419,14 @@ test('a full Reading round-trips; a minimal one gets null for the rest', () => {
   const db2 = freshDb();
   db2.insertReading(1, validReading({ t: 5 }));
   const row = db2.latestReading(1);
-  assert.deepEqual(Object.keys(row), ['room_id', 't', 'T', 'RH', 'CO2', 't_out', 'rh_out', 'ac_mode', 'ac_setpoint', 'fog', 'fan', 'lights', 'circ', 'power_w', 'kwh']);
+  assert.deepEqual(Object.keys(row), ['room_id', 't', 'T', 'RH', 'CO2', 't_out', 'rh_out', 'ac_mode', 'ac_setpoint', 'fog', 'air', 'lights', 'circ', 'power_w', 'kwh']);
   assert.equal(row.T, null);
   assert.equal(row.RH, null);
 });
 
 test('raw range is inclusive; order by t (not by T); ties by insertion; other rooms excluded', () => {
   const db = freshDb();
-  db.createRoom({ name: 'B', volume: 60, vent: 'supply', settings: freshSettings() });
+  db.createRoom({ name: 'B', volume: 60, settings: freshSettings() });
   // T decreases as t increases, so sorting by T (a bug) would give a different order than sorting by t.
   db.insertReading(1, validReading({ t: 30, T: 1 }));
   db.insertReading(1, validReading({ t: 10, T: 4 }));
@@ -441,14 +445,15 @@ test('bucket averaging', () => {
   const db = freshDb();
   // Inserted out of t order: the row with the largest t (95) is inserted first, so "last inserted" would
   // wrongly pick the t: 65 row's ac_mode/kwh. The bucket starts at 60, not 0, so the start is not trivial.
-  db.insertReading(1, validReading({ t: 95, T: 20, fog: 2, lights: 0, ac_mode: 'off', ac_setpoint: null, kwh: null }));
-  db.insertReading(1, validReading({ t: 65, T: 10, fog: 1, lights: 1, ac_mode: 'cool', ac_setpoint: 18, kwh: 1 }));
+  db.insertReading(1, validReading({ t: 95, T: 20, fog: 2, air: 1, lights: 0, ac_mode: 'off', ac_setpoint: null, kwh: null }));
+  db.insertReading(1, validReading({ t: 65, T: 10, fog: 1, air: 0, lights: 1, ac_mode: 'cool', ac_setpoint: 18, kwh: 1 }));
   const buckets = db.queryReadings(1, { from: 60, to: 119, step: 60 });
   assert.equal(buckets.length, 1);
   const b = buckets[0];
   assert.equal(b.t, 60);
   assert.equal(b.T, 15);
   assert.equal(b.fog, 1.5);
+  assert.equal(b.air, 0.5); // the fraction of readings with the air exchange on (C9 6.1)
   assert.equal(b.lights, 0.5);
   assert.equal(b.ac_mode, 'off'); // the row with the largest t (95), even though it was inserted first
   assert.equal(b.ac_setpoint, 18); // average of the non-null values (the AC was on for one reading)
@@ -639,7 +644,7 @@ test('calibrations', () => {
 
 test('calibrations: applying another room\'s run; currentCalibration ties by the largest id', () => {
   const db = freshDb();
-  const room2 = db.createRoom({ name: 'B', volume: 60, vent: 'supply', settings: freshSettings() });
+  const room2 = db.createRoom({ name: 'B', volume: 60, settings: freshSettings() });
   const runOfRoom2 = db.saveCalibration(room2.id, { ua: 1, inf_ach: 1, moist_buffer: 1, co2_per_block: 1 });
   assert.throws(() => db.applyCalibration(1, runOfRoom2.id), err => err.code === 'NOT_FOUND' && err.what === 'calibration');
 

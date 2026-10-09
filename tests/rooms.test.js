@@ -137,7 +137,7 @@ test('sim adapter: env', (t) => {
 test('sim adapter: new room at its targets', () => {
   const now = () => T0;
   const cfg = CC.defaultSettings();
-  const a = createSimAdapter({ room: { id: 1, volume: 60, vent: 'supply', adapter: 'sim' }, calib: null, blocks: null, cfg, snapshot: null, now });
+  const a = createSimAdapter({ room: { id: 1, volume: 60, adapter: 'sim' }, calib: null, blocks: null, cfg, snapshot: null, now });
   assert.equal(a.io.read().t, now());
   assert.equal(a.io.read().hour, 10);
   assert.equal(a.view().T, cfg.spT);
@@ -156,7 +156,7 @@ test('sim adapter: one reading per 30 s', { skip: NEEDS_SIM }, (t) => {
   let clock = T0;
   const now = () => clock;
   const cfg = CC.defaultSettings();
-  const a = createSimAdapter({ room: { id: 1, volume: 60, vent: 'supply', adapter: 'sim' }, calib: null, blocks: null, cfg, snapshot: null, now });
+  const a = createSimAdapter({ room: { id: 1, volume: 60, adapter: 'sim' }, calib: null, blocks: null, cfg, snapshot: null, now });
   const r0 = a.io.read();
   a.io.write({ ac: { power: true, mode: 'cool', setpoint: 25, fan: 'auto' }, hu: { level: 0 }, air: { on: false }, lights: { on: false }, circ: { on: false } });
   for (let i = 0; i < 30; i++) { clock += 1; a.io.advance(1); }
@@ -180,7 +180,7 @@ test('sim adapter: CO₂ jitter', { skip: NEEDS_SIM }, (t) => {
   let capturedSim = null;
   SIM.create = (env, snapshot) => { capturedSim = origCreate(env, snapshot); return capturedSim; };
   t.after(() => { SIM.create = origCreate; });
-  const a = createSimAdapter({ room: { id: 1, volume: 60, vent: 'supply', adapter: 'sim' }, calib: null, blocks: null, cfg, snapshot: null, now });
+  const a = createSimAdapter({ room: { id: 1, volume: 60, adapter: 'sim' }, calib: null, blocks: null, cfg, snapshot: null, now });
   a.io.write({ ac: { power: true, mode: 'cool', setpoint: 25, fan: 'auto' }, hu: { level: 0 }, air: { on: false }, lights: { on: false }, circ: { on: false } });
   for (let i = 0; i < 5; i++) {
     clock += 1; a.io.advance(1);
@@ -198,7 +198,7 @@ test('sim adapter: gap', () => {
   let clock = T0;
   const now = () => clock;
   const cfg = CC.defaultSettings();
-  const a = createSimAdapter({ room: { id: 1, volume: 60, vent: 'supply', adapter: 'sim' }, calib: null, blocks: null, cfg, snapshot: null, now });
+  const a = createSimAdapter({ room: { id: 1, volume: 60, adapter: 'sim' }, calib: null, blocks: null, cfg, snapshot: null, now });
   a.io.write({ ac: { power: true, mode: 'cool', setpoint: 25, fan: 'auto' }, hu: { level: 0 }, air: { on: false }, lights: { on: false }, circ: { on: false } });
   const seqBefore = a.io.read().seq;
   clock += 301;
@@ -217,7 +217,7 @@ test('sim adapter: resume from a snapshot', { skip: NEEDS_SIM }, () => {
   let clock = T0;
   const now = () => clock;
   const cfg = CC.defaultSettings();
-  const a = createSimAdapter({ room: { id: 1, volume: 60, vent: 'supply', adapter: 'sim' }, calib: null, blocks: null, cfg, snapshot: null, now });
+  const a = createSimAdapter({ room: { id: 1, volume: 60, adapter: 'sim' }, calib: null, blocks: null, cfg, snapshot: null, now });
   a.io.write({ ac: { power: true, mode: 'cool', setpoint: 25, fan: 'auto' }, hu: { level: 0 }, air: { on: false }, lights: { on: false }, circ: { on: false } });
   for (let i = 0; i < 60; i++) { clock += 1; a.io.advance(1); }
   const oldView = a.view();
@@ -225,7 +225,7 @@ test('sim adapter: resume from a snapshot', { skip: NEEDS_SIM }, () => {
   const snap = fromJson(toJson(a.snapshot()));
 
   clock += 600;
-  const b = createSimAdapter({ room: { id: 1, volume: 60, vent: 'supply', adapter: 'sim' }, calib: null, blocks: null, cfg, snapshot: snap, now });
+  const b = createSimAdapter({ room: { id: 1, volume: 60, adapter: 'sim' }, calib: null, blocks: null, cfg, snapshot: snap, now });
   assert.equal(b.view().T, oldView.T);
   assert.equal(b.view().RH, oldView.RH);
   assert.equal(b.view().CO2, oldView.CO2);
@@ -282,13 +282,13 @@ test('rooms: TARGET_KEYS follow the controller ramp keys (C9 section 6.3)', { sk
 
 test('rooms: defaultAdapterFactory', () => {
   const cfg = CC.defaultSettings();
-  const a = rooms.defaultAdapterFactory({ room: { id: 1, volume: 60, vent: 'supply', adapter: 'sim' }, calib: null, blocks: null, cfg, snapshot: null, now: () => T0 });
+  const a = rooms.defaultAdapterFactory({ room: { id: 1, volume: 60, adapter: 'sim' }, calib: null, blocks: null, cfg, snapshot: null, now: () => T0 });
   assert.equal(typeof a.io.read, 'function');
   assert.equal(typeof a.io.write, 'function');
   assert.equal(typeof a.io.advance, 'function');
   assert.equal(typeof a.view, 'function');
   assert.equal(typeof a.snapshot, 'function');
-  assert.throws(() => rooms.defaultAdapterFactory({ room: { id: 1, volume: 60, vent: 'supply', adapter: 'hw' }, calib: null, blocks: null, cfg, snapshot: null, now: () => T0 }), /Unknown adapter "hw"/);
+  assert.throws(() => rooms.defaultAdapterFactory({ room: { id: 1, volume: 60, adapter: 'hw' }, calib: null, blocks: null, cfg, snapshot: null, now: () => T0 }), /Unknown adapter "hw"/);
 });
 
 test('rooms: listeners', () => {
@@ -301,14 +301,14 @@ test('rooms: listeners', () => {
   mgr.tick(); // no-op before start, but exercise listeners directly below
   // Fire manually through a method that emits 'event'
   // (use create, which is available even before start())
-  mgr.create({ name: 'X', volume: 60, vent: 'supply' });
+  mgr.create({ name: 'X', volume: 60 });
   assert.ok(order.includes('1') && order.includes('2'));
   const i1 = order.indexOf('1'), i2 = order.indexOf('2');
   assert.ok(i1 < i2);
 
   order.length = 0;
   mgr.off('event', fn1);
-  mgr.create({ name: 'Y', volume: 60, vent: 'supply' });
+  mgr.create({ name: 'Y', volume: 60 });
   assert.ok(!order.includes('1'));
   assert.ok(order.includes('2'));
 
@@ -321,7 +321,7 @@ test('rooms: listeners', () => {
   mgr.on('event', throwing);
   mgr.on('event', after);
   order.length = 0;
-  mgr.create({ name: 'Z', volume: 60, vent: 'supply' });
+  mgr.create({ name: 'Z', volume: 60 });
   console.error = origError;
   assert.ok(errorCalls > 0);
   assert.ok(order.includes('after'));
@@ -353,7 +353,8 @@ test('Demo room', () => {
   const room = db.getRoom(1);
   assert.equal(room.name, 'Room 1');
   assert.equal(room.volume, 60);
-  assert.equal(room.vent, 'supply');
+  assert.ok(!('vent' in room)); // C9 section 6.3: rooms have no vent
+  assert.deepEqual(roomsCommon.DEMO_ROOM, { name: 'Room 1', volume: 60 });
   assert.equal(room.adapter, 'sim');
   const version = db.currentSettings(1);
   assert.equal(version.note, 'Created');
@@ -373,7 +374,7 @@ test('First settings', () => {
   const { db, mgr, log } = setup();
 
   // Key left out
-  let { room: room1, warnings: w1 } = mgr.create({ name: 'A', volume: 80, vent: 'supply' });
+  let { room: room1, warnings: w1 } = mgr.create({ name: 'A', volume: 80 });
   let v1 = db.currentSettings(room1.id);
   assert.equal(v1.note, 'Created');
   let base1 = CC.defaultSettings(); base1.roomM3 = 80;
@@ -381,7 +382,7 @@ test('First settings', () => {
   assert.deepEqual(w1, []);
 
   // settings: undefined explicitly
-  const { room: room2, warnings: w2 } = mgr.create({ name: 'B', volume: 90, vent: 'supply', settings: undefined });
+  const { room: room2, warnings: w2 } = mgr.create({ name: 'B', volume: 90, settings: undefined });
   const v2 = db.currentSettings(room2.id);
   assert.equal(v2.note, 'Created');
   let base2 = CC.defaultSettings(); base2.roomM3 = 90;
@@ -390,7 +391,7 @@ test('First settings', () => {
 
   // Emit order check, on a manager not started
   log.length = 0;
-  const { room: room3 } = mgr.create({ name: 'C', volume: 70, vent: 'supply' });
+  const { room: room3 } = mgr.create({ name: 'C', volume: 70 });
   assert.equal(log.length, 3);
   assert.equal(log[0][0], 'settings');
   assert.equal(log[0][1].auto, false);
@@ -403,25 +404,25 @@ test('First settings', () => {
   assert.equal(log[2][0], 'room');
 
   // Bad settings with warnings
-  const { warnings: w4 } = mgr.create({ name: 'D', volume: 60, vent: 'supply', settings: { spT: 99, bogus: 1 } });
+  const { warnings: w4 } = mgr.create({ name: 'D', volume: 60, settings: { spT: 99, bogus: 1 } });
   const v4 = db.currentSettings(mgr.list().find(r => r.name === 'D').id);
   assert.equal(v4.settings.spT, 35);
   assert.ok(w4.includes('"spT" = 99 is outside 10–35: set to 35.'));
   assert.ok(w4.includes('Unknown setting "bogus" is ignored.'));
 
   // Merge over base with a given volume
-  const { room: room5 } = mgr.create({ name: 'E', volume: 200, vent: 'supply', settings: { crop: 'pink' } });
+  const { room: room5 } = mgr.create({ name: 'E', volume: 200, settings: { crop: 'pink' } });
   const v5 = db.currentSettings(room5.id);
   assert.equal(v5.settings.roomM3, 200);
   assert.equal(v5.settings.crop, 'pink');
 
   // Given roomM3 wins
-  const { room: room6 } = mgr.create({ name: 'F', volume: 60, vent: 'supply', settings: { roomM3: 150 } });
+  const { room: room6 } = mgr.create({ name: 'F', volume: 60, settings: { roomM3: 150 } });
   const v6 = db.currentSettings(room6.id);
   assert.equal(v6.settings.roomM3, 150);
 
   // Name stored trimmed
-  const { room: room7 } = mgr.create({ name: '  Trimmed  ', volume: 60, vent: 'supply' });
+  const { room: room7 } = mgr.create({ name: '  Trimmed  ', volume: 60 });
   assert.equal(db.getRoom(room7.id).name, 'Trimmed');
 });
 
@@ -442,25 +443,23 @@ test('Errors: create input', () => {
     }
   }
 
-  expectError({ name: '', volume: 60, vent: 'supply' }, ['name must be 1 to 60 characters']);
-  expectError({ name: 'x'.repeat(61), volume: 60, vent: 'supply' }, ['name must be 1 to 60 characters']);
-  expectError({ name: 'A', volume: 4.9, vent: 'supply' }, ['volume must be a number from 5 to 5000 (m³)']);
-  expectError({ name: 'A', volume: NaN, vent: 'supply' }, ['volume must be a number from 5 to 5000 (m³)']);
-  expectError({ name: 'A', volume: '60', vent: 'supply' }, ['volume must be a number from 5 to 5000 (m³)']);
-  expectError({ name: 'A', volume: 60, vent: 'side' }, ['vent must be "supply" or "exhaust"']);
-  expectError({ name: 'A', volume: 60, vent: 'supply', settings: [] }, ['settings must be an object']);
-  expectError({ name: 'A', volume: 60, vent: 'supply', settings: null }, ['settings must be an object']);
-  expectError({ name: 'A', volume: 60, vent: 'supply', settings: 5 }, ['settings must be an object']);
+  expectError({ name: '', volume: 60 }, ['name must be 1 to 60 characters']);
+  expectError({ name: 'x'.repeat(61), volume: 60 }, ['name must be 1 to 60 characters']);
+  expectError({ name: 'A', volume: 4.9 }, ['volume must be a number from 5 to 5000 (m³)']);
+  expectError({ name: 'A', volume: NaN }, ['volume must be a number from 5 to 5000 (m³)']);
+  expectError({ name: 'A', volume: '60' }, ['volume must be a number from 5 to 5000 (m³)']);
+  expectError({ name: 'A', volume: 60, settings: [] }, ['settings must be an object']);
+  expectError({ name: 'A', volume: 60, settings: null }, ['settings must be an object']);
+  expectError({ name: 'A', volume: 60, settings: 5 }, ['settings must be an object']);
 
   // Several broken rules, all texts, in table order (C2 section 6.1)
   try {
-    mgr.create({ name: '', volume: 4.9, vent: 'side' });
+    mgr.create({ name: '', volume: 4.9 });
     assert.fail('expected a RoomError');
   } catch (err) {
     assert.deepStrictEqual(err.details, [
       'name must be 1 to 60 characters',
       'volume must be a number from 5 to 5000 (m³)',
-      'vent must be "supply" or "exhaust"',
     ]);
   }
 
@@ -471,7 +470,7 @@ test('Errors: create input', () => {
 // Task 4: Loop start (fresh), tick, Record, state save (C2 section 8.1 fresh, 8.2-8.4, 5.2, 5.3)
 // ---------------------------------------------------------------------------
 
-const READING_KEYS = ['room_id', 't', 'T', 'RH', 'CO2', 't_out', 'rh_out', 'ac_mode', 'ac_setpoint', 'fog', 'fan', 'lights', 'circ', 'power_w', 'kwh'];
+const READING_KEYS = ['room_id', 't', 'T', 'RH', 'CO2', 't_out', 'rh_out', 'ac_mode', 'ac_setpoint', 'fog', 'air', 'lights', 'circ', 'power_w', 'kwh'];
 
 test('Recording', (t) => {
   const spy = simSpyFactory();
@@ -507,7 +506,7 @@ test('Recording', (t) => {
   assert.equal(row.ac_mode, lastCmd.ac.power ? lastCmd.ac.mode : 'off');
   assert.equal(row.ac_setpoint, lastCmd.ac.power ? lastCmd.ac.setpoint : null);
   assert.equal(row.fog, Math.min(3, Math.max(0, Math.round(lastCmd.hu.level || 0))));
-  assert.equal(row.fan, Math.min(3, Math.max(0, Math.round(lastCmd.fan.level || 0))));
+  assert.equal(row.air, lastCmd.air && lastCmd.air.on ? 1 : 0);
   assert.equal(row.lights, lastCmd.lights.on ? 1 : 0);
   assert.equal(row.circ, lastCmd.circ.on ? 1 : 0);
 
@@ -559,7 +558,7 @@ test('Rounded humidity target', () => {
   const x = mgr.get(1).live.targets.RH;
   assert.ok(Math.abs(x * 10 - Math.round(x * 10)) < 1e-9);
 
-  const { room } = mgr.create({ name: 'RH', volume: 60, vent: 'supply', settings: { humMode: 'rh' } });
+  const { room } = mgr.create({ name: 'RH', volume: 60, settings: { humMode: 'rh' } });
   assert.equal(mgr.get(room.id).live.targets.RH, 88);
 });
 
@@ -615,9 +614,9 @@ test('Block count', () => {
   const db = openFakeDb({ now });
   const spy = simSpyFactory();
   const mgr = rooms.createRoomManager({ db, now, tickMs: 0, adapterFactory: spy.factory });
-  const { room: a } = mgr.create({ name: 'A', volume: 60, vent: 'supply' });
-  const { room: b } = mgr.create({ name: 'B', volume: 60, vent: 'supply' });
-  const { room: c } = mgr.create({ name: 'C', volume: 60, vent: 'supply' });
+  const { room: a } = mgr.create({ name: 'A', volume: 60 });
+  const { room: b } = mgr.create({ name: 'B', volume: 60 });
+  const { room: c } = mgr.create({ name: 'C', volume: 60 });
   db.replaceMix(a.id, [{ crop: 'oyster', blocks: 300 }, { crop: 'golden', blocks: 200 }]);
   db.replaceMix(c.id, [{ crop: 'oyster', blocks: 0 }]);
   mgr.start();
@@ -629,8 +628,8 @@ test('Block count', () => {
 
 test('list and get', () => {
   const { db, mgr } = setup();
-  mgr.create({ name: 'A', volume: 60, vent: 'supply' });
-  mgr.create({ name: 'B', volume: 60, vent: 'supply' });
+  mgr.create({ name: 'A', volume: 60 });
+  mgr.create({ name: 'B', volume: 60 });
   const list = mgr.list();
   assert.deepEqual(list.map(r => r.id), [1, 2]);
   for (const r of list) assert.ok('live' in r);
@@ -644,7 +643,7 @@ test('create on a started manager', () => {
   const { db, mgr, log, step, now } = setup();
   mgr.start(); // creates the demo room (id 1)
   log.length = 0;
-  const { room } = mgr.create({ name: 'Live', volume: 60, vent: 'supply' });
+  const { room } = mgr.create({ name: 'Live', volume: 60 });
   const names = log.map(([n]) => n);
   assert.deepEqual(names, ['settings', 'event', 'event', 'reading', 'room']);
   assert.equal(log[1][1].event.text, 'Room created');
@@ -654,6 +653,25 @@ test('create on a started manager', () => {
   step(30);
   const after = db.queryReadings(room.id, { from: 0, to: now() }).length;
   assert.ok(after > before);
+});
+
+test('Recording: air is 1 while cmd.air.on, else 0 (C9 section 6.3)', (t) => {
+  let airOn = true;
+  const origCreate = CC.create;
+  CC.create = (cfg, snapshot, onEvent) => {
+    const ctl = origCreate(cfg, snapshot, onEvent);
+    const update = ctl.update;
+    ctl.update = r => ({ ...update(r), air: { on: airOn } });
+    return ctl;
+  };
+  t.after(() => { CC.create = origCreate; });
+
+  const { db, mgr, step } = setup(scripted().factory);
+  mgr.start();
+  assert.equal(db.latestReading(1).air, 1);
+  airOn = false;
+  step(30);
+  assert.equal(db.latestReading(1).air, 0);
 });
 
 // ---------------------------------------------------------------------------
@@ -778,7 +796,7 @@ test('Alarms: state saved after ack', () => {
 test('No frozen CO₂', () => {
   const { db, mgr, jump } = setup();
   mgr.start();
-  const { room } = mgr.create({ name: 'Circ', volume: 60, vent: 'supply', settings: { manual: { circ: { auto: false, on: true } } } });
+  const { room } = mgr.create({ name: 'Circ', volume: 60, settings: { manual: { circ: { auto: false, on: true } } } });
   for (let i = 0; i < 144; i++) jump(300); // 12 h
   const co2Alarms = db.listAlarms(room.id, { recent: 500 }).filter(a => a.alarm_key === 'sensor_CO2');
   assert.equal(co2Alarms.length, 0);
@@ -936,7 +954,7 @@ test('Room summary', () => {
   assert.equal(raiseRoomEmits[0][1].room.live.alarms, 1);
   s.knobs.values = {};
 
-  const { room } = mgr.create({ name: 'Auto', volume: 60, vent: 'supply', settings: { program: { auto: true, days: { fruiting: 1 } } } });
+  const { room } = mgr.create({ name: 'Auto', volume: 60, settings: { program: { auto: true, days: { fruiting: 1 } } } });
   log.length = 0;
   jump(86400);
   const stageRoomEmits = log.filter(([n, p]) => n === 'room' && p.room.id === room.id);
@@ -974,8 +992,8 @@ test('Crash isolation', () => {
   const sa = scripted(), sb = scripted();
   const factory = args => (args.room.name === 'A' ? sa.factory(args) : sb.factory(args));
   const { db, mgr, log, step, now } = setup(factory);
-  mgr.create({ name: 'A', volume: 60, vent: 'supply' });
-  mgr.create({ name: 'B', volume: 60, vent: 'supply' });
+  mgr.create({ name: 'A', volume: 60 });
+  mgr.create({ name: 'B', volume: 60 });
   mgr.start();
   const savedBeforeA = db.loadControllerState(1).saved_at;
 
@@ -1000,8 +1018,8 @@ test('Crash isolation', () => {
 
 test('Crash at loop start', () => {
   const { db, mgr, step, now } = setup();
-  db.createRoom({ name: 'Bad', volume: 60, vent: 'supply', adapter: 'hw', settings: CC.defaultSettings(), note: 'Created', at: now() });
-  mgr.create({ name: 'Good', volume: 60, vent: 'supply' });
+  db.createRoom({ name: 'Bad', volume: 60, adapter: 'hw', settings: CC.defaultSettings(), note: 'Created', at: now() });
+  mgr.create({ name: 'Good', volume: 60 });
   mgr.start();
   const bad = mgr.get(1);
   assert.equal(bad.live.running, false);
@@ -1068,7 +1086,7 @@ test('Restart', () => {
   assert.ok(rowsAfterRunningRestart.at(-1).t > lastTBeforeRunningRestart);
 
   // Archived
-  const { room: archRoom } = mgr.create({ name: 'Arch', volume: 60, vent: 'supply' });
+  const { room: archRoom } = mgr.create({ name: 'Arch', volume: 60 });
   mgr.archive(archRoom.id);
   try {
     mgr.restart(archRoom.id);
@@ -1149,7 +1167,7 @@ test('Database error: halted rooms stay halted (no state save, no Stopped) after
   const s = scripted();
   const { db, mgr, log, step } = setup(s.factory);
   mgr.start();
-  mgr.create({ name: 'B', volume: 60, vent: 'supply' });
+  mgr.create({ name: 'B', volume: 60 });
 
   const dbErr = Object.assign(new Error('disk I/O error'), { code: 'ERR_SQLITE_ERROR', errcode: 10, errstr: 'disk I/O error' });
   const origInsert = db.insertReading;
@@ -1300,20 +1318,27 @@ test('Partial merge', () => {
 test('Whole machine levels', () => {
   const { db, mgr, step } = setup();
   mgr.start();
-  const { room: a } = mgr.create({ name: 'A', volume: 60, vent: 'supply' });
-  const { room: b } = mgr.create({ name: 'B', volume: 60, vent: 'supply' });
+  const { room: a } = mgr.create({ name: 'A', volume: 60 });
   mgr.applySettings(a.id, { manual: { hu: { auto: false, level: 1.5 } } });
-  mgr.applySettings(b.id, { rules: { baseFan: { fruiting: 5 }, rhLock: false } });
 
   const fatalLog = [];
   mgr.on('fatal', p => fatalLog.push(p));
   step(30);
 
   const rowA = db.queryReadings(a.id, { from: 0, to: 10 ** 12 }).at(-1);
-  const rowB = db.queryReadings(b.id, { from: 0, to: 10 ** 12 }).at(-1);
   assert.equal(rowA.fog, 2);
-  assert.equal(rowB.fan, 3);
   assert.equal(fatalLog.length, 0);
+});
+
+// C9 section 10: the air exchange is on or off; a manual On (in place of the old baseFan: 5) records air 1.
+test('Whole machine levels: manual air exchange On records air 1', { skip: NEEDS_CTL }, () => {
+  const { db, mgr, step } = setup();
+  mgr.start();
+  const { room: b } = mgr.create({ name: 'B', volume: 60 });
+  mgr.applySettings(b.id, { manual: { air: { auto: false, on: true } } });
+  step(30);
+  const rowB = db.queryReadings(b.id, { from: 0, to: 10 ** 12 }).at(-1);
+  assert.equal(rowB.air, 1);
 });
 
 test('Settings: warnings and stopped rooms', () => {
@@ -1344,7 +1369,7 @@ test('Settings: warnings and stopped rooms', () => {
   expectErr(() => mgr.applySettings(1, null), 'bad_input', ['settings must be an object']);
   expectErr(() => mgr.applySettings(1, []), 'bad_input', ['settings must be an object']);
 
-  const { room } = mgr.create({ name: 'Arch', volume: 60, vent: 'supply' });
+  const { room } = mgr.create({ name: 'Arch', volume: 60 });
   mgr.archive(room.id);
   expectErr(() => mgr.applySettings(room.id, { spT: 20 }), 'bad_input', [`room ${room.id} is archived`]);
   expectErr(() => mgr.applySettings(999, { spT: 20 }), 'not_found');
@@ -1391,7 +1416,7 @@ test('Settings rules', () => {
   assert.equal(cfg.rules.co2SafetyAt, keep.safetyAt);
   assert.equal(db.loadControllerState(1).controller.stage.ramp, null);
 
-  const { room } = mgr.create({ name: 'Ramp2', volume: 60, vent: 'supply' });
+  const { room } = mgr.create({ name: 'Ramp2', volume: 60 });
   mgr.applySettings(room.id, { stage: 'pinning' });
   log.length = 0;
   jump(4 * 3600 + 30);
@@ -1553,13 +1578,13 @@ test('update', () => {
   }
 
   try {
-    mgr.update(1, { vent: 'side' });
+    mgr.update(1, { vent: 'supply' });
     assert.fail('expected bad_input');
   } catch (err) {
-    assert.deepEqual(err.details, ['vent must be "supply" or "exhaust"']);
+    assert.deepEqual(err.details, ['unknown field "vent"']); // C9 section 6.3
   }
 
-  const { room: arch } = mgr.create({ name: 'Arch', volume: 60, vent: 'supply' });
+  const { room: arch } = mgr.create({ name: 'Arch', volume: 60 });
   mgr.archive(arch.id);
   try {
     mgr.update(arch.id, { name: 'X' });
@@ -1580,7 +1605,7 @@ test('update', () => {
 test('archive', () => {
   const { db, mgr, log, step, now } = setup();
   mgr.start();
-  const { room } = mgr.create({ name: 'A', volume: 60, vent: 'supply' });
+  const { room } = mgr.create({ name: 'A', volume: 60 });
   step(30); // let time pass so a genuine new save at archive is visible, not a coincidence of the creation save
   const savedBeforeArchive = db.loadControllerState(room.id).saved_at;
 
@@ -1658,7 +1683,7 @@ test('Restore exact', () => {
 
   runRestoreCase(mgr, db, 1, { stage: 'pinning' });
 
-  const { room } = mgr.create({ name: 'R2', volume: 60, vent: 'supply' });
+  const { room } = mgr.create({ name: 'R2', volume: 60 });
   runRestoreCase(mgr, db, room.id, { stage: 'pinning', program: { rampH: 0 } });
 
   // Case 1 without exact: ramp.to.spT === 25, no Targets restored.
@@ -1704,7 +1729,7 @@ test('Untrusted keys', (t) => {
   for (const src of appliedSecondArgs) assert.ok(importedResults.includes(src));
   assert.ok(appliedSecondArgs.length > 0);
 
-  const { warnings: createWarnings } = mgr.create({ name: 'U', volume: 60, vent: 'supply', settings: s });
+  const { warnings: createWarnings } = mgr.create({ name: 'U', volume: 60, settings: s });
   assert.equal(({}).polluted, undefined);
   assert.deepEqual(Object.getOwnPropertyNames(Object.prototype), protoNamesBefore);
   assert.ok(createWarnings.includes('Setting "__proto__" is not allowed: ignored.'));
@@ -1746,7 +1771,7 @@ test('Fake parity', () => {
   const db = openFakeDb({ now });
   const fake = createFakeRoomManager({ db, now });
 
-  const { room } = fake.create({ name: 'F', volume: 60, vent: 'supply' });
+  const { room } = fake.create({ name: 'F', volume: 60 });
   assert.equal(db.currentSettings(room.id).note, 'Created');
 
   fake.applySettings(room.id, { spT: 20 });
@@ -1755,7 +1780,7 @@ test('Fake parity', () => {
   fake.archive(room.id);
   assert.equal(db.getRoom(room.id).archived_at, now());
 
-  const { room: room2 } = fake.create({ name: 'G', volume: 60, vent: 'supply' });
+  const { room: room2 } = fake.create({ name: 'G', volume: 60 });
   fake.setLive(room2.id, { running: false, error: 'boom' });
   const live = fake.get(room2.id).live;
   assert.equal(live.running, false);

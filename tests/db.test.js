@@ -51,12 +51,12 @@ function assertSql(fn, errcode) {
 }
 
 function roomInput(over) {
-  return Object.assign({ name: 'A', volume: 60, vent: 'supply', settings: { spT: 18 } }, over);
+  return Object.assign({ name: 'A', volume: 60, settings: { spT: 18 } }, over);
 }
 function reading(t, over) {
   return Object.assign({
     t, T: 20, RH: 80, CO2: 900, t_out: 30, rh_out: 60,
-    ac_mode: 'cool', ac_setpoint: 18, fog: 1, fan: 1, lights: 1, circ: 1, power_w: 100, kwh: 1,
+    ac_mode: 'cool', ac_setpoint: 18, fog: 1, air: 1, lights: 1, circ: 1, power_w: 100, kwh: 1,
   }, over);
 }
 function calibRun(over) {
@@ -76,7 +76,7 @@ both('open gives path and version', (t, open) => {
   const db = open({ now });
   t.after(() => db.close());
   assert.equal(db.path, ':memory:');
-  assert.equal(db.version, 1);
+  assert.equal(db.version, 2);
 });
 
 test('real: openDb rejects an unknown option', () => {
@@ -104,7 +104,7 @@ test('real: openDb(path, null) is treated as no options', t => {
   const file = tmpFile(t);
   const db = openDb(file, null);
   t.after(() => db.close());
-  assert.equal(db.version, 1);
+  assert.equal(db.version, 2);
 });
 
 test('real: opening a file creates the folder, schema and indexes', t => {
@@ -139,8 +139,10 @@ test('real: opening a file creates the folder, schema and indexes', t => {
   const cols = raw.prepare('SELECT name FROM pragma_table_info(?)').all('readings').map(r => r.name);
   assert.deepStrictEqual(cols, [
     'room_id', 't', 'temp', 'RH', 'CO2', 't_out', 'rh_out', 'ac_mode', 'ac_setpoint',
-    'fog', 'fan', 'lights', 'circ', 'power_w', 'kwh',
+    'fog', 'air', 'lights', 'circ', 'power_w', 'kwh',
   ]);
+  const roomCols = raw.prepare('SELECT name FROM pragma_table_info(?)').all('rooms').map(r => r.name);
+  assert.deepStrictEqual(roomCols, ['id', 'name', 'volume', 'adapter', 'created_at', 'archived_at']);
 });
 
 both('close twice does not throw; calls after close throw', (t, open) => {
@@ -179,7 +181,7 @@ test('real: reopening a file applies no upgrade twice', t => {
   const raw = new DatabaseSync(file);
   t.after(() => raw.close());
   assert.deepStrictEqual(raw.prepare('SELECT version, applied_at FROM schema_version').all().map(r => ({ ...r })), [
-    { version: 1, applied_at: T0 },
+    { version: 1, applied_at: T0 }, { version: 2, applied_at: T0 },
   ]);
 });
 
@@ -187,16 +189,16 @@ test('real: upgrades apply in order', t => {
   const file = tmpFile(t);
   const upgrades = [
     ...UPGRADES,
-    { version: 2, sql: 'CREATE TABLE extra_a (x INTEGER) STRICT;' },
-    { version: 3, sql: 'ALTER TABLE extra_a ADD COLUMN y INTEGER;' },
+    { version: 3, sql: 'CREATE TABLE extra_a (x INTEGER) STRICT;' },
+    { version: 4, sql: 'ALTER TABLE extra_a ADD COLUMN y INTEGER;' },
   ];
   const db = openDb(file, { now: () => T0, upgrades });
-  assert.equal(db.version, 3);
+  assert.equal(db.version, 4);
   db.close();
   const raw = new DatabaseSync(file);
   t.after(() => raw.close());
   assert.deepStrictEqual(raw.prepare('SELECT version FROM schema_version ORDER BY version').all().map(r => ({ ...r })), [
-    { version: 1 }, { version: 2 }, { version: 3 },
+    { version: 1 }, { version: 2 }, { version: 3 }, { version: 4 },
   ]);
   const cols = raw.prepare('SELECT name FROM pragma_table_info(?)').all('extra_a').map(r => r.name);
   assert.deepStrictEqual(cols, ['x', 'y']);
@@ -206,16 +208,16 @@ test('real: a failed upgrade leaves no trace; earlier upgrades stay', t => {
   const file = tmpFile(t);
   const upgrades = [
     ...UPGRADES,
-    { version: 2, sql: 'CREATE TABLE fk_probe (room_id INTEGER REFERENCES rooms (id)) STRICT; INSERT INTO fk_probe VALUES (999);' },
+    { version: 3, sql: 'CREATE TABLE fk_probe (room_id INTEGER REFERENCES rooms (id)) STRICT; INSERT INTO fk_probe VALUES (999);' },
   ];
-  assert.throws(() => openDb(file, { now: () => T0, upgrades }), err => /^Schema upgrade 2 failed: /.test(err.message));
+  assert.throws(() => openDb(file, { now: () => T0, upgrades }), err => /^Schema upgrade 3 failed: /.test(err.message));
 
   const db = openDb(file, { now: () => T0 });
-  assert.equal(db.version, 1);
+  assert.equal(db.version, 2);
   db.close();
   const raw = new DatabaseSync(file);
   t.after(() => raw.close());
-  assert.deepStrictEqual(raw.prepare('SELECT version FROM schema_version ORDER BY version').all().map(r => ({ ...r })), [{ version: 1 }]);
+  assert.deepStrictEqual(raw.prepare('SELECT version FROM schema_version ORDER BY version').all().map(r => ({ ...r })), [{ version: 1 }, { version: 2 }]);
   assert.deepStrictEqual(raw.prepare("SELECT name FROM sqlite_master WHERE name = 'fk_probe'").all(), []);
 });
 
@@ -223,16 +225,16 @@ test('real: a database newer than the app throws and changes nothing', t => {
   const file = tmpFile(t);
   const upgrades = [
     ...UPGRADES,
-    { version: 2, sql: 'CREATE TABLE extra_a (x INTEGER) STRICT;' },
-    { version: 3, sql: 'ALTER TABLE extra_a ADD COLUMN y INTEGER;' },
+    { version: 3, sql: 'CREATE TABLE extra_a (x INTEGER) STRICT;' },
+    { version: 4, sql: 'ALTER TABLE extra_a ADD COLUMN y INTEGER;' },
   ];
   openDb(file, { now: () => T0, upgrades }).close();
   assert.throws(() => openDb(file, { now: () => T0 }), {
-    message: `The database ${file} has schema version 3; this app knows up to 1. Use a newer version of the app.`,
+    message: `The database ${file} has schema version 4; this app knows up to 2. Use a newer version of the app.`,
   });
   const raw = new DatabaseSync(file);
   t.after(() => raw.close());
-  assert.equal(raw.prepare('SELECT MAX(version) AS v FROM schema_version').get().v, 3);
+  assert.equal(raw.prepare('SELECT MAX(version) AS v FROM schema_version').get().v, 4);
   assert.deepStrictEqual(raw.prepare("SELECT name FROM sqlite_master WHERE name = 'extra_a'").all().map(r => ({ ...r })), [{ name: 'extra_a' }]);
 });
 
@@ -240,11 +242,74 @@ test('real: a room inserted with raw SQL has no settings', t => {
   const file = tmpFile(t);
   openDb(file, { now: () => T0 }).close();
   const raw = new DatabaseSync(file);
-  raw.exec("INSERT INTO rooms (name, volume, vent, created_at) VALUES ('x', 10, 'supply', 1)");
+  raw.exec("INSERT INTO rooms (name, volume, created_at) VALUES ('x', 10, 1)");
   raw.close();
   const db = openDb(file, { now: () => T0 });
   t.after(() => db.close());
   assertNotFound(() => db.currentSettings(1), 'settings', 1);
+});
+
+// C9 sections 6.1, 6.2: upgrade 2 on a file written by the released app (schema version 1).
+function writeVersion1File(file) {
+  const raw = new DatabaseSync(file);
+  raw.exec('PRAGMA foreign_keys = ON;');
+  raw.exec('CREATE TABLE schema_version (version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL) STRICT;');
+  raw.exec(UPGRADES[0].sql);
+  raw.prepare('INSERT INTO schema_version (version, applied_at) VALUES (1, ?)').run(T0 - 86400);
+  const room = raw.prepare('INSERT INTO rooms (id, name, volume, vent, adapter, created_at, archived_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
+  room.run(1, 'Room 1', 60, 'exhaust', 'sim', T0 - 86400, null);
+  room.run(2, 'Old', 40, 'supply', 'sim', T0 - 86400, T0 - 3600);
+  raw.prepare('INSERT INTO room_settings (room_id, saved_at, settings, note) VALUES (1, ?, ?, ?)').run(T0 - 86400, '{"spT":18}', 'Created');
+  const reading = raw.prepare(
+    'INSERT INTO readings (room_id, t, temp, RH, CO2, t_out, rh_out, ac_mode, ac_setpoint, fog, fan, lights, circ, power_w, kwh) ' +
+    "VALUES (?, ?, 20, 80, 900, 30, 60, 'fan', NULL, 1, ?, 1, 0, 100, 1)"
+  );
+  [0, 1, 2, 3].forEach((fan, i) => reading.run(1, T0 + 30 * i, fan));
+  reading.run(2, T0 - 7200, 2);
+  raw.prepare("INSERT INTO events (room_id, t, level, text) VALUES (1, ?, 'info', 'Started')").run(T0 - 86400);
+  raw.prepare("INSERT INTO controller_state (room_id, saved_at, controller, sim) VALUES (1, ?, '{\"a\":1}', NULL)").run(T0 - 60);
+  raw.close();
+}
+
+test('real: upgrade 2 turns fan 0-3 into air 0/1 and drops rooms.vent (C9 6.2)', t => {
+  const file = tmpFile(t);
+  writeVersion1File(file);
+
+  const db = openDb(file, { now: () => T0 });
+  assert.equal(db.version, 2);
+  assert.deepStrictEqual(db.getRoom(1), { id: 1, name: 'Room 1', volume: 60, adapter: 'sim', created_at: T0 - 86400, archived_at: null });
+  assert.equal(db.getRoom(2).archived_at, T0 - 3600);
+  const rows = db.queryReadings(1, { from: T0, to: T0 + 90 });
+  assert.deepStrictEqual(rows.map(r => r.air), [0, 1, 1, 1]);
+  assert.deepStrictEqual(rows[0], {
+    room_id: 1, t: T0, T: 20, RH: 80, CO2: 900, t_out: 30, rh_out: 60, ac_mode: 'fan', ac_setpoint: null,
+    fog: 1, air: 0, lights: 1, circ: 0, power_w: 100, kwh: 1,
+  });
+  assert.equal(db.queryReadings(2, { from: T0 - 7200, to: T0 - 7200 })[0].air, 1);
+  assert.equal(db.queryReadings(1, { from: T0, to: T0 + 90, step: 3600 })[0].air, 0.75);
+  assert.deepStrictEqual(db.currentSettings(1).settings, { spT: 18 });
+  assert.equal(db.listEvents(1).length, 1);
+  assert.deepStrictEqual(db.loadControllerState(1).controller, { a: 1 });
+  db.insertReading(1, reading(T0 + 120, { air: 1 }));
+  assertSql(() => db.insertReading(1, reading(T0 + 150, { air: 2 })), 275);
+  assert.equal(db.createRoom(roomInput({ name: 'New' })).id, 3);
+  db.close();
+
+  const raw = new DatabaseSync(file);
+  t.after(() => raw.close());
+  assert.deepStrictEqual(raw.prepare('SELECT version, applied_at FROM schema_version ORDER BY version').all().map(r => ({ ...r })), [
+    { version: 1, applied_at: T0 - 86400 }, { version: 2, applied_at: T0 },
+  ]);
+  const cols = table => raw.prepare('SELECT name FROM pragma_table_info(?)').all(table).map(r => r.name);
+  assert.deepStrictEqual(cols('rooms'), ['id', 'name', 'volume', 'adapter', 'created_at', 'archived_at']);
+  assert.deepStrictEqual(cols('readings'), [
+    'room_id', 't', 'temp', 'RH', 'CO2', 't_out', 'rh_out', 'ac_mode', 'ac_setpoint',
+    'fog', 'air', 'lights', 'circ', 'power_w', 'kwh',
+  ]);
+  assert.equal(raw.prepare("SELECT strict FROM pragma_table_list() WHERE name = 'readings'").get().strict, 1);
+  assert.deepStrictEqual(raw.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'readings'").all().map(r => r.name), ['readings_room_t']);
+  assert.deepStrictEqual(raw.prepare('PRAGMA foreign_key_check').all(), []);
+  assert.equal(raw.prepare('PRAGMA integrity_check').get().integrity_check, 'ok');
 });
 
 // ---------------------------------------------------------------------------
@@ -257,7 +322,7 @@ both('createRoom: defaults, first settings version', (t, open) => {
   t.after(() => db.close());
   const room = db.createRoom(roomInput());
   assert.deepStrictEqual(room, {
-    id: room.id, name: 'A', volume: 60, vent: 'supply', adapter: 'sim', created_at: T0, archived_at: null,
+    id: room.id, name: 'A', volume: 60, adapter: 'sim', created_at: T0, archived_at: null,
   });
   const settings = db.currentSettings(room.id);
   assert.deepStrictEqual(settings, {
@@ -324,7 +389,6 @@ both('updateRoom: fields, unchanged, unknown field, bad value', (t, open) => {
   const room = db.createRoom(roomInput());
   assert.equal(db.updateRoom(room.id, { name: 'B' }).name, 'B');
   assert.equal(db.updateRoom(room.id, { volume: 80 }).volume, 80);
-  assert.equal(db.updateRoom(room.id, { vent: 'exhaust' }).vent, 'exhaust');
   const beforeEmpty = db.getRoom(room.id);
   assert.deepStrictEqual(db.updateRoom(room.id, {}), beforeEmpty);
   const beforeUnknown = db.getRoom(room.id);
@@ -334,8 +398,9 @@ both('updateRoom: fields, unchanged, unknown field, bad value', (t, open) => {
     return true;
   });
   assert.deepStrictEqual(db.getRoom(room.id), beforeUnknown);
-  assertSql(() => db.updateRoom(room.id, { vent: 'north' }), 275);
-  assert.equal(db.getRoom(room.id).vent, 'exhaust');
+  assert.throws(() => db.updateRoom(room.id, { vent: 'supply' }), { name: 'TypeError', message: 'updateRoom: unknown field "vent"' });
+  assertSql(() => db.updateRoom(room.id, { volume: 0 }), 275);
+  assert.equal(db.getRoom(room.id).volume, 80);
 });
 
 both('updateRoom: all or nothing when a later field breaks a rule', (t, open) => {
@@ -343,9 +408,9 @@ both('updateRoom: all or nothing when a later field breaks a rule', (t, open) =>
   t.after(() => db.close());
   const room = db.createRoom(roomInput());
   const before = db.getRoom(room.id);
-  assertSql(() => db.updateRoom(room.id, { name: 'B', vent: 'north' }), 275);
+  assertSql(() => db.updateRoom(room.id, { name: 'B', volume: 0 }), 275);
   assert.deepStrictEqual(db.getRoom(room.id), before);
-  assertSql(() => db.updateRoom(room.id, { name: 'C', volume: 80, vent: 'north' }), 275);
+  assertSql(() => db.updateRoom(room.id, { name: 'C', volume: NaN }), 1299);
   assert.deepStrictEqual(db.getRoom(room.id), before);
 });
 
@@ -432,7 +497,7 @@ both('insertReading: round trip, T <-> temp', (t, open) => {
   const db = open({ now: () => T0 });
   t.after(() => db.close());
   const roomId = makeRoom(db);
-  const r = { room_id: roomId, t: T0, T: 18.5, RH: 88, CO2: 900, t_out: 31, rh_out: 60, ac_mode: 'cool', ac_setpoint: 17.5, fog: 1, fan: 2, lights: 1, circ: 0, power_w: 1400, kwh: 12.5 };
+  const r = { room_id: roomId, t: T0, T: 18.5, RH: 88, CO2: 900, t_out: 31, rh_out: 60, ac_mode: 'cool', ac_setpoint: 17.5, fog: 1, air: 1, lights: 1, circ: 0, power_w: 1400, kwh: 12.5 };
   assert.equal(db.insertReading(roomId, r), undefined);
   const got = db.queryReadings(roomId, { from: T0, to: T0 })[0];
   assert.deepStrictEqual(got, r);
@@ -551,13 +616,13 @@ both('queryReadings: errors', (t, open) => {
 
 function bucketFixture(db, roomId) {
   db.insertReading(roomId, reading(T0, {
-    T: 20, RH: 80, CO2: null, ac_mode: 'cool', ac_setpoint: 18, fog: 1, lights: 1, kwh: 1,
+    T: 20, RH: 80, CO2: null, ac_mode: 'cool', ac_setpoint: 18, fog: 1, air: 1, lights: 1, kwh: 1,
   }));
   db.insertReading(roomId, reading(T0 + 30, {
-    T: null, RH: 90, CO2: null, ac_mode: 'off', ac_setpoint: null, fog: 2, lights: 0, kwh: 1.25,
+    T: null, RH: 90, CO2: null, ac_mode: 'off', ac_setpoint: null, fog: 2, air: 0, lights: 0, kwh: 1.25,
   }));
   db.insertReading(roomId, reading(T0 + 150, {
-    T: 21, RH: 85, CO2: 900, ac_mode: 'cool', ac_setpoint: 18, fog: 3, lights: 1, kwh: 2,
+    T: 21, RH: 85, CO2: 900, ac_mode: 'cool', ac_setpoint: 18, fog: 3, air: 1, lights: 1, kwh: 2,
   }));
 }
 
@@ -576,8 +641,17 @@ both('queryReadings: bucket averages, nulls, last ac_mode/kwh, empty bucket left
   assert.equal(b0.ac_mode, 'off'); assert.equal(b1.ac_mode, 'cool');
   assert.equal(b0.ac_setpoint, 18); assert.equal(b1.ac_setpoint, 18);
   assert.equal(b0.fog, 1.5); assert.equal(b1.fog, 3);
+  assert.equal(b0.air, 0.5); assert.equal(b1.air, 1);
   assert.equal(b0.lights, 0.5); assert.equal(b1.lights, 1);
   assert.equal(b0.kwh, 1.25); assert.equal(b1.kwh, 2);
+});
+
+both('queryReadings: bucket air is the fraction of readings with the air exchange on (C9 6.1)', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  [1, 1, 1, 0].forEach((air, i) => db.insertReading(roomId, reading(T0 + 30 * i, { air })));
+  assert.equal(db.queryReadings(roomId, { from: T0, to: T0 + 90, step: 120 })[0].air, 0.75);
 });
 
 both('queryReadings: bucket row keys equal raw row keys', (t, open) => {
@@ -1159,12 +1233,11 @@ both('constraint rules: one row per rule, nothing stored', (t, open) => {
 
   // CHECK (275)
   assertSql(() => db.updateRoom(roomId, { volume: 0 }), 275);
-  assertSql(() => db.updateRoom(roomId, { vent: 'north' }), 275);
   assertSql(() => db.saveCapacityReport(roomId, { report: report({ verdict: 'ok' }) }), 275);
   assertSql(() => db.replaceMix(roomId, [{ crop: 'a', blocks: -1 }]), 275);
   assertSql(() => db.insertReading(roomId, reading(T0, { ac_mode: 'auto' })), 275);
   assertSql(() => db.insertReading(roomId, reading(T0, { fog: 4 })), 275);
-  assertSql(() => db.insertReading(roomId, reading(T0, { fan: -1 })), 275);
+  assertSql(() => db.insertReading(roomId, reading(T0, { air: 2 })), 275);
   assertSql(() => db.insertReading(roomId, reading(T0, { lights: 2 })), 275);
   assertSql(() => db.insertReading(roomId, reading(T0, { circ: 2 })), 275);
   assertSql(() => db.addEvent(roomId, { t: T0, level: 'debug', text: 'x' }), 275);
@@ -1173,12 +1246,11 @@ both('constraint rules: one row per rule, nothing stored', (t, open) => {
   // NOT NULL (1299)
   { const r = roomInput(); delete r.name; assertSql(() => db.createRoom(r), 1299); }
   assertSql(() => db.updateRoom(roomId, { volume: NaN }), 1299);
-  { const r = roomInput(); delete r.vent; assertSql(() => db.createRoom(r), 1299); }
   { const r = roomInput(); delete r.settings; assertSql(() => db.createRoom(r), 1299); }
   { const r = reading(T0); delete r.t; assertSql(() => db.insertReading(roomId, r), 1299); }
   { const r = reading(T0); delete r.ac_mode; assertSql(() => db.insertReading(roomId, r), 1299); }
   { const r = reading(T0); delete r.fog; assertSql(() => db.insertReading(roomId, r), 1299); }
-  { const r = reading(T0); delete r.fan; assertSql(() => db.insertReading(roomId, r), 1299); }
+  { const r = reading(T0); delete r.air; assertSql(() => db.insertReading(roomId, r), 1299); }
   { const r = reading(T0); delete r.lights; assertSql(() => db.insertReading(roomId, r), 1299); }
   { const r = reading(T0); delete r.circ; assertSql(() => db.insertReading(roomId, r), 1299); }
   assertSql(() => db.addEvent(roomId, { t: T0, level: 'info' }), 1299);
@@ -1192,7 +1264,7 @@ both('constraint rules: one row per rule, nothing stored', (t, open) => {
   // Type (3091)
   assertSql(() => db.insertReading(roomId, reading(T0, { t: 1.5 })), 3091);
   assertSql(() => db.insertReading(roomId, reading(T0, { fog: 1.5 })), 3091);
-  assertSql(() => db.insertReading(roomId, reading(T0, { fan: 1.5 })), 3091);
+  assertSql(() => db.insertReading(roomId, reading(T0, { air: 1.5 })), 3091);
   assertSql(() => db.insertReading(roomId, reading('abc')), 3091);
   assertSql(() => db.insertReading(roomId, reading(T0, { T: 'abc' })), 3091);
   assertSql(() => db.addEvent(roomId, { t: 1.5, level: 'info', text: 'x' }), 3091);

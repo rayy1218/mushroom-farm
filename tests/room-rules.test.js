@@ -108,10 +108,9 @@ describe('normRoom', () => {
     assert.equal(R.normRoom({ volume: 100 }, 0).volume, 100);
     assert.equal(R.normRoom({ volume: 1 }, 0).volume, globalThis.ClimateSim.PLANT.room.volume);
   });
-  test('vent other than exhaust -> supply', () => {
-    assert.equal(R.normRoom({ vent: 'exhaust' }, 0).vent, 'exhaust');
-    assert.equal(R.normRoom({ vent: 'bogus' }, 0).vent, 'supply');
-    assert.equal(R.normRoom({}, 0).vent, 'supply');
+  test('vent is not kept (C9 section 6.3)', () => {
+    assert.ok(!('vent' in R.normRoom({ vent: 'exhaust' }, 0)));
+    assert.ok(!('vent' in R.normRoom({}, 0)));
   });
   test('id = String(r.id) or a base-36 text ending with the index', () => {
     assert.equal(R.normRoom({ id: 7 }, 2).id, '7');
@@ -128,31 +127,31 @@ describe('normRoom', () => {
 
 describe('checkRoom', () => {
   test('a valid POST body gives []', () => {
-    assert.deepStrictEqual(R.checkRoom({ name: 'A', volume: 60, vent: 'supply' }, false), []);
-    assert.deepStrictEqual(R.checkRoom({ name: 'A', volume: 60, vent: 'supply', settings: 'anything' }, false), []);
+    assert.deepStrictEqual(R.checkRoom({ name: 'A', volume: 60 }, false), []);
+    assert.deepStrictEqual(R.checkRoom({ name: 'A', volume: 60, settings: 'anything' }, false), []);
   });
   test('one problem each for a missing field', () => {
-    assert.equal(R.checkRoom({ volume: 60, vent: 'supply' }, false).length, 1);
-    assert.equal(R.checkRoom({ name: 'A', vent: 'supply' }, false).length, 1);
-    assert.equal(R.checkRoom({ name: 'A', volume: 60 }, false).length, 1);
+    assert.equal(R.checkRoom({ volume: 60 }, false).length, 1);
+    assert.equal(R.checkRoom({ name: 'A' }, false).length, 1);
   });
   test('name rules', () => {
-    assert.equal(R.checkRoom({ name: '   ', volume: 60, vent: 'supply' }, false).length, 1);
-    assert.equal(R.checkRoom({ name: 'x'.repeat(61), volume: 60, vent: 'supply' }, false).length, 1);
-    assert.equal(R.checkRoom({ name: 5, volume: 60, vent: 'supply' }, false).length, 1);
-    assert.deepStrictEqual(R.checkRoom({ name: '  ' + 'x'.repeat(60) + '  ', volume: 60, vent: 'supply' }, false), []);
+    assert.equal(R.checkRoom({ name: '   ', volume: 60 }, false).length, 1);
+    assert.equal(R.checkRoom({ name: 'x'.repeat(61), volume: 60 }, false).length, 1);
+    assert.equal(R.checkRoom({ name: 5, volume: 60 }, false).length, 1);
+    assert.deepStrictEqual(R.checkRoom({ name: '  ' + 'x'.repeat(60) + '  ', volume: 60 }, false), []);
   });
   test('volume rules', () => {
     for (const bad of [4.99, 5000.01, '60', null]) {
-      assert.equal(R.checkRoom({ name: 'A', volume: bad, vent: 'supply' }, false).length, 1, String(bad));
+      assert.equal(R.checkRoom({ name: 'A', volume: bad }, false).length, 1, String(bad));
     }
   });
-  test('vent rule', () => {
-    assert.equal(R.checkRoom({ name: 'A', volume: 60, vent: 'side' }, false).length, 1);
+  test('vent is an unknown field (C9 section 6.3)', () => {
+    assert.deepStrictEqual(R.checkRoom({ name: 'A', volume: 60, vent: 'supply' }, false), ['vent: unknown field']);
+    assert.deepStrictEqual(R.checkRoom({ vent: 'supply' }, true), ['vent: unknown field', 'body: at least one field is required']);
   });
   test('unknown field and archived on POST', () => {
-    assert.equal(R.checkRoom({ name: 'A', volume: 60, vent: 'supply', colour: 'red' }, false).length, 1);
-    assert.equal(R.checkRoom({ name: 'A', volume: 60, vent: 'supply', archived: true }, false).length, 1);
+    assert.equal(R.checkRoom({ name: 'A', volume: 60, colour: 'red' }, false).length, 1);
+    assert.equal(R.checkRoom({ name: 'A', volume: 60, archived: true }, false).length, 1);
   });
   test('a non-object body gives a problem', () => {
     assert.ok(R.checkRoom(null, false).length > 0);

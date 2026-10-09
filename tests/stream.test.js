@@ -105,7 +105,7 @@ describe('stream (C4)', () => {
     await ctx.ready;
     const c = await connectStream(ctx.url);
     await c.waitForCount(1);
-    const R = { room_id: 1, t: NOW, T: 18, RH: 88, CO2: 800, t_out: 30, rh_out: 60, ac_mode: 'cool', ac_setpoint: 17.5, fog: 1, fan: 1, lights: 1, circ: 0, power_w: 1000, kwh: 1 };
+    const R = { room_id: 1, t: NOW, T: 18, RH: 88, CO2: 800, t_out: 30, rh_out: 60, ac_mode: 'cool', ac_setpoint: 17.5, fog: 1, air: 1, lights: 1, circ: 0, power_w: 1000, kwh: 1 };
     ctx.rooms.emit('reading', { roomId: 1, live: { reading: R, running: true, error: null, stage: 'fruiting', crop: 'oyster', alarms: 0 } });
     await c.waitForCount(2);
     assert.equal(c.messages[1].event, 'reading');
@@ -121,7 +121,7 @@ describe('stream (C4)', () => {
     await c.waitForCount(1);
     const ev = { id: 1, room_id: 1, t: NOW, level: 'info', text: 'Started' };
     const alarm = { id: 2, room_id: 1, alarm_key: 'rhHi', level: 'warning', label: 'High humidity', raised_at: NOW, cleared_at: null, acked_at: null };
-    const room = { id: 1, name: 'Room 1', volume: 60, vent: 'supply', adapter: 'sim', created_at: NOW, archived_at: null, live: null };
+    const room = { id: 1, name: 'Room 1', volume: 60, adapter: 'sim', created_at: NOW, archived_at: null, live: null };
     ctx.rooms.emit('event', { roomId: 1, event: ev });
     ctx.rooms.emit('alarm', { roomId: 1, change: 'raised', alarm });
     ctx.rooms.emit('room', { room });
@@ -158,12 +158,12 @@ describe('stream (C4)', () => {
     await ctx.ready;
     const c = await connectStream(ctx.url);
     await c.waitForCount(1);
-    const R = { room_id: 1, t: NOW, T: 18, RH: 88, CO2: 800, t_out: 30, rh_out: 60, ac_mode: 'cool', ac_setpoint: 17.5, fog: 1, fan: 1, lights: 1, circ: 0, power_w: 1000, kwh: 1 };
+    const R = { room_id: 1, t: NOW, T: 18, RH: 88, CO2: 800, t_out: 30, rh_out: 60, ac_mode: 'cool', ac_setpoint: 17.5, fog: 1, air: 1, lights: 1, circ: 0, power_w: 1000, kwh: 1 };
     ctx.rooms.emit('reading', { roomId: 1, live: { reading: R } });
     ctx.rooms.emit('alarm', { roomId: 1, change: 'raised', alarm: { id: 1, room_id: 1, alarm_key: 'rhHi', level: 'warning', label: 'x', raised_at: NOW, cleared_at: null, acked_at: null } });
     ctx.rooms.emit('event', { roomId: 1, event: { id: 1, room_id: 1, t: NOW, level: 'info', text: 'x' } });
     ctx.rooms.emit('settings', { roomId: 1, version: { id: 1, room_id: 1, saved_at: NOW, note: null }, settings: {}, warnings: [], auto: false });
-    ctx.rooms.emit('room', { room: { id: 1, name: 'R', volume: 60, vent: 'supply', adapter: 'sim', created_at: NOW, archived_at: null, live: null } });
+    ctx.rooms.emit('room', { room: { id: 1, name: 'R', volume: 60, adapter: 'sim', created_at: NOW, archived_at: null, live: null } });
     await c.waitForCount(6);
     assert.deepStrictEqual(c.messages.slice(1, 6).map(m => m.event), ['reading', 'alarm', 'event', 'settings', 'room']);
 
@@ -240,7 +240,7 @@ describe('stream (C4)', () => {
     await other.waitForCount(1);
 
     const closed = new Promise(resolve => slow.res.on('close', resolve));
-    const bigRoom = { id: 1, name: 'R', volume: 60, vent: 'supply', adapter: 'sim', created_at: NOW, archived_at: null, live: null, pad: 'x'.repeat(65536) };
+    const bigRoom = { id: 1, name: 'R', volume: 60, adapter: 'sim', created_at: NOW, archived_at: null, live: null, pad: 'x'.repeat(65536) };
     const timer = setInterval(() => {
       try { ctx.rooms.emit('room', { room: bigRoom }); } catch { /* ignore */ }
     }, 5);

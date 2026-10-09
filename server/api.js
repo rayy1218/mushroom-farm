@@ -199,7 +199,7 @@ function createApi(opts) {
     if (problems.length) throw new HttpError(400, 'Invalid room', problems);
     const settings = body.settings;
     if (settings !== undefined && !isPlainObject(settings)) throw new HttpError(400, 'Invalid settings', ['settings: must be a plain object']);
-    const result = rooms.create({ name: body.name, volume: body.volume, vent: body.vent, settings });
+    const result = rooms.create({ name: body.name, volume: body.volume, settings });
     sendJson(res, 201, result.room);
   }
 
@@ -207,7 +207,7 @@ function createApi(opts) {
     const problems = RULES.checkRoom(body, true);
     if (problems.length) throw new HttpError(400, 'Invalid room', problems);
     const changes = {};
-    for (const k of ['name', 'volume', 'vent']) if (Object.hasOwn(body, k)) changes[k] = body[k];
+    for (const k of ['name', 'volume']) if (Object.hasOwn(body, k)) changes[k] = body[k];
     let result;
     if (Object.keys(changes).length > 0) result = rooms.update(id, changes);
     if (body.archived === true) result = rooms.archive(id);

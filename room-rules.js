@@ -43,7 +43,6 @@
       id: String(r.id || `${Date.now().toString(36)}${i}`),
       name: String(r.name || 'Room').slice(0, LIM.name),
       volume: inRange(r.volume, ...LIM.volume) ? r.volume : SIM.PLANT.room.volume,
-      vent: r.vent === 'exhaust' ? 'exhaust' : 'supply',
       calib: validCalib(r.calib),
       mix, report, rev: 0,
     };
@@ -54,7 +53,7 @@
   function checkRoom(body, partial) {
     const problems = [];
     if (!isPlainObject(body)) { problems.push('body: must be an object'); return problems; }
-    const allowed = partial ? ['name', 'volume', 'vent', 'archived'] : ['name', 'volume', 'vent', 'settings'];
+    const allowed = partial ? ['name', 'volume', 'archived'] : ['name', 'volume', 'settings'];
     for (const k of Object.keys(body)) {
       if (!allowed.includes(k)) problems.push(`${k}: unknown field`);
     }
@@ -67,21 +66,16 @@
     const checkVolume = () => {
       if (!inRange(body.volume, ...LIM.volume)) problems.push(`volume: must be a number from ${LIM.volume[0]} to ${LIM.volume[1]}`);
     };
-    const checkVent = () => {
-      if (body.vent !== 'supply' && body.vent !== 'exhaust') problems.push('vent: must be "supply" or "exhaust"');
-    };
     if (partial) {
       if (present('name')) checkName();
       if (present('volume')) checkVolume();
-      if (present('vent')) checkVent();
       if (present('archived') && body.archived !== true) problems.push('archived: must be true');
-      if (!present('name') && !present('volume') && !present('vent') && !present('archived')) {
+      if (!present('name') && !present('volume') && !present('archived')) {
         problems.push('body: at least one field is required');
       }
     } else {
       checkName();
       checkVolume();
-      checkVent();
     }
     return problems;
   }
