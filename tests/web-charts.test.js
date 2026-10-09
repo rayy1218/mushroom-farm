@@ -111,3 +111,77 @@ test('drawPurgeBars: purge bars titled with purges, m³ and capped purges (C9 7)
   assert.equal(host.children[0].attrs['aria-label'], 'Air exchange run minutes per hour, last 24 hours. The table below has the values.');
   assert.deepEqual(allOf(host).filter(e => e.tagName === 'title').map(e => e.textContent), ['23:00–00:00: 3 min, 2 purges, 90 m³, 1 capped, hour not finished']);
 });
+
+// drawCalibCharts options (docs/contracts/web.md C5 6.2): a recording DOM stub.
+function stubEl(tag) {
+  return { tag, attrs: {}, style: {}, children: [], className: '', textContent: '', clientWidth: 900,
+    setAttribute(k, v) { this.attrs[k] = String(v); }, appendChild(c) { this.children.push(c); return c; },
+    append(...c) { this.children.push(...c); }, replaceChildren(...c) { this.children = c; } };
+}
+const walk = (n, f, out = []) => { if (n && typeof n === 'object') { if (f(n)) out.push(n); (n.children || []).forEach(c => walk(c, f, out)); } return out; };
+const ROWS = [{ t: 0, T: 20, RH: 80, CO2: 900 }, { t: 3600, T: 21, RH: 82, CO2: 950 }];
+const BASE = { series: [{ t: 0, T: 20.5, RH: 81, CO2: 910 }, { t: 3600, T: 21.5, RH: 83, CO2: 940 }] };
+const FIT = { result: { series: BASE.series } };
+const keyTexts = host => walk(host, n => n.className === 'cal-key')[0].children.map(s => s.children[1]);
+const keyIcons = host => walk(host, n => n.className === 'cal-key')[0].children.map(s => s.children[0]);
+const paths = (host, cls) => walk(host, n => n.tag === 'path' && n.attrs.class === cls);
+function drawStub(opts) {
+  const saved = { document: globalThis.document };
+  globalThis.document = { createElement: stubEl, createElementNS: (ns, tag) => stubEl(tag) };
+  try { const host = stubEl('div'); FC.drawCalibCharts(host, opts); return host; }
+  finally { globalThis.document = saved.document; }
+}
+
+test('CH1 base is read as series', () => {
+  const host = drawStub({ rows: ROWS, base: BASE, fit: null });
+  assert.equal(walk(host, n => n.tag === 'svg').length, 3);
+  assert.equal(walk(host, n => n.className === 'cal-key').length, 1);
+  assert.equal(paths(host, 'meas').length, 3);
+  assert.equal(paths(host, 'simb').length, 3);
+  assert.equal(paths(host, 'sima').length, 0);
+  assert.deepEqual(keyTexts(host), ['Measured', 'Simulation now']);
+  assert.equal(walk(host, n => n.tag === 'path' && n.style.strokeDasharray !== undefined).length, 0);
+});
+
+test('CH2 labels', () => {
+  const host = drawStub({ rows: ROWS, base: BASE, fit: FIT, labels: { rows: 'Real (sensors)', base: 'Predicted (run 12)' } });
+  assert.deepEqual(keyTexts(host), ['Real (sensors)', 'Predicted (run 12)', 'Simulation, fitted']);
+  const h2 = drawStub({ rows: ROWS, base: BASE, fit: FIT, labels: { fit: 'F' } });
+  assert.deepEqual(keyTexts(h2), ['Measured', 'Simulation now', 'F']);
+});
+
+test('CH3 dashed', () => {
+  const dash = (d, base, fit, ib, ia) => {
+    const host = drawStub({ rows: ROWS, base: BASE, fit: FIT, dashed: d });
+    for (const p of paths(host, 'simb')) assert.equal(p.style.strokeDasharray, base);
+    for (const p of paths(host, 'sima')) assert.equal(p.style.strokeDasharray, fit);
+    const [, b, a] = keyIcons(host);
+    assert.equal(b.style.borderTopStyle, ib);
+    assert.equal(a.style.borderTopStyle, ia);
+  };
+  dash('base', '4 3', 'none', 'dashed', 'solid');
+  dash('fit', 'none', '4 3', 'solid', 'dashed');
+  dash(null, 'none', 'none', 'solid', 'solid');
+});
+
+test('CH4 defaults are today\'s look', () => {
+  const host = drawStub({ rows: ROWS, base: BASE, fit: FIT });
+  assert.deepEqual(keyTexts(host), ['Measured', 'Simulation now', 'Simulation, fitted']);
+  assert.deepEqual(keyIcons(host).map(i => i.className), ['', 'b', 'a']);
+  assert.equal(walk(host, n => n.tag === 'path' && n.style.strokeDasharray !== undefined).length, 0);
+  assert.equal(keyIcons(host).filter(i => i.style.borderTopStyle !== undefined).length, 0);
+  assert.equal(paths(host, 'meas').length, 3); assert.equal(paths(host, 'sima').length, 3);
+});
+
+test('createLadder: a chip drawn, cleared and drawn again shows again (lead decision 82)', (t) => {
+  fakeDocument(t);
+  const el = new FakeEl('div');
+  const lad = FC.createLadder(el);
+  const S = { co2Lim: 1200, rules: { fanOn: 1000, fanOff: 800, co2Safety: false, co2SafetyAt: 3000 } };
+  const X = { air: { lvl: 'info', icon: '▲', text: 'Purging' } };
+  const chip = () => allOf(el).find(e => e.className === 'chip');
+  const shown = () => chip().children.map(c => c.textContent);
+  lad.draw(S, 900, X); assert.deepEqual(shown(), ['▲', 'Purging']);
+  lad.draw(S, 900, null); assert.deepEqual(shown(), []);
+  lad.draw(S, 900, X); assert.deepEqual(shown(), ['▲', 'Purging']);
+});
