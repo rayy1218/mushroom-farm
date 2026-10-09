@@ -1422,6 +1422,226 @@ both('saveCapacityReport: unknown field', (t, open) => {
 });
 
 // ---------------------------------------------------------------------------
+// Task 12a: Simulation runs (C1 section 6.13, lead decisions 71, 73, 75)
+// ---------------------------------------------------------------------------
+
+const SIM_INFO_KEYS = ['id', 'room_id', 'created_at', 'kind', 'verdict', 'blocks', 'days', 'kwh', 'rm', 'utilisation', 'real_start', 'note', 'inputs'];
+
+both('saveSimulationRun: cycle summary columns', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  const pass = db.saveSimulationRun(roomId, simRun());
+  assert.deepStrictEqual(Object.keys(pass), SIM_INFO_KEYS.concat('result'));
+  assert.deepStrictEqual(pass, {
+    id: pass.id, room_id: roomId, created_at: T0, kind: 'cycle', verdict: 'pass', blocks: 2000, days: 83, kwh: 1093.4, rm: 623.2,
+    utilisation: null, real_start: null, note: null, inputs: simRun().inputs, result: simRun().result,
+  });
+  const failing = simRun();
+  failing.result.totals.pass = false;
+  assert.equal(db.saveSimulationRun(roomId, failing).verdict, 'fail');
+  const impossible = db.saveSimulationRun(roomId, simRun({ result: { verdict: 'impossible', why: 'x' } }));
+  assert.equal(impossible.verdict, 'impossible');
+  assert.equal(impossible.days, null);
+  assert.equal(impossible.kwh, null);
+  assert.equal(impossible.rm, null);
+});
+
+both('saveSimulationRun: capacity and equipment summary columns', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  const cap = db.saveSimulationRun(roomId, simRun({ kind: 'capacity', result: { verdict: 'good', utilisation: 74, runs: [] } }));
+  assert.equal(cap.verdict, 'good');
+  assert.equal(cap.utilisation, 74);
+  assert.equal(cap.days, null);
+  assert.equal(cap.kwh, null);
+  assert.equal(cap.rm, null);
+  const eq = db.saveSimulationRun(roomId, simRun({ kind: 'equipment', result: { verdict: 'ok', ac: { verdict: 'too-small' } } }));
+  assert.equal(eq.verdict, 'too-small');
+  for (const k of ['days', 'kwh', 'rm', 'utilisation']) assert.equal(eq[k], null, k);
+  const eqImpossible = db.saveSimulationRun(roomId, simRun({ kind: 'equipment', result: { verdict: 'impossible', why: 'x' } }));
+  assert.equal(eqImpossible.verdict, 'impossible');
+  const mix = db.saveSimulationRun(roomId, simRun({ inputs: { mix: [{ blocks: 1200 }, { blocks: 300 }] } }));
+  assert.equal(mix.blocks, 1500);
+  const empty = db.saveSimulationRun(roomId, simRun({ inputs: { mix: [] } }));
+  assert.equal(empty.blocks, 0);
+});
+
+both('saveSimulationRun: kind and verdict CHECKs, nothing stored', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  assertSql(() => db.saveSimulationRun(roomId, simRun({ kind: 'capacity', result: { verdict: 'pass' } })), 275);
+  assertSql(() => db.saveSimulationRun(roomId, simRun({ kind: 'equipment', result: { verdict: 'ok', ac: { verdict: 'pass' } } })), 275);
+  assertSql(() => db.saveSimulationRun(roomId, simRun({ kind: 'heat', result: { verdict: 'good' } })), 275);
+  assertSql(() => db.saveSimulationRun(roomId, simRun({ kind: 'equipment', result: { verdict: 'ok' } })), 1299);
+  assertSql(() => db.saveSimulationRun(roomId, simRun({ kind: 'capacity', result: { verdict: 'good', utilisation: 74.5 } })), 3091);
+  const noInputs = simRun();
+  delete noInputs.inputs;
+  assertSql(() => db.saveSimulationRun(roomId, noInputs), 1299);
+  assert.deepStrictEqual(db.listSimulationRuns(roomId), []);
+});
+
+both('saveSimulationRun: note, real_start, at, Infinity in result, unknown field', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  const run = db.saveSimulationRun(roomId, simRun({ note: 'n', real_start: T0, at: 5 }));
+  assert.equal(run.note, 'n');
+  assert.equal(run.real_start, T0);
+  assert.equal(run.created_at, 5);
+  const withInf = simRun();
+  withInf.result.x = Infinity;
+  const saved = db.saveSimulationRun(roomId, withInf);
+  assert.equal(db.getSimulationRun(roomId, saved.id).result.x, Infinity);
+  const before = db.listSimulationRuns(roomId).length;
+  assert.throws(() => db.saveSimulationRun(roomId, simRun({ colour: 1 })), {
+    name: 'TypeError', message: 'saveSimulationRun: unknown field "colour"',
+  });
+  assert.equal(db.listSimulationRuns(roomId).length, before);
+});
+
+both('listSimulationRuns: newest first, limit, before, no result', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  const otherId = makeRoom(db);
+  for (let i = 0; i < 51; i++) db.saveSimulationRun(roomId, simRun());
+  db.saveSimulationRun(otherId, simRun());
+  const page1 = db.listSimulationRuns(roomId);
+  assert.equal(page1.length, 50);
+  const ids = page1.map(r => r.id);
+  assert.deepStrictEqual(ids, ids.slice().sort((a, b) => b - a));
+  for (const item of page1) {
+    assert.deepStrictEqual(Object.keys(item), SIM_INFO_KEYS);
+    assert.ok(!('result' in item));
+  }
+  assert.equal(db.listSimulationRuns(roomId, { limit: 200 }).length, 51);
+  const rest = db.listSimulationRuns(roomId, { before: ids[ids.length - 1] });
+  assert.equal(rest.length, 1);
+  assert.ok(rest[0].id < ids[ids.length - 1]);
+  assert.deepStrictEqual(db.listSimulationRuns(roomId, { before: null }), page1);
+  assert.equal(db.listSimulationRuns(roomId, { limit: 3 }).length, 3);
+  assert.equal(db.listSimulationRuns(otherId).length, 1);
+});
+
+both('listSimulationRuns: errors', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  for (const limit of [0, 201, 1.5]) assert.throws(() => db.listSimulationRuns(roomId, { limit }), RangeError);
+  for (const before of [1.5, '5']) assert.throws(() => db.listSimulationRuns(roomId, { before }), RangeError);
+  assert.throws(() => db.listSimulationRuns(roomId, { offset: 1 }), TypeError);
+});
+
+both('getSimulationRun: result included; other room and bad ids throw NotFoundError(simulation)', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  const otherId = makeRoom(db);
+  const run = db.saveSimulationRun(roomId, simRun());
+  const other = db.saveSimulationRun(otherId, simRun());
+  assert.deepStrictEqual(db.getSimulationRun(roomId, run.id), run);
+  assert.deepStrictEqual(db.getSimulationRun(roomId, run.id).result, simRun().result);
+  assertNotFound(() => db.getSimulationRun(roomId, other.id), 'simulation', other.id);
+  assertNotFound(() => db.getSimulationRun(roomId, 999), 'simulation', 999);
+  assertNotFound(() => db.getSimulationRun(roomId, '1'), 'simulation', '1');
+  assertNotFound(() => db.getSimulationRun(roomId, NaN), 'simulation', NaN);
+});
+
+both('updateSimulationRun: note and real_start', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  const run = db.saveSimulationRun(roomId, simRun());
+  const info = { ...run };
+  delete info.result;
+  const a = db.updateSimulationRun(roomId, run.id, { note: 'hello' });
+  assert.deepStrictEqual(a, { ...info, note: 'hello' });
+  assert.deepStrictEqual(Object.keys(a), SIM_INFO_KEYS);
+  const b = db.updateSimulationRun(roomId, run.id, { real_start: T0 });
+  assert.deepStrictEqual(b, { ...info, note: 'hello', real_start: T0 });
+  assert.deepStrictEqual(db.updateSimulationRun(roomId, run.id, {}), b);
+  const c = db.updateSimulationRun(roomId, run.id, { note: null, real_start: null });
+  assert.deepStrictEqual(c, info);
+  assert.throws(() => db.updateSimulationRun(roomId, run.id, { kind: 'x' }), {
+    name: 'TypeError', message: 'updateSimulationRun: unknown field "kind"',
+  });
+  assertSql(() => db.updateSimulationRun(roomId, run.id, { real_start: 1.5 }), 3091);
+  assert.deepStrictEqual(db.listSimulationRuns(roomId), [info]);
+  assertNotFound(() => db.updateSimulationRun(roomId, 999, { note: 'x' }), 'simulation', 999);
+});
+
+both('deleteSimulationRun: returns the info read before, then NotFoundError(simulation)', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  const run = db.saveSimulationRun(roomId, simRun({ note: 'bye' }));
+  const keep = db.saveSimulationRun(roomId, simRun());
+  const info = { ...run };
+  delete info.result;
+  assert.deepStrictEqual(db.deleteSimulationRun(roomId, run.id), info);
+  assertNotFound(() => db.getSimulationRun(roomId, run.id), 'simulation', run.id);
+  assertNotFound(() => db.deleteSimulationRun(roomId, run.id), 'simulation', run.id);
+  assertNotFound(() => db.deleteSimulationRun(roomId, '1'), 'simulation', '1');
+  assert.deepStrictEqual(db.listSimulationRuns(roomId).map(r => r.id), [keep.id]);
+});
+
+both('updateSimulationRun: the run before column rules (LD 75)', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  assertNotFound(() => db.updateSimulationRun(999, 999, { colour: 1 }), 'room', 999);
+  assert.throws(() => db.updateSimulationRun(roomId, 999, { colour: 1 }), {
+    name: 'TypeError', message: 'updateSimulationRun: unknown field "colour"',
+  });
+  assertNotFound(() => db.updateSimulationRun(roomId, 999, { real_start: 1.5 }), 'simulation', 999);
+  const run = db.saveSimulationRun(roomId, simRun());
+  assertSql(() => db.updateSimulationRun(roomId, run.id, { real_start: 1.5 }), 3091);
+  assert.equal(db.getSimulationRun(roomId, run.id).real_start, null);
+});
+
+both('listSimulationRuns: limit null is a RangeError, before null no cursor (LD 71)', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  db.saveSimulationRun(roomId, simRun());
+  assert.throws(() => db.listSimulationRuns(roomId, { limit: null }), RangeError);
+  assert.deepStrictEqual(db.listSimulationRuns(roomId, { before: null }), db.listSimulationRuns(roomId, {}));
+});
+
+both('saveSimulationRun: a cycle without totals stores fail (LD 71)', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  for (const result of [{ verdict: 'ok' }, { verdict: 'ok', totals: 5 }]) {
+    const run = db.saveSimulationRun(roomId, simRun({ result }));
+    assert.equal(run.verdict, 'fail');
+    for (const k of ['days', 'kwh', 'rm']) assert.equal(run[k], null, k);
+  }
+});
+
+both('saveSimulationRun: totals.days 1.5 is 3091, days 0 is 275 (LD 71)', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  const withDays = days => simRun({ result: { verdict: 'ok', totals: { days, kwh: 1, rm: 1, pass: true } } });
+  assertSql(() => db.saveSimulationRun(roomId, withDays(1.5)), 3091);
+  assertSql(() => db.saveSimulationRun(roomId, withDays(0)), 275);
+  assert.deepStrictEqual(db.listSimulationRuns(roomId), []);
+});
+
+both('saveSimulationRun: a fractional blocks sum is 3091, a negative sum 275 (LD 71)', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  assertSql(() => db.saveSimulationRun(roomId, simRun({ inputs: { mix: [{ blocks: 1.5 }] } })), 3091);
+  assertSql(() => db.saveSimulationRun(roomId, simRun({ inputs: { mix: [{ blocks: -1 }] } })), 275);
+  assert.deepStrictEqual(db.listSimulationRuns(roomId), []);
+});
+
+// ---------------------------------------------------------------------------
 // Task 13: Sweeps
 // ---------------------------------------------------------------------------
 

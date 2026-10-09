@@ -732,6 +732,117 @@ function buildDb(conn, dbPath, version, now) {
     return capacityRowToPublic(latestCapacityStmt.get({ room_id: roomId }));
   }
 
+  // Simulation runs (section 6.13)
+  const insertSimStmt = conn.prepare(
+    'INSERT INTO simulation_runs (room_id, created_at, kind, verdict, blocks, days, kwh, rm, utilisation, real_start, note, inputs, result) ' +
+    'VALUES (:room_id, :created_at, :kind, :verdict, :blocks, :days, :kwh, :rm, :utilisation, :real_start, :note, :inputs, :result)'
+  );
+  const SIM_INFO_COLS = 'id, room_id, created_at, kind, verdict, blocks, days, kwh, rm, utilisation, real_start, note, inputs';
+  const getSimStmt = conn.prepare(`SELECT ${SIM_INFO_COLS}, result FROM simulation_runs WHERE id = :id AND room_id = :room_id`);
+  const getSimInfoStmt = conn.prepare(`SELECT ${SIM_INFO_COLS} FROM simulation_runs WHERE id = :id AND room_id = :room_id`);
+  const listSimStmt = conn.prepare(
+    `SELECT ${SIM_INFO_COLS} FROM simulation_runs WHERE room_id = :room_id ORDER BY id DESC LIMIT :limit`
+  );
+  const listSimBeforeStmt = conn.prepare(
+    `SELECT ${SIM_INFO_COLS} FROM simulation_runs WHERE room_id = :room_id AND id < :before ORDER BY id DESC LIMIT :limit`
+  );
+  const updateSimNoteStmt = conn.prepare('UPDATE simulation_runs SET note = :v WHERE id = :id');
+  const updateSimStartStmt = conn.prepare('UPDATE simulation_runs SET real_start = :v WHERE id = :id');
+  const deleteSimStmt = conn.prepare('DELETE FROM simulation_runs WHERE id = :id');
+
+  function isObject(v) {
+    return v !== null && typeof v === 'object';
+  }
+
+  function finiteOrNull(v) {
+    return typeof v === 'number' && Number.isFinite(v) ? v : null;
+  }
+
+  function simToPublic(row) {
+    if (!row) return null;
+    const out = { ...row, inputs: fromJson(row.inputs) };
+    if ('result' in row) out.result = fromJson(row.result);
+    return out;
+  }
+
+  function findSim(roomId, runId, stmt) {
+    const row = Number.isInteger(runId) ? stmt.get({ id: runId, room_id: roomId }) : undefined;
+    if (!row) throw new NotFoundError('simulation', runId);
+    return row;
+  }
+
+  function saveSimulationRun(roomId, run) {
+    live();
+    roomCheck(roomId);
+    fields('saveSimulationRun', run, ['kind', 'inputs', 'result', 'note', 'real_start', 'at']);
+    const r = run || {};
+    const result = isObject(r.result) ? r.result : {};
+    const totals = isObject(result.totals) ? result.totals : null;
+    let verdict;
+    if (r.kind === 'cycle') {
+      verdict = result.verdict === 'impossible' ? 'impossible' : (totals && totals.pass === true ? 'pass' : 'fail');
+    } else if (r.kind === 'equipment') {
+      verdict = result.verdict === 'impossible' ? 'impossible' : (isObject(result.ac) ? result.ac.verdict : undefined);
+    } else {
+      verdict = result.verdict;
+    }
+    let blocks = 0;
+    const mix = isObject(r.inputs) ? r.inputs.mix : undefined;
+    if (Array.isArray(mix)) for (const m of mix) if (isObject(m) && Number.isFinite(m.blocks)) blocks += m.blocks;
+    const cycle = r.kind === 'cycle' && totals;
+    const info = insertSimStmt.run({
+      room_id: roomId, created_at: val(r.at === undefined ? now() : r.at), kind: val(r.kind), verdict: val(verdict), blocks,
+      days: cycle ? finiteOrNull(totals.days) : null,
+      kwh: cycle ? finiteOrNull(totals.kwh) : null,
+      rm: cycle ? finiteOrNull(totals.rm) : null,
+      utilisation: r.kind === 'capacity' ? finiteOrNull(result.utilisation) : null,
+      real_start: val(r.real_start), note: val(r.note), inputs: jsonVal(r.inputs), result: jsonVal(r.result),
+    });
+    return simToPublic(getSimStmt.get({ id: info.lastInsertRowid, room_id: roomId }));
+  }
+
+  function listSimulationRuns(roomId, options) {
+    live();
+    roomCheck(roomId);
+    fields('listSimulationRuns', options, ['limit', 'before']);
+    const o = options || {};
+    const limit = o.limit === undefined ? 50 : o.limit;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 200) throw new RangeError('listSimulationRuns: limit must be an integer from 1 to 200');
+    const before = o.before === undefined ? null : o.before;
+    if (before !== null && !Number.isInteger(before)) throw new RangeError('listSimulationRuns: before must be an integer or null');
+    const rows = before === null
+      ? listSimStmt.all({ room_id: roomId, limit })
+      : listSimBeforeStmt.all({ room_id: roomId, before, limit });
+    return rows.map(simToPublic);
+  }
+
+  function getSimulationRun(roomId, runId) {
+    live();
+    roomCheck(roomId);
+    return simToPublic(findSim(roomId, runId, getSimStmt));
+  }
+
+  function updateSimulationRun(roomId, runId, changes) {
+    live();
+    roomCheck(roomId);
+    fields('updateSimulationRun', changes, ['note', 'real_start']);
+    findSim(roomId, runId, getSimInfoStmt); // lead decision 75: the run before the column rules
+    const c = changes || {};
+    return tx(() => {
+      if ('note' in c) updateSimNoteStmt.run({ v: val(c.note), id: runId });
+      if ('real_start' in c) updateSimStartStmt.run({ v: val(c.real_start), id: runId });
+      return simToPublic(getSimInfoStmt.get({ id: runId, room_id: roomId }));
+    });
+  }
+
+  function deleteSimulationRun(roomId, runId) {
+    live();
+    roomCheck(roomId);
+    const row = simToPublic(findSim(roomId, runId, getSimInfoStmt));
+    deleteSimStmt.run({ id: runId });
+    return row;
+  }
+
   function listRooms(options) {
     live();
     fields('listRooms', options, ['includeArchived']);
@@ -779,6 +890,11 @@ function buildDb(conn, dbPath, version, now) {
     replaceMix,
     saveCapacityReport,
     latestCapacityReport,
+    saveSimulationRun,
+    listSimulationRuns,
+    getSimulationRun,
+    updateSimulationRun,
+    deleteSimulationRun,
   };
   // The connection for server/harvest-db.js (C1 6.3, lead decision 61): read only, closed only by close().
   Object.defineProperty(db, 'sqlite', { value: conn, enumerable: true, writable: false, configurable: false });
