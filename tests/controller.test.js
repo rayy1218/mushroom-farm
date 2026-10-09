@@ -493,3 +493,57 @@ test('a CO2 sensor fault: the timed purge share is learned from the hours before
   assert.equal(feed(14730, { CO2: null }).air.on, true);
   assert.equal(ctl.state.why.air, 'CO₂ sensor fault: timed purge, 180 s of each 982 s (from this hour of an earlier day).');
 });
+
+const AIR = globalThis.ClimateAir;
+// A sealed 60 m³ room: CO2 output prodM3h (m³/h), the air exchange r.airM3h when on, 420 ppm outside.
+// step(on, dt) moves r.C with the exact solution of V dC/dt = prod × 10⁶ − Q (C − 420).
+function room({ prodM3h = 0.27, airM3h = 900, C = 800 } = {}) {
+  const r = {
+    C, airM3h,
+    step(on, dt) {
+      if (!on) { r.C += prodM3h * 1e6 / 60 * dt / 3600; return; }
+      const css = 420 + prodM3h * 1e6 / r.airM3h, k = r.airM3h / 60 / 3600;
+      r.C = css + (r.C - css) * Math.exp(-k * dt);
+    },
+  };
+  return r;
+}
+
+test('3 capped purges in a row raise the size alarm with an estimate; a purge that reaches the stop level clears it', () => {
+  assert.ok(CC.ALARMS.some(a => a.id === 'airTooSmall' && a.lvl() === 'warning' && a.label === 'Air exchange too small for the CO₂ load'));
+  const { feed, ctl, events, cfg } = make();
+  cfg.airM3h = 900;
+  const r = room({ airM3h: 900 });                             // 6000 blocks: steady 720 ppm at 900 m³/h, never 700 ppm
+  let on = false, t = 0;
+  for (; t <= 1800; t += 30) { if (t) r.step(on, 30); on = feed(t, { CO2: r.C }).air.on; }
+  const X = ctl.purges();
+  assert.ok(X.events.length >= 3, `${X.events.length} purges`);
+  for (const e of X.events) assert.deepEqual([e.end - e.start, e.capped, e.reason], [180, true, 'purge']);
+  assert.ok(ctl.state.air.capRun >= 3);
+  const a = ctl.state.alarms.airTooSmall;
+  assert.deepEqual([a.active, a.lvl, a.label], [true, 'warning', 'Air exchange too small for the CO₂ load']);
+  const m = /^Purges don't reach 700 ppm in 3 min\. The air exchange needs about (\d+) m³\/h \(now 900 m³\/h\)\.$/.exec(ctl.state.air.sizeText);
+  assert.ok(m, ctl.state.air.sizeText);
+  const truth = AIR.sizeFor({ volume: 60, co2Out: 420, prodM3h: 0.27, start: 900, stop: 700, capS: 180 }).needM3h;
+  assert.ok(Math.abs(Number(m[1]) - truth) / truth <= 0.15, `estimate ${m[1]}, truth ${truth}`);
+  assert.ok(ctl.state.why.air.endsWith(` ${ctl.state.air.sizeText}`));
+  assert.ok(events.some(e => e.lvl === 'warning' && e.text === `Alarm: Air exchange too small for the CO₂ load. ${ctl.state.air.sizeText}`));
+  // A bigger air exchange: the next purge reaches the stop level and the alarm clears.
+  cfg.airM3h = 1800; r.airM3h = 1800;
+  for (const end = t + 900; t <= end; t += 30) { r.step(on, 30); on = feed(t, { CO2: r.C }).air.on; }
+  assert.equal(ctl.state.air.capRun, 0);
+  assert.equal(ctl.state.alarms.airTooSmall.active, false);
+  assert.equal(ctl.state.air.sizeText, null);
+  assert.equal(ctl.purges().events.at(-1).capped, false);
+});
+
+test('the size alarm before a rise rate is measured says so', () => {
+  const { feed, ctl } = make();
+  let t = 0;
+  for (let n = 0; n < 3; n++) {                                // CO2 jumps above the start level: no rise rate with the fans off
+    for (const end = t + 180; t <= end; t += 30) feed(t, { CO2: 950 + (t % 60 ? 1 : 0) });
+    for (const end = t + 30; t <= end; t += 30) feed(t, { CO2: 950 + (t % 60 ? 1 : 0) });
+  }
+  assert.equal(ctl.state.air.capRun, 3);
+  assert.equal(ctl.state.air.sizeText, "Purges don't reach 700 ppm in 3 min. The air exchange is too small; the size needed is not measured yet.");
+});

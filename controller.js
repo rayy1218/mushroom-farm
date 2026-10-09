@@ -116,6 +116,7 @@
   const MODE_HOLD_S = 300;
   const AIR_MIN_ON_S = 30;         // every air run lasts at least this long, so a noisy reading cannot stop it at once
   const AIR_POINTS = 20;           // CO2 readings kept for the rise rate
+  const CO2_OUT = 420;             // ppm; outdoor CO2 for the size estimate
   const FOG_FULL_S = 300;          // humidity first acts only after the fogger is at its maximum for this long
   const ALARM_DELAY_S = 300;       // a process alarm needs its condition for this long (critical alarms: 60 s)        // a mode change (heat/cool, dry) needs its condition for this long
 
@@ -201,6 +202,8 @@
     { id: 'rhLo', label: 'Low humidity', lvl: c => RH_LO_LVL[c.stage] || 'warning', on: (v, c) => v.RH < c.rhT - BANDS.RHAlarm, off: (v, c) => v.RH > c.rhT - BANDS.RHAlarm + 1, uses: 'RH' },
     { id: 'co2Hi', label: 'CO₂ above limit', lvl: () => 'warning', on: (v, c) => v.CO2 > c.co2Lim, off: (v, c) => v.CO2 < c.co2Lim - 20, uses: 'CO2' },
     { id: 'co2Safe', label: 'CO₂ at safety level', lvl: () => 'critical', on: (v, c) => v.CO2 >= c.rules.co2SafetyAt, off: (v, c) => v.CO2 < c.rules.co2SafetyAt - 20, uses: 'CO2' },
+    // Raised and cleared by the purge cycle (endPurge), not by the loop in alarms(): 3 capped purges in a row.
+    { id: 'airTooSmall', label: 'Air exchange too small for the CO₂ load', lvl: () => 'warning' },
     { id: 'disagree', label: 'The two sensor sets disagree: check the air movement or a sensor', lvl: () => 'warning', on: v => v.disagree, off: v => !v.disagree, uses: null },
   ];
   const LVL_RANK = { critical: 3, serious: 2, warning: 1 };
@@ -405,11 +408,11 @@
     }
 
     // ---------- Alarms (with acknowledgement) ----------
-    function raise(id, label, lvl, t) {
+    function raise(id, label, lvl, t, note) {
       const a = st.alarms[id];
       if (a && a.active) return;
       st.alarms[id] = { id, label, lvl, active: true, acked: false, since: t };
-      say(t, lvl, `Alarm: ${label}`);
+      say(t, lvl, `Alarm: ${label}${note ? `. ${note}` : ''}`);
     }
     function clear(id, label, t) {
       const a = st.alarms[id];
@@ -421,6 +424,7 @@
     function alarms(v, f, t) {
       const c = { spT: cfg.spT, rhT: st.rhT, co2Lim: cfg.co2Lim, rules: cfg.rules, stage: cfg.stage, limits: CROPS[cfg.crop].limits, coreCooling: !!st.coreCooling };
       for (const a of ALARMS) {
+        if (!a.on) continue;                                                  // raised elsewhere (airTooSmall)
         if (a.uses && f[a.uses]) { delete st.alarmPend[a.id]; continue; }   // no alarm from a failed or missing sensor
         if (a.id === 'co2Safe' && !cfg.rules.co2Safety) { clear(a.id, a.label, t); continue; }
         if (!alarmOn(a.id)) {
@@ -470,7 +474,25 @@
         hourBucket(Math.floor(t / 3600)).cappedN++;
         st.airRunCapped = true;                // the record's event gets capped: true when the air run ends
         say(t, 'info', `Purge stopped at the time cap (${mss(runS)})`);
-      } else if (capped === false) A.capRun = 0;
+        if (A.capRun >= 3) sizeCheck(t);
+      } else if (capped === false) {
+        A.capRun = 0;
+        A.sizeText = null;
+        clear('airTooSmall', null, t);
+      }
+    }
+    // 5.5: after 3 capped purges in a row, the size the room needs, from the last rise rate with the fans off.
+    function sizeCheck(t) {
+      const R = cfg.rules, A = st.air, AIR = global.ClimateAir;
+      const head = `Purges don't reach ${R.fanOff} ppm in ${+(R.purgeMaxS / 60).toFixed(1)} min`;
+      if (st.airRate > 0) {
+        const prod = AIR.prodFromRise({ ratePpmS: st.airRate, volume: cfg.roomM3, co2: st.v.CO2, co2Out: CO2_OUT });
+        const need = AIR.sizeFor({ volume: cfg.roomM3, co2Out: CO2_OUT, prodM3h: prod, start: R.fanOn, stop: R.fanOff, capS: R.purgeMaxS });
+        A.sizeText = Number.isFinite(need.needM3h)
+          ? `${head}. The air exchange needs about ${need.needM3h} m³/h (now ${cfg.airM3h} m³/h).`
+          : `${head}: outside air alone cannot bring CO₂ this low; raise the stop level.`;
+      } else A.sizeText = `${head}. The air exchange is too small; the size needed is not measured yet.`;
+      raise('airTooSmall', ALARMS.find(a => a.id === 'airTooSmall').label, 'warning', t, A.sizeText);
     }
     // Push of humidity (5.4): outdoor minus room absolute humidity (g/m³); null with an outdoor, T or RH fault.
     const ahPush = (v, f) => (f.out || f.T || f.RH ? null : ahOf(v.tOut, v.rhOut) - ahOf(v.T, v.RH));
@@ -494,6 +516,7 @@
         if (st.airPts.length > AIR_POINTS) st.airPts.shift();
       }
       const rate = AIR.riseRate(st.airPts);
+      if (rate != null) st.airRate = rate;                                   // kept for the size estimate (5.5)
       // P1 CO2 safety level, off 20 ppm below it
       st.co2SafetyOn = R.co2Safety && !f.CO2 && v.CO2 >= (st.co2SafetyOn ? R.co2SafetyAt - 20 : R.co2SafetyAt);
       const manual = !cfg.manual.air.auto;
@@ -671,7 +694,7 @@
       const reason = st.co2SafetyOn ? 'safety' : A.state === 'purge' ? 'purge' : timed && timed.on ? 'timed'
         : cool ? 'free cooling' : st.fanDryOn ? 'drying' : '';
       q.on = reason !== '';
-      st.why.air = airWhy(v, reason, timed);
+      st.why.air = airWhy(v, reason, timed) + (A.sizeText ? ` ${A.sizeText}` : '');
       return reason;
     }
     // Plain-language reason for the air exchange (C9 5.7)
