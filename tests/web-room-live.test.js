@@ -64,6 +64,7 @@ test('LV2 airLive follows the C5 3.4 rows', () => {
     assert.deepEqual([o.state, o.glance, o.chip], ['Idle', 'Idle', IDLE]);
   }
   assert.equal(H.airLive(air({ on: true, reason: 'manual', manual: true, manualOn: true }), S).state, 'Manual on');
+  assert.equal(H.airLive(air({ on: true, reason: 'purge', purgeS: 75, manual: true }), S).state, 'Purge 1:15 of 3:00');
 });
 
 test('LV3 airLive day line', () => {
@@ -92,6 +93,7 @@ test('LV6 windows and reconnect queries', () => {
   assert.deepEqual(H.reconnectQuery(3600, 9000, 10000), { from: 9001, to: 10000, step: undefined, merge: true });
   assert.equal(H.reconnectQuery(3600, 1000, 10000).from, 6400);
   assert.equal(H.reconnectQuery(3600, 10000, 10000), null);
+  assert.deepEqual(H.reconnectQuery(3600, 9999, 10000), { from: 10000, to: 10000, step: undefined, merge: true });
   assert.deepEqual(H.reconnectQuery(3600, null, 10000), { from: 6400, to: 10000, step: undefined, merge: false });
   assert.deepEqual(H.reconnectQuery(86400, 9000, 10000), { from: -76400, to: 10000, step: 120, merge: false });
 });

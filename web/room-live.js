@@ -206,12 +206,11 @@ function mount(el, ctx) {
   const rdSave = btn('Save details', { id: 'rdSave' }), rdArchive = btn('Archive room', { id: 'rdArchive' });
   const rdMsg = tag({ id: 'rdMsg', role: 'status' });
   const secDetails = h('section', { class: 'card room-details' }, heading('h2', 'eyebrow', 'Room details'),
-    heading('label', '', 'Name'), rdName, heading('label', '', 'Volume (m³)'), rdVolume, rdSave, rdArchive,
+    h('label', { for: 'rdName' }, 'Name'), rdName, h('label', { for: 'rdVolume' }, 'Volume (m³)'), rdVolume, rdSave, rdArchive,
     span({ class: 'tag' }, 'A new volume restarts the room\'s loop.'), rdMsg);
   const lvMsg = h('p', { class: 'tag room-msg', id: 'lvMsg', role: 'status' });
   el.replaceChildren(secLive, secAir, glance, filters, chartsHost, secAlarms, secLog, head, spHost, secVer, secDetails, lvMsg);
   rdName.id = 'rdName'; rdVolume.id = 'rdVolume';
-  rdName.previousSibling.setAttribute('for', 'rdName'); rdVolume.previousSibling.setAttribute('for', 'rdVolume');
 
   const fail = (e, target) => { (target || lvMsg).textContent = UI.errorText(e); };
   const tg = () => chartTargets(room.live, base);
@@ -324,10 +323,10 @@ function mount(el, ctx) {
     try { const a = await api.getAlarms(id); if (!alive) return; alarms = a; renderAlarms(); } catch (e) { if (alive) fail(e); }
   }
   async function loadEvents(reset) {
+    if (reset) { events = []; olderDone = false; }
     try {
       const page = await api.getEvents(id, { limit: 100 });
       if (!alive) return;
-      if (reset) events = [];
       for (const ev of page) events = mergeEvent(events, ev);
       if (!page.length) olderDone = true;
       renderLog();
@@ -386,6 +385,7 @@ function mount(el, ctx) {
     points = retarget(points, tg()); drawCharts();
   }
   async function onReconnect() {
+    lvMsg.textContent = '';
     const now = nowS(), rq = reconnectQuery(windowS, points.length ? points[points.length - 1].t : null, now);
     const jobs = [];
     if (rq) {
@@ -469,7 +469,8 @@ function mount(el, ctx) {
       const { settings, warnings } = await api.restoreSettings(id, v.id);
       if (!alive) return;
       const old = base;
-      base = settings; panel.set(settings);
+      base = settings;
+      if (panel) panel.set(settings); else createPanel();
       setMsg([...(warnings || []), ...changeLines(SP.diffSettings(old, settings))]);
       afterBase(); loadVersions();
     } catch (e) { if (alive) setMsg([UI.errorText(e)]); }
@@ -492,7 +493,7 @@ function mount(el, ctx) {
   // ---- start ----
   charts = global.FarmCharts.createTrendCharts(chartsHost, { keys: ['T', 'RH', 'C'], power: false, clock,
     status: k => (room && room.live && room.live.status) ? room.live.status[k] : null });
-  paintValues(); paintAir(); paintDetails(true); renderAlarms(); renderLog();
+  paintValues(); paintAir(); paintDetails(true); renderLog();
   drawCharts();
   teardown = () => {
     const step = f => { try { f(); } catch (e) { console.error(e); } };
