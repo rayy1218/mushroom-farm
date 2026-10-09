@@ -214,20 +214,27 @@ test('C1 one action at a time', () => setup(async ({ fake, link, answer, tick, a
 
 test('C5 dispose while a request is in flight', () => setup(async ({ fake, cfg, link, events, loaded, calls, api }) => {
   const before = structuredClone(cfg);
-  fake.reply('GET', GET, 200, different());
+  fake.reply('GET', GET, 200, structuredClone(cfg));
   const p = link.load(ROOM);
   link.dispose();
   assert.equal(await p, null);
   assert.deepEqual(events, []); assert.deepEqual(loaded, []); assert.deepEqual(cfg, before); assert.equal(calls.length, 0);
 }));
 
-test('C6 dispose while a save request is in flight', () => setup(async ({ fake, link, calls, api }) => {
-  fake.reply('GET', GET, 200, different());
+test('C6 dispose while a save request is in flight', () => setup(async ({ fake, cfg, link, calls, api }) => {
+  fake.reply('GET', GET, 200, structuredClone(cfg));
   const p = link.save(ROOM);
   link.dispose();
   assert.equal(await p, null);
   assert.equal(calls.length, 0);
   assert.equal(api().filter(r => r.method === 'PUT').length, 0);
+}));
+
+test('C7 dispose while a request that fails is in flight', () => setup(async ({ fake, link }) => {
+  fake.reply('GET', GET, 404, { error: 'Unknown room', details: [] });
+  const p = link.load(ROOM);
+  link.dispose();
+  assert.equal(await p, null);
 }));
 
 test('C2 dispose during a load touches nothing', () => setup(async ({ fake, cfg, link, events, loaded, answer, tick }) => {
