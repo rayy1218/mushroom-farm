@@ -20,6 +20,7 @@ Brought onto the C9 air model (`master` 6a12852): the one fresh-air fan with lev
 | 13 | Re-measured on C9 with lead decisions 56 and 57 (13.1, 13.2, 13.3; the revision 3 first pass with pinning CO₂ 700 is kept in 13.2 and 13.3 as history); every other number measured on the old fan model is marked "to re-measure on the C9 model". 5.3 line 184, 5.4.3 lines of `master` 6a12852 (finding 24). |
 | 14 | Tests follow the air verdict, the one cool-crop rule and the C9 owner's example. |
 | 15 | Items 12–16 added and decided: pinning CO₂ of lion's mane 1000 (owner, lead decision 57); the stage ramp (lead decision 56, C9 revision 2); the air exchange `oversized` verdict (lead decision 58); the C9 spec's wording example (a note in C9 revision 2); the air run. Item 4 no longer applies. |
+| 8.1, 8.4, 13.3, 14 (lead rulings on the brief) | `{share(x)}` floors heat shares (39.8 → 39); five air examples; the oyster 6000 examples use farm type `ready`; the `Infinity` row is tested through the scripted runner; 87.0 %. |
 | 13.2, 13.3, 14 (buildability check) | Re-measured with the contract's rules (the prototype's no-wind-down switch off) on `master` bd24755: 4 hp now passes (fruiting 1 wet 6.8 %); `min` 1.5, `recommended` 2 unchanged; REAL1 does not assert the walls verdict or the breakdown advice. |
 | 5.4.2, 8.4, 13.2, 13.3, 14, 15 | Owner decision: lion's mane pinning CO₂ 1000 (lead decision 57). Lead decision 58: the air exchange `oversized` verdict. The owner's example re-measured with lead decisions 56 and 57: minimum 1.5 hp, buy 2 hp, the whole cycle passes, the 1800 m³/h air exchange is `enough` (need 800 m³/h; `oversized` starts 3 sizes above the recommended one). |
 | 5.4, 12.7 | C9 revision 2 (lead decision 56) is built by the Equipment stream in `controller.js`: a lower CO₂ limit applies at once at a stage change, with one uncapped purge; `stage-changes.json` regenerated. |
@@ -470,7 +471,8 @@ This contract defines `equipment.js`: a check that runs the C7 full crop cycle i
 | `{pct(x)}` | `String(Math.round(x))`, except when `x < 95` and `Math.round(x) ≥ 95`: `(Math.floor(x × 10) / 10).toFixed(1)` (never "95 %" for a value under the pass line) |
 | `{stages(list)}` | The distinct `STAGES[stage]` names in lower case, in segment order, joined `a`, `a and b`, `a, b and c` (`pinning`, `fruiting`, `rest between flushes`) |
 | `{in}` | `{pct(ownRun.fruitingInT)}` |
-| `{round(x)}` | `String(Math.round(x))` (shares, airflows, air changes: no pass line, so no `pct` rule) |
+| `{round(x)}` | `String(Math.round(x))` (counts and values with no line to cross) |
+| `{share(x)}` | `String(Math.floor(x))`: heat shares print floored, so a share never reads as having reached a line (`SHARE.poor` 40, `SHARE.fair` 25, `SHARE.freshAir` 45) it has not reached (39.8 → `39`; lead ruling 2026-10-09) |
 | `{fail}` | From the own run's `acFail` (11.3): `why` `temperature too high` → ` In {stage} {flush} it keeps the room within 1 °C of {T} °C only {pct(acFail.inT)} % of the time.` (`{T}` = that segment's `targets.spT`); `why` `block core too hot` → ` In the spawn run the block core gets too hot.` (both with a leading space). The `too-small` rows always have an `acFail` (the own run failed `acPass`, else 7.3 step 4b) |
 | `{noReserve}` | `noReserve === 'largest'` (7.4): ` It has no reserve for the hottest days: fix the room first (see the heat breakdown).`; `noReserve === 'too-big'`: ` It is just enough: it has no reserve for the hottest days, but no bigger size holds this room steadier ({ac(next)} is too big).` with `next` = `AC_SIZES[min + 1].hp` (leading space in both; lead decision 45) |
 | `{fog}` | `eq.fog_lph` as printed |
@@ -534,8 +536,8 @@ The rule of C9 4.1 and 10: the pair must end every purge within the time cap, in
 
 | Example | Text |
 |---|---|
-| 60 m³, 6000 grey oyster blocks, fruiting (start 900, stop 700, cap 180 s), 900 m³/h (C9 spec 4.1, re-measured: at 900 m³/h the steady CO₂ of a purge is 720 ppm) | `Your 900 m³/h air exchange is too small for 6,000 blocks in fruiting: a purge never brings CO₂ down to 700 ppm. Buy at least 1,450 m³/h; 1,800 m³/h gives a margin.` |
-| The same room with 1200 m³/h | `Your 1,200 m³/h air exchange is too small for 6,000 blocks in fruiting: a purge takes 4.6 min, the limit is 3 min. Buy at least 1,450 m³/h; 1,800 m³/h gives a margin.` |
+| 60 m³, 6000 grey oyster blocks, farm type `ready` (so fruiting is the judged stage with the largest need; with `full`, pinning's 1800 m³/h need would lead), fruiting (start 900, stop 700, cap 180 s), 900 m³/h (C9 spec 4.1, re-measured: at 900 m³/h the steady CO₂ of a purge is 720 ppm) | `Your 900 m³/h air exchange is too small for 6,000 blocks in fruiting: a purge never brings CO₂ down to 700 ppm. Buy at least 1,450 m³/h; 1,800 m³/h gives a margin.` |
+| The same room (farm type `ready`) with 1200 m³/h | `Your 1,200 m³/h air exchange is too small for 6,000 blocks in fruiting: a purge takes 4.6 min, the limit is 3 min. Buy at least 1,450 m³/h; 1,800 m³/h gives a margin.` |
 | Owner's example (13.3), 1800 m³/h, pinning CO₂ 1000 (need 800 m³/h in pinning, size 900; 1800 is 2 steps above 900) | `Your 1,800 m³/h air exchange is enough: a purge takes at most 1.2 min (pinning), the limit is 3 min.` |
 | Owner's example with 3600 m³/h (4 steps above 900; 2400 m³/h, 3 steps, is `oversized` too) | `Your 3,600 m³/h air exchange is bigger than this room needs: 900 m³/h is enough. Each purge brings in a lot of hot, wet outside air at once.` |
 | Owner's example with 900 m³/h | `Your 900 m³/h air exchange is enough: a purge takes at most 2.5 min (pinning), the limit is 3 min.` |
@@ -548,9 +550,9 @@ The rule of C9 4.1 and 10: the pair must end every purge within the time cap, in
 
 | `verdict` | When | `text` |
 |---|---|---|
-| `poor` | `share ≥ SHARE.poor` (40) | `Walls and roof: poor. They bring in {round(share)} % of the heat.` + insulated + drier + typical |
-| `fair` | `share ≥ SHARE.fair` (25) | `Walls and roof: fair. They bring in {round(share)} % of the heat.` + insulated + drier + typical |
-| `good` | otherwise | `Walls and roof: good. They bring in {round(share)} % of the heat.` + drier + typical |
+| `poor` | `share ≥ SHARE.poor` (40) | `Walls and roof: poor. They bring in {share(share)} % of the heat.` + insulated + drier + typical |
+| `fair` | `share ≥ SHARE.fair` (25) | `Walls and roof: fair. They bring in {share(share)} % of the heat.` + insulated + drier + typical |
+| `good` | otherwise | `Walls and roof: good. They bring in {share(share)} % of the heat.` + drier + typical |
 
 | Part | Text |
 |---|---|
@@ -579,8 +581,8 @@ The rule of C9 4.1 and 10: the pair must end every purge within the time cap, in
 
 | `advice` | When (first that applies) | `text` |
 |---|---|---|
-| `insulate` | walls share ≥ `SHARE.poor` (40) | `Most of the heat comes through the walls and roof ({round(walls)} %). Insulate before you buy a bigger aircond.` |
-| `fresh-air` | fresh air heat + water ≥ `SHARE.freshAir` (45) | `Most of the heat comes in with the fresh air ({round(air)} %: {round(airHeat)} % heat, {round(airWater)} % water). Bring in only the fresh air the blocks need, and recover its coolness with an energy-recovery unit that also exchanges moisture before you buy a bigger aircond.` (equipment-facts 13: 50–80 % recovered by moisture-exchanging units; plate units are sensible only) |
+| `insulate` | walls share ≥ `SHARE.poor` (40) | `Most of the heat comes through the walls and roof ({share(walls)} %). Insulate before you buy a bigger aircond.` |
+| `fresh-air` | fresh air heat + water ≥ `SHARE.freshAir` (45) | `Most of the heat comes in with the fresh air ({share(air)} %: {share(airHeat)} % heat, {share(airWater)} % water). Bring in only the fresh air the blocks need, and recover its coolness with an energy-recovery unit that also exchanges moisture before you buy a bigger aircond.` (equipment-facts 13: 50–80 % recovered by moisture-exchanging units; plate units are sensible only) |
 | `bigger-ac` | otherwise | `The heat comes mostly from the blocks and the room itself, not from the walls or the fresh air: a bigger aircond is the right fix.` |
 
 ### 8.8 Summary (`summary`, in this order)
@@ -859,7 +861,7 @@ CO₂ is below the limit 100 % of the time in every judged segment at every size
 | `wet` | `null` (reference run 2 hp: pinning 1.7 %, fruiting 0.4–2.1 %) |
 | Fogger | `Your 3 L/h fogger is enough.` (peak use 0.77 L/h in an hour outside spawn at 2 hp; no smaller size in `FOGGER_SIZES`) |
 | Air exchange (8.4) | `enough`: need 800 m³/h in pinning and fruiting (size 900, margin 1200); 1800 m³/h is 2 `AIR_SIZES` steps above 900, under the 3-step `oversized` line (lead decision 58); `Your 1,800 m³/h air exchange is enough: a purge takes at most 1.2 min (pinning), the limit is 3 min.` Measured at 2.5 hp, every size from 900 to 3600 m³/h passes the whole cycle (13.2) |
-| Walls and roof | `Walls and roof: fair. They bring in 40 % of the heat. With PU panel 75 mm walls and roof the room would need about 1 hp (quick estimate). (Typical walls: set the walls and roof of this room for a better answer.)` (PU 75 estimate 2230 W) |
+| Walls and roof | `Walls and roof: fair. They bring in 39 % of the heat. With PU panel 75 mm walls and roof the room would need about 1 hp (quick estimate). (Typical walls: set the walls and roof of this room for a better answer.)` (PU 75 estimate 2230 W) |
 | Heat breakdown (2 hp, 576 fruiting hours) | Walls and roof (sun included) 441 kWh, 39.8 %; fresh air heat 162 kWh, 14.6 %; fresh air water 239 kWh, 21.5 %; blocks 226 kWh, 20.4 %; machines and lights 40 kWh, 3.6 %. Advice `bigger-ac` (walls 39.8 %, only 0.2 under the 40 % line: the REAL1 test does not assert `insulation.verdict` or `breakdown.advice`; fresh air 36 %, under 45 %): `The heat comes mostly from the blocks and the room itself, not from the walls or the fresh air: a bigger aircond is the right fix.` Energy closure 0.999 |
 | Summary | 5 lines: aircond, fogger, air exchange, walls and roof, breakdown (`ac` is `too-small`, 8.8) |
 | `pass` | `true` (the 2 hp reference run passes the whole cycle) |
@@ -1053,7 +1055,7 @@ The work brief lists them with exact inputs. Required coverage:
 | 5 | same | `estimate`: the C9 needs and sizes of section 6 and 13.3 with lead decision 57 (owner's example 3442 W → 1.5 hp; `ready` 3039 W → 1.5 hp; zinc/zinc 16179 W → 6 hp; PU 50 2393 W → 1 hp; ±1 W) |
 | 6 | same | Input errors of section 3, impossible mix, async rejection |
 | 7 | same | Search with a scripted runner (`opts.runCycleSteps`): up-walk, down-walk, run reuse, `RUNS.ac` limit, margin run, `rec` stays `min` when `min + 1` fails or is too cold, own passes below a failing estimate (4b), `tooBig` for `!acPass` and for `tooLow`, `min === null` and the best run (also when the best is the own size), `noReserve` with both reasons (`'largest'` when 6 hp is the minimum; `'too-big'` when the margin run fails as too big, including too cold) |
-| 8 | same | Verdict texts of 8.2–8.8 for scripted reports (each row of each table, both `{fail}` forms, both `{noReserve}` texts, every air exchange row of 8.4 with the four examples there, `{int}` and `{min1}`); the breakdown line (summary line 6) present for `noReserve === 'largest'` and absent for `'too-big'`; the walls and roof text with and without the drier part (`wet` set or `null`, for `good` and for `fair`); the wet text with two segments of different limits (pinning 98, fruiting 95), each quoted with its own limit |
+| 8 | same | Verdict texts of 8.2–8.8 for scripted reports (each row of each table, both `{fail}` forms, both `{noReserve}` texts, every air exchange row of 8.4 with the five examples there (the `Infinity` row through the scripted runner: `opts.runCycleSteps` makes the runs, so a mix that large costs no simulation), `{int}` and `{min1}`); the breakdown line (summary line 6) present for `noReserve === 'largest'` and absent for `'too-big'`; the walls and roof text with and without the drier part (`wet` set or `null`, for `good` and for `fair`); the wet text with two segments of different limits (pinning 98, fruiting 95), each quoted with its own limit |
 | 9 | same | Progress fields and count |
 | 10 | same | Real check: the owner's example from 1 hp (13.3): `min` 1.5, `recommended` 2, sizes run `[1, 1.5, 2]`, summary line 1 exactly as 13.3, `wet` `null`, `pass` `true`, the air exchange `enough` (`needM3h` 800, `recommended` `null`), time logged, under 120 s. Not asserted: `insulation.verdict` and `breakdown.advice` (walls 39.8 %, 0.2 from the 40 % line); breakdown shares only to ±1 (they print with the `pct` flooring of 8.1) |
 | 11 | `tests/cycle.test.js` | C7 revision 3 rows of 12.6, including the per-stage wet line (5.3) |
