@@ -128,13 +128,65 @@ test('a stage change moves the targets slowly (ramp)', () => {
   const { ctl, cfg, feed } = makeProg();
   feed(0);
   ctl.setStage('pinning', 0);                                  // oyster: 25 -> 24 °C, 88 -> 92 %, 1000 -> 800 ppm, in 4 h
+  // The CO2 limit and its start and stop levels are lower, so they apply at once (lead decision 56); the rest ramps.
+  assert.deepEqual([cfg.co2Lim, cfg.rules.fanOn, cfg.rules.fanOff, cfg.rules.co2SafetyAt, cfg.spT, cfg.spRH], [800, 700, 600, 1500, 25, 88]);
   feed(2 * 3600);
-  assert.equal(cfg.spT, 24.5);
-  assert.equal(cfg.spRH, 90);
-  assert.equal(cfg.co2Lim, 900);
+  assert.deepEqual([cfg.spT, cfg.spRH, cfg.co2Lim, cfg.rules.fanOn, cfg.rules.fanOff, cfg.rules.co2SafetyAt], [24.5, 90, 800, 700, 600, 1400]);
   feed(4 * 3600 + 30);
-  assert.equal(cfg.spT, 24); assert.equal(cfg.spRH, 92); assert.equal(cfg.co2Lim, 800);
+  assert.deepEqual([cfg.spT, cfg.spRH, cfg.co2Lim, cfg.rules.fanOn, cfg.rules.fanOff, cfg.rules.co2SafetyAt], [24, 92, 800, 700, 600, 1300]);
   assert.equal(ctl.programStatus(4 * 3600 + 30).ramp, null);
+});
+
+test('D56-RAISE a stage change that raises the CO2 limit still ramps', () => {
+  const { ctl, cfg, feed } = makeProg();
+  feed(0);
+  ctl.setStage('rest', 0);
+  assert.deepEqual([cfg.co2Lim, cfg.rules.fanOn, cfg.rules.fanOff], [1000, 900, 700]);
+  assert.equal(ctl.state.stage.freePurge ?? null, null);
+  feed(2 * 3600);
+  assert.deepEqual([cfg.co2Lim, cfg.rules.fanOn, cfg.rules.fanOff, cfg.rules.co2SafetyAt], [1500, 1400, 1200, 2000]);
+});
+
+// Lowering stage change (oyster fruiting -> pinning, 1000 -> 800 ppm) with the air at 1000 ppm: the first purge has no cap.
+function freePurgeRun() {
+  const { ctl, feed } = makeProg();
+  feed(0, { CO2: 650 });
+  ctl.setStage('pinning', 0);
+  const S = ctl.state.stats;
+  const at = (t, CO2) => feed(t, { CO2 }).air.on;
+  return { ctl, S, at, feed };
+}
+
+test('D56-FREE the first purge after a lowering stage change has no cap while CO2 is above the limit', () => {
+  const { ctl, S, at } = freePurgeRun();
+  assert.equal(ctl.state.stage.freePurge, true);
+  const co2 = t => 1000 + (t % 60 ? 1 : 0);
+  assert.equal(at(30, co2(30)), true);
+  for (let t = 60; t <= 1800; t += 30) assert.equal(at(t, co2(t)), true, `on at ${t}`);
+  assert.equal(at(1830, co2(1830)), false);
+  assert.deepEqual([ctl.state.air.state, ctl.state.air.capRun, S.purges, S.cappedPurges, S.longestPurgeS, ctl.state.stage.freePurge], ['after', 0, 1, 1, 1800, null]);
+  let start = null, stop = null;
+  for (let t = 1860; t <= 2100 && stop === null; t += 30) {
+    const on = at(t, co2(t));
+    if (on && start === null) start = t;
+    if (!on && start !== null) stop = t;
+  }
+  assert.deepEqual([start, stop], [1890, 2070]);
+  assert.deepEqual([ctl.state.air.capRun, S.cappedPurges], [1, 2]);
+});
+
+test('D56-BELOW the free purge ends when CO2 falls below the limit', () => {
+  const { ctl, S, at } = freePurgeRun();
+  for (let t = 30; t <= 300; t += 30) at(t, 1000 + (t % 60 ? 1 : 0));
+  assert.equal(at(330, 750), false);
+  assert.deepEqual([ctl.state.air.state, ctl.state.air.capRun, S.cappedPurges, S.longestPurgeS, ctl.state.stage.freePurge], ['after', 0, 1, 300, null]);
+});
+
+test('D56-STOP the free purge ends at the stop level and is not capped', () => {
+  const { ctl, S, at } = freePurgeRun();
+  for (let t = 30; t <= 600; t += 30) at(t, 1000 + (t % 60 ? 1 : 0));
+  assert.equal(at(630, 590), false);
+  assert.deepEqual([ctl.state.air.state, ctl.state.air.capRun, S.cappedPurges, S.longestPurgeS, ctl.state.stage.freePurge], ['after', 0, 0, 600, null]);
 });
 
 test('a person who changes a target stops the ramp', () => {
@@ -741,4 +793,37 @@ test('default purge levels: the stop level is never below 600 ppm, and stays 50 
   assert.deepEqual(levels(800), [700, 600]);
   assert.deepEqual(levels(1000), [900, 700]);
   assert.deepEqual(levels(5000), [4900, 4700]);
+});
+
+// ---------- C8 5.4: lion's mane (draft) ----------
+test("LM1 lion's mane is the last crop, with its draft profile", () => {
+  assert.deepEqual(CC.CROPS.lionsmane, { name: "Lion's mane", spawn: [23, 80, 5000], pinning: [17, 92, 1000], fruiting: [20, 90, 1000], rest: [21, 80, 2000],
+    limits: { tMin: 14, tMax: 27, coreMax: 30 }, coreTarget: 25, range: { T: [16, 22], RH: [85, 92] }, cool: true, wetRH: { pinning: 98 } });
+  assert.equal(Object.keys(CC.CROPS).filter(k => k !== 'flagTest').at(-1), 'lionsmane');   // flagTest: a crop that tests add to CROPS
+  assert.equal(CC.importSettings(CC.exportSettings({ ...CC.defaultSettings(), crop: 'lionsmane' })).settings.crop, 'lionsmane');
+  const p = CC.profileTargets('lionsmane', 'pinning');
+  assert.deepEqual([p.spT, p.spRH, p.co2Lim, p['rules.fanOn'], p['rules.fanOff']], [17, 92, 1000, 900, 700]);
+});
+
+test("LM2 no other crop has the cool flag or a wet line", () => {
+  for (const [k, c] of Object.entries(CC.CROPS)) if (k !== 'lionsmane') { assert.equal('cool' in c, false, k); assert.equal('wetRH' in c, false, k); }
+});
+
+// ---------- C8 5.4.3: no heat mode while the outdoor air is warm (cool crops only) ----------
+test('COOL2 a cool crop does not heat while the outdoor air is warm', () => {
+  const modeOf = (crop, T, out) => {
+    const cfg = CC.defaultSettings();
+    cfg.crop = crop; cfg.stage = 'fruiting'; CC.applyProfile(cfg); cfg.program.harvest.on = false;
+    const ctl = CC.create(cfg, null, null);
+    for (let t = 0, seq = 1; t <= 600; t += 30, seq++) {
+      ctl.update({ seq, t, hour: 12, T: T + (seq % 2) * 0.01, RH: 90 + (seq % 2) * 0.1, CO2: 600 + (seq % 2), ...out });
+    }
+    return ctl.state.acMode;
+  };
+  assert.equal(modeOf('lionsmane', 18.8, { tOut: 30, rhOut: 60 }), 'cool');
+  assert.equal(modeOf('lionsmane', 18.8, { tOut: 15, rhOut: 60 }), 'heat');
+  assert.equal(modeOf('lionsmane', 18.8, { tOut: 21, rhOut: 60 }), 'heat');
+  assert.equal(modeOf('lionsmane', 18.8, { tOut: 21.5, rhOut: 60 }), 'cool');
+  assert.equal(modeOf('lionsmane', 18.8, {}), 'heat');
+  assert.equal(modeOf('oyster', 23.8, { tOut: 30, rhOut: 60 }), 'heat');
 });

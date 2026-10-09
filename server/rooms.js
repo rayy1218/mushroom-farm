@@ -3,7 +3,7 @@
 require('../air.js');
 require('../controller.js');
 require('../runtime.js');
-const { createSimAdapter, MAX_CATCH_UP_S } = require('./sim-adapter.js');
+const { createSimAdapter, MAX_CATCH_UP_S, TZ_OFFSET_S } = require('./sim-adapter.js');
 const { RoomError, DEMO_ROOM, FIRST_NOTE, cleanSettings } = require('./rooms-common.js');
 
 const TARGET_KEYS = ['spT', 'spRH', 'co2Lim', 'rules.co2SafetyAt', 'rules.fanOn', 'rules.fanOff'];
@@ -87,7 +87,7 @@ function upgradeAndImport(settings) {
   return { settings: imported.settings, warnings: upgraded.warnings.concat(imported.warnings), upgradeWarnings: upgraded.warnings };
 }
 
-function buildReadingRow(roomId, r, cmd) {
+function buildReadingRow(roomId, r, cmd, cfg) {
   return {
     room_id: roomId,
     t: Math.round(r.t),
@@ -104,6 +104,10 @@ function buildReadingRow(roomId, r, cmd) {
     circ: cmd.circ.on ? 1 : 0,
     power_w: sumFinite(r.power),
     kwh: sumFinite(r.kwh),
+    // C2 5.3 (revision 8): the AC fan as sim.js normalises it, the stage after this reading, the block core probe
+    ac_fan: cmd.ac.power ? (['low', 'auto', 'high'].includes(cmd.ac.fan) ? cmd.ac.fan : 'auto') : null,
+    stage: cfg.stage,
+    core: finiteOrNull(r.core),
   };
 }
 
@@ -173,7 +177,7 @@ function createRoomManager(options) {
   // ---------------- Live / summary ----------------
   function liveOf(loop) {
     if (!loop) {
-      return { reading: null, stage: null, crop: null, targets: null, status: null, alarms: 0, running: false, error: null };
+      return { reading: null, stage: null, crop: null, targets: null, status: null, alarms: 0, running: false, error: null, flush: null, blocks: null, air: null };
     }
     const ctl = loop.ctl, cfg = loop.cfg;
     return {
@@ -185,6 +189,37 @@ function createRoomManager(options) {
       alarms: loop.open.size,
       running: loop.running,
       error: loop.error,
+      // Revision 8 and 9 (lead decision 27): none of these is part of the room summary.
+      flush: ctl ? ctl.programStatus(loop.liveReading ? loop.liveReading.t : now()).flush : null,
+      blocks: loop.blocks,
+      air: loop.liveAir,
+    };
+  }
+  // C2 5.2 `air`: the running controller's air exchange, built after each Record with t = the new reading's t.
+  function buildLiveAir(loop, t) {
+    const ctl = loop.ctl, cfg = loop.cfg;
+    if (!ctl) return null;
+    const st = ctl.state, A = st.air, man = cfg.manual.air;
+    const rec = ctl.purges();
+    const midnight = Math.floor((t + TZ_OFFSET_S) / 86400) * 86400 - TZ_OFFSET_S; // 00:00 farm time of t
+    const todays = rec.events.filter(e => e.reason === 'purge' && e.start >= midnight);
+    const on = !!st.cmd.air.on;
+    return {
+      on,
+      state: A.state,
+      reason: st.airReason === undefined ? null : st.airReason,
+      delayed: !!A.delayed,
+      timed: !!A.timed,
+      manual: man.auto === false,
+      manualOn: !!man.on,
+      nextPurgeS: A.nextPurgeS === undefined ? null : A.nextPurgeS,
+      purgeS: on && rec.cur ? Math.round(t - rec.cur.start) : null,
+      why: st.why.air === undefined ? null : st.why.air,
+      today: {
+        purges: todays.length,
+        avgS: todays.length ? Math.round(todays.reduce((sum, e) => sum + (e.end - e.start), 0) / todays.length) : null,
+        capped: todays.filter(e => e.capped).length,
+      },
     };
   }
   function attachLive(room) {
@@ -265,9 +300,10 @@ function createRoomManager(options) {
   }
 
   function recordReading(id, loop, r, cmd) {
-    const row = buildReadingRow(id, r, cmd);
+    const row = buildReadingRow(id, r, cmd, loop.cfg);
     db.insertReading(id, row);
     loop.liveReading = row;
+    loop.liveAir = buildLiveAir(loop, row.t);
     emit('reading', { roomId: id, live: liveOf(loop) });
     flushPendingEvents(id, loop);
     syncAlarms(id, loop, row.t);
@@ -292,6 +328,7 @@ function createRoomManager(options) {
     const saved = db.loadControllerState(id);
     const calibRow = db.currentCalibration(id);
     const mix = db.getMix(id);
+    const equipment = db.getEquipment(id);
     const rows = db.queryReadings(id, { from: t - RECENT_READING_S, to: t });
     const liveReading = rows.length ? rows[rows.length - 1] : null;
 
@@ -299,25 +336,41 @@ function createRoomManager(options) {
       roomId: id, open, running: false, error: null,
       cfg: null, base: null, ctl: null, adapter: null, runtime: null,
       pendingEvents: [], pendingReading: null,
-      liveReading, lastNow: t, stateSavedAt: t, lastSummaryText: null,
+      liveReading, liveAir: null, blocks: null, lastNow: t, stateSavedAt: t, lastSummaryText: null,
     };
     loops.set(id, loop);
 
+    // Steps 2 to 6 can crash the room (an error that is not a db error); a db error is thrown to the caller.
+    function failStart(err) {
+      flushPendingEvents(id, loop);
+      writeManagerEvent(id, 'serious', `Stopped by an error: ${err.message}`);
+      loop.running = false;
+      loop.error = err.message;
+    }
+
     let warnings = [];
+    let imported;
     try {
-      const imported = upgradeAndImport(version.settings);
+      imported = upgradeAndImport(version.settings);
       loop.cfg = imported.settings;
       warnings = imported.warnings;
       loop.base = structuredClone(loop.cfg);
-      // C9 6.3 "Upgrade saved once": the upgraded settings become the current version, so the next start upgrades nothing.
-      if (imported.upgradeWarnings.length > 0) {
-        db.saveSettings(id, { settings: loop.cfg, note: 'Upgraded: air exchange', at: t });
-      }
+    } catch (err) {
+      failStart(err);
+      return;
+    }
+    // C9 6.3 "Upgrade saved once": the upgraded settings become the current version, so the next start upgrades nothing.
+    // Outside the try: a db error is thrown to the caller, it does not crash the room (C2 8.1 "On error").
+    if (imported.upgradeWarnings.length > 0) {
+      db.saveSettings(id, { settings: loop.cfg, note: 'Upgraded: air exchange', at: t });
+    }
 
+    try {
       const calib = calibRow ? { ua: calibRow.ua, infAch: calibRow.inf_ach, moistBuffer: calibRow.moist_buffer, co2PerBlock: calibRow.co2_per_block } : null;
       const sum = mix.reduce((s, m) => s + m.blocks, 0);
       const blocks = sum >= 1 ? sum : null;
-      const adapter = adapterFactory({ room: roomRow, calib, blocks, cfg: loop.cfg, snapshot: saved ? saved.sim : null, now });
+      loop.blocks = blocks;
+      const adapter = adapterFactory({ room: roomRow, calib, blocks, equipment, cfg: loop.cfg, snapshot: saved ? saved.sim : null, now });
       loop.adapter = adapter;
 
       const onEvent = ev => loop.pendingEvents.push(ev);
@@ -342,11 +395,9 @@ function createRoomManager(options) {
         const runtime = ClimateRuntime.createRuntime({ io: adapter.io, ctl, onReading: (r, cmd) => { loop.pendingReading = { r, cmd }; }, skipCurrent: true });
         loop.runtime = runtime;
       }
+      if (loop.liveReading) loop.liveAir = buildLiveAir(loop, loop.liveReading.t);
     } catch (err) {
-      flushPendingEvents(id, loop);
-      writeManagerEvent(id, 'serious', `Stopped by an error: ${err.message}`);
-      loop.running = false;
-      loop.error = err.message;
+      failStart(err);
       return;
     }
 

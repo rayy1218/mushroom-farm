@@ -1,9 +1,11 @@
 // server/sim-adapter.js: the simulated room adapter (C2 section 13).
-// Loads only ../air.js, ../sim.js and ../runtime.js (C2 section 1, C9 section 6.3).
+// Loads only ../air.js, ../sim.js, ../runtime.js and ../equipment.js, in this order (C2 section 1, C9 section 6.3);
+// only ClimateEquipment.plantOf is used (C8 section 1).
 'use strict';
 require('../air.js');
 require('../sim.js');
 require('../runtime.js');
+require('../equipment.js');
 
 const MAX_CATCH_UP_S = 300;
 const TZ_OFFSET_S = 28800;
@@ -17,7 +19,7 @@ function setOrigin(sim, env, now) {
   return origin;
 }
 
-function createSimAdapter({ room, calib, blocks, cfg, snapshot, now }) {
+function createSimAdapter({ room, calib, blocks, equipment = null, cfg, snapshot, now }) {
   const DEFAULT_ENV = globalThis.ClimateSim.DEFAULT_ENV;
 
   // Step 1 (C2 13.1)
@@ -32,6 +34,10 @@ function createSimAdapter({ room, calib, blocks, cfg, snapshot, now }) {
   env.co2PerBlock = calib ? Math.round(calib.co2PerBlock) : DEFAULT_ENV.co2PerBlock;
   env.blocks = blocks !== null && blocks !== undefined ? blocks : DEFAULT_ENV.blocks;
   env.blockStage = cfg.stage;
+  // C2 13.1 (revision 8): the room's machines; env.airM3h above stays the settings' size.
+  if (equipment !== null && equipment !== undefined) {
+    env.plant = globalThis.ClimateEquipment.plantOf(equipment, { volume: room.volume, calib });
+  }
 
   // Step 2
   const sim = globalThis.ClimateSim.create(env, snapshot || undefined);

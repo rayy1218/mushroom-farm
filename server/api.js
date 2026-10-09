@@ -1,28 +1,25 @@
 // server/api.js: HTTP API (C3) and live feed (C4). createApi(opts) -> { handle, close }.
 'use strict';
 const { serveStatic } = require('./static.js');
+const { HttpError } = require('./api-common.js');
 require('../sim.js');
+require('../air.js');
 require('../controller.js');
 require('../runtime.js');
 require('../calib.js');
+require('../capacity.js');
+require('../cycle.js');
+require('../equipment.js');
 require('../room-rules.js');
 
 const RULES = globalThis.ClimateRoomRules;
 const BODY_LIMIT = 1048576;
+const BIG_BODY_LIMIT = 8388608;
 const ID_RE = /^[1-9][0-9]{0,14}$/;
 const QUERY_INT_RE = /^[0-9]{1,15}$/;
 
 function isPlainObject(v) {
   return v !== null && typeof v === 'object' && !Array.isArray(v);
-}
-
-class HttpError extends Error {
-  constructor(status, error, details = []) {
-    super(error);
-    this.status = status;
-    this.errorText = error;
-    this.details = details;
-  }
 }
 
 function sendJson(res, status, body) {
@@ -41,14 +38,14 @@ function splitApiPath(rawPath) {
   return parts;
 }
 
-function readBody(req) {
+function readBody(req, limit) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     let total = 0;
     let tooLarge = false;
     req.on('data', chunk => {
       total += chunk.length;
-      if (total > BODY_LIMIT) { tooLarge = true; return; }
+      if (total > limit) { tooLarge = true; return; }
       chunks.push(chunk);
     });
     req.on('end', () => resolve({ buffer: tooLarge ? null : Buffer.concat(chunks), tooLarge }));
@@ -79,6 +76,9 @@ function mapError(err) {
   if (err && err.code === 'NOT_FOUND') {
     if (err.what === 'settings') return { status: 404, error: 'Unknown settings version', details: [] };
     if (err.what === 'calibration') return { status: 404, error: 'Unknown calibration run', details: [] };
+    if (err.what === 'simulation') return { status: 404, error: 'Unknown simulation run', details: [] };
+    if (err.what === 'batch') return { status: 404, error: 'Unknown batch', details: [] };
+    if (err.what === 'crate') return { status: 404, error: 'Unknown crate', details: [] };
     return { status: 404, error: 'Unknown room', details: [] };
   }
   if (err && err.name === 'RoomError') {
@@ -258,9 +258,12 @@ function createApi(opts) {
     if (from > to) throw new HttpError(400, 'Invalid query', ['from: must be at most to']);
     if (step !== undefined && step > 86400) throw new HttpError(400, 'Invalid query', ['step: must be at most 86400']);
     const range = to - from;
-    if (range > 2678400) throw new HttpError(400, 'Invalid query', ['from: range must be at most 2678400 seconds']);
-    if ((step === undefined || step === 0) && range > 604800) {
-      throw new HttpError(400, 'Invalid query', ['from: range must be at most 604800 seconds without step']);
+    if (step === undefined || step === 0) {
+      if (range > 604800) throw new HttpError(400, 'Invalid query', ['from: range must be at most 604800 seconds without step']);
+    } else if (step >= 3600) {
+      if (range > 112320000) throw new HttpError(400, 'Invalid query', ['from: range must be at most 112320000 seconds with a step of 3600 or more']);
+    } else if (range > 2678400) {
+      throw new HttpError(400, 'Invalid query', ['from: range must be at most 2678400 seconds with a step under 3600']);
     }
     const rows = db.queryReadings(id, { from, to, step: step || null });
     sendJson(res, 200, rows);
@@ -329,6 +332,67 @@ function createApi(opts) {
     sendJson(res, 200, room);
   }
 
+  // ---- simulation runs and equipment (C3 6.20-6.26) ----
+
+  function trimNote(note) {
+    if (note === undefined || note === null) return null;
+    const t = note.trim();
+    return t === '' ? null : t;
+  }
+
+  function withoutResult(run) {
+    const { result, ...info } = run;
+    return info;
+  }
+
+  function h_listSimulations({ res, id, qp }) {
+    let limit = getQueryInt(qp, 'limit');
+    const before = getQueryInt(qp, 'before');
+    if (limit === undefined) limit = 50;
+    if (limit < 1 || limit > 200) throw new HttpError(400, 'Invalid query', ['limit: must be an integer from 1 to 200']);
+    if (before !== undefined && before < 1) throw new HttpError(400, 'Invalid query', ['before: must be an integer from 1']);
+    sendJson(res, 200, db.listSimulationRuns(id, { limit, before: before ?? null }));
+  }
+
+  function h_createSimulation({ res, id, body }) {
+    const problems = RULES.checkSimulationRun(body, now());
+    if (problems.length) throw new HttpError(400, 'Invalid simulation run', problems);
+    const run = db.saveSimulationRun(id, { kind: body.kind, inputs: body.inputs, result: body.result, note: trimNote(body.note) });
+    sendJson(res, 201, withoutResult(run));
+  }
+
+  function h_getSimulation({ res, id, runId }) { sendJson(res, 200, db.getSimulationRun(id, runId)); }
+
+  function h_patchSimulation({ res, id, runId, body }) {
+    const problems = RULES.checkRunPatch(body, now());
+    if (problems.length) throw new HttpError(400, 'Invalid simulation run', problems);
+    const changes = {};
+    if (Object.hasOwn(body, 'note')) changes.note = trimNote(body.note);
+    if (Object.hasOwn(body, 'real_start')) changes.real_start = body.real_start;
+    sendJson(res, 200, withoutResult(db.updateSimulationRun(id, runId, changes)));
+  }
+
+  function h_deleteSimulation({ res, id, runId }) { sendJson(res, 200, withoutResult(db.deleteSimulationRun(id, runId))); }
+
+  function h_getEquipment({ res, id }) { sendJson(res, 200, db.getEquipment(id)); }
+
+  function h_putEquipment({ res, id, body }) {
+    const problems = RULES.checkEquipmentBody(body);
+    if (problems.length) throw new HttpError(400, 'Invalid equipment', problems);
+    const saved = db.saveEquipment(id, body);
+    const cur = db.currentSettings(id).settings;
+    if (cur.airM3h !== body.air_m3h) {
+      try {
+        rooms.applySettings(id, { airM3h: body.air_m3h }, 'Air exchange size from Your machines');
+      } catch (err) {
+        // a bad_input here is a bug (the body passed checkEquipment): 500, not 400 (C3 4.1)
+        if (err && err.name === 'RoomError' && err.code === 'bad_input') throw new Error(`applySettings rejected airM3h: ${(err.details || []).join('; ')}`);
+        throw err;
+      }
+    }
+    sendJson(res, 200, saved);
+  }
+
   const ROUTES = [
     { method: 'GET', segs: ['api', 'rooms'], needsRoom: false, hasBody: false, handler: h_listRooms },
     { method: 'POST', segs: ['api', 'rooms'], needsRoom: false, hasBody: true, handler: h_createRoom },
@@ -349,11 +413,32 @@ function createApi(opts) {
     { method: 'GET', segs: ['api', 'rooms', ':id', 'capacity'], needsRoom: true, hasBody: false, handler: h_getCapacity },
     { method: 'POST', segs: ['api', 'rooms', ':id', 'capacity'], needsRoom: true, hasBody: true, handler: h_postCapacity },
     { method: 'POST', segs: ['api', 'rooms', ':id', 'restart'], needsRoom: true, hasBody: false, handler: h_restart },
-    { method: 'GET', segs: ['api', 'stream'], needsRoom: false, hasBody: false, handler: h_stream },
+    { method: 'GET', segs: ['api', 'rooms', ':id', 'simulations'], needsRoom: true, hasBody: false, handler: h_listSimulations },
+    { method: 'POST', segs: ['api', 'rooms', ':id', 'simulations'], needsRoom: true, hasBody: true, bodyLimit: BIG_BODY_LIMIT, handler: h_createSimulation },
+    { method: 'GET', segs: ['api', 'rooms', ':id', 'simulations', ':runId'], needsRoom: true, hasBody: false, runNotFound: 'Unknown simulation run', handler: h_getSimulation },
+    { method: 'PATCH', segs: ['api', 'rooms', ':id', 'simulations', ':runId'], needsRoom: true, hasBody: true, runNotFound: 'Unknown simulation run', handler: h_patchSimulation },
+    { method: 'DELETE', segs: ['api', 'rooms', ':id', 'simulations', ':runId'], needsRoom: true, hasBody: false, runNotFound: 'Unknown simulation run', handler: h_deleteSimulation },
+    { method: 'GET', segs: ['api', 'rooms', ':id', 'equipment'], needsRoom: true, hasBody: false, handler: h_getEquipment },
+    { method: 'PUT', segs: ['api', 'rooms', ':id', 'equipment'], needsRoom: true, hasBody: true, handler: h_putEquipment },
   ];
 
+  const STREAM_ROUTE = { method: 'GET', segs: ['api', 'stream'], needsRoom: false, hasBody: false, handler: h_stream };
+
+  // Extra routes (C3 2.1): each one is one more row of the table, with its own run(ctx) in place of a handler.
+  // A row with the method and path of the stream is never reached: the C3 stream wins (C3 2.1, match order).
+  const EXTRA_ROUTES = (opts.extraRoutes || [])
+    .filter(r => !(r.method === 'GET' && r.segs.join('/') === STREAM_ROUTE.segs.join('/')))
+    .map(r => ({
+      method: r.method, segs: r.segs, needsRoom: !!r.needsRoom, hasBody: !!r.hasBody, extra: true,
+      handler: ({ res, id, params, body, qp }) => {
+        const out = r.run({ id, params, body, query: qp });
+        sendJson(res, out.status, out.body);
+      },
+    }));
+  const ALL_ROUTES = [...ROUTES, STREAM_ROUTE, ...EXTRA_ROUTES]; // lead decision 85: the stream before any extra route
+
   function matchRoute(method, segments) {
-    for (const route of ROUTES) {
+    for (const route of ALL_ROUTES) {
       if (route.method !== method) continue;
       if (route.segs.length !== segments.length) continue;
       const params = {};
@@ -404,27 +489,31 @@ function createApi(opts) {
       if (room.archived_at !== null) return failAndDrain(req, res, 404, 'Unknown room', []);
     }
 
+    // An extra route checks its own path ids after the body is read (C3 2.1, lead decision 64).
     let versionId, runId, alarmKey;
-    if (params.versionId !== undefined) {
-      if (!ID_RE.test(params.versionId)) return failAndDrain(req, res, 404, 'Unknown settings version', []);
-      versionId = Number(params.versionId);
-    }
-    if (params.runId !== undefined) {
-      if (!ID_RE.test(params.runId)) return failAndDrain(req, res, 404, 'Unknown calibration run', []);
-      runId = Number(params.runId);
-    }
-    if (params.alarmKey !== undefined) {
-      try {
-        alarmKey = decodeURIComponent(params.alarmKey);
-      } catch {
-        return failAndDrain(req, res, 404, 'Unknown alarm', []);
+    if (!route.extra) {
+      if (params.versionId !== undefined) {
+        if (!ID_RE.test(params.versionId)) return failAndDrain(req, res, 404, 'Unknown settings version', []);
+        versionId = Number(params.versionId);
+      }
+      if (params.runId !== undefined) {
+        if (!ID_RE.test(params.runId)) return failAndDrain(req, res, 404, route.runNotFound || 'Unknown calibration run', []);
+        runId = Number(params.runId);
+      }
+      if (params.alarmKey !== undefined) {
+        try {
+          alarmKey = decodeURIComponent(params.alarmKey);
+        } catch {
+          return failAndDrain(req, res, 404, 'Unknown alarm', []);
+        }
       }
     }
 
     let body;
     if (route.hasBody) {
-      const { buffer, tooLarge } = await readBody(req);
-      if (tooLarge) { sendError(res, 400, 'Body is larger than 1 MB', []); return; }
+      const big = route.bodyLimit === BIG_BODY_LIMIT;
+      const { buffer, tooLarge } = await readBody(req, route.bodyLimit || BODY_LIMIT);
+      if (tooLarge) { sendError(res, 400, big ? 'Body is larger than 8 MB' : 'Body is larger than 1 MB', []); return; }
       try {
         body = parseJsonBody(buffer);
       } catch {
@@ -442,7 +531,7 @@ function createApi(opts) {
   function handleFault(res, err) {
     if (res.writableEnded) { console.error(err); return; }
     if (err instanceof HttpError) {
-      sendError(res, err.status, err.errorText, err.details);
+      sendError(res, err.status, err.error, err.details);
       return;
     }
     const mapped = mapError(err);

@@ -7,6 +7,8 @@ const http = require('node:http');
 const { openDb } = require('./db.js');
 const { createRoomManager } = require('./rooms.js');
 const { createApi } = require('./api.js');
+const { openHarvest } = require('./harvest-db.js');
+const { createHarvestRoutes } = require('./harvest-api.js');
 const { readConfig, pickHosts } = require('./config.js');
 
 const root = path.join(__dirname, '..');
@@ -79,7 +81,17 @@ function main() {
     process.exit(1);
   }
 
-  api = createApi({ db, rooms, root, onFatal: fatal });
+  let harvest;
+  try {
+    harvest = openHarvest(db); // C10 8.4: the harvest store on the same connection (db.sqlite)
+  } catch (err) {
+    console.error('Cannot open the harvest records: ' + err.message);
+    rooms.stop();
+    db.close();
+    process.exit(1);
+  }
+
+  api = createApi({ db, rooms, root, onFatal: fatal, extraRoutes: createHarvestRoutes({ db, harvest }) });
   server = http.createServer(api.handle);
   server.on('error', err => {
     console.error(`Cannot listen on ${host}:${config.port}: ${err.message}`);
@@ -105,5 +117,6 @@ function shutdown() {
 
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
+process.on('SIGHUP', shutdown); // lead decision 80: a closed terminal or SSH session stops cleanly
 
 main();
