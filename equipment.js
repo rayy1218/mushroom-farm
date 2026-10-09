@@ -1,9 +1,16 @@
 /*
- * equipment.js: PREP 2.0 STUB of the equipment check (docs/contracts/equipment.md).
+ * equipment.js: EQUIPMENT CHECK (docs/contracts/equipment.md, C8)
  *
- * The frozen catalogue of C8 4.1 and the real checkEquipment of C8 4.3. geometry, shell, plantOf, estimate,
- * runCheckSteps, runCheck and runCheckAsync throw Error('stub'); the Equipment stream replaces this whole file.
- * At load it reads nothing (C8 1: only ClimateSim, which the stub does not need yet).
+ *   checkEquipment(eq)             -> problems[] ([] = valid)
+ *   geometry(volume, height)       -> { floor, walls, roof } m²
+ *   shell(eq, volume)              -> { floor, walls, roof, ua, solarPeakW } | null
+ *   plantOf(eq, room)              -> ClimateSim plant overrides for one room's machines
+ *   estimate(room, mix, opts)      -> { needW, stage, perStage, hp }
+ *   runCheckSteps(room, mix, opts) -> generator: one Progress per simulated day, returns the Report
+ *   runCheck(room, mix, opts), runCheckAsync(room, mix, opts)
+ *
+ * At load it reads only ClimateSim. ClimateAir, ClimateController, ClimateCapacity and ClimateCycle are read when
+ * estimate or a check runs (the server loads this file before capacity.js and cycle.js).
  */
 (function (global) {
 'use strict';
@@ -73,11 +80,38 @@ function checkEquipment(eq) {
   return problems;
 }
 
-function stub() { throw new Error('stub'); }
+const SIM = global.ClimateSim;
+
+// C8 4.4: the room shell. Plan 5 : 4; the floor slab is not counted.
+function geometry(volume, height) {
+  const floor = volume / height, L = Math.sqrt(floor * 5 / 4), W = Math.sqrt(floor * 4 / 5);
+  return { floor, walls: 2 * (L + W) * height, roof: floor };
+}
+
+function shell(eq, volume) {
+  if ((eq.walls ?? null) === null || (eq.roof ?? null) === null) return null;
+  const g = geometry(volume, eq.height ?? DEFAULTS.height), uw = CONSTRUCTIONS[eq.walls].u, ur = CONSTRUCTIONS[eq.roof].u;
+  return { ...g, ua: uw * g.walls + ur * g.roof, solarPeakW: ur * g.roof * SOL_AIR_K };
+}
+
+// C8 4.5: the machines in simulation units. The air exchange size is not a plant key (room.airM3h carries it).
+function plantOf(eqIn, room) {
+  const eq = { ...DEFAULTS, ...eqIn };
+  const P = SIM.PLANT, A = P.ac;
+  const capW = AC_SIZES.find(s => s.hp === eq.ac_hp).w * eq.ac_units, f = capW / A.capW, g = eq.fog_lph / 3;
+  const plant = {
+    ac: { capW, coilM3s: A.coilM3s * f, auxW: A.auxW * f, standbyW: A.standbyW * eq.ac_units },
+    fogger: { levels: P.fogger.levels.map(l => ({ ...l, gph: l.gph * g, w: l.w * g })) },
+  };
+  const sh = room.calib ? null : shell(eq, room.volume || P.room.volume);
+  if (sh) { plant.room = { ua: sh.ua }; plant.loads = { solarPeakW: sh.solarPeakW }; }
+  return plant;
+}
 
 global.ClimateEquipment = {
   AC_SIZES, CONSTRUCTIONS, FOGGER_SIZES, AIR_SIZES, DEFAULTS, LIMITS, SOL_AIR_K, MARGIN, SHARE, RUNS, MAX_RUNS,
-  checkEquipment,
-  geometry: stub, shell: stub, plantOf: stub, estimate: stub, runCheckSteps: stub, runCheck: stub, runCheckAsync: stub,
+  checkEquipment, geometry, shell, plantOf,
+  estimate: () => { throw new Error('stub'); },
+  runCheckSteps: () => { throw new Error('stub'); }, runCheck: () => { throw new Error('stub'); }, runCheckAsync: () => { throw new Error('stub'); },
 };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -343,3 +343,9 @@ test("CY-W1 lion's mane pinning is judged on its own wet line", () => {
   assert.equal(seg(b, 'pinning').fails.includes('humidity near saturation'), true);
   for (const st of ['spawn', 'fruiting']) assert.deepStrictEqual(seg(a, st), seg(b, st));
 });
+
+test('CY-P2 the plant of the default machines is the room today', () => {
+  require('../equipment.js');
+  const EQ = globalThis.ClimateEquipment;
+  assert.deepStrictEqual(CY.runCycle({ ...room, plant: EQ.plantOf(EQ.DEFAULTS, room) }, oyster(2000), { settings: SHORT_FULL }), getShortFull());
+});
