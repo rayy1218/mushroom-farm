@@ -123,3 +123,17 @@ test('docs: contract.md lists every field of a simulated reading', () => {
   const r = adapter().io.read();
   for (const k of Object.keys(r)) assert.ok(cells.some(c => c.includes('`' + k + '`')), `contract.md needs a table row for the reading field ${k}`);
 });
+
+test('docs: phase3-plan marks the covered work items', () => {
+  const table = rows(read('docs/phase3-plan.md'));
+  const header = table.find(l => l.includes('| # |') && l.includes('Status'));
+  assert.ok(header, 'the work items table needs a Status column');
+  const col = header.split('|').map(c => c.trim()).indexOf('Status');
+  const status = id => {
+    const row = table.find(l => firstCell(l) === id);
+    assert.ok(row, `no row for work item ${id}`);
+    return row.split('|')[col].trim();
+  };
+  for (const id of ['3.1', '3.3', '3.7']) assert.ok(status(id).startsWith('Covered'), `${id} must be Covered`);
+  for (const id of ['3.2', '3.4', '3.5', '3.6', '3.8']) assert.equal(status(id), 'Open', `${id} must be Open`);
+});
