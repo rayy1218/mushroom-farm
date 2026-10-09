@@ -87,12 +87,26 @@ test('balance: the air exchange limit matches a hand calculation with ClimateAir
   assert.equal(small.estimate, small.air);
 });
 
-test('balance: the leakage and the old vent field do not change the estimate', () => {
+test('balance: the leakage is a floor of the outdoor air; it does not change the air limit; the old vent field is ignored', () => {
   const mix = [{ crop: 'oyster', blocks: 1 }], tg = CAP.commonTargets(mix);
   const cal = { ua: 80, infAch: 0.4, moistBuffer: 3, co2PerBlock: 45 };
   const a = CAP.balance({ ...room, calib: cal }, mix, tg);
-  assert.deepEqual(CAP.balance({ ...room, calib: { ...cal, infAch: 2 } }, mix, tg), a);
+  assert.deepEqual(CAP.balance({ ...room, calib: { ...cal, infAch: 2 } }, mix, tg), a, 'a floor below the blocks\' air changes nothing');
   assert.deepEqual(CAP.balance({ ...room, calib: cal, vent: 'exhaust' }, mix, tg), a);
+  // 10 air changes an hour (600 m³/h) is above the air the blocks need up to about 1500 blocks: the AC carries it
+  const leaky = CAP.balance({ ...room, calib: { ...cal, infAch: 10 } }, mix, tg);
+  assert.equal(leaky.air, a.air);
+  assert.ok(leaky.ac < a.ac / 2, `${leaky.ac} vs ${a.ac}`);
+});
+
+test('balance: the room size is held to 50-10000 and a non-number means the default', () => {
+  const mix = [{ crop: 'oyster', blocks: 1 }], tg = CAP.commonTargets(mix);
+  const def = CAP.balance(room, mix, tg);
+  for (const x of ['900', NaN, null, undefined]) assert.deepEqual(CAP.balance({ ...room, airM3h: x }, mix, tg), def, String(x));
+  assert.deepEqual(CAP.balance({ ...room, airM3h: 20000 }, mix, tg), CAP.balance({ ...room, airM3h: 10000 }, mix, tg));
+  assert.deepEqual(CAP.balance({ ...room, airM3h: 10 }, mix, tg), CAP.balance({ ...room, airM3h: 50 }, mix, tg));
+  assert.equal(CAP.airOf({ airM3h: 20000 }), 10000);
+  assert.equal(CAP.airOf({}), 1800);
 });
 
 test('balance: no air exchange limit up to 100000 blocks is Infinity', () => {
@@ -153,7 +167,9 @@ test('trial: the room size of the air exchange reaches the simulation', () => {
   const mix = [{ crop: 'oyster', blocks: 2000 }], tg = CAP.commonTargets(mix);
   const base = CAP.trial(room, mix, tg, 2000);
   assert.deepEqual(CAP.trial({ ...room, airM3h: 1800 }, mix, tg, 2000), base, 'no size is the default 1800 m³/h');
-  assert.notDeepEqual(CAP.trial({ ...room, airM3h: 900 }, mix, tg, 2000), base);
+  // a smaller pair moves less air for each hour it runs, and uses less energy over the day
+  assert.ok(CAP.trial({ ...room, airM3h: 900 }, mix, tg, 2000).kwhDay < base.kwhDay);
+  assert.deepEqual(CAP.trial({ ...room, airM3h: 20000 }, mix, tg, 2000), CAP.trial({ ...room, airM3h: 10000 }, mix, tg, 2000), 'held to 10000');
 });
 
 // ---------- calibration status ----------
@@ -395,6 +411,9 @@ test('sim: an old snapshot (fan level, fan meters) is upgraded', () => {
   }
   assert.equal(up.reading.kwh.air, sim.snapshot().reading.kwh.air);
   assert.equal('fan' in up.reading.power, false);
+  assert.equal(up.reading.runS.air, sim.snapshot().reading.runS.air);
+  assert.equal('fan' in up.reading.runS, false);
+  assert.deepEqual(SIM.create(sim.env, up).snapshot(), up, 'upgrading twice changes nothing');
   old.act.fanLevel = 0;
   assert.equal(SIM.create(sim.env, old).snapshot().act.air, false);
   assert.deepEqual(SIM.create(sim.env, sim.snapshot()).snapshot(), sim.snapshot(), 'a new snapshot is unchanged');

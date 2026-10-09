@@ -72,7 +72,7 @@
     cfg.program.auto = false;
     cfg.program.harvest.on = false;
     cfg.offsets = { T: 0, RH: 0, CO2: 0 };
-    cfg.airM3h = room.airM3h ?? SIM.PLANT.air.m3h;
+    cfg.airM3h = CAP.airOf(room);
     cfg.manual.ac.auto = true; cfg.manual.hu.auto = true; cfg.manual.air.auto = true;
     cfg.manual.lights.auto = true; cfg.manual.circ.auto = true;
     CC.applyProfile(cfg);
@@ -103,7 +103,7 @@
     const c = CAP.mixCo2(room, mix);
     const e = structuredClone(SIM.DEFAULT_ENV);
     Object.assign(e, {
-      startHour: 0, blocks: n, co2PerBlock: c, blockStage: S[0], airM3h: room.airM3h ?? null,
+      startHour: 0, blocks: n, co2PerBlock: c, blockStage: S[0], airM3h: CAP.airOf(room),
       noise: false, sensorQuality: 'ideal', harvestDoors: false, randomWeather: false, dailyCycle: false,
     });
     e.room = CAP.roomOf(room);

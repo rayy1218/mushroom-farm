@@ -81,6 +81,8 @@
     const total = items.reduce((s, m) => s + m.blocks, 0);
     return total ? items.reduce((s, m) => s + m.blocks * (m.co2PerBlock || def), 0) / total : def;
   }
+  // The air exchange size (m³/h) of a room: held to 50-10000 like the simulation; anything but a number means the default.
+  const airOf = room => (Number.isFinite(room.airM3h) ? clamp(room.airM3h, 50, 10000) : SIM.PLANT.air.m3h);
   const roomOf = room => ({
     ...SIM.PLANT.room,
     ...(room.calib ? { ua: room.calib.ua, infAch: room.calib.infAch, moistBuffer: room.calib.moistBuffer } : {}),
@@ -122,10 +124,10 @@
   function balance(room, mix, tg, region = 'my-lowland') {
     if (!DESIGN_DAYS[region]) throw new Error(`Unknown region: ${region}`);
     const P = SIM.PLANT, R = roomOf(room), c = mixCo2(room, mix), rules = CC.defaultRules(tg.co2Lim);
-    const airM3h = room.airM3h ?? P.air.m3h;                                         // the air exchange when on
+    const airM3h = airOf(room);                                        // the air exchange when on
     const fogTop = P.fogger.levels[P.fogger.levels.length - 1].gph / 3600;         // g/s
     const dC = (rules.fanOn + rules.fanOff) / 2 - R.co2Out;                        // CO2 held at the middle of the purge band
-    const air = n => n * c / dC / 3600;                                             // m³/s of outdoor air, on average
+    const air = n => Math.max(R.infAch * R.volume, n * c / dC) / 3600;            // m³/s of outdoor air, on average; never below the leakage
     const blockW = c / 60000 * P.resp.wPerLpm, blockGps = c / 60000 * P.resp.gpsPerLpm + P.transpGph / 3600;
     const tRoom = tg.spT + CC.BANDS.T, ahT = tg.spRH / 100 * ahSat(tRoom), share = P.ac.latentMax.auto;
     const coilRate = 0.14 * Math.max(0, ahT - ahSat(P.ac.coil.auto));              // g/s at full output
@@ -157,7 +159,7 @@
     const days = DESIGN_DAYS[region].days, seq = [days[0], ...days];
     const n = Math.max(0, Math.round(blocks));
     const e = structuredClone(SIM.DEFAULT_ENV);
-    Object.assign(e, { startHour: 0, blocks: n, co2PerBlock: mixCo2(room, mix), blockStage: 'fruiting', airM3h: room.airM3h ?? null,
+    Object.assign(e, { startHour: 0, blocks: n, co2PerBlock: mixCo2(room, mix), blockStage: 'fruiting', airM3h: airOf(room),
       noise: false, sensorQuality: 'ideal', harvestDoors: false, randomWeather: false, dailyCycle: false });
     e.room = roomOf(room);
     e.weatherSeries = [];
@@ -168,7 +170,7 @@
     cfg.crop = tg.crop; cfg.stage = 'fruiting'; CC.applyProfile(cfg);
     cfg.spT = tg.spT; cfg.spRH = tg.spRH;
     cfg.program.harvest.on = false;                       // harvest windows lower RH on purpose
-    cfg.airM3h = room.airM3h ?? SIM.PLANT.air.m3h;         // the controller knows the size it runs
+    cfg.airM3h = airOf(room);        // the controller knows the size it runs
     const sim = SIM.create(e);
     sim.setRoom({ T: tg.spT, RH: tg.spRH, CO2: tg.co2Lim - 200 });
     // Noise-free CO2 can sit at exactly one value, which the controller's frozen-sensor check calls a fault.
@@ -336,5 +338,5 @@
     }
   }
 
-  global.ClimateCapacity = { commonTargets, balance, trial, calibStatus, verdictOf, checkSteps, check, checkAsync, DESIGN_DAYS, PASS, VERDICT, SEARCH, mixCo2, roomOf };
+  global.ClimateCapacity = { commonTargets, balance, trial, calibStatus, verdictOf, checkSteps, check, checkAsync, DESIGN_DAYS, PASS, VERDICT, SEARCH, mixCo2, roomOf, airOf };
 })(typeof window !== 'undefined' ? window : globalThis);

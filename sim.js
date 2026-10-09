@@ -95,6 +95,8 @@
     const R = () => ({ ...PLANT.room, ...(e.room || {}) });
     // Air exchange size (m³/h): env.airM3h held to 50-10000; anything but a number means PLANT.air.m3h.
     const airM3h = () => (Number.isFinite(e.airM3h) ? clamp(e.airM3h, 50, 10000) : PLANT.air.m3h);
+    // Air flows (m³/h) of the exchange: the pair when on, the wall leakage only when off.
+    const flows = on => ({ pair: on ? airM3h() : 0, leak: on ? 0 : R().infAch * R().volume });
     let s = snapshot ? upgrade(structuredClone(snapshot)) : init();
 
     function init() {
@@ -293,8 +295,7 @@
       // ---- Air flows (m³/s) ----
       // On: filtered air in through the intake, the same flow out through the exhaust, no leakage.
       // Off: the dampers are closed; only wall leakage, half through each zone, unfiltered.
-      const m3h = airM3h();
-      const qAir = a.air ? m3h / 3600 : 0, leak = a.air ? 0 : room.infAch * room.volume / 3600;
+      const fl = flows(a.air), m3h = fl.pair, qAir = fl.pair / 3600, leak = fl.leak / 3600;
       const d = s.dist, qDoor = s.t < d.door ? 0.25 : 0;
       const inZ = e.inletAt === 'high' ? 'hi' : 'lo', outZ = e.exhaustAt === 'low' ? 'lo' : 'hi';
       const inflow = { lo: 0, hi: 0 }, outflow = { lo: 0, hi: 0 };
@@ -364,7 +365,7 @@
       // ---- Meters ----
       s.p.ac = pAc;
       s.p.hu = a.huLevel > 0 ? fog.w : PLANT.fogger.standbyW;
-      s.p.air = a.air ? m3h * PLANT.air.wPerM3h : 0;
+      s.p.air = m3h * PLANT.air.wPerM3h;
       s.p.lights = lightsW;
       s.p.circ = a.circ ? PLANT.circ.w : 0;
       for (const k of Object.keys(s.p)) s.kwh[k] += s.p[k] * dt / 3.6e6;
@@ -390,11 +391,11 @@
     function view() {
       const w = weather(s.t), mid = zoneAt('mid'), lo = zoneAt('low'), hi = zoneAt('high');
       const cop = s.act.mode === 'heat' ? copHeat(w.T) : copCool(w.T);
-      const room = R(), qAir = s.act.air ? airM3h() : 0, leak = s.act.air ? 0 : room.infAch * room.volume;
+      const fl = flows(s.act.air);
       return {
         t: s.t, act: { ...s.act }, weather: w, lights: s.act.lights, cop,
         T: mid.T, RH: mid.RH, CO2: mid.C, zones: { lo, hi }, core: s.core,
-        airM3h: qAir + leak, fogGph: PLANT.fogger.levels[s.act.huLevel].gph,
+        airM3h: fl.pair + fl.leak, fogGph: PLANT.fogger.levels[s.act.huLevel].gph,
         power: { ...s.p }, kwh: { ...s.kwh }, water: { ...s.water }, unfilteredM3: s.unfilteredM3,
         nextRead: s.nextRead, acStarts: s.ac.starts, tRet: s.z.hi.T + PLANT.ac.sensorOffset,
         door: s.t < s.dist.door, workers: s.t < s.dist.workersUntil ? (s.dist.workersN || 0) : 0,
