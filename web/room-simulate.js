@@ -51,7 +51,9 @@ function seriesPoints(res) {
   return res.series.map(p => {
     const g = res.stages.find(x => x.stage === p.stage && x.flush === p.flush);
     const t = g ? g.targets : null;
-    return { t: p.h * 3600, T: p.T, RH: p.RH, C: p.CO2, core: p.core, spT: t ? t.spT : NaN, spRH: t ? t.spRH : NaN, co2Lim: t ? t.co2Lim : NaN };
+    const rules = t ? global.ClimateController.defaultRules(t.co2Lim) : null;
+    return { t: p.h * 3600, T: p.T, RH: p.RH, C: p.CO2, core: p.core, spT: t ? t.spT : NaN, spRH: t ? t.spRH : NaN, co2Lim: t ? t.co2Lim : NaN,
+      fanOff: rules ? rules.fanOff : NaN, fanOn: rules ? rules.fanOn : NaN };
   });
 }
 

@@ -102,7 +102,10 @@ test('SM6 cycle result', () => {
     ['Fruiting', '1', '1', '93.5', '99.1', '100.0', '27.4', 'rhHi ×2', '13', '7.18', 'temperature too high']]);
   const pts = H.seriesPoints(RES);
   assert.equal(pts.length, 48);
-  assert.deepEqual(pts[0], { t: 0, T: 24, RH: 80, C: 900, core: 27, spT: 24, spRH: 70, co2Lim: 5000 });
+  const r5 = CC.defaultRules(5000), r1 = CC.defaultRules(1000);
+  assert.deepEqual(pts[0], { t: 0, T: 24, RH: 80, C: 900, core: 27, spT: 24, spRH: 70, co2Lim: 5000, fanOff: r5.fanOff, fanOn: r5.fanOn });
+  assert.equal(pts[30].fanOff, r1.fanOff);
+  assert.equal(pts[30].fanOn, r1.fanOn);
   assert.equal(pts[30].t, 108000);
   assert.equal(pts[30].spT, 25);
   assert.equal(pts[30].spRH, 88);
