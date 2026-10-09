@@ -2,8 +2,7 @@
 (function (global) {
 'use strict';
 
-let alive = false;
-let gen = 0;                                // bumped by every load: an older reply is dropped
+let current = null;                         // the token of the mounted page; a late reply of an older mount sees it changed
 
 const OFFSET = 8 * 3600;
 const TEXT = ['strain', 'source', 'notes'];
@@ -85,7 +84,7 @@ const LIST_HTML = `
     <label>Source <input id="btSource"></label>
     <label>Blocks <input id="btCount" type="number" min="1" step="1"></label>
     <label>Wet weight per block (kg) <input id="btKg" type="number" step="0.01"></label>
-    <label>Moisture % <input id="btMoist" type="number"></label>
+    <label>Moisture % <input id="btMoist" type="number" step="any"></label>
     <label>Received <input id="btReceived" type="date"></label>
     <button class="btn" id="btSave" type="submit">Save</button>
   </form>
@@ -100,8 +99,8 @@ const DETAIL_HTML = `
     <label>Strain <input id="bdStrain"></label>
     <label>Source <input id="bdSource"></label>
     <label>Blocks <input id="bdCount" type="number" min="1" step="1"></label>
-    <label>Wet weight per block (kg) <input id="bdKg" type="number" step="0.01"></label>
-    <label>Moisture % <input id="bdMoist" type="number"></label>
+    <label>Wet weight per block (kg) <input id="bdKg" type="number" step="any"></label>
+    <label>Moisture % <input id="bdMoist" type="number" step="any"></label>
     <label>Spawn date <input id="bdSpawn" type="date"></label>
     <label>Received <input id="bdReceived" type="date"></label>
     <label>Days between flushes <input id="bdGap" type="number" min="1" step="1"></label>
@@ -109,10 +108,10 @@ const DETAIL_HTML = `
     <button class="btn" id="bdSave" type="submit">Save changes</button>
   </form>
   <div class="bd-actions">
-    <select id="bdRoom"></select>
-    <button class="btn" id="bdPlace" type="button">Place in room</button>
-    <button class="btn" id="bdClear" type="button">Clear</button>
-    <button class="btn" id="bdDelete" type="button">Delete</button>
+    <select id="bdRoom" hidden></select>
+    <button class="btn" id="bdPlace" type="button" hidden>Place in room</button>
+    <button class="btn" id="bdClear" type="button" hidden>Clear</button>
+    <button class="btn" id="bdDelete" type="button" hidden>Delete</button>
   </div>
   <h3>Flushes</h3>
   <table class="bd-flushes" id="bdFlushes">
@@ -129,7 +128,8 @@ const DETAIL_HTML = `
 
 // ---- list ----
 
-function mountList(el) {
+function mountList(el, live) {
+  let gen = 0;                              // bumped by every load: an older reply is dropped
   const $ = s => el.querySelector(s);
   el.innerHTML = LIST_HTML;
   const LIM = global.FarmHarvestRules.LIM;
@@ -146,8 +146,9 @@ function mountList(el) {
     const mine = ++gen;
     let list;
     try { list = await global.FarmApi.listBatches({ state }); }
-    catch (err) { if (alive && mine === gen) $('#btMsg').textContent = errText(err); return; }
-    if (!alive || mine !== gen) return;
+    catch (err) { if (live() && mine === gen) $('#btMsg').textContent = errText(err); return; }
+    if (!live() || mine !== gen) return;
+    $('#btMsg').textContent = '';
     const now = nowSec();
     const body = $('#btList').querySelector('tbody');
     const rows = list.map(b => {
@@ -182,14 +183,14 @@ function mountList(el) {
         block_wet_kg: $('#btKg').value, moisture_pct: $('#btMoist').value, received_at: $('#btReceived').value,
       };
       await global.FarmApi.createBatch(batchBody({ edit: false, fields }));
-      if (!alive) return;
+      if (!live()) return;
       for (const id of ['#btStrain', '#btSource', '#btCount', '#btKg']) $(id).value = '';
       await pick('received');
-      if (alive) $('#btMsg').textContent = 'Saved.';
+      if (live()) $('#btMsg').textContent = 'Saved.';
     } catch (err) {
-      if (alive) $('#btMsg').textContent = errText(err);
+      if (live()) $('#btMsg').textContent = errText(err);
     } finally {
-      if (alive) save.disabled = false;
+      if (live()) save.disabled = false;
     }
   });
 
@@ -198,7 +199,8 @@ function mountList(el) {
 
 // ---- detail ----
 
-async function mountDetail(el, id) {
+async function mountDetail(el, id, live) {
+  let gen = 0;
   const $ = s => el.querySelector(s);
   el.innerHTML = DETAIL_HTML;
   const HR = global.FarmHarvestRules;
@@ -208,7 +210,8 @@ async function mountDetail(el, id) {
   $('#bdNotes').maxLength = HR.LIM.notes;
   let batch = null;
 
-  const msg = text => { $('#bdMsg').textContent = text; };
+  const roomSel = $('#bdRoom'), msgEl = $('#bdMsg');   // held: notFound() detaches them, writes to them are harmless
+  const msg = text => { msgEl.textContent = text; };
 
   function notFound() {
     const page = document.createElement('div'); page.className = 'bd-page';
@@ -257,31 +260,32 @@ async function mountDetail(el, id) {
     let b;
     try { b = await global.FarmApi.getBatch(id); }
     catch (err) {
-      if (!alive || mine !== gen) return false;
+      if (!live() || mine !== gen) return false;
       if (err && err.name === 'ApiError' && err.status === 404) notFound(); else msg(errText(err));
       return false;
     }
-    if (!alive || mine !== gen) return false;
+    if (!live() || mine !== gen) return false;
     paint(b);
     return true;
   }
 
   // Runs one action on a button: disabled while it runs; the reload follows a success.
-  async function act(button, fn, okText) {
+  async function act(button, fn, okText, reloadOnError) {
     button.disabled = true;
     try {
       await fn();
-      if (!alive) return;
-      if (await load() && okText) msg(okText);
+      if (!live()) return;
+      if (await load()) msg(okText || '');
     } catch (err) {
-      if (alive) msg(errText(err));
+      if (live()) { msg(errText(err)); if (reloadOnError) await load(); }
     } finally {
-      if (alive) button.disabled = false;
+      if (live()) button.disabled = false;
     }
   }
 
   $('#bdForm').addEventListener('submit', e => {
     e.preventDefault();
+    if (!batch) return;
     const names = { crop: '#bdCrop', strain: '#bdStrain', source: '#bdSource', block_count: '#bdCount', block_wet_kg: '#bdKg',
       moisture_pct: '#bdMoist', spawn_date: '#bdSpawn', received_at: '#bdReceived', flush_gap_days: '#bdGap', notes: '#bdNotes' };
     const fields = {};
@@ -311,9 +315,9 @@ async function mountDetail(el, id) {
     button.disabled = true;
     try {
       await global.FarmApi.deleteBatch(id);
-      if (alive) global.location.hash = '#/batches';
+      if (live()) global.location.hash = '#/batches';
     } catch (err) {
-      if (alive) { msg(errText(err)); button.disabled = false; }
+      if (live()) { msg(errText(err)); button.disabled = false; }
     }
   });
 
@@ -322,15 +326,15 @@ async function mountDetail(el, id) {
     if (!button) return;
     const crate = batch.crates.find(c => String(c.id) === button.dataset.undo);
     if (!global.confirm(`Undo the crate of ${crate ? crate.kg : ''} kg?`)) return;
-    act(button, () => global.FarmApi.undoCrate(Number(button.dataset.undo)));
+    act(button, () => global.FarmApi.undoCrate(Number(button.dataset.undo)), '', true);
   });
 
   const [rooms] = await Promise.all([
-    global.FarmApi.listRooms().catch(err => { if (alive) msg(errText(err)); return []; }),
+    global.FarmApi.listRooms().catch(err => { if (live()) msg(errText(err)); return []; }),
     load(),
   ]);
-  if (!alive) return;
-  $('#bdRoom').replaceChildren(...rooms.map(r => {
+  if (!live()) return;
+  roomSel.replaceChildren(...rooms.map(r => {
     const o = document.createElement('option');
     o.value = String(r.id); o.textContent = r.name;
     return o;
@@ -338,11 +342,12 @@ async function mountDetail(el, id) {
 }
 
 function mount(el, params) {
-  alive = true;
-  if (params && params.id != null) return mountDetail(el, params.id);
-  return mountList(el);
+  const me = current = {};
+  const live = () => current === me;
+  if (params && params.id != null) return mountDetail(el, params.id, live);
+  return mountList(el, live);
 }
-function unmount() { alive = false; gen++; }
+function unmount() { current = null; }
 
 global.FarmShell.register('batches', { mount, unmount });
 

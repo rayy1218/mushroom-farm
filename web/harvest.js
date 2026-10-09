@@ -2,8 +2,7 @@
 (function (global) {
 'use strict';
 
-let alive = false;
-let gen = 0;                                // bumped by every load: an older reply is dropped
+let current = null;                         // the token of the mounted page; a late reply of an older mount sees it changed
 
 const LOCAL_HOSTS = ['localhost', '127.0.0.1', '[::1]', '::1'];
 
@@ -80,12 +79,13 @@ const STICKERS_HTML = `
 
 // ---- phone page ----
 
-async function mountRecord(el, roomId) {
+async function mountRecord(el, roomId, live) {
+  let gen = 0;                              // bumped by every load: an older reply is dropped
   const $ = s => el.querySelector(s);
   el.innerHTML = RECORD_HTML;
   const LIM = global.FarmHarvestRules.LIM;
   const clock = global.FarmUi.farmClock();
-  const name = $('#hvName');
+  const name = $('#hvName'), kgEl = $('#hvKg'), msgEl = $('#hvMsg'), addEl = $('#hvAdd');   // held: a 404 reload detaches the page
   name.maxLength = LIM.picker;
   try { name.value = global.localStorage.getItem('farm.picker') || ''; } catch { name.value = ''; }
   name.addEventListener('change', () => {
@@ -96,9 +96,8 @@ async function mountRecord(el, roomId) {
   let pickedId = null;
 
   const setMsg = (text, isErr) => {
-    const m = $('#hvMsg');
-    m.textContent = text;
-    m.className = isErr ? 'hv-msg err' : 'hv-msg';
+    msgEl.textContent = text;
+    msgEl.className = isErr ? 'hv-msg err' : 'hv-msg';
   };
   const picked = () => (data && data.batches.find(b => b.id === pickedId)) || null;
 
@@ -142,7 +141,7 @@ async function mountRecord(el, roomId) {
     let reply;
     try { reply = await global.FarmApi.getRoomHarvest(roomId); }
     catch (err) {
-      if (!alive || mine !== gen) return false;
+      if (!live() || mine !== gen) return false;
       if (err && err.name === 'ApiError' && err.status === 404 && err.error === 'Unknown room') {
         const page = document.createElement('div'); page.className = 'hv-page';
         const p = document.createElement('p'); p.className = 'hv-msg'; p.textContent = 'This room does not exist or is archived.';
@@ -151,7 +150,7 @@ async function mountRecord(el, roomId) {
       } else setMsg(errText(err), true);
       return false;
     }
-    if (!alive || mine !== gen) return false;
+    if (!live() || mine !== gen) return false;
     data = reply;
     render();
     return true;
@@ -166,25 +165,26 @@ async function mountRecord(el, roomId) {
   });
   $('#hvChange').addEventListener('click', () => { pickedId = null; setMsg('', false); render(); });
 
-  $('#hvAdd').addEventListener('click', async () => {
+  kgEl.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addEl.click(); } });
+
+  addEl.addEventListener('click', async () => {
     const b = picked();
-    const kg = parseKg($('#hvKg').value);
+    const kg = parseKg(kgEl.value);
     if (!b) return;
     if (kg === null) { setMsg('Type the weight in kg, for example 12.5', false); return; }
-    const add = $('#hvAdd');
-    add.disabled = true;
+    addEl.disabled = true;
     const body = { kg };
     const who = name.value.trim();
     if (who) body.picker = who;
     try {
       await global.FarmApi.addCrate(b.id, body);
-      if (!alive) return;
-      $('#hvKg').value = '';
+      if (!live()) return;
+      kgEl.value = '';
       setMsg('', false);
       await load();
-      if (alive) $('#hvKg').focus();
+      if (live()) kgEl.focus();
     } catch (err) {
-      if (!alive) return;
+      if (!live()) return;
       const api = err && err.name === 'ApiError';
       if (!api || err.status === 0 || err.status >= 500) {
         setMsg('Not saved: check Wi-Fi and press Add crate again', true);
@@ -197,7 +197,7 @@ async function mountRecord(el, roomId) {
         await load();
       } else setMsg(errText(err), true);
     } finally {
-      if (alive) add.disabled = false;
+      if (live()) addEl.disabled = false;
     }
   });
 
@@ -210,9 +210,9 @@ async function mountRecord(el, roomId) {
     btn.disabled = true;
     try {
       await global.FarmApi.undoCrate(Number(btn.dataset.undo));
-      if (alive) { setMsg('', false); await load(); }
+      if (live()) { setMsg('', false); await load(); }
     } catch (err) {
-      if (alive) { setMsg(errText(err), true); btn.disabled = false; }
+      if (live()) { setMsg(errText(err), true); btn.disabled = false; }
     }
   });
 
@@ -221,7 +221,7 @@ async function mountRecord(el, roomId) {
 
 // ---- stickers page ----
 
-async function mountStickers(el) {
+async function mountStickers(el, live) {
   const $ = s => el.querySelector(s);
   el.innerHTML = STICKERS_HTML;
   const local = isLocalHost(global.location.hostname);
@@ -232,12 +232,12 @@ async function mountStickers(el) {
   let rooms;
   try { rooms = await global.FarmApi.listRooms(); }
   catch (err) {
-    if (!alive) return;
+    if (!live()) return;
     const p = document.createElement('p'); p.className = 'tag'; p.textContent = errText(err);
     $('#stCards').replaceChildren(p);
     return;
   }
-  if (!alive) return;
+  if (!live()) return;
   $('#stCards').replaceChildren(...rooms.map(r => {
     const link = stickerLink(global.location.origin, r.id);
     const card = document.createElement('div'); card.className = 'st-card'; card.dataset.room = String(r.id);
@@ -252,11 +252,12 @@ async function mountStickers(el) {
 }
 
 function mount(el, params) {
-  alive = true;
-  if (params && params.view === 'stickers') return mountStickers(el);
-  return mountRecord(el, params.id);
+  const me = current = {};
+  const live = () => current === me;
+  if (params && params.view === 'stickers') return mountStickers(el, live);
+  return mountRecord(el, params.id, live);
 }
-function unmount() { alive = false; gen++; }
+function unmount() { current = null; }
 
 global.FarmShell.register('harvest', { mount, unmount });
 

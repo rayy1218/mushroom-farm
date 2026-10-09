@@ -22,6 +22,12 @@ test('BT2 dates are farm dates whatever the browser zone', () => {
   assert.equal(B.secondsToDate(1791388800), '2026-10-08');
   assert.equal(B.secondsToDate(1791388799), '2026-10-07');
   assert.equal(B.secondsToDate(B.dateToSeconds('2026-12-31')), '2026-12-31');
+  const prev = process.env.TZ;                       // the farm dates must not follow the browser's zone
+  process.env.TZ = 'America/New_York';
+  try {
+    assert.equal(B.dateToSeconds('2026-10-08'), 1791388800);
+    assert.equal(B.secondsToDate(1791388799), '2026-10-07');
+  } finally { process.env.TZ = prev; }
 });
 
 test('BT3 ageDays counts whole days', () => {
@@ -64,4 +70,62 @@ test('BT5 #btCrop lists the crops with a fruiting range, built in mount', async 
   await pending;
   for (let i = 0; i < 50 && !fake.requests.some(r => r.path === '/api/batches' && r.query.state === 'placed'); i++) await new Promise(r => setTimeout(r, 20));
   assert.ok(fake.requests.some(r => r.path === '/api/batches' && r.query.state === 'placed'), JSON.stringify(fake.requests));
+});
+
+// A recording element of its own: listeners kept, replaceChildren detaches what was queried (as a real page does).
+function mkEl() {
+  const map = {};
+  const el = mk('main');
+  el.stubs = map;
+  el.listeners = {};
+  const make = sel => {
+    const n = mk(sel);
+    n.querySelector = s2 => (map[sel + ' ' + s2] ||= make(sel + ' ' + s2));
+    n.addEventListener = (type, fn) => { n.listeners = { ...(n.listeners || {}), [type]: fn }; };
+    return n;
+  };
+  let detached = false;
+  el.querySelector = sel => (detached ? null : (map[sel] ||= make(sel)));
+  el.replaceChildren = (...c) => { detached = true; el.children = c; };
+  Object.defineProperty(el, 'innerHTML', { set() {}, get() { return ''; } });
+  return el;
+}
+const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; };
+const BATCH = { id: 1, crop: 'oyster', strain: 'PO-2', source: null, block_count: 10, block_wet_kg: 1, moisture_pct: 60, spawn_date: null,
+  received_at: 1791388800, room_id: null, placed_at: null, cleared_at: null, flush_gap_days: 5, notes: null, room_name: null, state: 'received',
+  totals: { crates: 0, kg: 0, g_per_block: 0, be_pct: 0, flushes: 0 }, flushes: [], crates: [] };
+
+test('BT6 a late reply of an older mount does not touch the new page', async t => {
+  globalThis.document = { createElement: mk };
+  const api = globalThis.FarmApi, saved = { ...api };
+  t.after(() => { Object.assign(api, saved); delete globalThis.document; });
+  const place = deferred(), list = deferred();
+  api.getBatch = async () => structuredClone(BATCH);
+  api.listRooms = async () => [];
+  api.placeBatch = () => place.promise;
+  api.listBatches = () => list.promise;
+  const elA = mkEl();
+  await registered.batches.mount(elA, { id: 1 });
+  elA.querySelector('#bdPlace').listeners.click();                  // Place in room, reply pending
+  registered.batches.unmount();
+  const elB = mkEl();
+  const pendingB = registered.batches.mount(elB, {});               // the list, reply pending
+  place.resolve({});                                                 // the old page's action finishes now
+  await new Promise(r => setTimeout(r, 20));
+  list.resolve([{ ...BATCH, state: 'placed', placed_at: BATCH.received_at, room_name: 'Room 1' }]);
+  await pendingB;
+  assert.equal(elB.querySelector('#btList').querySelector('tbody').children.length, 1);
+});
+
+test('BT7 an unknown batch shows its page and mount does not reject', async t => {
+  globalThis.document = { createElement: mk };
+  const api = globalThis.FarmApi, saved = { ...api };
+  t.after(() => { Object.assign(api, saved); delete globalThis.document; });
+  api.getBatch = async () => { throw new api.ApiError(404, 'Unknown batch', []); };
+  api.listRooms = async () => [{ id: 1, name: 'Room 1' }];
+  const el = mkEl();
+  await registered.batches.mount(el, { id: 99999 });
+  assert.equal(el.children.length, 1);
+  assert.equal(el.children[0].children[0].textContent, 'This batch does not exist.');
+  registered.batches.unmount();
 });
