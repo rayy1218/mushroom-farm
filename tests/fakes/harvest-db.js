@@ -11,8 +11,7 @@ function constraintError(message, errcode) {
 }
 
 // One column of a STRICT table: missing or non-finite -> NULL, then NOT NULL (1299), type (3091), CHECK (275).
-function column(raw, { type, notNull, check, name }) {
-  const v = raw;
+function column(v, { type, notNull, check, name }) {
   if (v === undefined || v === null || (typeof v === 'number' && !Number.isFinite(v))) {
     if (notNull) throw constraintError(`NOT NULL constraint failed: ${name}`, 1299);
     return null;

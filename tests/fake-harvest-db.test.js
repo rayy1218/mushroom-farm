@@ -13,6 +13,7 @@ let clock = T0;
 const now = () => clock;
 
 function fresh() {
+  clock = T0;
   const db = openFakeDb({ now });
   const room = db.createRoom({ name: 'Room A', volume: 50, settings: CC.defaultSettings() });
   const room2 = db.createRoom({ name: 'Room B', volume: 50, settings: CC.defaultSettings() });
@@ -92,7 +93,7 @@ test('createBatch: NOT NULL gives 1299, CHECK 275, wrong type 3091, nothing stor
   for (const [k, v] of [['block_count', 0], ['block_wet_kg', 0], ['moisture_pct', 100], ['moisture_pct', -1], ['flush_gap_days', 0]]) {
     assert.equal(errcode(() => h.createBatch({ ...GOOD, [k]: v })), 275, `${k} ${v}`);
   }
-  for (const [k, v] of [['block_count', 1.5], ['received_at', 1.5], ['spawn_date', 0.5], ['flush_gap_days', 2.5], ['crop', 5], ['strain', 5], ['block_wet_kg', 'abc'], ['at', 1.5]]) {
+  for (const [k, v] of [['block_count', 1.5], ['received_at', 1.5], ['spawn_date', 0.5], ['flush_gap_days', 2.5], ['crop', 5], ['strain', 5], ['source', 5], ['notes', 5], ['block_wet_kg', 'abc'], ['moisture_pct', 'abc'], ['at', 1.5]]) {
     assert.equal(errcode(() => h.createBatch({ ...GOOD, [k]: v })), 3091, `${k} ${v}`);
   }
   assert.equal(h.listBatches().length, 0);
