@@ -216,3 +216,37 @@ test('RS10 import on the wire', async t => {
     ['POST', '/api/rooms/7/calibrations/3/apply', null],
   ]);
 });
+
+test('RS11 import finished after unmount still writes the marker', async t => {
+  const cache = {};
+  const mk = () => {
+    const e = { dataset: {}, hidden: false, value: '', textContent: '', disabled: false, listeners: {},
+      addEventListener(n, f) { this.listeners[n] = f; }, setAttribute() {}, removeAttribute() {}, replaceChildren() {}, append() {}, closest: () => null,
+      querySelector: sel => (cache[sel] ||= mk()), querySelectorAll: () => [] };
+    return e;
+  };
+  const el = mk();
+  const stored = [];
+  const store = { 'mushroom-farm.rooms.v1': JSON.stringify({ version: 1, rooms: [{ name: 'A', volume: 80, mix: [] }] }) };
+  const saved = { document: globalThis.document, localStorage: globalThis.localStorage, confirm: globalThis.confirm, api: { ...FarmApi } };
+  globalThis.document = { createElement: mk };
+  globalThis.localStorage = { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { stored.push([k, v]); } };
+  globalThis.confirm = () => true;
+  t.after(() => {
+    registered.rooms.unmount();
+    for (const k of ['document', 'localStorage', 'confirm']) { if (saved[k] === undefined) delete globalThis[k]; else globalThis[k] = saved[k]; }
+    Object.assign(FarmApi, saved.api);
+  });
+  let release;
+  FarmApi.stream = () => () => {};
+  FarmApi.createRoom = () => new Promise(res => { release = () => res({ id: 5, name: 'A' }); });
+  FarmApi.saveMix = async () => ({});
+  FarmApi.listRooms = async () => [];
+  registered.rooms.mount(el, {});
+  const clicked = cache['#rhImport'].listeners.click();
+  registered.rooms.unmount();
+  release();
+  await clicked;
+  assert.equal(stored.length, 1);
+  assert.equal(stored[0][0], 'mushroom-farm.rooms.v1.imported');
+});

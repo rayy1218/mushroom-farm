@@ -107,6 +107,10 @@ test('SH4 update keeps the module mounted', () => {
   assert.deepEqual(events, [{ name: 'rooms', unmount: true }, { name: 'rooms', params: { id: 4, tab: 'live' } }]);
   events.length = 0;
   const saved = console.error; const logged = []; console.error = (...a) => logged.push(a);
+  updateImpl = () => 1; // only === true keeps the module mounted
+  go('#/rooms/4/simulate');
+  assert.deepEqual(events, [{ name: 'rooms', unmount: true }, { name: 'rooms', params: { id: 4, tab: 'simulate' } }]);
+  events.length = 0;
   updateImpl = () => { throw new Error('boom'); };
   go('#/rooms/4/calibrate');
   console.error = saved;

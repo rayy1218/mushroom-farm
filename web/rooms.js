@@ -139,8 +139,9 @@ function importPlan({ i, room }, nowS) {
 async function importRooms(entries, api, { nowS, onRoom }) {
   let created = 0;
   for (let k = 0; k < entries.length; k++) {
-    const p = importPlan(entries[k], nowS);
+    let p = null;
     try {
+      p = importPlan(entries[k], nowS);
       onRoom(k + 1, entries.length);
       const r = await api.createRoom(p.room);
       created++;
@@ -150,7 +151,7 @@ async function importRooms(entries, api, { nowS, onRoom }) {
         await api.applyCalibration(r.id, run.id);
       }
     } catch (error) {
-      return { created, failed: { name: p.room.name, error } };
+      return { created, failed: { name: p ? p.room.name : `Room ${entries[k].i + 1}`, error } };
     }
   }
   return { created, failed: null };
@@ -298,10 +299,12 @@ function mountHome(el) {
     if (!alive || mine !== seq) return;
     const early = buffer; buffer = null;
     rooms = reply;
+    let read = false;
     for (const [type, data] of early) {
-      if (type === 'room') rooms = upsertRoom(rooms, data); else applyReading(data);
+      if (type === 'room') rooms = upsertRoom(rooms, data); else if (applyReading(data)) read = true;
     }
     render();
+    if (read) refresher.request();
   }
 
   const refresher = createRefresher(reply => {
@@ -367,17 +370,17 @@ function mountHome(el) {
     buttons.forEach(b => { b.disabled = true; });
     const nowS = Math.floor(Date.now() / 1000);
     const res = await importRooms(entries, api, { nowS, onRoom: (k, n) => { if (alive) setMsg(`Importing room ${k} of ${n}…`); } });
+    if (!res.failed) { try { global.localStorage.setItem(MARKER_KEY, String(nowS)); } catch { /* the marker is best effort */ } }
     if (!alive) return;
     buttons.forEach(b => { b.disabled = false; });
     let message;
     if (res.failed) {
       message = `The import stopped at "${res.failed.name}": ${errorText(res.failed.error)}. ${res.created} room(s) were created; archive them on their room pages before you import again.`;
     } else {
-      try { global.localStorage.setItem(MARKER_KEY, String(nowS)); } catch { /* the marker is best effort */ }
       $('rhImport').hidden = true;
       message = `Imported ${res.created} room(s). Run the check again for each room.`;
     }
-    try { rooms = await api.listRooms(); if (alive) render(); } catch (err) { if (alive) message = errorText(err); }
+    try { rooms = await api.listRooms(); if (alive) render(); } catch (err) { if (alive) message += ` ${errorText(err)}`; }
     if (alive) setMsg(message);
   });
 
@@ -505,12 +508,15 @@ function mountFrame(el, params) {
     if (first) {
       room = row;
       const buffered = early; early = null;
+      let read = false;
       for (const [type, data] of buffered) {
-        if (type === 'room') room = data; else if (room.live && newerReading(room.live, data)) room = { ...room, live: { ...room.live, reading: data } };
+        if (type === 'room') room = data;
+        else if (room.live && newerReading(room.live, data)) { room = { ...room, live: { ...room.live, reading: data } }; read = true; }
       }
       if (room.archived_at !== null) { archivedOrMissing(); return; }
       paintHeader();
       mountTab();
+      if (read) refresher.request();
     } else {
       room = refreshRoom(room, row);
       roomChanged();
