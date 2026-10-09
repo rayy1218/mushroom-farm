@@ -294,6 +294,10 @@
       }
       st.stage.prevStage = stage;
       if (stage === 'pinning' && CROPS[cfg.crop].casing) say(t, 'info', 'Case the blocks with 2–3 cm of pasteurised soil (manual step). Pins come about 10 days after casing.');
+      // A lower CO2 limit (and its start and stop levels) takes effect at once, not over the ramp.
+      const co2Down = to.co2Lim < from.co2Lim;
+      if (co2Down) for (const k of ['co2Lim', 'rules.fanOn', 'rules.fanOff']) { from[k] = to[k]; setK(cfg, k, to[k]); }
+      st.stage.freePurge = co2Down ? true : null;   // the first purge after it: no time cap above the limit, not counted
       if (ramp && hours > 0) st.stage.ramp = { from, to, t0: t, dur: hours * 3600 };
       else { st.stage.ramp = null; for (const k of RAMP_KEYS) setK(cfg, k, to[k]); }
       say(t, 'info', `Stage: ${STAGES[stage]}${stage === 'fruiting' || stage === 'rest' ? `, flush ${st.stage.flush} of ${cfg.program.flushes}` : ''}. Targets ${to.spT} °C, ${to.spRH} % RH, CO₂ limit ${to.co2Lim} ppm${st.stage.ramp ? `, reached in ${hours} h` : ''}.`);
@@ -490,6 +494,7 @@
       if (st.air.state !== state) { st.air.state = state; st.air.since = t; }
     }
     function startPurge(t) {
+      if (st.stage.freePurge === true) st.stage.freePurge = 'run';
       setState('purge', t);
       st.air.purgeStart = t;
       st.stats.purges++;
@@ -501,8 +506,10 @@
       st.stats.longestPurgeS = Math.max(st.stats.longestPurgeS, runS);
       A.purgeStart = null;
       setState('after', t);
+      const free = st.stage.freePurge === 'run';
+      if (free) st.stage.freePurge = null;
       if (capped === true) {
-        A.capRun++;
+        if (!free) A.capRun++;
         st.stats.cappedPurges++;
         hourBucket(Math.floor(t / 3600)).cappedN++;
         st.airRunCapped = true;                // the record's event gets capped: true when the air run ends
@@ -571,7 +578,7 @@
       if (A.state === 'purge') {
         const runS = t - A.purgeStart;
         if (v.CO2 <= R.fanOff && runS >= AIR_MIN_ON_S) endPurge(t, false);
-        else if (runS >= R.purgeMaxS) endPurge(t, true);
+        else if (runS >= R.purgeMaxS && !(st.stage.freePurge === 'run' && v.CO2 > cfg.co2Lim && runS < 10 * R.purgeMaxS)) endPurge(t, true);
       }
       // The fans must be off: free cooling or drying keep them on, and then CO2 is being removed anyway.
       if (A.state === 'after' && !on && offFor >= R.minOffS) setState('idle', t);
