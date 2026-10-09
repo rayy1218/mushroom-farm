@@ -72,7 +72,8 @@
     cfg.program.auto = false;
     cfg.program.harvest.on = false;
     cfg.offsets = { T: 0, RH: 0, CO2: 0 };
-    cfg.manual.ac.auto = true; cfg.manual.hu.auto = true; cfg.manual.fan.auto = true;
+    cfg.airM3h = CAP.airOf(room);
+    cfg.manual.ac.auto = true; cfg.manual.hu.auto = true; cfg.manual.air.auto = true;
     cfg.manual.lights.auto = true; cfg.manual.circ.auto = true;
     CC.applyProfile(cfg);
     if (S[0] === 'fruiting') { cfg.spT = tg.spT; cfg.spRH = tg.spRH; }
@@ -102,7 +103,7 @@
     const c = CAP.mixCo2(room, mix);
     const e = structuredClone(SIM.DEFAULT_ENV);
     Object.assign(e, {
-      startHour: 0, blocks: n, co2PerBlock: c, blockStage: S[0], vent: room.vent || e.vent,
+      startHour: 0, blocks: n, co2PerBlock: c, blockStage: S[0], airM3h: CAP.airOf(room),
       noise: false, sensorQuality: 'ideal', harvestDoors: false, randomWeather: false, dailyCycle: false,
     });
     e.room = CAP.roomOf(room);

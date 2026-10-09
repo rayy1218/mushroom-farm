@@ -4,20 +4,21 @@
  * How many blocks of a crop mix can a room carry in fruiting, on the design days of its region?
  *
  *   commonTargets(mix)                 -> { spT, spRH, co2Lim, crop } or { impossible: true, conflict }
- *   balance(room, mix, targets, region) -> step 1: { fan, ac, fog, estimate, limit }, most blocks per machine, instant
+ *   balance(room, mix, targets, region) -> step 1: { air, ac, fog, estimate, limit }, most blocks per machine, instant
  *   trial(room, mix, targets, blocks, region, dt) -> step 2: { blocks, days, pass, side, kwhDay }, one simulated run
  *                                        with the real controller, pass/fail per design day
  *   checkSteps(room, mix, opts)        -> generator for the full check; yields progress, returns the report
  *   check(room, mix, opts)             -> the same, run to the end
  *
- * room = { name, volume, vent, calib: { ua, infAch, moistBuffer, co2PerBlock, rmse: { T, RH, CO2 }, date } | null }
+ * room = { name, volume, airM3h?, calib: { ua, infAch, moistBuffer, co2PerBlock, rmse: { T, RH, CO2 }, date } | null }
  * mix  = [{ crop, blocks, co2PerBlock? }]   (co2PerBlock in mL/h; default: the room's calibrated value)
- * Machine sizes are the simulation's (ClimateSim.PLANT). Choosing other machines is a later step.
+ * Machine sizes are the simulation's (ClimateSim.PLANT); the air exchange is room.airM3h (default PLANT.air.m3h).
+ * Choosing other machines is a later step.
  * Spec: docs/superpowers/specs/2026-10-07-room-capacity-design.md
  */
 (function (global) {
   'use strict';
-  const SIM = global.ClimateSim, CC = global.ClimateController, RT = global.ClimateRuntime;
+  const SIM = global.ClimateSim, CC = global.ClimateController, RT = global.ClimateRuntime, AIR = global.ClimateAir;
   const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
   const ahSat = SIM.ahSat;
 
@@ -80,6 +81,8 @@
     const total = items.reduce((s, m) => s + m.blocks, 0);
     return total ? items.reduce((s, m) => s + m.blocks * (m.co2PerBlock || def), 0) / total : def;
   }
+  // The air exchange size (m³/h) of a room: held to 50-10000 like the simulation; anything but a number means the default.
+  const airOf = room => (Number.isFinite(room.airM3h) ? clamp(room.airM3h, 50, 10000) : SIM.PLANT.air.m3h);
   const roomOf = room => ({
     ...SIM.PLANT.room,
     ...(room.calib ? { ua: room.calib.ua, infAch: room.calib.infAch, moistBuffer: room.calib.moistBuffer } : {}),
@@ -100,21 +103,31 @@
     while (bad - ok > 1) { const m = Math.floor((ok + bad) / 2); if (need(m) > cap) bad = m; else ok = m; }
     return ok;
   }
+  // Largest whole n in [0, max] with ok(n), for an ok that holds up to some n and fails above it (bisection).
+  // Never ok gives 0; still ok at max gives Infinity (no limit), as in maxBlocks.
+  function largestOk(ok, max) {
+    if (!ok(0)) return 0;
+    if (ok(max)) return Infinity;
+    let lo = 0, hi = max;
+    while (hi - lo > 1) { const m = Math.floor((lo + hi) / 2); if (ok(m)) lo = m; else hi = m; }
+    return lo;
+  }
   // Per hour of each design day, with the room at target + band (the pass rule allows the band edge):
   //   S = sensible heat gain (W), G = water gain (g/s) from the outdoor air and the blocks.
   //   The fog replaces the water the AC coil takes out, and its evaporation cools the air, so the AC
   //   carries S + 2450·G. When the coil cannot take out G, the room runs wetter than the target (allowed)
   //   and the coil's water removal (at most latentMax of its output) is lost for cooling: S / (1 - latentMax).
   // Each day's worst hour is left out: the pass rule allows 5 % of the day out of band.
+  // Outdoor air: the purges bring in, on average, the air that carries the blocks' CO2 out at the middle of the
+  // purge band (n·c / dC), never less than the wall leakage (the fans are off most of the time). The air exchange limit: the most blocks whose purge still reaches the stop level
+  // within the time cap.
   function balance(room, mix, tg, region = 'my-lowland') {
     if (!DESIGN_DAYS[region]) throw new Error(`Unknown region: ${region}`);
     const P = SIM.PLANT, R = roomOf(room), c = mixCo2(room, mix), rules = CC.defaultRules(tg.co2Lim);
-    const leak = room.vent === 'exhaust' ? R.infAch * R.volume : 0;               // m³/h; supply fan: no leak in
-    const fanBase = P.fan.levels[rules.baseFan.fruiting].m3h + leak;
-    const fanTop = P.fan.levels[P.fan.levels.length - 1].m3h + leak;
+    const airM3h = airOf(room);                                        // the air exchange when on
     const fogTop = P.fogger.levels[P.fogger.levels.length - 1].gph / 3600;         // g/s
-    const dC = rules.fanOn - R.co2Out;                                              // CO2 held at the fan start level
-    const air = n => Math.max(fanBase, n * c / dC) / 3600;                          // m³/s of outdoor air
+    const dC = (rules.fanOn + rules.fanOff) / 2 - R.co2Out;                        // CO2 held at the middle of the purge band
+    const air = n => Math.max(R.infAch * R.volume, n * c / dC) / 3600;            // m³/s of outdoor air, on average; never below the leakage
     const blockW = c / 60000 * P.resp.wPerLpm, blockGps = c / 60000 * P.resp.gpsPerLpm + P.transpGph / 3600;
     const tRoom = tg.spT + CC.BANDS.T, ahT = tg.spRH / 100 * ahSat(tRoom), share = P.ac.latentMax.auto;
     const coilRate = 0.14 * Math.max(0, ahT - ahSat(P.ac.coil.auto));              // g/s at full output
@@ -130,9 +143,11 @@
       return L >= G ? { ac: A1, fog: L - G } : { ac: S / (1 - Math.min(share, coilRate * 2450 / P.ac.capW)), fog: 0 };
     };
     const secondWorst = key => n => Math.max(...hours.map(day => day.map(x => at(n, x)[key]).sort((a, b) => b - a)[1]));
-    const out = { fan: maxBlocks(n => n * c / dC, fanTop), ac: maxBlocks(secondWorst('ac'), P.ac.capW), fog: maxBlocks(secondWorst('fog'), fogTop) };
-    out.estimate = Math.min(out.fan, out.ac, out.fog);
-    out.limit = ['fan', 'ac', 'fog'].find(k => out[k] === out.estimate);
+    const purgeOk = n => AIR.purgeTimeS({ volume: R.volume, co2Out: R.co2Out, leakM3h: 0, prodM3h: n * c / 1e6,
+      m3h: airM3h, start: rules.fanOn, stop: rules.fanOff }) <= rules.purgeMaxS;
+    const out = { air: largestOk(purgeOk, 100000), ac: maxBlocks(secondWorst('ac'), P.ac.capW), fog: maxBlocks(secondWorst('fog'), fogTop) };
+    out.estimate = Math.min(out.air, out.ac, out.fog);
+    out.limit = ['air', 'ac', 'fog'].find(k => out[k] === out.estimate);
     return out;
   }
 
@@ -144,7 +159,7 @@
     const days = DESIGN_DAYS[region].days, seq = [days[0], ...days];
     const n = Math.max(0, Math.round(blocks));
     const e = structuredClone(SIM.DEFAULT_ENV);
-    Object.assign(e, { startHour: 0, blocks: n, co2PerBlock: mixCo2(room, mix), blockStage: 'fruiting', vent: room.vent || e.vent,
+    Object.assign(e, { startHour: 0, blocks: n, co2PerBlock: mixCo2(room, mix), blockStage: 'fruiting', airM3h: airOf(room),
       noise: false, sensorQuality: 'ideal', harvestDoors: false, randomWeather: false, dailyCycle: false });
     e.room = roomOf(room);
     e.weatherSeries = [];
@@ -155,6 +170,7 @@
     cfg.crop = tg.crop; cfg.stage = 'fruiting'; CC.applyProfile(cfg);
     cfg.spT = tg.spT; cfg.spRH = tg.spRH;
     cfg.program.harvest.on = false;                       // harvest windows lower RH on purpose
+    cfg.airM3h = airOf(room);        // the controller knows the size it runs
     const sim = SIM.create(e);
     sim.setRoom({ T: tg.spT, RH: tg.spRH, CO2: tg.co2Lim - 200 });
     // Noise-free CO2 can sit at exactly one value, which the controller's frozen-sensor check calls a fault.
@@ -322,5 +338,5 @@
     }
   }
 
-  global.ClimateCapacity = { commonTargets, balance, trial, calibStatus, verdictOf, checkSteps, check, checkAsync, DESIGN_DAYS, PASS, VERDICT, SEARCH, mixCo2, roomOf };
+  global.ClimateCapacity = { commonTargets, balance, trial, calibStatus, verdictOf, checkSteps, check, checkAsync, DESIGN_DAYS, PASS, VERDICT, SEARCH, mixCo2, roomOf, airOf };
 })(typeof window !== 'undefined' ? window : globalThis);
