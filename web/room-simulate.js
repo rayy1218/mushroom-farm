@@ -188,6 +188,8 @@ const btn = (text, props) => mk('button', { type: 'button', cls: 'btn', text, ..
 // State of the mounted tab (closure; reset at each mount).
 let el = null, ctx = null, id = 0, room = null, saved = null, draft = [], calibrations = null, settings = null, version = null;
 let equipment, runs = [], running = false, saving = false, alive = false, card = null, charts = null, streamed = false, olderDone = false;
+let mountSeq = 0; // counts mounts and unmounts: a reply of an earlier mount never matches the present one
+const here = me => alive && me === mountSeq;
 let gen = 0; // never reset: a run of an earlier mount can never match it again
 
 const q = sel => el.querySelector(sel);
@@ -215,8 +217,8 @@ function cycleDaysText() {
 function paintValues() {
   const UI = global.FarmUi, clock = UI.farmClock();
   const row = calibrations && calibrations.find(c => c.applied === true);
-  UI.paintChip(q('#smCalib'), row ? { lvl: 'good', icon: '✓', text: `calibrated ${clock.stamp(row.run_at).slice(0, 10)}` }
-    : { lvl: 'info', icon: '●', text: 'not calibrated — typical values' });
+  UI.paintChip(q('#smCalib'), row ? { lvl: 'good', icon: UI.ICON.good, text: `calibrated ${clock.stamp(row.run_at).slice(0, 10)}` }
+    : { lvl: 'info', icon: UI.ICON.info, text: 'not calibrated — typical values' });
   q('#smSettings').textContent = version ? `Settings: version ${version.id} saved ${clock.stamp(version.saved_at)}` : '';
   q('#smMachines').textContent = equipment === undefined ? '' : `Machines: ${machinesText(equipment)}`;
   if (settings) q('#smCycle').textContent = cycleDaysText();
@@ -304,22 +306,25 @@ function paintRuns() {
     }
     actions.push(note, del);
     open.addEventListener('click', () => guarded(open, async () => {
+      const me = mountSeq;
       const run = await global.FarmApi.getSimulation(id, info.id);
-      if (!alive) return;
+      if (!here(me)) return;
       try { showResult(run.kind, run.result); } catch (err) { msg(`The saved result could not be read: ${err.message}`); }
     }));
     note.addEventListener('click', () => guarded(note, async () => {
       const text = prompt(`Note for run ${info.id}`, info.note ?? '');
       if (text === null) return;
+      const me = mountSeq;
       const updated = await global.FarmApi.updateSimulation(id, info.id, { note: text });
-      if (!alive) return;
+      if (!here(me)) return;
       const at = runs.findIndex(r => r.id === info.id);
       if (at >= 0) { runs[at] = updated; paintRuns(); }
     }));
     del.addEventListener('click', () => guarded(del, async () => {
       if (!confirm('Delete this run? It cannot be undone.')) return;
+      const me = mountSeq;
       await global.FarmApi.deleteSimulation(id, info.id);
-      if (!alive) return;
+      if (!here(me)) return;
       runs = runs.filter(r => r.id !== info.id); paintRuns();
     }));
     return mk('tr', { 'data-run-id': String(info.id) }, UI.cell('td', t.run), UI.cell('td', t.mix), mk('td', {}, chip), UI.cell('td', t.energy), noteCell,
@@ -330,14 +335,16 @@ function paintRuns() {
 // One request at a time per button; every ApiError becomes a message.
 async function guarded(button, fn) {
   if (button.disabled) return;
+  const me = mountSeq;
   button.disabled = true;
-  try { await fn(); } catch (err) { if (alive) msg(global.FarmUi.errorText(err)); } finally { if (alive && button.isConnected) button.disabled = false; }
+  try { await fn(); } catch (err) { if (here(me)) msg(global.FarmUi.errorText(err)); } finally { if (here(me) && button.isConnected) button.disabled = false; }
 }
 
 // ---- runs ----
 async function startRun(kind) {
   const UI = global.FarmUi;
   if (running || !alive || !ready()) return;
+  const me = mountSeq;
   let r, it;
   try {
     if (kind === 'cycle') {
@@ -363,47 +370,49 @@ async function startRun(kind) {
       label.textContent = progressText(s.value);
       fill.style.width = s.value.day === undefined ? '0%' : `${UI.clamp(s.value.day / s.value.days * 100, 0, 100)}%`;
       await new Promise(done => setTimeout(done, 0));
-      if (!alive || myGen !== gen) return;
+      if (!here(me) || myGen !== gen) return;
     }
   } catch (err) {
-    if (alive && myGen === gen) msg(`The run stopped: ${err.message}`);
+    if (here(me) && myGen === gen) msg(`The run stopped: ${err.message}`);
   } finally {
-    if (alive && myGen === gen) { running = false; bar.hidden = true; syncControls(); }
+    if (here(me) && myGen === gen) { running = false; bar.hidden = true; syncControls(); }
   }
-  if (!finished || !alive || myGen !== gen) return;
+  if (!finished || !here(me) || myGen !== gen) return;
 
   try { showResult(kind, result); } catch (err) { msg(`The result could not be drawn: ${err.message}`); }
   try {
     const info = await global.FarmApi.createSimulation(id, { kind, inputs: r.inputs, result });
-    if (!alive) return;
+    if (!here(me)) return;
     runs.unshift(info); paintRuns(); msg(`Saved as run ${info.id}.`);
   } catch (err) {
-    if (alive) msg(`The result was not saved: ${UI.errorText(err)}`);
+    if (here(me)) msg(`The result was not saved: ${UI.errorText(err)}`);
   }
 }
 
 async function saveMix() {
   const UI = global.FarmUi;
   if (saving || running) return;
+  const me = mountSeq;
   saving = true; syncControls();
   try {
     const rows = await global.FarmApi.saveMix(id, draft);
-    if (!alive) return;
+    if (!here(me)) return;
     saved = rows; draft = rows.map(x => ({ ...x }));
     paintMix();
     msg(`Saved. The simulated live room uses ${rows.reduce((n, x) => n + x.blocks, 0)} blocks after its next restart.`);
   } catch (err) {
-    if (alive) msg(UI.errorText(err));
+    if (here(me)) msg(UI.errorText(err));
   } finally {
-    if (alive) { saving = false; syncControls(); }
+    if (here(me)) { saving = false; syncControls(); }
   }
 }
 
 async function loadOlder() {
   const button = q('#smOlder');
   await guarded(button, async () => {
+    const me = mountSeq;
     const page = await global.FarmApi.listSimulations(id, { limit: 50, before: Math.min(...runs.map(r => r.id)) });
-    if (!alive) return;
+    if (!here(me)) return;
     if (!page.length) olderDone = true;
     runs = runs.concat(page); paintRuns();
   });
@@ -459,16 +468,17 @@ function mount(host, context) {
   saved = null; draft = []; calibrations = null; settings = null; version = null; equipment = undefined;
   runs = []; running = false; saving = false; streamed = false; olderDone = false; card = null; charts = null;
   alive = true; gen++;
+  const me = ++mountSeq;
   build();
   paintMix(); paintRuns(); paintValues();
   ctx.on('settings', data => {
-    if (!alive) return;
+    if (!here(me)) return;
     streamed = true; settings = data.settings; version = { id: data.id, saved_at: data.saved_at };
     paintValues(); syncControls();
   });
   ctx.on('room', r => { room = r; });
 
-  const load = (promise, apply) => promise.then(v => { if (alive) apply(v); }).catch(err => { if (alive) msg(UI.errorText(err)); });
+  const load = (promise, apply) => promise.then(v => { if (here(me)) apply(v); }).catch(err => { if (here(me)) msg(UI.errorText(err)); });
   return Promise.all([
     load(API.getMix(id), rows => { saved = rows; draft = rows.map(x => ({ ...x })); paintMix(); }),
     load(API.listCalibrations(id), rows => { calibrations = rows; paintValues(); }),
@@ -477,15 +487,14 @@ function mount(host, context) {
     load(API.getEquipment(id), eq => { equipment = eq; }),
     load(API.listSimulations(id, { limit: 50 }), rows => { runs = rows; paintRuns(); }),
   ]).then(() => {
-    if (!alive) return;
+    if (!here(me)) return;
     paintValues(); syncControls();
     if (settings !== null && equipment !== undefined) mountCard();
   });
 }
 
 function unmount() {
-  try { alive = false; } catch { /* nothing to stop */ }
-  try { gen++; } catch { /* nothing to stop */ }
+  alive = false; gen++; mountSeq++;
   try { if (card) card.unmount(); } catch { /* the card is gone with the page */ }
   card = null;
   try { if (charts) charts.destroy(); } catch { /* the charts are gone with the page */ }

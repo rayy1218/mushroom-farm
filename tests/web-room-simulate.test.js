@@ -110,6 +110,13 @@ test('SM6 cycle result', () => {
   assert.equal(pts[30].spT, 25);
   assert.equal(pts[30].spRH, 88);
   assert.equal(pts[30].co2Lim, 1000);
+  const two = { ...RES, stages: [...RES.stages, seg('fruiting', 2, { spT: 22, spRH: 91, co2Lim: 800, coreMax: 32 }, { flush: 2 })],
+    series: [...RES.series, { h: 48, stage: 'fruiting', flush: 2, T: 22, RH: 90, CO2: 700, core: 25, kwh: 0.5 }] };
+  const last = H.seriesPoints(two)[48];
+  assert.equal(last.spT, 22);
+  assert.equal(last.spRH, 91);
+  assert.equal(last.co2Lim, 800);
+  assert.equal(H.seriesPoints(two)[30].spT, 25);
 });
 
 const INFO = { id: 12, room_id: 1, created_at: 1791450900, kind: 'cycle', verdict: 'pass', blocks: 2000, days: 83, kwh: 1093.4, rm: 623.2,
@@ -124,6 +131,7 @@ test('SM7 runRowTexts', () => {
   assert.equal(H.runRowTexts({ ...INFO, kind: 'capacity', verdict: 'good', utilisation: 74 }).energy, '74 %');
   assert.equal(H.runRowTexts({ ...INFO, kind: 'equipment', verdict: 'enough', rm: 5, utilisation: 3 }).energy, '–');
   assert.equal(H.runRowTexts({ ...INFO, verdict: 'impossible', rm: null }).energy, '–');
+  assert.equal(H.runRowTexts({ ...INFO, blocks: 0, rm: 5 }).energy, '–');
   assert.equal(H.runRowTexts({ ...INFO, note: 'hello' }).note, 'hello');
   assert.equal(H.runRowTexts({ ...INFO, kind: 'equipment', verdict: 'enough' }).run.startsWith('Equipment · '), true);
   assert.equal(H.runRowTexts({ ...INFO, kind: 'capacity', verdict: 'good' }).run.startsWith('Capacity · '), true);
@@ -147,6 +155,7 @@ test('SM7 runRowTexts', () => {
 
 test('SM8 progressText', () => {
   assert.equal(H.progressText({ day: 3, days: 83, stage: 'spawn', flush: 1 }), 'Day 3 of 83 · Spawn run');
+  assert.equal(H.progressText({ day: 22, days: 83, stage: 'pinning', flush: 1 }), 'Day 22 of 83 · Pinning');
   assert.equal(H.progressText({ day: 40, days: 83, stage: 'fruiting', flush: 2 }), 'Day 40 of 83 · Fruiting · flush 2');
   assert.equal(H.progressText({ day: 50, days: 83, stage: 'rest', flush: 2 }), 'Day 50 of 83 · Rest between flushes · flush 2');
   assert.equal(H.progressText({ runs: 3, blocks: 1600, pass: true }), 'Simulation run 3: 1,600 blocks, pass…');
@@ -174,4 +183,67 @@ test('SM10 inputs', () => {
   assert.equal(H.clampCo2('x'), null);
   assert.equal(H.regionText('my-lowland'), 'Lowland Peninsular Malaysia');
   assert.equal(H.regionText('x'), 'x');
+});
+
+// ---- mount races (web.md 3.9): a tiny DOM stub, installed only inside these tests ----
+class FakeEl {
+  constructor(tag) { this.tagName = tag.toUpperCase(); this.children = []; this.attrs = {}; this.dataset = {}; this.style = {}; this.className = ''; this.textContent = ''; this.value = ''; this.hidden = false; this.disabled = false; this.isConnected = true; }
+  setAttribute(k, v) { this.attrs[k] = String(v); if (k === 'hidden') this.hidden = true; }
+  append(...c) { this.children.push(...c.filter(x => typeof x !== 'string')); }
+  replaceChildren(...c) { this.children = []; this.append(...c); }
+  addEventListener() {}
+  get firstElementChild() { return this.children[0]; }
+  get lastElementChild() { return this.children[this.children.length - 1]; }
+  matches(part) {
+    if (part[0] === '#') return this.attrs.id === part.slice(1);
+    if (part[0] === '[') { const m = /^\[([\w-]+)="(.*)"\]$/.exec(part); return this.attrs[m[1]] === m[2]; }
+    return this.tagName === part.toUpperCase();
+  }
+  all(chain, out) {
+    for (const c of this.children) {
+      if (c.matches(chain[0])) { if (chain.length === 1) out.push(c); else c.all(chain.slice(1), out); }
+      c.all(chain, out);
+    }
+    return out;
+  }
+  querySelectorAll(sel) { return sel.split(',').flatMap(s => this.all(s.trim().split(/\s+/), [])); }
+  querySelector(sel) { return this.querySelectorAll(sel)[0] || null; }
+}
+const withDom = (t, mixById) => {
+  globalThis.document = { createElement: tag => new FakeEl(tag) };
+  const api = globalThis.FarmApi, old = { ...api }, oldCard = globalThis.FarmEquipmentCard;
+  const cards = { mounted: 0 };
+  globalThis.FarmEquipmentCard = { mount: () => { cards.mounted++; return { unmount() {} }; }, renderReport() {} };
+  Object.assign(api, { getMix: id => mixById[id], listCalibrations: async () => [], getSettings: async () => S,
+    listSettingsHistory: async () => [{ id: 1, saved_at: 1791450000 }], getEquipment: async () => null, listSimulations: async () => [] });
+  t.after(() => { delete globalThis.document; Object.assign(api, old); globalThis.FarmEquipmentCard = oldCard; if (!oldCard) delete globalThis.FarmEquipmentCard; });
+  const tab = globalThis.FarmRoomTabs.get('simulate');
+  t.after(() => tab.unmount());
+  const ctx = id => ({ id, params: {}, room: () => ({ ...ROOM, id }), on: () => () => {} });
+  return { tab, ctx, cards };
+};
+const later = () => new Promise(r => setTimeout(r, 20));
+
+test('SM11 mounting twice on the same element makes one machines card', async t => {
+  const { tab, ctx, cards } = withDom(t, { 1: Promise.resolve([]) });
+  const el = new FakeEl('div');
+  const p1 = tab.mount(el, ctx(1)), p2 = tab.mount(el, ctx(1));
+  await Promise.all([p1, p2]); await later();
+  assert.equal(cards.mounted, 1);
+});
+
+test('SM12 a slow load of an earlier room never paints into the next room', async t => {
+  let late;
+  const slow = new Promise(r => { late = r; });
+  const { tab, ctx } = withDom(t, { 1: slow, 2: Promise.resolve([{ crop: 'pink', blocks: 7, co2_per_block: null }]) });
+  const el = new FakeEl('div');
+  const p1 = tab.mount(el, ctx(1));
+  tab.unmount();
+  const p2 = tab.mount(el, ctx(2));
+  await p2; await later();
+  late([{ crop: 'oyster', blocks: 99, co2_per_block: null }]);
+  await p1; await later();
+  const rows = el.querySelectorAll('#smMix tbody tr');
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].children[1].children[0].value, '7');
 });
