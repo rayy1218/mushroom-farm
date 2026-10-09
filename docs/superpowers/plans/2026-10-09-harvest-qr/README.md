@@ -383,6 +383,8 @@ git commit -m "feat: harvest-rules.js, batch and crate checks, flushes and yield
 
 ### Task 0.3: Vendor the QR encoder
 
+This task needs network: GitHub raw for Nayuki's source at commit 3c6d0b3, and npm `typescript@5.9.3` to compile it. The fingerprint test (`tests/qrcodegen.test.js`) is the guard that the result is right.
+
 Project Nayuki's QR Code generator (MIT) ships only TypeScript (`typescript-javascript/qrcodegen.ts`, 990 lines; it uses `namespace`, which Node cannot strip). It is compiled once to a plain script that defines the global `qrcodegen`.
 
 **Files:** Create `web/vendor/qrcodegen.js`, `tests/qrcodegen.test.js`.
@@ -607,7 +609,7 @@ Three streams beside the nine other wave 2 streams (twelve in all) (wave 2 plan 
 
 | Stream | Branch | Builds against | Done when |
 |---|---|---|---|
-| Harvest data | `stream/harvest-data` | C10 3, 5; the fake db; a real `openDb(':memory:')` needs upgrade 4, which is Data 2's: until gate 2.5 the real-store half of `tests/harvest-db.test.js` opens a `DatabaseSync` itself, runs `SCHEMA_V4_HARVEST` on it, and passes `{ version: 4, sqlite, getRoom }` as `db` | Every C10 13 row of `tests/harvest-db.test.js` passes on the fake and on that stand-in |
+| Harvest data | `stream/harvest-data` | C10 3, 5; the fake db; a real `openDb(':memory:')` needs upgrade 4, which is Data 2's: the test uses `openDb(':memory:')` when `require('../server/db.js').UPGRADES.some(u => u.version === 4)`, else the C10 13 stand-in (`DatabaseSync` with `PRAGMA foreign_keys = ON`, a `rooms (id, name, archived_at)` table, `SCHEMA_V4_HARVEST`, and `getRoom` throwing `NotFoundError('room', id)`) as `{ version: 4, sqlite, getRoom }` | Every C10 13 row of `tests/harvest-db.test.js` passes on the fake and on the real store (no edit at the gate) |
 | Harvest API | `stream/harvest-api` | C10 4, 6–9; the fake db and fake store | Every C10 13 row of `tests/harvest-api.test.js` passes |
 | Harvest web | `stream/harvest-web` | C10 10–12; the fake API server | Node helpers pass (C10 13); no headless check: the harvest pages are the lead's wave 3 check (C5 7.10) |
 
@@ -615,8 +617,8 @@ Three streams beside the nine other wave 2 streams (twelve in all) (wave 2 plan 
 
 ### Task 2.1: Gate 2.5 additions
 
-- [ ] **Step 1:** After Data 2, Equipment and Server 2: merge `stream/harvest-data`, then `stream/harvest-api`; `npm test`. Expected: `# fail 0`. In `tests/harvest-db.test.js`, point the real-store half at `openDb(':memory:')` (upgrade 4 is now in `UPGRADES`).
-- [ ] **Step 2:** `server/main.js`: the C10 8.4 wiring only (with the `openHarvest` failure rule of C3 2.2).
+- [ ] **Step 1:** After Data 2, Equipment and Server 2: merge `stream/harvest-data`, then `stream/harvest-api`; `npm test`. Expected: `# fail 0`. `tests/harvest-db.test.js` now picks `openDb(':memory:')` by itself (upgrade 4 is in `UPGRADES`).
+- [ ] **Step 2:** `server/main.js`: the C10 8.4 wiring (with the `openHarvest` failure rule of C3 2.2), and the `STUB_HARVEST_THROW` test in the `server/main.js` stub test (C3 12.1; Server 2 wrote the two stub files).
 - [ ] **Step 3:** The gate's real-server run on the version 1 and version 2 file copies: `db.version` 4; `curl` creates a batch (`POST /api/batches`), places it in Room 1, adds two crates; `GET /api/batches/<id>` gives the totals `harvest-rules.js` gives for the same crates; `GET /api/rooms/1/harvest` lists today's crates.
 
 ### Task 2.2: Wave 3

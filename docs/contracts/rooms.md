@@ -38,7 +38,6 @@ Room-centred app and C8 equipment (lead decisions 20, 27, 33, 35, 48, 54). In wa
 | 8.1, 12.2, 13.1 | Loop start reads `db.getEquipment(id)`; the adapter factory gets `equipment`; `createSimAdapter` sets `env.plant = ClimateEquipment.plantOf(equipment, { volume, calib })` when the room has machines (positions stay `DEFAULT_ENV`). An equipment save takes effect at the next restart, as a mix. |
 | 15 | `getEquipment` added; `insertReading` carries the new keys. |
 | 16 | The fake's default `live` adds `flush: null`, `blocks: null`; `setLive` readings have the 18 keys. |
-| 17 (lead decision 56) | "Pair correction": the low-key test is dropped (unreachable after lead decision 56); the high-key test with its bd24755 numbers stays. |
 | 17 | "Recording" checks the 18 keys; new tests "Live flush and blocks" and "Room equipment" (skipped while `equipment.js` is the prep 2.0 stub, lead decision 48). |
 
 ### Changes in revision 7
