@@ -102,7 +102,7 @@ test('W6 the progress bar is the fill span first, then the text span (C5 3.8)', 
 
 test('W7 after a successful save the air note is empty, not repainted from stale settings', async () => {
   const made = stubDom();
-  globalThis.FarmApi = { saveEquipment: async eq => ({ room_id: 1, ...eq }) };
+  globalThis.FarmApi = { saveEquipment: async (id, eq) => ({ room_id: id, ...eq }) };
   globalThis.FarmUi = { errorText: e => e.message };
   const got = [];
   const host = hostEl();
@@ -119,7 +119,7 @@ test('W7 after a successful save the air note is empty, not repainted from stale
 test('W8 a second mount into the same element replaces the first; the first never reports late', async () => {
   const made = stubDom();
   let release;
-  globalThis.FarmApi = { saveEquipment: eq => new Promise(r => { release = () => r({ room_id: 1, ...eq }); }) };
+  globalThis.FarmApi = { saveEquipment: (id, eq) => new Promise(r => { release = () => r({ room_id: id, ...eq }); }) };
   globalThis.FarmUi = { errorText: e => e.message };
   const host = hostEl(), first = [], second = [];
   globalThis.FarmEquipmentCard.mount(host, opts({ onEquipment: e => first.push(e) }));
