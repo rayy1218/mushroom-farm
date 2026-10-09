@@ -176,6 +176,7 @@ There is no Prepare step (owner decision, 2026-10-09). A 24 h prototype showed t
 | 4 | Free cooling (`rules.freeCool`) | As today's `lCool` condition (room warm, outdoor ≥ 3 °C cooler): on; not a purge, not capped |
 | 4 | Outdoor drying (`rules.outdoorDry`) | As today's `fanDryOn` hysteresis: on; not a purge, not capped |
 | Sensor check | CO₂ spike filter (the rate test of `validate`) | A falling CO₂ while `cmd.air.on`, and for one reading after the fans stop, is not tested against the rate limit: a strong purge really lowers CO₂ faster than 1000 ppm/min. A rising CO₂ is tested as today. |
+| Sensor check | Humidity response check (`responseCheck`) | The RH response window opens on a fog level change (as today) and also at a purge start when the outdoor air's water differs from the room's by at least 0.4 g/m³ (`RESP_PUSH_AH`, measured at integration): without the fog boost the fogger can hold one level for hours, so a frozen RH sensor would otherwise go unnoticed. Below that push a healthy sensor barely moves in a purge window. |
 
 ### 5.7 Records, statistics, status, events
 
