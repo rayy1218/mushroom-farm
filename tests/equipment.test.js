@@ -103,3 +103,21 @@ test('EQ4 plantOf', () => {
   assert.equal('room' in d, false);
   assert.equal(EQ.plantOf({ ac_units: 2, ac_hp: 1 }, rm).ac.standbyW, 6);
 });
+
+test('EQ5 estimate (C8 6)', () => {
+  const w = (r, mix, settings, want) => {
+    const e = EQ.estimate(r, mix, settings ? { settings } : {});
+    assert.ok(Math.abs(e.needW - want.needW) <= 1, `${e.needW} vs ${want.needW}`);
+    assert.equal(e.stage, want.stage);
+    assert.equal(e.hp, want.hp);
+    return e;
+  };
+  const e = w(room({ ac_hp: 1 }), lm(1000), LM(), { needW: 3442.3, stage: 'pinning', hp: 1.5 });
+  for (const [st, v] of Object.entries({ spawn: 1823, pinning: 3442, fruiting: 3039, rest: 1845 })) assert.ok(Math.abs(e.perStage[st] - v) <= 1, `${st} ${e.perStage[st]}`);
+  const ready = LM(); ready.farmType = 'ready';
+  w(room({ ac_hp: 1 }), lm(1000), ready, { needW: 3038.6, stage: 'fruiting', hp: 1.5 });
+  w(room({ ac_hp: 1, walls: 'zinc', roof: 'zinc' }), lm(1000), LM(), { needW: 16178.9, stage: 'pinning', hp: 6 });
+  w(room({ ac_hp: 1, walls: 'pu50', roof: 'pu50' }), lm(1000), LM(), { needW: 2393.6, stage: 'pinning', hp: 1 });
+  w(room({ ac_hp: 1, walls: 'pu75', roof: 'pu75' }), lm(1000), LM(), { needW: 2229.8, stage: 'pinning', hp: 1 });
+  w(room(), lm(2500), undefined, { needW: 5969.8, stage: 'pinning', hp: 2.5 });
+});

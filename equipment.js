@@ -108,10 +108,64 @@ function plantOf(eqIn, room) {
   return plant;
 }
 
+// ---------- shared by estimate and the check ----------
+const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
+const idx = hp => AC_SIZES.findIndex(s => s.hp === hp);
+
+// C8 6 step 1: the settings through importSettings(exportSettings()), days and flushes rounded as C7 4.2 step 3.
+function settingsOf(opts) {
+  const CC = global.ClimateController;
+  const cfg = opts.settings !== undefined ? CC.importSettings(CC.exportSettings(opts.settings)).settings : CC.defaultSettings();
+  for (const k of ['spawn', 'pinning', 'fruiting', 'rest']) cfg.program.days[k] = Math.max(1, Math.round(cfg.program.days[k]));
+  cfg.program.flushes = Math.max(1, Math.round(cfg.program.flushes));
+  return cfg;
+}
+const blocksOf = mix => Math.max(1, Math.round(mix.filter(m => Number.isFinite(m.blocks) && m.blocks > 0).reduce((s, m) => s + m.blocks, 0)));
+
+// Targets and CO2 purge levels of one stage (C8 6 step 2 and 3; fruiting takes the common targets and the default rules).
+function stageTargets(tg, st) {
+  const CC = global.ClimateController;
+  if (st === 'fruiting') {
+    const r = CC.defaultRules(tg.co2Lim);
+    return { spT: tg.spT, spRH: tg.spRH, co2Lim: tg.co2Lim, start: r.fanOn, stop: r.fanOff };
+  }
+  const t = CC.profileTargets(tg.crop, st);
+  return { spT: t.spT, spRH: t.spRH, co2Lim: t.co2Lim, start: t['rules.fanOn'], stop: t['rules.fanOff'] };
+}
+
+// C8 6: quick heat balance. Fresh air is the average outdoor air of the purges (C9), at least the wall leakage.
+function estimate(room, mix, opts = {}) {
+  const CC = global.ClimateController, CAP = global.ClimateCapacity;
+  const eq = { ...DEFAULTS, ...(room.equipment || {}) }, region = opts.region || 'my-lowland';
+  const cfg = settingsOf(opts), tg = CAP.commonTargets(mix), plant = plantOf(eq, room);
+  const P = SIM.plantOf(plant), R = CAP.roomOf({ ...room, plant });
+  const n = blocksOf(mix), c = CAP.mixCo2(room, mix);
+  const perStage = {};
+  for (const st of CC.FARM_TYPES[cfg.farmType].stages) {
+    const t = stageTargets(tg, st), fac = P.blockStage[st];
+    const dC = (t.start + t.stop) / 2 - R.co2Out;
+    const q = Math.max(R.infAch * R.volume, n * c * fac / dC) / 3600;                 // m³/s
+    const ahT = t.spRH / 100 * SIM.ahSat(t.spT);
+    const blockW = n * c * fac / 60000 * P.resp.wPerLpm;
+    const blockG = n * c * fac / 60000 * P.resp.gpsPerLpm + (st === 'fruiting' ? n * P.transpGph / 3600 : 0);
+    const L = cfg.program.lights, lit = h => !!L.stages[st] && h * 60 >= L.on && h * 60 < L.off;
+    // The pass rule allows 5 % of a day out of band: the second-largest hourly need of each design day.
+    perStage[st] = Math.max(...CAP.DESIGN_DAYS[region].days.map(d => d.T.map((T, h) => {
+      const ah = d.RH[h] / 100 * SIM.ahSat(T), sun = h > 7 && h < 19 ? Math.sin(Math.PI * (h - 7) / 12) : 0;
+      const S = (R.ua + 1206 * q) * (T - t.spT) + sun * P.loads.solarPeakW + P.loads.baseW + (lit(h) ? P.loads.lightsW : 0) + blockW;
+      return S + 2450 * Math.max(0, q * (ah - ahT) + blockG);
+    }).sort((a, b) => b - a)[1]));
+  }
+  let stage = null;
+  for (const st of Object.keys(perStage)) if (stage === null || perStage[st] > perStage[stage]) stage = st;
+  const needW = perStage[stage];
+  const i = AC_SIZES.findIndex(s => s.w * eq.ac_units >= needW);
+  return { needW, stage, perStage, hp: AC_SIZES[i < 0 ? AC_SIZES.length - 1 : i].hp };
+}
+
 global.ClimateEquipment = {
   AC_SIZES, CONSTRUCTIONS, FOGGER_SIZES, AIR_SIZES, DEFAULTS, LIMITS, SOL_AIR_K, MARGIN, SHARE, RUNS, MAX_RUNS,
-  checkEquipment, geometry, shell, plantOf,
-  estimate: () => { throw new Error('stub'); },
+  checkEquipment, geometry, shell, plantOf, estimate,
   runCheckSteps: () => { throw new Error('stub'); }, runCheck: () => { throw new Error('stub'); }, runCheckAsync: () => { throw new Error('stub'); },
 };
 })(typeof window !== 'undefined' ? window : globalThis);
