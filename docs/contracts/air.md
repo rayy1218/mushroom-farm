@@ -136,8 +136,8 @@ A pure module in the style of `capacity.js`: an IIFE that sets `global.ClimateAi
 
 | Rule | Exact behaviour |
 |---|---|
-| Minimum on | 30 s (`AIR_MIN_ON_S`) for every air run, except a manual Off and a CO₂ safety exit, which act at once |
-| Minimum off | `rules.minOffS` after every air run; the CO₂ safety level ignores it |
+| Minimum on | 30 s (`AIR_MIN_ON_S`) for every air run, except a manual change (On or Off) and a CO₂ safety exit, which act at once |
+| Minimum off | `rules.minOffS` after every air run; the CO₂ safety level and a manual change ignore it |
 | Capped purge counter | `capRun += 1` after a capped purge; `capRun = 0` after a purge that reached `fanOff` |
 | Purge seconds | A purge's time counts from the step it starts to the step it ends (whole controller steps) |
 | Manual control, CO₂ fault | `st.air.state` goes to `idle` (offsets 0). A purge running at that moment ends without counting as capped. |
@@ -161,7 +161,7 @@ There is no Prepare step (owner decision, 2026-10-09). A 24 h prototype showed t
 |---|---|
 | Alarm | New `ALARMS` entry `{ id: 'airTooSmall', label: 'Air exchange too small for the CO₂ load', lvl: () => 'warning' }`; on when `st.air.capRun ≥ 3`; off when `capRun` returns to 0 |
 | Estimate | With the last rise rate: `prod = ClimateAir.prodFromRise({ ratePpmS, volume: cfg.roomM3, co2: CO2, co2Out: 420 })`; `need = ClimateAir.sizeFor({ volume: cfg.roomM3, co2Out: 420, prodM3h: prod, start: fanOn, stop: fanOff, capS: purgeMaxS })` |
-| Rise rate kept | The estimate uses the last rise rate that was not `null` |
+| Rise rate kept | The estimate uses the last positive rise rate; with none (no rate yet, or CO₂ falling), the "not measured yet" text |
 | Text | `st.air.sizeText`: `Purges don't reach <fanOff> ppm in <cap> min. The air exchange needs about <needM3h> m³/h (now <airM3h> m³/h).`; `null` when the alarm is off. `<needM3h>` is a plain integer (no thousands separator); `<cap>` is minutes with at most one decimal. With no rise rate yet: `Purges don't reach <fanOff> ppm in <cap> min. The air exchange is too small; the size needed is not measured yet.` With `needM3h = Infinity`: `Purges don't reach <fanOff> ppm in <cap> min: outside air alone cannot bring CO₂ this low; raise the stop level.` Shown in `st.why.air` and in the event that raises the alarm. |
 
 ### 5.6 Rules around the purge, in priority order
