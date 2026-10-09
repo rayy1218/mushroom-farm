@@ -275,3 +275,11 @@ test('AIR the room size of the air exchange reaches the simulation', () => {
   // energy per m³ moved is the same for any size, so the energy hardly changes
   assert.ok(Math.abs(small.totals.kwh - r.totals.kwh) / r.totals.kwh < 0.1, `${small.totals.kwh} vs ${r.totals.kwh}`);
 });
+
+test('a stage ramp is not counted against CO₂: pinning is judged against the limit the controller holds (C9 10, C7 scoring)', () => {
+  // After the spawn run (CO₂ limit 5000) the targets ramp to pinning's 800 ppm over rampH (4 h). Purges on demand
+  // follow the ramped limit, so CO₂ above 800 during the ramp is the program's intent, not a failure.
+  const r = getShortFull();
+  const pin = r.stages.find(s => s.stage === 'pinning');
+  assert.ok(pin.co2Below >= 98, `pinning CO₂ below the limit ${pin.co2Below.toFixed(1)} %`);
+});

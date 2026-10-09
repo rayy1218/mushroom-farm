@@ -182,7 +182,9 @@
       if (v.RH >= g.spRH - CC.BANDS.RH) openSeg.rhOk++;
       if (v.RH < g.spRH - CC.BANDS.RHAlarm) openSeg.lowRh++;
       if (v.RH > CAP.PASS.wetRH) openSeg.wet++;
-      if (v.CO2 <= g.co2Lim) openSeg.co2Below++;
+      // CO₂ is judged against the limit the controller holds: after a stage change the limit ramps over rampH, and
+      // purges on demand follow the ramp (C9 10), so CO₂ above the stage's own limit during the ramp is intended.
+      if (v.CO2 <= Math.max(g.co2Lim, cfg.co2Lim)) openSeg.co2Below++;
       if (v.core > openSeg.maxCore) openSeg.maxCore = v.core;
 
       // C7 10: the hour's running means (stage/flush of its first reading)

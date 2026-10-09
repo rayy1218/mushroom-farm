@@ -134,7 +134,7 @@
       // P2 humidity first: a purge that would dry the room waits while RH is low
       rhLock: true, rhStop: 3, rhResume: 1,
       // P3 CO2 purge: start and stop levels (ppm), time cap (s), minimum off time (s)
-      fanOn: lim - 100, fanOff: Math.max(450, lim - 300), purgeMaxS: 180, minOffS: 60,
+      fanOn: lim - 100, fanOff: Math.min(lim - 150, Math.max(600, lim - 300)), purgeMaxS: 180, minOffS: 60,
       // P4 the air exchange also runs for free cooling and outdoor drying
       freeCool: true, outdoorDry: true,
       // 2.6: fog cools first when the room is warm; AC fan speed follows humidity (high fan = warmer coil = less water out)

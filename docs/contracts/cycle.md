@@ -332,18 +332,18 @@ The 8640th step of loop day `day` (section 7.2, 0 … D − 1) lands exactly on 
 | `rmPerBlock` | number | `rm / n` (`n ≥ 1`, section 7.1) |
 | `pass` | boolean | Every segment passes |
 
-### 12.6 Example (defaults, draft measurement, not binding)
+### 12.6 Example (defaults, measurement, not binding)
 
-2000 grey oyster, default room (`{ volume: 60, vent: 'supply', calib: null }`), default settings, `my-lowland`: 83 days, 9 segments, about 4.1 s in Node 22.20 with the weather window (5.6 s on the whole series; same Result).
+Re-measured 2026-10-09 with the air exchange (C9). 2000 grey oyster, default room (`{ volume: 60, calib: null }`), default settings, `my-lowland`: 83 days, 9 segments, about 5 s in Node 22.20. Total 836 kWh (the old always-on fan: about 909 kWh).
 
 | Segment | `inT` | `rhOk` | `co2Below` | `maxCore` | `alarms` | ≈ kWh | Pass |
 |---|---|---|---|---|---|---|---|
-| spawn 1 (21 d) | 100 (99.8 excused) | 6.2 (not judged) | 100 | 28.2 | – | 227 | yes |
-| pinning 1 (4 d) | 99.2 | 96.3 | 99.3 | 28.1 | `tLo` 1, `sensor_RH` 1 | 77 | yes |
-| fruiting 1–4 (7 d each) | 99.6–100 | 99.4–100 | 99.9–100 | 27.4 | 0–1 `rhHi` | 97–103 | yes |
-| rest 1–3 (10 d each) | 100 | 100 | 100 | 27.4 | – | 67–70 | yes |
+| spawn 1 (21 d) | 100 | 3.4 (not judged) | 100 | 28.2 | – | 225 | yes |
+| pinning 1 (4 d) | 99.2 | 96.4 | 100 | 28.1 | `tLo` 1 | 60 | yes |
+| fruiting 1–4 (7 d each) | 99.9–100 | 98.8–99.8 | 100 | 27.4 | 0–1 `rhHi` | 85–88 | yes |
+| rest 1–3 (10 d each) | 100 | 100 | 100 | 27.4 | – | 66–69 | yes |
 
-The `sensor_RH` alarm in pinning is the controller's response check ("does not respond to its machine"), not a frozen value; it is real controller behaviour in this simulation and is reported as is. 6000 grey oyster, farm type `ready`: each fruiting segment fails with `temperature too high` (`inT` 72–79 %, `acTooSmall` 4–5 raises); the rest segments pass.
+CO₂ is judged against the limit the controller holds (C9 10): after the spawn run the CO₂ limit ramps from 5000 to 800 ppm over `rampH` (4 h), and purges on demand follow the ramp. The old model's `sensor_RH` alarm in pinning (a response-check false positive) no longer appears. 6000 grey oyster, farm type `ready`: each fruiting segment fails with `temperature too high` (`inT` 68–75 %, `acTooSmall` 6–7 raises); the rest segments pass.
 
 ## 13. What `cycle.js` uses
 
