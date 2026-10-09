@@ -1,6 +1,6 @@
 # Air exchange: short, powerful CO₂ purges: design
 
-Date: 2026-10-08. Status: approved in brainstorming. Built as its own mini-wave before wave 2 (contract C9 in `docs/contracts/air.md`); plan in `docs/superpowers/plans/2026-10-08-air-exchange/`.
+Date: 2026-10-08, revised 2026-10-09 (Prepare dropped after a prototype, section 2.3). Status: approved in brainstorming. Built as its own mini-wave before wave 2 (contract C9 in `docs/contracts/air.md`); plan in `docs/superpowers/plans/2026-10-08-air-exchange/`.
 
 ## Purpose
 
@@ -8,7 +8,7 @@ Date: 2026-10-08. Status: approved in brainstorming. Built as its own mini-wave 
 |---|---|
 | The fresh-air fan (300/600/900 m³/h) cannot pull CO₂ down to the stop level when the room is full: with 6,000 blocks even High holds about 710 ppm against a 700 ppm stop level, so the fan never stops | The air exchange is sized from the block count, so every purge reaches the stop level within a time cap |
 | The default "Steady" mode keeps the fan at Low all through pinning and fruiting, so outdoor air disturbs the room 24/7 | The fans are off between purges; the room is sealed except for wall leakage |
-| A purge is long and gentle, so temperature and humidity stay off target for a long time | A purge is short and powerful (at most 3 min); the room is prepared before it and recovers after it |
+| A purge is long and gentle, so temperature and humidity stay off target for a long time | A purge is short and powerful (at most 3 min); the AC and fogger recover after it |
 
 ## Physics this design rests on
 
@@ -24,7 +24,7 @@ Short purges do not reduce the total outdoor air per day: the blocks make a fixe
 
 A wider band (for example stop 600, start 1,000) makes purges rarer and deeper. The band is the setting that trades how often against how hard.
 
-In Malaysia a purge does not always dry the room: outdoor air at 33 °C and 60 % RH (about 21.5 g/m³) holds more water than a 25 °C room at 88 % RH (about 20.3 g/m³), so a daytime purge often pushes RH up as well as temperature. The Prepare step (section 2) therefore works in both directions.
+In Malaysia a purge does not always dry the room: outdoor air at 33 °C and 60 % RH (about 21.5 g/m³) holds more water than a 25 °C room at 88 % RH (about 20.3 g/m³), so a daytime purge often pushes RH up as well as temperature. That is why humidity first (2.4) delays only the purges that would dry the room.
 
 ## Decisions
 
@@ -33,7 +33,7 @@ In Malaysia a purge does not always dry the room: outdoor air at 33 °C and 60 %
 | Hardware | One filtered intake fan and one exhaust fan, each with a motorised damper, switched on and off together on demand (the industrial standard). No continuous fresh air. |
 | Size | A setting per room (`air_m3h`); the app recommends it (section 4) |
 | Purge end | CO₂ reaches the stop level, or the time cap (3 min) is reached |
-| AC and fogger | Prepare before the purge (direction-aware), recover after it; no AC setback |
+| AC and fogger | Normal targets through the purge, recover after it; no AC setback. (A Prepare step was designed and dropped: section 2.3.) |
 | Old fresh-air modes | Both removed (`steady` with base levels, and on/off `purge` at a fixed level) |
 | Model | Approach B: a new on/off command `air.on` for the pair; fan levels removed everywhere |
 | When | Its own mini-wave now, before wave 2: a frozen contract C9, its own database upgrade, parallel streams. Wave 2 builds on the new air model; the wave 2 and C8 drafts are amended to match (section 3). |
@@ -63,28 +63,30 @@ In Malaysia a purge does not always dry the room: outdoor air at 33 °C and 60 %
 | State | Starts when | Fans | AC and fogger |
 |---|---|---|---|
 | Idle | After a purge (and after the minimum off time) | Off | Normal targets |
-| Prepare | The predicted purge is at most `prepareLeadS` away (2.2) | Off | Prepare targets (2.3) |
-| Purge | CO₂ ≥ start level (`rules.fanOn`) | On | Prepare targets held; no AC setback |
+| Purge | CO₂ ≥ start level (`rules.fanOn`) | On | Normal targets; no AC setback |
 | End | CO₂ ≤ stop level (`rules.fanOff`), or the purge has lasted `purgeMaxS` | Off for at least `minOffS` | Normal targets again; the normal rules run the AC and fogger hard until the room is on target |
 
-### 2.2 Rise rate and predicted purge
+### 2.2 Rise rate and next purge
 
 | Item | Rule |
 |---|---|
 | Rise rate | Least-squares slope of CO₂ against time over the readings since the fans last stopped, needing at least 4 readings (2 min at the default 30 s reading period) |
 | Predicted time to purge | (start level − CO₂ now) ÷ rise rate |
-| No prediction | Rise rate ≤ 0, or fewer than 4 readings: Prepare waits |
-| Many blocks | Prepare acts only when the expected time between purges is at least `2 × prepareLeadS`. With frequent purges it would hold the room at the band edge all the time; a 24 h prototype (6000 blocks, 1800 m³/h) showed RH in band falling from 94.7 % to 85.4 % that way (owner decision, 2026-10-09). |
+| No prediction | Rise rate ≤ 0, or fewer than 4 readings |
+| Use | Shown to the farmer ("next purge in about 2 min") and used by the size estimate (2.4) |
 
-### 2.3 Prepare targets
+### 2.3 Prepare (dropped)
 
-| Quantity | Push of the purge | Prepare target |
-|---|---|---|
-| Temperature | Outdoor temperature above room temperature (purge warms) | `spT − 0.5 × BANDS.T` (bottom of the band) |
-| Temperature | Outdoor temperature below room temperature (purge cools) | `spT + 0.5 × BANDS.T` (top of the band) |
-| RH | Outdoor absolute humidity above the room's (purge wets) | `rhT − 0.5 × BANDS.RH` (bottom of the band) |
-| RH | Outdoor absolute humidity below the room's (purge dries) | `rhT + 0.5 × BANDS.RH` (top of the band) |
-| Either | Push smaller than 0.5 °C or 0.5 g/m³, or an outdoor sensor fault | No change |
+A Prepare step was designed: before a predicted purge, move the AC and fogger targets to the side of their bands away from the purge's push. Two 24 h prototype runs (on a stand-in for the simulation, 1800 m³/h) showed it costs time in band:
+
+| Run | Prepare | T in band | RH in band |
+|---|---|---|---|
+| 6000 blocks, Prepare whenever a purge is near | on | 59.2 % | 85.4 % |
+| 6000 blocks | off | 58.0 % | 94.7 % |
+| 2000 blocks, Prepare only between far-apart purges, half the band | on | 99.2 % | 93.8 % |
+| 2000 blocks | off | 100 % | 100 % |
+
+Short, capped purges alone kept the room in band, so the owner dropped Prepare (2026-10-09). The 58 % temperature result at 6000 blocks is the 3.5 kW aircond being too small for that load; the equipment check (C8) reports it.
 
 ### 2.4 Rules around the purge
 
@@ -106,8 +108,6 @@ In Malaysia a purge does not always dry the room: outdoor air at 33 °C and 60 %
 | `fanOn` (kept) | ppm | 450–20000 | `co2Lim − 100` | Purge starts at |
 | `fanOff` (kept) | ppm | 400–20000 | `max(450, co2Lim − 300)` | Purge stops at |
 | `purgeMaxS` (new) | s | 60–900 | 180 | Time cap of one purge |
-| `prepare` (new) | boolean | – | `true` | Prepare before a purge |
-| `prepareLeadS` (new) | s | 0–900 | 180 | How long before the predicted purge Prepare starts |
 | `minOffS` (new) | s | 30–600 | 60 | Minimum time the fans stay off after a purge |
 
 | Removed key | Was |
@@ -148,10 +148,10 @@ In Malaysia a purge does not always dry the room: outdoor air at 33 °C and 60 %
 | Place | Design |
 |---|---|
 | Room drawing | `SF-203` on the inlet wall and `EF-206` on the outlet wall (high or low per `inletAt` / `exhaustAt`), both drawn as fans; both spin during a purge; with the fans off the dampers show closed; text "Purge 1,800 m³/h" or "Off · dampers closed". `mimicLayout` loses the vent branch. |
-| Status card | "Exhaust fan" → "Air exchange (SF-203 + EF-206)". State: Idle, Prepare (purge in about 2 min), Purge 0:45 of 3:00, Delayed (humidity first); a plain-language "why" line |
-| Fan and CO₂ card | → "Air exchange and CO₂". Ladder: start level, stop level and the Prepare point; the AC setback row is removed. Stats: purges per day, average and longest purge, purges that hit the cap. |
+| Status card | "Exhaust fan" → "Air exchange (SF-203 + EF-206)". State: Idle (purge in about 2 min), Purge 0:45 of 3:00, Delayed (humidity first); a plain-language "why" line |
+| Fan and CO₂ card | → "Air exchange and CO₂". Ladder: start level and stop level; the AC setback row is removed. Stats: purges per day, average and longest purge, purges that hit the cap. |
 | At a glance | "Next purge in about 2 min" or "Purging 0:45"; per day: purges and their average length |
-| Settings panel (Installer) | Purge group: start, stop, time cap, Prepare on/off and lead time, minimum off time. Removed: fresh-air mode, base levels, purge level, AC during a purge. |
+| Settings panel (Installer) | Purge group: start, stop, time cap, minimum off time. Removed: fresh-air mode, base levels, purge level, AC during a purge. |
 | Machines (Auto/Manual) | The air exchange's manual output is On/Off |
 | Charts | The fan level area → an on/off band for the air exchange |
 | Test bench | The fresh-air mode select is replaced by "Air exchange size (m³/h)" (until C8 brings equipment per room) |
@@ -160,16 +160,16 @@ In Malaysia a purge does not always dry the room: outdoor air at 33 °C and 60 %
 
 | Test | Proves |
 |---|---|
-| `tests/controller.test.js` (append) | Idle → Prepare from the predicted rise; Purge at the start level; end at the stop level; end at the cap; the minimum off time; the 30 s minimum on time; Prepare's direction in the four cases of 2.3 and "no change" for a small push |
+| `tests/controller.test.js` (append) | Purge at the start level; end at the stop level; end at the cap; the minimum off time; the 30 s minimum on time; the next purge time from the rise rate |
 | `tests/controller.test.js` (append) | Humidity first delays a purge but never past `co2Lim`; the safety level ignores the cap; a CO₂ sensor fault gives a capped timed purge |
 | `tests/controller.test.js` (append) | The "fans too small" alarm fires after 3 capped purges and its size is within 15 % of the value from the simulation's true CO₂ output; it clears after a purge reaches the stop level |
 | `tests/integration.test.js` (append) | Balanced flow; leakage only with the dampers closed; power only while on; the positions feed the right zones |
-| Integration (2 simulated days) | 6,000 blocks at 1,800 m³/h: every purge ≤ 3 min and CO₂ never above `co2Lim`. 6,000 blocks at 900 m³/h: the alarm fires with an estimate of about 1,400 m³/h. Prepare on vs off: time outside the temperature and RH bands is lower with Prepare on. |
+| Integration (2 simulated days) | 6,000 blocks at 1,800 m³/h: every purge ≤ 3 min and CO₂ never above `co2Lim`. 6,000 blocks at 900 m³/h: the alarm fires with an estimate of about 1,400 m³/h. 2,000 blocks at 1,800 m³/h: short purges keep temperature and RH in band (at least 98 % and 97 % of the time). |
 | `tests/settings.test.js` (append) | An older settings file imports with one warning per removed key and keeps `fanOn` / `fanOff`; new keys reject values outside their ranges |
 | `tests/db.test.js` (append) | The new upgrade converts `fan` to `air` 0/1; a bucket row gives the fraction on |
 | `tests/vectors.test.js` | Passes on the regenerated vectors |
 | `tests/web-mimic.test.js` (update) | `mimicLayout` places both fans by `inletAt` / `exhaustAt` |
-| Headless Chrome | Both fans spin during a purge; the status card and the glance panel show Prepare, Purge and Delayed |
+| Headless Chrome | Both fans spin during a purge; the status card and the glance panel show the next purge, Purge and Delayed |
 
 ## 6. Build
 

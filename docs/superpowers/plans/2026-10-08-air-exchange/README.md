@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace the one fresh-air fan (levels 0–3, steady/purge modes, AC setback) with an on/off intake + exhaust pair that runs short, capped purges, prepares the room before each purge, and tells the farmer when the pair is too small.
+**Goal:** Replace the one fresh-air fan (levels 0–3, steady/purge modes, AC setback) with an on/off intake + exhaust pair that runs short, capped purges and tells the farmer when the pair is too small.
 
 **Architecture:** A new pure module `air.js` (`ClimateAir`) holds the purge arithmetic shared by the controller, the capacity check and the equipment check. Contract C9 (`docs/contracts/air.md`) is frozen first; then four streams work in parallel git worktrees (simulation, controller, data, web), each against C9 only; the lead merges in order, regenerates the vectors and runs the integration checks.
 
@@ -215,7 +215,7 @@ git commit -m "feat(air): ClimateAir purge time, size recommendation, rise rate 
 - [ ] **Step 1:** Append to the decisions table:
 
 ```markdown
-| 55 | Air exchange (C9; 14–54 are reserved by the parked wave 2 decisions on `wave2/contracts-folded`) | The one fresh-air fan, its levels, `env.vent`, `rules.airMode`, `baseFan`, `fanLevel`, `rhAction`, `fogBoost` and the AC-during-purge rules are replaced by an on/off intake + exhaust pair (`air.on`) with short purges capped at `rules.purgeMaxS`, Prepare timed from the CO₂ rise rate, and the `airTooSmall` alarm. Contract C9 (`docs/contracts/air.md`) overrides the sections listed in its section 10. The reading key `fan` becomes `air`; database upgrade 2 is C9's, so wave 2's planned upgrade becomes 3. `SETTINGS_VERSION` 2 with `upgradeSettings` for older settings and stored room settings. |
+| 55 | Air exchange (C9; 14–54 are reserved by the parked wave 2 decisions on `wave2/contracts-folded`) | The one fresh-air fan, its levels, `env.vent`, `rules.airMode`, `baseFan`, `fanLevel`, `rhAction`, `fogBoost` and the AC-during-purge rules are replaced by an on/off intake + exhaust pair (`air.on`) with short purges capped at `rules.purgeMaxS`, no Prepare step (dropped after a prototype, spec 2.3), and the `airTooSmall` alarm. Contract C9 (`docs/contracts/air.md`) overrides the sections listed in its section 10. The reading key `fan` becomes `air`; database upgrade 2 is C9's, so wave 2's planned upgrade becomes 3. `SETTINGS_VERSION` 2 with `upgradeSettings` for older settings and stored room settings. |
 ```
 
 - [ ] **Step 2:** In `docs/contracts/air.md`, change the status line to `Status: frozen (lead decision 55), <date>.`
@@ -319,15 +319,15 @@ test('6000 blocks at 900 m³/h: the size alarm, with an estimate near the true n
   assert.ok(Math.abs(est - truth) / truth <= 0.15, `estimate ${est}, truth ${truth}`);
 });
 
-test('Prepare on vs off: more time in the temperature and RH bands with Prepare on', () => {
-  const on = run({ env: crowded, cfg: noHarvest() });
-  const off = run({ env: crowded, cfg: noHarvest(), rules: { prepare: false } });
-  const out = r => (100 - r.inT) + (100 - r.inRH);
-  assert.ok(out(on) < out(off), `out of band: on ${out(on).toFixed(2)} %, off ${out(off).toFixed(2)} %`);
+test('2000 blocks at 1800 m³/h: short purges keep the room in band', () => {
+  const r = run({ env: { blocks: 2000, airM3h: 1800 }, cfg: noHarvest() });
+  assert.ok(r.inT >= 98, `temperature in band ${r.inT}`);
+  assert.ok(r.inRH >= 97, `humidity in band ${r.inRH}`);
+  assert.equal(r.cappedPurges, 0);
 });
 ```
 
-- [ ] **Step 4:** `node --test tests/integration.test.js` → pass. The Prepare test decides the default (owner decision 2026-10-09): if Prepare on is not better than off, set `rules.prepare` default to `false` in `controller.js`, change the test to assert that default with both numbers in a comment, and report the numbers to the user. Also run the Prepare comparison at 2000 blocks (purges far apart, where Prepare acts) and report both results.
+- [ ] **Step 4:** `node --test tests/integration.test.js` → pass. If a test fails, record the numbers and stop: that is a design finding for the user, not a test to loosen.
 - [ ] **Step 5: Commit** `git commit -am "test(integration): air exchange purges, size alarm, Prepare benefit (C9 section 11)"`
 
 ### Task 2.4: Re-measure the C7 example numbers
