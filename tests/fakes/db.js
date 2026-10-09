@@ -6,6 +6,21 @@ const AC_MODES = ['off', 'cool', 'heat', 'dry', 'fan'];
 const EVENT_LEVELS = ['info', 'good', 'warning', 'serious', 'critical'];
 const ALARM_LEVELS = ['warning', 'serious', 'critical'];
 const CAPACITY_VERDICTS = ['good', 'tight', 'too-dense', 'too-empty', 'impossible'];
+const AC_FANS = ['low', 'auto', 'high'];
+const CALIBRATION_SOURCES = ['csv', 'history', 'import'];
+const SIMULATION_KINDS = ['cycle', 'capacity', 'equipment'];
+// The kind/verdict pair CHECK of simulation_runs (C1 4.4); the union of the three lists is the verdict CHECK.
+const SIMULATION_VERDICTS = {
+  cycle: ['pass', 'fail', 'impossible'],
+  capacity: ['good', 'tight', 'too-dense', 'too-empty', 'impossible'],
+  equipment: ['enough', 'too-small', 'too-big', 'oversized', 'impossible'],
+};
+const ALL_SIMULATION_VERDICTS = [].concat(...Object.values(SIMULATION_VERDICTS));
+const AC_HP_SIZES = [1, 1.5, 2, 2.5, 3, 4, 5, 6];
+const WALLS = ['zinc', 'brick115', 'brick230', 'eps50', 'eps75', 'eps100', 'pu50', 'pu75', 'pu100'];
+const ROOFS = ['zinc', 'eps50', 'eps75', 'eps100', 'pu50', 'pu75', 'pu100'];
+// The 7 Equipment fields, in the order the missing-field message checks them (C1 6.14).
+const EQUIPMENT_FIELDS = ['ac_hp', 'ac_units', 'fog_lph', 'air_m3h', 'walls', 'roof', 'height'];
 
 function constraintError(message, errcode) {
   return Object.assign(new Error(message), { code: 'ERR_SQLITE_ERROR', errcode, errstr: 'constraint failed' });
@@ -70,12 +85,14 @@ function openFakeDb(options) {
   let calibrations = [];
   let cropMixes = []; // { room_id, pos, crop, blocks, co2_per_block }
   let capacityReports = [];
-  let readings = []; // internal: { room_id, t, T, RH, CO2, t_out, rh_out, ac_mode, ac_setpoint, fog, air, lights, circ, power_w, kwh, _seq }
+  let simulationRuns = []; // { id, room_id, created_at, kind, verdict, blocks, days, kwh, rm, utilisation, real_start, note, inputs: text, result: text }
+  const equipment = new Map(); // room_id -> { room_id, saved_at, ac_hp, ac_units, fog_lph, air_m3h, walls, roof, height }
+  let readings = []; // internal: { room_id, t, T, RH, CO2, t_out, rh_out, ac_mode, ac_setpoint, fog, air, lights, circ, power_w, kwh, ac_fan, stage, core, _seq }
   let events = [];
   let alarms = [];
   const controllerState = new Map(); // room_id -> { room_id, saved_at, controller: text, sim: text|null }
 
-  const nextId = { room: 1, settings: 1, calibration: 1, event: 1, alarm: 1, capacity: 1 };
+  const nextId = { room: 1, settings: 1, calibration: 1, event: 1, alarm: 1, capacity: 1, simulation: 1 };
   let readingSeq = 0;
 
   function assertOpen() {
@@ -104,7 +121,7 @@ function openFakeDb(options) {
     return {
       room_id: r.room_id, t: r.t, T: r.T, RH: r.RH, CO2: r.CO2, t_out: r.t_out, rh_out: r.rh_out,
       ac_mode: r.ac_mode, ac_setpoint: r.ac_setpoint, fog: r.fog, air: r.air, lights: r.lights, circ: r.circ,
-      power_w: r.power_w, kwh: r.kwh,
+      power_w: r.power_w, kwh: r.kwh, ac_fan: r.ac_fan, stage: r.stage, core: r.core,
     };
   }
 
@@ -120,7 +137,8 @@ function openFakeDb(options) {
     return {
       id: c.id, room_id: c.room_id, run_at: c.run_at, ua: c.ua, inf_ach: c.inf_ach, moist_buffer: c.moist_buffer,
       co2_per_block: c.co2_per_block, rmse_t: c.rmse_t, rmse_rh: c.rmse_rh, rmse_co2: c.rmse_co2,
-      log_rows: c.log_rows, applied_at: c.applied_at,
+      log_rows: c.log_rows, applied_at: c.applied_at, source: c.source, log_from: c.log_from, log_to: c.log_to,
+      equipment: jsonOrNull(c.equipment),
     };
   }
 
@@ -227,7 +245,7 @@ function openFakeDb(options) {
     return settingsVersionToPublic(row);
   }
 
-  const READING_KEYS = ['room_id', 't', 'T', 'RH', 'CO2', 't_out', 'rh_out', 'ac_mode', 'ac_setpoint', 'fog', 'air', 'lights', 'circ', 'power_w', 'kwh'];
+  const READING_KEYS = ['room_id', 't', 'T', 'RH', 'CO2', 't_out', 'rh_out', 'ac_mode', 'ac_setpoint', 'fog', 'air', 'lights', 'circ', 'power_w', 'kwh', 'ac_fan', 'stage', 'core'];
 
   function insertReading(roomId, reading) {
     assertOpen();
@@ -248,8 +266,11 @@ function openFakeDb(options) {
     const air = numColumn(reading.air, { type: 'INTEGER', boolInt: true, notNull: true, check: v => v === 0 || v === 1, name: 'readings.air' });
     const lights = numColumn(reading.lights, { type: 'INTEGER', boolInt: true, notNull: true, check: v => v === 0 || v === 1, name: 'readings.lights' });
     const circ = numColumn(reading.circ, { type: 'INTEGER', boolInt: true, notNull: true, check: v => v === 0 || v === 1, name: 'readings.circ' });
+    const ac_fan = numColumn(reading.ac_fan, { type: 'TEXT', notNull: false, check: v => AC_FANS.includes(v), name: 'readings.ac_fan' });
+    const stage = numColumn(reading.stage, { type: 'TEXT', notNull: false, name: 'readings.stage' });
+    const core = numColumn(reading.core, { type: 'REAL', notNull: false, name: 'readings.core' });
     readings.push({
-      room_id: roomId, t, T, RH, CO2, t_out, rh_out, ac_mode, ac_setpoint, fog, air, lights, circ, power_w, kwh,
+      room_id: roomId, t, T, RH, CO2, t_out, rh_out, ac_mode, ac_setpoint, fog, air, lights, circ, power_w, kwh, ac_fan, stage, core,
       _seq: readingSeq++,
     });
     return undefined;
@@ -280,6 +301,7 @@ function openFakeDb(options) {
         ac_mode: last.ac_mode, ac_setpoint: mean('ac_setpoint'),
         fog: meanAll('fog'), air: meanAll('air'), lights: meanAll('lights'), circ: meanAll('circ'),
         power_w: mean('power_w'), kwh: last.kwh,
+        ac_fan: last.ac_fan, stage: last.stage, core: mean('core'),
       };
     });
   }
@@ -423,7 +445,7 @@ function openFakeDb(options) {
   function saveCalibration(roomId, run) {
     assertOpen();
     requireRoom(roomId);
-    checkFields(run, ['ua', 'inf_ach', 'moist_buffer', 'co2_per_block', 'rmse_t', 'rmse_rh', 'rmse_co2', 'log_rows', 'run_at'], 'saveCalibration');
+    checkFields(run, ['ua', 'inf_ach', 'moist_buffer', 'co2_per_block', 'rmse_t', 'rmse_rh', 'rmse_co2', 'log_rows', 'run_at', 'source', 'log_from', 'log_to', 'equipment'], 'saveCalibration');
     const ua = numColumn(run.ua, { type: 'REAL', notNull: true, name: 'calibrations.ua' });
     const inf_ach = numColumn(run.inf_ach, { type: 'REAL', notNull: true, name: 'calibrations.inf_ach' });
     const moist_buffer = numColumn(run.moist_buffer, { type: 'REAL', notNull: true, name: 'calibrations.moist_buffer' });
@@ -433,8 +455,12 @@ function openFakeDb(options) {
     const rmse_co2 = numColumn(run.rmse_co2 === undefined ? null : run.rmse_co2, { type: 'REAL', notNull: false, name: 'calibrations.rmse_co2' });
     const log_rows = numColumn(run.log_rows === undefined ? null : run.log_rows, { type: 'INTEGER', notNull: false, name: 'calibrations.log_rows' });
     const run_at = numColumn(run.run_at === undefined ? now() : run.run_at, { type: 'INTEGER', notNull: true, name: 'calibrations.run_at' });
+    const source = numColumn(run.source === undefined ? null : run.source, { type: 'TEXT', notNull: false, check: v => CALIBRATION_SOURCES.includes(v), name: 'calibrations.source' });
+    const log_from = numColumn(run.log_from === undefined ? null : run.log_from, { type: 'INTEGER', notNull: false, name: 'calibrations.log_from' });
+    const log_to = numColumn(run.log_to === undefined ? null : run.log_to, { type: 'INTEGER', notNull: false, name: 'calibrations.log_to' });
+    const equipmentText = run.equipment == null ? null : jsonColumn(run.equipment, false, 'calibrations.equipment');
     const id = nextId.calibration++;
-    const row = { id, room_id: roomId, run_at, ua, inf_ach, moist_buffer, co2_per_block, rmse_t, rmse_rh, rmse_co2, log_rows, applied_at: null };
+    const row = { id, room_id: roomId, run_at, ua, inf_ach, moist_buffer, co2_per_block, rmse_t, rmse_rh, rmse_co2, log_rows, applied_at: null, source, log_from, log_to, equipment: equipmentText };
     calibrations.push(row);
     return calibrationToPublic(row);
   }
@@ -518,13 +544,150 @@ function openFakeDb(options) {
     return capacityReportToPublic(row);
   }
 
+  function simulationRunToPublic(r, withResult) {
+    const info = {
+      id: r.id, room_id: r.room_id, created_at: r.created_at, kind: r.kind, verdict: r.verdict, blocks: r.blocks,
+      days: r.days, kwh: r.kwh, rm: r.rm, utilisation: r.utilisation, real_start: r.real_start, note: r.note,
+      inputs: jsonOrNull(r.inputs),
+    };
+    if (withResult) info.result = jsonOrNull(r.result);
+    return info;
+  }
+
+  function isObject(v) {
+    return v !== null && typeof v === 'object';
+  }
+
+  function finiteOrNull(v) {
+    return typeof v === 'number' && Number.isFinite(v) ? v : null;
+  }
+
+  function findSimulationRun(roomId, runId) {
+    const row = simulationRuns.find(r => r.id === runId && r.room_id === roomId);
+    if (!row) throw new NotFoundError('simulation', runId);
+    return row;
+  }
+
+  // The summary columns of C1 6.13. A missing result gives undefined values, which the NOT NULL rules then reject.
+  function saveSimulationRun(roomId, run) {
+    assertOpen();
+    requireRoom(roomId);
+    checkFields(run, ['kind', 'inputs', 'result', 'note', 'real_start', 'at'], 'saveSimulationRun');
+    const result = isObject(run.result) ? run.result : {};
+    const totals = isObject(result.totals) ? result.totals : null;
+    let verdictIn;
+    if (run.kind === 'cycle') {
+      verdictIn = result.verdict === 'impossible' ? 'impossible' : (totals && totals.pass === true ? 'pass' : 'fail');
+    } else if (run.kind === 'equipment') {
+      verdictIn = result.verdict === 'impossible' ? 'impossible' : (isObject(result.ac) ? result.ac.verdict : undefined);
+    } else {
+      verdictIn = result.verdict;
+    }
+    let blocksIn = 0;
+    const mixIn = isObject(run.inputs) ? run.inputs.mix : undefined;
+    if (Array.isArray(mixIn)) for (const m of mixIn) if (isObject(m) && Number.isFinite(m.blocks) && typeof m.blocks === 'number') blocksIn += m.blocks;
+    const cycle = run.kind === 'cycle' && totals;
+    const created_at = numColumn(run.at === undefined ? now() : run.at, { type: 'INTEGER', notNull: true, name: 'simulation_runs.created_at' });
+    const kind = numColumn(run.kind, { type: 'TEXT', notNull: true, check: v => SIMULATION_KINDS.includes(v), name: 'simulation_runs.kind' });
+    const verdict = numColumn(verdictIn, {
+      type: 'TEXT', notNull: true, name: 'simulation_runs.verdict',
+      check: v => ALL_SIMULATION_VERDICTS.includes(v) && (!SIMULATION_KINDS.includes(run.kind) || SIMULATION_VERDICTS[run.kind].includes(v)),
+    });
+    const blocks = numColumn(blocksIn, { type: 'INTEGER', notNull: true, check: v => v >= 0, name: 'simulation_runs.blocks' });
+    const days = numColumn(cycle ? finiteOrNull(totals.days) : null, { type: 'INTEGER', notNull: false, check: v => v >= 1, name: 'simulation_runs.days' });
+    const kwh = numColumn(cycle ? finiteOrNull(totals.kwh) : null, { type: 'REAL', notNull: false, name: 'simulation_runs.kwh' });
+    const rm = numColumn(cycle ? finiteOrNull(totals.rm) : null, { type: 'REAL', notNull: false, name: 'simulation_runs.rm' });
+    const utilisation = numColumn(run.kind === 'capacity' ? finiteOrNull(result.utilisation) : null, { type: 'INTEGER', notNull: false, name: 'simulation_runs.utilisation' });
+    const real_start = numColumn(run.real_start === undefined ? null : run.real_start, { type: 'INTEGER', notNull: false, name: 'simulation_runs.real_start' });
+    const note = numColumn(run.note === undefined ? null : run.note, { type: 'TEXT', notNull: false, name: 'simulation_runs.note' });
+    const inputs = jsonColumn(run.inputs, true, 'simulation_runs.inputs');
+    const resultText = jsonColumn(run.result, true, 'simulation_runs.result');
+    const row = { id: nextId.simulation++, room_id: roomId, created_at, kind, verdict, blocks, days, kwh, rm, utilisation, real_start, note, inputs, result: resultText };
+    simulationRuns.push(row);
+    return simulationRunToPublic(row, true);
+  }
+
+  function listSimulationRuns(roomId, options) {
+    assertOpen();
+    requireRoom(roomId);
+    options = orEmpty(options);
+    checkFields(options, ['limit', 'before'], 'listSimulationRuns');
+    const limit = options.limit === undefined ? 50 : options.limit;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 200) throw new RangeError('listSimulationRuns: limit must be an integer from 1 to 200');
+    const before = options.before === undefined ? null : options.before;
+    if (before !== null && !Number.isInteger(before)) throw new RangeError('listSimulationRuns: before must be an integer or null');
+    return simulationRuns
+      .filter(r => r.room_id === roomId && (before === null || r.id < before))
+      .slice()
+      .sort((a, b) => b.id - a.id)
+      .slice(0, limit)
+      .map(r => simulationRunToPublic(r, false));
+  }
+
+  function getSimulationRun(roomId, runId) {
+    assertOpen();
+    requireRoom(roomId);
+    return simulationRunToPublic(findSimulationRun(roomId, runId), true);
+  }
+
+  function updateSimulationRun(roomId, runId, changes) {
+    assertOpen();
+    requireRoom(roomId);
+    checkFields(changes, ['note', 'real_start'], 'updateSimulationRun');
+    const updated = {};
+    if (changes && 'note' in changes) updated.note = numColumn(changes.note, { type: 'TEXT', notNull: false, name: 'simulation_runs.note' });
+    if (changes && 'real_start' in changes) updated.real_start = numColumn(changes.real_start, { type: 'INTEGER', notNull: false, name: 'simulation_runs.real_start' });
+    const row = findSimulationRun(roomId, runId);
+    Object.assign(row, updated);
+    return simulationRunToPublic(row, false);
+  }
+
+  function deleteSimulationRun(roomId, runId) {
+    assertOpen();
+    requireRoom(roomId);
+    const row = findSimulationRun(roomId, runId);
+    const info = simulationRunToPublic(row, false);
+    simulationRuns = simulationRuns.filter(r => r !== row);
+    return info;
+  }
+
+  function getEquipment(roomId) {
+    assertOpen();
+    requireRoom(roomId);
+    const row = equipment.get(roomId);
+    return row ? Object.assign({}, row) : null;
+  }
+
+  function saveEquipment(roomId, eq) {
+    assertOpen();
+    requireRoom(roomId);
+    checkFields(eq, EQUIPMENT_FIELDS.concat('at'), 'saveEquipment');
+    const given = eq == null ? {} : eq;
+    for (const key of EQUIPMENT_FIELDS) {
+      if (given[key] === undefined) throw new TypeError(`saveEquipment: missing field "${key}"`);
+    }
+    const saved_at = numColumn(given.at === undefined ? now() : given.at, { type: 'INTEGER', notNull: true, name: 'room_equipment.saved_at' });
+    const ac_hp = numColumn(given.ac_hp, { type: 'REAL', notNull: true, check: v => AC_HP_SIZES.includes(v), name: 'room_equipment.ac_hp' });
+    const ac_units = numColumn(given.ac_units, { type: 'INTEGER', notNull: true, check: v => v >= 1 && v <= 4, name: 'room_equipment.ac_units' });
+    const fog_lph = numColumn(given.fog_lph, { type: 'REAL', notNull: true, check: v => v >= 0.5 && v <= 50, name: 'room_equipment.fog_lph' });
+    const air_m3h = numColumn(given.air_m3h, { type: 'REAL', notNull: true, check: v => v >= 50 && v <= 10000, name: 'room_equipment.air_m3h' });
+    const walls = numColumn(given.walls, { type: 'TEXT', notNull: false, check: v => WALLS.includes(v), name: 'room_equipment.walls' });
+    const roof = numColumn(given.roof, { type: 'TEXT', notNull: false, check: v => ROOFS.includes(v), name: 'room_equipment.roof' });
+    const height = numColumn(given.height, { type: 'REAL', notNull: true, check: v => v >= 2 && v <= 6, name: 'room_equipment.height' });
+    if ((walls === null) !== (roof === null)) throw constraintError('CHECK constraint failed: (walls IS NULL) = (roof IS NULL)', 275);
+    const row = { room_id: roomId, saved_at, ac_hp, ac_units, fog_lph, air_m3h, walls, roof, height };
+    equipment.set(roomId, row);
+    return Object.assign({}, row);
+  }
+
   function close() {
     closed = true;
   }
 
   return {
     path: ':memory:',
-    version: 2,
+    version: 4,
+    sqlite: null,
     close,
     createRoom, listRooms, getRoom, updateRoom, archiveRoom,
     saveSettings, currentSettings, settingsHistory, getSettingsVersion,
@@ -535,6 +698,8 @@ function openFakeDb(options) {
     saveCalibration, listCalibrations, applyCalibration, currentCalibration,
     getMix, replaceMix,
     saveCapacityReport, latestCapacityReport,
+    saveSimulationRun, listSimulationRuns, getSimulationRun, updateSimulationRun, deleteSimulationRun,
+    getEquipment, saveEquipment,
   };
 }
 

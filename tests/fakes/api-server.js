@@ -5,7 +5,8 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const ARRAY_ROUTE_RE = /^\/api\/rooms(\/[^/]+\/(settings\/history|readings|events|alarms|calibrations|mix))?$/;
+const ARRAY_ROUTE_RE = /^\/api\/rooms(\/[^/]+\/(settings\/history|readings|events|alarms|calibrations|mix|simulations))?$|^\/api\/batches$/;
+const EQUIPMENT_ROUTE_RE = /^\/api\/rooms\/[^/]+\/equipment$/;
 
 const TOP_FILES = {
   '/': { file: 'index.html', type: 'text/html; charset=utf-8' },
@@ -13,10 +14,14 @@ const TOP_FILES = {
   '/styles.css': { file: 'styles.css', type: 'text/css; charset=utf-8' },
   '/controller.js': { file: 'controller.js', type: 'text/javascript; charset=utf-8' },
   '/sim.js': { file: 'sim.js', type: 'text/javascript; charset=utf-8' },
+  '/air.js': { file: 'air.js', type: 'text/javascript; charset=utf-8' },
   '/runtime.js': { file: 'runtime.js', type: 'text/javascript; charset=utf-8' },
   '/capacity.js': { file: 'capacity.js', type: 'text/javascript; charset=utf-8' },
   '/calib.js': { file: 'calib.js', type: 'text/javascript; charset=utf-8' },
   '/room-rules.js': { file: 'room-rules.js', type: 'text/javascript; charset=utf-8' },
+  '/cycle.js': { file: 'cycle.js', type: 'text/javascript; charset=utf-8' },
+  '/equipment.js': { file: 'equipment.js', type: 'text/javascript; charset=utf-8' },
+  '/harvest-rules.js': { file: 'harvest-rules.js', type: 'text/javascript; charset=utf-8' },
 };
 
 const WEB_EXT_TYPES = {
@@ -180,10 +185,12 @@ function startFakeApi(options = {}) {
 
     if (method === 'GET' && reqPath === '/api/stream') return startStream(req, res);
     if (method === 'GET' && ARRAY_ROUTE_RE.test(reqPath)) return sendJson(res, method, 200, []);
+    if (method === 'GET' && EQUIPMENT_ROUTE_RE.test(reqPath)) return sendJson(res, method, 200, null);
     if (method === 'GET' && reqPath.startsWith('/api/')) return sendJson(res, method, 200, {});
     if ((method === 'POST' || method === 'PUT' || method === 'PATCH') && reqPath.startsWith('/api/')) {
       return sendJson(res, method, 200, body === undefined ? null : body);
     }
+    if (method === 'DELETE' && reqPath.startsWith('/api/')) return sendJson(res, method, 200, {});
     return send404Json(res, method);
   }
 

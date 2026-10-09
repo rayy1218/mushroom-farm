@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
+const os = require('node:os');
 const { startFakeApi } = require('./fakes/api-server.js');
 
 const ROOT = path.join(__dirname, '..');
@@ -46,13 +47,42 @@ test('default replies', async (t) => {
   assert.equal(noBody.status, 200);
   assert.deepEqual(await noBody.json(), null);
 
-  const del = await fetch(api.url + '/api/rooms/3', { method: 'DELETE' });
-  assert.equal(del.status, 404);
-  assert.deepEqual(await del.json(), { error: 'Unknown route', details: [] });
+  const del = await fetch(api.url + '/api/rooms/3/simulations/7', { method: 'DELETE' });
+  assert.equal(del.status, 200); // C5 4.5 revision 7: DELETE under /api/ answers {}
+  assert.deepEqual(await del.json(), {});
+  const del2 = await fetch(api.url + '/api/batches/1/crates/2', { method: 'DELETE' });
+  assert.equal(del2.status, 200);
+  assert.deepEqual(await del2.json(), {});
+
+  const patch = await fetch(api.url + '/api/rooms/3', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'x' }) });
+  assert.deepEqual(await patch.json(), { name: 'x' });
+  const options = await fetch(api.url + '/api/rooms/3', { method: 'OPTIONS' });
+  assert.equal(options.status, 404); // any other method
 
   const page = await fetch(api.url + '/index.html');
   assert.equal(page.status, 404);
   assert.deepEqual(await page.json(), { error: 'Unknown route', details: [] });
+});
+
+test('default replies: simulations and batches are arrays, equipment is null (C5 4.5)', async (t) => {
+  const api = await startFakeApi();
+  t.after(() => api.close());
+  for (const p of ['/api/rooms/3/simulations', '/api/rooms/3/simulations?limit=5&before=9', '/api/batches', '/api/batches?room=1&open=1']) {
+    const res = await fetch(api.url + p);
+    assert.equal(res.status, 200, p);
+    assert.deepEqual(await res.json(), [], p);
+  }
+  const eq = await fetch(api.url + '/api/rooms/3/equipment');
+  assert.equal(eq.status, 200);
+  assert.equal(eq.headers.get('content-type'), 'application/json; charset=utf-8');
+  assert.equal(await eq.text(), 'null');
+  // The other routes keep the {} default: one simulation run, one batch, a room's calibration list is an array.
+  assert.deepEqual(await (await fetch(api.url + '/api/rooms/3/simulations/7')).json(), {});
+  assert.deepEqual(await (await fetch(api.url + '/api/batches/4')).json(), {});
+  assert.deepEqual(await (await fetch(api.url + '/api/rooms/3/calibrations')).json(), []);
+  // A reply set by the test beats a default.
+  api.reply('GET', '/api/rooms/3/equipment', 200, { room_id: 3 });
+  assert.deepEqual(await (await fetch(api.url + '/api/rooms/3/equipment')).json(), { room_id: 3 });
 });
 
 test('requests recording', async (t) => {
@@ -253,6 +283,38 @@ test('root: static files by C3 section 9 rules', async (t) => {
   assert.deepEqual(await rooms.json(), []);
 
   assert.ok(api.requests.some(r => r.path === '/index.html'));
+});
+
+test('root: the shared modules of C3 9, air.js, cycle.js, equipment.js and harvest-rules.js included', async (t) => {
+  // A temporary root: the test does not depend on which modules exist in the repo yet.
+  const names = ['controller', 'sim', 'air', 'runtime', 'capacity', 'calib', 'room-rules', 'cycle', 'equipment', 'harvest-rules'];
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fake-api-root-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  for (const n of names) fs.writeFileSync(path.join(root, `${n}.js`), `// ${n}\nglobalThis.x_${n.replace('-', '_')} = 1;\n`);
+  const api = await startFakeApi({ root });
+  t.after(() => api.close());
+  for (const n of names) {
+    const res = await fetch(`${api.url}/${n}.js`);
+    assert.equal(res.status, 200, n);
+    assert.equal(res.headers.get('content-type'), 'text/javascript; charset=utf-8', n);
+    assert.ok(Buffer.from(await res.arrayBuffer()).equals(fs.readFileSync(path.join(root, `${n}.js`))), n);
+  }
+  // A module that is not in the list is a 404, even when the file exists.
+  fs.writeFileSync(path.join(root, 'secret.js'), 'x');
+  const secret = await fetch(`${api.url}/secret.js`);
+  assert.equal(secret.status, 404);
+  assert.equal(await secret.text(), 'Not found');
+});
+
+test('root: /air.js, /cycle.js are the repo files', async (t) => {
+  const api = await startFakeApi({ root: ROOT });
+  t.after(() => api.close());
+  for (const n of ['air', 'cycle']) {
+    const res = await fetch(`${api.url}/${n}.js`);
+    assert.equal(res.status, 200, n);
+    assert.equal(res.headers.get('content-type'), 'text/javascript; charset=utf-8', n);
+    assert.ok(Buffer.from(await res.arrayBuffer()).equals(fs.readFileSync(path.join(ROOT, `${n}.js`))), n);
+  }
 });
 
 test('close(): ends open streams, server unreachable after', async () => {
