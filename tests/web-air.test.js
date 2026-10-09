@@ -37,7 +37,10 @@ test('airText: idle, with and without a predicted purge', () => {
   assert.deepEqual(airText({ st: stOf({ state: 'after' }), cur: null, rules, t: 100 }), { state: 'Idle', glance: 'Idle', chip: IDLE });
 });
 
-test('airText: the next purge is rounded to whole minutes, at least 1', () => {
+test('airText: the next purge is rounded up to whole minutes, at least 1 (as the controller why text)', () => {
+  for (const [s, m] of [[600, 10], [301, 6], [20, 1]]) {
+    assert.equal(airText({ st: stOf({ nextPurgeS: s }), cur: null, rules, t: 100 }).glance, `Next purge in about ${m} min`, `${s} s`);
+  }
   assert.deepEqual(airText({ st: stOf({ nextPurgeS: 150 }), cur: null, rules, t: 100 }),
     { state: 'Idle · purge in about 3 min', glance: 'Next purge in about 3 min', chip: IDLE });
   assert.deepEqual(airText({ st: stOf({ nextPurgeS: 20 }), cur: null, rules, t: 100 }),
@@ -49,6 +52,18 @@ test('airText: a CO₂ purge shows its time and the cap', () => {
   assert.deepEqual(airText({ st, cur: run('purge', 1000), rules, t: 1045 }),
     { state: 'Purge 0:45 of 3:00', glance: 'Purging 0:45', chip: { lvl: 'info', icon: '▲', text: 'Purging' } });
   assert.equal(airText({ st, cur: run('purge', 1000), rules: { ...rules, purgeMaxS: 240 }, t: 1125 }).state, 'Purge 2:05 of 4:00');
+});
+
+test('airText: a CO₂-fault timed purge shows Timed purge · off while the fans are off', () => {
+  const off = airText({ st: stOf({ timed: true, nextPurgeS: 600 }), cur: null, rules, t: 100 });
+  assert.equal(off.state, 'Timed purge · off');
+  assert.equal(off.glance, 'Timed purge · off');
+  assert.equal(airText({ st: stOf({ timed: true }, true, 'timed'), cur: run('timed', 1000), rules, t: 1090 }).state, 'Timed purge');
+});
+
+test('airText: an unknown run reason throws, a missing cur is not guessed', () => {
+  assert.throws(() => airText({ st: stOf({}, true, 'bogus'), cur: run('bogus', 1000), rules, t: 1090 }), /unknown air run reason bogus/);
+  assert.throws(() => airText({ st: stOf({ purgeStart: 1000 }, true), cur: null, rules, t: 1090 }));
 });
 
 test('airText: humidity first delays the purge', () => {

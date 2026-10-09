@@ -372,7 +372,7 @@ function createSettingsPanel(el, options) {
   document.addEventListener('farm-level', levelHandler);
 
   // ---- derived corrections applied after every raw write (7.4 "Corrections") ----
-  // The fan/AC/humidity pairs are corrected in the direction of the field the user just touched (below,
+  // The paired fields (purge start and stop, humidity first stop and resume) are corrected in the direction of the field the user just touched (below,
   // in each field's own handler): correcting both directions here unconditionally would undo the user's edit
   // when it pushes a paired field past its partner (for example rFanOff set above rFanOn).
   function applyDerived() {

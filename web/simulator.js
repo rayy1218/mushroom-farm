@@ -44,8 +44,7 @@ function sample(r) {
     ac: r.power.ac, hu: r.power.hu, air: r.power.air, li: r.power.lights || 0, ci: r.power.circ || 0,
     acSet: c.ac.power ? c.ac.setpoint : NaN,
     core: r.core != null ? r.core : NaN, vpd: ctl.state.vpd ?? NaN,
-    // `c.air && c.air.on`: the C9 4.2 / 6.3 form, 0 when a command has no air exchange.
-    cmd: { air: c.air && c.air.on ? 1 : 0, fog: c.hu.level, acPower: c.ac.power ? 1 : 0, acMode: c.ac.mode,
+    cmd: { air: c.air.on ? 1 : 0, fog: c.hu.level, acPower: c.ac.power ? 1 : 0, acMode: c.ac.mode,
       acSet: c.ac.setpoint, acFan: c.ac.fan, lights: c.lights.on ? 1 : 0, circ: c.circ.on ? 1 : 0 },
     spT: cfg.spT, spRH: cfg.spRH, co2Lim: cfg.co2Lim, fanOn: R.fanOn, fanOff: R.fanOff });
   if (samples.length > MAX_SAMPLES) samples.splice(0, samples.length - MAX_SAMPLES);
@@ -693,17 +692,19 @@ function mimicLayout({ inletAt, exhaustAt }) {
 // (tests/web-air.test.js).
 const RUN_TEXT = { safety: 'Safety run', timed: 'Timed purge', 'free cooling': 'Free cooling', drying: 'Drying', manual: 'Manual on' };
 function airText({ st, cur, rules, manual = { auto: true, on: false }, t }) {
-  const A = st.air, mmss = s => UI.fmtMinSec(Math.max(0, Math.round(s))), mins = s => Math.max(1, Math.round(s / 60));
+  const A = st.air, mmss = s => UI.fmtMinSec(Math.max(0, Math.round(s))), mins = s => Math.max(1, Math.ceil(s / 60));
   if (st.cmd.air.on) {
     // st.airReason follows the run now (a purge can turn into a safety run); cur.reason keeps the first reason.
-    const reason = st.airReason || (cur ? cur.reason : 'purge'), ran = mmss(t - (cur ? cur.start : A.purgeStart));
+    const reason = st.airReason, ran = mmss(t - cur.start);
     if (reason === 'purge') return { state: `Purge ${ran} of ${mmss(rules.purgeMaxS)}`, glance: `Purging ${ran}`, chip: { lvl: 'info', icon: '▲', text: 'Purging' } };
     if (reason === 'safety') return { state: 'Safety run', glance: 'Safety run', chip: { lvl: 'serious', icon: '◆', text: 'Safety run' } };
+    if (!Object.hasOwn(RUN_TEXT, reason)) throw new Error(`airText: unknown air run reason ${reason}`);
     return { state: RUN_TEXT[reason], glance: RUN_TEXT[reason], chip: { lvl: 'info', icon: '●', text: RUN_TEXT[reason] } };
   }
   if (manual.auto === false) return { state: 'Manual off', glance: 'Manual off', chip: { lvl: 'none', icon: '○', text: 'Manual off' } };
   if (A.delayed) return { state: 'Delayed (humidity first)', glance: 'Delayed (humidity first)', chip: { lvl: 'info', icon: '❚❚', text: 'Delayed' } };
   const chip = { lvl: 'none', icon: '○', text: 'Idle' };
+  if (A.timed) return { state: 'Timed purge · off', glance: 'Timed purge · off', chip };
   if (!(A.nextPurgeS > 0)) return { state: 'Idle', glance: 'Idle', chip };
   const m = mins(A.nextPurgeS);
   return { state: `Idle · purge in about ${m} min`, glance: `Next purge in about ${m} min`, chip };

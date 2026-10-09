@@ -325,7 +325,7 @@ th:first-child, td:first-child { text-align: left; }
 .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 /* Climate controller section: its own grid, so a tall card never stretches its neighbours into empty boxes.
-   Wide: crop and targets | machine status | machines (Auto/Manual), then Fan and CO2 across. */
+   Wide: crop and targets | machine status | machines (Auto/Manual), then Air exchange and CO₂ across. */
 .ctl-section { grid-column: span 12; display: grid; gap: 12px; align-items: start;
   grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-areas: "targets status machines" "rules rules rules"; }
 .ctl-section .card.targets { grid-area: targets; }
