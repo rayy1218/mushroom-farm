@@ -665,17 +665,12 @@ const MIMIC_SVG = `
       <text x="404" y="390" class="m-small" id="mCore">Core -- °C</text>
     </svg>`;
 
-// The fresh-air path (C5 draft 9.1): the inlet is on the left wall, the outlet on the right wall; the fan sits where
-// the vent mode puts it, the other opening is passive. Pure, for Node tests.
-function mimicLayout({ vent, inletAt, exhaustAt }) {
-  const supply = vent === 'supply';
+// The air exchange of the drawing (C9 section 7): the filtered intake fan SF-203 on the left wall and the exhaust
+// fan EF-206 on the right wall, each high or low as env.inletAt / env.exhaustAt say. Pure, for Node tests.
+function mimicLayout({ inletAt, exhaustAt }) {
   return {
-    inlet: { band: inletAt === 'low' ? 'low' : 'high', ...(supply
-      ? { kind: 'fan', tag: 'SF-203', label: 'Filtered supply air' }
-      : { kind: 'grille', tag: null, label: 'Air in (open inlet)' }) },
-    outlet: { band: exhaustAt === 'high' ? 'high' : 'low', ...(supply
-      ? { kind: 'grille', tag: null, label: 'Air out (damper)' }
-      : { kind: 'fan', tag: 'EF-203', label: 'Exhaust' }) },
+    inlet: { band: inletAt === 'low' ? 'low' : 'high', kind: 'fan', tag: 'SF-203', label: 'Filtered intake' },
+    outlet: { band: exhaustAt === 'high' ? 'high' : 'low', kind: 'fan', tag: 'EF-206', label: 'Exhaust' },
   };
 }
 
