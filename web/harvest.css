@@ -1,1 +1,65 @@
-/* Harvest pages (C10 12): written by the Harvest web stream. */
+/* Harvest pages (C10 12): the Batches pages, the phone page and the stickers page. */
+
+/* The shell sets body[data-layout="bare"] on the phone page (lead decision 66): no menu bar. */
+body[data-layout="bare"] .bar { display: none; }
+
+.bt-page, .bd-page, .hv-page, .st-page { grid-column: 1 / -1; display: grid; gap: 12px; min-width: 0; }
+.bt-page .tag, .bd-page .tag { color: var(--muted); font-size: 13px; margin: 0; }
+.bt-page h3, .bd-page h3 { margin: 0; }
+.bt-page label, .bd-page label { display: grid; gap: 2px; font-size: 13px; color: var(--muted); }
+.bt-page input, .bt-page select, .bd-page input, .bd-page select, .bd-page textarea {
+  border: 1px solid var(--border-strong); background: var(--surface); color: var(--ink); border-radius: 6px; padding: 5px 8px; font: inherit;
+}
+
+.bt-tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+.bt-tabs button { border: 1px solid var(--border-strong); background: transparent; color: var(--ink); border-radius: 6px; padding: 5px 12px; cursor: pointer; font: inherit; }
+.bt-tabs button[aria-pressed="true"] { background: var(--band); font-weight: 600; }
+.bt-page #btStickers { justify-self: start; text-decoration: none; color: var(--ink); }
+
+.bt-list, .bd-flushes, .bd-crates { width: 100%; border-collapse: collapse; }
+.bt-list th, .bt-list td, .bd-flushes th, .bd-flushes td, .bd-crates th, .bd-crates td {
+  padding: 6px 8px; border-bottom: 1px solid var(--border); text-align: left;
+}
+.bt-list tr[data-id] { cursor: pointer; }
+.bt-list tr[data-id]:hover { background: var(--band); }
+
+.bt-form, .bd-form { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px 12px; align-items: end; }
+.bt-form h3 { grid-column: 1 / -1; }
+.bd-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+.hv-page { max-width: 520px; margin: 0 auto; width: 100%; }
+.hv-page h2 { margin: 0; font-size: 28px; }
+.hv-weigh { display: grid; gap: 8px; }
+.hv-batch, .hv-add {
+  display: block; width: 100%; min-height: 64px; font-size: 20px; border-radius: 8px;
+  border: 1px solid var(--border-strong); background: var(--surface); color: var(--ink); cursor: pointer;
+}
+.hv-pick { display: grid; gap: 8px; }
+.hv-add { font-weight: 700; background: var(--ink); color: var(--surface); }
+.hv-add:disabled { opacity: .5; }
+.hv-kg { width: 100%; font-size: 32px; min-height: 64px; text-align: center; box-sizing: border-box; }
+.hv-name { width: 100%; font-size: 18px; min-height: 48px; box-sizing: border-box; }
+.hv-picked { margin: 0; font-size: 18px; font-weight: 600; }
+.hv-msg { margin: 0; min-height: 1.4em; }
+.hv-msg.err { color: var(--critical); font-weight: 600; }
+.hv-summary { margin: 0; font-size: 18px; font-weight: 600; }
+.hv-today { list-style: none; padding: 0; margin: 0; }
+.hv-today li { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.hv-today li .btn { min-height: 44px; }
+
+.st-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+.st-page #stPrint { justify-self: start; }
+.st-card { border: 1px solid var(--border-strong); border-radius: 6px; padding: 10px; text-align: center; background: #fff; color: #000; }
+.st-name { font-size: 24px; font-weight: 700; margin: 0; }
+.st-qr { width: 160px; height: 160px; }
+.st-link { font: 12px var(--font-mono); word-break: break-all; margin: 4px 0; }
+.st-scan { margin: 0; }
+.st-warn { color: var(--critical); font-weight: 600; margin: 0; }
+
+@media print {
+  @page { size: A4; margin: 10mm; }
+  .bar, .st-page button, #stWarn, #stAdvice { display: none; }
+  .st-cards { grid-template-columns: repeat(2, 90mm); gap: 4mm; }
+  .st-card { width: 90mm; height: 88mm; break-inside: avoid; box-sizing: border-box; }
+  .st-qr { width: 60mm; height: 60mm; }
+}
