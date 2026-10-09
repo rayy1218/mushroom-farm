@@ -62,7 +62,7 @@ test('the fit finds the hidden room values from a 24 h log', () => {
   assert.ok(result.rmse.T < 0.3 && result.rmse.CO2 < 50, JSON.stringify(result.rmse));
 });
 
-test('CA1 the heat loss label and note', () => {
+test('CA1 the ua label and note', () => {
   const P = CAL.PARAMS;
   assert.equal(P.ua.label, 'Heat through walls and roof (W/K)');
   assert.equal(P.ua.note, 'Heat flows out when the room is warmer than outside, in when outside is hotter.');
@@ -86,5 +86,5 @@ test('CA3 no stage, no change', () => {
   const base = structuredClone(SIM.DEFAULT_ENV), p = CAL.paramsOf(base);
   const ref = CAL.replay(rows, base, p);
   assert.deepEqual(CAL.replay(rows.map(r => ({ ...r, stage: null })), base, p), ref);
-  assert.deepEqual(CAL.replay(rows.map(r => ({ ...r, stage: 'x' })), base, p), ref);
+  for (const stage of ['x', 'toString']) assert.deepEqual(CAL.replay(rows.map(r => ({ ...r, stage })), base, p), ref);
 });

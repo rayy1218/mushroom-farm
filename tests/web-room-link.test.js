@@ -31,15 +31,16 @@ async function setup(fn) {
   const cfg = CC.defaultSettings();
   const ctl = CC.create(cfg, null, null);
   const events = [], loaded = [], calls = [];
-  let pending = null;
-  const showChanges = (changes, opts) => new Promise(resolve => { calls.push({ changes, opts }); pending = resolve; });
+  let pending = null, shown;
+  const shownP = new Promise(r => { shown = r; });
+  const showChanges = (changes, opts) => new Promise(resolve => { calls.push({ changes, opts }); pending = resolve; shown(); });
   const link = createRoomLink({
     api: globalThis.FarmApi, diffSettings: SP.diffSettings, safeSettings: SP.safeSettings, showChanges,
     errorText: globalThis.FarmUi.errorText, cfg, getCtl: () => ctl, event: t => events.push(t), onLoaded: c => loaded.push(c),
   });
   const api = () => fake.requests.filter(r => r.path.startsWith('/api/'));
   const answer = v => pending(v);
-  const tick = () => new Promise(r => setTimeout(r, 30));
+  const tick = () => shownP;
   try { await fn({ fake, cfg, ctl, events, loaded, calls, link, api, answer, tick }); }
   finally { await fake.close(); }
 }
@@ -203,12 +204,30 @@ test('C1 one action at a time', () => setup(async ({ fake, link, answer, tick, a
   await tick();
   const n = api().length;
   assert.equal(link.busy, true);
-  assert.equal(await link.load(ROOM), null);
-  assert.equal(await link.save(ROOM), null);
+  const p2 = link.load(ROOM), p3 = link.save(ROOM);
+  for (const q of [p2, p3]) assert.equal(await Promise.race([q, new Promise(r => setTimeout(() => r('pending'), 1000))]), null);
   assert.equal(api().length, n);
   answer(null);
   await p;
   assert.equal(link.busy, false);
+}));
+
+test('C5 dispose while a request is in flight', () => setup(async ({ fake, cfg, link, events, loaded, calls, api }) => {
+  const before = structuredClone(cfg);
+  fake.reply('GET', GET, 200, different());
+  const p = link.load(ROOM);
+  link.dispose();
+  assert.equal(await p, null);
+  assert.deepEqual(events, []); assert.deepEqual(loaded, []); assert.deepEqual(cfg, before); assert.equal(calls.length, 0);
+}));
+
+test('C6 dispose while a save request is in flight', () => setup(async ({ fake, link, calls, api }) => {
+  fake.reply('GET', GET, 200, different());
+  const p = link.save(ROOM);
+  link.dispose();
+  assert.equal(await p, null);
+  assert.equal(calls.length, 0);
+  assert.equal(api().filter(r => r.method === 'PUT').length, 0);
 }));
 
 test('C2 dispose during a load touches nothing', () => setup(async ({ fake, cfg, link, events, loaded, answer, tick }) => {

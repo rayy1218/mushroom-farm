@@ -1259,7 +1259,7 @@ function createRoomLink(deps) {
   const { api, diffSettings, safeSettings, showChanges, errorText, cfg, getCtl, event, onLoaded } = deps;
   let busy = false, disposed = false;
 
-  async function run(room, body) {
+  async function run(body) {
     if (disposed || busy) return null;
     busy = true;
     try { return await body(); }
@@ -1271,7 +1271,7 @@ function createRoomLink(deps) {
   }
 
   function load(room) {
-    return run(room, async () => {
+    return run(async () => {
       const raw = await api.getSettings(room.id);
       if (disposed) return null;
       let roomSettings;
@@ -1291,7 +1291,7 @@ function createRoomLink(deps) {
   }
 
   function save(room) {
-    return run(room, async () => {
+    return run(async () => {
       const base = await api.getSettings(room.id);
       if (disposed) return null;
       const sent = structuredClone(cfg);
@@ -1448,6 +1448,6 @@ const FarmBench = {
 global.FarmBench = FarmBench;
 global.FarmShell.register('simulator', { mount, unmount });
 
-// Node only (tests/web-air.test.js); adds no browser global.
+// Node only (tests/web-air.test.js, tests/web-room-link.test.js); adds no browser global.
 if (typeof module === 'object' && module && module.exports) module.exports = { createRoomLink, airText, mimicLayout };
 })(typeof window !== 'undefined' ? window : globalThis);
