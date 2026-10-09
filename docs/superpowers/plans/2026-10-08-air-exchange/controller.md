@@ -4,9 +4,9 @@
 
 Date: 2026-10-09. Repo: `/home/foqcus/Documents/mushroom-farm`. Worktree: `~/.config/superpowers/worktrees/mushroom-farm/air-controller` (branch `stream/air-controller`). You work alone in that worktree, made by the lead from the step 0 commit. In this brief, `<base>` means that commit (`git merge-base HEAD master`); `air.js` and `tests/air.test.js` exist there. Contract C9 (`docs/contracts/air.md`) is frozen. Where this brief and C9 disagree, C9 wins: stop and report to the lead. Never put anything durable in `/tmp`.
 
-**Goal:** Replace the one fresh-air fan (levels 0–3, steady mode, AC setback, fog boost) in `controller.js` with the on/off air exchange of C9 section 5: short, capped CO₂ purges, Prepare before each purge, the size alarm, and settings version 2.
+**Goal:** Replace the one fresh-air fan (levels 0–3, steady mode, AC setback, fog boost) in `controller.js` with the on/off air exchange of C9 section 5: short, capped CO₂ purges, the predicted next purge, the size alarm, and settings version 2. There is no Prepare step (owner decision, C9 5.4): the AC and the fogger keep their normal targets through a purge.
 
-**Architecture:** `controller.js` stays one IIFE that sets `global.ClimateController`. The purge cycle is a small state machine in `st.air`. It runs before the AC and the fogger, which read its Prepare offsets, and before the air exchange request, which reads its state. The purge arithmetic (rise rate, size) comes from `air.js` (`global.ClimateAir`), read inside the functions at call time.
+**Architecture:** `controller.js` stays one IIFE that sets `global.ClimateController`. The purge cycle is a small state machine in `st.air`. It runs before the air exchange request, which reads its state. The purge arithmetic (rise rate, size) comes from `air.js` (`global.ClimateAir`), read inside the functions at call time.
 
 **Tech stack:** Plain JavaScript, Node 22, `node:test`, `node:assert/strict`. No build step, no dependencies.
 
@@ -16,8 +16,8 @@ Date: 2026-10-09. Repo: `/home/foqcus/Documents/mushroom-farm`. Worktree: `~/.co
 |---|---|---|---|
 | Command | `controller.js` | `air: { on }` replaces `fan: { level }` in `st.cmd`, `st.req` and `cfg.manual`; device key `air` in `st.why`, `st.hold`, `st.out` | 5.1 |
 | Settings version 2 | `controller.js` | New keys and ranges, removed keys gone, `RAMP_KEYS`, `SETTINGS_VERSION` 2, `upgradeSettings`, `importSettings` upgrades version 1 files | 5.2 |
-| Purge cycle | `controller.js` | `st.air` with the states `idle`, `prepare`, `purge`, `after`; 30 s minimum on; `rules.minOffS`; time cap; capped counter | 5.3 |
-| Prepare | `controller.js` | Rise rate from the CO₂ readings with the fans off, `nextPurgeS`, the gap rule, `prepT` / `prepRH` (half the band) used by the AC and the fogger | 5.4 |
+| Purge cycle | `controller.js` | `st.air` with the states `idle`, `purge`, `after`; 30 s minimum on; `rules.minOffS`; time cap; capped counter | 5.3 |
+| Next purge | `controller.js` | Rise rate from the CO₂ readings with the fans off; `nextPurgeS`, shown in the idle `why.air` text | 5.4 |
 | Size message | `controller.js` | `airTooSmall` alarm after 3 capped purges, `st.air.sizeText` with the needed size | 5.5 |
 | Rules | `controller.js` | Manual, CO₂ safety, humidity first, purge, timed purge, free cooling, outdoor drying | 5.6 |
 | Sensor check | `controller.js` | The CO₂ spike filter skips a falling CO₂ while the fans run and for one reading after | 5.6 |
@@ -29,8 +29,8 @@ Date: 2026-10-09. Repo: `/home/foqcus/Documents/mushroom-farm`. Worktree: `~/.co
 
 | File | At `<base>` | What you do |
 |---|---|---|
-| `controller.js` | 977 lines | Change (tasks 1–9). About 1096 lines at the end. |
-| `tests/controller.test.js` | 38 tests | Delete 13 tests, add 22 (47 at the end) |
+| `controller.js` | 977 lines | Change (tasks 1–9). About 1073 lines at the end. |
+| `tests/controller.test.js` | 38 tests | Delete 13 tests, add 17 (42 at the end) |
 | `tests/settings.test.js` | 4 tests | Edit one test, add 5 (9 at the end) |
 | `tests/vectors.test.js` | `pack` at line 9 | `pack` and the `air.js` require (task 10) |
 | `tools/make-vectors.js` | `packCmd` at line 12, scenarios at lines 39–47 | Pack, `cmdFields`, two scenarios, the `air.js` require (task 10). Do not run it. |
@@ -42,7 +42,7 @@ Every other file is read-only for you. That includes `air.js`, `tests/air.test.j
 | Document | Sections | Why |
 |---|---|---|
 | `docs/contracts/air.md` (C9) | 1, 2, 3, 5, 9, 10, 11 | **Your contract.** Words, ownership, `ClimateAir`, the controller rules, vectors, tests |
-| `docs/superpowers/specs/2026-10-08-air-exchange-purge-design.md` | Purpose, Physics, 2, 4.1, 5 | Why purges are short, which way Prepare moves, the sizing rule |
+| `docs/superpowers/specs/2026-10-08-air-exchange-purge-design.md` | Purpose, Physics, 2, 4.1, 5 | Why purges are short, why there is no Prepare step (2.3), the sizing rule |
 | `docs/superpowers/plans/2026-10-08-air-exchange/README.md` | Task 0.2, "Step 1: streams", Task 2.3 | The `air.js` code; what the lead reads from your controller (`state.stats`, `state.air.sizeText`, `alarmList()`) |
 | `air.js` | All (55 lines) | `riseRate`, `prodFromRise`, `sizeFor`, `MIN_POINTS` |
 | `controller.js` | All (977 lines) | The code you change. Read it fully once. |
@@ -56,16 +56,16 @@ Every other file is read-only for you. That includes `air.js`, `tests/air.test.j
 |---|---|---|
 | `ctl.update(reading)` | Returns `{ ac: { power, mode, setpoint, fan }, hu: { level }, air: { on }, lights: { on }, circ: { on } }` | 5.1 |
 | `cfg.manual.air` | `{ auto: true, on: false }` (replaces `manual.fan`) | 5.1 |
-| `ctl.state.air` | `{ state, since, purgeStart, capRun, prepT, prepRH, nextPurgeS, delayed, timed, sizeText }` | 5.3 |
+| `ctl.state.air` | `{ state, since, purgeStart, capRun, nextPurgeS, delayed, timed, sizeText }` | 5.3 |
 | `ctl.state.stats` | `{ airOnS, purges, purgeS, longestPurgeS, cappedPurges, delayedS, fogStarts, acCmds }`. `purges`, `purgeS`, `longestPurgeS`, `cappedPurges` count CO₂ purges only (state `purge`, counted in `startPurge` / `endPurge`); `airOnS` counts every air run. | 5.7 |
 | `ctl.state.why.air`, `ctl.state.hold.air`, `ctl.state.out.air.since` | Strings; time of the last switch | 5.1, 5.7 |
 | `ctl.state.airReason` | Reason of the running air run, `null` when off | 5.3 |
 | `ctl.purges()` | `{ cur, events, hours }`; `cur` is the running air run in the event shape with `end: null`, `co2End: null`, `capped: false`, and `null` when the fans are off; event `{ start, end, reason, co2Start, co2End, m3, capped }`; hour `{ h, runS, starts, m3, cappedN, fogLS, acHighS, acLowS }` | 5.7 |
-| `ctl.status('CO2')` | Sensor fault, `co2Safe`, `co2Hi`, safety run (`airReason === 'safety'` → `{ lvl: 'serious', icon: '◆', text: 'Safety run' }`), delayed, purge, prepare, below limit | 5.7 |
+| `ctl.status('CO2')` | Sensor fault, `co2Safe`, `co2Hi`, safety run (`airReason === 'safety'` → `{ lvl: 'serious', icon: '◆', text: 'Safety run' }`), delayed, purge, below limit | 5.7 |
 | `ctl.exhaust()` | Removed | 5.7 |
 | `ClimateController.upgradeSettings(obj)` | `{ settings, warnings }`, pure | 5.2 |
 | `ClimateController.SETTINGS_VERSION` | `2` | 5.2 |
-| `defaultSettings()` | Adds `airM3h: 1800`; `rules` adds `purgeMaxS`, `prepare`, `prepareLeadS`, `minOffS`; the 15 removed keys are gone | 5.2 |
+| `defaultSettings()` | Adds `airM3h: 1800`; `rules` adds `purgeMaxS`, `minOffS`; the 15 removed keys are gone | 5.2 |
 | `MACHINES` | `airTags: ['SF-203', 'EF-206']`; no `fanLevels`, no `fanM3h` | 5.1 |
 | `ALARMS` | Adds `{ id: 'airTooSmall', label: 'Air exchange too small for the CO₂ load', lvl: () => 'warning' }` | 5.5 |
 
@@ -87,7 +87,6 @@ Read it as `const AIR = global.ClimateAir` **inside** the function (C9 3). Every
 | `st.airPts` | Rise points `{ t, C }`: the good CO₂ readings since the last air run ended, at most 20 |
 | `st.airRate` (C9 5.5) | The last rise rate that was not `null` (ppm/s), for the size estimate |
 | `st.purgeRec` | The purge record that `ctl.purges()` returns (replaces `st.exh`) |
-| `st.airPrepared` | `true` when the running purge started from `prepare`: the Prepare offsets stay on in that purge only (C9 5.4 gap rule) |
 | `st.airRunCapped` | `true` when a capped purge ended during the running air run. It goes into the event's `capped` when the run ends, so `cur.capped` stays `false` (C9 5.7). |
 | `co2FallFree` | Argument of `validate`: the fans were on in the last interval, or stopped at the last reading (C9 5.6 sensor check). Applies to `CO2` and `CO2b`. |
 | `st.rhLocked`, `st.co2SafetyOn`, `st.fanDryOn` | Kept: the humidity-first lock, the safety run (now with the 20 ppm hysteresis), the drying hysteresis. During a safety run `st.air.state` is `idle` (a safety run is not a purge, C9 5.3); when it ends with CO₂ still at or above `fanOn`, a normal purge starts at once (the fans are still on, so no minimum off time). |
@@ -101,7 +100,6 @@ Read it as `const AIR = global.ClimateAir` **inside** the function (C9 3). Every
 | `why.air` while delayed | `Humidity first: RH <x> % is at or below <rhT − rhStop> % and outdoor air is drier. The purge waits until RH is <rhT − rhResume> % or CO₂ is <co2Lim> ppm.` |
 | `why.air` in free cooling / drying / manual | `Outdoor air is <d> °C cooler. The air exchange runs to help the AC.` / `Humidity is high and outdoor air is drier. The air exchange runs to dry the room.` / `Manual control. The controller does not change this output.` |
 | `hold.air` | `Minimum run time: <n> s to wait.` / `Minimum off time: <n> s to wait.` |
-| `why.ac`, `why.hu` in prepare and purge | Adds ` Prepare for a purge: the AC aims at <spT+prepT> °C.` / ` Prepare for a purge: the fogger aims at <rhT+prepRH> %.` |
 | Events not listed in C9 | `CO₂ safety level: the air exchange runs, ignoring the time cap` / `CO₂ below the safety level`; `CO₂ sensor back: timed purge ended` (today's text); `Air exchange: <reason>` when the reason changes during a run |
 | `sizeText` without a rise rate (C9 5.5) | `Purges don't reach <fanOff> ppm in <cap> min. The air exchange is too small; the size needed is not measured yet.` |
 | `sizeText` with `needM3h = Infinity` (C9 5.5) | `Purges don't reach <fanOff> ppm in <cap> min: outside air alone cannot bring CO₂ this low; raise the stop level.` |
@@ -113,9 +111,9 @@ Read it as `const AIR = global.ClimateAir` **inside** the function (C9 3). Every
 | 1 | `update` (top) | Record the time since the last reading with the old commands: `addRun` (air on), `addFog`, `addAcFan`; `stats.airOnS`, `stats.delayedS` |
 | 2 | `program`, `validate(r, co2FallFree)`, humidity target | As today, except that the CO₂ rate test skips a falling CO₂ while `co2FallFree` (C9 5.6 sensor check) |
 | 3 | `alarms` | As today. Skips `ALARMS` entries without `on` (`airTooSmall`). |
-| 4 | `airPlan` | Rise points and rate; P1 safety; manual or CO₂ fault reset; `nextPurgeS`; P2 `humidityFirst`; the states; Prepare offsets |
-| 5 | `airConditioner` | Uses `spT + st.air.prepT` |
-| 6 | `fogger` | Uses `st.rhT + st.air.prepRH` |
+| 4 | `airPlan` | Rise points and rate; P1 safety; manual, CO₂ fault or safety reset; `nextPurgeS`; P2 `humidityFirst`; the states |
+| 5 | `airConditioner` | As today, without the setback |
+| 6 | `fogger` | As today, without the fog boost |
 | 7 | `airExchange` | `req.air.on`, `why.air` (manual, safety, purge, timed purge, free cooling, drying); returns the reason |
 | 8 | `lights`, `circulation` | As today |
 | 9 | `protectAir`, then `st.airReason`; `protectOnOff('hu', …)`, `protectAc` | 30 s minimum on and `minOffS` for the air exchange; the reason of the running run; the fogger and AC as today |
@@ -184,7 +182,7 @@ require('../controller.js');
 function v1Settings() {
   const s = CC.defaultSettings();
   delete s.airM3h;
-  for (const k of ['purgeMaxS', 'prepare', 'prepareLeadS', 'minOffS']) delete s.rules[k];
+  for (const k of ['purgeMaxS', 'minOffS']) delete s.rules[k];
   Object.assign(s.rules, { fanOn: 1200, fanOff: 950, rhAction: 'low', airMode: 'steady', baseFan: { spawn: 0, pinning: 1, fruiting: 1, rest: 0 },
     fanLevel: 2, fogBoost: true, acPurge: true, acAction: 'setback', acSetbackC: 1, acOff: 900, acOn: 700, maxSetback: 30, guard: true });
   Object.assign(s.protect, { fanMinOn: 2, fanMinOff: 2 });
@@ -279,7 +277,7 @@ git commit -m "feat(controller): upgradeSettings for version 1 settings (C9 5.2)
 
 **Files:** Modify `controller.js` (most of the file). Test: `tests/controller.test.js`, `tests/settings.test.js`.
 
-This is the large step: every use of the old fan goes in one commit, because the old settings keys and the old logic depend on each other. After it, the cycle has the states `idle`, `purge` and `after`. Prepare (task 3), humidity first (task 4), the timed purge (task 5), the size alarm (task 6) and the snapshot upgrade (task 7) follow.
+This is the large step: every use of the old fan goes in one commit, because the old settings keys and the old logic depend on each other. After it, the cycle has the states `idle`, `purge` and `after`. The rise rate and next purge (task 3), humidity first (task 4), the timed purge (task 5), the size alarm (task 6) and the snapshot upgrade (task 7) follow.
 
 | What changes | Where (at `<base>`) |
 |---|---|
@@ -331,14 +329,14 @@ test('a version 1 file: one warning per removed key first, manual.fan becomes ma
   assert.equal('fan' in settings.manual, false);
   assert.deepEqual([settings.rules.fanOn, settings.rules.fanOff], [1200, 950]);
   for (const k of REMOVED) { const [g, key] = k.split('.'); assert.equal(key in settings[g], false, k); }
-  assert.deepEqual([settings.airM3h, settings.rules.purgeMaxS, settings.rules.prepare, settings.rules.prepareLeadS, settings.rules.minOffS], [1800, 180, true, 180, 60]);
+  assert.deepEqual([settings.airM3h, settings.rules.purgeMaxS, settings.rules.minOffS], [1800, 180, 60]);
   const noVersion = CC.importSettings({ format: 'mushroom-climate-settings', settings: v1Settings() });
   assert.deepEqual(noVersion.warnings, REMOVED.map(gone), 'a file without a version is version 1');
 });
 
 test('a version 2 file round-trips the new keys with no warnings; a removed key in it is unknown', () => {
   const cfg = CC.defaultSettings();
-  Object.assign(cfg.rules, { purgeMaxS: 240, prepare: false, prepareLeadS: 120, minOffS: 90 });
+  Object.assign(cfg.rules, { purgeMaxS: 240, minOffS: 90 });
   cfg.airM3h = 2400; cfg.manual.air = { auto: false, on: true };
   const r = CC.importSettings(CC.exportSettings(cfg));
   assert.deepEqual(r.warnings, []);
@@ -350,13 +348,12 @@ test('a version 2 file round-trips the new keys with no warnings; a removed key 
 test('the new settings are held inside their ranges', () => {
   const f = CC.exportSettings(CC.defaultSettings());
   f.settings.airM3h = 20;
-  Object.assign(f.settings.rules, { purgeMaxS: 5000, prepareLeadS: -5, minOffS: 10 });
+  Object.assign(f.settings.rules, { purgeMaxS: 5000, minOffS: 10 });
   const { settings, warnings } = CC.importSettings(f);
-  assert.deepEqual([settings.airM3h, settings.rules.purgeMaxS, settings.rules.prepareLeadS, settings.rules.minOffS], [50, 900, 0, 30]);
+  assert.deepEqual([settings.airM3h, settings.rules.purgeMaxS, settings.rules.minOffS], [50, 900, 30]);
   assert.deepEqual(warnings, [
     '"airM3h" = 20 is outside 50–10000: set to 50.',
     '"rules.purgeMaxS" = 5000 is outside 60–900: set to 900.',
-    '"rules.prepareLeadS" = -5 is outside 0–900: set to 0.',
     '"rules.minOffS" = 10 is outside 30–600: set to 30.',
   ]);
 });
@@ -366,7 +363,7 @@ test('version 2: the version, the ramp keys, the defaults and the machines', () 
   assert.deepEqual(Object.keys(CC.profileTargets('oyster', 'fruiting')), ['spT', 'spRH', 'co2Lim', 'rules.co2SafetyAt', 'rules.fanOn', 'rules.fanOff']);
   const d = CC.defaultSettings();
   assert.deepEqual(CC.upgradeSettings(d), { settings: d, warnings: [] }, 'the defaults have no removed key');
-  assert.deepEqual([d.airM3h, d.rules.purgeMaxS, d.rules.prepare, d.rules.prepareLeadS, d.rules.minOffS], [1800, 180, true, 180, 60]);
+  assert.deepEqual([d.airM3h, d.rules.purgeMaxS, d.rules.minOffS], [1800, 180, 60]);
   assert.deepEqual(d.manual.air, { auto: true, on: false });
   assert.deepEqual(CC.MACHINES.airTags, ['SF-203', 'EF-206']);
   assert.equal('fanLevels' in CC.MACHINES, false);
@@ -422,7 +419,7 @@ with:
 ```js
 // ---------- Air exchange (contract C9 section 5) ----------
 test('purge cycle: idle, purge at the start level, after at the stop level, idle after the minimum off time', () => {
-  const { feed, ctl, events } = make({ rules: { prepare: false } });
+  const { feed, ctl, events } = make();
   assert.equal(feed(0, { CO2: 850 }).air.on, false);
   assert.equal(ctl.state.air.state, 'idle');
   assert.equal(ctl.state.why.air, 'CO₂ is 850 ppm. The next purge starts at 900 ppm.');
@@ -443,7 +440,7 @@ test('purge cycle: idle, purge at the start level, after at the stop level, idle
 });
 
 test('every air run lasts at least 30 s, then stays off for the minimum off time', () => {
-  const { feed, ctl } = make({ rules: { prepare: false } });
+  const { feed, ctl } = make();
   assert.equal(feed(0, { T: 25.4, tOut: 20 }).air.on, true, 'free cooling');
   assert.equal(ctl.state.airReason, 'free cooling');
   assert.equal(feed(10, { T: 25.1, tOut: 20 }).air.on, true, 'no longer warm, but the minimum run time');
@@ -457,7 +454,7 @@ test('every air run lasts at least 30 s, then stays off for the minimum off time
 });
 
 test('a purge ends at the stop level only after 30 s', () => {
-  const { feed, ctl } = make({ rules: { prepare: false } });
+  const { feed, ctl } = make();
   feed(0, { CO2: 950 });
   assert.equal(feed(15, { CO2: 690 }).air.on, true, '15 s: still purging');
   assert.equal(ctl.state.air.state, 'purge');
@@ -465,7 +462,7 @@ test('a purge ends at the stop level only after 30 s', () => {
 });
 
 test('a purge stops at the time cap and counts as capped; the next purge waits for the minimum off time', () => {
-  const { feed, ctl, events } = make({ rules: { prepare: false } });
+  const { feed, ctl, events } = make();
   for (let t = 0; t <= 150; t += 30) assert.equal(feed(t, { CO2: 950 + (t % 60 ? 1 : 0) }).air.on, true, `t=${t}`);
   assert.deepEqual(ctl.purges().cur, { start: 0, end: null, reason: 'purge', co2Start: 950, co2End: null, m3: 75, capped: false }, 'the running purge');
   assert.equal(feed(180, { CO2: 951 }).air.on, false, '180 s: the cap');
@@ -493,14 +490,14 @@ test('a CO2 safety run is not a purge: no cap, no count; below the level the nor
   assert.equal(feed(660, { CO2: 1470 }).air.on, true, 'below 1480 ppm: a normal purge goes on');
   assert.deepEqual([ctl.state.air.state, ctl.state.air.purgeStart, ctl.state.airReason, ctl.state.stats.purges], ['purge', 660, 'purge', 1]);
   assert.deepEqual([ctl.purges().events.length, ctl.purges().cur.reason], [0, 'safety'], 'one air run; it started as a safety run');
-  const b = make({ rules: { prepare: false } });
+  const b = make();
   b.feed(0, { CO2: 950 }); b.feed(30, { CO2: 1400 }); b.feed(60, { CO2: 1550 });
   const S = b.ctl.state.stats;
   assert.deepEqual([b.ctl.state.air.state, S.purges, S.purgeS, S.cappedPurges, b.ctl.state.airReason], ['idle', 1, 60, 0, 'safety'], 'a running purge ends, not capped');
 });
 
 test('the purge record: each air run with reason, CO2, air volume and capped flag, split at the full hour', () => {
-  const { feed, ctl } = make({ rules: { prepare: false, purgeMaxS: 900 } });
+  const { feed, ctl } = make({ rules: { purgeMaxS: 900 } });
   feed(3300, { CO2: 950 });                                    // on at 55 min
   feed(3600, { CO2: 950 });
   feed(3900, { CO2: 690 });                                    // off at 1 h 5 min
@@ -515,7 +512,7 @@ test('the purge record: each air run with reason, CO2, air volume and capped fla
 });
 
 test('status CO2 and the why text while purging; manual control acts at once', () => {
-  const { feed, ctl, cfg } = make({ rules: { prepare: false } });
+  const { feed, ctl, cfg } = make();
   feed(0, { CO2: 950 });
   assert.deepEqual(ctl.status('CO2'), { lvl: 'info', icon: '▲', text: 'Purging' });
   assert.equal(ctl.state.why.air, 'Purging since 0:00 (at most 3:00). It stops at 700 ppm.');
@@ -589,8 +586,8 @@ with:
       co2Safety: true, co2SafetyAt: lim + 500,
       // P2 humidity first: a purge that would dry the room waits while RH is low
       rhLock: true, rhStop: 3, rhResume: 1,
-      // P3 CO2 purge: start and stop levels (ppm), time cap (s), Prepare and its lead time (s), minimum off time (s)
-      fanOn: lim - 100, fanOff: Math.max(450, lim - 300), purgeMaxS: 180, prepare: true, prepareLeadS: 180, minOffS: 60,
+      // P3 CO2 purge: start and stop levels (ppm), time cap (s), minimum off time (s)
+      fanOn: lim - 100, fanOff: Math.max(450, lim - 300), purgeMaxS: 180, minOffS: 60,
       // P4 the air exchange also runs for free cooling and outdoor drying
       freeCool: true, outdoorDry: true,
       // 2.6: fog cools first when the room is warm; AC fan speed follows humidity (high fan = warmer coil = less water out)
@@ -652,7 +649,7 @@ with:
 
   // State of the purge cycle (contract C9 section 5.3)
   function airInit() {
-    return { state: 'idle', since: null, purgeStart: null, capRun: 0, prepT: 0, prepRH: 0, nextPurgeS: null, delayed: false, timed: false, sizeText: null };
+    return { state: 'idle', since: null, purgeStart: null, capRun: 0, nextPurgeS: null, delayed: false, timed: false, sizeText: null };
   }
   function freshState(cfg) {
     return {
@@ -717,7 +714,7 @@ with:
         // A safety run is not a purge (5.3): a purge running when it starts ends here, not capped.
         if (A.state === 'purge') endPurge(t, null);
         setState('idle', t);
-        A.nextPurgeS = st.co2SafetyOn ? 0 : null; A.prepT = 0; A.prepRH = 0; A.delayed = false;
+        A.nextPurgeS = st.co2SafetyOn ? 0 : null; A.delayed = false;
         if (!st.co2SafetyOn) st.rhLocked = false;
         return;
       }
@@ -729,14 +726,11 @@ with:
         else if (runS >= R.purgeMaxS) endPurge(t, true);
       }
       if (A.state === 'after' && !on && offFor >= R.minOffS) setState('idle', t);
-      if (A.state === 'idle' || A.state === 'prepare') {
-        if (v.CO2 >= R.fanOn && (on || offFor >= R.minOffS)) startPurge(t);
-        else setState('idle', t);
-      }
+      if (A.state === 'idle' && v.CO2 >= R.fanOn && (on || offFor >= R.minOffS)) startPurge(t);
     }
 ```
 
-- [ ] **3.10** `controller.js`, line 536. Replace:
+- [ ] **3.10** `controller.js`, line 533. Replace:
 
 ```js
       if (!st.setbackOn) st.trim = clamp(st.trim - clamp(e, -2, 2) * dt / TRIM_TI, -3, 3);
@@ -748,7 +742,7 @@ with:
       st.trim = clamp(st.trim - clamp(e, -2, 2) * dt / TRIM_TI, -3, 3);
 ```
 
-- [ ] **3.11** `controller.js`, lines 547–564: replace everything from the line that starts with `const mode = st.dryOn ? 'dry' : st.acMode;` up to, not including, the line that starts with `// AC fan speed (2.6)`, with:
+- [ ] **3.11** `controller.js`, lines 544–561: replace everything from the line that starts with `const mode = st.dryOn ? 'dry' : st.acMode;` up to, not including, the line that starts with `// AC fan speed (2.6)`, with:
 
 ```js
       const mode = st.dryOn ? 'dry' : st.acMode;
@@ -760,7 +754,7 @@ with:
         : `Room is ${Math.abs(e).toFixed(1)} °C ${e > 0 ? 'above' : 'below'} the target. ${corr}`;
 ```
 
-- [ ] **3.12** `controller.js`, lines 621–626. Delete:
+- [ ] **3.12** `controller.js`, lines 618–623. Delete:
 
 ```js
       // During a purge, the incoming air is drier: fog one level more. The fogger never stops for a purge.
@@ -771,7 +765,7 @@ with:
       }
 ```
 
-- [ ] **3.13** `controller.js`, lines 629–668: replace everything from the line that starts with `function exhaustFan(v, f) {` up to, not including, the line that starts with `// Lights (2.2)`, with:
+- [ ] **3.13** `controller.js`, lines 626–665: replace everything from the line that starts with `function exhaustFan(v, f) {` up to, not including, the line that starts with `// Lights (2.2)`, with:
 
 ```js
     // The air exchange request (C9 5.6): manual, then P1 safety, P3 purge, P4 free cooling and drying.
@@ -808,7 +802,7 @@ with:
     }
 ```
 
-- [ ] **3.14** `controller.js`, lines 688–689. Replace:
+- [ ] **3.14** `controller.js`, lines 685–686. Replace:
 
 ```js
     // after the fan starts. 2 failed checks in a row = the sensor "does not respond".
@@ -822,7 +816,7 @@ with:
     function responseCheck(r, prevFog, prevOn) {
 ```
 
-- [ ] **3.15** `controller.js`, line 705. Replace:
+- [ ] **3.15** `controller.js`, line 702. Replace:
 
 ```js
       watch('CO2', prevFan === 0 && c.fan.level > 0, RESP_WIN_CO2, 5);
@@ -834,7 +828,7 @@ with:
       watch('CO2', !prevOn && c.air.on, RESP_WIN_CO2, 5);
 ```
 
-- [ ] **3.16** `controller.js`, lines 708–724: replace everything from the line that starts with `// ---------- 3. Machine protection ----------` up to, not including, the line that starts with `function protectAc(t) {`, with:
+- [ ] **3.16** `controller.js`, lines 705–721: replace everything from the line that starts with `// ---------- 3. Machine protection ----------` up to, not including, the line that starts with `function protectAc(t) {`, with:
 
 ```js
     // ---------- 4. Machine protection ----------
@@ -865,7 +859,7 @@ with:
     }
 ```
 
-- [ ] **3.17** `controller.js`, lines 746–761: replace everything from the line that starts with `// ---------- 4. Exhaust record ----------` up to, not including, the line that starts with `function addAcFan(t0, t1, fan) {`, with:
+- [ ] **3.17** `controller.js`, lines 743–758: replace everything from the line that starts with `// ---------- 4. Exhaust record ----------` up to, not including, the line that starts with `function addAcFan(t0, t1, fan) {`, with:
 
 ```js
     // ---------- 5. Purge record ----------
@@ -886,7 +880,7 @@ with:
     }
 ```
 
-- [ ] **3.18** `controller.js`, lines 779–780. Replace:
+- [ ] **3.18** `controller.js`, lines 776–777. Replace:
 
 ```js
     function historyFor(key, t, before) {
@@ -900,7 +894,7 @@ with:
       const H = st.purgeRec.hours;
 ```
 
-- [ ] **3.19** `controller.js`, lines 790–825: replace everything from the line that starts with `function recordExhaust(prevLvl, t, v) {` up to, not including, the line that starts with `// Call once for each new sensor reading.`, with:
+- [ ] **3.19** `controller.js`, lines 787–822: replace everything from the line that starts with `function recordExhaust(prevLvl, t, v) {` up to, not including, the line that starts with `// Call once for each new sensor reading.`, with:
 
 ```js
     // One event per air run (C9 5.7): reason at the start, CO2 at the start and the end, air volume, capped.
@@ -938,7 +932,7 @@ with:
     }
 ```
 
-- [ ] **3.20** `controller.js`, lines 824–864: replace everything from the line that starts with `// Call once for each new sensor reading.` up to, not including, the line that starts with `// Status of one measured value, for the display.`, with:
+- [ ] **3.20** `controller.js`, lines 821–861: replace everything from the line that starts with `// Call once for each new sensor reading.` up to, not including, the line that starts with `// Status of one measured value, for the display.`, with:
 
 ```js
     // Call once for each new sensor reading. The commands stay the same until the next reading.
@@ -980,7 +974,7 @@ with:
     }
 ```
 
-- [ ] **3.21** `controller.js`, lines 882–883. Replace:
+- [ ] **3.21** `controller.js`, lines 879–880. Replace:
 
 ```js
       if (st.fanCo2On && st.fanBlocked) return { lvl: 'info', icon: '❚❚', text: 'Purge held (RH)' };
@@ -995,7 +989,7 @@ with:
       return { lvl: 'good', icon: '✓', text: 'Below limit' };
 ```
 
-- [ ] **3.22** `controller.js`, line 887. Replace:
+- [ ] **3.22** `controller.js`, line 884. Replace:
 
 ```js
     return { update, status, ack, alarmList, exhaust: () => st.exh,
@@ -1007,7 +1001,7 @@ with:
     return { update, status, ack, alarmList, purges: () => st.purgeRec,
 ```
 
-- [ ] **3.23** `controller.js`, lines 891–910: replace everything from the line that starts with `const SETTINGS_FORMAT = 'mushroom-climate-settings', SETTINGS_VERSION = 1;` up to, not including, the line that starts with `// Settings of the one fresh-air fan, removed by contract C9.`, with:
+- [ ] **3.23** `controller.js`, lines 888–907: replace everything from the line that starts with `const SETTINGS_FORMAT = 'mushroom-climate-settings', SETTINGS_VERSION = 1;` up to, not including, the line that starts with `// Settings of the one fresh-air fan, removed by contract C9.`, with:
 
 ```js
   const SETTINGS_FORMAT = 'mushroom-climate-settings', SETTINGS_VERSION = 2;
@@ -1015,7 +1009,7 @@ with:
   const SETTING_LIMITS = {
     spT: [10, 35], spRH: [40, 99], co2Lim: [400, 20000], roomM3: [1, 100000], airM3h: [50, 10000],
     'rules.co2SafetyAt': [500, 20000], 'rules.rhStop': [1, 20], 'rules.rhResume': [0, 19], 'rules.fanOn': [450, 20000],
-    'rules.fanOff': [400, 20000], 'rules.purgeMaxS': [60, 900], 'rules.prepareLeadS': [0, 900], 'rules.minOffS': [30, 600],
+    'rules.fanOff': [400, 20000], 'rules.purgeMaxS': [60, 900], 'rules.minOffS': [30, 600],
     'protect.fogMinOn': [0, 30], 'protect.fogMinOff': [0, 30],
     'protect.acMinCmd': [0, 30], 'protect.timedPurgeOn': [1, 60], 'protect.timedPurgeEvery': [5, 240], 'protect.faultFogLevel': [1, 3],
     'program.rampH': [0, 48], 'program.flushes': [1, 10], 'program.days.spawn': [1, 90], 'program.days.pinning': [1, 30],
@@ -1030,7 +1024,7 @@ with:
   };
 ```
 
-- [ ] **3.24** `controller.js`, lines 940–941. Replace:
+- [ ] **3.24** `controller.js`, lines 937–938. Replace:
 
 ```js
     const warnings = [];
@@ -1047,7 +1041,7 @@ with:
     if (file.version > SETTINGS_VERSION)
 ```
 
-- [ ] **3.25** `controller.js`, line 965. Replace:
+- [ ] **3.25** `controller.js`, line 962. Replace:
 
 ```js
     })(out, file.settings, '');
@@ -1059,7 +1053,7 @@ with:
     })(out, src, '');
 ```
 
-- [ ] **3.26** `controller.js`, line 970. Delete:
+- [ ] **3.26** `controller.js`, line 967. Delete:
 
 ```js
     if (R.acOn > R.acOff - 50) { warnings.push('AC "until" level must be at least 50 ppm below the "from" level: corrected.'); R.acOn = R.acOff - 50; }
@@ -1072,7 +1066,7 @@ with:
 grep -nE "fanCo2On|purgeHeld|purgeReduced|setback|airLevel|AIR_STEP_S|fogBoost|fanM3h|fanLevels|st\.exh|fanReason|fanBlocked|co2Timed|cmd\.fan|req\.fan|acPurge|timedOnS|timedSource" controller.js
 ```
 
-Expected: exactly 2 lines: line 24 (the old header comment, rewritten in task 9) and the first line of `REMOVED_SETTINGS` (line 910).
+Expected: exactly 2 lines: line 24 (the old header comment, rewritten in task 9) and the first line of `REMOVED_SETTINGS` (line 907).
 
 - [ ] **Step 6: Commit.**
 
@@ -1081,118 +1075,40 @@ git add controller.js tests/controller.test.js tests/settings.test.js
 git commit -m "feat(controller): air exchange on/off with the purge cycle, settings version 2 (C9 5.1-5.3, 5.6, 5.7)"
 ```
 
-## Task 3: Rise rate and Prepare (C9 5.4)
+## Task 3: Rise rate and next purge (C9 5.4)
 
-**Files:** Modify `controller.js` (`AIR_POINTS`, `pushes`, `prepOf`, `airPlan`, `airConditioner`, `fogger`, `airWhy`, `status`). Test: `tests/controller.test.js`.
+**Files:** Modify `controller.js` (`AIR_POINTS`, `airPlan`, `airWhy`). Test: `tests/controller.test.js`.
+
+There is no Prepare step (owner decision, C9 5.4). The rise rate only predicts the next purge for the grower (and feeds the size estimate of task 6).
 
 | Rule (C9 5.4) | Code |
 |---|---|
 | Points: good CO₂ readings since the last air run ended, at most 20 | `airPlan`: cleared while the fans were on in the last interval (`prevOn`); a reading counts when `CO2` or `CO2b` was good at this step |
-| `nextPurgeS` | `0` at or above `fanOn`; `(fanOn − CO2) / rate` when `rate > 0`; else `null` |
-| Gap rule | `gapS = (fanOn − fanOff) / rate` when `rate > 0`, else `null`. Prepare starts only when `gapS ≥ 2 × prepareLeadS` (and `0 < nextPurgeS ≤ prepareLeadS`). Defaults: purges at least 360 s apart, a rise of at most 0.56 ppm/s. |
-| `prepT`, `prepRH` | `prepOf(push, band)`: `−0.5 × band` for a push ≥ 0.5, `+0.5 × band` for a push ≤ −0.5, else 0 (±0.5 °C, ±1.5 %) |
-| Unknown push | `pushes()` gives `null` with an outdoor fault (`f.out`), and also with a room `T` fault (both) or `RH` fault (humidity) |
-| Where they act | In `prepare`, and in the `purge` that follows a `prepare` (`st.airPrepared`, set in `startPurge`); never when `rules.prepare` is off. A purge that starts from `idle` (purges too frequent) moves no target. |
+| `nextPurgeS` | `0` at or above `fanOn`; `(fanOn − CO2) / rate` when `rate > 0`; else `null`. Used for nothing else. |
+| `why.air` in `idle` | `CO₂ is <x> ppm. The next purge starts at <fanOn> ppm` plus ` (in about <m> min)` when `nextPurgeS > 0` (`m` = `nextPurgeS / 60` rounded up), then `.` |
 
 - [ ] **Step 1: Write the failing tests.** Apply this edit.
 
 - [ ] **1.1** `tests/controller.test.js`: append at the end of the file (after line 389), after one blank line:
 
 ```js
-// A CO2 rise of 0.5 ppm/s from 760 ppm, read every 30 s up to 120 s: at 120 s the next purge is 160 s away (lead 180 s),
-// and purges are 400 s apart ((900 - 700) / 0.5), at least 2 x 180 s: Prepare acts.
-function prepared(o = {}, rules = {}) {
-  const m = make({ rules, protect: { acMinCmd: 0 } });
-  for (let t = 0; t <= 120; t += 30) m.feed(t, { CO2: 760 + t / 2, ...o });
-  return m;
-}
-
-test('Prepare starts from the predicted rise and ends when the prediction is too far away', () => {
-  const { ctl, feed, cfg } = prepared();
-  assert.equal(ctl.state.air.state, 'prepare');
+// ---------- Rise rate and next purge (C9 5.4) ----------
+test('next purge: predicted from the CO2 rise with the fans off, shown in the idle why text', () => {
+  const { feed, ctl } = make();
+  for (let t = 0; t <= 60; t += 30) feed(t, { CO2: 650 + t });
+  assert.equal(ctl.state.air.nextPurgeS, null, '3 readings: no rise rate yet');
+  assert.equal(ctl.state.why.air, 'CO₂ is 710 ppm. The next purge starts at 900 ppm.');
+  feed(90, { CO2: 740 });                                      // 1 ppm/s: 160 s to 900 ppm
   assert.ok(Math.abs(ctl.state.air.nextPurgeS - 160) < 1e-6, `next purge in ${ctl.state.air.nextPurgeS} s`);
-  assert.deepEqual(ctl.status('CO2'), { lvl: 'info', icon: '◷', text: 'Purge soon' });
-  assert.match(ctl.state.why.air, /^Purge in about 3 min: the AC aims at 24\.5 °C, the fogger at \d+ %\.$/);
-  cfg.rules.prepareLeadS = 60;
-  feed(150, { CO2: 835 });                                      // purge in 130 s > 60 s
   assert.equal(ctl.state.air.state, 'idle');
-  assert.deepEqual([ctl.state.air.prepT, ctl.state.air.prepRH], [0, 0]);
+  assert.equal(ctl.state.why.air, 'CO₂ is 740 ppm. The next purge starts at 900 ppm (in about 3 min).');
   assert.deepEqual(ctl.status('CO2'), { lvl: 'good', icon: '✓', text: 'Below limit' });
-});
-
-test('Prepare: the AC and the fogger move away from the push of the purge, in four directions', () => {
-  const cases = [
-    { name: 'warm, wet outdoor air', tOut: 33, rhOut: 60, T: -0.5, RH: -1.5 },
-    { name: 'cool, dry outdoor air', tOut: 18, rhOut: 50, T: 0.5, RH: 1.5 },
-    { name: 'warm, dry outdoor air', tOut: 30, rhOut: 40, T: -0.5, RH: 1.5 },
-    { name: 'cool, wet outdoor air', tOut: 24, rhOut: 100, T: 0.5, RH: -1.5 },
-  ];
-  for (const c of cases) {
-    const { ctl } = prepared({ T: 25, RH: 88, tOut: c.tOut, rhOut: c.rhOut });
-    assert.equal(ctl.state.air.state, 'prepare', c.name);
-    assert.ok(Math.abs(ctl.state.air.prepT - c.T) < 1e-9, `${c.name}: prepT ${ctl.state.air.prepT}`);
-    assert.ok(Math.abs(ctl.state.air.prepRH - c.RH) < 1e-9, `${c.name}: prepRH ${ctl.state.air.prepRH}`);
-  }
-});
-
-test('Prepare: a small push or no outdoor reading changes nothing', () => {
-  const small = prepared({ T: 25, RH: 88, tOut: 25.3, rhOut: 86.5 });
-  assert.equal(small.ctl.state.air.state, 'prepare');
-  assert.deepEqual([small.ctl.state.air.prepT, small.ctl.state.air.prepRH], [0, 0]);
-  const none = prepared({ tOut: null, rhOut: null });
-  assert.equal(none.ctl.state.f.out, true);
-  assert.equal(none.ctl.state.air.state, 'prepare');
-  assert.deepEqual([none.ctl.state.air.prepT, none.ctl.state.air.prepRH], [0, 0]);
-});
-
-test('Prepare: the AC and fogger targets move in prepare and purge, and come back after the purge', () => {
-  const o = { RH: 85.8, tOut: 33, rhOut: 60 };                  // warm, wet outdoor air: AC -0.5 °C, fogger -1.5 %
-  const { ctl, feed } = make({ protect: { acMinCmd: 0 } });
-  for (let t = 0; t <= 60; t += 30) feed(t, { CO2: 780 + t / 2, ...o });
-  assert.equal(ctl.state.air.state, 'idle', '3 readings: no rise rate yet');
-  assert.equal(ctl.state.cmd.ac.setpoint, 25);
-  assert.equal(ctl.state.cmd.hu.level, 2, 'deficit 3.2 %: level 2');
-  feed(90, { CO2: 825, ...o });                                  // 0.5 ppm/s: purge in 150 s, purges 400 s apart
-  assert.equal(ctl.state.air.state, 'prepare');
-  assert.equal(ctl.state.cmd.ac.setpoint, 24.5, 'the AC aims at 24.5 °C');
-  assert.equal(ctl.state.cmd.hu.level, 1, 'the fogger aims 1.5 % lower: deficit 1.7 %');
-  assert.match(ctl.state.why.ac, /Prepare for a purge: the AC aims at 24\.5 °C\./);
-  feed(120, { CO2: 900, ...o });
-  assert.equal(ctl.state.air.state, 'purge');
-  assert.equal(ctl.state.cmd.ac.setpoint, 24.5, 'held during the purge');
-  feed(150, { CO2: 690, ...o });
-  assert.equal(ctl.state.air.state, 'after');
-  assert.deepEqual([ctl.state.air.prepT, ctl.state.air.prepRH], [0, 0]);
-  assert.equal(ctl.state.cmd.ac.setpoint, 25);
-  assert.equal(ctl.state.cmd.hu.level, 2);
-});
-
-test('rules.prepare = false: no Prepare state and no offsets in a purge', () => {
-  const { ctl, feed } = prepared({}, { prepare: false });
-  assert.equal(ctl.state.air.state, 'idle');
-  assert.ok(ctl.state.air.nextPurgeS > 0, 'the prediction is still made');
-  feed(150, { CO2: 900 });
-  assert.equal(ctl.state.air.state, 'purge');
-  assert.deepEqual([ctl.state.air.prepT, ctl.state.air.prepRH], [0, 0]);
-});
-
-test('Prepare acts only when purges are far apart: (fanOn - fanOff) / rate >= 2 x prepareLeadS', () => {
-  const fast = make({ protect: { acMinCmd: 0 } });
-  for (let t = 0; t <= 120; t += 30) fast.feed(t, { CO2: 650 + t });   // 1 ppm/s: a purge every 200 s, under 360 s
-  assert.ok(Math.abs(fast.ctl.state.air.nextPurgeS - 130) < 1e-6, 'the next purge is inside the lead time');
-  assert.equal(fast.ctl.state.air.state, 'idle', 'frequent purges: no Prepare');
-  fast.feed(150, { CO2: 950 });
-  assert.equal(fast.ctl.state.air.state, 'purge');
-  assert.deepEqual([fast.ctl.state.air.prepT, fast.ctl.state.air.prepRH], [0, 0], 'a purge without Prepare moves no target');
-  const slow = prepared();                                       // 0.5 ppm/s: a purge every 400 s
-  assert.equal(slow.ctl.state.air.state, 'prepare');
-  slow.cfg.rules.prepareLeadS = 240;                             // 2 x 240 s = 480 s > 400 s
-  slow.feed(150, { CO2: 835 });
-  assert.equal(slow.ctl.state.air.state, 'idle', 'purges closer than 2 x the lead: Prepare stops');
+  feed(120, { CO2: 900 });
+  assert.deepEqual([ctl.state.air.nextPurgeS, ctl.state.air.state], [0, 'purge']);
 });
 
 test('the rise rate uses only readings with the fans off', () => {
-  const { ctl, feed } = make({ rules: { prepare: false } });
+  const { ctl, feed } = make();
   for (let t = 0; t <= 90; t += 30) feed(t, { CO2: 650 + t });
   assert.equal(ctl.state.airPts.length, 4);
   feed(120, { CO2: 950 });                                      // purge
@@ -1204,37 +1120,10 @@ test('the rise rate uses only readings with the fans off', () => {
 });
 ```
 
-- [ ] **Step 2: Run them to see them fail.** `node --test tests/controller.test.js` → expected `# pass 32`, `# fail 7` (the 7 new tests; `AssertionError`s such as `'idle' !== 'prepare'`).
+- [ ] **Step 2: Run them to see them fail.** `node --test tests/controller.test.js` → expected `# pass 32`, `# fail 2` (`nextPurgeS` stays `null`; `st.airPts` stays empty).
 - [ ] **Step 3: Implement.** Apply these edits in order.
 
-- [ ] **3.1** `controller.js`, line 222. Replace:
-
-```js
-      air: airInit(), airReason: null, airPts: [], airRate: null, airRunCapped: false,
-```
-
-with:
-
-```js
-      air: airInit(), airReason: null, airPts: [], airRate: null, airRunCapped: false, airPrepared: false,
-```
-
-- [ ] **3.2** `controller.js`, lines 454–455. Replace:
-
-```js
-    function startPurge(t) {
-      setState('purge', t);
-```
-
-with:
-
-```js
-    function startPurge(t) {
-      st.airPrepared = st.air.state === 'prepare';            // the Prepare offsets stay on in this purge (5.4)
-      setState('purge', t);
-```
-
-- [ ] **3.3** `controller.js`, line 117. Replace:
+- [ ] **3.1** `controller.js`, line 117. Replace:
 
 ```js
   const AIR_MIN_ON_S = 30;         // every air run lasts at least this long, so a noisy reading cannot stop it at once
@@ -1247,28 +1136,7 @@ with:
   const AIR_POINTS = 20;           // CO2 readings kept for the rise rate
 ```
 
-- [ ] **3.4** `controller.js`, line 451. Replace:
-
-```js
-    // ---------- 2. Purge cycle (contract C9 section 5) ----------
-```
-
-with:
-
-```js
-    // ---------- 2. Purge cycle (contract C9 section 5) ----------
-    // Push of a purge: outdoor minus room, temperature (°C) and absolute humidity (g/m³). null = not known.
-    function pushes(v, f) {
-      return {
-        T: f.out || f.T ? null : v.tOut - v.T,
-        AH: f.out || f.T || f.RH ? null : ahOf(v.tOut, v.rhOut) - ahOf(v.T, v.RH),
-      };
-    }
-    // Prepare offset (5.4): half the band, on the side away from the push; 0 for a push under 0.5 or an unknown push.
-    const prepOf = (push, band) => (push == null ? 0 : push >= 0.5 ? -0.5 * band : push <= -0.5 ? 0.5 * band : 0);
-```
-
-- [ ] **3.5** `controller.js`, lines 485–487. Replace:
+- [ ] **3.2** `controller.js`, lines 475–477. Replace:
 
 ```js
     // P1 CO2 safety level and the purge states. Runs before the AC and the fogger.
@@ -1279,11 +1147,10 @@ with:
 with:
 
 ```js
-    // Rise rate and prediction, P1 CO2 safety level, the purge states and the Prepare offsets.
-    // Runs before the AC and the fogger, which use st.air.prepT and st.air.prepRH.
+    // Rise rate and next purge, P1 CO2 safety level and the purge states. Runs before the AC and the fogger.
     function airPlan(v, f, t, prevOn) {
       const R = cfg.rules, A = st.air, AIR = global.ClimateAir;
-      // Rise rate: the good CO2 readings since the last air run ended (at most AIR_POINTS)
+      // Rise rate (5.4): the good CO2 readings since the last air run ended (at most AIR_POINTS)
       if (prevOn) st.airPts = [];
       else if (!f.CO2 && ['CO2', 'CO2b'].some(k => st.sensors[k] && st.sensors[k].goodT === t)) {
         st.airPts.push({ t, C: v.CO2 });
@@ -1292,7 +1159,7 @@ with:
       const rate = AIR.riseRate(st.airPts);
 ```
 
-- [ ] **3.6** `controller.js`, line 507. Replace:
+- [ ] **3.3** `controller.js`, line 496. Replace:
 
 ```js
       // States (5.3). offFor: how long the air exchange has been off (0 while on).
@@ -1301,210 +1168,45 @@ with:
 with:
 
 ```js
-      A.nextPurgeS = v.CO2 >= R.fanOn ? 0 : rate > 0 ? (R.fanOn - v.CO2) / rate : null;
-      const gapS = rate > 0 ? (R.fanOn - R.fanOff) / rate : null;            // expected time between purges (5.4)
-      const push = pushes(v, f);
+      A.nextPurgeS = v.CO2 >= R.fanOn ? 0 : rate > 0 ? (R.fanOn - v.CO2) / rate : null;   // shown to the grower (5.4)
       // States (5.3). offFor: how long the air exchange has been off (0 while on).
 ```
 
-- [ ] **3.7** `controller.js`, lines 519–522. Replace:
+- [ ] **3.4** `controller.js`, line 665. Replace:
 
 ```js
-        if (v.CO2 >= R.fanOn && (on || offFor >= R.minOffS)) startPurge(t);
-        else setState('idle', t);
-      }
-    }
+      return `CO₂ is ${ppm(v.CO2)} ppm. The next purge starts at ${R.fanOn} ppm.`;
 ```
 
 with:
 
 ```js
-        if (v.CO2 >= R.fanOn && (on || offFor >= R.minOffS)) startPurge(t);
-        else {
-          // Prepare only when purges are far apart: with frequent purges it would hold the room at the band edge.
-          const far = gapS != null && gapS >= 2 * R.prepareLeadS;
-          setState(R.prepare && far && A.nextPurgeS > 0 && A.nextPurgeS <= R.prepareLeadS ? 'prepare' : 'idle', t);
-        }
-      }
-      // Prepare offsets (5.4): in prepare, and in a purge that followed a prepare
-      const act = R.prepare && (A.state === 'prepare' || (A.state === 'purge' && st.airPrepared));
-      A.prepT = act ? prepOf(push.T, BANDS.T) : 0;
-      A.prepRH = act ? prepOf(push.AH, BANDS.RH) : 0;
-    }
+      const soon = A.nextPurgeS > 0 ? ` (in about ${Math.ceil(A.nextPurgeS / 60)} min)` : '';
+      return `CO₂ is ${ppm(v.CO2)} ppm. The next purge starts at ${R.fanOn} ppm${soon}.`;
 ```
 
-- [ ] **3.8** `controller.js`, line 550. Replace:
-
-```js
-      let e = v.T - cfg.spT, coreNote = '';
-```
-
-with:
-
-```js
-      // Prepare (C9 5.4): in prepare and purge the AC aims at spT + prepT.
-      const spT = cfg.spT + st.air.prepT;
-      let e = v.T - spT, coreNote = '';
-```
-
-- [ ] **3.9** `controller.js`, line 573. Replace:
-
-```js
-st.acMode !== 'heat' && !fanCanDry && v.T > cfg.spT - 1 && e < 0.5;
-```
-
-with:
-
-```js
-st.acMode !== 'heat' && !fanCanDry && v.T > spT - 1 && e < 0.5;
-```
-
-- [ ] **3.10** `controller.js`, line 577. Replace:
-
-```js
-(v.RH < st.rhT + 1 || v.T < cfg.spT - 1.5 || st.acMode === 'heat' || e > 1)
-```
-
-with:
-
-```js
-(v.RH < st.rhT + 1 || v.T < spT - 1.5 || st.acMode === 'heat' || e > 1)
-```
-
-- [ ] **3.11** `controller.js`, line 580. Replace:
-
-```js
-      const sp = cfg.spT + st.trim;
-```
-
-with:
-
-```js
-      const sp = spT + st.trim;
-```
-
-- [ ] **3.12** `controller.js`, line 585. Replace:
-
-```js
-        : `Room is ${Math.abs(e).toFixed(1)} °C ${e > 0 ? 'above' : 'below'} the target. ${corr}`;
-```
-
-with:
-
-```js
-        : `Room is ${Math.abs(e).toFixed(1)} °C ${e > 0 ? 'above' : 'below'} the target. ${corr}`;
-      if (st.air.prepT) why += ` Prepare for a purge: the AC aims at ${spT.toFixed(1)} °C.`;
-```
-
-- [ ] **3.13** `controller.js`, lines 610–661: replace everything from the line that starts with `function fogger(v, f, t) {` up to, not including, the line that starts with `// The air exchange request (C9 5.6)`, with:
-
-```js
-    function fogger(v, f, t) {
-      const m = cfg.manual.hu, q = st.req.hu, R = cfg.rules, P = cfg.protect;
-      if (!m.auto) { q.level = m.level; st.why.hu = 'Manual control. The controller does not change this output.'; return; }
-      // Prepare (C9 5.4): in prepare and purge the fogger aims at rhT + prepRH.
-      const rhT = st.rhT + st.air.prepRH;
-      if (st.harvestOn) {
-        // Drier caps for picking, but not below the harvest floor (hysteresis 1 %).
-        const floor = rhT - cfg.program.harvest.floorDrop;
-        if (f.RH || alarmOn('rhLo')) st.harvestFog = true;
-        else if (!st.harvestFog && v.RH <= floor) st.harvestFog = true;
-        else if (st.harvestFog && v.RH >= floor + 1) st.harvestFog = false;
-        q.level = !st.harvestFog ? 0 : !f.RH && v.RH < floor - 1 ? 3 : 2;
-        st.why.hu = `Harvest window ${hhmm(st.harvestWin.from)}–${hhmm(st.harvestWin.to)}: fog off so the caps are drier for picking.`
-          + (st.harvestFog ? ` RH is at the harvest floor ${floor.toFixed(0)} %, so fog level ${q.level}.` : ` Fog comes back below ${floor.toFixed(0)} % RH.`);
-        return;
-      }
-      st.harvestFog = false;
-      if (f.RH) {
-        // Safe state: copy the average fog of the hours before the fault, in 10 min cycles.
-        const learned = P.learnSafe ? historyFor('fogLS', t, st.sensors.RH.faultSince) : null;   // level-seconds per hour
-        if (learned != null) {
-          const avg = learned / 3600, L = clamp(Math.ceil(avg), 1, 3), onFrac = clamp(avg / L, 0.1, 1);
-          q.level = t % 600 < onFrac * 600 ? L : 0;
-          st.why.hu = `Humidity sensor fault: fog copies this hour of an earlier day, level ${L} for ${Math.round(onFrac * 10)} min of each 10 min.`;
-        } else {
-          q.level = t % 1200 < 600 ? P.faultFogLevel : 0;
-          st.why.hu = `Humidity sensor fault: fixed fog at level ${P.faultFogLevel}, 10 min on and 10 min off.`;
-        }
-        return;
-      }
-      if (!st.huOn && v.RH < rhT - 2 && !st.dryOn) st.huOn = true;
-      else if (st.huOn && (v.RH >= rhT + 0.5 || st.dryOn)) st.huOn = false;
-      const deficit = rhT + 1 - v.RH;
-      let lv = !st.huOn ? 0 : deficit > 4 ? 3 : deficit > 2 ? 2 : 1;
-      let why = st.huOn ? `Humidity is ${(rhT - v.RH).toFixed(1)} % below the target.`
-        : v.RH > rhT + 5 ? 'Humidity is above the target. The fogger stays off.'
-        : 'Humidity is in the band. The unit is on standby.';
-      // Fog-first cooling (2.6): when the room is warm, fog cools it by evaporation before the AC must work more.
-      const crop = CROPS[cfg.crop], eT = !f.T ? v.T - cfg.spT : 0;
-      if (!R.fogCool || f.T) st.fogCoolOn = false;
-      else if (!st.fogCoolOn && eT > 0.5 && v.RH < rhT + 1) st.fogCoolOn = true;
-      else if (st.fogCoolOn && (eT < 0.1 || v.RH >= rhT + 2.5)) st.fogCoolOn = false;
-      if (st.fogCoolOn) {
-        const want = eT > 1 ? 2 : 1;
-        if (lv < want) { lv = want; why = `Room is ${eT.toFixed(1)} °C warm: fog cools it first (evaporation).`; }
-      }
-      if (st.air.prepRH) why += ` Prepare for a purge: the fogger aims at ${rhT.toFixed(0)} %.`;
-      // Crop flag maxFog: a crop that must not get direct fog.
-      if (crop.maxFog && lv > crop.maxFog) { lv = crop.maxFog; why += ` ${crop.name}: fog limited to level ${crop.maxFog} (no direct fog on the crop).`; }
-      q.level = lv;
-      const fogMax = crop.maxFog || 3;
-      st.fogFullSince = lv >= fogMax ? (st.fogFullSince ?? t) : null;
-      st.why.hu = why + (lv > 0 ? ` Level ${lv}.` : '');
-    }
-```
-
-- [ ] **3.14** `controller.js`, lines 691–692. Replace:
-
-```js
-      if (A.state === 'after') {
-        const offAt
-```
-
-with:
-
-```js
-      if (A.state === 'prepare') return `Purge in about ${Math.ceil(A.nextPurgeS / 60)} min: the AC aims at ${(cfg.spT + A.prepT).toFixed(1)} °C, the fogger at ${(st.rhT + A.prepRH).toFixed(0)} %.`;
-      if (A.state === 'after') {
-        const offAt
-```
-
-- [ ] **3.15** `controller.js`, line 920. Replace:
-
-```js
-      if (st.air.state === 'purge') return { lvl: 'info', icon: '▲', text: 'Purging' };
-```
-
-with:
-
-```js
-      if (st.air.state === 'purge') return { lvl: 'info', icon: '▲', text: 'Purging' };
-      if (st.air.state === 'prepare') return { lvl: 'info', icon: '◷', text: 'Purge soon' };
-```
-
-- [ ] **Step 4: Run the tests.** `node --test tests/controller.test.js tests/settings.test.js` → expected `# pass 48`, `# fail 0` (controller 39).
+- [ ] **Step 4: Run the tests.** `node --test tests/controller.test.js tests/settings.test.js` → expected `# pass 43`, `# fail 0` (controller 34).
 - [ ] **Step 5: Commit.**
 
 ```bash
 git add controller.js tests/controller.test.js
-git commit -m "feat(controller): Prepare from the CO2 rise rate; AC and fogger targets move away from the purge's push (C9 5.4)"
+git commit -m "feat(controller): rise rate and the predicted next purge in the idle text (C9 5.4)"
 ```
 
 ## Task 4: Humidity first (C9 5.6, priority 2)
 
-**Files:** Modify `controller.js` (`humidityFirst`, `airPlan`, `airWhy`, `status`, `log`). Test: `tests/controller.test.js`.
+**Files:** Modify `controller.js` (`ahPush`, `humidityFirst`, `airPlan`, `airWhy`, `status`, `log`). Test: `tests/controller.test.js`.
 
 | Rule | Code |
 |---|---|
-| Lock on | `rules.rhLock`, RH ≤ `rhT − rhStop`, the fogger at its maximum for `FOG_FULL_S` (300 s), and `pushAH ≤ −0.5` |
+| Lock on | `rules.rhLock`, RH ≤ `rhT − rhStop`, the fogger at its maximum for `FOG_FULL_S` (300 s), and `pushAH ≤ −0.5` (`ahPush`: outdoor minus room absolute humidity; `null` with an outdoor, T or RH fault, so no lock) |
 | Lock off | RH ≥ `rhT − rhResume`; also off with an RH fault, in the harvest window, with `rhLock` off |
 | Delayed | Locked, not purging, and `fanOn ≤ CO₂ < co2Lim` (a safety run returns before this check). A delayed purge does not start. At `co2Lim` it starts anyway. |
 | Running purge | Never stopped by the lock |
 
 - [ ] **Step 1: Write the failing tests.** Apply this edit.
 
-- [ ] **1.1** `tests/controller.test.js`: append at the end of the file (after line 493), after one blank line:
+- [ ] **1.1** `tests/controller.test.js`: append at the end of the file (after line 416), after one blank line:
 
 ```js
 // Drier outdoor air (30 °C, 40 %): a purge would dry the room. RH 83 % is 5 % under the target: fog level 3 (full).
@@ -1512,7 +1214,7 @@ const DRY = { tOut: 30, rhOut: 40 };
 const lowRH = t => ({ RH: 83 + (t % 60 ? 0.01 : 0), ...DRY });
 
 test('humidity first: after 5 min of full fog a purge that would dry the room waits, at most until the CO2 limit', () => {
-  const { feed, ctl, events } = make({ rules: { prepare: false } });
+  const { feed, ctl, events } = make();
   for (let t = 0; t <= 270; t += 30) feed(t, { CO2: 850 + (t % 60 ? 1 : 0), ...lowRH(t) });
   assert.equal(ctl.state.cmd.hu.level, 3);
   assert.equal(ctl.state.rhLocked, false, 'fog more before less air');
@@ -1529,35 +1231,37 @@ test('humidity first: after 5 min of full fog a purge that would dry the room wa
 });
 
 test('humidity first: the purge goes when RH recovers; a running purge is never stopped; wet outdoor air never delays', () => {
-  const a = make({ rules: { prepare: false } });
+  const a = make();
   for (let t = 0; t <= 300; t += 30) a.feed(t, { CO2: 850 + (t % 60 ? 1 : 0), ...lowRH(t) });
   assert.equal(a.feed(330, { CO2: 950, ...lowRH(330) }).air.on, false);
   assert.equal(a.feed(360, { CO2: 950, RH: 87.2, ...DRY }).air.on, true, 'RH at the allow level 87 %');
   assert.ok(a.events.some(e => e.text === 'Purge allowed again: humidity recovered'));
-  const b = make({ rules: { prepare: false, purgeMaxS: 600 } });
+  const b = make({ rules: { purgeMaxS: 600 } });
   for (let t = 0; t <= 360; t += 30) b.feed(t, { CO2: 950 + (t % 60 ? 1 : 0), ...lowRH(t) });
   assert.equal(b.ctl.state.rhLocked, true);
   assert.equal(b.ctl.state.cmd.air.on, true, 'the purge that started before the lock goes on');
   assert.equal(b.ctl.state.air.delayed, false);
-  const c = make({ rules: { prepare: false } });
+  const c = make();
   for (let t = 0; t <= 300; t += 30) c.feed(t, { CO2: 850 + (t % 60 ? 1 : 0), RH: 83 + (t % 60 ? 0.01 : 0), tOut: 33, rhOut: 90 });
   assert.equal(c.ctl.state.rhLocked, false, 'wetter outdoor air: a purge does not dry the room');
   assert.equal(c.feed(330, { CO2: 950, RH: 83, tOut: 33, rhOut: 90 }).air.on, true);
 });
 ```
 
-- [ ] **Step 2: Run them to see them fail.** `node --test tests/controller.test.js` → expected `# pass 39`, `# fail 2` (both new tests; the purge starts at 950 ppm).
+- [ ] **Step 2: Run them to see them fail.** `node --test tests/controller.test.js` → expected `# pass 34`, `# fail 2` (both new tests; the purge starts at 950 ppm).
 - [ ] **Step 3: Implement.** Apply these edits in order.
 
-- [ ] **3.1** `controller.js`, line 485. Replace:
+- [ ] **3.1** `controller.js`, line 475. Replace:
 
 ```js
-    // Rise rate and prediction, P1 CO2 safety level, the purge states and the Prepare offsets.
+    // Rise rate and next purge, P1 CO2 safety level and the purge states. Runs before the AC and the fogger.
 ```
 
 with:
 
 ```js
+    // Push of humidity (5.4): outdoor minus room absolute humidity (g/m³); null with an outdoor, T or RH fault.
+    const ahPush = (v, f) => (f.out || f.T || f.RH ? null : ahOf(v.tOut, v.rhOut) - ahOf(v.T, v.RH));
     // P2 humidity first: RH low, the fogger at its maximum for FOG_FULL_S, and a purge that would dry the room.
     // The lock holds a purge that has not started; a running purge goes on. The CO2 limit ends the wait.
     function humidityFirst(v, f, t, pushAH) {
@@ -1568,35 +1272,35 @@ with:
       else if (st.rhLocked && v.RH >= resumeAt) st.rhLocked = false;
       A.delayed = st.rhLocked && A.state !== 'purge' && v.CO2 >= R.fanOn && v.CO2 < cfg.co2Lim;
     }
-    // Rise rate and prediction, P1 CO2 safety level, P2 humidity first, the purge states and the Prepare offsets.
+    // Rise rate and next purge, P1 CO2 safety level, P2 humidity first and the purge states. Runs before the AC and the fogger.
 ```
 
-- [ ] **3.2** `controller.js`, line 519. Replace:
+- [ ] **3.2** `controller.js`, line 508. Replace:
 
 ```js
-      const push = pushes(v, f);
+      A.nextPurgeS = v.CO2 >= R.fanOn ? 0 : rate > 0 ? (R.fanOn - v.CO2) / rate : null;   // shown to the grower (5.4)
 ```
 
 with:
 
 ```js
-      const push = pushes(v, f);
-      humidityFirst(v, f, t, push.AH);
+      A.nextPurgeS = v.CO2 >= R.fanOn ? 0 : rate > 0 ? (R.fanOn - v.CO2) / rate : null;   // shown to the grower (5.4)
+      humidityFirst(v, f, t, ahPush(v, f));
 ```
 
-- [ ] **3.3** `controller.js`, line 530. Replace:
+- [ ] **3.3** `controller.js`, line 518. Replace:
 
 ```js
-        if (v.CO2 >= R.fanOn && (on || offFor >= R.minOffS)) startPurge(t);
+      if (A.state === 'idle' && v.CO2 >= R.fanOn && (on || offFor >= R.minOffS)) startPurge(t);
 ```
 
 with:
 
 ```js
-        if (v.CO2 >= R.fanOn && !A.delayed && (on || offFor >= R.minOffS)) startPurge(t);
+      if (A.state === 'idle' && v.CO2 >= R.fanOn && !A.delayed && (on || offFor >= R.minOffS)) startPurge(t);
 ```
 
-- [ ] **3.4** `controller.js`, line 700. Replace:
+- [ ] **3.4** `controller.js`, line 672. Replace:
 
 ```js
       if (reason === 'free cooling') return
@@ -1609,7 +1313,7 @@ with:
       if (reason === 'free cooling') return
 ```
 
-- [ ] **3.5** `controller.js`, line 932. Replace:
+- [ ] **3.5** `controller.js`, line 904. Replace:
 
 ```js
       if (st.air.state === 'purge') return { lvl: 'info', icon: '▲', text: 'Purging' };
@@ -1622,7 +1326,7 @@ with:
       if (st.air.state === 'purge') return { lvl: 'info', icon: '▲', text: 'Purging' };
 ```
 
-- [ ] **3.6** `controller.js`, line 863. Replace:
+- [ ] **3.6** `controller.js`, line 835. Replace:
 
 ```js
       if (now.fogOn !== p.fogOn)
@@ -1636,7 +1340,7 @@ with:
       if (now.fogOn !== p.fogOn)
 ```
 
-- [ ] **Step 4: Run the tests.** `node --test tests/controller.test.js tests/settings.test.js` → expected `# pass 50`, `# fail 0` (controller 41).
+- [ ] **Step 4: Run the tests.** `node --test tests/controller.test.js tests/settings.test.js` → expected `# pass 45`, `# fail 0` (controller 36).
 - [ ] **Step 5: Commit.**
 
 ```bash
@@ -1658,7 +1362,7 @@ git commit -m "feat(controller): humidity first delays a purge until RH recovers
 
 - [ ] **Step 1: Write the failing tests.** Apply this edit.
 
-- [ ] **1.1** `tests/controller.test.js`: append at the end of the file (after line 531), after one blank line:
+- [ ] **1.1** `tests/controller.test.js`: append at the end of the file (after line 454), after one blank line:
 
 ```js
 test('a CO2 sensor fault: timed purge from the setting, run capped at purgeMaxS, period with the minimum off time', () => {
@@ -1703,10 +1407,10 @@ test('a CO2 sensor fault: the timed purge share is learned from the hours before
 });
 ```
 
-- [ ] **Step 2: Run them to see them fail.** `node --test tests/controller.test.js` → expected `# pass 41`, `# fail 2` (no timed purge yet: on a CO₂ fault `air.on` and `st.air.timed` stay `false`).
+- [ ] **Step 2: Run them to see them fail.** `node --test tests/controller.test.js` → expected `# pass 36`, `# fail 2` (no timed purge yet: on a CO₂ fault `air.on` and `st.air.timed` stay `false`).
 - [ ] **Step 3: Implement.** Apply these edits in order.
 
-- [ ] **3.1** `controller.js`, line 508. Replace:
+- [ ] **3.1** `controller.js`, line 499. Replace:
 
 ```js
       if (!cfg.manual.air.auto || f.CO2 || st.co2SafetyOn) {
@@ -1720,7 +1424,7 @@ with:
       if (manual || f.CO2 || st.co2SafetyOn) {
 ```
 
-- [ ] **3.2** `controller.js`, lines 678–696: replace everything from the line that starts with `// The air exchange request (C9 5.6): manual, then P1 safety, P3 purge, P4 free cooling and drying.` up to, not including, the line that starts with `// Plain-language reason for the air exchange (C9 5.7)`, with:
+- [ ] **3.2** `controller.js`, lines 650–668: replace everything from the line that starts with `// The air exchange request (C9 5.6): manual, then P1 safety, P3 purge, P4 free cooling and drying.` up to, not including, the line that starts with `// Plain-language reason for the air exchange (C9 5.7)`, with:
 
 ```js
     // The air exchange request (C9 5.6): manual, then P1 safety, P3 purge or timed purge, P4 free cooling and drying.
@@ -1753,7 +1457,7 @@ with:
     }
 ```
 
-- [ ] **3.3** `controller.js`, lines 707–709. Replace:
+- [ ] **3.3** `controller.js`, lines 679–681. Replace:
 
 ```js
     function airWhy(v, reason) {
@@ -1771,7 +1475,7 @@ with:
         : 'CO₂ sensor fault: timed purge. The air exchange is in the off part of the cycle.';
 ```
 
-- [ ] **3.4** `controller.js`, line 878. Replace:
+- [ ] **3.4** `controller.js`, line 850. Replace:
 
 ```js
       if (now.fogOn !== p.fogOn)
@@ -1784,7 +1488,7 @@ with:
       if (now.fogOn !== p.fogOn)
 ```
 
-- [ ] **Step 4: Run the tests.** `node --test tests/controller.test.js tests/settings.test.js` → expected `# pass 52`, `# fail 0` (controller 43).
+- [ ] **Step 4: Run the tests.** `node --test tests/controller.test.js tests/settings.test.js` → expected `# pass 47`, `# fail 0` (controller 38).
 - [ ] **Step 5: Commit.**
 
 ```bash
@@ -1808,7 +1512,7 @@ The test room is a 60 m³ box with 6000 blocks (0.27 m³/h of CO₂). At 900 m³
 
 - [ ] **Step 1: Write the failing tests.** Apply this edit.
 
-- [ ] **1.1** `tests/controller.test.js`: append at the end of the file (after line 572), after one blank line:
+- [ ] **1.1** `tests/controller.test.js`: append at the end of the file (after line 495), after one blank line:
 
 ```js
 const AIR = globalThis.ClimateAir;
@@ -1828,7 +1532,7 @@ function room({ prodM3h = 0.27, airM3h = 900, C = 800 } = {}) {
 
 test('3 capped purges in a row raise the size alarm with an estimate; a purge that reaches the stop level clears it', () => {
   assert.ok(CC.ALARMS.some(a => a.id === 'airTooSmall' && a.lvl() === 'warning' && a.label === 'Air exchange too small for the CO₂ load'));
-  const { feed, ctl, events, cfg } = make({ rules: { prepare: false } });
+  const { feed, ctl, events, cfg } = make();
   cfg.airM3h = 900;
   const r = room({ airM3h: 900 });                             // 6000 blocks: steady 720 ppm at 900 m³/h, never 700 ppm
   let on = false, t = 0;
@@ -1855,7 +1559,7 @@ test('3 capped purges in a row raise the size alarm with an estimate; a purge th
 });
 
 test('the size alarm before a rise rate is measured says so', () => {
-  const { feed, ctl } = make({ rules: { prepare: false } });
+  const { feed, ctl } = make();
   let t = 0;
   for (let n = 0; n < 3; n++) {                                // CO2 jumps above the start level: no rise rate with the fans off
     for (const end = t + 180; t <= end; t += 30) feed(t, { CO2: 950 + (t % 60 ? 1 : 0) });
@@ -1866,7 +1570,7 @@ test('the size alarm before a rise rate is measured says so', () => {
 });
 ```
 
-- [ ] **Step 2: Run them to see them fail.** `node --test tests/controller.test.js` → expected `# pass 43`, `# fail 2` (no `airTooSmall` entry in `ALARMS`; `sizeText` is `null`).
+- [ ] **Step 2: Run them to see them fail.** `node --test tests/controller.test.js` → expected `# pass 38`, `# fail 2` (no `airTooSmall` entry in `ALARMS`; `sizeText` is `null`).
 - [ ] **Step 3: Implement.** Apply these edits in order.
 
 - [ ] **3.1** `controller.js`, line 118. Replace:
@@ -1931,7 +1635,7 @@ with:
         if (a.uses && f[a.uses])
 ```
 
-- [ ] **3.5** `controller.js`, lines 486–488. Replace:
+- [ ] **3.5** `controller.js`, lines 476–478. Replace:
 
 ```js
         say(t, 'info', `Purge stopped at the time cap (${mss(runS)})`);
@@ -1965,7 +1669,7 @@ with:
     }
 ```
 
-- [ ] **3.6** `controller.js`, line 527. Replace:
+- [ ] **3.6** `controller.js`, line 518. Replace:
 
 ```js
       const rate = AIR.riseRate(st.airPts);
@@ -1978,7 +1682,7 @@ with:
       if (rate != null) st.airRate = rate;                                   // kept for the size estimate (5.5)
 ```
 
-- [ ] **3.7** `controller.js`, line 726. Replace:
+- [ ] **3.7** `controller.js`, line 698. Replace:
 
 ```js
       st.why.air = airWhy(v, reason, timed);
@@ -1990,7 +1694,7 @@ with:
       st.why.air = airWhy(v, reason, timed) + (A.sizeText ? ` ${A.sizeText}` : '');
 ```
 
-- [ ] **Step 4: Run the tests.** `node --test tests/controller.test.js tests/settings.test.js` → expected `# pass 54`, `# fail 0` (controller 45).
+- [ ] **Step 4: Run the tests.** `node --test tests/controller.test.js tests/settings.test.js` → expected `# pass 49`, `# fail 0` (controller 40).
 - [ ] **Step 5: Commit.**
 
 ```bash
@@ -2016,7 +1720,7 @@ Live rooms save `ctl.snapshot()` (`server/rooms.js` lines 217 and 312) and pass 
 
 - [ ] **Step 1: Write the failing test.** Apply this edit.
 
-- [ ] **1.1** `tests/controller.test.js`: append at the end of the file (after line 626), after one blank line:
+- [ ] **1.1** `tests/controller.test.js`: append at the end of the file (after line 549), after one blank line:
 
 ```js
 test('an old snapshot (one fan with levels) is upgraded by create()', () => {
@@ -2040,7 +1744,7 @@ test('an old snapshot (one fan with levels) is upgraded by create()', () => {
   for (const k of ['fanCo2On', 'co2Timed', 'purgeHeld', 'purgeReduced', 'setbackReq', 'setbackOn', 'setbackS', 'setbackAlarmStop', 'setbackTimeStop',
     'fanReason', 'fanBlocked', 'airLevel', 'airStepT', 'timedOnS', 'timedSource', 'exh']) assert.equal(k in st, false, k);
   assert.deepEqual([st.cmd.air, st.req.air, 'fan' in st.cmd, 'fan' in st.req], [{ on: true }, { on: true }, false, false]);
-  assert.deepEqual(st.air, { state: 'idle', since: null, purgeStart: null, capRun: 0, prepT: 0, prepRH: 0, nextPurgeS: null, delayed: false, timed: false, sizeText: null });
+  assert.deepEqual(st.air, { state: 'idle', since: null, purgeStart: null, capRun: 0, nextPurgeS: null, delayed: false, timed: false, sizeText: null });
   assert.deepEqual([st.out.air, st.hold.air, st.why.air, 'fan' in st.out, 'fan' in st.hold, 'fan' in st.why], [{ since: 0 }, '', 'CO₂ is 950 ppm. Purge at Medium.', false, false, false]);
   assert.deepEqual(up.purges(), { cur: null, events: [], hours: [{ h: 0, runS: 300, starts: 1, m3: 50, cappedN: 0, fogLS: 30, acHighS: 0, acLowS: 0 }] });
   assert.deepEqual(st.stats, { airOnS: 3600, purges: 12, purgeS: 0, longestPurgeS: 0, cappedPurges: 0, delayedS: 0, fogStarts: 3, acCmds: 7 });
@@ -2053,7 +1757,7 @@ test('an old snapshot (one fan with levels) is upgraded by create()', () => {
 });
 ```
 
-- [ ] **Step 2: Run it to see it fail.** `node --test tests/controller.test.js` → expected `# pass 45`, `# fail 1` (`fanCo2On` is still in the state).
+- [ ] **Step 2: Run it to see it fail.** `node --test tests/controller.test.js` → expected `# pass 40`, `# fail 1` (`fanCo2On` is still in the state).
 - [ ] **Step 3: Implement.** Apply this edit.
 
 - [ ] **3.1** `controller.js`, lines 237–240. Replace:
@@ -2078,7 +1782,7 @@ with:
     for (const g of ['cmd', 'req']) { s[g].air = { on }; delete s[g].fan; }
     s.out.air = s.out.fan || { since: null }; delete s.out.fan;
     for (const g of ['hold', 'why']) { s[g].air = s[g].fan || ''; delete s[g].fan; }
-    s.air = airInit(); s.airReason = null; s.airPts = []; s.airRate = null; s.airRunCapped = false; s.airPrepared = false;
+    s.air = airInit(); s.airReason = null; s.airPts = []; s.airRate = null; s.airRunCapped = false;
     const hours = (s.exh && s.exh.hours) || [];
     s.purgeRec = { cur: null, events: [], hours: hours.map(b => ({ h: b.h, runS: b.runS || 0, starts: b.starts || 0, m3: b.m3 || 0, cappedN: 0, fogLS: b.fogLS || 0, acHighS: b.acHighS || 0, acLowS: b.acLowS || 0 })) };
     delete s.exh;
@@ -2093,7 +1797,7 @@ with:
     let st = snapshot ? upgradeState(structuredClone(snapshot)) : freshState(cfg);
 ```
 
-- [ ] **Step 4: Run the tests.** `node --test tests/controller.test.js tests/settings.test.js` → expected `# pass 55`, `# fail 0` (controller 46, settings 9).
+- [ ] **Step 4: Run the tests.** `node --test tests/controller.test.js tests/settings.test.js` → expected `# pass 50`, `# fail 0` (controller 41, settings 9).
 - [ ] **Step 5: Commit.**
 
 ```bash
@@ -2115,11 +1819,11 @@ A strong purge lowers CO₂ faster than the rate limit of the CO₂ sensor (1000
 
 - [ ] **Step 1: Write the failing test.** Apply this edit.
 
-- [ ] **1.1** `tests/controller.test.js`: append at the end of the file (after line 659), after one blank line:
+- [ ] **1.1** `tests/controller.test.js`: append at the end of the file (after line 582), after one blank line:
 
 ```js
 test('sensor check: a falling CO2 is no spike while the fans run and for one reading after; a rise still is', () => {
-  const { feed, ctl } = make({ rules: { prepare: false, co2Safety: false, purgeMaxS: 60 } });
+  const { feed, ctl } = make({ rules: { co2Safety: false, purgeMaxS: 60 } });
   feed(0, { CO2: 3000 });                                       // purge
   feed(30, { CO2: 2400 });                                      // -1200 ppm/min with the fans on
   assert.deepEqual([ctl.state.v.CO2, ctl.state.sensors.CO2.why], [2400, '']);
@@ -2129,7 +1833,7 @@ test('sensor check: a falling CO2 is no spike while the fans run and for one rea
   assert.equal(ctl.state.v.CO2, 1200);
   feed(120, { CO2: 600 });                                      // the fans were off for a whole interval: tested again
   assert.deepEqual([ctl.state.v.CO2, ctl.state.sensors.CO2.why], [1200, 'sudden jump (spike)']);
-  const b = make({ rules: { prepare: false, co2Safety: false } });
+  const b = make({ rules: { co2Safety: false } });
   b.feed(0, { CO2: 1000 });
   assert.equal(b.ctl.state.cmd.air.on, true);
   b.feed(30, { CO2: 1700 });                                    // +1400 ppm/min with the fans on: a rise is still tested
@@ -2137,7 +1841,7 @@ test('sensor check: a falling CO2 is no spike while the fans run and for one rea
 });
 ```
 
-- [ ] **Step 2: Run it to see it fail.** `node --test tests/controller.test.js` → expected `# pass 46`, `# fail 1` (`v.CO2` stays 3000: the fall is taken as a spike).
+- [ ] **Step 2: Run it to see it fail.** `node --test tests/controller.test.js` → expected `# pass 41`, `# fail 1` (`v.CO2` stays 3000: the fall is taken as a spike).
 - [ ] **Step 3: Implement.** Apply these edits in order.
 
 - [ ] **3.1** `controller.js`, line 364. Replace:
@@ -2167,7 +1871,7 @@ with:
           if (perMin > L.rate && !purgeFall) {
 ```
 
-- [ ] **3.3** `controller.js`, line 937. Replace:
+- [ ] **3.3** `controller.js`, line 909. Replace:
 
 ```js
       const prevOn = st.cmd.air.on, prevFog = st.cmd.hu.level, wasSafe = st.co2SafetyOn;
@@ -2180,7 +1884,7 @@ with:
       const co2FallFree = prevOn || (st.out.air.since != null && st.out.air.since === st.lastT);   // before st.lastT moves
 ```
 
-- [ ] **3.4** `controller.js`, line 948. Replace:
+- [ ] **3.4** `controller.js`, line 920. Replace:
 
 ```js
       const { v, f } = validate(r);
@@ -2192,7 +1896,7 @@ with:
       const { v, f } = validate(r, co2FallFree);
 ```
 
-- [ ] **Step 4: Run the tests.** `node --test tests/controller.test.js tests/settings.test.js` → expected `# pass 56`, `# fail 0` (controller 47).
+- [ ] **Step 4: Run the tests.** `node --test tests/controller.test.js tests/settings.test.js` → expected `# pass 51`, `# fail 0` (controller 42).
 - [ ] **Step 5: Commit.**
 
 ```bash
@@ -2231,9 +1935,8 @@ with:
  *   0. Stage program: slow change of the targets after a stage change (ramp), automatic stage change
  *      after the set days, flush count, and the daily harvest windows (fogger off before picking).
  *   1. Check each sensor value. A bad value is not used; 3 bad readings = sensor fault.
- *   2. Purge cycle: idle -> prepare -> purge -> after -> idle. The CO2 rise with the fans off predicts the
- *      next purge. When purges are far apart (gap >= 2 x prepareLeadS), in prepare and the purge after it the
- *      AC and the fogger aim halfway to the side of their bands away from the purge's push. A purge runs from the start level (fanOn) to the stop level (fanOff), at most purgeMaxS.
+ *   2. Purge cycle: idle -> purge -> after -> idle. The CO2 rise with the fans off predicts the next purge
+ *      (shown to the grower). The AC and the fogger keep their normal targets through a purge. A purge runs from the start level (fanOn) to the stop level (fanOff), at most purgeMaxS.
  *      3 capped purges in a row: the "air exchange too small" alarm, with the size the room needs.
  *   3. Rules for the air exchange, highest priority first:
  *        Manual  the grower's on/off.
@@ -2247,7 +1950,7 @@ with:
  *   5. Purge record: each air run (start, end, reason, CO2, air volume, capped) and a total per hour.
 ```
 
-- [ ] **1.3** `controller.js`, line 52. Replace:
+- [ ] **1.3** `controller.js`, line 51. Replace:
 
 ```js
 maxFog (no direct fog on the crop), noFogBoost, shock
@@ -2283,7 +1986,7 @@ with:
 maxFog: 2, shock:
 ```
 
-- [ ] **Step 2: Run the tests.** `node --test tests/controller.test.js tests/settings.test.js` → expected `# pass 56`, `# fail 0`.
+- [ ] **Step 2: Run the tests.** `node --test tests/controller.test.js tests/settings.test.js` → expected `# pass 51`, `# fail 0`.
 - [ ] **Step 3: Check for leftovers.**
 
 ```bash
@@ -2399,7 +2102,7 @@ git commit -m "test(vectors): pack air.on, cmdFields, crowded-dry and capped-pur
 
 **Files:** none.
 
-- [ ] **Step 1: Run the stream's tests.** `node --test tests/controller.test.js tests/settings.test.js tests/air.test.js` → expected `# pass 65`, `# fail 0`.
+- [ ] **Step 1: Run the stream's tests.** `node --test tests/controller.test.js tests/settings.test.js tests/air.test.js` → expected `# pass 60`, `# fail 0`.
 - [ ] **Step 2: Run the whole suite.** `npm test`. Then list the failing files:
 
 ```bash
@@ -2409,18 +2112,18 @@ for f in tests/*.test.js; do n=$(node --disable-warning=ExperimentalWarning --te
 Expected: exactly the 9 files of section 4.5. The counts may differ by a few from the table; the file list must match. A failing file outside the table means a bug in this stream: fix it, or stop and report.
 
 - [ ] **Step 3: Check the history.** `git log --oneline <base>..HEAD` → 10 commits (tasks 1–10). `git status --short` → nothing.
-- [ ] **Step 4: Report to the lead.** One table: the commits, the test counts (controller 47, settings 9), the failing files of step 2 with their counts, and anything that did not match this brief or C9.
+- [ ] **Step 4: Report to the lead.** One table: the commits, the test counts (controller 42, settings 9), the failing files of step 2 with their counts, and anything that did not match this brief or C9.
 
 ## Done checklist
 
 | Check | How |
 |---|---|
-| `controller.test.js` 47 pass, `settings.test.js` 9 pass | Task 11 step 1 |
+| `controller.test.js` 42 pass, `settings.test.js` 9 pass | Task 11 step 1 |
 | `update()` returns `air: { on }`; no `fan` key in `cmd`, `req`, `manual`, `out`, `hold`, `why` | Task 2 tests, task 9 grep |
 | Settings version 2 with the C9 5.2 keys, ranges, removed keys, `RAMP_KEYS` | `settings.test.js` |
 | `upgradeSettings` pure, idempotent; `importSettings` upgrades version < 2 first | Task 1, task 2 tests |
-| States `idle` / `prepare` / `purge` / `after`, 30 s minimum on, `minOffS`, cap, `capRun` | Tasks 2, 3 tests |
-| Prepare in four directions, small push, no outdoor reading, AC and fogger targets, the gap rule | Task 3 tests |
+| States `idle` / `purge` / `after`, 30 s minimum on, `minOffS`, cap, `capRun` | Task 2 tests |
+| Rise rate from readings with the fans off, at most 20; `nextPurgeS`; the idle text | Task 3 tests |
 | Humidity first, safety, timed purge, free cooling, drying | Tasks 2, 4, 5 tests |
 | `airTooSmall` with the estimate within 15 % of `sizeFor`; clears | Task 6 tests |
 | `purges()`, `st.stats`, `status('CO2')`, `why.air`, events | Tasks 2–6 tests |
@@ -2432,38 +2135,32 @@ Expected: exactly the 9 files of section 4.5. The counts may differ by a few fro
 
 ## Contract questions for the lead
 
-All answered by the lead (C9 commits 1ac170c, 2fd0e57, 1c9b9b9). The brief follows the rulings below; none is open.
+All answered by the lead (C9 commits 1ac170c, 1c9b9b9, 2b56e5c, f41484f). None is open. The brief follows the rulings below; none is open.
 
 | C9 section | Question | Ruling (now in C9) | Where in this brief |
 |---|---|---|---|
 | 3 | Other streams' files must require `air.js` | C9 3 names every module that runs a controller loop; the lead checks at integration | Section 4.5; this stream's own files in tasks 1, 2, 10 |
 | 5.2 | `manual.fan` that is not an object | Dropped with the warning; the default `manual.air` is filled in later | Task 1 |
-| 5.3 | States under manual control or a CO₂ fault | `idle`, offsets 0; a running purge ends without counting as capped | Task 2 (`airPlan`) |
+| 5.3 | States under manual control or a CO₂ fault | `idle`; a running purge ends without counting as capped | Task 2 (`airPlan`) |
 | 5.3 | A long safety run | A safety run is not a purge: never counts in `capRun`, `purges`, `cappedPurges` or `longestPurgeS` | Task 2: during a safety run the state is `idle`; a running purge ends there, not capped |
 | 5.3 | The current reason for the web status card | `ctl.state.airReason`, `null` when off, follows the run; `purges().cur.reason` keeps the start reason | Task 2 (`update` after `protectAir`) |
-| 5.4 | Room T or RH fault; `rules.prepare` off; fogger scope | `prepT` 0 with a T fault, `prepRH` 0 with a T or RH fault; no offsets with `prepare` off; the whole fogger rule (also the harvest floor) uses `rhT + prepRH` | Task 3 |
+| 5.4 | `pushAH` with a room T or RH fault | `null` with an outdoor, T or RH fault (so no humidity-first lock) | Task 4 (`ahPush`) |
 | 5.5 | No rise rate, `Infinity`, number formats | The last rise rate that is not `null`; two extra texts; plain integer; minutes with at most one decimal | Task 6, texts verbatim |
 | 5.6 | When "delayed", and when "allowed again" | `delayed` only while `fanOn ≤ CO₂ < co2Lim`; "allowed again" only when RH recovers | Task 4 |
 | 5.7 | Snapshot `exh.cur`, `prev`, new fields | `cur` dropped, `prev` null, new fields initial | Task 7 |
 | 5.7 | `status('CO2')` in the first 60 s of a safety run, before the `co2Safe` alarm, showed `Below limit` | After `co2Hi`: `airReason === 'safety'` → `Safety run` (C9 1c9b9b9) | Task 2 (`status`, safety test) |
 | 9 | `capped-purges` size | `cfg: { airM3h: 900 }` with `env.airM3h: 900` | Task 10 |
-| 5.3, 5.4 (owner decision, C9 2fd0e57) | Prototype: RH in band 94.7 % (Prepare off) → 85.4 % (on) at 6000 blocks | Prepare only when `gapS ≥ 2 × prepareLeadS`; offsets 0.5 × the band | Task 3 (gap rule, ±0.5 °C, ±1.5 %) |
+| 5.2, 5.3, 5.4 (owner decision, C9 2b56e5c, f41484f) | Prototype: Prepare lowered the time in band in every case | Prepare dropped: no `rules.prepare`, `rules.prepareLeadS`, state `prepare`, `prepT` / `prepRH`, gap rule or `Purge soon`; `nextPurgeS` kept for the idle text | Task 3 (rise rate and next purge only) |
 
-Two notes for the lead:
+Note for the lead: the prototype numbers that led to dropping Prepare (now in spec 2.3). Stand-in for the simulation (not the simulation stream's code: `cmd.air.on` drives today's supply fan at `env.airM3h` = 1800 m³/h), oyster fruiting, no harvest window, 24 h measured after 6 h.
 
-| Note | Detail |
-|---|---|
-| Offsets in a purge without Prepare | C9 5.4 says the offsets act "in `prepare` and `purge`" and that Prepare acts only when `gapS ≥ 2 × prepareLeadS`. During a purge `gapS` cannot be measured (no readings with the fans off). The brief keeps the offsets in a purge only when it followed a `prepare` (`st.airPrepared`); a purge from `idle` moves no target. Confirm. |
-| Prototype with the new rule | Same stand-in as before (not the simulation stream's code: `cmd.air.on` drives today's supply fan at `env.airM3h` = 1800 m³/h), oyster fruiting, no harvest window, 24 h measured after 6 h. Shown in the table below. |
-
-| Blocks | Prepare | In T band | In RH band | Purges per day | States (readings: idle / prepare / purge / after) |
+| Run | Blocks | Prepare | In T band | In RH band | Purges per day |
 |---|---|---|---|---|---|
-| 6000 | on | 58.0 % | 94.7 % | 279 | 983 / 0 / 758 / 420 |
-| 6000 | off | 58.0 % | 94.7 % | 279 | 983 / – / 758 / 420 |
-| 2000 | on | 99.2 % | 93.8 % | 111 | 1217 / 529 / 249 / 166 |
-| 2000 | off | 100 % | 100 % | 111 | 1750 / – / 247 / 164 |
-
-At 6000 blocks the gap rule keeps Prepare off (purges about 5 min apart), so on and off are equal. At 2000 blocks Prepare acts (purges about 13 min apart) and still lowers the time in band: the room is in band without it, and the offsets move the targets towards the band edge for about a quarter of the day. The lead's "Prepare on vs off" integration test (README task 2.3) would fail at 6000 blocks (equal, not better) and at 2000 blocks (worse) in this stand-in.
+| First (offsets 0.8 × band, no gap rule) | 6000 | on | 59.2 % | 85.4 % | 275 |
+| First | 6000 | off | 58.0 % | 94.7 % | 279 |
+| Second (offsets 0.5 × band, gap rule) | 6000 | on | 58.0 % | 94.7 % | 279 (Prepare never acted) |
+| Second | 2000 | on | 99.2 % | 93.8 % | 111 |
+| Second | 2000 | off | 100 % | 100 % | 111 |
 
 ## Self-review
 
@@ -2479,7 +2176,7 @@ At 6000 blocks the gap rule keeps Prepare off (purges about 5 min apart), so on 
 | 5.1 | `MACHINES`: no `fanLevels`, `fanM3h`; `airTags` | 2 |
 | 5.2 | `airM3h` 50–10000, default 1800 | 2 |
 | 5.2 | `fanOn`, `fanOff` kept; correction `fanOff ≤ fanOn − 50` | 2 |
-| 5.2 | `purgeMaxS`, `prepare`, `prepareLeadS`, `minOffS` with ranges and defaults | 2 |
+| 5.2 | `purgeMaxS`, `minOffS` with ranges and defaults | 2 |
 | 5.2 | `rhLock`, `rhStop`, `rhResume`, `freeCool`, `outdoorDry`, `co2Safety`, `co2SafetyAt`, `timedPurgeOn`, `timedPurgeEvery`, `learnSafe` kept | 2 |
 | 5.2 | The 15 removed keys | 2 (defaults, limits, enums), 1 (upgrade) |
 | 5.2 | `SETTINGS_VERSION` 2 | 2 |
@@ -2490,7 +2187,6 @@ At 6000 blocks the gap rule keeps Prepare off (purges about 5 min apart), so on 
 | 5.2 | `noFogBoost` removed, also from `flagTest` | 2 (code), 9 (comment, test crop) |
 | 5.3 | `st.air` shape and initial value | 2 |
 | 5.3 | `idle`, `purge`, `after` transitions | 2 |
-| 5.3 | `prepare` transitions | 3 |
 | 5.3 | 30 s minimum on; manual Off and safety exit at once | 2 |
 | 5.3 | `minOffS` after every air run; safety ignores it | 2 |
 | 5.3 | `capRun` | 2 |
@@ -2499,10 +2195,9 @@ At 6000 blocks the gap rule keeps Prepare off (purges about 5 min apart), so on 
 | 5.3 | `ctl.state.airReason`, `null` when off, follows the run | 2 |
 | 5.3 | Purge seconds in whole steps | 2 |
 | 5.4 | Points, at most 20; `riseRate` | 3 |
-| 5.4 | `gapS` and the rule `gapS ≥ 2 × prepareLeadS`; offsets 0.5 × the band | 3 |
 | 5.4 | `nextPurgeS` | 3 |
-| 5.4 | `pushT`, `pushAH`, `prepT`, `prepRH`, outdoor fault, room sensor fault, `prepare` off, fogger scope | 3 |
-| 5.4 | AC uses `spT + prepT`, fogger `rhT + prepRH`; alarms and display stay on `spT`, `rhT`; 0 in `idle`, `after` | 3 |
+| 5.4 | `pushAH`, `null` with an outdoor, T or RH fault (humidity first only) | 4 |
+| 5.4 | No Prepare: the AC and the fogger keep their normal targets | 2 (no change to their targets) |
 | 5.4 | No AC setback | 2 |
 | 5.5 | `ALARMS` entry, on at `capRun ≥ 3`, off at `capRun` 0 | 6 |
 | 5.5 | Estimate with `prodFromRise` and `sizeFor` | 6 |
@@ -2516,16 +2211,16 @@ At 6000 blocks the gap rule keeps Prepare off (purges about 5 min apart), so on 
 | 5.6 | Sensor check: no rate test on a falling CO₂ while `cmd.air.on` and for one reading after the fans stop; a rise tested as today | 8 |
 | 5.7 | `ctl.purges()` replaces `ctl.exhaust()`; `cur` in the event shape with `end`, `co2End` `null` and `capped: false`; event and hour shapes; 200 events, 168 h | 2 |
 | 5.7 | `st.stats`; purge counts for state `purge` only, `airOnS` for every run | 2 |
-| 5.7 | `status('CO2')` order, with `Safety run` after `co2Hi` | 2, 3, 4 |
-| 5.7 | `why.air` for `idle`, `prepare`, `purge`, `after` | 2, 3 |
+| 5.7 | `status('CO2')` order, with `Safety run` after `co2Hi`; no `Purge soon` | 2, 4 |
+| 5.7 | `why.air` for `idle` (with the next purge), `purge`, `after` | 2, 3 |
 | 5.7 | Events | 2 (on, off, cap), 4 (delayed), 5 (timed), 6 (alarm) |
 | 5.7 | Removed: `acPurge()`, setback, `purgeHeld`, `purgeReduced`, `airLevel`, `AIR_STEP_S`, fog boost | 2 |
 | 5.7 | Snapshot upgrade | 7 |
 | 9 | `pack` (both copies), `cmdFields` | 10 |
 | 9 | `crowded-dry`, `capped-purges` (with `cfg: { airM3h: 900 }`) | 10 |
 | 9 | Regeneration | Not this stream (lead, step 2) |
-| 11 | Controller tests: 5.3 transitions, 30 s, `minOffS` | 2, 3 |
-| 11 | Four Prepare directions and the small push; AC and fogger targets in `prepare` / `purge` and back after | 3 |
+| 11 | Controller tests: 5.3 transitions, 30 s, `minOffS` | 2 |
+| 11 | `nextPurgeS` from the rise rate | 3 |
 | 11 | Humidity first never past `co2Lim`; safety ignores the cap | 4, 2 |
 | 11 | Timed purge share, run, period | 5 |
 | 11 | Size alarm after 3 capped purges, its text, its clearing | 6 |
