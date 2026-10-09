@@ -51,3 +51,11 @@ test('errorText', () => {
   assert.equal(UI.errorText(apiErr2), 'Invalid room');
   assert.equal(UI.errorText(new Error('boom')), 'boom');
 });
+
+test('errorText: no ".:" after a sentence that ends in punctuation', () => {
+  const mk = (error, details) => Object.assign(new Error(error), { name: 'ApiError', status: 0, error, details });
+  assert.equal(UI.errorText(mk('The farm server cannot be reached.', ['Failed to fetch'])), 'The farm server cannot be reached. Failed to fetch');
+  assert.equal(UI.errorText(mk('Is it saved?', ['a', 'b'])), 'Is it saved? a; b');
+  assert.equal(UI.errorText(mk('Not saved!', ['a'])), 'Not saved! a');
+  assert.equal(UI.errorText(mk('Invalid room', ['a'])), 'Invalid room: a');
+});
