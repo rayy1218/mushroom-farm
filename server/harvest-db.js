@@ -67,7 +67,32 @@ function openHarvest(db, options) {
     return row;
   }
 
-  return {};
+  function createBatch(batch) {
+    fields('createBatch', batch, [...BATCH_FIELDS, 'at']);
+    batch = orEmpty(batch);
+    return plain(insertBatch.get(
+      val(batch.crop), val(batch.strain), val(batch.source), val(batch.block_count), val(batch.block_wet_kg),
+      val(batch.moisture_pct), val(batch.spawn_date), val(batch.received_at),
+      batch.flush_gap_days === undefined ? 5 : val(batch.flush_gap_days), val(batch.notes),
+      batch.at === undefined ? now() : val(batch.at),
+    ));
+  }
+
+  function getBatch(id) {
+    return plain(batchOrThrow(id));
+  }
+
+  function listBatches(options) {
+    fields('listBatches', options, ['state', 'room_id']);
+    options = orEmpty(options);
+    const state = val(options.state);
+    if (state !== null && !STATES.includes(state)) throw new RangeError(`listBatches: unknown state "${state}"`);
+    const roomId = val(options.room_id);
+    if (roomId !== null) db.getRoom(roomId);
+    return listBatchesStmt.all(state, state, roomId, roomId).map(plain);
+  }
+
+  return { createBatch, getBatch, listBatches };
 }
 
 module.exports = { openHarvest };

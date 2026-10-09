@@ -116,3 +116,46 @@ realTest('openHarvest needs schema version 4', t => {
   assert.doesNotThrow(() => openHarvest({ version: 4, sqlite: db.sqlite, getRoom: db.getRoom }, { now }));
 });
 
+
+// Task 2: createBatch, getBatch
+realTest('the store writes through db.sqlite', t => {
+  const { db, harvest } = openReal(t, now);
+  harvest.createBatch(batch());
+  assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS n FROM batches').get().n, 1);
+});
+
+both('createBatch: shape and defaults', (t, open) => {
+  const { harvest } = open();
+  const row = harvest.createBatch(batch());
+  assert.deepEqual(Object.keys(row), BATCH_KEYS);
+  for (const k of ['strain', 'source', 'spawn_date', 'room_id', 'placed_at', 'cleared_at', 'notes']) assert.equal(row[k], null, k);
+  assert.equal(row.flush_gap_days, 5);
+  assert.equal(row.created_at, clock);
+  assert.ok(Number.isInteger(row.id));
+  assert.deepEqual(harvest.getBatch(row.id), row);
+  assert.ok(isPlain(row));
+});
+
+both('createBatch: explicit values are stored', (t, open) => {
+  const { harvest } = open();
+  const row = harvest.createBatch(batch({ strain: 'PO-2', source: 'Kebun', spawn_date: clock - 30 * DAY, flush_gap_days: 7, notes: 'rack 2', at: 5 }));
+  assert.equal(row.strain, 'PO-2');
+  assert.equal(row.source, 'Kebun');
+  assert.equal(row.spawn_date, clock - 30 * DAY);
+  assert.equal(row.flush_gap_days, 7);
+  assert.equal(row.notes, 'rack 2');
+  assert.equal(row.created_at, 5);
+});
+
+both('createBatch: unknown field; nothing stored', (t, open) => {
+  const { harvest } = open();
+  assertTypeError(() => harvest.createBatch(batch({ colour: 'red' })), 'createBatch: unknown field "colour"');
+  assertTypeError(() => harvest.createBatch(batch({ room_id: 1 })), 'createBatch: unknown field "room_id"');
+  assert.deepEqual(harvest.listBatches(), []);
+});
+
+both('getBatch: unknown ids throw NotFoundError(batch)', (t, open) => {
+  const { harvest } = open();
+  harvest.createBatch(batch());
+  for (const id of [999, NaN, '1', undefined]) assertNotFound(() => harvest.getBatch(id), 'batch', id);
+});
