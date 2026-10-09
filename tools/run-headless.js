@@ -3,7 +3,7 @@
 //   node tools/run-headless.js [--days 2] [--settings file.json]
 const fs = require('node:fs'), path = require('node:path');
 const D = path.join(__dirname, '..');
-require(path.join(D, 'sim.js')); require(path.join(D, 'controller.js')); require(path.join(D, 'runtime.js'));
+require(path.join(D, 'sim.js')); require(path.join(D, 'air.js')); require(path.join(D, 'controller.js')); require(path.join(D, 'runtime.js'));
 const SIM = globalThis.ClimateSim, CC = globalThis.ClimateController, RT = globalThis.ClimateRuntime;
 
 const arg = (name, def) => { const i = process.argv.indexOf(`--${name}`); return i > 0 ? process.argv[i + 1] : def; };
