@@ -38,14 +38,15 @@ function tick() { if (blockFollow) env.blockStage = cfg.stage; io.advance(1); rt
 
 const plausible = (k, x) => (x != null && Number.isFinite(x) && x >= CC.SENSORS[k].min && x <= CC.SENSORS[k].max ? x : NaN);
 function sample(r) {
-  const R = cfg.rules;
+  const R = cfg.rules, c = ctl.state.cmd;
   samples.push({ t: r.t, T: plausible('T', r.T), RH: plausible('RH', r.RH), C: plausible('CO2', r.CO2),
     tOut: plausible('tOut', r.tOut), rhOut: plausible('rhOut', r.rhOut),
-    ac: r.power.ac, hu: r.power.hu, fan: r.power.fan, li: r.power.lights || 0, ci: r.power.circ || 0,
-    acSet: ctl.state.cmd.ac.power ? ctl.state.cmd.ac.setpoint : NaN,
+    ac: r.power.ac, hu: r.power.hu, air: r.power.air, li: r.power.lights || 0, ci: r.power.circ || 0,
+    acSet: c.ac.power ? c.ac.setpoint : NaN,
     core: r.core != null ? r.core : NaN, vpd: ctl.state.vpd ?? NaN,
-    cmd: { fan: ctl.state.cmd.fan.level, fog: ctl.state.cmd.hu.level, acPower: ctl.state.cmd.ac.power ? 1 : 0, acMode: ctl.state.cmd.ac.mode,
-      acSet: ctl.state.cmd.ac.setpoint, acFan: ctl.state.cmd.ac.fan, lights: ctl.state.cmd.lights.on ? 1 : 0, circ: ctl.state.cmd.circ.on ? 1 : 0 },
+    // `c.air && c.air.on`: the C9 4.2 / 6.3 form, 0 when a command has no air exchange.
+    cmd: { air: c.air && c.air.on ? 1 : 0, fog: c.hu.level, acPower: c.ac.power ? 1 : 0, acMode: c.ac.mode,
+      acSet: c.ac.setpoint, acFan: c.ac.fan, lights: c.lights.on ? 1 : 0, circ: c.circ.on ? 1 : 0 },
     spT: cfg.spT, spRH: cfg.spRH, co2Lim: cfg.co2Lim, fanOn: R.fanOn, fanOff: R.fanOff });
   if (samples.length > MAX_SAMPLES) samples.splice(0, samples.length - MAX_SAMPLES);
   chartsDirty = true;
@@ -258,11 +259,11 @@ function updateUi() {
     ? 'The AC coil removes much more water than the fogger adds: the AC and the fogger work against each other. A high AC fan speed and fog-first cooling decrease this.'
     : env.vent === 'exhaust' ? 'All incoming air is unfiltered: the exhaust fan puts the room under suction.' : 'Incoming air goes through the filter: the room has a slight over-pressure.');
 
-  const tot = r.kwh.ac + r.kwh.hu + r.kwh.fan + (r.kwh.lights || 0) + (r.kwh.circ || 0), days = r.t / 86400;
+  const tot = r.kwh.ac + r.kwh.hu + r.kwh.air + (r.kwh.lights || 0) + (r.kwh.circ || 0), days = r.t / 86400;
   UI.set('eKwh', tot.toFixed(3));
   UI.set('eDay', r.t >= 3600 ? (tot / days).toFixed(1) : '–');
   UI.set('eCost', (tot * input.tariff).toFixed(2));
-  for (const [k, id] of [['ac', 'Ac'], ['hu', 'Hu'], ['fan', 'Fan'], ['lights', 'Li'], ['circ', 'Ci']]) {
+  for (const [k, id] of [['ac', 'Ac'], ['hu', 'Hu'], ['air', 'Air'], ['lights', 'Li'], ['circ', 'Ci']]) {
     const kwh = r.kwh[k] || 0, share = tot > 0 ? kwh / tot : 0;
     UI.set('e' + id, `${kwh.toFixed(3)} kWh · ${Math.round(share * 100)} %`);
     el.querySelector('#e' + id + 'Bar').style.width = `${share * 100}%`;
@@ -278,7 +279,7 @@ function updateUi() {
   UI.set('dAcCmds', String(S.acCmds)); UI.set('dAcCmdsL', `AC commands${perDay(S.acCmds)}`);
   UI.set('dFogStarts', String(S.fogStarts)); UI.set('dFogStartsL', `fogger starts${perDay(S.fogStarts)}`);
   updateLadderLive();
-  renderExhaust();
+  renderPurges();
   paintProgram();
   paintGlance(list, tot, days, air);
 
@@ -319,35 +320,37 @@ function renderLog() {
   el.querySelector('#log').replaceChildren(...items);
 }
 
-// ---------------- Exhaust per hour ----------------
-function renderExhaust() {
-  const X = ctl.exhaust(), nowH = Math.floor(reading.t / 3600);
+// ---------------- Air exchange per hour (C9 5.7 ctl.purges()) ----------------
+function renderPurges() {
+  const P = ctl.purges(), nowH = Math.floor(reading.t / 3600);
   const hours = [];
-  for (let h = nowH - 23; h <= nowH; h++) hours.push(X.hours.find(b => b.h === h) || { h, runS: 0, starts: 0, m3: 0 });
-  const key = `${nowH}|${hours.map(b => Math.round(b.runS / 30)).join(',')}|${X.events.length}|${cfg.roomM3}`;
+  for (let h = nowH - 23; h <= nowH; h++) hours.push(P.hours.find(b => b.h === h) || { h, runS: 0, starts: 0, m3: 0, cappedN: 0 });
+  const key = `${nowH}|${hours.map(b => `${Math.round(b.runS / 30)}.${b.cappedN}`).join(',')}|${P.events.length}|${cfg.roomM3}`;
   if (key === exhKey) return;
   exhKey = key;
   const vol = cfg.roomM3 || 1, mine = hours.filter(b => b.h >= 0);
   const done = mine.filter(b => b.h < nowH);
   const sum = (arr, k) => arr.reduce((s, b) => s + b[k], 0);
   UI.set('xAvgStarts', done.length ? (sum(done, 'starts') / done.length).toFixed(1) : '–');
-  UI.set('xAvgRun', done.length ? `${Math.round(sum(done, 'runS') / done.length / 60)} min` : '–');
+  UI.set('xAvgRun', done.length ? UI.fmtMinSec(Math.round(sum(done, 'runS') / done.length)) : '–');
   UI.set('xAvgAch', done.length ? (sum(done, 'm3') / done.length / vol).toFixed(1) : '–');
   UI.set('xTotM3', Math.round(sum(mine, 'm3')).toLocaleString('en'));
-  global.FarmCharts.drawExhaustBars(el.querySelector('#exhChart'), { hours, nowH, vol, clock: clock() });
+  UI.set('xCapped', String(sum(mine, 'cappedN')));
+  global.FarmCharts.drawPurgeBars(el.querySelector('#exhChart'), hours, clock());
   el.querySelector('#exhRows').replaceChildren(...mine.slice(-12).reverse().map(b => {
     const tr = document.createElement('tr');
     tr.append(UI.cell('td', `${clock().hm(b.h * 3600)}–${clock().hm((b.h + 1) * 3600)}${b.h === nowH ? ' (now)' : ''}`),
-      UI.cell('td', String(b.starts)), UI.cell('td', UI.fmtMinSec(b.runS)), UI.cell('td', Math.round(b.m3).toLocaleString('en')), UI.cell('td', (b.m3 / vol).toFixed(1)));
+      UI.cell('td', String(b.starts)), UI.cell('td', UI.fmtMinSec(b.runS)), UI.cell('td', Math.round(b.m3).toLocaleString('en')),
+      UI.cell('td', (b.m3 / vol).toFixed(1)), UI.cell('td', String(b.cappedN)));
     return tr;
   }));
-  const evs = (X.cur ? [{ ...X.cur, running: true }] : []).concat(X.events.slice().reverse()).slice(0, 40);
+  const evs = (P.cur ? [{ ...P.cur, running: true }] : []).concat(P.events.slice().reverse()).slice(0, 40);
   el.querySelector('#exhEvents').replaceChildren(...evs.map(e => {
     const tr = document.createElement('tr');
     const dur = (e.running ? reading.t : e.end) - e.start;
     tr.append(UI.cell('td', clock().stamp(e.start)), UI.cell('td', e.running ? 'running' : clock().stamp(e.end)), UI.cell('td', UI.fmtMinSec(dur)),
-      UI.cell('td', CC.MACHINES.fanLevels[e.maxLevel]), UI.cell('td', e.reason || '–'),
-      UI.cell('td', `${UI.fmtNum(e.co2Start, 0)} → ${e.running ? '…' : UI.fmtNum(e.co2End, 0)}`), UI.cell('td', Math.round(e.m3).toLocaleString('en')));
+      UI.cell('td', e.reason || '–'), UI.cell('td', `${UI.fmtNum(e.co2Start, 0)} → ${e.running ? '…' : UI.fmtNum(e.co2End, 0)}`),
+      UI.cell('td', Math.round(e.m3).toLocaleString('en')), UI.cell('td', e.capped ? 'Yes' : '–'));
     return tr;
   }));
 }
@@ -494,26 +497,24 @@ function runTest(rulesOverride) {
     if (room.RH < cfg2.spRH - CC.BANDS.RHAlarm) rhLow++;
   });
   const r1 = sim2.read(), s1 = ctl2.state.stats, k = key => r1.kwh[key] - r0.kwh[key];
-  return { ac: k('ac'), hu: k('hu'), fan: k('fan'), total: k('ac') + k('hu') + k('fan'),
-    fanH: (s1.fanOnS - s0.fanOnS) / 3600, starts: s1.fanStarts - s0.fanStarts, blockedH: (s1.fanBlockedS - s0.fanBlockedS) / 3600,
-    acStarts: sim2.view().acStarts - a0, acCmds: s1.acCmds - s0.acCmds,
+  return { ac: k('ac'), hu: k('hu'), air: k('air'), total: k('ac') + k('hu') + k('air'),
+    airH: (s1.airOnS - s0.airOnS) / 3600, purges: s1.purges - s0.purges, capped: s1.cappedPurges - s0.cappedPurges,
+    delayedH: (s1.delayedS - s0.delayedS) / 3600, acStarts: sim2.view().acStarts - a0, acCmds: s1.acCmds - s0.acCmds,
     inT: inT / n * 100, inRH: inRH / n * 100, overMin: overC / n * 1440, rhLowMin: rhLow / n * 1440 };
 }
 function renderTest() {
   const tariff = input.tariff;
   const variants = [
     ['Your rules', runTest({})],
-    ['AC off during purge', runTest({ acPurge: true, acAction: 'off' })],
-    ['No AC rule during purge', runTest({ acPurge: false })],
     ['No humidity priority', runTest({ rhLock: false })],
   ];
   const mine = variants[0][1];
-  const head = ['Rules', 'Total kWh/day', 'RM/day', 'AC kWh', 'Fogger kWh', 'Fan kWh', 'AC compressor starts', 'AC commands', 'Fan run (h)', 'Fan starts', 'Fan stopped by RH (h)', 'Temp in band', 'RH in band', 'RH low alarm', 'CO₂ over limit'];
+  const head = ['Rules', 'Total kWh/day', 'RM/day', 'AC kWh', 'Fogger kWh', 'Air exchange kWh', 'AC compressor starts', 'AC commands', 'Air exchange run (h)', 'Purges', 'Capped purges', 'Purges delayed by RH (h)', 'Temp in band', 'RH in band', 'RH low alarm', 'CO₂ over limit'];
   const sgn = v => (v > 0 ? '+' : '') + v;
   const row = (name, x) => [name,
     x === mine ? x.total.toFixed(2) : `${x.total.toFixed(2)} (${sgn((x.total - mine.total).toFixed(2))})`,
-    (x.total * tariff).toFixed(2), x.ac.toFixed(2), x.hu.toFixed(2), x.fan.toFixed(2),
-    String(x.acStarts), String(x.acCmds), x.fanH.toFixed(1), String(x.starts), x.blockedH.toFixed(1),
+    (x.total * tariff).toFixed(2), x.ac.toFixed(2), x.hu.toFixed(2), x.air.toFixed(2),
+    String(x.acStarts), String(x.acCmds), x.airH.toFixed(1), String(x.purges), String(x.capped), x.delayedH.toFixed(1),
     `${x.inT.toFixed(0)} %`, `${x.inRH.toFixed(0)} %`, `${Math.round(x.rhLowMin)} min`, `${Math.round(x.overMin)} min`];
   const table = document.createElement('table');
   const thead = document.createElement('thead'), htr = document.createElement('tr');
@@ -544,7 +545,7 @@ function drawCharts() {
 function renderTable(raw) {
   const rows = raw.slice(-15).reverse().map(p => {
     const tr = document.createElement('tr');
-    for (const val of [clock().stamp(p.t), UI.fmtNum(p.T, 1), UI.fmtNum(p.RH, 0), UI.fmtNum(p.C, 0), UI.fmtNum(p.tOut, 1), UI.fmtNum(p.rhOut, 0), UI.fmtNum(p.core, 1), UI.fmtNum(p.vpd, 2), UI.fmtNum(p.acSet, 1), Math.round(p.ac), Math.round(p.hu), Math.round(p.fan)]) tr.append(UI.cell('td', String(val)));
+    for (const val of [clock().stamp(p.t), UI.fmtNum(p.T, 1), UI.fmtNum(p.RH, 0), UI.fmtNum(p.C, 0), UI.fmtNum(p.tOut, 1), UI.fmtNum(p.rhOut, 0), UI.fmtNum(p.core, 1), UI.fmtNum(p.vpd, 2), UI.fmtNum(p.acSet, 1), Math.round(p.ac), Math.round(p.hu), Math.round(p.air)]) tr.append(UI.cell('td', String(val)));
     return tr;
   });
   el.querySelector('#tbody').replaceChildren(...rows);
@@ -971,7 +972,7 @@ ${faceplate('circ', 'Circulation fan', 'CF-205 · 40 W', 'small', `
   <div class="e-rows">
     <div class="e-row" style="--key:var(--s-ac)"><span class="nm"><i></i>Air conditioner</span><span class="v" id="eAc"></span><span class="track"><span id="eAcBar"></span></span></div>
     <div class="e-row" style="--key:var(--s-hu)"><span class="nm"><i></i>Fogger</span><span class="v" id="eHu"></span><span class="track"><span id="eHuBar"></span></span></div>
-    <div class="e-row" style="--key:var(--s-air)"><span class="nm"><i></i>Exhaust fan</span><span class="v" id="eFan"></span><span class="track"><span id="eFanBar"></span></span></div>
+    <div class="e-row" style="--key:var(--s-air)"><span class="nm"><i></i>Air exchange</span><span class="v" id="eAir"></span><span class="track"><span id="eAirBar"></span></span></div>
     <div class="e-row" style="--key:var(--s-li)"><span class="nm"><i></i>Lights</span><span class="v" id="eLi"></span><span class="track"><span id="eLiBar"></span></span></div>
     <div class="e-row" style="--key:var(--s-ci)"><span class="nm"><i></i>Circulation</span><span class="v" id="eCi"></span><span class="track"><span id="eCiBar"></span></span></div>
   </div>
@@ -979,26 +980,27 @@ ${faceplate('circ', 'Circulation fan', 'CF-205 · 40 W', 'small', `
 </section>
 <section class="card exhaust" aria-labelledby="hExh">
   <div class="rules-head">
-    <h2 id="hExh">Exhaust per hour</h2>
-    <span class="tag">Controller record. Air volume = fan run time × airflow of the fan level.</span>
+    <h2 id="hExh">Air exchange per hour</h2>
+    <span class="tag">Controller record. Air volume = run time × the air exchange size.</span>
   </div>
   <div class="e-hero">
     <div><span class="num" id="xAvgStarts">–</span><span class="lbl">purges per hour</span></div>
-    <div><span class="num" id="xAvgRun">–</span><span class="lbl">fan run per hour</span></div>
+    <div><span class="num" id="xAvgRun">–</span><span class="lbl">run per hour (min:s)</span></div>
     <div><span class="num" id="xAvgAch">–</span><span class="lbl">air changes per hour</span></div>
-    <div><span class="num" id="xTotM3">0</span><span class="lbl">m³ exhausted, last 24 h</span></div>
+    <div><span class="num" id="xTotM3">0</span><span class="lbl">m³ exchanged, last 24 h</span></div>
+    <div><span class="num" id="xCapped">0</span><span class="lbl">capped purges, last 24 h</span></div>
   </div>
-  <p class="est-note" style="margin:0 0 4px">Fan run minutes per hour, last 24 h (point at a bar for the values). The averages use the full hours.</p>
+  <p class="est-note" style="margin:0 0 4px">Air exchange run minutes per hour, last 24 h (point at a bar for the values). The averages use the full hours.</p>
   <div id="exhChart" class="ch-host"></div>
   <div class="exh-grid">
     <div>
       <h3 class="eyebrow">Each hour</h3>
-      <table><thead><tr><th>Hour</th><th>Purges</th><th>Run (min:s)</th><th>Air out (m³)</th><th>Air changes</th></tr></thead><tbody id="exhRows"></tbody></table>
+      <table><thead><tr><th>Hour</th><th>Purges</th><th>Run (min:s)</th><th>Air (m³)</th><th>Air changes</th><th>Capped</th></tr></thead><tbody id="exhRows"></tbody></table>
     </div>
     <div>
-      <h3 class="eyebrow">Each exhaust (newest first)</h3>
+      <h3 class="eyebrow">Each run (newest first)</h3>
       <div class="exh-scroll">
-        <table><thead><tr><th>Start</th><th>End</th><th>Time (min:s)</th><th>Level</th><th>Reason</th><th>CO₂ start → end</th><th>Air out (m³)</th></tr></thead><tbody id="exhEvents"></tbody></table>
+        <table><thead><tr><th>Start</th><th>End</th><th>Time (min:s)</th><th>Reason</th><th>CO₂ start → end</th><th>Air (m³)</th><th>Capped</th></tr></thead><tbody id="exhEvents"></tbody></table>
       </div>
     </div>
   </div>
@@ -1009,12 +1011,12 @@ ${faceplate('circ', 'Circulation fan', 'CF-205 · 40 W', 'small', `
     <button class="btn" id="estBtn">Run 24 h test</button>
     <span class="tag">Runs a copy of the simulation from now: 1 h to settle, then 24 h. The live run does not change.</span>
   </div>
-  <div class="est-out" id="estOut"><p class="est-note">Run the test to compare four rule sets: your rules, AC off during a purge, no AC rule during a purge, and no humidity priority.</p></div>
+  <div class="est-out" id="estOut"><p class="est-note">Run the test to compare two rule sets: your rules, and no humidity priority.</p></div>
 </section>
 <section class="card tablecard" id="tableCard" hidden aria-labelledby="hTab">
   <h2 class="eyebrow" id="hTab">Recent sensor readings (newest first)</h2>
   <table>
-    <thead><tr><th>Time</th><th>Temp °C</th><th>RH %</th><th>CO₂ ppm</th><th>Outdoor °C</th><th>Outdoor RH %</th><th>Core °C</th><th>VPD kPa</th><th>AC set °C</th><th>AC W</th><th>Fogger W</th><th>Fan W</th></tr></thead>
+    <thead><tr><th>Time</th><th>Temp °C</th><th>RH %</th><th>CO₂ ppm</th><th>Outdoor °C</th><th>Outdoor RH %</th><th>Core °C</th><th>VPD kPa</th><th>AC set °C</th><th>AC W</th><th>Fogger W</th><th>Air exchange W</th></tr></thead>
     <tbody id="tbody"></tbody>
   </table>
 </section>
@@ -1212,7 +1214,7 @@ function wire() {
     keys: ['T', 'RH', 'C'], power: true, clock: clock(), status: kind => ctl.status(kind),
   });
 
-  // A width change redraws the exhaust bar chart at its new size (today's behaviour), unmount() disconnects it.
+  // A width change redraws the purge bar chart at its new size (today's behaviour), unmount() disconnects it.
   exhRo = new ResizeObserver(() => { exhKey = ''; });
   exhRo.observe($('#exhChart'));
 
