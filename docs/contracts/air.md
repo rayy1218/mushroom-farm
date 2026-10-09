@@ -185,8 +185,8 @@ A pure module in the style of `capacity.js`: an IIFE that sets `global.ClimateAi
 
 | Item | Rule |
 |---|---|
-| `ctl.purges()` | Replaces `ctl.exhaust()`. `{ cur, events, hours }`. Event: `{ start, end, reason, co2Start, co2End, m3, capped }`, `m3 = runS × cfg.airM3h / 3600`, at most 200 events. Hour bucket: `{ h, runS, starts, m3, cappedN, fogLS, acHighS, acLowS }`, 168 h kept. `reason` ∈ `'purge' \| 'safety' \| 'timed' \| 'free cooling' \| 'drying' \| 'manual'`. |
-| `st.stats` | `{ airOnS, purges, purgeS, longestPurgeS, cappedPurges, delayedS, fogStarts, acCmds }` (replaces `fanOnS`, `fanStarts`, `setbackS`, `acOffS`, `fanBlockedS`) |
+| `ctl.purges()` | Replaces `ctl.exhaust()`. `{ cur, events, hours }`. `cur`: the running air run in the event shape with `end: null`, `co2End: null`, `capped: false`; `null` when the fans are off. Event: `{ start, end, reason, co2Start, co2End, m3, capped }`, `m3 = runS × cfg.airM3h / 3600`, at most 200 events. Hour bucket: `{ h, runS, starts, m3, cappedN, fogLS, acHighS, acLowS }`, 168 h kept. `reason` ∈ `'purge' \| 'safety' \| 'timed' \| 'free cooling' \| 'drying' \| 'manual'`. |
+| `st.stats` | `{ airOnS, purges, purgeS, longestPurgeS, cappedPurges, delayedS, fogStarts, acCmds }` (replaces `fanOnS`, `fanStarts`, `setbackS`, `acOffS`, `fanBlockedS`). `purges`, `purgeS`, `longestPurgeS`, `cappedPurges` count CO₂ purges only (state `purge`); `airOnS` counts every air run. |
 | `status('CO2')` | Order: sensor fault; `co2Safe` → as today; `co2Hi` → as today; `delayed` → `{ lvl: 'info', icon: '❚❚', text: 'Purge delayed (RH)' }`; `purge` → `{ 'info', '▲', 'Purging' }`; `prepare` → `{ 'info', '◷', 'Purge soon' }`; else `{ 'good', '✓', 'Below limit' }` |
 | `st.why.air` | `idle`: `CO₂ is <x> ppm. The next purge starts at <fanOn> ppm.` `prepare`: `Purge in about <m> min: the AC aims at <spT+prepT> °C, the fogger at <rhT+prepRH> %.` `purge`: `Purging since <m:ss> (at most <cap>). It stops at <fanOff> ppm.` `after`: `Minimum off time: <s> s.` plus 5.5 when on |
 | Events (`say`) | `Air exchange on: <reason>` / `Air exchange off (<m:ss>, CO₂ <x> ppm)` / `Purge stopped at the time cap (<m:ss>)` / `Purge delayed: humidity first` / `Purge allowed again: humidity recovered` / `CO₂ sensor fault: timed purge started` / `… ended` / the 5.5 alarm |
@@ -257,27 +257,28 @@ Checked on Node 22.20 (SQLite 3.50.4) inside `BEGIN IMMEDIATE` with `foreign_key
 |---|---|
 | `index.html` (lead, step 0) | `<script src="air.js"></script>` before `controller.js` |
 | Room drawing (`web/simulator.js`) | `mimicLayout({ inletAt, exhaustAt })` → `{ inlet: { band, kind: 'fan', tag: 'SF-203', label: 'Filtered intake' }, outlet: { band, kind: 'fan', tag: 'EF-206', label: 'Exhaust' } }`. Two fan groups (`#fanIn`, `#fanOut`), both spin while `act.air`; the grille is removed. With the fans off, each shows a closed damper (a bar across the opening). Text: `Purge <m3h> m³/h` / `Off · dampers closed`. |
-| Status card | `faceplate('air', 'Air exchange', 'SF-203 + EF-206 · <m3h> m³/h', …)`; ids `airState`, `airPower`, `airWhy`; state `Idle` / `Prepare · purge in about <m> min` / `Purge <m:ss> of <cap>` / `Delayed (humidity first)` / `Safety run` / `Timed purge` / `Free cooling` / `Drying` / `Manual on` |
-| Glance panel | Adds a row `Air exchange`: `Next purge in about <m> min` / `Purging <m:ss>` / `Idle`; per day: `Purges <n> · average <m:ss>` |
-| Settings panel (`web/settings-panel.js`) | Rules card heading `Air exchange and CO₂`. Priority 2 text: "Delay purges that dry the room when humidity is low". Priority 3 fieldset `CO₂ purge`: `rFanOn`, `rFanOff`, `rPurgeMax` (min, 1–15, stored as s), `rPrepare` (checkbox), `rPrepareLead` (min, 0–15), `rMinOff` (s, 30–600). Removed: `rRhAction`, `rAirMode`, `rFanLevel`, the whole AC-during-purge fieldset. The Machines card device `air` ("Air exchange") with an On/Off checkbox `airOnChk` in place of `fanLevelSel`. `FIELDS` updated to match (the count follows), with labels in 7.1. |
-| Charts (`web/charts.js`) | Power key `fan` → `air` (legend "Air exchange"); `LADDER_ROWS` = one row `{ key: 'air', name: 'Purge', hi: fanOn, lo: fanOff }`; the exhaust bars become purge bars ("Air exchange run minutes per hour", title `<n> purges, <m3> m³, <capped> capped`) |
+| Status card | `faceplate('air', 'Air exchange', 'SF-203 + EF-206 · <m3h> m³/h', …)`; ids `airState`, `airPower`, `airWhy`; state `Idle` / `Prepare · purge in about <m> min` / `Purge <m:ss> of <cap>` / `Delayed (humidity first)` / `Safety run` / `Timed purge` / `Free cooling` / `Drying` / `Manual on` / `Manual off` |
+| Glance panel | Adds a row `Air exchange`: `Next purge in about <m> min` / `Purging <m:ss>` / `Delayed (humidity first)` / for other air runs the status card's text / `Idle`; per day: `Purges <n> · average <m:ss>` |
+| Settings panel (`web/settings-panel.js`) | Rules card heading `Air exchange and CO₂`. Priority 2 text: "Delay purges that dry the room when humidity is low". Priority 3 fieldset `CO₂ purge`: `rFanOn`, `rFanOff`, `rPurgeMax` (min, 1–15, stored as s), `rPrepare` (checkbox), `rPrepareLead` (min, 0–15), `rMinOff` (s, 30–600). Removed: `rRhAction`, `rAirMode`, `rFanLevel`, the whole AC-during-purge fieldset. The Machines card device `air` ("Air exchange") with an On/Off checkbox `airOnChk` in place of `fanLevelSel`. Installer group "program and room": number input `inAirSize` "Air exchange size" (m³/h, 50–10000) next to Room volume, writing `airM3h`. `FIELDS` updated to match (the count follows), with labels and units in 7.1. |
+| Charts (`web/charts.js`) | Power key `fan` → `air` (legend "Air exchange"); `LADDER_ROWS` = one row `{ key: 'air', name: 'Purge', hi: fanOn, lo: fanOff }`; `drawExhaustBars` becomes `drawPurgeBars(el, hours)` ("Air exchange run minutes per hour", title `<n> purges, <m3> m³, <capped> capped`; no volume argument); `createLadder` chips `{ air }`. The ladder has one row; Prepare is timed, not a ppm level, so it shows only as the chip text. |
 | Test bench | `#inVent` removed. New number input `#inAirM3h` "Air exchange size (m³/h)", 50–10000, sets `env.airM3h` and `cfg.airM3h` together. The plant facts line reads `Air exchange: <m3h> m³/h, <W> W while on`. |
 | Capacity page (`web/capacity.js`) | `vent` removed from rooms; `LIMIT_WORD.air = 'the air exchange (CO₂ purges)'`; `FAIL_MACHINE['CO₂ above the limit'] = 'the air exchange is too small for short purges'` |
 | Calibration page | CSV help: column `air` (0 or 1; an old `fan` column 0–3 is read as on when > 0). The supply-fan tag text is removed. |
+| Room page (C5 7.9, 7.10) | Command from a Reading: `air: { on: r.air === 1 }` in place of `fan.level ← r.fan`; the restart-check fixture room has no `vent` |
 
 ### 7.1 Settings labels (`FIELDS`)
 
-| Path | Label |
-|---|---|
-| `rules.fanOn` | Purge starts at (ppm) |
-| `rules.fanOff` | Purge stops at (ppm) |
-| `rules.purgeMaxS` | Longest purge (s) |
-| `rules.prepare` | Prepare before a purge |
-| `rules.prepareLeadS` | Prepare starts before the purge (s) |
-| `rules.minOffS` | Minimum off time (s) |
-| `airM3h` | Air exchange size (m³/h) |
-| `manual.air.auto` | Air exchange: automatic |
-| `manual.air.on` | Air exchange: manual output |
+| Path | Label | Unit |
+|---|---|---|
+| `rules.fanOn` | Purge starts at | ppm |
+| `rules.fanOff` | Purge stops at | ppm |
+| `rules.purgeMaxS` | Longest purge | s |
+| `rules.prepare` | Prepare before a purge | – |
+| `rules.prepareLeadS` | Prepare starts before the purge | s |
+| `rules.minOffS` | Minimum off time | s |
+| `airM3h` | Air exchange size | m³/h |
+| `manual.air.auto` | Air exchange | – |
+| `manual.air.on` | Air exchange: manual output | – |
 
 ## 8. Capacity, cycle, calibration, tools
 
