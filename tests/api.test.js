@@ -17,6 +17,9 @@ const { HttpError } = require('../server/api-common.js');
 require('../air.js');
 require('../sim.js');
 require('../controller.js');
+require('../capacity.js');
+require('../cycle.js');
+require('../equipment.js');
 
 let NOW = 1791450000;
 const now = () => NOW;
@@ -1088,6 +1091,184 @@ describe('error mapping and the database-error stop (4.4)', () => {
       assert.deepStrictEqual((await r.json()).details, ['x']);
       assert.equal(ctx.fatals.length, before);
     });
+  });
+});
+
+// ---- simulation runs and equipment (C3 6.20-6.26) ----
+
+const CC = globalThis.ClimateController;
+const EQ = globalThis.ClimateEquipment;
+const send = (url, method, body) => fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: typeof body === 'string' ? body : JSON.stringify(body) });
+
+function runInputs(over = {}) {
+  return { mix: [{ crop: 'oyster', blocks: 2000, co2_per_block: null }], settings: CC.defaultSettings(), region: 'my-lowland', tariff: 0.57, volume: 60, calibration: null, empty_below: null, equipment: null, ...over };
+}
+function cycleResult(pass = true) {
+  return { verdict: 'ok', totals: { days: 1, pass, kwh: 10, rm: 5.7, rmPerBlock: 0.003 }, stages: [{ stage: 'fruiting' }], series: Array.from({ length: 24 }, (_, h) => ({ h })) };
+}
+const cycleRun = (over = {}) => ({ kind: 'cycle', inputs: runInputs(), result: cycleResult(), ...over });
+function eqReport() {
+  return {
+    verdict: 'ok', ac: { verdict: 'too-small' },
+    air: { verdict: 'enough', own: 1800, capS: 180, needM3h: 800, recommended: null, margin: null, purgeS: 69, stage: 'pinning', text: 'Your 1,800 m³/h air exchange is enough: a purge takes at most 1.2 min (pinning), the limit is 3 min.' },
+    runs: [{ kind: 'ac', ac_hp: 1 }], summary: ['x'],
+  };
+}
+
+describe('simulation runs 6.20-6.24', () => {
+  let ctx;
+  test.before(async () => { ctx = startApi(); await ctx.ready; });
+  test.after(() => ctx.stop());
+
+  test('simulation runs: create, list, get, patch, delete (C3 6.20-6.24)', async () => {
+    const id = seedRoom(ctx.db, 'S1');
+    const base = `${ctx.url}/api/rooms/${id}/simulations`;
+    const r1 = await send(base, 'POST', cycleRun({ note: '  x  ' }));
+    assert.equal(r1.status, 201);
+    assert.equal(r1.headers.get('cache-control'), 'no-store');
+    const info1 = await r1.json();
+    assert.equal('result' in info1, false);
+    assert.equal(info1.kind, 'cycle');
+    assert.equal(info1.verdict, 'pass');
+    assert.equal(info1.blocks, 2000);
+    assert.equal(info1.days, 1);
+    assert.equal(info1.note, 'x');
+    assert.equal(info1.room_id, id);
+    const info2 = await (await send(base, 'POST', cycleRun({ note: '  ' }))).json();
+    assert.equal(info2.note, null);
+    const info3 = await (await send(base, 'POST', cycleRun())).json();
+    assert.equal(info3.note, null);
+
+    const list = await (await fetch(base)).json();
+    assert.deepStrictEqual(list.map(r => r.id), [info3.id, info2.id, info1.id]);
+    for (const row of list) assert.equal('result' in row, false);
+    const page = await (await fetch(`${base}?limit=1`)).json();
+    assert.deepStrictEqual(page.map(r => r.id), [info3.id]);
+    const page2 = await (await fetch(`${base}?limit=2&before=${info3.id}`)).json();
+    assert.deepStrictEqual(page2.map(r => r.id), [info2.id, info1.id]);
+
+    const full = await (await fetch(`${base}/${info1.id}`)).json();
+    assert.deepStrictEqual(full.result, cycleResult());
+    assert.equal(full.id, info1.id);
+
+    const rp = await send(`${base}/${info1.id}`, 'PATCH', { note: 'later', real_start: NOW - 86400 });
+    assert.equal(rp.status, 200);
+    const patched = await rp.json();
+    assert.equal('result' in patched, false);
+    assert.equal(patched.note, 'later');
+    assert.equal(patched.real_start, NOW - 86400);
+    const cleared = await (await send(`${base}/${info1.id}`, 'PATCH', { note: '   ' })).json();
+    assert.equal(cleared.note, null);
+
+    const rd = await fetch(`${base}/${info1.id}`, { method: 'DELETE' });
+    assert.equal(rd.status, 200);
+    const deleted = await rd.json();
+    assert.equal(deleted.id, info1.id);
+    assert.equal('result' in deleted, false);
+    const gone = await fetch(`${base}/${info1.id}`);
+    assert.equal(gone.status, 404);
+    assert.equal((await gone.json()).error, 'Unknown simulation run');
+    assert.deepStrictEqual((await (await fetch(base)).json()).map(r => r.id), [info3.id, info2.id]);
+  });
+
+  test('simulation runs: 400s and 404s (C3 6.20-6.24, 7.6)', async () => {
+    const id = seedRoom(ctx.db, 'S2');
+    const other = seedRoom(ctx.db, 'S2b');
+    const archived = seedRoom(ctx.db, 'S2c');
+    ctx.rooms.archive(archived);
+    const base = `${ctx.url}/api/rooms/${id}/simulations`;
+    const run = await (await send(base, 'POST', cycleRun())).json();
+    const rowsBefore = ctx.db.listSimulationRuns(id, {}).length;
+
+    for (const body of [null, JSON.stringify('x'), { ...cycleRun(), extra: 1 }, cycleRun({ kind: 'heat' }), cycleRun({ inputs: runInputs({ vent: 1 }) }), cycleRun({ note: 'x'.repeat(201) })]) {
+      const r = await send(base, 'POST', body);
+      assert.equal(r.status, 400, JSON.stringify(body)?.slice(0, 80));
+      assert.equal((await r.json()).error, 'Invalid simulation run');
+    }
+    for (const body of [{}, { extra: 1 }, { real_start: 0 }, { note: 5 }, [], null]) {
+      const r = await send(`${base}/${run.id}`, 'PATCH', body);
+      assert.equal(r.status, 400, JSON.stringify(body));
+      assert.equal((await r.json()).error, 'Invalid simulation run');
+    }
+    const rBad = await send(base, 'POST', '{not json');
+    assert.equal(rBad.status, 400);
+    assert.equal((await rBad.json()).error, 'Body is not valid JSON');
+    assert.equal(ctx.db.listSimulationRuns(id, {}).length, rowsBefore);
+    assert.equal(ctx.db.getSimulationRun(id, run.id).note, null);
+
+    for (const q of ['limit=0', 'limit=201', 'limit=abc', 'before=0', 'before=x']) {
+      const r = await fetch(`${base}?${q}`);
+      assert.equal(r.status, 400, q);
+      assert.equal((await r.json()).error, 'Invalid query', q);
+    }
+
+    const otherRun = await (await send(`${ctx.url}/api/rooms/${other}/simulations`, 'POST', cycleRun())).json();
+    for (const runId of ['0', 'abc', '99999', '01', String(otherRun.id)]) {
+      for (const [method, body] of [['GET', undefined], ['PATCH', { note: 'x' }], ['DELETE', undefined]]) {
+        const r = await fetch(`${base}/${runId}`, { method, ...(body ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}) });
+        assert.equal(r.status, 404, `${method} ${runId}`);
+        assert.deepStrictEqual(await r.json(), { error: 'Unknown simulation run', details: [] }, `${method} ${runId}`);
+      }
+    }
+    // the other room's run is untouched
+    assert.equal(ctx.db.getSimulationRun(other, otherRun.id).id, otherRun.id);
+
+    const ab = `${ctx.url}/api/rooms/${archived}/simulations`;
+    for (const [method, p] of [['GET', ''], ['POST', ''], ['GET', '/1'], ['PATCH', '/1'], ['DELETE', '/1']]) {
+      const r = await fetch(ab + p, { method, ...(method === 'POST' || method === 'PATCH' ? { body: '{}' } : {}) });
+      assert.equal(r.status, 404, `${method} ${p}`);
+      assert.equal((await r.json()).error, 'Unknown room');
+    }
+  });
+
+  test('simulation runs: body limits 8 MB on 6.21, 1 MB on 6.23', async () => {
+    const id = seedRoom(ctx.db, 'S3');
+    const base = `${ctx.url}/api/rooms/${id}/simulations`;
+    const padded = n => { const run = cycleRun(); run.result.pad = 'x'.repeat(n); return JSON.stringify(run); };
+    const ok = await send(base, 'POST', padded(7 * 1024 * 1024));
+    assert.equal(ok.status, 201);
+    const stored = ctx.db.listSimulationRuns(id, {}).length;
+    assert.equal(stored, 1);
+    const big = await send(base, 'POST', padded(9 * 1024 * 1024));
+    assert.equal(big.status, 400);
+    assert.deepStrictEqual(await big.json(), { error: 'Body is larger than 8 MB', details: [] });
+    assert.equal(ctx.db.listSimulationRuns(id, {}).length, stored);
+    const runId = ctx.db.listSimulationRuns(id, {})[0].id;
+    const patch = await send(`${base}/${runId}`, 'PATCH', JSON.stringify({ note: 'x'.repeat(2 * 1024 * 1024) }));
+    assert.equal(patch.status, 400);
+    assert.equal((await patch.json()).error, 'Body is larger than 1 MB');
+    // another route keeps the 1 MB limit
+    const put = await send(`${ctx.url}/api/rooms/${id}/mix`, 'PUT', JSON.stringify([{ crop: 'oyster', blocks: 1, pad: 'x'.repeat(2 * 1024 * 1024) }]));
+    assert.equal(put.status, 400);
+    assert.equal((await put.json()).error, 'Body is larger than 1 MB');
+  });
+
+  test('simulation runs: an equipment Report (C3 6.21)', async () => {
+    const id = seedRoom(ctx.db, 'S4');
+    const body = { kind: 'equipment', inputs: runInputs({ equipment: { ...EQ.DEFAULTS } }), result: eqReport() };
+    const r = await send(`${ctx.url}/api/rooms/${id}/simulations`, 'POST', body);
+    assert.equal(r.status, 201);
+    const info = await r.json();
+    assert.equal(info.kind, 'equipment');
+    assert.equal(info.verdict, 'too-small');
+  });
+
+  test('simulation errors: a NotFoundError from db.getSimulationRun gives 404 Unknown simulation run (C3 4.1)', async () => {
+    const id = seedRoom(ctx.db, 'S5');
+    await withReplaced(ctx.db, 'getSimulationRun', () => { throw new NotFoundError('simulation', 5); }, async () => {
+      const r = await fetch(`${ctx.url}/api/rooms/${id}/simulations/5`);
+      assert.equal(r.status, 404);
+      assert.equal((await r.json()).error, 'Unknown simulation run');
+    });
+  });
+
+  test('DELETE on another path gives Unknown route', async () => {
+    seedRoom(ctx.db, 'S6');
+    for (const p of ['/api/rooms/1', '/api/rooms/1/settings', '/api/rooms/1/simulations', '/api/rooms']) {
+      const r = await fetch(ctx.url + p, { method: 'DELETE' });
+      assert.equal(r.status, 404, p);
+      assert.deepStrictEqual(await r.json(), { error: 'Unknown route', details: [] }, p);
+    }
   });
 });
 
