@@ -11,6 +11,8 @@ const { openFakeDb } = require('../tests/fakes/db.js');
 const { createFakeRoomManager } = require('../tests/fakes/rooms.js');
 const { createApi } = require('../server/api.js');
 const { RoomError } = require('../server/rooms-common.js');
+const { NotFoundError } = require('../server/db-common.js');
+const { HttpError } = require('../server/api-common.js');
 
 require('../air.js');
 require('../sim.js');
@@ -62,6 +64,9 @@ fs.writeFileSync(path.join(root, 'styles.css'), 'body{}');
 fs.writeFileSync(path.join(root, 'sim.js'), '// sim');
 fs.writeFileSync(path.join(root, 'air.js'), '// air');
 fs.writeFileSync(path.join(root, 'room-rules.js'), '// room-rules');
+fs.writeFileSync(path.join(root, 'cycle.js'), '// cycle');
+fs.writeFileSync(path.join(root, 'equipment.js'), '// equipment');
+fs.writeFileSync(path.join(root, 'harvest-rules.js'), '// harvest-rules');
 fs.mkdirSync(path.join(root, 'web', 'sub'), { recursive: true });
 fs.writeFileSync(path.join(root, 'web', 'a.js'), '// a');
 fs.writeFileSync(path.join(root, 'web', 'sub', 'b.css'), '/* b */');
@@ -98,6 +103,9 @@ describe('static files', () => {
       ['/sim.js?v=2', 'text/javascript; charset=utf-8'],
       ['/air.js', 'text/javascript; charset=utf-8'],
       ['/room-rules.js', 'text/javascript; charset=utf-8'],
+      ['/cycle.js', 'text/javascript; charset=utf-8'],
+      ['/equipment.js', 'text/javascript; charset=utf-8'],
+      ['/harvest-rules.js', 'text/javascript; charset=utf-8'],
       ['/web/a.js', 'text/javascript; charset=utf-8'],
       ['/web/sub/b.css', 'text/css; charset=utf-8'],
     ];
@@ -900,6 +908,28 @@ describe('error mapping and the database-error stop (4.4)', () => {
         const r = await fetch(`${ctx.url}/api/rooms/${id}/alarms/someKey/ack`, { method: 'POST' });
         assert.equal(r.status, 404, code);
         assert.equal((await r.json()).error, 'Unknown alarm', code);
+      });
+    }
+  });
+
+  test('HttpError comes from server/api-common.js (C3 2.1)', async () => {
+    const source = fs.readFileSync(path.join(__dirname, '..', 'server', 'api.js'), 'utf8');
+    assert.ok(!source.includes('class HttpError'));
+    assert.ok(!source.includes('errorText'));
+    await withReplaced(ctx.rooms, 'list', () => { throw new HttpError(400, 'Invalid thing', ['x: bad']); }, async () => {
+      const r = await fetch(`${ctx.url}/api/rooms`);
+      assert.equal(r.status, 400);
+      assert.deepStrictEqual(await r.json(), { error: 'Invalid thing', details: ['x: bad'] });
+      assert.equal(ctx.fatals.length, 0);
+    });
+  });
+
+  test('error mapping: NotFoundError simulation, batch, crate (C3 4.1)', async () => {
+    for (const [what, text] of [['simulation', 'Unknown simulation run'], ['batch', 'Unknown batch'], ['crate', 'Unknown crate']]) {
+      await withReplaced(ctx.rooms, 'list', () => { throw new NotFoundError(what, 7); }, async () => {
+        const r = await fetch(`${ctx.url}/api/rooms`);
+        assert.equal(r.status, 404);
+        assert.deepStrictEqual(await r.json(), { error: text, details: [] });
       });
     }
   });

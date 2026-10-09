@@ -1,10 +1,15 @@
 // server/api.js: HTTP API (C3) and live feed (C4). createApi(opts) -> { handle, close }.
 'use strict';
 const { serveStatic } = require('./static.js');
+const { HttpError } = require('./api-common.js');
 require('../sim.js');
+require('../air.js');
 require('../controller.js');
 require('../runtime.js');
 require('../calib.js');
+require('../capacity.js');
+require('../cycle.js');
+require('../equipment.js');
 require('../room-rules.js');
 
 const RULES = globalThis.ClimateRoomRules;
@@ -14,15 +19,6 @@ const QUERY_INT_RE = /^[0-9]{1,15}$/;
 
 function isPlainObject(v) {
   return v !== null && typeof v === 'object' && !Array.isArray(v);
-}
-
-class HttpError extends Error {
-  constructor(status, error, details = []) {
-    super(error);
-    this.status = status;
-    this.errorText = error;
-    this.details = details;
-  }
 }
 
 function sendJson(res, status, body) {
@@ -79,6 +75,9 @@ function mapError(err) {
   if (err && err.code === 'NOT_FOUND') {
     if (err.what === 'settings') return { status: 404, error: 'Unknown settings version', details: [] };
     if (err.what === 'calibration') return { status: 404, error: 'Unknown calibration run', details: [] };
+    if (err.what === 'simulation') return { status: 404, error: 'Unknown simulation run', details: [] };
+    if (err.what === 'batch') return { status: 404, error: 'Unknown batch', details: [] };
+    if (err.what === 'crate') return { status: 404, error: 'Unknown crate', details: [] };
     return { status: 404, error: 'Unknown room', details: [] };
   }
   if (err && err.name === 'RoomError') {
@@ -442,7 +441,7 @@ function createApi(opts) {
   function handleFault(res, err) {
     if (res.writableEnded) { console.error(err); return; }
     if (err instanceof HttpError) {
-      sendError(res, err.status, err.errorText, err.details);
+      sendError(res, err.status, err.error, err.details);
       return;
     }
     const mapped = mapError(err);
