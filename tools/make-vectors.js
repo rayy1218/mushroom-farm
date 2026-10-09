@@ -3,13 +3,13 @@
 // change of the controller: node tools/make-vectors.js
 const fs = require('node:fs'), path = require('node:path');
 const D = path.join(__dirname, '..');
-require(path.join(D, 'sim.js')); require(path.join(D, 'controller.js')); require(path.join(D, 'runtime.js'));
+require(path.join(D, 'air.js')); require(path.join(D, 'sim.js')); require(path.join(D, 'controller.js')); require(path.join(D, 'runtime.js'));
 const SIM = globalThis.ClimateSim, CC = globalThis.ClimateController, RT = globalThis.ClimateRuntime;
 
 const READ_KEYS = ['seq', 't', 'hour', 'T', 'RH', 'CO2', 'tOut', 'rhOut', 'core', 'T2', 'RH2', 'CO2b'];
 const round = x => (x == null ? x : Math.round(x * 1e4) / 1e4);
-// Compact command: [acPower, acMode, acSetpoint, acFan, fogLevel, fanLevel, lights, circ]
-const packCmd = c => [c.ac.power ? 1 : 0, c.ac.mode, c.ac.setpoint, c.ac.fan, c.hu.level, c.fan.level, c.lights.on ? 1 : 0, c.circ.on ? 1 : 0];
+// Compact command: [acPower, acMode, acSetpoint, acFan, fogLevel, air, lights, circ]
+const packCmd = c => [c.ac.power ? 1 : 0, c.ac.mode, c.ac.setpoint, c.ac.fan, c.hu.level, c.air.on ? 1 : 0, c.lights.on ? 1 : 0, c.circ.on ? 1 : 0];
 
 function record(name, description, { hours = 6, env = {}, cfg: cfgOver = {}, events = [] }) {
   const e = { ...structuredClone(SIM.DEFAULT_ENV), ...env };
@@ -31,7 +31,7 @@ function record(name, description, { hours = 6, env = {}, cfg: cfgOver = {}, eve
     simIo.advance(1); rt.poll();
   }
   const file = { format: 'mushroom-climate-vectors', version: 1, name, description, controller: 'controller.js', settings,
-    cmdFields: ['acPower', 'acMode', 'acSetpoint', 'acFan', 'fogLevel', 'fanLevel', 'lights', 'circ'], actions, steps };
+    cmdFields: ['acPower', 'acMode', 'acSetpoint', 'acFan', 'fogLevel', 'air', 'lights', 'circ'], actions, steps };
   fs.writeFileSync(path.join(D, 'tests/vectors', `${name}.json`), JSON.stringify(file));
   console.log(`${name}: ${steps.length} steps, ${(JSON.stringify(file).length / 1024).toFixed(0)} KB`);
 }
@@ -43,5 +43,7 @@ record('dry-weather', 'Dry outdoor air and 4000 blocks: humidity first and the C
 record('two-sensor-sets', 'A second sensor set low in the room; the main RH sensor stops after 1 h.', { env: { sensor2At: 'low' }, events: [{ at: 3600, faults: { RH: 'missing' } }] });
 record('stage-changes', 'Black oyster: fruiting, then pinning after 1 h, ramps.', { cfg: { crop: 'black', stage: 'fruiting', applyProfile: true }, events: [{ at: 3600, call: 'setStage', args: ['pinning'] }] });
 record('cold-weather', 'Cold outdoor air (14 °C, no day cycle): the AC changes to heat mode.', { env: { dailyCycle: false, tFixed: 14, nightRH: 90 } });
-record('crowded-dry', 'Dry air and 6000 blocks for 12 h, humidity action "reduce to Low", fan level High: reduced purges and the CO2 safety level.',
-  { hours: 12, env: { nightRH: 50, blocks: 6000 }, cfg: { rules: { ...CC.defaultRules(1000), rhAction: 'low', fanLevel: 3 } } });
+record('crowded-dry', 'Dry air and 6000 blocks for 12 h: purges delayed by humidity first, and the CO2 safety level.',
+  { hours: 12, env: { nightRH: 50, blocks: 6000 }, cfg: { rules: CC.defaultRules(1000) } });
+record('capped-purges', 'Grey oyster fruiting, 6000 blocks, an air exchange of 900 m³/h: the purges hit the time cap and the size alarm comes.',
+  { hours: 6, env: { blocks: 6000, airM3h: 900 }, cfg: { airM3h: 900 } });

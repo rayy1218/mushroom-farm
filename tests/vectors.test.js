@@ -3,10 +3,11 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs'), path = require('node:path');
+require('../air.js');
 require('../controller.js');
 const CC = globalThis.ClimateController;
 const DIR = path.join(__dirname, 'vectors');
-const pack = c => [c.ac.power ? 1 : 0, c.ac.mode, c.ac.setpoint, c.ac.fan, c.hu.level, c.fan.level, c.lights.on ? 1 : 0, c.circ.on ? 1 : 0];
+const pack = c => [c.ac.power ? 1 : 0, c.ac.mode, c.ac.setpoint, c.ac.fan, c.hu.level, c.air.on ? 1 : 0, c.lights.on ? 1 : 0, c.circ.on ? 1 : 0];
 
 for (const f of fs.readdirSync(DIR).filter(x => x.endsWith('.json')).sort()) {
   test(`vectors: ${f}`, () => {
