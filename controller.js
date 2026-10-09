@@ -47,9 +47,11 @@
   // limits: alarm range for the air (tMin-tMax) and the block core (coreMax).
   // coreTarget: block core temperature that the AC holds in spawn run (with a block probe).
   // range: the good fruiting band (T °C, RH %), narrower than the alarm limits; a mixed room needs targets inside every crop's range.
-  // Only crops that fruit near tropical room temperature (a split AC cannot hold 16-21 °C on a 33 °C day).
+  // Mostly crops that fruit near tropical room temperature; a cool crop (flag cool) needs an insulated room and a larger AC.
   // Flags: casing (milky: soil casing before pinning, a manual step). Flags for other crops:
-  // maxFog (no direct fog on the crop), shock { T, hours } (cold shock at pinning), spawnLights (light in spawn run).
+  // maxFog (no direct fog on the crop), shock { T, hours } (cold shock at pinning), spawnLights (light in spawn run),
+  // cool (a crop held well below the outdoor air: no heat mode while the outdoor air is warm, C8).
+  // wetRH { <stage>: % } (C8): the "humidity near saturation" line of that stage in C7 scoring (default PASS.wetRH 95).
   const CROPS = {
     oyster:    { name: 'Grey oyster', spawn: [24, 70, 5000], pinning: [24, 92, 800], fruiting: [25, 88, 1000], rest: [25, 80, 2000],
                  limits: { tMin: 20, tMax: 30, coreMax: 32 }, coreTarget: 28, range: { T: [23, 27], RH: [85, 92] } },
@@ -74,6 +76,13 @@
     // Heat-loving (30-35 °C). Held at 30 °C: the highest split AC setpoint.
     milky:     { name: 'Milky (Calocybe indica)', spawn: [30, 70, 5000], pinning: [30, 90, 1000], fruiting: [30, 85, 1000], rest: [30, 80, 2000],
                  limits: { tMin: 25, tMax: 36, coreMax: 38 }, coreTarget: 32, range: { T: [28, 34], RH: [80, 90] }, casing: true },
+    // DRAFT (C8, research 2026-10-08, 22 sources for fruiting): a cool crop (fruits at 16-22 °C) that needs an insulated room
+    // and a larger AC than the tropical crops. CO2 sets the shape: above about 1000 ppm long spines and coral shapes.
+    // Pinning RH 90-100 % in the sources (S12 Out-Grow and S15 Fungi Academy 95-100): wet only above 98 % in pinning.
+    // Pinning CO2 1000 (owner 2026-10-09, inside the 500-1100 of the sources): a 450 ppm stop level (6a12852) made purges frequent and wet.
+    lionsmane: { name: "Lion's mane", spawn: [23, 80, 5000], pinning: [17, 92, 1000], fruiting: [20, 90, 1000], rest: [21, 80, 2000],
+                 limits: { tMin: 14, tMax: 27, coreMax: 30 }, coreTarget: 25, range: { T: [16, 22], RH: [85, 92] }, cool: true,
+                 wetRH: { pinning: 98 } },
   };
   const STAGES = { spawn: 'Spawn run', pinning: 'Pinning', fruiting: 'Fruiting', rest: 'Rest between flushes' };
   // Farms that buy ready-to-fruit blocks never have a spawn run or pinning in their rooms.
@@ -294,6 +303,10 @@
       }
       st.stage.prevStage = stage;
       if (stage === 'pinning' && CROPS[cfg.crop].casing) say(t, 'info', 'Case the blocks with 2–3 cm of pasteurised soil (manual step). Pins come about 10 days after casing.');
+      // A lower CO2 limit (and its start and stop levels) takes effect at once, not over the ramp.
+      const co2Down = to.co2Lim < from.co2Lim;
+      if (co2Down) for (const k of ['co2Lim', 'rules.fanOn', 'rules.fanOff']) { from[k] = to[k]; setK(cfg, k, to[k]); }
+      st.stage.freePurge = co2Down ? true : null;   // the first purge after it: no time cap above the limit, not counted
       if (ramp && hours > 0) st.stage.ramp = { from, to, t0: t, dur: hours * 3600 };
       else { st.stage.ramp = null; for (const k of RAMP_KEYS) setK(cfg, k, to[k]); }
       say(t, 'info', `Stage: ${STAGES[stage]}${stage === 'fruiting' || stage === 'rest' ? `, flush ${st.stage.flush} of ${cfg.program.flushes}` : ''}. Targets ${to.spT} °C, ${to.spRH} % RH, CO₂ limit ${to.co2Lim} ppm${st.stage.ramp ? `, reached in ${hours} h` : ''}.`);
@@ -490,6 +503,7 @@
       if (st.air.state !== state) { st.air.state = state; st.air.since = t; }
     }
     function startPurge(t) {
+      if (st.stage.freePurge === true) st.stage.freePurge = 'run';
       setState('purge', t);
       st.air.purgeStart = t;
       st.stats.purges++;
@@ -501,8 +515,10 @@
       st.stats.longestPurgeS = Math.max(st.stats.longestPurgeS, runS);
       A.purgeStart = null;
       setState('after', t);
+      const free = st.stage.freePurge === 'run';
+      if (free) st.stage.freePurge = null;
       if (capped === true) {
-        A.capRun++;
+        if (!free) A.capRun++;
         st.stats.cappedPurges++;
         hourBucket(Math.floor(t / 3600)).cappedN++;
         st.airRunCapped = true;                // the record's event gets capped: true when the air run ends
@@ -571,7 +587,7 @@
       if (A.state === 'purge') {
         const runS = t - A.purgeStart;
         if (v.CO2 <= R.fanOff && runS >= AIR_MIN_ON_S) endPurge(t, false);
-        else if (runS >= R.purgeMaxS) endPurge(t, true);
+        else if (runS >= R.purgeMaxS && !(st.stage.freePurge === 'run' && v.CO2 > cfg.co2Lim && runS < 10 * R.purgeMaxS)) endPurge(t, true);
       }
       // The fans must be off: free cooling or drying keep them on, and then CO2 is being removed anyway.
       if (A.state === 'after' && !on && offFor >= R.minOffS) setState('idle', t);
@@ -605,7 +621,9 @@
       st.coreCooling = !!coreNote;
       // Mode changes only when the condition stays for MODE_HOLD_S (one wrong reading must not change the mode).
       // Heat starts inside the band edge (-0.8 °C), so the room cannot stay below the band in cool mode.
-      st.heatSince = e < -0.8 ? (st.heatSince ?? t) : null;
+      // A cool crop (flag cool) never goes to heat mode while the outdoor air is warm: a large AC in a cool room overshoots below the band.
+      const outWarm = !!crop.cool && !f.out && v.tOut > cfg.spT + BANDS.T;
+      st.heatSince = e < -0.8 && !outWarm ? (st.heatSince ?? t) : null;
       st.coolSince = e > 0.5 ? (st.coolSince ?? t) : null;
       if (st.acMode !== 'heat' && st.heatSince != null && t - st.heatSince >= MODE_HOLD_S) st.acMode = 'heat';
       else if (st.acMode === 'heat' && st.coolSince != null && t - st.coolSince >= MODE_HOLD_S) st.acMode = 'cool';

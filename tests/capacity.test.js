@@ -428,3 +428,23 @@ test('sim: a smaller pair runs longer to move the same air', () => {
   };
   assert.ok(runS(900) > runS(1800));
 });
+
+// ---------- C8 5.2: the room's machines (room.plant) ----------
+test('CAP-P1 roomOf takes the plant room, the calibration still wins', () => {
+  assert.equal(CAP.roomOf({ volume: 60, plant: { room: { ua: 300 } } }).ua, 300);
+  assert.equal(CAP.roomOf({ volume: 60, plant: { room: { ua: 300 } }, calib: { ua: 90, infAch: 0.4, moistBuffer: 3 } }).ua, 90);
+});
+
+test('CAP-P2 trial uses the plant of the room (a small aircond cannot hold 4000 blocks)', () => {
+  const mix = [{ crop: 'oyster', blocks: 4000 }], tg = CAP.commonTargets(mix);
+  const mean = r => r.days.reduce((s, d) => s + d.inT, 0) / r.days.length;
+  const big = mean(CAP.trial(room, mix, tg, 4000));
+  const small = mean(CAP.trial({ ...room, plant: { ac: { capW: 2640, coilM3s: 0.1056, auxW: 26.4 } } }, mix, tg, 4000));
+  assert.ok(big - small >= 10, `${big} vs ${small}`);
+});
+
+test('CAP-P3 balance sizes the aircond from the plant', () => {
+  const mix = [{ crop: 'oyster', blocks: 4000 }], tg = CAP.commonTargets(mix);
+  const a = CAP.balance(room, mix, tg), b = CAP.balance({ ...room, plant: { ac: { capW: 7910 } } }, mix, tg);
+  assert.ok(b.ac > a.ac, `${a.ac} vs ${b.ac}`);
+});

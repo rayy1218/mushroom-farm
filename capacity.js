@@ -85,6 +85,7 @@
   const airOf = room => (Number.isFinite(room.airM3h) ? clamp(room.airM3h, 50, 10000) : SIM.PLANT.air.m3h);
   const roomOf = room => ({
     ...SIM.PLANT.room,
+    ...(room.plant && room.plant.room),
     ...(room.calib ? { ua: room.calib.ua, infAch: room.calib.infAch, moistBuffer: room.calib.moistBuffer } : {}),
     volume: room.volume || SIM.PLANT.room.volume,
   });
@@ -123,14 +124,14 @@
   // within the time cap.
   function balance(room, mix, tg, region = 'my-lowland') {
     if (!DESIGN_DAYS[region]) throw new Error(`Unknown region: ${region}`);
-    const P = SIM.PLANT, R = roomOf(room), c = mixCo2(room, mix), rules = CC.defaultRules(tg.co2Lim);
+    const P = SIM.plantOf(room.plant), R = roomOf(room), c = mixCo2(room, mix), rules = CC.defaultRules(tg.co2Lim);
     const airM3h = airOf(room);                                        // the air exchange when on
     const fogTop = P.fogger.levels[P.fogger.levels.length - 1].gph / 3600;         // g/s
     const dC = (rules.fanOn + rules.fanOff) / 2 - R.co2Out;                        // CO2 held at the middle of the purge band
     const air = n => Math.max(R.infAch * R.volume, n * c / dC) / 3600;            // m³/s of outdoor air, on average; never below the leakage
     const blockW = c / 60000 * P.resp.wPerLpm, blockGps = c / 60000 * P.resp.gpsPerLpm + P.transpGph / 3600;
     const tRoom = tg.spT + CC.BANDS.T, ahT = tg.spRH / 100 * ahSat(tRoom), share = P.ac.latentMax.auto;
-    const coilRate = 0.14 * Math.max(0, ahT - ahSat(P.ac.coil.auto));              // g/s at full output
+    const coilRate = P.ac.coilM3s * Math.max(0, ahT - ahSat(P.ac.coil.auto));              // g/s at full output
     const latent = A => Math.min(coilRate * A / P.ac.capW, share * A / 2450);
     const days = DESIGN_DAYS[region].days;
     const hours = days.map(d => d.T.map((T, h) => ({ T, ah: d.RH[h] / 100 * ahSat(T),
@@ -162,6 +163,7 @@
     Object.assign(e, { startHour: 0, blocks: n, co2PerBlock: mixCo2(room, mix), blockStage: 'fruiting', airM3h: airOf(room),
       noise: false, sensorQuality: 'ideal', harvestDoors: false, randomWeather: false, dailyCycle: false });
     e.room = roomOf(room);
+    if (room.plant != null) e.plant = structuredClone(room.plant);
     e.weatherSeries = [];
     seq.forEach((d, k) => d.T.forEach((T, h) => e.weatherSeries.push({ t: (k * 24 + h) * 3600, T, RH: d.RH[h] })));
     const last = days[days.length - 1];
