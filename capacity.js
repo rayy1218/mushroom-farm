@@ -271,6 +271,13 @@
     let mult = SEARCH.step;
     const grow = () => { const m = mult; mult = Math.min(mult * mult, 4); return m; };
     let next = plan.pass || plan.side === 'empty' ? Math.max(e ?? 0, planned * grow()) : Math.min(e ?? Infinity, planned / grow());
+    // A plan that fails only "too few" reasons (too wet, too cold) with no pass known: probe a nearly empty room
+    // first. With purges on demand (C9) crowding can make a room too wet, so if the nearly empty room passes, the
+    // plan is too many blocks and the search goes down; if it fails too, the plan is too few and the search goes up.
+    if (!plan.pass && plan.side === 'empty') {
+      const probe = yield* run(Math.max(1, Math.round(planned * SEARCH.lowAt)));
+      if (probe.pass && probe.blocks < plan.blocks) { lo = probe.blocks; hi = plan.blocks; lowFail = null; next = (lo + hi) / 2; }
+    }
     for (let i = 0; i < SEARCH.maxRuns; i++) {
       if (lo != null && hi != null && (hi - lo <= 1 || (hi - lo) / lo <= SEARCH.resolution)) break;
       if (lo != null && hi != null) next = (lo + hi) / 2;
@@ -306,10 +313,14 @@
       if (!runs.some(r => r.blocks <= n)) { const low = yield* run(n); if (low.pass) lo = low.blocks; }   // passes only when nearly empty
     }
     const cap = { max: lo || 0, hi, min, settled: lo != null && hi != null && (hi - lo <= 1 || (hi - lo) / lo <= SEARCH.resolution) };
-    // The failure that explains the limit: the smallest "dense" failure above the capacity; with no capacity and only
-    // "too wet" failures, the largest of those.
-    const failing = runs.filter(r => !r.pass && r.side === 'dense' && r.blocks > cap.max).sort((a, b) => a.blocks - b.blocks)[0]
-      || (cap.max ? null : runs.filter(r => !r.pass && r.side === 'empty').sort((a, b) => b.blocks - a.blocks)[0]);
+    // The side of a failed run comes from its position: above the capacity it is "too many blocks", below the
+    // smallest passing size "too few"; only with no pass to compare does its reason decide (EMPTY_REASONS).
+    const minPass = runs.filter(r => r.pass).reduce((m, r) => Math.min(m, r.blocks), Infinity);
+    const sideOf = r => (r.pass ? null : cap.max && r.blocks > cap.max ? 'dense' : r.blocks < minPass && Number.isFinite(minPass) ? 'empty' : r.side);
+    // The failure that explains the limit: the smallest "too many" failure above the capacity; with no capacity and
+    // only "too few" failures, the largest of those.
+    const failing = runs.filter(r => sideOf(r) === 'dense' && r.blocks > cap.max).sort((a, b) => a.blocks - b.blocks)[0]
+      || (cap.max ? null : runs.filter(r => sideOf(r) === 'empty').sort((a, b) => b.blocks - a.blocks)[0]);
     const limit = failing ? failing.days.filter(d => !d.pass).map(d => ({ day: d.name, fails: d.fails })) : [];
     const v = verdictOf(planned, cap, opts);
     const tariff = opts.tariff ?? 0.57;
@@ -320,7 +331,7 @@
       perCrop: mix.map(m => ({ crop: m.crop, max: Math.floor(cap.max * share(m)), min: Math.ceil(cap.min * share(m)) })),
       energy: { kwhDay: plan.kwhDay, rmPerBlockCycle: planned ? plan.kwhDay * tariff * cycleDays / planned : null, cycleDays, tariff, planPass: plan.pass },
       disagree: cap.max > 0 && Number.isFinite(est.estimate) && Math.abs(est.estimate - cap.max) / cap.max > SEARCH.disagree,
-      runs: runs.map(r => ({ blocks: r.blocks, pass: r.pass, side: r.side, days: r.days })),
+      runs: runs.map(r => ({ blocks: r.blocks, pass: r.pass, side: sideOf(r), days: r.days })),
     };
   }
   function check(room, mix, opts) {

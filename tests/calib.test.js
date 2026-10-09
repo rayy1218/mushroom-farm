@@ -2,26 +2,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 require('../sim.js'); require('../air.js'); require('../controller.js'); require('../calib.js');
-// C9 bridge (lead deletes at step 2). Test only: until the controller stream merges, controller.js still speaks the old fan shapes.
-// This makes it speak C9's: cmd.air, manual.air, rules.purgeMaxS, and on/off purges in place of steady air.
-// It does nothing once controller.js has manual.air; the lead deletes it at step 2.
-(function bridge(CC) {
-  if (CC.defaultSettings().manual.air) return;
-  const fix = cfg => { cfg.manual.air = { auto: true, on: false }; cfg.rules.airMode = 'purge'; cfg.rules.purgeMaxS = 180; return cfg; };
-  const { defaultRules, defaultSettings, importSettings, create } = CC;
-  CC.defaultRules = lim => ({ ...defaultRules(lim), airMode: 'purge', purgeMaxS: 180 });
-  CC.defaultSettings = () => fix(defaultSettings());
-  CC.importSettings = input => {
-    const r = importSettings(input);
-    return { settings: fix(r.settings), warnings: r.warnings.filter(w => !w.includes('"manual.air')) };
-  };
-  CC.create = (cfg, snapshot, onEvent) => {
-    const ctl = create(cfg, snapshot, onEvent), update = ctl.update;
-    ctl.update = r => { const c = update(r); return { ...c, air: { on: c.fan.level > 0 } }; };
-    return ctl;
-  };
-})(globalThis.ClimateController);
-// end of C9 bridge
 const SIM = globalThis.ClimateSim, CC = globalThis.ClimateController, CAL = globalThis.ClimateCalib;
 
 // A log of a "hidden" room, with every reading (30 s), so a replay runs each purge exactly as long as it ran.

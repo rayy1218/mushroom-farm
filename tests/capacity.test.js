@@ -2,26 +2,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 require('../sim.js'); require('../air.js'); require('../controller.js'); require('../runtime.js'); require('../capacity.js');
-// C9 bridge (lead deletes at step 2). Test only: until the controller stream merges, controller.js still speaks the old fan shapes.
-// This makes it speak C9's: cmd.air, manual.air, rules.purgeMaxS, and on/off purges in place of steady air.
-// It does nothing once controller.js has manual.air; the lead deletes it at step 2.
-(function bridge(CC) {
-  if (CC.defaultSettings().manual.air) return;
-  const fix = cfg => { cfg.manual.air = { auto: true, on: false }; cfg.rules.airMode = 'purge'; cfg.rules.purgeMaxS = 180; return cfg; };
-  const { defaultRules, defaultSettings, importSettings, create } = CC;
-  CC.defaultRules = lim => ({ ...defaultRules(lim), airMode: 'purge', purgeMaxS: 180 });
-  CC.defaultSettings = () => fix(defaultSettings());
-  CC.importSettings = input => {
-    const r = importSettings(input);
-    return { settings: fix(r.settings), warnings: r.warnings.filter(w => !w.includes('"manual.air')) };
-  };
-  CC.create = (cfg, snapshot, onEvent) => {
-    const ctl = create(cfg, snapshot, onEvent), update = ctl.update;
-    ctl.update = r => { const c = update(r); return { ...c, air: { on: c.fan.level > 0 } }; };
-    return ctl;
-  };
-})(globalThis.ClimateController);
-// end of C9 bridge
 const CAP = globalThis.ClimateCapacity, CC = globalThis.ClimateController, SIM = globalThis.ClimateSim, AIR = globalThis.ClimateAir;
 
 const room = { name: 'Room 1', volume: 60, calib: null };
@@ -243,11 +223,23 @@ test('check: 2000 grey oyster in the default room is good; 6000 is too dense', (
   assert.ok(dense.utilisation > 100);
 });
 
-test('check: 200 golden oyster is too empty (too wet), with a minimum and a maximum', { todo: 'C9: the lead re-measures with the C9 controller at step 2' }, () => {
+// Purges on demand (C9): few blocks bring in little outdoor air, so wetness now comes with crowding. Golden oyster's
+// warm target hardly runs the AC, so nothing dries the purged wet air: about 217 blocks fit (measured 2026-10-09).
+const wetAbove = r => r.limit.some(l => l.fails.includes('humidity near saturation'));
+test('check: 200 golden oyster fit, and too wet above them is named as the limit (too many blocks)', () => {
   const r = CAP.check(room, [{ crop: 'golden', blocks: 200 }], { now: NOW });
-  assert.equal(r.verdict, 'too-empty');
-  assert.equal(r.why, 'wet');
-  assert.ok(r.capacity.min > 200 && r.capacity.min < r.capacity.max, JSON.stringify(r.capacity));
+  assert.equal(r.verdict, 'tight', JSON.stringify(r.capacity));
+  assert.ok(r.capacity.max >= 200 && r.capacity.max < 300, JSON.stringify(r.capacity));
+  assert.ok(wetAbove(r), JSON.stringify(r.limit));
+  // a failed run above a passing size is "too many blocks", whatever its reason (position, not reason)
+  for (const x of r.runs) if (!x.pass && x.blocks > r.capacity.max) assert.equal(x.side, 'dense', `${x.blocks}`);
+});
+
+test('check: a too-wet plan above the limit searches down, not up', () => {
+  const r = CAP.check(room, [{ crop: 'golden', blocks: 300 }], { now: NOW });
+  assert.equal(r.verdict, 'too-dense', r.runs.map(x => x.blocks + (x.pass ? 'P' : x.side)).join(' '));
+  assert.ok(r.capacity.max >= 150 && r.capacity.max < 300, JSON.stringify(r.capacity));
+  assert.ok(wetAbove(r), JSON.stringify(r.limit));
 });
 
 test('check: an impossible mix runs no simulation', () => {
@@ -274,13 +266,15 @@ test('check: a balance estimate of 0 does not send the search to 1 block', () =>
   assert.ok(r.limit.some(l => l.fails.includes('temperature too high')));
 });
 
-test('check: a too-wet plan with a low estimate still finds the pass window', { todo: 'C9: the lead re-measures with the C9 controller at step 2' }, () => {
-  // A large, tight room: 100 black oyster blocks are too wet, and the estimate (about 80) is below the plan.
+test('check: a large, tight room with 100 black oyster is under-used; heat limits it', () => {
+  // Under the old always-on fan this room was too wet at 100 blocks; with purges on demand it is not (measured
+  // 2026-10-09: 100 pass, about 1425 blocks fit, the hot-humid day is too hot above that).
   const big = { ...room, volume: 120, calib: { ua: 150, infAch: 0.2, moistBuffer: 3, co2PerBlock: 45, rmse: { T: 0.2, RH: 1, CO2: 20 }, date: '2026-10-01T00:00:00Z' } };
   const r = CAP.check(big, [{ crop: 'black', blocks: 100 }], { now: NOW });
   assert.equal(r.verdict, 'too-empty', r.runs.map(x => x.blocks + (x.pass ? 'P' : x.side)).join(' '));
-  assert.equal(r.why, 'wet');
-  assert.ok(r.capacity.min > 100 && r.capacity.max > r.capacity.min, JSON.stringify(r.capacity));
+  assert.equal(r.why, 'use');
+  assert.ok(r.capacity.max > 1000, JSON.stringify(r.capacity));
+  assert.ok(r.limit.some(l => l.fails.includes('temperature too high')), JSON.stringify(r.limit));
 });
 
 // ---------- air exchange in the simulation (C9 4) ----------
