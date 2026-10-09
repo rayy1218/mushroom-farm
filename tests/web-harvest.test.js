@@ -65,10 +65,11 @@ function mk(tag) {
 }
 function mkEl() {
   const map = {};
+  let detached = false;
   const el = mk('main');
-  el.querySelector = sel => (map[sel] ||= mk(sel));
-  el.replaceChildren = (...c) => { for (const k of Object.keys(map)) delete map[k]; el.children = c; };
-  Object.defineProperty(el, 'innerHTML', { set() {}, get() { return ''; } });
+  el.querySelector = sel => (detached ? null : (map[sel] ||= mk(sel)));
+  el.replaceChildren = (...c) => { detached = true; el.children = c; };
+  Object.defineProperty(el, 'innerHTML', { set() { for (const k of Object.keys(map)) delete map[k]; detached = false; }, get() { return ''; } });   // a new template: fresh nodes
   return el;
 }
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; };
@@ -86,14 +87,16 @@ test('HV6 a late reply of an older mount does not drop the new page\'s load', as
   elA.querySelector('#hvKg').value = '5';
   elA.querySelector('#hvAdd').click();                              // Add crate, reply pending
   registered.harvest.unmount();
-  const elB = mkEl();
+  const elB = elA;                                                   // the shell reuses its one view element
   const pendingB = registered.harvest.mount(elB, { view: 'record', id: 4 });
+  elB.querySelector('#hvKg').value = '7';
   crate.resolve({});                                                 // the old page's save finishes now
   await new Promise(r => setTimeout(r, 20));
+  assert.equal(elB.querySelector('#hvRoom').textContent, '');       // nothing of room 3 reached the new page
   roomB.resolve(roomData(4, 'Room 4'));
   await pendingB;
+  assert.equal(elB.querySelector('#hvKg').value, '7');
   assert.equal(elB.querySelector('#hvRoom').textContent, 'Room 4');
-  assert.equal(elA.querySelector('#hvRoom').textContent, 'Room 3');
 });
 
 test('HV7 a 404 on the reload after a saved crate does not throw, and Enter in #hvKg adds', async t => {

@@ -212,7 +212,11 @@ async function mountRecord(el, roomId, live) {
       await global.FarmApi.undoCrate(Number(btn.dataset.undo));
       if (live()) { setMsg('', false); await load(); }
     } catch (err) {
-      if (live()) { setMsg(errText(err), true); btn.disabled = false; }
+      if (live()) {
+        setMsg(errText(err), true);
+        btn.disabled = false;
+        if (err && err.name === 'ApiError' && (err.status === 400 || err.status === 404)) await load();     // the stale row goes
+      }
     }
   });
 

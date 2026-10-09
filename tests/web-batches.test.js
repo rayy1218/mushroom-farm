@@ -27,6 +27,7 @@ test('BT2 dates are farm dates whatever the browser zone', () => {
   try {
     assert.equal(B.dateToSeconds('2026-10-08'), 1791388800);
     assert.equal(B.secondsToDate(1791388799), '2026-10-07');
+    assert.equal(B.secondsToDate(1791388800), '2026-10-08');
   } finally { process.env.TZ = prev; }
 });
 
@@ -85,9 +86,10 @@ function mkEl() {
     return n;
   };
   let detached = false;
+  const reset = () => { for (const k of Object.keys(map)) delete map[k]; detached = false; };
   el.querySelector = sel => (detached ? null : (map[sel] ||= make(sel)));
   el.replaceChildren = (...c) => { detached = true; el.children = c; };
-  Object.defineProperty(el, 'innerHTML', { set() {}, get() { return ''; } });
+  Object.defineProperty(el, 'innerHTML', { set: reset, get() { return ''; } });   // a new template: fresh nodes
   return el;
 }
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; };
@@ -108,10 +110,11 @@ test('BT6 a late reply of an older mount does not touch the new page', async t =
   await registered.batches.mount(elA, { id: 1 });
   elA.querySelector('#bdPlace').listeners.click();                  // Place in room, reply pending
   registered.batches.unmount();
-  const elB = mkEl();
+  const elB = elA;                                                  // the shell reuses its one view element
   const pendingB = registered.batches.mount(elB, {});               // the list, reply pending
   place.resolve({});                                                 // the old page's action finishes now
   await new Promise(r => setTimeout(r, 20));
+  assert.equal(elB.querySelector('#bdHead').textContent, '');       // nothing of the old detail page reached the new page
   list.resolve([{ ...BATCH, state: 'placed', placed_at: BATCH.received_at, room_name: 'Room 1' }]);
   await pendingB;
   assert.equal(elB.querySelector('#btList').querySelector('tbody').children.length, 1);
