@@ -1,8 +1,29 @@
 # C1: Database contract (`server/db.js`)
 
-Date: 2026-10-08. Status: **frozen** (revision 5). Changes only through the lead; see `docs/contracts/LEAD-DECISIONS.md`. Spec: `docs/superpowers/specs/2026-10-08-farm-app-foundation-design.md`.
+Date: 2026-10-08. Status: **draft** (revision 6, not frozen; the lead freezes it with wave 2). Changes only through the lead; see `docs/contracts/LEAD-DECISIONS.md`. Spec: `docs/superpowers/specs/2026-10-08-farm-app-foundation-design.md`. Air exchange: C9 `docs/contracts/air.md` (frozen, lead decision 55).
 
 This contract defines the SQLite schema (as exact SQL), the schema upgrade mechanism, every function of `server/db.js`, and the in-memory fake `tests/fakes/db.js` (section 9). The Data stream builds `server/db.js` against it. The Rooms stream (C2) and the API stream (C3) build against the fake, which follows this contract as section 9 states.
+
+### Changes in revision 6
+
+Wave 2 on top of C9 (the air exchange, on `master` 6a12852). C9 owns upgrade 2 (`SCHEMA_V2_AIR`: `readings.fan` becomes `air` 0/1, `rooms.vent` is dropped); the whole wave 2 schema moves to upgrade 3 (lead decision 54, amended). C9 section 10 lists the C1 sections it overrides (3, 4, 4.2, 6.2, 6.4, 6.6, 9); they now say what C9 6.1 and 6.2 say.
+
+| Section | Change |
+|---|---|
+| 1 | Booleans: `air` accepts `true`/`false` like `lights` and `circ` (C9 6.1). Transactions: upgrades 2 and 3 are each one transaction. |
+| 3 | Upgrade list 1 (released), 2 (C9 `SCHEMA_V2_AIR`, a rebuild of `readings` that needs no extra field), 3 (wave 2, columns and tables only). `db.version` is 3 (C9 6.1, 10). |
+| 4 | Upgrade 1 SQL unchanged (released); a note that upgrade 2 replaces its `readings.fan` and drops its `rooms.vent` (C9 10). |
+| 4.2 | `rooms` loses `vent` (dropped by upgrade 2). `readings` has `air` (0/1) in place of `fan`; the meter sums use the key `air` (C9 4.2, 6.1). The wave 2 columns and tables are "upgrade 3". `room_equipment.fan_m3h` becomes `air_m3h` (50–10000, the air exchange pair, C9 10 row C8); `calibrations.equipment` holds the 7 fields with `air_m3h`. `simulation_runs.inputs` has no `vent`. |
+| 4.3 (replaced) | Upgrade 2 is C9's `SCHEMA_V2_AIR`, exact SQL copied from C9 6.2 (on `master`). |
+| 4.4 (new) | Upgrade 3: the wave 2 SQL of revision 5's 4.3 with `room_equipment.air_m3h REAL NOT NULL CHECK (air_m3h BETWEEN 50 AND 10000)` in place of `fan_m3h`; re-checked on Node 22.20 on a version 1 file through upgrade 2. |
+| 6.2 | `Room` has no `vent` (C9 6.1). `Reading` keeps 18 keys with `air` in place of `fan` (lead decision 20, amended). `Equipment` has `air_m3h`. |
+| 6.3 | `db.version` is 3. |
+| 6.4 | `createRoom` and `updateRoom` take no `vent`: it is an unknown field (C9 6.3). |
+| 6.6 | `insertReading` takes `air` (0/1 or boolean); raw and bucket SQL use `air` (`AVG(air) AS air`); bucket `air` is the fraction of readings with the air exchange on (C9 6.1). |
+| 6.14 | `saveEquipment` takes `air_m3h`; a missing field has an exact message, checked in field order before anything is written (finding 23). |
+| 7 | C2 writes `air` (C9 6.3). |
+| 8 | Version 3; upgrade 2 and upgrade 3 tests; the master tests that number their test upgrades 3 and 4 move up; `air` `CHECK` (`air: 2` → 275); `vent` an unknown field; `air_m3h` range `CHECK`; the missing-field message (finding 23). |
+| 9 | The fake reports `version: 3`; `air` `CHECK IN (0, 1)`; no `vent`; `air_m3h` `CHECK` and type; the `saveEquipment` missing-field message. |
 
 ### Changes in revision 5
 
@@ -50,10 +71,10 @@ Room-centred app and C8 equipment, frozen together (lead decisions 18, 20, 23, 3
 | Missing values | `undefined` (or a left-out key) is bound as `NULL`. An optional column stores `NULL` and returns `null`; a `NOT NULL` column then fails with the node:sqlite error. |
 | Non-finite numbers | db.js binds `NaN`, `Infinity` and `-Infinity` as `NULL` in every column (SQLite would otherwise store `Infinity`). A `NOT NULL` column then fails. |
 | JSON columns | `room_settings.settings`, `capacity_reports.report`, `controller_state.controller`, `controller_state.sim`, `calibrations.equipment`, `simulation_runs.inputs`, `simulation_runs.result`: db.js stores JS values as JSON text and returns them parsed (`null` stays SQL `NULL` and comes back `null`). It keeps non-finite numbers (section 5). |
-| Booleans | SQLite has none. `lights` and `circ` accept `true`, `false`, `0`, `1` and are returned as `0` or `1`. |
+| Booleans | SQLite has none. `air`, `lights` and `circ` accept `true`, `false`, `0`, `1` and are returned as `0` or `1`. |
 | Validation | db.js does not apply business rules. The callers validate first. Settings: C2 stores only `ClimateController.defaultSettings()` or the `settings` result of `ClimateController.importSettings`, never settings received from HTTP or an import as they arrived (lead decision 6). Rooms, mixes and calibrations go through `room-rules.js` (`check*`); query options are checked in the API. The SQL constraints (types, `NOT NULL`, `CHECK`, foreign keys) are the last guard: a value that breaks one throws the node:sqlite error and stores nothing. |
 | Archived rooms | An archived room still exists: every function works on it (reads and writes). Stopping its loop and refusing edits are C2 and C3 decisions. |
-| Transactions | A function that writes more than one row (`createRoom`, `replaceMix`, each schema upgrade) runs in one transaction: all rows or none. Upgrade 2 is one transaction (section 3). |
+| Transactions | A function that writes more than one row (`createRoom`, `replaceMix`, each schema upgrade) runs in one transaction: all rows or none. Upgrade 2 (C9) and upgrade 3 are each one transaction (section 3). |
 | Demo room | Not a db.js matter: `openDb` makes only the schema. C2 `start()` creates the demo room (C2 section 4) through `createRoom`. |
 
 ## 2. Opening the database
@@ -83,17 +104,18 @@ Room-centred app and C8 equipment, frozen together (lead decisions 18, 20, 23, 3
 |---|---|
 | Table | `schema_version (version, applied_at)`: one row per applied upgrade. `openDb` creates it itself (it is not part of an upgrade): `CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL) STRICT;` |
 | Upgrade list | `UPGRADES` in `server/db.js`: an array of `{ version, sql }` with `version` = 1, 2, 3, … in order and no gaps; `sql` is SQL text run with `db.exec`. |
+| The three upgrades | `{ version: 1, sql: SCHEMA_V1 }` (section 4, released), `{ version: 2, sql: SCHEMA_V2_AIR }` (section 4.3, C9 6.2, on `master`), `{ version: 3, sql: SCHEMA_V3_ROOMS }` (section 4.4, wave 2). Wave 2 appends upgrade 3 and edits neither of the others. |
 | Current version | `SELECT COALESCE(MAX(version), 0) AS version FROM schema_version` (0 = new, empty database). |
 | Apply | For each upgrade with `version` above the current version, in order: `BEGIN IMMEDIATE`; `exec(sql)`; `INSERT INTO schema_version (version, applied_at) VALUES (?, now())`; `COMMIT`. |
 | Failed upgrade | `ROLLBACK` (that upgrade leaves no trace; earlier upgrades stay applied), then throw `Error('Schema upgrade <version> failed: <SQLite message>')`. |
 | Newer database | If the current version is above the highest version in the list: throw `Error('The database <path> has schema version <n>; this app knows up to <m>. Use a newer version of the app.')` and change nothing. |
 | Released upgrades | Never edited. A change is always a new upgrade with the next number. Later modules (batches, harvest, …) add their tables this way. |
-| Table rebuilds | A later upgrade that rebuilds a table (SQLite cannot drop a `CHECK`) must follow SQLite's 12-step rebuild; `foreign_keys` cannot change inside a transaction, so such an upgrade needs an extra field in the upgrade object. Not needed for versions 1 and 2: upgrade 2 only adds columns (`ALTER TABLE … ADD COLUMN`) and tables. The `simulation_runs` `CHECK`s carry C8's kind `equipment` and its verdicts from the start, because SQLite cannot change a `CHECK` without rebuilding the table (lead decision 30). |
-| Result | `db.version` is the schema version after opening (2 for this contract: upgrades 1 and 2, section 4.3). |
+| Table rebuilds | A later upgrade that rebuilds a table (SQLite cannot drop a `CHECK`) must follow SQLite's 12-step rebuild; `foreign_keys` cannot change inside a transaction, so such an upgrade needs an extra field in the upgrade object when another table references the rebuilt one. Upgrade 2 (C9) rebuilds `readings` without that field: no table references `readings`, and `ALTER TABLE rooms DROP COLUMN vent` works because `vent` has only its own `CHECK` (checked on Node 22.20, SQLite 3.50.4, inside `BEGIN IMMEDIATE` with `foreign_keys = ON`; C9 6.2). Upgrade 3 only adds columns (`ALTER TABLE … ADD COLUMN`) and tables. The `simulation_runs` `CHECK`s carry C8's kind `equipment` and its verdicts from the start, because SQLite cannot change a `CHECK` without rebuilding the table (lead decision 30). |
+| Result | `db.version` is the schema version after opening (3 for this contract: upgrades 1, 2 and 3, sections 4, 4.3 and 4.4). |
 
 ## 4. Schema version 1 (exact SQL)
 
-This is the `sql` of upgrade 1. All tables are `STRICT` (SQLite 3.37+; Node 22 bundles 3.4x+): a value of the wrong type fails instead of being stored.
+This is the `sql` of upgrade 1 (`SCHEMA_V1`), released and never edited. Its `readings.fan` (0–3) and `rooms.vent` are history: upgrade 2 (section 4.3, C9) turns `fan` into `air` (0/1) and drops `vent`, so section 4.2 lists neither. All tables are `STRICT` (SQLite 3.37+; Node 22 bundles 3.4x+): a value of the wrong type fails instead of being stored.
 
 ```sql
 CREATE TABLE rooms (
@@ -218,10 +240,11 @@ CREATE TABLE controller_state (
 | `id` | INTEGER | no | – | Room id |
 | `name` | TEXT | no | – | Shown name (C3 limits it to 60 characters, as today) |
 | `volume` | REAL | no | m³, > 0 | Room volume (capacity card limit 5–5000) |
-| `vent` | TEXT | no | `supply`, `exhaust` | Air path (sim `env.vent`) |
 | `adapter` | TEXT | no | `sim` (later `hw`, …) | Which adapter runs the room. No `CHECK`, so a new adapter needs no table rebuild |
 | `created_at` | INTEGER | no | s since 1970 UTC | When the room was made |
 | `archived_at` | INTEGER | yes | s since 1970 UTC | `null` = active; set = archived (loop stopped, data kept) |
+
+Upgrade 2 dropped the version 1 column `vent` (C9 6.2). A room has no air path setting: every room uses the drawing positions of `DEFAULT_ENV` (`inletAt: 'high'`, `exhaustAt: 'low'`), and its air exchange size is the settings key `airM3h` (C9 5.2).
 
 #### `room_settings`
 
@@ -251,10 +274,10 @@ The current settings of a room are its version with the largest `id`.
 | `rmse_co2` | REAL | yes | ppm | Fit error of CO₂ |
 | `log_rows` | INTEGER | yes | rows | Rows of the farm log used; `null` when not known |
 | `applied_at` | INTEGER | yes | s since 1970 UTC | When last applied to the room; `null` = never |
-| `source` | TEXT | yes | `csv`, `history`, `import` | Upgrade 2. Where the fitted log came from: a CSV log file, the room's own readings, or the browser-storage import; `null` for runs saved before upgrade 2 |
-| `log_from` | INTEGER | yes | s since 1970 UTC | Upgrade 2. First reading time of the fitted history (`source = 'history'`); `null` otherwise |
-| `log_to` | INTEGER | yes | s since 1970 UTC | Upgrade 2. Last reading time of the fitted history |
-| `equipment` | TEXT | yes | JSON | Upgrade 2. The room's machines the fit used (lead decision 50): the 7 Equipment fields `{ ac_hp, ac_units, fog_lph, fan_m3h, walls, roof, height }` of `room_equipment` at fit time; `null` = fitted with the typical machines (`PLANT`, no machines saved), imported, or saved before upgrade 2. The Calibrate tab warns when the room's machines now differ (C5 3.11). |
+| `source` | TEXT | yes | `csv`, `history`, `import` | Upgrade 3. Where the fitted log came from: a CSV log file, the room's own readings, or the browser-storage import; `null` for runs saved before upgrade 3 |
+| `log_from` | INTEGER | yes | s since 1970 UTC | Upgrade 3. First reading time of the fitted history (`source = 'history'`); `null` otherwise |
+| `log_to` | INTEGER | yes | s since 1970 UTC | Upgrade 3. Last reading time of the fitted history |
+| `equipment` | TEXT | yes | JSON | Upgrade 3. The room's machines the fit used (lead decision 50): the 7 Equipment fields `{ ac_hp, ac_units, fog_lph, air_m3h, walls, roof, height }` of `room_equipment` at fit time; `null` = fitted with the typical machines (`PLANT`, no machines saved), imported, or saved before upgrade 3. The Calibrate tab warns when the room's machines now differ (C5 3.11). |
 
 The room's current calibration is the run with the largest `applied_at` (ties: largest `id`).
 
@@ -279,7 +302,7 @@ The room's current calibration is the run with the largest `applied_at` (ties: l
 | `utilisation` | INTEGER | yes | % (whole number) | Copy of `report.utilisation`, unchanged (not rounded); `null` when it is not a finite number (for example the verdict is `impossible`) |
 | `report` | TEXT | no | JSON | The whole `ClimateCapacity.checkAsync` result |
 
-Written by the version 1 web pages only; from upgrade 2 the web app stores capacity checks in `simulation_runs` (lead decision 19). The table and its functions stay.
+Written by the version 1 web pages only; from upgrade 3 the web app stores capacity checks in `simulation_runs` (lead decision 19). The table and its functions stay.
 
 #### `readings`
 
@@ -297,16 +320,16 @@ One row per controller reading (every 30 s by default). The "Reading key" column
 | `ac_mode` | `ac_mode` | TEXT | no | `off`, `cool`, `heat`, `dry`, `fan` | AC command | `cmd.ac.power ? cmd.ac.mode : 'off'` |
 | `ac_setpoint` | `ac_setpoint` | REAL | yes | °C (16–30) | AC setpoint command; `null` when the AC is off | `cmd.ac.power ? cmd.ac.setpoint : null` |
 | `fog` | `fog` | INTEGER | no | 0–3 | Fogger level command | `cmd.hu.level` |
-| `fan` | `fan` | INTEGER | no | 0–3 | Exhaust or supply fan level command | `cmd.fan.level` |
+| `air` | `air` | INTEGER | no | 0, 1 | Upgrade 2 (C9). Air exchange command: `1` = intake `SF-203` and exhaust `EF-206` on, dampers open; `0` = both off, dampers closed | `cmd.air && cmd.air.on ? 1 : 0` (C9 6.3) |
 | `lights` | `lights` | INTEGER | no | 0, 1 | Lights command | `cmd.lights.on` |
-| `circ` | `circ` | INTEGER | no | 0, 1 | Circulation fan command | `cmd.circ.on` |
-| `power_w` | `power_w` | REAL | yes | W | Total electric power at the reading | Sum of `r.power` (`ac + hu + fan + lights + circ`); `null` if the adapter has no meter |
-| `kwh` | `kwh` | REAL | yes | kWh | Energy meter: total since the adapter's meter started (it only grows within a run) | Sum of `r.kwh` (`ac + hu + fan + lights + circ`); `null` if the adapter has no meter |
-| `ac_fan` | `ac_fan` | TEXT | yes | `low`, `auto`, `high` | Upgrade 2. AC indoor fan command; `null` when the AC is off | `cmd.ac.power ? (['low', 'auto', 'high'].includes(cmd.ac.fan) ? cmd.ac.fan : 'auto') : null` (the rule `sim.js` applies, so the `CHECK` cannot fail) |
-| `stage` | `stage` | TEXT | yes | a key of `ClimateController.STAGES` (`spawn`, `pinning`, `fruiting`, `rest`) | Upgrade 2. Controller stage after its decision at this reading. No `CHECK` (an open list, like `alarm_key`: a new stage needs no rebuild of the largest table) | `cfg.stage` |
-| `core` | `core` | REAL | yes | °C | Upgrade 2. Block core temperature (probe) | `r.core` if a finite number, else `null` |
+| `circ` | `circ` | INTEGER | no | 0, 1 | Circulation fan (`CF-205`) command | `cmd.circ.on` |
+| `power_w` | `power_w` | REAL | yes | W | Total electric power at the reading | Sum of `r.power` (`ac + hu + air + lights + circ`, the meter keys of C9 4.2); `null` if the adapter has no meter |
+| `kwh` | `kwh` | REAL | yes | kWh | Energy meter: total since the adapter's meter started (it only grows within a run) | Sum of `r.kwh` (`ac + hu + air + lights + circ`); `null` if the adapter has no meter |
+| `ac_fan` | `ac_fan` | TEXT | yes | `low`, `auto`, `high` | Upgrade 3. AC indoor fan command (the AC's own fan, not the air exchange); `null` when the AC is off | `cmd.ac.power ? (['low', 'auto', 'high'].includes(cmd.ac.fan) ? cmd.ac.fan : 'auto') : null` (the rule `sim.js` applies, so the `CHECK` cannot fail) |
+| `stage` | `stage` | TEXT | yes | a key of `ClimateController.STAGES` (`spawn`, `pinning`, `fruiting`, `rest`) | Upgrade 3. Controller stage after its decision at this reading. No `CHECK` (an open list, like `alarm_key`: a new stage needs no rebuild of the largest table) | `cfg.stage` |
+| `core` | `core` | REAL | yes | °C | Upgrade 3. Block core temperature (probe) | `r.core` if a finite number, else `null` |
 
-Readings written before upgrade 2 have `ac_fan`, `stage` and `core` = `NULL`; readers accept `null` (calib.js takes `acFan` `null` as `'auto'`). There is no `ac_power` column: `ac_mode = 'off'` records "AC power off" (C2 5.3), and calib.js `acPower` is derived from it (lead decision 20).
+The `ac_mode` value `fan` is the AC's fan-only mode, not the air exchange. Readings written before upgrade 2 have `air = 1` where their version 1 fan level was 1–3, else `0` (C9 6.2). Readings written before upgrade 3 have `ac_fan`, `stage` and `core` = `NULL`; readers accept `null` (calib.js takes `acFan` `null` as `'auto'`). There is no `ac_power` column: `ac_mode = 'off'` records "AC power off" (C2 5.3), and calib.js `acPower` is derived from it (lead decision 20).
 
 The sensor values are stored raw, as the adapter gave them: a missing sensor (`null`) and any non-finite number are stored as `NULL`. An out-of-range value (for example the sim's `range` fault) is stored as it is; the charts hide implausible values as today's page does (`plausible`).
 
@@ -344,7 +367,7 @@ One row per alarm occurrence (raise to clear). The same key raised again after i
 | `controller` | TEXT | no | JSON | `ctl.snapshot()` |
 | `sim` | TEXT | yes | JSON | `sim.snapshot()` of the simulated adapter; `null` for an adapter without a simulation |
 
-#### `simulation_runs` (upgrade 2)
+#### `simulation_runs` (upgrade 3)
 
 One row per saved Simulate run: a capacity check, a full cycle or a C8 equipment check (lead decisions 18, 39).
 
@@ -362,10 +385,10 @@ One row per saved Simulate run: a capacity check, a full cycle or a C8 equipment
 | `utilisation` | INTEGER | yes | % | `result.utilisation` of a capacity check, unchanged (no rounding); `null` when not a finite number, or for the other kinds |
 | `real_start` | INTEGER | yes | s since 1970 UTC | When the planned cycle really started in the room (00:00 farm time of that day); set later in the Calibrate tab; `null` = not linked |
 | `note` | TEXT | yes | – | The farmer's note (C3 limits it to 200 characters) |
-| `inputs` | TEXT | no | JSON | What the run used: `{ mix, settings, region, tariff, volume, vent, calibration, empty_below, equipment }` (C3 3.10.1) |
+| `inputs` | TEXT | no | JSON | What the run used: `{ mix, settings, region, tariff, volume, calibration, empty_below, equipment }` (C3 3.10.1). No air size key: a capacity or cycle run's size is `inputs.settings.airM3h`, an equipment check's is `inputs.equipment.air_m3h` |
 | `result` | TEXT | no | JSON | The whole C7 Result (with `series`, about 300 KB for the default cycle), the whole capacity report, or the C8 Report (no hourly series; a few KB) |
 
-#### `room_equipment` (upgrade 2, C8)
+#### `room_equipment` (upgrade 3, C8)
 
 One row per room: the room's machines and its walls and roof (`docs/contracts/equipment.md` section 4.2). Replaced on save.
 
@@ -376,7 +399,7 @@ One row per room: the room's machines and its walls and roof (`docs/contracts/eq
 | `ac_hp` | REAL | no | 1, 1.5, 2, 2.5, 3, 4, 5, 6 | Size of each aircond (hp badge) |
 | `ac_units` | INTEGER | no | 1–4 | Number of airconds of that size |
 | `fog_lph` | REAL | no | L/h, 0.5–50 | Fogger output at its top level |
-| `fan_m3h` | REAL | no | m³/h, 50–5000 | Fresh-air fan at top speed |
+| `air_m3h` | REAL | no | m³/h, 50–10000 | Airflow of the air exchange pair (intake = exhaust) when on (C9); C8 default 1800. C3 6.26 keeps the room's settings `airM3h` in step with it (C2 `applySettings`) |
 | `walls` | TEXT | yes | C8 `CONSTRUCTIONS` keys: `zinc`, `brick115`, `brick230`, `eps50`, `eps75`, `eps100`, `pu50`, `pu75`, `pu100` | `null` = not set |
 | `roof` | TEXT | yes | keys with `roof: true`: `zinc`, `eps50`, `eps75`, `eps100`, `pu50`, `pu75`, `pu100` | `null` = not set; set both or neither |
 | `height` | REAL | no | m, 2–6 | Inside height |
@@ -388,12 +411,49 @@ One row per room: the room's machines and its walls and roof (`docs/contracts/eq
 | `version` | INTEGER | no | 1, 2, … (primary key) | Applied upgrade |
 | `applied_at` | INTEGER | no | s since 1970 UTC | When applied |
 
-### 4.3 Schema version 2 (upgrade 2, exact SQL)
+### 4.3 Schema version 2 (upgrade 2, C9, on `master`: exact SQL)
 
-The `sql` of upgrade 2, run as one transaction by section 3. Upgrade 1 (section 4) is released and never edited. Checked on node:sqlite (Node 22.20): applied on a version 1 file with a room, a reading and a calibration, every new column of an old row is `NULL`; `equipment`/`too-small` is stored; `equipment`/`pass`, `cycle`/`enough` and `heat`/`pass` give errcode 275; `ac_hp` 1.25, `ac_units` 5, `walls` without `roof`, `roof` `brick115`, `ac_fan` `max`, `source` `web` give 275; `ac_units` 1.5, `ac_hp` `'x'`, `core` `'abc'` give 3091.
+`SCHEMA_V2_AIR`, the `sql` of upgrade 2, copied from C9 6.2. It is on `master` (6a12852) and released with C9: wave 2 never edits it. Run as one transaction by section 3.
 
 ```sql
--- Upgrade 2: room-centred app and C8 equipment (lead decisions 18, 20, 23, 30, 33, 39, 50, 54).
+CREATE TABLE readings_new (
+  room_id     INTEGER NOT NULL REFERENCES rooms (id),
+  t           INTEGER NOT NULL,
+  temp        REAL,
+  RH          REAL,
+  CO2         REAL,
+  t_out       REAL,
+  rh_out      REAL,
+  ac_mode     TEXT    NOT NULL CHECK (ac_mode IN ('off', 'cool', 'heat', 'dry', 'fan')),
+  ac_setpoint REAL,
+  fog         INTEGER NOT NULL CHECK (fog BETWEEN 0 AND 3),
+  air         INTEGER NOT NULL CHECK (air IN (0, 1)),
+  lights      INTEGER NOT NULL CHECK (lights IN (0, 1)),
+  circ        INTEGER NOT NULL CHECK (circ IN (0, 1)),
+  power_w     REAL,
+  kwh         REAL
+) STRICT;
+INSERT INTO readings_new (room_id, t, temp, RH, CO2, t_out, rh_out, ac_mode, ac_setpoint, fog, air, lights, circ, power_w, kwh)
+  SELECT room_id, t, temp, RH, CO2, t_out, rh_out, ac_mode, ac_setpoint, fog, CASE WHEN fan > 0 THEN 1 ELSE 0 END, lights, circ, power_w, kwh FROM readings;
+DROP TABLE readings;
+ALTER TABLE readings_new RENAME TO readings;
+CREATE INDEX readings_room_t ON readings (room_id, t);
+ALTER TABLE rooms DROP COLUMN vent;
+```
+
+| Rule | Detail |
+|---|---|
+| What it does | Rebuilds `readings` with `air` (0/1) in place of the version 1 fan level, and drops `rooms.vent` (C9 6.1) |
+| Old rows | `air = 1` where the version 1 level was 1–3, `0` where it was 0. Every other column keeps its value; `ac_mode` keeps the value `'fan'` (the AC's fan-only mode) |
+| Checked | On Node 22.20 (SQLite 3.50.4) inside `BEGIN IMMEDIATE` with `foreign_keys = ON`: no table references `readings`, and `DROP COLUMN` works on a column with only its own `CHECK` (C9 6.2) |
+| Cost on an existing file | Copies every reading once (the whole `readings` table is rewritten) |
+
+### 4.4 Schema version 3 (upgrade 3, exact SQL)
+
+`SCHEMA_V3_ROOMS`, the `sql` of upgrade 3, run as one transaction by section 3. It holds the whole wave 2 schema (lead decision 54, amended): only `ALTER TABLE … ADD COLUMN` and `CREATE TABLE`, no rebuild. Upgrades 1 and 2 (sections 4 and 4.3) are released and never edited. The new `readings` columns follow C9's `kwh`. Checked on node:sqlite (Node 22.20, SQLite 3.50.4): applied through upgrade 2 on a version 1 file with a room, a reading and a calibration, every new column of an old row is `NULL` (and the reading's version 1 level 2 is `air` 1); `equipment`/`too-small` is stored; `equipment`/`pass`, `cycle`/`enough` and `heat`/`pass` give errcode 275; `ac_hp` 1.25, `ac_units` 5, `air_m3h` 40 and 10001, `walls` without `roof`, `roof` `brick115`, `ac_fan` `max`, `source` `web` give 275 (`air_m3h` 50 and 10000 are stored); `ac_units` 1.5, `ac_hp` `'x'`, `air_m3h` `'x'`, `core` `'abc'` give 3091. On an empty file the three upgrades give version 3.
+
+```sql
+-- Upgrade 3: room-centred app and C8 equipment (lead decisions 18, 20, 23, 30, 33, 39, 50, 54).
 
 -- Readings: what calib.js needs to replay a live room, and what Calibrate compares with a simulation (LD 20).
 ALTER TABLE readings ADD COLUMN ac_fan TEXT CHECK (ac_fan IN ('low', 'auto', 'high'));
@@ -436,7 +496,7 @@ CREATE TABLE room_equipment (
   ac_hp     REAL    NOT NULL CHECK (ac_hp IN (1, 1.5, 2, 2.5, 3, 4, 5, 6)),
   ac_units  INTEGER NOT NULL CHECK (ac_units BETWEEN 1 AND 4),
   fog_lph   REAL    NOT NULL CHECK (fog_lph BETWEEN 0.5 AND 50),
-  fan_m3h   REAL    NOT NULL CHECK (fan_m3h BETWEEN 50 AND 5000),
+  air_m3h   REAL    NOT NULL CHECK (air_m3h BETWEEN 50 AND 10000),
   walls     TEXT    CHECK (walls IN ('zinc', 'brick115', 'brick230', 'eps50', 'eps75', 'eps100', 'pu50', 'pu75', 'pu100')),
   roof      TEXT    CHECK (roof IN ('zinc', 'eps50', 'eps75', 'eps100', 'pu50', 'pu75', 'pu100')),
   height    REAL    NOT NULL CHECK (height BETWEEN 2 AND 6),
@@ -503,10 +563,10 @@ Every function that takes a `roomId` first checks that the room exists (archived
 
 | Shape | Fields |
 |---|---|
-| `Room` | `{ id, name, volume, vent, adapter, created_at, archived_at }` |
+| `Room` | `{ id, name, volume, adapter, created_at, archived_at }` (no `vent`, C9 6.1) |
 | `SettingsVersion` | `{ id, room_id, saved_at, note, settings }` (`settings` parsed) |
 | `SettingsVersionInfo` | `{ id, saved_at, note }` |
-| `Reading` | `{ room_id, t, T, RH, CO2, t_out, rh_out, ac_mode, ac_setpoint, fog, fan, lights, circ, power_w, kwh, ac_fan, stage, core }` (18 keys; lead decision 20). The same keys for raw rows and averaged (bucket) rows; in a bucket row `t` is the bucket start and the values follow section 6.6. This is exactly C2's ReadingRow and C3's Reading, and what C5 reads (lead decision 1). |
+| `Reading` | `{ room_id, t, T, RH, CO2, t_out, rh_out, ac_mode, ac_setpoint, fog, air, lights, circ, power_w, kwh, ac_fan, stage, core }` (18 keys, in this order; lead decision 20, amended; `air` from C9 6.1). The same keys for raw rows and averaged (bucket) rows; in a bucket row `t` is the bucket start and the values follow section 6.6. This is exactly C2's ReadingRow and C3's Reading, and what C5 reads (lead decision 1). |
 | `Event` | `{ id, room_id, t, level, text }` |
 | `Alarm` | `{ id, room_id, alarm_key, level, label, raised_at, cleared_at, acked_at }` |
 | `ControllerState` | `{ room_id, saved_at, controller, sim }` (`controller` and `sim` parsed; `sim` may be `null`) |
@@ -515,24 +575,24 @@ Every function that takes a `roomId` first checks that the room exists (archived
 | `CapacityReport` | `{ id, room_id, run_at, verdict, utilisation, report }` (`report` parsed) |
 | `SimulationRunInfo` | `{ id, room_id, created_at, kind, verdict, blocks, days, kwh, rm, utilisation, real_start, note, inputs }` (`inputs` parsed; no `result`) |
 | `SimulationRun` | `SimulationRunInfo` plus `result` (parsed) |
-| `Equipment` | `{ room_id, saved_at, ac_hp, ac_units, fog_lph, fan_m3h, walls, roof, height }` |
+| `Equipment` | `{ room_id, saved_at, ac_hp, ac_units, fog_lph, air_m3h, walls, roof, height }` |
 
 ### 6.3 Properties and lifecycle
 
 | Member | Type | Meaning | Errors |
 |---|---|---|---|
 | `db.path` | string | The path given to `openDb` (`':memory:'` for the fake) | – |
-| `db.version` | integer | Schema version after opening (2) | – |
+| `db.version` | integer | Schema version after opening (3) | – |
 | `db.close()` | → `undefined` | Closes the connection (WAL is checkpointed by SQLite). A second call does nothing. | – |
 
 ### 6.4 Rooms
 
 | Function | Arguments | Returns | Errors |
 |---|---|---|---|
-| `createRoom(room)` | `room.name`: string; `room.volume`: number (m³); `room.vent`: `'supply'` or `'exhaust'`; `room.adapter`: string (default `'sim'`); `room.settings`: settings object (required; `defaultSettings()` or the `settings` result of `importSettings`, lead decision 6; C2 section 9.4); `room.note`: string (default `'Created'`); `room.at`: integer s (default `now()`) | `Room`. In one transaction it inserts the room (`created_at = at`) and its first settings version (`saved_at = at`, `note`), so a room always has settings | `TypeError` (unknown field); node:sqlite error (bad vent, volume ≤ 0, missing name or settings) |
+| `createRoom(room)` | `room.name`: string; `room.volume`: number (m³); `room.adapter`: string (default `'sim'`); `room.settings`: settings object (required; `defaultSettings()` or the `settings` result of `importSettings`, lead decision 6; C2 section 9.4); `room.note`: string (default `'Created'`); `room.at`: integer s (default `now()`) | `Room`. In one transaction it inserts the room (`created_at = at`) and its first settings version (`saved_at = at`, `note`), so a room always has settings | `TypeError` (unknown field, `vent` included: C9 6.3); node:sqlite error (volume ≤ 0, missing name or settings) |
 | `listRooms(options?)` | `options.includeArchived`: boolean (default `false`) | `Room[]`, ordered by `id` ascending. Without `includeArchived`, only rooms with `archived_at = null` | `TypeError` (unknown field) |
 | `getRoom(id)` | `id`: integer | `Room` | `NotFoundError('room')` |
-| `updateRoom(id, changes)` | `id`: integer; `changes`: object with any of `name` (string), `volume` (number), `vent` (`'supply'` or `'exhaust'`). An empty object changes nothing | `Room` after the change | `NotFoundError('room')`; `TypeError` (any other key, `archived_at` included: use `archiveRoom`); node:sqlite error (bad value) |
+| `updateRoom(id, changes)` | `id`: integer; `changes`: object with any of `name` (string), `volume` (number). An empty object changes nothing | `Room` after the change | `NotFoundError('room')`; `TypeError` (any other key, `vent` included (C9 6.3), `archived_at` too: use `archiveRoom`); node:sqlite error (bad value) |
 | `archiveRoom(id, at?)` | `id`: integer; `at`: integer s (default `now()`) | `Room` with `archived_at` set. Already archived: unchanged (keeps the first `archived_at`) | `NotFoundError('room')` |
 
 There is no delete and no un-archive. The only delete in C1 is `deleteSimulationRun` (6.13).
@@ -554,11 +614,11 @@ Every Reading key is its column name, except `T` (section 4.1). db.js writes `re
 
 | Function | Arguments | Returns | Errors |
 |---|---|---|---|
-| `insertReading(roomId, reading)` | `reading`: a `Reading` object (section 6.2). `t` (integer s, required); `T`, `RH`, `CO2`, `t_out`, `rh_out`, `ac_setpoint`, `power_w`, `kwh`, `core` (number, `null` or left out; non-finite → `NULL`); `ac_fan`, `stage` (string, `null` or left out); `ac_mode` (string, required); `fog`, `fan` (integer 0–3, required); `lights`, `circ` (boolean or 0/1, required); `room_id` (optional; when present it must equal `roomId`) | `undefined` | `NotFoundError('room')`; `TypeError` (unknown field, including `temp`, `rh`, `co2`, `n`; or `room_id` ≠ `roomId`); node:sqlite error (missing or bad required field, `t` with a fraction) |
+| `insertReading(roomId, reading)` | `reading`: a `Reading` object (section 6.2). `t` (integer s, required); `T`, `RH`, `CO2`, `t_out`, `rh_out`, `ac_setpoint`, `power_w`, `kwh`, `core` (number, `null` or left out; non-finite → `NULL`); `ac_fan`, `stage` (string, `null` or left out); `ac_mode` (string, required); `fog` (integer 0–3, required); `air`, `lights`, `circ` (boolean or 0/1, required); `room_id` (optional; when present it must equal `roomId`) | `undefined` | `NotFoundError('room')`; `TypeError` (unknown field, including `temp`, `rh`, `co2`, `n` and the version 1 key `fan`; or `room_id` ≠ `roomId`); node:sqlite error (missing or bad required field, `t` with a fraction) |
 | `queryReadings(roomId, query)` | `query.from`, `query.to`: integer s, both required, `from ≤ to`; rows with `from ≤ t ≤ to`. `query.step`: integer s ≥ 1, or `null` / left out for raw rows | Without `step`: raw `Reading[]`, ordered by `t` ascending (equal `t`: insertion order). With `step`: averaged `Reading[]`, one per bucket that has rows (empty buckets are left out, so a gap stays a gap), ordered by `t` ascending | `NotFoundError('room')`; `TypeError` (unknown field); `RangeError` if `from` or `to` is not an integer, `from > to`, or `step` is not an integer ≥ 1 |
 | `latestReading(roomId)` | – | The newest raw `Reading` of the room (largest `t`; ties: the one inserted last), or `null` if the room has none | `NotFoundError('room')` |
 
-Duplicate `t` values for one room are allowed (no unique key); they are returned as they are. A raw Reading (from `queryReadings` without `step`, or from `latestReading`) can be passed back to `insertReading` unchanged. A bucket row cannot, because its `fog`, `fan`, `lights` and `circ` can be fractions.
+Duplicate `t` values for one room are allowed (no unique key); they are returned as they are. A raw Reading (from `queryReadings` without `step`, or from `latestReading`) can be passed back to `insertReading` unchanged. A bucket row cannot, because its `fog`, `air`, `lights` and `circ` can be fractions.
 
 #### Bucket averaging
 
@@ -568,7 +628,8 @@ Duplicate `t` values for one room are allowed (no unique key); they are returned
 | `t` | Bucket start: `floor(t / step) * step` (buckets align to multiples of `step` since 1970 UTC; Malaysia time is UTC+8, so steps that divide 1 h also align to local hours) |
 | `T`, `RH`, `CO2`, `t_out`, `rh_out`, `power_w` | Average of the non-null values; `null` if all are null |
 | `ac_setpoint` | Average of the non-null values (the AC was on); `null` if the AC was off for the whole bucket |
-| `fog`, `fan` | Average level (a fraction, for example 1.5) |
+| `fog` | Average level (a fraction, for example 1.5) |
+| `air` | Fraction of readings with the air exchange on (0–1; C9 6.1) |
 | `lights`, `circ` | Fraction of readings with the machine on (0–1) |
 | `ac_mode` | Value of the last reading in the bucket (the one with the largest `t`) |
 | `kwh` | Value of the last reading in the bucket (the meter at the bucket's end) |
@@ -583,13 +644,13 @@ When two readings share the bucket's largest `t`, which one gives `ac_mode`, `kw
 Exact SQL (the `MAX(t)` makes SQLite take the bare columns `ac_mode`, `kwh`, `ac_fan` and `stage` from the last row of each group; it must stay the only `MIN`/`MAX` in the inner query). node:sqlite binds every JS number as REAL, so `:step` is cast to INTEGER for the integer division. The outer query orders by `b`, because the result has both `t` and `T`, which SQLite treats as the same name:
 
 ```sql
-SELECT room_id, b AS t, T, RH, CO2, t_out, rh_out, ac_mode, ac_setpoint, fog, fan, lights, circ, power_w, kwh,
+SELECT room_id, b AS t, T, RH, CO2, t_out, rh_out, ac_mode, ac_setpoint, fog, air, lights, circ, power_w, kwh,
        ac_fan, stage, core
 FROM (
   SELECT room_id,
          (t / CAST(:step AS INTEGER)) * CAST(:step AS INTEGER) AS b,
          AVG(temp) AS T, AVG(RH) AS RH, AVG(CO2) AS CO2, AVG(t_out) AS t_out, AVG(rh_out) AS rh_out,
-         AVG(ac_setpoint) AS ac_setpoint, AVG(fog) AS fog, AVG(fan) AS fan,
+         AVG(ac_setpoint) AS ac_setpoint, AVG(fog) AS fog, AVG(air) AS air,
          AVG(lights) AS lights, AVG(circ) AS circ, AVG(power_w) AS power_w, AVG(core) AS core,
          MAX(t) AS t_last, ac_mode, kwh, ac_fan, stage
   FROM readings
@@ -602,7 +663,7 @@ ORDER BY b;
 Raw query (uses `readings_room_t`). `ORDER BY` must name `readings.t`: in `ORDER BY`, SQLite matches a bare `t` to the result column `T` first, so `ORDER BY t` would sort by temperature (tested on Node 22.20). `WHERE` is not affected, because a table column wins there.
 
 ```sql
-SELECT room_id, t, temp AS T, RH, CO2, t_out, rh_out, ac_mode, ac_setpoint, fog, fan, lights, circ, power_w, kwh,
+SELECT room_id, t, temp AS T, RH, CO2, t_out, rh_out, ac_mode, ac_setpoint, fog, air, lights, circ, power_w, kwh,
        ac_fan, stage, core
 FROM readings WHERE room_id = ? AND t >= ? AND t <= ? ORDER BY readings.t, readings.rowid;
 ```
@@ -691,14 +752,21 @@ Older reports are kept (no delete); only the latest is read in version 1. Writte
 | Function | Arguments | Returns | Errors |
 |---|---|---|---|
 | `getEquipment(roomId)` | – | `Equipment`, or `null` when the room has no row | `NotFoundError('room')` |
-| `saveEquipment(roomId, eq)` | `eq`: the 7 fields `ac_hp`, `ac_units`, `fog_lph`, `fan_m3h`, `walls`, `roof`, `height`, all required (`walls`, `roof` may be `null`); `eq.at`: integer s (default `now()`, stored as `saved_at`) | `Equipment` (insert, or replace the room's row: `INSERT … ON CONFLICT (room_id) DO UPDATE SET` every column) | `NotFoundError('room')`; `TypeError` (unknown or missing field); node:sqlite error (275 a `CHECK`, 3091 a wrong type) |
+| `saveEquipment(roomId, eq)` | `eq`: the 7 fields `ac_hp`, `ac_units`, `fog_lph`, `air_m3h`, `walls`, `roof`, `height`, all required (`walls`, `roof` may be `null`); `eq.at`: integer s (default `now()`, stored as `saved_at`) | `Equipment` (insert, or replace the room's row: `INSERT … ON CONFLICT (room_id) DO UPDATE SET` every column) | `NotFoundError('room')`; `TypeError` (unknown field, the old key `fan_m3h` included; missing field, below); node:sqlite error (275 a `CHECK`, 3091 a wrong type) |
+
+| Rule | Detail |
+|---|---|
+| Missing field | A field of the 7 that is absent or `undefined` throws `TypeError('saveEquipment: missing field "<key>"')`, before anything is written. `null` is not missing: it is stored (`walls`, `roof`) or fails its `NOT NULL` (1299, the other five). |
+| Which key the message names | The first missing key in the order `ac_hp`, `ac_units`, `fog_lph`, `air_m3h`, `walls`, `roof`, `height` |
+| Order of the checks | The room check (`NotFoundError`), then unknown fields, then missing fields, then the write (SQL constraints). Real db and fake give the same error and message. |
+| Air size in the settings | db.js does not touch settings. C3 6.26 saves the Equipment, then calls C2 `applySettings` with `{ airM3h: air_m3h }` when the room's settings `airM3h` differs (lead decision 35, amended) |
 
 ## 7. Which caller uses what
 
 | Caller | Functions |
 |---|---|
 | `server/main.js` | `openDb`, `close` |
-| C2 `server/rooms.js` (C2 section 15) | `listRooms` (`{ includeArchived: true }` for the empty-database check; no argument for the rooms to start and `list`), `getRoom`, `createRoom` (also the demo room in `start()`), `updateRoom`, `archiveRoom`, `currentSettings`, `saveSettings`, `currentCalibration` (sim adapter room values), `loadControllerState`, `saveControllerState`, `insertReading`, `queryReadings` (`{ from: now − 3600, to: now }`, raw rows, at loop start for `Live.reading`; no conversion), `addEvent`, `listAlarms` (`{ recent: 0 }` for the open alarms at loop start; `{ recent: 500 }` in `ackAlarm`), `raiseAlarm`, `clearAlarm`, `ackAlarm`, `getMix` (loop start, the block count; C2 revision 6), `getEquipment` (loop start, the room's machines for the simulated adapter; C2 revision 8). C2 does not call `getSettingsVersion` or `latestReading`. Revision 5: C2 writes the new Reading keys `ac_fan`, `stage`, `core` through `insertReading`. |
+| C2 `server/rooms.js` (C2 section 15) | `listRooms` (`{ includeArchived: true }` for the empty-database check; no argument for the rooms to start and `list`), `getRoom`, `createRoom` (also the demo room in `start()`), `updateRoom`, `archiveRoom`, `currentSettings`, `saveSettings`, `currentCalibration` (sim adapter room values), `loadControllerState`, `saveControllerState`, `insertReading`, `queryReadings` (`{ from: now − 3600, to: now }`, raw rows, at loop start for `Live.reading`; no conversion), `addEvent`, `listAlarms` (`{ recent: 0 }` for the open alarms at loop start; `{ recent: 500 }` in `ackAlarm`), `raiseAlarm`, `clearAlarm`, `ackAlarm`, `getMix` (loop start, the block count; C2 revision 6), `getEquipment` (loop start, the room's machines for the simulated adapter; C2 revision 8). C2 does not call `getSettingsVersion` or `latestReading`. Revision 5: C2 writes the new Reading keys `ac_fan`, `stage`, `core` through `insertReading`. Revision 6: C2 writes `air` (`cmd.air && cmd.air.on ? 1 : 0`, C9 6.3) and creates rooms without `vent`. |
 | C3 `server/api.js` (C3 section 11) | Reads: `getRoom` (the room check of every route), `currentSettings`, `settingsHistory`, `getSettingsVersion` (restore), `queryReadings`, `listEvents`, `listAlarms`, `listCalibrations`, `currentCalibration`, `getMix`, `latestCapacityReport`. Revision 5 reads: `listSimulationRuns`, `getSimulationRun`, `getEquipment`. Writes the API makes itself: `saveCalibration`, `applyCalibration` (then C2 `restart`), `replaceMix`, `saveCapacityReport` (legacy), `saveSimulationRun`, `updateSimulationRun`, `deleteSimulationRun`, `saveEquipment`. Writes that change a running room go through C2 (settings, restore, ack, update, archive, create). Readings go to the browser as db.js returns them (no mapping). |
 | Tests only | `latestReading`: C2's tests compare the recorded reading with it (C2 sections 5.3 and 17). No server code calls it in version 1. |
 
@@ -708,18 +776,23 @@ The file defines every test once and runs it twice: with `openDb(':memory:', opt
 
 | Test | Proves | Real only |
 |---|---|---|
-| Open `':memory:'` | `db.version === 2`; every table and index of sections 4 and 4.3 exists (`simulation_runs`, its index, `room_equipment`, the seven new columns); `foreign_keys` is on | yes |
-| Upgrade from version 1 | A temporary file opened with `upgrades: [UPGRADES[0]]` and given one room, one reading and one calibration, then reopened with the default list: `version === 2`, the old reading comes back with `ac_fan`, `stage`, `core` = `null`, the old calibration with `source`, `log_from`, `log_to`, `equipment` = `null` | yes |
+| Open `':memory:'` | `db.version === 3`; every table and index of sections 4, 4.3 and 4.4 exists (`simulation_runs`, its index, `room_equipment`, the seven new columns); `readings` has `air` and no `fan`; `rooms` has no `vent`; `foreign_keys` is on | yes |
+| Upgrade 2 (C9, on `master`) | The `master` tests of C9 6.2 stay, with two changes: where they open with the default list and assert the version 2 result (`db.version === 2`, `schema_version` rows 1 and 2, the 15 `readings` columns), they open with `upgrades: UPGRADES.slice(0, 2)`, or assert version 3 and the 18 columns. They prove: a version 1 file with `fan` 0, 1, 2, 3 gives `air` 0, 1, 1, 1; `rooms` has no `vent`; the bucket `air` is the fraction on (0.75); `air: 2` is rejected (275); a failed upgrade 2 leaves the version 1 file as it was | yes |
+| Upgrade 3 from version 2 | A temporary file opened with `upgrades: UPGRADES.slice(0, 2)` and given one room, one reading and one calibration, then reopened with the default list: `version === 3`, the old reading comes back with `ac_fan`, `stage`, `core` = `null`, the old calibration with `source`, `log_from`, `log_to`, `equipment` = `null` | yes |
+| Upgrade 1 to 3 in one open | A version 1 file (written as the `master` test's `writeVersion1File` does, `fan` 0–3) opened with the default list: `version === 3`, `schema_version` rows 1, 2, 3; each reading has `air` 0/1 and `ac_fan`, `stage`, `core` = `null` | yes |
 | Open a temporary file | `journal_mode` is `wal`; reopening applies no upgrade twice | yes |
-| Upgrades | With `options.upgrades` of two test upgrades: both applied in order; a failing upgrade rolls back and throws `Schema upgrade N failed`; a database with a higher version throws and is not changed | yes |
+| Upgrades | With `options.upgrades` of two test upgrades appended after `UPGRADES`: both applied in order; a failing upgrade rolls back and throws `Schema upgrade N failed`; a database with a higher version throws and is not changed (message `… this app knows up to 3. …`). The test upgrades are numbered 4 and 5 (the `master` tests number them 3 and 4, and the failing one 3: wave 2 moves them up by one) | yes |
 | Each function | Its return shape, its order, its defaults, and each error listed above (including `NotFoundError` for an unknown room on reads, and `TypeError` for an unknown field with nothing stored) | no |
 | Constraint errors | Each `CHECK`, `NOT NULL` and type rule of section 9.2, with a row that breaks only that rule, throws an error with `code === 'ERR_SQLITE_ERROR'` and stores nothing | no |
 | `errcode` values | The errors of the previous test have `errcode` 275 for a `CHECK`, 1299 for a `NOT NULL` and 3091 for a wrong type, so `(errcode & 0xff) === 19`. This is the shared test of lead decision 3 (C3 section 4.2 relies on it). | no |
 | Readings | A Reading with `T`, `RH`, `CO2`, `room_id` comes back equal from `queryReadings` and `latestReading`; `temp`, `rh`, `co2` or `n` as an input key throw `TypeError`; raw range is inclusive at both ends; raw rows come back in `t` order when the temperatures are in another order, and rows with equal `t` in insertion order; `latestReading` picks the largest `t`, not the highest temperature; bucket values of section 6.6 (averages, nulls, last `ac_mode` and `kwh` with distinct `t` values, empty buckets left out, keys equal to a raw row's); `RangeError` cases; `latestReading` is `null` for a room without readings | no |
-| Readings, upgrade 2 keys | A Reading with `ac_fan`, `stage`, `core` comes back equal (raw and latest); a bucket takes `ac_fan` and `stage` from the last row and averages `core`; `ac_fan: 'max'` → 275; `core: 'abc'` → 3091; a Reading without the three keys stores `null` in each | no |
+| Readings, `air` (C9 6.1) | `air` `true` / `false` is stored as `1` / `0`; `air: 2` → 275; `air: 0.5` → 3091; a missing `air` → 1299; `fan` as an input key throws `TypeError`; a bucket's `air` is the fraction of readings with the air exchange on | no |
+| Rooms, no `vent` (C9 6.3) | `createRoom` and `updateRoom` with `vent` throw `TypeError` (`createRoom: unknown field "vent"`, `updateRoom: unknown field "vent"`) and store nothing; a `Room` has exactly the 6 keys of section 6.2 | no |
+| Readings, upgrade 3 keys | A Reading with `ac_fan`, `stage`, `core` comes back equal (raw and latest); a bucket takes `ac_fan` and `stage` from the last row and averages `core`; `ac_fan: 'max'` → 275; `core: 'abc'` → 3091; a Reading without the three keys stores `null` in each | no |
 | Simulation runs | Save, list (newest first, `limit`, `before`, no `result`), get (with `result`), update (`note`, `real_start`), delete (then `NotFoundError('simulation')`); the summary rules of 6.13 for a passing cycle, a failing cycle, an impossible cycle, a capacity report and an equipment Report (`result.ac.verdict = 'too-small'` stores `verdict` `too-small` and `days`, `kwh`, `rm`, `utilisation` `null`); a run of another room is `NotFoundError('simulation')`; `kind: 'cycle'` with a capacity verdict → 275, `kind: 'equipment'` with verdict `pass` → 275, `kind: 'heat'` → 275; `Infinity` inside `result` survives | no |
-| Calibrations, upgrade 2 fields | `source`, `log_from`, `log_to`, `equipment` stored and returned (`equipment` parsed); left out → `null`; `source: 'web'` → 275 | no |
-| Equipment | `getEquipment` of a new room is `null`; save then get returns the same 9 keys; a second save replaces (one row); `ac_hp: 1.25` → 275; `ac_units: 5` → 275; `walls: 'pu50', roof: null` → 275; `roof: 'brick115'` → 275; `ac_units: 1.5` → 3091; `ac_hp: 'x'` → 3091; unknown room → `NotFoundError('room')`; missing `height` → `TypeError` | no |
+| Calibrations, upgrade 3 fields | `source`, `log_from`, `log_to`, `equipment` stored and returned (`equipment` parsed, with `air_m3h`); left out → `null`; `source: 'web'` → 275 | no |
+| Equipment | `getEquipment` of a new room is `null`; save then get returns the same 9 keys; a second save replaces (one row); `ac_hp: 1.25` → 275; `ac_units: 5` → 275; `air_m3h` 50 and 10000 stored, 40 and 10001 → 275; `walls: 'pu50', roof: null` → 275; `roof: 'brick115'` → 275; `ac_units: 1.5` → 3091; `ac_hp: 'x'` → 3091; `air_m3h: 'x'` → 3091; `fan_m3h` as a key → `TypeError('saveEquipment: unknown field "fan_m3h"')`; unknown room → `NotFoundError('room')` | no |
+| Equipment, missing field | Left-out `height` → `TypeError('saveEquipment: missing field "height"')`; `height: undefined` → the same; `fog_lph` and `height` both left out → the message names `fog_lph`; `walls: null, roof: null` is not missing; after each error `getEquipment` is still `null` (nothing written) | no |
 | Alarms | Raise twice gives one open row; clear then raise gives a new row; ack marks all unacknowledged rows of the key; `listAlarms` with `{ recent: 0 }` gives the open rows only | no |
 | JSON | `Infinity`, `-Infinity`, `NaN` inside a controller state survive save and load; a real `ctl.snapshot()` loads equal to `fromJson(toJson(snapshot))` | no |
 | Transactions | A failing `createRoom` or `replaceMix` leaves no row | no |
@@ -733,23 +806,23 @@ Written by the lead in wave 0, so C2 and C3 can test before `server/db.js` exist
 
 | Export | Arguments | Returns | Errors |
 |---|---|---|---|
-| `openFakeDb(options?)` | `options.now`: function returning integer seconds (default `() => Math.floor(Date.now() / 1000)`) | The db object of section 6, with `path = ':memory:'`, `version = 2` and `close()`; a new empty database on every call | `TypeError` (unknown option; `upgrades` is not accepted) |
+| `openFakeDb(options?)` | `options.now`: function returning integer seconds (default `() => Math.floor(Date.now() / 1000)`) | The db object of section 6, with `path = ':memory:'`, `version = 3` and `close()`; a new empty database on every call | `TypeError` (unknown option; `upgrades` is not accepted) |
 
 ### 9.2 What the fake reproduces
 
 | Behaviour | Fake |
 |---|---|
 | Functions, arguments, return shapes, orders, defaults, `now` | Exactly as section 6, including plain-object rows, `T` / `RH` / `CO2` keys, raw order (`t`, then insertion order) and bucket averaging |
-| `NotFoundError`, `RangeError`, `TypeError` (unknown field, `room_id` ≠ `roomId`) | Exactly as section 6 (same class, `code`, `what`, `id`, message) |
-| Missing values, non-finite numbers, booleans of `lights` and `circ` | Exactly as section 1 |
-| Every `NOT NULL` of sections 4 and 4.3 (upgrade 2: simulation `kind`, `inputs`, `result`, `verdict`, `blocks`; every `NOT NULL` column of `room_equipment`) | Throws `Error` with `code: 'ERR_SQLITE_ERROR'`, `errcode: 1299` |
-| Every `CHECK` of sections 4 and 4.3 (`volume > 0`, `vent`, `verdict`, `blocks >= 0`, `ac_mode`, `fog`, `fan`, `lights`, `circ`, event `level`, alarm `level`; upgrade 2: `ac_fan`, calibration `source`, simulation `kind`, simulation `verdict` (the 11 values), the kind/verdict pair (three kinds), simulation `blocks >= 0`, `days >= 1`, `ac_hp`, `ac_units`, `fog_lph`, `fan_m3h`, `walls`, `roof`, `height`, the `walls`/`roof` pair) | Throws `Error` with `code: 'ERR_SQLITE_ERROR'`, `errcode: 275` |
+| `NotFoundError`, `RangeError`, `TypeError` (unknown field, `vent` and `fan` included; `room_id` ≠ `roomId`; the `saveEquipment` missing field of 6.14, same message and key order) | Exactly as section 6 (same class, `code`, `what`, `id`, message) |
+| Missing values, non-finite numbers, booleans of `air`, `lights` and `circ` | Exactly as section 1 |
+| Every `NOT NULL` of sections 4, 4.3 and 4.4 (upgrade 2: `air`; upgrade 3: simulation `kind`, `inputs`, `result`, `verdict`, `blocks`; every `NOT NULL` column of `room_equipment`) | Throws `Error` with `code: 'ERR_SQLITE_ERROR'`, `errcode: 1299` |
+| Every `CHECK` of the current schema, sections 4, 4.3 and 4.4 (`volume > 0`, `verdict`, `blocks >= 0`, `ac_mode`, `fog`, `lights`, `circ`, event `level`, alarm `level`; upgrade 2: `air` `IN (0, 1)`; upgrade 3: `ac_fan`, calibration `source`, simulation `kind`, simulation `verdict` (the 11 values), the kind/verdict pair (three kinds), simulation `blocks >= 0`, `days >= 1`, `ac_hp`, `ac_units`, `fog_lph`, `air_m3h` (50–10000), `walls`, `roof`, `height`, the `walls`/`roof` pair). The fake has no room `vent` and no reading level `fan` (C9 6.1). | Throws `Error` with `code: 'ERR_SQLITE_ERROR'`, `errcode: 275` |
 | Foreign key (787), `UNIQUE` (2067) | Same codes as section 6.1. As in the real db, they cannot happen through the db object: the room check comes first, and `raiseAlarm` returns the open row. |
-| Type rules: a number with a fraction in an INTEGER column (`t`, `at`, `run_at`, `blocks`, `fog`, `fan`, `log_rows`, `utilisation`; upgrade 2: `log_from`, `log_to`, `days`, `real_start`, `ac_units`, `saved_at`; db.js copies `report.utilisation` unchanged, with no rounding, so a fraction fails like in any INTEGER column); a non-numeric string (for example `'abc'`) in an INTEGER or REAL column (upgrade 2 REAL columns: `core`, `kwh`, `rm`, `ac_hp`, `fog_lph`, `fan_m3h`, `height`) | Throws `Error` with `code: 'ERR_SQLITE_ERROR'`, `errcode: 3091` |
+| Type rules: a number with a fraction in an INTEGER column (`t`, `at`, `run_at`, `blocks`, `fog`, `air`, `log_rows`, `utilisation`; upgrade 3: `log_from`, `log_to`, `days`, `real_start`, `ac_units`, `saved_at`; db.js copies `report.utilisation` unchanged, with no rounding, so a fraction fails like in any INTEGER column); a non-numeric string (for example `'abc'`) in an INTEGER or REAL column (upgrade 3 REAL columns: `core`, `kwh`, `rm`, `ac_hp`, `fog_lph`, `air_m3h`, `height`) | Throws `Error` with `code: 'ERR_SQLITE_ERROR'`, `errcode: 3091` |
 | A row that breaks more than one rule | Throws one of the errors above; which one is not defined (section 6.1) |
 | Unique open alarm per room and key | `raiseAlarm` returns the open row, as section 6.8 |
 | All or nothing: `createRoom`, `replaceMix` | Checks every row before it changes anything |
-| Upgrade 2 functions | `saveSimulationRun`, `listSimulationRuns`, `getSimulationRun`, `updateSimulationRun`, `deleteSimulationRun`, `getEquipment`, `saveEquipment` and the new Reading and Calibration fields, exactly as sections 6.2, 6.6, 6.10, 6.13 and 6.14 (written by the lead in prep 2.0) |
+| Upgrade 3 functions | `saveSimulationRun`, `listSimulationRuns`, `getSimulationRun`, `updateSimulationRun`, `deleteSimulationRun`, `getEquipment`, `saveEquipment` and the new Reading and Calibration fields, exactly as sections 6.2, 6.6, 6.10, 6.13 and 6.14, the `saveEquipment` missing-field message included (written by the lead in prep 2.0; the C9 key `air` and the missing `vent` are on `master` already) |
 | JSON columns | `toJson` on write, `fromJson` on read (section 5) |
 | Calls after `close()` | Throw `Error('database is not open')` |
 

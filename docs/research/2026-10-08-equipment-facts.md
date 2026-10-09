@@ -1,5 +1,7 @@
 # Malaysian equipment facts for C8
 
+Note (2026-10-09): the single fresh-air fan model in this file was replaced by the air exchange pair of C9 (`docs/contracts/air.md`); section 15's fan sizes are context, C8 uses `AIR_SIZES`.
+
 ## 1. Scope and method
 
 | Item | Value |

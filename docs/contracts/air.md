@@ -1,8 +1,16 @@
 # Contract C9: air exchange with short, powerful CO₂ purges
 
-Revision 1, 2026-10-08. Status: frozen (lead decision 55), 2026-10-09. Decisions 14–54 are reserved by the parked wave 2 branch `wave2/contracts-folded`. Design: `docs/superpowers/specs/2026-10-08-air-exchange-purge-design.md`.
+Revision 2 (draft, wave 2), 2026-10-09; revision 1 frozen (lead decision 55), 2026-10-09. Revision 2 is one amendment built by the wave 2 Equipment stream (lead decision 37 as amended); the lead freezes it with wave 2. Decisions 14–54 are reserved by the parked wave 2 branch `wave2/contracts-folded`. Design: `docs/superpowers/specs/2026-10-08-air-exchange-purge-design.md`.
 
 C9 replaces the one fresh-air fan (levels 0–3, `env.vent`, `rules.airMode`, AC setback during a purge) with an intake fan and an exhaust fan that switch on and off together. Where C9 and an older contract disagree, C9 wins; section 10 lists every overridden section.
+
+### Changes in revision 2 (wave 2)
+
+| Section | Change |
+|---|---|
+| 5.3 | New row "Stage change that lowers the CO₂ limit": the lower `co2Lim`, `rules.fanOn` and `rules.fanOff` apply at once (no 4 h ramp for them), and the first purge after it has no time cap while CO₂ is above `co2Lim`, bounded at 10 × `purgeMaxS`; it never counts toward `capRun`. Reason: on revision 1 every crop's full cycle failed `CO₂ above the limit` in pinning (the ramp held CO₂ at the ramped limit, 3.8 h above the pinning limit; C7 allows 2 %). Growers flush hard at pinning induction. Measured on `master` 6a12852 (diff and scripts: `/home/foqcus/Documents/mushroom-farm-drafts/ramp-fix/fixB.diff`, `scripts/`): the C7 default cycle passes again (pinning `co2Below` 96.0 → 99.9 %, fruiting 98.2–99.1 → 100 %); abalone and wood ear pass whole cycles; no crop gets worse; CO₂ 4753 → below 800 ppm in about 4 min; longest first purge 270 s in the default cycle, 1320 s worst measured (6000 blocks at 600 m³/h), so the 10 × bound never bound. |
+| 9 | `tests/vectors/stage-changes.json` changes from step 120 (the black oyster fruiting → pinning change, 900 → 800 ppm) and is regenerated; the other 8 vectors stay byte-identical. |
+| 11 | Tests: `tests/controller.test.js` line 127 (it expected `co2Lim` 900 two hours into the ramp) is rewritten by the Equipment stream; the C2 "Pair correction" test (`tests/rooms.test.js` line 1476, a golden pinning ramp of `fanOn`) is rewritten by the lead in prep 2.0 (wave 2 plan step 2b) with a stage change that raises the limit (pinning → fruiting), which still ramps, so it passes before and after the Equipment merge. Watch item: `airTooSmall` raises in steady pinning of the default cycle went from 6 to 9 (read as simulation noise; the free purge itself never counts). |
 
 ## 1. Words
 
@@ -139,6 +147,7 @@ A pure module in the style of `capacity.js`: an IIFE that sets `global.ClimateAi
 | Minimum on | 30 s (`AIR_MIN_ON_S`) for every air run, except a manual change (On or Off) and a CO₂ safety exit, which act at once |
 | Minimum off | `rules.minOffS` after every air run; the CO₂ safety level and a manual change ignore it |
 | Capped purge counter | `capRun += 1` after a capped purge; `capRun = 0` after a purge that reached `fanOff` |
+| Stage change that lowers the CO₂ limit (revision 2) | In `setStage`, when the new stage's `co2Lim` is below the old one: `co2Lim`, `rules.fanOn` and `rules.fanOff` take the new values at once (the ramp's `from` values for these three keys are set to the new values, so they do not ramp); `spT`, `spRH` and `rules.co2SafetyAt` still ramp over `program.rampH` (an at-once safety level would raise a false `co2Safe`). `st.stage.freePurge = true`. The next purge that starts takes it (`'run'`): it is not ended by the time cap while CO₂ > `co2Lim`, but always at 10 × `purgeMaxS`; it ends as any purge at `fanOff`, a safety run, manual control or a CO₂ fault. Whether capped or not, it never changes `capRun` (`freePurge` is cleared when it ends). A stage change that raises or keeps the CO₂ limit ramps as before. |
 | Purge seconds | A purge's time counts from the step it starts to the step it ends (whole controller steps) |
 | Manual control, CO₂ fault | `st.air.state` goes to `idle` (offsets 0). A purge running at that moment ends without counting as capped. |
 | Safety runs | A CO₂ safety run is not a purge: it never counts in `capRun`, `purges`, `cappedPurges` or `longestPurgeS`, however long it lasts |

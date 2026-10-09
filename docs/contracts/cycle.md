@@ -1,6 +1,27 @@
 # C7: Crop cycle simulation contract (`cycle.js`)
 
-Date: 2026-10-08. Status: **frozen** (revision 2). Changes only through the lead; see `docs/contracts/LEAD-DECISIONS.md`. Spec: `docs/superpowers/specs/2026-10-08-farm-app-foundation-design.md`. Work brief: `docs/superpowers/plans/2026-10-08-farm-foundation/cycle.md`.
+Date: 2026-10-08. Status: **draft** (revision 3, not frozen; the lead freezes it with wave 2). Changes only through the lead; see `docs/contracts/LEAD-DECISIONS.md`. Spec: `docs/superpowers/specs/2026-10-08-farm-app-foundation-design.md`. Work brief: `docs/superpowers/plans/2026-10-08-farm-foundation/cycle.md`.
+
+### Changes in revision 3
+
+The air exchange of C9 (`docs/contracts/air.md`, frozen, lead decision 55) is on `master` 6a12852, and `cycle.js` on `master` already follows it (C9 8). This revision brings the text in line with C9 (C9 10, row C7) and keeps the revision 2 parts (`room.plant`, `opts.heat`, the per-crop per-stage wet line), which the Equipment stream adds on top in wave 2.
+
+| Section | Change |
+|---|---|
+| Header | Status: draft, revision 3. |
+| Lead decisions for C7 (rows Module, Room machines and heat, new row Air exchange) | `capacity.js` also exports `airOf` (C9 8); the room argument has no `vent` and an optional `airM3h` (C9 8, C9 10 row C7). |
+| 1 (Load order, Browser and Node, Shared modules) | `air.js` loads before `capacity.js` (C9 3); `index.html` loads `cycle.js` from prep 2.0 (C5 1.2); C9 changed `sim.js`, `controller.js`, `capacity.js` and `cycle.js` (C9 10 row C7: "not changed" no longer holds). |
+| 2.1 | `room = { name, volume, airM3h?, calib, plant? }`: `vent` removed, `airM3h` added; who passes which size (C9 8, C9 10 row C7). |
+| 4.2 step 4 | `cfg.airM3h = CAP.airOf(room)`; `cfg.manual.air.auto` replaces the fan line (C9 8). |
+| 5.2 (Cold shock) | The `controller.js` line re-checked on `master` 6a12852 (288). |
+| 7.1 step 2 | `airM3h: CAP.airOf(room)` replaces `vent` in the env; the drawing positions are `inletAt`, `exhaustAt` (C9 4.1, 8). |
+| 9 | `airTooSmall` among the controller's alarm ids (C9 5.5). |
+| 10 (Meter) | Meter keys `ac`, `hu`, `air`, `lights`, `circ` (C9 4.2). |
+| 12.6 | Example numbers re-measured on `master` 6a12852 (C9 10 row C7); pinning 1 now fails `CO₂ above the limit`. |
+| 13.1, 13.2 | Line numbers re-checked on `master` 6a12852; `ClimateCapacity.airOf` added; the `capacity.js` export line now holds `airOf` too (C9 8). |
+| 14 | Test 22 (`AIR`, on `master`): the room's air exchange size reaches the simulation (C9 11). |
+| 15 | The air exchange model: C9. |
+| 16 (new) | Open items: the pinning CO₂ result of 12.6, closed by lead decision 37 as amended (C9 revision 2). |
 
 ### Changes in revision 2
 
@@ -29,7 +50,7 @@ This contract defines `cycle.js`: a simulation of one whole crop cycle (every st
 
 | Topic | Decision | Section |
 |---|---|---|
-| Module | New shared file `cycle.js` (browser and Node, global `ClimateCycle`, same wrapper as `capacity.js`). `capacity.js` may only gain exports of existing helpers (`mixCo2`, `roomOf`), no behaviour change; its tests stay green. | 1, 13.2 |
+| Module | New shared file `cycle.js` (browser and Node, global `ClimateCycle`, same wrapper as `capacity.js`). `capacity.js` may only gain exports of existing helpers (`mixCo2`, `roomOf`), no behaviour change; its tests stay green. C9 later added the export `airOf` (C9 8). | 1, 13.2 |
 | Functions | `runCycleSteps(room, mix, opts)` generator yielding `{ day, days, stage, flush }` once per simulated day and returning the result; `runCycle` synchronous; `runCycleAsync` yielding to the browser between days, `opts.onProgress`. `room` and `mix` as in `capacity.js`. | 2, 11 |
 | Targets | `commonTargets(mix)`; impossible: `{ verdict: 'impossible', why }`, no simulation. The controller runs the stage program of `tg.crop`; in fruiting `spT`/`spRH` are the common targets. `opts.settings` (validated with `importSettings`) override the defaults. | 3, 4 |
 | Program | `program.auto = true` with the controller's days per stage and flushes. `full`: spawn, pinning, (fruiting, rest) per flush, ending after the last fruiting; `ready`: (fruiting, rest) per flush, ending after the last fruiting. Total days from the program; harvest windows off; `env.blockStage` follows the controller stage every step. | 5 |
@@ -37,6 +58,7 @@ This contract defines `cycle.js`: a simulation of one whole crop cycle (every st
 | Scoring | Per stage segment: hours, `inT`, `rhOk`, `lowRhMin` per day, `wet`, `co2Below`, max block core, alarms raised per id, kWh, RM (`opts.tariff`, default 0.57). Pass rules: `capacity.js` `PASS` against the stage's own targets; spawn judges temperature and block core (`coreMax`) only. Spawn: air below the band is excused while the controller's `coreControl` rule cools for the core (`core − coreTarget > T − spT`) (added on review, revision 1; signed off by the lead, lead decision 12). `fails[]` lists the failed rules. | 8, 9, 10 |
 | Result | `{ verdict, why?, targets, inputs, stages, totals: { days, kwh, rm, rmPerBlock, pass }, series }`; `series` hourly `{ h, stage, flush, T, RH, CO2, core, kwh }` (plus `heat` with `opts.heat`, revision 2) | 12 |
 | Room machines and heat (revision 2, C8) | `room.plant` overrides the simulation's machines; `opts.heat` adds heat flows; the wet line is per crop and stage (lead decisions 34, 36, 37, 40) | 2.1, 3, 7.1, 8.1, 8.2, 12 |
+| Air exchange (revision 3, C9) | The room has no `vent`; its optional `airM3h` is the size of the air exchange; `cycle.js` gives the simulation and the controller the same size (`CAP.airOf(room)`, C9 8; lead decisions 35, 55) | 2.1, 4.2, 7.1 |
 | Speed | `DT = 10` s; a full default cycle within 60 s in Node; the tests log the time | 1, 14 |
 
 ## 1. General rules
@@ -45,9 +67,9 @@ This contract defines `cycle.js`: a simulation of one whole crop cycle (every st
 |---|---|
 | File | `cycle.js` in the repository root, next to `capacity.js` |
 | Module pattern | The same wrapper as `capacity.js`: `(function (global) { 'use strict'; … global.ClimateCycle = { … }; })(typeof window !== 'undefined' ? window : globalThis);`. No `require`, no `module.exports`, no DOM access, no npm packages. |
-| Load order | `sim.js`, `controller.js`, `runtime.js`, `capacity.js`, then `cycle.js`. `cycle.js` reads `global.ClimateSim`, `global.ClimateController`, `global.ClimateRuntime`, `global.ClimateCapacity` once, at load. |
-| Browser and Node | The same file runs in both. Node tests `require('../cycle.js')` after the four files above. C5 revision 7 loads it in `index.html` after `capacity.js`; C3 section 9 serves `/cycle.js`. |
-| Shared modules | Revision 1: `controller.js`, `sim.js`, `runtime.js` are not changed; `capacity.js` gains two exports and nothing else (section 13.2). Revision 2: C8 changes `sim.js`, `controller.js` and `capacity.js` (C8 section 5); this contract uses `sim.heatJ()` and `env.plant` from them. |
+| Load order | `sim.js`, `air.js`, `controller.js`, `runtime.js`, `capacity.js`, then `cycle.js`. `air.js` must come before `capacity.js`, which reads `global.ClimateAir` at load (C9 3). `cycle.js` reads `global.ClimateSim`, `global.ClimateController`, `global.ClimateRuntime`, `global.ClimateCapacity` once, at load; it does not read `ClimateAir` itself. |
+| Browser and Node | The same file runs in both. Node tests `require('../cycle.js')` after the five files above (as `tests/cycle.test.js` on `master`). `index.html` loads it after `capacity.js` (C5 1.2, written by the lead in prep 2.0); C3 section 9 serves `/cycle.js`. |
+| Shared modules | Revision 1: `controller.js`, `sim.js`, `runtime.js` are not changed; `capacity.js` gains two exports and nothing else (section 13.2). C9 (on `master`) changed `sim.js`, `controller.js`, `capacity.js` (the export `airOf`) and `cycle.js` for the air exchange (C9 4, 5, 8). Revision 2: C8 changes `sim.js`, `controller.js` and `capacity.js` (C8 section 5); this contract uses `sim.heatJ()` and `env.plant` from them. |
 | Deterministic | The same `room`, `mix` and `opts` always give a deep-equal result (`assert.deepStrictEqual`). No `Math.random`, no clock: the simulation uses no noise and no random weather. |
 | Numbers | Every number in the result is unrounded (the page rounds for display). Units: °C, % RH, ppm, kWh, RM, hours, days. |
 | Time step | `DT = 10` s of simulated time per step (as `capacity.js` `trial`). Not an option. |
@@ -67,7 +89,7 @@ This contract defines `cycle.js`: a simulation of one whole crop cycle (every st
 
 | Argument | Shape | Meaning |
 |---|---|---|
-| `room` | `{ name, volume, vent, calib, plant? }` as in `capacity.js` (revision 2 adds the optional `plant`: a partial plant of C8 5.1.1, the room's machines; `null` or left out = `ClimateSim.PLANT`): `volume` m³ (falsy = the simulation's 60 m³), `vent` `'supply'` or `'exhaust'` (falsy = the simulation's default `'supply'`), `calib` `{ ua, infAch, moistBuffer, co2PerBlock, rmse, date }` or `null` | The room. `name` is not used. |
+| `room` | `{ name, volume, airM3h?, calib, plant? }` as in `capacity.js` (C9 8; revision 2 adds the optional `plant`: a partial plant of C8 5.1.1, the room's machines; `null` or left out = `ClimateSim.PLANT`): `volume` m³ (falsy = the simulation's 60 m³), `airM3h` the size of the air exchange in m³/h (`CAP.airOf(room)`: a finite number is clamped to 50–10000; left out or not a finite number = `ClimateSim.PLANT.air.m3h`, 1800), `calib` `{ ua, infAch, moistBuffer, co2PerBlock, rmse, date }` or `null`. Other keys are ignored (a `vent` key from an older caller changes nothing). | The room. `name` is not used. The air exchange size comes from `airM3h` only: `room.plant` does not set it. The Simulate tab passes the room's current settings `airM3h`; the C8 check passes its Equipment's `air_m3h` (lead decision 35). |
 | `mix` | `[{ crop, blocks, co2PerBlock? }]` exactly as in `capacity.js` | The planned blocks. A row counts only when `blocks` is a finite number above 0 (as `commonTargets` and `mixCo2`). |
 | `opts.settings` | A Settings object (controller settings of the room), optional | Taken through `importSettings` (lead decision 6), then the forced keys of section 4.2 are set. Left out: `ClimateController.defaultSettings()`. |
 | `opts.region` | string, default `'my-lowland'` | An own key of `ClimateCapacity.DESIGN_DAYS`. `region = opts.region \|\| 'my-lowland'` (as `capacity.js` `check`: `undefined`, `null` and `''` take the default) |
@@ -111,7 +133,7 @@ After the checks: `tg = ClimateCapacity.commonTargets(mix)`. When `tg.impossible
 | 1 | `opts.settings` given: `imp = CC.importSettings(CC.exportSettings(opts.settings))`; `cfg = imp.settings`; `warnings = imp.warnings`. Not given: `cfg = CC.defaultSettings()`; `warnings = []`. |
 | 2 | `farmType = cfg.farmType` (`'full'` or `'ready'`; `importSettings` guarantees one of the two). `S = CC.FARM_TYPES[farmType].stages`. |
 | 3 | Whole numbers: each of `cfg.program.days.spawn`, `.pinning`, `.fruiting`, `.rest` and `cfg.program.flushes` becomes `Math.max(1, Math.round(value))`. (`importSettings` holds them inside their limits but allows fractions.) |
-| 4 | Forced keys: `cfg.crop = tg.crop`; `cfg.stage = S[0]`; `cfg.program.auto = false` (it becomes `true` at day 0, section 7.2); `cfg.program.harvest.on = false` (harvest windows lower RH on purpose); `cfg.offsets = { T: 0, RH: 0, CO2: 0 }` (the simulated sensors have no error to correct); `cfg.manual.ac.auto`, `cfg.manual.hu.auto`, `cfg.manual.fan.auto`, `cfg.manual.lights.auto`, `cfg.manual.circ.auto` all `true` (the cycle tests automatic control). |
+| 4 | Forced keys: `cfg.crop = tg.crop`; `cfg.stage = S[0]`; `cfg.program.auto = false` (it becomes `true` at day 0, section 7.2); `cfg.program.harvest.on = false` (harvest windows lower RH on purpose); `cfg.offsets = { T: 0, RH: 0, CO2: 0 }` (the simulated sensors have no error to correct); `cfg.airM3h = CAP.airOf(room)` (the controller knows the size the simulation runs, C9 8); `cfg.manual.ac.auto`, `cfg.manual.hu.auto`, `cfg.manual.air.auto`, `cfg.manual.lights.auto`, `cfg.manual.circ.auto` all `true` (the cycle tests automatic control). |
 | 5 | `CC.applyProfile(cfg)` (targets of `tg.crop` and `S[0]` at once, no ramp). |
 | 6 | `S[0] === 'fruiting'` (farm type `ready`): `cfg.spT = tg.spT`; `cfg.spRH = tg.spRH`. |
 | 7 | Every other key (rules switches, protection times, `humMode`, `sensorMode`, `circ`, lights, `rampH`, `coreControl`, …) stays as `cfg` has it. |
@@ -163,7 +185,7 @@ A segment is one stage occurrence with its flush number, as `ctl.programStatus(t
 | End | The reading at `END` (section 7.1) is where the controller leaves the last fruiting (it changes to `rest` and raises `blocksDone`). That reading is not scored; it only closes the last hour's energy (section 10). |
 | Block stage | `e.blockStage = cfg.stage` before every simulation step (as `app.js` `tick`), so the blocks' CO₂ and heat follow the controller's stage (`PLANT.blockStage`: spawn 1.3, pinning 1.0, fruiting 1.0, rest 0.6). |
 | Ramps | The controller's ramp (`rampH`, default 4 h) after each stage change is part of the segment and is scored against the new stage's targets. |
-| Cold shock | No crop in `CROPS` has the `shock` flag today, so this row is not tested. If one is added: the controller applies a shock at pinning **and at every new flush** (`rest` → `fruiting`, `controller.js` line 247). The shock hours count against the targets of the segment they fall in (pinning or fruiting). In fruiting, section 4.3 keeps the shock temperature and patches again when the shock ends. |
+| Cold shock | No crop in `CROPS` has the `shock` flag today, so this row is not tested. If one is added: the controller applies a shock at pinning **and at every new flush** (`rest` → `fruiting`, `controller.js` line 288 on `master` 6a12852). The shock hours count against the targets of the segment they fall in (pinning or fruiting). In fruiting, section 4.3 keeps the shock temperature and patches again when the shock ends. |
 
 ## 6. Weather sequence
 
@@ -183,7 +205,7 @@ A segment is one stage occurrence with its flush number, as `ctl.programStatus(t
 | Step | Action |
 |---|---|
 | 1 | `n = Math.max(1, Math.round(Σ blocks of the counted rows))` (a mix such as `[{ crop: 'oyster', blocks: 0.4 }]` passes `commonTargets` but rounds to 0; it runs with 1 block, so `rmPerBlock` stays finite); `c = CAP.mixCo2(room, mix)` (mL/h per block) |
-| 2 | `e = structuredClone(SIM.DEFAULT_ENV)`; `Object.assign(e, { startHour: 0, blocks: n, co2PerBlock: c, blockStage: S[0], vent: room.vent \|\| e.vent, noise: false, sensorQuality: 'ideal', harvestDoors: false, randomWeather: false, dailyCycle: false })`; `e.room = CAP.roomOf(room)`; revision 2: when `room.plant != null`, `e.plant = structuredClone(room.plant)` (`roomOf` lays `plant.room` under the calibration, C8 5.2); `full` = the weather series of section 6; `e.weatherSeries = full` (the loop replaces it with the day's window unless `opts.fullWeather`). Every other `DEFAULT_ENV` key stays (`probe: true`, `sensorPeriod: 30`, sensor positions, `vent` positions). |
+| 2 | `e = structuredClone(SIM.DEFAULT_ENV)`; `Object.assign(e, { startHour: 0, blocks: n, co2PerBlock: c, blockStage: S[0], airM3h: CAP.airOf(room), noise: false, sensorQuality: 'ideal', harvestDoors: false, randomWeather: false, dailyCycle: false })` (`airM3h` as the capacity trial, C9 8; the same number as `cfg.airM3h`, 4.2 step 4); `e.room = CAP.roomOf(room)`; revision 2: when `room.plant != null`, `e.plant = structuredClone(room.plant)` (`roomOf` lays `plant.room` under the calibration, C8 5.2); `full` = the weather series of section 6; `e.weatherSeries = full` (the loop replaces it with the day's window unless `opts.fullWeather`). Every other `DEFAULT_ENV` key stays (`probe: true`, `sensorPeriod: 30`, sensor positions, the air exchange positions `inletAt: 'high'`, `exhaustAt: 'low'`). |
 | 3 | `sim = SIM.create(e)`; `sim.setRoom({ T, RH, CO2 })` with the targets of `S[0]` (section 4.1): `T = spT`, `RH = spRH`, `CO2 = co2Lim − 200` |
 | 4 | `ctl = CC.create(cfg, null, null)` |
 | 5 | `sio = RT.simIO(sim)`; `io = { ...sio, read: () => { const r = sio.read(); return r && { ...r, CO2: r.CO2 + (r.seq % 2) * 1e-6 }; } }`. A noise-free CO₂ can sit at one exact value, which the controller's frozen-sensor check calls a fault; the change is far below a sensor's resolution (copied from `capacity.js` `trial`). |
@@ -266,7 +288,7 @@ In the spawn run the bags are sealed: humidity and CO₂ are reported but not ju
 |---|---|
 | Source | `ctl.alarmList()` after each scored reading (step 6 of 8.1) |
 | A raise | An alarm `a` with `a.active === true` and `a.since === r.t` (the controller stamps every raise with the reading time) |
-| Count | `segment.alarms[a.id] += 1` (key created at 1). Ids are the controller's: `tHi`, `tLo`, `tCrop`, `coreHi`, `rhHi`, `rhLo`, `co2Hi`, `co2Safe`, `disagree`, `acTooSmall`, `sensor_<key>`, … |
+| Count | `segment.alarms[a.id] += 1` (key created at 1). Ids are the controller's: `tHi`, `tLo`, `tCrop`, `coreHi`, `rhHi`, `rhLo`, `co2Hi`, `co2Safe`, `disagree`, `acTooSmall`, `airTooSmall` (C9 5.5), `sensor_<key>`, … |
 | Not counted | Raises in the warm-up day, and `blocksDone` at `END` (not scored) |
 | No alarm | `alarms` is `{}` |
 
@@ -274,7 +296,7 @@ In the spawn run the bags are sealed: humidity and CO₂ are reported but not ju
 
 | Item | Rule |
 |---|---|
-| Meter | `K = Σ Object.values(r.kwh)` (`ac`, `hu`, `fan`, `lights`, `circ`), cumulative kWh of the reading |
+| Meter | `K = Σ Object.values(r.kwh)` (`ac`, `hu`, `air`, `lights`, `circ`, C9 4.2), cumulative kWh of the reading |
 | Hour h (h = 0 … D × 24 − 1) | Opens at its first reading (`t = W + h × 3600`) with `k0 = K`; closes at the first reading of the next hour (the reading at `END` closes the last hour); `kwh = K(close) − k0` |
 | Series entry | `{ h, stage, flush, T, RH, CO2, core, kwh }` (plus `heat` with `opts.heat`, 8.1 step 2a): `h` = hours from day 0; `stage`, `flush` = the segment of the hour's first reading; `T`, `RH`, `CO2`, `core` = means of `v.T`, `v.RH`, `v.CO2`, `v.core` over the hour's 120 readings; `kwh` as above |
 | Segment `kwh` | Sum of its hours' `kwh` (in hour order) |
@@ -352,44 +374,49 @@ The 8640th step of loop day `day` (section 7.2, 0 … D − 1) lands exactly on 
 | `rmPerBlock` | number | `rm / n` (`n ≥ 1`, section 7.1) |
 | `pass` | boolean | Every segment passes |
 
-### 12.6 Example (defaults, draft measurement, not binding)
+### 12.6 Example (defaults, measurement, not binding)
 
-2000 grey oyster, default room (`{ volume: 60, vent: 'supply', calib: null }`), default settings, `my-lowland`: 83 days, 9 segments, about 4.1 s in Node 22.20 with the weather window (5.6 s on the whole series; same Result).
+C9 10 (row C7) asked the lead to re-measure these numbers at C9 step 2 (the air exchange changes every segment). They were re-measured with `ClimateCycle.runCycle` on `master` 6a12852 (C9 merged), Node 22.20: 2000 grey oyster (`crop: 'oyster'`), default room (`{ volume: 60, calib: null }`, no `airM3h`, so 1800 m³/h), default settings, `my-lowland`: 83 days, 9 segments, about 4.6 s with the weather window. `totals.pass` is `false`.
 
 | Segment | `inT` | `rhOk` | `co2Below` | `maxCore` | `alarms` | ≈ kWh | Pass |
 |---|---|---|---|---|---|---|---|
-| spawn 1 (21 d) | 100 (99.8 excused) | 6.2 (not judged) | 100 | 28.2 | – | 227 | yes |
-| pinning 1 (4 d) | 99.2 | 96.3 | 99.3 | 28.1 | `tLo` 1, `sensor_RH` 1 | 77 | yes |
-| fruiting 1–4 (7 d each) | 99.6–100 | 99.4–100 | 99.9–100 | 27.4 | 0–1 `rhHi` | 97–103 | yes |
-| rest 1–3 (10 d each) | 100 | 100 | 100 | 27.4 | – | 67–70 | yes |
+| spawn 1 (21 d) | 100 | 3.4 (not judged) | 100 | 28.2 | – | 225 | yes |
+| pinning 1 (4 d) | 98.8 | 94.1 | **96.0** | 28.1 | `tLo` 1, `airTooSmall` 6 | 69 | **no**: `CO₂ above the limit` |
+| fruiting 1–4 (7 d each) | 99.9–100 | 98.7–99.8 | 98.2–100 | 27.4 | 0–1 `rhHi` | 85–88 | yes |
+| rest 1–3 (10 d each) | 100 | 100 | 100 | 27.4 | – | 66–68 | yes |
 
-The `sensor_RH` alarm in pinning is the controller's response check ("does not respond to its machine"), not a frozen value; it is real controller behaviour in this simulation and is reported as is. 6000 grey oyster, farm type `ready`: each fruiting segment fails with `temperature too high` (`inT` 72–79 %, `acTooSmall` 4–5 raises); the rest segments pass.
+| Note | Detail |
+|---|---|
+| Pinning fails on CO₂ | The stage ramp (`program.rampH` 4 h) from the spawn run's CO₂ limit (5000 ppm) down to the pinning limit (800 ppm) keeps CO₂ above the pinning limit long enough to break the 98 % rule (`co2Below` 96.0 %). With C9's short purges the size alarm `airTooSmall` rises 6 times in that segment. The scoring is not changed for this (section 16). Test 12 still holds: the spawn segment and every fruiting segment pass. |
+| Before C9 (revision 1 draft, for history) | Every segment passed: pinning 1 had `inT` 99.2, `rhOk` 96.3, `co2Below` 99.3, alarms `tLo` 1, `sensor_RH` 1. |
+| Dense case | 6000 grey oyster, farm type `ready`: each fruiting segment fails with `temperature too high` (`inT` 68–75 %, `acTooSmall` 6–7 raises, `tHi` 2–3); the rest segments pass. |
 
 ## 13. What `cycle.js` uses
 
-### 13.1 Calls into the shared modules (checked against the files on `master`, 2026-10-08)
+### 13.1 Calls into the shared modules (line numbers checked against `master` 6a12852)
 
 | Module | Name | Where it is | Used for |
 |---|---|---|---|
-| `capacity.js` | `ClimateCapacity.commonTargets(mix)` | line 51, exported line 325 | Targets, impossible mix |
-| `capacity.js` | `ClimateCapacity.DESIGN_DAYS` | line 43, exported | Weather |
-| `capacity.js` | `ClimateCapacity.PASS` | line 25, exported | Pass thresholds |
-| `capacity.js` | `ClimateCapacity.mixCo2(room, mix)` | line 77; **export added** (13.2) | CO₂ per block |
-| `capacity.js` | `ClimateCapacity.roomOf(room)` | line 83; **export added** (13.2) | Room physics for `e.room` |
-| `controller.js` | `ClimateController.defaultSettings()` | line 165, exported line 976 | Settings without `opts.settings` |
-| `controller.js` | `ClimateController.exportSettings(cfg)` | line 927, exported | Wraps `opts.settings` in the file format `importSettings` expects |
-| `controller.js` | `ClimateController.importSettings(file)` | line 932, exported | Validates `opts.settings` (lead decision 6) |
-| `controller.js` | `ClimateController.applyProfile(cfg)` | line 188, exported | First stage targets |
-| `controller.js` | `ClimateController.profileTargets(crop, stage)` | line 161, exported | Targets of spawn, pinning, rest |
-| `controller.js` | `ClimateController.create(cfg, snapshot, onEvent)` | line 210, exported | The controller |
-| `controller.js` | `ClimateController.FARM_TYPES`, `CROPS`, `BANDS` | lines 74, 47, 85, exported | Stage lists, crop limits, bands |
-| `controller.js` | `ctl.setStage(stage, t, ramp)` | line 236, returned line 903 | Start of day 0 |
-| `controller.js` | `ctl.programStatus(t)` | line 324, returned line 903 | Segment stage and flush |
-| `controller.js` | `ctl.alarmList()` | line 439, returned line 903 | Alarm raises |
-| `controller.js` | `ctl.state` (getter: `stage.ramp`) | returned line 903 | Section 4.3 |
-| `controller.js` | `ctl.update(r)` | returned line 903 | Called by the runtime only |
-| `sim.js` | `ClimateSim.create(env)`, `ClimateSim.DEFAULT_ENV` | lines 93, 69, exported line 421 | The simulated room |
-| `sim.js` | `sim.setRoom({ T, RH, CO2 })`, `sim.view()`, `sim.read()` | lines 404, 388, 382, returned | Start state, scoring, (via `simIO`) readings |
+| `capacity.js` | `ClimateCapacity.commonTargets(mix)` | line 52, exported line 352 | Targets, impossible mix |
+| `capacity.js` | `ClimateCapacity.DESIGN_DAYS` | line 44, exported | Weather |
+| `capacity.js` | `ClimateCapacity.PASS` | line 26, exported | Pass thresholds |
+| `capacity.js` | `ClimateCapacity.mixCo2(room, mix)` | line 78; **export added** (13.2) | CO₂ per block |
+| `capacity.js` | `ClimateCapacity.roomOf(room)` | line 86; **export added** (13.2) | Room physics for `e.room` |
+| `capacity.js` | `ClimateCapacity.airOf(room)` | line 85; export added by C9 (C9 8) | The air exchange size for `e.airM3h` and `cfg.airM3h` |
+| `controller.js` | `ClimateController.defaultSettings()` | line 170, exported line 1087 | Settings without `opts.settings` |
+| `controller.js` | `ClimateController.exportSettings(cfg)` | line 1036, exported | Wraps `opts.settings` in the file format `importSettings` expects |
+| `controller.js` | `ClimateController.importSettings(file)` | line 1041, exported | Validates `opts.settings` (lead decision 6) |
+| `controller.js` | `ClimateController.applyProfile(cfg)` | line 194, exported | First stage targets |
+| `controller.js` | `ClimateController.profileTargets(crop, stage)` | line 166, exported | Targets of spawn, pinning, rest |
+| `controller.js` | `ClimateController.create(cfg, snapshot, onEvent)` | line 268, exported | The controller |
+| `controller.js` | `ClimateController.FARM_TYPES`, `CROPS`, `BANDS` | lines 80, 53, 91, exported | Stage lists, crop limits, bands |
+| `controller.js` | `ctl.setStage(stage, t, ramp)` | line 277, returned line 991 | Start of day 0 |
+| `controller.js` | `ctl.programStatus(t)` | line 365, returned line 991 | Segment stage and flush |
+| `controller.js` | `ctl.alarmList()` | line 484, returned line 991 | Alarm raises |
+| `controller.js` | `ctl.state` (getter: `stage.ramp`) | returned line 991 | Section 4.3 |
+| `controller.js` | `ctl.update(r)` | returned line 991 | Called by the runtime only |
+| `sim.js` | `ClimateSim.create(env)`, `ClimateSim.DEFAULT_ENV` | lines 93, 69, exported line 424 | The simulated room |
+| `sim.js` | `sim.setRoom({ T, RH, CO2 })`, `sim.view()`, `sim.read()` | lines 407, 391, 385, returned | Start state, scoring, (via `simIO`) readings |
 | `runtime.js` | `ClimateRuntime.simIO(sim)` → `read`, `write`, `advance(dt)` | line 33, exported line 43 | Adapter |
 | `runtime.js` | `ClimateRuntime.createRuntime({ io, ctl, onReading })` → `poll()` | line 16, exported | The control loop |
 
@@ -398,6 +425,7 @@ The `sensor_RH` alarm in pinning is the controller's response check ("does not r
 | Before | After |
 |---|---|
 | `global.ClimateCapacity = { commonTargets, balance, trial, calibStatus, verdictOf, checkSteps, check, checkAsync, DESIGN_DAYS, PASS, VERDICT, SEARCH };` | The same object with `mixCo2, roomOf` added. No other line changes; `tests/capacity.test.js` stays green unchanged. |
+| `global.ClimateCapacity = { …, SEARCH, mixCo2, roomOf };` | C9 (on `master` 6a12852, line 352): `airOf` added as well (C9 8). C9 also changed the behaviour of `capacity.js` (`balance`, `trial`, the side of a failure); that is C9's change, not this contract's. |
 
 ## 14. Tests (`tests/cycle.test.js`)
 
@@ -426,6 +454,7 @@ The work brief lists them with exact inputs. Required coverage:
 | 19 | Revision 2: a `plant` with `ac.capW` 2640 lowers each fruiting segment's `inT` (4000 grey oyster, `ready`) |
 | 20 | Revision 2: `opts.heat: true` adds `heat` with exactly the 13 keys to every segment and hour; a segment's `heat` equals the sum of its hours' (1e-6); removing every `heat` key gives the Result without `opts.heat`; without `opts.heat` no `heat` key anywhere |
 | 21 | Revision 2: a short lion's mane cycle scores pinning `wet` against 98 %: lower than the same run with `wetRH` removed, and without `humidity near saturation` in pinning; spawn and fruiting segments deep-equal |
+| 22 | C9 (on `master`, test `AIR`): `room.airM3h: 1800` gives a Result deep-equal to a room without `airM3h`; `airM3h: 900` gives a different Result; the energy differs by less than 10 % (`SHORT_READY`) |
 
 ## 15. Not in this contract
 
@@ -435,5 +464,12 @@ The work brief lists them with exact inputs. Required coverage:
 | Saving results (database table, API route) | C1 6.13 (`simulation_runs`), C3 6.20–6.24 |
 | Predicted-versus-real comparison and calibration from it | The Calibrate tab (C5 3.11); it reads `series` |
 | A room's machines | C8 (`room.plant`, revision 2) |
+| The air exchange (intake and exhaust pair, purges, its size) | C9 (`docs/contracts/air.md`); this contract only passes `room.airM3h` on (2.1) |
 | Random weather, sensor noise | Not modelled here |
 | Batches of blocks with their own dates | Sub-project 2 (batches and stages) |
+
+## 16. Open items
+
+| Item | Owner |
+|---|---|
+| C9: the stage ramp from spawn broke the 98 % CO₂ rule in pinning (12.6: the default cycle failed `CO₂ above the limit` in pinning 1, `co2Below` 96.0 %) | Closed (lead decision 37 as amended, C9 revision 2): the behaviour is fixed, not the scoring. A stage change that lowers the CO₂ limit applies it at once with one uncapped purge; measured, the default cycle passes again (pinning `co2Below` 99.9 %, fruiting 100 %, `totals.pass` true). The Equipment stream builds it; 12.6 is measured again by the lead at gate 2.5 |

@@ -1,9 +1,39 @@
 # Contract C5 and C6: web modules and settings editor
 
-Date: 2026-10-08. Status: **frozen** (revision 7). Changes only through the lead; see `docs/contracts/LEAD-DECISIONS.md`. Spec: `docs/superpowers/specs/2026-10-08-farm-app-foundation-design.md`.
+Date: 2026-10-08. Status: **draft** (revision 8, not frozen; the lead freezes it with wave 2). Changes only through the lead; see `docs/contracts/LEAD-DECISIONS.md`. Spec: `docs/superpowers/specs/2026-10-08-farm-app-foundation-design.md`.
 (sections 4, 5 and 6). Related contracts: C3 and C4 (`docs/contracts/api.md`) define every resource, route, status code and
 stream payload. This file does not repeat them. Where it names a C3 resource (Room, Reading, Event, Alarm,
 SettingsVersion, Calibration, MixRow, CapacityReport), C3's JSON is used unchanged.
+
+### Changes in revision 8
+
+Wave 2 moved onto C9, the air exchange (`docs/contracts/air.md`, frozen, lead decision 55; its section 10 lists the C5 sections it overrides, with C9 7 as the new text), plus the freeze check findings for this file. Upgrade 2 is now C9's; wave 2's schema is upgrade 3.
+
+| Section | Change |
+|---|---|
+| Header | Status draft, revision 8 |
+| 1.1 | `index.html`: wave 2 owner the lead in prep 2.0, then nobody (finding 2). New rows `air.js` (C9 3, nobody in wave 2), `tests/web-load.test.js` and `tests/web-bench.test.js`, `tests/web-air.test.js` and `tests/web-mimic.test.js` (nobody in wave 2). `web/simulator.js`: Bench does not change the mimic or C9's air card code; the fake's served files gain `/air.js`, `/cycle.js`, `/equipment.js` (findings 3, 19) |
+| 1.2 | The lead writes `index.html` in prep 2.0 (finding 2); script tag `air.js` after `sim.js` (C9 7) |
+| 1.3 | `air.js` is script 2; `capacity.js` needs `ClimateAir` at load; `equipment.js` reads `ClimateAir` and the run modules only at call time; `room-rules.js` reads `ClimateEquipment` only inside `checkEquipmentBody`, `checkCalibration`, `checkSimulationRun`, never at load (finding 4) |
+| 1.7 | New `index.html` row (finding 2); the `equipment.js` stub has `AIR_SIZES` and no `FAN_MIN_ACH` (C9 10 row C8); the fake's file list adds `/air.js`, `/cycle.js`, `/equipment.js` (findings 3, 19); the start check greps `index.html`; the `web/room-equipment.js` tag gives a 404 until gate 2.5 |
+| 3.2, 3.3 | The Test bench shows C9 7's air exchange; the rules card is **Air exchange and CO₂**; the bars are `drawPurgeBars`; the room drawing is C9's (C9 10 rows 3.2, 3.3) |
+| 3.4 | The Reading's air exchange is `On` / `Off` (`r.air`); new table "Air exchange on the Live tab": status card, glance row and ladder chip from C2 `live.air` (lead decision 27 as amended); `drawPurgeBars` stays in the Test bench (C9 10 row 3.4) |
+| 3.5 | Member `FarmBench.mimicLayout` (C9 7) until wave 3 |
+| 3.6 | No `vent`; `envBase.airM3h` = the room's settings `airM3h`; the Calibrate tab loads `getSettings` (C9 10 row 3.6, C9 4.1) |
+| 3.7 | `normRoom` keeps no air key (C9 6.3; C9 10 row 3.7) |
+| 3.8 | **New room** and the header info have no `vent` (C9 6.1) |
+| 3.9 | "Headless checks of one tab": the gate 2.5 tree's prep 2.0 `index.html` loads every script, the tab is mounted by hand, no script injection, no layout assertion (findings 13, 2) |
+| 3.10 | `room.airM3h` = settings `airM3h`; `inputs.calibration` exactly `{ id, ua, inf_ach, moist_buffer, co2_per_block }`, the air size in `inputs.settings.airM3h` (finding 17); machines line `air_m3h`; stream `settings` events; Saved runs: Result chip `info.verdict`, equipment Energy `–` (findings 5, 16); Node tests record `plantOf` (finding 22) |
+| 3.11 | `sameMachines` with `air_m3h`; "before upgrade 3"; `envBase.airM3h`; the `PARAMS.ua` note only when a string, and `replay` ignores `stage` before the Bench merge (finding 15); Comparison `base: { series }` and no request for a future start (finding 9); log row `air` from `r.air` (C9 8); Node tests record `plantOf` (finding 22) |
+| 3.12 | Field `#eqAir` "Air exchange (m³/h)" for `air_m3h`, 50–10000; the air size note; a save keeps the settings' `airM3h` in step (C3 6.26); Progress kind `air`; report row "air exchange" (key `air`); helpers `formValues` order and `airNote` |
+| 4.3 | `createRoom`, `updateRoom` without `vent`; `listRooms` `live.air`; `saveEquipment` with `air_m3h` and the settings sync; mapping rows for `airM3h` |
+| 4.5 | The served shared modules include `/air.js`, `/cycle.js`, `/equipment.js` (findings 3, 19) |
+| 6.1, 6.2 | Power key `air`; `aggregate` averages `air`; `drawPurgeBars(host, hours, clock)` replaces `drawExhaustBars`; `createLadder` chips `{ air }`, one row `Purge`; `drawCalibCharts` reads `base.series` (finding 9) (C9 10 rows 6.1, 6.2) |
+| 7.2, 7.3, 7.4, 7.5 | Command `air: { on }`; card **Air exchange and CO₂** with three fieldsets; Machines card device `air` with `airOnChk`; the corrections, bumpless transfer and visibility rules of C9 (C9 10 rows 7.2, 7.3, 7.4) |
+| 7.7 | Rows follow C9 7.1: `airM3h`, `rules.fanOn` / `fanOff` labels, `rules.purgeMaxS`, `rules.minOffS`, `manual.air.*`; the removed keys' rows and the AC pair are gone; the list of settings without a control follows `master` (C9 10 row 7.7) |
+| 7.8 | Ramp paths are C9's `RAMP_KEYS`; new `airM3h` row; event name `Air exchange`; the `PARAMS.ua` note text (finding 15); Node export `{ createRoomLink, airText, mimicLayout }`; the room drawing is C9's; `createRoomLink(deps)`, its members, steps and page wiring (finding 26) (C9 10 row 7.8) |
+| 7.9 | Command `air.on` from `r.air === 1`; the ladder chip from `live.air` (C9 10 row 7.9) |
+| 7.10 | No temporary-folder path; tab checks follow 3.9 (finding 13); fake file test row (finding 3); Live tab check stands in for the frame (finding 27) and checks the air card; Simulate check (findings 5, 16, 17); Calibrate check (findings 9, 15, 22); Bench check mounts with `{ roomId: 1 }` and leaves `#/simulator/1` to wave 3 (finding 14); Equipment check of the air size sync (C9 10 row 7.10) |
 
 ### Changes in revision 7
 
@@ -75,16 +105,17 @@ The room-centred app (owner correction, lead decision 14) and C8 equipment, froz
 
 | File | Global it defines | Owner (wave 0) | Owner (wave 1) | Owner (wave 2) | Content |
 |---|---|---|---|---|---|
-| `index.html` | – | – | Web split | Room shell | The shell markup and the script tags (1.2). No module markup. |
+| `index.html` | – | – | Web split (C9 step 0: the lead added `air.js`) | Lead (prep 2.0, exactly 1.2), then nobody | The shell markup and the script tags (1.2). No module markup. |
 | `styles.css` | – | – | Web split | Room shell (appends one `/* Room page */` block only, lead decision 32) | Today's styles plus the menu, `.contents`, `dialog` and Machines card styles; from wave 2 every class the room files and the Equipment card use (3.8) |
 | `room-rules.js` | `ClimateRoomRules` | Lead (stub, 1.5) | API (replaces the stub; exports in C3 section 7.1) | Server 2 (C3 7.6, 7.7) | Shared room, mix, calibration, simulation run and equipment rules. The web modules only read it. |
+| `air.js` | `ClimateAir` | – | Lead (C9 step 0, on `master`) | nobody (frozen C9) | C9 section 3 |
 | `cycle.js` | `ClimateCycle` | – | Cycle stream (C7) | Equipment (C7 revision 2, C8 5.3) | Loaded by the page from wave 2 |
 | `equipment.js` | `ClimateEquipment` | – | – | Lead (prep 2.0 stub, 1.7), then Equipment (replaces it) | C8 |
 | `sim.js`, `controller.js`, `capacity.js`, `tools/make-vectors.js` | `ClimateSim`, `ClimateController`, `ClimateCapacity`, – | – | – | Equipment | C8 5.1, 5.4, 5.2; one new recorded run |
 | `web/ui.js` | `FarmUi` | – | Web split | nobody | Formatting and small DOM helpers moved from `app.js` (section 5) |
 | `web/api.js` | `FarmApi` | – | Web split | Lead (prep 2.0, the 4.3 additions), then nobody | One function per C3 route, and `stream` (section 4) |
 | `web/charts.js` | `FarmCharts` | – | Web split | Calibrate tab (the 6.2 `drawCalibCharts` options only) | The charts moved from `app.js` (section 6) |
-| `web/settings-panel.js` | `FarmSettingsPanel` | – | Web split | Equipment (the one `#inCrop` lion's mane option only, lead decision 47) | The settings editor (section 7, C6) |
+| `web/settings-panel.js` | `FarmSettingsPanel` | – | Web split (C9's air fields are on `master`) | Equipment (the one `#inCrop` lion's mane option only, lead decision 47) | The settings editor (section 7, C6) |
 | `web/shell.js` | `FarmShell` | – | Web split | Room shell | Menu, routing, settings level, theme (section 2) |
 | `web/room-tabs.js` | `FarmRoomTabs` | – | – | Lead (prep 2.0, the real file), then nobody | Tab registry (3.9) |
 | `web/rooms.js` | – (registers `rooms`) | Lead (stub, 1.5) | nobody (no wave 1 stream creates or changes it) | Room shell (replaces the stub) | Rooms home and room page frame (3.8) |
@@ -92,17 +123,19 @@ The room-centred app (owner correction, lead decision 14) and C8 equipment, froz
 | `web/room-simulate.js` | – (registers tab `simulate`) | – | – | Lead (prep 2.0 stub), then Simulate tab (replaces it) | 3.10 |
 | `web/room-calibrate.js` | – (registers tab `calibrate`) | – | – | Lead (prep 2.0 stub), then Calibrate tab (replaces it) | 3.6, 3.11 |
 | `web/room-equipment.js` | `FarmEquipmentCard` | – | – | Equipment | The **Your machines** card (3.12, C8) |
-| `web/simulator.js` | `FarmBench` (waves 1 and 2 only, section 3.5) | – | Web split | Bench | Today's test bench (the Test bench); room link (7.8), `#/simulator/:id`, the calibration event text |
+| `web/simulator.js` | `FarmBench` (waves 1 and 2 only, section 3.5) | – | Web split | Bench (not the room drawing `mimicLayout` and not C9's air exchange card code) | Today's test bench (the Test bench); room link (7.8), `#/simulator/:id`, the calibration event text, the Node export of 7.8 |
 | `calib.js` | `ClimateCalib` | – | – | Bench | `PARAMS.ua` label and note (lead decision 28), `stage` per row in `replay` (3.11) |
 | `web/capacity.js` | – (registers `capacity`) | – | Web split | nobody (no longer loaded by `index.html`) | Today's capacity card; deleted by the lead in wave 3 (lead decision 29) |
 | `web/calibration.js` | – (registers `calibration`) | – | Web split | nobody (no longer loaded by `index.html`) | Today's calibration card; deleted by the lead in wave 3 |
-| `tests/fakes/api-server.js` | – (CommonJS export `startFakeApi`) | Lead | nobody | Lead (prep 2.0) | The fake API server (section 4.5) |
+| `tests/fakes/api-server.js` | – (CommonJS export `startFakeApi`) | Lead | nobody | Lead (prep 2.0) | The fake API server (section 4.5); prep 2.0 adds `/air.js`, `/cycle.js`, `/equipment.js` to its served files (4.5) |
 | `tests/fake-api-server.test.js` | – | Lead | nobody | Lead (prep 2.0) | The fake API server's own test (section 4.5) |
+| `tests/web-load.test.js`, `tests/web-bench.test.js` | – | – | Web split | nobody (the lead in wave 3, lead decision 29) | They load `room-rules.js` without `cycle.js` and `equipment.js` (1.3 row 9) |
+| `tests/web-air.test.js`, `tests/web-mimic.test.js` | – | – | Web stream (C9) | nobody (the lead in wave 3 if a merge needs it) | C9's `airText` and `mimicLayout` tests |
 | `app.js` | – | – | Web split (deletes it) | – | Removed |
 
 ### 1.2 index.html
 
-The page is the shell only. Each module builds its own markup inside `<main id="view">` when it mounts. Revision 7 (Room shell stream): the menu has **Rooms** and **Test bench**; the script tags are those of 1.3 (`web/capacity.js` and `web/calibration.js` are no longer loaded).
+The page is the shell only. Each module builds its own markup inside `<main id="view">` when it mounts. The lead writes this file exactly as below in prep 2.0 (revision 8; it was the Room shell's in revision 7), and no wave 2 stream changes it: the menu has **Rooms** and **Test bench**; the script tags are those of 1.3 (`web/capacity.js` and `web/calibration.js` are no longer loaded; `air.js` is on `master` from C9).
 
 The app loads nothing from the internet (spec: no internet needed). The three Google Fonts `<link>` elements of
 today's `index.html` (two preconnects and the stylesheet) are removed; the `font-family` lists in `styles.css`
@@ -132,6 +165,7 @@ today's `index.html` (two preconnects and the stylesheet) are removed; the `font
 </header>
 <main id="view"></main>
 <script src="sim.js"></script>
+<script src="air.js"></script>
 <script src="controller.js"></script>
 <script src="runtime.js"></script>
 <script src="calib.js"></script>
@@ -162,25 +196,26 @@ Plain `<script src>` tags at the end of `<body>`: no `defer`, no `async`, no `ty
 | # | Script | Defines | Needs when it loads |
 |---|---|---|---|
 | 1 | `sim.js` | `ClimateSim` | – |
-| 2 | `controller.js` | `ClimateController` | – |
-| 3 | `runtime.js` | `ClimateRuntime` | – |
-| 4 | `calib.js` | `ClimateCalib` | `ClimateSim` |
-| 5 | `capacity.js` | `ClimateCapacity` | `ClimateSim`, `ClimateController`, `ClimateRuntime` |
-| 6 | `cycle.js` | `ClimateCycle` | `ClimateSim`, `ClimateController`, `ClimateRuntime`, `ClimateCapacity` (C7 1) |
-| 7 | `equipment.js` | `ClimateEquipment` | `ClimateSim` at load; `ClimateController`, `ClimateCapacity`, `ClimateCycle` at call time (C8 1) |
-| 8 | `room-rules.js` | `ClimateRoomRules` (owned by the API stream in wave 1 and Server 2 in wave 2; its members are exactly those of C3 section 7.1, which is the authority: `LIM`, `VERDICTS`, `ALARM_KEYS`, `hasCrop`, `validCalib`, `normRoom`, `checkRoom`, `checkMix`, `checkCalibration`, `checkReport`, `checkSimulationRun`, `checkRunPatch`, `checkEquipmentBody`) | `ClimateController`, `ClimateCalib`, `ClimateSim`, `ClimateCapacity`, `ClimateEquipment` |
-| 9 | `web/ui.js` | `FarmUi` | – |
-| 10 | `web/api.js` | `FarmApi` | – |
-| 11 | `web/charts.js` | `FarmCharts` | `FarmUi` (at call time) |
-| 12 | `web/settings-panel.js` | `FarmSettingsPanel` | `FarmUi`, `ClimateController` (at call time) |
-| 13 | `web/shell.js` | `FarmShell` | – |
-| 14 | `web/room-tabs.js` | `FarmRoomTabs` | – |
-| 15 | `web/rooms.js` | nothing (registers `rooms`) | `FarmShell`, `FarmRoomTabs` (at call time) |
-| 16 | `web/room-live.js` | nothing (registers tab `live`) | `FarmRoomTabs` (it calls `FarmRoomTabs.register` at load) |
-| 17 | `web/room-equipment.js` | `FarmEquipmentCard` | – (it uses `ClimateEquipment`, `FarmApi` at call time); before `web/room-simulate.js` (C8 12.5) |
-| 18 | `web/room-simulate.js` | nothing (registers tab `simulate`) | `FarmRoomTabs` |
-| 19 | `web/room-calibrate.js` | nothing (registers tab `calibrate`) | `FarmRoomTabs` |
-| 20 | `web/simulator.js` | `FarmBench` (until wave 3, section 3.5) | `FarmShell` (it calls `FarmShell.register` at load) |
+| 2 | `air.js` | `ClimateAir` | – (C9 3) |
+| 3 | `controller.js` | `ClimateController` | – (`ClimateAir` at call time, C9 3) |
+| 4 | `runtime.js` | `ClimateRuntime` | – |
+| 5 | `calib.js` | `ClimateCalib` | `ClimateSim` |
+| 6 | `capacity.js` | `ClimateCapacity` | `ClimateSim`, `ClimateAir` (C9 3), `ClimateController`, `ClimateRuntime` |
+| 7 | `cycle.js` | `ClimateCycle` | `ClimateSim`, `ClimateController`, `ClimateRuntime`, `ClimateCapacity` (C7 1) |
+| 8 | `equipment.js` | `ClimateEquipment` | `ClimateSim` at load; `ClimateAir`, `ClimateController`, `ClimateCapacity`, `ClimateCycle` only when `estimate` or a run function is called (C8 1) |
+| 9 | `room-rules.js` | `ClimateRoomRules` (owned by the API stream in wave 1 and Server 2 in wave 2; its members are exactly those of C3 section 7.1, which is the authority: `LIM`, `VERDICTS`, `ALARM_KEYS`, `hasCrop`, `validCalib`, `normRoom`, `checkRoom`, `checkMix`, `checkCalibration`, `checkReport`, `checkSimulationRun`, `checkRunPatch`, `checkEquipmentBody`) | `ClimateSim`, `ClimateController`, `ClimateCalib` and `ClimateCapacity.DESIGN_DAYS` at load; `ClimateEquipment` only when `checkEquipmentBody`, `checkCalibration` or `checkSimulationRun` is called, never at load. Loading `room-rules.js` without `cycle.js` and `equipment.js` must not throw: `tests/web-load.test.js` and `tests/web-bench.test.js` load it that way and stay unchanged until wave 3 (C3 7.1). |
+| 10 | `web/ui.js` | `FarmUi` | – |
+| 11 | `web/api.js` | `FarmApi` | – |
+| 12 | `web/charts.js` | `FarmCharts` | `FarmUi` (at call time) |
+| 13 | `web/settings-panel.js` | `FarmSettingsPanel` | `FarmUi`, `ClimateController` (at call time) |
+| 14 | `web/shell.js` | `FarmShell` | – |
+| 15 | `web/room-tabs.js` | `FarmRoomTabs` | – |
+| 16 | `web/rooms.js` | nothing (registers `rooms`) | `FarmShell`, `FarmRoomTabs` (at call time) |
+| 17 | `web/room-live.js` | nothing (registers tab `live`) | `FarmRoomTabs` (it calls `FarmRoomTabs.register` at load) |
+| 18 | `web/room-equipment.js` | `FarmEquipmentCard` | – (it uses `ClimateEquipment`, `FarmApi` at call time); before `web/room-simulate.js` (C8 12.5) |
+| 19 | `web/room-simulate.js` | nothing (registers tab `simulate`) | `FarmRoomTabs` |
+| 20 | `web/room-calibrate.js` | nothing (registers tab `calibrate`) | `FarmRoomTabs` |
+| 21 | `web/simulator.js` | `FarmBench` (until wave 3, section 3.5) | `FarmShell` (it calls `FarmShell.register` at load) |
 
 ### 1.4 Rules for every web file
 
@@ -237,16 +272,17 @@ So that every wave 2 stream's worktree loads the page without a 404, the lead co
 
 | File | Content in prep 2.0 | Replaced by |
 |---|---|---|
+| `index.html` | The real file, exactly 1.2 (menu **Rooms · Test bench**, every script tag of 1.3) | – (the lead's; nobody changes it in wave 2) |
 | `web/room-tabs.js` | The real file (3.9) | – (the lead's; nobody changes it in wave 2) |
 | `web/room-live.js`, `web/room-simulate.js`, `web/room-calibrate.js` | Stubs: the 1.4 wrapper, registering nothing, so the frame shows `This tab is not installed.` | Live tab, Simulate tab, Calibrate tab |
-| `equipment.js` | Stub: the frozen C8 constants (`AC_SIZES`, `CONSTRUCTIONS`, `FOGGER_SIZES`, `FAN_SIZES`, `DEFAULTS`, `LIMITS`, `FAN_MIN_ACH`, `SOL_AIR_K`, `MARGIN`, `SHARE`, `RUNS`, `MAX_RUNS`, deep-frozen as C8 4.1) and the real `checkEquipment` (C8 4.3); `geometry`, `shell`, `plantOf`, `estimate`, `runCheckSteps`, `runCheck`, `runCheckAsync` throw `Error('stub')` | Equipment (merged at gate 2.5) |
+| `equipment.js` | Stub: the frozen C8 constants (`AC_SIZES`, `CONSTRUCTIONS`, `FOGGER_SIZES`, `AIR_SIZES`, `DEFAULTS`, `LIMITS`, `SOL_AIR_K`, `MARGIN`, `SHARE`, `RUNS`, `MAX_RUNS`, deep-frozen as C8 4.1) and the real `checkEquipment` (C8 4.3); `geometry`, `shell`, `plantOf`, `estimate`, `runCheckSteps`, `runCheck`, `runCheckAsync` throw `Error('stub')` | Equipment (merged at gate 2.5) |
 | `web/api.js`, `tests/web-api.test.js` | The 4.3 additions | – |
-| `tests/fakes/api-server.js`, `tests/fake-api-server.test.js` | The 4.5 defaults for the new routes | – |
+| `tests/fakes/api-server.js`, `tests/fake-api-server.test.js` | The 4.5 defaults for the new routes, and the C3 section 9 file list: `/air.js`, `/cycle.js`, `/equipment.js` added to the served files (on `master` 6a12852 the list lacks all three), each tested for 200, `text/javascript; charset=utf-8` and the file bytes | – |
 
 | Rule | Detail |
 |---|---|
-| Start check of every wave 2 web stream | `ls web/room-tabs.js web/room-live.js web/room-simulate.js web/room-calibrate.js equipment.js` lists all five; otherwise the stream stops and reports to the lead |
-| `web/room-equipment.js` | Not a stub: the Equipment stream creates it, and it is on `master` from gate 2.5 (the Equipment merge). The web streams' headless checks run after gate 2.5 on a tree that holds `master` plus their own files (7.10), so the script tag never gives a 404 there |
+| Start check of every wave 2 web stream | `ls web/room-tabs.js web/room-live.js web/room-simulate.js web/room-calibrate.js equipment.js` lists all five, and `grep -c 'web/room-tabs.js' index.html` prints `1`; otherwise the stream stops and reports to the lead |
+| `web/room-equipment.js` | Not a stub: the Equipment stream creates it, and it is on `master` from gate 2.5 (the Equipment merge). Until gate 2.5 its script tag in the prep 2.0 `index.html` gives a 404 (on the fake API and on the real server); no headless check runs before then. The web streams' headless checks run after gate 2.5 on a tree that holds `master` plus their own files (7.10), so the script tag never gives a 404 there |
 
 ## 2. Shell (`web/shell.js`)
 
@@ -325,7 +361,7 @@ On `DOMContentLoaded` the shell wires the menu, the level and the theme, then ro
 | Name | File | Routes | Shows | Uses |
 |---|---|---|---|---|
 | `rooms` | `web/rooms.js` | `#/rooms`, `#/rooms/:id/<tab>`, `#/rooms/:id/calibrate/:runId` | The Rooms home and the room page frame with the tabs **Live · Simulate · Calibrate** (3.8, 3.9). Revision 6's Rooms list and room page content is now split between the home, the frame and the Live tab (3.4; table "Room-centred moves" in 3.3). | `FarmApi`, `FarmRoomTabs`, the tab files |
-| `simulator` | `web/simulator.js` | `#/simulator`, `#/simulator/:id` | The Test bench: today's test bench (3.3), **Load settings from room** and **Save settings to room** (7.8); opened from a room's **Open test bench** with that room picked | `ClimateSim`, `ClimateController`, `ClimateRuntime`, `ClimateCalib.toCsv`, `FarmCharts`, `FarmSettingsPanel`, `FarmApi` |
+| `simulator` | `web/simulator.js` | `#/simulator`, `#/simulator/:id` | The Test bench: today's test bench (3.3) with C9 7's air exchange (room drawing, status card, glance row, purge ladder, **Air exchange per hour** bars, `#inAirM3h`), **Load settings from room** and **Save settings to room** (7.8); opened from a room's **Open test bench** with that room picked | `ClimateSim`, `ClimateAir`, `ClimateController`, `ClimateRuntime`, `ClimateCalib.toCsv`, `FarmCharts`, `FarmSettingsPanel`, `FarmApi` |
 
 Revision 6 had two more modules, `capacity` (`web/capacity.js`) and `calibration` (`web/calibration.js`). From revision 7 `index.html` does not load them; their parts are the Simulate and Calibrate tabs (3.10, 3.11) and the Rooms home's import (3.8); the lead deletes both files in wave 3 (lead decision 29).
 
@@ -345,15 +381,15 @@ Revision 6 had two more modules, `capacity` (`web/capacity.js`) and `calibration
 | Capacity card | Capacity module |
 | "Climate controller" heading | Simulator (the level switch moves to the shell header) |
 | Crop and stage, Targets, Installer: program and room (`.card.targets`) | Settings panel; the live lines (`progStatus`, `progRamp`, `progHarvest`, `cropCheck`, `vpdLine`) go into panel slots filled by the Simulator |
-| Fan and CO₂ rules (`.card.rules`), left column | Settings panel |
-| Fan and CO₂, right column: ladder, ladder note, duty counters | Simulator, in the panel slot `rules-side`; ladder drawn by `FarmCharts.createLadder` |
+| Fan and CO₂ rules (`.card.rules`), left column | Settings panel (card **Air exchange and CO₂**, C9 7) |
+| Fan and CO₂, right column: ladder, ladder note, duty counters | Simulator, in the panel slot `rules-side`; ladder drawn by `FarmCharts.createLadder` (one row `Purge`, C9 7) |
 | Five machine faceplates: state, power, meter, reason | Simulator |
 | Five machine faceplates: Auto/Manual switch and manual outputs | Settings panel, new **Machines** card (same controls and ids) |
 | Water and air (meters) | Simulator |
 | Time window filter row, **Show data table** | Simulator |
 | Temperature, humidity, CO₂ and power charts | `FarmCharts.createTrendCharts`, used by the Simulator (all four) and the room page (the three trends) |
 | Energy since reset (with the tariff) | Simulator |
-| Exhaust per hour | Simulator; the bar chart is `FarmCharts.drawExhaustBars` |
+| Exhaust per hour | Simulator, card **Air exchange per hour**; the bar chart is `FarmCharts.drawPurgeBars` (C9 7) |
 | Test the rules over 24 h | Simulator |
 | Recent sensor readings table | Simulator |
 | Alarms, Controller event log | Simulator (its local controller); the room page has its own from the API |
@@ -379,11 +415,11 @@ Revision 6 had two more modules, `capacity` (`web/capacity.js`) and `calibration
 | Room page live values, machines, charts, alarms, events, settings, versions, room details | Live tab (`web/room-live.js`, 3.4) | Same design |
 | Capacity: mix table, **Run check**, report, `verdictText`, `VERDICT_CHIP`, `LIMIT_WORD`, `FAIL_MACHINE` | Simulate tab (`web/room-simulate.js`, 3.10) | The mix is a draft (lead decision 25); the check runs `checkSteps` (lead decision 26) |
 | Capacity: farm line (`capFarm`) | Dropped | Each room shows its own runs |
-| Capacity: room picker, **New room** (`capNew`, `capVolume`, `capVent`) | Dropped | The room comes from the page; **New room** is on the Rooms home |
+| Capacity: room picker, **New room** (`capNew`, `capVolume`) | Dropped | The room comes from the page; **New room** is on the Rooms home |
 | Capacity: **Import rooms from this browser** | Rooms home (3.8) | Same rules (3.7 import table) |
 | Calibration: room picker | Dropped | The page's room |
 | Calibration: blocks field, CSV load, **Fit**, table, charts, **Save and apply** | Calibrate tab (`web/room-calibrate.js`, 3.11) | The room's history is the default source; CSV is "Log file" |
-| Simulator | Test bench (`web/simulator.js`, menu **Test bench**) | Plus `#/simulator/:id`. The room drawing fix is done outside the wave 2 streams (lead decision 53) |
+| Simulator | Test bench (`web/simulator.js`, menu **Test bench**) | Plus `#/simulator/:id`. The room drawing is C9's (`mimicLayout({ inletAt, exhaustAt })`, intake SF-203 and exhaust EF-206, on `master`); no wave 2 stream changes it (lead decision 53) |
 
 ### 3.4 Live tab data flow (`web/room-live.js`, wave 2)
 
@@ -392,7 +428,8 @@ Revision 7: the room header, running/stopped state and **Restart** are the frame
 | Part | Source | Refresh |
 |---|---|---|
 | Room header, running/stopped and error, **Restart** | The frame (3.8) | – |
-| Live readings and machines | The latest Reading (from `live.reading`, then stream `reading` events) | Each `reading` event |
+| Live readings and machines | The latest Reading (from `live.reading`, then stream `reading` events). The air exchange is `On` or `Off` from `r.air` (`1` / `0`, C9 6.1); it has no level. | Each `reading` event |
+| Air exchange card, glance row, purge ladder (revision 8, lead decision 27 as amended) | `room.live.air` (C2 5.2 `Live.air`, C3 3.1, passed through unchanged): `{ on, state, reason, delayed, timed, manual, manualOn, nextPurgeS, purgeS, why, today: { purges, avgS, capped } }`, and the current settings (`base`, 7.9) for `airM3h` and `rules.purgeMaxS`. Texts in the table "Air exchange on the Live tab" below. `live.air` `null` or absent (a stopped room, no reading yet): the card shows `–`. | With the Room: the `listRooms()` refresh after a `reading` event, a `room` event, the `restartRoom` reply (row below). Between them the texts stay as received (at most about 30 s old). |
 | Status chips and targets (`live.status`, `live.targets`) | A Room object only: the `listRooms()` row, a `room` event, or the `restartRoom` reply. A `reading` event carries only the Reading, and a change of `live.status` or `live.targets` alone sends no `room` event (C2 section 7, C3 section 10.2). | After each `reading` event of a shown room (the list: any room; the room page: its room), the page calls `listRooms()` again, at most once per 30 s per page: when no call of this page started in the last 30 s and none is in flight, it calls at once; otherwise it calls once when those 30 s end (one timer, cleared by `unmount`). From the reply it takes `live.status` and `live.targets` of each shown room (same `id`) and repaints the chips and, on the room page, the chart bands and targets line. A failed call changes nothing and is not retried. Also set again from every `room` event and the `restartRoom` reply. This refresh is required, not optional: it is the only way a change of `live.status` or `live.targets` alone reaches the page (C2 section 7 and C3 section 10.2 send no event for it). It is driven by `reading` events (no `reading`, no call), uses only `FarmApi.listRooms()`, and its one timer is the only data timer of the Rooms module. A brief that forbids "polling" or "a polling timer" does not forbid this refresh. |
 | History charts | `getReadings(id, { from, to, step })` with `to` = now, `from` = now − window. Window 1 h and 6 h: no `step`. 24 h: `step` 120. 7 days: `step` 900. | Each `reading` event appends a point; points before `from` are dropped. |
 | Alarms | `getAlarms(id)`; **Acknowledge** calls `ackAlarm(id, alarmKey)` | Stream `alarm` events reload the list |
@@ -412,6 +449,30 @@ refreshed (row "Status chips and targets" above: the `listRooms()` call after a 
 `null` becomes `NaN`. The room page draws the three trend charts only (`power: false`): readings hold one total power,
 not the power per machine. `gapS` = 3 × max(30, step) so a server stop shows as a gap. The clock is `FarmUi.farmClock()`.
 
+#### Air exchange on the Live tab (revision 8, lead decision 27 as amended)
+
+The texts are those of C9 7 (status card, glance row, ladder chip), with the same rule order as the Test bench's `airText` (`web/simulator.js`), but read from `live.air` instead of a controller in the page. `<m:ss>` is `FarmUi.fmtMinSec` of whole seconds; `<m>` = `max(1, ceil(nextPurgeS / 60))` (the controller's rounding). The first row that applies wins.
+
+| # | `live.air` | Status card state (`#airState`) | Glance row `Air exchange` | Ladder chip (`createLadder` chips `{ air }`) |
+|---|---|---|---|---|
+| 1 | `on` and `reason === 'purge'` | `Purge <m:ss of purgeS> of <m:ss of rules.purgeMaxS>` | `Purging <m:ss of purgeS>` | `{ lvl: 'info', icon: '▲', text: 'Purging' }` |
+| 2 | `on` and `reason === 'safety'` | `Safety run` | `Safety run` | `{ lvl: 'serious', icon: '◆', text: 'Safety run' }` |
+| 3 | `on`, other `reason` (`timed`, `free cooling`, `drying`, `manual`) | `Timed purge`, `Free cooling`, `Drying`, `Manual on` | the same text | `{ lvl: 'info', icon: '●', text: <the same text> }` |
+| 4 | not `on`, `manual` and `manualOn` | `Manual on` | `Manual on` | `{ lvl: 'info', icon: '●', text: 'Manual on' }` |
+| 5 | not `on`, `manual` | `Manual off` | `Manual off` | `{ lvl: 'none', icon: '○', text: 'Manual off' }` |
+| 6 | `delayed` | `Delayed (humidity first)` | `Delayed (humidity first)` | `{ lvl: 'info', icon: '❚❚', text: 'Delayed' }` |
+| 7 | `timed` | `Timed purge · off` | `Timed purge · off` | `{ lvl: 'none', icon: '○', text: 'Idle' }` |
+| 8 | `nextPurgeS > 0` | `Idle · purge in about <m> min` | `Next purge in about <m> min` | `{ lvl: 'none', icon: '○', text: 'Idle' }` |
+| 9 | otherwise (`state` `idle` or `after`) | `Idle` | `Idle` | `{ lvl: 'none', icon: '○', text: 'Idle' }` |
+
+| Part | Content |
+|---|---|
+| Status card | Heading `Air exchange`, sub-line `SF-203 + EF-206 · <airM3h> m³/h` (the current settings' `airM3h`, `en` grouping), `#airState` (table above), `#airWhy` = `live.air.why` (empty when `null`) |
+| Glance row | `Air exchange` (table above); per day: `Purges <today.purges> · average <m:ss of today.avgS>` (`–` for the average when `today.purges` is 0), plus ` · <today.capped> capped` when `today.capped` > 0 (`today` counts since 00:00 farm time) |
+| Purge ladder | The `rules-side` slot of 7.9: `FarmCharts.createLadder` (C9's one row `Purge`, from `rules.fanOn` to `rules.fanOff`) with the latest CO₂ and the chip of the table above |
+| Air exchange per hour (`drawPurgeBars`) | Not on the Live tab in wave 2: the hourly history stays in the Test bench. A later item (it could be built from the `air` column of the readings). |
+| `helpers` (`tests/web-room-live.test.js`) | `airLive(air, settings) → { state, glance, chip, day }`: the two tables above, pure |
+
 ### 3.5 `FarmBench`: wave 1 bridge (removed in wave 3)
 
 In wave 1 the Calibration and Capacity modules are moved code and still need the Simulator's state, as today. The
@@ -424,6 +485,7 @@ loaded; the Calibrate tab builds its own simulation base, 3.6); the lead deletes
 | `FarmBench.env` | getter → object | The Simulator's `env` (the live object). Creates the Simulator state on first use if the Simulator was never mounted. |
 | `FarmBench.cfg` | getter → Settings | The Simulator's settings (the live object) |
 | `FarmBench.tariff` | getter → number | RM per kWh from the Energy card (default 0.57) |
+| `FarmBench.mimicLayout` | function | C9 7's `mimicLayout({ inletAt, exhaustAt })` (on `master`). `tests/web-mimic.test.js` reads it here until the lead points that test at the Node export of 7.8 in wave 3, before deleting `FarmBench` (lead decision 51) |
 | `FarmBench.calApplied` | object or `null` | The last applied calibration `{ ua, infAch, moistBuffer, co2PerBlock, rmse, date }` (today's `calApplied`) |
 | `FarmBench.applyCalib(params, rmse)` | `({ ua, infAch, moistBuffer, co2PerBlock }, { T, RH, CO2 }) → void` | Today's `#calApply` effect on the Simulator: sets `env.room.ua`, `infAch`, `moistBuffer`, `env.co2PerBlock = Math.round(co2PerBlock)`, sets `calApplied` (date = ISO now), adds today's "Simulation calibrated: …" event, updates `#inPerBlock` and the blocks hint if mounted |
 
@@ -436,9 +498,9 @@ count must be the room's, or the fitted `co2PerBlock` is wrong by the same facto
 
 | Step | Action |
 |---|---|
-| 1 | The room is the page's room (`ctx.room()`, 3.9). Each mount loads `getMix(id)`, `listCalibrations(id)` and `getEquipment(id)` (C8; `null` = no machines saved). A failure: `errorText` in `#calMsg`, **Fit** stays disabled. |
+| 1 | The room is the page's room (`ctx.room()`, 3.9). Each mount loads `getMix(id)`, `listCalibrations(id)`, `getEquipment(id)` (C8; `null` = no machines saved) and `getSettings(id)` (for `airM3h`; a stream `settings` event of the room, `ctx.on('settings')`, replaces it). A failure: `errorText` in `#calMsg`, **Fit** stays disabled. |
 | 2 | Blocks field: number input `calBlocks`, label `Blocks in the room during the log`. Default: the sum of `blocks` over the room's MixRows, when that sum is ≥ 1; otherwise `live.blocks` when set; otherwise empty. Rule: an integer from 1 to 200000 (`ClimateRoomRules.LIM.blocks`). While it is empty or invalid, **Fit** is disabled and the message line says `Enter the number of blocks in the room during the log.` |
-| 3 | `envBase = structuredClone(ClimateSim.DEFAULT_ENV)`; then `envBase.vent = room.vent`; `envBase.room = { volume: room.volume }`; `envBase.blocks = <the blocks field>`; `envBase.blockStage` = the `stage` of the first log row that has one (history rows carry `stage`, 3.11), else `room.live.stage`, else `DEFAULT_ENV.blockStage` (`'fruiting'`); when the room has equipment, `envBase.plant = ClimateEquipment.plantOf(equipment, { volume: room.volume, calib: {} })` (machines only: no `room`, no `loads`, so the sun stays 500 W, C8 4.5); without equipment no `plant`. Every other value stays `DEFAULT_ENV` (`probe: true`, `co2PerBlock: 45`, …). `envBase` is built again whenever the log, the machines or the blocks field changes. The same `envBase` serves both sources (history and CSV). |
+| 3 | `envBase = structuredClone(ClimateSim.DEFAULT_ENV)`; then `envBase.airM3h` = the room's current settings `airM3h` (C9 4.1: the size of the room's air exchange; the live room and its controller use the same number); `envBase.room = { volume: room.volume }`; `envBase.blocks = <the blocks field>`; `envBase.blockStage` = the `stage` of the first log row that has one (history rows carry `stage`, 3.11), else `room.live.stage`, else `DEFAULT_ENV.blockStage` (`'fruiting'`); when the room has equipment, `envBase.plant = ClimateEquipment.plantOf(equipment, { volume: room.volume, calib: {} })` (machines only: no `room`, no `loads`, so the sun stays 500 W, C8 4.5); without equipment no `plant`. Every other value stays `DEFAULT_ENV` (`probe: true`, `co2PerBlock: 45`, …). `envBase` is built again whenever the log, the machines, the settings' `airM3h` or the blocks field changes. The same `envBase` serves both sources (history and CSV). |
 | 4 | Start values `params`: the four values of the room's Calibration with `applied` = `true` (`{ ua, infAch: inf_ach, moistBuffer: moist_buffer, co2PerBlock: co2_per_block }`); without an applied run, `ClimateCalib.paramsOf(envBase)`. |
 | 5 | Base line (the "before" curves): `ClimateCalib.replay(rows, envBase, params)`. **Fit**: `ClimateCalib.fitAsync(rows, envBase, params, onProgress)` → `{ params, result, evals }`. |
 | 6 | **Save and apply**: `run = await saveCalibration(id, body)` with the body mapped as in C3 section 8 (`ua` = `params.ua`, `inf_ach` = `params.infAch`, `moist_buffer` = `params.moistBuffer`, `co2_per_block` = `params.co2PerBlock`, `rmse_t` / `rmse_rh` / `rmse_co2` = `result.rmse.T` / `RH` / `CO2` with `NaN` sent as `null`, `log_rows` = `rows.length`), plus `source` (`history` with `log_from` = the first reading `t` and `log_to` = the last reading `t`; or `csv` with both left out) and `equipment` (the 7 fields of the equipment `envBase.plant` was made from, or `null`; lead decision 50); then `applyCalibration(id, run.id)`. Message: `Applied. Simulate now uses these values.` On an `ApiError`: `errorText`, the fit stays on screen. |
@@ -457,7 +519,7 @@ import is on the Rooms home (3.8). Two parts of this section stay binding:
 
 | Item | Rule |
 |---|---|
-| Stored data | `localStorage['mushroom-farm.rooms.v1']`, read as today's `loadRooms`: `JSON.parse`, the `rooms` array, each room through `ClimateRoomRules.normRoom(r, i)`, `null` results dropped. A read that throws (blocked storage, bad JSON) counts as no stored data. |
+| Stored data | `localStorage['mushroom-farm.rooms.v1']`, read as today's `loadRooms`: `JSON.parse`, the `rooms` array, each room through `ClimateRoomRules.normRoom(r, i)`, `null` results dropped (`normRoom` keeps no air key: a stored room's old air setting is ignored, C9 6.3). A read that throws (blocked storage, bad JSON) counts as no stored data. |
 | Marker | `localStorage['mushroom-farm.rooms.v1.imported']` = `String(<Unix time>)`, written only after a complete import. |
 | Button | **Import rooms from this browser** (revision 7: `rhImport` beside **New room** on the Rooms home; `capImportLocal` in wave 1) is shown only when the marker is absent and the stored data gives at least one room; otherwise it is hidden. |
 | Click | `confirm('Create <n> room(s) from this browser on the farm server? Each one starts running as a simulated room.')`; on OK, for each room in order, the requests of C3 section 8.1 (the calibration body with `source: 'import'`), one at a time; message `Importing room <k> of <n>…`. |
@@ -471,10 +533,10 @@ import is on the Rooms home (3.8). Two parts of this section stay binding:
 |---|---|
 | Home: explain card | `p.explain`: `Every grow room is one card. The farm server runs each room's climate controller 24/7, so these values are live even when nobody has the page open.` and the loop line `Live: is the room alright now? → Calibrate: make the virtual room match the real one → Simulate: will this crop plan work? → predicted vs real → Calibrate again` |
 | Home: cards | A card per room (`section.card.room-card`): name, status chip (`All good` / `<n> alarm(s)` / `Out of band` / `Stopped`), `p.rc-crop` = `<crop> · <stage>[ · flush <flush>][ · <blocks> blocks]` (from `live.flush`, `live.blocks`), T / RH / CO₂ now from `live.reading` with the `live.status` chips (`div.rc-values`), machines, `live.alarms`, "Stopped" with `live.error` and **Restart** when `live.running` is `false`. The whole card links to `#/rooms/<id>/live` (the **Restart** button does not follow the link). |
-| Home: **New room** | `div.room-new`: name, volume m³ (5–5000, default `ClimateSim.PLANT.room.volume`), vent (`supply` default, `exhaust`); `createRoom({ name, volume, vent })` (name = the trimmed text, or `Room <number of rooms + 1>`); the new card appears; message `Created "<name>". It starts running at once (simulated, default settings).` |
+| Home: **New room** | `div.room-new`: name, volume m³ (5–5000, default `ClimateSim.PLANT.room.volume`); `createRoom({ name, volume })` (no air field: a room has none, C9 6.1) (name = the trimmed text, or `Room <number of rooms + 1>`); the new card appears; message `Created "<name>". It starts running at once (simulated, default settings).` |
 | Home: **Import rooms from this browser** | Button `rhImport` beside **New room**; the 3.7 import table; the requests of C3 8.1 (calibration body with `source: 'import'`) |
 | Home: stream and refresh | `FarmApi.stream` opened at mount, then `listRooms()` on the first `open` (C4 10.3); a `reading` event updates the card's values; a `room` event replaces the card (a room with `archived_at` set is removed, a new id added); the `listRooms()` refresh after a `reading` event, at most once per 30 s (3.4 row "Status chips and targets"); a reconnect reloads `listRooms()` |
-| Frame: header | `section.card.room-head`: `nav.crumbs` (`a[href="#/rooms"]` `Rooms` › name), `h2#rpName`, `span.tag#rpInfo` = `<crop> · <stage>[ · flush <n>] · <blocks> blocks · <volume> m³ · <Supply fan \| Exhaust fan>` (`blocks` left out when `live.blocks` is `null`), `span.chip#rpState` (`Running` / `Stopped: <error>`), `span.chip#rpAlarms`, `button.btn#rpRestart` (hidden while running; `restartRoom(id)`, the reply repaints the header), `span.tag#rpFeed` (`Live` / `Reconnecting…`), `p.tag#rpMsg` |
+| Frame: header | `section.card.room-head`: `nav.crumbs` (`a[href="#/rooms"]` `Rooms` › name), `h2#rpName`, `span.tag#rpInfo` = `<crop> · <stage>[ · flush <n>] · <blocks> blocks · <volume> m³` (`blocks` left out when `live.blocks` is `null`), `span.chip#rpState` (`Running` / `Stopped: <error>`), `span.chip#rpAlarms`, `button.btn#rpRestart` (hidden while running; `restartRoom(id)`, the reply repaints the header), `span.tag#rpFeed` (`Live` / `Reconnecting…`), `p.tag#rpMsg` |
 | Frame: tabs | `nav.room-tabs` (`aria-label="Room views"`): links `Live`, `Simulate`, `Calibrate` (`FarmRoomTabs.NAMES` order) to `#/rooms/<id>/<tab>`; `aria-current="page"` on the shown tab |
 | Frame: tab host | `div.contents#roomTab` |
 | Frame: stream | One `FarmApi.stream` per room page; open first, then load (C4 10.3). The frame does the `listRooms()` status refresh of 3.4 (its only data timer). Events of other rooms are ignored. |
@@ -508,7 +570,7 @@ import is on the Rooms home (3.8). Two parts of this section stay binding:
 
 | Rule | Detail |
 |---|---|
-| Headless checks of one tab | A check may mount a tab without the frame: `FarmRoomTabs.get('<tab>').mount(document.getElementById('view'), { id, params: {}, room: () => R, on: () => () => {} })` with `R` from `FarmApi.listRooms()` against the real server. The lead's wave 3 checks run the whole page. |
+| Headless checks of one tab | A check opens the gate 2.5 tree's `index.html` (the prep 2.0 file of 1.2: it already loads `cycle.js`, `equipment.js`, `web/room-tabs.js`, `web/room-equipment.js` and the tab files, so no script is injected) and mounts the tab by hand, without the frame: `FarmRoomTabs.get('<tab>').mount(document.getElementById('view'), ctx)` with a hand-made `ctx` `{ id, params: {}, room: () => R, on }` and `R` from `FarmApi.listRooms()` against the real server. The Room shell's `web/rooms.js` and `web/shell.js` are not on that tree (they merge in wave 3; the tree has the wave 0 `web/rooms.js` stub and the wave 1 `web/shell.js`), so `#/rooms` shows the wave 0 stub's `This part of the app is not installed.` and the check empties `#view` before it mounts. The Room shell's `/* Room page */` CSS block is absent there too: a check makes no layout assertion. `on` either returns `() => {}` or records the listeners so the check can call them (7.10 Live tab). The lead's wave 3 checks run the whole page. |
 | Tab switch | Unmounts the old tab: a running capacity check, cycle or equipment check stops and is not saved (lead decision 26); unsaved settings edits are dropped (7.9 "Leaving the page") |
 
 ### 3.10 Simulate tab (`web/room-simulate.js`, revision 7)
@@ -516,52 +578,54 @@ import is on the Rooms home (3.8). Two parts of this section stay binding:
 | Part | Content |
 |---|---|
 | Explain | `p.explain`: `Simulate = try a plan before you do it. Enter the crop mix, then Check capacity (fast: will the climate hold on a hot-dry, a hot-humid and a rainy day, and how many blocks fit?) or Run a full cycle (spawn run, pinning, fruiting and rest for every flush, with the energy cost). Every result is saved and can later be compared with what really happens.` |
-| Load at mount | In parallel: `getMix(id)`, `listCalibrations(id)`, `getSettings(id)`, `listSettingsHistory(id)` (first row = the version used), `getEquipment(id)` (C8; `null` = no machines saved), `listSimulations(id, { limit: 50 })`. Each failure: `errorText` in `#smMsg`; **Check capacity** and **Run a full cycle** stay disabled until mix, calibrations, settings and equipment have loaded. |
+| Load at mount | In parallel: `getMix(id)`, `listCalibrations(id)`, `getSettings(id)`, `listSettingsHistory(id)` (first row = the version used), `getEquipment(id)` (C8; `null` = no machines saved), `listSimulations(id, { limit: 50 })`. Each failure: `errorText` in `#smMsg`; **Check capacity** and **Run a full cycle** stay disabled until mix, calibrations, settings and equipment have loaded. A stream `settings` event of the room (`ctx.on('settings')`, `{ id, room_id, saved_at, note, settings }`) replaces the tab's settings and the version shown (later runs, the machines card's note of 3.12 and the line below use it; a **Your machines** save that changes `airM3h` arrives this way, C3 6.26). |
 | Crop mix card | `table.mix-table#smMix`: crop select (`ClimateRoomRules.hasCrop` keys, names from `CROPS`), Blocks (0–200000, rounded), CO₂ per block (empty or 1–1000), Remove; **Add a crop** (`{ crop: 'oyster', blocks: 500 }`). The table edits a **draft** seeded from `getMix` (lead decision 25). **Save as this room's crop mix** (`smSaveMix`, enabled when the draft differs from the saved mix by `sameMix`, 3.7) → `saveMix(id, rows)`; message `Saved. The simulated live room uses <n> blocks after its next restart.` |
-| Room values line | `span.chip` `calibrated <YYYY-MM-DD>` (applied run, farm date) or `not calibrated — typical values`; `span.tag` `Settings: version <id> saved <stamp>`; `span.tag` `Machines: <ac(hp)> aircond, <fog> L/h fogger, <fan> m³/h fan` (C8 8.1 `{ac}` form) or `Machines: typical (not saved)` |
+| Room values line | `span.chip` `calibrated <YYYY-MM-DD>` (applied run, farm date) or `not calibrated — typical values`; `span.tag` `Settings: version <id> saved <stamp>`; `span.tag` `Machines: <ac(hp)> aircond, <fog> L/h fogger, <air> m³/h air exchange` (C8 8.1 `{ac}` form; `<air>` = the Equipment's `air_m3h`) or `Machines: typical (not saved)` |
 | Options | `select#smRegion` (own keys of `ClimateCapacity.DESIGN_DAYS`; text `Lowland Peninsular Malaysia` for `my-lowland`, the key otherwise); `input#smTariff` (number, RM per kWh, 0–10, step 0.01, default 0.57); `input#smEmpty` (capacity only: too empty below %, default `ClimateCapacity.VERDICT.emptyBelow`) |
 | Buttons | **Check capacity (≈ 2 s)** `smCap`; **Run a full cycle** `smCycle`, text `Run a full cycle (<D> days)` with `D = ClimateCycle.cycleDays(settings.farmType, settings.program)`; **Open test bench** `a.btn[href="#/simulator/<id>"]`. While a run runs: both run buttons, the mix table and **Save as this room's crop mix** are disabled. |
 | Long cycle | `D > 180`: `confirm('This program is <D> days long and may take several minutes in the browser. Run it?')` (lead decision 26) |
-| Run inputs | `room = { name, volume, vent, calib, plant }`: `calib` = the applied calibration mapped as C3 8, or `null`; `plant = equipment ? ClimateEquipment.plantOf(equipment, { volume, calib }) : undefined` (capacity and cycle use the room's machines, lead decision 35); `mix` = the draft mapped to capacity form; `inputs` = C3 3.10.1 with `empty_below` (capacity) or `null` (cycle), and `equipment` = the Equipment's 7 fields or `null` |
+| Run inputs | `room = { name, volume, airM3h, calib, plant }`: `airM3h` = the tab's settings `airM3h` (the size the live room and its controller use, C9 8 `airOf(room)`; without it every run would use 1800); `calib` = the applied calibration mapped as C3 8, or `null`; `plant = equipment ? ClimateEquipment.plantOf(equipment, { volume, calib }) : undefined` (capacity and cycle use the room's machines, lead decision 35); `mix` = the draft mapped to capacity form; `inputs` = C3 3.10.1: `mix`, `settings` (the tab's settings; the run's air size is `inputs.settings.airM3h`, no other `inputs` key holds it), `region`, `tariff`, `volume`, `calibration` = exactly `{ id, ua, inf_ach, moist_buffer, co2_per_block }` of the applied Calibration row (no other key; `null` without an applied run), `empty_below` (capacity) or `null` (cycle), and `equipment` = the Equipment's 7 fields (`ac_hp, ac_units, fog_lph, air_m3h, walls, roof, height`) or `null` |
 | Running | Cycle: the tab steps `ClimateCycle.runCycleSteps(room, mix, { settings, region, tariff })` itself, awaiting `setTimeout(0)` after each Progress and stopping when unmounted; progress `div.run-progress` width `day / days`, text `Day <day> of <days> · <STAGES[stage]>[ · flush <flush>]`. Capacity: `ClimateCapacity.checkSteps(room, mix, { region, tariff, emptyBelow })` the same way, text `Simulation run <n>…` (today's texts). |
 | Finished | `createSimulation(id, { kind, inputs, result })` → the run joins the top of the saved list; message `Saved as run <id>.` A rejection: the result stays on screen, `The result was not saved: <errorText>`. An input error thrown by the generator: `The run stopped: <message>`, nothing saved. |
 | Result card, capacity | `section.card.result-card`: today's capacity report (verdict chip, holds `<max>` blocks of `<planned>` (`<utilisation> %`), utilisation bar, limit text, design-day table), from the wave 1 `renderReport` |
 | Result card, cycle | Chip `all stages pass` (good) / `<n> stage(s) fail` (bad) / `impossible` with `why`; line `<days> days · <flushes> flushes · <kWh> kWh · RM <rm> · RM <rmPerBlock> per block`; table Stage, Flush, Days, Temp in band %, RH ok %, CO₂ ok %, Max core °C, Alarms (`id ×count`), kWh, RM, Result (`Pass` or the `fails` texts; spawn RH and CO₂ shown as `not judged`); note `Spawn run judges temperature and block core only (the bags are sealed).`; prediction chart `FarmCharts.createTrendCharts` (`keys: ['T', 'RH', 'C']`, `clock: FarmUi.simClock(0)`) with points `{ t: h × 3600, T, RH, C: CO2, core, spT, spRH, co2Lim }` (targets of the hour's segment) |
 | Equipment slot (C8) | `div[data-slot="equipment-check"]`: its own grid item after the Result card and before Saved runs (not inside the mix card, where the buttons sit). At mount the tab calls `FarmEquipmentCard.mount(slot, { id, equipment, runInputs, onEquipment, onSaved })` (3.12): `runInputs()` returns the cycle inputs of the row "Run inputs" without `plant`; `onEquipment(eq)` replaces the tab's `equipment` (later runs and the machines line use it); `onSaved(info)` adds the run to the top of Saved runs. The tab's `unmount` calls the card's `unmount()`. When `FarmEquipmentCard` is not defined (a tree without the Equipment merge), the slot shows `p.est-note` `The machines check is not installed.` |
-| Saved runs card | `table.run-list#smRuns`: Run (`Cycle` / `Capacity` / `Equipment` · `clock.stamp(created_at)`), Mix (`<blocks> <crop name>` joined with ` + `), Result chip (cycle and capacity: the verdict; equipment: `ac.verdict` as `enough`, `too small`, `too big`, `bigger than needed`), Energy (cycle: `RM <rm / blocks> per block`; capacity: `<utilisation> %`; equipment: `buy {ac(recommended)}` with `U = result.ac.units` (C8 8.1: `buy 2.5 hp`, `buy 2 × 1.5 hp`), `–` when `recommended` is `null` or the result is `impossible`), Note; actions **Open** (`getSimulation` → the result card; for kind `equipment`: `FarmEquipmentCard.renderReport(resultEl, result)`), **Compare with real** (a cycle that ran: link `#/rooms/<id>/calibrate/<runId>`; none for capacity and equipment), **Note** (`prompt`, `updateSimulation(id, runId, { note })`), **Delete** (`confirm('Delete this run? It cannot be undone.')`, `deleteSimulation`); **Older** with `before` |
-| `helpers` | `toCapacityMix`, `toMixRows`, `sameMix`, `appliedCalib`, `runInputs(kind, data)`, `cycleSummary(result)`, `stageRows(result)`, `seriesPoints(result)`, `runRowTexts(info)`, `progressText(progress)`, `machinesText(equipment)` |
+| Saved runs card | `table.run-list#smRuns`, built from the SimulationRunInfo rows of `listSimulations` only (they have no `result`, C3 3.9): Run (`Cycle` / `Capacity` / `Equipment` · `clock.stamp(created_at)`), Mix (`<blocks> <crop name>` joined with ` + `), Result chip `info.verdict` for every kind (cycle and capacity: the verdict as stored; equipment: `enough`, `too small`, `too big`, `bigger than needed`, `impossible` for `enough`, `too-small`, `too-big`, `oversized`, `impossible`), Energy (cycle: `RM <rm / blocks> per block`; capacity: `<utilisation> %`; equipment: `–` in the list: **Open** shows the report with its `buy …` texts), Note; actions **Open** (`getSimulation` → the result card; for kind `equipment`: `FarmEquipmentCard.renderReport(resultEl, result)`), **Compare with real** (a cycle that ran: link `#/rooms/<id>/calibrate/<runId>`; none for capacity and equipment), **Note** (`prompt`, `updateSimulation(id, runId, { note })`), **Delete** (`confirm('Delete this run? It cannot be undone.')`, `deleteSimulation`); **Older** with `before` |
+| `helpers` | `toCapacityMix`, `toMixRows`, `sameMix`, `appliedCalib`, `runInputs(kind, data)` (the row "Run inputs": `room` with `airM3h`, and `inputs.calibration` exactly `{ id, ua, inf_ach, moist_buffer, co2_per_block }` or `null`), `cycleSummary(result)`, `stageRows(result)`, `seriesPoints(result)`, `runRowTexts(info)` (from a SimulationRunInfo only: the Result chip and the Energy text of Saved runs; equipment Energy `–`), `progressText(progress)`, `machinesText(equipment)` |
+| Node tests with machines | Before gate 2.5 `ClimateEquipment.plantOf` is the prep 2.0 stub and throws `Error('stub')`. A Node test of the with-equipment branch replaces `globalThis.ClimateEquipment.plantOf` with a recorder (`(eq, room) => ({ ac: { capW: 1 }, args: [eq, room] })`) for that test, restores it in `t.after`, and asserts the arguments (`{ volume, calib }`). The real mapping is checked by the headless check after gate 2.5. |
 
 ### 3.11 Calibrate tab (`web/room-calibrate.js`, revision 7)
 
 | Part | Content |
 |---|---|
 | Explain | `p.explain`: `Calibrate = make the virtual room behave like this real room. The room's recorded history is already on the farm server: pick a few days and press Fit. The app replays those days in its virtual room and adjusts four room values until it matches what really happened. Then Simulate gives answers for this room, not an average one.` |
-| Load at mount | 3.6 step 1 (`getMix`, `listCalibrations`, `getEquipment`) |
-| Machines warning (lead decision 50) | `p.tag#cbStale`, shown when the room has an applied calibration and `sameMachines(applied.equipment, equipment)` is `false`: `The applied calibration (<YYYY-MM-DD>) was fitted with other machines than this room has now. Fit again so Simulate uses room values that match the machines.` `sameMachines(a, b)`: both `null`, or both objects with equal `ac_hp`, `ac_units`, `fog_lph`, `fan_m3h`, `walls`, `roof`, `height` (`equipment` reduced to these 7 fields). A calibration saved before upgrade 2 has `equipment` `null`, so it warns once machines are saved. |
+| Load at mount | 3.6 step 1 (`getMix`, `listCalibrations`, `getEquipment`, `getSettings`) |
+| Machines warning (lead decision 50) | `p.tag#cbStale`, shown when the room has an applied calibration and `sameMachines(applied.equipment, equipment)` is `false`: `The applied calibration (<YYYY-MM-DD>) was fitted with other machines than this room has now. Fit again so Simulate uses room values that match the machines.` `sameMachines(a, b)`: both `null`, or both objects with equal `ac_hp`, `ac_units`, `fog_lph`, `air_m3h`, `walls`, `roof`, `height` (`equipment` reduced to these 7 fields). A calibration saved before upgrade 3 has `equipment` `null`, so it warns once machines are saved. |
 | Source | `div.seg#cbSource`: `This room's history` (default), `Log file (CSV)` |
 | History range | `input#cbFrom`, `input#cbTo` (type `date`, farm days); default: the 2 days ending at today 00:00 farm time; at most 7 days (C3 6.8 raw limit); **Load** reads `getReadings(id, { from: <from 00:00 farm>, to: min(now, <to + 1 day 00:00 farm> − 1) })` (raw), then shows `<days> days · <n> readings`; fewer than 120 readings: `Not enough readings in these days (at least 1 h).`; gaps over 10 min: `The range has <g> gap(s) (the server was stopped); the fit keeps the machines unchanged through them.` |
 | History log | `logFromReadings(readings)` (table below) → calib.js rows |
 | Log file | The wave 1 file input (`calFile`, `parseCsv`) and the CSV columns `details` |
 | Blocks | `input#calBlocks` as 3.6 step 2 |
-| `envBase` | 3.6 step 3 (`blockStage` from the log rows; `plant` from the room's machines). `calib.js` `replay` follows each row's `stage` (Bench stream, lead decision 23); rows without `stage` (CSV, old readings) keep `envBase.blockStage`. |
+| `envBase` | 3.6 step 3 (`blockStage` from the log rows; `plant` from the room's machines; `airM3h` from the room's settings). `calib.js` `replay` follows each row's `stage` (Bench stream, lead decision 23); rows without `stage` (CSV, old readings) keep `envBase.blockStage`. Before the Bench merge (wave 3), `replay` ignores `stage`: the Calibrate tab's tests and check assert no fit result that depends on it. |
 | Start values, replay, **Fit** | 3.6 steps 4–5, unchanged |
-| Table | `table.fit-table`: Room value (`ClimateCalib.PARAMS[k].label`), Now, Fitted, then the error row `T / RH / CO₂`; below it `p.tag` = `ClimateCalib.PARAMS.ua.note` (lead decision 28) |
+| Table | `table.fit-table`: Room value (`ClimateCalib.PARAMS[k].label`), Now, Fitted, then the error row `T / RH / CO₂`; below it `p.tag` = `ClimateCalib.PARAMS.ua.note` when it is a string, else no `p.tag` (lead decision 28; the label and the note are the Bench stream's, merged in wave 3 after this tab, so this tab's tests and check do not assert their text: the Bench row of 7.10 and the lead's wave 3 check do) |
 | **Save and apply** | 3.6 step 6 (body with `source`, `log_from`, `log_to`, `equipment`); message `Applied. Simulate now uses these values.`; the machines warning hides |
 | Predicted vs real card | `section.card.pvr-card`: `select#pvRun` (the room's cycle runs that ran, newest first, from `listSimulations`; preselect `ctx.params.runId`); `input#pvStart` (date; default `run.real_start` as a farm date, else empty); **Use this start** → `updateSimulation(id, runId, { real_start })` |
-| Comparison | `start` = 00:00 farm time of `pvStart`; `run = getSimulation(id, runId)`; `real = getReadings(id, { from: start, to: min(now, start + days × 86400 − 1), step: 3600 })`; pair `series[h]` with the bucket `t = start + h × 3600` (C7 day 0 starts at 00:00 of the simulated clock; farm midnight is a whole UTC hour, so buckets align); charts `FarmCharts.drawCalibCharts(host, { rows: real points, base: predicted, fit: null, labels: { rows: 'Real (sensors)', base: 'Predicted (run <id>)' }, dashed: 'base' })` with `t` = seconds from `start` |
+| Comparison | `start` = 00:00 farm time of `pvStart`; when `start > now` no request is made and the tab shows `No real readings for this run yet.` (a `from` after `to` would get 400 `Invalid query`); `run = getSimulation(id, runId)`; `real = getReadings(id, { from: start, to: min(now, start + days × 86400 − 1), step: 3600 })`; pair `series[h]` with the bucket `t = start + h × 3600` (C7 day 0 starts at 00:00 of the simulated clock; farm midnight is a whole UTC hour, so buckets align); charts `FarmCharts.drawCalibCharts(host, { rows: real points, base: { series: <the predicted points [{ t, T, RH, CO2 }]> }, fit: null, labels: { rows: 'Real (sensors)', base: 'Predicted (run <id>)' }, dashed: 'base' })` with `t` = seconds from `start` |
 | Differences | `Average difference: <T> °C, RH <RH> %, CO₂ <CO2> ppm over <n> hours.` (each the mean absolute difference over the hours with both values); `Stage agreement: <share> % of hours` (reading `stage` equals the series `stage`; hours whose reading has no `stage` left out); `A big gap means: calibrate again.`; a start in the future or no readings yet: `No real readings for this run yet.` |
-| `helpers` | `logFromReadings`, `farmMidnight(dateText)`, `historyGaps(readings)`, `envBaseFor(room, blocks, rows, equipment)`, `paramsOfRun`, `startParams`, `defaultBlocks`, `parseBlocks`, `calibBody(fit, rows, source, range, equipment)`, `sameMachines(a, b)`, `pairSeries(series, buckets, start)`, `differences(pairs)` |
+| `helpers` | `logFromReadings`, `farmMidnight(dateText)`, `historyGaps(readings)`, `envBaseFor(room, blocks, rows, equipment, airM3h)`, `paramsOfRun`, `startParams`, `defaultBlocks`, `parseBlocks`, `calibBody(fit, rows, source, range, equipment)`, `sameMachines(a, b)`, `pairSeries(series, buckets, start)`, `differences(pairs)` |
+| Node tests with machines | Before gate 2.5 `ClimateEquipment.plantOf` is the prep 2.0 stub and throws `Error('stub')`. A Node test of `envBaseFor` with equipment replaces `globalThis.ClimateEquipment.plantOf` with a recorder (`(eq, room) => ({ ac: { capW: 1 }, args: [eq, room] })`) for that test, restores it in `t.after`, and asserts the arguments (`{ volume, calib: {} }`). The real mapping is checked by the headless check after gate 2.5. |
 
 | History log row (`logFromReadings`) | From the Reading `r` (readings in `t` order; `t0` = the first `t`) |
 |---|---|
 | `t` | `r.t − t0` |
 | `hour` | `((r.t + 28800) mod 86400) / 3600` (farm time) |
 | `T`, `RH`, `CO2`, `tOut`, `rhOut` | `r.T`, `r.RH`, `r.CO2`, `r.t_out`, `r.rh_out`; `null` when not finite or outside `ClimateController.SENSORS[k]` `min`–`max` (the charts' `plausible` rule) |
-| `fan`, `fog`, `lights`, `circ` | `r.fan`, `r.fog`, `r.lights`, `r.circ` |
+| `air`, `fog`, `lights`, `circ` | `r.air` (`0` / `1`, C9 8: the calib.js column `air`), `r.fog`, `r.lights`, `r.circ` |
 | `acPower` | `r.ac_mode === 'off' ? 0 : 1` |
 | `acMode` | `r.ac_mode === 'off' ? null : r.ac_mode` |
 | `acSet` | `r.ac_setpoint` |
-| `acFan` | `r.ac_fan` (`null` before upgrade 2: calib.js uses `'auto'`) |
+| `acFan` | `r.ac_fan` (the AC's own fan speed; `null` in rows written before upgrade 3: calib.js uses `'auto'`) |
 | `stage` | `r.stage` |
 
 ### 3.12 Your machines card (`web/room-equipment.js`, Equipment stream, C8)
@@ -570,13 +634,14 @@ import is on the Rooms home (3.8). Two parts of this section stay binding:
 |---|---|
 | Global | `FarmEquipmentCard = { mount(el, opts) → { unmount() }, renderReport(el, report), helpers }` |
 | `opts` | `{ id, equipment (Equipment \| null), runInputs: () => ({ room, mix, settings, region, tariff, inputs }), onEquipment(eq), onSaved(info) }`; `runInputs` returns what the Simulate tab would run a full cycle with: its `room` without `plant`, and `inputs` in the cycle form (C3 3.10.1 with `inputs.empty_below: null` and `inputs.equipment` the saved Equipment's 7 fields or `null`), never the capacity form |
-| Markup | `section.card.result-card`, `h3` `Your machines`, `p.explain` `Tell the app which machines this room has. Check my machines runs a full cycle of this crop mix with them, then tries other aircond sizes, and says what is too small and what to buy.`; `form.equip-form`: `select#eqAcHp` (`1 hp` … `6 hp`), `input#eqAcUnits` (1–4), `input#eqFog` (L/h), `input#eqFan` (m³/h), `select#eqWalls` and `select#eqRoof` (`Not set` + `CONSTRUCTIONS` labels; the roof list only `roof: true`), `input#eqHeight` (m); `button#eqSave` `Save machines`; `button#eqCheck` `Check my machines`; `div.run-progress#eqProgress`; `p.tag#eqMsg`; `div#eqResult` |
-| Save | `checkEquipment` first (problems in `#eqMsg`); `saveEquipment(id, eq)`; message `Saved. Simulate uses these machines now; the live room uses them after its next restart.`; then `opts.onEquipment(saved)` |
-| Check | Disabled while running or when `commonTargets(mix)` is impossible. Steps `ClimateEquipment.runCheckSteps({ ...room, equipment: <form values> }, mix, { settings, region, tariff })` itself, awaiting `setTimeout(0)` after each Progress, stopping when unmounted. Progress text by `kind`: `ac` `Run <run> · {ac(ac_hp)} aircond · day <day> of <days>` (`U` = the Progress `ac_units`: `Run 2 · 2 × 1.5 hp aircond · day 3 of 78`); `fogger` `Run <run> · <fog_lph> L/h fogger · day <day> of <days>`; `fan` `Run <run> · <fan_m3h> m³/h fan · day <day> of <days>` (the number of runs is not known in advance); bar width `day / days`, restarting with each run. |
+| Markup | `section.card.result-card`, `h3` `Your machines`, `p.explain` `Tell the app which machines this room has. Check my machines runs a full cycle of this crop mix with them, then tries other aircond sizes, and says what is too small and what to buy.`; `form.equip-form`: `select#eqAcHp` (`1 hp` … `6 hp`), `input#eqAcUnits` (1–4), `input#eqFog` (L/h), `input#eqAir` (label `Air exchange (m³/h)`, 50–10000, step 50: `air_m3h`, the airflow of the intake and exhaust pair when on, C9), `select#eqWalls` and `select#eqRoof` (`Not set` + `CONSTRUCTIONS` labels; the roof list only `roof: true`), `input#eqHeight` (m); `button#eqSave` `Save machines`; `button#eqCheck` `Check my machines`; `p.tag#eqAirNote` (row "Air size note"); `div.run-progress#eqProgress`; `p.tag#eqMsg`; `div#eqResult` |
+| Air size note | The room's settings `airM3h` (`<b>`, from `runInputs().settings`) is the size the live room and Simulate use; the saved Equipment's `air_m3h` (`<a>`: the value last stored, from `getEquipment` at mount or the `saveEquipment` reply; not the form field) is what the check uses. A save brings `<b>` to `<a>` (C3 6.26), so they differ only when the settings were changed after the last save (or the room has no saved machines: no note). When the room has saved machines and `<b>` differs from `<a>`, `#eqAirNote` shows `The room's settings use <b> m³/h for the air exchange; save your machines to use <a> m³/h there too.`; otherwise it is empty. It is repainted after each save and each `runInputs()` change (a stream `settings` event, 3.10). |
+| Save | `checkEquipment` first (problems in `#eqMsg`); `saveEquipment(id, eq)`; message `Saved. Simulate uses these machines now; the live room uses them after its next restart.`; then `opts.onEquipment(saved)`. When `air_m3h` differed from the settings' `airM3h`, the server also saves the room's settings with `airM3h` = `air_m3h` (C3 6.26; the controller uses it at once); the new settings reach the Simulate tab as a stream `settings` event (3.10). |
+| Check | Disabled while running or when `commonTargets(mix)` is impossible. Steps `ClimateEquipment.runCheckSteps({ ...room, equipment: <form values> }, mix, { settings, region, tariff })` itself, awaiting `setTimeout(0)` after each Progress, stopping when unmounted. Progress text by `kind`: `ac` `Run <run> · {ac(ac_hp)} aircond · day <day> of <days>` (`U` = the Progress `ac_units`: `Run 2 · 2 × 1.5 hp aircond · day 3 of 78`); `fogger` `Run <run> · <fog_lph> L/h fogger · day <day> of <days>`; `air` `Run <run> · <air_m3h> m³/h air exchange · day <day> of <days>` (the Progress `air_m3h`; the number of runs is not known in advance); bar width `day / days`, restarting with each run. |
 | Finished | `createSimulation(id, { kind: 'equipment', inputs: { ...runInputs().inputs, empty_below: null, equipment: formValues(form) }, result: report })` (C3 7.6: `empty_below` `null` and `equipment` set for kind `equipment`) → `opts.onSaved(info)`, message `Saved as run <id>.`; a rejection keeps the result on screen with `The result was not saved: <errorText>` |
-| `renderReport(el, report)` | `impossible`: `p` with `why`. Else: each `summary` line a `p` (the first in `strong`); table `Aircond sizes tried` (`table.run-list`): Aircond (`{ac(hp)}`), Fruiting hours at `{spT}` °C (`pct` %), Worst stage (`<stage> <flush>: <pct> %`), kWh per block (2 decimals), RM per block (2 decimals), Result (`holds it` / `too small` / `too big` (when `tooBig`)), with tags `smallest that works` on `min` and `buy this` on `recommended`; table `Your machines`: Machine, Yours, Verdict, Buy (aircond, fogger, fresh-air fan, walls and roof); table `Where the heat comes from (fruiting hours, with {ac(breakdown.ac_hp)})`: Source (`label`), kWh (heat, whole number), Share (`span.equip-bar` + `round(share)` %); a confirmation run row lists under `Also tried` |
+| `renderReport(el, report)` | `impossible`: `p` with `why`. Else: each `summary` line a `p` (the first in `strong`); table `Aircond sizes tried` (`table.run-list`): Aircond (`{ac(hp)}`), Fruiting hours at `{spT}` °C (`pct` %), Worst stage (`<stage> <flush>: <pct> %`), kWh per block (2 decimals), RM per block (2 decimals), Result (`holds it` / `too small` / `too big` (when `tooBig`)), with tags `smallest that works` on `min` and `buy this` on `recommended`; table `Your machines`: Machine, Yours, Verdict, Buy (rows aircond, fogger, air exchange (report key `air`: verdict `enough`, `too-small` or `not-the-fix`, Buy its `recommended` m³/h), walls and roof); table `Where the heat comes from (fruiting hours, with {ac(breakdown.ac_hp)})`: Source (`label`), kWh (heat, whole number), Share (`span.equip-bar` + `round(share)` %); a confirmation run row lists under `Also tried` |
 | `unmount` | Stops a running check (nothing saved), removes listeners; a late result never touches the DOM |
-| `helpers` | `formValues(form)`, `fillForm(form, eq)`, `progressText(p)`, `runRows(report)`, `machineRows(report)`, `heatRows(report)` |
+| `helpers` | `formValues(form)` (the 7 fields in the order `ac_hp, ac_units, fog_lph, air_m3h, walls, roof, height`), `fillForm(form, eq)`, `progressText(p)` (kinds `ac`, `fogger`, `air`), `runRows(report)`, `machineRows(report)`, `heatRows(report)`, `airNote(a, b)` (the row "Air size note": the text, or `''` when `a === b`) |
 
 ---
 
@@ -609,9 +674,9 @@ import is on the Rooms home (3.8). Two parts of this section stay binding:
 
 | Function | Route | Arguments | Resolves to |
 |---|---|---|---|
-| `listRooms()` | `GET /api/rooms` | – | `Room[]` as C3 section 3.1 (`live` with `reading`, `stage`, `crop`, `targets`, `status`, `alarms`, `running`, `error`, and from revision 7 `flush`, `blocks`) |
-| `createRoom(room)` | `POST /api/rooms` | `room`: `{ name, volume, vent, settings? }` | `Room` |
-| `updateRoom(id, fields)` | `PATCH /api/rooms/:id` | `fields`: only the changed C3 fields (`name`, `volume`, `vent`, `archived: true`) | `Room` |
+| `listRooms()` | `GET /api/rooms` | – | `Room[]` as C3 section 3.1 (`live` with `reading`, `stage`, `crop`, `targets`, `status`, `alarms`, `running`, `error`, from revision 7 `flush`, `blocks`, and from revision 8 `air`, the air exchange summary of 3.4) |
+| `createRoom(room)` | `POST /api/rooms` | `room`: `{ name, volume, settings? }` | `Room` |
+| `updateRoom(id, fields)` | `PATCH /api/rooms/:id` | `fields`: only the changed C3 fields (`name`, `volume`, `archived: true`) | `Room` |
 | `restartRoom(id)` | `POST /api/rooms/:id/restart` | – | `Room` after the restart (when the loop fails again: `live.running` = `false` with the new `live.error`) |
 | `getSettings(id)` | `GET /api/rooms/:id/settings` | – | Settings |
 | `saveSettings(id, settings, note)` | `PUT /api/rooms/:id/settings` | `settings`: Settings; `note`: string, optional (left out of the body when `undefined` or `''`) | `{ settings, warnings }` (`warnings`: string[]) |
@@ -634,7 +699,7 @@ import is on the Rooms home (3.8). Two parts of this section stay binding:
 | `updateSimulation(id, runId, fields)` | `PATCH /api/rooms/:id/simulations/:runId` | `fields`: any of `{ note, real_start }` | `SimulationRunInfo` |
 | `deleteSimulation(id, runId)` | `DELETE /api/rooms/:id/simulations/:runId` | – | `SimulationRunInfo` |
 | `getEquipment(id)` | `GET /api/rooms/:id/equipment` | – | `Equipment` or `null` (C8) |
-| `saveEquipment(id, eq)` | `PUT /api/rooms/:id/equipment` | `eq`: the 7 Equipment fields | `Equipment` |
+| `saveEquipment(id, eq)` | `PUT /api/rooms/:id/equipment` | `eq`: the 7 Equipment fields (`ac_hp, ac_units, fog_lph, air_m3h, walls, roof, height`) | `Equipment` (the server also brings the room's settings `airM3h` in step, C3 6.26) |
 | `stream(onEvent)` | `GET /api/stream` | `onEvent(type, data)` | Returns a `close()` function at once (not a Promise) |
 
 Mapping between the API and the shared modules is done in the web module, not in `api.js`:
@@ -644,7 +709,8 @@ Mapping between the API and the shared modules is done in the web module, not in
 | Simulate tab | `MixRow.co2_per_block` | `capacity.js` / `cycle.js` mix `co2PerBlock` (left out when `null`) |
 | Simulate tab, Calibrate tab | The Calibration with `applied` = `true` | `capacity.js` / `cycle.js` / `ClimateRoomRules` room `calib: { ua, infAch, moistBuffer, co2PerBlock, rmse: { T, RH, CO2 }, date }` (`date` = ISO text of `run_at`); `null` without an applied run (C3 section 8) |
 | Simulate tab | Equipment (C3 3.11) | `room.plant = ClimateEquipment.plantOf(equipment, { volume, calib })` (3.10) |
-| Calibrate tab | The room's MixRows, `vent`, `volume`, `live.stage`, Equipment, the log rows' `stage` | `envBase` of `ClimateCalib.replay` / `fitAsync` (section 3.6) |
+| Simulate tab | The room's settings `airM3h` | `room.airM3h` of `capacity.js` / `cycle.js` (C9 8 `airOf(room)`; 3.10) |
+| Calibrate tab | The room's MixRows, `volume`, `live.stage`, Equipment, settings `airM3h`, the log rows' `stage` | `envBase` of `ClimateCalib.replay` / `fitAsync` (section 3.6) |
 | Calibrate tab | Reading (C3 3.2) | `calib.js` log row (`logFromReadings`, 3.11) |
 
 ### 4.4 `stream(onEvent)`
@@ -702,7 +768,7 @@ fake itself in `tests/fake-api-server.test.js` (wave 0), `root` included.
 | Any other `GET` under `/api/` | 200, `{}` |
 | `POST`, `PUT`, `PATCH` under `/api/` | 200, the request body echoed as JSON (`null` when the request had no body). The fake has no route logic: a check that needs a server-made field (for example `room_id`, `saved_at`, `id`) sets it with `reply`. |
 | `DELETE` under `/api/` (revision 7) | 200, `{}` |
-| `GET` or `HEAD` of a path not under `/api/`, with `root` | The file under `root` by C3 section 9 (above) |
+| `GET` or `HEAD` of a path not under `/api/`, with `root` | The file under `root` by C3 section 9 (above). The served shared modules are `/controller.js`, `/sim.js`, `/air.js`, `/runtime.js`, `/capacity.js`, `/calib.js`, `/room-rules.js`, `/cycle.js`, `/equipment.js`: the list on `master` 6a12852 lacks `/air.js` (a C9 gap), `/cycle.js` and `/equipment.js`; the lead adds them in prep 2.0 (1.7), tested in `tests/fake-api-server.test.js` |
 | Any other method, or a path not under `/api/` (without `root`, or a method other than `GET` and `HEAD`) | 404, `{ "error": "Unknown route", "details": [] }` |
 
 Every request is recorded in `requests`, the file requests of `root` included; a check reads only the `/api/` entries.
@@ -735,7 +801,7 @@ Every request is recorded in `requests`, the file requests of `root` included; a
 |---|---|
 | `Clock` | `offset` (s added to `t` to get local seconds since a midnight), `hm(t) → string`, `stamp(t) → string`, `label(t) → string`. Night is 19:00–07:00 local. |
 | `Chip` | `{ lvl: 'critical' \| 'serious' \| 'warning' \| 'good' \| 'info' \| 'none', icon: string, text: string }` |
-| `ChartPoint` | `t` (s, simulation or Unix time), `T` °C, `RH` %, `C` CO₂ ppm, `tOut` °C, `rhOut` %, `core` °C (optional), `spT`, `spRH`, `co2Lim`, `fanOn`, `fanOff` (targets for the bands), `ac`, `hu`, `fan`, `li`, `ci` (W, power chart only). A missing value is `NaN` or `undefined` and draws as a gap. Other fields are kept and ignored. |
+| `ChartPoint` | `t` (s, simulation or Unix time), `T` °C, `RH` %, `C` CO₂ ppm, `tOut` °C, `rhOut` %, `core` °C (optional), `spT`, `spRH`, `co2Lim`, `fanOn`, `fanOff` (targets for the bands; `fanOn`, `fanOff` are the purge start and stop levels, C9 5.2), `ac`, `hu`, `air`, `li`, `ci` (W, power chart only; `air` is the air exchange, legend `Air exchange`, C9 7). A missing value is `NaN` or `undefined` and draws as a gap. Other fields are kept and ignored. |
 | `View` | `{ t0, t1, pts: ChartPoint[] (sorted by t), gapS?: number }`; `gapS` (default `Infinity`): a line breaks where two points are more than `gapS` apart |
 
 ### 6.2 Functions
@@ -744,15 +810,15 @@ Every request is recorded in `requests`, the file requests of `root` included; a
 |---|---|---|
 | `lowerBound` | `(pts, t) → number` | First index with `pts[i].t ≥ t` |
 | `nearest` | `(pts, t) → ChartPoint \| null` | |
-| `aggregate` | `(pts, maxN) → ChartPoint[]` | Today's bucket average of `T, RH, C, tOut, rhOut, ac, hu, fan, li, ci, acSet, core, vpd`; other fields from the bucket's last point; `t` = bucket middle |
+| `aggregate` | `(pts, maxN) → ChartPoint[]` | Today's bucket average of `T, RH, C, tOut, rhOut, ac, hu, air, li, ci, acSet, core, vpd`; other fields from the bucket's last point; `t` = bucket middle |
 | `niceTicks` | `(lo, hi, n) → number[]` | |
 | `linePath` | `(pts, X, Y, f, gapS = Infinity) → string` | SVG path; breaks at non-finite values and at time gaps over `gapS` |
 | `areaPath` | `(pts, X, Y, lo, hi) → string` | |
 | `barPath` | `(x, y, w, h, r) → string` | |
 | `createTrendCharts` | `(el, opts) → { draw(view), destroy() }` | 6.3 |
-| `drawExhaustBars` | `(host, { hours, nowH, vol, clock }) → void` | Replaces `host`'s content with today's bar chart. `hours`: 24 × `{ h, runS, starts, m3 }` (`h` = whole hours of simulation time); `nowH`: the current `h`; `vol`: room m³. Labels every 3 local hours. |
-| `drawCalibCharts` | `(host, { rows, base, fit, labels?, dashed? }) → void` | Replaces `host`'s content with today's three calibration charts and key. `rows`: parsed log `[{ t, T, RH, CO2 }]` (t = s from the log start); `base`: `ClimateCalib.replay` result; `fit`: the fitted result or `null`. Revision 7 (Calibrate tab stream): `labels`: optional `{ rows, base, fit }` strings for the key (defaults: today's texts); `dashed`: optional `'base'`, `'fit'` or `null`, which simulated line is dashed (default: today's). Used by Predicted vs real (3.11). |
-| `createLadder` | `(el) → { draw(settings, co2, chips), destroy() }` | Builds today's CO₂ rules ladder in `el` (`el` gets class `ladder`). `draw` lays out the scale from `settings.co2Lim` and `settings.rules`, places the CO₂ marker at `co2` (hidden when `NaN`), paints `chips = { fan: Chip, ac: Chip }` (chips hidden when `null`). Cheap enough to call every UI update. |
+| `drawPurgeBars` | `(host, hours, clock) → void` | C9 7 (replaces wave 1's `drawExhaustBars`). Replaces `host`'s content with the bar chart "Air exchange run minutes per hour". `hours`: 24 × `{ h, runS, starts, m3, cappedN }` (`h` = whole hours of simulation time, the hour buckets of `ctl.purges()`, C9 5.7); the current hour is the last bucket's `h`; each bar's title `<HH:MM>–<HH:MM>: <min> min, <starts> purges, <m3> m³, <cappedN> capped`. Labels every 3 local hours. Used by the Test bench only in wave 2 (3.4). |
+| `drawCalibCharts` | `(host, { rows, base, fit, labels?, dashed? }) → void` | Replaces `host`'s content with today's three calibration charts and key. `rows`: parsed log `[{ t, T, RH, CO2 }]` (t = s from the log start); `base`: `ClimateCalib.replay` result, or any `{ series: [{ t, T, RH, CO2 }] }` (it reads `base.series`; Predicted vs real wraps its points so, 3.11); `fit`: the fitted result or `null`. Revision 7 (Calibrate tab stream): `labels`: optional `{ rows, base, fit }` strings for the key (defaults: today's texts); `dashed`: optional `'base'`, `'fit'` or `null`, which simulated line is dashed (default: today's). Used by Predicted vs real (3.11). |
+| `createLadder` | `(el) → { draw(settings, co2, chips), destroy() }` | Builds today's CO₂ rules ladder in `el` (`el` gets class `ladder`). `draw` lays out the scale from `settings.co2Lim` and `settings.rules`, places the CO₂ marker at `co2` (hidden when `NaN`), paints `chips = { air: Chip }` (hidden when `null` or absent). C9 7: one row `{ key: 'air', name: 'Purge', hi: rules.fanOn, lo: rules.fanOff }`; its chip shows the state (`Idle`, `Purging`, `Delayed`, `Safety run`). Cheap enough to call every UI update. |
 
 ### 6.3 `createTrendCharts(el, opts)`
 
@@ -792,7 +858,7 @@ Global: `FarmSettingsPanel.createSettingsPanel`.
 | `settings` | Settings | required | Copied with `structuredClone`; the caller's object is never changed |
 | `readOnly` | boolean | `false` | Every control disabled; `onChange` never called |
 | `onChange` | `(changes: Change[], settings: Settings) → void` | none | Called once per user action that changed something; `changes` = this action only (old → new), including the panel's own corrections; `settings` = a deep copy of the whole edited object |
-| `getCommand` | `() → Command \| null` | none | Bumpless transfer (7.4). `Command` = the controller's `state.cmd` format `{ ac: { power, mode?, setpoint? }, hu: { level }, fan: { level }, lights: { on }, circ: { on } }`. `ac.mode` and `ac.setpoint` may be absent when `ac.power` is `false` (the room page's Command, 7.9). |
+| `getCommand` | `() → Command \| null` | none | Bumpless transfer (7.4). `Command` = the controller's `state.cmd` format `{ ac: { power, mode?, setpoint? }, hu: { level }, air: { on }, lights: { on }, circ: { on } }` (C9 5.1). `ac.mode` and `ac.setpoint` may be absent when `ac.power` is `false` (the room page's Command, 7.9). |
 
 | Method | Signature | Contract |
 |---|---|---|
@@ -808,16 +874,16 @@ today's (`index.html`, the targets card, the rules card, the faceplate controls)
 
 | Card | Classes | Content | Visible to |
 |---|---|---|---|
-| Crop and stage, Targets, Installer: program and room | `card targets` | Today's three sections; the status lines are replaced by slots | Farmer; the installer section has `inst` |
-| Fan and CO₂ | `card rules` | Today's header, left column (`div.inst`: the four rule fieldsets and "Fixed values"), right column = slot `rules-side` | Farmer sees the right column only (today's CSS) |
-| Machines (new) | `card machines` | Per machine (Air conditioner, Fogger, Exhaust fan, Lights, Circulation fan): name, the Auto/Manual switch (`.seg[data-dev]`), the manual fieldset (`acManual`, `huManual`, `fanManual`, `lightsManual`, `circManual` with today's controls and ids) | Farmer |
+| Crop and stage, Targets, Installer: program and room | `card targets` | Today's three sections (the installer section has C9's `inAirSize` next to Room volume); the status lines are replaced by slots | Farmer; the installer section has `inst` |
+| Air exchange and CO₂ (C9 7) | `card rules` | Header `Air exchange and CO₂`, left column (`div.inst`: the three rule fieldsets `ruleSafe` Priority 1 · CO₂ safety level, `ruleRh` Priority 2 · Humidity first, Priority 3 · CO₂ purge, and "Fixed values"), right column = slot `rules-side` | Farmer sees the right column only (today's CSS) |
+| Machines | `card machines` | Per machine (Air conditioner, Fogger, Air exchange, Lights, Circulation fan): name, the Auto/Manual switch (`.seg[data-dev]`), the manual fieldset (`acManual`, `huManual`, `airManual` with the checkbox `airOnChk` "On (both fans)", `lightsManual`, `circManual`) | Farmer |
 
 | Slot (`[data-slot]`, an empty `div`) | Position | Today's content there |
 |---|---|---|
 | `program-status` | Crop and stage, after Stage | `progStatus`, `progRamp`, `progHarvest` |
 | `crop-check` | End of Crop and stage | `cropCheck` |
 | `targets-status` | Targets, after the humidity target | `vpdLine` |
-| `rules-side` | Fan and CO₂, right column | Ladder, ladder note, duty counters |
+| `rules-side` | Air exchange and CO₂, right column | Ladder (one row `Purge`, C9 7), ladder note, duty counters |
 
 The user of the panel finds a slot with `el.querySelector('[data-slot="…"]')` and fills it. The panel never writes into
 a slot.
@@ -828,12 +894,12 @@ a slot.
 |---|---|
 | When a change counts | Range sliders on `input` (continuous, as today); other inputs and selects on `change`; stage buttons and Auto/Manual on `click` |
 | Field rewrite | After a commit, each control shows the stored value (a clamped number, a parsed time list) |
-| Corrections | The input rules of 7.7, including the coupled values (fan, AC and humidity pairs; farm type → stage). The corrections are part of the same `changes`. |
+| Corrections | The input rules of 7.7, including the coupled values (the purge start and stop pair and the humidity pair; farm type → stage). The corrections are part of the same `changes`. |
 | Crop, stage, farm type | The panel changes only `crop`, `stage`, `farmType` (and `stage` when the farm type does not use it). It does not change the targets: the owner of the controller applies the stage program (7.8, 7.9). |
-| Bumpless transfer | When a machine goes from Auto to Manual and `getCommand()` returns a Command, the panel first copies that machine's command into `manual.<dev>`. AC: `power` always; `mode` only when the Command's `ac.mode` is one of `cool`, `heat`, `dry`, `fan`; `setpoint` only when `ac.setpoint` is a finite number (held in 16–30). Fogger and fan: `level`. Lights and circulation: `on`. A value that is not copied keeps the stored `manual.<dev>` value. Without a Command, all stored manual values stay. |
+| Bumpless transfer | When a machine goes from Auto to Manual and `getCommand()` returns a Command, the panel first copies that machine's command into `manual.<dev>`. AC: `power` always; `mode` only when the Command's `ac.mode` is one of `cool`, `heat`, `dry`, `fan`; `setpoint` only when `ac.setpoint` is a finite number (held in 16–30). Fogger: `level`. Air exchange, lights and circulation: `on`. A value that is not copied keeps the stored `manual.<dev>` value. Without a Command, all stored manual values stay. |
 | Manual fieldset | Disabled while its machine is on Auto |
 | Settings level | `spT`, `spRH`, `co2Lim` (class `lockable`) are disabled unless `document.body.dataset.level === 'installer'`; the panel listens to `farm-level` on `document`. Installer parts are hidden by the existing CSS. |
-| Visibility | `rSetbackRow` only when `rules.acAction === 'setback'`; spawn and pinning days only when `farmType === 'full'`; fieldsets `ruleRh`, `ruleAc`, `ruleSafe` get class `off` when their switch is off |
+| Visibility | Spawn and pinning days only when `farmType === 'full'`; fieldsets `ruleRh`, `ruleSafe` get class `off` when their switch is off |
 | Derived texts | `rRhStopAbs` = `(spRH − rules.rhStop %)`, `rRhResumeAbs` = `(spRH − rules.rhResume %)`, from the edited object |
 | No change | A commit that leaves every value equal calls no `onChange` |
 
@@ -860,7 +926,7 @@ a slot.
 | `undefined` | `—` |
 | Boolean at a path ending in `.auto` | `Auto` / `Manual` |
 | Other boolean | `On` / `Off` |
-| A value of a select (farm type, crop, stage, sensor mode, actions, levels, AC mode) | The option text of 7.7 |
+| A value of a select (farm type, crop, stage, sensor mode, fogger level, AC mode) | The option text of 7.7 |
 | `program.lights.on`, `program.lights.off` | `HH:MM` (`ClimateController.hhmm`) |
 | `program.harvest.times` | `HH:MM, HH:MM`, or `none` when empty |
 | Number | `String(+value.toFixed(6))`, then a space and the unit when the field has one. The rounding hides floating-point noise: the controller's ramp (`Math.round(v / 0.1) * 0.1` in `controller.js` `program()`) stores values such as `20.200000000000003`, which print as `20.2`. |
@@ -883,11 +949,11 @@ a slot.
 Level: F = farmer and installer, I = installer only, L = shown to both, editable by the installer only. Number rule
 "clamp a–b" = today's `numIn`: a value that is not a number keeps the old value, then the value is held in a–b. Every
 clamp range below lies inside the limit `ClimateController.importSettings` applies to the same path (its
-`SETTING_LIMITS`), and so does every value a pair rule writes (the coupled `rhStop`/`rhResume`, `fanOn`/`fanOff` and
-`acOff`/`acOn`), so a value the panel accepts is never corrected by the server; where the server has a limit, the panel
-uses exactly that limit, except that the lower value of a pair with a 50 ppm gap stops 50 below the server's top
-(`rules.fanOff`, `rules.acOn`: 400–19950), so the upper value it pushes up stays within 20000 (sliders may use a narrower
-range).
+`SETTING_LIMITS`), and so does every value a pair rule writes (the coupled `rhStop`/`rhResume` and `fanOn`/`fanOff`), so a
+value the panel accepts is never corrected by the server; where the server has a limit, the panel uses exactly that
+limit, except that the lower value of the pair with a 50 ppm gap stops 50 below the server's top (`rules.fanOff`:
+400–19950), so the upper value it pushes up stays within 20000 (sliders may use a narrower range). The rows follow
+C9 7 and 7.1 (`FIELDS` on `master`).
 
 | Path | Label | Control (id) | Input rule | Level | Unit / option texts |
 |---|---|---|---|---|---|
@@ -917,6 +983,7 @@ range).
 | `program.lights.stages.rest` | Lights in rest | checkbox `pgLRest` | – | I | On/Off |
 | `sensorMode` | Two sensor sets | select `inSensMode` | `average`, `worst`, `main` | I | Use the average; Use the worst value; Use the main set |
 | `roomM3` | Room volume | number `inRoomM3` | Not a number or 0 keeps the value; clamp 1–100000 | I | m³ |
+| `airM3h` | Air exchange size | number `inAirSize` | Clamp 50–10000, rounded (C9 5.2) | I | m³/h |
 | `offsets.T` | Sensor correction T | number `oT` | Not a number → 0; clamp −5–5 | I | °C |
 | `offsets.RH` | Sensor correction RH | number `oRH` | Not a number → 0; clamp −15–15 | I | % |
 | `offsets.CO2` | Sensor correction CO₂ | number `oCO2` | Not a number → 0; clamp −500–500 | I | ppm |
@@ -925,32 +992,26 @@ range).
 | `rules.rhLock` | Humidity first on | checkbox `rRhLock` | – | I | On/Off |
 | `rules.rhStop` | Humidity first: at target − | number `rRhStop` | Clamp 1–20, rounded; then `rhResume` = min(`rhResume`, `rhStop` − 1) | I | % |
 | `rules.rhResume` | Humidity first: until target − | number `rRhResume` | Clamp 0–19, rounded; then `rhStop` = max(`rhStop`, `rhResume` + 1) | I | % |
-| `rules.rhAction` | Humidity first: action | select `rRhAction` | `stop`, `low` | I | Stop the fan; Reduce the fan to Low |
-| `rules.fanOn` | CO₂ purge: start at | number `rFanOn` | Clamp 450–20000, rounded; then `fanOff` = min(`fanOff`, `fanOn` − 50) | I | ppm |
-| `rules.fanOff` | CO₂ purge: stop at | number `rFanOff` | Clamp 400–19950 (server limit 400–20000), rounded; then `fanOn` = max(`fanOn`, `fanOff` + 50), so at most 20000 | I | ppm |
-| `rules.airMode` | Fresh air | select `rAirMode` | `steady`, `purge` | I | Steady (base level + steps); Purge (on and off) |
-| `rules.fanLevel` | Purge level | select `rFanLevel` | 1, 2, 3 (stored as a number) | I | Low; Medium; High |
-| `rules.acPurge` | Change the AC during a purge | checkbox `rAcPurge` | – | I | On/Off |
-| `rules.acAction` | AC during a purge: action | select `rAcAction` | `setback`, `off` | I | Raise the setpoint (setback); Turn the AC off |
-| `rules.acSetbackC` | AC setback | number `rSetbackC` | Clamp 0.5–6 | I | °C |
-| `rules.acOff` | AC during a purge: from | number `rAcOff` | Clamp 450–20000, rounded; then `acOn` = min(`acOn`, `acOff` − 50) | I | ppm |
-| `rules.acOn` | AC during a purge: until | number `rAcOn` | Clamp 400–19950 (server limit 400–20000), rounded; then `acOff` = max(`acOff`, `acOn` + 50), so at most 20000 | I | ppm |
+| `rules.fanOn` | Purge starts at | number `rFanOn` | Clamp 450–20000, rounded; then `fanOff` = min(`fanOff`, `fanOn` − 50) | I | ppm |
+| `rules.fanOff` | Purge stops at | number `rFanOff` | Clamp 400–19950 (server limit 400–20000), rounded; then `fanOn` = max(`fanOn`, `fanOff` + 50), so at most 20000 | I | ppm |
+| `rules.purgeMaxS` | Longest purge | number `rPurgeMax` | Shown in minutes: clamp 1–15 min, stored as seconds (× 60, rounded; server limit 60–900 s) | I | s |
+| `rules.minOffS` | Minimum off time | number `rMinOff` | Clamp 30–600, rounded | I | s |
 | `manual.ac.auto` | Air conditioner | Auto/Manual `[data-dev="ac"]` | Bumpless transfer (7.4) | F | Auto/Manual |
 | `manual.ac.power` | Air conditioner, manual: power | select `acModeSel` | `off` → `power = false`; another value → `power = true` and `mode` = the value | F | On/Off |
 | `manual.ac.mode` | Air conditioner, manual: mode | select `acModeSel` (same) | `cool`, `heat`, `dry`, `fan` | F | Cool; Heat; Dry; Fan only |
 | `manual.ac.setpoint` | Air conditioner, manual: setpoint | range `acSetIn` | 16–30, step 0.5 | F | °C |
 | `manual.hu.auto` | Fogger | Auto/Manual `[data-dev="hu"]` | Bumpless | F | Auto/Manual |
 | `manual.hu.level` | Fogger, manual: level | select `huLevelSel` | 0–3 (number) | F | Off; 1 (1 kg/h); 2 (2 kg/h); 3 (3 kg/h) |
-| `manual.fan.auto` | Exhaust fan | Auto/Manual `[data-dev="fan"]` | Bumpless | F | Auto/Manual |
-| `manual.fan.level` | Exhaust fan, manual: level | select `fanLevelSel` | 0–3 (number) | F | Off; Low; Medium; High |
+| `manual.air.auto` | Air exchange | Auto/Manual `[data-dev="air"]` | Bumpless | F | Auto/Manual |
+| `manual.air.on` | Air exchange: manual output | checkbox `airOnChk` | – | F | On/Off |
 | `manual.lights.auto` | Lights | Auto/Manual `[data-dev="lights"]` | Bumpless | F | Auto/Manual |
 | `manual.lights.on` | Lights, manual: on | checkbox `liOn` | – | F | On/Off |
 | `manual.circ.auto` | Circulation fan | Auto/Manual `[data-dev="circ"]` | Bumpless | F | Auto/Manual |
 | `manual.circ.on` | Circulation fan, manual: on | checkbox `ciOn` | – | F | On/Off |
 
 Settings without a control (label = path; they appear in a change list only when two settings objects differ there):
-`humMode`, `circ`, `program.coreControl`, `rules.baseFan.*`, `rules.freeCool`, `rules.outdoorDry`, `rules.fogBoost`,
-`rules.maxSetback`, `rules.guard`, `rules.fogCool`, `rules.acFanRH`, `protect.*`.
+`humMode`, `circ`, `program.coreControl`, `rules.freeCool`, `rules.outdoorDry`, `rules.fogCool`, `rules.acFanRH`,
+`protect.*`.
 
 ### 7.8 Use in the Test bench (`web/simulator.js`)
 
@@ -963,8 +1024,9 @@ as today.
 | `onChange` with `farmType` | `ctl.setFarmType(new, reading.t)` (it also chooses the stage, so a `stage` change in the same list is skipped); then `panel.set(cfg)` |
 | `onChange` with `crop` | `ctl.setCrop(new, reading.t)`; `scheduleCropCheck()`; `panel.set(cfg)` |
 | `onChange` with `stage` | `ctl.setStage(new, reading.t)`; `scheduleCropCheck()`; `panel.set(cfg)` |
-| `onChange` with `spT`, `spRH`, `co2Lim`, `rules.fanOn`, `rules.fanOff`, `rules.acOff`, `rules.acOn`, `rules.co2SafetyAt` | Write the value into `cfg`; `ctl.cancelRamp()` |
-| `onChange` with `manual.<dev>.auto` | Write; event `<Air conditioner \| Fogger \| Exhaust fan \| Lights \| Circulation fan> set to <auto \| manual>` |
+| `onChange` with `spT`, `spRH`, `co2Lim`, `rules.co2SafetyAt`, `rules.fanOn`, `rules.fanOff` (C9 5.2 `RAMP_KEYS`) | Write the value into `cfg`; `ctl.cancelRamp()` |
+| `onChange` with `airM3h` | Write; `env.airM3h` = the same value and `#inAirM3h` shows it (C9 7: the simulated pair and the controller's size together) |
+| `onChange` with `manual.<dev>.auto` | Write; event `<Air conditioner \| Fogger \| Air exchange \| Lights \| Circulation fan> set to <auto \| manual>` |
 | `onChange` with `offsets.<k>` | Write; event `Sensor correction <k>: <+/−value>` |
 | `onChange`, any other path | Write the value into `cfg` at the path |
 | After every `onChange` | Redraw the ladder; charts dirty |
@@ -978,10 +1040,71 @@ heading row. When the server cannot be reached, they are disabled with the `erro
 | Revision 7 rule (Bench stream) | Detail |
 |---|---|
 | `#/simulator/:id` | The shell passes `{ roomId }` (2.1); the bench picks that room in the picker (when it is listed) and runs **Load settings from room** for it at once (the change list shows first, as above). Opened from the Simulate tab's **Open test bench**. |
-| Machines | The Test bench simulates the typical machines (`PLANT`) in wave 2, also on `#/simulator/:id`: a room's saved Equipment is not loaded (lead decision 35 covers Simulate, Calibrate and the live room only) |
+| Machines | The Test bench simulates the typical machines (`PLANT`) in wave 2, also on `#/simulator/:id`: a room's saved Equipment is not loaded (lead decision 35 covers Simulate, Calibrate and the live room only). The air exchange size is the bench's own `#inAirM3h` (C9 7), which a loaded `airM3h` sets (`onLoaded` below). |
 | Calibration event text | `Simulation calibrated: heat through walls and roof <ua> W/K, …` (was `heat loss`; lead decision 28) |
-| Node export | The room link helpers are exported for Node (`module.exports = { createRoomLink, … }` when `module` exists), tested by `tests/web-room-link.test.js` |
-| Room drawing | Not part of any wave 2 stream: the drawing fix is done outside the streams on branch `fix/room-drawing` (lead decision 53). The Bench stream does not change the mimic code. `mimicLayout` goes into the same Node export, next to `createRoomLink`, once the fix is on `master` (lead decision 51; wave 2 plan, wave 3) |
+| `ClimateCalib.PARAMS.ua` (Bench stream, `calib.js`) | `label` `Heat through walls and roof (W/K)`; `note` exactly `Heat flows out when the room is warmer than outside, in when outside is hotter.` (lead decision 28; shown by the Calibrate tab, 3.11) |
+| Node export | The last statement inside the wrapper: `if (typeof module === 'object' && module && module.exports) module.exports = { createRoomLink, airText, mimicLayout };` (adds no browser global). `airText` is on `master` (C9); the Bench stream adds `createRoomLink` and `mimicLayout` (lead decision 51). Tested by `tests/web-room-link.test.js` (`createRoomLink`); `tests/web-air.test.js` keeps reading `airText`; the lead points `tests/web-mimic.test.js` at `mimicLayout` in wave 3, before deleting `FarmBench` (3.5). |
+| Room drawing | C9's (`mimicLayout({ inletAt, exhaustAt })`, two fans SF-203 and EF-206, closed dampers when off; merged on `master`). No wave 2 stream changes the mimic code or C9's air exchange card code (lead decision 53). |
+
+#### `createRoomLink(deps)` (Bench stream, inside `web/simulator.js`)
+
+The logic of **Load settings from room** and **Save settings to room**, without DOM. If the wave 1 file touches `window`, `document` or `matchMedia` at load, the Bench stream moves that into `mount` or the lazily created Simulator state (1.4), so Node can require the file.
+
+| Dep | Type | Page value |
+|---|---|---|
+| `api` | `{ getSettings, saveSettings }` as 4.3 | `FarmApi` |
+| `diffSettings` | `(base, next) → Change[]` | `FarmSettingsPanel.diffSettings` |
+| `safeSettings` | `(settings) → { settings, warnings }` | `FarmSettingsPanel.safeSettings` |
+| `showChanges` | `(changes, { title, confirmText, note }) → Promise<string \| null>` | The wrapper in the table "Page wiring" |
+| `errorText` | `(err) → string` | `FarmUi.errorText` |
+| `cfg` | Settings | The live object the Simulator's controller runs with; never replaced |
+| `getCtl` | `() → controller` | `() => ctl` (**Reset** makes a new controller on the same `cfg`) |
+| `event` | `(text) → void` | Adds an `info` event to the Simulator log: `onEvent({ t: reading ? reading.t : 0, lvl: 'info', text })` |
+| `onLoaded` | `(changes) → void` | Repaint after a confirmed load (table "Page wiring") |
+
+| Member | Signature | Contract |
+|---|---|---|
+| `load` | `(room: { id, name }) → Promise<string \| null>` | Steps in the table "`load(room)`". A string is the message-line text (`''` clears it). `null` = change nothing (disposed, or another action running). Never rejects. |
+| `save` | same | Steps in the table "`save(room)`" |
+| `busy` | getter → boolean | `true` from the start of `load` or `save` until it settles |
+| `dispose` | `() → void` | Later `load` / `save` resolve `null` with no request. A call in flight resolves `null` and from then on touches nothing (`cfg`, controller, `event`, `onLoaded`, no `saveSettings`). Idempotent. |
+
+| `load(room)` step (`<room>` = `room.name`) | Action |
+|---|---|
+| 1 | Disposed or `busy`: resolve `null`, no request. Else `busy = true`. |
+| 2 | `raw = await api.getSettings(room.id)`. Disposed: `null`. |
+| 3 | `roomSettings = safeSettings(raw).settings`. A throw: resolve `The settings of <room> could not be read: <err.message>` (nothing changed). |
+| 4 | `changes = diffSettings(cfg, roomSettings)`. Empty: resolve `Same settings as <room>.` |
+| 5 | `answer = await showChanges(changes, { title: 'Load the settings of <room>?', confirmText: 'Load', note: false })`. Disposed: `null`. `answer === null`: resolve `''`. |
+| 6 | `ClimateController.applySettings(cfg, roomSettings)`; `getCtl().cancelRamp()`; `event('Settings loaded from room "<room>"')`; `onLoaded(changes)`; resolve `Loaded the settings of <room>.` |
+| Error | Disposed: `null`. Else resolve `errorText(err)`; an error that is not a `FarmApi.ApiError` is also logged with `console.error`. |
+| Always | `busy = false` in `finally`. |
+
+| `save(room)` step | Action |
+|---|---|
+| 1 | As `load`. |
+| 2 | `base = await api.getSettings(room.id)`. Disposed: `null`. |
+| 3 | `sent = structuredClone(cfg)`; `changes = diffSettings(base, sent)`. Empty: resolve `<room> already has these settings.` |
+| 4 | `note = await showChanges(changes, { title: 'Save these settings to <room>?', confirmText: 'Save to room', note: true })`. Disposed: `null`. `note === null`: resolve `''` (no `PUT`). |
+| 5 | `{ warnings } = await api.saveSettings(room.id, sent, note \|\| 'From the Simulator')`. Disposed: `null`. |
+| 6 | No warnings: `Saved.`; else `Saved with <n> warning(s): <warnings joined with ' '>`. The reply's `settings` are not copied into `cfg`. |
+| Error, Always | As `load`. |
+
+`sent` is taken once, before the dialog, so the server gets exactly what the user confirmed even if the simulation changes `cfg` while the dialog is open.
+
+| Page wiring | Action |
+|---|---|
+| Markup | Inside the `div.section-head` of the "Climate controller" heading, after its `<p>` (inline style; `styles.css` is not the Bench stream's): `label[for=simRoom]` `Room`, `select#simRoom`, `button.btn#simRoomLoad` `Load settings from room`, `button.btn#simRoomSave` `Save settings to room`, `span.tag#simRoomMsg` (`role="status"`, `aria-live="polite"`); all three controls start disabled |
+| `mount` | `link = createRoomLink({ api: FarmApi, diffSettings, safeSettings, showChanges: <wrapper>, errorText: FarmUi.errorText, cfg, getCtl: () => ctl, event, onLoaded })`; then `FarmApi.listRooms()` (once per mount; no stream, no polling) |
+| `listRooms` resolves rooms | One `option` per room: `value = String(room.id)`, `option.textContent = room.name` (never `innerHTML`). Select `params.roomId` when listed (`#/simulator/:id`), else the id kept from the last mount if listed, else the first. Enable the select and both buttons; clear the message. With `params.roomId` listed, run **Load** for it at once. |
+| `listRooms` resolves `[]` | All three stay disabled; message `No rooms on the farm server. Create one under Rooms.` |
+| `listRooms` rejects | All three stay disabled; message `FarmUi.errorText(err)`; the bench keeps running |
+| Settles after `unmount` | Ignored (mount token; no DOM access) |
+| `simRoom` change | Keep the picked id in the module closure (survives remounts); clear the message |
+| Button click | `room` = the listed Room with the picked id. Disable the three. `text = await link.load(room)` (or `save`). `text !== null`: message = `text`, enable the three. `null`: do nothing. |
+| `onLoaded(changes)` | `panel.set(cfg)`; if a change has path `farmType`, `crop` or `stage`: `scheduleCropCheck()`; if a change has path `airM3h`: `env.airM3h = cfg.airM3h` and `#inAirM3h` shows it; redraw the ladder and mark the charts dirty (as "After every `onChange`" above) |
+| `showChanges` wrapper | `(c, o) => { const p = FarmSettingsPanel.showChanges(c, o); const d = document.body.lastElementChild; openDialog = d && d.tagName === 'DIALOG' ? d : null; return p; }` |
+| `unmount` | `link.dispose()`; if `openDialog` is still in the document: `openDialog.close()`, `openDialog.remove()`; `openDialog = null`. Everything else `unmount` does stays. |
 
 ### 7.9 Use on the Live tab (`web/room-live.js`)
 
@@ -999,7 +1122,7 @@ server (`importSettings` in C2, section 9.2). `getCommand` builds the Command fr
 | `ac.mode` | `r.ac_mode` when `ac.power` is `true`; absent when it is `false` (bumpless transfer then keeps the stored `manual.ac.mode`) |
 | `ac.setpoint` | `r.ac_setpoint` when `ac.power` is `true`; absent when it is `false` (the stored `manual.ac.setpoint` stays) |
 | `hu.level` | `r.fog` |
-| `fan.level` | `r.fan` |
+| `air.on` | `r.air === 1` (C9 7) |
 | `lights.on` | `r.lights === 1` |
 | `circ.on` | `r.circ === 1` |
 
@@ -1012,7 +1135,7 @@ server (`importSettings` in C2, section 9.2). `getCommand` builds the Command fr
 | Stream `settings` for this room (`data` = `{ id, room_id, saved_at, note, settings }`), not `saving` | `pending = panel.diff(base)`; `base = data.settings`; `panel.set(applyChanges(base, pending))`; reload the versions. When `pending` is not empty: note `The settings changed on the server; your <n> change(s) are kept.` |
 | Reconnect (stream `open` with `reconnect: true`, 3.4), not `saving` | `fresh = await getSettings(id)`; `pending = panel.diff(base)`; `changed = diffSettings(base, fresh)`; `base = fresh`; `panel.set(applyChanges(base, pending))`; reload the versions. When `changed` and `pending` are both not empty: note `The settings changed on the server; your <n> change(s) are kept.` (C4 section 10.4: the page says so before a save). While `saving`: only the versions reload; the call's reply sets `base`. |
 | **Restore** (versions list: `saved_at` in farm time, note) | `confirm('Make the version of <saved_at> current? Unsaved changes are lost.')`; `saving = true`; `restoreSettings(id, versionId)` → `{ settings, warnings }`; `old = base`; `base = settings`; `panel.set(settings)`; show the warnings and the restored changes `diffSettings(old, settings)` as lines; reload the versions. On an `ApiError`: show `errorText`. In both cases `saving = false` at the end. |
-| Slots | `program-status`: crop and stage from `live`, plus ` · flush <n>` when `live.flush` is set (revision 7); `rules-side`: `FarmCharts.createLadder` with the latest CO₂ and no chips; the others empty |
+| Slots | `program-status`: crop and stage from `live`, plus ` · flush <n>` when `live.flush` is set (revision 7); `rules-side`: `FarmCharts.createLadder` (C9's one row `Purge`) with the latest CO₂ and the chip `{ air }` from `live.air` (3.4, table "Air exchange on the Live tab"; no chip while `live.air` is `null`); the others empty |
 | Leaving the page | Unsaved edits are dropped without a prompt; a reply that arrives after `unmount` is ignored |
 
 ### 7.10 Checks
@@ -1023,12 +1146,13 @@ server (`importSettings` in C2, section 9.2). `getCommand` builds the Command fr
 | `tests/web-api.test.js`, watchdog | With `FarmApi.streamTimeoutMs` = 100 and `startFakeApi({ retryMs: 50 })` (the fake sends no `: ping`): `open` (`reconnect: false`), then `down` with `error` `No data from the server for 0.1 s`, then `open` (`reconnect: true`), and `requests` holds a second `GET /api/stream`; an `emit` every 50 ms keeps the connection (no `down`); no `onEvent` call after `close()` | Web split |
 | `tests/settings-diff.test.js` (Node) | `diffSettings` (order, arrays, missing leaves, no change → `[]`), `applyChanges`, `formatValue`; `safeSettings`: `JSON.parse('{"__proto__":{"polluted":1},"rules":{"constructor":1}}')` gives two warnings and `({}).polluted` stays `undefined`, an unknown key is dropped with `importSettings`' warning, an out-of-limit `spT` is clamped, a missing key takes its default, a non-object throws | Web split |
 | Headless Chrome, wave 1 (spec section 5) | Each module mounts and unmounts without errors (with the wave 0 stubs `room-rules.js` and `web/rooms.js`, 1.5 and 1.6: no 404 and no console error; a 404 for `/favicon.ico` is ignored, and a 404 for `/web/rooms.js` or `/room-rules.js` fails the check); `#/rooms` shows `This part of the app is not installed.`; the Simulator runs as today with the panel. The check opens the Web split worktree's `index.html` over `file://` (wave 1 makes no API call), or over a throwaway static file server inside the test tool; `server/static.js` is the API stream's and is not in this worktree. | Web split |
-| Headless Chrome, how wave 2 checks run (revision 7) | Against the real server, after the lead's gate 2.5 (Data 2, Equipment, then Server 2 merged into `master`; wave 2 plan). Until then each web stream tests in Node against the fake API (4.5) and the prep 2.0 `equipment.js` stub. The check tree: `T=$(mktemp -d); git archive master \| tar -x -C $T` (the gate 2.5 `master`), then the stream's own changed files on top (`git archive HEAD -- <files changed since the merge base> \| tar -x -C $T`); the streams do not merge `master` into their branches (the lead merges). Command: `cd $T && FARM_HOST=127.0.0.1 FARM_PORT=<free port> FARM_DB=$T/check.db npm start`, then open `http://127.0.0.1:<port>/`. The empty database gets the demo room `Room 1`, which records a reading every 30 s. A check seeds what else it needs through the API or `localStorage`; a check that needs history writes it before `npm start` with a script in `/tmp` (`openDb`, `createRoom`, `insertReading` on `$T/check.db`). Wave 3 integration runs every check again through the real room page. | Every wave 2 web stream |
+| Headless Chrome, how wave 2 checks run (revision 7) | Against the real server, after the lead's gate 2.5 (Data 2, Equipment, then Server 2 merged into `master`; wave 2 plan). Until then each web stream tests in Node against the fake API (4.5) and the prep 2.0 `equipment.js` stub. The check tree: `T=$(mktemp -d); git archive master \| tar -x -C $T` (the gate 2.5 `master`), then the stream's own changed files on top (`git archive HEAD -- <files changed since the merge base> \| tar -x -C $T`); the streams do not merge `master` into their branches (the lead merges). Command: `cd $T && FARM_HOST=127.0.0.1 FARM_PORT=<free port> FARM_DB=$T/check.db npm start`, then open `http://127.0.0.1:<port>/`. The empty database gets the demo room `Room 1`, which records a reading every 30 s. A check seeds what else it needs through the API or `localStorage`; a check that needs history writes it before `npm start` with a script kept outside the repo (its own `mktemp -d` folder; `openDb`, `createRoom`, `insertReading` on `$T/check.db`). Tab and card checks follow 3.9 "Headless checks of one tab" (the gate 2.5 `index.html` already loads every script; the tab is mounted by hand; no layout assertion). Wave 3 integration runs every check again through the real room page. | Every wave 2 web stream |
 | `tests/web-api.test.js`, revision 7 additions | The seven functions of 4.3 (`listSimulations`, `createSimulation`, `getSimulation`, `updateSimulation`, `deleteSimulation`, `getEquipment`, `saveEquipment`): method, path, query, body, result, against the fake; `DELETE` gets 200 `{}`; `getEquipment` gets `null` | Lead (prep 2.0) |
+| `tests/fake-api-server.test.js`, revision 8 additions | With `root`: `GET /air.js`, `/cycle.js`, `/equipment.js` each answer 200, `text/javascript; charset=utf-8` and the file bytes (4.5) | Lead (prep 2.0) |
 | `tests/web-shell.test.js`, `tests/web-rooms.test.js` + headless Chrome, Room shell | Node: the routes of 2.1 (`FarmShell.parseHash`), the `update(params)` rule of 2.3, `MENU_NAMES`, the home helpers and import helpers (3.8). Headless: the home shows cards with live values and `flush`/`blocks`; a card opens `#/rooms/1/live`; `#/rooms/1` replaces to `/live`; the three tab links switch tabs without a reload of the header (the frame's `GET /api/rooms` count does not grow on a tab switch) and show `This tab is not installed.` where a tab registers nothing; `#/capacity` and `#/calibration` go to `#/rooms`; the menu has Rooms and Test bench; the browser-storage import (with `mushroom-farm.rooms.v1` seeded with two rooms, one with a mix of two crops and a valid `calib`: both rooms, their mixes, an applied calibration with `source: 'import'`, the marker set, the button hidden after a reload); **Restart** against the fake (`startFakeApi({ root: <the check tree> })`, a stopped room `R` with `live.error: 'boom'`, the button sends exactly one `POST /api/rooms/1/restart` with no body and the card then shows the reply), on the home card and in the frame header; no console errors | Room shell |
-| `tests/web-room-live.test.js` + headless Chrome, Live tab | The tab mounted alone with a hand-made `ctx` (3.9) whose `on` the check drives: live values and machines from `reading`; the status chip changes after a reading that moves T out of band (the check saves the room's settings through the API with `spT` far from the room's T, then waits up to 65 s); charts, alarms and events load; a settings change shows the change list, saves, and Restore works; the `program-status` slot shows `flush <n>`; no console errors | Live tab |
-| `tests/web-room-simulate.test.js` + headless Chrome, Simulate tab | Node: the helpers of 3.10. Headless: a capacity check and a short cycle (settings with 1-day stages, 1 flush, `farmType: 'ready'`) finish, are stored (`listSimulations`), reopen (`getSimulation`), take a note and delete; the draft mix is saved only by **Save as this room's crop mix** (`getMix`); with saved machines (`saveEquipment` through the API first) the stored run's `inputs.equipment` holds them; the equipment slot sits after the Result card and before Saved runs | Simulate tab |
-| `tests/web-room-calibrate.test.js`, `tests/web-charts.test.js` (append) + headless Chrome, Calibrate tab | Node: `logFromReadings`, `pairSeries`, `differences`, `sameMachines`, `calibBody`; the `drawCalibCharts` options. Headless: a history fit stores a calibration with `source: 'history'`, `log_from`, `log_to` and `equipment` (2 h of readings written into the check database before `npm start`); a CSV fit stores `source: 'csv'`; after `saveEquipment` with other machines the warning `#cbStale` shows; Predicted vs real shows a short saved cycle against its readings and stores `real_start` | Calibrate tab |
-| `tests/web-room-link.test.js`, `tests/calib.test.js` (append) + headless Chrome, Test bench | The room link of 7.8; `#/simulator/1` picks room 1; the calibration event text `heat through walls and roof`; `ClimateCalib.PARAMS.ua.label === 'Heat through walls and roof (W/K)'` and `PARAMS.ua.note` contains `outside is hotter`; `replay` follows a row's `stage` (a log switching from `fruiting` to `rest` replays with less CO₂ after the switch); every existing calib and bench test stays green | Bench |
-| `tests/web-room-equipment.test.js` + headless Chrome, Equipment card | Node: the card's helpers (3.12). Headless, after gate 2.5: the card mounted alone (3.9 "Headless checks of one tab") against the real server: save and reload the machines; a check with a short program (1-day stages, 1 flush, `ready`) finishes and is stored as kind `equipment` (`listSimulations(1)`). Fixes after gate 2.5 merge in wave 3 (lead decision 49). The card inside the Simulate tab is the lead's wave 3 check. | Equipment |
+| `tests/web-room-live.test.js` + headless Chrome, Live tab | Node: `airLive` (3.4, every row of "Air exchange on the Live tab"). Headless: the tab mounted alone with a hand-made `ctx` (3.9) whose `on` records the listeners. The check stands in for the frame: it opens `FarmApi.stream`, passes the `reading`, `event`, `alarm` and `settings` events of room 1 to the tab's listeners of that type, and after each reading calls `FarmApi.listRooms()` and passes room 1 to the `room` listeners (and makes `ctx.room()` return it). Live values and machines (the air exchange `On` / `Off`) from `reading`; the Air exchange card, glance row and ladder chip from `live.air`; the status chip changes after a reading that moves T out of band (the check saves the room's settings through the API with `spT` far from the room's T, then waits up to 65 s); charts, alarms and events load; a settings change shows the change list, saves, and Restore works; the `program-status` slot shows `flush <n>`; no console errors | Live tab |
+| `tests/web-room-simulate.test.js` + headless Chrome, Simulate tab | Node: the helpers of 3.10. Headless: a capacity check and a short cycle (settings with 1-day stages, 1 flush, `farmType: 'ready'`) finish, are stored (`listSimulations`), reopen (`getSimulation`), take a note and delete; the draft mix is saved only by **Save as this room's crop mix** (`getMix`); with saved machines (`saveEquipment` through the API first) the stored run's `inputs.equipment` holds them (with `air_m3h`); a stored run's `inputs.settings.airM3h` is the room's settings `airM3h` and `inputs.calibration` has exactly the keys `id`, `ua`, `inf_ach`, `moist_buffer`, `co2_per_block` (or is `null`); the Saved runs row of an equipment run shows its verdict chip and Energy `–`; the equipment slot sits after the Result card and before Saved runs | Simulate tab |
+| `tests/web-room-calibrate.test.js`, `tests/web-charts.test.js` (append) + headless Chrome, Calibrate tab | Node: `logFromReadings` (`air` from `r.air`), `pairSeries`, `differences`, `sameMachines` (`air_m3h`), `calibBody`, `envBaseFor` (`airM3h` from the settings; `plantOf` recorded, 3.11); the `drawCalibCharts` options and a `base` given as `{ series }`. No assertion on the `PARAMS` label or note text, nor on a fit result that needs `replay` to follow `stage` (3.11). Headless: a history fit stores a calibration with `source: 'history'`, `log_from`, `log_to` and `equipment` (2 h of readings written into the check database before `npm start`); a CSV fit stores `source: 'csv'`; after `saveEquipment` with other machines the warning `#cbStale` shows; Predicted vs real shows a short saved cycle against its readings and stores `real_start`; a start in the future shows `No real readings for this run yet.` with no `GET …/readings` | Calibrate tab |
+| `tests/web-room-link.test.js`, `tests/calib.test.js` (append) + headless Chrome, Test bench | The room link of 7.8 (`createRoomLink` from the Node export: every step of `load` and `save`, `dispose`); the registered simulator module's `mount(document.getElementById('view'), { roomId: 1 })`, called through a `FarmShell.register` spy or the recorded module, picks room 1 and shows the Load change list (the address `#/simulator/1` needs the Room shell's `parseHash`, so the lead checks it in wave 3); the calibration event text `heat through walls and roof`; `ClimateCalib.PARAMS.ua.label === 'Heat through walls and roof (W/K)'` and `PARAMS.ua.note` contains `outside is hotter`; `replay` follows a row's `stage` (a log switching from `fruiting` to `rest` replays with less CO₂ after the switch); every existing calib and bench test stays green | Bench |
+| `tests/web-room-equipment.test.js` + headless Chrome, Equipment card | Node: the card's helpers (3.12; `progressText` for kinds `ac`, `fogger`, `air`; `airNote`). Headless, after gate 2.5: the card mounted alone (3.9 "Headless checks of one tab") against the real server: save and reload the machines; after saving an `air_m3h` that differs from the room's settings `airM3h` the settings come in step and no note shows; changing the settings' `airM3h` afterwards (`saveSettings`) shows the air size note of 3.12, and saving the machines again brings the settings in step (`getSettings(1).airM3h` equals it after the save); a check with a short program (1-day stages, 1 flush, `ready`) finishes and is stored as kind `equipment` (`listSimulations(1)`). Fixes after gate 2.5 merge in wave 3 (lead decision 49). The card inside the Simulate tab is the lead's wave 3 check. | Equipment |
 | Headless Chrome, integration | Every row above on the merged code through the real room page; the Equipment card inside the Simulate tab (mount, **Check my machines** with a short program, the Saved runs row `Equipment`, **Open**) | Lead (wave 3) |
