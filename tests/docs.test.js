@@ -102,3 +102,24 @@ test('docs: README upgrades, stickers and farm time zone', () => {
   for (const v of versions.filter(v => v >= 2)) assert.ok(cells.includes(String(v)), `the upgrade table needs a row for upgrade ${v}`);
   for (const t of ['#/harvest/stickers', 'fixed address', 'TZ=Asia/Kuala_Lumpur']) assert.ok(md.includes(t), `README must contain "${t}"`);
 });
+
+// A real simulated adapter, made with the factory arguments of C2 12.2
+function adapter() {
+  require('../air.js');
+  require('../controller.js');
+  const { createSimAdapter } = require('../server/sim-adapter.js');
+  return createSimAdapter({ room: { id: 1, name: 'Room 1', volume: 60, adapter: 'sim', created_at: 0, archived_at: null }, calib: null, blocks: null, equipment: null, cfg: globalThis.ClimateController.defaultSettings(), snapshot: null, now: () => 1791446400 });
+}
+
+test('docs: contract.md lists every member of the server adapter', () => {
+  const cells = rows(read('docs/contract.md')).map(firstCell);
+  const a = adapter();
+  for (const k of Object.keys(a).filter(k => k !== 'io')) assert.ok(cells.some(c => c.includes('`' + k + '()`')), `contract.md needs a table row for ${k}()`);
+  for (const k of Object.keys(a.io)) assert.ok(cells.some(c => c.includes('`io.' + k + '(')), `contract.md needs a table row for io.${k}(`);
+});
+
+test('docs: contract.md lists every field of a simulated reading', () => {
+  const cells = rows(read('docs/contract.md')).map(firstCell);
+  const r = adapter().io.read();
+  for (const k of Object.keys(r)) assert.ok(cells.some(c => c.includes('`' + k + '`')), `contract.md needs a table row for the reading field ${k}`);
+});
