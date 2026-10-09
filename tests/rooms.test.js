@@ -8,6 +8,11 @@ require('../sim.js');
 require('../runtime.js');
 const CC = globalThis.ClimateController;
 const SIM = globalThis.ClimateSim;
+
+// C9 cross-stream gates: a test that needs another air-exchange stream is skipped (with this reason) until
+// the lead merges that stream at step 2. After the merge both are false and every test runs.
+const NEEDS_CTL = typeof CC.upgradeSettings !== 'function' && 'needs the controller stream (C9 section 5.2)';
+const NEEDS_SIM = !('airM3h' in SIM.DEFAULT_ENV) && 'needs the simulation stream (C9 section 4.1)';
 const { openFakeDb } = require('./fakes/db.js');
 const { fromJson, toJson } = require('../server/db-common.js');
 const { createSimAdapter, MAX_CATCH_UP_S, TZ_OFFSET_S, START_CO2 } = require('../server/sim-adapter.js');
@@ -235,7 +240,7 @@ test('sim adapter: resume from a snapshot', () => {
 test('rooms: exports', () => {
   assert.equal(typeof rooms.createRoomManager, 'function');
   assert.equal(typeof rooms.defaultAdapterFactory, 'function');
-  assert.deepEqual(rooms.TARGET_KEYS, Object.keys(CC.profileTargets('oyster', 'fruiting')));
+  assert.deepEqual(rooms.TARGET_KEYS, ['spT', 'spRH', 'co2Lim', 'rules.co2SafetyAt', 'rules.fanOn', 'rules.fanOff']);
   assert.equal(rooms.RoomError, roomsCommon.RoomError);
   assert.equal(rooms.DEMO_ROOM, roomsCommon.DEMO_ROOM);
   assert.equal(rooms.FIRST_NOTE, roomsCommon.FIRST_NOTE);
@@ -256,6 +261,10 @@ test('rooms: exports', () => {
   // only rules out server/db.js being reachable through rooms.js's own require graph.
   assert.ok(!('node:sqlite' in require.cache));
   assert.ok(!Object.keys(require.cache).some(k => /[\\/]server[\\/]db\.js$/.test(k)));
+});
+
+test('rooms: TARGET_KEYS follow the controller ramp keys (C9 section 6.3)', { skip: NEEDS_CTL }, () => {
+  assert.deepEqual(rooms.TARGET_KEYS, Object.keys(CC.profileTargets('oyster', 'fruiting')));
 });
 
 test('rooms: defaultAdapterFactory', () => {
@@ -1358,7 +1367,7 @@ test('Settings rules', () => {
   jump(1800);
   const keep = {
     spRH: cfg.spRH, co2Lim: cfg.co2Lim, fanOn: cfg.rules.fanOn, fanOff: cfg.rules.fanOff,
-    acOff: cfg.rules.acOff, acOn: cfg.rules.acOn, safetyAt: cfg.rules.co2SafetyAt,
+    safetyAt: cfg.rules.co2SafetyAt,
   };
   mgr.applySettings(1, { spT: 20 });
   assert.equal(cfg.spT, 20);
@@ -1366,8 +1375,6 @@ test('Settings rules', () => {
   assert.equal(cfg.co2Lim, keep.co2Lim);
   assert.equal(cfg.rules.fanOn, keep.fanOn);
   assert.equal(cfg.rules.fanOff, keep.fanOff);
-  assert.equal(cfg.rules.acOff, keep.acOff);
-  assert.equal(cfg.rules.acOn, keep.acOn);
   assert.equal(cfg.rules.co2SafetyAt, keep.safetyAt);
   assert.equal(db.loadControllerState(1).controller.stage.ramp, null);
 
@@ -1453,33 +1460,20 @@ test('Pair correction', () => {
 
   const imported = CC.importSettings({ format: 'mushroom-climate-settings', version: CC.SETTINGS_VERSION, settings: result.settings });
   assert.ok(!imported.warnings.some(w => w.includes('Fan stop level')));
-  assert.ok(!imported.warnings.some(w => w.includes('AC "until" level')));
 });
 
-// Note (contract gap, reported to the lead): the brief's own numbers for this test ("Same setup" as
-// "Pair correction", i.e. golden/pinning, then { rules: { acOff: 450 } } with "live acOn 450" expecting
-// acOff corrected to 500) cannot occur with this implementation. During the golden/pinning ramp, acOn
-// ramps *down* from the base's 700 to the live 450; cleanSettings merges the edit over the stale base
-// (acOn still 700 there), and `ClimateController.importSettings` enforces the same pair rule on that
-// merged object *before* step 7 runs: 700 > 450 - 50 is already true, so importSettings itself corrects
-// `acOn` down to 400, which then counts as "changed" in step 5 (next.acOn 400 !== base.acOn 700) -- so
-// step 7's "exactly one of the two keys changed" guard is never true and our correction never fires (the
-// version is stored as importSettings left it: acOff 450, acOn 400, with importSettings' own pair
-// warning, not ours). This is inherent to any ramp where the kept key moves *down* away from the base:
-// importSettings always corrects the low side first using the stale base value. The symmetric case this
-// test wants (only the high key in `changed`) needs a ramp where the kept low key moves *up* away from
-// the base instead (so the merged/base-relative check stays safe while the live-relative one does not);
-// oyster fruiting -> rest does that (co2Lim 1000 -> 2000, so acOn ramps 700 -> 1700), so it is used here.
+// The high key changed and the low key kept: oyster fruiting -> rest ramps fanOff 700 -> 1700 upwards, so
+// the edit merged over the stale base passes importSettings while the live check does not (C2 9.2 step 7).
 test('Pair correction, high key', () => {
   const s = scripted();
   const { mgr, jump } = setup(s.factory);
   mgr.start();
   mgr.applySettings(1, { stage: 'rest' });
-  jump(14256); // f = 0.99 along the ramp: live acOff 1890, acOn 1690
-  const result = mgr.applySettings(1, { rules: { acOff: 1650 } });
-  assert.equal(result.settings.rules.acOff, 1740);
-  assert.equal(result.settings.rules.acOn, 1690);
-  assert.deepEqual(result.warnings, ['"rules.acOff" = 1650 must be at least 50 ppm above "rules.acOn" (1690 now): set to 1740.']);
+  jump(14256); // f = 0.99 along the ramp: live fanOn 1890, fanOff 1690
+  const result = mgr.applySettings(1, { rules: { fanOn: 1650 } });
+  assert.equal(result.settings.rules.fanOn, 1740);
+  assert.equal(result.settings.rules.fanOff, 1690);
+  assert.deepEqual(result.warnings, ['"rules.fanOn" = 1650 must be at least 50 ppm above "rules.fanOff" (1690 now): set to 1740.']);
 });
 
 // ---------------------------------------------------------------------------

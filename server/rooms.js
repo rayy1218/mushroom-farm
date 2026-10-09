@@ -6,7 +6,7 @@ require('../runtime.js');
 const { createSimAdapter, MAX_CATCH_UP_S } = require('./sim-adapter.js');
 const { RoomError, DEMO_ROOM, FIRST_NOTE, cleanSettings } = require('./rooms-common.js');
 
-const TARGET_KEYS = ['spT', 'spRH', 'co2Lim', 'rules.co2SafetyAt', 'rules.fanOn', 'rules.fanOff', 'rules.acOff', 'rules.acOn'];
+const TARGET_KEYS = ['spT', 'spRH', 'co2Lim', 'rules.co2SafetyAt', 'rules.fanOn', 'rules.fanOff'];
 
 // Internal constants (not part of the module's exported surface, C2 section 1).
 const STATE_SAVE_S = 300;
@@ -578,7 +578,6 @@ function createRoomManager(options) {
 
     const pairWarnings = [];
     pairCorrect(cfg, 'rules.fanOn', 'rules.fanOff', changed, pairWarnings);
-    pairCorrect(cfg, 'rules.acOff', 'rules.acOn', changed, pairWarnings);
 
     const t = loop.runtime && loop.runtime.reading ? loop.runtime.reading.t : now();
     let stageCallMade = false;
