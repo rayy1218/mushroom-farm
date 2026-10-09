@@ -158,3 +158,14 @@ test('LV11 forms and change lines', () => {
   assert.equal(H.versionText({ id: 14, saved_at: 1791450100, note: null }, clock, false), '2026-10-08 17:01:40 · —');
   assert.deepEqual(H.changeLines(globalThis.FarmSettingsPanel.diffSettings(S, { ...S, spT: 20 })), ['Temperature target: 25 °C → 20 °C']);
 });
+
+test('LV12 rebase keeps the edits', () => {
+  const edit = o => ({ ...S, ...o });
+  const args = [S, edit({ spT: 20 }), edit({ spRH: 90 })], copies = structuredClone(args);
+  const r = H.rebase(...args);
+  assert.equal(r.settings.spT, 20); assert.equal(r.settings.spRH, 90); assert.equal(r.kept, 1);
+  assert.deepEqual(args, copies);
+  const same = H.rebase(S, structuredClone(S), edit({ spRH: 90 }));
+  assert.deepEqual(same.settings, edit({ spRH: 90 })); assert.equal(same.kept, 0);
+  assert.equal(H.rebase(S, edit({ spT: 20 }), edit({ spT: 22 })).settings.spT, 20);
+});

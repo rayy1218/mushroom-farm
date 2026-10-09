@@ -139,8 +139,12 @@ const versionText = (v, clock, current) => `${clock.stamp(v.saved_at)} · ${v.no
 
 const helpers = { airLive, airSub, windowQuery, gapFor, reconnectQuery, chartTargets, toChartPoint, retarget, mergePoints,
   readingTexts, machineLines, programText, commandFromReading, alarmTexts, mergeEvent, detailChanges, countText, changeLines, versionText };
-const todo = name => () => { throw new Error(`${name} is not built yet`); };
-helpers.rebase = todo('rebase');
+function rebase(from, edited, to) {
+  const SP = global.FarmSettingsPanel;
+  const pending = SP.diffSettings(from, edited);
+  return { settings: SP.applyChanges(to, pending), kept: pending.length };
+}
+helpers.rebase = rebase;
 
 function mount() {}
 function unmount() {}
