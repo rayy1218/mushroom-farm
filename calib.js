@@ -34,7 +34,7 @@
   };
   // Room values that a fit can change. [min, max] keeps the search physical.
   const PARAMS = {
-    ua: { label: 'Room heat loss (W/K)', min: 20, max: 400, where: 'room' },
+    ua: { label: 'Heat through walls and roof (W/K)', note: 'Heat flows out when the room is warmer than outside, in when outside is hotter.', min: 20, max: 400, where: 'room' },
     infAch: { label: 'Air leakage (changes/h)', min: 0.05, max: 3, where: 'room' },
     moistBuffer: { label: 'Moisture buffer (×)', min: 1, max: 10, where: 'room' },
     co2PerBlock: { label: 'CO₂ per block (mL/h)', min: 5, max: 300, where: 'env' },
@@ -109,6 +109,7 @@
         out.push({ t: r.t, T: v.T, RH: v.RH, CO2: v.CO2 });
         for (const k of ['T', 'RH', 'CO2']) if (Number.isFinite(r[k])) { const d = v[k] - r[k]; sq[k][0] += d * d; sq[k][1]++; }
         cmd = cmdOf(r); if (cmd.lights === undefined) delete cmd.lights;
+        if (Object.hasOwn(SIM.PLANT.blockStage, r.stage)) sim.env.blockStage = r.stage;
         i++;
       }
       if (i >= rows.length) break;
