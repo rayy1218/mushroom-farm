@@ -141,3 +141,34 @@ test('SM7 runRowTexts', () => {
   assert.deepEqual(chip('capacity', 'xyz'), I('xyz'));
   assert.deepEqual(chip('equipment', 'xyz'), I('xyz'));
 });
+
+test('SM8 progressText', () => {
+  assert.equal(H.progressText({ day: 3, days: 83, stage: 'spawn', flush: 1 }), 'Day 3 of 83 · Spawn run');
+  assert.equal(H.progressText({ day: 40, days: 83, stage: 'fruiting', flush: 2 }), 'Day 40 of 83 · Fruiting · flush 2');
+  assert.equal(H.progressText({ day: 50, days: 83, stage: 'rest', flush: 2 }), 'Day 50 of 83 · Rest between flushes · flush 2');
+  assert.equal(H.progressText({ runs: 3, blocks: 1600, pass: true }), 'Simulation run 3: 1,600 blocks, pass…');
+  assert.equal(H.progressText({ runs: 3, blocks: 1600, pass: false }), 'Simulation run 3: 1,600 blocks, fail…');
+});
+
+test('SM9 machinesText', () => {
+  assert.equal(H.machinesText(null), 'Typical machines');
+  assert.equal(H.machinesText({ ac_hp: 2.5, ac_units: 1, fog_lph: 3, air_m3h: 1800, walls: null, roof: null, height: 3 }),
+    '2.5 hp aircond · 3 L/h fogger · 1,800 m³/h air exchange · Typical walls');
+  assert.equal(H.machinesText({ ...EQUIP, ac_units: 2 }), '2 × 2.5 hp aircond · 3 L/h fogger · 1,200 m³/h air exchange · PU panel 50 mm walls and roof');
+  assert.ok(H.machinesText({ ...EQUIP, walls: 'brick115', roof: 'zinc' }).endsWith('Brick 115 mm, plastered walls, Zinc sheet, no insulation roof'));
+});
+
+test('SM10 inputs', () => {
+  assert.equal(H.clampBlocks('12.6'), 13);
+  assert.equal(H.clampBlocks('-5'), 0);
+  assert.equal(H.clampBlocks('300000'), 200000);
+  assert.equal(H.clampBlocks(''), 0);
+  assert.equal(H.clampBlocks('abc'), 0);
+  assert.equal(H.clampCo2(''), null);
+  assert.equal(H.clampCo2('0'), 1);
+  assert.equal(H.clampCo2('55.4'), 55);
+  assert.equal(H.clampCo2('5000'), 1000);
+  assert.equal(H.clampCo2('x'), null);
+  assert.equal(H.regionText('my-lowland'), 'Lowland Peninsular Malaysia');
+  assert.equal(H.regionText('x'), 'x');
+});

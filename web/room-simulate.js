@@ -75,9 +75,31 @@ function runRowTexts(info) {
   return { run: `${KIND_NAME[info.kind] || info.kind} · ${global.FarmUi.farmClock().stamp(info.created_at)}`, mix: parts.length ? parts.join(' + ') : '–',
     chip: runChip(info.kind, info.verdict), energy, note: info.note ?? '' };
 }
-const stub = () => { throw new Error('not built yet'); };
+const int = x => String(Math.round(x)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+function progressText(p) {
+  if (p.day === undefined) return `Simulation run ${p.runs}: ${global.FarmUi.nf(p.blocks)} blocks, ${p.pass ? 'pass' : 'fail'}…`;
+  const flush = p.stage === 'fruiting' || p.stage === 'rest' ? ` · flush ${p.flush}` : '';
+  return `Day ${p.day} of ${p.days} · ${global.ClimateController.STAGES[p.stage]}${flush}`;
+}
+function machinesText(eq) {
+  if (!eq) return 'Typical machines';
+  const label = k => global.ClimateEquipment.CONSTRUCTIONS[k].label;
+  const ac = eq.ac_units > 1 ? `${eq.ac_units} × ${eq.ac_hp} hp` : `${eq.ac_hp} hp`;
+  const walls = eq.walls === null && eq.roof === null ? 'Typical walls' : eq.walls === eq.roof ? `${label(eq.walls)} walls and roof`
+    : `${label(eq.walls)} walls, ${label(eq.roof)} roof`;
+  return `${ac} aircond · ${eq.fog_lph} L/h fogger · ${int(eq.air_m3h)} m³/h air exchange · ${walls}`;
+}
+function clampBlocks(text) {
+  const n = Math.round(+text);
+  return text === '' || !Number.isFinite(n) ? 0 : Math.min(200000, Math.max(0, n));
+}
+function clampCo2(text) {
+  const n = Math.round(+text);
+  return text === '' || !Number.isFinite(n) ? null : Math.min(1000, Math.max(1, n));
+}
+const regionText = key => (key === 'my-lowland' ? 'Lowland Peninsular Malaysia' : key);
 const helpers = { toCapacityMix, toMixRows, sameMix, appliedCalib, runInputs, cycleSummary, stageRows,
-  seriesPoints, runRowTexts, progressText: stub, machinesText: stub, clampBlocks: stub, clampCo2: stub, regionText: stub };
+  seriesPoints, runRowTexts, progressText, machinesText, clampBlocks, clampCo2, regionText };
 
 function mount() {}
 function unmount() {}
