@@ -223,7 +223,7 @@
   function freshState(cfg) {
     return {
       lastT: null, sensors: {}, alarms: {}, v: {}, f: {},
-      rhLocked: false, co2SafetyOn: false,
+      rhLocked: false, rhRecovered: false, co2SafetyOn: false,
       trim: 0, acMode: 'cool', dryOn: false, heatSince: null, coolSince: null, drySince: null,
       stage: { since: null, flush: 1, ramp: null, done: false }, harvestOn: false, harvestWin: null, harvestFog: false,
       huOn: false, fanDryOn: false, fogCoolOn: false, fogFullSince: null,
@@ -250,7 +250,7 @@
     for (const g of ['cmd', 'req']) { s[g].air = { on }; delete s[g].fan; }
     s.out.air = s.out.fan || { since: null }; delete s.out.fan;
     for (const g of ['hold', 'why']) { s[g].air = s[g].fan || ''; delete s[g].fan; }
-    s.air = airInit(); s.airReason = null; s.airPts = []; s.airRate = null; s.airRunCapped = false;
+    s.air = airInit(); s.airReason = null; s.airPts = []; s.airRate = null; s.airRunCapped = false; s.rhRecovered = false;
     const hours = (s.exh && s.exh.hours) || [];
     s.purgeRec = { cur: null, events: [], hours: hours.map(b => ({ h: b.h, runS: b.runS || 0, starts: b.starts || 0, m3: b.m3 || 0, cappedN: 0, fogLS: b.fogLS || 0, acHighS: b.acHighS || 0, acLowS: b.acLowS || 0 })) };
     delete s.exh;
@@ -512,7 +512,6 @@
     // 5.5: after 3 capped purges in a row, the size the room needs, from the last rise rate with the fans off.
     function sizeCheck(t) {
       const R = cfg.rules, A = st.air, AIR = global.ClimateAir;
-      st.rhRecovered = false;                                                // set by humidityFirst when RH ends the lock
       const head = `Purges don't reach ${R.fanOff} ppm in ${+(R.purgeMaxS / 60).toFixed(1)} min`;
       if (st.airRate > 0) {
         const prod = AIR.prodFromRise({ ratePpmS: st.airRate, volume: cfg.roomM3, co2: st.v.CO2, co2Out: CO2_OUT });
@@ -538,6 +537,7 @@
     // Rise rate and next purge, P1 CO2 safety level, P2 humidity first and the purge states. Runs before the AC and the fogger.
     function airPlan(v, f, t, prevOn) {
       const R = cfg.rules, A = st.air, AIR = global.ClimateAir;
+      st.rhRecovered = false;                                                // set by humidityFirst when RH ends the lock
       // Rise rate (5.4): the good CO2 readings since the last air run ended (at most AIR_POINTS)
       if (prevOn) st.airPts = [];
       else if (!f.CO2 && ['CO2', 'CO2b'].some(k => st.sensors[k] && st.sensors[k].goodT === t)) {

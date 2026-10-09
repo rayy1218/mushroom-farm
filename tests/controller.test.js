@@ -626,6 +626,14 @@ test('"Purge allowed again" is said only when RH recovers, not when the lock dro
   const b = delayed();
   b.feed(360, { CO2: 950, RH: 87.2, ...DRY });
   assert.ok(b.events.some(e => e.text === 'Purge allowed again: humidity recovered'), 'RH recovered');
+  const allowed = () => b.events.filter(e => e.text === 'Purge allowed again: humidity recovered').length;
+  assert.equal(allowed(), 1);
+  for (let t = 390; t <= 960; t += 30) b.feed(t, { CO2: 850 + (t % 60 ? 1 : 0), ...lowRH(t) });   // fog to full again, lock again
+  b.feed(990, { CO2: 950, ...lowRH(990) });
+  assert.equal(b.ctl.state.air.delayed, true, 'delayed again');
+  b.cfg.manual.air = { auto: false, on: false };
+  b.feed(1020, { CO2: 950, ...lowRH(1020) });
+  assert.equal(allowed(), 1, 'manual control: no second event');
 });
 
 test('switching to manual during a CO2 sensor fault does not say the sensor is back', () => {
