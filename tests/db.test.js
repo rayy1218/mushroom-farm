@@ -21,9 +21,9 @@ const TARGETS = [
   ['fake', o => openFakeDb(o)],
 ];
 
-function both(name, fn, fakeSkip) {
+function both(name, fn) {
   for (const [label, open] of TARGETS) {
-    test(`${label}: ${name}`, label === 'fake' && fakeSkip ? { skip: fakeSkip } : {}, t => fn(t, open));
+    test(`${label}: ${name}`, t => fn(t, open));
   }
 }
 
@@ -468,6 +468,9 @@ both('createRoom: vent is an unknown field (C9 6.1)', (t, open) => {
   t.after(() => db.close());
   assert.throws(() => db.createRoom(roomInput({ vent: 'supply' })), { name: 'TypeError', message: 'createRoom: unknown field "vent"' });
   assert.deepStrictEqual(db.listRooms(), []);
+  const room = db.createRoom(roomInput());
+  assert.deepStrictEqual(Object.keys(room), ['id', 'name', 'volume', 'adapter', 'created_at', 'archived_at']);
+  assert.deepStrictEqual(Object.keys(db.getRoom(room.id)), Object.keys(room));
 });
 
 // ---------------------------------------------------------------------------
@@ -1759,6 +1762,13 @@ both('every function throws NotFoundError(room) for an unknown room', (t, open) 
     ['replaceMix', [999, []]],
     ['saveCapacityReport', [999, { report: report() }]],
     ['latestCapacityReport', [999]],
+    ['saveSimulationRun', [999, simRun()]],
+    ['listSimulationRuns', [999]],
+    ['getSimulationRun', [999, 1]],
+    ['updateSimulationRun', [999, 1, {}]],
+    ['deleteSimulationRun', [999, 1]],
+    ['getEquipment', [999]],
+    ['saveEquipment', [999, equipment()]],
   ];
   for (const [name, args] of calls) {
     assertNotFound(() => db[name](...args), 'room', 999);
@@ -1782,6 +1792,11 @@ both('constraint rules: one row per rule, nothing stored', (t, open) => {
   assertSql(() => db.insertReading(roomId, reading(T0, { circ: 2 })), 275);
   assertSql(() => db.addEvent(roomId, { t: T0, level: 'debug', text: 'x' }), 275);
   assertSql(() => db.raiseAlarm(roomId, { alarm_key: 'x', level: 'info', label: 'x' }), 275);
+  assertSql(() => db.insertReading(roomId, reading(T0, { ac_fan: 'max' })), 275);
+  assertSql(() => db.saveCalibration(roomId, calibRun({ source: 'web' })), 275);
+  { const r = simRun(); r.result.totals.days = 0; assertSql(() => db.saveSimulationRun(roomId, r), 275); }
+  assertSql(() => db.saveSimulationRun(roomId, simRun({ inputs: { mix: [{ blocks: -1 }] } })), 275);
+  assertSql(() => db.saveEquipment(roomId, equipment({ height: 7 })), 275);
 
   // NOT NULL (1299)
   { const r = roomInput(); delete r.name; assertSql(() => db.createRoom(r), 1299); }
@@ -1800,6 +1815,8 @@ both('constraint rules: one row per rule, nothing stored', (t, open) => {
   assertSql(() => db.replaceMix(roomId, [{ blocks: 1 }]), 1299);
   assertSql(() => db.saveCapacityReport(roomId, {}), 1299);
   assertSql(() => db.saveControllerState(roomId, {}), 1299);
+  { const r = simRun(); delete r.inputs; assertSql(() => db.saveSimulationRun(roomId, r), 1299); }
+  assertSql(() => db.saveEquipment(roomId, equipment({ height: null })), 1299);
 
   // Type (3091)
   assertSql(() => db.insertReading(roomId, reading(T0, { t: 1.5 })), 3091);
@@ -1813,6 +1830,11 @@ both('constraint rules: one row per rule, nothing stored', (t, open) => {
   assertSql(() => db.saveCalibration(roomId, calibRun({ log_rows: 1.5 })), 3091);
   assertSql(() => db.replaceMix(roomId, [{ crop: 'a', blocks: 1.5 }]), 3091);
   assertSql(() => db.saveCapacityReport(roomId, { report: report({ utilisation: 74.5 }) }), 3091);
+  assertSql(() => db.insertReading(roomId, reading(T0, { core: 'abc' })), 3091);
+  assertSql(() => db.saveCalibration(roomId, calibRun({ log_to: 1.5 })), 3091);
+  { const r = simRun(); r.result.totals.days = 1.5; assertSql(() => db.saveSimulationRun(roomId, r), 3091); }
+  assertSql(() => db.saveSimulationRun(roomId, simRun({ real_start: 1.5 })), 3091);
+  assertSql(() => db.saveEquipment(roomId, equipment({ at: 1.5 })), 3091);
 
   // Every one of the rows above wrote nothing (C1 section 8 "Constraint errors ... stores nothing").
   assert.equal(db.latestReading(roomId), null);
@@ -1822,6 +1844,8 @@ both('constraint rules: one row per rule, nothing stored', (t, open) => {
   assert.deepStrictEqual(db.getMix(roomId), []);
   assert.equal(db.latestCapacityReport(roomId), null);
   assert.equal(db.loadControllerState(roomId), null);
+  assert.deepStrictEqual(db.listSimulationRuns(roomId), []);
+  assert.equal(db.getEquipment(roomId), null);
   assert.deepStrictEqual(db.listRooms({ includeArchived: true }), [room]);
   assert.deepStrictEqual(db.getRoom(roomId), room);
 });
@@ -1863,6 +1887,12 @@ both('left-out at/run_at equals now(), clock moved between calls', (t, open) => 
 
   clock = T0 + 10;
   assert.equal(db.saveCapacityReport(room.id, { report: report() }).run_at, T0 + 10);
+
+  clock = T0 + 11;
+  assert.equal(db.saveSimulationRun(room.id, simRun()).created_at, T0 + 11);
+
+  clock = T0 + 12;
+  assert.equal(db.saveEquipment(room.id, equipment()).saved_at, T0 + 12);
 });
 
 // ---------------------------------------------------------------------------
@@ -1885,9 +1915,13 @@ both('rows of every shape are plain objects', (t, open) => {
   const calib = db.saveCalibration(room.id, calibRun());
   const [mixRow] = db.replaceMix(room.id, [{ crop: 'oyster', blocks: 1 }]);
   const capacity = db.saveCapacityReport(room.id, { report: report() });
+  const simulation = db.saveSimulationRun(room.id, simRun());
+  const [simulationInfo] = db.listSimulationRuns(room.id);
+  const eq = db.saveEquipment(room.id, equipment());
 
   for (const row of [
     room, settings, historyRow, readingRow, bucketRow, event, alarm, controllerState, calib, mixRow, capacity,
+    simulation, simulationInfo, eq,
   ]) {
     assert.equal(Object.getPrototypeOf(row), Object.prototype);
   }
