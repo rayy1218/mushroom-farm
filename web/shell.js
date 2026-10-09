@@ -4,24 +4,46 @@
 
 const registry = {};
 let current = null; // { name, params, module }
-const MENU_NAMES = { rooms: 'Rooms', simulator: 'Simulator', capacity: 'Capacity', calibration: 'Calibration' };
+const MENU_NAMES = Object.freeze({ rooms: 'Rooms', simulator: 'Test bench', batches: 'Batches', harvest: 'Harvest' });
 const ROOM_ID_RE = /^[1-9][0-9]{0,14}$/;
+const TABS = ['live', 'simulate', 'calibrate']; // the names of FarmRoomTabs.NAMES (C5 3.9); not read here so the file loads alone in Node
+const isId = s => ROOM_ID_RE.test(s);
 
-// Parses location.hash into { name, params } (2.1), or null for an unknown hash (redirect to the default route).
+// Parses location.hash into { name, params } (C5 2.1, C10 11), { redirect } for '#/rooms/:id', or null (redirect to the default route).
 // The hash must start with '#/': a missing leading slash ('#rooms') or an empty segment ('#//simulator',
-// '#/rooms//3') is "anything else" (C5 2.1) and does not route.
+// '#/rooms//3') is "anything else" and does not route.
 function parseHash(hash) {
   let h = hash || '';
   if (!h.startsWith('#/')) return null;
   h = h.slice(1);
   if (h.length > 1 && h.endsWith('/')) h = h.slice(0, -1);
   const parts = h.split('/'); // h starts with '/', so parts[0] is always ''
-  if (parts.length === 2) {
-    const name = parts[1];
-    if (name === 'rooms' || name === 'simulator' || name === 'capacity' || name === 'calibration') return { name, params: {} };
+  parts.shift();
+  const [name, a, b, c] = parts;
+  if (parts.some(x => x === '')) return null;
+  const n = parts.length;
+  if (name === 'rooms') {
+    if (n === 1) return { name, params: {} };
+    if (!isId(a)) return null;
+    const id = Number(a);
+    if (n === 2) return { redirect: `#/rooms/${id}/live` };
+    if (!TABS.includes(b)) return null;
+    if (n === 3) return { name, params: { id, tab: b } };
+    if (n === 4 && b === 'calibrate' && isId(c)) return { name, params: { id, tab: b, runId: Number(c) } };
     return null;
   }
-  if (parts.length === 3 && parts[1] === 'rooms' && ROOM_ID_RE.test(parts[2])) return { name: 'rooms', params: { id: Number(parts[2]) } };
+  if (name === 'simulator') {
+    if (n === 1) return { name, params: {} };
+    return n === 2 && isId(a) ? { name, params: { roomId: Number(a) } } : null;
+  }
+  if (name === 'batches') {
+    if (n === 1) return { name, params: {} };
+    return n === 2 && isId(a) ? { name, params: { id: Number(a) } } : null;
+  }
+  if (name === 'harvest' && n === 2) {
+    if (a === 'stickers') return { name, params: { view: 'stickers' } };
+    return isId(a) ? { name, params: { view: 'record', id: Number(a) } } : null;
+  }
   return null;
 }
 function paramsEqual(a, b) {
@@ -34,21 +56,39 @@ function showNotice(view, text) {
   view.append(p);
 }
 
+// Step 5: menu marking, title and the bare layout (lead decision 66). The shell owns body[data-layout].
+function menuLink(parsed) {
+  if (parsed.name !== 'harvest') return parsed.name;
+  return parsed.params.view === 'stickers' ? 'batches' : null;
+}
+function applyChrome(parsed) {
+  const link = menuLink(parsed);
+  document.querySelectorAll('#menu a').forEach(a => {
+    if (link && a.dataset.module === link) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+  });
+  document.title = `${MENU_NAMES[parsed.name]} · Mushroom farm`;
+  if (parsed.name === 'harvest' && parsed.params.view === 'record') document.body.dataset.layout = 'bare';
+  else delete document.body.dataset.layout;
+}
+
 function route() {
   const parsed = parseHash(location.hash);
   if (!parsed) { location.replace('#/rooms'); return; }
+  if (parsed.redirect) { location.replace(parsed.redirect); return; }
   const { name, params } = parsed;
   if (current && current.name === name && paramsEqual(current.params, params)) return;
+  if (current && current.name === name && current.module && typeof current.module.update === 'function') {
+    let kept = false;
+    try { kept = current.module.update(params) === true; } catch (err) { console.error(err); }
+    if (kept) { current.params = params; applyChrome(parsed); return; }
+  }
   if (current && current.module) {
     try { current.module.unmount(); } catch (err) { console.error(err); }
   }
   const view = document.getElementById('view');
   view.replaceChildren();
   for (const attr of Array.from(view.attributes)) { if (attr.name !== 'id') view.removeAttribute(attr.name); }
-  document.querySelectorAll('#menu a').forEach(a => {
-    if (a.dataset.module === name) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
-  });
-  document.title = `${MENU_NAMES[name]} · Mushroom farm`;
+  applyChrome(parsed);
   const module = registry[name];
   const token = current = { name, params, module };
   if (!module) { showNotice(view, 'This part of the app is not installed.'); return; }
@@ -96,6 +136,8 @@ function init() {
 
 const FarmShell = {
   register,
+  MENU_NAMES,
+  parseHash,
   get level() { return document.body.dataset.level; },
 };
 
