@@ -134,7 +134,7 @@ A pure module in the style of `capacity.js`: an IIFE that sets `global.ClimateAi
 | State | Enter when | Fans (`req.air.on`) | Leave |
 |---|---|---|---|
 | `idle` | Start, or a purge ended and `minOffS` passed | Off | → `prepare` (5.4), → `purge` at the start level |
-| `prepare` | `rules.prepare`, the CO₂ sensor is good, and `0 < nextPurgeS ≤ prepareLeadS` | Off | → `purge` at the start level; → `idle` when the prediction is gone or > `prepareLeadS` |
+| `prepare` | `rules.prepare`, the CO₂ sensor is good, `0 < nextPurgeS ≤ prepareLeadS`, and `gapS ≥ 2 × prepareLeadS` (5.4) | Off | → `purge` at the start level; → `idle` when the prediction is gone or > `prepareLeadS` |
 | `purge` | CO₂ ≥ `fanOn`, `minOffS` passed since the last air run, and not delayed (5.6) | On | → `after` when CO₂ ≤ `fanOff` and the purge has run ≥ 30 s, or when it has run `purgeMaxS` (a capped purge) |
 | `after` | A purge ended | Off | → `idle` after `minOffS` |
 
@@ -155,10 +155,11 @@ A pure module in the style of `capacity.js`: an IIFE that sets `global.ClimateAi
 | Points | The good CO₂ readings (`t`, `CO2`) since the last air run ended; at most the last 20 |
 | Rise rate | `ClimateAir.riseRate(points)` |
 | `nextPurgeS` | `(fanOn − CO2) / rate` when `rate > 0` and CO₂ < `fanOn`; `0` at or above `fanOn`; `null` otherwise |
+| `gapS` | The expected time between purges: `(fanOn − fanOff) / rate` when `rate > 0`, else `null`. Prepare acts only when `gapS ≥ 2 × prepareLeadS`: with frequent purges (many blocks) it would hold the room at the band edge all the time, which a 24 h prototype showed costs time in band (RH in band 94.7 % → 85.4 %, 6000 blocks at 1800 m³/h). |
 | Push of temperature | `pushT = tOut − T` (°C) |
 | Push of humidity | `pushAH = ahOf(tOut, rhOut) − ahOf(T, RH)` (g/m³) |
-| `prepT` | `−0.8 × BANDS.T` when `pushT ≥ 0.5`; `+0.8 × BANDS.T` when `pushT ≤ −0.5`; else `0` |
-| `prepRH` | `−0.8 × BANDS.RH` when `pushAH ≥ 0.5`; `+0.8 × BANDS.RH` when `pushAH ≤ −0.5`; else `0` |
+| `prepT` | `−0.5 × BANDS.T` when `pushT ≥ 0.5`; `+0.5 × BANDS.T` when `pushT ≤ −0.5`; else `0` |
+| `prepRH` | `−0.5 × BANDS.RH` when `pushAH ≥ 0.5`; `+0.5 × BANDS.RH` when `pushAH ≤ −0.5`; else `0` |
 | No outdoor reading | An outdoor sensor fault (`f.out`) gives `prepT = prepRH = 0` |
 | Room sensor fault | `prepT = 0` with a T fault; `prepRH = 0` with a T or RH fault |
 | `rules.prepare` off | No offsets at all, in any state |

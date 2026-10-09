@@ -327,7 +327,7 @@ test('Prepare on vs off: more time in the temperature and RH bands with Prepare 
 });
 ```
 
-- [ ] **Step 4:** `node --test tests/integration.test.js` → pass. If the Prepare test fails, record both numbers and stop: that is a design finding for the user, not a test to loosen.
+- [ ] **Step 4:** `node --test tests/integration.test.js` → pass. The Prepare test decides the default (owner decision 2026-10-09): if Prepare on is not better than off, set `rules.prepare` default to `false` in `controller.js`, change the test to assert that default with both numbers in a comment, and report the numbers to the user. Also run the Prepare comparison at 2000 blocks (purges far apart, where Prepare acts) and report both results.
 - [ ] **Step 5: Commit** `git commit -am "test(integration): air exchange purges, size alarm, Prepare benefit (C9 section 11)"`
 
 ### Task 2.4: Re-measure the C7 example numbers

@@ -74,16 +74,16 @@ In Malaysia a purge does not always dry the room: outdoor air at 33 °C and 60 %
 | Rise rate | Least-squares slope of CO₂ against time over the readings since the fans last stopped, needing at least 4 readings (2 min at the default 30 s reading period) |
 | Predicted time to purge | (start level − CO₂ now) ÷ rise rate |
 | No prediction | Rise rate ≤ 0, or fewer than 4 readings: Prepare waits |
-| Many blocks | When the time between purges is shorter than `prepareLeadS`, Prepare simply holds between purges |
+| Many blocks | Prepare acts only when the expected time between purges is at least `2 × prepareLeadS`. With frequent purges it would hold the room at the band edge all the time; a 24 h prototype (6000 blocks, 1800 m³/h) showed RH in band falling from 94.7 % to 85.4 % that way (owner decision, 2026-10-09). |
 
 ### 2.3 Prepare targets
 
 | Quantity | Push of the purge | Prepare target |
 |---|---|---|
-| Temperature | Outdoor temperature above room temperature (purge warms) | `spT − 0.8 × BANDS.T` (bottom of the band) |
-| Temperature | Outdoor temperature below room temperature (purge cools) | `spT + 0.8 × BANDS.T` (top of the band) |
-| RH | Outdoor absolute humidity above the room's (purge wets) | `rhT − 0.8 × BANDS.RH` (bottom of the band) |
-| RH | Outdoor absolute humidity below the room's (purge dries) | `rhT + 0.8 × BANDS.RH` (top of the band) |
+| Temperature | Outdoor temperature above room temperature (purge warms) | `spT − 0.5 × BANDS.T` (bottom of the band) |
+| Temperature | Outdoor temperature below room temperature (purge cools) | `spT + 0.5 × BANDS.T` (top of the band) |
+| RH | Outdoor absolute humidity above the room's (purge wets) | `rhT − 0.5 × BANDS.RH` (bottom of the band) |
+| RH | Outdoor absolute humidity below the room's (purge dries) | `rhT + 0.5 × BANDS.RH` (top of the band) |
 | Either | Push smaller than 0.5 °C or 0.5 g/m³, or an outdoor sensor fault | No change |
 
 ### 2.4 Rules around the purge
