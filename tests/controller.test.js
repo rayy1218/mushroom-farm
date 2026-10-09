@@ -598,3 +598,43 @@ test('sensor check: a falling CO2 is no spike while the fans run and for one rea
   b.feed(30, { CO2: 1700 });                                    // +1400 ppm/min with the fans on: a rise is still tested
   assert.deepEqual([b.ctl.state.v.CO2, b.ctl.state.sensors.CO2.why], [1000, 'sudden jump (spike)']);
 });
+
+// ---------- Spec review fixes (C9 5.5, 5.6, 5.7) ----------
+test('the size text when outside air alone cannot reach the stop level', () => {
+  const { feed, ctl, cfg } = make({ rules: { fanOff: 410 } });
+  cfg.airM3h = 900;
+  const r = room({ airM3h: 900 });
+  let on = false;
+  for (let t = 0; t <= 1800; t += 30) { if (t) r.step(on, 30); on = feed(t, { CO2: r.C }).air.on; }
+  assert.ok(ctl.state.air.capRun >= 3);
+  assert.equal(ctl.state.air.sizeText, "Purges don't reach 410 ppm in 3 min: outside air alone cannot bring CO₂ this low; raise the stop level.");
+});
+
+test('"Purge allowed again" is said only when RH recovers, not when the lock drops for another reason', () => {
+  const delayed = () => {
+    const a = make();
+    for (let t = 0; t <= 300; t += 30) a.feed(t, { CO2: 850 + (t % 60 ? 1 : 0), ...lowRH(t) });
+    a.feed(330, { CO2: 950, ...lowRH(330) });
+    assert.equal(a.ctl.state.air.delayed, true);
+    return a;
+  };
+  const a = delayed();
+  a.cfg.manual.air = { auto: false, on: false };
+  a.feed(360, { CO2: 950, ...lowRH(360) });
+  assert.equal(a.ctl.state.air.delayed, false);
+  assert.equal(a.events.some(e => e.text === 'Purge allowed again: humidity recovered'), false, 'manual control');
+  const b = delayed();
+  b.feed(360, { CO2: 950, RH: 87.2, ...DRY });
+  assert.ok(b.events.some(e => e.text === 'Purge allowed again: humidity recovered'), 'RH recovered');
+});
+
+test('switching to manual during a CO2 sensor fault does not say the sensor is back', () => {
+  const { feed, ctl, cfg, events } = make();
+  feed(0, { CO2: 800 });
+  for (const t of [30, 60, 90]) feed(t, { CO2: null });
+  assert.equal(ctl.state.air.timed, true);
+  cfg.manual.air = { auto: false, on: false };
+  feed(120, { CO2: null });
+  assert.equal(ctl.state.air.timed, false);
+  assert.equal(events.some(e => e.text === 'CO₂ sensor back: timed purge ended'), false);
+});

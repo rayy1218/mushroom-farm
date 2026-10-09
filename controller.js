@@ -19,7 +19,8 @@
  *      after the set days, flush count, and the daily harvest windows (fogger off before picking).
  *   1. Check each sensor value. A bad value is not used; 3 bad readings = sensor fault.
  *   2. Purge cycle: idle -> purge -> after -> idle. The CO2 rise with the fans off predicts the next purge
- *      (shown to the grower). The AC and the fogger keep their normal targets through a purge. A purge runs from the start level (fanOn) to the stop level (fanOff), at most purgeMaxS.
+ *      (shown to the grower). The AC and the fogger keep their normal targets through a purge.
+ *      A purge runs from the start level (fanOn) to the stop level (fanOff), at most purgeMaxS.
  *      3 capped purges in a row: the "air exchange too small" alarm, with the size the room needs.
  *   3. Rules for the air exchange, highest priority first:
  *        Manual  the grower's on/off.
@@ -511,6 +512,7 @@
     // 5.5: after 3 capped purges in a row, the size the room needs, from the last rise rate with the fans off.
     function sizeCheck(t) {
       const R = cfg.rules, A = st.air, AIR = global.ClimateAir;
+      st.rhRecovered = false;                                                // set by humidityFirst when RH ends the lock
       const head = `Purges don't reach ${R.fanOff} ppm in ${+(R.purgeMaxS / 60).toFixed(1)} min`;
       if (st.airRate > 0) {
         const prod = AIR.prodFromRise({ ratePpmS: st.airRate, volume: cfg.roomM3, co2: st.v.CO2, co2Out: CO2_OUT });
@@ -530,7 +532,7 @@
       const stopAt = st.rhT - R.rhStop, resumeAt = st.rhT - R.rhResume;
       if (!R.rhLock || f.RH || st.harvestOn) st.rhLocked = false;
       else if (!st.rhLocked && v.RH <= stopAt && st.fogFullSince != null && t - st.fogFullSince >= FOG_FULL_S && pushAH != null && pushAH <= -0.5) st.rhLocked = true;
-      else if (st.rhLocked && v.RH >= resumeAt) st.rhLocked = false;
+      else if (st.rhLocked && v.RH >= resumeAt) { st.rhLocked = false; st.rhRecovered = true; }
       A.delayed = st.rhLocked && A.state !== 'purge' && v.CO2 >= R.fanOn && v.CO2 < cfg.co2Lim;
     }
     // Rise rate and next purge, P1 CO2 safety level, P2 humidity first and the purge states. Runs before the AC and the fogger.
@@ -894,8 +896,9 @@
       if (now.mode !== p.mode) say(t, 'info', `AC mode: ${now.mode}` + man('ac'));
       if (now.safety !== p.safety) say(t, now.safety ? 'critical' : 'good', now.safety ? 'CO₂ safety level: the air exchange runs, ignoring the time cap' : 'CO₂ below the safety level');
       if (now.delayed && !p.delayed) say(t, 'warning', 'Purge delayed: humidity first');
-      else if (!now.delayed && p.delayed && !st.rhLocked) say(t, 'good', 'Purge allowed again: humidity recovered');
-      if (now.timed !== p.timed) say(t, now.timed ? 'serious' : 'good', now.timed ? 'CO₂ sensor fault: timed purge started' : 'CO₂ sensor back: timed purge ended');
+      else if (!now.delayed && p.delayed && st.rhRecovered) say(t, 'good', 'Purge allowed again: humidity recovered');
+      if (now.timed && !p.timed) say(t, 'serious', 'CO₂ sensor fault: timed purge started');
+      else if (!now.timed && p.timed && !st.f.CO2) say(t, 'good', 'CO₂ sensor back: timed purge ended');
       if (now.fogOn !== p.fogOn) say(t, 'info', (now.fogOn ? 'Fogger on' : 'Fogger off') + man('hu'));
       if (now.lights !== p.lights) say(t, 'info', now.lights ? 'Lights on' : 'Lights off');
       if (now.airOn && !p.airOn) say(t, 'info', `Air exchange on: ${now.airReason}`);
