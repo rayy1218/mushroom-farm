@@ -23,7 +23,7 @@ C9 replaces the one fresh-air fan (levels 0–3, `env.vent`, `rules.airMode`, AC
 |---|---|---|
 | `air.js` | Lead (step 0) | New: `ClimateAir` (section 3) |
 | `tests/air.test.js` | Lead (step 0) | New |
-| `docs/contracts/air.md`, `docs/contract.md`, `docs/contracts/LEAD-DECISIONS.md` | Lead | This contract; lead decision 14 |
+| `docs/contracts/air.md`, `docs/contract.md`, `docs/contracts/LEAD-DECISIONS.md` | Lead | This contract; lead decision 55 |
 | `sim.js`, `capacity.js`, `cycle.js`, `calib.js`, `tools/run-headless.js`, `tests/capacity.test.js`, `tests/cycle.test.js`, `tests/calib.test.js` | Simulation stream | Sections 4, 8 |
 | `controller.js`, `tests/controller.test.js`, `tests/settings.test.js`, `tests/vectors.test.js` (pack only), `tools/make-vectors.js` | Controller stream | Sections 5, 9 |
 | `server/db.js`, `server/rooms.js`, `server/rooms-common.js`, `server/sim-adapter.js`, `server/api.js`, `room-rules.js`, `tests/fakes/**`, `tests/db.test.js`, `tests/fake-db.test.js`, `tests/rooms.test.js`, `tests/fake-rooms.test.js`, `tests/rooms-common.test.js`, `tests/api.test.js`, `tests/stream.test.js`, `tests/room-rules.test.js` | Data stream | Section 6 |
