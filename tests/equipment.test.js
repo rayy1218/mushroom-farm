@@ -440,3 +440,55 @@ test('AIR-900 (example 5)', () => {
   assert.equal(r.air.verdict, 'enough');
   assert.equal(r.air.text, 'Your 900 m³/h air exchange is enough: a purge takes at most 2.5 min (pinning), the limit is 3 min.');
 });
+
+// ---------- Progress, determinism, the owner's example ----------
+test('P1 one Progress per simulated day of every run, and the async Report is the same', async () => {
+  const seen = [];
+  const fn = p => (hpOf(p) >= 2 ? {} : { fails: HOT, inT: 60 });
+  const r = check(room({ ac_hp: 1 }), lm(2500), fn, { onProgress: p => seen.push(p) });
+  assert.equal(seen.length, 4);
+  assert.deepEqual(seen.map(p => p.run), [1, 2, 3, 4]);
+  assert.deepEqual(seen.map(p => p.ac_hp), [1, 2.5, 2, 1.5]);
+  for (const p of seen) {
+    assert.deepEqual([p.maxRuns, p.kind, p.ac_units, p.fog_lph, p.air_m3h, p.day, p.days], [9, 'ac', 1, 3, 1800, 1, 1]);
+  }
+  const a = await EQ.runCheckAsync(room({ ac_hp: 1 }), lm(2500), { runCycleSteps: scripted(fn) });
+  assert.deepEqual(a, r);
+});
+
+test('DET the same arguments give a deep-equal Report', () => {
+  const fn = p => (hpOf(p) >= 2 ? {} : { fails: HOT, inT: 60 });
+  assert.deepEqual(check(room({ ac_hp: 1 }), lm(2500), fn), check(room({ ac_hp: 1 }), lm(2500), fn));
+});
+
+test("REAL1 the owner's example: 60 m³, 1000 lion's mane, 1 hp aircond", t => {
+  const t0 = Date.now();
+  const r = EQ.runCheck(room({ ac_hp: 1 }), lm(1000), { settings: LM() });
+  const ms = Date.now() - t0;
+  t.diagnostic(`owner's example: ${ms} ms`);
+  for (const x of r.runs.filter(x => x.kind === 'ac')) t.diagnostic(`${x.ac_hp} hp: fruiting in band ${x.fruitingInT.toFixed(2)} %, ${x.kwhPerBlock.toFixed(3)} kWh per block, RM ${x.rmPerBlock.toFixed(3)} per block, pass ${x.pass}`);
+  assert.deepEqual(sizes(r), [1, 1.5, 2]);
+  assert.equal(r.ac.min, 1.5);
+  assert.equal(r.ac.recommended, 2);
+  assert.equal(r.summary[0], "Your 1 hp aircond is too small for lion's mane. In pinning 1 it keeps the room within 1 °C of 17 °C only 87 % of the time. You need at least 1.5 hp. Buy 2 hp for a margin on the hottest days.");
+  assert.equal(r.wet, null);
+  assert.equal(r.pass, true);
+  assert.deepEqual([r.air.verdict, r.air.needM3h, r.air.recommended], ['enough', 800, null]);
+  assert.equal(r.air.text, 'Your 1,800 m³/h air exchange is enough: a purge takes at most 1.2 min (pinning), the limit is 3 min.');
+  assert.equal(r.fogger.verdict, 'enough');
+  assert.equal(r.runs.some(x => x.kind === 'fogger' || x.kind === 'air'), false);
+  assert.equal(r.summary.length, 5);
+  assert.equal(r.breakdown.ac_hp, 2);
+  assert.equal(r.breakdown.hours, 576);
+  const want = [39.8, 14.6, 21.5, 20.4, 3.6];
+  r.breakdown.items.forEach((it, i) => assert.ok(Math.abs(it.share - want[i]) <= 1, `${it.key} ${it.share}`));
+  assert.ok(Math.abs(r.runs.find(x => x.ac_hp === 2).fruitingInT - 99.4) <= 0.5);
+  assert.ok(ms < 120000, `${ms} ms`);
+});
+
+test('REAL2 a ready-to-fruit room with a short program runs and finds a minimum', () => {
+  const s = LM(); s.farmType = 'ready'; s.program.days.fruiting = 2; s.program.days.rest = 1; s.program.flushes = 1;
+  const r = EQ.runCheck(room({ ac_hp: 1 }), lm(1000), { settings: s });
+  assert.equal(r.verdict, 'ok');
+  assert.notEqual(r.ac.min, null);
+});
