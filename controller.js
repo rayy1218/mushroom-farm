@@ -924,6 +924,29 @@
     sensorMode: ['average', 'worst', 'main'], circ: ['auto', 'on', 'off'], 'rules.rhAction': ['stop', 'low'],
     'rules.acAction': ['setback', 'off'], 'manual.ac.mode': ['cool', 'heat', 'dry', 'fan'],
   };
+  // Settings of the one fresh-air fan, removed by contract C9. An older file can still have them.
+  const REMOVED_SETTINGS = ['rules.airMode', 'rules.baseFan', 'rules.fanLevel', 'rules.fogBoost', 'rules.rhAction', 'rules.acPurge',
+    'rules.acAction', 'rules.acSetbackC', 'rules.acOff', 'rules.acOn', 'rules.maxSetback', 'rules.guard', 'protect.fanMinOn', 'protect.fanMinOff'];
+  // Bring a settings object of version 1 to version 2 (C9 5.2). Pure: obj is not changed. Keys missing from the
+  // new shape are not added here (importSettings fills the defaults). A version 2 object gives no warnings.
+  function upgradeSettings(obj) {
+    const warnings = [];
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return { settings: obj, warnings };
+    const settings = structuredClone(obj);
+    const gone = path => warnings.push(`Setting "${path}" was removed: fresh air now runs as short purges.`);
+    for (const path of REMOVED_SETTINGS) {
+      const [group, key] = path.split('.'), g = settings[group];
+      if (g && typeof g === 'object' && Object.hasOwn(g, key)) { delete g[key]; gone(path); }
+    }
+    const m = settings.manual;
+    if (m && typeof m === 'object' && Object.hasOwn(m, 'fan')) {
+      const fan = m.fan;
+      if (fan && typeof fan === 'object') m.air = { auto: !!fan.auto, on: (fan.level ?? 0) > 0 };
+      delete m.fan;
+      gone('manual.fan');
+    }
+    return { settings, warnings };
+  }
   function exportSettings(cfg) {
     return { format: SETTINGS_FORMAT, version: SETTINGS_VERSION, saved: new Date().toISOString(), settings: structuredClone(cfg) };
   }
@@ -973,5 +996,5 @@
     return target;
   }
 
-  global.ClimateController = { exportSettings, importSettings, applySettings, SETTINGS_VERSION, create, defaultSettings, defaultRules, defaultProtect, defaultProgram, applyProfile, profileTargets, hhmm, FARM_TYPES, CROPS, STAGES, BANDS, ALARMS, MACHINES, SENSORS };
+  global.ClimateController = { exportSettings, importSettings, upgradeSettings, applySettings, SETTINGS_VERSION, create, defaultSettings, defaultRules, defaultProtect, defaultProgram, applyProfile, profileTargets, hhmm, FARM_TYPES, CROPS, STAGES, BANDS, ALARMS, MACHINES, SENSORS };
 })(typeof window !== 'undefined' ? window : globalThis);
