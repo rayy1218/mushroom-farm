@@ -172,3 +172,16 @@ test('CH4 defaults are today\'s look', () => {
   assert.equal(keyIcons(host).filter(i => i.style.borderTopStyle !== undefined).length, 0);
   assert.equal(paths(host, 'meas').length, 3); assert.equal(paths(host, 'sima').length, 3);
 });
+
+test('createLadder: a chip drawn, cleared and drawn again shows again (lead decision 82)', (t) => {
+  fakeDocument(t);
+  const el = new FakeEl('div');
+  const lad = FC.createLadder(el);
+  const S = { co2Lim: 1200, rules: { fanOn: 1000, fanOff: 800, co2Safety: false, co2SafetyAt: 3000 } };
+  const X = { air: { lvl: 'info', icon: '▲', text: 'Purging' } };
+  const chip = () => allOf(el).find(e => e.className === 'chip');
+  const shown = () => chip().children.map(c => c.textContent);
+  lad.draw(S, 900, X); assert.deepEqual(shown(), ['▲', 'Purging']);
+  lad.draw(S, 900, null); assert.deepEqual(shown(), []);
+  lad.draw(S, 900, X); assert.deepEqual(shown(), ['▲', 'Purging']);
+});

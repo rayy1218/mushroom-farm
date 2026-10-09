@@ -457,7 +457,7 @@ function createLadder(el) {
     const UI = global.FarmUi;
     for (const row of rows) {
       const chip = chips && chips[row.key];
-      if (chip) UI.paintChip(row.chip, chip); else row.chip.replaceChildren();
+      if (chip) UI.paintChip(row.chip, chip); else { row.chip.replaceChildren(); delete row.chip.dataset.txt; delete row.chip.dataset.ico; }
     }
   }
   function destroy() { el.replaceChildren(); el.classList.remove('ladder'); }
