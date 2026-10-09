@@ -4,7 +4,7 @@ Date: 2026-10-08, revised 2026-10-09 for the C9 air exchange. Status: **draft** 
 
 | Binding source, in this order | Path |
 |---|---|
-| Lead decisions 1–68 | `docs/contracts/LEAD-DECISIONS.md` |
+| Lead decisions 1–79 (69 = the freeze; 70–79 added during prep 2.0 and wave 2) | `docs/contracts/LEAD-DECISIONS.md` |
 | C9 revision 1 (air exchange, frozen, on `master`) and its revision 2 amendment (wave 2: the CO₂ limit at a stage change, lead decision 56; the C8 oversized air verdict, lead decision 58) | `docs/contracts/air.md` |
 | C1 revision 6 (database) | `docs/contracts/db.md` |
 | C2 revision 9 (room manager) | `docs/contracts/rooms.md` |

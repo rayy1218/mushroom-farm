@@ -4,7 +4,7 @@ Revision 1, 2026-10-09 (wave 2, written in prep 2.0 from the frozen contracts on
 
 | Binding source, in this order | Path | What it settles |
 |---|---|---|
-| Lead decisions 1–69 (here: 59, 60, 63, 65, 66, 67, 68), and 74 and 77 (added on `master` after the freeze) | `docs/contracts/LEAD-DECISIONS.md` | They override this brief and every contract text |
+| Lead decisions 1–69 (here: 59, 60, 63, 65, 66, 67, 68), and 74, 77, 78 (added on `master` after the freeze) | `docs/contracts/LEAD-DECISIONS.md` | They override this brief and every contract text |
 | C10 revision 2 (batches and harvest by room QR) | `docs/contracts/harvest.md` | 1, 2 (owned files), 4 (`FarmHarvestRules`), 6 (Batch, BatchDetail, Crate, RoomHarvest, CrateSaved), 7 (error texts), 9 (routes and their rules), 10, 11 (routes and the bare layout, the shell's), 12 (the pages, helpers, ids, texts), 13 (tests and the pre-merge headless check) |
 | C5 revision 8 | `docs/contracts/web.md` | 1.3 rows 23–24, 1.4 (wrapper; the vendored `qrcodegen` has none), 1.7, 2.1 (the four routes and their `params`), 3.1 (DOM scope: never `document.body`), 3.2 rows `batches` and `harvest`, 4.1–4.3 (the ten harvest functions), 4.5, 5 (`FarmUi`), 7.10 rows "Harvest web" and "harvest pages through the shell (lead, wave 3)" |
 | C3 revision 9 | `docs/contracts/api.md` | 2.2 (`FARM_HOST`: never `0.0.0.0`), 4 (the error body), 9 (static files), 3.1 (Room) |
@@ -94,6 +94,7 @@ Read before you code: `harvest-rules.js` (`state`, `totals`, `flushes`, `DEFAULT
 | 68 | A placed batch keeps taking crates after its room is archived; a crate of a cleared batch can still be undone |
 | 74 | Harvest test files start with a comment, `'use strict'`, then the `TZ` line (the form this brief also uses for its two test files) |
 | 77 | The server's date-order rules compare farm days (`startOfDay`), not seconds: a batch received today may be placed or cleared with today's date; the pages send every date as 00:00 farm time (`dateToSeconds`) |
+| 78 | When the page places or clears a batch with today's date (00:00 farm time) and the batch was received or placed earlier today, the API stores the later time (it clamps within the same farm day) and replies with it; the page shows the time from the reply, never the date it sent |
 
 ## 5. Design (fixed by this brief where the contracts leave it open)
 
