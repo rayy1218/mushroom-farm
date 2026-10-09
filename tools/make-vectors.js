@@ -47,3 +47,5 @@ record('crowded-dry', 'Dry air and 6000 blocks for 12 h: purges delayed by humid
   { hours: 12, env: { nightRH: 50, blocks: 6000 }, cfg: { rules: CC.defaultRules(1000) } });
 record('capped-purges', 'Grey oyster fruiting, 6000 blocks, an air exchange of 900 m³/h: the purges hit the time cap and the size alarm comes.',
   { hours: 6, env: { blocks: 6000, airM3h: 900 }, cfg: { airM3h: 900 } });
+record('cool-crop', "Lion's mane fruiting, 1000 blocks, 12 h from 18:00, harvest windows off: a cool crop, so no heat mode while the outdoor air is warm.",
+  { hours: 12, env: { startHour: 18, blocks: 1000 }, cfg: { crop: 'lionsmane', stage: 'fruiting', applyProfile: true, program: { ...CC.defaultProgram(), harvest: { ...CC.defaultProgram().harvest, on: false } } } });
