@@ -139,7 +139,7 @@ test('CB12 lines', () => {
 test('CB13 a late reply of an unmounted mount never touches the next mount', async () => {
   const stubs = {};
   const stub = () => ({ value: '', textContent: '', hidden: false, disabled: false, dataset: {}, children: [], addEventListener() {},
-    setAttribute() {}, replaceChildren() {}, append() {}, remove() {} });
+    setAttribute() {}, replaceChildren() {}, append() {}, after() {}, remove() {} });
   const el = { set innerHTML(v) {}, querySelector: s => (stubs[s] ||= stub()), querySelectorAll: () => [] };
   globalThis.document = { createElement: () => stub() };
   const FA = globalThis.FarmApi, saved = { ...FA };
