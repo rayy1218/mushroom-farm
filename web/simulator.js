@@ -94,15 +94,16 @@ function paintBlocks() {
 // ---------------- Mimic animation ----------------
 let mist = [], bubbles = [], caps = [];
 let animAcFlows = [], animFanFlows = [];
-const anim = { fan: 0, cond: 0, acFlow: 0, fanFlow: 0 };
+const anim = { fan: 0, cond: 0, circ: 0, acFlow: 0, fanFlow: 0 };
+let ventKey = '';
 const reduceMotion = () => (typeof matchMedia !== 'undefined' ? matchMedia('(prefers-reduced-motion: reduce)').matches : false);
 function buildMimicExtras() {
   mist = []; bubbles = []; caps = [];
   for (let i = 0; i < 16; i++) mist.push({ ph: i / 16, dx: (Math.random() - 0.5) * 14, elm: UI.svgEl('circle', { class: 'mist', r: 3 }, el.querySelector('#mist')) });
   for (let i = 0; i < 14; i++) bubbles.push({ ph: i / 14, dx: Math.random() * 136, elm: UI.svgEl('circle', { class: 'bubble', r: 2.5 }, el.querySelector('#bubbles')) });
   const g = el.querySelector('#bags');
-  for (const y0 of [264, 314]) for (let i = 0; i < 5; i++) {
-    const x = 186 + i * 29;
+  for (const y0 of [324, 374]) for (let i = 0; i < 5; i++) {
+    const x = 246 + i * 29;
     UI.svgEl('rect', { class: 'bag', x, y: y0, width: 24, height: 36, rx: 7 }, g);
     for (const [cx, cy, side] of [[x + 2, y0 + 12, -1], [x + 22, y0 + 24, 1]]) {
       const outer = UI.svgEl('g', { transform: `translate(${cx} ${cy})` }, g);
@@ -113,7 +114,31 @@ function buildMimicExtras() {
     }
   }
   animAcFlows = [...el.querySelectorAll('[data-flow="ac"]')];
-  animFanFlows = [...el.querySelectorAll('[data-flow="fan"]')];
+  ventKey = ''; glanceKey = '';
+}
+// Places the fan, the passive opening, their arrows and texts for env.vent / inletAt / exhaustAt (on a change only).
+const VENT_Y = { high: 160, low: 352 };
+function layoutVents() {
+  const key = `${env.vent}|${env.inletAt}|${env.exhaustAt}`;
+  if (key === ventKey) return;
+  ventKey = key;
+  const L = mimicLayout(env), flows = el.querySelector('#ventFlows'), txt = el.querySelector('#ventText');
+  flows.replaceChildren(); txt.replaceChildren();
+  for (const side of ['inlet', 'outlet']) {
+    const o = L[side], y = VENT_Y[o.band], left = side === 'inlet', fan = o.kind === 'fan';
+    el.querySelector(fan ? '#fanUnit' : '#grilleUnit').setAttribute('transform', `translate(${left ? 180 : 820} ${y})`);
+    const [x1, x2] = fan ? (left ? [60, 134] : [866, 990]) : (left ? [90, 212] : [788, 910]);
+    for (const d of fan ? [-18, 0, 18] : [-9, 9]) UI.svgEl('path', { class: 'flow fan', 'data-flow': 'fan', d: `M${x1} ${y + d} H${x2}`, 'marker-end': 'url(#arFan)' }, flows);
+    const flowId = left ? 'mInflow' : 'mOutflow';
+    const lines = fan ? [['m-tag', 'mFanTag', o.tag, 0], ['m-small', 'mFanState', '', 17], ['m-small', null, o.label, 21], ['m-small', flowId, '', 17]]
+      : [['m-small', null, o.label, 0], ['m-small', flowId, '', 17]];
+    let ty = o.band === 'high' ? 226 : 300 - lines.reduce((h, l) => h + l[3], 0);
+    for (const [cls, id, text, gap] of lines) {
+      ty += gap;
+      UI.svgEl('text', { x: left ? 12 : 836, y: ty, class: cls, ...(id ? { id } : {}) }, txt).textContent = text;
+    }
+  }
+  animFanFlows = [...flows.querySelectorAll('[data-flow="fan"]')];
 }
 const paintCaps = () => { const sc = { spawn: 0, pinning: 0.35, fruiting: 1, rest: 0.12 }[cfg.stage]; for (const c of caps) c.style.transform = `scale(${sc})`; };
 function animateMimic(dtReal) {
@@ -122,25 +147,27 @@ function animateMimic(dtReal) {
   if (move) {
     anim.fan = (anim.fan + 1080 * fanF * dtReal) % 360;
     anim.cond = (anim.cond + 720 * (a.comp ? 0.3 + a.acFrac : 0) * dtReal) % 360;
+    anim.circ = (anim.circ + 900 * (a.circ ? 1 : 0) * dtReal) % 360;
     anim.acFlow -= dtReal * 40 * (0.5 + a.acFrac);
     anim.fanFlow -= dtReal * 60 * (0.3 + fanF);
   }
   el.querySelector('#fanBlades').setAttribute('transform', `rotate(${anim.fan.toFixed(1)})`);
   el.querySelector('#condBlades').setAttribute('transform', `rotate(${anim.cond.toFixed(1)})`);
+  el.querySelector('#circBlades').setAttribute('transform', `rotate(${anim.circ.toFixed(1)})`);
   for (const f of animAcFlows) { f.style.opacity = !a.power ? 0 : a.comp ? 0.35 + 0.65 * a.acFrac : 0.2; f.style.strokeDashoffset = anim.acFlow; }
   for (const f of animFanFlows) { f.style.opacity = fanF > 0 ? 0.35 + 0.65 * fanF : 0; f.style.strokeDashoffset = anim.fanFlow; }
   for (const p of mist) {
     if (move) { p.ph += dtReal * (0.25 + 0.5 * fogF); if (p.ph > 1) { p.ph -= 1; p.dx = (Math.random() - 0.5) * 14; } }
-    p.elm.setAttribute('cx', (572 + p.dx + Math.sin(p.ph * 7 + p.dx) * 4).toFixed(1));
-    p.elm.setAttribute('cy', (262 - p.ph * 80).toFixed(1));
+    p.elm.setAttribute('cx', (722 + p.dx + Math.sin(p.ph * 7 + p.dx) * 4).toFixed(1));
+    p.elm.setAttribute('cy', (322 - p.ph * 80).toFixed(1));
     p.elm.setAttribute('r', (2.5 + p.ph * 6).toFixed(1));
     p.elm.style.opacity = (fogF * (1 - p.ph) * 0.7).toFixed(2);
   }
   const lpm = SIM.co2Lpm(env), co2Vis = UI.clamp(lpm / 3, 0, 1);
   for (const b of bubbles) {
     if (move) { b.ph += dtReal * (0.3 + 0.1 * lpm); if (b.ph > 1) { b.ph -= 1; b.dx = Math.random() * 136; } }
-    b.elm.setAttribute('cx', (189 + b.dx + Math.sin(b.ph * 9 + b.dx) * 3).toFixed(1));
-    b.elm.setAttribute('cy', (258 - b.ph * 46).toFixed(1));
+    b.elm.setAttribute('cx', (249 + b.dx + Math.sin(b.ph * 9 + b.dx) * 3).toFixed(1));
+    b.elm.setAttribute('cy', (318 - b.ph * 46).toFixed(1));
     b.elm.style.opacity = (co2Vis * (1 - b.ph)).toFixed(2);
   }
 }
@@ -171,7 +198,11 @@ function updateUi() {
   el.querySelector('#mMoon').style.display = isNight ? '' : 'none';
   UI.set('mSkyTxt', isNight ? 'Night' : 'Day');
   el.querySelector('#lamp').classList.toggle('on', v.lights);
-  UI.set('mLamp', v.lights ? 'Lights on' : 'Lights off');
+  UI.set('mLamp', v.lights ? `Lights on · ${UI.watts(v.power.lights)}` : 'Lights off');
+  const vol = { ...PL.room, ...(env.room || {}) }.volume, kwhAll = Object.values(v.kwh).reduce((x, y) => x + y, 0);
+  UI.set('mRoomName', `FRUITING ROOM · ${vol} m³`);
+  UI.set('mAch', `Fresh air ${(v.airM3h / vol).toFixed(1)} changes an hour`);
+  UI.set('mPowerNow', `Power now ${UI.watts(Object.values(v.power).reduce((x, y) => x + y, 0))} · ${kwhAll.toFixed(1)} kWh so far`);
   const readout = (id, txt, s) => {
     const g = el.querySelector('#' + id); g.dataset.lvl = s.lvl;
     const val = g.querySelector('.val'), ic = g.querySelector('.ico');
@@ -181,21 +212,29 @@ function updateUi() {
   readout('mT', `${UI.fmtNum(r.T, 1)} °C`, ctl.status('T'));
   readout('mRH', `${UI.fmtNum(r.RH, 0)} % RH`, ctl.status('RH'));
   readout('mC', `${UI.fmtNum(r.CO2, 0)} ppm`, ctl.status('CO2'));
+  const Z = v.zones, zone = (id, k, d) => { const t = `low ${Z.lo[k].toFixed(d)} · high ${Z.hi[k].toFixed(d)}`, z = el.querySelector(`#${id} .zn`); if (z.textContent !== t) z.textContent = t; };
+  zone('mT', 'T', 1); zone('mRH', 'RH', 0); zone('mC', 'C', 0);
   const a = v.act;
   UI.set('mAcState', !a.power ? 'Off' : `${AC_WORD[a.mode]} ${a.setpoint.toFixed(1)}° · ${a.comp ? `comp ${UI.pct(a.acFrac)}` : 'comp idle'}`);
-  UI.set('mHuState', a.huLevel > 0 ? `Level ${a.huLevel}` : 'Off');
-  UI.set('mFanState', `${env.vent === 'supply' ? 'Supply ' : ''}${PL.fan.levels[a.fanLevel].name}`);
-  UI.set('mFanTag', env.vent === 'supply' ? 'SF-203' : 'EF-203');
+  UI.set('mAcPower', `${UI.watts(v.power.ac)}${a.comp ? ` · COP ${v.cop.toFixed(1)}` : ''}`);
+  UI.set('mCondState', a.comp ? 'Running' : 'Idle');
+  UI.set('mHuState', a.huLevel > 0 ? `Level ${a.huLevel} · ${(v.fogGph / 1000).toFixed(1)} L/h` : 'Off');
+  UI.set('mHuPower', UI.watts(v.power.hu));
+  UI.set('mCircState', a.circ ? `On · ${UI.watts(v.power.circ)}` : 'Off');
+  layoutVents();
+  UI.set('mFanState', a.fanLevel > 0 ? `${PL.fan.levels[a.fanLevel].name} · ${UI.watts(v.power.fan)}` : 'Off');
   UI.set('mOutflow', `${Math.round(v.airM3h)} m³/h`);
   UI.set('mInflow', `${Math.round(v.airM3h)} m³/h`);
   UI.set('mCo2Src', `${env.blocks.toLocaleString('en')} blocks`);
+  UI.set('mCore', `Core ${v.core.toFixed(1)} °C`);
   el.querySelector('#acUnit').classList.toggle('on', a.comp);
   el.querySelector('#condenser').classList.toggle('on', a.comp);
   el.querySelector('#huUnit').classList.toggle('on', a.huLevel > 0);
   el.querySelector('#fanUnit').classList.toggle('on', a.fanLevel > 0);
+  el.querySelector('#circUnit').classList.toggle('on', a.circ);
   UI.set('mimicStage', `${CC.CROPS[cfg.crop].name} · ${CC.STAGES[cfg.stage]} · live`);
-  const Z = v.zones, dist = [v.door && 'door open', v.workers && `${v.workers} workers`, v.watering && 'floor wet', v.weather.rain && 'rain', v.weather.cloudy && 'cloudy', v.wetSensor && 'RH sensor wet'].filter(Boolean);
-  UI.set('mimicNote', `Low air ${Z.lo.T.toFixed(1)} °C ${Z.lo.RH.toFixed(0)} % ${Z.lo.C.toFixed(0)} ppm · High air ${Z.hi.T.toFixed(1)} °C ${Z.hi.RH.toFixed(0)} % ${Z.hi.C.toFixed(0)} ppm · core ${v.core.toFixed(1)} °C${dist.length ? ' · ' + dist.join(', ') : ''}`);
+  const dist = [v.door && 'door open', v.workers && `${v.workers} workers`, v.watering && 'floor wet', v.weather.rain && 'rain', v.weather.cloudy && 'cloudy', v.wetSensor && 'RH sensor wet'].filter(Boolean);
+  UI.set('mimicNote', dist.join(' · '));
 
   const c = st.cmd, hold = (why, h) => (h ? `${why} ${h}` : why);
   UI.set('acState', !c.ac.power ? 'Off' : `${AC_WORD[c.ac.mode]} · set ${c.ac.setpoint.toFixed(1)} °C${st.setbackOn ? ` (setback +${R.acSetbackC})` : ''}`);
@@ -239,6 +278,7 @@ function updateUi() {
   updateLadderLive();
   renderExhaust();
   paintProgram();
+  paintGlance(list, tot, days);
 
   if (logDirty) renderLog();
 }
@@ -373,6 +413,70 @@ function paintProgram() {
   if (P.ramp && panel) panel.set(cfg);
 }
 
+// ---------------- At a glance (beside the room drawing) ----------------
+const GLANCE_S = 6 * 3600;
+let glanceKey = '';
+function spark(id, key, lo, hi) {
+  const g = el.querySelector(`#${id}`), t1 = reading.t, t0 = t1 - GLANCE_S;
+  const pts = samples.slice(global.FarmCharts.lowerBound(samples, t0)).filter(p => Number.isFinite(p[key]));
+  const step = Math.max(1, Math.floor(pts.length / 200));
+  const use = pts.filter((p, i) => i % step === 0 || i === pts.length - 1);
+  const vals = use.map(p => p[key]).concat([lo, hi].filter(Number.isFinite));
+  let yMin = Math.min(...vals), yMax = Math.max(...vals);
+  const pad = Math.max((yMax - yMin) * 0.12, 0.5); yMin -= pad; yMax += pad;
+  const y = v => (32 - (v - yMin) / (yMax - yMin) * 32).toFixed(1), x = t => ((t - t0) / GLANCE_S * 200).toFixed(1);
+  const band = g.querySelector('.gl-band'), top = Number.isFinite(hi) ? y(hi) : 0, bot = Number.isFinite(lo) ? y(lo) : 32;
+  band.setAttribute('y', top); band.setAttribute('height', Math.max(0, bot - top));
+  g.querySelector('.gl-line').setAttribute('d', use.length > 1 ? 'M' + use.map(p => `${x(p.t)} ${y(p[key])}`).join(' L') : '');
+}
+function paintGlance(alarms, kwhTot, days) {
+  const r = reading, st = ctl.state, P = ctl.programStatus(r.t), H = cfg.program.harvest, B = CC.BANDS;
+  UI.set('glCrop', `${CC.CROPS[cfg.crop].name} · ${CC.STAGES[cfg.stage]}`);
+  UI.set('glStage', [P.days && `Day ${P.day} of ${P.days}`, (cfg.stage === 'fruiting' || cfg.stage === 'rest') && `flush ${P.flush} of ${P.flushes}`, P.done && 'last flush done'].filter(Boolean).join(' · '));
+  let hv = '';
+  if (cfg.stage === 'fruiting' && H.on) {
+    if (P.harvestOn) hv = `Harvest now, until ${CC.hhmm(P.harvestWin.to)}`;
+    else if (H.times.length) {
+      const m = r.hour * 60, next = H.times.map(at => ({ at, wait: ((at - m) % 1440 + 1440) % 1440 })).sort((a, b) => a.wait - b.wait)[0];
+      hv = `Next harvest ${CC.hhmm(next.at)}, in ${UI.fmtDur(next.wait * 60)}`;
+    }
+  }
+  UI.set('glHarvest', hv);
+  const row = (id, txt, s, target) => {
+    const g = el.querySelector(`#${id}`); g.dataset.lvl = s.lvl;
+    const v = g.querySelector('.gl-v'), ic = g.querySelector('.gl-ico'), t = g.querySelector('.gl-t');
+    if (v.textContent !== txt) v.textContent = txt;
+    if (ic.textContent !== s.icon) ic.textContent = s.icon;
+    const tt = `${target} · ${s.text.toLowerCase()}`;
+    if (t.textContent !== tt) t.textContent = tt;
+  };
+  row('glT', `${UI.fmtNum(r.T, 1)} °C`, ctl.status('T'), `target ${cfg.spT.toFixed(1)} ± ${B.T} °C`);
+  row('glRH', `${UI.fmtNum(r.RH, 0)} %`, ctl.status('RH'), `target ${st.rhT.toFixed(0)} ± ${B.RH} %`);
+  row('glC', `${UI.fmtNum(r.CO2, 0)} ppm`, ctl.status('CO2'), `limit ${cfg.co2Lim} ppm`);
+  const key = `${Math.floor(r.t / 300)}|${cfg.spT}|${st.rhT}|${cfg.co2Lim}|${samples.length > 0}`;
+  if (key !== glanceKey) {
+    glanceKey = key;
+    spark('glT', 'T', cfg.spT - B.T, cfg.spT + B.T);
+    spark('glRH', 'RH', st.rhT - B.RH, st.rhT + B.RH);
+    spark('glC', 'C', NaN, cfg.co2Lim);
+  }
+  const full = r.t >= 3600, perDay = x => x / days;
+  UI.set('glEnergy', full ? `${perDay(kwhTot).toFixed(1)} kWh` : '–');
+  UI.set('glCost', full ? `RM ${(perDay(kwhTot) * input.tariff).toFixed(2)}` : '–');
+  UI.set('glWater', full ? `${perDay(r.water.fogKg).toFixed(1)} L` : '–');
+  UI.set('glFan', r.t > 0 ? `${Math.round(st.stats.fanOnS / r.t * 100)} % of the time` : '–');
+  const act = alarms.filter(a => a.active);
+  const host = el.querySelector('#glAlarms'), akey = act.map(a => a.id).join('|') || 'none';
+  if (host.dataset.key !== akey) {
+    host.dataset.key = akey;
+    host.replaceChildren(...(act.length ? act.slice(0, 4).map(a => {
+      const li = document.createElement('li'); li.dataset.lvl = a.lvl;
+      li.textContent = `${UI.ICON[a.lvl] || '•'} ${a.label}`;
+      return li;
+    }) : [Object.assign(document.createElement('li'), { className: 'gl-ok', textContent: '✓ No active alarms' })]));
+  }
+}
+
 // ---------------- 24 h test ----------------
 function runTest(rulesOverride) {
   const cfg2 = structuredClone(cfg); Object.assign(cfg2.rules, rulesOverride);
@@ -453,9 +557,9 @@ function renderTable(raw) {
 
 // ---------------- Markup ----------------
 const MIMIC_SVG = `
-    <svg class="mimic-svg" viewBox="0 0 800 380" role="img" aria-labelledby="mimicTitle mimicDesc">
+    <svg class="mimic-svg" viewBox="0 0 1000 420" role="img" aria-labelledby="mimicTitle mimicDesc">
       <title id="mimicTitle">Room schematic</title>
-      <desc id="mimicDesc">Live view of the fruiting room, the growing rack, the three sensors, the air conditioner, the fogger, and the exhaust fan.</desc>
+      <desc id="mimicDesc">Live view of the fruiting room: the growing rack, the three sensors, the air conditioner, the fogger, the circulation fan, and the fresh-air path (a supply fan with a damper, or an exhaust fan with an open inlet).</desc>
       <defs>
         <pattern id="hatch" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
           <rect class="hatch-bg" width="7" height="7"/><line class="hatch-line" x1="0" y1="0" x2="0" y2="7"/>
@@ -463,96 +567,117 @@ const MIMIC_SVG = `
         <marker id="arAc" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path class="arrowhead ac" d="M0 0 L10 5 L0 10 z"/></marker>
         <marker id="arFan" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path class="arrowhead fan" d="M0 0 L10 5 L0 10 z"/></marker>
       </defs>
-      <text x="16" y="30" class="m-eyebrow">OUTDOOR · OT-104</text>
-      <text x="16" y="58" class="m-big" id="mOutT">32.0 °C</text>
-      <text x="16" y="78" class="m-small" id="mOutRH">60 % RH</text>
-      <g id="mSun" transform="translate(24 214)"><circle class="sun" r="5"/>
+      <text x="12" y="26" class="m-eyebrow">OUTDOOR · OT-104</text>
+      <text x="12" y="54" class="m-big" id="mOutT">32.0 °C</text>
+      <text x="12" y="76" class="m-small" id="mOutRH">60 % RH</text>
+      <g id="mSun" transform="translate(110 72)"><circle class="sun" r="5"/>
         <path class="sun" d="M0,-8.5V-7 M0,7V8.5 M-8.5,0H-7 M7,0H8.5 M-6,-6L-5,-5 M5,5L6,6 M-6,6L-5,5 M5,-5L6,-6"/></g>
-      <g id="mMoon" transform="translate(24 214)"><circle class="moon" r="6.5"/><circle class="moon-cut" cx="3.6" cy="-2.4" r="5.4"/></g>
-      <text x="38" y="219" class="m-small" id="mSkyTxt">Day</text>
-      <line class="ground" x1="0" y1="352" x2="800" y2="352"/>
-      <rect class="wall" x="134" y="14" width="532" height="338"/>
-      <rect class="room" x="142" y="22" width="516" height="330"/>
+      <g id="mMoon" transform="translate(110 72)"><circle class="moon" r="6.5"/><circle class="moon-cut" cx="3.6" cy="-2.4" r="5.4"/></g>
+      <text x="124" y="76" class="m-small" id="mSkyTxt">Day</text>
+      <text x="520" y="26" class="m-eyebrow" id="mRoomName">FRUITING ROOM · 60 m³</text>
+      <text x="520" y="48" class="m-small" id="mAch">Fresh air 0.4 changes an hour</text>
+      <text x="520" y="66" class="m-small" id="mPowerNow">Power now 0 W · 0.0 kWh so far</text>
+      <line class="ground" x1="0" y1="412" x2="1000" y2="412"/>
+      <rect class="wall" x="176" y="92" width="648" height="320"/>
+      <rect class="room" x="184" y="100" width="632" height="312"/>
       <g id="condenser">
-        <rect class="unit" x="18" y="100" width="96" height="74" rx="4"/>
-        <circle class="ring" cx="66" cy="137" r="27"/>
-        <g transform="translate(66 137)"><g id="condBlades">
-          <path class="blade" d="M0,-3 C8,-7 18,-5 22,0 C17,3 7,3 0,3 Z"/>
-          <path class="blade" d="M0,-3 C8,-7 18,-5 22,0 C17,3 7,3 0,3 Z" transform="rotate(120)"/>
-          <path class="blade" d="M0,-3 C8,-7 18,-5 22,0 C17,3 7,3 0,3 Z" transform="rotate(240)"/>
-        </g><circle r="4" class="blade"/></g>
-        <text x="66" y="192" text-anchor="middle" class="m-small">Condenser</text>
+        <rect class="unit" x="290" y="30" width="80" height="58" rx="4"/>
+        <circle class="ring" cx="330" cy="59" r="22"/>
+        <g transform="translate(330 59)"><g id="condBlades">
+          <path class="blade" d="M0,-3 C7,-6 15,-4 18,0 C14,3 6,3 0,3 Z"/>
+          <path class="blade" d="M0,-3 C7,-6 15,-4 18,0 C14,3 6,3 0,3 Z" transform="rotate(120)"/>
+          <path class="blade" d="M0,-3 C7,-6 15,-4 18,0 C14,3 6,3 0,3 Z" transform="rotate(240)"/>
+        </g><circle r="3.5" class="blade"/></g>
+        <text x="380" y="54" class="m-small">Condenser</text>
+        <text x="380" y="70" class="m-small" id="mCondState">Idle</text>
       </g>
-      <path class="pipe" d="M114 120 H150 V56 H160"/>
-      <path class="pipe" d="M114 130 H156 V66 H160"/>
-      <g class="grille"><rect x="134" y="226" width="8" height="38" class="unit"/>
-        <line x1="135" x2="141" y1="234" y2="234"/><line x1="135" x2="141" y1="245" y2="245"/><line x1="135" x2="141" y1="256" y2="256"/></g>
-      <path class="flow fan" data-flow="fan" d="M84 236 H168" marker-end="url(#arFan)"/>
-      <path class="flow fan" data-flow="fan" d="M84 254 H168" marker-end="url(#arFan)"/>
-      <text x="16" y="296" class="m-small">Make-up air</text>
-      <text x="16" y="314" class="m-small" id="mInflow">12 m³/h</text>
+      <path class="pipe" d="M346 88 V108"/>
+      <path class="pipe" d="M356 88 V108"/>
       <g id="lamp">
-        <rect class="lamp" x="466" y="22" width="64" height="6" rx="2"/>
-        <path class="lamp-ray" d="M476,32 L470,40 M498,32 V42 M520,32 L526,40"/>
-        <text x="498" y="56" text-anchor="middle" class="m-small" id="mLamp">Lights off</text>
+        <rect class="lamp" x="470" y="100" width="64" height="6" rx="2"/>
+        <path class="lamp-ray" d="M480,110 L474,118 M502,110 V120 M524,110 L530,118"/>
+        <text x="502" y="136" text-anchor="middle" class="m-small" id="mLamp">Lights off</text>
       </g>
       <g id="acUnit">
-        <rect class="unit" x="160" y="34" width="200" height="46" rx="6"/>
-        <rect class="keybar ac" x="160" y="34" width="6" height="46" rx="2"/>
-        <line x1="176" x2="346" y1="74" y2="74" class="ring"/>
-        <text x="176" y="54" class="m-tag">ACU-201</text>
-        <text x="176" y="70" class="m-small" id="mAcState">Off</text>
+        <rect class="unit" x="250" y="108" width="196" height="58" rx="6"/>
+        <rect class="keybar ac" x="250" y="108" width="6" height="58" rx="2"/>
+        <text x="266" y="126" class="m-tag">ACU-201</text>
+        <text x="266" y="142" class="m-small" id="mAcState">Off</text>
+        <text x="266" y="158" class="m-small" id="mAcPower">0 W</text>
       </g>
-      <path class="flow ac" data-flow="ac" d="M200 86 C205 116, 228 136, 256 146" marker-end="url(#arAc)"/>
-      <path class="flow ac" data-flow="ac" d="M250 86 C255 120, 282 144, 314 156" marker-end="url(#arAc)"/>
-      <path class="flow ac" data-flow="ac" d="M300 86 C305 120, 330 146, 360 160" marker-end="url(#arAc)"/>
+      <path class="flow ac" data-flow="ac" d="M280 172 C282 205, 270 228, 256 248" marker-end="url(#arAc)"/>
+      <path class="flow ac" data-flow="ac" d="M340 172 C342 210, 330 236, 316 256" marker-end="url(#arAc)"/>
+      <path class="flow ac" data-flow="ac" d="M400 172 C402 210, 392 238, 380 258" marker-end="url(#arAc)"/>
+      <g id="circUnit" transform="translate(720 150)">
+        <circle class="unit" r="20"/>
+        <g id="circBlades">
+          <path class="blade" d="M0,-2.5 C6,-5 12,-4 15,0 C12,2.5 5,2.5 0,2.5 Z"/>
+          <path class="blade" d="M0,-2.5 C6,-5 12,-4 15,0 C12,2.5 5,2.5 0,2.5 Z" transform="rotate(120)"/>
+          <path class="blade" d="M0,-2.5 C6,-5 12,-4 15,0 C12,2.5 5,2.5 0,2.5 Z" transform="rotate(240)"/>
+        </g><circle r="3" class="blade"/>
+      </g>
+      <text x="720" y="188" text-anchor="middle" class="m-tag">CF-205</text>
+      <text x="720" y="204" text-anchor="middle" class="m-small" id="mCircState">Off</text>
       <g id="sensors">
-        <line class="leader" x1="404" x2="430" y1="130" y2="130"/>
-        <line class="leader" x1="404" x2="430" y1="185" y2="185"/>
-        <line class="leader" x1="404" x2="430" y1="240" y2="240"/>
-        <circle class="bubble-tag" cx="400" cy="130" r="20"/><text x="400" y="128" text-anchor="middle" class="m-tag" style="font-size:12px">TT</text><text x="400" y="142" text-anchor="middle" style="font-size:11px">101</text>
-        <circle class="bubble-tag" cx="400" cy="185" r="20"/><text x="400" y="183" text-anchor="middle" class="m-tag" style="font-size:12px">MT</text><text x="400" y="197" text-anchor="middle" style="font-size:11px">102</text>
-        <circle class="bubble-tag" cx="400" cy="240" r="20"/><text x="400" y="238" text-anchor="middle" class="m-tag" style="font-size:12px">AT</text><text x="400" y="252" text-anchor="middle" style="font-size:11px">103</text>
-        <g class="readout" id="mT"><rect x="430" y="115" width="122" height="30" rx="4"/><text class="val" x="440" y="136">--</text><text class="ico" x="542" y="135" text-anchor="end"></text></g>
-        <g class="readout" id="mRH"><rect x="430" y="170" width="122" height="30" rx="4"/><text class="val" x="440" y="191">--</text><text class="ico" x="542" y="190" text-anchor="end"></text></g>
-        <g class="readout" id="mC"><rect x="430" y="225" width="122" height="30" rx="4"/><text class="val" x="440" y="246">--</text><text class="ico" x="542" y="245" text-anchor="end"></text></g>
+        <line class="leader" x1="490" x2="500" y1="196" y2="196"/>
+        <line class="leader" x1="490" x2="500" y1="246" y2="246"/>
+        <line class="leader" x1="490" x2="500" y1="296" y2="296"/>
+        <circle class="bubble-tag" cx="470" cy="196" r="20"/><text x="470" y="194" text-anchor="middle" class="m-tag" style="font-size:11px">TT</text><text x="470" y="207" text-anchor="middle" style="font-size:10px">101</text>
+        <circle class="bubble-tag" cx="470" cy="246" r="20"/><text x="470" y="244" text-anchor="middle" class="m-tag" style="font-size:11px">MT</text><text x="470" y="257" text-anchor="middle" style="font-size:10px">102</text>
+        <circle class="bubble-tag" cx="470" cy="296" r="20"/><text x="470" y="294" text-anchor="middle" class="m-tag" style="font-size:11px">AT</text><text x="470" y="307" text-anchor="middle" style="font-size:10px">103</text>
+        <g class="readout" id="mT"><rect x="500" y="176" width="156" height="40" rx="4"/><text class="val" x="510" y="195">--</text><text class="ico" x="646" y="194" text-anchor="end"></text><text class="zn" x="510" y="210"></text></g>
+        <g class="readout" id="mRH"><rect x="500" y="226" width="156" height="40" rx="4"/><text class="val" x="510" y="245">--</text><text class="ico" x="646" y="244" text-anchor="end"></text><text class="zn" x="510" y="260"></text></g>
+        <g class="readout" id="mC"><rect x="500" y="276" width="156" height="40" rx="4"/><text class="val" x="510" y="295">--</text><text class="ico" x="646" y="294" text-anchor="end"></text><text class="zn" x="510" y="310"></text></g>
       </g>
       <g id="fanUnit">
-        <rect class="unit" x="622" y="60" width="80" height="80" rx="6"/>
-        <rect class="keybar fan" x="622" y="134" width="80" height="6" rx="2"/>
-        <circle class="ring" cx="662" cy="100" r="31"/>
-        <g transform="translate(662 100)"><g id="fanBlades">
+        <rect class="unit" x="-40" y="-40" width="80" height="80" rx="6"/>
+        <rect class="keybar fan" x="-40" y="34" width="80" height="6" rx="2"/>
+        <circle class="ring" r="31"/>
+        <g id="fanBlades">
           <path class="blade" d="M0,-4 C10,-9 22,-7 27,0 C21,4 9,4 0,4 Z"/>
           <path class="blade" d="M0,-4 C10,-9 22,-7 27,0 C21,4 9,4 0,4 Z" transform="rotate(120)"/>
           <path class="blade" d="M0,-4 C10,-9 22,-7 27,0 C21,4 9,4 0,4 Z" transform="rotate(240)"/>
-        </g><circle r="5" class="blade"/></g>
+        </g><circle r="5" class="blade"/>
       </g>
-      <text x="610" y="92" text-anchor="end" class="m-tag" id="mFanTag">EF-203</text>
-      <text x="610" y="109" text-anchor="end" class="m-small" id="mFanState">Off</text>
-      <path class="flow fan" data-flow="fan" d="M708 82 H790" marker-end="url(#arFan)"/>
-      <path class="flow fan" data-flow="fan" d="M708 100 H790" marker-end="url(#arFan)"/>
-      <path class="flow fan" data-flow="fan" d="M708 118 H790" marker-end="url(#arFan)"/>
-      <text x="712" y="164" class="m-small">Exhaust</text>
-      <text x="712" y="182" class="m-small" id="mOutflow">0 m³/h</text>
+      <g id="grilleUnit" class="grille"><rect x="-4" y="-19" width="8" height="38" class="unit"/>
+        <line x1="-3" x2="3" y1="-11" y2="-11"/><line x1="-3" x2="3" y1="0" y2="0"/><line x1="-3" x2="3" y1="11" y2="11"/></g>
+      <g id="ventFlows"></g>
+      <g id="ventText"></g>
       <g id="mist"></g>
       <g id="huUnit">
-        <rect class="unit" x="562" y="266" width="20" height="12" rx="3"/>
-        <rect class="unit body" x="540" y="276" width="64" height="76" rx="8"/>
-        <rect class="keybar hu" x="540" y="276" width="64" height="6" rx="2"/>
-        <rect class="tank" x="550" y="310" width="44" height="30" rx="3"/>
+        <rect class="unit" x="712" y="326" width="20" height="12" rx="3"/>
+        <rect class="unit body" x="690" y="336" width="64" height="76" rx="8"/>
+        <rect class="keybar hu" x="690" y="336" width="64" height="6" rx="2"/>
+        <rect class="tank" x="700" y="370" width="44" height="30" rx="3"/>
       </g>
-      <text x="528" y="300" text-anchor="end" class="m-tag">HU-202</text>
-      <text x="528" y="317" text-anchor="end" class="m-small" id="mHuState">Off</text>
+      <text x="680" y="356" text-anchor="end" class="m-tag">HU-202</text>
+      <text x="680" y="373" text-anchor="end" class="m-small" id="mHuState">Off</text>
+      <text x="680" y="390" text-anchor="end" class="m-small" id="mHuPower">0 W</text>
       <g id="bubbles"></g>
       <g id="rack">
-        <line class="post" x1="180" x2="180" y1="252" y2="352"/>
-        <line class="post" x1="334" x2="334" y1="252" y2="352"/>
-        <line class="shelf" x1="178" x2="336" y1="302" y2="302"/>
+        <line class="post" x1="240" x2="240" y1="312" y2="412"/>
+        <line class="post" x1="394" x2="394" y1="312" y2="412"/>
+        <line class="shelf" x1="238" x2="396" y1="362" y2="362"/>
         <g id="bags"></g>
       </g>
-      <text x="346" y="300" class="m-tag">Growing blocks</text>
-      <text x="346" y="317" class="m-small" id="mCo2Src">2,000 blocks</text>
+      <text x="404" y="356" class="m-tag">Growing blocks</text>
+      <text x="404" y="373" class="m-small" id="mCo2Src">2,000 blocks</text>
+      <text x="404" y="390" class="m-small" id="mCore">Core -- °C</text>
     </svg>`;
+
+// The fresh-air path (C5 draft 9.1): the inlet is on the left wall, the outlet on the right wall; the fan sits where
+// the vent mode puts it, the other opening is passive. Pure, for Node tests.
+function mimicLayout({ vent, inletAt, exhaustAt }) {
+  const supply = vent === 'supply';
+  return {
+    inlet: { band: inletAt === 'low' ? 'low' : 'high', ...(supply
+      ? { kind: 'fan', tag: 'SF-203', label: 'Filtered supply air' }
+      : { kind: 'grille', tag: null, label: 'Air in (open inlet)' }) },
+    outlet: { band: exhaustAt === 'high' ? 'high' : 'low', ...(supply
+      ? { kind: 'grille', tag: null, label: 'Air out (damper)' }
+      : { kind: 'fan', tag: 'EF-203', label: 'Exhaust' }) },
+  };
+}
 
 // C5 1.4 "Today's ids stay": today's faceplate heading ids are fpAcTitle, fpHuTitle, fpFanTitle, fpLiTitle,
 // fpCiTitle (not a lowercase device name), so faceplate() maps dev to that suffix when building the id.
@@ -595,7 +720,42 @@ const MARKUP = `
     <span class="eyebrow" id="mimicStage">Fruiting room · live</span>
     <span class="tag" id="mimicNote"></span>
   </div>
-  ${MIMIC_SVG}
+  <div class="mimic-body">
+    ${MIMIC_SVG}
+    <aside class="glance" aria-label="Room at a glance">
+      <section>
+        <h3 class="eyebrow">Crop</h3>
+        <p class="gl-big" id="glCrop">--</p>
+        <p class="gl-sub" id="glStage"></p>
+        <p class="gl-sub" id="glHarvest"></p>
+      </section>
+      <section>
+        <h3 class="eyebrow">Now and the last 6 h</h3>
+      <div class="gl-row" id="glT"><span class="gl-k">Temperature</span><b class="gl-v">--</b><span class="gl-ico"></span>
+        <svg class="gl-spark" viewBox="0 0 200 32" preserveAspectRatio="none" aria-hidden="true"><rect class="gl-band" x="0" width="200"/><path class="gl-line"/></svg>
+        <span class="gl-t"></span></div>
+      <div class="gl-row" id="glRH"><span class="gl-k">Humidity</span><b class="gl-v">--</b><span class="gl-ico"></span>
+        <svg class="gl-spark" viewBox="0 0 200 32" preserveAspectRatio="none" aria-hidden="true"><rect class="gl-band" x="0" width="200"/><path class="gl-line"/></svg>
+        <span class="gl-t"></span></div>
+      <div class="gl-row" id="glC"><span class="gl-k">CO₂</span><b class="gl-v">--</b><span class="gl-ico"></span>
+        <svg class="gl-spark" viewBox="0 0 200 32" preserveAspectRatio="none" aria-hidden="true"><rect class="gl-band" x="0" width="200"/><path class="gl-line"/></svg>
+        <span class="gl-t"></span></div>
+      </section>
+      <section>
+        <h3 class="eyebrow">Per day</h3>
+        <dl class="gl-kv">
+          <dt>Energy</dt><dd id="glEnergy">–</dd>
+          <dt>Cost</dt><dd id="glCost">–</dd>
+          <dt>Fog water</dt><dd id="glWater">–</dd>
+          <dt>Fan runs</dt><dd id="glFan">–</dd>
+        </dl>
+      </section>
+      <section>
+        <h3 class="eyebrow">Alarms</h3>
+        <ul class="gl-alarms" id="glAlarms"></ul>
+      </section>
+    </aside>
+  </div>
 </figure>
 <aside class="card sim simpanel" aria-labelledby="hSim">
   <section>
@@ -733,7 +893,9 @@ const MARKUP = `
   <h2>Climate controller</h2>
   <p>The part that runs the machines. It sees only the sensor readings.</p>
 </div>
+<div class="ctl-section">
 <div id="panelHost" class="contents"></div>
+<div class="ctl-status" aria-label="Machine status">
 ${faceplate('ac', 'Air conditioner', 'ACU-201 · split 3.5 kW · setpoint', '', `
     <div class="fp-state"><span class="state" id="acState">Off</span><span class="pw" id="acPower">3 W</span></div>
     <div class="meter" aria-hidden="true"><span id="acMeter"></span></div>
@@ -762,6 +924,8 @@ ${faceplate('circ', 'Circulation fan', 'CF-205 · 40 W', 'small', `
   </div>
   <p class="hint" id="wNote"></p>
 </section>
+</div>
+</div>
 <div class="filters">
   <span class="eyebrow">Time window</span>
   <div class="seg" role="group" aria-label="Chart time window" id="winSeg">
@@ -1081,6 +1245,7 @@ const FarmBench = {
   get cfg() { ensureState(); return cfg; },
   get tariff() { ensureState(); return input.tariff; },
   get calApplied() { return calApplied; },
+  mimicLayout,
   applyCalib(params, rmse) {
     ensureState();
     env.room = { ...(env.room || {}), ua: params.ua, infAch: params.infAch, moistBuffer: params.moistBuffer };

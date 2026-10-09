@@ -173,10 +173,10 @@ main { max-width: 1480px; margin: 0 auto; padding: 14px 16px 40px; display: grid
 .mimic-head { display: flex; justify-content: space-between; align-items: center; padding: 2px 4px 8px; gap: 8px; }
 .mimic-svg { display: block; width: 100%; height: auto; }
 .mimic-svg text { font-family: var(--font-cond); fill: var(--ink); }
-.m-eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .1em; fill: var(--muted) !important; }
-.m-big { font-family: var(--font-mono) !important; font-size: 24px; font-weight: 500; }
-.m-small { font-size: 13px; fill: var(--ink-2) !important; }
-.m-tag { font-size: 14px; font-weight: 700; letter-spacing: .04em; }
+.m-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: .1em; fill: var(--muted) !important; }
+.m-big { font-family: var(--font-mono) !important; font-size: 22px; font-weight: 500; }
+.m-small { font-size: 12px; fill: var(--ink-2) !important; }
+.m-tag { font-size: 13px; font-weight: 700; letter-spacing: .04em; }
 .wall { fill: url(#hatch); stroke: var(--wall); stroke-width: 1; }
 .hatch-bg { fill: var(--surface); }
 .hatch-line { stroke: var(--wall); stroke-width: 1.4; }
@@ -197,7 +197,8 @@ main { max-width: 1480px; margin: 0 auto; padding: 14px 16px 40px; display: grid
 .bubble-tag { fill: var(--unit); stroke: var(--ink-2); stroke-width: 1.5; }
 .leader { stroke: var(--ink-2); stroke-width: 1.2; }
 .readout rect { fill: var(--unit); stroke: var(--border-strong); stroke-width: 1.2; }
-.readout .val { font-family: var(--font-mono) !important; font-size: 17px; font-weight: 500; }
+.readout .val { font-family: var(--font-mono) !important; font-size: 16px; font-weight: 500; }
+.readout .zn { font-family: var(--font-mono) !important; font-size: 11px; fill: var(--muted) !important; }
 .readout .ico { font-size: 13px; fill: var(--lvl, var(--muted)) !important; }
 .readout[data-lvl="good"] { --lvl: var(--good); }
 .readout[data-lvl="warning"] { --lvl: var(--warning); }
@@ -322,6 +323,57 @@ th:first-child, td:first-child { text-align: left; }
 .log li[data-lvl="good"] { --lvl: var(--good); }
 .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
+/* Climate controller section: its own grid, so a tall card never stretches its neighbours into empty boxes.
+   Wide: crop and targets | machine status | machines (Auto/Manual), then Fan and CO2 across. */
+.ctl-section { grid-column: span 12; display: grid; gap: 12px; align-items: start;
+  grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-areas: "targets status machines" "rules rules rules"; }
+.ctl-section .card.targets { grid-area: targets; }
+.ctl-section .card.rules { grid-area: rules; }
+.ctl-section .card.machines { grid-area: machines; }
+.ctl-status { grid-area: status; display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.ctl-status .faceplate, .ctl-status .faceplate.wide { grid-column: span 2; }
+.ctl-status .faceplate.small { grid-column: span 1; }
+@media (max-width: 1100px) {
+  .ctl-section { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-areas: "targets machines" "status status" "rules rules"; }
+  .ctl-status { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .ctl-status .faceplate.wide { grid-column: span 4; }
+}
+@media (max-width: 720px) {
+  .ctl-section { grid-template-columns: minmax(0, 1fr); grid-template-areas: "targets" "status" "machines" "rules"; }
+  .ctl-status { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ctl-status .faceplate.wide { grid-column: span 2; }
+}
+
+/* Room at a glance, beside the drawing; under it when the card is narrow */
+.mimic { container-type: inline-size; }
+.mimic-body { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 12px 24px; align-items: center; }
+@container (max-width: 1050px) { .mimic-body { grid-template-columns: minmax(0, 1fr); } .glance { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); } }
+.glance { display: grid; gap: 14px 24px; align-content: start; padding: 4px 4px 4px 0; }
+.glance section { display: grid; gap: 4px; align-content: start; }
+.glance h3.eyebrow { margin: 0 0 2px; }
+.gl-big { margin: 0; font: 600 17px var(--font-cond); }
+.gl-sub { margin: 0; font-size: 13px; color: var(--ink-2); }
+.gl-sub:empty { display: none; }
+.gl-row { display: grid; grid-template-columns: 1fr auto 18px; align-items: baseline; gap: 0 8px; padding: 4px 0 6px; border-bottom: 1px solid var(--border); }
+.gl-row:last-child { border-bottom: 0; }
+.gl-k { font-size: 13px; color: var(--ink-2); }
+.gl-v { font: 500 16px var(--font-mono); }
+.gl-ico { text-align: center; font-size: 13px; color: var(--lvl, var(--muted)); }
+.gl-spark { grid-column: 1 / -1; width: 100%; height: 30px; margin-top: 4px; overflow: visible; }
+.gl-band { fill: var(--band); }
+.gl-line { fill: none; stroke: var(--trend); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.gl-t { grid-column: 1 / -1; font-size: 12px; color: var(--muted); }
+.gl-row[data-lvl="good"] { --lvl: var(--good); }
+.gl-row[data-lvl="warning"], .gl-alarms li[data-lvl="warning"] { --lvl: var(--warning); }
+.gl-row[data-lvl="serious"], .gl-alarms li[data-lvl="serious"] { --lvl: var(--serious); }
+.gl-row[data-lvl="critical"], .gl-alarms li[data-lvl="critical"] { --lvl: var(--critical); }
+.gl-kv { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; margin: 0; font-size: 13px; }
+.gl-kv dt { color: var(--ink-2); }
+.gl-kv dd { margin: 0; text-align: right; font-family: var(--font-mono); }
+.gl-alarms { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; font-size: 13px; }
+.gl-alarms li { color: var(--lvl, var(--ink)); }
+.gl-alarms .gl-ok { color: var(--good-text, var(--good)); }
+
 /* Mimic extras */
 .sun { fill: none; stroke: var(--ink-2); stroke-width: 1.5; }
 .moon { fill: var(--ink-2); }
@@ -415,7 +467,7 @@ body[data-level="farmer"] .rules-grid { grid-template-columns: minmax(0, 1fr); }
 input.lockable:disabled { opacity: .45; }
 [data-bench="off"] .simpanel, [data-bench="off"] .simextra { display: none; }
 [data-bench="off"] .mimic { grid-column: span 12; }
-[data-bench="off"] .mimic .mimic-svg { max-width: 980px; margin-inline: auto; }
+[data-bench="off"] .mimic .mimic-svg { max-width: 1180px; margin-inline: auto; }
 
 /* Simulator toolbar row: today's header clock, sky chip, alarm summary, speed, Pause, Reset */
 .sim-toolbar { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 20px; padding: 6px 2px 10px; }
