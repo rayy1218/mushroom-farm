@@ -395,6 +395,7 @@ function createRoomManager(options) {
         const runtime = ClimateRuntime.createRuntime({ io: adapter.io, ctl, onReading: (r, cmd) => { loop.pendingReading = { r, cmd }; }, skipCurrent: true });
         loop.runtime = runtime;
       }
+      if (loop.liveReading) loop.liveAir = buildLiveAir(loop, loop.liveReading.t);
     } catch (err) {
       failStart(err);
       return;
@@ -406,7 +407,6 @@ function createRoomManager(options) {
 
     loop.running = true;
     loop.error = null;
-    if (loop.liveReading) loop.liveAir = buildLiveAir(loop, loop.liveReading.t);
     loop.lastNow = t;
     loop.stateSavedAt = t;
 

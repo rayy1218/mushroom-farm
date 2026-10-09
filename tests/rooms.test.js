@@ -1067,7 +1067,7 @@ test('Live flush and blocks', () => {
   assert.equal(mgr.get(b.id).live.blocks, null);
   assert.equal(mgr.get(a.id).live.flush, 1);
   assert.equal(mgr.get(b.id).live.flush, 1);
-  // the summary is C2's lead decision 2 shape: no flush, blocks or air in a room event
+  // a room event carries Live (flush included); flush is not part of the summary
   const roomEmit = log.filter(([n]) => n === 'room').at(-1)[1].room;
   assert.equal(roomEmit.live.flush, 1);
 

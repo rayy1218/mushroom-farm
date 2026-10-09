@@ -29,7 +29,7 @@ function startApi(t, extra) {
   const fatals = [];
   const api = createApi({ db, rooms, root, now, heartbeatMs: 50, onFatal: e => fatals.push(e), ...extra });
   const server = http.createServer(api.handle).listen(0, '127.0.0.1');
-  const ready = new Promise(resolve => server.on('listening', resolve));
+  const ready = within(new Promise(resolve => server.on('listening', resolve)), 10000, 'the server to listen');
   const url = () => `http://127.0.0.1:${server.address().port}`;
   const requests = [];
   const ctx = { get url() { return url(); }, db, rooms, api, fatals, server, ready, onCalls, offCalls, requests };
@@ -62,7 +62,7 @@ function parseMessage(text) {
 }
 
 function connectStream(ctx, { pause } = {}) {
-  return new Promise((resolve, reject) => {
+  return within(new Promise((resolve, reject) => {
     const req = http.get(ctx.url + '/api/stream', res => {
       // A paused stream stops libuv from watching the socket at all, so a server-initiated close is never
       // observed until the stream is resumed: the caller resumes it (c.resume()) once the server has acted.
@@ -97,7 +97,7 @@ function connectStream(ctx, { pause } = {}) {
     });
     ctx.requests.push(req);
     req.on('error', reject);
-  });
+  }), 10000, 'the stream response');
 }
 
 describe('stream (C4)', () => {

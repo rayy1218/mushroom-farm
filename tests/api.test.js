@@ -1526,6 +1526,18 @@ describe('extra routes (C3 2.1, C10 13)', () => {
     assert.equal((await r2.json()).error, 'Unknown route');
   });
 
+  test('a pattern extra route does not take over /api/stream (lead decision 85)', async () => {
+    const pat = startApi({ extraRoutes: [{ method: 'GET', segs: ['api', ':thing'], needsRoom: false, hasBody: false, run: () => ({ status: 200, body: 'extra' }) }] });
+    await pat.ready;
+    try {
+      const controller = new AbortController();
+      const r = await fetch(`${pat.url}/api/stream`, { signal: controller.signal });
+      assert.equal(r.headers.get('content-type'), 'text/event-stream; charset=utf-8');
+      controller.abort();
+      assert.equal(await (await fetch(`${pat.url}/api/other`)).json(), 'extra');
+    } finally { pat.stop(); }
+  });
+
   test('without extraRoutes the C3 routes are unchanged (default [])', async () => {
     const plain = startApi();
     await plain.ready;

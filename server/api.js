@@ -435,7 +435,7 @@ function createApi(opts) {
         sendJson(res, out.status, out.body);
       },
     }));
-  const ALL_ROUTES = [...ROUTES, ...EXTRA_ROUTES, STREAM_ROUTE];
+  const ALL_ROUTES = [...ROUTES, STREAM_ROUTE, ...EXTRA_ROUTES]; // lead decision 85: the stream before any extra route
 
   function matchRoute(method, segments) {
     for (const route of ALL_ROUTES) {
