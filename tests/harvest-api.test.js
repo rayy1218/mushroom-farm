@@ -516,21 +516,21 @@ test('store errors reach the caller unchanged', () => {
   assert.throws(() => call('GET', 'api/batches'), e => e === F);
 });
 
-test('day rules compare farm days: previous day is 400, same day passes the route', () => {
+test('day rules compare farm days: previous day is 400, same day is clamped', () => {
   const { harvest, call, room } = setup();
   const r1 = room('Room 1');
   const D = startOfDay(NOW - 3 * DAY); // 00:00 three days ago
   const received = seed(harvest, { received_at: D + 10 * 3600 });
   const place = at => () => call('POST', `api/batches/${received.id}/place`, { body: { room_id: r1, placed_at: at } });
   rejects(harvest, received.id, place(D - 1), 400, 'Invalid batch', ['placed_at: must not be before the day it was received']);
-  // Same day, earlier hour: the route accepts it (it is not a 400); the store's seconds CHECK is the next guard.
-  assert.throws(place(D), e => !(e instanceof HttpError));
+  // Same day, earlier hour: stored clamped to received_at (LD 78).
+  assert.equal(place(D)().body.placed_at, D + 10 * 3600);
   const placed = seed(harvest, { received_at: D + 9 * 3600 }, r1, D + 10 * 3600);
   const clear = at => () => call('POST', `api/batches/${placed.id}/clear`, { body: { cleared_at: at } });
   rejects(harvest, placed.id, clear(D - 1), 400, 'Invalid batch', ['cleared_at: must not be before the day it was placed']);
-  assert.throws(clear(D), e => !(e instanceof HttpError));
+  assert.equal(clear(D)().body.cleared_at, D + 10 * 3600);
   const patch = at => () => call('PATCH', `api/batches/${placed.id}`, { body: { received_at: at } });
   rejects(harvest, placed.id, patch(D + DAY), 400, 'Invalid batch', ['received_at: must not be after the day it was placed']);
-  assert.throws(patch(D + 11 * 3600), e => !(e instanceof HttpError)); // store CHECK, as above
-  assert.equal(patch(D + 9 * 3600 + 60)().status, 200);
+  assert.equal(patch(D + 11 * 3600)().body.received_at, D + 10 * 3600);
+  assert.equal(patch(D + 9 * 3600 + 60)().body.received_at, D + 9 * 3600 + 60);
 });

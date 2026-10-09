@@ -155,7 +155,10 @@ function createHarvestRoutes(opts) {
         throw invalidBatch(['received_at: must not be after the day it was placed']);
       }
     }
-    return { status: 200, body: batchOf(harvest.updateBatch(row.id, trimFields(body))) };
+    const changes = trimFields(body);
+    // Same farm day but later in the day than placed_at: store placed_at (LD 78).
+    if (changes.received_at !== undefined && row.placed_at != null) changes.received_at = Math.min(changes.received_at, row.placed_at);
+    return { status: 200, body: batchOf(harvest.updateBatch(row.id, changes)) };
   });
 
   // 9.5
@@ -172,7 +175,7 @@ function createHarvestRoutes(opts) {
     if (startOfDay(placedAt) < startOfDay(row.received_at)) throw invalidBatch(['placed_at: must not be before the day it was received']);
     if (placedAt > now) throw invalidBatch(['placed_at: must not be in the future']);
     if (Rules.state(row) !== 'received') throw new HttpError(400, 'Batch is already in a room', []);
-    return { status: 200, body: batchOf(harvest.placeBatch(row.id, body.room_id, placedAt)) };
+    return { status: 200, body: batchOf(harvest.placeBatch(row.id, body.room_id, Math.max(placedAt, row.received_at))) };
   });
 
   // 9.6
@@ -190,7 +193,7 @@ function createHarvestRoutes(opts) {
     if (state === 'received') throw new HttpError(400, 'Batch is not in a room', []);
     if (state === 'cleared') throw new HttpError(400, 'Batch is cleared', []);
     if (startOfDay(clearedAt) < startOfDay(row.placed_at)) throw invalidBatch(['cleared_at: must not be before the day it was placed']);
-    return { status: 200, body: batchOf(harvest.clearBatch(row.id, clearedAt)) };
+    return { status: 200, body: batchOf(harvest.clearBatch(row.id, Math.max(clearedAt, row.placed_at))) };
   });
 
   // 9.7
