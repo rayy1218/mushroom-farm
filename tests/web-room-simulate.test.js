@@ -108,3 +108,36 @@ test('SM6 cycle result', () => {
   assert.equal(pts[30].spRH, 88);
   assert.equal(pts[30].co2Lim, 1000);
 });
+
+const INFO = { id: 12, room_id: 1, created_at: 1791450900, kind: 'cycle', verdict: 'pass', blocks: 2000, days: 83, kwh: 1093.4, rm: 623.2,
+  utilisation: null, real_start: null, note: null, inputs: { mix: [{ crop: 'oyster', blocks: 2000, co2_per_block: null }] } };
+
+test('SM7 runRowTexts', () => {
+  assert.deepEqual(H.runRowTexts(INFO), { run: 'Cycle · 2026-10-08 17:15:00', mix: '2000 Grey oyster',
+    chip: { lvl: 'good', icon: '✓', text: 'Passes' }, energy: 'RM 0.31 per block', note: '' });
+  const two = { ...INFO, inputs: { mix: [{ crop: 'oyster', blocks: 1200, co2_per_block: null }, { crop: 'pink', blocks: 0, co2_per_block: null }, { crop: 'pink', blocks: 300, co2_per_block: 55 }] } };
+  assert.equal(H.runRowTexts(two).mix, `1200 ${CC.CROPS.oyster.name} + 300 ${CC.CROPS.pink.name}`);
+  assert.equal(H.runRowTexts({ ...INFO, inputs: { mix: [] } }).mix, '–');
+  assert.equal(H.runRowTexts({ ...INFO, kind: 'capacity', verdict: 'good', utilisation: 74 }).energy, '74 %');
+  assert.equal(H.runRowTexts({ ...INFO, kind: 'equipment', verdict: 'enough', rm: 5, utilisation: 3 }).energy, '–');
+  assert.equal(H.runRowTexts({ ...INFO, verdict: 'impossible', rm: null }).energy, '–');
+  assert.equal(H.runRowTexts({ ...INFO, note: 'hello' }).note, 'hello');
+  assert.equal(H.runRowTexts({ ...INFO, kind: 'equipment', verdict: 'enough' }).run.startsWith('Equipment · '), true);
+  assert.equal(H.runRowTexts({ ...INFO, kind: 'capacity', verdict: 'good' }).run.startsWith('Capacity · '), true);
+  const chip = (kind, verdict) => H.runRowTexts({ ...INFO, kind, verdict }).chip;
+  const W = text => ({ lvl: 'warning', icon: '✕', text }), G = text => ({ lvl: 'good', icon: '✓', text }), I = text => ({ lvl: 'info', icon: '●', text });
+  assert.deepEqual(chip('cycle', 'pass'), G('Passes'));
+  assert.deepEqual(chip('cycle', 'fail'), W('Fails'));
+  assert.deepEqual(chip('capacity', 'good'), G('Good'));
+  assert.deepEqual(chip('capacity', 'tight'), I('Tight'));
+  assert.deepEqual(chip('capacity', 'too-dense'), W('Too many blocks'));
+  assert.deepEqual(chip('capacity', 'too-empty'), I('Too few blocks'));
+  assert.deepEqual(chip('equipment', 'enough'), G('Enough'));
+  assert.deepEqual(chip('equipment', 'too-small'), W('Too small'));
+  assert.deepEqual(chip('equipment', 'too-big'), W('Too big'));
+  assert.deepEqual(chip('equipment', 'oversized'), I('Bigger than needed'));
+  for (const k of ['cycle', 'capacity', 'equipment']) assert.deepEqual(chip(k, 'impossible'), W('Impossible'));
+  assert.deepEqual(chip('cycle', 'xyz'), I('xyz'));
+  assert.deepEqual(chip('capacity', 'xyz'), I('xyz'));
+  assert.deepEqual(chip('equipment', 'xyz'), I('xyz'));
+});

@@ -53,9 +53,31 @@ function seriesPoints(res) {
     return { t: p.h * 3600, T: p.T, RH: p.RH, C: p.CO2, core: p.core, spT: t ? t.spT : NaN, spRH: t ? t.spRH : NaN, co2Lim: t ? t.co2Lim : NaN };
   });
 }
+
+const CHIPS = {
+  cycle: { pass: ['good', '✓', 'Passes'], fail: ['warning', '✕', 'Fails'] },
+  capacity: { good: ['good', '✓', 'Good'], tight: ['info', '●', 'Tight'], 'too-dense': ['warning', '✕', 'Too many blocks'], 'too-empty': ['info', '●', 'Too few blocks'] },
+  equipment: { enough: ['good', '✓', 'Enough'], 'too-small': ['warning', '✕', 'Too small'], 'too-big': ['warning', '✕', 'Too big'],
+    oversized: ['info', '●', 'Bigger than needed'] },
+};
+function runChip(kind, verdict) {
+  const own = Object.hasOwn(CHIPS, kind) ? CHIPS[kind] : {};
+  const c = verdict === 'impossible' ? ['warning', '✕', 'Impossible'] : Object.hasOwn(own, verdict) ? own[verdict] : ['info', '●', verdict];
+  return { lvl: c[0], icon: c[1], text: c[2] };
+}
+const KIND_NAME = { cycle: 'Cycle', capacity: 'Capacity', equipment: 'Equipment' };
+function runRowTexts(info) {
+  const CROPS = global.ClimateController.CROPS;
+  const parts = info.inputs.mix.filter(m => m.blocks > 0).map(m => `${m.blocks} ${Object.hasOwn(CROPS, m.crop) ? CROPS[m.crop].name : m.crop}`);
+  let energy = '–';
+  if (info.kind === 'cycle' && info.rm !== null && info.blocks > 0) energy = `RM ${(info.rm / info.blocks).toFixed(2)} per block`;
+  else if (info.kind === 'capacity' && info.utilisation !== null) energy = `${info.utilisation} %`;
+  return { run: `${KIND_NAME[info.kind] || info.kind} · ${global.FarmUi.farmClock().stamp(info.created_at)}`, mix: parts.length ? parts.join(' + ') : '–',
+    chip: runChip(info.kind, info.verdict), energy, note: info.note ?? '' };
+}
 const stub = () => { throw new Error('not built yet'); };
 const helpers = { toCapacityMix, toMixRows, sameMix, appliedCalib, runInputs, cycleSummary, stageRows,
-  seriesPoints, runRowTexts: stub, progressText: stub, machinesText: stub, clampBlocks: stub, clampCo2: stub, regionText: stub };
+  seriesPoints, runRowTexts, progressText: stub, machinesText: stub, clampBlocks: stub, clampCo2: stub, regionText: stub };
 
 function mount() {}
 function unmount() {}
