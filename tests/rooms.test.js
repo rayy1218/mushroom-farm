@@ -1738,6 +1738,70 @@ test('Untrusted keys', (t) => {
   assert.equal(db.currentSettings(2).settings.spT, 20);
 });
 
+// C9 section 6.3: stored settings (and given settings merged over them) go through
+// ClimateController.upgradeSettings before importSettings; its warnings come before the import warnings.
+const REMOVED = 'Setting "rules.oldKey" was removed: fresh air now runs as short purges.';
+function stubUpgrade(t) {
+  const had = Object.hasOwn(CC, 'upgradeSettings'), orig = CC.upgradeSettings;
+  const seen = [];
+  CC.upgradeSettings = obj => {
+    seen.push(structuredClone(obj));
+    const settings = structuredClone(obj), warnings = [];
+    if (settings.rules && 'oldKey' in settings.rules) { delete settings.rules.oldKey; warnings.push(REMOVED); }
+    return { settings, warnings };
+  };
+  t.after(() => { if (had) CC.upgradeSettings = orig; else delete CC.upgradeSettings; });
+  return seen;
+}
+
+test('Settings upgrade: loop start upgrades the stored version', (t) => {
+  const seen = stubUpgrade(t);
+  const { db, mgr } = setup(scripted().factory);
+  const stored = CC.defaultSettings();
+  stored.roomM3 = 60;
+  stored.rules.oldKey = 1;
+  db.createRoom({ name: 'Old', volume: 60, adapter: 'sim', settings: stored, note: 'Created', at: T0 });
+  mgr.start();
+  assert.deepEqual(seen, [stored]);
+  const texts = db.listEvents(1, { limit: 50 }).map(e => e.text).reverse();
+  assert.deepEqual(texts, [`Settings: ${REMOVED}`, 'Started']);
+  assert.equal(mgr.get(1).live.running, true);
+});
+
+test('Settings upgrade: create and applySettings upgrade the merged settings', (t) => {
+  stubUpgrade(t);
+  const { db, mgr } = setup(scripted().factory);
+  mgr.start();
+  const created = mgr.create({ name: 'B', volume: 60, settings: { spT: 99, rules: { oldKey: 1 } } });
+  assert.deepEqual(created.warnings, [REMOVED, '"spT" = 99 is outside 10–35: set to 35.']);
+  assert.ok(!('oldKey' in db.currentSettings(created.room.id).settings.rules));
+  const applied = mgr.applySettings(1, { rules: { oldKey: 2 } });
+  assert.deepEqual(applied.warnings, [REMOVED]);
+  assert.ok(!('oldKey' in db.currentSettings(1).settings.rules));
+});
+
+test('Settings upgrade: a stored version 1 settings object loads with warnings', { skip: NEEDS_CTL }, () => {
+  const cap = capture(scripted().factory);
+  const { db, mgr } = setup(cap.factory);
+  const old = CC.defaultSettings();
+  old.roomM3 = 60;
+  old.rules.airMode = 'steady';
+  old.rules.acOff = 900;
+  old.rules.acOn = 700;
+  delete old.manual.air;
+  old.manual.fan = { auto: false, level: 2 };
+  db.createRoom({ name: 'Old', volume: 60, adapter: 'sim', settings: old, note: 'Created', at: T0 });
+  mgr.start();
+  const texts = db.listEvents(1, { limit: 50 }).map(e => e.text);
+  for (const key of ['rules.airMode', 'rules.acOff', 'rules.acOn', 'manual.fan']) {
+    assert.ok(texts.includes(`Settings: Setting "${key}" was removed: fresh air now runs as short purges.`), key);
+  }
+  assert.ok(!texts.some(x => x.startsWith('Settings: Unknown setting')), texts.join('\n'));
+  assert.equal(mgr.get(1).live.running, true);
+  assert.deepEqual(cap.made[0].cfg.manual.air, { auto: false, on: true });
+  assert.equal(cap.made[0].cfg.rules.fanOn, old.rules.fanOn);
+});
+
 test('Errors', () => {
   const { mgr } = setup();
   mgr.start();

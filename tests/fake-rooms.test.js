@@ -268,3 +268,21 @@ test('listeners: a throwing listener is caught; off removes a listener; emit tes
   rooms.emit('reading', { t: 5 });
   assert.deepEqual(seen.filter(([name]) => name === 'reading'), [['reading', { t: 5 }]]);
 });
+
+test('create and applySettings: upgradeSettings runs before the import (C9 section 6.3)', (t) => {
+  const REMOVED = 'Setting "rules.oldKey" was removed: fresh air now runs as short purges.';
+  const had = Object.hasOwn(CC, 'upgradeSettings'), orig = CC.upgradeSettings;
+  CC.upgradeSettings = obj => {
+    const settings = structuredClone(obj), warnings = [];
+    if (settings.rules && 'oldKey' in settings.rules) { delete settings.rules.oldKey; warnings.push(REMOVED); }
+    return { settings, warnings };
+  };
+  t.after(() => { if (had) CC.upgradeSettings = orig; else delete CC.upgradeSettings; });
+
+  const { db, rooms } = setup();
+  const created = rooms.create({ name: 'A', volume: 60, settings: { spT: 99, rules: { oldKey: 1 } } });
+  assert.deepEqual(created.warnings, [REMOVED, '"spT" = 99 is outside 10–35: set to 35.']);
+  const applied = rooms.applySettings(created.room.id, { rules: { oldKey: 2 } });
+  assert.deepEqual(applied.warnings, [REMOVED]);
+  assert.ok(!('oldKey' in db.currentSettings(created.room.id).settings.rules));
+});

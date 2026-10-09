@@ -75,6 +75,17 @@ function validateNote(note, details) {
   return trimmed === '' ? null : trimmed;
 }
 
+// C9 section 6.3: settings from the database (and given settings merged over them) may be version 1, so
+// ClimateController.upgradeSettings (C9 section 5.2) runs first; its warnings come before the import's own.
+// The typeof guard is for the time before the controller stream is merged (C9 step 2).
+function upgradeAndImport(settings) {
+  const upgraded = typeof ClimateController.upgradeSettings === 'function'
+    ? ClimateController.upgradeSettings(settings)
+    : { settings, warnings: [] };
+  const imported = ClimateController.importSettings({ format: SETTINGS_FORMAT, version: ClimateController.SETTINGS_VERSION, settings: upgraded.settings });
+  return { settings: imported.settings, warnings: upgraded.warnings.concat(imported.warnings) };
+}
+
 function buildReadingRow(roomId, r, cmd) {
   return {
     room_id: roomId,
@@ -293,7 +304,7 @@ function createRoomManager(options) {
 
     let warnings = [];
     try {
-      const imported = ClimateController.importSettings({ format: SETTINGS_FORMAT, version: ClimateController.SETTINGS_VERSION, settings: version.settings });
+      const imported = upgradeAndImport(version.settings);
       loop.cfg = imported.settings;
       warnings = imported.warnings;
       loop.base = structuredClone(loop.cfg);
@@ -484,7 +495,7 @@ function createRoomManager(options) {
       const { settings: merged, warnings: dropped } = cleanSettings(settingsInput, base);
       let imported;
       try {
-        imported = ClimateController.importSettings({ format: SETTINGS_FORMAT, version: ClimateController.SETTINGS_VERSION, settings: merged });
+        imported = upgradeAndImport(merged);
       } catch (err) {
         throw new RoomError('bad_input', 'Bad input', [err.message]);
       }
@@ -616,7 +627,7 @@ function createRoomManager(options) {
     const { settings: merged, warnings: dropped } = cleanSettings(settingsInput, base);
     let imported;
     try {
-      imported = ClimateController.importSettings({ format: SETTINGS_FORMAT, version: ClimateController.SETTINGS_VERSION, settings: merged });
+      imported = upgradeAndImport(merged);
     } catch (err) {
       throw new RoomError('bad_input', 'Bad input', [err.message]);
     }

@@ -84,17 +84,20 @@ function createFakeRoomManager({ db, now = () => Math.floor(Date.now() / 1000) }
 
   function mergeAndImport(settingsInput, base) {
     const { settings: merged, warnings: dropped } = cleanSettings(settingsInput, base);
-    let imported;
+    const CC = globalThis.ClimateController;
+    let upgraded, imported;
     try {
-      imported = globalThis.ClimateController.importSettings({
+      // C9 section 6.3: upgradeSettings first, like the real manager (typeof guard until the controller stream merges).
+      upgraded = typeof CC.upgradeSettings === 'function' ? CC.upgradeSettings(merged) : { settings: merged, warnings: [] };
+      imported = CC.importSettings({
         format: 'mushroom-climate-settings',
-        version: globalThis.ClimateController.SETTINGS_VERSION,
-        settings: merged,
+        version: CC.SETTINGS_VERSION,
+        settings: upgraded.settings,
       });
     } catch (err) {
       throw new RoomError('bad_input', 'Bad input', [err.message]);
     }
-    return { settings: imported.settings, warnings: dropped.concat(imported.warnings) };
+    return { settings: imported.settings, warnings: dropped.concat(upgraded.warnings, imported.warnings) };
   }
 
   function rawCreate(input) {
