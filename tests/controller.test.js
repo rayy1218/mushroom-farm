@@ -184,8 +184,8 @@ test('VPD mode: the humidity target moves with the temperature', () => {
   assert.ok(warmer > at25, 'warmer air: higher RH target for the same evaporation');
 });
 
-// No crop in the list uses the flags maxFog, noFogBoost, shock and spawnLights now: a test crop checks them.
-CC.CROPS.flagTest = { ...CC.CROPS.oyster, name: 'Flag test', maxFog: 2, noFogBoost: true, shock: { T: 20, hours: 24 }, spawnLights: true };
+// No crop in the list uses the flags maxFog, shock and spawnLights now: a test crop checks them.
+CC.CROPS.flagTest = { ...CC.CROPS.oyster, name: 'Flag test', maxFog: 2, shock: { T: 20, hours: 24 }, spawnLights: true };
 
 test('every crop can be held by a split AC (16-30 °C) and its targets are inside its own range', () => {
   for (const [key, c] of Object.entries(CC.CROPS)) {

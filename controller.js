@@ -8,24 +8,29 @@
  *   reading  { seq, t, T, RH, CO2, tOut, rhOut }        (one new reading per sensor period;
  *                                                        a value can be null when a sensor fails)
  *   ctl.update(reading) -> commands
- *   commands { ac: { power, mode, setpoint }, hu: { level }, fan: { level } }
+ *   commands { ac: { power, mode, setpoint, fan }, hu: { level }, air: { on }, lights: { on }, circ: { on } }
  *
  * The air conditioner is a split unit with its own thermostat: the controller sends a mode and a
- * setpoint. The fogger and the exhaust fan have fixed power levels.
+ * setpoint. The fogger has fixed power levels. The air exchange is a filtered intake fan (SF-203) and an
+ * exhaust fan (EF-206), each with a motorised damper, switched on and off together (contract C9).
  *
  * Each update has these steps:
  *   0. Stage program: slow change of the targets after a stage change (ramp), automatic stage change
  *      after the set days, flush count, and the daily harvest windows (fogger off before picking).
  *   1. Check each sensor value. A bad value is not used; 3 bad readings = sensor fault.
- *   2. Rules, highest priority first:
- *        P1  CO2 safety level: the fan runs, even when humidity is low.
- *        P2  Humidity first:   low RH stops (or reduces) the exhaust fan.
- *        P3  CO2 purge:        the fan runs between two CO2 levels; the AC setpoint goes up
- *                              (setback) while the fan exhausts air; the fogger fogs more.
- *        P4  Temperature and humidity loops.
- *      A failed sensor puts its loop in a safe state (for example a timed purge).
- *   3. Machine protection: minimum on/off times and a minimum time between AC commands.
- *   4. Exhaust record: each exhaust (start, end, level, reason, CO2, air volume) and a total per hour.
+ *   2. Purge cycle: idle -> purge -> after -> idle. The CO2 rise with the fans off predicts the next purge
+ *      (shown to the grower). The AC and the fogger keep their normal targets through a purge. A purge runs from the start level (fanOn) to the stop level (fanOff), at most purgeMaxS.
+ *      3 capped purges in a row: the "air exchange too small" alarm, with the size the room needs.
+ *   3. Rules for the air exchange, highest priority first:
+ *        Manual  the grower's on/off.
+ *        P1  CO2 safety level: on, ignoring the time cap and the minimum off time.
+ *        P2  Humidity first:   a purge that would dry the room waits while RH is low, at most until the CO2 limit.
+ *        P3  CO2 purge, or a timed purge when the CO2 sensor fails.
+ *        P4  Free cooling and outdoor drying.
+ *      Then the temperature and humidity loops. A failed sensor puts its loop in a safe state.
+ *   4. Machine protection: the air exchange runs at least 30 s and stays off rules.minOffS; minimum on/off
+ *      times for the fogger; a minimum time between AC commands.
+ *   5. Purge record: each air run (start, end, reason, CO2, air volume, capped) and a total per hour.
  */
 (function (global) {
   'use strict';
@@ -43,7 +48,7 @@
   // range: the good fruiting band (T °C, RH %), narrower than the alarm limits; a mixed room needs targets inside every crop's range.
   // Only crops that fruit near tropical room temperature (a split AC cannot hold 16-21 °C on a 33 °C day).
   // Flags: casing (milky: soil casing before pinning, a manual step). Flags for other crops:
-  // maxFog (no direct fog on the crop), noFogBoost, shock { T, hours } (cold shock at pinning), spawnLights (light in spawn run).
+  // maxFog (no direct fog on the crop), shock { T, hours } (cold shock at pinning), spawnLights (light in spawn run).
   const CROPS = {
     oyster:    { name: 'Grey oyster', spawn: [24, 70, 5000], pinning: [24, 92, 800], fruiting: [25, 88, 1000], rest: [25, 80, 2000],
                  limits: { tMin: 20, tMax: 30, coreMax: 32 }, coreTarget: 28, range: { T: [23, 27], RH: [85, 92] } },
