@@ -320,7 +320,7 @@ test('9.5 place: body rules are 400 Invalid batch', () => {
   for (const body of [{}, { room_id: 'abc' }, { room_id: 1.5 }, { room_id: 999 }, { room_id: old }]) bad(body, ['room_id: no such room']);
   bad({ room_id: r1, placed_at: 1.5 }, ['placed_at: must be whole seconds since 1970']);
   bad({ room_id: r1, placed_at: null }, ['placed_at: must be whole seconds since 1970']);
-  bad({ room_id: r1, placed_at: b.received_at - 1 }, ['placed_at: must not be before the day it was received']);
+  bad({ room_id: r1, placed_at: startOfDay(b.received_at) - 1 }, ['placed_at: must not be before the day it was received']);
   bad({ room_id: r1, placed_at: NOW + 1 }, ['placed_at: must not be in the future']);
 });
 
@@ -362,7 +362,7 @@ test('9.6 clear: body, state and date rules in order', () => {
   rejects(harvest, received.id, clear(received, {}), 400, 'Batch is not in a room', []);
   rejects(harvest, received.id, clear(received, { cleared_at: received.received_at - 1 }), 400, 'Batch is not in a room', []);
   rejects(harvest, cleared.id, clear(cleared, {}), 400, 'Batch is cleared', []);
-  rejects(harvest, placed.id, clear(placed, { cleared_at: placed.placed_at ?? NOW - 9 * DAY - 1 }), 400, 'Invalid batch',
+  rejects(harvest, placed.id, clear(placed, { cleared_at: startOfDay(harvest.getBatch(placed.id).placed_at) - 1 }), 400, 'Invalid batch',
     ['cleared_at: must not be before the day it was placed']);
 });
 
@@ -514,4 +514,23 @@ test('store errors reach the caller unchanged', () => {
   const F = Object.assign(new Error('disk I/O error'), { code: 'ERR_SQLITE_ERROR', errcode: 10 });
   harvest.listBatches = () => { throw F; };
   assert.throws(() => call('GET', 'api/batches'), e => e === F);
+});
+
+test('day rules compare farm days: previous day is 400, same day passes the route', () => {
+  const { harvest, call, room } = setup();
+  const r1 = room('Room 1');
+  const D = startOfDay(NOW - 3 * DAY); // 00:00 three days ago
+  const received = seed(harvest, { received_at: D + 10 * 3600 });
+  const place = at => () => call('POST', `api/batches/${received.id}/place`, { body: { room_id: r1, placed_at: at } });
+  rejects(harvest, received.id, place(D - 1), 400, 'Invalid batch', ['placed_at: must not be before the day it was received']);
+  // Same day, earlier hour: the route accepts it (it is not a 400); the store's seconds CHECK is the next guard.
+  assert.throws(place(D), e => !(e instanceof HttpError));
+  const placed = seed(harvest, { received_at: D + 9 * 3600 }, r1, D + 10 * 3600);
+  const clear = at => () => call('POST', `api/batches/${placed.id}/clear`, { body: { cleared_at: at } });
+  rejects(harvest, placed.id, clear(D - 1), 400, 'Invalid batch', ['cleared_at: must not be before the day it was placed']);
+  assert.throws(clear(D), e => !(e instanceof HttpError));
+  const patch = at => () => call('PATCH', `api/batches/${placed.id}`, { body: { received_at: at } });
+  rejects(harvest, placed.id, patch(D + DAY), 400, 'Invalid batch', ['received_at: must not be after the day it was placed']);
+  assert.throws(patch(D + 11 * 3600), e => !(e instanceof HttpError)); // store CHECK, as above
+  assert.equal(patch(D + 9 * 3600 + 60)().status, 200);
 });

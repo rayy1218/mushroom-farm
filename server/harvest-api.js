@@ -151,7 +151,7 @@ function createHarvestRoutes(opts) {
     if (problems.length > 0) throw invalidBatch(problems);
     if (body.received_at !== undefined) {
       if (body.received_at > now) throw invalidBatch(['received_at: must not be in the future']);
-      if (row.placed_at != null && body.received_at > row.placed_at) {
+      if (row.placed_at != null && startOfDay(body.received_at) > startOfDay(row.placed_at)) {
         throw invalidBatch(['received_at: must not be after the day it was placed']);
       }
     }
@@ -169,7 +169,7 @@ function createHarvestRoutes(opts) {
     if (openRoom(body.room_id) === null) throw invalidBatch(['room_id: no such room']);
     const placedAt = timeOf(body, 'placed_at', now);
     if (!Number.isInteger(placedAt)) throw invalidBatch(['placed_at: must be whole seconds since 1970']);
-    if (placedAt < row.received_at) throw invalidBatch(['placed_at: must not be before the day it was received']);
+    if (startOfDay(placedAt) < startOfDay(row.received_at)) throw invalidBatch(['placed_at: must not be before the day it was received']);
     if (placedAt > now) throw invalidBatch(['placed_at: must not be in the future']);
     if (Rules.state(row) !== 'received') throw new HttpError(400, 'Batch is already in a room', []);
     return { status: 200, body: batchOf(harvest.placeBatch(row.id, body.room_id, placedAt)) };
@@ -189,7 +189,7 @@ function createHarvestRoutes(opts) {
     const state = Rules.state(row);
     if (state === 'received') throw new HttpError(400, 'Batch is not in a room', []);
     if (state === 'cleared') throw new HttpError(400, 'Batch is cleared', []);
-    if (clearedAt < row.placed_at) throw invalidBatch(['cleared_at: must not be before the day it was placed']);
+    if (startOfDay(clearedAt) < startOfDay(row.placed_at)) throw invalidBatch(['cleared_at: must not be before the day it was placed']);
     return { status: 200, body: batchOf(harvest.clearBatch(row.id, clearedAt)) };
   });
 
