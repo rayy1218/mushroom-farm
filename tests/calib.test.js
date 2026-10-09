@@ -1,7 +1,7 @@
 // Calibration tests: a log from a "hidden" room; the fit must find the hidden values.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-require('../sim.js'); require('../controller.js'); require('../calib.js');
+require('../sim.js'); require('../air.js'); require('../controller.js'); require('../calib.js');
 const SIM = globalThis.ClimateSim, CC = globalThis.ClimateController, CAL = globalThis.ClimateCalib;
 const EXHAUST = { vent: 'exhaust', inletAt: 'low', exhaustAt: 'high' };
 

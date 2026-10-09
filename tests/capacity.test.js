@@ -1,10 +1,10 @@
 // Room capacity check (capacity.js). Spec: docs/superpowers/specs/2026-10-07-room-capacity-design.md
 const test = require('node:test');
 const assert = require('node:assert/strict');
-require('../sim.js'); require('../controller.js'); require('../runtime.js'); require('../capacity.js');
+require('../sim.js'); require('../air.js'); require('../controller.js'); require('../runtime.js'); require('../capacity.js');
 const CAP = globalThis.ClimateCapacity, CC = globalThis.ClimateController;
 
-const room = { name: 'Room 1', volume: 60, vent: 'supply', calib: null };
+const room = { name: 'Room 1', volume: 60, calib: null };
 const NOW = Date.parse('2026-10-07T12:00:00Z');
 
 // ---------- common targets ----------

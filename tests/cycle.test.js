@@ -1,10 +1,10 @@
 // Crop cycle simulation (cycle.js). Contract: docs/contracts/cycle.md
 const test = require('node:test');
 const assert = require('node:assert/strict');
-require('../sim.js'); require('../controller.js'); require('../runtime.js'); require('../capacity.js'); require('../cycle.js');
+require('../sim.js'); require('../air.js'); require('../controller.js'); require('../runtime.js'); require('../capacity.js'); require('../cycle.js');
 const CY = globalThis.ClimateCycle, CAP = globalThis.ClimateCapacity, CC = globalThis.ClimateController, SIM = globalThis.ClimateSim;
 
-const room = { name: 'Room 1', volume: 60, vent: 'supply', calib: null };
+const room = { name: 'Room 1', volume: 60, calib: null };
 const oyster = n => [{ crop: 'oyster', blocks: n }];
 const SHORT_FULL = { farmType: 'full', program: { flushes: 2, days: { spawn: 2, pinning: 1, fruiting: 2, rest: 1 } } };
 const SHORT_READY = { farmType: 'ready', program: { flushes: 2, days: { fruiting: 2, rest: 1 } } };
