@@ -347,12 +347,12 @@ async function waitFor(fn, timeoutMs = 1000) {
   }
 }
 
-// C5 4.3, revision 7 additions: simulations and equipment (the fake has no defaults for them, so each route is set with reply).
+// C5 4.3, revision 7 additions: simulations and equipment. The first GET, the DELETE and GET equipment use the fake's
+// 4.5 defaults ([], {}, null; C5 7.10); the other routes are set with reply.
 test('simulation and equipment functions: method, path, query, body, result', async (t) => {
   const fake = await withFake(t);
   const last = () => apiRequests(fake).at(-1);
 
-  fake.reply('GET', '/api/rooms/1/simulations', 200, []);
   assert.deepEqual(await FarmApi.listSimulations(1), []);
   assert.deepEqual(last(), { method: 'GET', path: '/api/rooms/1/simulations', query: {}, body: null });
   const infos = [{ id: 7, kind: 'capacity' }];
@@ -376,11 +376,9 @@ test('simulation and equipment functions: method, path, query, body, result', as
   assert.deepEqual(await FarmApi.updateSimulation(1, 8, { note: 'x' }), { id: 8, note: 'x' });
   assert.deepEqual(last(), { method: 'PATCH', path: '/api/rooms/1/simulations/8', query: {}, body: { note: 'x' } });
 
-  fake.reply('DELETE', '/api/rooms/1/simulations/8', 200, {});
   assert.deepEqual(await FarmApi.deleteSimulation(1, 8), {});
   assert.deepEqual(last(), { method: 'DELETE', path: '/api/rooms/1/simulations/8', query: {}, body: null });
 
-  fake.reply('GET', '/api/rooms/1/equipment', 200, null);
   assert.equal(await FarmApi.getEquipment(1), null);
   assert.deepEqual(last(), { method: 'GET', path: '/api/rooms/1/equipment', query: {}, body: null });
 
