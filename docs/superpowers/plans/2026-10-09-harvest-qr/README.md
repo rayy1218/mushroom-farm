@@ -4,49 +4,57 @@
 
 **Goal:** Workers scan a room's QR sticker and record each crate's weight against a batch; the office records batches of bought blocks and sees kg, g per block and BE % per flush.
 
-**Architecture:** A new pure module `harvest-rules.js` (`FarmHarvestRules`) holds validation and yield arithmetic for server and browser. A vendored QR encoder (`web/vendor/qrcodegen.js`) draws the stickers. Contract C10 (`docs/contracts/harvest.md`) is frozen first, against the contracts as they stand after wave 2; then three streams (Data, API, Web) work in parallel worktrees; the lead merges and runs the gate.
+**Architecture:** A new pure module `harvest-rules.js` (`FarmHarvestRules`) holds validation and yield arithmetic for server and browser. A vendored QR encoder (`web/vendor/qrcodegen.js`) draws the stickers. The store (`server/harvest-db.js`) and the routes (`server/harvest-api.js`) live in their own files and plug into C1 and C3 through `db.sqlite` and `createApi({ extraRoutes })`. Contract C10 (`docs/contracts/harvest.md`) is folded into the wave 2 contracts and frozen with them; prep 2.0 lays down the lead's harvest files; three harvest streams run in parallel with the nine wave 2 streams; gate 2.5 and wave 3 cover them.
 
 **Tech Stack:** Plain JavaScript (browser IIFEs + Node 22), `node:test`, `node:sqlite`, no build step, no npm dependencies (the encoder is compiled from TypeScript once, at vendoring time).
 
-**Spec:** `docs/superpowers/specs/2026-10-09-harvest-qr-design.md`. **Contract:** `docs/contracts/harvest.md` (C10, written in task 0.4).
+**Spec:** `docs/superpowers/specs/2026-10-09-harvest-qr-design.md`. **Contract:** `docs/contracts/harvest.md` (C10, draft revision 1; section 14 lists the changes to fold into C1, C3, C5 and the wave 2 plan; section 15 the proposed lead decisions H1–H10).
 
 ---
 
 ## When this runs
 
-This wave starts only after C9 (air exchange) and wave 2 have merged into `master`. The wave 2 contracts (C1 r5, C3 r8, web contract) are not frozen yet (`wave2/contracts-folded`), so C10 and the stream briefs are written against them only once they are on `master` (tasks 0.4 and 0.5). Tasks 0.2 and 0.3 depend on nothing in flight; their code below was run and passes (43 + 2 tests on 2026-10-09).
+Inside wave 2 (proposed lead decision H1, owner's choice 2026-10-09). The steps map onto the wave 2 plan's phases:
+
+| Step here | Wave 2 phase | Who |
+|---|---|---|
+| 0.1 | Contract freeze (prep 2.0 step 1) | The session that leads wave 2 |
+| 0.2–0.4 | Prep 2.0 steps 2–6 | Lead |
+| 1 | Streams | Harvest data, Harvest API, Harvest web, beside the nine wave 2 streams |
+| 2 | Gate 2.5 and wave 3 | Lead |
+
+On 2026-10-09 another session is reworking the wave 2 drafts on `wave2/contracts` (worktree `w2-contracts`). This branch (`docs/harvest-spec`) never edits that branch; the wave 2 lead folds C10 in (task 0.1). The code of tasks 0.2 and 0.3 was run and passes (43 + 2 tests on 2026-10-09).
 
 ## Files and who owns them
 
-| Step | Owner | Brief | Files |
-|---|---|---|---|
-| 0 | Lead | This file, tasks 0.1–0.5 | `harvest-rules.js`, `tests/harvest-rules.test.js`, `web/vendor/qrcodegen.js`, `tests/qrcodegen.test.js`, `docs/contracts/harvest.md`, `docs/contracts/LEAD-DECISIONS.md`, stream briefs in this folder |
-| 1 | Data stream | `data.md` (task 0.5) | `server/db.js` (upgrade and functions), `tests/fakes/db.js`, `tests/db.test.js`, `tests/fake-db.test.js` |
-| 1 | API stream | `api.md` (task 0.5) | `server/api.js` (routes), `server/static.js` (two static files), `tests/api.test.js`, `tests/fakes/api-server.js` (array routes) |
-| 1 | Web stream | `web.md` (task 0.5) | `web/batches.js`, `web/harvest.js`, `web/api.js` (functions), `web/shell.js` (routes, menu, bare layout), `index.html`, `styles.css`, `tests/web-batches.test.js`, `tests/web-harvest.test.js` |
-| 2 | Lead | This file, tasks 2.1–2.5 | `docs/ROADMAP.md`, `README.md` |
+C10 section 2 is the owner table. In short:
 
-Merge order at step 2: data → api → web. Each stream branches from the step 0 commit. Worktrees live under `~/.config/superpowers/worktrees/mushroom-farm/` (never `/tmp`: it is wiped on reboot).
+| Step | Owner | Files |
+|---|---|---|
+| 0 | Lead | `harvest-rules.js`, `tests/harvest-rules.test.js`, `web/vendor/qrcodegen.js`, `tests/qrcodegen.test.js`, `server/harvest-schema.js`, `server/api-common.js`, `tests/fakes/harvest-db.js`, `tests/fake-harvest-db.test.js`, stubs `web/batches.js`, `web/harvest.js`, `web/harvest.css`; the C10 14 lines in `index.html`, `web/api.js`, `tests/web-api.test.js`, `tests/fakes/api-server.js`, `tests/fake-api-server.test.js`, `tests/fakes/db.js` |
+| 1 | Harvest data | `server/harvest-db.js`, `tests/harvest-db.test.js` |
+| 1 | Harvest API | `server/harvest-api.js`, `tests/harvest-api.test.js` |
+| 1 | Harvest web | `web/batches.js`, `web/harvest.js`, `web/harvest.css` (replacing the stubs), `tests/web-batches.test.js`, `tests/web-harvest.test.js` |
+| 1 | Data 2, Server 2, Room shell (their briefs gain the C10 14 rows) | `server/db.js` (upgrade 4, `db.sqlite`), `server/api.js` (`extraRoutes`, `HttpError`), `server/static.js` (`/harvest-rules.js`), `web/shell.js` (four routes, bare layout) and their tests |
+| 2 | Lead | `server/main.js` (C10 8.4), `tests/api-real.test.js` (C10 9), `docs/ROADMAP.md` |
+
+Worktrees live under `~/.config/superpowers/worktrees/mushroom-farm/` (never `/tmp`: it is wiped on reboot).
 
 ## Step 0: lead
 
-### Task 0.1: Base
+### Task 0.1: Fold C10 into the wave 2 contracts (wave 2 lead)
 
-- [ ] **Step 1:** Check that C9 and wave 2 are merged and `master` is green:
-
-```bash
-cd ~/.config/superpowers/worktrees/mushroom-farm/lead
-git switch master && git log --oneline -5
-npm test            # expected: all pass
-```
-
-- [ ] **Step 2:** Rebase the spec branch on `master` and merge it (spec, roadmap order, this plan):
+- [ ] **Step 1:** Bring this branch's documents into the wave 2 contracts branch:
 
 ```bash
-cd ~/.config/superpowers/worktrees/mushroom-farm/harvest-spec
-git rebase master   # a conflict can only be in docs/ROADMAP.md: keep master's rows, re-apply the two harvest rows and the order table
-cd ../lead && git merge --no-ff docs/harvest-spec -m "Merge docs/harvest-spec (batches and harvest by room QR: spec and plan)"
+cd ~/.config/superpowers/worktrees/mushroom-farm/w2-contracts
+git merge --no-ff docs/harvest-spec -m "Merge docs/harvest-spec (C10 draft, harvest spec and plan) into wave2/contracts"
+# a conflict can only be in docs/ROADMAP.md: keep wave2/contracts' rows, re-apply the two harvest rows and the order table
 ```
+
+- [ ] **Step 2:** Apply every row of C10 section 14 to `db.md`, `api.md`, `web.md` and the wave 2 plan (each change in its contract's "Changes in revision N" table); record H1–H10 as lead decisions with the next free numbers in `LEAD-DECISIONS.md`, and replace "H<n>" in C10 with them.
+- [ ] **Step 3:** Two reviews of C10 with the other contracts (an Opus reviewer for consistency with C1, C3, C5; a second for testability), as the wave 2 freeze check; fix every blocking and important finding.
+- [ ] **Step 4:** Freeze C10 (revision 1) in the same commit as the wave 2 contracts.
 
 ### Task 0.2: `harvest-rules.js` (`FarmHarvestRules`)
 
@@ -492,25 +500,17 @@ git add web/vendor/qrcodegen.js tests/qrcodegen.test.js
 git commit -m "chore(web): vendor Nayuki QR Code generator (MIT, pinned 3c6d0b3, compiled with tsc 5.9.3)"
 ```
 
-### Task 0.4: Write and freeze C10 (`docs/contracts/harvest.md`)
+### Task 0.4: The rest of the lead's harvest files (prep 2.0)
 
-Written against the contracts on `master` after wave 2, in the same style (frozen header, revision table, "General rules" table, exact SQL, exact JSON, error codes). Every item below gets a table, never a paragraph list.
+**Files:** Create `server/harvest-schema.js`, `server/api-common.js`, `web/batches.js`, `web/harvest.js`, `web/harvest.css`, `tests/fakes/harvest-db.js`, `tests/fake-harvest-db.test.js`. Modify `index.html`, `web/api.js`, `tests/web-api.test.js`, `tests/fakes/api-server.js`, `tests/fake-api-server.test.js`, `tests/fakes/db.js`, `tests/fake-db.test.js`.
 
-| Section | Must define | Starting point |
-|---|---|---|
-| 1. Scope and owners | Which stream owns which file (table above) | – |
-| 2. Schema upgrade | The next free C1 upgrade number; exact SQL; the upgrade test from the previous version | SQL below (checked on `node:sqlite` 2026-10-09: every `CHECK` and foreign key fires as intended) |
-| 3. `harvest-rules.js` | The members as task 0.2 built them; load order `controller.js` → `harvest-rules.js` | Task 0.2 |
-| 4. db functions | Signatures, returns, errors (C1 style: synchronous, `NotFoundError`, unknown keys throw `TypeError`); the fake follows them | List below |
-| 5. Routes | Exact request and reply JSON per route, status codes, the error body; the server checks `received_at ≤ placed_at` and room not archived before writing | Spec section 3 |
-| 6. "Today" | From local midnight of the farm device (`new Date(); setHours(0, 0, 0, 0)`), farm device time zone `Asia/Kuala_Lumpur` | – |
-| 7. Static files | `/harvest-rules.js` and `/web/vendor/qrcodegen.js` served; `index.html` script order | – |
-| 8. Web | `FarmApi` functions (one per route), shell routes `#/batches`, `#/batches/:id`, `#/harvest/stickers`, `#/harvest/:id` (`stickers` matched before `:id`), menu entry **Batches**, body class that hides the menu on `#/harvest/:id`, element ids the web tests use | Spec section 4 |
-| 9. Fakes | `tests/fakes/db.js` and `tests/fakes/api-server.js` additions | – |
+- [ ] **Step 1:** `server/harvest-schema.js`:
 
-Draft SQL:
+```js
+// server/harvest-schema.js: the SQL of schema upgrade 4 (C10 section 3). Released upgrades are never edited (C1 3).
+const SCHEMA_V4_HARVEST = `
+-- Upgrade 4: batches and harvest by room QR (C10).
 
-```sql
 CREATE TABLE batches (
   id             INTEGER PRIMARY KEY,
   crop           TEXT    NOT NULL,
@@ -521,7 +521,7 @@ CREATE TABLE batches (
   moisture_pct   REAL    NOT NULL CHECK (moisture_pct >= 0 AND moisture_pct < 100),
   spawn_date     INTEGER,
   received_at    INTEGER NOT NULL,
-  room_id        INTEGER REFERENCES rooms(id),
+  room_id        INTEGER REFERENCES rooms (id),
   placed_at      INTEGER,
   cleared_at     INTEGER,
   flush_gap_days INTEGER NOT NULL DEFAULT 5 CHECK (flush_gap_days >= 1),
@@ -535,79 +535,97 @@ CREATE INDEX batches_room ON batches (room_id, cleared_at);
 
 CREATE TABLE harvest_crates (
   id         INTEGER PRIMARY KEY,
-  batch_id   INTEGER NOT NULL REFERENCES batches(id),
+  batch_id   INTEGER NOT NULL REFERENCES batches (id),
   t          INTEGER NOT NULL,
   kg         REAL    NOT NULL CHECK (kg >= 0.01 AND kg <= 50),
   picker     TEXT,
   deleted_at INTEGER
 ) STRICT;
 CREATE INDEX harvest_crates_batch ON harvest_crates (batch_id, t);
+`;
+
+module.exports = { SCHEMA_V4_HARVEST };
 ```
 
-Draft db functions:
-
-| Function | Returns | Notes |
-|---|---|---|
-| `createBatch(fields, at?)` | Batch row | `created_at = at`; `flush_gap_days` defaults to 5 |
-| `getBatch(id)` | Batch row | `NotFoundError` |
-| `listBatches({ state?, room_id? })` | Batch rows, newest `received_at` first | `state`: `received`, `placed`, `cleared` |
-| `updateBatch(id, fields)` | Batch row | Only the editable fields of spec section 3 |
-| `placeBatch(id, room_id, placed_at)` | Batch row | |
-| `clearBatch(id, cleared_at)` | Batch row | |
-| `deleteBatch(id)` | – | The caller checks for crates first |
-| `addCrate(batch_id, { kg, picker }, t?)` | Crate row | |
-| `listCrates(batch_id, { from? })` | Crate rows, oldest first, deleted ones included | The rules skip deleted ones |
-| `deleteCrate(id, at?)` | Crate row | Sets `deleted_at` |
-
-- [ ] **Step 1:** Write `docs/contracts/harvest.md` with the nine sections.
-- [ ] **Step 2:** Two reviews (an Opus reviewer for consistency with C1, C3 and the web contract; a second for testability), fix every blocking and important finding, record decisions in `docs/contracts/LEAD-DECISIONS.md`.
-- [ ] **Step 3:** Mark C10 frozen (revision 1) and commit:
+Check it runs on a fresh database with a `rooms` table:
 
 ```bash
-git add docs/contracts/harvest.md docs/contracts/LEAD-DECISIONS.md
-git commit -m "docs(contracts): C10 batches and harvest, frozen (revision 1)"
+node --disable-warning=ExperimentalWarning -e "
+const { DatabaseSync } = require('node:sqlite'); const db = new DatabaseSync(':memory:');
+db.exec('CREATE TABLE rooms (id INTEGER PRIMARY KEY) STRICT;'); db.exec(require('./server/harvest-schema.js').SCHEMA_V4_HARVEST);
+console.log(db.prepare(\"SELECT name FROM sqlite_master WHERE type IN ('table','index') ORDER BY name\").all().map(r => r.name).join(' '));"
+# expected: batches batches_room harvest_crates harvest_crates_batch rooms
 ```
 
-### Task 0.5: Stream briefs
+- [ ] **Step 2:** `server/api-common.js`: exactly the code block of C10 8.1.
+- [ ] **Step 3:** Stubs. `web/batches.js` and `web/harvest.js` each hold only the C5 1.4 wrapper:
 
-- [ ] **Step 1:** Write `data.md`, `api.md` and `web.md` in this folder, one per stream, in the format of `docs/superpowers/plans/2026-10-08-air-exchange/*.md`: TDD tasks with complete test and code blocks, written against the code on `master` at that time and C10 only.
-- [ ] **Step 2:** Commit them, then start the three streams in parallel worktrees (Agent-tool subagents: Sonnet implementers, Opus reviewers, two-stage review per stream).
+```js
+(function (global) { 'use strict'; })(typeof window !== 'undefined' ? window : globalThis);
+```
+
+`web/harvest.css` holds one line: `/* Harvest pages (C10 12): written by the Harvest web stream. */`
+
+- [ ] **Step 4:** `index.html`: the C10 14 row "C5 1.2" (one stylesheet link, the **Batches** menu link, four script tags), on top of the prep 2.0 file of C5 1.2.
+- [ ] **Step 5:** `web/api.js`: the ten functions of C10 12.1, added to the `FarmApi` object:
+
+```js
+function listBatches({ state, room } = {}) { return request('GET', '/api/batches', { query: { state, room } }); }
+function createBatch(fields) { return request('POST', '/api/batches', { body: fields }); }
+function getBatch(batchId) { return request('GET', `/api/batches/${batchId}`); }
+function updateBatch(batchId, fields) { return request('PATCH', `/api/batches/${batchId}`, { body: fields }); }
+function placeBatch(batchId, body) { return request('POST', `/api/batches/${batchId}/place`, { body }); }
+function clearBatch(batchId, body = {}) { return request('POST', `/api/batches/${batchId}/clear`, { body }); }
+function deleteBatch(batchId) { return request('DELETE', `/api/batches/${batchId}`); }
+function getRoomHarvest(id) { return request('GET', `/api/rooms/${id}/harvest`); }
+function addCrate(batchId, body) { return request('POST', `/api/batches/${batchId}/crates`, { body }); }
+function undoCrate(crateId) { return request('DELETE', `/api/crates/${crateId}`); }
+```
+
+and in `tests/web-api.test.js`, one test per function against `startFakeApi()`: method, path, query (`listBatches({ state: 'placed', room: 2 })` sends `?state=placed&room=2`; `listBatches()` sends no query), body (`clearBatch(4)` sends `{}`), and the reply passed through.
+- [ ] **Step 6:** `tests/fakes/api-server.js`: `GET /api/batches` answers `[]` by default; with `root`, `/harvest-rules.js` is served. `tests/fake-api-server.test.js`: both.
+- [ ] **Step 7:** `tests/fakes/db.js`: `version` 4 and `sqlite: null` (C10 14, C1 rows); `tests/fake-db.test.js` checks both.
+- [ ] **Step 8:** `tests/fakes/harvest-db.js` (`openFakeHarvest`, C10 5.4) and `tests/fake-harvest-db.test.js`: every function of C10 5.2 (shape, order, defaults, `NotFoundError` with `what` `batch` / `crate` / `room`, unknown field `TypeError`) and every rule of section 3 with its `errcode` (275, 1299, 3091; 787 for `deleteBatch` with crates).
+- [ ] **Step 9:** Run and commit:
+
+```bash
+npm test     # expected: # fail 0
+git add server/harvest-schema.js server/api-common.js web/batches.js web/harvest.js web/harvest.css index.html web/api.js \
+  tests/web-api.test.js tests/fakes/api-server.js tests/fake-api-server.test.js tests/fakes/db.js tests/fake-db.test.js \
+  tests/fakes/harvest-db.js tests/fake-harvest-db.test.js
+git commit -m "chore: prep 2.0 harvest files (C10 2): schema, HttpError, stubs, FarmApi, fakes"
+```
+
+### Task 0.5: Briefs
+
+- [ ] **Step 1:** Write `harvest-data.md`, `harvest-api.md` and `harvest-web.md` in `docs/superpowers/plans/2026-10-08-farm-foundation/` with the other wave 2 briefs (wave 2 plan prep 2.0 step 6): owned files exactly as C10 2, start checks (wave 2 plan 4, plus `ls harvest-rules.js server/harvest-schema.js server/api-common.js tests/fakes/harvest-db.js`), TDD tasks against C10 and the fakes, done-when from C10 13.
+- [ ] **Step 2:** Add the C10 14 rows to the Data 2, Server 2, Room shell and Docs briefs.
 
 ## Step 1: streams
 
-Run in parallel. Each stream works only against C10 and the fakes, then hands back a branch with all tests passing.
+Three streams beside the nine wave 2 streams (wave 2 plan 3, 4 rules apply: no merging of `master`, contract questions go to the lead).
 
-| Stream | Branch | Done when |
-|---|---|---|
-| Data | `stream/harvest-data` | Upgrade, functions and fake match C10; `npm test` passes |
-| API | `stream/harvest-api` | Every route and error of C10 section 5 tested against the fake db |
-| Web | `stream/harvest-web` | Pages and shell routes of C10 section 8 tested against the fake API server |
+| Stream | Branch | Builds against | Done when |
+|---|---|---|---|
+| Harvest data | `stream/harvest-data` | C10 3, 5; the fake db; a real `openDb(':memory:')` needs upgrade 4, which is Data 2's: until gate 2.5 the real-store half of `tests/harvest-db.test.js` opens a `DatabaseSync` itself, runs `SCHEMA_V4_HARVEST` on it, and passes `{ version: 4, sqlite, getRoom }` as `db` | Every C10 13 row of `tests/harvest-db.test.js` passes on the fake and on that stand-in |
+| Harvest API | `stream/harvest-api` | C10 4, 6–9; the fake db and fake store | Every C10 13 row of `tests/harvest-api.test.js` passes |
+| Harvest web | `stream/harvest-web` | C10 10–12; the fake API server; headless after gate 2.5 (C5 7.10) | Node helpers pass; headless rows of C10 13 pass against the gate 2.5 `master` |
 
 ## Step 2: lead
 
-### Task 2.1: Merge
+### Task 2.1: Gate 2.5 additions
 
-- [ ] **Step 1:** Merge `stream/harvest-data`, `stream/harvest-api`, `stream/harvest-web` in that order, `npm test` after each. Expected: all pass.
+- [ ] **Step 1:** After Data 2, Equipment and Server 2: merge `stream/harvest-data`, then `stream/harvest-api`; `npm test`. Expected: `# fail 0`. In `tests/harvest-db.test.js`, point the real-store half at `openDb(':memory:')` (upgrade 4 is now in `UPGRADES`).
+- [ ] **Step 2:** `server/main.js`: the C10 8.4 wiring; the `describe('server/main.js')` stub test gets stub `harvest-db.js` and `harvest-api.js` modules next to its copy.
+- [ ] **Step 3:** The gate's real-server run on the version 1 and version 2 file copies: `db.version` 4; `curl` creates a batch (`POST /api/batches`), places it in Room 1, adds two crates; `GET /api/batches/<id>` gives the totals `harvest-rules.js` gives for the same crates; `GET /api/rooms/1/harvest` lists today's crates.
 
-### Task 2.2: Real server check
+### Task 2.2: Wave 3
 
-- [ ] **Step 1:** `npm start` on the farm address; create a batch, place it in Room 1, add crates through the API with `curl`, read `GET /api/batches/:id`: the flushes and totals match `harvest-rules.js` for the same crates.
-
-### Task 2.3: Browser check
-
-- [ ] **Step 1:** Headless Chrome at 390 × 844 on `#/harvest/1`: one batch is picked automatically; **Add crate** saves once on a double tap; with the server stopped, the value stays and the red line shows; Undo works.
-- [ ] **Step 2:** `#/harvest/stickers` from `http://127.0.0.1:…` disables Print; from the farm address it prints 6 cards per A4 page (print preview to PDF).
-
-### Task 2.4: Phone check
-
-- [ ] **Step 1:** Print one sticker, scan it with a real phone on the farm Wi-Fi, record two crates, Undo one, and see them on `#/batches/:id`.
-
-### Task 2.5: Docs
-
-- [ ] **Step 1:** `docs/ROADMAP.md`: Batches and Harvest rows ✅. `README.md`: the stickers page and the fixed-address advice.
-- [ ] **Step 2:** Commit:
+- [ ] **Step 1:** Merge `stream/harvest-web` in the wave 2 plan's order; `tests/api-real.test.js` covers C10 9.1–9.10; the headless rows of C10 13 again on the final merge.
+- [ ] **Step 2:** Phone check (C10 13): print one sticker, scan it with a real phone on the farm Wi-Fi, record two crates, Undo one, see them on `#/batches/:id`.
+- [ ] **Step 3:** `docs/ROADMAP.md`: Batches and Harvest rows ✅; commit:
 
 ```bash
-git add docs/ROADMAP.md README.md
+git add docs/ROADMAP.md
 git commit -m "docs: batches and harvest by room QR built"
 ```

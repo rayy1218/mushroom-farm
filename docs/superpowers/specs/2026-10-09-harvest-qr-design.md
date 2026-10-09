@@ -1,6 +1,6 @@
 # Batches and harvest by room QR: design
 
-Date: 2026-10-09. Status: approved in brainstorming; to be written as contract C10 (`docs/contracts/harvest.md`) and built as its own wave after C9 (air exchange) and wave 2 have merged.
+Date: 2026-10-09. Status: approved in brainstorming. Contract C10 (`docs/contracts/harvest.md`, draft revision 1) is frozen with the wave 2 contracts and built inside wave 2 (owner's choice, 2026-10-09); C10 wins where this spec and it differ.
 
 ## Purpose
 
@@ -24,7 +24,7 @@ A worker scans a QR sticker on the room door with their phone, picks the batch, 
 | Blocks | Bought already colonised; one room for the batch's life. A gap between delivery and placing in the room is normal. |
 | Network | Phones join the farm Wi-Fi, which reaches the room doors. No offline queue. |
 | QR code generation | Vendored Nayuki "QR Code generator" (MIT, one plain-JS file, no dependencies) in `web/vendor/`; SVG output |
-| Build order | Spec now; built after wave 2, ahead of Economics and Real hardware on the roadmap |
+| Build order | Inside wave 2, as three more streams working in their own files; ahead of Economics and Real hardware on the roadmap |
 
 ### Out of scope
 
@@ -42,7 +42,7 @@ A worker scans a QR sticker on the room door with their phone, picks the batch, 
 
 ## 1. Data model
 
-Two new tables, added by one schema upgrade (the next free C1 upgrade number at build time). Times are integer seconds since 1970 UTC, as everywhere in C1. Date-only fields (received, placed, cleared, spawn) store local midnight of the farm device.
+Two new tables, added by schema upgrade 4 (after C9's 2 and wave 2's 3). Times are integer seconds since 1970 UTC, as everywhere in C1. Date-only fields (received, placed, cleared, spawn) store local midnight of the farm device.
 
 ### 1.1 `batches`
 
@@ -115,14 +115,14 @@ When the flush grouping is wrong, the office changes the batch's `flush_gap_days
 | `POST /api/batches` | batch fields | Create a Received batch | 400 |
 | `GET /api/batches/:id` | – | Batch, `flushes`, `totals` | 404 |
 | `PATCH /api/batches/:id` | editable fields | Edit `crop`, `strain`, `source`, `block_count`, `block_wet_kg`, `moisture_pct`, `spawn_date`, `received_at`, `flush_gap_days`, `notes` | 400, 404 |
-| `POST /api/batches/:id/place` | `{ room_id, placed_at? }` | Place in a room (not archived) | 400, 404, 409 already placed |
-| `POST /api/batches/:id/clear` | `{ cleared_at? }` | Clear | 404, 409 not placed or already cleared |
-| `DELETE /api/batches/:id` | – | Delete | 404, 409 has crates |
+| `POST /api/batches/:id/place` | `{ room_id, placed_at? }` | Place in a room (not archived) | 400, 404; 400 `Batch is already in a room` |
+| `POST /api/batches/:id/clear` | `{ cleared_at? }` | Clear | 404; 400 `Batch is not in a room` or `Batch is cleared` |
+| `DELETE /api/batches/:id` | – | Delete | 404; 400 `Batch has crates` |
 | `GET /api/rooms/:id/harvest` | – | For the phone, in one call: room name, placed batches, today's crates per batch (local day of the farm device) and the current flush number | 404 unknown or archived room |
-| `POST /api/batches/:id/crates` | `{ kg, picker? }` | Add a crate; returns the crate and the batch's new `totals` | 400 kg outside 0.01–50, 404, 409 batch not placed or cleared |
-| `DELETE /api/crates/:id` | – | Undo: sets `deleted_at` | 404, 409 already deleted |
+| `POST /api/batches/:id/crates` | `{ kg, picker? }` | Add a crate; returns the crate and the batch's new `totals` | 400 kg outside 0.01–50, 404; 400 `Batch is not in a room` or `Batch is cleared` |
+| `DELETE /api/crates/:id` | – | Undo: sets `deleted_at` | 404; 400 `Crate is already undone` |
 
-The live feed (C4) is not changed.
+The live feed (C4) is not changed. C3 answers only 400, 404 and 500, so a state conflict is a 400 with its own `error` text (C10 section 7).
 
 ## 4. Web pages (amendment to the web contract)
 
@@ -170,16 +170,16 @@ Mobile-first, large tap targets for gloved, wet hands.
 | Level | File | Covers |
 |---|---|---|
 | Rules | `tests/harvest-rules.test.js` | Dry substrate; flush split exactly at the gap and just under it; deleted crates ignored; batch with no crates; `check*` errors |
-| Database | `tests/db.test.js`, `tests/fake-db.test.js` | Upgrade from the previous version; `CHECK`s (kg range, date order, placed pair); the fake matches the real db |
-| API | `tests/api.test.js` | Every route, including 400, 404 and 409 |
-| Web | `tests/web-harvest.test.js`, `tests/web-batches.test.js` | Phone page: auto-pick, picker, double-tap guard, value kept after a failed save, cleared batch; stickers: Print disabled on localhost; QR output equals a known test vector from the Nayuki project |
+| Database | `tests/harvest-db.test.js`, `tests/fake-harvest-db.test.js`, `tests/db.test.js` (upgrade 4) | Upgrade 4 on a version 3 file; `CHECK`s (kg range, date order, placed pair); the fake store matches the real one |
+| API | `tests/harvest-api.test.js` | Every route, including each 400 and 404 |
+| Web | `tests/web-harvest.test.js`, `tests/web-batches.test.js` | Phone page: auto-pick, picker, double-tap guard, value kept after a failed save, cleared batch; stickers: Print disabled on localhost; QR output equals the fingerprint recorded at vendoring (`tests/qrcodegen.test.js`, checked with a real decoder) |
 | Real | – | Headless Chrome at phone size 390 × 844; then a printed sticker scanned with a real phone on the farm Wi-Fi |
 
 ## 6. Contracts and build
 
 | Item | Plan |
 |---|---|
-| New contract | C10 `docs/contracts/harvest.md`: tables and upgrade, `harvest-rules.js`, routes, pages |
-| Amendments | C1 (two tables, db functions, fake), C3 (routes, static file `harvest-rules.js`, `web/vendor/qrcodegen.js`), web contract (routes, menu entry, bare layout on `#/harvest/:id`) |
-| Streams | Data (db, fake), Rules (`harvest-rules.js`), API, Web (batches, harvest, stickers); lead integrates |
-| When | After C9 and wave 2 merge; takes the next free db upgrade number |
+| New contract | C10 `docs/contracts/harvest.md`: upgrade 4, `harvest-rules.js`, the store `server/harvest-db.js`, the routes module `server/harvest-api.js`, the pages |
+| Amendments | C10 section 14: C1 (upgrade 4 entry, `db.sqlite`), C3 (`opts.extraRoutes`, `HttpError` in `server/api-common.js`, `/harvest-rules.js`), C5 (`index.html` lines, four shell routes, bare layout, ten `FarmApi` functions), the wave 2 plan |
+| Streams | Harvest data, Harvest API, Harvest web, in parallel with the wave 2 streams; the lead's prep 2.0 writes `harvest-rules.js`, the QR encoder, the schema, `HttpError`, the fake store and the stubs |
+| When | Inside wave 2: frozen with the wave 2 contracts, upgrade 4 |

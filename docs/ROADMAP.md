@@ -55,7 +55,7 @@ Legend: ✅ built · 🔨 wave 2 · 📋 owner's plan, not started · 💡 sugge
 
 | # | Part | Why here |
 |---|---|---|
-| 1 | Batches and harvest (room QR) | Owner's choice (2026-10-09): spec approved, built right after wave 2; harvest data calibrates and checks everything else |
+| 1 | Batches and harvest (room QR) | Owner's choice (2026-10-09): built inside wave 2 (contract C10, three more streams); harvest data calibrates and checks everything else |
 | 2 | Economics | With the equipment check, it proves whether lion's mane pays in a lowland room |
 | 3 | Real hardware | Turns the simulator into a farm |
 | 4 | Costs and sales | Profit from real numbers |
