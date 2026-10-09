@@ -324,7 +324,7 @@ test('real: upgrade 2 turns fan 0-3 into air 0/1 and drops rooms.vent (C9 6.2)',
   assert.deepStrictEqual(rows.map(r => r.air), [0, 1, 1, 1]);
   assert.deepStrictEqual(rows[0], {
     room_id: 1, t: T0, T: 20, RH: 80, CO2: 900, t_out: 30, rh_out: 60, ac_mode: 'fan', ac_setpoint: null,
-    fog: 1, air: 0, lights: 1, circ: 0, power_w: 100, kwh: 1,
+    fog: 1, air: 0, lights: 1, circ: 0, power_w: 100, kwh: 1, ac_fan: null, stage: null, core: null,
   });
   assert.equal(db.queryReadings(2, { from: T0 - 7200, to: T0 - 7200 })[0].air, 1);
   assert.equal(db.queryReadings(1, { from: T0, to: T0 + 90, step: 3600 })[0].air, 0.75);
@@ -563,22 +563,57 @@ both('insertReading: round trip, T <-> temp', (t, open) => {
   const db = open({ now: () => T0 });
   t.after(() => db.close());
   const roomId = makeRoom(db);
-  const r = { room_id: roomId, t: T0, T: 18.5, RH: 88, CO2: 900, t_out: 31, rh_out: 60, ac_mode: 'cool', ac_setpoint: 17.5, fog: 1, air: 1, lights: 1, circ: 0, power_w: 1400, kwh: 12.5 };
+  const r = { room_id: roomId, t: T0, T: 18.5, RH: 88, CO2: 900, t_out: 31, rh_out: 60, ac_mode: 'cool', ac_setpoint: 17.5, fog: 1, air: 1, lights: 1, circ: 0, power_w: 1400, kwh: 12.5, ac_fan: 'auto', stage: 'fruiting', core: 22.5 };
+  assert.deepStrictEqual(Object.keys(r), [
+    'room_id', 't', 'T', 'RH', 'CO2', 't_out', 'rh_out', 'ac_mode', 'ac_setpoint', 'fog', 'air', 'lights', 'circ', 'power_w', 'kwh',
+    'ac_fan', 'stage', 'core',
+  ]);
   assert.equal(db.insertReading(roomId, r), undefined);
   const got = db.queryReadings(roomId, { from: T0, to: T0 })[0];
   assert.deepStrictEqual(got, r);
   assert.deepStrictEqual(db.latestReading(roomId), r);
+  assert.deepStrictEqual(Object.keys(got), Object.keys(r));
   assert.doesNotThrow(() => db.insertReading(roomId, got));
-}, 'C1 rev 6 / C2 rev 9 fake: Data 2 rewrites this test');
+});
 
 both('insertReading: booleans come back 0/1', (t, open) => {
   const db = open({ now: () => T0 });
   t.after(() => db.close());
   const roomId = makeRoom(db);
-  db.insertReading(roomId, reading(T0, { lights: true, circ: false }));
+  db.insertReading(roomId, reading(T0, { air: true, lights: true, circ: false }));
+  db.insertReading(roomId, reading(T0 + 30, { air: false, lights: false, circ: true }));
+  const [a, b] = db.queryReadings(roomId, { from: T0, to: T0 + 30 });
+  assert.equal(a.air, 1);
+  assert.equal(a.lights, 1);
+  assert.equal(a.circ, 0);
+  assert.equal(b.air, 0);
+  assert.equal(b.lights, 0);
+  assert.equal(b.circ, 1);
+});
+
+both('insertReading: ac_fan, stage and core left out are null', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  db.insertReading(roomId, reading(T0));
   const got = db.latestReading(roomId);
-  assert.equal(got.lights, 1);
-  assert.equal(got.circ, 0);
+  assert.equal(got.ac_fan, null);
+  assert.equal(got.stage, null);
+  assert.equal(got.core, null);
+  db.insertReading(roomId, reading(T0 + 30, { ac_fan: null, stage: null, core: NaN }));
+  const got2 = db.latestReading(roomId);
+  assert.equal(got2.ac_fan, null);
+  assert.equal(got2.stage, null);
+  assert.equal(got2.core, null);
+});
+
+both('insertReading: ac_fan max is 275, core abc is 3091, nothing stored', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  assertSql(() => db.insertReading(roomId, reading(T0, { ac_fan: 'max' })), 275);
+  assertSql(() => db.insertReading(roomId, reading(T0, { core: 'abc' })), 3091);
+  assert.equal(db.latestReading(roomId), null);
 });
 
 both('insertReading: non-finite and missing values become null', (t, open) => {
@@ -598,7 +633,7 @@ both('insertReading: unknown field throws and stores nothing', (t, open) => {
   const db = open({ now: () => T0 });
   t.after(() => db.close());
   const roomId = makeRoom(db);
-  for (const key of ['temp', 'rh', 'co2', 'n']) {
+  for (const key of ['temp', 'rh', 'co2', 'n', 'fan']) {
     assert.throws(() => db.insertReading(roomId, reading(T0, { [key]: 1 })), err => {
       assert.ok(err instanceof TypeError);
       assert.equal(err.message, `insertReading: unknown field "${key}"`);
@@ -710,6 +745,24 @@ both('queryReadings: bucket averages, nulls, last ac_mode/kwh, empty bucket left
   assert.equal(b0.air, 0.5); assert.equal(b1.air, 1);
   assert.equal(b0.lights, 0.5); assert.equal(b1.lights, 1);
   assert.equal(b0.kwh, 1.25); assert.equal(b1.kwh, 2);
+});
+
+both('queryReadings: bucket ac_fan and stage from the last row, core averaged', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  const B = T0;
+  db.insertReading(roomId, reading(B, { ac_fan: 'low', stage: 'pinning', core: 20 }));
+  db.insertReading(roomId, reading(B + 30, { ac_fan: 'high', stage: 'fruiting', core: null }));
+  db.insertReading(roomId, reading(B + 150, { ac_fan: null, stage: 'fruiting', core: 22 }));
+  const rows = db.queryReadings(roomId, { from: B, to: B + 300, step: 60 });
+  assert.deepStrictEqual(rows.map(r => r.t), [B, B + 120]);
+  assert.equal(rows[0].ac_fan, 'high');
+  assert.equal(rows[0].stage, 'fruiting');
+  assert.equal(rows[0].core, 20);
+  assert.equal(rows[1].ac_fan, null);
+  assert.equal(rows[1].stage, 'fruiting');
+  assert.equal(rows[1].core, 22);
 });
 
 both('queryReadings: bucket air is the fraction of readings with the air exchange on (C9 6.1)', (t, open) => {
