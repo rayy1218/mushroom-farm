@@ -50,6 +50,7 @@ test('CB4 logFromReadings', () => {
   assert.equal(rows[1].acPower, 1); assert.equal(rows[1].acMode, 'cool'); assert.equal(rows[1].acSet, 24);
   assert.equal(rows[1].acFan, 'auto'); assert.equal(rows[1].stage, 'fruiting');
   assert.equal(Object.keys(rows[1]).length, 16);
+  assert.equal(H.logFromReadings([RD(1791450000, { T: -20 })])[0].T, null);
   const env = H.envBaseFor({ volume: 60, live: null }, 1000, rows, null, 1800);
   assert.doesNotThrow(() => CAL.replay(rows, env, CAL.paramsOf(SIM.DEFAULT_ENV)));
 });
@@ -59,6 +60,7 @@ test('CB5 historyGaps', () => {
   assert.equal(H.historyGaps(at([0, 30, 700, 730, 2000])), 2);
   assert.equal(H.historyGaps(at([5])), 0);
   assert.equal(H.historyGaps([]), 0);
+  assert.equal(H.historyGaps(at([0, 600])), 0);
 });
 
 test('CB6 envBaseFor', t => {
@@ -98,6 +100,8 @@ test('CB9 calibBody', () => {
     rmse_t: 0.21, rmse_rh: null, rmse_co2: 38, log_rows: 720, source: 'history', log_from: 100, log_to: 200, equipment: EQ7 });
   const c = H.calibBody(fit, rows, 'csv', null, null);
   assert.equal('log_from' in c, false); assert.equal('log_to' in c, false);
+  const nan = H.calibBody({ ...fit, result: { rmse: { T: NaN, RH: 1, CO2: NaN } } }, rows, 'csv', null, null);
+  assert.equal(nan.rmse_t, null); assert.equal(nan.rmse_co2, null);
   assert.equal(c.source, 'csv'); assert.equal(c.equipment, null);
 });
 
@@ -130,4 +134,30 @@ test('CB12 lines', () => {
   const series = [0, 1, 2].map(h => ({ h, T: 25, RH: 88, CO2: 900 }));
   assert.deepEqual(H.predictedRows(series)[2], { t: 7200, T: 25, RH: 88, CO2: 900 });
   assert.equal(H.realRows([RD(1000), RD(8200)], 1000)[1].t, 7200);
+});
+
+test('CB13 a late reply of an unmounted mount never touches the next mount', async () => {
+  const stubs = {};
+  const stub = () => ({ value: '', textContent: '', hidden: false, disabled: false, dataset: {}, children: [], addEventListener() {},
+    setAttribute() {}, replaceChildren() {}, append() {}, remove() {} });
+  const el = { set innerHTML(v) {}, querySelector: s => (stubs[s] ||= stub()), querySelectorAll: () => [] };
+  globalThis.document = { createElement: () => stub() };
+  const FA = globalThis.FarmApi, saved = { ...FA };
+  const late = {};
+  const slow = new Promise((_, rej) => { late.fail = () => rej(new Error('OLD MOUNT')); });
+  let call = 0;
+  Object.assign(FA, {
+    getMix: () => (++call === 1 ? slow : Promise.resolve([])), listCalibrations: async () => [], getEquipment: async () => null,
+    getSettings: async () => ({ airM3h: 1800 }), listSimulations: async () => [],
+  });
+  const tab = globalThis.FarmRoomTabs.get('calibrate'), ctx = { id: 1, params: {}, room: () => ({ volume: 60, live: null }), on() {} };
+  try {
+    const first = tab.mount(el, ctx);
+    tab.unmount();
+    await tab.mount(el, ctx);
+    const before = stubs['#calMsg'].textContent;
+    late.fail(); await first;
+    assert.equal(stubs['#calMsg'].textContent, before);
+    assert.notEqual(stubs['#calMsg'].textContent, 'OLD MOUNT');
+  } finally { Object.assign(FA, saved); delete globalThis.document; tab.unmount(); }
 });

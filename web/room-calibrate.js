@@ -153,7 +153,6 @@ const MARKUP = `
   </div>
   <p class="tag" id="calMsg" role="status"></p>
   <table class="fit-table" id="cbTable"></table>
-  <div id="cbNote"></div>
   <div class="cal-charts" id="cbCharts"></div>
 </section>
 <section class="card pvr-card" aria-labelledby="hCbPvr">
@@ -177,7 +176,7 @@ function mount(el, ctx) {
   const id = ctx.id, now = () => Math.floor(Date.now() / 1000);
   let room = ctx.room(), mixRows = [], runs = [], equipment = null, settings = null;
   let source = 'history', rows = null, range = null, envBase = null, params = null, base = null, fit = null;
-  let busy = false, loaded = false, cycles = [], seq = 0, cmpSeq = 0;
+  let busy = false, pendingRebuild = false, loaded = false, cycles = [], seq = 0, cmpSeq = 0;
 
   el.innerHTML = MARKUP;
   const $ = sel => el.querySelector(sel);
@@ -192,7 +191,7 @@ function mount(el, ctx) {
     const ctrl = ['#cbLoad', '#calFile', '#calBlocks'];
     for (const sel of ctrl) $(sel).disabled = busy;
     for (const b of el.querySelectorAll('#cbSource button')) b.disabled = busy;
-    $('#calFit').disabled = busy || !loaded || blocksNow() === null || !rows;
+    $('#calFit').disabled = busy || !loaded || blocksNow() === null || !rows || !envBase;
     $('#calApply').disabled = busy || !fit;
   }
   function paintWarning() {
@@ -215,9 +214,9 @@ function mount(el, ctx) {
     const foot = document.createElement('tfoot');
     const tr = document.createElement('tr'); tr.append(UI.cell('td', 'T / RH / CO₂'), UI.cell('td', fe(base)), UI.cell('td', fe(fit && fit.result))); foot.append(tr);
     table.replaceChildren(head, body, foot);
-    const note = $('#cbNote'), n = CAL.PARAMS.ua && CAL.PARAMS.ua.note;
-    if (typeof n === 'string') { const p = document.createElement('p'); p.className = 'tag'; p.id = 'cbNoteText'; p.textContent = n; note.replaceChildren(p); }
-    else note.replaceChildren();
+    const old = $('#cbNote'); if (old) old.remove();
+    const n = CAL.PARAMS.ua && CAL.PARAMS.ua.note;
+    if (typeof n === 'string') { const p = document.createElement('p'); p.className = 'tag'; p.id = 'cbNote'; p.textContent = n; table.after(p); }
     const host = $('#cbCharts');
     if (rows && base) global.FarmCharts.drawCalibCharts(host, { rows, base, fit });
     else host.replaceChildren();
@@ -231,11 +230,11 @@ function mount(el, ctx) {
       params = null; renderTable(); syncButtons(); return;
     }
     if (loaded) {
-      envBase = envBaseFor(room, blocks, rows || [], equipment, settings.airM3h);
-      params = startParams(runs, envBase);
-      if (rows) {
-        try { base = CAL.replay(rows, envBase, params); } catch (err) { msg(err.message); }
-      }
+      try {
+        envBase = envBaseFor(room, blocks, rows || [], equipment, settings.airM3h);
+        params = startParams(runs, envBase);
+        if (rows) base = CAL.replay(rows, envBase, params);
+      } catch (err) { msg(err.message); envBase = null; params = null; base = null; }
     }
     renderTable(); syncButtons();
   }
@@ -262,8 +261,8 @@ function mount(el, ctx) {
     const ts = readings.map(r => r.t);
     range = { from: Math.min(...ts), to: Math.max(...ts) };
     const g = historyGaps(readings);
-    rebuild();
-    msg(`${q.days} days · ${readings.length} readings` + (g > 0 ? ` The range has ${g} gap(s) (the server was stopped); the fit keeps the machines unchanged through them.` : ''));
+    const text = `${q.days} days · ${readings.length} readings` + (g > 0 ? ` The range has ${g} gap(s) (the server was stopped); the fit keeps the machines unchanged through them.` : '');
+    msg(text); rebuild();
   });
   $('#calFile').addEventListener('change', e => {
     const f = e.target.files[0]; if (!f) return;
@@ -271,8 +270,8 @@ function mount(el, ctx) {
       if (!live()) return;
       let parsed;
       try { parsed = CAL.parseCsv(txt); } catch (err) { msg(`The file cannot be used: ${err.message}`); return; }
-      rows = parsed; range = null; rebuild();
-      if (base) msg(`${f.name}: ${rows.length} rows, ${(rows[rows.length - 1].t / 3600).toFixed(1)} h.`);
+      rows = parsed; range = null;
+      msg(`${f.name}: ${rows.length} rows, ${(rows[rows.length - 1].t / 3600).toFixed(1)} h.`); rebuild();
     }).catch(err => { if (live()) msg(`The file cannot be read: ${err && err.message}`); });
   });
   $('#calBlocks').addEventListener('input', () => { if (!busy) rebuild(); });
@@ -281,13 +280,16 @@ function mount(el, ctx) {
     if (busy || !rows || !envBase) return;
     busy = true; syncButtons(); msg('Fitting… (this takes a few seconds)');
     try {
-      const res = await CAL.fitAsync(rows, envBase, params, p => { if (live()) msg(`Fitting: run ${p.evals} of up to ${p.maxEval}, error score ${p.score.toFixed(2)}…`); });
+      const res = await CAL.fitAsync(rows, envBase, params, p => {
+        if (!live()) throw new Error('unmounted');
+        msg(`Fitting: run ${p.evals} of up to ${p.maxEval}, error score ${p.score.toFixed(2)}…`);
+      });
       if (!live()) return;
       fit = res; msg(`Fit done after ${fit.evals} simulation runs. The air leakage is the least certain value.`);
     } catch (err) {
       if (!live()) return;
       msg(`The fit stopped: ${err && err.message}`);
-    } finally { if (live()) { busy = false; renderTable(); syncButtons(); } }
+    } finally { if (live()) { busy = false; if (pendingRebuild) { pendingRebuild = false; rebuild(); } else renderTable(); syncButtons(); } }
   });
   $('#calApply').addEventListener('click', async () => {
     if (busy || !fit || !rows) return;
@@ -296,15 +298,13 @@ function mount(el, ctx) {
       const run = await FA.saveCalibration(id, calibBody(fit, rows, source, range, equipment));
       const applied = await FA.applyCalibration(id, run.id);
       if (!live()) return;
-      runs = await FA.listCalibrations(id);
-      if (!live()) return;
-      const cur = runs.find(r => r.applied === true) || applied;
-      params = paramsOfRun(cur);
+      runs = [applied, ...runs.filter(r => r.id !== applied.id).map(r => ({ ...r, applied: false }))];
+      params = paramsOfRun(applied);
       base = CAL.replay(rows, envBase, params); fit = null;
       msg('Applied. Simulate now uses these values.');
       paintWarning(); renderTable();
     } catch (err) { if (live()) msg(UI.errorText(err)); }
-    finally { if (live()) { busy = false; syncButtons(); } }
+    finally { if (live()) { busy = false; if (pendingRebuild) { pendingRebuild = false; rebuild(); } syncButtons(); } }
   });
 
   // Predicted vs real
@@ -344,12 +344,13 @@ function mount(el, ctx) {
       if (!live() || mySeq !== cmpSeq) return;
       if (!buckets.length) { none(); return; }
       const series = run.result.series;
-      global.FarmCharts.drawCalibCharts(charts, { rows: realRows(buckets, start), base: { series: predictedRows(series) }, fit: null,
+      const real = realRows(buckets, start), last = real[real.length - 1].t;
+      global.FarmCharts.drawCalibCharts(charts, { rows: real, base: { series: predictedRows(series).filter(p => p.t <= last) }, fit: null,
         labels: { rows: 'Real (sensors)', base: `Predicted (run ${runId})` }, dashed: 'base' });
       diff.replaceChildren(...differenceLines(differences(pairSeries(series, buckets, start))).map(t => { const p = document.createElement('p'); p.textContent = t; return p; }));
     } catch (err) { if (live() && mySeq === cmpSeq) pvMsg(UI.errorText(err)); }
   }
-  $('#pvRun').addEventListener('change', () => { cmpSeq++; fillStart(); const info = pvInfo(); if (info && info.real_start) compare(); });
+  $('#pvRun').addEventListener('change', () => { cmpSeq++; pvMsg(''); fillStart(); const info = pvInfo(); if (info && info.real_start) compare(); });
   $('#pvUse').addEventListener('click', async () => {
     const info = pvInfo(); if (!info) return;
     const start = farmMidnight($('#pvStart').value);
@@ -362,7 +363,7 @@ function mount(el, ctx) {
     } catch (err) { if (live()) pvMsg(UI.errorText(err)); }
   });
 
-  ctx.on('settings', d => { settings = d.settings; rebuild(); });
+  ctx.on('settings', d => { settings = d.settings; if (busy) { pendingRebuild = true; return; } rebuild(); });
   ctx.on('room', r => { room = r; });
 
   return (async () => {
@@ -385,7 +386,7 @@ function mount(el, ctx) {
   })();
 }
 function unmount() {
-  try { alive = false; } catch { /* never throws */ }
+  try { alive = false; gen++; } catch { /* never throws */ }
 }
 
 global.FarmRoomTabs.register('calibrate', { mount, unmount, helpers });
