@@ -175,3 +175,111 @@ test('EQ7 an impossible mix returns at once', () => {
   assert.deepEqual(r, { verdict: 'impossible', why: CAP.commonTargets(mix).conflict });
   assert.deepEqual([called, progress], [0, 0]);
 });
+
+// ---------- the search (C8 7), lm(2500), no settings ----------
+const AIRTXT = 'Your 1,800 m³/h air exchange is enough: a purge takes at most 1.3 min (pinning), the limit is 3 min.';
+const FOGTXT = 'Your 3 L/h fogger is enough.';
+const WALLS_TYPICAL = 'Walls and roof: good. They bring in 23 % of the heat. (Typical walls: set the walls and roof of this room for a better answer.)';
+const FRESH = 'Most of the heat comes in with the fresh air (47 %: 23 % heat, 23 % water). Bring in only the fresh air the blocks need, and recover its coolness with an energy-recovery unit that also exchanges moisture before you buy a bigger aircond.';
+const passFrom = (min, bad = { fails: HOT }) => p => (hpOf(p) >= min ? {} : bad);
+
+test('S-UP walks up from the own size to the smallest that works', () => {
+  const r = check(room({ ac_hp: 1 }), lm(2500), p => (hpOf(p) >= 3 ? {} : { fails: HOT, inT: 50 }));
+  assert.deepEqual(sizes(r), [1, 2.5, 3]);
+  assert.deepEqual([r.ac.min, r.ac.recommended, r.ac.noReserve, r.ac.verdict], [3, 3, null, 'too-small']);
+  assert.equal(r.ac.text, "Your 1 hp aircond is too small for lion's mane. In fruiting 1 it keeps the room within 1 °C of 20 °C only 50 % of the time. You need at least 3 hp.");
+});
+
+const DOWN_TXT = "Your 1 hp aircond is too small for lion's mane. In fruiting 1 it keeps the room within 1 °C of 20 °C only 60 % of the time. You need at least 2 hp. Buy 2.5 hp for a margin on the hottest days.";
+test('S-DOWN walks down from the estimate and recommends a margin', () => {
+  const r = check(room({ ac_hp: 1 }), lm(2500), p => (hpOf(p) >= 2 ? {} : { fails: HOT, inT: 60 }));
+  assert.deepEqual(sizes(r), [1, 1.5, 2, 2.5]);
+  assert.deepEqual(r.runs.map(x => x.ac_hp), [1, 1.5, 2, 2.5]);
+  assert.deepEqual([r.ac.min, r.ac.recommended], [2, 2.5]);
+  assert.equal(r.ac.text, DOWN_TXT);
+  assert.deepEqual(r.summary, [DOWN_TXT, FOGTXT, AIRTXT, WALLS_TYPICAL, FRESH]);
+});
+
+test('S-OWNBELOW an own size below the walk result wins', () => {
+  const r = check(room({ ac_hp: 2 }), lm(2500), p => (hpOf(p) === 2.5 ? { fails: HOT, inT: 90 } : hpOf(p) >= 2 ? {} : { fails: HOT }));
+  assert.deepEqual(sizes(r), [2, 2.5, 3]);
+  assert.deepEqual([r.ac.min, r.ac.recommended, r.ac.noReserve, r.ac.verdict], [2, 2, 'too-big', 'enough']);
+  assert.deepEqual(r.runs.map(x => x.tooBig), [false, true, false]);
+  assert.equal(r.ac.text, "Your 2 hp aircond is enough for lion's mane: it keeps the room within 1 °C of 20 °C 99 % of fruiting hours. It is just enough: it has no reserve for the hottest days, but no bigger size holds this room steadier (2.5 hp is too big).");
+  assert.equal(r.summary.length, 4);
+});
+
+test('S-NONE no size works', () => {
+  const r = check(room({ ac_hp: 1 }), lm(2500), p => ({ fails: HOT, inT: 40 + 5 * hpOf(p) }));
+  assert.deepEqual(sizes(r), [1, 2.5, 3, 4, 5, 6]);
+  assert.deepEqual([r.ac.min, r.ac.recommended], [null, null]);
+  assert.equal(r.ac.text, "Your 1 hp aircond is too small for lion's mane. In fruiting 1 it keeps the room within 1 °C of 20 °C only 45 % of the time. No aircond in the list holds the temperature in this room for the whole cycle: the best, 6 hp, keeps it 70 % of fruiting hours. Fix the room first (see the heat breakdown).");
+});
+
+test('S-NONEOWN no size works and the own size is the best', () => {
+  const r = check(room({ ac_hp: 6 }), lm(2500), p => ({ fails: HOT, inT: hpOf(p) === 6 ? 80 : 40 + 5 * hpOf(p) }));
+  assert.deepEqual(sizes(r), [2.5, 3, 4, 5, 6]);
+  assert.equal(r.ac.text, "Your 6 hp aircond is too small for lion's mane. In fruiting 1 it keeps the room within 1 °C of 20 °C only 80 % of the time. No aircond in the list holds the temperature in this room for the whole cycle; none does better than yours (80 % of fruiting hours). Fix the room first (see the heat breakdown).");
+});
+
+test('S-OVER an aircond two steps above the recommendation is oversized', () => {
+  const r = check(room({ ac_hp: 6 }), lm(2500), passFrom(2));
+  assert.deepEqual(sizes(r), [1.5, 2, 2.5, 6]);
+  assert.deepEqual([r.ac.min, r.ac.recommended, r.ac.verdict], [2, 2.5, 'oversized']);
+  assert.equal(r.ac.text, 'Your 6 hp aircond is bigger than this room needs: 2.5 hp is enough. It works, but a too-big aircond switches on and off more often and takes less water out of the air.');
+});
+
+test('S-BIG a too-big own size that fails', () => {
+  const r = check(room({ ac_hp: 5 }), lm(2500), p => (hpOf(p) === 5 ? { fails: HOT, inT: 94.6 } : hpOf(p) >= 2 ? {} : { fails: HOT }));
+  assert.deepEqual(sizes(r), [1.5, 2, 2.5, 5]);
+  assert.equal(r.ac.verdict, 'too-big');
+  assert.deepEqual(r.runs.map(x => x.tooBig), [false, false, false, true]);
+  assert.equal(r.ac.text, 'Your 5 hp aircond is too big for this room: it switches on and off and the room drifts out of the band (fruiting 1: 94.6 % in band, the pass line is 95 %). 2.5 hp holds it.');
+});
+
+test('S-COLD a too-big own size that cools the room below the band', () => {
+  const r = check(room({ ac_hp: 6 }), lm(2500), p => (hpOf(p) === 6 ? { fails: ['temperature too low'], inT: 94.8 } : hpOf(p) >= 2 ? {} : { fails: HOT }));
+  assert.deepEqual(sizes(r), [1.5, 2, 2.5, 6]);
+  assert.equal(r.ac.verdict, 'too-big');
+  assert.deepEqual(r.runs.map(x => x.tooBig), [false, false, false, true]);
+  assert.equal(r.ac.text, 'Your 6 hp aircond is too big for this room: it switches on and off and the room drifts out of the band (fruiting 1: 94.8 % in band, the pass line is 95 %). 2.5 hp holds it.');
+});
+
+test('S-MARGCOLD a margin run that is too cold is never recommended', () => {
+  const r = check(room({ ac_hp: 1 }), lm(2500), p => (hpOf(p) === 2.5 ? { fails: ['temperature too low'], inT: 94 } : hpOf(p) >= 2 ? {} : { fails: HOT, inT: 60 }));
+  assert.deepEqual(sizes(r), [1, 1.5, 2, 2.5]);
+  assert.deepEqual([r.ac.min, r.ac.recommended, r.ac.noReserve], [2, 2, 'too-big']);
+  assert.deepEqual(r.runs.map(x => x.tooBig), [false, false, false, true]);
+  assert.equal(r.ac.text, "Your 1 hp aircond is too small for lion's mane. In fruiting 1 it keeps the room within 1 °C of 20 °C only 60 % of the time. You need at least 2 hp. It is just enough: it has no reserve for the hottest days, but no bigger size holds this room steadier (2.5 hp is too big).");
+  assert.equal(r.summary.length, 5);
+  assert.equal(r.summary[4], r.breakdown.text);
+});
+
+test('S-JUST the own size is the minimum and the margin is one step up', () => {
+  const r = check(room({ ac_hp: 2 }), lm(2500), passFrom(2));
+  assert.deepEqual(sizes(r), [1.5, 2, 2.5]);
+  assert.equal(r.ac.text, "Your 2 hp aircond is enough for lion's mane: it keeps the room within 1 °C of 20 °C 99 % of fruiting hours. It is just enough: on the hottest days it has no reserve. 2.5 hp gives a margin.");
+});
+
+test('S-UNITS several units of the own size', () => {
+  const r = check(room({ ac_hp: 1, ac_units: 2 }), lm(2500), p => (p.ac.capW >= 5280 ? {} : { fails: HOT }));
+  assert.deepEqual(sizes(r), [1, 1.5]);
+  assert.deepEqual([r.ac.units, r.ac.min, r.ac.recommended], [2, 1, 1.5]);
+  assert.equal(r.ac.text, "Your 2 × 1 hp aircond is enough for lion's mane: it keeps the room within 1 °C of 20 °C 99 % of fruiting hours. It is just enough: on the hottest days it has no reserve. 2 × 1.5 hp gives a margin.");
+});
+
+test('S-CORE a hot block core in the spawn run', () => {
+  const r = check(room({ ac_hp: 1 }), lm(2500), p => (hpOf(p) >= 2 ? {} : { fails: ['block core too hot'], inT: 99 }));
+  assert.deepEqual(sizes(r), [1, 1.5, 2, 2.5]);
+  assert.equal(r.ac.text, "Your 1 hp aircond is too small for lion's mane. In the spawn run the block core gets too hot. You need at least 2 hp. Buy 2.5 hp for a margin on the hottest days.");
+});
+
+test('S-LARGEST the largest size is the minimum: no reserve, fix the room', () => {
+  const r = check(room({ ac_hp: 1, walls: 'zinc', roof: 'zinc' }), lm(1000), p => (hpOf(p) >= 6 ? {} : { fails: HOT, inT: 50 }), { settings: LM() });
+  assert.equal(r.estimate.hp, 6);
+  assert.deepEqual(sizes(r), [1, 5, 6]);
+  assert.deepEqual([r.ac.min, r.ac.recommended, r.ac.noReserve], [6, 6, 'largest']);
+  const t = "Your 1 hp aircond is too small for lion's mane. In fruiting 1 it keeps the room within 1 °C of 20 °C only 50 % of the time. You need at least 6 hp. It has no reserve for the hottest days: fix the room first (see the heat breakdown).";
+  assert.equal(r.ac.text, t);
+  assert.deepEqual(r.summary, [t, FOGTXT, 'Your 1,800 m³/h air exchange is enough: a purge takes at most 1.2 min (pinning), the limit is 3 min.', 'Walls and roof: good. They bring in 23 % of the heat.', r.breakdown.text]);
+});
