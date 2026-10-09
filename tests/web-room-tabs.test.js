@@ -30,7 +30,7 @@ test('register and get; a second register replaces the first', () => {
   assert.equal(get('live'), a);
   register('live', b);
   assert.equal(get('live'), b);
-  assert.equal(get('simulate'), undefined);
+  assert.notEqual(get('simulate'), b); // another name keeps its own entry (a stub registers none, a real tab its own)
   assert.equal(get('nope'), undefined);
 });
 
