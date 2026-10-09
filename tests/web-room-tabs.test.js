@@ -2,6 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
+// Runs first: require() caches one registry for the whole file, and a later test registers 'live'.
 test('the tab files load and register nothing', () => {
   require('../web/room-tabs.js');
   for (const f of ['room-live', 'room-simulate', 'room-calibrate']) require(`../web/${f}.js`);

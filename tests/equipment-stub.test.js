@@ -97,7 +97,7 @@ test('checkEquipment: several problems, in table order', () => {
 
 test('geometry, shell, plantOf, estimate, runCheckSteps, runCheck, runCheckAsync throw stub', () => {
   for (const name of ['geometry', 'shell', 'plantOf', 'estimate', 'runCheckSteps', 'runCheck', 'runCheckAsync']) {
-    assert.throws(() => E[name]({}, {}, {}), { message: 'stub' }, name);
+    assert.throws(() => E[name]({}, {}, {}), { name: 'Error', message: 'stub' }, name);
   }
 });
 
