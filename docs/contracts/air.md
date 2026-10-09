@@ -1,6 +1,6 @@
 # Contract C9: air exchange with short, powerful CO₂ purges
 
-Revision 1, 2026-10-08. Status: draft until the lead freezes it (lead decision 55; decisions 14–54 are reserved by the parked wave 2 branch `wave2/contracts-folded`). Design: `docs/superpowers/specs/2026-10-08-air-exchange-purge-design.md`.
+Revision 1, 2026-10-08. Status: frozen (lead decision 55), 2026-10-09. Decisions 14–54 are reserved by the parked wave 2 branch `wave2/contracts-folded`. Design: `docs/superpowers/specs/2026-10-08-air-exchange-purge-design.md`.
 
 C9 replaces the one fresh-air fan (levels 0–3, `env.vent`, `rules.airMode`, AC setback during a purge) with an intake fan and an exhaust fan that switch on and off together. Where C9 and an older contract disagree, C9 wins; section 10 lists every overridden section.
 
