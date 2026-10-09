@@ -38,3 +38,30 @@ test('BT4 batchBody builds the create and edit bodies', () => {
   assert.equal(B.batchBody({ edit: false, fields: { block_count: '12a' } }).block_count, '12a');
   assert.deepEqual(Object.keys(B.batchBody({ edit: true, fields: { strain: 'x' } })), ['strain']);
 });
+
+const stubs = {};
+function mk(tag) {
+  return { tag, children: [], dataset: {}, style: {}, attrs: {}, value: '', textContent: '', hidden: false, disabled: false,
+    classList: { add() {}, remove() {}, toggle() {} },
+    append(...c) { this.children.push(...c); }, appendChild(c) { this.children.push(c); return c; }, replaceChildren(...c) { this.children = c; },
+    addEventListener() {}, removeEventListener() {}, setAttribute(k, v) { this.attrs[k] = v; }, removeAttribute(k) { delete this.attrs[k]; },
+    querySelector: sel => (stubs[sel] ||= mk(sel)), querySelectorAll: () => [], focus() {} };
+}
+
+test('BT5 #btCrop lists the crops with a fruiting range, built in mount', async t => {
+  const { startFakeApi } = require('./fakes/api-server.js');
+  const fake = await startFakeApi();
+  const prevBase = globalThis.FarmApi.base;
+  globalThis.FarmApi.base = fake.url;
+  globalThis.document = { createElement: mk };
+  t.after(async () => { await fake.close(); delete globalThis.document; globalThis.FarmApi.base = prevBase; });
+  const el = mk('main');
+  Object.defineProperty(el, 'innerHTML', { set() {}, get() { return ''; } });
+  const pending = registered.batches.mount(el, {});
+  assert.deepEqual(stubs['#btCrop'].children.map(o => ({ value: o.value, text: o.textContent })),
+    Object.keys(CC.CROPS).filter(k => CC.CROPS[k].range).map(k => ({ value: k, text: CC.CROPS[k].name })));
+  registered.batches.unmount();
+  await pending;
+  for (let i = 0; i < 50 && !fake.requests.some(r => r.path === '/api/batches' && r.query.state === 'placed'); i++) await new Promise(r => setTimeout(r, 20));
+  assert.ok(fake.requests.some(r => r.path === '/api/batches' && r.query.state === 'placed'), JSON.stringify(fake.requests));
+});
