@@ -585,7 +585,7 @@ function openFakeDb(options) {
     }
     let blocksIn = 0;
     const mixIn = isObject(run.inputs) ? run.inputs.mix : undefined;
-    if (Array.isArray(mixIn)) for (const m of mixIn) if (isObject(m) && Number.isFinite(m.blocks) && typeof m.blocks === 'number') blocksIn += m.blocks;
+    if (Array.isArray(mixIn)) for (const m of mixIn) if (isObject(m) && Number.isFinite(m.blocks)) blocksIn += m.blocks;
     const cycle = run.kind === 'cycle' && totals;
     const created_at = numColumn(run.at === undefined ? now() : run.at, { type: 'INTEGER', notNull: true, name: 'simulation_runs.created_at' });
     const kind = numColumn(run.kind, { type: 'TEXT', notNull: true, check: v => SIMULATION_KINDS.includes(v), name: 'simulation_runs.kind' });

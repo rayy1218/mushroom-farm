@@ -36,6 +36,15 @@ test('close(): idempotent, functions throw, path/version stay readable', () => {
   assert.throws(() => db.listRooms(), { message: 'database is not open' });
   assert.throws(() => db.getRoom(1), { message: 'database is not open' });
   assert.throws(() => db.insertReading(1, { t: 1 }), { message: 'database is not open' });
+  for (const fn of [
+    () => db.saveSimulationRun(1, { kind: 'capacity', inputs: {}, result: { verdict: 'good' } }),
+    () => db.listSimulationRuns(1),
+    () => db.getSimulationRun(1, 1),
+    () => db.updateSimulationRun(1, 1, {}),
+    () => db.deleteSimulationRun(1, 1),
+    () => db.getEquipment(1),
+    () => db.saveEquipment(1, validEquipment()),
+  ]) assert.throws(fn, { message: 'database is not open' }, fn.toString());
   assert.equal(db.path, ':memory:');
   assert.equal(db.version, 4);
 });
@@ -777,6 +786,11 @@ test('simulation runs: summary columns by kind (C1 6.13)', () => {
   const noTotals = db.saveSimulationRun(1, { kind: 'cycle', inputs: {}, result: { totals: 5 } });
   assert.equal(noTotals.verdict, 'fail');
   assert.equal(noTotals.days, null);
+  const emptyResult = db.saveSimulationRun(1, { kind: 'cycle', inputs: {}, result: {} }); // LD 71: missing totals
+  assert.equal(emptyResult.verdict, 'fail');
+  assert.equal(emptyResult.days, null);
+  assert.equal(emptyResult.kwh, null);
+  assert.equal(emptyResult.rm, null);
   const cap = db.saveSimulationRun(1, { kind: 'capacity', inputs: mix(1), result: { verdict: 'tight', utilisation: 88, totals: { days: 9 } } });
   assert.equal(cap.verdict, 'tight');
   assert.equal(cap.utilisation, 88);
@@ -860,6 +874,10 @@ test('simulation runs: list, get, update, delete', () => {
   assertConstraint(() => db.updateSimulationRun(1, ids[2], { real_start: 1.5 }), 3091, () => assert.equal(db.getSimulationRun(1, ids[2]).real_start, 500));
   assert.throws(() => db.updateSimulationRun(1, other.id, {}), err => err.what === 'simulation');
   assert.throws(() => db.updateSimulationRun(1, 99, { note: 'x' }), err => err.what === 'simulation');
+  assert.throws(() => db.listSimulationRuns(1, { limit: null }), RangeError); // LD 71, as listEvents
+  assertConstraint(() => db.updateSimulationRun(1, 99, { real_start: 1.5 }), 3091); // LD 71: column rules before the run check
+  assert.throws(() => db.updateSimulationRun(99, 99, { x: 1 }), err => err.code === 'NOT_FOUND' && err.what === 'room'); // LD 71: room before unknown fields
+  assert.throws(() => db.updateSimulationRun(1, 99, { x: 1 }), { name: 'TypeError', message: 'updateSimulationRun: unknown field "x"' }); // LD 71: unknown fields before the run check
 
   const gone = db.deleteSimulationRun(1, ids[2]);
   assert.equal(gone.id, ids[2]);
