@@ -65,6 +65,19 @@ function calibRun(over) {
 function report(over) {
   return Object.assign({ verdict: 'good', utilisation: 70, runs: [], balance: {} }, over);
 }
+function simRun(over) {
+  return Object.assign({
+    kind: 'cycle',
+    inputs: {
+      mix: [{ crop: 'oyster', blocks: 2000, co2_per_block: null }], settings: { airM3h: 1800 },
+      region: 'my-lowland', tariff: 0.57, volume: 60, calibration: null, empty_below: null, equipment: null,
+    },
+    result: { verdict: 'ok', totals: { days: 83, kwh: 1093.4, rm: 623.2, rmPerBlock: 0.31, pass: true }, stages: [], series: [] },
+  }, over);
+}
+function equipment(over) {
+  return Object.assign({ ac_hp: 2.5, ac_units: 1, fog_lph: 3, air_m3h: 1800, walls: null, roof: null, height: 3 }, over);
+}
 
 // ---------------------------------------------------------------------------
 // Task 1: Open, schema, close
@@ -311,6 +324,85 @@ function writeVersion1File(file) {
   raw.prepare("INSERT INTO controller_state (room_id, saved_at, controller, sim) VALUES (1, ?, '{\"a\":1}', NULL)").run(T0 - 60);
   raw.close();
 }
+
+// C1 8 "Upgrade 3 from version 2": a file written by the app after C9, before wave 2.
+function writeVersion2File(file) {
+  const raw = new DatabaseSync(file);
+  raw.exec('PRAGMA foreign_keys = ON;');
+  raw.exec('CREATE TABLE schema_version (version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL) STRICT;');
+  raw.exec(UPGRADES[0].sql);
+  raw.exec(UPGRADES[1].sql);
+  const ver = raw.prepare('INSERT INTO schema_version (version, applied_at) VALUES (?, ?)');
+  ver.run(1, T0 - 86400);
+  ver.run(2, T0 - 3600);
+  raw.prepare("INSERT INTO rooms (id, name, volume, adapter, created_at) VALUES (1, 'Room 1', 60, 'sim', ?)").run(T0 - 86400);
+  raw.prepare(
+    'INSERT INTO readings (room_id, t, temp, RH, CO2, t_out, rh_out, ac_mode, ac_setpoint, fog, air, lights, circ, power_w, kwh) ' +
+    "VALUES (1, ?, 20, 80, 900, 30, 60, 'cool', 18, 1, 1, 1, 0, 100, 1)"
+  ).run(T0 - 60);
+  raw.prepare(
+    'INSERT INTO calibrations (room_id, run_at, ua, inf_ach, moist_buffer, co2_per_block, rmse_t, rmse_rh, rmse_co2, log_rows, applied_at) ' +
+    'VALUES (1, ?, 90, 0.3, 3, 40, 0.5, 2, 50, 1440, ?)'
+  ).run(T0 - 7200, T0 - 7100);
+  raw.close();
+}
+
+test('real: upgrade 3 from version 2', t => {
+  const file = tmpFile(t);
+  writeVersion2File(file);
+  const db = openDb(file, { now: () => T0 });
+  assert.equal(db.version, 4);
+  assert.deepStrictEqual(db.queryReadings(1, { from: T0 - 60, to: T0 - 60 }), [{
+    room_id: 1, t: T0 - 60, T: 20, RH: 80, CO2: 900, t_out: 30, rh_out: 60, ac_mode: 'cool', ac_setpoint: 18,
+    fog: 1, air: 1, lights: 1, circ: 0, power_w: 100, kwh: 1, ac_fan: null, stage: null, core: null,
+  }]);
+  assert.deepStrictEqual(db.listCalibrations(1), [{
+    id: 1, room_id: 1, run_at: T0 - 7200, ua: 90, inf_ach: 0.3, moist_buffer: 3, co2_per_block: 40,
+    rmse_t: 0.5, rmse_rh: 2, rmse_co2: 50, log_rows: 1440, applied_at: T0 - 7100,
+    source: null, log_from: null, log_to: null, equipment: null,
+  }]);
+  db.close();
+  const raw = new DatabaseSync(file);
+  t.after(() => raw.close());
+  assert.deepStrictEqual(raw.prepare('SELECT version, applied_at FROM schema_version ORDER BY version').all().map(r => ({ ...r })), [
+    { version: 1, applied_at: T0 - 86400 }, { version: 2, applied_at: T0 - 3600 }, { version: 3, applied_at: T0 }, { version: 4, applied_at: T0 },
+  ]);
+});
+
+test('real: upgrades 1 to 4 in one open', t => {
+  const file = tmpFile(t);
+  writeVersion1File(file);
+  const db = openDb(file, { now: () => T0 });
+  t.after(() => db.close());
+  assert.equal(db.version, 4);
+  const rows = db.queryReadings(1, { from: T0, to: T0 + 90 });
+  assert.deepStrictEqual(rows.map(r => r.air), [0, 1, 1, 1]);
+  for (const r of rows) {
+    assert.equal(r.ac_fan, null);
+    assert.equal(r.stage, null);
+    assert.equal(r.core, null);
+  }
+  assert.deepStrictEqual(db.sqlite.prepare('SELECT version FROM schema_version ORDER BY version').all().map(r => r.version), [1, 2, 3, 4]);
+  assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS n FROM batches').get().n, 0);
+  assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS n FROM harvest_crates').get().n, 0);
+});
+
+test('real: upgrade 4 from version 3', t => {
+  const file = tmpFile(t);
+  const db3 = openDb(file, { now: () => T0, upgrades: UPGRADES.slice(0, 3) });
+  assert.equal(db3.version, 3);
+  const room = db3.createRoom(roomInput());
+  db3.close();
+  const db = openDb(file, { now: () => T0 + 10 });
+  t.after(() => db.close());
+  assert.equal(db.version, 4);
+  assert.deepStrictEqual(db.sqlite.prepare('SELECT version, applied_at FROM schema_version WHERE version >= 3 ORDER BY version').all().map(r => ({ ...r })), [
+    { version: 3, applied_at: T0 }, { version: 4, applied_at: T0 + 10 },
+  ]);
+  assert.deepStrictEqual(db.getRoom(room.id), room);
+  assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS n FROM batches').get().n, 0);
+  assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS n FROM harvest_crates').get().n, 0);
+});
 
 test('real: upgrade 2 turns fan 0-3 into air 0/1 and drops rooms.vent (C9 6.2)', t => {
   const file = tmpFile(t);
