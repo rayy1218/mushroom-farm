@@ -1381,6 +1381,162 @@ describe('equipment 6.25-6.26', () => {
   });
 });
 
+describe('extra routes (C3 2.1, C10 13)', () => {
+  const seen = [];
+  let behaviour = () => ({ status: 201, body: { ok: true } });
+  const extraRoutes = [
+    { method: 'POST', segs: ['api', 'rooms', ':id', 'probe', ':thing'], needsRoom: true, hasBody: true, run: ctx => { seen.push(ctx); return behaviour(ctx); } },
+    { method: 'GET', segs: ['api', 'probes', ':thing'], needsRoom: false, hasBody: false, run: ctx => { seen.push(ctx); return behaviour(ctx); } },
+    { method: 'DELETE', segs: ['api', 'probes', ':probeId'], needsRoom: false, hasBody: false, run: ctx => { seen.push(ctx); return { status: 200, body: { deleted: ctx.params.probeId } }; } },
+    { method: 'GET', segs: ['api', 'rooms'], needsRoom: false, hasBody: false, run: ctx => { seen.push(ctx); return { status: 200, body: ['extra'] }; } },
+    { method: 'GET', segs: ['api', 'stream'], needsRoom: false, hasBody: false, run: ctx => { seen.push(ctx); return { status: 200, body: 'extra stream' }; } },
+  ];
+  let ctx;
+  test.before(async () => { ctx = startApi({ extraRoutes }); await ctx.ready; });
+  test.after(() => ctx.stop());
+  test.beforeEach(() => { seen.length = 0; behaviour = () => ({ status: 201, body: { ok: true } }); });
+  const probe = (id, thing, body, init = {}) => fetch(`${ctx.url}/api/rooms/${id}/probe/${thing}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: typeof body === 'string' ? body : JSON.stringify(body ?? {}), ...init });
+
+  test('needsRoom: run gets ctx.id after the room check; not called for an unknown or archived room', async () => {
+    const id = seedRoom(ctx.db, 'X1');
+    const archived = seedRoom(ctx.db, 'X2');
+    ctx.rooms.archive(archived);
+    const ok = await probe(id, 'a');
+    assert.equal(ok.status, 201);
+    assert.equal(seen.length, 1);
+    assert.equal(seen[0].id, id);
+    for (const x of [archived, 99999, 'abc', '0']) {
+      const r = await probe(x, 'a');
+      assert.equal(r.status, 404, String(x));
+      assert.deepStrictEqual(await r.json(), { error: 'Unknown room', details: [] });
+    }
+    assert.equal(seen.length, 1);
+  });
+
+  test('hasBody: ctx.body parsed with the __proto__ reviver', async () => {
+    const id = seedRoom(ctx.db, 'X3');
+    await probe(id, 'a', '{"__proto__":{"polluted":1},"a":1}');
+    assert.deepStrictEqual(seen[0].body, { a: 1 });
+    assert.equal(({}).polluted, undefined);
+    assert.equal(Object.hasOwn(seen[0].body, '__proto__'), false);
+  });
+
+  test('hasBody: over 1 MB and bad JSON answer 400 without calling run', async () => {
+    const id = seedRoom(ctx.db, 'X4');
+    const big = await probe(id, 'a', JSON.stringify({ pad: 'x'.repeat(1024 * 1024 + 10) }));
+    assert.equal(big.status, 400);
+    assert.deepStrictEqual(await big.json(), { error: 'Body is larger than 1 MB', details: [] });
+    const bad = await probe(id, 'a', '{nope');
+    assert.equal(bad.status, 400);
+    assert.deepStrictEqual(await bad.json(), { error: 'Body is not valid JSON', details: [] });
+    assert.equal(seen.length, 0);
+  });
+
+  test('ctx.params holds raw segments; ctx.query is the URLSearchParams', async () => {
+    const id = seedRoom(ctx.db, 'X5');
+    await fetch(`${ctx.url}/api/rooms/${id}/probe/a%20b?x=1`, { method: 'POST', body: '{}' });
+    assert.equal(seen[0].params.thing, 'a%20b');
+    assert.equal(seen[0].query.get('x'), '1');
+    assert.ok(seen[0].query instanceof URLSearchParams);
+    await fetch(`${ctx.url}/api/probes/zz%2F?y=2`);
+    assert.equal(seen[1].id, undefined);
+    assert.equal(seen[1].body, undefined);
+    assert.equal(seen[1].params.thing, 'zz%2F');
+    assert.equal(seen[1].query.get('y'), '2');
+  });
+
+  test("run's { status, body } is the reply", async () => {
+    const id = seedRoom(ctx.db, 'X6');
+    behaviour = () => ({ status: 201, body: { made: 1 } });
+    const r = await probe(id, 'a');
+    assert.equal(r.status, 201);
+    assert.equal(r.headers.get('content-type'), 'application/json; charset=utf-8');
+    assert.equal(r.headers.get('cache-control'), 'no-store');
+    assert.deepStrictEqual(await r.json(), { made: 1 });
+    behaviour = () => ({ status: 200, body: null });
+    const r2 = await probe(id, 'a');
+    assert.equal(r2.status, 200);
+    assert.equal(await r2.json(), null);
+  });
+
+  test('an HttpError from server/api-common.js is answered with status, error and details', async () => {
+    const id = seedRoom(ctx.db, 'X7');
+    behaviour = () => { throw new HttpError(404, 'Unknown batch', ['d']); };
+    const r = await probe(id, 'a');
+    assert.equal(r.status, 404);
+    assert.deepStrictEqual(await r.json(), { error: 'Unknown batch', details: ['d'] });
+    behaviour = () => { throw new HttpError(400, 'Batch is cleared'); };
+    const r2 = await probe(id, 'a');
+    assert.equal(r2.status, 400);
+    assert.deepStrictEqual(await r2.json(), { error: 'Batch is cleared', details: [] });
+    assert.equal(ctx.fatals.length, 0);
+  });
+
+  test('a constraint error gives 500 and no onFatal; a non-constraint sqlite error 500 and onFatal once', async () => {
+    const id = seedRoom(ctx.db, 'X8');
+    behaviour = () => { throw dbErr(275); };
+    const r = await probe(id, 'a');
+    assert.equal(r.status, 500);
+    assert.equal((await r.json()).error, 'Server fault');
+    assert.equal(ctx.fatals.length, 0);
+    const err = dbErr(10);
+    behaviour = () => { throw err; };
+    const r2 = await probe(id, 'a');
+    assert.equal(r2.status, 500);
+    assert.equal(ctx.fatals.length, 1);
+    assert.equal(ctx.fatals[0], err);
+    ctx.fatals.length = 0;
+    behaviour = () => { throw new NotFoundError('crate', 3); };
+    const r3 = await probe(id, 'a');
+    assert.equal(r3.status, 404);
+    assert.equal((await r3.json()).error, 'Unknown crate');
+  });
+
+  test('a DELETE extra route answers', async () => {
+    const r = await fetch(`${ctx.url}/api/probes/7`, { method: 'DELETE' });
+    assert.equal(r.status, 200);
+    assert.deepStrictEqual(await r.json(), { deleted: '7' });
+    const r2 = await fetch(`${ctx.url}/api/probes`, { method: 'DELETE' });
+    assert.equal(r2.status, 404);
+    assert.equal((await r2.json()).error, 'Unknown route');
+    const r3 = await fetch(`${ctx.url}/api/probes/7`, { method: 'PUT' });
+    assert.equal(r3.status, 404);
+    assert.equal((await r3.json()).error, 'Unknown route');
+  });
+
+  test('a C3 route wins over an extra route with the same method and path', async () => {
+    seedRoom(ctx.db, 'X9');
+    const r = await fetch(`${ctx.url}/api/rooms`);
+    assert.equal(r.status, 200);
+    assert.notDeepEqual(await r.json(), ['extra']);
+    assert.equal(seen.length, 0);
+  });
+
+  test('extra routes come before /api/stream', async () => {
+    // an extra GET api/stream is never reached: the C3 stream answers
+    const controller = new AbortController();
+    const r = await fetch(`${ctx.url}/api/stream`, { signal: controller.signal });
+    assert.equal(r.status, 200);
+    assert.equal(r.headers.get('content-type'), 'text/event-stream; charset=utf-8');
+    controller.abort();
+    assert.equal(seen.length, 0);
+    // a path no route has gives Unknown route
+    const r2 = await fetch(`${ctx.url}/api/nothing/here`);
+    assert.equal(r2.status, 404);
+    assert.equal((await r2.json()).error, 'Unknown route');
+  });
+
+  test('without extraRoutes the C3 routes are unchanged (default [])', async () => {
+    const plain = startApi();
+    await plain.ready;
+    try {
+      const r = await fetch(`${plain.url}/api/probes/1`);
+      assert.equal(r.status, 404);
+      assert.equal((await r.json()).error, 'Unknown route');
+    } finally { plain.stop(); }
+  });
+});
+
 function freePort() {
   return new Promise((resolve, reject) => {
     const srv = http.createServer();

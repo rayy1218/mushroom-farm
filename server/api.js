@@ -420,11 +420,25 @@ function createApi(opts) {
     { method: 'DELETE', segs: ['api', 'rooms', ':id', 'simulations', ':runId'], needsRoom: true, hasBody: false, runNotFound: 'Unknown simulation run', handler: h_deleteSimulation },
     { method: 'GET', segs: ['api', 'rooms', ':id', 'equipment'], needsRoom: true, hasBody: false, handler: h_getEquipment },
     { method: 'PUT', segs: ['api', 'rooms', ':id', 'equipment'], needsRoom: true, hasBody: true, handler: h_putEquipment },
-    { method: 'GET', segs: ['api', 'stream'], needsRoom: false, hasBody: false, handler: h_stream },
   ];
 
+  const STREAM_ROUTE = { method: 'GET', segs: ['api', 'stream'], needsRoom: false, hasBody: false, handler: h_stream };
+
+  // Extra routes (C3 2.1): each one is one more row of the table, with its own run(ctx) in place of a handler.
+  // A row with the method and path of the stream is never reached: the C3 stream wins (C3 2.1, match order).
+  const EXTRA_ROUTES = (opts.extraRoutes || [])
+    .filter(r => !(r.method === 'GET' && r.segs.join('/') === STREAM_ROUTE.segs.join('/')))
+    .map(r => ({
+      method: r.method, segs: r.segs, needsRoom: !!r.needsRoom, hasBody: !!r.hasBody, extra: true,
+      handler: ({ res, id, params, body, qp }) => {
+        const out = r.run({ id, params, body, query: qp });
+        sendJson(res, out.status, out.body);
+      },
+    }));
+  const ALL_ROUTES = [...ROUTES, ...EXTRA_ROUTES, STREAM_ROUTE];
+
   function matchRoute(method, segments) {
-    for (const route of ROUTES) {
+    for (const route of ALL_ROUTES) {
       if (route.method !== method) continue;
       if (route.segs.length !== segments.length) continue;
       const params = {};
@@ -475,20 +489,23 @@ function createApi(opts) {
       if (room.archived_at !== null) return failAndDrain(req, res, 404, 'Unknown room', []);
     }
 
+    // An extra route checks its own path ids after the body is read (C3 2.1, lead decision 64).
     let versionId, runId, alarmKey;
-    if (params.versionId !== undefined) {
-      if (!ID_RE.test(params.versionId)) return failAndDrain(req, res, 404, 'Unknown settings version', []);
-      versionId = Number(params.versionId);
-    }
-    if (params.runId !== undefined) {
-      if (!ID_RE.test(params.runId)) return failAndDrain(req, res, 404, route.runNotFound || 'Unknown calibration run', []);
-      runId = Number(params.runId);
-    }
-    if (params.alarmKey !== undefined) {
-      try {
-        alarmKey = decodeURIComponent(params.alarmKey);
-      } catch {
-        return failAndDrain(req, res, 404, 'Unknown alarm', []);
+    if (!route.extra) {
+      if (params.versionId !== undefined) {
+        if (!ID_RE.test(params.versionId)) return failAndDrain(req, res, 404, 'Unknown settings version', []);
+        versionId = Number(params.versionId);
+      }
+      if (params.runId !== undefined) {
+        if (!ID_RE.test(params.runId)) return failAndDrain(req, res, 404, route.runNotFound || 'Unknown calibration run', []);
+        runId = Number(params.runId);
+      }
+      if (params.alarmKey !== undefined) {
+        try {
+          alarmKey = decodeURIComponent(params.alarmKey);
+        } catch {
+          return failAndDrain(req, res, 404, 'Unknown alarm', []);
+        }
       }
     }
 
