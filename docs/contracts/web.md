@@ -1,6 +1,6 @@
 # Contract C5 and C6: web modules and settings editor
 
-Date: 2026-10-08. Status: **draft** (revision 8, not frozen; the lead freezes it with wave 2). Changes only through the lead; see `docs/contracts/LEAD-DECISIONS.md`. Spec: `docs/superpowers/specs/2026-10-08-farm-app-foundation-design.md`.
+Date: 2026-10-08. Status: **frozen** (revision 8, lead decision 69, 2026-10-09). Changes only through the lead; see `docs/contracts/LEAD-DECISIONS.md`. Spec: `docs/superpowers/specs/2026-10-08-farm-app-foundation-design.md`.
 (sections 4, 5 and 6). Related contracts: C3 and C4 (`docs/contracts/api.md`) define every resource, route, status code and
 stream payload. This file does not repeat them. Where it names a C3 resource (Room, Reading, Event, Alarm,
 SettingsVersion, Calibration, MixRow, CapacityReport), C3's JSON is used unchanged. C10 (`docs/contracts/harvest.md`,

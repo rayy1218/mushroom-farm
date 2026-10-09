@@ -1,6 +1,6 @@
 # Contracts C3 (HTTP API) and C4 (live feed)
 
-Date: 2026-10-08. Status: **draft** (revision 9, not frozen; the lead freezes it with wave 2). Changes only through the lead; see `docs/contracts/LEAD-DECISIONS.md`.
+Date: 2026-10-08. Status: **frozen** (revision 9, lead decision 69, 2026-10-09). Changes only through the lead; see `docs/contracts/LEAD-DECISIONS.md`.
 Spec: `docs/superpowers/specs/2026-10-08-farm-app-foundation-design.md`, sections 1-6.
 Binding: the lead decisions of `LEAD-DECISIONS.md` (1–68, cited as "lead decision N") override anything here. C9 (`docs/contracts/air.md`, frozen, lead decision 55) wins where it and this contract disagree. C10 (`docs/contracts/harvest.md`, batches and harvest, frozen with wave 2, lead decision 59) defines the harvest routes that `createApi` mounts through `opts.extraRoutes` (sections 2.1, 5); where C10 and this contract disagree, this contract wins.
 Owner of the code: the API stream (wave 1), the Server 2 stream (wave 2); every file is listed in section 2.3.

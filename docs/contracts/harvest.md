@@ -1,6 +1,6 @@
 # C10: Batches and harvest by room QR
 
-Date: 2026-10-09. Status: **draft** (revision 2, not frozen; the lead freezes it with the wave 2 contracts, lead decision 59). Changes only through the lead; see `docs/contracts/LEAD-DECISIONS.md`.
+Date: 2026-10-09. Status: **frozen** (revision 2, lead decision 69, 2026-10-09). Changes only through the lead; see `docs/contracts/LEAD-DECISIONS.md`.
 Spec: `docs/superpowers/specs/2026-10-09-harvest-qr-design.md`. Plan: `docs/superpowers/plans/2026-10-09-harvest-qr/README.md`.
 Folded into the wave 2 drafts on `wave2/contracts` (owner decision 2026-10-09): C1 revision 6, C3/C4 revision 9, C5/C6 revision 8, the wave 2 plan revision 2, lead decisions 1–68 (C10's are 59–68). Section 14 lists what C10 needed in those contracts; the lead folded every row in. Where C10 and those contracts disagree, the folded contracts win.
 

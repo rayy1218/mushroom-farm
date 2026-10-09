@@ -1,6 +1,6 @@
 # Contract C9: air exchange with short, powerful CO₂ purges
 
-Revision 2 (draft, wave 2), 2026-10-09; revision 1 frozen (lead decision 55), 2026-10-09. Revision 2 is two amendments: the CO₂ limit at a stage change, built by the wave 2 Equipment stream (lead decision 56), and the air exchange `oversized` verdict of C8 (lead decision 58); the lead freezes it with wave 2. Decisions 14–54 are reserved by the parked wave 2 branch `wave2/contracts-folded`. Design: `docs/superpowers/specs/2026-10-08-air-exchange-purge-design.md`.
+Revision 2 frozen (lead decision 69), 2026-10-09; revision 1 frozen (lead decision 55), 2026-10-09. Revision 2 is two amendments: the CO₂ limit at a stage change, built by the wave 2 Equipment stream (lead decision 56), and the air exchange `oversized` verdict of C8 (lead decision 58); the lead freezes it with wave 2. Decisions 14–54 are reserved by the parked wave 2 branch `wave2/contracts-folded`. Design: `docs/superpowers/specs/2026-10-08-air-exchange-purge-design.md`.
 
 C9 replaces the one fresh-air fan (levels 0–3, `env.vent`, `rules.airMode`, AC setback during a purge) with an intake fan and an exhaust fan that switch on and off together. Where C9 and an older contract disagree, C9 wins; section 10 lists every overridden section.
 

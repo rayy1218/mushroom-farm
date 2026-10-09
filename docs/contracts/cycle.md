@@ -1,6 +1,6 @@
 # C7: Crop cycle simulation contract (`cycle.js`)
 
-Date: 2026-10-08. Status: **draft** (revision 3, not frozen; the lead freezes it with wave 2). Changes only through the lead; see `docs/contracts/LEAD-DECISIONS.md`. Spec: `docs/superpowers/specs/2026-10-08-farm-app-foundation-design.md`. Work brief: `docs/superpowers/plans/2026-10-08-farm-foundation/cycle.md`.
+Date: 2026-10-08. Status: **frozen** (revision 3, lead decision 69, 2026-10-09). Changes only through the lead; see `docs/contracts/LEAD-DECISIONS.md`. Spec: `docs/superpowers/specs/2026-10-08-farm-app-foundation-design.md`. Work brief: `docs/superpowers/plans/2026-10-08-farm-foundation/cycle.md`.
 
 ### Changes in revision 3
 

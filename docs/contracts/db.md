@@ -1,6 +1,6 @@
 # C1: Database contract (`server/db.js`)
 
-Date: 2026-10-08. Status: **draft** (revision 6, not frozen; the lead freezes it with wave 2). Changes only through the lead; see `docs/contracts/LEAD-DECISIONS.md`. Spec: `docs/superpowers/specs/2026-10-08-farm-app-foundation-design.md`. Air exchange: C9 `docs/contracts/air.md` (frozen, lead decision 55). Batches and harvest: C10 `docs/contracts/harvest.md` (folded into wave 2, lead decision 59).
+Date: 2026-10-08. Status: **frozen** (revision 6, lead decision 69, 2026-10-09). Changes only through the lead; see `docs/contracts/LEAD-DECISIONS.md`. Spec: `docs/superpowers/specs/2026-10-08-farm-app-foundation-design.md`. Air exchange: C9 `docs/contracts/air.md` (frozen, lead decision 55). Batches and harvest: C10 `docs/contracts/harvest.md` (folded into wave 2, lead decision 59).
 
 This contract defines the SQLite schema (as exact SQL), the schema upgrade mechanism, every function of `server/db.js`, and the in-memory fake `tests/fakes/db.js` (section 9). The Data stream builds `server/db.js` against it. The Rooms stream (C2) and the API stream (C3) build against the fake, which follows this contract as section 9 states.
 
@@ -808,7 +808,7 @@ Older reports are kept (no delete); only the latest is read in version 1. Writte
 
 | Other kinds | Rule |
 |---|---|
-| Any other `kind` (rejected by the `kind` `CHECK`) | `verdict` = `result.verdict` as given, `blocks` as above, `days`, `kwh`, `rm`, `utilisation` `null`; the insert then fails (275 from the `kind` `CHECK`; with `result.verdict` missing as well, which error comes first is not defined, 6.1) |
+| Any other `kind` (rejected by the `kind` `CHECK`) | `verdict` = `result.verdict` as given, `blocks` as above, `days`, `kwh`, `rm`, `utilisation` `null`; the insert then fails (275 for the `kind` `CHECK`; with `result.verdict` missing as well, which code is not defined, 6.1) |
 
 | Rule | Detail |
 |---|---|

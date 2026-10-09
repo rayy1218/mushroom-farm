@@ -1,6 +1,6 @@
 # C2: Room manager contract
 
-Date: 2026-10-08. Status: **draft** (revision 9, not frozen; the lead freezes it with wave 2). Changes only through the lead; see `docs/contracts/LEAD-DECISIONS.md`. Spec: `docs/superpowers/specs/2026-10-08-farm-app-foundation-design.md` (sections 1, 2, 5, 6).
+Date: 2026-10-08. Status: **frozen** (revision 9, lead decision 69, 2026-10-09). Changes only through the lead; see `docs/contracts/LEAD-DECISIONS.md`. Spec: `docs/superpowers/specs/2026-10-08-farm-app-foundation-design.md` (sections 1, 2, 5, 6).
 Binding: the lead decisions of `LEAD-DECISIONS.md` (cited below as "lead decision N"); they override this text. Contract C9 (`docs/contracts/air.md`, frozen, on `master`) overrides the C2 sections its section 10 lists; revision 9 writes C9 6.3 into them.
 
 ### Changes in revision 9
