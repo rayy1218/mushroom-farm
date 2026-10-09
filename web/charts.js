@@ -370,7 +370,7 @@ function drawPurgeBars(host, hours, clock) {
 }
 
 // ---------------- drawCalibCharts ----------------
-function drawCalibCharts(host, { rows, base, fit }) {
+function drawCalibCharts(host, { rows, base, fit, labels, dashed }) {
   host.replaceChildren();
   if (!rows || !base) return;
   for (const [k, name, dec] of [['T', 'Temperature °C', 1], ['RH', 'Humidity %', 0], ['CO2', 'CO₂ ppm', 0]]) {
@@ -387,12 +387,19 @@ function drawCalibCharts(host, { rows, base, fit }) {
     for (const [cls, pts] of series) {
       let dd = '', pen = false;
       for (const [t, y] of pts) { if (!Number.isFinite(y)) { pen = false; continue; } dd += (pen ? 'L' : 'M') + X(t).toFixed(1) + ',' + Y(y).toFixed(1); pen = true; }
-      svgEl('path', { d: dd, class: cls }, svg);
+      const path = svgEl('path', { d: dd, class: cls }, svg);
+      if (dashed !== undefined && (cls === 'simb' || cls === 'sima')) path.style.strokeDasharray = dashed === (cls === 'simb' ? 'base' : 'fit') ? '4 3' : 'none';
     }
     box.append(svg); host.append(box);
   }
   const key = document.createElement('div'); key.className = 'cal-key';
-  key.innerHTML = '<span><i></i>Measured</span><span><i class="b"></i>Simulation now</span>' + (fit ? '<span><i class="a"></i>Simulation, fitted</span>' : '');
+  const L = labels || {}, text = { rows: L.rows ?? 'Measured', base: L.base ?? 'Simulation now', fit: L.fit ?? 'Simulation, fitted' };
+  for (const [k, cls] of [['rows', ''], ['base', 'b'], ['fit', 'a']]) {
+    if (k === 'fit' && !fit) continue;
+    const i = document.createElement('i'); i.className = cls;
+    if (dashed !== undefined && cls) i.style.borderTopStyle = dashed === (cls === 'b' ? 'base' : 'fit') ? 'dashed' : 'solid';
+    const span = document.createElement('span'); span.append(i, text[k]); key.append(span);
+  }
   host.append(key);
 }
 
