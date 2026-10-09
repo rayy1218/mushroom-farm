@@ -283,3 +283,70 @@ test('S-LARGEST the largest size is the minimum: no reserve, fix the room', () =
   assert.equal(r.ac.text, t);
   assert.deepEqual(r.summary, [t, FOGTXT, 'Your 1,800 m³/h air exchange is enough: a purge takes at most 1.2 min (pinning), the limit is 3 min.', 'Walls and roof: good. They bring in 23 % of the heat.', r.breakdown.text]);
 });
+
+// ---------- fogger, wet, walls and roof, breakdown (C8 7.6, 8.3, 8.5 to 8.8, 9) ----------
+const ENOUGH25 = "Your 2.5 hp aircond is enough for lion's mane: it keeps the room within 1 °C of 20 °C 99 % of fruiting hours.";
+const from2 = (good, bad = { fails: HOT }) => p => (hpOf(p) >= 2 ? good(p) : bad);
+
+test('S-FOG a fogger that is too small is confirmed by one run', () => {
+  const r = check(room({ ac_hp: 2.5 }), lm(2500), from2(p => (p.fogger.levels[3].gph >= 6000 ? {} : { fails: ['humidity too low'] })));
+  assert.deepEqual(sizes(r), [1.5, 2, 2.5]);
+  assert.deepEqual([r.ac.min, r.ac.recommended], [2, 2.5]);
+  assert.equal(r.ac.text, ENOUGH25);
+  assert.deepEqual([r.runs.at(-1).kind, r.runs.at(-1).fog_lph, r.runs.at(-1).ac_hp], ['fogger', 6, 2.5]);
+  assert.deepEqual([r.fogger.verdict, r.fogger.recommended], ['too-small', 6]);
+  assert.equal(r.fogger.text, 'Your 3 L/h fogger is too small: the air gets too dry in fruiting. A 6 L/h fogger keeps the humidity up.');
+});
+
+test('S-FOGNO a bigger fogger does not fix a room the aircond dries', () => {
+  const r = check(room({ ac_hp: 2.5 }), lm(2500), from2(p => (p.fogger.levels[3].gph >= 6000 ? { fails: ['humidity too low', 'temperature too low'] } : { fails: ['humidity too low'] })));
+  assert.deepEqual([r.fogger.verdict, r.fogger.tried], ['not-the-fix', 6]);
+  assert.equal(r.fogger.text, 'The air gets too dry in fruiting, and a 6 L/h fogger does not fix it: the aircond runs so hard that it dries the air. Fix the heat first (see the heat breakdown).');
+});
+
+test('S-FOGBIG a fogger that is bigger than needed', () => {
+  const r = check(room({ ac_hp: 2.5, fog_lph: 14 }), lm(2500), from2(() => ({ fog: 24000 })));
+  assert.equal(r.fogger.verdict, 'oversized');
+  assert.equal(r.fogger.recommended, 3);
+  assert.ok(Math.abs(r.fogger.peak - 1.469) < 0.001, r.fogger.peak);
+  assert.equal(r.fogger.text, 'Your 14 L/h fogger is bigger than needed: it never used more than 1.5 L/h in an hour. It works; a 3 L/h fogger would do.');
+});
+
+const WET_TXT = 'The room is too wet in fruiting 1 (above 95 % RH 24 % of the time). A bigger aircond does not fix this: the outside air brings in more water than the aircond can take out without making the room too cold. Dry the fresh air before it comes in: an energy-recovery unit with a moisture-exchanging core (enthalpy wheel or hygroscopic core), a fresh-air dehumidifier, or add a dehumidifier in the room.';
+test('S-WET a room that is too wet gets its own line, and the summary has six', () => {
+  const r = check(room({ ac_hp: 2.5 }), lm(2500), from2(() => ({ fails: ['humidity near saturation'], wet: 24.1 })));
+  assert.deepEqual(r.wet.stages, [{ stage: 'fruiting', flush: 1, wet: 24.1, limit: 95 }]);
+  assert.deepEqual(r.summary, [ENOUGH25, WET_TXT, FOGTXT, AIRTXT,
+    'Walls and roof: good. They bring in 23 % of the heat. An insulated room also needs drier fresh air. (Typical walls: set the walls and roof of this room for a better answer.)', FRESH]);
+});
+
+test('S-WET2 each wet segment prints with its own line', () => {
+  const segs = [{ stage: 'pinning', flush: 1, wet: 16, fails: ['humidity near saturation'] }, { stage: 'fruiting', flush: 1, wet: 15, fails: ['humidity near saturation'] }];
+  const r = check(room({ ac_hp: 2.5 }), lm(2500), from2(() => ({ segs })));
+  assert.deepEqual(r.wet.stages, [{ stage: 'pinning', flush: 1, wet: 16, limit: 98 }, { stage: 'fruiting', flush: 1, wet: 15, limit: 95 }]);
+  assert.ok(r.wet.text.startsWith('The room is too wet in pinning 1 (above 98 % RH 16 % of the time) and fruiting 1 (above 95 % RH 15 % of the time).'), r.wet.text);
+});
+
+test('S-FAIR walls and roof that are fair, and the breakdown says a bigger aircond', () => {
+  const r = check(room({ ac_hp: 2.5 }), lm(2500), from2(() => ({ heat: { walls: 2000 } })));
+  assert.deepEqual([r.insulation.verdict, r.insulation.insulatedHp, r.insulation.uaSource], ['fair', 2, 'typical']);
+  assert.equal(r.insulation.text, 'Walls and roof: fair. They bring in 38 % of the heat. With PU panel 75 mm walls and roof the room would need about 2 hp (quick estimate). (Typical walls: set the walls and roof of this room for a better answer.)');
+  assert.equal(r.breakdown.advice, 'bigger-ac');
+  assert.equal(r.breakdown.text, 'The heat comes mostly from the blocks and the room itself, not from the walls or the fresh air: a bigger aircond is the right fix.');
+});
+
+test('S-FAIRWET fair walls in a wet room', () => {
+  const r = check(room({ ac_hp: 2.5 }), lm(2500), from2(() => ({ heat: { walls: 2000 }, fails: ['humidity near saturation'], wet: 24.1 })));
+  assert.equal(r.insulation.text, 'Walls and roof: fair. They bring in 38 % of the heat. With PU panel 75 mm walls and roof the room would need about 2 hp (quick estimate). An insulated room also needs drier fresh air. (Typical walls: set the walls and roof of this room for a better answer.)');
+  assert.equal(r.summary.length, 6);
+  assert.equal(r.summary[5], r.breakdown.text);
+  assert.equal(r.breakdown.advice, 'bigger-ac');
+});
+
+test('S-POOR poor walls and roof: insulate first', () => {
+  const r = check(room({ ac_hp: 2.5 }), lm(2500), from2(() => ({ heat: { walls: 3000 } })));
+  assert.equal(r.insulation.verdict, 'poor');
+  assert.equal(r.insulation.text, 'Walls and roof: poor. They bring in 48 % of the heat. With PU panel 75 mm walls and roof the room would need about 2 hp (quick estimate). (Typical walls: set the walls and roof of this room for a better answer.)');
+  assert.equal(r.breakdown.advice, 'insulate');
+  assert.equal(r.breakdown.text, 'Most of the heat comes through the walls and roof (48 %). Insulate before you buy a bigger aircond.');
+});
