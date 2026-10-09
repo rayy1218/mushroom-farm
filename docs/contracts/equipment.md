@@ -15,12 +15,13 @@ Brought onto the C9 air model (`master` 6a12852): the one fresh-air fan with lev
 | 4.5, 5.1, 5.1.1 | The `fan.levels` row of `plantOf` and the `fan` key of `env.plant` are dropped; `PLANT_KEYS` = `room`, `ac`, `fogger`, `loads`. Line numbers of `master` 6a12852. |
 | 5.4 | Re-measured on C9: the wet outdoor air rule is dropped (it patched steady mode, which no longer exists); the no-wind-down rule is dropped (it changes no verdict on C9, 5.4.3); the no-heat-while-outside-warm rule stays (without it 2.5 hp falls to 87.2 % in pinning). The failure analysis of 5.4.1 is the C9 one (purges in pinning). |
 | 6 | Step 3: the fresh air of a stage is the average outdoor air of the purges (`max(leak, n c fac / dC)`, the C9 `balance` rule). |
-| 7.6, 8.4, 8.8, 10, 11 | The fan verdict becomes the air exchange verdict: `ClimateAir.sizeFor` per judged stage against the time cap (C9 10), a confirmation run only when the reference run fails CO₂; no `oversized` (C9 10); the "fix the fresh air first" branch of 8.2 and summary line 2 are removed. Report key `air`; run kind `'air'`; Progress and Run field `air_m3h`. |
+| 7.6, 8.4, 8.8, 10, 11 | The fan verdict becomes the air exchange verdict: `ClimateAir.sizeFor` per judged stage against the time cap (C9 10), a confirmation run only when the reference run fails CO₂; `oversized` at 2 `AIR_SIZES` steps above the recommended size (lead decision 58, C9 revision 2); the "fix the fresh air first" branch of 8.2 and summary line 2 are removed. Report key `air`; run kind `'air'`; Progress and Run field `air_m3h`. |
 | 12 | Upgrade 3 (C9 owns upgrade 2, lead decisions 54, 55); `room_equipment.air_m3h`; C3 7.1: `room-rules.js` reads `ClimateEquipment` only at call time (findings 4, 12); the equipment save keeps the room's `airM3h` setting in step (lead decision 35); require orders with `air.js`. |
-| 13 | Re-measured on C9 where the owner's example needs it (13.1, 13.2, 13.3); every other number measured on the old fan model is marked "to re-measure on the C9 model". 5.3 line 184, 5.4.3 lines of `master` 6a12852 (finding 24). |
+| 13 | Re-measured on C9 with lead decisions 56 and 57 (13.1, 13.2, 13.3; the revision 3 first pass with pinning CO₂ 700 is kept in 13.2 and 13.3 as history); every other number measured on the old fan model is marked "to re-measure on the C9 model". 5.3 line 184, 5.4.3 lines of `master` 6a12852 (finding 24). |
 | 14 | Tests follow the air verdict, the one cool-crop rule and the C9 owner's example. |
-| 15 | New items 12–16 (pinning CO₂ of lion's mane, open; the stage ramp, decided by lead decision 37 as amended / C9 revision 2; a big air exchange in pinning, open; the C9 spec's wording example; the air run); item 4 no longer applies. |
-| 5.4, 12.7 | C9 revision 2 (lead decision 37 as amended) is built by the Equipment stream in `controller.js`: a lower CO₂ limit applies at once at a stage change, with one uncapped purge; `stage-changes.json` regenerated. |
+| 15 | Items 12–16 added and decided: pinning CO₂ of lion's mane 1000 (owner, lead decision 57); the stage ramp (lead decision 56, C9 revision 2); the air exchange `oversized` verdict (lead decision 58); the C9 spec's wording example (a note in C9 revision 2); the air run. Item 4 no longer applies. |
+| 5.4.2, 8.4, 13.2, 13.3, 14, 15 | Owner decision: lion's mane pinning CO₂ 1000 (lead decision 57). Lead decision 58: the air exchange `oversized` verdict. The owner's example re-measured with lead decisions 56 and 57: minimum 1.5 hp, buy 2 hp, the whole cycle passes, the 1800 m³/h air exchange is `oversized` (need 800 m³/h). |
+| 5.4, 12.7 | C9 revision 2 (lead decision 56) is built by the Equipment stream in `controller.js`: a lower CO₂ limit applies at once at a stage change, with one uncapped purge; `stage-changes.json` regenerated. |
 
 ### Changes in revision 2
 
@@ -40,7 +41,7 @@ Brought onto the C9 air model (`master` 6a12852): the one fresh-air fan with lev
 | 14 | Tests for the revision 2 texts. |
 | 15 | Every open item decided (lead decisions 40–46). |
 
-This contract defines `equipment.js`: a check that runs the C7 full crop cycle in one room with the farmer's own machines, then with other aircond sizes, and tells the farmer in plain words whether each machine is big enough, what to buy, and whether the money is better spent on the room (insulation, drier fresh air) than on a bigger aircond. It also defines the minimum changes to `sim.js`, `controller.js`, `capacity.js` and `cycle.js` that make a room's machines part of the simulation, measure where the heat comes from, and let a correctly sized lion's mane room with typical walls hold its temperature through the whole cycle (13.3; the humidity and CO₂ of pinning on C9 are open items, section 15).
+This contract defines `equipment.js`: a check that runs the C7 full crop cycle in one room with the farmer's own machines, then with other aircond sizes, and tells the farmer in plain words whether each machine is big enough, what to buy, and whether the money is better spent on the room (insulation, drier fresh air) than on a bigger aircond. It also defines the minimum changes to `sim.js`, `controller.js`, `capacity.js` and `cycle.js` that make a room's machines part of the simulation, measure where the heat comes from, and let a correctly sized lion's mane room with typical walls pass the whole cycle (13.3).
 
 | Part of the owner's goal | Where |
 |---|---|
@@ -58,9 +59,9 @@ This contract defines `equipment.js`: a check that runs the C7 full crop cycle i
 |---|---|---|
 | Room equipment | Saved per room: aircond size in hp from the Malaysian market list with the number of units, fogger output, air exchange size (C9), wall and roof construction (zinc, brick, EPS and PU panel 50/75/100 mm) giving the room's wall heat transfer (UA), or the calibrated `ua` when the room has an applied calibration. Today `PLANT` in `sim.js` is fixed for every room; C8 lets a room's machines override it without changing any existing caller, test or vector. | 4, 5.1 |
 | Search | A quick heat balance picks a starting aircond size; the C7 full cycle confirms the sizes around it, stopping at the smallest size that holds the temperature; recommended = one market step above the minimum when the minimum has a thin margin (exact rule in 7.4). Every size run goes in the result table. | 6, 7 |
-| Verdicts | Per machine: enough / too small (size to buy) / oversized (aircond and fogger; the air exchange has no oversized verdict, C9 10); plus walls and roof. Exact message templates with placeholders. | 8 |
+| Verdicts | Per machine: enough / too small (size to buy) / oversized (the air exchange's `oversized`: lead decision 58); plus walls and roof. Exact message templates with placeholders. | 8 |
 | Heat breakdown | Shares of the cooling load by source over the fruiting hours, measured inside the simulation (a read-only addition to `sim.js`). | 5.1.2, 9 |
-| Lion's mane | Added to `CROPS` from the research profile (marked draft), with its own pinning wet line (`wetRH`, 98 %, from the sources' 90–100 % RH; lead decision 40); plus the cold-room controller tuning (one rule on C9, 5.4.3) so a correctly sized room with typical walls holds its temperature through the whole cycle (13.3). On C9 the owner's example still fails pinning on humidity and CO₂ at every aircond size: section 15 items 12 and 13 are open for the lead. | 5.4, 13.2 |
+| Lion's mane | Added to `CROPS` from the research profile (marked draft), with its own pinning wet line (`wetRH`, 98 %, from the sources' 90–100 % RH; lead decision 40); pinning CO₂ 1000 ppm (owner, lead decision 57); plus the cold-room controller tuning (one rule on C9, 5.4.3) and the CO₂ limit at a stage change (lead decision 56) so a correctly sized room with typical walls passes the whole cycle (13.3: from 1.5 hp, buy 2 hp). | 5.4, 13.2 |
 | Where | New module `equipment.js` (browser and Node, global `ClimateEquipment`, the wrapper of `cycle.js`) plus minimum changes to `sim.js`, `controller.js`, `capacity.js`, `cycle.js`. It runs in the room's Simulate tab and in Node tests. The database, route, room manager and page parts are in C1 revision 6, C2 revision 9, C3 revision 9, C5/C6 revision 8 and C7 revision 3 (section 12 says where). | 1, 12 |
 
 ## 1. General rules
@@ -75,7 +76,7 @@ This contract defines `equipment.js`: a check that runs the C7 full crop cycle i
 | No change for existing callers | A room without `plant`, a cycle without `opts.heat`, and every existing crop give results deep-equal to `master` 6a12852 (measured on the C9 prototype, 13.1). Every existing test (670 on `master` 6a12852) and the 9 recorded vectors stay green unchanged. |
 | Deterministic | Same `room`, `mix`, `opts`: deep-equal Report. No `Math.random`, no clock (C7 is deterministic; the search is a fixed sequence). |
 | Numbers | Unrounded in the Report (the page rounds). Units: hp (badge), W, W/K, m², m, L/h, m³/h, °C, % RH, ppm, kWh, RM. "kWh" in the heat breakdown is heat (thermal), not electricity; electricity is `kwh` of a run. |
-| Speed | One run = one C7 full cycle with `opts.heat` (5.2 s in Node 22.20 for the 78-day lion's mane program on C9; 3.7 s in desktop Chrome on the old fan model). A check makes 2–9 runs (section 7.7); measured 2–5 on the old fan model (13.5) and 5 for the owner's example on C9 (13.3). |
+| Speed | One run = one C7 full cycle with `opts.heat` (5.2 s in Node 22.20 for the 78-day lion's mane program on C9; 3.7 s in desktop Chrome on the old fan model). A check makes 2–9 runs (section 7.7); measured 2–5 on the old fan model (13.5) and 3 for the owner's example on C9 (13.3). |
 | Draft crop | `CROPS.lionsmane` is a draft profile (comment in the code); its numbers change only through the lead. |
 
 ## 2. Public API (`global.ClimateEquipment`)
@@ -314,13 +315,13 @@ This contract defines `equipment.js`: a check that runs the C7 full crop cycle i
 | # | Cause in the code | Effect | On C9 (revision 3) |
 |---|---|---|---|
 | 1 | Old model: steady mode kept the fan at Low (300 m³/h) all night, whatever the outside air held | Wet outside air at night (19–23 g/m³) against a 20 °C room (17.3 g/m³ at saturation) | Gone with steady mode (C9). The wet outdoor air rule that patched it is dropped. |
-| 1b | C9: the pinning stop level is `max(450, co2Lim − 300)` = 450 ppm, 30 ppm above the outdoor air, so the air exchange purges about every 12 min in pinning (C9 5.3) | At 1800 m³/h the steady CO₂ of a purge is 445 ppm: purges often hit the 180 s cap (465 capped of about 2042 purges in the cycle) and each brings in wet outside air. 1810 of the 2262 pinning readings above 98 % RH come during a purge, 452 within 5 min after one. | New. Pinning is too wet (about 15–16 % above 98 %) at every aircond size: section 15 item 12 (open for the lead) |
+| 1b | C9: the pinning stop level is `max(450, co2Lim − 300)` = 450 ppm, 30 ppm above the outdoor air, so the air exchange purges about every 12 min in pinning (C9 5.3) | At 1800 m³/h the steady CO₂ of a purge is 445 ppm: purges often hit the 180 s cap (465 capped of about 2042 purges in the cycle) and each brings in wet outside air. 1810 of the 2262 pinning readings above 98 % RH come during a purge, 452 within 5 min after one. | Resolved by lead decision 57 (owner): pinning CO₂ 1000, stop level 700 ppm. Measured: pinning above 98 % RH 1.6 %, one capped purge in the whole cycle (13.3) |
 | 2 | Physics: at night the room needs little cooling, so the aircond runs at its minimum (`minFrac` 0.2) or cycles; its water removal is proportional to its output | It cannot take the water of the outside air out without over-cooling the room; a bigger aircond is wetter in fruiting (13.3: fruiting `wet` rises from 0.5 % at 2 hp to 7–10 % at 4 hp) | Still true |
 | 3 | `sim.js` latent removal used a fixed coil airflow 0.14 m³/s for any `capW` | A bigger aircond took out no more water per share of output | Still true: fixed by `PLANT.ac.coilM3s` scaled in `plantOf` (5.1, 4.5) |
 | 4 | Heat mode (`controller.js` line 608 of `master` 6a12852): `e < −0.8` for 5 min switches the AC to heat, also when the outdoor air is 31 °C. A large AC in a cool room overshoots below the band at every start | Heat and cool flap and the room swings out of the band | Still true: without the no-heat rule 2.5 hp falls from 95.2 % to 87.2 % in pinning (`temperature too high`) and is judged too small (13.2). The rule stays (5.4.3). The same flapping is in two recorded oyster vectors, so it stays a cool-crop rule (section 15 item 3). |
 | 5 | Old model: the setpoint correction kept integrating while dry mode capped the compressor | The AC left dry mode at its lowest setpoint and overcooled the room | Not needed on C9: without the no-wind-down rule no size changes its verdict (2 hp 97.0 %, 2.5 hp 95.6 %, 4 hp 96.3 % in pinning; 4 hp fruiting 99.2 % instead of 98.3 %). The rule is dropped. |
 | 6 | Pinning target 16 °C = `MACHINES.acSetMin` | The correction has no room below the setpoint, so any upset leaves the band | Still true: pinning stays at 17 °C |
-| 7 | C9 revision 1 + C7: the 4 h ramp from the spawn run (CO₂ limit 5000) to pinning starts pinning at about 2760 ppm; the first 3.85 h are above the pinning limit | 3.2 % of the 120 pinning hours above the limit, C7 allows 2 %: `CO₂ above the limit` in pinning 1 at every aircond and air exchange size | New. Not an equipment problem: the C7 default cycle (2000 grey oyster) fails the same way on `master` 6a12852 (pinning 1, 96.0 % below the limit). Fixed by C9 revision 2 (lead decision 37 as amended): a lower CO₂ limit applies at once at a stage change, with one uncapped purge; the C8 numbers of 13.3 were measured before it (section 15 item 13) |
+| 7 | C9 revision 1 + C7: the 4 h ramp from the spawn run (CO₂ limit 5000) to pinning starts pinning at about 2760 ppm; the first 3.85 h are above the pinning limit | 3.2 % of the 120 pinning hours above the limit, C7 allows 2 %: `CO₂ above the limit` in pinning 1 at every aircond and air exchange size | New. Not an equipment problem: the C7 default cycle (2000 grey oyster) fails the same way on `master` 6a12852 (pinning 1, 96.0 % below the limit). Fixed by C9 revision 2 (lead decision 56): a lower CO₂ limit applies at once at a stage change, with one uncapped purge; 13.3 is measured with it |
 
 #### 5.4.2 `CROPS.lionsmane` (draft) and the `cool` flag
 
@@ -333,7 +334,8 @@ This contract defines `equipment.js`: a check that runs the C7 full crop cycle i
     // DRAFT (C8, research 2026-10-08, 22 sources for fruiting): a cool crop (fruits at 16-22 °C) that needs an insulated room
     // and a larger AC than the tropical crops. CO2 sets the shape: above about 1000 ppm long spines and coral shapes.
     // Pinning RH 90-100 % in the sources (S12 Out-Grow and S15 Fungi Academy 95-100): wet only above 98 % in pinning.
-    lionsmane: { name: "Lion's mane", spawn: [23, 80, 5000], pinning: [17, 92, 700], fruiting: [20, 90, 1000], rest: [21, 80, 2000],
+    // Pinning CO2 1000 (owner 2026-10-09, inside the 500-1100 of the sources): a 450 ppm stop level made purges frequent and wet.
+    lionsmane: { name: "Lion's mane", spawn: [23, 80, 5000], pinning: [17, 92, 1000], fruiting: [20, 90, 1000], rest: [21, 80, 2000],
                  limits: { tMin: 14, tMax: 27, coreMax: 30 }, coreTarget: 25, range: { T: [16, 22], RH: [85, 92] }, cool: true,
                  wetRH: { pinning: 98 } },
 ```
@@ -341,17 +343,17 @@ This contract defines `equipment.js`: a check that runs the C7 full crop cycle i
 | Item | Value | From the research profile |
 |---|---|---|
 | Place | Last entry of `CROPS` (after `milky`) | – |
-| `pinning` | `[17, 92, 700]` | Research proposed 16 °C (the AC minimum); 17 °C because of cause 6 (still inside the sources' 10–24 °C, S14 16–22 °C) |
+| `pinning` | `[17, 92, 1000]` | Research proposed 16 °C (the AC minimum); 17 °C because of cause 6 (still inside the sources' 10–24 °C, S14 16–22 °C) |
 | `cool: true` | New flag | Turns on 5.4.3 |
-| Pinning CO₂ `700` | Research median 600, range 500–1100 (S13 warm strain: below 1000–1100) | Kept as researched. On C9 it gives a 450 ppm stop level and frequent wet, capped purges (5.4.1 cause 1b); measured with 1000 instead: pinning above 98 % RH 1.6 %, no capped purge, 1.5 hp already holds pinning (13.3). Section 15 item 12: open for the lead. |
-| `wetRH: { pinning: 98 }` | New optional key (C7 scoring only, 5.3; the controller does not read it) | Pinning RH 90–100 % (median 97.5; S12 and S15 95–100, S22 90–95, research section 3): growers hold pinning near saturation, so the app's 95 % line would call a correctly run pinning room "too wet". Measured on the old fan model: above 98 % in pinning 1.4–2.7 % at 2–4 hp. On C9 with the pinning CO₂ limit 700: 15.1–16.5 % at every size (purges, 5.4.1 cause 1b); with 1000: 1.6 % (13.3). Fruiting keeps 95 (research fruiting RH 85–95). |
+| Pinning CO₂ `1000` (owner decision, lead decision 57) | Research median 600, range 500–1100 (S13 warm strain: below 1000–1100); the research profile proposed 700 | With 700 the stop level is 450 ppm and purges come about every 12 min, many capped, each bringing wet outside air: pinning above 98 % RH 15–16 % at every size (5.4.1 cause 1b). With 1000: 1.6 %, and the 1800 m³/h default ends every pinning purge in about 1.2 min (13.3). |
+| `wetRH: { pinning: 98 }` | New optional key (C7 scoring only, 5.3; the controller does not read it) | Pinning RH 90–100 % (median 97.5; S12 and S15 95–100, S22 90–95, research section 3): growers hold pinning near saturation, so the app's 95 % line would call a correctly run pinning room "too wet". Measured on the old fan model: above 98 % in pinning 1.4–2.7 % at 2–4 hp. On C9 with the pinning CO₂ limit 700: 15.1–16.5 % at every size (purges, 5.4.1 cause 1b); with 1000 (lead decision 57): 1.6–2.0 % at 1.5–4 hp (13.3). Fruiting keeps 95 (research fruiting RH 85–95). |
 | Everything else | As `lionsmane-research.md` section 6 | Unchanged (spawn 23/80/5000, fruiting 20/90/1000, rest 21/80/2000, limits, coreTarget 25, range) |
 | Program | Not in `CROPS` (programs are per room settings). Measurements use the research program: `days` spawn 21, pinning 5, fruiting 8, rest 14; `flushes` 3 (78 days, full). | Research section 7 |
 | Comment at `controller.js` line 50 of `master` 6a12852 | "Only crops that fruit near tropical room temperature …" | Becomes: `// Mostly crops that fruit near tropical room temperature; a cool crop (flag cool) needs an insulated room and a larger AC.` (in both prototypes' `controller.js.diff`) |
 
 #### 5.4.3 Cool-crop rule (only when `CROPS[cfg.crop].cool`)
 
-| Rule | Where (`master` 6a12852) | Exact change | Measured effect (1000 blocks, typical room, 1800 m³/h, C9) |
+| Rule | Where (`master` 6a12852) | Exact change | Measured effect (1000 blocks, typical room, 1800 m³/h, C9; pinning CO₂ 700, before lead decisions 56 and 57) |
 |---|---|---|---|
 | No heat while outside is warm | `airConditioner`, line 608: `st.heatSince = e < -0.8 ? (st.heatSince ?? t) : null;` (`crop` is already defined at line 598) | `const outWarm = !!crop.cool && !f.out && v.tOut > cfg.spT + BANDS.T; st.heatSince = e < -0.8 && !outWarm ? (st.heatSince ?? t) : null;` | Pinning at 2.5 hp (full cycle): 87.2 % (`temperature too high`) → 95.2 %; at 2 hp 96.1 % → 96.9 % |
 
@@ -379,9 +381,9 @@ This contract defines `equipment.js`: a check that runs the C7 full crop cycle i
 
 | Measured against the simulation | Rooms |
 |---|---|
-| C9 model (13.3) | Owner's example: 7178 W in pinning → 3 hp; the simulated smallest size is 2 hp (the walk goes down two steps). Other C9 estimates (no cycle run yet): farm type `ready` 3039 W (fruiting) → 1.5 hp; zinc walls and roof 19102 W → 6 hp; PU 50 walls and roof 6132 W → 2.5 hp |
+| C9 model with lead decisions 56, 57 (13.3) | Owner's example: 3442 W in pinning → 1.5 hp = the simulated smallest size (fresh air 118 m³/h in pinning and fruiting). Other C9 estimates (no cycle run yet): farm type `ready` 3039 W (fruiting) → 1.5 hp; zinc walls and roof 16179 W → 6 hp; PU 50 walls and roof 2393 W → 1 hp; PU 75 2230 W → 1 hp. With the old pinning CO₂ 700 the owner's example was 7178 W → 3 hp (fresh air 429 m³/h) |
 | Old fan model (13.4; to re-measure on the C9 model) | Estimate = the simulated smallest size in 4 rooms, one market step above it in 5, below it in 0; no size passed in 2 |
-| Why | The estimate is on the safe side (the target, not the band edge; pinning's 450 ppm stop level makes its average outdoor air large), so the walk usually goes down |
+| Why | The estimate is on the safe side (the target, not the band edge), so the walk usually goes down or stays |
 
 ## 7. The check (`runCheckSteps`)
 
@@ -508,7 +510,7 @@ This contract defines `equipment.js`: a check that runs the C7 full crop cycle i
 
 ### 8.4 Air exchange (`air`)
 
-The rule of C9 4.1 and 10: the pair must end every purge within the time cap, in every judged stage. The pair is off between purges, so a bigger pair only shortens purges: no `oversized` verdict (C9 10; section 15 item 14 records a measurement against it).
+The rule of C9 4.1 and 10: the pair must end every purge within the time cap, in every judged stage. A pair much bigger than the room needs is `oversized` (lead decision 58, C9 revision 2): each purge brings in a lot of hot, wet outside air at once.
 
 | Name | Value |
 |---|---|
@@ -526,14 +528,15 @@ The rule of C9 4.1 and 10: the pair must end every purge within the time cap, in
 | `too-small` | `need.needM3h > eq.air_m3h` | `Your {air} m³/h air exchange is too small for {int(n)} blocks in {stage}: ` + (`purgeS` finite: `a purge takes {min1(purgeS)} min, the limit is {min1(capS)} min.`; else `a purge never brings CO₂ down to {stop} ppm.`) + ` Buy at least {int(need.needM3h)} m³/h{gives}` | `need.size` (`null` above 3600 m³/h) |
 | `too-small` | The `'air'` run of 7.6 ran and has `co2Pass` | `Your {air} m³/h air exchange is too small: CO₂ goes above the limit in {stages(co2)}. A {int(tried)} m³/h air exchange keeps it below.` | `tried` |
 | `not-the-fix` | The reference run fails `CO₂ above the limit` in a judged segment | `CO₂ goes above the limit in {stages(co2)}` + (a run was made: `, and a {int(tried)} m³/h air exchange does not fix it.`; else `.`) | `null` |
+| `oversized` | `need.size` is set and `ownIdx ≥ i(need.size) + 2`, where `ownIdx` = the largest `i` with `AIR_SIZES[i] ≤ eq.air_m3h` and `i(need.size)` its index in `AIR_SIZES` (lead decision 58) | `Your {air} m³/h air exchange is bigger than this room needs: {int(need.size)} m³/h is enough. Each purge brings in a lot of hot, wet outside air at once.` | `need.size` |
 | `enough` | otherwise | `Your {air} m³/h air exchange is enough: a purge takes at most {min1(purgeS)} min ({stage}), the limit is {min1(capS)} min.` | `null` |
 
 | Example | Text |
 |---|---|
 | 60 m³, 6000 grey oyster blocks, fruiting (start 900, stop 700, cap 180 s), 900 m³/h (C9 spec 4.1, re-measured: at 900 m³/h the steady CO₂ of a purge is 720 ppm) | `Your 900 m³/h air exchange is too small for 6,000 blocks in fruiting: a purge never brings CO₂ down to 700 ppm. Buy at least 1,450 m³/h; 1,800 m³/h gives a margin.` |
 | The same room with 1200 m³/h | `Your 1,200 m³/h air exchange is too small for 6,000 blocks in fruiting: a purge takes 4.6 min, the limit is 3 min. Buy at least 1,450 m³/h; 1,800 m³/h gives a margin.` |
-| Owner's example (13.3), 1800 m³/h, lion's mane pinning CO₂ limit 700 (stop 450) | `Your 1,800 m³/h air exchange is too small for 1,000 blocks in pinning: a purge takes 6.9 min, the limit is 3 min. Buy at least 2,950 m³/h; 3,600 m³/h gives a margin.` (section 15 item 12: the simulation does not confirm this advice) |
-| Owner's example with a pinning CO₂ limit of 1000 (stop 700) | `Your 1,800 m³/h air exchange is enough: a purge takes at most 1.2 min (pinning), the limit is 3 min.` |
+| Owner's example (13.3), 1800 m³/h, pinning CO₂ 1000 (need 800 m³/h in pinning, size 900) | `Your 1,800 m³/h air exchange is bigger than this room needs: 900 m³/h is enough. Each purge brings in a lot of hot, wet outside air at once.` |
+| Owner's example with 900 m³/h | `Your 900 m³/h air exchange is enough: a purge takes at most 2.5 min (pinning), the limit is 3 min.` |
 
 ### 8.5 Walls and roof (`insulation`)
 
@@ -751,7 +754,7 @@ The draft of this section proposed exact changes to the room-centred amendments.
 
 ### 12.7 Lead decisions 33–39 and the wave 2 rows
 
-Decisions 33–39 are recorded in `LEAD-DECISIONS.md` (repeated here for C8 readers; 33, 35, 37 and 38 as amended for C9):
+Decisions 33–39 are recorded in `LEAD-DECISIONS.md` (repeated here for C8 readers; 33, 35, 37 and 38 as amended for C9; 56–58 are the C9 follow-ups: the CO₂ limit at a stage change, pinning CO₂ 1000, the air exchange `oversized` verdict):
 
 | # | Topic | Decision |
 |---|---|---|
@@ -759,8 +762,8 @@ Decisions 33–39 are recorded in `LEAD-DECISIONS.md` (repeated here for C8 read
 | 34 | Machines in the simulation | `env.plant` (one-level override of `PLANT`) and `room.plant` (C7, `capacity.js`); `ClimateEquipment.plantOf` maps Equipment to it; `DEFAULTS` = today's `PLANT` exactly |
 | 35 | Every Simulate run and the live room use the room's machines | Simulate's capacity and cycle runs pass `room.plant` and `room.airM3h` (the room's settings `airM3h`); the live sim sets `env.plant` at loop start; the Calibrate tab fits with them (4.5); the equipment save keeps the settings' `airM3h` equal to `air_m3h` |
 | 36 | Heat accounting | `sim.heatJ()` and C7 `opts.heat`; the breakdown is over fruiting hours of the reference run |
-| 37 | Controller changes in wave 2 | `CROPS.lionsmane` (pinning 17 °C, `cool: true`, `wetRH: { pinning: 98 }`); one rule only for `cool` crops (no heat mode while the outdoor air is warm, 5.4.3); C7 scores the wet line per crop and stage (95 % unless a crop sets `wetRH`, lead decision 40); vectors unchanged plus `cool-crop.json` (and `stage-changes.json` regenerated for C9 revision 2); `select#inCrop` gains the lion's mane option (lead decision 47); C9 revision 2: a lower CO₂ limit applies at once at a stage change, with one uncapped purge |
-| 38 | Search and verdicts | Sections 7 and 8: estimate-started one-step walk with a passing own size winning (7.3 step 4b), `MARGIN` 1.2, `RUNS` 6+1+1+1 (aircond, margin, fogger, air exchange), the AC judged on temperature and block core only (a size above the minimum that overcools is too big), humidity and CO₂ judged per machine, the air exchange by the C9 purge-time rule (8.4), a too-small text names the failing stage |
+| 37 | Lion's mane draft and the cool-crop rule | `CROPS.lionsmane` (pinning 17 °C and CO₂ 1000 ppm, lead decision 57, `cool: true`, `wetRH: { pinning: 98 }`); one rule only for `cool` crops (no heat mode while the outdoor air is warm, 5.4.3); C7 scores the wet line per crop and stage (95 % unless a crop sets `wetRH`, lead decision 40); vectors unchanged plus `cool-crop.json` (and `stage-changes.json` regenerated for C9 revision 2); `select#inCrop` gains the lion's mane option (lead decision 47); the CO₂ limit at a stage change is lead decision 56 (C9 revision 2) |
+| 38 | Search and verdicts | Sections 7 and 8: estimate-started one-step walk with a passing own size winning (7.3 step 4b), `MARGIN` 1.2, `RUNS` 6+1+1+1 (aircond, margin, fogger, air exchange), the AC judged on temperature and block core only (a size above the minimum that overcools is too big), humidity and CO₂ judged per machine, the air exchange by the C9 purge-time rule with `oversized` 2 steps above (8.4, lead decision 58), a too-small text names the failing stage |
 | 39 | Equipment checks are simulation runs | Kind `equipment` in `simulation_runs`, run in the browser (lead decision 17), saved through C3 6.21, no series stored |
 
 | Wave 2 item (authority: the wave 2 plan) | Rule |
@@ -787,7 +790,17 @@ Decisions 33–39 are recorded in `LEAD-DECISIONS.md` (repeated here for C8 read
 | C7 default cycle (2000 grey oyster), changed modules vs `master` 6a12852 | Byte-identical without `plant`, with `plant: {}`, and with `opts.heat` after removing `heat` |
 | Energy closure (aircond removal / sources) over fruiting | 0.996–0.999 |
 
-### 13.2 What the cool-crop rules do on C9 (60 m³, 1000 lion's mane, typical room, 1800 m³/h, full program)
+### 13.2 What the cool-crop rules and the air exchange size do on C9 (60 m³, 1000 lion's mane, typical room, full program)
+
+| With lead decisions 56 and 57 (pinning CO₂ 1000), 2.5 hp | Pinning in band | Above the wet line (pinning 1 / fruiting 1) | CO₂ below the limit, pinning 1 | Capped purges | Longest purge | Whole cycle |
+|---|---|---|---|---|---|---|
+| 900 m³/h | 97.3 % | 3.3 / 6.2 % | 99.9 % | 3 | 330 s (the free purge after the spawn run) | passes |
+| 1800 m³/h | 97.2 % | 1.6 / 5.4 % | 100 % | 1 | 180 s | passes |
+| 2400 m³/h | 97.2 % | 2.5 / 9.6 % | 100 % | 0 | 180 s | passes |
+| 3600 m³/h | 97.2 % | 1.5 / 6.1 % | 100 % | 0 | 120 s | passes |
+
+The tables below are the first C9 pass, before lead decisions 56 and 57 (pinning CO₂ 700, the 4 h CO₂ ramp; 1800 m³/h unless noted). They are why those decisions were taken.
+
 
 | Variant | 2 hp: pinning in band, verdict | 2.5 hp | 4 hp |
 |---|---|---|---|
@@ -811,7 +824,51 @@ Decisions 33–39 are recorded in `LEAD-DECISIONS.md` (repeated here for C8 read
 | Pinning CO₂ | 96.8 % below the limit at every size: the 4 h ramp from spawn (5.4.1 cause 7), not the air exchange. Section 15 item 13 |
 | A bigger air exchange | 2400 and 3600 m³/h make pinning too hot at 2.5 hp: a bigger pair does not only shorten purges (each purge brings in hot air faster than the aircond removes it). Section 15 item 14 |
 
-### 13.3 The owner's example: 60 m³, 1000 lion's mane blocks (C9)
+### 13.3 The owner's example: 60 m³, 1000 lion's mane blocks (C9 with lead decisions 56 and 57)
+
+| Input | Value |
+|---|---|
+| Program | Days 21/5/8/14 (spawn, pinning, fruiting, rest), 3 flushes, full: 78 days |
+| Room | 60 m³, typical walls (UA 80 W/K, sun 500 W), no calibration |
+| Machines | 3 L/h fogger, 1800 m³/h air exchange (`DEFAULTS`), the farmer's aircond (rows below) |
+| Settings | `defaultSettings()` with `crop: 'lionsmane'` (pinning `[17, 92, 1000]`) and the program above (C9 defaults: `purgeMaxS` 180, `minOffS` 60) |
+| Controller | C9 revision 2 (lead decision 56, with the 10 × `purgeMaxS` bound) and the cool-crop rule of 5.4.3 |
+| Tariff | 0.57 RM/kWh |
+| Estimate (6) | 3442 W (pinning; fresh air 118 m³/h) → 1.5 hp. Other stages: spawn 1823 W, fruiting 3039 W, rest 1845 W |
+| Prototype | `/home/foqcus/Documents/mushroom-farm-c8/proto-c9/rev2/` (diffs against `master` 6a12852, `scripts/`, `A.jsonl`, `estimate.txt`, `airsize.txt`); 7–8 s per run with three in parallel |
+
+| Aircond | Fruiting hours at 20 °C | Worst stage | Above the wet line (pinning 1 / fruiting 1 / 2 / 3) | Failing segments | kWh per block | RM per block | AC result | Whole cycle |
+|---|---|---|---|---|---|---|---|---|
+| 1 hp | 97.3 % | pinning 1, 87.1 % | 1.9 / 3.3 / 1.0 / 1.2 % | pinning 1: temperature too high | 0.834 | 0.475 | too small | fails |
+| 1.5 hp (smallest that works) | 99.2 % | pinning 1, 97.2 % | 1.7 / 2.8 / 0.3 / 0.5 % | none | 0.850 | 0.484 | holds it | **passes** |
+| 2 hp (buy this) | 99.3 % | pinning 1, 97.2 % | 1.6 / 2.2 / 0.5 / 0.4 % | none | 0.886 | 0.505 | holds it | **passes** |
+| 2.5 hp | 99.0 % | pinning 1, 97.2 % | 1.6 / 5.4 / 2.4 / 3.5 % | none | 0.917 | 0.523 | holds it | **passes** |
+| 3 hp | 98.8 % | pinning 1, 97.2 % | 1.6 / 7.0 / 5.4 / 5.5 % | none | 0.939 | 0.535 | holds it | **passes** |
+| 4 hp | 98.4 % | pinning 1, 96.8 % | 2.0 / 10.7 / 7.6 / 9.1 % | fruiting 1: humidity near saturation | 0.991 | 0.565 | holds it | fails (too wet) |
+
+CO₂ is below the limit 100 % of the time in every judged segment at every size; one purge in the whole cycle hit the cap (180 s).
+
+| Result of the check from a farmer's 1 hp | Value |
+|---|---|
+| Sizes run (7.3) | 1 (own), 1.5 (estimate; it passes, and 1 hp below it already failed): 2 runs, plus the margin run 2 hp: 3 runs. No fogger or air exchange run (no dry or CO₂ failure) |
+| `min` / `recommended` | 1.5 hp / 2 hp (thin margin: 3500 W < 1.2 × 3442 W = 4131 W; 2 hp passes `acPass` with no `temperature too low`) |
+| Summary line 1 (`ac`) | `Your 1 hp aircond is too small for lion's mane. In pinning 1 it keeps the room within 1 °C of 17 °C only 87 % of the time. You need at least 1.5 hp. Buy 2 hp for a margin on the hottest days.` |
+| `wet` | `null` (reference run 2 hp: pinning 1.6 %, fruiting 0.4–2.2 %) |
+| Fogger | `Your 3 L/h fogger is enough.` (peak use 0.77 L/h in an hour outside spawn at 2 hp; no smaller size in `FOGGER_SIZES`) |
+| Air exchange (8.4) | `oversized`: need 800 m³/h in pinning and fruiting (size 900, margin 1200); `Your 1,800 m³/h air exchange is bigger than this room needs: 900 m³/h is enough. Each purge brings in a lot of hot, wet outside air at once.` A purge at 1800 m³/h takes 69 s. Measured at 2.5 hp, 900 m³/h also passes the whole cycle (13.2) |
+| Walls and roof | `Walls and roof: fair. They bring in 40 % of the heat. With PU panel 75 mm walls and roof the room would need about 1 hp (quick estimate). (Typical walls: set the walls and roof of this room for a better answer.)` (PU 75 estimate 2230 W) |
+| Heat breakdown (2 hp, 576 fruiting hours) | Walls and roof (sun included) 441 kWh, 39.8 %; fresh air heat 162 kWh, 14.6 %; fresh air water 238 kWh, 21.5 %; blocks 226 kWh, 20.4 %; machines and lights 40 kWh, 3.6 %. Advice `bigger-ac` (walls under 40 %, fresh air 36 %, under 45 %): `The heat comes mostly from the blocks and the room itself, not from the walls or the fresh air: a bigger aircond is the right fix.` Energy closure 0.999 |
+| Summary | 5 lines: aircond, fogger, air exchange, walls and roof, breakdown (`ac` is `too-small`, 8.8) |
+| `pass` | `true` (the 2 hp reference run passes the whole cycle) |
+
+| Air exchange per judged stage (8.4; 60 m³, 1000 blocks, cap 180 s) | Start / stop (ppm) | CO₂ made (m³/h) | `needM3h` | Size | Margin | Purge at 600 / 900 / 1800 / 3600 m³/h |
+|---|---|---|---|---|---|---|
+| Pinning (CO₂ limit 1000) | 900 / 700 | 0.045 | 800 | 900 | 1200 | 245 / 150 / 69 / 33 s |
+| Fruiting (1000) | 900 / 700 | 0.045 | 800 | 900 | 1200 | 245 / 150 / 69 / 33 s |
+| Rest (2000) | 1900 / 1700 | 0.027 | 200 | 600 | 900 | 54 / 36 / 18 / 9 s |
+| Spawn (not judged) | 4900 / 4700 | 0.0585 | 100 | 600 | 900 | 17 / 11 / 6 / 3 s |
+
+#### 13.3.1 First C9 pass: pinning CO₂ 700, before lead decision 56 (history)
 
 | Input | Value |
 |---|---|
@@ -837,7 +894,7 @@ Decisions 33–39 are recorded in `LEAD-DECISIONS.md` (repeated here for C8 read
 | `min` / `recommended` | 2 hp / 2.5 hp (thin margin: 5280 W < 1.2 × 7178 W; 2.5 hp passes `acPass` with no `temperature too low`). Unchanged from the old fan model |
 | Summary line 1 | `Your 1 hp aircond is too small for lion's mane. In pinning 1 it keeps the room within 1 °C of 17 °C only 10 % of the time. You need at least 2 hp. Buy 2.5 hp for a margin on the hottest days.` |
 | `wet` | Set: `The room is too wet in pinning 1 (above 98 % RH 16 % of the time). …` |
-| Air exchange (8.4) | `too-small`: need 2950 m³/h in pinning (start 600, stop 450), size 3600, no margin size; a purge at 1800 m³/h takes 412 s. The simulation does not confirm the advice (13.2: 3600 m³/h makes pinning too hot): section 15 item 12 |
+| Air exchange (8.4) | `too-small`: need 2950 m³/h in pinning (start 600, stop 450), size 3600, no margin size; a purge at 1800 m³/h takes 412 s. The simulation does not confirm the advice (13.2: 3600 m³/h makes pinning too hot); led to lead decision 57 |
 | `pass` | `false`: the reference run (2.5 hp) fails pinning 1 on humidity and CO₂ (section 15 items 12, 13; measured before C9 revision 2, which removes the ramp's CO₂ failure) |
 | Heat breakdown (2.5 hp, 576 fruiting hours) | Walls and roof (sun included) 441 kWh, 39.9 %; fresh air heat 161 kWh, 14.6 %; fresh air water 236 kWh, 21.4 %; blocks 226 kWh, 20.5 %; machines and lights 40 kWh, 3.7 %. Walls `fair` (39.9 %, the 40 % line is close: 40.0 % at 4 hp); advice `bigger-ac` (fresh air 36 %, under 45 %; it was `fresh-air`, 55 %, on the old model) |
 
@@ -848,7 +905,7 @@ Decisions 33–39 are recorded in `LEAD-DECISIONS.md` (repeated here for C8 read
 | Rest (2000) | 1900 / 1700 | 0.027 | 200 | 600 | 900 | 36 / 18 / 13 / 9 s |
 | Spawn (not judged) | 4900 / 4700 | 0.0585 | 100 | 600 | 900 | 11 / 6 / 4 / 3 s |
 
-| With a lion's mane pinning CO₂ limit of 1000 (measured, not adopted: section 15 item 12) | Pinning in band | Pinning 1 above 98 % RH | CO₂ below the limit, pinning 1 | Fails | kWh per block |
+| With a lion's mane pinning CO₂ limit of 1000 (measured in the first pass; adopted as lead decision 57) | Pinning in band | Pinning 1 above 98 % RH | CO₂ below the limit, pinning 1 | Fails | kWh per block |
 |---|---|---|---|---|---|
 | 1.5 hp | 97.3 % | 1.7 % | 96.9 % | CO₂ only (the ramp) | 0.849 |
 | 2 hp | 97.2 % | 1.6 % | 96.9 % | CO₂ only | 0.885 |
@@ -880,10 +937,10 @@ Every row below was measured with the one fresh-air fan (levels, steady mode, `v
 |---|---|
 | One run (78-day lion's mane cycle with `opts.heat`), Node 22.20, C9 prototype | 5.2 s alone; 5.7–6.8 s with three in parallel |
 | One run, desktop Chrome 152 (headless), old fan model | 3.7 s (to re-measure on the C9 model) |
-| Owner's example from 1 hp, C9 | 5 runs (1, 3, 2.5, 2, 1.5 hp) plus at most one air exchange run: about 26–31 s in Node (sum of single runs) |
+| Owner's example from 1 hp, C9 with lead decisions 56, 57 | 3 runs (1, 1.5, 2 hp): about 21–24 s in Node (sum of single runs). The first C9 pass (pinning CO₂ 700) needed 5 runs plus an air exchange run |
 | Runs per check, old fan model (13.4) | 2–5 (to re-measure on the C9 model) |
 | `estimate` | 0.1–0.3 ms (old model; the C9 step 3 is no slower) |
-| A phone | 2–3 × desktop: about 40–90 s for 5–6 runs |
+| A phone | 2–3 × desktop: about 30–70 s for 3–5 runs |
 
 ### 13.6 Revisions 0–2 on the old fan model (history; to re-measure on the C9 model where still used)
 
@@ -995,7 +1052,7 @@ The work brief lists them with exact inputs. Required coverage:
 | 7 | same | Search with a scripted runner (`opts.runCycleSteps`): up-walk, down-walk, run reuse, `RUNS.ac` limit, margin run, `rec` stays `min` when `min + 1` fails or is too cold, own passes below a failing estimate (4b), `tooBig` for `!acPass` and for `tooLow`, `min === null` and the best run (also when the best is the own size), `noReserve` with both reasons (`'largest'` when 6 hp is the minimum; `'too-big'` when the margin run fails as too big, including too cold) |
 | 8 | same | Verdict texts of 8.2–8.8 for scripted reports (each row of each table, both `{fail}` forms, both `{noReserve}` texts, every air exchange row of 8.4 with the four examples there, `{int}` and `{min1}`); the breakdown line (summary line 6) present for `noReserve === 'largest'` and absent for `'too-big'`; the walls and roof text with and without the drier part (`wet` set or `null`, for `good` and for `fair`); the wet text with two segments of different limits (pinning 98, fruiting 95), each quoted with its own limit |
 | 9 | same | Progress fields and count |
-| 10 | same | Real check: the owner's example from 1 hp (13.3): `min` 2, `recommended` 2.5, sizes run `[1, 1.5, 2, 2.5, 3]`, summary line 1 exactly as 13.3, time logged, under 120 s. `wet`, `pass` and the air verdict as 13.3 (`wet` set, `pass` `false`, air `too-small` 2950) measured before C9 revision 2; the Equipment stream re-measures them with it and the lead updates this row after deciding section 15 item 12 |
+| 10 | same | Real check: the owner's example from 1 hp (13.3): `min` 1.5, `recommended` 2, sizes run `[1, 1.5, 2]`, summary line 1 exactly as 13.3, `wet` `null`, `pass` `true`, the air exchange `oversized` (recommended 900), time logged, under 120 s |
 | 11 | `tests/cycle.test.js` | C7 revision 3 rows of 12.6, including the per-stage wet line (5.3) |
 | 12 | `tests/capacity.test.js` | `roomOf` with `plant.room`; `trial` with a 2640 W plant lowers `inT`; `balance` with `plant` |
 | 13 | `tests/sim.test.js` (new) | `plantOf(undefined) === PLANT`; `env.plant` changes `capW`; `heatJ` keys and closure; `snapshot()` has no `flowJ` |
@@ -1019,11 +1076,11 @@ The work brief lists them with exact inputs. Required coverage:
 | 9 | The rows the room-centred draft had to carry (`equipment.js`, `web/room-equipment.js`, the contract freeze, the merge position) | Done: folded into C1–C7 and the wave 2 plan by the lead (section 12) |
 | 10 | `calib.js` limits `ua` to 20–400 W/K, but the construction UA of zinc/zinc (629) and PU 100 (14.8) lie outside it. An applied calibration wins (4.5), so for such a room a clipped calibration (20 or 400) silently replaces a more accurate construction value. Option: when the applied calibration's `ua` sits at a limit and walls and roof are set, use the construction `ua` (`uaSource` `construction`) and say so in the insulation text; this needs the calibration replaced in `room.calib` before C7 (`roomOf` applies it after `plant.room`), also in the Simulate tab and the live adapter | Deferred (lead decision 42): a later item; no change in wave 2 |
 | 11 | An insulated room (PU 50) is too wet in fruiting at every aircond size (20–25 % above 95 %; 13.4): less heat to remove means less water taken out. The insulation text for poor and fair rooms could add `an insulated room also needs drier fresh air`. | Decided (lead decision 43): when the reference run is too wet, the walls and roof text adds ` An insulated room also needs drier fresh air.` for every verdict (8.5) |
-| 12 | Lion's mane pinning CO₂ limit 700 on C9 (5.4.1 cause 1b, 13.2, 13.3): the stop level becomes 450 ppm, 30 ppm above the outdoor air; purges come about every 12 min, many hit the cap, and pinning is above 98 % RH 15–16 % of the time at every aircond and air exchange size. The 8.4 rule then asks for 2950 m³/h (3600), which the simulation shows makes pinning too hot. Options: (A) keep 700 (research median 600, range 500–1100) and accept that the check reports pinning as too wet and the air exchange as too small; (B) raise the lion's mane pinning limit to 1000 (inside the research range: S13 "below 1000–1100"; measured: wet 1.6 %, no capped purge, the 1800 m³/h default is `enough`); (C) keep 700 but judge the air exchange on fruiting and rest only and keep `fanOff` above `co2Out + 100` | Open for the lead (and the owner: a crop number). This contract keeps 700 until then |
-| 13 | C7 scoring of the stage ramp on C9 (5.4.1 cause 7): the 4 h ramp from the spawn run's 5000 ppm limit leaves pinning above its CO₂ limit 3.2 % of the time; C7 allows 2 %. Every crop fails: the C7 default cycle (2000 grey oyster) fails `CO₂ above the limit` in pinning 1 on `master` 6a12852 (96.0 % below the limit). Options: excuse CO₂ readings in the first `program.rampH` hours of a stage (as lead decision 12 excuses spawn temperature), or judge them against the ramped limit | Decided (lead decision 37 as amended, C9 revision 2): the controller applies a lower CO₂ limit at once at a stage change, with one uncapped purge (measured: the C7 default cycle passes again). The owner's example (13.3) was measured before it: its pinning CO₂ failure is to re-measure on C9 revision 2 (the Equipment stream reports it in REAL1) |
-| 14 | C9 10 says a bigger pair "only shortens purges", so the air exchange has no oversized verdict. Measured (13.2): at 2.5 hp, 2400 and 3600 m³/h make pinning too hot (91.6 %, 92.6 %), also at 2 and 4 hp with 3600 | Open for the lead: an `oversized` air verdict or a note in 8.4, after item 12 is decided. This contract follows C9 (no oversized verdict) |
-| 15 | The C9 design spec's wording example (section 4.1: "900 m³/h … a purge takes 4.3 min … at least 1,400 m³/h") does not match `ClimateAir`: at 900 m³/h a purge never reaches 700 ppm (steady 720 ppm), the need is 1450 m³/h (13.3 method). 8.4 uses the measured numbers | For the lead: correct the spec example |
-| 16 | The air exchange confirmation run (7.6) runs whenever the reference run fails CO₂; with item 13 open that is every lion's mane check, and it ends `not-the-fix` (the ramp is not a size problem) | With item 13 decided, the run happens only when CO₂ really fails; to re-measure with C9 revision 2 |
+| 12 | Lion's mane pinning CO₂ limit 700 on C9 (5.4.1 cause 1b, 13.2, 13.3): the stop level becomes 450 ppm, 30 ppm above the outdoor air; purges come about every 12 min, many hit the cap, and pinning is above 98 % RH 15–16 % of the time at every aircond and air exchange size. The 8.4 rule then asks for 2950 m³/h (3600), which the simulation shows makes pinning too hot. Options: (A) keep 700 (research median 600, range 500–1100) and accept that the check reports pinning as too wet and the air exchange as too small; (B) raise the lion's mane pinning limit to 1000 (inside the research range: S13 "below 1000–1100"; measured: wet 1.6 %, no capped purge, the 1800 m³/h default is `enough`); (C) keep 700 but judge the air exchange on fruiting and rest only and keep `fanOff` above `co2Out + 100` | Decided by the owner (lead decision 57): pinning CO₂ 1000. Measured with lead decision 56: the owner's example passes the whole cycle from 1.5 hp (13.3) |
+| 13 | C7 scoring of the stage ramp on C9 (5.4.1 cause 7): the 4 h ramp from the spawn run's 5000 ppm limit leaves pinning above its CO₂ limit 3.2 % of the time; C7 allows 2 %. Every crop fails: the C7 default cycle (2000 grey oyster) fails `CO₂ above the limit` in pinning 1 on `master` 6a12852 (96.0 % below the limit). Options: excuse CO₂ readings in the first `program.rampH` hours of a stage (as lead decision 12 excuses spawn temperature), or judge them against the ramped limit | Decided (lead decision 56, C9 revision 2): the controller applies a lower CO₂ limit at once at a stage change, with one uncapped purge bounded at 10 × `purgeMaxS`. Measured: the C7 default cycle passes again; the owner's example has CO₂ below the limit 100 % in every judged segment (13.3) |
+| 14 | C9 10 says a bigger pair "only shortens purges", so the air exchange has no oversized verdict. Measured (13.2): at 2.5 hp, 2400 and 3600 m³/h make pinning too hot (91.6 %, 92.6 %), also at 2 and 4 hp with 3600 | Decided (lead decision 58, C9 revision 2): `oversized` when `air_m3h` is at least 2 `AIR_SIZES` steps above the recommended size (8.4). With decisions 56 and 57, 900–3600 m³/h all pass at 2.5 hp (13.2), so the verdict is advice about outside air, not a failure; the owner's example's 1800 m³/h default is `oversized` against a need of 800 m³/h |
+| 15 | The C9 design spec's wording example (section 4.1: "900 m³/h … a purge takes 4.3 min … at least 1,400 m³/h") does not match `ClimateAir`: at 900 m³/h a purge never reaches 700 ppm (steady 720 ppm), the need is 1450 m³/h (13.3 method). 8.4 uses the measured numbers | Done: a note in C9 revision 2's change table; the spec itself is not rewritten |
+| 16 | The air exchange confirmation run (7.6) runs whenever the reference run fails CO₂; with item 13 open that is every lion's mane check, and it ends `not-the-fix` (the ramp is not a size problem) | With decision 56 the run happens only when CO₂ really fails; the owner's example makes none (13.3) |
 
 ## 16. Change log
 

@@ -21,7 +21,7 @@ The air exchange of C9 (`docs/contracts/air.md`, frozen, lead decision 55) is on
 | 13.1, 13.2 | Line numbers re-checked on `master` 6a12852; `ClimateCapacity.airOf` added; the `capacity.js` export line now holds `airOf` too (C9 8). |
 | 14 | Test 22 (`AIR`, on `master`): the room's air exchange size reaches the simulation (C9 11). |
 | 15 | The air exchange model: C9. |
-| 16 (new) | Open items: the pinning CO₂ result of 12.6, closed by lead decision 37 as amended (C9 revision 2). |
+| 16 (new) | Open items: the pinning CO₂ result of 12.6, closed by lead decision 56 (C9 revision 2). |
 
 ### Changes in revision 2
 
@@ -472,4 +472,4 @@ The work brief lists them with exact inputs. Required coverage:
 
 | Item | Owner |
 |---|---|
-| C9: the stage ramp from spawn broke the 98 % CO₂ rule in pinning (12.6: the default cycle failed `CO₂ above the limit` in pinning 1, `co2Below` 96.0 %) | Closed (lead decision 37 as amended, C9 revision 2): the behaviour is fixed, not the scoring. A stage change that lowers the CO₂ limit applies it at once with one uncapped purge; measured, the default cycle passes again (pinning `co2Below` 99.9 %, fruiting 100 %, `totals.pass` true). The Equipment stream builds it; 12.6 is measured again by the lead at gate 2.5 |
+| C9: the stage ramp from spawn broke the 98 % CO₂ rule in pinning (12.6: the default cycle failed `CO₂ above the limit` in pinning 1, `co2Below` 96.0 %) | Closed (lead decision 56, C9 revision 2): the behaviour is fixed, not the scoring. A stage change that lowers the CO₂ limit applies it at once with one uncapped purge; measured, the default cycle passes again (pinning `co2Below` 99.9 %, fruiting 100 %, `totals.pass` true). The Equipment stream builds it; 12.6 is measured again by the lead at gate 2.5 |

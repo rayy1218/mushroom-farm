@@ -1,5 +1,7 @@
 # Lion's mane (Hericium erinaceus): research synthesis for C8
 
+Owner decision 2026-10-09 (lead decision 57): the app uses a lion's mane pinning CO₂ limit of 1000 ppm, not the 700 proposed in section 6 below (700 gave a 450 ppm purge stop level and a too-wet pinning room on the C9 air exchange; 1000 is inside the 500–1100 range of the sources, S13).
+
 ## 1. Scope and method
 
 | Item | Value |
