@@ -346,3 +346,105 @@ async function waitFor(fn, timeoutMs = 1000) {
     await sleep(10);
   }
 }
+
+// C5 4.3, revision 7 additions: simulations and equipment (the fake has no defaults for them, so each route is set with reply).
+test('simulation and equipment functions: method, path, query, body, result', async (t) => {
+  const fake = await withFake(t);
+  const last = () => apiRequests(fake).at(-1);
+
+  fake.reply('GET', '/api/rooms/1/simulations', 200, []);
+  assert.deepEqual(await FarmApi.listSimulations(1), []);
+  assert.deepEqual(last(), { method: 'GET', path: '/api/rooms/1/simulations', query: {}, body: null });
+  const infos = [{ id: 7, kind: 'capacity' }];
+  fake.reply('GET', '/api/rooms/1/simulations', 200, infos);
+  assert.deepEqual(await FarmApi.listSimulations(1, { limit: 20, before: 9 }), infos);
+  assert.deepEqual(last(), { method: 'GET', path: '/api/rooms/1/simulations', query: { limit: '20', before: '9' }, body: null });
+  await FarmApi.listSimulations(1, { limit: 5 });
+  assert.deepEqual(last().query, { limit: '5' });
+
+  const run = { kind: 'capacity', inputs: { a: 1 }, result: { b: 2 }, note: 'n' };
+  fake.reply('POST', '/api/rooms/1/simulations', 201, { id: 8, kind: 'capacity' });
+  assert.deepEqual(await FarmApi.createSimulation(1, run), { id: 8, kind: 'capacity' });
+  assert.deepEqual(last(), { method: 'POST', path: '/api/rooms/1/simulations', query: {}, body: run });
+
+  const full = { id: 8, kind: 'capacity', inputs: {}, result: {} };
+  fake.reply('GET', '/api/rooms/1/simulations/8', 200, full);
+  assert.deepEqual(await FarmApi.getSimulation(1, 8), full);
+  assert.deepEqual(last(), { method: 'GET', path: '/api/rooms/1/simulations/8', query: {}, body: null });
+
+  fake.reply('PATCH', '/api/rooms/1/simulations/8', 200, { id: 8, note: 'x' });
+  assert.deepEqual(await FarmApi.updateSimulation(1, 8, { note: 'x' }), { id: 8, note: 'x' });
+  assert.deepEqual(last(), { method: 'PATCH', path: '/api/rooms/1/simulations/8', query: {}, body: { note: 'x' } });
+
+  fake.reply('DELETE', '/api/rooms/1/simulations/8', 200, {});
+  assert.deepEqual(await FarmApi.deleteSimulation(1, 8), {});
+  assert.deepEqual(last(), { method: 'DELETE', path: '/api/rooms/1/simulations/8', query: {}, body: null });
+
+  fake.reply('GET', '/api/rooms/1/equipment', 200, null);
+  assert.equal(await FarmApi.getEquipment(1), null);
+  assert.deepEqual(last(), { method: 'GET', path: '/api/rooms/1/equipment', query: {}, body: null });
+
+  const eq = { ac_hp: 2, ac_units: 1, fog_lph: 6, air_m3h: 1800, walls: null, roof: null, height: 3 };
+  fake.reply('PUT', '/api/rooms/1/equipment', 200, eq);
+  assert.deepEqual(await FarmApi.saveEquipment(1, eq), eq);
+  assert.deepEqual(last(), { method: 'PUT', path: '/api/rooms/1/equipment', query: {}, body: eq });
+});
+
+// C10 12.1: the ten harvest functions.
+test('harvest functions: method, path, query, body, result', async (t) => {
+  const fake = await withFake(t);
+  const last = () => apiRequests(fake).at(-1);
+
+  fake.reply('GET', '/api/batches', 200, []);
+  assert.deepEqual(await FarmApi.listBatches(), []);
+  assert.deepEqual(last(), { method: 'GET', path: '/api/batches', query: {}, body: null });
+  const list = [{ id: 1 }];
+  fake.reply('GET', '/api/batches', 200, list);
+  assert.deepEqual(await FarmApi.listBatches({ state: 'placed', room: 2 }), list);
+  assert.deepEqual(last(), { method: 'GET', path: '/api/batches', query: { state: 'placed', room: '2' }, body: null });
+  await FarmApi.listBatches({ state: 'received' });
+  assert.deepEqual(last().query, { state: 'received' });
+  await FarmApi.listBatches({ room: null, state: undefined });
+  assert.deepEqual(last().query, {});
+
+  const fields = { crop: 'lionsmane', blocks: 40 };
+  fake.reply('POST', '/api/batches', 201, { id: 4, ...fields });
+  assert.deepEqual(await FarmApi.createBatch(fields), { id: 4, ...fields });
+  assert.deepEqual(last(), { method: 'POST', path: '/api/batches', query: {}, body: fields });
+
+  const detail = { id: 4, crates: [] };
+  fake.reply('GET', '/api/batches/4', 200, detail);
+  assert.deepEqual(await FarmApi.getBatch(4), detail);
+  assert.deepEqual(last(), { method: 'GET', path: '/api/batches/4', query: {}, body: null });
+
+  fake.reply('PATCH', '/api/batches/4', 200, { id: 4, blocks: 30 });
+  assert.deepEqual(await FarmApi.updateBatch(4, { blocks: 30 }), { id: 4, blocks: 30 });
+  assert.deepEqual(last(), { method: 'PATCH', path: '/api/batches/4', query: {}, body: { blocks: 30 } });
+
+  fake.reply('POST', '/api/batches/4/place', 200, { id: 4, room_id: 2 });
+  assert.deepEqual(await FarmApi.placeBatch(4, { room_id: 2, placed_at: 100 }), { id: 4, room_id: 2 });
+  assert.deepEqual(last(), { method: 'POST', path: '/api/batches/4/place', query: {}, body: { room_id: 2, placed_at: 100 } });
+
+  fake.reply('POST', '/api/batches/4/clear', 200, { id: 4, cleared_at: 5 });
+  assert.deepEqual(await FarmApi.clearBatch(4), { id: 4, cleared_at: 5 });
+  assert.deepEqual(last(), { method: 'POST', path: '/api/batches/4/clear', query: {}, body: {} });
+  await FarmApi.clearBatch(4, { cleared_at: 5 });
+  assert.deepEqual(last().body, { cleared_at: 5 });
+
+  fake.reply('DELETE', '/api/batches/4', 200, { id: 4 });
+  assert.deepEqual(await FarmApi.deleteBatch(4), { id: 4 });
+  assert.deepEqual(last(), { method: 'DELETE', path: '/api/batches/4', query: {}, body: null });
+
+  const harvest = { batches: [] };
+  fake.reply('GET', '/api/rooms/2/harvest', 200, harvest);
+  assert.deepEqual(await FarmApi.getRoomHarvest(2), harvest);
+  assert.deepEqual(last(), { method: 'GET', path: '/api/rooms/2/harvest', query: {}, body: null });
+
+  fake.reply('POST', '/api/batches/4/crates', 201, { crate: { id: 9 } });
+  assert.deepEqual(await FarmApi.addCrate(4, { kg: 12.5, picker: 'Ali' }), { crate: { id: 9 } });
+  assert.deepEqual(last(), { method: 'POST', path: '/api/batches/4/crates', query: {}, body: { kg: 12.5, picker: 'Ali' } });
+
+  fake.reply('DELETE', '/api/crates/9', 200, { id: 9 });
+  assert.deepEqual(await FarmApi.undoCrate(9), { id: 9 });
+  assert.deepEqual(last(), { method: 'DELETE', path: '/api/crates/9', query: {}, body: null });
+});

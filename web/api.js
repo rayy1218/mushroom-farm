@@ -75,6 +75,25 @@ async function getCapacity(id) {
   }
 }
 function saveCapacity(id, report) { return request('POST', `/api/rooms/${id}/capacity`, { body: report }); }
+function listSimulations(id, { limit, before } = {}) { return request('GET', `/api/rooms/${id}/simulations`, { query: { limit, before } }); }
+function createSimulation(id, run) { return request('POST', `/api/rooms/${id}/simulations`, { body: run }); }
+function getSimulation(id, runId) { return request('GET', `/api/rooms/${id}/simulations/${runId}`); }
+function updateSimulation(id, runId, fields) { return request('PATCH', `/api/rooms/${id}/simulations/${runId}`, { body: fields }); }
+function deleteSimulation(id, runId) { return request('DELETE', `/api/rooms/${id}/simulations/${runId}`); }
+function getEquipment(id) { return request('GET', `/api/rooms/${id}/equipment`); }
+function saveEquipment(id, eq) { return request('PUT', `/api/rooms/${id}/equipment`, { body: eq }); }
+
+// Batches and harvest (C10 12.1).
+function listBatches({ state, room } = {}) { return request('GET', '/api/batches', { query: { state, room } }); }
+function createBatch(fields) { return request('POST', '/api/batches', { body: fields }); }
+function getBatch(batchId) { return request('GET', `/api/batches/${batchId}`); }
+function updateBatch(batchId, fields) { return request('PATCH', `/api/batches/${batchId}`, { body: fields }); }
+function placeBatch(batchId, body) { return request('POST', `/api/batches/${batchId}/place`, { body }); }
+function clearBatch(batchId, body = {}) { return request('POST', `/api/batches/${batchId}/clear`, { body }); }
+function deleteBatch(batchId) { return request('DELETE', `/api/batches/${batchId}`); }
+function getRoomHarvest(id) { return request('GET', `/api/rooms/${id}/harvest`); }
+function addCrate(batchId, body) { return request('POST', `/api/batches/${batchId}/crates`, { body }); }
+function undoCrate(crateId) { return request('DELETE', `/api/crates/${crateId}`); }
 
 // ---------------- stream(onEvent) (4.4) ----------------
 function stream(onEvent) {
@@ -198,6 +217,10 @@ const FarmApi = {
   getReadings, getEvents, getAlarms, ackAlarm,
   listCalibrations, saveCalibration, applyCalibration,
   getMix, saveMix, getCapacity, saveCapacity,
+  listSimulations, createSimulation, getSimulation, updateSimulation, deleteSimulation,
+  getEquipment, saveEquipment,
+  listBatches, createBatch, getBatch, updateBatch, placeBatch, clearBatch, deleteBatch,
+  getRoomHarvest, addCrate, undoCrate,
   stream,
 };
 
