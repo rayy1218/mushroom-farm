@@ -2,6 +2,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
+require('../air.js');
 require('../controller.js');
 require('../sim.js');
 require('../runtime.js');
@@ -74,6 +75,13 @@ function capture(factory) {
 // ---------------------------------------------------------------------------
 // Task 1: Simulated adapter (C2 section 13, 12.1)
 // ---------------------------------------------------------------------------
+
+test('sim adapter: requires air.js before sim.js (C9 section 6.3)', () => {
+  const mod = require.cache[require.resolve('../server/sim-adapter.js')];
+  const names = mod.children.map(c => c.id.replace(/^.*[\\/]/, ''));
+  assert.deepEqual(names, ['air.js', 'sim.js', 'runtime.js']);
+  assert.equal(typeof globalThis.ClimateAir.purgeTimeS, 'function');
+});
 
 test('sim adapter: constants', () => {
   assert.equal(MAX_CATCH_UP_S, 300);
@@ -236,8 +244,12 @@ test('rooms: exports', () => {
   const roomsPath = require.resolve('../server/rooms.js');
   const mod = require.cache[roomsPath];
   for (const child of mod.children) {
-    assert.ok(/[\\/](controller|runtime|sim-adapter|rooms-common)\.js$/.test(child.id), `unexpected require: ${child.id}`);
+    assert.ok(/[\\/](air|controller|runtime|sim-adapter|rooms-common)\.js$/.test(child.id), `unexpected require: ${child.id}`);
   }
+  // C9 section 6.3: air.js is required before controller.js.
+  const names = mod.children.map(c => c.id.replace(/^.*[\\/]/, ''));
+  assert.ok(names.includes('air.js'), `air.js not required: ${names}`);
+  assert.ok(names.indexOf('air.js') < names.indexOf('controller.js'), `air.js after controller.js: ${names}`);
 
   // Requiring rooms.js loads no node:sqlite and no server/db.js (C2 section 17). node:sqlite is a
   // built-in and is never a require.cache key at all (even when it has been required elsewhere), so this

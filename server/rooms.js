@@ -1,5 +1,6 @@
 // server/rooms.js: the room manager (C2 sections 1-12, 15). CommonJS, synchronous.
 'use strict';
+require('../air.js');
 require('../controller.js');
 require('../runtime.js');
 const { createSimAdapter, MAX_CATCH_UP_S } = require('./sim-adapter.js');

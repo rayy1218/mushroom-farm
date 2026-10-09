@@ -5,6 +5,7 @@ const vm = require('node:vm');
 const fs = require('node:fs');
 const path = require('node:path');
 
+require('../air.js');
 require('../sim.js');
 require('../controller.js');
 require('../runtime.js');

@@ -1,6 +1,7 @@
 // server/sim-adapter.js: the simulated room adapter (C2 section 13).
-// Loads only ../sim.js and ../runtime.js (C2 section 1).
+// Loads only ../air.js, ../sim.js and ../runtime.js (C2 section 1, C9 section 6.3).
 'use strict';
+require('../air.js');
 require('../sim.js');
 require('../runtime.js');
 

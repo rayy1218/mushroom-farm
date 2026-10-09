@@ -2,6 +2,7 @@
 // controller. Writes through the C1 db it is given, so API tests that write through C2 and read through C1 see the
 // same data.
 'use strict';
+require('../../air.js'); // C9 section 3: before controller.js
 require('../../controller.js'); // defines globalThis.ClimateController
 const { RoomError, DEMO_ROOM, FIRST_NOTE, cleanSettings } = require('../../server/rooms-common.js');
 

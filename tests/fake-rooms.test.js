@@ -1,6 +1,7 @@
 // tests/fakes/rooms.js: the fake C2 room manager (C2 section 16; lead-fakes brief task 8).
 const test = require('node:test');
 const assert = require('node:assert/strict');
+require('../air.js');
 require('../controller.js');
 const CC = globalThis.ClimateController;
 const { openFakeDb } = require('./fakes/db.js');

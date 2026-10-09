@@ -12,6 +12,7 @@ const { createFakeRoomManager } = require('../tests/fakes/rooms.js');
 const { createApi } = require('../server/api.js');
 const { RoomError } = require('../server/rooms-common.js');
 
+require('../air.js');
 require('../sim.js');
 require('../controller.js');
 

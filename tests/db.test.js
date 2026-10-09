@@ -10,6 +10,7 @@ const { DatabaseSync } = require('node:sqlite');
 const { openDb, NotFoundError, UPGRADES } = require('../server/db.js');
 const { toJson, fromJson } = require('../server/db-common.js');
 const { openFakeDb } = require('./fakes/db.js');
+require('../air.js');
 require('../sim.js');
 require('../controller.js');
 require('../runtime.js');

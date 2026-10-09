@@ -2,6 +2,7 @@
 // crop mix, capacity reports (C1 sections 6, 9; docs/superpowers/plans .../lead-fakes.md tasks 4-7).
 const test = require('node:test');
 const assert = require('node:assert/strict');
+require('../air.js');
 require('../controller.js');
 const CC = globalThis.ClimateController;
 const { openFakeDb } = require('./fakes/db.js');
