@@ -47,6 +47,14 @@ test('areaPath moved unchanged', () => {
   assert.ok(two.endsWith('Z'));
 });
 
+test('areaPath draws no band when any band value is not finite', () => {
+  const X = t => t, Y = y => y;
+  const pts = [{ t: 0, v: 1 }, { t: 10, v: 2 }];
+  assert.equal(FC.areaPath(pts, X, Y, () => NaN, p => p.v), '');
+  assert.equal(FC.areaPath(pts, X, Y, () => 0, () => NaN), '');
+  assert.equal(FC.areaPath(pts, X, Y, p => (p.t ? NaN : 0), p => p.v), '');
+});
+
 test('barPath moved unchanged', () => {
   assert.equal(FC.barPath(0, 0, 10, 20, 3), 'M0,20V3Q0,0 3,0H7Q10,0 10,3V20Z');
 });
