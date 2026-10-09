@@ -26,7 +26,7 @@ C9 replaces the one fresh-air fan (levels 0–3, `env.vent`, `rules.airMode`, AC
 | `docs/contracts/air.md`, `docs/contract.md`, `docs/contracts/LEAD-DECISIONS.md` | Lead | This contract; lead decision 14 |
 | `sim.js`, `capacity.js`, `cycle.js`, `calib.js`, `tools/run-headless.js`, `tests/capacity.test.js`, `tests/cycle.test.js`, `tests/calib.test.js` | Simulation stream | Sections 4, 8 |
 | `controller.js`, `tests/controller.test.js`, `tests/settings.test.js`, `tests/vectors.test.js` (pack only), `tools/make-vectors.js` | Controller stream | Sections 5, 9 |
-| `server/db.js`, `server/rooms.js`, `server/rooms-common.js`, `server/sim-adapter.js`, `server/api.js`, `room-rules.js`, `tests/fakes/**`, `tests/db.test.js`, `tests/fake-db.test.js`, `tests/rooms.test.js`, `tests/fake-rooms.test.js`, `tests/api.test.js`, `tests/stream.test.js`, `tests/room-rules.test.js` | Data stream | Section 6 |
+| `server/db.js`, `server/rooms.js`, `server/rooms-common.js`, `server/sim-adapter.js`, `server/api.js`, `room-rules.js`, `tests/fakes/**`, `tests/db.test.js`, `tests/fake-db.test.js`, `tests/rooms.test.js`, `tests/fake-rooms.test.js`, `tests/rooms-common.test.js`, `tests/api.test.js`, `tests/stream.test.js`, `tests/room-rules.test.js` | Data stream | Section 6 |
 | `web/**`, `styles.css`, `tests/web-*.test.js`, `tests/settings-diff.test.js` | Web stream | Section 7 |
 | `index.html` | Lead (step 0) | One script line (section 7) |
 | `tests/integration.test.js`, `tests/harness.js`, `tests/vectors/*.json` | Lead (step 2) | Section 11 |
@@ -35,7 +35,7 @@ No stream edits a file it does not own. A stream that needs a change elsewhere s
 
 ## 3. `air.js`: `ClimateAir`
 
-A pure module in the style of `capacity.js`: an IIFE that sets `global.ClimateAir` (frozen). No dependencies. Loaded before `controller.js` in `index.html` and required before `controller.js` by every Node entry point (`server/rooms.js`, `server/sim-adapter.js`, `tools/*.js`, tests). `controller.js` reads `global.ClimateAir` at call time (inside functions), so its own load order does not matter; `capacity.js` reads it at load time like its other globals (`const AIR = global.ClimateAir` beside `SIM`), so `air.js` must load before `capacity.js`. The full code is in the plan (`docs/superpowers/plans/2026-10-08-air-exchange/README.md`, task 0.2).
+A pure module in the style of `capacity.js`: an IIFE that sets `global.ClimateAir` (frozen). No dependencies. Loaded before `controller.js` in `index.html` and required before `controller.js` by every Node module that runs a controller loop or the capacity check (`server/rooms.js`, `server/sim-adapter.js`, `tests/fakes/rooms.js` when it builds controllers, `tools/*.js`, tests). `server/api.js` keeps its require list (C3 4.1): it calls no controller code that uses `ClimateAir`. `controller.js` reads `global.ClimateAir` at call time (inside functions), so its own load order does not matter; `capacity.js` reads it at load time like its other globals (`const AIR = global.ClimateAir` beside `SIM`), so `air.js` must load before `capacity.js`. The full code is in the plan (`docs/superpowers/plans/2026-10-08-air-exchange/README.md`, task 0.2).
 
 | Export | Signature | Result |
 |---|---|---|
@@ -242,9 +242,11 @@ Checked on Node 22.20 (SQLite 3.50.4) inside `BEGIN IMMEDIATE` with `foreign_key
 | `buildReadingRow` | `air: cmd.air && cmd.air.on ? 1 : 0` in place of `fan` |
 | Stored settings | Every settings object read from the database goes through `ClimateController.upgradeSettings` before `importSettings` (rooms.js lines ~300, ~492, ~627); its warnings join the import warnings |
 | Controller and sim snapshots | Passed to `create` unchanged; the upgrades of 4.2 and 5.7 handle old ones |
+| Simulated size | `sim-adapter.js` sets `env.airM3h = settings.airM3h` when it builds the env, so a simulated room runs with its own size. A saved change of `airM3h` reaches the simulation no later than the next loop restart. |
+| Fake manager | `tests/fakes/rooms.js` runs `upgradeSettings` before its import too (C2 16), like the real manager |
 | `TARGET_KEYS` | Follows `RAMP_KEYS` (5.2) |
 | Pair correction | `rules.fanOn` / `rules.fanOff` only (the `acOff` / `acOn` pair is removed) |
-| `vent` | Removed from `validateVent`, `create`, `update`, `DEMO_ROOM`, the fake rooms, `RULES.normRoom` and `RULES.checkRoom` (now an unknown field: the existing unknown-field error), `server/api.js` (`vent` no longer read) and `sim-adapter.js` (`env.vent` no longer set) |
+| `vent` | Removed from `validateVent`, `create`, `update`, `DEMO_ROOM`, the fake rooms, `RULES.normRoom` and `RULES.checkRoom` (now an unknown field: the existing unknown-field error from `checkRoom`, `rooms.update` and the database; `rooms.create` ignores unknown keys as C2 4 says), `server/api.js` (`vent` no longer read) and `sim-adapter.js` (`env.vent` no longer set) |
 | `ALARM_KEYS` (`room-rules.js`) | Add `'airTooSmall'` |
 | Requires | `server/rooms.js` and `server/sim-adapter.js` require `../air.js` before `../controller.js` / `../sim.js` |
 
@@ -281,7 +283,7 @@ Checked on Node 22.20 (SQLite 3.50.4) inside `BEGIN IMMEDIATE` with `foreign_key
 | File | Rule |
 |---|---|
 | `capacity.js` `balance` | No base fan. `dC = (rules.fanOn + rules.fanOff) / 2 − co2Out`; average outdoor air `air(n) = n × c / dC` (m³/h; no floor). `out.air` replaces `out.fan`: the largest whole `n` with `ClimateAir.purgeTimeS({ volume: R.volume, co2Out: R.co2Out, leakM3h: 0, prodM3h: n × c / 10⁶, m3h: airM3h, start: rules.fanOn, stop: rules.fanOff }) ≤ rules.purgeMaxS` (`c` = `mixCo2(room, mix)` in mL/h per block, so `n × c / 10⁶` is m³/h of CO₂), found by bisection over 0–100000, where `airM3h = room.airM3h ?? PLANT.air.m3h`. `limit ∈ 'air' \| 'ac' \| 'fog'`. |
-| `capacity.js` rooms | `room = { name, volume, airM3h?, calib }` (no `vent`) |
+| `capacity.js` rooms | `room = { name, volume, airM3h?, calib }` (no `vent`). No room stores a size yet (that is C8): `RULES.normRoom` keeps its key set and drops `airM3h`; only in-browser callers (the test bench) pass `airM3h`. |
 | `capacity.js` trial | `env.airM3h = room.airM3h ?? null`; `vent` no longer set |
 | `cycle.js` | `vent` no longer set; `cfg.manual.air.auto = true` replaces the fan line; energy keys follow 4.2 |
 | `calib.js` | CSV column `air` (aliases `air`, `fan`, `fan_level`, `exhaust`; a value > 0 means on). Replay command `air: { on: (r.air ?? 0) > 0 }`. `toCsv` writes `air`. |
