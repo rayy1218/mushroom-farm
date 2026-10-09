@@ -50,7 +50,7 @@ Suggested order. Done: 3.1, 3.3, 3.7. Next: 3.8 → 3.2 → 3.4 → 3.5 → 3.6.
 | Settings file | Export, import with validation and warnings, apply without a restart (`tests/settings.test.js`). |
 | Test vectors | Recorded scenarios of readings and commands (`tests/vectors/`, `tools/make-vectors.js`, `tests/vectors.test.js`). They are strict: a small change of the controller fails several files. |
 | `package.json` | `npm test`, `npm start`, `npm run vectors`, `npm run headless`. |
-| Farm app foundation | The farm server, the Rooms home and the room tabs. See [the design](superpowers/specs/2026-10-08-farm-app-foundation-design.md) and the contracts in [`docs/contracts/`](contracts/db.md). |
+| Farm app foundation | The farm server, the Rooms home and the room tabs. See [the design](superpowers/specs/2026-10-08-farm-app-foundation-design.md) and the contracts in [`docs/contracts/`](contracts/). |
 | Batches and harvest | Batches, crates and QR stickers per room. See [the harvest design](superpowers/specs/2026-10-09-harvest-qr-design.md) and [`docs/contracts/harvest.md`](contracts/harvest.md). |
 
 ## Open questions
