@@ -190,7 +190,8 @@ main { max-width: 1480px; margin: 0 auto; padding: 14px 16px 40px; display: grid
 .flow.fan { stroke: var(--s-air); }
 .blade { fill: var(--ink-2); }
 .ring { fill: none; stroke: var(--border-strong); stroke-width: 1.5; }
-.grille line { stroke: var(--ink-2); stroke-width: 1.2; }
+.damper { fill: var(--ink-2); }
+.on > .damper { display: none; }
 .tank { fill: var(--room); stroke: var(--border-strong); }
 .mist { fill: var(--mist); }
 .bubble { fill: none; stroke: var(--muted); stroke-width: 1.2; }

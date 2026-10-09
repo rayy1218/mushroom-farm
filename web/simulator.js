@@ -116,22 +116,20 @@ function buildMimicExtras() {
   animAcFlows = [...el.querySelectorAll('[data-flow="ac"]')];
   ventKey = ''; glanceKey = '';
 }
-// Places the fan, the passive opening, their arrows and texts for env.vent / inletAt / exhaustAt (on a change only).
+// Places the intake fan, the exhaust fan, their arrows and texts for env.inletAt / env.exhaustAt (on a change only).
 const VENT_Y = { high: 160, low: 352 };
 function layoutVents() {
-  const key = `${env.vent}|${env.inletAt}|${env.exhaustAt}`;
+  const key = `${env.inletAt}|${env.exhaustAt}`;
   if (key === ventKey) return;
   ventKey = key;
   const L = mimicLayout(env), flows = el.querySelector('#ventFlows'), txt = el.querySelector('#ventText');
   flows.replaceChildren(); txt.replaceChildren();
   for (const side of ['inlet', 'outlet']) {
-    const o = L[side], y = VENT_Y[o.band], left = side === 'inlet', fan = o.kind === 'fan';
-    el.querySelector(fan ? '#fanUnit' : '#grilleUnit').setAttribute('transform', `translate(${left ? 180 : 820} ${y})`);
-    const [x1, x2] = fan ? (left ? [60, 134] : [866, 990]) : (left ? [90, 212] : [788, 910]);
-    for (const d of fan ? [-18, 0, 18] : [-9, 9]) UI.svgEl('path', { class: 'flow fan', 'data-flow': 'fan', d: `M${x1} ${y + d} H${x2}`, 'marker-end': 'url(#arFan)' }, flows);
-    const flowId = left ? 'mInflow' : 'mOutflow';
-    const lines = fan ? [['m-tag', 'mFanTag', o.tag, 0], ['m-small', 'mFanState', '', 17], ['m-small', null, o.label, 21], ['m-small', flowId, '', 17]]
-      : [['m-small', null, o.label, 0], ['m-small', flowId, '', 17]];
+    const o = L[side], y = VENT_Y[o.band], left = side === 'inlet';
+    el.querySelector(left ? '#fanIn' : '#fanOut').setAttribute('transform', `translate(${left ? 180 : 820} ${y})`);
+    const [x1, x2] = left ? [60, 134] : [866, 990];
+    for (const d of [-18, 0, 18]) UI.svgEl('path', { class: 'flow fan', 'data-flow': 'fan', d: `M${x1} ${y + d} H${x2}`, 'marker-end': 'url(#arFan)' }, flows);
+    const lines = [['m-tag', null, o.tag, 0], ['m-small', left ? 'mInState' : 'mOutState', '', 17], ['m-small', null, o.label, 17]];
     let ty = o.band === 'high' ? 226 : 300 - lines.reduce((h, l) => h + l[3], 0);
     for (const [cls, id, text, gap] of lines) {
       ty += gap;
@@ -143,7 +141,7 @@ function layoutVents() {
 const paintCaps = () => { const sc = { spawn: 0, pinning: 0.35, fruiting: 1, rest: 0.12 }[cfg.stage]; for (const c of caps) c.style.transform = `scale(${sc})`; };
 function animateMimic(dtReal) {
   const a = sim.view().act, move = !reduceMotion() && !paused;
-  const fanF = a.fanLevel / 3, fogF = a.huLevel / 3;
+  const fanF = a.air ? 1 : 0, fogF = a.huLevel / 3;
   if (move) {
     anim.fan = (anim.fan + 1080 * fanF * dtReal) % 360;
     anim.cond = (anim.cond + 720 * (a.comp ? 0.3 + a.acFrac : 0) * dtReal) % 360;
@@ -151,7 +149,9 @@ function animateMimic(dtReal) {
     anim.acFlow -= dtReal * 40 * (0.5 + a.acFrac);
     anim.fanFlow -= dtReal * 60 * (0.3 + fanF);
   }
-  el.querySelector('#fanBlades').setAttribute('transform', `rotate(${anim.fan.toFixed(1)})`);
+  const fanRot = `rotate(${anim.fan.toFixed(1)})`;
+  el.querySelector('#fanInBlades').setAttribute('transform', fanRot);
+  el.querySelector('#fanOutBlades').setAttribute('transform', fanRot);
   el.querySelector('#condBlades').setAttribute('transform', `rotate(${anim.cond.toFixed(1)})`);
   el.querySelector('#circBlades').setAttribute('transform', `rotate(${anim.circ.toFixed(1)})`);
   for (const f of animAcFlows) { f.style.opacity = !a.power ? 0 : a.comp ? 0.35 + 0.65 * a.acFrac : 0.2; f.style.strokeDashoffset = anim.acFlow; }
@@ -222,15 +222,15 @@ function updateUi() {
   UI.set('mHuPower', UI.watts(v.power.hu));
   UI.set('mCircState', a.circ ? `On · ${UI.watts(v.power.circ)}` : 'Off');
   layoutVents();
-  UI.set('mFanState', a.fanLevel > 0 ? `${PL.fan.levels[a.fanLevel].name} · ${UI.watts(v.power.fan)}` : 'Off');
-  UI.set('mOutflow', `${Math.round(v.airM3h)} m³/h`);
-  UI.set('mInflow', `${Math.round(v.airM3h)} m³/h`);
+  const airTxt = a.air ? `Purge ${Math.round(v.airM3h).toLocaleString('en')} m³/h` : 'Off · dampers closed';
+  UI.set('mInState', airTxt); UI.set('mOutState', airTxt);
   UI.set('mCo2Src', `${env.blocks.toLocaleString('en')} blocks`);
   UI.set('mCore', `Core ${v.core.toFixed(1)} °C`);
   el.querySelector('#acUnit').classList.toggle('on', a.comp);
   el.querySelector('#condenser').classList.toggle('on', a.comp);
   el.querySelector('#huUnit').classList.toggle('on', a.huLevel > 0);
-  el.querySelector('#fanUnit').classList.toggle('on', a.fanLevel > 0);
+  el.querySelector('#fanIn').classList.toggle('on', a.air);
+  el.querySelector('#fanOut').classList.toggle('on', a.air);
   el.querySelector('#circUnit').classList.toggle('on', a.circ);
   UI.set('mimicStage', `${CC.CROPS[cfg.crop].name} · ${CC.STAGES[cfg.stage]} · live`);
   const dist = [v.door && 'door open', v.workers && `${v.workers} workers`, v.watering && 'floor wet', v.weather.rain && 'rain', v.weather.cloudy && 'cloudy', v.wetSensor && 'RH sensor wet'].filter(Boolean);
@@ -559,7 +559,7 @@ function renderTable(raw) {
 const MIMIC_SVG = `
     <svg class="mimic-svg" viewBox="0 0 1000 420" role="img" aria-labelledby="mimicTitle mimicDesc">
       <title id="mimicTitle">Room schematic</title>
-      <desc id="mimicDesc">Live view of the fruiting room: the growing rack, the three sensors, the air conditioner, the fogger, the circulation fan, and the fresh-air path (a supply fan with a damper, or an exhaust fan with an open inlet).</desc>
+      <desc id="mimicDesc">Live view of the fruiting room: the growing rack, the three sensors, the air conditioner, the fogger, the circulation fan, and the air exchange (a filtered intake fan and an exhaust fan; their dampers close when they are off).</desc>
       <defs>
         <pattern id="hatch" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
           <rect class="hatch-bg" width="7" height="7"/><line class="hatch-line" x1="0" y1="0" x2="0" y2="7"/>
@@ -629,18 +629,28 @@ const MIMIC_SVG = `
         <g class="readout" id="mRH"><rect x="500" y="226" width="156" height="40" rx="4"/><text class="val" x="510" y="245">--</text><text class="ico" x="646" y="244" text-anchor="end"></text><text class="zn" x="510" y="260"></text></g>
         <g class="readout" id="mC"><rect x="500" y="276" width="156" height="40" rx="4"/><text class="val" x="510" y="295">--</text><text class="ico" x="646" y="294" text-anchor="end"></text><text class="zn" x="510" y="310"></text></g>
       </g>
-      <g id="fanUnit">
+      <g id="fanIn">
         <rect class="unit" x="-40" y="-40" width="80" height="80" rx="6"/>
         <rect class="keybar fan" x="-40" y="34" width="80" height="6" rx="2"/>
         <circle class="ring" r="31"/>
-        <g id="fanBlades">
+        <g id="fanInBlades">
           <path class="blade" d="M0,-4 C10,-9 22,-7 27,0 C21,4 9,4 0,4 Z"/>
           <path class="blade" d="M0,-4 C10,-9 22,-7 27,0 C21,4 9,4 0,4 Z" transform="rotate(120)"/>
           <path class="blade" d="M0,-4 C10,-9 22,-7 27,0 C21,4 9,4 0,4 Z" transform="rotate(240)"/>
         </g><circle r="5" class="blade"/>
+        <rect class="damper" x="-3" y="-36" width="6" height="72" rx="2"/>
       </g>
-      <g id="grilleUnit" class="grille"><rect x="-4" y="-19" width="8" height="38" class="unit"/>
-        <line x1="-3" x2="3" y1="-11" y2="-11"/><line x1="-3" x2="3" y1="0" y2="0"/><line x1="-3" x2="3" y1="11" y2="11"/></g>
+      <g id="fanOut">
+        <rect class="unit" x="-40" y="-40" width="80" height="80" rx="6"/>
+        <rect class="keybar fan" x="-40" y="34" width="80" height="6" rx="2"/>
+        <circle class="ring" r="31"/>
+        <g id="fanOutBlades">
+          <path class="blade" d="M0,-4 C10,-9 22,-7 27,0 C21,4 9,4 0,4 Z"/>
+          <path class="blade" d="M0,-4 C10,-9 22,-7 27,0 C21,4 9,4 0,4 Z" transform="rotate(120)"/>
+          <path class="blade" d="M0,-4 C10,-9 22,-7 27,0 C21,4 9,4 0,4 Z" transform="rotate(240)"/>
+        </g><circle r="5" class="blade"/>
+        <rect class="damper" x="-3" y="-36" width="6" height="72" rx="2"/>
+      </g>
       <g id="ventFlows"></g>
       <g id="ventText"></g>
       <g id="mist"></g>
