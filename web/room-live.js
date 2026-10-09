@@ -161,6 +161,7 @@ const nowS = () => Math.floor(Date.now() / 1000);
 let teardown = null;
 
 function mount(el, ctx) {
+  unmount(); // a mount that was never unmounted must not keep painting
   const api = global.FarmApi, UI = global.FarmUi, SP = global.FarmSettingsPanel;
   const clock = UI.farmClock();
   const id = ctx.id;
