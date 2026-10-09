@@ -81,3 +81,17 @@ test('LV5 airSub', () => {
   assert.equal(H.airSub(S), 'SF-203 + EF-206 · 1,800 m³/h');
   assert.equal(H.airSub(null), 'SF-203 + EF-206');
 });
+
+test('LV6 windows and reconnect queries', () => {
+  assert.deepEqual(H.windowQuery(3600, 10000), { from: 6400, to: 10000, step: undefined });
+  assert.deepEqual(H.windowQuery(21600, 30000), { from: 8400, to: 30000, step: undefined });
+  assert.equal(H.windowQuery(86400, 100000).step, 120);
+  assert.equal(H.windowQuery(604800, 700000).step, 900);
+  assert.throws(() => H.windowQuery(7200, 10000), RangeError);
+  assert.equal(H.gapFor(undefined), 90); assert.equal(H.gapFor(120), 360); assert.equal(H.gapFor(900), 2700);
+  assert.deepEqual(H.reconnectQuery(3600, 9000, 10000), { from: 9001, to: 10000, step: undefined, merge: true });
+  assert.equal(H.reconnectQuery(3600, 1000, 10000).from, 6400);
+  assert.equal(H.reconnectQuery(3600, 10000, 10000), null);
+  assert.deepEqual(H.reconnectQuery(3600, null, 10000), { from: 6400, to: 10000, step: undefined, merge: false });
+  assert.deepEqual(H.reconnectQuery(86400, 9000, 10000), { from: -76400, to: 10000, step: 120, merge: false });
+});

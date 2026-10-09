@@ -45,9 +45,23 @@ function airSub(settings) {
   return settings ? `SF-203 + EF-206 · ${ui().nf(settings.airM3h)} m³/h` : 'SF-203 + EF-206';
 }
 
-const helpers = { airLive, airSub };
+const STEPS = { 3600: undefined, 21600: undefined, 86400: 120, 604800: 900 };
+function windowQuery(windowS, now) {
+  if (!Object.prototype.hasOwnProperty.call(STEPS, windowS)) throw new RangeError(`Unknown chart window ${windowS}`);
+  return { from: now - windowS, to: now, step: STEPS[windowS] };
+}
+const gapFor = step => 3 * Math.max(30, step || 0);
+function reconnectQuery(windowS, lastT, now) {
+  if (windowS === 3600 && Number.isFinite(lastT)) {
+    const from = Math.max(lastT + 1, now - 3600);
+    return from > now ? null : { from, to: now, step: undefined, merge: true };
+  }
+  return { ...windowQuery(windowS, now), merge: false };
+}
+
+const helpers = { airLive, airSub, windowQuery, gapFor, reconnectQuery };
 const todo = name => () => { throw new Error(`${name} is not built yet`); };
-for (const n of ['windowQuery', 'gapFor', 'reconnectQuery', 'chartTargets', 'toChartPoint', 'retarget',
+for (const n of ['chartTargets', 'toChartPoint', 'retarget',
   'mergePoints', 'mergeEvent', 'readingTexts', 'machineLines', 'commandFromReading', 'programText', 'alarmTexts', 'detailChanges',
   'countText', 'changeLines', 'versionText', 'rebase']) helpers[n] = todo(n);
 
