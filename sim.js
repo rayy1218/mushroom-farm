@@ -95,7 +95,7 @@
     const R = () => ({ ...PLANT.room, ...(e.room || {}) });
     // Air exchange size (m³/h): env.airM3h held to 50-10000; anything but a number means PLANT.air.m3h.
     const airM3h = () => (Number.isFinite(e.airM3h) ? clamp(e.airM3h, 50, 10000) : PLANT.air.m3h);
-    let s = snapshot ? structuredClone(snapshot) : init();
+    let s = snapshot ? upgrade(structuredClone(snapshot)) : init();
 
     function init() {
       const T0 = 27, ah0 = 0.62 * ahSat(T0);
@@ -114,6 +114,15 @@
         frozen: {}, reading: null, seq: 0, nextRead: 0, rng: (e.seed ?? 1) >>> 0,
         dist: { door: 0, workersUntil: 0, workersN: 0, waterUntil: 0, rainUntil: 0, rainAt: null, cloudyDay: -1, dayRolled: -1 },
       };
+    }
+
+    // A snapshot from before the air exchange (one fan with levels 0-3): fan level > 0 is "on"; the meters keep their values.
+    function upgrade(x) {
+      if (x.act && 'fanLevel' in x.act) { x.act.air = x.act.fanLevel > 0; delete x.act.fanLevel; }
+      for (const m of [x.p, x.kwh, x.runS, x.reading && x.reading.power, x.reading && x.reading.kwh, x.reading && x.reading.runS]) {
+        if (m && 'fan' in m) { m.air = m.fan; delete m.fan; }
+      }
+      return x;
     }
 
     // Seeded random number 0..1 (mulberry32); its state is part of the snapshot.

@@ -378,3 +378,24 @@ test('sim: env.airM3h is held to 50-10000; anything but a number means the defau
   sim.step(1, CMD(true));
   assert.equal(sim.view().airM3h, 10000);
 });
+
+test('sim: an old snapshot (fan level, fan meters) is upgraded', () => {
+  const sim = airRoom();
+  for (let i = 0; i < 40; i++) sim.step(1, CMD(true));
+  const old = sim.snapshot();
+  delete old.act.air; old.act.fanLevel = 2;
+  for (const k of ['p', 'kwh', 'runS']) { old[k].fan = old[k].air; delete old[k].air; }
+  for (const k of ['power', 'kwh', 'runS']) { old.reading[k].fan = old.reading[k].air; delete old.reading[k].air; }
+  const up = SIM.create(sim.env, old).snapshot();
+  assert.equal(up.act.air, true);
+  assert.equal('fanLevel' in up.act, false);
+  for (const k of ['p', 'kwh', 'runS']) {
+    assert.equal(up[k].air, sim.snapshot()[k].air, k);
+    assert.equal('fan' in up[k], false, k);
+  }
+  assert.equal(up.reading.kwh.air, sim.snapshot().reading.kwh.air);
+  assert.equal('fan' in up.reading.power, false);
+  old.act.fanLevel = 0;
+  assert.equal(SIM.create(sim.env, old).snapshot().act.air, false);
+  assert.deepEqual(SIM.create(sim.env, sim.snapshot()).snapshot(), sim.snapshot(), 'a new snapshot is unchanged');
+});
