@@ -87,8 +87,8 @@ function createFakeRoomManager({ db, now = () => Math.floor(Date.now() / 1000) }
     const CC = globalThis.ClimateController;
     let upgraded, imported;
     try {
-      // C9 section 6.3: upgradeSettings first, like the real manager (typeof guard until the controller stream merges).
-      upgraded = typeof CC.upgradeSettings === 'function' ? CC.upgradeSettings(merged) : { settings: merged, warnings: [] };
+      // C9 section 6.3: upgradeSettings first, like the real manager.
+      upgraded = CC.upgradeSettings(merged);
       imported = CC.importSettings({
         format: 'mushroom-climate-settings',
         version: CC.SETTINGS_VERSION,
@@ -183,9 +183,7 @@ function createFakeRoomManager({ db, now = () => Math.floor(Date.now() / 1000) }
 
     // The stored base is upgraded first, so the input merges over version 2 keys (review fix I1).
     const CC = globalThis.ClimateController;
-    const fromDb = typeof CC.upgradeSettings === 'function'
-      ? CC.upgradeSettings(db.currentSettings(id).settings)
-      : { settings: db.currentSettings(id).settings, warnings: [] };
+    const fromDb = CC.upgradeSettings(db.currentSettings(id).settings);
     const merged = mergeAndImport(settings, fromDb.settings);
     const next = merged.settings;
     const warnings = fromDb.warnings.concat(merged.warnings);

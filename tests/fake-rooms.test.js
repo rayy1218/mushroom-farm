@@ -289,9 +289,7 @@ test('create and applySettings: upgradeSettings runs before the import (C9 secti
 
 test('applySettings: the stored base is upgraded before the input is merged (review fix I1)', (t) => {
   const GONE = 'Setting "manual.fan" was removed: fresh air now runs as short purges.';
-  const had = Object.hasOwn(CC, 'upgradeSettings'), orig = CC.upgradeSettings, origImport = CC.importSettings;
-  // The version 1 controller's importSettings drops manual.air, so it passes the object through here.
-  CC.importSettings = env => ({ settings: structuredClone(env.settings), warnings: [] });
+  const had = Object.hasOwn(CC, 'upgradeSettings'), orig = CC.upgradeSettings;
   CC.upgradeSettings = obj => {
     const settings = structuredClone(obj), warnings = [];
     if (settings.manual && 'fan' in settings.manual) {
@@ -301,7 +299,7 @@ test('applySettings: the stored base is upgraded before the input is merged (rev
     }
     return { settings, warnings };
   };
-  t.after(() => { CC.importSettings = origImport; if (had) CC.upgradeSettings = orig; else delete CC.upgradeSettings; });
+  t.after(() => { if (had) CC.upgradeSettings = orig; else delete CC.upgradeSettings; });
 
   const { db, rooms } = setup();
   const old = CC.defaultSettings();

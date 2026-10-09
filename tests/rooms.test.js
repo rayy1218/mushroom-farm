@@ -9,10 +9,6 @@ require('../runtime.js');
 const CC = globalThis.ClimateController;
 const SIM = globalThis.ClimateSim;
 
-// C9 cross-stream gates: a test that needs another air-exchange stream is skipped (with this reason) until
-// the lead merges that stream at step 2. After the merge both are false and every test runs.
-const NEEDS_CTL = typeof CC.upgradeSettings !== 'function' && 'needs the controller stream (C9 section 5.2)';
-const NEEDS_SIM = !('airM3h' in SIM.DEFAULT_ENV) && 'needs the simulation stream (C9 section 4.1)';
 const { openFakeDb } = require('./fakes/db.js');
 const { fromJson, toJson } = require('../server/db-common.js');
 const { createSimAdapter, MAX_CATCH_UP_S, TZ_OFFSET_S, START_CO2 } = require('../server/sim-adapter.js');
@@ -113,7 +109,7 @@ test('sim adapter: env', (t) => {
 
   createSimAdapter({ room, calib, blocks: 500, cfg, snapshot: null, now });
   assert.ok(capturedEnv);
-  assert.equal(capturedEnv.vent, SIM.DEFAULT_ENV.vent); // C9 section 6.3: env.vent is no longer set
+  assert.ok(!('vent' in capturedEnv)); // C9 section 6.3: env.vent is no longer set
   assert.equal(capturedEnv.airM3h, 900); // C9 section 6.3: the room's own size
   assert.deepEqual(capturedEnv.room, { volume: 80, ua: 90, infAch: 0.4, moistBuffer: 3 });
   assert.equal(capturedEnv.co2PerBlock, 42);
@@ -144,7 +140,7 @@ test('sim adapter: new room at its targets', () => {
   assert.equal(a.view().CO2, 750);
 });
 
-test('sim adapter: one reading per 30 s', { skip: NEEDS_SIM }, (t) => {
+test('sim adapter: one reading per 30 s', (t) => {
   const origCreate = SIM.create;
   let capturedEnv = null;
   SIM.create = (env, snapshot) => {
@@ -172,7 +168,7 @@ test('sim adapter: one reading per 30 s', { skip: NEEDS_SIM }, (t) => {
   assert.equal(capturedEnv.blockStage, 'rest');
 });
 
-test('sim adapter: CO₂ jitter', { skip: NEEDS_SIM }, (t) => {
+test('sim adapter: CO₂ jitter', (t) => {
   let clock = T0;
   const now = () => clock;
   const cfg = CC.defaultSettings();
@@ -213,7 +209,7 @@ test('sim adapter: gap', () => {
   assert.deepEqual(a.view(), viewBefore);
 });
 
-test('sim adapter: resume from a snapshot', { skip: NEEDS_SIM }, () => {
+test('sim adapter: resume from a snapshot', () => {
   let clock = T0;
   const now = () => clock;
   const cfg = CC.defaultSettings();
@@ -235,7 +231,7 @@ test('sim adapter: resume from a snapshot', { skip: NEEDS_SIM }, () => {
   assert.deepEqual(b.snapshot(), snap);
 });
 
-test('sim adapter: the simulated room runs with its own air exchange size (C9 section 6.3)', { skip: NEEDS_SIM }, () => {
+test('sim adapter: the simulated room runs with its own air exchange size (C9 section 6.3)', () => {
   let clock = T0;
   const now = () => clock;
   const cfg = CC.defaultSettings();
@@ -276,7 +272,7 @@ test('rooms: exports', () => {
   assert.ok(!Object.keys(require.cache).some(k => /[\\/]server[\\/]db\.js$/.test(k)));
 });
 
-test('rooms: TARGET_KEYS follow the controller ramp keys (C9 section 6.3)', { skip: NEEDS_CTL }, () => {
+test('rooms: TARGET_KEYS follow the controller ramp keys (C9 section 6.3)', () => {
   assert.deepEqual(rooms.TARGET_KEYS, Object.keys(CC.profileTargets('oyster', 'fruiting')));
 });
 
@@ -1331,7 +1327,7 @@ test('Whole machine levels', () => {
 });
 
 // C9 section 10: the air exchange is on or off; a manual On (in place of the old baseFan: 5) records air 1.
-test('Whole machine levels: manual air exchange On records air 1', { skip: NEEDS_CTL }, () => {
+test('Whole machine levels: manual air exchange On records air 1', () => {
   const { db, mgr, step } = setup();
   mgr.start();
   const { room: b } = mgr.create({ name: 'B', volume: 60 });
@@ -1780,7 +1776,7 @@ test('Settings upgrade: create and applySettings upgrade the merged settings', (
   assert.ok(!('oldKey' in db.currentSettings(1).settings.rules));
 });
 
-test('Settings upgrade: a stored version 1 settings object loads with warnings', { skip: NEEDS_CTL }, () => {
+test('Settings upgrade: a stored version 1 settings object loads with warnings', () => {
   const cap = capture(scripted().factory);
   const { db, mgr } = setup(cap.factory);
   const old = CC.defaultSettings();
@@ -1806,9 +1802,7 @@ test('Settings upgrade: a stored version 1 settings object loads with warnings',
 // manual.fan cannot overwrite the user's new manual.air.
 const FAN_GONE = 'Setting "manual.fan" was removed: fresh air now runs as short purges.';
 function stubFanToAir(t) {
-  const had = Object.hasOwn(CC, 'upgradeSettings'), orig = CC.upgradeSettings, origImport = CC.importSettings;
-  // The version 1 controller's importSettings drops manual.air, so it passes the object through here.
-  CC.importSettings = env => ({ settings: structuredClone(env.settings), warnings: [] });
+  const had = Object.hasOwn(CC, 'upgradeSettings'), orig = CC.upgradeSettings;
   CC.upgradeSettings = obj => {
     const settings = structuredClone(obj), warnings = [];
     if (settings.manual && 'fan' in settings.manual) {
@@ -1818,7 +1812,7 @@ function stubFanToAir(t) {
     }
     return { settings, warnings };
   };
-  t.after(() => { CC.importSettings = origImport; if (had) CC.upgradeSettings = orig; else delete CC.upgradeSettings; });
+  t.after(() => { if (had) CC.upgradeSettings = orig; else delete CC.upgradeSettings; });
 }
 function storedV1() {
   const old = CC.defaultSettings();
@@ -1837,7 +1831,7 @@ test('Settings upgrade: applySettings on a stopped room keeps the new manual.air
   assert.ok(result.warnings.includes(FAN_GONE), result.warnings.join('\n'));
 });
 
-test('Settings upgrade: applySettings on a stopped room, real upgradeSettings', { skip: NEEDS_CTL }, (t) => {
+test('Settings upgrade: applySettings on a stopped room, real upgradeSettings', (t) => {
   const { db, mgr } = setup(scripted().factory);
   db.createRoom({ name: 'Old', volume: 60, adapter: 'sim', settings: storedV1(), note: 'Created', at: T0 });
   const result = mgr.applySettings(1, { manual: { air: { auto: false, on: true } } });
@@ -1865,7 +1859,7 @@ test('Settings upgrade: the upgraded settings are saved once at loop start', (t)
   assert.ok(!('oldKey' in db.currentSettings(1).settings.rules));
 });
 
-test('Settings upgrade: a stored version 1 room started twice logs the removals once', { skip: NEEDS_CTL }, () => {
+test('Settings upgrade: a stored version 1 room started twice logs the removals once', () => {
   const { db, mgr } = setup(scripted().factory);
   db.createRoom({ name: 'Old', volume: 60, adapter: 'sim', settings: storedV1(), note: 'Created', at: T0 });
   mgr.start();

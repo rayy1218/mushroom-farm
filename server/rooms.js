@@ -77,11 +77,8 @@ function validateNote(note, details) {
 
 // C9 section 6.3: settings from the database (and given settings merged over them) may be version 1, so
 // ClimateController.upgradeSettings (C9 section 5.2) runs first; its warnings come before the import's own.
-// The typeof guard is for the time before the controller stream is merged (C9 step 2).
 function upgrade(settings) {
-  return typeof ClimateController.upgradeSettings === 'function'
-    ? ClimateController.upgradeSettings(settings)
-    : { settings, warnings: [] };
+  return ClimateController.upgradeSettings(settings);
 }
 // upgradeWarnings is the upgrade's share of warnings, so a loop start can tell that it upgraded.
 function upgradeAndImport(settings) {
