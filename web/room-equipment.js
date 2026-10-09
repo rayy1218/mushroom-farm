@@ -157,17 +157,20 @@ function markup() {
   <button type="button" class="btn primary" id="eqCheck">Check my machines</button>
 </form>
 <p class="tag" id="eqAirNote"></p>
-<div class="run-progress" id="eqProgress" hidden><span id="eqProgressText"></span><div class="bar"><i id="eqProgressBar"></i></div></div>
+<div class="run-progress" id="eqProgress" hidden><span id="eqProgressBar"></span><span id="eqProgressText"></span></div>
 <p class="tag" id="eqMsg"></p>
 <div id="eqResult"></div>`;
 }
 
+const mounted = new WeakMap();   // element -> the unmount of the card mounted there
+
 function mount(el, opts) {
+  if (mounted.has(el)) mounted.get(el)();   // a second mount into the same element replaces the first
   const EQ = global.ClimateEquipment, API = global.FarmApi, UI = global.FarmUi;
   const section = document.createElement('section');
   section.className = 'card result-card';
   section.innerHTML = markup();
-  el.append(section);
+  el.replaceChildren(section);
   const $ = id => section.querySelector(`#${id}`);
   const form = section.querySelector('form.equip-form');
   let dead = false, running = false, savedAir = opts.equipment ? opts.equipment.air_m3h : null;
@@ -199,7 +202,8 @@ function mount(el, opts) {
       if (dead) return null;
       savedAir = saved.air_m3h;
       say('Saved. Simulate uses these machines now; the live room uses them after its next restart.');
-      paintNote();
+      // The server synced the settings (C3 6.26); their stream event has not reached the tab yet, so no note.
+      $('eqAirNote').textContent = '';
       opts.onEquipment(saved);
       return saved;
     } catch (err) {
@@ -250,14 +254,16 @@ function mount(el, opts) {
   $('eqSave').addEventListener('click', () => { save(); });
   $('eqCheck').addEventListener('click', () => { check(); });
 
-  return {
-    unmount() {
-      dead = true;
-      section.removeEventListener('focusin', repaint);
-      section.removeEventListener('pointerdown', repaint);
-      section.remove();
-    },
+  const unmount = () => {
+    if (dead) return;
+    dead = true;
+    if (mounted.get(el) === unmount) mounted.delete(el);
+    section.removeEventListener('focusin', repaint);
+    section.removeEventListener('pointerdown', repaint);
+    section.remove();
   };
+  mounted.set(el, unmount);
+  return { unmount };
 }
 
 global.FarmEquipmentCard = { mount, renderReport, helpers: { formValues, fillForm, progressText, runRows, machineRows, heatRows, airNote } };

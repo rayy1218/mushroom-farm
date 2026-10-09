@@ -72,3 +72,62 @@ test('W5 airNote', () => {
   assert.equal(helpers.airNote(null, 900), '');
   assert.equal(helpers.airNote(1200, 900), "The room's settings use 900 m³/h for the air exchange; save your machines to use 1,200 m³/h there too.");
 });
+
+// ---------- the card against a small DOM stub ----------
+function stubDom() {
+  const made = [];
+  globalThis.document = {
+    createElement() {
+      const nodes = {}, el = {
+        className: '', innerHTML: '', removed: false, listeners: {},
+        querySelector(sel) { return (nodes[sel] ||= { querySelector: el.querySelector, value: '', textContent: '', hidden: false, disabled: false, style: {}, listeners: {}, addEventListener(t, f) { this.listeners[t] = f; }, replaceChildren() {} }); },
+        addEventListener(t, f) { this.listeners[t] = f; }, removeEventListener() {}, remove() { this.removed = true; },
+      };
+      made.push(el);
+      return el;
+    },
+  };
+  return made;
+}
+const hostEl = () => ({ children: [], replaceChildren(...c) { this.children = c; } });
+const opts = (over = {}) => ({ id: 1, equipment: null, runInputs: () => ({ settings: { airM3h: 900 } }), onEquipment() {}, onSaved() {}, ...over });
+
+test('W6 the progress bar is the fill span first, then the text span (C5 3.8)', () => {
+  const made = stubDom();
+  globalThis.FarmEquipmentCard.mount(hostEl(), opts());
+  const html = made[0].innerHTML;
+  assert.ok(html.indexOf('id="eqProgressBar"') > 0 && html.indexOf('id="eqProgressBar"') < html.indexOf('id="eqProgressText"'));
+  assert.match(html, /<div class="run-progress" id="eqProgress" hidden><span id="eqProgressBar"><\/span><span id="eqProgressText"><\/span><\/div>/);
+});
+
+test('W7 after a successful save the air note is empty, not repainted from stale settings', async () => {
+  const made = stubDom();
+  globalThis.FarmApi = { saveEquipment: async eq => ({ room_id: 1, ...eq }) };
+  globalThis.FarmUi = { errorText: e => e.message };
+  const got = [];
+  const host = hostEl();
+  const card = globalThis.FarmEquipmentCard.mount(host, opts({ equipment: { ...EQ.DEFAULTS, air_m3h: 1200 }, onEquipment: e => got.push(e) }));
+  const sec = made[0];
+  assert.match(sec.querySelector('#eqAirNote').textContent, /1,200 m³\/h there too/);
+  sec.querySelector('#eqSave').listeners.click();
+  await new Promise(r => setTimeout(r, 10));
+  assert.equal(got.length, 1);
+  assert.equal(sec.querySelector('#eqAirNote').textContent, '');
+  card.unmount();
+});
+
+test('W8 a second mount into the same element replaces the first; the first never reports late', async () => {
+  const made = stubDom();
+  let release;
+  globalThis.FarmApi = { saveEquipment: eq => new Promise(r => { release = () => r({ room_id: 1, ...eq }); }) };
+  globalThis.FarmUi = { errorText: e => e.message };
+  const host = hostEl(), first = [], second = [];
+  globalThis.FarmEquipmentCard.mount(host, opts({ onEquipment: e => first.push(e) }));
+  made[0].querySelector('#eqSave').listeners.click();
+  globalThis.FarmEquipmentCard.mount(host, opts({ onEquipment: e => second.push(e) }));
+  assert.equal(made[0].removed, true);
+  assert.deepEqual(host.children, [made[1]]);
+  release();
+  await new Promise(r => setTimeout(r, 10));
+  assert.deepEqual([first.length, second.length], [0, 0]);
+});
