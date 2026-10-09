@@ -50,7 +50,7 @@ node --version
 |---|---|
 | Get the code | `git clone https://github.com/rayy1218/mushroom-farm.git` |
 | Go to the folder | `cd mushroom-farm` |
-| Update later | `git pull`, then restart the server. An update may run a database upgrade (see "Database upgrades"). |
+| Update later | `git pull`, then restart the server (on a service: `sudo systemctl restart mushroom-farm`). An update may run a database upgrade (see "Database upgrades"). |
 
 ## Start
 
@@ -58,7 +58,7 @@ node --version
 |---|---|
 | `npm start` | The server starts. After two lines about the script, it prints the address, for example `Open http://192.168.1.20:8080`. |
 | First start | It makes `data/farm.db` with the demo room `Room 1`: simulated, grey oyster, fruiting, default settings. The room records a reading every 30 s. |
-| Stop | Press Ctrl+C. The server saves the state of each room and closes the database. |
+| Stop | Press Ctrl+C. The server saves the state of each room and closes the database. Closing the terminal stops the server cleanly in the same way. |
 
 | Setting | Environment variable | `farm.config.json` key | Default | Rule |
 |---|---|---|---|---|
@@ -142,6 +142,7 @@ WantedBy=multi-user.target
 | 3 | `sudo systemctl enable --now mushroom-farm` |
 | See the address and messages | `journalctl -u mushroom-farm -f` |
 | Stop | `sudo systemctl stop mushroom-farm` (the same clean stop as Ctrl+C) |
+| Restart after an update | `sudo systemctl restart mushroom-farm` |
 
 | Line of the unit | Why |
 |---|---|
@@ -232,7 +233,7 @@ A room needs about 100 MB per year.
 
 | Way | When | Steps |
 |---|---|---|
-| Copy with the server stopped | Any system | Stop the server. Copy `data/farm.db` to a USB stick or another computer. Start the server. After a clean stop only `data/farm.db` is left: there is no `data/farm.db-wal` or `data/farm.db-shm`. |
+| Copy with the server stopped | Any system | Stop the server with Ctrl+C. Copy `data/farm.db` to a USB stick or another computer. Start the server. After a clean stop only `data/farm.db` is left: there is no `data/farm.db-wal` or `data/farm.db-shm`. |
 | SQLite's backup command with the server running | Linux | Install `sqlite3` once: `sudo apt-get install -y sqlite3`. Then `sqlite3 data/farm.db ".backup '/media/usb/farm-$(date +%F).db'"`. |
 
 | Rule | Detail |
@@ -240,6 +241,7 @@ A room needs about 100 MB per year.
 | Off the device | Keep backups off the device. An SD card can fail. |
 | How often | At least daily, and always before an update (see "Database upgrades"). |
 | While running | Never copy only `farm.db` while the server runs: the newest data may still be in `farm.db-wal`. |
+| After an unclean stop | After a `Database error`, a power cut or a crash, `data/farm.db-wal` may still be there. It holds the newest data, so never copy `farm.db` alone. Either use the `sqlite3 … .backup` command above (it also works with the server stopped), or start the server and stop it once with Ctrl+C, then copy `data/farm.db`. |
 
 ## Restore a backup
 
