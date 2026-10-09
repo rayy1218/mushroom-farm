@@ -235,7 +235,7 @@ A room needs about 100 MB per year.
 
 | Way | When | Steps |
 |---|---|---|
-| Copy with the server stopped | Any system | Stop the server with Ctrl+C. Copy `data/farm.db` to a USB stick or another computer. Start the server. After a clean stop only `data/farm.db` is left: there is no `data/farm.db-wal` or `data/farm.db-shm`. |
+| Copy with the server stopped | Any system | Stop the server (Ctrl+C, or `sudo systemctl stop mushroom-farm` with the service), then copy `data/farm.db` to a USB stick or another computer. Start the server. After a clean stop only `data/farm.db` is left: there is no `data/farm.db-wal` or `data/farm.db-shm`. |
 | SQLite's backup command with the server running | Linux | Install `sqlite3` once: `sudo apt-get install -y sqlite3`. Then `sqlite3 data/farm.db ".backup '/media/usb/farm-$(date +%F).db'"`. |
 
 | Rule | Detail |
