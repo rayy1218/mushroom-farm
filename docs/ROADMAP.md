@@ -37,9 +37,9 @@ Legend: ✅ built · 🔨 wave 2 · 📋 owner's plan, not started · 💡 sugge
 
 | Part | Tracks | Status |
 |---|---|---|
-| Batches | Each lot of blocks: crop, strain, spawn date, room, stage | 📋 |
+| Batches | Each lot of bought blocks: crop, strain, source, received, placed in a room, cleared (spec `docs/superpowers/specs/2026-10-09-harvest-qr-design.md`) | 📋 spec approved |
 | Substrate and spawn | Recipes, sterilisation, spawn source, inoculation | 📋 |
-| Harvest and yield | kg per flush per room, biological efficiency (also feeds predicted vs real) | 📋 |
+| Harvest and yield | Crate weights recorded by scanning the room's QR sticker; kg, g per block and BE % per flush and batch (same spec) | 📋 spec approved |
 | Contamination | Losses by batch and room, with causes | 📋 |
 | Inventory | Bags, sawdust, supplements, spawn, packaging | 📋 |
 
@@ -55,9 +55,9 @@ Legend: ✅ built · 🔨 wave 2 · 📋 owner's plan, not started · 💡 sugge
 
 | # | Part | Why here |
 |---|---|---|
-| 1 | Economics | With the equipment check, it proves whether lion's mane pays in a lowland room |
-| 2 | Real hardware | Turns the simulator into a farm |
-| 3 | Batches and harvest | Harvest data calibrates and checks everything else |
+| 1 | Batches and harvest (room QR) | Owner's choice (2026-10-09): spec approved, built right after wave 2; harvest data calibrates and checks everything else |
+| 2 | Economics | With the equipment check, it proves whether lion's mane pays in a lowland room |
+| 3 | Real hardware | Turns the simulator into a farm |
 | 4 | Costs and sales | Profit from real numbers |
 | 5 | Contamination and inventory | Day-to-day operations |
 | 6 | Workers and login | More than one person uses the app |
