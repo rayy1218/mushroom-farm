@@ -14,7 +14,7 @@
 
   const LIM = { blocks: 200000, volume: [5, 5000], co2: [1, 1000], name: 60 };
   const VERDICTS = ['impossible', 'too-dense', 'tight', 'good', 'too-empty'];
-  const ALARM_KEYS = ['tHi', 'tLo', 'tCrop', 'coreHi', 'rhHi', 'rhLo', 'co2Hi', 'co2Safe', 'disagree', 'acTooSmall', 'blocksDone', 'shockLimit'];
+  const ALARM_KEYS = ['tHi', 'tLo', 'tCrop', 'coreHi', 'rhHi', 'rhLo', 'co2Hi', 'co2Safe', 'disagree', 'acTooSmall', 'blocksDone', 'shockLimit', 'airTooSmall'];
 
   function isPlainObject(v) {
     return v !== null && typeof v === 'object' && !Array.isArray(v);

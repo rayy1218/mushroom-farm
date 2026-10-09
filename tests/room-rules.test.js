@@ -26,6 +26,7 @@ describe('room-rules.js: members and constants', () => {
     assert.deepStrictEqual(R.VERDICTS, ['impossible', 'too-dense', 'tight', 'good', 'too-empty']);
     assert.deepStrictEqual(R.ALARM_KEYS, [
       'tHi', 'tLo', 'tCrop', 'coreHi', 'rhHi', 'rhLo', 'co2Hi', 'co2Safe', 'disagree', 'acTooSmall', 'blocksDone', 'shockLimit',
+      'airTooSmall',
     ]);
   });
 });
