@@ -92,7 +92,30 @@ function openHarvest(db, options) {
     return listBatchesStmt.all(state, state, roomId, roomId).map(plain);
   }
 
-  return { createBatch, getBatch, listBatches };
+  function updateBatch(id, changes) {
+    const row = batchOrThrow(id);
+    fields('updateBatch', changes, BATCH_FIELDS);
+    changes = orEmpty(changes);
+    // An own key, even one holding undefined, replaces the column (undefined sets NULL).
+    const next = { ...row };
+    for (const key of Object.keys(changes)) next[key] = changes[key];
+    return plain(updateBatchStmt.get(
+      ...BATCH_FIELDS.map(key => val(next[key])), id,
+    ));
+  }
+
+  function placeBatch(id, roomId, placedAt) {
+    batchOrThrow(id);
+    db.getRoom(roomId);
+    return plain(placeBatchStmt.get(val(roomId), val(placedAt), id));
+  }
+
+  function clearBatch(id, clearedAt) {
+    batchOrThrow(id);
+    return plain(clearBatchStmt.get(val(clearedAt), id));
+  }
+
+  return { createBatch, getBatch, listBatches, updateBatch, placeBatch, clearBatch };
 }
 
 module.exports = { openHarvest };

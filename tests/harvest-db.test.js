@@ -32,13 +32,15 @@ function openFake(t, now) {
     if (archived) db.archiveRoom(room.id);
     return room.id;
   };
-  return { db, harvest, addRoom };
+  return { db, harvest, addRoom, archiveRoom: id => db.archiveRoom(id) };
 }
 
 function openReal(t, now) {
   let db;
   let addRoom;
+  let archiveRoom;
   if (HAS_V4) {
+    archiveRoom = id => db.archiveRoom(id);
     db = openDb(':memory:', { now });
     t.after(() => db.close());
     addRoom = (name, { archived = false } = {}) => {
@@ -53,10 +55,11 @@ function openReal(t, now) {
     const getRoom = id => { const r = sqlite.prepare('SELECT * FROM rooms WHERE id = ?').get(id); if (!r) throw new NotFoundError('room', id); return { ...r }; };
     db = { version: 4, sqlite, getRoom };
     t.after(() => sqlite.close());
+    archiveRoom = id => sqlite.prepare('UPDATE rooms SET archived_at = ? WHERE id = ?').run(now(), id);
     addRoom = (name, { archived = false } = {}) => Number(sqlite.prepare('INSERT INTO rooms (name, archived_at) VALUES (?, ?)').run(name, archived ? now() : null).lastInsertRowid);
   }
   const harvest = openHarvest(db, { now });
-  return { db, harvest, addRoom };
+  return { db, harvest, addRoom, archiveRoom };
 }
 
 const TARGETS = [['fake', openFake], ['real', openReal]];
@@ -158,4 +161,187 @@ both('getBatch: unknown ids throw NotFoundError(batch)', (t, open) => {
   const { harvest } = open();
   harvest.createBatch(batch());
   for (const id of [999, NaN, '1', undefined]) assertNotFound(() => harvest.getBatch(id), 'batch', id);
+});
+
+// Task 3: listBatches
+both('listBatches: order is received_at descending, then id descending', (t, open) => {
+  const { harvest } = open();
+  const a = harvest.createBatch(batch({ received_at: clock - 3 * DAY }));
+  const b = harvest.createBatch(batch({ received_at: clock - DAY }));
+  const c = harvest.createBatch(batch({ received_at: clock - DAY }));
+  assert.deepEqual(harvest.listBatches().map(r => r.id), [c.id, b.id, a.id]);
+  assert.ok(isPlain(harvest.listBatches()[0]));
+});
+
+both('listBatches: state filter', (t, open) => {
+  const { harvest, addRoom } = open();
+  const room = addRoom('A');
+  const received = harvest.createBatch(batch());
+  const placed = harvest.createBatch(batch());
+  const cleared = harvest.createBatch(batch());
+  harvest.placeBatch(placed.id, room, clock);
+  harvest.placeBatch(cleared.id, room, clock);
+  harvest.clearBatch(cleared.id, clock + 10);
+  const ids = options => harvest.listBatches(options).map(r => r.id).sort();
+  assert.deepEqual(ids({ state: 'received' }), [received.id]);
+  assert.deepEqual(ids({ state: 'placed' }), [placed.id]);
+  assert.deepEqual(ids({ state: 'cleared' }), [cleared.id]);
+  const all = [received.id, placed.id, cleared.id].sort();
+  assert.deepEqual(ids({ state: null }), all);
+  assert.deepEqual(ids({}), all);
+});
+
+both('listBatches: room filter; archived rooms count', (t, open) => {
+  const { harvest, addRoom, archiveRoom } = open();
+  const roomA = addRoom('A');
+  const roomB = addRoom('B');
+  const inA = harvest.createBatch(batch());
+  const inB = harvest.createBatch(batch());
+  const inA2 = harvest.createBatch(batch());
+  harvest.createBatch(batch());
+  harvest.placeBatch(inA.id, roomA, clock);
+  harvest.placeBatch(inB.id, roomB, clock);
+  harvest.placeBatch(inA2.id, roomA, clock);
+  harvest.clearBatch(inA2.id, clock + 1);
+  const ids = options => harvest.listBatches(options).map(r => r.id).sort();
+  assert.deepEqual(ids({ room_id: roomB }), [inB.id]);
+  assert.deepEqual(ids({ room_id: roomA, state: 'placed' }), [inA.id]);
+  archiveRoom(roomB);
+  assert.deepEqual(ids({ room_id: roomB }), [inB.id]);
+});
+
+both('listBatches: room_id filters in every state (LD 70)', (t, open) => {
+  const { harvest, addRoom } = open();
+  const room = addRoom('A');
+  harvest.createBatch(batch());
+  const placed = harvest.createBatch(batch());
+  const cleared = harvest.createBatch(batch());
+  harvest.placeBatch(placed.id, room, clock);
+  harvest.placeBatch(cleared.id, room, clock);
+  harvest.clearBatch(cleared.id, clock + 1);
+  assert.deepEqual(harvest.listBatches({ room_id: room }).map(r => r.id).sort(), [placed.id, cleared.id].sort());
+  assert.deepEqual(harvest.listBatches({ room_id: room, state: 'cleared' }).map(r => r.id), [cleared.id]);
+});
+
+both('listBatches: errors', (t, open) => {
+  const { harvest } = open();
+  assert.throws(() => harvest.listBatches({ state: 'gone' }), RangeError);
+  assertNotFound(() => harvest.listBatches({ room_id: 999 }), 'room', 999);
+  assertTypeError(() => harvest.listBatches({ room: 1 }), 'listBatches: unknown field "room"');
+});
+
+// Task 4: updateBatch
+both('updateBatch: changes fields; {} changes nothing', (t, open) => {
+  const { harvest } = open();
+  const row = harvest.createBatch(batch());
+  const changed = harvest.updateBatch(row.id, { strain: 'X', notes: 'n', flush_gap_days: 6 });
+  assert.deepEqual(changed, { ...row, strain: 'X', notes: 'n', flush_gap_days: 6 });
+  assert.deepEqual(Object.keys(changed), BATCH_KEYS);
+  assert.deepEqual(harvest.updateBatch(row.id, {}), changed);
+});
+
+both('updateBatch: fields it refuses', (t, open) => {
+  const { harvest } = open();
+  const row = harvest.createBatch(batch());
+  for (const key of ['room_id', 'placed_at', 'cleared_at', 'created_at', 'at', 'colour']) {
+    assertTypeError(() => harvest.updateBatch(row.id, { [key]: 1 }), `updateBatch: unknown field "${key}"`);
+  }
+  assert.deepEqual(harvest.getBatch(row.id), row);
+});
+
+both('updateBatch: a constraint failure leaves the row unchanged', (t, open) => {
+  const { harvest } = open();
+  const row = harvest.createBatch(batch());
+  assertSql(() => harvest.updateBatch(row.id, { moisture_pct: 100 }), 275);
+  assertSql(() => harvest.updateBatch(row.id, { crop: null }), 1299);
+  assert.deepEqual(harvest.getBatch(row.id), row);
+});
+
+both('updateBatch: unknown batch', (t, open) => {
+  const { harvest } = open();
+  assertNotFound(() => harvest.updateBatch(999, { strain: 'X' }), 'batch', 999);
+});
+
+both('updateBatch: an explicit undefined sets NULL (LD 70)', (t, open) => {
+  const { harvest } = open();
+  const row = harvest.createBatch(batch({ strain: 'PO-2', notes: 'n' }));
+  const cleared = harvest.updateBatch(row.id, { strain: undefined, notes: undefined });
+  assert.equal(cleared.strain, null);
+  assert.equal(cleared.notes, null);
+  assertSql(() => harvest.updateBatch(row.id, { crop: undefined }), 1299);
+  assert.deepEqual(harvest.getBatch(row.id), cleared);
+});
+
+// Task 5: placeBatch, clearBatch
+both('placeBatch: sets room_id and placed_at', (t, open) => {
+  const { harvest, addRoom } = open();
+  const room = addRoom('A');
+  const row = harvest.createBatch(batch());
+  const placed = harvest.placeBatch(row.id, room, clock);
+  assert.deepEqual(placed, { ...row, room_id: room, placed_at: clock });
+  assert.deepEqual(harvest.getBatch(row.id), placed);
+  assert.ok(isPlain(placed));
+});
+
+both('placeBatch: archived room accepted; unknown room and batch throw', (t, open) => {
+  const { harvest, addRoom } = open();
+  const archived = addRoom('Old', { archived: true });
+  const valid = addRoom('A');
+  const row = harvest.createBatch(batch());
+  assert.equal(harvest.placeBatch(row.id, archived, clock).room_id, archived);
+  const other = harvest.createBatch(batch());
+  assertNotFound(() => harvest.placeBatch(other.id, 999, clock), 'room', 999);
+  assert.deepEqual(harvest.getBatch(other.id), other);
+  assertNotFound(() => harvest.placeBatch(999, valid, clock), 'batch', 999);
+});
+
+both('placeBatch: placed before received is a CHECK failure', (t, open) => {
+  const { harvest, addRoom } = open();
+  const room = addRoom('A');
+  const row = harvest.createBatch(batch());
+  assertSql(() => harvest.placeBatch(row.id, room, row.received_at - 1), 275);
+  assert.deepEqual(harvest.getBatch(row.id), row);
+});
+
+both('clearBatch: sets cleared_at', (t, open) => {
+  const { harvest, addRoom } = open();
+  const room = addRoom('A');
+  const row = harvest.createBatch(batch());
+  const placed = harvest.placeBatch(row.id, room, clock);
+  const cleared = harvest.clearBatch(row.id, clock + 100);
+  assert.deepEqual(cleared, { ...placed, cleared_at: clock + 100 });
+  assert.deepEqual(harvest.getBatch(row.id), cleared);
+});
+
+both('clearBatch: before placed, or on a received batch, is a CHECK failure', (t, open) => {
+  const { harvest, addRoom } = open();
+  const room = addRoom('A');
+  const received = harvest.createBatch(batch());
+  assertSql(() => harvest.clearBatch(received.id, clock), 275);
+  assert.deepEqual(harvest.getBatch(received.id), received);
+  const placed = harvest.placeBatch(harvest.createBatch(batch()).id, room, clock);
+  assertSql(() => harvest.clearBatch(placed.id, placed.placed_at - 1), 275);
+  assert.deepEqual(harvest.getBatch(placed.id), placed);
+});
+
+both('clearBatch: unknown batch', (t, open) => {
+  const { harvest } = open();
+  assertNotFound(() => harvest.clearBatch(999, clock), 'batch', 999);
+});
+
+both('placeBatch: an unknown batch wins over an unknown room (LD 70)', (t, open) => {
+  const { harvest } = open();
+  assertNotFound(() => harvest.placeBatch(999, 999, clock), 'batch', 999);
+});
+
+both('clearBatch: null un-clears a cleared batch (LD 70)', (t, open) => {
+  const { harvest, addRoom } = open();
+  const room = addRoom('A');
+  const row = harvest.createBatch(batch());
+  harvest.placeBatch(row.id, room, clock);
+  harvest.clearBatch(row.id, clock + 5);
+  const back = harvest.clearBatch(row.id, null);
+  assert.equal(back.cleared_at, null);
+  assert.equal(back.room_id, room);
+  assert.equal(back.placed_at, clock);
 });
