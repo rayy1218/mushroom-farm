@@ -1,6 +1,6 @@
 # Work brief: Wave 2, Server 2 stream (C2 revision 9, C3/C4 revision 9)
 
-Revision 2, 2026-10-09 (wave 2 contracts frozen on `master` e60dabf, lead decision 69; lead decisions 72 and 74 added later on `master`). Stream: **Server 2** (wave 2). You are the implementer; two reviewers check the work before the lead merges it at gate 2.5.
+Revision 3, 2026-10-09 (wave 2 contracts frozen on `master` e60dabf, lead decision 69; lead decisions 72 and 74 added later on `master`; `tests/stream.test.js` given to this stream by the lead on 2026-10-09). Stream: **Server 2** (wave 2). You are the implementer; two reviewers check the work before the lead merges it at gate 2.5.
 
 | Binding source, in this order | Path | What it settles |
 |---|---|---|
@@ -28,6 +28,7 @@ When this brief and a contract disagree, the contract wins: follow it and report
 | A db error at the loop-start upgrade save is thrown (C2 8.1) | The `Upgraded: air exchange` save sits outside the steps 2–6 `try`; test "Upgrade save error" |
 | No prep 2.0 skip left in your test files | `grep -c "C1 rev 6 / C2 rev 9 fake:" tests/rooms.test.js tests/api.test.js` gives `0` for both |
 | Your tests survive the Equipment merge (lead decision 56) | With `fixB-on-bd24755.diff` applied to `controller.js` in a scratch tree, your three test files give `# fail 0` |
+| The live-feed test does not hang under load | `tests/stream.test.js` (yours from revision 3, test code only) passes five full `npm test` runs in a row while another `npm test` runs in parallel (task 13) |
 | `server/main.js` can be wired at gate 2.5 | The `server/main.js` stub folder of `tests/api.test.js` also holds `tmp/server/harvest-db.js` and `tmp/server/harvest-api.js` (C3 12.1) |
 
 ## 2. Before you start
@@ -68,12 +69,13 @@ Read C3 and C2 completely before task 1.
 | `server/sim-adapter.js` | Modify | C2 1 (requires), 13.1 (`equipment`, `env.plant`) |
 | `server/rooms.js` | Modify | C2 5.2, 5.3, 8.1, 12.2 |
 | `tests/rooms.test.js` | Modify, append | Tasks 10–12; remove its prep 2.0 skips |
+| `tests/stream.test.js` | Modify (test code only) | Task 13. Not in the wave 2 plan's Server 2 row: C3 2.3 and wave 2 plan 3.1 list it as nobody's; the lead gave it to Server 2 on 2026-10-09 after it hung twice in full runs under heavy CPU load |
 
 | Not yours | Owner |
 |---|---|
 | `server/main.js` | Lead at gate 2.5 (C10 8.4 wiring). You write only the two stub files `tmp/server/harvest-db.js` and `tmp/server/harvest-api.js` inside the `describe('server/main.js')` set-up of `tests/api.test.js` (C3 12.1). Not the `STUB_HARVEST_THROW` test: the lead adds it at gate 2.5 step 3b (before the wiring it would fail) |
 | `server/api-common.js`, `harvest-rules.js`, `server/harvest-schema.js`, `tests/fakes/*`, `tests/fake-*.test.js`, the `equipment.js` stub, `index.html`, `web/api.js`, `docs/*` | Lead (prep 2.0) |
-| `tests/stream.test.js`, `server/config.js`, `tests/config.test.js`, `server/db-common.js`, `server/rooms-common.js` | Nobody (read-only) |
+| `server/config.js`, `tests/config.test.js`, `server/db-common.js`, `server/rooms-common.js` | Nobody (read-only) |
 | `server/db.js`, `tests/db.test.js` | Data 2 |
 | `server/harvest-db.js`, `server/harvest-api.js` and their tests | Harvest data, Harvest API |
 | `controller.js`, `sim.js`, `capacity.js`, `cycle.js`, `equipment.js` (the real one) | Equipment |
@@ -150,7 +152,7 @@ Read C3 and C2 completely before task 1.
 
 | Rule | Detail |
 |---|---|
-| Order | Task 0, then 1–13. Commit after each task that ends green |
+| Order | Task 0, then 1–14. Commit after each task that ends green |
 | Run one file | `node --disable-warning=ExperimentalWarning --test tests/<file>.test.js` |
 | Test names | New tests take the names in the table (exact). Tests that exist on `master` keep their names unless the table says otherwise |
 | Contract labels | C2 17 rows are named by their "Proves" label where the test is new; where `master` already has the row under another name, the table says which test it is |
@@ -170,7 +172,8 @@ Read C3 and C2 completely before task 1.
 | 10 | Remove every prep 2.0 skip of `tests/rooms.test.js` ("Recording", "One reading shape" per the plan; your section 2 list) by rewriting them: **`Recording`** checks exactly the 18 keys (C2 17 row "Recording": `air` 0 or 1, `ac_fan` `null` while the AC is off and one of `low`, `auto`, `high` while it runs, `stage` equal to `get(id).live.stage`, `core` a number, the payload row deep-equal to `db.latestReading`); **`One reading shape`**: a manager started on a db with a reading of the last hour gives `live.reading` the same keys as a Record row. **`Room equipment: the adapter factory gets the saved row`** (runs now, needs no `plantOf`): with `capture(scripted().factory)`, a room with saved equipment gives `made.at(-1).equipment` deep-equal to `db.getEquipment(id)`; without equipment `null`. The existing **`Block count`** and **`Recording: air is 1 while cmd.air.on, else 0 (C9 section 6.3)`** (C2 17 row "Air exchange row") keep passing | `rooms.js`: loop start reads `db.getEquipment(id)` (step 1) and passes `equipment` (step 3); `buildReadingRow` adds `ac_fan`, `stage`, `core` (C2 5.3) | C2 5.3, 8.1, 12.2, 17 |
 | 11 | **`Live flush and blocks`**: mix sum 500 gives `live.blocks === 500`, no mix `null`; `live.flush` is 1 after start and follows an automatic `rest` → `fruiting` change (assert only `flush` and `stage`, no CO₂ key); a change of only `flush` or `blocks` emits no `room`. **`Live air exchange`**: after the first reading with default settings `live.air` has exactly the 11 keys of C2 5.2, `state` one of `idle`, `purge`, `after`; with `manual.air = { auto: false, on: true }` (through `applySettings`), after the next reading `on`, `manual`, `manualOn` are `true` and `reason` is `'manual'`; `today` has `purges` (integer ≥ 0), `avgS` (`null` when `purges` is 0), `capped`; a run held above `rules.fanOn` with the scripted adapter gives `today.purges ≥ 1`; a change of `live.air` alone emits no `room`. **`Upgrade save error`**: a stored version 1 settings object (with `manual.fan = { auto: false, level: 2 }`) and the fake db's `saveSettings` replaced by a thrower of the fatal shape: `start()` throws that error; and on a second manager whose room started normally, `db.saveSettings(id, { settings: <a version 1 object> })` written straight to the fake, then `saveSettings` replaced by the thrower, `restart(id)` throws it (`create` stores upgraded settings, so it never reaches this save: test `start` and `restart` only); the room is not marked crashed (`live.error` is not the error message; no `Stopped by an error` event). It fails on `master` (the save is inside the `try`) | `Live.flush`, `Live.blocks`, `Live.air` (C2 5.2 build rules, after each Record and at loop start); move the `Upgraded: air exchange` save out of the steps 2–6 `try` | C2 5.2, 7, 8.1, 17 |
 | 12 | Lead decision 56 audit (C2 9.1). Read every test of `tests/rooms.test.js` and `tests/api.test.js` that changes the stage, crop or farm type ("Settings rules", "Automatic stage version", "Crop and farm type", "Restore exact", "Room summary", "Pair correction, high key", "Resume: …", your task 11 tests): no assertion may depend on `co2Lim`, `rules.fanOn` or `rules.fanOff` ramping after a change that lowers the CO₂ limit (compare live values with live values, or assert only T, RH and `rules.co2SafetyAt` on a lowering change; a raising change still ramps). The C2 17 row "Pair correction" is the high-key test only; the low-key test stays dropped. Proof: the scratch run of section 7 | Only test changes where the audit finds a dependence | Lead decision 56; C2 9.1, 17 |
-| 13 | – | Section 7; commit; report (section 10) | – |
+| 13 | `tests/stream.test.js` under load (test names and count unchanged; C3 10 and C5 4.4 behaviour unchanged: no edit of `server/api.js` for this task). First reproduce: with every core busy (`for c in $(seq $(nproc)); do node -e "const e=Date.now()+300000;while(Date.now()<e);" & done`), run `for i in $(seq 20); do timeout 120 node --disable-warning=ExperimentalWarning --test tests/stream.test.js 2>&1 \| grep -E '^# (pass\|fail)' \|\| echo HUNG; done` and record every failure or `HUNG` (exit 124); then `kill` the busy loops. Likely causes on `master` (check each): (a) `ctx.stop()` and `c.req.destroy()` run only at the end of each test, so a failed wait leaves the server and the open event streams alive and the test process never exits; (b) the slow-client test resumes the paused client on a fixed `resumeAfterMs: 1500`: under load the server may not have passed 1 MB of `writableLength` by then, the resumed client drains, the server never ends it, the 10 s race rejects, and (a) keeps the process alive; (c) fixed waits that are too short under load (`waitForCount` default 3000 ms, the heartbeat's 500 ms); (d) waits with no timeout at all (`await ended1`, `await ended2` in the `close()` test) | Test code only: a `cleanup(t, ctx, ...clients)` helper that registers `t.after(() => { for (const c of clients) c.req.destroy(); ctx.api.close(); ctx.server.closeAllConnections(); ctx.server.close(); })` in every test, before its first wait; the slow client resumes only after the test has emitted far more than 1 MB plus the socket buffers (for example 32 MB of `room` events, counted, not timed), never on a timer; wait for events (`waitForCount`, `res` `end` or `close`) with generous timeouts (10 s) instead of fixed sleeps, and give every wait a timeout; keep the heartbeat assertion as "a ping arrives" with a margin that holds under load (for example 5 s with `heartbeatMs: 50`). The two absence checks ("fatal sends nothing", "an emit after `close()` writes nothing") may keep a short fixed wait: under load it can only make them pass less strictly, never hang | Lead's assignment 2026-10-09; C3 10, 12 (`tests/stream.test.js` row unchanged) |
+| 14 | – | Section 7; commit; report (section 10) | – |
 
 | Point | Rule |
 |---|---|
@@ -190,7 +193,10 @@ Read C3 and C2 completely before task 1.
 | `grep -n "require(" server/api.js` | `./static.js`, `./api-common.js`, then `../sim.js`, `../air.js`, `../controller.js`, `../runtime.js`, `../calib.js`, `../capacity.js`, `../cycle.js`, `../equipment.js`, `../room-rules.js` (optionally `./db-common.js`, `./rooms-common.js`); no `./db.js`, `./rooms.js`, `./harvest-db.js`, `./harvest-api.js` |
 | `grep -n "require(" server/sim-adapter.js server/rooms.js` | `sim-adapter.js`: `../air.js`, `../sim.js`, `../runtime.js`, `../equipment.js`; `rooms.js`: `../air.js`, `../controller.js`, `../runtime.js`, `./sim-adapter.js`, `./rooms-common.js` |
 | `node -e "for (const f of ['sim','air','controller','runtime','calib','capacity']) require('./'+f+'.js'); require('./room-rules.js'); console.log(Object.keys(ClimateRoomRules).length)"` | `13` (loads without `cycle.js` and `equipment.js`) |
-| `git diff --name-only $(git merge-base HEAD master) HEAD` | Only the 8 files of section 3 |
+| `( for i in 1 2 3 4 5; do npm test > /dev/null 2>&1; done ) & BG=$!; for i in 1 2 3 4 5; do timeout 900 npm test 2>&1 \| grep -E '^# (pass\|fail\|cancelled)' \|\| echo "run $i HUNG"; done; wait $BG` | Five runs in the foreground, each `# fail 0` and `# cancelled 0`, none `HUNG`, while the background loop runs `npm test` at the same time (task 13; the lead's done-when) |
+| The task 13 reproduction loop (20 runs of `tests/stream.test.js` with every core busy) | 20 × `# fail 0`, no `HUNG` |
+| `git show --name-only --format= <the task 13 commit>` | Exactly `tests/stream.test.js` (task 13 changes no server code) |
+| `git diff --name-only $(git merge-base HEAD master) HEAD` | Only the 9 files of section 3 |
 | `git diff --exit-code $(git merge-base HEAD master) HEAD -- tests/vectors/ server/main.js server/api-common.js tests/fakes/ equipment.js controller.js` | No output, exit 0 |
 | `git log --format=%B $(git merge-base HEAD master)..HEAD \| grep -ci 'co-authored'` | `0` |
 | `git branch --show-current`; `git status --short` | `stream/server-2`; empty |
@@ -208,7 +214,8 @@ Read C3 and C2 completely before task 1.
 | 7 | The two stub files of C3 12.1 are written by the `server/main.js` test set-up; every `server/main.js` test passes; no `STUB_HARVEST_THROW` test |
 | 8 | "Room equipment" is skipped with the exact C2 17 reason while `plantOf` throws `stub` (lead decision 48) and runs at gate 2.5 without an edit |
 | 9 | No prep 2.0 skip left in `tests/rooms.test.js` and `tests/api.test.js`; no test depends on `co2Lim`, `rules.fanOn` or `rules.fanOff` ramping after a lowering change (lead decision 56); the scratch run with `fixB` gives `# fail 0` |
-| 10 | Every command of section 7 gives its expected result; committed on `stream/server-2` with plain messages; nothing pushed; report sent |
+| 10 | `tests/stream.test.js` passes five full `npm test` runs in a row while another `npm test` runs in parallel, with the same test names and count and no server change for it (task 13) |
+| 11 | Every command of section 7 gives its expected result; committed on `stream/server-2` with plain messages; nothing pushed; report sent |
 
 ## 9. What NOT to do
 
@@ -224,6 +231,7 @@ Read C3 and C2 completely before task 1.
 | Write a test that depends on `co2Lim`, `rules.fanOn` or `rules.fanOff` ramping after a lowering change, or bring back the low-key "Pair correction" test | Lead decision 56; C2 9.1, 17 |
 | Unskip "Room equipment" by hand, or skip it with another reason | It switches itself on at gate 2.5 (lead decision 48) |
 | Weaken, skip or `todo` a test so it passes on the fake | Report the difference instead |
+| Make `tests/stream.test.js` pass by changing `server/api.js` stream behaviour (heartbeat, `retry: 3000`, the 1 MB slow-client rule, `close()`), by skipping or deleting a stream test, or by only raising the file's timeout | C3 10 and C5 4.4 are frozen; task 13 makes the waits and the clean-up robust, the behaviour stays |
 | Run `npm run vectors` or `tools/make-vectors.js` | They rewrite `tests/vectors/` |
 | Write report or summary files | The report is your last message |
 
@@ -235,6 +243,7 @@ Read C3 and C2 completely before task 1.
 | Counts | `N0`, `S0`, `P` and the prep skips you removed; `# pass` and `# skipped` at the end |
 | Section 7 | The result of each command, the `fixB` scratch run's last lines included |
 | Lead decision 56 audit | Each test you changed for it, and why |
+| Stream test (task 13) | The reproduction before the fix (failures, `HUNG` count), the causes you found, the fix, and the five parallel runs after |
 | Contract questions | Every gap or difference with its C2 / C3 / C10 section |
 
 ## 11. Change log
@@ -244,3 +253,4 @@ Read C3 and C2 completely before task 1.
 | 0 | 2026-10-09 | First brief, from the frozen C2 revision 9, C3/C4 revision 9, C1 revision 6, C9 revision 2 (6.3), C10 revision 2 and the wave 2 plan (Server 2 row, prep 2.0 step 6) |
 | 1 | 2026-10-09 | The prep 2.0 skips as step 2b made them: "Recording" and "One reading shape" in `tests/rooms.test.js`, none in `tests/api.test.js`, the reason text, `P` = 2 |
 | 2 | 2026-10-09 | Lead decisions 72 (equipment stub details) and 74 (the points this brief settles) cited; the prep 2.0 skips confirmed on `master` as the start check expects (`P` = 2) |
+| 3 | 2026-10-09 | Task 13: `tests/stream.test.js` hardened against hangs under load (the lead's assignment; test code only); goal, owned files, verify, done-when and report rows; final task renumbered 14 |
