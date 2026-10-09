@@ -1,6 +1,7 @@
 // server/sim-adapter.js: the simulated room adapter (C2 section 13).
-// Loads only ../sim.js and ../runtime.js (C2 section 1).
+// Loads only ../air.js, ../sim.js and ../runtime.js (C2 section 1, C9 section 6.3).
 'use strict';
+require('../air.js');
 require('../sim.js');
 require('../runtime.js');
 
@@ -21,7 +22,7 @@ function createSimAdapter({ room, calib, blocks, cfg, snapshot, now }) {
 
   // Step 1 (C2 13.1)
   const env = structuredClone(DEFAULT_ENV);
-  env.vent = room.vent;
+  env.airM3h = cfg.airM3h; // C9 section 6.3: the room's own air exchange size
   env.room = { volume: room.volume };
   if (calib) {
     env.room.ua = calib.ua;

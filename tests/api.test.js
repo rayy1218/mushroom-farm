@@ -12,6 +12,7 @@ const { createFakeRoomManager } = require('../tests/fakes/rooms.js');
 const { createApi } = require('../server/api.js');
 const { RoomError } = require('../server/rooms-common.js');
 
+require('../air.js');
 require('../sim.js');
 require('../controller.js');
 
@@ -34,11 +35,11 @@ function startApi(extra) {
 }
 
 function seedRoom(db, name) {
-  return db.createRoom({ name, volume: 60, vent: 'supply', settings: globalThis.ClimateController.defaultSettings() }).id;
+  return db.createRoom({ name, volume: 60, settings: globalThis.ClimateController.defaultSettings() }).id;
 }
 
 function reading(t) {
-  return { t, T: 18, RH: 88, CO2: 800, t_out: 30, rh_out: 60, ac_mode: 'cool', ac_setpoint: 17.5, fog: 1, fan: 1, lights: 1, circ: 0, power_w: 1000, kwh: 1 };
+  return { t, T: 18, RH: 88, CO2: 800, t_out: 30, rh_out: 60, ac_mode: 'cool', ac_setpoint: 17.5, fog: 1, air: 1, lights: 1, circ: 0, power_w: 1000, kwh: 1 };
 }
 
 function rawGet(url, pathAndQuery, method = 'GET') {
@@ -242,20 +243,20 @@ describe('room routes 6.1, 6.2, 6.3, 6.19', () => {
   test('POST /api/rooms', async () => {
     const r = await fetch(`${ctx.url}/api/rooms`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: 'New room', volume: 60, vent: 'supply' }),
+      body: JSON.stringify({ name: 'New room', volume: 60 }),
     });
     assert.equal(r.status, 201);
     const room = await r.json();
     assert.ok(room.live);
     const last = ctx.rooms.calls[ctx.rooms.calls.length - 1];
     assert.equal(last.method, 'create');
-    assert.deepStrictEqual(last.args, [{ name: 'New room', volume: 60, vent: 'supply', settings: undefined }]);
+    assert.deepStrictEqual(last.args, [{ name: 'New room', volume: 60, settings: undefined }]);
   });
 
   test('POST with settings (C3 6.2, C2 9.4)', async () => {
     const r1 = await fetch(`${ctx.url}/api/rooms`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: 'Pink', volume: 200, vent: 'supply', settings: { crop: 'pink' } }),
+      body: JSON.stringify({ name: 'Pink', volume: 200, settings: { crop: 'pink' } }),
     });
     assert.equal(r1.status, 201);
     const room1 = await r1.json();
@@ -267,7 +268,7 @@ describe('room routes 6.1, 6.2, 6.3, 6.19', () => {
 
     const r2 = await fetch(`${ctx.url}/api/rooms`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: 'Pink2', volume: 200, vent: 'supply', settings: { crop: 'pink', roomM3: 90 } }),
+      body: JSON.stringify({ name: 'Pink2', volume: 200, settings: { crop: 'pink', roomM3: 90 } }),
     });
     const room2 = await r2.json();
     const s2 = await (await fetch(`${ctx.url}/api/rooms/${room2.id}/settings`)).json();
@@ -279,19 +280,18 @@ describe('room routes 6.1, 6.2, 6.3, 6.19', () => {
     const roomsBefore = ctx.db.listRooms();
     // The full task 2 checkRoom(body, false) invalid-body list (room-rules.test.js), run over HTTP.
     const badBodies = [
-      { volume: 60, vent: 'supply' },                        // missing name
-      { name: 'A', vent: 'supply' },                          // missing volume
-      { name: 'A', volume: 60 },                              // missing vent
-      { name: '   ', volume: 60, vent: 'supply' },            // blank after trim
-      { name: 'x'.repeat(61), volume: 60, vent: 'supply' },   // too long
-      { name: 5, volume: 60, vent: 'supply' },                // not a string
-      { name: 'A', volume: 4.99, vent: 'supply' },
-      { name: 'A', volume: 5000.01, vent: 'supply' },
-      { name: 'A', volume: '60', vent: 'supply' },
-      { name: 'A', volume: null, vent: 'supply' },
-      { name: 'A', volume: 60, vent: 'side' },
-      { name: 'A', volume: 60, vent: 'supply', colour: 'red' },   // unknown field
-      { name: 'A', volume: 60, vent: 'supply', archived: true },  // archived on POST
+      { volume: 60 },                        // missing name
+      { name: 'A' },                          // missing volume
+      { name: '   ', volume: 60 },            // blank after trim
+      { name: 'x'.repeat(61), volume: 60 },   // too long
+      { name: 5, volume: 60 },                // not a string
+      { name: 'A', volume: 4.99 },
+      { name: 'A', volume: 5000.01 },
+      { name: 'A', volume: '60' },
+      { name: 'A', volume: null },
+      { name: 'A', volume: 60, vent: 'supply' },              // vent is an unknown field (C9 6.3)
+      { name: 'A', volume: 60, colour: 'red' },   // unknown field
+      { name: 'A', volume: 60, archived: true },  // archived on POST
       {}, null, 'x', [],
     ];
     for (const body of badBodies) {
@@ -304,7 +304,7 @@ describe('room routes 6.1, 6.2, 6.3, 6.19', () => {
     for (const settings of [null, [], 5]) {
       const r = await fetch(`${ctx.url}/api/rooms`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: 'A', volume: 60, vent: 'supply', settings }),
+        body: JSON.stringify({ name: 'A', volume: 60, settings }),
       });
       assert.equal(r.status, 400, JSON.stringify(settings));
       assert.equal((await r.json()).error, 'Invalid settings', JSON.stringify(settings));
@@ -351,7 +351,7 @@ describe('room routes 6.1, 6.2, 6.3, 6.19', () => {
   test('PATCH 400s', async () => {
     const id = seedRoom(ctx.db, 'PatchBad');
     const callsBefore = ctx.rooms.calls.length;
-    for (const body of [{}, { archived: false }, { colour: 1 }, { volume: 1 }]) {
+    for (const body of [{}, { archived: false }, { colour: 1 }, { volume: 1 }, { vent: 'supply' }]) {
       const r = await fetch(`${ctx.url}/api/rooms/${id}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
       });
@@ -449,7 +449,7 @@ describe('settings routes 6.4-6.7', () => {
     assert.equal(({}).polluted, undefined);
     assert.deepStrictEqual(Object.keys(Object.prototype), []);
 
-    const raw2 = '{"__proto__":{"polluted":1},"name":"PollutedRoom","volume":60,"vent":"supply"}';
+    const raw2 = '{"__proto__":{"polluted":1},"name":"PollutedRoom","volume":60}';
     const r2 = await fetch(`${ctx.url}/api/rooms`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: raw2,
     });
@@ -514,7 +514,7 @@ describe('readings, events, alarms, ack (6.8-6.11)', () => {
     assert.equal(rows.length, 2);
     for (const row of rows) {
       assert.deepStrictEqual(Object.keys(row).sort(), [
-        'CO2', 'RH', 'T', 'ac_mode', 'ac_setpoint', 'circ', 'fan', 'fog', 'kwh', 'lights', 'power_w', 'rh_out', 'room_id', 't', 't_out',
+        'CO2', 'RH', 'T', 'ac_mode', 'ac_setpoint', 'air', 'circ', 'fog', 'kwh', 'lights', 'power_w', 'rh_out', 'room_id', 't', 't_out',
       ]);
     }
     assert.deepStrictEqual(rows, ctx.db.queryReadings(id, { from: NOW - 3600, to: NOW, step: null }));
@@ -786,7 +786,7 @@ describe('error mapping and the database-error stop (4.4)', () => {
     await withReplaced(ctx.rooms, 'create', () => { throw new RoomError('bad_input', 'Bad input', ['name: x']); }, async () => {
       const r = await fetch(`${ctx.url}/api/rooms`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: 'A', volume: 60, vent: 'supply' }),
+        body: JSON.stringify({ name: 'A', volume: 60 }),
       });
       assert.equal(r.status, 400);
       const body = await r.json();

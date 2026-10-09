@@ -2,6 +2,7 @@
 // controller. Writes through the C1 db it is given, so API tests that write through C2 and read through C1 see the
 // same data.
 'use strict';
+require('../../air.js'); // C9 section 3: before controller.js
 require('../../controller.js'); // defines globalThis.ClimateController
 const { RoomError, DEMO_ROOM, FIRST_NOTE, cleanSettings } = require('../../server/rooms-common.js');
 
@@ -80,25 +81,23 @@ function createFakeRoomManager({ db, now = () => Math.floor(Date.now() / 1000) }
     details.push('volume must be a number from 5 to 5000 (m³)');
     return undefined;
   }
-  function validateVent(vent, details) {
-    if (vent === 'supply' || vent === 'exhaust') return vent;
-    details.push('vent must be "supply" or "exhaust"');
-    return undefined;
-  }
 
   function mergeAndImport(settingsInput, base) {
     const { settings: merged, warnings: dropped } = cleanSettings(settingsInput, base);
-    let imported;
+    const CC = globalThis.ClimateController;
+    let upgraded, imported;
     try {
-      imported = globalThis.ClimateController.importSettings({
+      // C9 section 6.3: upgradeSettings first, like the real manager.
+      upgraded = CC.upgradeSettings(merged);
+      imported = CC.importSettings({
         format: 'mushroom-climate-settings',
-        version: globalThis.ClimateController.SETTINGS_VERSION,
-        settings: merged,
+        version: CC.SETTINGS_VERSION,
+        settings: upgraded.settings,
       });
     } catch (err) {
       throw new RoomError('bad_input', 'Bad input', [err.message]);
     }
-    return { settings: imported.settings, warnings: dropped.concat(imported.warnings) };
+    return { settings: imported.settings, warnings: dropped.concat(upgraded.warnings, imported.warnings) };
   }
 
   function rawCreate(input) {
@@ -106,7 +105,6 @@ function createFakeRoomManager({ db, now = () => Math.floor(Date.now() / 1000) }
     const details = [];
     const name = validateName(obj.name, details);
     const volume = validateVolume(obj.volume, details);
-    const vent = validateVent(obj.vent, details);
     const settingsInput = obj.settings;
     if (settingsInput !== undefined && !isPlainObject(settingsInput)) details.push('settings must be an object');
     if (details.length > 0) throw new RoomError('bad_input', 'Bad input', details);
@@ -123,7 +121,7 @@ function createFakeRoomManager({ db, now = () => Math.floor(Date.now() / 1000) }
       warnings = result.warnings;
     }
 
-    const room = db.createRoom({ name, volume, vent, adapter: 'sim', settings, note: FIRST_NOTE, at: now() });
+    const room = db.createRoom({ name, volume, adapter: 'sim', settings, note: FIRST_NOTE, at: now() });
     const version = db.currentSettings(room.id);
     emit('settings', { roomId: room.id, version, settings: version.settings, warnings, auto: false });
     const event = db.addEvent(room.id, { t: now(), level: 'info', text: 'Room created' });
@@ -141,7 +139,6 @@ function createFakeRoomManager({ db, now = () => Math.floor(Date.now() / 1000) }
     for (const key of Object.keys(changes)) {
       if (key === 'name') toApply.name = validateName(changes.name, details);
       else if (key === 'volume') toApply.volume = validateVolume(changes.volume, details);
-      else if (key === 'vent') toApply.vent = validateVent(changes.vent, details);
       else details.push(`unknown field "${key}"`);
     }
     if (details.length > 0) throw new RoomError('bad_input', 'Bad input', details);
@@ -184,8 +181,12 @@ function createFakeRoomManager({ db, now = () => Math.floor(Date.now() / 1000) }
     }
     if (details.length > 0) throw new RoomError('bad_input', 'Bad input', details);
 
-    const base = db.currentSettings(id).settings;
-    const { settings: next, warnings } = mergeAndImport(settings, base);
+    // The stored base is upgraded first, so the input merges over version 2 keys (review fix I1).
+    const CC = globalThis.ClimateController;
+    const fromDb = CC.upgradeSettings(db.currentSettings(id).settings);
+    const merged = mergeAndImport(settings, fromDb.settings);
+    const next = merged.settings;
+    const warnings = fromDb.warnings.concat(merged.warnings);
     const version = db.saveSettings(id, { settings: next, note: trimmedNote, at: now() });
     const text = `Settings saved (version ${version.id})` + (trimmedNote ? `: ${trimmedNote}` : '');
     const event = db.addEvent(id, { t: now(), level: 'info', text });

@@ -1,11 +1,12 @@
 // server/rooms.js: the room manager (C2 sections 1-12, 15). CommonJS, synchronous.
 'use strict';
+require('../air.js');
 require('../controller.js');
 require('../runtime.js');
 const { createSimAdapter, MAX_CATCH_UP_S } = require('./sim-adapter.js');
 const { RoomError, DEMO_ROOM, FIRST_NOTE, cleanSettings } = require('./rooms-common.js');
 
-const TARGET_KEYS = ['spT', 'spRH', 'co2Lim', 'rules.co2SafetyAt', 'rules.fanOn', 'rules.fanOff', 'rules.acOff', 'rules.acOn'];
+const TARGET_KEYS = ['spT', 'spRH', 'co2Lim', 'rules.co2SafetyAt', 'rules.fanOn', 'rules.fanOff'];
 
 // Internal constants (not part of the module's exported surface, C2 section 1).
 const STATE_SAVE_S = 300;
@@ -66,17 +67,24 @@ function validateVolume(volume, details) {
   details.push('volume must be a number from 5 to 5000 (m³)');
   return undefined;
 }
-function validateVent(vent, details) {
-  if (vent === 'supply' || vent === 'exhaust') return vent;
-  details.push('vent must be "supply" or "exhaust"');
-  return undefined;
-}
 function validateNote(note, details) {
   if (note === undefined || note === null) return null;
   if (typeof note !== 'string') { details.push('note must be text of at most 200 characters'); return undefined; }
   const trimmed = note.trim();
   if (trimmed.length > NOTE_MAX) { details.push('note must be text of at most 200 characters'); return undefined; }
   return trimmed === '' ? null : trimmed;
+}
+
+// C9 section 6.3: settings from the database (and given settings merged over them) may be version 1, so
+// ClimateController.upgradeSettings (C9 section 5.2) runs first; its warnings come before the import's own.
+function upgrade(settings) {
+  return ClimateController.upgradeSettings(settings);
+}
+// upgradeWarnings is the upgrade's share of warnings, so a loop start can tell that it upgraded.
+function upgradeAndImport(settings) {
+  const upgraded = upgrade(settings);
+  const imported = ClimateController.importSettings({ format: SETTINGS_FORMAT, version: ClimateController.SETTINGS_VERSION, settings: upgraded.settings });
+  return { settings: imported.settings, warnings: upgraded.warnings.concat(imported.warnings), upgradeWarnings: upgraded.warnings };
 }
 
 function buildReadingRow(roomId, r, cmd) {
@@ -91,7 +99,7 @@ function buildReadingRow(roomId, r, cmd) {
     ac_mode: cmd.ac.power ? cmd.ac.mode : 'off',
     ac_setpoint: cmd.ac.power ? cmd.ac.setpoint : null,
     fog: clampLevel(cmd.hu.level),
-    fan: clampLevel(cmd.fan.level),
+    air: cmd.air && cmd.air.on ? 1 : 0,
     lights: cmd.lights.on ? 1 : 0,
     circ: cmd.circ.on ? 1 : 0,
     power_w: sumFinite(r.power),
@@ -297,10 +305,14 @@ function createRoomManager(options) {
 
     let warnings = [];
     try {
-      const imported = ClimateController.importSettings({ format: SETTINGS_FORMAT, version: ClimateController.SETTINGS_VERSION, settings: version.settings });
+      const imported = upgradeAndImport(version.settings);
       loop.cfg = imported.settings;
       warnings = imported.warnings;
       loop.base = structuredClone(loop.cfg);
+      // C9 6.3 "Upgrade saved once": the upgraded settings become the current version, so the next start upgrades nothing.
+      if (imported.upgradeWarnings.length > 0) {
+        db.saveSettings(id, { settings: loop.cfg, note: 'Upgraded: air exchange', at: t });
+      }
 
       const calib = calibRow ? { ua: calibRow.ua, infAch: calibRow.inf_ach, moistBuffer: calibRow.moist_buffer, co2PerBlock: calibRow.co2_per_block } : null;
       const sum = mix.reduce((s, m) => s + m.blocks, 0);
@@ -474,7 +486,6 @@ function createRoomManager(options) {
     const details = [];
     const name = validateName(obj.name, details);
     const volume = validateVolume(obj.volume, details);
-    const vent = validateVent(obj.vent, details);
     const settingsInput = obj.settings;
     if (settingsInput !== undefined && !isPlainObject(settingsInput)) details.push('settings must be an object');
     if (details.length > 0) throw new RoomError('bad_input', 'Bad input', details);
@@ -489,7 +500,7 @@ function createRoomManager(options) {
       const { settings: merged, warnings: dropped } = cleanSettings(settingsInput, base);
       let imported;
       try {
-        imported = ClimateController.importSettings({ format: SETTINGS_FORMAT, version: ClimateController.SETTINGS_VERSION, settings: merged });
+        imported = upgradeAndImport(merged);
       } catch (err) {
         throw new RoomError('bad_input', 'Bad input', [err.message]);
       }
@@ -497,7 +508,7 @@ function createRoomManager(options) {
       warnings = dropped.concat(imported.warnings);
     }
 
-    const room = db.createRoom({ name, volume, vent, adapter: 'sim', settings, note: FIRST_NOTE, at: now() });
+    const room = db.createRoom({ name, volume, adapter: 'sim', settings, note: FIRST_NOTE, at: now() });
     const version = db.currentSettings(room.id);
     emit('settings', { roomId: room.id, version, settings: version.settings, warnings, auto: false });
     writeManagerEvent(room.id, 'info', 'Room created');
@@ -515,16 +526,14 @@ function createRoomManager(options) {
     for (const key of Object.keys(changesInput)) {
       if (key === 'name') toApply.name = validateName(changesInput.name, details);
       else if (key === 'volume') toApply.volume = validateVolume(changesInput.volume, details);
-      else if (key === 'vent') toApply.vent = validateVent(changesInput.vent, details);
       else details.push(`unknown field "${key}"`);
     }
     if (details.length > 0) throw new RoomError('bad_input', 'Bad input', details);
 
     db.updateRoom(id, toApply);
     const loop = loops.get(id);
-    const volumeOrVentChanged = (('volume' in toApply) && toApply.volume !== room.volume) ||
-      (('vent' in toApply) && toApply.vent !== room.vent);
-    if (volumeOrVentChanged && loop && loop.running) {
+    const volumeChanged = ('volume' in toApply) && toApply.volume !== room.volume;
+    if (volumeChanged && loop && loop.running) {
       restart(id);
     } else {
       emitRoomAlways(id);
@@ -577,7 +586,6 @@ function createRoomManager(options) {
 
     const pairWarnings = [];
     pairCorrect(cfg, 'rules.fanOn', 'rules.fanOff', changed, pairWarnings);
-    pairCorrect(cfg, 'rules.acOff', 'rules.acOn', changed, pairWarnings);
 
     const t = loop.runtime && loop.runtime.reading ? loop.runtime.reading.t : now();
     let stageCallMade = false;
@@ -619,17 +627,18 @@ function createRoomManager(options) {
     if (details.length > 0) throw new RoomError('bad_input', 'Bad input', details);
 
     const loop = loops.get(id);
-    const base = loop && loop.base ? loop.base : db.currentSettings(id).settings;
+    // The stored base is upgraded first, so the input merges over version 2 keys (review fix I1).
+    const fromDb = loop && loop.base ? { settings: loop.base, warnings: [] } : upgrade(db.currentSettings(id).settings);
 
-    const { settings: merged, warnings: dropped } = cleanSettings(settingsInput, base);
+    const { settings: merged, warnings: dropped } = cleanSettings(settingsInput, fromDb.settings);
     let imported;
     try {
-      imported = ClimateController.importSettings({ format: SETTINGS_FORMAT, version: ClimateController.SETTINGS_VERSION, settings: merged });
+      imported = upgradeAndImport(merged);
     } catch (err) {
       throw new RoomError('bad_input', 'Bad input', [err.message]);
     }
     const next = imported.settings;
-    let warnings = dropped.concat(imported.warnings);
+    let warnings = fromDb.warnings.concat(dropped, imported.warnings);
     const exact = !!(options && options.exact === true);
 
     let stored;

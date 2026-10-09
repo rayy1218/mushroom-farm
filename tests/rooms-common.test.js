@@ -18,7 +18,7 @@ test('RoomError shape', () => {
 });
 
 test('DEMO_ROOM and FIRST_NOTE', () => {
-  assert.deepEqual(DEMO_ROOM, { name: 'Room 1', volume: 60, vent: 'supply' });
+  assert.deepEqual(DEMO_ROOM, { name: 'Room 1', volume: 60 });
   assert.ok(Object.isFrozen(DEMO_ROOM));
   assert.equal(FIRST_NOTE, 'Created');
 });

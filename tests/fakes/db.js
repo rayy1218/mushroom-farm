@@ -6,7 +6,6 @@ const AC_MODES = ['off', 'cool', 'heat', 'dry', 'fan'];
 const EVENT_LEVELS = ['info', 'good', 'warning', 'serious', 'critical'];
 const ALARM_LEVELS = ['warning', 'serious', 'critical'];
 const CAPACITY_VERDICTS = ['good', 'tight', 'too-dense', 'too-empty', 'impossible'];
-const VENTS = ['supply', 'exhaust'];
 
 function constraintError(message, errcode) {
   return Object.assign(new Error(message), { code: 'ERR_SQLITE_ERROR', errcode, errstr: 'constraint failed' });
@@ -71,7 +70,7 @@ function openFakeDb(options) {
   let calibrations = [];
   let cropMixes = []; // { room_id, pos, crop, blocks, co2_per_block }
   let capacityReports = [];
-  let readings = []; // internal: { room_id, t, T, RH, CO2, t_out, rh_out, ac_mode, ac_setpoint, fog, fan, lights, circ, power_w, kwh, _seq }
+  let readings = []; // internal: { room_id, t, T, RH, CO2, t_out, rh_out, ac_mode, ac_setpoint, fog, air, lights, circ, power_w, kwh, _seq }
   let events = [];
   let alarms = [];
   const controllerState = new Map(); // room_id -> { room_id, saved_at, controller: text, sim: text|null }
@@ -94,7 +93,7 @@ function openFakeDb(options) {
   }
 
   function roomToPublic(r) {
-    return { id: r.id, name: r.name, volume: r.volume, vent: r.vent, adapter: r.adapter, created_at: r.created_at, archived_at: r.archived_at };
+    return { id: r.id, name: r.name, volume: r.volume, adapter: r.adapter, created_at: r.created_at, archived_at: r.archived_at };
   }
 
   function settingsVersionToPublic(v) {
@@ -104,7 +103,7 @@ function openFakeDb(options) {
   function readingToPublic(r) {
     return {
       room_id: r.room_id, t: r.t, T: r.T, RH: r.RH, CO2: r.CO2, t_out: r.t_out, rh_out: r.rh_out,
-      ac_mode: r.ac_mode, ac_setpoint: r.ac_setpoint, fog: r.fog, fan: r.fan, lights: r.lights, circ: r.circ,
+      ac_mode: r.ac_mode, ac_setpoint: r.ac_setpoint, fog: r.fog, air: r.air, lights: r.lights, circ: r.circ,
       power_w: r.power_w, kwh: r.kwh,
     };
   }
@@ -135,17 +134,16 @@ function openFakeDb(options) {
 
   function createRoom(room) {
     assertOpen();
-    checkFields(room, ['name', 'volume', 'vent', 'adapter', 'settings', 'note', 'at'], 'createRoom');
+    checkFields(room, ['name', 'volume', 'adapter', 'settings', 'note', 'at'], 'createRoom');
     const name = numColumn(room.name, { type: 'TEXT', notNull: true, name: 'rooms.name' });
     const volume = numColumn(room.volume, { type: 'REAL', notNull: true, check: v => v > 0, name: 'rooms.volume' });
-    const vent = numColumn(room.vent, { type: 'TEXT', notNull: true, check: v => VENTS.includes(v), name: 'rooms.vent' });
     const adapter = numColumn(room.adapter === undefined ? 'sim' : room.adapter, { type: 'TEXT', notNull: true, name: 'rooms.adapter' });
     const settingsText = jsonColumn(room.settings, true, 'room_settings.settings');
     const note = numColumn(room.note === undefined ? 'Created' : room.note, { type: 'TEXT', notNull: false, name: 'room_settings.note' });
     const at = numColumn(room.at === undefined ? now() : room.at, { type: 'INTEGER', notNull: true, name: 'rooms.created_at' });
 
     const id = nextId.room++;
-    const roomRow = { id, name, volume, vent, adapter, created_at: at, archived_at: null };
+    const roomRow = { id, name, volume, adapter, created_at: at, archived_at: null };
     rooms.push(roomRow);
     const settingsId = nextId.settings++;
     roomSettings.push({ id: settingsId, room_id: id, saved_at: at, settings: settingsText, note });
@@ -172,11 +170,10 @@ function openFakeDb(options) {
   function updateRoom(id, changes) {
     assertOpen();
     const room = requireRoom(id);
-    checkFields(changes, ['name', 'volume', 'vent'], 'updateRoom');
+    checkFields(changes, ['name', 'volume'], 'updateRoom');
     const updated = {};
     if ('name' in changes) updated.name = numColumn(changes.name, { type: 'TEXT', notNull: true, name: 'rooms.name' });
     if ('volume' in changes) updated.volume = numColumn(changes.volume, { type: 'REAL', notNull: true, check: v => v > 0, name: 'rooms.volume' });
-    if ('vent' in changes) updated.vent = numColumn(changes.vent, { type: 'TEXT', notNull: true, check: v => VENTS.includes(v), name: 'rooms.vent' });
     Object.assign(room, updated);
     return roomToPublic(room);
   }
@@ -230,7 +227,7 @@ function openFakeDb(options) {
     return settingsVersionToPublic(row);
   }
 
-  const READING_KEYS = ['room_id', 't', 'T', 'RH', 'CO2', 't_out', 'rh_out', 'ac_mode', 'ac_setpoint', 'fog', 'fan', 'lights', 'circ', 'power_w', 'kwh'];
+  const READING_KEYS = ['room_id', 't', 'T', 'RH', 'CO2', 't_out', 'rh_out', 'ac_mode', 'ac_setpoint', 'fog', 'air', 'lights', 'circ', 'power_w', 'kwh'];
 
   function insertReading(roomId, reading) {
     assertOpen();
@@ -248,11 +245,11 @@ function openFakeDb(options) {
     const kwh = numColumn(reading.kwh, { type: 'REAL', notNull: false, name: 'readings.kwh' });
     const ac_mode = numColumn(reading.ac_mode, { type: 'TEXT', notNull: true, check: v => AC_MODES.includes(v), name: 'readings.ac_mode' });
     const fog = numColumn(reading.fog, { type: 'INTEGER', notNull: true, check: v => v >= 0 && v <= 3, name: 'readings.fog' });
-    const fan = numColumn(reading.fan, { type: 'INTEGER', notNull: true, check: v => v >= 0 && v <= 3, name: 'readings.fan' });
+    const air = numColumn(reading.air, { type: 'INTEGER', boolInt: true, notNull: true, check: v => v === 0 || v === 1, name: 'readings.air' });
     const lights = numColumn(reading.lights, { type: 'INTEGER', boolInt: true, notNull: true, check: v => v === 0 || v === 1, name: 'readings.lights' });
     const circ = numColumn(reading.circ, { type: 'INTEGER', boolInt: true, notNull: true, check: v => v === 0 || v === 1, name: 'readings.circ' });
     readings.push({
-      room_id: roomId, t, T, RH, CO2, t_out, rh_out, ac_mode, ac_setpoint, fog, fan, lights, circ, power_w, kwh,
+      room_id: roomId, t, T, RH, CO2, t_out, rh_out, ac_mode, ac_setpoint, fog, air, lights, circ, power_w, kwh,
       _seq: readingSeq++,
     });
     return undefined;
@@ -281,7 +278,7 @@ function openFakeDb(options) {
         room_id: group[0].room_id, t: b,
         T: mean('T'), RH: mean('RH'), CO2: mean('CO2'), t_out: mean('t_out'), rh_out: mean('rh_out'),
         ac_mode: last.ac_mode, ac_setpoint: mean('ac_setpoint'),
-        fog: meanAll('fog'), fan: meanAll('fan'), lights: meanAll('lights'), circ: meanAll('circ'),
+        fog: meanAll('fog'), air: meanAll('air'), lights: meanAll('lights'), circ: meanAll('circ'),
         power_w: mean('power_w'), kwh: last.kwh,
       };
     });
@@ -527,7 +524,7 @@ function openFakeDb(options) {
 
   return {
     path: ':memory:',
-    version: 1,
+    version: 2,
     close,
     createRoom, listRooms, getRoom, updateRoom, archiveRoom,
     saveSettings, currentSettings, settingsHistory, getSettingsVersion,

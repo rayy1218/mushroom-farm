@@ -10,7 +10,7 @@ class RoomError extends Error {
   }
 }
 
-const DEMO_ROOM = Object.freeze({ name: 'Room 1', volume: 60, vent: 'supply' });
+const DEMO_ROOM = Object.freeze({ name: 'Room 1', volume: 60 });
 const FIRST_NOTE = 'Created';
 
 function isPlainObject(v) {

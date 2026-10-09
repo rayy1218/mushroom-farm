@@ -110,7 +110,38 @@ CREATE TABLE controller_state (
 ) STRICT;
 `;
 
-const UPGRADES = [{ version: 1, sql: SCHEMA_V1 }];
+// Schema version 2 (C9 section 6.2, verbatim): the reading key fan (0-3) becomes air (0/1); rooms.vent is dropped.
+const SCHEMA_V2_AIR = `
+CREATE TABLE readings_new (
+  room_id     INTEGER NOT NULL REFERENCES rooms (id),
+  t           INTEGER NOT NULL,
+  temp        REAL,
+  RH          REAL,
+  CO2         REAL,
+  t_out       REAL,
+  rh_out      REAL,
+  ac_mode     TEXT    NOT NULL CHECK (ac_mode IN ('off', 'cool', 'heat', 'dry', 'fan')),
+  ac_setpoint REAL,
+  fog         INTEGER NOT NULL CHECK (fog BETWEEN 0 AND 3),
+  air         INTEGER NOT NULL CHECK (air IN (0, 1)),
+  lights      INTEGER NOT NULL CHECK (lights IN (0, 1)),
+  circ        INTEGER NOT NULL CHECK (circ IN (0, 1)),
+  power_w     REAL,
+  kwh         REAL
+) STRICT;
+INSERT INTO readings_new (room_id, t, temp, RH, CO2, t_out, rh_out, ac_mode, ac_setpoint, fog, air, lights, circ, power_w, kwh)
+  SELECT room_id, t, temp, RH, CO2, t_out, rh_out, ac_mode, ac_setpoint, fog, CASE WHEN fan > 0 THEN 1 ELSE 0 END, lights, circ, power_w, kwh FROM readings;
+DROP TABLE readings;
+ALTER TABLE readings_new RENAME TO readings;
+CREATE INDEX readings_room_t ON readings (room_id, t);
+ALTER TABLE rooms DROP COLUMN vent;
+`;
+
+// Released upgrades are never edited; a new one is appended (C1 section 3).
+const UPGRADES = [
+  { version: 1, sql: SCHEMA_V1 },
+  { version: 2, sql: SCHEMA_V2_AIR },
+];
 
 // --- Section 4 binding helper: every bound value goes through this. ---
 function val(x) {
@@ -224,11 +255,10 @@ function buildDb(conn, dbPath, version, now) {
   // Rooms (section 6.4)
   const getRoomStmt = conn.prepare('SELECT * FROM rooms WHERE id = :id');
   const insertRoomStmt = conn.prepare(
-    'INSERT INTO rooms (name, volume, vent, adapter, created_at) VALUES (:name, :volume, :vent, :adapter, :created_at)'
+    'INSERT INTO rooms (name, volume, adapter, created_at) VALUES (:name, :volume, :adapter, :created_at)'
   );
   const updateNameStmt = conn.prepare('UPDATE rooms SET name = :v WHERE id = :id');
   const updateVolumeStmt = conn.prepare('UPDATE rooms SET volume = :v WHERE id = :id');
-  const updateVentStmt = conn.prepare('UPDATE rooms SET vent = :v WHERE id = :id');
   const archiveRoomStmt = conn.prepare('UPDATE rooms SET archived_at = :at WHERE id = :id AND archived_at IS NULL');
   const listRoomsActiveStmt = conn.prepare('SELECT * FROM rooms WHERE archived_at IS NULL ORDER BY id');
   const listRoomsAllStmt = conn.prepare('SELECT * FROM rooms ORDER BY id');
@@ -248,14 +278,14 @@ function buildDb(conn, dbPath, version, now) {
 
   function createRoom(room) {
     live();
-    fields('createRoom', room, ['name', 'volume', 'vent', 'adapter', 'settings', 'note', 'at']);
+    fields('createRoom', room, ['name', 'volume', 'adapter', 'settings', 'note', 'at']);
     const r = room || {};
     const adapter = r.adapter === undefined ? 'sim' : r.adapter;
     const note = r.note === undefined ? 'Created' : r.note;
     const at = r.at === undefined ? now() : r.at;
     return tx(() => {
       const info = insertRoomStmt.run({
-        name: val(r.name), volume: val(r.volume), vent: val(r.vent), adapter: val(adapter), created_at: val(at),
+        name: val(r.name), volume: val(r.volume), adapter: val(adapter), created_at: val(at),
       });
       const id = info.lastInsertRowid;
       insertSettingsStmt.run({ room_id: id, saved_at: val(at), settings: jsonVal(r.settings), note: val(note) });
@@ -266,7 +296,7 @@ function buildDb(conn, dbPath, version, now) {
   function updateRoom(id, changes) {
     live();
     roomCheck(id);
-    fields('updateRoom', changes, ['name', 'volume', 'vent']);
+    fields('updateRoom', changes, ['name', 'volume']);
     const c = changes || {};
     // All or nothing (C1 section 1 "Validation"): a value that breaks one field's
     // rule must leave every field as it was, even though each field is its own
@@ -274,7 +304,6 @@ function buildDb(conn, dbPath, version, now) {
     return tx(() => {
       if ('name' in c) updateNameStmt.run({ v: val(c.name), id });
       if ('volume' in c) updateVolumeStmt.run({ v: val(c.volume), id });
-      if ('vent' in c) updateVentStmt.run({ v: val(c.vent), id });
       return plain(getRoomStmt.get({ id }));
     });
   }
@@ -335,12 +364,12 @@ function buildDb(conn, dbPath, version, now) {
   }
 
   // Readings (section 6.6)
-  const READING_KEYS = ['room_id', 't', 'T', 'RH', 'CO2', 't_out', 'rh_out', 'ac_mode', 'ac_setpoint', 'fog', 'fan', 'lights', 'circ', 'power_w', 'kwh'];
+  const READING_KEYS = ['room_id', 't', 'T', 'RH', 'CO2', 't_out', 'rh_out', 'ac_mode', 'ac_setpoint', 'fog', 'air', 'lights', 'circ', 'power_w', 'kwh'];
   const insertReadingStmt = conn.prepare(
-    'INSERT INTO readings (room_id, t, temp, RH, CO2, t_out, rh_out, ac_mode, ac_setpoint, fog, fan, lights, circ, power_w, kwh) ' +
-    'VALUES (:room_id, :t, :temp, :RH, :CO2, :t_out, :rh_out, :ac_mode, :ac_setpoint, :fog, :fan, :lights, :circ, :power_w, :kwh)'
+    'INSERT INTO readings (room_id, t, temp, RH, CO2, t_out, rh_out, ac_mode, ac_setpoint, fog, air, lights, circ, power_w, kwh) ' +
+    'VALUES (:room_id, :t, :temp, :RH, :CO2, :t_out, :rh_out, :ac_mode, :ac_setpoint, :fog, :air, :lights, :circ, :power_w, :kwh)'
   );
-  const RAW_READINGS_COLS = 'room_id, t, temp AS T, RH, CO2, t_out, rh_out, ac_mode, ac_setpoint, fog, fan, lights, circ, power_w, kwh';
+  const RAW_READINGS_COLS = 'room_id, t, temp AS T, RH, CO2, t_out, rh_out, ac_mode, ac_setpoint, fog, air, lights, circ, power_w, kwh';
   const rawReadingsStmt = conn.prepare(
     `SELECT ${RAW_READINGS_COLS} FROM readings WHERE room_id = ? AND t >= ? AND t <= ? ORDER BY readings.t, readings.rowid`
   );
@@ -348,12 +377,12 @@ function buildDb(conn, dbPath, version, now) {
     `SELECT ${RAW_READINGS_COLS} FROM readings WHERE room_id = ? ORDER BY readings.t DESC, readings.rowid DESC LIMIT 1`
   );
   const bucketReadingsStmt = conn.prepare(`
-    SELECT room_id, b AS t, T, RH, CO2, t_out, rh_out, ac_mode, ac_setpoint, fog, fan, lights, circ, power_w, kwh
+    SELECT room_id, b AS t, T, RH, CO2, t_out, rh_out, ac_mode, ac_setpoint, fog, air, lights, circ, power_w, kwh
     FROM (
       SELECT room_id,
              (t / CAST(:step AS INTEGER)) * CAST(:step AS INTEGER) AS b,
              AVG(temp) AS T, AVG(RH) AS RH, AVG(CO2) AS CO2, AVG(t_out) AS t_out, AVG(rh_out) AS rh_out,
-             AVG(ac_setpoint) AS ac_setpoint, AVG(fog) AS fog, AVG(fan) AS fan,
+             AVG(ac_setpoint) AS ac_setpoint, AVG(fog) AS fog, AVG(air) AS air,
              AVG(lights) AS lights, AVG(circ) AS circ, AVG(power_w) AS power_w,
              MAX(t) AS t_last, ac_mode, kwh
       FROM readings
@@ -372,7 +401,7 @@ function buildDb(conn, dbPath, version, now) {
     insertReadingStmt.run({
       room_id: roomId, t: val(r.t), temp: val(r.T), RH: val(r.RH), CO2: val(r.CO2),
       t_out: val(r.t_out), rh_out: val(r.rh_out), ac_mode: val(r.ac_mode), ac_setpoint: val(r.ac_setpoint),
-      fog: val(r.fog), fan: val(r.fan), lights: val(r.lights), circ: val(r.circ), power_w: val(r.power_w), kwh: val(r.kwh),
+      fog: val(r.fog), air: val(r.air), lights: val(r.lights), circ: val(r.circ), power_w: val(r.power_w), kwh: val(r.kwh),
     });
     return undefined;
   }
