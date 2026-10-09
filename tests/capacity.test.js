@@ -424,8 +424,10 @@ test('sim: an old snapshot (fan level, fan meters) is upgraded', () => {
 test('sim: a smaller pair runs longer to move the same air', () => {
   const runS = airM3h => {
     const sim = airRoom({ airM3h });
-    // fans on until the room is back to 700 ppm
-    while (sim.view().zones.hi.C > 700 || sim.view().zones.lo.C > 700) sim.step(1, CMD(true));
+    // fans on until the room is back to 700 ppm (at most 6 h)
+    const high = () => sim.view().zones.hi.C > 700 || sim.view().zones.lo.C > 700;
+    for (let s = 0; s < 6 * 3600 && high(); s++) sim.step(1, CMD(true));
+    assert.ok(!high(), 'the room reached 700 ppm');
     return sim.snapshot().runS.air;
   };
   assert.ok(runS(900) > runS(1800));
