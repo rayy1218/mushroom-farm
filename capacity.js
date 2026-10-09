@@ -119,7 +119,7 @@
   //   and the coil's water removal (at most latentMax of its output) is lost for cooling: S / (1 - latentMax).
   // Each day's worst hour is left out: the pass rule allows 5 % of the day out of band.
   // Outdoor air: the purges bring in, on average, the air that carries the blocks' CO2 out at the middle of the
-  // purge band (n·c / dC). The air exchange limit: the most blocks whose purge still reaches the stop level
+  // purge band (n·c / dC), never less than the wall leakage (the fans are off most of the time). The air exchange limit: the most blocks whose purge still reaches the stop level
   // within the time cap.
   function balance(room, mix, tg, region = 'my-lowland') {
     if (!DESIGN_DAYS[region]) throw new Error(`Unknown region: ${region}`);

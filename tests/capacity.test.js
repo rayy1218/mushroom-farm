@@ -93,7 +93,7 @@ test('balance: the leakage is a floor of the outdoor air; it does not change the
   const a = CAP.balance({ ...room, calib: cal }, mix, tg);
   assert.deepEqual(CAP.balance({ ...room, calib: { ...cal, infAch: 2 } }, mix, tg), a, 'a floor below the blocks\' air changes nothing');
   assert.deepEqual(CAP.balance({ ...room, calib: cal, vent: 'exhaust' }, mix, tg), a);
-  // 10 air changes an hour (600 m³/h) is above the air the blocks need up to about 1500 blocks: the AC carries it
+  // 10 air changes an hour (600 m³/h) is above the air the blocks need up to about 5000 blocks (n = 600 × 380 / 45): the AC carries it
   const leaky = CAP.balance({ ...room, calib: { ...cal, infAch: 10 } }, mix, tg);
   assert.equal(leaky.air, a.air);
   assert.ok(leaky.ac < a.ac / 2, `${leaky.ac} vs ${a.ac}`);
@@ -167,8 +167,10 @@ test('trial: the room size of the air exchange reaches the simulation', () => {
   const mix = [{ crop: 'oyster', blocks: 2000 }], tg = CAP.commonTargets(mix);
   const base = CAP.trial(room, mix, tg, 2000);
   assert.deepEqual(CAP.trial({ ...room, airM3h: 1800 }, mix, tg, 2000), base, 'no size is the default 1800 m³/h');
-  // a smaller pair moves less air for each hour it runs, and uses less energy over the day
-  assert.ok(CAP.trial({ ...room, airM3h: 900 }, mix, tg, 2000).kwhDay < base.kwhDay);
+  const small = CAP.trial({ ...room, airM3h: 900 }, mix, tg, 2000);
+  assert.notDeepEqual(small, base);
+  // energy per m³ moved is the same for any size, so the day's energy hardly changes
+  assert.ok(Math.abs(small.kwhDay - base.kwhDay) / base.kwhDay < 0.1, `${small.kwhDay} vs ${base.kwhDay}`);
   assert.deepEqual(CAP.trial({ ...room, airM3h: 20000 }, mix, tg, 2000), CAP.trial({ ...room, airM3h: 10000 }, mix, tg, 2000), 'held to 10000');
 });
 
@@ -417,4 +419,14 @@ test('sim: an old snapshot (fan level, fan meters) is upgraded', () => {
   old.act.fanLevel = 0;
   assert.equal(SIM.create(sim.env, old).snapshot().act.air, false);
   assert.deepEqual(SIM.create(sim.env, sim.snapshot()).snapshot(), sim.snapshot(), 'a new snapshot is unchanged');
+});
+
+test('sim: a smaller pair runs longer to move the same air', () => {
+  const runS = airM3h => {
+    const sim = airRoom({ airM3h });
+    // fans on until the room is back to 700 ppm
+    while (sim.view().zones.hi.C > 700 || sim.view().zones.lo.C > 700) sim.step(1, CMD(true));
+    return sim.snapshot().runS.air;
+  };
+  assert.ok(runS(900) > runS(1800));
 });
