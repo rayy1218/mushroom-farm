@@ -783,6 +783,93 @@ async function withReplaced(obj, method, impl, fn) {
   }
 }
 
+const READING_KEYS = ['room_id', 't', 'T', 'RH', 'CO2', 't_out', 'rh_out', 'ac_mode', 'ac_setpoint', 'fog', 'air', 'lights', 'circ', 'power_w', 'kwh', 'ac_fan', 'stage', 'core'];
+
+describe('revision 8 and 9 shapes: readings, rooms, calibrations (C3 3.1, 3.2, 6.8, 6.13)', () => {
+  let ctx;
+  test.before(async () => { ctx = startApi(); await ctx.ready; });
+  test.after(() => ctx.stop());
+  const post = (u, body) => fetch(u, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+
+  test('readings: 18 keys in order, air and no fan (C3 3.2)', async () => {
+    const id = seedRoom(ctx.db, 'K1');
+    ctx.db.insertReading(id, { ...reading(NOW), ac_fan: 'auto', stage: 'fruiting', core: 19.1 });
+    const rows = await (await fetch(`${ctx.url}/api/rooms/${id}/readings`)).json();
+    assert.equal(rows.length, 1);
+    assert.deepStrictEqual(Object.keys(rows[0]), READING_KEYS);
+    assert.equal(rows[0].air, 1);
+    assert.equal('fan' in rows[0], false);
+    assert.equal(rows[0].stage, 'fruiting');
+  });
+
+  test('rooms: no vent; vent gives Invalid room (C3 3.1, 7.2)', async () => {
+    const id = seedRoom(ctx.db, 'V1');
+    const list = await (await fetch(`${ctx.url}/api/rooms`)).json();
+    for (const room of list) assert.equal('vent' in room, false);
+    const before = ctx.rooms.calls.length;
+    const r1 = await post(`${ctx.url}/api/rooms`, { name: 'A', volume: 60, vent: 'supply' });
+    assert.equal(r1.status, 400);
+    const b1 = await r1.json();
+    assert.equal(b1.error, 'Invalid room');
+    assert.ok(b1.details.includes('vent: unknown field'));
+    const r2 = await fetch(`${ctx.url}/api/rooms/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ vent: 'supply' }) });
+    assert.equal(r2.status, 400);
+    const b2 = await r2.json();
+    assert.equal(b2.error, 'Invalid room');
+    assert.ok(b2.details.includes('vent: unknown field'));
+    assert.equal(ctx.rooms.calls.length, before);
+  });
+
+  test('rooms: live relays flush, blocks and air (C3 3.1)', async () => {
+    const id = seedRoom(ctx.db, 'L1');
+    const find = async () => (await (await fetch(`${ctx.url}/api/rooms`)).json()).find(r => r.id === id);
+    const first = await find();
+    assert.equal(first.live.flush, null);
+    assert.equal(first.live.blocks, null);
+    assert.equal(first.live.air, null);
+    const air = { on: true, state: 'purge', reason: 'co2', delayed: false, timed: true, manual: false, manualOn: false, nextPurgeS: null, purgeS: 40, why: 'x', today: { purges: 3, avgS: 60, capped: 0 } };
+    ctx.rooms.setLive(id, { flush: 2, blocks: 500, air });
+    const live = (await find()).live;
+    assert.equal(live.flush, 2);
+    assert.equal(live.blocks, 500);
+    assert.deepStrictEqual(live.air, air);
+  });
+
+  test('readings range: step 3600 over 400 days, step 600 over 40 days (C3 6.8)', async () => {
+    const id = seedRoom(ctx.db, 'G1');
+    const day = 86400;
+    const q = (days, step) => fetch(`${ctx.url}/api/rooms/${id}/readings?from=${NOW - days * day}&to=${NOW}&step=${step}`);
+    assert.equal((await q(400, 3600)).status, 200);
+    const r = await q(40, 600);
+    assert.equal(r.status, 400);
+    assert.equal((await r.json()).error, 'Invalid query');
+    assert.equal((await q(1300, 3600)).status, 200);
+    assert.equal((await q(1301, 3600)).status, 400);
+    assert.equal((await q(1301, 86400)).status, 400);
+    assert.equal((await q(31, 3599)).status, 200);
+    assert.equal((await q(32, 3599)).status, 400);
+  });
+
+  test('POST /calibrations: source, log_from, log_to, equipment (C3 6.13)', async () => {
+    const id = seedRoom(ctx.db, 'Q1');
+    const base = { ua: 92, inf_ach: 0.3, moist_buffer: 3, co2_per_block: 41, rmse_t: 0.2, rmse_rh: 1, rmse_co2: 10, log_rows: 100 };
+    const r1 = await post(`${ctx.url}/api/rooms/${id}/calibrations`, { ...base, source: 'history' });
+    assert.equal(r1.status, 400);
+    assert.equal((await r1.json()).error, 'Invalid calibration');
+    assert.equal(ctx.db.listCalibrations(id).length, 0);
+    const eq = { ac_hp: 2.5, ac_units: 1, fog_lph: 3, air_m3h: 1800, walls: null, roof: null, height: 3 };
+    const r2 = await post(`${ctx.url}/api/rooms/${id}/calibrations`, { ...base, source: 'history', log_from: NOW - 5000, log_to: NOW - 100, equipment: eq });
+    assert.equal(r2.status, 201);
+    const rows = await (await fetch(`${ctx.url}/api/rooms/${id}/calibrations`)).json();
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].source, 'history');
+    assert.equal(rows[0].log_from, NOW - 5000);
+    assert.equal(rows[0].log_to, NOW - 100);
+    assert.deepStrictEqual(rows[0].equipment, eq);
+    assert.equal(rows[0].equipment.air_m3h, 1800);
+  });
+});
+
 describe('error mapping and the database-error stop (4.4)', () => {
   let ctx, id;
   test.before(async () => { ctx = startApi(); await ctx.ready; id = seedRoom(ctx.db, 'E1'); });

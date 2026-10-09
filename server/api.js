@@ -257,9 +257,12 @@ function createApi(opts) {
     if (from > to) throw new HttpError(400, 'Invalid query', ['from: must be at most to']);
     if (step !== undefined && step > 86400) throw new HttpError(400, 'Invalid query', ['step: must be at most 86400']);
     const range = to - from;
-    if (range > 2678400) throw new HttpError(400, 'Invalid query', ['from: range must be at most 2678400 seconds']);
-    if ((step === undefined || step === 0) && range > 604800) {
-      throw new HttpError(400, 'Invalid query', ['from: range must be at most 604800 seconds without step']);
+    if (step === undefined || step === 0) {
+      if (range > 604800) throw new HttpError(400, 'Invalid query', ['from: range must be at most 604800 seconds without step']);
+    } else if (step >= 3600) {
+      if (range > 112320000) throw new HttpError(400, 'Invalid query', ['from: range must be at most 112320000 seconds with a step of 3600 or more']);
+    } else if (range > 2678400) {
+      throw new HttpError(400, 'Invalid query', ['from: range must be at most 2678400 seconds with a step under 3600']);
     }
     const rows = db.queryReadings(id, { from, to, step: step || null });
     sendJson(res, 200, rows);
