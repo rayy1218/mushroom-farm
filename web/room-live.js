@@ -108,11 +108,39 @@ function programText(live) {
   return `Running now: ${crop} · ${stage}` + (live.flush != null ? ` · flush ${live.flush}` : '');
 }
 
+function commandFromReading(r) {
+  if (!r) return null;
+  return {
+    ac: r.ac_mode !== 'off' ? { power: true, mode: r.ac_mode, setpoint: r.ac_setpoint } : { power: false },
+    hu: { level: r.fog }, air: { on: r.air === 1 }, lights: { on: r.lights === 1 }, circ: { on: r.circ === 1 },
+  };
+}
+
+function alarmTexts(a, clock) {
+  const state = (a.cleared_at === null ? 'Active' : `Cleared ${clock.stamp(a.cleared_at)}`) + ' · ' + (a.acked_at === null ? 'not acknowledged' : 'acknowledged');
+  return { main: `${a.label} · since ${clock.stamp(a.raised_at)}`, state, canAck: a.acked_at === null };
+}
+
+function mergeEvent(events, ev) {
+  if (events.some(e => e.id === ev.id)) return events;
+  return [...events, ev].sort((a, b) => b.id - a.id);
+}
+
+function detailChanges(room, form) {
+  const out = {};
+  if (form.name.trim() !== room.name) out.name = form.name.trim();
+  if (Number(form.volume) !== room.volume) out.volume = Number(form.volume);
+  return out;
+}
+
+const countText = n => (n === 0 ? '' : `${n} unsaved change(s)`);
+const changeLines = changes => changes.map(c => `${c.label}: ${c.oldText} → ${c.newText}`);
+const versionText = (v, clock, current) => `${clock.stamp(v.saved_at)} · ${v.note ?? '—'}` + (current ? ' · current' : '');
+
 const helpers = { airLive, airSub, windowQuery, gapFor, reconnectQuery, chartTargets, toChartPoint, retarget, mergePoints,
-  readingTexts, machineLines, programText };
+  readingTexts, machineLines, programText, commandFromReading, alarmTexts, mergeEvent, detailChanges, countText, changeLines, versionText };
 const todo = name => () => { throw new Error(`${name} is not built yet`); };
-for (const n of ['mergeEvent', 'commandFromReading', 'alarmTexts', 'detailChanges',
-  'countText', 'changeLines', 'versionText', 'rebase']) helpers[n] = todo(n);
+helpers.rebase = todo('rebase');
 
 function mount() {}
 function unmount() {}

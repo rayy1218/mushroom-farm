@@ -130,3 +130,31 @@ test('LV8 reading, machine and program texts', () => {
   assert.equal(H.programText({ crop: 'oyster', stage: 'fruiting', flush: null }), 'Running now: Grey oyster · Fruiting');
   assert.equal(H.programText(null), ''); assert.equal(H.programText({ crop: null }), '');
 });
+
+test('LV9 command from a reading', () => {
+  assert.deepEqual(H.commandFromReading(READING), { ac: { power: true, mode: 'cool', setpoint: 17.5 }, hu: { level: 1 },
+    air: { on: false }, lights: { on: true }, circ: { on: false } });
+  assert.deepEqual(H.commandFromReading({ ...READING, air: 1 }).air, { on: true });
+  assert.deepEqual(H.commandFromReading({ ...READING, ac_mode: 'off' }).ac, { power: false });
+  assert.equal(H.commandFromReading(null), null);
+});
+
+test('LV10 alarm and event lists', () => {
+  const a = { alarm_key: 'rh_high', label: 'High humidity', level: 'warning', raised_at: 1791450012, cleared_at: null, acked_at: null };
+  assert.deepEqual(H.alarmTexts(a, clock), { main: 'High humidity · since 2026-10-08 17:00:12', state: 'Active · not acknowledged', canAck: true });
+  const b = H.alarmTexts({ ...a, cleared_at: 1791450600, acked_at: 1791450700 }, clock);
+  assert.equal(b.state, 'Cleared 2026-10-08 17:10:00 · acknowledged'); assert.equal(b.canAck, false);
+  const ids = x => x.map(e => e.id);
+  assert.deepEqual(ids(H.mergeEvent([{ id: 5 }, { id: 3 }], { id: 6 })), [6, 5, 3]);
+  assert.deepEqual(ids(H.mergeEvent([{ id: 5 }, { id: 3 }], { id: 5 })), [5, 3]);
+  assert.deepEqual(ids(H.mergeEvent([{ id: 5 }, { id: 3 }], { id: 4 })), [5, 4, 3]);
+});
+
+test('LV11 forms and change lines', () => {
+  assert.deepEqual(H.detailChanges({ name: 'Room 1', volume: 60 }, { name: ' Room 1 ', volume: '60' }), {});
+  assert.deepEqual(H.detailChanges({ name: 'Room 1', volume: 60 }, { name: 'Shed A', volume: '80' }), { name: 'Shed A', volume: 80 });
+  assert.equal(H.countText(0), ''); assert.equal(H.countText(1), '1 unsaved change(s)');
+  assert.equal(H.versionText({ id: 14, saved_at: 1791450100, note: 'Lower RH' }, clock, true), '2026-10-08 17:01:40 · Lower RH · current');
+  assert.equal(H.versionText({ id: 14, saved_at: 1791450100, note: null }, clock, false), '2026-10-08 17:01:40 · —');
+  assert.deepEqual(H.changeLines(globalThis.FarmSettingsPanel.diffSettings(S, { ...S, spT: 20 })), ['Temperature target: 25 °C → 20 °C']);
+});
