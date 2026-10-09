@@ -60,8 +60,8 @@ Line numbers below are approximate: the drawing branch was rebased onto `master`
 | C9 | 4.2 | `act.air` (boolean); meter key `air` in `power`, `kwh`, `runS` of `view()` and the reading; `view().airM3h` = airflow now |
 | C9 | 5.1 | `cmd.air.on`; `manual.air = { auto, on }`; device key `air` in `why`, `hold` |
 | C9 | 5.2 | Settings keys, ranges, removed keys, `RAMP_KEYS` |
-| C9 | 5.4 | Prepare acts only when the gap between purges is ≥ 2 × `prepareLeadS`, with offsets of 0.5 × band: only the "Fixed values" text of the rules card names these numbers |
-| C9 | 5.3 | `st.air = { state, since, purgeStart, capRun, prepT, prepRH, nextPurgeS, delayed, timed, sizeText }`; states `idle`, `prepare`, `purge`, `after` |
+| C9 | 5.4 | No Prepare step (owner decision): the AC and fogger keep their targets through a purge. `nextPurgeS` is shown to the farmer and used for nothing else. |
+| C9 | 5.3 | `st.air = { state, since, purgeStart, capRun, nextPurgeS, delayed, timed, sizeText }`; states `idle`, `purge`, `after` |
 | C9 | 5.7 | `ctl.purges() → { cur, events, hours }`; `cur` = the running run in the event shape (`end: null`, `co2End: null`, `capped: false`), `null` when off; event `{ start, end, reason, co2Start, co2End, m3, capped }`; hour `{ h, runS, starts, m3, cappedN, fogLS, acHighS, acLowS }`; `st.stats = { airOnS, purges, purgeS, longestPurgeS, cappedPurges, delayedS, fogStarts, acCmds }` (`purges`, `purgeS`, `longestPurgeS`, `cappedPurges`: CO₂ purges only; `airOnS`: every run); `reason` values; `ctl.state.airReason` = the reason of the run now (it follows a change, `cur.reason` keeps the first); `status('CO2')` = `{ serious, ◆, Safety run }` during a safety run |
 | C9 | 7, 7.1 | Your section |
 | C9 | 8 | Capacity room `{ name, volume, airM3h?, calib }`; balance `limit` ∈ `'air' \| 'ac' \| 'fog'` |
@@ -116,7 +116,7 @@ Expected failures on `master` between the lead's merges (not on your branch). Th
 | 1 | Node hook for `airText` | `module.exports = { airText }` behind a `typeof module` guard at the end of `web/simulator.js`; no browser global, no new `FarmBench` member. If another stream later adds its own Node export to this file, the lead joins them into one object. |
 | 2 | Safety run in the CO₂ readouts | Nothing to add: the drawing readout, the glance CO₂ row and the trend chip paint `status('CO2')` as they get it, and `styles.css` already has the `serious` rules for `.readout`, `.gl-row` and `.chip` |
 | 3 | Minutes and times; run reason | `<m>` = `max(1, round(seconds / 60))`. `<m:ss>` = `FarmUi.fmtMinSec` of whole seconds. A run's time = simulation time now − `cur.start`. The run's text follows `st.airReason` (C9 5.7: it follows a purge that turns into a safety run); `cur.reason` only when `airReason` is missing. |
-| 4 | Ladder chip of the `air` row | Purge: `info ▲ Purging`. Safety run: `serious ◆ Safety run` (as `status('CO2')`, C9 5.7). Other run: `info ●` + the status text (`Timed purge`, `Free cooling`, `Drying`, `Manual on`). Manual off: `none ○ Manual off`. Delayed: `info ❚❚ Delayed (RH)`. Prepare: `info ◷ Purge soon`. Else `none ○ Off`. |
+| 4 | Ladder chip of the `air` row | Purge: `info ▲ Purging`. Safety run: `serious ◆ Safety run` (as `status('CO2')`, C9 5.7). Other run: `info ●` + the status text (`Timed purge`, `Free cooling`, `Drying`, `Manual on`). Manual off: `none ○ Manual off`. Delayed: `info ❚❚ Delayed`. Else `none ○ Idle`. (C9 7: the chip shows the state: Idle, Purging, Delayed, Safety run.) |
 | 5 | Status card | No meter (C9 lists `airState`, `airPower`, `airWhy` only). Every faceplate tag gets the id `fp<Suffix>Tag`; `fpAirTag` is painted from `env.airM3h ?? PLANT.air.m3h`. The AC faceplate loses its setback suffix. |
 | 6 | Drawing texts | Per fan: tag, state (`mInState` / `mOutState`), label. The airflow lines `mInflow` / `mOutflow` go (the state text carries the airflow). |
 | 7 | Closed damper | `rect.damper` across each fan's opening; hidden by `.on > .damper` |
@@ -124,8 +124,8 @@ Expected failures on `master` between the lead's merges (not on your branch). Th
 | 9 | Texts that named the one fan | CO₂ trend subtitle `Purge <off>–<on> ppm · limit <lim>`; priority 1 label `Run the air exchange when CO₂ is ≥`; the "Fixed values" text; `wNote`; the CO₂-per-block measuring step; energy row, data table header, purge card texts (task 9) |
 | 10 | Rules-side counters | Spec 4.2: purges (per day), average and longest purge, purges stopped at the cap, run time, delay time; AC commands and fogger starts stay |
 | 11 | Purge record card | Keeps today's ids and classes (`exhChart`, `exhRows`, `exhEvents`, `.exhaust`, `exhKey`). Column Level goes; column Capped comes. The chart is `drawPurgeBars(host, hours, clock)` (C9 7); `nowH` is the last bucket's `h`. |
-| 12 | 24 h test | Variants: Your rules, No Prepare (`prepare: false`), No humidity priority (`rhLock: false`) |
-| 13 | Panel inputs | `rPurgeMax`, `rPrepareLead`: minutes, step 0.5, shown as `+(s / 60).toFixed(2)`. `rMinOff`: s, step 10. `rPrepareLeadRow` hidden when Prepare is off. |
+| 12 | 24 h test | Variants: Your rules, No humidity priority (`rhLock: false`) |
+| 13 | Panel inputs | `rPurgeMax`: minutes, step 0.5, shown as `+(s / 60).toFixed(2)`. `rMinOff`: s, step 10. |
 | 14 | `#inAirM3h` and `inAirSize` | `#inAirM3h` (bench): rounded, held in 50–10000, written to `env.airM3h` and `cfg.airM3h`, then `panel.set(cfg)`. In the Simulator, a panel change of `airM3h` (`inAirSize`) also sets `env.airM3h` and the bench field, so the simulated pair and the controller's size stay equal (as `sim-adapter.js` does for a live room, C9 6.3). No event. |
 | 15 | Capacity storage | A room keeps `airM3h` only within 50–10000. A saved room takes `env.airM3h` only when it is a number. A stored report whose balance `limit` is not a `LIMIT_WORD` key (old reports say `fan`) is dropped on load: the check runs again. |
 | 16 | `FIELDS` units | C9 7.1's Unit column is the `unit` of each row; `–` means no `unit` |
@@ -266,28 +266,28 @@ const SIM = globalThis.ClimateSim, CC = globalThis.ClimateController, RT = globa
 // base the controller still has the old shape.
 function stOf(air = {}, on = false, airReason = on ? 'purge' : null) {
   return {
-    air: { state: 'idle', since: null, purgeStart: null, capRun: 0, prepT: 0, prepRH: 0, nextPurgeS: null, delayed: false, timed: false, sizeText: null, ...air },
+    air: { state: 'idle', since: null, purgeStart: null, capRun: 0, nextPurgeS: null, delayed: false, timed: false, sizeText: null, ...air },
     cmd: { air: { on } },
     airReason,
   };
 }
 const rules = { fanOn: 900, fanOff: 700, purgeMaxS: 180 };
 const run = (reason, start) => ({ start, end: null, reason, co2Start: 950, co2End: null, m3: 0, capped: false });
-const OFF = { lvl: 'none', icon: '○', text: 'Off' };
+const IDLE = { lvl: 'none', icon: '○', text: 'Idle' };
 const MANUAL = { auto: false, on: false };
 
 test('airText: idle, with and without a predicted purge', () => {
-  assert.deepEqual(airText({ st: stOf(), cur: null, rules, t: 100 }), { state: 'Idle', glance: 'Idle', chip: OFF });
-  assert.deepEqual(airText({ st: stOf({ nextPurgeS: 600 }), cur: null, rules, t: 100 }), { state: 'Idle', glance: 'Next purge in about 10 min', chip: OFF });
-  assert.deepEqual(airText({ st: stOf({ state: 'after' }), cur: null, rules, t: 100 }), { state: 'Idle', glance: 'Idle', chip: OFF });
+  assert.deepEqual(airText({ st: stOf(), cur: null, rules, t: 100 }), { state: 'Idle', glance: 'Idle', chip: IDLE });
+  assert.deepEqual(airText({ st: stOf({ nextPurgeS: 600 }), cur: null, rules, t: 100 }),
+    { state: 'Idle · purge in about 10 min', glance: 'Next purge in about 10 min', chip: IDLE });
+  assert.deepEqual(airText({ st: stOf({ state: 'after' }), cur: null, rules, t: 100 }), { state: 'Idle', glance: 'Idle', chip: IDLE });
 });
 
-test('airText: prepare, rounded to whole minutes and at least 1', () => {
-  const soon = { lvl: 'info', icon: '◷', text: 'Purge soon' };
-  assert.deepEqual(airText({ st: stOf({ state: 'prepare', nextPurgeS: 150 }), cur: null, rules, t: 100 }),
-    { state: 'Prepare · purge in about 3 min', glance: 'Next purge in about 3 min', chip: soon });
-  assert.deepEqual(airText({ st: stOf({ state: 'prepare', nextPurgeS: 20 }), cur: null, rules, t: 100 }),
-    { state: 'Prepare · purge in about 1 min', glance: 'Next purge in about 1 min', chip: soon });
+test('airText: the next purge is rounded to whole minutes, at least 1', () => {
+  assert.deepEqual(airText({ st: stOf({ nextPurgeS: 150 }), cur: null, rules, t: 100 }),
+    { state: 'Idle · purge in about 3 min', glance: 'Next purge in about 3 min', chip: IDLE });
+  assert.deepEqual(airText({ st: stOf({ nextPurgeS: 20 }), cur: null, rules, t: 100 }),
+    { state: 'Idle · purge in about 1 min', glance: 'Next purge in about 1 min', chip: IDLE });
 });
 
 test('airText: a CO₂ purge shows its time and the cap', () => {
@@ -299,7 +299,7 @@ test('airText: a CO₂ purge shows its time and the cap', () => {
 
 test('airText: humidity first delays the purge', () => {
   assert.deepEqual(airText({ st: stOf({ delayed: true, nextPurgeS: 0 }), cur: null, rules, t: 100 }),
-    { state: 'Delayed (humidity first)', glance: 'Delayed (humidity first)', chip: { lvl: 'info', icon: '❚❚', text: 'Delayed (RH)' } });
+    { state: 'Delayed (humidity first)', glance: 'Delayed (humidity first)', chip: { lvl: 'info', icon: '❚❚', text: 'Delayed' } });
 });
 
 test('airText: Manual and Off', () => {
@@ -362,10 +362,11 @@ function airText({ st, cur, rules, manual = { auto: true, on: false }, t }) {
     return { state: RUN_TEXT[reason], glance: RUN_TEXT[reason], chip: { lvl: 'info', icon: '●', text: RUN_TEXT[reason] } };
   }
   if (manual.auto === false) return { state: 'Manual off', glance: 'Manual off', chip: { lvl: 'none', icon: '○', text: 'Manual off' } };
-  if (A.delayed) return { state: 'Delayed (humidity first)', glance: 'Delayed (humidity first)', chip: { lvl: 'info', icon: '❚❚', text: 'Delayed (RH)' } };
-  const glance = A.nextPurgeS > 0 ? `Next purge in about ${mins(A.nextPurgeS)} min` : 'Idle';
-  if (A.state === 'prepare') return { state: `Prepare · purge in about ${mins(A.nextPurgeS)} min`, glance, chip: { lvl: 'info', icon: '◷', text: 'Purge soon' } };
-  return { state: 'Idle', glance, chip: { lvl: 'none', icon: '○', text: 'Off' } };
+  if (A.delayed) return { state: 'Delayed (humidity first)', glance: 'Delayed (humidity first)', chip: { lvl: 'info', icon: '❚❚', text: 'Delayed' } };
+  const chip = { lvl: 'none', icon: '○', text: 'Idle' };
+  if (!(A.nextPurgeS > 0)) return { state: 'Idle', glance: 'Idle', chip };
+  const m = mins(A.nextPurgeS);
+  return { state: `Idle · purge in about ${m} min`, glance: `Next purge in about ${m} min`, chip };
 }
 ```
 
@@ -537,7 +538,7 @@ function c9Defaults() {
   for (const k of REMOVED_RULES) delete s.rules[k];
   delete s.protect.fanMinOn; delete s.protect.fanMinOff; delete s.manual.fan;
   s.airM3h ??= 1800;
-  s.rules.purgeMaxS ??= 180; s.rules.prepare ??= true; s.rules.prepareLeadS ??= 180; s.rules.minOffS ??= 60;
+  s.rules.purgeMaxS ??= 180; s.rules.minOffS ??= 60;
   s.manual.air ??= { auto: true, on: false };
   return s;
 }
@@ -547,14 +548,12 @@ const C9_FIELDS = [
   ['rules.fanOn', 'Purge starts at', 'ppm'],
   ['rules.fanOff', 'Purge stops at', 'ppm'],
   ['rules.purgeMaxS', 'Longest purge', 's'],
-  ['rules.prepare', 'Prepare before a purge', undefined],
-  ['rules.prepareLeadS', 'Prepare starts before the purge', 's'],
   ['rules.minOffS', 'Minimum off time', 's'],
   ['airM3h', 'Air exchange size', 'm³/h'],
   ['manual.air.auto', 'Air exchange', undefined],
   ['manual.air.on', 'Air exchange: manual output', undefined],
 ];
-const GONE = ['rules.rhAction', 'rules.airMode', 'rules.fanLevel', 'rules.acPurge', 'rules.acAction', 'rules.acSetbackC', 'rules.acOff', 'rules.acOn', 'manual.fan.auto', 'manual.fan.level'];
+const GONE = ['rules.prepare', 'rules.prepareLeadS', 'rules.rhAction', 'rules.airMode', 'rules.fanLevel', 'rules.acPurge', 'rules.acAction', 'rules.acSetbackC', 'rules.acOff', 'rules.acOn', 'manual.fan.auto', 'manual.fan.level'];
 ```
 
 In the test `formatValue rules`, replace the line `assert.equal(SP.formatValue('rules.fanLevel', 2), 'Medium');` with:
@@ -588,8 +587,8 @@ function assertLeaves(base) {
   }
 }
 
-test('FIELDS = C6 7.7 as changed by C9 7.1: 53 rows, leaves of the C9 settings', () => {
-  assert.equal(SP.FIELDS.length, 53);
+test('FIELDS = C6 7.7 as changed by C9 7.1: 51 rows, leaves of the C9 settings', () => {
+  assert.equal(SP.FIELDS.length, 51);
   assertLeaves(c9Defaults());
   for (const [path, label, unit] of C9_FIELDS) {
     const f = SP.FIELDS.find(x => x.path === path);
@@ -609,7 +608,8 @@ test('FIELDS against the real controller defaults (C9 5.2)', { skip: CTL_C9 ? fa
   const s = d();
   for (const k of REMOVED_RULES) assert.ok(!Object.hasOwn(s.rules, k), `rules.${k} is still a setting`);
   assert.ok(!Object.hasOwn(s.manual, 'fan'));
-  assert.deepEqual([s.airM3h, s.rules.purgeMaxS, s.rules.prepare, s.rules.prepareLeadS, s.rules.minOffS], [1800, 180, true, 180, 60]);
+  assert.deepEqual([s.airM3h, s.rules.purgeMaxS, s.rules.minOffS], [1800, 180, 60]);
+  assert.ok(!Object.hasOwn(s.rules, 'prepare') && !Object.hasOwn(s.rules, 'prepareLeadS'), 'no Prepare settings (C9 5.4)');
   assert.deepEqual(s.manual.air, { auto: true, on: false });
 });
 ```
@@ -619,17 +619,15 @@ test('FIELDS against the real controller defaults (C9 5.2)', { skip: CTL_C9 ? fa
 
 | Place | Change |
 |---|---|
-| Comment above `FIELDS` | `// The 53 field rows of C6 7.7 as changed by C9 7.1, in table order.` |
+| Comment above `FIELDS` | `// The 51 field rows of C6 7.7 as changed by C9 7.1, in table order.` |
 | After the `roomM3` row | Insert `{ path: 'airM3h', label: 'Air exchange size', unit: 'm³/h' },` |
-| The 10 rows from `rules.rhAction` through `rules.acOn` (lines ~49–58: `rhAction`, `fanOn`, `fanOff`, `airMode`, `fanLevel`, `acPurge`, `acAction`, `acSetbackC`, `acOff`, `acOn`) | Replace with the six rows below |
+| The 10 rows from `rules.rhAction` through `rules.acOn` (lines ~49–58: `rhAction`, `fanOn`, `fanOff`, `airMode`, `fanLevel`, `acPurge`, `acAction`, `acSetbackC`, `acOff`, `acOn`) | Replace with the four rows below |
 | Rows `manual.fan.auto`, `manual.fan.level` | Replace with the two rows below |
 
 ```js
   { path: 'rules.fanOn', label: 'Purge starts at', unit: 'ppm' },
   { path: 'rules.fanOff', label: 'Purge stops at', unit: 'ppm' },
   { path: 'rules.purgeMaxS', label: 'Longest purge', unit: 's' },
-  { path: 'rules.prepare', label: 'Prepare before a purge' },
-  { path: 'rules.prepareLeadS', label: 'Prepare starts before the purge', unit: 's' },
   { path: 'rules.minOffS', label: 'Minimum off time', unit: 's' },
 ```
 
@@ -638,7 +636,7 @@ test('FIELDS against the real controller defaults (C9 5.2)', { skip: CTL_C9 ? fa
   { path: 'manual.air.on', label: 'Air exchange: manual output' },
 ```
 
-Count after the edit: 56 − 10 + 6 (rules block) − 2 + 2 (manual rows) + 1 (`airM3h`) = 53.
+Count after the edit: 56 − 10 + 4 (rules block) − 2 + 2 (manual rows) + 1 (`airM3h`) = 51.
 - [ ] **Step 4:** `node --test tests/settings-diff.test.js` → `# fail 0`, `# skipped 1`. `npm test` → `# fail 0`.
 - [ ] **Step 5:** Commit:
 
@@ -698,15 +696,11 @@ const RULES_HTML = `
           <label class="num">Longest purge <input type="number" id="rPurgeMax" min="1" max="15" step="0.5"> min</label>
           <label class="num">Minimum off time <input type="number" id="rMinOff" min="30" max="600" step="10"> s</label>
         </div>
-        <div class="row">
-          <label class="chk"><input type="checkbox" id="rPrepare"> Prepare before a purge</label>
-          <label class="num" id="rPrepareLeadRow">from <input type="number" id="rPrepareLead" min="0" max="15" step="0.5"> min before</label>
-        </div>
-        <p class="hint">The intake fan and the exhaust fan run together. A purge stops at the stop level or at the longest purge. Prepare moves the AC and fogger targets to the side of their bands away from the purge's push.</p>
+        <p class="hint">The intake fan and the exhaust fan run together. A purge stops at the stop level or at the longest purge. The AC and the fogger keep their targets and bring the room back after it.</p>
       </fieldset>
       <details class="measure">
         <summary>Fixed values (not settings)</summary>
-        <p>Each air run lasts at least 30 s. After it, the fans stay off for the minimum off time. The CO₂ safety level ignores both. Prepare acts only when purges are at least twice the prepare time apart, and moves each target by half of its band; the alarms and the targets shown stay on the real targets. After 3 purges in a row that stop at the time cap, a warning gives the air exchange size the room needs. Humidity first acts only after the fogger is at its maximum for 5 min. Alarms need their condition for 5 min (critical alarms 60 s). Fogger: 1 min. AC: 2 min between commands. Fog cools first when the room is warm. The AC fan speed follows humidity. The circulation fan runs with the fog and 10 min of each 30 min. In spawn run, the AC also cools for the block core. Humidity control uses VPD. A failed sensor: the machines copy the same hour of an earlier day. A failed CO₂ sensor gives timed purges.</p>
+        <p>Each air run lasts at least 30 s. After it, the fans stay off for the minimum off time. The CO₂ safety level ignores both. After 3 purges in a row that stop at the time cap, a warning gives the air exchange size the room needs. Humidity first acts only after the fogger is at its maximum for 5 min. Alarms need their condition for 5 min (critical alarms 60 s). Fogger: 1 min. AC: 2 min between commands. Fog cools first when the room is warm. The AC fan speed follows humidity. The circulation fan runs with the fog and 10 min of each 30 min. In spawn run, the AC also cools for the block core. Humidity control uses VPD. A failed sensor: the machines copy the same hour of an earlier day. A failed CO₂ sensor gives timed purges.</p>
       </details>
     </div>
     <div data-slot="rules-side"></div>
@@ -734,11 +728,6 @@ const DEV_NAME = { ac: 'Air conditioner', hu: 'Fogger', air: 'Air exchange', lig
   $('#rPurgeMax').addEventListener('change', e => commit(() => {
     const R = settings.rules;
     R.purgeMaxS = Math.round(numIn($('#rPurgeMax'), R.purgeMaxS / 60, 1, 15) * 60);
-  }, e.target));
-  $('#rPrepare').addEventListener('change', e => commit(() => { settings.rules.prepare = e.target.checked; }, e.target));
-  $('#rPrepareLead').addEventListener('change', e => commit(() => {
-    const R = settings.rules;
-    R.prepareLeadS = Math.round(numIn($('#rPrepareLead'), R.prepareLeadS / 60, 0, 15) * 60);
   }, e.target));
   $('#rMinOff').addEventListener('change', e => commit(() => {
     const R = settings.rules;
@@ -778,8 +767,6 @@ with
     setVal($('#rFanOn'), R.fanOn); setVal($('#rFanOff'), R.fanOff);
     // Purge times: minutes on screen, seconds in the settings (C9 7).
     setVal($('#rPurgeMax'), +(R.purgeMaxS / 60).toFixed(2)); setVal($('#rMinOff'), R.minOffS);
-    setVal($('#rPrepare'), R.prepare); setVal($('#rPrepareLead'), +(R.prepareLeadS / 60).toFixed(2));
-    $('#rPrepareLeadRow').hidden = !R.prepare;
     $('#ruleRh').classList.toggle('off', !R.rhLock);
     $('#ruleSafe').classList.toggle('off', !R.co2Safety);
     for (const dev of ['ac', 'hu', 'air', 'lights', 'circ']) {
@@ -1172,7 +1159,6 @@ function renderTest() {
   const tariff = input.tariff;
   const variants = [
     ['Your rules', runTest({})],
-    ['No Prepare', runTest({ prepare: false })],
     ['No humidity priority', runTest({ rhLock: false })],
   ];
   const mine = variants[0][1];
@@ -1203,7 +1189,7 @@ function renderTest() {
 In `MARKUP` replace the paragraph inside `#estOut` with:
 
 ```html
-<p class="est-note">Run the test to compare three rule sets: your rules, no Prepare, and no humidity priority.</p>
+<p class="est-note">Run the test to compare two rule sets: your rules, and no humidity priority.</p>
 ```
 
 - [ ] **Step 5: Data table.** In `renderTable` replace `Math.round(p.fan)` with `Math.round(p.air)`. In `MARKUP` (the `#tableCard` header row) replace `<th>Fan W</th>` with `<th>Air exchange W</th>`.
@@ -1436,12 +1422,12 @@ The panel is built in a `div` on `#/rooms` with `c9()`, the default settings con
 | Check | Expected output |
 |---|---|
 | H1.0 prelude | `true` |
-| H1.1 rules card and Machines | `{"title":"Air exchange and CO₂","gone":[],"rh":"Delay purges that dry the room when humidity is low","vals":["900","700","3","3","60"],"prepare":true,"air":["Air exchange",true,false]}` |
+| H1.1 rules card and Machines | `{"title":"Air exchange and CO₂","gone":[],"rh":"Delay purges that dry the room when humidity is low","vals":["900","700","3","60"],"air":["Air exchange",true,false]}` |
 | H1.2 longest purge 2.5 min | `[[["rules.purgeMaxS",180,150,"Longest purge","150 s"]],"2.5"]` |
 | H1.3 longest purge 20 min | `[[["rules.purgeMaxS",150,900,"Longest purge","900 s"]],"15"]` |
-| H1.4 prepare lead 0 | `[[["rules.prepareLeadS",180,0,"Prepare starts before the purge","0 s"]],"0"]` |
-| H1.5 prepare off | `[[["rules.prepare",true,false,"Prepare before a purge","Off"]],true]` |
-| H1.6 minimum off 5 s | `[[["rules.minOffS",60,30,"Minimum off time","30 s"]],"30"]` |
+| H1.4 no Prepare in the rules card | `true` |
+| H1.5 minimum off 700 s | `[[["rules.minOffS",60,600,"Minimum off time","600 s"]],"600"]` |
+| H1.6 minimum off 5 s | `[[["rules.minOffS",600,30,"Minimum off time","30 s"]],"30"]` |
 | H1.7 start level 600 | `[[["rules.fanOn",900,600,"Purge starts at","600 ppm"],["rules.fanOff",700,550,"Purge stops at","550 ppm"]],"550"]` |
 | H1.7b air exchange size | `[[["airM3h",1800,10000,"Air exchange size","10000 m³/h"]],"10000"]` |
 | H1.8 bumpless to Manual | `[1,[["manual.air.auto",true,false,"Air exchange"],["manual.air.on",false,true,"Air exchange: manual output"]],false,true]` |
@@ -1460,11 +1446,11 @@ The panel is built in a `div` on `#/rooms` with `c9()`, the default settings con
 | shot sim-purge.png | `saved` |
 | H2.3 both fans spin | `[true,true,true]` |
 | H2.4 manual on | `[{"auto":false,"on":true},true,"manual","Manual on",true]` |
-| H2.5 prepare | `[true,"Prepare · purge in about <N> min","Next purge in about <N> min","Purge soon"]` with the same whole `<N>` from 1 to 3 |
+| H2.5 idle with the next purge | `[true,"Idle · purge in about <N> min","Next purge in about <N> min","Idle"]` with the same whole `<N>` ≥ 1 |
 | H2.6 cards | `h` `"Air exchange per hour"`; `runs` `true`; `cols` `7`; `aria` `"Air exchange run minutes per hour, last 24 hours. The table below has the values."`; `ladder` `["Purge"]`; `legend` `["Air conditioner","Fogger","Air exchange","Lights","Circulation"]`; `energy` `true`; `tableHead` `"Air exchange W"`; `duty` = [a whole number ≥ 1, `m:ss`, `m:ss`, a whole number]; `glance` matches `Purges <n> · average <m:ss>` |
 | H2.7 bench size | `["1800",900,900,"SF-203 + EF-206 · 900 m³/h","900 m³/h, 72 W while on","50","10000","900"]` |
 | H2.7b panel size | `[1200,1200,"1200","SF-203 + EF-206 · 1,200 m³/h"]` |
-| H2.8 24 h test | `[["Rules","Total kWh/day","RM/day","AC kWh","Fogger kWh","Air exchange kWh","AC compressor starts","AC commands","Air exchange run (h)","Purges","Capped purges","Purges delayed by RH (h)","Temp in band","RH in band","RH low alarm","CO₂ over limit"],["Your rules","No Prepare","No humidity priority"]]` |
+| H2.8 24 h test | `[["Rules","Total kWh/day","RM/day","AC kWh","Fogger kWh","Air exchange kWh","AC compressor starts","AC commands","Air exchange run (h)","Purges","Capped purges","Purges delayed by RH (h)","Temp in band","RH in band","RH low alarm","CO₂ over limit"],["Your rules","No humidity priority"]]` |
 | H2.9 capacity | `[false,1200,true,false,true]` |
 | H2.10 calibration help | `["Make the simulation agree with your room. The log must have the machine states at 1 min or less.",true,false]` |
 | H2.11 back to the Simulator | `[true,true]` |
@@ -1521,7 +1507,7 @@ All questions are answered: 1–10 in C9 commit `70be7a0`, 11 and 12 in `1c9b9b9
 | 4 | 7.1 | `manual.air.auto` label | Answered: `Air exchange` (task 5, H1.8) |
 | 5 | 5.7 | Shape of `ctl.purges().cur` | Answered: the event shape with `end: null`, `co2End: null`, `capped: false` while running; `null` when off |
 | 6 | 7, Charts | Name and arguments of the purge bars; ladder chips | Answered: `drawPurgeBars`, no volume (arguments: question 11); chips `{ air }`; nothing else in C5 is amended |
-| 7 | 7, Charts | Prepare point on the ladder | Answered: one row; Prepare only as the chip text |
+| 7 | 7, Charts | Prepare point on the ladder | Answered: one row; its chip shows the state (Prepare is dropped, C9 5.4) |
 | 8 | 10 (C5 7.9, 7.10) | Room page command and fixture room | Answered: `air: { on: r.air === 1 }`; fixture room without `vent`. Nothing to build here (`web/rooms.js` is a stub until the wave 2 Rooms UI). |
 | 9 | 5.2, 7 | No panel control for `airM3h` | Answered: installer number input `inAirSize` "Air exchange size" (m³/h, 50–10000) next to Room volume (task 6, H1.7b; Simulator sync in task 10, H2.7b) |
 | 10 | 5.7 | Scope of `purges`, `purgeS`, `longestPurgeS`, `cappedPurges` | Answered: CO₂ purges only; `airOnS` counts every air run |
@@ -1541,19 +1527,19 @@ All questions are answered: 1–10 in C9 commit `70be7a0`, 11 and 12 in `1c9b9b9
 | 7 Room drawing | Closed damper bar when off | 7 |
 | 7 Room drawing | Text `Purge <m3h> m³/h` / `Off · dampers closed` | 7 |
 | 7 Status card | `faceplate('air', 'Air exchange', 'SF-203 + EF-206 · <m3h> m³/h', …)`; ids `airState`, `airPower`, `airWhy` | 8 (tag value: 10) |
-| 7 Status card | The ten state texts (with `Manual off`) | 3 (`airText`), 8 |
+| 7 Status card | The ten state texts (with `Idle · purge in about <m> min` and `Manual off`) | 3 (`airText`), 8 |
 | 7 Glance panel | Row `Air exchange`: next purge, purging, delayed, the status text of other runs, `Manual off`, idle | 3, 8 |
 | 5.7 | `st.airReason` drives the run text; `status('CO2')` safety chip shows as given | 3; 8 (no extra code, decision 2) |
-| 5.4 | Prepare numbers in the "Fixed values" text (gap ≥ 2 × lead, half the band) | 6 |
+| 5.4 | No Prepare: no inputs, no FIELDS rows, no text; the next purge only in the idle and glance texts | 3, 5, 6 |
 | 7 Glance panel | Per day `Purges <n> · average <m:ss>` | 8 |
 | 7 Settings panel | Heading `Air exchange and CO₂`; priority 2 text | 6 |
-| 7 Settings panel | Fieldset `CO₂ purge`: `rFanOn`, `rFanOff`, `rPurgeMax` (min, 1–15, s), `rPrepare`, `rPrepareLead` (min, 0–15), `rMinOff` (s, 30–600) | 6 |
+| 7 Settings panel | Fieldset `CO₂ purge`: `rFanOn`, `rFanOff`, `rPurgeMax` (min, 1–15, s), `rMinOff` (s, 30–600) | 6 |
 | 7 Settings panel | Removed `rRhAction`, `rAirMode`, `rFanLevel`, the AC-during-purge fieldset | 6 |
 | 7 Settings panel | Machines device `air` with `airOnChk` | 6 |
 | 7 Settings panel | Installer input `inAirSize` next to Room volume, writing `airM3h` | 6 (Simulator sync: 10) |
 | 7 Settings panel, 7.1 | `FIELDS` labels and units | 5 |
 | 7 Charts | Power key `air`, legend "Air exchange" | 4 |
-| 7 Charts | `LADDER_ROWS` one row `air` / `Purge` | 4 (chip: 8) |
+| 7 Charts | `LADDER_ROWS` one row `air` / `Purge`; the chip shows the state | 4 (chip: 3, 8) |
 | 7 Charts | `drawPurgeBars`: no volume, aria text and title | 4 (caller: 9) |
 | 7 Test bench | `#inVent` removed; `#inAirM3h` 50–10000 sets `env.airM3h` and `cfg.airM3h` | 10 |
 | 7 Test bench | Plant facts `Air exchange: <m3h> m³/h, <W> W while on` | 10 |
@@ -1636,7 +1622,7 @@ const PRELUDE = `(() => {
     for (const k of ['airMode', 'baseFan', 'fanLevel', 'fogBoost', 'rhAction', 'acPurge', 'acAction', 'acSetbackC', 'acOff', 'acOn', 'maxSetback', 'guard']) delete s.rules[k];
     delete s.protect.fanMinOn; delete s.protect.fanMinOff; delete s.manual.fan;
     s.airM3h ??= 1800;
-    s.rules.purgeMaxS ??= 180; s.rules.prepare ??= true; s.rules.prepareLeadS ??= 180; s.rules.minOffS ??= 60;
+    s.rules.purgeMaxS ??= 180; s.rules.minOffS ??= 60;
     s.manual.air ??= { auto: true, on: false };
     return s;
   };
@@ -1663,17 +1649,16 @@ module.exports = [
     mk(); const g = id => document.getElementById(id);
     return {
       title: document.querySelector('#hRules').textContent,
-      gone: ['rRhAction', 'rAirMode', 'rFanLevel', 'ruleAc', 'rAcPurge', 'rAcAction', 'rSetbackC', 'rAcOff', 'rAcOn', 'fanLevelSel', 'fanManual'].filter(id => g(id)),
+      gone: ['rRhAction', 'rAirMode', 'rFanLevel', 'ruleAc', 'rAcPurge', 'rAcAction', 'rSetbackC', 'rAcOff', 'rAcOn', 'fanLevelSel', 'fanManual', 'rPrepare', 'rPrepareLead'].filter(id => g(id)),
       rh: g('rRhLock').parentElement.textContent.trim(),
-      vals: ['rFanOn', 'rFanOff', 'rPurgeMax', 'rPrepareLead', 'rMinOff'].map(id => g(id).value),
-      prepare: g('rPrepare').checked,
+      vals: ['rFanOn', 'rFanOff', 'rPurgeMax', 'rMinOff'].map(id => g(id).value),
       air: [document.querySelector('[data-dev="air"]').closest('.device').querySelector('h3').textContent, g('airManual').disabled, g('airOnChk').checked],
     };
   })()`],
   ['H1.2 longest purge 2.5 min', `[chg('rPurgeMax', '2.5'), ${val('rPurgeMax')}]`],
   ['H1.3 longest purge 20 min', `[chg('rPurgeMax', '20'), ${val('rPurgeMax')}]`],
-  ['H1.4 prepare lead 0', `[chg('rPrepareLead', '0'), ${val('rPrepareLead')}]`],
-  ['H1.5 prepare off', `[chg('rPrepare', false), document.getElementById('rPrepareLeadRow').hidden]`],
+  ['H1.4 no Prepare in the rules card', `!/Prepare/.test(document.querySelector('.card.rules').textContent)`],
+  ['H1.5 minimum off 700 s', `[chg('rMinOff', '700'), ${val('rMinOff')}]`],
   ['H1.6 minimum off 5 s', `[chg('rMinOff', '5'), ${val('rMinOff')}]`],
   ['H1.7 start level 600', `[chg('rFanOn', '600'), ${val('rFanOff')}]`],
   ['H1.7b air exchange size', `[chg('inAirSize', '20000'), ${val('inAirSize')}]`],
@@ -1752,10 +1737,10 @@ module.exports = [
     document.querySelector('[data-dev="air"] [data-auto="1"]').click();
     return out;
   })()`],
-  ['H2.5 prepare', `(async () => {
+  ['H2.5 idle with the next purge', `(async () => {
     const c = __climate; let seen = false;
     FarmBench.env.blocks = 2000;
-    for (let i = 0; i < 7200 && !seen; i++) { c.tick(); seen = c.ctl.state.air.state === 'prepare'; }
+    for (let i = 0; i < 7200 && !seen; i++) { c.tick(); seen = !c.ctl.state.cmd.air.on && c.ctl.state.air.state === 'idle' && c.ctl.state.air.nextPurgeS > 60; }
     ${wait(400)};
     return [seen, document.getElementById('airState').textContent, document.getElementById('glAirNow').textContent,
       document.querySelector('.ladder .chip span:last-child').textContent];
