@@ -1272,6 +1272,115 @@ describe('simulation runs 6.20-6.24', () => {
   });
 });
 
+describe('equipment 6.25-6.26', () => {
+  let ctx;
+  test.before(async () => { ctx = startApi(); await ctx.ready; });
+  test.after(() => ctx.stop());
+
+  const body = (over = {}) => ({ ac_hp: 2.5, ac_units: 1, fog_lph: 3, air_m3h: 1800, walls: 'pu50', roof: 'pu50', height: 3, ...over });
+  const applyCalls = r => r.calls.filter(x => x.method === 'applySettings');
+
+  test('equipment: GET null then the saved row; PUT stores (C3 6.25, 6.26)', async () => {
+    const id = seedRoom(ctx.db, 'E1');
+    const url = `${ctx.url}/api/rooms/${id}/equipment`;
+    const r0 = await fetch(url);
+    assert.equal(r0.status, 200);
+    assert.equal(await r0.json(), null);
+    const r1 = await send(url, 'PUT', body());
+    assert.equal(r1.status, 200);
+    const eq = await r1.json();
+    assert.deepStrictEqual(Object.keys(eq), ['room_id', 'saved_at', 'ac_hp', 'ac_units', 'fog_lph', 'air_m3h', 'walls', 'roof', 'height']);
+    assert.equal(eq.room_id, id);
+    assert.equal(eq.saved_at, NOW);
+    assert.equal(eq.ac_hp, 2.5);
+    const again = await (await fetch(url)).json();
+    assert.deepStrictEqual(again, eq);
+    const replaced = await (await send(url, 'PUT', body({ ac_hp: 3, walls: null, roof: null }))).json();
+    assert.equal(replaced.ac_hp, 3);
+    assert.equal(replaced.walls, null);
+  });
+
+  test('equipment: an air_m3h that differs syncs the settings airM3h (lead decision 35)', async () => {
+    const id = seedRoom(ctx.db, 'E2');
+    const before = applyCalls(ctx.rooms).length;
+    assert.equal(ctx.db.currentSettings(id).settings.airM3h, 1800);
+    const r = await send(`${ctx.url}/api/rooms/${id}/equipment`, 'PUT', body({ air_m3h: 900 }));
+    assert.equal(r.status, 200);
+    const eq = await r.json();
+    assert.equal(eq.air_m3h, 900);
+    assert.equal('settings' in eq, false);
+    const calls = applyCalls(ctx.rooms);
+    assert.equal(calls.length, before + 1);
+    const call = calls.at(-1);
+    assert.deepStrictEqual(call.args, [id, { airM3h: 900 }, 'Air exchange size from Your machines']);
+    assert.equal(call.args.length, 3);
+    const settings = await (await fetch(`${ctx.url}/api/rooms/${id}/settings`)).json();
+    assert.equal(settings.airM3h, 900);
+  });
+
+  test('equipment: the same air_m3h makes no applySettings call', async () => {
+    const id = seedRoom(ctx.db, 'E3');
+    await send(`${ctx.url}/api/rooms/${id}/equipment`, 'PUT', body({ air_m3h: 900 }));
+    const calls = applyCalls(ctx.rooms).length;
+    const versions = ctx.db.settingsHistory(id).length;
+    const r = await send(`${ctx.url}/api/rooms/${id}/equipment`, 'PUT', body({ air_m3h: 900, ac_hp: 3 }));
+    assert.equal(r.status, 200);
+    assert.equal(applyCalls(ctx.rooms).length, calls);
+    assert.equal(ctx.db.settingsHistory(id).length, versions);
+    // the default size equals the default settings' airM3h: no call either
+    const id2 = seedRoom(ctx.db, 'E3b');
+    const c2 = applyCalls(ctx.rooms).length;
+    await send(`${ctx.url}/api/rooms/${id2}/equipment`, 'PUT', body({ air_m3h: 1800 }));
+    assert.equal(applyCalls(ctx.rooms).length, c2);
+  });
+
+  test('equipment: 400 Invalid equipment, nothing stored (C3 7.7)', async () => {
+    const id = seedRoom(ctx.db, 'E4');
+    const url = `${ctx.url}/api/rooms/${id}/equipment`;
+    const calls = applyCalls(ctx.rooms).length;
+    const { air_m3h, ...rest } = body();
+    const r = await send(url, 'PUT', { ...rest, fan_m3h: 900 });
+    assert.equal(r.status, 400);
+    const b = await r.json();
+    assert.equal(b.error, 'Invalid equipment');
+    assert.ok(b.details.includes('air_m3h: missing'));
+    assert.ok(b.details.includes('fan_m3h: unknown field'));
+    assert.equal(await (await fetch(url)).json(), null);
+    for (const bad of [body({ ac_hp: 1.25 }), [], null, JSON.stringify('x'), body({ walls: 'pu50', roof: null })]) {
+      const rb = await send(url, 'PUT', bad);
+      assert.equal(rb.status, 400, JSON.stringify(bad));
+      assert.equal((await rb.json()).error, 'Invalid equipment');
+      assert.equal(await (await fetch(url)).json(), null);
+    }
+    const rj = await send(url, 'PUT', '{nope');
+    assert.equal(rj.status, 400);
+    assert.equal((await rj.json()).error, 'Body is not valid JSON');
+    assert.equal(applyCalls(ctx.rooms).length, calls);
+  });
+
+  test('equipment: applySettings bad_input is a 500 Server fault (C3 4.1)', async () => {
+    const id = seedRoom(ctx.db, 'E5');
+    await withReplaced(ctx.rooms, 'applySettings', () => { throw new RoomError('bad_input', 'Bad input', ['x']); }, async () => {
+      const r = await send(`${ctx.url}/api/rooms/${id}/equipment`, 'PUT', body({ air_m3h: 900 }));
+      assert.equal(r.status, 500);
+      assert.equal((await r.json()).error, 'Server fault');
+      assert.equal(ctx.fatals.length, 0);
+    });
+  });
+
+  test('equipment: 404 for an unknown or archived room', async () => {
+    const archived = seedRoom(ctx.db, 'E6');
+    ctx.rooms.archive(archived);
+    for (const x of [archived, 99999]) {
+      for (const [method, b] of [['GET'], ['PUT', body()]]) {
+        const r = await fetch(`${ctx.url}/api/rooms/${x}/equipment`, { method, ...(b ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) } : {}) });
+        assert.equal(r.status, 404);
+        assert.equal((await r.json()).error, 'Unknown room');
+      }
+    }
+  });
+});
+
 function freePort() {
   return new Promise((resolve, reject) => {
     const srv = http.createServer();
