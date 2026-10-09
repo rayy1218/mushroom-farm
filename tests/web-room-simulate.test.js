@@ -25,3 +25,57 @@ test('SM1 registration', () => {
   assert.equal(typeof globalThis.document, 'undefined');
   assert.doesNotThrow(() => tab.unmount());
 });
+
+test('SM2 mix', () => {
+  assert.deepEqual(H.toCapacityMix(DRAFT), [{ crop: 'oyster', blocks: 1200 }, { crop: 'pink', blocks: 300, co2PerBlock: 55 }]);
+  assert.deepEqual(H.toMixRows(H.toCapacityMix(DRAFT)), DRAFT);
+  const a = H.toCapacityMix(DRAFT);
+  assert.equal(H.sameMix(a, H.toCapacityMix(DRAFT)), true);
+  assert.equal(H.sameMix(a, a.slice(0, 1)), false);
+  assert.equal(H.sameMix(a, [{ ...a[0], crop: 'pink' }, a[1]]), false);
+  assert.equal(H.sameMix(a, [{ ...a[0], blocks: 1201 }, a[1]]), false);
+  assert.equal(H.sameMix(a, [a[0], { ...a[1], co2PerBlock: 56 }]), false);
+  assert.equal(H.sameMix([{ crop: 'oyster', blocks: 1 }], [{ crop: 'oyster', blocks: 1 }]), true);
+  assert.equal(H.sameMix([{ crop: 'oyster', blocks: 1 }], [{ crop: 'oyster', blocks: 1, co2PerBlock: 55 }]), false);
+  assert.equal(H.sameMix(null, a), false);
+  assert.equal(H.sameMix(a, undefined), false);
+  assert.equal(H.sameMix({}, {}), false);
+  const before = JSON.stringify(DRAFT);
+  H.toCapacityMix(DRAFT);
+  assert.equal(JSON.stringify(DRAFT), before);
+});
+
+test('SM3 appliedCalib', () => {
+  assert.equal(H.appliedCalib([{ ...CAL, applied: false }]), null);
+  assert.equal(H.appliedCalib([]), null);
+  assert.deepEqual(H.appliedCalib([CAL]), { ua: 92.4, infAch: 0.31, moistBuffer: 3.6, co2PerBlock: 41, rmse: { T: 0.21, RH: null, CO2: 38 },
+    date: '2026-10-01T04:00:00.000Z' });
+});
+
+test('SM4 runInputs without machines', () => {
+  const r = H.runInputs('cycle', data());
+  assert.deepEqual(r.room, { name: 'Room 1', volume: 60, airM3h: 900, calib: H.appliedCalib([CAL]) });
+  assert.equal('plant' in r.room, false);
+  assert.deepEqual(r.mix, H.toCapacityMix(DRAFT));
+  assert.equal(r.settings, S);
+  assert.equal(r.region, 'my-lowland');
+  assert.equal(r.tariff, 0.57);
+  assert.deepEqual(r.inputs, { mix: DRAFT, settings: S, region: 'my-lowland', tariff: 0.57, volume: 60,
+    calibration: { id: 3, ua: 92.4, inf_ach: 0.31, moist_buffer: 3.6, co2_per_block: 41 }, empty_below: null, equipment: null });
+  assert.deepEqual(Object.keys(r.inputs.calibration), ['id', 'ua', 'inf_ach', 'moist_buffer', 'co2_per_block']);
+  assert.equal(H.runInputs('capacity', data()).inputs.empty_below, 50);
+  const none = H.runInputs('cycle', data({ calibrations: [{ ...CAL, applied: false }] }));
+  assert.equal(none.room.calib, null);
+  assert.equal(none.inputs.calibration, null);
+});
+
+test('SM5 runInputs with machines', t => {
+  const real = ClimateEquipment.plantOf;
+  ClimateEquipment.plantOf = (eq, room) => ({ ac: { capW: 1 }, args: [eq, room] });
+  t.after(() => { ClimateEquipment.plantOf = real; });
+  const r = H.runInputs('cycle', data({ equipment: EQUIP }));
+  assert.equal(r.room.plant.args[0], EQUIP);
+  assert.deepEqual(r.room.plant.args[1], { volume: 60, calib: H.appliedCalib([CAL]) });
+  assert.deepEqual(r.inputs.equipment, { ac_hp: 2.5, ac_units: 1, fog_lph: 3, air_m3h: 1200, walls: 'pu50', roof: 'pu50', height: 3 });
+  assert.equal(r.room.airM3h, 900);
+});
