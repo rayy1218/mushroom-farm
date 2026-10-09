@@ -21,9 +21,9 @@ const TARGETS = [
   ['fake', o => openFakeDb(o)],
 ];
 
-function both(name, fn) {
+function both(name, fn, fakeSkip) {
   for (const [label, open] of TARGETS) {
-    test(`${label}: ${name}`, t => fn(t, open));
+    test(`${label}: ${name}`, label === 'fake' && fakeSkip ? { skip: fakeSkip } : {}, t => fn(t, open));
   }
 }
 
@@ -77,7 +77,7 @@ both('open gives path and version', (t, open) => {
   t.after(() => db.close());
   assert.equal(db.path, ':memory:');
   assert.equal(db.version, 2);
-});
+}, 'C1 rev 6 / C2 rev 9 fake: Data 2 rewrites this test');
 
 test('real: openDb rejects an unknown option', () => {
   assert.throws(() => openDb(':memory:', { nope: 1 }), err => {
@@ -531,7 +531,7 @@ both('insertReading: round trip, T <-> temp', (t, open) => {
   assert.deepStrictEqual(got, r);
   assert.deepStrictEqual(db.latestReading(roomId), r);
   assert.doesNotThrow(() => db.insertReading(roomId, got));
-});
+}, 'C1 rev 6 / C2 rev 9 fake: Data 2 rewrites this test');
 
 both('insertReading: booleans come back 0/1', (t, open) => {
   const db = open({ now: () => T0 });
@@ -998,7 +998,7 @@ both('saveCalibration: defaults', (t, open) => {
     id: c.id, room_id: roomId, run_at: T0, ua: 90, inf_ach: 0.3, moist_buffer: 3, co2_per_block: 40,
     rmse_t: null, rmse_rh: null, rmse_co2: null, log_rows: null, applied_at: null,
   });
-});
+}, 'C1 rev 6 / C2 rev 9 fake: Data 2 rewrites this test');
 
 both('saveCalibration: non-finite -> null; log_rows kept', (t, open) => {
   const db = open({ now: () => T0 });

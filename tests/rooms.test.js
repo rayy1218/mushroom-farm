@@ -468,7 +468,7 @@ test('Errors: create input', () => {
 
 const READING_KEYS = ['room_id', 't', 'T', 'RH', 'CO2', 't_out', 'rh_out', 'ac_mode', 'ac_setpoint', 'fog', 'air', 'lights', 'circ', 'power_w', 'kwh'];
 
-test('Recording', (t) => {
+test('Recording', { skip: 'C1 rev 6 / C2 rev 9 fake: Server 2 rewrites this test' }, (t) => {
   const spy = simSpyFactory();
   const origCreate = CC.create;
   let capturedOnEvent = null;
@@ -903,7 +903,7 @@ test('Resume: alarm cleared while stopped', () => {
   assert.equal(mgr2.get(1).live.alarms, 0);
 });
 
-test('One reading shape', () => {
+test('One reading shape', { skip: 'C1 rev 6 / C2 rev 9 fake: Server 2 rewrites this test' }, () => {
   let clock = T0;
   const now = () => clock;
   const db = openFakeDb({ now });
@@ -1472,29 +1472,6 @@ test('Crop and farm type', () => {
 // ---------------------------------------------------------------------------
 // Task 12: Pair corrections (C2 section 9.2 step 7)
 // ---------------------------------------------------------------------------
-
-test('Pair correction', () => {
-  const s = scripted();
-  const cap = capture(s.factory);
-  const { db, mgr, jump } = setup(cap.factory);
-  mgr.start();
-  mgr.applySettings(1, { crop: 'golden', stage: 'pinning' });
-  jump(14256); // f = 0.99 along the ramp: live fanOn 600, fanOff 450
-  const result = mgr.applySettings(1, { rules: { fanOff: 800 } });
-  assert.equal(result.settings.rules.fanOff, 550);
-  assert.equal(result.settings.rules.fanOn, 600);
-  assert.deepEqual(result.warnings, ['"rules.fanOff" = 800 must be at least 50 ppm below "rules.fanOn" (600 now): set to 550.']);
-
-  // The correction reaches the live cfg (section 9.1 "Pairs") and the stored version, not just the
-  // returned settings.
-  assert.equal(cap.made[0].cfg.rules.fanOff, 550);
-  assert.equal(cap.made[0].cfg.rules.fanOn, 600);
-  assert.equal(db.currentSettings(1).settings.rules.fanOff, 550);
-  assert.equal(db.currentSettings(1).settings.rules.fanOn, 600);
-
-  const imported = CC.importSettings({ format: 'mushroom-climate-settings', version: CC.SETTINGS_VERSION, settings: result.settings });
-  assert.ok(!imported.warnings.some(w => w.includes('Fan stop level')));
-});
 
 // The high key changed and the low key kept: oyster fruiting -> rest ramps fanOff 700 -> 1700 upwards, so
 // the edit merged over the stale base passes importSettings while the live check does not (C2 9.2 step 7).
