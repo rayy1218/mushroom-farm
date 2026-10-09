@@ -544,6 +544,9 @@ div.room-air { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: basel
 .run-list, .mix-table, .fit-table { width: 100%; border-collapse: collapse; }
 .run-list th, .run-list td, .mix-table th, .mix-table td, .fit-table th, .fit-table td { padding: 4px 8px; border-bottom: 1px solid var(--border); text-align: left; }
 .mix-table input[type="number"] { width: 90px; }
+#roomTab .mix-table, #roomTab .run-list { display: block; max-width: 100%; overflow-x: auto; }
+#roomTab #smValues { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
+.room-live .rv { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; }
 .result-card { grid-column: 1 / -1; display: grid; gap: 8px; overflow-x: auto; }
 .pvr-card { grid-column: 1 / -1; display: grid; gap: 8px; }
 .equip-form { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px 12px; }
