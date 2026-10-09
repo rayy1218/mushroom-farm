@@ -573,6 +573,7 @@ function openFakeDb(options) {
     assertOpen();
     requireRoom(roomId);
     checkFields(run, ['kind', 'inputs', 'result', 'note', 'real_start', 'at'], 'saveSimulationRun');
+    run = orEmpty(run); // a null run is {} (as the real db), so the NOT NULL rules answer
     const result = isObject(run.result) ? run.result : {};
     const totals = isObject(result.totals) ? result.totals : null;
     let verdictIn;
