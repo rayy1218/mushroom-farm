@@ -195,7 +195,7 @@ function openFakeHarvest(db, options) {
     requireBatch(batchId);
     options = orEmpty(options);
     checkFields(options, ['from'], 'listCrates');
-    const from = options.from === undefined ? null : options.from;
+    const from = options.from === undefined || (typeof options.from === 'number' && !Number.isFinite(options.from)) ? null : options.from;
     return crates
       .filter(c => c.batch_id === batchId && (from === null || c.t >= from))
       .sort((a, b) => a.t - b.t || a.id - b.id)

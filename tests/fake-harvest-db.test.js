@@ -293,3 +293,66 @@ test('getCrate and undoCrate: undoing twice keeps the first time', () => {
   const e = h.addCrate(b.id, { kg: 1 });
   assert.equal(errcode(() => h.undoCrate(e.id, 1.5)), 3091);
 });
+
+// ---------- Lead decision 70: details both stores share ----------
+
+test('decision 70: placeBatch checks the batch before the room', () => {
+  const { h } = fresh();
+  assert.throws(() => h.placeBatch(99, 99, T0), { name: 'NotFoundError', what: 'batch', id: 99 });
+});
+
+test('decision 70: an explicit undefined in updateBatch sets the column to NULL', () => {
+  const { h } = fresh();
+  const b = h.createBatch({ ...GOOD, strain: 'LM-01', notes: 'n' });
+  const u = h.updateBatch(b.id, { strain: undefined, notes: undefined });
+  assert.equal(u.strain, null);
+  assert.equal(u.notes, null);
+  assert.equal(h.updateBatch(b.id, { crop: 'oyster' }).strain, null);
+  assert.equal(errcode(() => h.updateBatch(b.id, { crop: undefined })), 1299);
+});
+
+test('decision 70: clearBatch(id, null) un-clears a cleared batch', () => {
+  const { h, room } = fresh();
+  const b = h.createBatch(GOOD);
+  h.placeBatch(b.id, room.id, T0 + DAY);
+  h.clearBatch(b.id, T0 + 2 * DAY);
+  const u = h.clearBatch(b.id, null);
+  assert.equal(u.cleared_at, null);
+  assert.equal(h.listBatches({ state: 'placed' }).length, 1);
+  assert.equal(h.getBatch(b.id).cleared_at, null);
+});
+
+test('decision 70: undoCrate(id, null) changes nothing', () => {
+  const { h } = fresh();
+  const b = h.createBatch(GOOD);
+  const c = h.addCrate(b.id, { kg: 2, t: T0 });
+  assert.deepStrictEqual(h.undoCrate(c.id, null), c);
+  assert.equal(h.getCrate(c.id).deleted_at, null);
+  // and it did not use up the undo: a later undo still records its time
+  assert.equal(h.undoCrate(c.id, T0 + 9).deleted_at, T0 + 9);
+});
+
+test('decision 70: listCrates does not validate from', () => {
+  const { h } = fresh();
+  const b = h.createBatch(GOOD);
+  h.addCrate(b.id, { kg: 1, t: T0 });
+  h.addCrate(b.id, { kg: 1, t: T0 + 10 });
+  assert.equal(h.listCrates(b.id, { from: 5.5 + T0 }).length, 1);
+  assert.equal(h.listCrates(b.id, { from: -1 }).length, 2);
+  assert.equal(h.listCrates(b.id, { from: Infinity }).length, 2); // non-finite is NULL, as bound by the real store
+  assert.doesNotThrow(() => h.listCrates(b.id, { from: 'abc' }));
+});
+
+test('decision 70: listBatches({ room_id }) filters in every state', () => {
+  const { h, room, room2 } = fresh();
+  const a = h.createBatch(GOOD);
+  const b = h.createBatch(GOOD);
+  h.placeBatch(a.id, room.id, T0);
+  h.placeBatch(b.id, room.id, T0);
+  h.clearBatch(b.id, T0 + DAY);
+  h.createBatch(GOOD); // received, no room
+  assert.deepStrictEqual(h.listBatches({ room_id: room.id }).map(x => x.id), [2, 1]);
+  assert.deepStrictEqual(h.listBatches({ room_id: room.id, state: 'cleared' }).map(x => x.id), [2]);
+  assert.deepStrictEqual(h.listBatches({ room_id: room.id, state: 'received' }), []);
+  assert.deepStrictEqual(h.listBatches({ room_id: room2.id }), []);
+});
