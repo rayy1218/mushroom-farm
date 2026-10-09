@@ -257,6 +257,10 @@ const TARGETS_HTML = `
       <input type="number" id="inRoomM3" min="1" max="100000" step="1" value="60"> <span>m³</span>
     </div>
     <div class="rule-extra">
+      <label class="num" for="inAirSize">Air exchange size</label>
+      <input type="number" id="inAirSize" min="50" max="10000" step="50" value="1800"> <span>m³/h</span>
+    </div>
+    <div class="rule-extra">
       <span class="num">Sensor corrections</span>
       <label class="num">T <input type="number" id="oT" step="0.1"> °C</label>
       <label class="num">RH <input type="number" id="oRH" step="0.5"> %</label>
@@ -268,26 +272,24 @@ const TARGETS_HTML = `
 const RULES_HTML = `
 <section class="card rules" aria-labelledby="hRules">
   <div class="rules-head">
-    <h2 id="hRules">Fan and CO₂</h2>
+    <h2 id="hRules">Air exchange and CO₂</h2>
     <span class="tag inst">For machines in Auto. Priority 1 acts before priority 2, and so on.</span>
   </div>
   <div class="rules-grid">
     <div class="inst">
       <fieldset class="rule rule-first" style="--key:var(--critical)" id="ruleSafe">
         <legend>Priority 1 · CO₂ safety level</legend>
-        <label class="chk"><input type="checkbox" id="rCo2Safety"> Run the fan when CO₂ is ≥ <input type="number" id="rCo2SafeAt" min="500" max="20000" step="50"> ppm</label>
-        <p class="hint">Above the humidity rule. A critical alarm comes on.</p>
+        <label class="chk"><input type="checkbox" id="rCo2Safety"> Run the air exchange when CO₂ is ≥ <input type="number" id="rCo2SafeAt" min="500" max="20000" step="50"> ppm</label>
+        <p class="hint">Above the humidity rule and the time cap. A critical alarm comes on.</p>
       </fieldset>
       <fieldset class="rule rule-first" style="--key:var(--ink)" id="ruleRh">
         <legend>Priority 2 · Humidity first</legend>
-        <label class="chk"><input type="checkbox" id="rRhLock"> Act on the exhaust fan when humidity is low</label>
+        <label class="chk"><input type="checkbox" id="rRhLock"> Delay purges that dry the room when humidity is low</label>
         <div class="row">
           <label class="num">At ≤ target − <input type="number" id="rRhStop" min="1" max="20" step="1"> % <span class="tag" id="rRhStopAbs"></span></label>
           <label class="num">Until ≥ target − <input type="number" id="rRhResume" min="0" max="19" step="1"> % <span class="tag" id="rRhResumeAbs"></span></label>
         </div>
-        <div class="row">
-          <label class="num">Action <select id="rRhAction"><option value="stop">Stop the fan</option><option value="low">Reduce the fan to Low</option></select></label>
-        </div>
+        <p class="hint">A purge is never delayed past the CO₂ limit.</p>
       </fieldset>
       <fieldset class="rule" style="--key:var(--s-air)">
         <legend>Priority 3 · CO₂ purge</legend>
@@ -296,27 +298,14 @@ const RULES_HTML = `
           <label class="num">Stop at ≤ <input type="number" id="rFanOff" min="400" max="19950" step="50"> ppm</label>
         </div>
         <div class="row">
-          <label class="num">Fresh air <select id="rAirMode"><option value="steady">Steady (base level + steps)</option><option value="purge">Purge (on and off)</option></select></label>
-          <label class="num">Purge level <select id="rFanLevel"><option value="1">Low</option><option value="2">Medium</option><option value="3">High</option></select></label>
+          <label class="num">Longest purge <input type="number" id="rPurgeMax" min="1" max="15" step="0.5"> min</label>
+          <label class="num">Minimum off time <input type="number" id="rMinOff" min="30" max="600" step="10"> s</label>
         </div>
-        <p class="hint">Steady: the fan runs at Low in pinning and fruiting and goes one level up or down each 5 min with CO₂. No bursts of fresh air.</p>
-      </fieldset>
-      <fieldset class="rule" style="--key:var(--s-ac)" id="ruleAc">
-        <legend>Priority 3 · Air conditioner during a purge</legend>
-        <label class="chk"><input type="checkbox" id="rAcPurge"> Change the AC during a purge</label>
-        <div class="row">
-          <label class="num">Action <select id="rAcAction"><option value="setback">Raise the setpoint (setback)</option><option value="off">Turn the AC off</option></select></label>
-          <label class="num" id="rSetbackRow">by <input type="number" id="rSetbackC" min="0.5" max="6" step="0.5"> °C</label>
-        </div>
-        <div class="row">
-          <label class="num">From ≥ <input type="number" id="rAcOff" min="450" max="20000" step="50"> ppm</label>
-          <label class="num">Until ≤ <input type="number" id="rAcOn" min="400" max="19950" step="50"> ppm</label>
-        </div>
-        <p class="hint">Test result: with no AC rule, the compressor starts about once a day. Measure one restart before you use this rule.</p>
+        <p class="hint">The intake fan and the exhaust fan run together. A purge stops at the stop level or at the longest purge. The AC and the fogger keep their targets and bring the room back after it.</p>
       </fieldset>
       <details class="measure">
         <summary>Fixed values (not settings)</summary>
-        <p>Steady fresh air: base level Low in pinning and fruiting, off in spawn run and rest, one step each 5 min. Humidity first acts only after the fogger is at its maximum for 5 min. Alarms need their condition for 5 min (critical alarms 60 s). Fan: minimum 2 min on and 2 min off. Fogger: 1 min. AC: 2 min between commands. The fogger never stops for a purge and goes one level higher. Fog cools first when the room is warm. The AC fan speed follows humidity. The circulation fan runs with the fog and 10 min of each 30 min. A setback ends after 30 min or at a temperature alarm. In spawn run, the AC also cools for the block core. Humidity control uses VPD. A failed sensor: the machines copy the same hour of an earlier day.</p>
+        <p>Each air run lasts at least 30 s. After it, the fans stay off for the minimum off time. The CO₂ safety level ignores both. After 3 purges in a row that stop at the time cap, a warning gives the air exchange size the room needs. Humidity first acts only after the fogger is at its maximum for 5 min. Alarms need their condition for 5 min (critical alarms 60 s). Fogger: 1 min. AC: 2 min between commands. Fog cools first when the room is warm. The AC fan speed follows humidity. The circulation fan runs with the fog and 10 min of each 30 min. In spawn run, the AC also cools for the block core. Humidity control uses VPD. A failed sensor: the machines copy the same hour of an earlier day. A failed CO₂ sensor gives timed purges.</p>
       </details>
     </div>
     <div data-slot="rules-side"></div>
@@ -357,14 +346,8 @@ const MACHINES_HTML = `
         <select id="huLevelSel"><option value="0">Off</option><option value="1">1 (1 kg/h)</option><option value="2">2 (2 kg/h)</option><option value="3">3 (3 kg/h)</option></select>
       </div>
     </fieldset>`)}
-  ${deviceHtml('fan', 'Exhaust fan', `
-    <fieldset class="manual" id="fanManual" disabled>
-      <legend>Manual output</legend>
-      <div class="field">
-        <label for="fanLevelSel">Level</label>
-        <select id="fanLevelSel"><option value="0">Off</option><option value="1">Low (300 m³/h)</option><option value="2">Medium (600 m³/h)</option><option value="3">High (900 m³/h)</option></select>
-      </div>
-    </fieldset>`)}
+  ${deviceHtml('air', 'Air exchange', `
+    <fieldset class="manual" id="airManual" disabled><legend>Manual output</legend><label class="chk"><input type="checkbox" id="airOnChk"> On (both fans)</label></fieldset>`)}
   ${deviceHtml('lights', 'Lights', `
     <fieldset class="manual" id="lightsManual" disabled><legend>Manual output</legend><label class="chk"><input type="checkbox" id="liOn"> On</label></fieldset>`)}
   ${deviceHtml('circ', 'Circulation fan', `
@@ -372,7 +355,7 @@ const MACHINES_HTML = `
 </section>`;
 
 // ---------------- createSettingsPanel (7.2-7.4, 7.8, 7.9) ----------------
-const DEV_NAME = { ac: 'Air conditioner', hu: 'Fogger', fan: 'Exhaust fan', lights: 'Lights', circ: 'Circulation fan' };
+const DEV_NAME = { ac: 'Air conditioner', hu: 'Fogger', air: 'Air exchange', lights: 'Lights', circ: 'Circulation fan' };
 
 function createSettingsPanel(el, options) {
   let settings = structuredClone(options.settings);
@@ -468,6 +451,9 @@ function createSettingsPanel(el, options) {
     const v = parseFloat(e.target.value);
     settings.roomM3 = clamp(Number.isFinite(v) && v !== 0 ? v : settings.roomM3, 1, 100000);
   }, e.target));
+  $('#inAirSize').addEventListener('change', e => commit(() => {
+    settings.airM3h = Math.round(numIn($('#inAirSize'), settings.airM3h, 50, 10000));
+  }, e.target));
   for (const [id, k, lo, hi] of [['oT', 'T', -5, 5], ['oRH', 'RH', -15, 15], ['oCO2', 'CO2', -500, 500]]) {
     $('#' + id).addEventListener('change', e => commit(() => {
       const v = parseFloat(e.target.value);
@@ -475,7 +461,7 @@ function createSettingsPanel(el, options) {
     }, e.target));
   }
 
-  // ---- Fan and CO2 rules ----
+  // ---- Air exchange and CO2 rules ----
   $('#rCo2Safety').addEventListener('change', e => commit(() => { settings.rules.co2Safety = e.target.checked; }, e.target));
   $('#rCo2SafeAt').addEventListener('change', e => commit(() => { settings.rules.co2SafetyAt = numIn($('#rCo2SafeAt'), settings.rules.co2SafetyAt, 500, 20000); }, e.target));
   $('#rRhLock').addEventListener('change', e => commit(() => { settings.rules.rhLock = e.target.checked; }, e.target));
@@ -489,7 +475,6 @@ function createSettingsPanel(el, options) {
     R.rhResume = Math.round(numIn($('#rRhResume'), R.rhResume, 0, 19));
     if (R.rhStop < R.rhResume + 1) R.rhStop = R.rhResume + 1;
   }, e.target));
-  $('#rRhAction').addEventListener('change', e => commit(() => { settings.rules.rhAction = e.target.value; }, e.target));
   // Keep at least 50 ppm between the "act" level and the "end" level (the field just edited wins).
   $('#rFanOn').addEventListener('change', e => commit(() => {
     const R = settings.rules;
@@ -501,20 +486,14 @@ function createSettingsPanel(el, options) {
     R.fanOff = Math.round(numIn($('#rFanOff'), R.fanOff, 400, 19950));
     if (R.fanOn < R.fanOff + 50) R.fanOn = R.fanOff + 50;
   }, e.target));
-  $('#rAirMode').addEventListener('change', e => commit(() => { settings.rules.airMode = e.target.value; }, e.target));
-  $('#rFanLevel').addEventListener('change', e => commit(() => { settings.rules.fanLevel = +e.target.value; }, e.target));
-  $('#rAcPurge').addEventListener('change', e => commit(() => { settings.rules.acPurge = e.target.checked; }, e.target));
-  $('#rAcAction').addEventListener('change', e => commit(() => { settings.rules.acAction = e.target.value; }, e.target));
-  $('#rSetbackC').addEventListener('change', e => commit(() => { settings.rules.acSetbackC = numIn($('#rSetbackC'), settings.rules.acSetbackC, 0.5, 6); }, e.target));
-  $('#rAcOff').addEventListener('change', e => commit(() => {
+  // Purge times: minutes on screen, seconds in the settings (C9 7).
+  $('#rPurgeMax').addEventListener('change', e => commit(() => {
     const R = settings.rules;
-    R.acOff = Math.round(numIn($('#rAcOff'), R.acOff, 450, 20000));
-    if (R.acOn > R.acOff - 50) R.acOn = R.acOff - 50;
+    R.purgeMaxS = Math.round(numIn($('#rPurgeMax'), R.purgeMaxS / 60, 1, 15) * 60);
   }, e.target));
-  $('#rAcOn').addEventListener('change', e => commit(() => {
+  $('#rMinOff').addEventListener('change', e => commit(() => {
     const R = settings.rules;
-    R.acOn = Math.round(numIn($('#rAcOn'), R.acOn, 400, 19950));
-    if (R.acOff < R.acOn + 50) R.acOff = R.acOn + 50;
+    R.minOffS = Math.round(numIn($('#rMinOff'), R.minOffS, 30, 600));
   }, e.target));
 
   // ---- Machines: Auto/Manual with bumpless transfer (7.4), manual outputs ----
@@ -527,8 +506,8 @@ function createSettingsPanel(el, options) {
       m.power = cmd.ac.power;
       if (['cool', 'heat', 'dry', 'fan'].includes(cmd.ac.mode)) m.mode = cmd.ac.mode;
       if (Number.isFinite(cmd.ac.setpoint)) m.setpoint = clamp(cmd.ac.setpoint, 16, 30);
-    } else if (dev === 'hu' || dev === 'fan') {
-      m.level = cmd[dev].level;
+    } else if (dev === 'hu') {
+      m.level = cmd.hu.level;
     } else {
       m.on = cmd[dev].on;
     }
@@ -553,7 +532,7 @@ function createSettingsPanel(el, options) {
   }, e.target));
   $('#acSetIn').addEventListener('input', e => commit(() => { settings.manual.ac.setpoint = +e.target.value; }, e.target));
   $('#huLevelSel').addEventListener('change', e => commit(() => { settings.manual.hu.level = +e.target.value; }, e.target));
-  $('#fanLevelSel').addEventListener('change', e => commit(() => { settings.manual.fan.level = +e.target.value; }, e.target));
+  $('#airOnChk').addEventListener('change', e => commit(() => { settings.manual.air.on = e.target.checked; }, e.target));
   $('#liOn').addEventListener('change', e => commit(() => { settings.manual.lights.on = e.target.checked; }, e.target));
   $('#ciOn').addEventListener('change', e => commit(() => { settings.manual.circ.on = e.target.checked; }, e.target));
 
@@ -608,21 +587,18 @@ function createSettingsPanel(el, options) {
     setVal($('#pgLFruit'), s.program.lights.stages.fruiting); setVal($('#pgLRest'), s.program.lights.stages.rest);
     setVal($('#inSensMode'), s.sensorMode);
     setVal($('#inRoomM3'), s.roomM3);
+    setVal($('#inAirSize'), s.airM3h);
     setVal($('#oT'), s.offsets.T); setVal($('#oRH'), s.offsets.RH); setVal($('#oCO2'), s.offsets.CO2);
     setVal($('#rCo2Safety'), R.co2Safety); setVal($('#rCo2SafeAt'), R.co2SafetyAt);
     setVal($('#rRhLock'), R.rhLock); setVal($('#rRhStop'), R.rhStop); setVal($('#rRhResume'), R.rhResume);
     global.FarmUi.set($('#rRhStopAbs').id, `(${s.spRH - R.rhStop} %)`);
     global.FarmUi.set($('#rRhResumeAbs').id, `(${s.spRH - R.rhResume} %)`);
-    setVal($('#rRhAction'), R.rhAction);
     setVal($('#rFanOn'), R.fanOn); setVal($('#rFanOff'), R.fanOff);
-    setVal($('#rAirMode'), R.airMode); setVal($('#rFanLevel'), R.fanLevel);
-    setVal($('#rAcPurge'), R.acPurge); setVal($('#rAcAction'), R.acAction);
-    $('#rSetbackRow').hidden = R.acAction !== 'setback';
-    setVal($('#rSetbackC'), R.acSetbackC); setVal($('#rAcOff'), R.acOff); setVal($('#rAcOn'), R.acOn);
+    // Purge times: minutes on screen, seconds in the settings (C9 7).
+    setVal($('#rPurgeMax'), +(R.purgeMaxS / 60).toFixed(2)); setVal($('#rMinOff'), R.minOffS);
     $('#ruleRh').classList.toggle('off', !R.rhLock);
-    $('#ruleAc').classList.toggle('off', !R.acPurge);
     $('#ruleSafe').classList.toggle('off', !R.co2Safety);
-    for (const dev of ['ac', 'hu', 'fan', 'lights', 'circ']) {
+    for (const dev of ['ac', 'hu', 'air', 'lights', 'circ']) {
       const m = s.manual[dev], seg = $(`.seg[data-dev="${dev}"]`);
       seg.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String((b.dataset.auto === '1') === m.auto)));
       $('#' + dev + 'Manual').disabled = m.auto;
@@ -630,7 +606,7 @@ function createSettingsPanel(el, options) {
     setVal($('#acModeSel'), s.manual.ac.power ? s.manual.ac.mode : 'off');
     setVal($('#acSetIn'), s.manual.ac.setpoint); global.FarmUi.set($('#acSetOut').id, `${s.manual.ac.setpoint.toFixed(1)} °C`);
     setVal($('#huLevelSel'), s.manual.hu.level);
-    setVal($('#fanLevelSel'), s.manual.fan.level);
+    setVal($('#airOnChk'), s.manual.air.on);
     setVal($('#liOn'), s.manual.lights.on);
     setVal($('#ciOn'), s.manual.circ.on);
     // Settings level (7.4): spT, spRH, co2Lim unlock for the installer only.
