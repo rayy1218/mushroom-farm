@@ -234,10 +234,29 @@
       prev: null,
     };
   }
+  // A snapshot saved before C9 (one fan with levels 0-3): bring it to the air exchange shape (C9 5.7).
+  const OLD_STATE = ['fanCo2On', 'co2Timed', 'purgeHeld', 'purgeReduced', 'setbackReq', 'setbackOn', 'setbackS', 'setbackAlarmStop',
+    'setbackTimeStop', 'fanReason', 'fanBlocked', 'airLevel', 'airStepT', 'timedOnS', 'timedSource'];
+  function upgradeState(s) {
+    if (s.air) return s;
+    const on = !!(s.cmd.fan && s.cmd.fan.level > 0);
+    for (const k of OLD_STATE) delete s[k];
+    for (const g of ['cmd', 'req']) { s[g].air = { on }; delete s[g].fan; }
+    s.out.air = s.out.fan || { since: null }; delete s.out.fan;
+    for (const g of ['hold', 'why']) { s[g].air = s[g].fan || ''; delete s[g].fan; }
+    s.air = airInit(); s.airReason = null; s.airPts = []; s.airRate = null; s.airRunCapped = false;
+    const hours = (s.exh && s.exh.hours) || [];
+    s.purgeRec = { cur: null, events: [], hours: hours.map(b => ({ h: b.h, runS: b.runS || 0, starts: b.starts || 0, m3: b.m3 || 0, cappedN: 0, fogLS: b.fogLS || 0, acHighS: b.acHighS || 0, acLowS: b.acLowS || 0 })) };
+    delete s.exh;
+    const S = s.stats || {};
+    s.stats = { airOnS: S.fanOnS || 0, purges: S.fanStarts || 0, purgeS: 0, longestPurgeS: 0, cappedPurges: 0, delayedS: 0, fogStarts: S.fogStarts || 0, acCmds: S.acCmds || 0 };
+    s.prev = null;                       // the event log compares with the step before: start it again
+    return s;
+  }
 
   function create(cfg, snapshot, onEvent) {
     const emit = onEvent || (() => {});
-    let st = snapshot ? structuredClone(snapshot) : freshState(cfg);
+    let st = snapshot ? upgradeState(structuredClone(snapshot)) : freshState(cfg);
     const say = (t, lvl, text) => emit({ t, lvl, text });
     const ppm = v => Math.round(v);
     const alarmOn = id => !!(st.alarms[id] && st.alarms[id].active);

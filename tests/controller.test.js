@@ -547,3 +547,36 @@ test('the size alarm before a rise rate is measured says so', () => {
   assert.equal(ctl.state.air.capRun, 3);
   assert.equal(ctl.state.air.sizeText, "Purges don't reach 700 ppm in 3 min. The air exchange is too small; the size needed is not measured yet.");
 });
+
+test('an old snapshot (one fan with levels) is upgraded by create()', () => {
+  const { ctl, feed } = make(); feed(0); feed(30);
+  const s = ctl.snapshot();                                     // made old by hand: the fields a version 1 controller saved
+  delete s.air; delete s.airReason; delete s.airPts; delete s.airRate; delete s.purgeRec;
+  Object.assign(s, { fanCo2On: true, co2Timed: false, purgeHeld: false, purgeReduced: false, setbackReq: true, setbackOn: true, setbackS: 120,
+    setbackAlarmStop: false, setbackTimeStop: false, fanReason: 'CO₂ purge', fanBlocked: false, airLevel: 2, airStepT: 0, timedOnS: 300, timedSource: 'setting' });
+  for (const g of ['cmd', 'req']) { delete s[g].air; s[g].fan = { level: 2 }; }
+  s.out.fan = { since: 0 }; delete s.out.air;
+  s.hold.fan = ''; delete s.hold.air;
+  s.why.fan = 'CO₂ is 950 ppm. Purge at Medium.'; delete s.why.air;
+  s.stats = { fanOnS: 3600, fanStarts: 12, fogStarts: 3, setbackS: 600, acOffS: 0, fanBlockedS: 0, acCmds: 7 };
+  s.exh = { cur: { start: 0, end: null, maxLevel: 2, reason: 'CO₂ purge', co2Start: 950, co2End: null, m3: 5 },
+    events: [{ start: -600, end: -300, maxLevel: 2, reason: 'CO₂ purge', co2Start: 950, co2End: 700, m3: 50 }],
+    hours: [{ h: 0, runS: 300, starts: 1, m3: 50, fogLS: 30, acHighS: 0, acLowS: 0 }] };
+  s.prev = { power: true, mode: 'cool', setback: true, fanOn: true, fanReason: 'CO₂ purge', fogOn: false, lights: true, blocked: false, reduced: false, safety: false, timed: false };
+  const events = [];
+  const up = CC.create(CC.defaultSettings(), s, e => events.push(e));
+  const st = up.state;
+  for (const k of ['fanCo2On', 'co2Timed', 'purgeHeld', 'purgeReduced', 'setbackReq', 'setbackOn', 'setbackS', 'setbackAlarmStop', 'setbackTimeStop',
+    'fanReason', 'fanBlocked', 'airLevel', 'airStepT', 'timedOnS', 'timedSource', 'exh']) assert.equal(k in st, false, k);
+  assert.deepEqual([st.cmd.air, st.req.air, 'fan' in st.cmd, 'fan' in st.req], [{ on: true }, { on: true }, false, false]);
+  assert.deepEqual(st.air, { state: 'idle', since: null, purgeStart: null, capRun: 0, nextPurgeS: null, delayed: false, timed: false, sizeText: null });
+  assert.deepEqual([st.out.air, st.hold.air, st.why.air, 'fan' in st.out, 'fan' in st.hold, 'fan' in st.why], [{ since: 0 }, '', 'CO₂ is 950 ppm. Purge at Medium.', false, false, false]);
+  assert.deepEqual(up.purges(), { cur: null, events: [], hours: [{ h: 0, runS: 300, starts: 1, m3: 50, cappedN: 0, fogLS: 30, acHighS: 0, acLowS: 0 }] });
+  assert.deepEqual(st.stats, { airOnS: 3600, purges: 12, purgeS: 0, longestPurgeS: 0, cappedPurges: 0, delayedS: 0, fogStarts: 3, acCmds: 7 });
+  assert.equal(st.prev, null);
+  const cmd = up.update({ seq: 99, t: 60, T: 25, RH: 88, CO2: 800, tOut: 30, rhOut: 70 });
+  assert.equal(cmd.air.on, false, 'the next step runs on the new model');
+  assert.deepEqual(events.filter(e => /Air exchange/.test(e.text)), [], 'no event from the old log state');
+  const again = CC.create(CC.defaultSettings(), up.snapshot(), null);
+  assert.deepEqual(again.state, up.state, 'a version 2 snapshot is not changed');
+});
