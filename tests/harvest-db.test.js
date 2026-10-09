@@ -467,3 +467,109 @@ both('countCrates: counts every row, undone ones included', (t, open) => {
   assert.equal(harvest.countCrates(harvest.createBatch(batch()).id), 0);
   assertNotFound(() => harvest.countCrates(999), 'batch', 999);
 });
+
+// Task 9: deleteBatch
+both('deleteBatch: returns the row read before the delete', (t, open) => {
+  const { harvest } = open();
+  const row = harvest.createBatch(batch());
+  const before = harvest.getBatch(row.id);
+  const gone = harvest.deleteBatch(row.id);
+  assert.deepEqual(gone, before);
+  assert.ok(isPlain(gone));
+  assertNotFound(() => harvest.getBatch(row.id), 'batch', row.id);
+});
+
+both('deleteBatch: a batch with crate rows is a foreign key failure', (t, open) => {
+  const { harvest } = open();
+  const live = harvest.createBatch(batch());
+  harvest.addCrate(live.id, crate());
+  assertSql(() => harvest.deleteBatch(live.id), 787);
+  const undone = harvest.createBatch(batch());
+  harvest.undoCrate(harvest.addCrate(undone.id, crate()).id, 500);
+  assertSql(() => harvest.deleteBatch(undone.id), 787);
+  for (const b of [live, undone]) {
+    assert.deepEqual(harvest.getBatch(b.id), b);
+    assert.equal(harvest.countCrates(b.id), 1);
+  }
+});
+
+both('deleteBatch: unknown batch', (t, open) => {
+  const { harvest } = open();
+  assertNotFound(() => harvest.deleteBatch(999), 'batch', 999);
+});
+
+// Task 10: constraint rules and shapes
+both('constraint rules: one row per rule, nothing stored', (t, open) => {
+  const without = key => { const b = batch(); delete b[key]; return b; };
+  // Each case breaks one rule on a store holding a received batch r and a placed batch p.
+  const cases = [
+    [275, 'block_count 0', h => h.createBatch(batch({ block_count: 0 }))],
+    [275, 'block_wet_kg 0', h => h.createBatch(batch({ block_wet_kg: 0 }))],
+    [275, 'moisture_pct 100', h => h.createBatch(batch({ moisture_pct: 100 }))],
+    [275, 'moisture_pct -1', h => h.createBatch(batch({ moisture_pct: -1 }))],
+    [275, 'flush_gap_days 0', h => h.createBatch(batch({ flush_gap_days: 0 }))],
+    [275, 'place before received', (h, c) => h.placeBatch(c.r.id, c.room, c.r.received_at - 1)],
+    [275, 'clear before placed', (h, c) => h.clearBatch(c.p.id, c.p.placed_at - 1)],
+    [275, 'clear a received batch', (h, c) => h.clearBatch(c.r.id, clock)],
+    [275, 'kg 0.009', (h, c) => h.addCrate(c.r.id, crate({ kg: 0.009 }))],
+    [275, 'kg 50.01', (h, c) => h.addCrate(c.r.id, crate({ kg: 50.01 }))],
+    [1299, 'no crop', h => h.createBatch(without('crop'))],
+    [1299, 'no block_count', h => h.createBatch(without('block_count'))],
+    [1299, 'no block_wet_kg', h => h.createBatch(without('block_wet_kg'))],
+    [1299, 'no moisture_pct', h => h.createBatch(without('moisture_pct'))],
+    [1299, 'no received_at', h => h.createBatch(without('received_at'))],
+    [1299, 'no kg', (h, c) => h.addCrate(c.r.id, {})],
+    [3091, 'block_count 1.5', h => h.createBatch(batch({ block_count: 1.5 }))],
+    [3091, 'flush_gap_days 2.5', h => h.createBatch(batch({ flush_gap_days: 2.5 }))],
+    [3091, 'received_at 1.5', h => h.createBatch(batch({ received_at: 1.5 }))],
+    [3091, "spawn_date 'abc'", h => h.createBatch(batch({ spawn_date: 'abc' }))],
+    [3091, 't 1.5', (h, c) => h.addCrate(c.r.id, crate({ t: 1.5 }))],
+  ];
+  for (const [errcode, label, call] of cases) {
+    const { harvest, addRoom } = open();
+    const room = addRoom('A');
+    const r = harvest.createBatch(batch());
+    const p = harvest.placeBatch(harvest.createBatch(batch()).id, room, clock);
+    const before = { batches: harvest.listBatches(), crates: harvest.countCrates(r.id) };
+    assert.throws(() => call(harvest, { room, r, p }), e => {
+      assert.equal(e.code, 'ERR_SQLITE_ERROR', label);
+      assert.equal(e.errcode, errcode, label);
+      assert.equal(e.errcode & 0xff, 19, label);
+      return true;
+    }, label);
+    assert.deepEqual({ batches: harvest.listBatches(), crates: harvest.countCrates(r.id) }, before, label);
+  }
+});
+
+both('non-finite and missing values are bound as NULL', (t, open) => {
+  const { harvest } = open();
+  assertSql(() => harvest.createBatch(batch({ block_wet_kg: NaN })), 1299);
+  const b = harvest.createBatch(batch({ strain: undefined }));
+  assert.equal(b.strain, null);
+  assert.equal(b.notes, null);
+  assertSql(() => harvest.addCrate(b.id, crate({ kg: Infinity })), 1299);
+  assert.equal(harvest.countCrates(b.id), 0);
+  assert.equal(harvest.createBatch(batch({ notes: undefined })).notes, null);
+});
+
+both('rows of every shape are plain objects', (t, open) => {
+  const { harvest, addRoom } = open();
+  const room = addRoom('A');
+  const b = harvest.createBatch(batch());
+  const batchRows = [
+    b, harvest.getBatch(b.id), ...harvest.listBatches(), harvest.updateBatch(b.id, { notes: 'n' }),
+    harvest.placeBatch(b.id, room, clock), harvest.clearBatch(b.id, clock + 1),
+  ];
+  const c = harvest.addCrate(b.id, crate());
+  const crateRows = [c, harvest.getCrate(c.id), ...harvest.listCrates(b.id), harvest.undoCrate(c.id, clock)];
+  for (const row of batchRows) { assert.ok(isPlain(row)); assert.deepEqual(Object.keys(row), BATCH_KEYS); }
+  for (const row of crateRows) { assert.ok(isPlain(row)); assert.deepEqual(Object.keys(row), CRATE_KEYS); }
+  const other = harvest.createBatch(batch());
+  assert.ok(isPlain(harvest.deleteBatch(other.id)));
+});
+
+both('store functions', (t, open) => {
+  const { harvest } = open();
+  assert.deepEqual(Object.keys(harvest).sort(), ['addCrate', 'clearBatch', 'countCrates', 'createBatch', 'deleteBatch', 'getBatch', 'getCrate', 'listBatches', 'listCrates', 'placeBatch', 'undoCrate', 'updateBatch']);
+  for (const fn of Object.values(harvest)) assert.equal(typeof fn, 'function');
+});
