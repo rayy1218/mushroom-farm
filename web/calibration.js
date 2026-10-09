@@ -39,7 +39,7 @@ const MARKUP = `
 <section class="card sim calib" aria-labelledby="hCal">
   <div class="rules-head">
     <h2 id="hCal">Calibration with a farm log</h2>
-    <span class="tag">Make the simulation agree with your room. The log must have the machine states at 1 min or less. With a supply fan that always runs, the air leakage cannot be measured (it also has no effect).</span>
+    <span class="tag">Make the simulation agree with your room. The log must have the machine states at 1 min or less.</span>
   </div>
   <div class="cal-row">
     <label class="btn" for="calFile">Load a CSV log</label><input type="file" id="calFile" accept=".csv,text/csv" class="vh">
@@ -54,7 +54,7 @@ const MARKUP = `
   </div>
   <details class="measure">
     <summary>CSV columns</summary>
-    <p>Header row, then one row per minute (or less). Columns in any order: <b>time</b> (date and time, or minutes from the start), <b>T</b>, <b>RH</b>, <b>CO2</b>, tOut, rhOut, fan (0–3), fog (0–3), acPower (0/1), acMode (cool/heat/dry/fan), acSet (°C), acFan (low/auto/high), lights (0/1), circ (0/1, circulation fan). Columns in bold are necessary.</p>
+    <p>Header row, then one row per minute (or less). Columns in any order: <b>time</b> (date and time, or minutes from the start), <b>T</b>, <b>RH</b>, <b>CO2</b>, tOut, rhOut, air (0 or 1, the air exchange; an old fan column 0–3 counts as on when above 0), fog (0–3), acPower (0/1), acMode (cool/heat/dry/fan), acSet (°C), acFan (low/auto/high), lights (0/1), circ (0/1, circulation fan). Columns in bold are necessary.</p>
   </details>
 </section>`;
 
