@@ -54,7 +54,7 @@ A pure module in the style of `capacity.js`: an IIFE that sets `global.ClimateAi
 | Item | Rule |
 |---|---|
 | `PLANT.air` | `{ m3h: 1800, wPerM3h: 0.08 }` (0.08 W per m³/h for the pair, "no source" until equipment research). Replaces `PLANT.fan`. |
-| `DEFAULT_ENV.airM3h` | `null` = `PLANT.air.m3h`. A number 50–10000 overrides it (the test bench input, later C8 equipment). |
+| `DEFAULT_ENV.airM3h` | `null` = `PLANT.air.m3h`. A number overrides it (the test bench input, later C8 equipment); the sim uses `m3h = Number.isFinite(e.airM3h) ? clamp(e.airM3h, 50, 10000) : PLANT.air.m3h`. |
 | `DEFAULT_ENV.inletAt`, `exhaustAt` | Unchanged (`'high'`, `'low'`) |
 | `DEFAULT_ENV.vent` | Removed. An env with `vent` is accepted and the key ignored. |
 | Header comment (lines 14–16) | Rewritten: balanced intake + exhaust pair, dampers closed when off |
@@ -66,10 +66,10 @@ A pure module in the style of `capacity.js`: an IIFE that sets `global.ClimateAi
 | Command | `cmd.air.on` (boolean). `s.act.air = !!(cmd.air && cmd.air.on)`. `cmd.fan` is ignored. |
 | `s.act` | `fanLevel` → `air` (boolean) |
 | Meters | Key `fan` → `air` in `s.p`, `s.kwh`, `s.runS` and the reading's `power`, `kwh`, `runS` |
-| Power | `s.p.air = a.air ? m3h × PLANT.air.wPerM3h : 0`, with `m3h` = `e.airM3h ?? PLANT.air.m3h` |
+| Power | `s.p.air = a.air ? m3h × PLANT.air.wPerM3h : 0`, with `m3h` from 4.1 |
 | Run time | `s.runS.air += dt` while `a.air` |
 | `view()` | `airM3h`: `(a.air ? m3h : 0) + leak`, where `leak = room.infAch × room.volume` only while the fans are off (with the fans on the leakage is 0, as in today's supply mode). `act.air` replaces `act.fanLevel`. |
-| Snapshot restore | `create(env, snapshot)` upgrades an older snapshot: `act.fanLevel` → `act.air = act.fanLevel > 0`; `p.fan`, `kwh.fan`, `runS.fan` → `p.air`, `kwh.air`, `runS.air` (values kept); the old keys are deleted |
+| Snapshot restore | `create(env, snapshot)` upgrades an older snapshot: `act.fanLevel` → `act.air = act.fanLevel > 0`; `p.fan`, `kwh.fan`, `runS.fan` → `p.air`, `kwh.air`, `runS.air` (values kept), and the same keys in the stored `s.reading` (`power`, `kwh`, `runS`); the old keys are deleted |
 
 ### 4.3 Air flows (replaces sim.js lines 282–303)
 
@@ -179,6 +179,7 @@ A pure module in the style of `capacity.js`: an IIFE that sets `global.ClimateAi
 | 3 | CO₂ sensor fault: timed purge | `share = learned` (the past run seconds per hour ÷ 3600 × 1.1, from `historyFor('runS', …)` as today) or `timedPurgeOn / timedPurgeEvery`; clamped 0.02–0.9. Run length `min(purgeMaxS, share × timedPurgeEvery × 60)`; period `max(run / share, run + minOffS)`; on while `t mod period < run`. `st.air.timed = true`. |
 | 4 | Free cooling (`rules.freeCool`) | As today's `lCool` condition (room warm, outdoor ≥ 3 °C cooler): on; not a purge, not capped |
 | 4 | Outdoor drying (`rules.outdoorDry`) | As today's `fanDryOn` hysteresis: on; not a purge, not capped |
+| Sensor check | CO₂ spike filter (the rate test of `validate`) | A falling CO₂ while `cmd.air.on`, and for one reading after the fans stop, is not tested against the rate limit: a strong purge really lowers CO₂ faster than 1000 ppm/min. A rising CO₂ is tested as today. |
 
 ### 5.7 Records, statistics, status, events
 
@@ -282,10 +283,10 @@ Checked on Node 22.20 (SQLite 3.50.4) inside `BEGIN IMMEDIATE` with `foreign_key
 
 | File | Rule |
 |---|---|
-| `capacity.js` `balance` | No base fan. `dC = (rules.fanOn + rules.fanOff) / 2 − co2Out`; average outdoor air `air(n) = n × c / dC` (m³/h; no floor). `out.air` replaces `out.fan`: the largest whole `n` with `ClimateAir.purgeTimeS({ volume: R.volume, co2Out: R.co2Out, leakM3h: 0, prodM3h: n × c / 10⁶, m3h: airM3h, start: rules.fanOn, stop: rules.fanOff }) ≤ rules.purgeMaxS` (`c` = `mixCo2(room, mix)` in mL/h per block, so `n × c / 10⁶` is m³/h of CO₂), found by bisection over 0–100000, where `airM3h = room.airM3h ?? PLANT.air.m3h`. `limit ∈ 'air' \| 'ac' \| 'fog'`. |
+| `capacity.js` `balance` | No base fan. `dC = (rules.fanOn + rules.fanOff) / 2 − co2Out`; average outdoor air `air(n) = n × c / dC` (m³/h; no floor). `out.air` replaces `out.fan`: the largest whole `n` with `ClimateAir.purgeTimeS({ volume: R.volume, co2Out: R.co2Out, leakM3h: 0, prodM3h: n × c / 10⁶, m3h: airM3h, start: rules.fanOn, stop: rules.fanOff }) ≤ rules.purgeMaxS` (`c` = `mixCo2(room, mix)` in mL/h per block, so `n × c / 10⁶` is m³/h of CO₂), found by bisection over 0–100000 (`Infinity` when 100000 blocks still pass, like the other limits), where `airM3h = room.airM3h ?? PLANT.air.m3h`. `limit ∈ 'air' \| 'ac' \| 'fog'`. |
 | `capacity.js` rooms | `room = { name, volume, airM3h?, calib }` (no `vent`). No room stores a size yet (that is C8): `RULES.normRoom` keeps its key set and drops `airM3h`; only in-browser callers (the test bench) pass `airM3h`. |
-| `capacity.js` trial | `env.airM3h = room.airM3h ?? null`; `vent` no longer set |
-| `cycle.js` | `vent` no longer set; `cfg.manual.air.auto = true` replaces the fan line; energy keys follow 4.2 |
+| `capacity.js` trial | `env.airM3h = room.airM3h ?? null` and `cfg.airM3h = room.airM3h ?? PLANT.air.m3h` (the controller knows the size it runs); `vent` no longer set |
+| `cycle.js` | `vent` no longer set; `env.airM3h` and `cfg.airM3h` as the capacity trial; `cfg.manual.air.auto = true` replaces the fan line; energy keys follow 4.2 |
 | `calib.js` | CSV column `air` (aliases `air`, `fan`, `fan_level`, `exhaust`; a value > 0 means on). Replay command `air: { on: (r.air ?? 0) > 0 }`. `toCsv` writes `air`. |
 | `tools/run-headless.js` | Unchanged output; follows the meter keys |
 | `tests/harness.js` (lead, step 2) | Requires `../air.js`; returns `airKwh`, `airH`, `purges`, `cappedPurges`, `longestPurgeS`, `alarmIds`, `sizeText` in place of `fanKwh`, `fanH`, `fanStarts` |

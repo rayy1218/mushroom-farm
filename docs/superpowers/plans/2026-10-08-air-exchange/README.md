@@ -264,6 +264,9 @@ Each stream's tests that depend on another stream's code use the contract's shap
 
 - [ ] For each of `stream/air-simulation`, `stream/air-controller`, `stream/air-data`, `stream/air-web`: `git merge --no-ff <branch>`, then `npm test`. Expected: the stream's own tests pass; failures in `tests/integration.test.js` and `tests/vectors.test.js` are expected until tasks 2.2–2.3.
 
+- [ ] After the controller merge, delete the simulation stream's test-only "C9 bridge" from `tests/capacity.test.js`, `tests/cycle.test.js` and `tests/calib.test.js` (brief `simulation.md` names it), and remove the `todo` option from the three tests it marked; run them. If cycle test FULL still fails, check the spike-filter rule (C9 5.6 "Sensor check") first.
+- [ ] Re-measure the capacity check "too wet with many blocks" result (simulation brief question 2: default room, 200 golden oyster, capacity 222 with no limit named). If the two capacity `todo` tests still fail with the C9 controller and Prepare, stop and bring it to the user as a design question (which side a near-saturation failure belongs to); do not loosen the tests.
+
 ### Task 2.2: Regenerate the vectors
 
 - [ ] Run `npm run vectors`, then `node --test tests/vectors.test.js` → pass. Check the new `capped-purges` file has runs of `air` 1 lasting at most `purgeMaxS`.
