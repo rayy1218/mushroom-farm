@@ -132,8 +132,8 @@ test('startOfDay: Malaysian midnight', () => {
 test('9.1 GET /api/batches: Batch list, order, room_name, state, totals', () => {
   const { harvest, call, room } = setup();
   const r1 = room('Room 1');
-  const received = seed(harvest, { received_at: NOW - 2 * DAY });
   const placed = seed(harvest, { received_at: NOW - 5 * DAY }, r1, NOW - 4 * DAY);
+  const received = seed(harvest, { received_at: NOW - 2 * DAY });
   const cleared = seed(harvest, { received_at: NOW - 8 * DAY }, r1, NOW - 7 * DAY);
   harvest.addCrate(placed.id, { kg: 5, picker: null, t: NOW - 3 * DAY });
   const gone = harvest.addCrate(placed.id, { kg: 2, picker: null, t: NOW - 2 * DAY });
@@ -282,8 +282,8 @@ test('9.4 PATCH /api/batches/:batchId: 400 Invalid batch', () => {
   const cleared = seed(harvest, {}, r1);
   harvest.clearBatch(cleared.id, NOW - DAY);
   rejects(harvest, received.id, () => call('PATCH', `api/batches/${received.id}`, { body: {} }), 400, 'Invalid batch', ['body: at least one field is required']);
-  rejects(harvest, received.id, () => call('PATCH', `api/batches/${received.id}`, { body: { room_id: 2 } }), 400, 'Invalid batch',
-    ['room_id: unknown field', 'body: at least one field is required']);
+  rejects(harvest, received.id, () => call('PATCH', `api/batches/${received.id}`, { body: { notes: 'x', room_id: 2 } }), 400, 'Invalid batch',
+    ['room_id: unknown field']);
   rejects(harvest, received.id, () => call('PATCH', `api/batches/${received.id}`, { body: { received_at: NOW + 1 } }), 400, 'Invalid batch',
     ['received_at: must not be in the future']);
   for (const b of [placed, cleared]) {
@@ -333,6 +333,9 @@ test('9.5 place: a placed or cleared batch is 400 Batch is already in a room', (
   for (const b of [placed, cleared]) {
     rejects(harvest, b.id, () => call('POST', `api/batches/${b.id}/place`, { body: { room_id: r1 } }), 400, 'Batch is already in a room', []);
   }
+  // Body rules come before the state rule (C10 9.5).
+  rejects(harvest, placed.id, () => call('POST', `api/batches/${placed.id}/place`, { body: { room_id: r1, x: 1 } }), 400, 'Invalid batch',
+    ['x: unknown field']);
 });
 
 test('9.6 clear: 200 Batch; {} clears now', () => {
@@ -360,6 +363,9 @@ test('9.6 clear: body, state and date rules in order', () => {
   rejects(harvest, placed.id, clear(placed, { cleared_at: 1.5 }), 400, 'Invalid batch', ['cleared_at: must be whole seconds since 1970']);
   rejects(harvest, placed.id, clear(placed, { cleared_at: NOW + 1 }), 400, 'Invalid batch', ['cleared_at: must not be in the future']);
   rejects(harvest, received.id, clear(received, {}), 400, 'Batch is not in a room', []);
+  // Body rules come before the state rule (C10 9.6).
+  rejects(harvest, received.id, clear(received, { x: 1 }), 400, 'Invalid batch', ['x: unknown field']);
+  rejects(harvest, received.id, clear(received, { cleared_at: NOW + 1 }), 400, 'Invalid batch', ['cleared_at: must not be in the future']);
   rejects(harvest, received.id, clear(received, { cleared_at: received.received_at - 1 }), 400, 'Batch is not in a room', []);
   rejects(harvest, cleared.id, clear(cleared, {}), 400, 'Batch is cleared', []);
   rejects(harvest, placed.id, clear(placed, { cleared_at: startOfDay(harvest.getBatch(placed.id).placed_at) - 1 }), 400, 'Invalid batch',
@@ -390,7 +396,8 @@ test('9.8 GET /api/rooms/:id/harvest: RoomHarvest', () => {
   const { harvest, call, room } = setup();
   const r1 = room('Room 1');
   const r2 = room('Room 2');
-  const later = seed(harvest, {}, r1, NOW - 5 * DAY);
+  // later is created first and received later, so the store lists it first; the route must sort by placed_at.
+  const later = seed(harvest, { received_at: NOW - 6 * DAY }, r1, NOW - 5 * DAY);
   const earlier = seed(harvest, {}, r1, NOW - 9 * DAY);
   seed(harvest);
   const cleared = seed(harvest, {}, r1, NOW - 9 * DAY);
@@ -429,7 +436,11 @@ test('9.8 today and flush', () => {
 test('9.9 POST crates: 201 CrateSaved', () => {
   const { harvest, call, room } = setup();
   const b = seed(harvest, {}, room('Room 1'));
+  const addArgs = [];
+  const realAdd = harvest.addCrate;
+  harvest.addCrate = (...a) => { addArgs.push(a); return realAdd(...a); };
   const res = call('POST', `api/batches/${b.id}/crates`, { body: { kg: 12.5, picker: '  Aminah ' } });
+  assert.deepStrictEqual(addArgs[0], [b.id, { kg: 12.5, picker: 'Aminah', t: NOW }]);
   assert.equal(res.status, 201);
   assert.deepStrictEqual(Object.keys(res.body), ['crate', 'flush', 'totals']);
   assert.deepStrictEqual(res.body.crate, { id: res.body.crate.id, batch_id: b.id, t: NOW, kg: 12.5, picker: 'Aminah', deleted_at: null });
@@ -463,6 +474,8 @@ test('9.9 POST crates: 400 Invalid crate, Batch is not in a room, Batch is clear
   rejects(harvest, placed.id, add(placed, { kg: 51 }), 400, 'Invalid crate', ['kg: must be a number from 0.01 to 50 kg']);
   rejects(harvest, placed.id, add(placed, { kg: 1, batch_id: 2 }), 400, 'Invalid crate', ['batch_id: unknown field']);
   rejects(harvest, received.id, add(received, { kg: 1 }), 400, 'Batch is not in a room', []);
+  // checkCrate comes before the state rule (C10 9.9).
+  rejects(harvest, received.id, add(received, {}), 400, 'Invalid crate', ['kg: required']);
   rejects(harvest, cleared.id, add(cleared, { kg: 1 }), 400, 'Batch is cleared', []);
 });
 
@@ -478,7 +491,11 @@ test('9.10 DELETE /api/crates/:crateId: 200 Crate', () => {
   const { harvest, call, room } = setup();
   const b = seed(harvest, {}, room('Room 1'));
   const c = harvest.addCrate(b.id, { kg: 5, picker: null, t: NOW - DAY });
+  const undoArgs = [];
+  const realUndo = harvest.undoCrate;
+  harvest.undoCrate = (...a) => { undoArgs.push(a); return realUndo(...a); };
   const res = call('DELETE', `api/crates/${c.id}`);
+  assert.deepStrictEqual(undoArgs, [[c.id, NOW]]);
   assert.equal(res.status, 200);
   assert.deepStrictEqual(res.body, { ...c, deleted_at: NOW });
   assert.equal(Rules.totals(harvest.getBatch(b.id), harvest.listCrates(b.id)).crates, 0);
@@ -514,6 +531,21 @@ test('store errors reach the caller unchanged', () => {
   const F = Object.assign(new Error('disk I/O error'), { code: 'ERR_SQLITE_ERROR', errcode: 10 });
   harvest.listBatches = () => { throw F; };
   assert.throws(() => call('GET', 'api/batches'), e => e === F);
+  // The id and room lookups turn only NOT_FOUND into an answer; anything else reaches mapError unchanged.
+  const s2 = setup();
+  const r2 = s2.room('Room 1');
+  const b2 = seed(s2.harvest, {}, r2);
+  const fresh = seed(s2.harvest);
+  const c2 = s2.harvest.addCrate(b2.id, { kg: 1, picker: null, t: NOW - DAY });
+  const realGetRoom = s2.db.getRoom;
+  s2.db.getRoom = () => { throw F; };
+  assert.throws(() => s2.call('GET', 'api/batches', { query: `room=${r2}` }), e => e === F);
+  assert.throws(() => s2.call('POST', `api/batches/${fresh.id}/place`, { body: { room_id: r2 } }), e => e === F);
+  s2.db.getRoom = realGetRoom;
+  s2.harvest.getBatch = () => { throw F; };
+  assert.throws(() => s2.call('GET', `api/batches/${b2.id}`), e => e === F);
+  s2.harvest.getCrate = () => { throw F; };
+  assert.throws(() => s2.call('DELETE', `api/crates/${c2.id}`), e => e === F);
 });
 
 test('day rules compare farm days: previous day is 400, same day is clamped', () => {
@@ -532,5 +564,6 @@ test('day rules compare farm days: previous day is 400, same day is clamped', ()
   const patch = at => () => call('PATCH', `api/batches/${placed.id}`, { body: { received_at: at } });
   rejects(harvest, placed.id, patch(D + DAY), 400, 'Invalid batch', ['received_at: must not be after the day it was placed']);
   assert.equal(patch(D + 11 * 3600)().body.received_at, D + 10 * 3600);
+  assert.equal(patch(D + DAY - 1)().body.received_at, D + 10 * 3600); // 23:59:59 the same farm day: clamped
   assert.equal(patch(D + 9 * 3600 + 60)().body.received_at, D + 9 * 3600 + 60);
 });
