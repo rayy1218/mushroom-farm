@@ -634,10 +634,10 @@ function openFakeDb(options) {
     assertOpen();
     requireRoom(roomId);
     checkFields(changes, ['note', 'real_start'], 'updateSimulationRun');
+    const row = findSimulationRun(roomId, runId); // LD 75: the run before column rules (an UPDATE that matches no row checks nothing)
     const updated = {};
     if (changes && 'note' in changes) updated.note = numColumn(changes.note, { type: 'TEXT', notNull: false, name: 'simulation_runs.note' });
     if (changes && 'real_start' in changes) updated.real_start = numColumn(changes.real_start, { type: 'INTEGER', notNull: false, name: 'simulation_runs.real_start' });
-    const row = findSimulationRun(roomId, runId);
     Object.assign(row, updated);
     return simulationRunToPublic(row, false);
   }

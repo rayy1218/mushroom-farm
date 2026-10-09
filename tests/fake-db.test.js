@@ -875,7 +875,7 @@ test('simulation runs: list, get, update, delete', () => {
   assert.throws(() => db.updateSimulationRun(1, other.id, {}), err => err.what === 'simulation');
   assert.throws(() => db.updateSimulationRun(1, 99, { note: 'x' }), err => err.what === 'simulation');
   assert.throws(() => db.listSimulationRuns(1, { limit: null }), RangeError); // LD 71, as listEvents
-  assertConstraint(() => db.updateSimulationRun(1, 99, { real_start: 1.5 }), 3091); // LD 71: column rules before the run check
+  assert.throws(() => db.updateSimulationRun(1, 99, { real_start: 1.5 }), err => err.what === 'simulation'); // LD 75: the run before column rules
   assert.throws(() => db.updateSimulationRun(99, 99, { x: 1 }), err => err.code === 'NOT_FOUND' && err.what === 'room'); // LD 71: room before unknown fields
   assert.throws(() => db.updateSimulationRun(1, 99, { x: 1 }), { name: 'TypeError', message: 'updateSimulationRun: unknown field "x"' }); // LD 71: unknown fields before the run check
 

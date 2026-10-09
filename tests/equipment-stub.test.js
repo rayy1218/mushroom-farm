@@ -20,7 +20,8 @@ test('catalogue values (C8 4.1)', () => {
   assert.deepEqual(E.AC_SIZES, [
     { hp: 1, w: 2640 }, { hp: 1.5, w: 3500 }, { hp: 2, w: 5280 }, { hp: 2.5, w: 6810 },
     { hp: 3, w: 7910 }, { hp: 4, w: 10550 }, { hp: 5, w: 13480 }, { hp: 6, w: 16120 }]);
-  assert.deepEqual(E.CONSTRUCTIONS, {
+  // C8 4.1.1 in key order (deepEqual ignores order); roof: false is always present (lead decision 72).
+  assert.deepEqual(Object.entries(E.CONSTRUCTIONS), Object.entries({
     zinc:     { label: 'Zinc sheet, no insulation', u: 8.5,   roof: true },
     brick115: { label: 'Brick 115 mm, plastered',   u: 2.1,   roof: false },
     brick230: { label: 'Brick 230 mm',              u: 2.2,   roof: false },
@@ -30,7 +31,7 @@ test('catalogue values (C8 4.1)', () => {
     pu50:     { label: 'PU panel 50 mm',            u: 0.38,  roof: true },
     pu75:     { label: 'PU panel 75 mm',            u: 0.275, roof: true },
     pu100:    { label: 'PU panel 100 mm',           u: 0.2,   roof: true },
-  });
+  }));
   assert.deepEqual(Object.keys(E.CONSTRUCTIONS), ['zinc', 'brick115', 'brick230', 'eps50', 'eps75', 'eps100', 'pu50', 'pu75', 'pu100']);
   assert.deepEqual(E.FOGGER_SIZES, [3, 6, 14, 24]);
   assert.deepEqual(E.AIR_SIZES, [600, 900, 1200, 1800, 2400, 3600]);
@@ -78,11 +79,11 @@ test('checkEquipment: each row of C8 4.3', () => {
   assert.deepEqual(E.checkEquipment({ roof: 'zinc', walls: null }), ['walls and roof: set both or neither']);
 });
 
-test('checkEquipment: limits are inclusive', () => {
-  assert.deepEqual(E.checkEquipment({ ac_units: 1, fog_lph: 0.5, air_m3h: 50, height: 2 }), []);
-  assert.deepEqual(E.checkEquipment({ ac_units: 4, fog_lph: 50, air_m3h: 10000, height: 6 }), []);
-  assert.deepEqual(E.checkEquipment({ ac_hp: 1 }), []);
-  assert.deepEqual(E.checkEquipment({ ac_hp: 6 }), []);
+test('checkEquipment: the limits are inclusive (C8 4.2, 4.3 rows 4 to 7)', () => {
+  for (const eq of [{ ac_units: 1 }, { ac_units: 4 }, { fog_lph: 0.5 }, { fog_lph: 50 },
+    { air_m3h: 50 }, { air_m3h: 10000 }, { height: 2 }, { height: 6 }, { ac_hp: 1 }, { ac_hp: 6 }]) {
+    assert.deepEqual(E.checkEquipment(eq), [], JSON.stringify(eq));
+  }
 });
 
 test('checkEquipment: several problems, in table order', () => {
