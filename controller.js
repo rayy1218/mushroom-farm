@@ -115,6 +115,7 @@
   const TRIM_TI = 1800;           // s; speed of the AC setpoint correction
   const MODE_HOLD_S = 300;
   const AIR_MIN_ON_S = 30;         // every air run lasts at least this long, so a noisy reading cannot stop it at once
+  const AIR_POINTS = 20;           // CO2 readings kept for the rise rate
   const FOG_FULL_S = 300;          // humidity first acts only after the fogger is at its maximum for this long
   const ALARM_DELAY_S = 300;       // a process alarm needs its condition for this long (critical alarms: 60 s)        // a mode change (heat/cool, dry) needs its condition for this long
 
@@ -471,9 +472,16 @@
         say(t, 'info', `Purge stopped at the time cap (${mss(runS)})`);
       } else if (capped === false) A.capRun = 0;
     }
-    // P1 CO2 safety level and the purge states. Runs before the AC and the fogger.
+    // Rise rate and next purge, P1 CO2 safety level and the purge states. Runs before the AC and the fogger.
     function airPlan(v, f, t, prevOn) {
-      const R = cfg.rules, A = st.air;
+      const R = cfg.rules, A = st.air, AIR = global.ClimateAir;
+      // Rise rate (5.4): the good CO2 readings since the last air run ended (at most AIR_POINTS)
+      if (prevOn) st.airPts = [];
+      else if (!f.CO2 && ['CO2', 'CO2b'].some(k => st.sensors[k] && st.sensors[k].goodT === t)) {
+        st.airPts.push({ t, C: v.CO2 });
+        if (st.airPts.length > AIR_POINTS) st.airPts.shift();
+      }
+      const rate = AIR.riseRate(st.airPts);
       // P1 CO2 safety level, off 20 ppm below it
       st.co2SafetyOn = R.co2Safety && !f.CO2 && v.CO2 >= (st.co2SafetyOn ? R.co2SafetyAt - 20 : R.co2SafetyAt);
       if (!cfg.manual.air.auto || f.CO2 || st.co2SafetyOn) {
@@ -485,6 +493,7 @@
         if (!st.co2SafetyOn) st.rhLocked = false;
         return;
       }
+      A.nextPurgeS = v.CO2 >= R.fanOn ? 0 : rate > 0 ? (R.fanOn - v.CO2) / rate : null;   // shown to the grower (5.4)
       // States (5.3). offFor: how long the air exchange has been off (0 while on).
       const on = st.cmd.air.on, offFor = on ? 0 : st.out.air.since == null ? Infinity : t - st.out.air.since;
       if (A.state === 'purge') {
@@ -652,7 +661,8 @@
         const offAt = st.cmd.air.on ? t : st.out.air.since ?? t;
         return `Minimum off time: ${Math.max(0, Math.ceil(R.minOffS - (t - offAt)))} s.`;
       }
-      return `CO₂ is ${ppm(v.CO2)} ppm. The next purge starts at ${R.fanOn} ppm.`;
+      const soon = A.nextPurgeS > 0 ? ` (in about ${Math.ceil(A.nextPurgeS / 60)} min)` : '';
+      return `CO₂ is ${ppm(v.CO2)} ppm. The next purge starts at ${R.fanOn} ppm${soon}.`;
     }
     // Lights (2.2): a daily window, only in the stages with light.
     function lights(r) {

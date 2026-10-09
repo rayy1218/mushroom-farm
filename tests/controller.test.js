@@ -387,3 +387,30 @@ test('status CO2 and the why text while purging; manual control acts at once', (
   assert.equal(feed(80, { CO2: 920 }).air.on, true, 'a manual On acts at once');
   assert.equal(ctl.state.airReason, 'manual');
 });
+
+// ---------- Rise rate and next purge (C9 5.4) ----------
+test('next purge: predicted from the CO2 rise with the fans off, shown in the idle why text', () => {
+  const { feed, ctl } = make();
+  for (let t = 0; t <= 60; t += 30) feed(t, { CO2: 650 + t });
+  assert.equal(ctl.state.air.nextPurgeS, null, '3 readings: no rise rate yet');
+  assert.equal(ctl.state.why.air, 'CO₂ is 710 ppm. The next purge starts at 900 ppm.');
+  feed(90, { CO2: 740 });                                      // 1 ppm/s: 160 s to 900 ppm
+  assert.ok(Math.abs(ctl.state.air.nextPurgeS - 160) < 1e-6, `next purge in ${ctl.state.air.nextPurgeS} s`);
+  assert.equal(ctl.state.air.state, 'idle');
+  assert.equal(ctl.state.why.air, 'CO₂ is 740 ppm. The next purge starts at 900 ppm (in about 3 min).');
+  assert.deepEqual(ctl.status('CO2'), { lvl: 'good', icon: '✓', text: 'Below limit' });
+  feed(120, { CO2: 900 });
+  assert.deepEqual([ctl.state.air.nextPurgeS, ctl.state.air.state], [0, 'purge']);
+});
+
+test('the rise rate uses only readings with the fans off', () => {
+  const { ctl, feed } = make();
+  for (let t = 0; t <= 90; t += 30) feed(t, { CO2: 650 + t });
+  assert.equal(ctl.state.airPts.length, 4);
+  feed(120, { CO2: 950 });                                      // purge
+  feed(150, { CO2: 690 });                                      // the fans were on: points cleared
+  assert.deepEqual(ctl.state.airPts, []);
+  assert.equal(ctl.state.air.nextPurgeS, null, 'no rise rate yet');
+  for (let t = 180; t <= 30 * 40; t += 30) feed(t, { CO2: 690 + (t - 150) * 0.1 });
+  assert.equal(ctl.state.airPts.length, 20, 'at most the last 20 readings');
+});
