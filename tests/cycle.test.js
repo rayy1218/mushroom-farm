@@ -328,3 +328,18 @@ test('CY-H2 without opts.heat there is no heat key', () => {
   for (const s of r.stages) assert.equal('heat' in s, false);
   for (const h of r.series) assert.equal('heat' in h, false);
 });
+
+test("CY-W1 lion's mane pinning is judged on its own wet line", () => {
+  const rm = { ...room, plant: { ac: { capW: 6810, coilM3s: 0.2724, auxW: 68.1 } } };
+  const mix = [{ crop: 'lionsmane', blocks: 1000 }];
+  const settings = { farmType: 'full', crop: 'lionsmane', program: { flushes: 1, days: { spawn: 1, pinning: 2, fruiting: 1, rest: 1 } } };
+  const a = CY.runCycle(rm, mix, { settings });
+  const saved = CC.CROPS.lionsmane.wetRH;
+  let b;
+  try { delete CC.CROPS.lionsmane.wetRH; b = CY.runCycle(rm, mix, { settings }); } finally { CC.CROPS.lionsmane.wetRH = saved; }
+  const seg = (r, st) => r.stages.find(s => s.stage === st);
+  assert.ok(seg(a, 'pinning').wet < seg(b, 'pinning').wet, `${seg(a, 'pinning').wet} vs ${seg(b, 'pinning').wet}`);
+  assert.equal(seg(a, 'pinning').fails.includes('humidity near saturation'), false);
+  assert.equal(seg(b, 'pinning').fails.includes('humidity near saturation'), true);
+  for (const st of ['spawn', 'fruiting']) assert.deepStrictEqual(seg(a, st), seg(b, st));
+});

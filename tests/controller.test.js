@@ -794,3 +794,17 @@ test('default purge levels: the stop level is never below 600 ppm, and stays 50 
   assert.deepEqual(levels(1000), [900, 700]);
   assert.deepEqual(levels(5000), [4900, 4700]);
 });
+
+// ---------- C8 5.4: lion's mane (draft) ----------
+test("LM1 lion's mane is the last crop, with its draft profile", () => {
+  assert.deepEqual(CC.CROPS.lionsmane, { name: "Lion's mane", spawn: [23, 80, 5000], pinning: [17, 92, 1000], fruiting: [20, 90, 1000], rest: [21, 80, 2000],
+    limits: { tMin: 14, tMax: 27, coreMax: 30 }, coreTarget: 25, range: { T: [16, 22], RH: [85, 92] }, cool: true, wetRH: { pinning: 98 } });
+  assert.equal(Object.keys(CC.CROPS).filter(k => k !== 'flagTest').at(-1), 'lionsmane');   // flagTest: a crop that tests add to CROPS
+  assert.equal(CC.importSettings(CC.exportSettings({ ...CC.defaultSettings(), crop: 'lionsmane' })).settings.crop, 'lionsmane');
+  const p = CC.profileTargets('lionsmane', 'pinning');
+  assert.deepEqual([p.spT, p.spRH, p.co2Lim, p['rules.fanOn'], p['rules.fanOff']], [17, 92, 1000, 900, 700]);
+});
+
+test("LM2 no other crop has the cool flag or a wet line", () => {
+  for (const [k, c] of Object.entries(CC.CROPS)) if (k !== 'lionsmane') { assert.equal('cool' in c, false, k); assert.equal('wetRH' in c, false, k); }
+});

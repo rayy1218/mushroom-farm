@@ -189,6 +189,7 @@ const TARGETS_HTML = `
         <option value="woodear">Black jelly / wood ear (Auricularia)</option>
         <option value="reishi">Reishi / lingzhi (Ganoderma lucidum)</option>
         <option value="milky">Milky (Calocybe indica)</option>
+        <option value="lionsmane">Lion's mane (Hericium erinaceus)</option>
       </select>
     </div>
     <div class="crop-row">

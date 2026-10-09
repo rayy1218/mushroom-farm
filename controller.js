@@ -47,9 +47,11 @@
   // limits: alarm range for the air (tMin-tMax) and the block core (coreMax).
   // coreTarget: block core temperature that the AC holds in spawn run (with a block probe).
   // range: the good fruiting band (T °C, RH %), narrower than the alarm limits; a mixed room needs targets inside every crop's range.
-  // Only crops that fruit near tropical room temperature (a split AC cannot hold 16-21 °C on a 33 °C day).
+  // Mostly crops that fruit near tropical room temperature; a cool crop (flag cool) needs an insulated room and a larger AC.
   // Flags: casing (milky: soil casing before pinning, a manual step). Flags for other crops:
-  // maxFog (no direct fog on the crop), shock { T, hours } (cold shock at pinning), spawnLights (light in spawn run).
+  // maxFog (no direct fog on the crop), shock { T, hours } (cold shock at pinning), spawnLights (light in spawn run),
+  // cool (a crop held well below the outdoor air: no heat mode while the outdoor air is warm, C8).
+  // wetRH { <stage>: % } (C8): the "humidity near saturation" line of that stage in C7 scoring (default PASS.wetRH 95).
   const CROPS = {
     oyster:    { name: 'Grey oyster', spawn: [24, 70, 5000], pinning: [24, 92, 800], fruiting: [25, 88, 1000], rest: [25, 80, 2000],
                  limits: { tMin: 20, tMax: 30, coreMax: 32 }, coreTarget: 28, range: { T: [23, 27], RH: [85, 92] } },
@@ -74,6 +76,13 @@
     // Heat-loving (30-35 °C). Held at 30 °C: the highest split AC setpoint.
     milky:     { name: 'Milky (Calocybe indica)', spawn: [30, 70, 5000], pinning: [30, 90, 1000], fruiting: [30, 85, 1000], rest: [30, 80, 2000],
                  limits: { tMin: 25, tMax: 36, coreMax: 38 }, coreTarget: 32, range: { T: [28, 34], RH: [80, 90] }, casing: true },
+    // DRAFT (C8, research 2026-10-08, 22 sources for fruiting): a cool crop (fruits at 16-22 °C) that needs an insulated room
+    // and a larger AC than the tropical crops. CO2 sets the shape: above about 1000 ppm long spines and coral shapes.
+    // Pinning RH 90-100 % in the sources (S12 Out-Grow and S15 Fungi Academy 95-100): wet only above 98 % in pinning.
+    // Pinning CO2 1000 (owner 2026-10-09, inside the 500-1100 of the sources): a 450 ppm stop level (6a12852) made purges frequent and wet.
+    lionsmane: { name: "Lion's mane", spawn: [23, 80, 5000], pinning: [17, 92, 1000], fruiting: [20, 90, 1000], rest: [21, 80, 2000],
+                 limits: { tMin: 14, tMax: 27, coreMax: 30 }, coreTarget: 25, range: { T: [16, 22], RH: [85, 92] }, cool: true,
+                 wetRH: { pinning: 98 } },
   };
   const STAGES = { spawn: 'Spawn run', pinning: 'Pinning', fruiting: 'Fruiting', rest: 'Rest between flushes' };
   // Farms that buy ready-to-fruit blocks never have a spawn run or pinning in their rooms.
