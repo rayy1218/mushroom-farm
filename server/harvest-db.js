@@ -85,9 +85,9 @@ function openHarvest(db, options) {
   function listBatches(options) {
     fields('listBatches', options, ['state', 'room_id']);
     options = orEmpty(options);
-    const state = val(options.state);
+    const state = options.state === undefined ? null : options.state;
     if (state !== null && !STATES.includes(state)) throw new RangeError(`listBatches: unknown state "${state}"`);
-    const roomId = val(options.room_id);
+    const roomId = options.room_id === undefined ? null : options.room_id;
     if (roomId !== null) db.getRoom(roomId);
     return listBatchesStmt.all(state, state, roomId, roomId).map(plain);
   }

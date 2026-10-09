@@ -119,14 +119,13 @@ realTest('openHarvest needs schema version 4', t => {
   assert.doesNotThrow(() => openHarvest({ version: 4, sqlite: db.sqlite, getRoom: db.getRoom }, { now }));
 });
 
-
-// Task 2: createBatch, getBatch
 realTest('the store writes through db.sqlite', t => {
   const { db, harvest } = openReal(t, now);
   harvest.createBatch(batch());
   assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS n FROM batches').get().n, 1);
 });
 
+// Task 2: createBatch, getBatch
 both('createBatch: shape and defaults', (t, open) => {
   const { harvest } = open();
   const row = harvest.createBatch(batch());
@@ -228,6 +227,12 @@ both('listBatches: errors', (t, open) => {
   assert.throws(() => harvest.listBatches({ state: 'gone' }), RangeError);
   assertNotFound(() => harvest.listBatches({ room_id: 999 }), 'room', 999);
   assertTypeError(() => harvest.listBatches({ room: 1 }), 'listBatches: unknown field "room"');
+});
+
+both('listBatches: a NaN room_id or state is not a filter', (t, open) => {
+  const { harvest } = open();
+  assertNotFound(() => harvest.listBatches({ room_id: NaN }), 'room', NaN);
+  assert.throws(() => harvest.listBatches({ state: NaN }), RangeError);
 });
 
 // Task 4: updateBatch
@@ -386,7 +391,7 @@ both('getCrate: unknown ids throw NotFoundError(crate)', (t, open) => {
 });
 
 // Task 7: listCrates
-function threeBatchCrates(harvest) {
+function batchWithCrates(harvest) {
   const b = harvest.createBatch(batch());
   const ids = {};
   for (const t of [300, 100, 200, 400, 400]) ids[`${t}${ids[t] === undefined ? '' : 'b'}`] = harvest.addCrate(b.id, crate({ t })).id;
@@ -395,7 +400,7 @@ function threeBatchCrates(harvest) {
 
 both('listCrates: t ascending, then id; undone crates included', (t, open) => {
   const { harvest } = open();
-  const { b, ids } = threeBatchCrates(harvest);
+  const { b, ids } = batchWithCrates(harvest);
   harvest.undoCrate(ids[100], 500);
   const rows = harvest.listCrates(b.id);
   assert.deepEqual(rows.map(r => r.id), [ids[100], ids[200], ids[300], ids[400], ids['400b']]);
@@ -406,14 +411,14 @@ both('listCrates: t ascending, then id; undone crates included', (t, open) => {
 
 both('listCrates: from is inclusive', (t, open) => {
   const { harvest } = open();
-  const { b } = threeBatchCrates(harvest);
+  const { b } = batchWithCrates(harvest);
   assert.deepEqual(harvest.listCrates(b.id, { from: 200 }).map(r => r.t), [200, 300, 400, 400]);
   assert.deepEqual(harvest.listCrates(b.id, { from: null }), harvest.listCrates(b.id, {}));
 });
 
 both('listCrates: a null or non-finite from is no filter (LD 70)', (t, open) => {
   const { harvest } = open();
-  const { b } = threeBatchCrates(harvest);
+  const { b } = batchWithCrates(harvest);
   const all = harvest.listCrates(b.id);
   assert.equal(all.length, 5);
   for (const from of [Infinity, -Infinity, NaN, null]) assert.deepEqual(harvest.listCrates(b.id, { from }), all, String(from));
