@@ -1,8 +1,23 @@
 # C2: Room manager contract
 
-Date: 2026-10-08. Status: **frozen** (revision 7). Changes only through the lead; see `docs/contracts/LEAD-DECISIONS.md`. Spec: `docs/superpowers/specs/2026-10-08-farm-app-foundation-design.md`.
+Date: 2026-10-08. Status: **frozen** (revision 8). Changes only through the lead; see `docs/contracts/LEAD-DECISIONS.md`. Spec: `docs/superpowers/specs/2026-10-08-farm-app-foundation-design.md`.
 Spec: `docs/superpowers/specs/2026-10-08-farm-app-foundation-design.md` (sections 1, 2, 5, 6).
 Binding: the lead decisions of `LEAD-DECISIONS.md` (cited below as "lead decision N"); they override this text.
+
+### Changes in revision 8
+
+Room-centred app and C8 equipment (lead decisions 20, 27, 33, 35, 48, 54). In wave 2 the **Server 2** stream owns `server/rooms.js`, `server/sim-adapter.js` and `tests/rooms.test.js`; the lead owns `tests/fakes/rooms.js` (prep 2.0).
+
+| Section | Change |
+|---|---|
+| 1 | Reading keys: 18 (adds `ac_fan`, `stage`, `core`; lead decision 20). `server/sim-adapter.js` also loads `../equipment.js` (C8; only `plantOf` is used). |
+| 5.2 | `Live` adds `flush` and `blocks` (lead decision 27). Neither is part of the summary, so neither sends a `room` event alone. |
+| 5.3 | ReadingRow adds `ac_fan` (the `sim.js` rule, so C1's `CHECK` cannot fail), `stage` (`cfg.stage`), `core` (`r.core` when finite). |
+| 7 | The summary is unchanged: `flush` and `blocks` are left out, like `targets` and `status`. |
+| 8.1, 12.2, 13.1 | Loop start reads `db.getEquipment(id)`; the adapter factory gets `equipment`; `createSimAdapter` sets `env.plant = ClimateEquipment.plantOf(equipment, { volume, calib })` when the room has machines (positions stay `DEFAULT_ENV`). An equipment save takes effect at the next restart, as a mix. |
+| 15 | `getEquipment` added; `insertReading` carries the new keys. |
+| 16 | The fake's default `live` adds `flush: null`, `blocks: null`; `setLive` readings have the 18 keys. |
+| 17 | "Recording" checks the 18 keys; new tests "Live flush and blocks" and "Room equipment" (skipped while `equipment.js` is the prep 2.0 stub, lead decision 48). |
 
 ### Changes in revision 7
 
@@ -45,8 +60,10 @@ Binding: the lead decisions of `LEAD-DECISIONS.md` (cited below as "lead decisio
 | 15 | `latestReading` added to the C1 functions the manager does not call (as in C1 section 7). |
 
 This contract defines `server/rooms.js` (the room manager), `server/sim-adapter.js` (the simulated adapter), the small
-shared module `server/rooms-common.js` and the fake room manager `tests/fakes/rooms.js`. The shared modules
-`controller.js`, `sim.js` and `runtime.js` do not change. Every call to them named here exists today. Every database
+shared module `server/rooms-common.js` and the fake room manager `tests/fakes/rooms.js`. This contract does not change
+the shared modules `controller.js`, `sim.js`, `runtime.js` and `equipment.js`; it uses `env.plant` of `sim.js` and
+`ClimateEquipment.plantOf` (both C8, `docs/contracts/equipment.md` sections 4.5 and 5.1). Every other call to them named
+here exists today. Every database
 call named here is a C1 function (`docs/contracts/db.md`) with C1's name, arguments and return shape; section 15 lists
 them.
 
@@ -55,10 +72,10 @@ them.
 | File | Owner | Exports | Loads |
 |---|---|---|---|
 | `server/rooms-common.js` | Lead (wave 0, with the fakes, like `server/db-common.js`) | `RoomError`, `DEMO_ROOM`, `FIRST_NOTE`, `cleanSettings` (section 6.3) | nothing |
-| `server/rooms.js` | Rooms stream | `createRoomManager`, `defaultAdapterFactory`, `TARGET_KEYS`, and the four exports of `./rooms-common.js` re-exported unchanged (the same objects) | `../controller.js`, `../runtime.js`, `./sim-adapter.js`, `./rooms-common.js` |
-| `server/sim-adapter.js` | Rooms stream | `createSimAdapter`, `MAX_CATCH_UP_S`, `TZ_OFFSET_S`, `START_CO2` | `../sim.js`, `../runtime.js` |
+| `server/rooms.js` | Rooms stream (wave 1); Server 2 stream (wave 2) | `createRoomManager`, `defaultAdapterFactory`, `TARGET_KEYS`, and the four exports of `./rooms-common.js` re-exported unchanged (the same objects) | `../controller.js`, `../runtime.js`, `./sim-adapter.js`, `./rooms-common.js` |
+| `server/sim-adapter.js` | Rooms stream (wave 1); Server 2 stream (wave 2) | `createSimAdapter`, `MAX_CATCH_UP_S`, `TZ_OFFSET_S`, `START_CO2` | `../sim.js`, `../runtime.js`, `../equipment.js` (revision 8; only `ClimateEquipment.plantOf` is used, C8 section 1) |
 | `tests/fakes/rooms.js` | Lead (wave 0) | `createFakeRoomManager` (section 16) | `../../controller.js`, `../../server/rooms-common.js`. Never `../../server/rooms.js`: that file does not exist in the API stream's worktree during wave 1. |
-| `tests/rooms.test.js` | Rooms stream | – | `server/rooms.js`, the fake db `tests/fakes/db.js`, the fake room manager (parity test, section 17) |
+| `tests/rooms.test.js` | Rooms stream (wave 1); Server 2 stream (wave 2) | – | `server/rooms.js`, the fake db `tests/fakes/db.js`, the fake room manager (parity test, section 17) |
 
 | Rule | Detail |
 |---|---|
@@ -68,7 +85,7 @@ them.
 | One thread | API calls run between ticks, so no locking is needed. |
 | Time | Every timestamp is an integer number of seconds since 1970 UTC. The controller time `t` of a live room is this same clock (section 13.2). |
 | Database | Only the C1 functions of section 15, with C1's `(roomId, …)` signatures. A C1 `NotFoundError` is recognised by `err.code === 'NOT_FOUND'` (so the real db and the fake db behave the same). |
-| Reading keys | Lead decision 1: one set of keys everywhere, `room_id`, `t`, `T`, `RH`, `CO2`, `t_out`, `rh_out`, `ac_mode`, `ac_setpoint`, `fog`, `fan`, `lights`, `circ`, `power_w`, `kwh` (C1's `Reading`, C1 section 6.2). The manager builds rows with these keys and passes them on unchanged; it never renames a key. |
+| Reading keys | Lead decisions 1 and 20: one set of keys everywhere, `room_id`, `t`, `T`, `RH`, `CO2`, `t_out`, `rh_out`, `ac_mode`, `ac_setpoint`, `fog`, `fan`, `lights`, `circ`, `power_w`, `kwh`, `ac_fan`, `stage`, `core` (18 keys; C1's `Reading`, C1 section 6.2). The manager builds rows with these keys and passes them on unchanged; it never renames a key. |
 | Settings from outside | Lead decision 6: a settings object given to `create` or `applySettings` (from HTTP, an import or a restored version) is never passed to `ClimateController.applySettings`. It goes through `cleanSettings` and `ClimateController.importSettings`, and only the `importSettings` result is applied and stored (sections 6.3 and 9). |
 
 ## 2. Terms
@@ -98,7 +115,7 @@ them.
 | `db` | object | required | The C1 database object (the real `server/db.js` or the fake `tests/fakes/db.js`). Section 15 lists the functions used. |
 | `now` | `() => integer` | `() => Math.floor(Date.now() / 1000)` | The clock, in whole seconds since 1970 UTC. Tests pass a fake clock. |
 | `tickMs` | integer ≥ 0 | `1000` | Milliseconds between ticks. `0` = no timer: the caller drives the loops with `tick()` (tests). |
-| `adapterFactory` | `(args) => adapter` | `defaultAdapterFactory` | Makes the adapter of a room. `args` = `{ room, calib, blocks, cfg, snapshot, now }` (section 12.2). |
+| `adapterFactory` | `(args) => adapter` | `defaultAdapterFactory` | Makes the adapter of a room. `args` = `{ room, calib, blocks, equipment, cfg, snapshot, now }` (section 12.2). |
 
 | Constant | Value | Meaning |
 |---|---|---|
@@ -167,6 +184,8 @@ The C1 `Room` plus `live`.
 | `alarms` | integer | – | Number of active alarms = size of the room's open map (the C1 rows with `cleared_at = null`; the same count C3 shows). `0` before the open map is loaded. |
 | `running` | boolean | – | |
 | `error` | string \| null | – | The crash message of a stopped room (`err.message`); `null` otherwise |
+| `flush` | integer \| null | – | Revision 8. `ctl.programStatus(t).flush` with `t` = `live.reading.t`, or `now()` without a reading; `null` without a controller. Not part of the summary (section 7, lead decision 27). |
+| `blocks` | integer \| null | blocks | Revision 8. The `blocks` the adapter factory got at loop start (section 8.1 step 3): the mix sum, or `null` when it is below 1. Not part of the summary. |
 
 ### 5.3 ReadingRow (exactly C1's `Reading`)
 
@@ -193,6 +212,9 @@ row below, writes it with `db.insertReading(id, row)`, and sets `live.reading = 
 | `circ` | 0 \| 1 | – | `cmd.circ.on ? 1 : 0` |
 | `power_w` | number \| null | W | Sum of the finite values of `r.power` (`ac`, `hu`, `fan`, `lights`, `circ`); `null` when the adapter gives no `power` |
 | `kwh` | number \| null | kWh | Sum of the finite values of `r.kwh`: the meter since the simulated room began (kept across restarts in the sim snapshot); `null` when the adapter gives no `kwh` |
+| `ac_fan` | `'low'` \| `'auto'` \| `'high'` \| null | – | Revision 8. `cmd.ac.power ? (['low', 'auto', 'high'].includes(cmd.ac.fan) ? cmd.ac.fan : 'auto') : null` (the rule `sim.js` applies, so C1's `CHECK` cannot fail and stop the server) |
+| `stage` | string | – | Revision 8. `cfg.stage` after the controller's decision at this reading (one of `ClimateController.STAGES`) |
+| `core` | number \| null | °C | Revision 8. `r.core` if a finite number, else `null` (the block core probe) |
 
 No other key is passed. So a row never breaks C1's `fog` and `fan` CHECK (an error there during a tick would be
 `fatal`, section 11, and would repeat at every server start). Sensor values are stored as the adapter gave them (no filtering), as `docs/contract.md` asks;
@@ -318,7 +340,7 @@ browser's shape).
 | `room` event rule (lead decision 2) | Detail |
 |---|---|
 | Owner | C2 owns every `room` event: the lifecycle ones (`create`, `update`, `archive`, `restart`, a crash, each room started by `start()`) and the summary ones (end of a tick of the room, end of `applySettings`, end of `ackAlarm`, each only when the summary changed). |
-| Summary | `{ stage, crop, alarms, running, error }` of `live`, built in that fixed key order (lead decision 2). It is compared as `JSON.stringify(summary)` text with the text of the last emitted one. `live.reading`, `live.targets` and `live.status` are not part of it: the `reading` event carries the reading, and a change of only the targets or the status chips sends no `room`. |
+| Summary | `{ stage, crop, alarms, running, error }` of `live`, built in that fixed key order (lead decision 2). It is compared as `JSON.stringify(summary)` text with the text of the last emitted one. `live.reading`, `live.targets`, `live.status`, `live.flush` and `live.blocks` are not part of it: the `reading` event carries the reading, and a change of only the targets, the status chips, the flush or the block count sends no `room`. |
 | Targets and status | They stay in `Live` and in every `room` payload, `list()` and `get(id)`. They reach the page through C5's `listRooms()` refresh (at most once per 30 s, after a `reading`; C5 sections 3.2 and 3.4). They are left out of the summary because in VPD mode (`humMode: 'vpd'`, the default) `targets.RH` (from `ctl.state.rhT`, section 5.2) is recomputed from the measured T at every reading, so comparing them would send a `room` per reading per room. |
 | Rate | At most one summary `room` per room per tick (section 8.2 step 4), and at most one per `applySettings` or `ackAlarm` call. In practice only at a stage or crop change, an alarm raise or clear (a change of the open count), and a crash. |
 | C3 | Only relays the C2 `room` events to the stream; it derives no `room` event of its own (not from `reading`, not after a request). |
@@ -331,9 +353,9 @@ Database reads come first, then the steps that can crash, then the database writ
 
 | Step | Action |
 |---|---|
-| 1 | Reads: `open` = `db.listAlarms(id, { recent: 0 })` (only open rows) kept by `alarm_key`; `version = db.currentSettings(id)`; `saved = db.loadControllerState(id)` (or `null`); `calibRow = db.currentCalibration(id)` (or `null`); `mix = db.getMix(id)`; `rows = db.queryReadings(id, { from: now() - RECENT_READING_S, to: now() })`, `live.reading` = the last of `rows` as returned (a C1 `Reading`, no conversion), or `null`. |
+| 1 | Reads: `open` = `db.listAlarms(id, { recent: 0 })` (only open rows) kept by `alarm_key`; `version = db.currentSettings(id)`; `saved = db.loadControllerState(id)` (or `null`); `calibRow = db.currentCalibration(id)` (or `null`); `mix = db.getMix(id)`; `equipment = db.getEquipment(id)` (or `null`; revision 8); `rows = db.queryReadings(id, { from: now() - RECENT_READING_S, to: now() })`, `live.reading` = the last of `rows` as returned (a C1 `Reading`, no conversion), or `null`. |
 | 2 | `{ settings: cfg, warnings } = importSettings({ format: 'mushroom-climate-settings', version: ClimateController.SETTINGS_VERSION, settings: version.settings })`. This is the live `cfg`. The base = a deep copy of `cfg`. |
-| 3 | `calib` = `calibRow` mapped to `{ ua, infAch, moistBuffer, co2PerBlock }` (from `ua`, `inf_ach`, `moist_buffer`, `co2_per_block`), or `null`. `sum` = the sum of `blocks` over the rows of `mix`; `blocks` = `sum` when `sum ≥ 1`, else `null`. `adapter = adapterFactory({ room, calib, blocks, cfg, snapshot: saved ? saved.sim : null, now })`. A mix saved later takes effect at the next loop start (a restart; no new trigger). |
+| 3 | `calib` = `calibRow` mapped to `{ ua, infAch, moistBuffer, co2PerBlock }` (from `ua`, `inf_ach`, `moist_buffer`, `co2_per_block`), or `null`. `sum` = the sum of `blocks` over the rows of `mix`; `blocks` = `sum` when `sum ≥ 1`, else `null`. `live.blocks = blocks`. `adapter = adapterFactory({ room, calib, blocks, equipment, cfg, snapshot: saved ? saved.sim : null, now })`. A mix or equipment saved later takes effect at the next loop start (a restart; no new trigger: C3 6.16 and 6.26 do not restart the room). |
 | 4 | `ctl = ClimateController.create(cfg, saved ? saved.controller : null, onEvent)`. `onEvent(ev)` keeps the event (`{ t, lvl, text }`) to be written later. |
 | 5 | Resumed only: for each controller alarm `a` of `ctl.alarmList()` with `a.acked === false` whose open row `open.get(a.id)` has `acked_at` set: `ctl.ack(a.id)` (an acknowledgement made while the room was crashed, or after the last state save, is not lost). |
 | 6a | Fresh (`saved` is `null`): `runtime = ClimateRuntime.createRuntime({ io: adapter.io, ctl, onReading })`, then `runtime.poll()` once, so the first command goes out at once (as `app.js` `reset()` does). |
@@ -520,6 +542,7 @@ The adapter is the existing one from `docs/contract.md` (sections 1 and 2) and `
 | `room` | Room row | `id`, `volume`, `vent`, `adapter` |
 | `calib` | `{ ua, infAch, moistBuffer, co2PerBlock }` \| null | The room's current calibration (`db.currentCalibration`) |
 | `blocks` | integer ≥ 1 \| null | The room's block count: the sum of `blocks` over `db.getMix(id)` at loop start, or `null` when that sum is below 1 (section 8.1 step 3) |
+| `equipment` | C1 `Equipment` \| null | Revision 8. The room's machines (`db.getEquipment(id)` at loop start), or `null` when none are saved |
 | `cfg` | settings object | The live `cfg`, read only for the adapter (the simulated blocks follow `cfg.stage`) |
 | `snapshot` | object \| null | `controller_state.sim` of the last save |
 | `now` | `() => integer` | The manager's clock |
@@ -529,13 +552,13 @@ The adapter is the existing one from `docs/contract.md` (sections 1 and 2) and `
 
 ## 13. `server/sim-adapter.js`
 
-### 13.1 `createSimAdapter({ room, calib, blocks, cfg, snapshot, now })`
+### 13.1 `createSimAdapter({ room, calib, blocks, equipment, cfg, snapshot, now })`
 
 Returns `{ io, view(), snapshot() }`. The arguments are those of section 12.2.
 
 | Step | Action |
 |---|---|
-| 1 | `env = structuredClone(ClimateSim.DEFAULT_ENV)`; `env.vent = room.vent`; `env.room = { volume: room.volume }` plus, with `calib`, `ua`, `infAch`, `moistBuffer`; `env.co2PerBlock = calib ? Math.round(calib.co2PerBlock) : DEFAULT_ENV.co2PerBlock`; `env.blocks = blocks` when `blocks` is not `null` (else `DEFAULT_ENV.blocks`, 2000), the same block count C5 section 3.6 fits `co2_per_block` with; `env.blockStage = cfg.stage`. All other values stay `DEFAULT_ENV` (ideal sensors, no noise, daily weather 24–33 °C, sensor period 30 s). |
+| 1 | `env = structuredClone(ClimateSim.DEFAULT_ENV)`; `env.vent = room.vent`; `env.room = { volume: room.volume }` plus, with `calib`, `ua`, `infAch`, `moistBuffer`; `env.co2PerBlock = calib ? Math.round(calib.co2PerBlock) : DEFAULT_ENV.co2PerBlock`; `env.blocks = blocks` when `blocks` is not `null` (else `DEFAULT_ENV.blocks`, 2000), the same block count C5 section 3.6 fits `co2_per_block` with; `env.blockStage = cfg.stage`; revision 8: when `equipment` is not `null`, `env.plant = ClimateEquipment.plantOf(equipment, { volume: room.volume, calib })` (C8 section 4.5: with a calibration the plant has no `room` and `loads` keys, so the calibration's `ua` stays in force); `env.inletAt` and `env.exhaustAt` stay `DEFAULT_ENV` (`high`, `low`) for every room. All other values stay `DEFAULT_ENV` (ideal sensors, no noise, daily weather 24–33 °C, sensor period 30 s). |
 | 2 | `sim = ClimateSim.create(env, snapshot \|\| undefined)`. Without a snapshot: `sim.setRoom({ T: cfg.spT, RH: cfg.spRH, CO2: START_CO2 })`, so a new room starts at its targets without start-up alarms (as `app.js` `reset()`). |
 | 3 | `inner = ClimateRuntime.simIO(sim)`. |
 | 4 | Set the time origin (section 13.2). |
@@ -599,9 +622,10 @@ takes a `roomId` throws C1's `NotFoundError` for an unknown room.
 | `saveSettings(roomId, version)` | `{ settings, note, at: now() }` | `SettingsVersion` | `applySettings`, automatic versions |
 | `currentCalibration(roomId)` | integer | `Calibration` \| null | Loop start |
 | `getMix(roomId)` | integer | `MixRow[]` in `pos` order; `[]` if none | Loop start (`blocks` for the simulated adapter, section 8.1 step 3) |
+| `getEquipment(roomId)` | integer | `Equipment` \| null | Loop start (`equipment` for the simulated adapter, section 8.1 steps 1 and 3; revision 8) |
 | `loadControllerState(roomId)` | integer | `ControllerState` \| null | Loop start |
 | `saveControllerState(roomId, state)` | `{ controller, sim, at: now() }` | `undefined` (insert or replace) | Section 8.4 |
-| `insertReading(roomId, reading)` | The ReadingRow (section 5.3): a C1 `Reading` with `room_id` = `roomId` | `undefined` | Record |
+| `insertReading(roomId, reading)` | The ReadingRow (section 5.3): a C1 `Reading` (18 keys) with `room_id` = `roomId` | `undefined` | Record |
 | `queryReadings(roomId, query)` | `{ from: now() - 3600, to: now() }` (raw rows) | `Reading[]` by `t` | Loop start (`live.reading` = the last row, unchanged) |
 | `addEvent(roomId, event)` | `{ t, level, text }` | `Event` | Everywhere events are written |
 | `listAlarms(roomId, options)` | `{ recent: 0 }` (open rows only); `{ recent: 500 }` | `Alarm[]` | Loop start (open map); `ackAlarm` (rows it changes) |
@@ -624,7 +648,7 @@ data (for example `POST /rooms` then `GET /rooms/:id/settings`, `PUT settings` t
 |---|---|
 | `createFakeRoomManager({ db, now })` | `db`: the C1 db object (normally the fake `tests/fakes/db.js`); `now`: as in section 3. No loops, no timer, no adapter, no controller. Tests seed rooms with `db.createRoom` (or the fake's `create`). |
 | `start`, `stop`, `tick` | Do nothing |
-| `list`, `get` | `db.listRooms()` / `db.getRoom(id)` (with the `NotFoundError` → `null` rule) plus `live`. Default `live` of a room that is not archived: `{ reading: null, stage, crop, targets: null, status: null, alarms, running: true, error: null }` with `stage` and `crop` from `db.currentSettings(id).settings` and `alarms` = `db.listAlarms(id, { recent: 0 }).length`; then the fields given to `setLive` replace these. Archived: `live: null`. |
+| `list`, `get` | `db.listRooms()` / `db.getRoom(id)` (with the `NotFoundError` → `null` rule) plus `live`. Default `live` of a room that is not archived: `{ reading: null, stage, crop, targets: null, status: null, alarms, running: true, error: null, flush: null, blocks: null }` with `stage` and `crop` from `db.currentSettings(id).settings` and `alarms` = `db.listAlarms(id, { recent: 0 }).length`; then the fields given to `setLive` replace these. Archived: `live: null`. |
 | `create` | Section 6.1 rules; first settings by section 9.4 (with `cleanSettings`); `db.createRoom({ …, note: FIRST_NOTE })`; `db.addEvent` `Room created`; emits `settings` (`auto: false`), `event`, `room`, as section 4 |
 | `update` | Section 6.1 rules; `db.updateRoom`; emits `room` |
 | `archive` | `db.archiveRoom(id, now())`; `db.addEvent` `Room archived`; emits `event`, `room`. Already archived: unchanged, no emit |
@@ -633,7 +657,7 @@ data (for example `POST /rooms` then `GET /rooms/:id/settings`, `PUT settings` t
 | `applySettings(id, settings, note?, options?)` | Steps 1–3 and 11 of section 9.2 with `base = db.currentSettings(id).settings`: `cleanSettings(settings, base)`, `importSettings` of the merge, `db.saveSettings(id, { settings: next, note, at: now() })` (only the `importSettings` result is stored; the fake never calls `ClimateController.applySettings`, lead decision 6), event `Settings saved (version <id>)…`; emits `settings` (`auto: false`), `event`; returns `{ settings, warnings, version }`. `options` is recorded in `calls` and has no other effect (there is no controller, so the stored version is `next` either way). |
 | `ackAlarm` | Steps 1–3 and 5 of section 10.2 (no controller): `db.ackAlarm`, event and `alarm` `'acked'` emits; returns the row |
 | `on`, `off` | As section 4 |
-| `setLive(id, partialLive)` | Test helper: overrides fields of the room's `live` (for example `{ running: false, error: 'boom' }` for a crashed room, or a `reading`, which must be a C1 `Reading`). Emits nothing. |
+| `setLive(id, partialLive)` | Test helper: overrides fields of the room's `live` (for example `{ running: false, error: 'boom' }` for a crashed room, or a `reading`, which must be a C1 `Reading` with its 18 keys). Emits nothing. |
 | `emit(name, payload)` | Test helper: sends a section 7 event to the listeners |
 | `calls` | Array of `{ method, args }` for assertions (every public method except `on`, `off`, `setLive`, `emit`) |
 
@@ -649,13 +673,15 @@ Errors: the same `RoomError` class (from `server/rooms-common.js`), codes and `d
 |---|---|
 | Empty database: `start()` creates `Room 1` with one settings version whose note is `Created` and `roomM3 = 60`; a second manager on the same db creates nothing | Demo room |
 | `create` without settings (key left out, and key present with `undefined`): one version, note `Created`, `roomM3 = volume`; emits `settings` (`auto: false`) then `room`; with settings: `importSettings` warnings returned; with `settings: { crop: 'pink' }` and `volume: 200`: `roomM3 = 200` (merged over the base); with `settings: { roomM3: 150 }`: `roomM3 = 150` | First settings |
-| Fresh room: `start` writes one reading row at `t = now()`; 30 ticks of 1 s add exactly one more row at `t = start + 30`, with matching commands and exactly the C1 `Reading` keys of lead decision 1 (`room_id` = the room id, `t`, `T`, `RH`, `CO2`, `t_out`, `rh_out`, `ac_mode`, `ac_setpoint`, `fog`, `fan`, `lights`, `circ`, `power_w`, `kwh`; no other key); the `reading` payload's `live.reading` is `deepStrictEqual` to the row `db.latestReading` returns; controller events become rows | Recording |
+| Fresh room: `start` writes one reading row at `t = now()`; 30 ticks of 1 s add exactly one more row at `t = start + 30`, with matching commands and exactly the 18 C1 `Reading` keys of lead decisions 1 and 20 (`room_id` = the room id, `t`, `T`, `RH`, `CO2`, `t_out`, `rh_out`, `ac_mode`, `ac_setpoint`, `fog`, `fan`, `lights`, `circ`, `power_w`, `kwh`, `ac_fan`, `stage`, `core`; no other key); `ac_fan` is `null` while the AC is off and one of `low`, `auto`, `high` while it runs; `stage` equals `get(id).live.stage`; `core` is a number (the simulated room has a probe); the `reading` payload's `live.reading` is `deepStrictEqual` to the row `db.latestReading` returns; controller events become rows | Recording |
 | A manager started on a db that has a reading of the last hour: `get(id).live.reading` has the same keys as a row written by Record | One reading shape |
 | A clock step of 300 s in one tick records 10 reading rows, 30 s apart | Catch-up |
 | An alarm condition held long enough gives an `alarms` row and `alarm` `'raised'`; when it goes away, `cleared_at` is set; `ackAlarm` sets `acked_at`, emits one `'acked'` per changed row, and a second `ackAlarm` emits nothing | Alarms |
 | An automatic stage change and an alarm raise each emit `room` once, with the new `live.stage` or `live.alarms` in its payload; a ramped target change alone (a reading during a stage ramp that moves `live.targets.T`) and a status chip change alone (`live.status.T` going from `In band` to `Above band`) emit no `room`; a tick with no summary change (for example a tick with no new reading) emits no `room` | Room summary |
 | `applySettings` with `{ manual: { hu: { auto: false, level: 1.5 } } }`, and on another room with `{ rules: { baseFan: { fruiting: 5 }, rhLock: false } }`: the rooms keep recording, the rows have `fog` = 2 and `fan` = 3 (integers 0–3), and no `fatal` is emitted | Whole machine levels |
 | A room whose mix sums to 500 blocks: the adapter factory gets `blocks: 500`; a room without a mix (or with 0 blocks) gets `blocks: null` (so `createSimAdapter` keeps `DEFAULT_ENV.blocks`) | Block count |
+| A room whose mix sums to 500: `live.blocks === 500`; a room without a mix: `null`; `live.flush` is 1 after start and follows an automatic `rest` → `fruiting` change; neither a `flush` nor a `blocks` change alone emits `room` | Live flush and blocks |
+| A room with saved equipment `{ ac_hp: 3, ac_units: 1, fog_lph: 6, fan_m3h: 600, walls: 'pu50', roof: 'pu50', height: 3 }`: the adapter factory gets it as `equipment`; `createSimAdapter` gives a sim whose `env.plant.ac.capW === 7910` and `env.plant.room.ua` ≈ 28.12 (no calibration), and no `env.plant.room` with an applied calibration; without equipment `env.plant` is `undefined`. While `ClimateEquipment.plantOf` throws `Error('stub')` (the prep 2.0 stub of `equipment.js`) the test is skipped: `test(name, { skip: STUB && "plantOf throws 'stub' (prep 2.0 stub of equipment.js); runs at gate 2.5" }, fn)` with `STUB` found once by calling `plantOf` in a `try`. It runs at gate 2.5, after the Equipment merge (lead decision 48). | Room equipment |
 | `stop()` saves the state; a new manager on the same db resumes: no reading is repeated, the controller's stage and alarms carry on, the sim continues from its snapshot, reading `t` keeps increasing | Resume |
 | `ackAlarm` on a crashed room, then `restart`: the controller's alarm has `acked: true` | Ack while crashed |
 | State is saved at a fresh start and again after 300 s of the clock | Periodic save |
