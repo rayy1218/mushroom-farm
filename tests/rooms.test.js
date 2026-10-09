@@ -518,9 +518,9 @@ test('Errors: create input', () => {
 // Task 4: Loop start (fresh), tick, Record, state save (C2 section 8.1 fresh, 8.2-8.4, 5.2, 5.3)
 // ---------------------------------------------------------------------------
 
-const READING_KEYS = ['room_id', 't', 'T', 'RH', 'CO2', 't_out', 'rh_out', 'ac_mode', 'ac_setpoint', 'fog', 'air', 'lights', 'circ', 'power_w', 'kwh'];
+const READING_KEYS = ['room_id', 't', 'T', 'RH', 'CO2', 't_out', 'rh_out', 'ac_mode', 'ac_setpoint', 'fog', 'air', 'lights', 'circ', 'power_w', 'kwh', 'ac_fan', 'stage', 'core'];
 
-test('Recording', { skip: 'C1 rev 6 / C2 rev 9 fake: Server 2 rewrites this test' }, (t) => {
+test('Recording', (t) => {
   const spy = simSpyFactory();
   const origCreate = CC.create;
   let capturedOnEvent = null;
@@ -547,7 +547,7 @@ test('Recording', { skip: 'C1 rev 6 / C2 rev 9 fake: Server 2 rewrites this test
   assert.equal(rowsAfter30.length, 2);
   const row = rowsAfter30[1];
   assert.equal(row.t, T0 + 30);
-  assert.deepEqual(Object.keys(row).sort(), READING_KEYS.slice().sort());
+  assert.deepEqual(Object.keys(row), READING_KEYS); // C2 5.3: the 18 keys, in this order
   assert.equal(row.room_id, 1);
 
   const lastCmd = spy.writes[spy.writes.length - 1];
@@ -557,6 +557,13 @@ test('Recording', { skip: 'C1 rev 6 / C2 rev 9 fake: Server 2 rewrites this test
   assert.equal(row.air, lastCmd.air && lastCmd.air.on ? 1 : 0);
   assert.equal(row.lights, lastCmd.lights.on ? 1 : 0);
   assert.equal(row.circ, lastCmd.circ.on ? 1 : 0);
+  assert.ok(row.air === 0 || row.air === 1);
+  assert.equal(row.ac_fan, lastCmd.ac.power ? (['low', 'auto', 'high'].includes(lastCmd.ac.fan) ? lastCmd.ac.fan : 'auto') : null);
+  if (row.ac_mode === 'off') assert.equal(row.ac_fan, null);
+  else assert.ok(['low', 'auto', 'high'].includes(row.ac_fan));
+  assert.equal(row.stage, mgr2.get(1).live.stage);
+  assert.equal(typeof row.core, 'number');
+  assert.ok(Number.isFinite(row.core));
 
   const r = spy.made[0].a.io.read();
   const sumPower = Object.values(r.power).reduce((a, b) => a + b, 0);
@@ -672,6 +679,25 @@ test('Block count', () => {
   assert.equal(byRoom.get(a.id), 500);
   assert.equal(byRoom.get(b.id), null);
   assert.equal(byRoom.get(c.id), null);
+});
+
+test('Room equipment: the adapter factory gets the saved row', () => {
+  const cap = capture(scripted().factory);
+  const { db, mgr } = setup(cap.factory);
+  const { room: a } = mgr.create({ name: 'A', volume: 60 });
+  const { room: b } = mgr.create({ name: 'B', volume: 60 });
+  const saved = { ac_hp: 3, ac_units: 1, fog_lph: 6, air_m3h: 600, walls: 'pu50', roof: 'pu50', height: 3 };
+  db.saveEquipment(a.id, saved);
+  mgr.start();
+  const byRoom = new Map(cap.made.map(args => [args.room.id, args.equipment]));
+  assert.deepEqual(byRoom.get(a.id), db.getEquipment(a.id));
+  assert.equal(byRoom.get(a.id).ac_hp, 3);
+  assert.equal(byRoom.get(b.id), null);
+  // a restart reads the row again (C2 8.1 step 1)
+  db.saveEquipment(a.id, { ...saved, ac_hp: 4 });
+  mgr.restart(a.id);
+  assert.deepEqual(cap.made.at(-1).equipment, db.getEquipment(a.id));
+  assert.equal(cap.made.at(-1).equipment.ac_hp, 4);
 });
 
 test('list and get', () => {
@@ -955,7 +981,7 @@ test('Resume: alarm cleared while stopped', () => {
   assert.equal(mgr2.get(1).live.alarms, 0);
 });
 
-test('One reading shape', { skip: 'C1 rev 6 / C2 rev 9 fake: Server 2 rewrites this test' }, () => {
+test('One reading shape', () => {
   let clock = T0;
   const now = () => clock;
   const db = openFakeDb({ now });
@@ -969,7 +995,7 @@ test('One reading shape', { skip: 'C1 rev 6 / C2 rev 9 fake: Server 2 rewrites t
   const live = mgr2.get(1).live;
   const expected = db.queryReadings(1, { from: 0, to: now() }).at(-1);
   assert.deepEqual(live.reading, expected);
-  assert.deepEqual(Object.keys(live.reading).sort(), READING_KEYS.slice().sort());
+  assert.deepEqual(Object.keys(live.reading), READING_KEYS);
   mgr2.stop();
 
   clock += 3601;

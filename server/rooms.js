@@ -87,7 +87,7 @@ function upgradeAndImport(settings) {
   return { settings: imported.settings, warnings: upgraded.warnings.concat(imported.warnings), upgradeWarnings: upgraded.warnings };
 }
 
-function buildReadingRow(roomId, r, cmd) {
+function buildReadingRow(roomId, r, cmd, cfg) {
   return {
     room_id: roomId,
     t: Math.round(r.t),
@@ -104,6 +104,10 @@ function buildReadingRow(roomId, r, cmd) {
     circ: cmd.circ.on ? 1 : 0,
     power_w: sumFinite(r.power),
     kwh: sumFinite(r.kwh),
+    // C2 5.3 (revision 8): the AC fan as sim.js normalises it, the stage after this reading, the block core probe
+    ac_fan: cmd.ac.power ? (['low', 'auto', 'high'].includes(cmd.ac.fan) ? cmd.ac.fan : 'auto') : null,
+    stage: cfg.stage,
+    core: finiteOrNull(r.core),
   };
 }
 
@@ -265,7 +269,7 @@ function createRoomManager(options) {
   }
 
   function recordReading(id, loop, r, cmd) {
-    const row = buildReadingRow(id, r, cmd);
+    const row = buildReadingRow(id, r, cmd, loop.cfg);
     db.insertReading(id, row);
     loop.liveReading = row;
     emit('reading', { roomId: id, live: liveOf(loop) });
@@ -292,6 +296,7 @@ function createRoomManager(options) {
     const saved = db.loadControllerState(id);
     const calibRow = db.currentCalibration(id);
     const mix = db.getMix(id);
+    const equipment = db.getEquipment(id);
     const rows = db.queryReadings(id, { from: t - RECENT_READING_S, to: t });
     const liveReading = rows.length ? rows[rows.length - 1] : null;
 
@@ -317,7 +322,7 @@ function createRoomManager(options) {
       const calib = calibRow ? { ua: calibRow.ua, infAch: calibRow.inf_ach, moistBuffer: calibRow.moist_buffer, co2PerBlock: calibRow.co2_per_block } : null;
       const sum = mix.reduce((s, m) => s + m.blocks, 0);
       const blocks = sum >= 1 ? sum : null;
-      const adapter = adapterFactory({ room: roomRow, calib, blocks, cfg: loop.cfg, snapshot: saved ? saved.sim : null, now });
+      const adapter = adapterFactory({ room: roomRow, calib, blocks, equipment, cfg: loop.cfg, snapshot: saved ? saved.sim : null, now });
       loop.adapter = adapter;
 
       const onEvent = ev => loop.pendingEvents.push(ev);
