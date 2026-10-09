@@ -1,6 +1,6 @@
 # Batches and harvest by room QR: design
 
-Date: 2026-10-09. Status: approved in brainstorming. Contract C10 (`docs/contracts/harvest.md`, draft revision 1) is frozen with the wave 2 contracts and built inside wave 2 (owner's choice, 2026-10-09); C10 wins where this spec and it differ.
+Date: 2026-10-09. Status: approved in brainstorming. Contract C10 (`docs/contracts/harvest.md`, revision 2) is frozen with the wave 2 contracts and built inside wave 2 (owner's choice, 2026-10-09; lead decisions 59–68, twelve streams in wave 2); C10 wins where this spec and it differ.
 
 ## Purpose
 

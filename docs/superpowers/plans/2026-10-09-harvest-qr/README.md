@@ -8,19 +8,19 @@
 
 **Tech Stack:** Plain JavaScript (browser IIFEs + Node 22), `node:test`, `node:sqlite`, no build step, no npm dependencies (the encoder is compiled from TypeScript once, at vendoring time).
 
-**Spec:** `docs/superpowers/specs/2026-10-09-harvest-qr-design.md`. **Contract:** `docs/contracts/harvest.md` (C10, draft revision 1; section 14 lists the changes to fold into C1, C3, C5 and the wave 2 plan; section 15 the proposed lead decisions H1–H10).
+**Spec:** `docs/superpowers/specs/2026-10-09-harvest-qr-design.md`. **Contract:** `docs/contracts/harvest.md` (C10, draft revision 2, folded into the wave 2 contracts; section 14 lists the changes to fold into C1, C3, C5 and the wave 2 plan; section 15 the proposed lead decisions H1–H10).
 
 ---
 
 ## When this runs
 
-Inside wave 2 (proposed lead decision H1, owner's choice 2026-10-09). The steps map onto the wave 2 plan's phases:
+Inside wave 2 (lead decision 59, owner's choice 2026-10-09; C10's decisions are 59–68). The steps map onto the wave 2 plan's phases:
 
 | Step here | Wave 2 phase | Who |
 |---|---|---|
 | 0.1 | Contract freeze (prep 2.0 step 1) | The session that leads wave 2 |
 | 0.2–0.4 | Prep 2.0 steps 2–6 | Lead |
-| 1 | Streams | Harvest data, Harvest API, Harvest web, beside the nine wave 2 streams |
+| 1 | Streams | Harvest data, Harvest API, Harvest web, beside the nine other wave 2 streams (twelve in all) |
 | 2 | Gate 2.5 and wave 3 | Lead |
 
 On 2026-10-09 another session is reworking the wave 2 drafts on `wave2/contracts` (worktree `w2-contracts`). This branch (`docs/harvest-spec`) never edits that branch; the wave 2 lead folds C10 in (task 0.1). The code of tasks 0.2 and 0.3 was run and passes (43 + 2 tests on 2026-10-09).
@@ -52,9 +52,9 @@ git merge --no-ff docs/harvest-spec -m "Merge docs/harvest-spec (C10 draft, harv
 # a conflict can only be in docs/ROADMAP.md: keep wave2/contracts' rows, re-apply the two harvest rows and the order table
 ```
 
-- [ ] **Step 2:** Apply every row of C10 section 14 to `db.md`, `api.md`, `web.md` and the wave 2 plan (each change in its contract's "Changes in revision N" table); record H1–H10 as lead decisions with the next free numbers in `LEAD-DECISIONS.md`, and replace "H<n>" in C10 with them.
+- [ ] **Step 2:** Apply every row of C10 section 14 to `db.md`, `api.md`, `web.md` and the wave 2 plan (each change in its contract's "Changes in revision N" table); record H1–H10 as lead decisions 59–68 in `LEAD-DECISIONS.md` (done on `wave2/contracts`), and replace "H<n>" in C10 with them.
 - [ ] **Step 3:** Two reviews of C10 with the other contracts (an Opus reviewer for consistency with C1, C3, C5; a second for testability), as the wave 2 freeze check; fix every blocking and important finding.
-- [ ] **Step 4:** Freeze C10 (revision 1) in the same commit as the wave 2 contracts.
+- [ ] **Step 4:** Freeze C10 (revision 2) in the same commit as the wave 2 contracts.
 
 ### Task 0.2: `harvest-rules.js` (`FarmHarvestRules`)
 
@@ -603,7 +603,7 @@ git commit -m "chore: prep 2.0 harvest files (C10 2): schema, HttpError, stubs, 
 
 ## Step 1: streams
 
-Three streams beside the nine wave 2 streams (wave 2 plan 3, 4 rules apply: no merging of `master`, contract questions go to the lead).
+Three streams beside the nine other wave 2 streams (twelve in all) (wave 2 plan 3, 4 rules apply: no merging of `master`, contract questions go to the lead).
 
 | Stream | Branch | Builds against | Done when |
 |---|---|---|---|

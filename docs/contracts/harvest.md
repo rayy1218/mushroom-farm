@@ -365,8 +365,8 @@ No route sends a stream event (C4 unchanged): the phone and the batch pages relo
 
 | Helper | Contract |
 |---|---|
-| `dateToSeconds('YYYY-MM-DD')` | Local midnight in seconds (`new Date(y, m − 1, d)`); `null` for an empty or invalid string |
-| `secondsToDate(t)` | `'YYYY-MM-DD'` of the local date |
+| `dateToSeconds('YYYY-MM-DD')` | 00:00 farm time (UTC+8, the farm device's `TZ=Asia/Kuala_Lumpur`, lead decision 67) in seconds: `Date.UTC(y, m − 1, d) / 1000 − 8 × 3600`, whatever the browser's time zone; `null` for an empty or invalid string |
+| `secondsToDate(t)` | `'YYYY-MM-DD'` of the farm date: `new Date((t + 8 × 3600) × 1000)` read with the UTC getters (`getUTCFullYear`, `getUTCMonth`, `getUTCDate`) |
 | `ageDays(from, now)` | Whole days, `Math.floor((now − from) / 86400)` |
 | `batchBody(form)` | The C10 batch body from the form values: numbers parsed, dates through `dateToSeconds`, empty text left out on create and sent as `null` on edit |
 | `parseKg(text)` | Accepts `12.5`, `12,5`, ` 12.5 `; `null` for anything else (no unit, no sign) |
