@@ -121,3 +121,57 @@ test('EQ5 estimate (C8 6)', () => {
   w(room({ ac_hp: 1, walls: 'pu75', roof: 'pu75' }), lm(1000), LM(), { needW: 2229.8, stage: 'pinning', hp: 1 });
   w(room(), lm(2500), undefined, { needW: 5969.8, stage: 'pinning', hp: 2.5 });
 });
+
+// ---------- fixtures for the scripted search tests ----------
+const H = (fog = 1000, over = {}) => ({ walls: 1000, sun: 0, airSens: 1000, airLat: 1000, blockSens: 500, blockLat: 500, base: 100, lights: 100, people: 0, fog, water: 0, acSens: 3000, acLat: 1000, ...over });
+
+function fakeResult({ inT = 99, fails = [], wet = 0, fog = 1000, heat = {}, segs = null } = {}) {
+  const list = (segs || [{ stage: 'fruiting', flush: 1 }]).map((x, i) => {
+    const f = x.fails ?? fails;
+    return {
+      stage: x.stage, flush: x.flush, startDay: i, days: 1, hours: 24,
+      targets: { spT: x.stage === 'pinning' ? 17 : 20, spRH: 90, co2Lim: 1000, coreMax: 30 },
+      inT: x.inT ?? inT, rhOk: 100, lowRhMin: 0, wet: x.wet ?? wet, co2Below: 100, maxCore: 22, alarms: {}, kwh: 100, rm: 57,
+      fails: f, pass: f.length === 0, heat: H(fog, heat),
+    };
+  });
+  const series = [];
+  for (const sg of list) for (let h = 0; h < 24; h++) {
+    series.push({ h: series.length, stage: sg.stage, flush: sg.flush, T: 20, RH: 90, CO2: 800, core: 22, kwh: 4, heat: Object.fromEntries(Object.entries(sg.heat).map(([k, v]) => [k, v / 24])) });
+  }
+  return {
+    verdict: 'ok', stages: list, series,
+    totals: { days: list.length, kwh: 100 * list.length, rm: 57 * list.length, rmPerBlock: 0.057, pass: list.every(x => x.pass) },
+  };
+}
+const scripted = fn => function* (rm) { yield { day: 1, days: 1, stage: 'fruiting', flush: 1 }; return fakeResult(fn(rm.plant, rm)); };
+const hpOf = p => EQ.AC_SIZES.find(s => s.w === p.ac.capW).hp;
+const HOT = ['temperature too high'], CO2 = ['CO₂ above the limit'];
+const sizes = r => r.runs.filter(x => x.kind === 'ac').map(x => x.ac_hp);
+const check = (rm, mix, fn, extra = {}) => EQ.runCheck(rm, mix, { runCycleSteps: scripted(fn), ...extra });
+
+test('EQ6 input errors, from the first next() and from runCheck', () => {
+  const cases = [
+    [() => [null, lm(1)], 'TypeError', 'runCheck: room must be an object', {}],
+    [() => [room(), 'x'], 'TypeError', 'runCheck: mix must be a list', {}],
+    [() => [{ ...room(), equipment: { ac_hp: 7 } }, lm(1)], 'TypeError', 'runCheck: ac_hp: must be one of 1, 1.5, 2, 2.5, 3, 4, 5, 6', {}],
+    [() => [room(), lm(1)], 'TypeError', 'runCheck: settings must be an object', { settings: [] }],
+    [() => [room(), lm(1)], 'TypeError', 'runCheck: tariff must be a number of at least 0', { tariff: -1 }],
+    [() => [room(), lm(1)], 'Error', 'Unknown region: mars', { region: 'mars' }],
+  ];
+  for (const [args, name, message, opts] of cases) {
+    const [r, m] = args();
+    assert.throws(() => EQ.runCheckSteps(r, m, opts).next(), { name, message });
+    assert.throws(() => EQ.runCheck(r, m, opts), { name, message });
+  }
+  assert.throws(() => EQ.runCheck(room(), lm(1), { settings: { f: () => 1 } }), { name: 'DataCloneError' });
+  return assert.rejects(EQ.runCheckAsync(room(), 'x'), /mix must be a list/);
+});
+
+test('EQ7 an impossible mix returns at once', () => {
+  let called = 0, progress = 0;
+  const mix = [{ crop: 'lionsmane', blocks: 500 }, { crop: 'pink', blocks: 500 }];
+  const r = EQ.runCheck(room(), mix, { runCycleSteps: () => { called++; }, onProgress: () => { progress++; } });
+  assert.deepEqual(r, { verdict: 'impossible', why: CAP.commonTargets(mix).conflict });
+  assert.deepEqual([called, progress], [0, 0]);
+});
