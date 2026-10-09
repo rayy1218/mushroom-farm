@@ -13,7 +13,7 @@ require('../web/api.js');
 require('../web/charts.js');
 require('../web/settings-panel.js');
 require('../web/shell.js');
-const { airText } = require('../web/simulator.js');
+const { airText: airTextRaw } = require('../web/simulator.js');
 const SIM = globalThis.ClimateSim, CC = globalThis.ClimateController, RT = globalThis.ClimateRuntime;
 
 // The controller state of C9 5.3 (st.air), 5.1 (st.cmd.air) and 5.7 (st.airReason), built by hand: at the stream's
@@ -29,6 +29,8 @@ const rules = { fanOn: 900, fanOff: 700, purgeMaxS: 180 };
 const run = (reason, start) => ({ start, end: null, reason, co2Start: 950, co2End: null, m3: 0, capped: false });
 const IDLE = { lvl: 'none', icon: '○', text: 'Idle' };
 const MANUAL = { auto: false, on: false };
+const AUTO = { auto: true, on: false };
+const airText = a => airTextRaw({ manual: AUTO, ...a });
 
 test('airText: idle, with and without a predicted purge', () => {
   assert.deepEqual(airText({ st: stOf(), cur: null, rules, t: 100 }), { state: 'Idle', glance: 'Idle', chip: IDLE });
@@ -63,7 +65,7 @@ test('airText: a CO₂-fault timed purge shows Timed purge · off while the fans
 
 test('airText: an unknown run reason throws, a missing cur is not guessed', () => {
   assert.throws(() => airText({ st: stOf({}, true, 'bogus'), cur: run('bogus', 1000), rules, t: 1090 }), /unknown air run reason bogus/);
-  assert.throws(() => airText({ st: stOf({ purgeStart: 1000 }, true), cur: null, rules, t: 1090 }));
+  assert.throws(() => airText({ st: stOf({ purgeStart: 1000 }, true), cur: null, rules, t: 1090 }), /without a running record/);
 });
 
 test('airText: humidity first delays the purge', () => {
@@ -75,6 +77,11 @@ test('airText: Manual and Off', () => {
   assert.deepEqual(airText({ st: stOf({ nextPurgeS: 120 }), cur: null, rules, manual: MANUAL, t: 100 }),
     { state: 'Manual off', glance: 'Manual off', chip: { lvl: 'none', icon: '○', text: 'Manual off' } });
   assert.equal(airText({ st: stOf({}, true, 'manual'), cur: run('manual', 1000), rules, manual: { auto: false, on: true }, t: 1010 }).state, 'Manual on');
+});
+
+test('airText: Manual with On ticked reads Manual on before the controller steps', () => {
+  assert.deepEqual(airText({ st: stOf(), cur: null, rules, manual: { auto: false, on: true }, t: 100 }),
+    { state: 'Manual on', glance: 'Manual on', chip: { lvl: 'info', icon: '●', text: 'Manual on' } });
 });
 
 test('airText: runs that are not CO₂ purges', () => {

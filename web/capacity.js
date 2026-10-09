@@ -35,7 +35,7 @@ function normRoom(r, i) {
     .map(m => ({ crop: m.crop, blocks: Math.round(m.blocks), ...(inRange(m.co2PerBlock, ...LIM.co2) ? { co2PerBlock: m.co2PerBlock } : {}) }));
   const rep = r.report;
   const report = rep && typeof rep === 'object' && VERDICT_CHIP[rep.verdict] && Array.isArray(rep.runs)
-    && !(rep.balance && !LIMIT_WORD[rep.balance.limit]) ? rep : null;
+    && !(rep.balance && !Object.hasOwn(LIMIT_WORD, rep.balance.limit)) ? rep : null;
   return { id: String(r.id || `${Date.now().toString(36)}${i}`), name: String(r.name || 'Room').slice(0, 60),
     volume: inRange(r.volume, ...LIM.volume) ? r.volume : PL.room.volume, ...(inRange(r.airM3h, ...LIM.air) ? { airM3h: r.airM3h } : {}),
     calib: validCalib(r.calib), mix, report, rev: 0 };

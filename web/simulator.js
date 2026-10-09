@@ -103,7 +103,9 @@ let animAcFlows = [], animFanFlows = [];
 const anim = { fan: 0, cond: 0, circ: 0, acFlow: 0, fanFlow: 0 };
 let ventKey = '';
 const reduceMotion = () => (typeof matchMedia !== 'undefined' ? matchMedia('(prefers-reduced-motion: reduce)').matches : false);
+let fanInBlades = null, fanOutBlades = null;
 function buildMimicExtras() {
+  fanInBlades = el.querySelector('#fanInBlades'); fanOutBlades = el.querySelector('#fanOutBlades');
   mist = []; bubbles = []; caps = [];
   for (let i = 0; i < 16; i++) mist.push({ ph: i / 16, dx: (Math.random() - 0.5) * 14, elm: UI.svgEl('circle', { class: 'mist', r: 3 }, el.querySelector('#mist')) });
   for (let i = 0; i < 14; i++) bubbles.push({ ph: i / 14, dx: Math.random() * 136, elm: UI.svgEl('circle', { class: 'bubble', r: 2.5 }, el.querySelector('#bubbles')) });
@@ -156,8 +158,8 @@ function animateMimic(dtReal) {
     anim.fanFlow -= dtReal * 60 * (0.3 + fanF);
   }
   const fanRot = `rotate(${anim.fan.toFixed(1)})`;
-  el.querySelector('#fanInBlades').setAttribute('transform', fanRot);
-  el.querySelector('#fanOutBlades').setAttribute('transform', fanRot);
+  fanInBlades.setAttribute('transform', fanRot);
+  fanOutBlades.setAttribute('transform', fanRot);
   el.querySelector('#condBlades').setAttribute('transform', `rotate(${anim.cond.toFixed(1)})`);
   el.querySelector('#circBlades').setAttribute('transform', `rotate(${anim.circ.toFixed(1)})`);
   for (const f of animAcFlows) { f.style.opacity = !a.power ? 0 : a.comp ? 0.35 + 0.65 * a.acFrac : 0.2; f.style.strokeDashoffset = anim.acFlow; }
@@ -283,7 +285,7 @@ function updateUi() {
   UI.set('dDelayed', UI.fmtDur(S.delayedS));
   UI.set('dAcCmds', String(S.acCmds)); UI.set('dAcCmdsL', `AC commands${perDay(S.acCmds)}`);
   UI.set('dFogStarts', String(S.fogStarts)); UI.set('dFogStartsL', `fogger starts${perDay(S.fogStarts)}`);
-  updateLadderLive();
+  updateLadderLive(air.chip);
   renderPurges();
   paintProgram();
   paintGlance(list, tot, days, air);
@@ -361,11 +363,11 @@ function renderPurges() {
 }
 
 // ---------------- Ladder (rules-side panel slot) ----------------
-function updateLadderLive() {
+function updateLadderLive(chip = airText({ st: ctl.state, cur: ctl.purges().cur, rules: cfg.rules, manual: cfg.manual.air, t: reading.t }).chip) {
   if (!ladder) return;
   const st = ctl.state, co2 = reading.CO2;
   const ok = Number.isFinite(co2) && !st.f.CO2;
-  ladder.draw(cfg, ok ? co2 : NaN, { air: airText({ st, cur: ctl.purges().cur, rules: cfg.rules, manual: cfg.manual.air, t: reading.t }).chip });
+  ladder.draw(cfg, ok ? co2 : NaN, { air: chip });
 }
 
 // ---------------- Stage program / crop check ----------------
@@ -466,6 +468,7 @@ function paintGlance(alarms, kwhTot, days, air) {
   UI.set('glCost', full ? `RM ${(perDay(kwhTot) * input.tariff).toFixed(2)}` : '–');
   UI.set('glWater', full ? `${perDay(r.water.fogKg).toFixed(1)} L` : '–');
   UI.set('glAirNow', air.glance);
+  { const g = el.querySelector('#glAir'); g.dataset.lvl = air.chip.lvl; g.querySelector('.gl-ico').textContent = air.chip.icon; }
   const S = st.stats;
   UI.set('glPurges', full ? `Purges ${Math.round(perDay(S.purges))} · average ${S.purges ? UI.fmtMinSec(Math.round(S.purgeS / S.purges)) : '–'}` : '–');
   const act = alarms.filter(a => a.active);
@@ -691,16 +694,21 @@ function mimicLayout({ inletAt, exhaustAt }) {
 // state, the glance text and the ladder chip. st.airReason is C9 5.7's reason of the run now. Pure, for Node tests
 // (tests/web-air.test.js).
 const RUN_TEXT = { safety: 'Safety run', timed: 'Timed purge', 'free cooling': 'Free cooling', drying: 'Drying', manual: 'Manual on' };
-function airText({ st, cur, rules, manual = { auto: true, on: false }, t }) {
+function airText({ st, cur, rules, manual, t }) {
   const A = st.air, mmss = s => UI.fmtMinSec(Math.max(0, Math.round(s))), mins = s => Math.max(1, Math.ceil(s / 60));
   if (st.cmd.air.on) {
     // st.airReason follows the run now (a purge can turn into a safety run); cur.reason keeps the first reason.
-    const reason = st.airReason, ran = mmss(t - cur.start);
-    if (reason === 'purge') return { state: `Purge ${ran} of ${mmss(rules.purgeMaxS)}`, glance: `Purging ${ran}`, chip: { lvl: 'info', icon: '▲', text: 'Purging' } };
+    const reason = st.airReason;
+    if (!cur) throw new Error('airText: the air exchange is on without a running record (ctl.purges().cur)');
+    if (reason === 'purge') {
+      const ran = mmss(t - cur.start);
+      return { state: `Purge ${ran} of ${mmss(rules.purgeMaxS)}`, glance: `Purging ${ran}`, chip: { lvl: 'info', icon: '▲', text: 'Purging' } };
+    }
     if (reason === 'safety') return { state: 'Safety run', glance: 'Safety run', chip: { lvl: 'serious', icon: '◆', text: 'Safety run' } };
     if (!Object.hasOwn(RUN_TEXT, reason)) throw new Error(`airText: unknown air run reason ${reason}`);
     return { state: RUN_TEXT[reason], glance: RUN_TEXT[reason], chip: { lvl: 'info', icon: '●', text: RUN_TEXT[reason] } };
   }
+  if (manual.auto === false && manual.on) return { state: 'Manual on', glance: 'Manual on', chip: { lvl: 'info', icon: '●', text: 'Manual on' } };
   if (manual.auto === false) return { state: 'Manual off', glance: 'Manual off', chip: { lvl: 'none', icon: '○', text: 'Manual off' } };
   if (A.delayed) return { state: 'Delayed (humidity first)', glance: 'Delayed (humidity first)', chip: { lvl: 'info', icon: '❚❚', text: 'Delayed' } };
   const chip = { lvl: 'none', icon: '○', text: 'Idle' };
@@ -1243,6 +1251,7 @@ function stopFrame() { if (rafId != null) { cancelAnimationFrame(rafId); rafId =
 
 function frame(now) {
   if (!mounted) return;
+  rafId = requestAnimationFrame(frame); // first, so a throw below cannot stop the page
   const dtReal = Math.min(0.1, (now - last) / 1000); last = now;
   if (!paused) {
     acc += dtReal * speed;
@@ -1252,7 +1261,6 @@ function frame(now) {
   animateMimic(dtReal);
   if (now - lastUi > 150) { updateUi(); lastUi = now; }
   if (chartsDirty && now - lastChart > 200) { drawCharts(); lastChart = now; }
-  rafId = requestAnimationFrame(frame);
 }
 
 function mount(viewEl) {
