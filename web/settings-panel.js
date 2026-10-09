@@ -294,7 +294,7 @@ const RULES_HTML = `
           <label class="num">Action <select id="rRhAction"><option value="stop">Stop the fan</option><option value="low">Reduce the fan to Low</option></select></label>
         </div>
       </fieldset>
-      <fieldset class="rule" style="--key:var(--s-fan)">
+      <fieldset class="rule" style="--key:var(--s-air)">
         <legend>Priority 3 · CO₂ purge</legend>
         <div class="row">
           <label class="num">Start at ≥ <input type="number" id="rFanOn" min="450" max="20000" step="50"> ppm</label>

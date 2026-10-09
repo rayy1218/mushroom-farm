@@ -7,7 +7,7 @@
   --page: #dde0e3; --surface: #f4f5f6; --room: #e8ebed; --ink: #15181b; --ink-2: #464c53; --muted: #6a7078;
   --grid: #dadde1; --axis: #b4bac1; --border: rgba(21,24,27,.13); --border-strong: rgba(21,24,27,.28);
   --wall: #a3aab1; --unit: #fbfcfc; --unit-on: #cfd4d9; --band: rgba(21,24,27,.075); --trend: #2b3036; --mist: #7f8790; --night: rgba(30,40,70,.07); --night-key: rgba(30,40,70,.14);
-  --s-ac: #2a78d6; --s-hu: #eb6834; --s-fan: #1baf7a; --s-li: #eda100; --s-ci: #e87ba4;
+  --s-ac: #2a78d6; --s-hu: #eb6834; --s-air: #1baf7a; --s-li: #eda100; --s-ci: #e87ba4;
   --good: #0ca30c; --good-text: #006300; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b;
 }
 @media (prefers-color-scheme: dark) {
@@ -16,7 +16,7 @@
     --page: #0f1113; --surface: #1c1f22; --room: #16191c; --ink: #f1f3f4; --ink-2: #c3c8cd; --muted: #959ba2;
     --grid: #2a2f33; --axis: #40464c; --border: rgba(255,255,255,.1); --border-strong: rgba(255,255,255,.24);
     --wall: #4d545b; --unit: #23272b; --unit-on: #3a4148; --band: rgba(255,255,255,.075); --trend: #e4e7ea; --mist: #9aa2aa; --night: rgba(0,0,0,.28); --night-key: rgba(0,0,0,.5);
-    --s-ac: #3987e5; --s-hu: #d95926; --s-fan: #199e70; --s-li: #c98500; --s-ci: #d55181; --good-text: #0ca30c;
+    --s-ac: #3987e5; --s-hu: #d95926; --s-air: #199e70; --s-li: #c98500; --s-ci: #d55181; --good-text: #0ca30c;
   }
 }
 :root[data-theme="dark"] {
@@ -24,7 +24,7 @@
   --page: #0f1113; --surface: #1c1f22; --room: #16191c; --ink: #f1f3f4; --ink-2: #c3c8cd; --muted: #959ba2;
   --grid: #2a2f33; --axis: #40464c; --border: rgba(255,255,255,.1); --border-strong: rgba(255,255,255,.24);
   --wall: #4d545b; --unit: #23272b; --unit-on: #3a4148; --band: rgba(255,255,255,.075); --trend: #e4e7ea; --mist: #9aa2aa; --night: rgba(0,0,0,.28); --night-key: rgba(0,0,0,.5);
-  --s-ac: #3987e5; --s-hu: #d95926; --s-fan: #199e70; --s-li: #c98500; --s-ci: #d55181; --good-text: #0ca30c;
+  --s-ac: #3987e5; --s-hu: #d95926; --s-air: #199e70; --s-li: #c98500; --s-ci: #d55181; --good-text: #0ca30c;
 }
 
 * { box-sizing: border-box; }
@@ -187,7 +187,7 @@ main { max-width: 1480px; margin: 0 auto; padding: 14px 16px 40px; display: grid
 .pipe { fill: none; stroke: var(--wall); stroke-width: 2.5; }
 .flow { fill: none; stroke-width: 2; stroke-linecap: round; stroke-dasharray: 5 9; opacity: 0; }
 .flow.ac { stroke: var(--s-ac); }
-.flow.fan { stroke: var(--s-fan); }
+.flow.fan { stroke: var(--s-air); }
 .blade { fill: var(--ink-2); }
 .ring { fill: none; stroke: var(--border-strong); stroke-width: 1.5; }
 .grille line { stroke: var(--ink-2); stroke-width: 1.2; }
@@ -205,8 +205,8 @@ main { max-width: 1480px; margin: 0 auto; padding: 14px 16px 40px; display: grid
 .readout[data-lvl="serious"] { --lvl: var(--serious); }
 .readout[data-lvl="critical"] { --lvl: var(--critical); }
 .readout[data-lvl="warning"] rect, .readout[data-lvl="serious"] rect, .readout[data-lvl="critical"] rect { stroke: var(--lvl); stroke-width: 2.5; }
-.keybar.ac { fill: var(--s-ac); } .keybar.hu { fill: var(--s-hu); } .keybar.fan { fill: var(--s-fan); }
-.arrowhead.ac { fill: var(--s-ac); } .arrowhead.fan { fill: var(--s-fan); }
+.keybar.ac { fill: var(--s-ac); } .keybar.hu { fill: var(--s-hu); } .keybar.fan { fill: var(--s-air); }
+.arrowhead.ac { fill: var(--s-ac); } .arrowhead.fan { fill: var(--s-air); }
 
 /* Rack */
 .post { stroke: var(--ink-2); stroke-width: 3; }
@@ -270,7 +270,7 @@ svg.chart:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; bo
 .chart .line { fill: none; stroke: var(--trend); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 .chart .cross { stroke: var(--ink-2); stroke-width: 1; }
 .chart .dot { fill: var(--trend); stroke: var(--surface); stroke-width: 2; }
-.chart .area.ac { fill: var(--s-ac); } .chart .area.hu { fill: var(--s-hu); } .chart .area.fan { fill: var(--s-fan); }
+.chart .area.ac { fill: var(--s-ac); } .chart .area.hu { fill: var(--s-hu); } .chart .area.air { fill: var(--s-air); }
 .chart .gap { fill: none; stroke: var(--surface); stroke-width: 2; }
 .chart .dlabel { font: 600 12px var(--font-cond); fill: var(--ink-2); }
 .legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 6px 0 8px; font-size: 13px; color: var(--ink-2); }
@@ -397,9 +397,9 @@ th:first-child, td:first-child { text-align: left; }
 .lad-mark.safe b { display: none; }
 .lad-mark[hidden] { display: none; }
 .chart .gridl { stroke: var(--grid); }
-.xbar path { fill: var(--s-fan); }
-.xbar.now path { fill: color-mix(in srgb, var(--s-fan) 55%, transparent); }
-.xbar:hover path { fill: color-mix(in srgb, var(--s-fan) 80%, var(--ink)); }
+.xbar path { fill: var(--s-air); }
+.xbar.now path { fill: color-mix(in srgb, var(--s-air) 55%, transparent); }
+.xbar:hover path { fill: color-mix(in srgb, var(--s-air) 80%, var(--ink)); }
 .chart .xlab { font: 600 11px var(--font-mono); fill: var(--ink-2); }
 .exh-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 16px; margin-top: 12px; }
 .exh-grid > div { overflow-x: auto; min-width: 0; }

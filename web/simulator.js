@@ -965,7 +965,7 @@ ${faceplate('circ', 'Circulation fan', 'CF-205 · 40 W', 'small', `
   <div class="e-rows">
     <div class="e-row" style="--key:var(--s-ac)"><span class="nm"><i></i>Air conditioner</span><span class="v" id="eAc"></span><span class="track"><span id="eAcBar"></span></span></div>
     <div class="e-row" style="--key:var(--s-hu)"><span class="nm"><i></i>Fogger</span><span class="v" id="eHu"></span><span class="track"><span id="eHuBar"></span></span></div>
-    <div class="e-row" style="--key:var(--s-fan)"><span class="nm"><i></i>Exhaust fan</span><span class="v" id="eFan"></span><span class="track"><span id="eFanBar"></span></span></div>
+    <div class="e-row" style="--key:var(--s-air)"><span class="nm"><i></i>Exhaust fan</span><span class="v" id="eFan"></span><span class="track"><span id="eFanBar"></span></span></div>
     <div class="e-row" style="--key:var(--s-li)"><span class="nm"><i></i>Lights</span><span class="v" id="eLi"></span><span class="track"><span id="eLiBar"></span></span></div>
     <div class="e-row" style="--key:var(--s-ci)"><span class="nm"><i></i>Circulation</span><span class="v" id="eCi"></span><span class="track"><span id="eCiBar"></span></span></div>
   </div>
