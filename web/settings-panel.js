@@ -10,7 +10,7 @@ function optMap(pairs) { return Object.fromEntries(pairs); }
 const cropOptions = () => optMap(Object.keys(CC.CROPS).filter(k => CC.CROPS[k].range).map(k => [k, CC.CROPS[k].name]));
 const farmTypeOptions = () => optMap(Object.keys(CC.FARM_TYPES).map(k => [k, CC.FARM_TYPES[k].name]));
 
-// The 56 field rows of C6 7.7, in table order.
+// The 51 field rows of C6 7.7 as changed by C9 7.1, in table order.
 const FIELDS = [
   { path: 'farmType', label: 'Farm type', get options() { return farmTypeOptions(); } },
   { path: 'crop', label: 'Mushroom', get options() { return cropOptions(); } },
@@ -38,6 +38,7 @@ const FIELDS = [
   { path: 'program.lights.stages.rest', label: 'Lights in rest' },
   { path: 'sensorMode', label: 'Two sensor sets', options: { average: 'Use the average', worst: 'Use the worst value', main: 'Use the main set' } },
   { path: 'roomM3', label: 'Room volume', unit: 'm³' },
+  { path: 'airM3h', label: 'Air exchange size', unit: 'm³/h' },
   { path: 'offsets.T', label: 'Sensor correction T', unit: '°C' },
   { path: 'offsets.RH', label: 'Sensor correction RH', unit: '%' },
   { path: 'offsets.CO2', label: 'Sensor correction CO₂', unit: 'ppm' },
@@ -46,24 +47,18 @@ const FIELDS = [
   { path: 'rules.rhLock', label: 'Humidity first on' },
   { path: 'rules.rhStop', label: 'Humidity first: at target −', unit: '%' },
   { path: 'rules.rhResume', label: 'Humidity first: until target −', unit: '%' },
-  { path: 'rules.rhAction', label: 'Humidity first: action', options: { stop: 'Stop the fan', low: 'Reduce the fan to Low' } },
-  { path: 'rules.fanOn', label: 'CO₂ purge: start at', unit: 'ppm' },
-  { path: 'rules.fanOff', label: 'CO₂ purge: stop at', unit: 'ppm' },
-  { path: 'rules.airMode', label: 'Fresh air', options: { steady: 'Steady (base level + steps)', purge: 'Purge (on and off)' } },
-  { path: 'rules.fanLevel', label: 'Purge level', options: { 1: 'Low', 2: 'Medium', 3: 'High' } },
-  { path: 'rules.acPurge', label: 'Change the AC during a purge' },
-  { path: 'rules.acAction', label: 'AC during a purge: action', options: { setback: 'Raise the setpoint (setback)', off: 'Turn the AC off' } },
-  { path: 'rules.acSetbackC', label: 'AC setback', unit: '°C' },
-  { path: 'rules.acOff', label: 'AC during a purge: from', unit: 'ppm' },
-  { path: 'rules.acOn', label: 'AC during a purge: until', unit: 'ppm' },
+  { path: 'rules.fanOn', label: 'Purge starts at', unit: 'ppm' },
+  { path: 'rules.fanOff', label: 'Purge stops at', unit: 'ppm' },
+  { path: 'rules.purgeMaxS', label: 'Longest purge', unit: 's' },
+  { path: 'rules.minOffS', label: 'Minimum off time', unit: 's' },
   { path: 'manual.ac.auto', label: 'Air conditioner' },
   { path: 'manual.ac.power', label: 'Air conditioner, manual: power' },
   { path: 'manual.ac.mode', label: 'Air conditioner, manual: mode', options: { cool: 'Cool', heat: 'Heat', dry: 'Dry', fan: 'Fan only' } },
   { path: 'manual.ac.setpoint', label: 'Air conditioner, manual: setpoint', unit: '°C' },
   { path: 'manual.hu.auto', label: 'Fogger' },
   { path: 'manual.hu.level', label: 'Fogger, manual: level', options: { 0: 'Off', 1: '1 (1 kg/h)', 2: '2 (2 kg/h)', 3: '3 (3 kg/h)' } },
-  { path: 'manual.fan.auto', label: 'Exhaust fan' },
-  { path: 'manual.fan.level', label: 'Exhaust fan, manual: level', options: { 0: 'Off', 1: 'Low', 2: 'Medium', 3: 'High' } },
+  { path: 'manual.air.auto', label: 'Air exchange' },
+  { path: 'manual.air.on', label: 'Air exchange: manual output' },
   { path: 'manual.lights.auto', label: 'Lights' },
   { path: 'manual.lights.on', label: 'Lights, manual: on' },
   { path: 'manual.circ.auto', label: 'Circulation fan' },

@@ -10,6 +10,30 @@ const CC = globalThis.ClimateController;
 const SP = globalThis.FarmSettingsPanel;
 
 function d() { return CC.defaultSettings(); }
+// Contract C9 5.2: the keys the air exchange removes, and the settings shape after it. At the stream's base the
+// controller still has the old shape, so c9Defaults() converts it; once the controller stream is merged it changes nothing.
+const REMOVED_RULES = ['airMode', 'baseFan', 'fanLevel', 'fogBoost', 'rhAction', 'acPurge', 'acAction', 'acSetbackC', 'acOff', 'acOn', 'maxSetback', 'guard'];
+function c9Defaults() {
+  const s = d();
+  for (const k of REMOVED_RULES) delete s.rules[k];
+  delete s.protect.fanMinOn; delete s.protect.fanMinOff; delete s.manual.fan;
+  s.airM3h ??= 1800;
+  s.rules.purgeMaxS ??= 180; s.rules.minOffS ??= 60;
+  s.manual.air ??= { auto: true, on: false };
+  return s;
+}
+const CTL_C9 = !!d().manual.air;
+// C9 7.1: path, label, unit (`–` in the contract is no unit).
+const C9_FIELDS = [
+  ['rules.fanOn', 'Purge starts at', 'ppm'],
+  ['rules.fanOff', 'Purge stops at', 'ppm'],
+  ['rules.purgeMaxS', 'Longest purge', 's'],
+  ['rules.minOffS', 'Minimum off time', 's'],
+  ['airM3h', 'Air exchange size', 'm³/h'],
+  ['manual.air.auto', 'Air exchange', undefined],
+  ['manual.air.on', 'Air exchange: manual output', undefined],
+];
+const GONE = ['rules.prepare', 'rules.prepareLeadS', 'rules.rhAction', 'rules.airMode', 'rules.fanLevel', 'rules.acPurge', 'rules.acAction', 'rules.acSetbackC', 'rules.acOff', 'rules.acOn', 'manual.fan.auto', 'manual.fan.level'];
 
 test('diffSettings: no change', () => {
   const base = d();
@@ -67,7 +91,10 @@ test('formatValue rules', () => {
   assert.equal(SP.formatValue('crop', 'pink'), 'Pink oyster');
   assert.equal(SP.formatValue('farmType', 'ready'), 'Ready-to-fruit blocks (bought in)');
   assert.equal(SP.formatValue('stage', 'rest'), CC.STAGES.rest);
-  assert.equal(SP.formatValue('rules.fanLevel', 2), 'Medium');
+  assert.equal(SP.formatValue('manual.air.auto', false), 'Manual');
+  assert.equal(SP.formatValue('manual.air.on', true), 'On');
+  assert.equal(SP.formatValue('rules.purgeMaxS', 180), '180 s');
+  assert.equal(SP.formatValue('airM3h', 1800), '1800 m³/h');
   assert.equal(SP.formatValue('manual.hu.level', 0), 'Off');
   assert.equal(SP.formatValue('program.lights.on', 420), '07:00');
   assert.equal(SP.formatValue('program.flushes', 3), '3');
@@ -102,17 +129,14 @@ test('safeSettings: importSettings step', () => {
   assert.throws(() => SP.safeSettings(5));
 });
 
-test('FIELDS = C6 7.7', () => {
-  assert.equal(SP.FIELDS.length, 56);
-  const base = d();
+function assertLeaves(base) {
   const paths = new Set();
   for (const f of SP.FIELDS) {
     assert.equal(typeof f.label, 'string');
     assert.ok(!paths.has(f.path), `duplicate path ${f.path}`);
     paths.add(f.path);
-    const parts = f.path.split('.');
     let v = base;
-    for (const p of parts) {
+    for (const p of f.path.split('.')) {
       assert.ok(v && typeof v === 'object', `${f.path} is not reachable`);
       // Object.hasOwn on the parent, not just a type check on the result: a misspelt leaf (for example
       // "program.flushs") would otherwise pass too, because v becomes undefined either way.
@@ -122,11 +146,32 @@ test('FIELDS = C6 7.7', () => {
     assert.ok(v !== undefined, `${f.path} is not a leaf`);
     assert.ok(v === null || typeof v !== 'object' || Array.isArray(v), `${f.path} is not a leaf`);
   }
-  const selectLike = ['farmType', 'crop', 'sensorMode', 'rules.rhAction', 'rules.airMode', 'rules.fanLevel', 'rules.acAction', 'manual.ac.mode', 'manual.hu.level', 'manual.fan.level'];
-  for (const p of selectLike) {
-    const f = SP.FIELDS.find(x => x.path === p);
-    assert.ok(f.options, `${p} is missing options`);
+}
+
+test('FIELDS = C6 7.7 as changed by C9 7.1: 51 rows, leaves of the C9 settings', () => {
+  assert.equal(SP.FIELDS.length, 51);
+  assertLeaves(c9Defaults());
+  for (const [path, label, unit] of C9_FIELDS) {
+    const f = SP.FIELDS.find(x => x.path === path);
+    assert.ok(f, `${path} is missing`);
+    assert.equal(f.label, label, path);
+    assert.equal(f.unit, unit, path);
   }
+  for (const p of GONE) assert.ok(!SP.FIELDS.some(f => f.path === p), `${p} is still listed`);
+  for (const p of ['farmType', 'crop', 'sensorMode', 'manual.ac.mode', 'manual.hu.level']) {
+    assert.ok(SP.FIELDS.find(x => x.path === p).options, `${p} is missing options`);
+  }
+});
+
+test('FIELDS against the real controller defaults (C9 5.2)', { skip: CTL_C9 ? false : 'runs after the controller stream is merged (lead step 2)' }, () => {
+  assertLeaves(d());
+  assert.equal(CC.SETTINGS_VERSION, 2);
+  const s = d();
+  for (const k of REMOVED_RULES) assert.ok(!Object.hasOwn(s.rules, k), `rules.${k} is still a setting`);
+  assert.ok(!Object.hasOwn(s.manual, 'fan'));
+  assert.deepEqual([s.airM3h, s.rules.purgeMaxS, s.rules.minOffS], [1800, 180, 60]);
+  assert.ok(!Object.hasOwn(s.rules, 'prepare') && !Object.hasOwn(s.rules, 'prepareLeadS'), 'no Prepare settings (C9 5.4)');
+  assert.deepEqual(s.manual.air, { auto: true, on: false });
 });
 
 test('diffSettings/applyChanges: an own __proto__ key on either side never pollutes Object.prototype', () => {
