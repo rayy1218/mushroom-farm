@@ -115,7 +115,45 @@ function openHarvest(db, options) {
     return plain(clearBatchStmt.get(val(clearedAt), id));
   }
 
-  return { createBatch, getBatch, listBatches, updateBatch, placeBatch, clearBatch };
+  function deleteBatch(id) {
+    const row = batchOrThrow(id);
+    deleteBatchStmt.run(id);
+    return plain(row);
+  }
+
+  function countCrates(batchId) {
+    batchOrThrow(batchId);
+    return countCratesStmt.get(batchId).n;
+  }
+
+  function addCrate(batchId, crate) {
+    batchOrThrow(batchId);
+    fields('addCrate', crate, ['kg', 'picker', 't']);
+    crate = orEmpty(crate);
+    return plain(insertCrate.get(batchId, crate.t === undefined ? now() : val(crate.t), val(crate.kg), val(crate.picker)));
+  }
+
+  function listCrates(batchId, options) {
+    batchOrThrow(batchId);
+    fields('listCrates', options, ['from']);
+    const from = val(orEmpty(options).from);
+    return listCratesStmt.all(batchId, from, from).map(plain);
+  }
+
+  function getCrate(id) {
+    return plain(crateOrThrow(id));
+  }
+
+  function undoCrate(id, at) {
+    crateOrThrow(id);
+    undoCrateStmt.run(at === undefined ? now() : val(at), id);
+    return plain(getCrateStmt.get(id));
+  }
+
+  return {
+    createBatch, getBatch, listBatches, updateBatch, placeBatch, clearBatch, deleteBatch,
+    countCrates, addCrate, listCrates, getCrate, undoCrate,
+  };
 }
 
 module.exports = { openHarvest };

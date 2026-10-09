@@ -345,3 +345,125 @@ both('clearBatch: null un-clears a cleared batch (LD 70)', (t, open) => {
   assert.equal(back.room_id, room);
   assert.equal(back.placed_at, clock);
 });
+
+// Task 6: addCrate, getCrate
+both('addCrate: shape and default t', (t, open) => {
+  const { harvest } = open();
+  const b = harvest.createBatch(batch());
+  const row = harvest.addCrate(b.id, { kg: 12.5 });
+  assert.deepEqual(Object.keys(row), CRATE_KEYS);
+  assert.equal(row.batch_id, b.id);
+  assert.equal(row.t, clock);
+  assert.equal(row.kg, 12.5);
+  assert.equal(row.picker, null);
+  assert.equal(row.deleted_at, null);
+  assert.deepEqual(harvest.getCrate(row.id), row);
+  assert.ok(isPlain(row));
+});
+
+both('addCrate: explicit t and picker; integer kg', (t, open) => {
+  const { harvest } = open();
+  const b = harvest.createBatch(batch());
+  const row = harvest.addCrate(b.id, { kg: 12, picker: 'Aminah', t: clock - 60 });
+  assert.equal(row.kg, 12);
+  assert.equal(row.t, clock - 60);
+  assert.equal(row.picker, 'Aminah');
+});
+
+both('addCrate: unknown field; unknown batch', (t, open) => {
+  const { harvest } = open();
+  const b = harvest.createBatch(batch());
+  assertTypeError(() => harvest.addCrate(b.id, { kg: 1, batch_id: 2 }), 'addCrate: unknown field "batch_id"');
+  assert.equal(harvest.countCrates(b.id), 0);
+  assertNotFound(() => harvest.addCrate(999, crate()), 'batch', 999);
+});
+
+both('getCrate: unknown ids throw NotFoundError(crate)', (t, open) => {
+  const { harvest } = open();
+  const b = harvest.createBatch(batch());
+  harvest.addCrate(b.id, crate());
+  for (const id of [999, NaN, '1', undefined]) assertNotFound(() => harvest.getCrate(id), 'crate', id);
+});
+
+// Task 7: listCrates
+function threeBatchCrates(harvest) {
+  const b = harvest.createBatch(batch());
+  const ids = {};
+  for (const t of [300, 100, 200, 400, 400]) ids[`${t}${ids[t] === undefined ? '' : 'b'}`] = harvest.addCrate(b.id, crate({ t })).id;
+  return { b, ids };
+}
+
+both('listCrates: t ascending, then id; undone crates included', (t, open) => {
+  const { harvest } = open();
+  const { b, ids } = threeBatchCrates(harvest);
+  harvest.undoCrate(ids[100], 500);
+  const rows = harvest.listCrates(b.id);
+  assert.deepEqual(rows.map(r => r.id), [ids[100], ids[200], ids[300], ids[400], ids['400b']]);
+  assert.equal(rows[0].deleted_at, 500);
+  assert.deepEqual(Object.keys(rows[0]), CRATE_KEYS);
+  assert.ok(isPlain(rows[0]));
+});
+
+both('listCrates: from is inclusive', (t, open) => {
+  const { harvest } = open();
+  const { b } = threeBatchCrates(harvest);
+  assert.deepEqual(harvest.listCrates(b.id, { from: 200 }).map(r => r.t), [200, 300, 400, 400]);
+  assert.deepEqual(harvest.listCrates(b.id, { from: null }), harvest.listCrates(b.id, {}));
+});
+
+both('listCrates: a null or non-finite from is no filter (LD 70)', (t, open) => {
+  const { harvest } = open();
+  const { b } = threeBatchCrates(harvest);
+  const all = harvest.listCrates(b.id);
+  assert.equal(all.length, 5);
+  for (const from of [Infinity, -Infinity, NaN, null]) assert.deepEqual(harvest.listCrates(b.id, { from }), all, String(from));
+});
+
+both('listCrates: errors', (t, open) => {
+  const { harvest } = open();
+  const b = harvest.createBatch(batch());
+  assertTypeError(() => harvest.listCrates(b.id, { to: 5 }), 'listCrates: unknown field "to"');
+  assertNotFound(() => harvest.listCrates(999), 'batch', 999);
+});
+
+// Task 8: undoCrate, countCrates
+both('undoCrate: sets deleted_at; a second undo keeps the first time', (t, open) => {
+  const { harvest } = open();
+  const b = harvest.createBatch(batch());
+  const c = harvest.addCrate(b.id, crate());
+  assert.equal(harvest.undoCrate(c.id, 500).deleted_at, 500);
+  assert.equal(harvest.undoCrate(c.id, 900).deleted_at, 500);
+  assert.ok(isPlain(harvest.undoCrate(c.id, 900)));
+});
+
+both('undoCrate: default at is now; unknown crate', (t, open) => {
+  const { harvest } = open();
+  const b = harvest.createBatch(batch());
+  const c = harvest.addCrate(b.id, crate());
+  clock += 30;
+  assert.equal(harvest.undoCrate(c.id).deleted_at, clock);
+  assertNotFound(() => harvest.undoCrate(999), 'crate', 999);
+});
+
+both('undoCrate: an explicit null at changes nothing (LD 70)', (t, open) => {
+  const { harvest } = open();
+  const b = harvest.createBatch(batch());
+  const live = harvest.addCrate(b.id, crate());
+  const undone = harvest.addCrate(b.id, crate());
+  harvest.undoCrate(undone.id, 500);
+  assert.equal(harvest.undoCrate(live.id, null).deleted_at, null);
+  assert.equal(harvest.listCrates(b.id).find(r => r.id === live.id).deleted_at, null);
+  assert.equal(harvest.undoCrate(undone.id, null).deleted_at, 500);
+});
+
+both('countCrates: counts every row, undone ones included', (t, open) => {
+  const { harvest } = open();
+  const b = harvest.createBatch(batch());
+  const first = harvest.addCrate(b.id, crate());
+  harvest.addCrate(b.id, crate());
+  harvest.addCrate(b.id, crate());
+  harvest.undoCrate(first.id, 500);
+  assert.equal(harvest.countCrates(b.id), 3);
+  assert.equal(harvest.countCrates(harvest.createBatch(batch()).id), 0);
+  assertNotFound(() => harvest.countCrates(999), 'batch', 999);
+});
