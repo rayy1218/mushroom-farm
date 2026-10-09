@@ -28,3 +28,56 @@ test('LV1 registration', () => {
   for (const n of HELPER_NAMES) assert.equal(typeof H[n], 'function', n);
   assert.doesNotThrow(() => tab.unmount());
 });
+
+test('LV2 airLive follows the C5 3.4 rows', () => {
+  const chip = (lvl, icon, text) => ({ lvl, icon, text });
+  const IDLE = chip('none', '○', 'Idle');
+  const r1 = air({ on: true, state: 'purge', reason: 'purge', purgeS: 75 });
+  let o = H.airLive(r1, S);
+  assert.equal(o.state, 'Purge 1:15 of 3:00'); assert.equal(o.glance, 'Purging 1:15');
+  assert.deepEqual(o.chip, chip('info', '▲', 'Purging'));
+  assert.equal(H.airLive(r1, null).state, 'Purge 1:15');
+  o = H.airLive(air({ on: true, reason: 'safety' }), S);
+  assert.deepEqual([o.state, o.glance, o.chip], ['Safety run', 'Safety run', chip('serious', '◆', 'Safety run')]);
+  for (const [reason, text] of [['timed', 'Timed purge'], ['free cooling', 'Free cooling'], ['drying', 'Drying'], ['manual', 'Manual on']]) {
+    o = H.airLive(air({ on: true, reason }), S);
+    assert.deepEqual([o.state, o.glance, o.chip], [text, text, chip('info', '●', text)]);
+  }
+  assert.equal(H.airLive(air({ on: true, reason: 'weird' }), S).state, 'On');
+  assert.equal(H.airLive(air({ on: true, reason: null }), S).glance, 'On');
+  o = H.airLive(air({ manual: true, manualOn: true }), S);
+  assert.deepEqual([o.state, o.glance, o.chip], ['Manual on', 'Manual on', chip('info', '●', 'Manual on')]);
+  for (const extra of [{}, { delayed: true }]) {
+    o = H.airLive(air({ manual: true, ...extra }), S);
+    assert.deepEqual([o.state, o.glance, o.chip], ['Manual off', 'Manual off', chip('none', '○', 'Manual off')]);
+  }
+  o = H.airLive(air({ delayed: true }), S);
+  assert.deepEqual([o.state, o.glance, o.chip], ['Delayed (humidity first)', 'Delayed (humidity first)', chip('info', '❚❚', 'Delayed')]);
+  o = H.airLive(air({ timed: true }), S);
+  assert.deepEqual([o.state, o.glance, o.chip], ['Timed purge · off', 'Timed purge · off', IDLE]);
+  o = H.airLive(air({ nextPurgeS: 240 }), S);
+  assert.deepEqual([o.state, o.glance, o.chip], ['Idle · purge in about 4 min', 'Next purge in about 4 min', IDLE]);
+  assert.equal(H.airLive(air({ nextPurgeS: 241 }), S).glance, 'Next purge in about 5 min');
+  assert.equal(H.airLive(air({ nextPurgeS: 30 }), S).glance, 'Next purge in about 1 min');
+  for (const a of [AIR, air({ state: 'after' })]) {
+    o = H.airLive(a, S);
+    assert.deepEqual([o.state, o.glance, o.chip], ['Idle', 'Idle', IDLE]);
+  }
+  assert.equal(H.airLive(air({ on: true, reason: 'manual', manual: true, manualOn: true }), S).state, 'Manual on');
+});
+
+test('LV3 airLive day line', () => {
+  assert.equal(H.airLive(AIR, S).day, 'Purges 0 · average –');
+  assert.equal(H.airLive(air({ today: { purges: 41, avgS: 74, capped: 0 } }), S).day, 'Purges 41 · average 1:14');
+  assert.equal(H.airLive(air({ today: { purges: 41, avgS: 74.4, capped: 0 } }), S).day, 'Purges 41 · average 1:14');
+  assert.equal(H.airLive(air({ today: { purges: 41, avgS: 74, capped: 2 } }), S).day, 'Purges 41 · average 1:14 · 2 capped');
+});
+
+test('LV4 airLive null', () => {
+  assert.deepEqual(H.airLive(null, S), { state: '–', glance: '–', chip: null, day: '' });
+});
+
+test('LV5 airSub', () => {
+  assert.equal(H.airSub(S), 'SF-203 + EF-206 · 1,800 m³/h');
+  assert.equal(H.airSub(null), 'SF-203 + EF-206');
+});
