@@ -159,7 +159,9 @@ The server runs one adapter per room (`contracts/rooms.md` 12). A hardware adapt
 | Catch-up | Up to 300 s; a longer pause is a gap |
 | State save | Every 300 s and at stop (`contracts/rooms.md` 13.2, 14) |
 
-| Step | Adding a hardware adapter (work item 3.2) |
+Adding a hardware adapter (work item 3.2):
+
+| Step | Action |
 |---|---|
 | 1 | Write a module that returns the same object: `view()` and `snapshot()` return `null`, and there is no `io.advance`. |
 | 2 | Put its name in `rooms.adapter` (the column has no `CHECK`). |
