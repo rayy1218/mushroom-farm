@@ -1,18 +1,42 @@
 # Contracts C3 (HTTP API) and C4 (live feed)
 
-Date: 2026-10-08. Status: **frozen** (revision 7). Changes only through the lead; see `docs/contracts/LEAD-DECISIONS.md`. Spec: `docs/superpowers/specs/2026-10-08-farm-app-foundation-design.md`.
+Date: 2026-10-08. Status: **frozen** (revision 8). Changes only through the lead; see `docs/contracts/LEAD-DECISIONS.md`. Spec: `docs/superpowers/specs/2026-10-08-farm-app-foundation-design.md`.
 spec amendment of section 2.3 (a condition of the freeze).
 Spec: `docs/superpowers/specs/2026-10-08-farm-app-foundation-design.md`, sections 1-6.
 Binding: the lead decisions of 2026-10-08 (`LEAD-DECISIONS.md`, numbered 1-7 below as "lead decision N") override anything here.
 Section 2.3 proposes a lead decision 8 (the wave plan); until the lead records it, it is a proposal, not binding.
 Owner of the code: the API stream (every file it owns is listed in section 2.3).
-Users: the Rooms UI, Capacity and calibration, Simulator link and Web split streams (`web/api.js`), and the lead (fakes).
+Users: the Rooms UI, Capacity and calibration, Simulator link and Web split streams (`web/api.js`), and the lead (fakes); from revision 8 the wave 2 web streams (Room shell, Live tab, Simulate tab, Calibrate tab, Bench, the Equipment card).
 Builds against: C1 (`docs/contracts/db.md`, the fake db `tests/fakes/db.js`) and C2 (`docs/contracts/rooms.md`, the fake
 room manager `tests/fakes/rooms.js`), both written by the lead in wave 0 (lead decision 7). Section 11 lists every call
 the API makes to them.
 
 Where the spec is silent, this contract decides. Those points are marked **decided here** and are listed again
 under "Open questions" in the lead's report, so they can be changed before the freeze.
+
+### Changes in revision 8
+
+Room-centred app and C8 equipment (lead decisions 17–24, 39, 50, 52, 54). In wave 2 the **Server 2** stream owns every server file this contract names (section 2.3); the plan is `docs/superpowers/plans/2026-10-08-farm-foundation/wave2-plan.md`.
+
+| Section | Change |
+|---|---|
+| 1 | Body size: at most 8 MB for `POST /api/rooms/:id/simulations`, 1 MB elsewhere (lead decision 21). 201 also for a simulation run. Field names and unknown fields: a simulation run's `result` and `inputs.settings` pass through as sent. `DELETE` is a known method on 6.24 only. |
+| 2.3 | Wave 2 owners (prep 2.0, the Server 2 stream, gate 2.5). |
+| 3.1 | `Live` adds `flush` and `blocks` (C2 5.2, lead decision 27). |
+| 3.2 | Reading adds `ac_fan`, `stage`, `core` (lead decision 20). |
+| 3.6 | Calibration adds `source`, `log_from`, `log_to` (lead decision 23) and `equipment` (lead decision 50); `ua` is "Heat through walls and roof" (lead decision 28). |
+| 3.8 | CapacityReport is legacy: the web app stores capacity checks as simulation runs (lead decision 19). |
+| 3.9, 3.10, 3.11 (new) | SimulationRunInfo, SimulationRun (with `inputs`, 3.10.1), Equipment (C8). |
+| 4, 4.1 | New errors: 400 `Invalid simulation run`, 400 `Body is larger than 8 MB`, 400 `Invalid equipment`, 404 `Unknown simulation run`; C1 `NotFoundError` `simulation`. |
+| 5, 6.20–6.26 (new) | Routes: list, create, get, patch, delete simulation runs (lead decisions 17, 18); get and put the room's equipment (C8). 6.17 and 6.18 are legacy (lead decision 19). |
+| 6.8 | Range limits: `step` ≥ 3600 allows up to 1300 days (lead decision 22). |
+| 6.13 | Body takes optional `source`, `log_from`, `log_to`, `equipment`. |
+| 7.1 | `room-rules.js` loads after `capacity.js`, `cycle.js`, `equipment.js`; the Node require order; new exports `checkSimulationRun`, `checkRunPatch`, `checkEquipmentBody`. |
+| 7.4, 7.6, 7.7 | `checkCalibration` extended; new rules for simulation runs and equipment. |
+| 8, 8.1 | Mapping rows for simulation runs and the history log; the browser-storage import sends `source: 'import'`. |
+| 9 | `/cycle.js` and `/equipment.js` are served. |
+| 10.2 | The `reading` example carries the three new keys; simulation runs and equipment send no stream event (lead decision 18). |
+| 11, 12, 12.2 | Calls and tests for the new routes. The `simulation_runs` `CHECK`s accept kind `equipment`; this contract is the gate (lead decision 52). |
 
 ### Changes in revision 7
 
@@ -65,15 +89,15 @@ under "Open questions" in the lead's report, so they can be changed before the f
 |---|---|
 | Base path | Every API route starts with `/api/`. Every other path is a static file (section 9) or 404. |
 | Time | Every time field and time parameter is an integer: seconds since 1970-01-01 00:00 UTC. The page shows Malaysia time. |
-| Ids | Room, settings version, calibration run, event and alarm ids are positive integers (SQLite row ids). In a path, an id that is not a positive decimal integer gives 404 (as an unknown id). |
+| Ids | Room, settings version, calibration run, event, alarm and simulation run ids are positive integers (SQLite row ids). In a path, an id that is not a positive decimal integer gives 404 (as an unknown id). |
 | Request body | JSON, UTF-8. The `Content-Type` header is not checked. A route that takes no body ignores any body sent. Every body is parsed with `JSON.parse(text, (k, v) => (k === '__proto__' ? undefined : v))`, so a `__proto__` key never reaches C1, C2 or the controller (C2's `cleanSettings` also drops it; the two layers protect independently). |
-| Body size | At most 1 MB (1,048,576 bytes). A larger body gives 400 and is not stored. |
+| Body size | At most 1 MB (1,048,576 bytes), except `POST /api/rooms/:id/simulations` (6.21): at most 8 MB (8,388,608 bytes), because the longest program's Result is about 4.8 MB (lead decision 21). A larger body gives 400 and is not stored. |
 | Reply body | JSON, UTF-8, `Content-Type: application/json; charset=utf-8`, `Cache-Control: no-store`. |
 | Numbers | Plain JSON numbers. `NaN` and `Infinity` cannot be sent in JSON; they arrive as `null` (see the CapacityReport and Calibration rules). |
-| Field names | Resource fields use the database column names (`snake_case`), as in spec section 3 (`saved_at`, `co2_per_block`). Exceptions: the Reading fields `T`, `RH`, `CO2` (spec section 2; C1's `Reading` object already uses these names, so the API sends it unchanged, section 3.2), and two values passed through as stored JSON with their own camelCase names: the controller settings object and the capacity report. |
-| Unknown fields | A body field that the route does not define gives 400 (it catches typing errors). Exceptions: the settings object (checked by `importSettings` in C2, which warns) and the capacity report (stored as sent). |
+| Field names | Resource fields use the database column names (`snake_case`), as in spec section 3 (`saved_at`, `co2_per_block`). Exceptions: the Reading fields `T`, `RH`, `CO2` (spec section 2; C1's `Reading` object already uses these names, so the API sends it unchanged, section 3.2), and values passed through as stored JSON with their own camelCase names: the controller settings object, the capacity report, a simulation run's `result` (C7 Result, capacity report or C8 Report, as made) and the settings inside a simulation run's `inputs`. |
+| Unknown fields | A body field that the route does not define gives 400 (it catches typing errors). Exceptions: the settings object (checked by `importSettings` in C2, which warns), the capacity report (stored as sent), and a simulation run's `result` and `inputs.settings` (7.6). |
 | Bad input | 400 with the reasons; **nothing is stored** and the running room is not changed (spec section 5). |
-| Status codes | Success: 200, or 201 when the route creates a row named in its reply (room, calibration run, capacity report). Errors: 400, 404, 500 only (spec section 3). A known path with the wrong method gives 404 `Unknown route` (**decided here**, no 405). |
+| Status codes | Success: 200, or 201 when the route creates a row named in its reply (room, calibration run, capacity report, simulation run). Errors: 400, 404, 500 only (spec section 3). A known path with the wrong method gives 404 `Unknown route` (**decided here**, no 405). `DELETE` is a known method on 6.24 only. |
 | Archived rooms | An archived room is unknown to the API: `GET /api/rooms` leaves it out, and every `/api/rooms/:id/...` route gives 404 for it. Its rows stay in the database (**decided here**). |
 | Order of lists | Stated per route. Ties are broken by `id`, in the same direction. |
 | Access | No login (spec). No CORS headers: the page and the API have the same origin. The server listens on the farm network address only (section 2.2). |
@@ -158,32 +182,36 @@ section 12.2, and every wave 2 headless Chrome check of C5 section 7.10 moves to
 | 0 | Lead | The contracts, the fakes, `server/db-common.js`, `server/rooms-common.js`, the stubs `room-rules.js` and `web/rooms.js` (C5 section 1.5), the `package.json` start script | – |
 | 1 | API stream (in parallel with Data, Rooms and Web split) | Its files below; `server/main.js` with the real `openDb` and `createRoomManager` wiring, tested with stubs (section 12.1) | The contracts are frozen |
 | 1.5 | Lead: gate | Merges the four wave 1 streams into `master`, runs the full test suite, then the gate of section 12.2 | Every wave 1 stream is reviewed |
-| 2 | Rooms UI, Capacity and calibration, Simulator link, Docs | Branch from `master` after the gate; their headless Chrome checks run against the real server (C5 section 7.10) | The gate passes |
-| 3 | Lead: integration | Merges wave 2; writes and runs `tests/api-real.test.js` (section 12.2); runs every test and headless Chrome check again on the final merge; the 8 recorded controller runs unchanged | Every wave 2 stream is reviewed |
+| 2.0 | Lead: prep | The frozen contracts, the fakes (C1 revision 5, C2 revision 8, C5 4.5), the `FarmApi` additions, the tab registry and stubs, the `equipment.js` stub (wave 2 plan, prep 2.0) | – |
+| 2 | Data 2, Equipment, Server 2, Room shell, Live tab, Simulate tab, Calibrate tab, Bench, Docs (the wave 2 plan) | Branch from `master` after prep 2.0. Server 2 builds this contract's revision 8 against the C1 and C2 fakes and the `equipment.js` stub. The web streams' headless Chrome checks run against the real server after gate 2.5 (C5 section 7.10) | Prep 2.0 is on `master` |
+| 2.5 | Lead: gate | Merges Data 2, Equipment, then Server 2; `npm test`; the gate of section 12.2 with a version 1 database file (upgrade 2 runs, `Room 1` records readings with the new keys) | Data 2, Equipment and Server 2 are reviewed |
+| 3 | Lead: integration | Merges wave 2 in the plan's order; writes and runs `tests/api-real.test.js` (section 12.2, with 6.20–6.26); runs every test and headless Chrome check again on the final merge; the 8 recorded controller runs unchanged plus `cool-crop.json` | Every wave 2 stream is reviewed |
 
 Every file this contract names has exactly one owner per wave. In wave 3 the lead owns every file (integration fixes).
 
 | File | Wave 0 | Wave 1 | Wave 2 | Defined in |
 |---|---|---|---|---|
-| `server/api.js` | – | API | nobody | 2.1, 4-6, 10 |
-| `server/static.js` | – | API | nobody | 9 |
+| `server/api.js` | – | API | Server 2 | 2.1, 4-6, 10 |
+| `server/static.js` | – | API | Server 2 | 9 |
 | `server/config.js` | – | API | nobody | 2.1, 2.2 |
 | `server/main.js` | – | API | nobody | 2.2 |
-| `room-rules.js` | Lead (stub, C5 section 1.5) | API (replaces the stub) | nobody | 7 |
-| `tests/api.test.js` (routes, static files, and `describe('server/main.js')`) | – | API | nobody | 12, 12.1 |
+| `room-rules.js` | Lead (stub, C5 section 1.5) | API (replaces the stub) | Server 2 | 7 |
+| `tests/api.test.js` (routes, static files, and `describe('server/main.js')`) | – | API | Server 2 | 12, 12.1 |
 | `tests/stream.test.js` | – | API | nobody | 12 |
 | `tests/config.test.js` | – | API | nobody | 12 |
-| `tests/room-rules.test.js` | – | API | nobody | 12 |
-| `tests/api-real.test.js` | – | nobody | nobody | 12.2 (the lead writes it in wave 3) |
+| `tests/room-rules.test.js` | – | API | Server 2 | 12 |
+| `tests/api-real.test.js` | – | nobody | nobody | 12.2 (the lead writes it in wave 3, with 6.20–6.26) |
 | `server/db-common.js` | Lead | nobody | nobody | C1 section 5.1 |
 | `server/rooms-common.js` | Lead | nobody | nobody | C2 section 1 |
-| `tests/fakes/db.js`, `tests/fakes/rooms.js` | Lead | nobody | nobody | C1 section 9, C2 section 16 |
-| `tests/fakes/api-server.js`, `tests/fake-api-server.test.js` | Lead | nobody | nobody | C5 section 4.5 |
+| `tests/fakes/db.js`, `tests/fakes/rooms.js` | Lead | nobody | Lead (prep 2.0) | C1 section 9, C2 section 16 |
+| `tests/fakes/api-server.js`, `tests/fake-api-server.test.js` | Lead | nobody | Lead (prep 2.0) | C5 section 4.5 |
 | `package.json` (start script) | Lead | nobody | nobody | 2.2, C1 section 1 |
-| `web/ui.js`, `tests/web-api.test.js`, `tests/settings-diff.test.js` | – | Web split | nobody | C5 sections 1.1 and 7.10 |
-| `web/rooms.js` | Lead (stub, C5 section 1.5) | nobody | Rooms UI (replaces the stub) | C5 section 1.1 |
-| `styles.css` | – | Web split | Rooms UI (appends a `/* Rooms */` section only) | C5 section 1.1 |
-| `server/db.js`, `server/rooms.js` | – | Data, Rooms | nobody | C1, C2 (never required by `server/api.js` or by the API stream's tests) |
+| `web/ui.js`, `tests/settings-diff.test.js` | – | Web split | nobody | C5 sections 1.1 and 7.10 |
+| `tests/web-api.test.js` | – | Web split | Lead (prep 2.0, the new `FarmApi` functions) | C5 sections 4.3 and 7.10 |
+| `web/rooms.js` | Lead (stub, C5 section 1.5) | nobody | Room shell (replaces the stub) | C5 sections 1.1, 3.8 |
+| `styles.css` | – | Web split | Room shell (appends one `/* Room page */` block only, lead decision 32) | C5 sections 1.1, 3.8 |
+| `server/db.js`, `tests/db.test.js` | – | Data | Data 2 | C1 (never required by `server/api.js` or by the API stream's tests) |
+| `server/rooms.js`, `server/sim-adapter.js`, `tests/rooms.test.js` | – | Rooms | Server 2 | C2 (never required by `server/api.js`) |
 
 ## 3. Resources
 
@@ -215,17 +243,20 @@ Every resource is shown as a table of fields, then as an example. Types: `int` =
 | `alarms` | int | ≥ 0 | Number of the room's open alarm rows (C1 rows with `cleared_at` = `null`, the same rows `GET /alarms` lists first; C2 section 5.2). A crashed room keeps its count. `0` before the room manager has loaded the open rows. |
 | `running` | bool | – | `true` while the room loop runs. |
 | `error` | str \| null | – | Why the loop stopped (the error message) when it crashed; `null` otherwise. |
+| `flush` | int \| null | 1, 2, … | Revision 8. The flush the controller is in (`ctl.programStatus(t).flush`, C2 5.2); `null` without a controller. |
+| `blocks` | int \| null | blocks | Revision 8. The block count the room's simulated adapter runs with (the mix sum at the last loop start); `null` when the mix sums to less than 1 (the adapter then uses its default). |
 
 ```json
 { "id": 1, "name": "Room 1", "volume": 60, "vent": "supply", "adapter": "sim", "created_at": 1791446400, "archived_at": null,
   "live": { "reading": { "room_id": 1, "t": 1791450000, "T": 18.2, "RH": 88.4, "CO2": 812, "t_out": 31.5, "rh_out": 62,
-                         "ac_mode": "cool", "ac_setpoint": 17.5, "fog": 1, "fan": 1, "lights": 1, "circ": 0, "power_w": 1430, "kwh": 12.84 },
+                         "ac_mode": "cool", "ac_setpoint": 17.5, "fog": 1, "fan": 1, "lights": 1, "circ": 0, "power_w": 1430, "kwh": 12.84,
+                         "ac_fan": "auto", "stage": "fruiting", "core": 19.1 },
             "stage": "fruiting", "crop": "oyster",
             "targets": { "T": 18, "RH": 88, "CO2": 1000 },
             "status": { "T": { "lvl": "good", "icon": "✓", "text": "In band" },
                         "RH": { "lvl": "good", "icon": "✓", "text": "In band" },
                         "CO2": { "lvl": "good", "icon": "✓", "text": "Below limit" } },
-            "alarms": 0, "running": true, "error": null } }
+            "alarms": 0, "running": true, "error": null, "flush": 1, "blocks": 2000 } }
 ```
 
 ### 3.2 Reading
@@ -251,6 +282,11 @@ unchanged (C1 already uses `T`, `RH`, `CO2` and includes `room_id`; there is no 
 | `circ` | num | 0 or 1 | Circulation fan command. Averaged like `lights`. |
 | `power_w` | num \| null | W | Total electrical power of all machines at the reading; `null` when the adapter has no meter. |
 | `kwh` | num \| null | kWh | Sum of the finite values of `r.kwh`: the meter since the simulated room began (kept across restarts in the sim snapshot); `null` when the adapter gives no `kwh`. After an unclean stop (crash, power cut) the room resumes from a snapshot up to 300 s old, so `kwh` can fall below an earlier reading; a client that sums energy treats a decrease as a meter restart. |
+| `ac_fan` | str \| null | `low`, `auto`, `high` | Revision 8. The AC indoor fan command; `null` when the AC is off. Averaged row: the last reading's. |
+| `stage` | str \| null | `spawn`, `pinning`, `fruiting`, `rest` | Revision 8. The controller stage after this reading. Averaged row: the last reading's. |
+| `core` | num \| null | °C | Revision 8. Block core temperature (probe). Averaged row: the mean of the non-null values. |
+
+Readings written before upgrade 2 (C1 4.3) have `null` in `ac_fan`, `stage` and `core`.
 
 The exact meaning of each column is C1's (`docs/contracts/db.md`) and C2's (section 5.3); this table repeats it for the browser.
 
@@ -313,7 +349,7 @@ The exact meaning of each column is C1's (`docs/contracts/db.md`) and C2's (sect
 | `id` | int | – | The run id. |
 | `room_id` | int | – | |
 | `run_at` | int | s | When the fit was made. |
-| `ua` | num | W/K, 20-400 | Room heat loss (`ClimateCalib.PARAMS.ua`). |
+| `ua` | num | W/K, 20-400 | Heat through walls and roof (`ClimateCalib.PARAMS.ua`): heat flows out when the room is warmer than outside, in when outside is hotter (lead decision 28). |
 | `inf_ach` | num | air changes per hour, 0.05-3 | Air leakage (`PARAMS.infAch`). |
 | `moist_buffer` | num | ×, 1-10 | Moisture buffer (`PARAMS.moistBuffer`). |
 | `co2_per_block` | num | mL/h per block, 5-300 | CO₂ per block (`PARAMS.co2PerBlock`). |
@@ -323,10 +359,15 @@ The exact meaning of each column is C1's (`docs/contracts/db.md`) and C2's (sect
 | `log_rows` | int \| null | ≥ 2 | Rows in the farm log that was fitted; `null` for a calibration imported from browser storage. |
 | `applied_at` | int \| null | s | Last time the run was applied; `null` if never. |
 | `applied` | bool | – | Computed: `true` for the room's present calibration (`db.currentCalibration(roomId)`: the run with the largest `applied_at`, ties: the largest `id`). At most one run per room is `true`. |
+| `source` | str \| null | `csv`, `history`, `import` | Revision 8. Where the fitted log came from (a CSV log file, the room's own readings, the browser-storage import); `null` for runs saved before upgrade 2 or without a source. |
+| `log_from`, `log_to` | int \| null | s | Revision 8. First and last reading time of the fitted history (`source` = `history`); `null` otherwise. |
+| `equipment` | object \| null | the 7 Equipment fields (3.11, without `room_id` and `saved_at`) | Revision 8. The room's machines the fit used; `null` = the typical machines (`PLANT`), an import, or a run saved before upgrade 2 (lead decision 50). |
 
 ```json
 { "id": 3, "room_id": 1, "run_at": 1791440000, "ua": 92.4, "inf_ach": 0.31, "moist_buffer": 3.6, "co2_per_block": 41,
-  "rmse_t": 0.21, "rmse_rh": 1.9, "rmse_co2": 38, "log_rows": 1440, "applied_at": 1791440030, "applied": true }
+  "rmse_t": 0.21, "rmse_rh": 1.9, "rmse_co2": 38, "log_rows": 5760, "applied_at": 1791440030, "applied": true,
+  "source": "history", "log_from": 1791267200, "log_to": 1791439970,
+  "equipment": { "ac_hp": 2.5, "ac_units": 1, "fog_lph": 3, "fan_m3h": 900, "walls": null, "roof": null, "height": 3 } }
 ```
 
 ### 3.7 MixRow
@@ -345,6 +386,8 @@ One planned crop of a room (`crop_mixes`). A room's mix is an array of MixRow, i
 
 ### 3.8 CapacityReport
 
+Legacy (lead decision 19): the web app of revision 8 stores capacity checks as simulation runs (3.9). The routes 6.17 and 6.18 stay for compatibility.
+
 | Field | Type | Unit or values | Notes |
 |---|---|---|---|
 | `id` | int | – | Larger = newer. |
@@ -361,6 +404,69 @@ One planned crop of a room (`crop_mixes`). A room's mix is an array of MixRow, i
               "capacity": { "max": 1620, "hi": 1700, "min": 0, "settled": true }, "runs": [ "..." ] } }
 ```
 
+### 3.9 SimulationRunInfo and 3.10 SimulationRun
+
+One saved Simulate run: a capacity check, a full cycle or a C8 equipment check (C1 `simulation_runs`). **SimulationRunInfo** has every field below except `result`; **SimulationRun** (6.22 only) adds `result`.
+
+| Field | Type | Unit or values | Notes |
+|---|---|---|---|
+| `id` | int | – | Larger = newer |
+| `room_id` | int | – | |
+| `created_at` | int | s | When the server stored it |
+| `kind` | str | `cycle`, `capacity`, `equipment` | |
+| `verdict` | str | cycle: `pass`, `fail`, `impossible`; capacity: `good`, `tight`, `too-dense`, `too-empty`, `impossible`; equipment: `enough`, `too-small`, `too-big`, `oversized`, `impossible` | Copied from `result` by C1 (6.13) |
+| `blocks` | int | ≥ 0 | Sum of `inputs.mix[].blocks` |
+| `days` | int \| null | days | Cycle that ran: `result.totals.days`; `null` otherwise |
+| `kwh` | num \| null | kWh | Cycle that ran: `result.totals.kwh` |
+| `rm` | num \| null | RM | Cycle that ran: `result.totals.rm` |
+| `utilisation` | int \| null | % | Capacity: `result.utilisation` |
+| `real_start` | int \| null | s | 00:00 farm time of the day the planned cycle really started (the Calibrate tab sets it) |
+| `note` | str \| null | 0–200 characters | |
+| `inputs` | object | 3.10.1 | What the run used |
+| `result` | object | – | Only in **SimulationRun**: the C7 Result (with `series`), the capacity report, or the C8 Report, as sent. `NaN` and `Infinity` arrived as `null`. |
+
+#### 3.10.1 `inputs`
+
+| Field | Type | Notes |
+|---|---|---|
+| `mix` | MixRow[] | The draft mix the run used (3.7 names: `co2_per_block`) |
+| `settings` | Settings | The room's settings the run used (cycle and equipment: passed as `opts.settings`, so C7 runs them through `importSettings`; capacity: not used by `capacity.js`, kept for the record) |
+| `region` | str | An own key of `ClimateCapacity.DESIGN_DAYS` (`my-lowland`) |
+| `tariff` | num | RM per kWh, 0–10 |
+| `volume`, `vent` | num, str | The room's values at run time (7.2 rules) |
+| `calibration` | `{ id, ua, inf_ach, moist_buffer, co2_per_block }` \| null | The applied calibration the run used; `null` = typical values |
+| `empty_below` | num \| null | Capacity only: `opts.emptyBelow` (%); `null` for a cycle or an equipment check |
+| `equipment` | object \| null | The room's Equipment fields (`ac_hp`, `ac_units`, `fog_lph`, `fan_m3h`, `walls`, `roof`, `height`) at run time, or `null` when the room has none; required (not `null`) for kind `equipment` (the machines the check started from) |
+
+```json
+{ "id": 12, "room_id": 1, "created_at": 1791450900, "kind": "cycle", "verdict": "pass", "blocks": 2000, "days": 83,
+  "kwh": 1093.4, "rm": 623.2, "utilisation": null, "real_start": null, "note": null,
+  "inputs": { "mix": [{ "crop": "oyster", "blocks": 2000, "co2_per_block": null }], "settings": { "...": "..." },
+              "region": "my-lowland", "tariff": 0.57, "volume": 60, "vent": "supply", "calibration": null,
+              "empty_below": null, "equipment": null } }
+```
+
+### 3.11 Equipment (C8)
+
+The machines of one room (C1 `room_equipment`; meanings in `docs/contracts/equipment.md` section 4.2).
+
+| Field | Type | Unit or values | Notes |
+|---|---|---|---|
+| `room_id` | int | – | |
+| `saved_at` | int | s | Last save |
+| `ac_hp` | num | 1, 1.5, 2, 2.5, 3, 4, 5, 6 | Size of each aircond (hp badge) |
+| `ac_units` | int | 1–4 | Number of airconds of that size |
+| `fog_lph` | num | L/h, 0.5–50 | Fogger output |
+| `fan_m3h` | num | m³/h, 50–5000 | Fresh-air fan at top speed |
+| `walls` | str \| null | C8 `CONSTRUCTIONS` keys | `null` = not set |
+| `roof` | str \| null | keys with `roof: true` | `null` = not set; set both or neither |
+| `height` | num | m, 2–6 | Inside height |
+
+```json
+{ "room_id": 1, "saved_at": 1791450950, "ac_hp": 2.5, "ac_units": 1, "fog_lph": 3, "fan_m3h": 900,
+  "walls": "pu50", "roof": "pu50", "height": 3 }
+```
+
 ## 4. Errors
 
 | Field | Type | Notes |
@@ -375,19 +481,23 @@ One planned crop of a room (`crop_mixes`). A room's mix is an array of MixRow, i
 | Status | `error` | When |
 |---|---|---|
 | 400 | `Body is not valid JSON` | The body does not parse. |
-| 400 | `Body is larger than 1 MB` | The body is over 1,048,576 bytes. |
+| 400 | `Body is larger than 1 MB` | The body is over 1,048,576 bytes (every route that takes a body, except 6.21). |
+| 400 | `Body is larger than 8 MB` | 6.21 only: the body is over 8,388,608 bytes. |
 | 400 | `Invalid query` | A query parameter breaks its rule (sections 6.8, 6.9). |
 | 400 | `Invalid room` | `POST /api/rooms` or `PATCH /api/rooms/:id` body breaks a rule (section 7.2), or C2 `create` / `update` rejects it (section 4.1). |
 | 400 | `Invalid settings` | The settings body breaks a rule (sections 6.2, 6.5). |
 | 400 | `Invalid crop mix` | `PUT /mix` body breaks a rule (section 7.3). |
 | 400 | `Invalid calibration` | `POST /calibrations` body breaks a rule (section 7.4). |
 | 400 | `Invalid capacity report` | `POST /capacity` body breaks a rule (section 7.5). |
+| 400 | `Invalid simulation run` | `POST` or `PATCH` of a simulation run breaks a rule (section 7.6). |
+| 400 | `Invalid equipment` | `PUT /equipment` body breaks a rule (section 7.7). |
 | 404 | `Unknown route` | No route has this method and path (under `/api/`). |
 | 404 | `Unknown room` | `:id` is not a positive integer, no room has it, or the room is archived. |
 | 404 | `Unknown settings version` | `:versionId` is not a version of this room. |
 | 404 | `Unknown alarm` | The room has no alarm row with this `:alarmKey`, or the key does not URL-decode. |
 | 404 | `Unknown calibration run` | `:runId` is not a calibration run of this room. |
 | 404 | `No capacity report` | `GET /capacity` and the room has no report yet. |
+| 404 | `Unknown simulation run` | `:runId` is not a positive integer or not a simulation run of this room. |
 | 500 | `Server fault` | Anything else that throws (a database error, an unexpected room manager error, a bug). The server prints the error with its stack. A database error then stops the server (section 4.2). |
 
 Checks run in this order, and the first failing step answers: route (404 `Unknown route`), room (404 `Unknown room`,
@@ -407,6 +517,7 @@ then the C1 or C2 call (its errors are mapped by section 4.1).
 | C1 (any function) | `NotFoundError` with `what: 'room'` | 404 `Unknown room` |
 | C1 `getSettingsVersion` | `NotFoundError` with `what: 'settings'` | 404 `Unknown settings version` |
 | C1 `applyCalibration` | `NotFoundError` with `what: 'calibration'` | 404 `Unknown calibration run` |
+| C1 `getSimulationRun`, `updateSimulationRun`, `deleteSimulationRun` | `NotFoundError` with `what: 'simulation'` | 404 `Unknown simulation run` |
 | C1 | `RangeError` | 500 `Server fault` (the API validates first, so this is a bug) |
 | C1 or C2 | node:sqlite error (`code: 'ERR_SQLITE_ERROR'`) | 500 `Server fault`, then section 4.2 |
 | C2 `create` | `RoomError` `bad_input` | 400 `Invalid room` with C2's `details` (the API's own plain-object check of 6.2 is the only source of `Invalid settings` on `POST /api/rooms`) |
@@ -444,13 +555,20 @@ then the C1 or C2 call (its errors are mapped by section 4.1).
 | 6.10 | GET | `/api/rooms/:id/alarms` | – | 200 | Alarm[] |
 | 6.11 | POST | `/api/rooms/:id/alarms/:alarmKey/ack` | – | 200 | Alarm |
 | 6.12 | GET | `/api/rooms/:id/calibrations` | – | 200 | Calibration[] |
-| 6.13 | POST | `/api/rooms/:id/calibrations` | `{ ua, inf_ach, moist_buffer, co2_per_block, rmse_t, rmse_rh, rmse_co2, log_rows, run_at? }` | 201 | Calibration |
+| 6.13 | POST | `/api/rooms/:id/calibrations` | `{ ua, inf_ach, moist_buffer, co2_per_block, rmse_t, rmse_rh, rmse_co2, log_rows, run_at?, source?, log_from?, log_to?, equipment? }` | 201 | Calibration |
 | 6.14 | POST | `/api/rooms/:id/calibrations/:runId/apply` | – | 200 | Calibration |
 | 6.15 | GET | `/api/rooms/:id/mix` | – | 200 | MixRow[] |
 | 6.16 | PUT | `/api/rooms/:id/mix` | MixRow[] | 200 | MixRow[] |
-| 6.17 | GET | `/api/rooms/:id/capacity` | – | 200 | CapacityReport |
-| 6.18 | POST | `/api/rooms/:id/capacity` | the `checkAsync` report object | 201 | CapacityReport |
+| 6.17 | GET | `/api/rooms/:id/capacity` | – | 200 | CapacityReport (legacy, lead decision 19) |
+| 6.18 | POST | `/api/rooms/:id/capacity` | the `checkAsync` report object | 201 | CapacityReport (legacy, lead decision 19) |
 | 6.19 | POST | `/api/rooms/:id/restart` | – | 200 | Room |
+| 6.20 | GET | `/api/rooms/:id/simulations` | `?limit=&before=` | 200 | SimulationRunInfo[] |
+| 6.21 | POST | `/api/rooms/:id/simulations` | `{ kind, inputs, result, note? }` | 201 | SimulationRunInfo |
+| 6.22 | GET | `/api/rooms/:id/simulations/:runId` | – | 200 | SimulationRun |
+| 6.23 | PATCH | `/api/rooms/:id/simulations/:runId` | any of `{ note, real_start }` | 200 | SimulationRunInfo |
+| 6.24 | DELETE | `/api/rooms/:id/simulations/:runId` | – | 200 | SimulationRunInfo |
+| 6.25 | GET | `/api/rooms/:id/equipment` | – | 200 | Equipment or `null` |
+| 6.26 | PUT | `/api/rooms/:id/equipment` | the 7 Equipment fields | 200 | Equipment |
 | C4 | GET | `/api/stream` | – | 200 | Server-Sent Events (section 10) |
 
 ## 6. Route details
@@ -543,11 +661,11 @@ the exact calls.
 | Query `to` | Optional integer ≥ 0, s. Default: now. |
 | Query `from` | Optional integer ≥ 0, s. Default: `to` − 3600. Must be ≤ `to`. |
 | Query `step` | Optional integer, s. `0` or absent: raw rows. Otherwise 1-86400: averaged rows. |
-| Range limits | `to` − `from` ≤ 31 days (2,678,400 s). Raw rows (`step` = 0): `to` − `from` ≤ 7 days (604,800 s). |
+| Range limits | Raw rows (`step` = 0): `to` − `from` ≤ 7 days (604,800 s). `step` 1–3599: ≤ 31 days (2,678,400 s). `step` 3600–86400: ≤ 1300 days (112,320,000 s), so the Calibrate tab can load a whole cycle hour by hour (at most 31,200 rows; lead decision 22). |
 | Call | `db.queryReadings(id, { from, to, step: step || null })`; the rows are sent unchanged (section 3.2). |
 | Rows chosen | `from` ≤ `t` ≤ `to` (both ends included). |
 | Reply, raw | 200, Reading[], `t` ascending. `[]` when there are none. |
-| Reply, averaged | 200, Reading[], one row per bucket that has at least one reading, `t` ascending. Bucket of a reading: `Math.floor(t / step) * step` (aligned to 1970, so the same buckets come back on every request; the first bucket can start before `from`). Row values: `t` = the bucket start; `T`, `RH`, `CO2`, `t_out`, `rh_out`, `ac_setpoint`, `power_w` = the mean of the non-null values (`null` when all are null); `fog`, `fan`, `lights`, `circ` = the mean; `ac_mode` and `kwh` = the values of the last reading in the bucket. Empty buckets are left out; a chart shows a gap where readings are missing. |
+| Reply, averaged | 200, Reading[], one row per bucket that has at least one reading, `t` ascending. Bucket of a reading: `Math.floor(t / step) * step` (aligned to 1970, so the same buckets come back on every request; the first bucket can start before `from`). Row values: `t` = the bucket start; `T`, `RH`, `CO2`, `t_out`, `rh_out`, `ac_setpoint`, `power_w`, `core` = the mean of the non-null values (`null` when all are null); `fog`, `fan`, `lights`, `circ` = the mean; `ac_mode`, `kwh`, `ac_fan` and `stage` = the values of the last reading in the bucket. Empty buckets are left out; a chart shows a gap where readings are missing. |
 | Errors | 404 `Unknown room`; 400 `Invalid query` (a value that is not a decimal integer, a value out of range, `from` > `to`, a range over its limit). Unknown query parameters are ignored. |
 | Effects | none |
 
@@ -599,8 +717,8 @@ the exact calls.
 
 | Item | Value |
 |---|---|
-| Does | Saves a fitted run from the Calibration module (or one imported from browser storage). It does not apply it. |
-| Request | `{ ua, inf_ach, moist_buffer, co2_per_block, rmse_t, rmse_rh, rmse_co2, log_rows, run_at? }`: rules in section 7.4. From a fit: the four values are `fitAsync(...).params` (`ua`, `infAch`, `moistBuffer`, `co2PerBlock`), the errors are `.result.rmse` (`T`, `RH`, `CO2`), `log_rows` is the number of parsed log rows. |
+| Does | Saves a fitted run from the Calibrate tab (or one imported from browser storage). It does not apply it. |
+| Request | `{ ua, inf_ach, moist_buffer, co2_per_block, rmse_t, rmse_rh, rmse_co2, log_rows, run_at?, source?, log_from?, log_to?, equipment? }`: rules in section 7.4. `source`: `history` (the room's readings, with `log_from` and `log_to`), `csv` or `import`. `equipment`: the 7 Equipment fields the fit used, or `null` (lead decision 50). From a fit: the four values are `fitAsync(...).params` (`ua`, `infAch`, `moistBuffer`, `co2PerBlock`), the errors are `.result.rmse` (`T`, `RH`, `CO2`), `log_rows` is the number of parsed log rows. |
 | Call | `db.saveCalibration(id, body)` (`run_at` left out → now). |
 | Reply | 201, the Calibration (`applied_at` = `null`, `applied` = `false`). |
 | Errors | 404 `Unknown room`; 400 `Body is not valid JSON`; 400 `Body is larger than 1 MB`; 400 `Invalid calibration`. |
@@ -615,7 +733,7 @@ the exact calls.
 | Calls | `run = db.applyCalibration(id, runId)`, then `rooms.restart(id)` (the room is not archived: the API checked it). The restart builds the adapter again from the database, so it uses the new calibration (C2 section 8.1); it also runs a crashed room again. |
 | Reply | 200, `run` (`applied_at` = now, `applied` = `true`). Applying the present run again only updates `applied_at` (and restarts the loop). |
 | Errors | 404 `Unknown room`; 404 `Unknown calibration run` (`:runId` is not a positive integer or not a run of this room; `NotFoundError` `calibration`). |
-| Effects | `applied_at` = now on that row (the room's other runs keep theirs, so they are no longer `applied`); the loop restarts; stream events `event` (`Stopped`, then `Resumed after 0 min stopped`) and `room` (from the restart). The Calibration module calls 6.13 then 6.14 for **Save and apply**. |
+| Effects | `applied_at` = now on that row (the room's other runs keep theirs, so they are no longer `applied`); the loop restarts; stream events `event` (`Stopped`, then `Resumed after 0 min stopped`) and `room` (from the restart). The Calibrate tab calls 6.13 then 6.14 for **Save and apply**. |
 
 ### 6.15 GET /api/rooms/:id/mix
 
@@ -635,7 +753,7 @@ the exact calls.
 | Call | `db.replaceMix(id, rows)`. |
 | Reply | 200, the stored MixRow[] (in the order sent; `co2_per_block` always present). |
 | Errors | 404 `Unknown room`; 400 `Body is not valid JSON`; 400 `Body is larger than 1 MB`; 400 `Invalid crop mix`. |
-| Effects | The room's `crop_mixes` rows are replaced in one transaction. The last capacity report is kept (it is not deleted or changed); the Capacity module compares `report.mix` with the mix to show a stale report. No stream event. |
+| Effects | The room's `crop_mixes` rows are replaced in one transaction. The last capacity report is kept (it is not deleted or changed). No stream event. The live room uses the new block count after its next restart (C2 8.1). |
 
 ### 6.17 GET /api/rooms/:id/capacity
 
@@ -661,12 +779,88 @@ the exact calls.
 
 | Item | Value |
 |---|---|
-| Does | Runs the room's loop again: after a crash (`live.running` = `false`, `live.error` set), or to restart a running loop. The Rooms UI shows a **Restart** button on a stopped room and calls it through `web/api.js` `restartRoom(id)` (lead decision 5; C5 section 4.3). |
+| Does | Runs the room's loop again: after a crash (`live.running` = `false`, `live.error` set), or to restart a running loop. The Rooms home and the room page header (C5 3.8) show a **Restart** button on a stopped room and calls it through `web/api.js` `restartRoom(id)` (lead decision 5; C5 section 4.3). |
 | Request | No body. |
 | Call | `rooms.restart(id)` (C2 section 4): a running loop saves its state and stops; a crashed one does not save; then the loop starts again from the database (latest settings, applied calibration, saved state). |
 | Reply | 200, the Room after the restart. If the loop fails to start again, the reply is still 200, with `live.running` = `false` and the new `live.error`. |
 | Errors | 404 `Unknown room` |
 | Effects | Stream events `event` (`Stopped` for a running loop; `Resumed after <N> min stopped` or `Started`; or `Stopped by an error: …`) and `room`. |
+
+### 6.20 GET /api/rooms/:id/simulations
+
+| Item | Value |
+|---|---|
+| Does | Lists the room's saved Simulate runs, newest first, one page at a time. Simulations run in the browser; the server only validates and stores them (lead decision 17). |
+| Query `limit` | Optional integer 1-200. Default 50. |
+| Query `before` | Optional positive integer: a run `id`. Only runs with `id` < `before` are given (the next page: the smallest `id` of the last page). |
+| Call | `db.listSimulationRuns(id, { limit, before: before ?? null })`. |
+| Reply | 200, SimulationRunInfo[] (no `result`), `id` descending, at most `limit`. `[]` at the end. |
+| Errors | 404 `Unknown room`; 400 `Invalid query`. |
+| Effects | none |
+
+### 6.21 POST /api/rooms/:id/simulations
+
+| Item | Value |
+|---|---|
+| Does | Stores a finished run (a capacity check, a full cycle or an equipment check) that the browser computed. |
+| Request | `{ kind, inputs, result, note? }`: rules in section 7.6 (`checkSimulationRun`). At most 8 MB. |
+| Call | `db.saveSimulationRun(id, { kind, inputs, result, note })` with `note` trimmed, `null` when empty or left out. |
+| Reply | 201, SimulationRunInfo (no `result`: the browser already has it). |
+| Errors | 404 `Unknown room`; 400 `Body is not valid JSON`; 400 `Body is larger than 8 MB`; 400 `Invalid simulation run`. |
+| Effects | One `simulation_runs` row (`created_at` = now; the summary columns copied by C1 6.13). No stream event: the tab that saved the run reloads its own list (lead decision 18). |
+
+### 6.22 GET /api/rooms/:id/simulations/:runId
+
+| Item | Value |
+|---|---|
+| Does | Gives one run with its whole `result` (a default cycle's is about 300 KB). |
+| Call | `db.getSimulationRun(id, runId)`. |
+| Reply | 200, SimulationRun. |
+| Errors | 404 `Unknown room`; 404 `Unknown simulation run` (`:runId` not a positive integer, or not a run of this room). |
+| Effects | none |
+
+### 6.23 PATCH /api/rooms/:id/simulations/:runId
+
+| Item | Value |
+|---|---|
+| Does | Changes a run's note, or links it to the room's real cycle (`real_start`, used by Predicted vs real). |
+| Request | An object with at least one of `note`, `real_start` and no other field (section 7.6, `checkRunPatch`). |
+| Call | `db.updateSimulationRun(id, runId, changes)` (`note` trimmed, empty → `null`). |
+| Reply | 200, SimulationRunInfo after the change. |
+| Errors | 404 `Unknown room`; 404 `Unknown simulation run`; 400 `Body is not valid JSON`; 400 `Body is larger than 1 MB`; 400 `Invalid simulation run`. |
+| Effects | The row's `note` and/or `real_start` change. No stream event. |
+
+### 6.24 DELETE /api/rooms/:id/simulations/:runId
+
+| Item | Value |
+|---|---|
+| Does | Deletes a run: the only delete route (lead decision 18). |
+| Request | No body. |
+| Call | `db.deleteSimulationRun(id, runId)`. |
+| Reply | 200, SimulationRunInfo of the deleted run. |
+| Errors | 404 `Unknown room`; 404 `Unknown simulation run`. |
+| Effects | The row is deleted. No stream event. |
+
+### 6.25 GET /api/rooms/:id/equipment
+
+| Item | Value |
+|---|---|
+| Does | Gives the room's machines (C8). |
+| Call | `db.getEquipment(id)`. |
+| Reply | 200, Equipment, or `null` when the room has no machines saved (the simulation then uses the typical machines, `PLANT`). |
+| Errors | 404 `Unknown room` |
+| Effects | none |
+
+### 6.26 PUT /api/rooms/:id/equipment
+
+| Item | Value |
+|---|---|
+| Does | Saves the room's machines (replaces the row). |
+| Request | `{ ac_hp, ac_units, fog_lph, fan_m3h, walls, roof, height }`: exactly these 7 fields (section 7.7). |
+| Call | `db.saveEquipment(id, body)`. |
+| Reply | 200, Equipment. |
+| Errors | 404 `Unknown room`; 400 `Body is not valid JSON`; 400 `Body is larger than 1 MB`; 400 `Invalid equipment`. |
+| Effects | The room's `room_equipment` row is replaced. No stream event; no restart: the live room uses the machines after its next restart (C2 8.1), Simulate and Calibrate use them at once. An applied calibration fitted with other machines is now stale (the Calibrate tab warns, lead decision 50). |
 
 ## 7. Validation rules and `room-rules.js`
 
@@ -675,20 +869,21 @@ and the web modules. The limits are the same; the difference is what happens to 
 
 | Function kind | Behaviour | Used by |
 |---|---|---|
-| `normRoom`, `validCalib` | **Correct**: keep only valid fields, drop bad mix rows, default bad values (today's behaviour, unchanged) | The Capacity module's one-time **Import rooms from this browser** (reads `mushroom-farm.rooms.v1`) |
+| `normRoom`, `validCalib` | **Correct**: keep only valid fields, drop bad mix rows, default bad values (today's behaviour, unchanged) | The Rooms home's one-time **Import rooms from this browser** (reads `mushroom-farm.rooms.v1`) |
 | `check*` | **Reject**: return the list of problems; the API answers 400 and stores nothing | `server/api.js` |
 
 Settings are not checked here: the room manager validates them (`importSettings`, sections 6.2, 6.5).
 
 ### 7.1 Exports of `room-rules.js`
 
-Loaded after `sim.js`, `controller.js` and `calib.js` (it reads `ClimateSim`, `ClimateController`, `ClimateCalib`;
-`calib.js` itself reads `ClimateSim` once when it loads); exported as `ClimateRoomRules` on `window` or `globalThis`.
+Loaded after `sim.js`, `controller.js`, `calib.js`, `capacity.js`, `cycle.js` and `equipment.js` (it reads `ClimateSim`,
+`ClimateController`, `ClimateCalib`, `ClimateCapacity.DESIGN_DAYS` and `global.ClimateEquipment` once, at load; `calib.js`
+itself reads `ClimateSim` once when it loads); exported as `ClimateRoomRules` on `window` or `globalThis`.
 
 | Environment | Load order |
 |---|---|
-| Browser | The script tags of C5 section 1.3: `sim.js`, `controller.js`, `runtime.js`, `calib.js`, `capacity.js`, `room-rules.js`. |
-| Node | `server/api.js` and `tests/room-rules.test.js` require `../sim.js`, `../controller.js`, `../runtime.js` and `../calib.js`, in that order, before `../room-rules.js`, then read `globalThis.ClimateRoomRules`. |
+| Browser | The script tags of C5 section 1.3: `sim.js`, `controller.js`, `runtime.js`, `calib.js`, `capacity.js`, `cycle.js`, `equipment.js`, `room-rules.js`. |
+| Node | `server/api.js` and `tests/room-rules.test.js` require `../sim.js`, `../controller.js`, `../runtime.js`, `../calib.js`, `../capacity.js`, `../cycle.js`, `../equipment.js`, in that order, then `../room-rules.js`, then read `globalThis.ClimateRoomRules`. On the server `equipment.js` may already be loaded through `server/rooms.js` → `server/sim-adapter.js` (before `capacity.js` and `cycle.js`; `server/main.js` requires `rooms.js` before `api.js`), so server code calls only `checkEquipment`, `geometry`, `shell` and `plantOf`, which use only `ClimateSim` (C8 section 1). |
 
 | Export | Signature | Returns | Notes |
 |---|---|---|---|
@@ -702,6 +897,9 @@ Loaded after `sim.js`, `controller.js` and `calib.js` (it reads `ClimateSim`, `C
 | `checkMix(rows)` | `(any) → str[]` | Problems, `[]` when valid | Section 7.3. |
 | `checkCalibration(body, now)` | `(any, int) → str[]` | Problems, `[]` when valid | Section 7.4. `now` = the server time in s (for the `run_at` rule). |
 | `checkReport(report)` | `(any) → str[]` | Problems, `[]` when valid | Section 7.5. |
+| `checkSimulationRun(body, now)` | `(any, int) → str[]` | Problems, `[]` when valid | Section 7.6 (revision 8). |
+| `checkRunPatch(body, now)` | `(any, int) → str[]` | Problems, `[]` when valid | Section 7.6 (revision 8). |
+| `checkEquipmentBody(body)` | `(any) → str[]` | Problems, `[]` when valid | Section 7.7 (revision 8). |
 
 ### 7.2 Room fields (`checkRoom`)
 
@@ -738,6 +936,9 @@ The same crop may appear in more than one row (as today).
 | `rmse_t`, `rmse_rh`, `rmse_co2` | yes (each key present) | `null` or a finite number ≥ 0 | – (`replay` gives `NaN` when a column has no values; JSON sends it as `null`) |
 | `log_rows` | yes | `null` or an integer ≥ 2 | `parseCsv` needs 2 data rows |
 | `run_at` | no | An integer from 1 to `now` + 60 | – (for imported calibrations: their `date`) |
+| `source` | no | Left out, `null`, `csv`, `history` or `import` (revision 8) | – |
+| `log_from`, `log_to` | no | Together: both left out or `null`, or both integers ≥ 1 with `log_from` ≤ `log_to` ≤ `now` + 60. Required (not `null`) when `source` is `history` (revision 8) | – |
+| `equipment` | no | Left out, `null`, or an object passing `checkEquipmentBody` (7.7; revision 8, lead decision 50) | C8 `checkEquipment` |
 
 ### 7.5 Capacity report (`checkReport`)
 
@@ -750,6 +951,32 @@ The same crop may appear in more than one row (as today).
 
 The rest of the report is stored as sent and is not checked (the page wrote it; the size limit is 1 MB).
 
+### 7.6 Simulation run (`checkSimulationRun`, `checkRunPatch`)
+
+| Function | Field | Rule |
+|---|---|---|
+| `checkSimulationRun(body, now)` | (body) | A plain object; only `kind`, `inputs`, `result`, `note` |
+| | `kind` | `cycle`, `capacity` or `equipment` |
+| | `inputs` | A plain object with exactly the fields of 3.10.1, all present. `mix` passes `checkMix`; `settings` a plain object (not validated here: C7 validates it when it runs); `region` an own key of `ClimateCapacity.DESIGN_DAYS`; `tariff` a finite number 0–10; `volume`, `vent` as `checkRoom`; `calibration` `null` or an object with a positive integer `id` and `ua`, `inf_ach`, `moist_buffer`, `co2_per_block` within `checkCalibration`'s limits; `empty_below` a finite number 0–100 for `capacity`, `null` for `cycle` and `equipment`; `equipment` `null` or passing `checkEquipmentBody` (7.7), and not `null` for `equipment` |
+| | `result`, `kind = 'cycle'` | A plain object. `verdict` `impossible`: exactly the keys `verdict`, `why` (a string). `verdict` `ok`: `totals` an object with `days` an integer 1–1300, `pass` a boolean, `kwh`, `rm`, `rmPerBlock` each a number or `null`; `stages` a non-empty array of objects; `series` an array of length `totals.days × 24` whose element `i` is an object with `h === i`. Anything else in `result` is stored as sent. |
+| | `result`, `kind = 'capacity'` | `checkReport` (7.5) |
+| | `result`, `kind = 'equipment'` | A plain object. `verdict` `impossible`: exactly the keys `verdict`, `why` (a string). `verdict` `ok`: `ac` an object whose `verdict` is `enough`, `too-small`, `too-big` or `oversized`; `runs` a non-empty array of objects; `summary` a non-empty array of strings. Anything else stored as sent. |
+| | `note` | Left out, `null`, or a string of at most 200 characters after trimming (stored trimmed; empty → `null`) |
+| `checkRunPatch(body, now)` | (body) | A plain object with at least one of `note`, `real_start` and no other field |
+| | `note` | `null` or a string of at most 200 characters after trimming |
+| | `real_start` | `null` or an integer from 1 to `now` + 366 × 86400 (a planned start may lie ahead) |
+
+| Rule | Detail |
+|---|---|
+| Schema and API | C1's `CHECK`s accept every kind and verdict of this section; this section is the gate for what is stored (lead decision 52) |
+
+### 7.7 Equipment (`checkEquipmentBody`)
+
+| Field | Rule | Same rule as |
+|---|---|---|
+| (body) | Not a plain object: the one problem `equipment: must be an object`. Otherwise each of the 7 fields `ac_hp`, `ac_units`, `fog_lph`, `fan_m3h`, `walls`, `roof`, `height` must be present (`walls` and `roof` may be `null`): one problem `<field>: missing` per missing field, in that order | – |
+| (values) | Then the problems of `ClimateEquipment.checkEquipment(body)`, unchanged (they include `<key>: unknown field` for any other field) | C8 section 4.3 (the real function is already in the prep 2.0 stub of `equipment.js`) |
+
 ## 8. Mapping to the browser modules
 
 The capacity and calibration code keeps its camelCase shapes; the web modules convert.
@@ -760,13 +987,20 @@ The capacity and calibration code keeps its camelCase shapes; the web modules co
 | The room's Calibration with `applied` = `true` | `room.calib = { ua, infAch, moistBuffer, co2PerBlock, rmse: { T, RH, CO2 }, date }` | `infAch` = `inf_ach`, `moistBuffer` = `moist_buffer`, `co2PerBlock` = `co2_per_block`, `rmse.T` = `rmse_t`, `rmse.RH` = `rmse_rh`, `rmse.CO2` = `rmse_co2`, `date` = `new Date(run_at * 1000).toISOString()`. No applied run: `room.calib = null`. |
 | MixRow `{ crop, blocks, co2_per_block }` | mix item `{ crop, blocks, co2PerBlock? }` | `co2PerBlock` = `co2_per_block`; leave it out when `null`. |
 | Body of 6.13 | `fitAsync(...)` result and `parseCsv` rows | `ua` = `params.ua`, `inf_ach` = `params.infAch`, `moist_buffer` = `params.moistBuffer`, `co2_per_block` = `params.co2PerBlock`, `rmse_*` = `result.rmse.T / RH / CO2` (`null` when not finite), `log_rows` = `rows.length`. |
-| Body of 6.18 | `checkAsync(room, mix, opts)` result | Sent as it is. |
+| Body of 6.18 | `checkAsync(room, mix, opts)` result | Sent as it is (legacy). |
+| `inputs.mix` of 6.21 | `cycle.js` / `capacity.js` / `equipment.js` mix `{ crop, blocks, co2PerBlock? }` | As MixRow (above) |
+| `inputs.volume`, `inputs.vent`, `inputs.calibration` | `room = { name, volume, vent, calib }` | `calib` = `{ ua, infAch: inf_ach, moistBuffer: moist_buffer, co2PerBlock: co2_per_block, rmse: {}, date }` of the applied run (above), or `null` |
+| `inputs.settings`, `region`, `tariff` | `ClimateCycle.runCycleSteps(room, mix, { settings, region, tariff })` | Cycle |
+| `inputs.region`, `tariff`, `empty_below` | `ClimateCapacity.checkSteps(room, mix, { region, tariff, emptyBelow })` | Capacity |
+| `inputs.equipment` | `room.plant = ClimateEquipment.plantOf(equipment, room)` (cycle, capacity); `room.equipment` (equipment check) | C5 3.10 |
+| `result` of 6.21 | C7 Result, capacity report, C8 Report | Sent as it is |
+| Reading (3.2) | `calib.js` log row (`parseCsv` shape) | C5 section 3.11 (`logFromReadings`) |
 | Settings | `ClimateController` settings object | Same object; the settings file wrapper is not used by the API. |
 | Live `targets`, `status` | `ctl.state.rhT`, `cfg.spT`, `cfg.co2Lim`, `ctl.status(kind)` | Computed on the server (the browser has no controller for a live room). |
 ### 8.1 Browser-storage import (spec section 4)
 
 For each stored room `r` at position `i` (0-based) of `mushroom-farm.rooms.v1`, after `n = normRoom(r, i)` (rooms
-for which it returns `null` are skipped), the Capacity module sends, in this order:
+for which it returns `null` are skipped), the Rooms home (C5 3.8; the Capacity module in wave 1) sends, in this order:
 
 | Request | Body field | Value |
 |---|---|---|
@@ -777,6 +1011,7 @@ for which it returns `null` are skipped), the Capacity module sends, in this ord
 | same | `rmse_t`, `rmse_rh`, `rmse_co2` | `(n.calib.rmse && Number.isFinite(n.calib.rmse.X) && n.calib.rmse.X >= 0) ? n.calib.rmse.X : null` with `X` = `T`, `RH`, `CO2` |
 | same | `log_rows` | `null` |
 | same | `run_at` | `Math.floor(Date.parse(n.calib.date) / 1000)` when that is an integer from 1 to now + 60; otherwise left out |
+| same | `source` | `'import'` (revision 8); `log_from`, `log_to`, `equipment` left out |
 | `POST /api/rooms/:id/calibrations/:runId/apply` (only after a calibration) | – | `:runId` = the `id` of the calibration just saved |
 
 | Rule | Detail |
@@ -790,7 +1025,7 @@ for which it returns `null` are skipped), the Capacity module sends, in this ord
 |---|---|---|
 | `/` and `/index.html` | `index.html` | `text/html; charset=utf-8` |
 | `/styles.css` | `styles.css` | `text/css; charset=utf-8` |
-| `/controller.js`, `/sim.js`, `/runtime.js`, `/capacity.js`, `/calib.js`, `/room-rules.js` | the shared module of that name | `text/javascript; charset=utf-8` |
+| `/controller.js`, `/sim.js`, `/runtime.js`, `/capacity.js`, `/calib.js`, `/room-rules.js`, `/cycle.js`, `/equipment.js` | the shared module of that name (`/cycle.js` and `/equipment.js`: revision 8) | `text/javascript; charset=utf-8` |
 | `/web/<path>` | the file under `web/` (subfolders allowed) | by extension, below |
 
 | Extension (under `web/`) | `Content-Type` |
@@ -836,7 +1071,8 @@ for which it returns `null` are skipped), the Capacity module sends, in this ord
 The room manager (C2 section 7) emits `reading`, `event`, `alarm`, `settings` and `room`; the API takes the `data` from
 each payload as below and sends it to every open connection. One C2 emit gives exactly one message; the API only relays
 and derives no events of its own (lead decision 2). The `data` column is the browser's contract. C2's `fatal` is not
-sent (section 4.2).
+sent (section 4.2). Simulation runs (6.21–6.24) and equipment saves (6.26) send no event (lead decision 18): the tab that
+changed them reloads its own data.
 
 | Event | Sent when | `data` | From the C2 payload |
 |---|---|---|---|
@@ -850,7 +1086,7 @@ sent (section 4.2).
 retry: 3000
 
 event: reading
-data: {"room_id":1,"t":1791450030,"T":18.3,"RH":88.1,"CO2":820,"t_out":31.4,"rh_out":62,"ac_mode":"cool","ac_setpoint":17.5,"fog":1,"fan":1,"lights":1,"circ":0,"power_w":1425,"kwh":12.85}
+data: {"room_id":1,"t":1791450030,"T":18.3,"RH":88.1,"CO2":820,"t_out":31.4,"rh_out":62,"ac_mode":"cool","ac_setpoint":17.5,"fog":1,"fan":1,"lights":1,"circ":0,"power_w":1425,"kwh":12.85,"ac_fan":"auto","stage":"fruiting","core":27.4}
 
 event: alarm
 data: {"id":88,"room_id":1,"alarm_key":"rhHi","level":"warning","label":"High humidity","raised_at":1791450012,"cleared_at":null,"acked_at":null}
@@ -907,20 +1143,28 @@ calls it makes. `id` is the room id from the path; every route that has one firs
 | 6.17 | C1 `db.latestCapacityReport(id)` | `null` → 404 `No capacity report` |
 | 6.18 | C1 `db.saveCapacityReport(id, { report })` | |
 | 6.19 | C2 `rooms.restart(id)` | |
+| 6.20 | C1 `db.listSimulationRuns(id, { limit, before: before ?? null })` | `limit` defaulted to 50 |
+| 6.21 | C1 `db.saveSimulationRun(id, { kind, inputs, result, note })` | `note` trimmed, `null` when empty or left out |
+| 6.22 | C1 `db.getSimulationRun(id, runId)` | |
+| 6.23 | C1 `db.updateSimulationRun(id, runId, changes)` | `note` trimmed, empty → `null` |
+| 6.24 | C1 `db.deleteSimulationRun(id, runId)` | |
+| 6.25 | C1 `db.getEquipment(id)` | |
+| 6.26 | C1 `db.saveEquipment(id, body)` | |
 | `createApi` | C2 `rooms.on(name, listener)` for `reading`, `event`, `alarm`, `settings`, `room` | |
 | `close()` | C2 `rooms.off(name, listener)` for each listener | |
 
 The API never writes settings, alarms, rooms or the running loop through C1 directly: those writes go through C2.
-C1 writes the API makes itself: `saveCalibration`, `applyCalibration`, `replaceMix`, `saveCapacityReport`.
+C1 writes the API makes itself: `saveCalibration`, `applyCalibration`, `replaceMix`, `saveCapacityReport`, `saveSimulationRun`, `updateSimulationRun`, `deleteSimulationRun`, `saveEquipment`.
 
 ## 12. Tests that prove this contract
 
 | File | Proves |
 |---|---|
 | `tests/api.test.js` | For every route of section 5, against a real HTTP server on a random port with the C1 and C2 fakes only (the real modules are covered by the wave 1.5 gate and by the lead's `tests/api-real.test.js` in wave 3, section 12.2; this file needs no switch to the real modules): the success status and reply shape; each 400 of the route's table, with nothing stored and no C2 call made; 404 for an unknown room, an archived room and an unknown sub-id; `Unknown route` for a wrong method; the C2 calls of section 11 (the fake's `calls`), including `restart` after a calibration apply and `applySettings` with the `Restored version <n>` note and `{ exact: true }` (and for 6.5 exactly three arguments: `args.length === 3`, `args[2]` the trimmed note, or `undefined` for a body with no note, `null` or `"  "`); `PUT /settings` with `{ "settings": { "spT": 20 } }` stores (and `GET /settings` then gives) the room's previous version with only `spT` changed (6.5, missing settings keep their value); `POST /api/rooms` with `volume` 200 and `settings: { crop: 'pink' }` stores (and `GET /settings` then gives) the defaults with `crop` = `pink` and `roomM3` = 200, and with `settings: { crop: 'pink', roomM3: 90 }` stores `roomM3` = 90 (6.2, C2 section 9.4); each row of the error mapping (4.1), using a fake that throws (a C2 `create` `bad_input` gives 400 `Invalid room`); `onFatal` called after a 500 for a non-constraint node:sqlite error and not for a constraint error (both rules of the next table); a body `{"__proto__":{"polluted":1}, ...}` on `PUT /settings` and `POST /api/rooms` leaves `({}).polluted` `undefined` and adds no key to `Object.prototype`; `/alarms/sensor_RH/ack` and an encoded key; a Reading from `/readings` equal to the C1 row (`T`, `RH`, `CO2`, `room_id`, no other keys); the static file rules of section 9 (`/` gives `index.html`, `/web/` is 404, `/data/farm.db` is 404, `..` is 404). Also `server/main.js` with stub modules (`describe('server/main.js')`, section 12.1). |
-| `tests/stream.test.js` | The stream sends `retry: 3000` first, then `reading`, `alarm`, `event`, `settings` and `room` events emitted by the fake room manager (`emit`), with the data and mapping of section 10.2; exactly one message per C2 emit (a `room` payload is sent unchanged, and a `reading` emit is never followed by a `room` the fake did not emit); the heartbeat comment (with a short `heartbeatMs` in the test); a closed client is removed; `close()` ends the connections and removes the C2 listeners. |
+| `tests/stream.test.js` | Unchanged in revision 8 (it relays the Reading as given). The stream sends `retry: 3000` first, then `reading`, `alarm`, `event`, `settings` and `room` events emitted by the fake room manager (`emit`), with the data and mapping of section 10.2; exactly one message per C2 emit (a `room` payload is sent unchanged, and a `reading` emit is never followed by a `room` the fake did not emit); the heartbeat comment (with a short `heartbeatMs` in the test); a closed client is removed; `close()` ends the connections and removes the C2 listeners. |
+| `tests/api.test.js`, revision 8 | 6.20–6.26: success status and shape (6.21 and 6.23 reply without `result`, 6.22 with it); each 400 of 7.6 and 7.7 with nothing stored; a 7 MB body is accepted on 6.21 and a 9 MB body gives `Body is larger than 8 MB`; a 2 MB body on 6.23 gives `Body is larger than 1 MB`; 404 `Unknown simulation run` for an unknown id and for another room's run; `DELETE` on another path gives `Unknown route`; 6.21 accepts a `kind: 'equipment'` run with a hand-made Report; 6.25 `null` then the saved row; 6.26 stores the row; 6.8 accepts `step=3600` over 400 days and rejects `step=600` over 40 days; 6.13 with `source: 'history'` and no `log_from` gives 400, with a valid `equipment` stores it; a Reading from `/readings` has 18 keys; a Room's `live` has `flush` and `blocks`; `/cycle.js` and `/equipment.js` are served |
 | `tests/config.test.js` | `server/config.js` alone (no db, no room manager, no network; section 2.2). `readConfig`: an environment variable wins over `farm.config.json`, which wins over the defaults, for each of `port`, `db`, `host`; a present but empty `FARM_HOST` is a bad configuration; the defaults (8080, `<root>/data/farm.db`, `host` `null`); a relative `db` resolved from `root`; `fileText` `null` uses the defaults; each `Bad configuration: …` reason of 2.2 throws (bad JSON, not an object, unknown field, port `0`, `65536`, `8080.5`, `"80a"`, empty `db`). `pickHosts` with hand-made interface objects: skips internal, IPv6 and public addresses and every skipped name prefix (`docker0` 172.17.0.1, `br-1a2b`, `veth…`, `virbr0` 192.168.122.1, `vmnet1`, `tun0`, `tap0`, `lo`, `zt…`); keeps `enp3s0`, `eth0`, `wlan0`, `wlp2s0` in sorted name order; gives `[]` when nothing is left. |
-| `tests/room-rules.test.js` | Requires `../sim.js`, `../controller.js`, `../runtime.js`, `../calib.js`, then `../room-rules.js` (section 7.1). `checkRoom`, `checkMix`, `checkCalibration`, `checkReport` accept the limits and reject each broken rule (including a fractional `utilisation`); `normRoom` and `validCalib` behave as today's `app.js`. |
+| `tests/room-rules.test.js` | Requires `../sim.js`, `../controller.js`, `../runtime.js`, `../calib.js`, `../capacity.js`, `../cycle.js`, `../equipment.js`, then `../room-rules.js` (section 7.1). `checkRoom`, `checkMix`, `checkCalibration`, `checkReport` accept the limits and reject each broken rule (including a fractional `utilisation`); `normRoom` and `validCalib` behave as today's `app.js`. Revision 8: `checkSimulationRun` accepts a passing, failing and impossible cycle, a capacity report and an equipment Report, rejects each rule of 7.6 (a `series` of the wrong length, `inputs.equipment: null` for kind `equipment`, `result.ac.verdict: 'pass'`); `checkRunPatch`; extended `checkCalibration`; `checkEquipmentBody`: a valid body `[]`, a missing field, an extra field, and every `checkEquipment` problem. |
 
 | Rule for the API tests | Detail |
 |---|---|
@@ -968,12 +1212,12 @@ The stub test of 12.1 cannot prove that `main.js` works with the real `server/db
 
 | Gate | Who and when | Steps | Passes when |
 |---|---|---|---|
-| Wave 1.5 | The lead, after the four wave 1 streams are merged into `master` and the full test suite passes, before the wave 2 streams branch (C5 section 7.10 relies on it) | `FARM_HOST=127.0.0.1 FARM_PORT=<free port> FARM_DB=<new temporary file> npm start`; wait for the start-up line; `GET /api/rooms` until `Room 1` has a reading; then `SIGINT` | The server prints `Open http://127.0.0.1:<port>` and no `ExperimentalWarning`; `GET /api/rooms` gives `Room 1` with `live.reading` not `null` within 35 s; `GET /` gives `index.html`; after `SIGINT` the process exits with code 0. A failure is fixed on `master` before wave 2 starts. |
+| Wave 1.5 | The lead, after the four wave 1 streams are merged into `master` and the full test suite passes, before the wave 2 streams branch (C5 section 7.10 relies on it). Gate 2.5 (wave 2 plan) runs the same steps after merging Data 2, Equipment and Server 2, with `FARM_DB` = a copy of a version 1 database file, and also checks that upgrade 2 ran (the file's `schema_version` has row 2) and that `Room 1`'s new readings carry `ac_fan`, `stage` and `core` | `FARM_HOST=127.0.0.1 FARM_PORT=<free port> FARM_DB=<new temporary file> npm start`; wait for the start-up line; `GET /api/rooms` until `Room 1` has a reading; then `SIGINT` | The server prints `Open http://127.0.0.1:<port>` and no `ExperimentalWarning`; `GET /api/rooms` gives `Room 1` with `live.reading` not `null` within 35 s; `GET /` gives `index.html`; after `SIGINT` the process exits with code 0. A failure is fixed on `master` before wave 2 starts. |
 | Wave 3, real modules | The lead writes and runs `tests/api-real.test.js` on the final merge | Below | Every row of the next table passes |
 | Wave 3, everything again | The lead, on the final merge | Every test of section 12 (against the fakes, as written), `tests/api-real.test.js`, the gate above, and every headless Chrome check of C5 section 7.10 again | All pass |
 
 | `tests/api-real.test.js` | Rule |
 |---|---|
 | Set-up | `db = openDb(<new temporary file>)`, `rooms = createRoomManager({ db, tickMs: 0 })`, `rooms.start()` (creates the demo room `Room 1`), `api = createApi({ db, rooms, root, onFatal })`, a real HTTP server on `127.0.0.1` and a free port. After the tests: `api.close()`, server close, `rooms.stop()`, `db.close()`, delete the file. No env switch: it is its own file and never replaces the fakes in `tests/api.test.js`. |
-| Checks | For every route of section 5: the success status and reply shape (the fields and types of section 3); one 400 for each route that takes a body or query; 404 for an unknown room, an archived room and an unknown sub-id; `PUT /settings` with `{ "settings": { "spT": 20 } }` changes only `spT`; `POST /api/rooms` with `volume` 200 and `settings: { crop: 'pink' }` stores `roomM3` = 200; `GET /api/stream` sends `retry: 3000`, then a `settings` event after a `PUT /settings`. |
+| Checks | For every route of section 5 (6.20–6.26 included; a real default cycle is too slow for a test, so 6.21 posts a small hand-made Result that passes `checkSimulationRun`): the success status and reply shape (the fields and types of section 3); one 400 for each route that takes a body or query; 404 for an unknown room, an archived room and an unknown sub-id; `PUT /settings` with `{ "settings": { "spT": 20 } }` changes only `spT`; `POST /api/rooms` with `volume` 200 and `settings: { crop: 'pink' }` stores `roomM3` = 200; `GET /api/stream` sends `retry: 3000`, then a `settings` event after a `PUT /settings`. |
 | Not checked (only the fakes have them) | The fake's `calls`, `setLive` and `emit`; the exact number or order of emits; event texts (C2's, tested in `tests/rooms.test.js`); readings, alarm raises and clears; the error mapping and `onFatal` tests that replace a fake function (4.1, 4.2); the `server/main.js` stub tests (12.1). |

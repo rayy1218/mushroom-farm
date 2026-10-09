@@ -1,14 +1,29 @@
 # C7: Crop cycle simulation contract (`cycle.js`)
 
-Date: 2026-10-08. Status: **frozen** (revision 1). Changes only through the lead; see `docs/contracts/LEAD-DECISIONS.md`. Spec: `docs/superpowers/specs/2026-10-08-farm-app-foundation-design.md`. Work brief: `docs/superpowers/plans/2026-10-08-farm-foundation/cycle.md`.
+Date: 2026-10-08. Status: **frozen** (revision 2). Changes only through the lead; see `docs/contracts/LEAD-DECISIONS.md`. Spec: `docs/superpowers/specs/2026-10-08-farm-app-foundation-design.md`. Work brief: `docs/superpowers/plans/2026-10-08-farm-foundation/cycle.md`.
 
-This contract defines `cycle.js`: a simulation of one whole crop cycle (every stage, every flush) for a room and a crop mix. It answers "can this room hold this mix for a full cycle on our region's weather?" one stage at a time. It runs the real controller (`controller.js`) against the simulated room (`sim.js`) through the runtime (`runtime.js`), as the capacity check (`capacity.js` `trial`) does for fruiting only. Its result keeps an hourly series, so a later module can lay the predicted cycle over the real readings of the same room and calibrate.
+### Changes in revision 2
+
+The C8 equipment check (`docs/contracts/equipment.md` sections 5.3 and 12.6) and the room-centred app, frozen together (lead decisions 34, 36, 37, 40). In wave 2 the **Equipment** stream owns `cycle.js` and appends to `tests/cycle.test.js`.
+
+| Section | Change |
+|---|---|
+| Intro, 1, 15 | The page is the Simulate tab (C5 3.10), which asks before a program longer than 180 days (lead decision 26); results are stored in C1 `simulation_runs` through C3 6.20–6.24 and compared in the Calibrate tab (C5 3.11). C5 revision 7 loads `cycle.js`; C3 serves `/cycle.js`. |
+| 2.1 | `room` takes an optional `plant` (C8 5.1.1: the room's machines, one-level override of `ClimateSim.PLANT`); new `opts.heat`. |
+| 3 | New check 2b: `room.plant` not `null`/`undefined` and not a non-array object → `TypeError('runCycle: plant must be an object')`. |
+| 7.1 | Step 2: `e.plant = structuredClone(room.plant)` when `room.plant != null`. |
+| 8.1 | New step 2a (with `opts.heat`): heat flows from `sim.heatJ()` into the open hour and segment. |
+| 8.2, 8.4 | The wet counter uses the stage's wet line: `CROPS[tg.crop].wetRH[stage]` when the crop sets it, else `PASS.wetRH` (95). Only lion's mane sets it (`{ pinning: 98 }`, lead decision 40); every other crop's result is deep-equal to revision 1. |
+| 12.4, 12.2 | With `opts.heat`, every Segment and every series Hour gain `heat` (13 keys, Wh). Without it the Result is deep-equal to revision 1. |
+| 14 | Tests for `plant`, `opts.heat` and the per-stage wet line. |
+
+This contract defines `cycle.js`: a simulation of one whole crop cycle (every stage, every flush) for a room and a crop mix. It answers "can this room hold this mix for a full cycle on our region's weather?" one stage at a time. It runs the real controller (`controller.js`) against the simulated room (`sim.js`) through the runtime (`runtime.js`), as the capacity check (`capacity.js` `trial`) does for fruiting only. Its result keeps an hourly series, so the Calibrate tab (C5 3.11) can lay the predicted cycle over the real readings of the same room.
 
 | Part of the user's idea | Where |
 |---|---|
-| Many rooms; per room a live dashboard (IoT) | Not here: the Rooms module (C2, C3, C5) |
+| Many rooms; per room a live dashboard (IoT) | Not here: the room's Live tab (C2, C3, C5 3.4) |
 | Per room a simulation: put a composition (crop mix), run a cycle, see whether the room capacity is enough for the climate | This contract |
-| Save the result and compare it with the real data, then calibrate | Not here. This contract only makes the result (with `series`) ready for that; storing and comparing are later modules |
+| Save the result and compare it with the real data, then calibrate | Not here. This contract makes the result (with `series`) ready for that; it is stored by C1 `simulation_runs` and C3 6.20–6.24 and compared in the Calibrate tab (C5 3.11) |
 
 ### Lead decisions for C7 (binding; this contract implements them)
 
@@ -20,7 +35,8 @@ This contract defines `cycle.js`: a simulation of one whole crop cycle (every st
 | Program | `program.auto = true` with the controller's days per stage and flushes. `full`: spawn, pinning, (fruiting, rest) per flush, ending after the last fruiting; `ready`: (fruiting, rest) per flush, ending after the last fruiting. Total days from the program; harvest windows off; `env.blockStage` follows the controller stage every step. | 5 |
 | Weather | Day k uses `DESIGN_DAYS[region].days[k % 3]`; one warm-up day before day 0, not scored. Deterministic. | 6, 7.2 |
 | Scoring | Per stage segment: hours, `inT`, `rhOk`, `lowRhMin` per day, `wet`, `co2Below`, max block core, alarms raised per id, kWh, RM (`opts.tariff`, default 0.57). Pass rules: `capacity.js` `PASS` against the stage's own targets; spawn judges temperature and block core (`coreMax`) only. Spawn: air below the band is excused while the controller's `coreControl` rule cools for the core (`core − coreTarget > T − spT`) (added on review, revision 1; signed off by the lead, lead decision 12). `fails[]` lists the failed rules. | 8, 9, 10 |
-| Result | `{ verdict, why?, targets, inputs, stages, totals: { days, kwh, rm, rmPerBlock, pass }, series }`; `series` hourly `{ h, stage, flush, T, RH, CO2, core, kwh }` | 12 |
+| Result | `{ verdict, why?, targets, inputs, stages, totals: { days, kwh, rm, rmPerBlock, pass }, series }`; `series` hourly `{ h, stage, flush, T, RH, CO2, core, kwh }` (plus `heat` with `opts.heat`, revision 2) | 12 |
+| Room machines and heat (revision 2, C8) | `room.plant` overrides the simulation's machines; `opts.heat` adds heat flows; the wet line is per crop and stage (lead decisions 34, 36, 37, 40) | 2.1, 3, 7.1, 8.1, 8.2, 12 |
 | Speed | `DT = 10` s; a full default cycle within 60 s in Node; the tests log the time | 1, 14 |
 
 ## 1. General rules
@@ -30,12 +46,12 @@ This contract defines `cycle.js`: a simulation of one whole crop cycle (every st
 | File | `cycle.js` in the repository root, next to `capacity.js` |
 | Module pattern | The same wrapper as `capacity.js`: `(function (global) { 'use strict'; … global.ClimateCycle = { … }; })(typeof window !== 'undefined' ? window : globalThis);`. No `require`, no `module.exports`, no DOM access, no npm packages. |
 | Load order | `sim.js`, `controller.js`, `runtime.js`, `capacity.js`, then `cycle.js`. `cycle.js` reads `global.ClimateSim`, `global.ClimateController`, `global.ClimateRuntime`, `global.ClimateCapacity` once, at load. |
-| Browser and Node | The same file runs in both. Node tests `require('../cycle.js')` after the four files above. This contract does not add `cycle.js` to `index.html` (a later web module does). |
-| Shared modules | `controller.js`, `sim.js`, `runtime.js` are not changed. `capacity.js` gains two exports and nothing else (section 13.2). |
+| Browser and Node | The same file runs in both. Node tests `require('../cycle.js')` after the four files above. C5 revision 7 loads it in `index.html` after `capacity.js`; C3 section 9 serves `/cycle.js`. |
+| Shared modules | Revision 1: `controller.js`, `sim.js`, `runtime.js` are not changed; `capacity.js` gains two exports and nothing else (section 13.2). Revision 2: C8 changes `sim.js`, `controller.js` and `capacity.js` (C8 section 5); this contract uses `sim.heatJ()` and `env.plant` from them. |
 | Deterministic | The same `room`, `mix` and `opts` always give a deep-equal result (`assert.deepStrictEqual`). No `Math.random`, no clock: the simulation uses no noise and no random weather. |
 | Numbers | Every number in the result is unrounded (the page rounds for display). Units: °C, % RH, ppm, kWh, RM, hours, days. |
 | Time step | `DT = 10` s of simulated time per step (as `capacity.js` `trial`). Not an option. |
-| Speed | A full default cycle (83 simulated days) finishes within 60 s in Node 22 (measured on the draft with the weather window of section 6: about 4 s). With the window the run time grows linearly with the program length (measured: about 50 ms per simulated day in Node; 570 days in 27 s). Only the default cycle is bound to 60 s. The longest program `importSettings` allows (spawn 90 + pinning 30 + 10 × fruiting 60 + 9 × rest 60 = 1260 days) takes about 1 minute in Node and longer in a browser; the later page warns before it runs a long program. |
+| Speed | A full default cycle (83 simulated days) finishes within 60 s in Node 22 (measured on the draft with the weather window of section 6: about 4 s). With the window the run time grows linearly with the program length (measured: about 50 ms per simulated day in Node; 570 days in 27 s). Only the default cycle is bound to 60 s. The longest program `importSettings` allows (spawn 90 + pinning 30 + 10 × fruiting 60 + 9 × rest 60 = 1260 days) takes about 1 minute in Node and longer in a browser; the Simulate tab asks before it runs a program longer than 180 days (C5 3.10, lead decision 26). With `opts.heat` a run takes about 4–10 % longer (C8 13.1). |
 
 ## 2. Public API (`global.ClimateCycle`)
 
@@ -51,11 +67,12 @@ This contract defines `cycle.js`: a simulation of one whole crop cycle (every st
 
 | Argument | Shape | Meaning |
 |---|---|---|
-| `room` | `{ name, volume, vent, calib }` exactly as in `capacity.js`: `volume` m³ (falsy = the simulation's 60 m³), `vent` `'supply'` or `'exhaust'` (falsy = the simulation's default `'supply'`), `calib` `{ ua, infAch, moistBuffer, co2PerBlock, rmse, date }` or `null` | The room. `name` is not used. |
+| `room` | `{ name, volume, vent, calib, plant? }` as in `capacity.js` (revision 2 adds the optional `plant`: a partial plant of C8 5.1.1, the room's machines; `null` or left out = `ClimateSim.PLANT`): `volume` m³ (falsy = the simulation's 60 m³), `vent` `'supply'` or `'exhaust'` (falsy = the simulation's default `'supply'`), `calib` `{ ua, infAch, moistBuffer, co2PerBlock, rmse, date }` or `null` | The room. `name` is not used. |
 | `mix` | `[{ crop, blocks, co2PerBlock? }]` exactly as in `capacity.js` | The planned blocks. A row counts only when `blocks` is a finite number above 0 (as `commonTargets` and `mixCo2`). |
 | `opts.settings` | A Settings object (controller settings of the room), optional | Taken through `importSettings` (lead decision 6), then the forced keys of section 4.2 are set. Left out: `ClimateController.defaultSettings()`. |
 | `opts.region` | string, default `'my-lowland'` | An own key of `ClimateCapacity.DESIGN_DAYS`. `region = opts.region \|\| 'my-lowland'` (as `capacity.js` `check`: `undefined`, `null` and `''` take the default) |
 | `opts.tariff` | number, RM per kWh, default `0.57` | Energy price |
+| `opts.heat` | boolean, default `false` | Revision 2. `true`: every Segment and every series Hour gain `heat`, an object with the 13 keys of C8 5.1.2 in **Wh** (J / 3600). `false`: no `heat` key anywhere; the Result is deep-equal to revision 1. |
 | `opts.fullWeather` | boolean, default `false` | For the tests only: `true` keeps the whole weather series in `e.weatherSeries` instead of the per-day window (section 6). The Result must be deep-equal either way. |
 | `opts.onProgress` | `(progress) => void`, optional | Used by `runCycle` and `runCycleAsync` only |
 | `opts` itself | object or left out (`undefined`) | Other keys are ignored |
@@ -68,6 +85,7 @@ Checked in this order before anything runs. A failed check throws (from the gene
 |---|---|---|
 | 1 | `room` is not a non-null object | `TypeError('runCycle: room must be an object')` |
 | 2 | `mix` is not an array | `TypeError('runCycle: mix must be a list')` |
+| 2b | Revision 2: `room.plant != null` and it is not a non-array object | `TypeError('runCycle: plant must be an object')` |
 | 3 | `opts.settings !== undefined` and it is not a non-null, non-array object | `TypeError('runCycle: settings must be an object')` |
 | 4 | `opts.tariff !== undefined` and it is not a finite number ≥ 0 | `TypeError('runCycle: tariff must be a number of at least 0')` |
 | 5 | `region = opts.region \|\| 'my-lowland'` is applied first; fails when `!Object.hasOwn(DESIGN_DAYS, region)` (so inherited names such as `'toString'` or `'constructor'` fail too) | `Error('Unknown region: <region>')` (the same text as `capacity.js`) |
@@ -165,7 +183,7 @@ A segment is one stage occurrence with its flush number, as `ctl.programStatus(t
 | Step | Action |
 |---|---|
 | 1 | `n = Math.max(1, Math.round(Σ blocks of the counted rows))` (a mix such as `[{ crop: 'oyster', blocks: 0.4 }]` passes `commonTargets` but rounds to 0; it runs with 1 block, so `rmPerBlock` stays finite); `c = CAP.mixCo2(room, mix)` (mL/h per block) |
-| 2 | `e = structuredClone(SIM.DEFAULT_ENV)`; `Object.assign(e, { startHour: 0, blocks: n, co2PerBlock: c, blockStage: S[0], vent: room.vent \|\| e.vent, noise: false, sensorQuality: 'ideal', harvestDoors: false, randomWeather: false, dailyCycle: false })`; `e.room = CAP.roomOf(room)`; `full` = the weather series of section 6; `e.weatherSeries = full` (the loop replaces it with the day's window unless `opts.fullWeather`). Every other `DEFAULT_ENV` key stays (`probe: true`, `sensorPeriod: 30`, sensor positions, `vent` positions). |
+| 2 | `e = structuredClone(SIM.DEFAULT_ENV)`; `Object.assign(e, { startHour: 0, blocks: n, co2PerBlock: c, blockStage: S[0], vent: room.vent \|\| e.vent, noise: false, sensorQuality: 'ideal', harvestDoors: false, randomWeather: false, dailyCycle: false })`; `e.room = CAP.roomOf(room)`; revision 2: when `room.plant != null`, `e.plant = structuredClone(room.plant)` (`roomOf` lays `plant.room` under the calibration, C8 5.2); `full` = the weather series of section 6; `e.weatherSeries = full` (the loop replaces it with the day's window unless `opts.fullWeather`). Every other `DEFAULT_ENV` key stays (`probe: true`, `sensorPeriod: 30`, sensor positions, `vent` positions). |
 | 3 | `sim = SIM.create(e)`; `sim.setRoom({ T, RH, CO2 })` with the targets of `S[0]` (section 4.1): `T = spT`, `RH = spRH`, `CO2 = co2Lim − 200` |
 | 4 | `ctl = CC.create(cfg, null, null)` |
 | 5 | `sio = RT.simIO(sim)`; `io = { ...sio, read: () => { const r = sio.read(); return r && { ...r, CO2: r.CO2 + (r.seq % 2) * 1e-6 }; } }`. A noise-free CO₂ can sit at one exact value, which the controller's frozen-sensor check calls a fault; the change is far below a sensor's resolution (copied from `capacity.js` `trial`). |
@@ -193,6 +211,7 @@ The runtime calls it after `ctl.update(r)` for each new reading. `v = sim.view()
 |---|---|
 | 1 | `r.t < W`: return (warm-up). |
 | 2 | Energy (section 10): `K = Σ Object.values(r.kwh)`; `hour = Math.floor((r.t − W) / 3600)`. If an hour is open and `hour` differs from it: close it with `kwh = K − k0`. If `r.t < END` and no hour `hour` is open: open it with `k0 = K`. |
+| 2a | Revision 2, only with `opts.heat`, right after `hour` is computed and before an hour closes: `F = sim.heatJ()`; when a previous `F` exists, add `(F[k] − Fprev[k]) / 3600` to the open hour's `heat[k]` and to the open segment's `heat[k]` for each of the 13 keys; `Fprev = F`. The interval ending at a reading belongs to the hour and segment open before that reading, so a segment's `heat` equals the sum of its hours' `heat` (measured to 2e-8 Wh, C8 13.1). |
 | 3 | `r.t >= END`: return. |
 | 4 | `ps = ctl.programStatus(r.t)`. No open segment, or `ps.stage` / `ps.flush` differ from it: open a new segment (`startDay = (r.t − W) / 86400`, targets of section 4.1); if its stage is `fruiting`: section 4.3 (segment start). Otherwise, in a fruiting segment, at a shock end: section 4.3 (shock end). Then remember whether `ctl.state.stage.shock` is `null` for the next reading. |
 | 5 | Count the reading in the open segment (section 8.2) and in the open hour (section 10). |
@@ -211,7 +230,7 @@ The runtime calls it after `ctl.update(r)` for each new reading. `v = sim.view()
 | `tLo` | Not in `inT` and `v.T <= g.spT` |
 | `rhOk` | `v.RH >= g.spRH − BANDS.RH` |
 | `lowRh` | `v.RH < g.spRH − BANDS.RHAlarm` |
-| `wet` | `v.RH > PASS.wetRH` |
+| `wet` | `v.RH > wetLim` (revision 2): `wetLim = (CC.CROPS[tg.crop].wetRH && CC.CROPS[tg.crop].wetRH[stage]) ?? PASS.wetRH`, set once when the segment opens (an internal counter field, not part of the Segment). Only lion's mane sets `wetRH` (`{ pinning: 98 }`, lead decision 40); every other crop and stage uses 95. |
 | `co2Below` | `v.CO2 <= g.co2Lim` |
 | `maxCore` | Not a count: the largest `v.core` of the segment |
 
@@ -235,7 +254,7 @@ A segment passes when none of its judged rules fails. `fails` lists the failed r
 | Temperature | `inT < PASS.inT` | `temperature too high` when `tHi >= tLo`, else `temperature too low` | every stage |
 | Humidity | `rhOk < PASS.rhOk` | `humidity too low` | pinning, fruiting, rest |
 | Low humidity alarm | `lowRhMin > PASS.lowRhMin` | `humidity at the low alarm` | pinning, fruiting, rest |
-| Wet | `wet > PASS.wetMax` | `humidity near saturation` | pinning, fruiting, rest |
+| Wet | `wet > PASS.wetMax` (10 %; `wet` counted against the stage's wet line, 8.2) | `humidity near saturation` | pinning, fruiting, rest |
 | CO₂ | `co2Below < PASS.co2Below` | `CO₂ above the limit` | pinning, fruiting, rest |
 | Block core | `maxCore > coreMax` | `block core too hot` | spawn |
 
@@ -257,7 +276,7 @@ In the spawn run the bags are sealed: humidity and CO₂ are reported but not ju
 |---|---|
 | Meter | `K = Σ Object.values(r.kwh)` (`ac`, `hu`, `fan`, `lights`, `circ`), cumulative kWh of the reading |
 | Hour h (h = 0 … D × 24 − 1) | Opens at its first reading (`t = W + h × 3600`) with `k0 = K`; closes at the first reading of the next hour (the reading at `END` closes the last hour); `kwh = K(close) − k0` |
-| Series entry | `{ h, stage, flush, T, RH, CO2, core, kwh }`: `h` = hours from day 0; `stage`, `flush` = the segment of the hour's first reading; `T`, `RH`, `CO2`, `core` = means of `v.T`, `v.RH`, `v.CO2`, `v.core` over the hour's 120 readings; `kwh` as above |
+| Series entry | `{ h, stage, flush, T, RH, CO2, core, kwh }` (plus `heat` with `opts.heat`, 8.1 step 2a): `h` = hours from day 0; `stage`, `flush` = the segment of the hour's first reading; `T`, `RH`, `CO2`, `core` = means of `v.T`, `v.RH`, `v.CO2`, `v.core` over the hour's 120 readings; `kwh` as above |
 | Segment `kwh` | Sum of its hours' `kwh` (in hour order) |
 | Segment `rm` | `kwh × tariff` |
 | Totals | `totals.kwh` = sum of the segments' `kwh`; `totals.rm` = sum of the segments' `rm` (both in segment order) |
@@ -321,6 +340,7 @@ The 8640th step of loop day `day` (section 7.2, 0 … D − 1) lands exactly on 
 | `rm` | number | Section 10 |
 | `fails` | string[] | Section 8.4 |
 | `pass` | boolean | `fails.length === 0` |
+| `heat` | object (revision 2, only with `opts.heat`) | The 13 heat flows of C8 5.1.2 summed over the segment, Wh (8.1 step 2a) |
 
 ### 12.5 `totals`
 
@@ -402,13 +422,18 @@ The work brief lists them with exact inputs. Required coverage:
 | 15 | No frozen-CO₂ false alarm: no segment counts `sensor_CO2` in a nearly empty room |
 | 16 | Weather window: a run with `opts.fullWeather: true` deep-strict-equals the windowed run (`SHORT_FULL`) |
 | 17 | A mix that rounds to 0 blocks (`blocks: 0.4`) runs with `inputs.blocks === 1` and a finite `totals.rmPerBlock` |
+| 18 | Revision 2: `room.plant: 5` → `runCycle: plant must be an object`; `plant: null` is accepted; `room.plant = ClimateEquipment.plantOf(DEFAULTS, room)` gives a deep-equal Result (`SHORT_FULL`) |
+| 19 | Revision 2: a `plant` with `ac.capW` 2640 lowers each fruiting segment's `inT` (4000 grey oyster, `ready`) |
+| 20 | Revision 2: `opts.heat: true` adds `heat` with exactly the 13 keys to every segment and hour; a segment's `heat` equals the sum of its hours' (1e-6); removing every `heat` key gives the Result without `opts.heat`; without `opts.heat` no `heat` key anywhere |
+| 21 | Revision 2: a short lion's mane cycle scores pinning `wet` against 98 %: lower than the same run with `wetRH` removed, and without `humidity near saturation` in pinning; spawn and fruiting segments deep-equal |
 
 ## 15. Not in this contract
 
 | Item | Where |
 |---|---|
-| Page, buttons, charts of the cycle | A later web module |
-| Saving results (database table, API route) | A later contract (C1/C3 change through the lead) |
-| Predicted-versus-real comparison and calibration from it | A later module; it reads `series` |
-| Other machines than `ClimateSim.PLANT`'s, random weather, sensor noise | Not modelled here |
+| Page, buttons, charts of the cycle | The Simulate tab (C5 3.10) |
+| Saving results (database table, API route) | C1 6.13 (`simulation_runs`), C3 6.20–6.24 |
+| Predicted-versus-real comparison and calibration from it | The Calibrate tab (C5 3.11); it reads `series` |
+| A room's machines | C8 (`room.plant`, revision 2) |
+| Random weather, sensor noise | Not modelled here |
 | Batches of blocks with their own dates | Sub-project 2 (batches and stages) |
