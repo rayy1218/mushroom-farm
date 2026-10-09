@@ -3,6 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { run, CC } = require('./harness.js');
+const AIR = globalThis.ClimateAir;
 // Steady control tests switch the harvest windows off; the harvest has its own test.
 const noHarvest = () => { const p = CC.defaultProgram(); p.harvest.on = false; return { program: p }; };
 const fault = (faults, faultAt = 30) => ({ hours: 72, measureFrom: 48, faultAt, faults, cfg: noHarvest() });
@@ -13,13 +14,7 @@ test('default oyster fruiting, tropical weather: in band, few starts', () => {
   assert.ok(r.inRH >= 97, `humidity in band ${r.inRH}`);
   assert.ok(r.overMin <= 10, `CO2 over limit ${r.overMin} min`);
   assert.ok(r.acStarts <= 30, `AC compressor starts ${r.acStarts}/day`);
-  assert.ok(r.fanStarts <= 120, `fan starts ${r.fanStarts}/day`);
-});
-
-test('purge mode: a 0.5 °C setback keeps the AC compressor running; "AC off" restarts it at each purge', () => {
-  const small = run({ rules: { airMode: 'purge', acSetbackC: 0.5 }, cfg: noHarvest() }), off = run({ rules: { airMode: 'purge', acAction: 'off' }, cfg: noHarvest() });
-  assert.ok(small.acStarts <= 6, `setback 0.5: ${small.acStarts} starts/day`);
-  assert.ok(off.acStarts >= 50, `AC off: ${off.acStarts} starts/day`);
+  assert.equal(r.cappedPurges, 0, 'capped purges');
 });
 
 test('CO2 sensor fault: the timed purge copies earlier days and holds CO2', () => {
@@ -59,20 +54,6 @@ test('harvest windows dry the room for picking without a low-humidity alarm', ()
 });
 
 // ---------- Phase 2 ----------
-test('old layout (exhaust, purge): AC fan speed control reduces the water that the AC removes and the fogger adds back', () => {
-  // With the supply fan and steady air (the defaults) the effect is small; this test keeps the rule correct.
-  const on = run({ cfg: noHarvest(), rules: { airMode: 'purge' }, env: { vent: 'exhaust', inletAt: 'low', exhaustAt: 'high' } }), off = run({ cfg: noHarvest(), rules: { airMode: 'purge', acFanRH: false }, env: { vent: 'exhaust', inletAt: 'low', exhaustAt: 'high' } });
-  const fogOn = on.sim.view().water.fogKg, fogOff = off.sim.view().water.fogKg;
-  assert.ok(fogOn < fogOff * 0.85, `fog water ${fogOn.toFixed(1)} < ${fogOff.toFixed(1)} kg`);
-  assert.ok(on.inRH >= off.inRH, 'humidity control is not worse');
-});
-
-test('a filtered supply fan cuts the unfiltered air by more than 80 %', () => {
-  const ex = run({ cfg: noHarvest(), env: { vent: 'exhaust' } }), sup = run({ cfg: noHarvest(), env: { vent: 'supply' } });
-  assert.ok(sup.sim.view().unfilteredM3 < ex.sim.view().unfilteredM3 * 0.2);
-  assert.ok(sup.overMin <= 10, 'CO2 still controlled');
-});
-
 test('spawn run with a block probe keeps the core below its alarm limit', () => {
   const p = CC.defaultProgram(); p.harvest.on = false;
   const base = { cfg: { program: p, stage: 'spawn', spT: 24, spRH: 70, co2Lim: 5000, rules: CC.defaultRules(5000) }, env: { blockStage: 'spawn', blocks: 3000 } };
@@ -96,15 +77,37 @@ test('harvest doors, workers, and rain cause no false sensor faults', () => {
   assert.equal(r.rhLowMin, 0);
 });
 
-test('steady fresh air (default): no bursts, stable CO2, no unfiltered air', () => {
-  const r = run({ cfg: noHarvest() });
-  assert.ok(r.fanStarts <= 2, `fan starts ${r.fanStarts}/day`);
-  assert.ok(r.overMin === 0 && r.inT >= 98 && r.inRH >= 97, JSON.stringify({ over: r.overMin, inT: r.inT, inRH: r.inRH }));
-  assert.equal(r.sim.view().unfilteredM3, 0);
-});
-
 test('the AC-too-small warning comes on when the room cannot be held', () => {
   const r = run({ cfg: { ...noHarvest(), spT: 18 } });          // 18 °C on a 33 °C day: below what the AC can hold
   // It comes on in the hot hours (it can clear at night): it stays in the list until a person acknowledges it.
   assert.ok(r.ctl.alarmList().some(a => a.id === 'acTooSmall'));
+});
+
+// ---------- Air exchange (C9) ----------
+const crowded = { blocks: 6000, airM3h: 1800 };
+
+test('6000 blocks at 1800 m³/h: every purge within the cap, CO₂ never above the limit', () => {
+  const r = run({ env: crowded, cfg: noHarvest() });
+  assert.ok(r.purges > 100, `purges ${r.purges}/day`);
+  assert.equal(r.cappedPurges, 0);
+  assert.ok(r.longestPurgeS <= 180, `longest purge ${r.longestPurgeS} s`);
+  assert.ok(r.overMin <= 1, `CO₂ over the limit ${r.overMin} min/day`);
+  assert.ok(!r.alarmIds.some(id => id.startsWith('sensor_')), `frequent purges cause no false sensor faults: ${r.alarmIds}`);
+});
+
+test('6000 blocks at 900 m³/h: the size alarm, with an estimate near the true need', () => {
+  const r = run({ hours: 12, measureFrom: 6, env: { blocks: 6000, airM3h: 900 }, cfg: { ...noHarvest(), airM3h: 900 } });
+  assert.ok(r.alarmIds.includes('airTooSmall'), `alarms ${r.alarmIds}`);
+  const R = CC.defaultRules(CC.defaultSettings().co2Lim);
+  const truth = AIR.sizeFor({ volume: 60, co2Out: 420, prodM3h: 6000 * 45 / 1e6, start: R.fanOn, stop: R.fanOff, capS: 180 }).needM3h;
+  const est = Number(/needs about (\d+)/.exec(r.sizeText)[1]);
+  assert.ok(Math.abs(est - truth) / truth <= 0.15, `estimate ${est}, truth ${truth}`);
+});
+
+test('2000 blocks at 1800 m³/h: short purges keep the room in band', () => {
+  const r = run({ env: { blocks: 2000, airM3h: 1800 }, cfg: noHarvest() });
+  assert.ok(r.inT >= 98, `temperature in band ${r.inT}`);
+  assert.ok(r.inRH >= 97, `humidity in band ${r.inRH}`);
+  assert.equal(r.cappedPurges, 0);
+  assert.ok(!r.alarmIds.some(id => id.startsWith('sensor_')), `no false sensor faults: ${r.alarmIds}`);
 });

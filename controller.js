@@ -119,12 +119,13 @@
   const OFFSET_OF = { T: 'T', T2: 'T', RH: 'RH', RH2: 'RH', CO2: 'CO2', CO2b: 'CO2' };   // sensor -> correction
   const FAULT_COUNT = 3;          // bad readings in a row before a sensor fault
   const TRIM_TI = 1800;           // s; speed of the AC setpoint correction
-  const MODE_HOLD_S = 300;
+  const MODE_HOLD_S = 300;         // a mode change (heat/cool, dry) needs its condition for this long
   const AIR_MIN_ON_S = 30;         // every air run lasts at least this long, so a noisy reading cannot stop it at once
   const AIR_POINTS = 20;           // CO2 readings kept for the rise rate
   const CO2_OUT = 420;             // ppm; outdoor CO2 for the size estimate
   const FOG_FULL_S = 300;          // humidity first acts only after the fogger is at its maximum for this long
-  const ALARM_DELAY_S = 300;       // a process alarm needs its condition for this long (critical alarms: 60 s)        // a mode change (heat/cool, dry) needs its condition for this long
+  const RESP_PUSH_AH = 0.4;        // g/m³: a purge opens the humidity response window only above this push
+  const ALARM_DELAY_S = 300;       // a process alarm needs its condition for this long (critical alarms: 60 s)
 
   function defaultRules(lim) {
     return {
@@ -794,7 +795,13 @@
           R.win = null;
         }
       };
-      watch('RH', c.hu.level !== prevFog, RESP_WIN_RH, 0.15);
+      // With the fans off between purges the fogger can hold one level for hours (no fog boost any more, C9), so a
+      // purge start also opens the window, but only when the outdoor air's water differs from the room's by at least
+      // RESP_PUSH_AH: when the two are nearly equal a healthy sensor barely moves. Measured over 2 days each (default
+      // 2000 blocks, 6000 blocks, dry weather): every purge window under 0.15 % RH had a push of at most 0.34 g/m³;
+      // a sensor frozen at midday sees pushes of 0.43-0.57 g/m³. Two still windows in a row are needed for a fault.
+      const push = ahPush(st.v, st.f);
+      watch('RH', c.hu.level !== prevFog || (!prevOn && c.air.on && push != null && Math.abs(push) >= RESP_PUSH_AH), RESP_WIN_RH, 0.15);
       watch('CO2', !prevOn && c.air.on, RESP_WIN_CO2, 5);
     }
 
