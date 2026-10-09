@@ -609,14 +609,14 @@ Three streams beside the nine wave 2 streams (wave 2 plan 3, 4 rules apply: no m
 |---|---|---|---|
 | Harvest data | `stream/harvest-data` | C10 3, 5; the fake db; a real `openDb(':memory:')` needs upgrade 4, which is Data 2's: until gate 2.5 the real-store half of `tests/harvest-db.test.js` opens a `DatabaseSync` itself, runs `SCHEMA_V4_HARVEST` on it, and passes `{ version: 4, sqlite, getRoom }` as `db` | Every C10 13 row of `tests/harvest-db.test.js` passes on the fake and on that stand-in |
 | Harvest API | `stream/harvest-api` | C10 4, 6–9; the fake db and fake store | Every C10 13 row of `tests/harvest-api.test.js` passes |
-| Harvest web | `stream/harvest-web` | C10 10–12; the fake API server; headless after gate 2.5 (C5 7.10) | Node helpers pass; headless rows of C10 13 pass against the gate 2.5 `master` |
+| Harvest web | `stream/harvest-web` | C10 10–12; the fake API server | Node helpers pass (C10 13); no headless check: the harvest pages are the lead's wave 3 check (C5 7.10) |
 
 ## Step 2: lead
 
 ### Task 2.1: Gate 2.5 additions
 
 - [ ] **Step 1:** After Data 2, Equipment and Server 2: merge `stream/harvest-data`, then `stream/harvest-api`; `npm test`. Expected: `# fail 0`. In `tests/harvest-db.test.js`, point the real-store half at `openDb(':memory:')` (upgrade 4 is now in `UPGRADES`).
-- [ ] **Step 2:** `server/main.js`: the C10 8.4 wiring; the `describe('server/main.js')` stub test gets stub `harvest-db.js` and `harvest-api.js` modules next to its copy.
+- [ ] **Step 2:** `server/main.js`: the C10 8.4 wiring only (with the `openHarvest` failure rule of C3 2.2).
 - [ ] **Step 3:** The gate's real-server run on the version 1 and version 2 file copies: `db.version` 4; `curl` creates a batch (`POST /api/batches`), places it in Room 1, adds two crates; `GET /api/batches/<id>` gives the totals `harvest-rules.js` gives for the same crates; `GET /api/rooms/1/harvest` lists today's crates.
 
 ### Task 2.2: Wave 3

@@ -1294,7 +1294,7 @@ child gets a 10 s timeout.
 
 | Test | Expected |
 |---|---|
-| With `STUB_HARVEST_THROW=1` (after the gate 2.5 wiring) | stderr `Cannot open the harvest records: stub cannot open harvest`; stdout `stub: rooms.stop` then `stub: db.close`; exit code 1; nothing listens |
+| With `STUB_HARVEST_THROW=1`: written by Server 2 in wave 2 as `test(…, { skip: !mainWiresHarvest && 'main.js is wired at gate 2.5' })`, with `mainWiresHarvest` = the copied `main.js` text contains `openHarvest`; it runs from gate 2.5 | stderr `Cannot open the harvest records: stub cannot open harvest`; stdout `stub: rooms.stop` then `stub: db.close`; exit code 1; nothing listens |
 | `FARM_PORT=abc` (the other bad values are `tests/config.test.js`'s) | Exit 1; stderr starts with `Bad configuration:` |
 | `tmp/farm.config.json` = `{bad` | Exit 1; stderr starts with `Bad configuration:` |
 | `tmp/farm.config.json` = `{ "port": 1 }` and `FARM_PORT=<free port>`, `FARM_HOST=127.0.0.1` | Listens on the free port (the environment wins) |
