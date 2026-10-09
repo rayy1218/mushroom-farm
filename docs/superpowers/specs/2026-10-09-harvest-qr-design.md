@@ -50,18 +50,18 @@ Two new tables, added by one schema upgrade (the next free C1 upgrade number at 
 |---|---|---|---|
 | `id` | integer | yes | `INTEGER PRIMARY KEY` |
 | `crop` | text | yes | a key of `ClimateController.CROPS` |
-| `strain` | text | no | for example "LM-01 from supplier X" |
-| `source` | text | no | supplier name, or "own" for farm-made blocks |
-| `block_count` | integer | yes | ≥ 1 |
-| `block_wet_kg` | real | yes | > 0, weight of one block as received |
+| `strain` | text | no | for example "LM-01 from supplier X"; ≤ 80 characters |
+| `source` | text | no | supplier name, or "own" for farm-made blocks; ≤ 80 characters |
+| `block_count` | integer | yes | 1 to 1,000,000 |
+| `block_wet_kg` | real | yes | > 0 and ≤ 20, weight of one block as received |
 | `moisture_pct` | real | yes | ≥ 0 and < 100; default 60 in the form |
 | `spawn_date` | integer | no | the supplier's spawn date |
 | `received_at` | integer | yes | date the blocks were delivered or made |
 | `room_id` | integer | no | foreign key to `rooms`; empty until placed, fixed afterwards |
 | `placed_at` | integer | no | set together with `room_id`; ≥ `received_at` |
 | `cleared_at` | integer | no | only when placed; ≥ `placed_at` |
-| `flush_gap_days` | integer | yes | ≥ 1; default 5 |
-| `notes` | text | no | |
+| `flush_gap_days` | integer | yes | 1 to 60; default 5 |
+| `notes` | text | no | ≤ 2000 characters |
 | `created_at` | integer | yes | set by db.js |
 
 SQL `CHECK`s: `(room_id IS NULL) = (placed_at IS NULL)`, `cleared_at IS NULL OR placed_at IS NOT NULL`, and the date orders above.
@@ -93,6 +93,7 @@ A pure module at the repo root (like `room-rules.js`), loaded by the server and 
 
 | Function | Returns |
 |---|---|
+| `state(batch)` | `received`, `placed` or `cleared` (section 1.3) |
 | `drySubstrateKg(batch)` | `block_count × block_wet_kg × (1 − moisture_pct / 100)` |
 | `flushes(batch, crates)` | Crates sorted by `t`; a new flush starts when the time since the previous crate is ≥ `flush_gap_days × 86400`. One entry per flush: `{ n, from, to, crates, kg, g_per_block, be_pct }` |
 | `totals(batch, crates)` | `{ crates, kg, g_per_block, be_pct, flushes }` |
