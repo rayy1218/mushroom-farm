@@ -1801,7 +1801,7 @@ describe('server/main.js', () => {
     await p.waitForExit(10000);
   });
 
-  for (const sig of ['SIGTERM', 'SIGINT']) {
+  for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP']) { // SIGHUP: lead decision 80
     test(`${sig} after a normal start -> exit 0, ordered shutdown`, async () => {
       const tmp = buildMainTmp();
       const port = await freePort();
@@ -1814,6 +1814,17 @@ describe('server/main.js', () => {
       assert.ok(order[0] >= 0 && order[0] < order[1] && order[1] < order[2], p.stdout);
     });
   }
+
+  test('STUB_HARVEST_THROW=1 -> Cannot open the harvest records (C10 8.4, C3 2.2 step 4)', async () => {
+    const tmp = buildMainTmp();
+    const p = spawnMain(tmp, { FARM_HOST: '127.0.0.1', STUB_HARVEST_THROW: '1' });
+    const code = await p.waitForExit(10000);
+    assert.equal(code, 1);
+    assert.ok(p.stderr.includes('Cannot open the harvest records: stub cannot open harvest'), p.stderr);
+    const order = ['stub: openHarvest', 'stub: rooms.stop', 'stub: db.close'].map(s => p.stdout.indexOf(s));
+    assert.ok(order[0] >= 0 && order[0] < order[1] && order[1] < order[2], p.stdout);
+    assert.ok(!p.stdout.includes('Open http://'), p.stdout);
+  });
 
   test('STUB_DB_THROW=1 -> Cannot open the database', async () => {
     const tmp = buildMainTmp();
