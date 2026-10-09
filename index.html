@@ -5,15 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Mushroom farm</title>
 <link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="web/harvest.css">
 </head>
 <body data-level="farmer">
 <header class="bar">
   <div><h1>Mushroom farm</h1></div>
   <nav class="menu" id="menu" aria-label="Main menu">
     <a href="#/rooms" data-module="rooms">Rooms</a>
-    <a href="#/simulator" data-module="simulator">Simulator</a>
-    <a href="#/capacity" data-module="capacity">Capacity</a>
-    <a href="#/calibration" data-module="calibration">Calibration</a>
+    <a href="#/batches" data-module="batches">Batches</a>
+    <a href="#/simulator" data-module="simulator">Test bench</a>
   </nav>
   <div class="spacer"></div>
   <div class="seg level-seg" role="group" aria-label="Settings level" id="levelSeg">
@@ -28,15 +28,24 @@
 <script src="runtime.js"></script>
 <script src="calib.js"></script>
 <script src="capacity.js"></script>
+<script src="cycle.js"></script>
+<script src="equipment.js"></script>
 <script src="room-rules.js"></script>
+<script src="harvest-rules.js"></script>
 <script src="web/ui.js"></script>
 <script src="web/api.js"></script>
 <script src="web/charts.js"></script>
 <script src="web/settings-panel.js"></script>
+<script src="web/vendor/qrcodegen.js"></script>
 <script src="web/shell.js"></script>
+<script src="web/room-tabs.js"></script>
 <script src="web/rooms.js"></script>
+<script src="web/room-live.js"></script>
+<script src="web/room-equipment.js"></script>
+<script src="web/room-simulate.js"></script>
+<script src="web/room-calibrate.js"></script>
+<script src="web/batches.js"></script>
+<script src="web/harvest.js"></script>
 <script src="web/simulator.js"></script>
-<script src="web/capacity.js"></script>
-<script src="web/calibration.js"></script>
 </body>
 </html>
