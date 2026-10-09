@@ -218,7 +218,7 @@
 
   // State of the purge cycle (contract C9 section 5.3)
   function airInit() {
-    return { state: 'idle', since: null, purgeStart: null, capRun: 0, nextPurgeS: null, delayed: false, timed: false, sizeText: null };
+    return { state: 'idle', since: null, purgeStart: null, capRun: 0, nextPurgeS: null, delayed: false, timed: false, timedK: null, timedFrom: null, sizeText: null };
   }
   function freshState(cfg) {
     return {
@@ -243,26 +243,31 @@
   // A snapshot saved before C9 (one fan with levels 0-3): bring it to the air exchange shape (C9 5.7).
   const OLD_STATE = ['fanCo2On', 'co2Timed', 'purgeHeld', 'purgeReduced', 'setbackReq', 'setbackOn', 'setbackS', 'setbackAlarmStop',
     'setbackTimeStop', 'fanReason', 'fanBlocked', 'airLevel', 'airStepT', 'timedOnS', 'timedSource'];
-  function upgradeState(s) {
-    if (s.air) return s;
+  function upgradeState(s, cfg) {
+    if (!s.air) upgradeOld(s);
+    // Fields added later: take the start value from a fresh state (also the keys of st.air).
+    const fresh = freshState(cfg);
+    for (const k of Object.keys(fresh)) if (!(k in s)) s[k] = fresh[k];
+    for (const k of Object.keys(fresh.air)) if (!(k in s.air)) s.air[k] = fresh.air[k];
+    return s;
+  }
+  function upgradeOld(s) {
     const on = !!(s.cmd.fan && s.cmd.fan.level > 0);
     for (const k of OLD_STATE) delete s[k];
     for (const g of ['cmd', 'req']) { s[g].air = { on }; delete s[g].fan; }
     s.out.air = s.out.fan || { since: null }; delete s.out.fan;
     for (const g of ['hold', 'why']) { s[g].air = s[g].fan || ''; delete s[g].fan; }
-    s.air = airInit(); s.airReason = null; s.airPts = []; s.airRate = null; s.airRunCapped = false; s.rhRecovered = false;
     const hours = (s.exh && s.exh.hours) || [];
     s.purgeRec = { cur: null, events: [], hours: hours.map(b => ({ h: b.h, runS: b.runS || 0, starts: b.starts || 0, m3: b.m3 || 0, cappedN: 0, fogLS: b.fogLS || 0, acHighS: b.acHighS || 0, acLowS: b.acLowS || 0 })) };
     delete s.exh;
     const S = s.stats || {};
     s.stats = { airOnS: S.fanOnS || 0, purges: S.fanStarts || 0, purgeS: 0, longestPurgeS: 0, cappedPurges: 0, delayedS: 0, fogStarts: S.fogStarts || 0, acCmds: S.acCmds || 0 };
     s.prev = null;                       // the event log compares with the step before: start it again
-    return s;
   }
 
   function create(cfg, snapshot, onEvent) {
     const emit = onEvent || (() => {});
-    let st = snapshot ? upgradeState(structuredClone(snapshot)) : freshState(cfg);
+    let st = snapshot ? upgradeState(structuredClone(snapshot), cfg) : freshState(cfg);
     const say = (t, lvl, text) => emit({ t, lvl, text });
     const ppm = v => Math.round(v);
     const alarmOn = id => !!(st.alarms[id] && st.alarms[id].active);
@@ -568,7 +573,9 @@
         if (v.CO2 <= R.fanOff && runS >= AIR_MIN_ON_S) endPurge(t, false);
         else if (runS >= R.purgeMaxS) endPurge(t, true);
       }
+      // The fans must be off: free cooling or drying keep them on, and then CO2 is being removed anyway.
       if (A.state === 'after' && !on && offFor >= R.minOffS) setState('idle', t);
+      // The minimum off time is also kept in protectAir (a purge request while the fans are off waits there).
       if (A.state === 'idle' && v.CO2 >= R.fanOn && !A.delayed && (on || offFor >= R.minOffS)) startPurge(t);
     }
     // P4: AC by mode and setpoint.
@@ -717,9 +724,12 @@
       if (A.timed) {
         const learned = P.learnSafe ? historyFor('runS', t, st.sensors.CO2.faultSince) : null;   // s per hour
         const share = clamp(learned != null ? learned / 3600 * 1.1 : P.timedPurgeOn / P.timedPurgeEvery, 0.02, 0.9);
-        const run = Math.min(R.purgeMaxS, share * P.timedPurgeEvery * 60), period = Math.max(run / share, run + R.minOffS);
-        timed = { on: t % period < run, run, period, learned: learned != null };
-      }
+        const run = Math.min(R.purgeMaxS, Math.max(AIR_MIN_ON_S, share * P.timedPurgeEvery * 60)), period = Math.max(run / share, run + R.minOffS);
+        // Each period starts its run at its first reading, so a reading time that never falls in a fixed window cannot skip it.
+        const k = Math.floor(t / period);
+        if (A.timedK !== k) { A.timedK = k; A.timedFrom = t; }
+        timed = { on: t - A.timedFrom < run, run, period, learned: learned != null };
+      } else { A.timedK = null; A.timedFrom = null; }
       const reason = st.co2SafetyOn ? 'safety' : A.state === 'purge' ? 'purge' : timed && timed.on ? 'timed'
         : cool ? 'free cooling' : st.fanDryOn ? 'drying' : '';
       q.on = reason !== '';
@@ -730,7 +740,7 @@
     function airWhy(v, reason, timed) {
       const R = cfg.rules, A = st.air, t = st.lastT;
       if (reason === 'safety') return `CO₂ is ${ppm(v.CO2)} ppm, at or above the safety level ${R.co2SafetyAt}. The air exchange runs even when humidity is low.`;
-      if (timed) return timed.on ? `CO₂ sensor fault: timed purge, ${Math.round(timed.run)} s of each ${Math.round(timed.period)} s (from ${timed.learned ? 'this hour of an earlier day' : 'the setting'}).`
+      if (timed && (reason === 'timed' || !reason)) return timed.on ? `CO₂ sensor fault: timed purge, ${Math.round(timed.run)} s of each ${Math.round(timed.period)} s (from ${timed.learned ? 'this hour of an earlier day' : 'the setting'}).`
         : 'CO₂ sensor fault: timed purge. The air exchange is in the off part of the cycle.';
       if (A.state === 'purge') return `Purging since ${mss(t - A.purgeStart)} (at most ${mss(R.purgeMaxS)}). It stops at ${R.fanOff} ppm.`;
       if (A.delayed) return `Humidity first: RH ${v.RH.toFixed(1)} % is at or below ${(st.rhT - R.rhStop).toFixed(0)} % and outdoor air is drier. The purge waits until RH is ${(st.rhT - R.rhResume).toFixed(0)} % or CO₂ is ${cfg.co2Lim} ppm.`;
@@ -791,18 +801,18 @@
 
     // ---------- 4. Machine protection ----------
     // Fogger: on/off changes wait for the minimum on or off time. Level changes while on are free.
-    function protectOnOff(dev, minOnMin, minOffMin, t) {
-      const o = st.out[dev], c = st.cmd[dev], want = st.req[dev].level;
+    function protectFog(minOnMin, minOffMin, t) {
+      const o = st.out.hu, c = st.cmd.hu, want = st.req.hu.level;
       const isOn = c.level > 0, wantOn = want > 0;
-      st.hold[dev] = '';
+      st.hold.hu = '';
       if (isOn === wantOn) { c.level = want; return; }
-      const manual = !cfg.manual[dev].auto;
+      const manual = !cfg.manual.hu.auto;
       const min = (isOn ? minOnMin : minOffMin) * 60, age = o.since == null ? Infinity : t - o.since;
       if (manual || age >= min) {
         c.level = want; o.since = t;
         if (wantOn) st.stats.fogStarts++;
       } else {
-        st.hold[dev] = `${isOn ? 'Minimum run time' : 'Minimum off time'}: ${Math.ceil((min - age) / 60)} min to wait.`;
+        st.hold.hu = `${isOn ? 'Minimum run time' : 'Minimum off time'}: ${Math.ceil((min - age) / 60)} min to wait.`;
       }
     }
     // Air exchange: every run lasts AIR_MIN_ON_S, then stays off rules.minOffS. A manual change acts at once;
@@ -937,7 +947,7 @@
       circulation(v, r.t);
       protectAir(r.t, wasSafe && !st.co2SafetyOn);
       st.airReason = st.cmd.air.on ? reason || st.airReason : null;    // C9 5.3: follows the run; null when off
-      protectOnOff('hu', cfg.protect.fogMinOn, cfg.protect.fogMinOff, r.t);
+      protectFog(cfg.protect.fogMinOn, cfg.protect.fogMinOff, r.t);
       protectAc(r.t);
       st.cmd.lights.on = st.req.lights.on;
       st.cmd.circ.on = st.req.circ.on;
