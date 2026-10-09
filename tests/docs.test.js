@@ -12,6 +12,18 @@ const firstCell = l => (l.split('|')[1] || '').trim();
 // The 18 Reading keys, in order (C1 6.2, lead decision 20)
 const READING_KEYS = ['room_id', 't', 'T', 'RH', 'CO2', 't_out', 'rh_out', 'ac_mode', 'ac_setpoint', 'fog', 'air', 'lights', 'circ', 'power_w', 'kwh', 'ac_fan', 'stage', 'core'];
 
+test('docs: relative links resolve', () => {
+  const dead = [];
+  for (const doc of DOCS) {
+    for (const m of read(doc).matchAll(/\]\(([^)\s]+)\)/g)) {
+      const target = m[1];
+      if (/^[a-z]+:/i.test(target) || target.startsWith('#')) continue;
+      if (!fs.existsSync(path.join(ROOT, path.dirname(doc), target.split('#')[0]))) dead.push(`${doc}: ${target}`);
+    }
+  }
+  assert.deepEqual(dead, [], `dead links:\n${dead.join('\n')}`);
+});
+
 test('docs: README npm commands are package.json scripts', () => {
   const md = read('README.md');
   const names = [...md.matchAll(/\bnpm run ([\w:-]+)/g)].map(m => m[1]).concat([...md.matchAll(/\bnpm (start|test)\b/g)].map(m => m[1]));
