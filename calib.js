@@ -9,7 +9,7 @@
  *
  * CSV columns (header names, any order; aliases in COLS):
  *   time (ISO date/time, or minutes from the start), T, RH, CO2, tOut, rhOut,
- *   fan (0-3), fog (0-3), acPower (0/1), acMode (cool/heat/dry/fan), acSet (°C), acFan (low/auto/high), lights (0/1), circ (0/1)
+ *   air (0/1; an old fan column 0-3 counts as on above 0), fog (0-3), acPower (0/1), acMode (cool/heat/dry/fan), acSet (°C), acFan (low/auto/high), lights (0/1), circ (0/1)
  */
 (function (global) {
   'use strict';
@@ -23,7 +23,7 @@
     CO2: ['co2', 'co2_ppm', 'co₂'],
     tOut: ['tout', 'outdoor_t', 'outdoortemp', 't_out'],
     rhOut: ['rhout', 'outdoor_rh', 'rh_out'],
-    fan: ['fan', 'fan_level', 'exhaust'],
+    air: ['air', 'fan', 'fan_level', 'exhaust'],
     fog: ['fog', 'fogger', 'fog_level', 'humidifier'],
     acPower: ['acpower', 'ac_on', 'ac'],
     acMode: ['acmode', 'ac_mode'],
@@ -58,8 +58,9 @@
       if (t0 == null) t0 = t;
       const num = k => (idx[k] == null || c[idx[k]] === '' ? null : parseFloat(c[idx[k]]));
       const str = k => (idx[k] == null ? null : c[idx[k]].toLowerCase());
+      const onOff = x => (x == null || !Number.isFinite(x) ? null : x > 0 ? 1 : 0);
       rows.push({ t: t - t0, T: num('T'), RH: num('RH'), CO2: num('CO2'), tOut: num('tOut'), rhOut: num('rhOut'),
-        fan: num('fan'), fog: num('fog'), acPower: num('acPower'), acMode: str('acMode'), acSet: num('acSet'), acFan: str('acFan'), lights: num('lights'), circ: num('circ'),
+        air: onOff(num('air')), fog: num('fog'), acPower: num('acPower'), acMode: str('acMode'), acSet: num('acSet'), acFan: str('acFan'), lights: num('lights'), circ: num('circ'),
         hour: /^-?\d/.test(raw) ? null : new Date(Date.parse(raw)).getHours() + new Date(Date.parse(raw)).getMinutes() / 60 });
     }
     rows.sort((a, b) => a.t - b.t);
@@ -67,10 +68,10 @@
   }
 
   function toCsv(rows) {
-    const head = ['minutes', 'T', 'RH', 'CO2', 'tOut', 'rhOut', 'fan', 'fog', 'acPower', 'acMode', 'acSet', 'acFan', 'lights', 'circ'];
+    const head = ['minutes', 'T', 'RH', 'CO2', 'tOut', 'rhOut', 'air', 'fog', 'acPower', 'acMode', 'acSet', 'acFan', 'lights', 'circ'];
     const f = (x, d) => (x == null || !Number.isFinite(x) ? '' : x.toFixed(d));
     return [head.join(',')].concat(rows.map(r => [f(r.t / 60, 2), f(r.T, 2), f(r.RH, 1), f(r.CO2, 0), f(r.tOut, 2), f(r.rhOut, 1),
-      r.fan ?? '', r.fog ?? '', r.acPower ?? '', r.acMode ?? '', f(r.acSet, 1), r.acFan ?? '', r.lights ?? '', r.circ ?? ''].join(','))).join('\n');
+      r.air ?? '', r.fog ?? '', r.acPower ?? '', r.acMode ?? '', f(r.acSet, 1), r.acFan ?? '', r.lights ?? '', r.circ ?? ''].join(','))).join('\n');
   }
 
   // Apply a parameter set to a copy of the base environment.
@@ -95,7 +96,7 @@
     sim.setRoom({ T: first.T, RH: first.RH, CO2: first.CO2 });
     const cmdOf = r => ({
       ac: { power: r.acPower == null ? true : r.acPower > 0, mode: r.acMode || 'cool', setpoint: r.acSet ?? 25, fan: r.acFan || 'auto' },
-      hu: { level: r.fog ?? 0 }, fan: { level: r.fan ?? 0 }, lights: r.lights == null ? undefined : { on: r.lights > 0 },
+      hu: { level: r.fog ?? 0 }, air: { on: (r.air ?? 0) > 0 }, lights: r.lights == null ? undefined : { on: r.lights > 0 },
       circ: { on: (r.circ ?? 0) > 0 },
     });
     const out = [];

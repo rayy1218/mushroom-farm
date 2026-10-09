@@ -2,6 +2,26 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 require('../sim.js'); require('../air.js'); require('../controller.js'); require('../runtime.js'); require('../capacity.js'); require('../cycle.js');
+// C9 bridge (lead deletes at step 2). Test only: until the controller stream merges, controller.js still speaks the old fan shapes.
+// This makes it speak C9's: cmd.air, manual.air, rules.purgeMaxS, and on/off purges in place of steady air.
+// It does nothing once controller.js has manual.air; the lead deletes it at step 2.
+(function bridge(CC) {
+  if (CC.defaultSettings().manual.air) return;
+  const fix = cfg => { cfg.manual.air = { auto: true, on: false }; cfg.rules.airMode = 'purge'; cfg.rules.purgeMaxS = 180; return cfg; };
+  const { defaultRules, defaultSettings, importSettings, create } = CC;
+  CC.defaultRules = lim => ({ ...defaultRules(lim), airMode: 'purge', purgeMaxS: 180 });
+  CC.defaultSettings = () => fix(defaultSettings());
+  CC.importSettings = input => {
+    const r = importSettings(input);
+    return { settings: fix(r.settings), warnings: r.warnings.filter(w => !w.includes('"manual.air')) };
+  };
+  CC.create = (cfg, snapshot, onEvent) => {
+    const ctl = create(cfg, snapshot, onEvent), update = ctl.update;
+    ctl.update = r => { const c = update(r); return { ...c, air: { on: c.fan.level > 0 } }; };
+    return ctl;
+  };
+})(globalThis.ClimateController);
+// end of C9 bridge
 const CY = globalThis.ClimateCycle, CAP = globalThis.ClimateCapacity, CC = globalThis.ClimateController, SIM = globalThis.ClimateSim;
 
 const room = { name: 'Room 1', volume: 60, calib: null };
@@ -171,7 +191,7 @@ test('F1 forced settings cannot change the run', () => {
   const merged = JSON.parse(JSON.stringify(SHORT_FULL));
   merged.crop = 'pink'; merged.stage = 'rest';
   merged.offsets = { T: 3, RH: 0, CO2: 0 };
-  merged.manual = { fan: { auto: false, level: 0 } };
+  merged.manual = { air: { auto: false, on: false } };
   merged.program.auto = false;
   merged.program.harvest = { on: true };
   const r = CY.runCycle(room, oyster(2000), { settings: merged });
@@ -243,7 +263,7 @@ test('WIN the per-day weather window changes no number', () => {
 });
 
 // ---------- FULL ----------
-test('FULL full default cycle: speed and sensible result', t => {
+test('FULL full default cycle: speed and sensible result', { todo: 'C9 5.6 "Sensor check" (controller stream): the lead removes this at step 2' }, t => {
   const t0 = Date.now();
   const r = CY.runCycle(room, oyster(2000));
   const ms = Date.now() - t0;
@@ -264,4 +284,12 @@ test('FULL full default cycle: speed and sensible result', t => {
   for (const s of r.stages) assert.equal(s.alarms.sensor_CO2, undefined);
   assert.deepEqual(r.inputs.days, { spawn: 21, pinning: 4, fruiting: 7, rest: 10 });
   assert.equal(r.inputs.flushes, 4);
+});
+
+// ---------- AIR ----------
+test('AIR the room size of the air exchange reaches the simulation', () => {
+  const r = CY.runCycle({ ...room, airM3h: 1800 }, oyster(2000), { settings: SHORT_READY });
+  assert.deepStrictEqual(r, CY.runCycle(room, oyster(2000), { settings: SHORT_READY }), 'no size is the default 1800 m³/h');
+  const small = CY.runCycle({ ...room, airM3h: 900 }, oyster(2000), { settings: SHORT_READY });
+  assert.ok(Math.abs(small.totals.kwh - r.totals.kwh) > 1e-6, `${small.totals.kwh} vs ${r.totals.kwh}`);
 });

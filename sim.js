@@ -11,9 +11,10 @@
  * Model
  *   - Two air zones, low (bottom shelf) and high (top shelf), each half of the room. They mix
  *     naturally, more with the circulation fan and with the AC airflow. CO2 collects low; heat rises.
- *   - Air path: an exhaust fan with a passive inlet (the room is under suction: all incoming air is
- *     unfiltered) or a filtered supply fan with a damper (slight over-pressure). Inlet and outlet can be
- *     low or high.
+ *   - Air exchange: a filtered intake fan (SF-203) and an exhaust fan (EF-206), each with a motorised
+ *     damper, switched on and off together (command air.on). Balanced: the room stays at neutral pressure.
+ *     With the fans off the dampers are closed and only wall leakage exchanges air (unfiltered).
+ *     The intake and the exhaust can each be low or high.
  *   - Blocks: their own stage, CO2 and heat per stage, water from fruit bodies, a block core temperature.
  *   - The AC is a split unit with its own thermostat (setpoint, return-air sensor, restart delay,
  *     full speed after each start). Its fan speed sets the coil temperature (low fan = colder coil =
@@ -50,9 +51,8 @@
     fogger: { standbyW: 2, levels: [
       { name: 'Off', gph: 0, w: 0 }, { name: '1', gph: 1000, w: 70 }, { name: '2', gph: 2000, w: 135 }, { name: '3', gph: 3000, w: 200 },
     ] },
-    fan: { levels: [
-      { name: 'Off', m3h: 0, w: 0 }, { name: 'Low', m3h: 300, w: 60 }, { name: 'Medium', m3h: 600, w: 90 }, { name: 'High', m3h: 900, w: 120 },
-    ], supplyPowerFactor: 1.15, leakFrac: 0.3 },
+    // Air exchange (intake + exhaust pair) when on. wPerM3h is for both fans: no source yet, replace with equipment data.
+    air: { m3h: 1800, wPerM3h: 0.08 },
     circ: { m3s: 0.35, w: 40 },
     person: { co2Lpm: 0.3, w: 100, gph: 50 },
     sensors: {
@@ -71,8 +71,8 @@
     blocks: 2000, co2PerBlock: 45, blockStage: 'fruiting', probe: true,
     startHour: 6, noise: false, sensorPeriod: 30, sensorQuality: 'ideal',
     sensorAt: 'mid', sensor2At: 'none',            // 'low' | 'mid' | 'high'; second set: 'none' | 'low' | 'high'
-    // Default: filtered supply fan, air in high, out low (CO2 collects low). 'exhaust' = exhaust fan, open inlet.
-    vent: 'supply', inletAt: 'high', exhaustAt: 'low',
+    // Air exchange: airM3h null = PLANT.air.m3h; a number overrides it (held to 50-10000). Air in high, out low (CO2 collects low).
+    airM3h: null, inletAt: 'high', exhaustAt: 'low',
     // Sensor faults for a test: 'ok' | 'frozen' | 'missing' | 'range' | 'spike'
     faults: { T: 'ok', RH: 'ok', CO2: 'ok', out: 'ok' },
     acStartBoostMin: 3,
@@ -93,6 +93,8 @@
   function create(env, snapshot) {
     const e = env || structuredClone(DEFAULT_ENV);
     const R = () => ({ ...PLANT.room, ...(e.room || {}) });
+    // Air exchange size (m³/h): env.airM3h held to 50-10000; anything but a number means PLANT.air.m3h.
+    const airM3h = () => (Number.isFinite(e.airM3h) ? clamp(e.airM3h, 50, 10000) : PLANT.air.m3h);
     let s = snapshot ? structuredClone(snapshot) : init();
 
     function init() {
@@ -101,11 +103,11 @@
         t: 0,
         z: { lo: { T: T0, AH: ah0, C: 850 }, hi: { T: T0 + 0.3, AH: ah0, C: 800 } },
         core: T0 + 2,
-        act: { power: true, mode: 'cool', setpoint: 25, acFan: 'auto', comp: false, acFrac: 0, coil: 'auto', huLevel: 0, fanLevel: 0, lights: false, circ: false },
+        act: { power: true, mode: 'cool', setpoint: 25, acFan: 'auto', comp: false, acFrac: 0, coil: 'auto', huLevel: 0, air: false, lights: false, circ: false },
         ac: { integ: 0, offSince: -1e9, startUntil: 0, starts: 0 },
-        p: { ac: PLANT.ac.standbyW, hu: PLANT.fogger.standbyW, fan: 0, lights: 0, circ: 0 },
-        kwh: { ac: 0, hu: 0, fan: 0, lights: 0, circ: 0 },
-        runS: { ac: 0, hu: 0, fan: 0 },
+        p: { ac: PLANT.ac.standbyW, hu: PLANT.fogger.standbyW, air: 0, lights: 0, circ: 0 },
+        kwh: { ac: 0, hu: 0, air: 0, lights: 0, circ: 0 },
+        runS: { ac: 0, hu: 0, air: 0 },
         water: { fogKg: 0, acKg: 0 },
         unfilteredM3: 0,
         sens: null, wet: { on: false, since: null, level: 0 },
@@ -251,7 +253,7 @@
       a.setpoint = clamp(Number(cmd.ac.setpoint) || 25, 16, 30);
       a.acFan = ['low', 'auto', 'high'].includes(cmd.ac.fan) ? cmd.ac.fan : 'auto';
       a.huLevel = level(cmd.hu.level, PLANT.fogger.levels.length);
-      a.fanLevel = level(cmd.fan.level, PLANT.fan.levels.length);
+      a.air = !!(cmd.air && cmd.air.on);
       // Controllers that do not send lights: the lights follow 07:00-19:00.
       a.lights = cmd.lights ? !!cmd.lights.on : (w.hour >= 7 && w.hour < 19);
       a.circ = cmd.circ ? !!cmd.circ.on : false;
@@ -280,25 +282,16 @@
       a.coil = a.mode === 'dry' ? 'cold' : a.acFan;
 
       // ---- Air flows (m³/s) ----
-      const fanL = PLANT.fan.levels[a.fanLevel], qFan = fanL.m3h / 3600, leak = room.infAch * room.volume / 3600;
+      // On: filtered air in through the intake, the same flow out through the exhaust, no leakage.
+      // Off: the dampers are closed; only wall leakage, half through each zone, unfiltered.
+      const m3h = airM3h();
+      const qAir = a.air ? m3h / 3600 : 0, leak = a.air ? 0 : room.infAch * room.volume / 3600;
       const d = s.dist, qDoor = s.t < d.door ? 0.25 : 0;
       const inZ = e.inletAt === 'high' ? 'hi' : 'lo', outZ = e.exhaustAt === 'low' ? 'lo' : 'hi';
       const inflow = { lo: 0, hi: 0 }, outflow = { lo: 0, hi: 0 };
-      let unfiltered;
-      if (e.vent === 'supply') {
-        // Filtered supply fan: slight over-pressure. Leaks bring air in only when the fan is off.
-        inflow[inZ] += qFan; outflow[outZ] += qFan;
-        const leakIn = qFan > 0 ? 0 : leak;
-        inflow.lo += leakIn / 2; inflow.hi += leakIn / 2; outflow.lo += leakIn / 2; outflow.hi += leakIn / 2;
-        unfiltered = leakIn;
-      } else {
-        // Exhaust fan with a passive inlet: the room is under suction. All incoming air is unfiltered;
-        // part of it comes through gaps instead of the inlet.
-        const lf = PLANT.fan.leakFrac;
-        inflow[inZ] += qFan * (1 - lf); inflow.lo += qFan * lf / 2 + leak / 2; inflow.hi += qFan * lf / 2 + leak / 2;
-        outflow[outZ] += qFan; outflow.lo += leak / 2; outflow.hi += leak / 2;
-        unfiltered = qFan + leak;
-      }
+      inflow[inZ] += qAir; outflow[outZ] += qAir;
+      inflow.lo += leak / 2; inflow.hi += leak / 2; outflow.lo += leak / 2; outflow.hi += leak / 2;
+      let unfiltered = leak;
       inflow.lo += qDoor; outflow.lo += qDoor; unfiltered += qDoor;
       // Net flow from low to high (air enters one zone and leaves at the other).
       const qUp = inflow.lo - outflow.lo;
@@ -362,13 +355,13 @@
       // ---- Meters ----
       s.p.ac = pAc;
       s.p.hu = a.huLevel > 0 ? fog.w : PLANT.fogger.standbyW;
-      s.p.fan = fanL.w * (e.vent === 'supply' ? PLANT.fan.supplyPowerFactor : 1);
+      s.p.air = a.air ? m3h * PLANT.air.wPerM3h : 0;
       s.p.lights = lightsW;
       s.p.circ = a.circ ? PLANT.circ.w : 0;
       for (const k of Object.keys(s.p)) s.kwh[k] += s.p[k] * dt / 3.6e6;
       if (a.comp) s.runS.ac += dt;
       if (a.huLevel > 0) s.runS.hu += dt;
-      if (a.fanLevel > 0) s.runS.fan += dt;
+      if (a.air) s.runS.air += dt;
       s.water.fogKg += fogGps * dt / 1000;
       s.water.acKg += latent * dt / 1000;
       s.unfilteredM3 += unfiltered * dt;
@@ -388,11 +381,11 @@
     function view() {
       const w = weather(s.t), mid = zoneAt('mid'), lo = zoneAt('low'), hi = zoneAt('high');
       const cop = s.act.mode === 'heat' ? copHeat(w.T) : copCool(w.T);
-      const qFan = PLANT.fan.levels[s.act.fanLevel].m3h;
+      const room = R(), qAir = s.act.air ? airM3h() : 0, leak = s.act.air ? 0 : room.infAch * room.volume;
       return {
         t: s.t, act: { ...s.act }, weather: w, lights: s.act.lights, cop,
         T: mid.T, RH: mid.RH, CO2: mid.C, zones: { lo, hi }, core: s.core,
-        airM3h: R().infAch * R().volume + qFan, fogGph: PLANT.fogger.levels[s.act.huLevel].gph,
+        airM3h: qAir + leak, fogGph: PLANT.fogger.levels[s.act.huLevel].gph,
         power: { ...s.p }, kwh: { ...s.kwh }, water: { ...s.water }, unfilteredM3: s.unfilteredM3,
         nextRead: s.nextRead, acStarts: s.ac.starts, tRet: s.z.hi.T + PLANT.ac.sensorOffset,
         door: s.t < s.dist.door, workers: s.t < s.dist.workersUntil ? (s.dist.workersN || 0) : 0,
