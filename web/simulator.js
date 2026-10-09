@@ -73,8 +73,8 @@ function setPath(obj, path, value) {
   o[parts[parts.length - 1]] = value;
 }
 
-const RAMP_PATHS = new Set(['spT', 'spRH', 'co2Lim', 'rules.fanOn', 'rules.fanOff', 'rules.acOff', 'rules.acOn', 'rules.co2SafetyAt']);
-const DEV_NAME = { ac: 'Air conditioner', hu: 'Fogger', fan: 'Exhaust fan', lights: 'Lights', circ: 'Circulation fan' };
+const RAMP_PATHS = new Set(['spT', 'spRH', 'co2Lim', 'rules.co2SafetyAt', 'rules.fanOn', 'rules.fanOff']); // C9 5.2 RAMP_KEYS
+const DEV_NAME = { ac: 'Air conditioner', hu: 'Fogger', air: 'Air exchange', lights: 'Lights', circ: 'Circulation fan' };
 
 // ---------------- Per-mount state ----------------
 let mounted = false, el = null, mountGen = 0;
@@ -90,6 +90,12 @@ function paintBlocks() {
   const lpm = SIM.co2Lpm(env);
   UI.set('hintBlocks', env.blocks === 0 ? 'The room is empty: no CO₂, heat, or water from blocks.'
     : `Together they make ${lpm.toFixed(2)} L/min of CO₂, ${Math.round(lpm * PL.resp.wPerLpm)} W of heat, and ${Math.round(lpm * PL.resp.gpsPerLpm * 3600)} g/h of water.`);
+}
+// The air exchange size (C9 7): the faceplate tag and the plant facts line.
+function paintAirSize() {
+  const m3h = env.airM3h ?? PL.air.m3h, n = m3h.toLocaleString('en');
+  UI.set('fpAirTag', `SF-203 + EF-206 · ${n} m³/h`);
+  UI.set('plantAir', `${n} m³/h, ${Math.round(m3h * PL.air.wPerM3h)} W while on`);
 }
 
 // ---------------- Mimic animation ----------------
@@ -257,7 +263,7 @@ function updateUi() {
   UI.set('wVpd', st.vpd != null ? `${st.vpd.toFixed(2)} / ${st.vpdT.toFixed(2)}` : '–');
   UI.set('wNote', r.water.acKg > r.water.fogKg * 1.5 && r.water.fogKg > 0.5
     ? 'The AC coil removes much more water than the fogger adds: the AC and the fogger work against each other. A high AC fan speed and fog-first cooling decrease this.'
-    : env.vent === 'exhaust' ? 'All incoming air is unfiltered: the exhaust fan puts the room under suction.' : 'Incoming air goes through the filter: the room has a slight over-pressure.');
+    : 'Air from the intake fan goes through the filter. Between purges the dampers are closed and only wall leakage comes in, unfiltered.');
 
   const tot = r.kwh.ac + r.kwh.hu + r.kwh.air + (r.kwh.lights || 0) + (r.kwh.circ || 0), days = r.t / 86400;
   UI.set('eKwh', tot.toFixed(3));
@@ -826,7 +832,7 @@ const MARKUP = `
     <details class="measure">
       <summary>Measure the CO₂ per block on your farm</summary>
       <ol>
-        <li>Stop the exhaust fan and close the room.</li>
+        <li>Switch the air exchange to Manual, Off, and close the room.</li>
         <li>Record the CO₂ rise in ppm per minute over 10 min.</li>
         <li>Calculate: CO₂ per block (mL/h) = rise (ppm/min) × room volume (m³) × 60 ÷ number of blocks.</li>
       </ol>
@@ -876,11 +882,13 @@ const MARKUP = `
 <section class="card sim simextra" aria-label="Room set-up and disturbances">
   <section>
     <h2 class="eyebrow">Air path</h2>
-    <div class="crop-row"><label for="inVent">Fresh air</label>
-      <select id="inVent"><option value="exhaust">Exhaust fan, open inlet (room under suction)</option><option value="supply">Filtered supply fan, damper out (slight over-pressure)</option></select></div>
+    <div class="rule-extra">
+      <label class="num" for="inAirM3h">Air exchange size</label>
+      <input type="number" id="inAirM3h" min="50" max="10000" step="50" value="1800"> <span>m³/h</span>
+    </div>
     <div class="crop-row"><label for="inInlet">Air comes in</label><select id="inInlet"><option value="low">Low</option><option value="high">High</option></select></div>
     <div class="crop-row"><label for="inOutlet">Air goes out</label><select id="inOutlet"><option value="high">High</option><option value="low">Low</option></select></div>
-    <p class="hint">CO₂ collects low. Air in high and out low removes it best.</p>
+    <p class="hint">The intake fan and the exhaust fan run together. CO₂ collects low: air in high and out low removes it best.</p>
   </section>
   <section>
     <h2 class="eyebrow">Disturbances</h2>
@@ -911,7 +919,7 @@ const MARKUP = `
       <dt>Respiration</dt><dd>per 1 L/min CO₂: 318 W heat, 44 g/h water</dd>
       <dt>Air conditioner</dt><dd>3.5 kW split inverter with its own thermostat: return-air sensor 0.8 °C above the room, on at +0.5 °C, off at −1 °C, 3 min restart delay</dd>
       <dt>Fogger levels</dt><dd>1: 1 kg/h 70 W · 2: 2 kg/h 135 W · 3: 3 kg/h 200 W</dd>
-      <dt>Fan levels</dt><dd>Low 300 m³/h 60 W · Medium 600 m³/h 90 W · High 900 m³/h 120 W</dd>
+      <dt>Air exchange</dt><dd id="plantAir">1,800 m³/h, 144 W while on</dd>
     </dl>
   </details>
 </section>
@@ -1051,6 +1059,7 @@ function handlePanelChange(changes) {
     else if (c.path === 'stage') { if (!usedFarmType) { ctl.setStage(c.new, reading.t); scheduleCropCheck(); } }
     else {
       setPath(cfg, c.path, c.new);
+      if (c.path === 'airM3h') { env.airM3h = c.new; el.querySelector('#inAirM3h').value = c.new; paintAirSize(); }
       if (RAMP_PATHS.has(c.path)) ctl.cancelRamp();
       if (c.path.startsWith('manual.') && c.path.endsWith('.auto')) {
         const dev = c.path.split('.')[1];
@@ -1102,7 +1111,12 @@ function wire() {
   selBind('inSensQ', () => env.sensorQuality, v => { env.sensorQuality = v; });
   selBind('inSensAt', () => env.sensorAt, v => { env.sensorAt = v; });
   selBind('inSens2', () => env.sensor2At, v => { env.sensor2At = v; });
-  selBind('inVent', () => env.vent, v => { env.vent = v; });
+  $('#inAirM3h').addEventListener('change', e => {
+    const v = parseFloat(e.target.value);
+    const m3h = UI.clamp(Number.isFinite(v) ? Math.round(v) : (env.airM3h ?? PL.air.m3h), 50, 10000);
+    env.airM3h = m3h; cfg.airM3h = m3h; e.target.value = m3h; // C9 7: the simulated pair and the controller's size together
+    panel.set(cfg); paintAirSize();
+  });
   selBind('inInlet', () => env.inletAt, v => { env.inletAt = v; });
   selBind('inOutlet', () => env.exhaustAt, v => { env.exhaustAt = v; });
   $('#inDoors').addEventListener('change', e => { env.harvestDoors = e.target.checked; });
@@ -1170,6 +1184,8 @@ function wire() {
   $('#inDoors').checked = env.harvestDoors;
   $('#inRandWx').checked = env.randomWeather;
   paintBlocks();
+  $('#inAirM3h').value = env.airM3h ?? PL.air.m3h;
+  paintAirSize();
 
   // ---- Toolbar and bench controls that survive a module switch (closure state, 6.1 "Simulator bench flag") ----
   $('#pauseBtn').textContent = paused ? 'Resume' : 'Pause';
