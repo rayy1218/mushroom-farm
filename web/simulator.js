@@ -674,6 +674,29 @@ function mimicLayout({ inletAt, exhaustAt }) {
   };
 }
 
+// ---------------- Air exchange texts (C9 section 7) ----------------
+// From the controller state (st = ctl.state: st.air of C9 5.3 and st.cmd.air), the running air run (cur =
+// ctl.purges().cur, null when off), the rules, the manual setting (cfg.manual.air) and the time now: the status card
+// state, the glance text and the ladder chip. st.airReason is C9 5.7's reason of the run now. Pure, for Node tests
+// (tests/web-air.test.js).
+const RUN_TEXT = { safety: 'Safety run', timed: 'Timed purge', 'free cooling': 'Free cooling', drying: 'Drying', manual: 'Manual on' };
+function airText({ st, cur, rules, manual = { auto: true, on: false }, t }) {
+  const A = st.air, mmss = s => UI.fmtMinSec(Math.max(0, Math.round(s))), mins = s => Math.max(1, Math.round(s / 60));
+  if (st.cmd.air.on) {
+    // st.airReason follows the run now (a purge can turn into a safety run); cur.reason keeps the first reason.
+    const reason = st.airReason || (cur ? cur.reason : 'purge'), ran = mmss(t - (cur ? cur.start : A.purgeStart));
+    if (reason === 'purge') return { state: `Purge ${ran} of ${mmss(rules.purgeMaxS)}`, glance: `Purging ${ran}`, chip: { lvl: 'info', icon: '▲', text: 'Purging' } };
+    if (reason === 'safety') return { state: 'Safety run', glance: 'Safety run', chip: { lvl: 'serious', icon: '◆', text: 'Safety run' } };
+    return { state: RUN_TEXT[reason], glance: RUN_TEXT[reason], chip: { lvl: 'info', icon: '●', text: RUN_TEXT[reason] } };
+  }
+  if (manual.auto === false) return { state: 'Manual off', glance: 'Manual off', chip: { lvl: 'none', icon: '○', text: 'Manual off' } };
+  if (A.delayed) return { state: 'Delayed (humidity first)', glance: 'Delayed (humidity first)', chip: { lvl: 'info', icon: '❚❚', text: 'Delayed' } };
+  const chip = { lvl: 'none', icon: '○', text: 'Idle' };
+  if (!(A.nextPurgeS > 0)) return { state: 'Idle', glance: 'Idle', chip };
+  const m = mins(A.nextPurgeS);
+  return { state: `Idle · purge in about ${m} min`, glance: `Next purge in about ${m} min`, chip };
+}
+
 // C5 1.4 "Today's ids stay": today's faceplate heading ids are fpAcTitle, fpHuTitle, fpFanTitle, fpLiTitle,
 // fpCiTitle (not a lowercase device name), so faceplate() maps dev to that suffix when building the id.
 const FP_ID_SUFFIX = { ac: 'Ac', hu: 'Hu', fan: 'Fan', lights: 'Li', circ: 'Ci' };
@@ -1256,4 +1279,7 @@ const FarmBench = {
 
 global.FarmBench = FarmBench;
 global.FarmShell.register('simulator', { mount, unmount });
+
+// Node only (tests/web-air.test.js); adds no browser global.
+if (typeof module === 'object' && module && module.exports) module.exports = { airText };
 })(typeof window !== 'undefined' ? window : globalThis);
