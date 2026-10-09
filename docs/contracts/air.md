@@ -123,7 +123,7 @@ A pure module in the style of `capacity.js`: an IIFE that sets `global.ClimateAi
 | `profileTargets`, `applyProfile` | Follow `RAMP_KEYS` |
 | `SETTING_LIMITS` | Add the ranges above; remove the entries of removed keys |
 | `SETTING_ENUMS` | Remove `rules.rhAction`, `rules.acAction` |
-| New export `upgradeSettings(obj) → { settings, warnings }` | Pure; does not change `obj`. Works on a settings object (not a file). For each removed key present: delete it and add the warning `Setting "<path>" was removed: fresh air now runs as short purges.` `manual.fan` → `manual.air = { auto: !!fan.auto, on: (fan.level ?? 0) > 0 }`, with the same warning for `manual.fan`. Keys missing from the new shape are not added here (`importSettings` fills defaults). Idempotent: a v2 object gives no warnings. |
+| New export `upgradeSettings(obj) → { settings, warnings }` | Pure; does not change `obj`. Works on a settings object (not a file). For each removed key present: delete it and add the warning `Setting "<path>" was removed: fresh air now runs as short purges.` `manual.fan` → `manual.air = { auto: !!fan.auto, on: (fan.level ?? 0) > 0 }`, with the same warning for `manual.fan`; a `manual.fan` that is not an object is dropped with the warning (the default `manual.air` is filled in later). Keys missing from the new shape are not added here (`importSettings` fills defaults). Idempotent: a v2 object gives no warnings. |
 | `importSettings(file)` | When `file.version < 2` (or missing), it runs `upgradeSettings(file.settings)` first and puts its warnings before its own. Everything else as today. |
 | `noFogBoost` crop flag | Removed (no crop uses it; the test crop `flagTest` drops it) |
 
@@ -144,6 +144,9 @@ A pure module in the style of `capacity.js`: an IIFE that sets `global.ClimateAi
 | Minimum off | `rules.minOffS` after every air run; the CO₂ safety level ignores it |
 | Capped purge counter | `capRun += 1` after a capped purge; `capRun = 0` after a purge that reached `fanOff` |
 | Purge seconds | A purge's time counts from the step it starts to the step it ends (whole controller steps) |
+| Manual control, CO₂ fault | `st.air.state` goes to `idle` (offsets 0). A purge running at that moment ends without counting as capped. |
+| Safety runs | A CO₂ safety run is not a purge: it never counts in `capRun`, `purges`, `cappedPurges` or `longestPurgeS`, however long it lasts |
+| Current reason | `ctl.state.airReason`: the reason of the running air run (`'purge' \| 'safety' \| 'timed' \| 'free cooling' \| 'drying' \| 'manual'`), `null` when off; it follows the run as it changes (`purges().cur.reason` keeps the reason at the start) |
 
 ### 5.4 Rise rate and Prepare
 
@@ -157,8 +160,11 @@ A pure module in the style of `capacity.js`: an IIFE that sets `global.ClimateAi
 | `prepT` | `−0.8 × BANDS.T` when `pushT ≥ 0.5`; `+0.8 × BANDS.T` when `pushT ≤ −0.5`; else `0` |
 | `prepRH` | `−0.8 × BANDS.RH` when `pushAH ≥ 0.5`; `+0.8 × BANDS.RH` when `pushAH ≤ −0.5`; else `0` |
 | No outdoor reading | An outdoor sensor fault (`f.out`) gives `prepT = prepRH = 0` |
+| Room sensor fault | `prepT = 0` with a T fault; `prepRH = 0` with a T or RH fault |
+| `rules.prepare` off | No offsets at all, in any state |
 | Where they act | In `prepare` and `purge` only: the AC uses `spT + prepT` in place of `spT`; the fogger uses `rhT + prepRH` in place of `rhT`. Alarms, status chips and the targets shown stay on `spT` and `rhT`. In `idle` and `after` both offsets are 0. |
 | No AC setback | The AC never changes for a purge beyond `prepT` |
+| Fogger scope | `rhT + prepRH` is the fogger's target everywhere in the fogger rule (including the harvest floor); the AC's dry mode and fan speed stay on `rhT` |
 
 ### 5.5 Size message
 
@@ -166,7 +172,8 @@ A pure module in the style of `capacity.js`: an IIFE that sets `global.ClimateAi
 |---|---|
 | Alarm | New `ALARMS` entry `{ id: 'airTooSmall', label: 'Air exchange too small for the CO₂ load', lvl: () => 'warning' }`; on when `st.air.capRun ≥ 3`; off when `capRun` returns to 0 |
 | Estimate | With the last rise rate: `prod = ClimateAir.prodFromRise({ ratePpmS, volume: cfg.roomM3, co2: CO2, co2Out: 420 })`; `need = ClimateAir.sizeFor({ volume: cfg.roomM3, co2Out: 420, prodM3h: prod, start: fanOn, stop: fanOff, capS: purgeMaxS })` |
-| Text | `st.air.sizeText`: `Purges don't reach <fanOff> ppm in <cap> min. The air exchange needs about <needM3h> m³/h (now <airM3h> m³/h).`; `null` when the alarm is off. Shown in `st.why.air` and in the event that raises the alarm. |
+| Rise rate kept | The estimate uses the last rise rate that was not `null` |
+| Text | `st.air.sizeText`: `Purges don't reach <fanOff> ppm in <cap> min. The air exchange needs about <needM3h> m³/h (now <airM3h> m³/h).`; `null` when the alarm is off. `<needM3h>` is a plain integer (no thousands separator); `<cap>` is minutes with at most one decimal. With no rise rate yet: `Purges don't reach <fanOff> ppm in <cap> min. The air exchange is too small; the size needed is not measured yet.` With `needM3h = Infinity`: `Purges don't reach <fanOff> ppm in <cap> min: outside air alone cannot bring CO₂ this low; raise the stop level.` Shown in `st.why.air` and in the event that raises the alarm. |
 
 ### 5.6 Rules around the purge, in priority order
 
@@ -174,7 +181,7 @@ A pure module in the style of `capacity.js`: an IIFE that sets `global.ClimateAi
 |---|---|---|
 | Manual | `manual.air.auto === false` | `manual.air.on` |
 | 1 | CO₂ safety (`rules.co2Safety`, CO₂ ≥ `co2SafetyAt`, sensor good) | On until CO₂ < `co2SafetyAt − 20`; ignores the cap and the minimum off time |
-| 2 | Humidity first (`rules.rhLock`, RH ≤ `rhT − rhStop`, the fogger at its maximum for `FOG_FULL_S`, and `pushAH ≤ −0.5`) | A purge does not start (`st.air.delayed = true`) until RH ≥ `rhT − rhResume` or CO₂ ≥ `co2Lim`. A purge already running is not stopped. |
+| 2 | Humidity first (`rules.rhLock`, RH ≤ `rhT − rhStop`, the fogger at its maximum for `FOG_FULL_S`, and `pushAH ≤ −0.5`) | A purge does not start (`st.air.delayed = true`) until RH ≥ `rhT − rhResume` or CO₂ ≥ `co2Lim`. A purge already running is not stopped. `delayed` is true only while `fanOn ≤ CO₂ < co2Lim` and the condition holds; "Purge allowed again" is said only when RH recovers (not when CO₂ reaches `co2Lim`). |
 | 3 | CO₂ purge (5.3) | On in `purge` |
 | 3 | CO₂ sensor fault: timed purge | `share = learned` (the past run seconds per hour ÷ 3600 × 1.1, from `historyFor('runS', …)` as today) or `timedPurgeOn / timedPurgeEvery`; clamped 0.02–0.9. Run length `min(purgeMaxS, share × timedPurgeEvery × 60)`; period `max(run / share, run + minOffS)`; on while `t mod period < run`. `st.air.timed = true`. |
 | 4 | Free cooling (`rules.freeCool`) | As today's `lCool` condition (room warm, outdoor ≥ 3 °C cooler): on; not a purge, not capped |
@@ -191,7 +198,7 @@ A pure module in the style of `capacity.js`: an IIFE that sets `global.ClimateAi
 | `st.why.air` | `idle`: `CO₂ is <x> ppm. The next purge starts at <fanOn> ppm.` `prepare`: `Purge in about <m> min: the AC aims at <spT+prepT> °C, the fogger at <rhT+prepRH> %.` `purge`: `Purging since <m:ss> (at most <cap>). It stops at <fanOff> ppm.` `after`: `Minimum off time: <s> s.` plus 5.5 when on |
 | Events (`say`) | `Air exchange on: <reason>` / `Air exchange off (<m:ss>, CO₂ <x> ppm)` / `Purge stopped at the time cap (<m:ss>)` / `Purge delayed: humidity first` / `Purge allowed again: humidity recovered` / `CO₂ sensor fault: timed purge started` / `… ended` / the 5.5 alarm |
 | Removed | `acPurge()`, setback state, `purgeHeld`, `purgeReduced`, `airLevel`, `AIR_STEP_S`, fog boost |
-| Snapshot restore | `create(cfg, snapshot)` upgrades an older snapshot: drops the removed state fields, sets `cmd.air` / `req.air = { on: cmd.fan.level > 0 }`, sets `st.air` to its initial value, renames `out.fan` → `out.air`, `hold.fan` → `hold.air`, `why.fan` → `why.air`, `exh` → the purge record (events dropped, hours kept with `cappedN: 0`), and maps the old stats (`fanOnS` → `airOnS`, `fanStarts` → `purges`) |
+| Snapshot restore | `create(cfg, snapshot)` upgrades an older snapshot: drops the removed state fields, sets `cmd.air` / `req.air = { on: cmd.fan.level > 0 }`, sets `st.air` to its initial value, renames `out.fan` → `out.air`, `hold.fan` → `hold.air`, `why.fan` → `why.air`, `exh` → the purge record (events dropped, hours kept with `cappedN: 0`), and maps the old stats (`fanOnS` → `airOnS`, `fanStarts` → `purges`); `exh.cur` is dropped, `prev` set to `null`, every new field at its initial value |
 
 ## 6. Data
 
@@ -299,7 +306,7 @@ Checked on Node 22.20 (SQLite 3.50.4) inside `BEGIN IMMEDIATE` with `foreign_key
 | `pack(cmd)` (both copies) | `[ac.power ? 1 : 0, ac.mode, ac.setpoint, ac.fan, hu.level, air.on ? 1 : 0, lights.on ? 1 : 0, circ.on ? 1 : 0]` |
 | `cmdFields` | `['acPower', 'acMode', 'acSetpoint', 'acFan', 'fogLevel', 'air', 'lights', 'circ']` |
 | Scenario `crowded-dry` | `cfg.rules = defaultRules(1000)` (no `rhAction`, no `fanLevel`) |
-| New scenario `capped-purges` | 6 h, 6000 blocks, `env.airM3h: 900`, default settings: the purges hit the cap |
+| New scenario `capped-purges` | 6 h, 6000 blocks, `env.airM3h: 900`, `cfg: { airM3h: 900 }`, other settings default: the purges hit the cap |
 | Regeneration | By the lead at step 2, after the simulation and controller streams merge |
 
 ## 10. Overridden sections of older contracts
