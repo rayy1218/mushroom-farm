@@ -10,15 +10,17 @@ One app for running a mushroom farm. A server on a farm device (a small PC or a 
 
 | Room page tab | What it does |
 |---|---|
-| **Live** | Readings, charts, alarms, events and machines. The air exchange card. The settings, with their versions and **Restore**. **Restart** for a stopped room. |
+| **Live** | Readings, charts, alarms, events and machines. The air exchange card. The settings, with their versions and **Restore**. |
 | **Simulate** | Try a plan before you do it. Make a draft crop mix, then **Check capacity** or **Run a full cycle**. Every run is saved: **Open**, **Note**, **Delete**, **Compare with real**. The **Your machines** card and **Check my machines** tell you if the room's machines are big enough. |
 | **Calibrate** | Fit the room's values from its own history or from a CSV log, then **Save and apply**. For a linked cycle run, it shows predicted against real. |
 
+A stopped room shows **Restart** at the top of its page.
+
 | Room status | Meaning |
 |---|---|
-| `Stopped` | The room's loop stopped. The card shows the error and **Restart**. The other rooms keep running. |
+| `Stopped` | The room's controller stopped. The card shows the error and **Restart**. The other rooms keep running. |
 | `<n> alarm` or `<n> alarms` | The room has open alarms. |
-| `Out of band` | A value is outside its band. |
+| `Out of band` | A value is outside its target range (band). |
 | `All good` | Everything is in band and there is no alarm. |
 
 The Rooms home shows the first status that applies, in the order of this table.
@@ -50,7 +52,7 @@ node --version
 |---|---|
 | Get the code | `git clone https://github.com/rayy1218/mushroom-farm.git` |
 | Go to the folder | `cd mushroom-farm` |
-| Update later | `git pull`, then restart the server (on a service: `sudo systemctl restart mushroom-farm`). An update may run a database upgrade (see "Database upgrades"). |
+| Update later | `git pull`, then restart the server (with the service: see "Run at boot"). An update may run a database upgrade (see "Database upgrades"). |
 
 ## Start
 
@@ -58,19 +60,19 @@ node --version
 |---|---|
 | `npm start` | The server starts. After two lines about the script, it prints the address, for example `Open http://192.168.1.20:8080`. |
 | First start | It makes `data/farm.db` with the demo room `Room 1`: simulated, grey oyster, fruiting, default settings. The room records a reading every 30 s. |
-| Stop | Press Ctrl+C. The server saves the state of each room and closes the database. Closing the terminal stops the server cleanly in the same way. |
+| Stop | Press Ctrl+C. The server saves the state of each room and closes the database. Closing the terminal also stops the server cleanly. |
 
 | Setting | Environment variable | `farm.config.json` key | Default | Rule |
 |---|---|---|---|---|
 | Port | `FARM_PORT` | `port` | 8080 | A whole number from 1 to 65535 |
 | Database file | `FARM_DB` | `db` | `data/farm.db` | Not empty. A relative path starts from the repo folder. |
 | Listen address | `FARM_HOST` | `host` | The first private IPv4 address of the device | Not empty. Private means 10.x, 172.16 to 172.31.x or 192.168.x. Interfaces are taken in name order. Docker, virtual-machine, VPN and loopback interfaces are skipped (names starting `docker`, `br-`, `veth`, `virbr`, `vmnet`, `tun`, `tap`, `lo`, `zt`). |
-| Time zone | `TZ` | – | The device's own | Use `Asia/Kuala_Lumpur` on the farm device. "Today" on the phone harvest page starts at the device's midnight. |
+| Time zone | `TZ` | – | The device's own | Use `Asia/Kuala_Lumpur` on the farm device. "Today" on the phone harvest page starts at the device's midnight. Set it once with `sudo timedatectl set-timezone Asia/Kuala_Lumpur` (the service sets it itself). |
 
 | Rule | Detail |
 |---|---|
 | Order | The environment wins over `farm.config.json`, which wins over the default. |
-| Empty variable | A variable that is set but empty counts as set. For `FARM_DB` and `FARM_HOST` that is a `Bad configuration` error. |
+| Empty variable | A variable that is set but empty counts as set. For `FARM_PORT`, `FARM_DB` and `FARM_HOST` that is a `Bad configuration` error. |
 | File keys | `farm.config.json` takes only `port`, `db` and `host`. Any other key is a `Bad configuration` error. |
 | Address | The server never listens on `0.0.0.0`. |
 
@@ -140,9 +142,9 @@ WantedBy=multi-user.target
 | 1 | Create the file above |
 | 2 | `sudo systemctl daemon-reload` |
 | 3 | `sudo systemctl enable --now mushroom-farm` |
-| See the address and messages | `journalctl -u mushroom-farm -f` |
-| Stop | `sudo systemctl stop mushroom-farm` (the same clean stop as Ctrl+C) |
-| Restart after an update | `sudo systemctl restart mushroom-farm` |
+| 4 | See the address and messages: `journalctl -u mushroom-farm -f` |
+| 5 | Stop: `sudo systemctl stop mushroom-farm` (the same clean stop as Ctrl+C) |
+| 6 | Restart (after an update): `sudo systemctl restart mushroom-farm` |
 
 | Line of the unit | Why |
 |---|---|
@@ -241,7 +243,7 @@ A room needs about 100 MB per year.
 | Off the device | Keep backups off the device. An SD card can fail. |
 | How often | At least daily, and always before an update (see "Database upgrades"). |
 | While running | Never copy only `farm.db` while the server runs: the newest data may still be in `farm.db-wal`. |
-| After an unclean stop | After a `Database error`, a power cut or a crash, `data/farm.db-wal` may still be there. It holds the newest data, so never copy `farm.db` alone. Either use the `sqlite3 … .backup` command above (it also works with the server stopped), or start the server and stop it once with Ctrl+C, then copy `data/farm.db`. |
+| After an unclean stop | If `data/farm.db-wal` is still there (the server stopped with `Database error` or a power cut), it holds the newest data: make the copy with the `sqlite3 … .backup` command of the other row (it works with the server stopped too), or start the server and stop it once with Ctrl+C first. |
 
 ## Restore a backup
 
@@ -263,7 +265,7 @@ A room needs about 100 MB per year.
 
 | Old | Now |
 |---|---|
-| Rooms saved in a browser by the old capacity card | Open **Rooms** in that same browser and click **Import rooms from this browser**. The button shows only while there are stored rooms. Each room starts running as a simulated room. Run the check again on its **Simulate** tab. Reports are not imported. |
+| Rooms saved in a browser by the old capacity card | Open **Rooms** in that same browser and click **Import rooms from this browser**. The button shows only while there are stored rooms that were not imported yet. Each room starts running as a simulated room. Run the check again on its **Simulate** tab. Reports are not imported. |
 | Settings JSON files | **Load settings from room** and **Save settings to room** in the Test bench replace the JSON export and import. |
 | The old **Capacity** and **Calibration** menus | The **Simulate** and **Calibrate** tabs of each room |
 
@@ -345,4 +347,4 @@ A room needs about 100 MB per year.
 | 1 | Change `controller.js`. |
 | 2 | Run `npm test`. |
 | 3 | If the vector test fails and the change is intended, run `npm run vectors`, then `npm test` again. |
-| 4 | Restart the server so the rooms use the new controller. |
+| 4 | Restart the server so the rooms use the new controller (with the service: see "Run at boot"). |
