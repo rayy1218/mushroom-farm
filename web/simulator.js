@@ -468,7 +468,7 @@ function paintGlance(alarms, kwhTot, days, air) {
   UI.set('glCost', full ? `RM ${(perDay(kwhTot) * input.tariff).toFixed(2)}` : '–');
   UI.set('glWater', full ? `${perDay(r.water.fogKg).toFixed(1)} L` : '–');
   UI.set('glAirNow', air.glance);
-  { const g = el.querySelector('#glAir'); g.dataset.lvl = air.chip.lvl; g.querySelector('.gl-ico').textContent = air.chip.icon; }
+  { const g = el.querySelector('#glAir'); g.dataset.lvl = air.chip.lvl; const ic = g.querySelector('.gl-ico'); if (ic.textContent !== air.chip.icon) ic.textContent = air.chip.icon; }
   const S = st.stats;
   UI.set('glPurges', full ? `Purges ${Math.round(perDay(S.purges))} · average ${S.purges ? UI.fmtMinSec(Math.round(S.purgeS / S.purges)) : '–'}` : '–');
   const act = alarms.filter(a => a.active);
@@ -1259,7 +1259,7 @@ function frame(now) {
     while (acc >= 1 && n < 4000) { tick(); acc -= 1; n++; }
   }
   animateMimic(dtReal);
-  if (now - lastUi > 150) { updateUi(); lastUi = now; }
+  if (now - lastUi > 150) { lastUi = now; updateUi(); }
   if (chartsDirty && now - lastChart > 200) { drawCharts(); lastChart = now; }
 }
 
