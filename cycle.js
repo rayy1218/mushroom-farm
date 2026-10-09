@@ -38,6 +38,7 @@
     // ---- C7 3: input checks, in order ----
     if (room === null || typeof room !== 'object') throw new TypeError('runCycle: room must be an object');
     if (!Array.isArray(mix)) throw new TypeError('runCycle: mix must be a list');
+    if (room.plant != null && (typeof room.plant !== 'object' || Array.isArray(room.plant))) throw new TypeError('runCycle: plant must be an object');
     if (opts.settings !== undefined && (opts.settings === null || typeof opts.settings !== 'object' || Array.isArray(opts.settings))) {
       throw new TypeError('runCycle: settings must be an object');
     }
@@ -107,6 +108,7 @@
       noise: false, sensorQuality: 'ideal', harvestDoors: false, randomWeather: false, dailyCycle: false,
     });
     e.room = CAP.roomOf(room);
+    if (room.plant != null) e.plant = structuredClone(room.plant);
     e.weatherSeries = full;
 
     const st0 = targetsFor(S[0]);
@@ -119,7 +121,9 @@
     const W = 86400, END = W + D * 86400;
 
     // ---- Scoring state ----
-    let openSeg = null, prevShockActive = false;
+    let openSeg = null, prevShockActive = false, heatPrev = null;
+    const HEAT = !!opts.heat;
+    const addHeat = (dst, F) => { for (const k of Object.keys(F)) dst[k] = (dst[k] || 0) + (F[k] - heatPrev[k]) / 3600; };
     const rawSegments = [];
     let openHour = null;
     const finishedHours = [];
@@ -127,7 +131,8 @@
     function newSegCounters(ps, startDay) {
       return {
         stage: ps.stage, flush: ps.flush, startDay, targets: targetsFor(ps.stage),
-        n: 0, inT: 0, tHi: 0, tLo: 0, rhOk: 0, lowRh: 0, wet: 0, co2Below: 0, maxCore: -Infinity, alarms: {},
+        n: 0, inT: 0, tHi: 0, tLo: 0, rhOk: 0, lowRh: 0, wet: 0, co2Below: 0, maxCore: -Infinity, alarms: {}, heat: {},
+        wetLim: (CC.CROPS[tg.crop].wetRH && CC.CROPS[tg.crop].wetRH[ps.stage]) ?? CAP.PASS.wetRH,
       };
     }
     function patchFruiting() {
@@ -146,17 +151,23 @@
       // C7 10: energy and the hourly series
       const K = Object.values(r.kwh).reduce((s, x) => s + x, 0);
       const hourIdx = Math.floor((r.t - W) / 3600);
+      if (HEAT) {
+        const F = sim.heatJ();
+        if (heatPrev) { if (openHour) addHeat(openHour.heat, F); if (openSeg) addHeat(openSeg.heat, F); }
+        heatPrev = F;
+      }
       if (openHour && hourIdx !== openHour.hIndex) {
         finishedHours.push({
           h: openHour.hIndex, stage: openHour.stage, flush: openHour.flush,
           T: openHour.sumT / openHour.n, RH: openHour.sumRH / openHour.n,
           CO2: openHour.sumCO2 / openHour.n, core: openHour.sumCore / openHour.n,
           kwh: K - openHour.k0,
+          ...(HEAT ? { heat: openHour.heat } : {}),
         });
         openHour = null;
       }
       if (r.t < END && !openHour) {
-        openHour = { hIndex: hourIdx, k0: K, sumT: 0, sumRH: 0, sumCO2: 0, sumCore: 0, n: 0, stage: undefined, flush: undefined };
+        openHour = { hIndex: hourIdx, k0: K, sumT: 0, sumRH: 0, sumCO2: 0, sumCore: 0, n: 0, stage: undefined, flush: undefined, heat: {} };
       }
       if (r.t >= END) return;
 
@@ -181,7 +192,7 @@
       else openSeg.tLo++;
       if (v.RH >= g.spRH - CC.BANDS.RH) openSeg.rhOk++;
       if (v.RH < g.spRH - CC.BANDS.RHAlarm) openSeg.lowRh++;
-      if (v.RH > CAP.PASS.wetRH) openSeg.wet++;
+      if (v.RH > openSeg.wetLim) openSeg.wet++;
       // CO₂ is judged against the limit the controller holds: after a stage change the limit ramps over rampH, and
       // purges on demand follow the ramp (C9 10), so CO₂ above the stage's own limit during the ramp is intended.
       if (v.CO2 <= Math.max(g.co2Lim, cfg.co2Lim)) openSeg.co2Below++;
@@ -241,6 +252,7 @@
         stage: seg.stage, flush: seg.flush, startDay: seg.startDay, days, hours,
         targets: seg.targets, inT, rhOk, lowRhMin, wet, co2Below, maxCore: seg.maxCore,
         alarms: seg.alarms, kwh, rm: kwh * tariff, fails, pass: fails.length === 0,
+        ...(HEAT ? { heat: seg.heat } : {}),
       };
     });
     const totalsKwh = stages.reduce((s, x) => s + x.kwh, 0), totalsRm = stages.reduce((s, x) => s + x.rm, 0);

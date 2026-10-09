@@ -283,3 +283,48 @@ test('a stage ramp is not counted against CO₂: pinning is judged against the l
   const pin = r.stages.find(s => s.stage === 'pinning');
   assert.ok(pin.co2Below >= 98, `pinning CO₂ below the limit ${pin.co2Below.toFixed(1)} %`);
 });
+
+// ---------- C8 5.3: room.plant and opts.heat (C7 revision 3) ----------
+const HEAT_KEYS = ['walls', 'sun', 'airSens', 'airLat', 'blockSens', 'blockLat', 'base', 'lights', 'people', 'fog', 'water', 'acSens', 'acLat'];
+const withoutHeat = r => {
+  const c = structuredClone(r);
+  for (const s of c.stages) delete s.heat;
+  for (const h of c.series) delete h.heat;
+  return c;
+};
+
+test('CY-P1 plant must be an object; null is accepted', () => {
+  assert.throws(() => CY.runCycle({ ...room, plant: 5 }, oyster(1)), { name: 'TypeError', message: 'runCycle: plant must be an object' });
+  assert.throws(() => CY.runCycle({ ...room, plant: [] }, oyster(1)), { name: 'TypeError', message: 'runCycle: plant must be an object' });
+  assert.deepStrictEqual(CY.runCycle({ ...room, plant: null }, oyster(2000), { settings: SHORT_FULL }), getShortFull());
+});
+
+test('CY-P3 the room plant changes the cycle (a small aircond cannot hold 4000 blocks)', () => {
+  const settings = { farmType: 'ready', program: { flushes: 2, days: { fruiting: 2, rest: 1 } } };
+  const mix = [{ crop: 'oyster', blocks: 4000 }];
+  const big = CY.runCycle(room, mix, { settings });
+  const small = CY.runCycle({ ...room, plant: { ac: { capW: 2640, coilM3s: 0.1056, auxW: 26.4 } } }, mix, { settings });
+  const fr = r => r.stages.filter(s => s.stage === 'fruiting');
+  assert.equal(fr(big).length, fr(small).length);
+  fr(big).forEach((s, i) => assert.ok(s.inT - fr(small)[i].inT >= 10, `${s.inT} vs ${fr(small)[i].inT}`));
+});
+
+test('CY-H1 opts.heat adds the 13 heat keys to every segment and hour; the segment is the sum of its hours', () => {
+  const r = CY.runCycle(room, oyster(2000), { settings: SHORT_FULL, heat: true });
+  for (const s of r.stages) {
+    assert.deepEqual(Object.keys(s.heat).sort(), [...HEAT_KEYS].sort());
+    const hours = r.series.filter(h => h.stage === s.stage && h.flush === s.flush);
+    for (const k of HEAT_KEYS) {
+      const sum = hours.reduce((a, h) => a + h.heat[k], 0);
+      assert.ok(Math.abs(sum - s.heat[k]) <= 1e-6, `${s.stage} ${k}: ${sum} vs ${s.heat[k]}`);
+    }
+  }
+  for (const h of r.series) assert.deepEqual(Object.keys(h.heat).sort(), [...HEAT_KEYS].sort());
+  assert.deepStrictEqual(withoutHeat(r), getShortFull());
+});
+
+test('CY-H2 without opts.heat there is no heat key', () => {
+  const r = getShortFull();
+  for (const s of r.stages) assert.equal('heat' in s, false);
+  for (const h of r.series) assert.equal('heat' in h, false);
+});
