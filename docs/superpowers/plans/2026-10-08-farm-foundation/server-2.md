@@ -1,6 +1,6 @@
 # Work brief: Wave 2, Server 2 stream (C2 revision 9, C3/C4 revision 9)
 
-Revision 0, 2026-10-09 (wave 2 contracts frozen on `master` e60dabf, lead decision 69). Stream: **Server 2** (wave 2). You are the implementer; two reviewers check the work before the lead merges it at gate 2.5.
+Revision 1, 2026-10-09 (wave 2 contracts frozen on `master` e60dabf, lead decision 69). Stream: **Server 2** (wave 2). You are the implementer; two reviewers check the work before the lead merges it at gate 2.5.
 
 | Binding source, in this order | Path | What it settles |
 |---|---|---|
@@ -26,7 +26,7 @@ When this brief and a contract disagree, the contract wins: follow it and report
 | `room-rules.js` checks runs and machines | `checkSimulationRun`, `checkRunPatch`, `checkEquipmentBody` and the extended `checkCalibration` (C3 7.4, 7.6, 7.7); it loads without `cycle.js` and `equipment.js` (C3 7.1) |
 | The room manager records what wave 2 needs | 18-key readings (`ac_fan`, `stage`, `core`), `live.flush`, `live.blocks`, `live.air`; the room's machines reach the simulated room through `env.plant` (C2 13.1) |
 | A db error at the loop-start upgrade save is thrown (C2 8.1) | The `Upgraded: air exchange` save sits outside the steps 2–6 `try`; test "Upgrade save error" |
-| No prep 2.0 skip left in your test files | `grep -c "C1 rev 6 / C2 rev 9 fake" tests/rooms.test.js tests/api.test.js` gives `0` for both |
+| No prep 2.0 skip left in your test files | `grep -c "C1 rev 6 / C2 rev 9 fake:" tests/rooms.test.js tests/api.test.js` gives `0` for both |
 | Your tests survive the Equipment merge (lead decision 56) | With `fixB-on-bd24755.diff` applied to `controller.js` in a scratch tree, your three test files give `# fail 0` |
 | `server/main.js` can be wired at gate 2.5 | The `server/main.js` stub folder of `tests/api.test.js` also holds `tmp/server/harvest-db.js` and `tmp/server/harvest-api.js` (C3 12.1) |
 
@@ -48,7 +48,7 @@ When this brief and a contract disagree, the contract wins: follow it and report
 | `node -e "const d=require('./tests/fakes/db.js').openFakeDb(); console.log(d.version, d.sqlite, typeof d.saveSimulationRun, typeof d.saveEquipment)"` | `4 null function function` |
 | `node -e "require('./air.js');require('./controller.js');const db=require('./tests/fakes/db.js').openFakeDb();const m=require('./tests/fakes/rooms.js').createFakeRoomManager({db});m.create({name:'A',volume:60});const l=m.list()[0].live;console.log(l.air,l.flush,l.blocks)"` | `null null null` |
 | `node -e "console.log(typeof require('./server/api-common.js').HttpError)"` | `function` |
-| `grep -n "C1 rev 6 / C2 rev 9 fake" tests/rooms.test.js tests/api.test.js` | The prep 2.0 skips in your files (wave 2 plan step 2b measured "Recording" and "One reading shape" in `tests/rooms.test.js`, none in `tests/api.test.js`). Write the exact list down as `P` (count) and names |
+| `grep -c "C1 rev 6 / C2 rev 9 fake:" tests/rooms.test.js tests/api.test.js` | `tests/rooms.test.js:2` and `tests/api.test.js:0`: the prep 2.0 skips (step 2b) of "Recording" and "One reading shape", each with the reason `'C1 rev 6 / C2 rev 9 fake: Server 2 rewrites this test'`; `tests/api.test.js` has none (its "readings default" key list already has the 18 keys). `P` = 2 |
 | `grep -c "^test('Pair correction', " tests/rooms.test.js` and `grep -c "^test('Pair correction, high key'" tests/rooms.test.js` | `0` and `1` (prep 2.0 dropped the low-key test, lead decision 56) |
 | `grep -c "'airTooSmall'" room-rules.js` | `1` (C9 on `master`) |
 | `ls /home/foqcus/Documents/mushroom-farm-c8/proto-c9/rev3-bd24755/fixB-on-bd24755.diff` | Listed (the lead decision 56 change, for task 12) |
@@ -184,7 +184,7 @@ Read C3 and C2 completely before task 1.
 |---|---|
 | `node --disable-warning=ExperimentalWarning --test tests/room-rules.test.js tests/api.test.js tests/rooms.test.js` | `# fail 0`; `# skipped 1` (`Room equipment`, with the C2 17 reason) |
 | `npm test 2>&1 \| grep -E '^# (pass\|fail\|skipped)'` | `# fail 0`; `# skipped` = `S0 − P + 1` (your `P` prep skips gone, `Room equipment` added); `# pass` = `N0 + P + <your new test count>` (write both numbers in the report) |
-| `grep -c "C1 rev 6 / C2 rev 9 fake" tests/rooms.test.js tests/api.test.js` | `0` for both |
+| `grep -c "C1 rev 6 / C2 rev 9 fake:" tests/rooms.test.js tests/api.test.js` | `0` for both |
 | `T=$(mktemp -d); git archive HEAD \| tar -x -C $T; (cd $T && patch -p1 -s < /home/foqcus/Documents/mushroom-farm-c8/proto-c9/rev3-bd24755/fixB-on-bd24755.diff && node --disable-warning=ExperimentalWarning --test tests/rooms.test.js tests/api.test.js tests/room-rules.test.js 2>&1 \| grep -E '^# (pass\|fail)'); rm -rf $T` | `# fail 0` (lead decision 56 in place; measured on `master` e60dabf: only the low-key "Pair correction" failed there, and prep 2.0 dropped it) |
 | `grep -c "class HttpError\|errorText" server/api.js` | `0` |
 | `grep -n "require(" server/api.js` | `./static.js`, `./api-common.js`, then `../sim.js`, `../air.js`, `../controller.js`, `../runtime.js`, `../calib.js`, `../capacity.js`, `../cycle.js`, `../equipment.js`, `../room-rules.js` (optionally `./db-common.js`, `./rooms-common.js`); no `./db.js`, `./rooms.js`, `./harvest-db.js`, `./harvest-api.js` |
@@ -242,3 +242,4 @@ Read C3 and C2 completely before task 1.
 | Revision | Date | Changes |
 |---|---|---|
 | 0 | 2026-10-09 | First brief, from the frozen C2 revision 9, C3/C4 revision 9, C1 revision 6, C9 revision 2 (6.3), C10 revision 2 and the wave 2 plan (Server 2 row, prep 2.0 step 6) |
+| 1 | 2026-10-09 | The prep 2.0 skips as step 2b made them: "Recording" and "One reading shape" in `tests/rooms.test.js`, none in `tests/api.test.js`, the reason text, `P` = 2 |
