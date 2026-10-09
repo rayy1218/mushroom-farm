@@ -44,7 +44,7 @@
     transpGph: 0.2,
     // Block core: heat capacity J/K per block; heat loss W/K per block (stacked and closed in spawn run).
     block: { heatCap: 3500, ua: { spawn: 0.05, other: 0.1 } },
-    ac: { capW: 3500, auxW: 35, standbyW: 3, minFrac: 0.2, coil: { low: 9, auto: 11, high: 13 }, coldCoilC: 7, dryMaxFrac: 0.45,
+    ac: { capW: 3500, coilM3s: 0.14, auxW: 35, standbyW: 3, minFrac: 0.2, coil: { low: 9, auto: 11, high: 13 }, coldCoilC: 7, dryMaxFrac: 0.45,
           sensorOffset: 0.3, onBand: 0.5, offBand: 1.0, restartDelayS: 180, startBoostS: 180, kp: 0.5, ti: 600, airMix: 0.1,
           // largest latent part of the coil capacity per fan speed (more air = warmer coil = higher sensible heat ratio)
           latentMax: { low: 0.45, auto: 0.35, high: 0.2, cold: 0.5 } },
@@ -90,11 +90,21 @@
   // CO2 from the blocks in L/min (each block makes co2PerBlock mL/h in fruiting).
   const co2Lpm = e => e.blocks * e.co2PerBlock / 60000 * (PLANT.blockStage[e.blockStage] ?? 1);
 
+  const PLANT_KEYS = ['room', 'ac', 'fogger', 'loads'];
+  function plantOf(over) {
+    if (over == null) return PLANT;
+    const p = { ...PLANT };
+    for (const k of PLANT_KEYS) if (over[k] != null) p[k] = { ...PLANT[k], ...over[k] };
+    return p;
+  }
+
   function create(env, snapshot) {
     const e = env || structuredClone(DEFAULT_ENV);
-    const R = () => ({ ...PLANT.room, ...(e.room || {}) });
-    // Air exchange size (m³/h): env.airM3h held to 50-10000; anything but a number means PLANT.air.m3h.
-    const airM3h = () => (Number.isFinite(e.airM3h) ? clamp(e.airM3h, 50, 10000) : PLANT.air.m3h);
+    const P = plantOf(e.plant);
+    const R = () => ({ ...P.room, ...(e.room || {}) });
+    const flowJ = { walls: 0, sun: 0, airSens: 0, airLat: 0, blockSens: 0, blockLat: 0, base: 0, lights: 0, people: 0, fog: 0, water: 0, acSens: 0, acLat: 0 };
+    // Air exchange size (m³/h): env.airM3h held to 50-10000; anything but a number means P.air.m3h.
+    const airM3h = () => (Number.isFinite(e.airM3h) ? clamp(e.airM3h, 50, 10000) : P.air.m3h);
     // Air flows (m³/h) of the exchange: the pair when on, the wall leakage only when off.
     const flows = on => ({ pair: on ? airM3h() : 0, leak: on ? 0 : R().infAch * R().volume });
     let s = snapshot ? upgrade(structuredClone(snapshot)) : init();
@@ -107,7 +117,7 @@
         core: T0 + 2,
         act: { power: true, mode: 'cool', setpoint: 25, acFan: 'auto', comp: false, acFrac: 0, coil: 'auto', huLevel: 0, air: false, lights: false, circ: false },
         ac: { integ: 0, offSince: -1e9, startUntil: 0, starts: 0 },
-        p: { ac: PLANT.ac.standbyW, hu: PLANT.fogger.standbyW, air: 0, lights: 0, circ: 0 },
+        p: { ac: P.ac.standbyW, hu: P.fogger.standbyW, air: 0, lights: 0, circ: 0 },
         kwh: { ac: 0, hu: 0, air: 0, lights: 0, circ: 0 },
         runS: { ac: 0, hu: 0, air: 0 },
         water: { fogKg: 0, acKg: 0 },
@@ -196,7 +206,7 @@
     }
     // Sensor electronics: delay, offset, gain, drift, and a wet RH sensor. Runs every second.
     function sensorPhysics(dt) {
-      const q = PLANT.sensors[e.sensorQuality] || PLANT.sensors.ideal;
+      const q = P.sensors[e.sensorQuality] || P.sensors.ideal;
       const lag = (prev, x, tau) => (tau > 0 && prev != null ? prev + (x - prev) * Math.min(1, dt / tau) : x);
       const days = s.t / 86400;
       const sens = s.sens || (s.sens = {});
@@ -254,7 +264,7 @@
     }
 
     function step(dt, cmd) {
-      const room = R(), A = PLANT.ac, ac = s.ac, a = s.act;
+      const room = R(), A = P.ac, ac = s.ac, a = s.act;
       disturbances(s.t);
       const w = weather(s.t);
 
@@ -263,7 +273,7 @@
       a.mode = ['cool', 'heat', 'dry', 'fan'].includes(cmd.ac.mode) ? cmd.ac.mode : 'cool';
       a.setpoint = clamp(Number(cmd.ac.setpoint) || 25, 16, 30);
       a.acFan = ['low', 'auto', 'high'].includes(cmd.ac.fan) ? cmd.ac.fan : 'auto';
-      a.huLevel = level(cmd.hu.level, PLANT.fogger.levels.length);
+      a.huLevel = level(cmd.hu.level, P.fogger.levels.length);
       a.air = !!(cmd.air && cmd.air.on);
       // Controllers that do not send lights: the lights follow 07:00-19:00.
       a.lights = cmd.lights ? !!cmd.lights.on : (w.hour >= 7 && w.hour < 19);
@@ -305,26 +315,26 @@
       inflow.lo += qDoor; outflow.lo += qDoor; unfiltered += qDoor;
       // Net flow from low to high (air enters one zone and leaves at the other).
       const qUp = inflow.lo - outflow.lo;
-      const qMix = room.mixNatural + (a.circ ? PLANT.circ.m3s : 0) + (a.power ? A.airMix : 0);
+      const qMix = room.mixNatural + (a.circ ? P.circ.m3s : 0) + (a.power ? A.airMix : 0);
 
       // ---- Sources ----
-      const L = PLANT.loads, nb = e.blocks;
+      const L = P.loads, nb = e.blocks;
       const lpmBlocks = co2Lpm(e);
       const workers = s.t < d.workersUntil ? (d.workersN || 0) : 0;
-      const respGps = lpmBlocks * PLANT.resp.gpsPerLpm + (e.blockStage === 'fruiting' ? nb * PLANT.transpGph / 3600 : 0);
+      const respGps = lpmBlocks * P.resp.gpsPerLpm + (e.blockStage === 'fruiting' ? nb * P.transpGph / 3600 : 0);
       // Block core: heat from respiration flows to the air through the block surface.
-      const qBlock = nb > 0 ? lpmBlocks * PLANT.resp.wPerLpm / nb : 0;                 // W per block
-      const uaB = e.blockStage === 'spawn' ? PLANT.block.ua.spawn : PLANT.block.ua.other;
+      const qBlock = nb > 0 ? lpmBlocks * P.resp.wPerLpm / nb : 0;                 // W per block
+      const uaB = e.blockStage === 'spawn' ? P.block.ua.spawn : P.block.ua.other;
       const tAir = (s.z.lo.T + s.z.hi.T) / 2;
-      s.core += (qBlock - uaB * (s.core - tAir)) / PLANT.block.heatCap * dt;
+      s.core += (qBlock - uaB * (s.core - tAir)) / P.block.heatCap * dt;
       const blockToAir = nb * uaB * (s.core - tAir);                                   // W
-      const fog = PLANT.fogger.levels[a.huLevel], fogGps = fog.gph / 3600;
+      const fog = P.fogger.levels[a.huLevel], fogGps = fog.gph / 3600;
       const waterGps = s.t < d.waterUntil ? 3000 / 3600 : 0;                            // floor watering: 3 kg in 1 h
       let qAc = 0, latent = 0, pAc = a.power ? A.auxW : A.standbyW;
       if (a.comp && (a.mode === 'cool' || a.mode === 'dry')) {
         const total = a.acFrac * A.capW;
         const coil = a.coil === 'cold' ? A.coldCoilC : A.coil[a.coil];
-        latent = Math.min(a.acFrac * 0.14 * Math.max(0, s.z.hi.AH - ahSat(coil)), A.latentMax[a.coil] * total / 2450);
+        latent = Math.min(a.acFrac * A.coilM3s * Math.max(0, s.z.hi.AH - ahSat(coil)), A.latentMax[a.coil] * total / 2450);
         qAc = -Math.max(0, total - latent * 2450);
         pAc = total / copCool(w.T) + A.auxW;
       } else if (a.comp && a.mode === 'heat') {
@@ -338,17 +348,27 @@
       const Z = s.z, out = { T: w.T, AH: w.ah, C: room.co2Out };
       const heat = {
         // The AC takes air from the high zone and blows the cold air down: half of its effect reaches the low zone.
-        lo: room.ua * 0.4 * (w.T - Z.lo.T) + L.baseW / 2 + blockToAir / 2 + workers * PLANT.person.w - (fogGps + waterGps) * 2450 + qAc / 2,
+        lo: room.ua * 0.4 * (w.T - Z.lo.T) + L.baseW / 2 + blockToAir / 2 + workers * P.person.w - (fogGps + waterGps) * 2450 + qAc / 2,
         hi: room.ua * 0.6 * (w.T - Z.hi.T) + L.baseW / 2 + lightsW + w.sun * L.solarPeakW + blockToAir / 2 + qAc / 2,
       };
       const water = {
-        lo: respGps / 2 + fogGps + waterGps + workers * PLANT.person.gph / 3600,
+        lo: respGps / 2 + fogGps + waterGps + workers * P.person.gph / 3600,
         hi: respGps / 2 - latent,
       };
       const co2 = {   // ppm·m³/s; CO2 is heavier than air, so more of it stays low
-        lo: (lpmBlocks * 0.6 + workers * PLANT.person.co2Lpm) / 60000 * 1e6,
+        lo: (lpmBlocks * 0.6 + workers * P.person.co2Lpm) / 60000 * 1e6,
         hi: lpmBlocks * 0.4 / 60000 * 1e6,
       };
+      {
+        const W = (k, x) => { flowJ[k] += x * dt; };
+        W('walls', room.ua * 0.4 * (w.T - Z.lo.T) + room.ua * 0.6 * (w.T - Z.hi.T));
+        W('sun', w.sun * L.solarPeakW);
+        W('airSens', 1206 * (inflow.lo * w.T - outflow.lo * Z.lo.T + inflow.hi * w.T - outflow.hi * Z.hi.T));
+        W('airLat', 2450 * (inflow.lo * w.ah - outflow.lo * Z.lo.AH + inflow.hi * w.ah - outflow.hi * Z.hi.AH));
+        W('blockSens', blockToAir); W('blockLat', respGps * 2450); W('base', L.baseW); W('lights', lightsW);
+        W('people', workers * (P.person.w + P.person.gph / 3600 * 2450)); W('fog', fogGps * 2450); W('water', waterGps * 2450);
+        W('acSens', -qAc); W('acLat', latent * 2450);
+      }
       const next = { lo: {}, hi: {} };
       for (const [zn, other] of [['lo', 'hi'], ['hi', 'lo']]) {
         const z = Z[zn], o = Z[other];
@@ -364,10 +384,10 @@
 
       // ---- Meters ----
       s.p.ac = pAc;
-      s.p.hu = a.huLevel > 0 ? fog.w : PLANT.fogger.standbyW;
-      s.p.air = m3h * PLANT.air.wPerM3h;
+      s.p.hu = a.huLevel > 0 ? fog.w : P.fogger.standbyW;
+      s.p.air = m3h * P.air.wPerM3h;
       s.p.lights = lightsW;
-      s.p.circ = a.circ ? PLANT.circ.w : 0;
+      s.p.circ = a.circ ? P.circ.w : 0;
       for (const k of Object.keys(s.p)) s.kwh[k] += s.p[k] * dt / 3.6e6;
       if (a.comp) s.runS.ac += dt;
       if (a.huLevel > 0) s.runS.hu += dt;
@@ -395,9 +415,9 @@
       return {
         t: s.t, act: { ...s.act }, weather: w, lights: s.act.lights, cop,
         T: mid.T, RH: mid.RH, CO2: mid.C, zones: { lo, hi }, core: s.core,
-        airM3h: fl.pair + fl.leak, fogGph: PLANT.fogger.levels[s.act.huLevel].gph,
+        airM3h: fl.pair + fl.leak, fogGph: P.fogger.levels[s.act.huLevel].gph,
         power: { ...s.p }, kwh: { ...s.kwh }, water: { ...s.water }, unfilteredM3: s.unfilteredM3,
-        nextRead: s.nextRead, acStarts: s.ac.starts, tRet: s.z.hi.T + PLANT.ac.sensorOffset,
+        nextRead: s.nextRead, acStarts: s.ac.starts, tRet: s.z.hi.T + P.ac.sensorOffset,
         door: s.t < s.dist.door, workers: s.t < s.dist.workersUntil ? (s.dist.workersN || 0) : 0,
         watering: s.t < s.dist.waterUntil, wetSensor: s.wet.on || s.wet.level > 0.05,
       };
@@ -412,14 +432,14 @@
       }
       // block core at its steady state above the air (it changes slowly, so a wrong start disturbs a replay for hours)
       if (Number.isFinite(T)) {
-        const nb = e.blocks, uaB = e.blockStage === 'spawn' ? PLANT.block.ua.spawn : PLANT.block.ua.other;
-        s.core = T + (nb > 0 ? co2Lpm(e) * PLANT.resp.wPerLpm / nb / uaB : 0);
+        const nb = e.blocks, uaB = e.blockStage === 'spawn' ? P.block.ua.spawn : P.block.ua.other;
+        s.core = T + (nb > 0 ? co2Lpm(e) * P.resp.wPerLpm / nb / uaB : 0);
       }
       s.sens = null; s.reading = null;
     }
 
-    return { step, read, view, trigger, setRoom, snapshot: () => structuredClone(s), env: e };
+    return { step, read, view, trigger, setRoom, snapshot: () => structuredClone(s), env: e, heatJ: () => ({ ...flowJ }) };
   }
 
-  global.ClimateSim = { create, PLANT, DEFAULT_ENV, ahSat, co2Lpm };
+  global.ClimateSim = { create, PLANT, DEFAULT_ENV, ahSat, co2Lpm, plantOf };
 })(typeof window !== 'undefined' ? window : globalThis);
