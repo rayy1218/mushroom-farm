@@ -808,3 +808,22 @@ test("LM1 lion's mane is the last crop, with its draft profile", () => {
 test("LM2 no other crop has the cool flag or a wet line", () => {
   for (const [k, c] of Object.entries(CC.CROPS)) if (k !== 'lionsmane') { assert.equal('cool' in c, false, k); assert.equal('wetRH' in c, false, k); }
 });
+
+// ---------- C8 5.4.3: no heat mode while the outdoor air is warm (cool crops only) ----------
+test('COOL2 a cool crop does not heat while the outdoor air is warm', () => {
+  const modeOf = (crop, T, out) => {
+    const cfg = CC.defaultSettings();
+    cfg.crop = crop; cfg.stage = 'fruiting'; CC.applyProfile(cfg); cfg.program.harvest.on = false;
+    const ctl = CC.create(cfg, null, null);
+    for (let t = 0, seq = 1; t <= 600; t += 30, seq++) {
+      ctl.update({ seq, t, hour: 12, T: T + (seq % 2) * 0.01, RH: 90 + (seq % 2) * 0.1, CO2: 600 + (seq % 2), ...out });
+    }
+    return ctl.state.acMode;
+  };
+  assert.equal(modeOf('lionsmane', 18.8, { tOut: 30, rhOut: 60 }), 'cool');
+  assert.equal(modeOf('lionsmane', 18.8, { tOut: 15, rhOut: 60 }), 'heat');
+  assert.equal(modeOf('lionsmane', 18.8, { tOut: 21, rhOut: 60 }), 'heat');
+  assert.equal(modeOf('lionsmane', 18.8, { tOut: 21.5, rhOut: 60 }), 'cool');
+  assert.equal(modeOf('lionsmane', 18.8, {}), 'heat');
+  assert.equal(modeOf('oyster', 23.8, { tOut: 30, rhOut: 60 }), 'heat');
+});

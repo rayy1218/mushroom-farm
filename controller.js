@@ -621,7 +621,9 @@
       st.coreCooling = !!coreNote;
       // Mode changes only when the condition stays for MODE_HOLD_S (one wrong reading must not change the mode).
       // Heat starts inside the band edge (-0.8 °C), so the room cannot stay below the band in cool mode.
-      st.heatSince = e < -0.8 ? (st.heatSince ?? t) : null;
+      // A cool crop (flag cool) never goes to heat mode while the outdoor air is warm: a large AC in a cool room overshoots below the band.
+      const outWarm = !!crop.cool && !f.out && v.tOut > cfg.spT + BANDS.T;
+      st.heatSince = e < -0.8 && !outWarm ? (st.heatSince ?? t) : null;
       st.coolSince = e > 0.5 ? (st.coolSince ?? t) : null;
       if (st.acMode !== 'heat' && st.heatSince != null && t - st.heatSince >= MODE_HOLD_S) st.acMode = 'heat';
       else if (st.acMode === 'heat' && st.coolSince != null && t - st.coolSince >= MODE_HOLD_S) st.acMode = 'cool';
