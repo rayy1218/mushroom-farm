@@ -6,11 +6,13 @@
  *
  * The `check*` functions REJECT bad input: they return a list of problems, store nothing. Used by server/api.js.
  *
- * Load order (section 7.1): sim.js, controller.js, runtime.js, calib.js[, capacity.js], then this file.
+ * Load order (section 7.1): sim.js, air.js, controller.js, runtime.js, calib.js, capacity.js, cycle.js, equipment.js, then this file.
+ * ClimateEquipment is read only when a check function that needs it is called, so this file loads without cycle.js and equipment.js.
  */
 (function (global) {
   'use strict';
   const SIM = global.ClimateSim, CC = global.ClimateController, CAL = global.ClimateCalib;
+  const DESIGN_DAYS = global.ClimateCapacity.DESIGN_DAYS;
 
   const LIM = { blocks: 200000, volume: [5, 5000], co2: [1, 1000], name: 60 };
   const VERDICTS = ['impossible', 'too-dense', 'tight', 'good', 'too-empty'];
@@ -99,10 +101,23 @@
     return problems;
   }
 
+  // C3 7.7. ClimateEquipment is read here, at call time, never at load.
+  const EQUIPMENT_FIELDS = ['ac_hp', 'ac_units', 'fog_lph', 'air_m3h', 'walls', 'roof', 'height'];
+  function checkEquipmentBody(body) {
+    if (!isPlainObject(body)) return ['equipment: must be an object'];
+    const problems = [];
+    for (const k of EQUIPMENT_FIELDS) if (!Object.hasOwn(body, k)) problems.push(`${k}: missing`);
+    return problems.concat(global.ClimateEquipment.checkEquipment(body));
+  }
+
+  // C3 7.6: filled in by the next task.
+  function checkSimulationRun() { return ['not implemented']; }
+  function checkRunPatch() { return ['not implemented']; }
+
   function checkCalibration(body, now) {
     const problems = [];
     if (!isPlainObject(body)) { problems.push('body: must be an object'); return problems; }
-    const allowed = ['ua', 'inf_ach', 'moist_buffer', 'co2_per_block', 'rmse_t', 'rmse_rh', 'rmse_co2', 'log_rows', 'run_at'];
+    const allowed = ['ua', 'inf_ach', 'moist_buffer', 'co2_per_block', 'rmse_t', 'rmse_rh', 'rmse_co2', 'log_rows', 'run_at', 'source', 'log_from', 'log_to', 'equipment'];
     for (const k of Object.keys(body)) {
       if (!allowed.includes(k)) problems.push(`${k}: unknown field`);
     }
@@ -130,6 +145,23 @@
         problems.push(`run_at: must be an integer from 1 to ${now + 60}`);
       }
     }
+    const given = k => Object.hasOwn(body, k) && body[k] !== null;
+    if (Object.hasOwn(body, 'source') && body.source !== null && !['csv', 'history', 'import'].includes(body.source)) {
+      problems.push('source: must be left out, null, csv, history or import');
+    }
+    const timeOk = v => Number.isInteger(v) && v >= 1 && v <= now + 60;
+    if (given('log_from') !== given('log_to')) {
+      problems.push(`${given('log_from') ? 'log_to' : 'log_from'}: is required together with ${given('log_from') ? 'log_from' : 'log_to'}`);
+    } else if (given('log_from')) {
+      if (!timeOk(body.log_from)) problems.push(`log_from: must be an integer from 1 to ${now + 60}`);
+      if (!timeOk(body.log_to)) problems.push(`log_to: must be an integer from 1 to ${now + 60}`);
+      if (timeOk(body.log_from) && timeOk(body.log_to) && body.log_from > body.log_to) problems.push('log_from: must be at most log_to');
+    } else if (body.source === 'history') {
+      problems.push('log_from: is required when source is history');
+    }
+    if (given('equipment')) {
+      for (const p of checkEquipmentBody(body.equipment)) problems.push(p === 'equipment: must be an object' ? p : `equipment.${p}`);
+    }
     return problems;
   }
 
@@ -149,6 +181,6 @@
   global.ClimateRoomRules = {
     LIM, VERDICTS, ALARM_KEYS,
     hasCrop, validCalib, normRoom,
-    checkRoom, checkMix, checkCalibration, checkReport,
+    checkRoom, checkMix, checkCalibration, checkReport, checkEquipmentBody, checkSimulationRun, checkRunPatch,
   };
 })(typeof window !== 'undefined' ? window : globalThis);

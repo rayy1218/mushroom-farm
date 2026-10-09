@@ -4,22 +4,37 @@ const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const fs = require('node:fs');
 const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 
-require('../air.js');
 require('../sim.js');
+require('../air.js');
 require('../controller.js');
 require('../runtime.js');
 require('../calib.js');
+require('../capacity.js');
+require('../cycle.js');
+require('../equipment.js');
 require('../room-rules.js');
 
 const R = globalThis.ClimateRoomRules;
+const EQ = globalThis.ClimateEquipment;
 const NOW = 1791450000;
 
 describe('room-rules.js: members and constants', () => {
-  test('Object.keys sorted equals the 10 names', () => {
+  test('Object.keys sorted equals the 13 names', () => {
     assert.deepStrictEqual(Object.keys(R).sort(), [
-      'ALARM_KEYS', 'LIM', 'VERDICTS', 'checkCalibration', 'checkMix', 'checkReport', 'checkRoom', 'hasCrop', 'normRoom', 'validCalib',
+      'ALARM_KEYS', 'LIM', 'VERDICTS', 'checkCalibration', 'checkEquipmentBody', 'checkMix', 'checkReport', 'checkRoom',
+      'checkRunPatch', 'checkSimulationRun', 'hasCrop', 'normRoom', 'validCalib',
     ].sort());
+  });
+
+  test('room-rules: loads without cycle.js and equipment.js (C3 7.1)', () => {
+    const root = path.join(__dirname, '..');
+    const code = ['sim', 'air', 'controller', 'runtime', 'calib', 'capacity'].map(f => `require(${JSON.stringify(path.join(root, f + '.js'))});`).join('')
+      + `require(${JSON.stringify(path.join(root, 'room-rules.js'))});`
+      + "if (typeof globalThis.ClimateRoomRules.checkEquipmentBody !== 'function') process.exit(3);";
+    const r = spawnSync(process.execPath, ['-e', code], { encoding: 'utf8' });
+    assert.equal(r.status, 0, r.stderr);
   });
 
   test('LIM, VERDICTS, ALARM_KEYS', () => {
@@ -237,6 +252,64 @@ describe('checkCalibration', () => {
   test('a non-object', () => {
     assert.ok(R.checkCalibration(null, NOW).length > 0);
     assert.ok(R.checkCalibration('x', NOW).length > 0);
+  });
+});
+
+describe('checkEquipmentBody', () => {
+  test('checkEquipmentBody (C3 7.7)', () => {
+    assert.deepStrictEqual(R.checkEquipmentBody({ ...EQ.DEFAULTS }), []);
+    assert.deepStrictEqual(R.checkEquipmentBody(null), ['equipment: must be an object']);
+    assert.deepStrictEqual(R.checkEquipmentBody([]), ['equipment: must be an object']);
+    const { height, ...noHeight } = EQ.DEFAULTS;
+    assert.ok(R.checkEquipmentBody(noHeight).includes('height: missing'));
+    const { air_m3h, ...rest } = EQ.DEFAULTS;
+    const p = R.checkEquipmentBody({ ...rest, fan_m3h: 900 });
+    assert.ok(p.includes('air_m3h: missing'));
+    assert.ok(p.includes('fan_m3h: unknown field'));
+    assert.ok(p.indexOf('air_m3h: missing') < p.indexOf('fan_m3h: unknown field'));
+    const text = 'air_m3h: must be a number from 50 to 10000';
+    assert.deepStrictEqual(R.checkEquipmentBody({ ...EQ.DEFAULTS, air_m3h: 40 }), [text]);
+    assert.deepStrictEqual(R.checkEquipmentBody({ ...EQ.DEFAULTS, air_m3h: 10001 }), [text]);
+    assert.deepStrictEqual(R.checkEquipmentBody({ ...EQ.DEFAULTS, air_m3h: 50 }), []);
+    assert.deepStrictEqual(R.checkEquipmentBody({ ...EQ.DEFAULTS, air_m3h: 10000 }), []);
+    // one body per checkEquipment problem of C8 4.3
+    const D = EQ.DEFAULTS;
+    const cases = [
+      [{ ...D, ac_hp: 1.25 }, `ac_hp: must be one of ${EQ.AC_SIZES.map(s => s.hp).join(', ')}`],
+      [{ ...D, ac_units: 5 }, 'ac_units: must be a whole number from 1 to 4'],
+      [{ ...D, ac_units: 1.5 }, 'ac_units: must be a whole number from 1 to 4'],
+      [{ ...D, fog_lph: 0.2 }, 'fog_lph: must be a number from 0.5 to 50'],
+      [{ ...D, height: 7 }, 'height: must be a number from 2 to 6'],
+      [{ ...D, walls: 'wood', roof: 'pu50' }, `walls: must be one of ${Object.keys(EQ.CONSTRUCTIONS).join(', ')} or null`],
+      [{ ...D, walls: 'pu50', roof: 'brick115' }, `roof: must be one of ${Object.keys(EQ.CONSTRUCTIONS).filter(k => EQ.CONSTRUCTIONS[k].roof).join(', ')} or null`],
+      [{ ...D, walls: 'pu50', roof: null }, 'walls and roof: set both or neither'],
+      [{ ...D, vent: 1 }, 'vent: unknown field'],
+    ];
+    for (const [body, text2] of cases) assert.ok(R.checkEquipmentBody(body).includes(text2), text2);
+  });
+});
+
+describe('checkCalibration extension', () => {
+  const full = { ua: 92, inf_ach: 0.3, moist_buffer: 3, co2_per_block: 41, rmse_t: 0.2, rmse_rh: 1, rmse_co2: 10, log_rows: 100 };
+  test('checkCalibration: source, log_from, log_to, equipment (C3 7.4)', () => {
+    for (const source of [null, 'csv', 'history', 'import']) {
+      const body = source === 'history' ? { ...full, source, log_from: 1000, log_to: 2000 } : { ...full, source };
+      assert.deepStrictEqual(R.checkCalibration(body, NOW), [], String(source));
+    }
+    assert.ok(R.checkCalibration({ ...full, source: 'web' }, NOW).some(p => p.startsWith('source')));
+    assert.ok(R.checkCalibration({ ...full, source: 'history' }, NOW).some(p => p.startsWith('log_from')));
+    assert.ok(R.checkCalibration({ ...full, source: 'history', log_from: null, log_to: null }, NOW).some(p => p.startsWith('log_from')));
+    assert.ok(R.checkCalibration({ ...full, log_from: 1000 }, NOW).some(p => p.startsWith('log_to')));
+    assert.ok(R.checkCalibration({ ...full, log_to: 1000 }, NOW).some(p => p.startsWith('log_from')));
+    assert.ok(R.checkCalibration({ ...full, log_from: 3000, log_to: 2000 }, NOW).some(p => p.startsWith('log_from')));
+    assert.ok(R.checkCalibration({ ...full, log_from: 1000, log_to: NOW + 61 }, NOW).some(p => p.startsWith('log_to')));
+    assert.deepStrictEqual(R.checkCalibration({ ...full, log_from: 1000, log_to: NOW + 60 }, NOW), []);
+    assert.deepStrictEqual(R.checkCalibration({ ...full, log_from: null, log_to: null }, NOW), []);
+    assert.ok(R.checkCalibration({ ...full, log_from: 0, log_to: 5 }, NOW).some(p => p.startsWith('log_from')));
+    assert.deepStrictEqual(R.checkCalibration({ ...full, equipment: { ...EQ.DEFAULTS } }, NOW), []);
+    assert.deepStrictEqual(R.checkCalibration({ ...full, equipment: null }, NOW), []);
+    const bad = R.checkCalibration({ ...full, equipment: { ...EQ.DEFAULTS, air_m3h: 40 } }, NOW);
+    assert.ok(bad.some(p => p.includes('air_m3h')));
   });
 });
 
