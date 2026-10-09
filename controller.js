@@ -76,7 +76,7 @@
     ready: { name: 'Ready-to-fruit blocks (bought in)', stages: ['fruiting', 'rest'] },
   };
   // Values that move slowly (ramp) after a stage change. "rules.x" = cfg.rules.x
-  const RAMP_KEYS = ['spT', 'spRH', 'co2Lim', 'rules.co2SafetyAt', 'rules.fanOn', 'rules.fanOff', 'rules.acOff', 'rules.acOn'];
+  const RAMP_KEYS = ['spT', 'spRH', 'co2Lim', 'rules.co2SafetyAt', 'rules.fanOn', 'rules.fanOff'];
   const RAMP_ROUND = { spT: 0.1, spRH: 1 };     // others: 10 ppm
   const getK = (cfg, k) => (k.startsWith('rules.') ? cfg.rules[k.slice(6)] : cfg[k]);
   const setK = (cfg, k, v) => { if (k.startsWith('rules.')) cfg.rules[k.slice(6)] = v; else cfg[k] = v; };
@@ -86,8 +86,7 @@
 
   // What the controller knows about the machines (from their data sheets).
   const MACHINES = {
-    fanLevels: ['Off', 'Low', 'Medium', 'High'],
-    fanM3h: [0, 300, 600, 900],          // airflow per fan level (data sheet)
+    airTags: ['SF-203', 'EF-206'],       // the air exchange: filtered intake fan and exhaust fan, on and off together
     foggerLevels: ['Off', '1', '2', '3'],
     acModes: ['cool', 'heat', 'dry', 'fan'],
     acSetMin: 16, acSetMax: 30,
@@ -115,30 +114,27 @@
   const FAULT_COUNT = 3;          // bad readings in a row before a sensor fault
   const TRIM_TI = 1800;           // s; speed of the AC setpoint correction
   const MODE_HOLD_S = 300;
-  const AIR_STEP_S = 300;          // steady fresh air: at most one fan step each 5 min
+  const AIR_MIN_ON_S = 30;         // every air run lasts at least this long, so a noisy reading cannot stop it at once
   const FOG_FULL_S = 300;          // humidity first acts only after the fogger is at its maximum for this long
   const ALARM_DELAY_S = 300;       // a process alarm needs its condition for this long (critical alarms: 60 s)        // a mode change (heat/cool, dry) needs its condition for this long
 
   function defaultRules(lim) {
-    const fanOn = lim - 100, fanOff = Math.max(450, lim - 300);
     return {
       // P1 CO2 safety level
       co2Safety: true, co2SafetyAt: lim + 500,
-      // P2 humidity first
-      rhLock: true, rhStop: 3, rhResume: 1, rhAction: 'low',
-      // Fresh air: 'steady' = the fan runs at a base level and steps up or down with CO2; 'purge' = on and off between two levels
-      airMode: 'steady', baseFan: { spawn: 0, pinning: 1, fruiting: 1, rest: 0 },
-      // P3 CO2 purge
-      fanOn, fanOff, fanLevel: 2, freeCool: true, outdoorDry: true, fogBoost: true,
-      // P3 AC during purge: 'setback' = raise the setpoint, 'off' = turn the AC off
-      acPurge: true, acAction: 'setback', acSetbackC: 1, acOff: fanOn, acOn: fanOff, maxSetback: 30, guard: true,
+      // P2 humidity first: a purge that would dry the room waits while RH is low
+      rhLock: true, rhStop: 3, rhResume: 1,
+      // P3 CO2 purge: start and stop levels (ppm), time cap (s), minimum off time (s)
+      fanOn: lim - 100, fanOff: Math.max(450, lim - 300), purgeMaxS: 180, minOffS: 60,
+      // P4 the air exchange also runs for free cooling and outdoor drying
+      freeCool: true, outdoorDry: true,
       // 2.6: fog cools first when the room is warm; AC fan speed follows humidity (high fan = warmer coil = less water out)
       fogCool: true, acFanRH: true,
     };
   }
   function defaultProtect() {
     return {
-      fanMinOn: 2, fanMinOff: 2, fogMinOn: 1, fogMinOff: 1, acMinCmd: 2,      // minutes
+      fogMinOn: 1, fogMinOff: 1, acMinCmd: 2,                                  // minutes
       timedPurgeOn: 10, timedPurgeEvery: 30, faultFogLevel: 1,                 // safe states (fallback)
       learnSafe: true,                       // safe states copy the average of the hours before the fault
     };
@@ -160,7 +156,7 @@
   // Targets of a crop and stage, for all ramp keys.
   function profileTargets(crop, stage) {
     const [t, h, c] = CROPS[crop][stage], d = defaultRules(c);
-    return { spT: t, spRH: h, co2Lim: c, 'rules.co2SafetyAt': d.co2SafetyAt, 'rules.fanOn': d.fanOn, 'rules.fanOff': d.fanOff, 'rules.acOff': d.acOff, 'rules.acOn': d.acOn };
+    return { spT: t, spRH: h, co2Lim: c, 'rules.co2SafetyAt': d.co2SafetyAt, 'rules.fanOn': d.fanOn, 'rules.fanOff': d.fanOff };
   }
   function defaultSettings() {
     const [spT, spRH, co2Lim] = CROPS.oyster.fruiting;
@@ -171,13 +167,14 @@
       circ: 'auto',                          // circulation fan: 'auto' | 'on' | 'off'
       offsets: { T: 0, RH: 0, CO2: 0 },      // sensor corrections (from a salt test or a reference meter), added to the readings
       program: defaultProgram(),
-      roomM3: 60,                            // room volume, for air changes per hour
+      roomM3: 60,                            // room volume, for air changes per hour and the size estimate
+      airM3h: 1800,                          // airflow of the air exchange when on (m³/h)
       rules: defaultRules(co2Lim),
       protect: defaultProtect(),
       manual: {
         ac: { auto: true, power: true, mode: 'cool', setpoint: spT },
         hu: { auto: true, level: 1 },
-        fan: { auto: true, level: 1 },
+        air: { auto: true, on: false },
         lights: { auto: true, on: true },
         circ: { auto: true, on: true },
       },
@@ -206,27 +203,37 @@
     { id: 'disagree', label: 'The two sensor sets disagree: check the air movement or a sensor', lvl: () => 'warning', on: v => v.disagree, off: v => !v.disagree, uses: null },
   ];
   const LVL_RANK = { critical: 3, serious: 2, warning: 1 };
+  // m:ss for a number of seconds
+  const mss = s => { s = Math.max(0, Math.round(s)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+
+  // State of the purge cycle (contract C9 section 5.3)
+  function airInit() {
+    return { state: 'idle', since: null, purgeStart: null, capRun: 0, nextPurgeS: null, delayed: false, timed: false, sizeText: null };
+  }
+  function freshState(cfg) {
+    return {
+      lastT: null, sensors: {}, alarms: {}, v: {}, f: {},
+      rhLocked: false, co2SafetyOn: false,
+      trim: 0, acMode: 'cool', dryOn: false, heatSince: null, coolSince: null, drySince: null,
+      stage: { since: null, flush: 1, ramp: null, done: false }, harvestOn: false, harvestWin: null, harvestFog: false,
+      huOn: false, fanDryOn: false, fogCoolOn: false, fogFullSince: null,
+      acLimitSince: null, alarmPend: {}, rhT: cfg.spRH, vpd: null, vpdT: null,
+      resp: { RH: { n: 0, win: null, fault: false }, CO2: { n: 0, win: null, fault: false } },
+      air: airInit(), airReason: null, airPts: [], airRate: null, airRunCapped: false,
+      req: { ac: { power: true, mode: 'cool', setpoint: cfg.spT, fan: 'auto' }, hu: { level: 0 }, air: { on: false }, lights: { on: false }, circ: { on: false } },
+      cmd: { ac: { power: true, mode: 'cool', setpoint: cfg.spT, fan: 'auto' }, hu: { level: 0 }, air: { on: false }, lights: { on: false }, circ: { on: false } },
+      out: { air: { since: null }, hu: { since: null }, ac: { last: null } },
+      hold: { ac: '', hu: '', air: '' },
+      why: { ac: '', hu: '', air: '', lights: '', circ: '' },
+      stats: { airOnS: 0, purges: 0, purgeS: 0, longestPurgeS: 0, cappedPurges: 0, delayedS: 0, fogStarts: 0, acCmds: 0 },
+      purgeRec: { cur: null, events: [], hours: [] },
+      prev: null,
+    };
+  }
 
   function create(cfg, snapshot, onEvent) {
     const emit = onEvent || (() => {});
-    let st = snapshot ? structuredClone(snapshot) : {
-      lastT: null, sensors: {}, alarms: {}, v: {}, f: {},
-      fanCo2On: false, co2Timed: false, rhLocked: false, purgeHeld: false, purgeReduced: false, co2SafetyOn: false,
-      setbackReq: false, setbackOn: false, setbackS: 0, setbackAlarmStop: false, setbackTimeStop: false,
-      trim: 0, acMode: 'cool', dryOn: false, heatSince: null, coolSince: null, drySince: null,
-      stage: { since: null, flush: 1, ramp: null, done: false }, harvestOn: false, harvestWin: null, harvestFog: false,
-      huOn: false, fanDryOn: false, fanReason: '', fanBlocked: false, fogCoolOn: false, airLevel: null, airStepT: null, fogFullSince: null,
-      acLimitSince: null, alarmPend: {}, rhT: cfg.spRH, vpd: null, vpdT: null,
-      resp: { RH: { n: 0, win: null, fault: false }, CO2: { n: 0, win: null, fault: false } },
-      req: { ac: { power: true, mode: 'cool', setpoint: cfg.spT, fan: 'auto' }, hu: { level: 0 }, fan: { level: 0 }, lights: { on: false }, circ: { on: false } },
-      cmd: { ac: { power: true, mode: 'cool', setpoint: cfg.spT, fan: 'auto' }, hu: { level: 0 }, fan: { level: 0 }, lights: { on: false }, circ: { on: false } },
-      out: { fan: { since: null }, hu: { since: null }, ac: { last: null } },
-      hold: { ac: '', hu: '', fan: '' },
-      why: { ac: '', hu: '', fan: '', lights: '', circ: '' },
-      stats: { fanOnS: 0, fanStarts: 0, fogStarts: 0, setbackS: 0, acOffS: 0, fanBlockedS: 0, acCmds: 0 },
-      exh: { cur: null, events: [], hours: [] },
-      prev: null,
-    };
+    let st = snapshot ? structuredClone(snapshot) : freshState(cfg);
     const say = (t, lvl, text) => emit({ t, lvl, text });
     const ppm = v => Math.round(v);
     const alarmOn = id => !!(st.alarms[id] && st.alarms[id].active);
@@ -440,62 +447,54 @@
       return Object.values(st.alarms).sort((a, b) => (LVL_RANK[b.lvl] || 0) - (LVL_RANK[a.lvl] || 0));
     }
 
-    // ---------- 2. Rules ----------
-    // P3 purge request (or a timed purge when the CO2 sensor fails).
-    function co2Purge(v, f, t) {
-      const R = cfg.rules, P = cfg.protect;
-      st.co2Timed = f.CO2;
-      if (f.CO2) {
-        const cycle = Math.max(1, P.timedPurgeEvery) * 60;
-        const learned = P.learnSafe ? historyFor('runS', t, st.sensors.CO2.faultSince) : null;   // s per hour
-        st.timedSource = learned != null ? 'history' : 'setting';
-        const on = learned != null ? clamp(learned / 3600 * cycle * 1.1, 60, cycle) : clamp(P.timedPurgeOn, 0, P.timedPurgeEvery) * 60;
-        st.timedOnS = on;
-        st.fanCo2On = t % cycle < on;
-      } else if (R.airMode === 'steady') {
-        // Steady fresh air: a base level all the time (no bursts); one step up when CO2 is high,
-        // one step down when CO2 is low, at most one step each 5 min.
-        const base = (R.baseFan && R.baseFan[cfg.stage]) || 0;
-        if (st.airLevel == null) { st.airLevel = base; st.airStepT = t; }
-        const canStep = t - (st.airStepT ?? -Infinity) >= AIR_STEP_S;
-        if (v.CO2 >= R.fanOn && st.airLevel < 3 && canStep) { st.airLevel++; st.airStepT = t; }
-        else if (v.CO2 <= R.fanOff && st.airLevel > base && canStep) { st.airLevel--; st.airStepT = t; }
-        if (st.airLevel < base) st.airLevel = base;
-        st.fanCo2On = st.airLevel > 0;
-      } else {
-        st.airLevel = null;
-        if (!st.fanCo2On && v.CO2 >= R.fanOn) st.fanCo2On = true;
-        else if (st.fanCo2On && v.CO2 <= R.fanOff) st.fanCo2On = false;
+    // ---------- 2. Purge cycle (contract C9 section 5) ----------
+    function setState(state, t) {
+      if (st.air.state !== state) { st.air.state = state; st.air.since = t; }
+    }
+    function startPurge(t) {
+      setState('purge', t);
+      st.air.purgeStart = t;
+      st.stats.purges++;
+    }
+    // End of a purge. capped: true = the time cap, false = the stop level, null = manual control, a CO2 fault or a safety run.
+    function endPurge(t, capped) {
+      const A = st.air, runS = t - A.purgeStart;
+      st.stats.purgeS += runS;
+      st.stats.longestPurgeS = Math.max(st.stats.longestPurgeS, runS);
+      A.purgeStart = null;
+      setState('after', t);
+      if (capped === true) {
+        A.capRun++;
+        st.stats.cappedPurges++;
+        hourBucket(Math.floor(t / 3600)).cappedN++;
+        st.airRunCapped = true;                // the record's event gets capped: true when the air run ends
+        say(t, 'info', `Purge stopped at the time cap (${mss(runS)})`);
+      } else if (capped === false) A.capRun = 0;
+    }
+    // P1 CO2 safety level and the purge states. Runs before the AC and the fogger.
+    function airPlan(v, f, t, prevOn) {
+      const R = cfg.rules, A = st.air;
+      // P1 CO2 safety level, off 20 ppm below it
+      st.co2SafetyOn = R.co2Safety && !f.CO2 && v.CO2 >= (st.co2SafetyOn ? R.co2SafetyAt - 20 : R.co2SafetyAt);
+      if (!cfg.manual.air.auto || f.CO2 || st.co2SafetyOn) {
+        // No purge cycle: the grower, the timed purge or the safety run (airExchange) runs the air exchange.
+        // A safety run is not a purge (5.3): a purge running when it starts ends here, not capped.
+        if (A.state === 'purge') endPurge(t, null);
+        setState('idle', t);
+        A.nextPurgeS = st.co2SafetyOn ? 0 : null; A.delayed = false;
+        if (!st.co2SafetyOn) st.rhLocked = false;
+        return;
       }
+      // States (5.3). offFor: how long the air exchange has been off (0 while on).
+      const on = st.cmd.air.on, offFor = on ? 0 : st.out.air.since == null ? Infinity : t - st.out.air.since;
+      if (A.state === 'purge') {
+        const runS = t - A.purgeStart;
+        if (v.CO2 <= R.fanOff && runS >= AIR_MIN_ON_S) endPurge(t, false);
+        else if (runS >= R.purgeMaxS) endPurge(t, true);
+      }
+      if (A.state === 'after' && !on && offFor >= R.minOffS) setState('idle', t);
+      if (A.state === 'idle' && v.CO2 >= R.fanOn && (on || offFor >= R.minOffS)) startPurge(t);
     }
-    // P1 + P2: CO2 safety level and humidity first.
-    function priorities(v, f) {
-      const R = cfg.rules;
-      const stopAt = st.rhT - R.rhStop, resumeAt = st.rhT - R.rhResume;
-      if (!R.rhLock || f.RH || st.harvestOn) st.rhLocked = false;
-      // Fog more before less air: act only when the fogger has been at its maximum for FOG_FULL_S.
-      else if (!st.rhLocked && v.RH <= stopAt && st.fogFullSince != null && st.lastT - st.fogFullSince >= FOG_FULL_S) st.rhLocked = true;
-      else if (st.rhLocked && v.RH >= resumeAt) st.rhLocked = false;
-      st.co2SafetyOn = R.co2Safety && !f.CO2 && v.CO2 >= R.co2SafetyAt;
-      const lock = st.rhLocked && !st.co2SafetyOn;
-      st.purgeHeld = lock && R.rhAction === 'stop';
-      st.purgeReduced = lock && R.rhAction === 'low';
-    }
-    // P3: AC setback (or off) while the fan really exhausts air for CO2.
-    function acPurge(v, f, dt) {
-      const R = cfg.rules;
-      const purging = st.fanCo2On && !st.purgeHeld;
-      if (!R.acPurge) st.setbackReq = false;
-      else if (f.CO2) st.setbackReq = st.fanCo2On;                 // follow the timed purge
-      else if (!st.setbackReq && v.CO2 >= R.acOff) st.setbackReq = true;
-      else if (st.setbackReq && v.CO2 <= R.acOn) st.setbackReq = false;
-      if (st.setbackOn) st.setbackS += dt;
-      if (!st.setbackReq) st.setbackS = 0;
-      st.setbackAlarmStop = R.guard && (alarmOn('tHi') || alarmOn('tLo'));
-      st.setbackTimeStop = R.maxSetback > 0 && st.setbackS >= R.maxSetback * 60;
-      st.setbackOn = st.setbackReq && purging && !st.setbackAlarmStop && !st.setbackTimeStop;
-    }
-
     // P4: AC by mode and setpoint.
     function airConditioner(v, f, dt) {
       const m = cfg.manual.ac, q = st.req.ac, R = cfg.rules;
@@ -530,7 +529,7 @@
       // Slow correction: the AC measures its own return air, which is not the room sensor.
       // Room too warm -> setpoint down; room too cold -> setpoint up (in both modes). The error is limited
       // to ±2 °C, so one wrong reading cannot move the correction far.
-      if (!st.setbackOn) st.trim = clamp(st.trim - clamp(e, -2, 2) * dt / TRIM_TI, -3, 3);
+      st.trim = clamp(st.trim - clamp(e, -2, 2) * dt / TRIM_TI, -3, 3);
       // Dry mode when RH is high and outdoor air cannot dry the room.
       const fanCanDry = R.outdoorDry && !f.out && !f.RH && ahOf(v.tOut, v.rhOut) < ahOf(v.T, v.RH) - 0.5;
       // Dry mode starts just above the band (target + 3.5 %) when the condition stays for 5 min.
@@ -542,23 +541,12 @@
       else if (st.dryOn && (v.RH < st.rhT + 1 || v.T < cfg.spT - 1.5 || st.acMode === 'heat' || e > 1)) st.dryOn = false;
 
       const mode = st.dryOn ? 'dry' : st.acMode;
-      const base = cfg.spT + st.trim;
+      const sp = cfg.spT + st.trim;
       const corr = `Setpoint correction ${st.trim >= 0 ? '+' : ''}${st.trim.toFixed(1)} °C for the AC sensor.`;
-      let sp = base, why;
       q.power = true;
-      if (st.setbackOn && R.acAction === 'off') {
-        q.power = false;
-        why = `CO₂ purge: the AC is off. It starts again at ${R.acOn} ppm.`;
-      } else if (st.setbackOn) {
-        sp = mode === 'heat' ? base - R.acSetbackC : base + R.acSetbackC;
-        why = `CO₂ purge: setpoint ${mode === 'heat' ? 'down' : 'up'} ${R.acSetbackC} °C, so the compressor runs slowly and does not restart. It ends at ${R.acOn} ppm.`;
-      } else {
-        why = mode === 'dry' ? `Humidity is ${(v.RH - st.rhT).toFixed(0)} % above the target and outdoor air is too wet: dry mode.`
-          : Math.abs(e) <= 0.3 ? `Room is at the target. ${corr}`
-          : `Room is ${Math.abs(e).toFixed(1)} °C ${e > 0 ? 'above' : 'below'} the target. ${corr}`;
-        if (st.setbackReq && st.setbackAlarmStop) why += ' The CO₂ setback is cancelled: the temperature is at the alarm limit.';
-        else if (st.setbackReq && st.setbackTimeStop) why += ` The CO₂ setback is cancelled: it reached ${R.maxSetback} min.`;
-      }
+      let why = mode === 'dry' ? `Humidity is ${(v.RH - st.rhT).toFixed(0)} % above the target and outdoor air is too wet: dry mode.`
+        : Math.abs(e) <= 0.3 ? `Room is at the target. ${corr}`
+        : `Room is ${Math.abs(e).toFixed(1)} °C ${e > 0 ? 'above' : 'below'} the target. ${corr}`;
       // AC fan speed (2.6): a high fan makes the coil warmer, so less water comes out of the air.
       let fanTxt = '';
       q.fan = 'auto';
@@ -626,12 +614,6 @@
         const want = eT > 1 ? 2 : 1;
         if (lv < want) { lv = want; why = `Room is ${eT.toFixed(1)} °C warm: fog cools it first (evaporation).`; }
       }
-      // During a purge, the incoming air is drier: fog one level more. The fogger never stops for a purge.
-      const purging = st.fanCo2On && !st.purgeHeld;
-      if (R.fogBoost && !crop.noFogBoost && purging && v.RH < st.rhT + 1 && lv < 3) {
-        lv += 1;
-        why += ' CO₂ purge: one level more for the dry incoming air.';
-      }
       // Crop flag maxFog: a crop that must not get direct fog.
       if (crop.maxFog && lv > crop.maxFog) { lv = crop.maxFog; why += ` ${crop.name}: fog limited to level ${crop.maxFog} (no direct fog on the crop).`; }
       q.level = lv;
@@ -640,46 +622,38 @@
       st.why.hu = why + (lv > 0 ? ` Level ${lv}.` : '');
     }
 
-    function exhaustFan(v, f) {
-      const m = cfg.manual.fan, q = st.req.fan, R = cfg.rules;
-      st.fanBlocked = false;
-      if (!m.auto) { q.level = m.level; st.fanReason = 'manual'; st.why.fan = 'Manual control. The controller does not change this output.'; return; }
-      const lCo2 = R.airMode === 'steady' && !st.co2Timed ? (st.airLevel || 0) : st.fanCo2On ? R.fanLevel : 0;
-      let lDry = 0, lCool = 0;
+    // The air exchange request (C9 5.6): manual, then P1 safety, P3 purge, P4 free cooling and drying.
+    // Returns the reason of the request ('' = off).
+    function airExchange(v, f, t) {
+      const m = cfg.manual.air, q = st.req.air, R = cfg.rules, A = st.air;
+      if (!m.auto) { q.on = !!m.on; st.why.air = 'Manual control. The controller does not change this output.'; return q.on ? 'manual' : ''; }
+      // Outdoor drying (hysteresis): RH well above the target and drier outdoor air.
       if (!R.outdoorDry || f.out || f.RH || f.T) st.fanDryOn = false;
       else {
         const ahIn = ahOf(v.T, v.RH), ahOut = ahOf(v.tOut, v.rhOut);
         if (!st.fanDryOn && v.RH > st.rhT + 5 && ahOut < ahIn - 0.5) st.fanDryOn = true;
         else if (st.fanDryOn && (v.RH < st.rhT + 1 || ahOut >= ahIn)) st.fanDryOn = false;
       }
-      if (st.fanDryOn) lDry = 2;
-      if (R.freeCool && !f.out && !f.T) {
-        const eT = v.T - cfg.spT;
-        if (eT > 0.3 && v.tOut < v.T - 3) lCool = eT > 1.5 ? 3 : eT > 0.8 ? 2 : 1;
-      }
-      let lv = Math.max(lCo2, lDry, lCool);
-      const name = l => MACHINES.fanLevels[l];
-      if (st.co2SafetyOn) {
-        lv = Math.max(lv, R.fanLevel);
-        st.fanReason = 'CO₂ safety level';
-        st.why.fan = `CO₂ is ${ppm(v.CO2)} ppm, at or above the safety level ${R.co2SafetyAt}. The fan runs at ${name(lv)} even when humidity is low.`;
-      } else if (lv > 0 && lv !== lDry && st.purgeHeld) {
-        lv = 0; st.fanBlocked = true; st.fanReason = '';
-        st.why.fan = `Humidity first: RH ${v.RH.toFixed(1)} % is at or below ${(st.rhT - R.rhStop).toFixed(0)} %. The fan stays off until RH is ${(st.rhT - R.rhResume).toFixed(0)} %.`;
-      } else if (lv > 1 && lv !== lDry && st.purgeReduced) {
-        lv = 1; st.fanReason = 'CO₂ purge (reduced)';
-        st.why.fan = `Humidity first: RH ${v.RH.toFixed(1)} % is low. The purge continues at Low until RH is ${(st.rhT - R.rhResume).toFixed(0)} %.`;
-      } else if (lv === 0) {
-        st.fanReason = '';
-        st.why.fan = st.co2Timed ? 'CO₂ sensor fault: timed purge. The fan is in the off part of the cycle.' : `CO₂ is ${ppm(v.CO2)} ppm. The fan starts at ${R.fanOn} ppm.`;
-      } else if (lv === lCo2) {
-        st.fanReason = st.co2Timed ? 'timed purge' : 'CO₂ purge';
-        st.why.fan = st.co2Timed ? `CO₂ sensor fault: timed purge at ${name(lv)}, ${Math.round(st.timedOnS / 60)} min of each ${cfg.protect.timedPurgeEvery} min (from ${st.timedSource === 'history' ? 'this hour of an earlier day' : 'the setting'}).` : `CO₂ is ${ppm(v.CO2)} ppm. Purge at ${name(lv)}. The fan stops at ${R.fanOff} ppm.`;
-      } else if (lv === lDry) { st.fanReason = 'drying with outdoor air'; st.why.fan = `Humidity is high and outdoor air is drier. The fan runs at ${name(lv)}.`; }
-      else { st.fanReason = 'free cooling'; st.why.fan = `Outdoor air is ${(v.T - v.tOut).toFixed(1)} °C cooler. The fan runs at ${name(lv)} to help the AC.`; }
-      q.level = lv;
+      // Free cooling: the room is warm and outdoor air is at least 3 °C cooler.
+      const cool = R.freeCool && !f.out && !f.T && v.T - cfg.spT > 0.3 && v.tOut < v.T - 3;
+      const reason = st.co2SafetyOn ? 'safety' : A.state === 'purge' ? 'purge' : cool ? 'free cooling' : st.fanDryOn ? 'drying' : '';
+      q.on = reason !== '';
+      st.why.air = airWhy(v, reason);
+      return reason;
     }
-
+    // Plain-language reason for the air exchange (C9 5.7)
+    function airWhy(v, reason) {
+      const R = cfg.rules, A = st.air, t = st.lastT;
+      if (reason === 'safety') return `CO₂ is ${ppm(v.CO2)} ppm, at or above the safety level ${R.co2SafetyAt}. The air exchange runs even when humidity is low.`;
+      if (A.state === 'purge') return `Purging since ${mss(t - A.purgeStart)} (at most ${mss(R.purgeMaxS)}). It stops at ${R.fanOff} ppm.`;
+      if (reason === 'free cooling') return `Outdoor air is ${(v.T - v.tOut).toFixed(1)} °C cooler. The air exchange runs to help the AC.`;
+      if (reason === 'drying') return 'Humidity is high and outdoor air is drier. The air exchange runs to dry the room.';
+      if (A.state === 'after') {
+        const offAt = st.cmd.air.on ? t : st.out.air.since ?? t;
+        return `Minimum off time: ${Math.max(0, Math.ceil(R.minOffS - (t - offAt)))} s.`;
+      }
+      return `CO₂ is ${ppm(v.CO2)} ppm. The next purge starts at ${R.fanOn} ppm.`;
+    }
     // Lights (2.2): a daily window, only in the stages with light.
     function lights(r) {
       const m = cfg.manual.lights, q = st.req.lights, P = cfg.program.lights, crop = CROPS[cfg.crop];
@@ -706,8 +680,8 @@
     }
     // Sensor response check (2.7): when its machine switches, a working sensor must move. RH must move
     // >= 0.15 % in 15 min after the fogger switches on or off; CO2 must move >= 5 ppm in 10 min
-    // after the fan starts. 2 failed checks in a row = the sensor "does not respond".
-    function responseCheck(r, prevFog, prevFan) {
+    // after the air exchange starts. 2 failed checks in a row = the sensor "does not respond".
+    function responseCheck(r, prevFog, prevOn) {
       const t = r.t, c = st.cmd;
       const watch = (k, trig, winS, minMove) => {
         const R = st.resp[k], x = r[k];
@@ -723,25 +697,34 @@
         }
       };
       watch('RH', c.hu.level !== prevFog, RESP_WIN_RH, 0.15);
-      watch('CO2', prevFan === 0 && c.fan.level > 0, RESP_WIN_CO2, 5);
+      watch('CO2', !prevOn && c.air.on, RESP_WIN_CO2, 5);
     }
 
-    // ---------- 3. Machine protection ----------
-    // On/off changes wait for the minimum on or off time. Level changes while on are free.
-    // A humidity-first stop acts at once.
-    function protectOnOff(dev, minOnMin, minOffMin, t, urgentStop) {
+    // ---------- 4. Machine protection ----------
+    // Fogger: on/off changes wait for the minimum on or off time. Level changes while on are free.
+    function protectOnOff(dev, minOnMin, minOffMin, t) {
       const o = st.out[dev], c = st.cmd[dev], want = st.req[dev].level;
       const isOn = c.level > 0, wantOn = want > 0;
       st.hold[dev] = '';
       if (isOn === wantOn) { c.level = want; return; }
       const manual = !cfg.manual[dev].auto;
       const min = (isOn ? minOnMin : minOffMin) * 60, age = o.since == null ? Infinity : t - o.since;
-      if (manual || age >= min || (isOn && urgentStop)) {
+      if (manual || age >= min) {
         c.level = want; o.since = t;
-        if (wantOn) st.stats[dev === 'fan' ? 'fanStarts' : 'fogStarts']++;
+        if (wantOn) st.stats.fogStarts++;
       } else {
         st.hold[dev] = `${isOn ? 'Minimum run time' : 'Minimum off time'}: ${Math.ceil((min - age) / 60)} min to wait.`;
       }
+    }
+    // Air exchange: every run lasts AIR_MIN_ON_S, then stays off rules.minOffS. A manual change acts at once;
+    // the CO2 safety level starts the fans at once, and its end (safetyExit) stops them at once.
+    function protectAir(t, safetyExit) {
+      const o = st.out.air, c = st.cmd.air, want = st.req.air.on;
+      st.hold.air = '';
+      if (c.on === want) return;
+      const min = c.on ? AIR_MIN_ON_S : cfg.rules.minOffS, age = o.since == null ? Infinity : t - o.since;
+      if (!cfg.manual.air.auto || age >= min || (c.on ? safetyExit : st.co2SafetyOn)) { c.on = want; o.since = t; }
+      else st.hold.air = `${c.on ? 'Minimum run time' : 'Minimum off time'}: ${Math.ceil(min - age)} s to wait.`;
     }
     function protectAc(t) {
       const q = st.req.ac, c = st.cmd.ac, o = st.out.ac, P = cfg.protect;
@@ -755,21 +738,21 @@
       } else st.hold.ac = `Next AC command in ${Math.ceil((P.acMinCmd * 60 - age) / 60)} min (minimum time between commands).`;
     }
 
-    // ---------- 4. Exhaust record ----------
+    // ---------- 5. Purge record ----------
     function hourBucket(h) {
-      const H = st.exh.hours;
+      const H = st.purgeRec.hours;
       let b = H[H.length - 1];
-      if (!b || b.h !== h) { b = { h, runS: 0, starts: 0, m3: 0, fogLS: 0, acHighS: 0, acLowS: 0 }; H.push(b); if (H.length > 168) H.shift(); }   // 7 days
+      if (!b || b.h !== h) { b = { h, runS: 0, starts: 0, m3: 0, cappedN: 0, fogLS: 0, acHighS: 0, acLowS: 0 }; H.push(b); if (H.length > 168) H.shift(); }   // 7 days
       return b;
     }
-    // Run time and air volume from t0 to t1 at one fan level, split at each full hour.
-    function addRun(t0, t1, lv) {
-      const q = MACHINES.fanM3h[lv] / 3600;
+    // Run time and air volume from t0 to t1 with the air exchange on, split at each full hour.
+    function addRun(t0, t1) {
+      const q = cfg.airM3h / 3600;
       for (let a = t0; a < t1;) {
         const h = Math.floor(a / 3600), b = Math.min(t1, (h + 1) * 3600), bk = hourBucket(h);
         bk.runS += b - a; bk.m3 += q * (b - a); a = b;
       }
-      if (st.exh.cur) st.exh.cur.m3 += q * (t1 - t0);
+      if (st.purgeRec.cur) st.purgeRec.cur.m3 += q * (t1 - t0);
     }
     function addAcFan(t0, t1, fan) {
       const key = fan === 'high' ? 'acHighS' : fan === 'low' ? 'acLowS' : null;
@@ -789,7 +772,7 @@
     // the same hour of an earlier day (the need changes with the time of day). With less than one day
     // of history: the average of the full hours before the fault. null if less than 3 hours.
     function historyFor(key, t, before) {
-      const H = st.exh.hours;
+      const H = st.purgeRec.hours;
       if (!H.length) return null;
       const firstH = H[0].h, faultH = Math.floor(before / 3600), curH = Math.floor(t / 3600);
       for (let h = curH - 24; h >= firstH; h -= 24) {
@@ -799,55 +782,50 @@
       if (span < 3) return null;
       return H.filter(b => b.h < faultH).reduce((s, b) => s + b[key], 0) / span;
     }
-    function recordExhaust(prevLvl, t, v) {
-      const lv = st.cmd.fan.level, X = st.exh;
-      if (prevLvl === 0 && lv > 0) {
-        X.cur = { start: t, end: null, maxLevel: lv, reason: st.fanReason, co2Start: v.CO2, co2End: null, m3: 0 };
+    // One event per air run (C9 5.7): reason at the start, CO2 at the start and the end, air volume, capped.
+    function recordPurges(prevOn, t, v) {
+      const on = st.cmd.air.on, X = st.purgeRec;
+      if (!prevOn && on) {
+        X.cur = { start: t, end: null, reason: st.airReason, co2Start: v.CO2, co2End: null, m3: 0, capped: false };
+        st.airRunCapped = false;
         hourBucket(Math.floor(t / 3600)).starts++;
-      } else if (prevLvl > 0 && lv === 0 && X.cur) {
-        X.cur.end = t; X.cur.co2End = v.CO2;
+      } else if (prevOn && !on && X.cur) {
+        X.cur.end = t; X.cur.co2End = v.CO2; X.cur.capped = st.airRunCapped;
         X.events.push(X.cur); if (X.events.length > 200) X.events.shift();
         X.cur = null;
-      } else if (lv > 0 && X.cur) {
-        X.cur.maxLevel = Math.max(X.cur.maxLevel, lv);
-        if (!X.cur.reason) X.cur.reason = st.fanReason;
       }
     }
 
     // ---------- Event log ----------
     function log(t) {
-      const c = st.cmd, R = cfg.rules;
-      const now = { power: c.ac.power, mode: c.ac.mode, setback: st.setbackOn, fanOn: c.fan.level > 0, fanReason: st.fanReason,
-        fogOn: c.hu.level > 0, lights: c.lights.on, blocked: st.fanBlocked, reduced: st.purgeReduced && st.fanCo2On, safety: st.co2SafetyOn, timed: st.co2Timed };
+      const c = st.cmd, A = st.air, X = st.purgeRec;
+      const now = { power: c.ac.power, mode: c.ac.mode, airOn: c.air.on, airReason: st.airReason, fogOn: c.hu.level > 0, lights: c.lights.on,
+        delayed: A.delayed, safety: st.co2SafetyOn, timed: A.timed };
       const p = st.prev || now;
       const man = d => (cfg.manual[d].auto ? '' : ' (manual)');
-      if (now.setback !== p.setback) say(t, 'info', now.setback ? (R.acAction === 'off' ? 'AC off for the CO₂ purge' : `AC setback +${R.acSetbackC} °C for the CO₂ purge`) : 'AC setback ended');
-      else if (now.power !== p.power) say(t, 'info', (now.power ? 'AC on' : 'AC off') + man('ac'));
+      if (now.power !== p.power) say(t, 'info', (now.power ? 'AC on' : 'AC off') + man('ac'));
       if (now.mode !== p.mode) say(t, 'info', `AC mode: ${now.mode}` + man('ac'));
-      if (now.safety !== p.safety) say(t, now.safety ? 'critical' : 'good', now.safety ? 'CO₂ safety level: the fan runs although humidity is low' : 'CO₂ below the safety level');
-      if (now.blocked !== p.blocked) say(t, now.blocked ? 'warning' : 'good', now.blocked ? `Exhaust fan stopped: humidity first (RH ≤ ${(st.rhT - R.rhStop).toFixed(0)} %)` : 'Exhaust fan allowed again: humidity recovered');
-      if (now.reduced !== p.reduced) say(t, 'info', now.reduced ? 'Purge reduced to Low: humidity first' : 'Purge back to the normal level');
-      if (now.timed !== p.timed) say(t, now.timed ? 'serious' : 'good', now.timed ? 'CO₂ sensor fault: timed purge started' : 'CO₂ sensor back: timed purge ended');
+      if (now.safety !== p.safety) say(t, now.safety ? 'critical' : 'good', now.safety ? 'CO₂ safety level: the air exchange runs, ignoring the time cap' : 'CO₂ below the safety level');
       if (now.fogOn !== p.fogOn) say(t, 'info', (now.fogOn ? 'Fogger on' : 'Fogger off') + man('hu'));
       if (now.lights !== p.lights) say(t, 'info', now.lights ? 'Lights on' : 'Lights off');
-      if (now.fanOn !== p.fanOn) say(t, 'info', now.fanOn ? `Exhaust fan on: ${st.fanReason}` : 'Exhaust fan off');
-      else if (now.fanOn && p.fanReason !== now.fanReason) say(t, 'info', `Exhaust fan: ${st.fanReason}`);
+      if (now.airOn && !p.airOn) say(t, 'info', `Air exchange on: ${now.airReason}`);
+      else if (!now.airOn && p.airOn) {
+        const e = X.events[X.events.length - 1];
+        say(t, 'info', `Air exchange off (${mss(e && e.end === t ? e.end - e.start : 0)}, CO₂ ${ppm(st.v.CO2)} ppm)`);
+      } else if (now.airOn && now.airReason && now.airReason !== p.airReason) say(t, 'info', `Air exchange: ${now.airReason}`);
       st.prev = now;
     }
-
     // Call once for each new sensor reading. The commands stay the same until the next reading.
     function update(r) {
       const dt = st.lastT == null ? 0 : Math.max(0, r.t - st.lastT);
-      const prevLvl = st.cmd.fan.level, prevFog = st.cmd.hu.level;
-      if (prevLvl > 0 && dt > 0) addRun(st.lastT, r.t, prevLvl);
+      const prevOn = st.cmd.air.on, prevFog = st.cmd.hu.level, wasSafe = st.co2SafetyOn;
+      if (prevOn && dt > 0) addRun(st.lastT, r.t);
       if (prevFog > 0 && dt > 0) addFog(st.lastT, r.t, prevFog);
       if (dt > 0 && st.cmd.ac.power) addAcFan(st.lastT, r.t, st.cmd.ac.fan);
       st.lastT = r.t;
       // Time since the last reading, with the commands that were active in that time.
-      if (st.cmd.fan.level > 0) st.stats.fanOnS += dt;
-      if (st.setbackOn) st.stats.setbackS += dt;
-      if (!st.cmd.ac.power) st.stats.acOffS += dt;
-      if (st.fanBlocked) st.stats.fanBlockedS += dt;
+      if (prevOn) st.stats.airOnS += dt;
+      if (st.air.delayed) st.stats.delayedS += dt;
 
       program(r);
       const { v, f } = validate(r);
@@ -857,25 +835,23 @@
       st.rhT = cfg.humMode === 'vpd' && !f.T ? clamp(100 * (1 - st.vpdT / es(v.T)), 50, 99) : cfg.spRH;
       st.vpd = !f.T && !f.RH ? es(v.T) * (1 - v.RH / 100) : null;
       alarms(v, f, r.t);
-      co2Purge(v, f, r.t);
-      priorities(v, f);
-      acPurge(v, f, dt);
+      airPlan(v, f, r.t, prevOn);
       airConditioner(v, f, dt);
       fogger(v, f, r.t);
-      exhaustFan(v, f);
+      const reason = airExchange(v, f, r.t);
       lights(r);
       circulation(v, r.t);
-      protectOnOff('fan', cfg.protect.fanMinOn, cfg.protect.fanMinOff, r.t, st.fanBlocked);
-      protectOnOff('hu', cfg.protect.fogMinOn, cfg.protect.fogMinOff, r.t, false);
+      protectAir(r.t, wasSafe && !st.co2SafetyOn);
+      st.airReason = st.cmd.air.on ? reason || st.airReason : null;    // C9 5.3: follows the run; null when off
+      protectOnOff('hu', cfg.protect.fogMinOn, cfg.protect.fogMinOff, r.t);
       protectAc(r.t);
       st.cmd.lights.on = st.req.lights.on;
       st.cmd.circ.on = st.req.circ.on;
-      responseCheck(r, prevFog, prevLvl);
-      recordExhaust(prevLvl, r.t, v);
+      responseCheck(r, prevFog, prevOn);
+      recordPurges(prevOn, r.t, v);
       log(r.t);
       return st.cmd;
     }
-
     // Status of one measured value, for the display.
     function status(kind) {
       const s = st.sensors[kind];
@@ -896,33 +872,32 @@
       }
       if (alarmOn('co2Safe')) return { lvl: 'critical', icon: '◆', text: 'Safety level' };
       if (alarmOn('co2Hi')) return { lvl: 'warning', icon: '▲', text: 'Above limit' };
-      if (st.fanCo2On && st.fanBlocked) return { lvl: 'info', icon: '❚❚', text: 'Purge held (RH)' };
-      return st.fanCo2On ? { lvl: 'info', icon: '▲', text: 'Purge on' } : { lvl: 'good', icon: '✓', text: 'Below limit' };
+      if (st.airReason === 'safety') return { lvl: 'serious', icon: '◆', text: 'Safety run' };   // before the co2Safe alarm
+      if (st.air.state === 'purge') return { lvl: 'info', icon: '▲', text: 'Purging' };
+      return { lvl: 'good', icon: '✓', text: 'Below limit' };
     }
 
-    return { update, status, ack, alarmList, exhaust: () => st.exh, setStage, setCrop, setFarmType, cancelRamp, programStatus, get state() { return st; }, snapshot: () => structuredClone(st), cfg };
+    return { update, status, ack, alarmList, purges: () => st.purgeRec, setStage, setCrop, setFarmType, cancelRamp, programStatus, get state() { return st; }, snapshot: () => structuredClone(st), cfg };
   }
 
   // ---------- Settings file (3.1 and device configuration) ----------
-  const SETTINGS_FORMAT = 'mushroom-climate-settings', SETTINGS_VERSION = 1;
+  const SETTINGS_FORMAT = 'mushroom-climate-settings', SETTINGS_VERSION = 2;
   // Number limits ("a.b" = cfg.a.b). Numbers without a limit only need the right type.
   const SETTING_LIMITS = {
-    spT: [10, 35], spRH: [40, 99], co2Lim: [400, 20000], roomM3: [1, 100000],
+    spT: [10, 35], spRH: [40, 99], co2Lim: [400, 20000], roomM3: [1, 100000], airM3h: [50, 10000],
     'rules.co2SafetyAt': [500, 20000], 'rules.rhStop': [1, 20], 'rules.rhResume': [0, 19], 'rules.fanOn': [450, 20000],
-    'rules.fanOff': [400, 20000], 'rules.fanLevel': [1, 3], 'rules.acSetbackC': [0.5, 6], 'rules.acOff': [450, 20000],
-    'rules.acOn': [400, 20000], 'rules.maxSetback': [0, 240],
-    'protect.fanMinOn': [0, 30], 'protect.fanMinOff': [0, 30], 'protect.fogMinOn': [0, 30], 'protect.fogMinOff': [0, 30],
+    'rules.fanOff': [400, 20000], 'rules.purgeMaxS': [60, 900], 'rules.minOffS': [30, 600],
+    'protect.fogMinOn': [0, 30], 'protect.fogMinOff': [0, 30],
     'protect.acMinCmd': [0, 30], 'protect.timedPurgeOn': [1, 60], 'protect.timedPurgeEvery': [5, 240], 'protect.faultFogLevel': [1, 3],
     'program.rampH': [0, 48], 'program.flushes': [1, 10], 'program.days.spawn': [1, 90], 'program.days.pinning': [1, 30],
     'program.days.fruiting': [1, 60], 'program.days.rest': [1, 60], 'program.harvest.dryMin': [0, 240],
     'program.harvest.pickMin': [0, 240], 'program.harvest.floorDrop': [1, 15], 'program.lights.on': [0, 1439], 'program.lights.off': [0, 1439],
     'offsets.T': [-5, 5], 'offsets.RH': [-15, 15], 'offsets.CO2': [-500, 500],
-    'manual.ac.setpoint': [16, 30], 'manual.hu.level': [0, 3], 'manual.fan.level': [0, 3],
+    'manual.ac.setpoint': [16, 30], 'manual.hu.level': [0, 3],
   };
   const SETTING_ENUMS = {
     farmType: Object.keys(FARM_TYPES), crop: Object.keys(CROPS), stage: Object.keys(STAGES), humMode: ['vpd', 'rh'],
-    sensorMode: ['average', 'worst', 'main'], circ: ['auto', 'on', 'off'], 'rules.rhAction': ['stop', 'low'],
-    'rules.acAction': ['setback', 'off'], 'manual.ac.mode': ['cool', 'heat', 'dry', 'fan'],
+    sensorMode: ['average', 'worst', 'main'], circ: ['auto', 'on', 'off'], 'manual.ac.mode': ['cool', 'heat', 'dry', 'fan'],
   };
   // Settings of the one fresh-air fan, removed by contract C9. An older file can still have them.
   const REMOVED_SETTINGS = ['rules.airMode', 'rules.baseFan', 'rules.fanLevel', 'rules.fogBoost', 'rules.rhAction', 'rules.acPurge',
@@ -956,6 +931,9 @@
     const file = typeof input === 'string' ? JSON.parse(input) : input;
     if (!file || file.format !== SETTINGS_FORMAT || typeof file.settings !== 'object') throw new Error('This is not a settings file of this controller.');
     const warnings = [];
+    let src = file.settings;
+    // An older file (version 1, or no version): drop the removed settings first, with a warning for each.
+    if (!(file.version >= 2)) { const up = upgradeSettings(src); src = up.settings; warnings.push(...up.warnings); }
     if (file.version > SETTINGS_VERSION) warnings.push(`The file is version ${file.version}; this controller reads version ${SETTINGS_VERSION}. Newer settings are ignored.`);
     const out = defaultSettings();
     (function merge(dst, src, path) {
@@ -977,12 +955,11 @@
           warnings.push(`"${key}" = "${val}" is not known: default "${def}" kept.`);
         } else dst[k] = val;
       }
-    })(out, file.settings, '');
+    })(out, src, '');
     // Settings that must agree with each other
     const R = out.rules;
     if (!FARM_TYPES[out.farmType].stages.includes(out.stage)) { warnings.push(`Stage "${out.stage}" is not used by this farm type: set to "${FARM_TYPES[out.farmType].stages[0]}".`); out.stage = FARM_TYPES[out.farmType].stages[0]; }
     if (R.fanOff > R.fanOn - 50) { warnings.push('Fan stop level must be at least 50 ppm below the start level: corrected.'); R.fanOff = R.fanOn - 50; }
-    if (R.acOn > R.acOff - 50) { warnings.push('AC "until" level must be at least 50 ppm below the "from" level: corrected.'); R.acOn = R.acOff - 50; }
     if (R.rhResume > R.rhStop - 1) { warnings.push('Humidity "until" must be closer to the target than "at": corrected.'); R.rhResume = R.rhStop - 1; }
     return { settings: out, warnings };
   }

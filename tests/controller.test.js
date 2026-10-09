@@ -1,11 +1,12 @@
 // Unit tests for controller.js. Run: node --test tests/
 const test = require('node:test');
 const assert = require('node:assert/strict');
+require('../air.js');
 require('../controller.js');
 const CC = globalThis.ClimateController;
 
 // A controller with default oyster-fruiting settings: target 25 °C / 88 %, CO2 limit 1000,
-// fan 700-900 ppm, safety level 1500, min on/off 2 min, AC command every 2 min.
+// purge 900 -> 700 ppm, at most 180 s, 60 s off, air exchange 1800 m³/h, safety level 1500, AC command every 2 min.
 function make({ rules = {}, protect = {}, stage } = {}) {
   const cfg = CC.defaultSettings();
   Object.assign(cfg.rules, rules);
@@ -18,56 +19,6 @@ function make({ rules = {}, protect = {}, stage } = {}) {
   const feed = (t, o = {}) => ctl.update({ seq: ++seq, t, T: 25 + (seq % 2) * 0.01, RH: 88 + (seq % 2) * 0.1, CO2: 800 + (seq % 2), tOut: 30, rhOut: 70, ...o });
   return { cfg, ctl, events, feed };
 }
-
-test('purge mode: the fan starts at the start level and stops at the stop level', () => {
-  const { feed } = make({ rules: { airMode: 'purge' } });
-  assert.equal(feed(0, { CO2: 850 }).fan.level, 0);
-  assert.equal(feed(30, { CO2: 900 }).fan.level, 2);          // start at >= 900, purge level Medium
-  assert.equal(feed(150, { CO2: 750 }).fan.level, 2);         // hysteresis: still on
-  assert.equal(feed(180, { CO2: 700 }).fan.level, 0);         // stop at <= 700
-});
-
-test('purge mode: the fan keeps its minimum run time and minimum off time', () => {
-  const { feed, ctl } = make({ rules: { airMode: 'purge' } });
-  feed(0, { CO2: 950 });                                       // on at t=0
-  assert.equal(feed(60, { CO2: 690 }).fan.level, 2, 'still in minimum run time');
-  assert.match(ctl.state.hold.fan, /Minimum run time/);
-  assert.equal(feed(120, { CO2: 690 }).fan.level, 0, 'run time done: off');
-  assert.equal(feed(150, { CO2: 950 }).fan.level, 0, 'still in minimum off time');
-  assert.equal(feed(240, { CO2: 950 }).fan.level, 2, 'off time done: on');
-});
-
-test('humidity first (action "stop"): after 5 min of full fog the fan stops at once; the purge continues after recovery', () => {
-  const { feed, ctl } = make({ rules: { airMode: 'purge', rhAction: 'stop' } });
-  for (let t = 0; t <= 300; t += 30) feed(t, { CO2: 950, RH: 83 + (t % 60) * 0.001 });   // deficit 6: fog level 3 (full)
-  assert.equal(ctl.state.cmd.hu.level, 3);
-  assert.equal(feed(330, { CO2: 950, RH: 83 }).fan.level, 0, 'full fog for 5 min and RH <= 85: the fan stops without the minimum run time');
-  assert.equal(ctl.state.fanBlocked, true);
-  assert.equal(feed(360, { CO2: 950, RH: 86 }).fan.level, 0, 'below the allow level 87');
-  assert.equal(feed(480, { CO2: 950, RH: 87.2 }).fan.level, 2, 'RH >= 87: purge continues');
-});
-
-test('humidity first gives the fogger 5 min at full before the air is reduced', () => {
-  const { feed, ctl } = make({ rules: { airMode: 'purge', rhAction: 'stop' } });
-  for (let t = 0; t <= 270; t += 30) feed(t, { CO2: 950, RH: 83 + (t % 60) * 0.001 });   // below the stop level, fog at full
-  assert.equal(ctl.state.cmd.hu.level, 3);
-  assert.equal(ctl.state.rhLocked, false, 'not yet: fog more before less air');
-  assert.equal(ctl.state.cmd.fan.level, 2);
-  feed(300, { CO2: 950, RH: 83 });
-  assert.equal(ctl.state.rhLocked, true, 'after 5 min of full fog');
-});
-
-test('steady fresh air: base level Low, one step each 5 min with CO2, never below the base in fruiting', () => {
-  const { feed, ctl } = make();
-  assert.equal(feed(0, { CO2: 800 }).fan.level, 1, 'fruiting base level Low');
-  assert.equal(feed(30, { CO2: 950 }).fan.level, 1, 'next step only after 5 min');
-  assert.equal(feed(300, { CO2: 950 }).fan.level, 2);
-  assert.equal(feed(600, { CO2: 950 }).fan.level, 3);
-  assert.equal(feed(900, { CO2: 680 }).fan.level, 2, 'one step down');
-  assert.equal(feed(1200, { CO2: 680 }).fan.level, 1);
-  assert.equal(feed(1500, { CO2: 650 }).fan.level, 1, 'never below the base level');
-  assert.equal(ctl.state.stats.fanStarts, 1, 'one start only');
-});
 
 test('alarm delay: a short excursion gives no alarm; 5 min gives one', () => {
   const { feed, ctl } = make();
@@ -83,74 +34,6 @@ test('the AC is too small: a warning after 1 h at its limit with the room too wa
   assert.equal(ctl.state.alarms.acTooSmall.active, true);
   for (let t = 3 * 3600 + 30; t <= 3 * 3600 + 120; t += 30) feed(t, { T: 25.2 + (t % 60) * 0.001 });
   assert.equal(ctl.state.alarms.acTooSmall.active, false);
-});
-
-test('humidity first can reduce the fan to Low instead of a stop', () => {
-  const { feed } = make({ rules: { rhAction: 'low' } });
-  feed(0, { CO2: 950 });
-  assert.equal(feed(30, { CO2: 950, RH: 84 }).fan.level, 1);
-});
-
-test('the CO2 safety level runs the fan even when humidity is low, with a critical alarm', () => {
-  const { feed, ctl } = make();
-  feed(0, { CO2: 1550, RH: 80 });
-  const cmd = feed(90, { CO2: 1551, RH: 80.1 });                 // critical alarms have a 60 s delay
-  assert.equal(cmd.fan.level, 2);
-  assert.equal(ctl.state.alarms.co2Safe.lvl, 'critical');
-  assert.equal(ctl.state.alarms.co2Safe.active, true);
-});
-
-test('during a purge the AC setpoint goes up (setback); the AC is not turned off', () => {
-  const { feed } = make();
-  const a0 = feed(0, { CO2: 800 }).ac;
-  assert.equal(a0.power, true);
-  const base = a0.setpoint;
-  feed(30, { CO2: 950 });                                      // purge starts; AC command must wait 2 min
-  const a1 = feed(150, { CO2: 950 }).ac;
-  assert.equal(a1.power, true);
-  assert.equal(a1.setpoint, base + 1);
-  feed(300, { CO2: 690 });                                     // purge ends
-  assert.equal(feed(450, { CO2: 690 }).ac.setpoint, base);
-});
-
-test('the old rule "AC off during purge" is still available for comparison', () => {
-  const { feed } = make({ rules: { acAction: 'off' } });
-  feed(0, { CO2: 800 });
-  feed(30, { CO2: 950 });
-  assert.equal(feed(150, { CO2: 950 }).ac.power, false);
-});
-
-test('the setback ends at the longest setback time', () => {
-  const { feed, ctl } = make({ rules: { maxSetback: 5 } });
-  feed(0, { CO2: 950 });
-  feed(30, { CO2: 950 });
-  assert.equal(ctl.state.setbackOn, true);
-  feed(30 + 5 * 60 + 30, { CO2: 950 });
-  assert.equal(ctl.state.setbackOn, false);
-  assert.match(ctl.state.why.ac, /cancelled: it reached 5 min/);
-});
-
-test('purge mode: the fogger never stops for a purge, and fogs one level more', () => {
-  const { feed } = make({ rules: { airMode: 'purge' } });
-  feed(0, { CO2: 800, RH: 85.5 });                             // RH < 86: fogger on, deficit 3.5 -> level 2
-  const lvNoPurge = feed(30, { CO2: 800, RH: 85.6 }).hu.level;
-  assert.equal(lvNoPurge, 2);
-  const lvPurge = feed(60, { CO2: 950, RH: 86.5 }).hu.level;   // purge, RH above the stop level
-  assert.equal(lvPurge, 3, 'fogger stays on during the purge, one level more (deficit 2.5 -> 2, +1)');
-});
-
-test('a missing CO2 sensor gives a fault after 3 readings and starts the timed purge', () => {
-  const { feed, ctl } = make();
-  feed(0, { CO2: 800 });
-  feed(30, { CO2: null });
-  feed(60, { CO2: null });
-  assert.equal(ctl.state.sensors.CO2.fault, false);
-  feed(90, { CO2: null });
-  assert.equal(ctl.state.sensors.CO2.fault, true);
-  assert.equal(ctl.state.alarms.sensor_CO2.active, true);
-  // timed purge: 5 min on every 30 min (by the clock)
-  assert.equal(feed(1800 + 60, { CO2: null }).fan.level, 2);
-  assert.equal(feed(1800 + 600, { CO2: null }).fan.level, 0);
 });
 
 test('a single spike is not used, but a real jump that stays is accepted', () => {
@@ -205,21 +88,6 @@ test('low humidity is critical during pinning', () => {
   const { feed, ctl } = make({ stage: 'pinning' });
   feed(0, { RH: 79 }); feed(60, { RH: 79.1 });                 // critical: 60 s delay
   assert.equal(ctl.state.alarms.rhLo.lvl, 'critical');
-});
-
-test('the exhaust record counts each exhaust and splits the air volume at the full hour', () => {
-  const { feed, ctl } = make({ rules: { airMode: 'purge' } });
-  feed(3000, { CO2: 950 });                                    // on at 50 min, Medium = 600 m³/h
-  feed(3300, { CO2: 950 });
-  feed(3600 + 600, { CO2: 690 });                              // off at 1 h 10 min
-  const X = ctl.exhaust();
-  assert.equal(X.events.length, 1);
-  const e = X.events[0];
-  assert.equal(e.end - e.start, 1200);
-  assert.equal(Math.round(e.m3), 200);                         // 20 min at 600 m³/h
-  const h0 = X.hours.find(b => b.h === 0), h1 = X.hours.find(b => b.h === 1);
-  assert.equal(h0.runS, 600); assert.equal(Math.round(h0.m3), 100); assert.equal(h0.starts, 1);
-  assert.equal(h1.runS, 600); assert.equal(Math.round(h1.m3), 100); assert.equal(h1.starts, 0);
 });
 
 test('one low reading does not change the AC to heat; 5 min of low readings do', () => {
@@ -407,4 +275,115 @@ test('the shock flag: a shock at each new flush, held inside the AC range, with 
   assert.equal(p.cfg.spT, 16, 'the AC lowest setpoint, not 12 °C');
   assert.equal(p.ctl.state.alarms.shockLimit.active, true);
   delete CC.CROPS.coldTest;
+});
+
+// ---------- Air exchange (contract C9 section 5) ----------
+test('purge cycle: idle, purge at the start level, after at the stop level, idle after the minimum off time', () => {
+  const { feed, ctl, events } = make();
+  assert.equal(feed(0, { CO2: 850 }).air.on, false);
+  assert.equal(ctl.state.air.state, 'idle');
+  assert.equal(ctl.state.why.air, 'CO₂ is 850 ppm. The next purge starts at 900 ppm.');
+  assert.equal(feed(30, { CO2: 900 }).air.on, true);
+  assert.equal(ctl.state.air.state, 'purge');
+  assert.equal(ctl.state.air.purgeStart, 30);
+  assert.equal(feed(60, { CO2: 750 }).air.on, true, 'above the stop level: still on');
+  assert.equal(feed(90, { CO2: 700 }).air.on, false, 'stop level after 60 s');
+  assert.equal(ctl.state.air.state, 'after');
+  assert.deepEqual([ctl.state.stats.purges, ctl.state.stats.purgeS, ctl.state.stats.cappedPurges, ctl.state.air.capRun], [1, 60, 0, 0]);
+  feed(120, { CO2: 720 });
+  assert.equal(ctl.state.air.state, 'after', '30 s off');
+  assert.equal(ctl.state.why.air, 'Minimum off time: 30 s.');
+  feed(150, { CO2: 740 });
+  assert.equal(ctl.state.air.state, 'idle', '60 s off');
+  assert.ok(events.some(e => e.text === 'Air exchange on: purge'));
+  assert.ok(events.some(e => e.text === 'Air exchange off (1:00, CO₂ 700 ppm)'));
+});
+
+test('every air run lasts at least 30 s, then stays off for the minimum off time', () => {
+  const { feed, ctl } = make();
+  assert.equal(feed(0, { T: 25.4, tOut: 20 }).air.on, true, 'free cooling');
+  assert.equal(ctl.state.airReason, 'free cooling');
+  assert.equal(feed(10, { T: 25.1, tOut: 20 }).air.on, true, 'no longer warm, but the minimum run time');
+  assert.equal(ctl.state.hold.air, 'Minimum run time: 20 s to wait.');
+  assert.equal(ctl.state.airReason, 'free cooling', 'the run keeps its reason');
+  assert.equal(feed(30, { T: 25.1, tOut: 20.1 }).air.on, false);
+  assert.equal(ctl.state.airReason, null, 'off: no reason');
+  assert.equal(feed(60, { T: 25.4, tOut: 20 }).air.on, false, 'warm again, but the minimum off time (60 s)');
+  assert.equal(ctl.state.hold.air, 'Minimum off time: 30 s to wait.');
+  assert.equal(feed(90, { T: 25.45, tOut: 20 }).air.on, true);
+});
+
+test('a purge ends at the stop level only after 30 s', () => {
+  const { feed, ctl } = make();
+  feed(0, { CO2: 950 });
+  assert.equal(feed(15, { CO2: 690 }).air.on, true, '15 s: still purging');
+  assert.equal(ctl.state.air.state, 'purge');
+  assert.equal(feed(30, { CO2: 680 }).air.on, false);
+});
+
+test('a purge stops at the time cap and counts as capped; the next purge waits for the minimum off time', () => {
+  const { feed, ctl, events } = make();
+  for (let t = 0; t <= 150; t += 30) assert.equal(feed(t, { CO2: 950 + (t % 60 ? 1 : 0) }).air.on, true, `t=${t}`);
+  assert.deepEqual(ctl.purges().cur, { start: 0, end: null, reason: 'purge', co2Start: 950, co2End: null, m3: 75, capped: false }, 'the running purge');
+  assert.equal(feed(180, { CO2: 951 }).air.on, false, '180 s: the cap');
+  assert.deepEqual([ctl.state.air.state, ctl.state.air.capRun, ctl.state.stats.cappedPurges], ['after', 1, 1]);
+  assert.ok(events.some(e => e.text === 'Purge stopped at the time cap (3:00)'));
+  assert.equal(ctl.purges().events[0].capped, true);
+  assert.equal(ctl.purges().hours[0].cappedN, 1);
+  assert.equal(feed(210, { CO2: 950 }).air.on, false, 'minimum off time');
+  assert.equal(feed(240, { CO2: 951 }).air.on, true, 'then the next purge');
+  assert.equal(ctl.state.stats.purges, 2);
+});
+
+test('a CO2 safety run is not a purge: no cap, no count; below the level the normal purge takes over', () => {
+  const { feed, ctl } = make();
+  assert.equal(feed(0, { CO2: 1550 }).air.on, true);
+  assert.deepEqual(ctl.status('CO2'), { lvl: 'serious', icon: '◆', text: 'Safety run' }, 'before the critical alarm (60 s delay)');
+  for (let t = 30; t <= 600; t += 30) assert.equal(feed(t, { CO2: 1550 + (t % 60 ? 1 : 0) }).air.on, true, `t=${t}`);
+  assert.deepEqual(ctl.status('CO2'), { lvl: 'critical', icon: '◆', text: 'Safety level' }, 'the alarm comes first');
+  assert.equal(ctl.state.airReason, 'safety');
+  assert.equal(ctl.state.alarms.co2Safe.active, true);
+  assert.equal(ctl.state.alarms.co2Safe.lvl, 'critical');
+  assert.deepEqual([ctl.state.air.state, ctl.state.air.capRun, ctl.state.stats.purges, ctl.state.stats.cappedPurges], ['idle', 0, 0, 0], '10 min, no cap');
+  assert.equal(feed(630, { CO2: 1485 }).air.on, true, 'above 1480 ppm: still the safety run');
+  assert.equal(ctl.state.airReason, 'safety');
+  assert.equal(feed(660, { CO2: 1470 }).air.on, true, 'below 1480 ppm: a normal purge goes on');
+  assert.deepEqual([ctl.state.air.state, ctl.state.air.purgeStart, ctl.state.airReason, ctl.state.stats.purges], ['purge', 660, 'purge', 1]);
+  assert.deepEqual([ctl.purges().events.length, ctl.purges().cur.reason], [0, 'safety'], 'one air run; it started as a safety run');
+  const b = make();
+  b.feed(0, { CO2: 950 }); b.feed(30, { CO2: 1400 }); b.feed(60, { CO2: 1550 });
+  const S = b.ctl.state.stats;
+  assert.deepEqual([b.ctl.state.air.state, S.purges, S.purgeS, S.cappedPurges, b.ctl.state.airReason], ['idle', 1, 60, 0, 'safety'], 'a running purge ends, not capped');
+});
+
+test('the purge record: each air run with reason, CO2, air volume and capped flag, split at the full hour', () => {
+  const { feed, ctl } = make({ rules: { purgeMaxS: 900 } });
+  feed(3300, { CO2: 950 });                                    // on at 55 min
+  feed(3600, { CO2: 950 });
+  feed(3900, { CO2: 690 });                                    // off at 1 h 5 min
+  const X = ctl.purges();
+  assert.equal(X.cur, null);
+  assert.deepEqual(X.events, [{ start: 3300, end: 3900, reason: 'purge', co2Start: 950, co2End: 690, m3: 300, capped: false }]);   // 10 min at 1800 m³/h
+  const h0 = X.hours.find(b => b.h === 0), h1 = X.hours.find(b => b.h === 1);
+  assert.deepEqual([h0.runS, h0.m3, h0.starts, h0.cappedN], [300, 150, 1, 0]);
+  assert.deepEqual([h1.runS, h1.m3, h1.starts, h1.cappedN], [300, 150, 0, 0]);
+  const S = ctl.state.stats;
+  assert.deepEqual([S.airOnS, S.purges, S.purgeS, S.longestPurgeS, S.cappedPurges], [600, 1, 600, 600, 0]);
+});
+
+test('status CO2 and the why text while purging; manual control acts at once', () => {
+  const { feed, ctl, cfg } = make();
+  feed(0, { CO2: 950 });
+  assert.deepEqual(ctl.status('CO2'), { lvl: 'info', icon: '▲', text: 'Purging' });
+  assert.equal(ctl.state.why.air, 'Purging since 0:00 (at most 3:00). It stops at 700 ppm.');
+  feed(60, { CO2: 940 });
+  assert.equal(ctl.state.why.air, 'Purging since 1:00 (at most 3:00). It stops at 700 ppm.');
+  cfg.manual.air = { auto: false, on: false };
+  assert.equal(feed(70, { CO2: 930 }).air.on, false, 'a manual Off acts at once');
+  assert.equal(ctl.state.air.state, 'idle');
+  assert.equal(ctl.state.airReason, null, 'off: no reason');
+  assert.deepEqual(ctl.status('CO2'), { lvl: 'good', icon: '✓', text: 'Below limit' });
+  cfg.manual.air.on = true;
+  assert.equal(feed(80, { CO2: 920 }).air.on, true, 'a manual On acts at once');
+  assert.equal(ctl.state.airReason, 'manual');
 });
