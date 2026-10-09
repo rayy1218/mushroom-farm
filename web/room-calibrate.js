@@ -261,7 +261,7 @@ function mount(el, ctx) {
     const ts = readings.map(r => r.t);
     range = { from: Math.min(...ts), to: Math.max(...ts) };
     const g = historyGaps(readings);
-    const text = `${q.days} days · ${readings.length} readings` + (g > 0 ? ` The range has ${g} gap(s) (the server was stopped); the fit keeps the machines unchanged through them.` : '');
+    const text = `${q.days} ${q.days === 1 ? 'day' : 'days'} · ${readings.length} readings` + (g > 0 ? ` The range has ${g} gap(s) (the server was stopped); the fit keeps the machines unchanged through them.` : '');
     msg(text); rebuild();
   });
   $('#calFile').addEventListener('change', e => {
@@ -324,7 +324,7 @@ function mount(el, ctx) {
     sel.disabled = false; $('#pvUse').disabled = false; pvMsg('');
     sel.replaceChildren(...cycles.map(c => {
       const o = document.createElement('option'); o.value = String(c.id);
-      o.textContent = `Run ${c.id} · ${farmDate(c.created_at)} · ${c.days} days`; return o;
+      o.textContent = `Run ${c.id} · ${farmDate(c.created_at)} · ${c.days} ${c.days === 1 ? 'day' : 'days'}`; return o;
     }));
     const want = ctx.params && +ctx.params.runId;
     sel.value = String(cycles.some(c => c.id === want) ? want : cycles[0].id);
