@@ -4,6 +4,7 @@ const { DatabaseSync } = require('node:sqlite');
 const fs = require('node:fs');
 const path = require('node:path');
 const { NotFoundError, toJson, fromJson } = require('./db-common.js');
+const { SCHEMA_V4_HARVEST } = require('./harvest-schema.js');
 
 // Schema version 1 (C1 section 4, verbatim).
 const SCHEMA_V1 = `
@@ -137,10 +138,66 @@ CREATE INDEX readings_room_t ON readings (room_id, t);
 ALTER TABLE rooms DROP COLUMN vent;
 `;
 
+// Schema version 3 (C1 section 4.4, verbatim): the wave 2 columns and tables.
+const SCHEMA_V3_ROOMS = `
+-- Upgrade 3: room-centred app and C8 equipment (lead decisions 18, 20, 23, 30, 33, 39, 50, 54).
+
+-- Readings: what calib.js needs to replay a live room, and what Calibrate compares with a simulation (LD 20).
+ALTER TABLE readings ADD COLUMN ac_fan TEXT CHECK (ac_fan IN ('low', 'auto', 'high'));
+ALTER TABLE readings ADD COLUMN stage  TEXT;
+ALTER TABLE readings ADD COLUMN core   REAL;
+
+-- Calibrations: where the fitted log came from (LD 23) and the machines it was fitted with (LD 50).
+ALTER TABLE calibrations ADD COLUMN source    TEXT CHECK (source IN ('csv', 'history', 'import'));
+ALTER TABLE calibrations ADD COLUMN log_from  INTEGER;
+ALTER TABLE calibrations ADD COLUMN log_to    INTEGER;
+ALTER TABLE calibrations ADD COLUMN equipment TEXT;
+
+-- Saved Simulate runs: capacity checks, full cycles and C8 equipment checks (LD 18, 39).
+CREATE TABLE simulation_runs (
+  id          INTEGER PRIMARY KEY,
+  room_id     INTEGER NOT NULL REFERENCES rooms (id),
+  created_at  INTEGER NOT NULL,
+  kind        TEXT    NOT NULL CHECK (kind IN ('cycle', 'capacity', 'equipment')),
+  verdict     TEXT    NOT NULL CHECK (verdict IN ('pass', 'fail', 'impossible', 'good', 'tight', 'too-dense', 'too-empty',
+                                                 'enough', 'too-small', 'too-big', 'oversized')),
+  blocks      INTEGER NOT NULL CHECK (blocks >= 0),
+  days        INTEGER CHECK (days >= 1),
+  kwh         REAL,
+  rm          REAL,
+  utilisation INTEGER,
+  real_start  INTEGER,
+  note        TEXT,
+  inputs      TEXT    NOT NULL,
+  result      TEXT    NOT NULL,
+  CHECK ((kind = 'cycle'     AND verdict IN ('pass', 'fail', 'impossible'))
+      OR (kind = 'capacity'  AND verdict IN ('good', 'tight', 'too-dense', 'too-empty', 'impossible'))
+      OR (kind = 'equipment' AND verdict IN ('enough', 'too-small', 'too-big', 'oversized', 'impossible')))
+) STRICT;
+CREATE INDEX simulation_runs_room ON simulation_runs (room_id, id);
+
+-- C8: the machines of each room (one row per room; replaced on save) (LD 33, 54).
+CREATE TABLE room_equipment (
+  room_id   INTEGER PRIMARY KEY REFERENCES rooms (id),
+  saved_at  INTEGER NOT NULL,
+  ac_hp     REAL    NOT NULL CHECK (ac_hp IN (1, 1.5, 2, 2.5, 3, 4, 5, 6)),
+  ac_units  INTEGER NOT NULL CHECK (ac_units BETWEEN 1 AND 4),
+  fog_lph   REAL    NOT NULL CHECK (fog_lph BETWEEN 0.5 AND 50),
+  air_m3h   REAL    NOT NULL CHECK (air_m3h BETWEEN 50 AND 10000),
+  walls     TEXT    CHECK (walls IN ('zinc', 'brick115', 'brick230', 'eps50', 'eps75', 'eps100', 'pu50', 'pu75', 'pu100')),
+  roof      TEXT    CHECK (roof IN ('zinc', 'eps50', 'eps75', 'eps100', 'pu50', 'pu75', 'pu100')),
+  height    REAL    NOT NULL CHECK (height BETWEEN 2 AND 6),
+  CHECK ((walls IS NULL) = (roof IS NULL))
+) STRICT;
+`;
+
 // Released upgrades are never edited; a new one is appended (C1 section 3).
+// Upgrade 4 (C10 3) lives in harvest-schema.js; db.js prepares no statement on its tables.
 const UPGRADES = [
   { version: 1, sql: SCHEMA_V1 },
   { version: 2, sql: SCHEMA_V2_AIR },
+  { version: 3, sql: SCHEMA_V3_ROOMS },
+  { version: 4, sql: SCHEMA_V4_HARVEST },
 ];
 
 // --- Section 4 binding helper: every bound value goes through this. ---
@@ -364,12 +421,12 @@ function buildDb(conn, dbPath, version, now) {
   }
 
   // Readings (section 6.6)
-  const READING_KEYS = ['room_id', 't', 'T', 'RH', 'CO2', 't_out', 'rh_out', 'ac_mode', 'ac_setpoint', 'fog', 'air', 'lights', 'circ', 'power_w', 'kwh'];
+  const READING_KEYS = ['room_id', 't', 'T', 'RH', 'CO2', 't_out', 'rh_out', 'ac_mode', 'ac_setpoint', 'fog', 'air', 'lights', 'circ', 'power_w', 'kwh', 'ac_fan', 'stage', 'core'];
   const insertReadingStmt = conn.prepare(
-    'INSERT INTO readings (room_id, t, temp, RH, CO2, t_out, rh_out, ac_mode, ac_setpoint, fog, air, lights, circ, power_w, kwh) ' +
-    'VALUES (:room_id, :t, :temp, :RH, :CO2, :t_out, :rh_out, :ac_mode, :ac_setpoint, :fog, :air, :lights, :circ, :power_w, :kwh)'
+    'INSERT INTO readings (room_id, t, temp, RH, CO2, t_out, rh_out, ac_mode, ac_setpoint, fog, air, lights, circ, power_w, kwh, ac_fan, stage, core) ' +
+    'VALUES (:room_id, :t, :temp, :RH, :CO2, :t_out, :rh_out, :ac_mode, :ac_setpoint, :fog, :air, :lights, :circ, :power_w, :kwh, :ac_fan, :stage, :core)'
   );
-  const RAW_READINGS_COLS = 'room_id, t, temp AS T, RH, CO2, t_out, rh_out, ac_mode, ac_setpoint, fog, air, lights, circ, power_w, kwh';
+  const RAW_READINGS_COLS = 'room_id, t, temp AS T, RH, CO2, t_out, rh_out, ac_mode, ac_setpoint, fog, air, lights, circ, power_w, kwh, ac_fan, stage, core';
   const rawReadingsStmt = conn.prepare(
     `SELECT ${RAW_READINGS_COLS} FROM readings WHERE room_id = ? AND t >= ? AND t <= ? ORDER BY readings.t, readings.rowid`
   );
@@ -377,14 +434,15 @@ function buildDb(conn, dbPath, version, now) {
     `SELECT ${RAW_READINGS_COLS} FROM readings WHERE room_id = ? ORDER BY readings.t DESC, readings.rowid DESC LIMIT 1`
   );
   const bucketReadingsStmt = conn.prepare(`
-    SELECT room_id, b AS t, T, RH, CO2, t_out, rh_out, ac_mode, ac_setpoint, fog, air, lights, circ, power_w, kwh
+    SELECT room_id, b AS t, T, RH, CO2, t_out, rh_out, ac_mode, ac_setpoint, fog, air, lights, circ, power_w, kwh,
+           ac_fan, stage, core
     FROM (
       SELECT room_id,
              (t / CAST(:step AS INTEGER)) * CAST(:step AS INTEGER) AS b,
              AVG(temp) AS T, AVG(RH) AS RH, AVG(CO2) AS CO2, AVG(t_out) AS t_out, AVG(rh_out) AS rh_out,
              AVG(ac_setpoint) AS ac_setpoint, AVG(fog) AS fog, AVG(air) AS air,
-             AVG(lights) AS lights, AVG(circ) AS circ, AVG(power_w) AS power_w,
-             MAX(t) AS t_last, ac_mode, kwh
+             AVG(lights) AS lights, AVG(circ) AS circ, AVG(power_w) AS power_w, AVG(core) AS core,
+             MAX(t) AS t_last, ac_mode, kwh, ac_fan, stage
       FROM readings
       WHERE room_id = :room_id AND t >= :from AND t <= :to
       GROUP BY b
@@ -402,6 +460,7 @@ function buildDb(conn, dbPath, version, now) {
       room_id: roomId, t: val(r.t), temp: val(r.T), RH: val(r.RH), CO2: val(r.CO2),
       t_out: val(r.t_out), rh_out: val(r.rh_out), ac_mode: val(r.ac_mode), ac_setpoint: val(r.ac_setpoint),
       fog: val(r.fog), air: val(r.air), lights: val(r.lights), circ: val(r.circ), power_w: val(r.power_w), kwh: val(r.kwh),
+      ac_fan: val(r.ac_fan), stage: val(r.stage), core: val(r.core),
     });
     return undefined;
   }
@@ -553,8 +612,10 @@ function buildDb(conn, dbPath, version, now) {
 
   // Calibrations (section 6.10)
   const insertCalibStmt = conn.prepare(
-    'INSERT INTO calibrations (room_id, run_at, ua, inf_ach, moist_buffer, co2_per_block, rmse_t, rmse_rh, rmse_co2, log_rows) ' +
-    'VALUES (:room_id, :run_at, :ua, :inf_ach, :moist_buffer, :co2_per_block, :rmse_t, :rmse_rh, :rmse_co2, :log_rows)'
+    'INSERT INTO calibrations (room_id, run_at, ua, inf_ach, moist_buffer, co2_per_block, rmse_t, rmse_rh, rmse_co2, log_rows, ' +
+    'source, log_from, log_to, equipment) ' +
+    'VALUES (:room_id, :run_at, :ua, :inf_ach, :moist_buffer, :co2_per_block, :rmse_t, :rmse_rh, :rmse_co2, :log_rows, ' +
+    ':source, :log_from, :log_to, :equipment)'
   );
   const getCalibByIdStmt = conn.prepare('SELECT * FROM calibrations WHERE id = :id');
   const listCalibStmt = conn.prepare('SELECT * FROM calibrations WHERE room_id = :room_id ORDER BY run_at DESC, id DESC');
@@ -564,10 +625,14 @@ function buildDb(conn, dbPath, version, now) {
     'SELECT * FROM calibrations WHERE room_id = :room_id AND applied_at IS NOT NULL ORDER BY applied_at DESC, id DESC LIMIT 1'
   );
 
+  function calibToPublic(row) {
+    return row ? { ...row, equipment: row.equipment === null ? null : fromJson(row.equipment) } : null;
+  }
+
   function saveCalibration(roomId, run) {
     live();
     roomCheck(roomId);
-    fields('saveCalibration', run, ['ua', 'inf_ach', 'moist_buffer', 'co2_per_block', 'rmse_t', 'rmse_rh', 'rmse_co2', 'log_rows', 'run_at']);
+    fields('saveCalibration', run, ['ua', 'inf_ach', 'moist_buffer', 'co2_per_block', 'rmse_t', 'rmse_rh', 'rmse_co2', 'log_rows', 'run_at', 'source', 'log_from', 'log_to', 'equipment']);
     const r = run || {};
     const run_at = r.run_at === undefined ? now() : r.run_at;
     const info = insertCalibStmt.run({
@@ -577,14 +642,16 @@ function buildDb(conn, dbPath, version, now) {
       rmse_rh: val(r.rmse_rh === undefined ? null : r.rmse_rh),
       rmse_co2: val(r.rmse_co2 === undefined ? null : r.rmse_co2),
       log_rows: val(r.log_rows === undefined ? null : r.log_rows),
+      source: val(r.source), log_from: val(r.log_from), log_to: val(r.log_to),
+      equipment: r.equipment == null ? null : toJson(r.equipment),
     });
-    return plain(getCalibByIdStmt.get({ id: info.lastInsertRowid }));
+    return calibToPublic(getCalibByIdStmt.get({ id: info.lastInsertRowid }));
   }
 
   function listCalibrations(roomId) {
     live();
     roomCheck(roomId);
-    return listCalibStmt.all({ room_id: roomId }).map(plain);
+    return listCalibStmt.all({ room_id: roomId }).map(calibToPublic);
   }
 
   function applyCalibration(roomId, runId, at) {
@@ -595,14 +662,14 @@ function buildDb(conn, dbPath, version, now) {
     const row = findCalibStmt.get({ id: runId, room_id: roomId });
     if (!row) throw new NotFoundError('calibration', runId);
     applyCalibStmt.run({ id: runId, at: atVal });
-    return plain(findCalibStmt.get({ id: runId, room_id: roomId }));
+    return calibToPublic(findCalibStmt.get({ id: runId, room_id: roomId }));
   }
 
   function currentCalibration(roomId) {
     live();
     roomCheck(roomId);
     const row = currentCalibStmt.get({ room_id: roomId });
-    return row ? plain(row) : null;
+    return calibToPublic(row);
   }
 
   // Crop mix (section 6.11)
@@ -665,6 +732,149 @@ function buildDb(conn, dbPath, version, now) {
     return capacityRowToPublic(latestCapacityStmt.get({ room_id: roomId }));
   }
 
+  // Simulation runs (section 6.13)
+  const insertSimStmt = conn.prepare(
+    'INSERT INTO simulation_runs (room_id, created_at, kind, verdict, blocks, days, kwh, rm, utilisation, real_start, note, inputs, result) ' +
+    'VALUES (:room_id, :created_at, :kind, :verdict, :blocks, :days, :kwh, :rm, :utilisation, :real_start, :note, :inputs, :result)'
+  );
+  const SIM_INFO_COLS = 'id, room_id, created_at, kind, verdict, blocks, days, kwh, rm, utilisation, real_start, note, inputs';
+  const getSimStmt = conn.prepare(`SELECT ${SIM_INFO_COLS}, result FROM simulation_runs WHERE id = :id AND room_id = :room_id`);
+  const getSimInfoStmt = conn.prepare(`SELECT ${SIM_INFO_COLS} FROM simulation_runs WHERE id = :id AND room_id = :room_id`);
+  const listSimStmt = conn.prepare(
+    `SELECT ${SIM_INFO_COLS} FROM simulation_runs WHERE room_id = :room_id ORDER BY id DESC LIMIT :limit`
+  );
+  const listSimBeforeStmt = conn.prepare(
+    `SELECT ${SIM_INFO_COLS} FROM simulation_runs WHERE room_id = :room_id AND id < :before ORDER BY id DESC LIMIT :limit`
+  );
+  const updateSimNoteStmt = conn.prepare('UPDATE simulation_runs SET note = :v WHERE id = :id');
+  const updateSimStartStmt = conn.prepare('UPDATE simulation_runs SET real_start = :v WHERE id = :id');
+  const deleteSimStmt = conn.prepare('DELETE FROM simulation_runs WHERE id = :id');
+
+  function isObject(v) {
+    return v !== null && typeof v === 'object';
+  }
+
+  function finiteOrNull(v) {
+    return typeof v === 'number' && Number.isFinite(v) ? v : null;
+  }
+
+  function simToPublic(row) {
+    if (!row) return null;
+    const out = { ...row, inputs: fromJson(row.inputs) };
+    if ('result' in row) out.result = fromJson(row.result);
+    return out;
+  }
+
+  function findSim(roomId, runId, stmt) {
+    const row = Number.isInteger(runId) ? stmt.get({ id: runId, room_id: roomId }) : undefined;
+    if (!row) throw new NotFoundError('simulation', runId);
+    return row;
+  }
+
+  function saveSimulationRun(roomId, run) {
+    live();
+    roomCheck(roomId);
+    fields('saveSimulationRun', run, ['kind', 'inputs', 'result', 'note', 'real_start', 'at']);
+    const r = run || {};
+    const result = isObject(r.result) ? r.result : {};
+    const totals = isObject(result.totals) ? result.totals : null;
+    let verdict;
+    if (r.kind === 'cycle') {
+      verdict = result.verdict === 'impossible' ? 'impossible' : (totals && totals.pass === true ? 'pass' : 'fail');
+    } else if (r.kind === 'equipment') {
+      verdict = result.verdict === 'impossible' ? 'impossible' : (isObject(result.ac) ? result.ac.verdict : undefined);
+    } else {
+      verdict = result.verdict;
+    }
+    let blocks = 0;
+    const mix = isObject(r.inputs) ? r.inputs.mix : undefined;
+    if (Array.isArray(mix)) for (const m of mix) if (isObject(m) && Number.isFinite(m.blocks)) blocks += m.blocks;
+    const cycle = r.kind === 'cycle' && totals;
+    const info = insertSimStmt.run({
+      room_id: roomId, created_at: val(r.at === undefined ? now() : r.at), kind: val(r.kind), verdict: val(verdict), blocks,
+      days: cycle ? finiteOrNull(totals.days) : null,
+      kwh: cycle ? finiteOrNull(totals.kwh) : null,
+      rm: cycle ? finiteOrNull(totals.rm) : null,
+      utilisation: r.kind === 'capacity' ? finiteOrNull(result.utilisation) : null,
+      real_start: val(r.real_start), note: val(r.note), inputs: jsonVal(r.inputs), result: jsonVal(r.result),
+    });
+    return simToPublic(getSimStmt.get({ id: info.lastInsertRowid, room_id: roomId }));
+  }
+
+  function listSimulationRuns(roomId, options) {
+    live();
+    roomCheck(roomId);
+    fields('listSimulationRuns', options, ['limit', 'before']);
+    const o = options || {};
+    const limit = o.limit === undefined ? 50 : o.limit;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 200) throw new RangeError('listSimulationRuns: limit must be an integer from 1 to 200');
+    const before = o.before === undefined ? null : o.before;
+    if (before !== null && !Number.isInteger(before)) throw new RangeError('listSimulationRuns: before must be an integer or null');
+    const rows = before === null
+      ? listSimStmt.all({ room_id: roomId, limit })
+      : listSimBeforeStmt.all({ room_id: roomId, before, limit });
+    return rows.map(simToPublic);
+  }
+
+  function getSimulationRun(roomId, runId) {
+    live();
+    roomCheck(roomId);
+    return simToPublic(findSim(roomId, runId, getSimStmt));
+  }
+
+  function updateSimulationRun(roomId, runId, changes) {
+    live();
+    roomCheck(roomId);
+    fields('updateSimulationRun', changes, ['note', 'real_start']);
+    findSim(roomId, runId, getSimInfoStmt); // lead decision 75: the run before the column rules
+    const c = changes || {};
+    return tx(() => {
+      if ('note' in c) updateSimNoteStmt.run({ v: val(c.note), id: runId });
+      if ('real_start' in c) updateSimStartStmt.run({ v: val(c.real_start), id: runId });
+      return simToPublic(getSimInfoStmt.get({ id: runId, room_id: roomId }));
+    });
+  }
+
+  function deleteSimulationRun(roomId, runId) {
+    live();
+    roomCheck(roomId);
+    const row = simToPublic(findSim(roomId, runId, getSimInfoStmt));
+    deleteSimStmt.run({ id: runId });
+    return row;
+  }
+
+  // Room equipment (section 6.14)
+  const EQUIPMENT_FIELDS = ['ac_hp', 'ac_units', 'fog_lph', 'air_m3h', 'walls', 'roof', 'height'];
+  const getEquipmentStmt = conn.prepare('SELECT * FROM room_equipment WHERE room_id = :room_id');
+  const saveEquipmentStmt = conn.prepare(
+    'INSERT INTO room_equipment (room_id, saved_at, ac_hp, ac_units, fog_lph, air_m3h, walls, roof, height) ' +
+    'VALUES (:room_id, :saved_at, :ac_hp, :ac_units, :fog_lph, :air_m3h, :walls, :roof, :height) ' +
+    'ON CONFLICT (room_id) DO UPDATE SET saved_at = :saved_at, ac_hp = :ac_hp, ac_units = :ac_units, fog_lph = :fog_lph, ' +
+    'air_m3h = :air_m3h, walls = :walls, roof = :roof, height = :height'
+  );
+
+  function getEquipment(roomId) {
+    live();
+    roomCheck(roomId);
+    return plain(getEquipmentStmt.get({ room_id: roomId }));
+  }
+
+  function saveEquipment(roomId, eq) {
+    live();
+    roomCheck(roomId);
+    fields('saveEquipment', eq, EQUIPMENT_FIELDS.concat('at'));
+    const e = eq || {};
+    for (const key of EQUIPMENT_FIELDS) {
+      if (e[key] === undefined) throw new TypeError(`saveEquipment: missing field "${key}"`);
+    }
+    saveEquipmentStmt.run({
+      room_id: roomId, saved_at: val(e.at === undefined ? now() : e.at),
+      ac_hp: val(e.ac_hp), ac_units: val(e.ac_units), fog_lph: val(e.fog_lph), air_m3h: val(e.air_m3h),
+      walls: val(e.walls), roof: val(e.roof), height: val(e.height),
+    });
+    return plain(getEquipmentStmt.get({ room_id: roomId }));
+  }
+
   function listRooms(options) {
     live();
     fields('listRooms', options, ['includeArchived']);
@@ -680,7 +890,7 @@ function buildDb(conn, dbPath, version, now) {
     return undefined;
   }
 
-  return {
+  const db = {
     path: dbPath,
     version,
     close,
@@ -712,7 +922,17 @@ function buildDb(conn, dbPath, version, now) {
     replaceMix,
     saveCapacityReport,
     latestCapacityReport,
+    saveSimulationRun,
+    listSimulationRuns,
+    getSimulationRun,
+    updateSimulationRun,
+    deleteSimulationRun,
+    getEquipment,
+    saveEquipment,
   };
+  // The connection for server/harvest-db.js (C1 6.3, lead decision 61): read only, closed only by close().
+  Object.defineProperty(db, 'sqlite', { value: conn, enumerable: true, writable: false, configurable: false });
+  return db;
 }
 
 module.exports = { openDb, NotFoundError, UPGRADES };
