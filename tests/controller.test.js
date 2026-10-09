@@ -452,3 +452,44 @@ test('humidity first: the purge goes when RH recovers; a running purge is never 
   assert.equal(c.ctl.state.rhLocked, false, 'wetter outdoor air: a purge does not dry the room');
   assert.equal(c.feed(330, { CO2: 950, RH: 83, tOut: 33, rhOut: 90 }).air.on, true);
 });
+
+test('a CO2 sensor fault: timed purge from the setting, run capped at purgeMaxS, period with the minimum off time', () => {
+  const { feed, ctl, events } = make();
+  feed(0, { CO2: 800 });
+  feed(30, { CO2: null });
+  feed(60, { CO2: null });
+  assert.equal(ctl.state.sensors.CO2.fault, false);
+  // share 10 / 30 min; run min(180 s, 600 s) = 180 s; period max(180 s / share, 180 s + 60 s) = 540 s: on while t mod 540 < 180
+  assert.equal(feed(90, { CO2: null }).air.on, true);
+  assert.equal(ctl.state.sensors.CO2.fault, true);
+  assert.equal(ctl.state.alarms.sensor_CO2.active, true);
+  assert.equal(ctl.state.air.timed, true);
+  assert.equal(ctl.state.airReason, 'timed');
+  assert.equal(ctl.state.why.air, 'CO₂ sensor fault: timed purge, 180 s of each 540 s (from the setting).');
+  assert.ok(events.some(e => e.text === 'CO₂ sensor fault: timed purge started'));
+  assert.equal(feed(240, { CO2: null }).air.on, false);
+  assert.equal(ctl.state.why.air, 'CO₂ sensor fault: timed purge. The air exchange is in the off part of the cycle.');
+  assert.equal(ctl.purges().events.at(-1).reason, 'timed');
+  assert.equal(feed(540, { CO2: null }).air.on, true);
+  assert.equal(feed(710, { CO2: null }).air.on, true);
+  assert.equal(feed(740, { CO2: null }).air.on, false);
+  assert.deepEqual(ctl.status('CO2'), { lvl: 'serious', icon: '!', text: 'Sensor fault' });
+  feed(770, { CO2: 800 }); feed(800, { CO2: 801 });
+  assert.equal(ctl.state.air.timed, false);
+  assert.ok(events.some(e => e.text === 'CO₂ sensor back: timed purge ended'));
+});
+
+test('a CO2 sensor fault: the timed purge share is learned from the hours before the fault', () => {
+  const a = make(); a.feed(0);
+  const snap = a.ctl.snapshot();
+  snap.purgeRec.hours = [0, 1, 2, 3].map(h => ({ h, runS: 600, starts: 2, m3: 300, cappedN: 0, fogLS: 0, acHighS: 0, acLowS: 0 }));
+  const ctl = CC.create(a.cfg, snap, null);
+  let seq = 100;
+  const feed = (t, o) => ctl.update({ seq: ++seq, t, T: 25 + (seq % 2) * 0.01, RH: 88 + (seq % 2) * 0.1, CO2: 800 + (seq % 2), tOut: 30, rhOut: 70, ...o });
+  feed(14400);
+  for (const t of [14430, 14460, 14490]) feed(t, { CO2: null });
+  assert.equal(ctl.state.air.timed, true);
+  // 600 s per hour x 1.1: share 0.1833; run min(180 s, 330 s) = 180 s; period 180 / 0.1833 = 982 s: on from 15 x 982 = 14727 s
+  assert.equal(feed(14730, { CO2: null }).air.on, true);
+  assert.equal(ctl.state.why.air, 'CO₂ sensor fault: timed purge, 180 s of each 982 s (from this hour of an earlier day).');
+});

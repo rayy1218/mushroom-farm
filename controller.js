@@ -496,7 +496,9 @@
       const rate = AIR.riseRate(st.airPts);
       // P1 CO2 safety level, off 20 ppm below it
       st.co2SafetyOn = R.co2Safety && !f.CO2 && v.CO2 >= (st.co2SafetyOn ? R.co2SafetyAt - 20 : R.co2SafetyAt);
-      if (!cfg.manual.air.auto || f.CO2 || st.co2SafetyOn) {
+      const manual = !cfg.manual.air.auto;
+      A.timed = !manual && !!f.CO2;
+      if (manual || f.CO2 || st.co2SafetyOn) {
         // No purge cycle: the grower, the timed purge or the safety run (airExchange) runs the air exchange.
         // A safety run is not a purge (5.3): a purge running when it starts ends here, not capped.
         if (A.state === 'purge') endPurge(t, null);
@@ -644,10 +646,10 @@
       st.why.hu = why + (lv > 0 ? ` Level ${lv}.` : '');
     }
 
-    // The air exchange request (C9 5.6): manual, then P1 safety, P3 purge, P4 free cooling and drying.
+    // The air exchange request (C9 5.6): manual, then P1 safety, P3 purge or timed purge, P4 free cooling and drying.
     // Returns the reason of the request ('' = off).
     function airExchange(v, f, t) {
-      const m = cfg.manual.air, q = st.req.air, R = cfg.rules, A = st.air;
+      const m = cfg.manual.air, q = st.req.air, R = cfg.rules, P = cfg.protect, A = st.air;
       if (!m.auto) { q.on = !!m.on; st.why.air = 'Manual control. The controller does not change this output.'; return q.on ? 'manual' : ''; }
       // Outdoor drying (hysteresis): RH well above the target and drier outdoor air.
       if (!R.outdoorDry || f.out || f.RH || f.T) st.fanDryOn = false;
@@ -658,15 +660,26 @@
       }
       // Free cooling: the room is warm and outdoor air is at least 3 °C cooler.
       const cool = R.freeCool && !f.out && !f.T && v.T - cfg.spT > 0.3 && v.tOut < v.T - 3;
-      const reason = st.co2SafetyOn ? 'safety' : A.state === 'purge' ? 'purge' : cool ? 'free cooling' : st.fanDryOn ? 'drying' : '';
+      // Timed purge (CO2 sensor fault): a share of each period, learned from the hours before the fault or from the setting.
+      let timed = null;
+      if (A.timed) {
+        const learned = P.learnSafe ? historyFor('runS', t, st.sensors.CO2.faultSince) : null;   // s per hour
+        const share = clamp(learned != null ? learned / 3600 * 1.1 : P.timedPurgeOn / P.timedPurgeEvery, 0.02, 0.9);
+        const run = Math.min(R.purgeMaxS, share * P.timedPurgeEvery * 60), period = Math.max(run / share, run + R.minOffS);
+        timed = { on: t % period < run, run, period, learned: learned != null };
+      }
+      const reason = st.co2SafetyOn ? 'safety' : A.state === 'purge' ? 'purge' : timed && timed.on ? 'timed'
+        : cool ? 'free cooling' : st.fanDryOn ? 'drying' : '';
       q.on = reason !== '';
-      st.why.air = airWhy(v, reason);
+      st.why.air = airWhy(v, reason, timed);
       return reason;
     }
     // Plain-language reason for the air exchange (C9 5.7)
-    function airWhy(v, reason) {
+    function airWhy(v, reason, timed) {
       const R = cfg.rules, A = st.air, t = st.lastT;
       if (reason === 'safety') return `CO₂ is ${ppm(v.CO2)} ppm, at or above the safety level ${R.co2SafetyAt}. The air exchange runs even when humidity is low.`;
+      if (timed) return timed.on ? `CO₂ sensor fault: timed purge, ${Math.round(timed.run)} s of each ${Math.round(timed.period)} s (from ${timed.learned ? 'this hour of an earlier day' : 'the setting'}).`
+        : 'CO₂ sensor fault: timed purge. The air exchange is in the off part of the cycle.';
       if (A.state === 'purge') return `Purging since ${mss(t - A.purgeStart)} (at most ${mss(R.purgeMaxS)}). It stops at ${R.fanOff} ppm.`;
       if (A.delayed) return `Humidity first: RH ${v.RH.toFixed(1)} % is at or below ${(st.rhT - R.rhStop).toFixed(0)} % and outdoor air is drier. The purge waits until RH is ${(st.rhT - R.rhResume).toFixed(0)} % or CO₂ is ${cfg.co2Lim} ppm.`;
       if (reason === 'free cooling') return `Outdoor air is ${(v.T - v.tOut).toFixed(1)} °C cooler. The air exchange runs to help the AC.`;
@@ -832,6 +845,7 @@
       if (now.safety !== p.safety) say(t, now.safety ? 'critical' : 'good', now.safety ? 'CO₂ safety level: the air exchange runs, ignoring the time cap' : 'CO₂ below the safety level');
       if (now.delayed && !p.delayed) say(t, 'warning', 'Purge delayed: humidity first');
       else if (!now.delayed && p.delayed && !st.rhLocked) say(t, 'good', 'Purge allowed again: humidity recovered');
+      if (now.timed !== p.timed) say(t, now.timed ? 'serious' : 'good', now.timed ? 'CO₂ sensor fault: timed purge started' : 'CO₂ sensor back: timed purge ended');
       if (now.fogOn !== p.fogOn) say(t, 'info', (now.fogOn ? 'Fogger on' : 'Fogger off') + man('hu'));
       if (now.lights !== p.lights) say(t, 'info', now.lights ? 'Lights on' : 'Lights off');
       if (now.airOn && !p.airOn) say(t, 'info', `Air exchange on: ${now.airReason}`);
