@@ -1051,6 +1051,134 @@ test('Room summary', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Live flush, blocks and air exchange; the upgrade save error (C2 5.2, 8.1, 17)
+// ---------------------------------------------------------------------------
+
+const LIVE_AIR_KEYS = ['on', 'state', 'reason', 'delayed', 'timed', 'manual', 'manualOn', 'nextPurgeS', 'purgeS', 'why', 'today'];
+
+test('Live flush and blocks', () => {
+  const s = scripted();
+  const { db, mgr, log, step, jump } = setup(s.factory);
+  const { room: a } = mgr.create({ name: 'A', volume: 60 });
+  const { room: b } = mgr.create({ name: 'B', volume: 60 });
+  db.replaceMix(a.id, [{ crop: 'oyster', blocks: 300 }, { crop: 'golden', blocks: 200 }]);
+  mgr.start();
+  assert.equal(mgr.get(a.id).live.blocks, 500);
+  assert.equal(mgr.get(b.id).live.blocks, null);
+  assert.equal(mgr.get(a.id).live.flush, 1);
+  assert.equal(mgr.get(b.id).live.flush, 1);
+  // the summary is C2's lead decision 2 shape: no flush, blocks or air in a room event
+  const roomEmit = log.filter(([n]) => n === 'room').at(-1)[1].room;
+  assert.equal(roomEmit.live.flush, 1);
+
+  // an automatic rest -> fruiting change raises the flush
+  const { room: c } = mgr.create({ name: 'Auto', volume: 60, settings: { program: { auto: true, days: { fruiting: 1, rest: 1 } } } });
+  assert.equal(mgr.get(c.id).live.flush, 1);
+  jump(86400);
+  assert.equal(mgr.get(c.id).live.stage, 'rest');
+  jump(86400);
+  assert.equal(mgr.get(c.id).live.stage, 'fruiting');
+  assert.equal(mgr.get(c.id).live.flush, 2);
+  const flushText = db.settingsHistory(c.id)[0].note;
+  assert.ok(flushText.startsWith('Automatic'), flushText);
+});
+
+test('Live flush and blocks: a change of only flush emits no room', (t) => {
+  let flush = 1;
+  const origCreate = CC.create;
+  CC.create = (cfg, snapshot, onEvent) => {
+    const ctl = origCreate(cfg, snapshot, onEvent);
+    const ps = ctl.programStatus;
+    ctl.programStatus = tt => ({ ...ps(tt), flush });
+    return ctl;
+  };
+  t.after(() => { CC.create = origCreate; });
+  const { mgr, log, step } = setup(scripted().factory);
+  mgr.start();
+  step(30);
+  assert.equal(mgr.get(1).live.flush, 1);
+  log.length = 0;
+  flush = 2;
+  step(30);
+  assert.equal(mgr.get(1).live.flush, 2);
+  assert.equal(log.filter(([n]) => n === 'reading').length, 1);
+  assert.equal(log.filter(([n]) => n === 'room').length, 0);
+});
+
+test('Live air exchange', () => {
+  const s = scripted();
+  const { mgr, log, step } = setup(s.factory);
+  mgr.start();
+  const air = mgr.get(1).live.air;
+  assert.deepEqual(Object.keys(air), LIVE_AIR_KEYS);
+  assert.ok(['idle', 'purge', 'after'].includes(air.state));
+  assert.equal(typeof air.on, 'boolean');
+  assert.equal(air.manual, false);
+  assert.equal(air.manualOn, false);
+  assert.ok(Number.isInteger(air.today.purges) && air.today.purges >= 0);
+  assert.equal(air.today.avgS, air.today.purges === 0 ? null : air.today.avgS);
+  assert.ok(Number.isInteger(air.today.capped));
+  assert.deepEqual(Object.keys(air.today), ['purges', 'avgS', 'capped']);
+  // the reading event carries the same live
+  assert.deepEqual(log.filter(([n]) => n === 'reading').at(-1)[1].live.air, air);
+
+  // manual On (through applySettings), after the next reading
+  mgr.applySettings(1, { manual: { air: { auto: false, on: true } } });
+  log.length = 0;
+  step(30);
+  const manual = mgr.get(1).live.air;
+  assert.equal(manual.on, true);
+  assert.equal(manual.manual, true);
+  assert.equal(manual.manualOn, true);
+  assert.equal(manual.reason, 'manual');
+  assert.equal(log.filter(([n]) => n === 'room').length, 0); // a change of live.air alone sends no room event
+
+  // a run held above rules.fanOn gives at least one purge today
+  mgr.applySettings(1, { manual: { air: { auto: true, on: false } } });
+  const rules = CC.defaultSettings().rules; // above fanOn, below the safety level: a CO2 purge, not a safety run
+  s.knobs.values = { CO2: rules.fanOn + Math.min(100, (rules.co2SafetyAt - rules.fanOn) / 2) };
+  for (let i = 0; i < 40; i++) step(30);
+  const held = mgr.get(1).live.air;
+  assert.ok(held.today.purges >= 1, JSON.stringify(held));
+  assert.ok(Number.isInteger(held.today.purges));
+  if (held.today.avgS !== null) assert.ok(held.today.avgS > 0);
+});
+
+function fatalDbError() {
+  return Object.assign(new Error('disk I/O error'), { code: 'ERR_SQLITE_ERROR', errcode: 10 });
+}
+
+test('Upgrade save error', () => {
+  const old = CC.defaultSettings();
+  old.roomM3 = 60;
+  old.rules.airMode = 'steady';
+  delete old.manual.air;
+  old.manual.fan = { auto: false, level: 2 };
+
+  // start(): a stored version 1 object and a failing save
+  const first = setup(scripted().factory);
+  first.db.createRoom({ name: 'Old', volume: 60, adapter: 'sim', settings: old, note: 'Created', at: T0 });
+  const err1 = fatalDbError();
+  first.db.saveSettings = () => { throw err1; };
+  assert.throws(() => first.mgr.start(), e => e === err1);
+  assert.notEqual(first.mgr.get(1).live.error, 'disk I/O error');
+  assert.equal(first.mgr.get(1).live.error, null);
+  assert.ok(!first.db.listEvents(1, { limit: 50 }).some(e => e.text.startsWith('Stopped by an error')));
+
+  // restart(): a room that started normally, then a version 1 settings row and a failing save
+  const second = setup(scripted().factory);
+  second.mgr.start();
+  const realSave = second.db.saveSettings;
+  second.db.saveSettings(1, { settings: old, note: 'older', at: T0 });
+  const err2 = fatalDbError();
+  second.db.saveSettings = () => { throw err2; };
+  assert.throws(() => second.mgr.restart(1), e => e === err2);
+  assert.equal(second.mgr.get(1).live.error, null);
+  assert.ok(!second.db.listEvents(1, { limit: 50 }).some(e => e.text.startsWith('Stopped by an error')));
+  second.db.saveSettings = realSave;
+});
+
+// ---------------------------------------------------------------------------
 // Task 8: Crashes, restart, ack while crashed (C2 section 11, 4 restart, 8.1/8.2)
 // ---------------------------------------------------------------------------
 
