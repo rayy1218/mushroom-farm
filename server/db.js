@@ -612,8 +612,10 @@ function buildDb(conn, dbPath, version, now) {
 
   // Calibrations (section 6.10)
   const insertCalibStmt = conn.prepare(
-    'INSERT INTO calibrations (room_id, run_at, ua, inf_ach, moist_buffer, co2_per_block, rmse_t, rmse_rh, rmse_co2, log_rows) ' +
-    'VALUES (:room_id, :run_at, :ua, :inf_ach, :moist_buffer, :co2_per_block, :rmse_t, :rmse_rh, :rmse_co2, :log_rows)'
+    'INSERT INTO calibrations (room_id, run_at, ua, inf_ach, moist_buffer, co2_per_block, rmse_t, rmse_rh, rmse_co2, log_rows, ' +
+    'source, log_from, log_to, equipment) ' +
+    'VALUES (:room_id, :run_at, :ua, :inf_ach, :moist_buffer, :co2_per_block, :rmse_t, :rmse_rh, :rmse_co2, :log_rows, ' +
+    ':source, :log_from, :log_to, :equipment)'
   );
   const getCalibByIdStmt = conn.prepare('SELECT * FROM calibrations WHERE id = :id');
   const listCalibStmt = conn.prepare('SELECT * FROM calibrations WHERE room_id = :room_id ORDER BY run_at DESC, id DESC');
@@ -623,10 +625,14 @@ function buildDb(conn, dbPath, version, now) {
     'SELECT * FROM calibrations WHERE room_id = :room_id AND applied_at IS NOT NULL ORDER BY applied_at DESC, id DESC LIMIT 1'
   );
 
+  function calibToPublic(row) {
+    return row ? { ...row, equipment: row.equipment === null ? null : fromJson(row.equipment) } : null;
+  }
+
   function saveCalibration(roomId, run) {
     live();
     roomCheck(roomId);
-    fields('saveCalibration', run, ['ua', 'inf_ach', 'moist_buffer', 'co2_per_block', 'rmse_t', 'rmse_rh', 'rmse_co2', 'log_rows', 'run_at']);
+    fields('saveCalibration', run, ['ua', 'inf_ach', 'moist_buffer', 'co2_per_block', 'rmse_t', 'rmse_rh', 'rmse_co2', 'log_rows', 'run_at', 'source', 'log_from', 'log_to', 'equipment']);
     const r = run || {};
     const run_at = r.run_at === undefined ? now() : r.run_at;
     const info = insertCalibStmt.run({
@@ -636,14 +642,16 @@ function buildDb(conn, dbPath, version, now) {
       rmse_rh: val(r.rmse_rh === undefined ? null : r.rmse_rh),
       rmse_co2: val(r.rmse_co2 === undefined ? null : r.rmse_co2),
       log_rows: val(r.log_rows === undefined ? null : r.log_rows),
+      source: val(r.source), log_from: val(r.log_from), log_to: val(r.log_to),
+      equipment: r.equipment == null ? null : toJson(r.equipment),
     });
-    return plain(getCalibByIdStmt.get({ id: info.lastInsertRowid }));
+    return calibToPublic(getCalibByIdStmt.get({ id: info.lastInsertRowid }));
   }
 
   function listCalibrations(roomId) {
     live();
     roomCheck(roomId);
-    return listCalibStmt.all({ room_id: roomId }).map(plain);
+    return listCalibStmt.all({ room_id: roomId }).map(calibToPublic);
   }
 
   function applyCalibration(roomId, runId, at) {
@@ -654,14 +662,14 @@ function buildDb(conn, dbPath, version, now) {
     const row = findCalibStmt.get({ id: runId, room_id: roomId });
     if (!row) throw new NotFoundError('calibration', runId);
     applyCalibStmt.run({ id: runId, at: atVal });
-    return plain(findCalibStmt.get({ id: runId, room_id: roomId }));
+    return calibToPublic(findCalibStmt.get({ id: runId, room_id: roomId }));
   }
 
   function currentCalibration(roomId) {
     live();
     roomCheck(roomId);
     const row = currentCalibStmt.get({ room_id: roomId });
-    return row ? plain(row) : null;
+    return calibToPublic(row);
   }
 
   // Crop mix (section 6.11)

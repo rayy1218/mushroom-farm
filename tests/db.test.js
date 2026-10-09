@@ -1180,8 +1180,39 @@ both('saveCalibration: defaults', (t, open) => {
   assert.deepStrictEqual(c, {
     id: c.id, room_id: roomId, run_at: T0, ua: 90, inf_ach: 0.3, moist_buffer: 3, co2_per_block: 40,
     rmse_t: null, rmse_rh: null, rmse_co2: null, log_rows: null, applied_at: null,
+    source: null, log_from: null, log_to: null, equipment: null,
   });
-}, 'C1 rev 6 / C2 rev 9 fake: Data 2 rewrites this test');
+  assert.deepStrictEqual(Object.keys(c), [
+    'id', 'room_id', 'run_at', 'ua', 'inf_ach', 'moist_buffer', 'co2_per_block', 'rmse_t', 'rmse_rh', 'rmse_co2',
+    'log_rows', 'applied_at', 'source', 'log_from', 'log_to', 'equipment',
+  ]);
+});
+
+both('saveCalibration: source, log_from, log_to, equipment stored and returned', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  const c = db.saveCalibration(roomId, calibRun({ source: 'history', log_from: T0 - 3600, log_to: T0, equipment: equipment() }));
+  assert.equal(c.source, 'history');
+  assert.equal(c.log_from, T0 - 3600);
+  assert.equal(c.log_to, T0);
+  assert.deepStrictEqual(c.equipment, equipment());
+  assert.equal(c.equipment.air_m3h, 1800);
+  assert.deepStrictEqual(db.listCalibrations(roomId), [c]);
+  const applied = db.applyCalibration(roomId, c.id, T0 + 5);
+  assert.deepStrictEqual(applied, { ...c, applied_at: T0 + 5 });
+  assert.deepStrictEqual(db.currentCalibration(roomId), applied);
+});
+
+both('saveCalibration: source web is 275; a fraction in log_from is 3091; nothing stored', (t, open) => {
+  const db = open({ now: () => T0 });
+  t.after(() => db.close());
+  const roomId = makeRoom(db);
+  assertSql(() => db.saveCalibration(roomId, calibRun({ source: 'web' })), 275);
+  assertSql(() => db.saveCalibration(roomId, calibRun({ log_from: 1.5 })), 3091);
+  assertSql(() => db.saveCalibration(roomId, calibRun({ log_to: 1.5 })), 3091);
+  assert.deepStrictEqual(db.listCalibrations(roomId), []);
+});
 
 both('saveCalibration: non-finite -> null; log_rows kept', (t, open) => {
   const db = open({ now: () => T0 });
