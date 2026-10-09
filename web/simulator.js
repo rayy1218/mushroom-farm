@@ -935,6 +935,13 @@ const MARKUP = `
 <div class="section-head">
   <h2>Climate controller</h2>
   <p>The part that runs the machines. It sees only the sensor readings.</p>
+  <div style="margin-left:auto;display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px">
+    <label for="simRoom">Room</label>
+    <select id="simRoom" disabled></select>
+    <button class="btn" id="simRoomLoad" disabled>Load settings from room</button>
+    <button class="btn" id="simRoomSave" disabled>Save settings to room</button>
+    <span class="tag" id="simRoomMsg" role="status" aria-live="polite"></span>
+  </div>
 </div>
 <div class="ctl-section">
 <div id="panelHost" class="contents"></div>
@@ -1246,6 +1253,66 @@ function wire() {
   buildMimicExtras();
 }
 
+// ---------------- Room link: Load / Save settings from / to a room (C5 7.8) ----------------
+// The logic of the two actions, without DOM. Never rejects; null means "change nothing".
+function createRoomLink(deps) {
+  const { api, diffSettings, safeSettings, showChanges, errorText, cfg, getCtl, event, onLoaded } = deps;
+  let busy = false, disposed = false;
+
+  async function run(room, body) {
+    if (disposed || busy) return null;
+    busy = true;
+    try { return await body(); }
+    catch (err) {
+      if (disposed) return null;
+      if (!(global.FarmApi && err instanceof global.FarmApi.ApiError)) console.error(err);
+      return errorText(err);
+    } finally { busy = false; }
+  }
+
+  function load(room) {
+    return run(room, async () => {
+      const raw = await api.getSettings(room.id);
+      if (disposed) return null;
+      let roomSettings;
+      try { roomSettings = safeSettings(raw).settings; }
+      catch (err) { return `The settings of ${room.name} could not be read: ${err.message}`; }
+      const changes = diffSettings(cfg, roomSettings);
+      if (!changes.length) return `Same settings as ${room.name}.`;
+      const answer = await showChanges(changes, { title: `Load the settings of ${room.name}?`, confirmText: 'Load', note: false });
+      if (disposed) return null;
+      if (answer === null) return '';
+      CC.applySettings(cfg, roomSettings);
+      getCtl().cancelRamp();
+      event(`Settings loaded from room "${room.name}"`);
+      onLoaded(changes);
+      return `Loaded the settings of ${room.name}.`;
+    });
+  }
+
+  function save(room) {
+    return run(room, async () => {
+      const base = await api.getSettings(room.id);
+      if (disposed) return null;
+      const sent = structuredClone(cfg);
+      const changes = diffSettings(base, sent);
+      if (!changes.length) return `${room.name} already has these settings.`;
+      const note = await showChanges(changes, { title: `Save these settings to ${room.name}?`, confirmText: 'Save to room', note: true });
+      if (disposed) return null;
+      if (note === null) return '';
+      const { warnings } = await api.saveSettings(room.id, sent, note || 'From the Simulator');
+      if (disposed) return null;
+      return warnings && warnings.length ? `Saved with ${warnings.length} warning(s): ${warnings.join(' ')}` : 'Saved.';
+    });
+  }
+
+  return {
+    load, save,
+    get busy() { return busy; },
+    dispose() { disposed = true; },
+  };
+}
+
 // ---------------- mount / unmount (3.1) ----------------
 function stopFrame() { if (rafId != null) { cancelAnimationFrame(rafId); rafId = null; } }
 
@@ -1263,13 +1330,75 @@ function frame(now) {
   if (chartsDirty && now - lastChart > 200) { drawCharts(); lastChart = now; }
 }
 
-function mount(viewEl) {
+let link = null, openDialog = null, roomGen = 0, rooms = [], pickedRoom = null;
+
+// After a confirmed Load: repaint what the new settings touch (C5 7.8, C6 7.8 "After every onChange").
+function onRoomLoaded(changes) {
+  panel.set(cfg);
+  if (changes.some(c => c.path === 'farmType' || c.path === 'crop' || c.path === 'stage')) scheduleCropCheck();
+  if (changes.some(c => c.path === 'airM3h')) {
+    env.airM3h = cfg.airM3h;
+    el.querySelector('#inAirM3h').value = cfg.airM3h;
+    paintAirSize();
+  }
+  updateLadderLive();
+  chartsDirty = true;
+}
+
+function wireRoomLink(params) {
+  const gen = ++roomGen;
+  const $ = sel => el.querySelector(sel);
+  const sel = $('#simRoom'), bLoad = $('#simRoomLoad'), bSave = $('#simRoomSave'), msg = $('#simRoomMsg');
+  const setBusy = on => { sel.disabled = on; bLoad.disabled = on; bSave.disabled = on; };
+  link = createRoomLink({
+    api: global.FarmApi, diffSettings: global.FarmSettingsPanel.diffSettings, safeSettings: global.FarmSettingsPanel.safeSettings,
+    showChanges: (c, o) => {
+      const p = global.FarmSettingsPanel.showChanges(c, o);
+      const d = document.body.lastElementChild;
+      openDialog = d && d.tagName === 'DIALOG' ? d : null;
+      return p;
+    },
+    errorText: global.FarmUi.errorText, cfg, getCtl: () => ctl,
+    event: text => onEvent({ t: reading ? reading.t : 0, lvl: 'info', text }),
+    onLoaded: onRoomLoaded,
+  });
+  const act = async (name) => {
+    const room = rooms.find(r => String(r.id) === sel.value);
+    if (!room) return;
+    setBusy(true);
+    const text = await link[name](room);
+    if (text === null || gen !== roomGen) return;
+    msg.textContent = text;
+    setBusy(false);
+  };
+  sel.addEventListener('change', () => { pickedRoom = Number(sel.value); msg.textContent = ''; });
+  bLoad.addEventListener('click', () => act('load'));
+  bSave.addEventListener('click', () => act('save'));
+  global.FarmApi.listRooms().then(list => {
+    if (gen !== roomGen) return;
+    rooms = list;
+    if (!list.length) { msg.textContent = 'No rooms on the farm server. Create one under Rooms.'; return; }
+    for (const r of list) { const o = document.createElement('option'); o.value = String(r.id); o.textContent = r.name; sel.append(o); }
+    const wanted = params && params.roomId != null ? Number(params.roomId) : null;
+    const fromParams = wanted != null && list.some(r => r.id === wanted);
+    const id = fromParams ? wanted : list.some(r => r.id === pickedRoom) ? pickedRoom : list[0].id;
+    sel.value = String(id); pickedRoom = id;
+    setBusy(false); msg.textContent = '';
+    if (fromParams) act('load');
+  }, err => {
+    if (gen !== roomGen) return;
+    msg.textContent = global.FarmUi.errorText(err);
+  });
+}
+
+function mount(viewEl, params) {
   ensureState();
   mounted = true; el = viewEl; mountGen++;
   el.dataset.bench = benchFlag;
   el.innerHTML = MARKUP;
   logDirty = true; chartsDirty = true; alarmKey = ''; exhKey = ''; lastStage = '';
   wire();
+  wireRoomLink(params || {});
   updateLadderLive();
   updateUi(); // updateUi() already calls paintProgram()
   scheduleCropCheck();
@@ -1284,6 +1413,10 @@ function unmount() {
   mounted = false;
   stopFrame();
   clearTimeout(cropCheckTimer);
+  roomGen++;
+  if (link) { link.dispose(); link = null; }
+  if (openDialog && openDialog.isConnected) { openDialog.close(); openDialog.remove(); }
+  openDialog = null;
   if (exhRo) { exhRo.disconnect(); exhRo = null; }
   if (trendCharts) { trendCharts.destroy(); trendCharts = null; }
   if (ladder) { ladder.destroy(); ladder = null; }
@@ -1304,7 +1437,7 @@ const FarmBench = {
     env.room = { ...(env.room || {}), ua: params.ua, infAch: params.infAch, moistBuffer: params.moistBuffer };
     env.co2PerBlock = Math.round(params.co2PerBlock);
     calApplied = { ua: params.ua, infAch: params.infAch, moistBuffer: params.moistBuffer, co2PerBlock: env.co2PerBlock, rmse, date: new Date().toISOString() };
-    onEvent({ t: reading ? reading.t : 0, lvl: 'info', text: `Simulation calibrated: heat loss ${params.ua.toFixed(0)} W/K, leakage ${params.infAch.toFixed(2)}/h, moisture buffer ${params.moistBuffer.toFixed(1)}, CO₂ ${env.co2PerBlock} mL/h per block` });
+    onEvent({ t: reading ? reading.t : 0, lvl: 'info', text: `Simulation calibrated: heat through walls and roof ${params.ua.toFixed(0)} W/K, leakage ${params.infAch.toFixed(2)}/h, moisture buffer ${params.moistBuffer.toFixed(1)}, CO₂ ${env.co2PerBlock} mL/h per block` });
     if (mounted && el) {
       const inPerBlock = el.querySelector('#inPerBlock');
       if (inPerBlock) { inPerBlock.value = env.co2PerBlock; paintBlocks(); }
@@ -1316,5 +1449,5 @@ global.FarmBench = FarmBench;
 global.FarmShell.register('simulator', { mount, unmount });
 
 // Node only (tests/web-air.test.js); adds no browser global.
-if (typeof module === 'object' && module && module.exports) module.exports = { airText };
+if (typeof module === 'object' && module && module.exports) module.exports = { createRoomLink, airText, mimicLayout };
 })(typeof window !== 'undefined' ? window : globalThis);
