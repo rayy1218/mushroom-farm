@@ -53,6 +53,17 @@ Legend: ✅ built · 🔨 in progress · 📋 owner's plan, not started · 💡 
 | Login and roles (owner, worker, installer); left out of v1 on purpose | 📋 |
 | MyGAP compliance records, produced from the data above | 📋 |
 
+## 5. Usability (farmer and design review, 2026-10-12)
+
+Review: `docs/reviews/2026-10-12-farmer-and-design-review.md`. Contract: `docs/contracts/ux.md` (C11).
+
+| Part | Status |
+|---|---|
+| UX wave 1, quick wins: system fonts, one form style (`.field`, units, errors under the field), primary/danger/disabled buttons, `.alert` messages, Simulated and Manual badges, amber "Check room", Record harvest on room cards, machine tiles, "Should be" targets with the ramp, leave-page warning, scroll reset, Batches and phone layout fixes, farmer wording on Batches, Simulate, Your machines, Calibrate and the Test bench | ✅ (branch `ux/wave1`) |
+| UX wave 2, layout: sidebar shell and phone bottom tabs, Overview home (KPIs, sparklines, first-run checklist), Live split into Overview and Settings, installer items behind a PIN, farmer wording everywhere | 📋 |
+| UX wave 3, visuals: room drawing on the room page, machine timeline, capacity bullet chart, cycle Gantt, flush yield chart, batch board | 📋 |
+| UX wave 4, setup flow: one Add-room form (mushroom, stage, blocks), crop-matched targets with range warnings | 📋 |
+
 ## Suggested order after wave 2
 
 | # | Part | Why here |
