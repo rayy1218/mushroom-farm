@@ -44,6 +44,7 @@ test('L4: the modules and the room tabs register; FarmRoomTabs and FarmEquipment
     require('../web/room-tabs.js');
     require('../web/rooms.js');
     require('../web/room-live.js');
+    require('../web/room-settings.js');
     require('../web/room-equipment.js');
     require('../web/room-simulate.js');
     require('../web/room-calibrate.js');
@@ -58,7 +59,7 @@ test('L4: the modules and the room tabs register; FarmRoomTabs and FarmEquipment
   }
   const tabs = globalThis.FarmRoomTabs;
   assert.deepEqual([...tabs.NAMES], ['overview', 'settings', 'simulate', 'calibrate']);
-  for (const n of tabs.NAMES.filter(x => x !== 'settings')) assert.ok(tabs.get(n), n); // C12 prep: the Room stream registers 'settings' and drops this filter
+  for (const n of tabs.NAMES) assert.ok(tabs.get(n), n);
   assert.equal(typeof globalThis.FarmEquipmentCard, 'object');
   assert.equal(globalThis.FarmBench, undefined);
 

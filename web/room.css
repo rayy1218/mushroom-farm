@@ -1,1 +1,35 @@
 /* web/room.css: the room page's Overview and Settings tabs (C12 5). Room stream. */
+
+/* Rooms list */
+.room-new[hidden] { display: none; }
+#rhFeed { grid-column: 1 / -1; }
+
+/* Room frame: breadcrumb, then the page head with the chip row under the sub line */
+.room-top { grid-column: 1 / -1; display: grid; gap: 4px; }
+.room-top .crumbs { font-size: var(--fs-sm); color: var(--ink-2); }
+.room-top .page-head { margin-bottom: 0; }
+.room-chips { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; margin-top: 8px; }
+.room-chips .chip { white-space: normal; max-width: 100%; overflow-wrap: anywhere; }
+.room-tabs a[hidden] { display: none; }
+
+/* Settings tab */
+#roomTab .room-versions, #roomTab .room-details, #roomTab .room-danger { grid-column: span 6; }
+.room-danger { border-color: var(--critical, var(--border-strong)); display: grid; gap: 10px; align-content: start; }
+.room-danger p { margin: 0; }
+
+/* The save bar: sticky at the bottom of the view while something is unsaved */
+.save-bar { grid-column: 1 / -1; position: sticky; bottom: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 8px 16px;
+  align-items: center; justify-content: space-between; padding: 10px 14px; background: var(--surface); border: 1px solid var(--border-strong);
+  border-radius: 10px; box-shadow: 0 -4px 16px rgb(0 0 0 / .12); }
+.save-bar[hidden] { display: none; }
+.save-count { font-weight: 600; }
+
+@media (max-width: 899px) {
+  #roomTab .room-versions, #roomTab .room-details, #roomTab .room-danger { grid-column: 1 / -1; }
+  .save-bar { bottom: calc(var(--tab-h, 0px) + 8px + env(safe-area-inset-bottom)); }
+  .save-bar .btn-row { width: 100%; }
+  .save-bar .btn-row .btn { flex: 1; min-height: 44px; }
+}
+
+#spMsg { scroll-margin-top: calc(var(--topbar-h, 0px) + 8px); }
+.save-note { flex: 1 1 100%; margin: 0; }

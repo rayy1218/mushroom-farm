@@ -7,9 +7,7 @@ const MARKER_KEY = 'mushroom-farm.rooms.v1.imported';
 const REFRESH_MS = 30000;
 const AC_WORD = { cool: 'Cool', heat: 'Heat', dry: 'Dry', fan: 'Fan only' };
 const FEED = { open: 'Connected', down: 'Reconnecting…' };
-const MACHINE_NAME = { ac: 'Aircon', hu: 'Mister', air: 'Fresh-air fans', lights: 'Lights', circ: 'Circulation fan' };
 const INTRO = 'Your grow rooms. Green means all good. Amber or red means go and check.';
-const SIM_NOTE = 'No sensors are connected yet. These rooms are simulated: the numbers come from a computer model, not from your rooms.';
 
 // ---------------- pure helpers (tested in tests/web-rooms.test.js) ----------------
 
@@ -17,23 +15,9 @@ const cropName = k => (global.ClimateController.CROPS[k] ? global.ClimateControl
 const stageName = k => global.ClimateController.STAGES[k] ?? k;
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
-function statusChip(room) {
-  const ICON = global.FarmUi.ICON;
-  const live = room.live;
-  if (!live || live.running === false) return { lvl: 'serious', icon: ICON.serious, text: 'Stopped' };
-  if (live.alarms > 0) return { lvl: 'warning', icon: ICON.warning, text: plural(live.alarms, 'alarm') };
-  const st = live.status;
-  const fixing = live.air && (live.air.state === 'purge' || live.air.state === 'after');
-  if (st && ['T', 'RH', 'CO2'].some(k => st[k] && st[k].lvl !== 'good' && !(k === 'CO2' && fixing))) {
-    return { lvl: 'warning', icon: ICON.warning, text: 'Check room' };
-  }
-  return { lvl: 'good', icon: ICON.good, text: 'All good' };
-}
-
-function manualText(list) {
-  const names = (list || []).map(k => MACHINE_NAME[k]).filter(Boolean);
-  return names.length ? `Manual: ${names.join(', ')}` : '';
-}
+// The status and the Manual text are shared with the Overview (FarmUi, C12 2.4).
+const statusChip = room => global.FarmUi.roomStatus(room);
+const manualText = list => global.FarmUi.manualText(list);
 
 // The kg harvested today in a room (GET /api/rooms/:id/harvest), or null when the room has no placed batch.
 function harvestToday(roomHarvest) {
@@ -42,8 +26,6 @@ function harvestToday(roomHarvest) {
   const kg = batches.reduce((sum, b) => sum + (b.today && Number.isFinite(b.today.kg) ? b.today.kg : 0), 0);
   return kg > 0 ? `Harvest today: ${kg.toFixed(1)} kg` : 'No harvest today';
 }
-
-function allSimulated(rooms) { return rooms.length > 0 && rooms.every(r => r.adapter === 'sim'); }
 
 function cropText(live) {
   if (!live || live.crop == null) return '–';
@@ -74,7 +56,7 @@ function cardTexts(room) {
   const live = room.live;
   const r = live && live.reading ? live.reading : null;
   let air = '–';
-  if (r) air = r.air === 1 ? 'Air exchange on' : 'Air exchange off';
+  if (r) air = r.air === 1 ? 'Fresh air on' : 'Fresh air off';
   let stopped = null;
   if (!live || !live.running) stopped = live && live.error ? `Stopped: ${live.error}` : 'Stopped';
   return {
@@ -89,7 +71,12 @@ function cardTexts(room) {
   };
 }
 
-function infoText(room) { return `${cropText(room.live)}${flushBlocks(room.live)} · ${room.volume} m³`; }
+// The room page sub line (C12 5.2): crop · stage · flush · size.
+function infoText(room) {
+  const live = room.live;
+  const flush = live && live.flush != null ? ` · flush ${live.flush}` : '';
+  return `${cropText(live)}${flush} · ${room.volume} m³`;
+}
 
 function stateText(room) {
   const live = room.live;
@@ -179,7 +166,7 @@ async function importRooms(entries, api, { nowS, onRoom }) {
 }
 
 const helpers = {
-  statusChip, manualText, harvestToday, allSimulated, cropText, cardTexts, machineLines, infoText, stateText, alarmsChip, upsertRoom, takeLive, refreshRoom,
+  statusChip, manualText, harvestToday, cropText, cardTexts, machineLines, infoText, stateText, alarmsChip, upsertRoom, takeLive, refreshRoom,
   refreshDelay, newRoomName, readStored, importPlan, importRooms,
 };
 
@@ -221,12 +208,10 @@ function newerReading(live, data) { return !live.reading || data.t >= live.readi
 // ---------------- the Rooms home ----------------
 
 const HOME_HTML = `
-<p class="explain">${INTRO}</p>
-<p class="alert" id="rhSim" data-lvl="info" hidden></p>
-<div class="section-head"><h2>Rooms</h2><span class="tag" id="rhFeed" role="status"></span></div>
+<span class="tag" id="rhFeed" role="status"></span>
 <p class="room-msg" id="rhMsg" role="status" hidden></p>
 <div class="contents" id="rhCards"></div>
-<div class="card room-new">
+<section class="card room-new" id="rhNew" aria-label="New room" hidden>
   <div class="form-grid">
     <div class="field" data-field="name">
       <label for="rhName">Room name</label>
@@ -244,7 +229,7 @@ const HOME_HTML = `
     <button class="btn btn-primary" id="rhCreate" type="button" disabled>Create room</button>
     <button class="btn" id="rhImport" type="button" hidden>Import rooms from this browser</button>
   </div>
-</div>`;
+</section>`;
 
 const CARD_HTML = `
 <a class="room-link"><div class="rc-head"><h3></h3><span class="chip"></span></div>
@@ -285,7 +270,7 @@ function paintCard(card, room, harvest) {
     const chip = box.querySelector('.chip');
     const st = live && live.status ? live.status[k] : null;
     chip.hidden = !st;
-    if (st) paintChip(chip, st);
+    if (st) paintChip(chip, global.FarmUi.plainChip(k, st));
   }
   card.querySelector('.rc-machines').textContent = t.machines;
   const hv = card.querySelector('.rc-harvest');
@@ -321,6 +306,10 @@ function mountHome(el) {
   const { errorText, say } = global.FarmUi;
   const api = global.FarmApi;
   el.innerHTML = HOME_HTML;
+  const newBtn = document.createElement('button');
+  newBtn.type = 'button'; newBtn.className = 'btn btn-primary'; newBtn.id = 'rhNewBtn'; newBtn.textContent = 'New room';
+  newBtn.setAttribute('aria-controls', 'rhNew');
+  el.prepend(global.FarmUi.pageHead({ title: 'Rooms', sub: INTRO, actions: [newBtn] }));
   const $ = id => el.querySelector(`#${id}`);
   $('rhVolume').value = String(global.ClimateSim.PLANT.room.volume);
   $('rhImport').hidden = !importAvailable();
@@ -335,7 +324,13 @@ function mountHome(el) {
     const card = cardOf(room.id);
     if (card) paintCard(card, room, harvest.get(room.id));
   };
-  const paintSim = () => say($('rhSim'), 'info', allSimulated(rooms) ? SIM_NOTE : '');
+  // C12 5.1: the New room card is closed while rooms exist, open when there are none; the head's button opens it.
+  const openNew = (open, focus) => {
+    $('rhNew').hidden = !open;
+    newBtn.setAttribute('aria-expanded', String(open));
+    if (open && focus) $('rhName').focus();
+  };
+  newBtn.addEventListener('click', () => openNew(true, true));
   const setCreateState = () => { $('rhCreate').disabled = !$('rhName').value.trim(); };
   const harvestSeq = new Map(); // room id -> the newest fetch, so an older reply cannot overwrite it
   async function loadHarvest() {
@@ -352,7 +347,9 @@ function mountHome(el) {
   }
   const cardOf = id => $('rhCards').querySelector(`.room-card[data-room-id="${id}"]`);
 
-  function render() { $('rhCards').replaceChildren(...rooms.map(r => buildCard(r, harvest.get(r.id)))); paintSim(); }
+  function render() { $('rhCards').replaceChildren(...rooms.map(r => buildCard(r, harvest.get(r.id))));
+    if (!rooms.length) openNew(true, false);
+  }
 
   function applyReading(data) {
     const room = rooms.find(r => r.id === data.room_id);
@@ -424,6 +421,7 @@ function mountHome(el) {
       rooms = upsertRoom(rooms, room);
       render();
       loadHarvest();
+      openNew(false, false);
       $('rhName').value = '';
       global.FarmUi.markFields($('rhName').closest('.room-new'), {});
       setMsg(`Created "${room.name}". It starts running at once (simulated, default settings).`, 'good');
@@ -438,6 +436,7 @@ function mountHome(el) {
     }
   });
   $('rhName').addEventListener('input', setCreateState);
+  openNew(false, false);
 
   $('rhImport').addEventListener('click', async () => {
     const entries = readStored(global.localStorage);
@@ -469,21 +468,21 @@ function mountHome(el) {
 // ---------------- the room page frame ----------------
 
 const FRAME_HTML = `
-<section class="card room-head">
+<div class="room-top">
   <nav class="crumbs"><a href="#/rooms">Rooms</a> › <span></span></nav>
-  <h2 id="rpName"></h2>
-  <span class="tag" id="rpInfo"></span>
-  <span class="chip" id="rpState"></span>
-  <span class="chip" id="rpAlarms"></span>
-  <span class="chip" id="rpSim" data-kind="sim" hidden></span>
-  <span class="chip" id="rpManual" data-kind="manual" hidden></span>
-  <button class="btn" id="rpRestart" type="button" hidden>Restart</button>
-  <span class="tag" id="rpFeed" role="status"></span>
+  <div class="room-chips">
+    <span class="chip" id="rpState"></span>
+    <span class="chip" id="rpAlarms"></span>
+    <span class="chip" id="rpSim" data-kind="sim" hidden></span>
+    <span class="chip" id="rpManual" data-kind="manual" hidden></span>
+    <span class="tag" id="rpFeed" role="status"></span>
+  </div>
   <p id="rpMsg" role="status" hidden></p>
-</section>
+</div>
 <nav class="room-tabs" aria-label="Room views"></nav>
 <div class="contents" id="roomTab"></div>`;
 
+const INSTALLER_TABS = new Set(['simulate', 'calibrate']);
 const TAB_LABEL = { overview: 'Overview', settings: 'Settings', simulate: 'Simulate', calibrate: 'Calibrate' };
 
 function mountFrame(el, params) {
@@ -494,10 +493,19 @@ function mountFrame(el, params) {
   let tabParams = params.runId ? { runId: params.runId } : {};
   el.innerHTML = FRAME_HTML;
   const $ = sel => el.querySelector(sel);
+  // C12 5.2: the page head holds the room name and sub line, the chip row sits under it, the actions are on the right
+  const restartBtn = document.createElement('button');
+  restartBtn.type = 'button'; restartBtn.className = 'btn'; restartBtn.id = 'rpRestart'; restartBtn.textContent = 'Restart'; restartBtn.hidden = true;
+  const recordLink = document.createElement('a');
+  recordLink.className = 'btn btn-primary btn-link'; recordLink.id = 'rpRecord'; recordLink.textContent = 'Record harvest'; recordLink.href = `#/harvest/${id}`;
+  const head = global.FarmUi.pageHead({ title: '', sub: ' ', actions: [recordLink, restartBtn] });
+  head.querySelector('.page-titles').append($('.room-chips'));
+  $('.room-top').insertBefore(head, $('#rpMsg'));
   const nav = $('.room-tabs');
   for (const name of global.FarmRoomTabs.NAMES) {
     const a = document.createElement('a');
     a.dataset.tab = name; a.href = `#/rooms/${id}/${name}`; a.textContent = TAB_LABEL[name] ?? name;
+    if (INSTALLER_TABS.has(name)) a.setAttribute('data-level-only', 'installer');
     nav.append(a);
   }
   function markTab() {
@@ -514,14 +522,14 @@ function mountFrame(el, params) {
   let tokenCount = 0;
 
   function paintHeader() {
-    $('#rpName').textContent = room.name;
+    head.querySelector('.page-title').textContent = room.name;
+    head.querySelector('.page-sub').textContent = infoText(room);
     $('.crumbs span').textContent = room.name;
-    $('#rpInfo').textContent = infoText(room);
     const running = !!(room.live && room.live.running);
     paintChip($('#rpState'), running ? { lvl: 'good', icon: global.FarmUi.ICON.good, text: 'Running' } : { lvl: 'serious', icon: global.FarmUi.ICON.serious, text: stateText(room) });
     paintChip($('#rpAlarms'), alarmsChip(room.live ? room.live.alarms : 0));
     paintBadges($('#rpSim'), $('#rpManual'), room);
-    $('#rpRestart').hidden = running;
+    restartBtn.hidden = running;
   }
 
   function dispatch(type, arg) {
@@ -630,8 +638,8 @@ function mountFrame(el, params) {
     }
   }
 
-  $('#rpRestart').addEventListener('click', async () => {
-    const btn = $('#rpRestart');
+  restartBtn.addEventListener('click', async () => {
+    const btn = restartBtn;
     btn.disabled = true;
     try {
       const reply = await api.restartRoom(id);

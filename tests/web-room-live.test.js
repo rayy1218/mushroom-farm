@@ -17,8 +17,7 @@ const READING = { room_id: 1, t: 1791450000, T: 18.2, RH: 88.4, CO2: 812, t_out:
 const TG = { spT: 18, spRH: 88, co2Lim: 1000, fanOn: 900, fanOff: 700 };
 
 const HELPER_NAMES = ['airLive', 'airSub', 'windowQuery', 'gapFor', 'reconnectQuery', 'chartTargets', 'toChartPoint', 'retarget',
-  'mergePoints', 'mergeEvent', 'readingTexts', 'machineLines', 'machineTiles', 'targetsText', 'commandFromReading', 'programText', 'alarmTexts', 'detailChanges',
-  'countText', 'changeLines', 'versionText', 'rebase'];
+  'mergePoints', 'mergeEvent', 'readingTexts', 'machineLines', 'machineTiles', 'targetsText', 'alarmTexts'];
 
 test('LV1 registration', () => {
   assert.ok(tab, 'tab live registered');
@@ -124,21 +123,10 @@ test('LV7 chart points', () => {
 test('LV8 reading, machine and program texts', () => {
   assert.deepEqual(H.readingTexts(READING, clock), { T: '18.2 °C', RH: '88 % RH', CO2: '812 ppm', at: 'Reading at 2026-10-08 17:00:00' });
   assert.deepEqual(H.readingTexts(null, clock), { T: '—', RH: '—', CO2: '—', at: 'No reading yet' });
-  assert.deepEqual(H.machineLines(READING), ['AC Cool 17.5 °C', 'Fogger level 1', 'Air exchange Off', 'Lights on', 'Circulation fan off', 'Power 1.43 kW']);
+  assert.deepEqual(H.machineLines(READING), ['AC Cool 17.5 °C', 'Fogger level 1', 'Fresh air Off', 'Lights on', 'Circulation fan off', 'Power 1.43 kW']);
   assert.deepEqual(H.machineLines({ ...READING, ac_mode: 'off', ac_setpoint: null, fog: 0, air: 1, lights: 0, circ: 1, power_w: null }),
-    ['AC off', 'Fogger off', 'Air exchange On', 'Lights off', 'Circulation fan on']);
+    ['AC off', 'Fogger off', 'Fresh air On', 'Lights off', 'Circulation fan on']);
   assert.deepEqual(H.machineLines(null), []);
-  assert.equal(H.programText({ crop: 'oyster', stage: 'fruiting', flush: 2 }), 'Running now: Grey oyster · Fruiting · flush 2');
-  assert.equal(H.programText({ crop: 'oyster', stage: 'fruiting', flush: null }), 'Running now: Grey oyster · Fruiting');
-  assert.equal(H.programText(null), ''); assert.equal(H.programText({ crop: null }), '');
-});
-
-test('LV9 command from a reading', () => {
-  assert.deepEqual(H.commandFromReading(READING), { ac: { power: true, mode: 'cool', setpoint: 17.5 }, hu: { level: 1 },
-    air: { on: false }, lights: { on: true }, circ: { on: false } });
-  assert.deepEqual(H.commandFromReading({ ...READING, air: 1 }).air, { on: true });
-  assert.deepEqual(H.commandFromReading({ ...READING, ac_mode: 'off' }).ac, { power: false });
-  assert.equal(H.commandFromReading(null), null);
 });
 
 test('LV10 alarm and event lists', () => {
@@ -150,26 +138,6 @@ test('LV10 alarm and event lists', () => {
   assert.deepEqual(ids(H.mergeEvent([{ id: 5 }, { id: 3 }], { id: 6 })), [6, 5, 3]);
   assert.deepEqual(ids(H.mergeEvent([{ id: 5 }, { id: 3 }], { id: 5 })), [5, 3]);
   assert.deepEqual(ids(H.mergeEvent([{ id: 5 }, { id: 3 }], { id: 4 })), [5, 4, 3]);
-});
-
-test('LV11 forms and change lines', () => {
-  assert.deepEqual(H.detailChanges({ name: 'Room 1', volume: 60 }, { name: ' Room 1 ', volume: '60' }), {});
-  assert.deepEqual(H.detailChanges({ name: 'Room 1', volume: 60 }, { name: 'Shed A', volume: '80' }), { name: 'Shed A', volume: 80 });
-  assert.equal(H.countText(0), ''); assert.equal(H.countText(1), '1 unsaved change(s)');
-  assert.equal(H.versionText({ id: 14, saved_at: 1791450100, note: 'Lower RH' }, clock, true), '2026-10-08 17:01:40 · Lower RH · current');
-  assert.equal(H.versionText({ id: 14, saved_at: 1791450100, note: null }, clock, false), '2026-10-08 17:01:40 · —');
-  assert.deepEqual(H.changeLines(globalThis.FarmSettingsPanel.diffSettings(S, { ...S, spT: 20 })), ['Temperature target: 25 °C → 20 °C']);
-});
-
-test('LV12 rebase keeps the edits', () => {
-  const edit = o => ({ ...S, ...o });
-  const args = [S, edit({ spT: 20 }), edit({ spRH: 90 })], copies = structuredClone(args);
-  const r = H.rebase(...args);
-  assert.equal(r.settings.spT, 20); assert.equal(r.settings.spRH, 90); assert.equal(r.kept, 1);
-  assert.deepEqual(args, copies);
-  const same = H.rebase(S, structuredClone(S), edit({ spRH: 90 }));
-  assert.deepEqual(same.settings, edit({ spRH: 90 })); assert.equal(same.kept, 0);
-  assert.equal(H.rebase(S, edit({ spT: 20 }), edit({ spT: 22 })).settings.spT, 20);
 });
 
 test('LV20 machineTiles', () => {
