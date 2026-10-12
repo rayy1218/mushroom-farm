@@ -1,5 +1,6 @@
 // server/rooms.js: the room manager (C2 sections 1-12, 15). CommonJS, synchronous.
 'use strict';
+const MANUAL_KEYS = ['ac', 'hu', 'air', 'lights', 'circ']; // C11 2.1
 require('../air.js');
 require('../controller.js');
 require('../runtime.js');
@@ -177,7 +178,7 @@ function createRoomManager(options) {
   // ---------------- Live / summary ----------------
   function liveOf(loop) {
     if (!loop) {
-      return { reading: null, stage: null, crop: null, targets: null, status: null, alarms: 0, running: false, error: null, flush: null, blocks: null, air: null };
+      return { reading: null, stage: null, crop: null, targets: null, status: null, alarms: 0, running: false, error: null, flush: null, blocks: null, air: null, manual: [] };
     }
     const ctl = loop.ctl, cfg = loop.cfg;
     return {
@@ -193,7 +194,13 @@ function createRoomManager(options) {
       flush: ctl ? ctl.programStatus(loop.liveReading ? loop.liveReading.t : now()).flush : null,
       blocks: loop.blocks,
       air: loop.liveAir,
+      manual: manualOf(cfg), // C11 2.1
     };
+  }
+  // C11 2.1: the machines not on Auto, in the order of the controller's `manual` settings.
+  function manualOf(cfg) {
+    const m = cfg && cfg.manual;
+    return m ? MANUAL_KEYS.filter(k => m[k] && m[k].auto === false) : [];
   }
   // C2 5.2 `air`: the running controller's air exchange, built after each Record with t = the new reading's t.
   function buildLiveAir(loop, t) {

@@ -73,5 +73,56 @@ function errorText(err) {
   return err.message;
 }
 
-global.FarmUi = { set, cell, svgEl, paintChip, clamp, fmtNum, fmtDur, fmtMinSec, watts, pct, nf, ICON, LVL_RANK, simClock, farmClock, errorText };
+// C11 3.2: a message next to the action that caused it. lvl 'info', 'good' or 'error'; an empty text hides the box.
+function say(el, lvl, text) {
+  if (!el) return;
+  el.classList.add('alert');
+  el.dataset.lvl = lvl;
+  el.textContent = text || '';
+  el.hidden = !text;
+}
+
+// C11 3.3: an error in plain words. labels maps an API field key to the field's label on the page.
+// Returns { text, fields }: fields[key] is the line shown under that field; text is the line for the alert.
+function problemText(problem) {
+  const p = String(problem).trim();
+  if (p === 'required') return 'Fill this in.';
+  const s = p.charAt(0).toUpperCase() + p.slice(1);
+  return /[.!?]$/.test(s) ? s : `${s}.`;
+}
+function plainError(err, labels) {
+  const map = labels || {};
+  const fields = {};
+  const rest = [];
+  if (err && err.name === 'ApiError' && err.details && err.details.length) {
+    for (const d of err.details) {
+      // 'key: problem' (C10 details) or 'key problem' (C3 room details: 'name must be 1 to 60 characters')
+      const m = /^([a-z_][a-z0-9_.]*): (.+)$/i.exec(String(d)) || /^([a-z_][a-z0-9_]*) (.+)$/i.exec(String(d));
+      if (m && Object.hasOwn(map, m[1])) fields[m[1]] = problemText(m[2]);
+      else rest.push(String(d));
+    }
+    const n = Object.keys(fields).length;
+    if (n && !rest.length) return { text: n === 1 ? 'Check the marked field.' : 'Check the marked fields.', fields };
+    if (n) return { text: `Check the marked fields. Also: ${rest.join('; ')}`, fields };
+  }
+  return { text: err ? errorText(err) : '', fields };
+}
+
+// C11 3.3: shows plainError's field lines under their fields (.field[data-field]) and clears the others.
+function markFields(root, fields) {
+  if (!root) return;
+  const f = fields || {};
+  root.querySelectorAll('.field[data-field]').forEach(box => {
+    const msg = f[box.dataset.field] || '';
+    let err = box.querySelector('.field-err');
+    if (!err && msg) { err = document.createElement('p'); err.className = 'field-err'; box.append(err); }
+    if (err) { err.textContent = msg; err.hidden = !msg; }
+    box.querySelectorAll('input, select, textarea').forEach(c => {
+      if (msg) c.setAttribute('aria-invalid', 'true'); else c.removeAttribute('aria-invalid');
+    });
+  });
+}
+
+global.FarmUi = { set, cell, svgEl, paintChip, clamp, fmtNum, fmtDur, fmtMinSec, watts, pct, nf, ICON, LVL_RANK, simClock, farmClock, errorText,
+  say, plainError, markFields };
 })(typeof window !== 'undefined' ? window : globalThis);

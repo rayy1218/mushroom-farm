@@ -13,6 +13,10 @@ function pct(x) {
 }
 const stageName = s => global.ClimateController.STAGES[s].toLowerCase();
 
+// C11 6: field labels by API key, for plainError.
+const LABELS = { ac_hp: 'Aircond size', ac_units: 'Number of airconds', fog_lph: 'Fogger', air_m3h: 'Air exchange', walls: 'Walls', roof: 'Roof', height: 'Inside height' };
+const problemsError = problems => ({ name: 'ApiError', error: 'Check your machines', details: problems });
+
 const FIELDS = ['eqAcHp', 'eqAcUnits', 'eqFog', 'eqAir', 'eqWalls', 'eqRoof', 'eqHeight'];
 const VERDICT_WORD = { enough: 'Enough', 'too-small': 'Too small', 'too-big': 'Too big', oversized: 'Bigger than needed', 'not-the-fix': 'Not the fix',
   poor: 'Poor', fair: 'Fair', good: 'Good' };
@@ -41,6 +45,7 @@ function progressText(p) {
 }
 
 // Aircond sizes tried: one row per AC run, in size order.
+const acIsEnough = report => report.ac.verdict === 'enough' || report.ac.verdict === 'oversized';
 function runRows(report) {
   const U = report.ac.units;
   return report.runs.filter(r => r.kind === 'ac').map(r => ({
@@ -51,7 +56,8 @@ function runRows(report) {
     kwh: r.kwhPerBlock.toFixed(2),
     rm: r.rmPerBlock.toFixed(2),
     result: r.tooBig ? 'too big' : r.acPass ? 'holds it' : 'too small',
-    tags: [...(r.ac_hp === report.ac.min ? ['smallest that works'] : []), ...(r.ac_hp === report.ac.recommended ? ['buy this'] : [])],
+    tags: [...(r.ac_hp === report.ac.min ? ['smallest that works'] : []), ...(r.ac_hp === report.ac.own ? ['your aircond'] : []),
+      ...(r.ac_hp === report.ac.recommended && !acIsEnough(report) ? ['buy this'] : [])],
   }));
 }
 
@@ -62,12 +68,25 @@ function machineRows(report) {
   const shell = e.walls !== null && e.roof !== null
     ? `Walls ${EQ.CONSTRUCTIONS[e.walls].label}, roof ${EQ.CONSTRUCTIONS[e.roof].label}` : 'Typical';
   return [
-    { machine: 'Aircond', yours: acText(report.ac.own, U), verdict: VERDICT_WORD[report.ac.verdict], buy: report.ac.recommended === report.ac.own ? '' : buy(report.ac.recommended, x => acText(x, U)) },
+    { machine: 'Aircond', yours: acText(report.ac.own, U), verdict: VERDICT_WORD[report.ac.verdict], buy: acIsEnough(report) || report.ac.recommended === report.ac.own ? '' : buy(report.ac.recommended, x => acText(x, U)) },
     { machine: 'Fogger', yours: `${report.fogger.own} L/h`, verdict: VERDICT_WORD[report.fogger.verdict], buy: buy(report.fogger.recommended, x => `${x} L/h`) },
     { machine: 'Air exchange', yours: `${int(report.air.own)} m³/h`, verdict: VERDICT_WORD[report.air.verdict], buy: buy(report.air.recommended, x => `${int(x)} m³/h`) },
     { machine: 'Walls and roof', yours: shell, verdict: VERDICT_WORD[report.insulation.verdict], buy: '' },
   ];
 }
+
+// C11 6: when the room's own aircond is big enough, say so (never "Buy this" on the size it already has); otherwise the report's own text.
+function acVerdictText(report) {
+  const ac = report.ac, U = ac.units;
+  if (!acIsEnough(report)) return ac.text;
+  let t = `Your ${acText(ac.own, U)} aircond is big enough.`;
+  if (ac.recommended !== null && ac.recommended < ac.own) t += ` A ${acText(ac.recommended, U)} would also be enough.`;
+  const tail = /hours\.( .*)$/.exec(ac.text || '');   // the engine's "no reserve" sentence, when it has one
+  return tail ? t + tail[1] : t;
+}
+
+const EMPTY_MIX = 'Add a mushroom and the number of blocks first.';
+const emptyMixReason = mix => (Array.isArray(mix) && mix.some(r => r.blocks > 0) ? '' : EMPTY_MIX);
 
 function heatRows(report) {
   return report.breakdown.items.map(i => ({ key: i.key, label: i.label, kwh: Math.round(i.kwh), share: Math.floor(i.share) }));
@@ -108,7 +127,9 @@ function renderReport(el, report) {
   if (report.verdict === 'impossible') {
     parts.push(node('p', report.why));
   } else {
-    report.summary.forEach((line, i) => { const p = node('p'); p.append(i === 0 ? node('strong', line) : line); parts.push(p); });
+    const lines = report.summary.slice();
+    if (report.ac.text && lines[0] === report.ac.text) lines[0] = acVerdictText(report);
+    lines.forEach((line, i) => { const p = node('p'); p.append(i === 0 ? node('strong', line) : line); parts.push(p); });
     const spT = report.targets.spT;
     parts.push(node('h4', 'Aircond sizes tried'));
     parts.push(table('run-list', ['Aircond', `Fruiting hours at ${spT} °C`, 'Worst stage', 'kWh per block', 'RM per block', 'Result'],
@@ -147,19 +168,51 @@ function markup() {
   return `<h3>Your machines</h3>
 <p class="explain">Tell the app which machines this room has. Check my machines runs a full cycle of this crop mix with them, then tries other aircond sizes, and says what is too small and what to buy.</p>
 <form class="equip-form">
-  <label>Aircond size <select id="eqAcHp">${EQ.AC_SIZES.map(s => opt(s.hp, `${s.hp} hp`)).join('')}</select></label>
-  <label>Number of airconds <input id="eqAcUnits" type="number" min="1" max="4" step="1"></label>
-  <label>Fogger (L/h) <input id="eqFog" type="number" min="0.5" max="50" step="0.5"></label>
-  <label>Air exchange (m³/h) <input id="eqAir" type="number" min="50" max="10000" step="50"></label>
-  <label>Walls <select id="eqWalls">${list(keys)}</select></label>
-  <label>Roof <select id="eqRoof">${list(keys.filter(k => EQ.CONSTRUCTIONS[k].roof))}</select></label>
-  <label>Inside height (m) <input id="eqHeight" type="number" min="2" max="6" step="0.1"></label>
-  <button type="button" class="btn" id="eqSave">Save machines</button>
-  <button type="button" class="btn primary" id="eqCheck">Check my machines</button>
+  <div class="form-grid">
+    <div class="field" data-field="ac_hp">
+      <label for="eqAcHp">Aircond size</label>
+      <div class="field-ctl"><select id="eqAcHp">${EQ.AC_SIZES.map(s => opt(s.hp, `${s.hp} hp`)).join('')}</select></div>
+      <p class="field-err" hidden></p>
+    </div>
+    <div class="field" data-field="ac_units">
+      <label for="eqAcUnits">Number of airconds</label>
+      <div class="field-ctl"><input id="eqAcUnits" type="number" min="1" max="4" step="1"><span class="unit">airconds</span></div>
+      <p class="field-err" hidden></p>
+    </div>
+    <div class="field" data-field="fog_lph">
+      <label for="eqFog">Fogger</label>
+      <div class="field-ctl"><input id="eqFog" type="number" min="0.5" max="50" step="0.5"><span class="unit">L/h</span></div>
+      <p class="field-err" hidden></p>
+    </div>
+    <div class="field" data-field="air_m3h">
+      <label for="eqAir">Air exchange</label>
+      <div class="field-ctl"><input id="eqAir" type="number" min="50" max="10000" step="50"><span class="unit">m³/h</span></div>
+      <p class="field-err" hidden></p>
+    </div>
+    <div class="field" data-field="walls">
+      <label for="eqWalls">Walls</label>
+      <div class="field-ctl"><select id="eqWalls">${list(keys)}</select></div>
+      <p class="field-err" hidden></p>
+    </div>
+    <div class="field" data-field="roof">
+      <label for="eqRoof">Roof</label>
+      <div class="field-ctl"><select id="eqRoof">${list(keys.filter(k => EQ.CONSTRUCTIONS[k].roof))}</select></div>
+      <p class="field-err" hidden></p>
+    </div>
+    <div class="field" data-field="height">
+      <label for="eqHeight">Inside height</label>
+      <div class="field-ctl"><input id="eqHeight" type="number" min="2" max="6" step="0.1"><span class="unit">m</span></div>
+      <p class="field-err" hidden></p>
+    </div>
+  </div>
+  <div class="btn-row">
+    <button type="button" class="btn btn-primary" id="eqSave">Save machines</button>
+    <button type="button" class="btn" id="eqCheck">Check my machines</button>
+  </div>
 </form>
 <p class="tag" id="eqAirNote"></p>
 <div class="run-progress" id="eqProgress" hidden><span id="eqProgressBar"></span><span id="eqProgressText"></span></div>
-<p class="tag" id="eqMsg"></p>
+<p class="alert" id="eqMsg" role="status" hidden></p>
 <div id="eqResult"></div>`;
 }
 
@@ -177,7 +230,7 @@ function mount(el, opts) {
   let dead = false, running = false, savedAir = opts.equipment ? opts.equipment.air_m3h : null;
   fillForm(form, opts.equipment);
 
-  const say = text => { $('eqMsg').textContent = text; };
+  const say = (text, lvl) => UI.say($('eqMsg'), lvl || 'info', text);
   const paintNote = () => {
     const st = opts.runInputs().settings, b = st ? st.airM3h : undefined;
     $('eqAirNote').textContent = airNote(savedAir, b === undefined ? savedAir : b);
@@ -194,21 +247,42 @@ function mount(el, opts) {
   section.addEventListener('focusin', repaint);
   section.addEventListener('pointerdown', repaint);
 
+  // Shows an error as a message plus marks on the fields it names.
+  const fail = (err, prefix) => {
+    const p = UI.plainError(err, LABELS);
+    say(prefix ? `${prefix}${p.text}` : p.text, 'error');
+    UI.markFields(form, p.fields);
+  };
+  // Leave guard: only while the form differs from the saved machines.
+  const guardApi = () => (global.FarmShell && global.FarmShell.guardLeave ? global.FarmShell : null);
+  let base = JSON.stringify(formValues(form)), guarded = false;
+  const syncGuard = () => {
+    const sh = guardApi();
+    if (!sh || dead) return;
+    const differs = JSON.stringify(formValues(form)) !== base;
+    if (differs && !guarded) { sh.guardLeave(() => 'Your machines have unsaved changes.'); guarded = true; }
+    else if (!differs && guarded) { sh.guardLeave(null); guarded = false; }
+  };
+  form.addEventListener('input', syncGuard);
+  form.addEventListener('change', syncGuard);
+
   async function save() {
     const eq = formValues(form);
+    UI.markFields(form, {});
     const problems = EQ.checkEquipment(eq);
-    if (problems.length) { say(problems.join('; ')); return null; }
+    if (problems.length) { fail(problemsError(problems)); return null; }
     try {
       const saved = await API.saveEquipment(opts.id, eq);
       if (dead) return null;
       savedAir = saved.air_m3h;
-      say('Saved. Simulate uses these machines now; the live room uses them after its next restart.');
+      base = JSON.stringify(formValues(form)); syncGuard();
+      say('Saved. Simulate uses these machines now; the live room uses them after its next restart.', 'good');
       // The server synced the settings (C3 6.26); their stream event has not reached the tab yet, so no note.
       $('eqAirNote').textContent = '';
       opts.onEquipment(saved);
       return saved;
     } catch (err) {
-      if (!dead) say(UI.errorText(err));
+      if (!dead) fail(err);
       return null;
     }
   }
@@ -216,9 +290,11 @@ function mount(el, opts) {
   async function check() {
     const inp = opts.runInputs();
     const eq = formValues(form);
+    UI.markFields(form, {});
     const problems = EQ.checkEquipment(eq);
-    if (problems.length) { say(problems.join('; ')); return; }
-    if (!Array.isArray(inp.mix) || global.ClimateCapacity.commonTargets(inp.mix).impossible) { say('This crop mix cannot share one room.'); return; }
+    if (problems.length) { fail(problemsError(problems)); return; }
+    if (emptyMixReason(inp.mix)) { say(EMPTY_MIX, 'info'); return; }
+    if (!Array.isArray(inp.mix) || global.ClimateCapacity.commonTargets(inp.mix).impossible) { say('This crop mix cannot share one room.', 'error'); return; }
     running = true; paintButtons(); say(''); $('eqResult').replaceChildren();
     const prog = $('eqProgress');
     let report;
@@ -237,7 +313,7 @@ function mount(el, opts) {
     } catch (err) {
       if (dead) return;
       running = false; paintButtons(); prog.hidden = true;
-      say(`The run stopped: ${err.message}`);
+      say(`The run stopped: ${err.message}`, 'error');
       return;
     }
     running = false; paintButtons(); prog.hidden = true;
@@ -245,10 +321,10 @@ function mount(el, opts) {
     try {
       const info = await API.createSimulation(opts.id, { kind: 'equipment', inputs: { ...inp.inputs, empty_below: null, equipment: eq }, result: report });
       if (dead) return;
-      say(`Saved as run ${info.id}.`);
+      say(`Saved as run ${info.id}.`, 'good');
       opts.onSaved(info);
     } catch (err) {
-      if (!dead) say(`The result was not saved: ${UI.errorText(err)}`);
+      if (!dead) say(`The result was not saved: ${UI.errorText(err)}`, 'error');
     }
   }
 
@@ -257,6 +333,7 @@ function mount(el, opts) {
 
   const unmount = () => {
     if (dead) return;
+    if (guarded && guardApi()) guardApi().guardLeave(null);
     dead = true;
     if (mounted.get(el) === unmount) mounted.delete(el);
     section.removeEventListener('focusin', repaint);
@@ -267,5 +344,5 @@ function mount(el, opts) {
   return { unmount };
 }
 
-global.FarmEquipmentCard = { mount, renderReport, helpers: { formValues, fillForm, progressText, runRows, machineRows, heatRows, airNote } };
+global.FarmEquipmentCard = { mount, renderReport, helpers: { formValues, fillForm, progressText, runRows, machineRows, heatRows, airNote, acVerdictText, emptyMixReason } };
 })(typeof window !== 'undefined' ? window : globalThis);
