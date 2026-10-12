@@ -458,12 +458,6 @@ function rampNote(stored, edited) {
   const h = edited.program && edited.program.rampH;
   return h > 0 ? `After you save, the targets move to ${to} over ${nf1(h)} h.` : `After you save, the targets change to ${to}.`;
 }
-// Warnings for the targets shown, split by the slider they belong to: T sentences mention °C, RH sentences mention humidity.
-function targetWarns(s) {
-  const all = global.FarmUi.targetWarnings({ crop: s.crop, stage: s.stage, spT: s.spT, spRH: s.spRH });
-  return { T: all.filter(w => !/ humidity;/.test(w)), RH: all.filter(w => / humidity;/.test(w)) };
-}
-
 // ---------------- createSettingsPanel (7.2-7.4, 7.8, 7.9) ----------------
 const DEV_NAME = { ac: 'Air conditioner', hu: 'Fogger', air: 'Air exchange', lights: 'Lights', circ: 'Circulation fan' };
 
@@ -684,7 +678,7 @@ function createSettingsPanel(el, options) {
     { const elIn = $('#pgTimes'); if (document.activeElement !== elIn || elIn === forceWriteEl) elIn.value = s.program.harvest.times.map(CC.hhmm).join(', '); }
     $('#cropWants').textContent = wantsText(s.crop, s.stage);
     { const note = rampNote(stored, s), n = $('#cropRamp'); n.hidden = !note; n.textContent = note; }
-    { const w = targetWarns(s);
+    { const w = global.FarmUi.targetWarningsByKind({ crop: s.crop, stage: s.stage, spT: s.spT, spRH: s.spRH });
       for (const [id, list] of [['warnSpT', w.T], ['warnSpRH', w.RH]]) {
         $('#' + id).replaceChildren(...list.map(t => { const p = document.createElement('p'); p.className = 'field-help target-warn'; p.textContent = `▲ ${t}`; return p; }));
       } }
@@ -816,6 +810,6 @@ function showChanges(changes, opts) {
   });
 }
 
-const FarmSettingsPanel = { createSettingsPanel, diffSettings, applyChanges, formatValue, safeSettings, FIELDS, showChanges, ruleHelp, wantsText, rampNote, targetWarns, checkSection };
+const FarmSettingsPanel = { createSettingsPanel, diffSettings, applyChanges, formatValue, safeSettings, FIELDS, showChanges, ruleHelp, wantsText, rampNote, checkSection };
 global.FarmSettingsPanel = FarmSettingsPanel;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -72,7 +72,7 @@ test('RULEGRID priority 3 is one grid and the checkboxes sit straight in their c
   assert.doesNotMatch(src, /style="margin-top/);
 });
 
-test('C14 wantsText, rampNote, targetWarns and the confirm section', () => {
+test('C14 wantsText, rampNote, targetWarningsByKind and the confirm section', () => {
   require('../web/ui.js'); require('../web/settings-panel.js');
   const SP = globalThis.FarmSettingsPanel;
   assert.equal(SP.wantsText('lionsmane', 'pinning'), "Lion's mane · pinning wants 17 °C · 92 % · CO₂ under 1,000 ppm");
@@ -82,10 +82,10 @@ test('C14 wantsText, rampNote, targetWarns and the confirm section', () => {
   const edited = { ...stored, crop: 'lionsmane', stage: 'pinning', program: { ...stored.program, rampH: 6 } };
   assert.equal(SP.rampNote(stored, edited), 'After you save, the targets move to 17 °C and 92 % over 6 h.');
   assert.equal(SP.rampNote(stored, { ...edited, program: { ...edited.program, rampH: 0 } }), 'After you save, the targets change to 17 °C and 92 %.');
-  const w = SP.targetWarns({ ...stored, crop: 'oyster', stage: 'fruiting', spT: 16, spRH: 80 });
+  const w = globalThis.FarmUi.targetWarningsByKind({ ...stored, crop: 'oyster', stage: 'fruiting', spT: 16, spRH: 80 });
   assert.equal(w.T.length, 1); assert.match(w.T[0], /16 °C is outside/);
   assert.equal(w.RH.length, 1); assert.match(w.RH[0], /% drier\.$/);
-  assert.deepEqual(SP.targetWarns({ ...stored, spT: 25, spRH: 88 }), { T: [], RH: [] });
+  assert.deepEqual(globalThis.FarmUi.targetWarningsByKind({ ...stored, spT: 25, spRH: 88 }), { T: [], RH: [] });
   assert.equal(SP.checkSection([]), null);
 });
 
