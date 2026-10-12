@@ -136,8 +136,87 @@ function differenceLines(d) {
 function predictedRows(series) { return series.map(s => ({ t: s.h * 3600, T: s.T, RH: s.RH, CO2: s.CO2 })); }
 function realRows(buckets, start) { return buckets.map(b => ({ t: b.t - start, T: b.T, RH: b.RH, CO2: b.CO2 })); }
 
+// ---- fit quality (C13 4, lead decision 103) ----
+const FIT = {
+  T: { label: 'Temperature', plain: 'temperature', unit: '°C', good: 0.5, fair: 1.0, digits: 2 },
+  RH: { label: 'Humidity', plain: 'humidity', unit: '% RH', good: 3, fair: 6, digits: 1 },
+  CO2: { label: 'CO₂', plain: 'CO₂', unit: 'ppm', good: 80, fair: 150, digits: 0 },
+};
+const FIT_LVL = { Good: 'good', Fair: 'warning', Poor: 'serious' };
+// kind: 'T', 'RH' or 'CO2'; rmse in the unit of the kind. Null when there is no number.
+function fitVerdict(kind, rmse) {
+  const f = Object.hasOwn(FIT, kind) ? FIT[kind] : null;
+  if (!f || !Number.isFinite(rmse)) return null;
+  const word = rmse <= f.good ? 'Good' : rmse <= f.fair ? 'Fair' : 'Poor';
+  return { word, lvl: FIT_LVL[word] };
+}
+// One row per measurement: the error before (typical or applied values) and after (fitted), with the verdict on the fitted one.
+function fitRows(before, after) {
+  return Object.keys(FIT).map(k => ({ kind: k, label: FIT[k].label, plain: FIT[k].plain, unit: FIT[k].unit, digits: FIT[k].digits, good: FIT[k].good, fair: FIT[k].fair,
+    before: before[k], after: after[k], verdict: fitVerdict(k, after[k]) }));
+}
+function fitSummary(rows) {
+  const judged = rows.filter(r => r.verdict);
+  if (!judged.length) return 'There are not enough readings to judge the fit.';
+  const poor = judged.filter(r => r.verdict.word === 'Poor').map(r => r.plain);
+  if (poor.length) return `The fitted room still differs from your readings in ${poor.join(' and ')}. Check the number of blocks and the machines, then fit again.`;
+  if (judged.every(r => r.verdict.word === 'Good')) return 'The fitted room follows your readings closely.';
+  const fair = judged.filter(r => r.verdict.word === 'Fair').map(r => r.plain);
+  return `The fitted room follows your readings, but ${fair.join(' and ')} could be closer.`;
+}
+const fixed = (v, d) => (Number.isFinite(v) ? v.toFixed(d) : '–');
+const fitObservers = new Set();
+function disposeFit() { for (const o of fitObservers) o.disconnect(); fitObservers.clear(); }
+// Drawn 1:1 at the width of its box (decision 106), between 480 and 900.
+function fitFigure(before, after) {
+  const rows = fitRows(before, after), summary = fitSummary(rows);
+  const S = (tag, attrs, parent) => UI().svgEl(tag, attrs, parent);
+  const txt = (parent, x, y, s, cls, extra) => { const e = S('text', { x, y, class: cls, ...(extra || {}) }, parent); e.textContent = s; return e; };
+  const aria = `${summary} Error before and after the fit: ${rows.map(r => `${r.label} ${fixed(r.before, r.digits)} ${r.unit} now, ${fixed(r.after, r.digits)} ${r.unit} after${r.verdict ? `, ${r.verdict.word}` : ''}`).join('; ')}.`;
+  const mkEl = (tag, cls, text) => { const e = document.createElement(tag); e.className = cls; if (text !== undefined) e.textContent = text; return e; };
+  const fig = mkEl('figure', 'plan-fig fit-quality');
+  const host = mkEl('div', 'plan-scroll');
+  fig.append(mkEl('h4', 'plan-q', 'How close is the fitted room to your readings?'), mkEl('p', 'plan-verdict', summary),
+    mkEl('p', 'plan-sub', 'The dashed line is the Good limit. Smaller bars are better.'), host);
+  let last = 0, ro = null;
+  const paint = () => {
+    const avail = host.clientWidth || 0, W = Math.round(Math.min(900, Math.max(480, avail || 480)));
+    if (W === last) return;
+    last = W;
+    const LW = 100, VW = 96, LBL = 76, BW = W - LW - VW - LBL, RH = 56, TOP = 8, H = TOP + rows.length * RH + 4;
+    const svg = S('svg', { class: 'plan-svg', role: 'img', 'aria-label': aria, width: W, height: H, viewBox: `0 0 ${W} ${H}` });
+    rows.forEach((r, i) => {
+      const y = TOP + i * RH, top = Math.max(r.before || 0, r.after || 0, r.fair * 1.15) || 1;
+      const w = v => Math.max(2, (Number.isFinite(v) ? v : 0) / top * BW);
+      const gx = LW + r.good / top * BW;
+      txt(svg, 0, y + 25, r.label, 'pt pt-strong');
+      txt(svg, 0, y + 40, r.unit, 'pt pt-muted');
+      S('rect', { class: 'plan-b-before', x: LW, y: y + 6, width: w(r.before), height: 16, rx: 3 }, svg);
+      txt(svg, LW + Math.max(w(r.before), gx - LW) + 8, y + 19, `${fixed(r.before, r.digits)} now`, 'pt pt-muted');
+      S('rect', { class: 'plan-b-after', x: LW, y: y + 27, width: w(r.after), height: 16, rx: 3 }, svg);
+      txt(svg, LW + Math.max(w(r.after), gx - LW) + 8, y + 40, `${fixed(r.after, r.digits)} after`, 'pt');
+      S('line', { class: 'plan-pass', x1: gx, x2: gx, y1: y + 2, y2: y + 47 }, svg);
+      if (r.verdict) {
+        S('circle', { class: `plan-dot plan-dot-${r.verdict.lvl}`, cx: W - VW + 8, cy: y + 24, r: 6 }, svg);
+        txt(svg, W - VW + 20, y + 29, r.verdict.word, 'pt pt-strong');
+      }
+    });
+    host.replaceChildren(svg);
+  };
+  paint();
+  if (typeof ResizeObserver === 'function') {
+    ro = new ResizeObserver(() => { if (host.isConnected === false) { ro.disconnect(); fitObservers.delete(ro); return; } paint(); });
+    ro.observe(host);
+    fitObservers.add(ro);
+  }
+  return fig;
+}
+
+const UI = () => global.FarmUi;
+
 const helpers = { farmMidnight, farmDate, defaultRange, rangeQuery, logFromReadings, historyGaps, envBaseFor, paramsOfRun, startParams,
-  defaultBlocks, parseBlocks, fitBlockReason, calibBody, sameMachines, staleText, pairSeries, differences, differenceLines, predictedRows, realRows };
+  defaultBlocks, parseBlocks, fitBlockReason, calibBody, sameMachines, staleText, pairSeries, differences, differenceLines, predictedRows, realRows,
+  fitVerdict, fitRows, fitSummary, fitFigure };
 const EXPLAIN = "Calibrate = make the virtual room behave like this real room. The room's recorded history is already on the farm server: pick a few days and press Fit. The app replays those days in its virtual room and adjusts four room values until it matches what really happened. Then Simulate gives answers for this room, not an average one.";
 
 const MARKUP = `
@@ -171,6 +250,7 @@ const MARKUP = `
     <p class="field-help" id="calFitHelp"></p>
   </div>
   <p class="alert" id="calMsg" role="status" hidden></p>
+  <div id="cbFit"></div>
   <table class="fit-table" id="cbTable"></table>
   <div class="cal-charts" id="cbCharts"></div>
 </section>
@@ -239,6 +319,9 @@ function mount(el, ctx) {
     const old = $('#cbNote'); if (old) old.remove();
     const n = CAL.PARAMS.ua && CAL.PARAMS.ua.note;
     if (typeof n === 'string') { const p = document.createElement('p'); p.className = 'tag'; p.id = 'cbNote'; p.textContent = n; table.after(p); }
+    const fq = $('#cbFit');
+    disposeFit();
+    if (fit && base && base.rmse && fit.result.rmse) fq.replaceChildren(fitFigure(base.rmse, fit.result.rmse)); else fq.replaceChildren();
     const host = $('#cbCharts');
     if (rows && base) global.FarmCharts.drawCalibCharts(host, { rows, base, fit });
     else host.replaceChildren();
@@ -408,7 +491,7 @@ function mount(el, ctx) {
   })();
 }
 function unmount() {
-  try { alive = false; gen++; } catch { /* never throws */ }
+  try { alive = false; gen++; disposeFit(); } catch { /* never throws */ }
 }
 
 global.FarmRoomTabs.register('calibrate', { mount, unmount, helpers });

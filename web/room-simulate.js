@@ -37,7 +37,7 @@ function cycleSummary(res) {
   const n = res.stages.filter(g => g.pass === false).length;
   const chip = n === 0 ? { lvl: 'good', icon: '✓', text: 'all stages pass' } : { lvl: 'warning', icon: '✕', text: `${n} stage(s) fail` };
   const t = res.totals;
-  return { chip, line: `${plural(t.days, 'day', 'days')} · ${plural(res.inputs.flushes, 'flush', 'flushes')} · ${Math.round(t.kwh)} kWh · RM ${t.rm.toFixed(2)} · RM ${t.rmPerBlock.toFixed(2)} per block` };
+  return { chip, line: `${plural(t.days, 'day', 'days')} · ${plural(res.inputs.flushes, 'flush', 'flushes')} · ${kwh1(t.kwh)} kWh · RM ${t.rm.toFixed(2)} · RM ${t.rmPerBlock.toFixed(2)} per block` };
 }
 function stageRows(res) {
   return res.stages.map(g => {
@@ -60,7 +60,7 @@ function seriesPoints(res) {
 
 const CHIPS = {
   cycle: { pass: ['good', '✓', 'Passes'], fail: ['warning', '✕', 'Fails'] },
-  capacity: { good: ['good', '✓', 'Good'], tight: ['info', '●', 'Tight'], 'too-dense': ['warning', '✕', 'Too many blocks'], 'too-empty': ['info', '●', 'Too few blocks'] },
+  capacity: { good: ['good', '✓', 'Good'], tight: ['info', '●', 'Tight'], 'too-dense': ['warning', '✕', 'Too full'], 'too-empty': ['info', '●', 'Too empty'] },
   equipment: { enough: ['good', '✓', 'Enough'], 'too-small': ['warning', '✕', 'Too small'], 'too-big': ['warning', '✕', 'Too big'],
     oversized: ['info', '●', 'Bigger than needed'] },
 };
@@ -117,12 +117,13 @@ function runBlockReason(mix) {
 }
 const regionText = key => (key === 'my-lowland' ? 'Lowland Peninsular Malaysia' : key);
 const helpers = { toCapacityMix, toMixRows, sameMix, appliedCalib, runInputs, cycleSummary, stageRows,
-  seriesPoints, runRowTexts, progressText, machinesText, clampBlocks, clampCo2, regionText, availableCrops, runBlockReason };
+  seriesPoints, runRowTexts, progressText, machinesText, clampBlocks, clampCo2, regionText, availableCrops, runBlockReason,
+  bulletZones, bulletVerdict, bulletFigure, savedEmptyBelow, cycleDays, cycleFigure, kwh1 };
 
 // ---------------- the capacity report (moved from web/capacity.js, wave 1) ----------------
 const VERDICT_CHIP = {
   impossible: { lvl: 'critical', icon: '◆', text: 'Impossible' },
-  'too-dense': { lvl: 'serious', icon: '▲', text: 'Too dense' },
+  'too-dense': { lvl: 'serious', icon: '▲', text: 'Too full' },
   tight: { lvl: 'warning', icon: '▲', text: 'Tight' },
   good: { lvl: 'good', icon: '✓', text: 'Good' },
   'too-empty': { lvl: 'warning', icon: '▼', text: 'Too empty' },
@@ -133,33 +134,149 @@ const FAIL_MACHINE = { 'temperature too high': 'the AC cannot cool enough', 'tem
   'humidity near saturation': 'the AC cannot dry enough', 'CO₂ above the limit': 'the air exchange is too small for short purges' };
 
 const cropName = k => { const C = global.ClimateController.CROPS; return Object.hasOwn(C, k) ? C[k].name : k; };
-function verdictText(rep) {
-  const UI = global.FarmUi;
-  const cap = rep.capacity, pct = rep.utilisation == null ? '' : ` (${Math.round(rep.utilisation)} %)`;
-  const holds = !cap ? '' : cap.settled ? `Holds ${UI.nf(cap.max)} blocks` : cap.hi ? `Holds between ${UI.nf(cap.max)} and ${UI.nf(cap.hi)} blocks` : `Holds at least ${UI.nf(cap.max)} blocks`;
-  switch (rep.verdict) {
-    case 'impossible': return rep.why || 'No size of this mix passes on all design days, even with almost no blocks.';
-    case 'too-dense': return `${holds}; you plan ${UI.nf(rep.planned)}${pct}.`;
-    case 'tight': return `${holds}; you plan ${UI.nf(rep.planned)}${pct}. It works, but there is no margin for a hotter week than the design days.`;
-    case 'good': return `${holds}; you plan ${UI.nf(rep.planned)}${pct}.`;
-    case 'too-empty': return rep.why === 'wet'
-      ? `Below about ${UI.nf(cap.min)} blocks the room is too wet (near saturation); you plan ${UI.nf(rep.planned)}. ${holds}.`
-      : `You use ${Math.round(rep.utilisation)} % of the room. ${holds}; you plan ${UI.nf(rep.planned)}.`;
-    default: return '';
+// ---- plan charts (C13 4, decision 106): hand-made inline SVG, drawn 1:1 at the width of their box ----
+const S = (tag, attrs, parent) => global.FarmUi.svgEl(tag, attrs, parent);
+function label(parent, x, y, s, cls, extra) {
+  const e = S('text', { x, y, class: cls, ...(extra || {}) }, parent);
+  e.textContent = s;
+  return e;
+}
+const observers = new Set();
+function disposeCharts() { for (const o of observers) o.disconnect(); observers.clear(); }
+// Draws o.draw(svg, w) into host at the host's width (between o.min and o.max); redraws when the width changes.
+function chartInto(host, o) {
+  let last = 0, ro = null;
+  const paint = () => {
+    const avail = host.clientWidth || 0;
+    const w = Math.round(Math.min(o.max || Infinity, Math.max(o.min, avail || o.min)));
+    if (w === last) return;
+    last = w;
+    const svg = S('svg', { class: 'plan-svg', role: 'img', 'aria-label': o.aria, width: w });
+    const h = o.draw(svg, w);
+    svg.setAttribute('height', h);
+    svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+    host.replaceChildren(svg);
+  };
+  paint();
+  if (typeof ResizeObserver === 'function') {
+    ro = new ResizeObserver(() => {
+      if (host.isConnected === false) { ro.disconnect(); observers.delete(ro); return; }
+      paint();
+    });
+    ro.observe(host);
+    observers.add(ro);
   }
 }
-function renderReport(host, rep) {
+// A figure with its question as heading; the chart's box scrolls when the screen is narrower than the chart's minimum.
+function figure(cls, question) {
+  const host = mk('div', { cls: 'plan-scroll' });
+  const fig = mk('figure', { cls: `plan-fig ${cls}` }, mk('h4', { cls: 'plan-q', text: question }), host);
+  return { fig, host };
+}
+function more(summary, ...kids) {
+  return mk('details', { cls: 'plan-more' }, mk('summary', { text: summary }), ...kids);
+}
+const niceStep = (span, target) => {
+  const raw = span / target, mag = 10 ** Math.floor(Math.log10(raw || 1)), n = raw / mag;
+  return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * mag;
+};
+function kwh1(x) { return x.toFixed(1).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+
+// Where the zones of the capacity bullet lie. emptyBelow = the "too empty" percentage of the capacity the run was made with.
+// The upper end has three cases: settled (fits up to max), a range (fits to max, unsure to hi) or open (at least max).
+function bulletZones(rep, emptyBelow) {
+  const cap = rep && rep.capacity;
+  if (!cap || !(cap.max > 0)) return null;
+  const eb = Number.isFinite(emptyBelow) ? Math.min(100, Math.max(0, emptyBelow)) : global.ClimateCapacity.VERDICT.emptyBelow;
+  const max = cap.max, lo = Math.min(max, Math.max(cap.min || 0, Math.ceil(max * eb / 100)));
+  const tried = (rep.runs || []).reduce((m, r) => Math.max(m, r.blocks), 0);
+  const hi = Number.isFinite(cap.hi) && cap.hi > max ? cap.hi : null;
+  const kind = cap.settled || (hi === null && cap.hi === undefined && cap.settled !== false) ? 'settled' : hi !== null ? 'range' : 'atleast';
+  const end = Math.max(tried, rep.planned || 0, max, kind === 'settled' ? 0 : hi || 0);
+  const zones = [{ key: 'empty', label: 'Too empty', from: 0, to: lo }, { key: 'fits', label: 'Fits', from: lo, to: max }];
+  if (kind === 'settled') zones.push({ key: 'full', label: 'Too full', from: max, to: end });
+  else if (kind === 'range') zones.push({ key: 'maybe', label: 'Not sure', from: max, to: hi }, { key: 'full', label: 'Too full', from: hi, to: end });
+  else zones.push({ key: 'maybe', label: 'Not sure', from: max, to: end });
+  return { end, lo, hi: max, upper: hi, kind, plan: rep.planned || 0, zones: zones.filter(z => z.to > z.from), efficient: null };
+}
+// The inputs a saved run was made with: its own "too empty below".
+function savedEmptyBelow(run) { return run && run.inputs && Number.isFinite(run.inputs.empty_below) ? run.inputs.empty_below : undefined; }
+function holdsText(z) {
+  return z.kind === 'settled' ? `The room holds up to ${int(z.hi)}.` : z.kind === 'range' ? `The room holds between ${int(z.hi)} and ${int(z.upper)}.`
+    : `The room holds at least ${int(z.hi)}.`;
+}
+// The verdict in one or two sentences (C13 4: "2,000 blocks fit. The room holds up to 3,652.").
+function bulletVerdict(rep, emptyBelow) {
+  if (rep.verdict === 'impossible') return rep.why || 'No size of this mix passes on all design days, even with almost no blocks.';
+  const z = bulletZones(rep, emptyBelow);
+  if (!z) return '';
+  const n = int, upTo = holdsText(z);
+  switch (rep.verdict) {
+    case 'too-dense': return `${n(z.plan)} blocks are too many. ${upTo}`;
+    case 'tight': return `${n(z.plan)} blocks fit, but only just. ${upTo} There is no margin for a hotter week than the design days.`;
+    case 'too-empty': return rep.why === 'wet'
+      ? `${n(z.plan)} blocks are too few: below about ${n(rep.capacity.min)} the room gets too wet. ${upTo}`
+      : `${n(z.plan)} blocks are too few for this room. It fits ${n(z.lo)} to ${n(z.hi)} blocks.`;
+    default: return `${n(z.plan)} blocks fit. ${upTo}`;
+  }
+}
+function bulletFigure(rep, emptyBelow) {
+  const z = bulletZones(rep, emptyBelow);
+  if (!z) return null;
+  const verdict = bulletVerdict(rep, emptyBelow);
+  const fullFrom = z.kind === 'settled' ? z.hi : z.upper;
+  const aria = `${verdict} Too empty below ${int(z.lo)} blocks, fits ${int(z.lo)} to ${int(z.hi)}`
+    + `${fullFrom ? `, too full above ${int(fullFrom)}` : ''}. Your plan: ${int(z.plan)} blocks.`;
+  const { fig, host } = figure('cap-bullet', 'Does your plan fit this room?');
+  const chip = mk('span', { cls: 'chip' }); global.FarmUi.paintChip(chip, VERDICT_CHIP[rep.verdict]);
+  fig.insertBefore(mk('p', { cls: 'plan-verdict' }, chip, ` ${verdict}`), host);
+  const FILL = { empty: 'plan-z-empty', fits: 'plan-z-fits', maybe: 'plan-z-maybe', full: 'plan-z-full' };
+  chartInto(host, { min: 300, max: 900, aria, draw(svg, W) {
+    const PAD = 16, PW = W - 2 * PAD, BY = 36, BH = 22, x = v => PAD + (v / z.end) * PW;
+    z.zones.forEach((zn, i) => {
+      const a = x(zn.from), b = x(zn.to);
+      S('rect', { class: FILL[zn.key], x: a, y: BY, width: Math.max(0, b - a - (i < z.zones.length - 1 ? 1 : 0)), height: BH, rx: 4 }, svg);
+    });
+    // zone names on one row under the bar; "Too full" hangs on the bar's right end and is dropped when it would touch "Fits"
+    const ly = BY + BH + 18, fits = z.zones.find(q => q.key === 'fits');
+    const fitsMid = (x(fits.from) + x(fits.to)) / 2;
+    for (const zn of z.zones) {
+      if (zn.key === 'maybe') continue;
+      const mid = (x(zn.from) + x(zn.to)) / 2;
+      if (zn.key === 'full') {
+        if (x(zn.to) - 62 > fitsMid + 24 && x(zn.to) - x(zn.from) > 20) label(svg, x(zn.to), ly, zn.label, 'pt pt-zone', { 'text-anchor': 'end' });
+      } else label(svg, mid, ly, zn.label, 'pt pt-zone', { 'text-anchor': 'middle' });
+    }
+    // the boundaries as numbers
+    const seen = [];
+    for (const [v, anchor] of [[0, 'start'], [z.lo, 'middle'], [z.hi, 'middle'], [z.upper, 'middle'], [z.end, 'end']]) {
+      if (v === null || v === undefined || seen.some(s => Math.abs(x(s) - x(v)) < 46)) continue;
+      seen.push(v);
+      label(svg, x(v), BY + BH + 40, int(v), 'pt pt-muted', { 'text-anchor': anchor });
+      S('line', { class: 'plan-tick', x1: x(v), x2: x(v), y1: BY + BH, y2: BY + BH + 4 }, svg);
+    }
+    const px = x(z.plan), anchor = px < 90 ? 'start' : px > W - 90 ? 'end' : 'middle';
+    label(svg, px, 15, `Your plan · ${int(z.plan)}`, 'pt pt-strong', { 'text-anchor': anchor });
+    S('path', { class: 'plan-pin', d: `M${px - 6} 21 L${px + 6} 21 L${px} 31 Z` }, svg);
+    S('line', { class: 'plan-pin-line', x1: px, x2: px, y1: 31, y2: BY + BH + 2 }, svg);
+    return BY + BH + 48;
+  } });
+  return fig;
+}
+
+function renderReport(host, rep, opts) {
   const UI = global.FarmUi;
   host.replaceChildren();
   const p = (txt, cls) => { const e = document.createElement('p'); e.textContent = txt; if (cls) e.className = cls; host.append(e); return e; };
-  const chip = document.createElement('span'); chip.className = 'chip'; UI.paintChip(chip, VERDICT_CHIP[rep.verdict]);
-  const head = document.createElement('p'); head.append(chip, ` ${verdictText(rep)}`); host.append(head);
+  const emptyBelow = opts && opts.emptyBelow;
+  const fig = rep.verdict === 'impossible' ? null : bulletFigure(rep, emptyBelow);
+  if (fig) host.append(fig);
+  else {
+    const chip = document.createElement('span'); chip.className = 'chip'; UI.paintChip(chip, VERDICT_CHIP[rep.verdict]);
+    const head = document.createElement('p'); head.append(chip, ` ${bulletVerdict(rep, emptyBelow)}`); host.append(head);
+  }
   for (const w of rep.warnings || []) p(w, 'warn');
   if (!rep.capacity) return;
-  if (rep.utilisation != null) {
-    const bar = document.createElement('div'); bar.className = 'cap-util'; bar.dataset.lvl = VERDICT_CHIP[rep.verdict].lvl; bar.setAttribute('aria-hidden', 'true');
-    const fill = document.createElement('span'); fill.style.width = `${UI.clamp(rep.utilisation, 0, 100)}%`; bar.append(fill); host.append(bar);
-  }
   const t = rep.targets;
   p(`Targets: ${t.spT} °C, ${t.spRH} % RH, CO₂ limit ${UI.nf(t.co2Lim)} ppm (${cropName(t.crop)} sets the CO₂ limit).`);
   const split = (rep.perCrop || []).filter(c => c.max > 0);
@@ -179,7 +296,66 @@ function renderReport(host, rep) {
     tr.append(UI.cell('td', d.name), UI.cell('td', `${d.inT.toFixed(0)} %`), UI.cell('td', `${d.rhOk.toFixed(0)} %`), UI.cell('td', `${d.wet.toFixed(0)} %`), UI.cell('td', `${d.co2Below.toFixed(0)} %`), UI.cell('td', d.pass ? 'Pass' : d.fails.join(', ')));
     tb.append(tr);
   }
-  tbl.append(thead, tb); host.append(tbl);
+  tbl.append(thead, tb); host.append(more('Show the three design days', tbl));
+}
+
+// ---- the cycle chart ----
+const STAGE_ORDER = ['spawn', 'pinning', 'fruiting', 'rest'];
+// The numbers of the cycle chart from a C7 result: kWh per day (summed from the hourly series), the stage spans and the flush days.
+function cycleDays(res) {
+  const series = res.series || [];
+  const last = series.reduce((m, p) => Math.max(m, p.h), -1);
+  const n = Math.max(res.totals ? res.totals.days : 0, Math.floor(last / 24) + 1);
+  const kwh = new Array(n).fill(0);
+  for (const p of series) kwh[Math.floor(p.h / 24)] += p.kwh;
+  const stages = res.stages.map(g => ({ stage: g.stage, flush: g.flush, from: g.startDay, to: g.startDay + g.days, pass: g.pass }));
+  return { days: kwh.map((k, day) => ({ day, kwh: k })), stages,
+    flushes: stages.filter(g => g.stage === 'fruiting').map(g => ({ flush: g.flush, day: g.from })),
+    maxKwh: kwh.reduce((m, k) => Math.max(m, k), 0), total: { days: n, kwh: res.totals.kwh, rm: res.totals.rm } };
+}
+function cycleFigure(res) {
+  const CD = cycleDays(res), N = CD.total.days, STG = { spawn: 'Spawn run', pinning: 'Pinning', fruiting: 'Fruiting', rest: 'Rest' };
+  const rowsOf = STAGE_ORDER.filter(s => CD.stages.some(g => g.stage === s));
+  const fails = CD.stages.filter(g => !g.pass).length, fl = CD.flushes.length;
+  const aria = `Your grow cycle takes ${N} days with ${fl} ${fl === 1 ? 'flush' : 'flushes'} and uses ${kwh1(CD.total.kwh)} kWh, RM ${CD.total.rm.toFixed(2)}. `
+    + (fails ? `${fails} ${fails === 1 ? 'stage does' : 'stages do'} not pass.` : 'Every stage passes.');
+  const { fig, host } = figure('cycle-gantt', 'Your grow cycle, day by day');
+  const chip = mk('span', { cls: 'chip' }); global.FarmUi.paintChip(chip, cycleSummary(res).chip);
+  fig.insertBefore(mk('p', { cls: 'plan-verdict' }, chip, ` ${cycleSummary(res).line}`), host);
+  chartInto(host, { min: 560, max: 1000, aria, draw(svg, W) {
+    const LW = 92, RP = 16, PW = W - LW - RP, RH = 24, RG = 6, MK = 22, TOP = MK;
+    const EY = TOP + rowsOf.length * (RH + RG) + 14, EH = 70, AY = EY + EH;
+    const x = d => LW + (d / N) * PW;
+    const step = niceStep(N, Math.max(4, Math.floor(PW / 70)));
+    for (let d = 0; d <= N + 1e-9; d += step) {
+      S('line', { class: 'plan-grid', x1: x(d), x2: x(d), y1: TOP - 4, y2: AY }, svg);
+      label(svg, x(d), AY + 17, `${d}`, 'pt pt-muted', { 'text-anchor': 'middle' });
+    }
+    label(svg, LW - 10, AY + 17, 'day', 'pt pt-muted', { 'text-anchor': 'end' });
+    // flush markers on their own row above the bands
+    CD.flushes.forEach((f, i) => {
+      const fx = x(f.day), next = CD.flushes[i + 1], room = next ? x(next.day) - fx : Infinity;
+      S('path', { class: 'plan-flush', d: `M${fx - 5} 5 l10 0 l-5 9 z` }, svg);
+      label(svg, fx + 9, 14, room >= 64 ? `Flush ${f.flush}` : `${f.flush}`, 'pt pt-strong');
+    });
+    rowsOf.forEach((st, i) => {
+      const y = TOP + i * (RH + RG);
+      label(svg, LW - 10, y + 16, STG[st], 'pt', { 'text-anchor': 'end' });
+      for (const g of CD.stages.filter(s => s.stage === st)) {
+        S('rect', { class: `plan-st plan-st-${st}${g.pass ? '' : ' plan-st-fail'}`, x: x(g.from), y, width: Math.max(2, x(g.to) - x(g.from) - 1), height: RH, rx: 3 }, svg);
+      }
+    });
+    label(svg, LW - 10, EY + 10, 'kWh a day', 'pt', { 'text-anchor': 'end' });
+    label(svg, LW - 10, EY + 25, `up to ${kwh1(CD.maxKwh)}`, 'pt pt-muted', { 'text-anchor': 'end' });
+    S('line', { class: 'plan-axis', x1: LW, x2: LW + PW, y1: AY, y2: AY }, svg);
+    const bw = Math.max(1, PW / N - 1), top = CD.maxKwh || 1;
+    for (const d of CD.days) {
+      const h = d.kwh / top * EH;
+      S('rect', { class: 'plan-day', x: x(d.day) + 0.5, y: AY - h, width: bw, height: h }, svg);
+    }
+    return AY + 26;
+  } });
+  return fig;
 }
 
 // ---------------- the tab ----------------
@@ -282,30 +458,34 @@ function paintMix() {
 
 // ---- results ----
 function clearResult() {
+  disposeCharts();
   if (charts) { try { charts.destroy(); } catch { /* the charts are gone with the page */ } charts = null; }
   const host = q('#smResult');
   host.replaceChildren();
   q('#smCharts').replaceChildren();
   return host;
 }
-function showResult(kind, result) {
+function showResult(kind, result, opts) {
   const UI = global.FarmUi;
   const host = clearResult();
   host.hidden = false;
-  if (kind === 'capacity') { const box = mk('div', { cls: 'cap-report' }); host.append(box); renderReport(box, result); return; }
+  if (kind === 'capacity') { const box = mk('div', { cls: 'cap-report' }); host.append(box); renderReport(box, result, { emptyBelow: opts && opts.emptyBelow }); return; }
   if (kind === 'equipment') {
     if (global.FarmEquipmentCard) global.FarmEquipmentCard.renderReport(host, result);
     else host.append(mk('p', { cls: 'est-note', text: NOT_INSTALLED }));
     return;
   }
-  const sum = cycleSummary(result);
-  const chip = mk('span', { cls: 'chip' }); UI.paintChip(chip, sum.chip);
-  host.append(mk('p', {}, chip, ` ${sum.line}`));
-  if (result.verdict === 'impossible') return;
+  if (result.verdict === 'impossible') {
+    const sum = cycleSummary(result);
+    const chip = mk('span', { cls: 'chip' }); UI.paintChip(chip, sum.chip);
+    host.append(mk('p', {}, chip, ` ${sum.line}`));
+    return;
+  }
+  host.append(cycleFigure(result));
   const head = mk('tr', {}, ...STAGE_HEAD.map(h => UI.cell('th', h)));
   const rows = stageRows(result).map(r => mk('tr', {}, ...r.map(c => UI.cell('td', c))));
-  host.append(mk('table', { cls: 'run-list' }, mk('thead', {}, head), mk('tbody', {}, ...rows)),
-    mk('p', { cls: 'est-note', text: 'Spawn run judges temperature and block core only (the bags are sealed).' }));
+  host.append(more('Show the stage table', mk('table', { cls: 'run-list' }, mk('thead', {}, head), mk('tbody', {}, ...rows)),
+    mk('p', { cls: 'est-note', text: 'Spawn run judges temperature and block core only (the bags are sealed).' })));
   if (global.FarmCharts) {
     charts = global.FarmCharts.createTrendCharts(q('#smCharts'), { keys: ['T', 'RH', 'C'], clock: UI.simClock(0) });
     charts.draw({ t0: 0, t1: result.totals.days * 86400, pts: seriesPoints(result) });
@@ -330,7 +510,7 @@ function paintRuns() {
       const me = mountSeq;
       const run = await global.FarmApi.getSimulation(id, info.id);
       if (!here(me)) return;
-      try { showResult(run.kind, run.result); } catch (err) { msg(`The saved result could not be read: ${err.message}`, 'error'); }
+      try { showResult(run.kind, run.result, { emptyBelow: savedEmptyBelow(run) }); } catch (err) { msg(`The saved result could not be read: ${err.message}`, 'error'); }
     }));
     note.addEventListener('click', () => guarded(note, async () => {
       const text = prompt(`Note for run ${info.id}`, info.note ?? '');
@@ -400,7 +580,7 @@ async function startRun(kind) {
   }
   if (!finished || !here(me) || myGen !== gen) return;
 
-  try { showResult(kind, result); } catch (err) { msg(`The result could not be drawn: ${err.message}`, 'error'); }
+  try { showResult(kind, result, { emptyBelow: r.emptyBelow }); } catch (err) { msg(`The result could not be drawn: ${err.message}`, 'error'); }
   try {
     const info = await global.FarmApi.createSimulation(id, { kind, inputs: r.inputs, result });
     if (!here(me)) return;
@@ -521,6 +701,7 @@ function unmount() {
   try { if (card) card.unmount(); } catch { /* the card is gone with the page */ }
   card = null;
   try { if (charts) charts.destroy(); } catch { /* the charts are gone with the page */ }
+  disposeCharts();
   charts = null; running = false;
 }
 
