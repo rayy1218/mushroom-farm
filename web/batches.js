@@ -49,8 +49,8 @@ function batchPlan(form) {
   };
 }
 const placedMessage = roomName => `Batch saved and placed in ${roomName}.`;
-const notPlacedMessage = text => `Batch saved, but not placed: ${String(text).replace(/\.+$/, '')}. Use Place in room below.`;
-let carried = null;                         // { id, lvl, text }: said once on the batch page the form just went to
+const notPlacedMessage = text => `Batch saved, but not placed: ${String(text).replace(/\.+$/, '')}. Use Place in room above.`;
+let carried = null;                         // { id, lvl, text, room_id }: said once on the batch page the form just went to
 
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 const daysText = n => plural(n, 'day', 'days');
@@ -415,7 +415,7 @@ const DETAIL_HTML = `
     <button class="btn btn-danger" id="bdClear" type="button" hidden>Finish batch</button>
     <button class="btn btn-danger" id="bdDelete" type="button" hidden>Delete</button>
   </div>
-  <p class="alert" id="bdMsg" role="status" hidden></p>
+  <p class="alert" id="bdNote" role="status" hidden></p>
   <form class="bd-form" id="bdForm">
     <h3>Blocks</h3>
     <div class="form-grid">
@@ -493,6 +493,7 @@ const DETAIL_HTML = `
     <thead><tr><th>Time</th><th>kg</th><th>Picker</th><th>–</th></tr></thead>
     <tbody></tbody>
   </table>
+  <p class="alert" id="bdMsg" role="status" hidden></p>
 </div>`;
 
 // ---- list ----
@@ -510,8 +511,12 @@ function mountList(el, live) {
   $('#btReceived').value = secondsToDate(nowSec());
   $('#btPlaced').value = secondsToDate(nowSec());
   const syncPlaced = () => {
-    $('#btPlacedBox').hidden = $('#btRoom').value === '';
-    $('#btPlaced').min = $('#btReceived').value;
+    const placed = $('#btPlaced'), none = $('#btRoom').value === '';
+    $('#btPlacedBox').hidden = none;
+    placed.disabled = none;                  // a hidden date must not hold back the form's checks
+    placed.min = $('#btReceived').value;
+    placed.max = secondsToDate(nowSec());
+    if (placed.value && placed.min && placed.value < placed.min) placed.value = placed.min;
   };
   $('#btRoom').addEventListener('change', syncPlaced);
   $('#btReceived').addEventListener('change', syncPlaced);
@@ -612,23 +617,26 @@ function mountList(el, live) {
         room_id: $('#btRoom').value, placed_at: $('#btPlaced').value,
       });
       const made = await global.FarmApi.createBatch(plan.create);
-      if (!live()) return;
-      if (!plan.place) { say('good', 'Saved.'); global.location.hash = `#/batches/${made.id}`; return; }
-      try {
-        await global.FarmApi.placeBatch(made.id, plan.place);
+      if (!plan.place) {
         if (!live()) return;
-        const room = rooms.find(r => r.id === plan.place.room_id);
-        carried = { id: made.id, lvl: 'good', text: placedMessage(room ? room.name : 'the room') };
+        say('good', 'Saved.');
         global.location.hash = `#/batches/${made.id}`;
+        return;
+      }
+      let note;
+      try {
+        await global.FarmApi.placeBatch(made.id, plan.place);      // sent even if the page was left meanwhile
+        const room = rooms.find(r => r.id === plan.place.room_id);
+        note = { id: made.id, lvl: 'good', text: placedMessage(room ? room.name : 'the room') };
       } catch (err) {
-        if (!live()) return;
         const p = global.FarmUi.plainError(err, LABELS);
         // The batch page has no marked fields: name the problem in the message.
-        const named = Object.entries(p.fields).map(([k, v]) => `${LABELS[k]}: ${v}`.replace(/\.+$/, ''));
-        carried = { id: made.id, lvl: 'error', text: notPlacedMessage(named.length ? named.join('; ') : p.text) };
-        global.FarmUi.markFields($('#btForm'), p.fields);
-        global.location.hash = `#/batches/${made.id}`;
+        const named = Object.entries(p.fields).map(([k, v]) => `${LABELS[k]} ${v.charAt(0).toLowerCase()}${v.slice(1)}`.replace(/\.+$/, ''));
+        note = { id: made.id, lvl: 'error', text: notPlacedMessage(named.length ? named.join('; ') : p.text), room_id: plan.place.room_id };
       }
+      if (!live()) return;
+      carried = note;
+      global.location.hash = `#/batches/${made.id}`;
     } catch (err) {
       if (live()) {
         const p = global.FarmUi.plainError(err, LABELS);
@@ -655,15 +663,18 @@ async function mountDetail(el, id, live) {
   $('#bdSource').maxLength = HR.LIM.text;
   $('#bdNotes').maxLength = HR.LIM.notes;
   let batch = null;
-  const note = carried && String(carried.id) === String(id) ? carried : null;   // said once, on this page
+  const note = carried && String(carried.id) === String(id) ? carried : null;   // said once, on this page, in its own alert
   carried = null;
 
   const headSlot = $('#bdHead');
   const headActions = ['#bdRoom', '#bdPlace', '#bdClear', '#bdDelete'].map($);
   const roomSel = $('#bdRoom'), msgEl = $('#bdMsg');   // held: notFound() detaches them, writes to them are harmless
-  const msg = (text, lvl) => global.FarmUi.say(msgEl, lvl || (text ? 'good' : 'info'), text);
+  const msg = (text, lvl) => {
+    global.FarmUi.say(msgEl, lvl || (text ? 'good' : 'info'), text);
+    if (text && msgEl.scrollIntoView) msgEl.scrollIntoView({ block: 'nearest' });
+  };
   const fail = err => msg(errText(err), 'error');
-  if (note) msg(note.text, note.lvl);
+  if (note) global.FarmUi.say($('#bdNote'), note.lvl, note.text);
 
   function notFound() {
     const page = document.createElement('div'); page.className = 'bd-page';
@@ -803,6 +814,7 @@ async function mountDetail(el, id, live) {
     o.value = String(r.id); o.textContent = r.name;
     return o;
   }));
+  if (note && note.room_id != null && rooms.some(r => r.id === note.room_id)) roomSel.value = String(note.room_id);   // the room it was meant for
 }
 
 function mount(el, params) {
