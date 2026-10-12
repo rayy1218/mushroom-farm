@@ -17,7 +17,7 @@
 .room-danger p { margin: 0; }
 
 /* The save bar: sticky at the bottom of the view while something is unsaved */
-.save-bar { grid-column: 1 / -1; position: sticky; bottom: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 8px 16px;
+.save-bar { grid-column: 1 / -1; position: sticky; bottom: calc(var(--tab-h, 0px) + env(safe-area-inset-bottom)); z-index: 5; display: flex; flex-wrap: wrap; gap: 8px 16px;
   align-items: center; justify-content: space-between; padding: 10px 14px; background: var(--surface); border: 1px solid var(--border-strong);
   border-radius: 10px; box-shadow: 0 -4px 16px rgb(0 0 0 / .12); }
 .save-bar[hidden] { display: none; }
@@ -25,7 +25,6 @@
 
 @media (max-width: 899px) {
   #roomTab .room-versions, #roomTab .room-details, #roomTab .room-danger { grid-column: 1 / -1; }
-  .save-bar { bottom: calc(64px + env(safe-area-inset-bottom)); }
   .save-bar .btn-row { width: 100%; }
   .save-bar .btn-row .btn { flex: 1; min-height: 44px; }
 }
