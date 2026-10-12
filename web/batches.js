@@ -269,7 +269,6 @@ function drawTimeline(host, t, nowS, finished) {
     svgText(svg, tx, H - 2, 'Today', 'vz-sub', tx > W - 40 ? 'end' : 'middle');
   }
   host.appendChild(svg);
-  if (!finished) host.scrollLeft = host.scrollWidth;      // narrow screens: today is the end that matters
   return true;
 }
 
