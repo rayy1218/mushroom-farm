@@ -115,6 +115,99 @@ function table(cls, head, rows) {
   return t;
 }
 
+// ---------- the charts (C13 4) ----------
+const S = (tag, attrs, parent) => global.FarmUi.svgEl(tag, attrs, parent);
+function label(parent, x, y, s, cls, extra) {
+  const e = S('text', { x, y, class: cls, ...(extra || {}) }, parent);
+  e.textContent = s;
+  return e;
+}
+function figure(cls, question, aria, w, h, minW) {
+  const fig = node('figure', undefined, `plan-fig ${cls}`);
+  fig.append(node('h4', question, 'plan-q'));
+  const svg = S('svg', { viewBox: `0 0 ${w} ${h}`, class: 'plan-svg', role: 'img', 'aria-label': aria, style: `min-width:${minW || Math.min(w, 560)}px;max-width:${Math.round(w * (minW ? 1.4 : 1.1))}px` });
+  const scroll = node('div', undefined, 'plan-scroll');
+  scroll.append(svg);
+  fig.append(scroll);
+  return { fig, svg };
+}
+function more(summary, ...kids) {
+  const d = node('details', undefined, 'plan-more');
+  d.append(node('summary', summary), ...kids);
+  return d;
+}
+
+// One group per aircond size tried (C13 4): the share of time in band and the cost per block, and which size is yours and which is recommended.
+function sizeGroups(report) {
+  const U = report.ac.units, line = global.ClimateCapacity.PASS.inT;
+  return report.runs.filter(r => r.kind === 'ac').map(r => ({
+    hp: r.ac_hp, label: acText(r.ac_hp, U), inT: r.fruitingInT, rmPerBlock: r.rmPerBlock, kwhPerBlock: r.kwhPerBlock,
+    yours: r.ac_hp === report.ac.own, recommended: report.ac.recommended !== null && r.ac_hp === report.ac.recommended,
+    state: r.tooBig ? 'big' : r.acPass ? 'holds' : 'small',
+    word: r.tooBig ? 'too big' : r.acPass ? 'holds it' : 'too small', pass: r.fruitingInT >= line,
+  }));
+}
+const SIZE_LVL = { holds: 'plan-b-good', big: 'plan-b-warn', small: 'plan-b-bad' };
+function sizesAria(report, groups) {
+  const own = groups.find(g => g.yours), rec = groups.find(g => g.recommended);
+  const bits = [`Aircond sizes tried: ${groups.map(g => `${g.label} ${pct(g.inT)} % of the time in band, RM ${g.rmPerBlock.toFixed(2)} per block, ${g.word}`).join('; ')}.`];
+  if (own) bits.push(`Yours is ${own.label}.`);
+  if (rec) bits.push(`Recommended: ${rec.label}.`);
+  return bits.join(' ');
+}
+function sizesFigure(report) {
+  const G = sizeGroups(report);
+  if (!G.length) return null;
+  const W = 680, LW = 176, C1 = LW, B1 = 130, C2 = 480, B2 = 130, RH = 50, TOP = 30, H = TOP + G.length * RH + 6;
+  const { fig, svg } = figure('ac-sizes', 'Which aircond size works?', sizesAria(report, G), W, H);
+  const maxRm = Math.max(...G.map(g => g.rmPerBlock), 0.01);
+  fig.insertBefore(node('p', `The dashed line is the pass line: ${global.ClimateCapacity.PASS.inT} % of the time in band.`, 'plan-sub'), fig.lastChild);
+  label(svg, C1, 16, 'Time in band (fruiting)', 'pt pt-muted');
+  label(svg, C2, 16, 'RM per block', 'pt pt-muted');
+  const passX = C1 + global.ClimateCapacity.PASS.inT / 100 * B1;
+  S('line', { class: 'plan-pass', x1: passX, x2: passX, y1: TOP - 4, y2: H - 6 }, svg);
+  G.forEach((g, i) => {
+    const y = TOP + i * RH;
+    if (g.yours) S('rect', { class: 'plan-yours', x: 3, y: y + 2, width: W - 6, height: RH - 6, rx: 6 }, svg);
+    label(svg, 14, y + 22, g.label, 'pt pt-strong');
+    const tags = [g.yours ? 'yours' : null, g.recommended ? 'recommended' : null].filter(Boolean).join(' · ');
+    if (tags) label(svg, 14, y + 38, tags, 'pt pt-tag');
+    S('rect', { class: 'plan-track', x: C1, y: y + 12, width: B1, height: 16, rx: 3 }, svg);
+    S('rect', { class: SIZE_LVL[g.state], x: C1, y: y + 12, width: Math.max(2, g.inT / 100 * B1), height: 16, rx: 3 }, svg);
+    label(svg, C1 + B1 + 8, y + 25, `${pct(g.inT)} % · ${g.word}`, 'pt');
+    S('rect', { class: 'plan-bar', x: C2, y: y + 12, width: Math.max(2, g.rmPerBlock / maxRm * B2), height: 16, rx: 3 }, svg);
+    label(svg, C2 + Math.max(2, g.rmPerBlock / maxRm * B2) + 8, y + 25, g.rmPerBlock.toFixed(2), 'pt');
+  });
+  return fig;
+}
+
+// Where the heat comes from: five shares of one 100 % bar.
+function heatFigure(report) {
+  const items = report.breakdown.items.filter(i => i.share > 0);
+  if (!items.length) return null;
+  const W = 480, PAD = 8, PW = W - 2 * PAD, BH = 30, H = BH + 14;
+  const top = items.reduce((a, b) => (b.share > a.share ? b : a));
+  const aria = `Where the heat comes from: ${items.map(i => `${i.label} ${Math.floor(i.share)} %`).join(', ')}. The biggest part is ${top.label.toLowerCase()}.`;
+  const { fig, svg } = figure('heat-split', 'Where the heat comes from', aria, W, H, 320);
+  let x = PAD;
+  items.forEach((it, i) => {
+    const w = it.share / 100 * PW;
+    S('rect', { class: `plan-heat plan-heat-${i + 1}`, x, y: 6, width: Math.max(0, w - 1), height: BH, rx: 3 }, svg);
+    if (w > 42) label(svg, x + w / 2, 6 + BH / 2 + 5, `${Math.floor(it.share)} %`, 'pt pt-onbar', { 'text-anchor': 'middle' });
+    x += w;
+  });
+  const legend = node('ul', undefined, 'plan-legend');
+  items.forEach((it, i) => {
+    const li = node('li');
+    li.append(node('span', undefined, `plan-sw plan-heat-${i + 1}`), ` ${it.label}: ${Math.floor(it.share)} % (${int(it.kwh)} kWh)`);
+    legend.append(li);
+  });
+  const sub = node('p', `Fruiting hours, with ${acText(report.breakdown.ac_hp, report.ac.units)} aircond.`, 'plan-sub');
+  fig.insertBefore(sub, fig.lastChild);
+  fig.append(legend);
+  return fig;
+}
+
 function alsoTried(report) {
   return report.runs.filter(r => r.kind !== 'ac').map(r => {
     const what = r.kind === 'fogger' ? `${r.fog_lph} L/h fogger` : `${int(r.air_m3h)} m³/h air exchange`;
@@ -131,23 +224,20 @@ function renderReport(el, report) {
     if (report.ac.text && lines[0] === report.ac.text) lines[0] = acVerdictText(report);
     lines.forEach((line, i) => { const p = node('p'); p.append(i === 0 ? node('strong', line) : line); parts.push(p); });
     const spT = report.targets.spT;
-    parts.push(node('h4', 'Aircond sizes tried'));
-    parts.push(table('run-list', ['Aircond', `Fruiting hours at ${spT} °C`, 'Worst stage', 'kWh per block', 'RM per block', 'Result'],
+    const sizes = sizesFigure(report);
+    if (sizes) parts.push(sizes);
+    parts.push(node('h4', 'Your machines'));
+    parts.push(table('run-list', ['Machine', 'Yours', 'Verdict', 'Buy'], machineRows(report).map(r => [r.machine, r.yours, r.verdict, r.buy])));
+    const heat = heatFigure(report);
+    if (heat) parts.push(heat);
+    if (report.breakdown.text && !report.summary.includes(report.breakdown.text)) parts.push(node('p', report.breakdown.text));
+    parts.push(more('Show the aircond sizes table', table('run-list', ['Aircond', `Fruiting hours at ${spT} °C`, 'Worst stage', 'kWh per block', 'RM per block', 'Result'],
       runRows(report).map(r => {
         const result = node('td', r.result);
         for (const t of r.tags) result.append(' ', node('span', t, 'chip'));
         return [r.aircond, r.fruiting, r.worst, r.kwh, r.rm, result];
-      })));
-    parts.push(node('h4', 'Your machines'));
-    parts.push(table('run-list', ['Machine', 'Yours', 'Verdict', 'Buy'], machineRows(report).map(r => [r.machine, r.yours, r.verdict, r.buy])));
-    parts.push(node('h4', `Where the heat comes from (fruiting hours, with ${acText(report.breakdown.ac_hp, report.ac.units)})`));
-    parts.push(table('run-list', ['Source', 'kWh (heat)', 'Share'], heatRows(report).map(r => {
-      const bar = node('td'), track = node('span', undefined, 'equip-bar'), fill = node('span');
-      fill.style.width = `${r.share}%`;
-      track.append(fill);
-      bar.append(track, ` ${r.share} %`);
-      return [r.label, int(r.kwh), bar];
-    })));
+      }))));
+    parts.push(more('Show the heat table', table('run-list', ['Source', 'kWh (heat)', 'Share'], heatRows(report).map(r => [r.label, int(r.kwh), `${r.share} %`]))));
     const also = alsoTried(report);
     if (also.length) {
       parts.push(node('h4', 'Also tried'));
@@ -344,5 +434,5 @@ function mount(el, opts) {
   return { unmount };
 }
 
-global.FarmEquipmentCard = { mount, renderReport, helpers: { formValues, fillForm, progressText, runRows, machineRows, heatRows, airNote, acVerdictText, emptyMixReason } };
+global.FarmEquipmentCard = { mount, renderReport, helpers: { sizeGroups, sizesFigure, heatFigure, formValues, fillForm, progressText, runRows, machineRows, heatRows, airNote, acVerdictText, emptyMixReason } };
 })(typeof window !== 'undefined' ? window : globalThis);

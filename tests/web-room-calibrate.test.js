@@ -18,7 +18,7 @@ test('CB1 registration', () => {
   assert.equal(typeof tab.unmount, 'function');
   assert.deepEqual(Object.keys(tab.helpers).sort(), ['farmMidnight', 'farmDate', 'defaultRange', 'rangeQuery', 'logFromReadings', 'historyGaps',
     'envBaseFor', 'paramsOfRun', 'startParams', 'defaultBlocks', 'parseBlocks', 'fitBlockReason', 'calibBody', 'sameMachines', 'staleText',
-    'pairSeries', 'differences', 'differenceLines', 'predictedRows', 'realRows'].sort());
+    'pairSeries', 'differences', 'differenceLines', 'predictedRows', 'realRows', 'fitVerdict', 'fitRows', 'fitSummary', 'fitFigure'].sort());
   assert.doesNotThrow(() => tab.unmount());
 });
 
@@ -177,3 +177,55 @@ test('CB13 a late reply of an unmounted mount never touches the next mount', asy
     assert.notEqual(msgOf(), 'OLD MOUNT');
   } finally { Object.assign(FA, saved); delete globalThis.document; tab.unmount(); }
 });
+
+// ---- a tiny DOM, enough to build the charts and look at them ----
+class El {
+  constructor(tag) { this.tag = tag; this.children = []; this.attrs = {}; this.dataset = {}; this.text = ''; this.className = ''; }
+  setAttribute(k, v) { this.attrs[k] = String(v); }
+  getAttribute(k) { return this.attrs[k]; }
+  append(...kids) { for (const k of kids) this.children.push(typeof k === 'string' ? Object.assign(new El('#text'), { text: k }) : k); }
+  appendChild(k) { this.children.push(k); return k; }
+  replaceChildren(...kids) { this.children = []; this.append(...kids); }
+  insertBefore(k, ref) { const i = this.children.indexOf(ref); this.children.splice(i < 0 ? this.children.length : i, 0, k); return k; }
+  get lastChild() { return this.children[this.children.length - 1] || null; }
+  set textContent(t) { this.text = String(t); this.children = []; }
+  get textContent() { return this.text + this.children.map(c => c.textContent).join(''); }
+}
+const walk = (e, fn) => { fn(e); for (const c of e.children) walk(c, fn); };
+const all = (e, pred) => { const out = []; walk(e, x => { if (pred(x)) out.push(x); }); return out; };
+const withFakeDom = fn => {
+  globalThis.document = { createElement: t => new El(t), createElementNS: (ns, t) => new El(t) };
+  try { return fn(); } finally { delete globalThis.document; }
+};
+const cls = (e, c) => (e.attrs.class || e.className || '').split(/\s+/).includes(c);
+
+test('PL8 fitVerdict thresholds (decision 103)', () => {
+  const w = (k, v) => H.fitVerdict(k, v).word;
+  assert.deepEqual([w('T', 0.5), w('T', 0.51), w('T', 1.0), w('T', 1.01)], ['Good', 'Fair', 'Fair', 'Poor']);
+  assert.deepEqual([w('RH', 3), w('RH', 3.1), w('RH', 6), w('RH', 6.1)], ['Good', 'Fair', 'Fair', 'Poor']);
+  assert.deepEqual([w('CO2', 80), w('CO2', 81), w('CO2', 150), w('CO2', 151)], ['Good', 'Fair', 'Fair', 'Poor']);
+  assert.equal(H.fitVerdict('T', 0.2).lvl, 'good');
+  assert.equal(H.fitVerdict('T', 2).lvl, 'serious');
+  assert.equal(H.fitVerdict('T', NaN), null);
+  assert.equal(H.fitVerdict('x', 1), null);
+});
+
+test('PL9 fitRows and the summary in words', () => {
+  const rows = H.fitRows({ T: 2, RH: 9, CO2: 300 }, { T: 0.3, RH: 2, CO2: 60 });
+  assert.deepEqual(rows.map(r => [r.kind, r.before, r.after, r.verdict.word]), [['T', 2, 0.3, 'Good'], ['RH', 9, 2, 'Good'], ['CO2', 300, 60, 'Good']]);
+  assert.equal(H.fitSummary(rows), 'The fitted room follows your readings closely.');
+  assert.match(H.fitSummary(H.fitRows({ T: 2, RH: 9, CO2: 300 }, { T: 0.8, RH: 2, CO2: 60 })), /but temperature could be closer\.$/);
+  assert.match(H.fitSummary(H.fitRows({ T: 2, RH: 9, CO2: 300 }, { T: 3, RH: 2, CO2: 200 })), /differs from your readings in temperature and CO₂\./);
+  assert.match(H.fitSummary(H.fitRows({}, {})), /not enough readings/);
+});
+
+test('PL10 the fit quality figure is labelled and has a row per measurement', () => withFakeDom(() => {
+  const fig = H.fitFigure({ T: 2, RH: 9, CO2: 300 }, { T: 0.3, RH: 2, CO2: 60 });
+  assert.ok(cls(fig, 'fit-quality'));
+  const svg = all(fig, e => e.tag === 'svg')[0];
+  assert.equal(svg.attrs.role, 'img');
+  assert.match(svg.attrs['aria-label'], /Temperature: error 2\.00 °C before, 0\.30 °C after, Good.*The fitted room follows your readings closely\./);
+  assert.equal(all(svg, e => cls(e, 'plan-b-after')).length, 3);
+  const texts = all(svg, e => e.tag === 'text').map(e => e.textContent);
+  assert.equal(texts.filter(t => t === 'Good').length, 3);
+}));

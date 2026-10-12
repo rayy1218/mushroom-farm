@@ -29,7 +29,7 @@ test('W1 the card exports its helpers and they read and fill the form', () => {
   const card = globalThis.FarmEquipmentCard;
   assert.equal(typeof card.mount, 'function');
   assert.equal(typeof card.renderReport, 'function');
-  for (const k of ['formValues', 'fillForm', 'progressText', 'runRows', 'machineRows', 'heatRows', 'airNote']) assert.equal(typeof card.helpers[k], 'function', k);
+  for (const k of ['sizeGroups', 'sizesFigure', 'heatFigure', 'formValues', 'fillForm', 'progressText', 'runRows', 'machineRows', 'heatRows', 'airNote']) assert.equal(typeof card.helpers[k], 'function', k);
   const form = fakeForm();
   helpers.fillForm(form, null);
   assert.deepEqual(helpers.formValues(form), EQ.DEFAULTS);
@@ -173,7 +173,7 @@ test('W11 acVerdictText: "Your <size> is big enough." when the room already has 
   assert.equal(helpers.runRows(big).some(r => r.tags.includes('buy this')), false);
   assert.equal(helpers.acVerdictText(down()), down().ac.text);   // too small: the report's own text
   const host = { children: [], replaceChildren(...c) { this.children = c; } };
-  globalThis.document = { createElement: tag => { const n = { tag, children: [], textContent: '', className: '', style: {}, append(...c) { this.children.push(...c); } }; return n; } };
+  globalThis.document = { createElement: t => new El(t), createElementNS: (ns, t) => new El(t) };
   globalThis.FarmEquipmentCard.renderReport(host, own);
   assert.ok(host.children[0].children[0].textContent.startsWith('Your 2.5 hp aircond is big enough.'));
   delete globalThis.document;
@@ -246,3 +246,52 @@ test('W16 the leave guard is set while the form differs from the saved machines,
   assert.deepEqual(calls.slice(2), ['Your machines have unsaved changes.', null]);
   delete globalThis.FarmShell;
 });
+
+// ---- a tiny DOM, enough to build the charts and look at them ----
+class El {
+  constructor(tag) { this.tag = tag; this.children = []; this.attrs = {}; this.dataset = {}; this.text = ''; this.className = ''; }
+  setAttribute(k, v) { this.attrs[k] = String(v); }
+  getAttribute(k) { return this.attrs[k]; }
+  append(...kids) { for (const k of kids) this.children.push(typeof k === 'string' ? Object.assign(new El('#text'), { text: k }) : k); }
+  appendChild(k) { this.children.push(k); return k; }
+  replaceChildren(...kids) { this.children = []; this.append(...kids); }
+  insertBefore(k, ref) { const i = this.children.indexOf(ref); this.children.splice(i < 0 ? this.children.length : i, 0, k); return k; }
+  get lastChild() { return this.children[this.children.length - 1] || null; }
+  set textContent(t) { this.text = String(t); this.children = []; }
+  get textContent() { return this.text + this.children.map(c => c.textContent).join(''); }
+}
+const walk = (e, fn) => { fn(e); for (const c of e.children) walk(c, fn); };
+const all = (e, pred) => { const out = []; walk(e, x => { if (pred(x)) out.push(x); }); return out; };
+const withFakeDom = fn => {
+  globalThis.document = { createElement: t => new El(t), createElementNS: (ns, t) => new El(t) };
+  try { return fn(); } finally { delete globalThis.document; }
+};
+const cls = (e, c) => (e.attrs.class || e.className || '').split(/\s+/).includes(c);
+
+test('PL6 sizeGroups: one group per size, yours and recommended marked', () => {
+  const g = helpers.sizeGroups(down());
+  assert.deepEqual(g.map(x => x.label), ['1 hp', '1.5 hp', '2 hp', '2.5 hp']);
+  assert.deepEqual(g.map(x => x.yours), [true, false, false, false]);
+  assert.deepEqual(g.map(x => x.recommended), [false, false, false, true]);
+  assert.deepEqual(g.map(x => x.state), ['small', 'small', 'holds', 'holds']);
+  assert.equal(g[0].inT, 60);
+  assert.equal(typeof g[0].rmPerBlock, 'number');
+});
+
+test('PL7 the sizes chart and the heat bar are labelled figures', () => withFakeDom(() => {
+  const r = down();
+  const fig = helpers.sizesFigure(r);
+  assert.ok(cls(fig, 'ac-sizes'));
+  assert.equal(all(fig, e => e.tag === 'h4')[0].textContent, 'Which aircond size works?');
+  const svg = all(fig, e => e.tag === 'svg')[0];
+  assert.equal(svg.attrs.role, 'img');
+  assert.match(svg.attrs['aria-label'], /1 hp 60 % of the time in band.*too small.*Yours is 1 hp\. Recommended: 2\.5 hp\./);
+  const texts = all(svg, e => e.tag === 'text').map(e => e.textContent);
+  assert.ok(texts.includes('yours'));
+  assert.ok(texts.includes('recommended'));
+  const heat = helpers.heatFigure(r);
+  assert.ok(cls(heat, 'heat-split'));
+  assert.equal(all(heat, e => e.tag === 'h4')[0].textContent, 'Where the heat comes from');
+  assert.equal(all(heat, e => e.tag === 'svg')[0].attrs.role, 'img');
+  assert.equal(all(heat, e => e.tag === 'li').length, r.breakdown.items.filter(i => i.share > 0).length);
+}));

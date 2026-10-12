@@ -20,7 +20,7 @@ test('SM1 registration', () => {
   const tab = globalThis.FarmRoomTabs.get('simulate');
   assert.equal(typeof tab.mount, 'function');
   assert.equal(typeof tab.unmount, 'function');
-  assert.deepEqual(Object.keys(tab.helpers).sort(), ['appliedCalib', 'availableCrops', 'clampBlocks', 'clampCo2', 'cycleSummary', 'machinesText', 'progressText',
+  assert.deepEqual(Object.keys(tab.helpers).sort(), ['appliedCalib', 'availableCrops', 'bulletFigure', 'bulletVerdict', 'bulletZones', 'clampBlocks', 'clampCo2', 'cycleDays', 'cycleFigure', 'cycleSummary', 'machinesText', 'progressText',
     'regionText', 'runBlockReason', 'runInputs', 'runRowTexts', 'sameMix', 'seriesPoints', 'stageRows', 'toCapacityMix', 'toMixRows']);
   assert.equal(typeof globalThis.document, 'undefined');
   assert.doesNotThrow(() => tab.unmount());
@@ -293,3 +293,91 @@ test('SM33 a loaded mix with the same crop twice shows the reason and keeps both
   assert.equal(el.querySelector('#smCap').disabled, true);
   for (const row of el.querySelectorAll('#smMix tbody tr')) assert.ok(row.children[0].children[0].children.some(o => o.attrs.value === 'oyster'));
 });
+
+// ---- a tiny DOM, enough to build the charts and look at them ----
+class El {
+  constructor(tag) { this.tag = tag; this.children = []; this.attrs = {}; this.dataset = {}; this.text = ''; this.className = ''; }
+  setAttribute(k, v) { this.attrs[k] = String(v); }
+  getAttribute(k) { return this.attrs[k]; }
+  append(...kids) { for (const k of kids) this.children.push(typeof k === 'string' ? Object.assign(new El('#text'), { text: k }) : k); }
+  appendChild(k) { this.children.push(k); return k; }
+  replaceChildren(...kids) { this.children = []; this.append(...kids); }
+  insertBefore(k, ref) { const i = this.children.indexOf(ref); this.children.splice(i < 0 ? this.children.length : i, 0, k); return k; }
+  get lastChild() { return this.children[this.children.length - 1] || null; }
+  set textContent(t) { this.text = String(t); this.children = []; }
+  get textContent() { return this.text + this.children.map(c => c.textContent).join(''); }
+}
+const walk = (e, fn) => { fn(e); for (const c of e.children) walk(c, fn); };
+const all = (e, pred) => { const out = []; walk(e, x => { if (pred(x)) out.push(x); }); return out; };
+const withFakeDom = fn => {
+  globalThis.document = { createElement: t => new El(t), createElementNS: (ns, t) => new El(t) };
+  try { return fn(); } finally { delete globalThis.document; }
+};
+const cls = (e, c) => (e.attrs.class || e.className || '').split(/\s+/).includes(c);
+
+const capRep = over => ({ verdict: 'good', planned: 2000, utilisation: 55, capacity: { min: 0, max: 3652, hi: 4019, settled: true },
+  runs: [{ blocks: 2000, pass: true }, { blocks: 3652, pass: true }, { blocks: 4019, pass: false }], ...over });
+
+test('PL1 bulletZones: the pass window and the largest count tried', () => {
+  const z = H.bulletZones(capRep(), 50);
+  assert.deepEqual(z.zones.map(x => [x.key, x.label, x.from, x.to]), [['empty', 'Too empty', 0, 1826], ['fits', 'Fits', 1826, 3652], ['full', 'Too full', 3652, 4019]]);
+  assert.equal(z.end, 4019); assert.equal(z.plan, 2000); assert.equal(z.efficient, null);
+  // the wet limit raises the lower edge; a plan above every run still fits the scale; no "too full" zone when nothing above was tried
+  assert.equal(H.bulletZones(capRep({ capacity: { min: 2500, max: 3652, settled: true } }), 50).lo, 2500);
+  const big = H.bulletZones(capRep({ planned: 5000 }), 50);
+  assert.equal(big.end, 5000);
+  const none = H.bulletZones(capRep({ runs: [], planned: 1000 }), 50);
+  assert.deepEqual(none.zones.map(x => x.key), ['empty', 'fits']);
+  assert.equal(H.bulletZones({ capacity: { min: 0, max: 0 } }, 50), null);
+  assert.equal(H.bulletZones({ verdict: 'impossible' }, 50), null);
+});
+
+test('PL2 bulletVerdict in words', () => {
+  assert.equal(H.bulletVerdict(capRep(), 50), '2,000 blocks fit. The room holds up to 3,652.');
+  assert.equal(H.bulletVerdict(capRep({ verdict: 'too-dense', planned: 3900 }), 50), '3,900 blocks are too many. The room holds up to 3,652.');
+  assert.match(H.bulletVerdict(capRep({ verdict: 'tight' }), 50), /fit, but only just\. The room holds up to 3,652\. There is no margin/);
+  assert.equal(H.bulletVerdict(capRep({ verdict: 'too-empty', why: 'use', planned: 500 }), 50), '500 blocks are too few for this room. It fits 1,826 to 3,652 blocks.');
+  assert.match(H.bulletVerdict(capRep({ verdict: 'too-empty', why: 'wet', planned: 500, capacity: { min: 1200, max: 3652, settled: true } }), 50), /below about 1,200 the room gets too wet/);
+  assert.match(H.bulletVerdict(capRep({ capacity: { min: 0, max: 3652, settled: false } }), 50), /holds up to about 3,652/);
+  assert.equal(H.bulletVerdict({ verdict: 'impossible', why: 'No.' }, 50), 'No.');
+});
+
+const cycleRes = () => ({ verdict: 'ok', totals: { days: 3, kwh: 30, rm: 17.1, rmPerBlock: 0.01, pass: true },
+  stages: [{ stage: 'spawn', flush: 1, startDay: 0, days: 1, pass: true }, { stage: 'fruiting', flush: 1, startDay: 1, days: 1.5, pass: true }, { stage: 'rest', flush: 1, startDay: 2.5, days: 0.5, pass: false }],
+  inputs: { flushes: 1 },
+  series: Array.from({ length: 72 }, (_, h) => ({ h, stage: 'fruiting', flush: 1, T: 20, RH: 90, CO2: 800, core: 22, kwh: h < 24 ? 0.5 : h < 48 ? 1 : 0.25 })) });
+
+test('PL3 cycleDays: kWh a day, stage spans, flush days', () => {
+  const d = H.cycleDays(cycleRes());
+  assert.deepEqual(d.days.map(x => x.kwh), [12, 24, 6]);
+  assert.equal(d.maxKwh, 24);
+  assert.deepEqual(d.stages.map(x => [x.stage, x.from, x.to, x.pass]), [['spawn', 0, 1, true], ['fruiting', 1, 2.5, true], ['rest', 2.5, 3, false]]);
+  assert.deepEqual(d.flushes, [{ flush: 1, day: 1 }]);
+  assert.deepEqual(d.total, { days: 3, kwh: 30, rm: 17.1 });
+});
+
+test('PL4 the capacity bullet is a labelled figure', () => withFakeDom(() => {
+  const fig = H.bulletFigure(capRep(), 50);
+  assert.ok(cls(fig, 'cap-bullet'));
+  assert.equal(all(fig, e => e.tag === 'h4')[0].textContent, 'Does your plan fit this room?');
+  const svg = all(fig, e => e.tag === 'svg')[0];
+  assert.equal(svg.attrs.role, 'img');
+  assert.match(svg.attrs['aria-label'], /2,000 blocks fit\. The room holds up to 3,652\..*Your plan: 2,000 blocks/);
+  const texts = all(svg, e => e.tag === 'text').map(e => e.textContent);
+  for (const t of ['Too empty', 'Fits', 'Too full', 'Your plan · 2,000', '1,826', '3,652']) assert.ok(texts.includes(t), t);
+  assert.equal(H.bulletFigure({ capacity: { max: 0 } }, 50), null);
+}));
+
+test('PL5 the cycle chart is a labelled figure with a row per stage and a bar per day', () => withFakeDom(() => {
+  const fig = H.cycleFigure(cycleRes());
+  assert.ok(cls(fig, 'cycle-gantt'));
+  assert.equal(all(fig, e => e.tag === 'h4')[0].textContent, 'Your grow cycle, day by day');
+  const svg = all(fig, e => e.tag === 'svg')[0];
+  assert.match(svg.attrs['aria-label'], /3 days with 1 flush and uses 30 kWh, RM 17\.10\. 1 stage does not pass\./);
+  assert.equal(all(svg, e => cls(e, 'plan-st')).length, 3);
+  assert.equal(all(svg, e => cls(e, 'plan-st-fail')).length, 1);
+  assert.equal(all(svg, e => cls(e, 'plan-day')).length, 3);
+  const texts = all(svg, e => e.tag === 'text').map(e => e.textContent);
+  for (const t of ['Spawn run', 'Fruiting', 'Rest']) assert.ok(texts.includes(t), t);
+  assert.ok(!texts.includes('Pinning'));
+}));
