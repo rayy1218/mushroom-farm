@@ -8,11 +8,12 @@ body[data-layout="bare"] .bar { display: none; }
 .bt-page .tag, .bd-page .tag { margin: 0; }
 .bt-page h3, .bd-page h3 { margin: 0; }
 .bt-page label, .bd-page label { display: grid; gap: 4px; font-size: var(--fs-sm); font-weight: 600; color: var(--ink-2); min-width: 0; }
-.bt-page input, .bt-page select, .bd-page input, .bd-page select, .bd-page textarea { width: 100%; min-width: 0; }
+.bt-page input, .bt-page select, .bd-page input, .bd-page select, .bd-page textarea { width: 100%; min-width: 0; background: var(--unit); }
 
 .bt-tabs { display: flex; gap: 4px; flex-wrap: wrap; }
 .bt-tabs button { border: 1px solid var(--border-strong); background: transparent; color: var(--ink); border-radius: 6px; padding: 5px 14px; min-height: 36px; cursor: pointer; font: inherit; }
 .bt-tabs button[aria-pressed="true"] { background: var(--band); font-weight: 600; }
+@media (pointer: coarse) { .bt-tabs button { min-height: 44px; } }
 .bt-page #btStickers { justify-self: start; text-decoration: none; color: var(--ink); }
 
 .bt-list, .bd-flushes, .bd-crates { width: 100%; border-collapse: collapse; }
@@ -26,7 +27,8 @@ body[data-layout="bare"] .bar { display: none; }
 .bt-form > *, .bd-form > * { min-width: 0; }
 @media (max-width: 480px) { .bt-form, .bd-form { grid-template-columns: minmax(0, 1fr); } }
 .bt-page, .bd-page { overflow-wrap: anywhere; }
-.bt-page table, .bd-page table { display: block; max-width: 100%; overflow-x: auto; }
+@media (max-width: 720px) { .bt-page table, .bd-page table { display: block; max-width: 100%; overflow-x: auto; } }
+.hv-page input, .hv-page select { background: var(--unit); }
 .bt-form h3 { grid-column: 1 / -1; }
 .bd-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 
