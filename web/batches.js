@@ -83,6 +83,196 @@ function row(cells) {
   return tr;
 }
 
+
+// ---- charts (C13 5): hand-made SVG, tokens from styles.css ----
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function shortDate(t) {
+  const [, m, d] = secondsToDate(t).split('-');
+  return `${Number(d)} ${MONTHS[Number(m) - 1]}`;
+}
+// The end of an axis with four equal, round steps that holds v.
+function niceMax(v) {
+  if (!(v > 0)) return 1;
+  const p = 10 ** Math.floor(Math.log10(v / 4));
+  for (const m of [1, 2, 2.5, 5, 10]) if (4 * m * p >= v * (1 - 1e-9)) return 4 * m * p;
+  return 40 * p;
+}
+const trim = n => String(Number(n.toFixed(2)));
+const one = n => (Math.round(n * 10) / 10).toFixed(1);
+
+// Bars of the flush chart: kg and g per block per flush, and the BE % added up flush by flush.
+function flushBars(detail) {
+  const flushes = detail && Array.isArray(detail.flushes) ? detail.flushes : [];
+  let cum = 0;
+  return flushes.map(f => {
+    cum += f.be_pct;
+    return { n: f.n, kg: f.kg, gPerBlock: f.g_per_block, beCum: Math.round(cum * 10) / 10 };
+  });
+}
+// The drop from the best flush to the latest one, in words. '' with no flush.
+function dropText(flushes) {
+  const list = Array.isArray(flushes) ? flushes : [];
+  if (list.length === 0) return '';
+  if (list.length === 1) return 'One flush so far.';
+  let best = list[0];
+  for (const f of list) if (f.kg > best.kg) best = f;
+  const last = list[list.length - 1];
+  if (best.kg <= 0) return '';
+  if (last === best) return `Flush ${last.n} is the best so far.`;
+  const pct = Math.round((1 - last.kg / best.kg) * 100);
+  if (pct === 0) return `Flush ${last.n} gave the same as flush ${best.n}.`;
+  return `Flush ${last.n} gave ${pct} % less than flush ${best.n}.`;
+}
+
+// Rows of the room timeline. state 'placed' = growing now (bar ends today), 'cleared' = finished (placed to cleared).
+// A room's overlapping bars go on separate lanes. Rooms with nothing growing keep an empty row; on Finished only rooms with bars show.
+function timelineRows(rooms, batches, nowS, state) {
+  const finished = state === 'cleared';
+  const names = new Map();
+  for (const r of rooms || []) if (!r.archived_at || batches.some(b => b.room_id === r.id)) names.set(r.id, r.name);
+  const rows = new Map();
+  const rowOf = id => { if (!rows.has(id)) rows.set(id, { room_id: id, name: names.get(id) || `Room ${id}`, bars: [], lanes: 1 }); return rows.get(id); };
+  for (const [id] of names) rowOf(id);
+  const list = (batches || []).filter(b => b.state === (finished ? 'cleared' : 'placed') && b.placed_at != null && b.room_id != null);
+  for (const b of list) {
+    if (!names.has(b.room_id) && b.room_name) names.set(b.room_id, b.room_name);
+    const row = rowOf(b.room_id);
+    row.name = names.get(b.room_id) || row.name;
+    const flushes = b.totals ? b.totals.flushes : 0;
+    row.bars.push({ id: b.id, from: b.placed_at, to: finished ? b.cleared_at : nowS, crop: b.crop,
+      label: flushes > 0 ? `${cropName(b.crop)} · Flush ${flushes}` : cropName(b.crop) });
+  }
+  const out = [...rows.values()].filter(r => !finished || r.bars.length > 0);
+  for (const r of out) {
+    r.bars.sort((a, b) => a.from - b.from || a.id - b.id);
+    const ends = [];
+    for (const bar of r.bars) {
+      let lane = ends.findIndex(e => e <= bar.from);
+      if (lane < 0) { lane = ends.length; ends.push(0); }
+      ends[lane] = bar.to;
+      bar.lane = lane;
+    }
+    r.lanes = Math.max(1, ends.length);
+  }
+  out.sort((a, b) => a.name.localeCompare(b.name) || a.room_id - b.room_id);
+  const all = out.flatMap(r => r.bars);
+  const to = all.length ? Math.max(nowS, ...all.map(b => b.to)) : nowS;
+  const from = all.length ? Math.min(...all.map(b => b.from)) : nowS - 14 * 86400;
+  const span = Math.max(to - from, 14 * 86400);
+  return { rows: out, from: to - span, to };
+}
+
+function timelineSummary(t, finished) {
+  const bars = t.rows.reduce((n, r) => n + r.bars.length, 0);
+  if (finished) return bars ? `${plural(bars, 'batch', 'batches')} finished, placed to cleared.` : 'No finished batches yet.';
+  const rooms = t.rows.filter(r => r.bars.length).length;
+  return bars ? `${plural(bars, 'batch', 'batches')} growing in ${plural(rooms, 'room', 'rooms')}; ${plural(t.rows.length - rooms, 'room is', 'rooms are')} empty.`
+    : 'Nothing is growing right now.';
+}
+
+function svgRoot(w, h, label) {
+  return global.FarmUi.svgEl('svg', { class: 'vz-svg', viewBox: `0 0 ${w} ${h}`, role: 'img', 'aria-label': label, preserveAspectRatio: 'xMinYMin meet' });
+}
+function svgText(parent, x, y, text, cls, anchor) {
+  const e = global.FarmUi.svgEl('text', { x, y, class: cls, 'text-anchor': anchor || 'start' }, parent);
+  e.textContent = text;
+  return e;
+}
+
+function drawFlushChart(host, detail) {
+  const { svgEl } = global.FarmUi;
+  const bars = flushBars(detail);
+  if (bars.length === 0) { host.replaceChildren(); return false; }
+  const sentence = dropText(detail.flushes);
+  const W = Math.max(360, 100 + bars.length * 84), H = 290, L = 46, R = 50, T = 38, B = 52;
+  const pw = W - L - R, ph = H - T - B;
+  const kgMax = niceMax(Math.max(...bars.map(b => b.kg)));
+  const beMax = niceMax(Math.max(...bars.map(b => b.beCum)));
+  const last = bars[bars.length - 1];
+  const label = `Harvest per flush: ${bars.map(b => `flush ${b.n} ${one(b.kg)} kg, ${b.gPerBlock} g per block`).join('; ')}. Together ${last.beCum} % BE. ${sentence}`.trim();
+  const svg = svgRoot(W, H, label);
+  svg.style.minWidth = `${W}px`;                 // text stays at its size; a long harvest scrolls inside the card
+  const y = (v, max) => T + ph - (v / max) * ph;
+  const g = svgEl('g', { class: 'vz-grid' }, svg);
+  for (let i = 0; i <= 4; i++) {
+    const yy = T + ph - (i / 4) * ph;
+    svgEl('line', { x1: L, x2: L + pw, y1: yy, y2: yy, class: i === 0 ? 'vz-base' : 'vz-gridline' }, g);
+    svgText(svg, L - 6, yy + 4, trim(kgMax * i / 4), 'vz-tick', 'end');
+    svgText(svg, L + pw + 6, yy + 4, trim(beMax * i / 4), 'vz-tick');
+  }
+  svgText(svg, L - 6, T - 14, 'kg', 'vz-unit', 'end');
+  svgText(svg, L + pw + 6, T - 14, 'BE %', 'vz-unit');
+  svgEl('rect', { x: L, y: 8, width: 10, height: 10, class: 'vz-key-bar' }, svg);
+  svgText(svg, L + 15, 17, 'Harvest (kg)', 'vz-legend');
+  svgEl('line', { x1: L + 110, x2: L + 128, y1: 13, y2: 13, class: 'vz-line' }, svg);
+  svgEl('circle', { cx: L + 119, cy: 13, r: 3, class: 'vz-dot' }, svg);
+  svgText(svg, L + 134, 17, 'BE % so far (right axis)', 'vz-legend');
+  const slot = pw / bars.length, bw = Math.min(56, slot * 0.6);
+  const pts = [];
+  bars.forEach((b, i) => {
+    const cx = L + slot * (i + 0.5);
+    const top = y(b.kg, kgMax);
+    const bar = svgEl('rect', { x: cx - bw / 2, y: top, width: bw, height: Math.max(0, T + ph - top), class: 'vz-bar', rx: 2 }, svg);
+    svgEl('title', {}, bar).textContent = `Flush ${b.n}: ${one(b.kg)} kg, ${b.gPerBlock} g per block, ${b.beCum} % BE so far`;
+    svgText(svg, cx, Math.max(T - 2, top - 5), `${one(b.kg)} kg`, 'vz-val', 'middle');
+    svgText(svg, cx, T + ph + 16, `Flush ${b.n}`, 'vz-cat', 'middle');
+    svgText(svg, cx, T + ph + 31, `${b.gPerBlock} g per block`, 'vz-sub', 'middle');
+    pts.push([cx, y(b.beCum, beMax)]);
+  });
+  if (pts.length > 1) svgEl('polyline', { points: pts.map(p => p.join(',')).join(' '), class: 'vz-line', fill: 'none' }, svg);
+  pts.forEach(([cx, cy], i) => {
+    svgEl('circle', { cx, cy, r: 3.5, class: 'vz-dot' }, svg).appendChild(svgEl('title', {}, null)).textContent = `${bars[i].beCum} % BE so far`;
+  });
+  host.replaceChildren(svg);
+  return true;
+}
+
+function drawTimeline(host, t, nowS, finished) {
+  const { svgEl } = global.FarmUi;
+  host.replaceChildren();
+  if (t.rows.length === 0) return false;
+  const W = 760, L = 96, R = 14, T = 26, LANE = 26, GAP = 10;
+  const pw = W - L - R;
+  const heights = t.rows.map(r => r.lanes * LANE + GAP);
+  const H = T + heights.reduce((a, b) => a + b, 0) + (finished ? 8 : 20);
+  const x = s => L + ((s - t.from) / (t.to - t.from)) * pw;
+  const label = `What is growing where: ${timelineSummary(t, finished)} ${t.rows.map(r => `${r.name}: ${r.bars.length ? r.bars.map(b => `${b.label}, from ${shortDate(b.from)}`).join('; ') : 'empty'}.`).join(' ')}`;
+  const svg = svgRoot(W, H, label);
+  const ticks = 4;
+  for (let i = 0; i <= ticks; i++) {
+    const s = t.from + (t.to - t.from) * i / ticks, xx = x(s);
+    svgEl('line', { x1: xx, x2: xx, y1: T - 4, y2: H - (finished ? 6 : 18), class: 'vz-gridline' }, svg);
+    svgText(svg, xx, T - 10, shortDate(s), 'vz-tick', i === 0 ? 'start' : i === ticks ? 'end' : 'middle');
+  }
+  let yy = T;
+  t.rows.forEach((r, i) => {
+    svgText(svg, 0, yy + LANE / 2 + 4, r.name, 'vz-cat');
+    if (r.bars.length === 0) svgText(svg, L + 8, yy + LANE / 2 + 4, 'Empty', 'vz-sub');
+    for (const b of r.bars) {
+      const x1 = x(b.from), w = Math.max(6, x(b.to) - x1), by = yy + b.lane * LANE;
+      const a = svgEl('g', { class: 'vz-hit', tabindex: '0', role: 'link', 'aria-label': `Open ${b.label}`, 'data-id': String(b.id) }, svg);
+      svgEl('rect', { x: x1, y: by, width: w, height: LANE - 4, rx: 3, class: 'vz-tbar' }, a);
+      const clip = `vz-clip-${r.room_id}-${b.id}`;
+      const cp = svgEl('clipPath', { id: clip }, a);
+      svgEl('rect', { x: x1 + 4, y: by, width: Math.max(0, w - 8), height: LANE - 4 }, cp);
+      const tx = svgText(a, x1 + 6, by + (LANE - 4) / 2 + 4, b.label, 'vz-tlabel');
+      tx.setAttribute('clip-path', `url(#${clip})`);
+      svgEl('title', {}, a).textContent = `${b.label}: ${shortDate(b.from)} to ${shortDate(b.to)}`;
+    }
+    yy += heights[i];
+    if (i < t.rows.length - 1) svgEl('line', { x1: 0, x2: W, y1: yy - GAP / 2, y2: yy - GAP / 2, class: 'vz-gridline' }, svg);
+  });
+  if (!finished) {
+    const tx = x(nowS);
+    svgEl('line', { x1: tx, x2: tx, y1: T - 4, y2: H - 16, class: 'vz-today' }, svg);
+    svgText(svg, tx, H - 2, 'Today', 'vz-sub', tx > W - 40 ? 'end' : 'middle');
+  }
+  host.appendChild(svg);
+  if (!finished) host.scrollLeft = host.scrollWidth;      // narrow screens: today is the end that matters
+  return true;
+}
+
 const LIST_HTML = `
 <div class="bt-page">
   <div class="bt-head" id="btHead"><button class="btn btn-primary" id="btNewBtn" type="button">New batch</button></div>
@@ -91,6 +281,11 @@ const LIST_HTML = `
     <button type="button" id="btTabPlaced" aria-pressed="true">Growing</button>
     <button type="button" id="btTabCleared" aria-pressed="false">Finished</button>
   </div>
+  <figure class="card room-timeline vz-card" id="btTimeline" hidden>
+    <h3>What is growing where</h3>
+    <p class="vz-sum" id="btTimelineSum"></p>
+    <div class="vz-scroll" id="btTimelineChart"></div>
+  </figure>
   <p class="tag" id="btEmpty" hidden>No batches here.</p>
   <table class="bt-list" id="btList">
     <thead><tr><th>Mushroom</th><th>Strain</th><th>Room</th><th>Age (days)</th><th>kg</th><th>g per block</th><th>BE %</th></tr></thead>
@@ -213,6 +408,11 @@ const DETAIL_HTML = `
     </div>
     <div class="btn-row"><button class="btn btn-primary" id="bdSave" type="submit">Save changes</button></div>
   </form>
+  <figure class="card flush-chart vz-card" id="bdChart" hidden>
+    <h3>Harvest per flush</h3>
+    <p class="vz-sum" id="bdChartSum"></p>
+    <div class="vz-scroll" id="bdChartSvg"></div>
+  </figure>
   <h3>Flushes</h3>
   <table class="bd-flushes" id="bdFlushes">
     <thead><tr><th>Flush</th><th>First</th><th>Last</th><th>kg</th><th>g per block</th><th>BE %</th></tr></thead>
@@ -243,6 +443,7 @@ function mountList(el, live) {
   const tabs = { received: $('#btTabReceived'), placed: $('#btTabPlaced'), cleared: $('#btTabCleared') };
   let state = 'placed';
   let all = [];
+  let rooms = [];
   let loaded = false;
   const newCard = $('#btNew');
   $('#btHead').replaceChildren(global.FarmUi.pageHead({
@@ -253,12 +454,23 @@ function mountList(el, live) {
     $('#btCrop').focus();
   });
 
+  function paintTimeline(now) {
+    const fig = $('#btTimeline');
+    fig.hidden = !loaded || state === 'received';
+    if (fig.hidden) return;
+    const finished = state === 'cleared';
+    const t = timelineRows(rooms, all, now, finished ? 'cleared' : 'placed');
+    $('#btTimelineSum').textContent = timelineSummary(t, finished);
+    if (!drawTimeline($('#btTimelineChart'), t, now, finished)) fig.hidden = true;
+  }
+
   function paint() {
     const now = nowSec();
     const list = filterByState(all, state);
     const body = $('#btList').querySelector('tbody');
     $('#btEmpty').hidden = !loaded || list.length !== 0;
     $('#btList').hidden = !loaded || list.length === 0;
+    paintTimeline(now);
     body.replaceChildren(...list.map(b => {
       const from = b.state === 'received' ? b.received_at : b.placed_at;
       const to = b.state === 'cleared' ? b.cleared_at : now;
@@ -270,12 +482,14 @@ function mountList(el, live) {
 
   async function load() {
     const mine = ++gen;
-    let list;
-    try { list = await global.FarmApi.listBatches({}); }
-    catch (err) { if (live() && mine === gen) say('error', errText(err)); return; }
+    let list, roomList;
+    try {
+      [list, roomList] = await Promise.all([global.FarmApi.listBatches({}), global.FarmApi.listRooms().catch(() => [])]);
+    } catch (err) { if (live() && mine === gen) say('error', errText(err)); return; }
     if (!live() || mine !== gen) return;
     say('info', '');
     all = list;
+    rooms = roomList;
     loaded = true;
     newCard.open = list.length === 0;
     paint();
@@ -287,6 +501,15 @@ function mountList(el, live) {
     if (loaded) paint(); else load();
   }
   for (const k of Object.keys(tabs)) tabs[k].addEventListener('click', () => pick(k));
+
+  $('#btTimelineChart').addEventListener('click', e => {
+    const hit = e.target && e.target.closest ? e.target.closest('[data-id]') : null;
+    if (hit) global.location.hash = `#/batches/${hit.getAttribute('data-id')}`;
+  });
+  $('#btTimelineChart').addEventListener('keydown', e => {
+    const hit = e.target && e.target.closest ? e.target.closest('[data-id]') : null;
+    if (hit && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); global.location.hash = `#/batches/${hit.getAttribute('data-id')}`; }
+  });
 
   $('#btList').addEventListener('click', e => {
     const tr = e.target && e.target.closest ? e.target.closest('tr[data-id]') : null;
@@ -367,6 +590,9 @@ async function mountDetail(el, id, live) {
     $('#bdClear').hidden = b.state !== 'placed';
     $('#bdDelete').hidden = b.totals.crates !== 0;
     headSlot.replaceChildren(global.FarmUi.pageHead({ title: titleOf(b), sub: subText(b), actions: headActions }));   // the buttons move into the head's action row
+    const chart = $('#bdChart');
+    chart.hidden = !drawFlushChart($('#bdChartSvg'), b);
+    $('#bdChartSum').textContent = chart.hidden ? '' : dropText(b.flushes);
     $('#bdFlushes').querySelector('tbody').replaceChildren(...b.flushes.map(f =>
       row([f.n, secondsToDate(f.from), secondsToDate(f.to), f.kg, f.g_per_block, f.be_pct])));
     $('#bdCrates').querySelector('tbody').replaceChildren(...b.crates.map(c => {
@@ -481,5 +707,5 @@ function unmount() { current = null; }
 
 global.FarmShell.register('batches', { mount, unmount });
 
-if (typeof module === 'object' && module && module.exports) module.exports = { dateToSeconds, secondsToDate, ageDays, batchBody, plural, daysText, titleOf, stateWords, subText, filterByState };
+if (typeof module === 'object' && module && module.exports) module.exports = { dateToSeconds, secondsToDate, ageDays, batchBody, plural, daysText, titleOf, stateWords, subText, filterByState, flushBars, dropText, timelineRows, niceMax };
 })(typeof window !== 'undefined' ? window : globalThis);

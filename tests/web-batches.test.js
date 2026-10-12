@@ -10,10 +10,10 @@ globalThis.FarmShell = { register: (name, m) => { registered[name] = m; } };
 const B = require('../web/batches.js');
 const CC = globalThis.ClimateController, HR = globalThis.FarmHarvestRules;
 
-test('BT1 module registers batches and exports the C10 12.2 names only', () => {
+test('BT1 module registers batches and exports the C10 12.2 names and the C13 5 chart helpers', () => {
   assert.equal(typeof registered.batches.mount, 'function');
   assert.equal(typeof registered.batches.unmount, 'function');
-  assert.deepEqual(Object.keys(B).sort(), ['ageDays', 'batchBody', 'daysText', 'dateToSeconds', 'filterByState', 'plural', 'secondsToDate', 'stateWords', 'subText', 'titleOf'].sort());
+  assert.deepEqual(Object.keys(B).sort(), ['ageDays', 'batchBody', 'daysText', 'dateToSeconds', 'dropText', 'filterByState', 'flushBars', 'niceMax', 'plural', 'secondsToDate', 'stateWords', 'subText', 'timelineRows', 'titleOf'].sort());
 });
 
 test('BT2 dates are farm dates whatever the browser zone', () => {
@@ -242,4 +242,63 @@ test('BT12 a remount on the same element: a late list reply of the old mount is 
   await first;
   assert.equal(el.querySelector('#btNew').open, true);                       // the old reply did not close it
   assert.equal(el.querySelector('#btList').querySelector('tbody').children.length, 0);
+});
+
+test('BT-V1 flushBars adds the BE % up flush by flush', () => {
+  const bars = B.flushBars({ flushes: [{ n: 1, kg: 10, g_per_block: 50, be_pct: 20 }, { n: 2, kg: 6, g_per_block: 30, be_pct: 12.3 }] });
+  assert.deepEqual(bars, [{ n: 1, kg: 10, gPerBlock: 50, beCum: 20 }, { n: 2, kg: 6, gPerBlock: 30, beCum: 32.3 }]);
+  assert.deepEqual(B.flushBars({}), []);
+  assert.deepEqual(B.flushBars(null), []);
+});
+
+test('BT-V2 dropText says the drop from the best flush in words', () => {
+  const f = (...kgs) => kgs.map((kg, i) => ({ n: i + 1, kg }));
+  assert.equal(B.dropText([]), '');
+  assert.equal(B.dropText(f(5)), 'One flush so far.');
+  assert.equal(B.dropText(f(10, 6)), 'Flush 2 gave 40 % less than flush 1.');
+  assert.equal(B.dropText(f(6, 10)), 'Flush 2 is the best so far.');
+  assert.equal(B.dropText(f(6, 10, 5)), 'Flush 3 gave 50 % less than flush 2.');
+  assert.equal(B.dropText(f(4, 4)), 'Flush 2 gave the same as flush 1.');
+  assert.equal(B.dropText(f(0, 0)), '');
+});
+
+test('BT-V3 niceMax gives an axis end with four round steps', () => {
+  assert.equal(B.niceMax(0), 1);
+  assert.equal(B.niceMax(7.3), 8);
+  assert.equal(B.niceMax(11), 20);
+  assert.equal(B.niceMax(23), 40);
+  assert.equal(B.niceMax(0.34), 0.4);
+  assert.equal(B.niceMax(10), 10);
+  for (const v of [0.7, 3, 12, 35, 99]) { const m = B.niceMax(v); assert.ok(m >= v && m < 2.6 * v + 1, String(v)); }
+});
+
+test('BT-V4 timelineRows: a row per room, empty rooms kept, overlaps on lanes, Flush n in the label', () => {
+  const day = 86400, now = 1791388800 + 40 * day;
+  const rooms = [{ id: 2, name: 'Room B' }, { id: 1, name: 'Room A' }, { id: 3, name: 'Room C' }];
+  const mk = (id, room, crop, placed, flushes, extra) => ({ id, room_id: room, room_name: `Room ${room}`, crop, state: 'placed', placed_at: placed, cleared_at: null, totals: { flushes }, ...extra });
+  const batches = [mk(10, 1, 'oyster', now - 30 * day, 2), mk(11, 1, 'oyster', now - 5 * day, 0), mk(12, 2, 'lions_mane', now - 10 * day, 1),
+    { ...mk(13, 3, 'oyster', now - 50 * day, 3), state: 'cleared', cleared_at: now - 20 * day }];
+  const t = B.timelineRows(rooms, batches, now, 'placed');
+  assert.deepEqual(t.rows.map(r => r.name), ['Room A', 'Room B', 'Room C']);
+  assert.equal(t.rows[0].bars.length, 2);
+  assert.deepEqual(t.rows[0].bars.map(b => b.lane), [0, 1]);
+  assert.equal(t.rows[0].lanes, 2);
+  assert.match(t.rows[0].bars[0].label, /Flush 2$/);
+  assert.equal(t.rows[0].bars[1].label, CC.CROPS.oyster.name);          // no crate yet: just the mushroom
+  assert.equal(t.rows[2].bars.length, 0);                              // empty room kept, the finished batch is not growing
+  assert.equal(t.to, now);
+  assert.equal(t.from, now - 30 * day);
+  const done = B.timelineRows(rooms, batches, now, 'cleared');
+  assert.deepEqual(done.rows.map(r => r.name), ['Room C']);            // Finished lists only rooms that had batches
+  assert.deepEqual([done.rows[0].bars[0].from, done.rows[0].bars[0].to], [now - 50 * day, now - 20 * day]);
+});
+
+test('BT-V5 timelineRows copes with no data and with a room missing from the list', () => {
+  const now = 1791388800;
+  const none = B.timelineRows([], [], now, 'placed');
+  assert.deepEqual(none.rows, []);
+  assert.equal(none.to - none.from, 14 * 86400);
+  const b = { id: 1, room_id: 9, room_name: 'Old room', crop: 'oyster', state: 'placed', placed_at: now - 86400, totals: { flushes: 0 } };
+  const t = B.timelineRows([{ id: 1, name: 'A' }], [b], now, 'placed');
+  assert.deepEqual(t.rows.map(r => r.name).sort(), ['A', 'Old room']);
 });
