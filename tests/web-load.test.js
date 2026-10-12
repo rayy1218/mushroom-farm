@@ -7,13 +7,13 @@ const vm = require('node:vm');
 
 const root = path.join(__dirname, '..');
 const BASE = ['ClimateSim', 'ClimateAir', 'ClimateController', 'ClimateRuntime', 'ClimateCalib', 'ClimateCapacity', 'ClimateCycle', 'ClimateEquipment',
-  'ClimateRoomRules', 'FarmHarvestRules', 'FarmUi', 'FarmApi', 'FarmCharts', 'FarmSettingsPanel', 'FarmShell'];
+  'ClimateRoomRules', 'FarmHarvestRules', 'FarmUi', 'FarmApi', 'FarmCharts', 'FarmMimic', 'FarmSettingsPanel', 'FarmShell'];
 
 test('L1: load order, nothing throws', () => {
   const before = new Set(Object.keys(globalThis));
   assert.doesNotThrow(() => {
     for (const f of ['sim', 'air', 'controller', 'runtime', 'calib', 'capacity', 'cycle', 'equipment', 'room-rules', 'harvest-rules']) require(`../${f}.js`);
-    for (const f of ['ui', 'api', 'charts', 'settings-panel']) require(`../web/${f}.js`);
+    for (const f of ['ui', 'api', 'charts', 'mimic', 'settings-panel']) require(`../web/${f}.js`);
     // web/vendor/qrcodegen.js is a classic script that declares `var qrcodegen`: run it as one.
     vm.runInThisContext(fs.readFileSync(path.join(root, 'web/vendor/qrcodegen.js'), 'utf8'), { filename: 'web/vendor/qrcodegen.js' });
     require('../web/shell.js');
