@@ -113,14 +113,16 @@ main { max-width: 1480px; width: 100%; margin: 0 auto; padding: 20px 24px 48px; 
 @media (max-width: 860px) { .rules-grid { grid-template-columns: minmax(0, 1fr); } }
 .rule { border: 1px solid var(--border); border-left: 4px solid var(--key); border-radius: 6px; margin: 0 0 10px; padding: 6px 10px 8px; }
 .rule legend { font: 600 14px var(--font-cond); padding: 0 4px; }
-.rule .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; }
-.rule label.num { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; }
-.rule input[type="number"] { width: 84px; min-height: 30px; padding: 3px 6px; font: 500 14px var(--font-num); }
 .rule .chk { margin: 4px 0 2px; font-weight: 400; font-size: 14px; }
-.rule.off .num { opacity: .45; }
+.rule.off .form-grid { opacity: .45; } /* C13 6.1: a priority that is off is dimmed */
+.rule .chk + .form-grid { margin-top: 10px; }
+.rule .form-grid { margin-top: 6px; }
+.rule .form-grid input { font-family: var(--font-num); }
+.stage-chks { border: 0; margin: 4px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 2px 16px; }
+.stage-chks legend { padding: 0; margin-bottom: 4px; font-size: var(--fs-sm); font-weight: 600; color: var(--ink-2); }
+.stage-chks .chk { margin: 0; min-height: 32px; }
 .rule-first { border-width: 1.5px; }
 .rule .hint { color: var(--muted); font-size: 13px; margin: 4px 0 0; }
-.rule .chk input[type="number"] { margin: 0 2px; }
 .rule-extra { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 14px; }
 .rule-extra input { width: 70px; min-height: 30px; padding: 3px 6px; font: 500 14px var(--font-num); }
 .ladder { padding-top: 22px; display: grid; grid-template-columns: 104px minmax(0, 1fr) 104px; align-items: center; gap: 10px 8px; position: relative; }
@@ -428,10 +430,6 @@ th:first-child, td:first-child { text-align: left; }
 .prog-status:empty { display: none; }
 .prog-status b { color: var(--ink); font-weight: 600; }
 details.prog { margin: 6px 0 8px; }
-.prog-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 6px 12px; margin: 6px 0 8px; font-size: 13px; color: var(--ink-2); }
-.prog-grid label { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.prog-grid input { width: 58px; min-height: 28px; padding: 2px 6px; font: 500 13px var(--font-num); }
-.prog-grid label[hidden] { display: none; }
 
 /* Phase 2 */
 .chart .area.li { fill: var(--s-li); } .chart .area.ci { fill: var(--s-ci); }
@@ -658,8 +656,8 @@ div.room-air { grid-column: 1 / -1; }
 }
 
 /* Numbers: sans with tabular figures, so columns still line up */
-.clock output, .rule input[type="number"], .rule-extra input, .duty .num, .m-big, .readout .val, .readout .zn, .field output, .fp-state .pw, .readv, .legend b,
-.tooltip .row b, .e-hero .num, .e-row .v, .tariff input, td, .gl-v, .gl-kv dd, .prot-grid input, .prog-grid input, .txt-in, .rc-val .val, li.machine .m-state { font-variant-numeric: tabular-nums; }
+.clock output, .rule .form-grid input, .rule-extra input, .duty .num, .m-big, .readout .val, .readout .zn, .field output, .fp-state .pw, .readv, .legend b,
+.tooltip .row b, .e-hero .num, .e-row .v, .tariff input, td, .gl-v, .gl-kv dd, .prot-grid input, .txt-in, .rc-val .val, li.machine .m-state { font-variant-numeric: tabular-nums; }
 
 /* App shell (C12 3): side bar >= 900 px, top bar, phone tab bar */
 :root { --side-w: 232px; --topbar-h: 52px; --tab-h: 56px; }
