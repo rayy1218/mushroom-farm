@@ -5,6 +5,7 @@
 const FIELDS7 = ['ac_hp', 'ac_units', 'fog_lph', 'air_m3h', 'walls', 'roof', 'height'];
 
 // ---------------- pure helpers (no DOM, no network) ----------------
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 const toCapacityMix = rows => rows.map(r => ({ crop: r.crop, blocks: r.blocks, ...(r.co2_per_block !== null ? { co2PerBlock: r.co2_per_block } : {}) }));
 const toMixRows = mix => mix.map(m => ({ crop: m.crop, blocks: m.blocks, co2_per_block: m.co2PerBlock ?? null }));
 function sameMix(a, b) {
@@ -36,7 +37,7 @@ function cycleSummary(res) {
   const n = res.stages.filter(g => g.pass === false).length;
   const chip = n === 0 ? { lvl: 'good', icon: '✓', text: 'all stages pass' } : { lvl: 'warning', icon: '✕', text: `${n} stage(s) fail` };
   const t = res.totals;
-  return { chip, line: `${t.days} days · ${res.inputs.flushes} flushes · ${Math.round(t.kwh)} kWh · RM ${t.rm.toFixed(2)} · RM ${t.rmPerBlock.toFixed(2)} per block` };
+  return { chip, line: `${plural(t.days, 'day', 'days')} · ${plural(res.inputs.flushes, 'flush', 'flushes')} · ${Math.round(t.kwh)} kWh · RM ${t.rm.toFixed(2)} · RM ${t.rmPerBlock.toFixed(2)} per block` };
 }
 function stageRows(res) {
   return res.stages.map(g => {
@@ -212,7 +213,7 @@ function cardInputs() {
 }
 
 function cycleDaysText() {
-  try { return `Run a full cycle (${global.ClimateCycle.cycleDays(settings.farmType, settings.program)} days)`; } catch { return 'Run a full cycle'; }
+  try { return `Run a full cycle (${plural(global.ClimateCycle.cycleDays(settings.farmType, settings.program), 'day', 'days')})`; } catch { return 'Run a full cycle'; }
 }
 function paintValues() {
   const UI = global.FarmUi, clock = UI.farmClock();

@@ -54,6 +54,7 @@ function linePath(pts, X, Y, f, gapS = Infinity) {
 }
 function areaPath(pts, X, Y, lo, hi) {
   if (pts.length < 2) return '';
+  if (!pts.every(p => Number.isFinite(lo(p)) && Number.isFinite(hi(p)))) return '';
   let d = linePath(pts, X, Y, hi);
   for (let i = pts.length - 1; i >= 0; i--) d += 'L' + X(pts[i].t).toFixed(1) + ',' + Y(lo(pts[i])).toFixed(1);
   return d + 'Z';

@@ -92,7 +92,8 @@ const RES = { verdict: 'ok', targets: { spT: 25, spRH: 88, co2Lim: 1000, crop: '
 
 test('SM6 cycle result', () => {
   assert.deepEqual(H.cycleSummary(RES), { chip: { lvl: 'warning', icon: '✕', text: '1 stage(s) fail' },
-    line: '2 days · 1 flushes · 23 kWh · RM 13.11 · RM 0.01 per block' });
+    line: '2 days · 1 flush · 23 kWh · RM 13.11 · RM 0.01 per block' });
+  assert.ok(H.cycleSummary({ ...RES, totals: { ...RES.totals, days: 1 }, inputs: { ...RES.inputs, flushes: 2 } }).line.startsWith('1 day · 2 flushes · '));
   const pass = { ...RES, stages: RES.stages.map(s => ({ ...s, pass: true, fails: [] })) };
   assert.deepEqual(H.cycleSummary(pass).chip, { lvl: 'good', icon: '✓', text: 'all stages pass' });
   assert.deepEqual(H.cycleSummary({ verdict: 'impossible', why: 'Add at least one crop with blocks.' }),
