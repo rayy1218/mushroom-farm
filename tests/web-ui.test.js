@@ -175,3 +175,11 @@ test('C14 cropTargets and targetWarnings', () => {
     'Grey oyster fruiting usually runs at 88 % humidity; 80 % is 8 % drier.']);
   assert.deepEqual(UI.targetWarnings({ crop: 'nope', stage: 'fruiting', spT: 5 }), []);
 });
+
+test('C14 targetWarningsByKind splits the warnings by target', () => {
+  require('../controller.js');
+  assert.deepEqual(UI.targetWarningsByKind({ crop: 'oyster', stage: 'fruiting', spT: 22, spRH: 80 }), {
+    T: ['Grey oyster fruiting usually runs at 25 °C; 22 °C is 3 °C colder.'],
+    RH: ['Grey oyster fruiting usually runs at 88 % humidity; 80 % is 8 % drier.'] });
+  assert.deepEqual(UI.targetWarningsByKind({ crop: 'nope', stage: 'fruiting', spT: 5 }), { T: [], RH: [] });
+});
