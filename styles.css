@@ -543,7 +543,7 @@ div.room-air { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: basel
 .room-live .rv { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; }
 .result-card { grid-column: 1 / -1; display: grid; gap: 8px; overflow-x: auto; }
 .pvr-card { grid-column: 1 / -1; display: grid; gap: 8px; }
-.equip-form { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px 12px; }
+.equip-form { display: grid; gap: 12px; } /* the .form-grid inside lays out the fields; the button row sits under it */
 .equip-bar { display: inline-block; width: 120px; height: 8px; background: var(--band); border-radius: 4px; overflow: hidden; vertical-align: middle; }
 .equip-bar span { display: block; height: 100%; background: var(--s-ac); }
 .cal-charts { grid-column: 1 / -1; }
@@ -553,7 +553,6 @@ div.room-air { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: basel
 }
 @media (max-width: 720px) {
   .room-card, .room-air { grid-column: span 12; }
-  .equip-form { grid-template-columns: minmax(0, 1fr); }
 }
 :where(#roomTab > section.card, #roomTab > .room-msg, #roomTab > p.tag) { grid-column: 1 / -1; }
 :where(#view > .est-note, #view > .est-note + a, #roomTab > .est-note, #view > .alert, #roomTab > .alert) { grid-column: 1 / -1; }
