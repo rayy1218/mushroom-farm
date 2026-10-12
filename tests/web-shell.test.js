@@ -74,7 +74,7 @@ test('SH1 parseHash', () => {
 test('SH2 MENU_NAMES', () => {
   assert.deepEqual(FarmShell.MENU_NAMES, { overview: 'Overview', rooms: 'Rooms', simulator: 'Test bench', batches: 'Batches', harvest: 'Harvest', settings: 'Settings' });
   assert.ok(Object.isFrozen(FarmShell.MENU_NAMES));
-  assert.deepEqual(Object.keys(FarmShell).sort(), ['DEFAULT_ROUTE', 'MENU_NAMES', 'guardLeave', 'level', 'parseHash', 'register', 'setLevel']);
+  assert.deepEqual(Object.keys(FarmShell).sort(), ['DEFAULT_ROUTE', 'MENU_NAMES', 'farmStatus', 'guardLeave', 'level', 'parseHash', 'refreshStatus', 'register', 'setLevel', 'setTheme', 'theme']);
 });
 
 test('SH3 redirects', () => {
@@ -237,4 +237,101 @@ test('SH10 beforeunload asks only with unsaved work', () => {
   assert.equal(e2.prevented, true);
   assert.equal(e2.returnValue, 'Unsaved.');
   FarmShell.guardLeave(null);
+});
+
+test('SH12 farmStatus (C12 3.1)', () => {
+  require('../web/ui.js');
+  const room = (live, adapter = 'sim') => ({ adapter, live });
+  const ok = { running: true, alarms: 0, status: { T: { lvl: 'good' }, RH: { lvl: 'good' }, CO2: { lvl: 'good' } } };
+  const warm = { running: true, alarms: 0, status: { T: { lvl: 'warning' } } };
+  const alarm = n => ({ running: true, alarms: n });
+  const f = FarmShell.farmStatus;
+  assert.deepEqual(f([]), { chip: null, sim: false });
+  assert.deepEqual(f(undefined), { chip: null, sim: false });
+  assert.equal(f([room(ok)]).chip.text, 'All rooms OK');
+  assert.equal(f([room(ok)]).chip.lvl, 'good');
+  assert.equal(f([room(ok), room(warm)]).chip.text, '1 room to check');
+  assert.equal(f([room(warm), room(warm)]).chip.text, '2 rooms to check');
+  assert.equal(f([room(alarm(1)), room(ok)]).chip.text, '1 alarm');
+  assert.equal(f([room(alarm(2)), room(alarm(1))]).chip.text, '3 alarms');
+  assert.equal(f([room(alarm(2)), room(alarm(1))]).chip.lvl, 'warning');
+  const stopped = f([room({ running: false }), room(alarm(2)), room(null)]);
+  assert.deepEqual([stopped.chip.lvl, stopped.chip.text], ['serious', '2 stopped']);
+  assert.equal(f([room(ok, 'sim'), room(ok, 'modbus')]).sim, false);
+  assert.equal(f([room(ok, 'sim'), room(ok, 'sim')]).sim, true);
+});
+
+test('SH13 setTheme and readTheme: store, remove, a bad value means device', () => {
+  const store = {};
+  globalThis.localStorage = { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = v; }, removeItem: k => { delete store[k]; } };
+  document.documentElement = { dataset: {} };
+  const saved = document.getElementById;
+  document.getElementById = () => null;
+  const saveQ = document.querySelectorAll; document.querySelectorAll = () => [];
+  try {
+    FarmShell.setTheme('dark');
+    assert.equal(store['mushroom-farm.theme'], 'dark');
+    assert.equal(document.documentElement.dataset.theme, 'dark');
+    assert.equal(FarmShell.theme, 'dark');
+    FarmShell.setTheme('light');
+    assert.equal(FarmShell.theme, 'light');
+    FarmShell.setTheme('device');
+    assert.equal('mushroom-farm.theme' in store, false);
+    assert.equal('theme' in document.documentElement.dataset, false);
+    assert.equal(FarmShell.theme, 'device');
+    FarmShell.setTheme('dark');
+    FarmShell.setTheme('purple');
+    assert.equal('mushroom-farm.theme' in store, false);
+    store['mushroom-farm.theme'] = 'blue';
+    assert.equal(FarmShell.theme, 'device');
+  } finally { document.getElementById = saved; document.querySelectorAll = saveQ; delete globalThis.localStorage; }
+});
+
+test('SH14 refreshStatus keeps the last chips on failure, hides with no rooms, skips bare and hidden', async () => {
+  const mk = () => ({ hidden: true, dataset: {}, replaceChildren() {}, setAttribute() {} });
+  const chipEl = mk(), simEl = mk();
+  const saved = document.getElementById;
+  document.getElementById = id => (id === 'farmStatus' ? chipEl : id === 'farmSim' ? simEl : null);
+  let reply = [{ adapter: 'sim', live: { running: true, alarms: 0, status: {} } }], calls = 0;
+  globalThis.FarmApi = { listRooms: () => { calls++; return reply instanceof Error ? Promise.reject(reply) : Promise.resolve(reply); } };
+  globalThis.FarmUi.paintChip = (el, chip) => { el.dataset.lvl = chip.lvl; el.shown = chip.text; };
+  try {
+    await FarmShell.refreshStatus();
+    assert.equal(chipEl.hidden, false);
+    assert.equal(chipEl.shown, 'All rooms OK');
+    assert.equal(simEl.hidden, false);
+    reply = new Error('down');
+    await FarmShell.refreshStatus();
+    assert.equal(chipEl.hidden, false);
+    assert.equal(simEl.hidden, false);
+    reply = [];
+    await FarmShell.refreshStatus();
+    assert.equal(chipEl.hidden, true);
+    assert.equal(simEl.hidden, true);
+    reply = [{ adapter: 'sim', live: { running: false } }];
+    const before = calls;
+    document.body.dataset.layout = 'bare';
+    await FarmShell.refreshStatus();
+    delete document.body.dataset.layout;
+    document.hidden = true;
+    await FarmShell.refreshStatus();
+    document.hidden = false;
+    assert.equal(calls, before);
+    assert.equal(chipEl.hidden, true);
+  } finally { document.getElementById = saved; delete globalThis.FarmApi; delete document.hidden; }
+});
+
+test('SH15 More stays current in the tab bar on Test bench routes', () => {
+  const tab = { ...link('settings'), closest: sel => (sel === '#tabbar' ? {} : null) };
+  const tabSim = { ...link('simulator'), closest: sel => (sel === '#tabbar' ? {} : null) };
+  const all = [...links, tab, tabSim];
+  const saved = document.querySelectorAll;
+  document.querySelectorAll = () => all;
+  try {
+    go('#/simulator/9');
+    assert.equal(tab.attrs['aria-current'], 'page');
+    assert.equal(tabSim.attrs['aria-current'], undefined);
+    assert.equal(links[4].attrs['aria-current'], 'page'); // the side bar entry keeps its own
+    assert.equal(links[5].attrs['aria-current'], undefined);
+  } finally { document.querySelectorAll = saved; }
 });

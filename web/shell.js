@@ -1,4 +1,4 @@
-// web/shell.js: menu, routing, settings level, theme (docs/contracts/web.md section 2).
+// web/shell.js: menu, routing, settings level, theme (docs/contracts/web.md section 2), C12 3.1 (theme, farm status).
 (function (global) {
 'use strict';
 
@@ -10,6 +10,7 @@ let skipHash = null; // the hash put back by a refused leave: its hashchange is 
 const MENU_NAMES = Object.freeze({ overview: 'Overview', rooms: 'Rooms', simulator: 'Test bench', batches: 'Batches', harvest: 'Harvest', settings: 'Settings' });
 const DEFAULT_ROUTE = '#/overview'; // C12 2.1
 const LEVEL_KEY = 'mushroom-farm.level'; // C12 2.3
+const THEME_KEY = 'mushroom-farm.theme'; // C12 3.1
 const ROOM_ID_RE = /^[1-9][0-9]{0,14}$/;
 const TABS = ['overview', 'settings', 'simulate', 'calibrate']; // the names of FarmRoomTabs.NAMES (C12 2.2); not read here so the file loads alone in Node
 const isId = s => ROOM_ID_RE.test(s);
@@ -73,11 +74,16 @@ function menuLink(parsed) {
 function applyChrome(parsed) {
   const link = menuLink(parsed);
   document.querySelectorAll('#menu a, #tabbar a').forEach(a => {
-    if (link && a.dataset.module === link) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+    // C12 decision 99: the Test bench has no phone tab, so More (Settings) stays lit on its routes
+    const tabbar = a.closest ? a.closest('#tabbar') : null;
+    const mod = link === 'simulator' && tabbar ? 'settings' : link;
+    if (mod && a.dataset.module === mod) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
   });
   document.title = `${MENU_NAMES[parsed.name]} · Mushroom farm`;
+  const wasBare = document.body.dataset.layout === 'bare';
   if (parsed.name === 'harvest' && parsed.params.view === 'record') document.body.dataset.layout = 'bare';
   else delete document.body.dataset.layout;
+  if (wasBare && document.body.dataset.layout !== 'bare') refreshStatus();
 }
 
 // C11 3.1: asks before leaving a page with unsaved work. true = go on, false = stay.
@@ -156,16 +162,84 @@ function initLevel() {
     if (b) setLevel(b.dataset.levelBtn);
   });
 }
+// C12 3.1: the theme is kept in this browser; absent = follow the device.
+function readTheme() {
+  try { const t = global.localStorage && global.localStorage.getItem(THEME_KEY); return t === 'light' || t === 'dark' ? t : 'device'; } catch { return 'device'; }
+}
+function paintTheme(theme) {
+  const root = document.documentElement;
+  if (theme === 'light' || theme === 'dark') root.dataset.theme = theme; else delete root.dataset.theme;
+  const btn = document.getElementById('themeBtn');
+  if (btn) btn.textContent = isDark() ? 'Light theme' : 'Dark theme';
+  document.querySelectorAll('[data-theme-btn]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.themeBtn === theme)));
+}
+function isDark() {
+  const t = document.documentElement.dataset.theme;
+  return t ? t === 'dark' : !!(global.matchMedia && global.matchMedia('(prefers-color-scheme: dark)').matches);
+}
+function setTheme(theme) {
+  const t = theme === 'light' || theme === 'dark' ? theme : 'device';
+  try {
+    if (global.localStorage) { if (t === 'device') global.localStorage.removeItem(THEME_KEY); else global.localStorage.setItem(THEME_KEY, t); }
+  } catch { /* private mode: not kept */ }
+  paintTheme(t);
+}
 function initTheme() {
-  const themeBtn = document.getElementById('themeBtn');
-  const isDark = () => (document.documentElement.dataset.theme ? document.documentElement.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches);
-  const syncThemeBtn = () => { themeBtn.textContent = isDark() ? 'Light theme' : 'Dark theme'; };
-  themeBtn.addEventListener('click', () => { document.documentElement.dataset.theme = isDark() ? 'light' : 'dark'; syncThemeBtn(); });
-  syncThemeBtn();
+  paintTheme(readTheme());
+  const btn = document.getElementById('themeBtn');
+  if (btn) btn.addEventListener('click', () => setTheme(isDark() ? 'light' : 'dark'));
+}
+
+// C12 3.1: the farm status chip. Pure: rooms are the listRooms() rows. Returns { chip, sim }; chip is null with no rooms.
+function farmStatus(rooms) {
+  const list = Array.isArray(rooms) ? rooms : [];
+  if (!list.length) return { chip: null, sim: false };
+  const ui = global.FarmUi;
+  let stopped = 0, alarms = 0, check = 0;
+  for (const r of list) {
+    const st = ui.roomStatus(r);
+    if (st.text === 'Stopped') stopped++;
+    else if (st.text === 'Check room') check++;
+    else if (r.live && r.live.alarms > 0) alarms += r.live.alarms;
+  }
+  const sim = list.every(r => r.adapter === 'sim');
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  if (stopped) return { chip: { lvl: 'serious', icon: ui.ICON.serious, text: `${stopped} stopped` }, sim };
+  if (alarms) return { chip: { lvl: 'warning', icon: ui.ICON.warning, text: plural(alarms, 'alarm', 'alarms') }, sim };
+  if (check) return { chip: { lvl: 'warning', icon: ui.ICON.warning, text: plural(check, 'room to check', 'rooms to check') }, sim };
+  return { chip: { lvl: 'good', icon: ui.ICON.good, text: 'All rooms OK' }, sim };
+}
+let statusTimer = null;
+async function refreshStatus() {
+  const chipEl = document.getElementById('farmStatus'), simEl = document.getElementById('farmSim');
+  if (!chipEl || !global.FarmApi || !global.FarmUi) return;
+  if (document.body.dataset.layout === 'bare' || document.hidden) return; // no chrome on screen, or no one looking
+  let rooms;
+  try { rooms = await global.FarmApi.listRooms(); } catch { return; } // keep the last chips
+  const { chip, sim } = farmStatus(rooms);
+  if (chip) global.FarmUi.paintChip(chipEl, chip);
+  chipEl.hidden = !chip;
+  if (simEl) simEl.hidden = !sim;
+}
+function initStatus() {
+  refreshStatus();
+  statusTimer = setInterval(refreshStatus, 30000);
+  document.addEventListener('visibilitychange', refreshStatus);
+}
+function initSkip() {
+  const skip = document.querySelector('[data-skip]');
+  if (!skip) return;
+  skip.addEventListener('click', e => { // a hash link would route: focus the view instead
+    e.preventDefault();
+    const v = document.getElementById('view');
+    if (v) { v.setAttribute('tabindex', '-1'); v.focus(); }
+  });
 }
 function init() {
+  initSkip();
   initLevel();
   initTheme();
+  initStatus();
   route();
 }
 
@@ -173,9 +247,13 @@ const FarmShell = {
   register,
   guardLeave,
   setLevel,
+  setTheme,
+  farmStatus,
+  refreshStatus,
   DEFAULT_ROUTE,
   MENU_NAMES,
   parseHash,
+  get theme() { return readTheme(); },
   get level() { return document.body.dataset.level; },
 };
 
