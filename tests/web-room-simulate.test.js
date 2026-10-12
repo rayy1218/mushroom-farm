@@ -20,8 +20,8 @@ test('SM1 registration', () => {
   const tab = globalThis.FarmRoomTabs.get('simulate');
   assert.equal(typeof tab.mount, 'function');
   assert.equal(typeof tab.unmount, 'function');
-  assert.deepEqual(Object.keys(tab.helpers).sort(), ['appliedCalib', 'clampBlocks', 'clampCo2', 'cycleSummary', 'machinesText', 'progressText',
-    'regionText', 'runInputs', 'runRowTexts', 'sameMix', 'seriesPoints', 'stageRows', 'toCapacityMix', 'toMixRows']);
+  assert.deepEqual(Object.keys(tab.helpers).sort(), ['appliedCalib', 'availableCrops', 'clampBlocks', 'clampCo2', 'cycleSummary', 'machinesText', 'progressText',
+    'regionText', 'runBlockReason', 'runInputs', 'runRowTexts', 'sameMix', 'seriesPoints', 'stageRows', 'toCapacityMix', 'toMixRows']);
   assert.equal(typeof globalThis.document, 'undefined');
   assert.doesNotThrow(() => tab.unmount());
 });
@@ -247,4 +247,49 @@ test('SM12 a slow load of an earlier room never paints into the next room', asyn
   const rows = el.querySelectorAll('#smMix tbody tr');
   assert.equal(rows.length, 1);
   assert.equal(rows[0].children[1].children[0].value, '7');
+});
+
+test('SM30 availableCrops: a crop in another row is not offered again, the row\'s own crop stays', () => {
+  const keys = ['oyster', 'pink', 'lionsmane'];
+  const mix = [{ crop: 'oyster', blocks: 1 }, { crop: 'pink', blocks: 1 }];
+  assert.deepEqual(H.availableCrops(mix, 0, keys), ['oyster', 'lionsmane']);
+  assert.deepEqual(H.availableCrops(mix, 1, keys), ['pink', 'lionsmane']);
+  assert.deepEqual(H.availableCrops(mix, 2, keys), ['lionsmane']);      // a new row
+  assert.deepEqual(H.availableCrops([], 0, keys), keys);
+  const dup = [{ crop: 'oyster', blocks: 1 }, { crop: 'oyster', blocks: 2 }];       // a saved mix with the same crop twice
+  assert.deepEqual(H.availableCrops(dup, 0, keys), ['oyster', 'pink', 'lionsmane']);
+  assert.deepEqual(H.availableCrops(dup, 1, keys), ['oyster', 'pink', 'lionsmane']);
+  assert.ok(H.availableCrops([], 0).includes('oyster'));                  // default: every crop a room can grow
+});
+
+test('SM31 runBlockReason: no run without a crop and blocks', () => {
+  const why = 'Add a mushroom and the number of blocks first.';
+  assert.equal(H.runBlockReason([]), why);
+  assert.equal(H.runBlockReason([{ crop: 'oyster', blocks: 0, co2_per_block: null }]), why);
+  assert.equal(H.runBlockReason(undefined), why);
+  assert.equal(H.runBlockReason([{ crop: 'oyster', blocks: 0 }, { crop: 'pink', blocks: 3 }]), '');
+  assert.equal(H.runBlockReason([{ crop: 'oyster', blocks: 1 }, { crop: 'oyster', blocks: 3 }]), 'The same mushroom is in the mix twice.');
+});
+
+test('SM32 an empty mix: both run buttons are disabled and the reason is shown; a mix with blocks enables them', async t => {
+  const { tab, ctx } = withDom(t, { 1: Promise.resolve([]), 2: Promise.resolve([{ crop: 'oyster', blocks: 5, co2_per_block: null }]) });
+  const el = new FakeEl('div');
+  await tab.mount(el, ctx(1)); await later();
+  const help = () => el.querySelector('#smRunHelp');
+  assert.equal(el.querySelector('#smCap').disabled, true);
+  assert.equal(el.querySelector('#smCycle').disabled, true);
+  assert.equal(help().textContent, 'Add a mushroom and the number of blocks first.');
+  assert.equal(help().hidden, false);
+  await tab.mount(el, ctx(2)); await later();
+  assert.equal(el.querySelector('#smCap').disabled, false);
+  assert.equal(help().hidden, true);
+});
+
+test('SM33 a loaded mix with the same crop twice shows the reason and keeps both selects filled', async t => {
+  const { tab, ctx } = withDom(t, { 1: Promise.resolve([{ crop: 'oyster', blocks: 5, co2_per_block: null }, { crop: 'oyster', blocks: 7, co2_per_block: null }]) });
+  const el = new FakeEl('div');
+  await tab.mount(el, ctx(1)); await later();
+  assert.equal(el.querySelector('#smRunHelp').textContent, 'The same mushroom is in the mix twice.');
+  assert.equal(el.querySelector('#smCap').disabled, true);
+  for (const row of el.querySelectorAll('#smMix tbody tr')) assert.ok(row.children[0].children[0].children.some(o => o.attrs.value === 'oyster'));
 });
