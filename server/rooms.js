@@ -178,7 +178,7 @@ function createRoomManager(options) {
   // ---------------- Live / summary ----------------
   function liveOf(loop) {
     if (!loop) {
-      return { reading: null, stage: null, crop: null, targets: null, status: null, alarms: 0, running: false, error: null, flush: null, blocks: null, air: null, manual: [] };
+      return { reading: null, stage: null, crop: null, targets: null, status: null, alarms: 0, running: false, error: null, flush: null, blocks: null, air: null, manual: [], ramp: null };
     }
     const ctl = loop.ctl, cfg = loop.cfg;
     return {
@@ -195,7 +195,14 @@ function createRoomManager(options) {
       blocks: loop.blocks,
       air: loop.liveAir,
       manual: manualOf(cfg), // C11 2.1
+      ramp: rampOf(ctl), // C14 2.1
     };
+  }
+  // C14 2.1: the targets a stage, crop or farm-type change is moving to, and when they arrive (null when no ramp runs).
+  function rampOf(ctl) {
+    const r = ctl && ctl.state && ctl.state.stage && ctl.state.stage.ramp;
+    if (!r || !r.to) return null;
+    return { to: { T: r.to.spT, RH: r.to.spRH, CO2: r.to.co2Lim }, endsAt: Math.round(r.t0 + r.dur) };
   }
   // C11 2.1: the machines not on Auto, in the order of the controller's `manual` settings.
   function manualOf(cfg) {

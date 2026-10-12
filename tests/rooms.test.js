@@ -1155,6 +1155,18 @@ test('C11 Live manual: the machines not on Auto', () => {
   assert.deepEqual(mgr.get(1).live.manual, []);
 });
 
+test('C14 Live ramp: a crop change shows the targets it moves to and when', () => {
+  const s = scripted();
+  const { mgr } = setup(s.factory);
+  mgr.start();
+  assert.equal(mgr.get(1).live.ramp, null);
+  mgr.applySettings(1, { crop: 'lionsmane', stage: 'pinning' });
+  const r = mgr.get(1).live.ramp;
+  assert.ok(r, 'a ramp runs after a crop change');
+  assert.deepEqual(r.to, { T: 17, RH: 92, CO2: 1000 });
+  assert.ok(Number.isInteger(r.endsAt) && r.endsAt > 0);
+});
+
 function fatalDbError() {
   return Object.assign(new Error('disk I/O error'), { code: 'ERR_SQLITE_ERROR', errcode: 10 });
 }
