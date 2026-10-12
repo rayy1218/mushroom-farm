@@ -165,7 +165,38 @@ async function importRooms(entries, api, { nowS, onRoom }) {
   return { created, failed: null };
 }
 
+// ---- C14 3: add a room in one step ----
+
+const STAGE_SHORT = { spawn: 'Spawn run', pinning: 'Pinning', fruiting: 'Fruiting', rest: 'Rest' };
+const SETUP_NOTE = 'Set up';
+const SETUP_WHAT = { settings: 'the mushroom and stage', mix: 'the block count' };
+
+// The calls of the Add room form, in order: { call, body }. `settings` and `mix` take the new room's id first.
+function setupPlan(form) {
+  const blocks = Math.max(0, Math.trunc(Number(form.blocks) || 0));
+  const plan = [
+    { call: 'createRoom', body: { name: String(form.name).trim(), volume: Number(form.volume) } },
+    { call: 'saveSettings', body: { crop: form.crop, stage: form.stage }, note: SETUP_NOTE },
+  ];
+  if (blocks > 0) plan.push({ call: 'saveMix', body: [{ crop: form.crop, blocks }] });
+  return plan;
+}
+
+// The line under the form after the calls ran. result: { id, name, crop, stage, blocks, failed }, where
+// failed is null or { step: 'settings' | 'mix', error: <text> }. Returns { lvl, text, link: { href, text } }.
+function setupMessage(result) {
+  const { id, name, crop, stage, failed } = result;
+  const blocks = Math.max(0, Math.trunc(Number(result.blocks) || 0));
+  if (!failed) {
+    return { lvl: 'good', text: `Room "${name}" added: ${cropName(crop)}, ${stageName(stage)}, ${plural(blocks, 'block')}.`,
+      link: { href: `#/rooms/${id}/overview`, text: `Open ${name}` } };
+  }
+  return { lvl: 'error', text: `Room "${name}" was added, but ${SETUP_WHAT[failed.step]} was not saved: ${failed.error}. Set it on the room's Settings tab.`,
+    link: { href: `#/rooms/${id}/settings`, text: 'Open Settings' } };
+}
+
 const helpers = {
+  setupPlan, setupMessage,
   statusChip, manualText, harvestToday, cropText, cardTexts, machineLines, infoText, stateText, alarmsChip, upsertRoom, takeLive, refreshRoom,
   refreshDelay, newRoomName, readStored, importPlan, importRooms,
 };
@@ -212,6 +243,7 @@ const HOME_HTML = `
 <p class="room-msg" id="rhMsg" role="status" hidden></p>
 <div class="contents" id="rhCards"></div>
 <section class="card room-new" id="rhNew" aria-label="New room" hidden>
+  <h3 id="rhNewTitle">Add a room</h3>
   <div class="form-grid">
     <div class="field" data-field="name">
       <label for="rhName">Room name</label>
@@ -224,9 +256,25 @@ const HOME_HTML = `
       <p class="field-help">Length × width × height.</p>
       <p class="field-err" hidden></p>
     </div>
+    <div class="field" data-field="crop">
+      <label for="rhCrop">Mushroom</label>
+      <div class="field-ctl"><select id="rhCrop"></select></div>
+      <p class="field-err" hidden></p>
+    </div>
+    <div class="field" data-field="stage">
+      <label id="rhStageLbl">Stage now</label>
+      <div class="field-ctl"><div class="seg" role="group" aria-labelledby="rhStageLbl" id="rhStage"></div></div>
+      <p class="field-err" hidden></p>
+    </div>
+    <div class="field" data-field="blocks">
+      <label for="rhBlocks">Blocks in the room</label>
+      <div class="field-ctl"><input id="rhBlocks" type="number" min="0" max="200000" step="1" value="0"><span class="unit">blocks</span></div>
+      <p class="field-help">How many blocks are in the room now. 0 if it is empty.</p>
+      <p class="field-err" hidden></p>
+    </div>
   </div>
   <div class="btn-row">
-    <button class="btn btn-primary" id="rhCreate" type="button" disabled>Create room</button>
+    <button class="btn btn-primary" id="rhCreate" type="button" disabled>Add room</button>
     <button class="btn" id="rhImport" type="button" hidden>Import rooms from this browser</button>
   </div>
 </section>`;
@@ -312,6 +360,24 @@ function mountHome(el) {
   el.prepend(global.FarmUi.pageHead({ title: 'Rooms', sub: INTRO, actions: [newBtn] }));
   const $ = id => el.querySelector(`#${id}`);
   $('rhVolume').value = String(global.ClimateSim.PLANT.room.volume);
+  const CC = global.ClimateController;
+  $('rhCrop').replaceChildren(...Object.keys(CC.CROPS).map(k => {
+    const o = document.createElement('option'); o.value = k; o.textContent = CC.CROPS[k].name; return o;
+  }));
+  $('rhCrop').value = 'oyster';
+  let stage = 'fruiting';
+  const stageBtns = CC.FARM_TYPES.full.stages.map(st => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.dataset.stage = st; b.textContent = STAGE_SHORT[st];
+    return b;
+  });
+  const paintStage = () => stageBtns.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.stage === stage)));
+  $('rhStage').replaceChildren(...stageBtns);
+  paintStage();
+  $('rhStage').addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (b) { stage = b.dataset.stage; paintStage(); }
+  });
   $('rhImport').hidden = !importAvailable();
 
   let alive = true;
@@ -327,6 +393,7 @@ function mountHome(el) {
   // C12 5.1: the New room card is closed while rooms exist, open when there are none; the head's button opens it.
   const openNew = (open, focus) => {
     $('rhNew').hidden = !open;
+    $('rhNewTitle').textContent = rooms.length ? 'Add a room' : 'Add your first room';
     newBtn.setAttribute('aria-expanded', String(open));
     if (open && focus) $('rhName').focus();
   };
@@ -348,6 +415,7 @@ function mountHome(el) {
   const cardOf = id => $('rhCards').querySelector(`.room-card[data-room-id="${id}"]`);
 
   function render() { $('rhCards').replaceChildren(...rooms.map(r => buildCard(r, harvest.get(r.id))));
+    $('rhNewTitle').textContent = rooms.length ? 'Add a room' : 'Add your first room';
     if (!rooms.length) openNew(true, false);
   }
 
@@ -412,28 +480,59 @@ function mountHome(el) {
     }
   });
 
+  // C14 3: the form remembers the new room's id after createRoom, so a retry never makes a second room.
+  let made = null; // { id, name }
+  const resetForm = () => {
+    made = null;
+    $('rhName').value = '';
+    $('rhBlocks').value = '0';
+    global.FarmUi.markFields($('rhNew'), {});
+  };
   $('rhCreate').addEventListener('click', async () => {
     const btn = $('rhCreate');
+    const form = { name: $('rhName').value, volume: $('rhVolume').value, crop: $('rhCrop').value, stage, blocks: $('rhBlocks').value };
+    const plan = setupPlan(form);
     btn.disabled = true;
+    btn.textContent = 'Adding…';
+    let failed = null;
     try {
-      const room = await api.createRoom({ name: $('rhName').value.trim(), volume: Number($('rhVolume').value) });
-      if (!alive) return;
-      rooms = upsertRoom(rooms, room);
-      render();
-      loadHarvest();
-      openNew(false, false);
-      $('rhName').value = '';
-      global.FarmUi.markFields($('rhName').closest('.room-new'), {});
-      setMsg(`Created "${room.name}". It starts running at once (simulated, default settings).`, 'good');
+      if (!made) {
+        const room = await api.createRoom(plan[0].body);
+        made = { id: room.id, name: room.name };
+        if (alive) { rooms = upsertRoom(rooms, room); render(); loadHarvest(); }
+      }
     } catch (err) {
       if (alive) {
         const p = global.FarmUi.plainError(err, { name: 'Room name', volume: 'Room size' });
         setMsg(p.text);
-        global.FarmUi.markFields($('rhName').closest('.room-new'), p.fields);
+        global.FarmUi.markFields($('rhNew'), p.fields);
+        btn.textContent = 'Add room';
+        setCreateState();
       }
-    } finally {
-      if (alive) setCreateState();
+      return;
     }
+    for (const step of plan.slice(1)) {
+      try {
+        if (step.call === 'saveSettings') await api.saveSettings(made.id, step.body, step.note);
+        else await api.saveMix(made.id, step.body);
+      } catch (err) {
+        failed = { step: step.call === 'saveSettings' ? 'settings' : 'mix', error: errorText(err) };
+        break;
+      }
+    }
+    if (!alive) return;
+    btn.textContent = 'Add room';
+    const msg = setupMessage({ id: made.id, name: made.name, crop: form.crop, stage, blocks: form.blocks, failed });
+    setMsg(msg.text, msg.lvl);
+    const a = document.createElement('a');
+    a.className = 'btn btn-link'; a.href = msg.link.href; a.textContent = msg.link.text;
+    $('rhMsg').append(' ', a);
+    if ($('rhMsg').scrollIntoView) $('rhMsg').scrollIntoView({ block: 'nearest' }); // the form is below the cards: show the result
+    if (!failed) {
+      openNew(false, false);
+      resetForm();
+    }
+    setCreateState();
   });
   $('rhName').addEventListener('input', setCreateState);
   openNew(false, false);

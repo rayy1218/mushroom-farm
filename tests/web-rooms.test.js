@@ -22,7 +22,7 @@ test('RS1 module', () => {
   assert.equal(typeof registered.rooms.unmount, 'function');
   assert.equal(typeof registered.rooms.update, 'function');
   for (const k of ['statusChip', 'cropText', 'cardTexts', 'machineLines', 'infoText', 'stateText', 'alarmsChip', 'upsertRoom', 'takeLive',
-    'refreshRoom', 'refreshDelay', 'manualText', 'harvestToday', 'newRoomName', 'readStored', 'importPlan', 'importRooms']) {
+    'refreshRoom', 'setupPlan', 'setupMessage', 'refreshDelay', 'manualText', 'harvestToday', 'newRoomName', 'readStored', 'importPlan', 'importRooms']) {
     assert.equal(typeof H[k], 'function', k);
   }
   assert.equal(typeof document, 'undefined');
@@ -274,4 +274,87 @@ test('RS11 import finished after unmount still writes the marker', async t => {
   await clicked;
   assert.equal(stored.length, 1);
   assert.equal(stored[0][0], 'mushroom-farm.rooms.v1.imported');
+});
+
+test('RS12 setupPlan: the calls in order, no mix call for an empty room', () => {
+  const form = { name: ' Room 2 ', volume: '60', crop: 'lionsmane', stage: 'pinning', blocks: '500' };
+  assert.deepEqual(H.setupPlan(form), [
+    { call: 'createRoom', body: { name: 'Room 2', volume: 60 } },
+    { call: 'saveSettings', body: { crop: 'lionsmane', stage: 'pinning' }, note: 'Set up' },
+    { call: 'saveMix', body: [{ crop: 'lionsmane', blocks: 500 }] },
+  ]);
+  assert.deepEqual(H.setupPlan({ ...form, blocks: '0' }).map(s => s.call), ['createRoom', 'saveSettings']);
+  assert.deepEqual(H.setupPlan({ ...form, blocks: '' }).map(s => s.call), ['createRoom', 'saveSettings']);
+});
+
+test('RS13 setupMessage: success and partial failures', () => {
+  const base = { id: 9, name: 'Room 2', crop: 'oyster', stage: 'fruiting', blocks: 500, failed: null };
+  assert.deepEqual(H.setupMessage(base), { lvl: 'good', text: 'Room "Room 2" added: Grey oyster, Fruiting, 500 blocks.',
+    link: { href: '#/rooms/9/overview', text: 'Open Room 2' } });
+  assert.match(H.setupMessage({ ...base, blocks: 1 }).text, /, 1 block\.$/);
+  assert.match(H.setupMessage({ ...base, blocks: 0 }).text, /, 0 blocks\.$/);
+  assert.deepEqual(H.setupMessage({ ...base, failed: { step: 'settings', error: 'The farm server did not answer' } }), { lvl: 'error',
+    text: 'Room "Room 2" was added, but the mushroom and stage was not saved: The farm server did not answer. Set it on the room\'s Settings tab.',
+    link: { href: '#/rooms/9/settings', text: 'Open Settings' } });
+  assert.match(H.setupMessage({ ...base, failed: { step: 'mix', error: 'x' } }).text, /but the block count was not saved: x\./);
+});
+
+test('RS14 Add room form: success, then a partial failure that retries without a second room', async t => {
+  const cache = {};
+  const mk = () => ({ dataset: {}, classList: { add() {} }, hidden: false, value: '', textContent: '', disabled: false, listeners: {},
+    addEventListener(n, f) { this.listeners[n] = f; }, setAttribute() {}, removeAttribute() {}, replaceChildren() {}, append() {}, prepend() {}, closest: () => null,
+    querySelector: sel => (cache[sel] ||= mk()), querySelectorAll: () => [] });
+  const el = mk();
+  const saved = { document: globalThis.document, localStorage: globalThis.localStorage, api: { ...FarmApi } };
+  globalThis.document = { createElement: mk };
+  globalThis.localStorage = { getItem: () => null, setItem() {} };
+  t.after(() => {
+    registered.rooms.unmount();
+    for (const k of ['document', 'localStorage']) { if (saved[k] === undefined) delete globalThis[k]; else globalThis[k] = saved[k]; }
+    Object.assign(FarmApi, saved.api);
+  });
+  const calls = [];
+  let failSettings = true;
+  FarmApi.stream = () => () => {};
+  FarmApi.listRooms = async () => [];
+  FarmApi.getRoomHarvest = async () => ({ batches: [] });
+  FarmApi.createRoom = async body => { calls.push(['createRoom', body]); return { id: 4, name: body.name, volume: body.volume, adapter: 'sim', archived_at: null, live: null }; };
+  FarmApi.saveSettings = async (id, body, note) => {
+    calls.push(['saveSettings', id, body, note]);
+    if (failSettings) throw new Error('boom');
+    return {};
+  };
+  FarmApi.saveMix = async (id, rows) => { calls.push(['saveMix', id, rows]); return rows; };
+  registered.rooms.mount(el, {});
+  await new Promise(r => setImmediate(r));
+  cache['#rhName'].value = 'Room 2';
+  cache['#rhVolume'].value = '60';
+  cache['#rhCrop'].value = 'lionsmane';
+  el.querySelector('#rhBlocks').value = '500';
+  cache['#rhName'].listeners.input();
+  assert.equal(cache['#rhCreate'].disabled, false);
+
+  await cache['#rhCreate'].listeners.click();
+  assert.deepEqual(calls.map(c => c[0]), ['createRoom', 'saveSettings']);
+  assert.equal(cache['#rhMsg'].dataset.lvl, 'error');
+  assert.match(cache['#rhMsg'].textContent, /^Room "Room 2" was added, but the mushroom and stage was not saved: .*Set it on the room's Settings tab\.$/);
+  assert.equal(cache['#rhCreate'].textContent, 'Add room');
+
+  failSettings = false;
+  calls.length = 0;
+  await cache['#rhCreate'].listeners.click();
+  assert.deepEqual(calls, [
+    ['saveSettings', 4, { crop: 'lionsmane', stage: 'fruiting' }, 'Set up'],
+    ['saveMix', 4, [{ crop: 'lionsmane', blocks: 500 }]],
+  ]);
+  assert.equal(cache['#rhMsg'].dataset.lvl, 'good');
+  assert.equal(cache['#rhMsg'].textContent, 'Room "Room 2" added: Lion\'s mane, Fruiting, 500 blocks.');
+  assert.equal(cache['#rhName'].value, '');
+  assert.equal(cache['#rhNew'].hidden, true);
+
+  // after the reset a new room is created again
+  cache['#rhName'].value = 'Room 3';
+  calls.length = 0;
+  await cache['#rhCreate'].listeners.click();
+  assert.equal(calls[0][0], 'createRoom');
 });
