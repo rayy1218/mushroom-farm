@@ -146,7 +146,7 @@ const LIST_HTML = `
 const DETAIL_HTML = `
 <div class="bd-page">
   <div class="bd-head" id="bdHead">
-    <select id="bdRoom" hidden></select>
+    <select id="bdRoom" aria-label="Room to place it in" hidden></select>
     <button class="btn" id="bdPlace" type="button" hidden>Place in room</button>
     <button class="btn btn-danger" id="bdClear" type="button" hidden>Finish batch</button>
     <button class="btn btn-danger" id="bdDelete" type="button" hidden>Delete</button>
@@ -243,6 +243,7 @@ function mountList(el, live) {
   const tabs = { received: $('#btTabReceived'), placed: $('#btTabPlaced'), cleared: $('#btTabCleared') };
   let state = 'placed';
   let all = [];
+  let loaded = false;
   const newCard = $('#btNew');
   $('#btHead').replaceChildren(global.FarmUi.pageHead({
     title: 'Batches', sub: 'The blocks you bought, from arrival to the last flush.', actions: [$('#btNewBtn')] }));
@@ -256,8 +257,8 @@ function mountList(el, live) {
     const now = nowSec();
     const list = filterByState(all, state);
     const body = $('#btList').querySelector('tbody');
-    $('#btEmpty').hidden = list.length !== 0;
-    $('#btList').hidden = list.length === 0;
+    $('#btEmpty').hidden = !loaded || list.length !== 0;
+    $('#btList').hidden = !loaded || list.length === 0;
     body.replaceChildren(...list.map(b => {
       const from = b.state === 'received' ? b.received_at : b.placed_at;
       const to = b.state === 'cleared' ? b.cleared_at : now;
@@ -275,6 +276,7 @@ function mountList(el, live) {
     if (!live() || mine !== gen) return;
     say('info', '');
     all = list;
+    loaded = true;
     newCard.open = list.length === 0;
     paint();
   }
@@ -282,7 +284,7 @@ function mountList(el, live) {
   function pick(next) {
     state = next;
     for (const k of Object.keys(tabs)) tabs[k].setAttribute('aria-pressed', String(k === next));
-    paint();
+    if (loaded) paint(); else load();
   }
   for (const k of Object.keys(tabs)) tabs[k].addEventListener('click', () => pick(k));
 

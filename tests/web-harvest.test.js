@@ -151,7 +151,7 @@ test('HV9 harvestRooms keeps rooms with a placed batch, with today\'s kg and sin
   const r = V.harvestRooms(list);
   assert.deepEqual(r.map(x => x.id), [1, 3, 4]);
   assert.equal(r[0].total, '12.6 kg today · 2 crates');
-  assert.equal(r[0].what, 'Grey oyster · flush 2');
+  assert.equal(r[0].what, 'Grey oyster · Flush 2');
   assert.equal(r[1].total, '0 kg today · 0 crates');
   assert.equal(r[1].what, 'Grey oyster · no crates yet');
   assert.equal(r[2].total, '4 kg today · 1 crate');
@@ -203,4 +203,9 @@ test('HV11 today view: cards, empty state, and a same-element remount drops the 
   assert.equal(el.querySelector('#hvCrateList').children.length, 1);
   registered.harvest.unmount();
   assert.equal(timers.size, 0);
+});
+
+test('HV12 harvestRooms adds the strain when there is one', () => {
+  const b = { ...hb(5, 'oyster', 1, []), strain: 'PO-2' };
+  assert.equal(V.harvestRooms([room(1, 'Room 1', [b])])[0].what, 'Grey oyster · PO-2 · Flush 1');
 });

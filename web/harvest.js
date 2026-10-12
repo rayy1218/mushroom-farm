@@ -32,7 +32,7 @@ function harvestRooms(list) {
     const kg = Math.round(r.batches.reduce((sum, b) => sum + b.today.kg, 0) * 100) / 100;
     out.push({
       id: r.room.id, name: r.room.name, kg, crates,
-      what: r.batches.map(b => `${cropName(b.crop)} · ${b.flush > 0 ? `flush ${b.flush}` : 'no crates yet'}`).join(', '),
+      what: r.batches.map(b => `${cropName(b.crop)}${b.strain ? ` · ${b.strain}` : ''} · ${b.flush > 0 ? `Flush ${b.flush}` : 'no crates yet'}`).join(', '),
       total: `${kgText(kg)} kg today · ${plural(crates, 'crate', 'crates')}`,
     });
   }
@@ -104,7 +104,7 @@ const TODAY_HTML = `
   <div id="hvHead"></div>
   <p class="alert" id="hvTodayMsg" role="status" hidden></p>
   <div class="hv-rooms" id="hvRooms"></div>
-  <p class="card hv-empty" id="hvEmpty" hidden>No blocks are growing in a room yet. Add a batch in Batches, then place it in a room. <a href="#/batches">Go to Batches</a></p>
+  <div class="card hv-empty" id="hvEmpty" hidden><p>No blocks are growing in a room yet. Add a batch in Batches, then place it in a room.</p><a class="btn btn-link" href="#/batches">Go to Batches</a></div>
   <section class="card hv-crates" id="hvCrates" hidden>
     <h2>Today's crates</h2>
     <p class="tag" id="hvCratesNone" hidden>No crates yet today.</p>
@@ -322,6 +322,7 @@ function mountToday(el, live) {
     let list;
     try {
       const rooms = await global.FarmApi.listRooms();
+      if (!live() || mine !== gen) return;
       list = await Promise.all(rooms.map(r => global.FarmApi.getRoomHarvest(r.id).catch(err => {
         if (err && err.name === 'ApiError' && err.status === 404) return null;           // archived since the list was read
         throw err;
@@ -337,7 +338,7 @@ function mountToday(el, live) {
   }
 
   if (timer) clearInterval(timer);
-  timer = setInterval(() => { if (live()) load(); }, REFRESH_MS);
+  timer = setInterval(() => { if (live() && !(global.document && global.document.hidden)) load(); }, REFRESH_MS);
   return load();
 }
 
