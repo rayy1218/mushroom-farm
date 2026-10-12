@@ -55,7 +55,7 @@ A stream never edits another stream's files; it asks the lead.
 | Item | Rule |
 |---|---|
 | New batch form | Adds **Put in room** (a `<select>`: `Not yet` (default) and every room from `listRooms()`), and `Placed on` (date, default today, shown only when a room is chosen). **Wet weight per block** is prefilled with `1.2` kg and **Moisture** with `60` % (lead decision 111), each with help `Typical for bought blocks. Change it if you weighed yours.` |
-| Saving | `createBatch(...)`; when a room is chosen, then `placeBatch(id, { room_id, placed_at })`. Success: go to `#/batches/<id>` as now, with `say` good `Batch saved and placed in <room>.` If placing failed: still go to the batch, with `say` error `Batch saved, but not placed: <error>. Use Place in room below.` |
+| Saving | `createBatch(...)`; when a room is chosen, then `placeBatch(id, { room_id, placed_at })`. Success: go to `#/batches/<id>` as now, with `say` good `Batch saved and placed in <room>.` If placing failed: still go to the batch, with `say` error `Batch saved, but not placed: <error>. Use Place in room above.` |
 | From a room | `#/batches?room=<id>` is not a route (C12 2.1 routes are fixed), so the room frame's actions are not changed in this wave. |
 | Tests | `batchPlan(form)` → the calls with bodies; the placed and the not-placed message; the prefilled values. |
 
