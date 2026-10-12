@@ -193,3 +193,47 @@ test('createLadder: a chip drawn, cleared and drawn again shows again (lead deci
   lad.draw(S, 900, null); assert.deepEqual(shown(), []);
   lad.draw(S, 900, X); assert.deepEqual(shown(), ['▲', 'Purging']);
 });
+
+// ---- machine timeline (C13 3.2) ----
+const row = (t, over = {}) => ({ t, ac_mode: 'off', fog: 0, air: 0, lights: 0, circ: 0, ...over });
+const lvl = key => FC.TIMELINE_ROWS.find(r => r.key === key).level;
+
+test('machineSpans merges consecutive on rows into one span', () => {
+  const rows = [row(0, { air: 1 }), row(30, { air: 1 }), row(60, { air: 1 }), row(90)];
+  assert.deepEqual(FC.machineSpans(rows, 'air', v => v), [{ from: 0, to: 90, level: 1 }]);
+});
+
+test('machineSpans splits on off rows and on level changes', () => {
+  const rows = [row(0, { fog: 1 }), row(30, { fog: 2 }), row(60, { fog: 2 }), row(90), row(120, { fog: 1 })];
+  assert.deepEqual(FC.machineSpans(rows, 'fog', (v, r) => lvl('hu')(r), 90), [
+    { from: 0, to: 30, level: 1 }, { from: 30, to: 90, level: 2 }, { from: 120, to: 150, level: 1 }]);
+});
+
+test('machineSpans breaks at a gap in the readings and never draws the gap as running', () => {
+  const rows = [row(0, { air: 1 }), row(30, { air: 1 }), row(1000, { air: 1 }), row(1030, { air: 1 })];
+  // gapS 90: a row lasts gapS / 3 = 30 s when the next one is too far away
+  assert.deepEqual(FC.machineSpans(rows, 'air', v => v, 90), [{ from: 0, to: 60, level: 1 }, { from: 1000, to: 1060, level: 1 }]);
+});
+
+test('machineSpans edge cases: no rows, never on, a single row', () => {
+  assert.deepEqual(FC.machineSpans([], 'air', v => v), []);
+  assert.deepEqual(FC.machineSpans([row(0), row(30)], 'air', v => v), []);
+  assert.deepEqual(FC.machineSpans([row(100, { air: 1 })], 'air', v => v, 60), [{ from: 100, to: 120, level: 1 }]);
+  assert.deepEqual(FC.machineSpans([row(0, { air: true })], 'air', v => v, 30), [{ from: 0, to: 10, level: 1 }]);
+});
+
+test('timeline rows: averaged-row rules', () => {
+  assert.equal(lvl('air')(row(0, { air: 0.49 })), 0);
+  assert.equal(lvl('air')(row(0, { air: 0.5 })), 1);
+  assert.equal(lvl('lights')(row(0, { lights: 0.7 })), 1);
+  assert.equal(lvl('circ')(row(0, { circ: 0.2 })), 0);
+  assert.equal(lvl('air')(row(0, { air: null })), 0);
+  assert.equal(lvl('hu')(row(0, { fog: 0 })), 0);
+  assert.equal(lvl('hu')(row(0, { fog: 0.2 })), 1);   // any mist in the bucket shows as level 1
+  assert.equal(lvl('hu')(row(0, { fog: 2.4 })), 2);
+  assert.equal(lvl('hu')(row(0, { fog: 5 })), 3);
+  assert.equal(lvl('ac')(row(0, { ac_mode: 'cool' })), 1);
+  assert.equal(lvl('ac')(row(0, { ac_mode: 'fan' })), 1);
+  assert.equal(lvl('ac')(row(0)), 0);
+  assert.deepEqual(FC.TIMELINE_ROWS.map(r => r.name), ['Aircon', 'Mister', 'Fresh air', 'Lights', 'Circulation fan']);
+});
