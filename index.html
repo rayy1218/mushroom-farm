@@ -2,31 +2,53 @@
 <html lang="en-MY">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Mushroom farm</title>
+<script>try{var t=localStorage.getItem('mushroom-farm.theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t;}catch(e){}</script>
+<meta name="theme-color" content="#f4f5f6" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1c1f22" media="(prefers-color-scheme: dark)">
 <link rel="stylesheet" href="styles.css">
 <link rel="stylesheet" href="web/harvest.css">
 <link rel="stylesheet" href="web/overview.css">
 <link rel="stylesheet" href="web/room.css">
 </head>
 <body data-level="farmer">
-<header class="bar">
-  <div><h1>Mushroom farm</h1></div>
+<a class="skip" href="#view" data-skip>Skip to content</a>
+<div class="app">
+<aside class="side">
+  <div class="brand"><span class="brand-mark" aria-hidden="true"></span><span class="brand-text"><strong>Mushroom farm</strong><small>Climate and harvest</small></span></div>
   <nav class="menu" id="menu" aria-label="Main menu">
-    <a href="#/overview" data-module="overview">Overview</a>
-    <a href="#/rooms" data-module="rooms">Rooms</a>
-    <a href="#/batches" data-module="batches">Batches</a>
-    <a href="#/harvest" data-module="harvest">Harvest</a>
-    <a href="#/simulator" data-module="simulator">Test bench</a>
-    <a href="#/settings" data-module="settings">Settings</a>
+    <a href="#/overview" data-module="overview"><svg class="ico" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg><span>Overview</span></a>
+    <a href="#/rooms" data-module="rooms"><svg class="ico" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/></svg><span>Rooms</span></a>
+    <a href="#/batches" data-module="batches"><svg class="ico" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 4-8 4-8-4 8-4z"/><path d="M4 12l8 4 8-4"/><path d="M4 17l8 4 8-4"/></svg><span>Batches</span></a>
+    <a href="#/harvest" data-module="harvest"><svg class="ico" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 9h14l-1.5 10h-11L5 9z"/><path d="M8 9a4 4 0 018 0"/></svg><span>Harvest</span></a>
+    <a href="#/simulator" data-module="simulator" data-level-only="installer"><svg class="ico" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3v6L4 19a1.5 1.5 0 001.4 2h13.2A1.5 1.5 0 0020 19l-5-10V3"/><path d="M8 3h8"/><path d="M7 15h10"/></svg><span>Test bench</span></a>
+    <a href="#/settings" data-module="settings"><svg class="ico" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg><span>Settings</span></a>
   </nav>
-  <div class="spacer"></div>
-  <div class="seg level-seg" role="group" aria-label="Settings level" id="levelSeg">
-    <button data-level-btn="farmer" aria-pressed="true">Farmer</button><button data-level-btn="installer" aria-pressed="false">Installer</button>
+  <div class="side-foot">
+    <div class="seg level-seg" role="group" aria-label="Who uses this screen" id="levelSeg">
+      <button data-level-btn="farmer" aria-pressed="true">Farmer</button><button data-level-btn="installer" aria-pressed="false">Installer</button>
+    </div>
+    <button class="btn btn-quiet" id="themeBtn" type="button">Dark theme</button>
   </div>
-  <button class="btn" id="themeBtn">Dark theme</button>
-</header>
-<main id="view"></main>
+</aside>
+<div class="col">
+  <header class="topbar">
+    <span class="brand brand-top"><span class="brand-mark" aria-hidden="true"></span><strong>Mushroom farm</strong></span>
+    <span class="spacer"></span>
+    <a class="chip" id="farmStatus" href="#/overview" hidden></a>
+    <span class="chip" id="farmSim" data-kind="sim" hidden>Simulated</span>
+  </header>
+  <main id="view"></main>
+</div>
+<nav class="tabbar" id="tabbar" aria-label="Main menu">
+  <a href="#/overview" data-module="overview"><svg class="ico" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg><span>Overview</span></a>
+  <a href="#/rooms" data-module="rooms"><svg class="ico" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/></svg><span>Rooms</span></a>
+  <a href="#/harvest" data-module="harvest"><svg class="ico" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 9h14l-1.5 10h-11L5 9z"/><path d="M8 9a4 4 0 018 0"/></svg><span>Harvest</span></a>
+  <a href="#/batches" data-module="batches"><svg class="ico" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 4-8 4-8-4 8-4z"/><path d="M4 12l8 4 8-4"/><path d="M4 17l8 4 8-4"/></svg><span>Batches</span></a>
+  <a href="#/settings" data-module="settings"><svg class="ico" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg><span>More</span></a>
+</nav>
+</div>
 <script src="sim.js"></script>
 <script src="air.js"></script>
 <script src="controller.js"></script>
