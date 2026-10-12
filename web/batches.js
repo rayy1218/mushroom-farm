@@ -48,6 +48,12 @@ function batchPlan(form) {
     place: room == null ? null : { room_id: room, placed_at: dateToSeconds(placed_at) ?? placed_at },
   };
 }
+// Lead decision 120: the crop a chosen room grows, when the Mushroom select offers it; null otherwise.
+function roomCrop(rooms, roomId, keys) {
+  const r = (rooms || []).find(x => String(x.id) === String(roomId));
+  const crop = r && r.live ? r.live.crop : null;
+  return crop && keys.includes(crop) ? crop : null;
+}
 const placedMessage = roomName => `Batch saved and placed in ${roomName}.`;
 const notPlacedMessage = text => `Batch saved, but not placed: ${String(text).replace(/\.+$/, '')}. Use Place in room above.`;
 let carried = null;                         // { id, lvl, text, room_id }: said once on the batch page the form just went to
@@ -518,6 +524,15 @@ function mountList(el, live) {
     placed.max = secondsToDate(nowSec());
     if (placed.value && placed.min && placed.value < placed.min) placed.value = placed.min;
   };
+  // Lead decision 120: choosing a room picks that room's mushroom, until the farmer picks one themselves.
+  let cropTouched = false;
+  $('#btCrop').addEventListener('change', () => { cropTouched = true; });
+  $('#btRoom').addEventListener('change', () => {
+    if (!cropTouched) {
+      const crop = roomCrop(rooms, $('#btRoom').value, cropKeys());
+      if (crop) $('#btCrop').value = crop;
+    }
+  });
   $('#btRoom').addEventListener('change', syncPlaced);
   $('#btReceived').addEventListener('change', syncPlaced);
 
@@ -827,5 +842,5 @@ function unmount() { current = null; }
 
 global.FarmShell.register('batches', { mount, unmount });
 
-if (typeof module === 'object' && module && module.exports) module.exports = { batchPlan, placedMessage, notPlacedMessage, dateToSeconds, secondsToDate, ageDays, batchBody, plural, daysText, titleOf, stateWords, subText, filterByState, flushBars, dropText, timelineRows, niceMax, niceAxis };
+if (typeof module === 'object' && module && module.exports) module.exports = { batchPlan, roomCrop, placedMessage, notPlacedMessage, dateToSeconds, secondsToDate, ageDays, batchBody, plural, daysText, titleOf, stateWords, subText, filterByState, flushBars, dropText, timelineRows, niceMax, niceAxis };
 })(typeof window !== 'undefined' ? window : globalThis);

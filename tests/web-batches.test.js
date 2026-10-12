@@ -13,7 +13,7 @@ const CC = globalThis.ClimateController, HR = globalThis.FarmHarvestRules;
 test('BT1 module registers batches and exports the C10 12.2 names and the C13 5 chart helpers', () => {
   assert.equal(typeof registered.batches.mount, 'function');
   assert.equal(typeof registered.batches.unmount, 'function');
-  assert.deepEqual(Object.keys(B).sort(), ['ageDays', 'batchBody', 'batchPlan', 'notPlacedMessage', 'placedMessage', 'daysText', 'dateToSeconds', 'dropText', 'filterByState', 'flushBars', 'niceAxis', 'niceMax', 'plural', 'secondsToDate', 'stateWords', 'subText', 'timelineRows', 'titleOf'].sort());
+  assert.deepEqual(Object.keys(B).sort(), ['ageDays', 'batchBody', 'batchPlan', 'notPlacedMessage', 'placedMessage', 'roomCrop', 'daysText', 'dateToSeconds', 'dropText', 'filterByState', 'flushBars', 'niceAxis', 'niceMax', 'plural', 'secondsToDate', 'stateWords', 'subText', 'timelineRows', 'titleOf'].sort());
 });
 
 test('BT2 dates are farm dates whatever the browser zone', () => {
@@ -528,4 +528,13 @@ test('BT-W6 a note for batch 8 is not shown on batch 9; a page left during creat
   await saving;
   assert.equal(placed, 1);
   assert.equal(globalThis.location.hash, '#/batches');             // no navigation from a page that was left
+});
+
+test('BT-L1 roomCrop: the chosen room\'s mushroom when offered (decision 120)', () => {
+  const rooms = [{ id: 1, live: { crop: 'lionsmane' } }, { id: 2, live: { crop: 'reishi' } }, { id: 3, live: null }];
+  assert.equal(B.roomCrop(rooms, '1', ['oyster', 'lionsmane']), 'lionsmane');
+  assert.equal(B.roomCrop(rooms, 2, ['oyster', 'lionsmane']), null);
+  assert.equal(B.roomCrop(rooms, '3', ['oyster']), null);
+  assert.equal(B.roomCrop(rooms, '', ['oyster']), null);
+  assert.equal(B.roomCrop(undefined, '1', ['oyster']), null);
 });

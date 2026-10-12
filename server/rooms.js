@@ -202,6 +202,9 @@ function createRoomManager(options) {
   function rampOf(ctl) {
     const r = ctl && ctl.state && ctl.state.stage && ctl.state.stage.ramp;
     if (!r || !r.to) return null;
+    // A ramp whose start equals its end (a new room set up at its crop's targets, lead decision 119) moves nothing.
+    const f = r.from || {};
+    if (Math.abs((f.spT ?? NaN) - r.to.spT) < 0.05 && Math.abs((f.spRH ?? NaN) - r.to.spRH) < 0.5 && f.co2Lim === r.to.co2Lim) return null;
     return { to: { T: r.to.spT, RH: r.to.spRH, CO2: r.to.co2Lim }, endsAt: Math.round(r.t0 + r.dur) };
   }
   // C11 2.1: the machines not on Auto, in the order of the controller's `manual` settings.
