@@ -228,44 +228,91 @@ const TARGETS_HTML = `
     <details class="prog">
       <summary>Stage program</summary>
       <label class="chk"><input type="checkbox" id="pgAuto"> Change the stage automatically after the set days</label>
-      <div class="prog-grid">
-        <label id="pgDaysSpawnL">Spawn run <input type="number" id="pgDaysSpawn" min="1" max="90" step="1"> days</label>
-        <label id="pgDaysPinL">Pinning <input type="number" id="pgDaysPin" min="1" max="30" step="1"> days</label>
-        <label>Fruiting <input type="number" id="pgDaysFruit" min="1" max="60" step="1"> days</label>
-        <label>Rest <input type="number" id="pgDaysRest" min="1" max="60" step="1"> days</label>
-        <label>Flushes per block <input type="number" id="pgFlushes" min="1" max="10" step="1"></label>
-        <label>Target change time <input type="number" id="pgRampH" min="0" max="48" step="0.5"> h</label>
-        <label>Fog off before harvest <input type="number" id="pgDry" min="0" max="240" step="5"> min</label>
-        <label>Picking time <input type="number" id="pgPick" min="0" max="240" step="5"> min</label>
-        <label>Lowest RH at harvest: target − <input type="number" id="pgFloor" min="1" max="15" step="1"> %</label>
+      <div class="form-grid">
+        <div class="field" id="pgDaysSpawnL">
+          <label for="pgDaysSpawn">Spawn run</label>
+          <div class="field-ctl"><input type="number" id="pgDaysSpawn" min="1" max="90" step="1"><span class="unit">days</span></div>
+        </div>
+        <div class="field" id="pgDaysPinL">
+          <label for="pgDaysPin">Pinning</label>
+          <div class="field-ctl"><input type="number" id="pgDaysPin" min="1" max="30" step="1"><span class="unit">days</span></div>
+        </div>
+        <div class="field">
+          <label for="pgDaysFruit">Fruiting</label>
+          <div class="field-ctl"><input type="number" id="pgDaysFruit" min="1" max="60" step="1"><span class="unit">days</span></div>
+        </div>
+        <div class="field">
+          <label for="pgDaysRest">Rest</label>
+          <div class="field-ctl"><input type="number" id="pgDaysRest" min="1" max="60" step="1"><span class="unit">days</span></div>
+        </div>
+        <div class="field">
+          <label for="pgFlushes">Flushes per block</label>
+          <div class="field-ctl"><input type="number" id="pgFlushes" min="1" max="10" step="1"></div>
+        </div>
+        <div class="field">
+          <label for="pgRampH">Target change time</label>
+          <div class="field-ctl"><input type="number" id="pgRampH" min="0" max="48" step="0.5"><span class="unit">h</span></div>
+        </div>
+        <div class="field">
+          <label for="pgDry">Fog off before harvest</label>
+          <div class="field-ctl"><input type="number" id="pgDry" min="0" max="240" step="5"><span class="unit">min</span></div>
+        </div>
+        <div class="field">
+          <label for="pgPick">Picking time</label>
+          <div class="field-ctl"><input type="number" id="pgPick" min="0" max="240" step="5"><span class="unit">min</span></div>
+        </div>
+        <div class="field">
+          <label for="pgFloor">Lowest humidity at harvest</label>
+          <div class="field-ctl"><input type="number" id="pgFloor" min="1" max="15" step="1"><span class="unit">% under target</span></div>
+          <p class="field-help">Humidity may fall this far below the target while picking.</p>
+        </div>
       </div>
     </details>
     <details class="prog">
       <summary>Lights</summary>
-      <div class="prog-grid">
-        <label>On <input type="text" id="pgLightOn" style="width:64px"></label>
-        <label>Off <input type="text" id="pgLightOff" style="width:64px"></label>
+      <div class="form-grid">
+        <div class="field">
+          <label for="pgLightOn">Lights on</label>
+          <div class="field-ctl"><input type="text" id="pgLightOn"></div>
+        </div>
+        <div class="field">
+          <label for="pgLightOff">Lights off</label>
+          <div class="field-ctl"><input type="text" id="pgLightOff"></div>
+        </div>
       </div>
-      <div class="prog-grid">
-        <label><input type="checkbox" id="pgLSpawn"> Spawn run</label><label><input type="checkbox" id="pgLPin"> Pinning</label>
-        <label><input type="checkbox" id="pgLFruit"> Fruiting</label><label><input type="checkbox" id="pgLRest"> Rest</label>
+      <p class="field-help">Lights run in these stages:</p>
+      <div class="form-grid">
+        <div class="field"><label class="chk"><input type="checkbox" id="pgLSpawn"> Spawn run</label></div>
+        <div class="field"><label class="chk"><input type="checkbox" id="pgLPin"> Pinning</label></div>
+        <div class="field"><label class="chk"><input type="checkbox" id="pgLFruit"> Fruiting</label></div>
+        <div class="field"><label class="chk"><input type="checkbox" id="pgLRest"> Rest</label></div>
       </div>
     </details>
-    <div class="crop-row"><label for="inSensMode">Two sensor sets</label>
-      <select id="inSensMode"><option value="average">Use the average</option><option value="worst">Use the worst value</option><option value="main">Use the main set</option></select></div>
-    <div class="rule-extra">
-      <label class="num" for="inRoomM3">Room volume</label>
-      <input type="number" id="inRoomM3" min="1" max="100000" step="1" value="60"> <span>m³</span>
-    </div>
-    <div class="rule-extra">
-      <label class="num" for="inAirSize">Air exchange size</label>
-      <input type="number" id="inAirSize" min="50" max="10000" step="50" value="1800"> <span>m³/h</span>
-    </div>
-    <div class="rule-extra">
-      <span class="num">Sensor corrections</span>
-      <label class="num">T <input type="number" id="oT" step="0.1"> °C</label>
-      <label class="num">RH <input type="number" id="oRH" step="0.5"> %</label>
-      <label class="num">CO₂ <input type="number" id="oCO2" step="10"> ppm</label>
+    <div class="form-grid">
+      <div class="field">
+        <label for="inSensMode">Two sensor sets</label>
+        <div class="field-ctl"><select id="inSensMode"><option value="average">Use the average</option><option value="worst">Use the worst value</option><option value="main">Use the main set</option></select></div>
+      </div>
+      <div class="field">
+        <label for="inRoomM3">Room volume</label>
+        <div class="field-ctl"><input type="number" id="inRoomM3" min="1" max="100000" step="1" value="60"><span class="unit">m³</span></div>
+      </div>
+      <div class="field">
+        <label for="inAirSize">Air exchange size</label>
+        <div class="field-ctl"><input type="number" id="inAirSize" min="50" max="10000" step="50" value="1800"><span class="unit">m³/h</span></div>
+      </div>
+      <div class="field">
+        <label for="oT">Temperature correction</label>
+        <div class="field-ctl"><input type="number" id="oT" step="0.1"><span class="unit">°C</span></div>
+      </div>
+      <div class="field">
+        <label for="oRH">Humidity correction</label>
+        <div class="field-ctl"><input type="number" id="oRH" step="0.5"><span class="unit">%</span></div>
+      </div>
+      <div class="field">
+        <label for="oCO2">CO₂ correction</label>
+        <div class="field-ctl"><input type="number" id="oCO2" step="10"><span class="unit">ppm</span></div>
+      </div>
     </div>
   </section>
 </section>`;
@@ -292,7 +339,7 @@ const RULES_HTML = `
       <fieldset class="rule rule-first" style="--key:var(--ink)" id="ruleRh">
         <legend>Priority 2 · Humidity first</legend>
         <label class="chk"><input type="checkbox" id="rRhLock"> Delay purges that dry the room when humidity is low</label>
-        <div class="form-grid">
+        <div class="form-grid" style="margin-top:10px">
           <div class="field">
             <label for="rRhStop">Delay purges below</label>
             <div class="field-ctl"><input type="number" id="rRhStop" min="1" max="20" step="1"><span class="unit">% under target</span></div>
