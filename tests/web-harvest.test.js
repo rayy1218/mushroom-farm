@@ -18,7 +18,7 @@ function loadQr() {             // as tests/qrcodegen.test.js: the vendored file
 test('HV1 module registers harvest and exports the C10 12.2 names only', () => {
   assert.equal(typeof registered.harvest.mount, 'function');
   assert.equal(typeof registered.harvest.unmount, 'function');
-  assert.deepEqual(Object.keys(V).sort(), ['isLocalHost', 'parseKg', 'qrSvg', 'stickerLink', 'summaryText']);
+  assert.deepEqual(Object.keys(V).sort(), ['harvestRooms', 'isLocalHost', 'kgText', 'parseKg', 'plural', 'qrSvg', 'stickerLink', 'summaryText', 'todayCrates']);
 });
 
 test('HV2 parseKg accepts a plain number with a dot or a comma', () => {
@@ -135,4 +135,72 @@ test('HV8 after a saved crate: "Saved ✓ <kg> kg" and a link back to the room',
   const msg = el.querySelector('#hvMsg');
   assert.equal(msg.textContent, 'Saved ✓ 12.5 kg');
   assert.equal(msg.dataset.lvl, 'good');
+});
+
+const crate = (id, t, kg, picker) => ({ id, t, kg, picker });
+const room = (id, name, batches) => ({ room: { id, name }, day_start: 0, batches });
+const hb = (id, crop, flush, crates) => ({ id, crop, strain: null, placed_at: 1, flush, today: { crates, kg: Math.round(crates.reduce((s, c) => s + c.kg, 0) * 100) / 100 } });
+
+test('HV9 harvestRooms keeps rooms with a placed batch, with today\'s kg and singular crate', () => {
+  const list = [
+    room(1, 'Room 1', [hb(5, 'oyster', 2, [crate(1, 100, 12.5, 'Ann'), crate(2, 200, 0.1, null)])]),
+    room(2, 'Room 2', []),
+    room(3, 'Room 3', [hb(6, 'oyster', 0, [])]),
+    room(4, 'Room 4', [hb(7, 'oyster', 1, [crate(3, 300, 4, null)])]),
+  ];
+  const r = V.harvestRooms(list);
+  assert.deepEqual(r.map(x => x.id), [1, 3, 4]);
+  assert.equal(r[0].total, '12.6 kg today · 2 crates');
+  assert.equal(r[0].what, 'Grey oyster · flush 2');
+  assert.equal(r[1].total, '0 kg today · 0 crates');
+  assert.equal(r[1].what, 'Grey oyster · no crates yet');
+  assert.equal(r[2].total, '4 kg today · 1 crate');
+  assert.deepEqual(V.harvestRooms([]), []);
+});
+
+test('HV10 todayCrates joins all rooms, newest first', () => {
+  const list = [
+    room(1, 'Room 1', [hb(5, 'oyster', 1, [crate(2, 200, 3, 'Ann'), crate(1, 100, 2, null)])]),
+    room(2, 'Room 2', [hb(6, 'oyster', 1, [crate(3, 300, 5, null)])]),
+  ];
+  assert.deepEqual(V.todayCrates(list).map(c => [c.id, c.room, c.kg, c.picker]), [[3, 'Room 2', 5, ''], [2, 'Room 1', 3, 'Ann'], [1, 'Room 1', 2, '']]);
+  assert.equal(V.plural(1, 'crate', 'crates'), '1 crate');
+  assert.equal(V.kgText(12.5), '12.5');
+});
+
+test('HV11 today view: cards, empty state, and a same-element remount drops the old reply and the old timer', async t => {
+  globalThis.document = { createElement: mk };
+  const api = globalThis.FarmApi, saved = { ...api };
+  const prevSet = globalThis.setInterval, prevClear = globalThis.clearInterval;
+  const timers = new Set();
+  globalThis.setInterval = fn => { const h = { fn }; timers.add(h); return h; };
+  globalThis.clearInterval = h => timers.delete(h);
+  t.after(() => { Object.assign(api, saved); delete globalThis.document; globalThis.setInterval = prevSet; globalThis.clearInterval = prevClear; registered.harvest.unmount(); });
+  const slow = deferred();
+  const el = mkEl();
+  api.listRooms = () => slow.promise;
+  const first = registered.harvest.mount(el, { view: 'today' });
+  registered.harvest.unmount();
+  assert.equal(timers.size, 0);
+  api.listRooms = async () => [];
+  await registered.harvest.mount(el, { view: 'today' });
+  assert.equal(timers.size, 1);
+  assert.equal(el.querySelector('#hvEmpty').hidden, false);
+  assert.equal(el.querySelector('#hvCrates').hidden, true);
+  slow.resolve([{ id: 1 }]);
+  api.getRoomHarvest = async () => room(1, 'Room 1', [hb(5, 'oyster', 1, [crate(1, 100, 2, null)])]);
+  await first;
+  assert.equal(el.querySelector('#hvEmpty').hidden, false);          // the old mount's reply changed nothing
+  assert.equal(el.querySelector('#hvRooms').children.length, 0);
+  api.listRooms = async () => [{ id: 1 }];
+  [...timers][0].fn();                                              // the 60 s refresh
+  await new Promise(r => setTimeout(r, 20));
+  assert.equal(el.querySelector('#hvEmpty').hidden, true);
+  const card = el.querySelector('#hvRooms').children[0];
+  assert.equal(card.children[1].href, '#/harvest/1');
+  assert.equal(card.children[1].textContent, 'Record harvest');
+  assert.equal(card.children[0].children[2].textContent, '2 kg today · 1 crate');
+  assert.equal(el.querySelector('#hvCrateList').children.length, 1);
+  registered.harvest.unmount();
+  assert.equal(timers.size, 0);
 });
