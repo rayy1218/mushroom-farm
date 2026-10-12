@@ -6,18 +6,23 @@
 <title>Mushroom farm</title>
 <link rel="stylesheet" href="styles.css">
 <link rel="stylesheet" href="web/harvest.css">
+<link rel="stylesheet" href="web/overview.css">
+<link rel="stylesheet" href="web/room.css">
 </head>
 <body data-level="farmer">
 <header class="bar">
   <div><h1>Mushroom farm</h1></div>
   <nav class="menu" id="menu" aria-label="Main menu">
+    <a href="#/overview" data-module="overview">Overview</a>
     <a href="#/rooms" data-module="rooms">Rooms</a>
     <a href="#/batches" data-module="batches">Batches</a>
+    <a href="#/harvest" data-module="harvest">Harvest</a>
     <a href="#/simulator" data-module="simulator">Test bench</a>
+    <a href="#/settings" data-module="settings">Settings</a>
   </nav>
   <div class="spacer"></div>
   <div class="seg level-seg" role="group" aria-label="Settings level" id="levelSeg">
-    <button data-level="farmer" aria-pressed="true">Farmer</button><button data-level="installer" aria-pressed="false">Installer</button>
+    <button data-level-btn="farmer" aria-pressed="true">Farmer</button><button data-level-btn="installer" aria-pressed="false">Installer</button>
   </div>
   <button class="btn" id="themeBtn">Dark theme</button>
 </header>
@@ -44,6 +49,9 @@
 <script src="web/room-equipment.js"></script>
 <script src="web/room-simulate.js"></script>
 <script src="web/room-calibrate.js"></script>
+<script src="web/room-settings.js"></script>
+<script src="web/overview.js"></script>
+<script src="web/settings-page.js"></script>
 <script src="web/batches.js"></script>
 <script src="web/harvest.js"></script>
 <script src="web/simulator.js"></script>

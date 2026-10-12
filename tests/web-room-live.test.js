@@ -5,7 +5,7 @@ for (const f of ['sim', 'air', 'controller', 'runtime']) require(`../${f}.js`);
 require('../web/ui.js'); require('../web/api.js'); require('../web/charts.js'); require('../web/settings-panel.js');
 require('../web/room-tabs.js');
 require('../web/room-live.js');
-const tab = globalThis.FarmRoomTabs.get('live');
+const tab = globalThis.FarmRoomTabs.get('overview');
 const H = tab && tab.helpers;
 const CC = globalThis.ClimateController, clock = globalThis.FarmUi.farmClock();
 const S = CC.defaultSettings();                                   // airM3h 1800, rules.purgeMaxS 180

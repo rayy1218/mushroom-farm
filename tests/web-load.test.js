@@ -57,8 +57,8 @@ test('L4: the modules and the room tabs register; FarmRoomTabs and FarmEquipment
     assert.equal(typeof r.mod.unmount, 'function', r.name);
   }
   const tabs = globalThis.FarmRoomTabs;
-  assert.deepEqual([...tabs.NAMES], ['live', 'simulate', 'calibrate']);
-  for (const n of tabs.NAMES) assert.ok(tabs.get(n), n);
+  assert.deepEqual([...tabs.NAMES], ['overview', 'settings', 'simulate', 'calibrate']);
+  for (const n of tabs.NAMES.filter(x => x !== 'settings')) assert.ok(tabs.get(n), n); // C12 prep: the Room stream registers 'settings' and drops this filter
   assert.equal(typeof globalThis.FarmEquipmentCard, 'object');
   assert.equal(globalThis.FarmBench, undefined);
 

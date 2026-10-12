@@ -7,9 +7,11 @@ let current = null; // { name, params, module }
 let guard = null;    // C11 3.1: () => string; a non-empty string means "this page has unsaved work"
 let shownHash = '';  // the hash of the page on screen, to go back to when the user stays
 let skipHash = null; // the hash put back by a refused leave: its hashchange is ignored once
-const MENU_NAMES = Object.freeze({ rooms: 'Rooms', simulator: 'Test bench', batches: 'Batches', harvest: 'Harvest' });
+const MENU_NAMES = Object.freeze({ overview: 'Overview', rooms: 'Rooms', simulator: 'Test bench', batches: 'Batches', harvest: 'Harvest', settings: 'Settings' });
+const DEFAULT_ROUTE = '#/overview'; // C12 2.1
+const LEVEL_KEY = 'mushroom-farm.level'; // C12 2.3
 const ROOM_ID_RE = /^[1-9][0-9]{0,14}$/;
-const TABS = ['live', 'simulate', 'calibrate']; // the names of FarmRoomTabs.NAMES (C5 3.9); not read here so the file loads alone in Node
+const TABS = ['overview', 'settings', 'simulate', 'calibrate']; // the names of FarmRoomTabs.NAMES (C12 2.2); not read here so the file loads alone in Node
 const isId = s => ROOM_ID_RE.test(s);
 
 // Parses location.hash into { name, params } (C5 2.1, C10 11), { redirect } for '#/rooms/:id', or null (redirect to the default route).
@@ -29,7 +31,8 @@ function parseHash(hash) {
     if (n === 1) return { name, params: {} };
     if (!isId(a)) return null;
     const id = Number(a);
-    if (n === 2) return { redirect: `#/rooms/${id}/live` };
+    if (n === 2) return { redirect: `#/rooms/${id}/overview` };
+    if (b === 'live' && n === 3) return { redirect: `#/rooms/${id}/overview` }; // C12 2.2: old links
     if (!TABS.includes(b)) return null;
     if (n === 3) return { name, params: { id, tab: b } };
     if (n === 4 && b === 'calibrate' && isId(c)) return { name, params: { id, tab: b, runId: Number(c) } };
@@ -43,10 +46,13 @@ function parseHash(hash) {
     if (n === 1) return { name, params: {} };
     return n === 2 && isId(a) ? { name, params: { id: Number(a) } } : null;
   }
-  if (name === 'harvest' && n === 2) {
+  if (name === 'harvest') {
+    if (n === 1) return { name, params: { view: 'today' } }; // C12 2.1
+    if (n !== 2) return null;
     if (a === 'stickers') return { name, params: { view: 'stickers' } };
     return isId(a) ? { name, params: { view: 'record', id: Number(a) } } : null;
   }
+  if ((name === 'overview' || name === 'settings') && n === 1) return { name, params: {} }; // C12 2.1
   return null;
 }
 function paramsEqual(a, b) {
@@ -62,11 +68,11 @@ function showNotice(view, text) {
 // Step 5: menu marking, title and the bare layout (lead decision 66). The shell owns body[data-layout].
 function menuLink(parsed) {
   if (parsed.name !== 'harvest') return parsed.name;
-  return parsed.params.view === 'stickers' ? 'batches' : null;
+  return parsed.params.view === 'record' ? null : 'harvest'; // C12 2.1: Harvest has its own menu entry
 }
 function applyChrome(parsed) {
   const link = menuLink(parsed);
-  document.querySelectorAll('#menu a').forEach(a => {
+  document.querySelectorAll('#menu a, #tabbar a').forEach(a => {
     if (link && a.dataset.module === link) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
   });
   document.title = `${MENU_NAMES[parsed.name]} · Mushroom farm`;
@@ -88,7 +94,7 @@ function route() {
   if (skipHash !== null && location.hash === skipHash) { skipHash = null; return; }
   skipHash = null;
   const parsed = parseHash(location.hash);
-  if (!parsed) { location.replace('#/rooms'); return; }
+  if (!parsed) { location.replace(DEFAULT_ROUTE); return; }
   if (parsed.redirect) { location.replace(parsed.redirect); return; }
   const { name, params } = parsed;
   if (current && current.name === name && paramsEqual(current.params, params)) return;
@@ -128,16 +134,26 @@ function route() {
 
 function register(name, module) { registry[name] = module; }
 
+// C12 2.3: the settings level is kept in this browser; the Settings page and the side bar switch it with setLevel.
+function readLevel() {
+  try { return global.localStorage && global.localStorage.getItem(LEVEL_KEY) === 'installer' ? 'installer' : 'farmer'; } catch { return 'farmer'; }
+}
+function paintLevel(level) {
+  document.body.dataset.level = level;
+  document.querySelectorAll('[data-level-btn]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.levelBtn === level)));
+}
+function setLevel(level) {
+  const lv = level === 'installer' ? 'installer' : 'farmer';
+  if (document.body.dataset.level === lv) return;
+  try { if (global.localStorage) global.localStorage.setItem(LEVEL_KEY, lv); } catch { /* private mode: not kept */ }
+  paintLevel(lv);
+  document.dispatchEvent(new CustomEvent('farm-level', { detail: { level: lv } }));
+}
 function initLevel() {
-  const levelSeg = document.getElementById('levelSeg');
-  document.body.dataset.level = 'farmer';
-  levelSeg.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.level === 'farmer')));
-  levelSeg.addEventListener('click', e => {
-    const b = e.target.closest('button'); if (!b) return;
-    const level = b.dataset.level;
-    document.body.dataset.level = level;
-    levelSeg.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
-    document.dispatchEvent(new CustomEvent('farm-level', { detail: { level } }));
+  paintLevel(readLevel());
+  document.addEventListener('click', e => {
+    const b = e.target && e.target.closest && e.target.closest('[data-level-btn]');
+    if (b) setLevel(b.dataset.levelBtn);
   });
 }
 function initTheme() {
@@ -156,6 +172,8 @@ function init() {
 const FarmShell = {
   register,
   guardLeave,
+  setLevel,
+  DEFAULT_ROUTE,
   MENU_NAMES,
   parseHash,
   get level() { return document.body.dataset.level; },

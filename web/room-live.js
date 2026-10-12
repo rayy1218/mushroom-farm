@@ -575,5 +575,5 @@ function unmount() {
   if (t) t();
 }
 
-global.FarmRoomTabs.register('live', { mount, unmount, helpers });
+global.FarmRoomTabs.register('overview', { mount, unmount, helpers }); // C12 2.2: the Live tab is the room Overview until the Room stream splits it
 })(typeof window !== 'undefined' ? window : globalThis);

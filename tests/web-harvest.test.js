@@ -128,7 +128,7 @@ test('HV8 after a saved crate: "Saved ✓ <kg> kg" and a link back to the room',
   await registered.harvest.mount(el, { view: 'record', id: 3 });
   const back = el.querySelector('#hvBack');
   assert.equal(back.textContent, 'Back to Room 3');
-  assert.equal(back.href, '#/rooms/3/live');
+  assert.equal(back.href, '#/rooms/3/overview');
   assert.equal(back.hidden, false);
   el.querySelector('#hvKg').value = '12,5';
   await el.querySelector('#hvAdd').click();

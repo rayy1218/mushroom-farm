@@ -10,11 +10,11 @@ const view = {
   removeAttribute() {},
 };
 const link = module => ({ dataset: { module }, attrs: {}, setAttribute(n, v) { this.attrs[n] = v; }, removeAttribute(n) { delete this.attrs[n]; } });
-const links = [link('rooms'), link('batches'), link('simulator')];
+const links = [link('overview'), link('rooms'), link('batches'), link('harvest'), link('simulator'), link('settings')];
 globalThis.document = {
   addEventListener(n, f) { listeners['doc:' + n] = f; },
   getElementById: () => view,
-  querySelectorAll: sel => (sel === '#menu a' ? links : []),
+  querySelectorAll: sel => (sel === '#menu a, #tabbar a' ? links : []),
   createElement: () => ({ className: '', textContent: '' }),
   body: { dataset: {} },
   title: '',
@@ -49,13 +49,13 @@ test('SH1 parseHash', () => {
   const p = FarmShell.parseHash;
   assert.deepEqual(p('#/rooms'), { name: 'rooms', params: {} });
   assert.deepEqual(p('#/rooms/'), { name: 'rooms', params: {} });
-  assert.deepEqual(p('#/rooms/3'), { redirect: '#/rooms/3/live' });
-  for (const tab of ['live', 'simulate', 'calibrate']) {
+  assert.deepEqual(p('#/rooms/3'), { redirect: '#/rooms/3/overview' });
+  for (const tab of ['overview', 'settings', 'simulate', 'calibrate']) {
     assert.deepEqual(p(`#/rooms/3/${tab}`), { name: 'rooms', params: { id: 3, tab } });
     assert.deepEqual(p(`#/rooms/3/${tab}/`), { name: 'rooms', params: { id: 3, tab } });
   }
   assert.deepEqual(p('#/rooms/3/calibrate/12'), { name: 'rooms', params: { id: 3, tab: 'calibrate', runId: 12 } });
-  assert.deepEqual(p('#/rooms/999999999999999/live'), { name: 'rooms', params: { id: 999999999999999, tab: 'live' } });
+  assert.deepEqual(p('#/rooms/999999999999999/overview'), { name: 'rooms', params: { id: 999999999999999, tab: 'overview' } });
   assert.deepEqual(p('#/simulator'), { name: 'simulator', params: {} });
   assert.deepEqual(p('#/simulator/2'), { name: 'simulator', params: { roomId: 2 } });
   assert.deepEqual(p('#/batches'), { name: 'batches', params: {} });
@@ -64,30 +64,30 @@ test('SH1 parseHash', () => {
   assert.deepEqual(p('#/harvest/stickers/'), { name: 'harvest', params: { view: 'stickers' } });
   assert.deepEqual(p('#/harvest/3'), { name: 'harvest', params: { view: 'record', id: 3 } });
   for (const bad of ['#/capacity', '#/calibration', '', '#', '#/', '#rooms', '#//simulator', '#/rooms//3', '#/rooms/0',
-    '#/rooms/1234567890123456', '#/rooms/3/settings', '#/rooms/3/simulate/5', '#/rooms/3/calibrate/0', '#/rooms/3/live/1',
-    '#/simulator/0', '#/batches/x', '#/harvest', '#/harvest/0', '#/harvest/stickers/1', '#/rooms?x=1', '#/nowhere']) {
+    '#/rooms/1234567890123456', '#/rooms/3/live/1', '#/rooms/3/simulate/5', '#/rooms/3/calibrate/0', '#/rooms/3/overview/1',
+    '#/simulator/0', '#/batches/x', '#/harvest/0', '#/harvest/stickers/1', '#/rooms?x=1', '#/nowhere']) {
     assert.equal(p(bad), null, JSON.stringify(bad));
   }
   assert.equal(p(undefined), null);
 });
 
 test('SH2 MENU_NAMES', () => {
-  assert.deepEqual(FarmShell.MENU_NAMES, { rooms: 'Rooms', simulator: 'Test bench', batches: 'Batches', harvest: 'Harvest' });
+  assert.deepEqual(FarmShell.MENU_NAMES, { overview: 'Overview', rooms: 'Rooms', simulator: 'Test bench', batches: 'Batches', harvest: 'Harvest', settings: 'Settings' });
   assert.ok(Object.isFrozen(FarmShell.MENU_NAMES));
-  assert.deepEqual(Object.keys(FarmShell).sort(), ['MENU_NAMES', 'guardLeave', 'level', 'parseHash', 'register']);
+  assert.deepEqual(Object.keys(FarmShell).sort(), ['DEFAULT_ROUTE', 'MENU_NAMES', 'guardLeave', 'level', 'parseHash', 'register', 'setLevel']);
 });
 
 test('SH3 redirects', () => {
   go('#/simulator');
   events.length = 0;
   go('#/rooms/3');
-  assert.equal(location.hash, '#/rooms/3/live');
+  assert.equal(location.hash, '#/rooms/3/overview');
   assert.deepEqual(events, []);
   for (const h of ['#/capacity', '#/calibration', '#/nowhere']) {
     go('#/simulator');
     events.length = 0;
     go(h);
-    assert.equal(location.hash, '#/rooms', h);
+    assert.equal(location.hash, '#/overview', h);
     assert.deepEqual(events, [], h);
   }
 });
@@ -96,8 +96,8 @@ test('SH4 update keeps the module mounted', () => {
   go('#/simulator');
   events.length = 0; updateCalls = [];
   updateImpl = () => true;
-  go('#/rooms/3/live');
-  assert.deepEqual(events, [{ name: 'simulator', unmount: true }, { name: 'rooms', params: { id: 3, tab: 'live' } }]);
+  go('#/rooms/3/overview');
+  assert.deepEqual(events, [{ name: 'simulator', unmount: true }, { name: 'rooms', params: { id: 3, tab: 'overview' } }]);
   events.length = 0;
   go('#/rooms/3/simulate');
   assert.deepEqual(updateCalls, [{ id: 3, tab: 'simulate' }]);
@@ -106,8 +106,8 @@ test('SH4 update keeps the module mounted', () => {
   assert.equal(updateCalls.length, 1);
   assert.deepEqual(events, []);
   updateImpl = () => false;
-  go('#/rooms/4/live');
-  assert.deepEqual(events, [{ name: 'rooms', unmount: true }, { name: 'rooms', params: { id: 4, tab: 'live' } }]);
+  go('#/rooms/4/overview');
+  assert.deepEqual(events, [{ name: 'rooms', unmount: true }, { name: 'rooms', params: { id: 4, tab: 'overview' } }]);
   events.length = 0;
   const saved = console.error; const logged = []; console.error = (...a) => logged.push(a);
   updateImpl = () => 1; // only === true keeps the module mounted
@@ -123,7 +123,7 @@ test('SH4 update keeps the module mounted', () => {
 
 test('SH5 menu, title, layout', () => {
   updateImpl = () => true;
-  go('#/rooms/1/live');
+  go('#/rooms/1/overview');
   assert.deepEqual(marked(), ['rooms']);
   assert.equal(document.title, 'Rooms · Mushroom farm');
   assert.equal('layout' in document.body.dataset, false);
@@ -133,7 +133,7 @@ test('SH5 menu, title, layout', () => {
   go('#/batches/4');
   assert.deepEqual(marked(), ['batches']);
   go('#/harvest/stickers');
-  assert.deepEqual(marked(), ['batches']);
+  assert.deepEqual(marked(), ['harvest']);
   assert.equal(document.title, 'Harvest · Mushroom farm');
   assert.equal('layout' in document.body.dataset, false);
   go('#/harvest/1');
@@ -142,13 +142,24 @@ test('SH5 menu, title, layout', () => {
   go('#/rooms');
   assert.deepEqual(marked(), ['rooms']);
   assert.equal('layout' in document.body.dataset, false);
-  go('#/rooms/1/live');
+  go('#/rooms/1/overview');
   go('#/simulator/1');
-  go('#/rooms/1/live');
+  go('#/rooms/1/overview');
   links.forEach(l => l.removeAttribute('aria-current')); document.title = '';
   go('#/rooms/1/simulate'); // update() returns true: menu and title are still set
   assert.deepEqual(marked(), ['rooms']);
   assert.equal(document.title, 'Rooms · Mushroom farm');
+});
+
+test('SH11 C12 routes: overview, settings, harvest today, old live links', () => {
+  const p = FarmShell.parseHash;
+  assert.deepEqual(p('#/overview'), { name: 'overview', params: {} });
+  assert.deepEqual(p('#/settings'), { name: 'settings', params: {} });
+  assert.deepEqual(p('#/harvest'), { name: 'harvest', params: { view: 'today' } });
+  assert.deepEqual(p('#/rooms/3/live'), { redirect: '#/rooms/3/overview' });
+  assert.deepEqual(p('#/rooms/3/settings'), { name: 'rooms', params: { id: 3, tab: 'settings' } });
+  for (const bad of ['#/overview/1', '#/settings/x', '#/harvest/stickers/1']) assert.equal(p(bad), null, bad);
+  assert.equal(FarmShell.DEFAULT_ROUTE, '#/overview');
 });
 
 test('SH6 not installed', () => {
@@ -163,7 +174,7 @@ test('SH7 late rejection of an old mount is ignored, a current one shows the not
     unmount() {},
   });
   go('#/simulator');
-  go('#/rooms/1/live');
+  go('#/rooms/1/overview');
   const reject = rejectLate;
   go('#/simulator/1');
   view.children = ['mimic'];
@@ -172,7 +183,7 @@ test('SH7 late rejection of an old mount is ignored, a current one shows the not
   assert.deepEqual(view.children, ['mimic']);
   // a rejection of the current async mount shows the notice
   go('#/simulator');
-  go('#/rooms/2/live');
+  go('#/rooms/2/overview');
   rejectLate(new Error('now failure'));
   await tick(20);
   assert.match(view.children[0].textContent, /now failure/);

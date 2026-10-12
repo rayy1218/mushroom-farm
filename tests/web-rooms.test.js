@@ -27,7 +27,7 @@ test('RS1 module', () => {
   }
   assert.equal(typeof document, 'undefined');
   assert.doesNotThrow(() => registered.rooms.unmount());
-  assert.equal(registered.rooms.update({ id: 1, tab: 'live' }), false);
+  assert.equal(registered.rooms.update({ id: 1, tab: 'overview' }), false);
 });
 
 test('RS2 statusChip precedence', () => {

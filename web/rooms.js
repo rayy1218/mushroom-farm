@@ -301,7 +301,7 @@ function buildCard(room, harvest) {
   card.className = 'card room-card';
   card.dataset.roomId = String(room.id);
   card.innerHTML = CARD_HTML;
-  card.querySelector('a.room-link').href = `#/rooms/${room.id}/live`;
+  card.querySelector('a.room-link').href = `#/rooms/${room.id}/overview`;
   card.querySelector('a.rc-record').href = `#/harvest/${room.id}`;
   paintCard(card, room, harvest);
   return card;
@@ -484,7 +484,7 @@ const FRAME_HTML = `
 <nav class="room-tabs" aria-label="Room views"></nav>
 <div class="contents" id="roomTab"></div>`;
 
-const TAB_LABEL = { live: 'Live', simulate: 'Simulate', calibrate: 'Calibrate' };
+const TAB_LABEL = { overview: 'Overview', settings: 'Settings', simulate: 'Simulate', calibrate: 'Calibrate' };
 
 function mountFrame(el, params) {
   const { errorText, paintChip, say } = global.FarmUi;

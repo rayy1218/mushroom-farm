@@ -109,7 +109,7 @@ async function mountRecord(el, roomId, live) {
     $('#hvRoom').textContent = data.room.name;
     const back = $('#hvBack');
     back.textContent = `Back to ${data.room.name}`;
-    back.href = `#/rooms/${data.room.id != null ? data.room.id : roomId}/live`;
+    back.href = `#/rooms/${data.room.id != null ? data.room.id : roomId}/overview`;
     back.hidden = false;
     $('#hvNone').hidden = batches.length !== 0;
     $('#hvPick').hidden = b !== null || batches.length < 2;
