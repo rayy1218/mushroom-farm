@@ -22,7 +22,7 @@ test('RS1 module', () => {
   assert.equal(typeof registered.rooms.unmount, 'function');
   assert.equal(typeof registered.rooms.update, 'function');
   for (const k of ['statusChip', 'cropText', 'cardTexts', 'machineLines', 'infoText', 'stateText', 'alarmsChip', 'upsertRoom', 'takeLive',
-    'refreshRoom', 'refreshDelay', 'newRoomName', 'readStored', 'importPlan', 'importRooms']) {
+    'refreshRoom', 'refreshDelay', 'manualText', 'harvestToday', 'allSimulated', 'newRoomName', 'readStored', 'importPlan', 'importRooms']) {
     assert.equal(typeof H[k], 'function', k);
   }
   assert.equal(typeof document, 'undefined');
@@ -32,12 +32,37 @@ test('RS1 module', () => {
 
 test('RS2 statusChip precedence', () => {
   assert.deepEqual(H.statusChip(R), { lvl: 'good', icon: '✓', text: 'All good' });
-  assert.deepEqual(H.statusChip(live({ status: warnStatus })), { lvl: 'info', icon: '•', text: 'Out of band' });
+  assert.deepEqual(H.statusChip(live({ status: warnStatus })), { lvl: 'warning', icon: '▲', text: 'Check room' });
   assert.deepEqual(H.statusChip(live({ alarms: 1 })), { lvl: 'warning', icon: '▲', text: '1 alarm' });
   assert.equal(H.statusChip(live({ alarms: 2, status: warnStatus })).text, '2 alarms');
   assert.deepEqual(H.statusChip(live({ running: false, error: 'boom', alarms: 2 })), { lvl: 'serious', icon: '▲', text: 'Stopped' });
   assert.equal(H.statusChip(live({ status: null })).text, 'All good');
   assert.equal(H.statusChip({ ...R, live: null }).text, 'Stopped');
+});
+
+test('RS2b statusChip purge exception', () => {
+  const co2High = { ...R.live.status, CO2: { lvl: 'warning', icon: '▲', text: 'High' } };
+  assert.equal(H.statusChip(live({ status: co2High })).text, 'Check room');
+  for (const state of ['purge', 'after']) {
+    assert.equal(H.statusChip(live({ status: co2High, air: { state } })).text, 'All good', state);
+    // only CO2 is excused: a high humidity during a purge still counts
+    assert.equal(H.statusChip(live({ status: { ...co2High, RH: warnStatus.RH }, air: { state } })).text, 'Check room', state);
+  }
+  assert.equal(H.statusChip(live({ status: co2High, air: { state: 'idle' } })).text, 'Check room');
+  assert.equal(H.statusChip(live({ status: co2High, air: { state: 'purge' }, alarms: 1 })).text, '1 alarm');
+});
+
+test('RS2c manualText, harvestToday, allSimulated', () => {
+  assert.equal(H.manualText([]), ''); assert.equal(H.manualText(undefined), '');
+  assert.equal(H.manualText(['ac', 'hu']), 'Manual: Aircon, Mister');
+  assert.equal(H.manualText(['air', 'lights', 'circ']), 'Manual: Fresh-air fans, Lights, Circulation fan');
+  assert.equal(H.harvestToday(null), null);
+  assert.equal(H.harvestToday({ batches: [] }), null);
+  assert.equal(H.harvestToday({ batches: [{ today: { kg: 0, crates: [] } }] }), 'No harvest today');
+  assert.equal(H.harvestToday({ batches: [{ today: { kg: 3.2 } }, { today: { kg: 1.2 } }] }), 'Harvest today: 4.4 kg');
+  assert.equal(H.allSimulated([]), false);
+  assert.equal(H.allSimulated([R, R]), true);
+  assert.equal(H.allSimulated([R, { ...R, adapter: 'real' }]), false);
 });
 
 test('RS3 cardTexts', () => {
@@ -220,7 +245,7 @@ test('RS10 import on the wire', async t => {
 test('RS11 import finished after unmount still writes the marker', async t => {
   const cache = {};
   const mk = () => {
-    const e = { dataset: {}, hidden: false, value: '', textContent: '', disabled: false, listeners: {},
+    const e = { dataset: {}, classList: { add() {} }, hidden: false, value: '', textContent: '', disabled: false, listeners: {},
       addEventListener(n, f) { this.listeners[n] = f; }, setAttribute() {}, removeAttribute() {}, replaceChildren() {}, append() {}, closest: () => null,
       querySelector: sel => (cache[sel] ||= mk()), querySelectorAll: () => [] };
     return e;

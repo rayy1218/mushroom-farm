@@ -100,6 +100,36 @@ function machineLines(r) {
   return lines;
 }
 
+const MACHINE_NAME = { ac: 'Aircon', hu: 'Mister', air: 'Fresh-air fans', lights: 'Lights', circ: 'Circulation fan' };
+
+// One tile per machine (C11 5.3): { dev, name, state, on, manual }. Empty before the first reading.
+function machineTiles(r, manual) {
+  if (!r) return [];
+  const flagged = new Set(manual || []);
+  const onOff = v => (v === 1 ? 'On' : 'Off');
+  const tiles = [
+    { dev: 'ac', on: r.ac_mode !== 'off', state: r.ac_mode === 'off' ? 'Off' : `${AC_WORD[r.ac_mode] ?? r.ac_mode} ${ui().fmtNum(r.ac_setpoint, 1)} °C` },
+    { dev: 'hu', on: r.fog > 0, state: r.fog > 0 ? `Level ${r.fog}` : 'Off' },
+    { dev: 'air', on: r.air === 1, state: onOff(r.air) },
+    { dev: 'lights', on: r.lights === 1, state: onOff(r.lights) },
+    { dev: 'circ', on: r.circ === 1, state: onOff(r.circ) },
+  ].map(t => ({ ...t, name: MACHINE_NAME[t.dev], manual: flagged.has(t.dev) }));
+  if (Number.isFinite(r.power_w)) tiles.push({ dev: 'power', name: 'Power', state: ui().watts(r.power_w), on: true, manual: false });
+  return tiles;
+}
+
+// "Should be: ..." with the ramp note when the stored setpoint is still on its way (C11 5.3).
+function targetsText(live, settings) {
+  const t = live && live.targets;
+  if (!t) return '';
+  const f = ui().fmtNum;
+  let text = `Should be: ${f(t.T, 1)} °C · ${f(t.RH, 0)} % · CO₂ under ${ui().nf(t.CO2)} ppm`;
+  if (settings && Number.isFinite(settings.spT) && Math.abs(settings.spT - t.T) >= 0.05) {
+    text += ` · moving to ${f(settings.spT, 1)} °C, ${f(settings.spRH, 0)} %`;
+  }
+  return text;
+}
+
 function programText(live) {
   if (!live || !live.crop) return '';
   const CC = global.ClimateController;
@@ -138,7 +168,7 @@ const changeLines = changes => changes.map(c => `${c.label}: ${c.oldText} → ${
 const versionText = (v, clock, current) => `${clock.stamp(v.saved_at)} · ${v.note ?? '—'}` + (current ? ' · current' : '');
 
 const helpers = { airLive, airSub, windowQuery, gapFor, reconnectQuery, chartTargets, toChartPoint, retarget, mergePoints,
-  readingTexts, machineLines, programText, commandFromReading, alarmTexts, mergeEvent, detailChanges, countText, changeLines, versionText };
+  readingTexts, machineLines, machineTiles, targetsText, programText, commandFromReading, alarmTexts, mergeEvent, detailChanges, countText, changeLines, versionText };
 function rebase(from, edited, to) {
   const SP = global.FarmSettingsPanel;
   const pending = SP.diffSettings(from, edited);
@@ -186,7 +216,7 @@ function mount(el, ctx) {
   const span = (attrs, txt) => { const e = h('span', attrs || {}); if (txt) e.textContent = txt; return e; };
 
   const secLive = h('section', { class: 'card room-live' }, rv('lvT', 'Temperature'), rv('lvRH', 'Humidity'), rv('lvCO2', 'CO₂'),
-    tag({ id: 'lvAt' }), tag({ id: 'lvTargets' }), h('ul', { id: 'lvMachines' }));
+    tag({ id: 'lvAt' }), tag({ id: 'lvTargets' }), h('ul', { class: 'machines', id: 'lvMachines' }));
   const secAir = h('section', { class: 'card room-air' }, heading('h3', '', 'Air exchange'), tag({ id: 'airSub' }), h('p', { id: 'airState' }), tag({ id: 'airWhy' }));
   const glance = h('div', { class: 'room-air' }, span({}, 'Air exchange'), span({ id: 'airGlance' }), span({ class: 'tag', id: 'airDay' }));
   const filters = h('div', { class: 'filters' }, winSeg, span({ class: 'tag' }, 'Farm time (UTC+8). A gap means no readings were recorded.'));
@@ -197,23 +227,40 @@ function mount(el, ctx) {
   const olderBtn = btn('Older', { id: 'lvOlder' });
   const secLog = h('section', { class: 'card log' }, heading('h2', 'eyebrow', 'Event log'), logList, olderBtn);
   const saveBtn = btn('Save', { id: 'spSave', disabled: '' }), discardBtn = btn('Discard', { id: 'spDiscard', disabled: '' });
-  const spMsg = h('ul', { class: 'room-msg', id: 'spMsg', role: 'status' });
-  const head = h('div', { class: 'section-head' }, heading('h2', '', 'Settings'), span({ class: 'tag', id: 'spCount' }), saveBtn, discardBtn, spMsg);
+  saveBtn.classList.add('btn-primary');
+  const spMsg = h('div', { class: 'room-msg', id: 'spMsg', role: 'status', hidden: '' });
+  const head = h('div', { class: 'section-head' }, heading('h2', '', 'Settings'), span({ class: 'tag', id: 'spCount' }),
+    h('div', { class: 'btn-row' }, saveBtn, discardBtn), spMsg);
   const spHost = h('div', { class: 'contents', id: 'spHost' });
   const verList = h('ol', { id: 'lvVersions' });
   const secVer = h('section', { class: 'card room-versions' }, heading('h2', 'eyebrow', 'Settings versions'), verList);
-  const rdName = h('input', { id: 'rdName', type: 'text', maxlength: '60' });
+const rdName = h('input', { id: 'rdName', type: 'text', maxlength: '60' });
   const rdVolume = h('input', { id: 'rdVolume', type: 'number', min: '5', max: '5000' });
   const rdSave = btn('Save details', { id: 'rdSave' }), rdArchive = btn('Archive room', { id: 'rdArchive' });
-  const rdMsg = tag({ id: 'rdMsg', role: 'status' });
+  rdSave.classList.add('btn-primary'); rdArchive.classList.add('btn-danger');
+  const rdMsg = h('p', { id: 'rdMsg', role: 'status', hidden: '' });
+  const field = (key, forId, label, ctl, unit, help) => {
+    const kids = [h('label', { for: forId }, label), h('div', { class: 'field-ctl' }, ctl, ...(unit ? [span({ class: 'unit' }, unit)] : []))];
+    if (help) { const p = h('p', { class: 'field-help' }); p.textContent = help; kids.push(p); }
+    kids.push(h('p', { class: 'field-err', hidden: '' }));
+    return h('div', { class: 'field', 'data-field': key }, ...kids);
+  };
+  const detailsForm = h('div', { class: 'form-grid' }, field('name', 'rdName', 'Name', rdName),
+    field('volume', 'rdVolume', 'Room size', rdVolume, 'm³', 'A new size restarts the room\'s loop.'));
   const secDetails = h('section', { class: 'card room-details' }, heading('h2', 'eyebrow', 'Room details'),
-    h('label', { for: 'rdName' }, 'Name'), rdName, h('label', { for: 'rdVolume' }, 'Volume (m³)'), rdVolume, rdSave, rdArchive,
-    span({ class: 'tag' }, 'A new volume restarts the room\'s loop.'), rdMsg);
-  const lvMsg = h('p', { class: 'tag room-msg', id: 'lvMsg', role: 'status' });
+    detailsForm, h('div', { class: 'btn-row' }, rdSave, rdArchive), rdMsg);
+  const lvMsg = h('p', { class: 'room-msg', id: 'lvMsg', role: 'status', hidden: '' });
   el.replaceChildren(secLive, secAir, glance, filters, chartsHost, secAlarms, secLog, head, spHost, secVer, secDetails, lvMsg);
   rdName.id = 'rdName'; rdVolume.id = 'rdVolume';
 
-  const fail = (e, target) => { (target || lvMsg).textContent = UI.errorText(e); };
+  const fail = (e, target) => { UI.say(target || lvMsg, 'error', UI.errorText(e)); };
+  const detailForm = () => ({ name: rdName.value, volume: rdVolume.value });
+  if (global.FarmShell && global.FarmShell.guardLeave) {
+    global.FarmShell.guardLeave(() => {
+      const n = (panel && base ? panel.diff(base).length : 0) + Object.keys(detailChanges(room, detailForm())).length;
+      return n ? `${n} unsaved change(s).` : '';
+    });
+  }
   const tg = () => chartTargets(room.live, base);
 
   // ---- painting ----
@@ -225,9 +272,13 @@ function mount(el, ctx) {
     q('#lvT .val').textContent = t.T; q('#lvRH .val').textContent = t.RH; q('#lvCO2 .val').textContent = t.CO2;
     paintChipOrHide(q('#lvT .chip'), st.T); paintChipOrHide(q('#lvRH .chip'), st.RH); paintChipOrHide(q('#lvCO2 .chip'), st.CO2);
     q('#lvAt').textContent = t.at;
-    const tt = room.live && room.live.targets;
-    q('#lvTargets').textContent = tt ? `Targets now: ${UI.fmtNum(tt.T, 1)} °C · ${UI.fmtNum(tt.RH, 0)} % RH · CO₂ limit ${UI.fmtNum(tt.CO2, 0)} ppm` : '';
-    q('#lvMachines').replaceChildren(...machineLines(latest).map(l => { const li = document.createElement('li'); li.textContent = l; return li; }));
+    q('#lvTargets').textContent = targetsText(room.live, base);
+    q('#lvMachines').replaceChildren(...machineTiles(latest, room.live && room.live.manual).map(t => {
+      const li = h('li', { class: 'machine', 'data-dev': t.dev, 'data-on': t.on ? '1' : '0', 'data-manual': t.manual ? '1' : '0' },
+        span({ class: 'm-name' }, t.name), span({ class: 'm-state' }, t.state));
+      if (t.manual) li.append(span({ class: 'm-flag' }, 'Manual'));
+      return li;
+    }));
   }
   function paintAir() {
     const a = room.live ? room.live.air : null, o = airLive(a, base);
@@ -258,9 +309,7 @@ function mount(el, ctx) {
     saveBtn.disabled = discardBtn.disabled = n === 0 || saving;
     verList.querySelectorAll('button').forEach(b => { b.disabled = saving; });
   }
-  function setMsg(lines) {
-    spMsg.replaceChildren(...lines.map(l => { const li = document.createElement('li'); li.textContent = l; return li; }));
-  }
+  function setMsg(lines, lvl = 'info') { UI.say(spMsg, lvl, lines.join(' ')); }
   function drawCharts() {
     if (!charts) return;
     const now = nowS();
@@ -346,7 +395,7 @@ function mount(el, ctx) {
     paintSave();
   }
   function afterBase() {
-    paintAir(); drawLadder();
+    paintValues(); paintAir(); drawLadder();
     points = retarget(points, tg()); drawCharts();
   }
   async function loadSettings() {
@@ -386,7 +435,7 @@ function mount(el, ctx) {
     points = retarget(points, tg()); drawCharts();
   }
   async function onReconnect() {
-    lvMsg.textContent = '';
+    UI.say(lvMsg, 'info', '');
     const now = nowS(), rq = reconnectQuery(windowS, points.length ? points[points.length - 1].t : null, now);
     const jobs = [];
     if (rq) {
@@ -457,9 +506,9 @@ function mount(el, ctx) {
       if (!alive) return;
       base = settings;
       panel.set(rebase(sent, panel.get(), settings).settings);
-      setMsg(warnings && warnings.length ? warnings : ['Saved.']);
+      setMsg(warnings && warnings.length ? warnings : ['Saved.'], warnings && warnings.length ? 'info' : 'good');
       afterBase(); loadVersions();
-    } catch (e) { if (alive) setMsg([UI.errorText(e)]); }
+    } catch (e) { if (alive) setMsg([UI.errorText(e)], 'error'); }
     finally { if (alive) { saving = false; paintSave(); } }
   });
   discardBtn.addEventListener('click', () => { if (!panel) return; panel.set(base); setMsg([]); drawLadder(); paintSave(); });
@@ -474,17 +523,22 @@ function mount(el, ctx) {
       if (panel) panel.set(settings); else createPanel();
       setMsg([...(warnings || []), ...changeLines(SP.diffSettings(old, settings))]);
       afterBase(); loadVersions();
-    } catch (e) { if (alive) setMsg([UI.errorText(e)]); }
+    } catch (e) { if (alive) setMsg([UI.errorText(e)], 'error'); }
     finally { if (alive) { saving = false; paintSave(); renderVersions(); } }
   }
   rdSave.addEventListener('click', async () => {
-    const changes = detailChanges(room, { name: rdName.value, volume: rdVolume.value });
-    if (!Object.keys(changes).length) { rdMsg.textContent = 'Nothing to change.'; return; }
+    const changes = detailChanges(room, detailForm());
+    UI.markFields(detailsForm, {});
+    if (!Object.keys(changes).length) { UI.say(rdMsg, 'info', 'Nothing to change.'); return; }
     try {
       const r = await api.updateRoom(id, changes);
       if (!alive) return;
-      room = r; paintDetails(true); rdMsg.textContent = 'Saved.';
-    } catch (e) { if (alive) fail(e, rdMsg); }
+      room = r; paintDetails(true); UI.say(rdMsg, 'good', 'Saved.');
+    } catch (e) {
+      if (!alive) return;
+      const p = UI.plainError(e, { name: 'Name', volume: 'Room size' });
+      UI.say(rdMsg, 'error', p.text); UI.markFields(detailsForm, p.fields);
+    }
   });
   rdArchive.addEventListener('click', async () => {
     if (!global.confirm(`Archive "${room.name}"? Its loop stops and it leaves the Rooms list. Its data is kept.`)) return;

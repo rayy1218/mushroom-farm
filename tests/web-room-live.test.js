@@ -17,7 +17,7 @@ const READING = { room_id: 1, t: 1791450000, T: 18.2, RH: 88.4, CO2: 812, t_out:
 const TG = { spT: 18, spRH: 88, co2Lim: 1000, fanOn: 900, fanOff: 700 };
 
 const HELPER_NAMES = ['airLive', 'airSub', 'windowQuery', 'gapFor', 'reconnectQuery', 'chartTargets', 'toChartPoint', 'retarget',
-  'mergePoints', 'mergeEvent', 'readingTexts', 'machineLines', 'commandFromReading', 'programText', 'alarmTexts', 'detailChanges',
+  'mergePoints', 'mergeEvent', 'readingTexts', 'machineLines', 'machineTiles', 'targetsText', 'commandFromReading', 'programText', 'alarmTexts', 'detailChanges',
   'countText', 'changeLines', 'versionText', 'rebase'];
 
 test('LV1 registration', () => {
@@ -170,4 +170,27 @@ test('LV12 rebase keeps the edits', () => {
   const same = H.rebase(S, structuredClone(S), edit({ spRH: 90 }));
   assert.deepEqual(same.settings, edit({ spRH: 90 })); assert.equal(same.kept, 0);
   assert.equal(H.rebase(S, edit({ spT: 20 }), edit({ spT: 22 })).settings.spT, 20);
+});
+
+test('LV20 machineTiles', () => {
+  assert.deepEqual(H.machineTiles(null, []), []);
+  const tiles = H.machineTiles(READING, ['hu', 'lights']);
+  assert.deepEqual(tiles.map(t => t.dev), ['ac', 'hu', 'air', 'lights', 'circ', 'power']);
+  assert.deepEqual(tiles.map(t => t.name), ['Aircon', 'Mister', 'Fresh-air fans', 'Lights', 'Circulation fan', 'Power']);
+  assert.deepEqual(tiles.map(t => t.state), ['Cool 17.5 °C', 'Level 1', 'Off', 'On', 'Off', '1.43 kW']);
+  assert.deepEqual(tiles.map(t => t.on), [true, true, false, true, false, true]);
+  assert.deepEqual(tiles.map(t => t.manual), [false, true, false, true, false, false]);
+  const off = H.machineTiles({ ...READING, ac_mode: 'off', fog: 0, power_w: null }, undefined);
+  assert.deepEqual(off.map(t => t.state), ['Off', 'Off', 'Off', 'On', 'Off']);
+  assert.equal(off[0].on, false); assert.equal(off[1].on, false);
+});
+
+test('LV21 targetsText and the ramp', () => {
+  const lv = { targets: { T: 25, RH: 88, CO2: 1000 } };
+  assert.equal(H.targetsText(lv, { spT: 25, spRH: 88 }), 'Should be: 25.0 °C · 88 % · CO₂ under 1,000 ppm');
+  assert.equal(H.targetsText(lv, null), 'Should be: 25.0 °C · 88 % · CO₂ under 1,000 ppm');
+  assert.equal(H.targetsText(lv, { spT: 25.04, spRH: 88 }), 'Should be: 25.0 °C · 88 % · CO₂ under 1,000 ppm');
+  assert.equal(H.targetsText(lv, { spT: 18, spRH: 90 }), 'Should be: 25.0 °C · 88 % · CO₂ under 1,000 ppm · moving to 18.0 °C, 90 %');
+  assert.equal(H.targetsText({ targets: null }, S), '');
+  assert.equal(H.targetsText(null, S), '');
 });
