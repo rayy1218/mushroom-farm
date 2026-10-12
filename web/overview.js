@@ -40,11 +40,13 @@ function eventTime(t, nowS) {
   return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()].slice(0, 3)} ${hm}`;
 }
 
-// kWh used today from hourly rows (C12 4 Energy): the sum of the rises of the meter; a restart (a drop) counts 0; null rows are skipped.
-function kwhToday(rows) {
+// kWh used today (C12 4 Energy, lead decision 101): the sum of the rises of the meter; a restart (a drop) counts 0; null rows are skipped.
+// An averaged row's kwh is the meter at the end of its bucket, so with startS (00:00 farm time) the last row before it is the baseline.
+function kwhToday(rows, startS) {
   let sum = 0, prev = null;
-  for (const r of rows || []) {
-    if (!r || !finite(r.kwh)) continue;
+  const sorted = (rows || []).filter(r => r && finite(r.kwh)).sort((a, b) => (a.t || 0) - (b.t || 0));
+  for (const r of sorted) {
+    if (startS != null && r.t < startS) { prev = r.kwh; continue; }
     if (prev !== null) sum += Math.max(0, r.kwh - prev);
     prev = r.kwh;
   }
@@ -113,14 +115,14 @@ function checklist(state) {
   const items = [
     { key: 'rooms', text: 'Add your rooms', done: rooms.length >= 1, href: '#/rooms' },
     { key: 'crop', text: 'Tell each room what it grows', done: rooms.length >= 1 && !firstUnset,
-      href: `#/rooms/${(firstUnset || rooms[0] || { id: 1 }).id}/settings` },
+      href: rooms.length ? `#/rooms/${(firstUnset || rooms[0]).id}/settings` : '#/rooms' },
     { key: 'batch', text: 'Add the blocks you bought', done: batches.length >= 1, href: '#/batches' },
     { key: 'harvest', text: 'Record your first harvest', done: batches.some(b => b.totals && b.totals.kg > 0), href: '#/harvest' },
   ];
   if (state.installer) {
     const calibrated = rooms.find(r => calibrations[r.id] > 0);
     items.push({ key: 'calibrate', text: 'Calibrate a room after a day of readings', done: !!calibrated,
-      href: `#/rooms/${(calibrated || rooms[0] || { id: 1 }).id}/calibrate` });
+      href: rooms.length ? `#/rooms/${(calibrated || rooms[0]).id}/calibrate` : '#/rooms' });
   }
   return { items, allDone: items.every(i => i.done) };
 }
@@ -203,7 +205,7 @@ function sparkSvg(kind, points, band) {
   const p = sparkPath(points, SPARK_W, SPARK_H, band);
   if (!p) return null;
   const svg = svgEl('svg', { viewBox: `0 0 ${SPARK_W} ${SPARK_H}`, width: SPARK_W, height: SPARK_H, class: 'ov-spark', role: 'img',
-    'aria-label': sparkLabel(kind, p.min, p.max), preserveAspectRatio: 'none' });
+    'aria-label': sparkLabel(kind, p.min, p.max), preserveAspectRatio: 'xMaxYMid meet' });
   if (p.band) svgEl('rect', { class: 'ov-band', x: 0, y: Math.max(0, p.band.y), width: SPARK_W, height: Math.max(0, Math.min(SPARK_H, p.band.y + p.band.h) - Math.max(0, p.band.y)) }, svg);
   svgEl('path', { class: 'ov-line', d: p.d, fill: 'none' }, svg);
   svgEl('circle', { class: 'ov-dot', cx: p.last.x, cy: p.last.y, r: 2.5 }, svg);
@@ -233,10 +235,12 @@ function buildKpi(key) {
   value.append(num, unit);
   const sub = el('span', 'kpi-sub');
   const dot = el('span', 'kpi-dot'); dot.setAttribute('aria-hidden', 'true');
-  tile.append(label, value, sub);
+  const row = el('div', 'kpi-row');
+  row.append(value);
+  tile.append(label, row, sub);
   label.append(dot);
   const name = el('span'); label.append(name);
-  return { tile, name, dot, num, unit, sub, extra: null };
+  return { tile, row, name, dot, num, unit, sub, extra: null };
 }
 
 function paintKpi(k, data, bars) {
@@ -249,7 +253,7 @@ function paintKpi(k, data, bars) {
   if (bars) {
     if (k.extra) k.extra.remove();
     k.extra = barsSvg(bars);
-    k.tile.append(k.extra);
+    k.row.append(k.extra);
   }
 }
 
@@ -322,12 +326,14 @@ function paintRoomCard(r, room, data) {
     li.dataset.on = String(m.on);
     if (m.manual) li.dataset.manual = 'true';
     const dot = el('span', 'ov-mdot'); dot.setAttribute('aria-hidden', 'true');
-    li.append(dot, el('span', 'ov-mname', m.name), el('span', 'ov-mstate', `${m.on ? 'on' : 'off'}${m.manual ? ', manual' : ''}`));
+    li.append(dot, el('span', 'ov-mname', m.name));
+    if (m.manual) li.append(el('span', 'ov-mmanual', 'manual'));
+    li.append(el('span', 'ov-mstate', m.on ? 'on' : 'off'));
     return li;
   });
   r.strip.replaceChildren(...lis);
   const kg = data.harvestKg;
-  r.harvest.textContent = kg == null ? '' : `Harvest today: ${kg.toFixed(1)} kg`;
+  r.harvest.textContent = kg === undefined ? '' : kg === null ? 'No batch in this room' : `Harvest today: ${kg.toFixed(1)} kg`;
   r.record.href = `#/harvest/${room.id}`;
 }
 
@@ -351,7 +357,7 @@ function mount(view) {
     harvest: new Map(),          // roomId -> kg today
     spark: new Map(),            // roomId -> { T: points, RH: points }
     kwh: new Map(),              // roomId -> kWh today
-    weekCrates: [],
+    crateCache: new Map(),       // batchId -> { crates, at, sig } (sig: the room's kg today when fetched)
     events: [],
     batches: [],
     history: {},
@@ -359,10 +365,13 @@ function mount(view) {
     errors: new Map(),           // part -> message
   };
   const cards = new Map();       // roomId -> card refs
+  const inflight = new Set();    // parts with a call running, so a slow server does not stack calls
+  let shownDay = dayStart(nowS());
 
   const actionLink = el('a', 'btn btn-primary btn-link', 'Record harvest');
   actionLink.href = '#/harvest';
   const head = ui.pageHead({ title: 'Your farm today', sub: dateText(nowS()), actions: [actionLink] });
+  const dateEl = head.children[0].children[1];
   const alert = el('p'); ui.say(alert, 'error', '');
   const body = el('div', 'ov');
   const startBox = el('section', 'card ov-start'); startBox.hidden = true;
@@ -384,6 +393,8 @@ function mount(view) {
   }
   // Runs one part of the page: a late reply of an older mount does nothing; a failure shows one line and leaves the rest working.
   async function part(name, fn) {
+    if (inflight.has(name)) return;
+    inflight.add(name);
     try {
       const res = await fn();
       if (!alive()) return;
@@ -393,14 +404,15 @@ function mount(view) {
       if (!alive()) return;
       data.errors.set(name, ui.errorText(err));
     } finally {
+      inflight.delete(name);
       if (alive()) reportErrors();
     }
   }
 
   function renderKpis() {
     const rooms = data.rooms || [];
-    const sum = m => { let s = 0, any = false; for (const v of m.values()) { s += v; any = true; } return any ? s : null; };
-    const week = weekBars(data.weekCrates, nowS());
+    const sum = m => { let s = 0, any = false; for (const v of m.values()) { if (v !== null) { s += v; any = true; } } return any ? s : null; };
+    const week = weekBars([...data.crateCache.values()].flatMap(c => c.crates), nowS());
     const k = kpis(rooms, { kwh: sum(data.kwh), kgToday: sum(data.harvest) || 0, weekKg: week.reduce((s, b) => s + b.kg, 0) });
     paintKpi(kpiRefs.rooms, k.rooms);
     paintKpi(kpiRefs.alarms, k.alarms);
@@ -421,7 +433,7 @@ function mount(view) {
     for (const room of rooms) {
       let c = cards.get(room.id);
       if (!c) { c = buildRoomCard(room); cards.set(room.id, c); }
-      paintRoomCard(c, room, { spark: data.spark.get(room.id), harvestKg: data.harvest.has(room.id) ? data.harvest.get(room.id) : null });
+      paintRoomCard(c, room, { spark: data.spark.get(room.id), harvestKg: data.harvest.get(room.id) });
       order.push(c.card);
     }
     roomsBox.replaceChildren(...order);
@@ -462,7 +474,7 @@ function mount(view) {
       if (item.done) li.append(el('span', 'ov-done-word', 'Done'));
       ol.append(li);
     }
-    const hide = el('button', 'btn btn-link-text', 'Hide this list');
+    const hide = el('button', 'btn ov-hide-btn', 'Hide this list');
     hide.type = 'button';
     hide.addEventListener('click', () => { writeHidden(); renderStart(); });
     startBox.replaceChildren(el('h2', 'ov-title', 'Getting started'), ol, hide);
@@ -472,27 +484,42 @@ function mount(view) {
   async function loadRooms() {
     const rooms = await part('rooms', () => api.listRooms());
     if (!rooms) return false;
+    const firstLoad = data.rooms === null;
+    const fresh = rooms.filter(r => !data.spark.has(r.id) && !cards.has(r.id));
+    const ids = new Set(rooms.map(r => r.id));
+    for (const m of [data.spark, data.kwh, data.harvest]) for (const id of m.keys()) if (!ids.has(id)) m.delete(id);
+    for (const name of [...data.errors.keys()]) {
+      const m = /^readings:(\d+)$/.exec(name);
+      if (m && !ids.has(Number(m[1]))) data.errors.delete(name);
+    }
     data.rooms = rooms;
     renderRooms();
     renderStart();
     renderEvents();
+    reportErrors();
+    const today = dayStart(nowS());
+    if (today !== shownDay) {  // midnight passed: the date and the day's numbers start over
+      shownDay = today;
+      dateEl.textContent = dateText(nowS());
+      loadSlow(); loadMid();
+    } else if (!firstLoad && fresh.length) {
+      loadSlow(fresh); loadMid();
+    }
     return true;
   }
 
-  async function loadSlow() {
-    const rooms = data.rooms || [];
+  async function loadSlow(list) {
+    const rooms = list || data.rooms || [];
     const now = nowS(), start = dayStart(now);
     await Promise.all(rooms.map(room => part(`readings:${room.id}`, async () => {
-      const [day, hours] = await Promise.all([
-        api.getReadings(room.id, { from: now - DAY_S, to: now, step: 900 }),
-        api.getReadings(room.id, { from: start, to: now, step: 3600 }),
-      ]);
+      // one 24 h request: the sparklines, and the energy of today (the last row before 00:00 is the meter baseline)
+      const day = await api.getReadings(room.id, { from: now - DAY_S, to: now, step: 900 });
       if (!alive()) return;
       data.spark.set(room.id, {
         T: day.map(r => ({ t: r.t, v: r.T })),
         RH: day.map(r => ({ t: r.t, v: r.RH })),
       });
-      if (hours.some(r => finite(r.kwh))) data.kwh.set(room.id, kwhToday(hours)); else data.kwh.delete(room.id);
+      if (day.some(r => finite(r.kwh))) data.kwh.set(room.id, kwhToday(day, start)); else data.kwh.delete(room.id);
     })));
     if (!alive()) return;
     renderRooms();
@@ -512,24 +539,37 @@ function mount(view) {
         if (!alive()) return;
         data.harvest.clear();
         for (const [id, rh] of res) {
-          if (rh && rh.batches && rh.batches.length) data.harvest.set(id, rh.batches.reduce((s, b) => s + (b.today && finite(b.today.kg) ? b.today.kg : 0), 0));
+          const has = rh && rh.batches && rh.batches.length;
+          data.harvest.set(id, has ? rh.batches.reduce((s, b) => s + (b.today && finite(b.today.kg) ? b.today.kg : 0), 0) : null);
         }
         renderRooms();
-      }),
-      part('batches', async () => {
+      }).then(() => part('batches', async () => {
         const list = await api.listBatches();
         if (!alive()) return;
         data.batches = list;
+        // The week bars use the crates of placed batches only: a cleared batch's crates are left out (a documented limit, C12 4 Harvest).
+        // A batch's crates are fetched again only when its room's kg today changed or after 5 minutes.
         const placed = list.filter(b => b.state === 'placed');
-        const details = await Promise.all(placed.map(b => api.getBatch(b.id)));
+        const now = nowS();
+        const stale = placed.filter(b => {
+          const c = data.crateCache.get(b.id);
+          return !c || c.sig !== data.harvest.get(b.room_id) || now - c.at > SLOW_MS / 1000;
+        });
+        const details = await Promise.all(stale.map(b => api.getBatch(b.id)));
         if (!alive()) return;
-        data.weekCrates = details.flatMap(d => d.crates || []);
+        stale.forEach((b, i) => data.crateCache.set(b.id, { crates: details[i].crates || [], at: now, sig: data.harvest.get(b.room_id) }));
+        for (const id of [...data.crateCache.keys()]) if (!placed.some(b => b.id === id)) data.crateCache.delete(id);
         renderKpis();
         renderStart();
-      }),
+      })),
       part('setup', async () => {
-        const hist = await Promise.all(rooms.map(async room => [room.id, (await api.listSettingsHistory(room.id)).length]));
-        const cal = await Promise.all(rooms.map(async room => [room.id, (await api.listCalibrations(room.id)).length]));
+        const installer = isInstaller();
+        const state = { rooms, history: data.history, batches: data.batches, calibrations: data.calibrations, installer };
+        if (readHidden() || (data.rooms !== null && checklist(state).allDone)) return;
+        const [hist, cal] = await Promise.all([
+          Promise.all(rooms.map(async room => [room.id, (await api.listSettingsHistory(room.id)).length])),
+          installer ? Promise.all(rooms.map(async room => [room.id, (await api.listCalibrations(room.id)).length])) : Promise.resolve([]),
+        ]);
         if (!alive()) return;
         data.history = Object.fromEntries(hist);
         data.calibrations = Object.fromEntries(cal);
@@ -538,7 +578,7 @@ function mount(view) {
     ]);
   }
 
-  ctx.onLevel = () => { if (alive()) renderStart(); };
+  ctx.onLevel = () => { if (alive()) { renderStart(); loadMid(); } };
   document.addEventListener('farm-level', ctx.onLevel);
 
   function every(ms, fn) {

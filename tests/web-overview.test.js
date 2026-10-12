@@ -35,6 +35,14 @@ test('OV2 kwhToday', () => {
   assert.equal(H.kwhToday([{ kwh: 10 }, { kwh: null }, { kwh: 12 }]), 2, 'null rows are skipped');
   assert.equal(H.kwhToday([{ kwh: null }, { kwh: 5 }, { kwh: 6 }]), 1);
   assert.equal(H.kwhToday([{ kwh: 0.1 }, { kwh: 0.2 }, { kwh: 0.3 }]), 0.2);
+  // with a start: the last row before it is the baseline, so the first hour of the day counts
+  const rows = [{ t: 80, kwh: 100 }, { t: 90, kwh: 101 }, { t: 100, kwh: 102.5 }, { t: 110, kwh: 104 }];
+  assert.equal(H.kwhToday(rows, 100), 3, 'baseline is the row at t=90');
+  assert.equal(H.kwhToday(rows), 4);
+  assert.equal(H.kwhToday(rows.slice(2), 100), 1.5, 'no baseline: the first row only sets it');
+  assert.equal(H.kwhToday([{ t: 90, kwh: null }, { t: 95, kwh: 5 }, { t: 100, kwh: 6 }], 100), 1);
+  assert.equal(H.kwhToday([{ t: 90, kwh: 50 }, { t: 100, kwh: 2 }, { t: 110, kwh: 3 }], 100), 1, 'restart after the baseline counts 0');
+  assert.equal(H.kwhToday([{ t: 90, kwh: 5 }], 100), 0);
 });
 
 test('OV3 sparkPath', () => {
@@ -97,6 +105,8 @@ test('OV6 checklist', () => {
   assert.ok(c.items.every(i => !i.done));
   assert.equal(c.allDone, false);
   assert.equal(c.items[0].href, '#/rooms');
+  assert.equal(c.items[1].href, '#/rooms', 'no rooms: the settings link goes to the rooms');
+  assert.equal(H.checklist({ rooms: [], installer: true }).items[4].href, '#/rooms');
   c = H.checklist({ rooms: [room(1), room(2)], history: { 1: 3, 2: 1 }, batches: [], calibrations: {}, installer: false });
   assert.equal(c.items[0].done, true);
   assert.equal(c.items[1].done, false, 'room 2 has one settings version');
@@ -293,5 +303,20 @@ test('OV14 the checklist shows for a fresh farm and Hide stores the flag', async
   hide.listeners.click[0]();
   assert.equal(stored['mushroom-farm.start.hidden'], '1');
   assert.equal(start.hidden, true);
+  OV.unmount();
+});
+
+test('OV15 a room without a placed batch says so; crates are cached per batch', async () => {
+  let getBatchCalls = 0;
+  stubApi({
+    listRooms: () => Promise.resolve([mkRoom(1, 'A'), mkRoom(2, 'B')]),
+    getRoomHarvest: id => Promise.resolve(id === 1 ? { batches: [{ today: { kg: 4 } }] } : { batches: [] }),
+    listBatches: () => Promise.resolve([{ id: 5, room_id: 1, state: 'placed', totals: { kg: 4 } }]),
+    getBatch: () => { getBatchCalls++; return Promise.resolve({ crates: [{ t: Math.floor(Date.now() / 1000), kg: 4 }] }); },
+  });
+  const view = new Node_('div'); await OV.mount(view);
+  const texts = view.find(n => n.className.includes('ov-harvest')).map(n => n.textContent);
+  assert.deepEqual(texts, ['Harvest today: 4.0 kg', 'No batch in this room']);
+  assert.equal(getBatchCalls, 1);
   OV.unmount();
 });
