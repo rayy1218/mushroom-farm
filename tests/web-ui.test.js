@@ -59,3 +59,56 @@ test('errorText: no ".:" after a sentence that ends in punctuation', () => {
   assert.equal(UI.errorText(mk('Not saved!', ['a'])), 'Not saved! a');
   assert.equal(UI.errorText(mk('Invalid room', ['a'])), 'Invalid room: a');
 });
+
+const apiErr = (error, details) => Object.assign(new Error(error), { name: 'ApiError', status: 400, error, details });
+
+test('C11 plainError: known fields get their own line, the alert says where to look', () => {
+  const labels = { block_count: 'Blocks', block_wet_kg: 'Wet weight per block' };
+  assert.deepEqual(UI.plainError(apiErr('Invalid batch', ['block_count: required', 'block_wet_kg: must be a number from 0.1 to 10']), labels), {
+    text: 'Check the marked fields.', fields: { block_count: 'Fill this in.', block_wet_kg: 'Must be a number from 0.1 to 10.' } });
+  assert.deepEqual(UI.plainError(apiErr('Invalid batch', ['block_count: required']), labels), { text: 'Check the marked field.', fields: { block_count: 'Fill this in.' } });
+  assert.deepEqual(UI.plainError(apiErr('Invalid batch', ['block_count: required', 'room_id: no such room']), labels), {
+    text: 'Check the marked fields. Also: room_id: no such room', fields: { block_count: 'Fill this in.' } });
+  // no known field: the old errorText line
+  assert.deepEqual(UI.plainError(apiErr('Invalid batch', ['room_id: no such room']), labels), { text: 'Invalid batch: room_id: no such room', fields: {} });
+  assert.deepEqual(UI.plainError(new Error('boom'), labels), { text: 'boom', fields: {} });
+  assert.deepEqual(UI.plainError(apiErr('Unknown room', []), labels), { text: 'Unknown room', fields: {} });
+  assert.deepEqual(UI.plainError(apiErr('X', ['kg: Too heavy!']), { kg: 'Kg' }), { text: 'Check the marked field.', fields: { kg: 'Too heavy!' } });
+});
+
+test('C11 say: class, level, text, hidden when empty', () => {
+  const classes = new Set();
+  const el = { classList: { add: c => classes.add(c) }, dataset: {}, textContent: '', hidden: false };
+  UI.say(el, 'error', 'Not saved.');
+  assert.ok(classes.has('alert'));
+  assert.equal(el.dataset.lvl, 'error');
+  assert.equal(el.textContent, 'Not saved.');
+  assert.equal(el.hidden, false);
+  UI.say(el, 'info', '');
+  assert.equal(el.hidden, true);
+  UI.say(null, 'info', 'x'); // no element: nothing happens
+});
+
+test('C11 markFields: marks known fields, clears the others', () => {
+  const ctl = () => ({ attrs: {}, setAttribute(n, v) { this.attrs[n] = v; }, removeAttribute(n) { delete this.attrs[n]; } });
+  const box = key => {
+    const c = ctl(); const kids = [];
+    return { dataset: { field: key }, c, kids,
+      querySelector: sel => (sel === '.field-err' ? kids[0] || null : null),
+      querySelectorAll: () => [c],
+      append(e) { kids.push(e); } };
+  };
+  const a = box('block_count'), b = box('strain');
+  const root = { querySelectorAll: () => [a, b] };
+  globalThis.document = { createElement: () => ({ className: '', textContent: '', hidden: false }) };
+  UI.markFields(root, { block_count: 'Fill this in.' });
+  assert.equal(a.kids[0].className, 'field-err');
+  assert.equal(a.kids[0].textContent, 'Fill this in.');
+  assert.equal(a.c.attrs['aria-invalid'], 'true');
+  assert.equal(b.kids.length, 0);
+  assert.equal(b.c.attrs['aria-invalid'], undefined);
+  UI.markFields(root, {});
+  assert.equal(a.kids[0].hidden, true);
+  assert.equal(a.c.attrs['aria-invalid'], undefined);
+  delete globalThis.document;
+});

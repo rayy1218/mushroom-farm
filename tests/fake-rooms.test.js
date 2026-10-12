@@ -48,8 +48,8 @@ test('default live summary; list and get; archived rooms', () => {
   db.raiseAlarm(room.id, { alarm_key: 'a', level: 'warning', label: 'A', at: 1 });
   db.raiseAlarm(room.id, { alarm_key: 'b', level: 'warning', label: 'B', at: 1 });
   const got = rooms.get(room.id);
-  assert.deepEqual(got.live, { reading: null, stage: 'fruiting', crop: 'oyster', targets: null, status: null, alarms: 2, running: true, error: null, flush: null, blocks: null, air: null });
-  assert.deepEqual(Object.keys(got.live), ['reading', 'stage', 'crop', 'targets', 'status', 'alarms', 'running', 'error', 'flush', 'blocks', 'air']); // C2 5.2, 16
+  assert.deepEqual(got.live, { reading: null, stage: 'fruiting', crop: 'oyster', targets: null, status: null, alarms: 2, running: true, error: null, flush: null, blocks: null, air: null, manual: [] });
+  assert.deepEqual(Object.keys(got.live), ['reading', 'stage', 'crop', 'targets', 'status', 'alarms', 'running', 'error', 'flush', 'blocks', 'air', 'manual']); // C2 5.2, 16
   assert.ok(rooms.list().some(r => r.id === room.id));
   assert.equal(rooms.get(999), null);
   assert.equal(rooms.get('x'), null);

@@ -1144,6 +1144,17 @@ test('Live air exchange', () => {
   if (held.today.avgS !== null) assert.ok(held.today.avgS > 0);
 });
 
+test('C11 Live manual: the machines not on Auto', () => {
+  const s = scripted();
+  const { mgr } = setup(s.factory);
+  mgr.start();
+  assert.deepEqual(mgr.get(1).live.manual, []);
+  mgr.applySettings(1, { manual: { ac: { auto: false, power: true, mode: 'heat', setpoint: 30 }, air: { auto: false, on: true } } });
+  assert.deepEqual(mgr.get(1).live.manual, ['ac', 'air']);
+  mgr.applySettings(1, { manual: { ac: { auto: true }, air: { auto: true, on: false } } });
+  assert.deepEqual(mgr.get(1).live.manual, []);
+});
+
 function fatalDbError() {
   return Object.assign(new Error('disk I/O error'), { code: 'ERR_SQLITE_ERROR', errcode: 10 });
 }

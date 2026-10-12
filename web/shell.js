@@ -4,6 +4,9 @@
 
 const registry = {};
 let current = null; // { name, params, module }
+let guard = null;    // C11 3.1: () => string; a non-empty string means "this page has unsaved work"
+let shownHash = '';  // the hash of the page on screen, to go back to when the user stays
+let skipHash = null; // the hash put back by a refused leave: its hashchange is ignored once
 const MENU_NAMES = Object.freeze({ rooms: 'Rooms', simulator: 'Test bench', batches: 'Batches', harvest: 'Harvest' });
 const ROOM_ID_RE = /^[1-9][0-9]{0,14}$/;
 const TABS = ['live', 'simulate', 'calibrate']; // the names of FarmRoomTabs.NAMES (C5 3.9); not read here so the file loads alone in Node
@@ -71,12 +74,28 @@ function applyChrome(parsed) {
   else delete document.body.dataset.layout;
 }
 
+// C11 3.1: asks before leaving a page with unsaved work. true = go on, false = stay.
+function mayLeave() {
+  let why = '';
+  try { why = guard ? String(guard() || '') : ''; } catch (err) { console.error(err); }
+  if (!why) return true;
+  return global.confirm(`${why}\n\nLeave this page and lose them?`);
+}
+function guardLeave(fn) { guard = typeof fn === 'function' ? fn : null; }
+function scrollTop() { if (typeof global.scrollTo === 'function') global.scrollTo(0, 0); }
+
 function route() {
+  if (skipHash !== null && location.hash === skipHash) { skipHash = null; return; }
+  skipHash = null;
   const parsed = parseHash(location.hash);
   if (!parsed) { location.replace('#/rooms'); return; }
   if (parsed.redirect) { location.replace(parsed.redirect); return; }
   const { name, params } = parsed;
   if (current && current.name === name && paramsEqual(current.params, params)) return;
+  if (current && !mayLeave()) { skipHash = shownHash; location.replace(shownHash); return; }
+  guard = null;
+  shownHash = location.hash;
+  scrollTop();
   if (current && current.name === name && current.module && typeof current.module.update === 'function') {
     let kept = false;
     try { kept = current.module.update(params) === true; } catch (err) { console.error(err); }
@@ -136,6 +155,7 @@ function init() {
 
 const FarmShell = {
   register,
+  guardLeave,
   MENU_NAMES,
   parseHash,
   get level() { return document.body.dataset.level; },
@@ -144,6 +164,11 @@ const FarmShell = {
 if (typeof document !== 'undefined') {
   document.addEventListener('DOMContentLoaded', init);
   global.addEventListener('hashchange', route);
+  global.addEventListener('beforeunload', e => {
+    let why = '';
+    try { why = guard ? String(guard() || '') : ''; } catch { why = ''; }
+    if (why) { e.preventDefault(); e.returnValue = why; }
+  });
 }
 
 global.FarmShell = FarmShell;

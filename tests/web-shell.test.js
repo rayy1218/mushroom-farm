@@ -21,6 +21,9 @@ globalThis.document = {
 };
 globalThis.location = { hash: '', replace(h) { this.hash = h; } };
 globalThis.addEventListener = (n, f) => { listeners[n] = f; };
+let confirmReply = true, confirmCalls = [], scrolls = 0;
+globalThis.confirm = m => { confirmCalls.push(m); return confirmReply; };
+globalThis.scrollTo = () => { scrolls++; };
 require('../web/shell.js');
 const FarmShell = globalThis.FarmShell;
 function go(hash) { location.hash = hash; listeners.hashchange(); }
@@ -71,7 +74,7 @@ test('SH1 parseHash', () => {
 test('SH2 MENU_NAMES', () => {
   assert.deepEqual(FarmShell.MENU_NAMES, { rooms: 'Rooms', simulator: 'Test bench', batches: 'Batches', harvest: 'Harvest' });
   assert.ok(Object.isFrozen(FarmShell.MENU_NAMES));
-  assert.deepEqual(Object.keys(FarmShell).sort(), ['MENU_NAMES', 'level', 'parseHash', 'register']);
+  assert.deepEqual(Object.keys(FarmShell).sort(), ['MENU_NAMES', 'guardLeave', 'level', 'parseHash', 'register']);
 });
 
 test('SH3 redirects', () => {
@@ -173,4 +176,54 @@ test('SH7 late rejection of an old mount is ignored, a current one shows the not
   rejectLate(new Error('now failure'));
   await tick(20);
   assert.match(view.children[0].textContent, /now failure/);
+});
+
+test('SH8 leave guard (C11 3.1): asks, stays on refusal, clears on a page change', () => {
+  FarmShell.register('simulator', plain('simulator'));
+  go('#/simulator');
+  FarmShell.guardLeave(() => '1 unsaved change(s).');
+  confirmReply = false; confirmCalls = []; events.length = 0;
+  go('#/simulator/2');
+  assert.equal(confirmCalls.length, 1);
+  assert.match(confirmCalls[0], /^1 unsaved change\(s\)\.\n\nLeave this page and lose them\?$/);
+  assert.equal(location.hash, '#/simulator');
+  assert.deepEqual(events, []); // nothing unmounted or mounted
+  listeners.hashchange(); // the hashchange of the put-back hash is ignored
+  assert.deepEqual(events, []);
+  confirmReply = true;
+  go('#/simulator/2');
+  assert.equal(confirmCalls.length, 2);
+  assert.deepEqual(events.map(e => e.name), ['simulator', 'simulator']);
+  // the guard was cleared by the page change
+  confirmCalls = [];
+  go('#/simulator');
+  assert.equal(confirmCalls.length, 0);
+  // an empty string means nothing to lose; a throwing guard does not block
+  FarmShell.guardLeave(() => '');
+  go('#/simulator/3');
+  FarmShell.guardLeave(() => { throw new Error('x'); });
+  go('#/simulator');
+  assert.equal(confirmCalls.length, 0);
+});
+
+test('SH9 scroll to the top on a page change, not on the same page', () => {
+  go('#/simulator');
+  const before = scrolls;
+  go('#/simulator/4');
+  assert.equal(scrolls, before + 1);
+  listeners.hashchange(); // same hash again
+  assert.equal(scrolls, before + 1);
+});
+
+test('SH10 beforeunload asks only with unsaved work', () => {
+  FarmShell.guardLeave(null);
+  const e1 = { preventDefault() { this.prevented = true; } };
+  listeners.beforeunload(e1);
+  assert.equal(e1.prevented, undefined);
+  FarmShell.guardLeave(() => 'Unsaved.');
+  const e2 = { preventDefault() { this.prevented = true; } };
+  listeners.beforeunload(e2);
+  assert.equal(e2.prevented, true);
+  assert.equal(e2.returnValue, 'Unsaved.');
+  FarmShell.guardLeave(null);
 });
