@@ -60,7 +60,7 @@ Review: `docs/reviews/2026-10-12-farmer-and-design-review.md`. Contract: `docs/c
 | Part | Status |
 |---|---|
 | UX wave 1, quick wins: system fonts, one form style (`.field`, units, errors under the field), primary/danger/disabled buttons, `.alert` messages, Simulated and Manual badges, amber "Check room", Record harvest on room cards, machine tiles, "Should be" targets with the ramp, leave-page warning, scroll reset, Batches and phone layout fixes, farmer wording on Batches, Simulate, Your machines, Calibrate and the Test bench | ✅ (branch `ux/wave1`) |
-| UX wave 2, layout: sidebar shell and phone bottom tabs, Overview home (KPIs, sparklines, first-run checklist), Live split into Overview and Settings, installer items behind a PIN, farmer wording everywhere | 📋 |
+| UX wave 2, layout (C12 `docs/contracts/layout.md`): side bar and phone tab bar, farm status in the top bar, page heads, Overview home (getting-started list, rooms OK, alarms, energy today, harvest with 7-day bars, room cards with 24 h sparklines, recent events), Harvest page, Settings page (Farmer/Installer stored per browser, no PIN; theme), room page split into Overview and Settings with a sticky save bar, farmer status words | ✅ (branch `ux/wave2`) |
 | UX wave 3, visuals: room drawing on the room page, machine timeline, capacity bullet chart, cycle Gantt, flush yield chart, batch board | 📋 |
 | UX wave 4, setup flow: one Add-room form (mushroom, stage, blocks), crop-matched targets with range warnings | 📋 |
 

@@ -2,6 +2,14 @@
 (function (global) {
 'use strict';
 
+// 'Monday 12 October' in farm time (UTC+8), as the Overview's page head (C12 4, 6).
+const LONG_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const LONG_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+function longDate(t) {
+  const d = new Date((t + 28800) * 1000);
+  return `${LONG_DAYS[d.getUTCDay()]} ${d.getUTCDate()} ${LONG_MONTHS[d.getUTCMonth()]}`;
+}
+
 let current = null;                         // the token of the mounted page; a late reply of an older mount sees it changed
 let timer = null;                           // the 60 s refresh of the today view
 const REFRESH_MS = 60000;
@@ -285,7 +293,7 @@ function mountToday(el, live) {
   const head = $('#hvHead');
   const msg = (lvl, text) => global.FarmUi.say($('#hvTodayMsg'), lvl, text);
   const paintHead = () => head.replaceChildren(global.FarmUi.pageHead({
-    title: 'Harvest', sub: `Today, ${dateOf(Math.floor(Date.now() / 1000))}`, actions: [printLink] }));
+    title: 'Harvest', sub: `Today, ${longDate(Math.floor(Date.now() / 1000))}`, actions: [printLink] }));
   paintHead();
 
   function paint(list) {
