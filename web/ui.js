@@ -96,7 +96,8 @@ function plainError(err, labels) {
   const rest = [];
   if (err && err.name === 'ApiError' && err.details && err.details.length) {
     for (const d of err.details) {
-      const m = /^([a-z_][a-z0-9_.]*): (.+)$/i.exec(String(d));
+      // 'key: problem' (C10 details) or 'key problem' (C3 room details: 'name must be 1 to 60 characters')
+      const m = /^([a-z_][a-z0-9_.]*): (.+)$/i.exec(String(d)) || /^([a-z_][a-z0-9_]*) (.+)$/i.exec(String(d));
       if (m && Object.hasOwn(map, m[1])) fields[m[1]] = problemText(m[2]);
       else rest.push(String(d));
     }
