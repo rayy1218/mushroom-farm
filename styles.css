@@ -88,7 +88,6 @@ main { max-width: 1480px; width: 100%; margin: 0 auto; padding: 20px 24px 48px; 
 @media (max-width: 720px) {
   .trend, .faceplate { grid-column: span 12; }
   #mimicNote { display: none; }
-  main { padding: 10px 8px 32px; }
 }
 
 /* Two parts of the page: the simulation (dashed, "the world") and the controller (solid) */
@@ -644,7 +643,9 @@ div.room-air { grid-column: 1 / -1; }
 .tooltip .row b, .e-hero .num, .e-row .v, .tariff input, td, .gl-v, .gl-kv dd, .prot-grid input, .prog-grid input, .txt-in, .rc-val .val, li.machine .m-state { font-variant-numeric: tabular-nums; }
 
 /* App shell (C12 3): side bar >= 900 px, top bar, phone tab bar */
-:root { --side-w: 232px; --topbar-h: 52px; --tab-h: 56px; --accent: var(--ink); }
+:root { --side-w: 232px; --topbar-h: 52px; --tab-h: 56px; }
+html { scroll-padding-top: var(--topbar-h); }
+@media (max-width: 899px) { html { scroll-padding-bottom: calc(var(--tab-h) + env(safe-area-inset-bottom)); } }
 .app { display: flex; min-height: 100vh; min-height: 100dvh; }
 .col { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .col > main { flex: 1; align-content: start; }
@@ -684,6 +685,12 @@ a.chip#farmStatus:hover { border-color: var(--border-strong); }
 .page-actions { flex: 1 1 100%; }
 .page-actions > * { flex: 0 1 auto; }
 
+.brand-top strong, .brand-text strong { white-space: nowrap; }
+.topbar .brand-top { flex: 1 1 0; min-width: 0; }
+.topbar .brand-top strong { overflow: hidden; text-overflow: ellipsis; }
+.topbar .spacer { display: none; }
+.topbar .chip { flex: none; }
+@media (max-width: 420px) { .topbar { gap: 6px; padding-inline: 10px; } .topbar .chip { padding: 2px 7px; font-size: 11px; letter-spacing: .03em; } }
 body[data-layout="bare"] .side, body[data-layout="bare"] .topbar, body[data-layout="bare"] .tabbar { display: none !important; }
 body[data-layout="bare"] .col > main { padding-bottom: 32px; }
 body[data-level="farmer"] [data-level-only="installer"] { display: none !important; }
@@ -693,6 +700,8 @@ body[data-level="farmer"] [data-level-only="installer"] { display: none !importa
 .btn-quiet:hover { background: var(--band); }
 
 @media (min-width: 900px) {
+  :root { --tab-h: 0px; }
+  .topbar .spacer { display: block; }
   .tabbar { display: none; }
   .side { display: flex; flex-direction: column; gap: 20px; flex: none; width: var(--side-w); height: 100vh; height: 100dvh; position: sticky; top: 0;
     padding: 18px 12px 14px; background: var(--surface); border-right: 1px solid var(--border); overflow-y: auto; }
@@ -710,8 +719,6 @@ body[data-level="farmer"] [data-level-only="installer"] { display: none !importa
   .side-foot .seg button { padding: 7px 8px; font: 600 var(--fs-sm) var(--font-body); }
   .topbar { padding-inline: 24px; padding-top: 8px; }
   .col > main { padding: 24px 28px 56px; }
-  .page-head { margin-bottom: 8px; }
-  .page-title { font-size: var(--fs-2xl); }
   .page-actions { flex: 0 0 auto; margin-left: auto; }
 }
 @media (max-width: 899px) {
@@ -722,6 +729,9 @@ body[data-level="farmer"] [data-level-only="installer"] { display: none !importa
 @media print { .side, .topbar, .tabbar { display: none !important; } }
 
 /* Settings page */
+.set-card .seg { justify-self: start; max-width: 100%; }
+.skip { position: absolute; left: 8px; top: -60px; z-index: 50; padding: 8px 14px; border-radius: 6px; background: var(--ink); color: var(--surface); text-decoration: none; font-weight: 600; }
+.skip:focus { top: 8px; }
 .set-page { display: contents; }
 .set-card { grid-column: span 6; display: grid; gap: 12px; align-content: start; }
 .set-card h2 { font: 700 var(--fs-lg)/1.2 var(--font-body); }
@@ -734,11 +744,3 @@ body[data-level="farmer"] [data-level-only="installer"] { display: none !importa
 .choice[aria-pressed="true"] { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); background: color-mix(in srgb, var(--ink) 6%, var(--surface)); }
 .set-meta { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--ink-2); }
 @media (max-width: 899px) { .set-card { grid-column: 1 / -1; } }
-.set-card .seg { justify-self: start; max-width: 100%; }
-.brand-top strong, .brand-text strong { white-space: nowrap; }
-.topbar .brand-top { flex: 1 1 0; min-width: 0; }
-.topbar .brand-top strong { overflow: hidden; text-overflow: ellipsis; }
-.topbar .spacer { display: none; }
-.topbar .chip { flex: none; }
-@media (max-width: 420px) { .topbar { gap: 6px; padding-inline: 10px; } .topbar .chip { padding: 2px 7px; font-size: 11px; letter-spacing: .03em; } }
-@media (min-width: 900px) { .topbar .spacer { display: block; } }

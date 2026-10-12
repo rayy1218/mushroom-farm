@@ -5,13 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Mushroom farm</title>
 <script>try{var t=localStorage.getItem('mushroom-farm.theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t;}catch(e){}</script>
-<meta name="theme-color" content="#f4f5f6">
+<meta name="theme-color" content="#f4f5f6" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1c1f22" media="(prefers-color-scheme: dark)">
 <link rel="stylesheet" href="styles.css">
 <link rel="stylesheet" href="web/harvest.css">
 <link rel="stylesheet" href="web/overview.css">
 <link rel="stylesheet" href="web/room.css">
 </head>
 <body data-level="farmer">
+<a class="skip" href="#view" data-skip>Skip to content</a>
 <div class="app">
 <aside class="side">
   <div class="brand"><span class="brand-mark" aria-hidden="true"></span><span class="brand-text"><strong>Mushroom farm</strong><small>Climate and harvest</small></span></div>
@@ -34,8 +36,8 @@
   <header class="topbar">
     <span class="brand brand-top"><span class="brand-mark" aria-hidden="true"></span><strong>Mushroom farm</strong></span>
     <span class="spacer"></span>
-    <span class="chip" id="farmSim" data-kind="sim" hidden>Simulated</span>
     <a class="chip" id="farmStatus" href="#/overview" hidden></a>
+    <span class="chip" id="farmSim" data-kind="sim" hidden>Simulated</span>
   </header>
   <main id="view"></main>
 </div>

@@ -60,7 +60,10 @@ function mount(view) {
 
   const whoCard = card('Who uses this screen', choices);
   whoCard.className += ' set-wide';
-  root.append(whoCard, card('Look', look), card('About this app', about, simNote), card('This device', device));
+  const tools = card('Installer tools', Object.assign(el('a', 'btn btn-link', 'Open the test bench'), { href: '#/simulator' }));
+  tools.dataset.levelOnly = 'installer';
+  tools.className += ' set-wide';
+  root.append(whoCard, tools, card('Look', look), card('About this app', about, simNote), card('This device', device));
   view.append(root);
 
   // The "no sensors" line only shows when every room is simulated.

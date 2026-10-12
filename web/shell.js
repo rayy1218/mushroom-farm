@@ -1,4 +1,4 @@
-// web/shell.js: menu, routing, settings level, theme (docs/contracts/web.md section 2).
+// web/shell.js: menu, routing, settings level, theme (docs/contracts/web.md section 2), C12 3.1 (theme, farm status).
 (function (global) {
 'use strict';
 
@@ -74,11 +74,16 @@ function menuLink(parsed) {
 function applyChrome(parsed) {
   const link = menuLink(parsed);
   document.querySelectorAll('#menu a, #tabbar a').forEach(a => {
-    if (link && a.dataset.module === link) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+    // C12 decision 99: the Test bench has no phone tab, so More (Settings) stays lit on its routes
+    const tabbar = a.closest ? a.closest('#tabbar') : null;
+    const mod = link === 'simulator' && tabbar ? 'settings' : link;
+    if (mod && a.dataset.module === mod) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
   });
   document.title = `${MENU_NAMES[parsed.name]} · Mushroom farm`;
+  const wasBare = document.body.dataset.layout === 'bare';
   if (parsed.name === 'harvest' && parsed.params.view === 'record') document.body.dataset.layout = 'bare';
   else delete document.body.dataset.layout;
+  if (wasBare && document.body.dataset.layout !== 'bare') refreshStatus();
 }
 
 // C11 3.1: asks before leaving a page with unsaved work. true = go on, false = stay.
@@ -208,6 +213,7 @@ let statusTimer = null;
 async function refreshStatus() {
   const chipEl = document.getElementById('farmStatus'), simEl = document.getElementById('farmSim');
   if (!chipEl || !global.FarmApi || !global.FarmUi) return;
+  if (document.body.dataset.layout === 'bare' || document.hidden) return; // no chrome on screen, or no one looking
   let rooms;
   try { rooms = await global.FarmApi.listRooms(); } catch { return; } // keep the last chips
   const { chip, sim } = farmStatus(rooms);
@@ -218,8 +224,19 @@ async function refreshStatus() {
 function initStatus() {
   refreshStatus();
   statusTimer = setInterval(refreshStatus, 30000);
+  document.addEventListener('visibilitychange', refreshStatus);
+}
+function initSkip() {
+  const skip = document.querySelector('[data-skip]');
+  if (!skip) return;
+  skip.addEventListener('click', e => { // a hash link would route: focus the view instead
+    e.preventDefault();
+    const v = document.getElementById('view');
+    if (v) { v.setAttribute('tabindex', '-1'); v.focus(); }
+  });
 }
 function init() {
+  initSkip();
   initLevel();
   initTheme();
   initStatus();
@@ -232,6 +249,7 @@ const FarmShell = {
   setLevel,
   setTheme,
   farmStatus,
+  refreshStatus,
   DEFAULT_ROUTE,
   MENU_NAMES,
   parseHash,

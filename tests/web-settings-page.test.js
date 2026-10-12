@@ -27,12 +27,16 @@ test('ST1 registers as settings', () => {
   assert.equal(typeof registered.m.unmount, 'function');
 });
 
-test('ST2 four cards, level and look choices', async () => {
+test('ST2 five cards (four, plus the installer tools), level and look choices', async () => {
   const view = node('main');
   rooms = [{ adapter: 'sim' }, { adapter: 'sim' }];
   registered.m.mount(view);
   const all = walk(view);
-  assert.equal(all.filter(n => /^card set-card/.test(n.className)).length, 4);
+  assert.equal(all.filter(n => /^card set-card/.test(n.className)).length, 5);
+  const tools = all.find(n => n.dataset.levelOnly === 'installer');
+  assert.ok(tools);
+  const open = walk(tools).find(n => n.tag === 'a');
+  assert.deepEqual([open.href, open.className, open.textContent], ['#/simulator', 'btn btn-link', 'Open the test bench']);
   assert.ok(texts(view).includes('Settings|How this screen looks and who uses it.'));
   const lv = all.filter(n => n.dataset.levelBtn);
   assert.deepEqual(lv.map(b => [b.dataset.levelBtn, b.attrs['aria-pressed']]), [['farmer', 'true'], ['installer', 'false']]);
