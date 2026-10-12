@@ -76,6 +76,20 @@ function svgEl(tag, attrs, parent) {
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const BAND_T = 1, BAND_RH = 3;
 
+// Time-axis ticks shared by the trends and the machine timeline. Farm time = t + clock.offset. About one label per 60 px;
+// from 12 h steps up the day change is labelled with a short weekday and date, the other ticks with the time.
+const TICK_STEPS = [600, 1800, 3600, 7200, 10800, 14400, 21600, 43200, 86400, 172800, 345600];
+const WEEKDAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+function timeTicks(from, to, pw, clock) {
+  const off = clock.offset, span = to - from, n = clamp(Math.floor(pw / 60), 2, 8);
+  const step = TICK_STEPS.find(s => s >= span / n) || TICK_STEPS[TICK_STEPS.length - 1], out = [];
+  for (let A = Math.ceil((from + off) / step) * step; A <= to + off + 1e-6; A += step) {
+    const day = step >= 43200 && A % 86400 === 0, d = new Date(A * 1000);
+    out.push({ t: A - off, label: day ? `${WEEKDAY[d.getUTCDay()]} ${d.getUTCDate()}` : clock.hm(A - off) });
+  }
+  return out;
+}
+
 const TREND_DEFS = {
   T: { out: 'tOut', unit: '°C', dec: 1, minSpan: 3, label: 'Temperature', title: 'TT-101 · outdoor OT-104',
     band: p => [p.spT - BAND_T, p.spT + BAND_T], ref: p => p.spT, sub: p => `Target ${global.FarmUi.fmtNum(p.spT, 1)} °C ± ${BAND_T}` },
@@ -98,6 +112,8 @@ function createTrendCharts(el, opts) {
   const made = []; // the sections this call created: destroy() removes only these
 
   let view = null, hoverT = null, hoverChart = null, rafId = null;
+  const onHover = opts.onHover || (() => {});
+  let told = null; // the hover time last reported to onHover, so a redraw does not repeat it
   const cards = [];
 
   // A hover, key move or resize redraws through one shared requestAnimationFrame (6.3): destroy() cancels it.
@@ -118,12 +134,12 @@ function createTrendCharts(el, opts) {
     const host = document.createElement('div'); host.className = 'ch-host';
     // The power card has no per-key status chip or hover sub-line (drawPowerCard never sets them), so it
     // gets no .ch-sub row: today's power card is head, legend, host, tooltip, with no blank line.
-    if (withSub === false) { section.append(head, host); return { section, readv, subSpan: null, chip: null, host }; }
+    if (withSub === false) { section.append(head, host); return { section, readv, subSpan: null, chip: null, host, tag }; }
     const chSub = document.createElement('div'); chSub.className = 'ch-sub';
     const subSpan = document.createElement('span'); const chip = document.createElement('span'); chip.className = 'chip';
     chSub.append(subSpan, chip);
     section.append(head, chSub, host);
-    return { section, readv, subSpan, chip, host };
+    return { section, readv, subSpan, chip, host, tag };
   }
 
   function makeSvg(host, height, label) {
@@ -165,6 +181,7 @@ function createTrendCharts(el, opts) {
   for (const key of keys) {
     const def = TREND_DEFS[key];
     const ui = card(def.label, def.title);
+    ui.tag.setAttribute('data-level-only', 'installer'); // the sensor codes are for the installer (C13 3.1)
     const c = makeSvg(ui.host, 160, `${def.label} trend`);
     c.m = { l: 46, r: def.out ? 58 : 12, t: 10, b: 22 };
     c.band = svgEl('path', { class: 'band' }, c.body);
@@ -196,7 +213,6 @@ function createTrendCharts(el, opts) {
     const c = makeSvg(ui.host, 220, 'Power consumption by machine, stacked');
     c.m = { l: 56, r: 84, t: 10, b: 22 };
     c.areas = Object.fromEntries(DEV.map(([k]) => [k, svgEl('path', { class: `area ${k}` }, c.body)]));
-    c.gap = svgEl('path', { class: 'gap' }, c.body);
     c.base = svgEl('line', { class: 'base' }, c.body);
     c.labels = svgEl('g', {}, c.body);
     el.appendChild(ui.section); made.push(ui.section);
@@ -214,11 +230,9 @@ function createTrendCharts(el, opts) {
     c.nightG.innerHTML = s;
   }
   function xAxis(c, v, X) {
-    const { m, height: h } = c, span = v.t1 - v.t0;
-    const step = [600, 1800, 3600, 7200, 10800, 14400, 21600].find(s => s >= span / 6) || 21600;
-    const off = clock.offset;
+    const { m, height: h } = c;
     let s = '';
-    for (let A = Math.ceil((v.t0 + off) / step) * step; A <= v.t1 + off + 1e-6; A += step) s += `<text x="${X(A - off).toFixed(1)}" y="${h - 5}" text-anchor="middle">${clock.hm(A - off)}</text>`;
+    for (const tk of timeTicks(v.t0, v.t1, c.w - m.l - m.r, clock)) s += `<text x="${X(tk.t).toFixed(1)}" y="${h - 5}" text-anchor="middle">${tk.label}</text>`;
     s += `<line class="base" x1="${m.l}" x2="${c.w - m.r}" y1="${h - m.b}" y2="${h - m.b}"/>`;
     c.xaxis.innerHTML = s;
   }
@@ -230,7 +244,7 @@ function createTrendCharts(el, opts) {
   }
   const lastFinite = (pts, key) => { for (let i = pts.length - 1; i >= 0; i--) if (Number.isFinite(pts[i][key])) return pts[i]; return null; };
 
-  function drawTrend(tc, v, hp) {
+  function drawTrend(tc, v, hp, cross) {
     const { def, c, ui } = tc, { m, w, height: h } = c, pts = v.pts;
     if (!pts.length) return;
     const pw = w - m.l - m.r, ph = h - m.t - m.b;
@@ -259,7 +273,7 @@ function createTrendCharts(el, opts) {
         for (const [txt, y] of [['Room', yIn], ['Outdoor', yOut]]) { const t = svgEl('text', { class: 'slabel', x: xEnd, y: (y + 4).toFixed(1) }, c.labels); t.textContent = txt; }
       }
     }
-    crosshair(c, X, !!hp);
+    crosshair(c, X, cross);
     if (hp && Number.isFinite(hp[tc.key])) { c.dot.setAttribute('cx', X(hp.t).toFixed(1)); c.dot.setAttribute('cy', Y(hp[tc.key]).toFixed(1)); c.dot.setAttribute('visibility', 'visible'); }
     else c.dot.setAttribute('visibility', 'hidden');
     const p = hp || pts[pts.length - 1];
@@ -272,7 +286,7 @@ function createTrendCharts(el, opts) {
     if (chip) UI.paintChip(ui.chip, chip); else ui.chip.replaceChildren();
   }
 
-  function drawPowerCard(v, hp) {
+  function drawPowerCard(v, hp, cross) {
     if (!powerCard) return;
     const { c, ui, legend, tooltip } = powerCard, { m, w, height: h } = c, pts = v.pts;
     if (!pts.length) return;
@@ -287,7 +301,6 @@ function createTrendCharts(el, opts) {
     const lo = {}, hi = {};
     DEV.forEach(([k], i) => { lo[k] = p => sumTo(p, i); hi[k] = p => sumTo(p, i + 1); });
     for (const [k] of DEV) c.areas[k].setAttribute('d', areaPath(pts, X, Y, lo[k], hi[k]));
-    c.gap.setAttribute('d', pts.length > 1 ? DEV.slice(0, 4).map(([k]) => linePath(pts, X, Y, hi[k], v.gapS)).join('') : '');
     for (const [k, val] of [['x1', m.l], ['x2', w - m.r], ['y1', Y(0)], ['y2', Y(0)]]) c.base.setAttribute(k, val);
     c.labels.replaceChildren();
     const last = pts[pts.length - 1];
@@ -295,7 +308,7 @@ function createTrendCharts(el, opts) {
       const yT = Y(hi[k](last)), yB = Y(lo[k](last));
       if (yB - yT >= 14) { const t = svgEl('text', { class: 'dlabel', x: X(last.t) + 6, y: ((yT + yB) / 2 + 4).toFixed(1) }, c.labels); t.textContent = name; }
     }
-    crosshair(c, X, !!hp);
+    crosshair(c, X, cross);
     const p = hp || last, total = sumTo(p, 5);
     const sm = document.createElement('small'); sm.textContent = total >= 1000 ? 'kW' : 'W';
     ui.readv.replaceChildren(document.createTextNode(UI.watts(total).replace(/ k?W$/, '')), sm);
@@ -321,11 +334,15 @@ function createTrendCharts(el, opts) {
   }
 
   function redraw() {
+    if (hoverT !== told) { told = hoverT; onHover(hoverT); }
     if (!view) return;
     if (hoverT != null && hoverT < view.t0) hoverT = null;
-    const hp = hoverT == null ? null : nearest(view.pts, hoverT);
-    for (const tc of trendCards) drawTrend(tc, view, hp);
-    drawPowerCard(view, hp);
+    // a hover from the timeline is a raw time: the readout snaps to the nearest point within a gap, else only the line shows
+    let hp = hoverT == null ? null : nearest(view.pts, hoverT);
+    if (hp && Math.abs(hp.t - hoverT) > view.gapS) hp = null;
+    const cross = hoverT != null;
+    for (const tc of trendCards) drawTrend(tc, view, hp, cross);
+    drawPowerCard(view, hp, cross);
   }
   function draw(v) {
     view = { t0: v.t0, t1: v.t1, pts: aggregate(v.pts, 700), gapS: v.gapS ?? Infinity };
@@ -339,7 +356,127 @@ function createTrendCharts(el, opts) {
     made.length = 0;
     if (!hadContents) el.classList.remove('contents');
   }
-  return { draw, destroy };
+  // The machine timeline under the trends shares the hover line: it calls this with a time or null.
+  function setHover(t) {
+    const v = Number.isFinite(t) ? t : null;
+    if (v === hoverT) return;
+    hoverT = v; told = v; hoverChart = null; scheduleRedraw();
+  }
+  return { draw, destroy, setHover };
+}
+
+// ---------------- Machine timeline (C13 3.2) ----------------
+// One bar per machine over the trends' window. level(row) is 0 when off; the Mister row has levels 1-3.
+const onAvg = v => (Number.isFinite(v) && v >= 0.5 ? 1 : 0); // averaged rows: on when the bucket's mean is at least 0.5
+const TIMELINE_ROWS = [
+  { key: 'ac', name: 'Aircon', color: 'var(--s-ac)', level: r => (r.ac_mode != null && r.ac_mode !== 'off' ? 1 : 0) },
+  { key: 'hu', name: 'Mister', color: 'var(--s-hu)', level: r => (Number.isFinite(r.fog) && r.fog > 0 ? clamp(Math.round(r.fog), 1, 3) : 0) },
+  { key: 'air', name: 'Fresh air', color: 'var(--s-air)', level: r => onAvg(r.air) },
+  { key: 'lights', name: 'Lights', color: 'var(--s-li)', level: r => onAvg(r.lights) },
+  { key: 'circ', name: 'Circulation fan', color: 'var(--s-ci)', level: r => onAvg(r.circ) },
+];
+// Spans where a machine was on. rows: readings sorted by t; test(row[key], row) gives a level (0, false or null = off; true = 1).
+// A row lasts until the next row when that is within gapS, else for gapS / 3 (one nominal interval) and the span breaks, so a
+// gap in the readings is never drawn as running. Neighbouring rows of the same level merge into one span.
+function machineSpans(rows, key, test, gapS = 90) {
+  const nominal = gapS / 3, out = [];
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i], lv = Number(test(r[key], r)) || 0;
+    if (lv <= 0) continue;
+    const next = rows[i + 1], joined = next && next.t - r.t <= gapS;
+    const to = joined ? next.t : r.t + nominal, last = out[out.length - 1];
+    if (last && last.level === lv && last.to === r.t) last.to = to;
+    else out.push({ from: r.t, to, level: lv });
+  }
+  return out;
+}
+const spanAt = (spans, t) => spans.find(s => t >= s.from && t < s.to) || null;
+const MISTER_ALPHA = [0, 0.45, 0.72, 1];
+const dur = s => { const m = Math.round(s / 60); return m < 60 ? `${m} min` : `${(m / 60).toFixed(1).replace(/\.0$/, '')} h`; };
+
+// Builds the timeline once in host and returns { update(rows, from, to, { gapS, averaged }), setHover(t), destroy() }.
+// update() redraws only the spans, axis and aria-label in the same SVG, so keyboard focus and a held hover survive a new reading.
+// opts: { rows, from, to, clock, gapS, averaged, onHover(t|null) }. averaged = the rows are bucket means (24 h and 7 day windows).
+// The SVG is drawn 1:1 at its host's width (a ResizeObserver redraws it). The left margin matches the trend charts so the axes line up.
+function drawMachineTimeline(host, rows, opts) {
+  const clock = opts.clock, onHover = opts.onHover || (() => {});
+  let from = opts.from, to = opts.to, gapS = opts.gapS ?? 90, averaged = !!opts.averaged, data = [], w = 0, cur = null;
+  const m = { l: 46, r: 12, t: 4, b: 22 }, rowH = 32, h = m.t + rowH * TIMELINE_ROWS.length + m.b;
+  host.replaceChildren();
+  const svg = svgEl('svg', { class: 'chart tl', height: h, tabindex: 0, role: 'img', 'aria-label': 'Machine timeline' }, host);
+  const tracks = [], spanGs = [];
+  TIMELINE_ROWS.forEach((r, i) => {
+    const y = m.t + i * rowH;
+    const lab = svgEl('text', { x: m.l, y: y + 11, class: 'tl-name' }, svg); lab.textContent = r.name;
+    tracks.push(svgEl('rect', { class: 'tl-track', x: m.l, y: y + 15, height: 12, rx: 3 }, svg));
+    spanGs.push(svgEl('g', {}, svg));
+  });
+  const axis = svgEl('g', {}, svg);
+  const cross = svgEl('line', { class: 'cross', y1: m.t, y2: h - m.b, visibility: 'hidden' }, svg);
+  const readout = document.createElement('p'); readout.className = 'tag tl-read'; readout.setAttribute('role', 'status');
+  readout.setAttribute('aria-live', 'off'); // announced only for key moves, never while the pointer sweeps
+  host.append(readout);
+  const idle = 'Hover or touch a time to see what was running.';
+  const pw = () => Math.max(1, w - m.l - m.r);
+  const X = t => m.l + (clamp(t, from, to) - from) / (to - from) * pw();
+
+  function render() {
+    w = Math.max(200, host.clientWidth || 400);
+    svg.setAttribute('width', w); svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+    data = TIMELINE_ROWS.map(r => ({ ...r, spans: machineSpans(rows, r.key, (v, row) => r.level(row), gapS) }));
+    data.forEach((d, i) => {
+      tracks[i].setAttribute('width', pw());
+      spanGs[i].replaceChildren();
+      for (const s of d.spans) {
+        const x0 = X(s.from), x1 = X(s.to);
+        if (s.to < from || s.from > to || x1 - x0 <= 0) continue;
+        const r = svgEl('rect', { class: 'tl-span', x: x0.toFixed(1), y: m.t + i * rowH + 15, width: Math.max(1, x1 - x0).toFixed(1), height: 12, rx: 2 }, spanGs[i]);
+        r.style.fill = d.color;
+        if (d.key === 'hu') r.style.fillOpacity = MISTER_ALPHA[s.level];
+      }
+    });
+    const onS = d => d.spans.reduce((a, s) => a + Math.max(0, Math.min(s.to, to) - Math.max(s.from, from)), 0);
+    svg.setAttribute('aria-label', `When each machine was on in this window: ${data.map(d => `${d.name} ${onS(d) > 0 ? `on ${dur(onS(d))}` : 'not on'}`).join(', ')}. Use the left and right arrow keys to read a time.`);
+    axis.replaceChildren();
+    svgEl('line', { class: 'base', x1: m.l, x2: w - m.r, y1: h - m.b, y2: h - m.b }, axis);
+    for (const tk of timeTicks(from, to, pw(), clock)) { const t = svgEl('text', { x: X(tk.t).toFixed(1), y: h - 5, 'text-anchor': 'middle' }, axis); t.textContent = tk.label; }
+    show(cur);
+  }
+  function show(t) {
+    if (!Number.isFinite(t) || t < from || t > to) { cross.setAttribute('visibility', 'hidden'); readout.textContent = idle; return; }
+    cross.setAttribute('x1', X(t).toFixed(1)); cross.setAttribute('x2', X(t).toFixed(1)); cross.setAttribute('visibility', 'visible');
+    // on a bucket row ac_mode is the last reading's, so the Aircon row is exact only on raw windows (1 h, 6 h)
+    const on = data.map(d => {
+      const sp = spanAt(d.spans, t);
+      return sp ? `${d.name} on${d.key === 'hu' ? ` (${averaged ? 'avg ' : ''}level ${sp.level})` : ''}` : null;
+    }).filter(Boolean);
+    readout.textContent = `${clock.stamp(t)} · ${on.length ? on.join(', ') : 'nothing running'}`;
+  }
+  const timeAt = ev => from + (ev.clientX - svg.getBoundingClientRect().left - m.l) / pw() * (to - from);
+  const move = (t, announce) => {
+    cur = t; readout.setAttribute('aria-live', announce ? 'polite' : 'off'); show(t); onHover(t);
+  };
+  const pointer = ev => { const t = timeAt(ev); if (t >= from && t <= to) move(t, false); };
+  svg.addEventListener('pointerdown', pointer); // touch has no move before the press
+  svg.addEventListener('pointermove', pointer);
+  svg.addEventListener('pointerleave', () => move(null, false));
+  svg.addEventListener('blur', () => move(null, false));
+  svg.addEventListener('keydown', ev => {
+    const stepS = (to - from) / 60 * (ev.shiftKey ? 5 : 1);
+    if (ev.key === 'ArrowLeft') move(clamp((cur ?? to) - stepS, from, to), true);
+    else if (ev.key === 'ArrowRight') move(clamp((cur ?? to) + stepS, from, to), true);
+    else if (ev.key === 'Escape') move(null, false);
+    else return;
+    ev.preventDefault();
+  });
+  const ro = new ResizeObserver(() => { if (Math.max(200, host.clientWidth) !== w) render(); });
+  ro.observe(host);
+  render();
+  return {
+    update(nextRows, f, t, o = {}) { rows = nextRows; from = f; to = t; if (o.gapS != null) gapS = o.gapS; if (o.averaged != null) averaged = !!o.averaged; render(); },
+    setHover(t) { cur = Number.isFinite(t) ? t : null; show(cur); },
+    destroy() { ro.disconnect(); host.replaceChildren(); },
+  };
 }
 
 // ---------------- drawPurgeBars: air exchange run minutes per hour (C9 7) ----------------
@@ -467,6 +604,6 @@ function createLadder(el) {
 
 global.FarmCharts = {
   lowerBound, nearest, aggregate, niceTicks, linePath, areaPath, barPath,
-  createTrendCharts, drawPurgeBars, drawCalibCharts, createLadder, TREND_DEFS,
+  createTrendCharts, timeTicks, machineSpans, drawMachineTimeline, TIMELINE_ROWS, drawPurgeBars, drawCalibCharts, createLadder, TREND_DEFS,
 };
 })(typeof window !== 'undefined' ? window : globalThis);

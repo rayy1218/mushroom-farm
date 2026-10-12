@@ -13,7 +13,8 @@
 .room-tabs a[hidden] { display: none; }
 
 /* Settings tab */
-#roomTab .room-versions, #roomTab .room-details, #roomTab .room-danger { grid-column: span 6; }
+#roomTab .room-details, #roomTab .room-danger { grid-column: span 6; }
+#roomTab .room-versions { grid-column: 1 / -1; }
 .room-danger { border-color: var(--critical, var(--border-strong)); display: grid; gap: 10px; align-content: start; }
 .room-danger p { margin: 0; }
 
@@ -25,7 +26,7 @@
 .save-count { font-weight: 600; }
 
 @media (max-width: 899px) {
-  #roomTab .room-versions, #roomTab .room-details, #roomTab .room-danger { grid-column: 1 / -1; }
+  #roomTab .room-details, #roomTab .room-danger { grid-column: 1 / -1; }
   .save-bar { bottom: calc(var(--tab-h, 0px) + 8px + env(safe-area-inset-bottom)); }
   .save-bar .btn-row { width: 100%; }
   .save-bar .btn-row .btn { flex: 1; min-height: 44px; }
@@ -33,3 +34,29 @@
 
 #spMsg { scroll-margin-top: calc(var(--topbar-h, 0px) + 8px); }
 .save-note { flex: 1 1 100%; margin: 0; }
+
+/* Overview: the room drawing, the machine row under it, the machine timeline (C13 3) */
+figure.room-drawing { grid-column: 1 / -1; margin: 0; padding: 8px; }
+.room-drawing-host svg { display: block; width: 100%; height: auto; }
+.room-live ul.machines { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 6px; }
+.room-live li.machine { padding: 5px 8px 5px 10px; }
+.machine-timeline { grid-column: 1 / -1; }
+.machine-timeline h3 { margin: 0 0 6px; font-size: 16px; font-weight: 600; }
+.machine-timeline .chart.tl { overflow: visible; }
+.chart .tl-name { font: 600 11px var(--font-cond); fill: var(--ink-2); }
+.chart .tl-track { fill: var(--band); }
+.tl-read { margin: 4px 0 0; min-height: 1.4em; }
+@media (max-width: 720px) {
+  figure.room-drawing { display: none; }
+  .room-live ul.machines { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+  .room-live li.machine { padding: 8px 10px 8px 12px; }
+}
+
+/* C14 4: targets follow the crop */
+.crop-wants { margin: 8px 0; color: var(--ink-2); font-size: var(--fs-sm); }
+.target-warns:empty { display: none; }
+.target-warn { margin: 4px 0 0; color: var(--warning-text); font-weight: 600; }
+.changes-check { margin: 12px 0; padding: 8px 12px; border-left: 4px solid var(--warning); background: color-mix(in srgb, var(--warning) 12%, transparent); }
+.changes-check-title { margin: 0 0 4px; font-weight: 700; }
+.changes-check ul { margin: 0; padding-left: 18px; }
+.ov-ramp { margin: 0; color: var(--ink-2); font-size: var(--fs-sm); }

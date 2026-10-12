@@ -167,6 +167,33 @@ function manualText(list) {
   return names.length ? `Manual: ${names.join(', ')}` : '';
 }
 
+// C14 2.2: what a crop wants in a stage, from the controller's crop profiles. null for an unknown crop or stage.
+function cropTargets(crop, stage) {
+  const CC = global.ClimateController, c = CC && CC.CROPS[crop];
+  if (!c || !Array.isArray(c[stage])) return null;
+  const [T, RH, CO2] = c[stage];
+  return { T, RH, CO2, name: c.name, stageName: CC.STAGES[stage] ?? stage, limits: c.limits || null };
+}
+// C14 2.2: plain warnings when targets do not suit the crop and stage (lead decision 110). [] when they do, or when unknown.
+function targetWarnings(targets) { const w = targetWarningsByKind(targets); return [...w.T, ...w.RH]; }
+// C14 2.2 (lead decision 113): the same warnings split by the target they belong to, { T: [], RH: [] }.
+function targetWarningsByKind({ crop, stage, spT, spRH }) {
+  const p = cropTargets(crop, stage);
+  const out = { T: [], RH: [] };
+  if (!p) return out;
+  const who = `${p.name} ${p.stageName.toLowerCase()}`;
+  const n1 = v => (Math.round(v * 10) / 10).toString();
+  if (Number.isFinite(spT)) {
+    const L = p.limits;
+    if (L && (spT < L.tMin || spT > L.tMax)) out.T.push(`${n1(spT)} °C is outside what ${p.name} can take (${L.tMin}–${L.tMax} °C).`);
+    else if (Math.abs(spT - p.T) >= 3) out.T.push(`${who} usually runs at ${n1(p.T)} °C; ${n1(spT)} °C is ${n1(Math.abs(spT - p.T))} °C ${spT < p.T ? 'colder' : 'warmer'}.`);
+  }
+  if (Number.isFinite(spRH) && Math.abs(spRH - p.RH) >= 6) {
+    out.RH.push(`${who} usually runs at ${Math.round(p.RH)} % humidity; ${Math.round(spRH)} % is ${Math.round(Math.abs(spRH - p.RH))} % ${spRH < p.RH ? 'drier' : 'wetter'}.`);
+  }
+  return out;
+}
+
 global.FarmUi = { set, cell, svgEl, paintChip, clamp, fmtNum, fmtDur, fmtMinSec, watts, pct, nf, ICON, LVL_RANK, simClock, farmClock, errorText,
-  say, plainError, markFields, pageHead, plainChip, roomStatus, manualText, MACHINE_NAME };
+  say, plainError, markFields, pageHead, plainChip, roomStatus, manualText, MACHINE_NAME, cropTargets, targetWarnings, targetWarningsByKind };
 })(typeof window !== 'undefined' ? window : globalThis);

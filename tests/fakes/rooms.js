@@ -53,7 +53,7 @@ function createFakeRoomManager({ db, now = () => Math.floor(Date.now() / 1000) }
     const alarms = db.listAlarms(room.id, { recent: 0 }).length;
     const m = settings.manual || {};
     const manual = ['ac', 'hu', 'air', 'lights', 'circ'].filter(k => m[k] && m[k].auto === false); // C11 2.1
-    return { reading: null, stage: settings.stage, crop: settings.crop, targets: null, status: null, alarms, running: true, error: null, flush: null, blocks: null, air: null, manual };
+    return { reading: null, stage: settings.stage, crop: settings.crop, targets: null, status: null, alarms, running: true, error: null, flush: null, blocks: null, air: null, manual, ramp: null };
   }
 
   function rawGet(id) {

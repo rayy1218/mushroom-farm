@@ -160,3 +160,26 @@ test('C12 roomStatus and manualText match the Rooms home rules (C11 5.1)', () =>
   assert.equal(UI.manualText([]), '');
   assert.equal(UI.manualText(undefined), '');
 });
+
+test('C14 cropTargets and targetWarnings', () => {
+  require('../controller.js');
+  const p = UI.cropTargets('lionsmane', 'pinning');
+  assert.equal(p.T, 17); assert.equal(p.RH, 92); assert.equal(p.CO2, 1000); assert.equal(p.name, "Lion's mane");
+  assert.equal(UI.cropTargets('nope', 'pinning'), null);
+  assert.equal(UI.cropTargets('oyster', 'nope'), null);
+  assert.deepEqual(UI.targetWarnings({ crop: 'oyster', stage: 'fruiting', spT: 25, spRH: 88 }), []);
+  assert.deepEqual(UI.targetWarnings({ crop: 'oyster', stage: 'fruiting', spT: 26.5, spRH: 92 }), []);
+  assert.deepEqual(UI.targetWarnings({ crop: 'oyster', stage: 'fruiting', spT: 16, spRH: 88 }), ['16 °C is outside what Grey oyster can take (20–30 °C).']);
+  assert.deepEqual(UI.targetWarnings({ crop: 'oyster', stage: 'fruiting', spT: 22, spRH: 80 }), [
+    'Grey oyster fruiting usually runs at 25 °C; 22 °C is 3 °C colder.',
+    'Grey oyster fruiting usually runs at 88 % humidity; 80 % is 8 % drier.']);
+  assert.deepEqual(UI.targetWarnings({ crop: 'nope', stage: 'fruiting', spT: 5 }), []);
+});
+
+test('C14 targetWarningsByKind splits the warnings by target', () => {
+  require('../controller.js');
+  assert.deepEqual(UI.targetWarningsByKind({ crop: 'oyster', stage: 'fruiting', spT: 22, spRH: 80 }), {
+    T: ['Grey oyster fruiting usually runs at 25 °C; 22 °C is 3 °C colder.'],
+    RH: ['Grey oyster fruiting usually runs at 88 % humidity; 80 % is 8 % drier.'] });
+  assert.deepEqual(UI.targetWarningsByKind({ crop: 'nope', stage: 'fruiting', spT: 5 }), { T: [], RH: [] });
+});

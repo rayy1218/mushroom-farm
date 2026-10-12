@@ -183,6 +183,17 @@ function cropLine(live) {
   return s;
 }
 
+// "Moving to Lion's mane Pinning targets, ready about 14:05" under the crop line; '' without a running ramp (C14 4).
+function rampLine(live, nowS) {
+  const live_ = global.FarmRoomTabs.get('overview').helpers;
+  const ramp = live && live.ramp;
+  if (!live_.rampShows(ramp, live && live.targets, nowS)) return '';
+  const CC = global.ClimateController;
+  const crop = CC && CC.CROPS && CC.CROPS[live.crop] ? CC.CROPS[live.crop].name : live.crop;
+  const stage = CC && CC.STAGES && CC.STAGES[live.stage] ? CC.STAGES[live.stage] : live.stage;
+  return `Moving to ${[crop, stage != null ? String(stage).toLowerCase() : null].filter(x => x != null).join(' ')} targets, ${live_.readyText(ramp.endsAt, nowS)}`;
+}
+
 // The target band of a room's sparkline (C12 4 Sparkline).
 function bandFor(kind, live) {
   const t = live && live.targets;
@@ -270,6 +281,7 @@ function buildRoomCard(room) {
   const manual = el('span', 'chip'); manual.dataset.kind = 'manual';
   badges.append(sim, manual);
   const crop = el('p', 'ov-crop');
+  const ramp = el('p', 'ov-ramp'); ramp.hidden = true;
   const vals = el('div', 'ov-vals');
   const cells = {};
   for (const [k, label] of [['T', 'Temperature'], ['RH', 'Humidity'], ['CO2', 'CO₂']]) {
@@ -290,8 +302,8 @@ function buildRoomCard(room) {
   const harvest = el('p', 'ov-harvest');
   const record = el('a', 'btn btn-primary btn-link', 'Record harvest');
   foot.append(harvest, record);
-  card.append(head, badges, crop, vals, strip, foot);
-  return { card, link, status, sim, manual, crop, cells, strip, harvest, record };
+  card.append(head, badges, crop, ramp, vals, strip, foot);
+  return { card, link, status, sim, manual, crop, ramp, cells, strip, harvest, record };
 }
 
 function fmt(x, d) { return finite(x) ? x.toFixed(d) : '–'; }
@@ -308,6 +320,7 @@ function paintRoomCard(r, room, data) {
   r.manual.hidden = !mt;
   r.manual.textContent = mt;
   r.crop.textContent = cropLine(live);
+  { const rl = rampLine(live, Math.floor(Date.now() / 1000)); r.ramp.hidden = !rl; r.ramp.textContent = rl; }
   const text = { T: `${fmt(rd && rd.T, 1)} °C`, RH: `${fmt(rd && rd.RH, 0)} %`, CO2: `${fmt(rd && rd.CO2, 0)} ppm` };
   for (const k of ['T', 'RH', 'CO2']) {
     const c = r.cells[k];
@@ -606,6 +619,6 @@ function unmount() {
   stopActive();
 }
 
-const helpers = { dayStart, dateText, eventTime, kwhToday, sparkPath, sparkLabel, weekBars, checklist, mergeEvents, kpis, machineStrip, cropLine, bandFor };
+const helpers = { dayStart, dateText, eventTime, kwhToday, sparkPath, sparkLabel, weekBars, checklist, mergeEvents, kpis, machineStrip, cropLine, rampLine, bandFor };
 global.FarmShell.register('overview', { mount, unmount, helpers });
 })(typeof window !== 'undefined' ? window : globalThis);

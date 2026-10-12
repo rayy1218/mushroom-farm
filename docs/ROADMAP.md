@@ -61,8 +61,8 @@ Review: `docs/reviews/2026-10-12-farmer-and-design-review.md`. Contract: `docs/c
 |---|---|
 | UX wave 1, quick wins: system fonts, one form style (`.field`, units, errors under the field), primary/danger/disabled buttons, `.alert` messages, Simulated and Manual badges, amber "Check room", Record harvest on room cards, machine tiles, "Should be" targets with the ramp, leave-page warning, scroll reset, Batches and phone layout fixes, farmer wording on Batches, Simulate, Your machines, Calibrate and the Test bench | ✅ |
 | UX wave 2, layout (C12 `docs/contracts/layout.md`): side bar and phone tab bar, farm status in the top bar, page heads, Overview home (getting-started list, rooms OK, alarms, energy today, harvest with 7-day bars, room cards with 24 h sparklines, recent events), Harvest page, Settings page (Farmer/Installer stored per browser, no PIN; theme), room page split into Overview and Settings with a sticky save bar, farmer status words | ✅ |
-| UX wave 3, visuals: room drawing on the room page, machine timeline, capacity bullet chart, cycle Gantt, flush yield chart, batch board | 📋 |
-| UX wave 4, setup flow: one Add-room form (mushroom, stage, blocks), crop-matched targets with range warnings | 📋 |
+| UX wave 3, visuals (C13 `docs/contracts/visuals.md`): the live room drawing on each room's Overview tab (shared with the Test bench), machine on/off timeline under the trends with dated 7-day ticks, capacity bullet ("Does your plan fit this room?"), day-by-day grow cycle chart, aircond sizes and heat split, calibration fit quality, flush chart with BE %, "What is growing where" room timeline, 24 h rule difference bars, rule editor and installer settings as labelled fields | ✅ (branch `ux/wave3`) |
+| UX wave 4, setup flow (C14 `docs/contracts/setup.md`): add a room in one step (name, size, mushroom, stage, blocks; starts at the crop's targets), "wants" line and plain target warnings on the Settings tab and in the save confirm, "moving to …, ready about HH:MM" on the room and Overview, a new batch put straight into a room with typical block values | ✅ (branch `ux/wave4`) |
 
 ## Suggested order after wave 2
 

@@ -265,7 +265,7 @@ test('C4 after dispose nothing runs', () => setup(async ({ link, api }) => {
 }));
 
 test('RL1 the Node export', () => {
-  assert.deepEqual(Object.keys(require('../web/simulator.js')).sort(), ['airText', 'createRoomLink', 'mimicLayout']);
+  assert.deepEqual(Object.keys(require('../web/simulator.js')).sort(), ['airText', 'compareBars', 'createRoomLink', 'mimicLayout']);
   assert.equal(globalThis.FarmBench, undefined);
   assert.equal(mimicLayout({ inletAt: 'high', exhaustAt: 'low' }).inlet.tag, 'SF-203');
   assert.equal(typeof airText, 'function');

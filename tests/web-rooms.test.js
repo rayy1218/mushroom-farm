@@ -22,7 +22,7 @@ test('RS1 module', () => {
   assert.equal(typeof registered.rooms.unmount, 'function');
   assert.equal(typeof registered.rooms.update, 'function');
   for (const k of ['statusChip', 'cropText', 'cardTexts', 'machineLines', 'infoText', 'stateText', 'alarmsChip', 'upsertRoom', 'takeLive',
-    'refreshRoom', 'refreshDelay', 'manualText', 'harvestToday', 'newRoomName', 'readStored', 'importPlan', 'importRooms']) {
+    'refreshRoom', 'setupPlan', 'setupMessage', 'parseBlocks', 'refreshDelay', 'manualText', 'harvestToday', 'newRoomName', 'readStored', 'importPlan', 'importRooms']) {
     assert.equal(typeof H[k], 'function', k);
   }
   assert.equal(typeof document, 'undefined');
@@ -179,7 +179,7 @@ function recorder(over = {}) {
   const calls = [];
   const api = {};
   let k = 0;
-  for (const name of ['createRoom', 'saveMix', 'saveCalibration', 'applyCalibration']) {
+  for (const name of ['createRoom', 'saveMix', 'restartRoom', 'saveCalibration', 'applyCalibration']) {
     api[name] = (...a) => {
       calls.push([name, ...a]);
       if (over[name]) return over[name](...a);
@@ -198,8 +198,8 @@ test('RS9 importRooms', async () => {
   const res = await H.importRooms(entries, a.api, { nowS: NOW, onRoom: (k, n) => seen.push([k, n]) });
   assert.deepEqual(res, { created: 2, failed: null });
   assert.deepEqual(a.calls.map(c => c[0] + (c[1] === undefined ? '' : ':' + (typeof c[1] === 'number' ? c[1] : ''))),
-    ['createRoom:', 'saveMix:11', 'saveCalibration:11', 'applyCalibration:11', 'createRoom:', 'saveMix:12']);
-  assert.equal(a.calls[3][2], 90);
+    ['createRoom:', 'saveMix:11', 'restartRoom:11', 'saveCalibration:11', 'applyCalibration:11', 'createRoom:', 'saveMix:12', 'restartRoom:12']);
+  assert.equal(a.calls[4][2], 90);
   assert.deepEqual(seen, [[1, 2], [2, 2]]);
 
   const err = new Error('nope');
@@ -215,6 +215,15 @@ test('RS9 importRooms', async () => {
   assert.equal(r3.failed.error, err);
   assert.equal(c.calls.at(-1)[0], 'saveMix');
 
+  const e = recorder();
+  await H.importRooms([stored({ mix: [] }), stored({ mix: [{ crop: 'oyster', blocks: 0 }] })], e.api, { nowS: NOW, onRoom() {} });
+  assert.ok(!e.calls.some(c => c[0] === 'restartRoom'), 'no restart without blocks');
+
+  const f = recorder({ restartRoom: () => Promise.reject(err) });
+  const r5 = await H.importRooms(entries, f.api, { nowS: NOW, onRoom() {} });
+  assert.deepEqual(r5, { created: 1, failed: { name: 'One', error: err } });
+  assert.equal(f.calls.at(-1)[0], 'restartRoom');
+
   const d = recorder({ createRoom: () => { throw err; } });
   const r4 = await H.importRooms(entries, d.api, { nowS: NOW, onRoom() {} });
   assert.deepEqual(r4, { created: 0, failed: { name: 'One', error: err } });
@@ -228,6 +237,7 @@ test('RS10 import on the wire', async t => {
   FarmApi.base = fake.url;
   t.after(() => { FarmApi.base = saved; });
   fake.reply('POST', '/api/rooms', 201, { id: 7, name: 'North' });
+  fake.reply('POST', '/api/rooms/7/restart', 200, { id: 7 });
   fake.reply('POST', '/api/rooms/7/calibrations', 201, { id: 3 });
   const entry = stored({ name: 'North', calib: CALIB });
   const plan = H.importPlan(entry, NOW);
@@ -237,6 +247,7 @@ test('RS10 import on the wire', async t => {
   assert.deepEqual(reqs, [
     ['POST', '/api/rooms', plan.room],
     ['PUT', '/api/rooms/7/mix', plan.mix],
+    ['POST', '/api/rooms/7/restart', null],
     ['POST', '/api/rooms/7/calibrations', plan.calibration],
     ['POST', '/api/rooms/7/calibrations/3/apply', null],
   ]);
@@ -274,4 +285,187 @@ test('RS11 import finished after unmount still writes the marker', async t => {
   await clicked;
   assert.equal(stored.length, 1);
   assert.equal(stored[0][0], 'mushroom-farm.rooms.v1.imported');
+});
+
+test('RS12 setupPlan: the calls in order, the crop targets, no mix call for an empty room', () => {
+  const form = { name: ' Room 2 ', volume: '60', crop: 'lionsmane', stage: 'pinning', blocks: '500' };
+  const tg = FarmUi.cropTargets('lionsmane', 'pinning');
+  assert.ok(tg);
+  assert.deepEqual(H.setupPlan(form), [
+    { call: 'createRoom', body: { name: 'Room 2', volume: 60 } },
+    { call: 'saveSettings', body: { crop: 'lionsmane', stage: 'pinning', spT: tg.T, spRH: tg.RH, co2Lim: tg.CO2 }, note: 'Set up' },
+    { call: 'saveMix', body: [{ crop: 'lionsmane', blocks: 500 }] },
+    { call: 'restartRoom', body: null },
+  ]);
+  assert.deepEqual(H.setupPlan({ ...form, blocks: '0' }).map(s => s.call), ['createRoom', 'saveSettings']);
+  assert.deepEqual(H.setupPlan({ ...form, blocks: '' }).map(s => s.call), ['createRoom', 'saveSettings']);
+});
+
+test('RS12b parseBlocks', () => {
+  for (const [v, want] of [['500', 500], ['0', 0], ['', 0], [' 7 ', 7], ['200000', 200000], ['200001', null], ['-1', null], ['2.5', null], ['abc', null]]) {
+    assert.equal(H.parseBlocks(v), want, JSON.stringify(v));
+  }
+});
+
+test('RS13 setupMessage: success and partial failures', () => {
+  const base = { id: 9, name: 'Room 2', crop: 'oyster', stage: 'fruiting', blocks: 500, failed: null };
+  assert.deepEqual(H.setupMessage(base), { lvl: 'good', text: 'Room "Room 2" added: Grey oyster, Fruiting, 500 blocks.',
+    link: { href: '#/rooms/9/overview', text: 'Open Room 2' } });
+  assert.match(H.setupMessage({ ...base, blocks: 1 }).text, /, 1 block\.$/);
+  assert.match(H.setupMessage({ ...base, blocks: 0 }).text, /, 0 blocks\.$/);
+  assert.match(H.setupMessage({ ...base, stage: 'rest' }).text, /, Rest, /);
+  assert.deepEqual(H.setupMessage({ ...base, failed: { step: 'settings', error: 'The farm server did not answer' } }), { lvl: 'error',
+    text: 'Room "Room 2" was added, but the mushroom and stage were not saved: The farm server did not answer. Set it on the room\'s Settings tab.',
+    link: { href: '#/rooms/9/settings', text: 'Open Settings' } });
+  assert.deepEqual(H.setupMessage({ ...base, failed: { step: 'mix', error: 'x' } }), { lvl: 'error',
+    text: 'Room "Room 2" was added, but its blocks were not saved: x. Press "Try again for Room 2".',
+    link: { href: '#/rooms/9/overview', text: 'Open Room 2' } });
+  assert.deepEqual(H.setupMessage({ ...base, failed: { step: 'restart', error: 'x' } }), { lvl: 'error',
+    text: 'Room "Room 2" was added and its blocks were saved, but the room did not restart: x. Press "Try again for Room 2"; the blocks also count from the room\'s next restart.',
+    link: { href: '#/rooms/9/overview', text: 'Open Room 2' } });
+});
+
+// A mounted Rooms home on a fake DOM and a stubbed FarmApi; returns the DOM cache, the api call log and switches.
+function mountForm(t) {
+  const cache = {};
+  const mk = () => ({ dataset: {}, classList: { add() {} }, hidden: false, value: '', textContent: '', disabled: false, readOnly: false, listeners: {}, writes: 0,
+    addEventListener(n, f) { this.listeners[n] = f; }, setAttribute() {}, removeAttribute() {}, replaceChildren() {}, append() {}, prepend() {}, closest: () => null,
+    focus() { this.focused = true; }, querySelector: sel => (cache[sel] ||= mk()), querySelectorAll: () => [] });
+  const el = mk();
+  const saved = { document: globalThis.document, localStorage: globalThis.localStorage, api: { ...FarmApi } };
+  globalThis.document = { createElement: mk };
+  globalThis.localStorage = { getItem: () => null, setItem() {} };
+  t.after(() => {
+    registered.rooms.unmount();
+    for (const k of ['document', 'localStorage']) { if (saved[k] === undefined) delete globalThis[k]; else globalThis[k] = saved[k]; }
+    Object.assign(FarmApi, saved.api);
+  });
+  const calls = [];
+  const sw = { failCreate: false, failSettings: false, failRestart: false, gate: null };
+  const room = (id, name) => ({ id, name, volume: 60, adapter: 'sim', archived_at: null, live: null });
+  FarmApi.stream = () => () => {};
+  FarmApi.listRooms = async () => [];
+  FarmApi.getRoomHarvest = async () => ({ batches: [] });
+  FarmApi.createRoom = async body => {
+    calls.push(['createRoom', body]);
+    if (sw.failCreate) { const e = new Error('bad'); e.name = 'ApiError'; e.status = 400; e.details = ['name must be 1 to 60 characters']; throw e; }
+    return room(4, body.name);
+  };
+  FarmApi.saveSettings = async (id, body, note) => {
+    calls.push(['saveSettings', id, body, note]);
+    if (sw.gate) await sw.gate;
+    if (sw.failSettings) throw new Error('boom');
+    return {};
+  };
+  FarmApi.saveMix = async (id, rows) => { calls.push(['saveMix', id, rows]); return rows; };
+  FarmApi.restartRoom = async id => {
+    calls.push(['restartRoom', id]);
+    if (sw.failRestart) throw new Error('nope');
+    return room(id, 'Room 2');
+  };
+  registered.rooms.mount(el, {});
+  for (const id of ['rhBlocks', 'rhNewRoom', 'rhMsg']) el.querySelector('#' + id);
+  const fill = (name, blocks) => {
+    cache['#rhName'].value = name; cache['#rhVolume'].value = '60'; cache['#rhCrop'].value = 'lionsmane'; cache['#rhBlocks'].value = blocks;
+    cache['#rhName'].listeners.input();
+  };
+  return { cache, calls, sw, fill, click: () => cache['#rhCreate'].listeners.click() };
+}
+
+test('RS14 Add room form: partial failures lock the form to the new room, retries make no second room', async t => {
+  const m = mountForm(t);
+  await new Promise(r => setImmediate(r));
+  m.fill('Room 2', '500');
+  assert.equal(m.cache['#rhCreate'].disabled, false);
+
+  m.sw.failSettings = true;
+  await m.click();
+  assert.deepEqual(m.calls.map(c => c[0]), ['createRoom', 'saveSettings']);
+  assert.equal(m.cache['#rhMsg'].dataset.lvl, 'error');
+  assert.match(m.cache['#rhMsg'].textContent, /^Room "Room 2" was added, but the mushroom and stage were not saved: .*Settings tab\.$/);
+  assert.equal(m.cache['#rhCreate'].textContent, 'Try again for Room 2');
+  assert.equal(m.cache['#rhName'].readOnly, true);
+  assert.equal(m.cache['#rhVolume'].readOnly, true);
+  assert.equal(m.cache['#rhNewRoom'].hidden, false);
+
+  m.sw.failSettings = false; m.sw.failRestart = true;
+  m.calls.length = 0;
+  await m.click();
+  assert.deepEqual(m.calls.map(c => c[0]), ['saveSettings', 'saveMix', 'restartRoom']);
+  assert.match(m.cache['#rhMsg'].textContent, /did not restart: .*Press "Try again for Room 2"/);
+
+  m.sw.failRestart = false;
+  m.calls.length = 0;
+  await m.click();
+  assert.deepEqual(m.calls.map(c => c[0]), ['saveSettings', 'saveMix', 'restartRoom']);
+  assert.equal(m.calls[0][1], 4);
+  assert.equal(m.cache['#rhMsg'].dataset.lvl, 'good');
+  assert.equal(m.cache['#rhMsg'].textContent, 'Room "Room 2" added: Lion\'s mane, Fruiting, 500 blocks.');
+  assert.equal(m.cache['#rhName'].value, '');
+  assert.equal(m.cache['#rhName'].readOnly, false);
+  assert.equal(m.cache['#rhCrop'].value, 'oyster');
+  assert.equal(m.cache['#rhCreate'].textContent, 'Add room');
+  assert.equal(m.cache['#rhNew'].hidden, true);
+
+  m.fill('Room 3', '0');
+  m.calls.length = 0;
+  await m.click();
+  assert.deepEqual(m.calls.map(c => c[0]), ['createRoom', 'saveSettings']);
+});
+
+test('RS15 Start a new room unbinds the form', async t => {
+  const m = mountForm(t);
+  m.fill('Room 2', '0');
+  m.sw.failSettings = true;
+  await m.click();
+  assert.equal(m.cache['#rhName'].readOnly, true);
+  m.cache['#rhNewRoom'].listeners.click();
+  assert.equal(m.cache['#rhName'].readOnly, false);
+  assert.equal(m.cache['#rhCreate'].textContent, 'Add room');
+  assert.equal(m.cache['#rhNewRoom'].hidden, true);
+  m.fill('Room 3', '0');
+  m.calls.length = 0;
+  await m.click();
+  assert.equal(m.calls[0][0], 'createRoom');
+});
+
+test('RS16 createRoom failure marks the fields and binds nothing; bad blocks make no calls', async t => {
+  const m = mountForm(t);
+  m.fill('', '500');
+  m.cache['#rhName'].value = 'x';
+  m.sw.failCreate = true;
+  await m.click();
+  assert.deepEqual(m.calls.map(c => c[0]), ['createRoom']);
+  assert.equal(m.cache['#rhMsg'].dataset.lvl, 'error');
+  assert.equal(m.cache['#rhName'].readOnly, false);
+  assert.equal(m.cache['#rhCreate'].textContent, 'Add room');
+  m.sw.failCreate = false;
+  m.calls.length = 0;
+  await m.click();
+  assert.equal(m.calls[0][0], 'createRoom', 'a retry creates the room: nothing was bound');
+
+  const n = mountForm(t);
+  for (const bad of ['-1', '2.5', '200001', 'abc']) {
+    n.fill('Room 2', bad);
+    n.cache['#rhBlocks'].value = bad;
+    await n.click();
+    assert.equal(n.calls.length, 0, bad);
+    assert.equal(n.cache['#rhMsg'].dataset.lvl, 'error', bad);
+  }
+});
+
+test('RS17 unmounted mid-chain: the chain completes, the page is not written', async t => {
+  const m = mountForm(t);
+  m.fill('Room 2', '500');
+  let release;
+  m.sw.gate = new Promise(r => { release = r; });
+  const clicked = m.click();
+  await new Promise(r => setImmediate(r));
+  const before = m.cache['#rhMsg'].textContent;
+  registered.rooms.unmount();
+  release();
+  await clicked;
+  assert.deepEqual(m.calls.map(c => c[0]), ['createRoom', 'saveSettings', 'saveMix', 'restartRoom']);
+  assert.equal(m.cache['#rhMsg'].textContent, before);
+  assert.equal(m.cache['#rhCreate'].textContent, 'Adding…');
 });
