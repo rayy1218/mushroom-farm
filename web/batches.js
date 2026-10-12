@@ -39,6 +39,20 @@ function batchBody({ edit, fields }) {
   return body;
 }
 
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+const daysText = n => plural(n, 'day', 'days');
+const titleOf = b => (b.strain ? `${cropName(b.crop)} · ${b.strain}` : cropName(b.crop));
+function stateWords(b) {
+  if (b.state === 'received') return 'New, not in a room yet';
+  if (b.state === 'placed') return `Growing in ${b.room_name}`;
+  return 'Finished';
+}
+// The batch page's sub line: the state, then the wait between arriving and being placed.
+function subText(b) {
+  const words = stateWords(b);
+  return b.placed_at == null ? words : `${words} · Arrived to placed: ${daysText(ageDays(b.received_at, b.placed_at))}`;
+}
+const filterByState = (list, state) => list.filter(b => b.state === state);
 const nowSec = () => Math.floor(Date.now() / 1000);
 const cropKeys = () => Object.keys(global.ClimateController.CROPS).filter(k => global.ClimateController.CROPS[k].range);
 const cropName = k => (global.ClimateController.CROPS[k] ? global.ClimateController.CROPS[k].name : k);
@@ -71,19 +85,21 @@ function row(cells) {
 
 const LIST_HTML = `
 <div class="bt-page">
-  <div class="bt-tabs" role="group" aria-label="Batches">
+  <div class="bt-head" id="btHead"><button class="btn btn-primary" id="btNewBtn" type="button">New batch</button></div>
+  <div class="seg bt-tabs" role="group" aria-label="Batches">
     <button type="button" id="btTabReceived" aria-pressed="false">New</button>
     <button type="button" id="btTabPlaced" aria-pressed="true">Growing</button>
     <button type="button" id="btTabCleared" aria-pressed="false">Finished</button>
   </div>
-  <a class="btn btn-link" id="btStickers" href="#/harvest/stickers">Print QR stickers</a>
+  <p class="tag" id="btEmpty" hidden>No batches here.</p>
   <table class="bt-list" id="btList">
     <thead><tr><th>Mushroom</th><th>Strain</th><th>Room</th><th>Age (days)</th><th>kg</th><th>g per block</th><th>BE %</th></tr></thead>
     <tbody></tbody>
   </table>
   <p class="alert" id="btMsg" role="status" hidden></p>
+  <details class="card bt-new" id="btNew">
+  <summary><h3>New batch</h3></summary>
   <form class="bt-form" id="btForm">
-    <h3>New batch</h3>
     <div class="form-grid">
       <div class="field" data-field="crop">
         <label for="btCrop">Mushroom</label>
@@ -124,12 +140,17 @@ const LIST_HTML = `
     </div>
     <div class="btn-row"><button class="btn btn-primary" id="btSave" type="submit">Save</button></div>
   </form>
+  </details>
 </div>`;
 
 const DETAIL_HTML = `
 <div class="bd-page">
-  <h2 id="bdHead"></h2>
-  <p class="tag" id="bdWait" hidden></p>
+  <div class="bd-head" id="bdHead">
+    <select id="bdRoom" aria-label="Room to place it in" hidden></select>
+    <button class="btn" id="bdPlace" type="button" hidden>Place in room</button>
+    <button class="btn btn-danger" id="bdClear" type="button" hidden>Finish batch</button>
+    <button class="btn btn-danger" id="bdDelete" type="button" hidden>Delete</button>
+  </div>
   <form class="bd-form" id="bdForm">
     <h3>Blocks</h3>
     <div class="form-grid">
@@ -192,12 +213,6 @@ const DETAIL_HTML = `
     </div>
     <div class="btn-row"><button class="btn btn-primary" id="bdSave" type="submit">Save changes</button></div>
   </form>
-  <div class="bd-actions btn-row">
-    <select id="bdRoom" hidden></select>
-    <button class="btn" id="bdPlace" type="button" hidden>Place in room</button>
-    <button class="btn btn-danger" id="bdClear" type="button" hidden>Finish batch</button>
-    <button class="btn btn-danger" id="bdDelete" type="button" hidden>Delete</button>
-  </div>
   <h3>Flushes</h3>
   <table class="bd-flushes" id="bdFlushes">
     <thead><tr><th>Flush</th><th>First</th><th>Last</th><th>kg</th><th>g per block</th><th>BE %</th></tr></thead>
@@ -227,30 +242,49 @@ function mountList(el, live) {
   const say = (lvl, text) => global.FarmUi.say($('#btMsg'), lvl, text);
   const tabs = { received: $('#btTabReceived'), placed: $('#btTabPlaced'), cleared: $('#btTabCleared') };
   let state = 'placed';
+  let all = [];
+  let loaded = false;
+  const newCard = $('#btNew');
+  $('#btHead').replaceChildren(global.FarmUi.pageHead({
+    title: 'Batches', sub: 'The blocks you bought, from arrival to the last flush.', actions: [$('#btNewBtn')] }));
+  $('#btNewBtn').addEventListener('click', () => {
+    newCard.open = true;
+    if (newCard.scrollIntoView) newCard.scrollIntoView({ block: 'start' });
+    $('#btCrop').focus();
+  });
 
-  async function load() {
-    const mine = ++gen;
-    let list;
-    try { list = await global.FarmApi.listBatches({ state }); }
-    catch (err) { if (live() && mine === gen) say('error', errText(err)); return; }
-    if (!live() || mine !== gen) return;
-    say('info', '');
+  function paint() {
     const now = nowSec();
+    const list = filterByState(all, state);
     const body = $('#btList').querySelector('tbody');
-    const rows = list.map(b => {
+    $('#btEmpty').hidden = !loaded || list.length !== 0;
+    $('#btList').hidden = !loaded || list.length === 0;
+    body.replaceChildren(...list.map(b => {
       const from = b.state === 'received' ? b.received_at : b.placed_at;
       const to = b.state === 'cleared' ? b.cleared_at : now;
       const tr = row([cropName(b.crop), b.strain || '–', b.room_name || '–', ageDays(from, to), b.totals.kg, b.totals.g_per_block, b.totals.be_pct]);
       tr.dataset.id = String(b.id);
       return tr;
-    });
-    body.replaceChildren(...rows);
+    }));
+  }
+
+  async function load() {
+    const mine = ++gen;
+    let list;
+    try { list = await global.FarmApi.listBatches({}); }
+    catch (err) { if (live() && mine === gen) say('error', errText(err)); return; }
+    if (!live() || mine !== gen) return;
+    say('info', '');
+    all = list;
+    loaded = true;
+    newCard.open = list.length === 0;
+    paint();
   }
 
   function pick(next) {
     state = next;
     for (const k of Object.keys(tabs)) tabs[k].setAttribute('aria-pressed', String(k === next));
-    return load();
+    if (loaded) paint(); else load();
   }
   for (const k of Object.keys(tabs)) tabs[k].addEventListener('click', () => pick(k));
 
@@ -300,6 +334,8 @@ async function mountDetail(el, id, live) {
   $('#bdNotes').maxLength = HR.LIM.notes;
   let batch = null;
 
+  const headSlot = $('#bdHead');
+  const headActions = ['#bdRoom', '#bdPlace', '#bdClear', '#bdDelete'].map($);
   const roomSel = $('#bdRoom'), msgEl = $('#bdMsg');   // held: notFound() detaches them, writes to them are harmless
   const msg = (text, lvl) => global.FarmUi.say(msgEl, lvl || (text ? 'good' : 'info'), text);
   const fail = err => msg(errText(err), 'error');
@@ -315,11 +351,6 @@ async function mountDetail(el, id, live) {
   function paint(b) {
     batch = b;
     const clock = global.FarmUi.farmClock();
-    const where = b.state === 'received' ? 'New' : b.state === 'placed' ? `In ${b.room_name}` : 'Finished';
-    $('#bdHead').textContent = `${cropName(b.crop)} · ${b.strain || '–'} · ${where}`;
-    const wait = $('#bdWait');
-    wait.hidden = b.placed_at == null;
-    wait.textContent = b.placed_at == null ? '' : `Arrived to placed: ${ageDays(b.received_at, b.placed_at)} days`;
     $('#bdCrop').value = b.crop;
     $('#bdStrain').value = b.strain ?? '';
     $('#bdSource').value = b.source ?? '';
@@ -335,6 +366,7 @@ async function mountDetail(el, id, live) {
     $('#bdPlace').hidden = !received;
     $('#bdClear').hidden = b.state !== 'placed';
     $('#bdDelete').hidden = b.totals.crates !== 0;
+    headSlot.replaceChildren(global.FarmUi.pageHead({ title: titleOf(b), sub: subText(b), actions: headActions }));   // the buttons move into the head's action row
     $('#bdFlushes').querySelector('tbody').replaceChildren(...b.flushes.map(f =>
       row([f.n, secondsToDate(f.from), secondsToDate(f.to), f.kg, f.g_per_block, f.be_pct])));
     $('#bdCrates').querySelector('tbody').replaceChildren(...b.crates.map(c => {
@@ -449,5 +481,5 @@ function unmount() { current = null; }
 
 global.FarmShell.register('batches', { mount, unmount });
 
-if (typeof module === 'object' && module && module.exports) module.exports = { dateToSeconds, secondsToDate, ageDays, batchBody };
+if (typeof module === 'object' && module && module.exports) module.exports = { dateToSeconds, secondsToDate, ageDays, batchBody, plural, daysText, titleOf, stateWords, subText, filterByState };
 })(typeof window !== 'undefined' ? window : globalThis);
