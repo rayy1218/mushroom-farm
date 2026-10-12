@@ -165,35 +165,50 @@ function fitSummary(rows) {
   return `The fitted room follows your readings, but ${fair.join(' and ')} could be closer.`;
 }
 const fixed = (v, d) => (Number.isFinite(v) ? v.toFixed(d) : '–');
+const fitObservers = new Set();
+function disposeFit() { for (const o of fitObservers) o.disconnect(); fitObservers.clear(); }
+// Drawn 1:1 at the width of its box (decision 106), between 480 and 900.
 function fitFigure(before, after) {
   const rows = fitRows(before, after), summary = fitSummary(rows);
   const S = (tag, attrs, parent) => UI().svgEl(tag, attrs, parent);
   const txt = (parent, x, y, s, cls, extra) => { const e = S('text', { x, y, class: cls, ...(extra || {}) }, parent); e.textContent = s; return e; };
-  const W = 640, LW = 110, BW = 280, RH = 56, TOP = 22, H = TOP + rows.length * RH + 4;
-  const aria = `How well the fitted room follows your readings. ${rows.map(r => `${r.label}: error ${fixed(r.before, r.digits)} ${r.unit} before, ${fixed(r.after, r.digits)} ${r.unit} after${r.verdict ? `, ${r.verdict.word}` : ''}`).join('; ')}. ${summary}`;
-  const fig = document.createElement('figure'); fig.className = 'plan-fig fit-quality';
-  const q = document.createElement('h4'); q.className = 'plan-q'; q.textContent = 'How close is the fitted room to your readings?';
-  const sum = document.createElement('p'); sum.className = 'plan-verdict'; sum.textContent = summary;
-  const scroll = document.createElement('div'); scroll.className = 'plan-scroll';
-  const svg = S('svg', { viewBox: `0 0 ${W} ${H}`, class: 'plan-svg', role: 'img', 'aria-label': aria, style: 'min-width:540px;max-width:700px' });
-  scroll.append(svg); fig.append(q, sum, scroll);
-  txt(svg, LW + 4, 12, 'Error (RMSE), smaller is better', 'pt pt-muted');
-  rows.forEach((r, i) => {
-    const y = TOP + i * RH, top = Math.max(r.before || 0, r.after || 0, r.fair * 1.15) || 1;
-    const w = v => Math.max(2, (Number.isFinite(v) ? v : 0) / top * BW);
-    txt(svg, 0, y + 25, r.label, 'pt pt-strong');
-    txt(svg, 0, y + 40, r.unit, 'pt pt-muted');
-    S('rect', { class: 'plan-b-before', x: LW, y: y + 6, width: w(r.before), height: 16, rx: 3 }, svg);
-    txt(svg, LW + w(r.before) + 8, y + 19, `${fixed(r.before, r.digits)} before`, 'pt pt-muted');
-    S('rect', { class: 'plan-b-after', x: LW, y: y + 27, width: w(r.after), height: 16, rx: 3 }, svg);
-    txt(svg, LW + w(r.after) + 8, y + 40, `${fixed(r.after, r.digits)} after`, 'pt');
-    const gx = LW + r.good / top * BW;
-    S('line', { class: 'plan-pass', x1: gx, x2: gx, y1: y + 2, y2: y + 47 }, svg);
-    if (r.verdict) {
-      S('circle', { class: `plan-dot plan-dot-${r.verdict.lvl}`, cx: LW + BW + 128, cy: y + 24, r: 6 }, svg);
-      txt(svg, LW + BW + 140, y + 29, r.verdict.word, 'pt pt-strong');
-    }
-  });
+  const aria = `${summary} Error before and after the fit: ${rows.map(r => `${r.label} ${fixed(r.before, r.digits)} ${r.unit} now, ${fixed(r.after, r.digits)} ${r.unit} after${r.verdict ? `, ${r.verdict.word}` : ''}`).join('; ')}.`;
+  const mkEl = (tag, cls, text) => { const e = document.createElement(tag); e.className = cls; if (text !== undefined) e.textContent = text; return e; };
+  const fig = mkEl('figure', 'plan-fig fit-quality');
+  const host = mkEl('div', 'plan-scroll');
+  fig.append(mkEl('h4', 'plan-q', 'How close is the fitted room to your readings?'), mkEl('p', 'plan-verdict', summary),
+    mkEl('p', 'plan-sub', 'The dashed line is the Good limit. Smaller bars are better.'), host);
+  let last = 0, ro = null;
+  const paint = () => {
+    const avail = host.clientWidth || 0, W = Math.round(Math.min(900, Math.max(480, avail || 480)));
+    if (W === last) return;
+    last = W;
+    const LW = 100, VW = 96, LBL = 76, BW = W - LW - VW - LBL, RH = 56, TOP = 8, H = TOP + rows.length * RH + 4;
+    const svg = S('svg', { class: 'plan-svg', role: 'img', 'aria-label': aria, width: W, height: H, viewBox: `0 0 ${W} ${H}` });
+    rows.forEach((r, i) => {
+      const y = TOP + i * RH, top = Math.max(r.before || 0, r.after || 0, r.fair * 1.15) || 1;
+      const w = v => Math.max(2, (Number.isFinite(v) ? v : 0) / top * BW);
+      const gx = LW + r.good / top * BW;
+      txt(svg, 0, y + 25, r.label, 'pt pt-strong');
+      txt(svg, 0, y + 40, r.unit, 'pt pt-muted');
+      S('rect', { class: 'plan-b-before', x: LW, y: y + 6, width: w(r.before), height: 16, rx: 3 }, svg);
+      txt(svg, LW + Math.max(w(r.before), gx - LW) + 8, y + 19, `${fixed(r.before, r.digits)} now`, 'pt pt-muted');
+      S('rect', { class: 'plan-b-after', x: LW, y: y + 27, width: w(r.after), height: 16, rx: 3 }, svg);
+      txt(svg, LW + Math.max(w(r.after), gx - LW) + 8, y + 40, `${fixed(r.after, r.digits)} after`, 'pt');
+      S('line', { class: 'plan-pass', x1: gx, x2: gx, y1: y + 2, y2: y + 47 }, svg);
+      if (r.verdict) {
+        S('circle', { class: `plan-dot plan-dot-${r.verdict.lvl}`, cx: W - VW + 8, cy: y + 24, r: 6 }, svg);
+        txt(svg, W - VW + 20, y + 29, r.verdict.word, 'pt pt-strong');
+      }
+    });
+    host.replaceChildren(svg);
+  };
+  paint();
+  if (typeof ResizeObserver === 'function') {
+    ro = new ResizeObserver(() => { if (host.isConnected === false) { ro.disconnect(); fitObservers.delete(ro); return; } paint(); });
+    ro.observe(host);
+    fitObservers.add(ro);
+  }
   return fig;
 }
 
@@ -305,6 +320,7 @@ function mount(el, ctx) {
     const n = CAL.PARAMS.ua && CAL.PARAMS.ua.note;
     if (typeof n === 'string') { const p = document.createElement('p'); p.className = 'tag'; p.id = 'cbNote'; p.textContent = n; table.after(p); }
     const fq = $('#cbFit');
+    disposeFit();
     if (fit && base && base.rmse && fit.result.rmse) fq.replaceChildren(fitFigure(base.rmse, fit.result.rmse)); else fq.replaceChildren();
     const host = $('#cbCharts');
     if (rows && base) global.FarmCharts.drawCalibCharts(host, { rows, base, fit });
@@ -475,7 +491,7 @@ function mount(el, ctx) {
   })();
 }
 function unmount() {
-  try { alive = false; gen++; } catch { /* never throws */ }
+  try { alive = false; gen++; disposeFit(); } catch { /* never throws */ }
 }
 
 global.FarmRoomTabs.register('calibrate', { mount, unmount, helpers });

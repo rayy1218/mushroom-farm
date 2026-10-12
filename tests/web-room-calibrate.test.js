@@ -224,7 +224,7 @@ test('PL10 the fit quality figure is labelled and has a row per measurement', ()
   assert.ok(cls(fig, 'fit-quality'));
   const svg = all(fig, e => e.tag === 'svg')[0];
   assert.equal(svg.attrs.role, 'img');
-  assert.match(svg.attrs['aria-label'], /Temperature: error 2\.00 °C before, 0\.30 °C after, Good.*The fitted room follows your readings closely\./);
+  assert.match(svg.attrs['aria-label'], /^The fitted room follows your readings closely\..*Temperature 2\.00 °C now, 0\.30 °C after, Good/);
   assert.equal(all(svg, e => cls(e, 'plan-b-after')).length, 3);
   const texts = all(svg, e => e.tag === 'text').map(e => e.textContent);
   assert.equal(texts.filter(t => t === 'Good').length, 3);

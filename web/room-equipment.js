@@ -115,27 +115,51 @@ function table(cls, head, rows) {
   return t;
 }
 
-// ---------- the charts (C13 4) ----------
+// ---------- the charts (C13 4, decision 106): drawn 1:1 at the width of their box ----------
 const S = (tag, attrs, parent) => global.FarmUi.svgEl(tag, attrs, parent);
 function label(parent, x, y, s, cls, extra) {
   const e = S('text', { x, y, class: cls, ...(extra || {}) }, parent);
   e.textContent = s;
   return e;
 }
-function figure(cls, question, aria, w, h, minW) {
+const observers = new Set();
+function disposeCharts() { for (const o of observers) o.disconnect(); observers.clear(); }
+function chartInto(host, o) {
+  let last = 0, ro = null;
+  const paint = () => {
+    const avail = host.clientWidth || 0;
+    const w = Math.round(Math.min(o.max || Infinity, Math.max(o.min, avail || o.min)));
+    if (w === last) return;
+    last = w;
+    const svg = S('svg', { class: 'plan-svg', role: 'img', 'aria-label': o.aria, width: w });
+    const h = o.draw(svg, w);
+    svg.setAttribute('height', h);
+    svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+    host.replaceChildren(svg);
+  };
+  paint();
+  if (typeof ResizeObserver === 'function') {
+    ro = new ResizeObserver(() => {
+      if (host.isConnected === false) { ro.disconnect(); observers.delete(ro); return; }
+      paint();
+    });
+    ro.observe(host);
+    observers.add(ro);
+  }
+}
+function figure(cls, question) {
   const fig = node('figure', undefined, `plan-fig ${cls}`);
   fig.append(node('h4', question, 'plan-q'));
-  const svg = S('svg', { viewBox: `0 0 ${w} ${h}`, class: 'plan-svg', role: 'img', 'aria-label': aria, style: `min-width:${minW || Math.min(w, 560)}px;max-width:${Math.round(w * (minW ? 1.4 : 1.1))}px` });
-  const scroll = node('div', undefined, 'plan-scroll');
-  scroll.append(svg);
-  fig.append(scroll);
-  return { fig, svg };
+  const host = node('div', undefined, 'plan-scroll');
+  fig.append(host);
+  return { fig, host };
 }
 function more(summary, ...kids) {
   const d = node('details', undefined, 'plan-more');
   d.append(node('summary', summary), ...kids);
   return d;
 }
+const kwh1 = x => x.toFixed(1).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 
 // One group per aircond size tried (C13 4): the share of time in band and the cost per block, and which size is yours and which is recommended.
 function sizeGroups(report) {
@@ -150,34 +174,41 @@ function sizeGroups(report) {
 const SIZE_LVL = { holds: 'plan-b-good', big: 'plan-b-warn', small: 'plan-b-bad' };
 function sizesAria(report, groups) {
   const own = groups.find(g => g.yours), rec = groups.find(g => g.recommended);
-  const bits = [`Aircond sizes tried: ${groups.map(g => `${g.label} ${pct(g.inT)} % of the time in band, RM ${g.rmPerBlock.toFixed(2)} per block, ${g.word}`).join('; ')}.`];
-  if (own) bits.push(`Yours is ${own.label}.`);
-  if (rec) bits.push(`Recommended: ${rec.label}.`);
+  const bits = [];
+  if (own && rec) bits.push(own === rec ? `Your ${own.label} aircond is the recommended size.` : `Recommended: ${rec.label}. Yours is ${own.label}.`);
+  else if (rec) bits.push(`Recommended: ${rec.label}.`);
+  else if (own) bits.push(`Yours is ${own.label}.`);
+  bits.push(`Aircond sizes tried: ${groups.map(g => `${g.label} ${pct(g.inT)} % of the time in band, RM ${g.rmPerBlock.toFixed(2)} per block, ${g.word}`).join('; ')}.`);
   return bits.join(' ');
 }
 function sizesFigure(report) {
   const G = sizeGroups(report);
   if (!G.length) return null;
-  const W = 680, LW = 176, C1 = LW, B1 = 130, C2 = 480, B2 = 130, RH = 50, TOP = 30, H = TOP + G.length * RH + 6;
-  const { fig, svg } = figure('ac-sizes', 'Which aircond size works?', sizesAria(report, G), W, H);
+  const { fig, host } = figure('ac-sizes', 'Which aircond size works?');
+  fig.insertBefore(node('p', `The dashed line is the pass line: ${global.ClimateCapacity.PASS.inT} % of the time in band.`, 'plan-sub'), host);
   const maxRm = Math.max(...G.map(g => g.rmPerBlock), 0.01);
-  fig.insertBefore(node('p', `The dashed line is the pass line: ${global.ClimateCapacity.PASS.inT} % of the time in band.`, 'plan-sub'), fig.lastChild);
-  label(svg, C1, 16, 'Time in band (fruiting)', 'pt pt-muted');
-  label(svg, C2, 16, 'RM per block', 'pt pt-muted');
-  const passX = C1 + global.ClimateCapacity.PASS.inT / 100 * B1;
-  S('line', { class: 'plan-pass', x1: passX, x2: passX, y1: TOP - 4, y2: H - 6 }, svg);
-  G.forEach((g, i) => {
-    const y = TOP + i * RH;
-    if (g.yours) S('rect', { class: 'plan-yours', x: 3, y: y + 2, width: W - 6, height: RH - 6, rx: 6 }, svg);
-    label(svg, 14, y + 22, g.label, 'pt pt-strong');
-    const tags = [g.yours ? 'yours' : null, g.recommended ? 'recommended' : null].filter(Boolean).join(' · ');
-    if (tags) label(svg, 14, y + 38, tags, 'pt pt-tag');
-    S('rect', { class: 'plan-track', x: C1, y: y + 12, width: B1, height: 16, rx: 3 }, svg);
-    S('rect', { class: SIZE_LVL[g.state], x: C1, y: y + 12, width: Math.max(2, g.inT / 100 * B1), height: 16, rx: 3 }, svg);
-    label(svg, C1 + B1 + 8, y + 25, `${pct(g.inT)} % · ${g.word}`, 'pt');
-    S('rect', { class: 'plan-bar', x: C2, y: y + 12, width: Math.max(2, g.rmPerBlock / maxRm * B2), height: 16, rx: 3 }, svg);
-    label(svg, C2 + Math.max(2, g.rmPerBlock / maxRm * B2) + 8, y + 25, g.rmPerBlock.toFixed(2), 'pt');
-  });
+  chartInto(host, { min: 480, max: 900, aria: sizesAria(report, G), draw(svg, W) {
+    const LW = 150, RH = 50, TOP = 30, rest = W - LW - 12, col1 = Math.round(rest * 0.58), C1 = LW, C2 = LW + col1;
+    const B1 = Math.max(50, col1 - 124), B2 = Math.max(50, rest - col1 - 64), H = TOP + G.length * RH + 6;
+    label(svg, C1, 16, 'Time in band (fruiting)', 'pt pt-muted');
+    label(svg, C2, 16, 'RM per block', 'pt pt-muted');
+    const passX = C1 + global.ClimateCapacity.PASS.inT / 100 * B1;
+    S('line', { class: 'plan-pass', x1: passX, x2: passX, y1: TOP - 4, y2: H - 6 }, svg);
+    G.forEach((g, i) => {
+      const y = TOP + i * RH;
+      if (g.yours) S('rect', { class: 'plan-yours', x: 3, y: y + 2, width: W - 6, height: RH - 6, rx: 6 }, svg);
+      label(svg, 14, y + 22, g.label, 'pt pt-strong');
+      const tags = [g.yours ? 'yours' : null, g.recommended ? 'recommended' : null].filter(Boolean).join(' · ');
+      if (tags) label(svg, 14, y + 38, tags, 'pt pt-tag');
+      S('rect', { class: 'plan-track', x: C1, y: y + 12, width: B1, height: 16, rx: 3 }, svg);
+      S('rect', { class: SIZE_LVL[g.state], x: C1, y: y + 12, width: Math.max(2, g.inT / 100 * B1), height: 16, rx: 3 }, svg);
+      label(svg, C1 + B1 + 8, y + 25, `${pct(g.inT)} % · ${g.word}`, 'pt');
+      const bw = Math.max(2, g.rmPerBlock / maxRm * B2);
+      S('rect', { class: 'plan-bar', x: C2, y: y + 12, width: bw, height: 16, rx: 3 }, svg);
+      label(svg, C2 + bw + 8, y + 25, `RM ${g.rmPerBlock.toFixed(2)}`, 'pt');
+    });
+    return H;
+  } });
   return fig;
 }
 
@@ -185,25 +216,27 @@ function sizesFigure(report) {
 function heatFigure(report) {
   const items = report.breakdown.items.filter(i => i.share > 0);
   if (!items.length) return null;
-  const W = 480, PAD = 8, PW = W - 2 * PAD, BH = 30, H = BH + 14;
   const top = items.reduce((a, b) => (b.share > a.share ? b : a));
-  const aria = `Where the heat comes from: ${items.map(i => `${i.label} ${Math.floor(i.share)} %`).join(', ')}. The biggest part is ${top.label.toLowerCase()}.`;
-  const { fig, svg } = figure('heat-split', 'Where the heat comes from', aria, W, H, 320);
-  let x = PAD;
-  items.forEach((it, i) => {
-    const w = it.share / 100 * PW;
-    S('rect', { class: `plan-heat plan-heat-${i + 1}`, x, y: 6, width: Math.max(0, w - 1), height: BH, rx: 3 }, svg);
-    if (w > 42) label(svg, x + w / 2, 6 + BH / 2 + 5, `${Math.floor(it.share)} %`, 'pt pt-onbar', { 'text-anchor': 'middle' });
-    x += w;
-  });
+  const aria = `The biggest part of the heat is ${top.label.toLowerCase()}. Where the heat comes from: ${items.map(i => `${i.label} ${Math.floor(i.share)} %`).join(', ')}.`;
+  const { fig, host } = figure('heat-split', 'Where the heat comes from');
+  fig.insertBefore(node('p', `Fruiting hours, with ${acText(report.breakdown.ac_hp, report.ac.units)} aircond.`, 'plan-sub'), host);
+  chartInto(host, { min: 360, max: 900, aria, draw(svg, W) {
+    const PAD = 4, PW = W - 2 * PAD, BH = 32;
+    let x = PAD;
+    items.forEach((it, i) => {
+      const w = it.share / 100 * PW;
+      S('rect', { class: `plan-heat plan-heat-${i + 1}`, x, y: 4, width: Math.max(0, w - 1), height: BH, rx: 3 }, svg);
+      if (w > 40) label(svg, x + w / 2, 4 + BH / 2 + 5, `${Math.floor(it.share)} %`, 'pt pt-onheat', { 'text-anchor': 'middle' });
+      x += w;
+    });
+    return BH + 8;
+  } });
   const legend = node('ul', undefined, 'plan-legend');
   items.forEach((it, i) => {
     const li = node('li');
-    li.append(node('span', undefined, `plan-sw plan-heat-${i + 1}`), ` ${it.label}: ${Math.floor(it.share)} % (${int(it.kwh)} kWh)`);
+    li.append(node('span', undefined, `plan-sw plan-heat-${i + 1}`), ` ${it.label}: ${Math.floor(it.share)} % (${kwh1(it.kwh)} kWh)`);
     legend.append(li);
   });
-  const sub = node('p', `Fruiting hours, with ${acText(report.breakdown.ac_hp, report.ac.units)} aircond.`, 'plan-sub');
-  fig.insertBefore(sub, fig.lastChild);
   fig.append(legend);
   return fig;
 }
@@ -216,6 +249,7 @@ function alsoTried(report) {
 }
 
 function renderReport(el, report) {
+  disposeCharts();
   const parts = [];
   if (report.verdict === 'impossible') {
     parts.push(node('p', report.why));
@@ -429,6 +463,7 @@ function mount(el, opts) {
     section.removeEventListener('focusin', repaint);
     section.removeEventListener('pointerdown', repaint);
     section.remove();
+    disposeCharts();
   };
   mounted.set(el, unmount);
   return { unmount };

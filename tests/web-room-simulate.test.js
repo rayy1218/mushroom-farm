@@ -20,8 +20,8 @@ test('SM1 registration', () => {
   const tab = globalThis.FarmRoomTabs.get('simulate');
   assert.equal(typeof tab.mount, 'function');
   assert.equal(typeof tab.unmount, 'function');
-  assert.deepEqual(Object.keys(tab.helpers).sort(), ['appliedCalib', 'availableCrops', 'bulletFigure', 'bulletVerdict', 'bulletZones', 'clampBlocks', 'clampCo2', 'cycleDays', 'cycleFigure', 'cycleSummary', 'machinesText', 'progressText',
-    'regionText', 'runBlockReason', 'runInputs', 'runRowTexts', 'sameMix', 'seriesPoints', 'stageRows', 'toCapacityMix', 'toMixRows']);
+  assert.deepEqual(Object.keys(tab.helpers).sort(), ['appliedCalib', 'availableCrops', 'bulletFigure', 'bulletVerdict', 'bulletZones', 'clampBlocks', 'clampCo2', 'cycleDays', 'cycleFigure', 'cycleSummary', 'kwh1', 'machinesText', 'progressText',
+    'regionText', 'runBlockReason', 'runInputs', 'runRowTexts', 'sameMix', 'savedEmptyBelow', 'seriesPoints', 'stageRows', 'toCapacityMix', 'toMixRows']);
   assert.equal(typeof globalThis.document, 'undefined');
   assert.doesNotThrow(() => tab.unmount());
 });
@@ -92,7 +92,7 @@ const RES = { verdict: 'ok', targets: { spT: 25, spRH: 88, co2Lim: 1000, crop: '
 
 test('SM6 cycle result', () => {
   assert.deepEqual(H.cycleSummary(RES), { chip: { lvl: 'warning', icon: '✕', text: '1 stage(s) fail' },
-    line: '2 days · 1 flush · 23 kWh · RM 13.11 · RM 0.01 per block' });
+    line: '2 days · 1 flush · 23.0 kWh · RM 13.11 · RM 0.01 per block' });
   assert.ok(H.cycleSummary({ ...RES, totals: { ...RES.totals, days: 1 }, inputs: { ...RES.inputs, flushes: 2 } }).line.startsWith('1 day · 2 flushes · '));
   const pass = { ...RES, stages: RES.stages.map(s => ({ ...s, pass: true, fails: [] })) };
   assert.deepEqual(H.cycleSummary(pass).chip, { lvl: 'good', icon: '✓', text: 'all stages pass' });
@@ -142,8 +142,8 @@ test('SM7 runRowTexts', () => {
   assert.deepEqual(chip('cycle', 'fail'), W('Fails'));
   assert.deepEqual(chip('capacity', 'good'), G('Good'));
   assert.deepEqual(chip('capacity', 'tight'), I('Tight'));
-  assert.deepEqual(chip('capacity', 'too-dense'), W('Too many blocks'));
-  assert.deepEqual(chip('capacity', 'too-empty'), I('Too few blocks'));
+  assert.deepEqual(chip('capacity', 'too-dense'), W('Too full'));
+  assert.deepEqual(chip('capacity', 'too-empty'), I('Too empty'));
   assert.deepEqual(chip('equipment', 'enough'), G('Enough'));
   assert.deepEqual(chip('equipment', 'too-small'), W('Too small'));
   assert.deepEqual(chip('equipment', 'too-big'), W('Too big'));
@@ -338,7 +338,9 @@ test('PL2 bulletVerdict in words', () => {
   assert.match(H.bulletVerdict(capRep({ verdict: 'tight' }), 50), /fit, but only just\. The room holds up to 3,652\. There is no margin/);
   assert.equal(H.bulletVerdict(capRep({ verdict: 'too-empty', why: 'use', planned: 500 }), 50), '500 blocks are too few for this room. It fits 1,826 to 3,652 blocks.');
   assert.match(H.bulletVerdict(capRep({ verdict: 'too-empty', why: 'wet', planned: 500, capacity: { min: 1200, max: 3652, settled: true } }), 50), /below about 1,200 the room gets too wet/);
-  assert.match(H.bulletVerdict(capRep({ capacity: { min: 0, max: 3652, settled: false } }), 50), /holds up to about 3,652/);
+  assert.equal(H.bulletVerdict(capRep({ capacity: { min: 0, max: 3652, hi: 4019, settled: false } }), 50), '2,000 blocks fit. The room holds between 3,652 and 4,019.');
+  const open = H.bulletVerdict(capRep({ capacity: { min: 0, max: 3652, hi: null, settled: false } }), 50);
+  assert.equal(open, '2,000 blocks fit. The room holds at least 3,652.');
   assert.equal(H.bulletVerdict({ verdict: 'impossible', why: 'No.' }, 50), 'No.');
 });
 
@@ -373,11 +375,57 @@ test('PL5 the cycle chart is a labelled figure with a row per stage and a bar pe
   assert.ok(cls(fig, 'cycle-gantt'));
   assert.equal(all(fig, e => e.tag === 'h4')[0].textContent, 'Your grow cycle, day by day');
   const svg = all(fig, e => e.tag === 'svg')[0];
-  assert.match(svg.attrs['aria-label'], /3 days with 1 flush and uses 30 kWh, RM 17\.10\. 1 stage does not pass\./);
+  assert.match(svg.attrs['aria-label'], /3 days with 1 flush and uses 30.0 kWh, RM 17\.10\. 1 stage does not pass\./);
   assert.equal(all(svg, e => cls(e, 'plan-st')).length, 3);
   assert.equal(all(svg, e => cls(e, 'plan-st-fail')).length, 1);
   assert.equal(all(svg, e => cls(e, 'plan-day')).length, 3);
   const texts = all(svg, e => e.tag === 'text').map(e => e.textContent);
   for (const t of ['Spawn run', 'Fruiting', 'Rest']) assert.ok(texts.includes(t), t);
   assert.ok(!texts.includes('Pinning'));
+}));
+
+test('PL11 the three capacity cases: settled, a range, open', () => withFakeDom(() => {
+  const range = H.bulletZones(capRep({ capacity: { min: 0, max: 3652, hi: 4019, settled: false } }), 50);
+  assert.deepEqual(range.zones.map(x => x.key), ['empty', 'fits', 'maybe']);
+  assert.equal(range.kind, 'range');
+  const open = H.bulletZones(capRep({ capacity: { min: 0, max: 3652, hi: null, settled: false }, runs: [{ blocks: 5000 }] }), 50);
+  assert.deepEqual(open.zones.map(x => x.key), ['empty', 'fits', 'maybe']);
+  const ariaOf = rep => all(H.bulletFigure(rep, 50), e => e.tag === 'svg')[0].attrs['aria-label'];
+  assert.doesNotMatch(ariaOf(capRep({ capacity: { min: 0, max: 3652, hi: null, settled: false } })), /too full/);
+  assert.match(ariaOf(capRep({ capacity: { min: 0, max: 3652, hi: 4019, settled: false } })), /too full above 4,019/);
+  assert.match(ariaOf(capRep()), /too full above 3,652/);
+}));
+
+test('PL12 a saved run keeps the "too empty below" it was made with', () => {
+  const run = { inputs: { empty_below: 30 }, result: capRep() };
+  assert.equal(H.savedEmptyBelow(run), 30);
+  assert.equal(H.savedEmptyBelow({ inputs: { empty_below: null } }), undefined);
+  assert.equal(H.savedEmptyBelow({}), undefined);
+  // 30 % and the default 50 % give different zones; the tab's field is never read
+  assert.equal(H.bulletZones(run.result, H.savedEmptyBelow(run)).lo, 1096);
+  assert.equal(H.bulletZones(run.result, H.savedEmptyBelow({})).lo, 1826);
+  assert.equal(H.bulletZones(run.result, 150).lo, 3652);
+});
+
+test('PL13 kWh with one decimal and a thousands separator', () => {
+  assert.equal(H.kwh1(1234.5), '1,234.5');
+  assert.equal(H.kwh1(30), '30.0');
+});
+
+test('PL14 the chart is drawn at the width of its box, and again when the width changes', () => withFakeDom(() => {
+  const widths = [];
+  const old = globalThis.ResizeObserver; let cb;
+  globalThis.ResizeObserver = class { constructor(f) { cb = f; } observe() {} disconnect() { widths.push('off'); } };
+  try {
+    const fig = H.bulletFigure(capRep(), 50);
+    const host = fig.children[fig.children.length - 1];
+    assert.equal(host.children[0].attrs.width, '300');                 // no layout: the minimum
+    host.clientWidth = 700; cb();
+    assert.equal(host.children[0].attrs.width, '700');
+    assert.equal(host.children[0].attrs.viewBox.split(' ')[2], '700');
+    const first = host.children[0]; cb();
+    assert.equal(host.children[0], first);                             // same width: no redraw
+    host.clientWidth = 2000; cb();
+    assert.equal(host.children[0].attrs.width, '900');                 // capped
+  } finally { globalThis.ResizeObserver = old; if (!old) delete globalThis.ResizeObserver; }
 }));

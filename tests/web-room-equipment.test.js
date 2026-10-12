@@ -285,7 +285,7 @@ test('PL7 the sizes chart and the heat bar are labelled figures', () => withFake
   assert.equal(all(fig, e => e.tag === 'h4')[0].textContent, 'Which aircond size works?');
   const svg = all(fig, e => e.tag === 'svg')[0];
   assert.equal(svg.attrs.role, 'img');
-  assert.match(svg.attrs['aria-label'], /1 hp 60 % of the time in band.*too small.*Yours is 1 hp\. Recommended: 2\.5 hp\./);
+  assert.match(svg.attrs['aria-label'], /^Recommended: 2\.5 hp\. Yours is 1 hp\..*1 hp 60 % of the time in band.*too small/);
   const texts = all(svg, e => e.tag === 'text').map(e => e.textContent);
   assert.ok(texts.includes('yours'));
   assert.ok(texts.includes('recommended'));

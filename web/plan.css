@@ -4,17 +4,17 @@
 .plan-verdict { margin: 0; color: var(--ink-2); max-width: 75ch; }
 .plan-sub { margin: 0; color: var(--muted); font-size: 13px; }
 .plan-scroll { overflow-x: auto; max-width: 100%; }
-.plan-svg { display: block; width: 100%; height: auto; overflow: visible; }
+.plan-svg { display: block; max-width: none; overflow: visible; }
 .plan-more { margin-top: 8px; }
 .plan-more > summary { cursor: pointer; font-weight: 600; color: var(--ink-2); padding: 4px 0; }
 
 /* text inside the charts */
-.plan-svg .pt { font: 12.5px var(--font-body); fill: var(--ink-2); }
+.plan-svg .pt { font: 13px var(--font-body); fill: var(--ink-2); }
 .plan-svg .pt-strong { font-weight: 600; fill: var(--ink); }
 .plan-svg .pt-muted { fill: var(--muted); }
 .plan-svg .pt-zone { fill: var(--ink-2); font-weight: 600; }
 .plan-svg .pt-tag { fill: var(--s-ac); font-weight: 600; font-size: 11.5px; }
-.plan-svg .pt-onbar { fill: var(--page); font-weight: 600; }
+.plan-svg .pt-onheat { fill: #fff; font-weight: 600; }
 .plan-grid { stroke: var(--grid); stroke-width: 1; }
 .plan-axis, .plan-tick { stroke: var(--axis); stroke-width: 1; }
 .plan-pass { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; }
@@ -22,6 +22,7 @@
 /* capacity bullet */
 .plan-z-empty { fill: var(--warning); fill-opacity: .38; }
 .plan-z-fits { fill: var(--good); fill-opacity: .5; }
+.plan-z-maybe { fill: var(--good); fill-opacity: .2; }
 .plan-z-full { fill: var(--serious); fill-opacity: .45; }
 .plan-pin { fill: var(--ink); }
 .plan-pin-line { stroke: var(--ink); stroke-width: 2; }
@@ -44,12 +45,12 @@
 .plan-b-bad { fill: var(--serious); }
 .plan-yours { fill: none; stroke: var(--s-ac); stroke-width: 1.5; }
 
-/* heat split: five calm hues, not machine or status colours */
-.plan-heat-1 { fill: #7a6aa8; background: #7a6aa8; }
-.plan-heat-2 { fill: #3f8f9b; background: #3f8f9b; }
-.plan-heat-3 { fill: #6fb2c4; background: #6fb2c4; }
-.plan-heat-4 { fill: #b0794a; background: #b0794a; }
-.plan-heat-5 { fill: #8d939a; background: #8d939a; }
+/* heat split: five calm hues, not machine or status colours; white text on the dark fills of the light theme */
+.plan-heat-1 { fill: #6a5a9a; background: #6a5a9a; }
+.plan-heat-2 { fill: #2f7f8c; background: #2f7f8c; }
+.plan-heat-3 { fill: #3f6fb0; background: #3f6fb0; }
+.plan-heat-4 { fill: #a8683a; background: #a8683a; }
+.plan-heat-5 { fill: #6b7178; background: #6b7178; }
 .plan-legend { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: 13px; color: var(--ink-2); }
 .plan-sw { display: inline-block; width: 11px; height: 11px; border-radius: 3px; vertical-align: -1px; margin-right: 2px; }
 
@@ -60,13 +61,18 @@
 .plan-dot-warning { fill: var(--warning); }
 .plan-dot-serious { fill: var(--serious); }
 
+/* dark theme: light fills, dark text */
 @media (prefers-color-scheme: dark) {
-  :root:where(:not([data-theme="light"])) .plan-heat-1 { fill: #9a8cc6; background: #9a8cc6; }
-  :root:where(:not([data-theme="light"])) .plan-heat-2 { fill: #52a6b3; background: #52a6b3; }
-  :root:where(:not([data-theme="light"])) .plan-heat-3 { fill: #9fd0de; background: #9fd0de; }
-  :root:where(:not([data-theme="light"])) .plan-heat-4 { fill: #c58f5e; background: #c58f5e; }
+  :root:where(:not([data-theme="light"])) .plan-heat-1 { fill: #b3a6dc; background: #b3a6dc; }
+  :root:where(:not([data-theme="light"])) .plan-heat-2 { fill: #6cc0cc; background: #6cc0cc; }
+  :root:where(:not([data-theme="light"])) .plan-heat-3 { fill: #8fb4ea; background: #8fb4ea; }
+  :root:where(:not([data-theme="light"])) .plan-heat-4 { fill: #e0a878; background: #e0a878; }
+  :root:where(:not([data-theme="light"])) .plan-heat-5 { fill: #aab0b6; background: #aab0b6; }
+  :root:where(:not([data-theme="light"])) .plan-svg .pt-onheat { fill: #15181b; }
 }
-:root[data-theme="dark"] .plan-heat-1 { fill: #9a8cc6; background: #9a8cc6; }
-:root[data-theme="dark"] .plan-heat-2 { fill: #52a6b3; background: #52a6b3; }
-:root[data-theme="dark"] .plan-heat-3 { fill: #9fd0de; background: #9fd0de; }
-:root[data-theme="dark"] .plan-heat-4 { fill: #c58f5e; background: #c58f5e; }
+:root[data-theme="dark"] .plan-heat-1 { fill: #b3a6dc; background: #b3a6dc; }
+:root[data-theme="dark"] .plan-heat-2 { fill: #6cc0cc; background: #6cc0cc; }
+:root[data-theme="dark"] .plan-heat-3 { fill: #8fb4ea; background: #8fb4ea; }
+:root[data-theme="dark"] .plan-heat-4 { fill: #e0a878; background: #e0a878; }
+:root[data-theme="dark"] .plan-heat-5 { fill: #aab0b6; background: #aab0b6; }
+:root[data-theme="dark"] .plan-svg .pt-onheat { fill: #15181b; }
