@@ -22,7 +22,7 @@ test('RS1 module', () => {
   assert.equal(typeof registered.rooms.unmount, 'function');
   assert.equal(typeof registered.rooms.update, 'function');
   for (const k of ['statusChip', 'cropText', 'cardTexts', 'machineLines', 'infoText', 'stateText', 'alarmsChip', 'upsertRoom', 'takeLive',
-    'refreshRoom', 'refreshDelay', 'manualText', 'harvestToday', 'allSimulated', 'newRoomName', 'readStored', 'importPlan', 'importRooms']) {
+    'refreshRoom', 'refreshDelay', 'manualText', 'harvestToday', 'newRoomName', 'readStored', 'importPlan', 'importRooms']) {
     assert.equal(typeof H[k], 'function', k);
   }
   assert.equal(typeof document, 'undefined');
@@ -52,7 +52,7 @@ test('RS2b statusChip purge exception', () => {
   assert.equal(H.statusChip(live({ status: co2High, air: { state: 'purge' }, alarms: 1 })).text, '1 alarm');
 });
 
-test('RS2c manualText, harvestToday, allSimulated', () => {
+test('RS2c manualText, harvestToday', () => {
   assert.equal(H.manualText([]), ''); assert.equal(H.manualText(undefined), '');
   assert.equal(H.manualText(['ac', 'hu']), 'Manual: Aircon, Mister');
   assert.equal(H.manualText(['air', 'lights', 'circ']), 'Manual: Fresh-air fans, Lights, Circulation fan');
@@ -60,17 +60,14 @@ test('RS2c manualText, harvestToday, allSimulated', () => {
   assert.equal(H.harvestToday({ batches: [] }), null);
   assert.equal(H.harvestToday({ batches: [{ today: { kg: 0, crates: [] } }] }), 'No harvest today');
   assert.equal(H.harvestToday({ batches: [{ today: { kg: 3.2 } }, { today: { kg: 1.2 } }] }), 'Harvest today: 4.4 kg');
-  assert.equal(H.allSimulated([]), false);
-  assert.equal(H.allSimulated([R, R]), true);
-  assert.equal(H.allSimulated([R, { ...R, adapter: 'real' }]), false);
 });
 
 test('RS3 cardTexts', () => {
   assert.deepEqual(H.cardTexts(R), {
-    name: 'Room 1', crop: 'Grey oyster · Fruiting · flush 1 · 2000 blocks', air: 'Air exchange off',
+    name: 'Room 1', crop: 'Grey oyster · Fruiting · flush 1 · 2000 blocks', air: 'Fresh air off',
     T: '18.2 °C', RH: '88 % RH', CO2: '812 ppm',
     machines: 'AC Cool 17.5 °C · Fogger level 1 · Lights on · Circulation fan off · Power 1.43 kW', stopped: null });
-  assert.equal(H.cardTexts(reading({ air: 1 })).air, 'Air exchange on');
+  assert.equal(H.cardTexts(reading({ air: 1 })).air, 'Fresh air on');
   const empty = H.cardTexts(live({ reading: null }));
   assert.equal(empty.air, '–');
   assert.equal(empty.T, '— °C'); assert.equal(empty.RH, '— % RH'); assert.equal(empty.CO2, '— ppm');
@@ -89,7 +86,7 @@ test('RS4 machineLines', () => {
 });
 
 test('RS5 header texts', () => {
-  assert.equal(H.infoText(R), 'Grey oyster · Fruiting · flush 1 · 2000 blocks · 60 m³');
+  assert.equal(H.infoText(R), 'Grey oyster · Fruiting · flush 1 · 60 m³');
   assert.equal(H.infoText(live({ blocks: null })), 'Grey oyster · Fruiting · flush 1 · 60 m³');
   assert.equal(H.infoText(live({ flush: null, blocks: null })), 'Grey oyster · Fruiting · 60 m³');
   assert.equal(H.stateText(R), 'Running');
@@ -249,7 +246,7 @@ test('RS11 import finished after unmount still writes the marker', async t => {
   const cache = {};
   const mk = () => {
     const e = { dataset: {}, classList: { add() {} }, hidden: false, value: '', textContent: '', disabled: false, listeners: {},
-      addEventListener(n, f) { this.listeners[n] = f; }, setAttribute() {}, removeAttribute() {}, replaceChildren() {}, append() {}, closest: () => null,
+      addEventListener(n, f) { this.listeners[n] = f; }, setAttribute() {}, removeAttribute() {}, replaceChildren() {}, append() {}, prepend() {}, closest: () => null,
       querySelector: sel => (cache[sel] ||= mk()), querySelectorAll: () => [] };
     return e;
   };

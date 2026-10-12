@@ -1,4 +1,4 @@
-// web/room-live.js: the Live tab of a room (docs/contracts/web.md sections 3.4, 3.9, 7.9; air.md section 7).
+// web/room-live.js: the Overview tab of a room (C12 5.3; docs/contracts/web.md sections 3.4, 3.9, 7.9; air.md section 7). Settings live in room-settings.js.
 (function (global) {
 'use strict';
 
@@ -93,7 +93,7 @@ function machineLines(r) {
   const lines = [];
   lines.push(r.ac_mode === 'off' ? 'AC off' : `AC ${AC_WORD[r.ac_mode] ?? r.ac_mode} ${ui().fmtNum(r.ac_setpoint, 1)} °C`);
   lines.push(r.fog > 0 ? `Fogger level ${r.fog}` : 'Fogger off');
-  lines.push(r.air === 1 ? 'Air exchange On' : 'Air exchange Off');
+  lines.push(r.air === 1 ? 'Fresh air On' : 'Fresh air Off');
   lines.push(r.lights === 1 ? 'Lights on' : 'Lights off');
   lines.push(r.circ === 1 ? 'Circulation fan on' : 'Circulation fan off');
   if (Number.isFinite(r.power_w)) lines.push(`Power ${ui().watts(r.power_w)}`);
@@ -130,22 +130,6 @@ function targetsText(live, settings) {
   return text;
 }
 
-function programText(live) {
-  if (!live || !live.crop) return '';
-  const CC = global.ClimateController;
-  const crop = CC.CROPS[live.crop] ? CC.CROPS[live.crop].name : live.crop;
-  const stage = CC.STAGES[live.stage] ?? live.stage;
-  return `Running now: ${crop} · ${stage}` + (live.flush != null ? ` · flush ${live.flush}` : '');
-}
-
-function commandFromReading(r) {
-  if (!r) return null;
-  return {
-    ac: r.ac_mode !== 'off' ? { power: true, mode: r.ac_mode, setpoint: r.ac_setpoint } : { power: false },
-    hu: { level: r.fog }, air: { on: r.air === 1 }, lights: { on: r.lights === 1 }, circ: { on: r.circ === 1 },
-  };
-}
-
 function alarmTexts(a, clock) {
   const state = (a.cleared_at === null ? 'Active' : `Cleared ${clock.stamp(a.cleared_at)}`) + ' · ' + (a.acked_at === null ? 'not acknowledged' : 'acknowledged');
   return { main: `${a.label} · since ${clock.stamp(a.raised_at)}`, state, canAck: a.acked_at === null };
@@ -156,25 +140,8 @@ function mergeEvent(events, ev) {
   return [...events, ev].sort((a, b) => b.id - a.id);
 }
 
-function detailChanges(room, form) {
-  const out = {};
-  if (form.name.trim() !== room.name) out.name = form.name.trim();
-  if (Number(form.volume) !== room.volume) out.volume = Number(form.volume);
-  return out;
-}
-
-const countText = n => (n === 0 ? '' : `${n} unsaved change(s)`);
-const changeLines = changes => changes.map(c => `${c.label}: ${c.oldText} → ${c.newText}`);
-const versionText = (v, clock, current) => `${clock.stamp(v.saved_at)} · ${v.note ?? '—'}` + (current ? ' · current' : '');
-
 const helpers = { airLive, airSub, windowQuery, gapFor, reconnectQuery, chartTargets, toChartPoint, retarget, mergePoints,
-  readingTexts, machineLines, machineTiles, targetsText, programText, commandFromReading, alarmTexts, mergeEvent, detailChanges, countText, changeLines, versionText };
-function rebase(from, edited, to) {
-  const SP = global.FarmSettingsPanel;
-  const pending = SP.diffSettings(from, edited);
-  return { settings: SP.applyChanges(to, pending), kept: pending.length };
-}
-helpers.rebase = rebase;
+  readingTexts, machineLines, machineTiles, targetsText, alarmTexts, mergeEvent };
 
 // ---------------- DOM ----------------
 function h(tag, attrs, ...kids) {
@@ -189,21 +156,24 @@ const WINDOWS = [[3600, '1 h'], [21600, '6 h'], [86400, '24 h'], [604800, '7 day
 const nowS = () => Math.floor(Date.now() / 1000);
 
 let teardown = null;
+let mountSeq = 0;
 
 function mount(el, ctx) {
   unmount(); // a mount that was never unmounted must not keep painting
-  const api = global.FarmApi, UI = global.FarmUi, SP = global.FarmSettingsPanel;
+  const api = global.FarmApi, UI = global.FarmUi;
   const clock = UI.farmClock();
   const id = ctx.id;
   let room = ctx.room();
   let latest = room.live ? room.live.reading : null;
-  let base = null, saving = false, windowS = 21600, points = [], events = [];
-  let panel = null, charts = null, ladder = null, alive = true, loadSeq = 0, pendingSettings = null;
-  let olderDone = false, alarms = [], versions = [];
+  // a per-mount token: every reply checks it, so a late reply never paints into a newer mount of the same element
+  const mine = ++mountSeq;
+  const alive = () => mine === mountSeq;
+  let base = null, windowS = 21600, points = [], events = [];
+  let charts = null, loadSeq = 0, olderDone = false, alarms = [];
   const offs = [];
   const q = sel => el.querySelector(sel);
 
-  // ---- markup (5.3) ----
+  // ---- markup (C12 5.3) ----
   const rv = (ido, label) => h('div', { class: 'rv', id: ido }, h('span', {}, label), h('span', { class: 'val' }), h('span', { class: 'chip' }));
   const winSeg = h('div', { class: 'seg', id: 'lvWinSeg', role: 'group', 'aria-label': 'Chart time window' });
   for (const [w, label] of WINDOWS) {
@@ -217,8 +187,8 @@ function mount(el, ctx) {
 
   const secLive = h('section', { class: 'card room-live' }, rv('lvT', 'Temperature'), rv('lvRH', 'Humidity'), rv('lvCO2', 'CO₂'),
     tag({ id: 'lvAt' }), tag({ id: 'lvTargets' }), h('ul', { class: 'machines', id: 'lvMachines' }));
-  const secAir = h('section', { class: 'card room-air' }, heading('h3', '', 'Air exchange'), tag({ id: 'airSub' }), h('p', { id: 'airState' }), tag({ id: 'airWhy' }));
-  const glance = h('div', { class: 'room-air' }, span({}, 'Air exchange'), span({ id: 'airGlance' }), span({ class: 'tag', id: 'airDay' }));
+  const secAir = h('section', { class: 'card room-air' }, heading('h3', '', 'Fresh air'), tag({ id: 'airSub' }), h('p', { id: 'airState' }), tag({ id: 'airWhy' }));
+  const glance = h('div', { class: 'room-air' }, span({}, 'Fresh air'), span({ id: 'airGlance' }), span({ class: 'tag', id: 'airDay' }));
   const filters = h('div', { class: 'filters' }, winSeg, span({ class: 'tag' }, 'Farm time (UTC+8). A gap means no readings were recorded.'));
   const chartsHost = h('div', { class: 'contents', id: 'lvCharts' });
   const alarmList = h('ul', { class: 'al-list', id: 'lvAlarmList' });
@@ -226,51 +196,20 @@ function mount(el, ctx) {
   const logList = h('ol', { id: 'lvLog' });
   const olderBtn = btn('Older', { id: 'lvOlder' });
   const secLog = h('section', { class: 'card log' }, heading('h2', 'eyebrow', 'Event log'), logList, olderBtn);
-  const saveBtn = btn('Save', { id: 'spSave', disabled: '' }), discardBtn = btn('Discard', { id: 'spDiscard', disabled: '' });
-  saveBtn.classList.add('btn-primary');
-  const spMsg = h('div', { class: 'room-msg', id: 'spMsg', role: 'status', hidden: '' });
-  const head = h('div', { class: 'section-head' }, heading('h2', '', 'Settings'), span({ class: 'tag', id: 'spCount' }),
-    h('div', { class: 'btn-row' }, saveBtn, discardBtn), spMsg);
-  const spHost = h('div', { class: 'contents', id: 'spHost' });
-  const verList = h('ol', { id: 'lvVersions' });
-  const secVer = h('section', { class: 'card room-versions' }, heading('h2', 'eyebrow', 'Settings versions'), verList);
-const rdName = h('input', { id: 'rdName', type: 'text', maxlength: '60' });
-  const rdVolume = h('input', { id: 'rdVolume', type: 'number', min: '5', max: '5000' });
-  const rdSave = btn('Save details', { id: 'rdSave' }), rdArchive = btn('Archive room', { id: 'rdArchive' });
-  rdSave.classList.add('btn-primary'); rdArchive.classList.add('btn-danger');
-  const rdMsg = h('p', { id: 'rdMsg', role: 'status', hidden: '' });
-  const field = (key, forId, label, ctl, unit, help) => {
-    const kids = [h('label', { for: forId }, label), h('div', { class: 'field-ctl' }, ctl, ...(unit ? [span({ class: 'unit' }, unit)] : []))];
-    if (help) { const p = h('p', { class: 'field-help' }); p.textContent = help; kids.push(p); }
-    kids.push(h('p', { class: 'field-err', hidden: '' }));
-    return h('div', { class: 'field', 'data-field': key }, ...kids);
-  };
-  const detailsForm = h('div', { class: 'form-grid' }, field('name', 'rdName', 'Name', rdName),
-    field('volume', 'rdVolume', 'Room size', rdVolume, 'm³', 'A new size restarts the room\'s loop.'));
-  const secDetails = h('section', { class: 'card room-details' }, heading('h2', 'eyebrow', 'Room details'),
-    detailsForm, h('div', { class: 'btn-row' }, rdSave, rdArchive), rdMsg);
   const lvMsg = h('p', { class: 'room-msg', id: 'lvMsg', role: 'status', hidden: '' });
-  el.replaceChildren(secLive, secAir, glance, filters, chartsHost, secAlarms, secLog, head, spHost, secVer, secDetails, lvMsg);
-  rdName.id = 'rdName'; rdVolume.id = 'rdVolume';
+  el.replaceChildren(secLive, secAir, glance, filters, chartsHost, secAlarms, secLog, lvMsg);
 
-  const fail = (e, target) => { UI.say(target || lvMsg, 'error', UI.errorText(e)); };
-  const detailForm = () => ({ name: rdName.value, volume: rdVolume.value });
-  if (global.FarmShell && global.FarmShell.guardLeave) {
-    global.FarmShell.guardLeave(() => {
-      const n = (panel && base ? panel.diff(base).length : 0) + Object.keys(detailChanges(room, detailForm())).length;
-      return n ? `${n} unsaved change(s).` : '';
-    });
-  }
+  const fail = e => { UI.say(lvMsg, 'error', UI.errorText(e)); };
   const tg = () => chartTargets(room.live, base);
 
   // ---- painting ----
-  function paintChipOrHide(node, chip) {
-    if (chip) { node.hidden = false; UI.paintChip(node, chip); } else { node.hidden = true; node.replaceChildren(); delete node.dataset.txt; }
+  function paintChipOrHide(node, kind, chip) {
+    if (chip) { node.hidden = false; UI.paintChip(node, UI.plainChip(kind, chip)); } else { node.hidden = true; node.replaceChildren(); delete node.dataset.txt; }
   }
   function paintValues() {
     const t = readingTexts(latest, clock), st = (room.live && room.live.status) || {};
     q('#lvT .val').textContent = t.T; q('#lvRH .val').textContent = t.RH; q('#lvCO2 .val').textContent = t.CO2;
-    paintChipOrHide(q('#lvT .chip'), st.T); paintChipOrHide(q('#lvRH .chip'), st.RH); paintChipOrHide(q('#lvCO2 .chip'), st.CO2);
+    paintChipOrHide(q('#lvT .chip'), 'T', st.T); paintChipOrHide(q('#lvRH .chip'), 'RH', st.RH); paintChipOrHide(q('#lvCO2 .chip'), 'CO2', st.CO2);
     q('#lvAt').textContent = t.at;
     q('#lvTargets').textContent = targetsText(room.live, base);
     q('#lvMachines').replaceChildren(...machineTiles(latest, room.live && room.live.manual).map(t => {
@@ -287,33 +226,6 @@ const rdName = h('input', { id: 'rdName', type: 'text', maxlength: '60' });
     q('#airWhy').textContent = (a && a.why) || '';
     q('#airGlance').textContent = o.glance; q('#airDay').textContent = o.day;
   }
-  function drawLadder() {
-    if (!ladder || !panel) return;
-    const a = airLive(room.live ? room.live.air : null, base);
-    ladder.draw(panel.get(), latest ? (latest.CO2 ?? NaN) : NaN, { air: a.chip });
-  }
-  function paintProgram() {
-    const slot = spHost.querySelector('[data-slot="program-status"]');
-    if (!slot) return;
-    const p = h('p', { class: 'prog-status' }); p.textContent = programText(room.live);
-    slot.replaceChildren(p);
-  }
-  let painted = null; // { name, volume } as last written to the fields
-  function paintDetails(force) {
-    const next = { name: room.name, volume: String(room.volume) };
-    // a field the user changed keeps its text: only overwrite one that still shows what was painted
-    if (force || !painted || rdName.value === painted.name) rdName.value = next.name;
-    if (force || !painted || rdVolume.value === painted.volume) rdVolume.value = next.volume;
-    painted = next;
-  }
-  function paintSave() {
-    if (!panel) return;
-    const n = panel.diff(base).length;
-    q('#spCount').textContent = countText(n);
-    saveBtn.disabled = discardBtn.disabled = n === 0 || saving;
-    verList.querySelectorAll('button').forEach(b => { b.disabled = saving; });
-  }
-  function setMsg(lines, lvl = 'info') { UI.say(spMsg, lvl, lines.join(' ')); }
   function drawCharts() {
     if (!charts) return;
     const now = nowS();
@@ -332,7 +244,7 @@ const rdName = h('input', { id: 'rdName', type: 'text', maxlength: '60' });
         const b = btn('Acknowledge', {});
         b.addEventListener('click', async () => {
           b.disabled = true;
-          try { await api.ackAlarm(id, a.alarm_key); await loadAlarms(); } catch (e) { if (alive) { fail(e); b.disabled = false; } }
+          try { await api.ackAlarm(id, a.alarm_key); await loadAlarms(); } catch (e) { if (alive()) { fail(e); b.disabled = false; } }
         });
         li.append(b);
       }
@@ -348,86 +260,48 @@ const rdName = h('input', { id: 'rdName', type: 'text', maxlength: '60' });
     }));
     olderBtn.hidden = olderDone;
   }
-  function renderVersions() {
-    verList.replaceChildren(...versions.map((v, i) => {
-      const li = document.createElement('li');
-      li.append(span({}, versionText(v, clock, i === 0)));
-      if (i > 0) {
-        const b = btn('Restore', { 'aria-label': `Restore the version of ${clock.stamp(v.saved_at)}` });
-        b.disabled = saving;
-        b.addEventListener('click', () => restore(v));
-        li.append(b);
-      }
-      return li;
-    }));
-  }
 
   // ---- loads ----
   async function loadReadings() {
     const seq = ++loadSeq, now = nowS(), qy = windowQuery(windowS, now);
     try {
       const rows = await api.getReadings(id, qy);
-      if (seq !== loadSeq || !alive) return;
+      if (seq !== loadSeq || !alive()) return;
       const t = tg();
       for (const r of rows) points = mergePoints(points, toChartPoint(r, t), qy.from);
       drawCharts();
-    } catch (e) { if (alive && seq === loadSeq) fail(e); }
+    } catch (e) { if (alive() && seq === loadSeq) fail(e); }
   }
   async function loadAlarms() {
-    try { const a = await api.getAlarms(id); if (!alive) return; alarms = a; renderAlarms(); } catch (e) { if (alive) fail(e); }
+    try { const a = await api.getAlarms(id); if (!alive()) return; alarms = a; renderAlarms(); } catch (e) { if (alive()) fail(e); }
   }
   async function loadEvents(reset) {
     if (reset) { events = []; olderDone = false; }
     try {
       const page = await api.getEvents(id, { limit: 100 });
-      if (!alive) return;
+      if (!alive()) return;
       for (const ev of page) events = mergeEvent(events, ev);
       if (!page.length) olderDone = true;
       renderLog();
-    } catch (e) { if (alive) fail(e); }
-  }
-  async function loadVersions() {
-    try { const v = await api.listSettingsHistory(id); if (!alive) return; versions = v; renderVersions(); paintSave(); } catch (e) { if (alive) fail(e); }
-  }
-  function createPanel() {
-    panel = SP.createSettingsPanel(spHost, { settings: base, readOnly: false, getCommand: () => commandFromReading(latest),
-      onChange: () => { paintSave(); drawLadder(); } });
-    const slot = spHost.querySelector('[data-slot="rules-side"]');
-    if (slot) { const d = document.createElement('div'); slot.append(d); ladder = global.FarmCharts.createLadder(d); }
-    paintProgram();
-    drawLadder();
-    paintSave();
+    } catch (e) { if (alive()) fail(e); }
   }
   function afterBase() {
-    paintValues(); paintAir(); drawLadder();
+    paintValues(); paintAir();
     points = retarget(points, tg()); drawCharts();
   }
+  // The settings are read only here: the targets, the air size and the chart lines come from them.
   async function loadSettings() {
     try {
       const s = await api.getSettings(id);
-      if (!alive) return;
+      if (!alive()) return;
       base = s;
-      if (!panel) createPanel();
       afterBase();
-      if (pendingSettings) { const d = pendingSettings; pendingSettings = null; onSettings(d); }
-    } catch (e) { if (alive) fail(e); }
-    await loadVersions();
+    } catch (e) { if (alive()) fail(e); }
   }
 
   // ---- stream events (5.4) ----
-  function onSettings(data) {
-    if (saving) return;
-    if (!base || !panel) { pendingSettings = data; return; }
-    const { settings, kept } = rebase(base, panel.get(), data.settings);
-    base = data.settings;
-    panel.set(settings);
-    afterBase();
-    loadVersions();
-    if (kept > 0) setMsg([`The settings changed on the server; your ${kept} change(s) are kept.`]);
-    paintSave();
-  }
   function onReading(data) {
-    if (!latest || data.t >= latest.t) { latest = data; paintValues(); drawLadder(); }
+    if (!latest || data.t >= latest.t) { latest = data; paintValues(); }
     points = mergePoints(points, toChartPoint(data, tg()), nowS() - windowS);
     drawCharts();
   }
@@ -435,7 +309,7 @@ const rdName = h('input', { id: 'rdName', type: 'text', maxlength: '60' });
     room = data;
     const rr = room.live && room.live.reading;
     if (rr && (!latest || rr.t >= latest.t)) latest = rr;
-    paintValues(); paintAir(); drawLadder(); paintProgram(); paintDetails(false);
+    paintValues(); paintAir();
     points = retarget(points, tg()); drawCharts();
   }
   async function onReconnect() {
@@ -448,34 +322,20 @@ const rdName = h('input', { id: 'rdName', type: 'text', maxlength: '60' });
         jobs.push((async () => {
           try {
             const rows = await api.getReadings(id, { from: rq.from, to: rq.to, step: rq.step });
-            if (seq !== loadSeq || !alive) return;
+            if (seq !== loadSeq || !alive()) return;
             const t = tg();
             for (const r of rows) points = mergePoints(points, toChartPoint(r, t), now - windowS);
             drawCharts();
-          } catch (e) { if (alive) fail(e); }
+          } catch (e) { if (alive()) fail(e); }
         })());
       } else { points = []; jobs.push(loadReadings()); }
     }
-    jobs.push(loadAlarms(), loadEvents(true), loadVersions());
-    if (!saving) {
-      jobs.push((async () => {
-        try {
-          const fresh = await api.getSettings(id);
-          if (!alive || saving) return;
-          if (!base || !panel) { base = fresh; if (!panel) createPanel(); afterBase(); return; }
-          const changed = SP.diffSettings(base, fresh).length;
-          const { settings, kept } = rebase(base, panel.get(), fresh);
-          base = fresh; panel.set(settings); afterBase();
-          if (changed > 0 && kept > 0) setMsg([`The settings changed on the server; your ${kept} change(s) are kept.`]);
-          paintSave();
-        } catch (e) { if (alive) fail(e); }
-      })());
-    }
+    jobs.push(loadAlarms(), loadEvents(true), loadSettings());
     await Promise.all(jobs);
   }
   offs.push(ctx.on('reading', onReading), ctx.on('room', onRoom), ctx.on('alarm', () => loadAlarms()),
     ctx.on('event', data => { events = mergeEvent(events, data); renderLog(); }),
-    ctx.on('settings', data => onSettings(data)),
+    ctx.on('settings', data => { base = data.settings; afterBase(); }),
     ctx.on('open', data => { if (data && data.reconnect) onReconnect(); }),
     ctx.on('down', () => {}));
 
@@ -490,82 +350,24 @@ const rdName = h('input', { id: 'rdName', type: 'text', maxlength: '60' });
     try {
       const before = events.length ? Math.min(...events.map(e => e.id)) : undefined;
       const page = await api.getEvents(id, { limit: 100, before });
-      if (!alive) return;
+      if (!alive()) return;
       for (const ev of page) events = mergeEvent(events, ev);
       if (!page.length) olderDone = true;
       renderLog();
       olderBtn.disabled = false;
-    } catch (e) { if (alive) { fail(e); olderBtn.disabled = false; } }
-  });
-  saveBtn.addEventListener('click', async () => {
-    if (!panel || saving) return;
-    const changes = panel.diff(base);
-    if (!changes.length) return;
-    const note = await SP.showChanges(changes, { title: `Save these changes to ${room.name}?`, confirmText: 'Save', note: true });
-    if (note === null || !alive) return;
-    const sent = panel.get();
-    saving = true; paintSave();
-    try {
-      const { settings, warnings } = await api.saveSettings(id, sent, note);
-      if (!alive) return;
-      base = settings;
-      panel.set(rebase(sent, panel.get(), settings).settings);
-      setMsg(warnings && warnings.length ? warnings : ['Saved.'], warnings && warnings.length ? 'info' : 'good');
-      afterBase(); loadVersions();
-    } catch (e) { if (alive) setMsg([UI.errorText(e)], 'error'); }
-    finally { if (alive) { saving = false; paintSave(); } }
-  });
-  discardBtn.addEventListener('click', () => { if (!panel) return; panel.set(base); setMsg([]); drawLadder(); paintSave(); });
-  async function restore(v) {
-    if (!global.confirm(`Make the version of ${clock.stamp(v.saved_at)} current? Unsaved changes are lost.`)) return;
-    saving = true; paintSave();
-    try {
-      const { settings, warnings } = await api.restoreSettings(id, v.id);
-      if (!alive) return;
-      const old = base;
-      base = settings;
-      if (panel) panel.set(settings); else createPanel();
-      setMsg([...(warnings || []), ...changeLines(SP.diffSettings(old, settings))]);
-      afterBase(); loadVersions();
-    } catch (e) { if (alive) setMsg([UI.errorText(e)], 'error'); }
-    finally { if (alive) { saving = false; paintSave(); renderVersions(); } }
-  }
-  rdSave.addEventListener('click', async () => {
-    const changes = detailChanges(room, detailForm());
-    UI.markFields(detailsForm, {});
-    if (!Object.keys(changes).length) { UI.say(rdMsg, 'info', 'Nothing to change.'); return; }
-    try {
-      const r = await api.updateRoom(id, changes);
-      if (!alive) return;
-      room = r; paintDetails(true); UI.say(rdMsg, 'good', 'Saved.');
-    } catch (e) {
-      if (!alive) return;
-      const p = UI.plainError(e, { name: 'Name', volume: 'Room size' });
-      UI.say(rdMsg, 'error', p.text); UI.markFields(detailsForm, p.fields);
-    }
-  });
-  rdArchive.addEventListener('click', async () => {
-    if (!global.confirm(`Archive "${room.name}"? Its loop stops and it leaves the Rooms list. Its data is kept.`)) return;
-    try {
-      await api.updateRoom(id, { archived: true });
-      if (alive) { if (global.FarmShell && global.FarmShell.guardLeave) global.FarmShell.guardLeave(null); global.location.hash = '#/rooms'; }
-    } catch (e) { if (alive) fail(e, rdMsg); }
+    } catch (e) { if (alive()) { fail(e); olderBtn.disabled = false; } }
   });
 
   // ---- start ----
   charts = global.FarmCharts.createTrendCharts(chartsHost, { keys: ['T', 'RH', 'C'], power: false, clock,
     status: k => (room && room.live && room.live.status) ? room.live.status[k] : null });
-  paintValues(); paintAir(); paintDetails(true); renderLog();
+  paintValues(); paintAir(); renderLog();
   drawCharts();
   teardown = () => {
     const step = f => { try { f(); } catch (e) { console.error(e); } };
-    step(() => { alive = false; });
-    step(() => global.FarmShell && global.FarmShell.guardLeave && global.FarmShell.guardLeave(null));
+    step(() => { mountSeq++; });
     for (const off of offs) step(off);
-    step(() => panel && panel.destroy());
     step(() => charts && charts.destroy());
-    step(() => ladder && ladder.destroy());
-    step(() => { const d = document.querySelector('body > dialog[open]'); if (d) { d.close(); d.remove(); } });
   };
   return Promise.all([loadReadings(), loadAlarms(), loadEvents(false), loadSettings()]).then(() => undefined);
 }
@@ -575,5 +377,5 @@ function unmount() {
   if (t) t();
 }
 
-global.FarmRoomTabs.register('overview', { mount, unmount, helpers }); // C12 2.2: the Live tab is the room Overview until the Room stream splits it
+global.FarmRoomTabs.register('overview', { mount, unmount, helpers });
 })(typeof window !== 'undefined' ? window : globalThis);
