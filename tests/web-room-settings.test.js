@@ -224,3 +224,11 @@ test('RT14 a settings failure does not touch the details', async t => {
   await el.querySelector('#spSave').listeners.click();
   assert.deepEqual(calls, { save: 1, update: 0 });
 });
+
+test('C14 checkLines: the confirm warnings follow the saved targets', () => {
+  const ok = { ...S, crop: 'oyster', stage: 'fruiting', spT: 25, spRH: 88 };
+  assert.deepEqual(H.checkLines(ok), []);
+  const cold = H.checkLines({ ...ok, spT: 16 });
+  assert.equal(cold.length, 1); assert.match(cold[0], /^16 °C is outside what Grey oyster can take/);
+  assert.equal(globalThis.FarmSettingsPanel.checkSection([]), null);
+});

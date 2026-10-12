@@ -118,15 +118,32 @@ function machineTiles(r, manual) {
   return tiles;
 }
 
-// "Should be: ..." with the ramp note when the stored setpoint is still on its way (C11 5.3).
-function targetsText(live, settings) {
+// "ready about 14:05" / "ready tomorrow about 06:10" in farm time; '' once the time has passed (C14 4).
+function readyText(endsAt, nowS) {
+  if (!Number.isFinite(endsAt) || endsAt <= nowS) return '';
+  const clock = ui().farmClock(), day = t => clock.label(t).slice(0, 10);
+  const dayDiff = (Date.parse(day(endsAt)) - Date.parse(day(nowS))) / 86400000;
+  const when = dayDiff <= 0 ? '' : dayDiff === 1 ? 'tomorrow ' : `${day(endsAt)} `;
+  return `ready ${when}about ${clock.hm(endsAt)}`;
+}
+
+// "moving to 17 °C and 92 %, ready about 14:05" for live.ramp; '' without a running ramp.
+function rampText(ramp, nowS) {
+  if (!ramp || !ramp.to) return '';
+  const ready = readyText(ramp.endsAt, nowS);
+  if (!ready) return '';
+  const n1 = v => String(Math.round(v * 10) / 10);
+  return `moving to ${n1(ramp.to.T)} °C and ${Math.round(ramp.to.RH)} %, ${ready}`;
+}
+
+// "Should be: ..." with the ramp note while the targets move (C14 4).
+function targetsText(live, nowS) {
   const t = live && live.targets;
   if (!t) return '';
   const f = ui().fmtNum;
   let text = `Should be: ${f(t.T, 1)} °C · ${f(t.RH, 0)} % · CO₂ under ${ui().nf(t.CO2)} ppm`;
-  if (settings && Number.isFinite(settings.spT) && Math.abs(settings.spT - t.T) >= 0.05) {
-    text += ` · moving to ${f(settings.spT, 1)} °C, ${f(settings.spRH, 0)} %`;
-  }
+  const ramp = rampText(live.ramp, nowS ?? Math.floor(Date.now() / 1000));
+  if (ramp) text += ` · ${ramp}`;
   return text;
 }
 
@@ -141,7 +158,7 @@ function mergeEvent(events, ev) {
 }
 
 const helpers = { airLive, airSub, windowQuery, gapFor, reconnectQuery, chartTargets, toChartPoint, retarget, mergePoints,
-  readingTexts, machineLines, machineTiles, targetsText, alarmTexts, mergeEvent };
+  readingTexts, machineLines, machineTiles, readyText, rampText, targetsText, alarmTexts, mergeEvent };
 
 // ---------------- DOM ----------------
 function h(tag, attrs, ...kids) {
@@ -215,7 +232,7 @@ function mount(el, ctx) {
     q('#lvT .val').textContent = t.T; q('#lvRH .val').textContent = t.RH; q('#lvCO2 .val').textContent = t.CO2;
     paintChipOrHide(q('#lvT .chip'), 'T', st.T); paintChipOrHide(q('#lvRH .chip'), 'RH', st.RH); paintChipOrHide(q('#lvCO2 .chip'), 'CO2', st.CO2);
     q('#lvAt').textContent = t.at;
-    q('#lvTargets').textContent = targetsText(room.live, base);
+    q('#lvTargets').textContent = targetsText(room.live, nowS());
     q('#lvMachines').replaceChildren(...machineTiles(latest, room.live && room.live.manual).map(t => {
       const li = h('li', { class: 'machine', 'data-dev': t.dev, 'data-on': t.on ? '1' : '0', 'data-manual': t.manual ? '1' : '0' },
         span({ class: 'm-name' }, t.name), span({ class: 'm-state' }, t.state));

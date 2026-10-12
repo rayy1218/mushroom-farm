@@ -320,3 +320,15 @@ test('OV15 a room without a placed batch says so; crates are cached per batch', 
   assert.equal(getBatchCalls, 1);
   OV.unmount();
 });
+
+test('C14 rampLine: the card line while the targets move', () => {
+  const NOW = 1791450000, to = { T: 17, RH: 92, CO2: 1000 }, clock = globalThis.FarmUi.farmClock();
+  const live = r => ({ crop: 'lionsmane', stage: 'pinning', ramp: r });
+  assert.equal(H.rampLine(live(null), NOW), '');
+  assert.equal(H.rampLine(null, NOW), '');
+  assert.equal(H.rampLine(live({ to, endsAt: NOW - 1 }), NOW), '');
+  const next = NOW + 86400;
+  assert.equal(H.rampLine(live({ to, endsAt: next }), NOW), `Moving to Lion's mane Pinning targets, ready tomorrow about ${clock.hm(next)}`);
+  let same = NOW + 600; while (clock.label(same).slice(0, 10) !== clock.label(NOW).slice(0, 10)) same -= 60;
+  assert.equal(H.rampLine(live({ to, endsAt: same }), NOW), `Moving to Lion's mane Pinning targets, ready about ${clock.hm(same)}`);
+});
