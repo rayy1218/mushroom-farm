@@ -17,7 +17,7 @@ const READING = { room_id: 1, t: 1791450000, T: 18.2, RH: 88.4, CO2: 812, t_out:
 const TG = { spT: 18, spRH: 88, co2Lim: 1000, fanOn: 900, fanOff: 700 };
 
 const HELPER_NAMES = ['airLive', 'airSub', 'windowQuery', 'gapFor', 'reconnectQuery', 'chartTargets', 'toChartPoint', 'retarget',
-  'mergePoints', 'mergeEvent', 'readingTexts', 'machineLines', 'machineTiles', 'readyText', 'rampText', 'targetsText', 'alarmTexts'];
+  'mergePoints', 'mergeEvent', 'readingTexts', 'machineLines', 'machineTiles', 'readyText', 'rampShows', 'rampText', 'targetsText', 'alarmTexts'];
 
 test('LV1 registration', () => {
   assert.ok(tab, 'tab live registered');
@@ -172,7 +172,10 @@ test('LV22 rampText: today, tomorrow, past', () => {
   const next = NOW + 86400;
   assert.equal(H.rampText({ to, endsAt: same }, NOW), `moving to 17 °C and 92 %, ready about ${hm(same)}`);
   assert.equal(H.rampText({ to, endsAt: next }, NOW), `moving to 17 °C and 92 %, ready tomorrow about ${hm(next)}`);
-  assert.match(H.rampText({ to, endsAt: NOW + 3 * 86400 }, NOW), /, ready \d{4}-\d\d-\d\d about \d\d:\d\d$/);
+  assert.match(H.rampText({ to, endsAt: NOW + 3 * 86400 }, NOW), /, ready (Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday) about \d\d:\d\d$/);
+  // decision 116: the room already has the targets
+  assert.equal(H.rampText({ to, endsAt: next }, NOW, { T: 17.05, RH: 91.5 }), '');
+  assert.notEqual(H.rampText({ to, endsAt: next }, NOW, { T: 25, RH: 88 }), '');
   assert.equal(H.rampText({ to, endsAt: NOW - 5 }, NOW), '');
   assert.equal(H.rampText(null, NOW), '');
   assert.equal(H.rampText({ to: { T: 22.5, RH: 80.4, CO2: 1000 }, endsAt: next }, NOW).startsWith('moving to 22.5 °C and 80 %'), true);

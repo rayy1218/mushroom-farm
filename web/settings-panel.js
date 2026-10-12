@@ -211,13 +211,13 @@ const TARGETS_HTML = `
     <p class="hint farmer-only">The crop and the stage set these targets. Use the installer view to change them.</p>
     <div class="field">
       <label for="inSpT">Temperature target</label><output id="outSpT" for="inSpT"></output>
-      <input type="range" id="inSpT" min="12" max="32" step="0.5" value="25" class="lockable">
+      <input type="range" id="inSpT" min="12" max="32" step="0.5" value="25" class="lockable" aria-describedby="warnSpT">
       <span class="hint">Band ±1 °C. Alarm at ±2 °C, and outside the crop range.</span>
       <div class="target-warns" id="warnSpT" role="status"></div>
     </div>
     <div class="field">
       <label for="inSpRH">Humidity target</label><output id="outSpRH" for="inSpRH"></output>
-      <input type="range" id="inSpRH" min="50" max="98" step="1" value="88" class="lockable">
+      <input type="range" id="inSpRH" min="50" max="98" step="1" value="88" class="lockable" aria-describedby="warnSpRH">
       <span class="hint">Band ±3 %. Alarm at ±8 %.</span>
       <div class="target-warns" id="warnSpRH" role="status"></div>
     </div>
@@ -456,14 +456,26 @@ function rampNote(stored, edited) {
   if (!p) return '';
   const to = `${nf1(p.T)} °C and ${Math.round(p.RH)} %`;
   const h = edited.program && edited.program.rampH;
-  return h > 0 ? `After you save, the targets move to ${to} over ${nf1(h)} h.` : `After you save, the targets change to ${to}.`;
+  const over = h < 1 ? `${Math.round(h * 60)} min` : `${nf1(h)} h`;
+  return h > 0 ? `After you save, the targets move to ${to} over ${over}.` : `After you save, the targets change to ${to}.`;
 }
+// C14 4, decision 117: warnings only while the targets are the farmer's own to set: not while a crop, stage or farm-type
+// change is pending (the targets become the crop's), nor while a ramp runs (the stored targets are only its start).
+function activeWarnings(stored, edited, ramp, nowS) {
+  const none = { T: [], RH: [] };
+  if (rampNote(stored, edited)) return none;
+  if (ramp && ramp.endsAt > (nowS ?? Math.floor(Date.now() / 1000))) return none;
+  return global.FarmUi.targetWarningsByKind({ crop: edited.crop, stage: edited.stage, spT: edited.spT, spRH: edited.spRH });
+}
+
 // ---------------- createSettingsPanel (7.2-7.4, 7.8, 7.9) ----------------
 const DEV_NAME = { ac: 'Air conditioner', hu: 'Fogger', air: 'Air exchange', lights: 'Lights', circ: 'Circulation fan' };
 
 function createSettingsPanel(el, options) {
   let settings = structuredClone(options.settings);
-  let stored = structuredClone(options.settings); // what is saved, for the "targets move" note
+  // what is saved, for the "targets move" note and the warnings; the panel shows neither without it (the Test bench passes none)
+  let stored = options.stored ? structuredClone(options.stored) : null;
+  const getRamp = typeof options.getRamp === 'function' ? options.getRamp : null;
   const readOnly = !!options.readOnly;
   const onChangeCb = typeof options.onChange === 'function' ? options.onChange : null;
   const getCommand = typeof options.getCommand === 'function' ? options.getCommand : null;
@@ -678,7 +690,7 @@ function createSettingsPanel(el, options) {
     { const elIn = $('#pgTimes'); if (document.activeElement !== elIn || elIn === forceWriteEl) elIn.value = s.program.harvest.times.map(CC.hhmm).join(', '); }
     $('#cropWants').textContent = wantsText(s.crop, s.stage);
     { const note = rampNote(stored, s), n = $('#cropRamp'); n.hidden = !note; n.textContent = note; }
-    { const w = global.FarmUi.targetWarningsByKind({ crop: s.crop, stage: s.stage, spT: s.spT, spRH: s.spRH });
+    { const w = document.body.dataset.level === 'installer' && stored ? activeWarnings(stored, s, getRamp && getRamp()) : { T: [], RH: [] };
       for (const [id, list] of [['warnSpT', w.T], ['warnSpRH', w.RH]]) {
         $('#' + id).replaceChildren(...list.map(t => { const p = document.createElement('p'); p.className = 'field-help target-warn'; p.textContent = `▲ ${t}`; return p; }));
       } }
@@ -739,7 +751,7 @@ function createSettingsPanel(el, options) {
     get() { return structuredClone(settings); },
     set(next, base) {
       settings = structuredClone(next);
-      if (base) stored = structuredClone(base);
+      if (base && stored) stored = structuredClone(base);
       repaint();
     },
     diff(base) { return diffSettings(base, structuredClone(settings)); },
@@ -810,6 +822,6 @@ function showChanges(changes, opts) {
   });
 }
 
-const FarmSettingsPanel = { createSettingsPanel, diffSettings, applyChanges, formatValue, safeSettings, FIELDS, showChanges, ruleHelp, wantsText, rampNote, checkSection };
+const FarmSettingsPanel = { createSettingsPanel, diffSettings, applyChanges, formatValue, safeSettings, FIELDS, showChanges, ruleHelp, wantsText, rampNote, activeWarnings, checkSection };
 global.FarmSettingsPanel = FarmSettingsPanel;
 })(typeof window !== 'undefined' ? window : globalThis);

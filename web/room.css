@@ -53,12 +53,10 @@ figure.room-drawing { grid-column: 1 / -1; margin: 0; padding: 8px; }
 }
 
 /* C14 4: targets follow the crop */
-.crop-wants { margin: var(--sp-2, 8px) 0; color: var(--ink-2); font-size: var(--fs-sm); }
-.alert[hidden] { display: none; }
+.crop-wants { margin: 8px 0; color: var(--ink-2); font-size: var(--fs-sm); }
 .target-warns:empty { display: none; }
-.target-warn { margin: 4px 0 0; color: var(--warning-ink, var(--warning)); font-weight: 600; }
+.target-warn { margin: 4px 0 0; color: var(--warning-text); font-weight: 600; }
 .changes-check { margin: 12px 0; padding: 8px 12px; border-left: 4px solid var(--warning); background: color-mix(in srgb, var(--warning) 12%, transparent); }
 .changes-check-title { margin: 0 0 4px; font-weight: 700; }
 .changes-check ul { margin: 0; padding-left: 18px; }
 .ov-ramp { margin: 0; color: var(--ink-2); font-size: var(--fs-sm); }
-.ov-ramp[hidden] { display: none; }

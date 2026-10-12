@@ -100,7 +100,7 @@ const later = () => new Promise(r => setTimeout(r, 20));
 const ROOM = { id: 1, name: 'Room 1', volume: 60, live: { reading: READING, crop: 'oyster', stage: 'fruiting', flush: 1, air: null } };
 
 function withDom(t, settingsById) {
-  globalThis.document = { createElement: tag => new FakeEl(tag), querySelector: () => null };
+  globalThis.document = { createElement: tag => new FakeEl(tag), querySelector: () => null, body: { dataset: {} } };
   const oldShow = globalThis.FarmSettingsPanel.showChanges; globalThis.FarmSettingsPanel.showChanges = async () => '';
   const api = globalThis.FarmApi, oldApi = { ...api }, oldSP = globalThis.FarmSettingsPanel.createSettingsPanel, oldCharts = globalThis.FarmCharts.createLadder;
   const made = [];
@@ -225,10 +225,25 @@ test('RT14 a settings failure does not touch the details', async t => {
   assert.deepEqual(calls, { save: 1, update: 0 });
 });
 
-test('C14 checkLines: the confirm warnings follow the saved targets', () => {
+test('C14 checkLines: the confirm warnings follow the saved targets (decision 117)', () => {
   const ok = { ...S, crop: 'oyster', stage: 'fruiting', spT: 25, spRH: 88 };
-  assert.deepEqual(H.checkLines(ok), []);
-  const cold = H.checkLines({ ...ok, spT: 16 });
+  assert.deepEqual(H.checkLines(ok, ok, null), []);
+  const cold = H.checkLines(ok, { ...ok, spT: 16 }, null);
   assert.equal(cold.length, 1); assert.match(cold[0], /^16 °C is outside what Grey oyster can take/);
-  assert.equal(globalThis.FarmSettingsPanel.checkSection([]), null);
+  assert.deepEqual(H.checkLines(ok, { ...ok, spT: 16, crop: 'lionsmane' }, null), []);
+  assert.deepEqual(H.checkLines(ok, { ...ok, spT: 16 }, { endsAt: Date.now() / 1000 + 600 }), []);
+});
+
+test('C14 Save passes the warnings to the confirm', async t => {
+  const { ctx, made, setDiff } = withDom(t, { 1: Promise.resolve({ ...S, crop: 'oyster', stage: 'fruiting', spT: 25, spRH: 88 }) });
+  globalThis.document.body.dataset.level = 'installer';
+  let seen = null;
+  globalThis.FarmSettingsPanel.showChanges = async (_l, opts) => { seen = opts; return null; };
+  const el = new FakeEl('div');
+  await tab.mount(el, ctx(1));
+  made[0].get = () => ({ ...S, crop: 'oyster', stage: 'fruiting', spT: 16, spRH: 88 });
+  setDiff([{ path: 'spT', label: 'Temperature target', oldText: '25 °C', newText: '16 °C' }]);
+  await el.querySelector('#spSave').listeners.click();
+  assert.equal(seen.warnings.length, 1);
+  assert.match(seen.warnings[0], /16 °C is outside/);
 });

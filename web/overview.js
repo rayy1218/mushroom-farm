@@ -185,15 +185,13 @@ function cropLine(live) {
 
 // "Moving to Lion's mane Pinning targets, ready about 14:05" under the crop line; '' without a running ramp (C14 4).
 function rampLine(live, nowS) {
+  const live_ = global.FarmRoomTabs.get('overview').helpers;
   const ramp = live && live.ramp;
-  if (!ramp || !Number.isFinite(ramp.endsAt) || ramp.endsAt <= nowS) return '';
-  const CC = global.ClimateController, clock = global.FarmUi.farmClock();
+  if (!live_.rampShows(ramp, live && live.targets, nowS)) return '';
+  const CC = global.ClimateController;
   const crop = CC && CC.CROPS && CC.CROPS[live.crop] ? CC.CROPS[live.crop].name : live.crop;
   const stage = CC && CC.STAGES && CC.STAGES[live.stage] ? CC.STAGES[live.stage] : live.stage;
-  const day = t => clock.label(t).slice(0, 10);
-  const diff = (Date.parse(day(ramp.endsAt)) - Date.parse(day(nowS))) / 86400000;
-  const when = diff <= 0 ? '' : diff === 1 ? 'tomorrow ' : `${day(ramp.endsAt)} `;
-  return `Moving to ${[crop, stage].filter(x => x != null).join(' ')} targets, ready ${when}about ${clock.hm(ramp.endsAt)}`;
+  return `Moving to ${[crop, stage != null ? String(stage).toLowerCase() : null].filter(x => x != null).join(' ')} targets, ${live_.readyText(ramp.endsAt, nowS)}`;
 }
 
 // The target band of a room's sparkline (C12 4 Sparkline).

@@ -118,22 +118,27 @@ function machineTiles(r, manual) {
   return tiles;
 }
 
-// "ready about 14:05" / "ready tomorrow about 06:10" in farm time; '' once the time has passed (C14 4).
+const WEEKDAY = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+// "ready about 14:05" / "ready tomorrow about 06:10" / "ready Wednesday about 06:10" in farm time; '' once the time has passed (C14 4).
 function readyText(endsAt, nowS) {
   if (!Number.isFinite(endsAt) || endsAt <= nowS) return '';
-  const clock = ui().farmClock(), day = t => clock.label(t).slice(0, 10);
-  const dayDiff = (Date.parse(day(endsAt)) - Date.parse(day(nowS))) / 86400000;
-  const when = dayDiff <= 0 ? '' : dayDiff === 1 ? 'tomorrow ' : `${day(endsAt)} `;
+  const clock = ui().farmClock(), day = t => Date.parse(clock.label(t).slice(0, 10));
+  const dayDiff = (day(endsAt) - day(nowS)) / 86400000;
+  const when = dayDiff <= 0 ? '' : dayDiff === 1 ? 'tomorrow ' : `${WEEKDAY[new Date(day(endsAt)).getUTCDay()]} `;
   return `ready ${when}about ${clock.hm(endsAt)}`;
 }
 
+// A ramp that is over, or whose targets the room already has (C14 4, decision 116), is not shown.
+function rampShows(ramp, targets, nowS) {
+  if (!ramp || !ramp.to || !(ramp.endsAt > nowS)) return false;
+  return !(targets && Math.abs(targets.T - ramp.to.T) <= 0.1 && Math.abs(targets.RH - ramp.to.RH) <= 1);
+}
+
 // "moving to 17 °C and 92 %, ready about 14:05" for live.ramp; '' without a running ramp.
-function rampText(ramp, nowS) {
-  if (!ramp || !ramp.to) return '';
-  const ready = readyText(ramp.endsAt, nowS);
-  if (!ready) return '';
+function rampText(ramp, nowS, targets) {
+  if (!rampShows(ramp, targets, nowS)) return '';
   const n1 = v => String(Math.round(v * 10) / 10);
-  return `moving to ${n1(ramp.to.T)} °C and ${Math.round(ramp.to.RH)} %, ${ready}`;
+  return `moving to ${n1(ramp.to.T)} °C and ${Math.round(ramp.to.RH)} %, ${readyText(ramp.endsAt, nowS)}`;
 }
 
 // "Should be: ..." with the ramp note while the targets move (C14 4).
@@ -142,7 +147,7 @@ function targetsText(live, nowS) {
   if (!t) return '';
   const f = ui().fmtNum;
   let text = `Should be: ${f(t.T, 1)} °C · ${f(t.RH, 0)} % · CO₂ under ${ui().nf(t.CO2)} ppm`;
-  const ramp = rampText(live.ramp, nowS ?? Math.floor(Date.now() / 1000));
+  const ramp = rampText(live.ramp, nowS ?? Math.floor(Date.now() / 1000), t);
   if (ramp) text += ` · ${ramp}`;
   return text;
 }
@@ -158,7 +163,7 @@ function mergeEvent(events, ev) {
 }
 
 const helpers = { airLive, airSub, windowQuery, gapFor, reconnectQuery, chartTargets, toChartPoint, retarget, mergePoints,
-  readingTexts, machineLines, machineTiles, readyText, rampText, targetsText, alarmTexts, mergeEvent };
+  readingTexts, machineLines, machineTiles, readyText, rampShows, rampText, targetsText, alarmTexts, mergeEvent };
 
 // ---------------- DOM ----------------
 function h(tag, attrs, ...kids) {

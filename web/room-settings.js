@@ -59,8 +59,9 @@ function rebase(from, edited, to) {
 }
 
 // C14 4: the plain warnings for the settings about to be saved.
-function checkLines(s) {
-  return global.FarmUi.targetWarnings({ crop: s.crop, stage: s.stage, spT: s.spT, spRH: s.spRH });
+function checkLines(stored, edited, ramp) {
+  const w = global.FarmSettingsPanel.activeWarnings(stored, edited, ramp);
+  return [...w.T, ...w.RH];
 }
 
 const helpers = { checkLines, programText, commandFromReading, detailChanges, detailProblems, detailLines, countText, changeLines, versionText, barVisible, rebase };
@@ -192,7 +193,7 @@ function mount(el, ctx) {
     try { const v = await api.listSettingsHistory(id); if (!alive()) return; versions = v; renderVersions(); paintSave(); } catch (e) { if (alive()) fail(e); }
   }
   function createPanel() {
-    panel = SP.createSettingsPanel(spHost, { settings: base, readOnly: false, getCommand: () => commandFromReading(latest),
+    panel = SP.createSettingsPanel(spHost, { settings: base, stored: base, getRamp: () => room.live && room.live.ramp, readOnly: false, getCommand: () => commandFromReading(latest),
       onChange: () => { paintSave(); drawLadder(); } });
     const slot = spHost.querySelector('[data-slot="rules-side"]');
     if (slot) { const d = document.createElement('div'); slot.append(d); ladder = global.FarmCharts.createLadder(d); }
@@ -268,7 +269,7 @@ function mount(el, ctx) {
     UI.markFields(detailsForm, problems);
     if (Object.keys(problems).length) { flash(['Nothing was saved. Check the marked field.'], 'error'); return; }
     const note = await SP.showChanges(lines, { title: `Save these changes to ${room.name}?`, confirmText: 'Save', note: changes.length > 0,
-      warnings: changes.length ? checkLines(panel.get()) : [] });
+      warnings: changes.length && document.body.dataset.level === 'installer' ? checkLines(base, panel.get(), room.live && room.live.ramp) : [] });
     if (note === null || !alive()) return;
     saving = true; paintSave();
     const messages = [];
