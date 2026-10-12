@@ -196,6 +196,8 @@ const TARGETS_HTML = `
       <span>Stage</span>
       <div class="seg" role="group" aria-label="Stage" id="stageSeg"></div>
     </div>
+    <p class="crop-wants" id="cropWants"></p>
+    <div class="alert" data-lvl="info" id="cropRamp" hidden></div>
     <div data-slot="program-status"></div>
     <div class="crop-row">
       <label class="chk" style="margin:0"><input type="checkbox" id="pgHarvest"> Harvest times</label>
@@ -209,13 +211,15 @@ const TARGETS_HTML = `
     <p class="hint farmer-only">The crop and the stage set these targets. Use the installer view to change them.</p>
     <div class="field">
       <label for="inSpT">Temperature target</label><output id="outSpT" for="inSpT"></output>
-      <input type="range" id="inSpT" min="12" max="32" step="0.5" value="25" class="lockable">
+      <input type="range" id="inSpT" min="12" max="32" step="0.5" value="25" class="lockable" aria-describedby="warnSpT">
       <span class="hint">Band ±1 °C. Alarm at ±2 °C, and outside the crop range.</span>
+      <div class="target-warns" id="warnSpT" role="status"></div>
     </div>
     <div class="field">
       <label for="inSpRH">Humidity target</label><output id="outSpRH" for="inSpRH"></output>
-      <input type="range" id="inSpRH" min="50" max="98" step="1" value="88" class="lockable">
+      <input type="range" id="inSpRH" min="50" max="98" step="1" value="88" class="lockable" aria-describedby="warnSpRH">
       <span class="hint">Band ±3 %. Alarm at ±8 %.</span>
+      <div class="target-warns" id="warnSpRH" role="status"></div>
     </div>
     <div data-slot="targets-status"></div>
     <div class="field">
@@ -437,11 +441,41 @@ const MACHINES_HTML = `
     <fieldset class="manual" id="circManual" disabled><legend>Manual output</legend><label class="chk"><input type="checkbox" id="ciOn"> On</label></fieldset>`)}
 </section>`;
 
+// C14 4: what the chosen crop and stage want, and the warnings for the shown targets.
+const nf1 = v => String(Math.round(v * 10) / 10);
+function wantsText(crop, stage) {
+  const p = global.FarmUi.cropTargets(crop, stage);
+  if (!p) return '';
+  return `${p.name} · ${p.stageName.toLowerCase()} wants ${nf1(p.T)} °C · ${Math.round(p.RH)} % · CO₂ under ${global.FarmUi.nf(p.CO2)} ppm`;
+}
+// The note shown when the crop, stage or farm type differs from the stored settings; '' when nothing moves.
+function rampNote(stored, edited) {
+  if (!stored || !edited) return '';
+  if (stored.crop === edited.crop && stored.stage === edited.stage && stored.farmType === edited.farmType) return '';
+  const p = global.FarmUi.cropTargets(edited.crop, edited.stage);
+  if (!p) return '';
+  const to = `${nf1(p.T)} °C and ${Math.round(p.RH)} %`;
+  const h = edited.program && edited.program.rampH;
+  const over = h < 1 ? `${Math.round(h * 60)} min` : `${nf1(h)} h`;
+  return h > 0 ? `After you save, the targets move to ${to} over ${over}.` : `After you save, the targets change to ${to}.`;
+}
+// C14 4, decision 117: warnings only while the targets are the farmer's own to set: not while a crop, stage or farm-type
+// change is pending (the targets become the crop's), nor while a ramp runs (the stored targets are only its start).
+function activeWarnings(stored, edited, ramp, nowS) {
+  const none = { T: [], RH: [] };
+  if (rampNote(stored, edited)) return none;
+  if (ramp && ramp.endsAt > (nowS ?? Math.floor(Date.now() / 1000))) return none;
+  return global.FarmUi.targetWarningsByKind({ crop: edited.crop, stage: edited.stage, spT: edited.spT, spRH: edited.spRH });
+}
+
 // ---------------- createSettingsPanel (7.2-7.4, 7.8, 7.9) ----------------
 const DEV_NAME = { ac: 'Air conditioner', hu: 'Fogger', air: 'Air exchange', lights: 'Lights', circ: 'Circulation fan' };
 
 function createSettingsPanel(el, options) {
   let settings = structuredClone(options.settings);
+  // what is saved, for the "targets move" note and the warnings; the panel shows neither without it (the Test bench passes none)
+  let stored = options.stored ? structuredClone(options.stored) : null;
+  const getRamp = typeof options.getRamp === 'function' ? options.getRamp : null;
   const readOnly = !!options.readOnly;
   const onChangeCb = typeof options.onChange === 'function' ? options.onChange : null;
   const getCommand = typeof options.getCommand === 'function' ? options.getCommand : null;
@@ -654,6 +688,12 @@ function createSettingsPanel(el, options) {
     renderStageSeg();
     setVal($('#pgHarvest'), s.program.harvest.on);
     { const elIn = $('#pgTimes'); if (document.activeElement !== elIn || elIn === forceWriteEl) elIn.value = s.program.harvest.times.map(CC.hhmm).join(', '); }
+    $('#cropWants').textContent = wantsText(s.crop, s.stage);
+    { const note = rampNote(stored, s), n = $('#cropRamp'); n.hidden = !note; n.textContent = note; }
+    { const w = document.body.dataset.level === 'installer' && stored ? activeWarnings(stored, s, getRamp && getRamp()) : { T: [], RH: [] };
+      for (const [id, list] of [['warnSpT', w.T], ['warnSpRH', w.RH]]) {
+        $('#' + id).replaceChildren(...list.map(t => { const p = document.createElement('p'); p.className = 'field-help target-warn'; p.textContent = `▲ ${t}`; return p; }));
+      } }
     setVal($('#inSpT'), s.spT); global.FarmUi.set($('#outSpT').id, `${s.spT.toFixed(1)} °C`);
     setVal($('#inSpRH'), s.spRH); global.FarmUi.set($('#outSpRH').id, `${s.spRH} %`);
     setVal($('#inCo2Lim'), s.co2Lim); global.FarmUi.set($('#outCo2Lim').id, `${s.co2Lim} ppm`);
@@ -709,8 +749,9 @@ function createSettingsPanel(el, options) {
 
   return {
     get() { return structuredClone(settings); },
-    set(next) {
+    set(next, base) {
       settings = structuredClone(next);
+      if (base && stored) stored = structuredClone(base);
       repaint();
     },
     diff(base) { return diffSettings(base, structuredClone(settings)); },
@@ -722,6 +763,17 @@ function createSettingsPanel(el, options) {
 }
 
 // ---------------- showChanges (7.6) ----------------
+// C14 4: the confirm's "Check before saving:" section; null when there is nothing to check.
+function checkSection(warnings) {
+  if (!warnings || !warnings.length) return null;
+  const box = document.createElement('div'); box.className = 'changes-check';
+  const p = document.createElement('p'); p.className = 'changes-check-title'; p.textContent = 'Check before saving:';
+  const ul = document.createElement('ul');
+  for (const w of warnings) { const li = document.createElement('li'); li.textContent = w; ul.append(li); }
+  box.append(p, ul);
+  return box;
+}
+
 function showChanges(changes, opts) {
   const title = opts.title, confirmText = opts.confirmText, note = !!opts.note;
   return new Promise(resolve => {
@@ -734,6 +786,8 @@ function showChanges(changes, opts) {
       ul.append(li);
     }
     dialog.append(h2, ul);
+    const check = checkSection(opts.warnings);
+    if (check) dialog.append(check);
     let noteInput = null;
     if (note) {
       const field = document.createElement('div'); field.className = 'field';
@@ -768,6 +822,6 @@ function showChanges(changes, opts) {
   });
 }
 
-const FarmSettingsPanel = { createSettingsPanel, diffSettings, applyChanges, formatValue, safeSettings, FIELDS, showChanges, ruleHelp };
+const FarmSettingsPanel = { createSettingsPanel, diffSettings, applyChanges, formatValue, safeSettings, FIELDS, showChanges, ruleHelp, wantsText, rampNote, activeWarnings, checkSection };
 global.FarmSettingsPanel = FarmSettingsPanel;
 })(typeof window !== 'undefined' ? window : globalThis);

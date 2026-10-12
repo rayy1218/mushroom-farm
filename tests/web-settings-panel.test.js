@@ -71,3 +71,94 @@ test('RULEGRID priority 3 is one grid and the checkboxes sit straight in their c
   assert.doesNotMatch(src, /<div class="field"><label class="chk">/);
   assert.doesNotMatch(src, /style="margin-top/);
 });
+
+test('C14 wantsText, rampNote, activeWarnings and the confirm section', () => {
+  require('../web/ui.js'); require('../web/settings-panel.js');
+  const SP = globalThis.FarmSettingsPanel;
+  assert.equal(SP.wantsText('lionsmane', 'pinning'), "Lion's mane · pinning wants 17 °C · 92 % · CO₂ under 1,000 ppm");
+  assert.equal(SP.wantsText('nope', 'pinning'), '');
+  const stored = { ...CC.defaultSettings(), crop: 'oyster', stage: 'fruiting' };
+  assert.equal(SP.rampNote(stored, stored), '');
+  const edited = { ...stored, crop: 'lionsmane', stage: 'pinning', program: { ...stored.program, rampH: 6 } };
+  assert.equal(SP.rampNote(stored, edited), 'After you save, the targets move to 17 °C and 92 % over 6 h.');
+  assert.equal(SP.rampNote(stored, { ...edited, program: { ...edited.program, rampH: 0.5 } }), 'After you save, the targets move to 17 °C and 92 % over 30 min.');
+  assert.equal(SP.rampNote(stored, { ...edited, program: { ...edited.program, rampH: 0 } }), 'After you save, the targets change to 17 °C and 92 %.');
+  const cold = { ...stored, spT: 16, spRH: 80 };
+  const w = SP.activeWarnings(stored, cold, null);
+  assert.equal(w.T.length, 1); assert.match(w.T[0], /16 °C is outside/);
+  assert.equal(w.RH.length, 1); assert.match(w.RH[0], /% drier\.$/);
+  assert.deepEqual(SP.activeWarnings(stored, { ...stored, spT: 25, spRH: 88 }, null), { T: [], RH: [] });
+  // decision 117: none while a crop change is pending or a ramp runs
+  assert.deepEqual(SP.activeWarnings(stored, { ...cold, crop: 'lionsmane' }, null), { T: [], RH: [] });
+  assert.deepEqual(SP.activeWarnings(stored, cold, { endsAt: 2000 }, 1000), { T: [], RH: [] });
+  assert.equal(SP.activeWarnings(stored, cold, { endsAt: 500 }, 1000).T.length, 1);
+});
+
+test('C14 checkSection: a title and one li per warning', () => {
+  require('../web/settings-panel.js');
+  const SP = globalThis.FarmSettingsPanel;
+  const mk = tag => ({ tagName: tag, children: [], className: '', textContent: '', append(...c) { this.children.push(...c); } });
+  const old = globalThis.document;
+  globalThis.document = { createElement: mk };
+  try {
+    assert.equal(SP.checkSection([]), null);
+    const box = SP.checkSection(['a', 'b']);
+    assert.equal(box.children[0].textContent, 'Check before saving:');
+    assert.deepEqual(box.children[1].children.map(li => li.textContent), ['a', 'b']);
+  } finally { if (old === undefined) delete globalThis.document; else globalThis.document = old; }
+});
+
+test('C14 the target warning appears and clears as the slider moves; the ramp note follows the crop', () => {
+  require('../web/ui.js'); require('../web/settings-panel.js');
+  const SP = globalThis.FarmSettingsPanel;
+  const mk = () => ({ dataset: {}, setAttribute() {}, children: [], textContent: '', hidden: false, className: '', append(...c) { this.children.push(...c); }, replaceChildren(...c) { this.children = c; } });
+  const nodes = {};
+  const node = id => nodes[id] ||= Object.assign(mk(), { id, classList: { add() {}, toggle() {} }, listeners: {}, addEventListener(n, f) { this.listeners[n] = f; },
+    querySelectorAll: () => [], value: '' });
+  const host = { classList: { add() {} }, set innerHTML(html) { this.html = html; }, replaceChildren() {},
+    querySelector: sel => node(sel.replace(/^#/, '').replace(/^\[data-slot="(.*)"\]$/, 'slot-$1')),
+    querySelectorAll: () => [] };
+  const old = globalThis.document;
+  const body = { dataset: { level: 'installer' } };
+  globalThis.document = { createElement: () => mk(), getElementById: id => node(id), addEventListener() {}, removeEventListener() {}, body, activeElement: null };
+  try {
+    const s0 = { ...CC.defaultSettings(), crop: 'oyster', stage: 'fruiting' };
+    let ramp = null;
+    const panel = SP.createSettingsPanel(host, { settings: s0, stored: s0, getRamp: () => ramp });
+    const slide = v => { node('inSpT').value = v; node('inSpT').listeners.input({ target: node('inSpT') }); };
+    assert.equal(node('warnSpT').children.length, 0);
+    slide('16');
+    assert.equal(node('warnSpT').children.length, 1);
+    assert.match(node('warnSpT').children[0].textContent, /^▲ 16 °C is outside what Grey oyster can take/);
+    slide('25');
+    assert.equal(node('warnSpT').children.length, 0);
+    ramp = { endsAt: Math.floor(Date.now() / 1000) + 600 }; slide('16');
+    assert.equal(node('warnSpT').children.length, 0, 'no warning while a ramp runs');
+    ramp = null; body.dataset.level = 'farmer'; slide('17');
+    assert.equal(node('warnSpT').children.length, 0, 'no warning at farmer level');
+    body.dataset.level = 'installer'; slide('16');
+    assert.equal(node('warnSpT').children.length, 1);
+    assert.equal(node('cropRamp').hidden, true);
+    node('inCrop').value = 'lionsmane'; node('inCrop').listeners.change({ target: node('inCrop') });
+    assert.equal(node('cropRamp').hidden, false);
+    assert.match(node('cropRamp').textContent, /^After you save, the targets move to 20 °C and 90 % over /);
+    assert.equal(node('warnSpT').children.length, 0, 'no warning while a crop change is pending');
+    assert.match(node('cropWants').textContent, /^Lion's mane · fruiting wants /);
+    panel.destroy();
+  } finally { if (old === undefined) delete globalThis.document; else globalThis.document = old; }
+});
+
+test('C14 without options.stored the panel shows no ramp note and no warnings (Test bench)', () => {
+  require('../web/ui.js'); require('../web/settings-panel.js');
+  const mk = () => ({ dataset: {}, setAttribute() {}, children: [], textContent: '', hidden: false, className: '', append(...c) { this.children.push(...c); }, replaceChildren(...c) { this.children = c; } });
+  const nodes = {};
+  const node = id => nodes[id] ||= Object.assign(mk(), { id, classList: { add() {}, toggle() {} }, listeners: {}, addEventListener(n, f) { this.listeners[n] = f; }, querySelectorAll: () => [], value: '' });
+  const host = { classList: { add() {} }, set innerHTML(h) {}, replaceChildren() {}, querySelector: sel => node(sel.replace(/^#/, '')), querySelectorAll: () => [] };
+  const old = globalThis.document;
+  globalThis.document = { createElement: () => mk(), getElementById: id => node(id), addEventListener() {}, removeEventListener() {}, body: { dataset: { level: 'installer' } }, activeElement: null };
+  try {
+    globalThis.FarmSettingsPanel.createSettingsPanel(host, { settings: { ...CC.defaultSettings(), crop: 'oyster', stage: 'fruiting' } });
+    node('inCrop').value = 'lionsmane'; node('inCrop').listeners.change({ target: node('inCrop') });
+    assert.equal(node('cropRamp').hidden, true);
+  } finally { if (old === undefined) delete globalThis.document; else globalThis.document = old; }
+});

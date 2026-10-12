@@ -17,7 +17,7 @@ const READING = { room_id: 1, t: 1791450000, T: 18.2, RH: 88.4, CO2: 812, t_out:
 const TG = { spT: 18, spRH: 88, co2Lim: 1000, fanOn: 900, fanOff: 700 };
 
 const HELPER_NAMES = ['airLive', 'airSub', 'windowQuery', 'gapFor', 'reconnectQuery', 'chartTargets', 'toChartPoint', 'retarget',
-  'mergePoints', 'mergeEvent', 'readingTexts', 'machineLines', 'machineTiles', 'targetsText', 'alarmTexts'];
+  'mergePoints', 'mergeEvent', 'readingTexts', 'machineLines', 'machineTiles', 'readyText', 'rampShows', 'rampText', 'targetsText', 'alarmTexts'];
 
 test('LV1 registration', () => {
   assert.ok(tab, 'tab live registered');
@@ -154,13 +154,31 @@ test('LV20 machineTiles', () => {
 });
 
 test('LV21 targetsText and the ramp', () => {
-  const lv = { targets: { T: 25, RH: 88, CO2: 1000 } };
-  assert.equal(H.targetsText(lv, { spT: 25, spRH: 88 }), 'Should be: 25.0 °C · 88 % · CO₂ under 1,000 ppm');
-  assert.equal(H.targetsText(lv, null), 'Should be: 25.0 °C · 88 % · CO₂ under 1,000 ppm');
-  assert.equal(H.targetsText(lv, { spT: 25.04, spRH: 88 }), 'Should be: 25.0 °C · 88 % · CO₂ under 1,000 ppm');
-  assert.equal(H.targetsText(lv, { spT: 18, spRH: 90 }), 'Should be: 25.0 °C · 88 % · CO₂ under 1,000 ppm · moving to 18.0 °C, 90 %');
-  assert.equal(H.targetsText({ targets: null }, S), '');
-  assert.equal(H.targetsText(null, S), '');
+  const NOW = 1791450000, base = { targets: { T: 25, RH: 88, CO2: 1000 } };
+  const TXT = 'Should be: 25.0 °C · 88 % · CO₂ under 1,000 ppm';
+  const to = { T: 17, RH: 92, CO2: 1000 };
+  assert.equal(H.targetsText(base, NOW), TXT);
+  assert.equal(H.targetsText({ ...base, ramp: null }, NOW), TXT);
+  assert.equal(H.targetsText({ ...base, ramp: { to, endsAt: NOW + 1800 } }, NOW).startsWith(`${TXT} · moving to 17 °C and 92 %, ready `), true);
+  assert.equal(H.targetsText({ targets: null }, NOW), '');
+  assert.equal(H.targetsText(null, NOW), '');
+});
+
+test('LV22 rampText: today, tomorrow, past', () => {
+  const NOW = 1791450000, to = { T: 17, RH: 92, CO2: 1000 };
+  const hm = t => clock.hm(t), ymd = t => clock.label(t).slice(0, 10);
+  // pick a time later the same farm day and one the next farm day
+  let same = NOW + 600; while (ymd(same) !== ymd(NOW)) same -= 60;
+  const next = NOW + 86400;
+  assert.equal(H.rampText({ to, endsAt: same }, NOW), `moving to 17 °C and 92 %, ready about ${hm(same)}`);
+  assert.equal(H.rampText({ to, endsAt: next }, NOW), `moving to 17 °C and 92 %, ready tomorrow about ${hm(next)}`);
+  assert.match(H.rampText({ to, endsAt: NOW + 3 * 86400 }, NOW), /, ready (Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday) about \d\d:\d\d$/);
+  // decision 116: the room already has the targets
+  assert.equal(H.rampText({ to, endsAt: next }, NOW, { T: 17.05, RH: 91.5 }), '');
+  assert.notEqual(H.rampText({ to, endsAt: next }, NOW, { T: 25, RH: 88 }), '');
+  assert.equal(H.rampText({ to, endsAt: NOW - 5 }, NOW), '');
+  assert.equal(H.rampText(null, NOW), '');
+  assert.equal(H.rampText({ to: { T: 22.5, RH: 80.4, CO2: 1000 }, endsAt: next }, NOW).startsWith('moving to 22.5 °C and 80 %'), true);
 });
 
 // ---- mount smoke: a tiny DOM stub, installed only inside this test (C13 3.1) ----

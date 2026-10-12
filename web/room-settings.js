@@ -58,7 +58,13 @@ function rebase(from, edited, to) {
   return { settings: SP.applyChanges(to, pending), kept: pending.length };
 }
 
-const helpers = { programText, commandFromReading, detailChanges, detailProblems, detailLines, countText, changeLines, versionText, barVisible, rebase };
+// C14 4: the plain warnings for the settings about to be saved.
+function checkLines(stored, edited, ramp) {
+  const w = global.FarmSettingsPanel.activeWarnings(stored, edited, ramp);
+  return [...w.T, ...w.RH];
+}
+
+const helpers = { checkLines, programText, commandFromReading, detailChanges, detailProblems, detailLines, countText, changeLines, versionText, barVisible, rebase };
 
 // ---------------- DOM ----------------
 function h(tag, attrs, ...kids) {
@@ -187,7 +193,7 @@ function mount(el, ctx) {
     try { const v = await api.listSettingsHistory(id); if (!alive()) return; versions = v; renderVersions(); paintSave(); } catch (e) { if (alive()) fail(e); }
   }
   function createPanel() {
-    panel = SP.createSettingsPanel(spHost, { settings: base, readOnly: false, getCommand: () => commandFromReading(latest),
+    panel = SP.createSettingsPanel(spHost, { settings: base, stored: base, getRamp: () => room.live && room.live.ramp, readOnly: false, getCommand: () => commandFromReading(latest),
       onChange: () => { paintSave(); drawLadder(); } });
     const slot = spHost.querySelector('[data-slot="rules-side"]');
     if (slot) { const d = document.createElement('div'); slot.append(d); ladder = global.FarmCharts.createLadder(d); }
@@ -213,7 +219,7 @@ function mount(el, ctx) {
     if (!base || !panel) { pendingSettings = data; return; }
     const { settings, kept } = rebase(base, panel.get(), data.settings);
     base = data.settings;
-    panel.set(settings);
+    panel.set(settings, base);
     drawLadder();
     loadVersions();
     if (kept > 0) setMsg([`The settings changed on the server; your ${kept} change(s) are kept.`]);
@@ -239,7 +245,7 @@ function mount(el, ctx) {
           if (!base || !panel) { base = fresh; if (!panel) createPanel(); drawLadder(); return; }
           const changed = SP.diffSettings(base, fresh).length;
           const { settings, kept } = rebase(base, panel.get(), fresh);
-          base = fresh; panel.set(settings); drawLadder();
+          base = fresh; panel.set(settings, base); drawLadder();
           if (changed > 0 && kept > 0) setMsg([`The settings changed on the server; your ${kept} change(s) are kept.`]);
           paintSave();
         } catch (e) { if (alive()) fail(e); }
@@ -262,7 +268,8 @@ function mount(el, ctx) {
     const problems = Object.keys(details).length ? detailProblems(detailForm()) : {};
     UI.markFields(detailsForm, problems);
     if (Object.keys(problems).length) { flash(['Nothing was saved. Check the marked field.'], 'error'); return; }
-    const note = await SP.showChanges(lines, { title: `Save these changes to ${room.name}?`, confirmText: 'Save', note: changes.length > 0 });
+    const note = await SP.showChanges(lines, { title: `Save these changes to ${room.name}?`, confirmText: 'Save', note: changes.length > 0,
+      warnings: changes.length && document.body.dataset.level === 'installer' ? checkLines(base, panel.get(), room.live && room.live.ramp) : [] });
     if (note === null || !alive()) return;
     saving = true; paintSave();
     const messages = [];
@@ -274,7 +281,7 @@ function mount(el, ctx) {
           const { settings, warnings } = await api.saveSettings(id, sent, note);
           if (!alive()) return;
           base = settings; settingsSaved = true;
-          panel.set(rebase(sent, panel.get(), settings).settings);
+          panel.set(rebase(sent, panel.get(), settings).settings, base);
           if (warnings && warnings.length) { messages.push(...warnings); level = 'info'; }
           drawLadder(); loadVersions();
         } catch (e) { if (alive()) flash([UI.errorText(e)], 'error'); return; }
@@ -295,7 +302,7 @@ function mount(el, ctx) {
     } finally { if (alive()) { saving = false; paintSave(); } }
   });
   discardBtn.addEventListener('click', () => {
-    if (panel) panel.set(base);
+    if (panel) panel.set(base, base);
     paintDetails(true); UI.markFields(detailsForm, {});
     setMsg([]); drawLadder(); paintSave();
   });
@@ -307,7 +314,7 @@ function mount(el, ctx) {
       if (!alive()) return;
       const old = base;
       base = settings;
-      if (panel) panel.set(settings); else createPanel();
+      if (panel) panel.set(settings, base); else createPanel();
       paintDetails(true); UI.markFields(detailsForm, {});
       setMsg([...(warnings || []), ...changeLines(SP.diffSettings(old, settings))]);
       drawLadder(); loadVersions();

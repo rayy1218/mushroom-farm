@@ -5,6 +5,7 @@ for (const f of ['sim', 'air', 'controller', 'runtime', 'calib', 'capacity', 'cy
 require('../web/ui.js'); require('../web/api.js');
 const registered = {};
 globalThis.FarmShell = { register: (name, m) => { registered[name] = m; } };
+require('../web/room-tabs.js'); require('../web/room-live.js');
 require('../web/overview.js');
 const OV = registered.overview;
 const H = OV.helpers;
@@ -319,4 +320,17 @@ test('OV15 a room without a placed batch says so; crates are cached per batch', 
   assert.deepEqual(texts, ['Harvest today: 4.0 kg', 'No batch in this room']);
   assert.equal(getBatchCalls, 1);
   OV.unmount();
+});
+
+test('C14 rampLine: the card line while the targets move', () => {
+  const NOW = 1791450000, to = { T: 17, RH: 92, CO2: 1000 }, clock = globalThis.FarmUi.farmClock();
+  const live = (r, targets) => ({ crop: 'lionsmane', stage: 'pinning', ramp: r, targets: targets || { T: 25, RH: 88, CO2: 1000 } });
+  assert.equal(H.rampLine(live(null), NOW), '');
+  assert.equal(H.rampLine(null, NOW), '');
+  assert.equal(H.rampLine(live({ to, endsAt: NOW - 1 }), NOW), '');
+  const next = NOW + 86400;
+  assert.equal(H.rampLine(live({ to, endsAt: next }, { T: 17, RH: 92, CO2: 1000 }), NOW), '');
+  assert.equal(H.rampLine(live({ to, endsAt: next }), NOW), `Moving to Lion's mane pinning targets, ready tomorrow about ${clock.hm(next)}`);
+  let same = NOW + 600; while (clock.label(same).slice(0, 10) !== clock.label(NOW).slice(0, 10)) same -= 60;
+  assert.equal(H.rampLine(live({ to, endsAt: same }), NOW), `Moving to Lion's mane pinning targets, ready about ${clock.hm(same)}`);
 });
