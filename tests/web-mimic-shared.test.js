@@ -11,8 +11,8 @@ const LIVE = { crop: 'oyster', stage: 'fruiting', blocks: 2000, manual: ['ac'], 
 const ROOM = { name: 'Room 1', volume: 60 };
 const read = (over = {}) => M.fromReading({ reading: { ...READING, ...(over.reading || {}) }, live: { ...LIVE, ...(over.live || {}) }, room: ROOM, settings: { airM3h: 24 }, level: 'installer', ...(over.top || {}) });
 
-test('API: create, layout, fromReading, view, compareBars', () => {
-  for (const k of ['create', 'layout', 'fromReading', 'view', 'compareBars']) assert.equal(typeof M[k], 'function', k);
+test('API: create, layout, fromReading, view', () => {
+  for (const k of ['create', 'layout', 'fromReading', 'view']) assert.equal(typeof M[k], 'function', k);
 });
 
 test('fromReading: null reading gives null; no arguments does not throw', () => {
@@ -41,23 +41,30 @@ test('fromReading: the air line is changes an hour when the air is on', () => {
   assert.equal(read({ top: { settings: null } }).airLine, 'Fresh air on');
 });
 
-test('fromReading: the power line gets the meter when the live has it', () => {
-  assert.equal(read({ live: { kwhToday: 12.84 } }).powerLine, 'Power now 432 W · 12.8 kWh today');
+test('fromReading: the power line is the power now only', () => {
+  assert.equal(read({ live: { kwhToday: 12.84 } }).powerLine, 'Power now 432 W');
   assert.equal(read({ reading: { power_w: 1500 } }).powerLine, 'Power now 1.50 kW');
   assert.equal(read({ reading: { power_w: null } }).powerLine, '');
 });
 
-test('fromReading: aircon on/off, run, state and the condenser', () => {
+test('fromReading: aircon on gives run 0.6 and a running condenser, off gives neither (no power threshold)', () => {
   let a = read().units;
-  assert.deepEqual(a.ac, { on: true, run: 1, state: 'Cool 25.0 °C', sub: '', manual: true });
+  assert.deepEqual(a.ac, { on: true, run: 0.6, state: 'Cool 25.0 °C', sub: '', manual: true });
   assert.deepEqual(a.cond, { on: true, state: 'Running' });
-  a = read({ reading: { power_w: 150 } }).units;
-  assert.equal(a.ac.run, 0.3, '150 W is not above 150 W');
+  a = read({ reading: { power_w: 20 } }).units;
+  assert.deepEqual([a.ac.run, a.cond.on], [0.6, true], 'low power does not matter');
+  a = read({ reading: { ac_mode: 'off', power_w: 900 } }).units;
+  assert.deepEqual(a.ac, { on: false, run: 0, state: 'Off', sub: '', manual: true });
   assert.deepEqual(a.cond, { on: false, state: 'Idle' });
-  a = read({ reading: { ac_mode: 'off', power_w: 20 } }).units;
-  assert.deepEqual(a.ac, { on: false, run: 0.3, state: 'Off', sub: '', manual: true });
   assert.equal(read({ reading: { ac_mode: 'heat', ac_setpoint: 23.5 } }).units.ac.state, 'Heat 23.5 °C');
   assert.equal(read({ reading: { ac_mode: 'fan', ac_setpoint: 23.5 } }).units.ac.state, 'Fan only 23.5 °C');
+});
+
+test('fromReading: a long room name is cut with an ellipsis at 34 characters', () => {
+  const long = M.fromReading({ reading: READING, live: LIVE, room: { name: 'The big north room of the farm', volume: 120 } });
+  assert.ok(long.roomLine.length <= 34 && long.roomLine.length > 30);
+  assert.ok(long.roomLine.endsWith('…'));
+  assert.equal(read().roomLine, 'Room 1 · 60 m³');
 });
 
 test('fromReading: mister level is fog, state Level n or Off', () => {
@@ -107,6 +114,7 @@ test('fromReading: co2Rate from the block count', () => {
   assert.equal(read({ live: { blocks: 5000 } }).co2Rate, 1);
   const none = read({ live: { blocks: null } });
   assert.equal(none.co2Rate, 0); assert.equal(none.blocks, '');
+  assert.equal(M.view(none).blocks, '', 'the painter hides the empty count line');
 });
 
 test('fromReading: night is 19:00 to 07:00 farm time (UTC+8)', () => {
@@ -198,28 +206,6 @@ test('view: animation inputs are clamped', () => {
   assert.equal(M.view({ stage: 'x' }).capScale, 0);
 });
 
-test('compareBars: change from your rules, better and worse, and "same" under 0.5', () => {
-  const mine = { inT: 90, inRH: 80, total: 10 };
-  const [a] = M.compareBars(mine, [{ name: 'No humidity priority', x: { inT: 92, inRH: 70, total: 10.2 } }]);
-  assert.equal(a.name, 'No humidity priority');
-  assert.equal(a.same, false);
-  assert.deepEqual(a.rows.map(r => [r.key, r.verdict]), [['inT', 'better'], ['inRH', 'worse'], ['kwh', 'same']]);
-  assert.equal(a.rows[0].delta, 2); assert.equal(a.rows[0].unit, 'points'); assert.equal(a.rows[2].unit, 'kWh');
-});
-
-test('compareBars: less energy is better, more is worse', () => {
-  const mine = { inT: 90, inRH: 80, total: 10 };
-  const [a, b] = M.compareBars(mine, [{ name: 'a', x: { ...mine, total: 9 } }, { name: 'b', x: { ...mine, total: 11 } }]);
-  assert.equal(a.rows[2].verdict, 'better'); assert.equal(b.rows[2].verdict, 'worse');
-});
-
-test('compareBars: every change under 0.5 is "No difference"; 0.5 itself counts', () => {
-  const mine = { inT: 90, inRH: 80, total: 10 };
-  assert.equal(M.compareBars(mine, [{ name: 'x', x: { inT: 90.4, inRH: 79.6, total: 10.49 } }])[0].same, true);
-  assert.equal(M.compareBars(mine, [{ name: 'x', x: { inT: 90.5, inRH: 80, total: 10 } }])[0].same, false);
-  assert.deepEqual(M.compareBars(mine, []), []);
-});
-
 // create(): the drawing is a string the browser parses, so here only its ids are checked (the rest is checked in the browser).
 const markupOf = pfx => {
   let html = '';
@@ -237,4 +223,93 @@ test('create: every id and url() reference carries the idPrefix, so two drawings
   assert.ok(!/url\(#(?!rm-)/.test(a));
   assert.equal(new Set(idsOf(a)).size, idsOf(a).length, 'ids are unique inside one drawing');
   assert.deepEqual(idsOf(a).map(i => i.slice(3)), idsOf(b), 'the prefixed drawing has the same ids as the plain one');
+});
+
+// ---- create / paint / tick / destroy on a small fake DOM ----
+function fakeEnv(reduced) {
+  const nodes = new Map(), lists = new Map();
+  const mk = tag => {
+    const n = { tag, children: [], attrs: {}, style: {}, dataset: {}, textContent: '', removed: false, classes: new Set(),
+      classList: { toggle: (c, on) => (on ? n.classes.add(c) : n.classes.delete(c)) },
+      setAttribute(k, v) { n.attrs[k] = String(v); }, appendChild(c) { n.children.push(c); return c; },
+      replaceChildren() { n.children = []; }, remove() { n.removed = true; },
+      querySelector(sel) { if (sel === '.val' || sel === '.ico' || sel === '.zn') return mk('t'); if (!nodes.has(sel)) nodes.set(sel, mk('g')); return nodes.get(sel); },
+      querySelectorAll(sel) { if (!lists.has(sel)) lists.set(sel, []); return lists.get(sel); } };
+    return n;
+  };
+  const svg = mk('svg');
+  const host = { insertAdjacentHTML() { host.lastElementChild = svg; }, lastElementChild: null };
+  globalThis.document = { createElementNS: (_ns, tag) => mk(tag) };
+  globalThis.matchMedia = () => ({ matches: reduced });
+  return { host, svg, cleanup() { delete globalThis.document; delete globalThis.matchMedia; } };
+}
+const rot = svg => svg.querySelector('#rm-fanInBlades').attrs.transform;
+
+test('create: tick turns the fans of a running drawing, and does nothing under reduced motion', () => {
+  const state = { units: { air: { on: true }, ac: { on: true, run: 1 } } };
+  for (const reduced of [false, true]) {
+    const env = fakeEnv(reduced);
+    try {
+      const m = M.create(env.host, { idPrefix: 'rm-' });
+      m.paint(state);
+      const before = rot(env.svg);
+      m.tick(0.1);
+      assert.equal(rot(env.svg) !== before, !reduced, reduced ? 'no motion' : 'fans moved');
+      m.tick(0);
+      m.tick(NaN);
+    } finally { env.cleanup(); }
+  }
+});
+
+test('create: paint draws the texts and null-safe; destroy removes the svg', () => {
+  const env = fakeEnv(false);
+  try {
+    const m = M.create(env.host, { idPrefix: 'x-' });
+    assert.doesNotThrow(() => m.paint(null));
+    assert.doesNotThrow(() => m.paint({ units: { ac: null } }));
+    m.paint({ title: 'Grey oyster · Fruiting', blocks: '' });
+    assert.equal(env.svg.querySelector('#x-mTitle').textContent, 'Grey oyster · Fruiting');
+    assert.equal(env.svg.querySelector('#x-mCo2Src').style.display, 'none');
+    m.paint({ blocks: '2,000 blocks' });
+    assert.equal(env.svg.querySelector('#x-mCo2Src').style.display, '');
+    assert.equal(env.svg.removed, false);
+    m.destroy();
+    assert.equal(env.svg.removed, true);
+  } finally { env.cleanup(); }
+});
+
+test('create: the vents are laid out again only when a position or the codes change', () => {
+  const env = fakeEnv(false);
+  try {
+    const m = M.create(env.host, {});
+    const flows = () => env.svg.querySelector('#ventFlows').children;
+    m.paint({ units: { air: { on: true, inletAt: 'high', exhaustAt: 'low' } } });
+    const first = flows();
+    assert.equal(first.length, 6);
+    assert.equal(env.svg.querySelector('#fanIn').attrs.transform, 'translate(180 160)');
+    assert.equal(env.svg.querySelector('#fanOut').attrs.transform, 'translate(820 352)');
+    m.paint({ units: { air: { on: false, inletAt: 'high', exhaustAt: 'low' } } });
+    assert.equal(flows(), first, 'same positions: not rebuilt');
+    m.paint({ units: { air: { on: false, inletAt: 'low', exhaustAt: 'high' } } });
+    assert.notEqual(flows(), first, 'a position change rebuilds');
+    assert.equal(env.svg.querySelector('#fanIn').attrs.transform, 'translate(180 352)');
+    assert.equal(env.svg.querySelector('#fanOut').attrs.transform, 'translate(820 160)');
+    const prev = flows();
+    m.paint({ codes: false, units: { air: { on: false, inletAt: 'low', exhaustAt: 'high' } } });
+    assert.notEqual(flows(), prev, 'codes change the texts, so it rebuilds');
+  } finally { env.cleanup(); }
+});
+
+test('create: the MANUAL tag of the fresh-air fans sits clear of the text when the fan is low', () => {
+  const env = fakeEnv(false);
+  try {
+    const m = M.create(env.host, {});
+    m.paint({ units: { air: { on: true, manual: true, inletAt: 'low', exhaustAt: 'high' } } });
+    const tags = env.svg.querySelector('#ventManual').children;
+    assert.equal(tags[0].attrs.transform, 'translate(150 396)');
+    assert.equal(tags[1].attrs.transform, 'translate(790 102)');
+    assert.equal(tags[0].attrs.display, 'inline');
+    m.paint({ units: { air: { on: true, manual: false, inletAt: 'low', exhaustAt: 'high' } } });
+    assert.equal(tags[0].attrs.display, 'none');
+  } finally { env.cleanup(); }
 });

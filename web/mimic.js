@@ -62,33 +62,33 @@ function view(s) {
 }
 
 // ---------------- fromReading (C13 2) ----------------
+const ellipsis = (t, n) => (t.length > n ? `${t.slice(0, n - 1).trimEnd()}…` : t);
 const onOff = v => (v === 1 ? 'On' : 'Off');
-function farmHour(t) { return Math.floor((((t + 28800) % 86400) + 86400) % 86400 / 3600); }
+function farmHour(t) { return Math.floor((((t + ui().farmClock().offset) % 86400) + 86400) % 86400 / 3600); }
 function fromReading({ reading, live, room, settings, level } = {}) {
   const r = reading;
   if (!r) return null;
   const U = ui(), CC = global.ClimateController, lv = live || {}, man = new Set(lv.manual || []), codes = level !== 'farmer';
   const st = lv.status || null, chip = k => (st && st[k] ? (codes ? st[k] : U.plainChip(k, st[k])) : null);
   const acOn = r.ac_mode !== 'off' && r.ac_mode != null, powerW = num(r.power_w);
-  const acComp = acOn && powerW !== null && powerW > 150, fog = num(r.fog) || 0, airOn = r.air === 1;
+  const fog = num(r.fog) || 0, airOn = r.air === 1;
   const vol = room && num(room.volume), airM3h = settings && num(settings.airM3h);
   const crop = CC && CC.CROPS && CC.CROPS[lv.crop], stage = CC && CC.STAGES && CC.STAGES[lv.stage];
   const title = [crop ? crop.name : lv.crop, stage || lv.stage].filter(Boolean).join(' · ');
   const power = powerW !== null ? `Power now ${U.watts(powerW)}` : '';
-  const kwh = num(lv.kwhToday);
   const blocks = num(lv.blocks), out = num(r.t_out) !== null || num(r.rh_out) !== null ? { T: num(r.t_out), RH: num(r.rh_out) } : null;
   return {
     title,
-    roomLine: room && room.name ? (vol !== null ? `${room.name} · ${vol} m³` : room.name) : '',
+    roomLine: room && room.name ? ellipsis(vol !== null ? `${room.name} · ${vol} m³` : room.name, 34) : '',
     airLine: airOn ? (airM3h !== null && vol ? `Fresh air ${(airM3h / vol).toFixed(1)} changes an hour` : 'Fresh air on') : 'Fresh air off',
-    powerLine: kwh !== null && power ? `${power} · ${kwh.toFixed(1)} kWh today` : power,
+    powerLine: power,
     out, night: num(r.t) !== null ? (h => h >= 19 || h < 7)(farmHour(r.t)) : false,
     T: num(r.T), RH: num(r.RH), CO2: num(r.CO2),
     status: { T: chip('T'), RH: chip('RH'), CO2: chip('CO2') },
     zones: null,
     units: {
-      ac: { on: acOn, run: acOn && powerW !== null && powerW > 150 ? 1 : 0.3, state: acOn ? `${AC_WORD[r.ac_mode] ?? r.ac_mode} ${U.fmtNum(r.ac_setpoint, 1)} °C` : 'Off', sub: '', manual: man.has('ac') },
-      cond: { on: acComp, state: acComp ? 'Running' : 'Idle' },
+      ac: { on: acOn, run: acOn ? 0.6 : 0, state: acOn ? `${AC_WORD[r.ac_mode] ?? r.ac_mode} ${U.fmtNum(r.ac_setpoint, 1)} °C` : 'Off', sub: '', manual: man.has('ac') },
+      cond: { on: acOn, state: acOn ? 'Running' : 'Idle' },
       hu: { level: fog, state: fog > 0 ? `Level ${fog}` : 'Off', sub: '', manual: man.has('hu') },
       air: { on: airOn, state: airOn ? (airM3h !== null ? `On · ${U.nf(airM3h)} m³/h` : 'On') : 'Off · dampers closed', manual: man.has('air'),
         inletAt: settings && settings.inletAt === 'low' ? 'low' : 'high', exhaustAt: settings && settings.exhaustAt === 'high' ? 'high' : 'low' },
@@ -99,27 +99,6 @@ function fromReading({ reading, live, room, settings, level } = {}) {
     co2Rate: blocks !== null ? clamp01(blocks / 2000) : 0,
     stage: lv.stage || null, codes,
   };
-}
-
-// ---------------- 24 h test difference bars (C13 6.3) ----------------
-// mine and each others[i].x hold { inT, inRH (% of the day in band), total (kWh) }. Per rule set, the change from
-// your rules: time in band in percentage points (up is better) and energy in kWh (down is better). A change under 0.5
-// is "same"; a set whose every change is under 0.5 is `same: true` (the page says "No difference"). Pure.
-const SAME_UNDER = 0.5;
-function compareBars(mine, others) {
-  const kinds = [
-    { key: 'inT', label: 'Temperature in band', unit: 'points', better: 1, of: x => x.inT },
-    { key: 'inRH', label: 'Humidity in band', unit: 'points', better: 1, of: x => x.inRH },
-    { key: 'kwh', label: 'Energy per day', unit: 'kWh', better: -1, of: x => x.total },
-  ];
-  return others.map(o => {
-    const rows = kinds.map(k => {
-      const delta = k.of(o.x) - k.of(mine);
-      const verdict = Math.abs(delta) < SAME_UNDER ? 'same' : delta * k.better > 0 ? 'better' : 'worse';
-      return { key: k.key, label: k.label, unit: k.unit, delta, verdict };
-    });
-    return { name: o.name, rows, same: rows.every(r => r.verdict === 'same') };
-  });
 }
 
 // ---------------- The drawing ----------------
@@ -193,9 +172,9 @@ function markup(p) {
         <line class="leader" x1="490" x2="500" y1="196" y2="196"/>
         <line class="leader" x1="490" x2="500" y1="246" y2="246"/>
         <line class="leader" x1="490" x2="500" y1="296" y2="296"/>
-        <circle class="bubble-tag" cx="470" cy="196" r="20"/><text x="470" y="194" text-anchor="middle" class="m-tag" style="font-size:11px">TT</text><text x="470" y="207" text-anchor="middle" style="font-size:10px">101</text>
-        <circle class="bubble-tag" cx="470" cy="246" r="20"/><text x="470" y="244" text-anchor="middle" class="m-tag" style="font-size:11px">MT</text><text x="470" y="257" text-anchor="middle" style="font-size:10px">102</text>
-        <circle class="bubble-tag" cx="470" cy="296" r="20"/><text x="470" y="294" text-anchor="middle" class="m-tag" style="font-size:11px">AT</text><text x="470" y="307" text-anchor="middle" style="font-size:10px">103</text>
+        <circle class="bubble-tag" cx="470" cy="196" r="20"/><text x="470" y="194" text-anchor="middle" class="m-tag" style="font-size:11px">TT</text><text x="470" y="207" text-anchor="middle" style="font-size:11px">101</text>
+        <circle class="bubble-tag" cx="470" cy="246" r="20"/><text x="470" y="244" text-anchor="middle" class="m-tag" style="font-size:11px">MT</text><text x="470" y="257" text-anchor="middle" style="font-size:11px">102</text>
+        <circle class="bubble-tag" cx="470" cy="296" r="20"/><text x="470" y="294" text-anchor="middle" class="m-tag" style="font-size:11px">AT</text><text x="470" y="307" text-anchor="middle" style="font-size:11px">103</text>
         </g>
         <g class="readout" id="${p}mT"><rect x="500" y="176" width="156" height="40" rx="4"/><text class="val" x="510" y="195">--</text><text class="ico" x="646" y="194" text-anchor="end"></text><text class="zn" x="510" y="210"></text></g>
         <g class="readout" id="${p}mRH"><rect x="500" y="226" width="156" height="40" rx="4"/><text class="val" x="510" y="245">--</text><text class="ico" x="646" y="244" text-anchor="end"></text><text class="zn" x="510" y="260"></text></g>
@@ -223,10 +202,10 @@ function markup(p) {
         </g><circle r="5" class="blade"/>
         <rect class="damper" x="-3" y="-36" width="6" height="72" rx="2"/>
       </g>
-      <g class="m-manual" id="${p}manAc" transform="translate(386 112)" display="none"><rect width="52" height="14" rx="7"/><text x="26" y="10.5" text-anchor="middle">MANUAL</text></g>
-      <g class="m-manual" id="${p}manLights" transform="translate(538 96)" display="none"><rect width="52" height="14" rx="7"/><text x="26" y="10.5" text-anchor="middle">MANUAL</text></g>
-      <g class="m-manual" id="${p}manCirc" transform="translate(694 110)" display="none"><rect width="52" height="14" rx="7"/><text x="26" y="10.5" text-anchor="middle">MANUAL</text></g>
-      <g class="m-manual" id="${p}manHu" transform="translate(628 396)" display="none"><rect width="52" height="14" rx="7"/><text x="26" y="10.5" text-anchor="middle">MANUAL</text></g>
+      <g class="m-manual" id="${p}manAc" transform="translate(378 112)" display="none"><rect width="60" height="16" rx="8"/><text x="30" y="12" text-anchor="middle">MANUAL</text></g>
+      <g class="m-manual" id="${p}manLights" transform="translate(538 96)" display="none"><rect width="60" height="16" rx="8"/><text x="30" y="12" text-anchor="middle">MANUAL</text></g>
+      <g class="m-manual" id="${p}manCirc" transform="translate(690 110)" display="none"><rect width="60" height="16" rx="8"/><text x="30" y="12" text-anchor="middle">MANUAL</text></g>
+      <g class="m-manual" id="${p}manHu" transform="translate(620 396)" display="none"><rect width="60" height="16" rx="8"/><text x="30" y="12" text-anchor="middle">MANUAL</text></g>
       <g id="${p}ventFlows"></g>
       <g id="${p}ventText"></g>
       <g id="${p}ventManual"></g>
@@ -254,10 +233,10 @@ function markup(p) {
 
 }
 
-const reduceMotion = () => (typeof matchMedia !== 'undefined' ? matchMedia('(prefers-reduced-motion: reduce)').matches : false);
 
 function create(host, opts) {
   const p = (opts && opts.idPrefix) || '', UI = ui();
+  const reduced = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
   host.insertAdjacentHTML('beforeend', markup(p));
   const svg = host.lastElementChild;
   const q = id => svg.querySelector('#' + p + id);
@@ -308,9 +287,9 @@ function create(host, opts) {
         const t = UI.svgEl('text', { x: left ? 12 : 836, y: ty, class: cls }, e.ventText);
         t.dataset.k = k; t.dataset.side = side; t.textContent = o[k];
       }
-      const m = UI.svgEl('g', { class: 'm-manual', transform: `translate(${(left ? 180 : 820) - 26} ${y - 58})`, display: 'none' }, e.ventManual);
-      UI.svgEl('rect', { width: 52, height: 14, rx: 7 }, m);
-      UI.svgEl('text', { x: 26, y: 10.5, 'text-anchor': 'middle' }, m).textContent = 'MANUAL';
+      const m = UI.svgEl('g', { class: 'm-manual', transform: `translate(${(left ? 180 : 820) - 30} ${y + (o.band === 'low' ? 44 : -58)})`, display: 'none' }, e.ventManual);
+      UI.svgEl('rect', { width: 60, height: 16, rx: 8 }, m);
+      UI.svgEl('text', { x: 30, y: 12, 'text-anchor': 'middle' }, m).textContent = 'MANUAL';
       mansVent[side] = m;
     }
     fanFlows = [...e.ventFlows.querySelectorAll('[data-flow="fan"]')];
@@ -365,7 +344,7 @@ function create(host, opts) {
     putId('mCircTag', v.circTag); putId('mCircState', v.circState); putId('mLamp', v.lampText);
     layoutVents();
     for (const t of e.ventText.children) put(t, v[t.dataset.side][t.dataset.k]);
-    putId('mCo2Src', v.blocks); putId('mCore', v.core || 'Core -- °C');
+    putId('mCo2Src', v.blocks); e.mCo2Src.style.display = v.blocks ? '' : 'none'; putId('mCore', v.core || 'Core -- °C');
     e.acUnit.classList.toggle('on', v.on.ac); e.condenser.classList.toggle('on', v.on.cond); e.huUnit.classList.toggle('on', v.on.hu);
     e.fanIn.classList.toggle('on', v.on.air); e.fanOut.classList.toggle('on', v.on.air);
     e.circUnit.classList.toggle('on', v.on.circ); e.lamp.classList.toggle('on', v.on.lights);
@@ -377,7 +356,7 @@ function create(host, opts) {
   }
 
   function tick(dt) {
-    if (reduceMotion() || !(dt > 0)) return;
+    if ((reduced && reduced.matches) || !(dt > 0)) return;
     frame(dt);
   }
   function destroy() { svg.remove(); }
@@ -386,5 +365,5 @@ function create(host, opts) {
   return { paint, tick, destroy };
 }
 
-global.FarmMimic = { create, layout, fromReading, view, compareBars };
+global.FarmMimic = { create, layout, fromReading, view };
 })(typeof window !== 'undefined' ? window : globalThis);

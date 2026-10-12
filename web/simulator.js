@@ -104,9 +104,8 @@ function benchDraw() {
   const hourLocal = Math.floor((env.startHour * 3600 + v.t) % 86400 / 3600);
   const vol = { ...PL.room, ...(env.room || {}) }.volume, kwhAll = Object.values(v.kwh).reduce((x, y) => x + y, 0);
   const airTxt = a.air ? `Purge ${Math.round(v.airM3h).toLocaleString('en')} m³/h` : 'Off · dampers closed';
-  const dist = [v.door && 'door open', v.workers && `${v.workers} workers`, v.watering && 'floor wet', v.weather.rain && 'rain', v.weather.cloudy && 'cloudy', v.wetSensor && 'RH sensor wet'].filter(Boolean);
   return {
-    title: `${CC.CROPS[cfg.crop].name} · ${CC.STAGES[cfg.stage]} · SANDBOX`, note: dist.join(' · '),
+    title: '', note: '',
     roomLine: `FRUITING ROOM · ${vol} m³`, airLine: `Fresh air ${(v.airM3h / vol).toFixed(1)} changes an hour`,
     powerLine: `Power now ${UI.watts(Object.values(v.power).reduce((x, y) => x + y, 0))} · ${kwhAll.toFixed(1)} kWh so far`,
     out: { T: v.weather.T, RH: v.weather.RH }, night: hourLocal >= 19 || hourLocal < 7,
@@ -148,6 +147,8 @@ function updateUi() {
   renderAlarms(list);
 
   mimic.paint(benchDraw());
+  UI.set('mimicStage', `${CC.CROPS[cfg.crop].name} · ${CC.STAGES[cfg.stage]} · SANDBOX`);
+  UI.set('mimicNote', [v.door && 'door open', v.workers && `${v.workers} workers`, v.watering && 'floor wet', v.weather.rain && 'rain', v.weather.cloudy && 'cloudy', v.wetSensor && 'RH sensor wet'].filter(Boolean).join(' · '));
 
   const c = st.cmd, hold = (why, h) => (h ? `${why} ${h}` : why);
   UI.set('acState', !c.ac.power ? 'Off' : `${AC_WORD[c.ac.mode]} · set ${c.ac.setpoint.toFixed(1)} °C`);
@@ -448,13 +449,34 @@ function renderTest() {
   det.append(sum, table, note);
   el.querySelector('#estOut').replaceChildren(diffBars(variants.slice(1).map(([name, x]) => ({ name, x })), mine), det);
 }
+// ---------------- 24 h test difference bars (C13 6.3) ----------------
+// mine and each others[i].x hold { inT, inRH (% of the day in band), total (kWh) }. Per rule set, the change from
+// your rules: time in band in percentage points (up is better) and energy in kWh (down is better). A change under 0.5
+// is "same"; a set whose every change is under 0.5 is `same: true` (the page says "No difference"). Pure.
+const SAME_UNDER = 0.5;
+function compareBars(mine, others) {
+  const kinds = [
+    { key: 'inT', label: 'Temperature in band', unit: 'points', better: 1, of: x => x.inT },
+    { key: 'inRH', label: 'Humidity in band', unit: 'points', better: 1, of: x => x.inRH },
+    { key: 'kwh', label: 'Energy per day', unit: 'kWh', better: -1, of: x => x.total },
+  ];
+  return others.map(o => {
+    const rows = kinds.map(k => {
+      const delta = k.of(o.x) - k.of(mine);
+      const verdict = Math.abs(delta) < SAME_UNDER ? 'same' : delta * k.better > 0 ? 'better' : 'worse';
+      return { key: k.key, label: k.label, unit: k.unit, delta, verdict };
+    });
+    return { name: o.name, rows, same: rows.every(r => r.verdict === 'same') };
+  });
+}
+
 // C13 6.3: the change from your rules as bars, green when better, serious when worse.
 function diffBars(others, mine) {
-  const sets = global.FarmMimic.compareBars(mine, others), h = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
+  const sets = compareBars(mine, others), h = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
   const wrap = h('section', 'diff-bars'); wrap.setAttribute('aria-labelledby', 'diffHead');
   const head = h('h3', null, 'How do the other rules compare?'); head.id = 'diffHead';
   wrap.append(head);
-  const scale = { points: Math.max(5, ...sets.flatMap(s => s.rows.filter(r => r.unit === 'points').map(r => Math.abs(r.delta)))), kWh: Math.max(0.5, ...sets.flatMap(s => s.rows.filter(r => r.unit === 'kWh').map(r => Math.abs(r.delta)))) };
+  const scale = { points: Math.max(5, ...sets.flatMap(s => s.rows.filter(r => r.unit === 'points').map(r => Math.abs(r.delta)))), kWh: Math.max(0.5, 0.1 * mine.total, ...sets.flatMap(s => s.rows.filter(r => r.unit === 'kWh').map(r => Math.abs(r.delta)))) };
   for (const set of sets) {
     const fig = h('figure', 'diff-set'), cap = h('figcaption', null, `${set.name}, compared with Your rules`);
     fig.append(cap);
@@ -564,6 +586,10 @@ const MARKUP = `
   <button class="btn" id="benchBtn" aria-expanded="false">Show test bench settings</button>
 </div>
 <figure class="card sim mimic">
+  <div class="mimic-head">
+    <span class="eyebrow" id="mimicStage">Fruiting room · SANDBOX</span>
+    <span class="tag" id="mimicNote"></span>
+  </div>
   <div class="mimic-body">
     <div class="mimic-host" id="mimicHost"></div>
     <aside class="glance" aria-label="Room at a glance">
@@ -1239,6 +1265,6 @@ global.FarmShell.register('simulator', { mount, unmount });
 // Node only (tests/web-air.test.js, tests/web-room-link.test.js); adds no browser global.
 if (typeof module === 'object' && module && module.exports) {
   if (!global.FarmMimic) require('./mimic.js');
-  module.exports = { createRoomLink, airText, mimicLayout: global.FarmMimic.layout };
+  module.exports = { createRoomLink, airText, mimicLayout: global.FarmMimic.layout, compareBars };
 }
 })(typeof window !== 'undefined' ? window : globalThis);

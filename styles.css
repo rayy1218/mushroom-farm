@@ -173,14 +173,16 @@ main { max-width: 1480px; width: 100%; margin: 0 auto; padding: 20px 24px 48px; 
 .nightkey { display: inline-block; width: 14px; height: 12px; background: var(--night-key); border: 1px solid var(--border); border-radius: 2px; vertical-align: -1px; margin-right: 4px; }
 
 /* Mimic diagram */
+.mimic-head { display: flex; justify-content: space-between; align-items: center; padding: 2px 4px 8px; gap: 8px; }
+@media (max-width: 720px) { #mimicNote { display: none; } }
 .mimic-host { min-width: 0; margin-block: auto; }
 .mimic-svg { display: block; width: 100%; height: auto; }
 .m-manual rect { fill: color-mix(in srgb, var(--warning) 18%, var(--unit)); stroke: var(--warning); stroke-width: 1; }
-.m-manual text { font: 700 9px var(--font-cond); letter-spacing: .06em; fill: var(--ink); }
+.m-manual text { font: 700 11px var(--font-cond); letter-spacing: .06em; fill: var(--ink); }
 .mimic-svg text { font-family: var(--font-cond); fill: var(--ink); }
-.m-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: .1em; fill: var(--muted) !important; }
+.m-eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .1em; fill: var(--muted) !important; }
 .m-big { font-family: var(--font-num) !important; font-size: 22px; font-weight: 500; }
-.m-small { font-size: 12px; fill: var(--ink-2) !important; }
+.m-small { font-size: 13px; fill: var(--ink-2) !important; }
 .m-tag { font-size: 13px; font-weight: 700; letter-spacing: .04em; }
 .wall { stroke: var(--wall); stroke-width: 1; }
 .hatch-bg { fill: var(--surface); }
@@ -204,7 +206,7 @@ main { max-width: 1480px; width: 100%; margin: 0 auto; padding: 20px 24px 48px; 
 .leader { stroke: var(--ink-2); stroke-width: 1.2; }
 .readout rect { fill: var(--unit); stroke: var(--border-strong); stroke-width: 1.2; }
 .readout .val { font-family: var(--font-num) !important; font-size: 16px; font-weight: 500; }
-.readout .zn { font-family: var(--font-num) !important; font-size: 11px; fill: var(--muted) !important; }
+.readout .zn { font-family: var(--font-num) !important; font-size: 12px; fill: var(--muted) !important; }
 .readout .ico { font-size: 13px; fill: var(--lvl, var(--muted)) !important; }
 .readout[data-lvl="good"] { --lvl: var(--good); }
 .readout[data-lvl="warning"] { --lvl: var(--warning); }
