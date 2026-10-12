@@ -2,6 +2,7 @@
 
 /* Rooms list */
 .room-new[hidden] { display: none; }
+#rhFeed { grid-column: 1 / -1; }
 
 /* Room frame: breadcrumb, then the page head with the chip row under the sub line */
 .room-top { grid-column: 1 / -1; display: grid; gap: 4px; }
