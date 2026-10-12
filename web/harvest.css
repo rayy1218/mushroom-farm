@@ -98,13 +98,13 @@
 .vz-sum { margin: 0; color: var(--ink-2); }
 .vz-sum:empty { display: none; }
 .vz-scroll { overflow-x: auto; max-width: 100%; }
-.vz-svg { display: block; width: 100%; min-width: 360px; max-width: 760px; height: auto; font-family: inherit; }
-.room-timeline .vz-svg { min-width: 760px; max-width: none; }
+.vz-svg { display: block; font-family: inherit; }
 .vz-gridline { stroke: var(--grid); stroke-width: 1; }
 .vz-base { stroke: var(--axis); stroke-width: 1; }
 .vz-tick, .vz-unit, .vz-sub, .vz-legend { fill: var(--muted); font-size: 11px; }
 .vz-cat { fill: var(--ink); font-size: 12px; font-weight: 600; }
-.vz-val { fill: var(--ink); font-size: 12px; font-weight: 600; }
+.vz-val { fill: var(--ink); font-size: 12px; font-weight: 600; paint-order: stroke; stroke: var(--surface); stroke-width: 3px; stroke-linejoin: round; }
+.vz-val-in { fill: var(--surface); font-size: 12px; font-weight: 700; }
 .vz-legend { fill: var(--ink-2); }
 .vz-bar, .vz-key-bar { fill: var(--mist); }
 .vz-line { stroke: var(--trend); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
@@ -113,4 +113,5 @@
 .vz-tlabel { fill: var(--ink); font-size: 11px; font-weight: 600; }
 .vz-today { stroke: var(--trend); stroke-width: 1.5; stroke-dasharray: 4 3; }
 .vz-hit { cursor: pointer; outline: none; }
-.vz-hit:hover .vz-tbar, .vz-hit:focus-visible .vz-tbar { stroke: var(--ink); stroke-width: 2; }
+.vz-hit:hover .vz-tbar { stroke: var(--ink); stroke-width: 2; }
+.vz-hit:focus-visible .vz-focus { stroke: var(--ink); stroke-width: 2; }

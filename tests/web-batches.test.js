@@ -13,7 +13,7 @@ const CC = globalThis.ClimateController, HR = globalThis.FarmHarvestRules;
 test('BT1 module registers batches and exports the C10 12.2 names and the C13 5 chart helpers', () => {
   assert.equal(typeof registered.batches.mount, 'function');
   assert.equal(typeof registered.batches.unmount, 'function');
-  assert.deepEqual(Object.keys(B).sort(), ['ageDays', 'batchBody', 'daysText', 'dateToSeconds', 'dropText', 'filterByState', 'flushBars', 'niceMax', 'plural', 'secondsToDate', 'stateWords', 'subText', 'timelineRows', 'titleOf'].sort());
+  assert.deepEqual(Object.keys(B).sort(), ['ageDays', 'batchBody', 'daysText', 'dateToSeconds', 'dropText', 'filterByState', 'flushBars', 'niceAxis', 'niceMax', 'plural', 'secondsToDate', 'stateWords', 'subText', 'timelineRows', 'titleOf'].sort());
 });
 
 test('BT2 dates are farm dates whatever the browser zone', () => {
@@ -52,6 +52,7 @@ function mk(tag) {
     classList: { add() {}, remove() {}, toggle() {} },
     append(...c) { this.children.push(...c); }, appendChild(c) { this.children.push(c); return c; }, replaceChildren(...c) { this.children = c; },
     addEventListener() {}, removeEventListener() {}, setAttribute(k, v) { this.attrs[k] = v; }, removeAttribute(k) { delete this.attrs[k]; },
+    getAttribute(k) { return this.attrs[k]; },
     querySelector: sel => (stubs[sel] ||= mk(sel)), querySelectorAll: () => [], focus() {} };
 }
 
@@ -60,7 +61,7 @@ test('BT5 #btCrop lists the crops with a fruiting range, built in mount', async 
   const fake = await startFakeApi();
   const prevBase = globalThis.FarmApi.base;
   globalThis.FarmApi.base = fake.url;
-  globalThis.document = { createElement: mk };
+  globalThis.document = { createElement: mk, createElementNS: (ns, tag) => mk(tag) };
   t.after(async () => { await fake.close(); delete globalThis.document; globalThis.FarmApi.base = prevBase; });
   const el = mk('main');
   Object.defineProperty(el, 'innerHTML', { set() {}, get() { return ''; } });
@@ -98,7 +99,7 @@ const BATCH = { id: 1, crop: 'oyster', strain: 'PO-2', source: null, block_count
   totals: { crates: 0, kg: 0, g_per_block: 0, be_pct: 0, flushes: 0 }, flushes: [], crates: [] };
 
 test('BT6 a late reply of an older mount does not touch the new page', async t => {
-  globalThis.document = { createElement: mk };
+  globalThis.document = { createElement: mk, createElementNS: (ns, tag) => mk(tag) };
   const api = globalThis.FarmApi, saved = { ...api };
   t.after(() => { Object.assign(api, saved); delete globalThis.document; });
   const place = deferred(), list = deferred();
@@ -121,7 +122,7 @@ test('BT6 a late reply of an older mount does not touch the new page', async t =
 });
 
 test('BT7 an unknown batch shows its page and mount does not reject', async t => {
-  globalThis.document = { createElement: mk };
+  globalThis.document = { createElement: mk, createElementNS: (ns, tag) => mk(tag) };
   const api = globalThis.FarmApi, saved = { ...api };
   t.after(() => { Object.assign(api, saved); delete globalThis.document; });
   api.getBatch = async () => { throw new api.ApiError(404, 'Unknown batch', []); };
@@ -134,7 +135,7 @@ test('BT7 an unknown batch shows its page and mount does not reject', async t =>
 });
 
 test('BT8 the new-batch form: a 400 marks the fields, a save goes to the new batch', async t => {
-  globalThis.document = { createElement: mk };
+  globalThis.document = { createElement: mk, createElementNS: (ns, tag) => mk(tag) };
   globalThis.location = { hash: '#/batches' };
   const api = globalThis.FarmApi, saved = { ...api };
   t.after(() => { Object.assign(api, saved); delete globalThis.document; delete globalThis.location; registered.batches.unmount(); });
@@ -167,7 +168,7 @@ test('BT8 the new-batch form: a 400 marks the fields, a save goes to the new bat
 });
 
 test('BT9 Finish batch asks first; the confirm text is the C11 text', async t => {
-  globalThis.document = { createElement: mk };
+  globalThis.document = { createElement: mk, createElementNS: (ns, tag) => mk(tag) };
   const api = globalThis.FarmApi, saved = { ...api }, prevConfirm = globalThis.confirm;
   t.after(() => { Object.assign(api, saved); delete globalThis.document; globalThis.confirm = prevConfirm; registered.batches.unmount(); });
   let cleared = 0, asked = null, answer = false;
@@ -204,10 +205,11 @@ test('BT10 helpers: title without a dash, state words, singular and plural days'
 });
 
 test('BT11 list: New batch card closed with batches, open without; the button opens it; empty tab text', async t => {
-  globalThis.document = { createElement: mk };
+  globalThis.document = { createElement: mk, createElementNS: (ns, tag) => mk(tag) };
   const api = globalThis.FarmApi, saved = { ...api };
   t.after(() => { Object.assign(api, saved); delete globalThis.document; registered.batches.unmount(); });
   const el = mkEl();
+  api.listRooms = async () => [];
   api.listBatches = async () => [{ ...BATCH, state: 'placed', placed_at: BATCH.received_at, room_name: 'Room 1' }];
   await registered.batches.mount(el, {});
   assert.equal(el.querySelector('#btNew').open, false);
@@ -225,11 +227,12 @@ test('BT11 list: New batch card closed with batches, open without; the button op
 });
 
 test('BT12 a remount on the same element: a late list reply of the old mount is dropped', async t => {
-  globalThis.document = { createElement: mk };
+  globalThis.document = { createElement: mk, createElementNS: (ns, tag) => mk(tag) };
   const api = globalThis.FarmApi, saved = { ...api };
   t.after(() => { Object.assign(api, saved); delete globalThis.document; registered.batches.unmount(); });
   const a = deferred(), b = deferred();
   const replies = [a, b];
+  api.listRooms = async () => [];
   api.listBatches = () => replies.shift().promise;
   const el = mkEl();
   const first = registered.batches.mount(el, {});
@@ -244,9 +247,15 @@ test('BT12 a remount on the same element: a late list reply of the old mount is 
   assert.equal(el.querySelector('#btList').querySelector('tbody').children.length, 0);
 });
 
-test('BT-V1 flushBars adds the BE % up flush by flush', () => {
-  const bars = B.flushBars({ flushes: [{ n: 1, kg: 10, g_per_block: 50, be_pct: 20 }, { n: 2, kg: 6, g_per_block: 30, be_pct: 12.3 }] });
-  assert.deepEqual(bars, [{ n: 1, kg: 10, gPerBlock: 50, beCum: 20 }, { n: 2, kg: 6, gPerBlock: 30, beCum: 32.3 }]);
+test('BT-V1 flushBars: BE % so far is the kg so far over the dry substrate, ending at the batch BE %', () => {
+  const HRd = globalThis.FarmHarvestRules;
+  const batch = { block_count: 1000, block_wet_kg: 1, moisture_pct: 60 };           // 400 kg dry
+  const flushes = HRd.flushes({ ...batch, flush_gap_days: 5 }, [{ t: 0, kg: 20 }, { t: 10 * 86400, kg: 12 }, { t: 20 * 86400, kg: 8 }].map((c, i) => ({ ...c, id: i + 1, deleted_at: null })));
+  const detail = { ...batch, flushes, totals: HRd.totals({ ...batch, flush_gap_days: 5 }, [{ t: 0, kg: 20 }, { t: 10 * 86400, kg: 12 }, { t: 20 * 86400, kg: 8 }].map((c, i) => ({ ...c, id: i + 1, deleted_at: null }))) };
+  const bars = B.flushBars(detail);
+  assert.deepEqual(bars.map(b => b.beCum), [5, 8, 10]);
+  assert.equal(bars[2].beCum, detail.totals.be_pct);
+  assert.deepEqual(bars.map(b => [b.n, b.kg, b.gPerBlock]), [[1, 20, 20], [2, 12, 12], [3, 8, 8]]);
   assert.deepEqual(B.flushBars({}), []);
   assert.deepEqual(B.flushBars(null), []);
 });
@@ -262,21 +271,22 @@ test('BT-V2 dropText says the drop from the best flush in words', () => {
   assert.equal(B.dropText(f(0, 0)), '');
 });
 
-test('BT-V3 niceMax gives an axis end with four round steps', () => {
-  assert.equal(B.niceMax(0), 1);
-  assert.equal(B.niceMax(7.3), 8);
-  assert.equal(B.niceMax(11), 20);
-  assert.equal(B.niceMax(23), 40);
-  assert.equal(B.niceMax(0.34), 0.4);
-  assert.equal(B.niceMax(10), 10);
-  for (const v of [0.7, 3, 12, 35, 99]) { const m = B.niceMax(v); assert.ok(m >= v && m < 2.6 * v + 1, String(v)); }
+test('BT-V3 niceMax gives the tightest axis of 3, 4 or 5 round steps', () => {
+  assert.deepEqual(B.niceMax(0), { max: 4, steps: 4 });
+  assert.deepEqual(B.niceMax(7.3), { max: 7.5, steps: 3 });
+  assert.deepEqual(B.niceMax(20.5), { max: 25, steps: 5 });
+  assert.deepEqual(B.niceMax(23), { max: 25, steps: 5 });
+  assert.deepEqual(B.niceMax(10), { max: 10, steps: 4 });
+  assert.equal(B.niceAxis(11, 5), 12.5);
+  assert.equal(B.niceAxis(7, 4), 8);
+  for (const v of [0.7, 3, 12, 20.5, 35, 99, 1350]) { const m = B.niceMax(v).max; assert.ok(m >= v && m < 1.35 * v + 1, `${v} -> ${m}`); }
 });
 
 test('BT-V4 timelineRows: a row per room, empty rooms kept, overlaps on lanes, Flush n in the label', () => {
   const day = 86400, now = 1791388800 + 40 * day;
   const rooms = [{ id: 2, name: 'Room B' }, { id: 1, name: 'Room A' }, { id: 3, name: 'Room C' }];
   const mk = (id, room, crop, placed, flushes, extra) => ({ id, room_id: room, room_name: `Room ${room}`, crop, state: 'placed', placed_at: placed, cleared_at: null, totals: { flushes }, ...extra });
-  const batches = [mk(10, 1, 'oyster', now - 30 * day, 2), mk(11, 1, 'oyster', now - 5 * day, 0), mk(12, 2, 'lions_mane', now - 10 * day, 1),
+  const batches = [mk(10, 1, 'oyster', now - 30 * day, 2), mk(11, 1, 'oyster', now - 5 * day, 0), mk(12, 2, 'lionsmane', now - 10 * day, 1),
     { ...mk(13, 3, 'oyster', now - 50 * day, 3), state: 'cleared', cleared_at: now - 20 * day }];
   const t = B.timelineRows(rooms, batches, now, 'placed');
   assert.deepEqual(t.rows.map(r => r.name), ['Room A', 'Room B', 'Room C']);
@@ -288,9 +298,11 @@ test('BT-V4 timelineRows: a row per room, empty rooms kept, overlaps on lanes, F
   assert.equal(t.rows[2].bars.length, 0);                              // empty room kept, the finished batch is not growing
   assert.equal(t.to, now);
   assert.equal(t.from, now - 30 * day);
+  assert.equal(t.rows[0].bars[0].since, now - 30 * day);
   const done = B.timelineRows(rooms, batches, now, 'cleared');
   assert.deepEqual(done.rows.map(r => r.name), ['Room C']);            // Finished lists only rooms that had batches
   assert.deepEqual([done.rows[0].bars[0].from, done.rows[0].bars[0].to], [now - 50 * day, now - 20 * day]);
+  assert.equal(done.to, now - 20 * day);                               // Finished ends at the last clearing, no today
 });
 
 test('BT-V5 timelineRows copes with no data and with a room missing from the list', () => {
@@ -301,4 +313,84 @@ test('BT-V5 timelineRows copes with no data and with a room missing from the lis
   const b = { id: 1, room_id: 9, room_name: 'Old room', crop: 'oyster', state: 'placed', placed_at: now - 86400, totals: { flushes: 0 } };
   const t = B.timelineRows([{ id: 1, name: 'A' }], [b], now, 'placed');
   assert.deepEqual(t.rows.map(r => r.name).sort(), ['A', 'Old room']);
+});
+
+test('BT-V6 timelineRows keeps a window of at most 90 days: older bars start at the edge and say since', () => {
+  const day = 86400, now = 1791388800 + 200 * day;
+  const b = { id: 1, room_id: 1, room_name: 'A', crop: 'oyster', state: 'placed', placed_at: now - 150 * day, totals: { flushes: 4 } };
+  const t = B.timelineRows([{ id: 1, name: 'A' }], [b], now, 'placed');
+  assert.equal(t.to - t.from, 90 * day);
+  assert.equal(t.rows[0].bars[0].from, t.from);
+  assert.equal(t.rows[0].bars[0].since, now - 150 * day);
+  const gone = { ...b, id: 2, state: 'cleared', cleared_at: now - 120 * day };
+  const f = B.timelineRows([{ id: 1, name: 'A' }], [gone, { ...gone, id: 3, cleared_at: now - 10 * day }], now, 'cleared');
+  assert.deepEqual(f.rows[0].bars.map(x => x.id), [3]);               // ended before the window opened (the newest clearing is the end)
+});
+
+// Walks the recording SVG for elements by class.
+const findAll = (node, cls, out = []) => { if (node && node.attrs && String(node.attrs.class || '').split(' ').includes(cls)) out.push(node); for (const c of (node && node.children) || []) findAll(c, cls, out); return out; };
+const FLUSH_DETAIL = { ...BATCH, id: 7, state: 'placed', room_id: 1, room_name: 'Room 1', placed_at: BATCH.received_at, block_count: 1000, block_wet_kg: 1, moisture_pct: 60,
+  flushes: [{ n: 1, from: 1, to: 2, crates: 2, kg: 20, g_per_block: 20, be_pct: 5 }, { n: 2, from: 3, to: 4, crates: 1, kg: 12, g_per_block: 12, be_pct: 3 }],
+  totals: { crates: 3, kg: 32, g_per_block: 32, be_pct: 8, flushes: 2 }, crates: [] };
+
+test('BT-V7 the batch page draws the flush chart as an image at its own width', async t => {
+  globalThis.document = { createElement: mk, createElementNS: (ns, tag) => mk(tag) };
+  const api = globalThis.FarmApi, saved = { ...api };
+  t.after(() => { Object.assign(api, saved); delete globalThis.document; registered.batches.unmount(); });
+  api.getBatch = async () => structuredClone(FLUSH_DETAIL);
+  api.listRooms = async () => [];
+  const el = mkEl();
+  await registered.batches.mount(el, { id: 7 });
+  const svg = el.querySelector('#bdChartSvg').children[0];
+  assert.equal(svg.attrs.role, 'img');
+  assert.match(svg.attrs['aria-label'], /Flush 2 gave 40 % less than flush 1/);
+  assert.match(svg.attrs['aria-label'], /20\.0 kg/);
+  assert.equal(svg.attrs.viewBox, `0 0 ${svg.attrs.width} ${svg.attrs.height}`);
+  assert.equal(el.querySelector('#bdChart').hidden, false);
+  assert.equal(el.querySelector('#bdChartSum').textContent, 'Flush 2 gave 40 % less than flush 1.');
+  assert.equal(findAll(svg, 'vz-bar').length, 2);
+});
+
+test('BT-V8 a remount on the same element: a late batch reply of the old mount draws nothing', async t => {
+  globalThis.document = { createElement: mk, createElementNS: (ns, tag) => mk(tag) };
+  const api = globalThis.FarmApi, saved = { ...api };
+  t.after(() => { Object.assign(api, saved); delete globalThis.document; registered.batches.unmount(); });
+  const late = deferred();
+  const replies = [late.promise, Promise.resolve(structuredClone(FLUSH_DETAIL))];
+  api.getBatch = () => replies.shift();
+  api.listRooms = async () => [];
+  const el = mkEl();
+  const first = registered.batches.mount(el, { id: 7 });
+  registered.batches.unmount();
+  await registered.batches.mount(el, { id: 7 });
+  const drawn = el.querySelector('#bdChartSvg').children[0];
+  assert.ok(drawn);
+  late.resolve({ ...structuredClone(FLUSH_DETAIL), flushes: [FLUSH_DETAIL.flushes[0]] });
+  await first;
+  assert.equal(el.querySelector('#bdChartSvg').children[0], drawn);     // not redrawn from the old reply
+  assert.match(drawn.attrs['aria-label'], /Flush 2/);
+});
+
+test('BT-V9 the Growing tab draws the timeline, a bar opens its batch, Finished renames the heading', async t => {
+  globalThis.document = { createElement: mk, createElementNS: (ns, tag) => mk(tag) };
+  globalThis.location = { hash: '#/batches' };
+  const api = globalThis.FarmApi, saved = { ...api };
+  t.after(() => { Object.assign(api, saved); delete globalThis.document; delete globalThis.location; registered.batches.unmount(); });
+  const now = Math.floor(Date.now() / 1000);
+  api.listRooms = async () => [{ id: 1, name: 'Room 1' }, { id: 2, name: 'Room 2' }];
+  api.listBatches = async () => [{ ...FLUSH_DETAIL, placed_at: now - 20 * 86400 }];
+  const el = mkEl();
+  await registered.batches.mount(el, {});
+  const host = el.querySelector('#btTimelineChart');
+  const svg = host.children[0];
+  assert.equal(svg.attrs.role, 'group');
+  const hits = findAll(svg, 'vz-hit');
+  assert.equal(hits.length, 1);
+  assert.match(hits[0].attrs['aria-label'], /^Open .* · Flush 2 in Room 1, placed \d+ \w+$/);
+  assert.equal(findAll(svg, 'vz-sub').some(n => n.textContent === 'Empty'), true);
+  host.listeners.click({ target: { closest: () => hits[0] } });
+  assert.equal(globalThis.location.hash, '#/batches/7');
+  assert.equal(el.querySelector('#btTimelineHead').textContent, 'What is growing where');
+  el.querySelector('#btTabCleared').listeners.click();
+  assert.equal(el.querySelector('#btTimelineHead').textContent, 'What grew where');
 });
