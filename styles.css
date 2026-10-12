@@ -583,7 +583,8 @@ div.room-air { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: basel
 
 /* The slider .field of the settings panels keeps its own grid; this layout is for the form fields */
 .form-grid .field, .field[data-field] { display: flex; align-items: stretch; flex-direction: column; gap: 4px; margin: 0; min-width: 0; }
-.form-grid .field > label, .field[data-field] > label { font-size: var(--fs-sm); font-weight: 600; color: var(--ink-2); }
+.form-grid .field > label, .field[data-field] > label, .form-grid .field > .field-label { font-size: var(--fs-sm); font-weight: 600; color: var(--ink-2); }
+.form-grid .field > .seg { width: fit-content; max-width: 100%; }
 .form-grid .field :where(input:not([type=checkbox], [type=radio]), select, textarea) { width: 100%; min-width: 0; }
 .field-ctl { display: flex; align-items: stretch; min-width: 0; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface); }
 .field-ctl:has(:focus-visible) { outline: 2px solid var(--ink); outline-offset: 1px; }
