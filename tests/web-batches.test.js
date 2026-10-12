@@ -13,7 +13,7 @@ const CC = globalThis.ClimateController, HR = globalThis.FarmHarvestRules;
 test('BT1 module registers batches and exports the C10 12.2 names and the C13 5 chart helpers', () => {
   assert.equal(typeof registered.batches.mount, 'function');
   assert.equal(typeof registered.batches.unmount, 'function');
-  assert.deepEqual(Object.keys(B).sort(), ['ageDays', 'batchBody', 'daysText', 'dateToSeconds', 'dropText', 'filterByState', 'flushBars', 'niceAxis', 'niceMax', 'plural', 'secondsToDate', 'stateWords', 'subText', 'timelineRows', 'titleOf'].sort());
+  assert.deepEqual(Object.keys(B).sort(), ['ageDays', 'batchBody', 'batchPlan', 'notPlacedMessage', 'placedMessage', 'daysText', 'dateToSeconds', 'dropText', 'filterByState', 'flushBars', 'niceAxis', 'niceMax', 'plural', 'secondsToDate', 'stateWords', 'subText', 'timelineRows', 'titleOf'].sort());
 });
 
 test('BT2 dates are farm dates whatever the browser zone', () => {
@@ -393,4 +393,139 @@ test('BT-V9 the Growing tab draws the timeline, a bar opens its batch, Finished 
   assert.equal(el.querySelector('#btTimelineHead').textContent, 'What is growing where');
   el.querySelector('#btTabCleared').listeners.click();
   assert.equal(el.querySelector('#btTimelineHead').textContent, 'What grew where');
+});
+
+// ---- C14 5: blocks in one step ----
+
+const FORM = { crop: 'oyster', strain: '', source: '', block_count: '10', block_wet_kg: '1.2', moisture_pct: '60', received_at: '2026-10-08' };
+
+test('BT-W1 batchPlan: create body, and a place body only when a room is chosen', () => {
+  const none = B.batchPlan({ ...FORM, room_id: '', placed_at: '2026-10-09' });
+  assert.deepEqual(none.create, { crop: 'oyster', block_count: 10, block_wet_kg: 1.2, moisture_pct: 60, received_at: 1791388800 });
+  assert.equal(none.place, null);
+  const put = B.batchPlan({ ...FORM, room_id: '3', placed_at: '2026-10-09' });
+  assert.deepEqual(put.create, none.create);
+  assert.deepEqual(put.place, { room_id: 3, placed_at: 1791388800 + 86400 });
+  assert.equal(B.batchPlan({ ...FORM, room_id: '3', placed_at: 'x' }).place.placed_at, 'x');
+});
+
+test('BT-W2 the two messages', () => {
+  assert.equal(B.placedMessage('Room 1'), 'Batch saved and placed in Room 1.');
+  assert.equal(B.notPlacedMessage('Placed on is in the future.'), 'Batch saved, but not placed: Placed on is in the future. Use Place in room above.');
+  assert.equal(B.notPlacedMessage('Boom'), 'Batch saved, but not placed: Boom. Use Place in room above.');
+});
+
+function setupNew(t) {
+  globalThis.document = { createElement: mk, createElementNS: (ns, tag) => mk(tag) };
+  globalThis.location = { hash: '#/batches' };
+  const api = globalThis.FarmApi, saved = { ...api };
+  t.after(() => { Object.assign(api, saved); delete globalThis.document; delete globalThis.location; registered.batches.unmount(); });
+  api.listBatches = async () => [];
+  api.listRooms = async () => [{ id: 3, name: 'Room 1' }, { id: 4, name: 'Old', archived_at: 5 }];
+  return api;
+}
+
+test('BT-W3 the form is prefilled, lists Not yet and the rooms, and shows Placed on only with a room', async t => {
+  setupNew(t);
+  const el = mkEl();
+  await registered.batches.mount(el, {});
+  assert.equal(el.querySelector('#btKg').value, 1.2);
+  assert.equal(el.querySelector('#btMoist').value, HR.DEFAULTS.moisture_pct);
+  const sel = el.querySelector('#btRoom');
+  assert.deepEqual(sel.children.map(o => [o.value, o.textContent]), [['', 'Not yet'], ['3', 'Room 1']]);
+  assert.equal(el.querySelector('#btPlacedBox').hidden, true);
+  sel.value = '3';
+  sel.listeners.change();
+  assert.equal(el.querySelector('#btPlacedBox').hidden, false);
+  assert.equal(el.querySelector('#btPlaced').value, el.querySelector('#btReceived').value);
+  assert.equal(el.querySelector('#btPlaced').min, el.querySelector('#btReceived').value);
+  assert.equal(el.querySelector('#btPlaced').disabled, false);
+  assert.equal(el.querySelector('#btPlaced').max, B.secondsToDate(Math.floor(Date.now() / 1000)));
+  sel.value = '';
+  sel.listeners.change();
+  assert.equal(el.querySelector('#btPlaced').disabled, true);       // hidden, so it must not hold back the form's checks
+  sel.value = '3';
+  sel.listeners.change();
+  el.querySelector('#btReceived').value = '2999-01-01';             // Placed on follows a later Arrived on
+  el.querySelector('#btReceived').listeners.change();
+  assert.equal(el.querySelector('#btPlaced').value, '2999-01-01');
+});
+
+test('BT-W4 create then place: the success message is said on the batch page, once', async t => {
+  const api = setupNew(t);
+  const el = mkEl();
+  await registered.batches.mount(el, {});
+  el.querySelector('#btRoom').value = '3';
+  const calls = [];
+  api.createBatch = async body => { calls.push(['create', body]); return { id: 7 }; };
+  api.placeBatch = async (id, body) => { calls.push(['place', id, body]); return {}; };
+  await el.querySelector('#btForm').listeners.submit({ preventDefault() {} });
+  assert.deepEqual(calls.map(c => c[0]), ['create', 'place']);
+  assert.equal(calls[1][1], 7);
+  assert.equal(calls[1][2].room_id, 3);
+  assert.equal(globalThis.location.hash, '#/batches/7');
+  api.getBatch = async () => BATCH;
+  const page = mkEl();
+  await registered.batches.mount(page, { id: 7 });
+  const msg = page.querySelector('#bdNote');
+  assert.equal(msg.textContent, 'Batch saved and placed in Room 1.');
+  assert.equal(msg.dataset.lvl, 'good');
+  const again = mkEl();                                    // said once
+  await registered.batches.mount(again, { id: 7 });
+  assert.notEqual(again.querySelector('#bdNote').textContent, 'Batch saved and placed in Room 1.');
+});
+
+test('BT-W5 place fails: still goes to the batch, with the not-placed message; Not yet makes no place call', async t => {
+  const api = setupNew(t);
+  const el = mkEl();
+  await registered.batches.mount(el, {});
+  el.querySelector('#btRoom').value = '3';
+  api.createBatch = async () => ({ id: 8 });
+  api.placeBatch = async () => { throw new api.ApiError(400, 'Invalid', ['placed_at: must not be in the future']); };
+  await el.querySelector('#btForm').listeners.submit({ preventDefault() {} });
+  assert.equal(globalThis.location.hash, '#/batches/8');
+  api.getBatch = async () => BATCH;
+  const page = mkEl();
+  await registered.batches.mount(page, { id: 8 });
+  const msg = page.querySelector('#bdNote');
+  assert.match(msg.textContent, /^Batch saved, but not placed: Placed on must not be in the future\. Use Place in room above\.$/);
+  assert.equal(page.querySelector('#bdRoom').value, '3');          // the room it was meant for is preselected
+  assert.equal(msg.dataset.lvl, 'error');
+  let placed = 0;
+  api.placeBatch = async () => { placed++; };
+  const el2 = mkEl();
+  await registered.batches.mount(el2, {});
+  el2.querySelector('#btRoom').value = '';
+  api.createBatch = async () => ({ id: 9 });
+  await el2.querySelector('#btForm').listeners.submit({ preventDefault() {} });
+  assert.equal(placed, 0);
+  assert.equal(globalThis.location.hash, '#/batches/9');
+});
+
+test('BT-W6 a note for batch 8 is not shown on batch 9; a page left during create still sends the place request', async t => {
+  const api = setupNew(t);
+  api.getBatch = async () => BATCH;
+  const el = mkEl();
+  await registered.batches.mount(el, {});
+  el.querySelector('#btRoom').value = '3';
+  api.createBatch = async () => ({ id: 8 });
+  api.placeBatch = async () => {};
+  await el.querySelector('#btForm').listeners.submit({ preventDefault() {} });   // batch 8's note waits
+  const other = mkEl();
+  await registered.batches.mount(other, { id: 9 });
+  assert.equal(other.querySelector('#bdNote').textContent, '');
+  // leave during create
+  const list = mkEl();
+  await registered.batches.mount(list, {});
+  list.querySelector('#btRoom').value = '3';
+  let release, placed = 0;
+  api.createBatch = () => new Promise(r => { release = () => r({ id: 10 }); });
+  api.placeBatch = async () => { placed++; };
+  globalThis.location.hash = '#/batches';
+  const saving = list.querySelector('#btForm').listeners.submit({ preventDefault() {} });
+  registered.batches.unmount();
+  release();
+  await saving;
+  assert.equal(placed, 1);
+  assert.equal(globalThis.location.hash, '#/batches');             // no navigation from a page that was left
 });
