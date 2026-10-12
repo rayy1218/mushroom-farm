@@ -154,6 +154,7 @@ async function importRooms(entries, api, { nowS, onRoom }) {
       const r = await api.createRoom(p.room);
       created++;
       await api.saveMix(r.id, p.mix);
+      if (p.mix.some(m => m.blocks > 0)) await api.restartRoom(r.id); // the running room reads its mix only at start (decision 112)
       if (p.calibration) {
         const run = await api.saveCalibration(r.id, p.calibration);
         await api.applyCalibration(r.id, run.id);
@@ -169,15 +170,27 @@ async function importRooms(entries, api, { nowS, onRoom }) {
 
 const STAGE_SHORT = { spawn: 'Spawn run', pinning: 'Pinning', fruiting: 'Fruiting', rest: 'Rest' };
 const SETUP_NOTE = 'Set up';
+const BLOCKS_MAX = 200000;
 const STEP_KEY = { saveSettings: 'settings', saveMix: 'mix', restartRoom: 'restart' };
-const SETUP_WHAT = { settings: 'the mushroom and stage', mix: 'the block count' };
 
-// The calls of the Add room form, in order: { call, body }. `settings` and `mix` take the new room's id first.
+// The blocks field as a whole number 0..BLOCKS_MAX, or null when it is not one ('' counts as 0).
+function parseBlocks(text) {
+  const t = String(text ?? '').trim();
+  if (t === '') return 0;
+  const n = Number(t);
+  return Number.isInteger(n) && n >= 0 && n <= BLOCKS_MAX ? n : null;
+}
+
+// The calls of the Add room form, in order: { call, body }. `settings`, `mix` and `restart` take the new room's id first.
+// The settings body carries the crop's own targets so the room starts there instead of ramping from the default (decision 116).
 function setupPlan(form) {
-  const blocks = Math.max(0, Math.trunc(Number(form.blocks) || 0));
+  const blocks = parseBlocks(form.blocks) ?? 0;
+  const t = global.FarmUi.cropTargets(form.crop, form.stage);
+  const settings = { crop: form.crop, stage: form.stage };
+  if (t) Object.assign(settings, { spT: t.T, spRH: t.RH, co2Lim: t.CO2 });
   const plan = [
     { call: 'createRoom', body: { name: String(form.name).trim(), volume: Number(form.volume) } },
-    { call: 'saveSettings', body: { crop: form.crop, stage: form.stage }, note: SETUP_NOTE },
+    { call: 'saveSettings', body: settings, note: SETUP_NOTE },
   ];
   // the running room reads its mix only when it starts (lead decision 112)
   if (blocks > 0) plan.push({ call: 'saveMix', body: [{ crop: form.crop, blocks }] }, { call: 'restartRoom', body: null });
@@ -188,21 +201,23 @@ function setupPlan(form) {
 // failed is null or { step: 'settings' | 'mix' | 'restart', error: <text> }. Returns { lvl, text, link: { href, text } }.
 function setupMessage(result) {
   const { id, name, crop, stage, failed } = result;
-  const blocks = Math.max(0, Math.trunc(Number(result.blocks) || 0));
+  const blocks = parseBlocks(result.blocks) ?? 0;
+  const open = { href: `#/rooms/${id}/overview`, text: `Open ${name}` };
   if (!failed) {
-    return { lvl: 'good', text: `Room "${name}" added: ${cropName(crop)}, ${stageName(stage)}, ${plural(blocks, 'block')}.`,
-      link: { href: `#/rooms/${id}/overview`, text: `Open ${name}` } };
+    return { lvl: 'good', text: `Room "${name}" added: ${cropName(crop)}, ${STAGE_SHORT[stage] ?? stageName(stage)}, ${plural(blocks, 'block')}.`, link: open };
   }
-  if (failed.step === 'restart') {
-    return { lvl: 'error', text: `Room "${name}" was added. The block count was saved but the room did not restart: ${failed.error}. Restart it from the room page.`,
-      link: { href: `#/rooms/${id}/overview`, text: `Open ${name}` } };
+  if (failed.step === 'settings') {
+    return { lvl: 'error', text: `Room "${name}" was added, but the mushroom and stage were not saved: ${failed.error}. Set it on the room's Settings tab.`,
+      link: { href: `#/rooms/${id}/settings`, text: 'Open Settings' } };
   }
-  return { lvl: 'error', text: `Room "${name}" was added, but ${SETUP_WHAT[failed.step]} was not saved: ${failed.error}. Set it on the room's Settings tab.`,
-    link: { href: `#/rooms/${id}/settings`, text: 'Open Settings' } };
+  if (failed.step === 'mix') {
+    return { lvl: 'error', text: `Room "${name}" was added, but its blocks were not saved: ${failed.error}. Press "Try again for ${name}".`, link: open };
+  }
+  return { lvl: 'error', text: `Room "${name}" was added and its blocks were saved, but the room did not restart: ${failed.error}. Press "Try again for ${name}"; the blocks also count from the room's next restart.`, link: open };
 }
 
 const helpers = {
-  setupPlan, setupMessage,
+  setupPlan, setupMessage, parseBlocks,
   statusChip, manualText, harvestToday, cropText, cardTexts, machineLines, infoText, stateText, alarmsChip, upsertRoom, takeLive, refreshRoom,
   refreshDelay, newRoomName, readStored, importPlan, importRooms,
 };
@@ -267,9 +282,9 @@ const HOME_HTML = `
       <div class="field-ctl"><select id="rhCrop"></select></div>
       <p class="field-err" hidden></p>
     </div>
-    <div class="field" data-field="stage">
-      <label id="rhStageLbl">Stage now</label>
-      <div class="field-ctl"><div class="seg" role="group" aria-labelledby="rhStageLbl" id="rhStage"></div></div>
+    <div class="field span-all" data-field="stage">
+      <span class="field-label" id="rhStageLbl">Stage now</span>
+      <div class="seg" role="group" aria-labelledby="rhStageLbl" id="rhStage"></div>
       <p class="field-err" hidden></p>
     </div>
     <div class="field" data-field="blocks">
@@ -281,6 +296,7 @@ const HOME_HTML = `
   </div>
   <div class="btn-row">
     <button class="btn btn-primary" id="rhCreate" type="button" disabled>Add room</button>
+    <button class="btn btn-link" id="rhNewRoom" type="button" hidden>Start a new room</button>
     <button class="btn" id="rhImport" type="button" hidden>Import rooms from this browser</button>
   </div>
 </section>`;
@@ -372,6 +388,7 @@ function mountHome(el) {
   }));
   $('rhCrop').value = 'oyster';
   let stage = 'fruiting';
+  // new rooms use the full farm type's stages (the settings default); the farm type is not asked here
   const stageBtns = CC.FARM_TYPES.full.stages.map(st => {
     const b = document.createElement('button');
     b.type = 'button'; b.dataset.stage = st; b.textContent = STAGE_SHORT[st];
@@ -487,16 +504,33 @@ function mountHome(el) {
   });
 
   // C14 3: the form remembers the new room's id after createRoom, so a retry never makes a second room.
+  // Until it is reset the form is bound to that room: name and size are locked and the button retries the rest.
   let made = null; // { id, name }
+  const lockForm = locked => {
+    $('rhName').readOnly = locked; $('rhVolume').readOnly = locked;
+    $('rhCreate').textContent = locked ? `Try again for ${made.name}` : 'Add room';
+    $('rhNewRoom').hidden = !locked;
+  };
   const resetForm = () => {
     made = null;
+    lockForm(false);
     $('rhName').value = '';
     $('rhBlocks').value = '0';
+    $('rhCrop').value = 'oyster';
+    stage = 'fruiting'; paintStage();
     global.FarmUi.markFields($('rhNew'), {});
+    setCreateState();
   };
+  $('rhNewRoom').addEventListener('click', () => { resetForm(); setMsg('', 'info'); $('rhName').focus(); });
   $('rhCreate').addEventListener('click', async () => {
     const btn = $('rhCreate');
     const form = { name: $('rhName').value, volume: $('rhVolume').value, crop: $('rhCrop').value, stage, blocks: $('rhBlocks').value };
+    if (parseBlocks(form.blocks) === null) {
+      global.FarmUi.markFields($('rhNew'), { blocks: `Must be a whole number from 0 to ${BLOCKS_MAX}.` });
+      setMsg('Check the marked field.');
+      return;
+    }
+    global.FarmUi.markFields($('rhNew'), {});
     const plan = setupPlan(form);
     btn.disabled = true;
     btn.textContent = 'Adding…';
@@ -531,17 +565,13 @@ function mountHome(el) {
       }
     }
     if (!alive) return;
-    btn.textContent = 'Add room';
     const msg = setupMessage({ id: made.id, name: made.name, crop: form.crop, stage, blocks: form.blocks, failed });
     setMsg(msg.text, msg.lvl);
     const a = document.createElement('a');
     a.className = 'btn btn-link'; a.href = msg.link.href; a.textContent = msg.link.text;
     $('rhMsg').append(' ', a);
     if ($('rhMsg').scrollIntoView) $('rhMsg').scrollIntoView({ block: 'nearest' }); // the form is below the cards: show the result
-    if (!failed) {
-      openNew(false, false);
-      resetForm();
-    }
+    if (failed) { lockForm(true); } else { openNew(false, false); resetForm(); a.focus(); }
     setCreateState();
   });
   $('rhName').addEventListener('input', setCreateState);
