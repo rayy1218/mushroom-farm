@@ -280,27 +280,55 @@ const RULES_HTML = `
     <div class="inst">
       <fieldset class="rule rule-first" style="--key:var(--critical)" id="ruleSafe">
         <legend>Priority 1 · CO₂ safety level</legend>
-        <label class="chk"><input type="checkbox" id="rCo2Safety"> Run the air exchange when CO₂ is ≥ <input type="number" id="rCo2SafeAt" min="500" max="20000" step="50"> ppm</label>
+        <div class="form-grid">
+          <div class="field">
+            <label for="rCo2SafeAt">Safety level</label>
+            <div class="field-ctl"><input type="number" id="rCo2SafeAt" min="500" max="20000" step="50"><span class="unit">ppm</span></div>
+          </div>
+          <div class="field"><label class="chk"><input type="checkbox" id="rCo2Safety"> Run the fresh air above this level</label></div>
+        </div>
         <p class="hint">Above the humidity rule and the time cap. A critical alarm comes on.</p>
       </fieldset>
       <fieldset class="rule rule-first" style="--key:var(--ink)" id="ruleRh">
         <legend>Priority 2 · Humidity first</legend>
         <label class="chk"><input type="checkbox" id="rRhLock"> Delay purges that dry the room when humidity is low</label>
-        <div class="row">
-          <label class="num">At ≤ target − <input type="number" id="rRhStop" min="1" max="20" step="1"> % <span class="tag" id="rRhStopAbs"></span></label>
-          <label class="num">Until ≥ target − <input type="number" id="rRhResume" min="0" max="19" step="1"> % <span class="tag" id="rRhResumeAbs"></span></label>
+        <div class="form-grid">
+          <div class="field">
+            <label for="rRhStop">Delay purges below</label>
+            <div class="field-ctl"><input type="number" id="rRhStop" min="1" max="20" step="1"><span class="unit">% under target</span></div>
+            <p class="field-help" id="rRhStopAbs"></p>
+          </div>
+          <div class="field">
+            <label for="rRhResume">Resume above</label>
+            <div class="field-ctl"><input type="number" id="rRhResume" min="0" max="19" step="1"><span class="unit">% under target</span></div>
+            <p class="field-help" id="rRhResumeAbs"></p>
+          </div>
         </div>
         <p class="hint">A purge is never delayed past the CO₂ limit.</p>
       </fieldset>
       <fieldset class="rule" style="--key:var(--s-air)">
         <legend>Priority 3 · CO₂ purge</legend>
-        <div class="row">
-          <label class="num">Start at ≥ <input type="number" id="rFanOn" min="450" max="20000" step="50"> ppm</label>
-          <label class="num">Stop at ≤ <input type="number" id="rFanOff" min="400" max="19950" step="50"> ppm</label>
+        <div class="form-grid">
+          <div class="field">
+            <label for="rFanOn">Start the fresh air at</label>
+            <div class="field-ctl"><input type="number" id="rFanOn" min="450" max="20000" step="50"><span class="unit">ppm</span></div>
+          </div>
+          <div class="field">
+            <label for="rFanOff">Stop the fresh air at</label>
+            <div class="field-ctl"><input type="number" id="rFanOff" min="400" max="19950" step="50"><span class="unit">ppm</span></div>
+          </div>
         </div>
-        <div class="row">
-          <label class="num">Longest purge <input type="number" id="rPurgeMax" min="1" max="15" step="0.5"> min</label>
-          <label class="num">Minimum off time <input type="number" id="rMinOff" min="30" max="600" step="10"> s</label>
+        <div class="form-grid">
+          <div class="field">
+            <label for="rPurgeMax">Longest purge</label>
+            <div class="field-ctl"><input type="number" id="rPurgeMax" min="1" max="15" step="0.5"><span class="unit">min</span></div>
+            <p class="field-help" id="rPurgeMaxAbs"></p>
+          </div>
+          <div class="field">
+            <label for="rMinOff">Minimum off time</label>
+            <div class="field-ctl"><input type="number" id="rMinOff" min="30" max="600" step="10"><span class="unit">s</span></div>
+            <p class="field-help" id="rMinOffAbs"></p>
+          </div>
         </div>
         <p class="hint">The intake fan and the exhaust fan run together. A purge stops at the stop level or at the longest purge. The AC and the fogger keep their targets and bring the room back after it.</p>
       </fieldset>
@@ -312,6 +340,14 @@ const RULES_HTML = `
     <div data-slot="rules-side"></div>
   </div>
 </section>`;
+
+// The computed absolute value shown under a rule field (C13 6.1), pure.
+const ruleHelp = {
+  rhStop: (spRH, drop) => `= ${+(spRH - drop).toFixed(1)} % now`,
+  rhResume: (spRH, drop) => `= ${+(spRH - drop).toFixed(1)} % now`,
+  purgeMax: sec => `= ${Math.round(sec)} s`,
+  minOff: sec => (sec >= 60 ? `= ${+(sec / 60).toFixed(1)} min` : 'under a minute'),
+};
 
 function deviceHtml(dev, name, body) {
   return `<div class="device">
@@ -592,11 +628,13 @@ function createSettingsPanel(el, options) {
     setVal($('#oT'), s.offsets.T); setVal($('#oRH'), s.offsets.RH); setVal($('#oCO2'), s.offsets.CO2);
     setVal($('#rCo2Safety'), R.co2Safety); setVal($('#rCo2SafeAt'), R.co2SafetyAt);
     setVal($('#rRhLock'), R.rhLock); setVal($('#rRhStop'), R.rhStop); setVal($('#rRhResume'), R.rhResume);
-    global.FarmUi.set($('#rRhStopAbs').id, `(${s.spRH - R.rhStop} %)`);
-    global.FarmUi.set($('#rRhResumeAbs').id, `(${s.spRH - R.rhResume} %)`);
+    global.FarmUi.set($('#rRhStopAbs').id, ruleHelp.rhStop(s.spRH, R.rhStop));
+    global.FarmUi.set($('#rRhResumeAbs').id, ruleHelp.rhResume(s.spRH, R.rhResume));
     setVal($('#rFanOn'), R.fanOn); setVal($('#rFanOff'), R.fanOff);
     // Purge times: minutes on screen, seconds in the settings (C9 7).
     setVal($('#rPurgeMax'), +(R.purgeMaxS / 60).toFixed(2)); setVal($('#rMinOff'), R.minOffS);
+    global.FarmUi.set('rPurgeMaxAbs', ruleHelp.purgeMax(R.purgeMaxS));
+    global.FarmUi.set('rMinOffAbs', ruleHelp.minOff(R.minOffS));
     $('#ruleRh').classList.toggle('off', !R.rhLock);
     $('#ruleSafe').classList.toggle('off', !R.co2Safety);
     for (const dev of ['ac', 'hu', 'air', 'lights', 'circ']) {
@@ -684,6 +722,6 @@ function showChanges(changes, opts) {
   });
 }
 
-const FarmSettingsPanel = { createSettingsPanel, diffSettings, applyChanges, formatValue, safeSettings, FIELDS, showChanges };
+const FarmSettingsPanel = { createSettingsPanel, diffSettings, applyChanges, formatValue, safeSettings, FIELDS, showChanges, ruleHelp };
 global.FarmSettingsPanel = FarmSettingsPanel;
 })(typeof window !== 'undefined' ? window : globalThis);
