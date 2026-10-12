@@ -87,7 +87,6 @@ main { max-width: 1480px; width: 100%; margin: 0 auto; padding: 20px 24px 48px; 
 }
 @media (max-width: 720px) {
   .trend, .faceplate { grid-column: span 12; }
-  #mimicNote { display: none; }
 }
 
 /* Two parts of the page: the simulation (dashed, "the world") and the controller (solid) */
@@ -150,6 +149,22 @@ main { max-width: 1480px; width: 100%; margin: 0 auto; padding: 20px 24px 48px; 
 .est-out { overflow-x: auto; }
 .est-out tr.diff td { font-weight: 600; border-top: 1px solid var(--border-strong); }
 .est-note { color: var(--muted); font-size: 13px; margin: 8px 0 0; }
+.diff-bars { margin-bottom: 12px; }
+.diff-bars h3 { margin: 0 0 6px; font-size: 14px; font-weight: 600; }
+.diff-set { margin: 0 0 10px; display: grid; gap: 6px; }
+.diff-set figcaption { font-size: 13px; color: var(--muted); }
+.diff-same { margin: 0; font-weight: 600; }
+.diff-row { display: grid; grid-template-columns: 10rem minmax(120px, 1fr) 7.5rem 6.5rem; gap: 4px 10px; align-items: center; font-size: 13px; }
+.diff-track { position: relative; height: 14px; background: var(--band); border-radius: 3px; }
+.diff-track::after { content: ""; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--axis); }
+.diff-bar { position: absolute; top: 0; bottom: 0; background: var(--muted); border-radius: 3px; }
+.diff-row[data-verdict="better"] .diff-bar { background: var(--good); }
+.diff-row[data-verdict="worse"] .diff-bar { background: var(--serious); }
+.diff-v { font-variant-numeric: tabular-nums; text-align: right; }
+.diff-w { color: var(--muted); }
+.est-out details { margin-top: 10px; }
+.est-out summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+@media (max-width: 600px) { .diff-row { grid-template-columns: 1fr auto 6.5rem; } .diff-track { grid-column: 1 / -1; order: 3; } }
 
 /* Chart extras */
 .chart .night { fill: var(--night); }
@@ -159,13 +174,17 @@ main { max-width: 1480px; width: 100%; margin: 0 auto; padding: 20px 24px 48px; 
 
 /* Mimic diagram */
 .mimic-head { display: flex; justify-content: space-between; align-items: center; padding: 2px 4px 8px; gap: 8px; }
+@media (max-width: 720px) { #mimicNote { display: none; } }
+.mimic-host { min-width: 0; margin-block: auto; }
 .mimic-svg { display: block; width: 100%; height: auto; }
+.m-manual rect { fill: color-mix(in srgb, var(--warning) 18%, var(--unit)); stroke: var(--warning); stroke-width: 1; }
+.m-manual text { font: 700 11px var(--font-cond); letter-spacing: .06em; fill: var(--ink); }
 .mimic-svg text { font-family: var(--font-cond); fill: var(--ink); }
-.m-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: .1em; fill: var(--muted) !important; }
+.m-eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .1em; fill: var(--muted) !important; }
 .m-big { font-family: var(--font-num) !important; font-size: 22px; font-weight: 500; }
-.m-small { font-size: 12px; fill: var(--ink-2) !important; }
+.m-small { font-size: 13px; fill: var(--ink-2) !important; }
 .m-tag { font-size: 13px; font-weight: 700; letter-spacing: .04em; }
-.wall { fill: url(#hatch); stroke: var(--wall); stroke-width: 1; }
+.wall { stroke: var(--wall); stroke-width: 1; }
 .hatch-bg { fill: var(--surface); }
 .hatch-line { stroke: var(--wall); stroke-width: 1.4; }
 .room { fill: var(--room); }
@@ -187,7 +206,7 @@ main { max-width: 1480px; width: 100%; margin: 0 auto; padding: 20px 24px 48px; 
 .leader { stroke: var(--ink-2); stroke-width: 1.2; }
 .readout rect { fill: var(--unit); stroke: var(--border-strong); stroke-width: 1.2; }
 .readout .val { font-family: var(--font-num) !important; font-size: 16px; font-weight: 500; }
-.readout .zn { font-family: var(--font-num) !important; font-size: 11px; fill: var(--muted) !important; }
+.readout .zn { font-family: var(--font-num) !important; font-size: 12px; fill: var(--muted) !important; }
 .readout .ico { font-size: 13px; fill: var(--lvl, var(--muted)) !important; }
 .readout[data-lvl="good"] { --lvl: var(--good); }
 .readout[data-lvl="warning"] { --lvl: var(--warning); }
@@ -369,8 +388,8 @@ th:first-child, td:first-child { text-align: left; }
 .moon-cut { fill: var(--surface); }
 .lamp { fill: var(--unit); stroke: var(--border-strong); }
 .lamp-ray { stroke: var(--ink-2); stroke-width: 1.2; opacity: 0; }
-#lamp.on .lamp { fill: var(--ink-2); }
-#lamp.on .lamp-ray { opacity: .7; }
+.lamp-g.on .lamp { fill: var(--ink-2); }
+.lamp-g.on .lamp-ray { opacity: .7; }
 
 /* Phase 1 additions */
 .protect, .exhaust, .alarms { grid-column: span 12; }
