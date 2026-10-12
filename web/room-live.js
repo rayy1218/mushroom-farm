@@ -169,7 +169,7 @@ function mount(el, ctx) {
   const mine = ++mountSeq;
   const alive = () => mine === mountSeq;
   let base = null, windowS = 21600, points = [], events = [];
-  let charts = null, loadSeq = 0, olderDone = false, alarms = [];
+  let charts = null, timeline = null, tlHover = null, tlRows = [], mimic = null, raf = null, rafLast = 0, loadSeq = 0, olderDone = false, alarms = [];
   const offs = [];
   const q = sel => el.querySelector(sel);
 
@@ -187,8 +187,12 @@ function mount(el, ctx) {
 
   const secLive = h('section', { class: 'card room-live' }, rv('lvT', 'Temperature'), rv('lvRH', 'Humidity'), rv('lvCO2', 'CO₂'),
     tag({ id: 'lvAt' }), tag({ id: 'lvTargets' }), h('ul', { class: 'machines', id: 'lvMachines' }));
-  const secAir = h('section', { class: 'card room-air' }, heading('h3', '', 'Fresh air'), tag({ id: 'airSub' }), h('p', { id: 'airState' }), tag({ id: 'airWhy' }));
-  const glance = h('div', { class: 'room-air' }, span({}, 'Fresh air'), span({ id: 'airGlance' }), span({ class: 'tag', id: 'airDay' }));
+  const secAir = h('section', { class: 'card room-air' }, heading('h3', '', 'Fresh air'), tag({ id: 'airSub' }), h('p', { id: 'airState' }), tag({ id: 'airWhy' }), tag({ id: 'airDay' }));
+  const drawHost = h('div', { class: 'room-drawing-host', id: 'rmDrawing' });
+  const figDrawing = h('figure', { class: 'card room-drawing' }, drawHost);
+  const secTimeline = h('section', { class: 'card machine-timeline' }, heading('h3', '', 'When did each machine run?'));
+  const tlHost = h('div', { class: 'ch-host', id: 'lvTimeline' });
+  secTimeline.append(tlHost);
   const filters = h('div', { class: 'filters' }, winSeg, span({ class: 'tag' }, 'Farm time (UTC+8). A gap means no readings were recorded.'));
   const chartsHost = h('div', { class: 'contents', id: 'lvCharts' });
   const alarmList = h('ul', { class: 'al-list', id: 'lvAlarmList' });
@@ -197,7 +201,7 @@ function mount(el, ctx) {
   const olderBtn = btn('Older', { id: 'lvOlder' });
   const secLog = h('section', { class: 'card log' }, heading('h2', 'eyebrow', 'Event log'), logList, olderBtn);
   const lvMsg = h('p', { class: 'room-msg', id: 'lvMsg', role: 'status', hidden: '' });
-  el.replaceChildren(secLive, secAir, glance, filters, chartsHost, secAlarms, secLog, lvMsg);
+  el.replaceChildren(figDrawing, secLive, secAir, filters, chartsHost, secAlarms, secLog, lvMsg);
 
   const fail = e => { UI.say(lvMsg, 'error', UI.errorText(e)); };
   const tg = () => chartTargets(room.live, base);
@@ -224,13 +228,49 @@ function mount(el, ctx) {
     q('#airSub').textContent = airSub(base);
     q('#airState').textContent = o.state;
     q('#airWhy').textContent = (a && a.why) || '';
-    q('#airGlance').textContent = o.glance; q('#airDay').textContent = o.day;
+    q('#airDay').textContent = a ? `Today: ${o.day}` : '';
   }
   function drawCharts() {
     if (!charts) return;
-    const now = nowS();
-    charts.draw({ t0: now - windowS, t1: now, pts: points, gapS: gapFor(windowQuery(windowS, now).step) });
+    const now = nowS(), gapS = gapFor(windowQuery(windowS, now).step);
+    charts.draw({ t0: now - windowS, t1: now, pts: points, gapS });
+    drawTimeline(now, gapS);
   }
+  // The machine timeline covers the trends' window and is redrawn with them (its SVG is cheap: five rows of spans).
+  function drawTimeline(now, gapS) {
+    const o = { gapS, averaged: windowQuery(windowS, now).step != null };
+    if (timeline) { timeline.update(tlRows, now - windowS, now, o); return; } // the same SVG: focus and a held hover stay
+    timeline = global.FarmCharts.drawMachineTimeline(tlHost, tlRows, { from: now - windowS, to: now, clock, ...o,
+      onHover: t => { tlHover = t; if (charts) charts.setHover(t); } });
+    if (tlHover != null) timeline.setHover(tlHover);
+  }
+  // ---- the room drawing (C13 3.1) ----
+  const levelNow = () => (document.body && document.body.dataset.level === 'installer' ? 'installer' : 'farmer');
+  function paintDrawing() {
+    if (!mimic) return;
+    const state = global.FarmMimic.fromReading({ reading: latest, live: room.live, room, settings: base, level: levelNow() });
+    mimic.paint(state || {});
+  }
+  function frame(ts) {
+    raf = null;
+    if (!alive() || !loopWanted()) return;
+    const dt = Math.min(0.25, Math.max(0, (ts - rafLast) / 1000));
+    rafLast = ts;
+    mimic.tick(dt);
+    raf = requestAnimationFrame(frame);
+  }
+  // the loop runs only while the drawing can be seen and moves: not when the page is hidden, under 720 px, or with reduced motion
+  const mq = q => (global.matchMedia ? global.matchMedia(q) : { matches: false, addEventListener() {}, removeEventListener() {} });
+  const mqNarrow = mq('(max-width: 720px)'), mqReduce = mq('(prefers-reduced-motion: reduce)');
+  const loopWanted = () => !document.hidden && !mqNarrow.matches && !mqReduce.matches;
+  function startLoop() {
+    if (raf != null || !mimic || !loopWanted() || !alive()) return;
+    rafLast = performance.now();
+    raf = requestAnimationFrame(frame);
+  }
+  const stopLoop = () => { if (raf != null) { cancelAnimationFrame(raf); raf = null; } };
+  const onVisibility = () => { if (loopWanted()) startLoop(); else stopLoop(); };
+  const onLevel = () => paintDrawing();
   function renderAlarms() {
     if (!alarms.length) {
       const p = h('p', { class: 'est-note' }); p.textContent = 'No alarms.';
@@ -268,7 +308,7 @@ function mount(el, ctx) {
       const rows = await api.getReadings(id, qy);
       if (seq !== loadSeq || !alive()) return;
       const t = tg();
-      for (const r of rows) points = mergePoints(points, toChartPoint(r, t), qy.from);
+      for (const r of rows) { points = mergePoints(points, toChartPoint(r, t), qy.from); tlRows = mergePoints(tlRows, r, qy.from); }
       drawCharts();
     } catch (e) { if (alive() && seq === loadSeq) fail(e); }
   }
@@ -286,7 +326,7 @@ function mount(el, ctx) {
     } catch (e) { if (alive()) fail(e); }
   }
   function afterBase() {
-    paintValues(); paintAir();
+    paintValues(); paintAir(); paintDrawing();
     points = retarget(points, tg()); drawCharts();
   }
   // The settings are read only here: the targets, the air size and the chart lines come from them.
@@ -301,15 +341,16 @@ function mount(el, ctx) {
 
   // ---- stream events (5.4) ----
   function onReading(data) {
-    if (!latest || data.t >= latest.t) { latest = data; paintValues(); }
+    if (!latest || data.t >= latest.t) { latest = data; paintValues(); paintDrawing(); }
     points = mergePoints(points, toChartPoint(data, tg()), nowS() - windowS);
+    tlRows = mergePoints(tlRows, data, nowS() - windowS);
     drawCharts();
   }
   function onRoom(data) {
     room = data;
     const rr = room.live && room.live.reading;
     if (rr && (!latest || rr.t >= latest.t)) latest = rr;
-    paintValues(); paintAir();
+    paintValues(); paintAir(); paintDrawing();
     points = retarget(points, tg()); drawCharts();
   }
   async function onReconnect() {
@@ -324,11 +365,11 @@ function mount(el, ctx) {
             const rows = await api.getReadings(id, { from: rq.from, to: rq.to, step: rq.step });
             if (seq !== loadSeq || !alive()) return;
             const t = tg();
-            for (const r of rows) points = mergePoints(points, toChartPoint(r, t), now - windowS);
+            for (const r of rows) { points = mergePoints(points, toChartPoint(r, t), now - windowS); tlRows = mergePoints(tlRows, r, now - windowS); }
             drawCharts();
           } catch (e) { if (alive()) fail(e); }
         })());
-      } else { points = []; jobs.push(loadReadings()); }
+      } else { points = []; tlRows = []; jobs.push(loadReadings()); }
     }
     jobs.push(loadAlarms(), loadEvents(true), loadSettings());
     await Promise.all(jobs);
@@ -343,7 +384,7 @@ function mount(el, ctx) {
   winSeg.addEventListener('click', e => {
     const b = e.target.closest('button[data-win]'); if (!b) return;
     winSeg.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
-    windowS = Number(b.dataset.win); points = []; drawCharts(); loadReadings();
+    windowS = Number(b.dataset.win); points = []; tlRows = []; drawCharts(); loadReadings();
   });
   olderBtn.addEventListener('click', async () => {
     olderBtn.disabled = true;
@@ -360,13 +401,25 @@ function mount(el, ctx) {
 
   // ---- start ----
   charts = global.FarmCharts.createTrendCharts(chartsHost, { keys: ['T', 'RH', 'C'], power: false, clock,
+    onHover: t => { tlHover = t; if (timeline) timeline.setHover(t); },
     status: k => { const st = room && room.live && room.live.status; return st ? UI.plainChip(k, st[k]) : null; } });
-  paintValues(); paintAir(); renderLog();
+  chartsHost.append(secTimeline);
+  mimic = global.FarmMimic.create(drawHost, { idPrefix: 'rm-' });
+  document.addEventListener('farm-level', onLevel);
+  document.addEventListener('visibilitychange', onVisibility);
+  mqNarrow.addEventListener('change', onVisibility); mqReduce.addEventListener('change', onVisibility);
+  paintValues(); paintAir(); renderLog(); paintDrawing(); startLoop();
   drawCharts();
   teardown = () => {
     const step = f => { try { f(); } catch (e) { console.error(e); } };
     step(() => { mountSeq++; });
     for (const off of offs) step(off);
+    step(stopLoop);
+    step(() => document.removeEventListener('farm-level', onLevel));
+    step(() => document.removeEventListener('visibilitychange', onVisibility));
+    step(() => { mqNarrow.removeEventListener('change', onVisibility); mqReduce.removeEventListener('change', onVisibility); });
+    step(() => mimic && mimic.destroy());
+    step(() => timeline && timeline.destroy());
     step(() => charts && charts.destroy());
   };
   return Promise.all([loadReadings(), loadAlarms(), loadEvents(false), loadSettings()]).then(() => undefined);
