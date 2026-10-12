@@ -2,7 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-// Runs first: require() caches one registry for the whole file, and a later test registers 'live'.
+// Runs first: require() caches one registry for the whole file, and a later test registers 'overview'.
 // The prep 2.0 stubs register nothing; a tab stream's real file registers its tab (C5 3.9), so either is fine.
 test('the tab files load; a tab they register has a mount function', () => {
   require('../web/room-tabs.js');
@@ -17,7 +17,7 @@ test('the tab files load; a tab they register has a mount function', () => {
 test('NAMES: live, simulate, calibrate, frozen', () => {
   require('../web/room-tabs.js');
   const { NAMES } = globalThis.FarmRoomTabs;
-  assert.deepEqual(NAMES, ['live', 'simulate', 'calibrate']);
+  assert.deepEqual(NAMES, ['overview', 'settings', 'simulate', 'calibrate']);
   assert.ok(Object.isFrozen(NAMES));
 });
 
@@ -26,16 +26,16 @@ test('register and get; a second register replaces the first', () => {
   const { register, get } = globalThis.FarmRoomTabs;
   const a = { mount() {} };
   const b = { mount() {} };
-  assert.equal(register('live', a), undefined);
-  assert.equal(get('live'), a);
-  register('live', b);
-  assert.equal(get('live'), b);
+  assert.equal(register('overview', a), undefined);
+  assert.equal(get('overview'), a);
+  register('overview', b);
+  assert.equal(get('overview'), b);
   assert.notEqual(get('simulate'), b); // another name keeps its own entry (a stub registers none, a real tab its own)
   assert.equal(get('nope'), undefined);
 });
 
 test('an unknown name throws', () => {
   require('../web/room-tabs.js');
-  assert.throws(() => globalThis.FarmRoomTabs.register('settings', {}), { name: 'Error', message: 'Unknown tab: settings' });
+  assert.throws(() => globalThis.FarmRoomTabs.register('live', {}), { name: 'Error', message: 'Unknown tab: live' });
   assert.throws(() => globalThis.FarmRoomTabs.register(undefined, {}), { message: 'Unknown tab: undefined' });
 });

@@ -2,7 +2,7 @@
 (function (global) {
 'use strict';
 
-const NAMES = Object.freeze(['live', 'simulate', 'calibrate']);
+const NAMES = Object.freeze(['overview', 'settings', 'simulate', 'calibrate']); // C12 2.2
 const tabs = new Map();
 
 function register(name, tab) {

@@ -44,20 +44,23 @@ test('L4: the modules and the room tabs register; FarmRoomTabs and FarmEquipment
     require('../web/room-tabs.js');
     require('../web/rooms.js');
     require('../web/room-live.js');
+    require('../web/room-settings.js');
     require('../web/room-equipment.js');
     require('../web/room-simulate.js');
     require('../web/room-calibrate.js');
+    require('../web/overview.js');
+    require('../web/settings-page.js');
     require('../web/batches.js');
     require('../web/harvest.js');
     require('../web/simulator.js');
   });
-  assert.deepEqual(recorded.map(r => r.name), ['rooms', 'batches', 'harvest', 'simulator']);
+  assert.deepEqual(recorded.map(r => r.name), ['rooms', 'overview', 'settings', 'batches', 'harvest', 'simulator']); // C12: overview and settings
   for (const r of recorded) {
     assert.equal(typeof r.mod.mount, 'function', r.name);
     assert.equal(typeof r.mod.unmount, 'function', r.name);
   }
   const tabs = globalThis.FarmRoomTabs;
-  assert.deepEqual([...tabs.NAMES], ['live', 'simulate', 'calibrate']);
+  assert.deepEqual([...tabs.NAMES], ['overview', 'settings', 'simulate', 'calibrate']);
   for (const n of tabs.NAMES) assert.ok(tabs.get(n), n);
   assert.equal(typeof globalThis.FarmEquipmentCard, 'object');
   assert.equal(globalThis.FarmBench, undefined);

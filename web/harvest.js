@@ -1,8 +1,18 @@
-// web/harvest.js: the phone page and the stickers page (docs/contracts/harvest.md 12.4, 12.5).
+// web/harvest.js: today's harvest, the phone page and the stickers page (docs/contracts/harvest.md 12.4, 12.5; layout.md 6).
 (function (global) {
 'use strict';
 
+// 'Monday 12 October' in farm time (UTC+8), as the Overview's page head (C12 4, 6).
+const LONG_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const LONG_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+function longDate(t) {
+  const d = new Date((t + 28800) * 1000);
+  return `${LONG_DAYS[d.getUTCDay()]} ${d.getUTCDate()} ${LONG_MONTHS[d.getUTCMonth()]}`;
+}
+
 let current = null;                         // the token of the mounted page; a late reply of an older mount sees it changed
+let timer = null;                           // the 60 s refresh of the today view
+const REFRESH_MS = 60000;
 
 const LOCAL_HOSTS = ['localhost', '127.0.0.1', '[::1]', '::1'];
 
@@ -15,7 +25,38 @@ function parseKg(text) {
 function summaryText(batch) {
   const n = batch.today.crates.length;
   if (n === 0) return 'No crates today';
-  return `Flush ${batch.flush} · ${batch.today.kg} kg today · ${n} ${n === 1 ? 'crate' : 'crates'}`;
+  return `Flush ${batch.flush} · ${batch.today.kg} kg today · ${plural(n, 'crate', 'crates')}`;
+}
+
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+const kgText = kg => String(Math.round(Number(kg) * 100) / 100);
+
+// list: the getRoomHarvest replies. One entry per room that has a placed batch; the kg and crates are today's.
+function harvestRooms(list) {
+  const out = [];
+  for (const r of list) {
+    if (!r || !r.batches || r.batches.length === 0) continue;
+    const crates = r.batches.reduce((n, b) => n + b.today.crates.length, 0);
+    const kg = Math.round(r.batches.reduce((sum, b) => sum + b.today.kg, 0) * 100) / 100;
+    out.push({
+      id: r.room.id, name: r.room.name, kg, crates,
+      what: r.batches.map(b => `${cropName(b.crop)}${b.strain ? ` · ${b.strain}` : ''} · ${b.flush > 0 ? `Flush ${b.flush}` : 'no crates yet'}`).join(', '),
+      total: `${kgText(kg)} kg today · ${plural(crates, 'crate', 'crates')}`,
+    });
+  }
+  return out;
+}
+
+// Every crate of today over all rooms, newest first.
+function todayCrates(list) {
+  const out = [];
+  for (const r of list) {
+    if (!r || !r.batches) continue;
+    for (const b of r.batches) {
+      for (const c of b.today.crates) out.push({ id: c.id, t: c.t, room: r.room.name, crop: cropName(b.crop), kg: c.kg, picker: c.picker || '' });
+    }
+  }
+  return out.sort((a, b) => b.t - a.t || b.id - a.id);
 }
 
 const stickerLink = (origin, roomId) => `${origin}/#/harvest/${roomId}`;
@@ -37,7 +78,7 @@ function qrSvg(qrcodegen, text) {
 
 const cropName = k => (global.ClimateController.CROPS[k] ? global.ClimateController.CROPS[k].name : k);
 const errText = err => global.FarmUi.errorText(err);
-const batchLine = b => `${cropName(b.crop)} · ${b.strain || '–'} · placed ${dateOf(b.placed_at)}`;
+const batchLine = b => `${cropName(b.crop)}${b.strain ? ` · ${b.strain}` : ''} · placed ${dateOf(b.placed_at)}`;
 
 // Farm date (UTC+8) of a time, whatever the browser's zone.
 function dateOf(t) {
@@ -66,10 +107,22 @@ const RECORD_HTML = `
   <ul class="hv-today" id="hvToday"></ul>
 </div>`;
 
+const TODAY_HTML = `
+<div class="hv-today-page">
+  <div id="hvHead"></div>
+  <p class="alert" id="hvTodayMsg" role="status" hidden></p>
+  <div class="hv-rooms" id="hvRooms"></div>
+  <div class="card hv-empty" id="hvEmpty" hidden><p>No blocks are growing in a room yet. Add a batch in Batches, then place it in a room.</p><a class="btn btn-link" href="#/batches">Go to Batches</a></div>
+  <section class="card hv-crates" id="hvCrates" hidden>
+    <h2>Today's crates</h2>
+    <p class="tag" id="hvCratesNone" hidden>No crates yet today.</p>
+    <ul class="hv-clist" id="hvCrateList"></ul>
+  </section>
+</div>`;
+
 const STICKERS_HTML = `
 <div class="st-page">
-  <h2>QR stickers</h2>
-  <button class="btn" id="stPrint" type="button">Print</button>
+  <div id="stHead"><button class="btn" id="stPrint" type="button">Print</button></div>
   <p class="st-warn" id="stWarn" hidden>Open this page from the farm address (for example http://192.168.1.20:8080); phones cannot reach localhost.</p>
   <div class="st-advice" id="stAdvice">
     <p>Laminate the stickers or print on waterproof labels: the rooms run at 90 % humidity.</p>
@@ -109,7 +162,7 @@ async function mountRecord(el, roomId, live) {
     $('#hvRoom').textContent = data.room.name;
     const back = $('#hvBack');
     back.textContent = `Back to ${data.room.name}`;
-    back.href = `#/rooms/${data.room.id != null ? data.room.id : roomId}/live`;
+    back.href = `#/rooms/${data.room.id != null ? data.room.id : roomId}/overview`;
     back.hidden = false;
     $('#hvNone').hidden = batches.length !== 0;
     $('#hvPick').hidden = b !== null || batches.length < 2;
@@ -228,11 +281,83 @@ async function mountRecord(el, roomId, live) {
   await load();
 }
 
+// ---- today view ----
+
+function mountToday(el, live) {
+  let gen = 0;                              // bumped by every load: an older reply is dropped
+  const $ = s => el.querySelector(s);
+  el.innerHTML = TODAY_HTML;
+  const clock = global.FarmUi.farmClock();
+  const printLink = document.createElement('a');
+  printLink.className = 'btn btn-link'; printLink.href = '#/harvest/stickers'; printLink.textContent = 'Print QR stickers';
+  const head = $('#hvHead');
+  const msg = (lvl, text) => global.FarmUi.say($('#hvTodayMsg'), lvl, text);
+  const paintHead = () => head.replaceChildren(global.FarmUi.pageHead({
+    title: 'Harvest', sub: `Today, ${longDate(Math.floor(Date.now() / 1000))}`, actions: [printLink] }));
+  paintHead();
+
+  function paint(list) {
+    const rooms = harvestRooms(list);
+    $('#hvEmpty').hidden = rooms.length !== 0;
+    $('#hvCrates').hidden = rooms.length === 0;
+    $('#hvRooms').replaceChildren(...rooms.map(r => {
+      const card = document.createElement('section'); card.className = 'card hv-room'; card.dataset.room = String(r.id);
+      const info = document.createElement('div'); info.className = 'hv-room-info';
+      const name = document.createElement('h2'); name.className = 'hv-room-name'; name.textContent = r.name;
+      const what = document.createElement('p'); what.className = 'hv-room-what'; what.textContent = r.what;
+      const total = document.createElement('p'); total.className = 'hv-room-total'; total.textContent = r.total;
+      info.append(name, what, total);
+      const rec = document.createElement('a');
+      rec.className = 'btn btn-primary btn-link hv-record'; rec.href = `#/harvest/${r.id}`; rec.textContent = 'Record harvest';
+      card.append(info, rec);
+      return card;
+    }));
+    const crates = todayCrates(list);
+    $('#hvCratesNone').hidden = crates.length !== 0;
+    $('#hvCrateList').replaceChildren(...crates.map(c => {
+      const li = document.createElement('li'); li.dataset.crate = String(c.id);
+      const cells = [['hv-ct', clock.hm(c.t)], ['hv-cw', `${c.room} · ${c.crop}`], ['hv-ck', `${kgText(c.kg)} kg`], ['hv-cp', c.picker]];
+      li.append(...cells.map(([cls, text]) => {
+        const sp = document.createElement('span'); sp.className = cls; sp.textContent = text;
+        return sp;
+      }));
+      return li;
+    }));
+  }
+
+  async function load() {
+    const mine = ++gen;
+    let list;
+    try {
+      const rooms = await global.FarmApi.listRooms();
+      if (!live() || mine !== gen) return;
+      list = await Promise.all(rooms.map(r => global.FarmApi.getRoomHarvest(r.id).catch(err => {
+        if (err && err.name === 'ApiError' && err.status === 404) return null;           // archived since the list was read
+        throw err;
+      })));
+    } catch (err) {
+      if (live() && mine === gen) msg('error', errText(err));
+      return;
+    }
+    if (!live() || mine !== gen) return;
+    msg('info', '');
+    paintHead();                                                                        // the farm date may have turned over
+    paint(list);
+  }
+
+  if (timer) clearInterval(timer);
+  timer = setInterval(() => { if (live() && !(global.document && global.document.hidden)) load(); }, REFRESH_MS);
+  return load();
+}
+
 // ---- stickers page ----
 
 async function mountStickers(el, live) {
   const $ = s => el.querySelector(s);
   el.innerHTML = STICKERS_HTML;
+  const printBtn = $('#stPrint');
+  $('#stHead').replaceChildren(global.FarmUi.pageHead({
+    title: 'QR stickers', sub: 'Print one per room and stick it at the door. Scanning it opens the harvest page for that room.', actions: [printBtn] }));
   const local = isLocalHost(global.location.hostname);
   $('#stWarn').hidden = !local;
   $('#stPrint').disabled = local;
@@ -263,12 +388,17 @@ async function mountStickers(el, live) {
 function mount(el, params) {
   const me = current = {};
   const live = () => current === me;
+  if (timer) { clearInterval(timer); timer = null; }
   if (params && params.view === 'stickers') return mountStickers(el, live);
-  return mountRecord(el, params.id, live);
+  if (params && params.id != null) return mountRecord(el, params.id, live);
+  return mountToday(el, live);
 }
-function unmount() { current = null; }
+function unmount() {
+  current = null;
+  if (timer) { clearInterval(timer); timer = null; }
+}
 
 global.FarmShell.register('harvest', { mount, unmount });
 
-if (typeof module === 'object' && module && module.exports) module.exports = { parseKg, summaryText, stickerLink, isLocalHost, qrSvg };
+if (typeof module === 'object' && module && module.exports) module.exports = { parseKg, summaryText, stickerLink, isLocalHost, qrSvg, harvestRooms, todayCrates, plural, kgText };
 })(typeof window !== 'undefined' ? window : globalThis);

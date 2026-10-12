@@ -123,6 +123,50 @@ function markFields(root, fields) {
   });
 }
 
+// C12 3.1: the page header every top-level page starts with. actions: elements (buttons, links) for the right side.
+function pageHead({ title, sub, actions } = {}) {
+  const head = document.createElement('header'); head.className = 'page-head';
+  const text = document.createElement('div'); text.className = 'page-titles';
+  const h = document.createElement('h1'); h.className = 'page-title'; h.textContent = title || '';
+  text.append(h);
+  if (sub) { const p = document.createElement('p'); p.className = 'page-sub'; p.textContent = sub; text.append(p); }
+  head.append(text);
+  if (actions && actions.length) {
+    const box = document.createElement('div'); box.className = 'page-actions btn-row';
+    box.append(...actions); head.append(box);
+  }
+  return head;
+}
+
+// C12 3.2: a controller status chip in the farmer's words. kind 'T', 'RH' or 'CO2'; an unknown text is kept.
+const PLAIN = {
+  T: { 'In band': 'OK', 'Above band': 'A bit warm', 'Below band': 'A bit cool', 'High alarm': 'Too hot', 'Low alarm': 'Too cold', 'Sensor fault': 'Sensor problem' },
+  RH: { 'In band': 'OK', 'Above band': 'A bit wet', 'Below band': 'A bit dry', 'High alarm': 'Too wet', 'Low alarm': 'Too dry', 'Sensor fault': 'Sensor problem' },
+  CO2: { 'Below limit': 'Fresh air OK', 'Above limit': 'Stale air', 'Purging': 'Airing out', 'Purge delayed (RH)': 'Airing out soon', 'Safety level': 'Stale air: danger', 'Safety run': 'Airing out (safety)', 'Sensor fault': 'Sensor problem' },
+};
+function plainChip(kind, chip) {
+  if (!chip) return chip;
+  let text = PLAIN[kind] && Object.hasOwn(PLAIN[kind], chip.text) ? PLAIN[kind][chip.text] : chip.text;
+  if (kind === 'T' && chip.text === 'Outside crop range') text = chip.icon === '▼' ? 'Too cold for this mushroom' : 'Too hot for this mushroom';
+  return { ...chip, text };
+}
+
+// C12 3.3: one room's status for cards and the farm totals (the Rooms home rule of C11 5.1, shared).
+const MACHINE_NAME = Object.freeze({ ac: 'Aircon', hu: 'Mister', air: 'Fresh-air fans', lights: 'Lights', circ: 'Circulation fan' });
+function roomStatus(room) {
+  const live = room && room.live;
+  if (!live || live.running === false) return { lvl: 'serious', icon: ICON.serious, text: 'Stopped' };
+  if (live.alarms > 0) return { lvl: 'warning', icon: ICON.warning, text: live.alarms === 1 ? '1 alarm' : `${live.alarms} alarms` };
+  const st = live.status;
+  const fixing = live.air && (live.air.state === 'purge' || live.air.state === 'after');
+  if (st && ['T', 'RH', 'CO2'].some(k => st[k] && st[k].lvl !== 'good' && !(k === 'CO2' && fixing))) return { lvl: 'warning', icon: ICON.warning, text: 'Check room' };
+  return { lvl: 'good', icon: ICON.good, text: 'All good' };
+}
+function manualText(list) {
+  const names = (list || []).map(k => MACHINE_NAME[k]).filter(Boolean);
+  return names.length ? `Manual: ${names.join(', ')}` : '';
+}
+
 global.FarmUi = { set, cell, svgEl, paintChip, clamp, fmtNum, fmtDur, fmtMinSec, watts, pct, nf, ICON, LVL_RANK, simClock, farmClock, errorText,
-  say, plainError, markFields };
+  say, plainError, markFields, pageHead, plainChip, roomStatus, manualText, MACHINE_NAME };
 })(typeof window !== 'undefined' ? window : globalThis);

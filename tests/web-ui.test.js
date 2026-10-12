@@ -116,3 +116,47 @@ test('C11 markFields: marks known fields, clears the others', () => {
   assert.equal(a.c.attrs['aria-invalid'], undefined);
   delete globalThis.document;
 });
+
+test('C12 plainChip: farmer words, unknown texts kept, chip not changed in place', () => {
+  const c = { lvl: 'good', icon: '✓', text: 'In band' };
+  assert.deepEqual(UI.plainChip('T', c), { lvl: 'good', icon: '✓', text: 'OK' });
+  assert.equal(c.text, 'In band');
+  assert.equal(UI.plainChip('T', { lvl: 'info', icon: '▲', text: 'Above band' }).text, 'A bit warm');
+  assert.equal(UI.plainChip('RH', { lvl: 'warning', icon: '▼', text: 'Low alarm' }).text, 'Too dry');
+  assert.equal(UI.plainChip('CO2', { lvl: 'good', icon: '✓', text: 'Below limit' }).text, 'Fresh air OK');
+  assert.equal(UI.plainChip('CO2', { lvl: 'info', icon: '▲', text: 'Purging' }).text, 'Airing out');
+  assert.equal(UI.plainChip('T', { lvl: 'serious', icon: '▼', text: 'Outside crop range' }).text, 'Too cold for this mushroom');
+  assert.equal(UI.plainChip('T', { lvl: 'serious', icon: '▲', text: 'Outside crop range' }).text, 'Too hot for this mushroom');
+  assert.equal(UI.plainChip('T', { lvl: 'info', icon: '?', text: 'Something new' }).text, 'Something new');
+  assert.equal(UI.plainChip('T', null), null);
+});
+
+test('C12 pageHead: title, optional subtitle and actions', () => {
+  const mk = tag => ({ tag, className: '', textContent: '', kids: [], append(...k) { this.kids.push(...k); } });
+  globalThis.document = { createElement: mk };
+  const h = UI.pageHead({ title: 'Rooms', sub: 'Your grow rooms.', actions: [{ tag: 'a' }] });
+  assert.equal(h.tag, 'header'); assert.equal(h.className, 'page-head');
+  assert.equal(h.kids[0].kids[0].textContent, 'Rooms');
+  assert.equal(h.kids[0].kids[0].className, 'page-title');
+  assert.equal(h.kids[0].kids[1].textContent, 'Your grow rooms.');
+  assert.equal(h.kids[1].className, 'page-actions btn-row');
+  const bare = UI.pageHead({ title: 'Settings' });
+  assert.equal(bare.kids.length, 1); assert.equal(bare.kids[0].kids.length, 1);
+  delete globalThis.document;
+});
+
+test('C12 roomStatus and manualText match the Rooms home rules (C11 5.1)', () => {
+  const R = live => ({ live });
+  const good = { lvl: 'good' }, info = { lvl: 'info' };
+  assert.equal(UI.roomStatus(R(null)).text, 'Stopped');
+  assert.equal(UI.roomStatus(R({ running: false, alarms: 0 })).lvl, 'serious');
+  assert.equal(UI.roomStatus(R({ running: true, alarms: 1 })).text, '1 alarm');
+  assert.equal(UI.roomStatus(R({ running: true, alarms: 3 })).text, '3 alarms');
+  assert.deepEqual(UI.roomStatus(R({ running: true, alarms: 0, status: { T: info, RH: good, CO2: good } })), { lvl: 'warning', icon: '▲', text: 'Check room' });
+  assert.equal(UI.roomStatus(R({ running: true, alarms: 0, status: { T: good, RH: good, CO2: info }, air: { state: 'purge' } })).text, 'All good');
+  assert.equal(UI.roomStatus(R({ running: true, alarms: 0, status: { T: good, RH: good, CO2: info }, air: { state: 'idle' } })).text, 'Check room');
+  assert.equal(UI.roomStatus(R({ running: true, alarms: 0, status: null })).text, 'All good');
+  assert.equal(UI.manualText(['ac', 'hu']), 'Manual: Aircon, Mister');
+  assert.equal(UI.manualText([]), '');
+  assert.equal(UI.manualText(undefined), '');
+});
