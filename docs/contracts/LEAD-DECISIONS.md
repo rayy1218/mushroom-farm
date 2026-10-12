@@ -115,3 +115,4 @@
 | 88 | `Live.manual` (C11 2.1; amends C2 5.2 and C3 Live) | `liveOf` adds `manual`: the machines whose `manual.<key>.auto` is `false`, in the order `ac`, `hu`, `air`, `lights`, `circ`; `[]` without a loop. Not part of the summary. The fake rooms give the same from the stored settings. |
 | 89 | Leave guard and scroll (C11 3.1; amends C5 2) | `FarmShell.guardLeave(fn)`; the shell asks before a page change while `fn()` is non-empty, clears the guard on each page change, and scrolls to the top on each page change. |
 | 90 | Messages (C11 3.2, 3.3; amends C5 5) | `FarmUi.say`, `FarmUi.plainError`, `FarmUi.markFields`. Status and errors use `.alert`, never `.tag`. |
+| 91 | Room details without a colon (C11 3.3; found in the Rooms review) | C3 room details read `name must be 1 to 60 characters` (no `key:`). `plainError` also accepts `key problem` when `key` is one of the given labels, so the room forms mark their fields. |
