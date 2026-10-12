@@ -169,6 +169,7 @@ async function importRooms(entries, api, { nowS, onRoom }) {
 
 const STAGE_SHORT = { spawn: 'Spawn run', pinning: 'Pinning', fruiting: 'Fruiting', rest: 'Rest' };
 const SETUP_NOTE = 'Set up';
+const STEP_KEY = { saveSettings: 'settings', saveMix: 'mix', restartRoom: 'restart' };
 const SETUP_WHAT = { settings: 'the mushroom and stage', mix: 'the block count' };
 
 // The calls of the Add room form, in order: { call, body }. `settings` and `mix` take the new room's id first.
@@ -178,17 +179,22 @@ function setupPlan(form) {
     { call: 'createRoom', body: { name: String(form.name).trim(), volume: Number(form.volume) } },
     { call: 'saveSettings', body: { crop: form.crop, stage: form.stage }, note: SETUP_NOTE },
   ];
-  if (blocks > 0) plan.push({ call: 'saveMix', body: [{ crop: form.crop, blocks }] });
+  // the running room reads its mix only when it starts (lead decision 112)
+  if (blocks > 0) plan.push({ call: 'saveMix', body: [{ crop: form.crop, blocks }] }, { call: 'restartRoom', body: null });
   return plan;
 }
 
 // The line under the form after the calls ran. result: { id, name, crop, stage, blocks, failed }, where
-// failed is null or { step: 'settings' | 'mix', error: <text> }. Returns { lvl, text, link: { href, text } }.
+// failed is null or { step: 'settings' | 'mix' | 'restart', error: <text> }. Returns { lvl, text, link: { href, text } }.
 function setupMessage(result) {
   const { id, name, crop, stage, failed } = result;
   const blocks = Math.max(0, Math.trunc(Number(result.blocks) || 0));
   if (!failed) {
     return { lvl: 'good', text: `Room "${name}" added: ${cropName(crop)}, ${stageName(stage)}, ${plural(blocks, 'block')}.`,
+      link: { href: `#/rooms/${id}/overview`, text: `Open ${name}` } };
+  }
+  if (failed.step === 'restart') {
+    return { lvl: 'error', text: `Room "${name}" was added. The block count was saved but the room did not restart: ${failed.error}. Restart it from the room page.`,
       link: { href: `#/rooms/${id}/overview`, text: `Open ${name}` } };
   }
   return { lvl: 'error', text: `Room "${name}" was added, but ${SETUP_WHAT[failed.step]} was not saved: ${failed.error}. Set it on the room's Settings tab.`,
@@ -514,9 +520,13 @@ function mountHome(el) {
     for (const step of plan.slice(1)) {
       try {
         if (step.call === 'saveSettings') await api.saveSettings(made.id, step.body, step.note);
-        else await api.saveMix(made.id, step.body);
+        else if (step.call === 'saveMix') await api.saveMix(made.id, step.body);
+        else {
+          const room = await api.restartRoom(made.id);
+          if (alive) { rooms = upsertRoom(rooms, room); render(); loadHarvest(); }
+        }
       } catch (err) {
-        failed = { step: step.call === 'saveSettings' ? 'settings' : 'mix', error: errorText(err) };
+        failed = { step: STEP_KEY[step.call], error: errorText(err) };
         break;
       }
     }

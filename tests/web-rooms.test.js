@@ -282,7 +282,9 @@ test('RS12 setupPlan: the calls in order, no mix call for an empty room', () => 
     { call: 'createRoom', body: { name: 'Room 2', volume: 60 } },
     { call: 'saveSettings', body: { crop: 'lionsmane', stage: 'pinning' }, note: 'Set up' },
     { call: 'saveMix', body: [{ crop: 'lionsmane', blocks: 500 }] },
+    { call: 'restartRoom', body: null },
   ]);
+  assert.deepEqual(H.setupPlan({ ...form, blocks: '500' }).map(s => s.call), ['createRoom', 'saveSettings', 'saveMix', 'restartRoom']);
   assert.deepEqual(H.setupPlan({ ...form, blocks: '0' }).map(s => s.call), ['createRoom', 'saveSettings']);
   assert.deepEqual(H.setupPlan({ ...form, blocks: '' }).map(s => s.call), ['createRoom', 'saveSettings']);
 });
@@ -297,6 +299,9 @@ test('RS13 setupMessage: success and partial failures', () => {
     text: 'Room "Room 2" was added, but the mushroom and stage was not saved: The farm server did not answer. Set it on the room\'s Settings tab.',
     link: { href: '#/rooms/9/settings', text: 'Open Settings' } });
   assert.match(H.setupMessage({ ...base, failed: { step: 'mix', error: 'x' } }).text, /but the block count was not saved: x\./);
+  assert.deepEqual(H.setupMessage({ ...base, failed: { step: 'restart', error: 'x' } }), { lvl: 'error',
+    text: 'Room "Room 2" was added. The block count was saved but the room did not restart: x. Restart it from the room page.',
+    link: { href: '#/rooms/9/overview', text: 'Open Room 2' } });
 });
 
 test('RS14 Add room form: success, then a partial failure that retries without a second room', async t => {
@@ -325,6 +330,12 @@ test('RS14 Add room form: success, then a partial failure that retries without a
     return {};
   };
   FarmApi.saveMix = async (id, rows) => { calls.push(['saveMix', id, rows]); return rows; };
+  let failRestart = true;
+  FarmApi.restartRoom = async id => {
+    calls.push(['restartRoom', id]);
+    if (failRestart) throw new Error('nope');
+    return { id, name: 'Room 2', volume: 60, adapter: 'sim', archived_at: null, live: null };
+  };
   registered.rooms.mount(el, {});
   await new Promise(r => setImmediate(r));
   cache['#rhName'].value = 'Room 2';
@@ -343,9 +354,16 @@ test('RS14 Add room form: success, then a partial failure that retries without a
   failSettings = false;
   calls.length = 0;
   await cache['#rhCreate'].listeners.click();
+  assert.deepEqual(calls.map(c => c[0]), ['saveSettings', 'saveMix', 'restartRoom']);
+  assert.match(cache['#rhMsg'].textContent, /did not restart: .*Restart it from the room page\.$/);
+
+  failRestart = false;
+  calls.length = 0;
+  await cache['#rhCreate'].listeners.click();
   assert.deepEqual(calls, [
     ['saveSettings', 4, { crop: 'lionsmane', stage: 'fruiting' }, 'Set up'],
     ['saveMix', 4, [{ crop: 'lionsmane', blocks: 500 }]],
+    ['restartRoom', 4],
   ]);
   assert.equal(cache['#rhMsg'].dataset.lvl, 'good');
   assert.equal(cache['#rhMsg'].textContent, 'Room "Room 2" added: Lion\'s mane, Fruiting, 500 blocks.');
