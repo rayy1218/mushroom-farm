@@ -1,0 +1,1201 @@
+{
+ "collected": "2026-10-09",
+ "note": "Recommended defaults for the economics calculator (plan before building). Every number has low/high and source ids. Confidence: high = several recent Malaysian sources agree; medium = one or two Malaysian sources; low = estimate, old, or not Malaysian. 'search summary' sources were seen only through a search engine summary, not fetched.",
+ "inputs": [
+  {
+   "id": "block.price.oyster.bought",
+   "label": "Bought grey oyster block",
+   "unit": "RM/block",
+   "default": 2.0,
+   "low": 1.5,
+   "high": 2.8,
+   "confidence": "medium",
+   "sources": [
+    "S01",
+    "S02",
+    "S03",
+    "S47"
+   ],
+   "note": "Bulk 1000+ delivered. Small lots RM2.80-4.00."
+  },
+  {
+   "id": "block.price.oyster.own",
+   "label": "Own-made grey oyster block (all-in)",
+   "unit": "RM/block",
+   "default": 1.0,
+   "low": 0.7,
+   "high": 1.5,
+   "confidence": "low",
+   "sources": [
+    "S04",
+    "S05"
+   ],
+   "note": "2016-2020 costs; RM0.65 direct + up to RM0.50 overhead. Not inflated to 2026."
+  },
+  {
+   "id": "block.price.lionsmane.bought",
+   "label": "Bought lion's mane block (imported, landed)",
+   "unit": "RM/block",
+   "default": 6.0,
+   "low": 3.0,
+   "high": 10.0,
+   "confidence": "low",
+   "sources": [
+    "S20",
+    "S32",
+    "S23"
+   ],
+   "note": "No Malaysian price found. China cost about 3 CNY (about RM1.80) per bag; adds freight, duty, margin, losses. Estimate."
+  },
+  {
+   "id": "block.price.lionsmane.own",
+   "label": "Own-made lion's mane block",
+   "unit": "RM/block",
+   "default": 2.5,
+   "low": 1.5,
+   "high": 4.0,
+   "confidence": "low",
+   "sources": [
+    "S04",
+    "S20",
+    "S23"
+   ],
+   "note": "Estimate: more bran and full sterilisation than oyster. Unverified."
+  },
+  {
+   "id": "block.weight.oyster",
+   "label": "Grey oyster block wet weight",
+   "unit": "kg",
+   "default": 0.7,
+   "low": 0.5,
+   "high": 1.0,
+   "confidence": "medium",
+   "sources": [
+    "S05"
+   ],
+   "note": ""
+  },
+  {
+   "id": "block.weight.lionsmane",
+   "label": "Lion's mane block wet weight",
+   "unit": "kg",
+   "default": 1.0,
+   "low": 0.75,
+   "high": 1.5,
+   "confidence": "low",
+   "sources": [
+    "S19",
+    "S48"
+   ],
+   "note": "Not Malaysian. Ask the supplier."
+  },
+  {
+   "id": "yield.oyster.shed",
+   "label": "Grey oyster yield, traditional shed, per good block, whole life",
+   "unit": "g/block",
+   "default": 170,
+   "low": 100,
+   "high": 300,
+   "confidence": "medium",
+   "sources": [
+    "S06",
+    "S07",
+    "S08",
+    "S09",
+    "S10",
+    "S11",
+    "S12",
+    "S15"
+   ],
+   "note": "Farm data (S11, S12, S15) point to 100-150 g; guides claim 250-640 g."
+  },
+  {
+   "id": "yield.oyster.controlledGain",
+   "label": "Grey oyster yield gain, controlled room over shed",
+   "unit": "%",
+   "default": 40,
+   "low": 20,
+   "high": 100,
+   "confidence": "low",
+   "sources": [
+    "S17",
+    "S14",
+    "S15"
+   ],
+   "note": "S17 not Malaysian (+49 %). Hot spells cut shed output 50-60 % (S14), peak:off season 3:1 (S15)."
+  },
+  {
+   "id": "yield.lionsmane.controlled",
+   "label": "Lion's mane yield, controlled room, per good block, all flushes",
+   "unit": "g/block",
+   "default": 250,
+   "low": 150,
+   "high": 400,
+   "confidence": "low",
+   "sources": [
+    "S18",
+    "S19",
+    "S22",
+    "S20",
+    "S48"
+   ],
+   "note": "Malaysian 150 g (S18, warm room); Shandong factory 400 g (S22); depends on block size."
+  },
+  {
+   "id": "flushes.oyster.shed",
+   "label": "Grey oyster flushes, shed",
+   "unit": "flushes",
+   "default": 6,
+   "low": 4,
+   "high": 8,
+   "confidence": "medium",
+   "sources": [
+    "S06",
+    "S07",
+    "S15"
+   ],
+   "note": ""
+  },
+  {
+   "id": "flushes.oyster.controlled",
+   "label": "Grey oyster flushes, controlled",
+   "unit": "flushes",
+   "default": 4,
+   "low": 3,
+   "high": 6,
+   "confidence": "medium",
+   "sources": [
+    "APP"
+   ],
+   "note": "App default program."
+  },
+  {
+   "id": "flushes.lionsmane",
+   "label": "Lion's mane flushes",
+   "unit": "flushes",
+   "default": 2,
+   "low": 1,
+   "high": 3,
+   "confidence": "medium",
+   "sources": [
+    "R08",
+    "S19",
+    "S22"
+   ],
+   "note": ""
+  },
+  {
+   "id": "cycle.oyster.shed",
+   "label": "Grey oyster block life in shed (ready-to-fruit)",
+   "unit": "days",
+   "default": 90,
+   "low": 75,
+   "high": 120,
+   "confidence": "medium",
+   "sources": [
+    "S07",
+    "S47",
+    "S06"
+   ],
+   "note": ""
+  },
+  {
+   "id": "cycle.oyster.controlled",
+   "label": "Grey oyster block life, controlled (ready-to-fruit)",
+   "unit": "days",
+   "default": 60,
+   "low": 50,
+   "high": 80,
+   "confidence": "medium",
+   "sources": [
+    "APP"
+   ],
+   "note": "App default 58 d."
+  },
+  {
+   "id": "cycle.lionsmane",
+   "label": "Lion's mane block life, controlled (ready-to-fruit)",
+   "unit": "days",
+   "default": 42,
+   "low": 35,
+   "high": 56,
+   "confidence": "low",
+   "sources": [
+    "S18",
+    "S23",
+    "R08"
+   ],
+   "note": "First harvest 10-13 d, rest 7-14 d, second flush."
+  },
+  {
+   "id": "price.oyster.farmgate",
+   "label": "Grey oyster farm-gate / wholesale",
+   "unit": "RM/kg",
+   "default": 10,
+   "low": 8,
+   "high": 13,
+   "confidence": "high",
+   "sources": [
+    "S16",
+    "S15",
+    "S12",
+    "S14",
+    "S47",
+    "S11"
+   ],
+   "note": ""
+  },
+  {
+   "id": "price.oyster.retail",
+   "label": "Grey oyster retail",
+   "unit": "RM/kg",
+   "default": 16,
+   "low": 12,
+   "high": 20,
+   "confidence": "medium",
+   "sources": [
+    "S16",
+    "S07"
+   ],
+   "note": ""
+  },
+  {
+   "id": "price.lionsmane.wholesale",
+   "label": "Lion's mane fresh, farm-gate / wholesale",
+   "unit": "RM/kg",
+   "default": 50,
+   "low": 30,
+   "high": 70,
+   "confidence": "low",
+   "sources": [
+    "S18",
+    "S21",
+    "S30",
+    "S26",
+    "S28"
+   ],
+   "note": "Only Malaysian farm price found: RM70 direct sale (S18). Chinese and Taiwanese export prices are RM25-40/kg."
+  },
+  {
+   "id": "price.lionsmane.retail",
+   "label": "Lion's mane fresh, retail",
+   "unit": "RM/kg",
+   "default": 100,
+   "low": 85,
+   "high": 117,
+   "confidence": "medium",
+   "sources": [
+    "S26",
+    "S28",
+    "S25"
+   ],
+   "note": ""
+  },
+  {
+   "id": "price.lionsmane.dried.retail",
+   "label": "Lion's mane dried (imported), retail",
+   "unit": "RM/kg",
+   "default": 149,
+   "low": 100,
+   "high": 150,
+   "confidence": "low",
+   "sources": [
+    "S29"
+   ],
+   "note": "One listing."
+  },
+  {
+   "id": "ratio.lionsmane.freshToDry",
+   "label": "Lion's mane fresh-to-dry weight ratio",
+   "unit": "kg/kg",
+   "default": 4.9,
+   "low": 4.5,
+   "high": 10,
+   "confidence": "low",
+   "sources": [
+    "S19"
+   ],
+   "note": "Oven-dry figure; commercial drying keeps more water. Not Malaysian."
+  },
+  {
+   "id": "tariff.rmPerKwh",
+   "label": "Electricity, all-in per kWh",
+   "unit": "RM/kWh",
+   "default": 0.55,
+   "low": 0.48,
+   "high": 0.6,
+   "confidence": "medium",
+   "sources": [
+    "S33",
+    "S34",
+    "S35",
+    "S36"
+   ],
+   "note": "LV General 50.68 sen + AFA 3.61 + KWTBB 1.6 % = 55.2 sen. Low = Specific Agriculture tariff if eligible (unverified). High = Jan 2027 AFA forecast. App uses 0.57."
+  },
+  {
+   "id": "tariff.retailCharge",
+   "label": "Electricity fixed retail charge",
+   "unit": "RM/month",
+   "default": 20,
+   "low": 10,
+   "high": 20,
+   "confidence": "medium",
+   "sources": [
+    "S33",
+    "S35"
+   ],
+   "note": "RM10 for Specific Agriculture (unverified)."
+  },
+  {
+   "id": "energy.oyster.controlled",
+   "label": "Grey oyster climate electricity, controlled",
+   "unit": "kWh/block",
+   "default": 0.46,
+   "low": 0.4,
+   "high": 0.55,
+   "confidence": "medium",
+   "sources": [
+    "APP"
+   ],
+   "note": "RM0.26 at RM0.57 = 0.46 kWh. Range is a guess around the sim."
+  },
+  {
+   "id": "energy.lionsmane.controlled",
+   "label": "Lion's mane climate electricity, controlled",
+   "unit": "kWh/block",
+   "default": 0.96,
+   "low": 0.7,
+   "high": 1.23,
+   "confidence": "medium",
+   "sources": [
+    "APP"
+   ],
+   "note": "RM0.40-0.70 at RM0.57."
+  },
+  {
+   "id": "energy.shed",
+   "label": "Shed electricity (pump, lights)",
+   "unit": "RM/block",
+   "default": 0.0,
+   "low": 0.0,
+   "high": 0.05,
+   "confidence": "low",
+   "sources": [
+    "S07"
+   ],
+   "note": "Manual misting assumed."
+  },
+  {
+   "id": "capex.panel.50",
+   "label": "PU panel 50 mm, supplied and installed",
+   "unit": "RM/m2",
+   "default": 220,
+   "low": 150,
+   "high": 380,
+   "confidence": "low",
+   "sources": [
+    "S40",
+    "S41",
+    "S39"
+   ],
+   "note": "Derived: China FOB USD 13-22/m2 x 4.3 x about 2.5; checked against whole-room prices (S39). Get a local quote."
+  },
+  {
+   "id": "capex.panel.75",
+   "label": "PU panel 75 mm, supplied and installed",
+   "unit": "RM/m2",
+   "default": 250,
+   "low": 170,
+   "high": 400,
+   "confidence": "low",
+   "sources": [
+    "S40",
+    "S41",
+    "S39"
+   ],
+   "note": "As above."
+  },
+  {
+   "id": "capex.panel.100",
+   "label": "PU panel 100 mm, supplied and installed",
+   "unit": "RM/m2",
+   "default": 280,
+   "low": 190,
+   "high": 425,
+   "confidence": "low",
+   "sources": [
+    "S40",
+    "S41",
+    "S39"
+   ],
+   "note": "As above."
+  },
+  {
+   "id": "capex.ac.1.0.inv",
+   "label": "Split AC 1.0 hp inverter, unit",
+   "unit": "RM",
+   "default": 1490,
+   "low": 1098,
+   "high": 1639,
+   "confidence": "high",
+   "sources": [
+    "S37"
+   ],
+   "note": ""
+  },
+  {
+   "id": "capex.ac.1.5.inv",
+   "label": "Split AC 1.5 hp inverter, unit",
+   "unit": "RM",
+   "default": 1780,
+   "low": 1317,
+   "high": 1929,
+   "confidence": "high",
+   "sources": [
+    "S37"
+   ],
+   "note": ""
+  },
+  {
+   "id": "capex.ac.2.0.inv",
+   "label": "Split AC 2.0 hp inverter, unit",
+   "unit": "RM",
+   "default": 3000,
+   "low": 2999,
+   "high": 3079,
+   "confidence": "high",
+   "sources": [
+    "S37"
+   ],
+   "note": ""
+  },
+  {
+   "id": "capex.ac.2.5.inv",
+   "label": "Split AC 2.5 hp inverter, unit",
+   "unit": "RM",
+   "default": 3940,
+   "low": 3940,
+   "high": 3940,
+   "confidence": "medium",
+   "sources": [
+    "S38"
+   ],
+   "note": "One brand."
+  },
+  {
+   "id": "capex.ac.3.0.inv",
+   "label": "Split AC 3.0 hp inverter, unit",
+   "unit": "RM",
+   "default": 4560,
+   "low": 4560,
+   "high": 4560,
+   "confidence": "medium",
+   "sources": [
+    "S38"
+   ],
+   "note": "One brand."
+  },
+  {
+   "id": "capex.ac.1.0.non",
+   "label": "Split AC 1.0 hp non-inverter, unit",
+   "unit": "RM",
+   "default": 1089,
+   "low": 869,
+   "high": 1109,
+   "confidence": "high",
+   "sources": [
+    "S37"
+   ],
+   "note": ""
+  },
+  {
+   "id": "capex.ac.1.5.non",
+   "label": "Split AC 1.5 hp non-inverter, unit",
+   "unit": "RM",
+   "default": 1399,
+   "low": 1153,
+   "high": 1549,
+   "confidence": "high",
+   "sources": [
+    "S37"
+   ],
+   "note": ""
+  },
+  {
+   "id": "capex.ac.2.0.non",
+   "label": "Split AC 2.0 hp non-inverter, unit",
+   "unit": "RM",
+   "default": 1955,
+   "low": 1955,
+   "high": 1955,
+   "confidence": "medium",
+   "sources": [
+    "S37"
+   ],
+   "note": "One model."
+  },
+  {
+   "id": "capex.ac.install",
+   "label": "Split AC installation (10 ft pipe, wiring)",
+   "unit": "RM",
+   "default": 280,
+   "low": 250,
+   "high": 350,
+   "confidence": "medium",
+   "sources": [
+    "S37"
+   ],
+   "note": "1.0 hp 250, 1.5 hp 280, 2.0 hp 310, 2.5 hp 350."
+  },
+  {
+   "id": "capex.fogger",
+   "label": "Ultrasonic fogger 3-6 L/h, landed and fitted",
+   "unit": "RM",
+   "default": 1500,
+   "low": 900,
+   "high": 3000,
+   "confidence": "low",
+   "sources": [
+    "S42"
+   ],
+   "note": "China FOB USD 210-340 plus shipping and fitting. Estimate."
+  },
+  {
+   "id": "capex.airPair",
+   "label": "Intake + exhaust fan pair with dampers, 1800 m3/h",
+   "unit": "RM",
+   "default": 800,
+   "low": 400,
+   "high": 2000,
+   "confidence": "low",
+   "sources": [],
+   "note": "No source found. Unverified."
+  },
+  {
+   "id": "capex.controller",
+   "label": "Controller, sensors, relays",
+   "unit": "RM",
+   "default": 1500,
+   "low": 800,
+   "high": 3000,
+   "confidence": "low",
+   "sources": [],
+   "note": "No source found. Unverified."
+  },
+  {
+   "id": "capex.racks",
+   "label": "Racks for 2000 blocks",
+   "unit": "RM",
+   "default": 3000,
+   "low": 1500,
+   "high": 5000,
+   "confidence": "low",
+   "sources": [],
+   "note": "No source found. Unverified."
+  },
+  {
+   "id": "capex.electrical",
+   "label": "Electrical work for a controlled room",
+   "unit": "RM",
+   "default": 1000,
+   "low": 500,
+   "high": 2500,
+   "confidence": "low",
+   "sources": [],
+   "note": "No source found. Unverified."
+  },
+  {
+   "id": "capex.shed",
+   "label": "Traditional shed for 2000 blocks, with racks",
+   "unit": "RM",
+   "default": 5000,
+   "low": 3000,
+   "high": 10000,
+   "confidence": "low",
+   "sources": [],
+   "note": "No source found. Unverified."
+  },
+  {
+   "id": "capex.lifeMonths",
+   "label": "Equipment write-off period",
+   "unit": "months",
+   "default": 60,
+   "low": 36,
+   "high": 120,
+   "confidence": "low",
+   "sources": [],
+   "note": "Assumption. No interest."
+  },
+  {
+   "id": "labour.minWage",
+   "label": "Minimum wage",
+   "unit": "RM/month",
+   "default": 1700,
+   "low": 1700,
+   "high": 1700,
+   "confidence": "high",
+   "sources": [
+    "S43"
+   ],
+   "note": "All employers from 2025-08-01."
+  },
+  {
+   "id": "labour.costPerHour",
+   "label": "Labour cost to employer",
+   "unit": "RM/h",
+   "default": 10.0,
+   "low": 8.72,
+   "high": 12.0,
+   "confidence": "medium",
+   "sources": [
+    "S43"
+   ],
+   "note": "RM8.72/h minimum plus about 15 % employer contributions (EPF, SOCSO, EIS: unverified)."
+  },
+  {
+   "id": "labour.oyster.hPer1000PerDay",
+   "label": "Grey oyster labour",
+   "unit": "h per 1000 blocks per day",
+   "default": 0.75,
+   "low": 0.4,
+   "high": 1.5,
+   "confidence": "low",
+   "sources": [
+    "S07"
+   ],
+   "note": "Unverified estimate."
+  },
+  {
+   "id": "labour.lionsmane.hPer1000PerDay",
+   "label": "Lion's mane labour (incl. trimming, packing)",
+   "unit": "h per 1000 blocks per day",
+   "default": 1.0,
+   "low": 0.5,
+   "high": 2.0,
+   "confidence": "low",
+   "sources": [],
+   "note": "Unverified estimate."
+  },
+  {
+   "id": "loss.oyster.shed",
+   "label": "Grey oyster blocks lost (contamination, no fruit), shed",
+   "unit": "%",
+   "default": 10,
+   "low": 5,
+   "high": 50,
+   "confidence": "low",
+   "sources": [
+    "S07",
+    "S44"
+   ],
+   "note": "S07: only about half fruit in the first flush."
+  },
+  {
+   "id": "loss.oyster.controlled",
+   "label": "Grey oyster blocks lost, controlled",
+   "unit": "%",
+   "default": 5,
+   "low": 2,
+   "high": 15,
+   "confidence": "low",
+   "sources": [
+    "S44"
+   ],
+   "note": "Estimate."
+  },
+  {
+   "id": "loss.lionsmane",
+   "label": "Lion's mane blocks lost (bought)",
+   "unit": "%",
+   "default": 10,
+   "low": 5,
+   "high": 25,
+   "confidence": "low",
+   "sources": [],
+   "note": "Estimate. Imported blocks travel far."
+  },
+  {
+   "id": "shrink.oyster",
+   "label": "Grey oyster shrink, harvest to sale",
+   "unit": "%",
+   "default": 5,
+   "low": 2,
+   "high": 15,
+   "confidence": "low",
+   "sources": [
+    "S06"
+   ],
+   "note": "Estimate; 3-4 days cold-store life."
+  },
+  {
+   "id": "shrink.lionsmane",
+   "label": "Lion's mane shrink, harvest to sale (incl. trim, unsold)",
+   "unit": "%",
+   "default": 10,
+   "low": 5,
+   "high": 20,
+   "confidence": "low",
+   "sources": [
+    "S18"
+   ],
+   "note": "Estimate; 1 week in fridge, 2 h outside."
+  },
+  {
+   "id": "sellCost.oyster",
+   "label": "Packing and delivery, grey oyster",
+   "unit": "RM/kg",
+   "default": 0.5,
+   "low": 0.3,
+   "high": 1.0,
+   "confidence": "low",
+   "sources": [],
+   "note": "Unverified."
+  },
+  {
+   "id": "sellCost.lionsmane",
+   "label": "Packing and delivery, lion's mane",
+   "unit": "RM/kg",
+   "default": 3.0,
+   "low": 1.5,
+   "high": 5.0,
+   "confidence": "low",
+   "sources": [
+    "S24"
+   ],
+   "note": "Unverified; S24 charges delivery to buyers."
+  },
+  {
+   "id": "fx.usd",
+   "label": "USD to RM",
+   "unit": "RM/USD",
+   "default": 4.3,
+   "low": 4.1,
+   "high": 4.5,
+   "confidence": "low",
+   "sources": [],
+   "note": "Approximate; not checked."
+  },
+  {
+   "id": "fx.cny",
+   "label": "CNY to RM",
+   "unit": "RM/CNY",
+   "default": 0.6,
+   "low": 0.57,
+   "high": 0.63,
+   "confidence": "low",
+   "sources": [],
+   "note": "Approximate; not checked."
+  }
+ ],
+ "sources": [
+  {
+   "id": "S01",
+   "url": "https://www.threads.com/@saiful_sifucendawan/post/DbAUzlVEiGY/promosi-jualan-bongkah-cendawan-tiram-kelabu-harga-bongkah-cendawan-rm-rm/",
+   "date": "2026",
+   "country": "MY",
+   "access": "search summary",
+   "finding": "Grey oyster blocks, Parit Hassan (Johor): RM2.80 (1-50), RM2.50 (51-250), RM2.30 (251+)"
+  },
+  {
+   "id": "S02",
+   "url": "https://www.facebook.com/cendawansegaragro/videos/dapatkan-bongkah-cendawan-tiram-kelabu-organikharga-serendah-rm150-per-pcs-pengh/701570107651804/",
+   "date": "undated",
+   "country": "MY",
+   "access": "search summary",
+   "finding": "Grey oyster blocks from RM1.50 each, delivered in the Peninsula"
+  },
+  {
+   "id": "S03",
+   "url": "https://siswazah-tani.blogspot.com/2020/11/jualan-bongkah-cendawan-tiram-kelabu.html",
+   "date": "2020-11",
+   "country": "MY",
+   "access": "fetched",
+   "finding": "Blocks RM3.00-4.00 in packs; RM1.50 delivered for 1000+"
+  },
+  {
+   "id": "S04",
+   "url": "https://siswazah-tani.blogspot.com/2020/01/cara-mengira-kos-penghasilan-beg.html",
+   "date": "2020-01",
+   "country": "MY",
+   "access": "fetched",
+   "finding": "Own block direct cost RM0.65 (rounded RM0.70); plus RM0.50 overhead = RM1.20"
+  },
+  {
+   "id": "S05",
+   "url": "https://siswazah-tani.blogspot.com/2016/12/kos-yang-terlibat-dalam-menghasilkan.html",
+   "date": "2016-12",
+   "country": "MY",
+   "access": "search summary",
+   "finding": "7000 bags RM4,366 = RM0.62/bag; bag 600-700 g"
+  },
+  {
+   "id": "S06",
+   "url": "https://epengembangan.doa.gov.my/en/tanaman/komoditi-berpotensi/cendawan/",
+   "date": "undated",
+   "country": "MY (DOA)",
+   "access": "fetched",
+   "finding": "60-80 g per bag per harvest, 6-8 harvests, 60 d incubation, 10 d rest, house 28-30 C 80-90 % RH, cold store 5-8 C 3-4 days"
+  },
+  {
+   "id": "S07",
+   "url": "https://cendawanonline.wordpress.com/",
+   "date": "2018-07",
+   "country": "MY",
+   "access": "fetched",
+   "finding": "180 g per block over 3 months (6 harvests); only about 50 % fruit in the first flush; one person can run 1000 blocks"
+  },
+  {
+   "id": "S08",
+   "url": "https://petani.my/cara-tanam-cendawan-tiram-di-rumah/",
+   "date": "undated",
+   "country": "MY",
+   "access": "search summary",
+   "finding": "250-500 g per block over its life (home growing)"
+  },
+  {
+   "id": "S09",
+   "url": "https://www.sciencedirect.com/science/article/pii/S0304423813003129",
+   "date": "2013",
+   "country": "MY (academic)",
+   "access": "search summary",
+   "finding": "P. pulmonarius on rubber-wood sawdust, 270 g dry substrate: 231 g/bag liquid spawn, 116 g/bag grain spawn"
+  },
+  {
+   "id": "S10",
+   "url": "https://www.researchgate.net/publication/376638044_SCIPe_MARDI_Pakej_lengkap_untuk_industri_cendawan_tempatan_SCIPe_MARDI_A_complete_package_for_the_local_mushroom_industry",
+   "date": "about 2023",
+   "country": "MY (MARDI)",
+   "access": "search summary (page 403)",
+   "finding": "Commercial grey oyster strain 149 g/bag; new strains 102-139 g/bag"
+  },
+  {
+   "id": "S11",
+   "url": "http://etmr.mardi.gov.my/index.php/25-abstract/2013/volume-8/57-daya-maju-perusahaan-cendawan-tiram-di-semenanjung-malaysia",
+   "date": "2013",
+   "country": "MY (MARDI)",
+   "access": "search summary",
+   "finding": "149 growers: typical farm 6000 blocks, 20 kg/day; cost RM5.30/kg; farm price RM10/kg"
+  },
+  {
+   "id": "S12",
+   "url": "https://www.utusanborneo.com.my/2025/12/20/pengusaha-tanaman-cendawan-tiram-mampu-meraih-pendapatan-lumayan",
+   "date": "2025-12-20",
+   "country": "MY (Bintulu)",
+   "access": "fetched",
+   "finding": "100,000 blocks, 3.4 t/month, RM32,000/month (about RM9.40/kg derived)"
+  },
+  {
+   "id": "S13",
+   "url": "https://www.hmetro.com.my/mutakhir/2025/05/1222854/100000-bongkah-cendawan-tiram-jana-hasil-rm37500-sebulan",
+   "date": "2025-05-26",
+   "country": "MY (Bintulu)",
+   "access": "headline only",
+   "finding": "Same farm: RM37,500/month, RM1.5 million invested"
+  },
+  {
+   "id": "S14",
+   "url": "https://www.sinarharian.com.my/article/257798/edisi/johor/cuaca-panas-pengeluaran-cendawan-tiram-terjejas",
+   "date": "2023-05-10",
+   "country": "MY (Johor)",
+   "access": "fetched",
+   "finding": "Heat wave (34 C): 40,000 blocks fell from 20 kg/day to 8 kg/day; sold at about RM12/kg"
+  },
+  {
+   "id": "S15",
+   "url": "https://agrimag.my/en/article-details/pengeluaran-harian-300-kg-bekalan-cendawan-tiram-masih-kurang",
+   "date": "2023-07-17",
+   "country": "MY (Selangor)",
+   "access": "fetched",
+   "finding": "180,000-block farm: 300 kg/day peak, 100 kg/day off season; wholesale above RM10/kg; 6 flushes"
+  },
+  {
+   "id": "S16",
+   "url": "https://www.hargasekilo.my/harga-cendawan-tiram/",
+   "date": "2026-04-10",
+   "country": "MY",
+   "access": "fetched",
+   "finding": "Oyster RM/kg: farm 10-15, farm wholesale 10-13, wet market 12-18, supermarket 15-20 (no method given)"
+  },
+  {
+   "id": "S17",
+   "url": "https://www.sciencedirect.com/science/article/pii/S2666154323004593",
+   "date": "2023",
+   "country": "not MY (country not checked)",
+   "access": "search summary",
+   "finding": "Controlled room gave about 49 % more oyster yield than a traditional room over three seasons"
+  },
+  {
+   "id": "S18",
+   "url": "https://malaysiaaktif.my/2025/04/cendawan-kobis-bunga-tarik-perhatian-penduduk-seberang-perak",
+   "date": "2025-04-10",
+   "country": "MY (Perak)",
+   "access": "fetched",
+   "finding": "Lion's mane in a 500-block modular smart house: up to 150 g/block, RM70/kg, 2-cluster pack RM10, harvest in 11-13 days, keeps 1 week in fridge, 2 h outside"
+  },
+  {
+   "id": "S19",
+   "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10432537/",
+   "date": "2023 (trial 2018-19)",
+   "country": "TH",
+   "access": "fetched",
+   "finding": "Lion's mane, 750 g wet bottle, 16 C room: 113 g fresh (23 g dry), BE 42.6 %, single harvest at 47 d"
+  },
+  {
+   "id": "S20",
+   "url": "https://finance.sina.com.cn/jjxw/2025-04-12/doc-inesvpzh4569524.shtml",
+   "date": "2025-04-12",
+   "country": "CN (Changshan)",
+   "access": "fetched",
+   "finding": "Lion's mane bag supplied at 3 CNY/bag cost; about 1 kg mushrooms per bag; guaranteed buy-back 12-16 CNY/kg"
+  },
+  {
+   "id": "S21",
+   "url": "https://www.163.com/dy/article/J4QK1LJP0552KEQO.html",
+   "date": "2024-06-16",
+   "country": "CN (Qingzhou)",
+   "access": "fetched",
+   "finding": "Fresh lion's mane about 30 CNY per jin (60 CNY/kg); co-op claims 4 flushes, 3 kg per bag (optimistic)"
+  },
+  {
+   "id": "S22",
+   "url": "https://www.nongji1958.com/index.php/node/61629",
+   "date": "2023",
+   "country": "CN (Shandong factory)",
+   "access": "fetched",
+   "finding": "Factory lion's mane: 3 flushes, 0.8 jin (400 g) per bag, over 50 days"
+  },
+  {
+   "id": "S23",
+   "url": "https://www.mrfungus.com.my/",
+   "date": "2026",
+   "country": "MY (KL)",
+   "access": "fetched",
+   "finding": "Climate-controlled lion's mane; says most farms import ready-to-fruit bags; harvest about 10 d after entering grow tents; sells to chefs and supplement brands"
+  },
+  {
+   "id": "S24",
+   "url": "https://www.shroomy-tek.com/wholesale",
+   "date": "2026",
+   "country": "MY (KL)",
+   "access": "fetched",
+   "finding": "Climate-controlled KL farm; lion's mane packs at 3 Jaya Grocer outlets; restaurants and cafes; min order 1 kg; prices on request"
+  },
+  {
+   "id": "S25",
+   "url": "https://mogoofarm.com/",
+   "date": "2026",
+   "country": "MY (Klang)",
+   "access": "fetched",
+   "finding": "Lion's mane-only farm; extract powder; wholesale to restaurants and hotels (no prices on page now); RM35 per 300 g per earlier sweep"
+  },
+  {
+   "id": "S26",
+   "url": "https://dusun.com.my/product/organic-local-fresh-lion-mane-200gm/",
+   "date": "2026",
+   "country": "MY",
+   "access": "fetched",
+   "finding": "Organic local fresh lion's mane RM90 (pack size unclear, 1 kg in title)"
+  },
+  {
+   "id": "S27",
+   "url": "https://dusun.com.my/product/frozen-lions-mane-mushroom-800gm/",
+   "date": "2026",
+   "country": "MY",
+   "access": "earlier sweep",
+   "finding": "Frozen lion's mane RM25/400 g, RM55/800 g"
+  },
+  {
+   "id": "S28",
+   "url": "https://vegandistrict.my/products/lions-head-mushroom-100g",
+   "date": "2026",
+   "country": "MY",
+   "access": "earlier sweep",
+   "finding": "Fresh lion's mane RM10 per 100 g (out of stock)"
+  },
+  {
+   "id": "S29",
+   "url": "http://m.organictrend.com.my/index.php?ws=showproducts&products_id=1781209",
+   "date": "undated",
+   "country": "MY (import from CN)",
+   "access": "search summary (fetch failed)",
+   "finding": "Dried monkey head mushroom, China, 80 g RM11.90 (about RM149/kg)"
+  },
+  {
+   "id": "S30",
+   "url": "https://www.tridge.com/market-overview/fresh-lion-s-mane-mushroom",
+   "date": "2026-03",
+   "country": "TW, CN",
+   "access": "fetched",
+   "finding": "Taiwan export about USD 5.7/kg (2026-01..03); China transaction USD 8.10/kg (2025-11)"
+  },
+  {
+   "id": "S31",
+   "url": "https://www.tridge.com/market-overview/powdered-lion-s-mane-mushroom/MY",
+   "date": "2025-10",
+   "country": "MY export",
+   "access": "earlier sweep",
+   "finding": "Lion's mane powder export sample USD 254.94/kg"
+  },
+  {
+   "id": "S32",
+   "url": "https://www.alibaba.com/supplier/lions-mane-supplier.html",
+   "date": "undated",
+   "country": "CN",
+   "access": "search summary",
+   "finding": "Lion's mane 'bags' USD 2.20-2.90, MOQ 500; product type not confirmed"
+  },
+  {
+   "id": "S33",
+   "url": "https://arusenerg.com/tnb-tariff-malaysia/",
+   "date": "2026",
+   "country": "MY",
+   "access": "fetched",
+   "finding": "LV General (non-domestic): energy 27.03 + capacity 8.83 + network 14.82 = 50.68 sen/kWh; RM20/month retail; RP4 fixed to 2027-12-31"
+  },
+  {
+   "id": "S34",
+   "url": "https://paultan.org/2026/10/01/tnb-bill-afa-rate-october-2026-set-at-3-61-sen-kwh/",
+   "date": "2026-10-01",
+   "country": "MY",
+   "access": "fetched",
+   "finding": "AFA +3.61 sen/kWh Oct 2026; forecast +4.27 Nov, +4.46 Dec, +7.59 Jan 2027"
+  },
+  {
+   "id": "S35",
+   "url": "https://www.mytnb.com.my/ms-MY/business/understand-your-bill/pricing-tariff",
+   "date": "2026",
+   "country": "MY (TNB)",
+   "access": "fetched (no rates on page)",
+   "finding": "Specific Agriculture LV General tariff exists (replaces Tariff H); rates not on page. 27.03 + 6.19 + 11.19 = 44.41 sen/kWh came from a search summary only"
+  },
+  {
+   "id": "S36",
+   "url": "https://soyacincau.com/2026/09/17/tnb-bill-electricity-afa-retail-sst-exemption-december-2026/",
+   "date": "2026-09-17",
+   "country": "MY",
+   "access": "search summary",
+   "finding": "8 % service tax on electricity is domestic only; KWTBB 1.6 % applies to non-domestic"
+  },
+  {
+   "id": "S37",
+   "url": "https://calculatormalaysia.com/harga/harga-aircond-malaysia/",
+   "date": "2026",
+   "country": "MY",
+   "access": "fetched",
+   "finding": "Split AC prices by hp, inverter and non-inverter; install RM250 (1 hp) to RM350 (2.5 hp)"
+  },
+  {
+   "id": "S38",
+   "url": "https://www.daikin.com.my/product/ftkf-series-r32/",
+   "date": "2026",
+   "country": "MY",
+   "access": "earlier sweep",
+   "finding": "Daikin FTKF 2.5 hp RM3,940; 3.0 hp RM4,560"
+  },
+  {
+   "id": "S39",
+   "url": "https://www.hy-refrigeration.com/latestnews/nid/193501/",
+   "date": "2026-07-22",
+   "country": "MY (vendor blog)",
+   "access": "fetched",
+   "finding": "Cold room installed: 3x3 m RM18,000-35,000; 5x4 m RM30,000-55,000 (incl. refrigeration)"
+  },
+  {
+   "id": "S40",
+   "url": "https://jialiang.en.alibaba.com/productgrouplist-802767317/Pu_Sandwich_Panel_For_Cold_Room.html",
+   "date": "undated",
+   "country": "CN (FOB)",
+   "access": "search summary",
+   "finding": "PU cold-room panel 50 mm USD 13-17/m2; 100 mm cam-lock USD 19-22/m2; MOQ 100 m2"
+  },
+  {
+   "id": "S41",
+   "url": "https://wiselinkpanel.en.made-in-china.com/product/WELRSYpOvarH/China-50mm-75mm-100mm-200mm-PU-EPS-Rockwool-Sandwich-Panel-for-Cold-Room-Slaughterhouse-Vaccinestore-Sea-Food-House.html",
+   "date": "undated",
+   "country": "CN (FOB)",
+   "access": "search summary",
+   "finding": "PU panel 50-200 mm USD 17.50-22.00/m2 by quantity"
+  },
+  {
+   "id": "S42",
+   "url": "https://duokai.en.made-in-china.com/product/ZdoteFAVELrT/China-CE-Approved-24-Liter-Per-Hour-Ultrasonic-Air-Humidifier-Industrial-Agriculture-Grow-Room-Mushroom-Fogger.html",
+   "date": "2026",
+   "country": "CN (FOB)",
+   "access": "fetched",
+   "finding": "Ultrasonic humidifier 24 L/h USD 880-920; 3 L/h models USD 210-230; 6 L/h USD 290-340"
+  },
+  {
+   "id": "S43",
+   "url": "https://www.thestar.com.my/news/nation/2025/07/22/rm1700-minimum-wage-to-come-into-force-from-aug-1",
+   "date": "2025-07-22",
+   "country": "MY",
+   "access": "search summary",
+   "finding": "RM1,700/month minimum wage for all employers from 2025-08-01; hourly RM8.72"
+  },
+  {
+   "id": "S44",
+   "url": "https://pubmed.ncbi.nlm.nih.gov/39384289/",
+   "date": "2024",
+   "country": "MY (academic)",
+   "access": "search summary (fetch blocked)",
+   "finding": "Green mould (Trichoderma) on P. pulmonarius in Malaysia; water, air and tools are sources; losses up to 100 % of a batch"
+  },
+  {
+   "id": "S45",
+   "url": "https://www.imarcgroup.com/malaysia-mushroom-market",
+   "date": "2026",
+   "country": "MY",
+   "access": "fetched",
+   "finding": "Malaysia mushroom market USD 320.2 million (2025), CAGR 5.33 % to 2034; no lion's mane split"
+  },
+  {
+   "id": "S46",
+   "url": "https://mycology.mnsselangorbranch.org/2025/02/7-stars-mushroom-farm-engaging-and.html",
+   "date": "2025-02",
+   "country": "MY (Semenyih)",
+   "access": "fetched",
+   "finding": "7-Stars grows lion's mane in cold rooms; no numbers"
+  },
+  {
+   "id": "S47",
+   "url": "https://www.sinarharian.com.my/article/159472/edisi/cendawan-tiram-beri-pendapatan-lumayan-buat-suami-isteri",
+   "date": "2021-09-04",
+   "country": "MY",
+   "access": "fetched",
+   "finding": "Block lasts 3-4 months; blocks sold RM1.60; mushrooms RM10/kg"
+  },
+  {
+   "id": "S48",
+   "url": "https://www.meritmushrooms.co.uk/product-page/lion-s-mane-mushroom-ready-to-fruit-block",
+   "date": "2026",
+   "country": "UK",
+   "access": "search summary",
+   "finding": "3.3 kg ready-to-fruit lion's mane block gives about 1.1 kg over 3 harvests"
+  },
+  {
+   "id": "S49",
+   "url": "https://coollat.com/cara-mengira-hasil-per-bongkah-dengan-betul/",
+   "date": "undated",
+   "country": "MY",
+   "access": "search summary",
+   "finding": "Count yield over all blocks put in, not only the healthy ones; seller yield claims are often inflated"
+  },
+  {
+   "id": "APP",
+   "url": "cycle.js, controller.js, sim.js (this repo)",
+   "date": "2026-10-09",
+   "country": "app",
+   "access": "read",
+   "finding": "Energy per block from the crop-cycle simulation (lead's figures): grey oyster RM0.26, lion's mane RM0.40-0.70 per block at RM0.57/kWh; oyster program 4 flushes, 58 d ready-to-fruit; default room 60 m3, 2000 blocks, 3.5 kW AC, 3 L/h fogger, 1800 m3/h air pair"
+  },
+  {
+   "id": "R08",
+   "url": "docs/research/2026-10-08-lionsmane-equipment-raw-findings.json",
+   "date": "2026-10-08",
+   "country": "mixed",
+   "access": "repo",
+   "finding": "Earlier sweep: lion's mane 2-3 flushes, 7-14 d rest, AC and tariff findings"
+  }
+ ]
+}
