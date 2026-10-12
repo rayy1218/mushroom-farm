@@ -17,7 +17,7 @@ test('RT1 registration', () => {
   assert.ok(tab, 'tab settings registered');
   assert.equal(typeof tab.mount, 'function');
   assert.equal(typeof tab.unmount, 'function');
-  for (const n of ['programText', 'commandFromReading', 'detailChanges', 'detailLines', 'countText', 'changeLines', 'versionText', 'barVisible', 'rebase']) {
+  for (const n of ['programText', 'commandFromReading', 'detailChanges', 'detailProblems', 'detailLines', 'countText', 'changeLines', 'versionText', 'barVisible', 'rebase']) {
     assert.equal(typeof H[n], 'function', n);
   }
   assert.doesNotThrow(() => tab.unmount());
@@ -101,6 +101,7 @@ const ROOM = { id: 1, name: 'Room 1', volume: 60, live: { reading: READING, crop
 
 function withDom(t, settingsById) {
   globalThis.document = { createElement: tag => new FakeEl(tag), querySelector: () => null };
+  const oldShow = globalThis.FarmSettingsPanel.showChanges; globalThis.FarmSettingsPanel.showChanges = async () => '';
   const api = globalThis.FarmApi, oldApi = { ...api }, oldSP = globalThis.FarmSettingsPanel.createSettingsPanel, oldCharts = globalThis.FarmCharts.createLadder;
   const made = [];
   let diff = [];
@@ -113,10 +114,10 @@ function withDom(t, settingsById) {
     return p;
   };
   globalThis.FarmCharts.createLadder = () => ({ draw() {}, destroy() {} });
-  Object.assign(api, { getSettings: id => settingsById[id], listSettingsHistory: async () => [{ id: 1, saved_at: 1791450000, note: null }] });
+  Object.assign(api, { getSettings: id => settingsById[id], saveSettings: async (id, sent) => ({ settings: sent, warnings: [] }), listSettingsHistory: async () => [{ id: 1, saved_at: 1791450000, note: null }] });
   t.after(() => {
     delete globalThis.document; Object.assign(api, oldApi);
-    globalThis.FarmSettingsPanel.createSettingsPanel = oldSP; globalThis.FarmCharts.createLadder = oldCharts;
+    globalThis.FarmSettingsPanel.createSettingsPanel = oldSP; globalThis.FarmSettingsPanel.showChanges = oldShow; globalThis.FarmCharts.createLadder = oldCharts;
   });
   t.after(() => tab.unmount());
   const ctx = (id, lists = {}) => ({ id, params: {}, room: () => ({ ...ROOM, id }), on: (type, fn) => { (lists[type] ||= []).push(fn); return () => {}; } });
@@ -173,4 +174,53 @@ test('RT10 mounting twice on the same element makes one panel; a reading updates
   assert.equal(made.length, 1);
   lists.reading[0]({ ...READING, t: READING.t + 1, ac_mode: 'off' });
   assert.deepEqual(made[0].opts.getCommand().ac, { power: false });
+});
+
+test('RT11 detailProblems', () => {
+  assert.deepEqual(H.detailProblems({ name: 'Shed', volume: '60' }), {});
+  assert.deepEqual(H.detailProblems({ name: '  ', volume: '60' }), { name: 'Fill this in.' });
+  assert.deepEqual(H.detailProblems({ name: 'x'.repeat(61), volume: '60' }), { name: 'Use 1 to 60 characters.' });
+  for (const v of ['', '4', '5001', 'abc']) assert.deepEqual(H.detailProblems({ name: 'A', volume: v }), { volume: 'Use a number from 5 to 5000.' });
+});
+
+async function dirtyMount(t, updateRoom) {
+  const calls = { save: 0, update: 0 };
+  const w = withDom(t, { 1: Promise.resolve(S) });
+  Object.assign(globalThis.FarmApi, {
+    saveSettings: async (id, sent) => { calls.save++; return { settings: sent, warnings: [] }; },
+    updateRoom: async (...a) => { calls.update++; return updateRoom(...a); },
+  });
+  const el = new FakeEl('div');
+  await tab.mount(el, w.ctx(1));
+  w.setDiff([{ path: 'spT', label: 'Temperature target', oldText: '25 °C', newText: '20 °C' }]);
+  return { el, calls, ...w };
+}
+
+test('RT12 a bad room size saves nothing and marks the field', async t => {
+  const { el, calls } = await dirtyMount(t, async () => ({}));
+  el.querySelector('#rdVolume').value = '3';
+  const marked = [], old = globalThis.FarmUi.markFields;
+  globalThis.FarmUi.markFields = (root, fields) => marked.push(fields);
+  t.after(() => { globalThis.FarmUi.markFields = old; });
+  await el.querySelector('#spSave').listeners.click();
+  assert.deepEqual(marked, [{ volume: 'Use a number from 5 to 5000.' }]);
+  assert.deepEqual(calls, { save: 0, update: 0 });
+  assert.ok(el.querySelector('#spNote').textContent.startsWith('Nothing was saved'));
+});
+
+test('RT13 settings saved, details rejected by the server: both facts are said', async t => {
+  const { el, calls } = await dirtyMount(t, async () => { throw new Error('boom'); });
+  el.querySelector('#rdName').value = 'Shed A';
+  await el.querySelector('#spSave').listeners.click();
+  assert.deepEqual(calls, { save: 1, update: 1 });
+  assert.ok(el.querySelector('#spMsg').textContent.startsWith('Settings saved. Room details not saved: '), el.querySelector('#spMsg').textContent);
+  assert.equal(el.querySelector('.save-bar').hidden, false); // the result stays in the bar for a moment
+});
+
+test('RT14 a settings failure does not touch the details', async t => {
+  const { el, calls } = await dirtyMount(t, async () => ({}));
+  globalThis.FarmApi.saveSettings = async () => { calls.save++; throw new Error('nope'); };
+  el.querySelector('#rdName').value = 'Shed A';
+  await el.querySelector('#spSave').listeners.click();
+  assert.deepEqual(calls, { save: 1, update: 0 });
 });

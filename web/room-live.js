@@ -360,7 +360,7 @@ function mount(el, ctx) {
 
   // ---- start ----
   charts = global.FarmCharts.createTrendCharts(chartsHost, { keys: ['T', 'RH', 'C'], power: false, clock,
-    status: k => (room && room.live && room.live.status) ? room.live.status[k] : null });
+    status: k => { const st = room && room.live && room.live.status; return st ? UI.plainChip(k, st[k]) : null; } });
   paintValues(); paintAir(); renderLog();
   drawCharts();
   teardown = () => {

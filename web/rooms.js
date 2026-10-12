@@ -208,7 +208,7 @@ function newerReading(live, data) { return !live.reading || data.t >= live.readi
 // ---------------- the Rooms home ----------------
 
 const HOME_HTML = `
-<div class="section-head"><span class="tag" id="rhFeed" role="status"></span></div>
+<span class="tag" id="rhFeed" role="status"></span>
 <p class="room-msg" id="rhMsg" role="status" hidden></p>
 <div class="contents" id="rhCards"></div>
 <section class="card room-new" id="rhNew" aria-label="New room" hidden>

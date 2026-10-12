@@ -26,6 +26,17 @@ function detailChanges(room, form) {
   return out;
 }
 
+// Client check of the Room details before anything is saved: { name?, volume? } with the line shown under the field.
+function detailProblems(form) {
+  const out = {};
+  const name = form.name.trim();
+  if (!name) out.name = 'Fill this in.';
+  else if (name.length > 60) out.name = 'Use 1 to 60 characters.';
+  const v = Number(form.volume);
+  if (String(form.volume).trim() === '' || !Number.isFinite(v) || v < 5 || v > 5000) out.volume = 'Use a number from 5 to 5000.';
+  return out;
+}
+
 // The room details as lines for the save confirm: { label, oldText, newText }.
 function detailLines(room, changes) {
   const out = [];
@@ -47,7 +58,7 @@ function rebase(from, edited, to) {
   return { settings: SP.applyChanges(to, pending), kept: pending.length };
 }
 
-const helpers = { programText, commandFromReading, detailChanges, detailLines, countText, changeLines, versionText, barVisible, rebase };
+const helpers = { programText, commandFromReading, detailChanges, detailProblems, detailLines, countText, changeLines, versionText, barVisible, rebase };
 
 // ---------------- DOM ----------------
 function h(tag, attrs, ...kids) {
@@ -72,7 +83,7 @@ function mount(el, ctx) {
   // a per-mount token, checked after every await, so a late reply never paints into a newer mount of the same element
   const mine = ++mountSeq;
   const alive = () => mine === mountSeq;
-  let base = null, saving = false, pendingSettings = null, versions = [];
+  let flashTimer = null, base = null, saving = false, pendingSettings = null, versions = [];
   let panel = null, ladder = null;
   const offs = [];
 
@@ -90,6 +101,7 @@ function mount(el, ctx) {
   const rdName = h('input', { id: 'rdName', type: 'text', maxlength: '60' });
   const rdVolume = h('input', { id: 'rdVolume', type: 'number', min: '5', max: '5000' });
   const rdMsg = h('p', { id: 'rdMsg', role: 'status', hidden: '' });
+  const SAVE_NOTE_MS = 3000;
   const field = (key, forId, label, ctl, unit, help) => {
     const kids = [h('label', { for: forId }, label), h('div', { class: 'field-ctl' }, ctl, ...(unit ? [span({ class: 'unit' }, unit)] : []))];
     if (help) kids.push(para('field-help', help));
@@ -98,15 +110,16 @@ function mount(el, ctx) {
   };
   const detailsForm = h('div', { class: 'form-grid' }, field('name', 'rdName', 'Name', rdName),
     field('volume', 'rdVolume', 'Room size', rdVolume, 'm³', 'A new size restarts the room\'s loop.'));
-  const secDetails = h('section', { class: 'card room-details' }, heading('h2', 'eyebrow', 'Room details'), detailsForm, rdMsg);
+  const secDetails = h('section', { class: 'card room-details' }, heading('h2', 'eyebrow', 'Room details'), detailsForm);
   const rdArchive = btn('Archive room', { id: 'rdArchive' });
   rdArchive.classList.add('btn-danger');
   const secDanger = h('section', { class: 'card room-danger' }, heading('h2', 'eyebrow', 'Danger zone'),
-    para('est-note', 'Archiving stops the room\'s loop and takes it off the Rooms list. Its data is kept.'), h('div', { class: 'btn-row' }, rdArchive));
+    para('est-note', 'Archiving stops the room\'s loop and takes it off the Rooms list. Its data is kept.'), h('div', { class: 'btn-row' }, rdArchive), rdMsg);
   const saveBtn = btn('Save', { id: 'spSave' }), discardBtn = btn('Discard', { id: 'spDiscard' });
   saveBtn.classList.add('btn-primary');
-  const spCount = span({ class: 'save-count', id: 'spCount', role: 'status' });
-  const saveBar = h('div', { class: 'save-bar', hidden: '' }, spCount, h('div', { class: 'btn-row' }, saveBtn, discardBtn));
+  const spCount = span({ class: 'save-count', id: 'spCount' });
+  const saveNote = h('div', { class: 'save-note', id: 'spNote', role: 'status', hidden: '' });
+  const saveBar = h('div', { class: 'save-bar', hidden: '' }, spCount, saveNote, h('div', { class: 'btn-row' }, saveBtn, discardBtn));
   const lvMsg = h('p', { class: 'room-msg', id: 'lvMsg', role: 'status', hidden: '' });
   el.replaceChildren(head, spHost, secVer, secDetails, secDanger, lvMsg, saveBar);
 
@@ -141,14 +154,19 @@ function mount(el, ctx) {
   function paintSave() {
     const n = unsaved();
     spCount.textContent = countText(n);
-    saveBar.hidden = !barVisible(n, saving);
+    saveBar.hidden = !barVisible(n, saving) && !flashTimer;
     saveBtn.disabled = discardBtn.disabled = n === 0 || saving;
     rdName.disabled = rdVolume.disabled = saving;
     verList.querySelectorAll('button').forEach(b => { b.disabled = saving; });
   }
-  function setMsg(lines, lvl = 'info') {
-    UI.say(spMsg, lvl, lines.join(' '));
-    if (lines.length && spMsg.scrollIntoView) spMsg.scrollIntoView({ block: 'nearest' }); // the bar is at the bottom, the message at the top
+  function setMsg(lines, lvl = 'info') { UI.say(spMsg, lvl, lines.join(' ')); }
+  // A save result: shown at the top as always, and in the bar for about 3 s, where the user is looking.
+  function flash(lines, lvl) {
+    setMsg(lines, lvl);
+    clearTimeout(flashTimer);
+    UI.say(saveNote, lvl, lines.join(' '));
+    flashTimer = setTimeout(() => { flashTimer = null; UI.say(saveNote, 'info', ''); paintSave(); }, SAVE_NOTE_MS);
+    paintSave();
   }
   function renderVersions() {
     verList.replaceChildren(...versions.map((v, i) => {
@@ -241,23 +259,25 @@ function mount(el, ctx) {
     const details = detailChanges(room, detailForm());
     const lines = [...changes, ...detailLines(room, details)];
     if (!lines.length) return;
+    const problems = Object.keys(details).length ? detailProblems(detailForm()) : {};
+    UI.markFields(detailsForm, problems);
+    if (Object.keys(problems).length) { flash(['Nothing was saved. Check the marked field.'], 'error'); return; }
     const note = await SP.showChanges(lines, { title: `Save these changes to ${room.name}?`, confirmText: 'Save', note: changes.length > 0 });
     if (note === null || !alive()) return;
     saving = true; paintSave();
-    UI.markFields(detailsForm, {});
     const messages = [];
-    let level = 'good';
+    let level = 'good', settingsSaved = false;
     try {
       if (changes.length) {
         const sent = panel.get();
         try {
           const { settings, warnings } = await api.saveSettings(id, sent, note);
           if (!alive()) return;
-          base = settings;
+          base = settings; settingsSaved = true;
           panel.set(rebase(sent, panel.get(), settings).settings);
           if (warnings && warnings.length) { messages.push(...warnings); level = 'info'; }
           drawLadder(); loadVersions();
-        } catch (e) { if (alive()) setMsg([UI.errorText(e)], 'error'); return; }
+        } catch (e) { if (alive()) flash([UI.errorText(e)], 'error'); return; }
       }
       if (Object.keys(details).length) {
         try {
@@ -267,10 +287,11 @@ function mount(el, ctx) {
         } catch (e) {
           if (!alive()) return;
           const p = UI.plainError(e, { name: 'Name', volume: 'Room size' });
-          setMsg([...messages, p.text], 'error'); UI.markFields(detailsForm, p.fields); return;
+          flash([settingsSaved ? `Settings saved. Room details not saved: ${p.text}` : p.text], 'error');
+          UI.markFields(detailsForm, p.fields); return;
         }
       }
-      setMsg(messages.length ? messages : ['Saved.'], level);
+      flash(messages.length ? messages : ['Saved.'], level);
     } finally { if (alive()) { saving = false; paintSave(); } }
   });
   discardBtn.addEventListener('click', () => {
@@ -287,6 +308,7 @@ function mount(el, ctx) {
       const old = base;
       base = settings;
       if (panel) panel.set(settings); else createPanel();
+      paintDetails(true); UI.markFields(detailsForm, {});
       setMsg([...(warnings || []), ...changeLines(SP.diffSettings(old, settings))]);
       drawLadder(); loadVersions();
     } catch (e) { if (alive()) setMsg([UI.errorText(e)], 'error'); }
@@ -304,7 +326,7 @@ function mount(el, ctx) {
   paintDetails(true);
   teardown = () => {
     const step = f => { try { f(); } catch (e) { console.error(e); } };
-    step(() => { mountSeq++; });
+    step(() => { mountSeq++; clearTimeout(flashTimer); });
     step(() => global.FarmShell && global.FarmShell.guardLeave && global.FarmShell.guardLeave(null));
     for (const off of offs) step(off);
     step(() => panel && panel.destroy());
