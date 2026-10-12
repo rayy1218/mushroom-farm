@@ -96,87 +96,35 @@ function paintAirSize() {
   UI.set('plantAir', `${n} m³/h, ${Math.round(m3h * PL.air.wPerM3h)} W while on`);
 }
 
-// ---------------- Mimic animation ----------------
-let mist = [], bubbles = [], caps = [];
-let animAcFlows = [], animFanFlows = [];
-const anim = { fan: 0, cond: 0, circ: 0, acFlow: 0, fanFlow: 0 };
-let ventKey = '';
-const reduceMotion = () => (typeof matchMedia !== 'undefined' ? matchMedia('(prefers-reduced-motion: reduce)').matches : false);
-let fanInBlades = null, fanOutBlades = null;
-function buildMimicExtras() {
-  fanInBlades = el.querySelector('#fanInBlades'); fanOutBlades = el.querySelector('#fanOutBlades');
-  mist = []; bubbles = []; caps = [];
-  for (let i = 0; i < 16; i++) mist.push({ ph: i / 16, dx: (Math.random() - 0.5) * 14, elm: UI.svgEl('circle', { class: 'mist', r: 3 }, el.querySelector('#mist')) });
-  for (let i = 0; i < 14; i++) bubbles.push({ ph: i / 14, dx: Math.random() * 136, elm: UI.svgEl('circle', { class: 'bubble', r: 2.5 }, el.querySelector('#bubbles')) });
-  const g = el.querySelector('#bags');
-  for (const y0 of [324, 374]) for (let i = 0; i < 5; i++) {
-    const x = 246 + i * 29;
-    UI.svgEl('rect', { class: 'bag', x, y: y0, width: 24, height: 36, rx: 7 }, g);
-    for (const [cx, cy, side] of [[x + 2, y0 + 12, -1], [x + 22, y0 + 24, 1]]) {
-      const outer = UI.svgEl('g', { transform: `translate(${cx} ${cy})` }, g);
-      const c = UI.svgEl('g', { class: 'cap' }, outer);
-      UI.svgEl('ellipse', { cx: 3 * side, cy: 0, rx: 7, ry: 3.6 }, c);
-      UI.svgEl('ellipse', { cx: 2 * side, cy: 5, rx: 5, ry: 2.8 }, c);
-      caps.push(c);
-    }
-  }
-  animAcFlows = [...el.querySelectorAll('[data-flow="ac"]')];
-  ventKey = ''; glanceKey = '';
-}
-// Places the intake fan, the exhaust fan, their arrows and texts for env.inletAt / env.exhaustAt (on a change only).
-const VENT_Y = { high: 160, low: 352 };
-function layoutVents() {
-  const key = `${env.inletAt}|${env.exhaustAt}`;
-  if (key === ventKey) return;
-  ventKey = key;
-  const L = mimicLayout(env), flows = el.querySelector('#ventFlows'), txt = el.querySelector('#ventText');
-  flows.replaceChildren(); txt.replaceChildren();
-  for (const side of ['inlet', 'outlet']) {
-    const o = L[side], y = VENT_Y[o.band], left = side === 'inlet';
-    el.querySelector(left ? '#fanIn' : '#fanOut').setAttribute('transform', `translate(${left ? 180 : 820} ${y})`);
-    const [x1, x2] = left ? [60, 134] : [866, 990];
-    for (const d of [-18, 0, 18]) UI.svgEl('path', { class: 'flow fan', 'data-flow': 'fan', d: `M${x1} ${y + d} H${x2}`, 'marker-end': 'url(#arFan)' }, flows);
-    const lines = [['m-tag', null, o.tag, 0], ['m-small', left ? 'mInState' : 'mOutState', '', 17], ['m-small', null, o.label, 17]];
-    let ty = o.band === 'high' ? 226 : 300 - lines.reduce((h, l) => h + l[3], 0);
-    for (const [cls, id, text, gap] of lines) {
-      ty += gap;
-      UI.svgEl('text', { x: left ? 12 : 836, y: ty, class: cls, ...(id ? { id } : {}) }, txt).textContent = text;
-    }
-  }
-  animFanFlows = [...flows.querySelectorAll('[data-flow="fan"]')];
-}
-const paintCaps = () => { const sc = { spawn: 0, pinning: 0.35, fruiting: 1, rest: 0.12 }[cfg.stage]; for (const c of caps) c.style.transform = `scale(${sc})`; };
-function animateMimic(dtReal) {
-  const a = sim.view().act, move = !reduceMotion() && !paused;
-  const fanF = a.air ? 1 : 0, fogF = a.huLevel / 3;
-  if (move) {
-    anim.fan = (anim.fan + 1080 * fanF * dtReal) % 360;
-    anim.cond = (anim.cond + 720 * (a.comp ? 0.3 + a.acFrac : 0) * dtReal) % 360;
-    anim.circ = (anim.circ + 900 * (a.circ ? 1 : 0) * dtReal) % 360;
-    anim.acFlow -= dtReal * 40 * (0.5 + a.acFrac);
-    anim.fanFlow -= dtReal * 60 * (0.3 + fanF);
-  }
-  const fanRot = `rotate(${anim.fan.toFixed(1)})`;
-  fanInBlades.setAttribute('transform', fanRot);
-  fanOutBlades.setAttribute('transform', fanRot);
-  el.querySelector('#condBlades').setAttribute('transform', `rotate(${anim.cond.toFixed(1)})`);
-  el.querySelector('#circBlades').setAttribute('transform', `rotate(${anim.circ.toFixed(1)})`);
-  for (const f of animAcFlows) { f.style.opacity = !a.power ? 0 : a.comp ? 0.35 + 0.65 * a.acFrac : 0.2; f.style.strokeDashoffset = anim.acFlow; }
-  for (const f of animFanFlows) { f.style.opacity = fanF > 0 ? 0.35 + 0.65 * fanF : 0; f.style.strokeDashoffset = anim.fanFlow; }
-  for (const p of mist) {
-    if (move) { p.ph += dtReal * (0.25 + 0.5 * fogF); if (p.ph > 1) { p.ph -= 1; p.dx = (Math.random() - 0.5) * 14; } }
-    p.elm.setAttribute('cx', (722 + p.dx + Math.sin(p.ph * 7 + p.dx) * 4).toFixed(1));
-    p.elm.setAttribute('cy', (322 - p.ph * 80).toFixed(1));
-    p.elm.setAttribute('r', (2.5 + p.ph * 6).toFixed(1));
-    p.elm.style.opacity = (fogF * (1 - p.ph) * 0.7).toFixed(2);
-  }
-  const lpm = SIM.co2Lpm(env), co2Vis = UI.clamp(lpm / 3, 0, 1);
-  for (const b of bubbles) {
-    if (move) { b.ph += dtReal * (0.3 + 0.1 * lpm); if (b.ph > 1) { b.ph -= 1; b.dx = Math.random() * 136; } }
-    b.elm.setAttribute('cx', (249 + b.dx + Math.sin(b.ph * 9 + b.dx) * 3).toFixed(1));
-    b.elm.setAttribute('cy', (318 - b.ph * 46).toFixed(1));
-    b.elm.style.opacity = (co2Vis * (1 - b.ph)).toFixed(2);
-  }
+// ---------------- Mimic (the drawing is web/mimic.js) ----------------
+let mimic = null;
+// The DrawState of the sandbox room, built from the simulator (C13 2).
+function benchDraw() {
+  const v = sim.view(), r = reading, a = v.act, st = ctl.state, Z = v.zones;
+  const hourLocal = Math.floor((env.startHour * 3600 + v.t) % 86400 / 3600);
+  const vol = { ...PL.room, ...(env.room || {}) }.volume, kwhAll = Object.values(v.kwh).reduce((x, y) => x + y, 0);
+  const airTxt = a.air ? `Purge ${Math.round(v.airM3h).toLocaleString('en')} m³/h` : 'Off · dampers closed';
+  const dist = [v.door && 'door open', v.workers && `${v.workers} workers`, v.watering && 'floor wet', v.weather.rain && 'rain', v.weather.cloudy && 'cloudy', v.wetSensor && 'RH sensor wet'].filter(Boolean);
+  return {
+    title: `${CC.CROPS[cfg.crop].name} · ${CC.STAGES[cfg.stage]} · SANDBOX`, note: dist.join(' · '),
+    roomLine: `FRUITING ROOM · ${vol} m³`, airLine: `Fresh air ${(v.airM3h / vol).toFixed(1)} changes an hour`,
+    powerLine: `Power now ${UI.watts(Object.values(v.power).reduce((x, y) => x + y, 0))} · ${kwhAll.toFixed(1)} kWh so far`,
+    out: { T: v.weather.T, RH: v.weather.RH }, night: hourLocal >= 19 || hourLocal < 7,
+    T: r.T, RH: r.RH, CO2: r.CO2,
+    status: { T: ctl.status('T'), RH: ctl.status('RH'), CO2: ctl.status('CO2') },
+    zones: { lo: { T: Z.lo.T, RH: Z.lo.RH, C: Z.lo.C }, hi: { T: Z.hi.T, RH: Z.hi.RH, C: Z.hi.C } },
+    units: {
+      ac: { on: a.power, run: a.acFrac, state: !a.power ? 'Off' : `${AC_WORD[a.mode]} ${a.setpoint.toFixed(1)}° · ${a.comp ? `comp ${UI.pct(a.acFrac)}` : 'comp idle'}`,
+        sub: `${UI.watts(v.power.ac)}${a.comp ? ` · COP ${v.cop.toFixed(1)}` : ''}` },
+      cond: { on: a.comp, state: a.comp ? 'Running' : 'Idle' },
+      hu: { level: a.huLevel, state: a.huLevel > 0 ? `Level ${a.huLevel} · ${(v.fogGph / 1000).toFixed(1)} L/h` : 'Off', sub: UI.watts(v.power.hu) },
+      air: { on: a.air, state: airTxt, inletAt: env.inletAt, exhaustAt: env.exhaustAt },
+      circ: { on: a.circ, state: a.circ ? `On · ${UI.watts(v.power.circ)}` : 'Off' },
+      lights: { on: v.lights, state: v.lights ? `Lights on · ${UI.watts(v.power.lights)}` : 'Lights off' },
+    },
+    blocks: `${env.blocks.toLocaleString('en')} blocks`, core: `Core ${v.core.toFixed(1)} °C`,
+    co2Rate: UI.clamp(SIM.co2Lpm(env) / 3, 0, 1), stage: cfg.stage, codes: true,
+  };
 }
 
 // ---------------- UI update ----------------
@@ -199,49 +147,7 @@ function updateUi() {
   el.querySelector('#ackBtn').hidden = unacked.length === 0;
   renderAlarms(list);
 
-  UI.set('mOutT', `${v.weather.T.toFixed(1)} °C`);
-  UI.set('mOutRH', `${v.weather.RH.toFixed(0)} % RH`);
-  el.querySelector('#mSun').style.display = isNight ? 'none' : '';
-  el.querySelector('#mMoon').style.display = isNight ? '' : 'none';
-  UI.set('mSkyTxt', isNight ? 'Night' : 'Day');
-  el.querySelector('#lamp').classList.toggle('on', v.lights);
-  UI.set('mLamp', v.lights ? `Lights on · ${UI.watts(v.power.lights)}` : 'Lights off');
-  const vol = { ...PL.room, ...(env.room || {}) }.volume, kwhAll = Object.values(v.kwh).reduce((x, y) => x + y, 0);
-  UI.set('mRoomName', `FRUITING ROOM · ${vol} m³`);
-  UI.set('mAch', `Fresh air ${(v.airM3h / vol).toFixed(1)} changes an hour`);
-  UI.set('mPowerNow', `Power now ${UI.watts(Object.values(v.power).reduce((x, y) => x + y, 0))} · ${kwhAll.toFixed(1)} kWh so far`);
-  const readout = (id, txt, s) => {
-    const g = el.querySelector('#' + id); g.dataset.lvl = s.lvl;
-    const val = g.querySelector('.val'), ic = g.querySelector('.ico');
-    if (val.textContent !== txt) val.textContent = txt;
-    if (ic.textContent !== s.icon) ic.textContent = s.icon;
-  };
-  readout('mT', `${UI.fmtNum(r.T, 1)} °C`, ctl.status('T'));
-  readout('mRH', `${UI.fmtNum(r.RH, 0)} % RH`, ctl.status('RH'));
-  readout('mC', `${UI.fmtNum(r.CO2, 0)} ppm`, ctl.status('CO2'));
-  const Z = v.zones, zone = (id, k, d) => { const t = `low ${Z.lo[k].toFixed(d)} · high ${Z.hi[k].toFixed(d)}`, z = el.querySelector(`#${id} .zn`); if (z.textContent !== t) z.textContent = t; };
-  zone('mT', 'T', 1); zone('mRH', 'RH', 0); zone('mC', 'C', 0);
-  const a = v.act;
-  UI.set('mAcState', !a.power ? 'Off' : `${AC_WORD[a.mode]} ${a.setpoint.toFixed(1)}° · ${a.comp ? `comp ${UI.pct(a.acFrac)}` : 'comp idle'}`);
-  UI.set('mAcPower', `${UI.watts(v.power.ac)}${a.comp ? ` · COP ${v.cop.toFixed(1)}` : ''}`);
-  UI.set('mCondState', a.comp ? 'Running' : 'Idle');
-  UI.set('mHuState', a.huLevel > 0 ? `Level ${a.huLevel} · ${(v.fogGph / 1000).toFixed(1)} L/h` : 'Off');
-  UI.set('mHuPower', UI.watts(v.power.hu));
-  UI.set('mCircState', a.circ ? `On · ${UI.watts(v.power.circ)}` : 'Off');
-  layoutVents();
-  const airTxt = a.air ? `Purge ${Math.round(v.airM3h).toLocaleString('en')} m³/h` : 'Off · dampers closed';
-  UI.set('mInState', airTxt); UI.set('mOutState', airTxt);
-  UI.set('mCo2Src', `${env.blocks.toLocaleString('en')} blocks`);
-  UI.set('mCore', `Core ${v.core.toFixed(1)} °C`);
-  el.querySelector('#acUnit').classList.toggle('on', a.comp);
-  el.querySelector('#condenser').classList.toggle('on', a.comp);
-  el.querySelector('#huUnit').classList.toggle('on', a.huLevel > 0);
-  el.querySelector('#fanIn').classList.toggle('on', a.air);
-  el.querySelector('#fanOut').classList.toggle('on', a.air);
-  el.querySelector('#circUnit').classList.toggle('on', a.circ);
-  UI.set('mimicStage', `${CC.CROPS[cfg.crop].name} · ${CC.STAGES[cfg.stage]} · SANDBOX`);
-  const dist = [v.door && 'door open', v.workers && `${v.workers} workers`, v.watering && 'floor wet', v.weather.rain && 'rain', v.weather.cloudy && 'cloudy', v.wetSensor && 'RH sensor wet'].filter(Boolean);
-  UI.set('mimicNote', dist.join(' · '));
+  mimic.paint(benchDraw());
 
   const c = st.cmd, hold = (why, h) => (h ? `${why} ${h}` : why);
   UI.set('acState', !c.ac.power ? 'Off' : `${AC_WORD[c.ac.mode]} · set ${c.ac.setpoint.toFixed(1)} °C`);
@@ -397,7 +303,7 @@ function checkCrop() {
 function paintProgram() {
   const P = ctl.programStatus(reading.t), H = cfg.program.harvest;
   const key = `${cfg.farmType}|${cfg.crop}|${cfg.stage}`;
-  if (key !== lastStage) { lastStage = key; paintCaps(); if (panel) panel.set(cfg); }
+  if (key !== lastStage) { lastStage = key; if (panel) panel.set(cfg); }
   const days = P.days ? ` · day ${P.day} of ${P.days}` : '';
   const flush = cfg.stage === 'fruiting' || cfg.stage === 'rest' ? ` · flush ${P.flush} of ${P.flushes}` : '';
   UI.set('progStatus', `${CC.STAGES[cfg.stage]}${days}${flush}${P.auto ? ' · automatic' : ''}${P.done ? ' · last flush done: replace the blocks' : ''}`);
@@ -524,6 +430,7 @@ function renderTest() {
     String(x.acStarts), String(x.acCmds), x.airH.toFixed(1), String(x.purges), String(x.capped), x.delayedH.toFixed(1),
     `${x.inT.toFixed(0)} %`, `${x.inRH.toFixed(0)} %`, `${Math.round(x.rhLowMin)} min`, `${Math.round(x.overMin)} min`];
   const table = document.createElement('table');
+  table.className = 'test-table';
   const thead = document.createElement('thead'), htr = document.createElement('tr');
   for (const h of head) htr.append(UI.cell('th', h));
   thead.append(htr);
@@ -536,7 +443,37 @@ function renderTest() {
   table.append(thead, tbody);
   const note = document.createElement('p'); note.className = 'est-note';
   note.textContent = `Start: ${clock().stamp(reading.t)}. The value in brackets is the difference from your rules. "In band" uses the real room values at each reading. "RH low alarm" is the time below target − ${CC.BANDS.RHAlarm} %. The AC restart energy comes from the simulation setting "Full speed after each AC start".`;
-  el.querySelector('#estOut').replaceChildren(table, note);
+  const det = document.createElement('details'), sum = document.createElement('summary');
+  sum.textContent = 'Show the full comparison table';
+  det.append(sum, table, note);
+  el.querySelector('#estOut').replaceChildren(diffBars(variants.slice(1).map(([name, x]) => ({ name, x })), mine), det);
+}
+// C13 6.3: the change from your rules as bars, green when better, serious when worse.
+function diffBars(others, mine) {
+  const sets = global.FarmMimic.compareBars(mine, others), h = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
+  const wrap = h('section', 'diff-bars'); wrap.setAttribute('aria-labelledby', 'diffHead');
+  const head = h('h3', null, 'How do the other rules compare?'); head.id = 'diffHead';
+  wrap.append(head);
+  const scale = { points: Math.max(5, ...sets.flatMap(s => s.rows.filter(r => r.unit === 'points').map(r => Math.abs(r.delta)))), kWh: Math.max(0.5, ...sets.flatMap(s => s.rows.filter(r => r.unit === 'kWh').map(r => Math.abs(r.delta)))) };
+  for (const set of sets) {
+    const fig = h('figure', 'diff-set'), cap = h('figcaption', null, `${set.name}, compared with Your rules`);
+    fig.append(cap);
+    if (set.same) { fig.append(h('p', 'diff-same', 'No difference')); wrap.append(fig); continue; }
+    fig.setAttribute('role', 'img');
+    fig.setAttribute('aria-label', `${set.name} compared with Your rules: ${set.rows.map(r => `${r.label} ${r.verdict === 'same' ? 'about the same' : `${r.delta > 0 ? '+' : '−'}${Math.abs(r.delta).toFixed(r.unit === 'kWh' ? 2 : 1)} ${r.unit}, ${r.verdict}`}`).join('; ')}`);
+    for (const r of set.rows) {
+      const row = h('div', 'diff-row'), track = h('span', 'diff-track'), bar = h('span', 'diff-bar');
+      row.dataset.verdict = r.verdict;
+      bar.style.width = `${Math.min(1, Math.abs(r.delta) / scale[r.unit]) * 50}%`;
+      if (r.delta < 0) bar.style.right = '50%'; else bar.style.left = '50%';
+      if (r.verdict !== 'same') track.append(bar);
+      const val = `${r.delta > 0 ? '+' : r.delta < 0 ? '−' : ''}${Math.abs(r.delta).toFixed(r.unit === 'kWh' ? 2 : 1)} ${r.unit}`;
+      row.append(h('span', 'diff-k', r.label), track, h('b', 'diff-v', val), h('span', 'diff-w', r.verdict === 'same' ? 'about the same' : r.verdict));
+      fig.append(row);
+    }
+    wrap.append(fig);
+  }
+  return wrap;
 }
 
 // ---------------- Charts ----------------
@@ -559,134 +496,6 @@ function renderTable(raw) {
 }
 
 // ---------------- Markup ----------------
-const MIMIC_SVG = `
-    <svg class="mimic-svg" viewBox="0 0 1000 420" role="img" aria-labelledby="mimicTitle mimicDesc">
-      <title id="mimicTitle">Room schematic</title>
-      <desc id="mimicDesc">Sandbox view of a fruiting room: the growing rack, the three sensors, the air conditioner, the fogger, the circulation fan, and the air exchange (a filtered intake fan and an exhaust fan; their dampers close when they are off).</desc>
-      <defs>
-        <pattern id="hatch" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-          <rect class="hatch-bg" width="7" height="7"/><line class="hatch-line" x1="0" y1="0" x2="0" y2="7"/>
-        </pattern>
-        <marker id="arAc" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path class="arrowhead ac" d="M0 0 L10 5 L0 10 z"/></marker>
-        <marker id="arFan" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path class="arrowhead fan" d="M0 0 L10 5 L0 10 z"/></marker>
-      </defs>
-      <text x="12" y="26" class="m-eyebrow">OUTDOOR · OT-104</text>
-      <text x="12" y="54" class="m-big" id="mOutT">32.0 °C</text>
-      <text x="12" y="76" class="m-small" id="mOutRH">60 % RH</text>
-      <g id="mSun" transform="translate(110 72)"><circle class="sun" r="5"/>
-        <path class="sun" d="M0,-8.5V-7 M0,7V8.5 M-8.5,0H-7 M7,0H8.5 M-6,-6L-5,-5 M5,5L6,6 M-6,6L-5,5 M5,-5L6,-6"/></g>
-      <g id="mMoon" transform="translate(110 72)"><circle class="moon" r="6.5"/><circle class="moon-cut" cx="3.6" cy="-2.4" r="5.4"/></g>
-      <text x="124" y="76" class="m-small" id="mSkyTxt">Day</text>
-      <text x="520" y="26" class="m-eyebrow" id="mRoomName">FRUITING ROOM · 60 m³</text>
-      <text x="520" y="48" class="m-small" id="mAch">Fresh air 0.4 changes an hour</text>
-      <text x="520" y="66" class="m-small" id="mPowerNow">Power now 0 W · 0.0 kWh so far</text>
-      <line class="ground" x1="0" y1="412" x2="1000" y2="412"/>
-      <rect class="wall" x="176" y="92" width="648" height="320"/>
-      <rect class="room" x="184" y="100" width="632" height="312"/>
-      <g id="condenser">
-        <rect class="unit" x="290" y="30" width="80" height="58" rx="4"/>
-        <circle class="ring" cx="330" cy="59" r="22"/>
-        <g transform="translate(330 59)"><g id="condBlades">
-          <path class="blade" d="M0,-3 C7,-6 15,-4 18,0 C14,3 6,3 0,3 Z"/>
-          <path class="blade" d="M0,-3 C7,-6 15,-4 18,0 C14,3 6,3 0,3 Z" transform="rotate(120)"/>
-          <path class="blade" d="M0,-3 C7,-6 15,-4 18,0 C14,3 6,3 0,3 Z" transform="rotate(240)"/>
-        </g><circle r="3.5" class="blade"/></g>
-        <text x="380" y="54" class="m-small">Condenser</text>
-        <text x="380" y="70" class="m-small" id="mCondState">Idle</text>
-      </g>
-      <path class="pipe" d="M346 88 V108"/>
-      <path class="pipe" d="M356 88 V108"/>
-      <g id="lamp">
-        <rect class="lamp" x="470" y="100" width="64" height="6" rx="2"/>
-        <path class="lamp-ray" d="M480,110 L474,118 M502,110 V120 M524,110 L530,118"/>
-        <text x="502" y="136" text-anchor="middle" class="m-small" id="mLamp">Lights off</text>
-      </g>
-      <g id="acUnit">
-        <rect class="unit" x="250" y="108" width="196" height="58" rx="6"/>
-        <rect class="keybar ac" x="250" y="108" width="6" height="58" rx="2"/>
-        <text x="266" y="126" class="m-tag">ACU-201</text>
-        <text x="266" y="142" class="m-small" id="mAcState">Off</text>
-        <text x="266" y="158" class="m-small" id="mAcPower">0 W</text>
-      </g>
-      <path class="flow ac" data-flow="ac" d="M280 172 C282 205, 270 228, 256 248" marker-end="url(#arAc)"/>
-      <path class="flow ac" data-flow="ac" d="M340 172 C342 210, 330 236, 316 256" marker-end="url(#arAc)"/>
-      <path class="flow ac" data-flow="ac" d="M400 172 C402 210, 392 238, 380 258" marker-end="url(#arAc)"/>
-      <g id="circUnit" transform="translate(720 150)">
-        <circle class="unit" r="20"/>
-        <g id="circBlades">
-          <path class="blade" d="M0,-2.5 C6,-5 12,-4 15,0 C12,2.5 5,2.5 0,2.5 Z"/>
-          <path class="blade" d="M0,-2.5 C6,-5 12,-4 15,0 C12,2.5 5,2.5 0,2.5 Z" transform="rotate(120)"/>
-          <path class="blade" d="M0,-2.5 C6,-5 12,-4 15,0 C12,2.5 5,2.5 0,2.5 Z" transform="rotate(240)"/>
-        </g><circle r="3" class="blade"/>
-      </g>
-      <text x="720" y="188" text-anchor="middle" class="m-tag">CF-205</text>
-      <text x="720" y="204" text-anchor="middle" class="m-small" id="mCircState">Off</text>
-      <g id="sensors">
-        <line class="leader" x1="490" x2="500" y1="196" y2="196"/>
-        <line class="leader" x1="490" x2="500" y1="246" y2="246"/>
-        <line class="leader" x1="490" x2="500" y1="296" y2="296"/>
-        <circle class="bubble-tag" cx="470" cy="196" r="20"/><text x="470" y="194" text-anchor="middle" class="m-tag" style="font-size:11px">TT</text><text x="470" y="207" text-anchor="middle" style="font-size:10px">101</text>
-        <circle class="bubble-tag" cx="470" cy="246" r="20"/><text x="470" y="244" text-anchor="middle" class="m-tag" style="font-size:11px">MT</text><text x="470" y="257" text-anchor="middle" style="font-size:10px">102</text>
-        <circle class="bubble-tag" cx="470" cy="296" r="20"/><text x="470" y="294" text-anchor="middle" class="m-tag" style="font-size:11px">AT</text><text x="470" y="307" text-anchor="middle" style="font-size:10px">103</text>
-        <g class="readout" id="mT"><rect x="500" y="176" width="156" height="40" rx="4"/><text class="val" x="510" y="195">--</text><text class="ico" x="646" y="194" text-anchor="end"></text><text class="zn" x="510" y="210"></text></g>
-        <g class="readout" id="mRH"><rect x="500" y="226" width="156" height="40" rx="4"/><text class="val" x="510" y="245">--</text><text class="ico" x="646" y="244" text-anchor="end"></text><text class="zn" x="510" y="260"></text></g>
-        <g class="readout" id="mC"><rect x="500" y="276" width="156" height="40" rx="4"/><text class="val" x="510" y="295">--</text><text class="ico" x="646" y="294" text-anchor="end"></text><text class="zn" x="510" y="310"></text></g>
-      </g>
-      <g id="fanIn">
-        <rect class="unit" x="-40" y="-40" width="80" height="80" rx="6"/>
-        <rect class="keybar fan" x="-40" y="34" width="80" height="6" rx="2"/>
-        <circle class="ring" r="31"/>
-        <g id="fanInBlades">
-          <path class="blade" d="M0,-4 C10,-9 22,-7 27,0 C21,4 9,4 0,4 Z"/>
-          <path class="blade" d="M0,-4 C10,-9 22,-7 27,0 C21,4 9,4 0,4 Z" transform="rotate(120)"/>
-          <path class="blade" d="M0,-4 C10,-9 22,-7 27,0 C21,4 9,4 0,4 Z" transform="rotate(240)"/>
-        </g><circle r="5" class="blade"/>
-        <rect class="damper" x="-3" y="-36" width="6" height="72" rx="2"/>
-      </g>
-      <g id="fanOut">
-        <rect class="unit" x="-40" y="-40" width="80" height="80" rx="6"/>
-        <rect class="keybar fan" x="-40" y="34" width="80" height="6" rx="2"/>
-        <circle class="ring" r="31"/>
-        <g id="fanOutBlades">
-          <path class="blade" d="M0,-4 C10,-9 22,-7 27,0 C21,4 9,4 0,4 Z"/>
-          <path class="blade" d="M0,-4 C10,-9 22,-7 27,0 C21,4 9,4 0,4 Z" transform="rotate(120)"/>
-          <path class="blade" d="M0,-4 C10,-9 22,-7 27,0 C21,4 9,4 0,4 Z" transform="rotate(240)"/>
-        </g><circle r="5" class="blade"/>
-        <rect class="damper" x="-3" y="-36" width="6" height="72" rx="2"/>
-      </g>
-      <g id="ventFlows"></g>
-      <g id="ventText"></g>
-      <g id="mist"></g>
-      <g id="huUnit">
-        <rect class="unit" x="712" y="326" width="20" height="12" rx="3"/>
-        <rect class="unit body" x="690" y="336" width="64" height="76" rx="8"/>
-        <rect class="keybar hu" x="690" y="336" width="64" height="6" rx="2"/>
-        <rect class="tank" x="700" y="370" width="44" height="30" rx="3"/>
-      </g>
-      <text x="680" y="356" text-anchor="end" class="m-tag">HU-202</text>
-      <text x="680" y="373" text-anchor="end" class="m-small" id="mHuState">Off</text>
-      <text x="680" y="390" text-anchor="end" class="m-small" id="mHuPower">0 W</text>
-      <g id="bubbles"></g>
-      <g id="rack">
-        <line class="post" x1="240" x2="240" y1="312" y2="412"/>
-        <line class="post" x1="394" x2="394" y1="312" y2="412"/>
-        <line class="shelf" x1="238" x2="396" y1="362" y2="362"/>
-        <g id="bags"></g>
-      </g>
-      <text x="404" y="356" class="m-tag">Growing blocks</text>
-      <text x="404" y="373" class="m-small" id="mCo2Src">2,000 blocks</text>
-      <text x="404" y="390" class="m-small" id="mCore">Core -- °C</text>
-    </svg>`;
-
-// The air exchange of the drawing (C9 section 7): the filtered intake fan SF-203 on the left wall and the exhaust
-// fan EF-206 on the right wall, each high or low as env.inletAt / env.exhaustAt say. Pure, for Node tests.
-function mimicLayout({ inletAt, exhaustAt }) {
-  return {
-    inlet: { band: inletAt === 'low' ? 'low' : 'high', kind: 'fan', tag: 'SF-203', label: 'Filtered intake' },
-    outlet: { band: exhaustAt === 'high' ? 'high' : 'low', kind: 'fan', tag: 'EF-206', label: 'Exhaust' },
-  };
-}
-
 // ---------------- Air exchange texts (C9 section 7) ----------------
 // From the controller state (st = ctl.state: st.air of C9 5.3 and st.cmd.air), the running air run (cur =
 // ctl.purges().cur, null when off), the rules, the manual setting (cfg.manual.air) and the time now: the status card
@@ -755,12 +564,8 @@ const MARKUP = `
   <button class="btn" id="benchBtn" aria-expanded="false">Show test bench settings</button>
 </div>
 <figure class="card sim mimic">
-  <div class="mimic-head">
-    <span class="eyebrow" id="mimicStage">Fruiting room · SANDBOX</span>
-    <span class="tag" id="mimicNote"></span>
-  </div>
   <div class="mimic-body">
-    ${MIMIC_SVG}
+    <div class="mimic-host" id="mimicHost"></div>
     <aside class="glance" aria-label="Room at a glance">
       <section>
         <h3 class="eyebrow">Crop</h3>
@@ -1252,7 +1057,7 @@ function wire() {
   exhRo = new ResizeObserver(() => { exhKey = ''; });
   exhRo.observe($('#exhChart'));
 
-  buildMimicExtras();
+  mimic = global.FarmMimic.create(el.querySelector('#mimicHost'), { idPrefix: '' });
 }
 
 // ---------------- Room link: Load / Save settings from / to a room (C5 7.8) ----------------
@@ -1327,7 +1132,7 @@ function frame(now) {
     let n = 0;
     while (acc >= 1 && n < 4000) { tick(); acc -= 1; n++; }
   }
-  animateMimic(dtReal);
+  mimic.tick(paused ? 0 : dtReal);
   if (now - lastUi > 150) { lastUi = now; updateUi(); }
   if (chartsDirty && now - lastChart > 200) { drawCharts(); lastChart = now; }
 }
@@ -1399,7 +1204,7 @@ function mount(viewEl, params) {
   mounted = true; el = viewEl; mountGen++;
   el.dataset.bench = benchFlag;
   el.innerHTML = MARKUP;
-  logDirty = true; chartsDirty = true; alarmKey = ''; exhKey = ''; lastStage = '';
+  logDirty = true; chartsDirty = true; alarmKey = ''; exhKey = ''; lastStage = ''; glanceKey = '';
   wire();
   wireRoomLink(params || {});
   updateLadderLive();
@@ -1425,11 +1230,15 @@ function unmount() {
   if (ladder) { ladder.destroy(); ladder = null; }
   if (panel) { panel.destroy(); panel = null; }
   delete global.__climate;
+  if (mimic) { mimic.destroy(); mimic = null; }
   el = null;
 }
 
 global.FarmShell.register('simulator', { mount, unmount });
 
 // Node only (tests/web-air.test.js, tests/web-room-link.test.js); adds no browser global.
-if (typeof module === 'object' && module && module.exports) module.exports = { createRoomLink, airText, mimicLayout };
+if (typeof module === 'object' && module && module.exports) {
+  if (!global.FarmMimic) require('./mimic.js');
+  module.exports = { createRoomLink, airText, mimicLayout: global.FarmMimic.layout };
+}
 })(typeof window !== 'undefined' ? window : globalThis);

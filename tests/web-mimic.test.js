@@ -1,4 +1,4 @@
-// web/simulator.js: mimicLayout, the air exchange of the room drawing (contract C9 section 7).
+// FarmMimic.layout (web/mimic.js), the air exchange of the room drawing (contract C9 section 7); simulator.js still exports it as mimicLayout.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 require('../sim.js');
@@ -13,6 +13,7 @@ require('../web/api.js');
 require('../web/charts.js');
 require('../web/settings-panel.js');
 require('../web/shell.js');
+require('../web/mimic.js');
 const { mimicLayout } = require('../web/simulator.js');
 const SIM = globalThis.ClimateSim;
 
@@ -44,4 +45,9 @@ test('mimicLayout: an old env with vent gives the same drawing (vent is ignored)
 
 test('mimicLayout: a missing position falls back to intake high, exhaust low', () => {
   assert.deepEqual(mimicLayout({}), { inlet: { band: 'high', ...INTAKE }, outlet: { band: 'low', ...EXHAUST } });
+});
+
+test('mimicLayout: simulator.js exports FarmMimic.layout itself', () => {
+  assert.equal(mimicLayout, globalThis.FarmMimic.layout);
+  assert.deepEqual(globalThis.FarmMimic.layout({ inletAt: 'low', exhaustAt: 'high' }), mimicLayout({ inletAt: 'low', exhaustAt: 'high' }));
 });
