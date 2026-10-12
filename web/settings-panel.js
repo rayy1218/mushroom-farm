@@ -29,7 +29,7 @@ const FIELDS = [
   { path: 'program.rampH', label: 'Target change time', unit: 'h' },
   { path: 'program.harvest.dryMin', label: 'Fog off before harvest', unit: 'min' },
   { path: 'program.harvest.pickMin', label: 'Picking time', unit: 'min' },
-  { path: 'program.harvest.floorDrop', label: 'Lowest RH at harvest (target −)', unit: '%' },
+  { path: 'program.harvest.floorDrop', label: 'Lowest humidity at harvest (under target)', unit: '%' },
   { path: 'program.lights.on', label: 'Lights on' },
   { path: 'program.lights.off', label: 'Lights off' },
   { path: 'program.lights.stages.spawn', label: 'Lights in spawn run' },
@@ -39,16 +39,16 @@ const FIELDS = [
   { path: 'sensorMode', label: 'Two sensor sets', options: { average: 'Use the average', worst: 'Use the worst value', main: 'Use the main set' } },
   { path: 'roomM3', label: 'Room volume', unit: 'm³' },
   { path: 'airM3h', label: 'Air exchange size', unit: 'm³/h' },
-  { path: 'offsets.T', label: 'Sensor correction T', unit: '°C' },
-  { path: 'offsets.RH', label: 'Sensor correction RH', unit: '%' },
-  { path: 'offsets.CO2', label: 'Sensor correction CO₂', unit: 'ppm' },
-  { path: 'rules.co2Safety', label: 'CO₂ safety level on' },
+  { path: 'offsets.T', label: 'Temperature correction', unit: '°C' },
+  { path: 'offsets.RH', label: 'Humidity correction', unit: '%' },
+  { path: 'offsets.CO2', label: 'CO₂ correction', unit: 'ppm' },
+  { path: 'rules.co2Safety', label: 'Run the fresh air above the safety level' },
   { path: 'rules.co2SafetyAt', label: 'CO₂ safety level', unit: 'ppm' },
   { path: 'rules.rhLock', label: 'Humidity first on' },
-  { path: 'rules.rhStop', label: 'Humidity first: at target −', unit: '%' },
-  { path: 'rules.rhResume', label: 'Humidity first: until target −', unit: '%' },
-  { path: 'rules.fanOn', label: 'Purge starts at', unit: 'ppm' },
-  { path: 'rules.fanOff', label: 'Purge stops at', unit: 'ppm' },
+  { path: 'rules.rhStop', label: 'Delay purges below (under target)', unit: '%' },
+  { path: 'rules.rhResume', label: 'Resume above (under target)', unit: '%' },
+  { path: 'rules.fanOn', label: 'Start the fresh air at', unit: 'ppm' },
+  { path: 'rules.fanOff', label: 'Stop the fresh air at', unit: 'ppm' },
   { path: 'rules.purgeMaxS', label: 'Longest purge', unit: 's' },
   { path: 'rules.minOffS', label: 'Minimum off time', unit: 's' },
   { path: 'manual.ac.auto', label: 'Air conditioner' },
@@ -263,8 +263,8 @@ const TARGETS_HTML = `
         </div>
         <div class="field">
           <label for="pgFloor">Lowest humidity at harvest</label>
-          <div class="field-ctl"><input type="number" id="pgFloor" min="1" max="15" step="1"><span class="unit">% under target</span></div>
-          <p class="field-help">Humidity may fall this far below the target while picking.</p>
+          <div class="field-ctl"><input type="number" id="pgFloor" min="1" max="15" step="1" aria-describedby="pgFloorHelp"><span class="unit">% under target</span></div>
+          <p class="field-help" id="pgFloorHelp">Humidity may fall this far below the target while picking.</p>
         </div>
       </div>
     </details>
@@ -273,20 +273,22 @@ const TARGETS_HTML = `
       <div class="form-grid">
         <div class="field">
           <label for="pgLightOn">Lights on</label>
-          <div class="field-ctl"><input type="text" id="pgLightOn"></div>
+          <div class="field-ctl"><input type="text" id="pgLightOn" aria-describedby="pgLightOnHelp"></div>
+          <p class="field-help" id="pgLightOnHelp">24 h clock, like 07:00</p>
         </div>
         <div class="field">
           <label for="pgLightOff">Lights off</label>
-          <div class="field-ctl"><input type="text" id="pgLightOff"></div>
+          <div class="field-ctl"><input type="text" id="pgLightOff" aria-describedby="pgLightOffHelp"></div>
+          <p class="field-help" id="pgLightOffHelp">24 h clock, like 19:00</p>
         </div>
       </div>
-      <p class="field-help">Lights run in these stages:</p>
-      <div class="form-grid">
-        <div class="field"><label class="chk"><input type="checkbox" id="pgLSpawn"> Spawn run</label></div>
-        <div class="field"><label class="chk"><input type="checkbox" id="pgLPin"> Pinning</label></div>
-        <div class="field"><label class="chk"><input type="checkbox" id="pgLFruit"> Fruiting</label></div>
-        <div class="field"><label class="chk"><input type="checkbox" id="pgLRest"> Rest</label></div>
-      </div>
+      <fieldset class="stage-chks">
+        <legend>Lights run in these stages</legend>
+        <label class="chk"><input type="checkbox" id="pgLSpawn"> Spawn run</label>
+        <label class="chk"><input type="checkbox" id="pgLPin"> Pinning</label>
+        <label class="chk"><input type="checkbox" id="pgLFruit"> Fruiting</label>
+        <label class="chk"><input type="checkbox" id="pgLRest"> Rest</label>
+      </fieldset>
     </details>
     <div class="form-grid">
       <div class="field">
@@ -332,22 +334,22 @@ const RULES_HTML = `
             <label for="rCo2SafeAt">Safety level</label>
             <div class="field-ctl"><input type="number" id="rCo2SafeAt" min="500" max="20000" step="50"><span class="unit">ppm</span></div>
           </div>
-          <div class="field"><label class="chk"><input type="checkbox" id="rCo2Safety"> Run the fresh air above this level</label></div>
+          <label class="chk"><input type="checkbox" id="rCo2Safety"> Run the fresh air above this level</label>
         </div>
         <p class="hint">Above the humidity rule and the time cap. A critical alarm comes on.</p>
       </fieldset>
       <fieldset class="rule rule-first" style="--key:var(--ink)" id="ruleRh">
         <legend>Priority 2 · Humidity first</legend>
         <label class="chk"><input type="checkbox" id="rRhLock"> Delay purges that dry the room when humidity is low</label>
-        <div class="form-grid" style="margin-top:10px">
+        <div class="form-grid">
           <div class="field">
             <label for="rRhStop">Delay purges below</label>
-            <div class="field-ctl"><input type="number" id="rRhStop" min="1" max="20" step="1"><span class="unit">% under target</span></div>
+            <div class="field-ctl"><input type="number" id="rRhStop" min="1" max="20" step="1" aria-describedby="rRhStopAbs"><span class="unit">% under target</span></div>
             <p class="field-help" id="rRhStopAbs"></p>
           </div>
           <div class="field">
             <label for="rRhResume">Resume above</label>
-            <div class="field-ctl"><input type="number" id="rRhResume" min="0" max="19" step="1"><span class="unit">% under target</span></div>
+            <div class="field-ctl"><input type="number" id="rRhResume" min="0" max="19" step="1" aria-describedby="rRhResumeAbs"><span class="unit">% under target</span></div>
             <p class="field-help" id="rRhResumeAbs"></p>
           </div>
         </div>
@@ -364,16 +366,14 @@ const RULES_HTML = `
             <label for="rFanOff">Stop the fresh air at</label>
             <div class="field-ctl"><input type="number" id="rFanOff" min="400" max="19950" step="50"><span class="unit">ppm</span></div>
           </div>
-        </div>
-        <div class="form-grid">
           <div class="field">
             <label for="rPurgeMax">Longest purge</label>
-            <div class="field-ctl"><input type="number" id="rPurgeMax" min="1" max="15" step="0.5"><span class="unit">min</span></div>
+            <div class="field-ctl"><input type="number" id="rPurgeMax" min="1" max="15" step="0.5" aria-describedby="rPurgeMaxAbs"><span class="unit">min</span></div>
             <p class="field-help" id="rPurgeMaxAbs"></p>
           </div>
           <div class="field">
             <label for="rMinOff">Minimum off time</label>
-            <div class="field-ctl"><input type="number" id="rMinOff" min="30" max="600" step="10"><span class="unit">s</span></div>
+            <div class="field-ctl"><input type="number" id="rMinOff" min="30" max="600" step="10" aria-describedby="rMinOffAbs"><span class="unit">s</span></div>
             <p class="field-help" id="rMinOffAbs"></p>
           </div>
         </div>
@@ -390,10 +390,9 @@ const RULES_HTML = `
 
 // The computed absolute value shown under a rule field (C13 6.1), pure.
 const ruleHelp = {
-  rhStop: (spRH, drop) => `= ${+(spRH - drop).toFixed(1)} % now`,
-  rhResume: (spRH, drop) => `= ${+(spRH - drop).toFixed(1)} % now`,
+  rh: (spRH, drop) => `= ${+(spRH - drop).toFixed(1)} % now`,
   purgeMax: sec => `= ${Math.round(sec)} s`,
-  minOff: sec => (sec >= 60 ? `= ${+(sec / 60).toFixed(1)} min` : 'under a minute'),
+  minOff: sec => `= ${+(sec / 60).toFixed(1)} min`,
 };
 
 function deviceHtml(dev, name, body) {
@@ -675,8 +674,8 @@ function createSettingsPanel(el, options) {
     setVal($('#oT'), s.offsets.T); setVal($('#oRH'), s.offsets.RH); setVal($('#oCO2'), s.offsets.CO2);
     setVal($('#rCo2Safety'), R.co2Safety); setVal($('#rCo2SafeAt'), R.co2SafetyAt);
     setVal($('#rRhLock'), R.rhLock); setVal($('#rRhStop'), R.rhStop); setVal($('#rRhResume'), R.rhResume);
-    global.FarmUi.set($('#rRhStopAbs').id, ruleHelp.rhStop(s.spRH, R.rhStop));
-    global.FarmUi.set($('#rRhResumeAbs').id, ruleHelp.rhResume(s.spRH, R.rhResume));
+    global.FarmUi.set($('#rRhStopAbs').id, ruleHelp.rh(s.spRH, R.rhStop));
+    global.FarmUi.set($('#rRhResumeAbs').id, ruleHelp.rh(s.spRH, R.rhResume));
     setVal($('#rFanOn'), R.fanOn); setVal($('#rFanOff'), R.fanOff);
     // Purge times: minutes on screen, seconds in the settings (C9 7).
     setVal($('#rPurgeMax'), +(R.purgeMaxS / 60).toFixed(2)); setVal($('#rMinOff'), R.minOffS);

@@ -30,10 +30,44 @@ test('RULEFIELDS every rule input is a labelled .field with its unit inside .fie
 test('RULEHELP the computed absolute values', () => {
   require('../web/settings-panel.js');
   const { ruleHelp } = globalThis.FarmSettingsPanel;
-  assert.equal(ruleHelp.rhStop(88, 3), '= 85 % now');
-  assert.equal(ruleHelp.rhResume(88, 1), '= 87 % now');
-  assert.equal(ruleHelp.rhStop(87.5, 3), '= 84.5 % now');
+  assert.equal(ruleHelp.rh(88, 3), '= 85 % now');
+  assert.equal(ruleHelp.rh(88, 1), '= 87 % now');
+  assert.equal(ruleHelp.rh(87.5, 3), '= 84.5 % now');
   assert.equal(ruleHelp.purgeMax(90), '= 90 s');
   assert.equal(ruleHelp.minOff(120), '= 2 min');
-  assert.equal(ruleHelp.minOff(30), 'under a minute');
+  assert.equal(ruleHelp.minOff(30), '= 0.5 min');
+});
+
+test('PROGFIELDS program, lights, room and correction inputs are labelled fields', () => {
+  for (const [id, unit] of [['pgDaysSpawn', 'days'], ['pgDaysPin', 'days'], ['pgDaysFruit', 'days'], ['pgDaysRest', 'days'],
+    ['pgRampH', 'h'], ['pgDry', 'min'], ['pgPick', 'min'], ['pgFloor', '% under target'],
+    ['inRoomM3', 'm³'], ['inAirSize', 'm³/h'], ['oT', '°C'], ['oRH', '%'], ['oCO2', 'ppm']]) {
+    const re = new RegExp(`<label for="${id}">[^<]+</label>\\s*<div class="field-ctl"><input [^>]*id="${id}"[^>]*><span class="unit">${unit.replace(/[/%]/g, '\\$&')}</span></div>`);
+    assert.match(src, re, id);
+  }
+  assert.match(src, /<label for="pgFlushes">[^<]+<\/label>\s*<div class="field-ctl"><input [^>]*id="pgFlushes"/);
+  assert.match(src, /<label for="pgLightOn">[^<]+<\/label>\s*<div class="field-ctl"><input type="text" id="pgLightOn"/);
+  assert.match(src, /<fieldset class="stage-chks">\s*<legend>Lights run in these stages<\/legend>/);
+  assert.match(src, /id="pgLightOnHelp">24 h clock, like 07:00</);
+});
+
+test('PROGHIDE the spawn and pinning day ids sit on the .field that holds the input', () => {
+  assert.match(src, /<div class="field" id="pgDaysSpawnL">\s*<label for="pgDaysSpawn">/);
+  assert.match(src, /<div class="field" id="pgDaysPinL">\s*<label for="pgDaysPin">/);
+});
+
+test('ARIA each rule input with a help line points at it', () => {
+  for (const [id, help] of [['rRhStop', 'rRhStopAbs'], ['rRhResume', 'rRhResumeAbs'], ['rPurgeMax', 'rPurgeMaxAbs'], ['rMinOff', 'rMinOffAbs'],
+    ['pgFloor', 'pgFloorHelp'], ['pgLightOn', 'pgLightOnHelp'], ['pgLightOff', 'pgLightOffHelp']]) {
+    assert.match(src, new RegExp(`id="${id}"[^>]*aria-describedby="${help}"`), id);
+    assert.match(src, new RegExp(`class="field-help" id="${help}"`), help);
+  }
+});
+
+test('RULEGRID priority 3 is one grid and the checkboxes sit straight in their containers', () => {
+  const p3 = src.match(/Priority 3 · CO₂ purge[\s\S]*?<\/fieldset>/)[0];
+  assert.equal((p3.match(/class="form-grid"/g) || []).length, 1);
+  assert.match(src, /<label class="chk"><input type="checkbox" id="rCo2Safety">/);
+  assert.doesNotMatch(src, /<div class="field"><label class="chk">/);
+  assert.doesNotMatch(src, /style="margin-top/);
 });
