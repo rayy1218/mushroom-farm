@@ -25,8 +25,8 @@ function c9Defaults() {
 const CTL_C9 = !!d().manual.air;
 // C9 7.1: path, label, unit (`–` in the contract is no unit).
 const C9_FIELDS = [
-  ['rules.fanOn', 'Purge starts at', 'ppm'],
-  ['rules.fanOff', 'Purge stops at', 'ppm'],
+  ['rules.fanOn', 'Start the fresh air at', 'ppm'],
+  ['rules.fanOff', 'Stop the fresh air at', 'ppm'],
   ['rules.purgeMaxS', 'Longest purge', 's'],
   ['rules.minOffS', 'Minimum off time', 's'],
   ['airM3h', 'Air exchange size', 'm³/h'],
