@@ -13,7 +13,7 @@ const CC = globalThis.ClimateController, HR = globalThis.FarmHarvestRules;
 test('BT1 module registers batches and exports the C10 12.2 names and the C13 5 chart helpers', () => {
   assert.equal(typeof registered.batches.mount, 'function');
   assert.equal(typeof registered.batches.unmount, 'function');
-  assert.deepEqual(Object.keys(B).sort(), ['ageDays', 'batchBody', 'daysText', 'dateToSeconds', 'dropText', 'filterByState', 'flushBars', 'niceAxis', 'niceMax', 'plural', 'secondsToDate', 'stateWords', 'subText', 'timelineRows', 'titleOf'].sort());
+  assert.deepEqual(Object.keys(B).sort(), ['ageDays', 'batchBody', 'batchPlan', 'notPlacedMessage', 'placedMessage', 'daysText', 'dateToSeconds', 'dropText', 'filterByState', 'flushBars', 'niceAxis', 'niceMax', 'plural', 'secondsToDate', 'stateWords', 'subText', 'timelineRows', 'titleOf'].sort());
 });
 
 test('BT2 dates are farm dates whatever the browser zone', () => {
@@ -393,4 +393,102 @@ test('BT-V9 the Growing tab draws the timeline, a bar opens its batch, Finished 
   assert.equal(el.querySelector('#btTimelineHead').textContent, 'What is growing where');
   el.querySelector('#btTabCleared').listeners.click();
   assert.equal(el.querySelector('#btTimelineHead').textContent, 'What grew where');
+});
+
+// ---- C14 5: blocks in one step ----
+
+const FORM = { crop: 'oyster', strain: '', source: '', block_count: '10', block_wet_kg: '1.2', moisture_pct: '60', received_at: '2026-10-08' };
+
+test('BT-W1 batchPlan: create body, and a place body only when a room is chosen', () => {
+  const none = B.batchPlan({ ...FORM, room_id: '', placed_at: '2026-10-09' });
+  assert.deepEqual(none.create, { crop: 'oyster', block_count: 10, block_wet_kg: 1.2, moisture_pct: 60, received_at: 1791388800 });
+  assert.equal(none.place, null);
+  const put = B.batchPlan({ ...FORM, room_id: '3', placed_at: '2026-10-09' });
+  assert.deepEqual(put.create, none.create);
+  assert.deepEqual(put.place, { room_id: 3, placed_at: 1791388800 + 86400 });
+  assert.equal(B.batchPlan({ ...FORM, room_id: '3', placed_at: 'x' }).place.placed_at, 'x');
+});
+
+test('BT-W2 the two messages', () => {
+  assert.equal(B.placedMessage('Room 1'), 'Batch saved and placed in Room 1.');
+  assert.equal(B.notPlacedMessage('Placed on is in the future.'), 'Batch saved, but not placed: Placed on is in the future. Use Place in room below.');
+  assert.equal(B.notPlacedMessage('Boom'), 'Batch saved, but not placed: Boom. Use Place in room below.');
+});
+
+function setupNew(t) {
+  globalThis.document = { createElement: mk, createElementNS: (ns, tag) => mk(tag) };
+  globalThis.location = { hash: '#/batches' };
+  const api = globalThis.FarmApi, saved = { ...api };
+  t.after(() => { Object.assign(api, saved); delete globalThis.document; delete globalThis.location; registered.batches.unmount(); });
+  api.listBatches = async () => [];
+  api.listRooms = async () => [{ id: 3, name: 'Room 1' }, { id: 4, name: 'Old', archived_at: 5 }];
+  return api;
+}
+
+test('BT-W3 the form is prefilled, lists Not yet and the rooms, and shows Placed on only with a room', async t => {
+  const api = setupNew(t);
+  const el = mkEl();
+  await registered.batches.mount(el, {});
+  assert.equal(el.querySelector('#btKg').value, 1.2);
+  assert.equal(el.querySelector('#btMoist').value, HR.DEFAULTS.moisture_pct);
+  const sel = el.querySelector('#btRoom');
+  assert.deepEqual(sel.children.map(o => [o.value, o.textContent]), [['', 'Not yet'], ['3', 'Room 1']]);
+  assert.equal(el.querySelector('#btPlacedBox').hidden, true);
+  sel.value = '3';
+  sel.listeners.change();
+  assert.equal(el.querySelector('#btPlacedBox').hidden, false);
+  assert.equal(el.querySelector('#btPlaced').value, el.querySelector('#btReceived').value);
+  assert.equal(el.querySelector('#btPlaced').min, el.querySelector('#btReceived').value);
+  void api;
+});
+
+test('BT-W4 create then place: the success message is said on the batch page, once', async t => {
+  const api = setupNew(t);
+  const el = mkEl();
+  await registered.batches.mount(el, {});
+  el.querySelector('#btRoom').value = '3';
+  const calls = [];
+  api.createBatch = async body => { calls.push(['create', body]); return { id: 7 }; };
+  api.placeBatch = async (id, body) => { calls.push(['place', id, body]); return {}; };
+  await el.querySelector('#btForm').listeners.submit({ preventDefault() {} });
+  assert.deepEqual(calls.map(c => c[0]), ['create', 'place']);
+  assert.equal(calls[1][1], 7);
+  assert.equal(calls[1][2].room_id, 3);
+  assert.equal(globalThis.location.hash, '#/batches/7');
+  api.getBatch = async () => BATCH;
+  const page = mkEl();
+  await registered.batches.mount(page, { id: 7 });
+  const msg = page.querySelector('#bdMsg');
+  assert.equal(msg.textContent, 'Batch saved and placed in Room 1.');
+  assert.equal(msg.dataset.lvl, 'good');
+  const again = mkEl();                                    // said once
+  await registered.batches.mount(again, { id: 7 });
+  assert.notEqual(again.querySelector('#bdMsg').textContent, 'Batch saved and placed in Room 1.');
+});
+
+test('BT-W5 place fails: still goes to the batch, with the not-placed message; Not yet makes no place call', async t => {
+  const api = setupNew(t);
+  const el = mkEl();
+  await registered.batches.mount(el, {});
+  el.querySelector('#btRoom').value = '3';
+  api.createBatch = async () => ({ id: 8 });
+  api.placeBatch = async () => { throw new api.ApiError(400, 'Invalid', ['placed_at: must not be in the future']); };
+  await el.querySelector('#btForm').listeners.submit({ preventDefault() {} });
+  assert.equal(globalThis.location.hash, '#/batches/8');
+  api.getBatch = async () => BATCH;
+  const page = mkEl();
+  await registered.batches.mount(page, { id: 8 });
+  const msg = page.querySelector('#bdMsg');
+  assert.match(msg.textContent, /^Batch saved, but not placed: Placed on: .*\. Use Place in room below\.$/);
+  assert.equal(msg.dataset.lvl, 'error');
+  // a note for another batch is not shown on this one
+  let placed = 0;
+  api.placeBatch = async () => { placed++; };
+  const el2 = mkEl();
+  await registered.batches.mount(el2, {});
+  el2.querySelector('#btRoom').value = '';
+  api.createBatch = async () => ({ id: 9 });
+  await el2.querySelector('#btForm').listeners.submit({ preventDefault() {} });
+  assert.equal(placed, 0);
+  assert.equal(globalThis.location.hash, '#/batches/9');
 });
