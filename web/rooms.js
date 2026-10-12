@@ -337,13 +337,17 @@ function mountHome(el) {
   };
   const paintSim = () => say($('rhSim'), 'info', allSimulated(rooms) ? SIM_NOTE : '');
   const setCreateState = () => { $('rhCreate').disabled = !$('rhName').value.trim(); };
+  const harvestSeq = new Map(); // room id -> the newest fetch, so an older reply cannot overwrite it
   async function loadHarvest() {
-    await Promise.all(rooms.map(async room => {
+    await Promise.all(rooms.map(async ({ id }) => {
+      const mine = (harvestSeq.get(id) ?? 0) + 1;
+      harvestSeq.set(id, mine);
       let text = null;
-      try { text = harvestToday(await api.getRoomHarvest(room.id)); } catch { text = null; }
-      if (!alive) return;
-      if (text) harvest.set(room.id, text); else harvest.delete(room.id);
-      paintOne(room);
+      try { text = harvestToday(await api.getRoomHarvest(id)); } catch { text = null; }
+      if (!alive || harvestSeq.get(id) !== mine) return;
+      if (text) harvest.set(id, text); else harvest.delete(id);
+      const current = rooms.find(r => r.id === id);
+      if (current) paintOne(current);
     }));
   }
   const cardOf = id => $('rhCards').querySelector(`.room-card[data-room-id="${id}"]`);

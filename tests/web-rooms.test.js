@@ -112,13 +112,16 @@ test('RS6 room lists', () => {
   assert.deepEqual(H.upsertRoom([r1, r2, r3], { ...r1, archived_at: 5 }).map(r => r.id), [2, 3]);
   assert.deepEqual(H.upsertRoom([r2, r3], { ...r1, archived_at: 5 }).map(r => r.id), [2, 3]);
 
-  const reply = [{ ...R, id: 1, live: { ...R.live, status: warnStatus, targets: { T: 19, RH: 90, CO2: 900 }, reading: { ...R.live.reading, t: 5 } } },
+  const airNow = { state: 'purge' };
+  const reply = [{ ...R, id: 1, live: { ...R.live, status: warnStatus, air: airNow, manual: ['ac', 'hu'], targets: { T: 19, RH: 90, CO2: 900 }, reading: { ...R.live.reading, t: 5 } } },
     { ...R, id: 9 }];
   const out = H.takeLive([{ ...R, id: 1 }, r2], reply);
   assert.equal(out.length, 2);
   assert.equal(out[0].live.status, warnStatus);
   assert.deepEqual(out[0].live.targets, { T: 19, RH: 90, CO2: 900 });
   assert.equal(out[0].live.reading.t, R.live.reading.t);
+  assert.equal(out[0].live.air, airNow);
+  assert.deepEqual(out[0].live.manual, ['ac', 'hu']);
   assert.equal(out[1], r2);
 
   const air = { on: true };

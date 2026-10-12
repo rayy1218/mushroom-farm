@@ -298,9 +298,13 @@ const rdName = h('input', { id: 'rdName', type: 'text', maxlength: '60' });
     const p = h('p', { class: 'prog-status' }); p.textContent = programText(room.live);
     slot.replaceChildren(p);
   }
+  let painted = null; // { name, volume } as last written to the fields
   function paintDetails(force) {
-    if (!force && (document.activeElement === rdName || document.activeElement === rdVolume)) return;
-    rdName.value = room.name; rdVolume.value = String(room.volume);
+    const next = { name: room.name, volume: String(room.volume) };
+    // a field the user changed keeps its text: only overwrite one that still shows what was painted
+    if (force || !painted || rdName.value === painted.name) rdName.value = next.name;
+    if (force || !painted || rdVolume.value === painted.volume) rdVolume.value = next.volume;
+    painted = next;
   }
   function paintSave() {
     if (!panel) return;
@@ -542,7 +546,10 @@ const rdName = h('input', { id: 'rdName', type: 'text', maxlength: '60' });
   });
   rdArchive.addEventListener('click', async () => {
     if (!global.confirm(`Archive "${room.name}"? Its loop stops and it leaves the Rooms list. Its data is kept.`)) return;
-    try { await api.updateRoom(id, { archived: true }); if (alive) global.location.hash = '#/rooms'; } catch (e) { if (alive) fail(e, rdMsg); }
+    try {
+      await api.updateRoom(id, { archived: true });
+      if (alive) { if (global.FarmShell && global.FarmShell.guardLeave) global.FarmShell.guardLeave(null); global.location.hash = '#/rooms'; }
+    } catch (e) { if (alive) fail(e, rdMsg); }
   });
 
   // ---- start ----
@@ -553,6 +560,7 @@ const rdName = h('input', { id: 'rdName', type: 'text', maxlength: '60' });
   teardown = () => {
     const step = f => { try { f(); } catch (e) { console.error(e); } };
     step(() => { alive = false; });
+    step(() => global.FarmShell && global.FarmShell.guardLeave && global.FarmShell.guardLeave(null));
     for (const off of offs) step(off);
     step(() => panel && panel.destroy());
     step(() => charts && charts.destroy());
