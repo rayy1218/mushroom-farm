@@ -144,6 +144,8 @@ test('CB14 fitBlockReason: the visible reason a disabled Fit gives', () => {
   assert.match(H.fitBlockReason({ ...ok, blocks: null, hasRows: false, readings: 90 }), /^Needs at least 1 hour/);   // the readings come first: they take time
   assert.equal(H.fitBlockReason({ ...ok, hasRows: false, readings: 90 }), 'Needs at least 1 hour of readings. Come back in about 15 min.');
   assert.equal(H.fitBlockReason({ ...ok, hasRows: false, readings: 0 }), 'Needs at least 1 hour of readings. Come back in about 60 min.');
+  assert.equal(H.fitBlockReason({ ...ok, hasRows: false, readings: 90, today: false }), 'Pick days with at least 1 hour of readings.');
+  assert.match(H.fitBlockReason({ ...ok, hasRows: false, readings: 90, today: true }), /Come back in about 15 min/);
   assert.equal(H.fitBlockReason({ ...ok, hasRows: false, readings: null }), 'Load the room history first.');
   assert.equal(H.fitBlockReason({ ...ok, hasRows: false, source: 'csv', readings: null }), 'Load a CSV log first.');
   assert.equal(H.fitBlockReason({ ...ok, hasEnv: false }), 'The room values are not ready yet.');
@@ -168,9 +170,10 @@ test('CB13 a late reply of an unmounted mount never touches the next mount', asy
     const first = tab.mount(el, ctx);
     tab.unmount();
     await tab.mount(el, ctx);
-    const before = stubs['#calMsg'].textContent;
+    const msgOf = () => (stubs['#calMsg'] || { textContent: '' }).textContent;
+    const before = msgOf();
     late.fail(); await first;
-    assert.equal(stubs['#calMsg'].textContent, before);
-    assert.notEqual(stubs['#calMsg'].textContent, 'OLD MOUNT');
+    assert.equal(msgOf(), before);
+    assert.notEqual(msgOf(), 'OLD MOUNT');
   } finally { Object.assign(FA, saved); delete globalThis.document; tab.unmount(); }
 });

@@ -1032,7 +1032,7 @@ ${faceplate('circ', 'Circulation fan', 'CF-205 · 40 W', 'small', `
   <div class="est-head">
     <h2 id="hEst">Test the rules over 24 h</h2>
     <button class="btn" id="estBtn">Run 24 h test</button>
-    <span class="tag">Runs a copy of the simulation from now: 1 h to settle, then 24 h. The live run does not change.</span>
+    <span class="tag">Runs a copy of the simulation from now: 1 h to settle, then 24 h. The running sandbox does not change.</span>
   </div>
   <div class="est-out" id="estOut"><p class="est-note">Run the test to compare two rule sets: your rules, and no humidity priority.</p></div>
 </section>

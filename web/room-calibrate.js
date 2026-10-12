@@ -95,11 +95,14 @@ function staleText(applied) {
 
 // C11 6: why Fit is off, or '' when it can run. st: { loaded, blocks (a number or null), hasRows, hasEnv, source, readings (a count or null) }.
 const MIN_READINGS = 120;   // one hour at one reading per 30 s
-function fitBlockReason(st) {
+function fitBlockReason(st) {   // st.today: the loaded range ends today (so more readings will come)
   if (!st.loaded) return 'Loading this room…';
   if (!st.hasRows) {
     if (st.source !== 'history') return 'Load a CSV log first.';
-    if (st.readings !== null && st.readings < MIN_READINGS) return `Needs at least 1 hour of readings. Come back in about ${Math.ceil((MIN_READINGS - st.readings) / 2)} min.`;
+    if (st.readings !== null && st.readings < MIN_READINGS) {
+      return st.today === false ? 'Pick days with at least 1 hour of readings.'
+        : `Needs at least 1 hour of readings. Come back in about ${Math.ceil((MIN_READINGS - st.readings) / 2)} min.`;
+    }
     return 'Load the room history first.';
   }
   if (st.blocks === null) return 'Enter the number of blocks in the room during the log.';
@@ -192,7 +195,7 @@ function mount(el, ctx) {
   const id = ctx.id, now = () => Math.floor(Date.now() / 1000);
   let room = ctx.room(), mixRows = [], runs = [], equipment = null, settings = null;
   let source = 'history', rows = null, range = null, envBase = null, params = null, base = null, fit = null;
-  let readingCount = null;
+  let readingCount = null, rangeToday = true;
   let busy = false, pendingRebuild = false, loaded = false, cycles = [], seq = 0, cmpSeq = 0;
 
   el.innerHTML = MARKUP;
@@ -208,7 +211,7 @@ function mount(el, ctx) {
     const ctrl = ['#cbLoad', '#calFile', '#calBlocks'];
     for (const sel of ctrl) $(sel).disabled = busy;
     for (const b of el.querySelectorAll('#cbSource button')) b.disabled = busy;
-    const reason = busy ? '' : fitBlockReason({ loaded, blocks: blocksNow(), hasRows: !!rows, hasEnv: !!envBase, source, readings: readingCount });
+    const reason = busy ? '' : fitBlockReason({ loaded, blocks: blocksNow(), hasRows: !!rows, hasEnv: !!envBase, source, readings: readingCount, today: rangeToday });
     $('#calFit').disabled = busy || reason !== '';
     $('#calFitHelp').textContent = reason;
     $('#calApply').disabled = busy || !fit;
@@ -245,7 +248,6 @@ function mount(el, ctx) {
     fit = null; base = null;
     const blocks = blocksNow();
     if (blocks === null) {
-      msg('Enter the number of blocks in the room during the log.', 'info');
       params = null; renderTable(); syncButtons(); return;
     }
     if (loaded) {
@@ -275,8 +277,8 @@ function mount(el, ctx) {
     try { readings = await FA.getReadings(id, { from: q.from, to: q.to }); }
     catch (err) { if (live() && mySeq === seq) msg(UI.errorText(err), 'error'); return; }
     if (!live() || mySeq !== seq) return;
-    readingCount = readings.length;
-    if (readings.length < MIN_READINGS) { rows = null; range = null; rebuild(); msg('Not enough readings in these days (at least 1 h).', 'error'); return; }
+    readingCount = readings.length; rangeToday = farmDate(q.to) === farmDate(now());
+    if (readings.length < MIN_READINGS) { rows = null; range = null; rebuild(); msg('', 'info'); return; }
     rows = logFromReadings(readings);
     const ts = readings.map(r => r.t);
     range = { from: Math.min(...ts), to: Math.max(...ts) };

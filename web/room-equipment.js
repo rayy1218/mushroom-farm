@@ -13,6 +13,10 @@ function pct(x) {
 }
 const stageName = s => global.ClimateController.STAGES[s].toLowerCase();
 
+// C11 6: field labels by API key, for plainError.
+const LABELS = { ac_hp: 'Aircond size', ac_units: 'Number of airconds', fog_lph: 'Fogger', air_m3h: 'Air exchange', walls: 'Walls', roof: 'Roof', height: 'Inside height' };
+const problemsError = problems => ({ name: 'ApiError', error: 'Check your machines', details: problems });
+
 const FIELDS = ['eqAcHp', 'eqAcUnits', 'eqFog', 'eqAir', 'eqWalls', 'eqRoof', 'eqHeight'];
 const VERDICT_WORD = { enough: 'Enough', 'too-small': 'Too small', 'too-big': 'Too big', oversized: 'Bigger than needed', 'not-the-fix': 'Not the fix',
   poor: 'Poor', fair: 'Fair', good: 'Good' };
@@ -41,6 +45,7 @@ function progressText(p) {
 }
 
 // Aircond sizes tried: one row per AC run, in size order.
+const acIsEnough = report => report.ac.verdict === 'enough' || report.ac.verdict === 'oversized';
 function runRows(report) {
   const U = report.ac.units;
   return report.runs.filter(r => r.kind === 'ac').map(r => ({
@@ -52,7 +57,7 @@ function runRows(report) {
     rm: r.rmPerBlock.toFixed(2),
     result: r.tooBig ? 'too big' : r.acPass ? 'holds it' : 'too small',
     tags: [...(r.ac_hp === report.ac.min ? ['smallest that works'] : []), ...(r.ac_hp === report.ac.own ? ['your aircond'] : []),
-      ...(r.ac_hp === report.ac.recommended && r.ac_hp !== report.ac.own ? ['buy this'] : [])],
+      ...(r.ac_hp === report.ac.recommended && !acIsEnough(report) ? ['buy this'] : [])],
   }));
 }
 
@@ -63,7 +68,7 @@ function machineRows(report) {
   const shell = e.walls !== null && e.roof !== null
     ? `Walls ${EQ.CONSTRUCTIONS[e.walls].label}, roof ${EQ.CONSTRUCTIONS[e.roof].label}` : 'Typical';
   return [
-    { machine: 'Aircond', yours: acText(report.ac.own, U), verdict: VERDICT_WORD[report.ac.verdict], buy: report.ac.recommended === report.ac.own ? '' : buy(report.ac.recommended, x => acText(x, U)) },
+    { machine: 'Aircond', yours: acText(report.ac.own, U), verdict: VERDICT_WORD[report.ac.verdict], buy: acIsEnough(report) || report.ac.recommended === report.ac.own ? '' : buy(report.ac.recommended, x => acText(x, U)) },
     { machine: 'Fogger', yours: `${report.fogger.own} L/h`, verdict: VERDICT_WORD[report.fogger.verdict], buy: buy(report.fogger.recommended, x => `${x} L/h`) },
     { machine: 'Air exchange', yours: `${int(report.air.own)} m³/h`, verdict: VERDICT_WORD[report.air.verdict], buy: buy(report.air.recommended, x => `${int(x)} m³/h`) },
     { machine: 'Walls and roof', yours: shell, verdict: VERDICT_WORD[report.insulation.verdict], buy: '' },
@@ -73,11 +78,11 @@ function machineRows(report) {
 // C11 6: when the room's own aircond is big enough, say so (never "Buy this" on the size it already has); otherwise the report's own text.
 function acVerdictText(report) {
   const ac = report.ac, U = ac.units;
-  if (ac.verdict !== 'enough' && ac.verdict !== 'oversized') return ac.text;
-  let t = `Your ${acText(ac.own, U)} is big enough.`;
-  if (ac.min !== null && ac.min < ac.own) t += ` A smaller ${acText(ac.min, U)} would also work.`;
-  else if (ac.recommended !== null && ac.recommended > ac.own) t += ` It has no reserve on the hottest days: ${acText(ac.recommended, U)} gives a margin.`;
-  return t;
+  if (!acIsEnough(report)) return ac.text;
+  let t = `Your ${acText(ac.own, U)} aircond is big enough.`;
+  if (ac.recommended !== null && ac.recommended < ac.own) t += ` A ${acText(ac.recommended, U)} would also be enough.`;
+  const tail = /hours\.( .*)$/.exec(ac.text || '');   // the engine's "no reserve" sentence, when it has one
+  return tail ? t + tail[1] : t;
 }
 
 const EMPTY_MIX = 'Add a mushroom and the number of blocks first.';
@@ -242,21 +247,42 @@ function mount(el, opts) {
   section.addEventListener('focusin', repaint);
   section.addEventListener('pointerdown', repaint);
 
+  // Shows an error as a message plus marks on the fields it names.
+  const fail = (err, prefix) => {
+    const p = UI.plainError(err, LABELS);
+    say(prefix ? `${prefix}${p.text}` : p.text, 'error');
+    UI.markFields(form, p.fields);
+  };
+  // Leave guard: only while the form differs from the saved machines.
+  const guardApi = () => (global.FarmShell && global.FarmShell.guardLeave ? global.FarmShell : null);
+  let base = JSON.stringify(formValues(form)), guarded = false;
+  const syncGuard = () => {
+    const sh = guardApi();
+    if (!sh || dead) return;
+    const differs = JSON.stringify(formValues(form)) !== base;
+    if (differs && !guarded) { sh.guardLeave(() => 'Your machines have unsaved changes.'); guarded = true; }
+    else if (!differs && guarded) { sh.guardLeave(null); guarded = false; }
+  };
+  form.addEventListener('input', syncGuard);
+  form.addEventListener('change', syncGuard);
+
   async function save() {
     const eq = formValues(form);
+    UI.markFields(form, {});
     const problems = EQ.checkEquipment(eq);
-    if (problems.length) { say(problems.join('; '), 'error'); return null; }
+    if (problems.length) { fail(problemsError(problems)); return null; }
     try {
       const saved = await API.saveEquipment(opts.id, eq);
       if (dead) return null;
       savedAir = saved.air_m3h;
+      base = JSON.stringify(formValues(form)); syncGuard();
       say('Saved. Simulate uses these machines now; the live room uses them after its next restart.', 'good');
       // The server synced the settings (C3 6.26); their stream event has not reached the tab yet, so no note.
       $('eqAirNote').textContent = '';
       opts.onEquipment(saved);
       return saved;
     } catch (err) {
-      if (!dead) say(UI.errorText(err), 'error');
+      if (!dead) fail(err);
       return null;
     }
   }
@@ -264,8 +290,9 @@ function mount(el, opts) {
   async function check() {
     const inp = opts.runInputs();
     const eq = formValues(form);
+    UI.markFields(form, {});
     const problems = EQ.checkEquipment(eq);
-    if (problems.length) { say(problems.join('; '), 'error'); return; }
+    if (problems.length) { fail(problemsError(problems)); return; }
     if (emptyMixReason(inp.mix)) { say(EMPTY_MIX, 'info'); return; }
     if (!Array.isArray(inp.mix) || global.ClimateCapacity.commonTargets(inp.mix).impossible) { say('This crop mix cannot share one room.', 'error'); return; }
     running = true; paintButtons(); say(''); $('eqResult').replaceChildren();
@@ -306,6 +333,7 @@ function mount(el, opts) {
 
   const unmount = () => {
     if (dead) return;
+    if (guarded && guardApi()) guardApi().guardLeave(null);
     dead = true;
     if (mounted.get(el) === unmount) mounted.delete(el);
     section.removeEventListener('focusin', repaint);

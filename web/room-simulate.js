@@ -105,12 +105,15 @@ function clampCo2(text) {
 function availableCrops(mix, rowIndex, keys) {
   const all = keys || Object.keys(global.ClimateController.CROPS).filter(global.ClimateRoomRules.hasCrop);
   const taken = new Set(mix.filter((_, i) => i !== rowIndex).map(r => r.crop));
-  return all.filter(k => !taken.has(k));
+  const own = (mix[rowIndex] || {}).crop;
+  return all.filter(k => k === own || !taken.has(k));
 }
 // C11 6: why the run buttons are off, or '' when a run can start.
 const NEEDS_MIX = 'Add a mushroom and the number of blocks first.';
+const TWICE = 'The same mushroom is in the mix twice.';
 function runBlockReason(mix) {
-  return Array.isArray(mix) && mix.some(r => r.blocks > 0) ? '' : NEEDS_MIX;
+  if (!Array.isArray(mix) || !mix.some(r => r.blocks > 0)) return NEEDS_MIX;
+  return new Set(mix.map(r => r.crop)).size < mix.length ? TWICE : '';
 }
 const regionText = key => (key === 'my-lowland' ? 'Lowland Peninsular Malaysia' : key);
 const helpers = { toCapacityMix, toMixRows, sameMix, appliedCalib, runInputs, cycleSummary, stageRows,
@@ -262,7 +265,11 @@ function paintMix() {
       blocks.setAttribute('aria-label', `Blocks of ${n}`); co2.setAttribute('aria-label', `CO₂ per block of ${n}, mL/h`);
     };
     labels();
-    sel.addEventListener('change', () => { row.crop = sel.value; paintMix(); });
+    sel.addEventListener('change', () => {
+      row.crop = sel.value; paintMix();
+      const again = q('#smMix tbody').children[i]; const next = again && again.querySelector('select');
+      if (next && next.focus) next.focus();
+    });
     blocks.addEventListener('input', () => { row.blocks = clampBlocks(blocks.value); syncControls(); });
     blocks.addEventListener('change', () => { row.blocks = clampBlocks(blocks.value); blocks.value = String(row.blocks); syncControls(); });
     co2.addEventListener('input', () => { row.co2_per_block = clampCo2(co2.value); syncControls(); });

@@ -142,6 +142,11 @@ test('BT8 the new-batch form: a 400 marks the fields, a save goes to the new bat
   const el = mkEl();
   await registered.batches.mount(el, {});
   const form = el.querySelector('#btForm');
+  // two .field boxes as the page has them; markFields reads and writes these
+  const box = key => { const ctl = { attrs: {}, setAttribute(k, v) { this.attrs[k] = v; }, removeAttribute(k) { delete this.attrs[k]; } };
+    return { dataset: { field: key }, ctl, err: null, append(e) { this.err = e; }, querySelector() { return this.err; }, querySelectorAll() { return [ctl]; } }; };
+  const boxes = [box('block_count'), box('strain')];
+  form.querySelectorAll = () => boxes;
   const submit = () => form.listeners.submit({ preventDefault() {} });
   api.createBatch = async () => { throw new api.ApiError(400, 'Invalid batch', ['block_count: required', 'block_wet_kg: must be above 0']); };
   await submit();
@@ -150,9 +155,15 @@ test('BT8 the new-batch form: a 400 marks the fields, a save goes to the new bat
   assert.equal(msg.dataset.lvl, 'error');
   assert.equal(msg.hidden, false);
   assert.equal(globalThis.location.hash, '#/batches');
+  assert.equal(boxes[0].err.textContent, 'Fill this in.');
+  assert.equal(boxes[0].err.hidden, false);
+  assert.equal(boxes[0].ctl.attrs['aria-invalid'], 'true');
+  assert.equal(boxes[1].err, null);                       // a field the server did not name stays clean
   api.createBatch = async body => { assert.equal(body.crop, el.querySelector('#btCrop').value); return { id: 7 }; };
   await submit();
   assert.equal(globalThis.location.hash, '#/batches/7');
+  assert.equal(boxes[0].err.hidden, true);                // the marks are cleared on the next save
+  assert.equal(boxes[0].ctl.attrs['aria-invalid'], undefined);
 });
 
 test('BT9 Finish batch asks first; the confirm text is the C11 text', async t => {

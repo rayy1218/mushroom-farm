@@ -49,7 +49,7 @@ function dateOf(t) {
 const RECORD_HTML = `
 <div class="hv-page">
   <h2 id="hvRoom"></h2>
-  <a class="btn-link" id="hvBack" href="#/rooms" hidden></a>
+  <a class="btn btn-link" id="hvBack" href="#/rooms" hidden></a>
   <div class="hv-pick" id="hvPick"></div>
   <p class="hv-msg" id="hvNone" hidden>No batch in this room. Ask the office to place one.</p>
   <p class="hv-picked" id="hvPicked" hidden></p>
@@ -186,8 +186,8 @@ async function mountRecord(el, roomId, live) {
       if (!live()) return;
       kgEl.value = '';
       setMsg('', false);
-      await load();
-      if (live()) { global.FarmUi.say(msgEl, 'good', `Saved ✓ ${kg} kg`); kgEl.focus(); }
+      const reloaded = await load();
+      if (live()) { if (reloaded) global.FarmUi.say(msgEl, 'good', `Saved ✓ ${kg} kg`); kgEl.focus(); }
     } catch (err) {
       if (!live()) return;
       const api = err && err.name === 'ApiError';

@@ -78,7 +78,7 @@ const LIST_HTML = `
   </div>
   <a class="btn btn-link" id="btStickers" href="#/harvest/stickers">Print QR stickers</a>
   <table class="bt-list" id="btList">
-    <thead><tr><th>Crop</th><th>Strain</th><th>Room</th><th>Age (days)</th><th>kg</th><th>g per block</th><th>BE %</th></tr></thead>
+    <thead><tr><th>Mushroom</th><th>Strain</th><th>Room</th><th>Age (days)</th><th>kg</th><th>g per block</th><th>BE %</th></tr></thead>
     <tbody></tbody>
   </table>
   <p class="alert" id="btMsg" role="status" hidden></p>
@@ -319,7 +319,7 @@ async function mountDetail(el, id, live) {
     $('#bdHead').textContent = `${cropName(b.crop)} · ${b.strain || '–'} · ${where}`;
     const wait = $('#bdWait');
     wait.hidden = b.placed_at == null;
-    wait.textContent = b.placed_at == null ? '' : `Received to placed: ${ageDays(b.received_at, b.placed_at)} days`;
+    wait.textContent = b.placed_at == null ? '' : `Arrived to placed: ${ageDays(b.received_at, b.placed_at)} days`;
     $('#bdCrop').value = b.crop;
     $('#bdStrain').value = b.strain ?? '';
     $('#bdSource').value = b.source ?? '';
@@ -363,6 +363,7 @@ async function mountDetail(el, id, live) {
   // Runs one action on a button: disabled while it runs; the reload follows a success.
   async function act(button, fn, okText, reloadOnError) {
     button.disabled = true;
+    global.FarmUi.markFields($('#bdForm'), {});
     try {
       await fn();
       if (!live()) return;

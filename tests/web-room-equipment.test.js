@@ -89,6 +89,13 @@ function stubDom() {
   };
   return made;
 }
+// The real FarmUi helpers, but say and markFields work on the stub nodes and record what they were given.
+require('../web/ui.js');
+const realUi = globalThis.FarmUi;
+const marked = [];
+function testUi() {
+  return { ...realUi, say: (el, lvl, text) => { el.textContent = text; el.dataset = { lvl }; }, markFields: (root, fields) => { marked.push(fields); } };
+}
 const hostEl = () => ({ children: [], replaceChildren(...c) { this.children = c; } });
 const opts = (over = {}) => ({ id: 1, equipment: null, runInputs: () => ({ settings: { airM3h: 900 } }), onEquipment() {}, onSaved() {}, ...over });
 
@@ -103,7 +110,7 @@ test('W6 the progress bar is the fill span first, then the text span (C5 3.8)', 
 test('W7 after a successful save the air note is empty, not repainted from stale settings', async () => {
   const made = stubDom();
   globalThis.FarmApi = { saveEquipment: async (id, eq) => ({ room_id: id, ...eq }) };
-  globalThis.FarmUi = { errorText: e => e.message, say: (el, lvl, text) => { el.textContent = text; el.dataset = { lvl }; } };
+  globalThis.FarmUi = testUi();
   const got = [];
   const host = hostEl();
   const card = globalThis.FarmEquipmentCard.mount(host, opts({ equipment: { ...EQ.DEFAULTS, air_m3h: 1200 }, onEquipment: e => got.push(e) }));
@@ -120,7 +127,7 @@ test('W8 a second mount into the same element replaces the first; the first neve
   const made = stubDom();
   let release;
   globalThis.FarmApi = { saveEquipment: (id, eq) => new Promise(r => { release = () => r({ room_id: id, ...eq }); }) };
-  globalThis.FarmUi = { errorText: e => e.message, say: (el, lvl, text) => { el.textContent = text; el.dataset = { lvl }; } };
+  globalThis.FarmUi = testUi();
   const host = hostEl(), first = [], second = [];
   globalThis.FarmEquipmentCard.mount(host, opts({ onEquipment: e => first.push(e) }));
   made[0].querySelector('#eqSave').listeners.click();
@@ -139,7 +146,7 @@ test('W9 the aircond Buy cell is empty when the recommended size is the own size
 
 test('W10 mount survives settings that are missing, and Check stays enabled for an impossible mix and says why', () => {
   const made = stubDom();
-  globalThis.FarmApi = {}; globalThis.FarmUi = { say: (el, lvl, text) => { el.textContent = text; } };
+  globalThis.FarmApi = {}; globalThis.FarmUi = testUi();
   const mix = [{ crop: 'lionsmane', blocks: 500 }, { crop: 'pink', blocks: 500 }];
   globalThis.FarmEquipmentCard.mount(hostEl(), opts({ runInputs: () => ({ settings: undefined, mix }) }));
   assert.equal(made[0].querySelector('#eqCheck').disabled, false);
@@ -155,16 +162,20 @@ test('W10 mount survives settings that are missing, and Check stays enabled for 
 test('W11 acVerdictText: "Your <size> is big enough." when the room already has enough, never a buy line for its own size', () => {
   const own = EQ.runCheck(room({ ac_hp: 2.5 }), lm(2500), { runCycleSteps: runner(p => (hpOf(p) >= 2 ? {} : { fails: ['temperature too high'], inT: 60 })) });
   assert.equal(own.ac.verdict, 'enough');
-  assert.match(helpers.acVerdictText(own), /^Your 2\.5 hp is big enough\. A smaller 2 hp would also work\./);
+  assert.equal(helpers.acVerdictText(own).startsWith('Your 2.5 hp aircond is big enough.'), true);
+  assert.doesNotMatch(helpers.acVerdictText(own), /smaller|would also/);       // recommended is not below the own size
   assert.equal(helpers.runRows(own).some(r => r.hp === own.ac.own && r.tags.includes('buy this')), false);
   assert.ok(helpers.runRows(own).find(r => r.hp === own.ac.own).tags.includes('your aircond'));
   const big = EQ.runCheck(room({ ac_hp: 4 }), lm(2500), { runCycleSteps: runner(p => (hpOf(p) >= 2 ? {} : { fails: ['temperature too high'], inT: 60 })) });
-  assert.match(helpers.acVerdictText(big), /^Your 4 hp is big enough\. A smaller 2 hp would also work\./);
+  assert.equal(big.ac.verdict, 'oversized');
+  assert.match(helpers.acVerdictText(big), /^Your 4 hp aircond is big enough\. A 2\.5 hp would also be enough\./);
+  assert.equal(helpers.machineRows(big)[0].buy, '');                          // no buy cell when the own aircond is enough
+  assert.equal(helpers.runRows(big).some(r => r.tags.includes('buy this')), false);
   assert.equal(helpers.acVerdictText(down()), down().ac.text);   // too small: the report's own text
   const host = { children: [], replaceChildren(...c) { this.children = c; } };
   globalThis.document = { createElement: tag => { const n = { tag, children: [], textContent: '', className: '', style: {}, append(...c) { this.children.push(...c); } }; return n; } };
   globalThis.FarmEquipmentCard.renderReport(host, own);
-  assert.ok(host.children[0].children[0].textContent.startsWith('Your 2.5 hp is big enough.'));
+  assert.ok(host.children[0].children[0].textContent.startsWith('Your 2.5 hp aircond is big enough.'));
   delete globalThis.document;
 });
 
@@ -177,10 +188,61 @@ test('W12 emptyMixReason', () => {
 
 test('W13 Check with an empty mix says what to add and does not run', async () => {
   const made = stubDom();
-  globalThis.FarmApi = {}; globalThis.FarmUi = { say: (el, lvl, text) => { el.textContent = text; el.dataset = { lvl }; } };
+  globalThis.FarmApi = {}; globalThis.FarmUi = testUi();
   globalThis.FarmEquipmentCard.mount(hostEl(), opts({ runInputs: () => ({ settings: { airM3h: 900 }, mix: [] }) }));
   made[0].querySelector('#eqCheck').listeners.click();
   await new Promise(r => setTimeout(r, 10));
   assert.equal(made[0].querySelector('#eqMsg').textContent, 'Add a mushroom and the number of blocks first.');
   assert.equal(made[0].querySelector('#eqResult').children, undefined);
+});
+
+test('W14 the engine\'s no-reserve sentence is kept after "big enough"', () => {
+  const rep = { ac: { verdict: 'enough', own: 2, units: 1, min: 2, recommended: 2.5,
+    text: 'Your 2 hp aircond is enough for Lion\'s mane: it keeps the room within 1 °C of 18 °C 97 % of fruiting hours. It is just enough: on the hottest days it has no reserve. 2.5 hp gives a margin.' } };
+  assert.equal(helpers.acVerdictText(rep), 'Your 2 hp aircond is big enough. It is just enough: on the hottest days it has no reserve. 2.5 hp gives a margin.');
+  const plain = { ac: { verdict: 'enough', own: 2.5, units: 1, min: 2, recommended: 2.5, text: 'Your 2.5 hp aircond is enough for X: it keeps the room within 1 °C of 18 °C 99 % of fruiting hours.' } };
+  assert.equal(helpers.acVerdictText(plain), 'Your 2.5 hp aircond is big enough.');
+});
+
+test('W15 an invalid form is marked per field through plainError; the marks are cleared first', async () => {
+  const made = stubDom();
+  marked.length = 0;
+  globalThis.FarmApi = {}; globalThis.FarmUi = testUi();
+  globalThis.FarmEquipmentCard.mount(hostEl(), opts({ runInputs: () => ({ settings: { airM3h: 900 }, mix: lm(100) }) }));
+  const sec = made[0];
+  sec.querySelector('#eqFog').value = '99';
+  sec.querySelector('#eqSave').listeners.click();
+  await new Promise(r => setTimeout(r, 10));
+  assert.deepEqual(marked[0], {});
+  assert.deepEqual(Object.keys(marked[1]), ['fog_lph']);
+  assert.equal(marked[1].fog_lph, 'Must be a number from 0.5 to 50.');
+  assert.equal(sec.querySelector('#eqMsg').textContent, 'Check the marked field.');
+  assert.equal(sec.querySelector('#eqMsg').dataset.lvl, 'error');
+});
+
+test('W16 the leave guard is set while the form differs from the saved machines, and cleared after a save and on unmount', async () => {
+  const made = stubDom();
+  const calls = [];
+  globalThis.FarmShell = { guardLeave: fn => calls.push(fn ? fn() : null) };
+  globalThis.FarmApi = { saveEquipment: async (id, eq) => ({ room_id: id, ...eq }) };
+  globalThis.FarmUi = testUi();
+  const card = globalThis.FarmEquipmentCard.mount(hostEl(), opts({ equipment: { ...EQ.DEFAULTS } }));
+  const sec = made[0], form = sec.querySelector('form.equip-form');
+  const fill = () => helpers.fillForm(form, { ...EQ.DEFAULTS });
+  fill();                                                         // the fields hold the defaults the card loaded
+  form.listeners.input();
+  assert.deepEqual(calls, []);                                    // nothing differs: the guard is not touched
+  sec.querySelector('#eqFog').value = '5';
+  form.listeners.input();
+  assert.deepEqual(calls, ['Your machines have unsaved changes.']);
+  form.listeners.input();
+  assert.equal(calls.length, 1);                                  // set once
+  sec.querySelector('#eqSave').listeners.click();
+  await new Promise(r => setTimeout(r, 10));
+  assert.deepEqual(calls.slice(1), [null]);                       // cleared after the save
+  sec.querySelector('#eqFog').value = '6';
+  form.listeners.input();
+  card.unmount();
+  assert.deepEqual(calls.slice(2), ['Your machines have unsaved changes.', null]);
+  delete globalThis.FarmShell;
 });
