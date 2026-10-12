@@ -39,6 +39,19 @@ function batchBody({ edit, fields }) {
   return body;
 }
 
+// C14 5: the create body, then the place body when a room is chosen. form: the batchBody fields plus room_id ('' = Not yet) and placed_at (a date text).
+function batchPlan(form) {
+  const { room_id, placed_at, ...fields } = form;
+  const room = room_id === '' || room_id == null ? null : Number(room_id);
+  return {
+    create: batchBody({ edit: false, fields }),
+    place: room == null ? null : { room_id: room, placed_at: dateToSeconds(placed_at) ?? placed_at },
+  };
+}
+const placedMessage = roomName => `Batch saved and placed in ${roomName}.`;
+const notPlacedMessage = text => `Batch saved, but not placed: ${String(text).replace(/\.+$/, '')}. Use Place in room above.`;
+let carried = null;                         // { id, lvl, text, room_id }: said once on the batch page the form just went to
+
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 const daysText = n => plural(n, 'day', 'days');
 const titleOf = b => (b.strain ? `${cropName(b.crop)} · ${b.strain}` : cropName(b.crop));
@@ -60,7 +73,8 @@ const errText = err => global.FarmUi.errorText(err);
 
 // C11 6: field labels by API key, for plainError.
 const LABELS = { crop: 'Mushroom', strain: 'Strain (seed type)', source: 'Bought from', block_count: 'Blocks', block_wet_kg: 'Wet weight per block',
-  moisture_pct: 'Moisture', received_at: 'Arrived on', spawn_date: 'Spawn date', flush_gap_days: 'Days between flushes', notes: 'Notes' };
+  moisture_pct: 'Moisture', received_at: 'Arrived on', room_id: 'Room', placed_at: 'Placed on', spawn_date: 'Spawn date', flush_gap_days: 'Days between flushes', notes: 'Notes' };
+const TYPICAL_WET_KG = 1.2;                  // lead decision 111
 const CONFIRM_FINISH = 'Finish this batch? Its blocks are thrown out and it takes no more crates.';
 
 function addCropOptions(select) {
@@ -363,16 +377,28 @@ const LIST_HTML = `
       <div class="field" data-field="block_wet_kg">
         <label for="btKg">Wet weight per block</label>
         <div class="field-ctl"><input id="btKg" type="number" step="0.01"><span class="unit">kg</span></div>
+        <p class="field-help">Typical for bought blocks. Change it if you weighed yours.</p>
         <p class="field-err" hidden></p>
       </div>
       <div class="field" data-field="moisture_pct">
         <label for="btMoist">Moisture</label>
         <div class="field-ctl"><input id="btMoist" type="number" step="any"><span class="unit">%</span></div>
+        <p class="field-help">Typical for bought blocks. Change it if you weighed yours.</p>
         <p class="field-err" hidden></p>
       </div>
       <div class="field" data-field="received_at">
         <label for="btReceived">Arrived on</label>
         <div class="field-ctl"><input id="btReceived" type="date"></div>
+        <p class="field-err" hidden></p>
+      </div>
+      <div class="field" data-field="room_id">
+        <label for="btRoom">Put in room</label>
+        <div class="field-ctl"><select id="btRoom"><option value="">Not yet</option></select></div>
+        <p class="field-err" hidden></p>
+      </div>
+      <div class="field" data-field="placed_at" id="btPlacedBox" hidden>
+        <label for="btPlaced">Placed on</label>
+        <div class="field-ctl"><input id="btPlaced" type="date"></div>
         <p class="field-err" hidden></p>
       </div>
     </div>
@@ -389,6 +415,7 @@ const DETAIL_HTML = `
     <button class="btn btn-danger" id="bdClear" type="button" hidden>Finish batch</button>
     <button class="btn btn-danger" id="bdDelete" type="button" hidden>Delete</button>
   </div>
+  <p class="alert" id="bdNote" role="status" hidden></p>
   <form class="bd-form" id="bdForm">
     <h3>Blocks</h3>
     <div class="form-grid">
@@ -479,8 +506,20 @@ function mountList(el, live) {
   addCropOptions($('#btCrop'));
   $('#btStrain').maxLength = LIM.text;
   $('#btSource').maxLength = LIM.text;
+  $('#btKg').value = TYPICAL_WET_KG;
   $('#btMoist').value = global.FarmHarvestRules.DEFAULTS.moisture_pct;
   $('#btReceived').value = secondsToDate(nowSec());
+  $('#btPlaced').value = secondsToDate(nowSec());
+  const syncPlaced = () => {
+    const placed = $('#btPlaced'), none = $('#btRoom').value === '';
+    $('#btPlacedBox').hidden = none;
+    placed.disabled = none;                  // a hidden date must not hold back the form's checks
+    placed.min = $('#btReceived').value;
+    placed.max = secondsToDate(nowSec());
+    if (placed.value && placed.min && placed.value < placed.min) placed.value = placed.min;
+  };
+  $('#btRoom').addEventListener('change', syncPlaced);
+  $('#btReceived').addEventListener('change', syncPlaced);
 
   const say = (lvl, text) => global.FarmUi.say($('#btMsg'), lvl, text);
   const tabs = { received: $('#btTabReceived'), placed: $('#btTabPlaced'), cleared: $('#btTabCleared') };
@@ -535,6 +574,11 @@ function mountList(el, live) {
     say('info', '');
     all = list;
     rooms = roomList;
+    const sel = $('#btRoom'), keep = sel.value;
+    const option = (value, text) => { const o = document.createElement('option'); o.value = value; o.textContent = text; return o; };
+    sel.replaceChildren(option('', 'Not yet'), ...rooms.filter(r => !r.archived_at).map(r => option(String(r.id), r.name)));
+    sel.value = keep;
+    syncPlaced();
     loaded = true;
     newCard.open = list.length === 0;
     paint();
@@ -567,13 +611,31 @@ function mountList(el, live) {
     save.disabled = true;
     global.FarmUi.markFields($('#btForm'), {});
     try {
-      const fields = {
+      const plan = batchPlan({
         crop: $('#btCrop').value, strain: $('#btStrain').value, source: $('#btSource').value, block_count: $('#btCount').value,
         block_wet_kg: $('#btKg').value, moisture_pct: $('#btMoist').value, received_at: $('#btReceived').value,
-      };
-      const made = await global.FarmApi.createBatch(batchBody({ edit: false, fields }));
+        room_id: $('#btRoom').value, placed_at: $('#btPlaced').value,
+      });
+      const made = await global.FarmApi.createBatch(plan.create);
+      if (!plan.place) {
+        if (!live()) return;
+        say('good', 'Saved.');
+        global.location.hash = `#/batches/${made.id}`;
+        return;
+      }
+      let note;
+      try {
+        await global.FarmApi.placeBatch(made.id, plan.place);      // sent even if the page was left meanwhile
+        const room = rooms.find(r => r.id === plan.place.room_id);
+        note = { id: made.id, lvl: 'good', text: placedMessage(room ? room.name : 'the room') };
+      } catch (err) {
+        const p = global.FarmUi.plainError(err, LABELS);
+        // The batch page has no marked fields: name the problem in the message.
+        const named = Object.entries(p.fields).map(([k, v]) => `${LABELS[k]} ${v.charAt(0).toLowerCase()}${v.slice(1)}`.replace(/\.+$/, ''));
+        note = { id: made.id, lvl: 'error', text: notPlacedMessage(named.length ? named.join('; ') : p.text), room_id: plan.place.room_id };
+      }
       if (!live()) return;
-      say('good', 'Saved.');
+      carried = note;
       global.location.hash = `#/batches/${made.id}`;
     } catch (err) {
       if (live()) {
@@ -601,12 +663,18 @@ async function mountDetail(el, id, live) {
   $('#bdSource').maxLength = HR.LIM.text;
   $('#bdNotes').maxLength = HR.LIM.notes;
   let batch = null;
+  const note = carried && String(carried.id) === String(id) ? carried : null;   // said once, on this page, in its own alert
+  carried = null;
 
   const headSlot = $('#bdHead');
   const headActions = ['#bdRoom', '#bdPlace', '#bdClear', '#bdDelete'].map($);
   const roomSel = $('#bdRoom'), msgEl = $('#bdMsg');   // held: notFound() detaches them, writes to them are harmless
-  const msg = (text, lvl) => global.FarmUi.say(msgEl, lvl || (text ? 'good' : 'info'), text);
+  const msg = (text, lvl) => {
+    global.FarmUi.say(msgEl, lvl || (text ? 'good' : 'info'), text);
+    if (text && msgEl.scrollIntoView) msgEl.scrollIntoView({ block: 'nearest' });
+  };
   const fail = err => msg(errText(err), 'error');
+  if (note) global.FarmUi.say($('#bdNote'), note.lvl, note.text);
 
   function notFound() {
     const page = document.createElement('div'); page.className = 'bd-page';
@@ -746,6 +814,7 @@ async function mountDetail(el, id, live) {
     o.value = String(r.id); o.textContent = r.name;
     return o;
   }));
+  if (note && note.room_id != null && rooms.some(r => r.id === note.room_id)) roomSel.value = String(note.room_id);   // the room it was meant for
 }
 
 function mount(el, params) {
@@ -758,5 +827,5 @@ function unmount() { current = null; }
 
 global.FarmShell.register('batches', { mount, unmount });
 
-if (typeof module === 'object' && module && module.exports) module.exports = { dateToSeconds, secondsToDate, ageDays, batchBody, plural, daysText, titleOf, stateWords, subText, filterByState, flushBars, dropText, timelineRows, niceMax, niceAxis };
+if (typeof module === 'object' && module && module.exports) module.exports = { batchPlan, placedMessage, notPlacedMessage, dateToSeconds, secondsToDate, ageDays, batchBody, plural, daysText, titleOf, stateWords, subText, filterByState, flushBars, dropText, timelineRows, niceMax, niceAxis };
 })(typeof window !== 'undefined' ? window : globalThis);

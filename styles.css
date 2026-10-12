@@ -10,7 +10,7 @@
   --grid: #dadde1; --axis: #b4bac1; --border: rgba(21,24,27,.13); --border-strong: rgba(21,24,27,.28);
   --wall: #a3aab1; --unit: #fbfcfc; --unit-on: #cfd4d9; --band: rgba(21,24,27,.075); --trend: #2b3036; --mist: #7f8790; --night: rgba(30,40,70,.07); --night-key: rgba(30,40,70,.14);
   --s-ac: #2a78d6; --s-hu: #eb6834; --s-air: #1baf7a; --s-li: #eda100; --s-ci: #e87ba4;
-  --good: #0ca30c; --good-text: #006300; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b; --critical-text: #b02a2a;
+  --good: #0ca30c; --good-text: #006300; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b; --critical-text: #b02a2a; --warning-text: #7a5200;
 }
 @media (prefers-color-scheme: dark) {
   :root:where(:not([data-theme="light"])) {
@@ -18,7 +18,7 @@
     --page: #0f1113; --surface: #1c1f22; --room: #16191c; --ink: #f1f3f4; --ink-2: #c3c8cd; --muted: #959ba2;
     --grid: #2a2f33; --axis: #40464c; --border: rgba(255,255,255,.1); --border-strong: rgba(255,255,255,.24);
     --wall: #4d545b; --unit: #23272b; --unit-on: #3a4148; --band: rgba(255,255,255,.075); --trend: #e4e7ea; --mist: #9aa2aa; --night: rgba(0,0,0,.28); --night-key: rgba(0,0,0,.5);
-    --s-ac: #3987e5; --s-hu: #d95926; --s-air: #199e70; --s-li: #c98500; --s-ci: #d55181; --good-text: #0ca30c; --critical-text: #ff8a8a;
+    --s-ac: #3987e5; --s-hu: #d95926; --s-air: #199e70; --s-li: #c98500; --s-ci: #d55181; --good-text: #0ca30c; --critical-text: #ff8a8a; --warning-text: #fab219;
   }
 }
 :root[data-theme="dark"] {
@@ -26,7 +26,7 @@
   --page: #0f1113; --surface: #1c1f22; --room: #16191c; --ink: #f1f3f4; --ink-2: #c3c8cd; --muted: #959ba2;
   --grid: #2a2f33; --axis: #40464c; --border: rgba(255,255,255,.1); --border-strong: rgba(255,255,255,.24);
   --wall: #4d545b; --unit: #23272b; --unit-on: #3a4148; --band: rgba(255,255,255,.075); --trend: #e4e7ea; --mist: #9aa2aa; --night: rgba(0,0,0,.28); --night-key: rgba(0,0,0,.5);
-  --s-ac: #3987e5; --s-hu: #d95926; --s-air: #199e70; --s-li: #c98500; --s-ci: #d55181; --good-text: #0ca30c; --critical-text: #ff8a8a;
+  --s-ac: #3987e5; --s-hu: #d95926; --s-air: #199e70; --s-li: #c98500; --s-ci: #d55181; --good-text: #0ca30c; --critical-text: #ff8a8a; --warning-text: #fab219;
 }
 
 * { box-sizing: border-box; }
