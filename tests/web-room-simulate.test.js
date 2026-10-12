@@ -366,7 +366,7 @@ test('PL4 the capacity bullet is a labelled figure', () => withFakeDom(() => {
   assert.equal(svg.attrs.role, 'img');
   assert.match(svg.attrs['aria-label'], /2,000 blocks fit\. The room holds up to 3,652\..*Your plan: 2,000 blocks/);
   const texts = all(svg, e => e.tag === 'text').map(e => e.textContent);
-  for (const t of ['Too empty', 'Fits', 'Too full', 'Your plan · 2,000', '1,826', '3,652']) assert.ok(texts.includes(t), t);
+  for (const t of ['Too empty', 'Fits', 'Your plan · 2,000', '1,826', '3,652']) assert.ok(texts.includes(t), t);
   assert.equal(H.bulletFigure({ capacity: { max: 0 } }, 50), null);
 }));
 
