@@ -20,8 +20,8 @@ test('SM1 registration', () => {
   const tab = globalThis.FarmRoomTabs.get('simulate');
   assert.equal(typeof tab.mount, 'function');
   assert.equal(typeof tab.unmount, 'function');
-  assert.deepEqual(Object.keys(tab.helpers).sort(), ['appliedCalib', 'clampBlocks', 'clampCo2', 'cycleSummary', 'machinesText', 'progressText',
-    'regionText', 'runInputs', 'runRowTexts', 'sameMix', 'seriesPoints', 'stageRows', 'toCapacityMix', 'toMixRows']);
+  assert.deepEqual(Object.keys(tab.helpers).sort(), ['appliedCalib', 'availableCrops', 'clampBlocks', 'clampCo2', 'cycleSummary', 'machinesText', 'progressText',
+    'regionText', 'runBlockReason', 'runInputs', 'runRowTexts', 'sameMix', 'seriesPoints', 'stageRows', 'toCapacityMix', 'toMixRows']);
   assert.equal(typeof globalThis.document, 'undefined');
   assert.doesNotThrow(() => tab.unmount());
 });
@@ -247,4 +247,22 @@ test('SM12 a slow load of an earlier room never paints into the next room', asyn
   const rows = el.querySelectorAll('#smMix tbody tr');
   assert.equal(rows.length, 1);
   assert.equal(rows[0].children[1].children[0].value, '7');
+});
+
+test('SM30 availableCrops: a crop in another row is not offered again, the row\'s own crop stays', () => {
+  const keys = ['oyster', 'pink', 'lionsmane'];
+  const mix = [{ crop: 'oyster', blocks: 1 }, { crop: 'pink', blocks: 1 }];
+  assert.deepEqual(H.availableCrops(mix, 0, keys), ['oyster', 'lionsmane']);
+  assert.deepEqual(H.availableCrops(mix, 1, keys), ['pink', 'lionsmane']);
+  assert.deepEqual(H.availableCrops(mix, 2, keys), ['lionsmane']);      // a new row
+  assert.deepEqual(H.availableCrops([], 0, keys), keys);
+  assert.ok(H.availableCrops([], 0).includes('oyster'));                  // default: every crop a room can grow
+});
+
+test('SM31 runBlockReason: no run without a crop and blocks', () => {
+  const why = 'Add a mushroom and the number of blocks first.';
+  assert.equal(H.runBlockReason([]), why);
+  assert.equal(H.runBlockReason([{ crop: 'oyster', blocks: 0, co2_per_block: null }]), why);
+  assert.equal(H.runBlockReason(undefined), why);
+  assert.equal(H.runBlockReason([{ crop: 'oyster', blocks: 0 }, { crop: 'pink', blocks: 3 }]), '');
 });

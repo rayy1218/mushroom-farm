@@ -101,9 +101,20 @@ function clampCo2(text) {
   const n = Math.round(+text);
   return text === '' || !Number.isFinite(n) ? null : Math.min(1000, Math.max(1, n));
 }
+// C11 6: a crop already in another row is not offered again.
+function availableCrops(mix, rowIndex, keys) {
+  const all = keys || Object.keys(global.ClimateController.CROPS).filter(global.ClimateRoomRules.hasCrop);
+  const taken = new Set(mix.filter((_, i) => i !== rowIndex).map(r => r.crop));
+  return all.filter(k => !taken.has(k));
+}
+// C11 6: why the run buttons are off, or '' when a run can start.
+const NEEDS_MIX = 'Add a mushroom and the number of blocks first.';
+function runBlockReason(mix) {
+  return Array.isArray(mix) && mix.some(r => r.blocks > 0) ? '' : NEEDS_MIX;
+}
 const regionText = key => (key === 'my-lowland' ? 'Lowland Peninsular Malaysia' : key);
 const helpers = { toCapacityMix, toMixRows, sameMix, appliedCalib, runInputs, cycleSummary, stageRows,
-  seriesPoints, runRowTexts, progressText, machinesText, clampBlocks, clampCo2, regionText };
+  seriesPoints, runRowTexts, progressText, machinesText, clampBlocks, clampCo2, regionText, availableCrops, runBlockReason };
 
 // ---------------- the capacity report (moved from web/capacity.js, wave 1) ----------------
 const VERDICT_CHIP = {
@@ -169,7 +180,7 @@ function renderReport(host, rep) {
 }
 
 // ---------------- the tab ----------------
-const EXPLAIN = 'Simulate = try a plan before you do it. Enter the crop mix, then Check capacity (fast: will the climate hold on a hot-dry, a hot-humid and a rainy day, and how many blocks fit?) or Run a full cycle (spawn run, pinning, fruiting and rest for every flush, with the energy cost). Every result is saved and can later be compared with what really happens.';
+const EXPLAIN = 'Simulate = try a plan before you do it. Enter the crop mix, then Check capacity (fast: will the climate hold on a hot-dry, a hot-humid and a rainy day, and how many blocks fit?) or Run full cycle (spawn run, pinning, fruiting and rest for every flush, with the energy cost). Every result is saved and can later be compared with what really happens.';
 const NOT_INSTALLED = 'The machines check is not installed.';
 const MAX_DAYS = 180;
 const STAGE_HEAD = ['Stage', 'Flush', 'Days', 'Temp in band %', 'RH ok %', 'CO₂ ok %', 'Max core °C', 'Alarms', 'kWh', 'RM', 'Result'];
@@ -194,7 +205,7 @@ const here = me => alive && me === mountSeq;
 let gen = 0; // never reset: a run of an earlier mount can never match it again
 
 const q = sel => el.querySelector(sel);
-const msg = text => { if (el) q('#smMsg').textContent = text; };
+const msg = (text, lvl) => { if (el) global.FarmUi.say(q('#smMsg'), lvl || 'info', text); };
 const ready = () => saved !== null && calibrations !== null && settings !== null && equipment !== undefined;
 
 function currentData(over) {
@@ -213,7 +224,7 @@ function cardInputs() {
 }
 
 function cycleDaysText() {
-  try { return `Run a full cycle (${plural(global.ClimateCycle.cycleDays(settings.farmType, settings.program), 'day', 'days')})`; } catch { return 'Run a full cycle'; }
+  try { return `Run full cycle · simulates ${plural(global.ClimateCycle.cycleDays(settings.farmType, settings.program), 'day', 'days')} in about 30 s`; } catch { return 'Run full cycle'; }
 }
 function paintValues() {
   const UI = global.FarmUi, clock = UI.farmClock();
@@ -225,20 +236,22 @@ function paintValues() {
   if (settings) q('#smCycle').textContent = cycleDaysText();
 }
 function syncControls() {
-  const ok = ready() && !running;
+  const reason = runBlockReason(draft);
+  const ok = ready() && !running && !reason;
   q('#smCap').disabled = q('#smCycle').disabled = !ok;
-  q('#smAddCrop').disabled = running;
+  const help = q('#smRunHelp');
+  help.textContent = reason; help.hidden = !reason;
+  q('#smAddCrop').disabled = running || availableCrops(draft, draft.length).length === 0;
   for (const c of q('#smMix').querySelectorAll('input, select, button')) c.disabled = running;
   q('#smSaveMix').disabled = running || saving || saved === null || sameMix(toCapacityMix(draft), toCapacityMix(saved));
 }
 
 function paintMix() {
   const CC = global.ClimateController;
-  const keys = Object.keys(CC.CROPS).filter(global.ClimateRoomRules.hasCrop);
   const body = q('#smMix tbody');
   body.replaceChildren(...draft.map((row, i) => {
     const sel = mk('select', { name: 'mixCrop' });
-    for (const k of keys) sel.append(mk('option', { value: k, text: CC.CROPS[k].name }));
+    for (const k of availableCrops(draft, i)) sel.append(mk('option', { value: k, text: CC.CROPS[k].name }));
     sel.value = row.crop;
     const blocks = mk('input', { type: 'number', min: '0', max: '200000', step: '1', name: 'mixBlocks' }); blocks.value = String(row.blocks);
     const co2 = mk('input', { type: 'number', min: '1', max: '1000', step: '1', name: 'mixCo2' }); co2.value = row.co2_per_block === null ? '' : String(row.co2_per_block);
@@ -249,7 +262,7 @@ function paintMix() {
       blocks.setAttribute('aria-label', `Blocks of ${n}`); co2.setAttribute('aria-label', `CO₂ per block of ${n}, mL/h`);
     };
     labels();
-    sel.addEventListener('change', () => { row.crop = sel.value; labels(); syncControls(); });
+    sel.addEventListener('change', () => { row.crop = sel.value; paintMix(); });
     blocks.addEventListener('input', () => { row.blocks = clampBlocks(blocks.value); syncControls(); });
     blocks.addEventListener('change', () => { row.blocks = clampBlocks(blocks.value); blocks.value = String(row.blocks); syncControls(); });
     co2.addEventListener('input', () => { row.co2_per_block = clampCo2(co2.value); syncControls(); });
@@ -303,14 +316,14 @@ function paintRuns() {
     const open = btn('Open'), note = btn('Note'), del = btn('Delete');
     const actions = [open];
     if (info.kind === 'cycle' && (info.verdict === 'pass' || info.verdict === 'fail')) {
-      actions.push(mk('a', { cls: 'btn', href: `#/rooms/${id}/calibrate/${info.id}`, text: 'Compare with real' }));
+      actions.push(mk('a', { cls: 'btn btn-link', href: `#/rooms/${id}/calibrate/${info.id}`, text: 'Compare with real' }));
     }
     actions.push(note, del);
     open.addEventListener('click', () => guarded(open, async () => {
       const me = mountSeq;
       const run = await global.FarmApi.getSimulation(id, info.id);
       if (!here(me)) return;
-      try { showResult(run.kind, run.result); } catch (err) { msg(`The saved result could not be read: ${err.message}`); }
+      try { showResult(run.kind, run.result); } catch (err) { msg(`The saved result could not be read: ${err.message}`, 'error'); }
     }));
     note.addEventListener('click', () => guarded(note, async () => {
       const text = prompt(`Note for run ${info.id}`, info.note ?? '');
@@ -338,7 +351,7 @@ async function guarded(button, fn) {
   if (button.disabled) return;
   const me = mountSeq;
   button.disabled = true;
-  try { await fn(); } catch (err) { if (here(me)) msg(global.FarmUi.errorText(err)); } finally { if (here(me) && button.isConnected) button.disabled = false; }
+  try { await fn(); } catch (err) { if (here(me)) msg(global.FarmUi.errorText(err), 'error'); } finally { if (here(me) && button.isConnected) button.disabled = false; }
 }
 
 // ---- runs ----
@@ -356,7 +369,7 @@ async function startRun(kind) {
     it = kind === 'cycle'
       ? global.ClimateCycle.runCycleSteps(r.room, r.mix, { settings: r.settings, region: r.region, tariff: r.tariff })
       : global.ClimateCapacity.checkSteps(r.room, r.mix, { region: r.region, tariff: r.tariff, emptyBelow: r.emptyBelow });
-  } catch (err) { msg(`The run stopped: ${err.message}`); return; }
+  } catch (err) { msg(`The run stopped: ${err.message}`, 'error'); return; }
 
   running = true;
   const myGen = ++gen;
@@ -374,19 +387,19 @@ async function startRun(kind) {
       if (!here(me) || myGen !== gen) return;
     }
   } catch (err) {
-    if (here(me) && myGen === gen) msg(`The run stopped: ${err.message}`);
+    if (here(me) && myGen === gen) msg(`The run stopped: ${err.message}`, 'error');
   } finally {
     if (here(me) && myGen === gen) { running = false; bar.hidden = true; syncControls(); }
   }
   if (!finished || !here(me) || myGen !== gen) return;
 
-  try { showResult(kind, result); } catch (err) { msg(`The result could not be drawn: ${err.message}`); }
+  try { showResult(kind, result); } catch (err) { msg(`The result could not be drawn: ${err.message}`, 'error'); }
   try {
     const info = await global.FarmApi.createSimulation(id, { kind, inputs: r.inputs, result });
     if (!here(me)) return;
-    runs.unshift(info); paintRuns(); msg(`Saved as run ${info.id}.`);
+    runs.unshift(info); paintRuns(); msg(`Saved as run ${info.id}.`, 'good');
   } catch (err) {
-    if (here(me)) msg(`The result was not saved: ${UI.errorText(err)}`);
+    if (here(me)) msg(`The result was not saved: ${UI.errorText(err)}`, 'error');
   }
 }
 
@@ -400,9 +413,9 @@ async function saveMix() {
     if (!here(me)) return;
     saved = rows; draft = rows.map(x => ({ ...x }));
     paintMix();
-    msg(`Saved. The simulated live room uses ${rows.reduce((n, x) => n + x.blocks, 0)} blocks after its next restart.`);
+    msg(`Saved. The simulated live room uses ${rows.reduce((n, x) => n + x.blocks, 0)} blocks after its next restart.`, 'good');
   } catch (err) {
-    if (here(me)) msg(UI.errorText(err));
+    if (here(me)) msg(UI.errorText(err), 'error');
   } finally {
     if (here(me)) { saving = false; syncControls(); }
   }
@@ -432,22 +445,24 @@ function build() {
     mk('p', { cls: 'explain', text: EXPLAIN }),
     mk('section', { cls: 'card' }, mk('h3', { text: 'Crop mix' }),
       mk('table', { cls: 'mix-table', id: 'smMix' }, mk('thead', {}, mixHead), mk('tbody')),
-      btn('Add a crop', { id: 'smAddCrop' }), btn("Save as this room's crop mix", { id: 'smSaveMix' })),
+      mk('div', { cls: 'btn-row' }, btn('Add a crop', { id: 'smAddCrop' }), btn("Save as this room's crop mix", { id: 'smSaveMix', cls: 'btn btn-primary' }))),
     mk('p', { cls: 'tag', id: 'smValues' }, calibChip, mk('span', { cls: 'tag', id: 'smSettings' }), mk('span', { cls: 'tag', id: 'smMachines' })),
     mk('div', { cls: 'section-head' },
       mk('label', { for: 'smRegion', text: 'Region' }), region,
       mk('label', { for: 'smTariff', text: 'Tariff (RM per kWh)' }), tariff,
       mk('label', { for: 'smEmpty', text: 'Too empty below (%)' }), empty,
-      btn('Check capacity (≈ 2 s)', { id: 'smCap' }), btn('Run a full cycle', { id: 'smCycle' }),
-      mk('a', { cls: 'btn', id: 'smBench', href: `#/simulator/${id}`, text: 'Open test bench' })),
+      mk('div', { cls: 'btn-row' },
+        btn('Check capacity (≈ 2 s)', { id: 'smCap', cls: 'btn btn-primary' }), btn('Run full cycle', { id: 'smCycle' }),
+        mk('a', { cls: 'btn btn-link', id: 'smBench', href: `#/simulator/${id}`, text: 'Open test bench' })),
+      mk('p', { cls: 'field-help', id: 'smRunHelp', role: 'status' })),
     mk('div', { cls: 'run-progress', id: 'smProgress', hidden: '' }, mk('span'), mk('span')),
-    mk('p', { cls: 'tag room-msg', id: 'smMsg', role: 'status' }),
+    mk('p', { cls: 'alert room-msg', id: 'smMsg', role: 'status', hidden: '' }),
     mk('section', { cls: 'card result-card', id: 'smResult', hidden: '' }),
     mk('div', { cls: 'contents', id: 'smCharts' }),
     mk('div', { cls: 'contents', 'data-slot': 'equipment-check' }),
     mk('section', { cls: 'card' }, mk('h3', { text: 'Saved runs' }),
       mk('table', { cls: 'run-list', id: 'smRuns' }, mk('thead', {}, runHead), mk('tbody')), btn('Older', { id: 'smOlder' })));
-  q('#smAddCrop').addEventListener('click', () => { draft.push({ crop: 'oyster', blocks: 500, co2_per_block: null }); paintMix(); });
+  q('#smAddCrop').addEventListener('click', () => { const next = availableCrops(draft, draft.length)[0]; if (next) { draft.push({ crop: next, blocks: 500, co2_per_block: null }); paintMix(); } });
   q('#smSaveMix').addEventListener('click', saveMix);
   q('#smCap').addEventListener('click', () => startRun('capacity'));
   q('#smCycle').addEventListener('click', () => startRun('cycle'));
@@ -479,7 +494,7 @@ function mount(host, context) {
   });
   ctx.on('room', r => { room = r; });
 
-  const load = (promise, apply) => promise.then(v => { if (here(me)) apply(v); }).catch(err => { if (here(me)) msg(UI.errorText(err)); });
+  const load = (promise, apply) => promise.then(v => { if (here(me)) apply(v); }).catch(err => { if (here(me)) msg(UI.errorText(err), 'error'); });
   return Promise.all([
     load(API.getMix(id), rows => { saved = rows; draft = rows.map(x => ({ ...x })); paintMix(); }),
     load(API.listCalibrations(id), rows => { calibrations = rows; paintValues(); }),

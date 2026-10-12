@@ -44,6 +44,11 @@ const cropKeys = () => Object.keys(global.ClimateController.CROPS).filter(k => g
 const cropName = k => (global.ClimateController.CROPS[k] ? global.ClimateController.CROPS[k].name : k);
 const errText = err => global.FarmUi.errorText(err);
 
+// C11 6: field labels by API key, for plainError.
+const LABELS = { crop: 'Mushroom', strain: 'Strain (seed type)', source: 'Bought from', block_count: 'Blocks', block_wet_kg: 'Wet weight per block',
+  moisture_pct: 'Moisture', received_at: 'Arrived on', spawn_date: 'Spawn date', flush_gap_days: 'Days between flushes', notes: 'Notes' };
+const CONFIRM_FINISH = 'Finish this batch? Its blocks are thrown out and it takes no more crates.';
+
 function addCropOptions(select) {
   for (const k of cropKeys()) {
     const o = document.createElement('option');
@@ -67,26 +72,57 @@ function row(cells) {
 const LIST_HTML = `
 <div class="bt-page">
   <div class="bt-tabs" role="group" aria-label="Batches">
-    <button type="button" id="btTabReceived" aria-pressed="false">Received</button>
-    <button type="button" id="btTabPlaced" aria-pressed="true">In rooms</button>
-    <button type="button" id="btTabCleared" aria-pressed="false">Cleared</button>
+    <button type="button" id="btTabReceived" aria-pressed="false">New</button>
+    <button type="button" id="btTabPlaced" aria-pressed="true">Growing</button>
+    <button type="button" id="btTabCleared" aria-pressed="false">Finished</button>
   </div>
-  <a class="btn" id="btStickers" href="#/harvest/stickers">Print QR stickers</a>
+  <a class="btn btn-link" id="btStickers" href="#/harvest/stickers">Print QR stickers</a>
   <table class="bt-list" id="btList">
     <thead><tr><th>Crop</th><th>Strain</th><th>Room</th><th>Age (days)</th><th>kg</th><th>g per block</th><th>BE %</th></tr></thead>
     <tbody></tbody>
   </table>
-  <p class="tag" id="btMsg" role="status"></p>
+  <p class="alert" id="btMsg" role="status" hidden></p>
   <form class="bt-form" id="btForm">
     <h3>New batch</h3>
-    <label>Crop <select id="btCrop"></select></label>
-    <label>Strain <input id="btStrain"></label>
-    <label>Source <input id="btSource"></label>
-    <label>Blocks <input id="btCount" type="number" min="1" step="1"></label>
-    <label>Wet weight per block (kg) <input id="btKg" type="number" step="0.01"></label>
-    <label>Moisture % <input id="btMoist" type="number" step="any"></label>
-    <label>Received <input id="btReceived" type="date"></label>
-    <button class="btn" id="btSave" type="submit">Save</button>
+    <div class="form-grid">
+      <div class="field" data-field="crop">
+        <label for="btCrop">Mushroom</label>
+        <div class="field-ctl"><select id="btCrop"></select></div>
+        <p class="field-err" hidden></p>
+      </div>
+      <div class="field" data-field="strain">
+        <label for="btStrain">Strain (seed type)</label>
+        <div class="field-ctl"><input id="btStrain"></div>
+        <p class="field-err" hidden></p>
+      </div>
+      <div class="field" data-field="source">
+        <label for="btSource">Bought from</label>
+        <div class="field-ctl"><input id="btSource"></div>
+        <p class="field-err" hidden></p>
+      </div>
+      <div class="field" data-field="block_count">
+        <label for="btCount">Blocks</label>
+        <div class="field-ctl"><input id="btCount" type="number" min="1" step="1"><span class="unit">blocks</span></div>
+        <p class="field-help">How many blocks arrived.</p>
+        <p class="field-err" hidden></p>
+      </div>
+      <div class="field" data-field="block_wet_kg">
+        <label for="btKg">Wet weight per block</label>
+        <div class="field-ctl"><input id="btKg" type="number" step="0.01"><span class="unit">kg</span></div>
+        <p class="field-err" hidden></p>
+      </div>
+      <div class="field" data-field="moisture_pct">
+        <label for="btMoist">Moisture</label>
+        <div class="field-ctl"><input id="btMoist" type="number" step="any"><span class="unit">%</span></div>
+        <p class="field-err" hidden></p>
+      </div>
+      <div class="field" data-field="received_at">
+        <label for="btReceived">Arrived on</label>
+        <div class="field-ctl"><input id="btReceived" type="date"></div>
+        <p class="field-err" hidden></p>
+      </div>
+    </div>
+    <div class="btn-row"><button class="btn btn-primary" id="btSave" type="submit">Save</button></div>
   </form>
 </div>`;
 
@@ -95,23 +131,72 @@ const DETAIL_HTML = `
   <h2 id="bdHead"></h2>
   <p class="tag" id="bdWait" hidden></p>
   <form class="bd-form" id="bdForm">
-    <label>Crop <select id="bdCrop"></select></label>
-    <label>Strain <input id="bdStrain"></label>
-    <label>Source <input id="bdSource"></label>
-    <label>Blocks <input id="bdCount" type="number" min="1" step="1"></label>
-    <label>Wet weight per block (kg) <input id="bdKg" type="number" step="any"></label>
-    <label>Moisture % <input id="bdMoist" type="number" step="any"></label>
-    <label>Spawn date <input id="bdSpawn" type="date"></label>
-    <label>Received <input id="bdReceived" type="date"></label>
-    <label>Days between flushes <input id="bdGap" type="number" min="1" step="1"></label>
-    <label>Notes <textarea id="bdNotes" rows="3"></textarea></label>
-    <button class="btn" id="bdSave" type="submit">Save changes</button>
+    <h3>Blocks</h3>
+    <div class="form-grid">
+      <div class="field" data-field="crop">
+        <label for="bdCrop">Mushroom</label>
+        <div class="field-ctl"><select id="bdCrop"></select></div>
+        <p class="field-err" hidden></p>
+      </div>
+      <div class="field" data-field="strain">
+        <label for="bdStrain">Strain (seed type)</label>
+        <div class="field-ctl"><input id="bdStrain"></div>
+        <p class="field-err" hidden></p>
+      </div>
+      <div class="field" data-field="source">
+        <label for="bdSource">Bought from</label>
+        <div class="field-ctl"><input id="bdSource"></div>
+        <p class="field-err" hidden></p>
+      </div>
+      <div class="field" data-field="block_count">
+        <label for="bdCount">Blocks</label>
+        <div class="field-ctl"><input id="bdCount" type="number" min="1" step="1"><span class="unit">blocks</span></div>
+        <p class="field-err" hidden></p>
+      </div>
+      <div class="field" data-field="block_wet_kg">
+        <label for="bdKg">Wet weight per block</label>
+        <div class="field-ctl"><input id="bdKg" type="number" step="any"><span class="unit">kg</span></div>
+        <p class="field-err" hidden></p>
+      </div>
+      <div class="field" data-field="moisture_pct">
+        <label for="bdMoist">Moisture</label>
+        <div class="field-ctl"><input id="bdMoist" type="number" step="any"><span class="unit">%</span></div>
+        <p class="field-err" hidden></p>
+      </div>
+    </div>
+    <h3>Dates</h3>
+    <div class="form-grid">
+      <div class="field" data-field="spawn_date">
+        <label for="bdSpawn">Spawn date</label>
+        <div class="field-ctl"><input id="bdSpawn" type="date"></div>
+        <p class="field-err" hidden></p>
+      </div>
+      <div class="field" data-field="received_at">
+        <label for="bdReceived">Arrived on</label>
+        <div class="field-ctl"><input id="bdReceived" type="date"></div>
+        <p class="field-err" hidden></p>
+      </div>
+      <div class="field" data-field="flush_gap_days">
+        <label for="bdGap">Days between flushes</label>
+        <div class="field-ctl"><input id="bdGap" type="number" min="1" step="1"><span class="unit">days</span></div>
+        <p class="field-err" hidden></p>
+      </div>
+    </div>
+    <h3>Notes</h3>
+    <div class="form-grid">
+      <div class="field span-all" data-field="notes">
+        <label for="bdNotes">Notes</label>
+        <div class="field-ctl"><textarea id="bdNotes" rows="3"></textarea></div>
+        <p class="field-err" hidden></p>
+      </div>
+    </div>
+    <div class="btn-row"><button class="btn btn-primary" id="bdSave" type="submit">Save changes</button></div>
   </form>
-  <div class="bd-actions">
+  <div class="bd-actions btn-row">
     <select id="bdRoom" hidden></select>
     <button class="btn" id="bdPlace" type="button" hidden>Place in room</button>
-    <button class="btn" id="bdClear" type="button" hidden>Clear</button>
-    <button class="btn" id="bdDelete" type="button" hidden>Delete</button>
+    <button class="btn btn-danger" id="bdClear" type="button" hidden>Finish batch</button>
+    <button class="btn btn-danger" id="bdDelete" type="button" hidden>Delete</button>
   </div>
   <h3>Flushes</h3>
   <table class="bd-flushes" id="bdFlushes">
@@ -123,7 +208,7 @@ const DETAIL_HTML = `
     <thead><tr><th>Time</th><th>kg</th><th>Picker</th><th>–</th></tr></thead>
     <tbody></tbody>
   </table>
-  <p class="tag" id="bdMsg" role="status"></p>
+  <p class="alert" id="bdMsg" role="status" hidden></p>
 </div>`;
 
 // ---- list ----
@@ -139,6 +224,7 @@ function mountList(el, live) {
   $('#btMoist').value = global.FarmHarvestRules.DEFAULTS.moisture_pct;
   $('#btReceived').value = secondsToDate(nowSec());
 
+  const say = (lvl, text) => global.FarmUi.say($('#btMsg'), lvl, text);
   const tabs = { received: $('#btTabReceived'), placed: $('#btTabPlaced'), cleared: $('#btTabCleared') };
   let state = 'placed';
 
@@ -146,9 +232,9 @@ function mountList(el, live) {
     const mine = ++gen;
     let list;
     try { list = await global.FarmApi.listBatches({ state }); }
-    catch (err) { if (live() && mine === gen) $('#btMsg').textContent = errText(err); return; }
+    catch (err) { if (live() && mine === gen) say('error', errText(err)); return; }
     if (!live() || mine !== gen) return;
-    $('#btMsg').textContent = '';
+    say('info', '');
     const now = nowSec();
     const body = $('#btList').querySelector('tbody');
     const rows = list.map(b => {
@@ -177,18 +263,22 @@ function mountList(el, live) {
     e.preventDefault();
     const save = $('#btSave');
     save.disabled = true;
+    global.FarmUi.markFields($('#btForm'), {});
     try {
       const fields = {
         crop: $('#btCrop').value, strain: $('#btStrain').value, source: $('#btSource').value, block_count: $('#btCount').value,
         block_wet_kg: $('#btKg').value, moisture_pct: $('#btMoist').value, received_at: $('#btReceived').value,
       };
-      await global.FarmApi.createBatch(batchBody({ edit: false, fields }));
+      const made = await global.FarmApi.createBatch(batchBody({ edit: false, fields }));
       if (!live()) return;
-      for (const id of ['#btStrain', '#btSource', '#btCount', '#btKg']) $(id).value = '';
-      await pick('received');
-      if (live()) $('#btMsg').textContent = 'Saved.';
+      say('good', 'Saved.');
+      global.location.hash = `#/batches/${made.id}`;
     } catch (err) {
-      if (live()) $('#btMsg').textContent = errText(err);
+      if (live()) {
+        const p = global.FarmUi.plainError(err, LABELS);
+        say('error', p.text);
+        global.FarmUi.markFields($('#btForm'), p.fields);
+      }
     } finally {
       if (live()) save.disabled = false;
     }
@@ -211,7 +301,8 @@ async function mountDetail(el, id, live) {
   let batch = null;
 
   const roomSel = $('#bdRoom'), msgEl = $('#bdMsg');   // held: notFound() detaches them, writes to them are harmless
-  const msg = text => { msgEl.textContent = text; };
+  const msg = (text, lvl) => global.FarmUi.say(msgEl, lvl || (text ? 'good' : 'info'), text);
+  const fail = err => msg(errText(err), 'error');
 
   function notFound() {
     const page = document.createElement('div'); page.className = 'bd-page';
@@ -224,7 +315,7 @@ async function mountDetail(el, id, live) {
   function paint(b) {
     batch = b;
     const clock = global.FarmUi.farmClock();
-    const where = b.state === 'received' ? 'Received' : b.state === 'placed' ? `In ${b.room_name}` : 'Cleared';
+    const where = b.state === 'received' ? 'New' : b.state === 'placed' ? `In ${b.room_name}` : 'Finished';
     $('#bdHead').textContent = `${cropName(b.crop)} · ${b.strain || '–'} · ${where}`;
     const wait = $('#bdWait');
     wait.hidden = b.placed_at == null;
@@ -261,7 +352,7 @@ async function mountDetail(el, id, live) {
     try { b = await global.FarmApi.getBatch(id); }
     catch (err) {
       if (!live() || mine !== gen) return false;
-      if (err && err.name === 'ApiError' && err.status === 404) notFound(); else msg(errText(err));
+      if (err && err.name === 'ApiError' && err.status === 404) notFound(); else fail(err);
       return false;
     }
     if (!live() || mine !== gen) return false;
@@ -277,7 +368,12 @@ async function mountDetail(el, id, live) {
       if (!live()) return;
       if (await load()) msg(okText || '');
     } catch (err) {
-      if (live()) { msg(errText(err)); if (reloadOnError) await load(); }
+      if (live()) {
+        const p = global.FarmUi.plainError(err, LABELS);
+        msg(p.text, 'error');
+        global.FarmUi.markFields($('#bdForm'), p.fields);
+        if (reloadOnError) await load();
+      }
     } finally {
       if (live()) button.disabled = false;
     }
@@ -297,7 +393,8 @@ async function mountDetail(el, id, live) {
       const current = DATE.includes(k) && batch[k] != null ? dateToSeconds(secondsToDate(batch[k])) : batch[k];
       if (all[k] !== (current === undefined ? null : current)) body[k] = all[k];
     }
-    if (Object.keys(body).length === 0) { msg('Nothing to change.'); return; }
+    global.FarmUi.markFields($('#bdForm'), {});
+    if (Object.keys(body).length === 0) { msg('Nothing to change.', 'info'); return; }
     act($('#bdSave'), () => global.FarmApi.updateBatch(id, body), 'Saved.');
   });
 
@@ -305,7 +402,7 @@ async function mountDetail(el, id, live) {
     act($('#bdPlace'), () => global.FarmApi.placeBatch(id, { room_id: Number($('#bdRoom').value) })));
 
   $('#bdClear').addEventListener('click', () => {
-    if (!global.confirm('Clear this batch? Crates can no longer be added.')) return;
+    if (!global.confirm(CONFIRM_FINISH)) return;
     act($('#bdClear'), () => global.FarmApi.clearBatch(id));
   });
 
@@ -317,7 +414,7 @@ async function mountDetail(el, id, live) {
       await global.FarmApi.deleteBatch(id);
       if (live()) global.location.hash = '#/batches';
     } catch (err) {
-      if (live()) { msg(errText(err)); button.disabled = false; }
+      if (live()) { fail(err); button.disabled = false; }
     }
   });
 
@@ -330,7 +427,7 @@ async function mountDetail(el, id, live) {
   });
 
   const [rooms] = await Promise.all([
-    global.FarmApi.listRooms().catch(err => { if (live()) msg(errText(err)); return []; }),
+    global.FarmApi.listRooms().catch(err => { if (live()) fail(err); return []; }),
     load(),
   ]);
   if (!live()) return;

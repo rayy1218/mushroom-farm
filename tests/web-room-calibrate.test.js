@@ -17,7 +17,7 @@ test('CB1 registration', () => {
   assert.equal(typeof tab.mount, 'function');
   assert.equal(typeof tab.unmount, 'function');
   assert.deepEqual(Object.keys(tab.helpers).sort(), ['farmMidnight', 'farmDate', 'defaultRange', 'rangeQuery', 'logFromReadings', 'historyGaps',
-    'envBaseFor', 'paramsOfRun', 'startParams', 'defaultBlocks', 'parseBlocks', 'calibBody', 'sameMachines', 'staleText',
+    'envBaseFor', 'paramsOfRun', 'startParams', 'defaultBlocks', 'parseBlocks', 'fitBlockReason', 'calibBody', 'sameMachines', 'staleText',
     'pairSeries', 'differences', 'differenceLines', 'predictedRows', 'realRows'].sort());
   assert.doesNotThrow(() => tab.unmount());
 });
@@ -136,9 +136,22 @@ test('CB12 lines', () => {
   assert.equal(H.realRows([RD(1000), RD(8200)], 1000)[1].t, 7200);
 });
 
+test('CB14 fitBlockReason: the visible reason a disabled Fit gives', () => {
+  const ok = { loaded: true, blocks: 600, hasRows: true, hasEnv: true, source: 'history', readings: 700 };
+  assert.equal(H.fitBlockReason(ok), '');
+  assert.equal(H.fitBlockReason({ ...ok, loaded: false }), 'Loading this room…');
+  assert.equal(H.fitBlockReason({ ...ok, blocks: null }), 'Enter the number of blocks in the room during the log.');
+  assert.match(H.fitBlockReason({ ...ok, blocks: null, hasRows: false, readings: 90 }), /^Needs at least 1 hour/);   // the readings come first: they take time
+  assert.equal(H.fitBlockReason({ ...ok, hasRows: false, readings: 90 }), 'Needs at least 1 hour of readings. Come back in about 15 min.');
+  assert.equal(H.fitBlockReason({ ...ok, hasRows: false, readings: 0 }), 'Needs at least 1 hour of readings. Come back in about 60 min.');
+  assert.equal(H.fitBlockReason({ ...ok, hasRows: false, readings: null }), 'Load the room history first.');
+  assert.equal(H.fitBlockReason({ ...ok, hasRows: false, source: 'csv', readings: null }), 'Load a CSV log first.');
+  assert.equal(H.fitBlockReason({ ...ok, hasEnv: false }), 'The room values are not ready yet.');
+});
+
 test('CB13 a late reply of an unmounted mount never touches the next mount', async () => {
   const stubs = {};
-  const stub = () => ({ value: '', textContent: '', hidden: false, disabled: false, dataset: {}, children: [], addEventListener() {},
+  const stub = () => ({ value: '', textContent: '', hidden: false, disabled: false, dataset: {}, children: [], classList: { add() {} }, addEventListener() {},
     setAttribute() {}, replaceChildren() {}, append() {}, after() {}, remove() {} });
   const el = { set innerHTML(v) {}, querySelector: s => (stubs[s] ||= stub()), querySelectorAll: () => [] };
   globalThis.document = { createElement: () => stub() };

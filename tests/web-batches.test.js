@@ -132,3 +132,45 @@ test('BT7 an unknown batch shows its page and mount does not reject', async t =>
   assert.equal(el.children[0].children[0].textContent, 'This batch does not exist.');
   registered.batches.unmount();
 });
+
+test('BT8 the new-batch form: a 400 marks the fields, a save goes to the new batch', async t => {
+  globalThis.document = { createElement: mk };
+  globalThis.location = { hash: '#/batches' };
+  const api = globalThis.FarmApi, saved = { ...api };
+  t.after(() => { Object.assign(api, saved); delete globalThis.document; delete globalThis.location; registered.batches.unmount(); });
+  api.listBatches = async () => [];
+  const el = mkEl();
+  await registered.batches.mount(el, {});
+  const form = el.querySelector('#btForm');
+  const submit = () => form.listeners.submit({ preventDefault() {} });
+  api.createBatch = async () => { throw new api.ApiError(400, 'Invalid batch', ['block_count: required', 'block_wet_kg: must be above 0']); };
+  await submit();
+  const msg = el.querySelector('#btMsg');
+  assert.equal(msg.textContent, 'Check the marked fields.');
+  assert.equal(msg.dataset.lvl, 'error');
+  assert.equal(msg.hidden, false);
+  assert.equal(globalThis.location.hash, '#/batches');
+  api.createBatch = async body => { assert.equal(body.crop, el.querySelector('#btCrop').value); return { id: 7 }; };
+  await submit();
+  assert.equal(globalThis.location.hash, '#/batches/7');
+});
+
+test('BT9 Finish batch asks first; the confirm text is the C11 text', async t => {
+  globalThis.document = { createElement: mk };
+  const api = globalThis.FarmApi, saved = { ...api }, prevConfirm = globalThis.confirm;
+  t.after(() => { Object.assign(api, saved); delete globalThis.document; globalThis.confirm = prevConfirm; registered.batches.unmount(); });
+  let cleared = 0, asked = null, answer = false;
+  api.getBatch = async () => structuredClone({ ...BATCH, state: 'placed', placed_at: BATCH.received_at, room_name: 'Room 1' });
+  api.listRooms = async () => [];
+  api.clearBatch = async () => { cleared++; return {}; };
+  globalThis.confirm = text => { asked = text; return answer; };
+  const el = mkEl();
+  await registered.batches.mount(el, { id: 1 });
+  assert.equal(el.querySelector('#bdHead').textContent, 'Grey oyster · PO-2 · In Room 1');
+  await el.querySelector('#bdClear').listeners.click();
+  assert.equal(asked, 'Finish this batch? Its blocks are thrown out and it takes no more crates.');
+  assert.equal(cleared, 0);
+  answer = true;
+  await el.querySelector('#bdClear').listeners.click();
+  assert.equal(cleared, 1);
+});

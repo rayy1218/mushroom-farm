@@ -49,6 +49,7 @@ function dateOf(t) {
 const RECORD_HTML = `
 <div class="hv-page">
   <h2 id="hvRoom"></h2>
+  <a class="btn-link" id="hvBack" href="#/rooms" hidden></a>
   <div class="hv-pick" id="hvPick"></div>
   <p class="hv-msg" id="hvNone" hidden>No batch in this room. Ask the office to place one.</p>
   <p class="hv-picked" id="hvPicked" hidden></p>
@@ -106,6 +107,10 @@ async function mountRecord(el, roomId, live) {
     if (!picked()) pickedId = batches.length === 1 ? batches[0].id : null;
     const b = picked();
     $('#hvRoom').textContent = data.room.name;
+    const back = $('#hvBack');
+    back.textContent = `Back to ${data.room.name}`;
+    back.href = `#/rooms/${data.room.id != null ? data.room.id : roomId}/live`;
+    back.hidden = false;
     $('#hvNone').hidden = batches.length !== 0;
     $('#hvPick').hidden = b !== null || batches.length < 2;
     $('#hvChange').hidden = !(b && batches.length > 1);
@@ -182,7 +187,7 @@ async function mountRecord(el, roomId, live) {
       kgEl.value = '';
       setMsg('', false);
       await load();
-      if (live()) kgEl.focus();
+      if (live()) { global.FarmUi.say(msgEl, 'good', `Saved ✓ ${kg} kg`); kgEl.focus(); }
     } catch (err) {
       if (!live()) return;
       const api = err && err.name === 'ApiError';

@@ -239,7 +239,7 @@ function updateUi() {
   el.querySelector('#fanIn').classList.toggle('on', a.air);
   el.querySelector('#fanOut').classList.toggle('on', a.air);
   el.querySelector('#circUnit').classList.toggle('on', a.circ);
-  UI.set('mimicStage', `${CC.CROPS[cfg.crop].name} · ${CC.STAGES[cfg.stage]} · live`);
+  UI.set('mimicStage', `${CC.CROPS[cfg.crop].name} · ${CC.STAGES[cfg.stage]} · SANDBOX`);
   const dist = [v.door && 'door open', v.workers && `${v.workers} workers`, v.watering && 'floor wet', v.weather.rain && 'rain', v.weather.cloudy && 'cloudy', v.wetSensor && 'RH sensor wet'].filter(Boolean);
   UI.set('mimicNote', dist.join(' · '));
 
@@ -562,7 +562,7 @@ function renderTable(raw) {
 const MIMIC_SVG = `
     <svg class="mimic-svg" viewBox="0 0 1000 420" role="img" aria-labelledby="mimicTitle mimicDesc">
       <title id="mimicTitle">Room schematic</title>
-      <desc id="mimicDesc">Live view of the fruiting room: the growing rack, the three sensors, the air conditioner, the fogger, the circulation fan, and the air exchange (a filtered intake fan and an exhaust fan; their dampers close when they are off).</desc>
+      <desc id="mimicDesc">Sandbox view of a fruiting room: the growing rack, the three sensors, the air conditioner, the fogger, the circulation fan, and the air exchange (a filtered intake fan and an exhaust fan; their dampers close when they are off).</desc>
       <defs>
         <pattern id="hatch" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
           <rect class="hatch-bg" width="7" height="7"/><line class="hatch-line" x1="0" y1="0" x2="0" y2="7"/>
@@ -756,7 +756,7 @@ const MARKUP = `
 </div>
 <figure class="card sim mimic">
   <div class="mimic-head">
-    <span class="eyebrow" id="mimicStage">Fruiting room · live</span>
+    <span class="eyebrow" id="mimicStage">Fruiting room · SANDBOX</span>
     <span class="tag" id="mimicNote"></span>
   </div>
   <div class="mimic-body">
@@ -939,7 +939,7 @@ const MARKUP = `
     <select id="simRoom" disabled></select>
     <button class="btn" id="simRoomLoad" disabled>Load settings from room</button>
     <button class="btn" id="simRoomSave" disabled>Save settings to room</button>
-    <span class="tag" id="simRoomMsg" role="status" aria-live="polite"></span>
+    <span class="alert" id="simRoomMsg" role="status" aria-live="polite" hidden></span>
   </div>
 </div>
 <div class="ctl-section">
@@ -1170,7 +1170,10 @@ function wire() {
     chartsDirty = true;
   });
   $('#pauseBtn').addEventListener('click', e => { paused = !paused; e.target.textContent = paused ? 'Resume' : 'Pause'; });
-  $('#resetBtn').addEventListener('click', () => { reset(); alarmKey = ''; exhKey = ''; updateLadderLive(); updateUi(); });
+  $('#resetBtn').addEventListener('click', () => {
+    if (!global.confirm('Reset the test bench? The simulated room starts again from day 1.')) return;
+    reset(); alarmKey = ''; exhKey = ''; updateLadderLive(); updateUi();
+  });
   $('#tableBtn').addEventListener('click', e => {
     const card = $('#tableCard'); card.hidden = !card.hidden;
     e.target.setAttribute('aria-expanded', String(!card.hidden));
@@ -1348,6 +1351,7 @@ function wireRoomLink(params) {
   const gen = ++roomGen;
   const $ = sel => el.querySelector(sel);
   const sel = $('#simRoom'), bLoad = $('#simRoomLoad'), bSave = $('#simRoomSave'), msg = $('#simRoomMsg');
+  const say = (lvl, text) => global.FarmUi.say(msg, lvl, text);
   const setBusy = on => { sel.disabled = on; bLoad.disabled = on; bSave.disabled = on; };
   link = createRoomLink({
     api: global.FarmApi, diffSettings: global.FarmSettingsPanel.diffSettings, safeSettings: global.FarmSettingsPanel.safeSettings,
@@ -1367,26 +1371,26 @@ function wireRoomLink(params) {
     setBusy(true);
     const text = await link[name](room);
     if (text === null || gen !== roomGen) return;
-    msg.textContent = text;
+    say('info', text);
     setBusy(false);
   };
-  sel.addEventListener('change', () => { pickedRoom = Number(sel.value); msg.textContent = ''; });
+  sel.addEventListener('change', () => { pickedRoom = Number(sel.value); say('info', ''); });
   bLoad.addEventListener('click', () => act('load'));
   bSave.addEventListener('click', () => act('save'));
   global.FarmApi.listRooms().then(list => {
     if (gen !== roomGen) return;
     rooms = list;
-    if (!list.length) { msg.textContent = 'No rooms on the farm server. Create one under Rooms.'; return; }
+    if (!list.length) { say('info', 'No rooms on the farm server. Create one under Rooms.'); return; }
     for (const r of list) { const o = document.createElement('option'); o.value = String(r.id); o.textContent = r.name; sel.append(o); }
     const wanted = params && params.roomId != null ? Number(params.roomId) : null;
     const fromParams = wanted != null && list.some(r => r.id === wanted);
     const id = fromParams ? wanted : list.some(r => r.id === pickedRoom) ? pickedRoom : list[0].id;
     sel.value = String(id); pickedRoom = id;
-    setBusy(false); msg.textContent = '';
+    setBusy(false); say('info', '');
     if (fromParams) act('load');
   }, err => {
     if (gen !== roomGen) return;
-    msg.textContent = global.FarmUi.errorText(err);
+    say('error', global.FarmUi.errorText(err));
   });
 }
 

@@ -50,7 +50,7 @@ test('W2 progressText by kind', () => {
 test('W3 runRows: one row per aircond run, with tags', () => {
   const rows = helpers.runRows(down());
   assert.deepEqual(rows.map(r => r.aircond), ['1 hp', '1.5 hp', '2 hp', '2.5 hp']);
-  assert.deepEqual(rows.map(r => r.tags), [[], [], ['smallest that works'], ['buy this']]);
+  assert.deepEqual(rows.map(r => r.tags), [['your aircond'], [], ['smallest that works'], ['buy this']]);
   assert.deepEqual(rows.map(r => r.result), ['too small', 'too small', 'holds it', 'holds it']);
   assert.deepEqual([rows[0].fruiting, rows[0].worst, rows[0].kwh, rows[0].rm], ['60 %', 'fruiting 1: 60 %', '0.04', '0.06']);
 });
@@ -103,7 +103,7 @@ test('W6 the progress bar is the fill span first, then the text span (C5 3.8)', 
 test('W7 after a successful save the air note is empty, not repainted from stale settings', async () => {
   const made = stubDom();
   globalThis.FarmApi = { saveEquipment: async (id, eq) => ({ room_id: id, ...eq }) };
-  globalThis.FarmUi = { errorText: e => e.message };
+  globalThis.FarmUi = { errorText: e => e.message, say: (el, lvl, text) => { el.textContent = text; el.dataset = { lvl }; } };
   const got = [];
   const host = hostEl();
   const card = globalThis.FarmEquipmentCard.mount(host, opts({ equipment: { ...EQ.DEFAULTS, air_m3h: 1200 }, onEquipment: e => got.push(e) }));
@@ -120,7 +120,7 @@ test('W8 a second mount into the same element replaces the first; the first neve
   const made = stubDom();
   let release;
   globalThis.FarmApi = { saveEquipment: (id, eq) => new Promise(r => { release = () => r({ room_id: id, ...eq }); }) };
-  globalThis.FarmUi = { errorText: e => e.message };
+  globalThis.FarmUi = { errorText: e => e.message, say: (el, lvl, text) => { el.textContent = text; el.dataset = { lvl }; } };
   const host = hostEl(), first = [], second = [];
   globalThis.FarmEquipmentCard.mount(host, opts({ onEquipment: e => first.push(e) }));
   made[0].querySelector('#eqSave').listeners.click();
@@ -139,7 +139,7 @@ test('W9 the aircond Buy cell is empty when the recommended size is the own size
 
 test('W10 mount survives settings that are missing, and Check stays enabled for an impossible mix and says why', () => {
   const made = stubDom();
-  globalThis.FarmApi = {}; globalThis.FarmUi = {};
+  globalThis.FarmApi = {}; globalThis.FarmUi = { say: (el, lvl, text) => { el.textContent = text; } };
   const mix = [{ crop: 'lionsmane', blocks: 500 }, { crop: 'pink', blocks: 500 }];
   globalThis.FarmEquipmentCard.mount(hostEl(), opts({ runInputs: () => ({ settings: undefined, mix }) }));
   assert.equal(made[0].querySelector('#eqCheck').disabled, false);
@@ -150,4 +150,37 @@ test('W10 mount survives settings that are missing, and Check stays enabled for 
   made[0].querySelector('#eqCheck').listeners.click();
   assert.equal(made[0].querySelector('#eqMsg').textContent, 'This crop mix cannot share one room.');
   assert.equal(made[0].querySelector('#eqCheck').disabled, false);
+});
+
+test('W11 acVerdictText: "Your <size> is big enough." when the room already has enough, never a buy line for its own size', () => {
+  const own = EQ.runCheck(room({ ac_hp: 2.5 }), lm(2500), { runCycleSteps: runner(p => (hpOf(p) >= 2 ? {} : { fails: ['temperature too high'], inT: 60 })) });
+  assert.equal(own.ac.verdict, 'enough');
+  assert.match(helpers.acVerdictText(own), /^Your 2\.5 hp is big enough\. A smaller 2 hp would also work\./);
+  assert.equal(helpers.runRows(own).some(r => r.hp === own.ac.own && r.tags.includes('buy this')), false);
+  assert.ok(helpers.runRows(own).find(r => r.hp === own.ac.own).tags.includes('your aircond'));
+  const big = EQ.runCheck(room({ ac_hp: 4 }), lm(2500), { runCycleSteps: runner(p => (hpOf(p) >= 2 ? {} : { fails: ['temperature too high'], inT: 60 })) });
+  assert.match(helpers.acVerdictText(big), /^Your 4 hp is big enough\. A smaller 2 hp would also work\./);
+  assert.equal(helpers.acVerdictText(down()), down().ac.text);   // too small: the report's own text
+  const host = { children: [], replaceChildren(...c) { this.children = c; } };
+  globalThis.document = { createElement: tag => { const n = { tag, children: [], textContent: '', className: '', style: {}, append(...c) { this.children.push(...c); } }; return n; } };
+  globalThis.FarmEquipmentCard.renderReport(host, own);
+  assert.ok(host.children[0].children[0].textContent.startsWith('Your 2.5 hp is big enough.'));
+  delete globalThis.document;
+});
+
+test('W12 emptyMixReason', () => {
+  assert.equal(helpers.emptyMixReason([]), 'Add a mushroom and the number of blocks first.');
+  assert.equal(helpers.emptyMixReason([{ crop: 'oyster', blocks: 0 }]), 'Add a mushroom and the number of blocks first.');
+  assert.equal(helpers.emptyMixReason(undefined), 'Add a mushroom and the number of blocks first.');
+  assert.equal(helpers.emptyMixReason(lm(5)), '');
+});
+
+test('W13 Check with an empty mix says what to add and does not run', async () => {
+  const made = stubDom();
+  globalThis.FarmApi = {}; globalThis.FarmUi = { say: (el, lvl, text) => { el.textContent = text; el.dataset = { lvl }; } };
+  globalThis.FarmEquipmentCard.mount(hostEl(), opts({ runInputs: () => ({ settings: { airM3h: 900 }, mix: [] }) }));
+  made[0].querySelector('#eqCheck').listeners.click();
+  await new Promise(r => setTimeout(r, 10));
+  assert.equal(made[0].querySelector('#eqMsg').textContent, 'Add a mushroom and the number of blocks first.');
+  assert.equal(made[0].querySelector('#eqResult').children, undefined);
 });

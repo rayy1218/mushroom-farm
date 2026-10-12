@@ -93,6 +93,19 @@ function staleText(applied) {
   return `The applied calibration (${farmDate(applied.run_at)}) was fitted with other machines than this room has now. Fit again so Simulate uses room values that match the machines.`;
 }
 
+// C11 6: why Fit is off, or '' when it can run. st: { loaded, blocks (a number or null), hasRows, hasEnv, source, readings (a count or null) }.
+const MIN_READINGS = 120;   // one hour at one reading per 30 s
+function fitBlockReason(st) {
+  if (!st.loaded) return 'Loading this room…';
+  if (!st.hasRows) {
+    if (st.source !== 'history') return 'Load a CSV log first.';
+    if (st.readings !== null && st.readings < MIN_READINGS) return `Needs at least 1 hour of readings. Come back in about ${Math.ceil((MIN_READINGS - st.readings) / 2)} min.`;
+    return 'Load the room history first.';
+  }
+  if (st.blocks === null) return 'Enter the number of blocks in the room during the log.';
+  return st.hasEnv ? '' : 'The room values are not ready yet.';
+}
+
 function pairSeries(series, buckets, start) {
   const byT = new Map(buckets.map(b => [b.t, b])), out = [];
   for (const s of [...series].sort((x, y) => x.h - y.h)) {
@@ -121,12 +134,12 @@ function predictedRows(series) { return series.map(s => ({ t: s.h * 3600, T: s.T
 function realRows(buckets, start) { return buckets.map(b => ({ t: b.t - start, T: b.T, RH: b.RH, CO2: b.CO2 })); }
 
 const helpers = { farmMidnight, farmDate, defaultRange, rangeQuery, logFromReadings, historyGaps, envBaseFor, paramsOfRun, startParams,
-  defaultBlocks, parseBlocks, calibBody, sameMachines, staleText, pairSeries, differences, differenceLines, predictedRows, realRows };
+  defaultBlocks, parseBlocks, fitBlockReason, calibBody, sameMachines, staleText, pairSeries, differences, differenceLines, predictedRows, realRows };
 const EXPLAIN = "Calibrate = make the virtual room behave like this real room. The room's recorded history is already on the farm server: pick a few days and press Fit. The app replays those days in its virtual room and adjusts four room values until it matches what really happened. Then Simulate gives answers for this room, not an average one.";
 
 const MARKUP = `
 <p class="explain"></p>
-<p class="tag" id="cbStale" hidden></p>
+<p class="alert" id="cbStale" hidden></p>
 <section class="card" aria-labelledby="hCbFit">
   <h3 id="hCbFit">Fit the room values</h3>
   <div class="seg" id="cbSource" role="group" aria-label="Source of the log">
@@ -148,10 +161,13 @@ const MARKUP = `
   <div class="cal-row">
     <label for="calBlocks">Blocks in the room during the log</label>
     <input type="number" id="calBlocks" min="1" max="200000" step="1">
-    <button type="button" class="btn" id="calFit" disabled>Fit</button>
-    <button type="button" class="btn" id="calApply" disabled>Save and apply</button>
+    <div class="btn-row">
+      <button type="button" class="btn btn-primary" id="calFit" disabled>Fit</button>
+      <button type="button" class="btn" id="calApply" disabled>Save and apply</button>
+    </div>
+    <p class="field-help" id="calFitHelp"></p>
   </div>
-  <p class="tag" id="calMsg" role="status"></p>
+  <p class="alert" id="calMsg" role="status" hidden></p>
   <table class="fit-table" id="cbTable"></table>
   <div class="cal-charts" id="cbCharts"></div>
 </section>
@@ -164,7 +180,7 @@ const MARKUP = `
   </div>
   <div class="cal-charts" id="pvCharts"></div>
   <div id="pvDiff"></div>
-  <p class="tag" id="pvMsg" role="status"></p>
+  <p class="alert" id="pvMsg" role="status" hidden></p>
 </section>`;
 
 let gen = 0, alive = false;
@@ -176,13 +192,14 @@ function mount(el, ctx) {
   const id = ctx.id, now = () => Math.floor(Date.now() / 1000);
   let room = ctx.room(), mixRows = [], runs = [], equipment = null, settings = null;
   let source = 'history', rows = null, range = null, envBase = null, params = null, base = null, fit = null;
+  let readingCount = null;
   let busy = false, pendingRebuild = false, loaded = false, cycles = [], seq = 0, cmpSeq = 0;
 
   el.innerHTML = MARKUP;
   const $ = sel => el.querySelector(sel);
   $('.explain').textContent = EXPLAIN;
-  const msg = text => { $('#calMsg').textContent = text; };
-  const pvMsg = text => { $('#pvMsg').textContent = text; };
+  const msg = (text, lvl) => UI.say($('#calMsg'), lvl || 'info', text);
+  const pvMsg = (text, lvl) => UI.say($('#pvMsg'), lvl || 'info', text);
   const fmtRange = defaultRange(now());
   $('#cbFrom').value = fmtRange.from; $('#cbTo').value = fmtRange.to;
 
@@ -191,13 +208,15 @@ function mount(el, ctx) {
     const ctrl = ['#cbLoad', '#calFile', '#calBlocks'];
     for (const sel of ctrl) $(sel).disabled = busy;
     for (const b of el.querySelectorAll('#cbSource button')) b.disabled = busy;
-    $('#calFit').disabled = busy || !loaded || blocksNow() === null || !rows || !envBase;
+    const reason = busy ? '' : fitBlockReason({ loaded, blocks: blocksNow(), hasRows: !!rows, hasEnv: !!envBase, source, readings: readingCount });
+    $('#calFit').disabled = busy || reason !== '';
+    $('#calFitHelp').textContent = reason;
     $('#calApply').disabled = busy || !fit;
   }
   function paintWarning() {
     const applied = runs.find(r => r.applied === true), box = $('#cbStale');
     const stale = !!applied && !sameMachines(applied.equipment || null, equipment);
-    box.hidden = !stale; box.textContent = stale ? staleText(applied) : '';
+    UI.say(box, 'info', stale ? staleText(applied) : '');
   }
   function renderTable() {
     const table = $('#cbTable'), fitP = fit && fit.params;
@@ -226,7 +245,7 @@ function mount(el, ctx) {
     fit = null; base = null;
     const blocks = blocksNow();
     if (blocks === null) {
-      msg('Enter the number of blocks in the room during the log.');
+      msg('Enter the number of blocks in the room during the log.', 'info');
       params = null; renderTable(); syncButtons(); return;
     }
     if (loaded) {
@@ -234,7 +253,7 @@ function mount(el, ctx) {
         envBase = envBaseFor(room, blocks, rows || [], equipment, settings.airM3h);
         params = startParams(runs, envBase);
         if (rows) base = CAL.replay(rows, envBase, params);
-      } catch (err) { msg(err.message); envBase = null; params = null; base = null; }
+      } catch (err) { msg(err.message, 'error'); envBase = null; params = null; base = null; }
     }
     renderTable(); syncButtons();
   }
@@ -243,36 +262,37 @@ function mount(el, ctx) {
   $('#cbSource').addEventListener('click', e => {
     const b = e.target.closest && e.target.closest('button[data-src]');
     if (!b || busy) return;
-    source = b.dataset.src; rows = null; range = null; fit = null; seq++;
+    source = b.dataset.src; rows = null; range = null; fit = null; readingCount = null; seq++;
     for (const x of el.querySelectorAll('#cbSource button')) x.setAttribute('aria-pressed', String(x === b));
     $('#cbHistory').hidden = source !== 'history'; $('#cbCsv').hidden = source !== 'csv';
     msg(''); rebuild();
   });
   $('#cbLoad').addEventListener('click', async () => {
     const q = rangeQuery($('#cbFrom').value, $('#cbTo').value, now());
-    if (q.error) { msg(q.error); return; }
+    if (q.error) { msg(q.error, 'error'); return; }
     const mySeq = ++seq;
     let readings;
     try { readings = await FA.getReadings(id, { from: q.from, to: q.to }); }
-    catch (err) { if (live() && mySeq === seq) msg(UI.errorText(err)); return; }
+    catch (err) { if (live() && mySeq === seq) msg(UI.errorText(err), 'error'); return; }
     if (!live() || mySeq !== seq) return;
-    if (readings.length < 120) { rows = null; range = null; rebuild(); msg('Not enough readings in these days (at least 1 h).'); return; }
+    readingCount = readings.length;
+    if (readings.length < MIN_READINGS) { rows = null; range = null; rebuild(); msg('Not enough readings in these days (at least 1 h).', 'error'); return; }
     rows = logFromReadings(readings);
     const ts = readings.map(r => r.t);
     range = { from: Math.min(...ts), to: Math.max(...ts) };
     const g = historyGaps(readings);
     const text = `${q.days} ${q.days === 1 ? 'day' : 'days'} · ${readings.length} readings` + (g > 0 ? ` The range has ${g} gap(s) (the server was stopped); the fit keeps the machines unchanged through them.` : '');
-    msg(text); rebuild();
+    msg(text, 'good'); rebuild();
   });
   $('#calFile').addEventListener('change', e => {
     const f = e.target.files[0]; if (!f) return;
     f.text().then(txt => {
       if (!live()) return;
       let parsed;
-      try { parsed = CAL.parseCsv(txt); } catch (err) { msg(`The file cannot be used: ${err.message}`); return; }
+      try { parsed = CAL.parseCsv(txt); } catch (err) { msg(`The file cannot be used: ${err.message}`, 'error'); return; }
       rows = parsed; range = null;
-      msg(`${f.name}: ${rows.length} rows, ${(rows[rows.length - 1].t / 3600).toFixed(1)} h.`); rebuild();
-    }).catch(err => { if (live()) msg(`The file cannot be read: ${err && err.message}`); });
+      msg(`${f.name}: ${rows.length} rows, ${(rows[rows.length - 1].t / 3600).toFixed(1)} h.`, 'good'); rebuild();
+    }).catch(err => { if (live()) msg(`The file cannot be read: ${err && err.message}`, 'error'); });
   });
   $('#calBlocks').addEventListener('input', () => { if (!busy) rebuild(); });
 
@@ -285,10 +305,10 @@ function mount(el, ctx) {
         msg(`Fitting: run ${p.evals} of up to ${p.maxEval}, error score ${p.score.toFixed(2)}…`);
       });
       if (!live()) return;
-      fit = res; msg(`Fit done after ${fit.evals} simulation runs. The air leakage is the least certain value.`);
+      fit = res; msg(`Fit done after ${fit.evals} simulation runs. The air leakage is the least certain value.`, 'good');
     } catch (err) {
       if (!live()) return;
-      msg(`The fit stopped: ${err && err.message}`);
+      msg(`The fit stopped: ${err && err.message}`, 'error');
     } finally { if (live()) { busy = false; if (pendingRebuild) { pendingRebuild = false; rebuild(); } else renderTable(); syncButtons(); } }
   });
   $('#calApply').addEventListener('click', async () => {
@@ -301,9 +321,9 @@ function mount(el, ctx) {
       runs = [applied, ...runs.filter(r => r.id !== applied.id).map(r => ({ ...r, applied: false }))];
       params = paramsOfRun(applied);
       base = CAL.replay(rows, envBase, params); fit = null;
-      msg('Applied. Simulate now uses these values.');
+      msg('Applied. Simulate now uses these values.', 'good');
       paintWarning(); renderTable();
-    } catch (err) { if (live()) msg(UI.errorText(err)); }
+    } catch (err) { if (live()) msg(UI.errorText(err), 'error'); }
     finally { if (live()) { busy = false; if (pendingRebuild) { pendingRebuild = false; rebuild(); } syncButtons(); } }
   });
 
@@ -348,19 +368,19 @@ function mount(el, ctx) {
       global.FarmCharts.drawCalibCharts(charts, { rows: real, base: { series: predictedRows(series).filter(p => p.t <= last) }, fit: null,
         labels: { rows: 'Real (sensors)', base: `Predicted (run ${runId})` }, dashed: 'base' });
       diff.replaceChildren(...differenceLines(differences(pairSeries(series, buckets, start))).map(t => { const p = document.createElement('p'); p.textContent = t; return p; }));
-    } catch (err) { if (live() && mySeq === cmpSeq) pvMsg(UI.errorText(err)); }
+    } catch (err) { if (live() && mySeq === cmpSeq) pvMsg(UI.errorText(err), 'error'); }
   }
   $('#pvRun').addEventListener('change', () => { cmpSeq++; pvMsg(''); fillStart(); const info = pvInfo(); if (info && info.real_start) compare(); });
   $('#pvUse').addEventListener('click', async () => {
     const info = pvInfo(); if (!info) return;
     const start = farmMidnight($('#pvStart').value);
-    if (start === null) { pvMsg('Pick the day this cycle really started.'); return; }
+    if (start === null) { pvMsg('Pick the day this cycle really started.', 'error'); return; }
     try {
       const upd = await FA.updateSimulation(id, info.id, { real_start: start });
       if (!live()) return;
       const i = cycles.findIndex(c => c.id === info.id); if (i >= 0) cycles[i] = upd;
       pvMsg(''); compare();
-    } catch (err) { if (live()) pvMsg(UI.errorText(err)); }
+    } catch (err) { if (live()) pvMsg(UI.errorText(err), 'error'); }
   });
 
   ctx.on('settings', d => { settings = d.settings; if (busy) { pendingRebuild = true; return; } rebuild(); });
@@ -371,7 +391,7 @@ function mount(el, ctx) {
     const [mix, cals, eq, st, sims] = await Promise.allSettled([FA.getMix(id), FA.listCalibrations(id), FA.getEquipment(id), FA.getSettings(id), FA.listSimulations(id, { limit: 200 })]);
     if (!live()) return;
     const failed = [mix, cals, eq, st].find(x => x.status === 'rejected');
-    if (failed) { msg(UI.errorText(failed.reason)); }
+    if (failed) { msg(UI.errorText(failed.reason), 'error'); }
     else {
       mixRows = mix.value; runs = cals.value; equipment = eq.value || null; settings = st.value;
       loaded = true;
@@ -382,7 +402,7 @@ function mount(el, ctx) {
     if (sims.status === 'fulfilled') {
       cycles = sims.value.filter(r => r.kind === 'cycle' && r.days !== null).sort((a, b) => b.created_at - a.created_at || b.id - a.id);
       paintList();
-    } else { cycles = []; paintList(); pvMsg(UI.errorText(sims.reason)); }
+    } else { cycles = []; paintList(); pvMsg(UI.errorText(sims.reason), 'error'); }
   })();
 }
 function unmount() {

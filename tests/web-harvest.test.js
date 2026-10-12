@@ -117,3 +117,22 @@ test('HV7 a 404 on the reload after a saved crate does not throw, and Enter in #
   assert.ok(prevented);
   registered.harvest.unmount();
 });
+
+test('HV8 after a saved crate: "Saved ✓ <kg> kg" and a link back to the room', async t => {
+  globalThis.document = { createElement: mk };
+  const api = globalThis.FarmApi, saved = { ...api };
+  t.after(() => { Object.assign(api, saved); delete globalThis.document; registered.harvest.unmount(); });
+  api.getRoomHarvest = async () => roomData(3, 'Room 3');
+  api.addCrate = async () => ({});
+  const el = mkEl();
+  await registered.harvest.mount(el, { view: 'record', id: 3 });
+  const back = el.querySelector('#hvBack');
+  assert.equal(back.textContent, 'Back to Room 3');
+  assert.equal(back.href, '#/rooms/3/live');
+  assert.equal(back.hidden, false);
+  el.querySelector('#hvKg').value = '12,5';
+  await el.querySelector('#hvAdd').click();
+  const msg = el.querySelector('#hvMsg');
+  assert.equal(msg.textContent, 'Saved ✓ 12.5 kg');
+  assert.equal(msg.dataset.lvl, 'good');
+});
