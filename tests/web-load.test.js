@@ -48,11 +48,13 @@ test('L4: the modules and the room tabs register; FarmRoomTabs and FarmEquipment
     require('../web/room-equipment.js');
     require('../web/room-simulate.js');
     require('../web/room-calibrate.js');
+    require('../web/overview.js');
+    require('../web/settings-page.js');
     require('../web/batches.js');
     require('../web/harvest.js');
     require('../web/simulator.js');
   });
-  assert.deepEqual(recorded.map(r => r.name), ['rooms', 'batches', 'harvest', 'simulator']);
+  assert.deepEqual(recorded.map(r => r.name), ['rooms', 'overview', 'settings', 'batches', 'harvest', 'simulator']); // C12: overview and settings
   for (const r of recorded) {
     assert.equal(typeof r.mod.mount, 'function', r.name);
     assert.equal(typeof r.mod.unmount, 'function', r.name);
