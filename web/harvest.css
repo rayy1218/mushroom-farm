@@ -23,9 +23,8 @@ body[data-layout="bare"] .bar { display: none; }
 .bt-list tr[data-id] { cursor: pointer; }
 .bt-list tr[data-id]:hover { background: var(--band); }
 
-.bt-form, .bd-form { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px 16px; align-items: end; min-width: 0; }
+.bt-form, .bd-form { display: grid; gap: 12px 16px; align-items: start; min-width: 0; } /* the .form-grid groups inside lay out the fields */
 .bt-form > *, .bd-form > * { min-width: 0; }
-@media (max-width: 480px) { .bt-form, .bd-form { grid-template-columns: minmax(0, 1fr); } }
 .bt-page, .bd-page { overflow-wrap: anywhere; }
 @media (max-width: 720px) { .bt-page table, .bd-page table { display: block; max-width: 100%; overflow-x: auto; } }
 .hv-page input, .hv-page select { background: var(--unit); }
