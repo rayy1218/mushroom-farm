@@ -162,3 +162,58 @@ test('LV21 targetsText and the ramp', () => {
   assert.equal(H.targetsText({ targets: null }, S), '');
   assert.equal(H.targetsText(null, S), '');
 });
+
+// ---- mount smoke: a tiny DOM stub, installed only inside this test (C13 3.1) ----
+class FakeEl {
+  constructor(tag) { this.tagName = tag.toUpperCase(); this.children = []; this.attrs = {}; this.dataset = {}; this.style = {}; this.className = ''; this.textContent = ''; this.hidden = false; this.listeners = {}; }
+  setAttribute(k, v) { this.attrs[k] = String(v); }
+  append(...c) { this.children.push(...c.filter(x => typeof x !== 'string')); }
+  replaceChildren(...c) { this.children = []; this.append(...c); }
+  addEventListener(n, f) { this.listeners[n] = f; }
+  matches(p) {
+    if (p[0] === '#') return this.attrs.id === p.slice(1);
+    if (p[0] === '.') return this.className.split(/\s+/).includes(p.slice(1));
+    return this.tagName === p.toUpperCase();
+  }
+  all(chain, out) { for (const c of this.children) { if (c.matches(chain[0])) { if (chain.length === 1) out.push(c); else c.all(chain.slice(1), out); } c.all(chain, out); } return out; }
+  querySelectorAll(sel) { return this.all(sel.trim().split(/\s+/), []); }
+  querySelector(sel) { return this.querySelectorAll(sel)[0] || null; }
+}
+
+test('LV12 mount: drawing first, timeline under the trends, no glance row, teardown stops the loop and the listeners', async t => {
+  const docL = new Set(), rafs = new Map(); let nextRaf = 1, destroyed = [], paints = 0;
+  const saved = ['document', 'requestAnimationFrame', 'cancelAnimationFrame', 'matchMedia', 'performance'].map(k => [k, Object.getOwnPropertyDescriptor(globalThis, k)]);
+  const set = (k, v) => Object.defineProperty(globalThis, k, { value: v, configurable: true, writable: true });
+  set('document', { hidden: false, body: { dataset: { level: 'farmer' } }, createElement: tag => new FakeEl(tag),
+    addEventListener: (n, f) => docL.add(n + f), removeEventListener: (n, f) => docL.delete(n + f) });
+  set('requestAnimationFrame', f => { rafs.set(nextRaf, f); return nextRaf++; });
+  set('cancelAnimationFrame', id => rafs.delete(id));
+  set('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
+  set('performance', { now: () => 0 });
+  const FC = globalThis.FarmCharts, FM = globalThis.FarmMimic, api = globalThis.FarmApi;
+  const old = { ...FC }, oldM = FM && { ...FM }, oldApi = { ...api };
+  globalThis.FarmMimic = { create: () => ({ paint() { paints++; }, tick() {}, destroy() { destroyed.push('mimic'); } }), fromReading: () => ({}) };
+  FC.createTrendCharts = host => { const s = new FakeEl('section'); s.className = 'card trend'; host.append(s); return { draw() {}, setHover() {}, destroy() { destroyed.push('charts'); } }; };
+  FC.drawMachineTimeline = () => ({ update() {}, setHover() {}, destroy() { destroyed.push('timeline'); } });
+  Object.assign(api, { getReadings: async () => [], getAlarms: async () => [], getEvents: async () => [], getSettings: async () => CC.defaultSettings() });
+  t.after(() => {
+    tab.unmount();
+    for (const [k, d] of saved) { if (d) Object.defineProperty(globalThis, k, d); else delete globalThis[k]; }
+    Object.assign(FC, old); Object.assign(api, oldApi); globalThis.FarmMimic = oldM;
+  });
+  const el = new FakeEl('div');
+  const ctx = { id: 1, params: {}, room: () => ({ id: 1, name: 'Room 1', volume: 60, live: { reading: READING } }), on: () => () => {} };
+  await tab.mount(el, ctx);
+  assert.ok(el.children[0].matches('.room-drawing'), 'the drawing card is first');
+  assert.equal(el.querySelector('#airGlance'), null, 'the duplicate air glance row is gone');
+  assert.ok(el.querySelector('#airDay'), 'the day line sits in the Fresh air card');
+  const charts = el.querySelector('#lvCharts');
+  assert.ok(charts.children[charts.children.length - 1].matches('.machine-timeline'), 'the timeline is the last thing under the trends');
+  assert.ok(paints >= 1);
+  assert.equal(rafs.size, 1, 'the loop runs');
+  assert.ok(docL.size >= 2, 'level and visibility listeners are on');
+  tab.unmount();
+  assert.equal(rafs.size, 0, 'teardown stops the loop');
+  assert.equal(docL.size, 0, 'teardown removes the document listeners');
+  assert.deepEqual(destroyed.sort(), ['charts', 'mimic', 'timeline']);
+});

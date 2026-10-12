@@ -187,7 +187,7 @@ function mount(el, ctx) {
 
   const secLive = h('section', { class: 'card room-live' }, rv('lvT', 'Temperature'), rv('lvRH', 'Humidity'), rv('lvCO2', 'CO₂'),
     tag({ id: 'lvAt' }), tag({ id: 'lvTargets' }), h('ul', { class: 'machines', id: 'lvMachines' }));
-  const secAir = h('section', { class: 'card room-air' }, heading('h3', '', 'Fresh air'), tag({ id: 'airSub' }), h('p', { id: 'airState' }), tag({ id: 'airWhy' }));
+  const secAir = h('section', { class: 'card room-air' }, heading('h3', '', 'Fresh air'), tag({ id: 'airSub' }), h('p', { id: 'airState' }), tag({ id: 'airWhy' }), tag({ id: 'airDay' }));
   const drawHost = h('div', { class: 'room-drawing-host', id: 'rmDrawing' });
   const figDrawing = h('figure', { class: 'card room-drawing' }, drawHost);
   const secTimeline = h('section', { class: 'card machine-timeline' }, heading('h3', '', 'When did each machine run?'));
@@ -228,6 +228,7 @@ function mount(el, ctx) {
     q('#airSub').textContent = airSub(base);
     q('#airState').textContent = o.state;
     q('#airWhy').textContent = (a && a.why) || '';
+    q('#airDay').textContent = a ? `Today: ${o.day}` : '';
   }
   function drawCharts() {
     if (!charts) return;
@@ -237,10 +238,11 @@ function mount(el, ctx) {
   }
   // The machine timeline covers the trends' window and is redrawn with them (its SVG is cheap: five rows of spans).
   function drawTimeline(now, gapS) {
-    if (timeline) timeline.destroy();
-    timeline = global.FarmCharts.drawMachineTimeline(tlHost, tlRows, { from: now - windowS, to: now, clock, gapS,
+    const o = { gapS, averaged: windowQuery(windowS, now).step != null };
+    if (timeline) { timeline.update(tlRows, now - windowS, now, o); return; } // the same SVG: focus and a held hover stay
+    timeline = global.FarmCharts.drawMachineTimeline(tlHost, tlRows, { from: now - windowS, to: now, clock, ...o,
       onHover: t => { tlHover = t; if (charts) charts.setHover(t); } });
-    if (tlHover != null) timeline.setHover(tlHover); // a new reading redraws it under a held hover
+    if (tlHover != null) timeline.setHover(tlHover);
   }
   // ---- the room drawing (C13 3.1) ----
   const levelNow = () => (document.body && document.body.dataset.level === 'installer' ? 'installer' : 'farmer');
@@ -251,19 +253,23 @@ function mount(el, ctx) {
   }
   function frame(ts) {
     raf = null;
-    if (!alive() || document.hidden) return;
+    if (!alive() || !loopWanted()) return;
     const dt = Math.min(0.25, Math.max(0, (ts - rafLast) / 1000));
     rafLast = ts;
-    if (figDrawing.offsetParent !== null) mimic.tick(dt); // not while the drawing is hidden (under 720 px)
+    mimic.tick(dt);
     raf = requestAnimationFrame(frame);
   }
+  // the loop runs only while the drawing can be seen and moves: not when the page is hidden, under 720 px, or with reduced motion
+  const mq = q => (global.matchMedia ? global.matchMedia(q) : { matches: false, addEventListener() {}, removeEventListener() {} });
+  const mqNarrow = mq('(max-width: 720px)'), mqReduce = mq('(prefers-reduced-motion: reduce)');
+  const loopWanted = () => !document.hidden && !mqNarrow.matches && !mqReduce.matches;
   function startLoop() {
-    if (raf != null || !mimic || document.hidden || !alive()) return;
+    if (raf != null || !mimic || !loopWanted() || !alive()) return;
     rafLast = performance.now();
     raf = requestAnimationFrame(frame);
   }
   const stopLoop = () => { if (raf != null) { cancelAnimationFrame(raf); raf = null; } };
-  const onVisibility = () => { if (document.hidden) stopLoop(); else startLoop(); };
+  const onVisibility = () => { if (loopWanted()) startLoop(); else stopLoop(); };
   const onLevel = () => paintDrawing();
   function renderAlarms() {
     if (!alarms.length) {
@@ -401,6 +407,7 @@ function mount(el, ctx) {
   mimic = global.FarmMimic.create(drawHost, { idPrefix: 'rm-' });
   document.addEventListener('farm-level', onLevel);
   document.addEventListener('visibilitychange', onVisibility);
+  mqNarrow.addEventListener('change', onVisibility); mqReduce.addEventListener('change', onVisibility);
   paintValues(); paintAir(); renderLog(); paintDrawing(); startLoop();
   drawCharts();
   teardown = () => {
@@ -410,6 +417,7 @@ function mount(el, ctx) {
     step(stopLoop);
     step(() => document.removeEventListener('farm-level', onLevel));
     step(() => document.removeEventListener('visibilitychange', onVisibility));
+    step(() => { mqNarrow.removeEventListener('change', onVisibility); mqReduce.removeEventListener('change', onVisibility); });
     step(() => mimic && mimic.destroy());
     step(() => timeline && timeline.destroy());
     step(() => charts && charts.destroy());

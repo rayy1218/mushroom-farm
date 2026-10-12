@@ -237,3 +237,16 @@ test('timeline rows: averaged-row rules', () => {
   assert.equal(lvl('ac')(row(0)), 0);
   assert.deepEqual(FC.TIMELINE_ROWS.map(r => r.name), ['Aircon', 'Mister', 'Fresh air', 'Lights', 'Circulation fan']);
 });
+
+test('timeTicks: about one label per 60 px, weekday and date on day ticks for long windows', () => {
+  const clock = globalThis.FarmUi.farmClock();
+  const t1 = 1791450000;
+  const hour = FC.timeTicks(t1 - 3600, t1, 600, clock);
+  assert.ok(hour.length >= 3 && hour.length <= 10);
+  assert.match(hour[0].label, /^\d\d:\d\d$/);
+  const week = FC.timeTicks(t1 - 604800, t1, 600, clock);
+  assert.ok(week.length <= 10);
+  assert.ok(week.every(k => /^[A-Z][a-z]{2} \d+$/.test(k.label) || /^\d\d:\d\d$/.test(k.label)));
+  assert.ok(week.some(k => /^[A-Z][a-z]{2} \d+$/.test(k.label)));
+  assert.ok(FC.timeTicks(t1 - 604800, t1, 120, clock).length <= 3, 'narrow hosts get fewer labels');
+});
