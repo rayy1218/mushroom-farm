@@ -74,6 +74,10 @@ test('C11 plainError: known fields get their own line, the alert says where to l
   assert.deepEqual(UI.plainError(new Error('boom'), labels), { text: 'boom', fields: {} });
   assert.deepEqual(UI.plainError(apiErr('Unknown room', []), labels), { text: 'Unknown room', fields: {} });
   assert.deepEqual(UI.plainError(apiErr('X', ['kg: Too heavy!']), { kg: 'Kg' }), { text: 'Check the marked field.', fields: { kg: 'Too heavy!' } });
+  // C3 room details have no colon: 'name must be 1 to 60 characters'
+  assert.deepEqual(UI.plainError(apiErr('Invalid room', ['name must be 1 to 60 characters', 'volume must be a number from 5 to 5000 (m³)']), { name: 'Name', volume: 'Room size' }), {
+    text: 'Check the marked fields.', fields: { name: 'Must be 1 to 60 characters.', volume: 'Must be a number from 5 to 5000 (m³).' } });
+  assert.deepEqual(UI.plainError(apiErr('Invalid room', ['room 3 is archived']), { name: 'Name' }), { text: 'Invalid room: room 3 is archived', fields: {} });
 });
 
 test('C11 say: class, level, text, hidden when empty', () => {

@@ -47,7 +47,7 @@ Adds class `alert` to `el`, sets `data-lvl` to `info`, `good` or `error`, sets t
 
 | Function | Rule |
 |---|---|
-| `plainError(err, labels)` | `labels` maps an API field key (`block_count`) to its label. An ApiError detail `key: problem` whose key is in `labels` becomes `fields[key]`: `required` → `Fill this in.`, otherwise the problem with a capital and a full stop. `text` is `Check the marked field.` / `Check the marked fields.` (plus `Also: <other details>`), or `errorText(err)` when no field matched. |
+| `plainError(err, labels)` | `labels` maps an API field key (`block_count`) to its label. An ApiError detail `key: problem` (or `key problem`, the C3 room form, lead decision 91) whose key is in `labels` becomes `fields[key]`: `required` → `Fill this in.`, otherwise the problem with a capital and a full stop. `text` is `Check the marked field.` / `Check the marked fields.` (plus `Also: <other details>`), or `errorText(err)` when no field matched. |
 | `markFields(root, fields)` | For each `.field[data-field]` under `root`: shows `fields[key]` in its `.field-err` (created if missing) and sets `aria-invalid="true"` on its controls; clears the others. Call with `{}` to clear. |
 | Use | `const p = UI.plainError(e, LABELS); UI.say(msgEl, 'error', p.text); UI.markFields(form, p.fields);` |
 
