@@ -11,17 +11,20 @@ export class SensorError extends Error {
   }
 }
 
-const KINDS = ['trh', 'co2'];
-const DEFAULTS = {
-  trh: { t: 25, rh: 85, co2: null },
-  co2: { t: null, rh: null, co2: 800 },
-};
+const KINDS = ['trh', 'co2', 'relay', 'ac'];
+const KIND_NAMES = { trh: 'T/RH sensor', co2: 'CO₂ sensor', relay: 'relay module', ac: 'aircon gateway' };
 const LIMITS = {
   t: { min: -40, max: 80, whole: false, label: 'Temperature', unit: '°C' },
   rh: { min: 0, max: 100, whole: false, label: 'Humidity', unit: '%' },
   co2: { min: 0, max: 10000, whole: true, label: 'CO₂', unit: 'ppm' },
+  roomT: { min: -40, max: 80, whole: false, label: 'Room temperature', unit: '°C' },
+  error: { min: 0, max: 255, whole: true, label: 'Error code', unit: '' },
 };
-const FIELDS_OF = { trh: ['t', 'rh'], co2: ['co2'] };
+// What a patch (and the state file) may carry for each kind.
+const FIELDS_OF = { trh: ['t', 'rh'], co2: ['co2'], relay: ['stuck', 'dead'], ac: ['roomT', 'error', 'refuse'] };
+const PATCHABLE = ['t', 'rh', 'co2', 'stuck', 'dead', 'roomT', 'error', 'refuse', 'coils', 'power', 'mode', 'setpoint', 'fan'];
+const OUTPUTS = 4;
+const DEFAULT_SPIN_UP_MS = 2000;
 
 const isAddress = (n) => Number.isInteger(n) && n >= 1 && n <= 247;
 
@@ -29,13 +32,50 @@ function checkValue(field, value) {
   const { min, max, whole, label, unit } = LIMITS[field];
   const ok = typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max && (!whole || Number.isInteger(value));
   if (!ok) {
-    throw new SensorError(400, `${label} must be ${whole ? 'a whole number' : 'a number'} from ${min} to ${max} ${unit}`, field);
+    throw new SensorError(400, `${label} must be ${whole ? 'a whole number' : 'a number'} from ${min} to ${max}${unit ? ` ${unit}` : ''}`, field);
   }
   return whole ? value : Math.round(value * 10) / 10;
 }
 
-export function createSensors({ statePath } = {}) {
+function checkSwitches(field, value) {
+  if (!Array.isArray(value) || value.length !== OUTPUTS || value.some((v) => typeof v !== 'boolean')) {
+    throw new SensorError(400, `${field === 'stuck' ? 'Stuck' : field === 'dead' ? 'Dead' : 'Coils'} must be a list of ${OUTPUTS} true or false values`, field);
+  }
+  return [...value];
+}
+
+function checkFlag(field, value) {
+  if (typeof value !== 'boolean') throw new SensorError(400, `${field === 'refuse' ? 'Refuse' : field === 'power' ? 'Power' : 'Answering'} must be true or false`, field);
+  return value;
+}
+
+// The four values an aircon gateway takes in one write (function 16), in register codes.
+export const AC_LIMITS = { mode: 3, fan: 2, setpointMin: 16, setpointMax: 30 };
+function checkAc(values) {
+  const { power, mode, setpoint, fan } = values ?? {};
+  const whole = (n, max) => Number.isInteger(n) && n >= 0 && n <= max;
+  if (typeof power !== 'boolean') throw new SensorError(400, 'Power must be true or false', 'power');
+  if (!whole(mode, AC_LIMITS.mode)) throw new SensorError(400, 'Mode must be a whole number from 0 to 3', 'mode');
+  if (!whole(fan, AC_LIMITS.fan)) throw new SensorError(400, 'Fan must be a whole number from 0 to 2', 'fan');
+  const ok = typeof setpoint === 'number' && setpoint >= AC_LIMITS.setpointMin && setpoint <= AC_LIMITS.setpointMax && Number.isInteger(setpoint * 2);
+  if (!ok) throw new SensorError(400, 'Setpoint must be from 16 to 30 °C in steps of 0.5', 'setpoint');
+  return { power, mode, setpoint, fan };
+}
+
+const clone = (entry) => ({ ...entry, ...Object.fromEntries(Object.entries(entry).filter(([, v]) => Array.isArray(v)).map(([k, v]) => [k, [...v]])) });
+
+export function createSensors({ statePath, spinUpMs = DEFAULT_SPIN_UP_MS, now = Date.now } = {}) {
   const byAddress = new Map();
+
+  // What callers see: copies, with a relay's running state worked out and its bookkeeping left out.
+  function view(entry) {
+    const { since, ...out } = clone(entry);
+    if (entry.kind === 'relay') {
+      const t = now();
+      out.running = entry.coils.map((on, i) => on && !entry.dead[i] && t - since[i] >= spinUpMs);
+    }
+    return out;
+  }
 
   function save() {
     if (!statePath) return;
@@ -45,70 +85,119 @@ export function createSensors({ statePath } = {}) {
   }
 
   function list() {
-    return [...byAddress.values()].sort((a, b) => a.address - b.address).map((s) => ({ ...s }));
+    return [...byAddress.values()].sort((a, b) => a.address - b.address).map(view);
   }
 
   function get(address) {
-    const s = byAddress.get(address);
-    return s && { ...s };
+    const entry = byAddress.get(address);
+    return entry && view(entry);
   }
 
   function make({ address, kind }) {
     if (!isAddress(address)) throw new SensorError(400, 'Address must be a whole number from 1 to 247', 'address');
-    if (!KINDS.includes(kind)) throw new SensorError(400, 'Kind must be trh or co2', 'kind');
+    if (!KINDS.includes(kind)) throw new SensorError(400, 'Kind must be trh, co2, relay or ac', 'kind');
     if (byAddress.has(address)) throw new SensorError(409, `Address ${address} is already used`, 'address');
-    return { address, kind, ...DEFAULTS[kind], answering: true };
+    const base = { address, kind };
+    if (kind === 'trh') return { ...base, t: 25, rh: 85, co2: null, answering: true };
+    if (kind === 'co2') return { ...base, t: null, rh: null, co2: 800, answering: true };
+    if (kind === 'relay') {
+      return { ...base, coils: Array(OUTPUTS).fill(false), stuck: Array(OUTPUTS).fill(false), dead: Array(OUTPUTS).fill(false), since: Array(OUTPUTS).fill(null), answering: true };
+    }
+    return { ...base, power: false, mode: 0, setpoint: 25, fan: 0, roomT: 25, error: 0, refuse: false, answering: true };
+  }
+
+  // Applies a change, saves it, and puts everything back if the save fails.
+  function commit(entry, change) {
+    const before = clone(entry);
+    change();
+    try {
+      save();
+    } catch (err) {
+      Object.assign(entry, before);
+      throw err;
+    }
+    return view(entry);
   }
 
   function add(input) {
-    const sensor = make(input ?? {});
-    byAddress.set(sensor.address, sensor);
+    const entry = make(input ?? {});
+    byAddress.set(entry.address, entry);
     try {
       save();
     } catch (err) {
-      byAddress.delete(sensor.address);
+      byAddress.delete(entry.address);
       throw err;
     }
-    return { ...sensor };
+    return view(entry);
+  }
+
+  function checkField(field, value) {
+    if (field === 'stuck' || field === 'dead') return checkSwitches(field, value);
+    if (field === 'refuse') return checkFlag(field, value);
+    return checkValue(field, value);
   }
 
   function update(address, patch) {
-    const sensor = byAddress.get(address);
-    if (!sensor) throw new SensorError(404, `No sensor with address ${address}`);
+    const entry = byAddress.get(address);
+    if (!entry) throw new SensorError(404, `No sensor with address ${address}`);
     const next = {};
-    for (const field of ['t', 'rh', 'co2']) {
+    for (const field of PATCHABLE) {
       if (patch?.[field] === undefined) continue;
-      if (!FIELDS_OF[sensor.kind].includes(field)) {
-        throw new SensorError(400, `A ${sensor.kind === 'trh' ? 'T/RH' : 'CO₂'} sensor has no ${field} value`, field);
+      if (!FIELDS_OF[entry.kind].includes(field)) {
+        throw new SensorError(400, `A ${KIND_NAMES[entry.kind]} has no ${field} value`, field);
       }
-      next[field] = checkValue(field, patch[field]);
+      next[field] = checkField(field, patch[field]);
     }
-    if (patch?.answering !== undefined) {
-      if (typeof patch.answering !== 'boolean') throw new SensorError(400, 'Answering must be true or false', 'answering');
-      next.answering = patch.answering;
-    }
+    if (patch?.answering !== undefined) next.answering = checkFlag('answering', patch.answering);
     if (Object.keys(next).length === 0) throw new SensorError(400, 'Nothing to change');
-    const before = { ...sensor };
-    Object.assign(sensor, next);
-    try {
-      save();
-    } catch (err) {
-      Object.assign(sensor, before);
-      throw err;
-    }
-    return { ...sensor };
+    return commit(entry, () => Object.assign(entry, next));
+  }
+
+  // Modbus function 05: a stuck relay is acknowledged but does not move.
+  function writeCoil(address, index, on) {
+    const entry = byAddress.get(address);
+    if (entry?.kind !== 'relay') throw new SensorError(404, `No relay module with address ${address}`);
+    if (!Number.isInteger(index) || index < 0 || index >= OUTPUTS) throw new SensorError(400, 'Coil must be 0 to 3', 'coil');
+    if (entry.stuck[index] || entry.coils[index] === on) return view(entry);
+    return commit(entry, () => {
+      entry.coils[index] = on;
+      entry.since[index] = on ? now() : null;
+    });
+  }
+
+  // Modbus function 16: an aircon gateway that refuses acknowledges but keeps its settings.
+  function writeAc(address, values) {
+    const entry = byAddress.get(address);
+    if (entry?.kind !== 'ac') throw new SensorError(404, `No aircon gateway with address ${address}`);
+    const next = checkAc(values);
+    if (entry.refuse) return view(entry);
+    return commit(entry, () => Object.assign(entry, next));
   }
 
   function remove(address) {
-    const sensor = byAddress.get(address);
-    if (!sensor) throw new SensorError(404, `No sensor with address ${address}`);
+    const entry = byAddress.get(address);
+    if (!entry) throw new SensorError(404, `No sensor with address ${address}`);
     byAddress.delete(address);
     try {
       save();
     } catch (err) {
-      byAddress.set(address, sensor);
+      byAddress.set(address, entry);
       throw err;
     }
+  }
+
+  function restore(saved) {
+    const entry = make(saved ?? {});
+    if (entry.kind === 'relay') {
+      entry.coils = checkSwitches('coils', saved.coils ?? entry.coils);
+      entry.since = entry.coils.map((on) => (on ? now() : null));
+    }
+    if (entry.kind === 'ac') {
+      Object.assign(entry, checkAc({ power: saved.power ?? entry.power, mode: saved.mode ?? entry.mode, setpoint: saved.setpoint ?? entry.setpoint, fan: saved.fan ?? entry.fan }));
+    }
+    for (const field of FIELDS_OF[entry.kind]) if (saved[field] !== undefined) entry[field] = checkField(field, saved[field]);
+    if (typeof saved.answering === 'boolean') entry.answering = saved.answering;
+    byAddress.set(entry.address, entry);
   }
 
   // Load: a missing or broken file means an empty device; bad entries are skipped.
@@ -125,14 +214,11 @@ export function createSensors({ statePath } = {}) {
     } else {
       for (const entry of saved) {
         try {
-          const sensor = make(entry ?? {});
-          for (const field of FIELDS_OF[sensor.kind]) if (entry[field] !== undefined) sensor[field] = checkValue(field, entry[field]);
-          if (typeof entry.answering === 'boolean') sensor.answering = entry.answering;
-          byAddress.set(sensor.address, sensor);
+          restore(entry);
         } catch { /* skip this entry */ }
       }
     }
   }
 
-  return { list, get, add, update, remove };
+  return { list, get, add, update, remove, writeCoil, writeAc };
 }
