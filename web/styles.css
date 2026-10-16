@@ -1,0 +1,180 @@
+:root {
+  --bg: #f6f5f1;
+  --surface: #ffffff;
+  --text: #1f2421;
+  --muted: #5f6762;
+  --line: #dcdcd4;
+  --accent: #2f6b4f;
+  --accent-dark: #24543e;
+  --danger: #b3261e;
+  --danger-bg: #fbeae8;
+  --radius: 8px;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: var(--text);
+  background: var(--bg);
+  line-height: 1.4;
+}
+
+* { box-sizing: border-box; }
+
+body { margin: 0; }
+
+h1, h2 { margin: 0; font-weight: 600; }
+h1 { font-size: 1.5rem; }
+h2 { font-size: 1.2rem; margin-bottom: 16px; }
+
+.top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 24px 16px 16px;
+}
+
+main {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 16px 32px;
+}
+
+button {
+  font: inherit;
+  min-height: 40px;
+  padding: 8px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+button:hover { border-color: var(--muted); }
+button:disabled { opacity: 0.6; cursor: default; }
+button:focus-visible, input:focus-visible { outline: 3px solid #8cb8a2; outline-offset: 1px; }
+
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.primary:hover { background: var(--accent-dark); }
+button.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+button.danger-text { color: var(--danger); }
+
+.muted { color: var(--muted); }
+
+.banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  border-radius: var(--radius);
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+.banner[hidden] { display: none; }
+
+.empty {
+  padding: 48px 16px;
+  text-align: center;
+  background: var(--surface);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+}
+.empty p { margin: 0 0 16px; color: var(--muted); }
+
+.rooms {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.rooms th, .rooms td {
+  padding: 12px 16px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+}
+.rooms th { font-size: 0.85rem; font-weight: 600; color: var(--muted); }
+.rooms tbody tr:last-child td { border-bottom: none; }
+.rooms .num { text-align: right; font-variant-numeric: tabular-nums; }
+.rooms .name { font-weight: 600; }
+.rooms .row-actions { text-align: right; white-space: nowrap; }
+.row-actions button + button { margin-left: 8px; }
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+dialog {
+  width: min(480px, calc(100% - 32px));
+  padding: 24px;
+  border: none;
+  border-radius: 12px;
+  color: var(--text);
+  box-shadow: 0 12px 40px rgb(0 0 0 / 0.2);
+}
+dialog::backdrop { background: rgb(0 0 0 / 0.35); }
+
+.field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+.field label { font-size: 0.9rem; font-weight: 600; }
+.field input {
+  font: inherit;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  width: 100%;
+}
+.field input[aria-invalid="true"] { border-color: var(--danger); }
+.field-error { margin: 0; min-height: 1.2em; font-size: 0.85rem; color: var(--danger); }
+
+.sizes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+
+.form-error {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.volume { margin: 4px 0 20px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+@media (max-width: 600px) {
+  .top { padding-top: 16px; }
+
+  .rooms, .rooms tbody, .rooms tr, .rooms td { display: block; }
+  .rooms { background: none; border: none; }
+  .rooms thead { display: none; }
+  .rooms tr {
+    margin-bottom: 12px;
+    padding: 12px 16px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+  }
+  .rooms td {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 4px 0;
+    border: none;
+  }
+  .rooms td::before { content: attr(data-label); color: var(--muted); }
+  .rooms td.name { font-size: 1.1rem; }
+  .rooms td.name::before { content: none; }
+  .rooms .num { text-align: left; }
+  .rooms .row-actions { justify-content: flex-end; padding-top: 8px; }
+  .rooms .row-actions::before { content: none; }
+  .rooms .row-actions button + button { margin-left: 0; }
+
+  .sizes { grid-template-columns: 1fr; gap: 0; }
+}

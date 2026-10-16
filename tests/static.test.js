@@ -86,3 +86,12 @@ test('other methods, missing files, other types, subfolders and .. give 404', as
     assert.equal(res.body, method === 'HEAD' ? '' : 'Not found');
   }
 });
+
+test('the real web folder is the default', async (t) => {
+  const real = createApp(db);
+  await new Promise((resolve) => real.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise((resolve) => real.close(resolve)));
+  const res = await fetch(`http://127.0.0.1:${real.address().port}/`);
+  assert.equal(res.status, 200);
+  assert.match(await res.text(), /<title>Rooms/);
+});
