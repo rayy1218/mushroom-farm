@@ -31,7 +31,7 @@ if (!gatewayMatch || Number(gatewayMatch[2]) < 1 || Number(gatewayMatch[2]) > 65
 if (dbPath !== ':memory:') mkdirSync(dirname(dbPath), { recursive: true });
 const db = openDb(dbPath);
 const server = createApp(db);
-const client = createModbusClient({ host: gatewayMatch[1], port: Number(gatewayMatch[2]) });
+const client = createModbusClient({ host: gatewayMatch[1].replace(/^\[(.*)\]$/, '$1'), port: Number(gatewayMatch[2]) });
 const poller = createPoller({ db, client });
 
 server.on('error', (err) => fail(`Could not start the server: ${err.message}`));
