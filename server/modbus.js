@@ -13,12 +13,15 @@ export class ModbusError extends Error {
   }
 }
 
+const DROP_AFTER_TIMEOUTS = 3;
 const HEADER = 7; // MBAP: tid, protocol id, length, unit
 
 // Requests are queued and sent one at a time. The connection is opened on the
 // first request and again after it drops. timeoutMs limits both connecting and
-// waiting for a reply. firstTid is only for tests.
-export function createModbusClient({ host, port, timeoutMs = 1000, firstTid = 1 }) {
+// waiting for a reply. After DROP_AFTER_TIMEOUTS timeouts in a row the connection is
+// dropped (it may be half-open) and the next call opens a new one.
+// firstTid and connectFn (a replacement for net.connect) are only for tests.
+export function createModbusClient({ host, port, timeoutMs = 1000, firstTid = 1, connectFn = net.connect }) {
   let socket = null;
   let connecting = null; // socket being connected
   let buffer = Buffer.alloc(0);
@@ -26,11 +29,12 @@ export function createModbusClient({ host, port, timeoutMs = 1000, firstTid = 1 
   let current = null; // the request in flight: { tid, unit, fn, qty, resolve, reject, timer }
   const queue = [];
   let busy = false;
+  let timeoutsInRow = 0;
 
   function connect() {
-    if (socket) return Promise.resolve(socket);
+    if (socket && !socket.destroyed) return Promise.resolve(socket);
     return new Promise((resolve, reject) => {
-      const sock = net.connect({ host, port });
+      const sock = connectFn({ host, port });
       connecting = sock;
       sock.setNoDelay(true);
       const timer = setTimeout(() => sock.destroy(), timeoutMs);
@@ -39,6 +43,7 @@ export function createModbusClient({ host, port, timeoutMs = 1000, firstTid = 1 
         connecting = null;
         socket = sock;
         buffer = Buffer.alloc(0);
+        timeoutsInRow = 0;
         resolve(sock);
       });
       sock.on('data', (chunk) => onData(sock, chunk));
@@ -73,6 +78,7 @@ export function createModbusClient({ host, port, timeoutMs = 1000, firstTid = 1 
       if (buffer.readUInt16BE(2) !== 0 || length < 2 || length > 254) {
         // Not a Modbus TCP stream any more: drop the connection.
         buffer = Buffer.alloc(0);
+        socket = null; // so the next call reconnects instead of using the dying socket
         sock.destroy();
         finish(new ModbusError('bad reply'));
         return;
@@ -81,7 +87,18 @@ export function createModbusClient({ host, port, timeoutMs = 1000, firstTid = 1 
       const frame = buffer.subarray(0, 6 + length);
       buffer = buffer.subarray(6 + length);
       // A reply that is not for the request in flight (late, or unknown) is dropped.
-      if (current && frame.readUInt16BE(0) === current.tid) finish(parse(frame, current));
+      if (current && frame.readUInt16BE(0) === current.tid) {
+        timeoutsInRow = 0;
+        finish(parse(frame, current));
+      }
+    }
+  }
+
+  function onTimeout(sock) {
+    finish(new ModbusError('timeout'));
+    if (++timeoutsInRow >= DROP_AFTER_TIMEOUTS && socket === sock) {
+      socket = null;
+      sock.destroy();
     }
   }
 
@@ -117,7 +134,7 @@ export function createModbusClient({ host, port, timeoutMs = 1000, firstTid = 1 
         ...req,
         resolve: (v) => { resolve(v); done(); },
         reject: (e) => { reject(e); done(); },
-        timer: setTimeout(() => finish(new ModbusError('timeout')), timeoutMs),
+        timer: setTimeout(() => onTimeout(sock), timeoutMs),
       };
       sock.write(frame);
     });
