@@ -1,7 +1,9 @@
-// JSON API: /api/rooms, /api/rooms/:id and /api/rooms/:id/sensors.
+// JSON API: /api/rooms, /api/rooms/:id, /api/rooms/:id/sensors and /api/rooms/:id/machines.
 
 import { validateRoom } from './rooms.js';
 import { NameTakenError, AddressTakenError } from './db.js';
+import { CommandError } from './machines.js';
+import { RELAY_KEYS } from './machine-codes.js';
 
 const MAX_BODY = 64 * 1024;
 
@@ -44,17 +46,33 @@ const notFound = () => new HttpError(404, 'Not found');
 const noRoom = () => new HttpError(404, 'Room not found');
 
 // Returns a handler for every request whose path starts with /api.
-export function createApi(db) {
+// machines (from createMachines) is optional: without it the machine routes do not exist.
+export function createApi(db, machines = null) {
   async function route(req, res, path) {
     if (path === '/api/rooms') {
       if (req.method === 'GET') return send(res, 200, db.listRooms());
       if (req.method === 'POST') return send(res, 201, db.createRoom(await readRoom(req)));
       throw notFound();
     }
-    const match = /^\/api\/rooms\/([1-9][0-9]{0,14})(\/sensors)?$/.exec(path);
+    const match = /^\/api\/rooms\/([1-9][0-9]{0,14})(\/sensors|\/machines(?:\/([a-z]+))?)?$/.exec(path);
     if (!match) throw notFound();
     const id = Number(match[1]);
-    if (match[2]) {
+    if (match[2]?.startsWith('/machines')) {
+      if (!machines) throw notFound();
+      const key = match[3];
+      if (key === undefined) {
+        if (req.method !== 'GET') throw notFound();
+        const view = machines.get(id);
+        if (!view) throw noRoom();
+        return send(res, 200, view);
+      }
+      if (req.method !== 'PUT' || !(key === 'ac' || RELAY_KEYS.includes(key))) throw notFound();
+      if (!db.getRoom(id)) throw noRoom();
+      const view = await machines.command(id, key, await readJson(req));
+      if (!view) throw noRoom();
+      return send(res, 200, view);
+    }
+    if (match[2]) { // /sensors
       if (req.method !== 'GET') throw notFound();
       const sensors = db.getSensors(id);
       if (!sensors) throw noRoom();
@@ -71,6 +89,7 @@ export function createApi(db) {
     }
     if (req.method === 'DELETE') {
       if (!db.deleteRoom(id)) throw noRoom();
+      machines?.forget(id);
       res.writeHead(204);
       return res.end();
     }
@@ -82,6 +101,8 @@ export function createApi(db) {
       await route(req, res, url.pathname);
     } catch (err) {
       if (err instanceof HttpError) {
+        send(res, err.status, err.field ? { error: err.message, field: err.field } : { error: err.message });
+      } else if (err instanceof CommandError) {
         send(res, err.status, err.field ? { error: err.message, field: err.field } : { error: err.message });
       } else if (err instanceof NameTakenError) {
         send(res, 409, { error: err.message, field: 'name' });

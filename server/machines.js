@@ -113,11 +113,16 @@ export function createMachines({ db, client, poller, now = Date.now }) {
     return view;
   }
 
+  // Drops what is remembered about a deleted room (room ids are reused).
+  function forget(roomId) {
+    lastWrites.delete(`${roomId}/relay`);
+    lastWrites.delete(`${roomId}/ac`);
+  }
+
   function get(roomId) {
     const room = db.getRoom(roomId);
     if (!room) {
-      lastWrites.delete(`${roomId}/relay`);
-      lastWrites.delete(`${roomId}/ac`);
+      forget(roomId);
       return null;
     }
     const commands = db.getCommands(roomId);
@@ -127,6 +132,7 @@ export function createMachines({ db, client, poller, now = Date.now }) {
 
   return {
     get,
+    forget,
 
     // key is a relay machine or 'ac'. Saves the command, then writes it and returns the machines object.
     // Throws CommandError. A failed write is not an error: it shows as lastWrite.
