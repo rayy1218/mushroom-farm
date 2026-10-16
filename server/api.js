@@ -19,6 +19,7 @@ function send(res, status, data) {
 }
 
 async function readJson(req) {
+  if (!/^application\/json\b/i.test(req.headers['content-type'] ?? '')) throw new HttpError(415, 'Content-Type must be application/json');
   const chunks = [];
   let size = 0;
   for await (const chunk of req) {
@@ -73,6 +74,8 @@ export function createApi(db) {
         send(res, err.status, err.field ? { error: err.message, field: err.field } : { error: err.message });
       } else if (err instanceof NameTakenError) {
         send(res, 409, { error: err.message, field: 'name' });
+      } else if (err.code === 'ECONNRESET') {
+        // The client hung up mid-body: nothing to answer, not a server bug.
       } else {
         console.error(err);
         send(res, 500, { error: 'Something went wrong' });

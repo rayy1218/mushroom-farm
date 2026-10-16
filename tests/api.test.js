@@ -1,5 +1,6 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import net from 'node:net';
 import { openDb } from '../server/db.js';
 import { createApp } from '../server/app.js';
 
@@ -115,7 +116,7 @@ test('PUT /api/rooms/:id needs all four fields', async () => {
 
 test('PUT /api/rooms/:id with a missing room gives 404', async () => {
   reset();
-  const res = await call('PUT', '/api/rooms/99', fields);
+  const res = await call('PUT', '/api/rooms/99', {});
   assert.equal(res.status, 404);
   assert.deepEqual(res.body, { error: 'Room not found' });
 });
@@ -178,4 +179,29 @@ test('an unexpected failure gives 500 without details', async (t) => {
   assert.equal(res.status, 500);
   assert.deepEqual(res.body, { error: 'Something went wrong' });
   assert.equal(console.error.mock.callCount(), 1);
+});
+
+test('POST and PUT with a body that is not JSON-typed give 415', async () => {
+  reset();
+  const { id } = db.createRoom(fields);
+  const headers = { 'content-type': 'text/plain' };
+  const body = JSON.stringify({ ...fields, name: 'Room 2' });
+  const post = await fetch(`${base}/api/rooms`, { method: 'POST', headers, body });
+  assert.equal(post.status, 415);
+  assert.deepEqual(await post.json(), { error: 'Content-Type must be application/json' });
+  const put = await fetch(`${base}/api/rooms/${id}`, { method: 'PUT', headers, body });
+  assert.equal(put.status, 415);
+  assert.deepEqual(await put.json(), { error: 'Content-Type must be application/json' });
+  assert.equal(db.listRooms().length, 1);
+  assert.equal(db.getRoom(id).name, 'Room 1');
+});
+
+test('a client that hangs up mid-body does not log an error', async (t) => {
+  t.mock.method(console, 'error', () => {});
+  const socket = net.connect(server.address().port, '127.0.0.1');
+  await new Promise((resolve) => socket.once('connect', resolve));
+  socket.write('POST /api/rooms HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: 1000\r\n\r\n{"name":');
+  socket.destroy();
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  assert.equal(console.error.mock.callCount(), 0);
 });
