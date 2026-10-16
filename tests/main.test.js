@@ -5,6 +5,18 @@ import { once } from 'node:events';
 import { mkdtempSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import net from 'node:net';
+
+// A port nothing listens on (never the owner's 1502).
+async function freePort() {
+  const probe = net.createServer();
+  probe.listen(0, '127.0.0.1');
+  await once(probe, 'listening');
+  const { port } = probe.address();
+  probe.close();
+  await once(probe, 'close');
+  return port;
+}
 
 const MAIN = new URL('../server/main.js', import.meta.url).pathname;
 
@@ -33,11 +45,13 @@ test('starts on FARM_PORT with FARM_DB and stops cleanly on SIGINT', async (t) =
   const dir = mkdtempSync(join(tmpdir(), 'farm-main-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const dbPath = join(dir, 'nested', 'farm.db');
-  const { child, firstLine, exited } = start(t, { FARM_PORT: '0', FARM_DB: dbPath });
+  const gateway = `127.0.0.1:${await freePort()}`;
+  const { child, firstLine, exited } = start(t, { FARM_PORT: '0', FARM_DB: dbPath, FARM_GATEWAY: gateway });
   const line = await firstLine;
-  const match = /^Farm app on http:\/\/localhost:(\d+) \(database (.+)\)$/.exec(line);
+  const match = /^Farm app on http:\/\/localhost:(\d+) \(database (.+), gateway (.+)\)$/.exec(line);
   assert.ok(match, line);
   assert.equal(match[2], dbPath);
+  assert.equal(match[3], gateway);
   assert.ok(existsSync(dbPath), 'creates the database folder and file');
 
   const res = await fetch(`http://localhost:${match[1]}/api/rooms`);
@@ -50,8 +64,59 @@ test('starts on FARM_PORT with FARM_DB and stops cleanly on SIGINT', async (t) =
 });
 
 test('a bad FARM_PORT stops with a message', async (t) => {
-  const { firstLine, exited } = start(t, { FARM_PORT: 'abc', FARM_DB: ':memory:' });
+  const { firstLine, exited } = start(t, { FARM_PORT: 'abc', FARM_DB: ':memory:', FARM_GATEWAY: '127.0.0.1:1' });
   assert.equal(await firstLine, 'FARM_PORT must be a whole number from 0 to 65535, got "abc"');
   const [code] = await exited;
   assert.equal(code, 1);
+});
+
+test('a bad FARM_GATEWAY stops with a message', async (t) => {
+  for (const value of ['nocolon', 'host:', ':1502', 'host:abc', 'host:0', 'host:65536', 'host:1:2x']) {
+    const { firstLine, exited } = start(t, { FARM_PORT: '0', FARM_DB: ':memory:', FARM_GATEWAY: value });
+    assert.equal(await firstLine, `FARM_GATEWAY must look like host:port, got "${value}"`);
+    const [code] = await exited;
+    assert.equal(code, 1);
+  }
+});
+
+test('polls the gateway: readings reach the API, and SIGTERM stops cleanly', async (t) => {
+  // A tiny gateway: answers every request with T 26.5, RH 88.1.
+  const gateway = net.createServer((socket) => {
+    socket.on('error', () => {});
+    socket.on('data', (f) => {
+      const out = Buffer.from([f[0], f[1], 0, 0, 0, 7, f[6], f[7], 4, 0x01, 0x09, 0x03, 0x71]);
+      socket.write(out);
+    });
+  });
+  gateway.listen(0, '127.0.0.1');
+  await once(gateway, 'listening');
+  t.after(() => gateway.close());
+  const dir = mkdtempSync(join(tmpdir(), 'farm-main-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const { child, firstLine, exited } = start(t, {
+    FARM_PORT: '0',
+    FARM_DB: join(dir, 'farm.db'),
+    FARM_GATEWAY: `127.0.0.1:${gateway.address().port}`,
+  });
+  const port = /localhost:(\d+)/.exec(await firstLine)[1];
+  const base = `http://localhost:${port}`;
+  const post = await fetch(`${base}/api/rooms`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name: 'R', length: 2, width: 2, height: 2, trhAddress: 1 }),
+  });
+  const { id } = await post.json();
+  const deadline = Date.now() + 8000; // the first cycle may run before the room exists: wait for the next (5 s)
+  let sensor;
+  while (Date.now() < deadline) {
+    [sensor] = await (await fetch(`${base}/api/rooms/${id}/sensors`)).json();
+    if (sensor.status === 'online') break;
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  assert.equal(sensor.status, 'online');
+  assert.deepEqual(sensor.lastOk.t, 26.5);
+  assert.deepEqual(sensor.lastOk.rh, 88.1);
+  child.kill('SIGTERM');
+  const [code] = await exited;
+  assert.equal(code, 0);
 });

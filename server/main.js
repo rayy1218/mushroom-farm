@@ -1,10 +1,13 @@
-// Starts the farm app: reads FARM_DB and FARM_PORT, opens the database, serves HTTP.
+// Starts the farm app: reads FARM_DB, FARM_PORT and FARM_GATEWAY, opens the database,
+// serves HTTP and polls the sensor gateway.
 
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openDb } from './db.js';
 import { createApp } from './app.js';
+import { createModbusClient } from './modbus.js';
+import { createPoller } from './poller.js';
 
 const DEFAULT_DB = fileURLToPath(new URL('../data/v2.db', import.meta.url));
 
@@ -19,16 +22,30 @@ if (!/^[0-9]{1,5}$/.test(portText) || Number(portText) > 65535) {
   fail(`FARM_PORT must be a whole number from 0 to 65535, got "${portText}"`);
 }
 
+const gatewayText = process.env.FARM_GATEWAY || '127.0.0.1:1502';
+const gatewayMatch = /^(.+):([0-9]{1,5})$/.exec(gatewayText);
+if (!gatewayMatch || Number(gatewayMatch[2]) < 1 || Number(gatewayMatch[2]) > 65535) {
+  fail(`FARM_GATEWAY must look like host:port, got "${gatewayText}"`);
+}
+
 if (dbPath !== ':memory:') mkdirSync(dirname(dbPath), { recursive: true });
 const db = openDb(dbPath);
 const server = createApp(db);
+const client = createModbusClient({ host: gatewayMatch[1], port: Number(gatewayMatch[2]) });
+const poller = createPoller({ db, client });
 
 server.on('error', (err) => fail(`Could not start the server: ${err.message}`));
 server.listen(Number(portText), () => {
-  console.log(`Farm app on http://localhost:${server.address().port} (database ${dbPath})`);
+  console.log(`Farm app on http://localhost:${server.address().port} (database ${dbPath}, gateway ${gatewayText})`);
+  poller.start();
 });
 
-function stop() {
+let stopping = false;
+async function stop() {
+  if (stopping) return;
+  stopping = true;
+  await poller.stop();
+  client.close();
   server.close();
   db.close();
   process.exit(0);
