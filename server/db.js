@@ -1,6 +1,7 @@
 // The farm database: schema and room queries.
 
 import { DatabaseSync } from 'node:sqlite';
+import { RELAY_KEYS } from './machine-codes.js';
 
 const VERSION = 2;
 
@@ -114,7 +115,6 @@ export class AddressTakenError extends Error {
 }
 
 const KINDS = ['trh', 'co2'];
-const RELAY_KEYS = ['intake', 'exhaust', 'circulation', 'humidifier'];
 const FAILS_FOR_OFFLINE = 3;
 
 function toRoom(row) {
