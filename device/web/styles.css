@@ -82,6 +82,7 @@ button.danger-text { color: var(--critical-text); }
 .banner[hidden] { display: none; }
 
 .scroll {
+  position: relative; /* keeps .sr-only text inside the scroll box */
   overflow-x: auto;
   background: var(--surface);
   border: 1px solid var(--border-strong);
