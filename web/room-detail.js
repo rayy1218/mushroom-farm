@@ -218,8 +218,9 @@ export function mount(container, { id }) {
       const points = chartPoints(s, def.field);
       const wired = s.status !== 'not-wired';
       entry.card.hidden = !wired;
-      entry.none.hidden = points.length > 0;
-      entry.host.hidden = points.length === 0;
+      const hasValue = points.some((p) => p.value !== null); // only failed polls: nothing to draw yet
+      entry.none.hidden = hasValue;
+      entry.host.hidden = !hasValue;
       if (!wired) continue;
       const opts = { points, unit: def.unit, label: def.label, color: def.color, digits: def.digits, minSpan: def.minSpan };
       if (!entry.chart) entry.chart = drawLineChart(entry.host, opts);
