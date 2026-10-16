@@ -8,7 +8,14 @@ const SIZES = [
   { field: 'height', label: 'Height', min: 0.5, max: 10 },
 ];
 
-// Returns { room: { name, length, width, height, trhAddress, co2Address } } when the input is valid,
+const ADDRESSES = [
+  { field: 'trhAddress', label: 'T/RH sensor' },
+  { field: 'co2Address', label: 'CO₂ sensor' },
+  { field: 'relayAddress', label: 'Relay module' },
+  { field: 'acAddress', label: 'Aircon gateway' },
+];
+
+// Returns { room: { name, length, width, height, trhAddress, co2Address, relayAddress, acAddress } } when the input is valid,
 // otherwise { error, field } for the first failing field (field is missing
 // when the body itself is wrong).
 export function validateRoom(body) {
@@ -28,19 +35,22 @@ export function validateRoom(body) {
     }
     room[field] = value;
   }
-  const addresses = [
-    { field: 'trhAddress', label: 'T/RH' },
-    { field: 'co2Address', label: 'CO\u2082' },
-  ];
-  for (const { field, label } of addresses) {
+  for (const { field, label } of ADDRESSES) {
     const value = body[field] ?? null;
     if (value !== null && !(Number.isInteger(value) && value >= 1 && value <= 247)) {
-      return { error: `${label} sensor address must be a whole number from 1 to 247`, field };
+      return { error: `${label} address must be a whole number from 1 to 247`, field };
     }
     room[field] = value;
   }
-  if (room.trhAddress !== null && room.trhAddress === room.co2Address) {
-    return { error: 'The two sensors need different addresses', field: 'co2Address' };
+  // The later field of a clashing pair is blamed.
+  for (let i = 1; i < ADDRESSES.length; i++) {
+    const { field } = ADDRESSES[i];
+    if (room[field] === null) continue;
+    if (!ADDRESSES.slice(0, i).some((a) => room[a.field] === room[field])) continue;
+    return {
+      error: i === 1 ? 'The two sensors need different addresses' : 'The devices in a room need different addresses',
+      field,
+    };
   }
   return { room };
 }
