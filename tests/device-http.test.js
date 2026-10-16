@@ -176,3 +176,18 @@ test('serves the page files', async () => {
   assert.equal((await fetch(`${base}/..%2Fsensors.js`)).status, 404);
   assert.equal((await fetch(`${base}/state.json`)).status, 404);
 });
+
+test('a request line the URL parser rejects gets a 4xx and the server stays up', async () => {
+  const raw = await new Promise((resolve, reject) => {
+    const sock = net.connect(http.address().port, '127.0.0.1', () => {
+      sock.write('GET http://[ HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n');
+    });
+    let out = '';
+    sock.setEncoding('utf8');
+    sock.on('data', (d) => { out += d; });
+    sock.on('end', () => resolve(out));
+    sock.on('error', reject);
+  });
+  assert.match(raw, /^HTTP\/1\.1 (400|404) /);
+  assert.equal((await fetch(`${base}/api/sensors`)).status, 200);
+});
