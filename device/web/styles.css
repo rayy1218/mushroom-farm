@@ -40,14 +40,14 @@ h2 { font-size: 1.2rem; margin: 32px 0 12px; }
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  max-width: 960px;
+  max-width: 1040px;
   margin: 0 auto;
   padding: 24px 16px 0;
 }
 .sub { margin: 4px 0 0; }
 
 main {
-  max-width: 960px;
+  max-width: 1040px;
   margin: 0 auto;
   padding: 0 16px 32px;
 }
@@ -90,7 +90,7 @@ button.danger-text { color: var(--critical-text); }
 }
 .grid { width: 100%; border-collapse: collapse; }
 .grid th, .grid td {
-  padding: 10px 16px;
+  padding: 10px 12px;
   text-align: left;
   white-space: nowrap;
   border-bottom: 1px solid var(--border);
@@ -108,11 +108,14 @@ button.danger-text { color: var(--critical-text); }
 .row-error:empty { display: none; }
 
 /* Relay module lines and the aircon block. */
-.machines { display: flex; flex-direction: column; gap: 4px; white-space: normal; }
-.machine { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; }
-.machine .mname { width: 120px; font-weight: 600; }
-.machine .coil { width: 64px; font-variant-numeric: tabular-nums; }
-.run { display: inline-flex; align-items: center; gap: 6px; width: 84px; }
+.machines { display: flex; flex-direction: column; gap: 4px; }
+.machine { display: flex; align-items: center; gap: 4px 12px; }
+.machine .mname { width: 124px; font-weight: 600; }
+.machine .coil { width: 56px; font-variant-numeric: tabular-nums; }
+.run { display: inline-flex; align-items: center; gap: 6px; width: 76px; }
+.machine .switch { gap: 6px; }
+.machine .switch .track { width: 40px; }
+.machine .switch input:checked + .track::after { left: 18px; }
 .dot { width: 10px; height: 10px; border-radius: 50%; border: 1px solid var(--border-strong); background: transparent; }
 .dot.on { background: var(--ink); border-color: var(--ink); }
 .ac { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
