@@ -31,7 +31,19 @@ CREATE TABLE readings (
   co2     REAL,
   error   TEXT
 ) STRICT;
-CREATE INDEX readings_by_room ON readings (room_id, kind, id);`;
+CREATE INDEX readings_by_sensor ON readings (room_id, kind, address, id);
+CREATE INDEX readings_ok ON readings (room_id, kind, address, id) WHERE ok = 1;`;
+
+// The status queries, exported so a test can check their query plans.
+export const STATUS_SQL = {
+  latest: `SELECT * FROM (SELECT * FROM readings WHERE room_id = ? AND kind = ? AND address = ?
+                          ORDER BY id DESC LIMIT ?) ORDER BY id`,
+  lastOk: `SELECT * FROM readings WHERE room_id = ? AND kind = ? AND address = ? AND ok = 1
+           ORDER BY id DESC LIMIT 1`,
+  // Counting stops at 10000: the status only needs to know "3 or more".
+  failuresSince: `SELECT COUNT(*) AS n FROM (SELECT 1 FROM readings WHERE room_id = ? AND kind = ? AND address = ? AND id > ?
+                                            LIMIT 10000)`,
+};
 
 // Brings a new or older database up to VERSION in one transaction.
 function migrate(db) {
@@ -117,13 +129,14 @@ export function openDb(path) {
                        UNION ALL
                        SELECT id, 'co2', co2_address FROM rooms WHERE co2_address IS NOT NULL
                        ORDER BY 1, 2 DESC`),
+    // Only while the room still has that address for that kind.
     addReading: db.prepare(`INSERT INTO readings (room_id, kind, address, at, ok, t, rh, co2, error)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`),
-    latest: db.prepare(`SELECT * FROM (SELECT * FROM readings WHERE room_id = ? AND kind = ? AND address = ?
-                                       ORDER BY id DESC LIMIT ?) ORDER BY id`),
-    lastOk: db.prepare(`SELECT * FROM readings WHERE room_id = ? AND kind = ? AND address = ? AND ok = 1
-                        ORDER BY id DESC LIMIT 1`),
-    failuresSince: db.prepare(`SELECT COUNT(*) AS n FROM readings WHERE room_id = ? AND kind = ? AND address = ? AND id > ?`),
+                            SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+                            WHERE EXISTS (SELECT 1 FROM rooms WHERE id = ? AND
+                              CASE ? WHEN 'trh' THEN trh_address WHEN 'co2' THEN co2_address END = ?)`),
+    latest: db.prepare(STATUS_SQL.latest),
+    lastOk: db.prepare(STATUS_SQL.lastOk),
+    failuresSince: db.prepare(STATUS_SQL.failuresSince),
   };
 
   function checkName(name, id) {
@@ -208,7 +221,7 @@ export function openDb(path) {
 
     // One poll result. Values not measured are null.
     addReading({ roomId, kind, address, at, ok, t = null, rh = null, co2 = null, error = null }) {
-      q.addReading.run(roomId, kind, address, at, ok ? 1 : 0, t, rh, co2, error);
+      q.addReading.run(roomId, kind, address, at, ok ? 1 : 0, t, rh, co2, error, roomId, kind, address);
     },
 
     // [trhSensor, co2Sensor] for the room, or null when there is no such room.
