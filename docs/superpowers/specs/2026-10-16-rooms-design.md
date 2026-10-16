@@ -68,8 +68,8 @@ Room object: `{ id, name, length, width, height, volume, createdAt, updatedAt }`
 | Method and path | Success | Errors |
 |---|---|---|
 | `GET /api/rooms` | 200, array of rooms sorted by name (case-insensitive) | — |
-| `POST /api/rooms` | 201, the new room | 400 invalid input or bad JSON; 409 name taken |
-| `PUT /api/rooms/:id` | 200, the updated room (all four fields required) | 400; 404 no such room; 409 name taken by another room |
+| `POST /api/rooms` | 201, the new room | 400 invalid input or bad JSON; 409 name taken; 413 body over 64 KB |
+| `PUT /api/rooms/:id` | 200, the updated room (all four fields required) | 404 no such room (checked first); 400; 409 name taken by another room; 413 |
 | `DELETE /api/rooms/:id` | 204, empty body | 404 no such room |
 | any other `/api/...` path or method | — | 404 |
 | unexpected server failure | — | 500 "Something went wrong" (details logged on the server only) |
@@ -107,7 +107,9 @@ One screen at `/`.
 | 400 or 409 with `field` | message under that field; dialog stays open with the input kept |
 | 400 without `field` | message at the top of the dialog |
 | 404 on edit or delete | banner "That room no longer exists"; dialog closes; list reloads |
-| network failure or 5xx | banner "Couldn't reach the farm server" with a **Retry** button |
+| network failure or 5xx while saving | message at the top of the dialog "Couldn't reach the farm server. Try again."; input kept |
+| network failure or 5xx on load or delete | banner "Couldn't reach the farm server" with a **Retry** button that reloads the list |
+| opening a dialog | hides any banner |
 
 ## 10. Files
 
@@ -118,6 +120,7 @@ One screen at `/`.
 | `server/db.js` | open a database, create the schema, room queries (create, list, get, update, delete) |
 | `server/rooms.js` | pure validation: input → clean room fields or `{ error, field }` |
 | `server/api.js` | route `/api/rooms…` to handlers; JSON parsing; status codes |
+| `server/app.js` | the HTTP server: sends `/api…` to the API and everything else to the static files |
 | `server/static.js` | serve files from `web/` |
 | `web/index.html` | page markup, including both dialogs |
 | `web/app.js` | fetch rooms, render the table, run the dialogs |
@@ -129,7 +132,9 @@ One screen at `/`.
 |---|---|
 | `tests/rooms.test.js` | every rule in section 5, including boundaries (0.5, 100, 10, 60 characters), trimming, strings for numbers, `NaN`/`Infinity`, missing fields |
 | `tests/db.test.js` | `:memory:` database: create, list order, get, update (`updated_at` changes), delete, case-insensitive uniqueness, missing ids |
-| `tests/api.test.js` | real server on port 0 with a `:memory:` database: every row of the section 6 table, bad JSON, bad ids, unknown routes, static paths and `..` |
+| `tests/api.test.js` | real server on port 0 with a `:memory:` database: every row of the section 6 table, bad JSON, bad ids, unknown routes |
+| `tests/static.test.js` | static paths, content types, HEAD, other methods, subfolders and `..` |
+| `tests/main.test.js` | the start script: `FARM_PORT`/`FARM_DB`, creates the database folder, clean exit on SIGINT, bad port message |
 | Browser check | headless Chrome: add a room, edit it, duplicate-name error under the field, delete with confirm, empty state, 375 px width shows cards |
 
 ## 12. Out of scope
