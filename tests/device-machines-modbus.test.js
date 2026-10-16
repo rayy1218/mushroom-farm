@@ -1,6 +1,9 @@
 import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import net from 'node:net';
+import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createSensors } from '../device/sensors.js';
 import { createModbusServer } from '../device/modbus-server.js';
 
@@ -59,18 +62,23 @@ function write16(start, qty, values, byteCount = values.length * 2) {
   return p;
 }
 
-// Sends one request on a new connection and returns the reply bytes (or what arrived in 150 ms).
-async function ask(unit, pdu) {
+// Sends one request on a new connection and returns the reply bytes at the first data (or close), capped at 2 s.
+// Where silence is the expected result, pass { expectSilence: true } to wait a short fixed 150 ms instead.
+async function ask(unit, pdu, { expectSilence = false } = {}) {
   const socket = net.connect(port, '127.0.0.1');
   let data = Buffer.alloc(0);
   let closed = false;
+  const first = new Promise((resolve) => {
+    socket.once('data', resolve);
+    socket.once('close', resolve);
+  });
   socket.on('data', (chunk) => { data = Buffer.concat([data, chunk]); });
   socket.on('close', () => { closed = true; });
   socket.on('error', () => {});
   await new Promise((resolve) => socket.once('connect', resolve));
   socket.write(adu(1, unit, pdu));
-  const until = Date.now() + 150;
-  while (data.length === 0 && !closed && Date.now() < until) await quiet(5);
+  await Promise.race([first, quiet(expectSilence ? 150 : 2000)]);
+  if (expectSilence) await quiet(0);
   socket.destroy();
   return { data, closed };
 }
@@ -139,7 +147,7 @@ test('fn 05 on a stuck relay is echoed and nothing changes', async () => {
   const r = await ask(10, pdu16(5, 3, 0xff00));
   assert.equal(replyPdu(r), '05' + '0003' + 'ff00');
   assert.equal(sensors.get(10).coils[3], false);
-  assert.equal(log[0].result, 'write coil 3 on');
+  assert.equal(log[0].result, 'write coil 3 on (stuck)');
 });
 
 test('fn 05: address above 3 is exception 2, bad value is exception 3', async () => {
@@ -206,6 +214,7 @@ test('fn 16 on a refusing aircon is acknowledged and changes nothing', async () 
   assert.equal(replyPdu(r), '10' + '0000' + '0004');
   assert.equal(sensors.get(20).power, false);
   assert.equal(sensors.get(20).setpoint, 25);
+  assert.equal(log[0].result, 'write ac heat 20 low on (refused)');
 });
 
 test('fn 16: wrong start or quantity is exception 2', async () => {
@@ -218,7 +227,7 @@ test('fn 16: byte count other than 8 (with a matching frame) is exception 3', as
   // quantity 4 but only 3 values and byte count 6
   assert.equal(replyPdu(await ask(20, write16(0, 4, [1, 0, 200], 6))), '9003');
   // right number of values, wrong byte count: the frame then does not fit the byte count
-  const r = await ask(20, write16(0, 4, [1, 0, 200, 0], 7));
+  const r = await ask(20, write16(0, 4, [1, 0, 200, 0], 7), { expectSilence: true });
   assert.equal(r.data.length, 0);
   assert.equal(r.closed, true);
   assert.equal(sensors.get(20).power, false);
@@ -251,9 +260,10 @@ test('fn 16 and 05 on a sensor are exception 1', async () => {
 test('answering off: silence for relay and ac, also for writes', async () => {
   sensors.update(10, { answering: false });
   sensors.update(20, { answering: false });
-  const a = await ask(10, pdu16(5, 0, 0xff00));
-  const b = await ask(20, write16(0, 4, [1, 0, 200, 0]));
-  const c = await ask(10, pdu16(1, 0, 4));
+  const silent = { expectSilence: true };
+  const a = await ask(10, pdu16(5, 0, 0xff00), silent);
+  const b = await ask(20, write16(0, 4, [1, 0, 200, 0]), silent);
+  const c = await ask(10, pdu16(1, 0, 4), silent);
   assert.equal(a.data.length + b.data.length + c.data.length, 0);
   assert.equal(sensors.get(10).coils[0], false);
   assert.equal(sensors.get(20).power, false);
@@ -265,4 +275,30 @@ test('a truncated fn 16 or fn 05 frame closes the connection', async () => {
   assert.equal((await ask(10, pdu16(5, 0, 0xff00).subarray(0, 4))).closed, true);
   assert.equal((await ask(10, pdu16(1, 0, 4).subarray(0, 4))).closed, true);
   assert.equal((await ask(20, Buffer.from([16]))).closed, true);
+});
+
+test('fn 05 exception 4 when the state file cannot be saved', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'dev-machines-modbus-'));
+  mkdirSync(join(dir, 'sub'));
+  const own = createSensors({ statePath: join(dir, 'sub', 'state.json'), spinUpMs: 0 });
+  own.add({ address: 5, kind: 'relay' });
+  rmSync(join(dir, 'sub'), { recursive: true }); // saving now fails
+  const s = createModbusServer(own);
+  const error = console.error;
+  console.error = () => {};
+  await new Promise((resolve) => s.listen(0, '127.0.0.1', resolve));
+  try {
+    const socket = net.connect(s.address().port, '127.0.0.1');
+    const chunk = new Promise((resolve) => socket.once('data', resolve));
+    await new Promise((resolve) => socket.once('connect', resolve));
+    socket.write(adu(1, 5, pdu16(5, 0, 0xff00)));
+    const data = await chunk;
+    socket.destroy();
+    assert.equal(hex(data.subarray(7)), '8504');
+    assert.equal(own.get(5).coils[0], false);
+  } finally {
+    console.error = error;
+    await new Promise((resolve) => s.close(resolve));
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

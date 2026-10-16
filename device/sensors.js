@@ -45,12 +45,12 @@ function checkSwitches(field, value) {
 }
 
 function checkFlag(field, value) {
-  if (typeof value !== 'boolean') throw new SensorError(400, `${field === 'refuse' ? 'Refuse' : field === 'power' ? 'Power' : 'Answering'} must be true or false`, field);
+  if (typeof value !== 'boolean') throw new SensorError(400, `${field === 'refuse' ? 'Refuse' : 'Answering'} must be true or false`, field);
   return value;
 }
 
 // The four values an aircon gateway takes in one write (function 16), in register codes.
-export const AC_LIMITS = { mode: 3, fan: 2, setpointMin: 16, setpointMax: 30 };
+const AC_LIMITS = { mode: 3, fan: 2, setpointMin: 16, setpointMax: 30 };
 function checkAc(values) {
   const { power, mode, setpoint, fan } = values ?? {};
   const whole = (n, max) => Number.isInteger(n) && n >= 0 && n <= max;
@@ -80,7 +80,9 @@ export function createSensors({ statePath, spinUpMs = DEFAULT_SPIN_UP_MS, now = 
   function save() {
     if (!statePath) return;
     const tmp = `${statePath}.tmp`;
-    writeFileSync(tmp, JSON.stringify(list(), null, 2));
+    // Only what was set: the derived running state and the timers are left out.
+    const stored = [...byAddress.values()].sort((a, b) => a.address - b.address).map(({ since, ...rest }) => rest);
+    writeFileSync(tmp, JSON.stringify(stored, null, 2));
     renameSync(tmp, statePath);
   }
 
@@ -139,7 +141,7 @@ export function createSensors({ statePath, spinUpMs = DEFAULT_SPIN_UP_MS, now = 
 
   function update(address, patch) {
     const entry = byAddress.get(address);
-    if (!entry) throw new SensorError(404, `No sensor with address ${address}`);
+    if (!entry) throw new SensorError(404, `No device with address ${address}`);
     const next = {};
     for (const field of PATCHABLE) {
       if (patch?.[field] === undefined) continue;
@@ -156,7 +158,7 @@ export function createSensors({ statePath, spinUpMs = DEFAULT_SPIN_UP_MS, now = 
   // Modbus function 05: a stuck relay is acknowledged but does not move.
   function writeCoil(address, index, on) {
     const entry = byAddress.get(address);
-    if (entry?.kind !== 'relay') throw new SensorError(404, `No relay module with address ${address}`);
+    if (entry?.kind !== 'relay') throw new SensorError(404, `No device with address ${address}`);
     if (!Number.isInteger(index) || index < 0 || index >= OUTPUTS) throw new SensorError(400, 'Coil must be 0 to 3', 'coil');
     if (entry.stuck[index] || entry.coils[index] === on) return view(entry);
     return commit(entry, () => {
@@ -168,7 +170,7 @@ export function createSensors({ statePath, spinUpMs = DEFAULT_SPIN_UP_MS, now = 
   // Modbus function 16: an aircon gateway that refuses acknowledges but keeps its settings.
   function writeAc(address, values) {
     const entry = byAddress.get(address);
-    if (entry?.kind !== 'ac') throw new SensorError(404, `No aircon gateway with address ${address}`);
+    if (entry?.kind !== 'ac') throw new SensorError(404, `No device with address ${address}`);
     const next = checkAc(values);
     if (entry.refuse) return view(entry);
     return commit(entry, () => Object.assign(entry, next));
@@ -176,7 +178,7 @@ export function createSensors({ statePath, spinUpMs = DEFAULT_SPIN_UP_MS, now = 
 
   function remove(address) {
     const entry = byAddress.get(address);
-    if (!entry) throw new SensorError(404, `No sensor with address ${address}`);
+    if (!entry) throw new SensorError(404, `No device with address ${address}`);
     byAddress.delete(address);
     try {
       save();

@@ -63,9 +63,7 @@ function relayValues(row, address) {
       m.coil.textContent = on ? 'Coil on' : 'Coil off';
       m.dot.classList.toggle('on', sensor.running[i]);
       m.run.textContent = sensor.running[i] ? 'running' : 'stopped';
-      for (const field of ['stuck', 'dead']) {
-        if (document.activeElement !== m[field].input) m[field].input.checked = sensor[field][i];
-      }
+      for (const field of ['stuck', 'dead']) m[field].input.checked = sensor[field][i];
     });
   };
   return [list];
@@ -81,7 +79,7 @@ function acValues(row, address) {
   refuse.input.addEventListener('change', () => save(row, address, 'refuse', refuse.input));
   row.extra = (sensor) => {
     row.setting.textContent = `Set by the farm: ${sensor.power ? 'on' : 'off'} · ${MODES[sensor.mode]} · ${sensor.setpoint.toFixed(1)} °C · fan ${FANS[sensor.fan]}`;
-    if (document.activeElement !== refuse.input) refuse.input.checked = sensor.refuse;
+    refuse.input.checked = sensor.refuse;
   };
   return [row.setting, values, refuse.label];
 }
@@ -144,11 +142,12 @@ async function save(row, address, field, input, list) {
 }
 
 function showRow(row, sensor) {
+  // Only number inputs keep what is being typed; checkboxes always show the device's state.
   for (const [field, input] of Object.entries(row.inputs)) {
     if (document.activeElement === input || input.getAttribute('aria-invalid') === 'true') continue;
     input.value = String(sensor[field]);
   }
-  if (document.activeElement !== row.check) row.check.checked = sensor.answering;
+  row.check.checked = sensor.answering; // a checkbox is always repainted, so a failed save flips it back
   row.extra?.(sensor);
   row.word.textContent = sensor.answering ? 'Answering' : 'Silent';
 }

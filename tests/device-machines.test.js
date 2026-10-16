@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, rmSync, readdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, readdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createSensors } from '../device/sensors.js';
@@ -10,7 +10,6 @@ function thrown(fn) {
   assert.fail('expected a throw');
 }
 
-const quiet = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const four = (v) => [v, v, v, v];
 
 test('relay and ac defaults', () => {
@@ -82,18 +81,50 @@ test('writeCoil switches a coil; stuck keeps it; running follows coil and dead',
   assert.equal(s.get(10).coils[1], true);
 });
 
-test('running needs the spin-up time on', async () => {
-  const s = createSensors({ spinUpMs: 80 });
+test('running needs the spin-up time on', () => {
+  let now = 0;
+  const s = createSensors({ spinUpMs: 80, now: () => now });
   s.add({ address: 10, kind: 'relay' });
   s.writeCoil(10, 2, true);
   assert.equal(s.get(10).coils[2], true);
   assert.equal(s.get(10).running[2], false);
-  await quiet(120);
+  now += 79;
+  assert.equal(s.get(10).running[2], false);
+  now += 1;
   assert.equal(s.get(10).running[2], true);
   s.writeCoil(10, 2, false);
   assert.equal(s.get(10).running[2], false);
   s.writeCoil(10, 2, true);
   assert.equal(s.get(10).running[2], false, 'spin-up starts again');
+});
+
+test('writing on to a coil that is already on keeps its timer', () => {
+  let now = 0;
+  const s = createSensors({ now: () => now });
+  s.add({ address: 10, kind: 'relay' });
+  s.writeCoil(10, 0, true);
+  now += 1500;
+  s.writeCoil(10, 0, true);
+  now += 500;
+  assert.equal(s.get(10).running[0], true);
+});
+
+test('a restart starts the spin-up again; running is not stored', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'dev-machines-'));
+  const statePath = join(dir, 'state.json');
+  let now = 0;
+  const a = createSensors({ statePath, now: () => now });
+  a.add({ address: 10, kind: 'relay' });
+  a.writeCoil(10, 0, true);
+  now += 2000;
+  assert.equal(a.get(10).running[0], true);
+  assert.equal('running' in JSON.parse(readFileSync(statePath, 'utf8'))[0], false);
+  const b = createSensors({ statePath, now: () => now });
+  assert.equal(b.get(10).coils[0], true);
+  assert.equal(b.get(10).running[0], false);
+  now += 2000;
+  assert.equal(b.get(10).running[0], true);
+  rmSync(dir, { recursive: true, force: true });
 });
 
 test('default spin-up is 2 s (injected clock)', () => {
