@@ -8,7 +8,9 @@ import { createModbusClient, ModbusError } from '../server/modbus.js';
 async function fakeGateway(t, onFrame) {
   const sockets = new Set();
   const frames = [];
+  let connections = 0;
   const server = net.createServer((socket) => {
+    connections++;
     sockets.add(socket);
     socket.on('close', () => sockets.delete(socket));
     socket.on('error', () => {});
@@ -28,6 +30,7 @@ async function fakeGateway(t, onFrame) {
   const gateway = {
     port: server.address().port,
     frames,
+    get connections() { return connections; },
     dropAll() { for (const s of sockets) s.destroy(); },
     close: () => new Promise((resolve) => { for (const s of sockets) s.destroy(); server.close(resolve); }),
   };
@@ -49,7 +52,7 @@ function reply(frame, regs, { tid = frame.readUInt16BE(0), unit = frame[6], fn =
 }
 
 function client(t, gateway, extra = {}) {
-  const c = createModbusClient({ host: '127.0.0.1', port: gateway.port, timeoutMs: 100, ...extra });
+  const c = createModbusClient({ host: '127.0.0.1', port: gateway.port, timeoutMs: 1000, ...extra });
   t.after(() => c.close());
   return c;
 }
@@ -99,27 +102,28 @@ test('an exception reply fails with the exception code', async (t) => {
 test('no reply in time fails with timeout', async (t) => {
   const gw = await fakeGateway(t);
   const started = Date.now();
-  await rejects(client(t, gw).readRegisters(1, 4, 1, 2), 'timeout', undefined);
+  await rejects(client(t, gw, { timeoutMs: 100 }).readRegisters(1, 4, 1, 2), 'timeout', undefined);
   assert.ok(Date.now() - started >= 90);
 });
 
-test('a late reply is dropped and the next request still works', async (t) => {
+test('a late reply is dropped, even in the same chunk as the real reply', async (t) => {
   let n = 0;
   const gw = await fakeGateway(t, (f, s) => {
     n++;
-    if (n === 1) setTimeout(() => s.write(reply(f, [111])), 150); // after the 100 ms timeout
-    else setTimeout(() => s.write(reply(f, [222])), 100);
+    if (n === 1) return; // no answer: request 1 times out
+    // Request 2: the late reply for tid 1 and the reply for tid 2 arrive together.
+    const late = reply(f, [111], { tid: 1 });
+    s.write(Buffer.concat([late, reply(f, [222])]));
   });
-  const c = client(t, gw, { timeoutMs: 120 });
-  await rejects(c.readRegisters(1, 3, 0, 1), 'timeout', undefined);
-  // The late reply (tid 1) arrives while request 2 (tid 2) is in flight and must not answer it.
+  const c = client(t, gw, { timeoutMs: 100 });
+  const first = c.readRegisters(1, 3, 0, 1);
+  await rejects(first, 'timeout', undefined);
   assert.deepEqual(await c.readRegisters(1, 3, 0, 1), [222]);
-  assert.deepEqual(await c.readRegisters(1, 3, 0, 1), [222]);
-});
+}, { timeout: 5000 });
 
 test('a reply for the wrong tid never answers the request in flight', async (t) => {
   const gw = await fakeGateway(t, (f, s) => s.write(reply(f, [5], { tid: f.readUInt16BE(0) + 100 })));
-  await rejects(client(t, gw).readRegisters(1, 3, 0, 1), 'timeout', undefined);
+  await rejects(client(t, gw, { timeoutMs: 100 }).readRegisters(1, 3, 0, 1), 'timeout', undefined);
 });
 
 test('a malformed reply is a bad reply', async (t) => {
@@ -162,8 +166,12 @@ test('after the server closes the connection the next call reconnects', async (t
   const c = client(t, gw);
   assert.deepEqual(await c.readRegisters(1, 3, 0, 1), [9]);
   gw.dropAll();
-  await sleep(30);
-  assert.deepEqual(await c.readRegisters(1, 3, 0, 1), [9]);
+  // The drop may not be noticed yet: retry until a call succeeds.
+  const deadline = Date.now() + 1000;
+  let result;
+  while (!result && Date.now() < deadline) result = await c.readRegisters(1, 3, 0, 1).catch(() => null);
+  assert.deepEqual(result, [9]);
+  assert.equal(gw.connections, 2);
 });
 
 test('a connection lost mid-request fails that request with no connection', async (t) => {
@@ -192,7 +200,7 @@ test('one request in flight: the rest queue and run in order', async (t) => {
 test('a timed-out request does not hold up the queue', async (t) => {
   let n = 0;
   const gw = await fakeGateway(t, (f, s) => { if (++n > 1) s.write(reply(f, [7])); });
-  const c = client(t, gw);
+  const c = client(t, gw, { timeoutMs: 100 });
   const [a, b] = await Promise.allSettled([c.readRegisters(1, 3, 0, 1), c.readRegisters(2, 3, 0, 1)]);
   assert.equal(a.status, 'rejected');
   assert.deepEqual(b.value, [7]);
@@ -207,4 +215,64 @@ test('close fails what is waiting', async (t) => {
   c.close();
   await rejects(p1, 'no connection', undefined);
   await rejects(p2, 'no connection', undefined);
+});
+
+test('after a framing error the next call reconnects and succeeds', async (t) => {
+  let n = 0;
+  const gw = await fakeGateway(t, (f, s) => {
+    if (n++ === 0) {
+      const bad = reply(f, [1]);
+      bad.writeUInt16BE(7, 2); // protocol id must be 0
+      s.write(bad);
+    } else {
+      s.write(reply(f, [42]));
+    }
+  });
+  const c = client(t, gw);
+  await rejects(c.readRegisters(1, 3, 0, 1), 'bad reply', undefined);
+  assert.deepEqual(await c.readRegisters(1, 3, 0, 1), [42]);
+  assert.equal(gw.connections, 2);
+});
+
+test('several frames in one chunk are all read', async (t) => {
+  const gw = await fakeGateway(t, (f, s) => s.write(Buffer.concat([reply(f, [1], { tid: f.readUInt16BE(0) + 50 }), reply(f, [5])])));
+  const c = client(t, gw);
+  assert.deepEqual(await c.readRegisters(1, 3, 0, 1), [5]);
+  assert.deepEqual(await c.readRegisters(1, 3, 0, 1), [5]);
+});
+
+test('three timeouts in a row drop the connection; the next call opens a new one', async (t) => {
+  let answering = false;
+  const gw = await fakeGateway(t, (f, s) => { if (answering) s.write(reply(f, [8])); });
+  const c = client(t, gw, { timeoutMs: 50 });
+  await rejects(c.readRegisters(1, 3, 0, 1), 'timeout', undefined);
+  await rejects(c.readRegisters(1, 3, 0, 1), 'timeout', undefined);
+  assert.equal(gw.connections, 1, 'two timeouts keep the connection');
+  await rejects(c.readRegisters(1, 3, 0, 1), 'timeout', undefined);
+  answering = true;
+  assert.deepEqual(await c.readRegisters(1, 3, 0, 1), [8]);
+  assert.equal(gw.connections, 2, 'the third timeout dropped the connection');
+});
+
+test('an answer resets the timeout count', async (t) => {
+  let answer = false;
+  const gw = await fakeGateway(t, (f, s) => { if (answer) s.write(reply(f, [3])); });
+  const c = client(t, gw, { timeoutMs: 50 });
+  for (let round = 0; round < 3; round++) {
+    answer = false;
+    await rejects(c.readRegisters(1, 3, 0, 1), 'timeout', undefined);
+    await rejects(c.readRegisters(1, 3, 0, 1), 'timeout', undefined);
+    answer = true;
+    assert.deepEqual(await c.readRegisters(1, 3, 0, 1), [3]);
+  }
+  assert.equal(gw.connections, 1);
+});
+
+test('a connect that never completes fails with no connection after the timeout', async (t) => {
+  const c = createModbusClient({ host: '127.0.0.1', port: 1, timeoutMs: 50, connectFn: () => new net.Socket() });
+  t.after(() => c.close());
+  const started = Date.now();
+  await rejects(c.readRegisters(1, 3, 0, 1), 'no connection', undefined);
+  assert.ok(Date.now() - started >= 40);
+  await rejects(c.readRegisters(1, 3, 0, 1), 'no connection', undefined);
 });

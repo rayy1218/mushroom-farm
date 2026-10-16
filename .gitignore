@@ -4,3 +4,4 @@ node_modules/
 data/
 device/state.json
 .claude/worktrees/
+device/state.json.tmp

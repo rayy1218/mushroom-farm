@@ -89,9 +89,15 @@ export function createDeviceHttp(sensors, log, { webDir = WEB_DIR } = {}) {
   }
 
   return http.createServer(async (req, res) => {
-    const path = new URL(req.url, 'http://localhost').pathname;
-    const isApi = path === '/api' || path.startsWith('/api/');
+    let isApi = false;
     try {
+      let path;
+      try {
+        path = new URL(req.url, 'http://localhost').pathname;
+      } catch {
+        throw new SensorError(400, 'Bad request');
+      }
+      isApi = path === '/api' || path.startsWith('/api/');
       await (isApi ? api(req, res, path) : files(req, res, path));
     } catch (err) {
       if (err instanceof SensorError) {

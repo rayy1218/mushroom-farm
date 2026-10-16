@@ -47,10 +47,10 @@ export function createPoller({ db, client, intervalMs = 5000, now = Date.now, lo
   function tick() {
     timer = null;
     if (stopped) return;
-    const began = Date.now();
+    const began = performance.now(); // monotonic, so a clock change cannot stretch or skip the schedule
     cycle().then(() => {
       if (stopped) return;
-      timer = setTimeout(tick, Math.max(0, began + intervalMs - Date.now()));
+      timer = setTimeout(tick, Math.max(0, began + intervalMs - performance.now()));
     });
   }
 

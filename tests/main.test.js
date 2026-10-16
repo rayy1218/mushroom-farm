@@ -6,6 +6,7 @@ import { mkdtempSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import net from 'node:net';
+import { openDb } from '../server/db.js';
 
 // A port nothing listens on (never the owner's 1502).
 async function freePort() {
@@ -116,6 +117,36 @@ test('polls the gateway: readings reach the API, and SIGTERM stops cleanly', asy
   assert.equal(sensor.status, 'online');
   assert.deepEqual(sensor.lastOk.t, 26.5);
   assert.deepEqual(sensor.lastOk.rh, 88.1);
+  child.kill('SIGTERM');
+  const [code] = await exited;
+  assert.equal(code, 0);
+});
+
+test('FARM_GATEWAY with an IPv6 address in brackets reaches the gateway', async (t) => {
+  const gateway = net.createServer((socket) => socket.on('error', () => {}));
+  gateway.listen(0, '::1');
+  try {
+    await once(gateway, 'listening');
+  } catch {
+    t.skip('no IPv6 loopback on this machine');
+    return;
+  }
+  t.after(() => gateway.close());
+  const dir = mkdtempSync(join(tmpdir(), 'farm-main-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const dbPath = join(dir, 'farm.db');
+  const seed = openDb(dbPath); // a wired room, so the first cycle connects at once
+  seed.createRoom({ name: 'R', length: 2, width: 2, height: 2, trhAddress: 1 });
+  seed.close();
+  const connected = once(gateway, 'connection');
+  const gatewayText = `[::1]:${gateway.address().port}`;
+  const { child, firstLine, exited } = start(t, { FARM_PORT: '0', FARM_DB: dbPath, FARM_GATEWAY: gatewayText });
+  assert.match(await firstLine, /^Farm app on /);
+  const [socket] = await Promise.race([
+    connected,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('the app never connected to [::1]')), 3000)),
+  ]);
+  socket.destroy();
   child.kill('SIGTERM');
   const [code] = await exited;
   assert.equal(code, 0);

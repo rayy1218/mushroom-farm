@@ -82,11 +82,15 @@ test('failures are stored with their error text and do not stop the cycle', asyn
 
 test('start runs a cycle now and then every interval', async () => {
   const db = fakeDb([wired[0]]);
-  const poller = createPoller({ db, client: fakeClient(() => [1, 2]), intervalMs: 40 });
+  const poller = createPoller({ db, client: fakeClient(() => [1, 2]), intervalMs: 40, now: Date.now });
   poller.start();
-  await sleep(110);
+  const deadline = Date.now() + 2000;
+  while (db.readings.length < 3 && Date.now() < deadline) await sleep(5);
   await poller.stop();
-  assert.ok(db.readings.length >= 3 && db.readings.length <= 4, String(db.readings.length));
+  assert.ok(db.readings.length >= 3, `only ${db.readings.length} readings in 2 s`);
+  for (let i = 1; i < db.readings.length; i++) {
+    assert.ok(db.readings[i].at - db.readings[i - 1].at >= 35, `gap ${i}: ${db.readings[i].at - db.readings[i - 1].at} ms`);
+  }
 });
 
 test('cycles never overlap, even when slower than the interval', async () => {

@@ -63,7 +63,12 @@ export function createSensors({ statePath } = {}) {
   function add(input) {
     const sensor = make(input ?? {});
     byAddress.set(sensor.address, sensor);
-    save();
+    try {
+      save();
+    } catch (err) {
+      byAddress.delete(sensor.address);
+      throw err;
+    }
     return { ...sensor };
   }
 
@@ -82,14 +87,28 @@ export function createSensors({ statePath } = {}) {
       if (typeof patch.answering !== 'boolean') throw new SensorError(400, 'Answering must be true or false', 'answering');
       next.answering = patch.answering;
     }
+    if (Object.keys(next).length === 0) throw new SensorError(400, 'Nothing to change');
+    const before = { ...sensor };
     Object.assign(sensor, next);
-    save();
+    try {
+      save();
+    } catch (err) {
+      Object.assign(sensor, before);
+      throw err;
+    }
     return { ...sensor };
   }
 
   function remove(address) {
-    if (!byAddress.delete(address)) throw new SensorError(404, `No sensor with address ${address}`);
-    save();
+    const sensor = byAddress.get(address);
+    if (!sensor) throw new SensorError(404, `No sensor with address ${address}`);
+    byAddress.delete(address);
+    try {
+      save();
+    } catch (err) {
+      byAddress.set(address, sensor);
+      throw err;
+    }
   }
 
   // Load: a missing or broken file means an empty device; bad entries are skipped.
@@ -97,8 +116,13 @@ export function createSensors({ statePath } = {}) {
     let saved = [];
     try {
       saved = JSON.parse(readFileSync(statePath, 'utf8'));
-    } catch { /* first start or unreadable file */ }
-    if (Array.isArray(saved)) {
+    } catch (err) {
+      // A missing file is a first start; anything else is worth knowing about.
+      if (err.code !== 'ENOENT') console.warn(`Could not read ${statePath} (${err.message}); starting with no sensors`);
+    }
+    if (!Array.isArray(saved)) {
+      console.warn(`${statePath} does not hold a list of sensors; starting with none`);
+    } else {
       for (const entry of saved) {
         try {
           const sensor = make(entry ?? {});

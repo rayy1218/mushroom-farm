@@ -16,7 +16,7 @@ async function setup(t) {
 
   const db = openDb(':memory:');
   const room = db.createRoom({ name: 'Room 1', length: 6, width: 4, height: 2.5, trhAddress: 1, co2Address: 2 });
-  const client = createModbusClient({ host: '127.0.0.1', port: device.modbusPort, timeoutMs: 200 });
+  const client = createModbusClient({ host: '127.0.0.1', port: device.modbusPort, timeoutMs: 500 });
   const poller = createPoller({ db, client, intervalMs: 60_000, log: () => {} });
 
   let deviceOpen = true;

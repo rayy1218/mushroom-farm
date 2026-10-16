@@ -77,7 +77,7 @@ Validation order: name, length, width, height, trhAddress, co2Address, then the 
 | `t`, `rh`, `co2` | REAL, null when not measured or failed | values in °C, %RH, ppm |
 | `error` | TEXT, null when ok | `timeout`, `no connection`, `exception <code>`, `bad reply` |
 
-Index `(room_id, kind, id)`. Deleting a room deletes its readings in the same transaction. Readings are kept (no trimming); at 2 sensors × one poll per 5 s that is ~35 000 rows per room per day.
+Indexes `readings_by_sensor (room_id, kind, address, id)` and the partial `readings_ok (room_id, kind, address, id) WHERE ok = 1`, so the status queries (latest, last ok, failures since the last ok) search an index and never scan history; the failure count stops at 10 000. A reading is stored only while the room still has that address for that kind. Deleting a room deletes its readings in the same transaction. Readings are kept (no trimming); at 2 sensors × one poll per 5 s that is ~35 000 rows per room per day.
 
 ## 6. Polling (farm app)
 
