@@ -1,7 +1,7 @@
-// JSON API: /api/rooms and /api/rooms/:id.
+// JSON API: /api/rooms, /api/rooms/:id and /api/rooms/:id/sensors.
 
 import { validateRoom } from './rooms.js';
-import { NameTakenError } from './db.js';
+import { NameTakenError, AddressTakenError } from './db.js';
 
 const MAX_BODY = 64 * 1024;
 
@@ -51,9 +51,20 @@ export function createApi(db) {
       if (req.method === 'POST') return send(res, 201, db.createRoom(await readRoom(req)));
       throw notFound();
     }
-    const match = /^\/api\/rooms\/([1-9][0-9]{0,14})$/.exec(path);
+    const match = /^\/api\/rooms\/([1-9][0-9]{0,14})(\/sensors)?$/.exec(path);
     if (!match) throw notFound();
     const id = Number(match[1]);
+    if (match[2]) {
+      if (req.method !== 'GET') throw notFound();
+      const sensors = db.getSensors(id);
+      if (!sensors) throw noRoom();
+      return send(res, 200, sensors);
+    }
+    if (req.method === 'GET') {
+      const room = db.getRoom(id);
+      if (!room) throw noRoom();
+      return send(res, 200, room);
+    }
     if (req.method === 'PUT') {
       if (!db.getRoom(id)) throw noRoom();
       return send(res, 200, db.updateRoom(id, await readRoom(req)));
@@ -74,6 +85,8 @@ export function createApi(db) {
         send(res, err.status, err.field ? { error: err.message, field: err.field } : { error: err.message });
       } else if (err instanceof NameTakenError) {
         send(res, 409, { error: err.message, field: 'name' });
+      } else if (err instanceof AddressTakenError) {
+        send(res, 409, { error: err.message, field: err.field });
       } else if (err.code === 'ECONNRESET') {
         // The client hung up mid-body: nothing to answer, not a server bug.
       } else {
