@@ -1,4 +1,5 @@
 // Starts the device: Modbus TCP side and control page, sharing one sensors store.
+// spinUpMs: how long a relay must be on before its current switch reads running (2000 unless a test says 0).
 
 import { createSensors } from './sensors.js';
 import { createModbusServer } from './modbus-server.js';
@@ -16,8 +17,8 @@ function listen(server, port, host) {
 
 const closeServer = (server) => new Promise((resolve) => server.close(resolve));
 
-export async function startDevice({ modbusPort = 1502, httpPort = 8090, statePath, host = '127.0.0.1' } = {}) {
-  const sensors = createSensors({ statePath });
+export async function startDevice({ modbusPort = 1502, httpPort = 8090, statePath, host = '127.0.0.1', spinUpMs } = {}) {
+  const sensors = createSensors({ statePath, spinUpMs });
   const log = createRequestLog();
   const modbus = createModbusServer(sensors, { onRequest: (entry) => log.add(entry) });
   const http = createDeviceHttp(sensors, log);

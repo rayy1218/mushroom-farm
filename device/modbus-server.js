@@ -1,20 +1,31 @@
-// Modbus TCP server for the device's sensors (function 03 and 04 only).
+// Modbus TCP server for the device's sensors, relay modules and aircon gateways
+// (functions 01, 02, 03, 04, 05 and 16).
 // Written on its own, not shared with the farm app's client.
 
 import net from 'node:net';
 
 const MAX_LENGTH = 254; // unit id + PDU
 
-// What each kind of sensor answers to: function, first register, register count.
+// What each kind of device answers to: function, first register, register count.
 const MAP = {
-  trh: { fn: 4, start: 1, qty: 2 },
-  co2: { fn: 3, start: 0, qty: 1 },
+  trh: { reads: { 4: { start: 1, qty: 2 } } },
+  co2: { reads: { 3: { start: 0, qty: 1 } } },
+  relay: { reads: { 1: { start: 0, qty: 4 }, 2: { start: 0, qty: 4 } }, writes: [5] },
+  ac: { reads: { 3: { start: 0, qty: 4 }, 4: { start: 0, qty: 2 } }, writes: [16] },
 };
+const MODES = ['cool', 'heat', 'dry', 'fan'];
+const FANS = ['auto', 'low', 'high'];
+const COIL_ON = 0xff00;
 
-function registersOf(sensor) {
-  if (sensor.kind === 'trh') return [Math.round(sensor.t * 10) & 0xffff, Math.round(sensor.rh * 10) & 0xffff];
-  return [Math.round(sensor.co2) & 0xffff];
+function registersOf(device, fn) {
+  if (device.kind === 'trh') return [Math.round(device.t * 10) & 0xffff, Math.round(device.rh * 10) & 0xffff];
+  if (device.kind === 'co2') return [Math.round(device.co2) & 0xffff];
+  if (fn === 3) return [device.power ? 1 : 0, device.mode, Math.round(device.setpoint * 10), device.fan];
+  return [Math.round(device.roomT * 10) & 0xffff, device.error];
 }
+
+// Bit 0 = output 0, as the reply to function 01 and 02 wants them.
+const packBits = (bits) => bits.reduce((byte, on, i) => byte | (on ? 1 << i : 0), 0);
 
 function reply(tid, unit, pdu) {
   const out = Buffer.alloc(7 + pdu.length);
@@ -30,6 +41,10 @@ function exception(tid, unit, fn, code) {
   return reply(tid, unit, Buffer.from([fn | 0x80, code]));
 }
 
+function bits(tid, unit, fn, byte) {
+  return reply(tid, unit, Buffer.from([fn, 1, byte]));
+}
+
 function normal(tid, unit, fn, regs) {
   const pdu = Buffer.alloc(2 + regs.length * 2);
   pdu.writeUInt8(fn, 0);
@@ -38,24 +53,70 @@ function normal(tid, unit, fn, regs) {
   return reply(tid, unit, pdu);
 }
 
+// Requests have a fixed shape: 5 bytes for functions 1 to 5, and for 16 the byte count must match the data.
+function wellFormed(pdu) {
+  const fn = pdu[0];
+  if (fn >= 1 && fn <= 5) return pdu.length === 5;
+  if (fn === 16) return pdu.length >= 6 && pdu.length === 6 + pdu[5];
+  return true;
+}
+
 export function createModbusServer(sensors, { onRequest = () => {} } = {}) {
+  function fail(tid, unit, fn, entry, code) {
+    entry.result = `exception ${code}`;
+    return exception(tid, unit, fn, code);
+  }
+
+  // Function 05: one coil. Replies with the request itself.
+  function writeCoil(tid, unit, pdu, entry) {
+    const [fn, index, value] = [pdu[0], pdu.readUInt16BE(1), pdu.readUInt16BE(3)];
+    if (index > 3) return fail(tid, unit, fn, entry, 2);
+    if (value !== COIL_ON && value !== 0) return fail(tid, unit, fn, entry, 3);
+    sensors.writeCoil(unit, index, value === COIL_ON);
+    entry.result = `write coil ${index} ${value === COIL_ON ? 'on' : 'off'}`;
+    return reply(tid, unit, pdu);
+  }
+
+  // Function 16: power, mode, setpoint x 10 and fan, all four at once.
+  function writeAc(tid, unit, pdu, entry) {
+    const fn = pdu[0];
+    if (pdu.readUInt16BE(1) !== 0 || pdu.readUInt16BE(3) !== 4) return fail(tid, unit, fn, entry, 2);
+    if (pdu[5] !== 8) return fail(tid, unit, fn, entry, 3);
+    const [power, mode, setpoint, fan] = [0, 1, 2, 3].map((i) => pdu.readUInt16BE(6 + i * 2));
+    if (power > 1 || mode >= MODES.length || fan >= FANS.length || setpoint < 160 || setpoint > 300 || setpoint % 5 !== 0) {
+      return fail(tid, unit, fn, entry, 3);
+    }
+    sensors.writeAc(unit, { power: power === 1, mode, setpoint: setpoint / 10, fan });
+    entry.result = `write ac ${MODES[mode]} ${setpoint / 10} ${FANS[fan]} ${power ? 'on' : 'off'}`;
+    return reply(tid, unit, pdu.subarray(0, 5));
+  }
+
   // Returns the bytes to send back, or null for no reply.
   function answer(tid, unit, pdu) {
     const fn = pdu[0];
     const entry = { at: Date.now(), address: unit, fn, result: 'ignored' };
     let out = null;
-    const sensor = sensors.get(unit);
-    if (sensor?.answering) {
-      const want = MAP[sensor.kind];
-      if (fn !== want.fn) {
-        out = exception(tid, unit, fn, 1);
-        entry.result = 'exception 1';
-      } else if (pdu.readUInt16BE(1) !== want.start || pdu.readUInt16BE(3) !== want.qty) {
-        out = exception(tid, unit, fn, 2);
-        entry.result = 'exception 2';
-      } else {
-        out = normal(tid, unit, fn, registersOf(sensor));
-        entry.result = 'answered';
+    const device = sensors.get(unit);
+    if (device?.answering) {
+      const map = MAP[device.kind];
+      const read = map.reads[fn];
+      try {
+        if (read) {
+          if (pdu.readUInt16BE(1) !== read.start || pdu.readUInt16BE(3) !== read.qty) {
+            out = fail(tid, unit, fn, entry, 2);
+          } else {
+            entry.result = 'answered';
+            if (device.kind === 'relay') out = bits(tid, unit, fn, packBits(fn === 1 ? device.coils : device.running));
+            else out = normal(tid, unit, fn, registersOf(device, fn));
+          }
+        } else if (map.writes?.includes(fn)) {
+          out = fn === 5 ? writeCoil(tid, unit, pdu, entry) : writeAc(tid, unit, pdu, entry);
+        } else {
+          out = fail(tid, unit, fn, entry, 1);
+        }
+      } catch (err) {
+        console.error(err);
+        out = fail(tid, unit, fn, entry, 4); // device failure, e.g. the state file could not be saved
       }
     }
     onRequest(entry);
@@ -76,7 +137,7 @@ export function createModbusServer(sensors, { onRequest = () => {} } = {}) {
         const unit = buffer[6];
         const pdu = buffer.subarray(7, total);
         buffer = buffer.subarray(total);
-        if ((pdu[0] === 3 || pdu[0] === 4) && pdu.length !== 5) return socket.destroy();
+        if (!wellFormed(pdu)) return socket.destroy();
         const out = answer(tid, unit, pdu);
         if (out) socket.write(out);
       }
