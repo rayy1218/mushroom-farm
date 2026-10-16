@@ -24,7 +24,7 @@ const STATUS_WORDS = {
 // Three charts: which sensor, which reading field, how to show it.
 const CHARTS = [
   { id: 'chart-t', kind: 'trh', field: 't', label: 'Temperature', unit: '°C', color: 'var(--s-t)', digits: 1, minSpan: 1 },
-  { id: 'chart-rh', kind: 'trh', field: 'rh', label: 'Humidity', unit: '%RH', color: 'var(--s-rh)', digits: 1, minSpan: 5 },
+  { id: 'chart-rh', kind: 'trh', field: 'rh', label: 'Humidity', unit: '%RH', color: 'var(--s-rh)', digits: 1, minSpan: 5, bounds: [0, 100] },
   { id: 'chart-co2', kind: 'co2', field: 'co2', label: 'CO₂', unit: 'ppm', color: 'var(--s-co2)', digits: 0, minSpan: 100 },
 ];
 
@@ -35,7 +35,7 @@ const TEMPLATE = `
       <h1 class="page-title" tabindex="-1" data-title>Room</h1>
       <p class="page-sub" data-sub>Loading…</p>
     </div>
-    <div class="page-actions"><button type="button" data-edit hidden>Edit</button></div>
+    <div class="page-actions" data-actions hidden><button type="button" data-edit>Edit</button></div>
   </div>
   <div class="banner" role="alert" hidden>
     <span data-banner-text></span>
@@ -71,6 +71,7 @@ export function mount(container, { id }) {
     title: q('[data-title]'),
     sub: q('[data-sub]'),
     edit: q('[data-edit]'),
+    actions: q('[data-actions]'),
     banner: q('.banner'),
     bannerText: q('[data-banner-text]'),
     retry: q('[data-retry]'),
@@ -84,6 +85,7 @@ export function mount(container, { id }) {
   let room = null;
   let sensors = null; // { trh, co2 }
   let loadSeq = 0;
+  let editedFromCard = false; // the dialog was opened from a sensor card button, which re-rendering replaces
   let timer = null;
   let ticker = null;
   const chartCards = new Map(); // chart id → { card, host, none, chart }
@@ -98,28 +100,35 @@ export function mount(container, { id }) {
   async function load() {
     clearTimeout(timer);
     const seq = ++loadSeq;
+    let fetched;
     try {
-      const [r, list] = await Promise.all([
+      fetched = await Promise.all([
         request('GET', `/api/rooms/${id}`),
         request('GET', `/api/rooms/${id}/sensors`),
       ]);
-      if (!alive() || seq !== loadSeq) return;
-      room = r;
-      sensors = { trh: list.find((s) => s.kind === 'trh'), co2: list.find((s) => s.kind === 'co2') };
-      els.banner.hidden = true;
-      els.missing.hidden = true;
-      render();
     } catch (err) {
       if (!alive() || seq !== loadSeq) return;
       if (err.status === 404) {
         showMissing();
         return; // nothing left to refresh
       }
-      els.bannerText.textContent = OFFLINE;
-      els.retry.hidden = false;
-      els.banner.hidden = false; // the page keeps the last data
+      // Fill the alert only when it is hidden, so a screen reader does not re-announce it every refresh.
+      if (els.banner.hidden) {
+        els.bannerText.textContent = OFFLINE;
+        els.retry.hidden = false;
+        els.banner.hidden = false; // the page keeps the last data
+      }
       if (!room) els.sub.textContent = '';
+      schedule();
+      return;
     }
+    if (!alive() || seq !== loadSeq) return;
+    const [r, list] = fetched;
+    room = r;
+    sensors = { trh: list.find((s) => s.kind === 'trh'), co2: list.find((s) => s.kind === 'co2') };
+    els.banner.hidden = true;
+    els.missing.hidden = true;
+    render();
     schedule();
   }
 
@@ -127,12 +136,14 @@ export function mount(container, { id }) {
     clearTimeout(timer);
     room = null;
     sensors = null;
-    els.title.textContent = 'Room';
+    els.title.textContent = 'Room not found';
     els.sub.textContent = '';
     els.edit.hidden = true;
+    els.actions.hidden = true;
     els.body.hidden = true;
     els.banner.hidden = true;
     els.missing.hidden = false;
+    document.title = 'Rooms · Mushroom farm';
   }
 
   // ---- drawing ----
@@ -141,6 +152,7 @@ export function mount(container, { id }) {
     els.title.textContent = room.name;
     els.sub.textContent = `${metres.format(room.length)} × ${metres.format(room.width)} × ${metres.format(room.height)} m · ${cubic.format(room.volume)} m³`;
     els.edit.hidden = false;
+    els.actions.hidden = false;
     document.title = `${room.name} · Mushroom farm`;
   }
 
@@ -148,7 +160,7 @@ export function mount(container, { id }) {
     const line = text('p', 'reading');
     const part = (value, unit, digits) => {
       const span = text('span');
-      span.append(text('span', 'val', value === undefined ? '—' : value.toFixed(digits)), text('span', 'unit', unit));
+      span.append(text('span', 'val', value == null ? '—' : value.toFixed(digits)), text('span', 'unit', unit));
       return span;
     };
     if (kind === 'trh') line.append(part(last?.t, '°C', 1), part(last?.rh, '%RH', 1));
@@ -197,6 +209,11 @@ export function mount(container, { id }) {
     const hadFocus = els.sensors.contains(document.activeElement) ? document.activeElement.closest('[data-kind]')?.dataset.kind : null;
     els.sensors.replaceChildren(sensorCard('trh', sensors.trh), sensorCard('co2', sensors.co2));
     if (hadFocus) els.sensors.querySelector(`[data-kind="${hadFocus}"] button`)?.focus();
+    // The focused "Edit room" button may be gone (its sensor is wired now) or the dialog just closed.
+    else if (editedFromCard && document.activeElement === document.body && !document.querySelector('dialog[open]')) {
+      editedFromCard = false;
+      els.edit.focus();
+    }
   }
 
   function buildCharts() {
@@ -222,7 +239,7 @@ export function mount(container, { id }) {
       entry.none.hidden = hasValue;
       entry.host.hidden = !hasValue;
       if (!wired) continue;
-      const opts = { points, unit: def.unit, label: def.label, color: def.color, digits: def.digits, minSpan: def.minSpan };
+      const opts = { points, unit: def.unit, label: def.label, color: def.color, digits: def.digits, minSpan: def.minSpan, bounds: def.bounds };
       if (!entry.chart) entry.chart = drawLineChart(entry.host, opts);
       else entry.chart.update(opts);
     }
@@ -260,7 +277,10 @@ export function mount(container, { id }) {
 
   els.edit.addEventListener('click', edit);
   els.sensors.addEventListener('click', (event) => {
-    if (event.target.closest('button[data-action="edit"]')) edit();
+    if (event.target.closest('button[data-action="edit"]')) {
+      editedFromCard = true;
+      edit();
+    }
   });
   els.retry.addEventListener('click', load);
 

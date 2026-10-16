@@ -20,6 +20,9 @@ export function drawLineChart(host, opts) {
   let svg = null;
   let marker = null; // { line, dot }
   let layout = null; // { xs, ys, points }
+  let lastWidth = -1;
+  let hoverAt = null; // the `at` of the hovered point, kept across update()
+  let hoverX = null; // pointer x (client) while it is over the chart
   const tip = document.createElement('div');
   tip.className = 'tip';
   tip.hidden = true;
@@ -45,17 +48,19 @@ export function drawLineChart(host, opts) {
     const y1 = M.top; // top
 
     const values = points.map((p) => p.value).filter((v) => v !== null && Number.isFinite(v));
-    const { min, max } = yRange(values, current.minSpan ?? 1);
+    const { min, max } = yRange(values, current.minSpan ?? 1, current.bounds);
     const t0 = points.length ? points[0].at : 0;
     const t1 = points.length ? points[points.length - 1].at : 0;
     const xs = points.map((p) => xFor(p.at, t0, t1, x0, x1));
     const yFor = (v) => y0 - ((v - min) / (max - min)) * (y0 - y1);
     const ys = points.map((p) => (p.value === null ? null : yFor(p.value)));
 
+    const lo = values.length ? Math.min(...values) : null;
+    const hi = values.length ? Math.max(...values) : null;
     const latest = [...points].reverse().find((p) => p.value !== null);
     svg = el('svg', {
       width, height, viewBox: `0 0 ${width} ${height}`, role: 'img',
-      'aria-label': `${label}: ${points.length} polls${latest ? `, latest ${fmt(latest.value)}` : ''}`,
+      'aria-label': `${label}: ${points.length} polls${latest ? `, latest ${fmt(latest.value)}, min ${fmt(lo)}, max ${fmt(hi)}` : ''}`,
     });
 
     // Grid lines and y labels at the padded min and max.
@@ -81,7 +86,7 @@ export function drawLineChart(host, opts) {
     // Failed polls: a short tick on the bottom axis, so a gap is visible as well as the broken line.
     points.forEach((p, i) => {
       if (p.value !== null) return;
-      svg.append(el('line', { x1: xs[i], x2: xs[i], y1: y0 - 6, y2: y0, style: 'stroke:var(--critical-text)', 'stroke-width': 2 }));
+      svg.append(el('line', { x1: xs[i], x2: xs[i], y1: y0 - 12, y2: y0, style: 'stroke:var(--critical-text)', 'stroke-width': 2 }));
     });
 
     // The line, one path per run; a run of one point is a dot.
@@ -111,6 +116,11 @@ export function drawLineChart(host, opts) {
     svg.addEventListener('pointermove', onPointer);
     svg.addEventListener('pointerleave', onLeave);
     host.prepend(svg);
+    // Put the tooltip back on the point that was hovered, if the pointer is still over the chart.
+    if (hoverX !== null && hoverAt !== null) {
+      const j = points.findIndex((p) => p.at === hoverAt);
+      if (j >= 0) showPoint(j);
+    }
   }
 
   function hideTip() {
@@ -121,9 +131,15 @@ export function drawLineChart(host, opts) {
   function onPointer(event) {
     if (!layout || layout.points.length === 0) return;
     const box = svg.getBoundingClientRect();
+    hoverX = event.clientX;
     const i = nearestIndex(layout.xs, event.clientX - box.left);
+    showPoint(i);
+  }
+
+  function showPoint(i) {
     const p = layout.points[i];
     const x = layout.xs[i];
+    hoverAt = p.at;
     marker.line.setAttribute('x1', x);
     marker.line.setAttribute('x2', x);
     marker.line.setAttribute('visibility', 'visible');
@@ -143,10 +159,11 @@ export function drawLineChart(host, opts) {
 
   function onLeave(event) {
     if (event.pointerType === 'touch') return; // a finger lifting keeps the reading on screen
+    hoverX = null;
+    hoverAt = null;
     hideTip();
   }
 
-  let lastWidth = -1;
   const observer = new ResizeObserver(() => {
     if (Math.floor(host.clientWidth) !== lastWidth) draw(); // height-only changes (our own svg) need no redraw
   });

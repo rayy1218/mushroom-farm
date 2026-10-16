@@ -28,9 +28,6 @@ function show() {
   window.scrollTo(0, 0);
 }
 
-window.addEventListener('hashchange', show);
-show();
-
 // Theme: dark by default; the choice is kept in this browser. index.html applies it before first paint.
 const THEME_COLOURS = { dark: '#1c1f22', light: '#f4f5f6' }; // each theme's --surface
 const themeButtons = document.querySelectorAll('.theme-btn');
@@ -47,7 +44,6 @@ function showTheme(theme) {
     b.setAttribute('aria-label', `Switch to ${next} mode`);
   }
   document.querySelector('meta[name="theme-color"]').setAttribute('content', THEME_COLOURS[theme]);
-  document.dispatchEvent(new CustomEvent('farm-theme')); // charts read colours from the tokens
 }
 
 for (const b of themeButtons) {
@@ -59,3 +55,12 @@ for (const b of themeButtons) {
 }
 
 showTheme(currentTheme());
+
+// "Skip to content" must not change the hash (the router would redirect to the list).
+document.querySelector('[data-skip]').addEventListener('click', (e) => {
+  e.preventDefault();
+  view.focus();
+});
+
+window.addEventListener('hashchange', show);
+show();
