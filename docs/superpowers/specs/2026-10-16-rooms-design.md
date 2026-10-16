@@ -68,8 +68,8 @@ Room object: `{ id, name, length, width, height, volume, createdAt, updatedAt }`
 | Method and path | Success | Errors |
 |---|---|---|
 | `GET /api/rooms` | 200, array of rooms sorted by name (case-insensitive) | — |
-| `POST /api/rooms` | 201, the new room | 400 invalid input or bad JSON; 409 name taken; 413 body over 64 KB |
-| `PUT /api/rooms/:id` | 200, the updated room (all four fields required) | 404 no such room (checked first); 400; 409 name taken by another room; 413 |
+| `POST /api/rooms` | 201, the new room | 400 invalid input or bad JSON; 409 name taken; 413 body over 64 KB; 415 body not sent as application/json |
+| `PUT /api/rooms/:id` | 200, the updated room (all four fields required) | 404 no such room (checked first); 400; 409 name taken by another room; 413; 415 body not sent as application/json |
 | `DELETE /api/rooms/:id` | 204, empty body | 404 no such room |
 | any other `/api/...` path or method | — | 404 |
 | unexpected server failure | — | 500 "Something went wrong" (details logged on the server only) |
@@ -109,7 +109,8 @@ One screen at `/`.
 | 404 on edit or delete | banner "That room no longer exists"; dialog closes; list reloads |
 | network failure or 5xx while saving | message at the top of the dialog "Couldn't reach the farm server. Try again."; input kept |
 | network failure or 5xx on load or delete | banner "Couldn't reach the farm server" with a **Retry** button that reloads the list |
-| opening a dialog | hides any banner |
+| opening a dialog | hides any banner, except the load-failure banner before the first successful load |
+| request with no reply after 10 s | treated as a network failure |
 
 ## 10. Files
 
