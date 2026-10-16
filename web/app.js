@@ -260,3 +260,27 @@ els.table.addEventListener('click', (event) => {
 });
 
 load();
+
+// Theme: dark by default; the choice is kept in this browser. index.html applies it before first paint.
+const THEME_COLOURS = { dark: '#1c1f22', light: '#f4f5f6' }; // each theme's --surface
+const themeButton = $('theme');
+
+function currentTheme() {
+  return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+}
+
+function showTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  const next = theme === 'dark' ? 'light' : 'dark';
+  themeButton.textContent = next === 'light' ? 'Light mode' : 'Dark mode';
+  themeButton.setAttribute('aria-label', `Switch to ${next} mode`);
+  document.querySelector('meta[name="theme-color"]').setAttribute('content', THEME_COLOURS[theme]);
+}
+
+themeButton.addEventListener('click', () => {
+  const theme = currentTheme() === 'dark' ? 'light' : 'dark';
+  showTheme(theme);
+  try { localStorage.setItem('farm.theme', theme); } catch { /* not kept */ }
+});
+
+showTheme(currentTheme());

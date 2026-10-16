@@ -99,6 +99,7 @@ One screen at `/`.
 | Add / Edit dialog | one `<dialog>` form: Name, Length, Width, Height (number inputs, step 0.1), a live "Volume: 48.0 m³" line, **Save** and **Cancel**; title "Add room" or "Edit room" |
 | Delete | confirm dialog "Delete <name>? This can't be undone." with **Delete** and **Cancel** |
 | After a save or delete | the list reloads from the server |
+| Theme | dark by default (the previous app's grey palette); a header button switches to light; the choice is kept per browser (localStorage farm.theme) |
 
 ## 9. Errors on the page
 
