@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Device · Mushroom farm</title>
+  <script>try{var t=localStorage.getItem('farm.theme');document.documentElement.dataset.theme=t==='light'?'light':'dark';}catch(e){document.documentElement.dataset.theme='dark';}</script>
+  <meta name="theme-color" content="#1c1f22">
+  <link rel="stylesheet" href="/styles.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <header class="top">
+    <div>
+      <h1>Device</h1>
+      <p class="muted sub">Pretends to be the gateway and its sensors. Values change only when you type them.</p>
+    </div>
+    <button type="button" id="theme" aria-label="Switch colour theme">Light mode</button>
+  </header>
+
+  <main>
+    <div class="banner" id="banner" role="alert" hidden></div>
+
+    <section aria-labelledby="sensors-title">
+      <h2 id="sensors-title">Sensors</h2>
+      <div class="scroll">
+        <table class="grid" id="sensors">
+          <thead>
+            <tr>
+              <th scope="col" class="num">Address</th>
+              <th scope="col">Kind</th>
+              <th scope="col">Values</th>
+              <th scope="col">Answering</th>
+              <th scope="col"><span class="sr-only">Actions</span></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="muted" id="no-sensors" hidden>No sensors yet. Add one below.</p>
+
+      <form id="add-form" class="add-form" novalidate>
+        <div class="field">
+          <label for="a-address">Address (1 to 247)</label>
+          <input id="a-address" name="address" type="number" inputmode="numeric" min="1" max="247" step="1" required autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="a-kind">Kind</label>
+          <select id="a-kind" name="kind">
+            <option value="trh">T/RH probe</option>
+            <option value="co2">CO₂ sensor</option>
+          </select>
+        </div>
+        <button type="submit" class="primary">Add sensor</button>
+        <p class="field-error" id="add-error" role="alert" aria-live="polite"></p>
+      </form>
+    </section>
+
+    <section aria-labelledby="log-title">
+      <h2 id="log-title">Latest requests</h2>
+      <div class="scroll">
+        <table class="grid" id="log">
+          <thead>
+            <tr>
+              <th scope="col">Time</th>
+              <th scope="col" class="num">Address</th>
+              <th scope="col" class="num">Function</th>
+              <th scope="col">Result</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="muted" id="no-log">No requests yet.</p>
+    </section>
+  </main>
+</body>
+</html>
