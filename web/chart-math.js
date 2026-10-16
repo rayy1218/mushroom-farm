@@ -1,0 +1,70 @@
+// Pure helpers for the line chart and the detail page (no DOM, so they can be tested in Node).
+
+const pad2 = (n) => String(n).padStart(2, '0');
+
+// hh:mm:ss in the browser's local time.
+export function formatClock(ms) {
+  const d = new Date(ms);
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+}
+
+// "5 s ago", "2 min ago", "1 h 5 min ago"; never negative (a clock a little behind shows "0 s ago").
+export function formatAgo(ms) {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return `${s} s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m} min ago`;
+  const h = Math.floor(m / 60);
+  return m % 60 === 0 ? `${h} h ago` : `${h} h ${m % 60} min ago`;
+}
+
+// The y range for a set of values: the data's min and max with 10 % padding either side.
+// A flat line (or one value) still gets a range of at least minSpan, centred on the value.
+export function yRange(values, minSpan = 1) {
+  const v = values.filter((x) => Number.isFinite(x));
+  if (v.length === 0) return { min: 0, max: minSpan };
+  const lo = Math.min(...v);
+  const hi = Math.max(...v);
+  const span = Math.max(hi - lo, minSpan);
+  const padding = span * 0.1;
+  const mid = (lo + hi) / 2;
+  return { min: mid - span / 2 - padding, max: mid + span / 2 + padding };
+}
+
+// x position of time `at` between the first and last time, across [x0, x1].
+// A single time (or all equal) sits in the middle.
+export function xFor(at, t0, t1, x0, x1) {
+  if (t1 <= t0) return (x0 + x1) / 2;
+  return x0 + ((at - t0) / (t1 - t0)) * (x1 - x0);
+}
+
+// Runs of consecutive points that have a value; a null value ends a run (the line breaks there).
+export function segments(points) {
+  const runs = [];
+  let run = [];
+  for (const p of points) {
+    if (p.value === null || p.value === undefined || !Number.isFinite(p.value)) {
+      if (run.length) runs.push(run);
+      run = [];
+    } else {
+      run.push(p);
+    }
+  }
+  if (run.length) runs.push(run);
+  return runs;
+}
+
+// Index of the x in `xs` (ascending) closest to `x`; -1 when there are none.
+export function nearestIndex(xs, x) {
+  if (xs.length === 0) return -1;
+  let best = 0;
+  for (let i = 1; i < xs.length; i++) {
+    if (Math.abs(xs[i] - x) < Math.abs(xs[best] - x)) best = i;
+  }
+  return best;
+}
+
+// Points for the three charts from a sensor object (I3): one point per poll, null when not ok.
+export function chartPoints(sensor, field) {
+  return (sensor?.readings ?? []).map((r) => ({ at: r.at, value: r.ok && Number.isFinite(r[field]) ? r[field] : null }));
+}
