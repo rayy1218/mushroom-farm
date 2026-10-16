@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Rooms · Mushroom farm</title>
   <script>try{var t=localStorage.getItem('farm.theme');document.documentElement.dataset.theme=t==='light'?'light':'dark';}catch(e){document.documentElement.dataset.theme='dark';}</script>
   <meta name="theme-color" content="#1c1f22">
@@ -10,88 +10,89 @@
   <script type="module" src="/app.js"></script>
 </head>
 <body>
-  <header class="top">
-    <h1>Rooms</h1>
-    <div class="top-actions">
-      <button type="button" id="theme" aria-label="Switch colour theme">Light mode</button>
-      <button type="button" class="primary" id="add">Add room</button>
+<a class="skip" href="#view" data-skip>Skip to content</a>
+<div class="app">
+  <aside class="side">
+    <div class="brand"><span class="brand-mark" aria-hidden="true"></span><span class="brand-text"><strong>Mushroom farm</strong><small>Climate and harvest</small></span></div>
+    <nav class="menu" aria-label="Main menu">
+      <a href="#/rooms" id="menu-rooms"><svg class="ico" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/></svg><span>Rooms</span></a>
+    </nav>
+    <div class="side-foot">
+      <button type="button" class="theme-btn" aria-label="Switch colour theme">Light mode</button>
     </div>
-  </header>
+  </aside>
+  <div class="col">
+    <header class="topbar">
+      <span class="brand brand-top"><span class="brand-mark" aria-hidden="true"></span><strong>Mushroom farm</strong></span>
+      <button type="button" class="theme-btn" aria-label="Switch colour theme">Light mode</button>
+    </header>
+    <main id="view" tabindex="-1"></main>
+  </div>
+</div>
 
-  <main>
-    <div class="banner" id="banner" role="alert" hidden>
-      <span id="banner-text"></span>
-      <button type="button" id="retry" hidden>Retry</button>
+<dialog id="room-dialog" aria-labelledby="room-title">
+  <form id="room-form">
+    <h2 id="room-title">Add room</h2>
+    <p class="form-error" id="form-error" role="alert" tabindex="-1" hidden></p>
+
+    <div class="field">
+      <label for="f-name">Name</label>
+      <input id="f-name" name="name" required maxlength="60" autocomplete="off" aria-describedby="e-name">
+      <p class="field-error" aria-live="polite" id="e-name"></p>
     </div>
 
-    <p class="muted" id="loading">Loading rooms…</p>
-
-    <div class="empty" id="empty" hidden>
-      <p>No rooms yet</p>
-      <button type="button" class="primary" id="add-empty">Add room</button>
-    </div>
-
-    <table class="rooms" id="rooms" hidden>
-      <thead>
-        <tr>
-          <th scope="col">Name</th>
-          <th scope="col">Size (L × W × H m)</th>
-          <th scope="col" class="num">Volume (m³)</th>
-          <th scope="col">Created</th>
-          <th scope="col"><span class="sr-only">Actions</span></th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-  </main>
-
-  <dialog id="room-dialog" aria-labelledby="room-title">
-    <form id="room-form">
-      <h2 id="room-title">Add room</h2>
-      <p class="form-error" id="form-error" role="alert" tabindex="-1" hidden></p>
-
+    <div class="sizes">
       <div class="field">
-        <label for="f-name">Name</label>
-        <input id="f-name" name="name" required maxlength="60" autocomplete="off" aria-describedby="e-name">
-        <p class="field-error" aria-live="polite" id="e-name"></p>
+        <label for="f-length">Length (m)</label>
+        <input id="f-length" name="length" type="number" required min="0.5" max="100" step="0.1" inputmode="decimal" aria-describedby="e-length">
+        <p class="field-error" aria-live="polite" id="e-length"></p>
       </div>
+      <div class="field">
+        <label for="f-width">Width (m)</label>
+        <input id="f-width" name="width" type="number" required min="0.5" max="100" step="0.1" inputmode="decimal" aria-describedby="e-width">
+        <p class="field-error" aria-live="polite" id="e-width"></p>
+      </div>
+      <div class="field">
+        <label for="f-height">Height (m)</label>
+        <input id="f-height" name="height" type="number" required min="0.5" max="10" step="0.1" inputmode="decimal" aria-describedby="e-height">
+        <p class="field-error" aria-live="polite" id="e-height"></p>
+      </div>
+    </div>
 
-      <div class="sizes">
+    <p class="volume" id="volume">Volume: — m³</p>
+
+    <fieldset class="addresses">
+      <legend>Sensors (Modbus address)</legend>
+      <div class="sizes two">
         <div class="field">
-          <label for="f-length">Length (m)</label>
-          <input id="f-length" name="length" type="number" required min="0.5" max="100" step="0.1" inputmode="decimal" aria-describedby="e-length">
-          <p class="field-error" aria-live="polite" id="e-length"></p>
+          <label for="f-trhAddress">T/RH probe</label>
+          <input id="f-trhAddress" name="trhAddress" type="number" min="1" max="247" step="1" inputmode="numeric" placeholder="none" aria-describedby="e-trhAddress">
+          <p class="field-error" aria-live="polite" id="e-trhAddress"></p>
         </div>
         <div class="field">
-          <label for="f-width">Width (m)</label>
-          <input id="f-width" name="width" type="number" required min="0.5" max="100" step="0.1" inputmode="decimal" aria-describedby="e-width">
-          <p class="field-error" aria-live="polite" id="e-width"></p>
-        </div>
-        <div class="field">
-          <label for="f-height">Height (m)</label>
-          <input id="f-height" name="height" type="number" required min="0.5" max="10" step="0.1" inputmode="decimal" aria-describedby="e-height">
-          <p class="field-error" aria-live="polite" id="e-height"></p>
+          <label for="f-co2Address">CO₂ sensor</label>
+          <input id="f-co2Address" name="co2Address" type="number" min="1" max="247" step="1" inputmode="numeric" placeholder="none" aria-describedby="e-co2Address">
+          <p class="field-error" aria-live="polite" id="e-co2Address"></p>
         </div>
       </div>
+    </fieldset>
 
-      <p class="volume" id="volume">Volume: — m³</p>
+    <div class="actions">
+      <button type="button" id="cancel">Cancel</button>
+      <button type="submit" class="primary" id="save">Save</button>
+    </div>
+  </form>
+</dialog>
 
-      <div class="actions">
-        <button type="button" id="cancel">Cancel</button>
-        <button type="submit" class="primary" id="save">Save</button>
-      </div>
-    </form>
-  </dialog>
-
-  <dialog id="delete-dialog" aria-labelledby="delete-title">
-    <form method="dialog">
-      <h2 id="delete-title">Delete room</h2>
-      <p id="delete-text"></p>
-      <div class="actions">
-        <button value="cancel">Cancel</button>
-        <button value="delete" class="danger">Delete</button>
-      </div>
-    </form>
-  </dialog>
+<dialog id="delete-dialog" aria-labelledby="delete-title">
+  <form method="dialog">
+    <h2 id="delete-title">Delete room</h2>
+    <p id="delete-text"></p>
+    <div class="actions">
+      <button value="cancel">Cancel</button>
+      <button value="delete" class="danger">Delete</button>
+    </div>
+  </form>
+</dialog>
 </body>
 </html>

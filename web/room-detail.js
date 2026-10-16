@@ -1,0 +1,278 @@
+// Room detail page: the room, its two sensors (status, latest values) and three charts of the last 50 polls.
+// Refreshes every 5 s while shown.
+
+import { request, OFFLINE } from './api.js';
+import { openRoomDialog, closeRoomDialog } from './room-dialog.js';
+import { drawLineChart } from './chart.js';
+import { formatClock, formatAgo, chartPoints } from './chart-math.js';
+
+const REFRESH_MS = 5000;
+const metres = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
+const cubic = new Intl.NumberFormat(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
+const KINDS = {
+  trh: { title: 'T/RH probe' },
+  co2: { title: 'CO₂ sensor' },
+};
+const STATUS_WORDS = {
+  'not-wired': 'Not wired',
+  'no-data': 'No data yet',
+  online: 'Online',
+  timeout: 'Timeout',
+  offline: 'Offline',
+};
+// Three charts: which sensor, which reading field, how to show it.
+const CHARTS = [
+  { id: 'chart-t', kind: 'trh', field: 't', label: 'Temperature', unit: '°C', color: 'var(--s-t)', digits: 1, minSpan: 1 },
+  { id: 'chart-rh', kind: 'trh', field: 'rh', label: 'Humidity', unit: '%RH', color: 'var(--s-rh)', digits: 1, minSpan: 5 },
+  { id: 'chart-co2', kind: 'co2', field: 'co2', label: 'CO₂', unit: 'ppm', color: 'var(--s-co2)', digits: 0, minSpan: 100 },
+];
+
+const TEMPLATE = `
+  <a class="back" href="#/rooms">← Rooms</a>
+  <div class="page-head">
+    <div class="page-titles">
+      <h1 class="page-title" tabindex="-1" data-title>Room</h1>
+      <p class="page-sub" data-sub>Loading…</p>
+    </div>
+    <div class="page-actions"><button type="button" data-edit hidden>Edit</button></div>
+  </div>
+  <div class="banner" role="alert" hidden>
+    <span data-banner-text></span>
+    <button type="button" data-retry hidden>Retry</button>
+  </div>
+  <div class="missing" data-missing hidden>
+    <p>That room no longer exists</p>
+    <a href="#/rooms">Back to the rooms</a>
+  </div>
+  <div data-body hidden>
+    <div class="sensors" data-sensors></div>
+    <div class="charts" data-charts></div>
+  </div>`;
+
+let mountSeq = 0; // every mount gets a token; a reply that finds the token changed is dropped
+
+function text(tag, className, content) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (content !== undefined) node.textContent = content;
+  return node;
+}
+
+function plural(n, one, many) {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+export function mount(container, { id }) {
+  const me = ++mountSeq;
+  container.innerHTML = TEMPLATE;
+  const q = (sel) => container.querySelector(sel);
+  const els = {
+    title: q('[data-title]'),
+    sub: q('[data-sub]'),
+    edit: q('[data-edit]'),
+    banner: q('.banner'),
+    bannerText: q('[data-banner-text]'),
+    retry: q('[data-retry]'),
+    missing: q('[data-missing]'),
+    body: q('[data-body]'),
+    sensors: q('[data-sensors]'),
+    charts: q('[data-charts]'),
+  };
+  const alive = () => me === mountSeq;
+
+  let room = null;
+  let sensors = null; // { trh, co2 }
+  let loadSeq = 0;
+  let timer = null;
+  let ticker = null;
+  const chartCards = new Map(); // chart id → { card, host, none, chart }
+
+  // ---- loading ----
+
+  function schedule() {
+    clearTimeout(timer);
+    timer = setTimeout(load, REFRESH_MS);
+  }
+
+  async function load() {
+    clearTimeout(timer);
+    const seq = ++loadSeq;
+    try {
+      const [r, list] = await Promise.all([
+        request('GET', `/api/rooms/${id}`),
+        request('GET', `/api/rooms/${id}/sensors`),
+      ]);
+      if (!alive() || seq !== loadSeq) return;
+      room = r;
+      sensors = { trh: list.find((s) => s.kind === 'trh'), co2: list.find((s) => s.kind === 'co2') };
+      els.banner.hidden = true;
+      els.missing.hidden = true;
+      render();
+    } catch (err) {
+      if (!alive() || seq !== loadSeq) return;
+      if (err.status === 404) {
+        showMissing();
+        return; // nothing left to refresh
+      }
+      els.bannerText.textContent = OFFLINE;
+      els.retry.hidden = false;
+      els.banner.hidden = false; // the page keeps the last data
+      if (!room) els.sub.textContent = '';
+    }
+    schedule();
+  }
+
+  function showMissing() {
+    clearTimeout(timer);
+    room = null;
+    sensors = null;
+    els.title.textContent = 'Room';
+    els.sub.textContent = '';
+    els.edit.hidden = true;
+    els.body.hidden = true;
+    els.banner.hidden = true;
+    els.missing.hidden = false;
+  }
+
+  // ---- drawing ----
+
+  function renderHead() {
+    els.title.textContent = room.name;
+    els.sub.textContent = `${metres.format(room.length)} × ${metres.format(room.width)} × ${metres.format(room.height)} m · ${cubic.format(room.volume)} m³`;
+    els.edit.hidden = false;
+    document.title = `${room.name} · Mushroom farm`;
+  }
+
+  function valueLine(kind, last) {
+    const line = text('p', 'reading');
+    const part = (value, unit, digits) => {
+      const span = text('span');
+      span.append(text('span', 'val', value === undefined ? '—' : value.toFixed(digits)), text('span', 'unit', unit));
+      return span;
+    };
+    if (kind === 'trh') line.append(part(last?.t, '°C', 1), part(last?.rh, '%RH', 1));
+    else line.append(part(last?.co2, 'ppm', 0));
+    return line;
+  }
+
+  function sensorCard(kind, s) {
+    const card = text('section', 'card');
+    card.dataset.kind = kind;
+    card.append(text('h2', '', KINDS[kind].title));
+    if (s.status === 'not-wired') {
+      card.append(text('p', 'addr', 'No sensor address set'));
+      const actions = text('div', 'card-actions');
+      const edit = text('button', '', 'Edit room');
+      edit.type = 'button';
+      edit.dataset.action = 'edit';
+      actions.append(edit);
+      card.append(actions);
+      return card;
+    }
+    card.append(text('p', 'addr', `address ${s.address}`));
+    const status = text('span', 'status', STATUS_WORDS[s.status] ?? s.status);
+    status.dataset.status = s.status;
+    card.append(status);
+    if (s.status === 'no-data') {
+      card.append(text('p', 'meta', 'Waiting for the first poll'));
+      return card;
+    }
+    card.append(valueLine(kind, s.lastOk));
+    if (s.lastOk) {
+      const ago = text('p', 'meta');
+      ago.dataset.agoAt = s.lastOk.at;
+      ago.textContent = formatAgo(Date.now() - s.lastOk.at);
+      card.append(ago);
+    }
+    if (s.status !== 'online') {
+      card.append(text('p', 'meta', `Last answer: ${s.lastOk ? formatClock(s.lastOk.at) : 'never'}`));
+      card.append(text('p', 'meta warn', `${plural(s.failuresInRow, 'failed poll', 'failed polls')} in a row`));
+    }
+    return card;
+  }
+
+  function renderSensors() {
+    // Re-rendering replaces the cards; keep focus on the same button.
+    const hadFocus = els.sensors.contains(document.activeElement) ? document.activeElement.closest('[data-kind]')?.dataset.kind : null;
+    els.sensors.replaceChildren(sensorCard('trh', sensors.trh), sensorCard('co2', sensors.co2));
+    if (hadFocus) els.sensors.querySelector(`[data-kind="${hadFocus}"] button`)?.focus();
+  }
+
+  function buildCharts() {
+    for (const def of CHARTS) {
+      const card = text('section', 'card chart-card');
+      card.append(text('h2', '', `${def.label} (${def.unit})`));
+      const none = text('p', 'none', 'No readings yet');
+      const host = text('div', 'chart-host');
+      card.append(none, host);
+      chartCards.set(def.id, { card, host, none, chart: null });
+      els.charts.append(card);
+    }
+  }
+
+  function renderCharts() {
+    for (const def of CHARTS) {
+      const entry = chartCards.get(def.id);
+      const s = sensors[def.kind];
+      const points = chartPoints(s, def.field);
+      const wired = s.status !== 'not-wired';
+      entry.card.hidden = !wired;
+      const hasValue = points.some((p) => p.value !== null); // only failed polls: nothing to draw yet
+      entry.none.hidden = hasValue;
+      entry.host.hidden = !hasValue;
+      if (!wired) continue;
+      const opts = { points, unit: def.unit, label: def.label, color: def.color, digits: def.digits, minSpan: def.minSpan };
+      if (!entry.chart) entry.chart = drawLineChart(entry.host, opts);
+      else entry.chart.update(opts);
+    }
+  }
+
+  let built = false;
+  function render() {
+    renderHead();
+    els.body.hidden = false;
+    if (!built) {
+      buildCharts();
+      built = true;
+    }
+    renderSensors();
+    renderCharts();
+  }
+
+  // "n s ago" counts on between refreshes.
+  ticker = setInterval(() => {
+    for (const node of els.sensors.querySelectorAll('[data-ago-at]')) {
+      node.textContent = formatAgo(Date.now() - Number(node.dataset.agoAt));
+    }
+  }, 1000);
+
+  // ---- wiring ----
+
+  function edit() {
+    if (!room) return;
+    els.banner.hidden = true;
+    openRoomDialog(room, {
+      onSaved: () => { if (alive()) load(); },
+      onGone: () => { if (alive()) showMissing(); },
+    });
+  }
+
+  els.edit.addEventListener('click', edit);
+  els.sensors.addEventListener('click', (event) => {
+    if (event.target.closest('button[data-action="edit"]')) edit();
+  });
+  els.retry.addEventListener('click', load);
+
+  load();
+
+  return function unmount() {
+    mountSeq++;
+    clearTimeout(timer);
+    clearInterval(ticker);
+    for (const { chart } of chartCards.values()) chart?.destroy();
+    closeRoomDialog();
+    document.title = 'Rooms · Mushroom farm';
+    container.replaceChildren();
+  };
+}
