@@ -13,7 +13,7 @@
   <header class="top">
     <div>
       <h1>Device</h1>
-      <p class="muted sub">Pretends to be the gateway and its sensors. Values change only when you type them.</p>
+      <p class="muted sub">Pretends to be the gateway, its sensors, a relay module and an aircon gateway. Values change only when you type them; relays and the aircon follow the farm.</p>
     </div>
     <button type="button" id="theme" aria-label="Switch colour theme">Light mode</button>
   </header>
@@ -22,7 +22,7 @@
     <div class="banner" id="banner" role="alert" hidden></div>
 
     <section aria-labelledby="sensors-title">
-      <h2 id="sensors-title">Sensors</h2>
+      <h2 id="sensors-title">Devices</h2>
       <div class="scroll">
         <table class="grid" id="sensors">
           <thead>
@@ -37,7 +37,7 @@
           <tbody></tbody>
         </table>
       </div>
-      <p class="muted" id="no-sensors" hidden>No sensors yet. Add one below.</p>
+      <p class="muted" id="no-sensors" hidden>No devices yet. Add one below.</p>
 
       <form id="add-form" class="add-form" novalidate>
         <div class="field">
@@ -49,9 +49,11 @@
           <select id="a-kind" name="kind">
             <option value="trh">T/RH probe</option>
             <option value="co2">CO₂ sensor</option>
+            <option value="relay">Relay module</option>
+            <option value="ac">Aircon gateway</option>
           </select>
         </div>
-        <button type="submit" class="primary">Add sensor</button>
+        <button type="submit" class="primary">Add device</button>
         <p class="field-error" id="add-error" role="alert" aria-live="polite"></p>
       </form>
     </section>

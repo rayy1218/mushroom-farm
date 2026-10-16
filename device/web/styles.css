@@ -107,6 +107,17 @@ button.danger-text { color: var(--critical-text); }
 .row-error { margin: 4px 0 0; font-size: 0.85rem; color: var(--critical-text); }
 .row-error:empty { display: none; }
 
+/* Relay module lines and the aircon block. */
+.machines { display: flex; flex-direction: column; gap: 4px; white-space: normal; }
+.machine { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; }
+.machine .mname { width: 120px; font-weight: 600; }
+.machine .coil { width: 64px; font-variant-numeric: tabular-nums; }
+.run { display: inline-flex; align-items: center; gap: 6px; width: 84px; }
+.dot { width: 10px; height: 10px; border-radius: 50%; border: 1px solid var(--border-strong); background: transparent; }
+.dot.on { background: var(--ink); border-color: var(--ink); }
+.ac { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.ac-setting { margin: 0; }
+
 /* Answering switch: a checkbox drawn as a switch, with the word beside it. */
 .switch { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; min-height: 40px; }
 .switch input { position: absolute; opacity: 0; width: 1px; height: 1px; min-height: 0; }

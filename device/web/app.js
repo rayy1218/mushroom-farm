@@ -1,8 +1,11 @@
-// Device control page: sensor table (edit in place), add form, request log. Refreshes every 2 s.
+// Device control page: table of sensors, relay modules and aircon gateways (edit in place), add form, request log. Refreshes every 2 s.
 
 const $ = (id) => document.getElementById(id);
 const REFRESH_MS = 2000;
-const KIND_NAMES = { trh: 'T/RH probe', co2: 'CO₂ sensor' };
+const KIND_NAMES = { trh: 'T/RH probe', co2: 'CO₂ sensor', relay: 'Relay module', ac: 'Aircon gateway' };
+const MACHINES = ['Intake fan', 'Exhaust fan', 'Circulation fan', 'Humidifier'];
+const MODES = ['cool', 'heat', 'dry', 'fan'];
+const FANS = ['auto', 'low', 'high'];
 
 async function request(method, path, body) {
   const init = { method, signal: AbortSignal.timeout(5000) };
@@ -35,11 +38,65 @@ function valueInput(row, address, field, label, props) {
   return [el('label', { htmlFor: input.id }, label), input];
 }
 
+// A switch drawn from a checkbox, with a fixed word beside it.
+function flagSwitch(id, word, label) {
+  const input = el('input', { type: 'checkbox', id });
+  if (label) input.setAttribute('aria-label', label);
+  return { input, label: el('label', { className: 'switch' }, input, el('span', { className: 'track' }), el('span', { textContent: word })) };
+}
+
+// Relay module: one line per output. The coil is the farm's doing; stuck and dead are the faults to play with.
+function relayValues(row, address) {
+  const list = el('div', { className: 'machines' });
+  row.machines = MACHINES.map((name, i) => {
+    const stuck = flagSwitch(`stuck-${address}-${i}`, 'Stuck', `${name} stuck`);
+    const dead = flagSwitch(`dead-${address}-${i}`, 'Dead', `${name} dead`);
+    stuck.input.addEventListener('change', () => save(row, address, 'stuck', stuck.input, row.machines.map((m) => m.stuck.input.checked)));
+    dead.input.addEventListener('change', () => save(row, address, 'dead', dead.input, row.machines.map((m) => m.dead.input.checked)));
+    const m = { stuck, dead, coil: el('span', { className: 'coil' }), dot: el('span', { className: 'dot' }), run: el('span', { className: 'muted' }) };
+    list.append(el('div', { className: 'machine' }, el('span', { className: 'mname', textContent: name }), m.coil, el('span', { className: 'run' }, m.dot, m.run), stuck.label, dead.label));
+    return m;
+  });
+  row.extra = (sensor) => {
+    sensor.coils.forEach((on, i) => {
+      const m = row.machines[i];
+      m.coil.textContent = on ? 'Coil on' : 'Coil off';
+      m.dot.classList.toggle('on', sensor.running[i]);
+      m.run.textContent = sensor.running[i] ? 'running' : 'stopped';
+      for (const field of ['stuck', 'dead']) {
+        if (document.activeElement !== m[field].input) m[field].input.checked = sensor[field][i];
+      }
+    });
+  };
+  return [list];
+}
+
+// Aircon gateway: what the farm set (read-only), then the room temperature, error code and the refuse switch.
+function acValues(row, address) {
+  row.setting = el('p', { className: 'ac-setting' });
+  const values = el('div', { className: 'values' },
+    ...valueInput(row, address, 'roomT', 'Room T °C', { min: -40, max: 80, step: 0.1 }),
+    ...valueInput(row, address, 'error', 'Error code', { min: 0, max: 255, step: 1 }));
+  const refuse = flagSwitch(`refuse-${address}`, 'Refuse commands');
+  refuse.input.addEventListener('change', () => save(row, address, 'refuse', refuse.input));
+  row.extra = (sensor) => {
+    row.setting.textContent = `Set by the farm: ${sensor.power ? 'on' : 'off'} · ${MODES[sensor.mode]} · ${sensor.setpoint.toFixed(1)} °C · fan ${FANS[sensor.fan]}`;
+    if (document.activeElement !== refuse.input) refuse.input.checked = sensor.refuse;
+  };
+  return [row.setting, values, refuse.label];
+}
+
 function buildRow(sensor) {
   const { address, kind } = sensor;
   const row = { inputs: {}, tr: el('tr'), error: el('p', { className: 'row-error', role: 'alert' }) };
   const values = el('div', { className: 'values' });
-  if (kind === 'trh') {
+  if (kind === 'relay') {
+    values.className = '';
+    values.append(...relayValues(row, address));
+  } else if (kind === 'ac') {
+    values.className = 'ac';
+    values.append(...acValues(row, address));
+  } else if (kind === 'trh') {
     values.append(
       ...valueInput(row, address, 't', 'T °C', { min: -40, max: 80, step: 0.1 }),
       ...valueInput(row, address, 'rh', 'RH %', { min: 0, max: 100, step: 0.1 }),
@@ -71,8 +128,8 @@ function buildRow(sensor) {
   return row;
 }
 
-async function save(row, address, field, input) {
-  const value = field === 'answering' ? input.checked : input.valueAsNumber;
+async function save(row, address, field, input, list) {
+  const value = list ?? (input.type === 'checkbox' ? input.checked : input.valueAsNumber);
   row.error.textContent = '';
   try {
     await request('PUT', `/api/sensors/${address}`, { [field]: Number.isNaN(value) ? input.value : value });
@@ -80,9 +137,9 @@ async function save(row, address, field, input) {
     clearBanner();
   } catch (err) {
     if (err.status === 404) return refresh();
-    if (field !== 'answering') input.setAttribute('aria-invalid', 'true');
+    if (input.type !== 'checkbox') input.setAttribute('aria-invalid', 'true');
     row.error.textContent = err.message;
-    if (field === 'answering') refresh();
+    if (input.type === 'checkbox') refresh();
   }
 }
 
@@ -92,6 +149,7 @@ function showRow(row, sensor) {
     input.value = String(sensor[field]);
   }
   if (document.activeElement !== row.check) row.check.checked = sensor.answering;
+  row.extra?.(sensor);
   row.word.textContent = sensor.answering ? 'Answering' : 'Silent';
 }
 
