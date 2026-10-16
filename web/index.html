@@ -77,6 +77,22 @@
       </div>
     </fieldset>
 
+    <fieldset class="addresses">
+      <legend>Machines (Modbus address)</legend>
+      <div class="sizes two">
+        <div class="field">
+          <label for="f-relayAddress">Relay module</label>
+          <input id="f-relayAddress" name="relayAddress" type="number" min="1" max="247" step="1" inputmode="numeric" placeholder="none" aria-describedby="e-relayAddress">
+          <p class="field-error" aria-live="polite" id="e-relayAddress"></p>
+        </div>
+        <div class="field">
+          <label for="f-acAddress">Aircon gateway</label>
+          <input id="f-acAddress" name="acAddress" type="number" min="1" max="247" step="1" inputmode="numeric" placeholder="none" aria-describedby="e-acAddress">
+          <p class="field-error" aria-live="polite" id="e-acAddress"></p>
+        </div>
+      </div>
+    </fieldset>
+
     <div class="actions">
       <button type="button" id="cancel">Cancel</button>
       <button type="submit" class="primary" id="save">Save</button>

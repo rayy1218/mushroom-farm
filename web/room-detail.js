@@ -1,8 +1,9 @@
-// Room detail page: the room, its two sensors (status, latest values) and three charts of the last 50 polls.
+// Room detail page: the room, its two sensors (status, latest values), its machines and three charts of the last 50 polls.
 // Refreshes every 5 s while shown.
 
 import { request, OFFLINE } from './api.js';
 import { openRoomDialog, closeRoomDialog } from './room-dialog.js';
+import { createMachines } from './machines.js';
 import { drawLineChart } from './chart.js';
 import { formatClock, formatAgo, chartPoints } from './chart-math.js';
 
@@ -47,6 +48,7 @@ const TEMPLATE = `
   </div>
   <div data-body hidden>
     <div class="sensors" data-sensors></div>
+    <section data-machines></section>
     <div class="charts" data-charts></div>
   </div>`;
 
@@ -78,6 +80,7 @@ export function mount(container, { id }) {
     missing: q('[data-missing]'),
     body: q('[data-body]'),
     sensors: q('[data-sensors]'),
+    machinesHost: q('[data-machines]'),
     charts: q('[data-charts]'),
   };
   const alive = () => me === mountSeq;
@@ -87,6 +90,7 @@ export function mount(container, { id }) {
   let loadSeq = 0;
   let editedFromCard = false; // the dialog was opened from a sensor card button, which re-rendering replaces
   let timer = null;
+  let machines = null; // the Machines card, made on the first render
   let ticker = null;
   const chartCards = new Map(); // chart id → { card, host, none, chart }
 
@@ -100,11 +104,13 @@ export function mount(container, { id }) {
   async function load() {
     clearTimeout(timer);
     const seq = ++loadSeq;
+    const token = machines?.token();
     let fetched;
     try {
       fetched = await Promise.all([
         request('GET', `/api/rooms/${id}`),
         request('GET', `/api/rooms/${id}/sensors`),
+        request('GET', `/api/rooms/${id}/machines`),
       ]);
     } catch (err) {
       if (!alive() || seq !== loadSeq) return;
@@ -123,12 +129,13 @@ export function mount(container, { id }) {
       return;
     }
     if (!alive() || seq !== loadSeq) return;
-    const [r, list] = fetched;
+    const [r, list, machineData] = fetched;
     room = r;
     sensors = { trh: list.find((s) => s.kind === 'trh'), co2: list.find((s) => s.kind === 'co2') };
     els.banner.hidden = true;
     els.missing.hidden = true;
     render();
+    machines.update(machineData, token ?? machines.token());
     schedule();
   }
 
@@ -250,11 +257,25 @@ export function mount(container, { id }) {
     renderHead();
     els.body.hidden = false;
     if (!built) {
+      makeMachines();
       buildCharts();
       built = true;
     }
     renderSensors();
     renderCharts();
+  }
+
+  function makeMachines() {
+    machines = createMachines(els.machinesHost, {
+      roomId: id,
+      onEdit: () => { editedFromCard = true; edit(); },
+      onOffline: () => {
+        els.bannerText.textContent = OFFLINE;
+        els.retry.hidden = false;
+        els.banner.hidden = false;
+      },
+      onGone: () => { if (alive()) showMissing(); },
+    });
   }
 
   // "n s ago" counts on between refreshes.
@@ -290,6 +311,7 @@ export function mount(container, { id }) {
     mountSeq++;
     clearTimeout(timer);
     clearInterval(ticker);
+    machines?.destroy();
     for (const { chart } of chartCards.values()) chart?.destroy();
     closeRoomDialog();
     document.title = 'Rooms · Mushroom farm';

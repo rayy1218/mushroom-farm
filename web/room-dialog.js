@@ -11,7 +11,7 @@ const formError = $('form-error');
 const volume = $('volume');
 const save = $('save');
 
-const FIELDS = ['name', 'length', 'width', 'height', 'trhAddress', 'co2Address'];
+const FIELDS = ['name', 'length', 'width', 'height', 'trhAddress', 'co2Address', 'relayAddress', 'acAddress'];
 const inputs = Object.fromEntries(FIELDS.map((f) => [f, $(`f-${f}`)]));
 const errors = Object.fromEntries(FIELDS.map((f) => [f, $(`e-${f}`)]));
 
@@ -68,7 +68,7 @@ function showFormError(err) {
   }
 }
 
-// A blank address means "no sensor".
+// A blank address means "none".
 function address(input) {
   return input.value.trim() === '' ? null : input.valueAsNumber;
 }
@@ -83,6 +83,8 @@ form.addEventListener('submit', async (event) => {
     height: inputs.height.valueAsNumber,
     trhAddress: address(inputs.trhAddress),
     co2Address: address(inputs.co2Address),
+    relayAddress: address(inputs.relayAddress),
+    acAddress: address(inputs.acAddress),
   };
   const mine = opened;
   save.disabled = true;
