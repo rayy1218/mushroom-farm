@@ -72,8 +72,9 @@ export function createModbusServer(sensors, { onRequest = () => {} } = {}) {
     const [fn, index, value] = [pdu[0], pdu.readUInt16BE(1), pdu.readUInt16BE(3)];
     if (index > 3) return fail(tid, unit, fn, entry, 2);
     if (value !== COIL_ON && value !== 0) return fail(tid, unit, fn, entry, 3);
+    const stuck = sensors.get(unit).stuck[index];
     sensors.writeCoil(unit, index, value === COIL_ON);
-    entry.result = `write coil ${index} ${value === COIL_ON ? 'on' : 'off'}`;
+    entry.result = `write coil ${index} ${value === COIL_ON ? 'on' : 'off'}${stuck ? ' (stuck)' : ''}`;
     return reply(tid, unit, pdu);
   }
 
@@ -86,8 +87,9 @@ export function createModbusServer(sensors, { onRequest = () => {} } = {}) {
     if (power > 1 || mode >= MODES.length || fan >= FANS.length || setpoint < 160 || setpoint > 300 || setpoint % 5 !== 0) {
       return fail(tid, unit, fn, entry, 3);
     }
+    const refused = sensors.get(unit).refuse;
     sensors.writeAc(unit, { power: power === 1, mode, setpoint: setpoint / 10, fan });
-    entry.result = `write ac ${MODES[mode]} ${setpoint / 10} ${FANS[fan]} ${power ? 'on' : 'off'}`;
+    entry.result = `write ac ${MODES[mode]} ${setpoint / 10} ${FANS[fan]} ${power ? 'on' : 'off'}${refused ? ' (refused)' : ''}`;
     return reply(tid, unit, pdu.subarray(0, 5));
   }
 
