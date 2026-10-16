@@ -1,5 +1,5 @@
 // Starts the farm app: reads FARM_DB, FARM_PORT and FARM_GATEWAY, opens the database,
-// serves HTTP and polls the sensor gateway.
+// serves HTTP and polls the gateway (sensors, relay modules, aircon gateways).
 
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -8,6 +8,7 @@ import { openDb } from './db.js';
 import { createApp } from './app.js';
 import { createModbusClient } from './modbus.js';
 import { createPoller } from './poller.js';
+import { createMachines } from './machines.js';
 
 const DEFAULT_DB = fileURLToPath(new URL('../data/v2.db', import.meta.url));
 
@@ -30,9 +31,10 @@ if (!gatewayMatch || Number(gatewayMatch[2]) < 1 || Number(gatewayMatch[2]) > 65
 
 if (dbPath !== ':memory:') mkdirSync(dirname(dbPath), { recursive: true });
 const db = openDb(dbPath);
-const server = createApp(db);
 const client = createModbusClient({ host: gatewayMatch[1].replace(/^\[(.*)\]$/, '$1'), port: Number(gatewayMatch[2]) });
 const poller = createPoller({ db, client });
+const machines = createMachines({ db, client, poller });
+const server = createApp(db, { machines });
 
 server.on('error', (err) => fail(`Could not start the server: ${err.message}`));
 server.listen(Number(portText), () => {

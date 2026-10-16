@@ -1,8 +1,9 @@
 // The farm database: schema and room queries.
 
 import { DatabaseSync } from 'node:sqlite';
+import { RELAY_KEYS } from './machine-codes.js';
 
-const VERSION = 1;
+const VERSION = 2;
 
 // Iteration 1 (version 0) had only the rooms table without the address columns.
 const ROOMS = `
@@ -34,6 +35,22 @@ CREATE TABLE readings (
 CREATE INDEX readings_by_sensor ON readings (room_id, kind, address, id);
 CREATE INDEX readings_ok ON readings (room_id, kind, address, id) WHERE ok = 1;`;
 
+// What the farm app last told each room's relay module and aircon gateway.
+const MACHINE_COMMANDS = `
+CREATE TABLE machine_commands (
+  room_id      INTEGER PRIMARY KEY,
+  intake       INTEGER NOT NULL DEFAULT 0,
+  exhaust      INTEGER NOT NULL DEFAULT 0,
+  circulation  INTEGER NOT NULL DEFAULT 0,
+  humidifier   INTEGER NOT NULL DEFAULT 0,
+  ac_power     INTEGER NOT NULL DEFAULT 0,
+  ac_mode      TEXT    NOT NULL DEFAULT 'cool',
+  ac_setpoint  REAL    NOT NULL DEFAULT 25,
+  ac_fan       TEXT    NOT NULL DEFAULT 'auto',
+  relay_sent_at INTEGER,
+  ac_sent_at   INTEGER
+) STRICT;`;
+
 // The status queries, exported so a test can check their query plans.
 export const STATUS_SQL = {
   latest: `SELECT * FROM (SELECT * FROM readings WHERE room_id = ? AND kind = ? AND address = ?
@@ -51,14 +68,22 @@ function migrate(db) {
   if (version >= VERSION) return;
   db.exec('BEGIN');
   try {
-    const hasRooms = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'rooms'").get();
-    if (hasRooms) {
-      db.exec(`ALTER TABLE rooms ADD COLUMN trh_address INTEGER CHECK (trh_address BETWEEN 1 AND 247);
-               ALTER TABLE rooms ADD COLUMN co2_address INTEGER CHECK (co2_address BETWEEN 1 AND 247);`);
-    } else {
-      db.exec(ROOMS);
+    if (version < 1) {
+      const hasRooms = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'rooms'").get();
+      if (hasRooms) {
+        db.exec(`ALTER TABLE rooms ADD COLUMN trh_address INTEGER CHECK (trh_address BETWEEN 1 AND 247);
+                 ALTER TABLE rooms ADD COLUMN co2_address INTEGER CHECK (co2_address BETWEEN 1 AND 247);`);
+      } else {
+        db.exec(ROOMS);
+      }
+      db.exec(READINGS);
     }
-    db.exec(READINGS);
+    if (version < 2) {
+      db.exec(`ALTER TABLE rooms ADD COLUMN relay_address INTEGER CHECK (relay_address BETWEEN 1 AND 247);
+               ALTER TABLE rooms ADD COLUMN ac_address INTEGER CHECK (ac_address BETWEEN 1 AND 247);`);
+      db.exec(MACHINE_COMMANDS);
+      db.exec('INSERT INTO machine_commands (room_id) SELECT id FROM rooms');
+    }
     db.exec(`PRAGMA user_version = ${VERSION}`);
     db.exec('COMMIT');
   } catch (err) {
@@ -102,6 +127,8 @@ function toRoom(row) {
     volume: Math.round(row.length_m * row.width_m * row.height_m * 100) / 100,
     trhAddress: row.trh_address,
     co2Address: row.co2_address,
+    relayAddress: row.relay_address,
+    acAddress: row.ac_address,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -117,14 +144,27 @@ export function openDb(path) {
     list: db.prepare('SELECT * FROM rooms ORDER BY name, id'),
     get: db.prepare('SELECT * FROM rooms WHERE id = ?'),
     nameUsed: db.prepare('SELECT 1 FROM rooms WHERE name = ? AND id IS NOT ?'),
-    addressUsed: db.prepare(`SELECT name FROM rooms WHERE id IS NOT ? AND (trh_address = ? OR co2_address = ?)`),
-    insert: db.prepare(`INSERT INTO rooms (name, length_m, width_m, height_m, trh_address, co2_address, created_at, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`),
+    addressUsed: db.prepare(`SELECT name FROM rooms WHERE id IS NOT ?1
+                             AND (trh_address = ?2 OR co2_address = ?2 OR relay_address = ?2 OR ac_address = ?2)`),
+    insert: db.prepare(`INSERT INTO rooms (name, length_m, width_m, height_m, trh_address, co2_address,
+                                           relay_address, ac_address, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
     update: db.prepare(`UPDATE rooms SET name = ?, length_m = ?, width_m = ?, height_m = ?,
-                               trh_address = ?, co2_address = ?, updated_at = ?
+                               trh_address = ?, co2_address = ?, relay_address = ?, ac_address = ?, updated_at = ?
                         WHERE id = ?`),
     delete: db.prepare('DELETE FROM rooms WHERE id = ?'),
     deleteReadings: db.prepare('DELETE FROM readings WHERE room_id = ?'),
+    insertCommands: db.prepare('INSERT INTO machine_commands (room_id) VALUES (?)'),
+    deleteCommands: db.prepare('DELETE FROM machine_commands WHERE room_id = ?'),
+    commands: db.prepare('SELECT * FROM machine_commands WHERE room_id = ?'),
+    setRelay: Object.fromEntries(RELAY_KEYS.map((key) => [key,
+      db.prepare(`UPDATE machine_commands SET ${key} = ?, relay_sent_at = ? WHERE room_id = ?`)])),
+    setAc: db.prepare(`UPDATE machine_commands SET ac_power = ?, ac_mode = ?, ac_setpoint = ?, ac_fan = ?, ac_sent_at = ?
+                       WHERE room_id = ?`),
+    wiredMachines: db.prepare(`SELECT id AS roomId, 'relay' AS kind, relay_address AS address FROM rooms WHERE relay_address IS NOT NULL
+                               UNION ALL
+                               SELECT id, 'ac', ac_address FROM rooms WHERE ac_address IS NOT NULL
+                               ORDER BY 1, 2 DESC`),
     wired: db.prepare(`SELECT id AS roomId, 'trh' AS kind, trh_address AS address FROM rooms WHERE trh_address IS NOT NULL
                        UNION ALL
                        SELECT id, 'co2', co2_address FROM rooms WHERE co2_address IS NOT NULL
@@ -143,11 +183,12 @@ export function openDb(path) {
     if (q.nameUsed.get(name, id)) throw new NameTakenError(name);
   }
 
-  // Each address may be used by one sensor of one room only.
-  function checkAddresses({ trhAddress, co2Address }, id) {
-    for (const [field, address] of [['trhAddress', trhAddress], ['co2Address', co2Address]]) {
+  // Each address may be used by one device of one room only.
+  function checkAddresses(addresses, id) {
+    for (const field of ['trhAddress', 'co2Address', 'relayAddress', 'acAddress']) {
+      const address = addresses[field];
       if (address == null) continue;
-      const other = q.addressUsed.get(id, address, address);
+      const other = q.addressUsed.get(id, address);
       if (other) throw new AddressTakenError(address, other.name, field);
     }
   }
@@ -184,20 +225,60 @@ export function openDb(path) {
 
     getRoom,
 
-    createRoom({ name, length, width, height, trhAddress = null, co2Address = null }, now = Date.now()) {
+    createRoom({ name, length, width, height, trhAddress = null, co2Address = null, relayAddress = null, acAddress = null },
+      now = Date.now()) {
       checkName(name, null);
-      checkAddresses({ trhAddress, co2Address }, null);
-      const { lastInsertRowid } = q.insert.run(name, length, width, height, trhAddress, co2Address, now, now);
-      return getRoom(Number(lastInsertRowid));
+      checkAddresses({ trhAddress, co2Address, relayAddress, acAddress }, null);
+      db.exec('BEGIN');
+      try {
+        const { lastInsertRowid } = q.insert.run(name, length, width, height, trhAddress, co2Address,
+          relayAddress, acAddress, now, now);
+        q.insertCommands.run(lastInsertRowid);
+        db.exec('COMMIT');
+        return getRoom(Number(lastInsertRowid));
+      } catch (err) {
+        db.exec('ROLLBACK');
+        throw err;
+      }
     },
 
     // Returns the updated room, or null when there is no room with that id.
-    updateRoom(id, { name, length, width, height, trhAddress = null, co2Address = null }, now = Date.now()) {
+    updateRoom(id, { name, length, width, height, trhAddress = null, co2Address = null, relayAddress = null, acAddress = null },
+      now = Date.now()) {
       if (!q.get.get(id)) return null;
       checkName(name, id);
-      checkAddresses({ trhAddress, co2Address }, id);
-      q.update.run(name, length, width, height, trhAddress, co2Address, now, id);
+      checkAddresses({ trhAddress, co2Address, relayAddress, acAddress }, id);
+      q.update.run(name, length, width, height, trhAddress, co2Address, relayAddress, acAddress, now, id);
       return getRoom(id);
+    },
+
+    // What was last commanded, or null when there is no such room:
+    // { relay: { intake, exhaust, circulation, humidifier, sentAt }, ac: { power, mode, setpoint, fan, sentAt } }
+    getCommands(roomId) {
+      const r = q.commands.get(roomId);
+      if (!r) return null;
+      return {
+        relay: {
+          intake: r.intake === 1, exhaust: r.exhaust === 1, circulation: r.circulation === 1,
+          humidifier: r.humidifier === 1, sentAt: r.relay_sent_at,
+        },
+        ac: { power: r.ac_power === 1, mode: r.ac_mode, setpoint: r.ac_setpoint, fan: r.ac_fan, sentAt: r.ac_sent_at },
+      };
+    },
+
+    // Both return true when the room exists.
+    setRelayCommand(roomId, key, on, at) {
+      if (!RELAY_KEYS.includes(key)) throw new Error(`unknown machine ${key}`);
+      return q.setRelay[key].run(on ? 1 : 0, at, roomId).changes > 0;
+    },
+
+    setAcCommand(roomId, { power, mode, setpoint, fan }, at) {
+      return q.setAc.run(power ? 1 : 0, mode, setpoint, fan, at, roomId).changes > 0;
+    },
+
+    // Every wired relay module and aircon gateway: rooms by id, relay before ac.
+    listWiredMachines() {
+      return q.wiredMachines.all().map((r) => ({ roomId: r.roomId, kind: r.kind, address: r.address }));
     },
 
     // Returns true when a room was deleted.
@@ -205,6 +286,7 @@ export function openDb(path) {
       db.exec('BEGIN');
       try {
         q.deleteReadings.run(id);
+        q.deleteCommands.run(id);
         const deleted = q.delete.run(id).changes > 0;
         db.exec('COMMIT');
         return deleted;

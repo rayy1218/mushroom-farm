@@ -1,4 +1,4 @@
-// Modbus TCP client for the sensor gateway: reads registers, one request at a time.
+// Modbus TCP client for the sensor gateway and the machines: reads and writes, one request at a time.
 
 import net from 'node:net';
 
@@ -26,7 +26,7 @@ export function createModbusClient({ host, port, timeoutMs = 1000, firstTid = 1,
   let connecting = null; // socket being connected
   let buffer = Buffer.alloc(0);
   let nextTid = firstTid;
-  let current = null; // the request in flight: { tid, unit, fn, qty, resolve, reject, timer }
+  let current = null; // the request in flight: { tid, unit, pdu, result, resolve, reject, timer }
   const queue = [];
   let busy = false;
   let timeoutsInRow = 0;
@@ -102,13 +102,14 @@ export function createModbusClient({ host, port, timeoutMs = 1000, firstTid = 1,
     }
   }
 
-  function parse(frame, { unit, fn, qty }) {
-    if (frame[6] !== unit) return new ModbusError('bad reply');
-    if (frame[7] === (fn | 0x80)) {
+  // The checks every reply needs; req.result(frame) checks the rest and returns the value or a ModbusError.
+  function parse(frame, req) {
+    if (frame[6] !== req.unit) return new ModbusError('bad reply');
+    if (frame[7] === (req.pdu[0] | 0x80)) {
       return frame.length === 9 ? new ModbusError('exception', frame[8]) : new ModbusError('bad reply');
     }
-    if (frame[7] !== fn || frame[8] !== qty * 2 || frame.length !== 9 + qty * 2) return new ModbusError('bad reply');
-    return Array.from({ length: qty }, (_, i) => frame.readUInt16BE(9 + i * 2));
+    if (frame[7] !== req.pdu[0]) return new ModbusError('bad reply');
+    return req.result(frame);
   }
 
   async function run(req) {
@@ -120,14 +121,12 @@ export function createModbusClient({ host, port, timeoutMs = 1000, firstTid = 1,
     }
     req.tid = nextTid;
     nextTid = (nextTid + 1) & 0xffff;
-    const frame = Buffer.alloc(12);
+    const frame = Buffer.alloc(HEADER + req.pdu.length);
     frame.writeUInt16BE(req.tid, 0);
     frame.writeUInt16BE(0, 2);
-    frame.writeUInt16BE(6, 4);
+    frame.writeUInt16BE(1 + req.pdu.length, 4);
     frame[6] = req.unit;
-    frame[7] = req.fn;
-    frame.writeUInt16BE(req.start, 8);
-    frame.writeUInt16BE(req.qty, 10);
+    req.pdu.copy(frame, HEADER);
     await new Promise((done) => {
       const { resolve, reject } = req;
       current = {
@@ -147,13 +146,74 @@ export function createModbusClient({ host, port, timeoutMs = 1000, firstTid = 1,
     busy = false;
   }
 
+  // Queues a request: pdu is the function code and its data, result(frame) checks the reply.
+  function submit(unit, pdu, result) {
+    return new Promise((resolve, reject) => {
+      queue.push({ unit, pdu: Buffer.from(pdu), result, resolve, reject });
+      pump();
+    });
+  }
+
+  const isUint16 = (n) => Number.isInteger(n) && n >= 0 && n <= 0xffff;
+
+  // The reply must repeat the first four bytes after the function code.
+  const echoOf = (pdu) => (frame) =>
+    frame.length === HEADER + 5 && frame.subarray(HEADER, HEADER + 5).equals(pdu.subarray(0, 5))
+      ? undefined
+      : new ModbusError('bad reply');
+
   return {
     // Resolves with the register values (unsigned 16-bit numbers).
     readRegisters(unit, fn, start, qty) {
-      return new Promise((resolve, reject) => {
-        queue.push({ unit, fn, start, qty, resolve, reject });
-        pump();
+      const pdu = Buffer.alloc(5);
+      pdu[0] = fn;
+      pdu.writeUInt16BE(start, 1);
+      pdu.writeUInt16BE(qty, 3);
+      return submit(unit, pdu, (frame) => {
+        if (frame[8] !== qty * 2 || frame.length !== 9 + qty * 2) return new ModbusError('bad reply');
+        return Array.from({ length: qty }, (_, i) => frame.readUInt16BE(9 + i * 2));
       });
+    },
+
+    // fn 1 (coils) or 2 (discrete inputs). Resolves with qty booleans, bit 0 of the first byte first.
+    readBits(unit, fn, start, qty) {
+      if (fn !== 1 && fn !== 2) return Promise.reject(new RangeError('fn must be 1 or 2'));
+      if (!isUint16(start) || !Number.isInteger(qty) || qty < 1 || qty > 2000) {
+        return Promise.reject(new RangeError('start must be 0 to 65535 and qty 1 to 2000'));
+      }
+      const pdu = Buffer.alloc(5);
+      pdu[0] = fn;
+      pdu.writeUInt16BE(start, 1);
+      pdu.writeUInt16BE(qty, 3);
+      const bytes = Math.ceil(qty / 8);
+      return submit(unit, pdu, (frame) => {
+        if (frame[8] !== bytes || frame.length !== 9 + bytes) return new ModbusError('bad reply');
+        return Array.from({ length: qty }, (_, i) => (frame[9 + (i >> 3)] >> (i & 7) & 1) === 1);
+      });
+    },
+
+    // fn 5. Resolves once the module has echoed the request.
+    writeCoil(unit, address, on) {
+      if (!isUint16(address)) return Promise.reject(new RangeError('address must be 0 to 65535'));
+      const pdu = Buffer.alloc(5);
+      pdu[0] = 5;
+      pdu.writeUInt16BE(address, 1);
+      pdu.writeUInt16BE(on ? 0xff00 : 0, 3);
+      return submit(unit, pdu, echoOf(pdu));
+    },
+
+    // fn 16. Resolves once the device has answered with the same start and quantity.
+    writeRegisters(unit, start, values) {
+      if (!isUint16(start) || !Array.isArray(values) || values.length < 1 || values.length > 123 || !values.every(isUint16)) {
+        return Promise.reject(new RangeError('start must be 0 to 65535 and values 1 to 123 numbers from 0 to 65535'));
+      }
+      const pdu = Buffer.alloc(6 + values.length * 2);
+      pdu[0] = 16;
+      pdu.writeUInt16BE(start, 1);
+      pdu.writeUInt16BE(values.length, 3);
+      pdu[5] = values.length * 2;
+      values.forEach((v, i) => pdu.writeUInt16BE(v, 6 + i * 2));
+      return submit(unit, pdu, echoOf(pdu));
     },
 
     // Fails everything waiting and drops the connection.
