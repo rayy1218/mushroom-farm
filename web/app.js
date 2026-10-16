@@ -36,6 +36,9 @@ const GONE = 'That room no longer exists';
 let rooms = [];
 let loaded = false;
 let editingId = null; // null while adding
+let opened = 0; // counts dialog openings, so a late save can tell it is stale
+let loadSeq = 0;
+let rendered = false;
 let deletingId = null;
 
 class ApiError extends Error {
@@ -52,6 +55,7 @@ async function request(method, path, body) {
     init.headers = { 'content-type': 'application/json' };
     init.body = JSON.stringify(body);
   }
+  init.signal = AbortSignal.timeout(10000);
   let res;
   try {
     res = await fetch(path, init);
@@ -79,11 +83,15 @@ function hideBanner() {
 // ---- list ----
 
 async function load() {
+  const seq = ++loadSeq;
   try {
     rooms = await request('GET', '/api/rooms');
+    if (seq !== loadSeq) return;
     loaded = true;
+    // Only the offline banner (the one with Retry) clears here; "That room no longer exists" stays.
     if (!els.retry.hidden) hideBanner();
   } catch {
+    if (seq !== loadSeq) return;
     showBanner(OFFLINE, { retry: true });
   }
   els.loading.hidden = true;
@@ -125,9 +133,15 @@ function row(room) {
 }
 
 function render() {
+  // Keep focus on the same row button across a re-render (the old one is replaced).
+  const active = document.activeElement;
+  const keep = [els.table, els.empty, els.banner].some((el) => el.contains(active)) || (active === document.body && rendered);
+  const { action, id } = active?.dataset ?? {};
   els.table.tBodies[0].replaceChildren(...rooms.map(row));
   els.table.hidden = rooms.length === 0;
   els.empty.hidden = !loaded || rooms.length > 0;
+  rendered = true;
+  if (keep) (els.table.querySelector(`button[data-action="${action}"][data-id="${id}"]`) ?? els.add).focus();
 }
 
 // ---- add / edit dialog ----
@@ -146,7 +160,9 @@ function updateVolume() {
 }
 
 function openRoomDialog(room) {
-  hideBanner();
+  if (loaded) hideBanner(); // keep the load-failure banner (with Retry) until a load succeeds
+  opened++;
+  els.save.disabled = false;
   editingId = room ? room.id : null;
   els.title.textContent = room ? 'Edit room' : 'Add room';
   els.form.reset();
@@ -164,6 +180,7 @@ function showFormError(err) {
   } else {
     els.formError.textContent = err.message;
     els.formError.hidden = false;
+    els.formError.focus();
   }
 }
 
@@ -182,18 +199,20 @@ els.form.addEventListener('submit', async (event) => {
     width: inputs.width.valueAsNumber,
     height: inputs.height.valueAsNumber,
   };
+  const mine = opened;
   els.save.disabled = true;
   try {
     if (editingId === null) await request('POST', '/api/rooms', body);
     else await request('PUT', `/api/rooms/${editingId}`, body);
-    els.dialog.close();
-    await load();
+    if (mine === opened) els.dialog.close();
+    load();
   } catch (err) {
+    if (mine !== opened) return;
     if (err.status === 404) await roomGone();
     else if (err.status === 400 || err.status === 409) showFormError(err);
     else showFormError(new ApiError(0, { error: `${OFFLINE}. Try again.` }));
   } finally {
-    els.save.disabled = false;
+    if (mine === opened) els.save.disabled = false;
   }
 });
 
@@ -203,7 +222,7 @@ els.cancel.addEventListener('click', () => els.dialog.close());
 // ---- delete ----
 
 function openDeleteDialog(room) {
-  hideBanner();
+  if (loaded) hideBanner(); // keep the load-failure banner (with Retry) until a load succeeds
   deletingId = room.id;
   els.deleteText.textContent = `Delete ${room.name}? This can't be undone.`;
   els.deleteDialog.returnValue = '';
