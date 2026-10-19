@@ -1,9 +1,10 @@
-// JSON API: /api/rooms, /api/rooms/:id, /api/rooms/:id/sensors and /api/rooms/:id/machines.
+// JSON API: /api/settings, /api/rooms, /api/rooms/:id, /api/rooms/:id/sensors and /api/rooms/:id/machines.
 
 import { validateRoom } from './rooms.js';
 import { NameTakenError, AddressTakenError } from './db.js';
 import { CommandError } from './machines.js';
 import { RELAY_KEYS } from './machine-codes.js';
+import { validateSettings, readSettings, writeSettings } from './settings.js';
 
 const MAX_BODY = 64 * 1024;
 
@@ -47,9 +48,19 @@ const noRoom = () => new HttpError(404, 'Room not found');
 
 // Returns a handler for every request whose path starts with /api.
 // machines (from createMachines) and controller (from createController) are optional:
-// without them the machine or control routes do not exist.
-export function createApi(db, machines = null, controller = null) {
+// without them the machine or control routes do not exist. poller (from createPoller), when given,
+// gets a new reading interval at once.
+export function createApi(db, machines = null, controller = null, poller = null) {
   async function route(req, res, path) {
+    if (path === '/api/settings') {
+      if (req.method === 'GET') return send(res, 200, readSettings(db));
+      if (req.method !== 'PUT') throw notFound();
+      const result = validateSettings(await readJson(req));
+      if (result.error) throw new HttpError(400, result.error, result.field);
+      writeSettings(db, result.settings);
+      poller?.setIntervalMs(result.settings.pollSeconds * 1000);
+      return send(res, 200, result.settings);
+    }
     if (path === '/api/rooms') {
       if (req.method === 'GET') return send(res, 200, db.listRooms());
       if (req.method === 'POST') return send(res, 201, db.createRoom(await readRoom(req)));
