@@ -1,0 +1,132 @@
+// The pure decision of automatic control (server/controller.js, spec 2026-10-19-controller-design.md).
+
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { decide, validateControl, DEFAULTS } from '../server/controller.js';
+
+const bands = { co2Low: 600, co2High: 750, tLow: 21, tHigh: 23, rhLow: 85, rhHigh: 95 };
+const off = { exchange: false, humidifier: false };
+
+function run({ state = off, co2 = 650, rh = 90, b = bands } = {}) {
+  return decide({ bands: b, state, readings: { t: 22, rh, co2 }, commands: {} });
+}
+
+test('air exchange: on at or above the upper limit, off at or below the lower, kept between', () => {
+  const cases = [
+    // [exchange before, co2, exchange after]
+    [false, 749, false], [false, 750, true], [false, 900, true],
+    [true, 601, true], [true, 600, false], [true, 300, false],
+    [false, 700, false], [true, 700, true],
+  ];
+  for (const [before, co2, after] of cases) {
+    const r = run({ state: { exchange: before, humidifier: false }, co2 });
+    assert.equal(r.state.exchange, after, `co2 ${co2} from ${before}`);
+    assert.equal(r.desired.intake, after);
+    assert.equal(r.desired.exhaust, after);
+  }
+});
+
+test('humidifier: on at or below the lower RH, off at or above the upper, kept between', () => {
+  const cases = [
+    [false, 86, false], [false, 85, true], [false, 70, true],
+    [true, 94, true], [true, 95, false], [true, 99, false],
+    [false, 90, false], [true, 90, true],
+  ];
+  for (const [before, rh, after] of cases) {
+    const r = run({ state: { exchange: false, humidifier: before }, rh });
+    assert.equal(r.state.humidifier, after, `rh ${rh} from ${before}`);
+    assert.equal(r.desired.humidifier, after);
+  }
+});
+
+test('the humidifier is on during an air exchange but its own band state is still tracked', () => {
+  const wet = run({ state: { exchange: false, humidifier: false }, co2: 800, rh: 97 });
+  assert.equal(wet.desired.humidifier, true);
+  assert.equal(wet.state.humidifier, false);
+  assert.equal(wet.reasons.humidifier, 'Humidifier: on during air exchange');
+  const dry = run({ state: { exchange: false, humidifier: false }, co2: 800, rh: 80 });
+  assert.equal(dry.state.humidifier, true);
+  // The exchange ends with RH between the limits: the humidifier band state (on) stays.
+  const after = run({ state: { exchange: true, humidifier: true }, co2: 590, rh: 90 });
+  assert.equal(after.state.exchange, false);
+  assert.equal(after.desired.humidifier, true);
+});
+
+test('aircon: power on, cool, auto fan, setpoint in the middle of the band', () => {
+  const r = run();
+  assert.deepEqual(r.desired.ac, { power: true, mode: 'cool', setpoint: 22, fan: 'auto' });
+  assert.equal(run({ b: { ...bands, tLow: 20, tHigh: 25 } }).desired.ac.setpoint, 22.5);
+  assert.equal(run({ b: { ...bands, tLow: 20, tHigh: 25.2 } }).desired.ac.setpoint, 22.5); // 22.6 rounds to 22.5
+  assert.equal(run({ b: { ...bands, tLow: 20, tHigh: 25.5 } }).desired.ac.setpoint, 23); // 22.75 rounds to 23
+});
+
+test('aircon: 5 degrees lower during an air exchange, clamped to 16-30, rounded to 0.5', () => {
+  const ex = { exchange: true, humidifier: false };
+  assert.equal(run({ state: ex, co2: 700 }).desired.ac.setpoint, 17);
+  assert.equal(run({ state: ex, co2: 700, b: { ...bands, tLow: 17, tHigh: 18 } }).desired.ac.setpoint, 16); // 12.5 clamps
+  assert.equal(run({ b: { ...bands, tLow: 16, tHigh: 17 } }).desired.ac.setpoint, 16.5);
+  assert.equal(run({ b: { ...bands, tLow: 34, tHigh: 35 } }).desired.ac.setpoint, 30); // 34.5 clamps
+  assert.equal(run({ state: ex, co2: 700, b: { ...bands, tLow: 34, tHigh: 35 } }).desired.ac.setpoint, 29.5);
+  assert.match(run({ state: ex, co2: 700 }).reasons.ac, /17\.0 °C \(22\.0 − 5 during air exchange\)/);
+});
+
+test('circulation is always on', () => {
+  assert.equal(run().desired.circulation, true);
+  assert.equal(run({ co2: null, rh: null }).desired.circulation, true);
+  assert.equal(run().reasons.circulation, 'Circulation: always on');
+});
+
+test('a missing CO2 reading keeps the air exchange state and says so', () => {
+  for (const exchange of [false, true]) {
+    const r = run({ state: { exchange, humidifier: false }, co2: null, rh: 90 });
+    assert.equal(r.state.exchange, exchange);
+    assert.equal(r.desired.intake, exchange);
+    assert.equal(r.reasons.exchange, `CO₂ sensor not answering: air exchange kept ${exchange ? 'on' : 'off'}`);
+  }
+});
+
+test('a missing RH reading keeps the humidifier state and says so; the exchange still runs', () => {
+  for (const humidifier of [false, true]) {
+    const r = run({ state: { exchange: false, humidifier }, co2: 650, rh: null });
+    assert.equal(r.state.humidifier, humidifier);
+    assert.equal(r.desired.humidifier, humidifier);
+    assert.equal(r.reasons.humidifier, `Humidity sensor not answering: humidifier kept ${humidifier ? 'on' : 'off'}`);
+  }
+  const r = run({ state: off, co2: 800, rh: null });
+  assert.equal(r.desired.intake, true);
+  assert.equal(r.desired.humidifier, true);
+});
+
+test('reasons name the rule and the numbers', () => {
+  assert.equal(run({ co2: 762 }).reasons.exchange, 'Air exchange: CO₂ 762 ≥ 750');
+  assert.equal(run({ state: { exchange: true, humidifier: false }, co2: 590 }).reasons.exchange, 'Air exchange: CO₂ 590 ≤ 600');
+  assert.equal(run({ co2: 700 }).reasons.exchange, 'Air exchange kept off: CO₂ 700 between 600 and 750');
+  assert.equal(run({ rh: 80 }).reasons.humidifier, 'Humidifier: RH 80 ≤ 85');
+  assert.equal(run({ rh: 96 }).reasons.humidifier, 'Humidifier: RH 96 ≥ 95');
+  assert.equal(run({ rh: 90 }).reasons.humidifier, 'Humidifier kept off: RH 90 between 85 and 95');
+  assert.equal(run().reasons.ac, 'Aircon: 22.0 °C (middle of 21–23)');
+});
+
+test('decide does not change its input', () => {
+  const state = { exchange: false, humidifier: false };
+  decide({ bands, state, readings: { co2: 800, rh: 80 }, commands: {} });
+  assert.deepEqual(state, off);
+});
+
+test('validateControl: defaults are valid; each field and the low < high check', () => {
+  assert.equal(validateControl(DEFAULTS), null);
+  const bad = (patch) => validateControl({ ...DEFAULTS, ...patch });
+  assert.deepEqual(bad({ auto: 1 }), { error: 'auto must be true or false', field: 'auto' });
+  assert.equal(bad({ co2Low: 299 }).field, 'co2Low');
+  assert.equal(bad({ co2High: 5001 }).field, 'co2High');
+  assert.equal(bad({ tLow: 15.9 }).field, 'tLow');
+  assert.equal(bad({ tHigh: 35.1 }).field, 'tHigh');
+  assert.equal(bad({ rhLow: 39 }).field, 'rhLow');
+  assert.equal(bad({ rhHigh: 101 }).field, 'rhHigh');
+  assert.equal(bad({ rhHigh: '95' }).field, 'rhHigh');
+  assert.equal(bad({ tLow: NaN }).field, 'tLow');
+  assert.deepEqual(bad({ co2Low: 800 }), { error: 'CO₂ band lower limit must be below the upper limit', field: 'co2Low' });
+  assert.equal(bad({ tLow: 23 }).field, 'tLow');
+  assert.equal(bad({ rhLow: 95 }).field, 'rhLow');
+  assert.equal(bad({ co2Low: 300, co2High: 5000, tLow: 16, tHigh: 35, rhLow: 40, rhHigh: 100 }), null);
+});
