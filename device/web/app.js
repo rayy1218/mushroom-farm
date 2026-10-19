@@ -201,9 +201,9 @@ const SIM_PARAMS = [
   ['blocks', 'Blocks', '', 0, 100000, 1],
   ['outdoorT', 'Outdoor T', '°C', -40, 60, 0.5],
   ['outdoorRH', 'Outdoor RH', '%', 0, 100, 1],
-  ['fanFlow', 'Fan flow', 'm³/h', 0, 100000, 10],
-  ['acKW', 'Aircon', 'kW', 0, 100, 0.1],
-  ['humidifierGH', 'Humidifier', 'g/h', 0, 100000, 100],
+  ['fanFlow', 'Fan flow', 'm³/h, intake + exhaust', 0, 100000, 10],
+  ['acBTU', 'Aircon', 'BTU/h', 0, 200000, 500],
+  ['humidifierLH', 'Humidifier', 'L/h', 0, 100, 0.1],
 ];
 const SIM_LINKS = [['trh', 'T/RH probe'], ['co2', 'CO₂ sensor'], ['relay', 'Relay module'], ['ac', 'Aircon gateway']];
 
@@ -215,7 +215,7 @@ function actingText(a) {
   const parts = [`Air exchange ${Math.round(a.exchangeM3h)} m³/h`];
   if (a.acCoolKW > 0.005) parts.push(`AC cooling ${a.acCoolKW.toFixed(1)} kW`);
   if (a.acHeatKW > 0.005) parts.push(`AC heating ${a.acHeatKW.toFixed(1)} kW`);
-  if (a.humidifierGH > 0) parts.push(`Humidifier +${(a.humidifierGH / 1000).toFixed(1)} kg/h`);
+  if (a.humidifierGH > 0) parts.push(`Humidifier +${(a.humidifierGH / 1000).toFixed(1)} L/h`);
   parts.push(`Blocks +${a.blocksKW.toFixed(1)} kW`);
   return parts.join(' · ');
 }

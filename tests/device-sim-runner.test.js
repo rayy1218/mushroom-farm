@@ -37,6 +37,16 @@ function setup({ model = recorder(), now } = {}) {
   return { sensors, sims, sim, model, id: room.id };
 }
 
+test('the model gets the aircon in kW and the humidifier in g/h', () => {
+  const { sims, sim, model, id } = setup();
+  sims.update(id, { acBTU: 34121, humidifierLH: 1.5 });
+  sim.tick();
+  const p = model.calls[0].params;
+  assert.ok(Math.abs(p.acKW - 10) < 1e-3);
+  assert.equal(p.humidifierGH, 1500);
+  assert.equal(p.fanFlow, 600);
+});
+
 const lastInputs = (model) => model.calls.at(-1).inputs;
 
 test('a tick steps speed simulated seconds and writes rounded values into the linked sensors', () => {

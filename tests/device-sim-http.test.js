@@ -62,8 +62,8 @@ test('POST /api/sims adds a room with the defaults and GET lists it', async () =
     { enabled: false, trh: null, co2: null, relay: null, ac: null },
   );
   assert.deepEqual(
-    { volume: room.volume, blocks: room.blocks, outdoorT: room.outdoorT, outdoorRH: room.outdoorRH, fanFlow: room.fanFlow, acKW: room.acKW, humidifierGH: room.humidifierGH },
-    { volume: 60, blocks: 500, outdoorT: 32, outdoorRH: 80, fanFlow: 600, acKW: 3.5, humidifierGH: 2000 },
+    { volume: room.volume, blocks: room.blocks, outdoorT: room.outdoorT, outdoorRH: room.outdoorRH, fanFlow: room.fanFlow, acBTU: room.acBTU, humidifierLH: room.humidifierLH },
+    { volume: 60, blocks: 500, outdoorT: 32, outdoorRH: 80, fanFlow: 600, acBTU: 12000, humidifierLH: 2 },
   );
   assert.deepEqual(room.state, { T: 32, W: 10, CO2: 420 });
   assert.equal(room.rh, 50);
@@ -77,9 +77,9 @@ test('POST /api/sims adds a room with the defaults and GET lists it', async () =
 test('PUT /api/sims/:id changes name, enabled and parameters', async () => {
   reset();
   const { id } = (await call('POST', '/api/sims', {})).body;
-  const res = await call('PUT', `/api/sims/${id}`, { name: 'Fruiting', enabled: true, volume: 80.5, blocks: 700, acKW: 5 });
+  const res = await call('PUT', `/api/sims/${id}`, { name: 'Fruiting', enabled: true, volume: 80.5, blocks: 700, acBTU: 18000, humidifierLH: 0.5 });
   assert.equal(res.status, 200);
-  assert.deepEqual([res.body.name, res.body.enabled, res.body.volume, res.body.blocks, res.body.acKW], ['Fruiting', true, 80.5, 700, 5]);
+  assert.deepEqual([res.body.name, res.body.enabled, res.body.volume, res.body.blocks, res.body.acBTU, res.body.humidifierLH], ['Fruiting', true, 80.5, 700, 18000, 0.5]);
 });
 
 test('PUT validation: 400 with the field', async () => {
@@ -101,8 +101,11 @@ test('PUT validation: 400 with the field', async () => {
   await bad({ outdoorRH: 101 }, 'outdoorRH');
   await bad({ outdoorT: 200 }, 'outdoorT');
   await bad({ fanFlow: Infinity }, 'fanFlow');
-  await bad({ acKW: null }, 'acKW');
-  await bad({ humidifierGH: -5 }, 'humidifierGH');
+  await bad({ acBTU: null }, 'acBTU');
+  await bad({ acBTU: 200001 }, 'acBTU');
+  await bad({ acBTU: 12000.5 }, 'acBTU');
+  await bad({ humidifierLH: -5 }, 'humidifierLH');
+  await bad({ humidifierLH: 100.1 }, 'humidifierLH');
   await bad({ trh: 1.5 }, 'trh');
   await bad({ trh: 99 }, 'trh');
   assert.equal((await call('PUT', `/api/sims/${id}`, {})).status, 400);
@@ -222,6 +225,34 @@ test('state round trip: rooms, links, speed and the air survive a restart', () =
   assert.deepEqual([again.id, again.name, again.enabled, again.trh, again.volume], [room.id, 'Kept', true, 1, 90]);
   assert.deepEqual(again.state, { T: 18.5, W: 7, CO2: 1234 });
   assert.equal(b.add({}).id, room.id + 1);
+});
+
+test('an old state file with acKW and humidifierGH is converted to BTU/h and L/h', () => {
+  const dir = tempDir();
+  const sensors = createSensors({});
+  const file = join(dir, 'state.json.sim');
+  writeFileSync(file, JSON.stringify({ speed: 1, rooms: [
+    { id: 1, name: 'Old', acKW: 3.5, humidifierGH: 2000, fanFlow: 700 },
+    { id: 2, name: 'Odd', acKW: 0.26, humidifierGH: 1234 },
+    { id: 3, name: 'Both', acKW: 3.5, acBTU: 20000, humidifierGH: 2000, humidifierLH: 0.5 },
+    { id: 4, name: 'Bad', acKW: 5000, humidifierGH: -1 },
+  ] }));
+  const sims = createSims({ sensors, statePath: file, model });
+  assert.deepEqual(sims.list().map((r) => r.id), [1, 2, 3]); // room 4 holds impossible values: skipped, as for any bad value
+  const [a, b, c] = sims.list();
+  assert.deepEqual([a.acBTU, a.humidifierLH, a.fanFlow], [11942, 2, 700]);
+  assert.deepEqual([b.acBTU, b.humidifierLH], [887, 1.2]);
+  assert.deepEqual([c.acBTU, c.humidifierLH], [20000, 0.5]);
+  assert.equal('acKW' in a || 'humidifierGH' in a, false);
+});
+
+test('the old parameter names are ignored by the API', async () => {
+  reset();
+  const { id } = (await call('POST', '/api/sims', {})).body;
+  assert.equal((await call('PUT', `/api/sims/${id}`, { acKW: 5, humidifierGH: 10 })).status, 400);
+  const res = await call('PUT', `/api/sims/${id}`, { acKW: 5, volume: 70 });
+  assert.equal(res.status, 200);
+  assert.equal('acKW' in res.body, false);
 });
 
 test('a broken or odd state file starts empty; bad rooms are skipped', () => {

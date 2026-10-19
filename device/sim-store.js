@@ -14,9 +14,10 @@ const PARAMS = {
   outdoorT: { min: -40, max: 60, whole: false, label: 'Outdoor temperature', unit: '°C', value: 32 },
   outdoorRH: { min: 0, max: 100, whole: false, label: 'Outdoor humidity', unit: '%', value: 80 },
   fanFlow: { min: 0, max: 100000, whole: false, label: 'Fan flow', unit: 'm³/h', value: 600 },
-  acKW: { min: 0, max: 100, whole: false, label: 'Aircon capacity', unit: 'kW', value: 3.5 },
-  humidifierGH: { min: 0, max: 100000, whole: false, label: 'Humidifier output', unit: 'g/h', value: 2000 },
+  acBTU: { min: 0, max: 200000, whole: true, label: 'Aircon capacity', unit: 'BTU/h', value: 12000 },
+  humidifierLH: { min: 0, max: 100, whole: false, label: 'Humidifier output', unit: 'L/h', value: 2 },
 };
+export const BTU_PER_KW = 3412.142;
 const NAME_MAX = 40;
 const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
 
@@ -209,7 +210,11 @@ export function createSims({ sensors, statePath, model = defaultModel } = {}) {
     if (!Number.isInteger(saved?.id) || saved.id < 1) throw new Error('bad id');
     const room = blank(saved.id, checkName(saved.name));
     if (typeof saved.enabled === 'boolean') room.enabled = saved.enabled;
-    for (const field of Object.keys(PARAMS)) if (saved[field] !== undefined) room[field] = checkParam(field, saved[field]);
+    // Files from before the unit change hold kW and g/h.
+    const old = {};
+    if (isNumber(saved.acKW)) old.acBTU = Math.round(saved.acKW * BTU_PER_KW);
+    if (isNumber(saved.humidifierGH)) old.humidifierLH = Math.round(saved.humidifierGH / 100) / 10;
+    for (const field of Object.keys(PARAMS)) if ((saved[field] ?? old[field]) !== undefined) room[field] = checkParam(field, saved[field] ?? old[field]);
     // A device belongs to one room (and one link) only: the first claim wins.
     for (const kind of LINKS) {
       if (!Number.isInteger(saved[kind]) || claimed.has(saved[kind])) continue;

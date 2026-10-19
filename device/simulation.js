@@ -2,12 +2,18 @@
 // on the device, steps the model, and writes the new values into its linked sensors.
 
 import * as defaultModel from './sim-model.js';
+import { BTU_PER_KW } from './sim-store.js';
 
 const MODES = ['cool', 'heat', 'dry', 'fan'];
 const FANS = ['auto', 'low', 'high'];
 const OUTPUT = { intake: 0, exhaust: 1, humidifier: 3 }; // circulation (2) has no effect in a one-zone model
 export const DEFAULT_TICK_MS = 1000;
 export const PERSIST_MS = 10_000;
+
+// The model works in kW and g/h; the room is set in BTU/h and L/h.
+function modelParams({ acBTU, humidifierLH, ...rest }) {
+  return { ...rest, acKW: acBTU / BTU_PER_KW, humidifierGH: humidifierLH * 1000 };
+}
 
 export function createSimulation({ sensors, sims, model = defaultModel, tickMs = DEFAULT_TICK_MS, now = Date.now } = {}) {
   let timer = null;
@@ -36,7 +42,7 @@ export function createSimulation({ sensors, sims, model = defaultModel, tickMs =
     const dt = sims.getSpeed();
     for (const room of sims.list()) {
       if (!room.enabled) continue;
-      const { state, acting } = model.step(room.state, inputsOf(room), room, dt);
+      const { state, acting } = model.step(room.state, inputsOf(room), modelParams(room), dt);
       sims.setState(room.id, state, acting);
       const { T, W, CO2 } = state;
       if (device(room.trh, 'trh')) sensors.simWrite(room.trh, { t: T, rh: model.rhOf(T, W) });
