@@ -59,6 +59,25 @@
       </form>
     </section>
 
+    <section aria-labelledby="sim-title">
+      <h2 id="sim-title">Simulation</h2>
+      <p class="muted sim-intro">A simulated room moves the values of the devices it links, following what the machines really do on this device: stuck relays, dead motors and a refusing or faulty aircon included.</p>
+      <div class="sim-toolbar">
+        <div class="field">
+          <label for="sim-speed">Speed</label>
+          <select id="sim-speed">
+            <option value="1">1× (real time)</option>
+            <option value="10">10×</option>
+            <option value="60">60×</option>
+          </select>
+        </div>
+        <button type="button" id="sim-add">+ Add simulated room</button>
+        <p class="field-error" id="sim-add-error" role="alert" aria-live="polite"></p>
+      </div>
+      <div class="sims" id="sims"></div>
+      <p class="muted" id="no-sims">No simulated rooms yet.</p>
+    </section>
+
     <section aria-labelledby="log-title">
       <h2 id="log-title">Latest requests</h2>
       <div class="scroll">

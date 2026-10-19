@@ -23,6 +23,8 @@ const LIMITS = {
 // What a patch (and the state file) may carry for each kind.
 const FIELDS_OF = { trh: ['t', 'rh'], co2: ['co2'], relay: ['stuck', 'dead'], ac: ['roomT', 'error', 'refuse'] };
 const PATCHABLE = ['t', 'rh', 'co2', 'stuck', 'dead', 'roomT', 'error', 'refuse', 'coils', 'power', 'mode', 'setpoint', 'fan'];
+// The values a simulation drives, per kind. Relays have none: stuck and dead stay editable.
+const SIMULATED_FIELDS = { trh: ['t', 'rh'], co2: ['co2'], ac: ['roomT'] };
 const OUTPUTS = 4;
 const DEFAULT_SPIN_UP_MS = 2000;
 
@@ -66,6 +68,8 @@ const clone = (entry) => ({ ...entry, ...Object.fromEntries(Object.entries(entry
 
 export function createSensors({ statePath, spinUpMs = DEFAULT_SPIN_UP_MS, now = Date.now } = {}) {
   const byAddress = new Map();
+  // Set by the simulation: (address, kind) -> name of the simulated room that drives it, or null.
+  let simulatedBy = () => null;
 
   // What callers see: copies, with a relay's running state worked out and its bookkeeping left out.
   function view(entry) {
@@ -145,6 +149,10 @@ export function createSensors({ statePath, spinUpMs = DEFAULT_SPIN_UP_MS, now = 
     const next = {};
     for (const field of PATCHABLE) {
       if (patch?.[field] === undefined) continue;
+      if (SIMULATED_FIELDS[entry.kind]?.includes(field)) {
+        const room = simulatedBy(address, entry.kind);
+        if (room) throw new SensorError(409, `Sensor ${address} is simulated by ${room}`, field);
+      }
       if (!FIELDS_OF[entry.kind].includes(field)) {
         throw new SensorError(400, `A ${KIND_NAMES[entry.kind]} has no ${field} value`, field);
       }
@@ -153,6 +161,23 @@ export function createSensors({ statePath, spinUpMs = DEFAULT_SPIN_UP_MS, now = 
     if (patch?.answering !== undefined) next.answering = checkFlag('answering', patch.answering);
     if (Object.keys(next).length === 0) throw new SensorError(400, 'Nothing to change');
     return commit(entry, () => Object.assign(entry, next));
+  }
+
+  // The simulation's own write: clamped to the limits, in memory only (the next save of any change keeps it).
+  function simWrite(address, values) {
+    const entry = byAddress.get(address);
+    if (!entry) return;
+    for (const field of SIMULATED_FIELDS[entry.kind] ?? []) {
+      const v = values[field];
+      if (typeof v !== 'number' || !Number.isFinite(v)) continue;
+      const { min, max, whole } = LIMITS[field];
+      const clamped = Math.min(max, Math.max(min, v));
+      entry[field] = whole ? Math.round(clamped) : Math.round(clamped * 10) / 10;
+    }
+  }
+
+  function setSimulatedBy(fn) {
+    simulatedBy = fn;
   }
 
   // Modbus function 05: a stuck relay is acknowledged but does not move.
@@ -222,5 +247,5 @@ export function createSensors({ statePath, spinUpMs = DEFAULT_SPIN_UP_MS, now = 
     }
   }
 
-  return { list, get, add, update, remove, writeCoil, writeAc };
+  return { list, get, add, update, remove, writeCoil, writeAc, simWrite, setSimulatedBy };
 }
