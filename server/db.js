@@ -3,7 +3,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { RELAY_KEYS } from './machine-codes.js';
 
-const VERSION = 2;
+const VERSION = 3;
 
 // Iteration 1 (version 0) had only the rooms table without the address columns.
 const ROOMS = `
@@ -51,6 +51,23 @@ CREATE TABLE machine_commands (
   ac_sent_at   INTEGER
 ) STRICT;`;
 
+// Automatic control (spec 2026-10-19-controller-design.md): the settings of each room and the
+// remembered band states of the controller.
+const ROOM_CONTROLS = `
+CREATE TABLE room_controls (
+  room_id  INTEGER PRIMARY KEY,
+  auto     INTEGER NOT NULL DEFAULT 0 CHECK (auto IN (0, 1)),
+  co2_low  REAL    NOT NULL DEFAULT 600,
+  co2_high REAL    NOT NULL DEFAULT 750,
+  t_low    REAL    NOT NULL DEFAULT 21,
+  t_high   REAL    NOT NULL DEFAULT 23,
+  rh_low   REAL    NOT NULL DEFAULT 85,
+  rh_high  REAL    NOT NULL DEFAULT 95,
+  exchange INTEGER NOT NULL DEFAULT 0 CHECK (exchange IN (0, 1)),
+  exchange_since INTEGER,
+  humidifier INTEGER NOT NULL DEFAULT 0 CHECK (humidifier IN (0, 1))
+) STRICT;`;
+
 // The status queries, exported so a test can check their query plans.
 export const STATUS_SQL = {
   latest: `SELECT * FROM (SELECT * FROM readings WHERE room_id = ? AND kind = ? AND address = ?
@@ -83,6 +100,12 @@ function migrate(db) {
                ALTER TABLE rooms ADD COLUMN ac_address INTEGER CHECK (ac_address BETWEEN 1 AND 247);`);
       db.exec(MACHINE_COMMANDS);
       db.exec('INSERT INTO machine_commands (room_id) SELECT id FROM rooms');
+    }
+    if (version < 3) {
+      db.exec(ROOM_CONTROLS);
+      db.exec(`INSERT INTO room_controls (room_id, exchange, humidifier)
+               SELECT r.id, COALESCE(c.intake, 0), COALESCE(c.humidifier, 0)
+               FROM rooms r LEFT JOIN machine_commands c ON c.room_id = r.id`);
     }
     db.exec(`PRAGMA user_version = ${VERSION}`);
     db.exec('COMMIT');
@@ -157,6 +180,14 @@ export function openDb(path) {
     insertCommands: db.prepare('INSERT INTO machine_commands (room_id) VALUES (?)'),
     deleteCommands: db.prepare('DELETE FROM machine_commands WHERE room_id = ?'),
     commands: db.prepare('SELECT * FROM machine_commands WHERE room_id = ?'),
+    insertControl: db.prepare('INSERT INTO room_controls (room_id) VALUES (?)'),
+    deleteControl: db.prepare('DELETE FROM room_controls WHERE room_id = ?'),
+    control: db.prepare('SELECT * FROM room_controls WHERE room_id = ?'),
+    setControl: db.prepare(`UPDATE room_controls SET auto = ?, co2_low = ?, co2_high = ?, t_low = ?, t_high = ?,
+                                   rh_low = ?, rh_high = ? WHERE room_id = ?`),
+    setControlState: db.prepare(`UPDATE room_controls SET exchange = ?1, humidifier = ?2,
+                                        exchange_since = CASE WHEN ?1 = 0 THEN NULL ELSE COALESCE(exchange_since, ?3) END
+                                 WHERE room_id = ?4`),
     setRelay: Object.fromEntries(RELAY_KEYS.map((key) => [key,
       db.prepare(`UPDATE machine_commands SET ${key} = ?, relay_sent_at = ? WHERE room_id = ?`)])),
     setAc: db.prepare(`UPDATE machine_commands SET ac_power = ?, ac_mode = ?, ac_setpoint = ?, ac_fan = ?, ac_sent_at = ?
@@ -234,6 +265,7 @@ export function openDb(path) {
         const { lastInsertRowid } = q.insert.run(name, length, width, height, trhAddress, co2Address,
           relayAddress, acAddress, now, now);
         q.insertCommands.run(lastInsertRowid);
+        q.insertControl.run(lastInsertRowid);
         db.exec('COMMIT');
         return getRoom(Number(lastInsertRowid));
       } catch (err) {
@@ -266,7 +298,29 @@ export function openDb(path) {
       };
     },
 
-    // Both return true when the room exists.
+    // The automatic control settings and band states, or null when there is no such room:
+    // { auto, co2Low, co2High, tLow, tHigh, rhLow, rhHigh, exchange, exchangeSince, humidifier }
+    getControl(roomId) {
+      const r = q.control.get(roomId);
+      if (!r) return null;
+      return {
+        auto: r.auto === 1, co2Low: r.co2_low, co2High: r.co2_high, tLow: r.t_low, tHigh: r.t_high,
+        rhLow: r.rh_low, rhHigh: r.rh_high,
+        exchange: r.exchange === 1, exchangeSince: r.exchange_since, humidifier: r.humidifier === 1,
+      };
+    },
+
+    // Returns true when the room exists. Settings must be valid (see validateControl in controller.js).
+    setControl(roomId, { auto, co2Low, co2High, tLow, tHigh, rhLow, rhHigh }) {
+      return q.setControl.run(auto ? 1 : 0, co2Low, co2High, tLow, tHigh, rhLow, rhHigh, roomId).changes > 0;
+    },
+
+    // exchangeSince keeps the time the exchange began and is cleared when it ends.
+    setControlState(roomId, { exchange, humidifier }, at) {
+      return q.setControlState.run(exchange ? 1 : 0, humidifier ? 1 : 0, at, roomId).changes > 0;
+    },
+
+    // Both of these return true when the room exists.
     setRelayCommand(roomId, key, on, at) {
       if (!RELAY_KEYS.includes(key)) throw new Error(`unknown machine ${key}`);
       return q.setRelay[key].run(on ? 1 : 0, at, roomId).changes > 0;
@@ -287,6 +341,7 @@ export function openDb(path) {
       try {
         q.deleteReadings.run(id);
         q.deleteCommands.run(id);
+        q.deleteControl.run(id);
         const deleted = q.delete.run(id).changes > 0;
         db.exec('COMMIT');
         return deleted;
