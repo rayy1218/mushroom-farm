@@ -357,7 +357,7 @@ button.toggle[data-on="true"]:hover { opacity: .85; background: var(--ink); }
 .control { margin-bottom: 16px; }
 .control h2 { margin-bottom: 12px; }
 .c-auto { display: flex; align-items: center; gap: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
-.c-humidifier { display: flex; align-items: center; gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.c-humidifier, .c-acfan { display: flex; align-items: center; gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--border); }
 .c-bands { display: grid; }
 .c-band { display: grid; grid-template-columns: minmax(0, 200px) minmax(0, 120px) minmax(0, 120px); align-items: end; gap: 4px 16px; padding: 10px 0; border-bottom: 1px solid var(--border); }
 .c-band .m-name { align-self: center; }

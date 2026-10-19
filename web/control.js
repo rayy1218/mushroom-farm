@@ -3,7 +3,7 @@
 // Controls are updated in place, so a refresh never replaces an input the person is using or has edited.
 
 import { request, OFFLINE } from './api.js';
-import { BANDS, REASONS, stateLine, inputLabel, reasonLine, checkBand, locateField, bandsBody, HUMIDIFIER_LABEL, humidifierOn } from './control-math.js';
+import { BANDS, REASONS, stateLine, inputLabel, reasonLine, checkBand, locateField, bandsBody, HUMIDIFIER_LABEL, humidifierOn, AC_FAN_LABEL, AC_FAN_OPTIONS, acFanOf } from './control-math.js';
 
 const COMMAND_TIMEOUT = 30000;
 
@@ -49,6 +49,7 @@ export function createControl(host, { roomId, onOffline, onGone, onChange }) {
   let saving = false;
   let switching = false;
   let switchingHum = false;
+  let switchingFan = false;
   const n = ++uid;
 
   host.className = 'card control';
@@ -123,7 +124,23 @@ export function createControl(host, { roomId, onOffline, onGone, onChange }) {
   humRow.append(humName, humBtn);
   const humErr = errorNode();
 
-  host.append(autoRow, autoErr, form, sendRow, saveErr, humRow, humErr, stateNode, reasonList);
+  // ---- aircon fan (a setting of its own: sent at once, not part of Save) ----
+  const fanRow = el('div', 'c-acfan');
+  const fanLabel = el('label', 'm-name', AC_FAN_LABEL);
+  const fanSelect = el('select', 'ctl');
+  fanSelect.id = `ctl-${n}-acfan`;
+  fanLabel.htmlFor = fanSelect.id;
+  for (const o of AC_FAN_OPTIONS) {
+    const opt = el('option', '', o.label);
+    opt.value = o.value;
+    fanSelect.append(opt);
+  }
+  const fanState = el('span', 'unsent');
+  fanState.hidden = true;
+  fanRow.append(fanLabel, fanSelect, fanState);
+  const fanErr = errorNode();
+
+  host.append(autoRow, autoErr, form, sendRow, saveErr, humRow, humErr, fanRow, fanErr, stateNode, reasonList);
 
   // ---- drawing ----
 
@@ -190,10 +207,18 @@ export function createControl(host, { roomId, onOffline, onGone, onChange }) {
     humBtn.disabled = switchingHum;
   }
 
+  function paintFan() {
+    fanSelect.value = acFanOf(last);
+    fanSelect.disabled = switchingFan;
+    fanState.textContent = switchingFan ? 'Sending…' : '';
+    fanState.hidden = !switchingFan;
+  }
+
   function paint(c) {
     last = c;
     paintAuto();
     paintHumidifier();
+    paintFan();
     // A refresh leaves alone what the person is editing, or has edited and not saved.
     const holding = dirty || saving || form.contains(document.activeElement);
     if (!holding) setInputs(c);
@@ -264,6 +289,38 @@ export function createControl(host, { roomId, onOffline, onGone, onChange }) {
     }
   }
 
+  async function changeFan() {
+    if (switchingFan || !last) return;
+    const wanted = fanSelect.value;
+    if (wanted === acFanOf(last)) return;
+    const hadFocus = document.activeElement === fanSelect;
+    switchingFan = true;
+    fanSelect.value = wanted;
+    fanSelect.disabled = true;
+    fanState.textContent = 'Sending…';
+    fanState.hidden = false;
+    showError(fanErr, '');
+    version++;
+    inflight++;
+    try {
+      const data = await request('PUT', `/api/rooms/${roomId}/control`, { acFan: wanted }, COMMAND_TIMEOUT);
+      if (!alive) return;
+      switchingFan = false;
+      paint(data);
+      onChange?.(data);
+    } catch (err) {
+      if (!alive) return;
+      failed(err, (e) => showError(fanErr, errorText(e)));
+    } finally {
+      inflight--;
+      switchingFan = false;
+      if (alive) {
+        paintFan();
+        if (hadFocus && !document.activeElement?.closest?.('dialog')) fanSelect.focus();
+      }
+    }
+  }
+
   async function saveBands() {
     if (saving || !last) return;
     clearErrors();
@@ -319,6 +376,7 @@ export function createControl(host, { roomId, onOffline, onGone, onChange }) {
 
   autoBtn.addEventListener('click', toggleAuto);
   humBtn.addEventListener('click', toggleHumidifier);
+  fanSelect.addEventListener('change', changeFan);
   save.addEventListener('click', saveBands);
   reset.addEventListener('click', () => {
     dirty = false;

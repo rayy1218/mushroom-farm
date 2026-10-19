@@ -21,6 +21,18 @@ export function humidifierOn(c) {
   return c?.humidifierDuringExchange !== false;
 }
 
+export const AC_FAN_LABEL = 'Aircon fan';
+export const AC_FAN_OPTIONS = [
+  { value: 'auto', label: 'Auto' },
+  { value: 'low', label: 'Low' },
+  { value: 'high', label: 'High' },
+];
+
+// The aircon fan setting as shown in its choice; a reply without it (or with an unknown value) counts as auto.
+export function acFanOf(c) {
+  return AC_FAN_OPTIONS.some((o) => o.value === c?.acFan) ? c.acFan : 'auto';
+}
+
 export const AUTO_NOTE = 'Automatic control is on';
 
 function pad2(n) {

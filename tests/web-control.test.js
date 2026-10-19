@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { BANDS, exchangeLine, formatHm, reasonLine, checkBand, locateField, stateLine, inputLabel, bandsBody, HUMIDIFIER_LABEL, humidifierOn } from '../web/control-math.js';
+import { BANDS, exchangeLine, formatHm, reasonLine, checkBand, locateField, stateLine, inputLabel, bandsBody, HUMIDIFIER_LABEL, humidifierOn, AC_FAN_LABEL, AC_FAN_OPTIONS, acFanOf } from '../web/control-math.js';
 
 const [co2, temp, rh] = BANDS;
 
@@ -71,4 +71,16 @@ test('the humidifier switch has its label and reads the setting, on when missing
   assert.equal(humidifierOn(null), true);
   // it is not part of the band body
   assert.equal('humidifierDuringExchange' in bandsBody({ co2Low: 1, co2High: 2, tLow: 3, tHigh: 4, rhLow: 5, rhHigh: 6, humidifierDuringExchange: false }), false);
+});
+
+test('the aircon fan choice has its label and options, reads the setting, auto when missing', () => {
+  assert.equal(AC_FAN_LABEL, 'Aircon fan');
+  assert.deepEqual(AC_FAN_OPTIONS, [{ value: 'auto', label: 'Auto' }, { value: 'low', label: 'Low' }, { value: 'high', label: 'High' }]);
+  assert.equal(acFanOf({ acFan: 'low' }), 'low');
+  assert.equal(acFanOf({ acFan: 'high' }), 'high');
+  assert.equal(acFanOf({ acFan: 'auto' }), 'auto');
+  assert.equal(acFanOf({ acFan: 'turbo' }), 'auto');
+  assert.equal(acFanOf({}), 'auto');
+  assert.equal(acFanOf(null), 'auto');
+  assert.equal('acFan' in bandsBody({ co2Low: 1, co2High: 2, tLow: 3, tHigh: 4, rhLow: 5, rhHigh: 6, acFan: 'low' }), false);
 });
