@@ -13,6 +13,7 @@ const fields = { name: 'Room 1', length: 6, width: 4, height: 2.5 };
 const DEFAULT_CONTROL = {
   auto: false, co2Low: 600, co2High: 750, tLow: 21, tHigh: 23, rhLow: 85, rhHigh: 95,
   exchange: false, exchangeSince: null, humidifier: false, humidifierDuringExchange: true, acFan: 'auto',
+  co2Safety: 1250, exchangeMaxMin: 10, exchangeEndedAt: null, cappedInRow: 0, humidifierSince: null,
 };
 
 // The schema of iteration 3 (user_version 2), copied from the db.js of that time.
@@ -127,7 +128,7 @@ test('a new room gets the default control row; deleting the room deletes it', (t
 test('setControl stores the settings and setControlState the band states', (t) => {
   const db = fresh(t);
   const { id } = db.createRoom(fields);
-  const settings = { auto: true, co2Low: 500, co2High: 800, tLow: 20, tHigh: 24, rhLow: 80, rhHigh: 90, humidifierDuringExchange: false, acFan: 'high' };
+  const settings = { auto: true, co2Low: 500, co2High: 800, tLow: 20, tHigh: 24, rhLow: 80, rhHigh: 90, humidifierDuringExchange: false, acFan: 'high', co2Safety: 1100, exchangeMaxMin: 15 };
   assert.equal(db.setControl(id, settings), true);
   assert.deepEqual(db.getControl(id), { ...DEFAULT_CONTROL, ...settings });
   db.setControlState(id, { exchange: true, humidifier: true }, 1000);
