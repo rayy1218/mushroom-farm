@@ -256,3 +256,50 @@ test('a failed save rolls the change back', () => {
   assert.equal(existsSync(statePath), true);
   assert.equal(JSON.parse(readFileSync(statePath, 'utf8')).rooms.length, 2);
 });
+
+test('the sensors list says which room simulates each device, with the same kind check as the lock', async () => {
+  reset();
+  device.sensors.add({ address: 1, kind: 'trh' });
+  device.sensors.add({ address: 3, kind: 'relay' });
+  device.sensors.add({ address: 4, kind: 'ac' });
+  const { id } = (await call('POST', '/api/sims', { name: 'Room A' })).body;
+  await call('PUT', `/api/sims/${id}`, { trh: 1, relay: 3, ac: 4, enabled: true });
+  const by = async () => Object.fromEntries((await call('GET', '/api/sensors')).body.map((s) => [s.address, s.simulatedBy]));
+  assert.deepEqual(await by(), { 1: 'Room A', 3: null, 4: 'Room A' });
+  await call('PUT', `/api/sims/${id}`, { enabled: false });
+  assert.deepEqual(await by(), { 1: null, 3: null, 4: null });
+});
+
+test('removing a simulated room lifts the lock', async () => {
+  reset();
+  device.sensors.add({ address: 1, kind: 'trh' });
+  const { id } = (await call('POST', '/api/sims', { name: 'Gone' })).body;
+  await call('PUT', `/api/sims/${id}`, { trh: 1, enabled: true });
+  assert.equal((await call('PUT', '/api/sensors/1', { t: 20 })).status, 409);
+  assert.equal((await call('DELETE', `/api/sims/${id}`)).status, 204);
+  assert.equal((await call('PUT', '/api/sensors/1', { t: 20 })).status, 200);
+});
+
+test('removing a linked device clears the link; a new device at that address is not locked', async () => {
+  reset();
+  device.sensors.add({ address: 1, kind: 'trh' });
+  device.sensors.add({ address: 3, kind: 'relay' });
+  const { id } = (await call('POST', '/api/sims', {})).body;
+  await call('PUT', `/api/sims/${id}`, { trh: 1, relay: 3, enabled: true });
+  assert.equal((await call('DELETE', '/api/sensors/1')).status, 204);
+  const room = (await call('GET', '/api/sims')).body[0];
+  assert.deepEqual([room.trh, room.relay, room.enabled], [null, 3, true]);
+  assert.equal((await call('POST', '/api/sensors', { address: 1, kind: 'trh' })).status, 201);
+  assert.equal((await call('PUT', '/api/sensors/1', { t: 20 })).status, 200);
+});
+
+test('a state file with a device linked twice keeps the first link only', () => {
+  const dir = tempDir();
+  const sensors = createSensors({});
+  sensors.add({ address: 1, kind: 'trh' });
+  sensors.add({ address: 2, kind: 'co2' });
+  const file = join(dir, 'state.json.sim');
+  writeFileSync(file, JSON.stringify({ speed: 1, rooms: [{ id: 1, name: 'A', trh: 1 }, { id: 2, name: 'B', trh: 1, co2: 2 }, { id: 3, name: 'C', co2: 2 }] }));
+  const sims = createSims({ sensors, statePath: file, model });
+  assert.deepEqual(sims.list().map((r) => [r.trh, r.co2]), [[1, null], [null, 2], [null, null]]);
+});

@@ -83,7 +83,7 @@ export function createDeviceHttp(sensors, log, { webDir = WEB_DIR, sims } = {}) 
 
   async function api(req, res, path) {
     if (path === '/api/sensors') {
-      if (req.method === 'GET') return send(res, 200, sensors.list());
+      if (req.method === 'GET') return send(res, 200, sims ? sensors.list().map((s) => ({ ...s, simulatedBy: sensors.simulatedByDevice(s.address) })) : sensors.list());
       if (req.method === 'POST') return send(res, 201, sensors.add(await readJson(req)));
       throw notFound();
     }
