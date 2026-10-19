@@ -7,7 +7,7 @@ Date: 2026-10-19 · Branch `v2` · Builds on `2026-10-16-machines-design.md` (it
 | Machine | Rule |
 |---|---|
 | **Air exchange** (intake + exhaust together) | starts when CO₂ ≥ CO₂ band upper limit (750), stops when CO₂ ≤ band lower limit (600); between them it keeps its state. "Air exchange" = this on state. |
-| **Humidifier** | band rule on RH: on when RH ≤ RH band lower limit, off when RH ≥ upper limit, keeps its state in between; **always on during an air exchange** |
+| **Humidifier** | band rule on RH: on when RH ≤ RH band lower limit, off when RH ≥ upper limit, keeps its state in between; **always on during an air exchange**, unless "Humidifier on during air exchange" is off for the room (then it follows its RH band state alone; the band state is tracked either way) |
 | **Aircon** | power on, mode cool, fan auto; setpoint = middle of the temperature band; **during an air exchange setpoint − 5 °C** (clamped to the AC's 16–30 °C, rounded to 0.5) |
 | **Circulation fan** | on all the time |
 
@@ -19,8 +19,9 @@ Date: 2026-10-19 · Branch `v2` · Builds on `2026-10-16-machines-design.md` (it
 | CO₂ band `co2Low`–`co2High` | 600–750 ppm | 300–5000, low < high |
 | Temperature band `tLow`–`tHigh` | 21–23 °C *default* | 16–35, low < high |
 | RH band `rhLow`–`rhHigh` | 85–95 % *default* | 40–100, low < high |
+| `humidifierDuringExchange` "Humidifier on during air exchange" | on (current behaviour) | true or false; a change takes effect on the next cycle |
 
-Stored in a new table `room_controls (room_id PK, auto, co2_low, co2_high, t_low, t_high, rh_low, rh_high, exchange INTEGER, exchange_since INTEGER, humidifier INTEGER)` (db upgrade 2 → 3; a row per room, created with the room and for existing rooms by the upgrade; deleted with the room). `exchange` and `humidifier` are the controller's remembered band states (so hysteresis survives a restart).
+Stored in a new table `room_controls (room_id PK, auto, co2_low, co2_high, t_low, t_high, rh_low, rh_high, exchange INTEGER, exchange_since INTEGER, humidifier INTEGER, humidifier_during_exchange INTEGER NOT NULL DEFAULT 1)` (db upgrade 2 → 3, and 3 → 4 adds `humidifier_during_exchange`; a row per room, created with the room and for existing rooms by the upgrade; deleted with the room). `exchange` and `humidifier` are the controller's remembered band states (so hysteresis survives a restart).
 
 ## 3. Running
 
@@ -33,14 +34,14 @@ Stored in a new table `room_controls (room_id PK, auto, co2_low, co2_high, t_low
 | Turning auto on | evaluates at once on the next cycle (band states start from the current commanded intake state for `exchange`, current humidifier command for `humidifier`) |
 | Turning auto off | nothing is switched; machines stay as they are and manual control is back |
 | Manual commands while auto | 409 "Automatic control is on" (field none) |
-| Reason | per machine a short text kept in memory, e.g. "Air exchange: CO₂ 762 ≥ 750", "Humidifier: on during air exchange", "Aircon: 17.0 °C (22.0 − 5 during air exchange)", "Circulation: always on", "CO₂ sensor not answering: air exchange kept on" |
+| Reason | per machine a short text kept in memory, e.g. "Air exchange: CO₂ 762 ≥ 750", "Humidifier: on during air exchange" (when it is off for the room: "Humidifier: off (RH 96 ≥ 95; not forced during air exchange)", "Humidifier: on (RH 84 ≤ 85)"), "Aircon: 17.0 °C (22.0 − 5 during air exchange)", "Circulation: always on", "CO₂ sensor not answering: air exchange kept on" |
 
 ## 4. API
 
 | Route | Body / reply |
 |---|---|
-| `GET /api/rooms/:id/control` | `{ auto, co2Low, co2High, tLow, tHigh, rhLow, rhHigh, exchange, exchangeSince, humidifierBand, reasons: { exchange, humidifier, ac, circulation } }` |
-| `PUT /api/rooms/:id/control` | any of `auto` and the six band values; validation 400 with `field` ("CO₂ band lower limit must be below the upper limit"…); reply as GET |
+| `GET /api/rooms/:id/control` | `{ auto, co2Low, co2High, tLow, tHigh, rhLow, rhHigh, humidifierDuringExchange, exchange, exchangeSince, humidifierBand, reasons: { exchange, humidifier, ac, circulation } }` |
+| `PUT /api/rooms/:id/control` | any of `auto`, `humidifierDuringExchange` (boolean) and the six band values; validation 400 with `field` ("CO₂ band lower limit must be below the upper limit"…); reply as GET |
 | `PUT /api/rooms/:id/machines/…` | 409 while `auto` is on |
 | `GET /api/rooms/:id/machines` | unchanged, plus `auto: bool` at the top level |
 
@@ -48,7 +49,7 @@ Stored in a new table `room_controls (room_id PK, auto, co2_low, co2_high, t_low
 
 | Element | Behaviour |
 |---|---|
-| "Automatic control" card (above Machines) | Auto switch; three band rows (CO₂ ppm, Temperature °C, Humidity %) with low/high number inputs and **Save** (unsent edits kept across the 5 s refresh, like the AC form); state line "Air exchange on since 10:42" / "Air exchange off"; the four reasons |
+| "Automatic control" card (above Machines) | Auto switch; three band rows (CO₂ ppm, Temperature °C, Humidity %) with low/high number inputs and **Save**; under them the switch "Humidifier on during air exchange" (sent at once, not part of Save) (unsent edits kept across the 5 s refresh, like the AC form); state line "Air exchange on since 10:42" / "Air exchange off"; the four reasons |
 | Machines card while auto | toggles and AC controls disabled, a note "Automatic control is on" |
 | Errors | field errors under the band inputs |
 
