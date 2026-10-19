@@ -3,7 +3,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { RELAY_KEYS } from './machine-codes.js';
 
-const VERSION = 6;
+const VERSION = 7;
 
 // Iteration 1 (version 0) had only the rooms table without the address columns.
 const ROOMS = `
@@ -67,8 +67,50 @@ CREATE TABLE room_controls (
   exchange_since INTEGER,
   humidifier INTEGER NOT NULL DEFAULT 0 CHECK (humidifier IN (0, 1)),
   humidifier_during_exchange INTEGER NOT NULL DEFAULT 1 CHECK (humidifier_during_exchange IN (0, 1)),
-  ac_fan TEXT NOT NULL DEFAULT 'auto' CHECK (ac_fan IN ('auto','low','high'))
+  ac_fan TEXT NOT NULL DEFAULT 'auto' CHECK (ac_fan IN ('auto','low','high')),
+  co2_safety REAL NOT NULL DEFAULT 1250,
+  exchange_max_min INTEGER NOT NULL DEFAULT 10,
+  exchange_ended_at INTEGER,
+  capped_in_row INTEGER NOT NULL DEFAULT 0,
+  humidifier_since INTEGER
 ) STRICT;`;
+
+// Safety and history (spec 2026-10-19-safety-and-history-design.md 3.2 and 4): the room_controls columns
+// that version 7 adds to an older table, the alarms, the machine log and the readings time index.
+const SAFETY_CONTROL_COLUMNS = `
+ALTER TABLE room_controls ADD COLUMN co2_safety REAL NOT NULL DEFAULT 1250;
+ALTER TABLE room_controls ADD COLUMN exchange_max_min INTEGER NOT NULL DEFAULT 10;
+ALTER TABLE room_controls ADD COLUMN exchange_ended_at INTEGER;
+ALTER TABLE room_controls ADD COLUMN capped_in_row INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE room_controls ADD COLUMN humidifier_since INTEGER;`;
+
+const ALARMS = `
+CREATE TABLE alarms (
+  id         INTEGER PRIMARY KEY,
+  room_id    INTEGER NOT NULL,
+  key        TEXT    NOT NULL,
+  level      TEXT    NOT NULL CHECK (level IN ('warning', 'serious', 'critical')),
+  text       TEXT    NOT NULL,
+  raised_at  INTEGER NOT NULL,
+  cleared_at INTEGER,
+  acked_at   INTEGER
+) STRICT;
+CREATE INDEX alarms_by_room ON alarms (room_id, id);
+CREATE UNIQUE INDEX alarms_active ON alarms (room_id, key) WHERE cleared_at IS NULL;`;
+
+const MACHINE_LOG = `
+CREATE TABLE machine_log (
+  id       INTEGER PRIMARY KEY,
+  room_id  INTEGER NOT NULL,
+  machine  TEXT    NOT NULL CHECK (machine IN ('intake', 'exhaust', 'circulation', 'humidifier', 'ac')),
+  at       INTEGER NOT NULL,
+  on_      INTEGER NOT NULL CHECK (on_ IN (0, 1)),
+  setpoint REAL,
+  mode     TEXT,
+  fan      TEXT,
+  source   TEXT    NOT NULL CHECK (source IN ('manual', 'auto'))
+) STRICT;
+CREATE INDEX machine_log_by_room ON machine_log (room_id, machine, at);`;
 
 // Farm-wide settings (spec 2026-10-19-settings-design.md): no rows means the defaults.
 const SETTINGS = `
@@ -122,6 +164,12 @@ function migrate(db) {
     if (version < 5) db.exec(SETTINGS);
     if (version >= 3 && version < 6) { // older tables lack the column; a table made above by ROOM_CONTROLS has it
       db.exec("ALTER TABLE room_controls ADD COLUMN ac_fan TEXT NOT NULL DEFAULT 'auto' CHECK (ac_fan IN ('auto','low','high'))");
+    }
+    if (version < 7) {
+      if (version >= 3) db.exec(SAFETY_CONTROL_COLUMNS); // a table made above by ROOM_CONTROLS has them
+      db.exec(ALARMS);
+      db.exec(MACHINE_LOG);
+      db.exec('CREATE INDEX readings_by_time ON readings (room_id, kind, at);');
     }
     db.exec(`PRAGMA user_version = ${VERSION}`);
     db.exec('COMMIT');
@@ -198,6 +246,8 @@ export function openDb(path) {
     commands: db.prepare('SELECT * FROM machine_commands WHERE room_id = ?'),
     insertControl: db.prepare('INSERT OR REPLACE INTO room_controls (room_id) VALUES (?)'),
     deleteControl: db.prepare('DELETE FROM room_controls WHERE room_id = ?'),
+    deleteAlarms: db.prepare('DELETE FROM alarms WHERE room_id = ?'),
+    deleteMachineLog: db.prepare('DELETE FROM machine_log WHERE room_id = ?'),
     control: db.prepare('SELECT * FROM room_controls WHERE room_id = ?'),
     setControl: db.prepare(`UPDATE room_controls SET auto = ?, co2_low = ?, co2_high = ?, t_low = ?, t_high = ?,
                                    rh_low = ?, rh_high = ?, humidifier_during_exchange = ?, ac_fan = ? WHERE room_id = ?`),
@@ -364,6 +414,8 @@ export function openDb(path) {
         q.deleteReadings.run(id);
         q.deleteCommands.run(id);
         q.deleteControl.run(id);
+        q.deleteAlarms.run(id);
+        q.deleteMachineLog.run(id);
         const deleted = q.delete.run(id).changes > 0;
         db.exec('COMMIT');
         return deleted;

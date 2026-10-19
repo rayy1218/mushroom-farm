@@ -36,10 +36,11 @@ function readingIndexes(path) {
 
 const EXPECTED = [
   { name: 'readings_by_sensor', sql: 'CREATE INDEX readings_by_sensor ON readings (room_id, kind, address, id)' },
+  { name: 'readings_by_time', sql: 'CREATE INDEX readings_by_time ON readings (room_id, kind, at)' },
   { name: 'readings_ok', sql: 'CREATE INDEX readings_ok ON readings (room_id, kind, address, id) WHERE ok = 1' },
 ];
 
-test('readings indexes: fresh schema and the 0 to 1 upgrade both get the per-sensor indexes', (t) => {
+test('readings indexes: fresh schema and the 0 to 1 upgrade both get the per-sensor and time indexes', (t) => {
   const dir = tempDir(t);
   openDb(join(dir, 'new.db')).close();
   assert.deepEqual(readingIndexes(join(dir, 'new.db')), EXPECTED);
