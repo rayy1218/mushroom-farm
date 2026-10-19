@@ -147,18 +147,21 @@ export function createMachines({ db, client, poller, now = Date.now }) {
       if (!room) throw new CommandError(404, 'Room not found');
       const index = RELAY_KEYS.indexOf(key);
       if (index < 0 && key !== 'ac') throw new CommandError(404, 'Not found');
+      const source = bypassAuto ? 'auto' : 'manual'; // for the machine log
       if (!bypassAuto && db.getControl(roomId)?.auto) throw new CommandError(409, 'Automatic control is on');
       if (index >= 0) {
         const { on } = relayBody(body);
         if (room.relayAddress === null) throw new CommandError(400, 'No relay module address set');
         const address = room.relayAddress;
         db.setRelayCommand(roomId, key, on, now());
+        db.logMachine(roomId, key, { on }, source, now());
         await write(roomId, 'relay', address, () => client.writeCoil(address, index, on));
       } else {
         const command = acBody(body);
         if (room.acAddress === null) throw new CommandError(400, 'No aircon gateway address set');
         const address = room.acAddress;
         db.setAcCommand(roomId, command, now());
+        db.logMachine(roomId, 'ac', { on: command.power, setpoint: command.setpoint, mode: command.mode, fan: command.fan }, source, now());
         const values = [command.power ? 1 : 0, MODES.indexOf(command.mode), Math.round(command.setpoint * 10), FANS.indexOf(command.fan)];
         await write(roomId, 'ac', address, () => client.writeRegisters(address, 0, values));
       }

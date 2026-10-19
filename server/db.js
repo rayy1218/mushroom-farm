@@ -130,6 +130,30 @@ export const STATUS_SQL = {
                                             LIMIT 10000)`,
 };
 
+// Stream B: the history queries (spec 2026-10-19-safety-and-history-design.md 5). Readings are averaged in SQL per time
+// bucket (bucketMs wide, aligned to the epoch; `at` is the bucket middle); it searches the readings_by_time index.
+// Parameters: room id, from, to. bucketMs is a number from our own table, never user text.
+export const HISTORY_SQL = {
+  buckets(kind, bucketMs) {
+    const b = Math.trunc(bucketMs);
+    const columns = kind === 'trh' ? 'AVG(t) AS t, AVG(rh) AS rh' : 'AVG(co2) AS co2';
+    return `SELECT (at / ${b}) * ${b} + ${b / 2} AS at, ${columns} FROM readings
+            WHERE room_id = ? AND kind = '${kind === 'trh' ? 'trh' : 'co2'}' AND ok = 1 AND at >= ? AND at <= ?
+            GROUP BY at / ${b} ORDER BY at / ${b}`;
+  },
+};
+
+// range hours → bucket seconds
+export const HISTORY_BUCKET_S = { 1: 15, 6: 60, 24: 300, 168: 1800, 720: 7200 };
+const SPARK_BUCKET_MS = 30 * 60_000;
+const MACHINE_KEYS = ['intake', 'exhaust', 'circulation', 'humidifier', 'ac'];
+const LEVEL_RANK = { critical: 3, serious: 2, warning: 1 };
+
+const alarmRow = (r) => ({
+  id: r.id, roomId: r.room_id, roomName: r.room_name, key: r.key, level: r.level, text: r.text,
+  raisedAt: r.raised_at, clearedAt: r.cleared_at, ackedAt: r.acked_at,
+});
+
 // Brings a new or older database up to VERSION in one transaction.
 function migrate(db) {
   const { user_version: version } = db.prepare('PRAGMA user_version').get();
@@ -178,6 +202,9 @@ function migrate(db) {
     throw err;
   }
 }
+
+// A machine_log row as the API shows it.
+const logRow = (r) => ({ at: r.at, on: r.on_ === 1, setpoint: r.setpoint, mode: r.mode, fan: r.fan, source: r.source });
 
 // Thrown by createRoom and updateRoom when another room already has the name
 // (ignoring case).
@@ -292,6 +319,17 @@ export function openDb(path) {
                               WHERE a.room_id = ? ORDER BY a.id DESC LIMIT 50`),
     ackAlarm: db.prepare('UPDATE alarms SET acked_at = COALESCE(acked_at, ?) WHERE id = ?'),
     ackRoomAlarms: db.prepare('UPDATE alarms SET acked_at = ? WHERE room_id = ? AND acked_at IS NULL'), // all of those are current
+    // Stream B: machine log (spec 2026-10-19-safety-and-history-design.md 4).
+    logLast: db.prepare('SELECT * FROM machine_log WHERE room_id = ? AND machine = ? ORDER BY id DESC LIMIT 1'),
+    logAdd: db.prepare(`INSERT INTO machine_log (room_id, machine, at, on_, setpoint, mode, fan, source)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`),
+    logAll: db.prepare('SELECT * FROM machine_log WHERE room_id = ? AND machine = ? ORDER BY id'),
+    logSince: db.prepare('SELECT * FROM machine_log WHERE room_id = ? AND machine = ? AND at >= ? AND at <= ? ORDER BY at, id'),
+    logBefore: db.prepare('SELECT * FROM machine_log WHERE room_id = ? AND machine = ? AND at < ? ORDER BY at DESC, id DESC LIMIT 1'),
+    overviewActive: db.prepare(`SELECT room_id, level FROM alarms WHERE cleared_at IS NULL`),
+    overviewAlarms: db.prepare(`SELECT alarms.*, rooms.name AS room_name FROM alarms JOIN rooms ON rooms.id = alarms.room_id
+                               WHERE cleared_at IS NULL OR acked_at IS NULL
+                               ORDER BY (level = 'critical') DESC, raised_at DESC, alarms.id DESC LIMIT 10`),
     getSetting: db.prepare('SELECT value FROM settings WHERE key = ?'),
     setSetting: db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)'),
     latest: db.prepare(STATUS_SQL.latest),
@@ -336,6 +374,14 @@ export function openDb(path) {
   function getRoom(id) {
     const row = q.get.get(id);
     return row ? toRoom(row) : null;
+  }
+
+  const bucketStatements = new Map();
+  // [{ at, ...values }] of one sensor kind between from and to, averaged per bucket.
+  function buckets(roomId, kind, bucketMs, from, to) {
+    const key = `${kind}/${bucketMs}`;
+    if (!bucketStatements.has(key)) bucketStatements.set(key, db.prepare(HISTORY_SQL.buckets(kind, bucketMs)));
+    return bucketStatements.get(key).all(roomId, from, to).map((r) => ({ ...r }));
   }
 
   return {
@@ -476,6 +522,81 @@ export function openDb(path) {
 
     setAcCommand(roomId, { power, mode, setpoint, fan }, at) {
       return q.setAc.run(power ? 1 : 0, mode, setpoint, fan, at, roomId).changes > 0;
+    },
+
+    // ---- Stream B: machine log ----
+
+    // Writes a log row for a saved command unless it equals the machine's previous row (a re-send).
+    // change: { on, setpoint, mode, fan } (the last three only for the aircon). Returns true when a row was written.
+    logMachine(roomId, machine, { on, setpoint = null, mode = null, fan = null }, source, at) {
+      const last = q.logLast.get(roomId, machine);
+      if (last && last.on_ === (on ? 1 : 0) && last.setpoint === setpoint && last.mode === mode && last.fan === fan) return false;
+      q.logAdd.run(roomId, machine, at, on ? 1 : 0, setpoint, mode, fan, source);
+      return true;
+    },
+
+    // Every log row of one machine, oldest first.
+    machineLog(roomId, machine) {
+      return q.logAll.all(roomId, machine).map(logRow);
+    },
+
+    // ---- Stream B: history and overview ----
+
+    // The charts data for the last `hours` (1, 6, 24, 168 or 720) ending at now, or null when there is no such room.
+    // Machines: the log rows in the window, and the last row before it moved to the start of the window.
+    history(roomId, hours, now = Date.now()) {
+      if (!q.get.get(roomId)) return null;
+      const bucketS = HISTORY_BUCKET_S[hours];
+      const from = now - hours * 3_600_000;
+      const machines = {};
+      for (const key of MACHINE_KEYS) {
+        const rows = [];
+        const before = q.logBefore.get(roomId, key, from);
+        if (before) rows.push({ ...before, at: from });
+        rows.push(...q.logSince.all(roomId, key, from, now));
+        machines[key] = rows.map((r) => {
+          const { at, on, setpoint, mode, fan, source } = logRow(r);
+          return key === 'ac' ? { at, on, setpoint, mode, fan, source } : { at, on, source };
+        });
+      }
+      return {
+        from, to: now, bucketS,
+        trh: buckets(roomId, 'trh', bucketS * 1000, from, now),
+        co2: buckets(roomId, 'co2', bucketS * 1000, from, now),
+        machines,
+      };
+    },
+
+    // Everything the Overview page shows. Alarms come straight from the alarms table:
+    // a room's count is its active alarms (not cleared); the list is the current ones (active, or cleared and not acknowledged).
+    overview(now = Date.now()) {
+      const perRoom = new Map();
+      for (const a of q.overviewActive.all()) {
+        const e = perRoom.get(a.room_id) ?? { count: 0, level: null };
+        e.count++;
+        if (e.level === null || LEVEL_RANK[a.level] > LEVEL_RANK[e.level]) e.level = a.level;
+        perRoom.set(a.room_id, e);
+      }
+      const rooms = this.listRooms().map((room) => {
+        const [trh, co2] = this.getSensors(room.id, 1);
+        const c = this.getControl(room.id);
+        const day = (kind) => buckets(room.id, kind, SPARK_BUCKET_MS, now - 24 * 3_600_000, now);
+        const line = (rows, field) => rows.map((p) => ({ at: p.at, v: p[field] }));
+        const trhDay = day('trh');
+        return {
+          id: room.id,
+          name: room.name,
+          trh: { status: trh.status, t: trh.lastOk?.t ?? null, rh: trh.lastOk?.rh ?? null, at: trh.lastOk?.at ?? null },
+          co2: { status: co2.status, co2: co2.lastOk?.co2 ?? null, at: co2.lastOk?.at ?? null },
+          auto: c.auto,
+          exchange: c.exchange,
+          exchangeSince: c.exchangeSince,
+          bands: { tLow: c.tLow, tHigh: c.tHigh, rhLow: c.rhLow, rhHigh: c.rhHigh, co2Low: c.co2Low, co2High: c.co2High },
+          alarms: perRoom.get(room.id) ?? { count: 0, level: null },
+          spark: { t: line(trhDay, 't'), rh: line(trhDay, 'rh'), co2: line(day('co2'), 'co2') },
+        };
+      });
+      return { rooms, alarms: q.overviewAlarms.all().map(alarmRow) };
     },
 
     // Every wired relay module and aircon gateway: rooms by id, relay before ac.

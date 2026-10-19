@@ -5,9 +5,13 @@ import { parseRoute, isCanonical } from './route.js';
 import * as list from './rooms-list.js';
 import * as detail from './room-detail.js';
 import * as settings from './settings-page.js';
+import * as overview from './overview.js';
+import { loadBadge } from './overview-data.js';
+import { withTitlePrefix } from './overview-math.js';
 
 const view = document.getElementById('view');
 const menuLinks = {
+  overview: document.querySelectorAll('[data-nav="overview"]'),
   list: document.querySelectorAll('[data-nav="rooms"]'),
   settings: document.querySelectorAll('[data-nav="settings"]'),
 };
@@ -19,16 +23,18 @@ function show() {
   if (!isCanonical(location.hash)) {
     const route = parseRoute(location.hash);
     // Tidy an empty or unknown hash without adding a history entry.
-    history.replaceState(null, '', route.name === 'detail' ? `#/rooms/${route.id}` : route.name === 'settings' ? '#/settings' : '#/rooms');
+    history.replaceState(null, '', route.name === 'detail' ? `#/rooms/${route.id}` : route.name === 'settings' ? '#/settings'
+      : route.name === 'list' ? '#/rooms' : '#/overview');
   }
   const route = parseRoute(location.hash);
   unmount?.();
   view.replaceChildren();
   unmount = route.name === 'detail' ? detail.mount(view, { id: route.id })
     : route.name === 'settings' ? settings.mount(view, {})
-    : list.mount(view, {});
+    : route.name === 'list' ? list.mount(view, {})
+    : overview.mount(view, {});
   // The Rooms entry stays current on a room's page.
-  const section = route.name === 'settings' ? 'settings' : 'list';
+  const section = route.name === 'settings' ? 'settings' : route.name === 'overview' ? 'overview' : 'list';
   for (const [name, links] of Object.entries(menuLinks)) {
     for (const a of links) {
       if (name === section) a.setAttribute('aria-current', 'page');
@@ -75,5 +81,31 @@ document.querySelector('[data-skip]').addEventListener('click', (e) => {
   view.focus();
 });
 
-window.addEventListener('hashchange', show);
+// The alarm badge on the Overview entry and "(2) " in front of the page title: the number of active, unacknowledged
+// alarms, asked every 30 s (and again when the page changes, so an Acknowledge shows at once).
+const BADGE_MS = 30_000;
+const titleNode = document.querySelector('title');
+let badge = 0;
+
+function showBadge() {
+  for (const el of document.querySelectorAll('[data-badge]')) {
+    el.textContent = String(badge);
+    el.hidden = badge === 0;
+  }
+  const next = withTitlePrefix(document.title, badge);
+  if (next !== document.title) document.title = next; // pages set their own title: the observer below puts the prefix back
+}
+
+async function refreshBadge() {
+  const count = await loadBadge();
+  if (count === null) return; // the server did not answer: keep the last number
+  badge = count;
+  showBadge();
+}
+
+new MutationObserver(showBadge).observe(titleNode, { childList: true });
+setInterval(refreshBadge, BADGE_MS);
+
+window.addEventListener('hashchange', () => { show(); refreshBadge(); });
 show();
+refreshBadge();

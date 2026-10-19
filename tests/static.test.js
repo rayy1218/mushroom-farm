@@ -93,5 +93,5 @@ test('the real web folder is the default', async (t) => {
   t.after(() => new Promise((resolve) => real.close(resolve)));
   const res = await fetch(`http://127.0.0.1:${real.address().port}/`);
   assert.equal(res.status, 200);
-  assert.match(await res.text(), /<title>Rooms/);
+  assert.match(await res.text(), /<title>Overview/);
 });
