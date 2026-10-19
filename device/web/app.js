@@ -142,13 +142,18 @@ async function save(row, address, field, input, list) {
   }
 }
 
-function showRow(row, sensor, simulatedBy) {
+// The fields a simulation drives, per kind (the server refuses edits of just these).
+const SIMULATED_FIELDS = { trh: ['t', 'rh'], co2: ['co2'], ac: ['roomT'] };
+
+function showRow(row, sensor) {
+  const simulatedBy = sensor.simulatedBy;
   // A simulated sensor's values come from its room: read-only, with a note.
   row.simNote.textContent = simulatedBy ? `simulated by ${simulatedBy}` : '';
   // Only number inputs keep what is being typed; checkboxes always show the device's state.
   for (const [field, input] of Object.entries(row.inputs)) {
-    input.readOnly = Boolean(simulatedBy);
-    if (simulatedBy) input.removeAttribute('aria-invalid');
+    const locked = Boolean(simulatedBy) && SIMULATED_FIELDS[sensor.kind]?.includes(field);
+    input.readOnly = locked;
+    if (locked) input.removeAttribute('aria-invalid');
     if (document.activeElement === input || input.getAttribute('aria-invalid') === 'true') continue;
     input.value = String(sensor[field]);
   }
@@ -157,7 +162,7 @@ function showRow(row, sensor, simulatedBy) {
   row.word.textContent = sensor.answering ? 'Answering' : 'Silent';
 }
 
-function showSensors(list, simulated) {
+function showSensors(list) {
   const seen = new Set();
   let previous = null;
   for (const sensor of list) {
@@ -176,7 +181,7 @@ function showSensors(list, simulated) {
     // Keep rows in address order without rebuilding the ones that already sit right.
     const want = previous ? previous.nextSibling : tbody.firstChild;
     if (want !== row.tr) tbody.insertBefore(row.tr, want);
-    showRow(row, sensor, simulated.get(sensor.address));
+    showRow(row, sensor);
     previous = row.tr;
   }
   for (const [address, row] of rows) {
@@ -204,16 +209,6 @@ const SIM_LINKS = [['trh', 'T/RH probe'], ['co2', 'CO₂ sensor'], ['relay', 'Re
 
 const simCards = new Map(); // id -> card
 const simBox = $('sims');
-
-// The sensors driven by an enabled room, by address.
-function simulatedMap(sims) {
-  const map = new Map();
-  for (const room of sims) {
-    if (!room.enabled) continue;
-    for (const kind of ['trh', 'co2', 'ac']) if (room[kind] !== null) map.set(room[kind], room.name);
-  }
-  return map;
-}
 
 function actingText(a) {
   if (!a) return 'Nothing acting yet';
@@ -261,6 +256,7 @@ function buildSimCard(room) {
     refresh();
   });
   const remove = el('button', { type: 'button', className: 'danger-text', textContent: 'Remove' });
+  card.remove = remove;
   remove.addEventListener('click', async () => {
     try {
       await request('DELETE', `/api/sims/${id}`);
@@ -322,6 +318,7 @@ function showLinks(card, room, sensors) {
 
 function showSimCard(card, room, sensors) {
   card.enabled.checked = room.enabled;
+  card.remove.setAttribute('aria-label', `Remove ${room.name}`);
   if (document.activeElement !== card.name && card.name.getAttribute('aria-invalid') !== 'true') card.name.value = room.name;
   for (const [key, input] of Object.entries(card.params)) {
     if (document.activeElement === input || input.getAttribute('aria-invalid') === 'true') continue;
@@ -428,7 +425,7 @@ async function refresh() {
   busy = true;
   try {
     const [sensors, log, sims, speed] = await Promise.all([request('GET', '/api/sensors'), request('GET', '/api/log'), request('GET', '/api/sims'), request('GET', '/api/sim-speed')]);
-    showSensors(sensors, simulatedMap(sims));
+    showSensors(sensors);
     showSims(sims, speed.speed, sensors);
     showLog(log);
     clearBanner();

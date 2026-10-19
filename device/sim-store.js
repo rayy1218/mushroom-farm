@@ -183,12 +183,39 @@ export function createSims({ sensors, statePath, model = defaultModel } = {}) {
     return null;
   }
 
+  // A device was removed: forget the link, so a new device at that address is not silently taken over.
+  // The room keeps running with that machine or sensor off.
+  function unlink(address) {
+    const touched = [];
+    for (const room of rooms.values()) {
+      for (const kind of LINKS) {
+        if (room[kind] === address) {
+          room[kind] = null;
+          touched.push(room);
+        }
+      }
+    }
+    if (touched.length === 0) return;
+    try {
+      save();
+    } catch (err) {
+      console.warn(`Could not save the simulation state (${err.message})`);
+    }
+  }
+
+  const claimed = new Set();
+
   function restore(saved) {
     if (!Number.isInteger(saved?.id) || saved.id < 1) throw new Error('bad id');
     const room = blank(saved.id, checkName(saved.name));
     if (typeof saved.enabled === 'boolean') room.enabled = saved.enabled;
     for (const field of Object.keys(PARAMS)) if (saved[field] !== undefined) room[field] = checkParam(field, saved[field]);
-    for (const kind of LINKS) if (Number.isInteger(saved[kind])) room[kind] = saved[kind];
+    // A device belongs to one room (and one link) only: the first claim wins.
+    for (const kind of LINKS) {
+      if (!Number.isInteger(saved[kind]) || claimed.has(saved[kind])) continue;
+      claimed.add(saved[kind]);
+      room[kind] = saved[kind];
+    }
     const s = saved.state;
     room.state = isNumber(s?.T) && isNumber(s?.W) && isNumber(s?.CO2) ? { T: s.T, W: s.W, CO2: s.CO2 } : model.initialState(paramsOf(room));
     rooms.set(room.id, room);
@@ -216,6 +243,7 @@ export function createSims({ sensors, statePath, model = defaultModel } = {}) {
     }
   }
   sensors.setSimulatedBy(simulatedBy);
+  sensors.setOnRemove?.(unlink);
 
   return {
     list: () => sorted().map(view),

@@ -70,6 +70,8 @@ export function createSensors({ statePath, spinUpMs = DEFAULT_SPIN_UP_MS, now = 
   const byAddress = new Map();
   // Set by the simulation: (address, kind) -> name of the simulated room that drives it, or null.
   let simulatedBy = () => null;
+  // Set by the simulation: called with an address once its device is removed.
+  let onRemove = () => {};
 
   // What callers see: copies, with a relay's running state worked out and its bookkeeping left out.
   function view(entry) {
@@ -180,6 +182,16 @@ export function createSensors({ statePath, spinUpMs = DEFAULT_SPIN_UP_MS, now = 
     simulatedBy = fn;
   }
 
+  function setOnRemove(fn) {
+    onRemove = fn;
+  }
+
+  // The name of the enabled simulated room driving this device's values, or null (also for kinds a simulation cannot drive).
+  function simulatedByDevice(address) {
+    const kind = byAddress.get(address)?.kind;
+    return SIMULATED_FIELDS[kind] ? simulatedBy(address, kind) : null;
+  }
+
   // Modbus function 05: a stuck relay is acknowledged but does not move.
   function writeCoil(address, index, on) {
     const entry = byAddress.get(address);
@@ -211,6 +223,7 @@ export function createSensors({ statePath, spinUpMs = DEFAULT_SPIN_UP_MS, now = 
       byAddress.set(address, entry);
       throw err;
     }
+    onRemove(address);
   }
 
   function restore(saved) {
@@ -247,5 +260,5 @@ export function createSensors({ statePath, spinUpMs = DEFAULT_SPIN_UP_MS, now = 
     }
   }
 
-  return { list, get, add, update, remove, writeCoil, writeAc, simWrite, setSimulatedBy };
+  return { list, get, add, update, remove, writeCoil, writeAc, simWrite, setSimulatedBy, setOnRemove, simulatedByDevice };
 }
