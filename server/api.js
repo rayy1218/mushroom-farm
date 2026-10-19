@@ -1,7 +1,7 @@
 // JSON API: /api/settings, /api/rooms, /api/rooms/:id, /api/rooms/:id/sensors and /api/rooms/:id/machines.
 
 import { validateRoom } from './rooms.js';
-import { NameTakenError, AddressTakenError } from './db.js';
+import { NameTakenError, AddressTakenError, HISTORY_BUCKET_S } from './db.js';
 import { CommandError } from './machines.js';
 import { RELAY_KEYS } from './machine-codes.js';
 import { validateSettings, readSettings, writeSettings } from './settings.js';
@@ -51,7 +51,7 @@ const noRoom = () => new HttpError(404, 'Room not found');
 // without them the machine or control routes do not exist. poller (from createPoller), when given,
 // gets a new reading interval at once.
 export function createApi(db, machines = null, controller = null, poller = null) {
-  async function route(req, res, path) {
+  async function route(req, res, path, url) {
     if (path === '/api/settings') {
       if (req.method === 'GET') return send(res, 200, readSettings(db));
       if (req.method !== 'PUT') throw notFound();
@@ -66,7 +66,12 @@ export function createApi(db, machines = null, controller = null, poller = null)
       if (req.method === 'POST') return send(res, 201, db.createRoom(await readRoom(req)));
       throw notFound();
     }
-    const match = /^\/api\/rooms\/([1-9][0-9]{0,14})(\/sensors|\/control|\/machines(?:\/([a-z]+))?)?$/.exec(path);
+    // Stream B: the Overview page's reply.
+    if (path === '/api/overview') {
+      if (req.method !== 'GET') throw notFound();
+      return send(res, 200, db.overview());
+    }
+    const match = /^\/api\/rooms\/([1-9][0-9]{0,14})(\/sensors|\/control|\/history|\/machines(?:\/([a-z]+))?)?$/.exec(path);
     if (!match) throw notFound();
     const id = Number(match[1]);
     if (match[2]?.startsWith('/machines')) {
@@ -83,6 +88,15 @@ export function createApi(db, machines = null, controller = null, poller = null)
       const view = await machines.command(id, key, await readJson(req));
       if (!view) throw noRoom();
       return send(res, 200, { ...view, auto: db.getControl(id)?.auto ?? false });
+    }
+    // Stream B: bucketed readings and machine lines for the charts.
+    if (match[2] === '/history') {
+      if (req.method !== 'GET') throw notFound();
+      const hours = /^[0-9]{1,3}$/.test(url.searchParams.get('hours') ?? '') ? Number(url.searchParams.get('hours')) : NaN;
+      if (!(hours in HISTORY_BUCKET_S)) throw new HttpError(400, 'hours must be 1, 6, 24, 168 or 720', 'hours');
+      const history = db.history(id, hours);
+      if (!history) throw noRoom();
+      return send(res, 200, history);
     }
     if (match[2] === '/control') {
       if (!controller) throw notFound();
@@ -122,7 +136,7 @@ export function createApi(db, machines = null, controller = null, poller = null)
 
   return async function api(req, res, url) {
     try {
-      await route(req, res, url.pathname);
+      await route(req, res, url.pathname, url);
     } catch (err) {
       if (err instanceof HttpError || err instanceof CommandError) {
         send(res, err.status, err.field ? { error: err.message, field: err.field } : { error: err.message });
