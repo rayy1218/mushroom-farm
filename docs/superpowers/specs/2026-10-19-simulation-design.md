@@ -34,12 +34,14 @@ Global: `speed` 1×, 10× or 60× (simulated seconds per real second).
 | Effect | Applies when (device truth) | Change |
 |---|---|---|
 | Walls | always | T moves toward outdoorT with time constant 1 h |
-| Air exchange | intake running AND exhaust running → flow = fanFlow; only one of them running → 0.5 × fanFlow; none → 0.02 × volume per hour (leakage) | k = flow / 3600 / volume per s; T, W and CO₂ each move toward outdoor (CO₂ outdoor 420 ppm) at rate k |
-| Blocks | always | heat 1 W per block; water 2 g/h per block; CO₂ 0.3 L/h per block |
+| Air exchange | intake running AND exhaust running → flow = fanFlow; only one of them running → 0.5 × fanFlow; none → 0.3 × volume per hour (leakage) | W and CO₂ move toward outdoor (CO₂ outdoor 420 ppm) at k = flow / 3600 / volume per s (air properties); T moves toward outdoorT at kT = min(1, flow × 1.2 / 3600 × dt / cap), cap = heat capacity below (the contents are 10× the air, so T is 10× slower than W) |
+| Blocks | always | heat 1 W per block; water 1 g/h per block (their evaporation cooling is not modelled: the 1 W per block is the net heat); CO₂ 0.3 L/h per block |
 | Humidifier | humidifier running | adds `humidifierGH` of water; evaporation cools: 2.45 kJ per g taken from the air |
-| Aircon | AC power on AND error code 0 | **cool**: removes heat P = acKW × clamp((T − setpoint) / 1 °C, 0, 1); water removed = P × f / 2.45 g/s with f = 0.35 fan low, 0.25 auto, 0.15 high · **dry**: as cool but P capped at 0.4 × acKW and f = 0.6 · **heat**: adds P = acKW × clamp((setpoint − T) / 1 °C, 0, 1) · **fan**: nothing |
+| Aircon | AC power on AND error code 0 | **cool**: capacity P = acKW × clamp((T − setpoint) / 0.5 °C, 0, 1), split into latent and sensible. Coil temperature 12 °C: wc = Wsat(12 °C), span = Wsat(T) − wc, wet = span > 0 ? clamp((W − wc) / span, 0, 1) : 0 (no condensation once the air's dew point is below the coil). Water removed = P × f × wet / 2.45 g/s with f = 0.35 fan low, 0.25 auto, 0.15 high; latent kW = water × 2.45; **sensible kW = P − latent kW** and only the sensible part lowers T (and is limited so T never passes the setpoint in one step; the latent part is scaled the same) · **dry**: as cool but P capped at 0.4 × acKW and f = 0.6 · **heat**: adds P = acKW × clamp((setpoint − T) / 0.5 °C, 0, 1) · **fan**: nothing |
 | Circulation fan | — | no effect in a single-zone model (stated on the page) |
 | Saturation | always | W never above saturation at T (RH ≤ 100 %; the excess condenses) |
+
+Reference points (60 m³, 500 blocks, outdoor 32 °C / 80 %, 8 h from outdoor state): AC cool 22 auto ≈ 22.4 °C / 83 %, fan low ≈ 75 %, fan high ≈ 99 %, AC + humidifier 100 %; closed 1 h ≈ 33.6 °C / 93 % / 2580 ppm; full exchange ≈ 33.2 °C / 77 % / 667 ppm.
 
 Heat capacity of the room = volume × 1.2 kJ/(m³·K) × 10 (air plus contents and blocks), so temperature moves in minutes, not seconds.
 
@@ -47,7 +49,7 @@ RH = W / Wsat(T) × 100, Wsat from the Magnus formula (`es = 0.6108·exp(17.27·
 
 Sensor values written each tick: T/RH probe `t` = T, `rh` = RH (both rounded to 0.1); CO₂ sensor `co2` = rounded CO₂; AC gateway `roomT` = T (0.1). Values are clamped to the device limits (§3 of iteration 3: T −40…80, RH 0…100, CO₂ 0…10000).
 
-The page also shows, per simulated room, what is acting now, e.g. "Air exchange 600 m³/h · AC cooling 2.1 kW · Humidifier +2.0 kg/h · Blocks +0.5 kW".
+`acting` (returned by `step`) reports what really happened in the last sub-step: `exchangeM3h`, `acCoolKW` (sensible, after the setpoint limit), `acLatentKW` (water removed × 2.45, after limits), `acHeatKW`, `humidifierGH` (water actually evaporated, 0 at saturation), `blocksKW`. The page also shows, per simulated room, what is acting now, e.g. "Air exchange 600 m³/h · AC cooling 2.1 kW · Humidifier +2.0 kg/h · Blocks +0.5 kW".
 
 ## 4. Device app changes
 
