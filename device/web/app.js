@@ -1,4 +1,4 @@
-// Device control page: table of sensors, relay modules and aircon gateways (edit in place), add form, request log. Refreshes every 2 s.
+// Device control page: table of sensors, relay modules and aircon gateways (edit in place), add form, simulated rooms, request log. Refreshes every 2 s.
 
 const $ = (id) => document.getElementById(id);
 const REFRESH_MS = 2000;
@@ -116,10 +116,11 @@ function buildRow(sensor) {
     }
     refresh();
   });
+  row.simNote = el('p', { className: 'sim-note muted' });
   row.tr.append(
     el('td', { className: 'num', textContent: String(address) }),
     el('td', { textContent: KIND_NAMES[kind] }),
-    el('td', {}, values, row.error),
+    el('td', {}, values, row.simNote, row.error),
     el('td', {}, answering),
     el('td', {}, remove),
   );
@@ -141,9 +142,13 @@ async function save(row, address, field, input, list) {
   }
 }
 
-function showRow(row, sensor) {
+function showRow(row, sensor, simulatedBy) {
+  // A simulated sensor's values come from its room: read-only, with a note.
+  row.simNote.textContent = simulatedBy ? `simulated by ${simulatedBy}` : '';
   // Only number inputs keep what is being typed; checkboxes always show the device's state.
   for (const [field, input] of Object.entries(row.inputs)) {
+    input.readOnly = Boolean(simulatedBy);
+    if (simulatedBy) input.removeAttribute('aria-invalid');
     if (document.activeElement === input || input.getAttribute('aria-invalid') === 'true') continue;
     input.value = String(sensor[field]);
   }
@@ -152,7 +157,7 @@ function showRow(row, sensor) {
   row.word.textContent = sensor.answering ? 'Answering' : 'Silent';
 }
 
-function showSensors(list) {
+function showSensors(list, simulated) {
   const seen = new Set();
   let previous = null;
   for (const sensor of list) {
@@ -171,7 +176,7 @@ function showSensors(list) {
     // Keep rows in address order without rebuilding the ones that already sit right.
     const want = previous ? previous.nextSibling : tbody.firstChild;
     if (want !== row.tr) tbody.insertBefore(row.tr, want);
-    showRow(row, sensor);
+    showRow(row, sensor, simulated.get(sensor.address));
     previous = row.tr;
   }
   for (const [address, row] of rows) {
@@ -182,6 +187,197 @@ function showSensors(list) {
   $('no-sensors').hidden = list.length > 0;
   $('sensors').hidden = list.length === 0;
 }
+
+// ---- Simulation ----
+
+// Number inputs of a simulated room: key, label, unit, min, max, step.
+const SIM_PARAMS = [
+  ['volume', 'Volume', 'm³', 1, 10000, 1],
+  ['blocks', 'Blocks', '', 0, 100000, 1],
+  ['outdoorT', 'Outdoor T', '°C', -40, 60, 0.5],
+  ['outdoorRH', 'Outdoor RH', '%', 0, 100, 1],
+  ['fanFlow', 'Fan flow', 'm³/h', 0, 100000, 10],
+  ['acKW', 'Aircon', 'kW', 0, 100, 0.1],
+  ['humidifierGH', 'Humidifier', 'g/h', 0, 100000, 100],
+];
+const SIM_LINKS = [['trh', 'T/RH probe'], ['co2', 'CO₂ sensor'], ['relay', 'Relay module'], ['ac', 'Aircon gateway']];
+
+const simCards = new Map(); // id -> card
+const simBox = $('sims');
+
+// The sensors driven by an enabled room, by address.
+function simulatedMap(sims) {
+  const map = new Map();
+  for (const room of sims) {
+    if (!room.enabled) continue;
+    for (const kind of ['trh', 'co2', 'ac']) if (room[kind] !== null) map.set(room[kind], room.name);
+  }
+  return map;
+}
+
+function actingText(a) {
+  if (!a) return 'Nothing acting yet';
+  const parts = [`Air exchange ${Math.round(a.exchangeM3h)} m³/h`];
+  if (a.acCoolKW > 0.005) parts.push(`AC cooling ${a.acCoolKW.toFixed(1)} kW`);
+  if (a.acHeatKW > 0.005) parts.push(`AC heating ${a.acHeatKW.toFixed(1)} kW`);
+  if (a.humidifierGH > 0) parts.push(`Humidifier +${(a.humidifierGH / 1000).toFixed(1)} kg/h`);
+  parts.push(`Blocks +${a.blocksKW.toFixed(1)} kW`);
+  return parts.join(' · ');
+}
+
+async function saveSim(card, field, input, value) {
+  card.error.textContent = '';
+  try {
+    await request('PUT', `/api/sims/${card.id}`, { [field]: value });
+    input.removeAttribute('aria-invalid');
+    clearBanner();
+    refresh();
+  } catch (err) {
+    if (err.status === 404) return refresh();
+    if (input.type !== 'checkbox' && input.tagName !== 'SELECT') input.setAttribute('aria-invalid', 'true');
+    card.error.textContent = err.message;
+    refresh(); // a switch or select flips back to the device's state
+  }
+}
+
+function buildSimCard(room) {
+  const id = room.id;
+  const card = { id, params: {}, links: {}, linkKeys: {}, error: el('p', { className: 'row-error', role: 'alert' }) };
+  const enabled = flagSwitch(`sim-${id}-enabled`, 'Simulate');
+  enabled.input.addEventListener('change', () => saveSim(card, 'enabled', enabled.input, enabled.input.checked));
+  card.enabled = enabled.input;
+  card.name = el('input', { type: 'text', id: `sim-${id}-name`, maxLength: 40, autocomplete: 'off' });
+  card.name.setAttribute('aria-label', 'Room name');
+  card.name.addEventListener('input', () => card.name.removeAttribute('aria-invalid'));
+  card.name.addEventListener('change', () => saveSim(card, 'name', card.name, card.name.value));
+  const reset = el('button', { type: 'button', textContent: 'Reset' });
+  reset.setAttribute('aria-label', 'Reset the air to its starting state');
+  reset.addEventListener('click', async () => {
+    try {
+      await request('POST', `/api/sims/${id}/reset`);
+    } catch (err) {
+      if (err.status !== 404) return showBanner(err.message);
+    }
+    refresh();
+  });
+  const remove = el('button', { type: 'button', className: 'danger-text', textContent: 'Remove' });
+  remove.addEventListener('click', async () => {
+    try {
+      await request('DELETE', `/api/sims/${id}`);
+    } catch (err) {
+      if (err.status !== 404) return showBanner(err.message);
+    }
+    refresh();
+  });
+
+  const links = el('div', { className: 'sim-grid' });
+  for (const [kind, label] of SIM_LINKS) {
+    const select = el('select', { id: `sim-${id}-${kind}` });
+    select.addEventListener('change', () => saveSim(card, kind, select, select.value === '' ? null : Number(select.value)));
+    card.links[kind] = select;
+    links.append(el('div', { className: 'field' }, el('label', { htmlFor: select.id, textContent: label }), select));
+  }
+  const params = el('div', { className: 'sim-grid' });
+  for (const [key, label, unit, min, max, step] of SIM_PARAMS) {
+    const input = el('input', { type: 'number', id: `sim-${id}-${key}`, min, max, step, autocomplete: 'off' });
+    input.addEventListener('input', () => input.removeAttribute('aria-invalid'));
+    input.addEventListener('change', () => saveSim(card, key, input, Number.isNaN(input.valueAsNumber) ? input.value : input.valueAsNumber));
+    card.params[key] = input;
+    params.append(el('div', { className: 'field' }, el('label', { htmlFor: input.id, textContent: unit ? `${label} (${unit})` : label }), input));
+  }
+
+  card.t = el('strong');
+  card.rh = el('strong');
+  card.co2 = el('strong');
+  card.acting = el('p', { className: 'sim-acting' });
+  const live = el('p', { className: 'sim-live' },
+    el('span', {}, 'T ', card.t, ' °C'), el('span', {}, 'RH ', card.rh, ' %'), el('span', {}, 'CO₂ ', card.co2, ' ppm'));
+
+  card.el = el('article', { className: 'sim-card' },
+    el('div', { className: 'sim-head' }, enabled.label, card.name, el('span', { className: 'sim-actions' }, reset, remove)),
+    links, params, live, card.acting,
+    el('p', { className: 'muted sim-note' }, 'Circulation fan: no effect in this one-zone model'),
+    card.error);
+  return card;
+}
+
+// Selects list only devices of their kind; a link to a device that is gone stays visible as "(missing)".
+function showLinks(card, room, sensors) {
+  for (const [kind] of SIM_LINKS) {
+    const select = card.links[kind];
+    const addresses = sensors.filter((s) => s.kind === kind).map((s) => s.address);
+    const missing = room[kind] !== null && !addresses.includes(room[kind]);
+    const key = JSON.stringify([addresses, missing ? room[kind] : null]);
+    if (card.linkKeys[kind] !== key) {
+      select.replaceChildren(
+        el('option', { value: '', textContent: 'None' }),
+        ...addresses.map((a) => el('option', { value: String(a), textContent: `Address ${a}` })),
+        ...(missing ? [el('option', { value: String(room[kind]), textContent: `Address ${room[kind]} (missing)` })] : []),
+      );
+      card.linkKeys[kind] = key;
+    }
+    if (document.activeElement !== select) select.value = room[kind] === null ? '' : String(room[kind]);
+  }
+}
+
+function showSimCard(card, room, sensors) {
+  card.enabled.checked = room.enabled;
+  if (document.activeElement !== card.name && card.name.getAttribute('aria-invalid') !== 'true') card.name.value = room.name;
+  for (const [key, input] of Object.entries(card.params)) {
+    if (document.activeElement === input || input.getAttribute('aria-invalid') === 'true') continue;
+    input.value = String(room[key]);
+  }
+  showLinks(card, room, sensors);
+  card.t.textContent = room.state.T.toFixed(1);
+  card.rh.textContent = room.rh.toFixed(1);
+  card.co2.textContent = String(Math.round(room.state.CO2));
+  card.acting.textContent = room.enabled ? actingText(room.acting) : 'Switched off';
+  card.el.classList.toggle('off', !room.enabled);
+}
+
+function showSims(rooms, speed, sensors) {
+  const seen = new Set();
+  let previous = null;
+  for (const room of rooms) {
+    seen.add(room.id);
+    let card = simCards.get(room.id);
+    if (!card) {
+      card = buildSimCard(room);
+      simCards.set(room.id, card);
+    }
+    const want = previous ? previous.nextSibling : simBox.firstChild;
+    if (want !== card.el) simBox.insertBefore(card.el, want);
+    showSimCard(card, room, sensors);
+    previous = card.el;
+  }
+  for (const [id, card] of simCards) {
+    if (seen.has(id)) continue;
+    card.el.remove();
+    simCards.delete(id);
+  }
+  if (document.activeElement !== $('sim-speed')) $('sim-speed').value = String(speed);
+  $('no-sims').hidden = rooms.length > 0;
+}
+
+$('sim-speed').addEventListener('change', async () => {
+  try {
+    await request('PUT', '/api/sim-speed', { speed: Number($('sim-speed').value) });
+    clearBanner();
+  } catch (err) {
+    showBanner(err.message);
+  }
+  refresh();
+});
+
+$('sim-add').addEventListener('click', async () => {
+  $('sim-add-error').textContent = '';
+  try {
+    await request('POST', '/api/sims', {});
+    refresh();
+  } catch (err) {
+    $('sim-add-error').textContent = err.message;
+  }
+});
 
 // ---- Log ----
 
@@ -231,8 +427,9 @@ async function refresh() {
   if (busy) return;
   busy = true;
   try {
-    const [sensors, log] = await Promise.all([request('GET', '/api/sensors'), request('GET', '/api/log')]);
-    showSensors(sensors);
+    const [sensors, log, sims, speed] = await Promise.all([request('GET', '/api/sensors'), request('GET', '/api/log'), request('GET', '/api/sims'), request('GET', '/api/sim-speed')]);
+    showSensors(sensors, simulatedMap(sims));
+    showSims(sims, speed.speed, sensors);
     showLog(log);
     clearBanner();
   } catch {
