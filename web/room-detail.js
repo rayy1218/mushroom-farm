@@ -25,9 +25,9 @@ const STATUS_WORDS = {
 };
 // Three charts: which sensor, which reading field, how to show it.
 const CHARTS = [
-  { id: 'chart-t', kind: 'trh', field: 't', label: 'Temperature', unit: '°C', color: 'var(--s-t)', digits: 1, minSpan: 1 },
-  { id: 'chart-rh', kind: 'trh', field: 'rh', label: 'Humidity', unit: '%RH', color: 'var(--s-rh)', digits: 1, minSpan: 5, bounds: [0, 100] },
-  { id: 'chart-co2', kind: 'co2', field: 'co2', label: 'CO₂', unit: 'ppm', color: 'var(--s-co2)', digits: 0, minSpan: 100 },
+  { id: 'chart-t', band: ['tLow', 'tHigh'], kind: 'trh', field: 't', label: 'Temperature', unit: '°C', color: 'var(--s-t)', digits: 1, minSpan: 1 },
+  { id: 'chart-rh', band: ['rhLow', 'rhHigh'], kind: 'trh', field: 'rh', label: 'Humidity', unit: '%RH', color: 'var(--s-rh)', digits: 1, minSpan: 5, bounds: [0, 100] },
+  { id: 'chart-co2', band: ['co2Low', 'co2High'], kind: 'co2', field: 'co2', label: 'CO₂', unit: 'ppm', color: 'var(--s-co2)', digits: 0, minSpan: 100 },
 ];
 
 const TEMPLATE = `
@@ -252,13 +252,16 @@ export function mount(container, { id }) {
       entry.none.hidden = hasValue;
       entry.host.hidden = !hasValue;
       if (!wired) continue;
-      const opts = { points, unit: def.unit, label: def.label, color: def.color, digits: def.digits, minSpan: def.minSpan, bounds: def.bounds };
+      // The band from the room's control settings (shown whether Auto is on or off), once they have loaded.
+      const band = bands ? { low: bands[def.band[0]], high: bands[def.band[1]] } : null;
+      const opts = { points, unit: def.unit, label: def.label, color: def.color, digits: def.digits, minSpan: def.minSpan, bounds: def.bounds, band };
       if (!entry.chart) entry.chart = drawLineChart(entry.host, opts);
       else entry.chart.update(opts);
     }
   }
 
   let built = false;
+  let bands = null; // the latest control settings, for the band lines on the charts
   function render(machineData, token, controlData, controlToken) {
     renderHead();
     els.body.hidden = false;
@@ -275,6 +278,7 @@ export function mount(container, { id }) {
       els.machinesHost.hidden = false;
     }
     if (controlData) {
+      bands = controlData;
       const painted = control.update(controlData, controlToken ?? control.token());
       els.controlHost.hidden = false;
       if (painted) machines.setAuto(controlData.auto); // a stale refresh must not relock the card

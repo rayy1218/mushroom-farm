@@ -13,7 +13,8 @@ function el(name, attrs = {}, text) {
   return node;
 }
 
-// opts: { points: [{ at, value|null }], unit, label, color = 'var(--ink)', digits = 1, minSpan = 1 }
+// opts: { points: [{ at, value|null }], unit, label, color = 'var(--ink)', digits = 1, minSpan = 1, bounds, band }
+// band: { low, high } drawn as a shaded zone with dashed limit lines (the room's control band), or null.
 // Returns { update(opts), destroy() }.
 export function drawLineChart(host, opts) {
   let current = opts;
@@ -48,7 +49,8 @@ export function drawLineChart(host, opts) {
     const y1 = M.top; // top
 
     const values = points.map((p) => p.value).filter((v) => v !== null && Number.isFinite(v));
-    const { min, max } = yRange(values, current.minSpan ?? 1, current.bounds);
+    const band = current.band ?? null;
+    const { min, max } = yRange(values, current.minSpan ?? 1, current.bounds, band ? [band.low, band.high] : []);
     const t0 = points.length ? points[0].at : 0;
     const t1 = points.length ? points[points.length - 1].at : 0;
     const xs = points.map((p) => xFor(p.at, t0, t1, x0, x1));
@@ -60,7 +62,7 @@ export function drawLineChart(host, opts) {
     const latest = [...points].reverse().find((p) => p.value !== null);
     svg = el('svg', {
       width, height, viewBox: `0 0 ${width} ${height}`, role: 'img',
-      'aria-label': `${label}: ${points.length} polls${latest ? `, latest ${fmt(latest.value)}, min ${fmt(lo)}, max ${fmt(hi)}` : ''}`,
+      'aria-label': `${label}: ${points.length} polls${latest ? `, latest ${fmt(latest.value)}, min ${fmt(lo)}, max ${fmt(hi)}` : ''}${band ? `, band ${fmt(band.low)} to ${fmt(band.high)}` : ''}`,
     });
 
     // Grid lines and y labels at the padded min and max.
@@ -71,6 +73,21 @@ export function drawLineChart(host, opts) {
       }, v.toFixed(current.digits ?? 1)));
     }
     svg.append(el('line', { x1: x0, x2: x1, y1: y0, y2: y0, style: 'stroke:var(--axis)', 'stroke-width': 1 }));
+
+    // The control band: a shaded zone between the limits, dashed lines and their values at the right end.
+    if (band) {
+      const yHigh = yFor(band.high);
+      const yLow = yFor(band.low);
+      svg.append(el('rect', { x: x0, y: yHigh, width: x1 - x0, height: Math.max(0, yLow - yHigh), style: 'fill:var(--band)' }));
+      for (const [v, y, dy] of [[band.high, yHigh, -4], [band.low, yLow, 13]]) {
+        svg.append(el('line', {
+          x1: x0, x2: x1, y1: y, y2: y, style: 'stroke:var(--muted)', 'stroke-width': 1, 'stroke-dasharray': '4 4',
+        }));
+        svg.append(el('text', {
+          x: x1 - 4, y: y + dy, 'text-anchor': 'end', style: 'fill:var(--muted)', 'font-size': 11,
+        }, v.toFixed(current.digits ?? 1)));
+      }
+    }
 
     // Time labels at start, middle and end.
     if (points.length) {

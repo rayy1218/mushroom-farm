@@ -21,9 +21,11 @@ export function formatAgo(ms) {
 // The y range for a set of values: the data's min and max with 10 % padding either side.
 // A flat line (or one value) still gets a range of at least minSpan, centred on the value.
 // `bounds` ([lo, hi]) keeps the axis inside the measure's physical range (relative humidity: 0 to 100).
-export function yRange(values, minSpan = 1, bounds = null) {
-  const v = values.filter((x) => Number.isFinite(x));
-  if (v.length === 0) return { min: 0, max: minSpan };
+// include: extra values the range must show (the band limits), even when no reading is near them.
+export function yRange(values, minSpan = 1, bounds = null, include = []) {
+  const data = values.filter((x) => Number.isFinite(x));
+  if (data.length === 0) return { min: 0, max: minSpan };
+  const v = [...data, ...include.filter((x) => Number.isFinite(x))];
   const lo = Math.min(...v);
   const hi = Math.max(...v);
   const span = Math.max(hi - lo, minSpan);

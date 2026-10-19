@@ -28,6 +28,15 @@ test('yRange pads the data and never collapses', () => {
   assert.deepEqual(yRange([NaN, null]), { min: 0, max: 1 });
 });
 
+test('yRange stretches to include the band so its lines are always visible', () => {
+  const r = yRange([650, 700], 100, null, [600, 750]);
+  assert.ok(r.min < 600 && r.max > 750);
+  const above = yRange([900, 1000], 100, null, [600, 750]);
+  assert.ok(above.min < 600 && above.max > 1000, 'readings far above the band still show the band');
+  const clamped = yRange([90, 92], 5, [0, 100], [85, 95]);
+  assert.ok(clamped.min < 85 && clamped.max <= 100, 'bounds still apply');
+});
+
 test('xFor spreads times across the width and centres a single time', () => {
   assert.equal(xFor(0, 0, 100, 10, 110), 10);
   assert.equal(xFor(50, 0, 100, 10, 110), 60);
