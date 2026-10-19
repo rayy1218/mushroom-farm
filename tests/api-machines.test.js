@@ -131,6 +131,7 @@ test('GET /api/rooms/:id/machines returns the machines object', async () => {
   const res = await call('GET', `/api/rooms/${room.id}/machines`);
   assert.equal(res.status, 200);
   assert.deepEqual(res.body, {
+    auto: false,
     relay: {
       address: 10,
       lastWrite: null,

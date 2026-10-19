@@ -46,15 +46,16 @@ const notFound = () => new HttpError(404, 'Not found');
 const noRoom = () => new HttpError(404, 'Room not found');
 
 // Returns a handler for every request whose path starts with /api.
-// machines (from createMachines) is optional: without it the machine routes do not exist.
-export function createApi(db, machines = null) {
+// machines (from createMachines) and controller (from createController) are optional:
+// without them the machine or control routes do not exist.
+export function createApi(db, machines = null, controller = null) {
   async function route(req, res, path) {
     if (path === '/api/rooms') {
       if (req.method === 'GET') return send(res, 200, db.listRooms());
       if (req.method === 'POST') return send(res, 201, db.createRoom(await readRoom(req)));
       throw notFound();
     }
-    const match = /^\/api\/rooms\/([1-9][0-9]{0,14})(\/sensors|\/machines(?:\/([a-z]+))?)?$/.exec(path);
+    const match = /^\/api\/rooms\/([1-9][0-9]{0,14})(\/sensors|\/control|\/machines(?:\/([a-z]+))?)?$/.exec(path);
     if (!match) throw notFound();
     const id = Number(match[1]);
     if (match[2]?.startsWith('/machines')) {
@@ -64,13 +65,24 @@ export function createApi(db, machines = null) {
         if (req.method !== 'GET') throw notFound();
         const view = machines.get(id);
         if (!view) throw noRoom();
-        return send(res, 200, view);
+        return send(res, 200, { ...view, auto: db.getControl(id)?.auto ?? false });
       }
       if (req.method !== 'PUT' || !(key === 'ac' || RELAY_KEYS.includes(key))) throw notFound();
       if (!db.getRoom(id)) throw noRoom();
       const view = await machines.command(id, key, await readJson(req));
       if (!view) throw noRoom();
-      return send(res, 200, view);
+      return send(res, 200, { ...view, auto: db.getControl(id)?.auto ?? false });
+    }
+    if (match[2] === '/control') {
+      if (!controller) throw notFound();
+      if (req.method === 'GET') {
+        const view = controller.get(id);
+        if (!view) throw noRoom();
+        return send(res, 200, view);
+      }
+      if (req.method !== 'PUT') throw notFound();
+      if (!db.getRoom(id)) throw noRoom();
+      return send(res, 200, controller.update(id, await readJson(req)));
     }
     if (match[2]) { // /sensors
       if (req.method !== 'GET') throw notFound();

@@ -33,15 +33,17 @@ const POLLS_KEPT = 2;
 const EMPTY = () => ({ address: null, polls: [] });
 
 // Polls sensors and machines. log is only for errors that are not sensor failures (a database error).
-export function createPoller({ db, client, intervalMs = 5000, now = Date.now, log = console.error }) {
+// afterCycle(cycleStart), when given, is awaited at the end of each complete cycle (automatic control).
+export function createPoller({ db, client, intervalMs = 5000, now = Date.now, log = console.error, afterCycle = null }) {
   let stopped = false;
   let timer = null;
   let running = null; // promise of the cycle in progress
   const machines = new Map(); // `${roomId}/${kind}` → { address, polls }, the last polls of each device
 
-  async function pollOne({ roomId, kind, address }) {
+  async function pollOne({ roomId, kind, address }, began) {
     const { fn, start, qty, values } = KINDS[kind];
     const at = now();
+    began(at);
     const reading = { roomId, kind, address, at };
     try {
       Object.assign(reading, { ok: true }, values(await client.readRegisters(address, fn, start, qty)));
@@ -51,8 +53,9 @@ export function createPoller({ db, client, intervalMs = 5000, now = Date.now, lo
     db.addReading(reading);
   }
 
-  async function pollMachine({ roomId, kind, address }) {
+  async function pollMachine({ roomId, kind, address }, began) {
     const at = now();
+    began(at);
     let poll;
     try {
       poll = { at, ok: true, ...await MACHINES[kind](client, address) };
@@ -67,6 +70,8 @@ export function createPoller({ db, client, intervalMs = 5000, now = Date.now, lo
   }
 
   async function runCycle() {
+    let cycleStart = null; // the time of the first poll of this cycle (the clock is not read more often than before)
+    const began = (at) => { cycleStart ??= at; };
     try {
       const sensors = db.listWiredSensors();
       const wired = db.listWiredMachines();
@@ -76,13 +81,14 @@ export function createPoller({ db, client, intervalMs = 5000, now = Date.now, lo
       for (const roomId of roomIds) {
         for (const sensor of sensors.filter((s) => s.roomId === roomId)) {
           if (stopped) return;
-          await pollOne(sensor);
+          await pollOne(sensor, began);
         }
         for (const machine of wired.filter((m) => m.roomId === roomId)) {
           if (stopped) return;
-          await pollMachine(machine);
+          await pollMachine(machine, began);
         }
       }
+      if (afterCycle && !stopped) await afterCycle(cycleStart ?? now());
     } catch (err) {
       log(err);
     }

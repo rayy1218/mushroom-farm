@@ -140,12 +140,14 @@ export function createMachines({ db, client, poller, now = Date.now }) {
     forget,
 
     // key is a relay machine or 'ac'. Saves the command, then writes it and returns the machines object.
-    // Throws CommandError. A failed write is not an error: it shows as lastWrite.
-    async command(roomId, key, body) {
+    // Throws CommandError (409 while automatic control is on, unless the controller itself sends with bypassAuto).
+    // A failed write is not an error: it shows as lastWrite.
+    async command(roomId, key, body, { bypassAuto = false } = {}) {
       const room = db.getRoom(roomId);
       if (!room) throw new CommandError(404, 'Room not found');
       const index = RELAY_KEYS.indexOf(key);
       if (index < 0 && key !== 'ac') throw new CommandError(404, 'Not found');
+      if (!bypassAuto && db.getControl(roomId)?.auto) throw new CommandError(409, 'Automatic control is on');
       if (index >= 0) {
         const { on } = relayBody(body);
         if (room.relayAddress === null) throw new CommandError(400, 'No relay module address set');

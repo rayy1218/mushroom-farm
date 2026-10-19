@@ -9,6 +9,7 @@ import { createApp } from './app.js';
 import { createModbusClient } from './modbus.js';
 import { createPoller } from './poller.js';
 import { createMachines } from './machines.js';
+import { createController } from './controller.js';
 
 const DEFAULT_DB = fileURLToPath(new URL('../data/v2.db', import.meta.url));
 
@@ -32,9 +33,12 @@ if (!gatewayMatch || Number(gatewayMatch[2]) < 1 || Number(gatewayMatch[2]) > 65
 if (dbPath !== ':memory:') mkdirSync(dirname(dbPath), { recursive: true });
 const db = openDb(dbPath);
 const client = createModbusClient({ host: gatewayMatch[1].replace(/^\[(.*)\]$/, '$1'), port: Number(gatewayMatch[2]) });
-const poller = createPoller({ db, client });
+// The poller calls the controller after each cycle; the controller needs the machines, which need the poller.
+let controller = null;
+const poller = createPoller({ db, client, afterCycle: (cycleStart) => controller.run(cycleStart) });
 const machines = createMachines({ db, client, poller });
-const server = createApp(db, { machines });
+controller = createController({ db, machines });
+const server = createApp(db, { machines, controller });
 
 server.on('error', (err) => fail(`Could not start the server: ${err.message}`));
 server.listen(Number(portText), () => {

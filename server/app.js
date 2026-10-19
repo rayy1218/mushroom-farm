@@ -7,8 +7,8 @@ import { createStatic } from './static.js';
 
 const WEB_DIR = fileURLToPath(new URL('../web/', import.meta.url));
 
-export function createApp(db, { webDir = WEB_DIR, machines = null } = {}) {
-  const api = createApi(db, machines);
+export function createApp(db, { webDir = WEB_DIR, machines = null, controller = null } = {}) {
+  const api = createApi(db, machines, controller);
   const files = createStatic(webDir);
   return http.createServer(async (req, res) => {
     try {
