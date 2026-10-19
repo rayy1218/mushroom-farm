@@ -5,3 +5,5 @@ data/
 device/state.json
 .claude/worktrees/
 device/state.json.tmp
+device/state.json.sim
+device/state.json.sim.tmp
