@@ -3,7 +3,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { RELAY_KEYS } from './machine-codes.js';
 
-const VERSION = 4;
+const VERSION = 5;
 
 // Iteration 1 (version 0) had only the rooms table without the address columns.
 const ROOMS = `
@@ -69,6 +69,13 @@ CREATE TABLE room_controls (
   humidifier_during_exchange INTEGER NOT NULL DEFAULT 1 CHECK (humidifier_during_exchange IN (0, 1))
 ) STRICT;`;
 
+// Farm-wide settings (spec 2026-10-19-settings-design.md): no rows means the defaults.
+const SETTINGS = `
+CREATE TABLE settings (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+) STRICT;`;
+
 // The status queries, exported so a test can check their query plans.
 export const STATUS_SQL = {
   latest: `SELECT * FROM (SELECT * FROM readings WHERE room_id = ? AND kind = ? AND address = ?
@@ -111,6 +118,7 @@ function migrate(db) {
     if (version === 3) { // a new database or an older one already has the column from ROOM_CONTROLS
       db.exec('ALTER TABLE room_controls ADD COLUMN humidifier_during_exchange INTEGER NOT NULL DEFAULT 1 CHECK (humidifier_during_exchange IN (0, 1))');
     }
+    if (version < 5) db.exec(SETTINGS);
     db.exec(`PRAGMA user_version = ${VERSION}`);
     db.exec('COMMIT');
   } catch (err) {
@@ -209,6 +217,8 @@ export function openDb(path) {
                             SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
                             WHERE EXISTS (SELECT 1 FROM rooms WHERE id = ? AND
                               CASE ? WHEN 'trh' THEN trh_address WHEN 'co2' THEN co2_address END = ?)`),
+    getSetting: db.prepare('SELECT value FROM settings WHERE key = ?'),
+    setSetting: db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)'),
     latest: db.prepare(STATUS_SQL.latest),
     lastOk: db.prepare(STATUS_SQL.lastOk),
     failuresSince: db.prepare(STATUS_SQL.failuresSince),
@@ -373,6 +383,15 @@ export function openDb(path) {
     getSensors(roomId, limit = 50) {
       const room = getRoom(roomId);
       return room ? KINDS.map((kind) => sensorOf(room, kind, limit)) : null;
+    },
+
+    // The stored text of a setting, or null when it was never set.
+    getSetting(key) {
+      return q.getSetting.get(key)?.value ?? null;
+    },
+
+    setSetting(key, value) {
+      q.setSetting.run(key, value);
     },
 
     close() {
