@@ -36,8 +36,8 @@ test('initialState starts at outdoor air and 420 ppm', () => {
 
 test('walls pull T toward outdoor with tau 1 h', () => {
   const r = run(start({ T: 22 }), OFF, { ...noBlocks, volume: 1e9 }, 3600, 5);
-  // leakage is negligible for a huge volume: only walls; 1 - e^-1 of the 10 K gap
-  near(r.state.T, 22 + 10 * (1 - Math.exp(-1)), 0.1);
+  // leakage (0.3 vol/h) moves T at 0.03/h (heat capacity is 10x the air): rate 1.03 per hour
+  near(r.state.T, 22 + 10 * (1 - Math.exp(-1.03)), 0.05);
   const cold = run(start({ T: 40 }), OFF, noBlocks, 600);
   assert.ok(cold.state.T < 40 && cold.state.T > 32);
 });
@@ -51,7 +51,7 @@ test('exchange: full vs half vs leakage', () => {
   assert.equal(full.acting.exchangeM3h, 600);
   assert.equal(half.acting.exchangeM3h, 300);
   assert.equal(half2.acting.exchangeM3h, 300);
-  near(leak.acting.exchangeM3h, 0.02 * 60, 1e-9);
+  near(leak.acting.exchangeM3h, 0.3 * 60, 1e-9);
   assert.ok(full.state.CO2 < half.state.CO2 && half.state.CO2 < leak.state.CO2 && leak.state.CO2 < 2000);
   // full: k = 600/60 = 10 /h; after 10 min e^-1.667 of the excess (walls do not touch CO2)
   near(full.state.CO2, 420 + 1580 * Math.exp(-10 / 6), 15);
@@ -84,7 +84,7 @@ test('blocks raise T, W and CO2 with exchange off', () => {
 
 test('humidifier raises W and lowers T', () => {
   const s0 = start({ T: 32, W: wOf(32, 50) });
-  const r = run(s0, { ...OFF, humidifier: true }, { ...noBlocks, outdoorT: 32 }, 300, 5);
+  const r = run(s0, { ...OFF, humidifier: true }, { ...noBlocks, outdoorT: 32, outdoorRH: 50 }, 300, 5);
   // 2000 g/h * 300 s = 166.7 g over 60 m3 = 2.78 g/m3
   near(r.state.W - s0.W, 2.78, 0.1);
   // cooling 2.45 kJ/g * 166.7 g = 408 kJ / 720 kJ/K = 0.57 K
@@ -104,10 +104,11 @@ test('AC cool lowers T toward the setpoint and stops at it', () => {
   assert.equal(below.acting.acCoolKW, 0);
   near(below.state.T, 20, 1e-9);
   // proportional band: 0.5 K above setpoint -> half power
-  const half = step(start({ T: 22.5 }), cool(), noBlocks, 5);
-  near(half.acting.acCoolKW, 1.75, 1e-9);
+  const total = (a) => a.acCoolKW + a.acLatentKW; // capacity = sensible + latent
+  const half = step(start({ T: 22.25 }), cool(), noBlocks, 5);
+  near(total(half.acting), 1.75, 1e-9);
   // far above: full power
-  near(step(start({ T: 30 }), cool(), noBlocks, 5).acting.acCoolKW, 3.5, 1e-9);
+  near(total(step(start({ T: 30 }), cool(), noBlocks, 5).acting), 3.5, 1e-9);
 });
 
 test('AC cool removes water; fan low more than high', () => {
@@ -118,9 +119,13 @@ test('AC cool removes water; fan low more than high', () => {
   const hi = step(s0, cool('high'), p, 5);
   const dw = r => s0.W - r.state.W;
   assert.ok(dw(lo) > dw(au) && dw(au) > dw(hi) && dw(hi) > 0);
-  // low: 3.5 kW * 0.35 / 2.45 = 0.5 g/s * 5 s = 2.5 g / 60 m3 = 0.0417 g/m3 (exchange/leak adds a hair back)
-  near(dw(lo), 2.5 / 60, 0.002);
-  near(dw(hi), 2.5 / 60 * 0.15 / 0.35, 0.002);
+  // low: 3.5 kW * 0.35 * wet / 2.45 g/s * 5 s / 60 m3 (exchange/leak adds a hair back)
+  const wc = satW(12), wet = (s0.W - wc) / (satW(30) - wc);
+  near(dw(lo), (0.5 * wet * 5) / 60, 0.002);
+  near(dw(hi), (0.5 * wet * 5) / 60 * 0.15 / 0.35, 0.002);
+  // sensible = P - latent
+  near(lo.acting.acCoolKW, 3.5 - lo.acting.acLatentKW, 1e-9);
+  near(lo.acting.acLatentKW, 3.5 * 0.35 * wet, 1e-9);
 });
 
 test('AC dry: power capped at 0.4 and more water', () => {
@@ -128,14 +133,15 @@ test('AC dry: power capped at 0.4 and more water', () => {
   const p = { ...noBlocks, outdoorT: 30 };
   const dry = step(s0, { ...OFF, ac: { mode: 'dry', setpoint: 22, fan: 'auto' } }, p, 5);
   const c = step(s0, cool('low'), p, 5);
-  near(dry.acting.acCoolKW, 1.4, 1e-9);
-  near(c.acting.acCoolKW, 3.5, 1e-9);
+  near(dry.acting.acCoolKW + dry.acting.acLatentKW, 1.4, 1e-9);
+  near(c.acting.acCoolKW + c.acting.acLatentKW, 3.5, 1e-9);
   // less cooling, but more water per kJ removed than any cool fan speed (0.6 vs 0.35)
   assert.ok(s0.T - dry.state.T < s0.T - c.state.T);
   const perKJ = r => (s0.W - r.state.W) / (s0.T - r.state.T);
   assert.ok(perKJ(dry) > perKJ(c) * 1.5);
-  // absolute: 1.4 kW * 0.6 / 2.45 = 0.343 g/s * 5 s / 60 m3
-  near(s0.W - dry.state.W, (1.4 * 0.6 / 2.45 * 5) / 60, 0.002);
+  // absolute: 1.4 kW * 0.6 * wet / 2.45 g/s * 5 s / 60 m3
+  const wet = (s0.W - satW(12)) / (satW(30) - satW(12));
+  near(s0.W - dry.state.W, (1.4 * 0.6 * wet / 2.45 * 5) / 60, 0.002);
 });
 
 test('AC heat warms and stops at the setpoint', () => {
@@ -207,4 +213,37 @@ test('step does not mutate its inputs', () => {
   const copy = { ...s0 };
   step(s0, OFF, noBlocks, 10);
   assert.deepEqual(s0, copy);
+});
+
+test('AC condenses only while the air is wetter than the coil (dew point above 12 C)', () => {
+  // dew point below the coil: no water removed, all of P is sensible
+  const dryAir = start({ T: 30, W: satW(12) * 0.8 });
+  const a = step(dryAir, cool('low'), { ...noBlocks, outdoorT: 30, outdoorRH: 10 }, 5);
+  assert.equal(a.acting.acLatentKW, 0);
+  near(a.acting.acCoolKW, 3.5, 1e-9);
+  // saturated air: full latent share f
+  const wetAir = start({ T: 30, W: satW(30) });
+  const b = step(wetAir, cool('low'), noBlocks, 5);
+  near(b.acting.acLatentKW, 3.5 * 0.35, 1e-9);
+  near(b.acting.acCoolKW, 3.5 * 0.65, 1e-9);
+});
+
+test('a sealed wet room cannot be dried to near 0 % RH by the AC', () => {
+  const s0 = start({ T: 32, W: wOf(32, 90) }, P);
+  const r = run(s0, cool('low'), P, 6 * 3600);
+  const rh = rhOf(r.state.T, r.state.W);
+  assert.ok(rh > 50, `RH ${rh}`);
+});
+
+test('acting reports the last sub-step: humidifier limited by saturation', () => {
+  const sat = start({ T: 25, W: satW(25) });
+  const r = step(sat, { ...OFF, humidifier: true }, { ...noBlocks, outdoorT: 25, outdoorRH: 100 }, 5);
+  assert.equal(r.acting.humidifierGH, 0);
+});
+
+test('air exchange moves T by the heat-capacity fraction, not the air-change fraction', () => {
+  const s0 = start({ T: 22 });
+  const r = step(s0, { ...OFF, intake: true, exhaust: true }, { ...noBlocks, outdoorRH: 0 }, 60);
+  // k = 600/3600/60*60 = 0.1667 for W; kT = 600*1.2/3600*60/720 = 0.0167 for T (walls add 60/3600*10 = 0.17 K)
+  near(r.state.T - 22, 10 * (0.0167 + 1 / 60), 0.02);
 });
