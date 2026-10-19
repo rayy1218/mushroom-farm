@@ -330,3 +330,17 @@ test('nothing is re-sent while auto is off, and forget drops the counters', asyn
   await s.cycle();
   assert.equal(s.controller.get(s.id).reasons.circulation.endsWith('(1 of 3)'), true);
 });
+
+test('humidifier during exchange off: changed between cycles, the next cycle sends the humidifier off', async (t) => {
+  const s = setup(t);
+  setAuto(s.controller, s.id);
+  await s.cycle({ co2: 800, rh: 96 });
+  assert.equal(s.db.getCommands(s.id).relay.humidifier, true); // forced on during the exchange
+  s.controller.update(s.id, { humidifierDuringExchange: false });
+  assert.equal(s.db.getCommands(s.id).relay.humidifier, true); // nothing happens until the next cycle
+  await s.cycle({ co2: 800, rh: 96 });
+  assert.equal(s.db.getCommands(s.id).relay.humidifier, false);
+  assert.equal(s.db.getCommands(s.id).relay.intake, true);
+  assert.equal(s.controller.get(s.id).reasons.humidifier, 'Humidifier: off (RH 96 ≥ 95; not forced during air exchange)');
+  assert.equal(s.controller.get(s.id).humidifierDuringExchange, false);
+});

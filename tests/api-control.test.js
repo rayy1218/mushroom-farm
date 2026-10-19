@@ -51,7 +51,7 @@ async function call(method, path, body) {
 
 const DEFAULT_VIEW = {
   auto: false, co2Low: 600, co2High: 750, tLow: 21, tHigh: 23, rhLow: 85, rhHigh: 95,
-  exchange: false, exchangeSince: null, humidifierBand: false,
+  exchange: false, exchangeSince: null, humidifierBand: false, humidifierDuringExchange: true,
   reasons: { exchange: '', humidifier: '', ac: '', circulation: '' },
 };
 
@@ -71,6 +71,17 @@ test('PUT control changes any of the fields and replies like GET', async () => {
   assert.equal(on.body.co2High, 800);
 });
 
+test('PUT control accepts humidifierDuringExchange alone and keeps it', async () => {
+  const off = await call('PUT', `/api/rooms/${id}/control`, { humidifierDuringExchange: false });
+  assert.equal(off.status, 200);
+  assert.deepEqual(off.body, { ...DEFAULT_VIEW, humidifierDuringExchange: false });
+  assert.deepEqual((await call('GET', `/api/rooms/${id}/control`)).body, off.body);
+  const band = await call('PUT', `/api/rooms/${id}/control`, { rhLow: 80 });
+  assert.equal(band.body.humidifierDuringExchange, false);
+  const on = await call('PUT', `/api/rooms/${id}/control`, { humidifierDuringExchange: true });
+  assert.deepEqual(on.body, { ...DEFAULT_VIEW, rhLow: 80 });
+});
+
 test('PUT control validation answers 400 with the field', async () => {
   const cases = [
     [{ co2Low: 800 }, 'co2Low', 'CO₂ band lower limit must be below the upper limit'],
@@ -82,6 +93,8 @@ test('PUT control validation answers 400 with the field', async () => {
     [{ rhHigh: 101 }, 'rhHigh', null],
     [{ rhLow: 'x' }, 'rhLow', null],
     [{ auto: 1 }, 'auto', 'auto must be true or false'],
+    [{ humidifierDuringExchange: 'false' }, 'humidifierDuringExchange', 'humidifierDuringExchange must be true or false'],
+    [{ humidifierDuringExchange: null }, 'humidifierDuringExchange', null],
   ];
   for (const [body, field, message] of cases) {
     const r = await call('PUT', `/api/rooms/${id}/control`, body);

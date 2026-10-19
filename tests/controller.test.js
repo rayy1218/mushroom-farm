@@ -7,8 +7,8 @@ import { decide, validateControl, DEFAULTS } from '../server/controller.js';
 const bands = { co2Low: 600, co2High: 750, tLow: 21, tHigh: 23, rhLow: 85, rhHigh: 95 };
 const off = { exchange: false, humidifier: false };
 
-function run({ state = off, co2 = 650, rh = 90, b = bands } = {}) {
-  return decide({ bands: b, state, readings: { rh, co2 } });
+function run({ state = off, co2 = 650, rh = 90, b = bands, during } = {}) {
+  return decide({ bands: b, state, readings: { rh, co2 }, humidifierDuringExchange: during });
 }
 
 test('air exchange: on at or above the upper limit, off at or below the lower, kept between', () => {
@@ -50,6 +50,27 @@ test('the humidifier is on during an air exchange but its own band state is stil
   const after = run({ state: { exchange: true, humidifier: true }, co2: 590, rh: 90 });
   assert.equal(after.state.exchange, false);
   assert.equal(after.desired.humidifier, true);
+});
+
+test('humidifier during exchange off: it follows its band alone while the exchange runs', () => {
+  const wet = run({ state: { exchange: false, humidifier: true }, co2: 800, rh: 96, during: false });
+  assert.equal(wet.desired.intake, true);
+  assert.equal(wet.desired.humidifier, false);
+  assert.equal(wet.state.humidifier, false);
+  assert.equal(wet.reasons.humidifier, 'Humidifier: off (RH 96 ≥ 95; not forced during air exchange)');
+  const dry = run({ state: { exchange: true, humidifier: false }, co2: 800, rh: 84, during: false });
+  assert.equal(dry.desired.humidifier, true);
+  assert.equal(dry.reasons.humidifier, 'Humidifier: on (RH 84 ≤ 85)');
+  const between = run({ state: { exchange: true, humidifier: true }, co2: 800, rh: 90, during: false });
+  assert.equal(between.desired.humidifier, true);
+  assert.equal(between.reasons.humidifier, 'Humidifier kept on: RH 90 between 85 and 95');
+  const gone = run({ state: { exchange: true, humidifier: false }, co2: 800, rh: null, during: false });
+  assert.equal(gone.desired.humidifier, false);
+  assert.equal(gone.reasons.humidifier, 'Humidity sensor not answering: humidifier kept off');
+  // without an exchange nothing differs; true (and the default) force it on
+  assert.equal(run({ state: { exchange: false, humidifier: false }, rh: 96, during: false }).reasons.humidifier, 'Humidifier: RH 96 ≥ 95');
+  assert.equal(run({ co2: 800, rh: 96, during: true }).desired.humidifier, true);
+  assert.equal(run({ co2: 800, rh: 96 }).desired.humidifier, true);
 });
 
 test('aircon: power on, cool, auto fan, setpoint in the middle of the band', () => {
@@ -117,6 +138,8 @@ test('validateControl: defaults are valid; each field and the low < high check',
   assert.equal(validateControl(DEFAULTS), null);
   const bad = (patch) => validateControl({ ...DEFAULTS, ...patch });
   assert.deepEqual(bad({ auto: 1 }), { error: 'auto must be true or false', field: 'auto' });
+  assert.deepEqual(bad({ humidifierDuringExchange: 'yes' }),
+    { error: 'humidifierDuringExchange must be true or false', field: 'humidifierDuringExchange' });
   assert.equal(bad({ co2Low: 299 }).field, 'co2Low');
   assert.equal(bad({ co2High: 5001 }).field, 'co2High');
   assert.equal(bad({ tLow: 15.9 }).field, 'tLow');

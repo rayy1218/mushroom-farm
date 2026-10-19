@@ -4,7 +4,7 @@
 import { CommandError } from './machines.js';
 import { RELAY_KEYS } from './machine-codes.js';
 
-export const DEFAULTS = { auto: false, co2Low: 600, co2High: 750, tLow: 21, tHigh: 23, rhLow: 85, rhHigh: 95 };
+export const DEFAULTS = { auto: false, co2Low: 600, co2High: 750, tLow: 21, tHigh: 23, rhLow: 85, rhHigh: 95, humidifierDuringExchange: true };
 
 // Pairs of band limits, in the order they are checked.
 const BANDS = [
@@ -21,9 +21,10 @@ const num = (x) => String(Math.round(x * 10) / 10);
 const word = (on) => (on ? 'on' : 'off');
 
 // bands: { co2Low, co2High, tLow, tHigh, rhLow, rhHigh }. state: { exchange, humidifier }, the remembered band states.
+// humidifierDuringExchange: whether an air exchange forces the humidifier on (default true).
 // readings: { co2, rh }, null when the sensor gave nothing this cycle (that rule then keeps its state).
 // Returns { state, desired, reasons }. Pure.
-export function decide({ bands, state, readings }) {
+export function decide({ bands, state, readings, humidifierDuringExchange = true }) {
   const { co2 = null, rh = null } = readings ?? {};
   let exchange = state.exchange;
   let band = state.humidifier;
@@ -43,19 +44,22 @@ export function decide({ bands, state, readings }) {
   }
 
   // Humidifier band: on at or below the lower RH limit, off at or above the upper, kept between.
+  const forced = exchange && humidifierDuringExchange;
+  const note = exchange && !humidifierDuringExchange ? '; not forced during air exchange' : '';
   let why;
   if (rh === null) {
     why = `Humidity sensor not answering: humidifier kept ${word(band)}`;
   } else if (rh <= bands.rhLow) {
     band = true;
-    why = `Humidifier: RH ${num(rh)} ≤ ${bands.rhLow}`;
+    why = exchange && !humidifierDuringExchange ? `Humidifier: on (RH ${num(rh)} ≤ ${bands.rhLow})` : `Humidifier: RH ${num(rh)} ≤ ${bands.rhLow}`;
   } else if (rh >= bands.rhHigh) {
     band = false;
-    why = `Humidifier: RH ${num(rh)} ≥ ${bands.rhHigh}`;
+    why = exchange && !humidifierDuringExchange
+      ? `Humidifier: off (RH ${num(rh)} ≥ ${bands.rhHigh}${note})` : `Humidifier: RH ${num(rh)} ≥ ${bands.rhHigh}`;
   } else {
     why = `Humidifier kept ${word(band)}: RH ${num(rh)} between ${bands.rhLow} and ${bands.rhHigh}`;
   }
-  reasons.humidifier = exchange ? 'Humidifier: on during air exchange' : why;
+  reasons.humidifier = forced ? 'Humidifier: on during air exchange' : why;
 
   const middle = (bands.tLow + bands.tHigh) / 2;
   const target = exchange ? middle - EXCHANGE_DROP : middle;
@@ -70,7 +74,7 @@ export function decide({ bands, state, readings }) {
     desired: {
       intake: exchange,
       exhaust: exchange,
-      humidifier: exchange || band,
+      humidifier: forced || band,
       circulation: true,
       ac: { power: true, mode: 'cool', setpoint, fan: 'auto' },
     },
@@ -81,6 +85,9 @@ export function decide({ bands, state, readings }) {
 // Validates a whole settings object. Returns { error, field } for the first problem, or null.
 export function validateControl(c) {
   if (typeof c.auto !== 'boolean') return { error: 'auto must be true or false', field: 'auto' };
+  if (typeof c.humidifierDuringExchange !== 'boolean') {
+    return { error: 'humidifierDuringExchange must be true or false', field: 'humidifierDuringExchange' };
+  }
   for (const { low, high, label, min, max, unit } of BANDS) {
     for (const [field, side] of [[low, 'lower'], [high, 'upper']]) {
       const v = c[field];
@@ -141,6 +148,7 @@ export function createController({ db, machines, now = Date.now, log = console.e
       bands: c,
       state: { exchange: c.exchange, humidifier: c.humidifier },
       readings: { rh: t?.rh ?? null, co2: c2?.co2 ?? null },
+      humidifierDuringExchange: c.humidifierDuringExchange,
     });
     db.setControlState(room.id, state, now());
 
@@ -194,7 +202,7 @@ export function createController({ db, machines, now = Date.now, log = console.e
 
     forget,
 
-    // Applies any of auto and the six limits and returns the view like get. Returns null when there is no
+    // Applies any of auto, humidifierDuringExchange and the six limits and returns the view like get. Returns null when there is no
     // such room; throws CommandError (400, with field) for a bad value.
     update(roomId, body) {
       const current = db.getControl(roomId);

@@ -12,7 +12,7 @@ const fields = { name: 'Room 1', length: 6, width: 4, height: 2.5 };
 
 const DEFAULT_CONTROL = {
   auto: false, co2Low: 600, co2High: 750, tLow: 21, tHigh: 23, rhLow: 85, rhHigh: 95,
-  exchange: false, exchangeSince: null, humidifier: false,
+  exchange: false, exchangeSince: null, humidifier: false, humidifierDuringExchange: true,
 };
 
 // The schema of iteration 3 (user_version 2), copied from the db.js of that time.
@@ -93,7 +93,7 @@ test('upgrade 2 to 3 keeps rooms, readings and commands and adds a control row p
   db.close();
 
   const raw = new DatabaseSync(path);
-  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 3);
+  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 4);
   raw.close();
   openDb(path).close(); // opening again changes nothing
   const again = new DatabaseSync(path);
@@ -127,7 +127,7 @@ test('a new room gets the default control row; deleting the room deletes it', (t
 test('setControl stores the settings and setControlState the band states', (t) => {
   const db = fresh(t);
   const { id } = db.createRoom(fields);
-  const settings = { auto: true, co2Low: 500, co2High: 800, tLow: 20, tHigh: 24, rhLow: 80, rhHigh: 90 };
+  const settings = { auto: true, co2Low: 500, co2High: 800, tLow: 20, tHigh: 24, rhLow: 80, rhHigh: 90, humidifierDuringExchange: false };
   assert.equal(db.setControl(id, settings), true);
   assert.deepEqual(db.getControl(id), { ...DEFAULT_CONTROL, ...settings });
   db.setControlState(id, { exchange: true, humidifier: true }, 1000);
@@ -159,4 +159,61 @@ test('a room without a control row (made by older code) gets the default row', (
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+// The schema of version 3 (iteration 5 as first built), copied from db.js before the humidifier setting.
+const VERSION_3_SCHEMA = `${ITERATION_3_SCHEMA.replace('PRAGMA user_version = 2;', '')}
+CREATE TABLE room_controls (
+  room_id  INTEGER PRIMARY KEY,
+  auto     INTEGER NOT NULL DEFAULT 0 CHECK (auto IN (0, 1)),
+  co2_low  REAL    NOT NULL DEFAULT 600,
+  co2_high REAL    NOT NULL DEFAULT 750,
+  t_low    REAL    NOT NULL DEFAULT 21,
+  t_high   REAL    NOT NULL DEFAULT 23,
+  rh_low   REAL    NOT NULL DEFAULT 85,
+  rh_high  REAL    NOT NULL DEFAULT 95,
+  exchange INTEGER NOT NULL DEFAULT 0 CHECK (exchange IN (0, 1)),
+  exchange_since INTEGER,
+  humidifier INTEGER NOT NULL DEFAULT 0 CHECK (humidifier IN (0, 1))
+) STRICT;
+PRAGMA user_version = 3;`;
+
+test('upgrade 3 to 4 adds humidifier_during_exchange (on) and keeps rooms, readings, commands and controls', (t) => {
+  const path = join(tempDir(t), 'v3.db');
+  const old = new DatabaseSync(path);
+  old.exec(VERSION_3_SCHEMA);
+  old.exec(`INSERT INTO rooms (id, name, length_m, width_m, height_m, created_at, updated_at, trh_address, co2_address, relay_address, ac_address)
+            VALUES (1, 'A', 6, 4, 2.5, 10, 20, 3, 4, 5, 6), (5, 'B', 5, 5, 3, 11, 21, NULL, NULL, NULL, NULL)`);
+  old.exec(`INSERT INTO readings (room_id, kind, address, at, ok, t, rh) VALUES (1, 'trh', 3, 100, 1, 21.5, 88)`);
+  old.exec(`INSERT INTO machine_commands (room_id, intake, humidifier, ac_setpoint) VALUES (1, 1, 1, 17), (5, 0, 0, 25)`);
+  old.exec(`INSERT INTO room_controls (room_id, auto, co2_low, co2_high, exchange, exchange_since, humidifier)
+            VALUES (1, 1, 500, 800, 1, 77, 1), (5, 0, 600, 750, 0, NULL, 0)`);
+  old.close();
+
+  const db = openDb(path);
+  assert.deepEqual(db.listRooms().map((r) => [r.id, r.name]), [[1, 'A'], [5, 'B']]);
+  assert.deepEqual(db.getSensors(1)[0].readings, [{ at: 100, ok: true, t: 21.5, rh: 88 }]);
+  assert.equal(db.getCommands(1).ac.setpoint, 17);
+  assert.deepEqual(db.getControl(1), {
+    ...DEFAULT_CONTROL, auto: true, co2Low: 500, co2High: 800, exchange: true, exchangeSince: 77, humidifier: true,
+  });
+  assert.deepEqual(db.getControl(5), DEFAULT_CONTROL);
+  db.close();
+
+  const raw = new DatabaseSync(path);
+  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 4);
+  raw.close();
+  openDb(path).close(); // opening again changes nothing
+});
+
+test('a failed upgrade 3 to 4 rolls back and leaves the file at version 3', (t) => {
+  const path = join(tempDir(t), 'bad4.db');
+  const old = new DatabaseSync(path);
+  old.exec(VERSION_3_SCHEMA);
+  old.exec('ALTER TABLE room_controls ADD COLUMN humidifier_during_exchange TEXT'); // makes ADD COLUMN fail
+  old.close();
+  assert.throws(() => openDb(path));
+  const raw = new DatabaseSync(path);
+  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 3);
+  raw.close();
 });

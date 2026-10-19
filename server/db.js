@@ -3,7 +3,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { RELAY_KEYS } from './machine-codes.js';
 
-const VERSION = 3;
+const VERSION = 4;
 
 // Iteration 1 (version 0) had only the rooms table without the address columns.
 const ROOMS = `
@@ -65,7 +65,8 @@ CREATE TABLE room_controls (
   rh_high  REAL    NOT NULL DEFAULT 95,
   exchange INTEGER NOT NULL DEFAULT 0 CHECK (exchange IN (0, 1)),
   exchange_since INTEGER,
-  humidifier INTEGER NOT NULL DEFAULT 0 CHECK (humidifier IN (0, 1))
+  humidifier INTEGER NOT NULL DEFAULT 0 CHECK (humidifier IN (0, 1)),
+  humidifier_during_exchange INTEGER NOT NULL DEFAULT 1 CHECK (humidifier_during_exchange IN (0, 1))
 ) STRICT;`;
 
 // The status queries, exported so a test can check their query plans.
@@ -106,6 +107,9 @@ function migrate(db) {
       db.exec(`INSERT INTO room_controls (room_id, exchange, humidifier)
                SELECT r.id, COALESCE(c.intake, 0), COALESCE(c.humidifier, 0)
                FROM rooms r LEFT JOIN machine_commands c ON c.room_id = r.id`);
+    }
+    if (version === 3) { // a new database or an older one already has the column from ROOM_CONTROLS
+      db.exec('ALTER TABLE room_controls ADD COLUMN humidifier_during_exchange INTEGER NOT NULL DEFAULT 1 CHECK (humidifier_during_exchange IN (0, 1))');
     }
     db.exec(`PRAGMA user_version = ${VERSION}`);
     db.exec('COMMIT');
@@ -184,7 +188,7 @@ export function openDb(path) {
     deleteControl: db.prepare('DELETE FROM room_controls WHERE room_id = ?'),
     control: db.prepare('SELECT * FROM room_controls WHERE room_id = ?'),
     setControl: db.prepare(`UPDATE room_controls SET auto = ?, co2_low = ?, co2_high = ?, t_low = ?, t_high = ?,
-                                   rh_low = ?, rh_high = ? WHERE room_id = ?`),
+                                   rh_low = ?, rh_high = ?, humidifier_during_exchange = ? WHERE room_id = ?`),
     setControlState: db.prepare(`UPDATE room_controls SET exchange = ?1, humidifier = ?2,
                                         exchange_since = CASE WHEN ?1 = 0 THEN NULL ELSE COALESCE(exchange_since, ?3) END
                                  WHERE room_id = ?4`),
@@ -299,7 +303,7 @@ export function openDb(path) {
     },
 
     // The automatic control settings and band states, or null when there is no such room:
-    // { auto, co2Low, co2High, tLow, tHigh, rhLow, rhHigh, exchange, exchangeSince, humidifier }
+    // { auto, co2Low, co2High, tLow, tHigh, rhLow, rhHigh, humidifierDuringExchange, exchange, exchangeSince, humidifier }
     getControl(roomId) {
       let r = q.control.get(roomId);
       if (!r) {
@@ -309,14 +313,14 @@ export function openDb(path) {
       }
       return {
         auto: r.auto === 1, co2Low: r.co2_low, co2High: r.co2_high, tLow: r.t_low, tHigh: r.t_high,
-        rhLow: r.rh_low, rhHigh: r.rh_high,
+        rhLow: r.rh_low, rhHigh: r.rh_high, humidifierDuringExchange: r.humidifier_during_exchange === 1,
         exchange: r.exchange === 1, exchangeSince: r.exchange_since, humidifier: r.humidifier === 1,
       };
     },
 
     // Returns true when the room exists. Settings must be valid (see validateControl in controller.js).
-    setControl(roomId, { auto, co2Low, co2High, tLow, tHigh, rhLow, rhHigh }) {
-      return q.setControl.run(auto ? 1 : 0, co2Low, co2High, tLow, tHigh, rhLow, rhHigh, roomId).changes > 0;
+    setControl(roomId, { auto, co2Low, co2High, tLow, tHigh, rhLow, rhHigh, humidifierDuringExchange }) {
+      return q.setControl.run(auto ? 1 : 0, co2Low, co2High, tLow, tHigh, rhLow, rhHigh, humidifierDuringExchange ? 1 : 0, roomId).changes > 0;
     },
 
     // exchangeSince keeps the time the exchange began and is cleared when it ends.
