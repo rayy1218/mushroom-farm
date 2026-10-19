@@ -381,3 +381,32 @@ button.toggle[data-on="true"]:hover { opacity: .85; background: var(--ink); }
 .s-hint { margin: 0 0 16px; font-size: var(--fs-sm); }
 .settings .ac-send { margin-bottom: 0; }
 .s-saved { margin: 12px 0 0; font-weight: 600; color: var(--good-text); }
+
+/* ---- Alarms (safety stream): the Alarms card, the Rooms list chip, the control card additions ---- */
+.alarms { margin-bottom: 16px; border-color: var(--critical-text); }
+.al-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-bottom: 8px; }
+.al-head h2 { margin: 0; }
+.al-list { list-style: none; margin: 0; padding: 0; display: grid; }
+.al-item { display: grid; grid-template-columns: 84px minmax(0, 1fr) auto; align-items: center; gap: 4px 12px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.al-item:last-child { border-bottom: 0; }
+.al-item.dimmed { opacity: .55; }
+.al-body { display: flex; flex-direction: column; min-width: 0; }
+.al-text { overflow-wrap: anywhere; font-weight: 600; }
+.al-times { color: var(--muted); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.al-level, .alarm-chip { display: inline-block; padding: 2px 8px; border: 1px solid currentColor; border-radius: 999px; font-size: var(--fs-xs); font-weight: 600; text-align: center; text-decoration: none; white-space: nowrap; }
+.al-level[data-level="warning"], .alarm-chip[data-level="warning"] { color: var(--warning-text); }
+.al-level[data-level="serious"], .alarm-chip[data-level="serious"] { color: var(--critical-text); }
+.al-level[data-level="critical"], .alarm-chip[data-level="critical"] { background: var(--critical); border-color: var(--critical); color: var(--on-critical); }
+.al-history { margin-top: 8px; }
+.al-history summary { cursor: pointer; font-weight: 600; padding: 6px 0; }
+.alarm-chip { margin-left: 8px; vertical-align: middle; }
+@media (max-width: 600px) {
+  .al-item { grid-template-columns: 1fr auto; }
+  .al-level { grid-column: 1; justify-self: start; }
+  .al-body { grid-column: 1 / -1; }
+}
+
+.c-safety { grid-template-columns: minmax(0, 200px) minmax(0, 120px); }
+.c-checks { margin: 8px 0 0; padding: 0; list-style: none; display: grid; gap: 2px; }
+.c-checks .warn { color: var(--critical-text); font-weight: 600; }
+.c-held { display: block; color: var(--warning-text); font-size: var(--fs-sm); }

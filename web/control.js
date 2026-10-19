@@ -3,7 +3,7 @@
 // Controls are updated in place, so a refresh never replaces an input the person is using or has edited.
 
 import { request, OFFLINE } from './api.js';
-import { BANDS, REASONS, stateLine, inputLabel, reasonLine, checkBand, locateField, bandsBody, HUMIDIFIER_LABEL, humidifierOn, AC_FAN_LABEL, AC_FAN_OPTIONS, acFanOf } from './control-math.js';
+import { BANDS, REASONS, stateLine, inputLabel, reasonLine, checkBand, locateField, bandsBody, SAFETY_FIELDS, checkSafety, locateSafetyField, checkLines, heldLine, HUMIDIFIER_LABEL, humidifierOn, AC_FAN_LABEL, AC_FAN_OPTIONS, acFanOf } from './control-math.js';
 
 const COMMAND_TIMEOUT = 30000;
 
@@ -96,6 +96,30 @@ export function createControl(host, { roomId, onOffline, onGone, onChange }) {
     form.append(row);
   }
 
+  // ---- safety settings (saved with the bands) ----
+  const safetyRows = new Map(); // setting key → { input, err, text }
+  for (const f of SAFETY_FIELDS) {
+    const row = el('div', 'c-band c-safety');
+    row.dataset.key = f.key;
+    row.append(el('span', 'm-name', f.label));
+    const input = el('input', 'ctl');
+    input.type = 'number';
+    input.id = `ctl-${n}-${f.key}`;
+    input.min = String(f.min);
+    input.max = String(f.max);
+    input.step = f.step;
+    input.inputMode = 'numeric';
+    input.setAttribute('aria-label', f.label);
+    const field = el('div', 'ac-field');
+    field.append(input);
+    row.append(field);
+    const err = errorNode(`ctl-${n}-${f.key}-error`);
+    row.append(err);
+    safetyRows.set(f.key, { input, err, text: '' });
+    input.addEventListener('input', () => markSafetyDirty(f.key));
+    form.append(row);
+  }
+
   const save = button('Save', 'primary');
   const reset = button('Reset');
   reset.hidden = true;
@@ -106,11 +130,16 @@ export function createControl(host, { roomId, onOffline, onGone, onChange }) {
   const saveErr = errorNode();
 
   const stateNode = el('p', 'c-state');
+  const checkList = el('ul', 'c-checks'); // a sensor whose last check was not ok
   const reasonList = el('ul', 'c-reasons');
-  const reasonItems = new Map();
+  const reasonItems = new Map(); // machine key → { li, line, held }
   for (const r of REASONS) {
     const li = el('li', 'meta');
-    reasonItems.set(r.key, li);
+    const line = el('span', 'c-reason');
+    const held = el('span', 'c-held'); // the wait of the machine protection, under the reason
+    held.hidden = true;
+    li.append(line, held);
+    reasonItems.set(r.key, { line, held });
     reasonList.append(li);
   }
 
@@ -140,7 +169,7 @@ export function createControl(host, { roomId, onOffline, onGone, onChange }) {
   fanRow.append(fanLabel, fanSelect, fanState);
   const fanErr = errorNode();
 
-  host.append(autoRow, autoErr, form, sendRow, saveErr, humRow, humErr, fanRow, fanErr, stateNode, reasonList);
+  host.append(autoRow, autoErr, form, sendRow, saveErr, humRow, humErr, fanRow, fanErr, stateNode, checkList, reasonList);
 
   // ---- drawing ----
 
@@ -159,9 +188,28 @@ export function createControl(host, { roomId, onOffline, onGone, onChange }) {
     row[side].setAttribute('aria-describedby', row.err.id);
   }
 
+  function clearSafetyInvalid(row) {
+    row.input.removeAttribute('aria-invalid');
+    row.input.removeAttribute('aria-describedby');
+  }
+
+  function markSafetyInvalid(key, text) {
+    const row = safetyRows.get(key);
+    clearSafetyInvalid(row);
+    row.text = text;
+    showError(row.err, text);
+    row.input.setAttribute('aria-invalid', 'true');
+    row.input.setAttribute('aria-describedby', row.err.id);
+  }
+
   function clearErrors() {
     for (const row of rows.values()) {
       clearInvalid(row);
+      row.text = '';
+      showError(row.err, '');
+    }
+    for (const row of safetyRows.values()) {
+      clearSafetyInvalid(row);
       row.text = '';
       showError(row.err, '');
     }
@@ -183,7 +231,18 @@ export function createControl(host, { roomId, onOffline, onGone, onChange }) {
     paintDirty();
   }
 
+  function markSafetyDirty(key) {
+    dirty = true;
+    const row = safetyRows.get(key);
+    clearSafetyInvalid(row);
+    row.text = '';
+    showError(row.err, '');
+    showError(saveErr, '');
+    paintDirty();
+  }
+
   function setInputs(c) {
+    for (const f of SAFETY_FIELDS) if (c[f.key] !== undefined) safetyRows.get(f.key).input.value = String(c[f.key]);
     for (const band of BANDS) {
       const row = rows.get(band.key);
       row.low.value = String(c[band.low]);
@@ -224,8 +283,17 @@ export function createControl(host, { roomId, onOffline, onGone, onChange }) {
     if (!holding) setInputs(c);
     paintDirty();
     stateNode.textContent = stateLine(c);
+    const lines = checkLines(c.checks);
+    checkList.replaceChildren(...lines.map((text) => el('li', 'warn', text)));
+    checkList.hidden = lines.length === 0;
     reasonList.hidden = !c.auto; // the reasons are of the last decision: not shown once auto is off
-    for (const r of REASONS) reasonItems.get(r.key).textContent = reasonLine(r.label, c.reasons?.[r.key]);
+    for (const r of REASONS) {
+      const item = reasonItems.get(r.key);
+      item.line.textContent = reasonLine(r.label, c.reasons?.[r.key]);
+      const held = heldLine(c, r.key);
+      if (item.held.textContent !== held) item.held.textContent = held;
+      item.held.hidden = held === '';
+    }
   }
 
   // A command failed: not-found means the room is gone, anything else is shown next to the control.
@@ -336,6 +404,14 @@ export function createControl(host, { roomId, onOffline, onGone, onChange }) {
         firstBad ??= row[bad.field];
       }
     }
+    for (const f of SAFETY_FIELDS) values[f.key] = safetyRows.get(f.key).input.valueAsNumber;
+    if (!firstBad) {
+      const bad = checkSafety(values.co2High, values.co2Safety, values.exchangeMaxMin);
+      if (bad) {
+        markSafetyInvalid(bad.field, bad.message);
+        firstBad = safetyRows.get(bad.field).input;
+      }
+    }
     if (firstBad) { firstBad.focus(); return; }
     saving = true;
     const hadFocus = form.contains(document.activeElement) || document.activeElement === save || document.activeElement === reset;
@@ -355,7 +431,11 @@ export function createControl(host, { roomId, onOffline, onGone, onChange }) {
       if (!alive) return;
       failed(err, (e) => {
         const at = locateField(e.field);
-        if (at && e.status === 400) {
+        const safety = locateSafetyField(e.field);
+        if (safety && e.status === 400) {
+          markSafetyInvalid(safety.key, e.message);
+          safetyRows.get(safety.key).input.focus();
+        } else if (at && e.status === 400) {
           const row = rows.get(at.band.key);
           markInvalid(row, at.side, e.message);
           row[at.side].focus();
