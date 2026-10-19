@@ -180,7 +180,7 @@ export function openDb(path) {
     insertCommands: db.prepare('INSERT INTO machine_commands (room_id) VALUES (?)'),
     deleteCommands: db.prepare('DELETE FROM machine_commands WHERE room_id = ?'),
     commands: db.prepare('SELECT * FROM machine_commands WHERE room_id = ?'),
-    insertControl: db.prepare('INSERT INTO room_controls (room_id) VALUES (?)'),
+    insertControl: db.prepare('INSERT OR REPLACE INTO room_controls (room_id) VALUES (?)'),
     deleteControl: db.prepare('DELETE FROM room_controls WHERE room_id = ?'),
     control: db.prepare('SELECT * FROM room_controls WHERE room_id = ?'),
     setControl: db.prepare(`UPDATE room_controls SET auto = ?, co2_low = ?, co2_high = ?, t_low = ?, t_high = ?,
@@ -301,8 +301,12 @@ export function openDb(path) {
     // The automatic control settings and band states, or null when there is no such room:
     // { auto, co2Low, co2High, tLow, tHigh, rhLow, rhHigh, exchange, exchangeSince, humidifier }
     getControl(roomId) {
-      const r = q.control.get(roomId);
-      if (!r) return null;
+      let r = q.control.get(roomId);
+      if (!r) {
+        if (!q.get.get(roomId)) return null;
+        q.insertControl.run(roomId); // a room made by older code has no row yet
+        r = q.control.get(roomId);
+      }
       return {
         auto: r.auto === 1, co2Low: r.co2_low, co2High: r.co2_high, tLow: r.t_low, tHigh: r.t_high,
         rhLow: r.rh_low, rhHigh: r.rh_high,

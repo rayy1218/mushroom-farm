@@ -8,7 +8,7 @@ const bands = { co2Low: 600, co2High: 750, tLow: 21, tHigh: 23, rhLow: 85, rhHig
 const off = { exchange: false, humidifier: false };
 
 function run({ state = off, co2 = 650, rh = 90, b = bands } = {}) {
-  return decide({ bands: b, state, readings: { t: 22, rh, co2 }, commands: {} });
+  return decide({ bands: b, state, readings: { rh, co2 } });
 }
 
 test('air exchange: on at or above the upper limit, off at or below the lower, kept between', () => {
@@ -109,7 +109,7 @@ test('reasons name the rule and the numbers', () => {
 
 test('decide does not change its input', () => {
   const state = { exchange: false, humidifier: false };
-  decide({ bands, state, readings: { co2: 800, rh: 80 }, commands: {} });
+  decide({ bands, state, readings: { co2: 800, rh: 80 } });
   assert.deepEqual(state, off);
 });
 

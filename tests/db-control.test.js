@@ -141,3 +141,22 @@ test('setControl stores the settings and setControlState the band states', (t) =
   assert.equal(db.getControl(id).exchangeSince, 4000);
   assert.equal(db.setControl(99, settings), false);
 });
+
+test('a room without a control row (made by older code) gets the default row', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'farm-'));
+  const path = join(dir, 'farm.db');
+  try {
+    const first = openDb(path);
+    const room = first.createRoom(fields);
+    first.close();
+    const raw = new DatabaseSync(path);
+    raw.exec('DELETE FROM room_controls');
+    raw.close();
+    const db = openDb(path);
+    assert.deepEqual(db.getControl(room.id), DEFAULT_CONTROL);
+    assert.equal(db.getControl(99), null);
+    db.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

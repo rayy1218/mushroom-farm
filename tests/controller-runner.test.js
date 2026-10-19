@@ -5,24 +5,25 @@ import assert from 'node:assert/strict';
 import { openDb } from '../server/db.js';
 import { createMachines, CommandError } from '../server/machines.js';
 import { createController } from '../server/controller.js';
+import { ModbusError } from '../server/modbus.js';
 import { createPoller } from '../server/poller.js';
 
 const fields = { name: 'Room 1', length: 6, width: 4, height: 2.5 };
 const WIRED = { ...fields, trhAddress: 1, co2Address: 2, relayAddress: 3, acAddress: 4 };
 
 // A runner with a clock the test moves. cycle(co2, rh) adds readings "of this cycle" and runs the controller.
-function setup(t, { db = openDb(':memory:'), room = WIRED } = {}) {
+function setup(t, { db = openDb(':memory:'), room = WIRED, onWrite = null, log = (e) => { throw e; } } = {}) {
   t.after(() => db.close());
   const writes = [];
   const client = {
-    async writeCoil(...a) { writes.push(['coil', ...a]); },
+    async writeCoil(...a) { writes.push(['coil', ...a]); await onWrite?.(...a); },
     async writeRegisters(...a) { writes.push(['regs', ...a]); },
   };
   const poller = { machineState: () => ({ relay: { address: null, polls: [] }, ac: { address: null, polls: [] } }) };
   let clock = 1000;
   const now = () => clock;
   const machines = createMachines({ db, client, poller, now });
-  const controller = createController({ db, machines, now, log: (e) => { throw e; } });
+  const controller = createController({ db, machines, now, log });
   const id = db.createRoom(room).id;
   const api = {
     db, writes, controller, machines, id,
@@ -183,4 +184,68 @@ test('the poller calls afterCycle with the start time at the end of each cycle',
   const failing = createPoller({ db, client: {}, afterCycle: async () => { throw new Error('boom'); }, log: (e) => calls.push(e.message) });
   await failing.cycle();
   assert.equal(calls.at(-1), 'boom');
+});
+
+test('a user taking over mid-run is not overwritten: no write after auto goes off', async (t) => {
+  let s;
+  let first = true;
+  s = setup(t, { onWrite: async () => { if (first) { first = false; s.controller.update(s.id, { auto: false }); } } });
+  setAuto(s.controller, s.id);
+  await s.cycle({ co2: 800 }); // would write circulation, intake, exhaust, humidifier and the aircon
+  assert.deepEqual(s.writes, [['coil', 3, 0, true]]); // the first write only
+});
+
+test('forget drops the reasons of a deleted room; a new room starts empty', async (t) => {
+  const s = setup(t);
+  setAuto(s.controller, s.id);
+  await s.cycle();
+  assert.notEqual(s.controller.get(s.id).reasons.exchange, '');
+  s.db.deleteRoom(s.id);
+  s.controller.forget(s.id);
+  const other = s.db.createRoom({ ...WIRED, name: 'Room 2', trhAddress: 11, co2Address: 12, relayAddress: 13, acAddress: 14 }).id;
+  assert.deepEqual(s.controller.get(other).reasons, { exchange: '', humidifier: '', ac: '', circulation: '' });
+  if (other === s.id) assert.equal(s.controller.get(other).reasons.exchange, '');
+});
+
+test('turning auto on restarts the exchange start time', async (t) => {
+  const s = setup(t);
+  s.db.setControlState(s.id, { exchange: true, humidifier: false }, 111); // an old start time
+  s.controller.update(s.id, { auto: false });
+  await s.machines.command(s.id, 'intake', { on: true });
+  const view = setAuto(s.controller, s.id);
+  assert.equal(view.exchange, true);
+  assert.notEqual(view.exchangeSince, 111);
+  assert.equal(view.exchangeSince, s.clock());
+});
+
+test('an error in one room does not stop the next room', async (t) => {
+  const errors = [];
+  const s = setup(t, { log: (e) => errors.push(e.message) });
+  const real = s.machines.command;
+  s.machines.command = async (roomId, ...rest) => {
+    if (roomId === s.id) throw new Error('bus down');
+    return real(roomId, ...rest);
+  };
+  const second = s.db.createRoom({ ...WIRED, name: 'Room 2', trhAddress: 11, co2Address: 12, relayAddress: 13, acAddress: 14 }).id;
+  setAuto(s.controller, s.id);
+  s.controller.update(second, { auto: true });
+  const start = s.clock() + 5000;
+  for (const [room, trh, co2] of [[s.id, 1, 2], [second, 11, 12]]) {
+    s.db.addReading({ roomId: room, kind: 'trh', address: trh, at: start, ok: true, t: 22, rh: 90 });
+    s.db.addReading({ roomId: room, kind: 'co2', address: co2, at: start, ok: true, co2: 650 });
+  }
+  await s.controller.run(start);
+  assert.equal(errors.length, 1);
+  assert.equal(s.writes.some((w) => w[1] === 13), true, 'the second room was written');
+});
+
+test('a failed write is not retried by the next cycle (the command is already recorded)', async (t) => {
+  let fail = true;
+  const s = setup(t, { onWrite: async () => { if (fail) { fail = false; throw new ModbusError('timeout'); } } });
+  setAuto(s.controller, s.id);
+  await s.cycle();
+  assert.equal(fail, false);
+  s.writes.length = 0;
+  await s.cycle();
+  assert.deepEqual(s.writes.filter((w) => w[0] === 'coil'), []);
 });

@@ -11,6 +11,7 @@ let db;
 let server;
 let base;
 let id;
+let controller;
 const writes = [];
 
 before(async () => {
@@ -21,7 +22,7 @@ before(async () => {
   };
   const poller = { machineState: () => ({ relay: { address: null, polls: [] }, ac: { address: null, polls: [] } }) };
   const machines = createMachines({ db, client, poller });
-  const controller = createController({ db, machines });
+  controller = createController({ db, machines });
   server = createApp(db, { machines, controller });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   base = `http://127.0.0.1:${server.address().port}`;
@@ -117,4 +118,15 @@ test('a manual machine command is 409 while auto is on; machines GET shows auto'
 test('deleting the room deletes its control', async () => {
   assert.equal((await call('DELETE', `/api/rooms/${id}`)).status, 204);
   assert.equal((await call('GET', `/api/rooms/${id}/control`)).status, 404);
+});
+
+test('deleting the last room with auto on, then creating a room: its reasons are empty', async () => {
+  await call('PUT', `/api/rooms/${id}/control`, { auto: true });
+  await controller.run(0); // nothing fresh: still records a reason for the sensor not answering
+  assert.notEqual(controller.get(id).reasons.exchange, '');
+  assert.equal((await call('DELETE', `/api/rooms/${id}`)).status, 204);
+  const created = await call('POST', '/api/rooms', { name: 'Room 2', length: 6, width: 4, height: 2.5 });
+  assert.equal(created.status, 201);
+  assert.deepEqual((await call('GET', `/api/rooms/${created.body.id}/control`)).body.reasons,
+    { exchange: '', humidifier: '', ac: '', circulation: '' });
 });

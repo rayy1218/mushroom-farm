@@ -22,7 +22,6 @@ const word = (on) => (on ? 'on' : 'off');
 
 // bands: { co2Low, co2High, tLow, tHigh, rhLow, rhHigh }. state: { exchange, humidifier }, the remembered band states.
 // readings: { co2, rh }, null when the sensor gave nothing this cycle (that rule then keeps its state).
-// commands is accepted for the caller's convenience and not needed: the decision depends on the state only.
 // Returns { state, desired, reasons }. Pure.
 export function decide({ bands, state, readings }) {
   const { co2 = null, rh = null } = readings ?? {};
@@ -118,6 +117,8 @@ export function createController({ db, machines, now = Date.now, log = console.e
     return r && r.ok && r.at >= cycleStart ? r : null;
   }
 
+  const stillAuto = (roomId) => Boolean(db.getControl(roomId)?.auto);
+
   async function runRoom(room, cycleStart) {
     const c = db.getControl(room.id);
     if (!c?.auto) return;
@@ -128,15 +129,16 @@ export function createController({ db, machines, now = Date.now, log = console.e
     const { state, desired, reasons: why } = decide({
       bands: c,
       state: { exchange: c.exchange, humidifier: c.humidifier },
-      readings: { t: t?.t ?? null, rh: t?.rh ?? null, co2: c2?.co2 ?? null },
-      commands,
+      readings: { rh: t?.rh ?? null, co2: c2?.co2 ?? null },
     });
     db.setControlState(room.id, state, now());
     reasons.set(room.id, why);
 
     if (room.relayAddress !== null) {
       for (const key of RELAY_KEYS) {
-        if (commands.relay[key] !== desired[key]) await machines.command(room.id, key, { on: desired[key] }, BYPASS);
+        if (commands.relay[key] === desired[key]) continue;
+        if (!stillAuto(room.id)) return; // the user took over while we were sending
+        await machines.command(room.id, key, { on: desired[key] }, BYPASS);
       }
     }
     if (room.acAddress !== null) {
@@ -144,12 +146,17 @@ export function createController({ db, machines, now = Date.now, log = console.e
       const d = desired.ac;
       const same = a.power === d.power && a.mode === d.mode && a.fan === d.fan
         && Math.round(a.setpoint * 10) === Math.round(d.setpoint * 10);
-      if (!same) await machines.command(room.id, 'ac', d, BYPASS);
+      if (!same && stillAuto(room.id)) await machines.command(room.id, 'ac', d, BYPASS);
     }
   }
 
   return {
     get,
+
+    // Drops what is kept in memory for a deleted room.
+    forget(roomId) {
+      reasons.delete(roomId);
+    },
 
     // Applies any of auto and the six limits and returns the view like get. Returns null when there is no
     // such room; throws CommandError (400, with field) for a bad value.
@@ -164,7 +171,9 @@ export function createController({ db, machines, now = Date.now, log = console.e
       db.setControl(roomId, merged);
       if (merged.auto && !current.auto) {
         // Turning auto on: the band states start from what is commanded now.
+        // An old start time must not survive: clear the state first.
         const { relay } = db.getCommands(roomId);
+        db.setControlState(roomId, { exchange: false, humidifier: false }, now());
         db.setControlState(roomId, { exchange: relay.intake, humidifier: relay.humidifier }, now());
       }
       return get(roomId);

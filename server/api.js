@@ -102,6 +102,7 @@ export function createApi(db, machines = null, controller = null) {
     if (req.method === 'DELETE') {
       if (!db.deleteRoom(id)) throw noRoom();
       machines?.forget(id);
+      controller?.forget(id);
       res.writeHead(204);
       return res.end();
     }
