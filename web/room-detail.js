@@ -275,9 +275,9 @@ export function mount(container, { id }) {
       els.machinesHost.hidden = false;
     }
     if (controlData) {
-      control.update(controlData, controlToken ?? control.token());
+      const painted = control.update(controlData, controlToken ?? control.token());
       els.controlHost.hidden = false;
-      machines.setAuto(controlData.auto);
+      if (painted) machines.setAuto(controlData.auto); // a stale refresh must not relock the card
     }
     renderSensors();
     renderCharts();

@@ -84,6 +84,7 @@ export function createMachines(host, { roomId, onEdit, onOffline, onGone }) {
   host.className = 'card machines';
   host.append(el('h2', '', 'Machines'));
   const autoNote = el('p', 'meta auto-note', AUTO_NOTE);
+  autoNote.setAttribute('role', 'status');
   autoNote.hidden = true;
   host.append(autoNote);
   const relayHost = el('div', 'm-section');

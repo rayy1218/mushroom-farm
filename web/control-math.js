@@ -32,6 +32,16 @@ export function exchangeLine(c) {
   return c.exchangeSince == null ? 'Air exchange on' : `Air exchange on since ${formatHm(c.exchangeSince)}`;
 }
 
+// The state line under the card: the exchange while auto is on, otherwise that auto is off.
+export function stateLine(c) {
+  return c.auto ? exchangeLine(c) : 'Automatic control off';
+}
+
+// The accessible name of a band input, e.g. "CO₂ band low limit, ppm".
+export function inputLabel(band, side) {
+  return `${band.name} ${side} limit, ${band.unit}`;
+}
+
 // One reason as a line; the server's text already starts with the machine name, a missing text becomes a dash.
 export function reasonLine(label, text) {
   if (!text) return `${label}: —`;
@@ -43,7 +53,7 @@ export function checkBand(band, low, high) {
   const range = `${band.min} to ${band.max} ${band.unit}`;
   if (!Number.isFinite(low) || low < band.min || low > band.max) return { field: 'low', message: `${band.name} lower limit must be ${range}` };
   if (!Number.isFinite(high) || high < band.min || high > band.max) return { field: 'high', message: `${band.name} upper limit must be ${range}` };
-  if (!(low < high)) return { field: 'high', message: `${band.name} lower limit must be below the upper limit` };
+  if (!(low < high)) return { field: 'low', message: `${band.name} lower limit must be below the upper limit` };
   return null;
 }
 
@@ -52,7 +62,6 @@ export function locateField(field) {
   for (const band of BANDS) {
     if (field === band.low) return { band, side: 'low' };
     if (field === band.high) return { band, side: 'high' };
-    if (field === band.key) return { band, side: 'high' };
   }
   return null;
 }

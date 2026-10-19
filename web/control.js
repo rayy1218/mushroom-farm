@@ -1,9 +1,9 @@
 // The Automatic control card on the room page: the Auto switch, the three bands, the air exchange state and the reasons.
-// createControl(host, { roomId, onOffline, onGone, onChange }) → { update(data, token), token(), destroy() }.
+// createControl(host, { roomId, onOffline, onGone, onChange }) → { update(data, token) → painted, token(), destroy() }.
 // Controls are updated in place, so a refresh never replaces an input the person is using or has edited.
 
 import { request, OFFLINE } from './api.js';
-import { BANDS, REASONS, exchangeLine, reasonLine, checkBand, locateField, bandsBody } from './control-math.js';
+import { BANDS, REASONS, stateLine, inputLabel, reasonLine, checkBand, locateField, bandsBody } from './control-math.js';
 
 const COMMAND_TIMEOUT = 30000;
 
@@ -79,6 +79,7 @@ export function createControl(host, { roomId, onOffline, onGone, onChange }) {
       input.max = String(band.max);
       input.step = band.step;
       input.inputMode = 'decimal';
+      input.setAttribute('aria-label', inputLabel(band, side));
       const field = el('div', 'ac-field');
       const caption = el('label', 'ac-label', side === 'low' ? 'Low' : 'High');
       caption.htmlFor = input.id;
@@ -102,7 +103,7 @@ export function createControl(host, { roomId, onOffline, onGone, onChange }) {
   sendRow.append(save, reset, unsent);
   const saveErr = errorNode();
 
-  const stateLine = el('p', 'c-state');
+  const stateNode = el('p', 'c-state');
   const reasonList = el('ul', 'c-reasons');
   const reasonItems = new Map();
   for (const r of REASONS) {
@@ -110,7 +111,7 @@ export function createControl(host, { roomId, onOffline, onGone, onChange }) {
     reasonItems.set(r.key, li);
     reasonList.append(li);
   }
-  host.append(autoRow, autoErr, form, sendRow, saveErr, stateLine, reasonList);
+  host.append(autoRow, autoErr, form, sendRow, saveErr, stateNode, reasonList);
 
   // ---- drawing ----
 
@@ -176,7 +177,8 @@ export function createControl(host, { roomId, onOffline, onGone, onChange }) {
     const holding = dirty || saving || form.contains(document.activeElement);
     if (!holding) setInputs(c);
     paintDirty();
-    stateLine.textContent = exchangeLine(c);
+    stateNode.textContent = stateLine(c);
+    reasonList.hidden = !c.auto; // the reasons are of the last decision: not shown once auto is off
     for (const r of REASONS) reasonItems.get(r.key).textContent = reasonLine(r.label, c.reasons?.[r.key]);
   }
 
@@ -281,10 +283,11 @@ export function createControl(host, { roomId, onOffline, onGone, onChange }) {
   return {
     // Read before starting a fetch; pass it to update() with the reply.
     token() { return version; },
-    // Paint a fetched object, unless a command began (or is running) since the fetch started.
+    // Paint a fetched object, unless a command began (or is running) since the fetch started. Returns whether it painted.
     update(data, token) {
-      if (!alive || token !== version || inflight > 0) return;
+      if (!alive || token !== version || inflight > 0) return false;
       paint(data);
+      return true;
     },
     destroy() { alive = false; host.replaceChildren(); },
   };

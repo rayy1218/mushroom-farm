@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { BANDS, exchangeLine, formatHm, reasonLine, checkBand, locateField, bandsBody } from '../web/control-math.js';
+import { BANDS, exchangeLine, formatHm, reasonLine, checkBand, locateField, stateLine, inputLabel, bandsBody } from '../web/control-math.js';
 
 const [co2, temp, rh] = BANDS;
 
@@ -41,4 +41,16 @@ test('server fields find their row', () => {
 test('save sends the six band values only', () => {
   const body = bandsBody({ co2Low: 600, co2High: 750, tLow: 21, tHigh: 23, rhLow: 85, rhHigh: 95, auto: true });
   assert.deepEqual(body, { co2Low: 600, co2High: 750, tLow: 21, tHigh: 23, rhLow: 85, rhHigh: 95 });
+});
+
+test('state line says auto is off; input labels carry the band, side and unit', () => {
+  assert.equal(stateLine({ auto: false, exchange: true, exchangeSince: 1 }), 'Automatic control off');
+  assert.equal(stateLine({ auto: true, exchange: false }), 'Air exchange off');
+  assert.equal(inputLabel(co2, 'low'), 'CO₂ band low limit, ppm');
+  assert.equal(inputLabel(rh, 'high'), 'Humidity band high limit, %');
+});
+
+test('low not below high is blamed on the low field, like the server', () => {
+  assert.equal(checkBand(temp, 23, 21).field, 'low');
+  assert.equal(locateField('co2'), null);
 });
