@@ -221,7 +221,9 @@ test('reads and writes share one queue: a write waits for the read in flight', a
   const read = c.readRegisters(1, 3, 0, 1);
   const write = c.writeCoil(2, 0, true);
   const read2 = c.readBits(2, 1, 0, 4).catch((e) => e);
-  await new Promise((resolve) => setTimeout(resolve, 50));
+  const deadline = Date.now() + 2000;
+  while (order.length < 1 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 5));
+  await new Promise((resolve) => setTimeout(resolve, 20)); // and a moment for any (wrong) second request
   assert.deepEqual(order, [3], 'only the first request was sent');
   release();
   assert.deepEqual(await read, [7]);
@@ -260,12 +262,7 @@ test('close fails queued writes and reads', async (t) => {
 });
 
 test('a refused connection fails writes with no connection', async (t) => {
-  const probe = net.createServer();
-  probe.listen(0, '127.0.0.1');
-  await once(probe, 'listening');
-  const { port } = probe.address();
-  probe.close();
-  await once(probe, 'close');
+  const port = 1; // privileged: nothing listens there
   const c = createModbusClient({ host: '127.0.0.1', port, timeoutMs: 200 });
   t.after(() => c.close());
   await rejects(c.writeCoil(1, 0, true), 'no connection', undefined);

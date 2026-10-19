@@ -35,9 +35,15 @@ test('a relay command is written to the gateway and the polled state comes back 
     env: { ...process.env, FARM_PORT: '0', FARM_DB: join(dir, 'farm.db'), FARM_GATEWAY: `127.0.0.1:${gateway.address().port}` },
   });
   t.after(() => child.kill('SIGKILL'));
-  child.stderr.on('data', () => {});
+  let err = '';
+  child.stderr.setEncoding('utf8');
+  child.stderr.on('data', (d) => { err += d; });
   child.stdout.setEncoding('utf8');
-  const line = await new Promise((resolve) => child.stdout.once('data', (d) => resolve(d.split('\n')[0])));
+  // The first stdout line, or the child's exit if it fails at startup (the fake gateway would keep a hang alive).
+  const line = await Promise.race([
+    new Promise((resolve) => child.stdout.once('data', (d) => resolve(d.split('\n')[0]))),
+    once(child, 'exit').then(([code]) => { throw new Error(`server/main.js exited with ${code} before it printed: ${err}`); }),
+  ]);
   const base = `http://localhost:${/localhost:(\d+)/.exec(line)[1]}`;
   const json = { 'content-type': 'application/json' };
 

@@ -149,12 +149,7 @@ test('a reply split over chunks is reassembled', async (t) => {
 });
 
 test('connection refused fails with no connection, every time', async (t) => {
-  const probe = net.createServer();
-  probe.listen(0, '127.0.0.1');
-  await once(probe, 'listening');
-  const port = probe.address().port;
-  probe.close();
-  await once(probe, 'close');
+  const port = 1; // privileged: nothing listens there
   const c = createModbusClient({ host: '127.0.0.1', port, timeoutMs: 100 });
   t.after(() => c.close());
   await rejects(c.readRegisters(1, 3, 0, 1), 'no connection', undefined);
