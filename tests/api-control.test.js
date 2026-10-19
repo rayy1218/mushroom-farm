@@ -52,7 +52,8 @@ async function call(method, path, body) {
 const DEFAULT_VIEW = {
   auto: false, co2Low: 600, co2High: 750, tLow: 21, tHigh: 23, rhLow: 85, rhHigh: 95,
   exchange: false, exchangeSince: null, humidifierBand: false, humidifierDuringExchange: true, acFan: 'auto',
-  reasons: { exchange: '', humidifier: '', ac: '', circulation: '' },
+  co2Safety: 1250, exchangeMaxMin: 10, exchangeEndedAt: null, cappedInRow: 0, checks: { trh: null, co2: null },
+  reasons: { exchange: '', humidifier: '', ac: '', circulation: '', held: { humidifier: '', ac: '' } },
 };
 
 test('GET control returns the defaults with empty reasons', async () => {
@@ -95,6 +96,17 @@ test('PUT control accepts acFan alone and keeps it', async () => {
   assert.deepEqual(auto.body, { ...DEFAULT_VIEW, rhLow: 80 });
 });
 
+test('PUT control accepts co2Safety and exchangeMaxMin and keeps them', async () => {
+  const r = await call('PUT', `/api/rooms/${id}/control`, { co2Safety: 1500, exchangeMaxMin: 20 });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body, { ...DEFAULT_VIEW, co2Safety: 1500, exchangeMaxMin: 20 });
+  const band = await call('PUT', `/api/rooms/${id}/control`, { rhLow: 80 });
+  assert.deepEqual([band.body.co2Safety, band.body.exchangeMaxMin], [1500, 20]);
+  const raise = await call('PUT', `/api/rooms/${id}/control`, { co2High: 1600 });
+  assert.equal(raise.status, 400, 'the band may not reach the safety level');
+  assert.equal(raise.body.field, 'co2Safety');
+});
+
 test('PUT control validation answers 400 with the field', async () => {
   const cases = [
     [{ co2Low: 800 }, 'co2Low', 'CO₂ band lower limit must be below the upper limit'],
@@ -112,6 +124,12 @@ test('PUT control validation answers 400 with the field', async () => {
     [{ acFan: 'LOW' }, 'acFan', null],
     [{ acFan: null }, 'acFan', null],
     [{ acFan: 1 }, 'acFan', null],
+    [{ co2Safety: 750 }, 'co2Safety', 'CO₂ safety level must be above the CO₂ band upper limit'],
+    [{ co2Safety: 10001 }, 'co2Safety', null],
+    [{ co2Safety: '1250' }, 'co2Safety', null],
+    [{ exchangeMaxMin: 0 }, 'exchangeMaxMin', 'Air exchange time limit must be a whole number from 1 to 120 min'],
+    [{ exchangeMaxMin: 121 }, 'exchangeMaxMin', null],
+    [{ exchangeMaxMin: 2.5 }, 'exchangeMaxMin', null],
   ];
   for (const [body, field, message] of cases) {
     const r = await call('PUT', `/api/rooms/${id}/control`, body);
@@ -158,5 +176,5 @@ test('deleting the last room with auto on, then creating a room: its reasons are
   const created = await call('POST', '/api/rooms', { name: 'Room 2', length: 6, width: 4, height: 2.5 });
   assert.equal(created.status, 201);
   assert.deepEqual((await call('GET', `/api/rooms/${created.body.id}/control`)).body.reasons,
-    { exchange: '', humidifier: '', ac: '', circulation: '' });
+    { exchange: '', humidifier: '', ac: '', circulation: '', held: { humidifier: '', ac: '' } });
 });

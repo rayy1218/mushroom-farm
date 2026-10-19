@@ -1,4 +1,4 @@
-// JSON API: /api/settings, /api/rooms, /api/rooms/:id, /api/rooms/:id/sensors and /api/rooms/:id/machines.
+// JSON API: /api/settings, /api/alarms, /api/rooms, /api/rooms/:id, /api/rooms/:id/sensors, /alarms, /control and /machines.
 
 import { validateRoom } from './rooms.js';
 import { NameTakenError, AddressTakenError } from './db.js';
@@ -66,6 +66,27 @@ export function createApi(db, machines = null, controller = null, poller = null)
       if (req.method === 'POST') return send(res, 201, db.createRoom(await readRoom(req)));
       throw notFound();
     }
+    // ---- Alarms (spec 2026-10-19-safety-and-history-design.md section 5) ----
+    if (path === '/api/alarms') {
+      if (req.method !== 'GET') throw notFound();
+      return send(res, 200, db.currentAlarms());
+    }
+    const alarmAck = /^\/api\/alarms\/([1-9][0-9]{0,14})\/ack$/.exec(path);
+    if (alarmAck) {
+      if (req.method !== 'POST') throw notFound();
+      const alarm = db.ackAlarm(Number(alarmAck[1]), Date.now());
+      if (!alarm) throw new HttpError(404, 'Alarm not found');
+      return send(res, 200, alarm);
+    }
+    const roomAlarms = /^\/api\/rooms\/([1-9][0-9]{0,14})\/alarms(\/ack)?$/.exec(path);
+    if (roomAlarms) {
+      const roomId = Number(roomAlarms[1]);
+      if (req.method !== (roomAlarms[2] ? 'POST' : 'GET')) throw notFound();
+      if (!db.getRoom(roomId)) throw noRoom();
+      return send(res, 200, roomAlarms[2] ? { acked: db.ackRoomAlarms(roomId, Date.now()) } : db.roomAlarms(roomId));
+    }
+    // ---- end of alarms ----
+
     const match = /^\/api\/rooms\/([1-9][0-9]{0,14})(\/sensors|\/control|\/machines(?:\/([a-z]+))?)?$/.exec(path);
     if (!match) throw notFound();
     const id = Number(match[1]);
