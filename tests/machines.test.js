@@ -52,9 +52,9 @@ function setup(t, roomExtra = { relayAddress: 10, acAddress: 20 }) {
   return { db, poller, client, clock, machines, id: room.id };
 }
 
-const relayPoll = (coils, inputs, at = 1, ok = true) =>
+const relayPoll = (coils, inputs, at = 1_000_000, ok = true) =>
   (ok ? { at, ok, coils, inputs } : { at, ok, error: 'timeout' });
-const acPoll = (extra = {}, at = 1) =>
+const acPoll = (extra = {}, at = 1_000_000) =>
   ({ at, ok: true, power: false, mode: 'cool', setpoint: 25, fan: 'auto', roomT: 24.8, error: 0, ...extra });
 const failed = (at = 1) => ({ at, ok: false, error: 'timeout' });
 
@@ -430,4 +430,40 @@ test('the command is saved before the write, and a write queued behind a poll st
   assert.equal(client.writes.length, 1);
   release();
   assert.equal((await pending).relay.lastWrite.ok, true);
+});
+
+// --- a poll that began before the write cannot have seen it ---
+
+test('relay status: switching past 10 s while the latest poll began at or before the command was sent', (t) => {
+  const { machines, id, poller, clock, db } = setup(t);
+  db.setRelayCommand(id, 'exhaust', true, 50_000);
+  clock.now = 80_000; // a slow cycle: 30 s later
+  poller.state[id] = { relay: [relayPoll(OFF, OFF, 49_000)] };
+  assert.equal(keyStatus(machines.get(id), 'exhaust').status, 'switching');
+  poller.state[id] = { relay: [relayPoll(OFF, OFF, 50_000)] };
+  assert.equal(keyStatus(machines.get(id), 'exhaust').status, 'switching', 'began at the send time');
+  poller.state[id] = { relay: [relayPoll(OFF, OFF, 50_001)] };
+  assert.equal(keyStatus(machines.get(id), 'exhaust').status, 'not-following');
+});
+
+test('ac status: switching past 10 s while the latest poll began at or before the command was sent', (t) => {
+  const { machines, id, poller, clock, db } = setup(t);
+  const cmd = { power: true, mode: 'heat', setpoint: 23.5, fan: 'high' };
+  db.setAcCommand(id, cmd, 50_000);
+  clock.now = 80_000;
+  poller.state[id] = { ac: [acPoll({ power: false }, 50_000)] };
+  assert.equal(machines.get(id).ac.status, 'switching');
+  poller.state[id] = { ac: [acPoll({ power: false }, 50_001)] };
+  assert.equal(machines.get(id).ac.status, 'not-following');
+});
+
+test('a write that fails with something other than a ModbusError is logged as a bug', async (t) => {
+  const { machines, id, client } = setup(t);
+  client.fail = new TypeError('oops');
+  const logged = [];
+  t.mock.method(console, 'error', (...a) => logged.push(a));
+  const view = await machines.command(id, 'intake', { on: true });
+  assert.equal(view.relay.lastWrite.error, 'bad reply');
+  assert.equal(logged.length, 1);
+  assert.equal(logged[0][0], client.fail);
 });

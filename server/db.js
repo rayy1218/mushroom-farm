@@ -103,7 +103,7 @@ export class NameTakenError extends Error {
 }
 
 // Thrown by createRoom and updateRoom when another room already uses an
-// address (either kind). field says which of the two addresses clashes.
+// address (any of the four: trh, co2, relay, ac). field says which address clashes.
 export class AddressTakenError extends Error {
   constructor(address, roomName, field) {
     super(`Address ${address} is already used by ${roomName}`);

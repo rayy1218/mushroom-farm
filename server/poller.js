@@ -1,4 +1,5 @@
-// The polling cycle: reads every wired sensor through the Modbus client and stores one reading per poll.
+// The polling cycle: reads every wired sensor through the Modbus client and stores one reading per poll;
+// also polls each wired machine (relay module, aircon gateway) and keeps its last polls in memory.
 
 import { ModbusError } from './modbus.js';
 import { MODES, FANS } from './machine-codes.js';
@@ -31,7 +32,7 @@ const MACHINES = {
 const POLLS_KEPT = 2;
 const EMPTY = () => ({ address: null, polls: [] });
 
-// log is only for errors that are not sensor failures (a database error).
+// Polls sensors and machines. log is only for errors that are not sensor failures (a database error).
 export function createPoller({ db, client, intervalMs = 5000, now = Date.now, log = console.error }) {
   let stopped = false;
   let timer = null;
@@ -68,7 +69,7 @@ export function createPoller({ db, client, intervalMs = 5000, now = Date.now, lo
   async function runCycle() {
     try {
       const sensors = db.listWiredSensors();
-      const wired = db.listWiredMachines?.() ?? [];
+      const wired = db.listWiredMachines();
       const wiredKeys = new Set(wired.map((m) => `${m.roomId}/${m.kind}`));
       for (const key of machines.keys()) if (!wiredKeys.has(key)) machines.delete(key);
       const roomIds = [...new Set([...sensors, ...wired].map((d) => d.roomId))].sort((a, b) => a - b);

@@ -165,6 +165,10 @@ export function createModbusClient({ host, port, timeoutMs = 1000, firstTid = 1,
   return {
     // Resolves with the register values (unsigned 16-bit numbers).
     readRegisters(unit, fn, start, qty) {
+      if (fn !== 3 && fn !== 4) return Promise.reject(new RangeError('fn must be 3 or 4'));
+      if (!isUint16(start) || !Number.isInteger(qty) || qty < 1 || qty > 125) {
+        return Promise.reject(new RangeError('start must be 0 to 65535 and qty 1 to 125'));
+      }
       const pdu = Buffer.alloc(5);
       pdu[0] = fn;
       pdu.writeUInt16BE(start, 1);

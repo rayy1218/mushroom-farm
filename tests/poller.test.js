@@ -7,7 +7,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function fakeDb(sensors) {
   const readings = [];
-  return { readings, listWiredSensors: () => sensors, addReading: (r) => readings.push(r) };
+  return { readings, listWiredSensors: () => sensors, listWiredMachines: () => [], addReading: (r) => readings.push(r) };
 }
 
 // answers: (unit, fn, start, qty) → registers, or throws.
@@ -148,6 +148,7 @@ test('a database error in one cycle does not stop the poller', async () => {
   const readings = [];
   const db = {
     listWiredSensors: () => [wired[0]],
+    listWiredMachines: () => [],
     addReading: (r) => { if (fail) { fail = false; throw new Error('disk full'); } readings.push(r); },
   };
   const poller = createPoller({ db, client: fakeClient(() => [1, 2]), intervalMs: 20, log: () => {} });

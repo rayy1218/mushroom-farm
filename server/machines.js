@@ -15,6 +15,10 @@ export class CommandError extends Error {
 
 const SWITCHING_MS = 10_000;
 
+// Still switching: the command is under 10 s old, or the latest poll began at or before it was sent
+// (so that poll cannot have seen the write and a slow cycle never shows a false not-following).
+const isSwitching = (sentAt, latest, now) => sentAt !== null && (now - sentAt < SWITCHING_MS || (latest?.at ?? Infinity) <= sentAt);
+
 // Returns { on } for a valid relay body.
 function relayBody(body) {
   if (body === null || typeof body !== 'object' || Array.isArray(body)) throw new CommandError(400, 'Body must be a JSON object');
@@ -53,6 +57,7 @@ export function createMachines({ db, client, poller, now = Date.now }) {
       await send();
       result = { address, at, ok: true, error: null };
     } catch (err) {
+      if (!(err instanceof ModbusError)) console.error(err); // not a gateway failure: a bug
       result = { address, at, ok: false, error: err instanceof ModbusError ? err.message : 'bad reply' };
     }
     lastWrites.set(`${roomId}/${kind}`, result);
@@ -68,7 +73,7 @@ export function createMachines({ db, client, poller, now = Date.now }) {
     const polls = pollsOf(state, address);
     const latest = polls.at(-1);
     const lastTwo = polls.length >= 2 && polls.every((p) => p.ok) ? polls : null;
-    const switching = commands.sentAt !== null && now() - commands.sentAt < SWITCHING_MS;
+    const switching = isSwitching(commands.sentAt, latest, now());
     const machines = RELAY_KEYS.map((key, i) => {
       const commanded = commands[key];
       const m = { key, commanded, reported: null, running: null, status: 'not-wired' };
@@ -108,7 +113,7 @@ export function createMachines({ db, client, poller, now = Date.now }) {
     const follows = latest.power === commanded.power && latest.mode === commanded.mode && latest.fan === commanded.fan
       && Math.round(latest.setpoint * 10) === Math.round(commanded.setpoint * 10);
     if (latest.error !== 0) view.status = 'fault';
-    else if (!follows) view.status = sentAt !== null && now() - sentAt < SWITCHING_MS ? 'switching' : 'not-following';
+    else if (!follows) view.status = isSwitching(sentAt, latest, now()) ? 'switching' : 'not-following';
     else view.status = latest.power ? 'on' : 'off';
     return view;
   }

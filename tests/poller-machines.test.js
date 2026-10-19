@@ -190,13 +190,6 @@ test('machineState returns copies: changing them does not change the poller', as
   assert.equal(poller.machineState(1).relay.address, 10);
 });
 
-test('a database without listWiredMachines still works (sensors only)', async () => {
-  const readings = [];
-  const db = { listWiredSensors: () => [{ roomId: 1, kind: 'co2', address: 4 }], addReading: (r) => readings.push(r) };
-  await createPoller({ db, client: fakeClient(() => [950]) }).cycle();
-  assert.equal(readings.length, 1);
-});
-
 test('stop is honoured between devices', async () => {
   let release;
   const gate = new Promise((resolve) => { release = resolve; });

@@ -100,9 +100,7 @@ export function createApi(db, machines = null) {
     try {
       await route(req, res, url.pathname);
     } catch (err) {
-      if (err instanceof HttpError) {
-        send(res, err.status, err.field ? { error: err.message, field: err.field } : { error: err.message });
-      } else if (err instanceof CommandError) {
+      if (err instanceof HttpError || err instanceof CommandError) {
         send(res, err.status, err.field ? { error: err.message, field: err.field } : { error: err.message });
       } else if (err instanceof NameTakenError) {
         send(res, 409, { error: err.message, field: 'name' });
