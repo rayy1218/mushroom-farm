@@ -78,11 +78,13 @@ CREATE TABLE room_controls (
 // Safety and history (spec 2026-10-19-safety-and-history-design.md 3.2 and 4): the room_controls columns
 // that version 7 adds to an older table, the alarms, the machine log and the readings time index.
 const SAFETY_CONTROL_COLUMNS = `
+-- an existing room's safety level is its CO2 upper limit + 500 (v1's rule), from 1250 to 10000
 ALTER TABLE room_controls ADD COLUMN co2_safety REAL NOT NULL DEFAULT 1250;
 ALTER TABLE room_controls ADD COLUMN exchange_max_min INTEGER NOT NULL DEFAULT 10;
 ALTER TABLE room_controls ADD COLUMN exchange_ended_at INTEGER;
 ALTER TABLE room_controls ADD COLUMN capped_in_row INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE room_controls ADD COLUMN humidifier_since INTEGER;`;
+ALTER TABLE room_controls ADD COLUMN humidifier_since INTEGER;
+UPDATE room_controls SET co2_safety = MIN(10000, MAX(1250, co2_high + 500));`;
 
 const ALARMS = `
 CREATE TABLE alarms (
@@ -193,7 +195,8 @@ function migrate(db) {
       if (version >= 3) db.exec(SAFETY_CONTROL_COLUMNS); // a table made above by ROOM_CONTROLS has them
       db.exec(ALARMS);
       db.exec(MACHINE_LOG);
-      db.exec('CREATE INDEX readings_by_time ON readings (room_id, kind, at);');
+      // Covering: the history buckets read only the index, not the table.
+      db.exec('CREATE INDEX readings_by_time ON readings (room_id, kind, at, ok, t, rh, co2);');
     }
     db.exec(`PRAGMA user_version = ${VERSION}`);
     db.exec('COMMIT');

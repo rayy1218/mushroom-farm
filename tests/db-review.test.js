@@ -36,7 +36,7 @@ function readingIndexes(path) {
 
 const EXPECTED = [
   { name: 'readings_by_sensor', sql: 'CREATE INDEX readings_by_sensor ON readings (room_id, kind, address, id)' },
-  { name: 'readings_by_time', sql: 'CREATE INDEX readings_by_time ON readings (room_id, kind, at)' },
+  { name: 'readings_by_time', sql: 'CREATE INDEX readings_by_time ON readings (room_id, kind, at, ok, t, rh, co2)' },
   { name: 'readings_ok', sql: 'CREATE INDEX readings_ok ON readings (room_id, kind, address, id) WHERE ok = 1' },
 ];
 

@@ -196,7 +196,7 @@ test('upgrade 3 to 4 adds humidifier_during_exchange (on) and keeps rooms, readi
   assert.deepEqual(db.getSensors(1)[0].readings, [{ at: 100, ok: true, t: 21.5, rh: 88 }]);
   assert.equal(db.getCommands(1).ac.setpoint, 17);
   assert.deepEqual(db.getControl(1), {
-    ...DEFAULT_CONTROL, auto: true, co2Low: 500, co2High: 800, exchange: true, exchangeSince: 77, humidifier: true,
+    ...DEFAULT_CONTROL, auto: true, co2Low: 500, co2High: 800, co2Safety: 1300, exchange: true, exchangeSince: 77, humidifier: true,
   });
   assert.deepEqual(db.getControl(5), DEFAULT_CONTROL);
   db.close();

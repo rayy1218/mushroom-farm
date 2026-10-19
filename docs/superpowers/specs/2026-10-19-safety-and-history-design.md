@@ -10,13 +10,13 @@ Every cycle, for every room (auto on or off), the latest reading of each wired s
 |---|---|---|---|---|
 | No reading | ✓ | ✓ | ✓ | the poll failed (`ok` false) |
 | Range | −10 to 60 °C | 1 to 100 % | 300 to 10 000 ppm | outside the range |
-| Sudden jump | 2 °C/min | 15 %/min | 1000 ppm/min | the change since the last good reading, per minute, is above the rate. A jump is accepted (good again) when 3 readings in a row agree with each other (each within the rate of the one before). A **falling** CO₂ is not tested while an air exchange runs or in the cycle after it stopped. |
+| Sudden jump | 2 °C/min | 15 %/min | 1000 ppm/min | the change since the last good reading is above the rate × the time between them, with that time taken as at least 1 min (so short reading intervals do not turn noise into jumps). A jump is accepted (good again) when 3 readings in a row agree with each other (each within the rate of the one before). A **falling** CO₂ is not tested while an air exchange runs or in the cycle after it stopped. |
 | Frozen | 120 min | 120 min (30 min while the humidifier is commanded on) | 60 min | the exact same value for that long. RH ≥ 99.9 is never frozen (a wet probe reads 100). |
 
 | Item | Behaviour |
 |---|---|
 | Fault | 3 bad readings in a row → the sensor is **faulty** (alarm 3.1 "sensor fault"); the next good reading ends the fault |
-| T/RH probe | T and RH are checked separately; the probe is faulty when either value is faulty. The controller uses RH only. |
+| T/RH probe | T and RH are checked separately; the probe is faulty (alarm) when either value is faulty. The controller uses RH only: only an RH fault (or the probe not answering) starts the timed humidifier. |
 | State | in memory per room and kind (last good value and time, same-value start, pending jump, bad count); a restart starts fresh *default* |
 | Not polled this cycle | not counted (no reading of this cycle → nothing changes) |
 | Module | `server/checks.js`: `createSensorChecks({ now })` → `{ check(roomId, kind, reading, ctx) → { ok, why, fault, faultWhy }, get(roomId) → { trh, co2 }, forget(roomId) }`; `ctx = { exchangeRecent, humidifierOn }`. `why`/`faultWhy` texts: "no reading", "value out of range", "sudden jump", "value does not change (frozen)". |
@@ -45,7 +45,7 @@ After a stop at the limit the band rule applies again: CO₂ between the limits 
 | Item | Behaviour |
 |---|---|
 | Band rule, forced during exchange | as iteration 5 |
-| T/RH probe faulty | **timed humidifier**: band state on for 10 min, off for 10 min *default*, repeating (from `humidifierSince`); reason "Humidity sensor fault: timed humidifier, 10 min of every 20" |
+| RH faulty (2.2: not a T-only fault) | **timed humidifier**: band state on for 10 min, off for 10 min *default*, repeating (from `humidifierSince`); reason "Humidity sensor fault: timed humidifier, 10 min of every 20" |
 | Bad RH reading, not faulty | band state kept (as iteration 5) |
 
 ### 2.3 Machine protection (auto only; manual commands act at once) *defaults*
@@ -70,7 +70,7 @@ The humidifier and aircon change times are kept in memory per room (the last tim
 
 | Setting | Label | Default | Limits |
 |---|---|---|---|
-| `co2Safety` | CO₂ safety level (ppm) | 1250 *default* (v1: limit + 500) | above `co2High`, at most 10 000 ("CO₂ safety level must be above the CO₂ band upper limit", field `co2Safety`) |
+| `co2Safety` | CO₂ safety level (ppm) | 1250 for a new room *default*; the upgrade gives an existing room its `co2High` + 500 (v1's rule), from 1250 to 10 000 | above `co2High`, at most 10 000 ("CO₂ safety level must be above the CO₂ band upper limit", field `co2Safety`). That comparison is only checked when the body sets `co2High` or `co2Safety`, so switching auto, the humidifier option or the fan is never refused because of it. |
 | `exchangeMaxMin` | Air exchange time limit (min) | 10 *default* | whole number 1–120 ("Air exchange time limit must be a whole number from 1 to 120 min") |
 
 ## 3. Alarms
@@ -91,7 +91,7 @@ The humidifier and aircon change times are kept in memory per room (the last tim
 | Item | Behaviour |
 |---|---|
 | Who checks | the controller's `run`, after each cycle, for **every** room (auto on or off) |
-| Process alarms (tHigh … co2Safety) | only from good readings; a faulty or missing sensor stops the delay count (no alarm from a bad sensor) |
+| Process alarms (tHigh … co2Safety) | only from good readings; a missing reading stops the delay count (no alarm from a bad sensor); a sensor that is faulty or no longer wired clears its process alarms (its fault alarm says why) |
 | Delay | the condition must hold for the delay (kept in memory); shorter changes give no alarm |
 | Machine alarms | only for wired machines; status from `machines.get(roomId)` |
 | One at a time | at most one **active** alarm per room and key; text is fixed at raise time |

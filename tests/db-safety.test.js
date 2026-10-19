@@ -95,6 +95,8 @@ function checkVersion7(raw) {
   assert.deepEqual(columns(raw, 'alarms'), ['id', 'room_id', 'key', 'level', 'text', 'raised_at', 'cleared_at', 'acked_at']);
   assert.deepEqual(columns(raw, 'machine_log'), ['id', 'room_id', 'machine', 'at', 'on_', 'setpoint', 'mode', 'fan', 'source']);
   for (const name of Object.keys(NEW_CONTROL_COLUMNS)) assert.ok(columns(raw, 'room_controls').includes(name), name);
+  assert.equal(raw.prepare("SELECT sql FROM sqlite_master WHERE name = 'readings_by_time'").get().sql.replace(/\s+/g, ' '),
+    'CREATE INDEX readings_by_time ON readings (room_id, kind, at, ok, t, rh, co2)');
   for (const name of ['readings_by_time', 'alarms_by_room', 'alarms_active', 'machine_log_by_room']) {
     assert.ok(indexes(raw).includes(name), name);
   }
@@ -136,7 +138,8 @@ test('upgrade 6 to 7 keeps rooms, readings, commands, controls and settings; new
   t.after(() => raw.close());
   checkVersion7(raw);
   const row = raw.prepare('SELECT * FROM room_controls WHERE room_id = 1').get();
-  for (const [name, value] of Object.entries(NEW_CONTROL_COLUMNS)) assert.equal(row[name], value, name);
+  // The safety level follows the room's CO2 upper limit (800 + 500); the rest get the column defaults.
+  for (const [name, value] of Object.entries({ ...NEW_CONTROL_COLUMNS, co2_safety: 1300 })) assert.equal(row[name], value, name);
 });
 
 test('the new tables enforce their checks and one active alarm per room and key', (t) => {
@@ -172,4 +175,21 @@ test('deleting a room deletes its alarms and machine log', (t) => {
   t.after(() => check.close());
   assert.equal(check.prepare('SELECT COUNT(*) AS n FROM alarms').get().n, 0);
   assert.equal(check.prepare('SELECT COUNT(*) AS n FROM machine_log').get().n, 0);
+});
+
+test('upgrade 6 to 7 sets the safety level of each room to its CO2 upper limit + 500, within 1250 to 10000', (t) => {
+  const path = join(tempDir(t), 'farm.db');
+  const old = new DatabaseSync(path);
+  old.exec(VERSION_6_SCHEMA);
+  const room = old.prepare(`INSERT INTO rooms (id, name, length_m, width_m, height_m, created_at, updated_at)
+                            VALUES (?, ?, 2, 2, 2, 1, 1)`);
+  const control = old.prepare('INSERT INTO room_controls (room_id, co2_low, co2_high) VALUES (?, ?, ?)');
+  for (const [id, high] of [[1, 750], [2, 900], [3, 1500], [4, 5000]]) {
+    room.run(id, `Room ${id}`);
+    control.run(id, high - 100, high);
+  }
+  old.close();
+  const db = openDb(path);
+  t.after(() => db.close());
+  assert.deepEqual([1, 2, 3, 4].map((id) => db.getControl(id).co2Safety), [1250, 1400, 2000, 5500]);
 });
