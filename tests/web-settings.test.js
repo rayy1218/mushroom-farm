@@ -25,5 +25,5 @@ test('#/settings is the settings page', () => {
   assert.deepEqual(parseRoute('#/settings/'), { name: 'settings' });
   assert.equal(isCanonical('#/settings'), true);
   assert.equal(isCanonical('#/settings/'), false);
-  assert.deepEqual(parseRoute('#/settingsx'), { name: 'list' });
+  assert.deepEqual(parseRoute('#/settingsx'), { name: 'overview' });
 });
