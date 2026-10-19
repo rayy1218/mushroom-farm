@@ -179,6 +179,9 @@ function migrate(db) {
   }
 }
 
+// A machine_log row as the API shows it.
+const logRow = (r) => ({ at: r.at, on: r.on_ === 1, setpoint: r.setpoint, mode: r.mode, fan: r.fan, source: r.source });
+
 // Thrown by createRoom and updateRoom when another room already has the name
 // (ignoring case).
 export class NameTakenError extends Error {
@@ -271,6 +274,11 @@ export function openDb(path) {
                             SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
                             WHERE EXISTS (SELECT 1 FROM rooms WHERE id = ? AND
                               CASE ? WHEN 'trh' THEN trh_address WHEN 'co2' THEN co2_address END = ?)`),
+    // Stream B: machine log (spec 2026-10-19-safety-and-history-design.md 4).
+    logLast: db.prepare('SELECT * FROM machine_log WHERE room_id = ? AND machine = ? ORDER BY id DESC LIMIT 1'),
+    logAdd: db.prepare(`INSERT INTO machine_log (room_id, machine, at, on_, setpoint, mode, fan, source)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`),
+    logAll: db.prepare('SELECT * FROM machine_log WHERE room_id = ? AND machine = ? ORDER BY id'),
     getSetting: db.prepare('SELECT value FROM settings WHERE key = ?'),
     setSetting: db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)'),
     latest: db.prepare(STATUS_SQL.latest),
@@ -400,6 +408,22 @@ export function openDb(path) {
 
     setAcCommand(roomId, { power, mode, setpoint, fan }, at) {
       return q.setAc.run(power ? 1 : 0, mode, setpoint, fan, at, roomId).changes > 0;
+    },
+
+    // ---- Stream B: machine log ----
+
+    // Writes a log row for a saved command unless it equals the machine's previous row (a re-send).
+    // change: { on, setpoint, mode, fan } (the last three only for the aircon). Returns true when a row was written.
+    logMachine(roomId, machine, { on, setpoint = null, mode = null, fan = null }, source, at) {
+      const last = q.logLast.get(roomId, machine);
+      if (last && last.on_ === (on ? 1 : 0) && last.setpoint === setpoint && last.mode === mode && last.fan === fan) return false;
+      q.logAdd.run(roomId, machine, at, on ? 1 : 0, setpoint, mode, fan, source);
+      return true;
+    },
+
+    // Every log row of one machine, oldest first.
+    machineLog(roomId, machine) {
+      return q.logAll.all(roomId, machine).map(logRow);
     },
 
     // Every wired relay module and aircon gateway: rooms by id, relay before ac.
