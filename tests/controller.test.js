@@ -7,8 +7,8 @@ import { decide, validateControl, DEFAULTS } from '../server/controller.js';
 const bands = { co2Low: 600, co2High: 750, tLow: 21, tHigh: 23, rhLow: 85, rhHigh: 95 };
 const off = { exchange: false, humidifier: false };
 
-function run({ state = off, co2 = 650, rh = 90, b = bands, during } = {}) {
-  return decide({ bands: b, state, readings: { rh, co2 }, humidifierDuringExchange: during });
+function run({ state = off, co2 = 650, rh = 90, b = bands, during, fan } = {}) {
+  return decide({ bands: b, state, readings: { rh, co2 }, humidifierDuringExchange: during, acFan: fan });
 }
 
 test('air exchange: on at or above the upper limit, off at or below the lower, kept between', () => {
@@ -118,6 +118,16 @@ test('a missing RH reading keeps the humidifier state and says so; the exchange 
   assert.equal(r.desired.humidifier, true);
 });
 
+test('aircon fan follows the room setting, auto when none is given', () => {
+  assert.equal(run().desired.ac.fan, 'auto');
+  for (const fan of ['auto', 'low', 'high']) assert.equal(run({ fan }).desired.ac.fan, fan);
+  assert.equal(run({ fan: 'low', co2: 800 }).desired.ac.fan, 'low'); // also during an air exchange
+  assert.equal(run({ fan: 'low' }).reasons.ac, 'Aircon: 22.0 °C (middle of 21–23), fan low');
+  assert.equal(run({ fan: 'high' }).reasons.ac, 'Aircon: 22.0 °C (middle of 21–23), fan high');
+  assert.equal(run({ fan: 'auto' }).reasons.ac, 'Aircon: 22.0 °C (middle of 21–23)');
+  assert.equal(run({ fan: 'low', co2: 800 }).reasons.ac, 'Aircon: 17.0 °C (22.0 − 5 during air exchange), fan low');
+});
+
 test('reasons name the rule and the numbers', () => {
   assert.equal(run({ co2: 762 }).reasons.exchange, 'Air exchange: CO₂ 762 ≥ 750');
   assert.equal(run({ state: { exchange: true, humidifier: false }, co2: 590 }).reasons.exchange, 'Air exchange: CO₂ 590 ≤ 600');
@@ -138,6 +148,9 @@ test('validateControl: defaults are valid; each field and the low < high check',
   assert.equal(validateControl(DEFAULTS), null);
   const bad = (patch) => validateControl({ ...DEFAULTS, ...patch });
   assert.deepEqual(bad({ auto: 1 }), { error: 'auto must be true or false', field: 'auto' });
+  assert.deepEqual(bad({ acFan: 'medium' }), { error: 'Aircon fan must be auto, low or high', field: 'acFan' });
+  assert.equal(bad({ acFan: undefined }).field, 'acFan');
+  for (const acFan of ['auto', 'low', 'high']) assert.equal(bad({ acFan }), null);
   assert.deepEqual(bad({ humidifierDuringExchange: 'yes' }),
     { error: 'humidifierDuringExchange must be true or false', field: 'humidifierDuringExchange' });
   assert.equal(bad({ co2Low: 299 }).field, 'co2Low');

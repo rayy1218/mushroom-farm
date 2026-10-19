@@ -3,7 +3,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { RELAY_KEYS } from './machine-codes.js';
 
-const VERSION = 5;
+const VERSION = 6;
 
 // Iteration 1 (version 0) had only the rooms table without the address columns.
 const ROOMS = `
@@ -66,7 +66,8 @@ CREATE TABLE room_controls (
   exchange INTEGER NOT NULL DEFAULT 0 CHECK (exchange IN (0, 1)),
   exchange_since INTEGER,
   humidifier INTEGER NOT NULL DEFAULT 0 CHECK (humidifier IN (0, 1)),
-  humidifier_during_exchange INTEGER NOT NULL DEFAULT 1 CHECK (humidifier_during_exchange IN (0, 1))
+  humidifier_during_exchange INTEGER NOT NULL DEFAULT 1 CHECK (humidifier_during_exchange IN (0, 1)),
+  ac_fan TEXT NOT NULL DEFAULT 'auto' CHECK (ac_fan IN ('auto','low','high'))
 ) STRICT;`;
 
 // Farm-wide settings (spec 2026-10-19-settings-design.md): no rows means the defaults.
@@ -119,6 +120,9 @@ function migrate(db) {
       db.exec('ALTER TABLE room_controls ADD COLUMN humidifier_during_exchange INTEGER NOT NULL DEFAULT 1 CHECK (humidifier_during_exchange IN (0, 1))');
     }
     if (version < 5) db.exec(SETTINGS);
+    if (version >= 3 && version < 6) { // older tables lack the column; a table made above by ROOM_CONTROLS has it
+      db.exec("ALTER TABLE room_controls ADD COLUMN ac_fan TEXT NOT NULL DEFAULT 'auto' CHECK (ac_fan IN ('auto','low','high'))");
+    }
     db.exec(`PRAGMA user_version = ${VERSION}`);
     db.exec('COMMIT');
   } catch (err) {
@@ -196,7 +200,7 @@ export function openDb(path) {
     deleteControl: db.prepare('DELETE FROM room_controls WHERE room_id = ?'),
     control: db.prepare('SELECT * FROM room_controls WHERE room_id = ?'),
     setControl: db.prepare(`UPDATE room_controls SET auto = ?, co2_low = ?, co2_high = ?, t_low = ?, t_high = ?,
-                                   rh_low = ?, rh_high = ?, humidifier_during_exchange = ? WHERE room_id = ?`),
+                                   rh_low = ?, rh_high = ?, humidifier_during_exchange = ?, ac_fan = ? WHERE room_id = ?`),
     setControlState: db.prepare(`UPDATE room_controls SET exchange = ?1, humidifier = ?2,
                                         exchange_since = CASE WHEN ?1 = 0 THEN NULL ELSE COALESCE(exchange_since, ?3) END
                                  WHERE room_id = ?4`),
@@ -313,7 +317,7 @@ export function openDb(path) {
     },
 
     // The automatic control settings and band states, or null when there is no such room:
-    // { auto, co2Low, co2High, tLow, tHigh, rhLow, rhHigh, humidifierDuringExchange, exchange, exchangeSince, humidifier }
+    // { auto, co2Low, co2High, tLow, tHigh, rhLow, rhHigh, humidifierDuringExchange, acFan, exchange, exchangeSince, humidifier }
     getControl(roomId) {
       let r = q.control.get(roomId);
       if (!r) {
@@ -323,14 +327,14 @@ export function openDb(path) {
       }
       return {
         auto: r.auto === 1, co2Low: r.co2_low, co2High: r.co2_high, tLow: r.t_low, tHigh: r.t_high,
-        rhLow: r.rh_low, rhHigh: r.rh_high, humidifierDuringExchange: r.humidifier_during_exchange === 1,
+        rhLow: r.rh_low, rhHigh: r.rh_high, humidifierDuringExchange: r.humidifier_during_exchange === 1, acFan: r.ac_fan,
         exchange: r.exchange === 1, exchangeSince: r.exchange_since, humidifier: r.humidifier === 1,
       };
     },
 
     // Returns true when the room exists. Settings must be valid (see validateControl in controller.js).
-    setControl(roomId, { auto, co2Low, co2High, tLow, tHigh, rhLow, rhHigh, humidifierDuringExchange }) {
-      return q.setControl.run(auto ? 1 : 0, co2Low, co2High, tLow, tHigh, rhLow, rhHigh, humidifierDuringExchange ? 1 : 0, roomId).changes > 0;
+    setControl(roomId, { auto, co2Low, co2High, tLow, tHigh, rhLow, rhHigh, humidifierDuringExchange, acFan }) {
+      return q.setControl.run(auto ? 1 : 0, co2Low, co2High, tLow, tHigh, rhLow, rhHigh, humidifierDuringExchange ? 1 : 0, acFan, roomId).changes > 0;
     },
 
     // exchangeSince keeps the time the exchange began and is cleared when it ends.

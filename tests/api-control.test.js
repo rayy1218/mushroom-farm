@@ -51,7 +51,7 @@ async function call(method, path, body) {
 
 const DEFAULT_VIEW = {
   auto: false, co2Low: 600, co2High: 750, tLow: 21, tHigh: 23, rhLow: 85, rhHigh: 95,
-  exchange: false, exchangeSince: null, humidifierBand: false, humidifierDuringExchange: true,
+  exchange: false, exchangeSince: null, humidifierBand: false, humidifierDuringExchange: true, acFan: 'auto',
   reasons: { exchange: '', humidifier: '', ac: '', circulation: '' },
 };
 
@@ -82,6 +82,19 @@ test('PUT control accepts humidifierDuringExchange alone and keeps it', async ()
   assert.deepEqual(on.body, { ...DEFAULT_VIEW, rhLow: 80 });
 });
 
+test('PUT control accepts acFan alone and keeps it', async () => {
+  const low = await call('PUT', `/api/rooms/${id}/control`, { acFan: 'low' });
+  assert.equal(low.status, 200);
+  assert.deepEqual(low.body, { ...DEFAULT_VIEW, acFan: 'low' });
+  assert.deepEqual((await call('GET', `/api/rooms/${id}/control`)).body, low.body);
+  const band = await call('PUT', `/api/rooms/${id}/control`, { rhLow: 80 });
+  assert.equal(band.body.acFan, 'low');
+  const high = await call('PUT', `/api/rooms/${id}/control`, { acFan: 'high' });
+  assert.equal(high.body.acFan, 'high');
+  const auto = await call('PUT', `/api/rooms/${id}/control`, { acFan: 'auto' });
+  assert.deepEqual(auto.body, { ...DEFAULT_VIEW, rhLow: 80 });
+});
+
 test('PUT control validation answers 400 with the field', async () => {
   const cases = [
     [{ co2Low: 800 }, 'co2Low', 'CO₂ band lower limit must be below the upper limit'],
@@ -95,6 +108,10 @@ test('PUT control validation answers 400 with the field', async () => {
     [{ auto: 1 }, 'auto', 'auto must be true or false'],
     [{ humidifierDuringExchange: 'false' }, 'humidifierDuringExchange', 'humidifierDuringExchange must be true or false'],
     [{ humidifierDuringExchange: null }, 'humidifierDuringExchange', null],
+    [{ acFan: 'medium' }, 'acFan', 'Aircon fan must be auto, low or high'],
+    [{ acFan: 'LOW' }, 'acFan', null],
+    [{ acFan: null }, 'acFan', null],
+    [{ acFan: 1 }, 'acFan', null],
   ];
   for (const [body, field, message] of cases) {
     const r = await call('PUT', `/api/rooms/${id}/control`, body);

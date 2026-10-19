@@ -4,7 +4,8 @@
 import { CommandError } from './machines.js';
 import { RELAY_KEYS } from './machine-codes.js';
 
-export const DEFAULTS = { auto: false, co2Low: 600, co2High: 750, tLow: 21, tHigh: 23, rhLow: 85, rhHigh: 95, humidifierDuringExchange: true };
+export const DEFAULTS = { auto: false, co2Low: 600, co2High: 750, tLow: 21, tHigh: 23, rhLow: 85, rhHigh: 95, humidifierDuringExchange: true, acFan: 'auto' };
+export const AC_FANS = ['auto', 'low', 'high'];
 
 // Pairs of band limits, in the order they are checked.
 const BANDS = [
@@ -22,9 +23,10 @@ const word = (on) => (on ? 'on' : 'off');
 
 // bands: { co2Low, co2High, tLow, tHigh, rhLow, rhHigh }. state: { exchange, humidifier }, the remembered band states.
 // humidifierDuringExchange: whether an air exchange forces the humidifier on (default true).
+// acFan: the aircon fan, 'auto' | 'low' | 'high' (default 'auto').
 // readings: { co2, rh }, null when the sensor gave nothing this cycle (that rule then keeps its state).
 // Returns { state, desired, reasons }. Pure.
-export function decide({ bands, state, readings, humidifierDuringExchange = true }) {
+export function decide({ bands, state, readings, humidifierDuringExchange = true, acFan = 'auto' }) {
   const { co2 = null, rh = null } = readings ?? {};
   let exchange = state.exchange;
   let band = state.humidifier;
@@ -64,9 +66,10 @@ export function decide({ bands, state, readings, humidifierDuringExchange = true
   const middle = (bands.tLow + bands.tHigh) / 2;
   const target = exchange ? middle - EXCHANGE_DROP : middle;
   const setpoint = Math.round(Math.min(AC_MAX, Math.max(AC_MIN, target)) * 2) / 2;
+  const fanNote = acFan === 'auto' ? '' : `, fan ${acFan}`;
   reasons.ac = exchange
-    ? `Aircon: ${setpoint.toFixed(1)} °C (${middle.toFixed(1)} − ${EXCHANGE_DROP} during air exchange)`
-    : `Aircon: ${setpoint.toFixed(1)} °C (middle of ${bands.tLow}–${bands.tHigh})`;
+    ? `Aircon: ${setpoint.toFixed(1)} °C (${middle.toFixed(1)} − ${EXCHANGE_DROP} during air exchange)${fanNote}`
+    : `Aircon: ${setpoint.toFixed(1)} °C (middle of ${bands.tLow}–${bands.tHigh})${fanNote}`;
   reasons.circulation = 'Circulation: always on';
 
   return {
@@ -76,7 +79,7 @@ export function decide({ bands, state, readings, humidifierDuringExchange = true
       exhaust: exchange,
       humidifier: forced || band,
       circulation: true,
-      ac: { power: true, mode: 'cool', setpoint, fan: 'auto' },
+      ac: { power: true, mode: 'cool', setpoint, fan: acFan },
     },
     reasons,
   };
@@ -88,6 +91,7 @@ export function validateControl(c) {
   if (typeof c.humidifierDuringExchange !== 'boolean') {
     return { error: 'humidifierDuringExchange must be true or false', field: 'humidifierDuringExchange' };
   }
+  if (!AC_FANS.includes(c.acFan)) return { error: 'Aircon fan must be auto, low or high', field: 'acFan' };
   for (const { low, high, label, min, max, unit } of BANDS) {
     for (const [field, side] of [[low, 'lower'], [high, 'upper']]) {
       const v = c[field];
@@ -149,6 +153,7 @@ export function createController({ db, machines, now = Date.now, log = console.e
       state: { exchange: c.exchange, humidifier: c.humidifier },
       readings: { rh: t?.rh ?? null, co2: c2?.co2 ?? null },
       humidifierDuringExchange: c.humidifierDuringExchange,
+      acFan: c.acFan,
     });
     db.setControlState(room.id, state, now());
 
@@ -202,7 +207,7 @@ export function createController({ db, machines, now = Date.now, log = console.e
 
     forget,
 
-    // Applies any of auto, humidifierDuringExchange and the six limits and returns the view like get. Returns null when there is no
+    // Applies any of auto, humidifierDuringExchange, acFan and the six limits and returns the view like get. Returns null when there is no
     // such room; throws CommandError (400, with field) for a bad value.
     update(roomId, body) {
       const current = db.getControl(roomId);

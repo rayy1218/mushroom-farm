@@ -344,3 +344,19 @@ test('humidifier during exchange off: changed between cycles, the next cycle sen
   assert.equal(s.controller.get(s.id).reasons.humidifier, 'Humidifier: off (RH 96 ≥ 95; not forced during air exchange)');
   assert.equal(s.controller.get(s.id).humidifierDuringExchange, false);
 });
+
+test('aircon fan changed between cycles: the next cycle sends the new fan', async (t) => {
+  const s = setup(t);
+  setAuto(s.controller, s.id);
+  await s.cycle();
+  assert.equal(s.db.getCommands(s.id).ac.fan, 'auto');
+  s.controller.update(s.id, { acFan: 'low' });
+  assert.equal(s.db.getCommands(s.id).ac.fan, 'auto'); // nothing happens until the next cycle
+  await s.cycle();
+  assert.equal(s.db.getCommands(s.id).ac.fan, 'low');
+  assert.equal(s.controller.get(s.id).acFan, 'low');
+  assert.equal(s.controller.get(s.id).reasons.ac, 'Aircon: 22.0 °C (middle of 21–23), fan low');
+  const sent = s.writes.length;
+  await s.cycle();
+  assert.equal(s.writes.length, sent); // the same fan is not sent again
+});
