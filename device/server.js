@@ -1,8 +1,11 @@
 // Starts the device: Modbus TCP side and control page, sharing one sensors store.
+// simTickMs: how often the simulation steps (1000; 0 = only when a test calls sim.tick()); model: replaces sim-model.js in tests.
 // spinUpMs: how long a relay must be on before its current switch reads running (2000 unless a test says 0).
 
 import { createSensors } from './sensors.js';
 import { createModbusServer } from './modbus-server.js';
+import { createSims } from './sim-store.js';
+import { createSimulation } from './simulation.js';
 import { createDeviceHttp, createRequestLog } from './http.js';
 
 function listen(server, port, host) {
@@ -17,11 +20,13 @@ function listen(server, port, host) {
 
 const closeServer = (server) => new Promise((resolve) => server.close(resolve));
 
-export async function startDevice({ modbusPort = 1502, httpPort = 8090, statePath, host = '127.0.0.1', spinUpMs } = {}) {
+export async function startDevice({ modbusPort = 1502, httpPort = 8090, statePath, host = '127.0.0.1', spinUpMs, simTickMs = 1000, model } = {}) {
   const sensors = createSensors({ statePath, spinUpMs });
+  const sims = createSims({ sensors, statePath: statePath && `${statePath}.sim`, model });
+  const sim = createSimulation({ sensors, sims, model, tickMs: simTickMs });
   const log = createRequestLog();
   const modbus = createModbusServer(sensors, { onRequest: (entry) => log.add(entry) });
-  const http = createDeviceHttp(sensors, log);
+  const http = createDeviceHttp(sensors, log, { sims });
 
   const sockets = new Set();
   modbus.on('connection', (socket) => {
@@ -37,11 +42,14 @@ export async function startDevice({ modbusPort = 1502, httpPort = 8090, statePat
     throw err;
   }
 
+  sim.start();
+
   async function close() {
+    sim.stop();
     for (const socket of sockets) socket.destroy();
     http.closeAllConnections();
     await Promise.all([closeServer(modbus), closeServer(http)]);
   }
 
-  return { modbusPort: modbus.address().port, httpPort: http.address().port, sensors, close };
+  return { modbusPort: modbus.address().port, httpPort: http.address().port, sensors, sims, sim, close };
 }
