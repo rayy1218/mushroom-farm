@@ -2,6 +2,7 @@
 
 import { request, OFFLINE, GONE } from './api.js';
 import { openRoomDialog, closeRoomDialog } from './room-dialog.js';
+import { activeCounts, chipText, levelLabel } from './alarms-math.js';
 
 const metres = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
 const cubic = new Intl.NumberFormat(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -59,6 +60,7 @@ export function mount(container) {
   const { signal } = abort;
 
   let rooms = [];
+  let alarmCounts = new Map(); // roomId → { count, level } of the active alarms
   let loaded = false;
   let loadSeq = 0;
   let rendered = false;
@@ -77,9 +79,13 @@ export function mount(container) {
   async function load() {
     const seq = ++loadSeq;
     try {
-      const data = await request('GET', '/api/rooms');
+      const [data, alarms] = await Promise.all([
+        request('GET', '/api/rooms'),
+        request('GET', '/api/alarms').catch(() => null), // optional: the alarm chips
+      ]);
       if (!alive() || seq !== loadSeq) return;
       rooms = data;
+      alarmCounts = activeCounts(alarms);
       loaded = true;
       // Only the offline banner (the one with Retry) clears here; "That room no longer exists" stays.
       if (!els.retry.hidden) hideBanner();
@@ -120,6 +126,16 @@ export function mount(container) {
     link.href = `#/rooms/${room.id}`;
     link.textContent = room.name;
     name.append(link);
+    const alarm = alarmCounts.get(room.id);
+    if (alarm) { // the chip: the number of active alarms, coloured by the highest level
+      const chip = document.createElement('a');
+      chip.className = 'alarm-chip';
+      chip.href = `#/rooms/${room.id}`;
+      chip.dataset.level = alarm.level;
+      chip.textContent = chipText(alarm.count);
+      chip.title = `${levelLabel(alarm.level)} alarm`;
+      name.append(' ', chip);
+    }
     tr.append(
       name,
       cell(`${metres.format(room.length)} × ${metres.format(room.width)} × ${metres.format(room.height)}`, 'Size (m)'),

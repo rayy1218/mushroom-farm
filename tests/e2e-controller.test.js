@@ -22,10 +22,13 @@ test('CO2 at the upper limit starts an air exchange, the lower limit ends it', a
     name: 'Room 1', length: 6, width: 4, height: 2.5, trhAddress: 1, co2Address: 2, relayAddress: 10, acAddress: 20,
   });
   const client = createModbusClient({ host: '127.0.0.1', port: device.modbusPort, timeoutMs: 500 });
+  // One clock for the farm: the machine protection times (30 s, 60 s, 2 min) run on simulated time, 10 s per cycle.
+  let clock = Date.now();
+  const now = () => clock;
   let controller = null;
-  const poller = createPoller({ db, client, intervalMs: 60_000, log: () => {}, afterCycle: (start) => controller.run(start) });
-  const machines = createMachines({ db, client, poller });
-  controller = createController({ db, machines });
+  const poller = createPoller({ db, client, intervalMs: 60_000, now, log: () => {}, afterCycle: (start) => controller.run(start) });
+  const machines = createMachines({ db, client, poller, now });
+  controller = createController({ db, machines, now });
   controller.update(room.id, { auto: true });
 
   t.after(async () => {
@@ -39,6 +42,7 @@ test('CO2 at the upper limit starts an air exchange, the lower limit ends it', a
   const commands = () => db.getCommands(room.id);
   // One farm cycle = 10 simulated seconds on the device, then a poll and a control decision.
   const cycle = async () => {
+    clock += 10_000;
     device.sim.tick();
     await poller.cycle();
   };

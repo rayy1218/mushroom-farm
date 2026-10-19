@@ -4,11 +4,14 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { decide, validateControl, DEFAULTS } from '../server/controller.js';
 
-const bands = { co2Low: 600, co2High: 750, tLow: 21, tHigh: 23, rhLow: 85, rhHigh: 95 };
+const bands = { co2Low: 600, co2High: 750, co2Safety: 1250, exchangeMaxMin: 10, tLow: 21, tHigh: 23, rhLow: 85, rhHigh: 95 };
 const off = { exchange: false, humidifier: false };
+const NOW = 10_000_000;
 
-function run({ state = off, co2 = 650, rh = 90, b = bands, during, fan } = {}) {
-  return decide({ bands: b, state, readings: { rh, co2 }, humidifierDuringExchange: during, acFan: fan });
+// A state given as { exchange, humidifier } is taken as long settled: an exchange running for 1 min, one off for ever.
+function run({ state = off, co2 = 650, rh = 90, b = bands, during, fan, faults, now = NOW } = {}) {
+  const full = { exchangeSince: state.exchange ? now - 60_000 : null, exchangeEndedAt: null, cappedInRow: 0, humidifierSince: null, ...state };
+  return decide({ bands: b, state: full, readings: { rh, co2 }, faults, now, humidifierDuringExchange: during, acFan: fan });
 }
 
 test('air exchange: on at or above the upper limit, off at or below the lower, kept between', () => {
@@ -102,7 +105,7 @@ test('a missing CO2 reading keeps the air exchange state and says so', () => {
     const r = run({ state: { exchange, humidifier: false }, co2: null, rh: 90 });
     assert.equal(r.state.exchange, exchange);
     assert.equal(r.desired.intake, exchange);
-    assert.equal(r.reasons.exchange, `CO₂ sensor not answering: air exchange kept ${exchange ? 'on' : 'off'}`);
+    assert.equal(r.reasons.exchange, `CO₂ reading not usable: air exchange kept ${exchange ? 'on' : 'off'}`);
   }
 });
 
@@ -140,7 +143,7 @@ test('reasons name the rule and the numbers', () => {
 
 test('decide does not change its input', () => {
   const state = { exchange: false, humidifier: false };
-  decide({ bands, state, readings: { co2: 800, rh: 80 } });
+  decide({ bands, state, readings: { co2: 800, rh: 80 }, now: NOW });
   assert.deepEqual(state, off);
 });
 
@@ -164,5 +167,5 @@ test('validateControl: defaults are valid; each field and the low < high check',
   assert.deepEqual(bad({ co2Low: 800 }), { error: 'CO₂ band lower limit must be below the upper limit', field: 'co2Low' });
   assert.equal(bad({ tLow: 23 }).field, 'tLow');
   assert.equal(bad({ rhLow: 95 }).field, 'rhLow');
-  assert.equal(bad({ co2Low: 300, co2High: 5000, tLow: 16, tHigh: 35, rhLow: 40, rhHigh: 100 }), null);
+  assert.equal(bad({ co2Low: 300, co2High: 5000, tLow: 16, tHigh: 35, rhLow: 40, rhHigh: 100, co2Safety: 5001 }), null);
 });

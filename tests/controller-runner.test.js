@@ -28,8 +28,8 @@ function setup(t, { db = openDb(':memory:'), room = WIRED, onWrite = null, log =
   const api = {
     db, writes, controller, machines, id,
     clock: () => clock,
-    async cycle({ co2 = 650, rh = 90, trhOk = true, co2Ok = true } = {}) {
-      clock += 5000;
+    async cycle({ co2 = 650, rh = 90, trhOk = true, co2Ok = true, dt = 30_000 } = {}) {
+      clock += dt;
       const start = clock;
       const r = db.getRoom(id);
       if (r.trhAddress) db.addReading({ roomId: id, kind: 'trh', address: r.trhAddress, at: start, ok: trhOk, t: trhOk ? 22 : null, rh: trhOk ? rh : null, error: trhOk ? null : 'timeout' });
@@ -72,7 +72,7 @@ test('an air exchange starts at the upper limit and ends at the lower; only diff
   setAuto(s.controller, s.id);
   await s.cycle();
   s.writes.length = 0;
-  await s.cycle({ co2: 760 });
+  await s.cycle({ co2: 760, dt: 120_000 }); // the aircon changes at most every 2 min
   assert.deepEqual(s.writes, [
     ['coil', 3, 0, true], ['coil', 3, 1, true], // intake, exhaust
     ['coil', 3, 3, true], // humidifier
@@ -83,7 +83,7 @@ test('an air exchange starts at the upper limit and ends at the lower; only diff
   s.writes.length = 0;
   await s.cycle({ co2: 700 }); // between: nothing changes
   assert.deepEqual(s.writes, []);
-  await s.cycle({ co2: 600 });
+  await s.cycle({ co2: 600, dt: 120_000 });
   assert.deepEqual(s.writes, [
     ['coil', 3, 0, false], ['coil', 3, 1, false], ['coil', 3, 3, false],
     ['regs', 4, 0, [1, 0, 220, 0]],
@@ -113,11 +113,11 @@ test('a sensor that failed this cycle keeps the rule state; an old reading does 
   s.writes.length = 0;
   await s.cycle({ co2Ok: false });
   assert.equal(s.controller.get(s.id).exchange, true);
-  assert.equal(s.controller.get(s.id).reasons.exchange, 'CO₂ sensor not answering: air exchange kept on');
+  assert.equal(s.controller.get(s.id).reasons.exchange, 'CO₂ reading not usable: air exchange kept on');
   assert.deepEqual(s.writes, []);
   // No new reading at all: the latest one is older than the cycle start.
   await s.controller.run(s.clock() + 1);
-  assert.equal(s.controller.get(s.id).reasons.exchange, 'CO₂ sensor not answering: air exchange kept on');
+  assert.equal(s.controller.get(s.id).reasons.exchange, 'CO₂ reading not usable: air exchange kept on');
   assert.equal(s.controller.get(s.id).reasons.humidifier, 'Humidifier: on during air exchange');
 });
 
@@ -203,7 +203,7 @@ test('forget drops the reasons of a deleted room; a new room starts empty', asyn
   s.db.deleteRoom(s.id);
   s.controller.forget(s.id);
   const other = s.db.createRoom({ ...WIRED, name: 'Room 2', trhAddress: 11, co2Address: 12, relayAddress: 13, acAddress: 14 }).id;
-  assert.deepEqual(s.controller.get(other).reasons, { exchange: '', humidifier: '', ac: '', circulation: '' });
+  assert.deepEqual(s.controller.get(other).reasons, { exchange: '', humidifier: '', ac: '', circulation: '', held: { humidifier: '', ac: '' } });
   if (other === s.id) assert.equal(s.controller.get(other).reasons.exchange, '');
 });
 
@@ -338,7 +338,7 @@ test('humidifier during exchange off: changed between cycles, the next cycle sen
   assert.equal(s.db.getCommands(s.id).relay.humidifier, true); // forced on during the exchange
   s.controller.update(s.id, { humidifierDuringExchange: false });
   assert.equal(s.db.getCommands(s.id).relay.humidifier, true); // nothing happens until the next cycle
-  await s.cycle({ co2: 800, rh: 96 });
+  await s.cycle({ co2: 800, rh: 96, dt: 60_000 }); // the humidifier command changes at most once a minute
   assert.equal(s.db.getCommands(s.id).relay.humidifier, false);
   assert.equal(s.db.getCommands(s.id).relay.intake, true);
   assert.equal(s.controller.get(s.id).reasons.humidifier, 'Humidifier: off (RH 96 ≥ 95; not forced during air exchange)');
@@ -352,7 +352,7 @@ test('aircon fan changed between cycles: the next cycle sends the new fan', asyn
   assert.equal(s.db.getCommands(s.id).ac.fan, 'auto');
   s.controller.update(s.id, { acFan: 'low' });
   assert.equal(s.db.getCommands(s.id).ac.fan, 'auto'); // nothing happens until the next cycle
-  await s.cycle();
+  await s.cycle({ dt: 120_000 }); // the aircon changes at most every 2 min
   assert.equal(s.db.getCommands(s.id).ac.fan, 'low');
   assert.equal(s.controller.get(s.id).acFan, 'low');
   assert.equal(s.controller.get(s.id).reasons.ac, 'Aircon: 22.0 °C (middle of 21–23), fan low');

@@ -45,10 +45,14 @@ export function formatHm(ms) {
   return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
 
-// "Air exchange on since 10:42 (12 min)" or "Air exchange off"; now is injectable.
+// "Air exchange on since 10:42 (stops by 10:52)" with the room's time limit, "(12 min)" without; or "Air exchange off".
+// now is injectable.
 export function exchangeLine(c, now = Date.now()) {
   if (!c.exchange) return 'Air exchange off';
   if (c.exchangeSince == null) return 'Air exchange on';
+  if (Number.isFinite(c.exchangeMaxMin)) {
+    return `Air exchange on since ${formatHm(c.exchangeSince)} (stops by ${formatHm(c.exchangeSince + c.exchangeMaxMin * 60000)})`;
+  }
   const min = Math.max(0, Math.floor((now - c.exchangeSince) / 60000));
   const length = min >= 60 ? `${Math.floor(min / 60)} h ${min % 60} min` : `${min} min`;
   return `Air exchange on since ${formatHm(c.exchangeSince)} (${length})`;
@@ -88,12 +92,54 @@ export function locateField(field) {
   return null;
 }
 
-// The six values the card sends with Save.
+// The values the card sends with Save: the six band values, and the safety values when they are given.
 export function bandsBody(values) {
   const body = {};
   for (const band of BANDS) {
     body[band.low] = values[band.low];
     body[band.high] = values[band.high];
   }
+  for (const f of SAFETY_FIELDS) if (values[f.key] !== undefined) body[f.key] = values[f.key];
   return body;
+}
+
+// ---- safety settings (spec 2026-10-19-safety-and-history-design.md 2.5, 6) ----
+
+// The two inputs next to the bands, saved with Save.
+export const SAFETY_FIELDS = [
+  { key: 'co2Safety', label: 'CO₂ safety level (ppm)', min: 300, max: 10000, step: '1' },
+  { key: 'exchangeMaxMin', label: 'Air exchange time limit (min)', min: 1, max: 120, step: '1' },
+];
+
+// Which safety input a server field belongs to, or null.
+export function locateSafetyField(field) {
+  return SAFETY_FIELDS.find((f) => f.key === field) ?? null;
+}
+
+// Checks the typed safety values like the server. → { field, message } or null.
+export function checkSafety(co2High, co2Safety, exchangeMaxMin) {
+  if (!Number.isFinite(co2Safety) || co2Safety > 10000) return { field: 'co2Safety', message: 'CO₂ safety level must be a number up to 10000 ppm' };
+  if (co2Safety <= co2High) return { field: 'co2Safety', message: 'CO₂ safety level must be above the CO₂ band upper limit' };
+  if (!Number.isInteger(exchangeMaxMin) || exchangeMaxMin < 1 || exchangeMaxMin > 120) {
+    return { field: 'exchangeMaxMin', message: 'Air exchange time limit must be a whole number from 1 to 120 min' };
+  }
+  return null;
+}
+
+// "CO₂ sensor: fault (value does not change)": one line for each sensor whose last check was not ok.
+// checks is { trh, co2 } of the control view, null for a sensor not checked yet.
+export function checkLines(checks) {
+  const lines = [];
+  for (const [key, name] of [['trh', 'T/RH probe'], ['co2', 'CO₂ sensor']]) {
+    const r = checks?.[key];
+    if (!r || r.ok) continue;
+    const why = String(r.why ?? '').replace(/ \(frozen\)$/, '');
+    lines.push(`${name}: ${r.fault ? 'fault' : 'reading not used'} (${why})`);
+  }
+  return lines;
+}
+
+// The wait text under a machine's reason ("Humidifier waits: minimum on time, 40 s to go"), or ''.
+export function heldLine(c, key) {
+  return c?.reasons?.held?.[key] ?? '';
 }

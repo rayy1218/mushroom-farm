@@ -221,6 +221,13 @@ function toRoom(row) {
   };
 }
 
+function toAlarm(row) {
+  return {
+    id: row.id, roomId: row.room_id, roomName: row.room_name, key: row.key, level: row.level, text: row.text,
+    raisedAt: row.raised_at, clearedAt: row.cleared_at, ackedAt: row.acked_at,
+  };
+}
+
 // path is a file path or ':memory:'. Fields passed in must already be valid
 // (see validateRoom in rooms.js).
 export function openDb(path) {
@@ -250,10 +257,10 @@ export function openDb(path) {
     deleteMachineLog: db.prepare('DELETE FROM machine_log WHERE room_id = ?'),
     control: db.prepare('SELECT * FROM room_controls WHERE room_id = ?'),
     setControl: db.prepare(`UPDATE room_controls SET auto = ?, co2_low = ?, co2_high = ?, t_low = ?, t_high = ?,
-                                   rh_low = ?, rh_high = ?, humidifier_during_exchange = ?, ac_fan = ? WHERE room_id = ?`),
-    setControlState: db.prepare(`UPDATE room_controls SET exchange = ?1, humidifier = ?2,
-                                        exchange_since = CASE WHEN ?1 = 0 THEN NULL ELSE COALESCE(exchange_since, ?3) END
-                                 WHERE room_id = ?4`),
+                                   rh_low = ?, rh_high = ?, humidifier_during_exchange = ?, ac_fan = ?,
+                                   co2_safety = ?, exchange_max_min = ? WHERE room_id = ?`),
+    setControlState: db.prepare(`UPDATE room_controls SET exchange = ?, humidifier = ?, exchange_since = ?,
+                                        exchange_ended_at = ?, capped_in_row = ?, humidifier_since = ? WHERE room_id = ?`),
     setRelay: Object.fromEntries(RELAY_KEYS.map((key) => [key,
       db.prepare(`UPDATE machine_commands SET ${key} = ?, relay_sent_at = ? WHERE room_id = ?`)])),
     setAc: db.prepare(`UPDATE machine_commands SET ac_power = ?, ac_mode = ?, ac_setpoint = ?, ac_fan = ?, ac_sent_at = ?
@@ -271,6 +278,20 @@ export function openDb(path) {
                             SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
                             WHERE EXISTS (SELECT 1 FROM rooms WHERE id = ? AND
                               CASE ? WHEN 'trh' THEN trh_address WHEN 'co2' THEN co2_address END = ?)`),
+    // Alarms (spec 2026-10-19-safety-and-history-design.md section 3): the queries of the alarm module and routes.
+    insertAlarm: db.prepare('INSERT INTO alarms (room_id, key, level, text, raised_at) VALUES (?, ?, ?, ?, ?)'),
+    clearAlarm: db.prepare('UPDATE alarms SET cleared_at = ? WHERE room_id = ? AND key = ? AND cleared_at IS NULL'),
+    alarm: db.prepare(`SELECT a.*, r.name AS room_name FROM alarms a JOIN rooms r ON r.id = a.room_id WHERE a.id = ?`),
+    activeAlarms: db.prepare(`SELECT a.*, r.name AS room_name FROM alarms a JOIN rooms r ON r.id = a.room_id
+                              WHERE a.room_id = ? AND a.cleared_at IS NULL ORDER BY a.id`),
+    // Current = active, or cleared and not acknowledged. Critical first, then newest.
+    currentAlarms: db.prepare(`SELECT a.*, r.name AS room_name FROM alarms a JOIN rooms r ON r.id = a.room_id
+                               WHERE (a.cleared_at IS NULL OR a.acked_at IS NULL) AND (?1 IS NULL OR a.room_id = ?1)
+                               ORDER BY a.level = 'critical' DESC, a.raised_at DESC, a.id DESC`),
+    alarmHistory: db.prepare(`SELECT a.*, r.name AS room_name FROM alarms a JOIN rooms r ON r.id = a.room_id
+                              WHERE a.room_id = ? ORDER BY a.id DESC LIMIT 50`),
+    ackAlarm: db.prepare('UPDATE alarms SET acked_at = COALESCE(acked_at, ?) WHERE id = ?'),
+    ackRoomAlarms: db.prepare('UPDATE alarms SET acked_at = ? WHERE room_id = ? AND acked_at IS NULL'), // all of those are current
     getSetting: db.prepare('SELECT value FROM settings WHERE key = ?'),
     setSetting: db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)'),
     latest: db.prepare(STATUS_SQL.latest),
@@ -367,7 +388,8 @@ export function openDb(path) {
     },
 
     // The automatic control settings and band states, or null when there is no such room:
-    // { auto, co2Low, co2High, tLow, tHigh, rhLow, rhHigh, humidifierDuringExchange, acFan, exchange, exchangeSince, humidifier }
+    // { auto, co2Low, co2High, tLow, tHigh, rhLow, rhHigh, humidifierDuringExchange, acFan, co2Safety, exchangeMaxMin,
+    //   exchange, exchangeSince, exchangeEndedAt, cappedInRow, humidifier, humidifierSince }
     getControl(roomId) {
       let r = q.control.get(roomId);
       if (!r) {
@@ -379,17 +401,71 @@ export function openDb(path) {
         auto: r.auto === 1, co2Low: r.co2_low, co2High: r.co2_high, tLow: r.t_low, tHigh: r.t_high,
         rhLow: r.rh_low, rhHigh: r.rh_high, humidifierDuringExchange: r.humidifier_during_exchange === 1, acFan: r.ac_fan,
         exchange: r.exchange === 1, exchangeSince: r.exchange_since, humidifier: r.humidifier === 1,
+        co2Safety: r.co2_safety, exchangeMaxMin: r.exchange_max_min, exchangeEndedAt: r.exchange_ended_at,
+        cappedInRow: r.capped_in_row, humidifierSince: r.humidifier_since,
       };
     },
 
     // Returns true when the room exists. Settings must be valid (see validateControl in controller.js).
-    setControl(roomId, { auto, co2Low, co2High, tLow, tHigh, rhLow, rhHigh, humidifierDuringExchange, acFan }) {
-      return q.setControl.run(auto ? 1 : 0, co2Low, co2High, tLow, tHigh, rhLow, rhHigh, humidifierDuringExchange ? 1 : 0, acFan, roomId).changes > 0;
+    setControl(roomId, { auto, co2Low, co2High, tLow, tHigh, rhLow, rhHigh, humidifierDuringExchange, acFan, co2Safety, exchangeMaxMin }) {
+      return q.setControl.run(auto ? 1 : 0, co2Low, co2High, tLow, tHigh, rhLow, rhHigh, humidifierDuringExchange ? 1 : 0, acFan,
+        co2Safety, exchangeMaxMin, roomId).changes > 0;
     },
 
-    // exchangeSince keeps the time the exchange began and is cleared when it ends.
-    setControlState(roomId, { exchange, humidifier }, at) {
-      return q.setControlState.run(exchange ? 1 : 0, humidifier ? 1 : 0, at, roomId).changes > 0;
+    // Without exchangeSince it keeps the time the exchange began and is cleared when it ends. exchangeEndedAt, cappedInRow
+    // and humidifierSince are kept when not given (null is a value).
+    setControlState(roomId, { exchange, humidifier, exchangeSince, exchangeEndedAt, cappedInRow, humidifierSince }, at) {
+      const r = q.control.get(roomId);
+      if (!r) return false;
+      const since = exchangeSince !== undefined ? exchangeSince : exchange ? (r.exchange_since ?? at) : null;
+      return q.setControlState.run(exchange ? 1 : 0, humidifier ? 1 : 0, since,
+        exchangeEndedAt !== undefined ? exchangeEndedAt : r.exchange_ended_at,
+        cappedInRow !== undefined ? cappedInRow : r.capped_in_row,
+        humidifierSince !== undefined ? humidifierSince : r.humidifier_since, roomId).changes > 0;
+    },
+
+    // ---- Alarms (spec 2026-10-19-safety-and-history-design.md section 3) ----
+    // An alarm is { id, roomId, roomName, key, level, text, raisedAt, clearedAt, ackedAt }.
+
+    // Raises an alarm and returns its id. Throws when the room already has an active alarm with that key.
+    raiseAlarm(roomId, key, level, text, at) {
+      return Number(q.insertAlarm.run(roomId, key, level, text, at).lastInsertRowid);
+    },
+
+    // Returns true when an active alarm was cleared.
+    clearAlarm(roomId, key, at) {
+      return q.clearAlarm.run(at, roomId, key).changes > 0;
+    },
+
+    getAlarm(id) {
+      const row = q.alarm.get(id);
+      return row ? toAlarm(row) : null;
+    },
+
+    // The room's active alarms.
+    activeAlarms(roomId) {
+      return q.activeAlarms.all(roomId).map(toAlarm);
+    },
+
+    // Active alarms, and cleared ones not yet acknowledged: of one room, or of every room. Critical first, then newest.
+    currentAlarms(roomId = null) {
+      return q.currentAlarms.all(roomId).map(toAlarm);
+    },
+
+    // { current, history }: history = the room's last 50 alarms of any state, newest first.
+    roomAlarms(roomId) {
+      return { current: this.currentAlarms(roomId), history: q.alarmHistory.all(roomId).map(toAlarm) };
+    },
+
+    // Acknowledging again keeps the first time. Returns the alarm, or null when there is none.
+    ackAlarm(id, at) {
+      if (q.ackAlarm.run(at, id).changes === 0) return null;
+      return this.getAlarm(id);
+    },
+
+    // Acknowledges every unacknowledged alarm of the room (all of them are current). Returns how many.
+    ackRoomAlarms(roomId, at) {
+      return Number(q.ackRoomAlarms.run(at, roomId).changes);
     },
 
     // Both of these return true when the room exists.

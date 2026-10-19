@@ -5,6 +5,7 @@ import { request, OFFLINE } from './api.js';
 import { openRoomDialog, closeRoomDialog } from './room-dialog.js';
 import { createMachines } from './machines.js';
 import { createControl } from './control.js';
+import { createAlarmsCard } from './alarms.js';
 import { drawLineChart } from './chart.js';
 import { refreshMs } from './settings-math.js';
 import { formatClock, formatAgo, chartPoints } from './chart-math.js';
@@ -48,6 +49,7 @@ const TEMPLATE = `
     <a href="#/rooms">Back to the rooms</a>
   </div>
   <div data-body hidden>
+    <section data-alarms hidden></section>
     <div class="sensors" data-sensors></div>
     <section data-control hidden></section>
     <section data-machines></section>
@@ -82,6 +84,7 @@ export function mount(container, { id }) {
     missing: q('[data-missing]'),
     body: q('[data-body]'),
     sensors: q('[data-sensors]'),
+    alarmsHost: q('[data-alarms]'),
     controlHost: q('[data-control]'),
     machinesHost: q('[data-machines]'),
     charts: q('[data-charts]'),
@@ -96,6 +99,7 @@ export function mount(container, { id }) {
   let refresh = refreshMs(null);
   let machines = null; // the Machines card, made on the first render
   let control = null; // the Automatic control card, made on the first render
+  let alarmsCard = null; // the Alarms card, made on the first render
   let ticker = null;
   const chartCards = new Map(); // chart id → { card, host, none, chart }
 
@@ -120,6 +124,7 @@ export function mount(container, { id }) {
         request('GET', `/api/rooms/${id}/machines`).catch(() => null),
         request('GET', `/api/rooms/${id}/control`).catch(() => null), // optional in the same way
         request('GET', '/api/settings').catch(() => null), // a failure keeps the 5 s refresh
+        request('GET', `/api/rooms/${id}/alarms`).catch(() => null), // optional: alarms
       ]);
     } catch (err) {
       if (!alive() || seq !== loadSeq) return;
@@ -138,13 +143,13 @@ export function mount(container, { id }) {
       return;
     }
     if (!alive() || seq !== loadSeq) return;
-    const [r, list, machineData, controlData, settingsData] = fetched;
+    const [r, list, machineData, controlData, settingsData, alarmData] = fetched;
     refresh = refreshMs(settingsData);
     room = r;
     sensors = { trh: list.find((s) => s.kind === 'trh'), co2: list.find((s) => s.kind === 'co2') };
     els.banner.hidden = true;
     els.missing.hidden = true;
-    render(machineData, token, controlData, controlToken);
+    render(machineData, token, controlData, controlToken, alarmData);
     schedule();
   }
 
@@ -265,15 +270,17 @@ export function mount(container, { id }) {
 
   let built = false;
   let bands = null; // the latest control settings, for the band lines on the charts
-  function render(machineData, token, controlData, controlToken) {
+  function render(machineData, token, controlData, controlToken, alarmData) {
     renderHead();
     els.body.hidden = false;
     if (!built) {
+      makeAlarms();
       makeMachines();
       makeControl();
       buildCharts();
       built = true;
     }
+    alarmsCard.update(alarmData); // hides itself while there are no current alarms; a failed read keeps the last data
     // The card shows only once a good reply came; later failures keep the last good data.
     // It is updated before the sensor cards so focus handling there sees the final page.
     if (machineData) {
@@ -288,6 +295,20 @@ export function mount(container, { id }) {
     }
     renderSensors();
     renderCharts();
+  }
+
+  // ---- Alarms card (spec 2026-10-19-safety-and-history-design.md section 6) ----
+  function makeAlarms() {
+    alarmsCard = createAlarmsCard(els.alarmsHost, {
+      roomId: id,
+      onChange: () => { if (alive()) load(); },
+      onOffline: () => {
+        if (!els.banner.hidden) return;
+        els.bannerText.textContent = OFFLINE;
+        els.retry.hidden = false;
+        els.banner.hidden = false;
+      },
+    });
   }
 
   function makeMachines() {
@@ -355,6 +376,7 @@ export function mount(container, { id }) {
     clearInterval(ticker);
     machines?.destroy();
     control?.destroy();
+    alarmsCard?.destroy();
     for (const { chart } of chartCards.values()) chart?.destroy();
     closeRoomDialog();
     document.title = 'Rooms · Mushroom farm';
