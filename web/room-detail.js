@@ -1,14 +1,14 @@
 // Room detail page: the room, its two sensors (status, latest values), its machines and three charts of the last 50 polls.
-// Refreshes every 5 s while shown.
+// Refreshes every reading interval (2–30 s; 5 s when the settings cannot be read) while shown.
 
 import { request, OFFLINE } from './api.js';
 import { openRoomDialog, closeRoomDialog } from './room-dialog.js';
 import { createMachines } from './machines.js';
 import { createControl } from './control.js';
 import { drawLineChart } from './chart.js';
+import { refreshMs } from './settings-math.js';
 import { formatClock, formatAgo, chartPoints } from './chart-math.js';
 
-const REFRESH_MS = 5000;
 const metres = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
 const cubic = new Intl.NumberFormat(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
@@ -93,6 +93,7 @@ export function mount(container, { id }) {
   let loadSeq = 0;
   let editedFromCard = false; // the dialog was opened from a sensor card button, which re-rendering replaces
   let timer = null;
+  let refresh = refreshMs(null);
   let machines = null; // the Machines card, made on the first render
   let control = null; // the Automatic control card, made on the first render
   let ticker = null;
@@ -102,7 +103,7 @@ export function mount(container, { id }) {
 
   function schedule() {
     clearTimeout(timer);
-    timer = setTimeout(load, REFRESH_MS);
+    timer = setTimeout(load, refresh);
   }
 
   async function load() {
@@ -118,6 +119,7 @@ export function mount(container, { id }) {
         // The machines are optional: a failing or missing route must not take the sensors down.
         request('GET', `/api/rooms/${id}/machines`).catch(() => null),
         request('GET', `/api/rooms/${id}/control`).catch(() => null), // optional in the same way
+        request('GET', '/api/settings').catch(() => null), // a failure keeps the 5 s refresh
       ]);
     } catch (err) {
       if (!alive() || seq !== loadSeq) return;
@@ -136,7 +138,8 @@ export function mount(container, { id }) {
       return;
     }
     if (!alive() || seq !== loadSeq) return;
-    const [r, list, machineData, controlData] = fetched;
+    const [r, list, machineData, controlData, settingsData] = fetched;
+    refresh = refreshMs(settingsData);
     room = r;
     sensors = { trh: list.find((s) => s.kind === 'trh'), co2: list.find((s) => s.kind === 'co2') };
     els.banner.hidden = true;

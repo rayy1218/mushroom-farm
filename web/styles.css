@@ -28,7 +28,7 @@
 :root {
   --radius: 6px;
   --fs-xs: 12px; --fs-sm: 13px; --fs-md: 15px; --fs-lg: 18px; --fs-xl: 22px; --fs-2xl: 28px;
-  --side-w: 232px; --topbar-h: 52px;
+  --side-w: 232px; --topbar-h: 52px; --tab-h: 56px;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   color: var(--ink);
   background: var(--page);
@@ -193,11 +193,21 @@ dialog::backdrop { background: var(--backdrop); }
 /* ---- App shell (from the previous app): side bar >= 900 px, top bar below ---- */
 .app { display: flex; min-height: 100vh; min-height: 100dvh; }
 .col { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.col > main { flex: 1; align-content: start; padding: 14px 14px 32px; outline: none; }
+.col > main { flex: 1; align-content: start; padding: 14px 14px calc(var(--tab-h) + env(safe-area-inset-bottom) + 28px); outline: none; }
+html { scroll-padding-top: var(--topbar-h); }
+@media (max-width: 899px) { html { scroll-padding-bottom: calc(var(--tab-h) + env(safe-area-inset-bottom)); } }
 .skip { position: absolute; left: 8px; top: -60px; z-index: 50; padding: 8px 14px; border-radius: 6px; background: var(--ink); color: var(--surface); text-decoration: none; font-weight: 600; }
 .skip:focus { top: 8px; }
 
 .side { display: none; }
+.tabbar { display: flex; position: fixed; inset: auto 0 0 0; z-index: 20; background: var(--surface); border-top: 1px solid var(--border);
+  padding-bottom: env(safe-area-inset-bottom); padding-inline: env(safe-area-inset-left) env(safe-area-inset-right); }
+.tabbar a { flex: 1; min-height: var(--tab-h); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  color: var(--muted); text-decoration: none; font: 600 11px/1.1 system-ui, sans-serif; position: relative; }
+.tabbar a .ico { width: 22px; height: 22px; }
+.tabbar a:focus-visible { outline: 2px solid var(--ink); outline-offset: -4px; }
+.tabbar a[aria-current="page"] { color: var(--ink); }
+.tabbar a[aria-current="page"]::before { content: ""; position: absolute; top: 0; left: 28%; right: 28%; height: 3px; border-radius: 0 0 3px 3px; background: var(--ink); }
 .brand { display: flex; align-items: center; gap: 10px; }
 .brand-mark { width: 26px; height: 26px; border-radius: 8px; flex: none; background: var(--ink); position: relative; }
 .brand-mark::before { content: ""; position: absolute; left: 4px; right: 4px; top: 5px; height: 11px; border-radius: 11px 11px 3px 3px; background: var(--surface); }
@@ -226,6 +236,8 @@ dialog::backdrop { background: var(--backdrop); }
 .back:hover { color: var(--ink); text-decoration: underline; }
 
 @media (min-width: 900px) {
+  :root { --tab-h: 0px; }
+  .tabbar { display: none; }
   .side { display: flex; flex-direction: column; gap: 20px; flex: none; width: var(--side-w); height: 100vh; height: 100dvh; position: sticky; top: 0;
     padding: 18px 12px 14px; background: var(--surface); border-right: 1px solid var(--border); overflow-y: auto; }
   .side .brand { padding: 4px 8px 0; }
@@ -245,7 +257,7 @@ dialog::backdrop { background: var(--backdrop); }
   .page-title { font-size: var(--fs-2xl); }
   .page-sub { font-size: var(--fs-md); }
 }
-@media print { .side, .topbar { display: none !important; } }
+@media print { .side, .topbar, .tabbar { display: none !important; } }
 
 /* ---- Rooms list ---- */
 .rooms .name a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--axis); text-decoration-thickness: 1px; text-underline-offset: 3px; }
@@ -361,3 +373,11 @@ button.toggle[data-on="true"]:hover { opacity: .85; background: var(--ink); }
   .c-band { grid-template-columns: 1fr 1fr; }
   .c-band .m-name { grid-column: 1 / -1; }
 }
+
+/* ---- Settings page ---- */
+.settings { max-width: 480px; }
+.settings h2 { margin-bottom: 12px; }
+.settings .field input { max-width: 160px; }
+.s-hint { margin: 0 0 16px; font-size: var(--fs-sm); }
+.settings .ac-send { margin-bottom: 0; }
+.s-saved { margin: 12px 0 0; font-weight: 600; color: var(--good-text); }
