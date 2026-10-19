@@ -157,3 +157,101 @@ test('a database error in one cycle does not stop the poller', async () => {
   await poller.stop();
   assert.ok(readings.length >= 1);
 });
+
+// A scheduler and a clock the test moves by hand: no real waiting.
+function manualTime() {
+  const time = { now: 0, timers: [], nextId: 1 };
+  time.clock = () => time.now;
+  time.setTimer = (fn, delay) => { const t = { id: time.nextId++, fn, delay }; time.timers.push(t); return t; };
+  time.clearTimer = (t) => { time.timers = time.timers.filter((x) => x !== t); };
+  return time;
+}
+
+// A client whose requests wait until the test lets them go.
+function gatedClient() {
+  const gates = [];
+  return {
+    gates,
+    async readRegisters() {
+      await new Promise((resolve) => gates.push(resolve));
+      return [1, 2];
+    },
+  };
+}
+
+const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+test('setIntervalMs while waiting moves the next cycle to the new interval counted from the cycle start', async () => {
+  const time = manualTime();
+  const db = fakeDb([wired[0]]);
+  const poller = createPoller({ db, client: fakeClient(() => [1, 2]), intervalMs: 5000, setTimer: time.setTimer, clearTimer: time.clearTimer, clock: time.clock });
+  poller.start();
+  await settle();
+  assert.deepEqual(time.timers.map((t) => t.delay), [5000]);
+  time.now = 1000; // 1 s into the wait
+  poller.setIntervalMs(2000);
+  assert.deepEqual(time.timers.map((t) => t.delay), [1000], 'one timer only, 2 s after the cycle began');
+  poller.setIntervalMs(60000);
+  assert.deepEqual(time.timers.map((t) => t.delay), [59000]);
+  await poller.stop();
+  assert.equal(time.timers.length, 0);
+});
+
+test('setIntervalMs to an interval already over starts the next cycle at once', async () => {
+  const time = manualTime();
+  const db = fakeDb([wired[0]]);
+  const poller = createPoller({ db, client: fakeClient(() => [1, 2]), intervalMs: 60000, setTimer: time.setTimer, clearTimer: time.clearTimer, clock: time.clock });
+  poller.start();
+  await settle();
+  time.now = 10000;
+  poller.setIntervalMs(5000);
+  assert.deepEqual(time.timers.map((t) => t.delay), [0]);
+  await poller.stop();
+});
+
+test('setIntervalMs during a cycle applies when the cycle ends, and never overlaps', async () => {
+  const time = manualTime();
+  const db = fakeDb([wired[0]]);
+  const client = gatedClient();
+  const poller = createPoller({ db, client, intervalMs: 60000, setTimer: time.setTimer, clearTimer: time.clearTimer, clock: time.clock });
+  poller.start();
+  await settle();
+  assert.equal(client.gates.length, 1, 'the cycle is waiting for the sensor');
+  time.now = 8000;
+  poller.setIntervalMs(5000); // the interval is already over: due at once, but after this cycle
+  assert.deepEqual(time.timers, [], 'no second timer while the cycle runs');
+  client.gates.shift()();
+  await settle();
+  assert.deepEqual(time.timers.map((t) => t.delay), [0], 'the next cycle is due as soon as this one ended');
+  assert.equal(db.readings.length, 1);
+  await poller.stop();
+});
+
+test('setIntervalMs during a cycle with a longer interval waits the remainder after the cycle', async () => {
+  const time = manualTime();
+  const db = fakeDb([wired[0]]);
+  const client = gatedClient();
+  const poller = createPoller({ db, client, intervalMs: 1000, setTimer: time.setTimer, clearTimer: time.clearTimer, clock: time.clock });
+  poller.start();
+  await settle();
+  time.now = 300;
+  poller.setIntervalMs(10000);
+  client.gates.shift()();
+  await settle();
+  assert.deepEqual(time.timers.map((t) => t.delay), [9700]);
+  await poller.stop();
+});
+
+test('setIntervalMs before start and after stop is harmless', async () => {
+  const time = manualTime();
+  const db = fakeDb([wired[0]]);
+  const poller = createPoller({ db, client: fakeClient(() => [1, 2]), intervalMs: 5000, setTimer: time.setTimer, clearTimer: time.clearTimer, clock: time.clock });
+  poller.setIntervalMs(3000);
+  assert.deepEqual(time.timers, []);
+  poller.start();
+  await settle();
+  assert.deepEqual(time.timers.map((t) => t.delay), [3000]);
+  await poller.stop();
+  poller.setIntervalMs(1000);
+  assert.deepEqual(time.timers, []);
+});

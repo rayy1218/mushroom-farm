@@ -34,9 +34,14 @@ const EMPTY = () => ({ address: null, polls: [] });
 
 // Polls sensors and machines. log is only for errors that are not sensor failures (a database error).
 // afterCycle(cycleStart), when given, is awaited at the end of each complete cycle (automatic control).
-export function createPoller({ db, client, intervalMs = 5000, now = Date.now, log = console.error, afterCycle = null }) {
+// clock (milliseconds, monotonic), setTimer and clearTimer are only replaced by tests.
+export function createPoller({
+  db, client, intervalMs = 5000, now = Date.now, log = console.error, afterCycle = null,
+  clock = () => performance.now(), setTimer = setTimeout, clearTimer = clearTimeout,
+}) {
   let stopped = false;
   let timer = null;
+  let cycleBegan = 0; // clock() when the latest scheduled cycle began
   let running = null; // promise of the cycle in progress
   const machines = new Map(); // `${roomId}/${kind}` → { address, polls }, the last polls of each device
 
@@ -104,10 +109,10 @@ export function createPoller({ db, client, intervalMs = 5000, now = Date.now, lo
   function tick() {
     timer = null;
     if (stopped) return;
-    const began = performance.now(); // monotonic, so a clock change cannot stretch or skip the schedule
+    cycleBegan = clock(); // monotonic, so a clock change cannot stretch or skip the schedule
     cycle().then(() => {
       if (stopped) return;
-      timer = setTimeout(tick, Math.max(0, began + intervalMs - performance.now()));
+      timer = setTimer(tick, Math.max(0, cycleBegan + intervalMs - clock()));
     });
   }
 
@@ -120,12 +125,22 @@ export function createPoller({ db, client, intervalMs = 5000, now = Date.now, lo
     // Resolves once the cycle in progress (if any) is over; nothing is written after that.
     async stop() {
       stopped = true;
-      clearTimeout(timer);
+      clearTimer(timer);
       timer = null;
       await running;
     },
 
     cycle,
+
+    // Changes the interval. While waiting for the next cycle, that cycle is moved to the new interval after the
+    // start of the last one (at once if that is already over). While a cycle runs, the new interval applies
+    // when it ends; cycles never overlap and there is never more than one timer.
+    setIntervalMs(ms) {
+      intervalMs = ms;
+      if (stopped || timer === null) return;
+      clearTimer(timer);
+      timer = setTimer(tick, Math.max(0, cycleBegan + intervalMs - clock()));
+    },
 
     // { relay: { address, polls }, ac: { address, polls } } for the room: the last two polls of each
     // device, oldest first (address null and no polls when the device is not wired or not polled yet).
