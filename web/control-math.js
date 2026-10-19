@@ -26,15 +26,18 @@ export function formatHm(ms) {
   return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
 
-// "Air exchange on since 10:42" or "Air exchange off".
-export function exchangeLine(c) {
+// "Air exchange on since 10:42 (12 min)" or "Air exchange off"; now is injectable.
+export function exchangeLine(c, now = Date.now()) {
   if (!c.exchange) return 'Air exchange off';
-  return c.exchangeSince == null ? 'Air exchange on' : `Air exchange on since ${formatHm(c.exchangeSince)}`;
+  if (c.exchangeSince == null) return 'Air exchange on';
+  const min = Math.max(0, Math.floor((now - c.exchangeSince) / 60000));
+  const length = min >= 60 ? `${Math.floor(min / 60)} h ${min % 60} min` : `${min} min`;
+  return `Air exchange on since ${formatHm(c.exchangeSince)} (${length})`;
 }
 
 // The state line under the card: the exchange while auto is on, otherwise that auto is off.
-export function stateLine(c) {
-  return c.auto ? exchangeLine(c) : 'Automatic control off';
+export function stateLine(c, now = Date.now()) {
+  return c.auto ? exchangeLine(c, now) : 'Automatic control off';
 }
 
 // The accessible name of a band input, e.g. "CO₂ band low limit, ppm".

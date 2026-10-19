@@ -39,7 +39,7 @@ Stored in a new table `room_controls (room_id PK, auto, co2_low, co2_high, t_low
 
 | Route | Body / reply |
 |---|---|
-| `GET /api/rooms/:id/control` | `{ auto, co2Low, co2High, tLow, tHigh, rhLow, rhHigh, exchange, exchangeSince, reasons: { exchange, humidifier, ac, circulation } }` |
+| `GET /api/rooms/:id/control` | `{ auto, co2Low, co2High, tLow, tHigh, rhLow, rhHigh, exchange, exchangeSince, humidifierBand, reasons: { exchange, humidifier, ac, circulation } }` |
 | `PUT /api/rooms/:id/control` | any of `auto` and the six band values; validation 400 with `field` ("CO₂ band lower limit must be below the upper limit"…); reply as GET |
 | `PUT /api/rooms/:id/machines/…` | 409 while `auto` is on |
 | `GET /api/rooms/:id/machines` | unchanged, plus `auto: bool` at the top level |

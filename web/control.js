@@ -59,7 +59,7 @@ export function createControl(host, { roomId, onOffline, onGone, onChange }) {
   const autoBtn = button('', 'toggle');
   const autoState = el('span', 'toggle-state');
   autoState.setAttribute('aria-hidden', 'true');
-  autoBtn.append(el('span', 'sr-only', 'Automatic control'), autoState);
+  autoBtn.append(el('span', 'sr-only', 'Auto (automatic control)'), autoState);
   autoRow.append(autoName, autoBtn);
   const autoErr = errorNode();
 

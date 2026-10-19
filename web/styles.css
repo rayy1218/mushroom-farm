@@ -353,7 +353,7 @@ button.toggle[data-on="true"]:hover { opacity: .85; background: var(--ink); }
 .control .ac-send { margin: 12px 0; }
 .c-state { margin: 4px 0 0; font-weight: 600; }
 .c-reasons { margin: 8px 0 0; padding: 0; list-style: none; display: grid; gap: 2px; }
-.auto-note { margin: 0 0 12px; font-weight: 600; color: var(--warning-text); }
+.machines .auto-note { margin: 8px 0 16px; display: block; font-weight: 600; color: var(--warning-text); }
 .control .toggle:disabled, .machines .toggle:disabled { opacity: .6; cursor: default; }
 
 @media (max-width: 600px) {

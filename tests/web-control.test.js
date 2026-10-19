@@ -7,7 +7,7 @@ const [co2, temp, rh] = BANDS;
 test('exchange line shows the start time or off', () => {
   const at = new Date(2026, 9, 19, 10, 42, 30).getTime();
   assert.equal(formatHm(at), '10:42');
-  assert.equal(exchangeLine({ exchange: true, exchangeSince: at }), 'Air exchange on since 10:42');
+  assert.equal(exchangeLine({ exchange: true, exchangeSince: at }, at + 12 * 60000), 'Air exchange on since 10:42 (12 min)');
   assert.equal(exchangeLine({ exchange: true, exchangeSince: null }), 'Air exchange on');
   assert.equal(exchangeLine({ exchange: false, exchangeSince: at }), 'Air exchange off');
 });
@@ -46,6 +46,7 @@ test('save sends the six band values only', () => {
 test('state line says auto is off; input labels carry the band, side and unit', () => {
   assert.equal(stateLine({ auto: false, exchange: true, exchangeSince: 1 }), 'Automatic control off');
   assert.equal(stateLine({ auto: true, exchange: false }), 'Air exchange off');
+  assert.equal(stateLine({ auto: true, exchange: true, exchangeSince: 0 }, 5 * 60000), 'Air exchange on since ' + formatHm(0) + ' (5 min)');
   assert.equal(inputLabel(co2, 'low'), 'CO₂ band low limit, ppm');
   assert.equal(inputLabel(rh, 'high'), 'Humidity band high limit, %');
 });
@@ -53,4 +54,11 @@ test('state line says auto is off; input labels carry the band, side and unit', 
 test('low not below high is blamed on the low field, like the server', () => {
   assert.equal(checkBand(temp, 23, 21).field, 'low');
   assert.equal(locateField('co2'), null);
+});
+
+test('state line shows how long the exchange has run', () => {
+  const at = new Date(2026, 9, 19, 11, 28).getTime();
+  assert.equal(exchangeLine({ exchange: true, exchangeSince: at }, at + 12 * 60000), 'Air exchange on since 11:28 (12 min)');
+  assert.equal(exchangeLine({ exchange: true, exchangeSince: at }, at + 30000), 'Air exchange on since 11:28 (0 min)');
+  assert.equal(exchangeLine({ exchange: true, exchangeSince: at }, at + 135 * 60000), 'Air exchange on since 11:28 (2 h 15 min)');
 });

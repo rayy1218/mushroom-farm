@@ -51,7 +51,7 @@ async function call(method, path, body) {
 
 const DEFAULT_VIEW = {
   auto: false, co2Low: 600, co2High: 750, tLow: 21, tHigh: 23, rhLow: 85, rhHigh: 95,
-  exchange: false, exchangeSince: null, humidifier: false,
+  exchange: false, exchangeSince: null, humidifierBand: false,
   reasons: { exchange: '', humidifier: '', ac: '', circulation: '' },
 };
 

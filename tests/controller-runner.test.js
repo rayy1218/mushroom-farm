@@ -132,7 +132,7 @@ test('band states are saved: a new controller continues the hysteresis', async (
   s.db.addReading({ roomId: s.id, kind: 'co2', address: 2, at, ok: true, co2: 700 });
   await again.run(at); // a CO2 between the limits: the saved state decides
   assert.equal(again.get(s.id).exchange, true, 'between the limits the saved state is kept');
-  assert.equal(s.db.getControl(s.id).humidifier, true);
+  assert.equal(s.controller.get(s.id).humidifierBand, true);
 });
 
 test('turning auto on starts from the commanded intake and humidifier', async (t) => {
@@ -141,7 +141,7 @@ test('turning auto on starts from the commanded intake and humidifier', async (t
   await s.machines.command(s.id, 'humidifier', { on: true });
   const view = setAuto(s.controller, s.id);
   assert.equal(view.exchange, true);
-  assert.equal(s.db.getControl(s.id).humidifier, true);
+  assert.equal(s.controller.get(s.id).humidifierBand, true);
   assert.notEqual(view.exchangeSince, null);
   s.writes.length = 0;
   await s.cycle({ co2: 700, rh: 90 }); // between the limits: exchange stays on, exhaust follows

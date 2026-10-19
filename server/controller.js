@@ -118,7 +118,8 @@ export function createController({ db, machines, now = Date.now, log = console.e
       forget(roomId);
       return null;
     }
-    return { ...c, reasons: { ...emptyReasons(), ...reasons.get(roomId) } };
+    const { humidifier, ...rest } = c; // the band state, not the machine's command
+    return { ...rest, humidifierBand: humidifier, reasons: { ...emptyReasons(), ...reasons.get(roomId) } };
   }
 
   // The reading of this cycle of a sensor, or null (no data, failed, or older than the cycle).
