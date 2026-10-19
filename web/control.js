@@ -3,7 +3,7 @@
 // Controls are updated in place, so a refresh never replaces an input the person is using or has edited.
 
 import { request, OFFLINE } from './api.js';
-import { BANDS, REASONS, stateLine, inputLabel, reasonLine, checkBand, locateField, bandsBody } from './control-math.js';
+import { BANDS, REASONS, stateLine, inputLabel, reasonLine, checkBand, locateField, bandsBody, HUMIDIFIER_LABEL, humidifierOn } from './control-math.js';
 
 const COMMAND_TIMEOUT = 30000;
 
@@ -48,6 +48,7 @@ export function createControl(host, { roomId, onOffline, onGone, onChange }) {
   let dirty = false;
   let saving = false;
   let switching = false;
+  let switchingHum = false;
   const n = ++uid;
 
   host.className = 'card control';
@@ -111,7 +112,18 @@ export function createControl(host, { roomId, onOffline, onGone, onChange }) {
     reasonItems.set(r.key, li);
     reasonList.append(li);
   }
-  host.append(autoRow, autoErr, form, sendRow, saveErr, stateNode, reasonList);
+
+  // ---- humidifier during air exchange (a setting of its own: sent at once, not part of Save) ----
+  const humRow = el('div', 'c-humidifier');
+  const humName = el('span', 'm-name', HUMIDIFIER_LABEL);
+  const humBtn = button('', 'toggle');
+  const humState = el('span', 'toggle-state');
+  humState.setAttribute('aria-hidden', 'true');
+  humBtn.append(el('span', 'sr-only', HUMIDIFIER_LABEL), humState);
+  humRow.append(humName, humBtn);
+  const humErr = errorNode();
+
+  host.append(autoRow, autoErr, form, sendRow, saveErr, humRow, humErr, stateNode, reasonList);
 
   // ---- drawing ----
 
@@ -170,9 +182,18 @@ export function createControl(host, { roomId, onOffline, onGone, onChange }) {
     autoBtn.disabled = switching;
   }
 
+  function paintHumidifier() {
+    const on = humidifierOn(last);
+    humState.textContent = switchingHum ? 'Sending…' : on ? 'On' : 'Off';
+    humBtn.dataset.on = String(on);
+    humBtn.setAttribute('aria-pressed', String(on));
+    humBtn.disabled = switchingHum;
+  }
+
   function paint(c) {
     last = c;
     paintAuto();
+    paintHumidifier();
     // A refresh leaves alone what the person is editing, or has edited and not saved.
     const holding = dirty || saving || form.contains(document.activeElement);
     if (!holding) setInputs(c);
@@ -213,6 +234,32 @@ export function createControl(host, { roomId, onOffline, onGone, onChange }) {
       if (alive) {
         paintAuto();
         if (hadFocus && !document.activeElement?.closest?.('dialog')) autoBtn.focus();
+      }
+    }
+  }
+
+  async function toggleHumidifier() {
+    if (switchingHum || !last) return;
+    const hadFocus = document.activeElement === humBtn;
+    switchingHum = true;
+    paintHumidifier();
+    showError(humErr, '');
+    version++;
+    inflight++;
+    try {
+      const data = await request('PUT', `/api/rooms/${roomId}/control`, { humidifierDuringExchange: !humidifierOn(last) }, COMMAND_TIMEOUT);
+      if (!alive) return;
+      paint(data);
+      onChange?.(data);
+    } catch (err) {
+      if (!alive) return;
+      failed(err, (e) => showError(humErr, errorText(e)));
+    } finally {
+      inflight--;
+      switchingHum = false;
+      if (alive) {
+        paintHumidifier();
+        if (hadFocus && !document.activeElement?.closest?.('dialog')) humBtn.focus();
       }
     }
   }
@@ -271,6 +318,7 @@ export function createControl(host, { roomId, onOffline, onGone, onChange }) {
   }
 
   autoBtn.addEventListener('click', toggleAuto);
+  humBtn.addEventListener('click', toggleHumidifier);
   save.addEventListener('click', saveBands);
   reset.addEventListener('click', () => {
     dirty = false;

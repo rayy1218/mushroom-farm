@@ -14,6 +14,13 @@ export const REASONS = [
   { key: 'circulation', label: 'Circulation' },
 ];
 
+export const HUMIDIFIER_LABEL = 'Humidifier on during air exchange';
+
+// The setting as shown on its switch; a reply without it counts as on (the default).
+export function humidifierOn(c) {
+  return c?.humidifierDuringExchange !== false;
+}
+
 export const AUTO_NOTE = 'Automatic control is on';
 
 function pad2(n) {

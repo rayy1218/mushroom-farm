@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { BANDS, exchangeLine, formatHm, reasonLine, checkBand, locateField, stateLine, inputLabel, bandsBody } from '../web/control-math.js';
+import { BANDS, exchangeLine, formatHm, reasonLine, checkBand, locateField, stateLine, inputLabel, bandsBody, HUMIDIFIER_LABEL, humidifierOn } from '../web/control-math.js';
 
 const [co2, temp, rh] = BANDS;
 
@@ -61,4 +61,14 @@ test('state line shows how long the exchange has run', () => {
   assert.equal(exchangeLine({ exchange: true, exchangeSince: at }, at + 12 * 60000), 'Air exchange on since 11:28 (12 min)');
   assert.equal(exchangeLine({ exchange: true, exchangeSince: at }, at + 30000), 'Air exchange on since 11:28 (0 min)');
   assert.equal(exchangeLine({ exchange: true, exchangeSince: at }, at + 135 * 60000), 'Air exchange on since 11:28 (2 h 15 min)');
+});
+
+test('the humidifier switch has its label and reads the setting, on when missing', () => {
+  assert.equal(HUMIDIFIER_LABEL, 'Humidifier on during air exchange');
+  assert.equal(humidifierOn({ humidifierDuringExchange: false }), false);
+  assert.equal(humidifierOn({ humidifierDuringExchange: true }), true);
+  assert.equal(humidifierOn({}), true);
+  assert.equal(humidifierOn(null), true);
+  // it is not part of the band body
+  assert.equal('humidifierDuringExchange' in bandsBody({ co2Low: 1, co2High: 2, tLow: 3, tHigh: 4, rhLow: 5, rhHigh: 6, humidifierDuringExchange: false }), false);
 });
