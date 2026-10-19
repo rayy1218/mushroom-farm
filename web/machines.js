@@ -1,9 +1,10 @@
 // The Machines card on the room page: relay module rows and the aircon panel.
-// createMachines(host, { roomId, onEdit, onOffline, onGone }) → { update(data, token), token(), destroy() }.
+// createMachines(host, { roomId, onEdit, onOffline, onGone }) → { update(data, token), token(), setAuto(on), destroy() }.
 // Controls are updated in place, so a refresh never replaces a button or input the person is using.
 
 import { request, OFFLINE } from './api.js';
 import { formatAgo } from './chart-math.js';
+import { AUTO_NOTE } from './control-math.js';
 import {
   MACHINE_NAMES, MODES, FANS, SETPOINT_MIN, SETPOINT_MAX,
   statusWord, onOff, validSetpoint, describeAc, acBody, acMatches, lastWriteText as lastWriteMessage,
@@ -78,9 +79,13 @@ export function createMachines(host, { roomId, onEdit, onOffline, onGone }) {
   let alive = true;
   let version = 0; // bumped by every command, so a refresh that began earlier is dropped
   let inflight = 0;
+  let autoOn = false; // automatic control is on: the controls are disabled
 
   host.className = 'card machines';
   host.append(el('h2', '', 'Machines'));
+  const autoNote = el('p', 'meta auto-note', AUTO_NOTE);
+  autoNote.hidden = true;
+  host.append(autoNote);
   const relayHost = el('div', 'm-section');
   const acHost = el('div', 'm-section');
   host.append(relayHost, acHost);
@@ -88,6 +93,7 @@ export function createMachines(host, { roomId, onEdit, onOffline, onGone }) {
   // A command failed: not-found means the room is gone, anything else is shown next to the control.
   function failed(err, setError) {
     if (err.status === 404) { onGone?.(); return; } // the room page re-reads the room to decide
+    if (err.status === 409) { setAuto(true); return; } // automatic control took over: the note says so
     setError(errorText(err));
     if (err.status === 0) onOffline?.();
   }
@@ -160,7 +166,7 @@ export function createMachines(host, { roomId, onEdit, onOffline, onGone }) {
     row.state.textContent = row.busy ? 'Sending…' : row.commanded ? 'On' : 'Off';
     row.toggle.dataset.on = String(row.commanded);
     row.toggle.setAttribute('aria-pressed', String(row.commanded));
-    row.toggle.disabled = row.busy;
+    row.toggle.disabled = row.busy || autoOn;
   }
 
   async function sendRelay(key, row) {
@@ -302,7 +308,17 @@ export function createMachines(host, { roomId, onEdit, onOffline, onGone }) {
   }
 
   function setAcDisabled(disabled) {
-    for (const c of [ac.power, ac.mode, ac.setpoint, ac.fan, ac.send, ac.reset]) c.disabled = disabled;
+    for (const c of [ac.power, ac.mode, ac.setpoint, ac.fan, ac.send, ac.reset]) c.disabled = disabled || autoOn;
+  }
+
+  // Automatic control on or off: shows the note and (un)locks every control.
+  function setAuto(on) {
+    on = Boolean(on);
+    if (on === autoOn) return;
+    autoOn = on;
+    autoNote.hidden = !on;
+    if (relay?.wired) for (const row of relay.rows.values()) paintToggle(row);
+    if (ac?.wired) setAcDisabled(ac.sending);
   }
 
   function paintAc(a) {
@@ -320,6 +336,7 @@ export function createMachines(host, { roomId, onEdit, onOffline, onGone }) {
     ac.code.hidden = !(a.status === 'fault' && a.errorCode != null);
     ac.code.textContent = `Error code ${a.errorCode}`;
     showError(ac.err, ac.localError || lastAcWriteText());
+    setAcDisabled(ac.sending);
   }
 
   async function sendAc() {
@@ -364,6 +381,7 @@ export function createMachines(host, { roomId, onEdit, onOffline, onGone }) {
   }
 
   function paintAll(data) {
+    if (typeof data.auto === 'boolean') setAuto(data.auto);
     paintRelay(data.relay);
     paintAc(data.ac);
   }
@@ -376,6 +394,8 @@ export function createMachines(host, { roomId, onEdit, onOffline, onGone }) {
       if (!alive || token !== version || inflight > 0) return;
       paintAll(data);
     },
+    // The Automatic control card knows better than the machines reply (it is fresher after a switch).
+    setAuto,
     destroy() { alive = false; host.replaceChildren(); },
   };
 }
