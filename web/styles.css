@@ -126,6 +126,8 @@ dialog {
   color: var(--ink);
   border: 1px solid var(--border);
   box-shadow: 0 12px 40px var(--shadow);
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
 }
 dialog::backdrop { background: var(--backdrop); }
 
@@ -290,7 +292,6 @@ dialog::backdrop { background: var(--backdrop); }
 .missing a { color: var(--ink); }
 
 /* ---- Machines card ---- */
-dialog { max-height: calc(100dvh - 32px); overflow-y: auto; }
 .status[data-status="not-following"]::before, .status[data-status="not-running"]::before, .status[data-status="running-while-off"]::before,
 .status[data-status="no-answer"]::before, .status[data-status="fault"]::before { background: var(--critical-text); }
 .status[data-status="not-following"], .status[data-status="not-running"], .status[data-status="running-while-off"],
@@ -306,9 +307,10 @@ dialog { max-height: calc(100dvh - 32px); overflow-y: auto; }
 .machines .not-wired .addr { margin: 0; }
 
 .m-rows { display: grid; }
-.m-row { display: grid; grid-template-columns: minmax(130px, 1.2fr) 80px minmax(110px, 1fr) minmax(110px, 1fr) minmax(150px, 1.2fr); align-items: center; gap: 4px 16px;
+.m-row { display: grid; grid-template-columns: minmax(0, 1.2fr) 80px minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.2fr); align-items: center; gap: 4px 16px;
   padding: 8px 0; border-bottom: 1px solid var(--border); }
 .m-row:last-child { border-bottom: 0; }
+.m-name, .m-info, .run, .m-row .status { min-width: 0; overflow-wrap: anywhere; }
 .m-name { font-weight: 600; }
 .m-info, .run { color: var(--ink-2); font-size: var(--fs-sm); }
 .run { display: inline-flex; align-items: center; gap: 8px; }
@@ -323,7 +325,7 @@ button.toggle[data-on="true"]:hover { opacity: .85; background: var(--ink); }
 
 .ac-form { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px 16px; margin: 12px 0; max-width: 640px; }
 .ac-field { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; }
-.ac-label { font-size: 0.9rem; font-weight: 600; }
+.ac-label { font-size: var(--fs-sm); font-weight: 600; }
 .ctl { font: inherit; min-height: 40px; width: 100%; padding: 8px 10px; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--surface); color: var(--ink); }
 .ctl:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 .ctl:disabled { opacity: .6; }

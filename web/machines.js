@@ -3,9 +3,10 @@
 // Controls are updated in place, so a refresh never replaces a button or input the person is using.
 
 import { request, OFFLINE } from './api.js';
+import { formatAgo } from './chart-math.js';
 import {
   MACHINE_NAMES, MODES, FANS, SETPOINT_MIN, SETPOINT_MAX,
-  statusWord, onOff, validSetpoint, describeAc, acBody,
+  statusWord, onOff, validSetpoint, describeAc, acBody, acMatches, lastWriteText as lastWriteMessage,
 } from './machines-math.js';
 
 function el(tag, className, content) {
@@ -21,9 +22,13 @@ function button(label, className) {
   return b;
 }
 
-function select(options, label) {
+const COMMAND_TIMEOUT = 30000; // commands wait in the server's Modbus queue behind other devices
+
+let uid = 0;
+
+function select(options, id) {
   const s = el('select', 'ctl');
-  s.setAttribute('aria-label', label);
+  s.id = id;
   for (const [value, text] of Object.entries(options)) {
     const o = el('option', '', text);
     o.value = value;
@@ -37,17 +42,26 @@ function setStatus(node, status) {
   node.textContent = statusWord(status);
 }
 
+// Writes only when the text changes, so a screen reader does not repeat an unchanged message.
 function showError(node, text) {
-  node.textContent = text;
+  if (node.textContent !== text) node.textContent = text;
   node.hidden = text === '';
+}
+
+function errorNode(id) {
+  const err = el('p', 'm-error');
+  err.setAttribute('role', 'status');
+  if (id) err.id = id;
+  err.hidden = true;
+  return err;
 }
 
 function errorText(err) {
   return err.status === 0 ? `${OFFLINE}. Try again.` : err.message;
 }
 
-function lastWriteText(w) {
-  return w && !w.ok ? `Last write failed: ${w.error}` : '';
+function lastWriteText(w, inSync) {
+  return lastWriteMessage(w, Date.now(), inSync, formatAgo);
 }
 
 function notWired(text, onEdit) {
@@ -73,7 +87,7 @@ export function createMachines(host, { roomId, onEdit, onOffline, onGone }) {
 
   // A command failed: not-found means the room is gone, anything else is shown next to the control.
   function failed(err, setError) {
-    if (err.status === 404) { onGone?.(); return; }
+    if (err.status === 404) { onGone?.(); return; } // the room page re-reads the room to decide
     setError(errorText(err));
     if (err.status === 0) onOffline?.();
   }
@@ -85,12 +99,13 @@ export function createMachines(host, { roomId, onEdit, onOffline, onGone }) {
   function buildRelay(r) {
     relayHost.replaceChildren();
     relayHost.append(el('h3', '', 'Relay module'));
-    relay = { wired: r.address != null, sig: null, rows: new Map(), moduleError: null };
+    relay = { wired: r.address != null, sig: null, rows: new Map(), moduleError: null, addr: null };
     if (!relay.wired) {
       relayHost.append(notWired('No relay module address set', onEdit));
       return;
     }
-    relayHost.append(el('p', 'addr', `address ${r.address}`));
+    relay.addr = el('p', 'addr');
+    relayHost.append(relay.addr);
     relay.sig = r.machines.map((m) => m.key).join();
     const list = el('div', 'm-rows');
     for (const m of r.machines) {
@@ -99,22 +114,21 @@ export function createMachines(host, { roomId, onEdit, onOffline, onGone }) {
       const name = el('span', 'm-name', MACHINE_NAMES[m.key] ?? m.key);
       const toggle = button('', 'toggle');
       const state = el('span', 'toggle-state');
-      toggle.append(el('span', 'sr-only', `${name.textContent}: `), state);
+      state.setAttribute('aria-hidden', 'true');
+      toggle.append(el('span', 'sr-only', name.textContent), state);
       const reported = el('span', 'm-info');
       const run = el('span', 'run');
       const runText = el('span');
       run.append(el('span', 'run-dot'), runText);
       const status = el('span', 'status');
-      const err = el('p', 'm-error');
-      err.hidden = true;
+      const err = errorNode();
       row.append(name, toggle, reported, run, status, err);
       list.append(row);
       const entry = { toggle, state, reported, run, runText, status, err, busy: false, localError: '', commanded: false };
       toggle.addEventListener('click', () => sendRelay(m.key, entry));
       relay.rows.set(m.key, entry);
     }
-    relay.moduleError = el('p', 'm-error');
-    relay.moduleError.hidden = true;
+    relay.moduleError = errorNode();
     relayHost.append(list, relay.moduleError);
   }
 
@@ -126,19 +140,27 @@ export function createMachines(host, { roomId, onEdit, onOffline, onGone }) {
       if (hadFocus) relay.rows.get(hadFocus)?.toggle.focus();
     }
     if (!relay.wired) return;
+    relay.addr.textContent = `address ${r.address}`;
     for (const m of r.machines) {
       const row = relay.rows.get(m.key);
       row.commanded = m.commanded;
-      row.state.textContent = m.commanded ? 'On' : 'Off';
-      row.toggle.dataset.on = String(m.commanded);
-      row.toggle.disabled = row.busy;
+      paintToggle(row);
       row.reported.textContent = `Reported ${onOff(m.reported)}`;
       row.run.dataset.run = String(m.running);
       row.runText.textContent = m.running == null ? 'Running —' : m.running ? 'Running' : 'Stopped';
       setStatus(row.status, m.status);
       showError(row.err, row.localError);
     }
-    showError(relay.moduleError, lastWriteText(r.lastWrite));
+    // The failure no longer matters once every output reports what was commanded.
+    const inSync = r.machines.every((m) => m.reported === m.commanded);
+    showError(relay.moduleError, lastWriteText(r.lastWrite, inSync));
+  }
+
+  function paintToggle(row) {
+    row.state.textContent = row.busy ? 'Sending…' : row.commanded ? 'On' : 'Off';
+    row.toggle.dataset.on = String(row.commanded);
+    row.toggle.setAttribute('aria-pressed', String(row.commanded));
+    row.toggle.disabled = row.busy;
   }
 
   async function sendRelay(key, row) {
@@ -146,12 +168,12 @@ export function createMachines(host, { roomId, onEdit, onOffline, onGone }) {
     const hadFocus = document.activeElement === row.toggle;
     row.busy = true;
     row.localError = '';
-    row.toggle.disabled = true;
+    paintToggle(row);
     showError(row.err, '');
     version++;
     inflight++;
     try {
-      const data = await request('PUT', `/api/rooms/${roomId}/machines/${key}`, { on: !row.commanded });
+      const data = await request('PUT', `/api/rooms/${roomId}/machines/${key}`, { on: !row.commanded }, COMMAND_TIMEOUT);
       if (!alive) return;
       row.busy = false;
       paintAll(data);
@@ -163,7 +185,7 @@ export function createMachines(host, { roomId, onEdit, onOffline, onGone }) {
       inflight--;
       row.busy = false;
       if (alive) {
-        row.toggle.disabled = false;
+        paintToggle(row);
         if (hadFocus && !document.activeElement?.closest?.('dialog')) row.toggle.focus();
       }
     }
@@ -177,24 +199,27 @@ export function createMachines(host, { roomId, onEdit, onOffline, onGone }) {
   function buildAc(a) {
     acHost.replaceChildren();
     acHost.append(el('h3', '', 'Aircon'));
-    ac = { wired: a.address != null, dirty: false, sending: false, localError: '', draftPower: false };
+    const n = ++uid;
+    ac = { wired: a.address != null, dirty: false, sending: false, localError: '', draftPower: false, addr: null };
     if (!ac.wired) {
       acHost.append(notWired('No aircon gateway address set', onEdit));
       return;
     }
-    acHost.append(el('p', 'addr', `address ${a.address}`));
+    ac.addr = el('p', 'addr');
+    acHost.append(ac.addr);
     const power = button('', 'toggle');
     const powerState = el('span', 'toggle-state');
-    power.append(el('span', 'sr-only', 'Aircon power: '), powerState);
-    const mode = select(MODES, 'Aircon mode');
+    powerState.setAttribute('aria-hidden', 'true');
+    power.append(el('span', 'sr-only', 'Aircon power'), powerState);
+    const mode = select(MODES, `ac-mode-${n}`);
     const setpoint = el('input', 'ctl');
     setpoint.type = 'number';
     setpoint.min = String(SETPOINT_MIN);
     setpoint.max = String(SETPOINT_MAX);
     setpoint.step = '0.5';
     setpoint.inputMode = 'decimal';
-    setpoint.setAttribute('aria-label', 'Setpoint (°C)');
-    const fan = select(FANS, 'Aircon fan');
+    setpoint.id = `ac-setpoint-${n}`;
+    const fan = select(FANS, `ac-fan-${n}`);
     const send = button('Send', 'primary');
     const reset = button('Reset');
     reset.hidden = true;
@@ -203,7 +228,14 @@ export function createMachines(host, { roomId, onEdit, onOffline, onGone }) {
 
     const field = (label, control) => {
       const f = el('div', 'ac-field');
-      f.append(el('span', 'ac-label', label), control);
+      let caption;
+      if (control.id) {
+        caption = el('label', 'ac-label', label);
+        caption.htmlFor = control.id;
+      } else {
+        caption = el('span', 'ac-label', label); // the power button is named by its own text
+      }
+      f.append(caption, control);
       return f;
     };
     const form = el('div', 'ac-form');
@@ -215,21 +247,28 @@ export function createMachines(host, { roomId, onEdit, onOffline, onGone }) {
     const roomT = el('p', 'meta ac-roomt');
     const code = el('p', 'meta warn ac-code');
     code.hidden = true;
-    const err = el('p', 'm-error');
-    err.hidden = true;
+    const err = errorNode(`ac-error-${n}`);
     acHost.append(status, form, sendRow, info, roomT, code, err);
     Object.assign(ac, { power, powerState, mode, setpoint, fan, send, reset, unsent, info, roomT, status, code, err, form });
 
+    const clearInvalid = () => {
+      setpoint.removeAttribute('aria-invalid');
+      setpoint.removeAttribute('aria-describedby');
+    };
     const markDirty = () => {
       ac.dirty = true;
       ac.localError = '';
-      showError(err, lastWriteText(lastAc?.lastWrite));
+      clearInvalid();
+      showError(err, lastAcWriteText());
       paintDirty();
     };
     power.addEventListener('click', () => { ac.draftPower = !ac.draftPower; paintPower(); markDirty(); });
     for (const c of [mode, setpoint, fan]) c.addEventListener('input', markDirty);
     reset.addEventListener('click', () => {
       ac.dirty = false;
+      ac.localError = '';
+      clearInvalid();
+      showError(err, lastAcWriteText());
       setControls(lastAc?.commanded);
       paintDirty();
       ac.send.focus();
@@ -237,9 +276,15 @@ export function createMachines(host, { roomId, onEdit, onOffline, onGone }) {
     send.addEventListener('click', sendAc);
   }
 
+  // The failure no longer matters once the gateway reports what was commanded.
+  function lastAcWriteText() {
+    return lastWriteText(lastAc?.lastWrite, lastAc ? acMatches(lastAc.commanded, lastAc.reported) : false);
+  }
+
   function paintPower() {
-    ac.powerState.textContent = ac.draftPower ? 'On' : 'Off';
+    ac.powerState.textContent = ac.sending ? 'Sending…' : ac.draftPower ? 'On' : 'Off';
     ac.power.dataset.on = String(ac.draftPower);
+    ac.power.setAttribute('aria-pressed', String(ac.draftPower));
   }
 
   function paintDirty() {
@@ -264,6 +309,7 @@ export function createMachines(host, { roomId, onEdit, onOffline, onGone }) {
     lastAc = a;
     if (!ac || ac.wired !== (a.address != null)) buildAc(a);
     if (!ac.wired) return;
+    ac.addr.textContent = `address ${a.address}`;
     // A refresh leaves alone what the person is editing, or has edited and not sent.
     const holding = ac.dirty || ac.sending || ac.form.contains(document.activeElement);
     if (!holding) setControls(a.commanded);
@@ -273,7 +319,7 @@ export function createMachines(host, { roomId, onEdit, onOffline, onGone }) {
     setStatus(ac.status, a.status);
     ac.code.hidden = !(a.status === 'fault' && a.errorCode != null);
     ac.code.textContent = `Error code ${a.errorCode}`;
-    showError(ac.err, ac.localError || lastWriteText(a.lastWrite));
+    showError(ac.err, ac.localError || lastAcWriteText());
   }
 
   async function sendAc() {
@@ -283,6 +329,8 @@ export function createMachines(host, { roomId, onEdit, onOffline, onGone }) {
     if (!validSetpoint(body.setpoint)) {
       mine.localError = `Setpoint must be ${SETPOINT_MIN} to ${SETPOINT_MAX} °C in steps of 0.5`;
       showError(mine.err, mine.localError);
+      mine.setpoint.setAttribute('aria-invalid', 'true');
+      mine.setpoint.setAttribute('aria-describedby', mine.err.id);
       mine.setpoint.focus();
       return;
     }
@@ -291,10 +339,11 @@ export function createMachines(host, { roomId, onEdit, onOffline, onGone }) {
     showError(mine.err, '');
     const hadFocus = mine.form.contains(document.activeElement) || document.activeElement === mine.send || document.activeElement === mine.reset;
     setAcDisabled(true);
+    paintPower();
     version++;
     inflight++;
     try {
-      const data = await request('PUT', `/api/rooms/${roomId}/machines/ac`, body);
+      const data = await request('PUT', `/api/rooms/${roomId}/machines/ac`, body, COMMAND_TIMEOUT);
       if (!alive) return;
       mine.sending = false;
       mine.dirty = false;
@@ -308,6 +357,7 @@ export function createMachines(host, { roomId, onEdit, onOffline, onGone }) {
       mine.sending = false;
       if (alive && ac === mine) {
         setAcDisabled(false);
+        paintPower();
         if (hadFocus) mine.send.focus();
       }
     }
