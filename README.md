@@ -22,6 +22,8 @@ Open http://localhost:8090, add sensors (address + kind), type their values, and
 
 Machines work the same way: add a relay module and an aircon gateway on the device page, give the room their addresses (Edit room → Machines), then switch the machines from the room's page. Each machine shows what the farm **commanded**, what the device **reports**, and (fans and humidifier) whether its current switch says it is **running**. On the device page you can make a relay stick, a motor die, the aircon refuse commands or show an error code, and watch the room page report it. There is no automatic control yet: machines only change when you switch them.
 
+**Simulation.** In the device page's Simulation section, add a simulated room and link a T/RH probe, a CO₂ sensor, a relay module and an aircon gateway, then enable it. The linked sensors' values then follow what the machines are really doing on the device (a stuck relay, dead motor or faulty aircon has no effect): mushroom blocks add heat, moisture and CO₂, intake + exhaust bring in outdoor air, the humidifier adds moisture, the aircon cools or heats toward its setpoint and dries the air (more on fan low, most in dry mode). Speed 1×, 10× or 60×. The farm app sees the values change like real sensors.
+
 The farm app polls every wired sensor and machine every 5 s. A sensor is **online** when the latest poll answered, **timeout** after 1–2 failed polls in a row, **offline** after 3 or more. Stop the device app to see what a dead gateway looks like.
 
 ### Farm app settings
@@ -57,4 +59,4 @@ A real RS-485 farm uses the same requests through an Ethernet-to-RS-485 gateway:
 npm test
 ```
 
-Design: `docs/superpowers/specs/2026-10-16-rooms-design.md` (rooms), `docs/superpowers/specs/2026-10-16-sensors-design.md` (sensors, room page, device app) and `docs/superpowers/specs/2026-10-16-machines-design.md` (machines).
+Design: `docs/superpowers/specs/2026-10-16-rooms-design.md` (rooms), `docs/superpowers/specs/2026-10-16-sensors-design.md` (sensors, room page, device app) `docs/superpowers/specs/2026-10-16-machines-design.md` (machines) and `docs/superpowers/specs/2026-10-19-simulation-design.md` (simulation).
