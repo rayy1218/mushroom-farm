@@ -49,8 +49,9 @@ test('starts on FARM_PORT with FARM_DB and stops cleanly on SIGINT', async (t) =
   const gateway = `127.0.0.1:${await freePort()}`;
   const { child, firstLine, exited } = start(t, { FARM_PORT: '0', FARM_DB: dbPath, FARM_GATEWAY: gateway });
   const line = await firstLine;
-  const match = /^Farm app on http:\/\/localhost:(\d+) \(database (.+), gateway (.+)\)$/.exec(line);
+  const match = /^Farm app on http:\/\/localhost:(\d+) \(database (.+), gateway (.+), reading every (\d+) s\)$/.exec(line);
   assert.ok(match, line);
+  assert.equal(match[4], '5', 'the default interval');
   assert.equal(match[2], dbPath);
   assert.equal(match[3], gateway);
   assert.ok(existsSync(dbPath), 'creates the database folder and file');
@@ -62,6 +63,33 @@ test('starts on FARM_PORT with FARM_DB and stops cleanly on SIGINT', async (t) =
   child.kill('SIGINT');
   const [code] = await exited;
   assert.equal(code, 0);
+});
+
+test('the startup line shows the stored reading interval, and a changed one is kept', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'farm-main-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const dbPath = join(dir, 'farm.db');
+  const seed = openDb(dbPath);
+  seed.setSetting('pollSeconds', '17');
+  seed.close();
+  const gateway = `127.0.0.1:${await freePort()}`;
+  const env = { FARM_PORT: '0', FARM_DB: dbPath, FARM_GATEWAY: gateway };
+  const first = start(t, env);
+  const line = await first.firstLine;
+  assert.ok(line.endsWith(', reading every 17 s)'), line);
+  const base = `http://localhost:${/localhost:(\d+)/.exec(line)[1]}`;
+  assert.deepEqual(await (await fetch(`${base}/api/settings`)).json(), { pollSeconds: 17 });
+  const res = await fetch(`${base}/api/settings`, {
+    method: 'PUT', headers: { 'content-type': 'application/json' }, body: '{"pollSeconds":30}',
+  });
+  assert.equal(res.status, 200);
+  first.child.kill('SIGINT');
+  assert.equal((await first.exited)[0], 0);
+
+  const second = start(t, env);
+  assert.ok((await second.firstLine).endsWith(', reading every 30 s)'));
+  second.child.kill('SIGINT');
+  assert.equal((await second.exited)[0], 0);
 });
 
 test('a bad FARM_PORT stops with a message', async (t) => {

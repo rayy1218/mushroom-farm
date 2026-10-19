@@ -10,6 +10,7 @@ import { createModbusClient } from './modbus.js';
 import { createPoller } from './poller.js';
 import { createMachines } from './machines.js';
 import { createController } from './controller.js';
+import { readSettings } from './settings.js';
 
 const DEFAULT_DB = fileURLToPath(new URL('../data/v2.db', import.meta.url));
 
@@ -35,14 +36,15 @@ const db = openDb(dbPath);
 const client = createModbusClient({ host: gatewayMatch[1].replace(/^\[(.*)\]$/, '$1'), port: Number(gatewayMatch[2]) });
 // The poller calls the controller after each cycle; the controller needs the machines, which need the poller.
 let controller = null;
-const poller = createPoller({ db, client, afterCycle: (cycleStart) => controller.run(cycleStart) });
+const { pollSeconds } = readSettings(db);
+const poller = createPoller({ db, client, intervalMs: pollSeconds * 1000, afterCycle: (cycleStart) => controller.run(cycleStart) });
 const machines = createMachines({ db, client, poller });
 controller = createController({ db, machines });
-const server = createApp(db, { machines, controller });
+const server = createApp(db, { machines, controller, poller });
 
 server.on('error', (err) => fail(`Could not start the server: ${err.message}`));
 server.listen(Number(portText), () => {
-  console.log(`Farm app on http://localhost:${server.address().port} (database ${dbPath}, gateway ${gatewayText})`);
+  console.log(`Farm app on http://localhost:${server.address().port} (database ${dbPath}, gateway ${gatewayText}, reading every ${pollSeconds} s)`);
   poller.start();
 });
 
