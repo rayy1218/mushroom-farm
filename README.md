@@ -40,9 +40,9 @@ The farm app polls every wired sensor and machine every 5 s. A sensor is **onlin
 | `DEVICE_HTTP_PORT` | `8090` | control page |
 | `DEVICE_STATE` | `device/state.json` | where the sensors and their values are kept |
 
-### Sensors (register map)
+### Devices (register map)
 
-| Sensor | Request | Reply |
+| Device | Request | Reply |
 |---|---|---|
 | T/RH probe | function 04, registers 1–2 | temperature × 10 (signed), humidity × 10 |
 | CO₂ sensor | function 03, register 0 | ppm |
