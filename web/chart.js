@@ -4,7 +4,7 @@
 import { formatClock, yRange, xFor, segments, nearestIndex } from './chart-math.js';
 
 const NS = 'http://www.w3.org/2000/svg';
-const M = { left: 46, right: 12, top: 10, bottom: 24 };
+export const M = { left: 46, right: 12, top: 10, bottom: 24 }; // the timeline lines up with these
 
 function el(name, attrs = {}, text) {
   const node = document.createElementNS(NS, name);
@@ -15,7 +15,10 @@ function el(name, attrs = {}, text) {
 
 // opts: { points: [{ at, value|null }], unit, label, color = 'var(--ink)', digits = 1, minSpan = 1, bounds, band }
 // band: { low, high } drawn as a shaded zone with dashed limit lines (the room's control band), or null.
-// Returns { update(opts), destroy() }.
+// Long ranges (spec 2026-10-19-safety-and-history-design.md 6) add: range { from, to } (the x axis spans it, not just the points),
+// ticks [{ at, label }] (axis labels instead of start/middle/end), formatAt(ms) (tooltip time), failTicks false (no red ticks
+// for null points) and onCursor(at|null) (called while the pointer moves, for the shared time line).
+// Returns { update(opts), setCursor(at|null), destroy() }.
 export function drawLineChart(host, opts) {
   let current = opts;
   let svg = null;
@@ -24,6 +27,8 @@ export function drawLineChart(host, opts) {
   let lastWidth = -1;
   let hoverAt = null; // the `at` of the hovered point, kept across update()
   let hoverX = null; // pointer x (client) while it is over the chart
+  let cursorAt = null; // a shared time line set from outside (setCursor)
+  let cursorLine = null;
   const tip = document.createElement('div');
   tip.className = 'tip';
   tip.hidden = true;
@@ -51,8 +56,8 @@ export function drawLineChart(host, opts) {
     const values = points.map((p) => p.value).filter((v) => v !== null && Number.isFinite(v));
     const band = current.band ?? null;
     const { min, max } = yRange(values, current.minSpan ?? 1, current.bounds, band ? [band.low, band.high] : []);
-    const t0 = points.length ? points[0].at : 0;
-    const t1 = points.length ? points[points.length - 1].at : 0;
+    const t0 = current.range ? current.range.from : points.length ? points[0].at : 0;
+    const t1 = current.range ? current.range.to : points.length ? points[points.length - 1].at : 0;
     const xs = points.map((p) => xFor(p.at, t0, t1, x0, x1));
     const yFor = (v) => y0 - ((v - min) / (max - min)) * (y0 - y1);
     const ys = points.map((p) => (p.value === null ? null : yFor(p.value)));
@@ -89,8 +94,16 @@ export function drawLineChart(host, opts) {
       }
     }
 
-    // Time labels at start, middle and end.
-    if (points.length) {
+    // Time labels: the given ticks, or start, middle and end.
+    if (current.ticks) {
+      for (const tick of current.ticks) {
+        const x = xFor(tick.at, t0, t1, x0, x1);
+        svg.append(el('line', { x1: x, x2: x, y1: y0, y2: y0 + 4, style: 'stroke:var(--axis)', 'stroke-width': 1 }));
+        svg.append(el('text', {
+          x, y: height - 6, 'text-anchor': 'middle', style: 'fill:var(--muted)', 'font-size': 12,
+        }, tick.label));
+      }
+    } else if (points.length) {
       const mid = (t0 + t1) / 2;
       for (const [at, anchor, x] of [[t0, 'start', x0], [mid, 'middle', (x0 + x1) / 2], [t1, 'end', x1]]) {
         if (t1 === t0 && anchor !== 'middle') continue;
@@ -102,7 +115,7 @@ export function drawLineChart(host, opts) {
 
     // Failed polls: a short tick on the bottom axis, so a gap is visible as well as the broken line.
     points.forEach((p, i) => {
-      if (p.value !== null) return;
+      if (p.value !== null || current.failTicks === false) return;
       svg.append(el('line', { x1: xs[i], x2: xs[i], y1: y0 - 12, y2: y0, style: 'stroke:var(--critical-text)', 'stroke-width': 2 }));
     });
 
@@ -126,9 +139,11 @@ export function drawLineChart(host, opts) {
       line: el('line', { y1, y2: y0, style: 'stroke:var(--ink-2)', 'stroke-width': 1, visibility: 'hidden' }),
       dot: el('circle', { r: 4, style: `fill:${current.color ?? 'var(--ink)'};stroke:var(--surface)`, 'stroke-width': 2, visibility: 'hidden' }),
     };
-    svg.append(marker.line, marker.dot);
+    cursorLine = el('line', { y1, y2: y0, style: 'stroke:var(--ink-2)', 'stroke-width': 1, 'stroke-dasharray': '3 3', visibility: 'hidden' });
+    svg.append(cursorLine, marker.line, marker.dot);
 
-    layout = { xs, ys, points, width, y0 };
+    layout = { xs, ys, points, width, y0, t0, t1, x0, x1 };
+    placeCursor();
     svg.addEventListener('pointerdown', onPointer);
     svg.addEventListener('pointermove', onPointer);
     svg.addEventListener('pointerleave', onLeave);
@@ -138,6 +153,18 @@ export function drawLineChart(host, opts) {
       const j = points.findIndex((p) => p.at === hoverAt);
       if (j >= 0) showPoint(j);
     }
+  }
+
+  function placeCursor() {
+    if (!cursorLine || !layout) return;
+    if (cursorAt === null || cursorAt < layout.t0 || cursorAt > layout.t1) {
+      cursorLine.setAttribute('visibility', 'hidden');
+      return;
+    }
+    const x = xFor(cursorAt, layout.t0, layout.t1, layout.x0, layout.x1);
+    cursorLine.setAttribute('x1', x);
+    cursorLine.setAttribute('x2', x);
+    cursorLine.setAttribute('visibility', 'visible');
   }
 
   function hideTip() {
@@ -151,6 +178,7 @@ export function drawLineChart(host, opts) {
     hoverX = event.clientX;
     const i = nearestIndex(layout.xs, event.clientX - box.left);
     showPoint(i);
+    current.onCursor?.(layout.points[i].at);
   }
 
   function showPoint(i) {
@@ -166,7 +194,7 @@ export function drawLineChart(host, opts) {
       marker.dot.setAttribute('cy', layout.ys[i]);
       marker.dot.setAttribute('visibility', 'visible');
     }
-    tip.textContent = `${formatClock(p.at)}  ${p.value === null ? 'no answer' : fmt(p.value)}`;
+    tip.textContent = `${(current.formatAt ?? formatClock)(p.at)}  ${p.value === null ? 'no answer' : fmt(p.value)}`;
     tip.hidden = false;
     // Keep the tip inside the chart: flip to the left of the marker near the right edge.
     const w = tip.offsetWidth;
@@ -179,6 +207,7 @@ export function drawLineChart(host, opts) {
     hoverX = null;
     hoverAt = null;
     hideTip();
+    current.onCursor?.(null);
   }
 
   const observer = new ResizeObserver(() => {
@@ -192,6 +221,11 @@ export function drawLineChart(host, opts) {
       current = next;
       hideTip();
       draw();
+    },
+    // The shared time line: draws a dashed line at `at` (null hides it), for hovers on another chart.
+    setCursor(at) {
+      cursorAt = at;
+      placeCursor();
     },
     destroy() {
       observer.disconnect();

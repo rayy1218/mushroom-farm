@@ -381,3 +381,17 @@ button.toggle[data-on="true"]:hover { opacity: .85; background: var(--ink); }
 .s-hint { margin: 0 0 16px; font-size: var(--fs-sm); }
 .settings .ac-send { margin-bottom: 0; }
 .s-saved { margin: 12px 0 0; font-weight: 600; color: var(--good-text); }
+
+/* ---- History: chart range choice and machine timeline (Stream B) ---- */
+.range-bar { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+.range-bar button { min-height: 36px; padding: 4px 14px; }
+.range-bar button[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--surface); }
+.range-bar button[aria-pressed="true"]:hover { background: var(--ink); opacity: .85; }
+.timeline-card { margin-top: 12px; }
+.timeline-card h2 { font-size: var(--fs-md); margin: 0 0 8px; }
+.timeline-card .chart-host { min-height: 0; }
+.legend { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; margin: 8px 0 0; color: var(--ink-2); font-size: var(--fs-xs); }
+.swatch { display: inline-block; width: 22px; height: 10px; border-radius: 2px; border: 1px solid var(--ink-2); margin-left: 8px; }
+.swatch:first-child { margin-left: 0; }
+.swatch-auto { background: var(--ink-2); }
+.swatch-manual { background: repeating-linear-gradient(45deg, var(--ink-2) 0 2px, transparent 2px 5px); }

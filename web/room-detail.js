@@ -8,6 +8,10 @@ import { createControl } from './control.js';
 import { drawLineChart } from './chart.js';
 import { refreshMs } from './settings-math.js';
 import { formatClock, formatAgo, chartPoints } from './chart-math.js';
+// Stream B: long-range charts and the machine timeline
+import { createHistory } from './history.js';
+import { drawTimeline } from './timeline.js';
+import { timeTicks, historyPoints, timelineSpans, acMarks, formatStamp, TIMELINE_ROWS } from './history-math.js';
 
 const metres = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
 const cubic = new Intl.NumberFormat(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -51,7 +55,13 @@ const TEMPLATE = `
     <div class="sensors" data-sensors></div>
     <section data-control hidden></section>
     <section data-machines></section>
+    <div data-range></div>
     <div class="charts" data-charts></div>
+    <section class="card timeline-card" data-timeline hidden>
+      <h2>Machine timeline</h2>
+      <div class="chart-host" data-timeline-host></div>
+      <p class="legend"><span class="swatch swatch-auto" aria-hidden="true"></span>Automatic <span class="swatch swatch-manual" aria-hidden="true"></span>Manual</p>
+    </section>
   </div>`;
 
 let mountSeq = 0; // every mount gets a token; a reply that finds the token changed is dropped
@@ -85,6 +95,9 @@ export function mount(container, { id }) {
     controlHost: q('[data-control]'),
     machinesHost: q('[data-machines]'),
     charts: q('[data-charts]'),
+    rangeHost: q('[data-range]'),
+    timeline: q('[data-timeline]'),
+    timelineHost: q('[data-timeline-host]'),
   };
   const alive = () => me === mountSeq;
 
@@ -98,6 +111,10 @@ export function mount(container, { id }) {
   let control = null; // the Automatic control card, made on the first render
   let ticker = null;
   const chartCards = new Map(); // chart id → { card, host, none, chart }
+  let history = null; // the range choice and the data of the other ranges (Stream B)
+  let timelineChart = null;
+  let drawnData = null; // the history reply last drawn
+  let drawnWith = null;
 
   // ---- loading ----
 
@@ -245,22 +262,71 @@ export function mount(container, { id }) {
   }
 
   function renderCharts() {
+    const hist = history?.current() ?? null; // null: Live (the last 50 polls)
+    const data = hist?.data ?? null;
+    // A long range changes once a minute: the 5 s refresh must not redraw it (that would drop the hover).
+    const drawnKey = data ? `${bands ? JSON.stringify(bands) : ''}/${sensors.trh.status}/${sensors.co2.status}` : null;
+    if (data && data === drawnData && drawnKey === drawnWith) return;
+    drawnData = data;
+    drawnWith = drawnKey;
     for (const def of CHARTS) {
       const entry = chartCards.get(def.id);
       const s = sensors[def.kind];
-      const points = chartPoints(s, def.field);
+      const points = hist ? (data ? historyPoints(data[def.kind], def.field, data.bucketS) : []) : chartPoints(s, def.field);
       const wired = s.status !== 'not-wired';
       entry.card.hidden = !wired;
       const hasValue = points.some((p) => p.value !== null); // only failed polls: nothing to draw yet
+      entry.none.textContent = hist ? (data ? 'No readings in this range' : hist.failed ? OFFLINE : 'Loading…') : 'No readings yet';
       entry.none.hidden = hasValue;
       entry.host.hidden = !hasValue;
       if (!wired) continue;
       // The band from the room's control settings (shown whether Auto is on or off), once they have loaded.
       const band = bands ? { low: bands[def.band[0]], high: bands[def.band[1]] } : null;
       const opts = { points, unit: def.unit, label: def.label, color: def.color, digits: def.digits, minSpan: def.minSpan, bounds: def.bounds, band };
+      if (data) { // a long range: the whole window on the axis, date ticks, a shared time line with the other charts
+        const range = { from: data.from, to: data.to };
+        Object.assign(opts, {
+          range, ticks: timeTicks(range.from, range.to, tickCount()), failTicks: false,
+          formatAt: (ms) => formatStamp(ms), onCursor: moveCursor,
+        });
+      }
       if (!entry.chart) entry.chart = drawLineChart(entry.host, opts);
       else entry.chart.update(opts);
     }
+    renderTimeline(data);
+  }
+
+  // About one axis label per 90 px of the chart.
+  function tickCount() {
+    return Math.max(2, Math.floor(els.charts.clientWidth / 90));
+  }
+
+  // The time line follows the pointer on every chart and the timeline.
+  function moveCursor(at) {
+    for (const { chart } of chartCards.values()) chart?.setCursor(at);
+    timelineChart?.setCursor(at);
+  }
+
+  // The machine timeline, only for a long range and only the machines the room has wired.
+  function renderTimeline(data) {
+    const wiredKeys = TIMELINE_ROWS.map((r) => r.key).filter((k) => (k === 'ac' ? room.acAddress !== null : room.relayAddress !== null));
+    els.timeline.hidden = !data || wiredKeys.length === 0;
+    if (els.timeline.hidden) {
+      timelineChart?.destroy();
+      timelineChart = null;
+      return;
+    }
+    const range = { from: data.from, to: data.to };
+    const opts = {
+      range, ticks: timeTicks(range.from, range.to, tickCount()), formatAt: (ms) => formatStamp(ms), onCursor: moveCursor,
+      rows: TIMELINE_ROWS.filter((r) => wiredKeys.includes(r.key)).map((r) => ({
+        ...r,
+        spans: timelineSpans(data.machines[r.key], range.from, range.to),
+        marks: r.key === 'ac' ? acMarks(data.machines.ac) : [],
+      })),
+    };
+    if (!timelineChart) timelineChart = drawTimeline(els.timelineHost, opts);
+    else timelineChart.update(opts);
   }
 
   let built = false;
@@ -272,6 +338,7 @@ export function mount(container, { id }) {
       makeMachines();
       makeControl();
       buildCharts();
+      history = createHistory(els.rangeHost, { roomId: id, onChange: () => { if (alive() && sensors) renderCharts(); } });
       built = true;
     }
     // The card shows only once a good reply came; later failures keep the last good data.
@@ -355,6 +422,8 @@ export function mount(container, { id }) {
     clearInterval(ticker);
     machines?.destroy();
     control?.destroy();
+    history?.destroy();
+    timelineChart?.destroy();
     for (const { chart } of chartCards.values()) chart?.destroy();
     closeRoomDialog();
     document.title = 'Rooms · Mushroom farm';
