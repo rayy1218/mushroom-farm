@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { statusWord, onOff, validSetpoint, describeAc, acBody, sameAc, STATUS_WORDS } from '../web/machines-math.js';
+import { statusWord, onOff, validSetpoint, describeAc, acBody, acMatches, lastWriteText, STATUS_WORDS } from '../web/machines-math.js';
 
 test('every status of the spec has a word', () => {
   for (const s of ['not-wired', 'no-data', 'no-answer', 'switching', 'not-following', 'not-running', 'running-while-off', 'fault', 'on', 'off']) {
@@ -25,9 +25,18 @@ test('describeAc and acBody', () => {
   assert.deepEqual(acBody({ power: 1, mode: 'heat', setpoint: 20, fan: 'low', extra: 1 }), { power: true, mode: 'heat', setpoint: 20, fan: 'low' });
 });
 
-test('sameAc compares all four values', () => {
+test('acMatches compares all four values', () => {
   const a = { power: true, mode: 'cool', setpoint: 23.5, fan: 'auto' };
-  assert.equal(sameAc(a, { ...a }), true);
-  assert.equal(sameAc(a, { ...a, fan: 'low' }), false);
-  assert.equal(sameAc(a, null), false);
+  assert.equal(acMatches(a, { ...a }), true);
+  assert.equal(acMatches(a, { ...a, fan: 'low' }), false);
+  assert.equal(acMatches(a, null), false);
+});
+
+test('lastWriteText shows a failure with its age until the device is back in sync', () => {
+  const ago = (ms) => `${ms / 1000} s ago`;
+  const w = { at: 1000, ok: false, error: 'timeout' };
+  assert.equal(lastWriteText(w, 6000, false, ago), 'Last write failed 5 s ago: timeout');
+  assert.equal(lastWriteText(w, 6000, true, ago), '');
+  assert.equal(lastWriteText({ at: 1, ok: true, error: null }, 6000, false, ago), '');
+  assert.equal(lastWriteText(null, 6000, false, ago), '');
 });

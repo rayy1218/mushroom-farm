@@ -110,7 +110,8 @@ export function mount(container, { id }) {
       fetched = await Promise.all([
         request('GET', `/api/rooms/${id}`),
         request('GET', `/api/rooms/${id}/sensors`),
-        request('GET', `/api/rooms/${id}/machines`),
+        // The machines are optional: a failing or missing route must not take the sensors down.
+        request('GET', `/api/rooms/${id}/machines`).catch(() => null),
       ]);
     } catch (err) {
       if (!alive() || seq !== loadSeq) return;
@@ -134,8 +135,7 @@ export function mount(container, { id }) {
     sensors = { trh: list.find((s) => s.kind === 'trh'), co2: list.find((s) => s.kind === 'co2') };
     els.banner.hidden = true;
     els.missing.hidden = true;
-    render();
-    machines.update(machineData, token ?? machines.token());
+    render(machineData, token);
     schedule();
   }
 
@@ -253,13 +253,19 @@ export function mount(container, { id }) {
   }
 
   let built = false;
-  function render() {
+  function render(machineData, token) {
     renderHead();
     els.body.hidden = false;
     if (!built) {
       makeMachines();
       buildCharts();
       built = true;
+    }
+    // The card shows only once a good reply came; later failures keep the last good data.
+    // It is updated before the sensor cards so focus handling there sees the final page.
+    if (machineData) {
+      machines.update(machineData, token ?? machines.token());
+      els.machinesHost.hidden = false;
     }
     renderSensors();
     renderCharts();
@@ -270,12 +276,15 @@ export function mount(container, { id }) {
       roomId: id,
       onEdit: () => { editedFromCard = true; edit(); },
       onOffline: () => {
+        if (!els.banner.hidden) return; // do not re-announce an alert that is already showing
         els.bannerText.textContent = OFFLINE;
         els.retry.hidden = false;
         els.banner.hidden = false;
       },
-      onGone: () => { if (alive()) showMissing(); },
+      // Not-found on a command may be the room or just the machines route: the room GET decides.
+      onGone: () => { if (alive()) load(); },
     });
+    els.machinesHost.hidden = true;
   }
 
   // "n s ago" counts on between refreshes.

@@ -11,13 +11,14 @@ export class ApiError extends Error {
   }
 }
 
-export async function request(method, path, body) {
+// timeout in ms; commands go through the server's shared Modbus queue and can take longer than a read.
+export async function request(method, path, body, timeout = 10000) {
   const init = { method };
   if (body !== undefined) {
     init.headers = { 'content-type': 'application/json' };
     init.body = JSON.stringify(body);
   }
-  init.signal = AbortSignal.timeout(10000);
+  init.signal = AbortSignal.timeout(timeout);
   let res;
   try {
     res = await fetch(path, init);

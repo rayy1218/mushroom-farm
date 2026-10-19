@@ -53,6 +53,16 @@ export function acBody({ power, mode, setpoint, fan }) {
   return { power: Boolean(power), mode, setpoint, fan };
 }
 
-export function sameAc(a, b) {
-  return Boolean(a) && Boolean(b) && a.power === b.power && a.mode === b.mode && a.setpoint === b.setpoint && a.fan === b.fan;
+// True when the gateway reports exactly what the farm commanded.
+export function acMatches(commanded, reported) {
+  return Boolean(commanded) && Boolean(reported)
+    && commanded.power === reported.power && commanded.mode === reported.mode
+    && commanded.setpoint === reported.setpoint && commanded.fan === reported.fan;
+}
+
+// "Last write failed 2 min ago: timeout", or "" when there is nothing to say.
+// inSync: a later poll shows the device doing what was commanded, so the old failure no longer matters.
+export function lastWriteText(w, now, inSync, agoText) {
+  if (!w || w.ok || inSync) return '';
+  return `Last write failed ${agoText(now - w.at)}: ${w.error}`;
 }
