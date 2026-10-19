@@ -249,3 +249,84 @@ test('a failed write is not retried by the next cycle (the command is already re
   await s.cycle();
   assert.deepEqual(s.writes.filter((w) => w[0] === 'coil'), []);
 });
+
+// Fake statuses: status[key] makes machines.get report it for the relay machine or 'ac'.
+function fakeStatuses(s) {
+  const status = {};
+  s.machines.get = () => ({
+    relay: { machines: ['intake', 'exhaust', 'circulation', 'humidifier'].map((key) => ({ key, status: status[key] ?? 'on' })) },
+    ac: { status: status.ac ?? 'on' },
+  });
+  return status;
+}
+
+test('a machine that is not following is sent again, at most 3 times, with the reason', async (t) => {
+  const s = setup(t);
+  const status = fakeStatuses(s);
+  setAuto(s.controller, s.id);
+  await s.cycle();
+  s.writes.length = 0;
+  status.circulation = 'not-following';
+  for (const n of [1, 2, 3]) {
+    await s.cycle();
+    assert.deepEqual(s.writes, [['coil', 3, 2, true]]);
+    assert.equal(s.controller.get(s.id).reasons.circulation, `Circulation: always on; Circulation fan: not following, sent again (${n} of 3)`);
+    s.writes.length = 0;
+  }
+  await s.cycle();
+  assert.deepEqual(s.writes, []);
+  assert.equal(s.controller.get(s.id).reasons.circulation, 'Circulation: always on; Circulation fan: not following after 3 tries');
+});
+
+test('the count resets when the machine follows again', async (t) => {
+  const s = setup(t);
+  const status = fakeStatuses(s);
+  setAuto(s.controller, s.id);
+  await s.cycle();
+  status.circulation = 'not-following';
+  await s.cycle();
+  await s.cycle();
+  status.circulation = 'on';
+  await s.cycle();
+  status.circulation = 'not-following';
+  await s.cycle();
+  assert.equal(s.controller.get(s.id).reasons.circulation.endsWith('(1 of 3)'), true);
+});
+
+test('the count resets when the desired value changes; the aircon is re-sent too', async (t) => {
+  const s = setup(t);
+  const status = fakeStatuses(s);
+  setAuto(s.controller, s.id);
+  await s.cycle();
+  status.ac = 'not-following';
+  s.writes.length = 0;
+  await s.cycle();
+  await s.cycle();
+  await s.cycle();
+  assert.deepEqual(s.writes.map((w) => w[0]), ['regs', 'regs', 'regs']);
+  await s.cycle();
+  assert.equal(s.writes.length, 3);
+  assert.match(s.controller.get(s.id).reasons.ac, /Aircon: not following after 3 tries/);
+  await s.cycle({ co2: 800 }); // the desired setpoint changes: sent, the count starts over
+  assert.equal(s.writes.filter((w) => w[0] === 'regs').length, 4);
+  await s.cycle({ co2: 800 });
+  assert.equal(s.writes.filter((w) => w[0] === 'regs').length, 5);
+  assert.match(s.controller.get(s.id).reasons.ac, /sent again \(1 of 3\)/);
+});
+
+test('nothing is re-sent while auto is off, and forget drops the counters', async (t) => {
+  const s = setup(t);
+  const status = fakeStatuses(s);
+  setAuto(s.controller, s.id);
+  await s.cycle();
+  status.circulation = 'not-following';
+  await s.cycle();
+  s.controller.update(s.id, { auto: false });
+  s.writes.length = 0;
+  await s.cycle();
+  assert.deepEqual(s.writes, []);
+  s.controller.update(s.id, { auto: true });
+  s.controller.forget(s.id);
+  await s.cycle();
+  assert.equal(s.controller.get(s.id).reasons.circulation.endsWith('(1 of 3)'), true);
+});

@@ -95,17 +95,27 @@ export function validateControl(c) {
 
 const emptyReasons = () => ({ exchange: '', humidifier: '', ac: '', circulation: '' });
 const BYPASS = { bypassAuto: true };
+const RESENDS = 3;
+const NAMES = { intake: 'Intake fan', exhaust: 'Exhaust fan', circulation: 'Circulation fan', humidifier: 'Humidifier', ac: 'Aircon' };
+const REASON_OF = { intake: 'exchange', exhaust: 'exchange', circulation: 'circulation', humidifier: 'humidifier', ac: 'ac' };
 
 // db: the farm database. machines: from createMachines. now is injectable.
 // log is only for errors that are not command failures (a database error).
 export function createController({ db, machines, now = Date.now, log = console.error }) {
   const reasons = new Map(); // roomId → { exchange, humidifier, ac, circulation }, in memory only
+  const tries = new Map(); // `${roomId}/${machine}` → { want, n }: re-sends in the current not-following episode
+
+  // Drops what is kept in memory for a deleted room.
+  function forget(roomId) {
+    reasons.delete(roomId);
+    for (const key of [...RELAY_KEYS, 'ac']) tries.delete(`${roomId}/${key}`);
+  }
 
   // The room's control settings with the reasons, or null when there is no such room.
   function get(roomId) {
     const c = db.getControl(roomId);
     if (!c) {
-      reasons.delete(roomId);
+      forget(roomId);
       return null;
     }
     return { ...c, reasons: { ...emptyReasons(), ...reasons.get(roomId) } };
@@ -132,31 +142,56 @@ export function createController({ db, machines, now = Date.now, log = console.e
       readings: { rh: t?.rh ?? null, co2: c2?.co2 ?? null },
     });
     db.setControlState(room.id, state, now());
-    reasons.set(room.id, why);
 
-    if (room.relayAddress !== null) {
-      for (const key of RELAY_KEYS) {
-        if (commands.relay[key] === desired[key]) continue;
-        if (!stillAuto(room.id)) return; // the user took over while we were sending
-        await machines.command(room.id, key, { on: desired[key] }, BYPASS);
+    // What to send: the differences, and a machine that is not following again (at most RESENDS times per episode).
+    const view = machines.get(room.id);
+    const statusOf = { ac: view?.ac?.status };
+    for (const m of view?.relay?.machines ?? []) statusOf[m.key] = m.status;
+    const sends = [];
+    const plan = (key, want, differs) => {
+      const slot = `${room.id}/${key}`;
+      const sig = JSON.stringify(want);
+      let entry = tries.get(slot);
+      if (!entry || entry.want !== sig) tries.set(slot, entry = { want: sig, n: 0 });
+      const status = statusOf[key];
+      if (differs) {
+        entry.n = 0;
+        sends.push(key);
+      } else if (status === 'not-following') {
+        const name = NAMES[key];
+        if (entry.n < RESENDS) {
+          entry.n++;
+          sends.push(key);
+          why[REASON_OF[key]] += `; ${name}: not following, sent again (${entry.n} of ${RESENDS})`;
+        } else {
+          why[REASON_OF[key]] += `; ${name}: not following after ${RESENDS} tries`;
+        }
+      } else if (status === 'on' || status === 'off') {
+        entry.n = 0;
       }
+    };
+    if (room.relayAddress !== null) {
+      for (const key of RELAY_KEYS) plan(key, desired[key], commands.relay[key] !== desired[key]);
     }
     if (room.acAddress !== null) {
       const a = commands.ac;
       const d = desired.ac;
       const same = a.power === d.power && a.mode === d.mode && a.fan === d.fan
         && Math.round(a.setpoint * 10) === Math.round(d.setpoint * 10);
-      if (!same && stillAuto(room.id)) await machines.command(room.id, 'ac', d, BYPASS);
+      plan('ac', d, !same);
+    }
+    reasons.set(room.id, why);
+
+    for (const key of sends) {
+      if (!stillAuto(room.id)) return; // the user took over while we were sending
+      await machines.command(room.id, key, key === 'ac' ? desired.ac : { on: desired[key] }, BYPASS);
     }
   }
 
   return {
     get,
 
-    // Drops what is kept in memory for a deleted room.
-    forget(roomId) {
-      reasons.delete(roomId);
-    },
+    forget,
 
     // Applies any of auto and the six limits and returns the view like get. Returns null when there is no
     // such room; throws CommandError (400, with field) for a bad value.
@@ -170,6 +205,7 @@ export function createController({ db, machines, now = Date.now, log = console.e
       if (bad) throw new CommandError(400, bad.error, bad.field);
       db.setControl(roomId, merged);
       if (merged.auto && !current.auto) {
+        for (const key of [...RELAY_KEYS, 'ac']) tries.delete(`${roomId}/${key}`);
         // Turning auto on: the band states start from what is commanded now.
         // An old start time must not survive: clear the state first.
         const { relay } = db.getCommands(roomId);
