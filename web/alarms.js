@@ -65,9 +65,16 @@ export function createAlarmsCard(host, { roomId, onChange, onOffline }) {
     err.hidden = text === '';
   }
 
+  // Acknowledge buttons are disabled while a request is in flight.
+  function paintBusy() {
+    ackAll.disabled = busy;
+    for (const b of host.querySelectorAll('button[data-ack]')) b.disabled = busy;
+  }
+
   async function run(action) {
     if (busy) return;
     busy = true;
+    paintBusy();
     showError('');
     try {
       await action();
@@ -82,6 +89,7 @@ export function createAlarmsCard(host, { roomId, onChange, onOffline }) {
       }
     } finally {
       busy = false;
+      if (alive) paintBusy();
     }
   }
 
@@ -99,6 +107,7 @@ export function createAlarmsCard(host, { roomId, onChange, onOffline }) {
       host.hidden = current.length === 0;
       list.replaceChildren(...current.map((a) => alarmItem(a, { withAck: true })));
       ackAll.hidden = unackedCount(current) < 1;
+      paintBusy();
       historyList.replaceChildren(...(data.history ?? []).map((a) => alarmItem(a, { withAck: false })));
       // The button that was used is gone: keep focus inside the card.
       if (hadFocus && !host.contains(document.activeElement) && !host.hidden) (list.querySelector('button') ?? details.querySelector('summary')).focus();
