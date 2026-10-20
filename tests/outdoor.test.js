@@ -107,3 +107,22 @@ test('history: an unknown range is null', (t) => {
   const db = setup(t);
   for (const range of ['', '2h', '24', '1H', 'x']) assert.equal(outdoorHistory(db, range, NOW), null, range);
 });
+
+test('the outdoor checks are fed only new readings, start again on a new address, and give null without recent readings', async () => {
+  const { openDb } = await import('../server/db.js');
+  const { outdoorView } = await import('../server/outdoor.js');
+  const db = openDb(':memory:');
+  db.setSetting('outdoorAddress', '9');
+  const t0 = 1_800_000_000_000;
+  for (let i = 0; i < 3; i++) db.addOutdoorReading({ address: 9, at: t0 + i * 1000, ok: true, t: 30, rh: 70 });
+  assert.deepEqual(outdoorView(db, t0 + 3000).check, { ok: true, why: null, fault: false });
+  // a jump of 20 °C in a second is caught on the next call (only the new reading is checked)
+  db.addOutdoorReading({ address: 9, at: t0 + 4000, ok: true, t: 50, rh: 70 });
+  assert.equal(outdoorView(db, t0 + 4000).check.why, 'sudden jump');
+  // a new address starts the checks again from its own readings
+  db.setSetting('outdoorAddress', '8');
+  db.addOutdoorReading({ address: 8, at: t0 + 5000, ok: true, t: 31, rh: 69 });
+  assert.deepEqual(outdoorView(db, t0 + 5000).check, { ok: true, why: null, fault: false });
+  // nothing in the last 3 hours: no check result
+  assert.equal(outdoorView(db, t0 + 5000 + 3 * 3_600_000 + 1000).check, null);
+});

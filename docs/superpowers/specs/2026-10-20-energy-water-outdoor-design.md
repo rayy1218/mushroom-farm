@@ -94,3 +94,17 @@ Stored as `rooms` columns `intake_w, exhaust_w, circulation_w, humidifier_w, hum
 ## 9. Database
 
 Upgrade 8 → 9: the `rooms` columns of section 4, tables `outdoor_readings` and `meter_readings`; settings are rows of the existing `settings` table (`outdoorAddress`, `electricityPrice`, `waterPrice`).
+
+## 10. After the review (2026-10-20)
+
+| Item | Rule |
+|---|---|
+| Metered energy and meter glitches | only an increase above the highest total seen counts; a lower total counts nothing and becomes the new base after 3 readings in a row (a real reset or a new meter); a step above 100 kW × the time since the last reading is skipped (a new meter with a higher total loses that one step) |
+| Unwired machines | clearing or changing a room's relay module or aircon address logs that device's machines that were on as off (source `manual`), so the estimate stops charging them |
+| Breakdown on a metered day | the machines add up to the day's kWh: estimates above the meter are scaled down to it, `rest` 0 |
+| Speed | completed days are cached per room (a day is final 60 s after it ends; dropped when the room changes, a late meter reading arrives, or a machine-log row lands in a final day); today's metered sum is one SQL pass over a covering index; the cache is filled after start one day at a time (`warmUsage`), so the first request after a start can still take a few seconds while it runs |
+| Indexes | meter_readings (room_id, address, id), (room_id, address, id) WHERE ok = 1, (room_id, address, at, energy_kwh) WHERE ok = 1; outdoor_readings (address, id), (address, id) WHERE ok = 1, (address, at, ok, t, rh); query-plan tests |
+| Outdoor | the history and the sparklines show only the current address's readings, through the room history's completed-bucket cache; the outdoor checks are kept in memory and fed only new readings |
+| Device meter | the total belongs to the meter device: each tick's energy is added to it and it is saved with the device state (every 10 s and on stop), so a restart answers the right total from the first poll and moving a meter to another room never makes it jump; the room's `meterKWh` is only the room's own total. The outdoor probes get their values before the device starts answering |
+
+Measured with 30 days of 1 s readings (2.6 million meter and 2.6 million outdoor rows): room sensors 2.7 s → 0.5 ms; room usage 7.2 s → 4 ms (cold, once per past day: about 150 ms a day); farm usage 7.1 s → 4 ms; /api/outdoor 240–490 ms → 0.3 ms (83 ms the first time); 30-day outdoor history 1.7 s → 1 ms (about 1 s the first time).

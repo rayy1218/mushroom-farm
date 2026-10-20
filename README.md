@@ -32,6 +32,8 @@ Machines work the same way: add a relay module and an aircon gateway on the devi
 
 **Room drawing.** The room page opens with a "Room" card that draws the room: the aircon and its condenser, the intake, exhaust and circulation fans, the humidifier mist, CO₂ bubbles and the three readings, animated from what the machines really report (a stuck or dead machine shows a warning). Each simulated room card on the device page draws the same picture, including the outdoor temperature and a sun or moon. The device serves the farm's `web/mimic.js` itself, so there is one copy. Spec: `docs/superpowers/specs/2026-10-20-room-drawing-design.md`.
 
+**Outdoor sensor, energy and water.** Set the address of an outdoor T/RH probe on the Settings page: the Overview shows the outdoor temperature, humidity and dew point, the room drawing shows them with the sun or moon, and the room charts draw the outdoor values as a dashed line. Each room can have an energy meter (an Eastron SDM120-style Modbus meter; Edit room → Sensors) and power ratings for its machines (Edit room → Power and water: fans 60 W, humidifier 80 W and 2.0 L/h, aircon 1050 W input by default). The room page's "Energy and water" card shows today, 7 days and 30 days in kWh, RM and litres, a bar chart per day and the share of each machine: metered when the room has a meter, otherwise estimated from run time × rating (the aircon estimate is an upper bound). Water is the humidifier's run time × its L/h. Prices are on the Settings page (electricity RM 0.55/kWh by default; the water price is blank until you enter your bill's rate, and water costs show only then). In the device app, add an "Energy meter" and a second T/RH probe and link them to a simulated room as its meter and outdoor probe. Spec: `docs/superpowers/specs/2026-10-20-energy-water-outdoor-design.md`.
+
 The farm app polls every wired sensor and machine every reading interval (5 s by default; change it on the Settings page, 1–300 s). A sensor is **online** when the latest poll answered, **timeout** after 1–2 failed polls in a row, **offline** after 3 or more. Stop the device app to see what a dead gateway looks like.
 
 ### Farm app settings
@@ -56,6 +58,8 @@ The farm app polls every wired sensor and machine every reading interval (5 s by
 |---|---|---|
 | T/RH probe | function 04, registers 1–2 | temperature × 10 (signed), humidity × 10 |
 | CO₂ sensor | function 03, register 0 | ppm |
+| Outdoor probe | function 04, registers 1–2 (as a room T/RH probe) | temperature × 10 (signed), humidity × 10 |
+| Energy meter | function 04, input registers 0x000C–0x000D and 0x0156–0x0157 | active power W and total energy kWh, each a float32, high word first |
 | Relay module | coils 0–3 (fn 01 read, fn 05 write), inputs 0–3 (fn 02, current switches) | outputs: 0 intake, 1 exhaust, 2 circulation, 3 humidifier |
 | Aircon gateway | holding 0–3 (fn 03 read, fn 16 write), input 0–1 (fn 04) | power, mode (0 cool, 1 heat, 2 dry, 3 fan), setpoint × 10, fan (0 auto, 1 low, 2 high); room T × 10, error code |
 
@@ -67,4 +71,4 @@ A real RS-485 farm uses the same requests through an Ethernet-to-RS-485 gateway:
 npm test
 ```
 
-Design: `docs/superpowers/specs/2026-10-16-rooms-design.md` (rooms), `docs/superpowers/specs/2026-10-16-sensors-design.md` (sensors, room page, device app), `docs/superpowers/specs/2026-10-16-machines-design.md` (machines) `docs/superpowers/specs/2026-10-19-simulation-design.md` (simulation), `docs/superpowers/specs/2026-10-19-controller-design.md` (automatic control), `docs/superpowers/specs/2026-10-19-settings-design.md` (settings) `docs/superpowers/specs/2026-10-19-safety-and-history-design.md` (sensor checks, alarms, safety level, history, Overview) and `docs/superpowers/specs/2026-10-20-room-drawing-design.md` (room drawing).
+Design: `docs/superpowers/specs/2026-10-16-rooms-design.md` (rooms), `docs/superpowers/specs/2026-10-16-sensors-design.md` (sensors, room page, device app), `docs/superpowers/specs/2026-10-16-machines-design.md` (machines) `docs/superpowers/specs/2026-10-19-simulation-design.md` (simulation), `docs/superpowers/specs/2026-10-19-controller-design.md` (automatic control), `docs/superpowers/specs/2026-10-19-settings-design.md` (settings) `docs/superpowers/specs/2026-10-19-safety-and-history-design.md` (sensor checks, alarms, safety level, history, Overview) `docs/superpowers/specs/2026-10-20-room-drawing-design.md` (room drawing) and `docs/superpowers/specs/2026-10-20-energy-water-outdoor-design.md` (outdoor sensor, energy and water).
