@@ -3,7 +3,7 @@
 // Controls are updated in place, so a refresh never replaces an input the person is using or has edited.
 
 import { request, OFFLINE } from './api.js';
-import { BANDS, REASONS, stateLine, inputLabel, reasonLine, checkBand, locateField, bandsBody, SAFETY_FIELDS, checkSafety, locateSafetyField, checkLines, heldLine, HUMIDIFIER_LABEL, humidifierOn, AC_FAN_LABEL, AC_FAN_OPTIONS, acFanOf } from './control-math.js';
+import { BANDS, REASONS, stateLine, inputLabel, reasonLine, checkBand, locateField, SAFETY_FIELDS, checkSafety, locateSafetyField, changedBody, checkLines, heldLine, HUMIDIFIER_LABEL, humidifierOn, AC_FAN_LABEL, AC_FAN_OPTIONS, acFanOf } from './control-math.js';
 
 const COMMAND_TIMEOUT = 30000;
 
@@ -45,6 +45,7 @@ export function createControl(host, { roomId, onOffline, onGone, onChange }) {
   let version = 0; // bumped by every command, so a refresh that began earlier is dropped
   let inflight = 0;
   let last = null; // the last control object painted
+  let loaded = null; // the object the inputs were last filled from (Save sends only what differs from it)
   let dirty = false;
   let saving = false;
   let switching = false;
@@ -244,6 +245,7 @@ export function createControl(host, { roomId, onOffline, onGone, onChange }) {
   }
 
   function setInputs(c) {
+    loaded = c;
     for (const f of SAFETY_FIELDS) if (c[f.key] !== undefined) safetyRows.get(f.key).input.value = String(c[f.key]);
     for (const band of BANDS) {
       const row = rows.get(band.key);
@@ -415,6 +417,13 @@ export function createControl(host, { roomId, onOffline, onGone, onChange }) {
       }
     }
     if (firstBad) { firstBad.focus(); return; }
+    const body = changedBody(values, loaded);
+    if (Object.keys(body).length === 0) { // nothing differs from what was loaded: nothing to send
+      dirty = false;
+      if (last) setInputs(last);
+      paintDirty();
+      return;
+    }
     saving = true;
     const hadFocus = form.contains(document.activeElement) || document.activeElement === save || document.activeElement === reset;
     save.disabled = true;
@@ -422,7 +431,7 @@ export function createControl(host, { roomId, onOffline, onGone, onChange }) {
     version++;
     inflight++;
     try {
-      const data = await request('PUT', `/api/rooms/${roomId}/control`, bandsBody(values), COMMAND_TIMEOUT);
+      const data = await request('PUT', `/api/rooms/${roomId}/control`, body, COMMAND_TIMEOUT);
       if (!alive) return;
       saving = false;
       dirty = false;

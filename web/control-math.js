@@ -109,6 +109,20 @@ export function bandsBody(values) {
   return body;
 }
 
+// The body of Save with only what the person changed: the typed values that differ from `loaded` (the object the inputs were
+// filled from). co2High and co2Safety go together when either changed (the server compares them as a pair). A band that is
+// moving (a ramp) keeps its old value in a form that was not edited, so it is never written back by accident.
+export function changedBody(values, loaded) {
+  const all = bandsBody(values);
+  const body = {};
+  for (const [k, v] of Object.entries(all)) if (v !== loaded?.[k]) body[k] = v;
+  if ('co2High' in body || 'co2Safety' in body) {
+    if ('co2High' in all) body.co2High = all.co2High;
+    if ('co2Safety' in all) body.co2Safety = all.co2Safety;
+  }
+  return body;
+}
+
 // ---- safety settings (spec 2026-10-19-safety-and-history-design.md 2.5, 6) ----
 
 // The two inputs next to the bands, saved with Save.

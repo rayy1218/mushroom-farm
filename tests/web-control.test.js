@@ -100,3 +100,19 @@ test('the card shows typical crop bands, the CO₂ minimum of 450 and the aircon
   assert.deepEqual(checkSafety(750, 1250, 10, 10.5), { field: 'acDrop', message: 'Aircon lower during air exchange must be a number from 0 to 10 °C' });
   assert.equal(checkSafety(750, 1250, 10, Number.NaN).field, 'acDrop');
 });
+
+test('Save sends only the fields that differ from what was loaded', async () => {
+  const { changedBody } = await import('../web/control-math.js');
+  const loaded = { co2Low: 600, co2High: 750, tLow: 21, tHigh: 23, rhLow: 85, rhHigh: 95, co2Safety: 1500, exchangeMaxMin: 10, acDrop: 0, exchangeEveryMin: 0 };
+  const values = { ...loaded };
+  assert.deepEqual(changedBody(values, loaded), {});
+  assert.deepEqual(changedBody({ ...values, exchangeMaxMin: 15 }, loaded), { exchangeMaxMin: 15 });
+  assert.deepEqual(changedBody({ ...values, tLow: 22 }, loaded), { tLow: 22 });
+  // co2High and co2Safety travel together
+  assert.deepEqual(changedBody({ ...values, co2High: 800 }, loaded), { co2High: 800, co2Safety: 1500 });
+  assert.deepEqual(changedBody({ ...values, co2Safety: 1600 }, loaded), { co2High: 750, co2Safety: 1600 });
+  // the bands moved on the server while the form was being edited: only the edited field is sent
+  assert.deepEqual(changedBody({ ...values, acDrop: 2 }, loaded), { acDrop: 2 });
+  // a loaded object without a safety field (older server): the typed value is sent
+  assert.deepEqual(changedBody({ ...values }, { ...loaded, acDrop: undefined }), { acDrop: 0 });
+});
