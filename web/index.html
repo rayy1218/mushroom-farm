@@ -83,6 +83,11 @@
           <input id="f-co2Address" name="co2Address" type="number" min="1" max="247" step="1" inputmode="numeric" placeholder="none" aria-describedby="e-co2Address">
           <p class="field-error" aria-live="polite" id="e-co2Address"></p>
         </div>
+        <div class="field">
+          <label for="f-meterAddress">Energy meter address</label>
+          <input id="f-meterAddress" name="meterAddress" type="number" min="1" max="247" step="1" inputmode="numeric" placeholder="none" aria-describedby="e-meterAddress">
+          <p class="field-error" aria-live="polite" id="e-meterAddress"></p>
+        </div>
       </div>
     </fieldset>
 
@@ -98,6 +103,42 @@
           <label for="f-acAddress">Aircon gateway</label>
           <input id="f-acAddress" name="acAddress" type="number" min="1" max="247" step="1" inputmode="numeric" placeholder="none" aria-describedby="e-acAddress">
           <p class="field-error" aria-live="polite" id="e-acAddress"></p>
+        </div>
+      </div>
+    </fieldset>
+
+    <fieldset class="addresses">
+      <legend>Power and water (for the usage estimates)</legend>
+      <div class="sizes two">
+        <div class="field">
+          <label for="f-intakeW">Intake fan (W)</label>
+          <input id="f-intakeW" name="intakeW" type="number" required min="0" max="5000" step="1" inputmode="decimal" aria-describedby="e-intakeW">
+          <p class="field-error" aria-live="polite" id="e-intakeW"></p>
+        </div>
+        <div class="field">
+          <label for="f-exhaustW">Exhaust fan (W)</label>
+          <input id="f-exhaustW" name="exhaustW" type="number" required min="0" max="5000" step="1" inputmode="decimal" aria-describedby="e-exhaustW">
+          <p class="field-error" aria-live="polite" id="e-exhaustW"></p>
+        </div>
+        <div class="field">
+          <label for="f-circulationW">Circulation fan (W)</label>
+          <input id="f-circulationW" name="circulationW" type="number" required min="0" max="5000" step="1" inputmode="decimal" aria-describedby="e-circulationW">
+          <p class="field-error" aria-live="polite" id="e-circulationW"></p>
+        </div>
+        <div class="field">
+          <label for="f-humidifierW">Humidifier power (W)</label>
+          <input id="f-humidifierW" name="humidifierW" type="number" required min="0" max="5000" step="1" inputmode="decimal" aria-describedby="e-humidifierW">
+          <p class="field-error" aria-live="polite" id="e-humidifierW"></p>
+        </div>
+        <div class="field">
+          <label for="f-humidifierLH">Humidifier water (L/h)</label>
+          <input id="f-humidifierLH" name="humidifierLH" type="number" required min="0" max="100" step="0.1" inputmode="decimal" aria-describedby="e-humidifierLH">
+          <p class="field-error" aria-live="polite" id="e-humidifierLH"></p>
+        </div>
+        <div class="field">
+          <label for="f-acInputW">Aircon rated input (W)</label>
+          <input id="f-acInputW" name="acInputW" type="number" required min="0" max="20000" step="1" inputmode="decimal" aria-describedby="e-acInputW">
+          <p class="field-error" aria-live="polite" id="e-acInputW"></p>
         </div>
       </div>
     </fieldset>

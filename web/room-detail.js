@@ -1,4 +1,5 @@
-// Room detail page: the room, its two sensors (status, latest values), its machines and three charts of the last 50 polls.
+// Room detail page: the room, its two sensors and the energy meter if it has one (status, latest values), its machines,
+// three charts of the last 50 polls (the T and RH charts with the outdoor line) and the energy and water card.
 // Refreshes every reading interval (2–30 s; 5 s when the settings cannot be read) while shown.
 
 import { request, OFFLINE } from './api.js';
@@ -11,6 +12,9 @@ import { fromRoom } from './mimic-math.js';
 import { drawLineChart } from './chart.js';
 import { refreshMs } from './settings-math.js';
 import { formatClock, formatAgo, chartPoints } from './chart-math.js';
+import { createUsageCard } from './usage.js';
+import { outdoorLine } from './outdoor-math.js';
+import { meterCard } from './ratings-math.js';
 // Stream B: long-range charts and the machine timeline
 import { createHistory } from './history.js';
 import { drawTimeline } from './timeline.js';
@@ -32,8 +36,8 @@ const STATUS_WORDS = {
 };
 // Three charts: which sensor, which reading field, how to show it.
 const CHARTS = [
-  { id: 'chart-t', band: ['tLow', 'tHigh'], kind: 'trh', field: 't', label: 'Temperature', unit: '°C', color: 'var(--s-t)', digits: 1, minSpan: 1 },
-  { id: 'chart-rh', band: ['rhLow', 'rhHigh'], kind: 'trh', field: 'rh', label: 'Humidity', unit: '%RH', color: 'var(--s-rh)', digits: 1, minSpan: 5, bounds: [0, 100] },
+  { id: 'chart-t', outdoor: true, band: ['tLow', 'tHigh'], kind: 'trh', field: 't', label: 'Temperature', unit: '°C', color: 'var(--s-t)', digits: 1, minSpan: 1 },
+  { id: 'chart-rh', outdoor: true, band: ['rhLow', 'rhHigh'], kind: 'trh', field: 'rh', label: 'Humidity', unit: '%RH', color: 'var(--s-rh)', digits: 1, minSpan: 5, bounds: [0, 100] },
   { id: 'chart-co2', band: ['co2Low', 'co2High'], kind: 'co2', field: 'co2', label: 'CO₂', unit: 'ppm', color: 'var(--s-co2)', digits: 0, minSpan: 100 },
 ];
 
@@ -70,6 +74,7 @@ const TEMPLATE = `
       <div class="chart-host" data-timeline-host></div>
       <p class="legend"><span class="swatch swatch-auto" aria-hidden="true"></span>Automatic <span class="swatch swatch-manual" aria-hidden="true"></span>Manual</p>
     </section>
+    <section data-usage></section>
   </div>`;
 
 let mountSeq = 0; // every mount gets a token; a reply that finds the token changed is dropped
@@ -108,11 +113,12 @@ export function mount(container, { id }) {
     rangeHost: q('[data-range]'),
     timeline: q('[data-timeline]'),
     timelineHost: q('[data-timeline-host]'),
+    usageHost: q('[data-usage]'),
   };
   const alive = () => me === mountSeq;
 
   let room = null;
-  let sensors = null; // { trh, co2 }
+  let sensors = null; // { trh, co2, meter } (meter only when the server sends one)
   let loadSeq = 0;
   let editedFromCard = false; // the dialog was opened from a sensor card button, which re-rendering replaces
   let timer = null;
@@ -130,6 +136,12 @@ export function mount(container, { id }) {
   let timelineChart = null;
   let drawnData = null; // the history reply last drawn
   let drawnWith = null;
+  let drawnOutdoor = null; // the outdoor history last drawn
+  let outdoor = null; // GET /api/outdoor, or null (no answer: an older server)
+  let outdoorLive = null; // the outdoor history of the last hour, for the Live charts
+  let outdoorLiveAt = 0;
+  let outdoorLiveSeq = 0;
+  let usageCard = null; // the Energy and water card, made on the first render
 
   // ---- loading ----
 
@@ -153,6 +165,7 @@ export function mount(container, { id }) {
         request('GET', `/api/rooms/${id}/control`).catch(() => null), // optional in the same way
         request('GET', '/api/settings').catch(() => null), // a failure keeps the 5 s refresh
         request('GET', `/api/rooms/${id}/alarms`).catch(() => null), // optional: alarms
+        request('GET', '/api/outdoor').catch(() => null), // optional: the outdoor sensor
       ]);
     } catch (err) {
       if (!alive() || seq !== loadSeq) return;
@@ -171,13 +184,15 @@ export function mount(container, { id }) {
       return;
     }
     if (!alive() || seq !== loadSeq) return;
-    const [r, list, machineData, controlData, settingsData, alarmData] = fetched;
+    const [r, list, machineData, controlData, settingsData, alarmData, outdoorData] = fetched;
     refresh = refreshMs(settingsData);
     room = r;
-    sensors = { trh: list.find((s) => s.kind === 'trh'), co2: list.find((s) => s.kind === 'co2') };
+    sensors = { trh: list.find((s) => s.kind === 'trh'), co2: list.find((s) => s.kind === 'co2'), meter: list.find((s) => s.kind === 'meter') ?? null };
+    outdoor = outdoorData;
     els.banner.hidden = true;
     els.missing.hidden = true;
     render(machineData, token, controlData, controlToken, alarmData);
+    refreshOutdoorLive();
     schedule();
   }
 
@@ -255,10 +270,44 @@ export function mount(container, { id }) {
     return card;
   }
 
+  // The "Energy meter" card: status, power now, the meter's total and when it answered last. Only for a room with a meter.
+  function meterNode(m) {
+    const card = text('section', 'card');
+    card.dataset.kind = 'meter';
+    card.append(text('h2', '', 'Energy meter'), text('p', 'addr', `address ${m.address}`));
+    const status = text('span', 'status', STATUS_WORDS[m.status] ?? m.status);
+    status.dataset.status = m.status;
+    card.append(status);
+    if (m.status === 'no-data') {
+      card.append(text('p', 'meta', 'Waiting for the first poll'));
+      return card;
+    }
+    const line = text('p', 'reading');
+    const part = (value, unit, digits) => {
+      const span = text('span');
+      span.append(text('span', 'val', value == null ? '—' : value.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })), text('span', 'unit', unit));
+      return span;
+    };
+    line.append(part(m.power, 'W', 0), part(m.energy, 'kWh total', 1));
+    card.append(line);
+    if (m.at !== null) {
+      const ago = text('p', 'meta');
+      ago.dataset.agoAt = m.at;
+      ago.textContent = formatAgo(Date.now() - m.at);
+      card.append(ago);
+    }
+    if (m.status !== 'online') {
+      card.append(text('p', 'meta', `Last answer: ${m.at !== null ? formatClock(m.at) : 'never'}`));
+      card.append(text('p', 'meta warn', `${plural(m.failures, 'failed poll', 'failed polls')} in a row`));
+    }
+    return card;
+  }
+
   function renderSensors() {
     // Re-rendering replaces the cards; keep focus on the same button.
     const hadFocus = els.sensors.contains(document.activeElement) ? document.activeElement.closest('[data-kind]')?.dataset.kind : null;
-    els.sensors.replaceChildren(sensorCard('trh', sensors.trh), sensorCard('co2', sensors.co2));
+    const meter = meterCard(sensors.meter);
+    els.sensors.replaceChildren(sensorCard('trh', sensors.trh), sensorCard('co2', sensors.co2), ...(meter ? [meterNode(meter)] : []));
     if (hadFocus) els.sensors.querySelector(`[data-kind="${hadFocus}"] button`)?.focus();
     // The focused "Edit room" button may be gone (its sensor is wired now) or the dialog just closed.
     else if (editedFromCard && document.activeElement === document.body && !document.querySelector('dialog[open]')) {
@@ -284,9 +333,10 @@ export function mount(container, { id }) {
     const data = hist?.data ?? null;
     // A long range changes once a minute: the 5 s refresh must not redraw it (that would drop the hover).
     const drawnKey = data ? chartDrawKey(bands, sensors, room) : null;
-    if (data && data === drawnData && drawnKey === drawnWith) return;
+    if (data && data === drawnData && drawnKey === drawnWith && hist.outdoor === drawnOutdoor) return;
     drawnData = data;
     drawnWith = drawnKey;
+    drawnOutdoor = hist?.outdoor ?? null;
     for (const def of CHARTS) {
       const entry = chartCards.get(def.id);
       const s = sensors[def.kind];
@@ -300,7 +350,9 @@ export function mount(container, { id }) {
       if (!wired) continue;
       // The band from the room's control settings (shown whether Auto is on or off), once they have loaded.
       const band = bands ? { low: bands[def.band[0]], high: bands[def.band[1]] } : null;
-      const opts = { points, unit: def.unit, label: def.label, color: def.color, digits: def.digits, minSpan: def.minSpan, bounds: def.bounds, band };
+      // The outdoor values as a second, dashed line: the history of the same range, or the last hour on Live.
+      const second = def.outdoor ? outdoorLine(hist ? hist.outdoor : outdoorLive, def.field) : null;
+      const opts = { points, unit: def.unit, label: def.label, color: def.color, digits: def.digits, minSpan: def.minSpan, bounds: def.bounds, band, second };
       if (data) { // a long range: the whole window on the axis, date ticks, a shared time line with the other charts
         const range = { from: data.from, to: data.to };
         Object.assign(opts, {
@@ -353,7 +405,8 @@ export function mount(container, { id }) {
       makeControl();
       mimic = createMimic(els.mimicHost, { idPrefix: 'room-' });
       buildCharts();
-      history = createHistory(els.rangeHost, { roomId: id, onChange: () => { if (alive() && sensors) renderCharts(); } });
+      usageCard = createUsageCard(els.usageHost, { roomId: id });
+      history = createHistory(els.rangeHost, { roomId: id, outdoor: true, onChange: () => { if (alive() && sensors) renderCharts(); } });
       built = true;
     }
     stopLoop ??= startLoop(() => (mimic ? [mimic] : [])); // (again after a missing room came back)
@@ -377,11 +430,27 @@ export function mount(container, { id }) {
     renderSensors();
     renderCharts();
     paintDrawing();
+    usageCard.refresh(); // not more than once a minute
   }
 
   // The room drawing from the latest painted replies (also right after a command, not only on the next refresh).
   function paintDrawing() {
-    if (mimic && room) mimic.paint(fromRoom({ room, sensors, machines: lastMachines, control: lastControl }));
+    if (mimic && room) mimic.paint(fromRoom({ room, sensors, machines: lastMachines, control: lastControl, outdoor }));
+  }
+
+  // The outdoor history of the last hour, for the Live charts; asked at most once a minute and only when a sensor is set.
+  async function refreshOutdoorLive() {
+    if (!outdoor || outdoor.address == null) {
+      outdoorLive = null;
+      return;
+    }
+    if (Date.now() - outdoorLiveAt < 60_000) return;
+    outdoorLiveAt = Date.now();
+    const me = ++outdoorLiveSeq;
+    const data = await request('GET', '/api/outdoor/history?range=1h').catch(() => null);
+    if (!alive() || me !== outdoorLiveSeq || !data) return; // a failed read keeps the last good one
+    outdoorLive = data;
+    if (sensors && built) renderCharts();
   }
 
   // ---- Alarms card (spec 2026-10-19-safety-and-history-design.md section 6) ----
@@ -447,7 +516,7 @@ export function mount(container, { id }) {
     if (!room) return;
     els.banner.hidden = true;
     openRoomDialog(room, {
-      onSaved: () => { if (alive()) load(); },
+      onSaved: () => { if (alive()) { load(); usageCard?.refresh(true); } }, // new ratings change the estimates
       onGone: () => { if (alive()) showMissing(); },
     });
   }
@@ -473,6 +542,8 @@ export function mount(container, { id }) {
     stopLoop?.();
     mimic?.destroy();
     history?.destroy();
+    usageCard?.destroy();
+    outdoorLiveSeq++;
     timelineChart?.destroy();
     for (const { chart } of chartCards.values()) chart?.destroy();
     closeRoomDialog();

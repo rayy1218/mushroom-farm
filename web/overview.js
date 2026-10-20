@@ -5,6 +5,9 @@ import { request, OFFLINE } from './api.js';
 import { refreshMs } from './settings-math.js';
 import { loadOverview } from './overview-data.js';
 import { tiles, roomCard, alarmTimeText, SPARK_W, SPARK_H } from './overview-math.js';
+import { outdoorCard } from './outdoor-math.js';
+import { roomLines, USAGE_DAYS, USAGE_REFRESH_MS } from './usage-math.js';
+import { usageTileNodes } from './usage.js';
 
 export const ALARMS_CHANGED = 'farm:alarms-changed';
 const NS = 'http://www.w3.org/2000/svg';
@@ -28,6 +31,7 @@ const TEMPLATE = `
       <h2>Alarms</h2>
       <ul class="ov-alarm-list" data-alarm-list></ul>
     </section>
+    <div class="ov-farm" data-farm></div>
     <div class="empty" data-empty hidden>
       <p>No rooms yet</p>
       <a href="#/rooms">Go to Rooms to add one</a>
@@ -92,6 +96,7 @@ export function mount(container) {
     alarmList: q('[data-alarm-list]'),
     empty: q('[data-empty]'),
     rooms: q('[data-rooms]'),
+    farm: q('[data-farm]'),
   };
   const alive = () => me === mountSeq;
 
@@ -100,6 +105,9 @@ export function mount(container) {
   let refresh = refreshMs(null);
   let shown = false;
   let holdBanner = false; // the next load keeps the banner (it shows why an Acknowledge failed)
+  let usageAt = 0; // when the farm usage was last read: it is asked at most once a minute
+  let outdoor = null; // the last good GET /api/outdoor (null: none yet, or an older server)
+  let usage = null; // the last good GET /api/usage
 
   function showBanner(text, retry = false) {
     if (!els.banner.hidden && els.bannerText.textContent === text) return; // do not re-announce the same alert
@@ -111,8 +119,18 @@ export function mount(container) {
   async function load() {
     clearTimeout(timer);
     const seq = ++loadSeq;
-    const [result, settings] = await Promise.all([loadOverview(), request('GET', '/api/settings').catch(() => null)]);
+    const wantUsage = Date.now() - usageAt >= USAGE_REFRESH_MS;
+    const [result, settings, outdoorData, usageData] = await Promise.all([
+      loadOverview(),
+      request('GET', '/api/settings').catch(() => null),
+      request('GET', '/api/outdoor').catch(() => null), // optional: an older server has no outdoor sensor
+      wantUsage ? request('GET', `/api/usage?days=${USAGE_DAYS}`).catch(() => null) : null,
+    ]);
     if (!alive() || seq !== loadSeq) return;
+    if (outdoorData) outdoor = outdoorData; // a failed read keeps the last card
+    if (wantUsage) usageAt = Date.now(); // a failed read is tried again in a minute
+    if (usageData) usage = usageData;
+    renderFarm();
     refresh = refreshMs(settings);
     const { overview, alarms, failed } = result;
     if (failed.overview || failed.alarms) showBanner(OFFLINE, true);
@@ -159,6 +177,68 @@ export function mount(container) {
       card.append(node('p', 'ov-room-foot', `${c.auto} · ${c.exchange}`));
       return card;
     }));
+  }
+
+  // The farm cards: Outdoor first, then Energy and water. A card shows once its data has come.
+  function renderFarm() {
+    const cards = [];
+    const o = outdoorCard(outdoor);
+    if (o) cards.push(outdoorNode(o));
+    if (usage) cards.push(energyNode(usage));
+    els.farm.replaceChildren(...cards);
+    els.farm.hidden = cards.length === 0;
+  }
+
+  function outdoorNode(o) {
+    const card = node('section', 'card ov-outdoor');
+    const head = node('div', 'ov-room-head');
+    head.append(node('h2', '', 'Outdoor'));
+    card.append(head);
+    if (!o.set) {
+      const p = node('p', 'muted', 'No outdoor sensor: ');
+      const link = node('a', '', 'set one on Settings');
+      link.href = '#/settings';
+      p.append(link);
+      card.append(p);
+      return card;
+    }
+    const status = node('span', 'status', o.statusText);
+    status.dataset.status = o.status;
+    head.append(status);
+    if (o.fault) card.append(levelChip(o.fault.level, o.fault.text));
+    for (const v of o.values) {
+      const row = node('div', 'ov-value');
+      const text = node('div', 'ov-value-text');
+      text.append(node('span', 'ov-value-label', v.label), node('span', 'ov-value-now', v.text));
+      row.append(text);
+      if (v.key !== 'dew') row.append(sparkline({ ...v, label: `Outdoor ${v.label.toLowerCase()}` }));
+      card.append(row);
+    }
+    return card;
+  }
+
+  function energyNode(u) {
+    const card = node('section', 'card ov-energy');
+    card.append(node('h2', '', 'Energy and water'));
+    const tilesRow = node('div', 'us-tiles');
+    tilesRow.append(...usageTileNodes(u, false));
+    card.append(tilesRow);
+    const lines = roomLines(u);
+    if (lines.length) {
+      const list = node('ul', 'us-rooms');
+      const head = node('li', 'us-room us-room-head');
+      head.append(node('span', '', 'Room'), node('span', '', 'Today'), node('span', '', '30 days'));
+      list.append(head);
+      for (const l of lines) {
+        const li = node('li', 'us-room');
+        const a = node('a', '', l.name);
+        a.href = l.href;
+        li.append(a, node('span', '', l.today), node('span', '', l.last30));
+        list.append(li);
+      }
+      card.append(list);
+    }
+    return card;
   }
 
   function renderAlarms(alarms) {

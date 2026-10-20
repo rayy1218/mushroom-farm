@@ -469,3 +469,43 @@ button.toggle[data-on="true"]:hover { opacity: .85; background: var(--ink); }
   .ov-alarm { grid-template-columns: auto minmax(0, 1fr) auto; }
   .ov-alarm-text { grid-column: 1 / -1; grid-row: 2; }
 }
+
+/* Energy and water (room page card and Overview farm card), Outdoor card */
+.us-card { margin-top: 12px; }
+.us-card h3 { margin: 0 0 8px; font-size: var(--fs-md); font-weight: 600; }
+.us-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 8px 0 12px; }
+.us-tile { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; min-width: 0; }
+.us-tile p { margin: 0; font-variant-numeric: tabular-nums; }
+.us-label { color: var(--ink-2); font-size: var(--fs-sm); }
+.us-kwh { font-size: var(--fs-xl); font-weight: 700; line-height: 1.25; }
+.us-line { font-size: var(--fs-md); }
+.us-basis { color: var(--muted); font-size: var(--fs-xs); text-transform: lowercase; }
+.us-hint { margin: 0 0 12px; font-size: var(--fs-sm); }
+.us-charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin: 4px 0 16px; }
+.us-chart { min-width: 0; }
+.swatch-solid { background: var(--s-co2); border-color: var(--s-co2); }
+.swatch-hatch { border-color: var(--s-co2); background: repeating-linear-gradient(45deg, var(--s-co2) 0 2px, transparent 2px 5px); }
+.us-table-wrap { overflow-x: auto; }
+.us-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.us-table caption { text-align: left; font-weight: 600; padding-bottom: 6px; }
+.us-table th, .us-table td { padding: 6px 8px; border-top: 1px solid var(--border); text-align: left; font-weight: 400; }
+.us-table thead th { border-top: 0; color: var(--ink-2); font-size: var(--fs-sm); font-weight: 600; }
+.us-table tbody th { font-weight: 600; }
+.us-table .num { text-align: right; white-space: nowrap; }
+.us-table .total th, .us-table .total td { font-weight: 700; border-top: 1px solid var(--border-strong); }
+.us-note { margin: 8px 0 0; font-size: var(--fs-sm); }
+.ov-farm { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.ov-farm:empty { display: none; }
+.ov-outdoor > .ov-chip { margin-bottom: 8px; }
+.ov-outdoor a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--axis); text-underline-offset: 3px; }
+.ov-energy h2 { margin-bottom: 8px; }
+.us-rooms { margin: 0; padding: 0; list-style: none; }
+.us-room { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 4px 12px; padding: 6px 0; border-top: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+.us-room > :not(:first-child) { text-align: right; }
+.us-room a { color: var(--ink); overflow-wrap: anywhere; }
+.us-room-head { color: var(--muted); font-size: var(--fs-xs); border-top: 0; }
+@media (max-width: 480px) {
+  .us-room { grid-template-columns: minmax(0, 1fr) auto; }
+  .us-room > :nth-child(3) { grid-column: 2; }
+  .us-room-head > :nth-child(3) { display: none; }
+}

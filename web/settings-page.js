@@ -1,7 +1,7 @@
-// Settings page: the farm-wide reading interval.
+// Settings page: the farm-wide reading interval, the outdoor sensor address and the electricity and water prices.
 
 import { request, OFFLINE } from './api.js';
-import { parsePoll, POLL_MESSAGE, POLL_MIN, POLL_MAX } from './settings-math.js';
+import { parsePoll, POLL_MESSAGE, POLL_MIN, POLL_MAX, EXTRA_FIELDS, parseExtraSettings } from './settings-math.js';
 
 const COMMAND_TIMEOUT = 15000;
 const SAVED = 'Saved — applies from the next reading';
@@ -26,6 +26,25 @@ const TEMPLATE = `
       <p class="field-error" id="e-pollSeconds" role="status"></p>
     </div>
     <p class="muted s-hint" id="s-hint">${HINT}</p>
+    <h2>Outdoor sensor</h2>
+    <div class="field">
+      <label for="f-outdoorAddress">Outdoor sensor address</label>
+      <input id="f-outdoorAddress" name="outdoorAddress" type="number" min="1" max="247" step="1" inputmode="numeric" placeholder="none" aria-describedby="e-outdoorAddress s-outdoor">
+      <p class="field-error" id="e-outdoorAddress" role="status"></p>
+    </div>
+    <p class="muted s-hint" id="s-outdoor">A T/RH probe outside, 1 to 247, or empty for none. It cannot share an address with a room's sensor.</p>
+    <h2>Prices</h2>
+    <div class="field">
+      <label for="f-electricityPrice">Electricity price (RM per kWh)</label>
+      <input id="f-electricityPrice" name="electricityPrice" type="number" min="0" max="10" step="0.01" inputmode="decimal" aria-describedby="e-electricityPrice">
+      <p class="field-error" id="e-electricityPrice" role="status"></p>
+    </div>
+    <div class="field">
+      <label for="f-waterPrice">Water price (RM per m³)</label>
+      <input id="f-waterPrice" name="waterPrice" type="number" min="0" max="100" step="0.01" inputmode="decimal" placeholder="not set" aria-describedby="e-waterPrice s-water">
+      <p class="field-error" id="e-waterPrice" role="status"></p>
+    </div>
+    <p class="muted s-hint" id="s-water">Leave the water price empty and water costs are not shown. Enter the rate on your water bill.</p>
     <div class="ac-send">
       <button type="submit" class="primary" data-save>Save</button>
       <button type="button" data-reset hidden>Reset</button>
@@ -42,8 +61,12 @@ export function mount(container) {
   container.innerHTML = TEMPLATE;
   const q = (sel) => container.querySelector(sel);
   const form = q('[data-form]');
-  const input = q('#f-pollSeconds');
-  const fieldErr = q('#e-pollSeconds');
+  // every field of the form: the input, its error line and (for the added ones) how its text is read and shown
+  const fields = {
+    pollSeconds: { input: q('#f-pollSeconds'), err: q('#e-pollSeconds'), show: (v) => String(v ?? '') },
+    ...Object.fromEntries(EXTRA_FIELDS.map((f) => [f.name, { input: q(`#f-${f.name}`), err: q(`#e-${f.name}`), show: f.show }])),
+  };
+  const input = fields.pollSeconds.input;
   const save = q('[data-save]');
   const reset = q('[data-reset]');
   const unsent = q('[data-unsent]');
@@ -57,17 +80,21 @@ export function mount(container) {
   let dirty = false;
   let saving = false;
 
-  function setError(text) {
-    if (fieldErr.textContent !== text) fieldErr.textContent = text;
-    if (text) input.setAttribute('aria-invalid', 'true');
-    else input.removeAttribute('aria-invalid');
+  function setError(text, name = 'pollSeconds') {
+    const { input: el, err } = fields[name];
+    if (err.textContent !== text) err.textContent = text;
+    if (text) el.setAttribute('aria-invalid', 'true');
+    else el.removeAttribute('aria-invalid');
+  }
+  function clearErrors() {
+    for (const name of Object.keys(fields)) setError('', name);
   }
   function paintDirty() {
     unsent.hidden = !dirty;
     reset.hidden = !dirty;
   }
   function setInput(s) {
-    input.value = String(s.pollSeconds);
+    for (const [name, f] of Object.entries(fields)) f.input.value = f.show(s[name]);
   }
 
   async function load() {
@@ -85,16 +112,18 @@ export function mount(container) {
     }
   }
 
-  input.addEventListener('input', () => {
-    dirty = true;
-    setError('');
-    saved.hidden = true;
-    paintDirty();
-  });
+  for (const [name, f] of Object.entries(fields)) {
+    f.input.addEventListener('input', () => {
+      dirty = true;
+      setError('', name);
+      saved.hidden = true;
+      paintDirty();
+    });
+  }
 
   reset.addEventListener('click', () => {
     dirty = false;
-    setError('');
+    clearErrors();
     if (last) setInput(last);
     paintDirty();
     save.focus();
@@ -103,10 +132,14 @@ export function mount(container) {
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     if (saving) return;
+    clearErrors();
     const n = parsePoll(input.value);
-    if (n === null) {
-      setError(POLL_MESSAGE);
-      input.focus();
+    const extra = parseExtraSettings(Object.fromEntries(EXTRA_FIELDS.map((f) => [f.name, fields[f.name].input.value])));
+    const errors = { ...(n === null ? { pollSeconds: POLL_MESSAGE } : {}), ...extra.errors };
+    const wrong = Object.keys(fields).filter((name) => errors[name]);
+    if (wrong.length) {
+      for (const name of wrong) setError(errors[name], name);
+      fields[wrong[0]].input.focus();
       return;
     }
     saving = true;
@@ -114,20 +147,20 @@ export function mount(container) {
     reset.disabled = true;
     saved.hidden = true;
     try {
-      const data = await request('PUT', '/api/settings', { pollSeconds: n }, COMMAND_TIMEOUT);
+      const data = await request('PUT', '/api/settings', { pollSeconds: n, ...extra.body }, COMMAND_TIMEOUT);
       if (!alive()) return;
       last = data;
       dirty = false;
-      setError('');
+      clearErrors();
       setInput(data);
       paintDirty();
       saved.textContent = SAVED;
       saved.hidden = false;
     } catch (err) {
       if (!alive()) return;
-      if (err.status === 400 && err.field === 'pollSeconds') {
-        setError(err.message);
-        input.focus();
+      if (err.status === 400 && Object.hasOwn(fields, err.field)) {
+        setError(err.message, err.field);
+        fields[err.field].input.focus();
       } else {
         setError(err.status === 0 ? `${OFFLINE}. Try again.` : err.message);
       }
