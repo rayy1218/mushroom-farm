@@ -126,18 +126,20 @@ export function barAt(layout, x) {
 }
 
 // The finding in words, for the chart's aria-label: total, the highest day, today, and how many days are metered.
-// kind: 'energy' (kWh) or 'water' (L).
+// kind: 'energy' (kWh), 'water' (L), or 'run-energy' / 'run-water' (the days of a simulation).
 export function barsSummary(series, kind) {
-  const fmt = kind === 'water' ? formatLitres : formatKWh;
-  const title = kind === 'water' ? 'Water per day' : 'Energy per day';
+  const water = kind === 'water' || kind === 'run-water';
+  const fmt = water ? formatLitres : formatKWh;
+  const title = water ? 'Water per day' : 'Energy per day';
   const have = series.filter((s) => finite(s.v));
   if (have.length === 0) return `${title}: no data`;
   const total = have.reduce((a, s) => a + s.v, 0);
   const peak = have.reduce((a, s) => (s.v > a.v ? s : a), have[0]);
   const today = series[series.length - 1];
-  const parts = [`${title}, last ${series.length} days: total ${fmt(total)}`, `highest ${fmt(peak.v)} on ${dateLabel(peak.date)}`];
-  if (finite(today.v)) parts.push(`today ${fmt(today.v)}`);
-  if (kind !== 'water') {
+  const run = kind.startsWith('run-'); // a simulation's days: no "last", no today, nothing metered
+  const parts = [`${title}, ${run ? '' : 'last '}${series.length} days: total ${fmt(total)}`, `highest ${fmt(peak.v)} on ${dateLabel(peak.date)}`];
+  if (!run && finite(today.v)) parts.push(`today ${fmt(today.v)}`);
+  if (kind === 'energy') {
     const metered = series.filter((s) => s.metered).length;
     parts.push(metered === 0 ? 'all estimated' : metered === series.length ? 'all metered' : `${metered} ${metered === 1 ? 'day' : 'days'} metered, the rest estimated`);
   }
@@ -146,8 +148,8 @@ export function barsSummary(series, kind) {
 
 // The tooltip of a bar.
 export function barTip(bar, kind) {
-  const fmt = kind === 'water' ? formatLitres : formatKWh;
-  const basis = kind === 'water' ? '' : bar.metered ? ' (metered)' : ' (estimated)';
+  const fmt = kind === 'water' || kind === 'run-water' ? formatLitres : formatKWh;
+  const basis = kind !== 'energy' ? '' : bar.metered ? ' (metered)' : ' (estimated)';
   return `${dateLabel(bar.date)}  ${fmt(bar.v)}${basis}`;
 }
 

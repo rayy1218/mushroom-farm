@@ -2,6 +2,7 @@
 
 import { request, OFFLINE, GONE } from './api.js';
 import { openRoomDialog, closeRoomDialog } from './room-dialog.js';
+import { openSimulateDialog, closeSimulateDialog } from './simulate-dialog.js';
 import { activeCounts, chipText, levelLabel } from './alarms-math.js';
 
 const metres = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
@@ -120,7 +121,7 @@ export function mount(container) {
     const tr = document.createElement('tr');
     const actions = document.createElement('td');
     actions.className = 'row-actions';
-    actions.append(button('Edit', 'edit', room), button('Delete', 'delete', room, 'danger-text'));
+    actions.append(button('Edit', 'edit', room), button('Simulate', 'simulate', room), button('Delete', 'delete', room, 'danger-text'));
     const name = cell('', 'Name', 'name');
     const link = document.createElement('a');
     link.href = `#/rooms/${room.id}`;
@@ -207,6 +208,7 @@ export function mount(container) {
     const room = rooms.find((r) => r.id === Number(b.dataset.id));
     if (!room) return;
     if (b.dataset.action === 'edit') openEdit(room);
+    else if (b.dataset.action === 'simulate') openSimulateDialog(room);
     else openDelete(room);
   });
 
@@ -216,6 +218,7 @@ export function mount(container) {
     mountSeq++;
     abort.abort();
     closeRoomDialog();
+    closeSimulateDialog();
     if (deleteDialog.open) deleteDialog.close();
     container.replaceChildren();
   };

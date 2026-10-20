@@ -25,3 +25,14 @@ test('canonical hashes are left alone, others are tidied', () => {
   assert.equal(isCanonical('#/rooms/7/'), false);
   assert.equal(isCanonical('#/rooms/x'), false);
 });
+
+test('a simulation run of a room is its own page', () => {
+  assert.deepEqual(parseRoute('#/rooms/3/simulations/12'), { name: 'simulation', id: 3, runId: 12 });
+  assert.deepEqual(parseRoute('#/rooms/3/simulations/12/'), { name: 'simulation', id: 3, runId: 12 });
+  for (const h of ['#/rooms/3/simulations', '#/rooms/3/simulations/0', '#/rooms/3/simulations/x', '#/rooms/0/simulations/1', '#/rooms/3/simulations/1/2']) {
+    assert.deepEqual(parseRoute(h), { name: 'overview' }, h);
+  }
+  assert.equal(isCanonical('#/rooms/3/simulations/12'), true);
+  assert.equal(isCanonical('#/rooms/3/simulations/12/'), false);
+  assert.equal(isCanonical('#/rooms/3/simulations/0'), false);
+});

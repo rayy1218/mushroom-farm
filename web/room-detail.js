@@ -7,6 +7,9 @@ import { openRoomDialog, closeRoomDialog } from './room-dialog.js';
 import { createMachines } from './machines.js';
 import { createControl } from './control.js';
 import { createAlarmsCard } from './alarms.js';
+import { createCropCard } from './crop-card.js';
+import { createSimulationsCard } from './sim-card.js';
+import { closeSimulateDialog } from './simulate-dialog.js';
 import { createMimic, startLoop } from './mimic.js';
 import { fromRoom } from './mimic-math.js';
 import { drawLineChart } from './chart.js';
@@ -65,6 +68,7 @@ const TEMPLATE = `
       <div class="mimic-host" data-mimic-host></div>
     </section>
     <div class="sensors" data-sensors></div>
+    <section data-crop></section>
     <section data-control hidden></section>
     <section data-machines></section>
     <div data-range></div>
@@ -75,6 +79,7 @@ const TEMPLATE = `
       <p class="legend"><span class="swatch swatch-auto" aria-hidden="true"></span>Automatic <span class="swatch swatch-manual" aria-hidden="true"></span>Manual</p>
     </section>
     <section data-usage></section>
+    <section data-simulations></section>
   </div>`;
 
 let mountSeq = 0; // every mount gets a token; a reply that finds the token changed is dropped
@@ -107,6 +112,7 @@ export function mount(container, { id }) {
     sensors: q('[data-sensors]'),
     alarmsHost: q('[data-alarms]'),
     mimicHost: q('[data-mimic-host]'),
+    cropHost: q('[data-crop]'),
     controlHost: q('[data-control]'),
     machinesHost: q('[data-machines]'),
     charts: q('[data-charts]'),
@@ -114,6 +120,7 @@ export function mount(container, { id }) {
     timeline: q('[data-timeline]'),
     timelineHost: q('[data-timeline-host]'),
     usageHost: q('[data-usage]'),
+    simulationsHost: q('[data-simulations]'),
   };
   const alive = () => me === mountSeq;
 
@@ -144,6 +151,8 @@ export function mount(container, { id }) {
   let outdoorLiveAt = 0;
   let outdoorLiveSeq = 0;
   let usageCard = null; // the Energy and water card, made on the first render
+  let cropCard = null; // the Crop and stage card
+  let simulationsCard = null; // the Simulations card
 
   // ---- loading ----
 
@@ -404,10 +413,12 @@ export function mount(container, { id }) {
     if (!built) {
       makeAlarms();
       makeMachines();
+      makeCrop();
       makeControl();
       mimic = createMimic(els.mimicHost, { idPrefix: 'room-' });
       buildCharts();
       usageCard = createUsageCard(els.usageHost, { roomId: id });
+      simulationsCard = createSimulationsCard(els.simulationsHost, { roomId: id, getRoom: () => room });
       history = createHistory(els.rangeHost, { roomId: id, outdoor: true, onChange: () => { if (alive() && sensors) renderCharts(); } });
       built = true;
     }
@@ -496,6 +507,21 @@ export function mount(container, { id }) {
     els.machinesHost.hidden = true;
   }
 
+  // The Crop and stage card; a saved crop or stage may change the bands, so the page reads the control settings again.
+  function makeCrop() {
+    cropCard = createCropCard(els.cropHost, {
+      roomId: id,
+      onChange: () => { if (alive()) load(); },
+      onOffline: () => {
+        if (!els.banner.hidden) return;
+        els.bannerText.textContent = OFFLINE;
+        els.retry.hidden = false;
+        els.banner.hidden = false;
+      },
+      onGone: () => { if (alive()) load(); },
+    });
+  }
+
   function makeControl() {
     control = createControl(els.controlHost, {
       roomId: id,
@@ -555,10 +581,13 @@ export function mount(container, { id }) {
     mimic?.destroy();
     history?.destroy();
     usageCard?.destroy();
+    cropCard?.destroy();
+    simulationsCard?.destroy();
     outdoorLiveSeq++;
     timelineChart?.destroy();
     for (const { chart } of chartCards.values()) chart?.destroy();
     closeRoomDialog();
+    closeSimulateDialog();
     document.title = 'Rooms · Mushroom farm';
     container.replaceChildren();
   };

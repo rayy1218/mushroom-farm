@@ -95,3 +95,30 @@ export function clipSeries(points, t0, t1) {
   });
   return out;
 }
+
+// The band as it moved (chart option bandSteps: [{ from, to, low, high }], times like the points') cut to the window and turned
+// into shapes: one shaded rect per step and one stepped path for each limit. yFor maps a value to y, xAt a time to x.
+// → { rects: [{ x, y, width, height }], high, low } (the two paths as `d` strings, '' when there is no step in the window).
+export function stepShapes(steps, window, xAt, yFor) {
+  const rects = [];
+  const paths = { high: '', low: '' };
+  let end = null; // where the previous step ended, to continue its line
+  for (const s of steps ?? []) {
+    const from = Math.max(s.from, window.from);
+    const to = Math.min(s.to, window.to);
+    if (!(to > from)) continue;
+    const xa = xAt(from);
+    const xb = xAt(to);
+    const yHigh = yFor(s.high);
+    const yLow = yFor(s.low);
+    rects.push({ x: xa, y: yHigh, width: Math.max(0, xb - xa), height: Math.max(0, yLow - yHigh) });
+    for (const [key, y] of [['high', yHigh], ['low', yLow]]) {
+      paths[key] += `${end === from ? `V${y.toFixed(1)}` : `M${xa.toFixed(1)} ${y.toFixed(1)}`}H${xb.toFixed(1)}`;
+    }
+    end = to;
+  }
+  return { rects, ...paths };
+}
+
+// Every value a list of band steps reaches, for the y range.
+export const stepValues = (steps) => (steps ?? []).flatMap((s) => [s.low, s.high]);

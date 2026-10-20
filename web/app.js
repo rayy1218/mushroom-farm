@@ -4,6 +4,7 @@
 import { parseRoute, isCanonical } from './route.js';
 import * as list from './rooms-list.js';
 import * as detail from './room-detail.js';
+import * as simulation from './simulation-page.js';
 import * as settings from './settings-page.js';
 import * as overview from './overview.js';
 import { loadBadge } from './overview-data.js';
@@ -23,13 +24,15 @@ function show() {
   if (!isCanonical(location.hash)) {
     const route = parseRoute(location.hash);
     // Tidy an empty or unknown hash without adding a history entry.
-    history.replaceState(null, '', route.name === 'detail' ? `#/rooms/${route.id}` : route.name === 'settings' ? '#/settings'
+    history.replaceState(null, '', route.name === 'simulation' ? `#/rooms/${route.id}/simulations/${route.runId}`
+      : route.name === 'detail' ? `#/rooms/${route.id}` : route.name === 'settings' ? '#/settings'
       : route.name === 'list' ? '#/rooms' : '#/overview');
   }
   const route = parseRoute(location.hash);
   unmount?.();
   view.replaceChildren();
-  unmount = route.name === 'detail' ? detail.mount(view, { id: route.id })
+  unmount = route.name === 'simulation' ? simulation.mount(view, { id: route.id, runId: route.runId })
+    : route.name === 'detail' ? detail.mount(view, { id: route.id })
     : route.name === 'settings' ? settings.mount(view, {})
     : route.name === 'list' ? list.mount(view, {})
     : overview.mount(view, {});
