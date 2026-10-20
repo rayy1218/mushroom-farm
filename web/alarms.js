@@ -78,6 +78,7 @@ export function createAlarmsCard(host, { roomId, onChange, onOffline }) {
     showError('');
     try {
       await action();
+      window.dispatchEvent(new Event('farm:alarms-changed')); // the nav badge counts again at once
       if (!alive) return;
       onChange?.();
     } catch (e) {
