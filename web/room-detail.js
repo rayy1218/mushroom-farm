@@ -13,7 +13,7 @@ import { drawLineChart } from './chart.js';
 import { refreshMs } from './settings-math.js';
 import { formatClock, formatAgo, chartPoints } from './chart-math.js';
 import { createUsageCard } from './usage.js';
-import { outdoorLine } from './outdoor-math.js';
+import { outdoorLine, pushOutdoorTail, liveOutdoor } from './outdoor-math.js';
 import { meterCard } from './ratings-math.js';
 // Stream B: long-range charts and the machine timeline
 import { createHistory } from './history.js';
@@ -139,6 +139,8 @@ export function mount(container, { id }) {
   let drawnOutdoor = null; // the outdoor history last drawn
   let outdoor = null; // GET /api/outdoor, or null (no answer: an older server)
   let outdoorLive = null; // the outdoor history of the last hour, for the Live charts
+  let outdoorBase = null; // the last hour fetched, at most once a minute
+  let outdoorTail = []; // the newest readings since, one per refresh
   let outdoorLiveAt = 0;
   let outdoorLiveSeq = 0;
   let usageCard = null; // the Energy and water card, made on the first render
@@ -438,18 +440,28 @@ export function mount(container, { id }) {
     if (mimic && room) mimic.paint(fromRoom({ room, sensors, machines: lastMachines, control: lastControl, outdoor }));
   }
 
-  // The outdoor history of the last hour, for the Live charts; asked at most once a minute and only when a sensor is set.
+  // The outdoor line of the Live charts: the history of the last hour, asked at most once a minute and only when a sensor
+  // is set, plus the newest reading of GET /api/outdoor on every refresh so the line reaches the right edge.
   async function refreshOutdoorLive() {
     if (!outdoor || outdoor.address == null) {
       outdoorLive = null;
+      outdoorBase = null;
+      outdoorTail = [];
       return;
+    }
+    const tail = pushOutdoorTail(outdoorTail, outdoor.last);
+    if (tail !== outdoorTail) {
+      outdoorTail = tail;
+      outdoorLive = liveOutdoor(outdoorBase, outdoorTail);
+      if (sensors && built) renderCharts();
     }
     if (Date.now() - outdoorLiveAt < 60_000) return;
     outdoorLiveAt = Date.now();
     const me = ++outdoorLiveSeq;
     const data = await request('GET', '/api/outdoor/history?range=1h').catch(() => null);
     if (!alive() || me !== outdoorLiveSeq || !data) return; // a failed read keeps the last good one
-    outdoorLive = data;
+    outdoorBase = data;
+    outdoorLive = liveOutdoor(outdoorBase, outdoorTail);
     if (sensors && built) renderCharts();
   }
 
