@@ -66,8 +66,8 @@ function layoutNarrow(size) {
     ground: h - 6,
     wall: { x: 0, y: 92, w, h: h - 98 }, room: { x: 8, y: 100, w: w - 16, h: h - 106 }, hatch: true,
     outdoor: { x: 34, eyebrow: null, big: null, small: 22, icon: [18, 17], sky: null, line: true },
-    note: { x: 8, y: 80, anchor: 'start' },
-    cond: { cx: w - 56, cy: 59, s: 0.8, rect: [w - 96, 34, 80, 50], tx: w - 104, ty: 56, anchor: 'end', pipes: null },
+    note: { x: 8, y: 86, anchor: 'start' },
+    cond: { cx: w - 56, cy: 59, s: 0.8, rect: [w - 96, 34, 80, 50], tx: w - 104, ty: 46, anchor: 'end', pipes: null },
     ac: { x: 16, y: 108, w: acW, h: 62, flows: [0.2, 0.5, 0.8].map((f) => [16 + acW * f, 174, 16 + acW * f - 16, 214]) },
     circ: { cx: w / 2, cy: fanY, s: 0.8, tx: w / 2, ty: fanY + 34, anchor: 'middle' },
     readouts: [0, 1, 2].map((i) => ({ x: 16 + i * (roW + 8), y: 350, w: roW, h: 46 })),
@@ -165,7 +165,7 @@ export function createMimic(host, opts = {}) {
       h.readouts[key] = {
         g,
         val: textNode(g, r.x + 8, r.y + 18, 'val'),
-        ico: textNode(g, r.x + r.w - 8, r.y + 17, 'ico', 'end'),
+        ico: textNode(g, r.x + r.w - 8, r.y + (L.mode === 'narrow' ? 35 : 17), 'ico', 'end'),
         zn: textNode(g, r.x + 8, r.y + 35, 'zn'),
       };
     });
