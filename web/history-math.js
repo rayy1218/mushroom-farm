@@ -38,6 +38,14 @@ export function formatStamp(ms, now = Date.now()) {
   return d.toDateString() === new Date(now).toDateString() ? clock : `${d.getDate()} ${MONTHS[d.getMonth()]} ${clock}`;
 }
 
+// What a long-range chart was drawn from besides the data: when this key and the data object are unchanged,
+// the 5 s refresh need not redraw (a redraw drops the hover). room carries the wired addresses of the timeline rows.
+export const chartDrawKey = (bands, sensors, room) =>
+  `${bands ? JSON.stringify(bands) : ''}/${sensors.trh.status}/${sensors.co2.status}/${room?.relayAddress ?? null}/${room?.acAddress ?? null}`;
+
+// How many axis labels fit a chart of this pixel width: about one per 90 px.
+export const tickCountFor = (width) => Math.max(2, Math.floor(width / 90));
+
 // Axis ticks across [from, to] on round local times: the smallest step that gives at most maxTicks.
 // Steps of a day or more are labelled with the date ("13 Oct"), the others with the time of day ("09:30").
 export function timeTicks(from, to, maxTicks) {

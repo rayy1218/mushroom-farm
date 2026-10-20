@@ -39,7 +39,8 @@ export function drawTimeline(host, opts) {
     svg = null;
     geometry = null;
     if (width < 40) return;
-    const { rows, range, ticks = [] } = current;
+    const { rows, range } = current;
+    const ticks = (current.ticksFor ? current.ticksFor(width) : current.ticks) ?? [];
     const x0 = M.left;
     const x1 = width - M.right;
     const height = rows.length * ROW_H + 24;

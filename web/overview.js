@@ -6,6 +6,7 @@ import { refreshMs } from './settings-math.js';
 import { loadOverview } from './overview-data.js';
 import { tiles, roomCard, alarmTimeText, SPARK_W, SPARK_H } from './overview-math.js';
 
+export const ALARMS_CHANGED = 'farm:alarms-changed';
 const NS = 'http://www.w3.org/2000/svg';
 const LEVEL_WORDS = { critical: 'Critical', serious: 'Serious', warning: 'Warning' };
 
@@ -98,6 +99,7 @@ export function mount(container) {
   let loadSeq = 0;
   let refresh = refreshMs(null);
   let shown = false;
+  let holdBanner = false; // the next load keeps the banner (it shows why an Acknowledge failed)
 
   function showBanner(text, retry = false) {
     if (!els.banner.hidden && els.bannerText.textContent === text) return; // do not re-announce the same alert
@@ -114,6 +116,7 @@ export function mount(container) {
     refresh = refreshMs(settings);
     const { overview, alarms, failed } = result;
     if (failed.overview || failed.alarms) showBanner(OFFLINE, true);
+    else if (holdBanner) holdBanner = false;
     else els.banner.hidden = true;
     // A part that failed keeps what is on screen.
     if (overview) {
@@ -184,10 +187,12 @@ export function mount(container) {
     button.disabled = true;
     try {
       await request('POST', `/api/alarms/${button.dataset.ack}/ack`);
+      window.dispatchEvent(new Event(ALARMS_CHANGED)); // the nav badge counts again at once
     } catch (err) {
       if (!alive()) return;
       button.disabled = false;
       showBanner(err.status === 404 ? 'That alarm no longer exists' : OFFLINE, true);
+      holdBanner = true;
     }
     if (alive()) load();
   });

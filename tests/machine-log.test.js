@@ -62,3 +62,11 @@ test('a rejected command logs nothing, and deleting the room deletes its log', a
   db.deleteRoom(id);
   assert.deepEqual(db.machineLog(id, 'exhaust'), []);
 });
+
+test('a manual command equal to the last auto row is not logged (spec: a re-send writes no row)', async (t) => {
+  const { db, machines, clock, id } = setup(t);
+  await machines.command(id, 'exhaust', { on: true }, { bypassAuto: true });
+  clock.now += 5000;
+  await machines.command(id, 'exhaust', { on: true }); // same state, now by hand
+  assert.deepEqual(db.machineLog(id, 'exhaust').map((r) => [r.on, r.source]), [[true, 'auto']]);
+});
