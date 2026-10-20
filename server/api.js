@@ -207,6 +207,7 @@ export function createApi(db, machines = null, controller = null, poller = null,
       if (!db.deleteRoom(id)) throw noRoom();
       machines?.forget(id);
       controller?.forget(id);
+      simulations?.forgetRoom(id);
       res.writeHead(204);
       return res.end();
     }

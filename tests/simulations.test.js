@@ -97,7 +97,7 @@ test('progress is stored in steps of 1 %; done stores the summary and the result
   assert.equal(db.getRun(run.id).progress, 0);
   h.onProgress(0.01);
   assert.equal(db.getRun(run.id).progress, 0.01);
-  h.onProgress(0.015);
+  h.onProgress(0.014);
   assert.equal(db.getRun(run.id).progress, 0.01);
   h.onProgress(0.5);
   assert.equal(db.getRun(run.id).progress, 0.5);
@@ -188,4 +188,57 @@ test('a worker that fails to run its job reports the error', async () => {
     spawnWorker({ input: {}, ctx: {} }, { onProgress() {}, onDone() {}, onError: resolve });
   });
   assert.equal(typeof message, 'string');
+});
+
+test('every whole percent of a worker is stored, even where floating point makes the step 0.0099', (t) => {
+  const { db, id, sims, jobs } = setup(t);
+  const { run } = sims.start(id, body());
+  for (let k = 1; k <= 100; k++) {
+    jobs[0].handlers.onProgress(k / 100);
+    assert.equal(db.getRun(run.id).progress, k / 100, `at ${k} %`);
+  }
+});
+
+test('deleting a room stops its running worker, drops its queued runs and starts the next room at once', (t) => {
+  const { db, id, sims, jobs } = setup(t);
+  const other = db.createRoom({ name: 'Room 2', length: 6, width: 4, height: 2.5 }).id;
+  sims.start(id, body());
+  sims.start(id, body());
+  const b = sims.start(other, body()).run;
+  assert.equal(jobs.length, 1);
+  db.deleteRoom(id);
+  sims.forgetRoom(id);
+  assert.equal(jobs[0].stopped, true);
+  assert.equal(jobs.length, 2);
+  assert.equal(db.getRun(b.id).status, 'running');
+  jobs[1].handlers.onDone(result());
+  assert.equal(jobs.length, 2); // the dropped queued run of the deleted room never started
+});
+
+test('a run whose row is gone is skipped, and a worker whose row vanished is stopped on its next progress', (t) => {
+  const { db, id, sims, jobs } = setup(t);
+  const a = sims.start(id, body()).run;
+  const b = sims.start(id, body()).run;
+  const c = sims.start(id, body()).run;
+  db.deleteRun(b.id); // gone from under the queue
+  db.deleteRun(a.id); // gone from under the worker
+  jobs[0].handlers.onProgress(0.5);
+  assert.equal(jobs[0].stopped, true);
+  assert.equal(jobs.length, 2); // b was skipped, c runs
+  assert.equal(db.getRun(c.id).status, 'running');
+});
+
+test('a room keeps at most 5 queued or running runs; finished ones do not count', (t) => {
+  const { db, id, sims, jobs } = setup(t);
+  for (let i = 0; i < 5; i++) assert.ok(sims.start(id, body()).run);
+  const sixth = sims.start(id, body());
+  assert.deepEqual(sixth, { error: 'This room already has 5 simulations waiting or running', conflict: true });
+  assert.equal(db.listRuns(id).length, 5);
+  jobs[0].handlers.onDone(result());
+  assert.ok(sims.start(id, body()).run);
+});
+
+test('farmType must be a string', () => {
+  assert.equal(validateSimulation(body({ farmType: ['ready'] })).field, 'farmType');
+  assert.equal(validateSimulation(body({ farmType: 'toString' })).field, 'farmType');
 });

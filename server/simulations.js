@@ -8,8 +8,8 @@ import { readSettings } from './settings.js';
 
 const PHYSICS = ['wallUA', 'outdoorHigh', 'outdoorLow', 'outdoorDew', 'sunW', 'fanFlow', 'acBTU', 'humidifierLH'];
 const RATING_FIELDS = ['intakeW', 'exhaustW', 'circulationW', 'humidifierW', 'humidifierLH', 'acInputW'];
-const CONTROL_FIELDS = ['co2Safety', 'exchangeMaxMin', 'acDrop', 'exchangeEveryMin', 'humidifierDuringExchange', 'acFan'];
-const PROGRESS_STEP = 0.01; // the stored progress moves in steps of at least 1 %
+const CONTROL_FIELDS = ['exchangeMaxMin', 'acDrop', 'exchangeEveryMin', 'humidifierDuringExchange', 'acFan'];
+const MAX_UNFINISHED = 5; // queued or running runs of one room
 export const RESTART_TEXT = 'Stopped by a restart of the farm app';
 
 const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -32,7 +32,7 @@ export function validateSimulation(body) {
   if (clash) return { error: clash.message, field: `physics.${clash.field}` };
   const badCrops = validateCrops(crops);
   if (badCrops) return badCrops;
-  if (!Object.hasOwn(FARM_TYPES, farmType)) return { error: 'Farm type must be ready or full', field: 'farmType' };
+  if (!(typeof farmType === 'string' && Object.hasOwn(FARM_TYPES, farmType))) return { error: 'Farm type must be ready or full', field: 'farmType' };
   const stages = FARM_TYPES[farmType].stages;
   if (!stages.includes(stage)) return { error: `Stage must be one of ${stages.join(', ')}`, field: 'stage' };
   if (!Number.isInteger(days) || days < 1 || days > 90) return { error: 'Days must be a whole number from 1 to 90', field: 'days' };
@@ -82,29 +82,36 @@ export function createSimulations({ db, now = Date.now, spawn = spawnWorker }) {
   }
 
   function pump() {
-    if (current || queue.length === 0) return;
-    const { id, job } = queue.shift();
-    const entry = { id, handle: null, stored: 0 };
-    current = entry;
-    db.setRunProgress(id, 'running', 0);
-    const finish = (outcome) => {
-      if (current !== entry) return; // cancelled meanwhile
-      current = null;
-      db.finishRun(id, outcome, now());
-      pump();
-    };
-    try {
-      entry.handle = spawn(job, {
-        onProgress(share) {
-          if (current !== entry || share - entry.stored < PROGRESS_STEP) return;
-          entry.stored = share;
-          db.setRunProgress(id, 'running', share);
-        },
-        onDone: (result) => finish({ status: 'done', summary: result.summary, result }),
-        onError: (message) => finish({ status: 'failed', error: message }),
-      });
-    } catch (err) {
-      finish({ status: 'failed', error: err.message });
+    while (!current && queue.length > 0) {
+      const { id, roomId, job } = queue.shift();
+      if (!db.setRunProgress(id, 'running', 0)) continue; // the run is gone (its room was deleted)
+      const entry = { id, roomId, handle: null, stored: 0 };
+      current = entry;
+      const finish = (outcome) => {
+        if (current !== entry) return; // cancelled meanwhile
+        current = null;
+        db.finishRun(id, outcome, now());
+        pump();
+      };
+      try {
+        entry.handle = spawn(job, {
+          onProgress(share) {
+            if (current !== entry) return;
+            const percent = Math.round(share * 100);
+            if (percent <= Math.round(entry.stored * 100)) return;
+            entry.stored = share;
+            if (!db.setRunProgress(id, 'running', share)) {
+              current = null; // the run was deleted under the worker
+              entry.handle?.stop();
+              pump();
+            }
+          },
+          onDone: (result) => finish({ status: 'done', summary: result.summary, result }),
+          onError: (message) => finish({ status: 'failed', error: message }),
+        });
+      } catch (err) {
+        finish({ status: 'failed', error: err.message });
+      }
     }
   }
 
@@ -113,11 +120,25 @@ export function createSimulations({ db, now = Date.now, spawn = spawnWorker }) {
     start(roomId, body) {
       const checked = validateSimulation(body);
       if (checked.error) return checked;
+      if (db.listRuns(roomId).filter((r) => r.status === 'queued' || r.status === 'running').length >= MAX_UNFINISHED) {
+        return { error: `This room already has ${MAX_UNFINISHED} simulations waiting or running`, conflict: true };
+      }
       const ctx = contextOf(roomId);
       const run = db.createRun(roomId, { ...checked.input, ctx }, now());
-      queue.push({ id: run.id, job: { input: checked.input, ctx } });
+      queue.push({ id: run.id, roomId, job: { input: checked.input, ctx } });
       pump();
       return { run };
+    },
+
+    // A deleted room: drops its queued runs and stops its running worker (the database rows went with the room).
+    forgetRoom(roomId) {
+      for (let i = queue.length - 1; i >= 0; i--) if (queue[i].roomId === roomId) queue.splice(i, 1);
+      if (current?.roomId === roomId) {
+        const { handle } = current;
+        current = null;
+        handle?.stop();
+      }
+      pump();
     },
 
     // Stops a running run or drops a queued one and deletes it (a finished one is only deleted). → false when there is none.

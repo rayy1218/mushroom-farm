@@ -58,7 +58,7 @@ export function simulate(input, ctx, { onProgress } = {}) {
   };
   let commands = { relay: { intake: false, exhaust: false, circulation: false, humidifier: false }, ac: { power: false, mode: 'cool', setpoint: 25, fan: 'auto' } };
   const changedAt = {};
-  const extra = { exchangeMaxMin: control.exchangeMaxMin ?? DEFAULTS.exchangeMaxMin, exchangeEveryMin: control.exchangeEveryMin ?? 0, acDrop: control.acDrop ?? 0 };
+  const extra = { exchangeMaxMin: control.exchangeMaxMin ?? DEFAULTS.exchangeMaxMin, exchangeEveryMin: control.exchangeEveryMin ?? DEFAULTS.exchangeEveryMin, acDrop: control.acDrop ?? 0 };
   const humidifierDuringExchange = control.humidifierDuringExchange ?? DEFAULTS.humidifierDuringExchange;
   const acFan = control.acFan ?? DEFAULTS.acFan;
 
