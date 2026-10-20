@@ -7,8 +7,13 @@ import * as defaultModel from './sim-model.js';
 import { outdoorAt } from './sim-model.js';
 
 const SPEEDS = [1, 10, 60];
-const LINKS = ['trh', 'co2', 'relay', 'ac'];
-const KIND_NAMES = { trh: 'T/RH sensor', co2: 'CO₂ sensor', relay: 'relay module', ac: 'aircon gateway' };
+const LINKS = ['trh', 'co2', 'relay', 'ac', 'outdoorProbe', 'meter'];
+// The kind of device each link takes: the outdoor probe is a T/RH sensor of its own.
+const LINK_KIND = { trh: 'trh', co2: 'co2', relay: 'relay', ac: 'ac', outdoorProbe: 'trh', meter: 'meter' };
+const KIND_NAMES = { trh: 'T/RH sensor', co2: 'CO₂ sensor', relay: 'relay module', ac: 'aircon gateway', meter: 'energy meter' };
+const LINK_NAMES = { ...KIND_NAMES, outdoorProbe: 'outdoor T/RH sensor' };
+const withArticle = (name) => `${/^[aeiou]/i.test(name) ? 'an' : 'a'} ${name}`;
+const KWH_MAX = 1e9;
 const PARAMS = {
   volume: { min: 1, max: 10000, whole: false, label: 'Volume', unit: 'm³', value: 60 },
   blocks: { min: 0, max: 100000, whole: true, label: 'Blocks', unit: '', value: 500 },
@@ -98,10 +103,12 @@ export function createSims({ sensors, statePath, model = defaultModel, now = Dat
 
   function checkLink(room, kind, value) {
     if (value === null) return null;
-    if (!Number.isInteger(value)) throw new SensorError(400, `${KIND_NAMES[kind]} must be a device address or null`, kind);
+    if (!Number.isInteger(value)) throw new SensorError(400, `${LINK_NAMES[kind]} must be a device address or null`, kind);
     const device = sensors.get(value);
     if (!device) throw new SensorError(400, `No device with address ${value}`, kind);
-    if (device.kind !== kind) throw new SensorError(409, `Device ${value} is a ${KIND_NAMES[device.kind]}, not a ${KIND_NAMES[kind]}`, kind);
+    if (device.kind !== LINK_KIND[kind]) {
+      throw new SensorError(409, `Device ${value} is ${withArticle(KIND_NAMES[device.kind])}, not ${withArticle(LINK_NAMES[kind])}`, kind);
+    }
     for (const other of rooms.values()) {
       if (other !== room && LINKS.some((k) => other[k] === value)) throw new SensorError(409, `Device ${value} is already linked to ${other.name}`, kind);
     }
@@ -124,7 +131,7 @@ export function createSims({ sensors, statePath, model = defaultModel, now = Dat
   }
 
   function blank(id, name) {
-    const room = { id, name, enabled: false, trh: null, co2: null, relay: null, ac: null, ...Object.fromEntries(Object.entries(PARAMS).map(([k, p]) => [k, p.value])) };
+    const room = { id, name, enabled: false, trh: null, co2: null, relay: null, ac: null, outdoorProbe: null, meter: null, meterKWh: 0, ...Object.fromEntries(Object.entries(PARAMS).map(([k, p]) => [k, p.value])) };
     room.clock = clockNow();
     room.state = startState(room);
     room.acting = null;
@@ -200,12 +207,14 @@ export function createSims({ sensors, statePath, model = defaultModel, now = Dat
   }
 
   // The runner's own writes: in memory, saved by persist(). clock: the simulated time of day (s), kept when not given.
-  function setState(id, state, acting, clock) {
+  // meterKWh: the room's meter total, kept when not given.
+  function setState(id, state, acting, clock, meterKWh) {
     const room = rooms.get(id);
     if (!room) return;
     room.state = airState(state);
     if (isNumber(clock)) room.clock = ((clock % DAY_S) + DAY_S) % DAY_S;
     room.acting = acting ?? null;
+    if (isNumber(meterKWh)) room.meterKWh = Math.min(KWH_MAX, Math.max(0, meterKWh));
     dirty = true;
   }
 
@@ -213,9 +222,10 @@ export function createSims({ sensors, statePath, model = defaultModel, now = Dat
     if (dirty) save();
   }
 
-  // The name of the enabled room that drives this device's values, if any.
+  // The name of the enabled room that drives this device's values, if any (a T/RH sensor may be a room's outdoor probe).
   function simulatedBy(address, kind) {
-    for (const room of sorted()) if (room.enabled && room[kind] === address) return room.name;
+    const links = LINKS.filter((link) => LINK_KIND[link] === kind);
+    for (const room of sorted()) if (room.enabled && links.some((link) => room[link] === address)) return room.name;
     return null;
   }
 
@@ -253,6 +263,8 @@ export function createSims({ sensors, statePath, model = defaultModel, now = Dat
     // Outdoor values that do not fit together go back to the defaults (a file from before the day cycle has none).
     if (outdoorProblem(room)) for (const field of OUTDOOR) room[field] = PARAMS[field].value;
     if (isNumber(saved.clock) && saved.clock >= 0 && saved.clock < DAY_S) room.clock = saved.clock;
+    // The meter total is kept across a restart and a reset, as a real meter does.
+    if (isNumber(saved.meterKWh) && saved.meterKWh >= 0 && saved.meterKWh <= KWH_MAX) room.meterKWh = saved.meterKWh;
     // A device belongs to one room (and one link) only: the first claim wins.
     for (const kind of LINKS) {
       if (!Number.isInteger(saved[kind]) || claimed.has(saved[kind])) continue;

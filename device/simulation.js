@@ -4,6 +4,7 @@
 import * as defaultModel from './sim-model.js';
 import { BTU_PER_KW } from './sim-store.js';
 import { outdoorAt } from './sim-model.js';
+import { electricW } from './sim-power.js';
 
 const MODES = ['cool', 'heat', 'dry', 'fan'];
 const FANS = ['auto', 'low', 'high'];
@@ -44,9 +45,18 @@ export function createSimulation({ sensors, sims, model = defaultModel, tickMs =
     const dt = sims.getSpeed();
     for (const room of sims.list()) {
       if (!room.enabled) continue;
-      const { state, acting } = model.step(room.state, inputsOf(room), modelParams(room), dt);
-      sims.setState(room.id, state, acting, room.clock + dt);
+      const inputs = inputsOf(room);
+      const params = modelParams(room);
+      const { state, acting } = model.step(room.state, inputs, params, dt);
+      // The room's electrical power; its meter adds up power x simulated time and is never reset.
+      const w = Math.round(electricW({ acting, inputs, params }) * 10) / 10;
+      const kWh = room.meterKWh + (w * dt) / 3.6e6;
+      const clock = (((room.clock + dt) % 86_400) + 86_400) % 86_400;
+      sims.setState(room.id, state, { ...acting, electricW: w }, room.clock + dt, kWh);
       const { T, W, CO2 } = state;
+      const out = outdoorAt(room, clock);
+      if (device(room.outdoorProbe, 'trh')) sensors.simWrite(room.outdoorProbe, { t: out.outdoorT, rh: out.outdoorRH });
+      if (device(room.meter, 'meter')) sensors.simWrite(room.meter, { power: w, energy: kWh });
       if (device(room.trh, 'trh')) sensors.simWrite(room.trh, { t: T, rh: model.rhOf(T, W) });
       if (device(room.co2, 'co2')) sensors.simWrite(room.co2, { co2: CO2 });
       if (device(room.ac, 'ac')) sensors.simWrite(room.ac, { roomT: T });

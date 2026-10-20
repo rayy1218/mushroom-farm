@@ -1,5 +1,5 @@
 // Modbus TCP server for the device's sensors, relay modules and aircon gateways
-// (functions 01, 02, 03, 04, 05 and 16).
+// and energy meters (functions 01, 02, 03, 04, 05 and 16).
 // Written on its own, not shared with the farm app's client.
 
 import net from 'node:net';
@@ -12,12 +12,22 @@ const MAP = {
   co2: { reads: { 3: { start: 0, qty: 1 } } },
   relay: { reads: { 1: { start: 0, qty: 4 }, 2: { start: 0, qty: 4 } }, writes: [5] },
   ac: { reads: { 3: { start: 0, qty: 4 }, 4: { start: 0, qty: 2 } }, writes: [16] },
+  // An SDM120-style meter: two float32 values, each read on its own; any other range is an illegal address.
+  meter: { reads: { 4: [{ start: 0x000c, qty: 2, field: 'power' }, { start: 0x0156, qty: 2, field: 'energy' }] } },
 };
 const MODES = ['cool', 'heat', 'dry', 'fan'];
 const FANS = ['auto', 'low', 'high'];
 const COIL_ON = 0xff00;
 
-function registersOf(device, fn) {
+// A float32 as two registers, high word first.
+function floatRegisters(value) {
+  const b = Buffer.alloc(4);
+  b.writeFloatBE(value);
+  return [b.readUInt16BE(0), b.readUInt16BE(2)];
+}
+
+function registersOf(device, fn, range) {
+  if (device.kind === 'meter') return floatRegisters(device[range.field]);
   if (device.kind === 'trh') return [Math.round(device.t * 10) & 0xffff, Math.round(device.rh * 10) & 0xffff];
   if (device.kind === 'co2') return [Math.round(device.co2) & 0xffff];
   if (fn === 3) return [device.power ? 1 : 0, device.mode, Math.round(device.setpoint * 10), device.fan];
@@ -101,15 +111,17 @@ export function createModbusServer(sensors, { onRequest = () => {} } = {}) {
     const device = sensors.get(unit);
     if (device?.answering) {
       const map = MAP[device.kind];
-      const read = map.reads[fn];
+      const reads = [].concat(map.reads[fn] ?? []);
       try {
-        if (read) {
-          if (pdu.readUInt16BE(1) !== read.start || pdu.readUInt16BE(3) !== read.qty) {
+        if (reads.length > 0) {
+          const start = pdu.readUInt16BE(1), qty = pdu.readUInt16BE(3);
+          const read = reads.find((r) => r.start === start && r.qty === qty);
+          if (!read) {
             out = fail(tid, unit, fn, entry, 2);
           } else {
             entry.result = 'answered';
             if (device.kind === 'relay') out = bits(tid, unit, fn, packBits(fn === 1 ? device.coils : device.running));
-            else out = normal(tid, unit, fn, registersOf(device, fn));
+            else out = normal(tid, unit, fn, registersOf(device, fn, read));
           }
         } else if (map.writes?.includes(fn)) {
           out = fn === 5 ? writeCoil(tid, unit, pdu, entry) : writeAc(tid, unit, pdu, entry);
