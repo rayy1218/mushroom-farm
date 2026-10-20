@@ -96,6 +96,9 @@ test('GET one has the result; 404 when missing', async () => {
   const done = await call('GET', `/api/simulations/${run.id}`);
   assert.deepEqual(done.body.result, { series: [1], summary: { days: 1 } });
   assert.equal(done.body.status, 'done');
+  const light = await call('GET', `/api/simulations/${run.id}?result=0`);
+  assert.equal(light.body.status, 'done');
+  assert.equal('result' in light.body, false, '?result=0 leaves the result out');
   assert.deepEqual(await call('GET', '/api/simulations/999'), { status: 404, body: { error: 'Simulation not found' } });
 });
 

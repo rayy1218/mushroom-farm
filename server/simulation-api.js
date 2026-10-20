@@ -1,5 +1,5 @@
 // The simulation routes (spec 2026-10-20-crops-and-simulation-design.md 4.4), called from api.js:
-// POST and GET /api/rooms/:id/simulations, GET and DELETE /api/simulations/:id.
+// POST and GET /api/rooms/:id/simulations, GET (?result=0 without the result) and DELETE /api/simulations/:id.
 
 const ROOM_ROUTE = /^\/api\/rooms\/([1-9][0-9]{0,14})\/simulations$/;
 const RUN_ROUTE = /^\/api\/simulations\/([1-9][0-9]{0,14})$/;
@@ -21,7 +21,9 @@ export function createSimulationRoutes({ db, simulations }) {
     if (!run) return false;
     const id = Number(run[1]);
     if (req.method === 'GET') {
-      const found = db.getRun(id);
+      // ?result=0: the run without its result (a few MB for a long run), for polling the status.
+      const withResult = new URL(req.url, 'http://farm').searchParams.get('result') !== '0';
+      const found = db.getRun(id, { withResult });
       if (!found) throw new HttpError(404, 'Simulation not found');
       return send(res, 200, found) ?? true;
     }
