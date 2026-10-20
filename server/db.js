@@ -2,8 +2,9 @@
 
 import { DatabaseSync } from 'node:sqlite';
 import { RELAY_KEYS } from './machine-codes.js';
+import { RATINGS } from './rooms.js';
 
-const VERSION = 8;
+const VERSION = 9;
 
 // Iteration 1 (version 0) had only the rooms table without the address columns.
 const ROOMS = `
@@ -122,6 +123,42 @@ CREATE TABLE settings (
   value TEXT NOT NULL
 ) STRICT;`;
 
+// Energy and water usage (spec 2026-10-20-energy-water-outdoor-design.md section 9): the rooms columns that version 9
+// adds (machine ratings, meter address), the outdoor probe's readings and the rooms' energy meter readings.
+const USAGE_ROOM_COLUMNS = `
+ALTER TABLE rooms ADD COLUMN intake_w REAL NOT NULL DEFAULT 60;
+ALTER TABLE rooms ADD COLUMN exhaust_w REAL NOT NULL DEFAULT 60;
+ALTER TABLE rooms ADD COLUMN circulation_w REAL NOT NULL DEFAULT 60;
+ALTER TABLE rooms ADD COLUMN humidifier_w REAL NOT NULL DEFAULT 80;
+ALTER TABLE rooms ADD COLUMN humidifier_lh REAL NOT NULL DEFAULT 2;
+ALTER TABLE rooms ADD COLUMN ac_input_w REAL NOT NULL DEFAULT 1050;
+ALTER TABLE rooms ADD COLUMN meter_address INTEGER CHECK (meter_address BETWEEN 1 AND 247);`;
+
+const OUTDOOR_READINGS = `
+CREATE TABLE outdoor_readings (
+  id      INTEGER PRIMARY KEY,
+  address INTEGER NOT NULL,
+  at      INTEGER NOT NULL,
+  ok      INTEGER NOT NULL CHECK (ok IN (0, 1)),
+  t       REAL,
+  rh      REAL,
+  error   TEXT
+) STRICT;
+CREATE INDEX outdoor_readings_by_time ON outdoor_readings (at);`;
+
+const METER_READINGS = `
+CREATE TABLE meter_readings (
+  id         INTEGER PRIMARY KEY,
+  room_id    INTEGER NOT NULL,
+  address    INTEGER NOT NULL,
+  at         INTEGER NOT NULL,
+  ok         INTEGER NOT NULL CHECK (ok IN (0, 1)),
+  power_w    REAL,
+  energy_kwh REAL,
+  error      TEXT
+) STRICT;
+CREATE INDEX meter_readings_by_room ON meter_readings (room_id, at);`;
+
 // The status queries, exported so a test can check their query plans.
 export const STATUS_SQL = {
   latest: `SELECT * FROM (SELECT * FROM readings WHERE room_id = ? AND kind = ? AND address = ?
@@ -227,6 +264,11 @@ function migrate(db) {
                UPDATE room_controls SET co2_high = 600 WHERE co2_high <= co2_low;
                UPDATE room_controls SET co2_safety = MIN(10000, co2_high + 500) WHERE co2_safety <= co2_high;`);
     }
+    if (version < 9) {
+      db.exec(USAGE_ROOM_COLUMNS);
+      db.exec(OUTDOOR_READINGS);
+      db.exec(METER_READINGS);
+    }
     db.exec(`PRAGMA user_version = ${VERSION}`);
     db.exec('COMMIT');
   } catch (err) {
@@ -275,10 +317,20 @@ function toRoom(row) {
     co2Address: row.co2_address,
     relayAddress: row.relay_address,
     acAddress: row.ac_address,
+    meterAddress: row.meter_address,
+    intakeW: row.intake_w,
+    exhaustW: row.exhaust_w,
+    circulationW: row.circulation_w,
+    humidifierW: row.humidifier_w,
+    humidifierLH: row.humidifier_lh,
+    acInputW: row.ac_input_w,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
 }
+
+// The six ratings in column order; one not given is the default (an older client's body).
+const ratingValues = (given) => RATINGS.map(({ field, default: d }) => given[field] ?? d);
 
 function toAlarm(row) {
   return {
@@ -298,12 +350,15 @@ export function openDb(path) {
     get: db.prepare('SELECT * FROM rooms WHERE id = ?'),
     nameUsed: db.prepare('SELECT 1 FROM rooms WHERE name = ? AND id IS NOT ?'),
     addressUsed: db.prepare(`SELECT name FROM rooms WHERE id IS NOT ?1
-                             AND (trh_address = ?2 OR co2_address = ?2 OR relay_address = ?2 OR ac_address = ?2)`),
+                             AND (trh_address = ?2 OR co2_address = ?2 OR relay_address = ?2 OR ac_address = ?2 OR meter_address = ?2)`),
     insert: db.prepare(`INSERT INTO rooms (name, length_m, width_m, height_m, trh_address, co2_address,
-                                           relay_address, ac_address, created_at, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+                                           relay_address, ac_address, meter_address, intake_w, exhaust_w, circulation_w,
+                                           humidifier_w, humidifier_lh, ac_input_w, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
     update: db.prepare(`UPDATE rooms SET name = ?, length_m = ?, width_m = ?, height_m = ?,
-                               trh_address = ?, co2_address = ?, relay_address = ?, ac_address = ?, updated_at = ?
+                               trh_address = ?, co2_address = ?, relay_address = ?, ac_address = ?, meter_address = ?,
+                               intake_w = ?, exhaust_w = ?, circulation_w = ?, humidifier_w = ?, humidifier_lh = ?, ac_input_w = ?,
+                               updated_at = ?
                         WHERE id = ?`),
     delete: db.prepare('DELETE FROM rooms WHERE id = ?'),
     deleteReadings: db.prepare('DELETE FROM readings WHERE room_id = ?'),
@@ -317,6 +372,7 @@ export function openDb(path) {
     deleteControl: db.prepare('DELETE FROM room_controls WHERE room_id = ?'),
     deleteAlarms: db.prepare('DELETE FROM alarms WHERE room_id = ?'),
     deleteMachineLog: db.prepare('DELETE FROM machine_log WHERE room_id = ?'),
+    deleteMeterReadings: db.prepare('DELETE FROM meter_readings WHERE room_id = ?'),
     control: db.prepare('SELECT * FROM room_controls WHERE room_id = ?'),
     setControl: db.prepare(`UPDATE room_controls SET auto = ?, co2_low = ?, co2_high = ?, t_low = ?, t_high = ?,
                                    rh_low = ?, rh_high = ?, humidifier_during_exchange = ?, ac_fan = ?,
@@ -365,6 +421,30 @@ export function openDb(path) {
     overviewAlarms: db.prepare(`SELECT alarms.*, rooms.name AS room_name FROM alarms JOIN rooms ON rooms.id = alarms.room_id
                                WHERE cleared_at IS NULL OR acked_at IS NULL
                                ORDER BY (level = 'critical') DESC, raised_at DESC, alarms.id DESC LIMIT 10`),
+    // Energy meter, outdoor probe and usage queries (spec 2026-10-20-energy-water-outdoor-design.md).
+    wiredMeters: db.prepare('SELECT id AS roomId, meter_address AS address FROM rooms WHERE meter_address IS NOT NULL ORDER BY id'),
+    addMeterReading: db.prepare(`INSERT INTO meter_readings (room_id, address, at, ok, power_w, energy_kwh, error)
+                                 SELECT ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM rooms WHERE id = ? AND meter_address = ?)`),
+    meterLatest: db.prepare(`SELECT * FROM (SELECT * FROM meter_readings WHERE room_id = ? AND address = ? ORDER BY id DESC LIMIT ?)
+                             ORDER BY id`),
+    meterLastOk: db.prepare('SELECT * FROM meter_readings WHERE room_id = ? AND address = ? AND ok = 1 ORDER BY id DESC LIMIT 1'),
+    meterFailuresSince: db.prepare(`SELECT COUNT(*) AS n FROM (SELECT 1 FROM meter_readings WHERE room_id = ? AND address = ? AND id > ?
+                                                               LIMIT 10000)`),
+    meterEnergy: db.prepare(`SELECT at, energy_kwh FROM meter_readings WHERE room_id = ? AND address = ? AND ok = 1
+                             AND energy_kwh IS NOT NULL AND at >= ? AND at <= ? ORDER BY at, id`),
+    meterEnergyBefore: db.prepare(`SELECT at, energy_kwh FROM meter_readings WHERE room_id = ? AND address = ? AND ok = 1
+                                   AND energy_kwh IS NOT NULL AND at < ? ORDER BY at DESC, id DESC LIMIT 1`),
+    addOutdoor: db.prepare(`INSERT INTO outdoor_readings (address, at, ok, t, rh, error)
+                            SELECT ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM settings WHERE key = 'outdoorAddress' AND value = ?)`),
+    outdoorLatest: db.prepare('SELECT * FROM (SELECT * FROM outdoor_readings WHERE address = ? ORDER BY id DESC LIMIT ?) ORDER BY id'),
+    outdoorLastOk: db.prepare('SELECT * FROM outdoor_readings WHERE address = ? AND ok = 1 ORDER BY id DESC LIMIT 1'),
+    outdoorFailuresSince: db.prepare(`SELECT COUNT(*) AS n FROM (SELECT 1 FROM outdoor_readings WHERE address = ? AND id > ?
+                                                                 LIMIT 10000)`),
+    outdoorSince: db.prepare('SELECT * FROM outdoor_readings WHERE address = ? AND at >= ? ORDER BY id'),
+    // One query per window: good readings in the plausible ranges, averaged per bucket (b = bucket ms).
+    outdoorBuckets: db.prepare(`SELECT at / CAST(?1 AS INTEGER) AS idx, AVG(t) AS t, AVG(rh) AS rh FROM outdoor_readings
+                                WHERE at >= ?2 AND at <= ?3 AND ok = 1 AND t BETWEEN -10 AND 60 AND rh BETWEEN 1 AND 100
+                                GROUP BY idx ORDER BY idx`),
     getSetting: db.prepare('SELECT value FROM settings WHERE key = ?'),
     setSetting: db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)'),
     latest: db.prepare(STATUS_SQL.latest),
@@ -378,7 +458,7 @@ export function openDb(path) {
 
   // Each address may be used by one device of one room only.
   function checkAddresses(addresses, id) {
-    for (const field of ['trhAddress', 'co2Address', 'relayAddress', 'acAddress']) {
+    for (const field of ['trhAddress', 'co2Address', 'relayAddress', 'acAddress', 'meterAddress']) {
       const address = addresses[field];
       if (address == null) continue;
       const other = q.addressUsed.get(id, address);
@@ -468,14 +548,14 @@ export function openDb(path) {
 
     getRoom,
 
-    createRoom({ name, length, width, height, trhAddress = null, co2Address = null, relayAddress = null, acAddress = null },
-      now = Date.now()) {
+    createRoom({ name, length, width, height, trhAddress = null, co2Address = null, relayAddress = null, acAddress = null,
+      meterAddress = null, ...ratings }, now = Date.now()) {
       checkName(name, null);
-      checkAddresses({ trhAddress, co2Address, relayAddress, acAddress }, null);
+      checkAddresses({ trhAddress, co2Address, relayAddress, acAddress, meterAddress }, null);
       db.exec('BEGIN');
       try {
         const { lastInsertRowid } = q.insert.run(name, length, width, height, trhAddress, co2Address,
-          relayAddress, acAddress, now, now);
+          relayAddress, acAddress, meterAddress, ...ratingValues(ratings), now, now);
         q.insertCommands.run(lastInsertRowid);
         q.insertControl.run(lastInsertRowid);
         db.exec('COMMIT');
@@ -487,12 +567,13 @@ export function openDb(path) {
     },
 
     // Returns the updated room, or null when there is no room with that id.
-    updateRoom(id, { name, length, width, height, trhAddress = null, co2Address = null, relayAddress = null, acAddress = null },
-      now = Date.now()) {
+    updateRoom(id, { name, length, width, height, trhAddress = null, co2Address = null, relayAddress = null, acAddress = null,
+      meterAddress = null, ...ratings }, now = Date.now()) {
       if (!q.get.get(id)) return null;
       checkName(name, id);
-      checkAddresses({ trhAddress, co2Address, relayAddress, acAddress }, id);
-      q.update.run(name, length, width, height, trhAddress, co2Address, relayAddress, acAddress, now, id);
+      checkAddresses({ trhAddress, co2Address, relayAddress, acAddress, meterAddress }, id);
+      q.update.run(name, length, width, height, trhAddress, co2Address, relayAddress, acAddress, meterAddress,
+        ...ratingValues(ratings), now, id);
       return getRoom(id);
     },
 
@@ -693,6 +774,7 @@ export function openDb(path) {
         q.deleteControl.run(id);
         q.deleteAlarms.run(id);
         q.deleteMachineLog.run(id);
+        q.deleteMeterReadings.run(id);
         bucketCache.delete(id);
         const deleted = q.delete.run(id).changes > 0;
         db.exec('COMMIT');
@@ -724,6 +806,106 @@ export function openDb(path) {
     getSensors(roomId, limit = 50) {
       const room = getRoom(roomId);
       return room ? KINDS.map((kind) => sensorOf(room, kind, limit)) : null;
+    },
+
+    // ---- Energy meter (spec 2026-10-20-energy-water-outdoor-design.md section 3) ----
+
+    // Every room with an energy meter, by room id: [{ roomId, address }].
+    listMeters() {
+      return q.wiredMeters.all().map((r) => ({ roomId: r.roomId, address: r.address }));
+    },
+
+    // One meter poll result (powerW in W, energyKwh the meter total); only while the room still has that meter address.
+    addMeterReading({ roomId, address, at, ok, powerW = null, energyKwh = null, error = null }) {
+      q.addMeterReading.run(roomId, address, at, ok ? 1 : 0, powerW, energyKwh, error, roomId, address);
+    },
+
+    // The room's meter like a sensor of getSensors: { kind: 'meter', address, status, failuresInRow, lastOk, readings },
+    // lastOk and readings carrying { at, power (W), energy (kWh) }. Null when there is no such room.
+    getMeter(roomId, limit = 50) {
+      const room = getRoom(roomId);
+      if (!room) return null;
+      const address = room.meterAddress;
+      const meter = { kind: 'meter', address, status: 'not-wired', failuresInRow: 0, lastOk: null, readings: [] };
+      if (address === null) return meter;
+      const rows = q.meterLatest.all(roomId, address, limit);
+      meter.readings = rows.map((r) => ({ at: r.at, ok: r.ok === 1, power: r.power_w, energy: r.energy_kwh }));
+      if (rows.length === 0) {
+        meter.status = 'no-data';
+        return meter;
+      }
+      const ok = q.meterLastOk.get(roomId, address);
+      if (ok) meter.lastOk = { at: ok.at, power: ok.power_w, energy: ok.energy_kwh };
+      meter.failuresInRow = q.meterFailuresSince.get(roomId, address, ok ? ok.id : 0).n;
+      const n = meter.failuresInRow;
+      meter.status = n === 0 ? 'online' : n < FAILS_FOR_OFFLINE ? 'timeout' : 'offline';
+      return meter;
+    },
+
+    // Good meter readings [{ at, energy }] of the room's current meter in [from, to], oldest first, with the last one before
+    // `from` first when there is one (the base of the first increase).
+    meterEnergy(roomId, from, to) {
+      const room = q.get.get(roomId);
+      if (!room || room.meter_address === null) return [];
+      const row = ({ at, energy_kwh: energy }) => ({ at, energy });
+      const before = q.meterEnergyBefore.get(roomId, room.meter_address, from);
+      return [...(before ? [{ ...row(before), before: true }] : []), ...q.meterEnergy.all(roomId, room.meter_address, from, to).map(row)];
+    },
+
+    // The machine's log rows [{ at, on, setpoint, mode, fan, source }] for [from, to]: the last row before `from` moved to
+    // `from`, then the rows inside. Oldest first.
+    machineLogWindow(roomId, machine, from, to) {
+      const rows = [];
+      const before = q.logBefore.get(roomId, machine, from);
+      if (before) rows.push({ ...before, at: from });
+      rows.push(...q.logSince.all(roomId, machine, from, to));
+      return rows.map(logRow);
+    },
+
+    // ---- Outdoor probe (spec section 2) ----
+
+    // The outdoor address from the settings, or null.
+    outdoorAddress() {
+      const n = Number(q.getSetting.get('outdoorAddress')?.value);
+      return Number.isInteger(n) && n >= 1 && n <= 247 ? n : null;
+    },
+
+    // One poll of the outdoor probe; stored only while the setting still has that address.
+    addOutdoorReading({ address, at, ok, t = null, rh = null, error = null }) {
+      q.addOutdoor.run(address, at, ok ? 1 : 0, t, rh, error, String(address));
+    },
+
+    // { address, status, failuresInRow, lastOk: { at, t, rh } | null, readings } like a room sensor; status 'not-set'
+    // without an address.
+    getOutdoor(limit = 1) {
+      const address = this.outdoorAddress();
+      const out = { address, status: 'not-set', failuresInRow: 0, lastOk: null, readings: [] };
+      if (address === null) return out;
+      const rows = q.outdoorLatest.all(address, limit);
+      out.readings = rows.map((r) => ({ at: r.at, ok: r.ok === 1, t: r.t, rh: r.rh }));
+      if (rows.length === 0) {
+        out.status = 'no-data';
+        return out;
+      }
+      const ok = q.outdoorLastOk.get(address);
+      if (ok) out.lastOk = { at: ok.at, t: ok.t, rh: ok.rh };
+      out.failuresInRow = q.outdoorFailuresSince.get(address, ok ? ok.id : 0).n;
+      const n = out.failuresInRow;
+      out.status = n === 0 ? 'online' : n < FAILS_FOR_OFFLINE ? 'timeout' : 'offline';
+      return out;
+    },
+
+    // The probe's readings (good and failed) since `from`, oldest first: [{ at, ok, t, rh }].
+    outdoorSince(from) {
+      const address = this.outdoorAddress();
+      return address === null ? [] : q.outdoorSince.all(address, from).map((r) => ({ at: r.at, ok: r.ok === 1, t: r.t, rh: r.rh }));
+    },
+
+    // Averages per bucket in the window [from, to] like a room's trh buckets (buckets aligned to the epoch, the window starts
+    // at the first boundary at or after from, `at` the bucket middle kept inside the window): [{ at, t, rh }].
+    outdoorBuckets(b, from, to) {
+      const fi = Math.ceil(from / b);
+      return q.outdoorBuckets.all(b, fi * b, to).map((r) => ({ at: Math.min(Math.max(r.idx * b + b / 2, from), to), t: r.t, rh: r.rh }));
     },
 
     // The stored text of a setting, or null when it was never set.

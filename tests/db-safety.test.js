@@ -92,7 +92,7 @@ function indexes(raw) {
 }
 
 function checkVersion7(raw) {
-  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 8);
+  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 9);
   assert.deepEqual(columns(raw, 'alarms'), ['id', 'room_id', 'key', 'level', 'text', 'raised_at', 'cleared_at', 'acked_at']);
   assert.deepEqual(columns(raw, 'machine_log'), ['id', 'room_id', 'machine', 'at', 'on_', 'setpoint', 'mode', 'fan', 'source']);
   for (const name of Object.keys(NEW_CONTROL_COLUMNS)) assert.ok(columns(raw, 'room_controls').includes(name), name);
@@ -103,7 +103,7 @@ function checkVersion7(raw) {
   }
 }
 
-test('a new database is at version 8 with the alarms, machine_log and new control columns', (t) => {
+test('a new database is at version 9 with the alarms, machine_log and new control columns', (t) => {
   const path = join(tempDir(t), 'farm.db');
   openDb(path).close();
   const raw = new DatabaseSync(path);

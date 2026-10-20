@@ -231,3 +231,11 @@ export function createModbusClient({ host, port, timeoutMs = 1000, firstTid = 1,
     },
   };
 }
+
+// Two registers (high word first) → the IEEE-754 float32 they hold, as a number (NaN and Infinity possible).
+export function registersToFloat([high, low]) {
+  const bytes = Buffer.alloc(4);
+  bytes.writeUInt16BE(high, 0);
+  bytes.writeUInt16BE(low, 2);
+  return bytes.readFloatBE(0);
+}

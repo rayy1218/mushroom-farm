@@ -1,7 +1,8 @@
-// The polling cycle: reads every wired sensor through the Modbus client and stores one reading per poll;
+// The polling cycle: reads the outdoor probe, then every wired sensor and energy meter through the Modbus client and stores
+// one reading per poll;
 // also polls each wired machine (relay module, aircon gateway) and keeps its last polls in memory.
 
-import { ModbusError } from './modbus.js';
+import { ModbusError, registersToFloat } from './modbus.js';
 import { MODES, FANS } from './machine-codes.js';
 
 // What to ask for, and how to turn the registers into values.
@@ -9,6 +10,9 @@ const KINDS = {
   trh: { fn: 4, start: 1, qty: 2, values: ([t, rh]) => ({ t: ((t << 16) >> 16) / 10, rh: rh / 10 }) },
   co2: { fn: 3, start: 0, qty: 1, values: ([ppm]) => ({ co2: ppm }) },
 };
+
+// Energy meter (SDM120 style): input registers (fn 4), each a float32 over two registers, high word first.
+const METER = { power: { start: 0x000c, qty: 2 }, energy: { start: 0x0156, qty: 2 } };
 
 // Relay module: coils (fn 1) then current inputs (fn 2). Aircon gateway: settings (fn 3) then room T and error (fn 4).
 const MACHINES = {
@@ -58,6 +62,37 @@ export function createPoller({
     db.addReading(reading);
   }
 
+  // The outdoor probe is a T/RH probe whose readings go to their own table. The address is read from the settings each
+  // cycle: it can change while the app runs.
+  async function pollOutdoor(address, began) {
+    const { fn, start, qty, values } = KINDS.trh;
+    const at = now();
+    began(at);
+    const reading = { address, at };
+    try {
+      Object.assign(reading, { ok: true }, values(await client.readRegisters(address, fn, start, qty)));
+    } catch (err) {
+      Object.assign(reading, { ok: false, error: err instanceof ModbusError ? err.message : 'bad reply' });
+    }
+    db.addOutdoorReading(reading);
+  }
+
+  // Two reads (power, then energy); a failed read, or a value that is not a number, makes the poll a failed one.
+  async function pollMeter({ roomId, address }, began) {
+    const at = now();
+    began(at);
+    const reading = { roomId, address, at };
+    try {
+      const powerW = registersToFloat(await client.readRegisters(address, 4, METER.power.start, METER.power.qty));
+      const energyKwh = registersToFloat(await client.readRegisters(address, 4, METER.energy.start, METER.energy.qty));
+      if (!Number.isFinite(powerW) || !Number.isFinite(energyKwh)) throw new ModbusError('bad reply');
+      Object.assign(reading, { ok: true, powerW, energyKwh });
+    } catch (err) {
+      Object.assign(reading, { ok: false, error: err instanceof ModbusError ? err.message : 'bad reply' });
+    }
+    db.addMeterReading(reading);
+  }
+
   async function pollMachine({ roomId, kind, address }, began) {
     const at = now();
     began(at);
@@ -80,13 +115,20 @@ export function createPoller({
     try {
       const sensors = db.listWiredSensors();
       const wired = db.listWiredMachines();
+      const meters = db.listMeters();
+      const outdoor = db.outdoorAddress();
+      if (outdoor !== null && !stopped) await pollOutdoor(outdoor, began);
       const wiredKeys = new Set(wired.map((m) => `${m.roomId}/${m.kind}`));
       for (const key of machines.keys()) if (!wiredKeys.has(key)) machines.delete(key);
-      const roomIds = [...new Set([...sensors, ...wired].map((d) => d.roomId))].sort((a, b) => a - b);
+      const roomIds = [...new Set([...sensors, ...meters, ...wired].map((d) => d.roomId))].sort((a, b) => a - b);
       for (const roomId of roomIds) {
         for (const sensor of sensors.filter((s) => s.roomId === roomId)) {
           if (stopped) return;
           await pollOne(sensor, began);
+        }
+        for (const meter of meters.filter((m) => m.roomId === roomId)) {
+          if (stopped) return;
+          await pollMeter(meter, began);
         }
         for (const machine of wired.filter((m) => m.roomId === roomId)) {
           if (stopped) return;

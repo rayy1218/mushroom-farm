@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { validateRoom } from '../server/rooms.js';
 
-const good = { name: 'Room 1', length: 6, width: 4, height: 2.5, trhAddress: null, co2Address: null, relayAddress: null, acAddress: null };
+const good = { name: 'Room 1', length: 6, width: 4, height: 2.5, trhAddress: null, co2Address: null, relayAddress: null, acAddress: null,
+  meterAddress: null, intakeW: 60, exhaustW: 60, circulationW: 60, humidifierW: 80, humidifierLH: 2, acInputW: 1050 };
 
 test('a valid room comes back clean', () => {
   assert.deepEqual(validateRoom(good), { room: good });
