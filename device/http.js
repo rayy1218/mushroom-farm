@@ -7,6 +7,9 @@ import { fileURLToPath } from 'node:url';
 import { SensorError } from './sensors.js';
 
 const WEB_DIR = fileURLToPath(new URL('./web/', import.meta.url));
+// The room drawing is shared with the farm app: served from the farm's web/ folder, not copied.
+const SHARED_DIR = fileURLToPath(new URL('../web/', import.meta.url));
+const SHARED_FILES = new Set(['mimic.js', 'mimic-math.js', 'mimic.css', 'machines-math.js']);
 const MAX_BODY = 64 * 1024;
 const LOG_SIZE = 20;
 const TYPES = {
@@ -53,7 +56,7 @@ async function readJson(req) {
 
 const notFound = () => new SensorError(404, 'Not found');
 
-export function createDeviceHttp(sensors, log, { webDir = WEB_DIR, sims } = {}) {
+export function createDeviceHttp(sensors, log, { webDir = WEB_DIR, sharedDir = SHARED_DIR, sims } = {}) {
   async function simApi(req, res, path) {
     if (path === '/api/sims') {
       if (req.method === 'GET') return send(res, 200, sims.list());
@@ -107,7 +110,7 @@ export function createDeviceHttp(sensors, log, { webDir = WEB_DIR, sims } = {}) 
     if ((req.method !== 'GET' && req.method !== 'HEAD') || !TYPES[ext]) throw notFound();
     let data;
     try {
-      data = await readFile(join(webDir, name));
+      data = await readFile(join(SHARED_FILES.has(name) ? sharedDir : webDir, name));
     } catch (err) {
       if (err.code === 'ENOENT') throw notFound();
       throw err;
