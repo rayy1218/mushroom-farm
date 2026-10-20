@@ -3,6 +3,7 @@
 
 import { M } from './chart.js';
 import { xFor } from './chart-math.js';
+import { thinMarks } from './history-math.js';
 
 const NS = 'http://www.w3.org/2000/svg';
 const ROW_H = 30;
@@ -56,7 +57,7 @@ export function drawTimeline(host, opts) {
     rows.forEach((row, i) => {
       const y = i * ROW_H;
       svg.append(el('line', { x1: x0, x2: x1, y1: y + ROW_H, y2: y + ROW_H, style: 'stroke:var(--grid)', 'stroke-width': 1 }));
-      svg.append(el('text', { x: x0 + 4, y: y + 11, style: 'fill:var(--muted)', 'font-size': 11 }, row.label));
+      svg.append(el('text', { x: 4, y: y + 19, style: 'fill:var(--muted)', 'font-size': 11 }, row.label)); // own column left of the plot
       for (const s of row.spans) {
         const xa = xAt(s.from);
         const w = Math.max(2, xAt(s.to) - xa);
@@ -64,7 +65,7 @@ export function drawTimeline(host, opts) {
         rect.setAttribute('fill', s.source === 'manual' ? `url(#${pattern})` : 'var(--ink-2)');
         svg.append(rect);
       }
-      for (const m of row.marks ?? []) {
+      for (const m of thinMarks(row.marks, xAt, 40)) {
         svg.append(el('text', { x: xAt(m.at) + 3, y: y + 11, style: 'fill:var(--ink)', 'font-size': 11 }, m.text));
       }
     });

@@ -53,13 +53,15 @@ export function timeTicks(from, to, maxTicks) {
 }
 
 // Chart points from /history rows ({ at, ...fields }): a gap of more than 3 buckets gets a null point in its middle
-// so the line breaks there. bucketS is the reply's bucket size in seconds.
-export function historyPoints(rows, field, bucketS) {
+// so the line breaks there. bucketS is the reply's bucket size in seconds; pollSeconds the reading interval (up to 300 s),
+// because buckets cannot be denser than the readings: the limit is 3 x the larger of the two.
+export function historyPoints(rows, field, bucketS, pollSeconds = 0) {
+  const limit = Math.max(bucketS, pollSeconds) * 3000;
   const points = [];
   let prev = null;
   for (const r of rows ?? []) {
     if (!Number.isFinite(r[field])) continue;
-    if (prev !== null && r.at - prev > bucketS * 3000) points.push({ at: (prev + r.at) / 2, value: null });
+    if (prev !== null && r.at - prev > limit) points.push({ at: (prev + r.at) / 2, value: null });
     points.push({ at: r.at, value: r[field] });
     prev = r.at;
   }
@@ -92,4 +94,17 @@ export function acMarks(rows) {
     setpoint = r.setpoint;
   }
   return marks;
+}
+
+// Keeps the marks that are at least minPx right of the previously kept one; xOf(at) is the mark's x position.
+export function thinMarks(marks, xOf, minPx = 40) {
+  const kept = [];
+  let last = -Infinity;
+  for (const m of marks ?? []) {
+    const x = xOf(m.at);
+    if (x - last < minPx) continue;
+    kept.push(m);
+    last = x;
+  }
+  return kept;
 }

@@ -277,7 +277,7 @@ export function mount(container, { id }) {
     for (const def of CHARTS) {
       const entry = chartCards.get(def.id);
       const s = sensors[def.kind];
-      const points = hist ? (data ? historyPoints(data[def.kind], def.field, data.bucketS) : []) : chartPoints(s, def.field);
+      const points = hist ? (data ? historyPoints(data[def.kind], def.field, data.bucketS, data.pollSeconds) : []) : chartPoints(s, def.field);
       const wired = s.status !== 'not-wired';
       entry.card.hidden = !wired;
       const hasValue = points.some((p) => p.value !== null); // only failed polls: nothing to draw yet

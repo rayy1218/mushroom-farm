@@ -4,7 +4,7 @@
 import { formatClock, yRange, xFor, segments, nearestIndex } from './chart-math.js';
 
 const NS = 'http://www.w3.org/2000/svg';
-export const M = { left: 46, right: 12, top: 10, bottom: 24 }; // the timeline lines up with these
+export const M = { left: 64, right: 12, top: 10, bottom: 24 }; // the timeline lines up with these
 
 function el(name, attrs = {}, text) {
   const node = document.createElementNS(NS, name);
