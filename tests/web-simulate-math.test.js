@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { PROGRAM_DEFAULTS, programDays as serverProgramDays } from '../server/program.js';
 import {
   PHYSICS_FIELDS, DEFAULT_CROPS, DAYS_DEFAULT, initialState, checkStep, firstField, stepOf, buildBody, mixSummary, wholeProgram,
-  programDays, programOf, stagesOf, fixStage, roomLine, summaryLines, progressLine, bandLines,
+  programDays, programOf, stagesOf, fixStage, roomLine, summaryLines, progressLine, bandLines, removeLabel,
 } from '../web/simulate-math.js';
 
 const room = { id: 3, name: 'Room 1', length: 6, width: 4, height: 3, volume: 72, humidifierLH: 1.5 };
@@ -188,4 +188,10 @@ test('the progress line', () => {
   assert.equal(progressLine({ status: 'running', progress: undefined }), 'Running… 0 %');
   assert.equal(progressLine({ status: 'done', progress: 1 }), 'Done');
   assert.equal(progressLine({ status: 'failed', error: 'Stopped by a restart of the farm app' }), 'Failed: Stopped by a restart of the farm app');
+});
+
+test('the Remove button of a crop row is named after the crop it holds now', () => {
+  assert.equal(removeLabel('black'), 'Remove Black oyster');
+  assert.equal(removeLabel('golden'), 'Remove Golden oyster');
+  assert.equal(removeLabel('nope'), 'Remove crop');
 });

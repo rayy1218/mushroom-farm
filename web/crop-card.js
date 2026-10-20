@@ -5,7 +5,7 @@
 
 import { request, OFFLINE } from './api.js';
 import { CROPS, CROP_KEYS, STAGES, FARM_TYPES, MAX_CROPS } from './crops.js';
-import { bandLines } from './simulate-math.js';
+import { bandLines, removeLabel } from './simulate-math.js';
 import {
   hasCrops, stageLine, nextLine, rampLine, doneLine, cropWarnings, formFromData, checkCropForm, saveBody, startBody, FORM_FIELD_ORDER,
 } from './crop-math.js';
@@ -219,13 +219,13 @@ export function createCropCard(host, { roomId, onChange, onOffline, onGone }) {
       }
       select.value = row.crop;
       select.setAttribute('aria-label', `Crop ${i + 1}`);
-      select.addEventListener('change', () => { row.crop = select.value; touched('crops'); });
+      select.addEventListener('change', () => { row.crop = select.value; wrap.querySelector('button').setAttribute('aria-label', removeLabel(row.crop)); touched('crops'); });
       const blocks = textInput(true);
       blocks.value = row.blocks;
       blocks.setAttribute('aria-label', `Blocks of crop ${i + 1}`);
       blocks.addEventListener('input', () => { row.blocks = blocks.value; touched('crops'); });
       const remove = button('Remove', 'danger-text');
-      remove.setAttribute('aria-label', `Remove ${CROPS[row.crop].name}`);
+      remove.setAttribute('aria-label', removeLabel(row.crop));
       remove.addEventListener('click', () => { form.crops.splice(i, 1); touched('crops'); cropRows(); addCrop.focus(); });
       wrap.append(select, blocks, el('span', 'sim-unit', 'blocks'), remove);
       return wrap;
