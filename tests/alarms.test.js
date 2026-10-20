@@ -226,3 +226,26 @@ test('forget drops the delay counts of a room', (t) => {
   s.tick(2 * MIN, readings({ t: 25 }));
   assert.deepEqual(s.keys(), []);
 });
+
+test('a faulty or unwired sensor clears its process alarms and drops the delay count; others stay', (t) => {
+  const s = setup(t);
+  const hot = { t: 24.5, rh: 70, co2: 900 };
+  for (let i = 0; i < 6; i++) s.tick(MIN, { readings: hot });
+  assert.deepEqual(s.keys().sort(), ['co2High', 'rhLow', 'tHigh']);
+  s.tick(MIN, { readings: { ...hot, t: null }, clear: { t: true } });
+  assert.deepEqual(s.keys().sort(), ['co2High', 'rhLow']);
+  s.tick(MIN, { readings: { ...hot, rh: null, co2: null }, clear: { rh: true, co2: true } });
+  assert.deepEqual(s.keys(), []);
+  s.tick(MIN, { readings: hot });
+  assert.deepEqual(s.keys(), []);
+  for (let i = 0; i < 5; i++) s.tick(MIN, { readings: hot });
+  assert.deepEqual(s.keys().sort(), ['co2High', 'rhLow', 'tHigh']);
+});
+
+test('a missing reading (not faulty) keeps an active process alarm', (t) => {
+  const s = setup(t);
+  for (let i = 0; i < 6; i++) s.tick(MIN, readings({ t: 24.5 }));
+  assert.deepEqual(s.keys(), ['tHigh']);
+  s.tick(MIN, readings({ t: null }));
+  assert.deepEqual(s.keys(), ['tHigh']);
+});
