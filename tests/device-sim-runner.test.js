@@ -7,6 +7,7 @@ import { createSensors } from '../device/sensors.js';
 import { createSims } from '../device/sim-store.js';
 import { createSimulation } from '../device/simulation.js';
 import { startDevice } from '../device/server.js';
+import { outdoorAt } from '../device/sim-model.js';
 
 // A model that records what it was given and moves to fixed numbers.
 function recorder(next = { T: 21.26, W: 10, CO2: 1234.6 }) {
@@ -52,11 +53,13 @@ const lastInputs = (model) => model.calls.at(-1).inputs;
 test('a tick steps speed simulated seconds and writes rounded values into the linked sensors', () => {
   const { sensors, sims, sim, model, id } = setup();
   sims.setSpeed(10);
+  const clock0 = sims.get(id).clock;
   sim.tick();
   assert.equal(model.calls.length, 1);
   assert.equal(model.calls[0].dt, 10);
   assert.equal(model.calls[0].params.volume, 60);
-  assert.deepEqual(model.calls[0].state, { T: 32, W: 10, CO2: 420 });
+  assert.deepEqual(model.calls[0].state, { T: outdoorAt(sims.get(id), clock0).outdoorT, W: 10, CO2: 420 });
+  assert.equal(sims.get(id).clock, (clock0 + 10) % 86400);
   assert.deepEqual([sensors.get(1).t, sensors.get(1).rh, sensors.get(2).co2, sensors.get(4).roomT], [21.3, 50, 1235, 21.3]);
   assert.deepEqual(sims.get(id).state, { T: 21.26, W: 10, CO2: 1234.6 });
   assert.equal(sims.get(id).acting.exchangeM3h, 1);
@@ -176,7 +179,7 @@ test('a disabled room writes nothing and is not stepped', () => {
   assert.equal(model.calls.length, 0);
   assert.equal(sensors.get(1).t, 7);
   assert.equal(sensors.get(2).co2, 800);
-  assert.deepEqual(sims.get(id).state, { T: 32, W: 10, CO2: 420 });
+  assert.deepEqual(sims.get(id).state, { T: outdoorAt(sims.get(id), sims.get(id).clock).outdoorT, W: 10, CO2: 420 });
 });
 
 test('two rooms run independently', () => {
@@ -252,4 +255,20 @@ test('startDevice with simTickMs 0 only steps when asked', async () => {
   } finally {
     await device.close();
   }
+});
+
+test('the model gets the outdoor air at the room\'s time of day, and the clock wraps at midnight', () => {
+  const { sims, sim, model, id } = setup();
+  sims.setSpeed(60);
+  sims.update(id, { outdoorHigh: 34, outdoorLow: 24, outdoorDew: 23, co2PerBlock: 45, wallUA: 30 });
+  sims.setState(id, sims.get(id).state, null, 86400 - 30);
+  sim.tick();
+  const p = model.calls[0].params;
+  const want = outdoorAt({ outdoorHigh: 34, outdoorLow: 24, outdoorDew: 23 }, 86400 - 30);
+  assert.equal(p.outdoorT, want.outdoorT);
+  assert.equal(p.outdoorRH, want.outdoorRH);
+  assert.deepEqual([p.co2PerBlock, p.wallUA], [45, 30]);
+  assert.equal(sims.get(id).clock, 30);
+  sim.tick();
+  assert.equal(model.calls[1].params.outdoorT, outdoorAt({ outdoorHigh: 34, outdoorLow: 24, outdoorDew: 23 }, 30).outdoorT);
 });

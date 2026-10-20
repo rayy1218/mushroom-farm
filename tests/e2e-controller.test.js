@@ -13,7 +13,7 @@ test('CO2 at the upper limit starts an air exchange, the lower limit ends it', a
   const device = await startDevice({ modbusPort: 0, httpPort: 0, spinUpMs: 0, simTickMs: 0 });
   for (const [address, kind] of [[1, 'trh'], [2, 'co2'], [10, 'relay'], [20, 'ac']]) device.sensors.add({ address, kind });
   const sim = device.sims.add({ name: 'Sim room' });
-  // 1200 m³/h: strong enough to bring this room below 600 ppm (at 600 m³/h it levels off near 667).
+  // 1200 m³/h: strong enough to bring this room well below 600 ppm.
   device.sims.update(sim.id, { trh: 1, co2: 2, relay: 10, ac: 20, fanFlow: 1200, enabled: true });
   device.sims.setSpeed(10);
 
@@ -61,7 +61,9 @@ test('CO2 at the upper limit starts an air exchange, the lower limit ends it', a
   await until('air exchange start', () => commands().relay.intake);
   assert.ok(co2() >= 750, `started at the upper limit (CO2 ${co2()})`);
   assert.equal(commands().relay.exhaust, true);
-  assert.equal(commands().relay.humidifier, true, 'humidifier on during an air exchange');
+  // A new room does not force the humidifier on during an exchange: it follows its own band.
+  assert.equal(controller.get(room.id).humidifierDuringExchange, false);
+  assert.equal(commands().relay.humidifier, controller.get(room.id).humidifierBand, 'humidifier follows its band during an air exchange');
   assert.equal(commands().ac.setpoint, 17, 'aircon 5 °C lower during an air exchange');
   assert.equal(controller.get(room.id).exchange, true);
 

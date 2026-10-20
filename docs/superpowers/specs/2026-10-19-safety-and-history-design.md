@@ -82,6 +82,7 @@ The humidifier and aircon change times are kept in memory per room (the last tim
 | `tHigh` | warning | T > tHigh + 1 | T ≤ tHigh + 0.8 | 5 min | "Temperature 24.3 °C, above 23 + 1" |
 | `tLow` | warning | T < tLow − 1 | T ≥ tLow − 0.8 | 5 min | "Temperature 19.6 °C, below 21 − 1" |
 | `rhLow` | warning | RH < rhLow − 5 | RH ≥ rhLow − 4 | 5 min | "Humidity 78 %, below 85 − 5" |
+| `rhHigh` | warning | RH > rhHigh + 3 | RH ≤ rhHigh + 2 | 15 min (longer than one air exchange) | "Humidity 99.5 %, above 95 + 3" (added 2026-10-20: a wet room, water on caps and walls) |
 | `co2High` | warning | CO₂ > co2High + 100 | CO₂ ≤ co2High + 80 | 5 min | "CO₂ 880 ppm, above 750 + 100" |
 | `co2Safety` | critical | CO₂ ≥ co2Safety | CO₂ < co2Safety − 20 | 60 s | "CO₂ 1300 ppm, at or above the safety level 1250" |
 | `sensorTrh` / `sensorCo2` | serious | sensor faulty (1) | fault ends | none | "T/RH probe fault: value does not change (frozen)" |

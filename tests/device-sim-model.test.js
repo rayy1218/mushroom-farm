@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { satW, rhOf, wOf, initialState, step } from '../device/sim-model.js';
+import { satW, rhOf, wOf, initialState, step, outdoorAt, dewOf } from '../device/sim-model.js';
 
-const P = { volume: 60, blocks: 500, outdoorT: 32, outdoorRH: 80, fanFlow: 600, acKW: 3.5, humidifierGH: 2000 };
+const P = { volume: 60, blocks: 500, co2PerBlock: 60, wallUA: 80, outdoorT: 32, outdoorRH: 80, fanFlow: 600, acKW: 3.5, humidifierGH: 2000 };
 const OFF = { intake: false, exhaust: false, humidifier: false, ac: null };
 const near = (a, b, tol, msg) => assert.ok(Math.abs(a - b) <= tol, `${msg || ''} ${a} vs ${b} (tol ${tol})`);
 
@@ -34,10 +34,14 @@ test('initialState starts at outdoor air and 420 ppm', () => {
   assert.equal(s.CO2, 420);
 });
 
-test('walls pull T toward outdoor with tau 1 h', () => {
-  const r = run(start({ T: 22 }), OFF, { ...noBlocks, volume: 1e9 }, 3600, 5);
-  // leakage (0.3 vol/h) moves T at 0.03/h (heat capacity is 10x the air): rate 1.03 per hour
+test('walls pull T toward outdoor at wallUA / heat capacity', () => {
+  // 200 W/K into 60 m3 x 12 kJ/(m3 K) = 720 kJ/K: rate 1 per hour, plus leakage (0.3 vol/h at 1/10 of the heat): 1.03 per hour
+  const r = run(start({ T: 22 }), OFF, { ...noBlocks, wallUA: 200 }, 3600, 5);
   near(r.state.T, 22 + 10 * (1 - Math.exp(-1.03)), 0.05);
+  const panel = run(start({ T: 22 }), OFF, { ...noBlocks, wallUA: 28 }, 3600, 5);
+  near(panel.state.T, 22 + 10 * (1 - Math.exp(-(28 / 200 + 0.03))), 0.05);
+  const sealed = run(start({ T: 22 }), OFF, { ...noBlocks, wallUA: 0 }, 3600, 5);
+  near(sealed.state.T, 22 + 10 * (1 - Math.exp(-0.03)), 0.02);
   const cold = run(start({ T: 40 }), OFF, noBlocks, 600);
   assert.ok(cold.state.T < 40 && cold.state.T > 32);
 });
@@ -73,13 +77,28 @@ test('blocks raise T, W and CO2 with exchange off', () => {
   assert.ok(r.state.T > 32);
   assert.ok(r.state.W > s0.W);
   assert.ok(r.state.CO2 > 420);
-  assert.equal(r.acting.blocksKW, 0.5);
-  // CO2: 500*0.3 L/h = 150 L/h = 0.15 m3/h over 60 m3 -> 2500 ppm/h, 10 min = ~417 ppm (minus tiny leakage)
-  near(r.state.CO2, 420 + 2500 / 6, 15);
-  // heat: 0.5 kW / 720 kJ/K -> 0.0007 K/s
-  // (walls pull back a little as the room warms)
-  near(r.state.T - 32, 0.5 / 720 * 600, 0.05);
-  assert.ok(r.state.T - 32 < 0.5 / 720 * 600);
+  // heat from respiration (467 kJ per mol CO2, 24.5 L/mol) less the evaporation of the block water (0.3 g/h x 2.45 kJ/g)
+  const perBlockKJh = 0.06 * 467 / 24.5 - 0.3 * 2.45;
+  near(r.acting.blocksKW, (500 * perBlockKJh) / 3600, 1e-9);
+  // CO2: 500 x 60 mL/h = 30 L/h = 0.03 m3/h over 60 m3 -> 500 ppm/h, 10 min = ~83 ppm (minus tiny leakage)
+  near(r.state.CO2, 420 + 500 / 6, 5);
+  // water: 500 x 0.3 g/h = 150 g/h, 10 min = 25 g over 60 m3 (leakage adds the same with or without blocks)
+  const none = run(s0, OFF, { ...noBlocks, outdoorT: 32 }, 600);
+  near(r.state.W - none.state.W, 25 / 60, 0.015); // leakage carries a little of it out
+  // heat: blocksKW / 720 kJ/K over 600 s (walls pull back a little as the room warms)
+  const rise = (r.acting.blocksKW / 720) * 600;
+  near(r.state.T - 32, rise, 0.01);
+  assert.ok(r.state.T - 32 < rise);
+});
+
+test('CO2, heat and water scale with CO2 per block', () => {
+  const s0 = start({ T: 32, W: wOf(32, 50) }, P);
+  const lo = step(s0, OFF, { ...P, co2PerBlock: 30 }, 60);
+  const hi = step(s0, OFF, { ...P, co2PerBlock: 120 }, 60);
+  assert.ok(hi.state.CO2 - 420 > 3.9 * (lo.state.CO2 - 420));
+  assert.ok(hi.acting.blocksKW > lo.acting.blocksKW);
+  // at 30 mL/h the evaporation takes more heat than respiration gives: the blocks cool the room a little
+  assert.ok(lo.acting.blocksKW < 0);
 });
 
 test('humidifier raises W and lowers T', () => {
@@ -244,6 +263,28 @@ test('acting reports the last sub-step: humidifier limited by saturation', () =>
 test('air exchange moves T by the heat-capacity fraction, not the air-change fraction', () => {
   const s0 = start({ T: 22 });
   const r = step(s0, { ...OFF, intake: true, exhaust: true }, { ...noBlocks, outdoorRH: 0 }, 60);
-  // k = 600/3600/60*60 = 0.1667 for W; kT = 600*1.2/3600*60/720 = 0.0167 for T (walls add 60/3600*10 = 0.17 K)
-  near(r.state.T - 22, 10 * (0.0167 + 1 / 60), 0.02);
+  // k = 600/3600/60*60 = 0.1667 for W; kT = 600*1.2/3600*60/720 = 0.0167 for T (walls add 0.08 kW/K x 60 s / 720 kJ/K)
+  near(r.state.T - 22, 10 * (0.0167 + (0.08 * 60) / 720), 0.02);
+});
+
+test('outdoorAt: night low at 03:00, day high at 15:00, dew point all day', () => {
+  const o = { outdoorHigh: 33, outdoorLow: 25, outdoorDew: 24 };
+  const at = (h) => outdoorAt(o, h * 3600);
+  near(at(3).outdoorT, 25, 1e-9);
+  near(at(15).outdoorT, 33, 1e-9);
+  near(at(9).outdoorT, 29, 1e-9);
+  near(at(21).outdoorT, 29, 1e-9);
+  near(at(27).outdoorT, 25, 1e-9); // wraps after midnight
+  near(dewOf(wOf(at(3).outdoorT, at(3).outdoorRH)), 24, 1e-6);
+  near(dewOf(wOf(at(15).outdoorT, at(15).outdoorRH)), 24, 1e-6);
+  near(at(15).outdoorRH, 61, 1); // a hot afternoon
+  near(at(3).outdoorRH, 94, 1); // a humid night
+  const flat = outdoorAt({ outdoorHigh: 30, outdoorLow: 30, outdoorDew: 30 }, 0);
+  assert.equal(flat.outdoorT, 30);
+  near(flat.outdoorRH, 100, 1e-9);
+});
+
+test('dewOf inverts the saturation curve', () => {
+  for (const T of [-5, 0, 12, 24, 27.9]) near(dewOf(satW(T)), T, 1e-6);
+  near(dewOf(wOf(32, 80)), 27.9, 0.1);
 });

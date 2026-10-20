@@ -13,7 +13,8 @@ async function setup(t) {
   const device = await startDevice({ modbusPort: 0, httpPort: 0, spinUpMs: 0, simTickMs: 0 });
   for (const [address, kind] of [[1, 'trh'], [2, 'co2'], [10, 'relay'], [20, 'ac']]) device.sensors.add({ address, kind });
   const sim = device.sims.add({ name: 'Sim room' });
-  device.sims.update(sim.id, { trh: 1, co2: 2, relay: 10, ac: 20, enabled: true });
+  // A fixed hot outdoor (no day cycle) and a crowded room, so the effects are large whatever the time of day.
+  device.sims.update(sim.id, { trh: 1, co2: 2, relay: 10, ac: 20, enabled: true, blocks: 2000, outdoorHigh: 32, outdoorLow: 32, outdoorDew: 24 });
   device.sims.setSpeed(60);
 
   const db = openDb(':memory:');

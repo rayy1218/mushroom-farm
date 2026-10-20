@@ -4,6 +4,7 @@
 import { readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { SensorError } from './sensors.js';
 import * as defaultModel from './sim-model.js';
+import { outdoorAt } from './sim-model.js';
 
 const SPEEDS = [1, 10, 60];
 const LINKS = ['trh', 'co2', 'relay', 'ac'];
@@ -11,14 +12,20 @@ const KIND_NAMES = { trh: 'T/RH sensor', co2: 'CO₂ sensor', relay: 'relay modu
 const PARAMS = {
   volume: { min: 1, max: 10000, whole: false, label: 'Volume', unit: 'm³', value: 60 },
   blocks: { min: 0, max: 100000, whole: true, label: 'Blocks', unit: '', value: 500 },
-  outdoorT: { min: -40, max: 60, whole: false, label: 'Outdoor temperature', unit: '°C', value: 32 },
-  outdoorRH: { min: 0, max: 100, whole: false, label: 'Outdoor humidity', unit: '%', value: 80 },
+  co2PerBlock: { min: 0, max: 1000, whole: false, label: 'CO₂ per block', unit: 'mL/h', value: 60 },
+  wallUA: { min: 0, max: 100000, whole: false, label: 'Wall heat transfer', unit: 'W/K', value: 80 },
+  // Lowland Malaysia (Subang 2015-2024): mean daily high 32.9 °C, low 25.0 °C, dew point about 24 °C.
+  outdoorHigh: { min: -40, max: 60, whole: false, label: 'Outdoor day high', unit: '°C', value: 33 },
+  outdoorLow: { min: -40, max: 60, whole: false, label: 'Outdoor night low', unit: '°C', value: 25 },
+  outdoorDew: { min: -40, max: 60, whole: false, label: 'Outdoor dew point', unit: '°C', value: 24 },
   fanFlow: { min: 0, max: 100000, whole: false, label: 'Fan flow', unit: 'm³/h', value: 600 },
   acBTU: { min: 0, max: 200000, whole: true, label: 'Aircon capacity', unit: 'BTU/h', value: 12000 },
   humidifierLH: { min: 0, max: 100, whole: false, label: 'Humidifier output', unit: 'L/h', value: 2 },
 };
 export const BTU_PER_KW = 3412.142;
 const NAME_MAX = 40;
+const DAY_S = 86_400;
+const OUTDOOR = ['outdoorHigh', 'outdoorLow', 'outdoorDew'];
 const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
 
 function checkParam(field, value) {
@@ -27,6 +34,13 @@ function checkParam(field, value) {
     throw new SensorError(400, `${label} must be ${whole ? 'a whole number' : 'a number'} from ${min} to ${max}${unit ? ` ${unit}` : ''}`, field);
   }
   return value;
+}
+
+// The outdoor values must fit together: night low at most the day high, dew point at most the night low.
+function outdoorProblem({ outdoorHigh, outdoorLow, outdoorDew }) {
+  if (outdoorLow > outdoorHigh) return { message: 'Outdoor night low must not be above the day high', field: 'outdoorLow' };
+  if (outdoorDew > outdoorLow) return { message: 'Outdoor dew point must not be above the night low', field: 'outdoorDew' };
+  return null;
 }
 
 function checkName(value) {
@@ -38,8 +52,15 @@ function checkName(value) {
 const paramsOf = (room) => Object.fromEntries(Object.keys(PARAMS).map((k) => [k, room[k]]));
 const clone = (room) => ({ ...room, state: { ...room.state } });
 
-export function createSims({ sensors, statePath, model = defaultModel } = {}) {
+// now: for the simulated time of day of a new or reset room, which starts at the local time.
+export function createSims({ sensors, statePath, model = defaultModel, now = Date.now } = {}) {
   const rooms = new Map();
+  const clockNow = () => {
+    const d = new Date(now());
+    return d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds();
+  };
+  // The air of a room that starts now: the outdoor air at its time of day.
+  const startState = (room) => model.initialState({ ...paramsOf(room), ...outdoorAt(room, room.clock) });
   let speed = 1;
   let nextId = 1;
   let dirty = false;
@@ -53,10 +74,15 @@ export function createSims({ sensors, statePath, model = defaultModel } = {}) {
     dirty = false;
   }
 
-  // What callers see: a copy with the humidity worked out and what is acting now.
+  // What callers see: a copy with the humidity and the outdoor air now worked out and what is acting now.
   function view(room) {
     const { T, W } = room.state;
-    return { ...clone(room), rh: Math.round(model.rhOf(T, W) * 10) / 10, acting: room.acting ? { ...room.acting } : null };
+    const { outdoorT, outdoorRH } = outdoorAt(room, room.clock);
+    return {
+      ...clone(room), rh: Math.round(model.rhOf(T, W) * 10) / 10,
+      outdoor: { T: Math.round(outdoorT * 10) / 10, RH: Math.round(outdoorRH * 10) / 10 },
+      acting: room.acting ? { ...room.acting } : null,
+    };
   }
 
   const sorted = () => [...rooms.values()].sort((a, b) => a.id - b.id);
@@ -95,7 +121,8 @@ export function createSims({ sensors, statePath, model = defaultModel } = {}) {
 
   function blank(id, name) {
     const room = { id, name, enabled: false, trh: null, co2: null, relay: null, ac: null, ...Object.fromEntries(Object.entries(PARAMS).map(([k, p]) => [k, p.value])) };
-    room.state = model.initialState(paramsOf(room));
+    room.clock = clockNow();
+    room.state = startState(room);
     room.acting = null;
     return room;
   }
@@ -127,6 +154,8 @@ export function createSims({ sensors, statePath, model = defaultModel } = {}) {
     for (const kind of LINKS) if (patch?.[kind] !== undefined) next[kind] = checkLink(room, kind, patch[kind]);
     for (const field of Object.keys(PARAMS)) if (patch?.[field] !== undefined) next[field] = checkParam(field, patch[field]);
     if (Object.keys(next).length === 0) throw new SensorError(400, 'Nothing to change');
+    const outdoor = outdoorProblem({ ...room, ...next });
+    if (outdoor) throw new SensorError(400, outdoor.message, outdoor.field);
     // One device cannot sit on two links of the same room either.
     const linked = LINKS.map((k) => next[k] ?? room[k]).filter((v) => v !== null);
     if (new Set(linked).size !== linked.length) throw new SensorError(409, 'A device can be linked once', LINKS.find((k) => next[k] !== undefined && next[k] !== null));
@@ -136,7 +165,8 @@ export function createSims({ sensors, statePath, model = defaultModel } = {}) {
   function reset(id) {
     const room = find(id);
     return commit(room, () => {
-      room.state = model.initialState(paramsOf(room));
+      room.clock = clockNow();
+      room.state = startState(room);
       room.acting = null;
     });
   }
@@ -165,11 +195,12 @@ export function createSims({ sensors, statePath, model = defaultModel } = {}) {
     return speed;
   }
 
-  // The runner's own writes: in memory, saved by persist().
-  function setState(id, state, acting) {
+  // The runner's own writes: in memory, saved by persist(). clock: the simulated time of day (s), kept when not given.
+  function setState(id, state, acting, clock) {
     const room = rooms.get(id);
     if (!room) return;
     room.state = { T: state.T, W: state.W, CO2: state.CO2 };
+    if (isNumber(clock)) room.clock = ((clock % DAY_S) + DAY_S) % DAY_S;
     room.acting = acting ?? null;
     dirty = true;
   }
@@ -215,6 +246,9 @@ export function createSims({ sensors, statePath, model = defaultModel } = {}) {
     if (isNumber(saved.acKW)) old.acBTU = Math.round(saved.acKW * BTU_PER_KW);
     if (isNumber(saved.humidifierGH)) old.humidifierLH = Math.round(saved.humidifierGH / 100) / 10;
     for (const field of Object.keys(PARAMS)) if ((saved[field] ?? old[field]) !== undefined) room[field] = checkParam(field, saved[field] ?? old[field]);
+    // Outdoor values that do not fit together go back to the defaults (a file from before the day cycle has none).
+    if (outdoorProblem(room)) for (const field of OUTDOOR) room[field] = PARAMS[field].value;
+    if (isNumber(saved.clock) && saved.clock >= 0 && saved.clock < DAY_S) room.clock = saved.clock;
     // A device belongs to one room (and one link) only: the first claim wins.
     for (const kind of LINKS) {
       if (!Number.isInteger(saved[kind]) || claimed.has(saved[kind])) continue;
@@ -222,7 +256,7 @@ export function createSims({ sensors, statePath, model = defaultModel } = {}) {
       room[kind] = saved[kind];
     }
     const s = saved.state;
-    room.state = isNumber(s?.T) && isNumber(s?.W) && isNumber(s?.CO2) ? { T: s.T, W: s.W, CO2: s.CO2 } : model.initialState(paramsOf(room));
+    room.state = isNumber(s?.T) && isNumber(s?.W) && isNumber(s?.CO2) ? { T: s.T, W: s.W, CO2: s.CO2 } : startState(room);
     rooms.set(room.id, room);
     nextId = Math.max(nextId, room.id + 1);
   }

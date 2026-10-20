@@ -10,13 +10,13 @@ import { createPoller } from '../server/poller.js';
 import { createMachines } from '../server/machines.js';
 import { createController } from '../server/controller.js';
 
-// A farm with one simulated room. The default fan (600 m³/h) only brings CO₂ down to about 667 ppm,
-// between the band limits, so the exchange never ends by itself. One farm cycle = 10 simulated seconds.
+// A farm with one simulated room whose fans are too small: 120 m³/h for 500 blocks at 60 mL/h only brings CO₂ down to
+// about 670 ppm, between the band limits, so the exchange never ends by itself. One farm cycle = 10 simulated seconds.
 async function setup(t) {
   const device = await startDevice({ modbusPort: 0, httpPort: 0, spinUpMs: 0, simTickMs: 0 });
   for (const [address, kind] of [[1, 'trh'], [2, 'co2'], [10, 'relay'], [20, 'ac']]) device.sensors.add({ address, kind });
   const sim = device.sims.add({ name: 'Sim room' });
-  device.sims.update(sim.id, { trh: 1, co2: 2, relay: 10, ac: 20, enabled: true });
+  device.sims.update(sim.id, { trh: 1, co2: 2, relay: 10, ac: 20, enabled: true, fanFlow: 120 });
   device.sims.setSpeed(10);
 
   const db = openDb(':memory:');

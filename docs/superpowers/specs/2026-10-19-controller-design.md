@@ -19,10 +19,10 @@ Date: 2026-10-19 · Branch `v2` · Builds on `2026-10-16-machines-design.md` (it
 | CO₂ band `co2Low`–`co2High` | 600–750 ppm | 300–5000, low < high |
 | Temperature band `tLow`–`tHigh` | 21–23 °C *default* | 16–35, low < high |
 | RH band `rhLow`–`rhHigh` | 85–95 % *default* | 40–100, low < high |
-| `humidifierDuringExchange` "Humidifier on during air exchange" | on (current behaviour) | true or false; a change takes effect on the next cycle |
+| `humidifierDuringExchange` "Humidifier on during air exchange" | off for a new room (2026-10-20: the outdoor dew point, 23–27 °C on the Malaysian lowlands, is above the room's T, so fresh air cooled into the room arrives at over 100 % RH; the exchange humidifies already); rooms that existed at the upgrade 3 → 4 keep on | true or false; a change takes effect on the next cycle |
 | `acFan` "Aircon fan" | auto (current behaviour) | `auto`, `low` or `high`; a change takes effect on the next cycle |
 
-Stored in a new table `room_controls (room_id PK, auto, co2_low, co2_high, t_low, t_high, rh_low, rh_high, exchange INTEGER, exchange_since INTEGER, humidifier INTEGER, humidifier_during_exchange INTEGER NOT NULL DEFAULT 1, ac_fan TEXT NOT NULL DEFAULT 'auto' CHECK (ac_fan IN ('auto','low','high')))` (db upgrade 2 → 3, 3 → 4 adds `humidifier_during_exchange`, and 5 → 6 adds `ac_fan`; a row per room, created with the room and for existing rooms by the upgrade; deleted with the room). `exchange` and `humidifier` are the controller's remembered band states (so hysteresis survives a restart).
+Stored in a new table `room_controls (room_id PK, auto, co2_low, co2_high, t_low, t_high, rh_low, rh_high, exchange INTEGER, exchange_since INTEGER, humidifier INTEGER, humidifier_during_exchange INTEGER NOT NULL DEFAULT 1 (a new room's row is written with 0), ac_fan TEXT NOT NULL DEFAULT 'auto' CHECK (ac_fan IN ('auto','low','high')))` (db upgrade 2 → 3, 3 → 4 adds `humidifier_during_exchange`, and 5 → 6 adds `ac_fan`; a row per room, created with the room and for existing rooms by the upgrade; deleted with the room). `exchange` and `humidifier` are the controller's remembered band states (so hysteresis survives a restart).
 
 ## 3. Running
 

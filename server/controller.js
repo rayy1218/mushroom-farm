@@ -7,7 +7,7 @@ import { createSensorChecks } from './checks.js';
 import { createAlarms } from './alarms.js';
 
 export const DEFAULTS = {
-  auto: false, co2Low: 600, co2High: 750, tLow: 21, tHigh: 23, rhLow: 85, rhHigh: 95, humidifierDuringExchange: true, acFan: 'auto',
+  auto: false, co2Low: 600, co2High: 750, tLow: 21, tHigh: 23, rhLow: 85, rhHigh: 95, humidifierDuringExchange: false, acFan: 'auto',
   co2Safety: 1250, exchangeMaxMin: 10,
 };
 export const AC_FANS = ['auto', 'low', 'high'];
@@ -49,12 +49,12 @@ const acDiffers = (a, d) => a.power !== d.power || a.mode !== d.mode || a.fan !=
 // bands: { co2Low, co2High, co2Safety, exchangeMaxMin, tLow, tHigh, rhLow, rhHigh }.
 // state: { exchange, exchangeSince, exchangeEndedAt, cappedInRow, humidifier, humidifierSince }, the remembered states
 // (times in ms; exchangeSince is null while the exchange is off, exchangeEndedAt null when it never ended).
-// humidifierDuringExchange: whether an air exchange forces the humidifier on (default true).
+// humidifierDuringExchange: whether an air exchange forces the humidifier on (default false).
 // acFan: the aircon fan, 'auto' | 'low' | 'high' (default 'auto').
 // readings: { co2, rh }, null when the sensor gave nothing usable this cycle (that rule then keeps its state).
 // faults: { co2, trh }, true while that sensor is faulty (timed exchange, timed humidifier). now: ms.
 // Returns { state, desired, reasons }. Pure.
-export function decide({ bands, state, readings, faults, now, humidifierDuringExchange = true, acFan = 'auto' }) {
+export function decide({ bands, state, readings, faults, now, humidifierDuringExchange = false, acFan = 'auto' }) {
   const { co2 = null, rh = null } = readings ?? {};
   const was = state.exchange;
   let exchange = was;

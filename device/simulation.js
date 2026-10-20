@@ -3,6 +3,7 @@
 
 import * as defaultModel from './sim-model.js';
 import { BTU_PER_KW } from './sim-store.js';
+import { outdoorAt } from './sim-model.js';
 
 const MODES = ['cool', 'heat', 'dry', 'fan'];
 const FANS = ['auto', 'low', 'high'];
@@ -10,9 +11,9 @@ const OUTPUT = { intake: 0, exhaust: 1, humidifier: 3 }; // circulation (2) has 
 export const DEFAULT_TICK_MS = 1000;
 export const PERSIST_MS = 10_000;
 
-// The model works in kW and g/h; the room is set in BTU/h and L/h.
+// The model works in kW and g/h; the room is set in BTU/h and L/h. The outdoor air is the one at the room's time of day.
 function modelParams({ acBTU, humidifierLH, ...rest }) {
-  return { ...rest, acKW: acBTU / BTU_PER_KW, humidifierGH: humidifierLH * 1000 };
+  return { ...rest, ...outdoorAt(rest, rest.clock), acKW: acBTU / BTU_PER_KW, humidifierGH: humidifierLH * 1000 };
 }
 
 export function createSimulation({ sensors, sims, model = defaultModel, tickMs = DEFAULT_TICK_MS, now = Date.now } = {}) {
@@ -43,7 +44,7 @@ export function createSimulation({ sensors, sims, model = defaultModel, tickMs =
     for (const room of sims.list()) {
       if (!room.enabled) continue;
       const { state, acting } = model.step(room.state, inputsOf(room), modelParams(room), dt);
-      sims.setState(room.id, state, acting);
+      sims.setState(room.id, state, acting, room.clock + dt);
       const { T, W, CO2 } = state;
       if (device(room.trh, 'trh')) sensors.simWrite(room.trh, { t: T, rh: model.rhOf(T, W) });
       if (device(room.co2, 'co2')) sensors.simWrite(room.co2, { co2: CO2 });

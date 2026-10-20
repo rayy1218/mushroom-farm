@@ -51,7 +51,7 @@ async function call(method, path, body) {
 
 const DEFAULT_VIEW = {
   auto: false, co2Low: 600, co2High: 750, tLow: 21, tHigh: 23, rhLow: 85, rhHigh: 95,
-  exchange: false, exchangeSince: null, humidifierBand: false, humidifierDuringExchange: true, acFan: 'auto',
+  exchange: false, exchangeSince: null, humidifierBand: false, humidifierDuringExchange: false, acFan: 'auto',
   co2Safety: 1250, exchangeMaxMin: 10, exchangeEndedAt: null, exchangeEndsAt: null, cappedInRow: 0, checks: { trh: null, co2: null },
   reasons: { exchange: '', humidifier: '', ac: '', circulation: '', held: { humidifier: '', ac: '' } },
 };
@@ -73,14 +73,14 @@ test('PUT control changes any of the fields and replies like GET', async () => {
 });
 
 test('PUT control accepts humidifierDuringExchange alone and keeps it', async () => {
-  const off = await call('PUT', `/api/rooms/${id}/control`, { humidifierDuringExchange: false });
-  assert.equal(off.status, 200);
-  assert.deepEqual(off.body, { ...DEFAULT_VIEW, humidifierDuringExchange: false });
-  assert.deepEqual((await call('GET', `/api/rooms/${id}/control`)).body, off.body);
-  const band = await call('PUT', `/api/rooms/${id}/control`, { rhLow: 80 });
-  assert.equal(band.body.humidifierDuringExchange, false);
   const on = await call('PUT', `/api/rooms/${id}/control`, { humidifierDuringExchange: true });
-  assert.deepEqual(on.body, { ...DEFAULT_VIEW, rhLow: 80 });
+  assert.equal(on.status, 200);
+  assert.deepEqual(on.body, { ...DEFAULT_VIEW, humidifierDuringExchange: true });
+  assert.deepEqual((await call('GET', `/api/rooms/${id}/control`)).body, on.body);
+  const band = await call('PUT', `/api/rooms/${id}/control`, { rhLow: 80 });
+  assert.equal(band.body.humidifierDuringExchange, true);
+  const off = await call('PUT', `/api/rooms/${id}/control`, { humidifierDuringExchange: false });
+  assert.deepEqual(off.body, { ...DEFAULT_VIEW, rhLow: 80 });
 });
 
 test('PUT control accepts acFan alone and keeps it', async () => {

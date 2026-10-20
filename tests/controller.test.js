@@ -42,15 +42,15 @@ test('humidifier: on at or below the lower RH, off at or above the upper, kept b
   }
 });
 
-test('the humidifier is on during an air exchange but its own band state is still tracked', () => {
-  const wet = run({ state: { exchange: false, humidifier: false }, co2: 800, rh: 97 });
+test('humidifier during exchange on: the humidifier is on during an air exchange but its own band state is still tracked', () => {
+  const wet = run({ state: { exchange: false, humidifier: false }, co2: 800, rh: 97, during: true });
   assert.equal(wet.desired.humidifier, true);
   assert.equal(wet.state.humidifier, false);
   assert.equal(wet.reasons.humidifier, 'Humidifier: on during air exchange');
-  const dry = run({ state: { exchange: false, humidifier: false }, co2: 800, rh: 80 });
+  const dry = run({ state: { exchange: false, humidifier: false }, co2: 800, rh: 80, during: true });
   assert.equal(dry.state.humidifier, true);
   // The exchange ends with RH between the limits: the humidifier band state (on) stays.
-  const after = run({ state: { exchange: true, humidifier: true }, co2: 590, rh: 90 });
+  const after = run({ state: { exchange: true, humidifier: true }, co2: 590, rh: 90, during: true });
   assert.equal(after.state.exchange, false);
   assert.equal(after.desired.humidifier, true);
 });
@@ -70,10 +70,11 @@ test('humidifier during exchange off: it follows its band alone while the exchan
   const gone = run({ state: { exchange: true, humidifier: false }, co2: 800, rh: null, during: false });
   assert.equal(gone.desired.humidifier, false);
   assert.equal(gone.reasons.humidifier, 'Humidity sensor not answering: humidifier kept off');
-  // without an exchange nothing differs; true (and the default) force it on
+  // without an exchange nothing differs; true forces it on; the default is off (fresh Malaysian air is wet enough)
   assert.equal(run({ state: { exchange: false, humidifier: false }, rh: 96, during: false }).reasons.humidifier, 'Humidifier: RH 96 ≥ 95');
   assert.equal(run({ co2: 800, rh: 96, during: true }).desired.humidifier, true);
-  assert.equal(run({ co2: 800, rh: 96 }).desired.humidifier, true);
+  assert.equal(run({ co2: 800, rh: 96 }).desired.humidifier, false);
+  assert.equal(DEFAULTS.humidifierDuringExchange, false);
 });
 
 test('aircon: power on, cool, auto fan, setpoint in the middle of the band', () => {
@@ -116,7 +117,7 @@ test('a missing RH reading keeps the humidifier state and says so; the exchange 
     assert.equal(r.desired.humidifier, humidifier);
     assert.equal(r.reasons.humidifier, `Humidity sensor not answering: humidifier kept ${humidifier ? 'on' : 'off'}`);
   }
-  const r = run({ state: off, co2: 800, rh: null });
+  const r = run({ state: off, co2: 800, rh: null, during: true });
   assert.equal(r.desired.intake, true);
   assert.equal(r.desired.humidifier, true);
 });

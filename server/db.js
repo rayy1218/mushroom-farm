@@ -300,7 +300,9 @@ export function openDb(path) {
     insertCommands: db.prepare('INSERT INTO machine_commands (room_id) VALUES (?)'),
     deleteCommands: db.prepare('DELETE FROM machine_commands WHERE room_id = ?'),
     commands: db.prepare('SELECT * FROM machine_commands WHERE room_id = ?'),
-    insertControl: db.prepare('INSERT OR REPLACE INTO room_controls (room_id) VALUES (?)'),
+    // A new room: the humidifier is not forced on during an air exchange (fresh Malaysian air is wet already).
+    // The column default (1) stays for the rooms that the upgrade 3 to 4 gave the setting.
+    insertControl: db.prepare('INSERT OR REPLACE INTO room_controls (room_id, humidifier_during_exchange) VALUES (?, 0)'),
     deleteControl: db.prepare('DELETE FROM room_controls WHERE room_id = ?'),
     deleteAlarms: db.prepare('DELETE FROM alarms WHERE room_id = ?'),
     deleteMachineLog: db.prepare('DELETE FROM machine_log WHERE room_id = ?'),

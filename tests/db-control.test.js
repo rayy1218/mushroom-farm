@@ -12,9 +12,11 @@ const fields = { name: 'Room 1', length: 6, width: 4, height: 2.5 };
 
 const DEFAULT_CONTROL = {
   auto: false, co2Low: 600, co2High: 750, tLow: 21, tHigh: 23, rhLow: 85, rhHigh: 95,
-  exchange: false, exchangeSince: null, humidifier: false, humidifierDuringExchange: true, acFan: 'auto',
+  exchange: false, exchangeSince: null, humidifier: false, humidifierDuringExchange: false, acFan: 'auto',
   co2Safety: 1250, exchangeMaxMin: 10, exchangeEndedAt: null, cappedInRow: 0, humidifierSince: null,
 };
+// A room that already existed at the upgrade 3 to 4 keeps the humidifier forced on during an exchange (the old behaviour).
+const UPGRADED_CONTROL = { ...DEFAULT_CONTROL, humidifierDuringExchange: true };
 
 // The schema of iteration 3 (user_version 2), copied from the db.js of that time.
 const ITERATION_3_SCHEMA = `
@@ -89,8 +91,8 @@ test('upgrade 2 to 3 keeps rooms, readings and commands and adds a control row p
   assert.deepEqual(db.getCommands(1).relay, { intake: true, exhaust: true, circulation: false, humidifier: true, sentAt: 50 });
   assert.equal(db.getCommands(1).ac.setpoint, 17);
   // exchange and humidifier start from the commanded intake and humidifier
-  assert.deepEqual(db.getControl(1), { ...DEFAULT_CONTROL, exchange: true, humidifier: true });
-  assert.deepEqual(db.getControl(5), DEFAULT_CONTROL);
+  assert.deepEqual(db.getControl(1), { ...UPGRADED_CONTROL, exchange: true, humidifier: true });
+  assert.deepEqual(db.getControl(5), UPGRADED_CONTROL);
   db.close();
 
   const raw = new DatabaseSync(path);
@@ -196,9 +198,9 @@ test('upgrade 3 to 4 adds humidifier_during_exchange (on) and keeps rooms, readi
   assert.deepEqual(db.getSensors(1)[0].readings, [{ at: 100, ok: true, t: 21.5, rh: 88 }]);
   assert.equal(db.getCommands(1).ac.setpoint, 17);
   assert.deepEqual(db.getControl(1), {
-    ...DEFAULT_CONTROL, auto: true, co2Low: 500, co2High: 800, co2Safety: 1300, exchange: true, exchangeSince: 77, humidifier: true,
+    ...UPGRADED_CONTROL, auto: true, co2Low: 500, co2High: 800, co2Safety: 1300, exchange: true, exchangeSince: 77, humidifier: true,
   });
-  assert.deepEqual(db.getControl(5), DEFAULT_CONTROL);
+  assert.deepEqual(db.getControl(5), UPGRADED_CONTROL);
   db.close();
 
   const raw = new DatabaseSync(path);

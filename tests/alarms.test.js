@@ -75,6 +75,23 @@ test('the safety level alarm is critical and waits 60 s', (t) => {
   assert.deepEqual(e.keys(), ['co2Safety']);
 });
 
+test('the high humidity alarm waits 15 min (longer than one air exchange) above the upper limit + 3', (t) => {
+  const s = setup(t);
+  s.tick(0, readings({ rh: 98 })); // exactly at 95 + 3: not an alarm
+  s.tick(20 * MIN, readings({ rh: 98 }));
+  assert.deepEqual(s.keys(), []);
+  s.tick(0, readings({ rh: 99.5 }));
+  s.tick(14 * MIN + 59_000, readings({ rh: 99.5 }));
+  assert.deepEqual(s.keys(), [], 'a 10 min exchange that wets the room is not an alarm');
+  s.tick(1000, readings({ rh: 99.5 }));
+  const a = s.db.activeAlarms(s.room.id)[0];
+  assert.deepEqual([a.key, a.level, a.text], ['rhHigh', 'warning', 'Humidity 99.5 %, above 95 + 3']);
+  s.tick(5000, readings({ rh: 97.1 }));
+  assert.deepEqual(s.keys(), ['rhHigh'], 'stays above 95 + 2');
+  s.tick(5000, readings({ rh: 97 }));
+  assert.deepEqual(s.keys(), [], 'clears at 95 + 2');
+});
+
 test('a condition that does not hold for the whole delay gives no alarm', (t) => {
   const s = setup(t);
   s.tick(0, readings({ t: 25 }));

@@ -199,8 +199,11 @@ function showSensors(list) {
 const SIM_PARAMS = [
   ['volume', 'Volume', 'm³', 1, 10000, 1],
   ['blocks', 'Blocks', '', 0, 100000, 1],
-  ['outdoorT', 'Outdoor T', '°C', -40, 60, 0.5],
-  ['outdoorRH', 'Outdoor RH', '%', 0, 100, 1],
+  ['co2PerBlock', 'CO₂ per block', 'mL/h', 0, 1000, 1],
+  ['wallUA', 'Wall heat transfer', 'W/K', 0, 100000, 1],
+  ['outdoorHigh', 'Outdoor high', '°C', -40, 60, 0.5],
+  ['outdoorLow', 'Outdoor low', '°C', -40, 60, 0.5],
+  ['outdoorDew', 'Outdoor dew point', '°C', -40, 60, 0.5],
   ['fanFlow', 'Fan flow', 'm³/h, intake + exhaust', 0, 100000, 10],
   ['acBTU', 'Aircon', 'BTU/h', 0, 200000, 500],
   ['humidifierLH', 'Humidifier', 'L/h', 0, 100, 0.1],
@@ -210,13 +213,19 @@ const SIM_LINKS = [['trh', 'T/RH probe'], ['co2', 'CO₂ sensor'], ['relay', 'Re
 const simCards = new Map(); // id -> card
 const simBox = $('sims');
 
+// "14:05" from seconds since midnight.
+function clockText(s) {
+  const m = Math.floor(s / 60);
+  return `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+}
+
 function actingText(a) {
   if (!a) return 'Nothing acting yet';
   const parts = [`Air exchange ${Math.round(a.exchangeM3h)} m³/h`];
   if (a.acCoolKW > 0.005) parts.push(`AC cooling ${a.acCoolKW.toFixed(1)} kW`);
   if (a.acHeatKW > 0.005) parts.push(`AC heating ${a.acHeatKW.toFixed(1)} kW`);
   if (a.humidifierGH > 0) parts.push(`Humidifier +${(a.humidifierGH / 1000).toFixed(1)} L/h`);
-  parts.push(`Blocks +${a.blocksKW.toFixed(1)} kW`);
+  parts.push(`Blocks ${a.blocksKW < 0 ? "−" : "+"}${Math.abs(Math.round(a.blocksKW * 1000))} W`);
   return parts.join(' · ');
 }
 
@@ -286,12 +295,13 @@ function buildSimCard(room) {
   card.rh = el('strong');
   card.co2 = el('strong');
   card.acting = el('p', { className: 'sim-acting' });
+  card.outdoor = el('p', { className: 'muted sim-outdoor' });
   const live = el('p', { className: 'sim-live' },
     el('span', {}, 'T ', card.t, ' °C'), el('span', {}, 'RH ', card.rh, ' %'), el('span', {}, 'CO₂ ', card.co2, ' ppm'));
 
   card.el = el('article', { className: 'sim-card' },
     el('div', { className: 'sim-head' }, enabled.label, card.name, el('span', { className: 'sim-actions' }, reset, remove)),
-    links, params, live, card.acting,
+    links, params, live, card.outdoor, card.acting,
     el('p', { className: 'muted sim-note' }, 'Circulation fan: no effect in this one-zone model'),
     card.error);
   return card;
@@ -328,6 +338,7 @@ function showSimCard(card, room, sensors) {
   card.t.textContent = room.state.T.toFixed(1);
   card.rh.textContent = room.rh.toFixed(1);
   card.co2.textContent = String(Math.round(room.state.CO2));
+  card.outdoor.textContent = `Outdoor now ${room.outdoor.T.toFixed(1)} °C / ${Math.round(room.outdoor.RH)} % · simulated time ${clockText(room.clock)} (low at 03:00, high at 15:00, same dew point all day)`;
   card.acting.textContent = room.enabled ? actingText(room.acting) : 'Switched off';
   card.el.classList.toggle('off', !room.enabled);
 }

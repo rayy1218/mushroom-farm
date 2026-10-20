@@ -29,6 +29,11 @@ const PROCESS = [
   { key: 'rhLow', sensor: 'rh', level: 'warning', delay: 5 * MIN_MS, read: (r) => r.rh,
     hit: (v, b) => v < b.rhLow - 5, released: (v, b) => v >= b.rhLow - 4 - EPS,
     text: (v, b) => `Humidity ${num(v)} %, below ${b.rhLow} − 5` },
+  // A wet room (water on caps and walls: blotch, soft mushrooms). The delay is longer than one air exchange, which
+  // can wet the room for a while in Malaysian air.
+  { key: 'rhHigh', sensor: 'rh', level: 'warning', delay: 15 * MIN_MS, read: (r) => r.rh,
+    hit: (v, b) => v > b.rhHigh + 3, released: (v, b) => v <= b.rhHigh + 2 + EPS,
+    text: (v, b) => `Humidity ${num(v)} %, above ${b.rhHigh} + 3` },
   { key: 'co2High', sensor: 'co2', level: 'warning', delay: 5 * MIN_MS, read: (r) => r.co2,
     hit: (v, b) => v > b.co2High + 100, released: (v, b) => v <= b.co2High + 80 + EPS,
     text: (v, b) => `CO₂ ${num(v)} ppm, above ${b.co2High} + 100` },

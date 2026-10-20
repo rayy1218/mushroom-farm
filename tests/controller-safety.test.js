@@ -117,8 +117,8 @@ test('T/RH probe fault: timed humidifier, 10 min on then 10 min off, repeating',
   assert.equal(at(NOW - 10 * MIN, NOW).state.humidifier, false);
   assert.equal(at(NOW - 19 * MIN, NOW).desired.humidifier, false);
   assert.equal(at(NOW - 20 * MIN, NOW).state.humidifier, true, 'repeats');
-  // forced on during an exchange as ever
-  const forced = decide({ bands, state: onFor(MIN, { humidifierSince: NOW - 15 * MIN }), readings: { co2: 800, rh: null }, faults, now: NOW });
+  // forced on during an exchange when the room asks for it
+  const forced = decide({ bands, state: onFor(MIN, { humidifierSince: NOW - 15 * MIN }), readings: { co2: 800, rh: null }, faults, now: NOW, humidifierDuringExchange: true });
   assert.equal(forced.state.humidifier, false);
   assert.equal(forced.desired.humidifier, true);
   // without the fault the timer is dropped

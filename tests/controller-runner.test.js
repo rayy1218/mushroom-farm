@@ -69,7 +69,7 @@ test('the first cycle sends circulation and the aircon; then nothing again for t
 
 test('an air exchange starts at the upper limit and ends at the lower; only differences are written', async (t) => {
   const s = setup(t);
-  setAuto(s.controller, s.id);
+  setAuto(s.controller, s.id, { humidifierDuringExchange: true });
   await s.cycle();
   s.writes.length = 0;
   await s.cycle({ co2: 760, dt: 120_000 }); // the aircon changes at most every 2 min
@@ -100,14 +100,14 @@ test('without a relay module or an aircon gateway that part is skipped', async (
   assert.equal(noRelay.controller.get(noRelay.id).exchange, true); // the state is still tracked
 
   const noAc = setup(t, { room: { ...WIRED, acAddress: null } });
-  setAuto(noAc.controller, noAc.id);
+  setAuto(noAc.controller, noAc.id, { humidifierDuringExchange: true });
   await noAc.cycle({ co2: 800 });
   assert.deepEqual(noAc.writes.map((w) => w[0]), ['coil', 'coil', 'coil', 'coil']);
 });
 
 test('a sensor that failed this cycle keeps the rule state; an old reading does not count', async (t) => {
   const s = setup(t);
-  setAuto(s.controller, s.id);
+  setAuto(s.controller, s.id, { humidifierDuringExchange: true });
   await s.cycle({ co2: 800 });
   assert.equal(s.controller.get(s.id).exchange, true);
   s.writes.length = 0;
@@ -333,9 +333,9 @@ test('nothing is re-sent while auto is off, and forget drops the counters', asyn
 
 test('humidifier during exchange off: changed between cycles, the next cycle sends the humidifier off', async (t) => {
   const s = setup(t);
-  setAuto(s.controller, s.id);
+  setAuto(s.controller, s.id, { humidifierDuringExchange: true });
   await s.cycle({ co2: 800, rh: 96 });
-  assert.equal(s.db.getCommands(s.id).relay.humidifier, true); // forced on during the exchange
+  assert.equal(s.db.getCommands(s.id).relay.humidifier, true); // forced on during the exchange (turned on above)
   s.controller.update(s.id, { humidifierDuringExchange: false });
   assert.equal(s.db.getCommands(s.id).relay.humidifier, true); // nothing happens until the next cycle
   await s.cycle({ co2: 800, rh: 96, dt: 60_000 }); // the humidifier command changes at most once a minute

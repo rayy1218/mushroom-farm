@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { startDevice } from '../device/server.js';
 import { createSensors } from '../device/sensors.js';
 import { createSims } from '../device/sim-store.js';
+import { outdoorAt } from '../device/sim-model.js';
 
 // A model with fixed, easy numbers: the store and HTTP tests do not depend on the real physics.
 const model = {
@@ -62,10 +63,14 @@ test('POST /api/sims adds a room with the defaults and GET lists it', async () =
     { enabled: false, trh: null, co2: null, relay: null, ac: null },
   );
   assert.deepEqual(
-    { volume: room.volume, blocks: room.blocks, outdoorT: room.outdoorT, outdoorRH: room.outdoorRH, fanFlow: room.fanFlow, acBTU: room.acBTU, humidifierLH: room.humidifierLH },
-    { volume: 60, blocks: 500, outdoorT: 32, outdoorRH: 80, fanFlow: 600, acBTU: 12000, humidifierLH: 2 },
+    { volume: room.volume, blocks: room.blocks, co2PerBlock: room.co2PerBlock, wallUA: room.wallUA, outdoorHigh: room.outdoorHigh, outdoorLow: room.outdoorLow, outdoorDew: room.outdoorDew, fanFlow: room.fanFlow, acBTU: room.acBTU, humidifierLH: room.humidifierLH },
+    { volume: 60, blocks: 500, co2PerBlock: 60, wallUA: 80, outdoorHigh: 33, outdoorLow: 25, outdoorDew: 24, fanFlow: 600, acBTU: 12000, humidifierLH: 2 },
   );
-  assert.deepEqual(room.state, { T: 32, W: 10, CO2: 420 });
+  // The air starts as the outdoor air at the room's time of day, which starts at the local time.
+  assert.ok(Number.isInteger(room.clock) && room.clock >= 0 && room.clock < 86400);
+  const out = outdoorAt(room, room.clock);
+  assert.deepEqual(room.state, { T: out.outdoorT, W: 10, CO2: 420 });
+  assert.deepEqual(room.outdoor, { T: Math.round(out.outdoorT * 10) / 10, RH: Math.round(out.outdoorRH * 10) / 10 });
   assert.equal(room.rh, 50);
   assert.equal(room.acting, null);
   const list = await call('GET', '/api/sims');
@@ -98,8 +103,13 @@ test('PUT validation: 400 with the field', async () => {
   await bad({ volume: '60' }, 'volume');
   await bad({ blocks: 1.5 }, 'blocks');
   await bad({ blocks: -1 }, 'blocks');
-  await bad({ outdoorRH: 101 }, 'outdoorRH');
-  await bad({ outdoorT: 200 }, 'outdoorT');
+  await bad({ outdoorHigh: 200 }, 'outdoorHigh');
+  await bad({ outdoorDew: -41 }, 'outdoorDew');
+  await bad({ outdoorLow: 34 }, 'outdoorLow'); // above the day high of 33
+  await bad({ outdoorDew: 26 }, 'outdoorDew'); // above the night low of 25
+  await bad({ outdoorHigh: 24 }, 'outdoorLow'); // the night low of 25 is now above the day high
+  await bad({ co2PerBlock: 1001 }, 'co2PerBlock');
+  await bad({ wallUA: -1 }, 'wallUA');
   await bad({ fanFlow: Infinity }, 'fanFlow');
   await bad({ acBTU: null }, 'acBTU');
   await bad({ acBTU: 200001 }, 'acBTU');
@@ -161,7 +171,7 @@ test('reset puts the air back to the start; delete removes the room', async () =
   assert.equal(device.sims.get(id).state.T, 20);
   const res = await call('POST', `/api/sims/${id}/reset`);
   assert.equal(res.status, 200);
-  assert.deepEqual(res.body.state, { T: 32, W: 10, CO2: 420 });
+  assert.deepEqual(res.body.state, { T: outdoorAt(res.body, res.body.clock).outdoorT, W: 10, CO2: 420 });
   assert.equal((await call('DELETE', `/api/sims/${id}`)).status, 204);
   assert.deepEqual((await call('GET', '/api/sims')).body, []);
 });
@@ -333,4 +343,30 @@ test('a state file with a device linked twice keeps the first link only', () => 
   writeFileSync(file, JSON.stringify({ speed: 1, rooms: [{ id: 1, name: 'A', trh: 1 }, { id: 2, name: 'B', trh: 1, co2: 2 }, { id: 3, name: 'C', co2: 2 }] }));
   const sims = createSims({ sensors, statePath: file, model });
   assert.deepEqual(sims.list().map((r) => [r.trh, r.co2]), [[1, null], [null, 2], [null, null]]);
+});
+
+test('the time of day survives a restart; an old file with a fixed outdoor gets the day cycle defaults', () => {
+  const dir = tempDir();
+  const file = join(dir, 'state.json.sim');
+  writeFileSync(file, JSON.stringify({ speed: 1, rooms: [
+    { id: 1, name: 'Old', outdoorT: 32, outdoorRH: 80, clock: 50000 },
+    { id: 2, name: 'Odd', outdoorHigh: 30, outdoorLow: 31, outdoorDew: 20, clock: 90000 },
+    { id: 3, name: 'Own', outdoorHigh: 35, outdoorLow: 26, outdoorDew: 25 },
+  ] }));
+  const noon = new Date(2026, 9, 20, 12, 0, 0).getTime();
+  const sims = createSims({ sensors: createSensors({}), statePath: file, model, now: () => noon });
+  const [old, odd, own] = sims.list();
+  const outdoor = (r) => [r.outdoorHigh, r.outdoorLow, r.outdoorDew];
+  assert.deepEqual(outdoor(old), [33, 25, 24]);
+  assert.equal('outdoorT' in old || 'outdoorRH' in old, false);
+  assert.equal(old.clock, 50000);
+  assert.deepEqual(outdoor(odd), [33, 25, 24]); // the night low was above the day high
+  assert.equal(odd.clock, 12 * 3600); // 90000 s is not a time of day: the local time
+  assert.deepEqual(outdoor(own), [35, 26, 25]);
+  sims.setState(own.id, own.state, null, 1234);
+  sims.persist();
+  const again = createSims({ sensors: createSensors({}), statePath: file, model });
+  assert.equal(again.get(own.id).clock, 1234);
+  sims.reset(own.id);
+  assert.equal(sims.get(own.id).clock, 12 * 3600);
 });

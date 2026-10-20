@@ -2,12 +2,14 @@
 // No I/O, no clock. State { T, W, CO2 }: degC, g/m3 water, ppm.
 
 const SUB = 5;                 // max sub-step, seconds
-const WALL_TAU = 3600;         // s
 const LEAK_PER_H = 0.3;        // vol/h
 const CO2_OUT = 420;
 const LATENT = 2.45;           // kJ per g evaporated
 const HEAT_CAP_PER_M3 = 1.2 * 10; // kJ/(m3 K), air plus contents
-const BLOCK_W = 1, BLOCK_GH = 1, BLOCK_CO2_LH = 0.3;
+// A fruiting block (1 to 1.2 kg): water in g/h (respiration plus evaporation from the block and its mushrooms);
+// its heat comes from the CO2 it makes (glucose oxidation, 467 kJ per mol CO2 at 24.5 L/mol) less that evaporation.
+const BLOCK_GH = 0.3;
+const RESP_KJ_PER_ML = 467 / 24.5 / 1000;
 const COIL_T = 12;             // degC, AC coil: no condensation once the air's dew point is below it
 const BAND = 0.5;              // K, proportional band of the AC
 const WATER_FRACTION = { low: 0.35, auto: 0.25, high: 0.15 };
@@ -25,6 +27,24 @@ export function rhOf(T, W) {
 export function wOf(T, RH) {
   return (satW(T) * RH) / 100;
 }
+// The dew point of air holding W g/m3 (inverts satW).
+export function dewOf(W) {
+  let lo = -60, hi = 80;
+  for (let i = 0; i < 60; i++) {
+    const mid = (lo + hi) / 2;
+    if (satW(mid) < W) lo = mid; else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+
+// Outdoor air at a time of day (s from midnight): the temperature follows a cosine from the night low at 03:00 to the
+// day high at 15:00; the dew point stays the same all day (as on the Malaysian lowlands), so RH is high at night.
+export function outdoorAt({ outdoorHigh, outdoorLow, outdoorDew }, clockS) {
+  const h = (((clockS / 3600) % 24) + 24) % 24;
+  const outdoorT = (outdoorHigh + outdoorLow) / 2 - ((outdoorHigh - outdoorLow) / 2) * Math.cos((2 * Math.PI * (h - 3)) / 24);
+  return { outdoorT, outdoorRH: rhOf(outdoorT, satW(outdoorDew)) };
+}
+
 export function initialState(params) {
   return { T: params.outdoorT, W: wOf(params.outdoorT, params.outdoorRH), CO2: CO2_OUT };
 }
@@ -53,18 +73,18 @@ function rates(inputs, params, T, W) {
   return {
     exchangeM3h, coolKW, heatKW, dryWaterGs,
     humGH: inputs.humidifier ? humidifierGH : 0,
-    blocksKW: (blocks * BLOCK_W) / 1000,
+    blocksKW: (blocks * (params.co2PerBlock * RESP_KJ_PER_ML - BLOCK_GH * LATENT)) / 3600,
   };
 }
 
 function substep(s, inputs, params, dt) {
-  const { volume, outdoorT, outdoorRH, blocks } = params;
+  const { volume, outdoorT, outdoorRH, blocks, co2PerBlock, wallUA } = params;
   const r = rates(inputs, params, s.T, s.W);
   const cap = volume * HEAT_CAP_PER_M3;                 // kJ/K
   const outW = wOf(outdoorT, outdoorRH);
   const k = Math.min(1, (r.exchangeM3h / 3600 / volume) * dt); // fraction replaced this step
   const kT = Math.min(1, (r.exchangeM3h * 1.2 / 3600) * dt / cap); // heat moved by exchange (cap is 10x the air)
-  const wall = Math.min(1, dt / WALL_TAU);
+  const wall = Math.min(1, ((wallUA / 1000) * dt) / cap); // walls and roof: wallUA in W/K
 
   let T = s.T, W = s.W, CO2 = s.CO2;
 
@@ -84,7 +104,7 @@ function substep(s, inputs, params, dt) {
 
   T += netKJ / cap;
   W = Math.max(0, W + waterG / volume);
-  CO2 += ((blocks * BLOCK_CO2_LH) / 1000 / 3600 / volume) * 1e6 * dt;
+  CO2 += ((blocks * co2PerBlock) / 1e6 / 3600 / volume) * 1e6 * dt;
 
   // walls and exchange: move toward the target, never past it
   T += (outdoorT - T) * wall;
