@@ -1,7 +1,7 @@
 // A small inline-SVG line chart. Drawn 1:1 at the host's pixel width (re-drawn by a ResizeObserver),
 // so text keeps its real size on a phone. Colours come from the theme tokens through CSS variables.
 
-import { formatClock, yRange, xFor, segments, nearestIndex } from './chart-math.js';
+import { formatClock, yRange, xFor, segments, nearestIndex, clipSeries } from './chart-math.js';
 
 const NS = 'http://www.w3.org/2000/svg';
 export const M = { left: 64, right: 12, top: 10, bottom: 24 }; // the timeline lines up with these
@@ -18,6 +18,8 @@ function el(name, attrs = {}, text) {
 // Long ranges (spec 2026-10-19-safety-and-history-design.md 6) add: range { from, to } (the x axis spans it, not just the points),
 // ticks [{ at, label }] (axis labels instead of start/middle/end), formatAt(ms) (tooltip time), failTicks false (no red ticks
 // for null points) and onCursor(at|null) (called while the pointer moves, for the shared time line).
+// second: { label, points } is another line of the same unit (the outdoor values), drawn dashed and muted under the main
+// one and cut to the time window; it is named in the aria-label and in a legend line at the top right.
 // Returns { update(opts), setCursor(at|null), destroy() }.
 export function drawLineChart(host, opts) {
   let current = opts;
@@ -38,6 +40,12 @@ export function drawLineChart(host, opts) {
     return `${v.toFixed(current.digits ?? 1)} ${current.unit}`;
   }
 
+  // ", outdoor latest 29.1 °C" for the aria-label, when there is a second line.
+  function secondText() {
+    const last = current.second ? [...current.second.points].reverse().find((p) => p.value !== null && Number.isFinite(p.value)) : null;
+    return last ? `, ${(current.second.label ?? 'outdoor').toLowerCase()} latest ${fmt(last.value)}` : '';
+  }
+
   function draw() {
     const width = Math.floor(host.clientWidth);
     lastWidth = width;
@@ -55,9 +63,11 @@ export function drawLineChart(host, opts) {
 
     const values = points.map((p) => p.value).filter((v) => v !== null && Number.isFinite(v));
     const band = current.band ?? null;
-    const { min, max } = yRange(values, current.minSpan ?? 1, current.bounds, band ? [band.low, band.high] : []);
     const t0 = current.range ? current.range.from : points.length ? points[0].at : 0;
     const t1 = current.range ? current.range.to : points.length ? points[points.length - 1].at : 0;
+    const second = current.second ? clipSeries(current.second.points, t0, t1) : [];
+    const secondValues = second.map((p) => p.value).filter((v) => v !== null && Number.isFinite(v));
+    const { min, max } = yRange(values, current.minSpan ?? 1, current.bounds, [...(band ? [band.low, band.high] : []), ...secondValues]);
     const xs = points.map((p) => xFor(p.at, t0, t1, x0, x1));
     const yFor = (v) => y0 - ((v - min) / (max - min)) * (y0 - y1);
     const ys = points.map((p) => (p.value === null ? null : yFor(p.value)));
@@ -67,7 +77,7 @@ export function drawLineChart(host, opts) {
     const latest = [...points].reverse().find((p) => p.value !== null);
     svg = el('svg', {
       width, height, viewBox: `0 0 ${width} ${height}`, role: 'img',
-      'aria-label': `${label}: ${points.length} polls${latest ? `, latest ${fmt(latest.value)}, min ${fmt(lo)}, max ${fmt(hi)}` : ''}${band ? `, band ${fmt(band.low)} to ${fmt(band.high)}` : ''}`,
+      'aria-label': `${label}: ${points.length} polls${latest ? `, latest ${fmt(latest.value)}, min ${fmt(lo)}, max ${fmt(hi)}` : ''}${band ? `, band ${fmt(band.low)} to ${fmt(band.high)}` : ''}${secondText()}`,
     });
 
     // Grid lines and y labels at the padded min and max.
@@ -119,6 +129,19 @@ export function drawLineChart(host, opts) {
       if (p.value !== null || current.failTicks === false) return;
       svg.append(el('line', { x1: xs[i], x2: xs[i], y1: y0 - 12, y2: y0, style: 'stroke:var(--critical-text)', 'stroke-width': 2 }));
     });
+
+    // The second line (outdoor): dashed and muted, under the main one, with its name at the top right.
+    if (secondValues.length) {
+      for (const run of segments(second)) {
+        if (run.length < 2) continue;
+        const d = run.map((p, k) => `${k ? 'L' : 'M'}${xFor(p.at, t0, t1, x0, x1).toFixed(1)} ${yFor(p.value).toFixed(1)}`).join(' ');
+        svg.append(el('path', {
+          d, fill: 'none', 'stroke-width': 1.5, 'stroke-dasharray': '5 4', 'stroke-linejoin': 'round', style: 'stroke:var(--muted)',
+        }));
+      }
+      svg.append(el('line', { x1: x1 - 76, x2: x1 - 56, y1: y1 + 8, y2: y1 + 8, 'stroke-width': 1.5, 'stroke-dasharray': '5 4', style: 'stroke:var(--muted)' }));
+      svg.append(el('text', { x: x1 - 50, y: y1 + 12, style: 'fill:var(--muted)', 'font-size': 11 }, current.second.label ?? 'Outdoor'));
+    }
 
     // The line, one path per run; a run of one point is a dot.
     const idx = new Map(points.map((p, i) => [p, i]));

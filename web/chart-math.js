@@ -77,3 +77,21 @@ export function nearestIndex(xs, x) {
 export function chartPoints(sensor, field) {
   return (sensor?.readings ?? []).map((r) => ({ at: r.at, value: r.ok && Number.isFinite(r[field]) ? r[field] : null }));
 }
+
+// A second line (the outdoor values) cut to the chart's time window [t0, t1]: points inside it stay, and where a line
+// crosses an edge a point is added on the edge, so the line runs to the edge instead of stopping at the last point inside.
+// A null value (a gap) is kept when inside the window.
+export function clipSeries(points, t0, t1) {
+  const out = [];
+  const has = (p) => p && p.value !== null && p.value !== undefined && Number.isFinite(p.value);
+  const lerp = (a, b, at) => ({ at, value: a.value + ((b.value - a.value) * (at - a.at)) / (b.at - a.at) });
+  const list = points ?? [];
+  list.forEach((p, i) => {
+    const prev = list[i - 1];
+    if (t1 > t0 && prev && has(prev) && has(p) && p.at > prev.at) {
+      for (const edge of [t0, t1]) if (prev.at < edge && p.at > edge) out.push(lerp(prev, p, edge));
+    }
+    if (p.at >= t0 && p.at <= t1) out.push(p);
+  });
+  return out;
+}

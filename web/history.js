@@ -7,10 +7,12 @@ import { RANGES, rangeOf } from './history-math.js';
 export const HISTORY_REFRESH_MS = 60_000;
 
 // host: the element for the buttons. onChange() is called when the range changes or new data arrived.
-// Returns { current() → { range, data, failed } | null (null while Live), destroy() }.
-export function createHistory(host, { roomId, onChange }) {
+// outdoor: also load the outdoor T/RH of the same range (GET /api/outdoor/history); a failed or missing route gives null.
+// Returns { current() → { range, data, outdoor, failed } | null (null while Live), destroy() }.
+export function createHistory(host, { roomId, onChange, outdoor = false }) {
   let range = RANGES[0];
   let data = null;
+  let outdoorData = null;
   let failed = false;
   let timer = null;
   let seq = 0;
@@ -36,9 +38,13 @@ export function createHistory(host, { roomId, onChange }) {
     const mine = ++seq;
     const asked = range;
     try {
-      const reply = await request('GET', `/api/rooms/${roomId}/history?hours=${asked.hours}`);
+      const [reply, outside] = await Promise.all([
+        request('GET', `/api/rooms/${roomId}/history?hours=${asked.hours}`),
+        outdoor ? request('GET', `/api/outdoor/history?range=${asked.key}`).catch(() => null) : null,
+      ]);
       if (mine !== seq) return;
       data = reply;
+      outdoorData = outside;
       failed = false;
     } catch {
       if (mine !== seq) return;
@@ -53,6 +59,7 @@ export function createHistory(host, { roomId, onChange }) {
     if (next === range) return;
     range = next;
     data = null;
+    outdoorData = null;
     failed = false;
     seq++;
     for (const [k, b] of buttons) b.setAttribute('aria-pressed', String(k === next.key));
@@ -61,7 +68,7 @@ export function createHistory(host, { roomId, onChange }) {
   }
 
   return {
-    current: () => (range.hours === null ? null : { range, data, failed }),
+    current: () => (range.hours === null ? null : { range, data, outdoor: outdoorData, failed }),
     destroy() {
       seq++;
       clearTimeout(timer);

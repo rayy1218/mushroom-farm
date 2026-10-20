@@ -3,6 +3,7 @@
 // DrawState: see docs/superpowers/specs/2026-10-20-room-drawing-design.md.
 
 import { MACHINE_NAMES, MODES, FANS, statusWord } from './machines-math.js';
+import { outdoorForDrawing } from './outdoor-math.js';
 
 export const NAMES = { ac: 'Aircon', hu: MACHINE_NAMES.humidifier, intake: MACHINE_NAMES.intake, exhaust: MACHINE_NAMES.exhaust, circ: MACHINE_NAMES.circulation };
 export const UNIT_KEYS = ['ac', 'hu', 'intake', 'exhaust', 'circ'];
@@ -68,7 +69,8 @@ function acUnit(ac) {
 const noteOf = (c) => (!c ? '' : c.auto ? (c.exchange ? 'Automatic control · air exchange on' : 'Automatic control on') : 'Automatic control off');
 
 // What the room page already loads → DrawState. Anything missing draws as "no data"; never throws.
-export function fromRoom({ room, sensors, machines, control } = {}) {
+// outdoor: GET /api/outdoor (the farm's outdoor sensor), or null when there is none or the server did not answer.
+export function fromRoom({ room, sensors, machines, control, outdoor = null, now = Date.now() } = {}) {
   const trh = sensors?.trh ?? null, co2 = sensors?.co2 ?? null, c = control ?? null;
   const T = num(trh?.lastOk?.t), RH = num(trh?.lastOk?.rh), CO2 = num(co2?.lastOk?.co2);
   const relay = Array.isArray(machines?.relay?.machines) ? machines.relay.machines : [];
@@ -77,8 +79,7 @@ export function fromRoom({ room, sensors, machines, control } = {}) {
   return {
     name: room?.name ?? '',
     note: noteOf(c),
-    out: null, // v2 has no outdoor sensor
-    night: false,
+    ...outdoorForDrawing(outdoor, now), // out and night
     T, RH, CO2,
     status: {
       T: readoutStatus(trh, T, c?.tLow, c?.tHigh),

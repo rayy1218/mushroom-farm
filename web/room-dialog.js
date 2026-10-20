@@ -1,6 +1,7 @@
 // The Add / Edit room dialog, shared by the list and the detail page. The markup lives in index.html.
 
 import { request, ApiError, OFFLINE } from './api.js';
+import { RATING_NAMES, ratingTexts, parseRatings, meterAddressOf } from './ratings-math.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -11,7 +12,7 @@ const formError = $('form-error');
 const volume = $('volume');
 const save = $('save');
 
-const FIELDS = ['name', 'length', 'width', 'height', 'trhAddress', 'co2Address', 'relayAddress', 'acAddress'];
+const FIELDS = ['name', 'length', 'width', 'height', 'trhAddress', 'co2Address', 'meterAddress', 'relayAddress', 'acAddress', ...RATING_NAMES];
 const inputs = Object.fromEntries(FIELDS.map((f) => [f, $(`f-${f}`)]));
 const errors = Object.fromEntries(FIELDS.map((f) => [f, $(`e-${f}`)]));
 
@@ -44,6 +45,9 @@ export function openRoomDialog(room, { onSaved, onGone } = {}) {
   title.textContent = room ? 'Edit room' : 'Add room';
   form.reset();
   if (room) for (const f of FIELDS) inputs[f].value = room[f] ?? '';
+  // The ratings start at the defaults for a new room (and for an older server that sends none).
+  const texts = ratingTexts(room);
+  for (const f of RATING_NAMES) inputs[f].value = texts[f];
   clearErrors();
   updateVolume();
   dialog.showModal();
@@ -76,6 +80,20 @@ function address(input) {
 form.addEventListener('submit', async (event) => {
   event.preventDefault();
   clearErrors();
+  // The meter address and the ratings are checked here as the server does; the first wrong input gets the focus.
+  const ratings = parseRatings(Object.fromEntries(RATING_NAMES.map((f) => [f, inputs[f].value])));
+  const problems = { ...ratings.errors };
+  const meter = meterAddressOf(inputs.meterAddress.value);
+  if (Number.isNaN(meter)) problems.meterAddress = 'Energy meter address must be a whole number from 1 to 247, or empty for none';
+  const wrong = FIELDS.filter((f) => problems[f]);
+  if (wrong.length) {
+    for (const f of wrong) {
+      errors[f].textContent = problems[f];
+      inputs[f].setAttribute('aria-invalid', 'true');
+    }
+    inputs[wrong[0]].focus();
+    return;
+  }
   const body = {
     name: inputs.name.value,
     length: inputs.length.valueAsNumber,
@@ -85,6 +103,8 @@ form.addEventListener('submit', async (event) => {
     co2Address: address(inputs.co2Address),
     relayAddress: address(inputs.relayAddress),
     acAddress: address(inputs.acAddress),
+    meterAddress: meter,
+    ...ratings.values,
   };
   const mine = opened;
   save.disabled = true;
