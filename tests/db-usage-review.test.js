@@ -37,6 +37,8 @@ test('meter and outdoor indexes: a fresh database and the 8 to 9 upgrade get the
   for (const c of ['intake_w', 'exhaust_w', 'circulation_w', 'humidifier_w', 'humidifier_lh', 'ac_input_w', 'meter_address']) {
     raw.exec(`ALTER TABLE rooms DROP COLUMN ${c}`);
   }
+  // the columns of the later upgrades too (9 → 10 fresh air), so this is a real version 8 file
+  for (const c of ['exchange_every_min', 'exchange_forced', 'fresh_from']) raw.exec(`ALTER TABLE room_controls DROP COLUMN ${c}`);
   raw.close();
   openDb(join(dir, 'v8.db')).close();
   assert.deepEqual(indexes(join(dir, 'v8.db')), EXPECTED);
