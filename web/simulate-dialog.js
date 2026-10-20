@@ -2,7 +2,7 @@
 // step 3 run; then the progress of the run. Shared by the Rooms list and the room page; the dialog is made on first use.
 // openSimulateDialog(room, { onStarted(run), onFinished() }); closeSimulateDialog() for a page that goes away.
 
-import { request, OFFLINE } from './api.js';
+import { request, OFFLINE, GONE, OUTDATED, routeMissing } from './api.js';
 import { CROPS, CROP_KEYS, STAGES, FARM_TYPES, MAX_CROPS } from './crops.js';
 import {
   PHYSICS_FIELDS, initialState, checkStep, firstField, stepOf, buildBody, mixSummary, wholeProgram, stagesOf, fixStage, roomLine,
@@ -321,8 +321,10 @@ export function openSimulateDialog(room, hooks = {}) {
         step = stepOf(err.field);
         render();
         showErrors({ [err.field]: err.message });
+      } else if (routeMissing(err)) {
+        showFormError(OUTDATED);
       } else if (err.status === 404) {
-        showFormError('That room no longer exists');
+        showFormError(GONE);
       } else {
         showFormError(err.status === 0 ? `${OFFLINE}. Try again.` : err.message);
       }

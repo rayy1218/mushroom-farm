@@ -28,3 +28,13 @@ test('an error reply keeps its status and field', async (t) => {
   stub(t, () => new Response('oops', { status: 502 }));
   await assert.rejects(request('GET', '/x'), (e) => e.status === 502);
 });
+
+test('routeMissing: a plain "Not found" (a farm server older than the page), not a missing room or run', async () => {
+  const { routeMissing, OUTDATED } = await import('../web/api.js');
+  assert.equal(routeMissing(new ApiError(404, { error: 'Not found' })), true);
+  assert.equal(routeMissing(new ApiError(404, { error: 'Room not found' })), false);
+  assert.equal(routeMissing(new ApiError(404, { error: 'Simulation not found' })), false);
+  assert.equal(routeMissing(new ApiError(400, { error: 'Not found' })), false);
+  assert.equal(routeMissing(new ApiError(404, null)), false, 'no body: not told apart, treated as missing');
+  assert.equal(OUTDATED, 'The farm app is older than this page: restart the farm app (npm start) to use this');
+});

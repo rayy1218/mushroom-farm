@@ -2,6 +2,11 @@
 
 export const OFFLINE = "Couldn't reach the farm server";
 export const GONE = 'That room no longer exists';
+// The page files are read from disk, so after an update the page can be newer than the running farm app.
+export const OUTDATED = 'The farm app is older than this page: restart the farm app (npm start) to use this';
+
+// A 404 for a route the running server does not have (its reply is a plain "Not found"; a missing room or run says so).
+export const routeMissing = (err) => err?.status === 404 && err.message === 'Not found';
 
 export class ApiError extends Error {
   constructor(status, data) {

@@ -1,7 +1,7 @@
 // The results page of one simulation run, #/rooms/:id/simulations/:runId (spec 2026-10-20-crops-and-simulation-design.md 4.5):
 // the progress while it runs, then the time in band, the charts with the band as it moved, the machine timeline, energy and water.
 
-import { request, OFFLINE } from './api.js';
+import { request, OFFLINE, OUTDATED, routeMissing } from './api.js';
 import { drawLineChart, M } from './chart.js';
 import { drawTimeline } from './timeline.js';
 import { drawBarChart } from './usage.js';
@@ -140,6 +140,12 @@ export function mount(container, { id, runId }) {
       render();
     } catch (err) {
       if (!alive() || seq !== loadSeq) return;
+      if (routeMissing(err)) {
+        els.bannerText.textContent = OUTDATED;
+        els.retry.hidden = false;
+        els.banner.hidden = false;
+        return;
+      }
       if (err.status === 404) {
         showMissing();
         return;
