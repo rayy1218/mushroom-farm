@@ -56,7 +56,10 @@ export function createSimulation({ sensors, sims, model = defaultModel, tickMs =
       const { T, W, CO2 } = state;
       const out = outdoorAt(room, clock);
       if (device(room.outdoorProbe, 'trh')) sensors.simWrite(room.outdoorProbe, { t: out.outdoorT, rh: out.outdoorRH });
-      if (device(room.meter, 'meter')) sensors.simWrite(room.meter, { power: w, energy: kWh });
+      if (device(room.meter, 'meter')) {
+        sensors.simWrite(room.meter, { power: w });
+        sensors.addEnergy(room.meter, (w * dt) / 3.6e6);
+      }
       if (device(room.trh, 'trh')) sensors.simWrite(room.trh, { t: T, rh: model.rhOf(T, W) });
       if (device(room.co2, 'co2')) sensors.simWrite(room.co2, { co2: CO2 });
       if (device(room.ac, 'ac')) sensors.simWrite(room.ac, { roomT: T });
@@ -64,11 +67,21 @@ export function createSimulation({ sensors, sims, model = defaultModel, tickMs =
     if (now() - lastSaved >= PERSIST_MS) flush();
   }
 
-  // Writes the state file if the air state moved since the last save.
+  // Puts each enabled room's outdoor air into its probe, so a first poll after a start is not a stale typed value.
+  function prime() {
+    for (const room of sims.list()) {
+      if (!room.enabled || !device(room.outdoorProbe, 'trh')) continue;
+      const out = outdoorAt(room, room.clock);
+      sensors.simWrite(room.outdoorProbe, { t: out.outdoorT, rh: out.outdoorRH });
+    }
+  }
+
+  // Writes the state files if the air state or a meter total moved since the last save.
   function flush() {
     lastSaved = now();
     try {
       sims.persist();
+      sensors.persist();
     } catch (err) {
       console.warn(`Could not save the simulation state (${err.message})`);
     }
@@ -92,5 +105,5 @@ export function createSimulation({ sensors, sims, model = defaultModel, tickMs =
     flush();
   }
 
-  return { tick, start, stop, flush };
+  return { tick, start, stop, flush, prime };
 }

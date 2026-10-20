@@ -34,6 +34,7 @@ export async function startDevice({ modbusPort = 1502, httpPort = 8090, statePat
     socket.once('close', () => sockets.delete(socket));
   });
 
+  sim.prime(); // before anything answers
   try {
     await listen(modbus, modbusPort, host);
     await listen(http, httpPort, host);
