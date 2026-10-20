@@ -126,20 +126,13 @@ function substep(s, inputs, params, dt) {
   let { T, W, CO2, Tm, Hs } = s;
 
   const exchangeM3h = exchangeOf(inputs, params);
-  const ac = acOf(inputs.ac, params, T, W);
 
-  // Aircon: only the sensible part lowers T, never past the setpoint in one step; the latent part is scaled the same.
-  let sensKJ = ac.coolKW * ac.shr * dt, dryG = (ac.coolKW * (1 - ac.shr) * dt) / LATENT, heatKJ = ac.heatKW * dt;
-  if (sensKJ > 0) {
-    const f = Math.min(1, Math.max(0, (T - inputs.ac.setpoint) * capAir) / sensKJ);
-    sensKJ *= f; dryG *= f;
-  }
-  dryG = Math.min(dryG, Math.max(0, W * volume)); // never more water than the air holds
-  if (heatKJ > 0) heatKJ = Math.min(heatKJ, Math.max(0, (inputs.ac.setpoint - T) * capAir));
-
-  // Humidifier: evaporation stops at saturation (also bounds its cooling); its motor and driver warm the air.
+  // Humidifier: evaporation stops at saturation, counting the cooling it causes (a cooler air holds less); its motor
+  // and driver warm the air.
   const humOn = inputs.humidifier ? params.humidifierGH : 0;
-  const humG = Math.min((humOn / 3600) * dt, Math.max(0, (satW(T) - W) * volume));
+  const slope = (satW(T) - satW(T - 0.1)) / 0.1;
+  const humMax = Math.max(0, (satW(T) - W) * volume) / (1 + (LATENT * volume * slope) / capAir);
+  const humG = Math.min((humOn / 3600) * dt, humMax);
 
   // Blocks: CO2, heat into the mass, water that evaporates less as the air gets wetter.
   const dryness = clamp((100 - rhOf(T, W)) / 10, 0, 3);
@@ -150,9 +143,9 @@ function substep(s, inputs, params, dt) {
   const machineKW = ((inputs.circulation ? CIRC_W : 0) + (inputs.intake ? INTAKE_W : 0)
     + (inputs.humidifier ? (HUMIDIFIER_W_PER_LH * humOn) / 1000 : 0)) / 1000;
 
-  T += (heatKJ - sensKJ - humG * LATENT + (sunKW + machineKW) * dt) / capAir;
+  T += (-humG * LATENT + (sunKW + machineKW) * dt) / capAir;
   Tm += blocksKJ / capMass;
-  W = Math.max(0, W + (blockG + humG - dryG) / volume);
+  W = Math.max(0, W + (blockG + humG) / volume);
   CO2 += ((blocks * co2PerBlock) / 1e6 / 3600 / volume) * 1e6 * dt;
 
   // Air and mass toward each other (exact for two capacities), then walls and exchange toward outdoor, never past.
@@ -165,6 +158,19 @@ function substep(s, inputs, params, dt) {
   const k = Math.min(1, (exchangeM3h / 3600 / volume) * dt);
   W += (outW - W) * k;
   CO2 += (CO2_OUT - CO2) * k;
+
+  // Aircon, after every other heat flow of the step: only the sensible part lowers T, never past the setpoint (so the
+  // room settles at the setpoint whatever the step length); the latent part is scaled the same.
+  const ac = acOf(inputs.ac, params, T, W); // its output from the air as the other flows left it
+  let sensKJ = ac.coolKW * ac.shr * dt, dryG = (ac.coolKW * (1 - ac.shr) * dt) / LATENT, heatKJ = ac.heatKW * dt;
+  if (sensKJ > 0) {
+    const f = Math.min(1, Math.max(0, (T - inputs.ac.setpoint) * capAir) / sensKJ);
+    sensKJ *= f; dryG *= f;
+  }
+  dryG = Math.min(dryG, Math.max(0, W * volume)); // never more water than the air holds
+  if (heatKJ > 0) heatKJ = Math.min(heatKJ, Math.max(0, (inputs.ac.setpoint - T) * capAir));
+  T += (heatKJ - sensKJ) / capAir;
+  W = Math.max(0, W - dryG / volume);
 
   // Surfaces: air RH and surface RH move toward their weighted level; water taken up gives its heat to the air.
   const airPerPct = (satW(T) * volume) / 100, surfPerPct = SURFACE_G_PER_PCT(volume);

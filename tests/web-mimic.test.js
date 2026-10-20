@@ -228,6 +228,12 @@ test('fromSim: ac level follows the cooling power, modes map from the register c
   assert.deepEqual([u.on, u.state, u.level], [false, 'Off', 0]);
   u = fromSim(simRoom(), [devices[0], { ...devices[1], error: 4 }]).units.ac;
   assert.deepEqual([u.state, u.warn], ['Fault (code 4)', true]);
+  // the compressor: not with an error code, not while idle at the setpoint, yes while it cools or dries
+  assert.equal(view({ units: { ac: u } }).comp, false, 'fault');
+  const idle = fromSim(simRoom({ acting: { exchangeM3h: 0, acCoolKW: 0, acLatentKW: 0, acHeatKW: 0, humidifierGH: 0, blocksKW: 0 } }), [devices[0], ...cool]).units.ac;
+  assert.equal(view({ units: { ac: idle } }).comp, false, 'idle');
+  const drying = fromSim(simRoom({ acting: { exchangeM3h: 0, acCoolKW: 0, acLatentKW: 0.5, acHeatKW: 0, humidifierGH: 0, blocksKW: 0 } }), [devices[0], ...cool]).units.ac;
+  assert.equal(view({ units: { ac: drying } }).comp, true, 'drying');
 });
 
 test('fromSim: relay states running, on but not running (stuck or dead) and off', () => {
@@ -262,4 +268,10 @@ test('fromSim: missing links, missing data and a switched off room never throw',
   assert.equal(v.readouts.T.zn, 'Simulated');
   assert.match(describe(v), /Outdoor 31\.2 °C · 62 % RH, day/);
   assert.equal(view(fromSim(simRoom({ clock: 23 * 3600 }), devices)).sky, 'Night');
+});
+
+test('fromRoom: an aircon with a fault shows no running compressor', () => {
+  const ac = (status) => ({ status, errorCode: 3, reported: { power: true, mode: 'cool', setpoint: 22, fan: 'auto' } });
+  assert.equal(view(fromRoom({ machines: { ac: ac('fault') } })).comp, false);
+  assert.equal(view(fromRoom({ machines: { ac: ac('on') } })).comp, true);
 });

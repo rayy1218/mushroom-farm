@@ -1,5 +1,6 @@
 // The Machines card on the room page: relay module rows and the aircon panel.
-// createMachines(host, { roomId, onEdit, onOffline, onGone }) → { update(data, token), token(), setAuto(on), destroy() }.
+// createMachines(host, { roomId, onEdit, onOffline, onGone, onCommand }) → { update(data, token) → painted, token(), setAuto(on),
+// destroy() }. onCommand(data) gets the reply of each command the card sent.
 // Controls are updated in place, so a refresh never replaces a button or input the person is using.
 
 import { request, OFFLINE } from './api.js';
@@ -75,7 +76,7 @@ function notWired(text, onEdit) {
   return wrap;
 }
 
-export function createMachines(host, { roomId, onEdit, onOffline, onGone }) {
+export function createMachines(host, { roomId, onEdit, onOffline, onGone, onCommand }) {
   let alive = true;
   let version = 0; // bumped by every command, so a refresh that began earlier is dropped
   let inflight = 0;
@@ -184,6 +185,7 @@ export function createMachines(host, { roomId, onEdit, onOffline, onGone }) {
       if (!alive) return;
       row.busy = false;
       paintAll(data);
+      onCommand?.(data);
     } catch (err) {
       if (!alive) return;
       failed(err, (t) => { row.localError = t; });
@@ -366,6 +368,7 @@ export function createMachines(host, { roomId, onEdit, onOffline, onGone }) {
       mine.sending = false;
       mine.dirty = false;
       paintAll(data);
+      onCommand?.(data);
     } catch (err) {
       if (!alive) return;
       failed(err, (t) => { mine.localError = t; });
@@ -392,8 +395,9 @@ export function createMachines(host, { roomId, onEdit, onOffline, onGone }) {
     token() { return version; },
     // Paint a fetched object, unless a command began (or is running) since the fetch started.
     update(data, token) {
-      if (!alive || token !== version || inflight > 0) return;
+      if (!alive || token !== version || inflight > 0) return false;
       paintAll(data);
+      return true;
     },
     // The Automatic control card knows better than the machines reply (it is fresher after a switch).
     setAuto,

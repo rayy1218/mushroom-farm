@@ -8,6 +8,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDb } from '../server/db.js';
+import { validateControl } from '../server/controller.js';
 
 function tempDir(t) {
   const dir = mkdtempSync(join(tmpdir(), 'farm-safety-'));
@@ -223,4 +224,26 @@ test('a new database starts with an empty machine log', (t) => {
   const raw = new DatabaseSync(path);
   t.after(() => raw.close());
   assert.equal(raw.prepare('SELECT COUNT(*) AS n FROM machine_log').get().n, 0);
+});
+
+test('upgrade to 8 lifts a CO2 band below 450 ppm (no longer valid), so the room can still be saved and switched', (t) => {
+  const path = join(tempDir(t), 'farm.db');
+  const old = new DatabaseSync(path);
+  old.exec(VERSION_6_SCHEMA);
+  const room = old.prepare(`INSERT INTO rooms (id, name, length_m, width_m, height_m, created_at, updated_at)
+                            VALUES (?, ?, 2, 2, 2, 1, 1)`);
+  const control = old.prepare('INSERT INTO room_controls (room_id, auto, co2_low, co2_high) VALUES (?, 1, ?, ?)');
+  for (const [id, low, high] of [[1, 300, 400], [2, 350, 800], [3, 600, 750], [4, 300, 450]]) {
+    room.run(id, `Room ${id}`);
+    control.run(id, low, high);
+  }
+  old.close();
+  const db = openDb(path);
+  t.after(() => db.close());
+  const band = (id) => { const c = db.getControl(id); return [c.co2Low, c.co2High, c.co2Safety]; };
+  assert.deepEqual(band(1), [450, 600, 1250]);
+  assert.deepEqual(band(2), [450, 800, 1300]);
+  assert.deepEqual(band(3), [600, 750, 1250]);
+  assert.deepEqual(band(4), [450, 600, 1250]);
+  for (const id of [1, 2, 3, 4]) assert.equal(validateControl({ ...db.getControl(id), auto: false }), null, `room ${id}`);
 });

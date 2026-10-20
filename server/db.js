@@ -219,7 +219,14 @@ function migrate(db) {
       db.exec('CREATE INDEX readings_by_time ON readings (room_id, kind, at, ok, t, rh, co2);');
     }
     // The aircon drop during an exchange becomes a room setting: existing rooms keep the 5 °C they had.
-    if (version >= 3 && version < 8) db.exec('ALTER TABLE room_controls ADD COLUMN ac_drop REAL NOT NULL DEFAULT 5');
+    if (version >= 3 && version < 8) {
+      db.exec('ALTER TABLE room_controls ADD COLUMN ac_drop REAL NOT NULL DEFAULT 5');
+      // The CO2 lower limit is now at least 450 ppm: lift an older band so the room stays valid (else no setting could
+      // be saved, not even auto off), keeping the upper limit above it and the safety level above that.
+      db.exec(`UPDATE room_controls SET co2_low = 450 WHERE co2_low < 450;
+               UPDATE room_controls SET co2_high = 600 WHERE co2_high <= co2_low;
+               UPDATE room_controls SET co2_safety = MIN(10000, co2_high + 500) WHERE co2_safety <= co2_high;`);
+    }
     db.exec(`PRAGMA user_version = ${VERSION}`);
     db.exec('COMMIT');
   } catch (err) {

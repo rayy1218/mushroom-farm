@@ -16,7 +16,7 @@ Date: 2026-10-19 · Branch `v2` · Builds on `2026-10-16-machines-design.md` (it
 | Setting | Default | Limits |
 |---|---|---|
 | `auto` | off *default* | — |
-| CO₂ band `co2Low`–`co2High` | 600–750 ppm | 300–5000, low < high |
+| CO₂ band `co2Low`–`co2High` | 600–750 ppm | 450–5000 (300–5000 before 2026-10-20), low < high |
 | Temperature band `tLow`–`tHigh` | 21–23 °C *default* | 16–35, low < high |
 | RH band `rhLow`–`rhHigh` | 85–95 % *default* | 40–100, low < high |
 | `humidifierDuringExchange` "Humidifier on during air exchange" | off for a new room (2026-10-20: the outdoor dew point, 23–27 °C on the Malaysian lowlands, is above the room's T, so fresh air cooled into the room arrives at over 100 % RH; the exchange humidifies already); rooms that existed at the upgrade 3 → 4 keep on | true or false; a change takes effect on the next cycle |
@@ -68,6 +68,7 @@ Stored in a new table `room_controls (room_id PK, auto, co2_low, co2_high, t_low
 | Change | Rule |
 |---|---|
 | CO₂ band lower limit | at least 450 ppm (outdoor air is about 420, so a lower limit below that can never be reached); both inputs and the server check 450 to 5000 |
+| Older bands | the upgrade 7 → 8 lifts a stored lower limit below 450 to 450, an upper limit at or below it to 600, and a safety level at or below the upper limit to upper + 500 (at most 10000): otherwise validation of the stored row would refuse every save of that room, even auto off |
 | `acDrop` | new room setting "Aircon lower during air exchange (°C)", 0 to 10, saved with the bands; column `room_controls.ac_drop REAL NOT NULL DEFAULT 5` (db upgrade 7 → 8, so existing rooms keep 5); a new room's row is written with 0 |
 | Hints | each band row shows the typical band of the crops grown here (temperature: grey oyster about 24 to 28 °C, lion's mane about 18 to 22 °C; CO₂: oyster under about 1000, lion's mane under about 750 to 1000 ppm; humidity: 85 to 95 % oyster, about 90 % lion's mane) |
 | Safety level label | "CO₂ safety level for the crop (ppm)", with the hint that it is not a limit for people (5000 ppm over 8 h) |

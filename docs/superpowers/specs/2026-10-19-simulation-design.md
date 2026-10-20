@@ -56,6 +56,10 @@ Reference points (the defaults, circulation on, 8 h from the outdoor state at 12
 
 Heat capacity: the air node (≈ 217 kJ/K for 60 m³) moves in minutes, the mass node (≈ 2600 kJ/K with 500 blocks) in hours.
 
+Order within a sub-step: humidifier, blocks, sun and motors; air ↔ mass; walls; exchange; then the aircon from the air as those left it (so the room settles at the setpoint whatever the step length; 1 s and 60 s steps agree within 0.1 °C); then surfaces and condensation. The humidifier's evaporation is capped at saturation counting its own cooling.
+
+Limits: the settings are checked one by one, so extreme combinations are not physical: a 1 m³ room with 100 kW of sun and no walls, or a 100 L/h humidifier (4 kW driver heat) in 1 m³ without leaks, heat the air without bound, and 100000 blocks in 1 m³ give CO₂ of millions of ppm. The sensor values are clamped to the device limits (T −40 to 80, RH 0 to 100, CO₂ 0 to 10000); only the card shows the raw state.
+
 RH = W / Wsat(T) × 100, Wsat from the Magnus formula (`es = 0.6108·exp(17.27·T/(T+237.3))` kPa, `Wsat = 2167·es/(T+273.15)` g/m³).
 
 Sensor values written each tick: T/RH probe `t` = T, `rh` = RH (both rounded to 0.1); CO₂ sensor `co2` = rounded CO₂; AC gateway `roomT` = T (0.1). Values are clamped to the device limits (§3 of iteration 3: T −40…80, RH 0…100, CO₂ 0…10000).

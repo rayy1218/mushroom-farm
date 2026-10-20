@@ -308,6 +308,7 @@ export function createMimic(host, opts = {}) {
     paint,
     tick(dt) {
       if ((reduced && reduced.matches) || !(dt > 0)) return;
+      if (!host.isConnected || host.clientWidth === 0) return; // hidden (a missing room, a closed card): nothing to draw
       frame(Math.min(dt, 0.1));
     },
     destroy() { alive = false; observer?.disconnect(); svg?.remove(); svg = null; h = null; },

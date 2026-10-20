@@ -183,6 +183,8 @@ export function mount(container, { id }) {
 
   function showMissing() {
     clearTimeout(timer);
+    stopLoop?.(); // the drawing is hidden with the body
+    stopLoop = null;
     room = null;
     sensors = null;
     els.title.textContent = 'Room not found';
@@ -350,29 +352,36 @@ export function mount(container, { id }) {
       makeMachines();
       makeControl();
       mimic = createMimic(els.mimicHost, { idPrefix: 'room-' });
-      stopLoop = startLoop(() => (mimic ? [mimic] : []));
       buildCharts();
       history = createHistory(els.rangeHost, { roomId: id, onChange: () => { if (alive() && sensors) renderCharts(); } });
       built = true;
     }
+    stopLoop ??= startLoop(() => (mimic ? [mimic] : [])); // (again after a missing room came back)
     alarmsCard.update(alarmData); // hides itself while there are no current alarms; a failed read keeps the last data
     // The card shows only once a good reply came; later failures keep the last good data.
     // It is updated before the sensor cards so focus handling there sees the final page.
+    // The drawing keeps only replies a card painted: a stale one (a command began since its fetch) must not show.
     if (machineData) {
-      machines.update(machineData, token ?? machines.token());
+      if (machines.update(machineData, token ?? machines.token())) lastMachines = machineData;
       els.machinesHost.hidden = false;
     }
     if (controlData) {
       bands = controlData;
       const painted = control.update(controlData, controlToken ?? control.token());
       els.controlHost.hidden = false;
-      if (painted) machines.setAuto(controlData.auto); // a stale refresh must not relock the card
+      if (painted) {
+        machines.setAuto(controlData.auto); // a stale refresh must not relock the card
+        lastControl = controlData;
+      }
     }
     renderSensors();
     renderCharts();
-    if (machineData) lastMachines = machineData;
-    if (controlData) lastControl = controlData;
-    mimic.paint(fromRoom({ room, sensors, machines: lastMachines, control: lastControl }));
+    paintDrawing();
+  }
+
+  // The room drawing from the latest painted replies (also right after a command, not only on the next refresh).
+  function paintDrawing() {
+    if (mimic && room) mimic.paint(fromRoom({ room, sensors, machines: lastMachines, control: lastControl }));
   }
 
   // ---- Alarms card (spec 2026-10-19-safety-and-history-design.md section 6) ----
@@ -401,6 +410,7 @@ export function mount(container, { id }) {
       },
       // Not-found on a command may be the room or just the machines route: the room GET decides.
       onGone: () => { if (alive()) load(); },
+      onCommand: (data) => { if (!alive()) return; lastMachines = data; paintDrawing(); },
     });
     els.machinesHost.hidden = true;
   }
@@ -408,7 +418,12 @@ export function mount(container, { id }) {
   function makeControl() {
     control = createControl(els.controlHost, {
       roomId: id,
-      onChange: (data) => machines?.setAuto(data.auto),
+      onChange: (data) => {
+        machines?.setAuto(data.auto);
+        if (!alive()) return;
+        lastControl = data;
+        paintDrawing();
+      },
       onOffline: () => {
         if (!els.banner.hidden) return;
         els.bannerText.textContent = OFFLINE;

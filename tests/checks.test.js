@@ -120,7 +120,7 @@ test('a falling CO2 is not tested while an air exchange runs or just after', () 
   assert.equal(s3.co2(1900, { exchangeRecent: true }).why, 'sudden jump', 'a rise is still tested');
 });
 
-test('T and RH jumps are not tested while an air exchange runs or just after; RH not while the humidifier is on', () => {
+test('T and RH jumps are not tested while an air exchange runs or just after; RH not in the first 5 min of the humidifier', () => {
   const s = setup(MIN);
   s.trh(22, 85);
   const purge = s.trh(25, 70, { exchangeRecent: true }); // outdoor air reaches the probe: 3 °C and 15 % in a minute
@@ -137,6 +137,11 @@ test('T and RH jumps are not tested while an air exchange runs or just after; RH
   const s4 = setup(MIN);
   s4.trh(22, 85);
   assert.equal(s4.trh(25, 85).parts.t.why, 'sudden jump', 'without an exchange a 3 °C jump is still caught');
+  // only in the first 5 min after the humidifier went on: later a glitching probe is still caught
+  const s5 = setup(MIN);
+  s5.trh(22, 80, { humidifierOn: true });
+  for (let i = 0; i < 5; i++) s5.trh(22, 80, { humidifierOn: true });
+  assert.equal(s5.trh(22, 99, { humidifierOn: true }).parts.rh.why, 'sudden jump');
 });
 
 test('frozen: the same value for 120 min (T, RH) and 60 min (CO2)', () => {

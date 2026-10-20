@@ -60,7 +60,9 @@ function acUnit(ac) {
   const mode = on ? r.mode : null;
   const state = ac.status === 'fault' ? `Fault${ac.errorCode ? ` (code ${ac.errorCode})` : ''}` : on ? `${MODES[r.mode] ?? r.mode} ${Number(r.setpoint).toFixed(1)} °C` : 'Off';
   const sub = ac.status === 'not-following' ? 'not following the farm' : on ? `fan ${FANS[r.fan] ?? r.fan}` : '';
-  return { known: true, on, level: on ? (mode === 'fan' ? 0.3 : 0.6) : 0, mode, state, sub, warn: PROBLEMS.has(ac.status) };
+  // the compressor runs only in a cooling, drying or heating mode without a fault
+  const running = on && mode !== 'fan' && ac.status !== 'fault';
+  return { known: true, on, running, level: on ? (mode === 'fan' ? 0.3 : 0.6) : 0, mode, state, sub, warn: PROBLEMS.has(ac.status) };
 }
 
 const noteOf = (c) => (!c ? '' : c.auto ? (c.exchange ? 'Automatic control · air exchange on' : 'Automatic control on') : 'Automatic control off');
@@ -111,10 +113,12 @@ function simRelayUnit(relay, i, level) {
 function simAcUnit(ac, a, room) {
   if (!ac) return { ...unknownUnit('No aircon linked'), mode: null };
   const on = ac.power === true, mode = on ? (MODES_BY_INDEX[ac.mode] ?? null) : null;
-  const used = Math.max(num(a?.acCoolKW) ?? 0, num(a?.acHeatKW) ?? 0), cap = (num(room?.acBTU) ?? 0) * BTU_KW;
+  const used = Math.max((num(a?.acCoolKW) ?? 0) + (num(a?.acLatentKW) ?? 0), num(a?.acHeatKW) ?? 0), cap = (num(room?.acBTU) ?? 0) * BTU_KW;
   const level = !on ? 0 : cap > 0 && a ? Math.max(0.15, clamp01(used / cap)) : 0.6;
+  // the simulation runs no aircon with an error code; one at its setpoint is idle
+  const running = on && mode !== 'fan' && !ac.error && (a ? used > 0.005 : true);
   const state = ac.error ? `Fault (code ${ac.error})` : on ? `${MODES[mode] ?? '?'} ${Number(ac.setpoint).toFixed(1)} °C` : 'Off';
-  return { known: true, on, level, mode, state, sub: on ? `fan ${FANS[FAN_BY_INDEX[ac.fan]] ?? '?'}` : '', warn: Boolean(ac.error) };
+  return { known: true, on, running, level, mode, state, sub: on ? `fan ${FANS[FAN_BY_INDEX[ac.fan]] ?? '?'}` : '', warn: Boolean(ac.error) };
 }
 
 // A simulated room of GET /api/sims and the device list of GET /api/sensors → DrawState.
@@ -159,6 +163,7 @@ function unitView(u, name) {
   return {
     name, known: Boolean(x.known), on: Boolean(x.on), level: x.known ? clamp01(num(x.level) ?? 0) : 0, warn: Boolean(x.warn),
     state: x.state ? String(x.state) : dash, sub: x.sub ? String(x.sub) : '', mode: x.mode ?? null,
+    running: x.running ?? null,
   };
 }
 
@@ -170,7 +175,7 @@ export function view(draw) {
   const units = {};
   for (const key of UNIT_KEYS) units[key] = unitView(un[key], NAMES[key]);
   const ac = units.ac;
-  const comp = ac.on && ac.mode !== 'fan';
+  const comp = ac.on && ac.mode !== 'fan' && ac.running !== false; // a fault or an idle aircon: no compressor
   return {
     night: Boolean(s.night),
     sky: s.night ? 'Night' : 'Day',

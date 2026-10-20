@@ -266,13 +266,27 @@ test('condensation: the excess goes onto the surfaces and warms the air; RH neve
   assert.ok(h.state.Hs <= 200);
 });
 
-test('dt 300 matches 60 x dt 5', () => {
-  const inputs = { intake: true, exhaust: true, circulation: true, humidifier: true, ac: { mode: 'cool', setpoint: 22, fan: 'auto' } };
-  const s0 = start({ T: 28, W: wOf(28, 60), CO2: 1500 }, P);
-  const a = step(s0, inputs, P, 300).state;
-  let b = s0;
-  for (let i = 0; i < 60; i++) b = step(b, inputs, P, 5).state;
-  for (const k of ['T', 'W', 'CO2', 'Tm', 'Hs']) near(a[k], b[k], 1e-6, k);
+test('the result does not depend on the step length: 1 s steps match 60 s steps (5 s sub-steps)', () => {
+  // a small room where the gains per sub-step are large next to the air's heat capacity
+  const p = { ...P, volume: 2, blocks: 16, sunW: 300, sun: 1, outdoorT: 33, outdoorRH: 60 };
+  const inputs = { ...OFF, circulation: true, ac: { mode: 'cool', setpoint: 22, fan: 'auto' } };
+  const s0 = start({ T: 28, W: wOf(28, 70) }, p);
+  const a = run(s0, inputs, p, 7200, 1).state;
+  const b = run(s0, inputs, p, 7200, 60).state;
+  near(a.T, b.T, 0.1, 'T');
+  near(rhOf(a.T, a.W), rhOf(b.T, b.W), 1, 'RH');
+  near(b.T, 22, 0.15, 'the aircon holds its setpoint');
+  // a huge humidifier in a hot, dry, tiny room: evaporation stops at saturation and does not overshoot into condensation
+  const hp = { ...noBlocks, volume: 1, humidifierGH: 100000, outdoorT: 50, outdoorRH: 10 };
+  const one = step(start({ T: 50, W: wOf(50, 10) }, hp), { ...OFF, humidifier: true }, hp, 5);
+  assert.ok(one.acting.condensedGH < 1, `condensed ${one.acting.condensedGH}`);
+  // a real humidifier: 1 s and 60 s steps agree
+  const rp = { ...P, outdoorT: 30, outdoorRH: 50 };
+  const r0 = start({ T: 30, W: wOf(30, 50) }, rp);
+  const r1 = run(r0, { ...OFF, humidifier: true }, rp, 1800, 1).state;
+  const r60 = run(r0, { ...OFF, humidifier: true }, rp, 1800, 60).state;
+  near(r1.T, r60.T, 0.1, 'T');
+  near(rhOf(r1.T, r1.W), rhOf(r60.T, r60.W), 1, 'RH');
 });
 
 test('stable and finite with huge fans, many blocks and long steps', () => {

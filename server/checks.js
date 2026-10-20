@@ -14,6 +14,7 @@ const SPECS = {
 };
 const PARTS = { trh: ['t', 'rh'], co2: ['co2'] };
 const RH_FROZEN_HUMIDIFIER_MIN = 30; // while the humidifier is commanded on
+const HUMIDIFIER_JUMP_MIN = 5; // an RH jump is not tested this long after the humidifier went on
 const WET_RH = 99.9; // a wet probe reads 100: never frozen
 
 export const WHY = {
@@ -39,9 +40,9 @@ function checkValue(st, name, v, at, ctx) {
   // Sudden jump: against the last good value; a jump is accepted once 3 readings in a row agree.
   if (st.last) {
     // Expected fast changes: a falling CO2, and T and RH either way, while an air exchange runs and in the cycle after
-    // it stopped (outdoor air reaches the probe within a minute); RH while the humidifier is on.
-    const expected = ctx.exchangeRecent && (name === 't' || name === 'rh' || (name === 'co2' && v < st.last.v))
-      || (name === 'rh' && ctx.humidifierOn);
+    // it stopped (outdoor air reaches the probe within a minute); RH in the first minutes after the humidifier went on.
+    const misting = name === 'rh' && st.humidifierOnSince !== null && at - st.humidifierOnSince < HUMIDIFIER_JUMP_MIN * MIN_MS;
+    const expected = ctx.exchangeRecent && (name === 't' || name === 'rh' || (name === 'co2' && v < st.last.v)) || misting;
     if (expected || rateOf(st.last, v, at) <= spec.rate) {
       st.pending = [];
     } else {
