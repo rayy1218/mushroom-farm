@@ -76,10 +76,12 @@ export function createSensors({ statePath, spinUpMs = DEFAULT_SPIN_UP_MS, now = 
   let simulatedBy = () => null;
   // Set by the simulation: called with an address once its device is removed.
   let onRemove = () => {};
+  // Set when the simulation moved a meter total in memory; the next persist() writes it.
+  let dirty = false;
 
   // What callers see: copies, with a relay's running state worked out and its bookkeeping left out.
   function view(entry) {
-    const { since, ...out } = clone(entry);
+    const { since, exact, ...out } = clone(entry);
     if (entry.kind === 'relay') {
       const t = now();
       out.running = entry.coils.map((on, i) => on && !entry.dead[i] && t - since[i] >= spinUpMs);
@@ -91,6 +93,7 @@ export function createSensors({ statePath, spinUpMs = DEFAULT_SPIN_UP_MS, now = 
     if (!statePath) return;
     const tmp = `${statePath}.tmp`;
     // Only what was set: the derived running state and the timers are left out.
+    dirty = false;
     const stored = [...byAddress.values()].sort((a, b) => a.address - b.address).map(({ since, ...rest }) => rest);
     writeFileSync(tmp, JSON.stringify(stored, null, 2));
     renameSync(tmp, statePath);
@@ -167,7 +170,24 @@ export function createSensors({ statePath, spinUpMs = DEFAULT_SPIN_UP_MS, now = 
     }
     if (patch?.answering !== undefined) next.answering = checkFlag('answering', patch.answering);
     if (Object.keys(next).length === 0) throw new SensorError(400, 'Nothing to change');
-    return commit(entry, () => Object.assign(entry, next));
+    // A typed total drops the extra digits kept for the simulation.
+    return commit(entry, () => Object.assign(entry, next, next.energy !== undefined && { exact: undefined }));
+  }
+
+  // The simulation adds a tick's energy to the meter itself, so the total belongs to the device and never goes down.
+  // Kept to the full precision (the register shows Wh); in memory, written by persist().
+  function addEnergy(address, kWh) {
+    const entry = byAddress.get(address);
+    if (entry?.kind !== 'meter' || !Number.isFinite(kWh) || kWh <= 0) return;
+    const { max } = LIMITS.energy;
+    entry.exact = Math.min(max, (entry.exact ?? entry.energy) + kWh);
+    entry.energy = Math.round(entry.exact * 1000) / 1000;
+    dirty = true;
+  }
+
+  // Writes the file if the simulation moved a total since the last save.
+  function persist() {
+    if (dirty) save();
   }
 
   // The simulation's own write: clamped to the limits, in memory only (the next save of any change keeps it).
@@ -175,6 +195,7 @@ export function createSensors({ statePath, spinUpMs = DEFAULT_SPIN_UP_MS, now = 
     const entry = byAddress.get(address);
     if (!entry) return;
     for (const field of SIMULATED_FIELDS[entry.kind] ?? []) {
+      if (field === 'energy') continue; // a meter total is added to, see addEnergy
       const v = values[field];
       if (typeof v !== 'number' || !Number.isFinite(v)) continue;
       const { min, max, whole, decimals = 1 } = LIMITS[field];
@@ -241,6 +262,8 @@ export function createSensors({ statePath, spinUpMs = DEFAULT_SPIN_UP_MS, now = 
       Object.assign(entry, checkAc({ power: saved.power ?? entry.power, mode: saved.mode ?? entry.mode, setpoint: saved.setpoint ?? entry.setpoint, fan: saved.fan ?? entry.fan }));
     }
     for (const field of FIELDS_OF[entry.kind]) if (saved[field] !== undefined) entry[field] = checkField(field, saved[field]);
+    // The exact total counts only while it still rounds to the register (a hand-edited file wins).
+    if (entry.kind === 'meter' && Number.isFinite(saved.exact) && Math.round(saved.exact * 1000) / 1000 === entry.energy) entry.exact = saved.exact;
     if (typeof saved.answering === 'boolean') entry.answering = saved.answering;
     byAddress.set(entry.address, entry);
   }
@@ -265,5 +288,5 @@ export function createSensors({ statePath, spinUpMs = DEFAULT_SPIN_UP_MS, now = 
     }
   }
 
-  return { list, get, add, update, remove, writeCoil, writeAc, simWrite, setSimulatedBy, setOnRemove, simulatedByDevice };
+  return { list, get, add, update, remove, writeCoil, writeAc, simWrite, addEnergy, persist, setSimulatedBy, setOnRemove, simulatedByDevice };
 }

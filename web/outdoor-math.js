@@ -81,3 +81,25 @@ export function outdoorCard(data, now = Date.now()) {
     fault,
   };
 }
+
+// ---- The Live charts: the hour of outdoor history plus the newest readings ----
+
+const TAIL_MAX = 120;
+
+// Adds GET /api/outdoor's `last` reading ({ at, t, rh }) to the tail of recent readings when it is newer than the tail's end.
+// Returns the tail itself when nothing was added (a new array otherwise), at most 120 readings.
+export function pushOutdoorTail(tail, last) {
+  if (!last || !finite(last.at) || !(finite(last.t) || finite(last.rh))) return tail;
+  if (tail.length && last.at <= tail[tail.length - 1].at) return tail;
+  return [...tail, { at: last.at, t: last.t, rh: last.rh }].slice(-TAIL_MAX);
+}
+
+// The 1 h history (rows of { at, t, rh } under `trh`, may be null) with the tail's readings after its last row,
+// in the same shape, so the dashed line reaches the right edge between the once-a-minute fetches. null: nothing at all.
+export function liveOutdoor(base, tail) {
+  const rows = Array.isArray(base?.trh) ? base.trh : [];
+  const end = rows.length ? rows[rows.length - 1].at : -Infinity;
+  const extra = tail.filter((r) => r.at > end);
+  if (!rows.length && !extra.length) return null;
+  return { ...(base ?? {}), bucketS: base?.bucketS ?? 0, pollSeconds: base?.pollSeconds || 5, trh: [...rows, ...extra] };
+}

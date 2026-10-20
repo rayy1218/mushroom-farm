@@ -91,3 +91,15 @@ test('the inputs show the server values; an older server (no fields) shows the d
   assert.equal(show.waterPrice(null), '');
   assert.equal(show.waterPrice(2.07), '2.07');
 });
+
+// The browser checks step before the dialog's own check runs, so a rating of 62.5 W must not be blocked by the markup.
+test('the ratings inputs take any step the parser takes (two decimals)', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const html = await readFile(new URL('../web/index.html', import.meta.url), 'utf8');
+  assert.deepEqual(parseRatings({ intakeW: '62.5', exhaustW: '60', circulationW: '60', humidifierW: '80', humidifierLH: '2.25', acInputW: '1050.75' }).errors, undefined);
+  for (const r of RATINGS) {
+    const tag = html.match(new RegExp(`<input id="f-${r.name}"[^>]*>`))?.[0];
+    assert.ok(tag, r.name);
+    assert.match(tag, /step="any"/, r.name);
+  }
+});

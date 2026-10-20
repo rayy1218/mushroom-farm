@@ -95,3 +95,44 @@ test('the Overview card with a sensor: T, RH, dew point, status, sparklines and 
   assert.equal(w.statusText, 'Timeout');
   assert.ok(Math.abs(Number.parseFloat(w.values[2].text) - 9.3) < 0.2); // dew point worked out here when the server sent none
 });
+
+import { pushOutdoorTail, liveOutdoor } from '../web/outdoor-math.js';
+
+test('live outdoor: the newest readings are appended after the hour of history', () => {
+  const base = { bucketS: 5, pollSeconds: 5, trh: [{ at: 1000, t: 30, rh: 60 }, { at: 6000, t: 31, rh: 61 }] };
+  let tail = [];
+  tail = pushOutdoorTail(tail, { at: 6000, t: 31, rh: 61 }); // the same reading as the history's last row
+  tail = pushOutdoorTail(tail, { at: 11000, t: 32, rh: 62 });
+  const merged = liveOutdoor(base, tail);
+  assert.deepEqual(merged.trh.map((r) => r.at), [1000, 6000, 11000]);
+  assert.equal(merged.bucketS, 5);
+  const line = outdoorLine(merged, 't');
+  assert.deepEqual(clipSeries(line.points, 0, 11000).map((p) => p.value), [30, 31, 32]);
+});
+
+test('live outdoor: the tail alone draws before the history arrives; nothing gives null', () => {
+  assert.equal(liveOutdoor(null, []), null);
+  let tail = pushOutdoorTail([], { at: 1000, t: 30, rh: 60 });
+  tail = pushOutdoorTail(tail, { at: 2000, t: 30.5, rh: 60 });
+  const merged = liveOutdoor(null, tail);
+  assert.equal(outdoorLine(merged, 't').points.length, 2);
+  assert.equal(outdoorLine(merged, 'rh').points[1].value, 60);
+});
+
+test('live outdoor: an old, repeated or empty reading adds nothing; the tail is capped', () => {
+  const tail = pushOutdoorTail([], { at: 5000, t: 30, rh: 60 });
+  assert.equal(pushOutdoorTail(tail, { at: 5000, t: 31, rh: 60 }), tail);
+  assert.equal(pushOutdoorTail(tail, { at: 4000, t: 31, rh: 60 }), tail);
+  assert.equal(pushOutdoorTail(tail, null), tail);
+  assert.equal(pushOutdoorTail(tail, { at: 6000 }), tail);
+  let big = [];
+  for (let i = 1; i <= 200; i++) big = pushOutdoorTail(big, { at: i, t: 20, rh: 50 });
+  assert.equal(big.length, 120);
+  assert.equal(big[0].at, 81);
+});
+
+test('live outdoor: a history newer than the tail drops the tail rows it covers', () => {
+  const base = { bucketS: 5, pollSeconds: 5, trh: [{ at: 20000, t: 30, rh: 60 }] };
+  const tail = [{ at: 10000, t: 29, rh: 59 }, { at: 25000, t: 31, rh: 61 }];
+  assert.deepEqual(liveOutdoor(base, tail).trh.map((r) => r.at), [20000, 25000]);
+});
