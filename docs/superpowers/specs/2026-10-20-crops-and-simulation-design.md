@@ -72,7 +72,7 @@ The owner asked (2026-10-20): on the Rooms list, beside **Edit**, a **Simulate**
 | Route | Reply |
 |---|---|
 | `GET /api/rooms/:id/crop` | `{ crops, farmType, stage, stageSince, flush, flushes, days, rampH, autoAdvance, done, ramp: { to, endAt } \| null, nextStage: { stage, flush, at } \| null, targets: { bands, warnings } \| null }` (`targets` = `mixBands` of the stage, null without crops) |
-| `PUT /api/rooms/:id/crop` | any of `crops`, `farmType`, `stage`, `flushes`, `days` (partial: the given stages), `rampH`, `autoAdvance`, `applyNow`; replies like GET; 400 `{ error, field }` (`crops`, `stage`, …); a stage that is not in the farm type: "Stage must be one of fruiting, rest" |
+| `PUT /api/rooms/:id/crop` | any of `crops`, `farmType`, `stage`, `flushes`, `days` (partial: the given stages), `rampH`, `autoAdvance`, `applyNow`, `newBlocks` (a done room: new blocks, flush 1 from the farm type's first stage; also when the crops differ; more `flushes` on a done room resume it); replies like GET; 400 `{ error, field }` (`crops`, `stage`, …); a stage that is not in the farm type: "Stage must be one of fruiting, rest" |
 
 ### 3.5 Room page
 

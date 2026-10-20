@@ -250,3 +250,17 @@ test('a control save that sends the bands unchanged does not end the ramp; a cha
   await call('PUT', `/api/rooms/${id}/control`, { ...six, tLow: six.tLow - 1 });
   assert.equal((await get()).body.ramp, null, 'ended');
 });
+
+test('a done room: the same crops with more flushes resume it; newBlocks true restarts it at flush 1', async () => {
+  doneProgram();
+  const view = (await get()).body;
+  const more = await put({ crops: view.crops, flushes: 5 });
+  assert.equal(more.body.done, false);
+  assert.equal(more.body.flush, 4, 'the same crops are not new blocks');
+  doneProgram();
+  const fresh = await put({ crops: view.crops, newBlocks: true });
+  assert.equal(fresh.body.flush, 1);
+  assert.equal(fresh.body.done, false);
+  doneProgram();
+  assert.equal((await put({ crops: view.crops, rampH: 2 })).body.done, true, 'the same crops with another change: still done');
+});
