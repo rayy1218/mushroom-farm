@@ -8,6 +8,7 @@ import { RELAY_KEYS } from './machine-codes.js';
 import { validateSettings, readSettings, writeSettings } from './settings.js';
 import { outdoorView, outdoorHistory, RANGES } from './outdoor.js';
 import { roomUsage, farmUsage } from './usage.js';
+import { createSimulationRoutes } from './simulation-api.js';
 
 const MAX_BODY = 64 * 1024;
 
@@ -58,7 +59,8 @@ const noRoom = () => new HttpError(404, 'Room not found');
 // machines (from createMachines) and controller (from createController) are optional:
 // without them the machine or control routes do not exist. poller (from createPoller), when given,
 // gets a new reading interval at once.
-export function createApi(db, machines = null, controller = null, poller = null) {
+export function createApi(db, machines = null, controller = null, poller = null, simulations = null) {
+  const simulationRoutes = simulations && createSimulationRoutes({ db, simulations });
   // The room body; its addresses must differ from the outdoor sensor's.
   async function readRoom(req) {
     const result = validateRoom(await readJson(req));
@@ -75,6 +77,7 @@ export function createApi(db, machines = null, controller = null, poller = null)
   };
 
   async function route(req, res, path, url) {
+    if (simulationRoutes && await simulationRoutes(req, res, path, { send, readJson, HttpError })) return;
     if (path === '/api/settings') {
       if (req.method === 'GET') return send(res, 200, readSettings(db));
       if (req.method !== 'PUT') throw notFound();

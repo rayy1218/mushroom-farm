@@ -99,7 +99,7 @@ function exchangeOf(inputs, params) {
 
 // The aircon now: total capacity P (kW) and its sensible share, or heat.
 function acOf(ac, params, T, W) {
-  const none = { coolKW: 0, shr: 1, heatKW: 0 };
+  const none = { coolKW: 0, shr: 1, heatKW: 0, capKW: 0 };
   if (!ac) return none;
   const RH = rhOf(T, W);
   const factor = clamp(1 + CAP_PER_WB * (wetBulb(T, RH) - 19) - CAP_PER_OUT * ((params.outdoorT ?? 35) - 35), 0.6, 1.2);
@@ -111,9 +111,9 @@ function acOf(ac, params, T, W) {
     const sens = Math.max(0, AIR_CP * (T - adp));
     const lat = Math.max(0, W - satW(adp)) * LATENT;
     if (sens + lat <= 0) return none; // the room is at the coil's temperature: nothing to take out
-    return { coolKW: p, shr: sens / (sens + lat), heatKW: 0 };
+    return { coolKW: p, shr: sens / (sens + lat), heatKW: 0, capKW: params.acKW * factor };
   }
-  if (ac.mode === 'heat') return { coolKW: 0, shr: 1, heatKW: params.acKW * clamp((ac.setpoint - T) / BAND, 0, 1) }; // rated output
+  if (ac.mode === 'heat') return { coolKW: 0, shr: 1, heatKW: params.acKW * clamp((ac.setpoint - T) / BAND, 0, 1), capKW: params.acKW }; // rated output
   return none;
 }
 
@@ -201,6 +201,8 @@ function substep(s, inputs, params, dt) {
     acCoolKW: sensKJ / dt,
     acLatentKW: (dryG * LATENT) / dt,
     acHeatKW: heatKJ / dt,
+    // The share (0 to 1) of its present capacity the aircon delivered: heat or cold, after the setpoint limit.
+    acLoad: ac.capKW > 0 ? clamp((sensKJ / dt + (dryG * LATENT) / dt + heatKJ / dt) / ac.capKW, 0, 1) : 0,
     humidifierGH: (humG / dt) * 3600,
     blocksKW: blocksKJ / dt,
     sunKW,
@@ -235,6 +237,7 @@ function nominal(inputs, params, s) {
     acCoolKW: ac.coolKW * ac.shr,
     acLatentKW: ac.coolKW * (1 - ac.shr),
     acHeatKW: ac.heatKW,
+    acLoad: ac.capKW > 0 ? clamp((ac.coolKW + ac.heatKW) / ac.capKW, 0, 1) : 0,
     humidifierGH: humOn,
     blocksKW: (params.blocks * (params.co2PerBlock * RESP_KJ_PER_ML - BLOCK_GH * dryness * LATENT)) / 3600,
     sunKW: ((params.sunW ?? 0) * (params.sun ?? 0)) / 1000,
