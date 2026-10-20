@@ -2,6 +2,7 @@
 
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SensorError } from './sensors.js';
@@ -9,7 +10,26 @@ import { SensorError } from './sensors.js';
 const WEB_DIR = fileURLToPath(new URL('./web/', import.meta.url));
 // The room drawing is shared with the farm app: served from the farm's web/ folder, not copied.
 const SHARED_DIR = fileURLToPath(new URL('../web/', import.meta.url));
-const SHARED_FILES = new Set(['mimic.js', 'mimic-math.js', 'mimic.css', 'machines-math.js']);
+const SHARED_ENTRIES = ['mimic.js', 'mimic-math.js', 'mimic.css'];
+
+// The shared files: the drawing's entries and every module they import from the same folder, followed to the end, so a
+// new import in the farm's drawing code is served too (one missing module stops the whole device page).
+export function sharedFilesOf(dir, entries = SHARED_ENTRIES) {
+  const found = new Set(entries);
+  const todo = entries.filter((name) => name.endsWith('.js'));
+  while (todo.length) {
+    let text;
+    try {
+      text = readFileSync(join(dir, todo.pop()), 'utf8');
+    } catch {
+      continue; // listed but absent: answered 404
+    }
+    for (const [, name] of text.matchAll(/from\s+['"]\.\/([a-z0-9-]+\.js)['"]/g)) {
+      if (!found.has(name)) { found.add(name); todo.push(name); }
+    }
+  }
+  return found;
+}
 const MAX_BODY = 64 * 1024;
 const LOG_SIZE = 20;
 const TYPES = {
@@ -57,6 +77,7 @@ async function readJson(req) {
 const notFound = () => new SensorError(404, 'Not found');
 
 export function createDeviceHttp(sensors, log, { webDir = WEB_DIR, sharedDir = SHARED_DIR, sims } = {}) {
+  const SHARED_FILES = sharedFilesOf(sharedDir);
   async function simApi(req, res, path) {
     if (path === '/api/sims') {
       if (req.method === 'GET') return send(res, 200, sims.list());
