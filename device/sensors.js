@@ -11,20 +11,22 @@ export class SensorError extends Error {
   }
 }
 
-const KINDS = ['trh', 'co2', 'relay', 'ac'];
-const KIND_NAMES = { trh: 'T/RH sensor', co2: 'CO₂ sensor', relay: 'relay module', ac: 'aircon gateway' };
+const KINDS = ['trh', 'co2', 'relay', 'ac', 'meter'];
+const KIND_NAMES = { trh: 'T/RH sensor', co2: 'CO₂ sensor', relay: 'relay module', ac: 'aircon gateway', meter: 'energy meter' };
 const LIMITS = {
   t: { min: -40, max: 80, whole: false, label: 'Temperature', unit: '°C' },
   rh: { min: 0, max: 100, whole: false, label: 'Humidity', unit: '%' },
   co2: { min: 0, max: 10000, whole: true, label: 'CO₂', unit: 'ppm' },
   roomT: { min: -40, max: 80, whole: false, label: 'Room temperature', unit: '°C' },
   error: { min: 0, max: 255, whole: true, label: 'Error code', unit: '' },
+  power: { min: 0, max: 100000, whole: false, label: 'Power', unit: 'W' },
+  energy: { min: 0, max: 1e9, whole: false, label: 'Energy', unit: 'kWh', decimals: 3 },
 };
 // What a patch (and the state file) may carry for each kind.
-const FIELDS_OF = { trh: ['t', 'rh'], co2: ['co2'], relay: ['stuck', 'dead'], ac: ['roomT', 'error', 'refuse'] };
-const PATCHABLE = ['t', 'rh', 'co2', 'stuck', 'dead', 'roomT', 'error', 'refuse', 'coils', 'power', 'mode', 'setpoint', 'fan'];
+const FIELDS_OF = { trh: ['t', 'rh'], co2: ['co2'], relay: ['stuck', 'dead'], ac: ['roomT', 'error', 'refuse'], meter: ['power', 'energy'] };
+const PATCHABLE = ['t', 'rh', 'co2', 'stuck', 'dead', 'roomT', 'error', 'refuse', 'coils', 'power', 'energy', 'mode', 'setpoint', 'fan'];
 // The values a simulation drives, per kind. Relays have none: stuck and dead stay editable.
-const SIMULATED_FIELDS = { trh: ['t', 'rh'], co2: ['co2'], ac: ['roomT'] };
+const SIMULATED_FIELDS = { trh: ['t', 'rh'], co2: ['co2'], ac: ['roomT'], meter: ['power', 'energy'] };
 const OUTPUTS = 4;
 const DEFAULT_SPIN_UP_MS = 2000;
 
@@ -36,7 +38,9 @@ function checkValue(field, value) {
   if (!ok) {
     throw new SensorError(400, `${label} must be ${whole ? 'a whole number' : 'a number'} from ${min} to ${max}${unit ? ` ${unit}` : ''}`, field);
   }
-  return whole ? value : Math.round(value * 10) / 10;
+  if (whole) return value;
+  const scale = 10 ** (LIMITS[field].decimals ?? 1);
+  return Math.round(value * scale) / scale;
 }
 
 function checkSwitches(field, value) {
@@ -103,7 +107,7 @@ export function createSensors({ statePath, spinUpMs = DEFAULT_SPIN_UP_MS, now = 
 
   function make({ address, kind }) {
     if (!isAddress(address)) throw new SensorError(400, 'Address must be a whole number from 1 to 247', 'address');
-    if (!KINDS.includes(kind)) throw new SensorError(400, 'Kind must be trh, co2, relay or ac', 'kind');
+    if (!KINDS.includes(kind)) throw new SensorError(400, 'Kind must be trh, co2, relay, ac or meter', 'kind');
     if (byAddress.has(address)) throw new SensorError(409, `Address ${address} is already used`, 'address');
     const base = { address, kind };
     if (kind === 'trh') return { ...base, t: 25, rh: 85, co2: null, answering: true };
@@ -111,6 +115,7 @@ export function createSensors({ statePath, spinUpMs = DEFAULT_SPIN_UP_MS, now = 
     if (kind === 'relay') {
       return { ...base, coils: Array(OUTPUTS).fill(false), stuck: Array(OUTPUTS).fill(false), dead: Array(OUTPUTS).fill(false), since: Array(OUTPUTS).fill(null), answering: true };
     }
+    if (kind === 'meter') return { ...base, power: 0, energy: 0, answering: true };
     return { ...base, power: false, mode: 0, setpoint: 25, fan: 0, roomT: 25, error: 0, refuse: false, answering: true };
   }
 
@@ -172,9 +177,9 @@ export function createSensors({ statePath, spinUpMs = DEFAULT_SPIN_UP_MS, now = 
     for (const field of SIMULATED_FIELDS[entry.kind] ?? []) {
       const v = values[field];
       if (typeof v !== 'number' || !Number.isFinite(v)) continue;
-      const { min, max, whole } = LIMITS[field];
+      const { min, max, whole, decimals = 1 } = LIMITS[field];
       const clamped = Math.min(max, Math.max(min, v));
-      entry[field] = whole ? Math.round(clamped) : Math.round(clamped * 10) / 10;
+      entry[field] = whole ? Math.round(clamped) : Math.round(clamped * 10 ** decimals) / 10 ** decimals;
     }
   }
 

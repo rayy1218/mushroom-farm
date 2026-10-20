@@ -1,10 +1,10 @@
-// Device control page: table of sensors, relay modules and aircon gateways (edit in place), add form, simulated rooms, request log. Refreshes every 2 s.
+// Device control page: table of sensors, relay modules, aircon gateways and energy meters (edit in place), add form, simulated rooms, request log. Refreshes every 2 s.
 
 import { createSimDrawing } from './sim-drawing.js';
 
 const $ = (id) => document.getElementById(id);
 const REFRESH_MS = 2000;
-const KIND_NAMES = { trh: 'T/RH probe', co2: 'CO₂ sensor', relay: 'Relay module', ac: 'Aircon gateway' };
+const KIND_NAMES = { trh: 'T/RH probe', co2: 'CO₂ sensor', relay: 'Relay module', ac: 'Aircon gateway', meter: 'Energy meter' };
 const MACHINES = ['Intake fan', 'Exhaust fan', 'Circulation fan', 'Humidifier'];
 const MODES = ['cool', 'heat', 'dry', 'fan'];
 const FANS = ['auto', 'low', 'high'];
@@ -96,6 +96,11 @@ function buildRow(sensor) {
   } else if (kind === 'ac') {
     values.className = 'ac';
     values.append(...acValues(row, address));
+  } else if (kind === 'meter') {
+    values.append(
+      ...valueInput(row, address, 'power', 'Power W', { min: 0, max: 100000, step: 0.1 }),
+      ...valueInput(row, address, 'energy', 'Energy kWh', { min: 0, max: 1e9, step: 0.001 }),
+    );
   } else if (kind === 'trh') {
     values.append(
       ...valueInput(row, address, 't', 'T °C', { min: -40, max: 80, step: 0.1 }),
@@ -145,7 +150,7 @@ async function save(row, address, field, input, list) {
 }
 
 // The fields a simulation drives, per kind (the server refuses edits of just these).
-const SIMULATED_FIELDS = { trh: ['t', 'rh'], co2: ['co2'], ac: ['roomT'] };
+const SIMULATED_FIELDS = { trh: ['t', 'rh'], co2: ['co2'], ac: ['roomT'], meter: ['power', 'energy'] };
 
 function showRow(row, sensor) {
   const simulatedBy = sensor.simulatedBy;
@@ -211,7 +216,9 @@ const SIM_PARAMS = [
   ['acBTU', 'Aircon', 'BTU/h', 0, 200000, 500],
   ['humidifierLH', 'Humidifier', 'L/h', 0, 100, 0.1],
 ];
-const SIM_LINKS = [['trh', 'T/RH probe'], ['co2', 'CO₂ sensor'], ['relay', 'Relay module'], ['ac', 'Aircon gateway']];
+const SIM_LINKS = [['trh', 'T/RH probe'], ['co2', 'CO₂ sensor'], ['relay', 'Relay module'], ['ac', 'Aircon gateway'], ['outdoorProbe', 'Outdoor T/RH probe'], ['meter', 'Energy meter']];
+// The kind of device each link takes (the outdoor probe is a T/RH probe of its own).
+const LINK_KIND = { trh: 'trh', co2: 'co2', relay: 'relay', ac: 'ac', outdoorProbe: 'trh', meter: 'meter' };
 
 const simCards = new Map(); // id -> card
 const simBox = $('sims');
@@ -233,6 +240,7 @@ function actingText(a) {
   if (a.sunKW > 0.0005) parts.push(`Sun +${Math.round(a.sunKW * 1000)} W`);
   if (a.machineKW > 0.0005) parts.push(`Motors +${Math.round(a.machineKW * 1000)} W`);
   if (a.condensedGH > 1) parts.push(`Condensing ${(a.condensedGH / 1000).toFixed(1)} L/h`);
+  if (Number.isFinite(a.electricW)) parts.push(a.electricW >= 1000 ? `Electric ${(a.electricW / 1000).toFixed(1)} kW` : `Electric ${Math.round(a.electricW)} W`);
   return parts.join(' · ');
 }
 
@@ -320,7 +328,7 @@ function buildSimCard(room) {
 function showLinks(card, room, sensors) {
   for (const [kind] of SIM_LINKS) {
     const select = card.links[kind];
-    const addresses = sensors.filter((s) => s.kind === kind).map((s) => s.address);
+    const addresses = sensors.filter((s) => s.kind === LINK_KIND[kind]).map((s) => s.address);
     const missing = room[kind] !== null && !addresses.includes(room[kind]);
     const key = JSON.stringify([addresses, missing ? room[kind] : null]);
     if (card.linkKeys[kind] !== key) {
