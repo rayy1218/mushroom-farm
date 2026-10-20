@@ -13,9 +13,20 @@ const ADDRESSES = [
   { field: 'co2Address', label: 'CO₂ sensor' },
   { field: 'relayAddress', label: 'Relay module' },
   { field: 'acAddress', label: 'Aircon gateway' },
+  { field: 'meterAddress', label: 'Energy meter' },
 ];
 
-// Returns { room: { name, length, width, height, trhAddress, co2Address, relayAddress, acAddress } } when the input is valid,
+// Machine ratings (spec 2026-10-20-energy-water-outdoor-design.md section 4), in the order of the rooms columns.
+export const RATINGS = [
+  { field: 'intakeW', label: 'Intake fan power', unit: 'W', default: 60, min: 0, max: 5000 },
+  { field: 'exhaustW', label: 'Exhaust fan power', unit: 'W', default: 60, min: 0, max: 5000 },
+  { field: 'circulationW', label: 'Circulation fan power', unit: 'W', default: 60, min: 0, max: 5000 },
+  { field: 'humidifierW', label: 'Humidifier power', unit: 'W', default: 80, min: 0, max: 5000 },
+  { field: 'humidifierLH', label: 'Humidifier output', unit: 'L/h', default: 2, min: 0, max: 100 },
+  { field: 'acInputW', label: 'Aircon rated input', unit: 'W', default: 1050, min: 0, max: 20000 },
+];
+
+// Returns { room: { name, length, width, height, the five addresses, the six ratings } } when the input is valid,
 // otherwise { error, field } for the first failing field (field is missing
 // when the body itself is wrong).
 export function validateRoom(body) {
@@ -39,6 +50,14 @@ export function validateRoom(body) {
     const value = body[field] ?? null;
     if (value !== null && !(Number.isInteger(value) && value >= 1 && value <= 247)) {
       return { error: `${label} address must be a whole number from 1 to 247`, field };
+    }
+    room[field] = value;
+  }
+  // A rating left out (or null) is the default; a given one must be a number in range.
+  for (const { field, label, unit, default: d, min, max } of RATINGS) {
+    const value = body[field] ?? d;
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max) {
+      return { error: `${label} must be a number from ${min} to ${max} ${unit}`, field };
     }
     room[field] = value;
   }

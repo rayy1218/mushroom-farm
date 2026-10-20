@@ -1,10 +1,13 @@
-// JSON API: /api/settings, /api/alarms, /api/rooms, /api/rooms/:id, /api/rooms/:id/sensors, /alarms, /control and /machines.
+// JSON API: /api/settings, /api/alarms, /api/outdoor, /api/usage, /api/rooms, /api/rooms/:id, /api/rooms/:id/sensors, /alarms,
+// /control, /machines and /usage.
 
 import { validateRoom } from './rooms.js';
 import { NameTakenError, AddressTakenError, HISTORY_BUCKET_S } from './db.js';
 import { CommandError } from './machines.js';
 import { RELAY_KEYS } from './machine-codes.js';
 import { validateSettings, readSettings, writeSettings } from './settings.js';
+import { outdoorView, outdoorHistory, RANGES } from './outdoor.js';
+import { roomUsage, farmUsage } from './usage.js';
 
 const MAX_BODY = 64 * 1024;
 
@@ -37,10 +40,15 @@ async function readJson(req) {
   }
 }
 
-async function readRoom(req) {
-  const result = validateRoom(await readJson(req));
-  if (result.error) throw new HttpError(400, result.error, result.field);
-  return result.room;
+const ADDRESS_FIELDS = ['trhAddress', 'co2Address', 'relayAddress', 'acAddress', 'meterAddress'];
+
+// The days query of the usage routes: a whole number from 1 to 90, default 30.
+function readDays(url) {
+  const text = url.searchParams.get('days');
+  if (text === null) return 30;
+  const days = /^[0-9]{1,3}$/.test(text) ? Number(text) : NaN;
+  if (!(days >= 1 && days <= 90)) throw new HttpError(400, 'days must be a whole number from 1 to 90', 'days');
+  return days;
 }
 
 const notFound = () => new HttpError(404, 'Not found');
@@ -51,15 +59,48 @@ const noRoom = () => new HttpError(404, 'Room not found');
 // without them the machine or control routes do not exist. poller (from createPoller), when given,
 // gets a new reading interval at once.
 export function createApi(db, machines = null, controller = null, poller = null) {
+  // The room body; its addresses must differ from the outdoor sensor's.
+  async function readRoom(req) {
+    const result = validateRoom(await readJson(req));
+    if (result.error) throw new HttpError(400, result.error, result.field);
+    const outdoor = db.outdoorAddress();
+    const clash = outdoor === null ? undefined : ADDRESS_FIELDS.find((f) => result.room[f] === outdoor);
+    if (clash) throw new HttpError(400, `Address ${outdoor} is used by the outdoor sensor`, clash);
+    return result.room;
+  }
+
+  const prices = () => {
+    const { electricityPrice, waterPrice } = readSettings(db);
+    return { electricity: electricityPrice, water: waterPrice };
+  };
+
   async function route(req, res, path, url) {
     if (path === '/api/settings') {
       if (req.method === 'GET') return send(res, 200, readSettings(db));
       if (req.method !== 'PUT') throw notFound();
       const result = validateSettings(await readJson(req));
       if (result.error) throw new HttpError(400, result.error, result.field);
+      const { outdoorAddress } = result.settings;
+      const user = outdoorAddress == null ? undefined : db.listRooms().find((r) => ADDRESS_FIELDS.some((f) => r[f] === outdoorAddress));
+      if (user) throw new HttpError(400, `Address ${outdoorAddress} is used by ${user.name}`, 'outdoorAddress');
       writeSettings(db, result.settings);
-      poller?.setIntervalMs(result.settings.pollSeconds * 1000);
-      return send(res, 200, result.settings);
+      const settings = readSettings(db);
+      if (result.settings.pollSeconds !== undefined) poller?.setIntervalMs(settings.pollSeconds * 1000);
+      return send(res, 200, settings);
+    }
+    if (path === '/api/outdoor') {
+      if (req.method !== 'GET') throw notFound();
+      return send(res, 200, outdoorView(db));
+    }
+    if (path === '/api/outdoor/history') {
+      if (req.method !== 'GET') throw notFound();
+      const history = outdoorHistory(db, url.searchParams.get('range') ?? '');
+      if (!history) throw new HttpError(400, `range must be ${RANGES.join(', ')}`, 'range');
+      return send(res, 200, { ...history, pollSeconds: readSettings(db).pollSeconds });
+    }
+    if (path === '/api/usage') {
+      if (req.method !== 'GET') throw notFound();
+      return send(res, 200, farmUsage(db, { days: readDays(url), prices: prices() }));
     }
     if (path === '/api/rooms') {
       if (req.method === 'GET') return send(res, 200, db.listRooms());
@@ -92,7 +133,7 @@ export function createApi(db, machines = null, controller = null, poller = null)
       if (req.method !== 'GET') throw notFound();
       return send(res, 200, db.overview());
     }
-    const match = /^\/api\/rooms\/([1-9][0-9]{0,14})(\/sensors|\/control|\/history|\/machines(?:\/([a-z]+))?)?$/.exec(path);
+    const match = /^\/api\/rooms\/([1-9][0-9]{0,14})(\/sensors|\/usage|\/control|\/history|\/machines(?:\/([a-z]+))?)?$/.exec(path);
     if (!match) throw notFound();
     const id = Number(match[1]);
     if (match[2]?.startsWith('/machines')) {
@@ -130,11 +171,17 @@ export function createApi(db, machines = null, controller = null, poller = null)
       if (!db.getRoom(id)) throw noRoom();
       return send(res, 200, controller.update(id, await readJson(req)));
     }
-    if (match[2]) { // /sensors
+    if (match[2] === '/usage') {
+      if (req.method !== 'GET') throw notFound();
+      const usage = roomUsage(db, id, { days: readDays(url), prices: prices() });
+      if (!usage) throw noRoom();
+      return send(res, 200, usage);
+    }
+    if (match[2]) { // /sensors: the two sensors, then the energy meter (kind 'meter')
       if (req.method !== 'GET') throw notFound();
       const sensors = db.getSensors(id);
       if (!sensors) throw noRoom();
-      return send(res, 200, sensors);
+      return send(res, 200, [...sensors, db.getMeter(id)]);
     }
     if (req.method === 'GET') {
       const room = db.getRoom(id);

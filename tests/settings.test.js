@@ -7,7 +7,7 @@ import { validateSettings, DEFAULT_SETTINGS } from '../server/settings.js';
 const BAD = { error: 'Reading interval must be a whole number from 1 to 300 seconds', field: 'pollSeconds' };
 
 test('the default reading interval is 5 seconds', () => {
-  assert.deepEqual(DEFAULT_SETTINGS, { pollSeconds: 5 });
+  assert.deepEqual(DEFAULT_SETTINGS, { pollSeconds: 5, outdoorAddress: null, electricityPrice: 0.55, waterPrice: null });
 });
 
 test('whole numbers from 1 to 300 are valid', () => {
@@ -18,7 +18,7 @@ test('anything else is rejected with the field', () => {
   for (const v of [0, 301, -1, 2.5, NaN, Infinity, '5', null, undefined, true, [5], {}]) {
     assert.deepEqual(validateSettings({ pollSeconds: v }), BAD, String(v));
   }
-  assert.deepEqual(validateSettings({}), BAD);
+  assert.deepEqual(validateSettings({}), { error: 'Body has no settings' });
 });
 
 test('a body that is not an object is rejected without a field', () => {

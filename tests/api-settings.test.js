@@ -53,9 +53,9 @@ test('GET returns the default when nothing is stored', async (t) => {
 test('PUT stores the interval, answers with the settings, and applies it to the poller at once', async () => {
   const res = await put({ pollSeconds: 12 });
   assert.equal(res.status, 200);
-  assert.deepEqual(await res.json(), { pollSeconds: 12 });
+  assert.deepEqual(await res.json(), { ...DEFAULT_SETTINGS, pollSeconds: 12 });
   assert.deepEqual(intervals, [12000]);
-  assert.deepEqual(await (await fetch(`${base}/api/settings`)).json(), { pollSeconds: 12 });
+  assert.deepEqual(await (await fetch(`${base}/api/settings`)).json(), { ...DEFAULT_SETTINGS, pollSeconds: 12 });
   assert.equal(db.getSetting('pollSeconds'), '12');
 });
 
@@ -68,7 +68,7 @@ test('a bad interval is 400 with the field and changes nothing', async () => {
     });
   }
   assert.deepEqual(intervals, []);
-  assert.deepEqual(await (await fetch(`${base}/api/settings`)).json(), { pollSeconds: 5 });
+  assert.deepEqual(await (await fetch(`${base}/api/settings`)).json(), DEFAULT_SETTINGS);
 });
 
 test('a body that is not an object is 400 without a field', async () => {
