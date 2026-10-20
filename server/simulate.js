@@ -13,6 +13,9 @@ const MODEL_S = 5; // the model's own sub-step (device/sim-model.js), stepped he
 const SAMPLE_S = 300; // a point of the series every 5 min
 const DAY_S = 86_400;
 const FAN_SHARE = 0.05; // the aircon draws at least this share of its rated input while powered (usage.js)
+// The aircon's input at full load from the size asked in the stepper (not the room's rating, which is for its present unit):
+// COP 3, about EER 10 BTU/Wh, a typical split unit.
+const AC_COP = 3;
 const MACHINES = ['intake', 'exhaust', 'circulation', 'humidifier'];
 const RATING = { intake: 'intakeW', exhaust: 'exhaustW', circulation: 'circulationW', humidifier: 'humidifierW' };
 
@@ -27,6 +30,7 @@ export function simulate(input, ctx, { onProgress } = {}) {
   const { physics, crops, farmType, stage: startName, days } = input;
   const { volume, ratings, control = DEFAULTS } = ctx;
   const prices = ctx.prices ?? { electricity: null, water: null };
+  const acInputKW = physics.acBTU / BTU_PER_KW / AC_COP;
   const stored = ctx.program ?? {};
   const totalS = days * DAY_S;
   const steps = totalS / STEP_S;
@@ -169,7 +173,7 @@ export function simulate(input, ctx, { onProgress } = {}) {
       load += r.acting.acLoad * MODEL_S;
       grams += (r.acting.humidifierGH * MODEL_S) / 3600;
     }
-    const acStepKWh = a.power ? (ratings.acInputW / 1000) * (Math.max(FAN_SHARE * STEP_S, load) / 3600) : 0;
+    const acStepKWh = a.power ? (acInputKW * Math.max(FAN_SHARE * STEP_S, load)) / 3600 : 0;
     acKWh += acStepKWh;
     litres += grams / 1000;
     let relayKWh = 0;

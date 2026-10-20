@@ -130,3 +130,11 @@ test('the control settings and the machine protection reach the run', () => {
   assert.deepEqual([...new Set(plain)], [25]);
   assert.ok(lowered.includes(22) && lowered.includes(25));
 });
+
+test('aircon energy follows the aircon size of the stepper (COP 3), not the room rating', () => {
+  const kWh = (over, ratings) => simulate(input({ physics: { ...physics, ...over } }), ctx(ratings ? { ratings } : {})).summary.energy.byMachine.ac;
+  const small = kWh({});
+  assert.ok(small > 0 && small <= 24 * (12000 / 3412.142 / 3) + 0.01, `${small} kWh`);
+  // the room's rating does not change it
+  assert.equal(kWh({}, { intakeW: 60, exhaustW: 60, circulationW: 60, humidifierW: 80, humidifierLH: 2, acInputW: 5000 }), small);
+});

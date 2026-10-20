@@ -100,7 +100,7 @@ Back/Next keep the values; each step checks its fields like the server (errors u
 | Time step | 10 s *default* (the controller decides every step) |
 | Start | 00:00 of simulated day 1; the room starts inside its bands: T and RH at the band middle, CO₂ 420, the mass at T, the surfaces at the air's RH *default* (no pull-down from outdoor air counted) |
 | Time in band | over every step: T in [tLow, tHigh], RH in [rhLow, rhHigh], CO₂ ≤ co2High (low CO₂ is good), and all three; the bands of that moment |
-| Energy | each relay machine: its rated W (room ratings) × on time; the aircon: rated input × the share of its present capacity it delivers, at least 5 % while on (its fan); by machine and total kWh, cost with the electricity price of Settings |
+| Energy | each relay machine: its rated W (room ratings) × on time; the aircon: its input at full load from the size of step 1 (BTU/h ÷ 3412 ÷ COP 3, about EER 10; not the room's rating, which is for the unit it has now) × the share of its present capacity it delivers, at least 5 % while on (its fan); by machine and total kWh, cost with the electricity price of Settings |
 | Water | the humidifier's water put into the air (L), cost with the water price of Settings when there is one |
 | Speed | in a worker thread; one run at a time, others wait (`queued`); progress posted at least every 1 % |
 | Restart | a run still `running` or `queued` when the server starts becomes `failed` "Stopped by a restart of the farm app" |
