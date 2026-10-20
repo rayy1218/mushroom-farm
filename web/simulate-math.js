@@ -32,7 +32,7 @@ function nextOf(p) {
   if (p.stage === 'spawn') return { stage: 'pinning', flush: 1, done: false };
   if (p.stage === 'pinning') return { stage: 'fruiting', flush: 1, done: false };
   if (p.stage === 'fruiting') return { stage: 'rest', flush: p.flush, done: p.flush >= p.flushes };
-  return p.done ? null : { stage: 'fruiting', flush: p.flush + 1, done: false };
+  return p.done || p.flush >= p.flushes ? null : { stage: 'fruiting', flush: p.flush + 1, done: false };
 }
 
 // Days from the start of `stage` (flush `flush`) to the end of the last flush's rest. p: { flushes, days }.

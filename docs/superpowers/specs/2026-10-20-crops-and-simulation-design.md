@@ -86,7 +86,7 @@ A **Crop and stage** card above Automatic control: the crops (crop + blocks rows
 |---|---|
 | 1 Room and machines | Wall heat transfer (W/K, 80), Outdoor day high (°C, 33), Outdoor night low (25), Outdoor dew point (24), Sun on the roof (W, 300), Fan flow (m³/h, 600), Aircon (BTU/h, 12 000), Humidifier output (L/h, the room's rating, 2); the room's size is shown, not asked |
 | 2 Crops | crop + blocks rows (prefill: the room's crops, else Grey oyster 500), farm type, start stage (the room's, else fruiting); the bands of the mix and its warnings |
-| 3 Run | how long: 7 days *default*, or **Whole program** (`programDays` from the start stage, e.g. 58 days for ready-to-fruit fruiting with 4 flushes), whole number 1–90 days; a summary of steps 1–2; **Run simulation** |
+| 3 Run | how long: 7 days *default*, or **Whole program** (`programDays` from the start stage, e.g. 68 days for ready-to-fruit fruiting with 4 flushes), whole number 1–90 days; a summary of steps 1–2; **Run simulation** |
 
 Back/Next keep the values; each step checks its fields like the server (errors under the field) before Next. After Run the dialog shows "Running… 35 %" with the step's progress and **Open results** (the results page) and may be closed; the run goes on in the background.
 
