@@ -202,3 +202,12 @@ test('a farm without rooms has zero days', (t) => {
   assert.deepEqual(farm.rooms, []);
   assert.equal(farm.last30.metered, false);
 });
+
+test('a range is metered when every day that used anything is metered; empty days before the data do not count', async () => {
+  const { totals } = await import('../server/usage.js');
+  const prices = { electricity: 0.55, water: null };
+  const empty = { kWh: 0, metered: false, waterL: 0 };
+  assert.equal(totals([empty, empty, { kWh: 2, metered: true, waterL: 0 }], prices).metered, true);
+  assert.equal(totals([{ kWh: 1, metered: false, waterL: 0 }, { kWh: 2, metered: true, waterL: 0 }], prices).metered, false);
+  assert.equal(totals([empty, empty], prices).metered, false);
+});

@@ -156,3 +156,14 @@ test('farm room lines: one per room with today and 30 days; a missing list is em
   assert.deepEqual(lines, [{ id: 3, href: '#/rooms/3', name: 'A', today: '2.0 kWh · RM 1.10', last30: '60.0 kWh · —' }]);
   assert.deepEqual(roomLines(null), []);
 });
+
+test('axis labels keep the decimals small values need; the last date label ends at the plot edge', async () => {
+  const { axisLabel, barLayout, barSeries } = await import('../web/usage-math.js');
+  assert.deepEqual([0, 0.05, 0.1, 0.25, 2.5, 5, 1250].map(axisLabel), ['0', '0.05', '0.1', '0.25', '2.5', '5', '1,250']);
+  const days = Array.from({ length: 30 }, (_, i) => ({ date: `2026-10-${String(i + 1).padStart(2, '0')}`, kWh: 1, metered: false }));
+  const layout = barLayout(barSeries(days, 'kWh'), 600, 200);
+  const last = layout.xTicks.at(-1);
+  assert.equal(last.anchor, 'end');
+  assert.equal(last.x, layout.plot.x1);
+  assert.equal(layout.xTicks[0].anchor, undefined);
+});

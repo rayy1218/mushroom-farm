@@ -20,12 +20,12 @@ Date: 2026-10-20. Status: approved by the owner's request ("energy and water usa
 | Where it is set | Settings page: "Outdoor sensor address", 1 to 247 or empty (none). Must not be an address a room uses (400 with field `outdoorAddress`, "Address n is used by Room x") and a room may not take it (the room check names "the outdoor sensor") |
 | Polling | first in each cycle, when set |
 | Storage | table `outdoor_readings (id INTEGER PRIMARY KEY, address INTEGER NOT NULL, at INTEGER NOT NULL, ok INTEGER NOT NULL CHECK (ok IN (0,1)), t REAL, rh REAL, error TEXT)`, index `(at)` |
-| Status | as a room sensor: online (latest poll answered), timeout (1–2 failed in a row), offline (3 or more), not set |
+| Status | as a room sensor: online (latest poll answered), timeout (1–2 failed in a row), offline (3 or more), `no-data` (set, no reading yet), `not-set` |
 | Checks | the room T/RH checks (range, jump, frozen; 3 bad = fault) without the exchange and humidifier exemptions; a fault shows as a chip on the Overview card; no alarm row (alarms belong to rooms) |
 | API | `GET /api/outdoor` → `{ address, status, last: { at, t, rh, dew } \| null, check: { ok, why, fault } \| null, spark: { t: [{ at, v }], rh: [...] } }` (spark: 24 h in 30 min buckets, like the Overview rooms); `GET /api/outdoor/history?range=1h\|6h\|24h\|7d\|30d` → the shape of a room's history series for `t` and `rh` |
 | Overview | an "Outdoor" card first: T, RH, dew point, status, the 24 h sparklines; "No outdoor sensor: set one on Settings" when not set |
 | Room page | the drawing shows outdoor T and RH and the sun or the moon (night 19:00–07:00 local); the T and RH charts draw the outdoor values as a second, dashed muted line (live and history ranges) with a legend "Outdoor" |
-| Device app | a simulated room gets a fifth link `outdoor` (a T/RH probe); each tick writes the room's outdoor T and RH (`outdoorAt`) into it; a device can be linked once, as for the other links |
+| Device app | a simulated room gets a fifth link `outdoorProbe` (a T/RH probe; not `outdoor`, which already names the room's outdoor air in the reply); each tick writes the room's outdoor T and RH (`outdoorAt`) into it; a device can be linked once, as for the other links |
 
 ## 3. Energy meter
 
@@ -35,7 +35,7 @@ Date: 2026-10-20. Status: approved by the owner's request ("energy and water usa
 | Where it is set | room dialog, Sensors section: "Energy meter address" (optional, 1–247, unique like the other addresses) |
 | Polling | after the room's sensors, two reads (power, energy); a failed read = a failed poll |
 | Storage | table `meter_readings (id INTEGER PRIMARY KEY, room_id INTEGER NOT NULL, address INTEGER NOT NULL, at INTEGER NOT NULL, ok INTEGER NOT NULL CHECK (ok IN (0,1)), power_w REAL, energy_kwh REAL, error TEXT)`, index `(room_id, at)`; deleted with the room |
-| Room page | a third sensor card "Energy meter": status, power now (W), meter total (kWh), "n s ago" |
+| Room page | a third sensor card "Energy meter": status, power now (W), meter total (kWh), "n s ago"; `GET /api/rooms/:id/sensors` returns it as a third element `{ kind: 'meter', address, status, failuresInRow, lastOk: { at, power, energy } \| null, readings }` |
 | Device app | kind `meter` with values `power` (W, 0–100000) and `energy` (kWh, 0–10⁹), typed by hand, answering as the registers above; a simulated room's sixth link `meter`: the simulation writes the room's electrical power and adds its energy each tick (the total survives a restart) |
 
 ## 4. Machine ratings (room dialog, new section "Power and water")
@@ -62,7 +62,7 @@ Stored as `rooms` columns `intake_w, exhaust_w, circulation_w, humidifier_w, hum
 | Breakdown | per machine, always the estimate; when the day is metered, `rest` = metered − the fans' and humidifier's estimates (≥ 0, "mostly the aircon") replaces the aircon estimate |
 | Water | humidifier run time × `humidifierLH` (litres) |
 | Cost | kWh × electricity price; water L ÷ 1000 × water price, only when a water price is set |
-| API | `GET /api/rooms/:id/usage?days=1..90` (default 30) → `{ prices: { electricity, water }, days: [{ date, kWh, metered, byMachine: { intake, exhaust, circulation, humidifier, ac, rest }, waterL }], today, last7, last30 }` with `today`/`last7`/`last30` = `{ kWh, cost, waterL, waterCost, metered }` (`metered`: all days of the range metered; `waterCost` null without a water price); days oldest first, today last; `GET /api/usage?days=` → the same totals for the whole farm plus `rooms: [{ id, name, today, last30 }]` |
+| API | `GET /api/rooms/:id/usage?days=1..90` (default 30) → `{ prices: { electricity, water }, days: [{ date, kWh, metered, byMachine: { intake, exhaust, circulation, humidifier, ac, rest }, waterL }], today, last7, last30 }` with `today`/`last7`/`last30` = `{ kWh, cost, waterL, waterCost, metered }` (`metered`: the range has a metered day and every day that used anything is metered, so empty days before the first data do not count; `waterCost` null without a water price); days oldest first, today last; `GET /api/usage?days=` → the same totals for the whole farm plus `rooms: [{ id, name, today, last30 }]` |
 
 ## 6. Settings (Settings page)
 

@@ -81,7 +81,7 @@ export function drawBarChart(host, opts) {
       }));
     }
     for (const t of layout.xTicks) {
-      svg.append(el('text', { x: t.x, y: height - 6, 'text-anchor': 'middle', style: 'fill:var(--muted)', 'font-size': 12 }, t.label));
+      svg.append(el('text', { x: t.x, y: height - 6, 'text-anchor': t.anchor ?? 'middle', style: 'fill:var(--muted)', 'font-size': 12 }, t.label));
     }
     svg.addEventListener('pointerdown', onPointer);
     svg.addEventListener('pointermove', onPointer);

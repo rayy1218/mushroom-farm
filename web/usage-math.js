@@ -100,13 +100,18 @@ export function barLayout(series, width, height, m = BAR_M) {
   const every = slot > 0 ? Math.max(1, Math.ceil(70 / slot)) : 1;
   const xTicks = [];
   for (let i = n - 1; i >= 0; i -= every) xTicks.unshift({ x: x0 + slot * i + slot / 2, label: dateLabel(series[i].date) });
+  // the last label ends at the plot's right edge, so it is not cut off
+  const last = xTicks.at(-1);
+  if (last) Object.assign(last, { anchor: 'end', x: Math.min(last.x + slot / 2, x1) });
   const yTicks = [0, top / 2, top].map((v) => ({ v, y: yFor(v) }));
   return { plot: { x0, x1, y0, y1 }, max: top, bars, yTicks, xTicks };
 }
 
-// The text of an axis value: whole numbers stay whole, small ones get one decimal.
+// The text of an axis value: whole numbers stay whole, others get the decimals they need (0.05 stays 0.05, not 0.1).
 export function axisLabel(v) {
-  return Number.isInteger(v) ? grouped(v, 0) : grouped(v, 1);
+  if (Number.isInteger(v)) return grouped(v, 0);
+  const places = Math.min(3, Math.max(1, -Math.floor(Math.log10(Math.abs(v))) + 1));
+  return grouped(Number(v.toFixed(places)), places).replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
 }
 
 // Index of the bar nearest to x (a pointer position); -1 for no bars.

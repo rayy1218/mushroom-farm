@@ -139,8 +139,9 @@ export function drawLineChart(host, opts) {
           d, fill: 'none', 'stroke-width': 1.5, 'stroke-dasharray': '5 4', 'stroke-linejoin': 'round', style: 'stroke:var(--muted)',
         }));
       }
-      svg.append(el('line', { x1: x1 - 76, x2: x1 - 56, y1: y1 + 8, y2: y1 + 8, 'stroke-width': 1.5, 'stroke-dasharray': '5 4', style: 'stroke:var(--muted)' }));
-      svg.append(el('text', { x: x1 - 50, y: y1 + 12, style: 'fill:var(--muted)', 'font-size': 11 }, current.second.label ?? 'Outdoor'));
+      // top left: the band limits are labelled at the right edge
+      svg.append(el('line', { x1: x0 + 8, x2: x0 + 28, y1: y1 + 8, y2: y1 + 8, 'stroke-width': 1.5, 'stroke-dasharray': '5 4', style: 'stroke:var(--muted)' }));
+      svg.append(el('text', { x: x0 + 34, y: y1 + 12, style: 'fill:var(--muted)', 'font-size': 11 }, current.second.label ?? 'Outdoor'));
     }
 
     // The line, one path per run; a run of one point is a dot.

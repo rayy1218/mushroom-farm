@@ -147,8 +147,15 @@ export function totals(days, prices) {
     cost: round(kWh * prices.electricity, 2),
     waterL,
     waterCost: prices.water === null ? null : round((waterL / 1000) * prices.water, 2),
-    metered: days.length > 0 && days.every((d) => d.metered),
+    metered: isMetered(days),
   };
+}
+
+// A range is metered when it has a metered day and every day that used anything is metered (days before the room's
+// first data, at 0, do not make a range "estimated").
+function isMetered(days) {
+  const used = days.filter((d) => d.metered || d.kWh > 0);
+  return used.length > 0 && used.every((d) => d.metered);
 }
 
 const summary = (days, prices) => ({
@@ -177,7 +184,7 @@ export function farmUsage(db, { days = 30, prices, now = Date.now(), zone = loca
     return {
       date: day.date,
       kWh: round(mine.reduce((s, d) => s + d.kWh, 0), 3),
-      metered: mine.length > 0 && mine.every((d) => d.metered),
+      metered: isMetered(mine), // every room that used anything that day is metered
       byMachine,
       waterL: round(mine.reduce((s, d) => s + d.waterL, 0), 3),
     };
