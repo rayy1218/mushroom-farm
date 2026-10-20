@@ -308,3 +308,13 @@ test('dt 0 reports the unlimited rates and changes nothing', () => {
   assert.equal(r.acting.humidifierGH, 2000);
   assert.ok(total(r.acting) > 3);
 });
+
+test('acLoad: the share of its present capacity the aircon delivered (0 without an aircon, 1 at full demand)', () => {
+  const params = { volume: 60, blocks: 0, co2PerBlock: 60, wallUA: 80, outdoorT: 33, outdoorRH: 70, sunW: 0, sun: 0, fanFlow: 0, acKW: 3.5, humidifierGH: 0 };
+  const hot = { T: 30, W: wOf(30, 70), CO2: 420, Tm: 30, Hs: 70 };
+  assert.equal(step(hot, { ac: null }, params, 10).acting.acLoad, 0);
+  const full = step(hot, { ac: { mode: 'cool', setpoint: 20, fan: 'auto' } }, params, 10).acting.acLoad;
+  assert.ok(full > 0.9 && full <= 1, String(full));
+  const off = step(hot, { ac: { mode: 'cool', setpoint: 35, fan: 'auto' } }, params, 10).acting.acLoad;
+  assert.equal(off, 0);
+});

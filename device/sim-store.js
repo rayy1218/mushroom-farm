@@ -14,7 +14,7 @@ const KIND_NAMES = { trh: 'T/RH sensor', co2: 'CO₂ sensor', relay: 'relay modu
 const LINK_NAMES = { ...KIND_NAMES, outdoorProbe: 'outdoor T/RH sensor' };
 const withArticle = (name) => `${/^[aeiou]/i.test(name) ? 'an' : 'a'} ${name}`;
 const KWH_MAX = 1e9;
-const PARAMS = {
+export const PARAMS = {
   volume: { min: 1, max: 10000, whole: false, label: 'Volume', unit: 'm³', value: 60 },
   blocks: { min: 0, max: 100000, whole: true, label: 'Blocks', unit: '', value: 500 },
   co2PerBlock: { min: 0, max: 1000, whole: false, label: 'CO₂ per block', unit: 'mL/h', value: 60 },
@@ -44,7 +44,7 @@ function checkParam(field, value) {
 }
 
 // The outdoor values must fit together: night low at most the day high, dew point at most the night low.
-function outdoorProblem({ outdoorHigh, outdoorLow, outdoorDew }) {
+export function outdoorProblem({ outdoorHigh, outdoorLow, outdoorDew }) {
   if (outdoorLow > outdoorHigh) return { message: 'Outdoor night low must not be above the day high', field: 'outdoorLow' };
   if (outdoorDew > outdoorLow) return { message: 'Outdoor dew point must not be above the night low', field: 'outdoorDew' };
   return null;
