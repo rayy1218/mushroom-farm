@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { stageLine, nextLine, rampLine, doneLine, cropWarnings, formFromData, checkCropForm, saveBody, startBody, hasCrops, FORM_FIELD_ORDER } from '../web/crop-math.js';
+import { stageLine, nextLine, rampLine, doneLine, cropWarnings, formFromData, checkCropForm, saveBody, newBlocksBody, startBody, hasCrops, FORM_FIELD_ORDER } from '../web/crop-math.js';
 
 const DAY = 86_400_000;
 const at = (d, h, m) => new Date(2026, 9, d, h, m).getTime();
@@ -43,9 +43,9 @@ test('the ramp line and the done line', () => {
 test('warnings: those of the mix and those of the crops\' ranges', () => {
   assert.deepEqual(cropWarnings(base), []);
   assert.deepEqual(cropWarnings({ ...base, targets: { ...base.targets, warnings: ['Grey oyster and Milky do not fit one temperature band'] } }), ['Grey oyster and Milky do not fit one temperature band']);
-  const out = cropWarnings({ ...base, crops: [{ crop: 'lionsmane', blocks: 5 }] });
-  assert.equal(out.length, 1);
-  assert.equal(out[0], "Temperature band 24–26 °C is outside Lion's mane (draft)'s range 16–22 °C");
+  // the server's targets.warnings already holds the range warnings: shown once, as they are
+  const range = "Temperature band 24–26 °C is outside Lion's mane (draft)'s range 16–22 °C";
+  assert.deepEqual(cropWarnings({ ...base, crops: [{ crop: 'lionsmane', blocks: 5 }], targets: { ...base.targets, warnings: [range] } }), [range]);
   assert.deepEqual(cropWarnings({ ...base, targets: null }), []);
   assert.deepEqual(cropWarnings({ ...base, crops: [], targets: null }), []);
   assert.equal(hasCrops({ ...base, crops: [] }), false);
@@ -68,13 +68,40 @@ test('the form holds the texts of the room, and checks them like the server', ()
   // no crops is allowed: a room whose bands are set by hand
   assert.deepEqual(checkCropForm({ ...f, crops: [] }).errors, {});
   assert.equal(checkCropForm({ ...f, rampH: '0.5' }).values.rampH, 0.5);
+  assert.equal(checkCropForm({ ...f, rampH: '12.25' }).values.rampH, 12.25, 'any decimal from 0 to 48');
+  assert.equal(checkCropForm({ ...f, rampH: '48' }).errors.rampH, undefined);
+  assert.equal(checkCropForm({ ...f, rampH: '48.5' }).errors.rampH, 'Ramp must be a number from 0 to 48 h');
   assert.equal(checkCropForm({ ...f, rampH: '' }).errors.rampH, 'Ramp must be a number from 0 to 48 h');
+});
+
+test('Save sends only what differs from the loaded view; a done room is not restarted by another field', () => {
+  const same = checkCropForm(formFromData(base)).values;
+  assert.deepEqual(saveBody(same, base), {}, 'nothing changed: nothing to send');
+  const change = (patch) => checkCropForm({ ...formFromData(base), ...patch }).values;
+  assert.deepEqual(saveBody(change({ flushes: '5' }), base), { flushes: 5 });
+  assert.deepEqual(saveBody(change({ rampH: '2.5' }), base), { rampH: 2.5 });
+  assert.deepEqual(saveBody(change({ autoAdvance: false }), base), { autoAdvance: false });
+  assert.deepEqual(saveBody(change({ farmType: 'full' }), base), { farmType: 'full' });
+  assert.deepEqual(saveBody(change({ days: { ...formFromData(base).days, rest: '12' } }), base), { days: { rest: 12 } });
+  assert.deepEqual(saveBody(change({ crops: [{ crop: 'oyster', blocks: '600' }] }), base), { crops: [{ crop: 'oyster', blocks: 600 }] });
+  assert.deepEqual(saveBody(change({ crops: [{ crop: 'oyster', blocks: '500' }] }), base), {}, 'the same rows are not sent');
+  const done = { ...base, done: true };
+  assert.deepEqual(saveBody(change({ flushes: '6' }), done), { flushes: 6 }, 'raising the flushes of a done room sends no crops');
+  // a room without crops: its first crops go with the chosen start stage
+  const empty = { ...base, crops: [], stageSince: null };
+  const first = checkCropForm({ ...formFromData(base) }).values;
+  assert.deepEqual(saveBody(first, empty, 'spawn').crops, first.crops);
+  assert.equal(saveBody(first, empty, 'spawn').stage, 'spawn');
+  assert.equal(saveBody(first, base, 'spawn').stage, undefined);
+});
+
+test('New blocks sends the rows with newBlocks', () => {
+  const crops = [{ crop: 'oyster', blocks: 500 }];
+  assert.deepEqual(newBlocksBody({ crops }), { crops, newBlocks: true });
 });
 
 test('the bodies of the two buttons', () => {
   const ok = checkCropForm(formFromData(base));
-  assert.deepEqual(saveBody(ok.values), ok.values);
-  assert.deepEqual(saveBody(ok.values, 'pinning'), { ...ok.values, stage: 'pinning' });
   assert.deepEqual(startBody('rest', false), { stage: 'rest' });
   assert.deepEqual(startBody('rest', true), { stage: 'rest', applyNow: true });
 });

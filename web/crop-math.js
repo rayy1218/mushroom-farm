@@ -1,7 +1,7 @@
 // Pure helpers for the Crop and stage card of the room page (no DOM, so they can be tested in Node).
 // Spec 2026-10-20-crops-and-simulation-design.md sections 3.4 and 3.5 (the reply of GET /api/rooms/:id/crop).
 
-import { STAGES, FARM_TYPES, rangeWarnings, validateCrops } from './crops.js';
+import { STAGES, FARM_TYPES, validateCrops } from './crops.js';
 import { formatDateTime } from './simulation-math.js';
 
 const DAY_MS = 86_400_000;
@@ -38,11 +38,8 @@ export function rampLine(c, now = Date.now()) {
 
 export const doneLine = (c) => (c?.done ? `Flush ${c.flushes} of ${c.flushes} done: replace the blocks` : '');
 
-// The warnings in words: those of the mix of the stage and those of the crops' good ranges.
-export function cropWarnings(c) {
-  if (!hasCrops(c) || !c.targets) return [];
-  return [...(c.targets.warnings ?? []), ...rangeWarnings(c.crops, c.targets.bands, c.stage)];
-}
+// The warnings in words: the server's targets.warnings (the mix of the stage and the crops' good ranges), as they are.
+export const cropWarnings = (c) => (hasCrops(c) && c.targets ? [...(c.targets.warnings ?? [])] : []);
 
 // ---- the form ----
 
@@ -72,13 +69,32 @@ export function checkCropForm(form) {
     if (!(n >= 1 && n <= 90)) errors[`days.${stage}`] = 'Days of each stage must be a whole number from 1 to 90';
     days[stage] = n;
   }
-  const rampH = /^[0-9]{1,2}(\.[0-9])?$/.test(String(form.rampH).trim()) ? Number(form.rampH) : NaN;
+  const rampH = /^[0-9]{1,2}(\.[0-9]+)?$/.test(String(form.rampH).trim()) ? Number(form.rampH) : NaN;
   if (!(rampH >= 0 && rampH <= 48)) errors.rampH = 'Ramp must be a number from 0 to 48 h';
   return { values: { crops, farmType: form.farmType, flushes, days, rampH, autoAdvance: Boolean(form.autoAdvance) }, errors };
 }
 
-// The body of Save; stage only for a room that had no crops, so its stage starts with them.
-export const saveBody = (values, stage) => (stage ? { ...values, stage } : { ...values });
+const sameRows = (a, b) => a.length === b.length && a.every((r, i) => r.crop === b[i].crop && r.blocks === b[i].blocks);
+
+// The body of Save with only what differs from the loaded view `c` (a Save of another field must not restart a done room):
+// crops only when the rows changed, days only for the stages that changed. stage: for a room that had no crops, so its first
+// crops start in the chosen stage. {} when nothing changed.
+export function saveBody(values, c, stage) {
+  const body = {};
+  const crops = c?.crops ?? [];
+  if (!sameRows(values.crops, crops)) body.crops = values.crops;
+  if (values.farmType !== c?.farmType) body.farmType = values.farmType;
+  if (values.flushes !== c?.flushes) body.flushes = values.flushes;
+  const days = Object.fromEntries(Object.entries(values.days).filter(([s, n]) => n !== c?.days?.[s]));
+  if (Object.keys(days).length) body.days = days;
+  if (values.rampH !== c?.rampH) body.rampH = values.rampH;
+  if (values.autoAdvance !== c?.autoAdvance) body.autoAdvance = values.autoAdvance;
+  if (stage && crops.length === 0 && body.crops?.length) body.stage = stage;
+  return body;
+}
+
+// New blocks in a done room: its rows, and newBlocks, so the room starts again at flush 1.
+export const newBlocksBody = (values) => ({ crops: values.crops, newBlocks: true });
 
 // The body of Start stage; applyNow skips the slow change of the bands.
 export const startBody = (stage, applyNow) => (applyNow ? { stage, applyNow: true } : { stage });

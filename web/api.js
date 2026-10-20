@@ -26,7 +26,12 @@ export async function request(method, path, body, timeout = 10000) {
     throw new ApiError(0, null);
   }
   if (res.status === 204) return null;
-  const data = await res.json().catch(() => null);
+  let data = null;
+  try {
+    data = await res.json();
+  } catch {
+    if (res.ok) throw new ApiError(0, null); // a good status with a body that could not be read (cut off, too slow)
+  }
   if (!res.ok) throw new ApiError(res.status, data);
   return data;
 }

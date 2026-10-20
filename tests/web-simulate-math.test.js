@@ -35,7 +35,7 @@ test('the page copy of programDays agrees with server/program.js', () => {
     const p = { ...PROGRAM_DEFAULTS, ...c, crops: [{ crop: 'oyster', blocks: 5 }], days: { spawn: 20, pinning: 3, fruiting: 6, rest: 9 } };
     assert.equal(programDays(p, c.stage, c.flush), serverProgramDays(p, c.stage, c.flush), JSON.stringify(c));
   }
-  assert.equal(programDays({ ...PROGRAM_DEFAULTS, crops: [] }, 'fruiting', 1), 68); // 4 flushes of 7 + 10, the last rest included (the spec's 58 leaves it out)
+  assert.equal(programDays({ ...PROGRAM_DEFAULTS, crops: [] }, 'fruiting', 1), 68); // 4 flushes of 7 + 10, the last rest included 
 });
 
 test('first open: the defaults, the humidifier from the room rating, 7 days', () => {
@@ -72,7 +72,7 @@ test('step 1 checks the numbers like the device app and the outdoor order', () =
   s.physics.outdoorHigh = '61';
   const e = checkStep(1, s);
   assert.equal(e['physics.wallUA'], 'Wall heat transfer must be a number from 0 to 100000 W/K');
-  assert.equal(e['physics.acBTU'], 'Aircon must be a whole number from 0 to 200000 BTU/h');
+  assert.equal(e['physics.acBTU'], 'Aircon capacity must be a whole number from 0 to 200000 BTU/h');
   assert.ok(e['physics.fanFlow']);
   assert.equal(e['physics.outdoorHigh'], 'Outdoor day high must be a number from -40 to 60 °C');
   assert.equal(firstField(e), 'physics.wallUA');

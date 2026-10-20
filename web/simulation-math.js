@@ -132,18 +132,32 @@ export function bandSteps(series, lowKey, highKey, endS) {
 
 // ---- machine timeline ----
 
-// The rows of drawTimeline: the on-spans (seconds) of result.machines and the aircon's setpoint marks.
-export function timelineRows(machines) {
+// Spans closer together than minGap seconds drawn as one (a long run has tens of thousands; they cannot be told apart).
+// A span keeps its own length, so a short one stays; `same` (optional) says whether two neighbours may be joined.
+export function mergeSpans(spans, minGap, same = () => true) {
+  const out = [];
+  for (const s of spans) {
+    const last = out.at(-1);
+    if (last && minGap > 0 && s.from - last.to < minGap && same(last, s)) last.to = Math.max(last.to, s.to);
+    else out.push({ ...s });
+  }
+  return out;
+}
+
+// The rows of drawTimeline: the on-spans (seconds) of result.machines and the aircon's setpoint marks. minGap: spans closer
+// than this many seconds (one pixel of the chart) are joined; the aircon's only when the setpoint is the same.
+export function timelineRows(machines, minGap = 0) {
   return TIMELINE_ROWS.map((r) => {
-    const spans = (machines?.[r.key] ?? []).map((s) => ({ from: s.from, to: s.to, source: 'auto' }));
+    const raw = (machines?.[r.key] ?? []).map((s) => ({ from: s.from, to: s.to, source: 'auto', setpoint: s.setpoint }));
     const marks = [];
     if (r.key === 'ac') {
       let prev = null;
-      for (const s of machines?.ac ?? []) {
+      for (const s of raw) {
         if (!prev || prev.to !== s.from || prev.setpoint !== s.setpoint) marks.push({ at: s.from, text: `${s.setpoint} °C` });
         prev = s;
       }
     }
+    const spans = mergeSpans(raw, minGap, (a, b) => a.setpoint === b.setpoint).map(({ setpoint, ...span }) => span);
     return { ...r, spans, marks };
   });
 }

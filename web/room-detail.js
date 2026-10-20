@@ -211,6 +211,10 @@ export function mount(container, { id }) {
     clearTimeout(timer);
     stopLoop?.(); // the drawing is hidden with the body
     stopLoop = null;
+    cropCard?.destroy(); // the two cards ask the server on their own: stop
+    cropCard = null;
+    simulationsCard?.destroy();
+    simulationsCard = null;
     room = null;
     sensors = null;
     els.title.textContent = 'Room not found';
@@ -413,15 +417,15 @@ export function mount(container, { id }) {
     if (!built) {
       makeAlarms();
       makeMachines();
-      makeCrop();
       makeControl();
       mimic = createMimic(els.mimicHost, { idPrefix: 'room-' });
       buildCharts();
       usageCard = createUsageCard(els.usageHost, { roomId: id });
-      simulationsCard = createSimulationsCard(els.simulationsHost, { roomId: id, getRoom: () => room });
       history = createHistory(els.rangeHost, { roomId: id, outdoor: true, onChange: () => { if (alive() && sensors) renderCharts(); } });
       built = true;
     }
+    if (!cropCard) makeCrop(); // (again after a missing room came back)
+    simulationsCard ??= createSimulationsCard(els.simulationsHost, { roomId: id, getRoom: () => room });
     stopLoop ??= startLoop(() => (mimic ? [mimic] : [])); // (again after a missing room came back)
     alarmsCard.update(alarmData); // hides itself while there are no current alarms; a failed read keeps the last data
     // The card shows only once a good reply came; later failures keep the last good data.
@@ -528,6 +532,7 @@ export function mount(container, { id }) {
       onChange: (data) => {
         machines?.setAuto(data.auto);
         if (!alive()) return;
+        cropCard?.refresh(); // a band changed by hand ends the ramp of the stage
         lastControl = data;
         paintDrawing();
       },

@@ -16,7 +16,7 @@ function el(name, attrs = {}, text) {
   return node;
 }
 
-// opts: { rows: [{ key, label, spans: [{ from, to, source }], marks: [{ at, text }] }], range: { from, to },
+// opts: { rows (or rowsFor(width) → rows): [{ key, label, spans: [{ from, to, source }], marks: [{ at, text }] }], range: { from, to },
 //         ticks: [{ at, label }], formatAt(ms), onCursor(at|null) }
 // Returns { update(opts), setCursor(at|null), destroy() }.
 export function drawTimeline(host, opts) {
@@ -39,7 +39,8 @@ export function drawTimeline(host, opts) {
     svg = null;
     geometry = null;
     if (width < 40) return;
-    const { rows, range } = current;
+    const { range } = current;
+    const rows = current.rowsFor ? current.rowsFor(width) : current.rows; // rowsFor: recomputed at every redraw (spans joined to a pixel)
     const ticks = (current.ticksFor ? current.ticksFor(width) : current.ticks) ?? [];
     const x0 = M.left;
     const x1 = width - M.right;

@@ -2,7 +2,7 @@
 // the progress while it runs, then the time in band, the charts with the band as it moved, the machine timeline, energy and water.
 
 import { request, OFFLINE } from './api.js';
-import { drawLineChart } from './chart.js';
+import { drawLineChart, M } from './chart.js';
 import { drawTimeline } from './timeline.js';
 import { drawBarChart } from './usage.js';
 import { tickCountFor } from './history-math.js';
@@ -13,6 +13,7 @@ import {
 } from './simulation-math.js';
 
 const POLL_MS = 2000;
+const RESULT_TIMEOUT = 120_000; // a run of 58 days has about 3 MB of results
 const MAX_POINTS = 700; // per chart line (a run of 90 days has 26 000 samples)
 
 const TEMPLATE = `
@@ -107,7 +108,9 @@ export function mount(container, { id, runId }) {
   let run = null;
   let timer = null;
   let loadSeq = 0;
-  let drawnFor = null; // the status the results were drawn for
+  let drawnFor = null; // the run the results were drawn for
+  let retry = null; // what Retry does: read the run again, or the results again
+  let resultSeq = 0;
   const charts = []; // everything to destroy on unmount or a redraw
 
   function moveCursor(at) {
@@ -121,12 +124,17 @@ export function mount(container, { id, runId }) {
     const seq = ++loadSeq;
     try {
       const [data, room] = await Promise.all([
-        request('GET', `/api/simulations/${runId}`),
+        request('GET', `/api/simulations/${runId}?result=0`), // the progress needs no result
         roomName === null ? request('GET', `/api/rooms/${id}`).catch(() => null) : Promise.resolve(null), // optional: the name
       ]);
       if (!alive() || seq !== loadSeq) return;
       if (room) roomName = room.name;
+      if (data.roomId !== undefined && data.roomId !== id) { // a run of another room is not this room's
+        showMissing();
+        return;
+      }
       run = data;
+      retry = load;
       els.banner.hidden = true;
       els.missing.hidden = true;
       render();
@@ -143,6 +151,30 @@ export function mount(container, { id, runId }) {
       }
     }
     if (isActive(run) || !run) timer = setTimeout(load, POLL_MS);
+    else if (run.status === 'done' && !run.result) loadResult();
+  }
+
+  // The full result, once, when the run is done. A failure shows the error and Retry; it is not tried again by itself.
+  async function loadResult() {
+    const me2 = ++resultSeq;
+    try {
+      const data = await request('GET', `/api/simulations/${runId}`, undefined, RESULT_TIMEOUT);
+      if (!alive() || me2 !== resultSeq) return;
+      run = data;
+      els.banner.hidden = true;
+      render();
+    } catch (err) {
+      if (!alive() || me2 !== resultSeq) return;
+      if (err.status === 404) {
+        showMissing();
+        return;
+      }
+      retry = loadResult;
+      els.progress.textContent = 'The results could not be loaded';
+      els.bannerText.textContent = err.status === 0 ? "Couldn't load the results. Try again." : err.message;
+      els.retry.hidden = false;
+      els.banner.hidden = false;
+    }
   }
 
   function showMissing() {
@@ -165,14 +197,15 @@ export function mount(container, { id, runId }) {
     els.actions.hidden = false;
     document.title = `${headLine(name)} · Mushroom farm`;
     const active = isActive(run);
-    els.run.hidden = run.status === 'done';
+    const loadingResult = run.status === 'done' && !run.result;
+    els.run.hidden = run.status === 'done' && !loadingResult;
     els.bar.value = Number.isFinite(run.progress) ? run.progress : 0;
     els.bar.hidden = run.status === 'failed';
     els.progress.hidden = run.status === 'failed';
-    els.progress.textContent = progressLine(run);
+    els.progress.textContent = loadingResult ? 'Loading the results…' : progressLine(run);
     els.failed.hidden = run.status !== 'failed';
     els.failed.textContent = run.status === 'failed' ? `The simulation failed: ${run.error ?? 'it stopped'}` : '';
-    if (!active && run.status === 'done' && drawnFor !== run.id) {
+    if (run.status === 'done' && run.result && drawnFor !== run.id) {
       drawnFor = run.id;
       els.results.hidden = false;
       drawResults();
@@ -233,7 +266,8 @@ export function mount(container, { id, runId }) {
     const tlHost = text('div', 'chart-host');
     tl.append(tlHost, text('p', 'legend', 'A bar is a time the machine was on. The aircon row shows its setpoint.'));
     els.results.append(tl);
-    charts.push(drawTimeline(tlHost, { ...common, rows: timelineRows(result.machines) }));
+    // spans closer than one pixel of time are drawn as one: a long run has tens of thousands
+    charts.push(drawTimeline(tlHost, { ...common, rowsFor: (w) => timelineRows(result.machines, end / Math.max(1, w - M.left - M.right)) }));
 
     // energy and water
     const use = energyView(summary);
@@ -284,11 +318,12 @@ export function mount(container, { id, runId }) {
     if (alive()) location.hash = `#/rooms/${id}`;
   }, { signal: abort.signal });
 
-  els.retry.addEventListener('click', load);
+  els.retry.addEventListener('click', () => { els.banner.hidden = true; (retry ?? load)(); });
   load();
 
   return function unmount() {
     mountSeq++;
+    resultSeq++;
     abort.abort();
     clearTimeout(timer);
     clearCharts();

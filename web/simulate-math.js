@@ -12,7 +12,7 @@ export const PHYSICS_FIELDS = [
   { key: 'outdoorDew', label: 'Outdoor dew point', unit: '°C', min: -40, max: 60, whole: false, def: 24 },
   { key: 'sunW', label: 'Sun on the roof', unit: 'W', min: 0, max: 100000, whole: false, def: 300 },
   { key: 'fanFlow', label: 'Fan flow', unit: 'm³/h', min: 0, max: 100000, whole: false, def: 600 },
-  { key: 'acBTU', label: 'Aircon', unit: 'BTU/h', min: 0, max: 200000, whole: true, def: 12000 },
+  { key: 'acBTU', label: 'Aircon capacity', unit: 'BTU/h', min: 0, max: 200000, whole: true, def: 12000 },
   { key: 'humidifierLH', label: 'Humidifier output', unit: 'L/h', min: 0, max: 100, whole: false, def: 2 },
 ];
 
