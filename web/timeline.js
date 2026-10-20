@@ -3,7 +3,7 @@
 
 import { M } from './chart.js';
 import { xFor } from './chart-math.js';
-import { thinMarks } from './history-math.js';
+import { thinMarks, markLabel } from './history-math.js';
 
 const NS = 'http://www.w3.org/2000/svg';
 const ROW_H = 30;
@@ -67,7 +67,8 @@ export function drawTimeline(host, opts) {
         svg.append(rect);
       }
       for (const m of thinMarks(row.marks, xAt, 40)) {
-        svg.append(el('text', { x: xAt(m.at) + 3, y: y + 11, style: 'fill:var(--ink)', 'font-size': 11 }, m.text));
+        const label = markLabel(xAt(m.at), m.text, width - 2);
+        svg.append(el('text', { x: label.x, y: y + 11, 'text-anchor': label.anchor, style: 'fill:var(--ink)', 'font-size': 11 }, m.text));
       }
     });
     const yAxis = rows.length * ROW_H;

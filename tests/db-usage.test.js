@@ -22,11 +22,11 @@ const tempDir = (t) => {
 const tableNames = (raw) => raw.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((r) => r.name);
 const NEW_COLUMNS = ['intake_w', 'exhaust_w', 'circulation_w', 'humidifier_w', 'humidifier_lh', 'ac_input_w', 'meter_address'];
 
-test('a new database is at version 9 with the usage tables and room columns', (t) => {
+test('a new database is at version 10 with the usage tables and room columns', (t) => {
   const path = join(tempDir(t), 'new.db');
   openDb(path).close();
   const raw = new DatabaseSync(path);
-  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 9);
+  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 10);
   assert.ok(tableNames(raw).includes('outdoor_readings') && tableNames(raw).includes('meter_readings'));
   const columns = raw.prepare('PRAGMA table_info(rooms)').all().map((c) => c.name);
   for (const c of NEW_COLUMNS) assert.ok(columns.includes(c), c);
@@ -42,6 +42,7 @@ test('upgrade 8 to 9 keeps rooms and gives them the default ratings and no meter
   const raw = new DatabaseSync(path);
   raw.exec('DROP TABLE outdoor_readings; DROP TABLE meter_readings;');
   for (const c of NEW_COLUMNS) raw.exec(`ALTER TABLE rooms DROP COLUMN ${c}`);
+  for (const c of ['exchange_every_min', 'exchange_forced', 'fresh_from']) raw.exec(`ALTER TABLE room_controls DROP COLUMN ${c}`); // version 10
   raw.exec('PRAGMA user_version = 8');
   raw.close();
 
@@ -55,7 +56,7 @@ test('upgrade 8 to 9 keeps rooms and gives them the default ratings and no meter
   openDb(path).close(); // opening again changes nothing
 });
 
-test('older versions end at 9 too (a version 0 file)', (t) => {
+test('older versions end at 10 too (a version 0 file)', (t) => {
   const path = join(tempDir(t), 'old.db');
   const old = new DatabaseSync(path);
   old.exec(`CREATE TABLE rooms (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE,
@@ -67,7 +68,7 @@ test('older versions end at 9 too (a version 0 file)', (t) => {
   assert.equal(db.getMeter(1).status, 'not-wired');
   db.close();
   const raw = new DatabaseSync(path);
-  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 9);
+  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 10);
   raw.close();
 });
 

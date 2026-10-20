@@ -276,7 +276,7 @@ test('3 bad CO₂ readings: fault alarm and the timed exchange', async (t) => {
   for (let i = 0; i < 3; i++) await s.cycle({ co2Ok: false });
   assert.deepEqual(s.keys(), ['sensorCo2']);
   const view = s.controller.get(s.id);
-  assert.equal(view.reasons.exchange, 'CO₂ sensor fault: timed air exchange, 10 min of every 30');
+  assert.equal(view.reasons.exchange, 'CO₂ sensor fault: timed air exchange, 10 min of every 25', 'rests at most the 15 min fresh-air interval');
   assert.equal(view.exchange, true, 'never ended: the timed exchange starts at once');
   assert.equal(s.db.getCommands(s.id).relay.intake, true);
   // on for 10 min, then off

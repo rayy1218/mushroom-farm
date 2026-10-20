@@ -4,7 +4,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { RELAY_KEYS } from './machine-codes.js';
 import { RATINGS } from './rooms.js';
 
-const VERSION = 9;
+const VERSION = 10;
 
 // Iteration 1 (version 0) had only the rooms table without the address columns.
 const ROOMS = `
@@ -74,7 +74,10 @@ CREATE TABLE room_controls (
   exchange_ended_at INTEGER,
   capped_in_row INTEGER NOT NULL DEFAULT 0,
   humidifier_since INTEGER,
-  ac_drop REAL NOT NULL DEFAULT 5
+  ac_drop REAL NOT NULL DEFAULT 5,
+  exchange_every_min INTEGER NOT NULL DEFAULT 15,
+  exchange_forced INTEGER NOT NULL DEFAULT 0 CHECK (exchange_forced IN (0, 1)),
+  fresh_from INTEGER
 ) STRICT;`;
 
 // Safety and history (spec 2026-10-19-safety-and-history-design.md 3.2 and 4): the room_controls columns
@@ -87,6 +90,12 @@ ALTER TABLE room_controls ADD COLUMN exchange_ended_at INTEGER;
 ALTER TABLE room_controls ADD COLUMN capped_in_row INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE room_controls ADD COLUMN humidifier_since INTEGER;
 UPDATE room_controls SET co2_safety = MIN(10000, MAX(1250, co2_high + 500));`;
+
+// Fresh air at least every N minutes (spec 2026-10-19-safety-and-history-design.md 2.6): the setting and the run state.
+const FRESH_AIR_CONTROL_COLUMNS = `
+ALTER TABLE room_controls ADD COLUMN exchange_every_min INTEGER NOT NULL DEFAULT 15;
+ALTER TABLE room_controls ADD COLUMN exchange_forced INTEGER NOT NULL DEFAULT 0 CHECK (exchange_forced IN (0, 1));
+ALTER TABLE room_controls ADD COLUMN fresh_from INTEGER;`;
 
 const ALARMS = `
 CREATE TABLE alarms (
@@ -269,6 +278,8 @@ function migrate(db) {
       db.exec(OUTDOOR_READINGS);
       db.exec(METER_READINGS);
     }
+    // Fresh air at least every 15 min, for the existing rooms too (a table made above by ROOM_CONTROLS has the columns).
+    if (version >= 3 && version < 10) db.exec(FRESH_AIR_CONTROL_COLUMNS);
     db.exec(`PRAGMA user_version = ${VERSION}`);
     db.exec('COMMIT');
   } catch (err) {
@@ -376,9 +387,10 @@ export function openDb(path) {
     control: db.prepare('SELECT * FROM room_controls WHERE room_id = ?'),
     setControl: db.prepare(`UPDATE room_controls SET auto = ?, co2_low = ?, co2_high = ?, t_low = ?, t_high = ?,
                                    rh_low = ?, rh_high = ?, humidifier_during_exchange = ?, ac_fan = ?,
-                                   co2_safety = ?, exchange_max_min = ?, ac_drop = ? WHERE room_id = ?`),
+                                   co2_safety = ?, exchange_max_min = ?, ac_drop = ?, exchange_every_min = ? WHERE room_id = ?`),
     setControlState: db.prepare(`UPDATE room_controls SET exchange = ?, humidifier = ?, exchange_since = ?,
-                                        exchange_ended_at = ?, capped_in_row = ?, humidifier_since = ? WHERE room_id = ?`),
+                                        exchange_ended_at = ?, capped_in_row = ?, humidifier_since = ?,
+                                        exchange_forced = ?, fresh_from = ? WHERE room_id = ?`),
     setRelay: Object.fromEntries(RELAY_KEYS.map((key) => [key,
       db.prepare(`UPDATE machine_commands SET ${key} = ?, relay_sent_at = ? WHERE room_id = ?`)])),
     setAc: db.prepare(`UPDATE machine_commands SET ac_power = ?, ac_mode = ?, ac_setpoint = ?, ac_fan = ?, ac_sent_at = ?
@@ -593,6 +605,7 @@ export function openDb(path) {
 
     // The automatic control settings and band states, or null when there is no such room:
     // { auto, co2Low, co2High, tLow, tHigh, rhLow, rhHigh, humidifierDuringExchange, acFan, co2Safety, exchangeMaxMin, acDrop,
+    //   exchangeEveryMin, exchangeForced, freshFrom,
     //   exchange, exchangeSince, exchangeEndedAt, cappedInRow, humidifier, humidifierSince }
     getControl(roomId) {
       let r = q.control.get(roomId);
@@ -607,25 +620,28 @@ export function openDb(path) {
         exchange: r.exchange === 1, exchangeSince: r.exchange_since, humidifier: r.humidifier === 1,
         co2Safety: r.co2_safety, exchangeMaxMin: r.exchange_max_min, acDrop: r.ac_drop, exchangeEndedAt: r.exchange_ended_at,
         cappedInRow: r.capped_in_row, humidifierSince: r.humidifier_since,
+        exchangeEveryMin: r.exchange_every_min, exchangeForced: r.exchange_forced === 1, freshFrom: r.fresh_from,
       };
     },
 
     // Returns true when the room exists. Settings must be valid (see validateControl in controller.js).
-    setControl(roomId, { auto, co2Low, co2High, tLow, tHigh, rhLow, rhHigh, humidifierDuringExchange, acFan, co2Safety, exchangeMaxMin, acDrop }) {
+    setControl(roomId, { auto, co2Low, co2High, tLow, tHigh, rhLow, rhHigh, humidifierDuringExchange, acFan, co2Safety, exchangeMaxMin, acDrop, exchangeEveryMin }) {
       return q.setControl.run(auto ? 1 : 0, co2Low, co2High, tLow, tHigh, rhLow, rhHigh, humidifierDuringExchange ? 1 : 0, acFan,
-        co2Safety, exchangeMaxMin, acDrop, roomId).changes > 0;
+        co2Safety, exchangeMaxMin, acDrop, exchangeEveryMin, roomId).changes > 0;
     },
 
-    // Without exchangeSince it keeps the time the exchange began and is cleared when it ends. exchangeEndedAt, cappedInRow
-    // and humidifierSince are kept when not given (null is a value).
-    setControlState(roomId, { exchange, humidifier, exchangeSince, exchangeEndedAt, cappedInRow, humidifierSince }, at) {
+    // Without exchangeSince it keeps the time the exchange began and is cleared when it ends. exchangeEndedAt, cappedInRow,
+    // humidifierSince, exchangeForced and freshFrom are kept when not given (null is a value).
+    setControlState(roomId, { exchange, humidifier, exchangeSince, exchangeEndedAt, cappedInRow, humidifierSince, exchangeForced, freshFrom }, at) {
       const r = q.control.get(roomId);
       if (!r) return false;
       const since = exchangeSince !== undefined ? exchangeSince : exchange ? (r.exchange_since ?? at) : null;
       return q.setControlState.run(exchange ? 1 : 0, humidifier ? 1 : 0, since,
         exchangeEndedAt !== undefined ? exchangeEndedAt : r.exchange_ended_at,
         cappedInRow !== undefined ? cappedInRow : r.capped_in_row,
-        humidifierSince !== undefined ? humidifierSince : r.humidifier_since, roomId).changes > 0;
+        humidifierSince !== undefined ? humidifierSince : r.humidifier_since,
+        exchangeForced !== undefined ? (exchangeForced ? 1 : 0) : r.exchange_forced,
+        freshFrom !== undefined ? freshFrom : r.fresh_from, roomId).changes > 0;
     },
 
     // ---- Alarms (spec 2026-10-19-safety-and-history-design.md section 3) ----

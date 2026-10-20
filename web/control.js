@@ -408,7 +408,7 @@ export function createControl(host, { roomId, onOffline, onGone, onChange }) {
     }
     for (const f of SAFETY_FIELDS) values[f.key] = safetyRows.get(f.key).input.valueAsNumber;
     if (!firstBad) {
-      const bad = checkSafety(values.co2High, values.co2Safety, values.exchangeMaxMin, values.acDrop);
+      const bad = checkSafety(values.co2High, values.co2Safety, values.exchangeMaxMin, values.acDrop, values.exchangeEveryMin);
       if (bad) {
         markSafetyInvalid(bad.field, bad.message);
         firstBad = safetyRows.get(bad.field).input;

@@ -30,7 +30,7 @@ async function setup(t) {
   const poller = createPoller({ db, client, intervalMs: 60_000, now, log: () => {}, afterCycle: (start) => controller.run(start) });
   const machines = createMachines({ db, client, poller, now });
   controller = createController({ db, machines, now });
-  controller.update(room.id, { auto: true });
+  controller.update(room.id, { auto: true, exchangeEveryMin: 0 }); // the CO2 rules only (fresh air: controller-fresh-air.test.js)
   t.after(async () => {
     await poller.stop();
     client.close();

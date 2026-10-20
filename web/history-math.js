@@ -104,6 +104,13 @@ export function acMarks(rows) {
   return marks;
 }
 
+// Where a mark's label goes: 3 px right of the mark at x, or 3 px left of it (ending there) when it would run past
+// right. The width is estimated (0.6 em per character), so a phone's narrow chart keeps the last label whole.
+export function markLabel(x, text, right, fontPx = 11) {
+  const width = String(text).length * fontPx * 0.6;
+  return x + 3 + width > right ? { x: x - 3, anchor: 'end' } : { x: x + 3, anchor: 'start' };
+}
+
 // Keeps the marks that are at least minPx right of the previously kept one; xOf(at) is the mark's x position.
 export function thinMarks(marks, xOf, minPx = 40) {
   const kept = [];

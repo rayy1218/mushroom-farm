@@ -266,3 +266,46 @@ test('a missing reading (not faulty) keeps an active process alarm', (t) => {
   s.tick(MIN, readings({ t: null }));
   assert.deepEqual(s.keys(), ['tHigh']);
 });
+
+// ---- the humidifier too small ----
+
+const humidifier = (status) => ({ relay: { machines: [{ key: 'humidifier', status }] }, ac: null });
+
+test('humidifier too small: running 30 min with the humidity still below the band', (t) => {
+  const s = setup(t);
+  const low = { ...readings({ rh: 80 }), machines: humidifier('on') };
+  for (let i = 0; i <= 29; i++) s.tick(MIN, low);
+  assert.deepEqual(s.keys(), [], 'not before 30 min');
+  s.tick(MIN, low);
+  assert.deepEqual(s.keys(), ['humidifierTooSmall']);
+  const [alarm] = s.db.activeAlarms(s.room.id);
+  assert.equal(alarm.level, 'warning');
+  assert.equal(alarm.text, 'Humidifier too small: running 30 min and the humidity is still 80 %, below 85');
+  s.tick(MIN, { ...readings({ rh: 85 }), machines: humidifier('on') });
+  assert.deepEqual(s.keys(), [], 'cleared at the lower limit');
+});
+
+test('humidifier too small: the count stops when the humidifier is off or the humidity reaches the band', (t) => {
+  const s = setup(t);
+  const low = { ...readings({ rh: 80 }), machines: humidifier('on') };
+  for (let i = 0; i < 20; i++) s.tick(MIN, low);
+  s.tick(MIN, { ...readings({ rh: 80 }), machines: humidifier('off') });
+  for (let i = 0; i < 20; i++) s.tick(MIN, low);
+  assert.deepEqual(s.keys(), []);
+  s.tick(MIN, { ...readings({ rh: 86 }), machines: humidifier('on') });
+  for (let i = 0; i < 20; i++) s.tick(MIN, low);
+  assert.deepEqual(s.keys(), []);
+  for (let i = 0; i < 11; i++) s.tick(MIN, low);
+  assert.deepEqual(s.keys(), ['humidifierTooSmall']);
+  s.tick(MIN, { ...readings({ rh: 80 }), machines: humidifier('off') });
+  assert.deepEqual(s.keys(), [], 'cleared when the humidifier stops');
+});
+
+test('humidifier too small: not from a faulty humidity probe or a humidifier that is not running', (t) => {
+  const s = setup(t);
+  for (let i = 0; i < 40; i++) s.tick(MIN, { ...readings({ rh: 80 }), machines: humidifier('not-running') });
+  assert.ok(!s.keys().includes('humidifierTooSmall'));
+  const t2 = setup(t);
+  for (let i = 0; i < 40; i++) t2.tick(MIN, { ...readings({ rh: 80 }), machines: humidifier('on'), clear: { rh: true } });
+  assert.deepEqual(t2.keys(), []);
+});

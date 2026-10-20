@@ -111,6 +111,7 @@ test('the state line says when the exchange stops by, when the time limit is kno
   assert.equal(exchangeLine({ exchange: true, exchangeSince: since, exchangeEndsAt: since + 10 * 60000 }, since + 3 * 60000), 'Air exchange on since 10:42 (stops by 10:52)');
   assert.equal(exchangeLine({ exchange: true, exchangeSince: since, exchangeEndsAt: since + 20 * 60000 }, since), 'Air exchange on since 10:42 (stops by 11:02)');
   assert.equal(exchangeLine({ exchange: true, exchangeSince: since, exchangeEndsAt: null }, since + 12 * 60000), 'Air exchange on since 10:42 (12 min)');
+  assert.equal(exchangeLine({ exchange: true, exchangeForced: true, exchangeSince: since, exchangeEndsAt: since + 60000 }, since), 'Fresh air on since 10:42 (stops by 10:43)');
   assert.equal(exchangeLine({ exchange: false, exchangeMaxMin: 10 }), 'Air exchange off');
   assert.equal(formatHm(since), '10:42');
 });
@@ -141,7 +142,7 @@ test('a held reason is the text under its machine, empty when none', () => {
 test('the safety inputs: labels, and the same checks as the server', () => {
   assert.deepEqual(SAFETY_FIELDS.map((f) => [f.key, f.label]), [
     ['co2Safety', 'CO₂ safety level for the crop (ppm)'], ['exchangeMaxMin', 'Air exchange time limit (min)'],
-    ['acDrop', 'Aircon lower during air exchange (°C)'],
+    ['exchangeEveryMin', 'Fresh air at least every (min)'], ['acDrop', 'Aircon lower during air exchange (°C)'],
   ]);
   assert.equal(checkSafety(750, 1250, 10), null);
   assert.deepEqual(checkSafety(750, 750, 10), { field: 'co2Safety', message: 'CO₂ safety level must be above the CO₂ band upper limit' });
@@ -153,6 +154,10 @@ test('the safety inputs: labels, and the same checks as the server', () => {
   }
   assert.equal(checkSafety(750, 1250, 1), null);
   assert.equal(checkSafety(750, 1250, 120), null);
+  for (const v of [0, 15, 240]) assert.equal(checkSafety(750, 1250, 10, 0, v), null, String(v));
+  for (const v of [-1, 241, 1.5, NaN]) {
+    assert.deepEqual(checkSafety(750, 1250, 10, 0, v), { field: 'exchangeEveryMin', message: 'Fresh air interval must be a whole number from 0 to 240 min (0: off)' }, String(v));
+  }
   assert.equal(locateSafetyField('co2Safety').key, 'co2Safety');
   assert.equal(locateSafetyField('exchangeMaxMin').key, 'exchangeMaxMin');
   assert.equal(locateSafetyField('co2Low'), null);

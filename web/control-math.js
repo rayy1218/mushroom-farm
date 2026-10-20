@@ -53,6 +53,9 @@ export function formatHm(ms) {
 export function exchangeLine(c, now = Date.now()) {
   if (!c.exchange) return 'Air exchange off';
   if (c.exchangeSince == null) return 'Air exchange on';
+  if (c.exchangeForced && Number.isFinite(c.exchangeEndsAt)) {
+    return `Fresh air on since ${formatHm(c.exchangeSince)} (stops by ${formatHm(c.exchangeEndsAt)})`;
+  }
   if (Number.isFinite(c.exchangeEndsAt)) {
     return `Air exchange on since ${formatHm(c.exchangeSince)} (stops by ${formatHm(c.exchangeEndsAt)})`;
   }
@@ -113,6 +116,8 @@ export const SAFETY_FIELDS = [
   { key: 'co2Safety', label: 'CO₂ safety level for the crop (ppm)', min: 300, max: 10000, step: '1',
     hint: 'At or above it the air exchange runs with no time limit and a critical alarm is raised. Not a limit for people: 5000 ppm over 8 h.' },
   { key: 'exchangeMaxMin', label: 'Air exchange time limit (min)', min: 1, max: 120, step: '1' },
+  { key: 'exchangeEveryMin', label: 'Fresh air at least every (min)', min: 0, max: 240, step: '1',
+    hint: 'With no air exchange for this long, the fans run for 1 min whatever the CO₂. 0 turns it off.' },
   { key: 'acDrop', label: 'Aircon lower during air exchange (°C)', min: 0, max: 10, step: '0.5',
     hint: 'The aircon already runs at full power during an exchange, so this rarely helps; 0 keeps it at the middle of the band.' },
 ];
@@ -122,8 +127,8 @@ export function locateSafetyField(field) {
   return SAFETY_FIELDS.find((f) => f.key === field) ?? null;
 }
 
-// Checks the typed safety values like the server (acDrop only when given). → { field, message } or null.
-export function checkSafety(co2High, co2Safety, exchangeMaxMin, acDrop) {
+// Checks the typed safety values like the server (acDrop and exchangeEveryMin only when given). → { field, message } or null.
+export function checkSafety(co2High, co2Safety, exchangeMaxMin, acDrop, exchangeEveryMin) {
   if (!Number.isFinite(co2Safety) || co2Safety > 10000) return { field: 'co2Safety', message: 'CO₂ safety level must be a number up to 10000 ppm' };
   if (co2Safety <= co2High) return { field: 'co2Safety', message: 'CO₂ safety level must be above the CO₂ band upper limit' };
   if (!Number.isInteger(exchangeMaxMin) || exchangeMaxMin < 1 || exchangeMaxMin > 120) {
@@ -131,6 +136,9 @@ export function checkSafety(co2High, co2Safety, exchangeMaxMin, acDrop) {
   }
   if (acDrop !== undefined && (!Number.isFinite(acDrop) || acDrop < 0 || acDrop > 10)) {
     return { field: 'acDrop', message: 'Aircon lower during air exchange must be a number from 0 to 10 °C' };
+  }
+  if (exchangeEveryMin !== undefined && (!Number.isInteger(exchangeEveryMin) || exchangeEveryMin < 0 || exchangeEveryMin > 240)) {
+    return { field: 'exchangeEveryMin', message: 'Fresh air interval must be a whole number from 0 to 240 min (0: off)' };
   }
   return null;
 }

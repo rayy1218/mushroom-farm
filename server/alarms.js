@@ -4,6 +4,7 @@
 
 const MIN_MS = 60_000;
 const EPS = 1e-9; // for limits like tHigh + 0.8
+const HUMIDIFIER_DELAY = 30 * MIN_MS; // the humidifier too small: running this long with the humidity below the band
 
 const num = (x) => String(Math.round(x * 10) / 10);
 
@@ -99,6 +100,21 @@ export function createAlarms({ db, now = Date.now }) {
         released: cappedInRow === 0,
         text: () => `Air exchange too small: ${cappedInRow} exchanges in a row stopped at the ${bands.exchangeMaxMin} min limit before CO₂ reached ${bands.co2Low} ppm`,
       });
+
+      // A humidifier too small for the room: running (switched on and drawing current) for HUMIDIFIER_DELAY with the humidity
+      // still below the band. Not from a faulty probe; a missing reading pauses the count.
+      const humidifierOn = machines?.relay?.machines?.find((x) => x.key === 'humidifier')?.status === 'on';
+      if (clear.rh) {
+        if (active.has('humidifierTooSmall')) db.clearAlarm(room.id, 'humidifierTooSmall', now());
+        pending.delete(`${room.id}/humidifierTooSmall`);
+      } else {
+        const rh = readings.rh;
+        apply(room, active, 'humidifierTooSmall', 'warning', HUMIDIFIER_DELAY, rh === null || rh === undefined ? null : {
+          hit: humidifierOn && rh < bands.rhLow,
+          released: !humidifierOn || rh >= bands.rhLow,
+          text: () => `Humidifier too small: running ${HUMIDIFIER_DELAY / MIN_MS} min and the humidity is still ${num(rh)} %, below ${bands.rhLow}`,
+        });
+      }
 
       for (const key of MACHINE_KEYS) {
         const m = key === 'ac' ? machines?.ac : machines?.relay?.machines?.find((x) => x.key === key);

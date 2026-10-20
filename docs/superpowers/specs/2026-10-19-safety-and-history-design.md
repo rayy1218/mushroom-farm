@@ -27,7 +27,7 @@ Every cycle, for every room (auto on or off), the latest reading of each wired s
 
 | State | Condition (checked in this order) | Result | Reason text |
 |---|---|---|---|
-| any | CO₂ sensor faulty | **timed exchange**: on for 10 min, then off for 20 min *default*, repeating (from `exchangeSince` / `exchangeEndedAt`) | "CO₂ sensor fault: timed air exchange, 10 min of every 30" |
+| any | CO₂ sensor faulty | **timed exchange**: on for 10 min, then off for 20 min *default* (at most the fresh-air interval, 2.6), repeating (from `exchangeSince` / `exchangeEndedAt`) | "CO₂ sensor fault: timed air exchange, 10 min of every 30" ("of every 25" with fresh air every 15 min) |
 | any | no good CO₂ reading this cycle (bad or missing, not yet faulty) | kept | "CO₂ reading not usable: air exchange kept on/off" |
 | off | CO₂ ≥ safety level | on at once (ignores the minimum off time) | "Air exchange: CO₂ 1300 ≥ safety level 1250" |
 | off | CO₂ ≥ upper limit and off for ≥ 60 s | on | "Air exchange: CO₂ 762 ≥ 750" |
@@ -39,6 +39,21 @@ Every cycle, for every room (auto on or off), the latest reading of each wired s
 | on | otherwise | stays on | as iteration 5 |
 
 After a stop at the limit the band rule applies again: CO₂ between the limits keeps the exchange off, so it only restarts at the upper limit. This ends the never-ending exchange of iteration 5. `cappedInRow` ≥ 3 raises "Air exchange too small" (3.1). The safety level and the time limit apply only with auto on; with auto off the safety alarm is still raised.
+
+### 2.6 Fresh air at least every N minutes (owner, 2026-10-20)
+
+The owner's rule: when the fans have not run in the last 15 minutes, run an air exchange. Mushrooms need fresh air even when the CO₂ stays low (a room with few blocks never reaches its upper limit). The lead chose the run length and the details (*default*).
+
+| Item | Behaviour |
+|---|---|
+| Setting | `exchangeEveryMin` "Fresh air at least every (min)": 15 *default* for new and existing rooms (upgrade 10); whole number 0–240, 0 turns the rule off ("Fresh air interval must be a whole number from 0 to 240 min (0: off)", field `exchangeEveryMin`) |
+| Start | the exchange is off and the wait has run for `exchangeEveryMin` (the CO₂ does not matter, even a missing CO₂ reading); reason "Fresh air: no air exchange for 15 min, fans on for 1 min" |
+| Wait counted from | the end of the last air exchange of any kind; after turning auto on, from the first cycle (state `freshFrom`, kept in the database) |
+| Run | intake + exhaust for 1 min *default*, even below the lower CO₂ limit (state `exchangeForced`); reason "Fresh air: fans on, 20 s to go", then "Fresh air done: fans ran 1 min"; not counted by `cappedInRow` |
+| CO₂ reaches the upper limit during the run | the run becomes a normal exchange (2.1) from its start time |
+| CO₂ sensor fault | the timed exchange takes over; its rest is at most `exchangeEveryMin` |
+| Room page | the input sits with the safety inputs; the state line "Fresh air on since 10:42 (stops by 10:43)"; `exchangeEndsAt` = start + 1 min |
+| Humidifier, aircon | as for any exchange (forced humidifier, aircon drop) |
 
 ### 2.2 Humidifier
 
@@ -72,6 +87,7 @@ The humidifier and aircon change times are kept in memory per room (the last tim
 |---|---|---|---|
 | `co2Safety` | CO₂ safety level (ppm) | 1250 for a new room *default*; the upgrade gives an existing room its `co2High` + 500 (v1's rule), from 1250 to 10 000 | above `co2High`, at most 10 000 ("CO₂ safety level must be above the CO₂ band upper limit", field `co2Safety`). That comparison is only checked when the body sets `co2High` or `co2Safety`, so switching auto, the humidifier option or the fan is never refused because of it. |
 | `exchangeMaxMin` | Air exchange time limit (min) | 10 *default* | whole number 1–120 ("Air exchange time limit must be a whole number from 1 to 120 min") |
+| `exchangeEveryMin` | Fresh air at least every (min) | 15 (2.6) | whole number 0–240, 0: off |
 
 ## 3. Alarms
 
@@ -86,6 +102,7 @@ The humidifier and aircon change times are kept in memory per room (the last tim
 | `co2High` | warning | CO₂ > co2High + 100 | CO₂ ≤ co2High + 80 | 5 min | "CO₂ 880 ppm, above 750 + 100" |
 | `co2Safety` | critical | CO₂ ≥ co2Safety | CO₂ < co2Safety − 20 | 60 s | "CO₂ 1300 ppm, at or above the safety level 1250" |
 | `sensorTrh` / `sensorCo2` | serious | sensor faulty (1) | fault ends | none | "T/RH probe fault: value does not change (frozen)" |
+| `humidifierTooSmall` | warning | the humidifier is running (status `on`) with RH < rhLow | RH ≥ rhLow, or the humidifier stops | 30 min | "Humidifier too small: running 30 min and the humidity is still 80 %, below 85" (added 2026-10-20: a 0.5 L/h humidifier in a 120 m³ room) |
 | `exchangeTooSmall` | warning | `cappedInRow` reaches 3 | an exchange ends at the lower limit, or auto turned off | none | "Air exchange too small: 3 exchanges in a row stopped at the 10 min limit before CO₂ reached 600 ppm" |
 | `machine.<key>` (intake, exhaust, circulation, humidifier, ac) | serious | the machine's status is `not-following`, `not-running`, `running-while-off`, `fault` or `no-answer` for 60 s | status is anything else | 60 s | "Exhaust fan: not running (switch on, no current)" |
 

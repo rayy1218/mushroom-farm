@@ -29,7 +29,7 @@ test('CO2 at the upper limit starts an air exchange, the lower limit ends it', a
   const poller = createPoller({ db, client, intervalMs: 60_000, now, log: () => {}, afterCycle: (start) => controller.run(start) });
   const machines = createMachines({ db, client, poller, now });
   controller = createController({ db, machines, now });
-  controller.update(room.id, { auto: true, acDrop: 5 }); // lowers the aircon 5 °C during an exchange (a new room: 0)
+  controller.update(room.id, { auto: true, acDrop: 5, exchangeEveryMin: 0 }); // lowers the aircon 5 °C during an exchange (a new room: 0); CO2 rule only
 
   t.after(async () => {
     await poller.stop();

@@ -8,7 +8,7 @@ import { createAlarms } from './alarms.js';
 
 export const DEFAULTS = {
   auto: false, co2Low: 600, co2High: 750, tLow: 21, tHigh: 23, rhLow: 85, rhHigh: 95, humidifierDuringExchange: false, acFan: 'auto',
-  co2Safety: 1250, exchangeMaxMin: 10, acDrop: 0,
+  co2Safety: 1250, exchangeMaxMin: 10, acDrop: 0, exchangeEveryMin: 15,
 };
 export const AC_FANS = ['auto', 'low', 'high'];
 
@@ -29,6 +29,8 @@ const MIN_ON_MS = 30_000; // air exchange
 const MIN_OFF_MS = 60_000;
 const TIMED_EXCHANGE_ON_MS = 10 * 60_000; // CO₂ sensor fault: on 10 min of every 30
 const TIMED_EXCHANGE_OFF_MS = 20 * 60_000;
+const FRESH_AIR_RUN_MS = 60_000; // a fresh-air run (no air exchange for exchangeEveryMin): the fans run this long
+const EVERY_MAX = 240; // min, the longest fresh-air interval
 const TIMED_HUMIDIFIER_MS = 10 * 60_000; // T/RH probe fault: 10 min on, 10 min off
 const HUMIDIFIER_HOLD_MS = 60_000; // the command changes at most once a minute
 const AC_HOLD_MS = 120_000; // at most one changed aircon command every 2 min
@@ -47,10 +49,12 @@ function wait(ms) {
 const acDiffers = (a, d) => a.power !== d.power || a.mode !== d.mode || a.fan !== d.fan
   || Math.round(a.setpoint * 10) !== Math.round(d.setpoint * 10);
 
-// bands: { co2Low, co2High, co2Safety, exchangeMaxMin, tLow, tHigh, rhLow, rhHigh, acDrop } (acDrop: °C lower during an
-// air exchange, 0 when missing).
-// state: { exchange, exchangeSince, exchangeEndedAt, cappedInRow, humidifier, humidifierSince }, the remembered states
-// (times in ms; exchangeSince is null while the exchange is off, exchangeEndedAt null when it never ended).
+// bands: { co2Low, co2High, co2Safety, exchangeMaxMin, exchangeEveryMin, tLow, tHigh, rhLow, rhHigh, acDrop } (acDrop: °C
+// lower during an air exchange, 0 when missing; exchangeEveryMin: fresh air at least this often, 0 or missing: off).
+// state: { exchange, exchangeSince, exchangeEndedAt, exchangeForced, freshFrom, cappedInRow, humidifier, humidifierSince },
+// the remembered states (times in ms; exchangeSince is null while the exchange is off, exchangeEndedAt null when it never
+// ended; exchangeForced: the running exchange is a fresh-air run; freshFrom: the fresh-air wait counts from then, null:
+// from the last end, or from now when it never ended).
 // humidifierDuringExchange: whether an air exchange forces the humidifier on (default false).
 // acFan: the aircon fan, 'auto' | 'low' | 'high' (default 'auto').
 // readings: { co2, rh }, null when the sensor gave nothing usable this cycle (that rule then keeps its state).
@@ -64,27 +68,49 @@ export function decide({ bands, state, readings, faults, now, humidifierDuringEx
   let since = state.exchangeSince ?? (was ? now : null);
   let endedAt = state.exchangeEndedAt ?? null;
   let capped = state.cappedInRow ?? 0;
+  let freshRun = was && Boolean(state.exchangeForced);
+  let freshFrom = state.freshFrom ?? endedAt ?? now;
   let band = state.humidifier;
   let humidifierSince = null;
   const reasons = {};
 
-  const start = () => { exchange = true; since = now; };
-  const stop = () => { exchange = false; since = null; endedAt = now; };
+  const start = () => { exchange = true; since = now; freshRun = false; };
+  const stop = () => { exchange = false; since = null; endedAt = now; freshRun = false; freshFrom = now; };
   const onFor = was ? now - since : 0;
   const offFor = was || endedAt === null ? Infinity : now - endedAt;
   const { co2Low, co2High, co2Safety } = bands;
+  // Fresh air: with no air exchange for `every` ms, the fans run for FRESH_AIR_RUN_MS whatever the CO2.
+  const every = (bands.exchangeEveryMin ?? 0) * 60_000;
+  const freshDue = !was && every > 0 && now - freshFrom >= every;
+  const startFresh = () => {
+    start();
+    freshRun = true;
+    reasons.exchange = `Fresh air: no air exchange for ${bands.exchangeEveryMin} min, fans on for ${FRESH_AIR_RUN_MS / 60_000} min`;
+  };
+  // The timed exchange of a CO2 fault rests at most the fresh-air interval.
+  const timedOff = every > 0 ? Math.min(TIMED_EXCHANGE_OFF_MS, every) : TIMED_EXCHANGE_OFF_MS;
 
   // Air exchange: on at or above the upper CO2 limit, off at or below the lower, kept between; at the safety level
   // it starts at once and has no time limit; otherwise it stops at the time limit.
   if (faults?.co2) {
+    freshRun = false; // the timed exchange takes over a fresh-air run
     if (was) {
       if (onFor >= TIMED_EXCHANGE_ON_MS) stop();
-    } else if (offFor >= TIMED_EXCHANGE_OFF_MS) {
+    } else if (offFor >= timedOff) {
       start();
     }
-    reasons.exchange = 'CO₂ sensor fault: timed air exchange, 10 min of every 30';
+    reasons.exchange = `CO₂ sensor fault: timed air exchange, 10 min of every ${(TIMED_EXCHANGE_ON_MS + timedOff) / 60_000}`;
+  } else if (freshRun && (co2 === null || co2 < co2High)) {
+    // A fresh-air run: its minute, even below the lower limit; one that reaches the upper limit goes on below as normal.
+    if (onFor >= FRESH_AIR_RUN_MS) {
+      stop();
+      reasons.exchange = `Fresh air done: fans ran ${FRESH_AIR_RUN_MS / 60_000} min`;
+    } else {
+      reasons.exchange = `Fresh air: fans on, ${wait(FRESH_AIR_RUN_MS - onFor)} to go`;
+    }
   } else if (co2 === null) {
-    reasons.exchange = `CO₂ reading not usable: air exchange kept ${word(exchange)}`;
+    if (freshDue) startFresh();
+    else reasons.exchange = `CO₂ reading not usable: air exchange kept ${word(exchange)}`;
   } else if (!was) {
     if (co2 >= co2Safety) {
       start();
@@ -96,14 +122,18 @@ export function decide({ bands, state, readings, faults, now, humidifierDuringEx
       } else {
         reasons.exchange = `Air exchange waits: minimum off time, ${wait(MIN_OFF_MS - offFor)} to go`;
       }
+    } else if (freshDue) {
+      startFresh();
     } else if (co2 <= co2Low) {
       reasons.exchange = `Air exchange: CO₂ ${num(co2)} ≤ ${co2Low}`;
     } else {
       reasons.exchange = `Air exchange kept off: CO₂ ${num(co2)} between ${co2Low} and ${co2High}`;
     }
   } else if (co2 >= co2Safety) {
+    freshRun = false;
     reasons.exchange = `Air exchange: CO₂ ${num(co2)} ≥ safety level ${co2Safety}, no time limit`;
   } else if (co2 <= co2Low) {
+    freshRun = false;
     if (onFor >= MIN_ON_MS) {
       stop();
       capped = 0;
@@ -116,6 +146,7 @@ export function decide({ bands, state, readings, faults, now, humidifierDuringEx
     capped++;
     reasons.exchange = `Air exchange stopped at the ${bands.exchangeMaxMin} min limit: CO₂ ${num(co2)} above ${co2Low}`;
   } else if (co2 >= co2High) {
+    freshRun = false;
     reasons.exchange = `Air exchange: CO₂ ${num(co2)} ≥ ${co2High}`;
   } else {
     reasons.exchange = `Air exchange kept on: CO₂ ${num(co2)} between ${co2Low} and ${co2High}`;
@@ -157,7 +188,10 @@ export function decide({ bands, state, readings, faults, now, humidifierDuringEx
   reasons.circulation = 'Circulation: always on';
 
   return {
-    state: { exchange, exchangeSince: since, exchangeEndedAt: endedAt, cappedInRow: capped, humidifier: band, humidifierSince },
+    state: {
+      exchange, exchangeSince: since, exchangeEndedAt: endedAt, exchangeForced: freshRun, freshFrom,
+      cappedInRow: capped, humidifier: band, humidifierSince,
+    },
     desired: {
       intake: exchange,
       exhaust: exchange,
@@ -218,6 +252,9 @@ export function validateControl(c, { compareSafety = true } = {}) {
   if (typeof c.acDrop !== 'number' || !Number.isFinite(c.acDrop) || c.acDrop < 0 || c.acDrop > AC_DROP_MAX) {
     return { error: `Aircon lower during air exchange must be a number from 0 to ${AC_DROP_MAX} °C`, field: 'acDrop' };
   }
+  if (!Number.isInteger(c.exchangeEveryMin) || c.exchangeEveryMin < 0 || c.exchangeEveryMin > EVERY_MAX) {
+    return { error: `Fresh air interval must be a whole number from 0 to ${EVERY_MAX} min (0: off)`, field: 'exchangeEveryMin' };
+  }
   return null;
 }
 
@@ -256,10 +293,11 @@ export function createController({ db, machines, now = Date.now, log = console.e
   }
 
   // When the running exchange is planned to stop: the time limit after its start, 10 min for a timed exchange (CO₂ sensor
-  // fault); null when off, with auto off, or while the CO₂ is at the safety level (no limit).
+  // fault), 1 min for a fresh-air run; null when off, with auto off, or while the CO₂ is at the safety level (no limit).
   function exchangeEndsAt(roomId, c) {
     if (!c.auto || !c.exchange || c.exchangeSince === null) return null;
     if (checks.get(roomId).co2?.fault) return c.exchangeSince + TIMED_EXCHANGE_ON_MS;
+    if (c.exchangeForced) return c.exchangeSince + FRESH_AIR_RUN_MS;
     if ((lastCo2.get(roomId) ?? 0) >= c.co2Safety) return null;
     return c.exchangeSince + c.exchangeMaxMin * 60_000;
   }
@@ -328,6 +366,7 @@ export function createController({ db, machines, now = Date.now, log = console.e
         bands: c,
         state: {
           exchange: c.exchange, exchangeSince: c.exchangeSince, exchangeEndedAt: c.exchangeEndedAt,
+          exchangeForced: c.exchangeForced, freshFrom: c.freshFrom,
           cappedInRow: c.cappedInRow, humidifier: c.humidifier, humidifierSince: c.humidifierSince,
         },
         readings: { rh: good.rh, co2: good.co2 },
@@ -395,7 +434,7 @@ export function createController({ db, machines, now = Date.now, log = console.e
 
     forget,
 
-    // Applies any of auto, humidifierDuringExchange, acFan, co2Safety, exchangeMaxMin and the six limits and returns the view like get.
+    // Applies any of auto, humidifierDuringExchange, acFan, co2Safety, exchangeMaxMin, acDrop, exchangeEveryMin and the six limits and returns the view like get.
     // Returns null when there is no such room; throws CommandError (400, with field) for a bad value.
     update(roomId, body) {
       const current = db.getControl(roomId);
@@ -418,6 +457,7 @@ export function createController({ db, machines, now = Date.now, log = console.e
         db.setControlState(roomId, { exchange: false, humidifier: false }, now());
         db.setControlState(roomId, {
           exchange: relay.intake, humidifier: relay.humidifier, exchangeEndedAt: null, cappedInRow: 0, humidifierSince: null,
+          exchangeForced: false, freshFrom: null, // the fresh-air wait counts from the first cycle
         }, now());
       } else if (!merged.auto && current.auto) {
         // Turning auto off: nothing is switched; the "too small" count and the timed humidifier start over.

@@ -2,7 +2,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { RANGES, rangeOf, timeTicks, historyPoints, timelineSpans, acMarks, thinMarks, tickCountFor, chartDrawKey, TIMELINE_ROWS, formatStamp } from '../web/history-math.js';
+import { RANGES, rangeOf, timeTicks, historyPoints, timelineSpans, acMarks, thinMarks, markLabel, tickCountFor, chartDrawKey, TIMELINE_ROWS, formatStamp } from '../web/history-math.js';
 
 const at = (d, h, m = 0) => new Date(2026, 9, d, h, m).getTime();
 
@@ -113,4 +113,13 @@ test('the chart redraw key changes with the bands, the sensor statuses and the r
   assert.notEqual(chartDrawKey({ tLow: 21 }, { ...sensors, co2: { status: 'offline' } }, room), key);
   assert.notEqual(chartDrawKey({ tLow: 21 }, sensors, { ...room, relayAddress: null }), key);
   assert.notEqual(chartDrawKey({ tLow: 21 }, sensors, { ...room, acAddress: 9 }), key);
+});
+
+test('markLabel: a label right of its mark, or left of it when it would run past the right edge', () => {
+  assert.deepEqual(markLabel(100, '22 °C', 400), { x: 103, anchor: 'start' });
+  // 5 characters at 11 px: about 33 px wide
+  assert.deepEqual(markLabel(365, '22 °C', 400), { x: 362, anchor: 'end' });
+  assert.deepEqual(markLabel(390, '22 °C', 400), { x: 387, anchor: 'end' });
+  assert.deepEqual(markLabel(364, '22 °C', 400), { x: 367, anchor: 'start' }, 'fits exactly');
+  assert.deepEqual(markLabel(398, '17.5 °C', 400, 12), { x: 395, anchor: 'end' });
 });
