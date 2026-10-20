@@ -36,6 +36,7 @@ test('nextStage: spawn → pinning → fruiting ⇄ rest, done after the last fl
   assert.deepEqual(nextStage(prog({ stage: 'rest', flush: 1 })), { stage: 'fruiting', flush: 2, done: false });
   assert.deepEqual(nextStage(prog({ stage: 'fruiting', flush: 4 })), { stage: 'rest', flush: 4, done: true });
   assert.equal(nextStage(prog({ stage: 'rest', flush: 4, done: true })), null);
+  assert.equal(nextStage(prog({ stage: 'rest', flush: 4, done: false })), null, 'never past the last flush');
 });
 
 test('stageEndsAt: since + the stage days; null without crops, auto off, at the end or before a start', () => {
@@ -63,7 +64,8 @@ test('startStage ramps from the present bands to the crop bands; a lower CO₂ l
   assert.deepEqual(now.ramp.from, to);
   assert.deepEqual(bandsAt(now, T0), to);
   assert.equal(startStage(prog({ farmType: 'full', flush: 3 }), 'spawn', T0, OWN).flush, 1);
-  assert.equal(startStage(prog({ flush: 3, done: true }), 'fruiting', T0, OWN).flush, 3);
+  assert.equal(startStage(prog({ flush: 3 }), 'fruiting', T0, OWN).flush, 3, 'by hand: the flush is kept');
+  assert.equal(startStage(prog({ flush: 3, done: true }), 'fruiting', T0, OWN).flush, 1, 'a done program: new blocks, flush 1');
   assert.equal(startStage(prog({ flush: 3, done: true }), 'fruiting', T0, OWN).done, false);
 });
 

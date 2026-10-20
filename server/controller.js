@@ -461,8 +461,8 @@ export function createController({ db, machines, now = Date.now, log = console.e
       const bad = validateControl(merged, { compareSafety: 'co2High' in body || 'co2Safety' in body });
       if (bad) throw new CommandError(400, bad.error, bad.field);
       db.setControl(roomId, merged);
-      // A person's change of a band ends a running ramp.
-      if (BAND_KEYS.some((k) => k in body)) {
+      // A person's change of a band ends a running ramp (a band sent unchanged, e.g. with another setting, does not).
+      if (BAND_KEYS.some((k) => k in body && body[k] !== current[k])) {
         const program = db.getProgram(roomId);
         if (program.ramp) db.setProgram(roomId, { ...program, ramp: null });
       }

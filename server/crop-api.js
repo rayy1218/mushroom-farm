@@ -2,7 +2,7 @@
 
 import { CommandError } from './machines.js';
 import { mixBands, rangeWarnings } from '../web/crops.js';
-import { BAND_KEYS, validateProgram, nextStage, stageEndsAt, startStage } from './program.js';
+import { validateProgram, nextStage, stageEndsAt, startStage, FIRST_STAGE } from './program.js';
 
 // db: the farm database. now is injectable.
 export function createCropApi({ db, now = Date.now }) {
@@ -40,13 +40,25 @@ export function createCropApi({ db, now = Date.now }) {
       const next = { ...was };
       for (const key of ['crops', 'farmType', 'stage', 'flushes', 'rampH', 'autoAdvance']) if (key in body) next[key] = body[key];
       if ('days' in body) next.days = body.days !== null && typeof body.days === 'object' && !Array.isArray(body.days) ? { ...was.days, ...body.days } : body.days;
+      // Crops set again on a done room are new blocks: flush 1 from the farm type's first stage (unless a stage is given).
+      const newBlocks = was.done && 'crops' in body && Array.isArray(body.crops) && body.crops.length > 0;
+      if (newBlocks) {
+        next.flush = 1;
+        next.done = false;
+        if (!('stage' in body)) next.stage = FIRST_STAGE[next.farmType] ?? 'fruiting';
+      } else if (was.done && 'flushes' in body && Number.isInteger(body.flushes) && body.flushes > was.flush) {
+        next.done = false; // more flushes: the rest goes on to the next fruiting
+      }
+      if (Number.isInteger(next.flushes) && next.flushes < next.flush && !newBlocks) {
+        throw new CommandError(400, `Flushes must be at least the present flush (${next.flush})`, 'flushes');
+      }
       const bad = validateProgram(next);
       if (bad) throw new CommandError(400, bad.error, bad.field);
 
       let program = next;
       if (next.crops.length === 0) {
         if ('crops' in body) program = { ...next, ramp: null }; // the bands stay as they are
-      } else if ('stage' in body || was.crops.length === 0) {
+      } else if ('stage' in body || was.crops.length === 0 || newBlocks) {
         const control = db.getControl(roomId);
         program = startStage(next, next.stage, now(), control, { ramp: body.applyNow !== true });
         // At once: the controller writes a ramp each cycle, but a stage without one is written now.

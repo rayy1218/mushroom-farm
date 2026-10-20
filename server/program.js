@@ -18,6 +18,9 @@ export const PROGRAM_DEFAULTS = {
   days: { spawn: 21, pinning: 4, fruiting: 7, rest: 10 }, rampH: 4, autoAdvance: true, ramp: null, done: false,
 };
 
+// The first stage of each farm type (new blocks start there).
+export const FIRST_STAGE = Object.fromEntries(Object.entries(FARM_TYPES).map(([k, t]) => [k, t.stages[0]]));
+
 const roundTo = (v, step) => Math.round(Math.round(v / step) * step * 10) / 10;
 const pick = (bands) => Object.fromEntries(BAND_KEYS.map((k) => [k, bands[k]]));
 
@@ -47,7 +50,7 @@ export function nextStage(p) {
   if (p.stage === 'spawn') return { stage: 'pinning', flush: 1, done: false };
   if (p.stage === 'pinning') return { stage: 'fruiting', flush: 1, done: false };
   if (p.stage === 'fruiting') return { stage: 'rest', flush: p.flush, done: p.flush >= p.flushes };
-  return p.done ? null : { stage: 'fruiting', flush: p.flush + 1, done: false };
+  return p.done || p.flush >= p.flushes ? null : { stage: 'fruiting', flush: p.flush + 1, done: false };
 }
 
 // When the present stage ends and the next starts (ms), or null: no crops, automatic change off, nothing follows, or no start.
@@ -58,8 +61,8 @@ export function stageEndsAt(p) {
 
 // The program with `stage` started at `now`: the bands move from `currentBands` to the crops' bands of the stage over rampH
 // (none when rampH is 0 or ramp is false: the new bands at once). A lower CO₂ upper limit takes effect at once with its lower
-// limit and safety level. flush and done: for the next stage (advance); a stage started by hand keeps the flush (spawn and
-// pinning: 1) and is not done.
+// limit and safety level. flush and done: for the next stage (advance); a stage started by hand keeps the flush, except
+// spawn, pinning and any stage of a done program (new blocks): flush 1; it is not done.
 export function startStage(p, stage, now, currentBands, { ramp = true, flush, done } = {}) {
   const to = mixBands(p.crops, stage).bands;
   const from = pick(currentBands);
@@ -73,7 +76,7 @@ export function startStage(p, stage, now, currentBands, { ramp = true, flush, do
     ...p,
     stage,
     stageSince: now,
-    flush: flush ?? (stage === 'spawn' || stage === 'pinning' ? 1 : p.flush),
+    flush: flush ?? (stage === 'spawn' || stage === 'pinning' || p.done ? 1 : p.flush),
     done: done ?? false,
     ramp: { from: hours > 0 ? from : to, to, startAt: now, endAt: now + hours * HOUR_MS },
   };

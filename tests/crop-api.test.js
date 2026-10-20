@@ -199,3 +199,54 @@ test('PUT control with a band field ends a running ramp; other fields leave it',
   assert.equal((await get()).body.ramp, null);
   assert.equal(db.getProgram(id).stage, 'fruiting');
 });
+
+// ---- review fixes: new blocks after the last flush, flushes, a band sent unchanged ----
+
+const doneProgram = () => {
+  const p = db.getProgram(id);
+  db.setProgram(id, { ...p, crops: OYSTER, stage: 'rest', flush: 4, done: true, stageSince: Date.now(), ramp: null });
+};
+
+test('crops set again on a done room: new blocks from flush 1 in the first stage, not done', async () => {
+  doneProgram();
+  const r = await put({ crops: [{ crop: 'oyster', blocks: 200 }] });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.done, false);
+  assert.equal(r.body.flush, 1);
+  assert.equal(r.body.stage, 'fruiting');
+  assert.ok(r.body.ramp, 'the stage started');
+  assert.equal(r.body.nextStage.stage, 'rest');
+});
+
+test('a stage started by hand on a done room starts at flush 1', async () => {
+  doneProgram();
+  const r = await put({ stage: 'fruiting' });
+  assert.equal(r.body.flush, 1);
+  assert.equal(r.body.done, false);
+});
+
+test('more flushes on a done room: the rest goes on to the next fruiting', async () => {
+  doneProgram();
+  const r = await put({ flushes: 5 });
+  assert.equal(r.body.done, false);
+  assert.deepEqual([r.body.nextStage.stage, r.body.nextStage.flush], ['fruiting', 5]);
+});
+
+test('flushes below the present flush: 400 on flushes', async () => {
+  await put({ crops: OYSTER });
+  const p = db.getProgram(id);
+  db.setProgram(id, { ...p, flush: 3 });
+  const r = await put({ flushes: 2 });
+  assert.equal(r.status, 400);
+  assert.deepEqual(r.body, { error: 'Flushes must be at least the present flush (3)', field: 'flushes' });
+});
+
+test('a control save that sends the bands unchanged does not end the ramp; a changed band does', async () => {
+  await put({ crops: OYSTER });
+  const control = (await call('GET', `/api/rooms/${id}/control`)).body;
+  const six = bandsOf(control);
+  await call('PUT', `/api/rooms/${id}/control`, { ...six, exchangeMaxMin: 12 });
+  assert.ok((await get()).body.ramp, 'kept');
+  await call('PUT', `/api/rooms/${id}/control`, { ...six, tLow: six.tLow - 1 });
+  assert.equal((await get()).body.ramp, null, 'ended');
+});

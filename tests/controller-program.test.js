@@ -128,14 +128,17 @@ test('with auto off the program still advances and writes the bands', async (t) 
   assert.equal(db0(s).stage, 'rest');
 });
 
-test('bands are written only on a change', async (t) => {
+test('bands are written only on a change: during a ramp, not on every cycle', async (t) => {
   const s = setup(t);
-  begin(s, 'fruiting', 0);
+  begin(s, 'fruiting', 4);
   await s.cycle();
   let writes = 0;
   const real = s.db.setControl;
   s.db.setControl = (...a) => { writes++; return real.apply(s.db, a); };
-  await s.cycle();
-  await s.cycle();
-  assert.equal(writes, 0);
+  // 10 cycles 1 s apart: the rounded bands (T 0.1 °C over a 3 °C, 4 h ramp: every 8 min) change at most once
+  for (let i = 0; i < 10; i++) await s.cycle({ dt: 1000 });
+  assert.ok(writes <= 1, `${writes} writes`);
+  const before = writes;
+  await s.cycle({ dt: HOUR });
+  assert.equal(writes, before + 1, 'an hour later the bands moved: one write');
 });
