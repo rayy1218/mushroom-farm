@@ -17,7 +17,7 @@ let jobs;
 
 before(async () => {
   db = openDb(':memory:');
-  sims = createSimulations({ db, spawn: (job, handlers) => { jobs.push({ job, handlers }); return { stop() {} }; } });
+  sims = createSimulations({ db, spawn: (job, handlers) => { const j = { job, handlers, stopped: false }; jobs.push(j); return { stop() { j.stopped = true; } }; } });
   server = createApp(db, { simulations: sims });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   base = `http://127.0.0.1:${server.address().port}`;
@@ -114,4 +114,13 @@ test('deleting the room deletes its runs', async () => {
   const run = (await call('POST', `/api/rooms/${id}/simulations`, body())).body;
   assert.equal((await call('DELETE', `/api/rooms/${id}`)).status, 204);
   assert.equal((await call('GET', `/api/simulations/${run.id}`)).status, 404);
+});
+
+test('the 6th unfinished run of a room is a 409, and deleting the room stops its worker', async () => {
+  const id = newRoom();
+  for (let i = 0; i < 5; i++) assert.equal((await call('POST', `/api/rooms/${id}/simulations`, body())).status, 202);
+  const sixth = await call('POST', `/api/rooms/${id}/simulations`, body());
+  assert.deepEqual(sixth, { status: 409, body: { error: 'This room already has 5 simulations waiting or running' } });
+  assert.equal((await call('DELETE', `/api/rooms/${id}`)).status, 204);
+  assert.equal(jobs[0].stopped, true);
 });

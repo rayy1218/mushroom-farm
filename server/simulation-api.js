@@ -14,7 +14,7 @@ export function createSimulationRoutes({ db, simulations }) {
       if (!db.getRoom(roomId)) throw new HttpError(404, 'Room not found');
       if (req.method === 'GET') return send(res, 200, db.listRuns(roomId)) ?? true;
       const result = simulations.start(roomId, await readJson(req));
-      if (result.error) throw new HttpError(400, result.error, result.field);
+      if (result.error) throw new HttpError(result.conflict ? 409 : 400, result.error, result.field);
       return send(res, 202, result.run) ?? true;
     }
     const run = RUN_ROUTE.exec(path);

@@ -108,3 +108,25 @@ test('a room without a stored program uses the defaults; a stored one is used', 
   assert.deepEqual(r.stages.map((x) => x.stage), ['fruiting', 'rest', 'fruiting']);
   assert.deepEqual(r.stages.map((x) => x.flush), [1, 1, 2]);
 });
+
+test('a room without a stored program runs the default one: fruiting 7 days, then rest', () => {
+  const r = simulate(input({ days: 8 }), ctx({ program: null }));
+  assert.deepEqual(r.stages.map((x) => [x.stage, x.flush, x.from]), [['fruiting', 1, 0], ['rest', 1, 604800]]);
+});
+
+test('the control settings and the machine protection reach the run', () => {
+  const run = (control) => simulate(input(), ctx({ control: { ...DEFAULTS, ...control } }));
+  // Machine protection: the humidifier keeps each state at least a minute (the last span may be cut by the end of the run).
+  const hum = run({}).machines.humidifier;
+  assert.ok(hum.length > 3);
+  for (const sp of hum.slice(0, -1)) assert.ok(sp.to - sp.from >= 60, `${sp.from}-${sp.to}`);
+  // Fresh air: fifteen-minute interval gives one-minute fan runs; interval 0 gives none.
+  const oneMinute = (r) => r.machines.intake.filter((sp) => sp.to - sp.from === 60).length;
+  assert.ok(oneMinute(run({ exchangeEveryMin: 15 })) > 0);
+  assert.equal(oneMinute(run({ exchangeEveryMin: 0 })), 0);
+  // The aircon setpoint drops during an air exchange.
+  const plain = run({ exchangeEveryMin: 0, acDrop: 0 }).machines.ac.map((sp) => sp.setpoint);
+  const lowered = run({ exchangeEveryMin: 0, acDrop: 3 }).machines.ac.map((sp) => sp.setpoint);
+  assert.deepEqual([...new Set(plain)], [25]);
+  assert.ok(lowered.includes(22) && lowered.includes(25));
+});
