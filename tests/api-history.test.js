@@ -112,7 +112,7 @@ test('the bucket queries search the readings_by_time index', (t) => {
   const raw = new DatabaseSync(path);
   t.after(() => raw.close());
   for (const kind of ['trh', 'co2']) {
-    const plan = raw.prepare(`EXPLAIN QUERY PLAN ${HISTORY_SQL.buckets(kind, 60_000)}`).all(1, 0, 1e12).map((r) => r.detail);
+    const plan = raw.prepare(`EXPLAIN QUERY PLAN ${HISTORY_SQL.bucket(kind)}`).all(1, 0, 1e12).map((r) => r.detail);
     const onReadings = plan.filter((d) => /readings/.test(d));
     assert.ok(onReadings.length > 0);
     for (const d of onReadings) assert.match(d, /^SEARCH readings USING (COVERING )?INDEX readings_by_time \(room_id=\? AND kind=\? AND at>\? AND at<\?\)/, d);
@@ -145,6 +145,10 @@ test('the reply of the route has the whole shape', async () => {
   const now = Date.now();
   trh(id, now - 1000, 20, 80);
   const { body } = await get(`/api/rooms/${id}/history?hours=1`);
-  assert.deepEqual(Object.keys(body), ['from', 'to', 'bucketS', 'trh', 'co2', 'machines']);
+  assert.deepEqual(Object.keys(body).sort(), ['bucketS', 'co2', 'from', 'machines', 'pollSeconds', 'to', 'trh']);
   assert.equal(body.trh.length, 1);
+  assert.equal(body.pollSeconds, 5);
+  db.setSetting('pollSeconds', '120');
+  assert.equal((await get(`/api/rooms/${id}/history?hours=1`)).body.pollSeconds, 120);
+  db.setSetting('pollSeconds', '5');
 });

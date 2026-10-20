@@ -96,8 +96,12 @@ function showBadge() {
   if (next !== document.title) document.title = next; // pages set their own title: the observer below puts the prefix back
 }
 
+let badgeSeq = 0;
+
 async function refreshBadge() {
+  const mine = ++badgeSeq;
   const count = await loadBadge();
+  if (mine !== badgeSeq) return; // a newer request was sent meanwhile: its answer wins
   if (count === null) return; // the server did not answer: keep the last number
   badge = count;
   showBadge();
@@ -105,6 +109,7 @@ async function refreshBadge() {
 
 new MutationObserver(showBadge).observe(titleNode, { childList: true });
 setInterval(refreshBadge, BADGE_MS);
+window.addEventListener('farm:alarms-changed', refreshBadge); // after an Acknowledge
 
 window.addEventListener('hashchange', () => { show(); refreshBadge(); });
 show();

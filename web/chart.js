@@ -4,7 +4,7 @@
 import { formatClock, yRange, xFor, segments, nearestIndex } from './chart-math.js';
 
 const NS = 'http://www.w3.org/2000/svg';
-export const M = { left: 46, right: 12, top: 10, bottom: 24 }; // the timeline lines up with these
+export const M = { left: 64, right: 12, top: 10, bottom: 24 }; // the timeline lines up with these
 
 function el(name, attrs = {}, text) {
   const node = document.createElementNS(NS, name);
@@ -95,8 +95,9 @@ export function drawLineChart(host, opts) {
     }
 
     // Time labels: the given ticks, or start, middle and end.
-    if (current.ticks) {
-      for (const tick of current.ticks) {
+    const ticks = current.ticksFor ? current.ticksFor(width) : current.ticks; // ticksFor: recomputed at every redraw
+    if (ticks) {
+      for (const tick of ticks) {
         const x = xFor(tick.at, t0, t1, x0, x1);
         svg.append(el('line', { x1: x, x2: x, y1: y0, y2: y0 + 4, style: 'stroke:var(--axis)', 'stroke-width': 1 }));
         svg.append(el('text', {

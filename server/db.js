@@ -132,18 +132,26 @@ export const STATUS_SQL = {
                                             LIMIT 10000)`,
 };
 
-// Stream B: the history queries (spec 2026-10-19-safety-and-history-design.md 5). Readings are averaged in SQL per time
-// bucket (bucketMs wide, aligned to the epoch; `at` is the bucket middle); it searches the readings_by_time index.
-// Parameters: room id, from, to. bucketMs is a number from our own table, never user text.
+// Stream B: the history queries (spec 2026-10-19-safety-and-history-design.md 5). One query averages one bucket
+// (parameters: room id, from, to; from inclusive, to exclusive). It reads only the covering readings_by_time index and
+// has no GROUP BY, so no temp b-tree. Good readings inside the plausible ranges of spec section 1 only.
 export const HISTORY_SQL = {
-  buckets(kind, bucketMs) {
-    const b = Math.trunc(bucketMs);
-    const columns = kind === 'trh' ? 'AVG(t) AS t, AVG(rh) AS rh' : 'AVG(co2) AS co2';
-    return `SELECT (at / ${b}) * ${b} + ${b / 2} AS at, ${columns} FROM readings
-            WHERE room_id = ? AND kind = '${kind === 'trh' ? 'trh' : 'co2'}' AND ok = 1 AND at >= ? AND at <= ?
-            GROUP BY at / ${b} ORDER BY at / ${b}`;
+  bucket(kind) {
+    return kind === 'trh'
+      ? `SELECT AVG(t) AS t, AVG(rh) AS rh, COUNT(*) AS n FROM readings
+         WHERE room_id = ? AND kind = 'trh' AND at >= ? AND at < ? AND ok = 1 AND t BETWEEN -10 AND 60 AND rh BETWEEN 1 AND 100`
+      : `SELECT AVG(co2) AS co2, COUNT(*) AS n FROM readings
+         WHERE room_id = ? AND kind = 'co2' AND at >= ? AND at < ? AND ok = 1 AND co2 BETWEEN 300 AND 10000`;
   },
 };
+
+// The machine log queries a test checks the plans of.
+export const MACHINE_LOG_SQL = {
+  last: 'SELECT * FROM machine_log WHERE room_id = ? AND machine = ? ORDER BY at DESC, id DESC LIMIT 1',
+};
+
+// Completed buckets kept per room, sensor kind and bucket size; at most this many buckets back from the newest.
+const CACHE_BUCKETS = 400;
 
 // range hours → bucket seconds
 export const HISTORY_BUCKET_S = { 1: 15, 6: 60, 24: 300, 168: 1800, 720: 7200 };
@@ -323,7 +331,7 @@ export function openDb(path) {
     ackAlarm: db.prepare('UPDATE alarms SET acked_at = COALESCE(acked_at, ?) WHERE id = ?'),
     ackRoomAlarms: db.prepare('UPDATE alarms SET acked_at = ? WHERE room_id = ? AND acked_at IS NULL'), // all of those are current
     // Stream B: machine log (spec 2026-10-19-safety-and-history-design.md 4).
-    logLast: db.prepare('SELECT * FROM machine_log WHERE room_id = ? AND machine = ? ORDER BY id DESC LIMIT 1'),
+    logLast: db.prepare(MACHINE_LOG_SQL.last),
     logAdd: db.prepare(`INSERT INTO machine_log (room_id, machine, at, on_, setpoint, mode, fan, source)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`),
     logAll: db.prepare('SELECT * FROM machine_log WHERE room_id = ? AND machine = ? ORDER BY id'),
@@ -379,12 +387,54 @@ export function openDb(path) {
     return row ? toRoom(row) : null;
   }
 
-  const bucketStatements = new Map();
-  // [{ at, ...values }] of one sensor kind between from and to, averaged per bucket.
-  function buckets(roomId, kind, bucketMs, from, to) {
-    const key = `${kind}/${bucketMs}`;
-    if (!bucketStatements.has(key)) bucketStatements.set(key, db.prepare(HISTORY_SQL.buckets(kind, bucketMs)));
-    return bucketStatements.get(key).all(roomId, from, to).map((r) => ({ ...r }));
+  // Averages per bucket. Completed buckets (the bucket of `to` is still running) are cached per room, kind and bucket
+  // size as { lo, hi, rows }: the buckets with index lo <= i < hi are complete and rows holds the non-empty ones.
+  // A later request reads only the buckets after hi from the table. The queries ignore the sensor address, so
+  // a changed address needs no invalidation; a room delete and a reading inside a cached bucket do.
+  const bucketStatements = { trh: db.prepare(HISTORY_SQL.bucket('trh')), co2: db.prepare(HISTORY_SQL.bucket('co2')) };
+  const bucketCache = new Map(); // roomId -> Map("kind/bucketMs" -> entry)
+
+  function computeBuckets(roomId, kind, b, fromIdx, toIdx) {
+    const stmt = bucketStatements[kind];
+    const rows = [];
+    for (let i = fromIdx; i < toIdx; i++) {
+      const r = stmt.get(roomId, i * b, (i + 1) * b);
+      if (r.n > 0) rows.push(kind === 'trh' ? { idx: i, t: r.t, rh: r.rh } : { idx: i, co2: r.co2 });
+    }
+    return rows;
+  }
+
+  // [{ at, ...values }] of one sensor kind in the window [from, to], bucketMs wide, buckets aligned to the epoch.
+  // The window starts at the first bucket boundary at or after from; each `at` is the bucket middle kept inside [from, to].
+  function buckets(roomId, kind, b, from, to) {
+    const fi = Math.ceil(from / b);
+    const ci = Math.floor(to / b); // the bucket holding `to` is not complete
+    let rows = [];
+    if (ci > fi) {
+      let perRoom = bucketCache.get(roomId);
+      if (!perRoom) bucketCache.set(roomId, (perRoom = new Map()));
+      const key = `${kind}/${b}`;
+      let e = perRoom.get(key);
+      if (!e || ci < e.lo || fi > e.hi) perRoom.set(key, (e = { lo: fi, hi: fi, rows: [] }));
+      if (fi < e.lo) {
+        e.rows = computeBuckets(roomId, kind, b, fi, e.lo).concat(e.rows);
+        e.lo = fi;
+      }
+      if (ci > e.hi) {
+        e.rows.push(...computeBuckets(roomId, kind, b, e.hi, ci));
+        e.hi = ci;
+      }
+      if (e.hi - e.lo > CACHE_BUCKETS) {
+        e.lo = e.hi - CACHE_BUCKETS;
+        e.rows = e.rows.filter((r) => r.idx >= e.lo);
+      }
+      rows = e.rows.filter((r) => r.idx >= fi && r.idx < ci);
+    }
+    if (ci >= fi) { // the running bucket: readings up to `to`
+      const r = bucketStatements[kind].get(roomId, ci * b, to + 1);
+      if (r.n > 0) rows = rows.concat(kind === 'trh' ? { idx: ci, t: r.t, rh: r.rh } : { idx: ci, co2: r.co2 });
+    }
+    return rows.map(({ idx, ...values }) => ({ at: Math.min(Math.max(idx * b + b / 2, from), to), ...values }));
   }
 
   return {
@@ -583,6 +633,9 @@ export function openDb(path) {
       const rooms = this.listRooms().map((room) => {
         const [trh, co2] = this.getSensors(room.id, 1);
         const c = this.getControl(room.id);
+        // With auto off the machines are driven by hand: an exchange is the intake and the exhaust both commanded on.
+        const relay = this.getCommands(room.id).relay;
+        const exchange = c.auto ? c.exchange : relay.intake && relay.exhaust;
         const day = (kind) => buckets(room.id, kind, SPARK_BUCKET_MS, now - 24 * 3_600_000, now);
         const line = (rows, field) => rows.map((p) => ({ at: p.at, v: p[field] }));
         const trhDay = day('trh');
@@ -592,8 +645,8 @@ export function openDb(path) {
           trh: { status: trh.status, t: trh.lastOk?.t ?? null, rh: trh.lastOk?.rh ?? null, at: trh.lastOk?.at ?? null },
           co2: { status: co2.status, co2: co2.lastOk?.co2 ?? null, at: co2.lastOk?.at ?? null },
           auto: c.auto,
-          exchange: c.exchange,
-          exchangeSince: c.exchangeSince,
+          exchange,
+          exchangeSince: c.auto ? c.exchangeSince : null,
           bands: { tLow: c.tLow, tHigh: c.tHigh, rhLow: c.rhLow, rhHigh: c.rhHigh, co2Low: c.co2Low, co2High: c.co2High },
           alarms: perRoom.get(room.id) ?? { count: 0, level: null },
           spark: { t: line(trhDay, 't'), rh: line(trhDay, 'rh'), co2: line(day('co2'), 'co2') },
@@ -616,6 +669,7 @@ export function openDb(path) {
         q.deleteControl.run(id);
         q.deleteAlarms.run(id);
         q.deleteMachineLog.run(id);
+        bucketCache.delete(id);
         const deleted = q.delete.run(id).changes > 0;
         db.exec('COMMIT');
         return deleted;
@@ -633,6 +687,13 @@ export function openDb(path) {
     // One poll result. Values not measured are null.
     addReading({ roomId, kind, address, at, ok, t = null, rh = null, co2 = null, error = null }) {
       q.addReading.run(roomId, kind, address, at, ok ? 1 : 0, t, rh, co2, error, roomId, kind, address);
+      const perRoom = bucketCache.get(roomId); // a reading inside a completed bucket makes that cache stale
+      if (perRoom) {
+        for (const [key, e] of perRoom) {
+          const [k, b] = key.split('/');
+          if (k === kind && at < e.hi * Number(b)) perRoom.delete(key);
+        }
+      }
     },
 
     // [trhSensor, co2Sensor] for the room, or null when there is no such room.

@@ -117,7 +117,7 @@ export function createApi(db, machines = null, controller = null, poller = null)
       if (!(hours in HISTORY_BUCKET_S)) throw new HttpError(400, 'hours must be 1, 6, 24, 168 or 720', 'hours');
       const history = db.history(id, hours);
       if (!history) throw noRoom();
-      return send(res, 200, history);
+      return send(res, 200, { ...history, pollSeconds: readSettings(db).pollSeconds });
     }
     if (match[2] === '/control') {
       if (!controller) throw notFound();

@@ -38,6 +38,14 @@ export function formatStamp(ms, now = Date.now()) {
   return d.toDateString() === new Date(now).toDateString() ? clock : `${d.getDate()} ${MONTHS[d.getMonth()]} ${clock}`;
 }
 
+// What a long-range chart was drawn from besides the data: when this key and the data object are unchanged,
+// the 5 s refresh need not redraw (a redraw drops the hover). room carries the wired addresses of the timeline rows.
+export const chartDrawKey = (bands, sensors, room) =>
+  `${bands ? JSON.stringify(bands) : ''}/${sensors.trh.status}/${sensors.co2.status}/${room?.relayAddress ?? null}/${room?.acAddress ?? null}`;
+
+// How many axis labels fit a chart of this pixel width: about one per 90 px.
+export const tickCountFor = (width) => Math.max(2, Math.floor(width / 90));
+
 // Axis ticks across [from, to] on round local times: the smallest step that gives at most maxTicks.
 // Steps of a day or more are labelled with the date ("13 Oct"), the others with the time of day ("09:30").
 export function timeTicks(from, to, maxTicks) {
@@ -53,13 +61,15 @@ export function timeTicks(from, to, maxTicks) {
 }
 
 // Chart points from /history rows ({ at, ...fields }): a gap of more than 3 buckets gets a null point in its middle
-// so the line breaks there. bucketS is the reply's bucket size in seconds.
-export function historyPoints(rows, field, bucketS) {
+// so the line breaks there. bucketS is the reply's bucket size in seconds; pollSeconds the reading interval (up to 300 s),
+// because buckets cannot be denser than the readings: the limit is 3 x the larger of the two.
+export function historyPoints(rows, field, bucketS, pollSeconds = 0) {
+  const limit = Math.max(bucketS, pollSeconds) * 3000;
   const points = [];
   let prev = null;
   for (const r of rows ?? []) {
     if (!Number.isFinite(r[field])) continue;
-    if (prev !== null && r.at - prev > bucketS * 3000) points.push({ at: (prev + r.at) / 2, value: null });
+    if (prev !== null && r.at - prev > limit) points.push({ at: (prev + r.at) / 2, value: null });
     points.push({ at: r.at, value: r[field] });
     prev = r.at;
   }
@@ -92,4 +102,17 @@ export function acMarks(rows) {
     setpoint = r.setpoint;
   }
   return marks;
+}
+
+// Keeps the marks that are at least minPx right of the previously kept one; xOf(at) is the mark's x position.
+export function thinMarks(marks, xOf, minPx = 40) {
+  const kept = [];
+  let last = -Infinity;
+  for (const m of marks ?? []) {
+    const x = xOf(m.at);
+    if (x - last < minPx) continue;
+    kept.push(m);
+    last = x;
+  }
+  return kept;
 }

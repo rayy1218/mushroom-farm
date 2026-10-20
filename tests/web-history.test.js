@@ -2,7 +2,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { RANGES, rangeOf, timeTicks, historyPoints, timelineSpans, acMarks, TIMELINE_ROWS, formatStamp } from '../web/history-math.js';
+import { RANGES, rangeOf, timeTicks, historyPoints, timelineSpans, acMarks, thinMarks, tickCountFor, chartDrawKey, TIMELINE_ROWS, formatStamp } from '../web/history-math.js';
 
 const at = (d, h, m = 0) => new Date(2026, 9, d, h, m).getTime();
 
@@ -14,7 +14,7 @@ test('the range choice: Live first, then 1 h, 6 h, 24 h, 7 d, 30 d', () => {
   assert.equal(rangeOf('nope').key, 'live');
 });
 
-test('time ticks sit on round local times, about one per 70 px, with the time of day', () => {
+test('time ticks sit on round local times, about one per 90 px, with the time of day', () => {
   const ticks = timeTicks(at(19, 9, 11), at(19, 10, 11), 6);
   assert.ok(ticks.length >= 3 && ticks.length <= 6, String(ticks.length));
   assert.deepEqual(ticks.map((t) => t.label).slice(0, 2), ['09:20', '09:30']);
@@ -51,6 +51,10 @@ test('history points: one per bucket, a gap of more than 3 buckets breaks the li
     { at: 0, value: 20 }, { at: 60_000, value: 21 }, { at: 330_000, value: null }, { at: 600_000, value: 22 },
   ]);
   assert.deepEqual(historyPoints([], 't', 60), []);
+  // a slow reading interval widens the limit: 15 s buckets of 300 s polls are 300 s apart and must not be dots
+  const slow = [{ at: 0, t: 20 }, { at: 300_000, t: 21 }, { at: 600_000, t: 22 }, { at: 1_800_000, t: 23 }];
+  assert.equal(historyPoints(slow, 't', 15).length, 7);
+  assert.deepEqual(historyPoints(slow, 't', 15, 300).map((p) => p.value), [20, 21, 22, null, 23]);
   assert.deepEqual(historyPoints([{ at: 1, t: null }], 't', 60), []);
 });
 
@@ -85,4 +89,28 @@ test('the timeline rows are Intake, Exhaust, Circulation, Humidifier, Aircon', (
     { key: 'intake', label: 'Intake' }, { key: 'exhaust', label: 'Exhaust' }, { key: 'circulation', label: 'Circulation' },
     { key: 'humidifier', label: 'Humidifier' }, { key: 'ac', label: 'Aircon' },
   ]);
+});
+
+test('marks closer than 40 px to the previous kept one are skipped', () => {
+  const marks = [{ at: 0, text: 'a' }, { at: 30, text: 'b' }, { at: 40, text: 'c' }, { at: 70, text: 'd' }, { at: 90, text: 'e' }];
+  assert.deepEqual(thinMarks(marks, (at) => at).map((m) => m.text), ['a', 'c', 'e']);
+  assert.deepEqual(thinMarks(marks, (at) => at / 10).map((m) => m.text), ['a']);
+  assert.deepEqual(thinMarks(undefined, (at) => at), []);
+});
+
+test('one axis label per 90 px, at least 2', () => {
+  assert.equal(tickCountFor(900), 10);
+  assert.equal(tickCountFor(359), 3);
+  assert.equal(tickCountFor(50), 2);
+});
+
+test('the chart redraw key changes with the bands, the sensor statuses and the relay and aircon addresses', () => {
+  const sensors = { trh: { status: 'online' }, co2: { status: 'online' } };
+  const room = { relayAddress: 3, acAddress: 4 };
+  const key = chartDrawKey({ tLow: 21 }, sensors, room);
+  assert.equal(chartDrawKey({ tLow: 21 }, sensors, { ...room }), key);
+  assert.notEqual(chartDrawKey({ tLow: 22 }, sensors, room), key);
+  assert.notEqual(chartDrawKey({ tLow: 21 }, { ...sensors, co2: { status: 'offline' } }, room), key);
+  assert.notEqual(chartDrawKey({ tLow: 21 }, sensors, { ...room, relayAddress: null }), key);
+  assert.notEqual(chartDrawKey({ tLow: 21 }, sensors, { ...room, acAddress: 9 }), key);
 });

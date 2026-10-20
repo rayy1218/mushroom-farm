@@ -12,7 +12,7 @@ import { formatClock, formatAgo, chartPoints } from './chart-math.js';
 // Stream B: long-range charts and the machine timeline
 import { createHistory } from './history.js';
 import { drawTimeline } from './timeline.js';
-import { timeTicks, historyPoints, timelineSpans, acMarks, formatStamp, TIMELINE_ROWS } from './history-math.js';
+import { timeTicks, tickCountFor, chartDrawKey, historyPoints, timelineSpans, acMarks, formatStamp, TIMELINE_ROWS } from './history-math.js';
 
 const metres = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
 const cubic = new Intl.NumberFormat(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -270,14 +270,14 @@ export function mount(container, { id }) {
     const hist = history?.current() ?? null; // null: Live (the last 50 polls)
     const data = hist?.data ?? null;
     // A long range changes once a minute: the 5 s refresh must not redraw it (that would drop the hover).
-    const drawnKey = data ? `${bands ? JSON.stringify(bands) : ''}/${sensors.trh.status}/${sensors.co2.status}` : null;
+    const drawnKey = data ? chartDrawKey(bands, sensors, room) : null;
     if (data && data === drawnData && drawnKey === drawnWith) return;
     drawnData = data;
     drawnWith = drawnKey;
     for (const def of CHARTS) {
       const entry = chartCards.get(def.id);
       const s = sensors[def.kind];
-      const points = hist ? (data ? historyPoints(data[def.kind], def.field, data.bucketS) : []) : chartPoints(s, def.field);
+      const points = hist ? (data ? historyPoints(data[def.kind], def.field, data.bucketS, data.pollSeconds) : []) : chartPoints(s, def.field);
       const wired = s.status !== 'not-wired';
       entry.card.hidden = !wired;
       const hasValue = points.some((p) => p.value !== null); // only failed polls: nothing to draw yet
@@ -291,7 +291,7 @@ export function mount(container, { id }) {
       if (data) { // a long range: the whole window on the axis, date ticks, a shared time line with the other charts
         const range = { from: data.from, to: data.to };
         Object.assign(opts, {
-          range, ticks: timeTicks(range.from, range.to, tickCount()), failTicks: false,
+          range, ticksFor: (w) => timeTicks(range.from, range.to, tickCountFor(w)), failTicks: false,
           formatAt: (ms) => formatStamp(ms), onCursor: moveCursor,
         });
       }
@@ -299,11 +299,6 @@ export function mount(container, { id }) {
       else entry.chart.update(opts);
     }
     renderTimeline(data);
-  }
-
-  // About one axis label per 90 px of the chart.
-  function tickCount() {
-    return Math.max(2, Math.floor(els.charts.clientWidth / 90));
   }
 
   // The time line follows the pointer on every chart and the timeline.
@@ -323,7 +318,7 @@ export function mount(container, { id }) {
     }
     const range = { from: data.from, to: data.to };
     const opts = {
-      range, ticks: timeTicks(range.from, range.to, tickCount()), formatAt: (ms) => formatStamp(ms), onCursor: moveCursor,
+      range, ticksFor: (w) => timeTicks(range.from, range.to, tickCountFor(w)), formatAt: (ms) => formatStamp(ms), onCursor: moveCursor,
       rows: TIMELINE_ROWS.filter((r) => wiredKeys.includes(r.key)).map((r) => ({
         ...r,
         spans: timelineSpans(data.machines[r.key], range.from, range.to),

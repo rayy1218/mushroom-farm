@@ -20,6 +20,15 @@ test('a sparkline: path in a w x h box, band shaded, last point; fewer than 2 po
   assert.equal(s.max, 20);
 });
 
+test('a sparkline over a fixed window: x follows the window, a gap of more than gapMs breaks the line', () => {
+  const win = { from: 0, to: 100, gapMs: 30 };
+  const s = sparkPath([{ at: 50, v: 10 }, { at: 70, v: 20 }, { at: 100, v: 10 }], 100, 30, null, win);
+  assert.match(s.d, /^M50 27 L68.8 3 L97 27$/); // x 3 + at/100 * 94, not stretched to the first point
+  const g = sparkPath([{ at: 10, v: 10 }, { at: 20, v: 20 }, { at: 80, v: 10 }, { at: 90, v: 12 }], 100, 30, null, win);
+  assert.equal(g.d.match(/M/g).length, 2);
+  assert.equal(g.d.match(/L/g).length, 2);
+});
+
 test('a flat line is drawn in the middle; a band outside the data stretches the scale', () => {
   const flat = sparkPath([{ at: 0, v: 5 }, { at: 1, v: 5 }], 100, 30, null);
   assert.match(flat.d, /^M3 15 L97 15$/);
