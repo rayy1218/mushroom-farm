@@ -153,7 +153,10 @@ CREATE TABLE outdoor_readings (
   rh      REAL,
   error   TEXT
 ) STRICT;
-CREATE INDEX outdoor_readings_by_time ON outdoor_readings (at);`;
+-- the status like a room sensor's, and a covering index for the time windows (the history buckets and the checks)
+CREATE INDEX outdoor_readings_by_sensor ON outdoor_readings (address, id);
+CREATE INDEX outdoor_readings_ok ON outdoor_readings (address, id) WHERE ok = 1;
+CREATE INDEX outdoor_readings_by_time ON outdoor_readings (address, at, ok, t, rh);`;
 
 const METER_READINGS = `
 CREATE TABLE meter_readings (
@@ -166,7 +169,41 @@ CREATE TABLE meter_readings (
   energy_kwh REAL,
   error      TEXT
 ) STRICT;
-CREATE INDEX meter_readings_by_room ON meter_readings (room_id, at);`;
+-- the status like a room sensor's, and a covering index of the good readings for the energy of a time window
+CREATE INDEX meter_readings_by_sensor ON meter_readings (room_id, address, id);
+CREATE INDEX meter_readings_ok ON meter_readings (room_id, address, id) WHERE ok = 1;
+CREATE INDEX meter_readings_energy ON meter_readings (room_id, address, at, energy_kwh) WHERE ok = 1;`;
+
+// The energy meter and outdoor probe queries, exported so a test can check their query plans. The status ones mirror
+// STATUS_SQL; the others read a time window from a covering index.
+const GOOD_METER = 'room_id = ?1 AND address = ?2 AND ok = 1 AND energy_kwh IS NOT NULL';
+export const METER_SQL = {
+  latest: `SELECT * FROM (SELECT * FROM meter_readings WHERE room_id = ? AND address = ? ORDER BY id DESC LIMIT ?) ORDER BY id`,
+  lastOk: 'SELECT * FROM meter_readings WHERE room_id = ? AND address = ? AND ok = 1 ORDER BY id DESC LIMIT 1',
+  failuresSince: `SELECT COUNT(*) AS n FROM (SELECT 1 FROM meter_readings WHERE room_id = ? AND address = ? AND id > ? LIMIT 10000)`,
+  // The last good reading before a time, and the good readings in [from, to) (parameters: room, address, from, to).
+  before: `SELECT at, energy_kwh FROM meter_readings WHERE ${GOOD_METER} AND at < ?3 ORDER BY at DESC LIMIT 1`,
+  rows: `SELECT at, energy_kwh FROM meter_readings WHERE ${GOOD_METER} AND at >= ?3 AND at < ?4 ORDER BY at`,
+  first: `SELECT at, energy_kwh FROM meter_readings WHERE ${GOOD_METER} AND at >= ?3 AND at < ?4 ORDER BY at LIMIT 1`,
+  last: `SELECT at, energy_kwh FROM meter_readings WHERE ${GOOD_METER} AND at >= ?3 AND at < ?4 ORDER BY at DESC LIMIT 1`,
+  // The readings of [from, to) in one pass: how many, the sum of the steps between neighbours that are plain (not a
+  // decrease, not above 100 kW over the time between them) and how many are not. dt in ms, 100 kW = 100 / 3.6e6 kWh per ms.
+  chunk: `SELECT COUNT(*) AS n,
+                 COALESCE(SUM(CASE WHEN dv >= 0 AND dv <= 100.0 * dt / 3600000.0 THEN dv END), 0) AS kwh,
+                 COALESCE(SUM(CASE WHEN dv < 0 OR dv > 100.0 * dt / 3600000.0 THEN 1 END), 0) AS bad
+          FROM (SELECT energy_kwh - LAG(energy_kwh) OVER w AS dv, at - LAG(at) OVER w AS dt
+                FROM meter_readings WHERE ${GOOD_METER} AND at >= ?3 AND at < ?4 WINDOW w AS (ORDER BY at))`,
+};
+
+export const OUTDOOR_SQL = {
+  latest: 'SELECT * FROM (SELECT * FROM outdoor_readings WHERE address = ? ORDER BY id DESC LIMIT ?) ORDER BY id',
+  lastOk: 'SELECT * FROM outdoor_readings WHERE address = ? AND ok = 1 ORDER BY id DESC LIMIT 1',
+  failuresSince: 'SELECT COUNT(*) AS n FROM (SELECT 1 FROM outdoor_readings WHERE address = ? AND id > ? LIMIT 10000)',
+  since: 'SELECT at, ok, t, rh FROM outdoor_readings WHERE address = ? AND at >= ? ORDER BY at',
+  // One bucket like HISTORY_SQL.bucket: good readings in the plausible ranges in [from, to).
+  bucket: `SELECT AVG(t) AS t, AVG(rh) AS rh, COUNT(*) AS n FROM outdoor_readings
+           WHERE address = ? AND at >= ? AND at < ? AND ok = 1 AND t BETWEEN -10 AND 60 AND rh BETWEEN 1 AND 100`,
+};
 
 // The status queries, exported so a test can check their query plans.
 export const STATUS_SQL = {
@@ -437,26 +474,20 @@ export function openDb(path) {
     wiredMeters: db.prepare('SELECT id AS roomId, meter_address AS address FROM rooms WHERE meter_address IS NOT NULL ORDER BY id'),
     addMeterReading: db.prepare(`INSERT INTO meter_readings (room_id, address, at, ok, power_w, energy_kwh, error)
                                  SELECT ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM rooms WHERE id = ? AND meter_address = ?)`),
-    meterLatest: db.prepare(`SELECT * FROM (SELECT * FROM meter_readings WHERE room_id = ? AND address = ? ORDER BY id DESC LIMIT ?)
-                             ORDER BY id`),
-    meterLastOk: db.prepare('SELECT * FROM meter_readings WHERE room_id = ? AND address = ? AND ok = 1 ORDER BY id DESC LIMIT 1'),
-    meterFailuresSince: db.prepare(`SELECT COUNT(*) AS n FROM (SELECT 1 FROM meter_readings WHERE room_id = ? AND address = ? AND id > ?
-                                                               LIMIT 10000)`),
-    meterEnergy: db.prepare(`SELECT at, energy_kwh FROM meter_readings WHERE room_id = ? AND address = ? AND ok = 1
-                             AND energy_kwh IS NOT NULL AND at >= ? AND at <= ? ORDER BY at, id`),
-    meterEnergyBefore: db.prepare(`SELECT at, energy_kwh FROM meter_readings WHERE room_id = ? AND address = ? AND ok = 1
-                                   AND energy_kwh IS NOT NULL AND at < ? ORDER BY at DESC, id DESC LIMIT 1`),
+    meterLatest: db.prepare(METER_SQL.latest),
+    meterLastOk: db.prepare(METER_SQL.lastOk),
+    meterFailuresSince: db.prepare(METER_SQL.failuresSince),
+    meterBefore: db.prepare(METER_SQL.before),
+    meterRows: db.prepare(METER_SQL.rows),
+    meterFirst: db.prepare(METER_SQL.first),
+    meterLast: db.prepare(METER_SQL.last),
+    meterChunk: db.prepare(METER_SQL.chunk),
     addOutdoor: db.prepare(`INSERT INTO outdoor_readings (address, at, ok, t, rh, error)
                             SELECT ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM settings WHERE key = 'outdoorAddress' AND value = ?)`),
-    outdoorLatest: db.prepare('SELECT * FROM (SELECT * FROM outdoor_readings WHERE address = ? ORDER BY id DESC LIMIT ?) ORDER BY id'),
-    outdoorLastOk: db.prepare('SELECT * FROM outdoor_readings WHERE address = ? AND ok = 1 ORDER BY id DESC LIMIT 1'),
-    outdoorFailuresSince: db.prepare(`SELECT COUNT(*) AS n FROM (SELECT 1 FROM outdoor_readings WHERE address = ? AND id > ?
-                                                                 LIMIT 10000)`),
-    outdoorSince: db.prepare('SELECT * FROM outdoor_readings WHERE address = ? AND at >= ? ORDER BY id'),
-    // One query per window: good readings in the plausible ranges, averaged per bucket (b = bucket ms).
-    outdoorBuckets: db.prepare(`SELECT at / CAST(?1 AS INTEGER) AS idx, AVG(t) AS t, AVG(rh) AS rh FROM outdoor_readings
-                                WHERE at >= ?2 AND at <= ?3 AND ok = 1 AND t BETWEEN -10 AND 60 AND rh BETWEEN 1 AND 100
-                                GROUP BY idx ORDER BY idx`),
+    outdoorLatest: db.prepare(OUTDOOR_SQL.latest),
+    outdoorLastOk: db.prepare(OUTDOOR_SQL.lastOk),
+    outdoorFailuresSince: db.prepare(OUTDOOR_SQL.failuresSince),
+    outdoorSince: db.prepare(OUTDOOR_SQL.since),
     getSetting: db.prepare('SELECT value FROM settings WHERE key = ?'),
     setSetting: db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)'),
     latest: db.prepare(STATUS_SQL.latest),
@@ -498,6 +529,22 @@ export function openDb(path) {
     return sensor;
   }
 
+  // The outdoor address from the settings, or null.
+  function outdoorAddress() {
+    const n = Number(q.getSetting.get('outdoorAddress')?.value);
+    return Number.isInteger(n) && n >= 1 && n <= 247 ? n : null;
+  }
+
+  // A reading at `at` inside a completed bucket makes that cache stale.
+  function dropStaleBuckets(roomId, kind, at) {
+    const perRoom = bucketCache.get(roomId);
+    if (!perRoom) return;
+    for (const [key, e] of perRoom) {
+      const [k, b] = key.split('/');
+      if (k === kind && at < e.hi * Number(b)) perRoom.delete(key);
+    }
+  }
+
   function getRoom(id) {
     const row = q.get.get(id);
     return row ? toRoom(row) : null;
@@ -507,15 +554,26 @@ export function openDb(path) {
   // size as { lo, hi, rows }: the buckets with index lo <= i < hi are complete and rows holds the non-empty ones.
   // A later request reads only the buckets after hi from the table. The queries ignore the sensor address, so
   // a changed address needs no invalidation; a room delete and a reading inside a cached bucket do.
-  const bucketStatements = { trh: db.prepare(HISTORY_SQL.bucket('trh')), co2: db.prepare(HISTORY_SQL.bucket('co2')) };
+  // The outdoor probe is kind 'out' of the pseudo room 0: its buckets answer for the address that is set now, so a changed
+  // address drops them (setSetting).
+  const outdoorBucket = db.prepare(OUTDOOR_SQL.bucket);
+  const bucketStatements = {
+    trh: db.prepare(HISTORY_SQL.bucket('trh')),
+    co2: db.prepare(HISTORY_SQL.bucket('co2')),
+    out: { get: (_, from, to) => outdoorBucket.get(outdoorAddress(), from, to) },
+  };
   const bucketCache = new Map(); // roomId -> Map("kind/bucketMs" -> entry)
+  // The completed days of the usage replies (see usage.js), by room and "start/end" of the day; the entries are the usage
+  // module's. A change of the room, a row written inside a day that was worked out, and a room delete drop them.
+  const usageCache = new Map();
+  const OUTDOOR = 0; // the pseudo room
 
   function computeBuckets(roomId, kind, b, fromIdx, toIdx) {
     const stmt = bucketStatements[kind];
     const rows = [];
     for (let i = fromIdx; i < toIdx; i++) {
       const r = stmt.get(roomId, i * b, (i + 1) * b);
-      if (r.n > 0) rows.push(kind === 'trh' ? { idx: i, t: r.t, rh: r.rh } : { idx: i, co2: r.co2 });
+      if (r.n > 0) rows.push(kind === 'co2' ? { idx: i, co2: r.co2 } : { idx: i, t: r.t, rh: r.rh });
     }
     return rows;
   }
@@ -548,7 +606,7 @@ export function openDb(path) {
     }
     if (ci >= fi) { // the running bucket: readings up to `to`
       const r = bucketStatements[kind].get(roomId, ci * b, to + 1);
-      if (r.n > 0) rows = rows.concat(kind === 'trh' ? { idx: ci, t: r.t, rh: r.rh } : { idx: ci, co2: r.co2 });
+      if (r.n > 0) rows = rows.concat(kind === 'co2' ? { idx: ci, co2: r.co2 } : { idx: ci, t: r.t, rh: r.rh });
     }
     return rows.map(({ idx, ...values }) => ({ at: Math.min(Math.max(idx * b + b / 2, from), to), ...values }));
   }
@@ -581,11 +639,17 @@ export function openDb(path) {
     // Returns the updated room, or null when there is no room with that id.
     updateRoom(id, { name, length, width, height, trhAddress = null, co2Address = null, relayAddress = null, acAddress = null,
       meterAddress = null, ...ratings }, now = Date.now()) {
-      if (!q.get.get(id)) return null;
+      const old = q.get.get(id);
+      if (!old) return null;
       checkName(name, id);
       checkAddresses({ trhAddress, co2Address, relayAddress, acAddress, meterAddress }, id);
       q.update.run(name, length, width, height, trhAddress, co2Address, relayAddress, acAddress, meterAddress,
         ...ratingValues(ratings), now, id);
+      // A device that is gone or is another one no longer runs its machines: log the ones logged on as off now, else the
+      // usage estimate charges them for ever.
+      if (old.relay_address !== relayAddress) for (const key of RELAY_KEYS) this.logOff(id, key, now);
+      if (old.ac_address !== acAddress) this.logOff(id, 'ac', now);
+      usageCache.delete(id);
       return getRoom(id);
     },
 
@@ -706,7 +770,14 @@ export function openDb(path) {
       const last = q.logLast.get(roomId, machine);
       if (last && last.on_ === (on ? 1 : 0) && last.setpoint === setpoint && last.mode === mode && last.fan === fan) return false;
       q.logAdd.run(roomId, machine, at, on ? 1 : 0, setpoint, mode, fan, source);
+      for (const [k, e] of usageCache.get(roomId) ?? []) if (e.ms && e.end > at) usageCache.get(roomId).delete(k); // a settled day changes
       return true;
+    },
+
+    // Logs the machine off at `at` when its last row says on (the other fields stay as they were).
+    logOff(roomId, machine, at) {
+      const last = q.logLast.get(roomId, machine);
+      if (last?.on_ === 1) this.logMachine(roomId, machine, { on: false, setpoint: last.setpoint, mode: last.mode, fan: last.fan }, 'manual', at);
     },
 
     // Every log row of one machine, oldest first.
@@ -792,6 +863,7 @@ export function openDb(path) {
         q.deleteMachineLog.run(id);
         q.deleteMeterReadings.run(id);
         bucketCache.delete(id);
+        usageCache.delete(id);
         const deleted = q.delete.run(id).changes > 0;
         db.exec('COMMIT');
         return deleted;
@@ -809,13 +881,7 @@ export function openDb(path) {
     // One poll result. Values not measured are null.
     addReading({ roomId, kind, address, at, ok, t = null, rh = null, co2 = null, error = null }) {
       q.addReading.run(roomId, kind, address, at, ok ? 1 : 0, t, rh, co2, error, roomId, kind, address);
-      const perRoom = bucketCache.get(roomId); // a reading inside a completed bucket makes that cache stale
-      if (perRoom) {
-        for (const [key, e] of perRoom) {
-          const [k, b] = key.split('/');
-          if (k === kind && at < e.hi * Number(b)) perRoom.delete(key);
-        }
-      }
+      dropStaleBuckets(roomId, kind, at);
     },
 
     // [trhSensor, co2Sensor] for the room, or null when there is no such room.
@@ -834,6 +900,7 @@ export function openDb(path) {
     // One meter poll result (powerW in W, energyKwh the meter total); only while the room still has that meter address.
     addMeterReading({ roomId, address, at, ok, powerW = null, energyKwh = null, error = null }) {
       q.addMeterReading.run(roomId, address, at, ok ? 1 : 0, powerW, energyKwh, error, roomId, address);
+      if (ok) for (const [k, e] of usageCache.get(roomId) ?? []) if (e.meter && at < e.meter.upto) usageCache.get(roomId).delete(k);
     },
 
     // The room's meter like a sensor of getSensors: { kind: 'meter', address, status, failuresInRow, lastOk, readings },
@@ -858,14 +925,42 @@ export function openDb(path) {
       return meter;
     },
 
-    // Good meter readings [{ at, energy }] of the room's current meter in [from, to], oldest first, with the last one before
-    // `from` first when there is one (the base of the first increase).
-    meterEnergy(roomId, from, to) {
+    // The meter of the usage replies. All of these use the room's current meter address and give nothing without one.
+    // The last good reading before `at`: { at, energy } or null.
+    meterBefore(roomId, at) {
       const room = q.get.get(roomId);
-      if (!room || room.meter_address === null) return [];
-      const row = ({ at, energy_kwh: energy }) => ({ at, energy });
-      const before = q.meterEnergyBefore.get(roomId, room.meter_address, from);
-      return [...(before ? [{ ...row(before), before: true }] : []), ...q.meterEnergy.all(roomId, room.meter_address, from, to).map(row)];
+      const r = room?.meter_address == null ? null : q.meterBefore.get(roomId, room.meter_address, at);
+      return r ? { at: r.at, energy: r.energy_kwh } : null;
+    },
+
+    // The good readings in [from, to), oldest first: [{ at, energy }].
+    meterRows(roomId, from, to) {
+      const room = q.get.get(roomId);
+      return room?.meter_address == null ? [] : q.meterRows.all(roomId, room.meter_address, from, to).map((r) => ({ at: r.at, energy: r.energy_kwh }));
+    },
+
+    // The good readings in [from, to) in one pass without reading them into JS: { n, kWh, bad, first, last } where kWh is
+    // the sum of the plain steps between neighbours (not a decrease, not above 100 kW over their time apart), bad how
+    // many steps are not plain, first and last the readings at the ends ({ at, energy }, null when n is 0).
+    meterChunk(roomId, from, to) {
+      const room = q.get.get(roomId);
+      const none = { n: 0, kWh: 0, bad: 0, first: null, last: null };
+      if (room?.meter_address == null) return none;
+      const { n, kwh, bad } = q.meterChunk.get(roomId, room.meter_address, from, to);
+      if (n === 0) return none;
+      const end = (r) => ({ at: r.at, energy: r.energy_kwh });
+      return {
+        n, kWh: kwh, bad,
+        first: end(q.meterFirst.get(roomId, room.meter_address, from, to)),
+        last: end(q.meterLast.get(roomId, room.meter_address, from, to)),
+      };
+    },
+
+    // The completed-day cache of one room (a Map the usage module fills).
+    usageDays(roomId) {
+      let days = usageCache.get(roomId);
+      if (!days) usageCache.set(roomId, (days = new Map()));
+      return days;
     },
 
     // The machine's log rows [{ at, on, setpoint, mode, fan, source }] for [from, to]: the last row before `from` moved to
@@ -881,14 +976,12 @@ export function openDb(path) {
     // ---- Outdoor probe (spec section 2) ----
 
     // The outdoor address from the settings, or null.
-    outdoorAddress() {
-      const n = Number(q.getSetting.get('outdoorAddress')?.value);
-      return Number.isInteger(n) && n >= 1 && n <= 247 ? n : null;
-    },
+    outdoorAddress,
 
     // One poll of the outdoor probe; stored only while the setting still has that address.
     addOutdoorReading({ address, at, ok, t = null, rh = null, error = null }) {
       q.addOutdoor.run(address, at, ok ? 1 : 0, t, rh, error, String(address));
+      dropStaleBuckets(OUTDOOR, 'out', at);
     },
 
     // { address, status, failuresInRow, lastOk: { at, t, rh } | null, readings } like a room sensor; status 'not-set'
@@ -913,15 +1006,15 @@ export function openDb(path) {
 
     // The probe's readings (good and failed) since `from`, oldest first: [{ at, ok, t, rh }].
     outdoorSince(from) {
-      const address = this.outdoorAddress();
+      const address = outdoorAddress();
       return address === null ? [] : q.outdoorSince.all(address, from).map((r) => ({ at: r.at, ok: r.ok === 1, t: r.t, rh: r.rh }));
     },
 
-    // Averages per bucket in the window [from, to] like a room's trh buckets (buckets aligned to the epoch, the window starts
-    // at the first boundary at or after from, `at` the bucket middle kept inside the window): [{ at, t, rh }].
+    // Averages per bucket in the window [from, to] of the probe that is set now, like a room's trh buckets (buckets aligned
+    // to the epoch, the window starts at the first boundary at or after from, `at` the bucket middle kept inside the
+    // window, completed buckets cached): [{ at, t, rh }].
     outdoorBuckets(b, from, to) {
-      const fi = Math.ceil(from / b);
-      return q.outdoorBuckets.all(b, fi * b, to).map((r) => ({ at: Math.min(Math.max(r.idx * b + b / 2, from), to), t: r.t, rh: r.rh }));
+      return outdoorAddress() === null ? [] : buckets(OUTDOOR, 'out', b, from, to);
     },
 
     // The stored text of a setting, or null when it was never set.
@@ -931,6 +1024,7 @@ export function openDb(path) {
 
     setSetting(key, value) {
       q.setSetting.run(key, value);
+      if (key === 'outdoorAddress') bucketCache.delete(OUTDOOR);
     },
 
     close() {

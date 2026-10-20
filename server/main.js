@@ -11,6 +11,7 @@ import { createPoller } from './poller.js';
 import { createMachines } from './machines.js';
 import { createController } from './controller.js';
 import { readSettings } from './settings.js';
+import { warmUsage } from './usage.js';
 
 const DEFAULT_DB = fileURLToPath(new URL('../data/v2.db', import.meta.url));
 
@@ -46,6 +47,7 @@ server.on('error', (err) => fail(`Could not start the server: ${err.message}`));
 server.listen(Number(portText), () => {
   console.log(`Farm app on http://localhost:${server.address().port} (database ${dbPath}, gateway ${gatewayText}, reading every ${pollSeconds} s)`);
   poller.start();
+  warmUsage(db).catch((err) => console.error(`Usage warm-up failed: ${err.message}`));
 });
 
 let stopping = false;

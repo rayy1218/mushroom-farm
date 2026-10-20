@@ -102,13 +102,13 @@ test('the log before the window sets the state at its start', (t) => {
   assert.equal(usage.last30.kWh, 12 + 24 * 18 + 10); // from noon on the 1st
 });
 
-test('metered days: the increases between good readings, to the day of the later reading, a decrease skipped', () => {
+test('metered days: the increases between good readings, to the day of the later reading, a lower reading counts nothing', () => {
   const days = dayWindows(NOW, 2, zone);
   const r = (time, energy, extra) => ({ at: time, energy, ...extra });
   const out = meteredDays([
     r(at(19, 20), 100, { before: true }), r(at(19, 23), 101), r(at(20, 1), 103), r(at(20, 2), 5), r(at(20, 3), 6.5),
   ], days);
-  assert.deepEqual(out, [{ kWh: 1, readings: 1 }, { kWh: 2 + 1.5, readings: 3 }]); // 103 to 5 is a reset: skipped
+  assert.deepEqual(out, [{ kWh: 1, readings: 1 }, { kWh: 2, readings: 3 }]); // 5 and 6.5 are below 103 and have not held for 3
 });
 
 test('a metered day uses the meter; rest is the meter minus the fans and humidifier; the aircon estimate is replaced', (t) => {
