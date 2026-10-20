@@ -203,6 +203,17 @@ function migrate(db) {
       if (version >= 3) db.exec(SAFETY_CONTROL_COLUMNS); // a table made above by ROOM_CONTROLS has them
       db.exec(ALARMS);
       db.exec(MACHINE_LOG);
+      // The log starts with what each room has commanded now, so machines already on show on the timeline.
+      const at = Date.now();
+      for (const key of RELAY_KEYS) {
+        db.prepare(`INSERT INTO machine_log (room_id, machine, at, on_, source)
+                    SELECT m.room_id, ?, ?, m.${key}, CASE WHEN c.auto = 1 THEN 'auto' ELSE 'manual' END
+                    FROM machine_commands m JOIN room_controls c ON c.room_id = m.room_id`).run(key, at);
+      }
+      db.prepare(`INSERT INTO machine_log (room_id, machine, at, on_, setpoint, mode, fan, source)
+                  SELECT m.room_id, 'ac', ?, m.ac_power, m.ac_setpoint, m.ac_mode, m.ac_fan,
+                         CASE WHEN c.auto = 1 THEN 'auto' ELSE 'manual' END
+                  FROM machine_commands m JOIN room_controls c ON c.room_id = m.room_id`).run(at);
       // Covering: the history buckets read only the index, not the table.
       db.exec('CREATE INDEX readings_by_time ON readings (room_id, kind, at, ok, t, rh, co2);');
     }

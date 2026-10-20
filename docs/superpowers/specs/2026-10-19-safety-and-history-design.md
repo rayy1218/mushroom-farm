@@ -108,6 +108,7 @@ The humidifier and aircon change times are kept in memory per room (the last tim
 | Item | Behaviour |
 |---|---|
 | Table | `machine_log (id INTEGER PK, room_id INTEGER NOT NULL, machine TEXT NOT NULL CHECK (machine IN ('intake','exhaust','circulation','humidifier','ac')), at INTEGER NOT NULL, on_ INTEGER NOT NULL CHECK (on_ IN (0,1)), setpoint REAL, mode TEXT, fan TEXT, source TEXT NOT NULL CHECK (source IN ('manual','auto')))`, index `(room_id, machine, at)` |
+| First rows | the upgrade writes one row per machine of each room with what is commanded now (source `auto` when the room's auto is on, else `manual`), so machines already on show on the timeline |
 | Written by | `machines.command` after it saves a command (manual, or auto via `bypassAuto`), only when the value differs from the previous log row of that machine (a re-send logs nothing) |
 | Readings index | `readings_by_time (room_id, kind, at)` for the history query |
 | Room deleted | its log rows are deleted |

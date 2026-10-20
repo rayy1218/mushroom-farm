@@ -193,3 +193,34 @@ test('upgrade 6 to 7 sets the safety level of each room to its CO2 upper limit +
   t.after(() => db.close());
   assert.deepEqual([1, 2, 3, 4].map((id) => db.getControl(id).co2Safety), [1250, 1400, 2000, 5500]);
 });
+
+test('upgrade 6 to 7 starts the machine log with what each room has commanded, so the timeline shows machines already on', (t) => {
+  const path = join(tempDir(t), 'farm.db');
+  const old = new DatabaseSync(path);
+  old.exec(VERSION_6_SCHEMA);
+  old.exec(`INSERT INTO rooms (id, name, length_m, width_m, height_m, created_at, updated_at) VALUES (1, 'A', 2, 2, 2, 1, 1), (2, 'B', 2, 2, 2, 1, 1);
+            INSERT INTO machine_commands (room_id, circulation, ac_power, ac_setpoint, ac_fan) VALUES (1, 1, 1, 22, 'low'), (2, 0, 0, 25, 'auto');
+            INSERT INTO room_controls (room_id, auto) VALUES (1, 1), (2, 0);`);
+  old.close();
+  const before = Date.now();
+  openDb(path).close();
+  const raw = new DatabaseSync(path);
+  t.after(() => raw.close());
+  const rows = raw.prepare('SELECT room_id, machine, at, on_, setpoint, mode, fan, source FROM machine_log ORDER BY room_id, id').all()
+    .map((r) => ({ ...r }));
+  assert.equal(rows.length, 10);
+  for (const r of rows) assert.ok(r.at >= before && r.at <= Date.now());
+  const pick = (room, machine) => { const { at, ...rest } = rows.find((r) => r.room_id === room && r.machine === machine); return rest; };
+  assert.deepEqual(pick(1, 'circulation'), { room_id: 1, machine: 'circulation', on_: 1, setpoint: null, mode: null, fan: null, source: 'auto' });
+  assert.deepEqual(pick(1, 'intake'), { room_id: 1, machine: 'intake', on_: 0, setpoint: null, mode: null, fan: null, source: 'auto' });
+  assert.deepEqual(pick(1, 'ac'), { room_id: 1, machine: 'ac', on_: 1, setpoint: 22, mode: 'cool', fan: 'low', source: 'auto' });
+  assert.deepEqual(pick(2, 'ac'), { room_id: 2, machine: 'ac', on_: 0, setpoint: 25, mode: 'cool', fan: 'auto', source: 'manual' });
+});
+
+test('a new database starts with an empty machine log', (t) => {
+  const path = join(tempDir(t), 'farm.db');
+  openDb(path).close();
+  const raw = new DatabaseSync(path);
+  t.after(() => raw.close());
+  assert.equal(raw.prepare('SELECT COUNT(*) AS n FROM machine_log').get().n, 0);
+});
