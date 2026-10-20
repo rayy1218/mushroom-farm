@@ -1,0 +1,214 @@
+// Pure helpers for the simulation results page and the Simulations card (no DOM, so they can be tested in Node).
+// Spec 2026-10-20-crops-and-simulation-design.md sections 4.3 and 4.5. Times of a run are seconds from its start (day 1, 00:00).
+
+import { CROPS, STAGES } from './crops.js';
+import { formatKWh, formatRM, formatLitres } from './usage-math.js';
+import { TIMELINE_ROWS } from './history-math.js';
+
+export const DAY_S = 86_400;
+const DASH = '—';
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const pad2 = (n) => String(n).padStart(2, '0');
+const finite = (v) => typeof v === 'number' && Number.isFinite(v);
+const pct = (v) => (finite(v) ? `${v.toFixed(1)} %` : DASH);
+
+// "20 Oct 10:42" in local time.
+export function formatDateTime(ms) {
+  const d = new Date(ms);
+  return `${d.getDate()} ${MONTHS[d.getMonth()]} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
+// ---- time in band ----
+
+export const TILES = [
+  { key: 't', label: 'Temperature' },
+  { key: 'rh', label: 'Humidity' },
+  { key: 'co2', label: 'CO₂' },
+  { key: 'all', label: 'All three' },
+];
+
+// The four tiles of summary.inBand as texts.
+export const tileList = (summary) => TILES.map((t) => ({ ...t, value: pct(summary?.inBand?.[t.key]) }));
+
+// "Fruiting, flush 2", "Rest after flush 2", "Spawn run".
+export function stageName(stage, flush) {
+  if (stage === 'fruiting') return `${STAGES.fruiting}, flush ${flush}`;
+  if (stage === 'rest') return `Rest after flush ${flush}`;
+  return STAGES[stage] ?? String(stage);
+}
+
+// The per-stage table rows of summary.perStage.
+export function stageRows(perStage) {
+  return (Array.isArray(perStage) ? perStage : []).map((s) => {
+    const from = Math.floor(s.from / DAY_S) + 1;
+    return {
+      name: stageName(s.stage, s.flush),
+      days: `day ${from} to day ${Math.max(from, Math.ceil(s.to / DAY_S))}`,
+      t: pct(s.inBand?.t), rh: pct(s.inBand?.rh), co2: pct(s.inBand?.co2), all: pct(s.inBand?.all),
+    };
+  });
+}
+
+// ---- charts ----
+
+// "day 3 13:05" for a second of the run.
+export function formatRunTime(s) {
+  const day = Math.floor(s / DAY_S) + 1;
+  const m = Math.floor((s % DAY_S) / 60);
+  return `day ${day} ${pad2(Math.floor(m / 60))}:${pad2(m % 60)}`;
+}
+
+// The length of the run in seconds: its days, else its last sample, else one day.
+export function runEnd(result) {
+  if (finite(result?.summary?.days)) return result.summary.days * DAY_S;
+  const last = result?.series?.at(-1);
+  return last && last.s > 0 ? last.s : DAY_S;
+}
+
+// Axis ticks "day 1, day 2 …" at the start of days, every few days when there are many; a run shorter than two days gets
+// hour ticks ("04:00") with day starts labelled. at is in seconds. Never more than maxTicks.
+export function dayTicks(totalS, maxTicks) {
+  const ticks = [];
+  if (totalS >= 2 * DAY_S) {
+    const step = Math.ceil(totalS / DAY_S / Math.max(1, maxTicks));
+    for (let d = 0; d * DAY_S < totalS; d += step) ticks.push({ at: d * DAY_S, label: `day ${d + 1}` });
+    return ticks;
+  }
+  const hours = totalS / 3600;
+  const step = [1, 2, 3, 4, 6, 12].find((h) => Math.ceil(hours / h) <= maxTicks) ?? 12;
+  for (let h = 0; h * 3600 < totalS; h += step) {
+    const at = h * 3600;
+    ticks.push({ at, label: at % DAY_S === 0 ? `day ${at / DAY_S + 1}` : `${pad2(h % 24)}:00` });
+  }
+  return ticks;
+}
+
+// The three charts: result.series field, the band's fields, the outdoor field (none for CO₂).
+export const CHARTS = [
+  { id: 'sim-t', field: 't', low: 'tLow', high: 'tHigh', outdoor: 'outT', label: 'Temperature', unit: '°C', color: 'var(--s-t)', digits: 1, minSpan: 1 },
+  { id: 'sim-rh', field: 'rh', low: 'rhLow', high: 'rhHigh', outdoor: 'outRH', label: 'Humidity', unit: '%RH', color: 'var(--s-rh)', digits: 1, minSpan: 5, bounds: [0, 100] },
+  { id: 'sim-co2', field: 'co2', low: 'co2Low', high: 'co2High', label: 'CO₂', unit: 'ppm', color: 'var(--s-co2)', digits: 0, minSpan: 100 },
+];
+
+// result.series → [{ at, value }] with at in seconds.
+export const chartPoints = (series, field) => (series ?? []).map((r) => ({ at: r.s, value: finite(r[field]) ? r[field] : null }));
+
+// At most about 2 x `max` points: every bucket of points keeps its lowest and its highest, so a peak never disappears.
+export function thinPoints(points, max) {
+  if (points.length <= 2 * max) return points;
+  const size = Math.ceil(points.length / max);
+  const out = [];
+  for (let i = 0; i < points.length; i += size) {
+    const part = points.slice(i, i + size);
+    let lo = part[0];
+    let hi = part[0];
+    for (const p of part) {
+      if (p.value !== null && (lo.value === null || p.value < lo.value)) lo = p;
+      if (p.value !== null && (hi.value === null || p.value > hi.value)) hi = p;
+    }
+    out.push(...(lo === hi ? [lo] : lo.at < hi.at ? [lo, hi] : [hi, lo]));
+  }
+  return out;
+}
+
+// The dashed second line of a chart (the outdoor values), or null when the series has none.
+export function outdoorLine(series, field) {
+  const points = chartPoints(series, field);
+  return points.some((p) => p.value !== null) ? { label: 'Outdoor', points } : null;
+}
+
+// The band as it moved: [{ from, to, low, high }] in seconds, one step for each change; the last step runs to endS.
+export function bandSteps(series, lowKey, highKey, endS) {
+  const steps = [];
+  (series ?? []).forEach((r, i) => {
+    const to = i + 1 < series.length ? series[i + 1].s : endS;
+    if (!(to > r.s) || !finite(r[lowKey]) || !finite(r[highKey])) return;
+    const prev = steps.at(-1);
+    if (prev && prev.low === r[lowKey] && prev.high === r[highKey] && prev.to === r.s) prev.to = to;
+    else steps.push({ from: r.s, to, low: r[lowKey], high: r[highKey] });
+  });
+  return steps;
+}
+
+// ---- machine timeline ----
+
+// The rows of drawTimeline: the on-spans (seconds) of result.machines and the aircon's setpoint marks.
+export function timelineRows(machines) {
+  return TIMELINE_ROWS.map((r) => {
+    const spans = (machines?.[r.key] ?? []).map((s) => ({ from: s.from, to: s.to, source: 'auto' }));
+    const marks = [];
+    if (r.key === 'ac') {
+      let prev = null;
+      for (const s of machines?.ac ?? []) {
+        if (!prev || prev.to !== s.from || prev.setpoint !== s.setpoint) marks.push({ at: s.from, text: `${s.setpoint} °C` });
+        prev = s;
+      }
+    }
+    return { ...r, spans, marks };
+  });
+}
+
+// ---- energy and water ----
+
+const MACHINES = [['intake', 'Intake'], ['exhaust', 'Exhaust'], ['circulation', 'Circulation'], ['humidifier', 'Humidifier'], ['ac', 'Aircon']];
+
+// summary → the texts of the energy and water part: totals, cost (null without a price) and a row per machine.
+export function energyView(summary) {
+  const e = summary?.energy;
+  const w = summary?.water;
+  const by = e?.byMachine;
+  const total = MACHINES.reduce((a, [k]) => a + (finite(by?.[k]) ? by[k] : 0), 0);
+  return {
+    kWh: formatKWh(e?.kWh),
+    cost: finite(e?.cost) ? formatRM(e.cost) : null,
+    litres: formatLitres(w?.litres),
+    waterCost: finite(w?.cost) ? formatRM(w.cost) : null,
+    rows: by ? MACHINES.map(([key, label]) => ({
+      key, label, kWh: formatKWh(by[key]), share: total > 0 && finite(by[key]) ? `${Math.round((by[key] / total) * 100)} %` : DASH,
+    })) : [],
+  };
+}
+
+// summary.perDay → the series of the bar chart of usage.js (key 'kWh' or 'litres'), labelled "day 1" …
+export const perDayBars = (perDay, key) =>
+  (Array.isArray(perDay) ? perDay : []).map((d) => ({ date: `day ${d.day}`, v: finite(d[key]) ? d[key] : null, metered: false }));
+
+// ---- words ----
+
+export const headLine = (roomName) => `Simulation of ${roomName}`;
+
+const grouped = (n) => n.toLocaleString('en-US', { maximumFractionDigits: 1 });
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+
+// What was asked, in one line (the input as it was posted).
+export function inputLine(input) {
+  const p = input?.physics;
+  if (!p) return '';
+  const crops = (input.crops ?? []).map((c) => `${CROPS[c.crop]?.name ?? c.crop} ${c.blocks}`).join(' and ');
+  const stage = STAGES[input.stage]?.toLowerCase() ?? input.stage;
+  return [
+    `${crops} blocks, starting at ${stage}, ${plural(input.days, 'day', 'days')}`,
+    `walls ${p.wallUA} W/K, sun ${p.sunW} W, outdoor ${p.outdoorLow}–${p.outdoorHigh} °C, dew point ${p.outdoorDew} °C`,
+    `fan ${p.fanFlow} m³/h, aircon ${grouped(p.acBTU)} BTU/h, humidifier ${p.humidifierLH} L/h`,
+  ].join(' · ');
+}
+
+const STATUS_WORDS = { queued: 'Waiting', done: 'Done', failed: 'Failed' };
+
+// One run of GET /api/rooms/:id/simulations as the texts of a row of the Simulations card.
+export function runRow(run, roomId) {
+  const days = run.summary?.days ?? run.input?.days;
+  const done = run.status === 'done';
+  return {
+    id: run.id,
+    href: `#/rooms/${roomId}/simulations/${run.id}`,
+    date: formatDateTime(run.createdAt),
+    days: finite(days) ? plural(days, 'day', 'days') : DASH,
+    all: done ? pct(run.summary?.inBand?.all) : DASH,
+    kWh: done ? formatKWh(run.summary?.energy?.kWh) : DASH,
+    litres: done ? formatLitres(run.summary?.water?.litres) : DASH,
+    status: run.status === 'running' ? `Running ${Math.round((finite(run.progress) ? run.progress : 0) * 100)} %` : STATUS_WORDS[run.status] ?? String(run.status),
+  };
+}
+
+export const isActive = (run) => run?.status === 'queued' || run?.status === 'running';

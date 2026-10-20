@@ -37,7 +37,7 @@ export function usageTileNodes(usage, withWeek = true) {
 }
 
 // A bar chart of one number per day, drawn 1:1 at the host's width (a ResizeObserver redraws it).
-// opts: { series (barSeries), kind: 'energy' | 'water', color, unit }. Returns { update(opts), destroy() }.
+// opts: { series (barSeries), kind: 'energy' | 'water' | 'run-energy' | 'run-water' (a simulation's days: no metered or estimated), color, unit }. Returns { update(opts), destroy() }.
 export function drawBarChart(host, opts) {
   let current = opts;
   let svg = null;
@@ -74,7 +74,7 @@ export function drawBarChart(host, opts) {
     svg.append(el('line', { x1: plot.x0, x2: plot.x1, y1: plot.y0, y2: plot.y0, style: 'stroke:var(--axis)', 'stroke-width': 1 }));
     for (const b of bars) {
       if (b.h <= 0) continue;
-      const solid = kind === 'water' || b.metered;
+      const solid = kind !== 'energy' || b.metered; // a simulation's days (kind 'run-energy') are not estimates
       svg.append(el('rect', {
         x: b.x.toFixed(1), y: b.y.toFixed(1), width: b.w.toFixed(1), height: b.h.toFixed(1), 'stroke-width': 1,
         style: solid ? `fill:${color};stroke:${color}` : `fill:url(#${id});stroke:${color}`,

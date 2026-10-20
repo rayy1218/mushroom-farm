@@ -167,3 +167,11 @@ test('axis labels keep the decimals small values need; the last date label ends 
   assert.equal(last.x, layout.plot.x1);
   assert.equal(layout.xTicks[0].anchor, undefined);
 });
+
+test('a simulation run\'s energy bars: no metered or estimated wording, no today', async () => {
+  const { barsSummary, barTip } = await import('../web/usage-math.js');
+  const series = [{ date: 'day 1', v: 5, metered: false }, { date: 'day 2', v: 7.5, metered: false }];
+  assert.equal(barsSummary(series, 'run-energy'), 'Energy per day, 2 days: total 12.5 kWh, highest 7.5 kWh on day 2');
+  assert.equal(barTip({ date: 'day 2', v: 7.5, metered: false }, 'run-energy'), 'day 2  7.5 kWh');
+  assert.match(barTip({ date: '2026-10-12', v: 7.5, metered: false }, 'energy'), /estimated/);
+});

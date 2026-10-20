@@ -1,7 +1,7 @@
 // A small inline-SVG line chart. Drawn 1:1 at the host's pixel width (re-drawn by a ResizeObserver),
 // so text keeps its real size on a phone. Colours come from the theme tokens through CSS variables.
 
-import { formatClock, yRange, xFor, segments, nearestIndex, clipSeries } from './chart-math.js';
+import { formatClock, yRange, xFor, segments, nearestIndex, clipSeries, stepShapes, stepValues } from './chart-math.js';
 
 const NS = 'http://www.w3.org/2000/svg';
 export const M = { left: 64, right: 12, top: 10, bottom: 24 }; // the timeline lines up with these
@@ -15,6 +15,8 @@ function el(name, attrs = {}, text) {
 
 // opts: { points: [{ at, value|null }], unit, label, color = 'var(--ink)', digits = 1, minSpan = 1, bounds, band }
 // band: { low, high } drawn as a shaded zone with dashed limit lines (the room's control band), or null.
+// bandSteps: [{ from, to, low, high }] is a band that moved (a simulation's), drawn as a stepped shaded zone with stepped dashed
+// limit lines; it takes the place of band.
 // Long ranges (spec 2026-10-19-safety-and-history-design.md 6) add: range { from, to } (the x axis spans it, not just the points),
 // ticks [{ at, label }] (axis labels instead of start/middle/end), formatAt(ms) (tooltip time), failTicks false (no red ticks
 // for null points) and onCursor(at|null) (called while the pointer moves, for the shared time line).
@@ -62,12 +64,13 @@ export function drawLineChart(host, opts) {
     const y1 = M.top; // top
 
     const values = points.map((p) => p.value).filter((v) => v !== null && Number.isFinite(v));
-    const band = current.band ?? null;
+    const steps = current.bandSteps?.length ? current.bandSteps : null;
+    const band = steps ? null : current.band ?? null;
     const t0 = current.range ? current.range.from : points.length ? points[0].at : 0;
     const t1 = current.range ? current.range.to : points.length ? points[points.length - 1].at : 0;
     const second = current.second ? clipSeries(current.second.points, t0, t1) : [];
     const secondValues = second.map((p) => p.value).filter((v) => v !== null && Number.isFinite(v));
-    const { min, max } = yRange(values, current.minSpan ?? 1, current.bounds, [...(band ? [band.low, band.high] : []), ...secondValues]);
+    const { min, max } = yRange(values, current.minSpan ?? 1, current.bounds, [...(band ? [band.low, band.high] : []), ...stepValues(steps), ...secondValues]);
     const xs = points.map((p) => xFor(p.at, t0, t1, x0, x1));
     const yFor = (v) => y0 - ((v - min) / (max - min)) * (y0 - y1);
     const ys = points.map((p) => (p.value === null ? null : yFor(p.value)));
@@ -77,7 +80,7 @@ export function drawLineChart(host, opts) {
     const latest = [...points].reverse().find((p) => p.value !== null);
     svg = el('svg', {
       width, height, viewBox: `0 0 ${width} ${height}`, role: 'img',
-      'aria-label': `${label}: ${points.length} polls${latest ? `, latest ${fmt(latest.value)}, min ${fmt(lo)}, max ${fmt(hi)}` : ''}${band ? `, band ${fmt(band.low)} to ${fmt(band.high)}` : ''}${secondText()}`,
+      'aria-label': `${label}: ${points.length} ${current.noun ?? 'polls'}${latest ? `, latest ${fmt(latest.value)}, min ${fmt(lo)}, max ${fmt(hi)}` : ''}${band ? `, band ${fmt(band.low)} to ${fmt(band.high)}` : ''}${steps ? ', band as it moved' : ''}${secondText()}`,
     });
 
     // Grid lines and y labels at the padded min and max.
@@ -101,6 +104,19 @@ export function drawLineChart(host, opts) {
         svg.append(el('text', {
           x: x1 - 4, y: y + dy, 'text-anchor': 'end', style: 'fill:var(--muted)', 'font-size': 11,
         }, v.toFixed(current.digits ?? 1)));
+      }
+    }
+
+    // A band that moved: a rect for each step, the two limits as stepped dashed lines, the last values at the right end.
+    if (steps) {
+      const shapes = stepShapes(steps, { from: t0, to: t1 }, (t) => xFor(t, t0, t1, x0, x1), yFor);
+      for (const r of shapes.rects) svg.append(el('rect', { x: r.x.toFixed(1), y: r.y.toFixed(1), width: r.width.toFixed(1), height: r.height.toFixed(1), style: 'fill:var(--band)' }));
+      for (const d of [shapes.high, shapes.low]) {
+        if (d) svg.append(el('path', { d, fill: 'none', style: 'stroke:var(--muted)', 'stroke-width': 1, 'stroke-dasharray': '4 4' }));
+      }
+      const end = steps[steps.length - 1];
+      for (const [v, dy] of [[end.high, -4], [end.low, 13]]) {
+        svg.append(el('text', { x: x1 - 4, y: yFor(v) + dy, 'text-anchor': 'end', style: 'fill:var(--muted)', 'font-size': 11 }, v.toFixed(current.digits ?? 1)));
       }
     }
 
