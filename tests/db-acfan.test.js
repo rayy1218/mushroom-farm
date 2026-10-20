@@ -104,7 +104,7 @@ test('upgrade 5 to 6 adds ac_fan (auto) and keeps rooms, readings, commands, con
   db.close();
 
   const raw = new DatabaseSync(path);
-  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 10);
+  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 11);
   raw.close();
   openDb(path).close(); // opening again changes nothing
 });

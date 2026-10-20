@@ -33,7 +33,7 @@ test('meter and outdoor indexes: a fresh database and the 8 to 9 upgrade get the
 
   openDb(join(dir, 'v8.db')).close();
   const raw = new DatabaseSync(join(dir, 'v8.db'));
-  raw.exec('DROP TABLE outdoor_readings; DROP TABLE meter_readings; PRAGMA user_version = 8');
+  raw.exec('DROP TABLE outdoor_readings; DROP TABLE meter_readings; DROP TABLE room_crops; DROP TABLE room_programs; DROP TABLE simulation_runs; PRAGMA user_version = 8');
   for (const c of ['intake_w', 'exhaust_w', 'circulation_w', 'humidifier_w', 'humidifier_lh', 'ac_input_w', 'meter_address']) {
     raw.exec(`ALTER TABLE rooms DROP COLUMN ${c}`);
   }

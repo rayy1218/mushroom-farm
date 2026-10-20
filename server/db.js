@@ -3,8 +3,9 @@
 import { DatabaseSync } from 'node:sqlite';
 import { RELAY_KEYS } from './machine-codes.js';
 import { RATINGS } from './rooms.js';
+import { PROGRAM_DEFAULTS } from './program.js';
 
-const VERSION = 10;
+const VERSION = 11;
 
 // Iteration 1 (version 0) had only the rooms table without the address columns.
 const ROOMS = `
@@ -96,6 +97,47 @@ const FRESH_AIR_CONTROL_COLUMNS = `
 ALTER TABLE room_controls ADD COLUMN exchange_every_min INTEGER NOT NULL DEFAULT 15;
 ALTER TABLE room_controls ADD COLUMN exchange_forced INTEGER NOT NULL DEFAULT 0 CHECK (exchange_forced IN (0, 1));
 ALTER TABLE room_controls ADD COLUMN fresh_from INTEGER;`;
+
+// Crops, stage program and simulation runs (spec 2026-10-20-crops-and-simulation-design.md 3.1 and 4.4).
+const PROGRAMS = `
+CREATE TABLE room_crops (
+  room_id  INTEGER NOT NULL,
+  position INTEGER NOT NULL,
+  crop     TEXT    NOT NULL,
+  blocks   INTEGER NOT NULL CHECK (blocks BETWEEN 1 AND 100000),
+  PRIMARY KEY (room_id, crop)
+) STRICT;
+CREATE TABLE room_programs (
+  room_id       INTEGER PRIMARY KEY,
+  farm_type     TEXT    NOT NULL DEFAULT 'ready' CHECK (farm_type IN ('ready', 'full')),
+  stage         TEXT    NOT NULL DEFAULT 'fruiting' CHECK (stage IN ('spawn', 'pinning', 'fruiting', 'rest')),
+  stage_since   INTEGER,
+  flush         INTEGER NOT NULL DEFAULT 1,
+  flushes       INTEGER NOT NULL DEFAULT 4,
+  days_spawn    INTEGER NOT NULL DEFAULT 21,
+  days_pinning  INTEGER NOT NULL DEFAULT 4,
+  days_fruiting INTEGER NOT NULL DEFAULT 7,
+  days_rest     INTEGER NOT NULL DEFAULT 10,
+  ramp_h        REAL    NOT NULL DEFAULT 4,
+  auto_advance  INTEGER NOT NULL DEFAULT 1 CHECK (auto_advance IN (0, 1)),
+  ramp          TEXT,
+  done          INTEGER NOT NULL DEFAULT 0 CHECK (done IN (0, 1))
+) STRICT;
+CREATE TABLE simulation_runs (
+  id          INTEGER PRIMARY KEY,
+  room_id     INTEGER NOT NULL,
+  created_at  INTEGER NOT NULL,
+  status      TEXT    NOT NULL CHECK (status IN ('queued', 'running', 'done', 'failed')),
+  progress    REAL    NOT NULL DEFAULT 0,
+  input       TEXT    NOT NULL,
+  summary     TEXT,
+  result      TEXT,
+  error       TEXT,
+  finished_at INTEGER
+) STRICT;
+CREATE INDEX simulation_runs_by_room ON simulation_runs (room_id, created_at);`;
+
+const RUNS_KEPT = 20; // finished simulation runs kept per room
 
 const ALARMS = `
 CREATE TABLE alarms (
@@ -317,6 +359,7 @@ function migrate(db) {
     }
     // Fresh air at least every 15 min, for the existing rooms too (a table made above by ROOM_CONTROLS has the columns).
     if (version >= 3 && version < 10) db.exec(FRESH_AIR_CONTROL_COLUMNS);
+    if (version < 11) db.exec(PROGRAMS);
     db.exec(`PRAGMA user_version = ${VERSION}`);
     db.exec('COMMIT');
   } catch (err) {
@@ -324,6 +367,12 @@ function migrate(db) {
     throw err;
   }
 }
+
+// A simulation_runs row (without result) as the API shows it.
+const runRow = (r) => ({
+  id: r.id, roomId: r.room_id, createdAt: r.created_at, status: r.status, progress: r.progress, input: JSON.parse(r.input),
+  summary: r.summary === null ? null : JSON.parse(r.summary), error: r.error, finishedAt: r.finished_at,
+});
 
 // A machine_log row as the API shows it.
 const logRow = (r) => ({ at: r.at, on: r.on_ === 1, setpoint: r.setpoint, mode: r.mode, fan: r.fan, source: r.source });
@@ -421,6 +470,29 @@ export function openDb(path) {
     deleteAlarms: db.prepare('DELETE FROM alarms WHERE room_id = ?'),
     deleteMachineLog: db.prepare('DELETE FROM machine_log WHERE room_id = ?'),
     deleteMeterReadings: db.prepare('DELETE FROM meter_readings WHERE room_id = ?'),
+    crops: db.prepare('SELECT crop, blocks FROM room_crops WHERE room_id = ? ORDER BY position'),
+    deleteCrops: db.prepare('DELETE FROM room_crops WHERE room_id = ?'),
+    insertCrop: db.prepare('INSERT INTO room_crops (room_id, position, crop, blocks) VALUES (?, ?, ?, ?)'),
+    program: db.prepare('SELECT * FROM room_programs WHERE room_id = ?'),
+    deleteProgram: db.prepare('DELETE FROM room_programs WHERE room_id = ?'),
+    setProgram: db.prepare(`INSERT OR REPLACE INTO room_programs (room_id, farm_type, stage, stage_since, flush, flushes, days_spawn,
+                              days_pinning, days_fruiting, days_rest, ramp_h, auto_advance, ramp, done)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+    insertRun: db.prepare(`INSERT INTO simulation_runs (room_id, created_at, status, progress, input) VALUES (?, ?, 'queued', 0, ?)`),
+    run: db.prepare('SELECT * FROM simulation_runs WHERE id = ?'),
+    runHead: db.prepare(`SELECT id, room_id, created_at, status, progress, input, summary, error, finished_at
+                         FROM simulation_runs WHERE id = ?`),
+    runs: db.prepare(`SELECT id, room_id, created_at, status, progress, input, summary, error, finished_at
+                      FROM simulation_runs WHERE room_id = ? ORDER BY created_at DESC, id DESC LIMIT ?`),
+    setRunProgress: db.prepare('UPDATE simulation_runs SET status = ?, progress = ? WHERE id = ?'),
+    finishRun: db.prepare(`UPDATE simulation_runs SET status = ?, progress = ?, summary = ?, result = ?, error = ?, finished_at = ?
+                           WHERE id = ?`),
+    deleteRun: db.prepare('DELETE FROM simulation_runs WHERE id = ?'),
+    deleteRuns: db.prepare('DELETE FROM simulation_runs WHERE room_id = ?'),
+    unfinishedRuns: db.prepare("SELECT id FROM simulation_runs WHERE status IN ('queued', 'running') ORDER BY id"),
+    pruneRuns: db.prepare(`DELETE FROM simulation_runs WHERE room_id = ? AND status IN ('done', 'failed') AND id NOT IN (
+                             SELECT id FROM simulation_runs WHERE room_id = ? AND status IN ('done', 'failed')
+                             ORDER BY created_at DESC, id DESC LIMIT ?)`),
     control: db.prepare('SELECT * FROM room_controls WHERE room_id = ?'),
     setControl: db.prepare(`UPDATE room_controls SET auto = ?, co2_low = ?, co2_high = ?, t_low = ?, t_high = ?,
                                    rh_low = ?, rh_high = ?, humidifier_during_exchange = ?, ac_fan = ?,
@@ -862,6 +934,9 @@ export function openDb(path) {
         q.deleteAlarms.run(id);
         q.deleteMachineLog.run(id);
         q.deleteMeterReadings.run(id);
+        q.deleteCrops.run(id);
+        q.deleteProgram.run(id);
+        q.deleteRuns.run(id);
         bucketCache.delete(id);
         usageCache.delete(id);
         const deleted = q.delete.run(id).changes > 0;
@@ -1015,6 +1090,86 @@ export function openDb(path) {
     // window, completed buckets cached): [{ at, t, rh }].
     outdoorBuckets(b, from, to) {
       return outdoorAddress() === null ? [] : buckets(OUTDOOR, 'out', b, from, to);
+    },
+
+    // ---- Crops and stage program (spec 2026-10-20-crops-and-simulation-design.md 3.1) ----
+
+    // The room's program (server/program.js shape; the defaults when it has none yet), or null when there is no such room.
+    getProgram(roomId) {
+      if (!q.get.get(roomId)) return null;
+      const r = q.program.get(roomId);
+      const crops = q.crops.all(roomId).map((c) => ({ crop: c.crop, blocks: c.blocks }));
+      if (!r) return { ...PROGRAM_DEFAULTS, days: { ...PROGRAM_DEFAULTS.days }, crops };
+      return {
+        crops, farmType: r.farm_type, stage: r.stage, stageSince: r.stage_since, flush: r.flush, flushes: r.flushes,
+        days: { spawn: r.days_spawn, pinning: r.days_pinning, fruiting: r.days_fruiting, rest: r.days_rest },
+        rampH: r.ramp_h, autoAdvance: r.auto_advance === 1, ramp: r.ramp === null ? null : JSON.parse(r.ramp), done: r.done === 1,
+      };
+    },
+
+    // Stores a whole program (valid: validateProgram) with its crops. Returns false when there is no such room.
+    setProgram(roomId, p) {
+      if (!q.get.get(roomId)) return false;
+      db.exec('BEGIN');
+      try {
+        q.deleteCrops.run(roomId);
+        p.crops.forEach((c, i) => q.insertCrop.run(roomId, i, c.crop, c.blocks));
+        q.setProgram.run(roomId, p.farmType, p.stage, p.stageSince, p.flush, p.flushes, p.days.spawn, p.days.pinning,
+          p.days.fruiting, p.days.rest, p.rampH, p.autoAdvance ? 1 : 0, p.ramp === null ? null : JSON.stringify(p.ramp), p.done ? 1 : 0);
+        db.exec('COMMIT');
+        return true;
+      } catch (err) {
+        db.exec('ROLLBACK');
+        throw err;
+      }
+    },
+
+    // ---- Simulation runs (spec 4.4). A run is { id, roomId, createdAt, status, progress, input, summary, error,
+    //      finishedAt } and, from getRun, result. ----
+
+    // A new queued run; returns it (without result). input: the JSON-able run input.
+    createRun(roomId, input, at) {
+      const { lastInsertRowid } = q.insertRun.run(roomId, at, JSON.stringify(input));
+      return runRow(q.runHead.get(Number(lastInsertRowid)));
+    },
+
+    // The run with its result (withResult false: without), or null.
+    getRun(id, { withResult = true } = {}) {
+      const r = withResult ? q.run.get(id) : q.runHead.get(id);
+      if (!r) return null;
+      const run = runRow(r);
+      if (withResult) run.result = r.result === null ? null : JSON.parse(r.result);
+      return run;
+    },
+
+    // The room's runs, newest first, without results.
+    listRuns(roomId, limit = RUNS_KEPT) {
+      return q.runs.all(roomId, limit).map(runRow);
+    },
+
+    setRunProgress(id, status, progress) {
+      return q.setRunProgress.run(status, progress, id).changes > 0;
+    },
+
+    // Ends a run: { status: 'done' | 'failed', summary, result, error }; then keeps the newest RUNS_KEPT finished runs of its room.
+    finishRun(id, { status, summary = null, result = null, error = null }, at) {
+      const r = q.runHead.get(id);
+      if (!r) return false;
+      q.finishRun.run(status, status === 'done' ? 1 : r.progress, summary === null ? null : JSON.stringify(summary),
+        result === null ? null : JSON.stringify(result), error, at, id);
+      q.pruneRuns.run(r.room_id, r.room_id, RUNS_KEPT);
+      return true;
+    },
+
+    deleteRun(id) {
+      return q.deleteRun.run(id).changes > 0;
+    },
+
+    // Marks every queued or running run as failed (a server start: their worker is gone). Returns the ids.
+    failUnfinishedRuns(text, at) {
+      const ids = q.unfinishedRuns.all().map((r) => r.id);
+      for (const id of ids) this.finishRun(id, { status: 'failed', error: text }, at);
+      return ids;
     },
 
     // The stored text of a setting, or null when it was never set.

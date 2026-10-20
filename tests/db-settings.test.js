@@ -112,7 +112,7 @@ test('upgrade 4 to 5 adds the settings table and keeps everything', (t) => {
   db.close();
 
   const raw = new DatabaseSync(path);
-  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 10);
+  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 11);
   assert.deepEqual(raw.prepare('SELECT key, value FROM settings').all().map((r) => ({ ...r })), [{ key: 'pollSeconds', value: '9' }]);
   raw.close();
   openDb(path).close(); // opening again changes nothing

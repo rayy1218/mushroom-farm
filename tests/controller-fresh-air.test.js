@@ -159,6 +159,7 @@ test('upgrade to 10: existing rooms get the rule at 15 min', (t) => {
   raw.exec(`ALTER TABLE room_controls DROP COLUMN exchange_every_min;
             ALTER TABLE room_controls DROP COLUMN exchange_forced;
             ALTER TABLE room_controls DROP COLUMN fresh_from;
+            DROP TABLE room_crops; DROP TABLE room_programs; DROP TABLE simulation_runs; -- version 11
             PRAGMA user_version = 9;`);
   raw.close();
   const again = openDb(path);
@@ -167,7 +168,7 @@ test('upgrade to 10: existing rooms get the rule at 15 min', (t) => {
   assert.equal(again.getControl(id).exchangeForced, false);
   const check = new DatabaseSync(path, { readOnly: true });
   t.after(() => check.close());
-  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 10);
+  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 11);
 });
 
 // ---- runner ----
