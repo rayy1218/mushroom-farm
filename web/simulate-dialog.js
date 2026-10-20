@@ -6,7 +6,7 @@ import { request, OFFLINE } from './api.js';
 import { CROPS, CROP_KEYS, STAGES, FARM_TYPES, MAX_CROPS } from './crops.js';
 import {
   PHYSICS_FIELDS, initialState, checkStep, firstField, stepOf, buildBody, mixSummary, wholeProgram, stagesOf, fixStage, roomLine,
-  summaryLines, progressLine,
+  summaryLines, progressLine, removeLabel,
 } from './simulate-math.js';
 
 const STEPS = ['Room and machines', 'Crops', 'Run'];
@@ -168,14 +168,14 @@ export function openSimulateDialog(room, hooks = {}) {
     function rows() {
       list.replaceChildren(...state.crops.map((row, i) => {
         const wrap = el('div', 'sim-crop-row');
-        const select = selectInput(CROP_KEYS.map((k) => [k, CROPS[k].name]), row.crop, (v) => { row.crop = v; paintMix(); });
+        const select = selectInput(CROP_KEYS.map((k) => [k, CROPS[k].name]), row.crop, (v) => { row.crop = v; wrap.querySelector('button').setAttribute('aria-label', removeLabel(v)); paintMix(); });
         select.setAttribute('aria-label', `Crop ${i + 1}`);
         select.dataset.field = i === 0 ? 'crops' : '';
         const blocks = numberInput(row.blocks, (v) => { row.blocks = v; paintMix(); }, true);
         blocks.setAttribute('aria-label', `Blocks of crop ${i + 1}`);
         blocks.dataset.field = '';
         const remove = button('Remove', 'danger-text');
-        remove.setAttribute('aria-label', `Remove ${CROPS[row.crop].name}`);
+        remove.setAttribute('aria-label', removeLabel(row.crop));
         remove.disabled = state.crops.length === 1;
         remove.addEventListener('click', () => { state.crops.splice(i, 1); clearError('crops'); rows(); paintMix(); add.focus(); });
         wrap.append(select, blocks, el('span', 'sim-unit', 'blocks'), remove);

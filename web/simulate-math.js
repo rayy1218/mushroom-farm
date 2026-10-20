@@ -53,6 +53,9 @@ export function programOf(cropData) {
   return { flushes: Number.isInteger(cropData?.flushes) ? cropData.flushes : PROGRAM_NUMBERS.flushes, days };
 }
 
+// The accessible name of a crop row's Remove button.
+export const removeLabel = (crop) => `Remove ${CROPS[crop]?.name ?? 'crop'}`;
+
 export const stagesOf = (farmType) => (FARM_TYPES[farmType] ?? FARM_TYPES.ready).stages;
 export const fixStage = (farmType, stage) => (stagesOf(farmType).includes(stage) ? stage : stagesOf(farmType)[0]);
 
