@@ -123,15 +123,24 @@ test('a room without a meter shows it as not wired', (t) => {
   assert.deepEqual(db.getMeter(room.id), { kind: 'meter', address: null, status: 'not-wired', failuresInRow: 0, lastOk: null, readings: [] });
 });
 
-test('meterEnergy gives the good readings in the window with the one before it first', (t) => {
+test('the meter readings of a window: the one before it, the rows, and the chunk summed in the database', (t) => {
   const db = fresh(t);
   const room = db.createRoom({ ...fields, meterAddress: 5 });
-  const add = (at, ok, energyKwh) => db.addMeterReading({ roomId: room.id, address: 5, at, ok, energyKwh });
-  add(10, true, 1); add(20, true, 2); add(25, false, null); add(30, true, 3); add(50, true, 4);
-  assert.deepEqual(db.meterEnergy(room.id, 20, 40), [
-    { at: 10, energy: 1, before: true }, { at: 20, energy: 2 }, { at: 30, energy: 3 },
-  ]);
-  assert.deepEqual(db.meterEnergy(99, 0, 100), []);
+  const H = 3_600_000;
+  const add = (at, ok, energyKwh) => db.addMeterReading({ roomId: room.id, address: 5, at: at * H, ok, energyKwh });
+  add(1, true, 1); add(2, true, 2); add(2.5, false, null); add(3, true, 3); add(5, true, 4);
+  assert.deepEqual(db.meterBefore(room.id, 2 * H), { at: H, energy: 1 });
+  assert.equal(db.meterBefore(room.id, H), null);
+  assert.deepEqual(db.meterRows(room.id, 2 * H, 4 * H), [{ at: 2 * H, energy: 2 }, { at: 3 * H, energy: 3 }]);
+  assert.deepEqual(db.meterChunk(room.id, 2 * H, 4 * H), { n: 2, kWh: 1, bad: 0, first: { at: 2 * H, energy: 2 }, last: { at: 3 * H, energy: 3 } });
+  assert.deepEqual(db.meterChunk(room.id, 6 * H, 9 * H), { n: 0, kWh: 0, bad: 0, first: null, last: null });
+  add(6, true, 0.5); // a decrease is not a plain step
+  add(7, true, 300); // nor 300 kWh in an hour
+  const chunk = db.meterChunk(room.id, 2 * H, 8 * H);
+  assert.equal(chunk.bad, 2);
+  assert.equal(chunk.kWh, 1 + 1); // 2 to 3 and 3 to 4 count, not 4 to 0.5 or 0.5 to 300
+  assert.deepEqual(db.meterRows(99, 0, 100), []);
+  assert.equal(db.meterBefore(99, 100), null);
 });
 
 test('machineLogWindow moves the last row before the window to its start', (t) => {
