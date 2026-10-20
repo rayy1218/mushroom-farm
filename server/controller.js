@@ -58,7 +58,8 @@ export function decide({ bands, state, readings, faults, now, humidifierDuringEx
   const { co2 = null, rh = null } = readings ?? {};
   const was = state.exchange;
   let exchange = was;
-  let since = state.exchangeSince ?? null;
+  // An exchange that is on with no start time (from the upgrade) starts counting now.
+  let since = state.exchangeSince ?? (was ? now : null);
   let endedAt = state.exchangeEndedAt ?? null;
   let capped = state.cappedInRow ?? 0;
   let band = state.humidifier;
@@ -67,7 +68,7 @@ export function decide({ bands, state, readings, faults, now, humidifierDuringEx
 
   const start = () => { exchange = true; since = now; };
   const stop = () => { exchange = false; since = null; endedAt = now; };
-  const onFor = was ? now - (since ?? now) : 0;
+  const onFor = was ? now - since : 0;
   const offFor = was || endedAt === null ? Infinity : now - endedAt;
   const { co2Low, co2High, co2Safety } = bands;
 
@@ -128,6 +129,7 @@ export function decide({ bands, state, readings, faults, now, humidifierDuringEx
     band = Math.floor((now - humidifierSince) / TIMED_HUMIDIFIER_MS) % 2 === 0;
     why = 'Humidity sensor fault: timed humidifier, 10 min of every 20';
   } else if (rh === null) {
+    humidifierSince = state.humidifierSince ?? null; // kept: a probe that is not yet called faulty (or a restart) must not restart the timer
     why = `Humidity sensor not answering: humidifier kept ${word(band)}`;
   } else if (rh <= bands.rhLow) {
     band = true;
@@ -186,7 +188,8 @@ export function protect({ desired, commands, changedAt = {}, now }) {
 }
 
 // Validates a whole settings object. Returns { error, field } for the first problem, or null.
-export function validateControl(c) {
+// compareSafety false skips only the check that the safety level is above co2High (the range is still checked).
+export function validateControl(c, { compareSafety = true } = {}) {
   if (typeof c.auto !== 'boolean') return { error: 'auto must be true or false', field: 'auto' };
   if (typeof c.humidifierDuringExchange !== 'boolean') {
     return { error: 'humidifierDuringExchange must be true or false', field: 'humidifierDuringExchange' };
@@ -204,7 +207,7 @@ export function validateControl(c) {
   if (typeof c.co2Safety !== 'number' || !Number.isFinite(c.co2Safety) || c.co2Safety > 10_000) {
     return { error: 'CO₂ safety level must be a number up to 10000 ppm', field: 'co2Safety' };
   }
-  if (c.co2Safety <= c.co2High) return { error: 'CO₂ safety level must be above the CO₂ band upper limit', field: 'co2Safety' };
+  if (compareSafety && c.co2Safety <= c.co2High) return { error: 'CO₂ safety level must be above the CO₂ band upper limit', field: 'co2Safety' };
   if (!Number.isInteger(c.exchangeMaxMin) || c.exchangeMaxMin < 1 || c.exchangeMaxMin > 120) {
     return { error: 'Air exchange time limit must be a whole number from 1 to 120 min', field: 'exchangeMaxMin' };
   }
@@ -224,11 +227,13 @@ export function createController({ db, machines, now = Date.now, log = console.e
   const reasons = new Map(); // roomId → { exchange, humidifier, ac, circulation, held }, in memory only
   const tries = new Map(); // `${roomId}/${machine}` → { want, n }: re-sends in the current not-following episode
   const changed = new Map(); // `${roomId}/humidifier|ac` → when the controller last changed that command (machine protection)
+  const lastCo2 = new Map(); // roomId → the last good CO₂ reading (for the planned end of an exchange)
   let lastStart = null; // the start time of the previous cycle
 
   // Drops what is kept in memory for a deleted room.
   function forget(roomId) {
     reasons.delete(roomId);
+    lastCo2.delete(roomId);
     for (const key of [...RELAY_KEYS, 'ac']) tries.delete(`${roomId}/${key}`);
     changed.delete(`${roomId}/humidifier`);
     changed.delete(`${roomId}/ac`);
@@ -243,6 +248,15 @@ export function createController({ db, machines, now = Date.now, log = console.e
     return { trh: view(trh), co2: view(co2) };
   }
 
+  // When the running exchange is planned to stop: the time limit after its start, 10 min for a timed exchange (CO₂ sensor
+  // fault); null when off, with auto off, or while the CO₂ is at the safety level (no limit).
+  function exchangeEndsAt(roomId, c) {
+    if (!c.auto || !c.exchange || c.exchangeSince === null) return null;
+    if (checks.get(roomId).co2?.fault) return c.exchangeSince + TIMED_EXCHANGE_ON_MS;
+    if ((lastCo2.get(roomId) ?? 0) >= c.co2Safety) return null;
+    return c.exchangeSince + c.exchangeMaxMin * 60_000;
+  }
+
   // The room's control settings with the reasons, or null when there is no such room.
   function get(roomId) {
     const c = db.getControl(roomId);
@@ -251,7 +265,7 @@ export function createController({ db, machines, now = Date.now, log = console.e
       return null;
     }
     const { humidifier, humidifierSince, ...rest } = c; // the band state, not the machine's command
-    return { ...rest, humidifierBand: humidifier, checks: checksOf(roomId), reasons: { ...emptyReasons(), ...reasons.get(roomId) } };
+    return { ...rest, humidifierBand: humidifier, exchangeEndsAt: exchangeEndsAt(roomId, c), checks: checksOf(roomId), reasons: { ...emptyReasons(), ...reasons.get(roomId) } };
   }
 
   // The reading of this cycle of a sensor (even a failed poll), or null (no data, or older than the cycle).
@@ -269,12 +283,14 @@ export function createController({ db, machines, now = Date.now, log = console.e
     const commands = db.getCommands(room.id);
 
     // Check the sensors (auto on or off); a reading that fails a check counts as missing.
-    const exchangeRecent = c.exchange || (c.exchangeEndedAt !== null && prevStart !== null && c.exchangeEndedAt >= prevStart);
+    const exchangeRecent = commands.relay.intake || commands.relay.exhaust || (c.exchangeEndedAt !== null && prevStart !== null && c.exchangeEndedAt >= prevStart);
     const ctx = { exchangeRecent, humidifierOn: commands.relay.humidifier };
     const good = { t: null, rh: null, co2: null };
+    const unwired = { trh: false, co2: false };
     for (const sensor of db.getSensors(room.id, 1)) {
       if (sensor.status === 'not-wired') {
         checks.forget(room.id, sensor.kind);
+        unwired[sensor.kind] = true;
         continue;
       }
       const r = latest(sensor, cycleStart);
@@ -288,6 +304,11 @@ export function createController({ db, machines, now = Date.now, log = console.e
       }
     }
     const status = checks.get(room.id);
+    // A value whose sensor is faulty or not wired clears its process alarms (a missing reading only pauses them).
+    const parts = (kind, name) => unwired[kind] || Boolean(status[kind]?.parts[name].fault);
+    const clear = { t: parts('trh', 't'), rh: parts('trh', 'rh'), co2: parts('co2', 'co2') };
+    if (good.co2 !== null) lastCo2.set(room.id, good.co2);
+    else if (unwired.co2) lastCo2.delete(room.id);
     const faults = { trh: status.trh?.fault ? status.trh.faultWhy : null, co2: status.co2?.fault ? status.co2.faultWhy : null };
 
     // What to send: the differences, and a machine that is not following again (at most RESENDS times per episode).
@@ -303,7 +324,7 @@ export function createController({ db, machines, now = Date.now, log = console.e
           cappedInRow: c.cappedInRow, humidifier: c.humidifier, humidifierSince: c.humidifierSince,
         },
         readings: { rh: good.rh, co2: good.co2 },
-        faults: { trh: faults.trh !== null, co2: faults.co2 !== null },
+        faults: { trh: Boolean(status.trh?.parts.rh.fault), co2: faults.co2 !== null }, // only an RH fault times the humidifier
         now: at,
         humidifierDuringExchange: c.humidifierDuringExchange,
         acFan: c.acFan,
@@ -349,7 +370,12 @@ export function createController({ db, machines, now = Date.now, log = console.e
       reasons.set(room.id, why);
     }
 
-    alarms.evaluate(room, { readings: good, bands: c, faults, cappedInRow, machines: view });
+    // An alarm error must not stop this room's commands.
+    try {
+      alarms.evaluate(room, { readings: good, bands: c, faults, clear, cappedInRow, machines: view });
+    } catch (err) {
+      log(err);
+    }
 
     for (const key of sends) {
       if (!stillAuto(room.id)) return; // the user took over while we were sending
@@ -370,7 +396,9 @@ export function createController({ db, machines, now = Date.now, log = console.e
       if (body === null || typeof body !== 'object' || Array.isArray(body)) throw new CommandError(400, 'Body must be a JSON object');
       const merged = {};
       for (const key of Object.keys(DEFAULTS)) merged[key] = key in body ? body[key] : current[key];
-      const bad = validateControl(merged);
+      // The safety level is compared with the CO₂ band only when the body sets one of them, so a room whose
+      // stored band is above its level can still switch auto, the humidifier option or the fan.
+      const bad = validateControl(merged, { compareSafety: 'co2High' in body || 'co2Safety' in body });
       if (bad) throw new CommandError(400, bad.error, bad.field);
       db.setControl(roomId, merged);
       if (merged.auto && !current.auto) {

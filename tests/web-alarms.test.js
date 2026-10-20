@@ -108,9 +108,9 @@ test('a failing call throws an ApiError with the status', async (t) => {
 
 test('the state line says when the exchange stops by, when the time limit is known', () => {
   const since = at(19, 10, 42);
-  assert.equal(exchangeLine({ exchange: true, exchangeSince: since, exchangeMaxMin: 10 }, since + 3 * 60000), 'Air exchange on since 10:42 (stops by 10:52)');
-  assert.equal(exchangeLine({ exchange: true, exchangeSince: since, exchangeMaxMin: 20 }, since), 'Air exchange on since 10:42 (stops by 11:02)');
-  assert.equal(exchangeLine({ exchange: true, exchangeSince: since }, since + 12 * 60000), 'Air exchange on since 10:42 (12 min)');
+  assert.equal(exchangeLine({ exchange: true, exchangeSince: since, exchangeEndsAt: since + 10 * 60000 }, since + 3 * 60000), 'Air exchange on since 10:42 (stops by 10:52)');
+  assert.equal(exchangeLine({ exchange: true, exchangeSince: since, exchangeEndsAt: since + 20 * 60000 }, since), 'Air exchange on since 10:42 (stops by 11:02)');
+  assert.equal(exchangeLine({ exchange: true, exchangeSince: since, exchangeEndsAt: null }, since + 12 * 60000), 'Air exchange on since 10:42 (12 min)');
   assert.equal(exchangeLine({ exchange: false, exchangeMaxMin: 10 }), 'Air exchange off');
   assert.equal(formatHm(since), '10:42');
 });

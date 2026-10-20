@@ -45,13 +45,13 @@ export function formatHm(ms) {
   return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
 
-// "Air exchange on since 10:42 (stops by 10:52)" with the room's time limit, "(12 min)" without; or "Air exchange off".
-// now is injectable.
+// "Air exchange on since 10:42 (stops by 10:52)" with the planned end the server sends (exchangeEndsAt); without one
+// (no limit at the safety level) "(12 min)" for how long it has run; or "Air exchange off". now is injectable.
 export function exchangeLine(c, now = Date.now()) {
   if (!c.exchange) return 'Air exchange off';
   if (c.exchangeSince == null) return 'Air exchange on';
-  if (Number.isFinite(c.exchangeMaxMin)) {
-    return `Air exchange on since ${formatHm(c.exchangeSince)} (stops by ${formatHm(c.exchangeSince + c.exchangeMaxMin * 60000)})`;
+  if (Number.isFinite(c.exchangeEndsAt)) {
+    return `Air exchange on since ${formatHm(c.exchangeSince)} (stops by ${formatHm(c.exchangeEndsAt)})`;
   }
   const min = Math.max(0, Math.floor((now - c.exchangeSince) / 60000));
   const length = min >= 60 ? `${Math.floor(min / 60)} h ${min % 60} min` : `${min} min`;

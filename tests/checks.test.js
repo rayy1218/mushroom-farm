@@ -82,39 +82,39 @@ test('the rate is per minute: a slow change over a long gap is fine', () => {
 test('a jump is accepted when 3 readings in a row agree', () => {
   const s = setup();
   s.co2(650);
-  assert.equal(s.co2(1200).why, 'sudden jump'); // 6600 ppm/min
-  assert.equal(s.co2(1210).why, 'sudden jump'); // agrees with the one before: second
-  const third = s.co2(1215);
+  assert.equal(s.co2(2000).why, 'sudden jump'); // 6600 ppm/min
+  assert.equal(s.co2(2010).why, 'sudden jump'); // agrees with the one before: second
+  const third = s.co2(2015);
   assert.equal(third.ok, true, 'the third agreeing reading is accepted');
-  assert.equal(s.co2(1220).ok, true, 'and the new level is the normal one');
+  assert.equal(s.co2(2020).ok, true, 'and the new level is the normal one');
   assert.equal(third.fault, false, 'only 2 bad readings: no fault');
 });
 
 test('readings that disagree do not add up to a jump', () => {
   const s = setup();
   s.co2(650);
-  assert.equal(s.co2(1200).ok, false);
-  assert.equal(s.co2(2500).ok, false);
-  assert.equal(s.co2(1500).ok, false);
-  assert.equal(s.co2(1500).ok, false);
-  assert.equal(s.co2(1500).ok, true);
+  assert.equal(s.co2(2000).ok, false);
+  assert.equal(s.co2(5000).ok, false);
+  assert.equal(s.co2(3000).ok, false);
+  assert.equal(s.co2(3000).ok, false);
+  assert.equal(s.co2(3000).ok, true);
 });
 
 test('a reading back near the last good value ends a pending jump', () => {
   const s = setup();
   s.co2(650);
-  s.co2(1200);
+  s.co2(2000);
   assert.equal(s.co2(655).ok, true);
-  assert.equal(s.co2(1200).why, 'sudden jump', 'the count starts again');
+  assert.equal(s.co2(2000).why, 'sudden jump', 'the count starts again');
 });
 
 test('a falling CO2 is not tested while an air exchange runs or just after', () => {
   const s = setup();
-  s.co2(1500);
+  s.co2(3000);
   assert.equal(s.co2(700, { exchangeRecent: true }).ok, true);
   const s2 = setup();
-  s2.co2(1500);
-  assert.equal(s2.co2(700).why, 'sudden jump');
+  s2.co2(3000);
+  assert.equal(s2.co2(1500).why, 'sudden jump');
   const s3 = setup();
   s3.co2(700);
   assert.equal(s3.co2(1900, { exchangeRecent: true }).why, 'sudden jump', 'a rise is still tested');
@@ -214,4 +214,38 @@ test('rooms are independent', () => {
   for (let i = 0; i < 3; i++) checks.check(1, 'co2', { at: START + i, ok: false });
   assert.equal(checks.check(2, 'co2', { at: START, ok: true, co2: 650 }).fault, false);
   assert.equal(checks.get(1).co2.fault, true);
+});
+
+test('readings 1 s apart with normal noise are all good; a real spike is still a jump', () => {
+  const s = setup(1000);
+  for (let i = 0; i < 120; i++) {
+    const r1 = s.co2(650 + (i % 2 ? 40 : -40));
+    const r2 = s.trh(22 + (i % 2 ? 0.1 : -0.1), 90 + (i % 2 ? 0.3 : -0.3));
+    assert.equal(r1.ok, true, `co2 ${i}`);
+    assert.equal(r2.ok, true, `trh ${i}`);
+  }
+  assert.equal(s.co2(2700).why, 'sudden jump');
+  assert.equal(s.trh(27, 90).parts.t.why, 'sudden jump');
+});
+
+test('the jump is judged over at least 1 min: 2 degrees in 10 s is fine, 3 degrees in 10 s is not', () => {
+  const s = setup(10_000);
+  s.trh(22, 90);
+  assert.equal(s.trh(23.9, 90).ok, true);
+  assert.equal(s.trh(26.2, 90).parts.t.why, 'sudden jump');
+});
+
+test('RH frozen with the humidifier on counts from when the humidifier went on', () => {
+  const s = setup(5 * MIN);
+  let r;
+  for (let i = 0; i < 12; i++) r = s.trh(22 + (i % 2) * 0.1, 90, { humidifierOn: false }); // 60 min steady, humidifier off
+  assert.equal(r.parts.rh.ok, true);
+  r = s.trh(22, 90, { humidifierOn: true }); // switched on now: not frozen at once
+  assert.equal(r.parts.rh.ok, true);
+  for (let i = 0; i < 5; i++) r = s.trh(22 + (i % 2) * 0.1, 90, { humidifierOn: true });
+  assert.equal(r.parts.rh.ok, true, '25 min after it went on');
+  r = s.trh(22, 90, { humidifierOn: true });
+  assert.equal(r.parts.rh.why, 'value does not change (frozen)', '30 min after it went on');
+  r = s.trh(22.1, 90, { humidifierOn: false });
+  assert.equal(r.parts.rh.ok, true);
 });

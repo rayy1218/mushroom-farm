@@ -20,19 +20,19 @@ const BAD_STATUS = {
 // The process alarms: raised when `hit` holds for the delay, cleared when `released` holds. A rule gets the good
 // value of its reading (null when the sensor is faulty or gave nothing: no alarm from a bad sensor) and the bands.
 const PROCESS = [
-  { key: 'tHigh', level: 'warning', delay: 5 * MIN_MS, read: (r) => r.t,
+  { key: 'tHigh', sensor: 't', level: 'warning', delay: 5 * MIN_MS, read: (r) => r.t,
     hit: (v, b) => v > b.tHigh + 1, released: (v, b) => v <= b.tHigh + 0.8 + EPS,
     text: (v, b) => `Temperature ${num(v)} °C, above ${b.tHigh} + 1` },
-  { key: 'tLow', level: 'warning', delay: 5 * MIN_MS, read: (r) => r.t,
+  { key: 'tLow', sensor: 't', level: 'warning', delay: 5 * MIN_MS, read: (r) => r.t,
     hit: (v, b) => v < b.tLow - 1, released: (v, b) => v >= b.tLow - 0.8 - EPS,
     text: (v, b) => `Temperature ${num(v)} °C, below ${b.tLow} − 1` },
-  { key: 'rhLow', level: 'warning', delay: 5 * MIN_MS, read: (r) => r.rh,
+  { key: 'rhLow', sensor: 'rh', level: 'warning', delay: 5 * MIN_MS, read: (r) => r.rh,
     hit: (v, b) => v < b.rhLow - 5, released: (v, b) => v >= b.rhLow - 4 - EPS,
     text: (v, b) => `Humidity ${num(v)} %, below ${b.rhLow} − 5` },
-  { key: 'co2High', level: 'warning', delay: 5 * MIN_MS, read: (r) => r.co2,
+  { key: 'co2High', sensor: 'co2', level: 'warning', delay: 5 * MIN_MS, read: (r) => r.co2,
     hit: (v, b) => v > b.co2High + 100, released: (v, b) => v <= b.co2High + 80 + EPS,
     text: (v, b) => `CO₂ ${num(v)} ppm, above ${b.co2High} + 100` },
-  { key: 'co2Safety', level: 'critical', delay: MIN_MS, read: (r) => r.co2,
+  { key: 'co2Safety', sensor: 'co2', level: 'critical', delay: MIN_MS, read: (r) => r.co2,
     hit: (v, b) => v >= b.co2Safety, released: (v, b) => v < b.co2Safety - 20,
     text: (v, b) => `CO₂ ${num(v)} ppm, at or above the safety level ${b.co2Safety}` },
 ];
@@ -67,12 +67,19 @@ export function createAlarms({ db, now = Date.now }) {
 
   return {
     // room: { id }. input: { readings: { t, rh, co2 } (good values or null), bands (the room's control settings),
-    // faults: { trh, co2 } (the fault text or null), cappedInRow, machines (the machines view or null) }.
-    evaluate(room, { readings, bands, faults, cappedInRow, machines }) {
+    // faults: { trh, co2 } (the fault text or null),
+    // clear: { t, rh, co2 } (true when that value's sensor is faulty or not wired: its process alarms clear), cappedInRow, machines (the machines view or null) }.
+    evaluate(room, { readings, bands, faults, clear = {}, cappedInRow, machines }) {
       const active = new Map(db.activeAlarms(room.id).map((a) => [a.key, a]));
 
       for (const rule of PROCESS) {
         const v = rule.read(readings);
+        if (clear[rule.sensor]) {
+          // A faulty or unwired sensor: the alarm ends (the sensor fault alarm says why) and the count is dropped.
+          if (active.has(rule.key)) db.clearAlarm(room.id, rule.key, now());
+          pending.delete(`${room.id}/${rule.key}`);
+          continue;
+        }
         const result = v === null || v === undefined ? null
           : { hit: rule.hit(v, bands), released: rule.released(v, bands), text: () => rule.text(v, bands) };
         apply(room, active, rule.key, rule.level, rule.delay, result);

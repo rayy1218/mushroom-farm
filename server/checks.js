@@ -4,7 +4,7 @@
 const MIN_MS = 60_000;
 const FAULT_AFTER = 3; // bad readings in a row
 const JUMP_AGREE = 3; // readings in a row that agree with each other: the jump is real
-const MIN_STEP_MIN = 1 / 60; // a jump is judged over at least one second
+const MIN_STEP_MIN = 1; // a jump is judged over at least one minute: short reading intervals do not turn noise into jumps
 
 // range, rate (change per minute allowed), frozen (minutes of the exact same value)
 const SPECS = {
@@ -30,6 +30,8 @@ const newState = () => ({ last: null, same: null, pending: [], bad: 0, why: null
 // Checks one value. Returns null when it is good, else the text why not. ctx: { exchangeRecent, humidifierOn }.
 function checkValue(st, name, v, at, ctx) {
   const spec = SPECS[name];
+  // When the humidifier went on (first seen on); RH is not called frozen from before that.
+  if (name === 'rh') st.humidifierOnSince = ctx.humidifierOn ? (st.humidifierOnSince ?? at) : null;
   if (typeof v !== 'number' || !Number.isFinite(v)) return WHY.none;
   if (v < spec.min || v > spec.max) return WHY.range;
   if (st.same?.v !== v) st.same = { v, since: at };
@@ -48,8 +50,11 @@ function checkValue(st, name, v, at, ctx) {
     }
   }
 
-  const frozenMin = name === 'rh' && ctx.humidifierOn ? RH_FROZEN_HUMIDIFIER_MIN : spec.frozenMin;
-  if (!(name === 'rh' && v >= WET_RH) && at - st.same.since >= frozenMin * MIN_MS) return WHY.frozen;
+  // While the humidifier is on, a steady RH counts from the later of the same-value start and the humidifier start.
+  const humidifying = name === 'rh' && st.humidifierOnSince !== null;
+  const frozenMin = humidifying ? RH_FROZEN_HUMIDIFIER_MIN : spec.frozenMin;
+  const steadySince = humidifying ? Math.max(st.same.since, st.humidifierOnSince) : st.same.since;
+  if (!(name === 'rh' && v >= WET_RH) && at - steadySince >= frozenMin * MIN_MS) return WHY.frozen;
   st.last = { v, at };
   return null;
 }

@@ -319,7 +319,7 @@ test('the safety level starts the exchange at once and raises the critical alarm
   await s.cycle({ co2: 1100, dt: 20_000 });
   await s.cycle({ co2: 1300, dt: 20_000 });
   assert.equal(s.controller.get(s.id).exchange, true);
-  assert.equal(s.controller.get(s.id).reasons.exchange, 'Air exchange: CO₂ 1300 ≥ safety level 1250');
+  assert.equal(s.controller.get(s.id).reasons.exchange, 'Air exchange: CO₂ 1300 ≥ safety level 1250, no time limit');
   await s.cycle({ co2: 1290, dt: 30_000 });
   await s.cycle({ co2: 1290, dt: 30_000 });
   assert.equal(s.keys().includes('co2Safety'), true);
@@ -364,12 +364,22 @@ test('the control view has the new settings, checks and held texts', (t) => {
   assert.throws(() => s.controller.update(s.id, { exchangeMaxMin: 0 }), { status: 400, field: 'exchangeMaxMin' });
 });
 
-test('forget drops the checks, the alarm counts and the protection times of a room', async (t) => {
+test('forget drops the checks, the alarm delay counts and the protection times of a room', async (t) => {
   const s = setup(t);
-  await s.cycle();
+  const hot = (i, rh) => ({ t: 24.5 + (i % 2) * 0.1, rh });
+  s.controller.update(s.id, { auto: true, rhLow: 90, rhHigh: 92 });
+  for (let i = 0; i < 6; i++) await s.cycle(hot(i, 91)); // the tHigh delay count runs: 2.5 min
+  await s.cycle(hot(6, 89)); // humidifier on: its change time is kept
+  assert.equal(s.db.getCommands(s.id).relay.humidifier, true);
   assert.notEqual(s.controller.get(s.id).checks.co2, null);
   s.controller.forget(s.id);
   assert.deepEqual(s.controller.get(s.id).checks, { trh: null, co2: null });
+  // the protection time is gone: wet air switches the humidifier off at once (it would be held 1 min otherwise)
+  await s.cycle({ ...hot(7, 93), dt: 1000 });
+  assert.equal(s.db.getCommands(s.id).relay.humidifier, false);
+  // the delay count starts again: 4 min after forget is not 5 min (without forget it would be 7)
+  for (let i = 8; i < 16; i++) await s.cycle(hot(i, 93));
+  assert.deepEqual(s.keys(), []);
 });
 
 test('an unwired sensor is not checked', async (t) => {
