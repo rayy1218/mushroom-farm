@@ -8,6 +8,7 @@ import { RELAY_KEYS } from './machine-codes.js';
 import { validateSettings, readSettings, writeSettings } from './settings.js';
 import { outdoorView, outdoorHistory, RANGES } from './outdoor.js';
 import { roomUsage, farmUsage } from './usage.js';
+import { createCropApi } from './crop-api.js';
 
 const MAX_BODY = 64 * 1024;
 
@@ -68,6 +69,8 @@ export function createApi(db, machines = null, controller = null, poller = null)
     if (clash) throw new HttpError(400, `Address ${outdoor} is used by the outdoor sensor`, clash);
     return result.room;
   }
+
+  const crop = createCropApi({ db });
 
   const prices = () => {
     const { electricityPrice, waterPrice } = readSettings(db);
@@ -133,7 +136,7 @@ export function createApi(db, machines = null, controller = null, poller = null)
       if (req.method !== 'GET') throw notFound();
       return send(res, 200, db.overview());
     }
-    const match = /^\/api\/rooms\/([1-9][0-9]{0,14})(\/sensors|\/usage|\/control|\/history|\/machines(?:\/([a-z]+))?)?$/.exec(path);
+    const match = /^\/api\/rooms\/([1-9][0-9]{0,14})(\/sensors|\/usage|\/control|\/crop|\/history|\/machines(?:\/([a-z]+))?)?$/.exec(path);
     if (!match) throw notFound();
     const id = Number(match[1]);
     if (match[2]?.startsWith('/machines')) {
@@ -170,6 +173,11 @@ export function createApi(db, machines = null, controller = null, poller = null)
       if (req.method !== 'PUT') throw notFound();
       if (!db.getRoom(id)) throw noRoom();
       return send(res, 200, controller.update(id, await readJson(req)));
+    }
+    if (match[2] === '/crop') {
+      if (req.method !== 'GET' && req.method !== 'PUT') throw notFound();
+      if (!db.getRoom(id)) throw noRoom();
+      return send(res, 200, req.method === 'GET' ? crop.get(id) : crop.put(id, await readJson(req)));
     }
     if (match[2] === '/usage') {
       if (req.method !== 'GET') throw notFound();

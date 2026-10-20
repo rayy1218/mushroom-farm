@@ -5,6 +5,7 @@ import { CommandError } from './machines.js';
 import { RELAY_KEYS } from './machine-codes.js';
 import { createSensorChecks } from './checks.js';
 import { createAlarms } from './alarms.js';
+import { advance, BAND_KEYS } from './program.js';
 
 export const DEFAULTS = {
   auto: false, co2Low: 600, co2High: 750, tLow: 21, tHigh: 23, rhLow: 85, rhHigh: 95, humidifierDuringExchange: false, acFan: 'auto',
@@ -322,9 +323,22 @@ export function createController({ db, machines, now = Date.now, log = console.e
   const stillAuto = (roomId) => Boolean(db.getControl(roomId)?.auto);
 
   async function runRoom(room, cycleStart, prevStart) {
-    const c = db.getControl(room.id);
+    let c = db.getControl(room.id);
     if (!c) return;
     const at = now();
+
+    // The stage program (auto on or off): a due stage change, and the ramped bands written to the settings when they differ.
+    const program = db.getProgram(room.id);
+    let blocksDone = null;
+    if (program.crops.length > 0) {
+      const next = advance(program, at, c);
+      if (next.program !== program) db.setProgram(room.id, next.program);
+      if (next.bands && BAND_KEYS.some((k) => next.bands[k] !== c[k])) {
+        db.setControl(room.id, { ...c, ...next.bands });
+        c = db.getControl(room.id);
+      }
+      if (next.program.done) blocksDone = { flush: next.program.flush, flushes: next.program.flushes };
+    }
     const commands = db.getCommands(room.id);
 
     // Check the sensors (auto on or off); a reading that fails a check counts as missing.
@@ -418,7 +432,7 @@ export function createController({ db, machines, now = Date.now, log = console.e
 
     // An alarm error must not stop this room's commands.
     try {
-      alarms.evaluate(room, { readings: good, bands: c, faults, clear, cappedInRow, machines: view });
+      alarms.evaluate(room, { readings: good, bands: c, faults, clear, cappedInRow, machines: view, blocksDone });
     } catch (err) {
       log(err);
     }
@@ -447,6 +461,11 @@ export function createController({ db, machines, now = Date.now, log = console.e
       const bad = validateControl(merged, { compareSafety: 'co2High' in body || 'co2Safety' in body });
       if (bad) throw new CommandError(400, bad.error, bad.field);
       db.setControl(roomId, merged);
+      // A person's change of a band ends a running ramp.
+      if (BAND_KEYS.some((k) => k in body)) {
+        const program = db.getProgram(roomId);
+        if (program.ramp) db.setProgram(roomId, { ...program, ramp: null });
+      }
       if (merged.auto && !current.auto) {
         for (const key of [...RELAY_KEYS, 'ac']) tries.delete(`${roomId}/${key}`);
         changed.delete(`${roomId}/humidifier`);
