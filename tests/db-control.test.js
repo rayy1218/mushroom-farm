@@ -13,10 +13,11 @@ const fields = { name: 'Room 1', length: 6, width: 4, height: 2.5 };
 const DEFAULT_CONTROL = {
   auto: false, co2Low: 600, co2High: 750, tLow: 21, tHigh: 23, rhLow: 85, rhHigh: 95,
   exchange: false, exchangeSince: null, humidifier: false, humidifierDuringExchange: false, acFan: 'auto',
-  co2Safety: 1250, exchangeMaxMin: 10, exchangeEndedAt: null, cappedInRow: 0, humidifierSince: null,
+  co2Safety: 1250, exchangeMaxMin: 10, acDrop: 0, exchangeEndedAt: null, cappedInRow: 0, humidifierSince: null,
 };
-// A room that already existed at the upgrade 3 to 4 keeps the humidifier forced on during an exchange (the old behaviour).
-const UPGRADED_CONTROL = { ...DEFAULT_CONTROL, humidifierDuringExchange: true };
+// A room that already existed at an upgrade keeps the old behaviour: humidifier forced on and the aircon 5 °C lower
+// during an exchange.
+const UPGRADED_CONTROL = { ...DEFAULT_CONTROL, humidifierDuringExchange: true, acDrop: 5 };
 
 // The schema of iteration 3 (user_version 2), copied from the db.js of that time.
 const ITERATION_3_SCHEMA = `
@@ -96,7 +97,7 @@ test('upgrade 2 to 3 keeps rooms, readings and commands and adds a control row p
   db.close();
 
   const raw = new DatabaseSync(path);
-  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 7);
+  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 8);
   raw.close();
   openDb(path).close(); // opening again changes nothing
   const again = new DatabaseSync(path);
@@ -130,7 +131,7 @@ test('a new room gets the default control row; deleting the room deletes it', (t
 test('setControl stores the settings and setControlState the band states', (t) => {
   const db = fresh(t);
   const { id } = db.createRoom(fields);
-  const settings = { auto: true, co2Low: 500, co2High: 800, tLow: 20, tHigh: 24, rhLow: 80, rhHigh: 90, humidifierDuringExchange: false, acFan: 'high', co2Safety: 1100, exchangeMaxMin: 15 };
+  const settings = { auto: true, co2Low: 500, co2High: 800, tLow: 20, tHigh: 24, rhLow: 80, rhHigh: 90, humidifierDuringExchange: false, acFan: 'high', co2Safety: 1100, exchangeMaxMin: 15, acDrop: 2 };
   assert.equal(db.setControl(id, settings), true);
   assert.deepEqual(db.getControl(id), { ...DEFAULT_CONTROL, ...settings });
   db.setControlState(id, { exchange: true, humidifier: true }, 1000);
@@ -204,7 +205,7 @@ test('upgrade 3 to 4 adds humidifier_during_exchange (on) and keeps rooms, readi
   db.close();
 
   const raw = new DatabaseSync(path);
-  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 7);
+  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 8);
   raw.close();
   openDb(path).close(); // opening again changes nothing
 });

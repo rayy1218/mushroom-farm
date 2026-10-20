@@ -18,6 +18,8 @@ const PARAMS = {
   outdoorHigh: { min: -40, max: 60, whole: false, label: 'Outdoor day high', unit: '°C', value: 33 },
   outdoorLow: { min: -40, max: 60, whole: false, label: 'Outdoor night low', unit: '°C', value: 25 },
   outdoorDew: { min: -40, max: 60, whole: false, label: 'Outdoor dew point', unit: '°C', value: 24 },
+  // Peak sun heat through the roof at 13:00: about 300 W for an insulated 20 m² roof, several kW for bare zinc.
+  sunW: { min: 0, max: 100000, whole: false, label: 'Sun on the roof', unit: 'W', value: 300 },
   fanFlow: { min: 0, max: 100000, whole: false, label: 'Fan flow', unit: 'm³/h', value: 600 },
   acBTU: { min: 0, max: 200000, whole: true, label: 'Aircon capacity', unit: 'BTU/h', value: 12000 },
   humidifierLH: { min: 0, max: 100, whole: false, label: 'Humidifier output', unit: 'L/h', value: 2 },
@@ -49,6 +51,8 @@ function checkName(value) {
   return name;
 }
 
+// The air state to keep: T, W, CO2 and, when the model gives them, the mass temperature Tm and the surfaces' Hs.
+const airState = (s) => ({ T: s.T, W: s.W, CO2: s.CO2, ...(isNumber(s.Tm) ? { Tm: s.Tm } : {}), ...(isNumber(s.Hs) ? { Hs: s.Hs } : {}) });
 const paramsOf = (room) => Object.fromEntries(Object.keys(PARAMS).map((k) => [k, room[k]]));
 const clone = (room) => ({ ...room, state: { ...room.state } });
 
@@ -199,7 +203,7 @@ export function createSims({ sensors, statePath, model = defaultModel, now = Dat
   function setState(id, state, acting, clock) {
     const room = rooms.get(id);
     if (!room) return;
-    room.state = { T: state.T, W: state.W, CO2: state.CO2 };
+    room.state = airState(state);
     if (isNumber(clock)) room.clock = ((clock % DAY_S) + DAY_S) % DAY_S;
     room.acting = acting ?? null;
     dirty = true;
@@ -256,7 +260,7 @@ export function createSims({ sensors, statePath, model = defaultModel, now = Dat
       room[kind] = saved[kind];
     }
     const s = saved.state;
-    room.state = isNumber(s?.T) && isNumber(s?.W) && isNumber(s?.CO2) ? { T: s.T, W: s.W, CO2: s.CO2 } : startState(room);
+    room.state = isNumber(s?.T) && isNumber(s?.W) && isNumber(s?.CO2) ? airState(s) : startState(room);
     rooms.set(room.id, room);
     nextId = Math.max(nextId, room.id + 1);
   }

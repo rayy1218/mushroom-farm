@@ -204,6 +204,7 @@ const SIM_PARAMS = [
   ['outdoorHigh', 'Outdoor high', '°C', -40, 60, 0.5],
   ['outdoorLow', 'Outdoor low', '°C', -40, 60, 0.5],
   ['outdoorDew', 'Outdoor dew point', '°C', -40, 60, 0.5],
+  ['sunW', 'Sun on the roof', 'W, peak', 0, 100000, 10],
   ['fanFlow', 'Fan flow', 'm³/h, intake + exhaust', 0, 100000, 10],
   ['acBTU', 'Aircon', 'BTU/h', 0, 200000, 500],
   ['humidifierLH', 'Humidifier', 'L/h', 0, 100, 0.1],
@@ -225,7 +226,11 @@ function actingText(a) {
   if (a.acCoolKW > 0.005) parts.push(`AC cooling ${a.acCoolKW.toFixed(1)} kW`);
   if (a.acHeatKW > 0.005) parts.push(`AC heating ${a.acHeatKW.toFixed(1)} kW`);
   if (a.humidifierGH > 0) parts.push(`Humidifier +${(a.humidifierGH / 1000).toFixed(1)} L/h`);
-  parts.push(`Blocks ${a.blocksKW < 0 ? "−" : "+"}${Math.abs(Math.round(a.blocksKW * 1000))} W`);
+  if (a.acLatentKW > 0.005) parts.push(`AC drying ${(a.acLatentKW / 2.45 * 3.6).toFixed(1)} L/h`);
+  parts.push(`Blocks ${a.blocksKW < 0 ? '−' : '+'}${Math.abs(Math.round(a.blocksKW * 1000))} W`);
+  if (a.sunKW > 0.0005) parts.push(`Sun +${Math.round(a.sunKW * 1000)} W`);
+  if (a.machineKW > 0.0005) parts.push(`Motors +${Math.round(a.machineKW * 1000)} W`);
+  if (a.condensedGH > 1) parts.push(`Condensing ${(a.condensedGH / 1000).toFixed(1)} L/h`);
   return parts.join(' · ');
 }
 
@@ -296,13 +301,14 @@ function buildSimCard(room) {
   card.co2 = el('strong');
   card.acting = el('p', { className: 'sim-acting' });
   card.outdoor = el('p', { className: 'muted sim-outdoor' });
+  card.mass = el('p', { className: 'muted sim-outdoor' });
   const live = el('p', { className: 'sim-live' },
     el('span', {}, 'T ', card.t, ' °C'), el('span', {}, 'RH ', card.rh, ' %'), el('span', {}, 'CO₂ ', card.co2, ' ppm'));
 
   card.el = el('article', { className: 'sim-card' },
     el('div', { className: 'sim-head' }, enabled.label, card.name, el('span', { className: 'sim-actions' }, reset, remove)),
-    links, params, live, card.outdoor, card.acting,
-    el('p', { className: 'muted sim-note' }, 'Circulation fan: no effect in this one-zone model'),
+    links, params, live, card.mass, card.outdoor, card.acting,
+    el('p', { className: 'muted sim-note' }, 'Circulation fan: adds its 60 W of motor heat (one well-mixed zone, so no mixing effect)'),
     card.error);
   return card;
 }
@@ -338,6 +344,7 @@ function showSimCard(card, room, sensors) {
   card.t.textContent = room.state.T.toFixed(1);
   card.rh.textContent = room.rh.toFixed(1);
   card.co2.textContent = String(Math.round(room.state.CO2));
+  card.mass.textContent = room.state.Tm === undefined ? '' : `Blocks and racks ${room.state.Tm.toFixed(1)} °C · surfaces ${Math.round(room.state.Hs)} %${room.state.Hs > 100 ? ' (wet)' : ''}`;
   card.outdoor.textContent = `Outdoor now ${room.outdoor.T.toFixed(1)} °C / ${Math.round(room.outdoor.RH)} % · simulated time ${clockText(room.clock)} (low at 03:00, high at 15:00, same dew point all day)`;
   card.acting.textContent = room.enabled ? actingText(room.acting) : 'Switched off';
   card.el.classList.toggle('off', !room.enabled);

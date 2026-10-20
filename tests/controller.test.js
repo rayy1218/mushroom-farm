@@ -4,7 +4,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { decide, validateControl, DEFAULTS } from '../server/controller.js';
 
-const bands = { co2Low: 600, co2High: 750, co2Safety: 1250, exchangeMaxMin: 10, tLow: 21, tHigh: 23, rhLow: 85, rhHigh: 95 };
+// acDrop 5: the room these rules were written for lowers the aircon 5 °C during an exchange (a new room: 0).
+const bands = { co2Low: 600, co2High: 750, co2Safety: 1250, exchangeMaxMin: 10, tLow: 21, tHigh: 23, rhLow: 85, rhHigh: 95, acDrop: 5 };
 const off = { exchange: false, humidifier: false };
 const NOW = 10_000_000;
 
@@ -132,6 +133,24 @@ test('aircon fan follows the room setting, auto when none is given', () => {
   assert.equal(run({ fan: 'low', co2: 800 }).reasons.ac, 'Aircon: 17.0 °C (22.0 − 5 during air exchange), fan low');
 });
 
+test('aircon drop: none for a new room (acDrop 0 or missing), any 0 to 10 °C as set', () => {
+  for (const acDrop of [0, undefined]) {
+    const r = run({ co2: 800, b: { ...bands, acDrop } });
+    assert.equal(r.desired.ac.setpoint, 22);
+    assert.equal(r.reasons.ac, 'Aircon: 22.0 °C (middle of 21–23)');
+  }
+  const two = run({ co2: 800, b: { ...bands, acDrop: 2.5 } });
+  assert.equal(two.desired.ac.setpoint, 19.5);
+  assert.equal(two.reasons.ac, 'Aircon: 19.5 °C (22.0 − 2.5 during air exchange)');
+  assert.equal(validateControl({ ...DEFAULTS, acDrop: 10 }), null);
+  for (const acDrop of [-0.5, 10.5, '5', null]) {
+    assert.deepEqual(validateControl({ ...DEFAULTS, acDrop }), { error: 'Aircon lower during air exchange must be a number from 0 to 10 °C', field: 'acDrop' });
+  }
+  assert.equal(DEFAULTS.acDrop, 0);
+  // a CO2 lower limit below 450 ppm cannot be reached with outdoor air
+  assert.deepEqual(validateControl({ ...DEFAULTS, co2Low: 449 }), { error: 'CO₂ band lower limit must be a number from 450 to 5000 ppm', field: 'co2Low' });
+});
+
 test('reasons name the rule and the numbers', () => {
   assert.equal(run({ co2: 762 }).reasons.exchange, 'Air exchange: CO₂ 762 ≥ 750');
   assert.equal(run({ state: { exchange: true, humidifier: false }, co2: 590 }).reasons.exchange, 'Air exchange: CO₂ 590 ≤ 600');
@@ -168,5 +187,5 @@ test('validateControl: defaults are valid; each field and the low < high check',
   assert.deepEqual(bad({ co2Low: 800 }), { error: 'CO₂ band lower limit must be below the upper limit', field: 'co2Low' });
   assert.equal(bad({ tLow: 23 }).field, 'tLow');
   assert.equal(bad({ rhLow: 95 }).field, 'rhLow');
-  assert.equal(bad({ co2Low: 300, co2High: 5000, tLow: 16, tHigh: 35, rhLow: 40, rhHigh: 100, co2Safety: 5001 }), null);
+  assert.equal(bad({ co2Low: 450, co2High: 5000, tLow: 16, tHigh: 35, rhLow: 40, rhHigh: 100, co2Safety: 5001 }), null);
 });

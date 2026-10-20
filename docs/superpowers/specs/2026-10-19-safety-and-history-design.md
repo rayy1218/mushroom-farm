@@ -10,7 +10,7 @@ Every cycle, for every room (auto on or off), the latest reading of each wired s
 |---|---|---|---|---|
 | No reading | ✓ | ✓ | ✓ | the poll failed (`ok` false) |
 | Range | −10 to 60 °C | 1 to 100 % | 300 to 10 000 ppm | outside the range |
-| Sudden jump | 2 °C/min | 15 %/min | 1000 ppm/min | the change since the last good reading is above the rate × the time between them, with that time taken as at least 1 min (so short reading intervals do not turn noise into jumps). A jump is accepted (good again) when 3 readings in a row agree with each other (each within the rate of the one before). A **falling** CO₂ is not tested while an air exchange runs or in the cycle after it stopped. |
+| Sudden jump | 2 °C/min | 15 %/min | 1000 ppm/min | the change since the last good reading is above the rate × the time between them, with that time taken as at least 1 min (so short reading intervals do not turn noise into jumps). A jump is accepted (good again) when 3 readings in a row agree with each other (each within the rate of the one before). A **falling** CO₂, and T and RH **either way**, are not tested while an air exchange runs or in the cycle after it stopped (outdoor air reaches the probe within a minute; T and RH added 2026-10-20); RH is not tested while the humidifier is commanded on. |
 | Frozen | 120 min | 120 min (30 min while the humidifier is commanded on) | 60 min | the exact same value for that long. RH ≥ 99.9 is never frozen (a wet probe reads 100). |
 
 | Item | Behaviour |

@@ -73,18 +73,18 @@ test('values are clamped to the device limits', () => {
   assert.deepEqual([sensors.get(1).t, sensors.get(1).rh, sensors.get(2).co2, sensors.get(4).roomT], [80, 5, 10000, 80]);
 });
 
-test('intake, exhaust and humidifier follow the relay running state; circulation is ignored', () => {
+test('intake, exhaust, circulation and humidifier follow the relay running state', () => {
   const { sensors, sim, model } = setup();
   sim.tick();
-  assert.deepEqual(lastInputs(model), { intake: false, exhaust: false, humidifier: false, ac: null });
+  assert.deepEqual(lastInputs(model), { intake: false, exhaust: false, circulation: false, humidifier: false, ac: null });
   sensors.writeCoil(3, 0, true);
   sensors.writeCoil(3, 2, true);
   sim.tick();
-  assert.deepEqual(lastInputs(model), { intake: true, exhaust: false, humidifier: false, ac: null });
+  assert.deepEqual(lastInputs(model), { intake: true, exhaust: false, circulation: true, humidifier: false, ac: null });
   sensors.writeCoil(3, 1, true);
   sensors.writeCoil(3, 3, true);
   sim.tick();
-  assert.deepEqual(lastInputs(model), { intake: true, exhaust: true, humidifier: true, ac: null });
+  assert.deepEqual(lastInputs(model), { intake: true, exhaust: true, circulation: true, humidifier: true, ac: null });
 });
 
 test('a stuck coil, a dead motor and a relay still spinning up do not count as running', () => {
@@ -95,7 +95,7 @@ test('a stuck coil, a dead motor and a relay still spinning up do not count as r
   sensors.update(3, { dead: [false, false, false, true] });
   sensors.writeCoil(3, 3, true); // coil on, motor dead
   sim.tick();
-  assert.deepEqual(lastInputs(model), { intake: true, exhaust: false, humidifier: false, ac: null });
+  assert.deepEqual(lastInputs(model), { intake: true, exhaust: false, circulation: false, humidifier: false, ac: null });
 
   const slow = createSensors({ spinUpMs: 60_000 });
   slow.add({ address: 3, kind: 'relay' });
@@ -153,7 +153,7 @@ test('a missing, unlinked or wrong-kind link means that machine is off and its s
   sensors.remove(4);
   sensors.remove(2);
   sim.tick();
-  assert.deepEqual(lastInputs(model), { intake: false, exhaust: false, humidifier: false, ac: null });
+  assert.deepEqual(lastInputs(model), { intake: false, exhaust: false, circulation: false, humidifier: false, ac: null });
   assert.equal(sensors.get(1).t, 21.3);
 
   // The address comes back as another kind: not a relay, so it is not read as one.

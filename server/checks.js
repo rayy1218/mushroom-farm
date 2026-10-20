@@ -38,9 +38,11 @@ function checkValue(st, name, v, at, ctx) {
 
   // Sudden jump: against the last good value; a jump is accepted once 3 readings in a row agree.
   if (st.last) {
-    // A falling CO2 is expected while an air exchange runs and in the cycle after it stopped.
-    const falling = name === 'co2' && ctx.exchangeRecent && v < st.last.v;
-    if (falling || rateOf(st.last, v, at) <= spec.rate) {
+    // Expected fast changes: a falling CO2, and T and RH either way, while an air exchange runs and in the cycle after
+    // it stopped (outdoor air reaches the probe within a minute); RH while the humidifier is on.
+    const expected = ctx.exchangeRecent && (name === 't' || name === 'rh' || (name === 'co2' && v < st.last.v))
+      || (name === 'rh' && ctx.humidifierOn);
+    if (expected || rateOf(st.last, v, at) <= spec.rate) {
       st.pending = [];
     } else {
       const prev = st.pending.at(-1);

@@ -8,20 +8,21 @@ import { createAlarms } from './alarms.js';
 
 export const DEFAULTS = {
   auto: false, co2Low: 600, co2High: 750, tLow: 21, tHigh: 23, rhLow: 85, rhHigh: 95, humidifierDuringExchange: false, acFan: 'auto',
-  co2Safety: 1250, exchangeMaxMin: 10,
+  co2Safety: 1250, exchangeMaxMin: 10, acDrop: 0,
 };
 export const AC_FANS = ['auto', 'low', 'high'];
 
 // Pairs of band limits, in the order they are checked.
 const BANDS = [
-  { low: 'co2Low', high: 'co2High', label: 'CO₂ band', min: 300, max: 5000, unit: 'ppm' },
+  // A lower limit below about 450 ppm can never be reached with outdoor air at about 420.
+  { low: 'co2Low', high: 'co2High', label: 'CO₂ band', min: 450, max: 5000, unit: 'ppm' },
   { low: 'tLow', high: 'tHigh', label: 'Temperature band', min: 16, max: 35, unit: '°C' },
   { low: 'rhLow', high: 'rhHigh', label: 'Humidity band', min: 40, max: 100, unit: '%' },
 ];
 
 const AC_MIN = 16;
 const AC_MAX = 30;
-const EXCHANGE_DROP = 5;
+const AC_DROP_MAX = 10; // °C the aircon setpoint may be lowered during an air exchange (acDrop)
 
 // Machine protection and the timed fallbacks (spec 2026-10-19-safety-and-history-design.md 2.1 to 2.3).
 const MIN_ON_MS = 30_000; // air exchange
@@ -46,7 +47,8 @@ function wait(ms) {
 const acDiffers = (a, d) => a.power !== d.power || a.mode !== d.mode || a.fan !== d.fan
   || Math.round(a.setpoint * 10) !== Math.round(d.setpoint * 10);
 
-// bands: { co2Low, co2High, co2Safety, exchangeMaxMin, tLow, tHigh, rhLow, rhHigh }.
+// bands: { co2Low, co2High, co2Safety, exchangeMaxMin, tLow, tHigh, rhLow, rhHigh, acDrop } (acDrop: °C lower during an
+// air exchange, 0 when missing).
 // state: { exchange, exchangeSince, exchangeEndedAt, cappedInRow, humidifier, humidifierSince }, the remembered states
 // (times in ms; exchangeSince is null while the exchange is off, exchangeEndedAt null when it never ended).
 // humidifierDuringExchange: whether an air exchange forces the humidifier on (default false).
@@ -144,11 +146,13 @@ export function decide({ bands, state, readings, faults, now, humidifierDuringEx
   reasons.humidifier = forced ? 'Humidifier: on during air exchange' : why;
 
   const middle = (bands.tLow + bands.tHigh) / 2;
-  const target = exchange ? middle - EXCHANGE_DROP : middle;
+  const drop = bands.acDrop ?? 0;
+  const lowered = exchange && drop > 0;
+  const target = lowered ? middle - drop : middle;
   const setpoint = Math.round(Math.min(AC_MAX, Math.max(AC_MIN, target)) * 2) / 2;
   const fanNote = acFan === 'auto' ? '' : `, fan ${acFan}`;
-  reasons.ac = exchange
-    ? `Aircon: ${setpoint.toFixed(1)} °C (${middle.toFixed(1)} − ${EXCHANGE_DROP} during air exchange)${fanNote}`
+  reasons.ac = lowered
+    ? `Aircon: ${setpoint.toFixed(1)} °C (${middle.toFixed(1)} − ${num(drop)} during air exchange)${fanNote}`
     : `Aircon: ${setpoint.toFixed(1)} °C (middle of ${bands.tLow}–${bands.tHigh})${fanNote}`;
   reasons.circulation = 'Circulation: always on';
 
@@ -210,6 +214,9 @@ export function validateControl(c, { compareSafety = true } = {}) {
   if (compareSafety && c.co2Safety <= c.co2High) return { error: 'CO₂ safety level must be above the CO₂ band upper limit', field: 'co2Safety' };
   if (!Number.isInteger(c.exchangeMaxMin) || c.exchangeMaxMin < 1 || c.exchangeMaxMin > 120) {
     return { error: 'Air exchange time limit must be a whole number from 1 to 120 min', field: 'exchangeMaxMin' };
+  }
+  if (typeof c.acDrop !== 'number' || !Number.isFinite(c.acDrop) || c.acDrop < 0 || c.acDrop > AC_DROP_MAX) {
+    return { error: `Aircon lower during air exchange must be a number from 0 to ${AC_DROP_MAX} °C`, field: 'acDrop' };
   }
   return null;
 }

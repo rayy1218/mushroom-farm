@@ -20,8 +20,8 @@ test('reason lines carry the machine name once', () => {
 
 test('band check enforces limits and low < high', () => {
   assert.equal(checkBand(co2, 600, 750), null);
-  assert.equal(checkBand(co2, 300, 5000), null);
-  assert.equal(checkBand(co2, 299, 750).field, 'low');
+  assert.equal(checkBand(co2, 450, 5000), null);
+  assert.equal(checkBand(co2, 449, 750).field, 'low'); // below about 450 cannot be reached with outdoor air
   assert.equal(checkBand(co2, 600, 5001).field, 'high');
   assert.equal(checkBand(temp, 21, 21).message, 'Temperature band lower limit must be below the upper limit');
   assert.equal(checkBand(temp, 15.5, 23).field, 'low');
@@ -83,4 +83,20 @@ test('the aircon fan choice has its label and options, reads the setting, auto w
   assert.equal(acFanOf({}), 'auto');
   assert.equal(acFanOf(null), 'auto');
   assert.equal('acFan' in bandsBody({ co2Low: 1, co2High: 2, tLow: 3, tHigh: 4, rhLow: 5, rhHigh: 6, acFan: 'low' }), false);
+});
+
+test('the card shows typical crop bands, the CO₂ minimum of 450 and the aircon drop setting', async () => {
+  const { BANDS, SAFETY_FIELDS, checkSafety } = await import('../web/control-math.js');
+  assert.equal(BANDS.find((b) => b.key === 'co2').min, 450);
+  for (const b of BANDS) assert.ok(b.hint && b.hint.length > 10, `${b.key} has a hint`);
+  assert.match(BANDS.find((b) => b.key === 't').hint, /grey oyster about 24 to 28, lion’s mane about 18 to 22/);
+  const safety = SAFETY_FIELDS.find((f) => f.key === 'co2Safety');
+  assert.match(safety.label, /for the crop/);
+  assert.match(safety.hint, /5000 ppm over 8 h/);
+  const drop = SAFETY_FIELDS.find((f) => f.key === 'acDrop');
+  assert.deepEqual([drop.min, drop.max, drop.step], [0, 10, '0.5']);
+  assert.equal(checkSafety(750, 1250, 10, 0), null);
+  assert.equal(checkSafety(750, 1250, 10, undefined), null);
+  assert.deepEqual(checkSafety(750, 1250, 10, 10.5), { field: 'acDrop', message: 'Aircon lower during air exchange must be a number from 0 to 10 °C' });
+  assert.equal(checkSafety(750, 1250, 10, Number.NaN).field, 'acDrop');
 });

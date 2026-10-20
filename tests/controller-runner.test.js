@@ -41,7 +41,8 @@ function setup(t, { db = openDb(':memory:'), room = WIRED, onWrite = null, log =
   return api;
 }
 
-const setAuto = (c, id, extra = {}) => c.update(id, { auto: true, ...extra });
+// acDrop 5: these tests were written for a room that lowers the aircon 5 °C during an exchange (a new room: 0).
+const setAuto = (c, id, extra = {}) => c.update(id, { auto: true, acDrop: 5, ...extra });
 
 test('nothing is sent while auto is off', async (t) => {
   const s = setup(t);

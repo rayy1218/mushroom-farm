@@ -51,7 +51,7 @@ async function call(method, path, body) {
 
 const DEFAULT_VIEW = {
   auto: false, co2Low: 600, co2High: 750, tLow: 21, tHigh: 23, rhLow: 85, rhHigh: 95,
-  exchange: false, exchangeSince: null, humidifierBand: false, humidifierDuringExchange: false, acFan: 'auto',
+  exchange: false, exchangeSince: null, humidifierBand: false, humidifierDuringExchange: false, acFan: 'auto', acDrop: 0,
   co2Safety: 1250, exchangeMaxMin: 10, exchangeEndedAt: null, exchangeEndsAt: null, cappedInRow: 0, checks: { trh: null, co2: null },
   reasons: { exchange: '', humidifier: '', ac: '', circulation: '', held: { humidifier: '', ac: '' } },
 };
@@ -112,7 +112,7 @@ test('PUT control validation answers 400 with the field', async () => {
     [{ co2Low: 800 }, 'co2Low', 'CO₂ band lower limit must be below the upper limit'],
     [{ tLow: 24 }, 'tLow', 'Temperature band lower limit must be below the upper limit'],
     [{ rhLow: 99, rhHigh: 99 }, 'rhLow', 'Humidity band lower limit must be below the upper limit'],
-    [{ co2Low: 100 }, 'co2Low', 'CO₂ band lower limit must be a number from 300 to 5000 ppm'],
+    [{ co2Low: 100 }, 'co2Low', 'CO₂ band lower limit must be a number from 450 to 5000 ppm'],
     [{ co2High: 6000 }, 'co2High', null],
     [{ tHigh: 40 }, 'tHigh', null],
     [{ rhHigh: 101 }, 'rhHigh', null],

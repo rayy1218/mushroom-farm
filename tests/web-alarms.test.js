@@ -140,7 +140,8 @@ test('a held reason is the text under its machine, empty when none', () => {
 
 test('the safety inputs: labels, and the same checks as the server', () => {
   assert.deepEqual(SAFETY_FIELDS.map((f) => [f.key, f.label]), [
-    ['co2Safety', 'CO₂ safety level (ppm)'], ['exchangeMaxMin', 'Air exchange time limit (min)'],
+    ['co2Safety', 'CO₂ safety level for the crop (ppm)'], ['exchangeMaxMin', 'Air exchange time limit (min)'],
+    ['acDrop', 'Aircon lower during air exchange (°C)'],
   ]);
   assert.equal(checkSafety(750, 1250, 10), null);
   assert.deepEqual(checkSafety(750, 750, 10), { field: 'co2Safety', message: 'CO₂ safety level must be above the CO₂ band upper limit' });

@@ -1,10 +1,13 @@
 // Pure helpers for the Automatic control card (no DOM, so they can be tested in Node).
 
-// Rows of the card: server field names, label, unit and limits (spec section 2).
+// Rows of the card: server field names, label, unit, limits (spec section 2) and the typical band of the crops grown here.
 export const BANDS = [
-  { key: 'co2', label: 'CO₂', unit: 'ppm', name: 'CO₂ band', low: 'co2Low', high: 'co2High', min: 300, max: 5000, step: '1' },
-  { key: 't', label: 'Temperature', unit: '°C', name: 'Temperature band', low: 'tLow', high: 'tHigh', min: 16, max: 35, step: '0.5' },
-  { key: 'rh', label: 'Humidity', unit: '%', name: 'Humidity band', low: 'rhLow', high: 'rhHigh', min: 40, max: 100, step: '0.5' },
+  { key: 'co2', label: 'CO₂', unit: 'ppm', name: 'CO₂ band', low: 'co2Low', high: 'co2High', min: 450, max: 5000, step: '1',
+    hint: 'Typical: oyster under about 1000, lion’s mane under about 750 to 1000. Outdoor air is about 420, so a lower limit near it takes a lot of air.' },
+  { key: 't', label: 'Temperature', unit: '°C', name: 'Temperature band', low: 'tLow', high: 'tHigh', min: 16, max: 35, step: '0.5',
+    hint: 'Typical fruiting: grey oyster about 24 to 28, lion’s mane about 18 to 22.' },
+  { key: 'rh', label: 'Humidity', unit: '%', name: 'Humidity band', low: 'rhLow', high: 'rhHigh', min: 40, max: 100, step: '0.5',
+    hint: 'Typical: 85 to 95 for oyster, about 90 for lion’s mane.' },
 ];
 
 export const REASONS = [
@@ -107,8 +110,11 @@ export function bandsBody(values) {
 
 // The two inputs next to the bands, saved with Save.
 export const SAFETY_FIELDS = [
-  { key: 'co2Safety', label: 'CO₂ safety level (ppm)', min: 300, max: 10000, step: '1' },
+  { key: 'co2Safety', label: 'CO₂ safety level for the crop (ppm)', min: 300, max: 10000, step: '1',
+    hint: 'At or above it the air exchange runs with no time limit and a critical alarm is raised. Not a limit for people: 5000 ppm over 8 h.' },
   { key: 'exchangeMaxMin', label: 'Air exchange time limit (min)', min: 1, max: 120, step: '1' },
+  { key: 'acDrop', label: 'Aircon lower during air exchange (°C)', min: 0, max: 10, step: '0.5',
+    hint: 'The aircon already runs at full power during an exchange, so this rarely helps; 0 keeps it at the middle of the band.' },
 ];
 
 // Which safety input a server field belongs to, or null.
@@ -116,12 +122,15 @@ export function locateSafetyField(field) {
   return SAFETY_FIELDS.find((f) => f.key === field) ?? null;
 }
 
-// Checks the typed safety values like the server. → { field, message } or null.
-export function checkSafety(co2High, co2Safety, exchangeMaxMin) {
+// Checks the typed safety values like the server (acDrop only when given). → { field, message } or null.
+export function checkSafety(co2High, co2Safety, exchangeMaxMin, acDrop) {
   if (!Number.isFinite(co2Safety) || co2Safety > 10000) return { field: 'co2Safety', message: 'CO₂ safety level must be a number up to 10000 ppm' };
   if (co2Safety <= co2High) return { field: 'co2Safety', message: 'CO₂ safety level must be above the CO₂ band upper limit' };
   if (!Number.isInteger(exchangeMaxMin) || exchangeMaxMin < 1 || exchangeMaxMin > 120) {
     return { field: 'exchangeMaxMin', message: 'Air exchange time limit must be a whole number from 1 to 120 min' };
+  }
+  if (acDrop !== undefined && (!Number.isFinite(acDrop) || acDrop < 0 || acDrop > 10)) {
+    return { field: 'acDrop', message: 'Aircon lower during air exchange must be a number from 0 to 10 °C' };
   }
   return null;
 }

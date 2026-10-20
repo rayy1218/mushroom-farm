@@ -361,6 +361,7 @@ button.toggle[data-on="true"]:hover { opacity: .85; background: var(--ink); }
 .c-bands { display: grid; }
 .c-band { display: grid; grid-template-columns: minmax(0, 200px) minmax(0, 120px) minmax(0, 120px); align-items: end; gap: 4px 16px; padding: 10px 0; border-bottom: 1px solid var(--border); }
 .c-band .m-name { align-self: center; }
+.c-hint { grid-column: 1 / -1; margin: 0; font-size: var(--fs-sm); color: var(--muted); max-width: 60ch; }
 .c-band .ctl[aria-invalid="true"] { border-color: var(--critical-text); }
 .c-band .ctl[aria-invalid="true"]:focus-visible { outline-color: var(--critical-text); }
 .control .ac-send { margin: 12px 0; }

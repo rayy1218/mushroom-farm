@@ -8,7 +8,7 @@ Date: 2026-10-19 · Branch `v2` · Builds on `2026-10-16-machines-design.md` (it
 |---|---|
 | **Air exchange** (intake + exhaust together) | starts when CO₂ ≥ CO₂ band upper limit (750), stops when CO₂ ≤ band lower limit (600); between them it keeps its state. "Air exchange" = this on state. |
 | **Humidifier** | band rule on RH: on when RH ≤ RH band lower limit, off when RH ≥ upper limit, keeps its state in between; **always on during an air exchange**, unless "Humidifier on during air exchange" is off for the room (then it follows its RH band state alone; the band state is tracked either way) |
-| **Aircon** | power on, mode cool, fan from the room's `acFan` setting (*default* auto; low keeps the room's humidity in band far more often in the simulations, because a slower fan makes the coil colder and wrings more water out); setpoint = middle of the temperature band; **during an air exchange setpoint − 5 °C** (clamped to the AC's 16–30 °C, rounded to 0.5) |
+| **Aircon** | power on, mode cool, fan from the room's `acFan` setting (*default* auto; a slower fan makes the coil colder and wrings more water out of air that is not near saturation; in a room close to saturation it hardly matters, revised simulation 2026-10-20); setpoint = middle of the temperature band; **during an air exchange setpoint − `acDrop`** (a room setting 0 to 10 °C, step 0.5; 0 for a new room because the aircon already runs at full power during an exchange; rooms that existed at the upgrade 7 → 8 keep the 5 °C they had; clamped to the AC's 16–30 °C, rounded to 0.5) |
 | **Circulation fan** | on all the time |
 
 ## 2. Settings per room
@@ -35,7 +35,7 @@ Stored in a new table `room_controls (room_id PK, auto, co2_low, co2_high, t_low
 | Turning auto on | evaluates at once on the next cycle (band states start from the current commanded intake state for `exchange`, current humidifier command for `humidifier`) |
 | Turning auto off | nothing is switched; machines stay as they are and manual control is back |
 | Manual commands while auto | 409 "Automatic control is on" (field none) |
-| Reason | per machine a short text kept in memory, e.g. "Air exchange: CO₂ 762 ≥ 750", "Humidifier: on during air exchange" (when it is off for the room: "Humidifier: off (RH 96 ≥ 95; not forced during air exchange)", "Humidifier: on (RH 84 ≤ 85)"), "Aircon: 17.0 °C (22.0 − 5 during air exchange)" (with the fan set to low or high the text ends ", fan low" / ", fan high", e.g. "Aircon: 22.0 °C (middle of 21–23), fan low"), "Circulation: always on", "CO₂ sensor not answering: air exchange kept on" |
+| Reason | per machine a short text kept in memory, e.g. "Air exchange: CO₂ 762 ≥ 750", "Humidifier: on during air exchange" (when it is off for the room: "Humidifier: off (RH 96 ≥ 95; not forced during air exchange)", "Humidifier: on (RH 84 ≤ 85)"), "Aircon: 17.0 °C (22.0 − 5 during air exchange)" (with acDrop 5; with 0 the text stays "Aircon: 22.0 °C (middle of 21–23)"; with the fan set to low or high the text ends ", fan low" / ", fan high", e.g. "Aircon: 22.0 °C (middle of 21–23), fan low"), "Circulation: always on", "CO₂ sensor not answering: air exchange kept on" |
 
 ## 4. API
 
@@ -62,3 +62,12 @@ Stored in a new table `room_controls (room_id PK, auto, co2_low, co2_high, t_low
 | Runner | only differences are sent; nothing when auto off; skipped parts without addresses; band states saved; manual 409 while auto |
 | DB / API | upgrade 2 → 3 keeps rooms, readings and commands; control validation; deletes with room |
 | End to end | farm controller + device simulation: closed room CO₂ rises to ≥ 750 → exchange on (intake, exhaust, humidifier on, AC setpoint 17) → CO₂ falls to ≤ 600 → exchange off (AC back to 22) |
+
+## Changes 2026-10-20
+
+| Change | Rule |
+|---|---|
+| CO₂ band lower limit | at least 450 ppm (outdoor air is about 420, so a lower limit below that can never be reached); both inputs and the server check 450 to 5000 |
+| `acDrop` | new room setting "Aircon lower during air exchange (°C)", 0 to 10, saved with the bands; column `room_controls.ac_drop REAL NOT NULL DEFAULT 5` (db upgrade 7 → 8, so existing rooms keep 5); a new room's row is written with 0 |
+| Hints | each band row shows the typical band of the crops grown here (temperature: grey oyster about 24 to 28 °C, lion's mane about 18 to 22 °C; CO₂: oyster under about 1000, lion's mane under about 750 to 1000 ppm; humidity: 85 to 95 % oyster, about 90 % lion's mane) |
+| Safety level label | "CO₂ safety level for the crop (ppm)", with the hint that it is not a limit for people (5000 ppm over 8 h) |

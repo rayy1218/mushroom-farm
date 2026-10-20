@@ -3,7 +3,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { RELAY_KEYS } from './machine-codes.js';
 
-const VERSION = 7;
+const VERSION = 8;
 
 // Iteration 1 (version 0) had only the rooms table without the address columns.
 const ROOMS = `
@@ -72,7 +72,8 @@ CREATE TABLE room_controls (
   exchange_max_min INTEGER NOT NULL DEFAULT 10,
   exchange_ended_at INTEGER,
   capped_in_row INTEGER NOT NULL DEFAULT 0,
-  humidifier_since INTEGER
+  humidifier_since INTEGER,
+  ac_drop REAL NOT NULL DEFAULT 5
 ) STRICT;`;
 
 // Safety and history (spec 2026-10-19-safety-and-history-design.md 3.2 and 4): the room_controls columns
@@ -217,6 +218,8 @@ function migrate(db) {
       // Covering: the history buckets read only the index, not the table.
       db.exec('CREATE INDEX readings_by_time ON readings (room_id, kind, at, ok, t, rh, co2);');
     }
+    // The aircon drop during an exchange becomes a room setting: existing rooms keep the 5 °C they had.
+    if (version >= 3 && version < 8) db.exec('ALTER TABLE room_controls ADD COLUMN ac_drop REAL NOT NULL DEFAULT 5');
     db.exec(`PRAGMA user_version = ${VERSION}`);
     db.exec('COMMIT');
   } catch (err) {
@@ -301,15 +304,16 @@ export function openDb(path) {
     deleteCommands: db.prepare('DELETE FROM machine_commands WHERE room_id = ?'),
     commands: db.prepare('SELECT * FROM machine_commands WHERE room_id = ?'),
     // A new room: the humidifier is not forced on during an air exchange (fresh Malaysian air is wet already).
-    // The column default (1) stays for the rooms that the upgrade 3 to 4 gave the setting.
-    insertControl: db.prepare('INSERT OR REPLACE INTO room_controls (room_id, humidifier_during_exchange) VALUES (?, 0)'),
+    // and the aircon is not lowered during an exchange (it already runs at full power then). The column defaults
+    // (humidifier 1, ac_drop 5) stay for the rooms that the upgrades gave the settings.
+    insertControl: db.prepare('INSERT OR REPLACE INTO room_controls (room_id, humidifier_during_exchange, ac_drop) VALUES (?, 0, 0)'),
     deleteControl: db.prepare('DELETE FROM room_controls WHERE room_id = ?'),
     deleteAlarms: db.prepare('DELETE FROM alarms WHERE room_id = ?'),
     deleteMachineLog: db.prepare('DELETE FROM machine_log WHERE room_id = ?'),
     control: db.prepare('SELECT * FROM room_controls WHERE room_id = ?'),
     setControl: db.prepare(`UPDATE room_controls SET auto = ?, co2_low = ?, co2_high = ?, t_low = ?, t_high = ?,
                                    rh_low = ?, rh_high = ?, humidifier_during_exchange = ?, ac_fan = ?,
-                                   co2_safety = ?, exchange_max_min = ? WHERE room_id = ?`),
+                                   co2_safety = ?, exchange_max_min = ?, ac_drop = ? WHERE room_id = ?`),
     setControlState: db.prepare(`UPDATE room_controls SET exchange = ?, humidifier = ?, exchange_since = ?,
                                         exchange_ended_at = ?, capped_in_row = ?, humidifier_since = ? WHERE room_id = ?`),
     setRelay: Object.fromEntries(RELAY_KEYS.map((key) => [key,
@@ -500,7 +504,7 @@ export function openDb(path) {
     },
 
     // The automatic control settings and band states, or null when there is no such room:
-    // { auto, co2Low, co2High, tLow, tHigh, rhLow, rhHigh, humidifierDuringExchange, acFan, co2Safety, exchangeMaxMin,
+    // { auto, co2Low, co2High, tLow, tHigh, rhLow, rhHigh, humidifierDuringExchange, acFan, co2Safety, exchangeMaxMin, acDrop,
     //   exchange, exchangeSince, exchangeEndedAt, cappedInRow, humidifier, humidifierSince }
     getControl(roomId) {
       let r = q.control.get(roomId);
@@ -513,15 +517,15 @@ export function openDb(path) {
         auto: r.auto === 1, co2Low: r.co2_low, co2High: r.co2_high, tLow: r.t_low, tHigh: r.t_high,
         rhLow: r.rh_low, rhHigh: r.rh_high, humidifierDuringExchange: r.humidifier_during_exchange === 1, acFan: r.ac_fan,
         exchange: r.exchange === 1, exchangeSince: r.exchange_since, humidifier: r.humidifier === 1,
-        co2Safety: r.co2_safety, exchangeMaxMin: r.exchange_max_min, exchangeEndedAt: r.exchange_ended_at,
+        co2Safety: r.co2_safety, exchangeMaxMin: r.exchange_max_min, acDrop: r.ac_drop, exchangeEndedAt: r.exchange_ended_at,
         cappedInRow: r.capped_in_row, humidifierSince: r.humidifier_since,
       };
     },
 
     // Returns true when the room exists. Settings must be valid (see validateControl in controller.js).
-    setControl(roomId, { auto, co2Low, co2High, tLow, tHigh, rhLow, rhHigh, humidifierDuringExchange, acFan, co2Safety, exchangeMaxMin }) {
+    setControl(roomId, { auto, co2Low, co2High, tLow, tHigh, rhLow, rhHigh, humidifierDuringExchange, acFan, co2Safety, exchangeMaxMin, acDrop }) {
       return q.setControl.run(auto ? 1 : 0, co2Low, co2High, tLow, tHigh, rhLow, rhHigh, humidifierDuringExchange ? 1 : 0, acFan,
-        co2Safety, exchangeMaxMin, roomId).changes > 0;
+        co2Safety, exchangeMaxMin, acDrop, roomId).changes > 0;
     },
 
     // Without exchangeSince it keeps the time the exchange began and is cleared when it ends. exchangeEndedAt, cappedInRow

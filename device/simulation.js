@@ -7,7 +7,7 @@ import { outdoorAt } from './sim-model.js';
 
 const MODES = ['cool', 'heat', 'dry', 'fan'];
 const FANS = ['auto', 'low', 'high'];
-const OUTPUT = { intake: 0, exhaust: 1, humidifier: 3 }; // circulation (2) has no effect in a one-zone model
+const OUTPUT = { intake: 0, exhaust: 1, circulation: 2, humidifier: 3 }; // circulation only adds its motor heat (one zone)
 export const DEFAULT_TICK_MS = 1000;
 export const PERSIST_MS = 10_000;
 
@@ -34,6 +34,7 @@ export function createSimulation({ sensors, sims, model = defaultModel, tickMs =
     return {
       intake: running('intake'),
       exhaust: running('exhaust'),
+      circulation: running('circulation'),
       humidifier: running('humidifier'),
       ac: works ? { mode: MODES[ac.mode], setpoint: ac.setpoint, fan: FANS[ac.fan] } : null,
     };

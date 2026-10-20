@@ -110,6 +110,7 @@ test('PUT validation: 400 with the field', async () => {
   await bad({ outdoorHigh: 24 }, 'outdoorLow'); // the night low of 25 is now above the day high
   await bad({ co2PerBlock: 1001 }, 'co2PerBlock');
   await bad({ wallUA: -1 }, 'wallUA');
+  await bad({ sunW: -1 }, 'sunW');
   await bad({ fanFlow: Infinity }, 'fanFlow');
   await bad({ acBTU: null }, 'acBTU');
   await bad({ acBTU: 200001 }, 'acBTU');
@@ -226,14 +227,15 @@ test('state round trip: rooms, links, speed and the air survive a restart', () =
   const room = a.add({ name: 'Kept' });
   a.update(room.id, { enabled: true, trh: 1, volume: 90 });
   a.setSpeed(10);
-  a.setState(room.id, { T: 18.5, W: 7, CO2: 1234 }, null);
+  a.setState(room.id, { T: 18.5, W: 7, CO2: 1234, Tm: 19.25, Hs: 104 }, null);
   a.persist();
 
   const b = createSims({ sensors: createSensors({ statePath }), statePath: `${statePath}.sim`, model });
   assert.equal(b.getSpeed(), 10);
   const [again] = b.list();
   assert.deepEqual([again.id, again.name, again.enabled, again.trh, again.volume], [room.id, 'Kept', true, 1, 90]);
-  assert.deepEqual(again.state, { T: 18.5, W: 7, CO2: 1234 });
+  assert.deepEqual(again.state, { T: 18.5, W: 7, CO2: 1234, Tm: 19.25, Hs: 104 });
+  assert.equal(again.sunW, 300);
   assert.equal(b.add({}).id, room.id + 1);
 });
 

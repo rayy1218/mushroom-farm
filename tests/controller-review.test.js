@@ -180,7 +180,7 @@ test('restart during the timed humidifier: it continues from the saved start', a
 
 test('an aircon re-send to an aircon that is not following does not start the 2 min hold', async (t) => {
   const s = setup(t);
-  s.controller.update(s.id, { auto: true });
+  s.controller.update(s.id, { auto: true, acDrop: 5 }); // a room that lowers the aircon during an exchange
   await s.cycle(); // first send: 22
   const real = s.machines.get;
   s.machines.get = (id) => {

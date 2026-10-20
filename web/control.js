@@ -92,6 +92,7 @@ export function createControl(host, { roomId, onOffline, onGone, onChange }) {
     }
     const err = errorNode(`ctl-${n}-${band.key}-error`);
     row.append(err);
+    if (band.hint) row.append(el('p', 'c-hint', band.hint));
     rows.set(band.key, { ...inputs, err, text: '' });
     form.append(row);
   }
@@ -108,13 +109,14 @@ export function createControl(host, { roomId, onOffline, onGone, onChange }) {
     input.min = String(f.min);
     input.max = String(f.max);
     input.step = f.step;
-    input.inputMode = 'numeric';
+    input.inputMode = f.step === '1' ? 'numeric' : 'decimal';
     input.setAttribute('aria-label', f.label);
     const field = el('div', 'ac-field');
     field.append(input);
     row.append(field);
     const err = errorNode(`ctl-${n}-${f.key}-error`);
     row.append(err);
+    if (f.hint) row.append(el('p', 'c-hint', f.hint));
     safetyRows.set(f.key, { input, err, text: '' });
     input.addEventListener('input', () => markSafetyDirty(f.key));
     form.append(row);
@@ -406,7 +408,7 @@ export function createControl(host, { roomId, onOffline, onGone, onChange }) {
     }
     for (const f of SAFETY_FIELDS) values[f.key] = safetyRows.get(f.key).input.valueAsNumber;
     if (!firstBad) {
-      const bad = checkSafety(values.co2High, values.co2Safety, values.exchangeMaxMin);
+      const bad = checkSafety(values.co2High, values.co2Safety, values.exchangeMaxMin, values.acDrop);
       if (bad) {
         markSafetyInvalid(bad.field, bad.message);
         firstBad = safetyRows.get(bad.field).input;

@@ -341,7 +341,7 @@ test('the humidifier is held for a minute after a change and the reason says so'
 
 test('the aircon is held for 2 min after a change', async (t) => {
   const s = setup(t);
-  s.controller.update(s.id, { auto: true });
+  s.controller.update(s.id, { auto: true, acDrop: 5 }); // a room that lowers the aircon during an exchange
   await s.cycle(); // first send: 22
   await s.cycle({ co2: 760 }); // air exchange: wants 17
   assert.equal(s.db.getCommands(s.id).ac.setpoint, 22);
