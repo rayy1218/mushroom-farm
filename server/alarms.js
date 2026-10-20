@@ -74,8 +74,9 @@ export function createAlarms({ db, now = Date.now }) {
   return {
     // room: { id }. input: { readings: { t, rh, co2 } (good values or null), bands (the room's control settings),
     // faults: { trh, co2 } (the fault text or null),
+    // blocksDone: { flush, flushes } while the room's program is done, else null.
     // clear: { t, rh, co2 } (true when that value's sensor is faulty or not wired: its process alarms clear), cappedInRow, machines (the machines view or null) }.
-    evaluate(room, { readings, bands, faults, clear = {}, cappedInRow, machines }) {
+    evaluate(room, { readings, bands, faults, clear = {}, cappedInRow, machines, blocksDone = null }) {
       const active = new Map(db.activeAlarms(room.id).map((a) => [a.key, a]));
 
       for (const rule of PROCESS) {
@@ -99,6 +100,12 @@ export function createAlarms({ db, now = Date.now }) {
         hit: cappedInRow >= 3,
         released: cappedInRow === 0,
         text: () => `Air exchange too small: ${cappedInRow} exchanges in a row stopped at the ${bands.exchangeMaxMin} min limit before CO₂ reached ${bands.co2Low} ppm`,
+      });
+
+      apply(room, active, 'blocksDone', 'warning', 0, {
+        hit: blocksDone !== null,
+        released: blocksDone === null,
+        text: () => `Flush ${blocksDone.flush} of ${blocksDone.flushes} done: replace the blocks`,
       });
 
       // A humidifier too small for the room: running (switched on and drawing current) for HUMIDIFIER_DELAY with the humidity
