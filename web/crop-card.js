@@ -7,7 +7,7 @@ import { request, OFFLINE } from './api.js';
 import { CROPS, CROP_KEYS, STAGES, FARM_TYPES, MAX_CROPS } from './crops.js';
 import { bandLines, removeLabel } from './simulate-math.js';
 import {
-  hasCrops, stageLine, nextLine, rampLine, doneLine, cropWarnings, formFromData, checkCropForm, saveBody, startBody, FORM_FIELD_ORDER,
+  hasCrops, stageLine, nextLine, rampLine, doneLine, cropWarnings, formFromData, checkCropForm, saveBody, newBlocksBody, startBody, FORM_FIELD_ORDER,
 } from './crop-math.js';
 
 const REFRESH_MS = 30_000; // the stage line counts days: asked now and then
@@ -55,9 +55,11 @@ export function createCropCard(host, { roomId, onChange, onOffline, onGone }) {
   const nextMeta = el('p', 'meta');
   const rampMeta = el('p', 'meta');
   const doneMeta = el('p', 'meta warn');
+  const newBlocks = button('New blocks');
+  newBlocks.title = 'The blocks were replaced: start again at flush 1';
   const bandsMeta = el('p', 'meta');
   const warnings = el('div', 'crop-warnings');
-  summary.append(stageName, stageMeta, nextMeta, rampMeta, doneMeta, bandsMeta, warnings);
+  summary.append(stageName, stageMeta, nextMeta, rampMeta, doneMeta, newBlocks, bandsMeta, warnings);
 
   // ---- the form ----
   const formBox = el('div', 'crop-form');
@@ -219,10 +221,12 @@ export function createCropCard(host, { roomId, onChange, onOffline, onGone }) {
       }
       select.value = row.crop;
       select.setAttribute('aria-label', `Crop ${i + 1}`);
+      select.setAttribute('aria-describedby', cropsErr.id);
       select.addEventListener('change', () => { row.crop = select.value; wrap.querySelector('button').setAttribute('aria-label', removeLabel(row.crop)); touched('crops'); });
       const blocks = textInput(true);
       blocks.value = row.blocks;
       blocks.setAttribute('aria-label', `Blocks of crop ${i + 1}`);
+      blocks.setAttribute('aria-describedby', cropsErr.id);
       blocks.addEventListener('input', () => { row.blocks = blocks.value; touched('crops'); });
       const remove = button('Remove', 'danger-text');
       remove.setAttribute('aria-label', removeLabel(row.crop));
@@ -250,7 +254,9 @@ export function createCropCard(host, { roomId, onChange, onOffline, onGone }) {
     const has = hasCrops(c);
     none.hidden = has || adding;
     summary.hidden = !has;
-    startRow.hidden = !has;
+    startRow.hidden = !has && !adding; // while the first crops are added it holds the stage they start in
+    startBtn.hidden = !has;
+    atOnceLabel.hidden = !has;
     formBox.hidden = !has && !adding;
     const now = Date.now();
     if (has) {
@@ -259,6 +265,7 @@ export function createCropCard(host, { roomId, onChange, onOffline, onGone }) {
         node.textContent = line;
         node.hidden = line === '';
       }
+      newBlocks.hidden = !c.done;
       bandsMeta.textContent = c.targets ? `Bands for this stage: ${bandLines(c.targets.bands).join(', ')}` : '';
       bandsMeta.hidden = !c.targets;
       warnings.replaceChildren(...cropWarnings(c).map((w) => el('p', 'sim-warn', w)));
@@ -342,6 +349,7 @@ export function createCropCard(host, { roomId, onChange, onOffline, onGone }) {
       if (alive) {
         save.disabled = false;
         startBtn.disabled = false;
+        schedule(); // a failed command must not end the refresh (a reply it made stale was dropped)
       }
     }
   }
@@ -361,8 +369,14 @@ export function createCropCard(host, { roomId, onChange, onOffline, onGone }) {
       (first.matches('input, select') ? first : first.querySelector('select, input'))?.focus();
       return;
     }
-    const firstCrops = !hasCrops(last);
-    await send(saveBody(checked.values, firstCrops && checked.values.crops.length ? stageSelect.value : undefined));
+    const body = saveBody(checked.values, last, stageSelect.value);
+    if (Object.keys(body).length === 0) { // nothing differs from the room: nothing to send
+      dirty = false;
+      setInputs(hasCrops(last) ? last : { ...last, crops: [] });
+      paintDirty();
+      return;
+    }
+    await send(body);
   }
 
   addFirst.addEventListener('click', () => {
@@ -370,6 +384,7 @@ export function createCropCard(host, { roomId, onChange, onOffline, onGone }) {
     form = formFromData({ ...last, crops: [{ crop: 'oyster', blocks: 500 }] });
     dirty = true;
     setInputs({ ...last, crops: [{ crop: 'oyster', blocks: 500 }] });
+    fillStageSelect(FARM_TYPES[form.farmType].stages, last.stage); // the view's stage; a full-cycle farm can pick spawn
     paint(last);
     paintDirty();
     cropList.querySelector('select')?.focus();
@@ -390,6 +405,15 @@ export function createCropCard(host, { roomId, onChange, onOffline, onGone }) {
       paint(last);
     }
     save.focus();
+  });
+  newBlocks.addEventListener('click', async () => {
+    syncFromInputs();
+    const checked = checkCropForm(form);
+    if (checked.errors.crops || checked.values.crops.length === 0) { // the rows are checked like Save does
+      showError(saveErr, checked.errors.crops ?? 'Add at least one crop');
+      return;
+    }
+    await send(newBlocksBody(checked.values));
   });
   startBtn.addEventListener('click', async () => {
     showError(stageErr, '');

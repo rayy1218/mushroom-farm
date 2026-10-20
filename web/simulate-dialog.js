@@ -170,9 +170,11 @@ export function openSimulateDialog(room, hooks = {}) {
         const wrap = el('div', 'sim-crop-row');
         const select = selectInput(CROP_KEYS.map((k) => [k, CROPS[k].name]), row.crop, (v) => { row.crop = v; wrap.querySelector('button').setAttribute('aria-label', removeLabel(v)); paintMix(); });
         select.setAttribute('aria-label', `Crop ${i + 1}`);
+        select.setAttribute('aria-describedby', 'sim-crops-error');
         select.dataset.field = i === 0 ? 'crops' : '';
         const blocks = numberInput(row.blocks, (v) => { row.blocks = v; paintMix(); }, true);
         blocks.setAttribute('aria-label', `Blocks of crop ${i + 1}`);
+        blocks.setAttribute('aria-describedby', 'sim-crops-error');
         blocks.dataset.field = '';
         const remove = button('Remove', 'danger-text');
         remove.setAttribute('aria-label', removeLabel(row.crop));
@@ -307,9 +309,9 @@ export function openSimulateDialog(room, hooks = {}) {
     submit.disabled = true;
     try {
       const created = await request('POST', `/api/rooms/${room.id}/simulations`, buildBody(state, cropData));
+      hooks.onStarted?.(created); // also when the dialog was closed meanwhile: the run exists
       if (!alive()) return;
       run = created;
-      hooks.onStarted?.(created);
       paintRun();
       poll();
     } catch (err) {
@@ -357,7 +359,7 @@ export function openSimulateDialog(room, hooks = {}) {
     timer = setTimeout(async () => {
       if (!alive()) return;
       try {
-        const latest = await request('GET', `/api/simulations/${run.id}`);
+        const latest = await request('GET', `/api/simulations/${run.id}?result=0`); // never needs the result
         if (!alive()) return;
         run = latest;
         paintRun();

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   DAY_S, tileList, stageRows, formatRunTime, dayTicks, runEnd, chartPoints, thinPoints, outdoorLine, bandSteps, CHARTS, timelineRows,
-  energyView, perDayBars, inputLine, runRow, headLine, stageName,
+  energyView, perDayBars, mergeSpans, inputLine, runRow, headLine, stageName,
 } from '../web/simulation-math.js';
 
 const series = [
@@ -123,4 +123,20 @@ test('the inputs in one line and the head', () => {
   assert.deepEqual([running.status, running.all, running.days, running.kWh], ['Running 35 %', '—', '1 day', '—']);
   assert.equal(runRow({ id: 7, createdAt: at, status: 'failed', error: 'x' }, 3).status, 'Failed');
   assert.equal(runRow({ id: 8, createdAt: at, status: 'queued' }, 3).status, 'Waiting');
+});
+
+test('spans closer than the gap are drawn as one (a long run has tens of thousands)', () => {
+  const spans = [{ from: 0, to: 10, source: 'auto' }, { from: 12, to: 20, source: 'auto' }, { from: 100, to: 110, source: 'auto' }];
+  assert.deepEqual(mergeSpans(spans, 5), [{ from: 0, to: 20, source: 'auto' }, { from: 100, to: 110, source: 'auto' }]);
+  assert.deepEqual(mergeSpans(spans, 0), spans);
+  assert.deepEqual(mergeSpans([], 5), []);
+  // a span shorter than the gap stays visible
+  assert.deepEqual(mergeSpans([{ from: 0, to: 1, source: 'auto' }, { from: 500, to: 501, source: 'auto' }], 10).length, 2);
+  const long = Array.from({ length: 20000 }, (_, i) => ({ from: i * 60, to: i * 60 + 30 }));
+  const rows = timelineRows({ intake: long }, 90 * 86400 / 700);
+  assert.ok(rows[0].spans.length <= 700, `${rows[0].spans.length} spans`);
+  // the aircon keeps its setpoint changes apart
+  const ac = timelineRows({ ac: [{ from: 0, to: 10, setpoint: 24 }, { from: 11, to: 20, setpoint: 25 }] }, 5)[4];
+  assert.equal(ac.spans.length, 2);
+  assert.equal(ac.marks.length, 2);
 });
