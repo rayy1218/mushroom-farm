@@ -1,5 +1,7 @@
 // Device control page: table of sensors, relay modules and aircon gateways (edit in place), add form, simulated rooms, request log. Refreshes every 2 s.
 
+import { createSimDrawing } from './sim-drawing.js';
+
 const $ = (id) => document.getElementById(id);
 const REFRESH_MS = 2000;
 const KIND_NAMES = { trh: 'T/RH probe', co2: 'CO₂ sensor', relay: 'Relay module', ac: 'Aircon gateway' };
@@ -291,6 +293,7 @@ function buildSimCard(room) {
     params.append(el('div', { className: 'field' }, el('label', { htmlFor: input.id, textContent: unit ? `${label} (${unit})` : label }), input));
   }
 
+  card.drawing = createSimDrawing(id); // the room drawing (sim-drawing.js)
   card.t = el('strong');
   card.rh = el('strong');
   card.co2 = el('strong');
@@ -301,7 +304,7 @@ function buildSimCard(room) {
 
   card.el = el('article', { className: 'sim-card' },
     el('div', { className: 'sim-head' }, enabled.label, card.name, el('span', { className: 'sim-actions' }, reset, remove)),
-    links, params, live, card.outdoor, card.acting,
+    card.drawing.el, links, params, live, card.outdoor, card.acting,
     el('p', { className: 'muted sim-note' }, 'Circulation fan: no effect in this one-zone model'),
     card.error);
   return card;
@@ -335,6 +338,7 @@ function showSimCard(card, room, sensors) {
     input.value = String(room[key]);
   }
   showLinks(card, room, sensors);
+  card.drawing.paint(room, sensors);
   card.t.textContent = room.state.T.toFixed(1);
   card.rh.textContent = room.rh.toFixed(1);
   card.co2.textContent = String(Math.round(room.state.CO2));
@@ -360,6 +364,7 @@ function showSims(rooms, speed, sensors) {
   }
   for (const [id, card] of simCards) {
     if (seen.has(id)) continue;
+    card.drawing.destroy();
     card.el.remove();
     simCards.delete(id);
   }

@@ -1,0 +1,64 @@
+/* The room drawing (web/mimic.js). Uses the page's theme tokens (--ink, --surface, --muted ...); the drawing's own
+   colours are set per theme here so the farm page and the device page look the same. */
+.mimic-host { min-width: 0; width: 100%; }
+.mimic-svg {
+  --m-unit: color-mix(in srgb, var(--ink) 7%, var(--surface));
+  --m-unit-on: color-mix(in srgb, var(--ink) 16%, var(--surface));
+  --m-room: color-mix(in srgb, var(--ink) 3%, var(--surface));
+  --m-wall: var(--border-strong);
+  --m-ac: #4f9de8; --m-air: #3aa89a; --m-hu: #62b8e0;
+  --m-good: #0ca30c; --m-warning: #fab219; --m-serious: #f08a24; --m-critical: #ff8a8a;
+  display: block; max-width: 100%; height: auto;
+}
+:root[data-theme="light"] .mimic-svg {
+  --m-ac: #2a78d6; --m-air: #1a8576; --m-hu: #2b8db8;
+  --m-good: #006300; --m-warning: #7a5200; --m-serious: #9a4a00; --m-critical: #b02a2a;
+}
+.mimic-svg text { font-family: inherit; fill: var(--ink); font-size: 13px; }
+.mimic-svg .m-eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .1em; fill: var(--muted); }
+.mimic-svg .m-big { font-size: 22px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.mimic-svg .m-small { font-size: 13px; fill: var(--ink-2, var(--muted)); }
+.mimic-svg .m-tag { font-size: 13px; font-weight: 700; }
+.mimic-svg .m-note { fill: var(--muted); }
+.mimic-svg .wall { stroke: var(--m-wall); stroke-width: 1; }
+.mimic-svg .hatch-bg { fill: var(--surface); }
+.mimic-svg .hatch-line { stroke: var(--m-wall); stroke-width: 1.4; }
+.mimic-svg .room { fill: var(--m-room); }
+.mimic-svg .ground { stroke: var(--m-wall); stroke-width: 2; }
+.mimic-svg .unit { fill: var(--m-unit); stroke: var(--border-strong); stroke-width: 1.5; transition: fill .3s; }
+.mimic-svg .on > .unit, .mimic-svg .on .unit.body { fill: var(--m-unit-on); }
+.mimic-svg .nodata { opacity: .6; }
+.mimic-svg .warn > .unit { stroke: var(--m-warning); stroke-width: 2.5; }
+.mimic-svg .pipe { fill: none; stroke: var(--m-wall); stroke-width: 2.5; }
+.mimic-svg .flow { fill: none; stroke-width: 2; stroke-linecap: round; stroke-dasharray: 5 9; opacity: 0; }
+.mimic-svg .flow.ac { stroke: var(--m-ac); }
+.mimic-svg .flow.air { stroke: var(--m-air); }
+.mimic-svg .arrowhead.ac { fill: var(--m-ac); }
+.mimic-svg .arrowhead.air { fill: var(--m-air); }
+.mimic-svg .keybar.ac { fill: var(--m-ac); }
+.mimic-svg .keybar.air { fill: var(--m-air); }
+.mimic-svg .keybar.hu { fill: var(--m-hu); }
+.mimic-svg .blade { fill: var(--ink-2, var(--muted)); }
+.mimic-svg .ring { fill: none; stroke: var(--border-strong); stroke-width: 1.5; }
+.mimic-svg .damper { fill: var(--ink-2, var(--muted)); }
+.mimic-svg .on > .damper { display: none; }
+.mimic-svg .tank { fill: var(--m-room); stroke: var(--border-strong); }
+.mimic-svg .mist { fill: var(--m-hu); }
+.mimic-svg .bubble { fill: none; stroke: var(--muted); stroke-width: 1.2; }
+.mimic-svg .post { stroke: var(--ink-2, var(--muted)); stroke-width: 3; }
+.mimic-svg .shelf { stroke: var(--ink-2, var(--muted)); stroke-width: 2; }
+.mimic-svg .bag { fill: var(--m-unit); stroke: var(--border-strong); stroke-width: 1.2; }
+.mimic-svg .cap { fill: var(--muted); stroke: var(--m-room); stroke-width: 1; transition: transform .6s; }
+.mimic-svg .sun { fill: none; stroke: var(--ink-2, var(--muted)); stroke-width: 1.5; }
+.mimic-svg .moon { fill: var(--ink-2, var(--muted)); }
+.mimic-svg .moon-cut { fill: var(--surface); }
+.mimic-svg .readout rect { fill: var(--m-unit); stroke: var(--border-strong); stroke-width: 1.2; }
+.mimic-svg .readout .val { font-size: 16px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.mimic-svg .readout .zn { font-size: 12px; fill: var(--muted); }
+.mimic-svg .readout .ico { font-size: 13px; font-weight: 700; fill: var(--lvl, var(--muted)); }
+.mimic-svg .readout[data-lvl="good"] { --lvl: var(--m-good); }
+.mimic-svg .readout[data-lvl="warning"] { --lvl: var(--m-warning); }
+.mimic-svg .readout[data-lvl="serious"] { --lvl: var(--m-serious); }
+.mimic-svg .readout[data-lvl="critical"] { --lvl: var(--m-critical); }
+.mimic-svg .readout[data-lvl="warning"] rect, .mimic-svg .readout[data-lvl="serious"] rect, .mimic-svg .readout[data-lvl="critical"] rect { stroke: var(--lvl); stroke-width: 2.5; }
+@media (prefers-reduced-motion: reduce) { .mimic-svg .cap, .mimic-svg .unit { transition: none; } }

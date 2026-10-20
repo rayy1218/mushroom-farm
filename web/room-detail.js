@@ -6,6 +6,8 @@ import { openRoomDialog, closeRoomDialog } from './room-dialog.js';
 import { createMachines } from './machines.js';
 import { createControl } from './control.js';
 import { createAlarmsCard } from './alarms.js';
+import { createMimic, startLoop } from './mimic.js';
+import { fromRoom } from './mimic-math.js';
 import { drawLineChart } from './chart.js';
 import { refreshMs } from './settings-math.js';
 import { formatClock, formatAgo, chartPoints } from './chart-math.js';
@@ -54,6 +56,10 @@ const TEMPLATE = `
   </div>
   <div data-body hidden>
     <section data-alarms hidden></section>
+    <section class="card mimic-card" data-mimic>
+      <h2>Room</h2>
+      <div class="mimic-host" data-mimic-host></div>
+    </section>
     <div class="sensors" data-sensors></div>
     <section data-control hidden></section>
     <section data-machines></section>
@@ -95,6 +101,7 @@ export function mount(container, { id }) {
     body: q('[data-body]'),
     sensors: q('[data-sensors]'),
     alarmsHost: q('[data-alarms]'),
+    mimicHost: q('[data-mimic-host]'),
     controlHost: q('[data-control]'),
     machinesHost: q('[data-machines]'),
     charts: q('[data-charts]'),
@@ -113,6 +120,10 @@ export function mount(container, { id }) {
   let machines = null; // the Machines card, made on the first render
   let control = null; // the Automatic control card, made on the first render
   let alarmsCard = null; // the Alarms card, made on the first render
+  let mimic = null; // the room drawing, made on the first render
+  let stopLoop = null; // stops its animation
+  let lastMachines = null; // the last good replies, so a failed optional read keeps the drawing's machines
+  let lastControl = null;
   let ticker = null;
   const chartCards = new Map(); // chart id → { card, host, none, chart }
   let history = null; // the range choice and the data of the other ranges (Stream B)
@@ -338,6 +349,8 @@ export function mount(container, { id }) {
       makeAlarms();
       makeMachines();
       makeControl();
+      mimic = createMimic(els.mimicHost, { idPrefix: 'room-' });
+      stopLoop = startLoop(() => (mimic ? [mimic] : []));
       buildCharts();
       history = createHistory(els.rangeHost, { roomId: id, onChange: () => { if (alive() && sensors) renderCharts(); } });
       built = true;
@@ -357,6 +370,9 @@ export function mount(container, { id }) {
     }
     renderSensors();
     renderCharts();
+    if (machineData) lastMachines = machineData;
+    if (controlData) lastControl = controlData;
+    mimic.paint(fromRoom({ room, sensors, machines: lastMachines, control: lastControl }));
   }
 
   // ---- Alarms card (spec 2026-10-19-safety-and-history-design.md section 6) ----
@@ -439,6 +455,8 @@ export function mount(container, { id }) {
     machines?.destroy();
     control?.destroy();
     alarmsCard?.destroy();
+    stopLoop?.();
+    mimic?.destroy();
     history?.destroy();
     timelineChart?.destroy();
     for (const { chart } of chartCards.values()) chart?.destroy();
