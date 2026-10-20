@@ -16,6 +16,7 @@ test('validateProgram', () => {
   assert.equal(validateProgram({ ...PROGRAM_DEFAULTS }), null, 'no crops is allowed');
   const err = (extra) => validateProgram(prog(extra));
   assert.deepEqual(err({ farmType: 'x' }), { error: 'Farm type must be ready or full', field: 'farmType' });
+  for (const farmType of ['toString', '__proto__', 'constructor', ['ready']]) assert.equal(err({ farmType }).field, 'farmType', String(farmType));
   assert.deepEqual(err({ stage: 'spawn' }), { error: 'Stage must be one of fruiting, rest', field: 'stage' });
   assert.equal(err({ farmType: 'full', stage: 'spawn' }), null);
   assert.equal(err({ flushes: 0 }).field, 'flushes');

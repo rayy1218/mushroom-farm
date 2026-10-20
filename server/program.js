@@ -28,9 +28,9 @@ const pick = (bands) => Object.fromEntries(BAND_KEYS.map((k) => [k, bands[k]]));
 export function validateProgram(p) {
   const crops = validateCrops(p.crops, { allowEmpty: true });
   if (crops) return crops;
-  if (!(p.farmType in FARM_TYPES)) return { error: 'Farm type must be ready or full', field: 'farmType' };
+  if (typeof p.farmType !== 'string' || !Object.hasOwn(FARM_TYPES, p.farmType)) return { error: 'Farm type must be ready or full', field: 'farmType' };
   const stages = FARM_TYPES[p.farmType].stages;
-  if (!stages.includes(p.stage)) return { error: `Stage must be one of ${stages.join(', ')}`, field: 'stage' };
+  if (typeof p.stage !== 'string' || !stages.includes(p.stage)) return { error: `Stage must be one of ${stages.join(', ')}`, field: 'stage' };
   if (!Number.isInteger(p.flushes) || p.flushes < 1 || p.flushes > 10) return { error: 'Flushes must be a whole number from 1 to 10', field: 'flushes' };
   if (!Number.isInteger(p.flush) || p.flush < 1 || p.flush > p.flushes) return { error: `Flush must be a whole number from 1 to ${p.flushes}`, field: 'flush' };
   if (p.days === null || typeof p.days !== 'object') return { error: 'Days must be given per stage', field: 'days' };

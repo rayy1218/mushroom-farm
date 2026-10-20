@@ -95,7 +95,7 @@ Back/Next keep the values; each step checks its fields like the server (errors u
 | Item | Rule |
 |---|---|
 | Model | `device/sim-model.js` `step` and `outdoorAt`, the room's volume, the inputs of step 1, blocks = the sum of the crops, CO₂ per block 60 mL/h |
-| Control | `decide` + `protect` of `server/controller.js` with the room's control settings at the start of the run (fresh air, time limit, safety, aircon drop, aircon fan, humidifier during exchange); the bands from the program: `mixBands` of the start stage, then `advance` and `bandsAt` like a live room, `autoAdvance` on, the room's program numbers (else the defaults) |
+| Control | `decide` + `protect` of `server/controller.js` with the room's control settings at the start of the run (fresh air, time limit, aircon drop, aircon fan, humidifier during exchange; the CO₂ safety level comes from the crops' bands, like a live room with crops); the bands from the program: `mixBands` of the start stage, then `advance` and `bandsAt` like a live room, `autoAdvance` on, the room's program numbers (else the defaults) |
 | Sensors and machines | ideal (no faults, machines follow at once) |
 | Time step | 10 s *default* (the controller decides every step) |
 | Start | 00:00 of simulated day 1; the room starts inside its bands: T and RH at the band middle, CO₂ 420, the mass at T, the surfaces at the air's RH *default* (no pull-down from outdoor air counted) |
