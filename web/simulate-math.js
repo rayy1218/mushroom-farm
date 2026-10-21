@@ -73,13 +73,17 @@ export function initialState({ room, lastRun = null, cropData = null }) {
     if (f.key === 'dehumidifierLday' && room?.dehumidifier === true && isNumber(room.dehumidifierLday)) fallback = room.dehumidifierLday;
     physics[f.key] = String(isNumber(before?.[f.key]) ? before[f.key] : fallback);
   }
-  const crops = Array.isArray(cropData?.crops) && cropData.crops.length ? cropData.crops : DEFAULT_CROPS;
-  const farmType = cropData?.farmType in FARM_TYPES ? cropData.farmType : 'ready';
+  // The crops: the room's, else those of its last run (a room only simulated so far), else Grey oyster 500.
+  const roomCrops = Array.isArray(cropData?.crops) && cropData.crops.length > 0;
+  const lastCrops = !roomCrops && Array.isArray(lastRun?.input?.crops) && lastRun.input.crops.length > 0 ? lastRun.input : null;
+  const crops = roomCrops ? cropData.crops : lastCrops ? lastCrops.crops : DEFAULT_CROPS;
+  const from = lastCrops ?? cropData;
+  const farmType = Object.hasOwn(FARM_TYPES, from?.farmType ?? '') ? from.farmType : 'ready';
   return {
     physics,
     crops: crops.map((c) => ({ crop: c.crop, blocks: String(c.blocks) })),
     farmType,
-    stage: fixStage(farmType, cropData?.stage ?? 'fruiting'),
+    stage: fixStage(farmType, from?.stage ?? 'fruiting'),
     daysMode: 'days',
     days: String(DAYS_DEFAULT),
   };

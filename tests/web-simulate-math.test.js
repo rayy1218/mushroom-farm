@@ -58,6 +58,10 @@ test('prefill: the physics from the last run, the crops from the room', () => {
   // a room without crops: Grey oyster 500 but its farm type and stage
   const none = initialState({ room, cropData: { ...cropData, crops: [] } });
   assert.deepEqual(none.crops, [{ crop: 'oyster', blocks: '500' }]);
+  // a room without crops and a last run: that run's crops, farm type and stage
+  const again = initialState({ room, lastRun, cropData: { ...cropData, crops: [] } });
+  assert.deepEqual(again.crops, [{ crop: 'pink', blocks: '40' }]);
+  assert.deepEqual([again.farmType, again.stage], ['full', 'spawn']);
   // an odd last run (no input, a missing number) falls back to the defaults
   assert.equal(initialState({ room, lastRun: { input: { physics: { wallUA: null } } } }).physics.wallUA, '80');
   assert.equal(initialState({ room, lastRun: {} }).physics.wallUA, '80');
