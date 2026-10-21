@@ -119,5 +119,5 @@ test('upgrade 10 to 11 adds the tables and keeps the rooms', (t) => {
   assert.deepEqual(db.getProgram(1), PROGRAM_DEFAULTS);
   const check = new DatabaseSync(path, { readOnly: true });
   t.after(() => check.close());
-  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 12);
+  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 13);
 });

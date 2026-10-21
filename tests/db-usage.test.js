@@ -22,11 +22,11 @@ const tempDir = (t) => {
 const tableNames = (raw) => raw.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((r) => r.name);
 const NEW_COLUMNS = ['intake_w', 'exhaust_w', 'circulation_w', 'humidifier_w', 'humidifier_lh', 'ac_input_w', 'meter_address'];
 
-test('a new database is at version 12 with the usage tables and room columns', (t) => {
+test('a new database is at version 13 with the usage tables and room columns', (t) => {
   const path = join(tempDir(t), 'new.db');
   openDb(path).close();
   const raw = new DatabaseSync(path);
-  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 12);
+  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 13);
   assert.ok(tableNames(raw).includes('outdoor_readings') && tableNames(raw).includes('meter_readings'));
   const columns = raw.prepare('PRAGMA table_info(rooms)').all().map((c) => c.name);
   for (const c of NEW_COLUMNS) assert.ok(columns.includes(c), c);
@@ -56,7 +56,7 @@ test('upgrade 8 to 9 keeps rooms and gives them the default ratings and no meter
   openDb(path).close(); // opening again changes nothing
 });
 
-test('older versions end at 12 too (a version 0 file)', (t) => {
+test('older versions end at 13 too (a version 0 file)', (t) => {
   const path = join(tempDir(t), 'old.db');
   const old = new DatabaseSync(path);
   old.exec(`CREATE TABLE rooms (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE,
@@ -68,7 +68,7 @@ test('older versions end at 12 too (a version 0 file)', (t) => {
   assert.equal(db.getMeter(1).status, 'not-wired');
   db.close();
   const raw = new DatabaseSync(path);
-  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 12);
+  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 13);
   raw.close();
 });
 

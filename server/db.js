@@ -5,7 +5,7 @@ import { RELAY_KEYS } from './machine-codes.js';
 import { RATINGS } from './rooms.js';
 import { PROGRAM_DEFAULTS } from './program.js';
 
-const VERSION = 12;
+const VERSION = 13;
 
 // Iteration 1 (version 0) had only the rooms table without the address columns.
 const ROOMS = `
@@ -81,7 +81,8 @@ CREATE TABLE room_controls (
   exchange_forced INTEGER NOT NULL DEFAULT 0 CHECK (exchange_forced IN (0, 1)),
   fresh_from INTEGER,
   dehumidifier INTEGER NOT NULL DEFAULT 0 CHECK (dehumidifier IN (0, 1)),
-  humidifier_last_on INTEGER
+  humidifier_last_on INTEGER,
+  dehumidifier_off_at INTEGER
 ) STRICT;`;
 
 // Safety and history (spec 2026-10-19-safety-and-history-design.md 3.2 and 4): the room_controls columns
@@ -369,6 +370,10 @@ function migrate(db) {
     // Fresh air at least every 15 min, for the existing rooms too (a table made above by ROOM_CONTROLS has the columns).
     if (version >= 3 && version < 10) db.exec(FRESH_AIR_CONTROL_COLUMNS);
     if (version < 11) db.exec(PROGRAMS);
+    // When the dehumidifier last stopped (the humidifier waits after it); a table made above already has it.
+    if (version >= 3 && version < 13 && !db.prepare('PRAGMA table_info(room_controls)').all().some((c) => c.name === 'dehumidifier_off_at')) {
+      db.exec('ALTER TABLE room_controls ADD COLUMN dehumidifier_off_at INTEGER');
+    }
     if (version < 12) {
       // The dehumidifier (spec 2026-10-21-dehumidifier-design.md 6). A table made above already has its columns.
       const has = (table, column) => db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
@@ -531,7 +536,8 @@ export function openDb(path) {
                                    co2_safety = ?, exchange_max_min = ?, ac_drop = ?, exchange_every_min = ? WHERE room_id = ?`),
     setControlState: db.prepare(`UPDATE room_controls SET exchange = ?, humidifier = ?, exchange_since = ?,
                                         exchange_ended_at = ?, capped_in_row = ?, humidifier_since = ?,
-                                        exchange_forced = ?, fresh_from = ?, dehumidifier = ?, humidifier_last_on = ? WHERE room_id = ?`),
+                                        exchange_forced = ?, fresh_from = ?, dehumidifier = ?, humidifier_last_on = ?, dehumidifier_off_at = ?
+                                        WHERE room_id = ?`),
     setRelay: Object.fromEntries(RELAY_KEYS.map((key) => [key,
       db.prepare(`UPDATE machine_commands SET ${key} = ?, relay_sent_at = ? WHERE room_id = ?`)])),
     setAc: db.prepare(`UPDATE machine_commands SET ac_power = ?, ac_mode = ?, ac_setpoint = ?, ac_fan = ?, ac_sent_at = ?
@@ -794,7 +800,7 @@ export function openDb(path) {
         exchange: r.exchange === 1, exchangeSince: r.exchange_since, humidifier: r.humidifier === 1,
         co2Safety: r.co2_safety, exchangeMaxMin: r.exchange_max_min, acDrop: r.ac_drop, exchangeEndedAt: r.exchange_ended_at,
         cappedInRow: r.capped_in_row, humidifierSince: r.humidifier_since, dehumidifier: r.dehumidifier === 1,
-        humidifierLastOn: r.humidifier_last_on,
+        humidifierLastOn: r.humidifier_last_on, dehumidifierOffAt: r.dehumidifier_off_at,
         exchangeEveryMin: r.exchange_every_min, exchangeForced: r.exchange_forced === 1, freshFrom: r.fresh_from,
       };
     },
@@ -808,7 +814,7 @@ export function openDb(path) {
     // Without exchangeSince it keeps the time the exchange began and is cleared when it ends. exchangeEndedAt, cappedInRow,
     // humidifierSince, exchangeForced and freshFrom are kept when not given (null is a value).
     // dehumidifier: its band state (spec 2026-10-21-dehumidifier-design.md 3), kept when not given.
-    setControlState(roomId, { exchange, humidifier, exchangeSince, exchangeEndedAt, cappedInRow, humidifierSince, exchangeForced, freshFrom, dehumidifier, humidifierLastOn }, at) {
+    setControlState(roomId, { exchange, humidifier, exchangeSince, exchangeEndedAt, cappedInRow, humidifierSince, exchangeForced, freshFrom, dehumidifier, humidifierLastOn, dehumidifierOffAt }, at) {
       const r = q.control.get(roomId);
       if (!r) return false;
       const since = exchangeSince !== undefined ? exchangeSince : exchange ? (r.exchange_since ?? at) : null;
@@ -819,7 +825,8 @@ export function openDb(path) {
         exchangeForced !== undefined ? (exchangeForced ? 1 : 0) : r.exchange_forced,
         freshFrom !== undefined ? freshFrom : r.fresh_from,
         dehumidifier !== undefined ? (dehumidifier ? 1 : 0) : r.dehumidifier,
-        humidifierLastOn !== undefined ? humidifierLastOn : r.humidifier_last_on, roomId).changes > 0;
+        humidifierLastOn !== undefined ? humidifierLastOn : r.humidifier_last_on,
+        dehumidifierOffAt !== undefined ? dehumidifierOffAt : r.dehumidifier_off_at, roomId).changes > 0;
     },
 
     // ---- Alarms (spec 2026-10-19-safety-and-history-design.md section 3) ----

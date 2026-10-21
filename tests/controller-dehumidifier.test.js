@@ -221,3 +221,48 @@ test('the humidifier-last-on time is stored and survives a restart', (t) => {
   db.setControlState(id, { exchange: false, humidifier: false }, 2);
   assert.equal(db.getControl(id).humidifierLastOn, 1234, 'kept when not given');
 });
+
+// ---- after the >95 % search (2026-10-21): the humidifier does not answer the dehumidifier's own overshoot ----
+
+const after = ({ offAgo, rh, humidifier = false, lastOn = null }) => decide({
+  bands, state: { exchange: false, exchangeSince: null, exchangeEndedAt: null, humidifier, dehumidifier: false, dehumidifierOffAt: offAgo === null ? null : NOW - offAgo, humidifierLastOn: lastOn },
+  readings: { co2: 650, rh }, now: NOW, dehumidifierFitted: true,
+});
+
+test('the humidifier waits 10 min after the dehumidifier stopped, unless the room is 3 % below the band', () => {
+  const r = after({ offAgo: 5 * 60_000, rh: 84 }); // band 85–95: 84 is below, but only by 1
+  assert.equal(r.desired.humidifier, false);
+  assert.equal(r.reasons.humidifier, 'Humidifier waits: RH 84 after the dehumidifier dried the room (on below 82 or in 5 min)');
+  assert.equal(after({ offAgo: 5 * 60_000, rh: 81.9 }).desired.humidifier, true, 'clearly dry: at once');
+  assert.equal(after({ offAgo: 10 * 60_000, rh: 84 }).desired.humidifier, true, 'after 10 min');
+  assert.equal(after({ offAgo: null, rh: 84 }).desired.humidifier, true, 'the dehumidifier never ran');
+  // not fitted: the wait does not apply
+  const plain = decide({ bands, state: { exchange: false, humidifier: false, dehumidifierOffAt: NOW - 60_000 }, readings: { co2: 650, rh: 84 }, now: NOW });
+  assert.equal(plain.desired.humidifier, true);
+});
+
+test('the dehumidifier remembers when it stopped', () => {
+  const r = decide({ bands, state: { exchange: false, humidifier: false, dehumidifier: true }, readings: { co2: 650, rh: 89 }, now: NOW, dehumidifierFitted: true });
+  assert.equal(r.state.dehumidifier, false);
+  assert.equal(r.state.dehumidifierOffAt, NOW);
+  const later = decide({ bands, state: { ...r.state }, readings: { co2: 650, rh: 89 }, now: NOW + 60_000, dehumidifierFitted: true });
+  assert.equal(later.state.dehumidifierOffAt, NOW, 'kept');
+});
+
+test('a humidifier run in the 15 min after the dehumidifier stopped does not hold the next dehumidifier start', () => {
+  const r = after({ offAgo: 12 * 60_000, rh: 80 }); // the humidifier starts (12 min > its 10 min wait)
+  assert.equal(r.desired.humidifier, true);
+  assert.equal(r.state.humidifierLastOn, null, 'overshoot, not a dry room');
+  const dry = after({ offAgo: 16 * 60_000, rh: 80 });
+  assert.equal(dry.state.humidifierLastOn, NOW, 'later: a dry room');
+});
+
+test('upgrade 13 keeps the rooms and adds the dehumidifier stop time', (t) => {
+  const db = openDb(':memory:');
+  t.after(() => db.close());
+  const { id } = db.createRoom({ name: 'R', length: 6, width: 4, height: 2.5 });
+  db.setControlState(id, { exchange: false, humidifier: false, dehumidifierOffAt: 4321 }, 1);
+  assert.equal(db.getControl(id).dehumidifierOffAt, 4321);
+  db.setControlState(id, { exchange: false, humidifier: false }, 2);
+  assert.equal(db.getControl(id).dehumidifierOffAt, 4321, 'kept when not given');
+});

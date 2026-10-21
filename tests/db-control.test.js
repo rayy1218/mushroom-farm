@@ -13,7 +13,7 @@ const fields = { name: 'Room 1', length: 6, width: 4, height: 2.5 };
 const DEFAULT_CONTROL = {
   auto: false, co2Low: 600, co2High: 750, tLow: 21, tHigh: 23, rhLow: 85, rhHigh: 95,
   exchange: false, exchangeSince: null, humidifier: false, humidifierDuringExchange: false, acFan: 'auto',
-  co2Safety: 1250, exchangeMaxMin: 10, acDrop: 0, exchangeEndedAt: null, cappedInRow: 0, humidifierSince: null, exchangeEveryMin: 15, exchangeForced: false, freshFrom: null, dehumidifier: false, humidifierLastOn: null,
+  co2Safety: 1250, exchangeMaxMin: 10, acDrop: 0, exchangeEndedAt: null, cappedInRow: 0, humidifierSince: null, exchangeEveryMin: 15, exchangeForced: false, freshFrom: null, dehumidifier: false, humidifierLastOn: null, dehumidifierOffAt: null,
 };
 // A room that already existed at an upgrade keeps the old behaviour: humidifier forced on and the aircon 5 °C lower
 // during an exchange.
@@ -97,7 +97,7 @@ test('upgrade 2 to 3 keeps rooms, readings and commands and adds a control row p
   db.close();
 
   const raw = new DatabaseSync(path);
-  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 12);
+  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 13);
   raw.close();
   openDb(path).close(); // opening again changes nothing
   const again = new DatabaseSync(path);
@@ -205,7 +205,7 @@ test('upgrade 3 to 4 adds humidifier_during_exchange (on) and keeps rooms, readi
   db.close();
 
   const raw = new DatabaseSync(path);
-  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 12);
+  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 13);
   raw.close();
   openDb(path).close(); // opening again changes nothing
 });

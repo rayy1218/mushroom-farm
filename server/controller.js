@@ -36,6 +36,9 @@ const TIMED_HUMIDIFIER_MS = 10 * 60_000; // T/RH probe fault: 10 min on, 10 min 
 const HUMIDIFIER_HOLD_MS = 60_000; // the command changes at most once a minute
 const AC_HOLD_MS = 120_000; // at most one changed aircon command every 2 min
 const DEHUMIDIFIER_QUIET_MS = 30 * 60_000; // the dehumidifier starts only when the humidifier has been off this long
+const AFTER_DRY_WAIT_MS = 10 * 60_000; // the humidifier waits this long after the dehumidifier stopped …
+const AFTER_DRY_MARGIN = 3; // … unless RH is this many % below the band
+const AFTER_DRY_IGNORE_MS = 15 * 60_000; // a humidifier run this soon after the dehumidifier stopped does not hold the next start
 const DEHUMIDIFIER_HOLD_MS = 180_000; // a compressor: 3 min on, 3 min off
 
 const num = (x) => String(Math.round(x * 10) / 10);
@@ -158,9 +161,12 @@ export function decide({ bands, state, readings, faults, now, humidifierDuringEx
     reasons.exchange = `Air exchange kept on: CO₂ ${num(co2)} between ${co2Low} and ${co2High}`;
   }
 
-  // Humidifier band: on at or below the lower RH limit, off at or above the upper, kept between.
+  // Humidifier band: on at or below the lower RH limit, off at or above the upper, kept between; with a dehumidifier it waits
+  // 10 min after the dehumidifier stopped unless the room is 3 % below the band.
   // A faulty T/RH probe: on for 10 min, off for 10 min, repeating.
   const forced = exchange && humidifierDuringExchange;
+  const offAt = dehumidifierFitted ? (state.dehumidifierOffAt ?? null) : null;
+  const dryingLeft = offAt === null ? 0 : AFTER_DRY_WAIT_MS - (now - offAt);
   const note = exchange && !humidifierDuringExchange ? '; not forced during air exchange' : '';
   let why;
   if (faults?.trh) {
@@ -170,6 +176,10 @@ export function decide({ bands, state, readings, faults, now, humidifierDuringEx
   } else if (rh === null) {
     humidifierSince = state.humidifierSince ?? null; // kept: a probe that is not yet called faulty (or a restart) must not restart the timer
     why = `Humidity sensor not answering: humidifier kept ${word(band)}`;
+  } else if (rh <= bands.rhLow && !band && dryingLeft > 0 && rh > bands.rhLow - AFTER_DRY_MARGIN) {
+    // Just below the band right after the dehumidifier stopped: its own overshoot (its 3 min minimum run), which the room
+    // makes up by itself; a humidifier now would wet it again and wake the dehumidifier.
+    why = `Humidifier waits: RH ${num(rh)} after the dehumidifier dried the room (on below ${num(bands.rhLow - AFTER_DRY_MARGIN)} or in ${Math.ceil(dryingLeft / 60_000)} min)`;
   } else if (rh <= bands.rhLow) {
     band = true;
     why = exchange && !humidifierDuringExchange ? `Humidifier: on (RH ${num(rh)} ≤ ${bands.rhLow})` : `Humidifier: RH ${num(rh)} ≤ ${bands.rhLow}`;
@@ -181,7 +191,9 @@ export function decide({ bands, state, readings, faults, now, humidifierDuringEx
     why = `Humidifier kept ${word(band)}: RH ${num(rh)} between ${bands.rhLow} and ${bands.rhHigh}`;
   }
   reasons.humidifier = forced ? 'Humidifier: on during air exchange' : why;
-  const humidifierLastOn = forced || band ? now : (state.humidifierLastOn ?? null); // when the humidifier was last decided on
+  // When the humidifier was last decided on for a dry room (a run just after the dehumidifier stopped is its overshoot).
+  const afterDry = offAt !== null && now - offAt < AFTER_DRY_IGNORE_MS;
+  const humidifierLastOn = (forced || band) && !afterDry ? now : (state.humidifierLastOn ?? null);
 
   // Dehumidifier band (spec 2026-10-21-dehumidifier-design.md 3): on at or above the upper RH limit once the humidifier has been
   // off for 30 min, off at the middle of the RH band, kept between; off while the humidifier is on and with a faulty RH probe.
@@ -231,6 +243,7 @@ export function decide({ bands, state, readings, faults, now, humidifierDuringEx
     state: {
       exchange, exchangeSince: since, exchangeEndedAt: endedAt, exchangeForced: freshRun, freshFrom,
       cappedInRow: capped, humidifier: band, humidifierSince, dehumidifier: dehumidifierBand, humidifierLastOn,
+      dehumidifierOffAt: state.dehumidifier && !dehumidifierBand ? now : (state.dehumidifierOffAt ?? null),
     },
     desired: {
       intake: exchange,
@@ -367,7 +380,7 @@ export function createController({ db, machines, now = Date.now, log = console.e
       forget(roomId);
       return null;
     }
-    const { humidifier, humidifierSince, dehumidifier, humidifierLastOn, ...rest } = c; // the band states, not the machines' commands
+    const { humidifier, humidifierSince, dehumidifier, humidifierLastOn, dehumidifierOffAt, ...rest } = c; // the band states, not the machines' commands
     return { ...rest, humidifierBand: humidifier, dehumidifierBand: dehumidifier, exchangeEndsAt: exchangeEndsAt(roomId, c), checks: checksOf(roomId), reasons: { ...emptyReasons(), ...reasons.get(roomId) } };
   }
 
@@ -439,7 +452,7 @@ export function createController({ db, machines, now = Date.now, log = console.e
           exchange: c.exchange, exchangeSince: c.exchangeSince, exchangeEndedAt: c.exchangeEndedAt,
           exchangeForced: c.exchangeForced, freshFrom: c.freshFrom,
           cappedInRow: c.cappedInRow, humidifier: c.humidifier, humidifierSince: c.humidifierSince, dehumidifier: c.dehumidifier,
-          humidifierLastOn: c.humidifierLastOn,
+          humidifierLastOn: c.humidifierLastOn, dehumidifierOffAt: c.dehumidifierOffAt,
         },
         readings: { rh: good.rh, co2: good.co2 },
         faults: { trh: Boolean(status.trh?.parts.rh.fault), co2: faults.co2 !== null }, // only an RH fault times the humidifier
