@@ -8,7 +8,7 @@ const HUMIDIFIER_DELAY = 30 * MIN_MS; // the humidifier too small: running this 
 
 const num = (x) => String(Math.round(x * 10) / 10);
 
-export const MACHINE_NAMES = { intake: 'Intake fan', exhaust: 'Exhaust fan', circulation: 'Circulation fan', humidifier: 'Humidifier', ac: 'Aircon' };
+export const MACHINE_NAMES = { intake: 'Intake fan', exhaust: 'Exhaust fan', circulation: 'Circulation fan', humidifier: 'Humidifier', dehumidifier: 'Dehumidifier', ac: 'Aircon' };
 export const MACHINE_KEYS = Object.keys(MACHINE_NAMES);
 const BAD_STATUS = {
   'not-following': () => 'not following its command',
@@ -127,7 +127,7 @@ export function createAlarms({ db, now = Date.now }) {
         const m = key === 'ac' ? machines?.ac : machines?.relay?.machines?.find((x) => x.key === key);
         const status = m?.status;
         let result = null;
-        if (status === 'not-wired') result = { hit: false, released: true, text: () => '' };
+        if (status === 'not-wired' || status === 'not-fitted') result = { hit: false, released: true, text: () => '' };
         else if (status !== undefined) {
           const bad = status in BAD_STATUS;
           result = { hit: bad, released: !bad, text: () => `${MACHINE_NAMES[key]}: ${BAD_STATUS[status](m, key)}` };

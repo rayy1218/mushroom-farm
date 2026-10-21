@@ -135,8 +135,11 @@ test('GET /api/rooms/:id/machines returns the machines object', async () => {
     relay: {
       address: 10,
       lastWrite: null,
-      machines: ['intake', 'exhaust', 'circulation', 'humidifier'].map((key) => (
-        { key, commanded: false, reported: false, running: false, status: 'off' })),
+      machines: [
+        ...['intake', 'exhaust', 'circulation', 'humidifier'].map((key) => (
+          { key, commanded: false, reported: false, running: false, status: 'off' })),
+        { key: 'dehumidifier', commanded: false, reported: null, running: null, status: 'not-fitted' },
+      ],
     },
     ac: {
       address: 20,
@@ -155,7 +158,7 @@ test('GET machines for a room without devices: not-wired, null values', async ()
   const room = db.createRoom(fields);
   const { body } = await call('GET', `/api/rooms/${room.id}/machines`);
   assert.equal(body.relay.address, null);
-  assert.deepEqual(body.relay.machines.map((m) => m.status), ['not-wired', 'not-wired', 'not-wired', 'not-wired']);
+  assert.deepEqual(body.relay.machines.map((m) => m.status), ['not-wired', 'not-wired', 'not-wired', 'not-wired', 'not-fitted']);
   assert.deepEqual(body.ac, {
     address: null, lastWrite: null, commanded: { power: false, mode: 'cool', setpoint: 25, fan: 'auto' },
     reported: null, roomT: null, errorCode: null, status: 'not-wired',
@@ -270,4 +273,19 @@ test('without a machines module the machine routes are 404', async () => {
   } finally {
     await new Promise((resolve) => bare.close(resolve));
   }
+});
+
+// --- the dehumidifier (spec 2026-10-21-dehumidifier-design.md 2) ---
+
+test('PUT machines/dehumidifier: 400 for a room without one, a normal command for a room with one', async () => {
+  reset();
+  const plain = db.createRoom({ ...fields, relayAddress: 10 });
+  const res = await call('PUT', `/api/rooms/${plain.id}/machines/dehumidifier`, { on: true });
+  assert.equal(res.status, 400);
+  assert.deepEqual(res.body, { error: 'This room has no dehumidifier', field: 'dehumidifier' });
+  assert.equal(db.getCommands(plain.id).relay.dehumidifier, false);
+  const fitted = db.createRoom({ ...fields, name: 'Wet', relayAddress: 11, dehumidifier: true });
+  const ok = await call('PUT', `/api/rooms/${fitted.id}/machines/dehumidifier`, { on: true });
+  assert.equal(ok.status, 200);
+  assert.equal(ok.body.relay.machines.find((m) => m.key === 'dehumidifier').commanded, true);
 });

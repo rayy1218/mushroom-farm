@@ -356,7 +356,7 @@ test('the control view has the new settings, checks and held texts', (t) => {
   const v = s.controller.get(s.id);
   assert.deepEqual([v.co2Safety, v.exchangeMaxMin, v.exchangeEndedAt, v.cappedInRow], [1250, 10, null, 0]);
   assert.deepEqual(v.checks, { trh: null, co2: null });
-  assert.deepEqual(v.reasons.held, { humidifier: '', ac: '' });
+  assert.deepEqual(v.reasons.held, { humidifier: '', dehumidifier: '', ac: '' });
   assert.equal('humidifierSince' in v, false);
   const u = s.controller.update(s.id, { co2Safety: 1500, exchangeMaxMin: 20 });
   assert.deepEqual([u.co2Safety, u.exchangeMaxMin], [1500, 20]);

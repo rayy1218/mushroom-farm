@@ -77,6 +77,7 @@ export function createMachines({ db, client, poller, now = Date.now }) {
     const machines = RELAY_KEYS.map((key, i) => {
       const commanded = commands[key];
       const m = { key, commanded, reported: null, running: null, status: 'not-wired' };
+      if (key === 'dehumidifier' && !room.dehumidifier) return { ...m, status: 'not-fitted' };
       if (address === null) return m;
       if (!latest) return { ...m, status: 'no-data' };
       if (!latest.ok) return { ...m, status: 'no-answer' };
@@ -151,6 +152,7 @@ export function createMachines({ db, client, poller, now = Date.now }) {
       if (!bypassAuto && db.getControl(roomId)?.auto) throw new CommandError(409, 'Automatic control is on');
       if (index >= 0) {
         const { on } = relayBody(body);
+        if (key === 'dehumidifier' && !room.dehumidifier) throw new CommandError(400, 'This room has no dehumidifier', 'dehumidifier');
         if (room.relayAddress === null) throw new CommandError(400, 'No relay module address set');
         const address = room.relayAddress;
         db.setRelayCommand(roomId, key, on, now());

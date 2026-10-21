@@ -16,13 +16,15 @@ const FAN_SHARE = 0.05; // the aircon draws at least this share of its rated inp
 // The aircon's input at full load from the size asked in the stepper (not the room's rating, which is for its present unit):
 // COP 3, about EER 10 BTU/Wh, a typical split unit.
 const AC_COP = 3;
-const MACHINES = ['intake', 'exhaust', 'circulation', 'humidifier'];
-const RATING = { intake: 'intakeW', exhaust: 'exhaustW', circulation: 'circulationW', humidifier: 'humidifierW' };
+const DEHUMIDIFIER_W_PER_LDAY = 18; // a 20 L/day unit draws about 360 W
+const MACHINES = ['intake', 'exhaust', 'circulation', 'humidifier', 'dehumidifier'];
+const RATING = { intake: 'intakeW', exhaust: 'exhaustW', circulation: 'circulationW', humidifier: 'humidifierW', dehumidifier: 'dehumidifierW' };
 
 const round = (v, digits) => Math.round(v * 10 ** digits) / 10 ** digits;
 const percent = (n, total) => round((n / total) * 100, 1);
 
-// input: { physics: { wallUA, outdoorHigh, outdoorLow, outdoorDew, sunW, fanFlow, acBTU, humidifierLH }, crops, farmType, stage,
+// input: { physics: { wallUA, outdoorHigh, outdoorLow, outdoorDew, sunW, fanFlow, acBTU, humidifierLH, dehumidifierLday (0 or
+// missing: no dehumidifier) }, crops, farmType, stage,
 // days }. ctx: { volume, ratings (the room's machine ratings), control (the room's control settings), program (its stored
 // numbers: flushes, days, rampH; null: the defaults), prices: { electricity, water } | null }.
 // onProgress(share 0 to 1) is called at least every 1 %. → { series, machines, stages, summary }.
@@ -31,6 +33,9 @@ export function simulate(input, ctx, { onProgress } = {}) {
   const { volume, ratings, control = DEFAULTS } = ctx;
   const prices = ctx.prices ?? { electricity: null, water: null };
   const acInputKW = physics.acBTU / BTU_PER_KW / AC_COP;
+  const dehumidifierLday = physics.dehumidifierLday ?? 0;
+  const dehumidifierW = dehumidifierLday * DEHUMIDIFIER_W_PER_LDAY; // its own rating, not the room's (like the aircon's size)
+  const watts = { ...ratings, dehumidifierW };
   const stored = ctx.program ?? {};
   const totalS = days * DAY_S;
   const steps = totalS / STEP_S;
@@ -49,6 +54,7 @@ export function simulate(input, ctx, { onProgress } = {}) {
   const modelParams = {
     volume, blocks: blocksOf(crops), co2PerBlock: CO2_PER_BLOCK, wallUA: physics.wallUA, sunW: physics.sunW, fanFlow: physics.fanFlow,
     acKW: physics.acBTU / BTU_PER_KW, humidifierGH: physics.humidifierLH * 1000,
+    dehumidifierLday, dehumidifierW,
   };
 
   const T0 = (bands.tLow + bands.tHigh) / 2;
@@ -58,27 +64,28 @@ export function simulate(input, ctx, { onProgress } = {}) {
   // The controller's memory and the machines' commands (all off to start; the aircon's first command is free of the hold).
   let memory = {
     exchange: false, exchangeSince: null, exchangeEndedAt: null, exchangeForced: false, freshFrom: null,
-    cappedInRow: 0, humidifier: false, humidifierSince: null,
+    cappedInRow: 0, humidifier: false, humidifierSince: null, dehumidifier: false,
   };
-  let commands = { relay: { intake: false, exhaust: false, circulation: false, humidifier: false }, ac: { power: false, mode: 'cool', setpoint: 25, fan: 'auto' } };
+  let commands = { relay: { intake: false, exhaust: false, circulation: false, humidifier: false, dehumidifier: false }, ac: { power: false, mode: 'cool', setpoint: 25, fan: 'auto' } };
   const changedAt = {};
   const extra = { exchangeMaxMin: control.exchangeMaxMin ?? DEFAULTS.exchangeMaxMin, exchangeEveryMin: control.exchangeEveryMin ?? DEFAULTS.exchangeEveryMin, acDrop: control.acDrop ?? 0 };
   const humidifierDuringExchange = control.humidifierDuringExchange ?? DEFAULTS.humidifierDuringExchange;
   const acFan = control.acFan ?? DEFAULTS.acFan;
 
   const series = [];
-  const spans = { intake: [], exhaust: [], circulation: [], humidifier: [], ac: [] };
+  const spans = { intake: [], exhaust: [], circulation: [], humidifier: [], dehumidifier: [], ac: [] };
   const open = {}; // the span being on now, by machine
   const stages = [{ stage: startName, flush: 1, from: 0, to: totalS }];
   const count = () => ({ t: 0, rh: 0, co2: 0, all: 0, n: 0 });
   const total = count();
   const stageCount = [count()];
-  const onS = { intake: 0, exhaust: 0, circulation: 0, humidifier: 0 };
+  const onS = { intake: 0, exhaust: 0, circulation: 0, humidifier: 0, dehumidifier: 0 };
   let acKWh = 0;
   const dayKWh = new Array(days).fill(0);
   const dayLitres = new Array(days).fill(0);
   const ext = { tMin: Infinity, tMax: -Infinity, rhMin: Infinity, rhMax: -Infinity, co2Max: -Infinity };
   let litres = 0;
+  let removed = 0; // grams of water the dehumidifier took out
   let lastShare = -1;
 
   const closeSpan = (name, at) => {
@@ -141,13 +148,14 @@ export function simulate(input, ctx, { onProgress } = {}) {
     // The control decides from ideal readings; the commands go to the machines at once.
     const decided = decide({
       bands: { ...extra, ...bands }, state: memory, readings: { co2: CO2, rh }, faults: null, now: ms, humidifierDuringExchange, acFan,
+      dehumidifierFitted: dehumidifierLday > 0,
     });
     memory = decided.state;
     const { desired } = protect({ desired: decided.desired, commands, changedAt, now: ms });
-    if (desired.humidifier !== commands.relay.humidifier) changedAt.humidifier = ms;
+    for (const name of ['humidifier', 'dehumidifier']) if (desired[name] !== commands.relay[name]) changedAt[name] = ms;
     const a = desired.ac, c = commands.ac;
     if (a.power !== c.power || a.mode !== c.mode || a.fan !== c.fan || a.setpoint !== c.setpoint) changedAt.ac = ms;
-    commands = { relay: { intake: desired.intake, exhaust: desired.exhaust, circulation: desired.circulation, humidifier: desired.humidifier }, ac: { ...a } };
+    commands = { relay: { intake: desired.intake, exhaust: desired.exhaust, circulation: desired.circulation, humidifier: desired.humidifier, dehumidifier: desired.dehumidifier }, ac: { ...a } };
 
     for (const name of MACHINES) {
       if (desired[name]) {
@@ -163,21 +171,23 @@ export function simulate(input, ctx, { onProgress } = {}) {
     } else closeSpan('ac', s);
 
     // The model, in its own sub-steps, with the commanded machines; adds up the humidifier's water and the aircon's load.
-    const inputs = { intake: desired.intake, exhaust: desired.exhaust, circulation: desired.circulation, humidifier: desired.humidifier,
+    const inputs = { intake: desired.intake, exhaust: desired.exhaust, circulation: desired.circulation, humidifier: desired.humidifier, dehumidifier: desired.dehumidifier,
       ac: a.power ? { mode: a.mode, setpoint: a.setpoint, fan: a.fan } : null };
     const params = { ...modelParams, ...out };
-    let load = 0, grams = 0;
+    let load = 0, grams = 0, takenOut = 0;
     for (let k = 0; k < STEP_S / MODEL_S; k++) {
       const r = step(state, inputs, params, MODEL_S);
       state = r.state;
       load += r.acting.acLoad * MODEL_S;
       grams += (r.acting.humidifierGH * MODEL_S) / 3600;
+      takenOut += (r.acting.dehumidifierGH * MODEL_S) / 3600;
     }
     const acStepKWh = a.power ? (acInputKW * Math.max(FAN_SHARE * STEP_S, load)) / 3600 : 0;
     acKWh += acStepKWh;
     litres += grams / 1000;
+    removed += takenOut / 1000;
     let relayKWh = 0;
-    for (const name of MACHINES) if (desired[name]) relayKWh += (ratings[RATING[name]] / 1000) * (STEP_S / 3600);
+    for (const name of MACHINES) if (desired[name]) relayKWh += (watts[RATING[name]] / 1000) * (STEP_S / 3600);
     dayKWh[dayIndex] += acStepKWh + relayKWh;
     dayLitres[dayIndex] += grams / 1000;
 
@@ -190,7 +200,7 @@ export function simulate(input, ctx, { onProgress } = {}) {
   for (const name of Object.keys(open)) closeSpan(name, totalS);
 
   const byMachine = {};
-  for (const name of MACHINES) byMachine[name] = round((ratings[RATING[name]] / 1000) * (onS[name] / 3600), 2);
+  for (const name of MACHINES) byMachine[name] = round((watts[RATING[name]] / 1000) * (onS[name] / 3600), 2);
   byMachine.ac = round(acKWh, 2);
   const kWh = round(Object.values(byMachine).reduce((x, y) => x + y, 0), 2);
   const litresRounded = round(litres, 1);
@@ -205,7 +215,7 @@ export function simulate(input, ctx, { onProgress } = {}) {
       inBand: bandShares(total),
       perStage: stages.map((st, i) => ({ stage: st.stage, flush: st.flush, from: st.from, to: st.to, inBand: bandShares(stageCount[i]) })),
       energy: { byMachine, kWh, cost: prices.electricity == null ? null : round(kWh * prices.electricity, 2) },
-      water: { litres: litresRounded, cost: prices.water == null ? null : round((litresRounded / 1000) * prices.water, 2) },
+      water: { litres: litresRounded, removedLitres: round(removed, 1), cost: prices.water == null ? null : round((litresRounded / 1000) * prices.water, 2) },
       perDay: dayKWh.map((k, d) => ({ day: d + 1, kWh: round(k, 2), litres: round(dayLitres[d], 1) })),
       extremes: {
         tMin: round(ext.tMin, 1), tMax: round(ext.tMax, 1), rhMin: round(ext.rhMin, 1), rhMax: round(ext.rhMax, 1), co2Max: Math.round(ext.co2Max),

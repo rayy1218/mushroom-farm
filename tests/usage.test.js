@@ -68,6 +68,16 @@ test('run time is split at midnight', () => {
   assert.deepEqual(per, [{ on: 2 * H }, { on: 2 * H }]);
 });
 
+test('estimated energy: the dehumidifier counts its rating times its run time, in the day and the totals', (t) => {
+  const { db, room } = setup(t, { dehumidifier: true, dehumidifierW: 400 });
+  on(db, room, 'dehumidifier', at(20, 7)); // still on at 10:00: 3 h
+  const usage = roomUsage(db, room.id, { days: 1, prices: PRICES, now: NOW, zone });
+  assert.deepEqual(usage.days[0].byMachine, { intake: 0, exhaust: 0, circulation: 0, humidifier: 0, dehumidifier: 1.2, ac: 0, rest: 0 });
+  assert.equal(usage.days[0].kWh, 1.2);
+  assert.equal(usage.today.kWh, 1.2);
+  assert.equal(usage.days[0].waterL, 0, 'the live water is the humidifier only');
+});
+
 test('estimated energy: run time times the rating, across midnight', (t) => {
   const { db, room } = setup(t, { intakeW: 100, humidifierW: 200, humidifierLH: 3 });
   on(db, room, 'intake', at(19, 22));
@@ -76,7 +86,7 @@ test('estimated energy: run time times the rating, across midnight', (t) => {
   const usage = roomUsage(db, room.id, { days: 2, prices: PRICES, now: NOW, zone });
   assert.deepEqual(usage.days.map((d) => d.date), ['2026-10-19', '2026-10-20']);
   assert.equal(usage.days[0].kWh, 0.2); // 2 h x 100 W
-  assert.deepEqual(usage.days[1].byMachine, { intake: 0.2, exhaust: 0, circulation: 0, humidifier: 0.4, ac: 0, rest: 0 });
+  assert.deepEqual(usage.days[1].byMachine, { intake: 0.2, exhaust: 0, circulation: 0, humidifier: 0.4, dehumidifier: 0, ac: 0, rest: 0 });
   assert.equal(usage.days[1].kWh, 0.6);
   assert.equal(usage.days[1].metered, false);
   assert.equal(usage.days[1].waterL, 6); // 2 h x 3 L/h
@@ -122,7 +132,7 @@ test('a metered day uses the meter; rest is the meter minus the fans and humidif
   const today = roomUsage(db, room.id, { days: 1, prices: PRICES, now: NOW, zone }).days[0];
   assert.equal(today.metered, true);
   assert.equal(today.kWh, 3.5);
-  assert.deepEqual(today.byMachine, { intake: 1, exhaust: 0, circulation: 0, humidifier: 0, ac: 0, rest: 2.5 });
+  assert.deepEqual(today.byMachine, { intake: 1, exhaust: 0, circulation: 0, humidifier: 0, dehumidifier: 0, ac: 0, rest: 2.5 });
 });
 
 test('rest is never negative; a day with one good reading is estimated', (t) => {

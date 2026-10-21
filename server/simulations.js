@@ -7,7 +7,7 @@ import { FARM_TYPES, validateCrops } from '../web/crops.js';
 import { readSettings } from './settings.js';
 
 const PHYSICS = ['wallUA', 'outdoorHigh', 'outdoorLow', 'outdoorDew', 'sunW', 'fanFlow', 'acBTU', 'humidifierLH'];
-const RATING_FIELDS = ['intakeW', 'exhaustW', 'circulationW', 'humidifierW', 'humidifierLH', 'acInputW'];
+const RATING_FIELDS = ['intakeW', 'exhaustW', 'circulationW', 'humidifierW', 'humidifierLH', 'acInputW', 'dehumidifierW', 'dehumidifierLday'];
 const CONTROL_FIELDS = ['exchangeMaxMin', 'acDrop', 'exchangeEveryMin', 'humidifierDuringExchange', 'acFan'];
 const MAX_UNFINISHED = 5; // queued or running runs of one room
 export const RESTART_TEXT = 'Stopped by a restart of the farm app';
@@ -27,6 +27,11 @@ export function validateSimulation(body) {
       return { error: `${label} must be ${whole ? 'a whole number' : 'a number'} from ${min} to ${max}${unit ? ` ${unit}` : ''}`, field: `physics.${field}` };
     }
     clean[field] = v;
+  }
+  if (physics.dehumidifierLday !== undefined) {
+    const v = physics.dehumidifierLday;
+    if (!isNumber(v) || v < 0 || v > 200) return { error: 'Dehumidifier must be a number from 0 to 200 L/day', field: 'physics.dehumidifierLday' };
+    clean.dehumidifierLday = v;
   }
   const clash = outdoorProblem(clean);
   if (clash) return { error: clash.message, field: `physics.${clash.field}` };

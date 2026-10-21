@@ -3,7 +3,7 @@
 // also polls each wired machine (relay module, aircon gateway) and keeps its last polls in memory.
 
 import { ModbusError, registersToFloat } from './modbus.js';
-import { MODES, FANS } from './machine-codes.js';
+import { MODES, FANS, RELAY_KEYS } from './machine-codes.js';
 
 // What to ask for, and how to turn the registers into values.
 const KINDS = {
@@ -17,8 +17,8 @@ const METER = { power: { start: 0x000c, qty: 2 }, energy: { start: 0x0156, qty: 
 // Relay module: coils (fn 1) then current inputs (fn 2). Aircon gateway: settings (fn 3) then room T and error (fn 4).
 const MACHINES = {
   relay: async (client, unit) => ({
-    coils: await client.readBits(unit, 1, 0, 4),
-    inputs: await client.readBits(unit, 2, 0, 4),
+    coils: await client.readBits(unit, 1, 0, RELAY_KEYS.length),
+    inputs: await client.readBits(unit, 2, 0, RELAY_KEYS.length),
   }),
   ac: async (client, unit) => {
     const [power, mode, setpoint, fan] = await client.readRegisters(unit, 3, 0, 4);
