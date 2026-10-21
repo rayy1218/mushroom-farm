@@ -51,8 +51,8 @@ test('POST adds a relay module and an aircon gateway with their defaults', async
   const relay = await call('POST', '/api/sensors', { address: 10, kind: 'relay' });
   assert.equal(relay.status, 201);
   assert.deepEqual(relay.body, {
-    address: 10, kind: 'relay', coils: [false, false, false, false], stuck: [false, false, false, false],
-    dead: [false, false, false, false], running: [false, false, false, false], answering: true,
+    address: 10, kind: 'relay', coils: [false, false, false, false, false], stuck: [false, false, false, false, false],
+    dead: [false, false, false, false, false], running: [false, false, false, false, false], answering: true,
   });
   const ac = await call('POST', '/api/sensors', { address: 20, kind: 'ac' });
   assert.equal(ac.status, 201);
@@ -66,10 +66,10 @@ test('PUT patches a relay module and an aircon gateway', async () => {
   reset();
   device.sensors.add({ address: 10, kind: 'relay' });
   device.sensors.add({ address: 20, kind: 'ac' });
-  const r = await call('PUT', '/api/sensors/10', { stuck: [true, false, false, false], dead: [false, false, true, false], answering: false });
+  const r = await call('PUT', '/api/sensors/10', { stuck: [true, false, false, false, false], dead: [false, false, true, false, false], answering: false });
   assert.equal(r.status, 200);
-  assert.deepEqual(r.body.stuck, [true, false, false, false]);
-  assert.deepEqual(r.body.dead, [false, false, true, false]);
+  assert.deepEqual(r.body.stuck, [true, false, false, false, false]);
+  assert.deepEqual(r.body.dead, [false, false, true, false, false]);
   assert.equal(r.body.answering, false);
   const a = await call('PUT', '/api/sensors/20', { roomT: 27.5, error: 4, refuse: true });
   assert.equal(a.status, 200);
@@ -83,7 +83,7 @@ test('PUT errors on machines: 400 with the field', async () => {
   device.sensors.add({ address: 10, kind: 'relay' });
   device.sensors.add({ address: 20, kind: 'ac' });
   const cases = [
-    [10, { stuck: [true] }, 'stuck'], [10, { dead: 'x' }, 'dead'], [10, { coils: [true, true, true, true] }, 'coils'],
+    [10, { stuck: [true] }, 'stuck'], [10, { dead: 'x' }, 'dead'], [10, { coils: [true, true, true, true, false] }, 'coils'],
     [20, { error: 300 }, 'error'], [20, { roomT: 100 }, 'roomT'], [20, { refuse: 1 }, 'refuse'], [20, { power: true }, 'power'],
   ];
   for (const [address, body, field] of cases) {
@@ -105,8 +105,8 @@ test('Modbus writes show in the API state and in the log', async () => {
   [1, 0, 235, 1].forEach((v, i) => ac.writeUInt16BE(v, 6 + i * 2));
   await modbus(20, ac);
   const list = (await call('GET', '/api/sensors')).body;
-  assert.deepEqual(list[0].coils, [false, false, true, false]);
-  assert.deepEqual(list[0].running, [false, false, true, false]);
+  assert.deepEqual(list[0].coils, [false, false, true, false, false]);
+  assert.deepEqual(list[0].running, [false, false, true, false, false]);
   assert.deepEqual({ power: list[1].power, mode: list[1].mode, setpoint: list[1].setpoint, fan: list[1].fan }, { power: true, mode: 0, setpoint: 23.5, fan: 1 });
   const log = (await call('GET', '/api/log')).body;
   assert.deepEqual(log.slice(0, 2).map((e) => e.result), ['write ac cool 23.5 low on', 'write coil 2 on']);

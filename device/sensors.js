@@ -27,7 +27,8 @@ const FIELDS_OF = { trh: ['t', 'rh'], co2: ['co2'], relay: ['stuck', 'dead'], ac
 const PATCHABLE = ['t', 'rh', 'co2', 'stuck', 'dead', 'roomT', 'error', 'refuse', 'coils', 'power', 'energy', 'mode', 'setpoint', 'fan'];
 // The values a simulation drives, per kind. Relays have none: stuck and dead stay editable.
 const SIMULATED_FIELDS = { trh: ['t', 'rh'], co2: ['co2'], ac: ['roomT'], meter: ['power', 'energy'] };
-const OUTPUTS = 4;
+const OUTPUTS = 5; // intake, exhaust, circulation, humidifier, dehumidifier
+const OLD_OUTPUTS = 4; // a state file from before the dehumidifier
 const DEFAULT_SPIN_UP_MS = 2000;
 
 const isAddress = (n) => Number.isInteger(n) && n >= 1 && n <= 247;
@@ -222,7 +223,7 @@ export function createSensors({ statePath, spinUpMs = DEFAULT_SPIN_UP_MS, now = 
   function writeCoil(address, index, on) {
     const entry = byAddress.get(address);
     if (entry?.kind !== 'relay') throw new SensorError(404, `No device with address ${address}`);
-    if (!Number.isInteger(index) || index < 0 || index >= OUTPUTS) throw new SensorError(400, 'Coil must be 0 to 3', 'coil');
+    if (!Number.isInteger(index) || index < 0 || index >= OUTPUTS) throw new SensorError(400, `Coil must be 0 to ${OUTPUTS - 1}`, 'coil');
     if (entry.stuck[index] || entry.coils[index] === on) return view(entry);
     return commit(entry, () => {
       entry.coils[index] = on;
@@ -254,6 +255,13 @@ export function createSensors({ statePath, spinUpMs = DEFAULT_SPIN_UP_MS, now = 
 
   function restore(saved) {
     const entry = make(saved ?? {});
+    if (entry.kind === 'relay') {
+      // A relay saved with 4 outputs gets the 5th off (the dehumidifier did not exist).
+      saved = { ...saved };
+      for (const field of ['coils', 'stuck', 'dead']) {
+        if (Array.isArray(saved[field]) && saved[field].length === OLD_OUTPUTS) saved[field] = [...saved[field], false];
+      }
+    }
     if (entry.kind === 'relay') {
       entry.coils = checkSwitches('coils', saved.coils ?? entry.coils);
       entry.since = entry.coils.map((on) => (on ? now() : null));

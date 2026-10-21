@@ -8,7 +8,7 @@ import { electricW } from './sim-power.js';
 
 const MODES = ['cool', 'heat', 'dry', 'fan'];
 const FANS = ['auto', 'low', 'high'];
-const OUTPUT = { intake: 0, exhaust: 1, circulation: 2, humidifier: 3 }; // circulation only adds its motor heat (one zone)
+const OUTPUT = { intake: 0, exhaust: 1, circulation: 2, humidifier: 3, dehumidifier: 4 }; // circulation only adds its motor heat (one zone)
 export const DEFAULT_TICK_MS = 1000;
 export const PERSIST_MS = 10_000;
 
@@ -37,6 +37,7 @@ export function createSimulation({ sensors, sims, model = defaultModel, tickMs =
       exhaust: running('exhaust'),
       circulation: running('circulation'),
       humidifier: running('humidifier'),
+      dehumidifier: running('dehumidifier'),
       ac: works ? { mode: MODES[ac.mode], setpoint: ac.setpoint, fan: FANS[ac.fan] } : null,
     };
   }

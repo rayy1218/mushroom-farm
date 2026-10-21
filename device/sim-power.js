@@ -11,7 +11,7 @@ const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
 export const copAt = (outdoorT) => clamp(3.6 - 0.06 * (outdoorT - 27), 2, 5);
 
 // acting: what the model reported (kW); inputs: the machines (ac is null when off or faulty); params: the room's
-// settings with the outdoor air now. The humidifier's draw follows its setting while it runs.
+// settings with the outdoor air now. The humidifier's draw follows its setting while it runs; the dehumidifier's is its rated power.
 export function electricW({ acting, inputs, params }) {
   const cop = copAt(params.outdoorT ?? 27);
   const heat = ((acting?.acCoolKW ?? 0) + (acting?.acLatentKW ?? 0) + (acting?.acHeatKW ?? 0)) * 1000;
@@ -21,5 +21,6 @@ export function electricW({ acting, inputs, params }) {
   if (inputs.exhaust) w += MOTOR_W;
   if (inputs.circulation) w += MOTOR_W;
   if (inputs.humidifier) w += (HUMIDIFIER_W_PER_LH * (params.humidifierGH ?? 0)) / 1000;
+  if (inputs.dehumidifier) w += (acting?.dehumidifierKW ?? 0) * 1000;
   return w;
 }
