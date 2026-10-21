@@ -5,7 +5,7 @@ import { createSimDrawing } from './sim-drawing.js';
 const $ = (id) => document.getElementById(id);
 const REFRESH_MS = 2000;
 const KIND_NAMES = { trh: 'T/RH probe', co2: 'CO₂ sensor', relay: 'Relay module', ac: 'Aircon gateway', meter: 'Energy meter' };
-const MACHINES = ['Intake fan', 'Exhaust fan', 'Circulation fan', 'Humidifier'];
+const MACHINES = ['Intake fan', 'Exhaust fan', 'Circulation fan', 'Humidifier', 'Dehumidifier'];
 const MODES = ['cool', 'heat', 'dry', 'fan'];
 const FANS = ['auto', 'low', 'high'];
 
@@ -215,6 +215,8 @@ const SIM_PARAMS = [
   ['fanFlow', 'Fan flow', 'm³/h, intake + exhaust', 0, 100000, 10],
   ['acBTU', 'Aircon', 'BTU/h', 0, 200000, 500],
   ['humidifierLH', 'Humidifier', 'L/h', 0, 100, 0.1],
+  ['dehumidifierLday', 'Dehumidifier capacity', 'L/day, 0 = none', 0, 200, 0.5],
+  ['dehumidifierW', 'Dehumidifier power', 'W', 0, 5000, 10],
 ];
 const SIM_LINKS = [['trh', 'T/RH probe'], ['co2', 'CO₂ sensor'], ['relay', 'Relay module'], ['ac', 'Aircon gateway'], ['outdoorProbe', 'Outdoor T/RH probe'], ['meter', 'Energy meter']];
 // The kind of device each link takes (the outdoor probe is a T/RH probe of its own).
@@ -235,6 +237,7 @@ function actingText(a) {
   if (a.acCoolKW > 0.005) parts.push(`AC cooling ${a.acCoolKW.toFixed(1)} kW`);
   if (a.acHeatKW > 0.005) parts.push(`AC heating ${a.acHeatKW.toFixed(1)} kW`);
   if (a.humidifierGH > 0) parts.push(`Humidifier +${(a.humidifierGH / 1000).toFixed(1)} L/h`);
+  if (a.dehumidifierGH > 0) parts.push(`Dehumidifier −${(a.dehumidifierGH / 1000).toFixed(1)} L/h`);
   if (a.acLatentKW > 0.005) parts.push(`AC drying ${(a.acLatentKW / 2.45 * 3.6).toFixed(1)} L/h`);
   parts.push(`Blocks ${a.blocksKW < 0 ? '−' : '+'}${Math.abs(Math.round(a.blocksKW * 1000))} W`);
   if (a.sunKW > 0.0005) parts.push(`Sun +${Math.round(a.sunKW * 1000)} W`);

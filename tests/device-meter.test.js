@@ -382,3 +382,10 @@ test('the API shows meter entries, the new links and electricW', async () => {
     await device.close();
   }
 });
+
+test('the dehumidifier draws its rated power while it runs', () => {
+  const w = (inputs) => electricW({ ...run, acting: { dehumidifierKW: 0.38 }, inputs: { ac: null, ...inputs } });
+  assert.equal(w({ dehumidifier: true }), 380);
+  assert.equal(w({ dehumidifier: false }), 0);
+  assert.equal(w({ dehumidifier: true, intake: true }), 440);
+});

@@ -28,6 +28,8 @@ export const PARAMS = {
   fanFlow: { min: 0, max: 100000, whole: false, label: 'Fan flow', unit: 'm³/h', value: 600 },
   acBTU: { min: 0, max: 200000, whole: true, label: 'Aircon capacity', unit: 'BTU/h', value: 12000 },
   humidifierLH: { min: 0, max: 100, whole: false, label: 'Humidifier output', unit: 'L/h', value: 2 },
+  dehumidifierLday: { min: 0, max: 200, whole: false, label: 'Dehumidifier capacity', unit: 'L/day', value: 0 },
+  dehumidifierW: { min: 0, max: 5000, whole: false, label: 'Dehumidifier power', unit: 'W', value: 380 },
 };
 export const BTU_PER_KW = 3412.142;
 const NAME_MAX = 40;

@@ -212,7 +212,7 @@ test('a simulated sensor refuses manual values with 409 while its room is enable
   // Answering, faults and the relay's stuck/dead stay editable.
   assert.equal((await call('PUT', '/api/sensors/1', { answering: false })).status, 200);
   assert.equal((await call('PUT', '/api/sensors/4', { error: 3, refuse: true })).status, 200);
-  assert.equal((await call('PUT', '/api/sensors/3', { stuck: [true, false, false, false] })).status, 200);
+  assert.equal((await call('PUT', '/api/sensors/3', { stuck: [true, false, false, false, false] })).status, 200);
   // Disabling or removing the room lifts the lock.
   await call('PUT', `/api/sims/${id}`, { enabled: false });
   assert.equal((await call('PUT', '/api/sensors/1', { t: 22 })).status, 200);
@@ -371,4 +371,23 @@ test('the time of day survives a restart; an old file with a fixed outdoor gets 
   assert.equal(again.get(own.id).clock, 1234);
   sims.reset(own.id);
   assert.equal(sims.get(own.id).clock, 12 * 3600);
+});
+
+test('dehumidifier parameters: defaults, limits, and an older state file without them', async () => {
+  reset();
+  const room = (await call('POST', '/api/sims', {})).body;
+  assert.deepEqual([room.dehumidifierLday, room.dehumidifierW], [0, 380]);
+  const ok = await call('PUT', `/api/sims/${room.id}`, { dehumidifierLday: 20.5, dehumidifierW: 5000 });
+  assert.deepEqual([ok.status, ok.body.dehumidifierLday, ok.body.dehumidifierW], [200, 20.5, 5000]);
+  for (const [patch, field] of [[{ dehumidifierLday: -1 }, 'dehumidifierLday'], [{ dehumidifierLday: 200.5 }, 'dehumidifierLday'], [{ dehumidifierW: 5001 }, 'dehumidifierW'], [{ dehumidifierW: '380' }, 'dehumidifierW']]) {
+    const res = await call('PUT', `/api/sims/${room.id}`, patch);
+    assert.deepEqual([res.status, res.body.field], [400, field], JSON.stringify(patch));
+  }
+  const dir = tempDir();
+  const file = join(dir, 'state.json.sim');
+  writeFileSync(file, JSON.stringify({ speed: 1, rooms: [{ id: 1, name: 'Old', fanFlow: 700 }, { id: 2, name: 'New', dehumidifierLday: 30, dehumidifierW: 400 }] }));
+  const sims = createSims({ sensors: createSensors({}), statePath: file, model });
+  const [a, b] = sims.list();
+  assert.deepEqual([a.dehumidifierLday, a.dehumidifierW, a.fanFlow], [0, 380, 700]);
+  assert.deepEqual([b.dehumidifierLday, b.dehumidifierW], [30, 400]);
 });
