@@ -13,7 +13,7 @@ const fields = { name: 'Room 1', length: 6, width: 4, height: 2.5 };
 const DEFAULT_CONTROL = {
   auto: false, co2Low: 600, co2High: 750, tLow: 21, tHigh: 23, rhLow: 85, rhHigh: 95,
   exchange: false, exchangeSince: null, humidifier: false, humidifierDuringExchange: false, acFan: 'auto',
-  co2Safety: 1250, exchangeMaxMin: 10, acDrop: 0, exchangeEndedAt: null, cappedInRow: 0, humidifierSince: null, exchangeEveryMin: 15, exchangeForced: false, freshFrom: null, dehumidifier: false,
+  co2Safety: 1250, exchangeMaxMin: 10, acDrop: 0, exchangeEndedAt: null, cappedInRow: 0, humidifierSince: null, exchangeEveryMin: 15, exchangeForced: false, freshFrom: null, dehumidifier: false, humidifierLastOn: null,
 };
 // A room that already existed at an upgrade keeps the old behaviour: humidifier forced on and the aircon 5 °C lower
 // during an exchange.

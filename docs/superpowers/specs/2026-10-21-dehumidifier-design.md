@@ -31,6 +31,7 @@ Why: a well insulated, shaded container (Container Alpha, 950 lion's mane blocks
 | any | RH probe faulty | off *default* (a dry room is safer than a running compressor on bad data) | "Humidity sensor fault: dehumidifier off" |
 | any | no usable RH reading (not yet faulty) | kept | "Humidity sensor not answering: dehumidifier kept on/off" |
 | any | the humidifier is decided on (its band or forced during exchange) | off | "Dehumidifier off: the humidifier is on" |
+| off | RH ≥ rhHigh, but the humidifier was decided on in the last 30 min *default* | stays off | "Dehumidifier waits: RH 96, but the humidifier ran in the last 30 min" |
 | off | RH ≥ rhHigh | on | "Dehumidifier: RH 94 ≥ 93" |
 | on | RH ≤ the band middle (rhLow + rhHigh) / 2 | off | "Dehumidifier: RH 90 ≤ 90" |
 | — | otherwise | kept | "Dehumidifier kept on: RH 91.5 between 90 and 93" |
@@ -39,6 +40,9 @@ Why: a well insulated, shaded container (Container Alpha, 950 lion's mane blocks
 |---|---|
 | State | `dehumidifierBand` (the band state, kept in the database: `room_controls.dehumidifier`) |
 | Protection (`protect`) | its command changes at most once every 3 min *default* (a compressor: 3 min on, 3 min off); reason while held "Dehumidifier waits: minimum on time, 1 min 20 s to go" / "minimum off time" |
+| Never both (`protect`) | a dehumidifier already running keeps the humidifier off ("Humidifier waits: the dehumidifier is still on"); otherwise a running humidifier keeps the dehumidifier off ("Dehumidifier waits: the humidifier is still on") |
+| State | `humidifierLastOn` (when the humidifier was last decided on, `room_controls.humidifier_last_on`) |
+| Why (real-app check, 2026-10-21) | in Container Alpha (32.6 m³, 950 lion's mane blocks) CO₂ reaches the upper limit about every 10 min, so an air exchange wets the room for a few minutes about 120 times a day. A dehumidifier that answered those spikes ran 3 min each time (its minimum), dried the small room 3–4 % past the band and woke the humidifier: in 17 days both ran 34 h together and the humidifier added 126 L for the 64 L taken out. Waiting until the humidifier has been off 30 min keeps it for a room that is wet by itself (the rest stage): all three in band 52 → 71 %, fruiting unharmed (76 → 76 % RH in band), rest 40 → 73 %, no time with both on, energy +12 %. A shorter minimum on time (1 min) gave 83 % but 250 starts a day, too many for a compressor; a smoothed RH or a pause after each exchange did worse. |
 | Turning auto on | the band state starts from what is commanded now |
 
 ## 4. Energy and water

@@ -80,7 +80,8 @@ CREATE TABLE room_controls (
   exchange_every_min INTEGER NOT NULL DEFAULT 15,
   exchange_forced INTEGER NOT NULL DEFAULT 0 CHECK (exchange_forced IN (0, 1)),
   fresh_from INTEGER,
-  dehumidifier INTEGER NOT NULL DEFAULT 0 CHECK (dehumidifier IN (0, 1))
+  dehumidifier INTEGER NOT NULL DEFAULT 0 CHECK (dehumidifier IN (0, 1)),
+  humidifier_last_on INTEGER
 ) STRICT;`;
 
 // Safety and history (spec 2026-10-19-safety-and-history-design.md 3.2 and 4): the room_controls columns
@@ -375,6 +376,7 @@ function migrate(db) {
       if (!has('room_controls', 'dehumidifier')) {
         db.exec('ALTER TABLE room_controls ADD COLUMN dehumidifier INTEGER NOT NULL DEFAULT 0 CHECK (dehumidifier IN (0, 1))');
       }
+      if (!has('room_controls', 'humidifier_last_on')) db.exec('ALTER TABLE room_controls ADD COLUMN humidifier_last_on INTEGER');
       if (!has('rooms', 'dehumidifier')) db.exec(DEHUMIDIFIER_ROOM_COLUMNS);
       // machine_log's CHECK must allow the new machine: rebuild it with its rows (a table made above already allows it).
       if (version >= 7) {
@@ -528,7 +530,7 @@ export function openDb(path) {
                                    co2_safety = ?, exchange_max_min = ?, ac_drop = ?, exchange_every_min = ? WHERE room_id = ?`),
     setControlState: db.prepare(`UPDATE room_controls SET exchange = ?, humidifier = ?, exchange_since = ?,
                                         exchange_ended_at = ?, capped_in_row = ?, humidifier_since = ?,
-                                        exchange_forced = ?, fresh_from = ?, dehumidifier = ? WHERE room_id = ?`),
+                                        exchange_forced = ?, fresh_from = ?, dehumidifier = ?, humidifier_last_on = ? WHERE room_id = ?`),
     setRelay: Object.fromEntries(RELAY_KEYS.map((key) => [key,
       db.prepare(`UPDATE machine_commands SET ${key} = ?, relay_sent_at = ? WHERE room_id = ?`)])),
     setAc: db.prepare(`UPDATE machine_commands SET ac_power = ?, ac_mode = ?, ac_setpoint = ?, ac_fan = ?, ac_sent_at = ?
@@ -785,6 +787,7 @@ export function openDb(path) {
         exchange: r.exchange === 1, exchangeSince: r.exchange_since, humidifier: r.humidifier === 1,
         co2Safety: r.co2_safety, exchangeMaxMin: r.exchange_max_min, acDrop: r.ac_drop, exchangeEndedAt: r.exchange_ended_at,
         cappedInRow: r.capped_in_row, humidifierSince: r.humidifier_since, dehumidifier: r.dehumidifier === 1,
+        humidifierLastOn: r.humidifier_last_on,
         exchangeEveryMin: r.exchange_every_min, exchangeForced: r.exchange_forced === 1, freshFrom: r.fresh_from,
       };
     },
@@ -798,7 +801,7 @@ export function openDb(path) {
     // Without exchangeSince it keeps the time the exchange began and is cleared when it ends. exchangeEndedAt, cappedInRow,
     // humidifierSince, exchangeForced and freshFrom are kept when not given (null is a value).
     // dehumidifier: its band state (spec 2026-10-21-dehumidifier-design.md 3), kept when not given.
-    setControlState(roomId, { exchange, humidifier, exchangeSince, exchangeEndedAt, cappedInRow, humidifierSince, exchangeForced, freshFrom, dehumidifier }, at) {
+    setControlState(roomId, { exchange, humidifier, exchangeSince, exchangeEndedAt, cappedInRow, humidifierSince, exchangeForced, freshFrom, dehumidifier, humidifierLastOn }, at) {
       const r = q.control.get(roomId);
       if (!r) return false;
       const since = exchangeSince !== undefined ? exchangeSince : exchange ? (r.exchange_since ?? at) : null;
@@ -808,7 +811,8 @@ export function openDb(path) {
         humidifierSince !== undefined ? humidifierSince : r.humidifier_since,
         exchangeForced !== undefined ? (exchangeForced ? 1 : 0) : r.exchange_forced,
         freshFrom !== undefined ? freshFrom : r.fresh_from,
-        dehumidifier !== undefined ? (dehumidifier ? 1 : 0) : r.dehumidifier, roomId).changes > 0;
+        dehumidifier !== undefined ? (dehumidifier ? 1 : 0) : r.dehumidifier,
+        humidifierLastOn !== undefined ? humidifierLastOn : r.humidifier_last_on, roomId).changes > 0;
     },
 
     // ---- Alarms (spec 2026-10-19-safety-and-history-design.md section 3) ----

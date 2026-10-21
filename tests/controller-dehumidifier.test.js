@@ -175,3 +175,49 @@ test('manual command of a dehumidifier the room does not have: 400 with the fiel
   assert.equal(s.coil(), false);
   assert.deepEqual(s.writes, []);
 });
+
+// ---- after the real-app check (2026-10-21): no fight with the humidifier in a small room ----
+
+test('dehumidifier rule: it starts only once the humidifier has been off for 30 min', () => {
+  const at = (ago) => decide({
+    bands, state: { exchange: false, exchangeSince: null, exchangeEndedAt: null, humidifier: false, dehumidifier: false, humidifierLastOn: ago === null ? null : NOW - ago },
+    readings: { co2: 650, rh: 96 }, now: NOW, dehumidifierFitted: true,
+  });
+  const recent = at(29 * 60_000);
+  assert.equal(recent.desired.dehumidifier, false);
+  assert.equal(recent.reasons.dehumidifier, 'Dehumidifier waits: RH 96, but the humidifier ran in the last 30 min');
+  assert.equal(at(30 * 60_000).desired.dehumidifier, true);
+  assert.equal(at(null).desired.dehumidifier, true, 'never ran');
+  // the decision remembers when the humidifier was last on
+  const wet = decide({ bands, state: { exchange: false, humidifier: false, dehumidifier: false }, readings: { co2: 650, rh: 80 }, now: NOW, dehumidifierFitted: true });
+  assert.equal(wet.desired.humidifier, true);
+  assert.equal(wet.state.humidifierLastOn, NOW);
+  assert.equal(decide({ bands, state: { ...wet.state, humidifier: false }, readings: { co2: 650, rh: 90 }, now: NOW + S, dehumidifierFitted: true }).state.humidifierLastOn, NOW);
+});
+
+test('protect: never both; a running dehumidifier keeps the humidifier off, a running humidifier keeps the dehumidifier off', () => {
+  const relay = (h, d) => ({ relay: { intake: false, exhaust: false, circulation: true, humidifier: h, dehumidifier: d }, ac: { power: true, mode: 'cool', setpoint: 22, fan: 'auto' } });
+  const want = { intake: false, exhaust: false, circulation: true, humidifier: true, dehumidifier: true, ac: { power: true, mode: 'cool', setpoint: 22, fan: 'auto' } };
+  const a = protect({ desired: want, commands: relay(false, true), now: NOW });
+  assert.equal(a.desired.humidifier, false);
+  assert.equal(a.desired.dehumidifier, true);
+  assert.equal(a.held.humidifier, 'Humidifier waits: the dehumidifier is still on');
+  const b = protect({ desired: want, commands: relay(true, false), now: NOW });
+  assert.equal(b.desired.dehumidifier, false);
+  assert.equal(b.desired.humidifier, true);
+  assert.equal(b.held.dehumidifier, 'Dehumidifier waits: the humidifier is still on');
+  // held on by its 3 min while the humidifier is wanted: still never both
+  const c = protect({ desired: { ...want, dehumidifier: false }, commands: relay(false, true), changedAt: { dehumidifier: NOW - 60_000 }, now: NOW });
+  assert.equal(c.desired.dehumidifier, true);
+  assert.equal(c.desired.humidifier, false);
+});
+
+test('the humidifier-last-on time is stored and survives a restart', (t) => {
+  const db = openDb(':memory:');
+  t.after(() => db.close());
+  const { id } = db.createRoom({ name: 'R', length: 6, width: 4, height: 2.5 });
+  db.setControlState(id, { exchange: false, humidifier: false, humidifierLastOn: 1234 }, 1);
+  assert.equal(db.getControl(id).humidifierLastOn, 1234);
+  db.setControlState(id, { exchange: false, humidifier: false }, 2);
+  assert.equal(db.getControl(id).humidifierLastOn, 1234, 'kept when not given');
+});
