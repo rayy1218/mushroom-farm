@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { statusWord, onOff, validSetpoint, describeAc, acBody, acMatches, lastWriteText, STATUS_WORDS } from '../web/machines-math.js';
+import { MACHINE_NAMES, shownMachines, statusWord, onOff, validSetpoint, describeAc, acBody, acMatches, lastWriteText, STATUS_WORDS } from '../web/machines-math.js';
 
 test('every status of the spec has a word', () => {
-  for (const s of ['not-wired', 'no-data', 'no-answer', 'switching', 'not-following', 'not-running', 'running-while-off', 'fault', 'on', 'off']) {
+  for (const s of ['not-wired', 'no-data', 'no-answer', 'switching', 'not-following', 'not-running', 'running-while-off', 'fault', 'on', 'off', 'not-fitted']) {
     assert.ok(STATUS_WORDS[s], s);
   }
   assert.equal(statusWord('on'), 'On');
@@ -39,4 +39,16 @@ test('lastWriteText shows a failure with its age until the device is back in syn
   assert.equal(lastWriteText(w, 6000, true, ago), '');
   assert.equal(lastWriteText({ at: 1, ok: true, error: null }, 6000, false, ago), '');
   assert.equal(lastWriteText(null, 6000, false, ago), '');
+});
+
+test('the Dehumidifier has a name and a status word', () => {
+  assert.equal(MACHINE_NAMES.dehumidifier, 'Dehumidifier');
+  assert.equal(statusWord('not-fitted'), 'Not fitted');
+});
+
+test('a relay machine that is not fitted is not shown; the others keep their order', () => {
+  const list = [{ key: 'intake', status: 'on' }, { key: 'humidifier', status: 'off' }, { key: 'dehumidifier', status: 'not-fitted' }];
+  assert.deepEqual(shownMachines(list).map((m) => m.key), ['intake', 'humidifier']);
+  assert.deepEqual(shownMachines([...list.slice(0, 2), { key: 'dehumidifier', status: 'off' }]).map((m) => m.key), ['intake', 'humidifier', 'dehumidifier']);
+  assert.deepEqual(shownMachines(undefined), []);
 });

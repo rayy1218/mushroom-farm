@@ -160,17 +160,20 @@ export const MACHINE_ROWS = [
   { key: 'exhaust', label: 'Exhaust' },
   { key: 'circulation', label: 'Circulation' },
   { key: 'humidifier', label: 'Humidifier' },
+  { key: 'dehumidifier', label: 'Dehumidifier' },
   { key: 'ac', label: 'Aircon' },
   { key: 'rest', label: 'Rest (mostly the aircon)' },
 ];
 
 // The per machine breakdown of the days: [{ key, label, kWh, share (0..1), cost }] and the total.
 // The aircon row is left out when the days are all metered (its share is in "rest"); "rest" only when there is some.
-export function breakdown(days, electricityPrice) {
+// The dehumidifier row shows when the room has one (options.dehumidifier) or when it used energy.
+export function breakdown(days, electricityPrice, { dehumidifier = false } = {}) {
   const list = Array.isArray(days) ? days : [];
   const sums = Object.fromEntries(MACHINE_ROWS.map((r) => [r.key, 0]));
   for (const d of list) for (const r of MACHINE_ROWS) if (finite(d?.byMachine?.[r.key])) sums[r.key] += d.byMachine[r.key];
-  const rows = MACHINE_ROWS.filter((r) => (r.key === 'rest' ? sums.rest > 0 : r.key === 'ac' ? sums.ac > 0 || sums.rest <= 0 : true));
+  const rows = MACHINE_ROWS.filter((r) => (r.key === 'rest' ? sums.rest > 0 : r.key === 'ac' ? sums.ac > 0 || sums.rest <= 0
+    : r.key === 'dehumidifier' ? dehumidifier || sums.dehumidifier > 0 : true));
   const total = rows.reduce((a, r) => a + sums[r.key], 0);
   return {
     rows: rows.map((r) => ({
@@ -185,11 +188,11 @@ export function breakdown(days, electricityPrice) {
 }
 
 // How the 30 days were worked out, one line under the table.
-export function breakdownNote(days) {
+export function breakdownNote(days, { dehumidifier = false } = {}) {
   const list = Array.isArray(days) ? days : [];
   const metered = list.filter((d) => d?.metered === true).length;
   if (list.length === 0) return '';
-  if (metered === list.length) return 'Metered. The fans and the humidifier are estimated from run time and rating; the rest is what is left of the meter.';
+  if (metered === list.length) return `Metered. ${dehumidifier ? 'The fans, the humidifier and the dehumidifier are' : 'The fans and the humidifier are'} estimated from run time and rating; the rest is what is left of the meter.`;
   if (metered === 0) return 'Estimated from run time and rated power. The aircon is counted at its rated input, so this is an upper bound.';
   return `${metered} of ${list.length} days metered, the rest estimated from run time and rated power.`;
 }

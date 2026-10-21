@@ -8,7 +8,7 @@ import { formatAgo } from './chart-math.js';
 import { AUTO_NOTE } from './control-math.js';
 import {
   MACHINE_NAMES, MODES, FANS, SETPOINT_MIN, SETPOINT_MAX,
-  statusWord, onOff, validSetpoint, describeAc, acBody, acMatches, lastWriteText as lastWriteMessage,
+  shownMachines, statusWord, onOff, validSetpoint, describeAc, acBody, acMatches, lastWriteText as lastWriteMessage,
 } from './machines-math.js';
 
 function el(tag, className, content) {
@@ -114,9 +114,9 @@ export function createMachines(host, { roomId, onEdit, onOffline, onGone, onComm
     }
     relay.addr = el('p', 'addr');
     relayHost.append(relay.addr);
-    relay.sig = r.machines.map((m) => m.key).join();
+    relay.sig = shownMachines(r.machines).map((m) => m.key).join();
     const list = el('div', 'm-rows');
-    for (const m of r.machines) {
+    for (const m of shownMachines(r.machines)) {
       const row = el('div', 'm-row');
       row.dataset.key = m.key;
       const name = el('span', 'm-name', MACHINE_NAMES[m.key] ?? m.key);
@@ -141,7 +141,7 @@ export function createMachines(host, { roomId, onEdit, onOffline, onGone, onComm
   }
 
   function paintRelay(r) {
-    const sig = r.machines?.map((m) => m.key).join() ?? null;
+    const sig = r.machines ? shownMachines(r.machines).map((m) => m.key).join() : null;
     if (!relay || relay.wired !== (r.address != null) || (relay.wired && relay.sig !== sig)) {
       const hadFocus = relayHost.contains(document.activeElement) ? document.activeElement.closest('.m-row')?.dataset.key : null;
       buildRelay(r);
@@ -149,7 +149,8 @@ export function createMachines(host, { roomId, onEdit, onOffline, onGone, onComm
     }
     if (!relay.wired) return;
     relay.addr.textContent = `address ${r.address}`;
-    for (const m of r.machines) {
+    const shown = shownMachines(r.machines);
+    for (const m of shown) {
       const row = relay.rows.get(m.key);
       row.commanded = m.commanded;
       paintToggle(row);
@@ -160,7 +161,7 @@ export function createMachines(host, { roomId, onEdit, onOffline, onGone, onComm
       showError(row.err, row.localError);
     }
     // The failure no longer matters once every output reports what was commanded.
-    const inSync = r.machines.every((m) => m.reported === m.commanded);
+    const inSync = shown.every((m) => m.reported === m.commanded);
     showError(relay.moduleError, lastWriteText(r.lastWrite, inSync));
   }
 

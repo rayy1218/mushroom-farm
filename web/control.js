@@ -3,7 +3,7 @@
 // Controls are updated in place, so a refresh never replaces an input the person is using or has edited.
 
 import { request, OFFLINE } from './api.js';
-import { BANDS, REASONS, stateLine, inputLabel, reasonLine, checkBand, locateField, SAFETY_FIELDS, checkSafety, locateSafetyField, changedBody, checkLines, heldLine, HUMIDIFIER_LABEL, humidifierOn, AC_FAN_LABEL, AC_FAN_OPTIONS, acFanOf } from './control-math.js';
+import { BANDS, REASONS, reasonsShown, stateLine, inputLabel, reasonLine, checkBand, locateField, SAFETY_FIELDS, checkSafety, locateSafetyField, changedBody, checkLines, heldLine, HUMIDIFIER_LABEL, humidifierOn, AC_FAN_LABEL, AC_FAN_OPTIONS, acFanOf } from './control-math.js';
 
 const COMMAND_TIMEOUT = 30000;
 
@@ -40,7 +40,7 @@ function errorText(err) {
   return err.status === 0 ? `${OFFLINE}. Try again.` : err.message;
 }
 
-export function createControl(host, { roomId, onOffline, onGone, onChange }) {
+export function createControl(host, { roomId, onOffline, onGone, onChange, getRoom }) {
   let alive = true;
   let version = 0; // bumped by every command, so a refresh that began earlier is dropped
   let inflight = 0;
@@ -142,7 +142,7 @@ export function createControl(host, { roomId, onOffline, onGone, onChange }) {
     const held = el('span', 'c-held'); // the wait of the machine protection, under the reason
     held.hidden = true;
     li.append(line, held);
-    reasonItems.set(r.key, { line, held });
+    reasonItems.set(r.key, { li, line, held });
     reasonList.append(li);
   }
 
@@ -291,8 +291,10 @@ export function createControl(host, { roomId, onOffline, onGone, onChange }) {
     checkList.replaceChildren(...lines.map((text) => el('li', 'warn', text)));
     checkList.hidden = lines.length === 0;
     reasonList.hidden = !c.auto; // the reasons are of the last decision: not shown once auto is off
+    const shown = reasonsShown(getRoom?.()?.dehumidifier === true);
     for (const r of REASONS) {
       const item = reasonItems.get(r.key);
+      item.li.hidden = !shown.includes(r);
       item.line.textContent = reasonLine(r.label, c.reasons?.[r.key]);
       const held = heldLine(c, r.key);
       if (item.held.textContent !== held) item.held.textContent = held;

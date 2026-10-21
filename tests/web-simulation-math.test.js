@@ -140,3 +140,39 @@ test('spans closer than the gap are drawn as one (a long run has tens of thousan
   assert.equal(ac.spans.length, 2);
   assert.equal(ac.marks.length, 2);
 });
+
+const withDehum = { physics: { dehumidifierLday: 20 } };
+
+test('the Dehumidifier timeline row shows when the run had one (dehumidifierLday above 0) or it has spans', () => {
+  const keys = (rows) => rows.map((r) => r.key);
+  assert.deepEqual(keys(timelineRows({}, 0, withDehum)), ['intake', 'exhaust', 'circulation', 'humidifier', 'dehumidifier', 'ac']);
+  assert.deepEqual(keys(timelineRows({}, 0, { physics: { dehumidifierLday: 0 } })), ['intake', 'exhaust', 'circulation', 'humidifier', 'ac']);
+  assert.deepEqual(keys(timelineRows({ dehumidifier: [] }, 0, { physics: {} })), ['intake', 'exhaust', 'circulation', 'humidifier', 'ac']);
+  const spans = timelineRows({ dehumidifier: [{ from: 5, to: 50 }] }, 0, { physics: { dehumidifierLday: 0 } });
+  assert.deepEqual(spans.find((r) => r.key === 'dehumidifier').spans, [{ from: 5, to: 50, source: 'auto' }]);
+  assert.equal(timelineRows({}, 0, withDehum).find((r) => r.key === 'dehumidifier').label, 'Dehumidifier');
+});
+
+test('energy by machine has a Dehumidifier row when the run had one; Water taken out only above 0', () => {
+  const summary = { energy: { byMachine: { intake: 1, exhaust: 1, circulation: 2, humidifier: 1, dehumidifier: 5, ac: 10 }, kWh: 20, cost: null },
+    water: { litres: 100, cost: null, removedLitres: 41.6 } };
+  const v = energyView(summary, withDehum);
+  assert.deepEqual(v.rows.map((r) => [r.label, r.kWh, r.share]).filter((r) => r[0] === 'Dehumidifier'), [['Dehumidifier', '5.0 kWh', '25 %']]);
+  assert.equal(v.removed, '42 L');
+  const none = energyView({ energy: { byMachine: { intake: 1, exhaust: 1, circulation: 2, humidifier: 1, dehumidifier: 0, ac: 10 } }, water: { litres: 1, removedLitres: 0 } }, { physics: { dehumidifierLday: 0 } });
+  assert.equal(none.rows.some((r) => r.key === 'dehumidifier'), false);
+  assert.equal(none.removed, null);
+  assert.equal(energyView({}).removed, null);
+  // a dehumidifier that ran shows even if the input line is missing
+  assert.ok(energyView(summary).rows.some((r) => r.key === 'dehumidifier'));
+  // fitted but never on: the row shows 0
+  assert.equal(energyView({ energy: { byMachine: { intake: 1, dehumidifier: 0 } } }, withDehum).rows.find((r) => r.key === 'dehumidifier').kWh, '0.0 kWh');
+});
+
+test('the inputs line mentions the dehumidifier only above 0', () => {
+  const base = { crops: [{ crop: 'oyster', blocks: 5 }], stage: 'fruiting', days: 7,
+    physics: { wallUA: 80, sunW: 300, outdoorLow: 25, outdoorHigh: 33, outdoorDew: 24, fanFlow: 600, acBTU: 12000, humidifierLH: 2 } };
+  assert.ok(!/dehumidifier/.test(inputLine(base)));
+  assert.ok(!/dehumidifier/.test(inputLine({ ...base, physics: { ...base.physics, dehumidifierLday: 0 } })));
+  assert.ok(inputLine({ ...base, physics: { ...base.physics, dehumidifierLday: 20 } }).endsWith('humidifier 2 L/h, dehumidifier 20 L/day'));
+});

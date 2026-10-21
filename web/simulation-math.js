@@ -132,6 +132,9 @@ export function bandSteps(series, lowKey, highKey, endS) {
 
 // ---- machine timeline ----
 
+// Whether the run was asked to have a dehumidifier (the input as it was posted).
+const hasDehumidifier = (input) => input?.physics?.dehumidifierLday > 0;
+
 // Spans closer together than minGap seconds drawn as one (a long run has tens of thousands; they cannot be told apart).
 // A span keeps its own length, so a short one stays; `same` (optional) says whether two neighbours may be joined.
 export function mergeSpans(spans, minGap, same = () => true) {
@@ -146,8 +149,10 @@ export function mergeSpans(spans, minGap, same = () => true) {
 
 // The rows of drawTimeline: the on-spans (seconds) of result.machines and the aircon's setpoint marks. minGap: spans closer
 // than this many seconds (one pixel of the chart) are joined; the aircon's only when the setpoint is the same.
-export function timelineRows(machines, minGap = 0) {
-  return TIMELINE_ROWS.map((r) => {
+// The dehumidifier's row is there when the run had one (input.physics.dehumidifierLday above 0) or it has spans.
+export function timelineRows(machines, minGap = 0, input = null) {
+  const hadDehumidifier = hasDehumidifier(input) || (machines?.dehumidifier?.length ?? 0) > 0;
+  return TIMELINE_ROWS.filter((r) => !r.fitted || hadDehumidifier).map((r) => {
     const raw = (machines?.[r.key] ?? []).map((s) => ({ from: s.from, to: s.to, source: 'auto', setpoint: s.setpoint }));
     const marks = [];
     if (r.key === 'ac') {
@@ -164,10 +169,11 @@ export function timelineRows(machines, minGap = 0) {
 
 // ---- energy and water ----
 
-const MACHINES = [['intake', 'Intake'], ['exhaust', 'Exhaust'], ['circulation', 'Circulation'], ['humidifier', 'Humidifier'], ['ac', 'Aircon']];
+const MACHINES = [['intake', 'Intake'], ['exhaust', 'Exhaust'], ['circulation', 'Circulation'], ['humidifier', 'Humidifier'], ['dehumidifier', 'Dehumidifier'], ['ac', 'Aircon']];
 
 // summary → the texts of the energy and water part: totals, cost (null without a price) and a row per machine.
-export function energyView(summary) {
+// The dehumidifier's row is there when the run had one (input) or it used energy; removed is the "Water taken out" text, or null.
+export function energyView(summary, input = null) {
   const e = summary?.energy;
   const w = summary?.water;
   const by = e?.byMachine;
@@ -177,7 +183,8 @@ export function energyView(summary) {
     cost: finite(e?.cost) ? formatRM(e.cost) : null,
     litres: formatLitres(w?.litres),
     waterCost: finite(w?.cost) ? formatRM(w.cost) : null,
-    rows: by ? MACHINES.map(([key, label]) => ({
+    removed: finite(w?.removedLitres) && w.removedLitres > 0 ? formatLitres(w.removedLitres) : null,
+    rows: by ? MACHINES.filter(([key]) => key !== 'dehumidifier' || hasDehumidifier(input) || by.dehumidifier > 0).map(([key, label]) => ({
       key, label, kWh: formatKWh(by[key]), share: total > 0 && finite(by[key]) ? `${Math.round((by[key] / total) * 100)} %` : DASH,
     })) : [],
   };
@@ -203,7 +210,7 @@ export function inputLine(input) {
   return [
     `${crops} blocks, starting at ${stage}, ${plural(input.days, 'day', 'days')}`,
     `walls ${p.wallUA} W/K, sun ${p.sunW} W, outdoor ${p.outdoorLow}–${p.outdoorHigh} °C, dew point ${p.outdoorDew} °C`,
-    `fan ${p.fanFlow} m³/h, aircon ${grouped(p.acBTU)} BTU/h, humidifier ${p.humidifierLH} L/h`,
+    `fan ${p.fanFlow} m³/h, aircon ${grouped(p.acBTU)} BTU/h, humidifier ${p.humidifierLH} L/h${p.dehumidifierLday > 0 ? `, dehumidifier ${p.dehumidifierLday} L/day` : ''}`,
   ].join(' · ');
 }
 
