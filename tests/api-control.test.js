@@ -53,7 +53,7 @@ const DEFAULT_VIEW = {
   auto: false, co2Low: 600, co2High: 750, tLow: 21, tHigh: 23, rhLow: 85, rhHigh: 95,
   exchange: false, exchangeSince: null, humidifierBand: false, dehumidifierBand: false, humidifierDuringExchange: false, acFan: 'auto', acDrop: 0,
   co2Safety: 1250, exchangeMaxMin: 10, exchangeEndedAt: null, exchangeEndsAt: null, cappedInRow: 0, exchangeEveryMin: 15, exchangeForced: false, freshFrom: null, checks: { trh: null, co2: null },
-  reasons: { exchange: '', humidifier: '', ac: '', circulation: '', held: { humidifier: '', ac: '' } },
+  reasons: { exchange: '', humidifier: '', dehumidifier: '', ac: '', circulation: '', held: { humidifier: '', dehumidifier: '', ac: '' } },
 };
 
 test('GET control returns the defaults with empty reasons', async () => {
@@ -176,5 +176,5 @@ test('deleting the last room with auto on, then creating a room: its reasons are
   const created = await call('POST', '/api/rooms', { name: 'Room 2', length: 6, width: 4, height: 2.5 });
   assert.equal(created.status, 201);
   assert.deepEqual((await call('GET', `/api/rooms/${created.body.id}/control`)).body.reasons,
-    { exchange: '', humidifier: '', ac: '', circulation: '', held: { humidifier: '', ac: '' } });
+    { exchange: '', humidifier: '', dehumidifier: '', ac: '', circulation: '', held: { humidifier: '', dehumidifier: '', ac: '' } });
 });

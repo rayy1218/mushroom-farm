@@ -35,6 +35,7 @@ const EVERY_MAX = 240; // min, the longest fresh-air interval
 const TIMED_HUMIDIFIER_MS = 10 * 60_000; // T/RH probe fault: 10 min on, 10 min off
 const HUMIDIFIER_HOLD_MS = 60_000; // the command changes at most once a minute
 const AC_HOLD_MS = 120_000; // at most one changed aircon command every 2 min
+const DEHUMIDIFIER_HOLD_MS = 180_000; // a compressor: 3 min on, 3 min off
 
 const num = (x) => String(Math.round(x * 10) / 10);
 const word = (on) => (on ? 'on' : 'off');
@@ -52,16 +53,17 @@ const acDiffers = (a, d) => a.power !== d.power || a.mode !== d.mode || a.fan !=
 
 // bands: { co2Low, co2High, co2Safety, exchangeMaxMin, exchangeEveryMin, tLow, tHigh, rhLow, rhHigh, acDrop } (acDrop: °C
 // lower during an air exchange, 0 when missing; exchangeEveryMin: fresh air at least this often, 0 or missing: off).
-// state: { exchange, exchangeSince, exchangeEndedAt, exchangeForced, freshFrom, cappedInRow, humidifier, humidifierSince },
+// state: { exchange, exchangeSince, exchangeEndedAt, exchangeForced, freshFrom, cappedInRow, humidifier, humidifierSince, dehumidifier },
 // the remembered states (times in ms; exchangeSince is null while the exchange is off, exchangeEndedAt null when it never
 // ended; exchangeForced: the running exchange is a fresh-air run; freshFrom: the fresh-air wait counts from then, null:
 // from the last end, or from now when it never ended).
 // humidifierDuringExchange: whether an air exchange forces the humidifier on (default false).
 // acFan: the aircon fan, 'auto' | 'low' | 'high' (default 'auto').
+// dehumidifierFitted: whether the room has a dehumidifier (default false: never on, no reason text).
 // readings: { co2, rh }, null when the sensor gave nothing usable this cycle (that rule then keeps its state).
 // faults: { co2, trh }, true while that sensor is faulty (timed exchange, timed humidifier). now: ms.
 // Returns { state, desired, reasons }. Pure.
-export function decide({ bands, state, readings, faults, now, humidifierDuringExchange = false, acFan = 'auto' }) {
+export function decide({ bands, state, readings, faults, now, humidifierDuringExchange = false, acFan = 'auto', dehumidifierFitted = false }) {
   const { co2 = null, rh = null } = readings ?? {};
   const was = state.exchange;
   let exchange = was;
@@ -72,6 +74,7 @@ export function decide({ bands, state, readings, faults, now, humidifierDuringEx
   let freshRun = was && Boolean(state.exchangeForced);
   let freshFrom = state.freshFrom ?? endedAt ?? now;
   let band = state.humidifier;
+  let dehumidifierBand = state.dehumidifier ?? false;
   let humidifierSince = null;
   const reasons = {};
 
@@ -177,6 +180,33 @@ export function decide({ bands, state, readings, faults, now, humidifierDuringEx
   }
   reasons.humidifier = forced ? 'Humidifier: on during air exchange' : why;
 
+  // Dehumidifier band (spec 2026-10-21-dehumidifier-design.md 3): on at or above the upper RH limit, off at the middle of the
+  // RH band, kept between; off while the humidifier is on and with a faulty RH probe.
+  reasons.dehumidifier = '';
+  if (dehumidifierFitted) {
+    const high = bands.rhHigh;
+    const mid = (bands.rhLow + high) / 2;
+    if (faults?.trh) {
+      dehumidifierBand = false;
+      reasons.dehumidifier = 'Humidity sensor fault: dehumidifier off';
+    } else if (rh === null) {
+      reasons.dehumidifier = `Humidity sensor not answering: dehumidifier kept ${word(dehumidifierBand)}`;
+    } else if (forced || band) {
+      dehumidifierBand = false;
+      reasons.dehumidifier = 'Dehumidifier off: the humidifier is on';
+    } else if (!dehumidifierBand && rh >= high) {
+      dehumidifierBand = true;
+      reasons.dehumidifier = `Dehumidifier: RH ${num(rh)} ≥ ${num(high)}`;
+    } else if (dehumidifierBand && rh <= mid) {
+      dehumidifierBand = false;
+      reasons.dehumidifier = `Dehumidifier: RH ${num(rh)} ≤ ${num(mid)}`;
+    } else if (rh > mid && rh < high) {
+      reasons.dehumidifier = `Dehumidifier kept ${word(dehumidifierBand)}: RH ${num(rh)} between ${num(mid)} and ${num(high)}`;
+    } else {
+      reasons.dehumidifier = `Dehumidifier kept ${word(dehumidifierBand)}: RH ${num(rh)} ${rh <= mid ? `≤ ${num(mid)}` : `≥ ${num(high)}`}`;
+    }
+  }
+
   const middle = (bands.tLow + bands.tHigh) / 2;
   const drop = bands.acDrop ?? 0;
   const lowered = exchange && drop > 0;
@@ -191,13 +221,13 @@ export function decide({ bands, state, readings, faults, now, humidifierDuringEx
   return {
     state: {
       exchange, exchangeSince: since, exchangeEndedAt: endedAt, exchangeForced: freshRun, freshFrom,
-      cappedInRow: capped, humidifier: band, humidifierSince,
+      cappedInRow: capped, humidifier: band, humidifierSince, dehumidifier: dehumidifierBand,
     },
     desired: {
       intake: exchange,
       exhaust: exchange,
       humidifier: forced || band,
-      dehumidifier: false, // its rule: spec 2026-10-21-dehumidifier-design.md 3 (stream server)
+      dehumidifier: dehumidifierFitted && dehumidifierBand,
       circulation: true,
       ac: { power: true, mode: 'cool', setpoint, fan: acFan },
     },
@@ -205,18 +235,24 @@ export function decide({ bands, state, readings, faults, now, humidifierDuringEx
   };
 }
 
-// Machine protection for the humidifier and the aircon (the air exchange keeps its own times in decide).
+// Machine protection for the humidifier, the dehumidifier and the aircon (the air exchange keeps its own times in decide).
 // desired: the decided commands. commands: what is commanded now (db.getCommands). changedAt: when the controller last
-// changed the humidifier and the aircon command (null or missing: never, no wait). now: ms.
-// Returns { desired, held: { humidifier, ac } }: a machine that must wait keeps its commanded value and has a reason text.
+// changed the humidifier, the dehumidifier and the aircon command (null or missing: never, no wait). now: ms.
+// Returns { desired, held: { humidifier, dehumidifier, ac } }: a machine that must wait keeps its commanded value and has a reason text.
 export function protect({ desired, commands, changedAt = {}, now }) {
   const out = { ...desired };
-  const held = { humidifier: '', ac: '' };
+  const held = { humidifier: '', dehumidifier: '', ac: '' };
 
   const on = commands.relay.humidifier;
   if (desired.humidifier !== on && changedAt.humidifier != null && now - changedAt.humidifier < HUMIDIFIER_HOLD_MS) {
     out.humidifier = on;
     held.humidifier = `Humidifier waits: minimum ${word(on)} time, ${wait(HUMIDIFIER_HOLD_MS - (now - changedAt.humidifier))} to go`;
+  }
+
+  const dehumidifierOn = commands.relay.dehumidifier;
+  if (desired.dehumidifier !== dehumidifierOn && changedAt.dehumidifier != null && now - changedAt.dehumidifier < DEHUMIDIFIER_HOLD_MS) {
+    out.dehumidifier = dehumidifierOn;
+    held.dehumidifier = `Dehumidifier waits: minimum ${word(dehumidifierOn)} time, ${wait(DEHUMIDIFIER_HOLD_MS - (now - changedAt.dehumidifier))} to go`;
   }
 
   const { power, mode, setpoint, fan } = commands.ac;
@@ -260,11 +296,11 @@ export function validateControl(c, { compareSafety = true } = {}) {
   return null;
 }
 
-const emptyReasons = () => ({ exchange: '', humidifier: '', ac: '', circulation: '', held: { humidifier: '', ac: '' } });
+const emptyReasons = () => ({ exchange: '', humidifier: '', dehumidifier: '', ac: '', circulation: '', held: { humidifier: '', dehumidifier: '', ac: '' } });
 const BYPASS = { bypassAuto: true };
 const RESENDS = 3;
-const NAMES = { intake: 'Intake fan', exhaust: 'Exhaust fan', circulation: 'Circulation fan', humidifier: 'Humidifier', ac: 'Aircon' };
-const REASON_OF = { intake: 'exchange', exhaust: 'exchange', circulation: 'circulation', humidifier: 'humidifier', ac: 'ac' };
+const NAMES = { intake: 'Intake fan', exhaust: 'Exhaust fan', circulation: 'Circulation fan', humidifier: 'Humidifier', dehumidifier: 'Dehumidifier', ac: 'Aircon' };
+const REASON_OF = { intake: 'exchange', exhaust: 'exchange', circulation: 'circulation', humidifier: 'humidifier', dehumidifier: 'dehumidifier', ac: 'ac' };
 
 // db: the farm database. machines: from createMachines. now is injectable. checks (createSensorChecks) and alarms
 // (createAlarms) are made here unless a test passes its own.
@@ -272,7 +308,7 @@ const REASON_OF = { intake: 'exchange', exhaust: 'exchange', circulation: 'circu
 export function createController({ db, machines, now = Date.now, log = console.error, checks = createSensorChecks({ now }), alarms = createAlarms({ db, now }) }) {
   const reasons = new Map(); // roomId → { exchange, humidifier, ac, circulation, held }, in memory only
   const tries = new Map(); // `${roomId}/${machine}` → { want, n }: re-sends in the current not-following episode
-  const changed = new Map(); // `${roomId}/humidifier|ac` → when the controller last changed that command (machine protection)
+  const changed = new Map(); // `${roomId}/humidifier|dehumidifier|ac` → when the controller last changed that command (machine protection)
   const lastCo2 = new Map(); // roomId → the last good CO₂ reading (for the planned end of an exchange)
   let lastStart = null; // the start time of the previous cycle
 
@@ -281,8 +317,7 @@ export function createController({ db, machines, now = Date.now, log = console.e
     reasons.delete(roomId);
     lastCo2.delete(roomId);
     for (const key of [...RELAY_KEYS, 'ac']) tries.delete(`${roomId}/${key}`);
-    changed.delete(`${roomId}/humidifier`);
-    changed.delete(`${roomId}/ac`);
+    for (const key of ['humidifier', 'dehumidifier', 'ac']) changed.delete(`${roomId}/${key}`);
     checks.forget(roomId);
     alarms.forget(roomId);
   }
@@ -382,19 +417,22 @@ export function createController({ db, machines, now = Date.now, log = console.e
         state: {
           exchange: c.exchange, exchangeSince: c.exchangeSince, exchangeEndedAt: c.exchangeEndedAt,
           exchangeForced: c.exchangeForced, freshFrom: c.freshFrom,
-          cappedInRow: c.cappedInRow, humidifier: c.humidifier, humidifierSince: c.humidifierSince,
+          cappedInRow: c.cappedInRow, humidifier: c.humidifier, humidifierSince: c.humidifierSince, dehumidifier: c.dehumidifier,
         },
         readings: { rh: good.rh, co2: good.co2 },
         faults: { trh: Boolean(status.trh?.parts.rh.fault), co2: faults.co2 !== null }, // only an RH fault times the humidifier
         now: at,
         humidifierDuringExchange: c.humidifierDuringExchange,
         acFan: c.acFan,
+        dehumidifierFitted: room.dehumidifier,
       });
       const why = decided.reasons;
       db.setControlState(room.id, decided.state, at);
       cappedInRow = decided.state.cappedInRow;
       const protectedNow = protect({
-        desired: decided.desired, commands, changedAt: { humidifier: changed.get(`${room.id}/humidifier`), ac: changed.get(`${room.id}/ac`) }, now: at,
+        desired: decided.desired, commands, changedAt: {
+          humidifier: changed.get(`${room.id}/humidifier`), dehumidifier: changed.get(`${room.id}/dehumidifier`), ac: changed.get(`${room.id}/ac`),
+        }, now: at,
       });
       desired = protectedNow.desired;
       why.held = protectedNow.held;
@@ -410,7 +448,7 @@ export function createController({ db, machines, now = Date.now, log = console.e
         if (differs) {
           entry.n = 0;
           sends.push(key);
-          if (key === 'humidifier' || key === 'ac') changed.set(slot, at);
+          if (key === 'humidifier' || key === 'dehumidifier' || key === 'ac') changed.set(slot, at);
         } else if (status === 'not-following') {
           const name = NAMES[key];
           if (entry.n < RESENDS) {
@@ -472,19 +510,18 @@ export function createController({ db, machines, now = Date.now, log = console.e
       }
       if (merged.auto && !current.auto) {
         for (const key of [...RELAY_KEYS, 'ac']) tries.delete(`${roomId}/${key}`);
-        changed.delete(`${roomId}/humidifier`);
-        changed.delete(`${roomId}/ac`);
+        for (const key of ['humidifier', 'dehumidifier', 'ac']) changed.delete(`${roomId}/${key}`);
         // Turning auto on: the band states start from what is commanded now, with no old times or counts.
         // An old start time must not survive: clear the state first.
         const { relay } = db.getCommands(roomId);
-        db.setControlState(roomId, { exchange: false, humidifier: false }, now());
+        db.setControlState(roomId, { exchange: false, humidifier: false, dehumidifier: false }, now());
         db.setControlState(roomId, {
-          exchange: relay.intake, humidifier: relay.humidifier, exchangeEndedAt: null, cappedInRow: 0, humidifierSince: null,
+          exchange: relay.intake, humidifier: relay.humidifier, dehumidifier: relay.dehumidifier, exchangeEndedAt: null, cappedInRow: 0, humidifierSince: null,
           exchangeForced: false, freshFrom: null, // the fresh-air wait counts from the first cycle
         }, now());
       } else if (!merged.auto && current.auto) {
         // Turning auto off: nothing is switched; the "too small" count and the timed humidifier start over.
-        db.setControlState(roomId, { exchange: current.exchange, humidifier: current.humidifier, cappedInRow: 0, humidifierSince: null }, now());
+        db.setControlState(roomId, { exchange: current.exchange, humidifier: current.humidifier, dehumidifier: current.dehumidifier, cappedInRow: 0, humidifierSince: null }, now());
       }
       return get(roomId);
     },

@@ -46,12 +46,12 @@ const normal = (kind, unit, fn) => {
 const relay = { roomId: 1, kind: 'relay', address: 10 };
 const ac = { roomId: 1, kind: 'ac', address: 20 };
 
-test('a relay module is polled with fn 1 then fn 2, four bits each', async () => {
+test('a relay module is polled with fn 1 then fn 2, five bits each', async () => {
   const client = fakeClient(normal);
   let clock = 1000;
   const poller = createPoller({ db: fakeDb({ machines: [relay] }), client, now: () => clock++ });
   await poller.cycle();
-  assert.deepEqual(client.calls, [['bits', 10, 1, 0, 4], ['bits', 10, 2, 0, 4]]);
+  assert.deepEqual(client.calls, [['bits', 10, 1, 0, 5], ['bits', 10, 2, 0, 5]]);
   assert.deepEqual(poller.machineState(1).relay, {
     address: 10,
     polls: [{ at: 1000, ok: true, coils: [true, false, true, false], inputs: [true, false, false, false] }],

@@ -27,7 +27,7 @@ test('the result has the four parts of the spec', () => {
   assert.equal(day.series[0].s, 0);
   assert.equal(day.series[1].s, 300);
   assert.equal(day.series[0].stage, 'fruiting');
-  assert.deepEqual(Object.keys(day.machines).sort(), ['ac', 'circulation', 'exhaust', 'humidifier', 'intake']);
+  assert.deepEqual(Object.keys(day.machines).sort(), ['ac', 'circulation', 'dehumidifier', 'exhaust', 'humidifier', 'intake']);
   for (const spans of Object.values(day.machines)) for (const sp of spans) assert.ok(sp.to > sp.from && sp.from >= 0 && sp.to <= 86400);
   assert.ok(day.machines.ac.every((sp) => typeof sp.setpoint === 'number'));
   assert.deepEqual(day.stages, [{ stage: 'fruiting', flush: 1, from: 0, to: 86400 }]);
@@ -36,7 +36,7 @@ test('the result has the four parts of the spec', () => {
   assert.equal(s.days, 1);
   assert.deepEqual(Object.keys(s.inBand).sort(), ['all', 'co2', 'rh', 't']);
   assert.deepEqual(Object.keys(s.energy).sort(), ['byMachine', 'cost', 'kWh']);
-  assert.deepEqual(Object.keys(s.energy.byMachine).sort(), ['ac', 'circulation', 'exhaust', 'humidifier', 'intake']);
+  assert.deepEqual(Object.keys(s.energy.byMachine).sort(), ['ac', 'circulation', 'dehumidifier', 'exhaust', 'humidifier', 'intake']);
   assert.deepEqual(Object.keys(s.extremes).sort(), ['co2Max', 'rhMax', 'rhMin', 'tMax', 'tMin']);
   assert.equal(s.perDay.length, 1);
   assert.deepEqual(Object.keys(s.perDay[0]).sort(), ['day', 'kWh', 'litres']);
@@ -137,4 +137,48 @@ test('aircon energy follows the aircon size of the stepper (COP 3), not the room
   assert.ok(small > 0 && small <= 24 * (12000 / 3412.142 / 3) + 0.01, `${small} kWh`);
   // the room's rating does not change it
   assert.equal(kWh({}, { intakeW: 60, exhaustW: 60, circulationW: 60, humidifierW: 80, humidifierLH: 2, acInputW: 5000 }), small);
+});
+
+// ---- the dehumidifier (spec 2026-10-21-dehumidifier-design.md 4 and 9) ----
+
+test('no dehumidifier (missing or 0): never on, no energy, no water taken out', () => {
+  for (const r of [day, simulate(input({ physics: { ...physics, dehumidifierLday: 0 } }), ctx())]) {
+    assert.deepEqual(r.machines.dehumidifier, []);
+    assert.equal(r.summary.energy.byMachine.dehumidifier, 0);
+    assert.equal(r.summary.water.removedLitres, 0);
+  }
+});
+
+// A wet container: well insulated, lion's mane, 950 blocks. Without a dehumidifier the rest stage sits near 84 % RH, above its band.
+const wet = {
+  wallUA: 30, outdoorHigh: 33, outdoorLow: 25, outdoorDew: 24, sunW: 100, fanFlow: 600, acBTU: 12000, humidifierLH: 2,
+};
+const wetInput = (lday) => ({
+  physics: lday === undefined ? wet : { ...wet, dehumidifierLday: lday },
+  crops: [{ crop: 'lionsmane', blocks: 950 }], farmType: 'ready', stage: 'fruiting', days: 17,
+});
+const wetCtx = ctx({ volume: 32.57 });
+const rest = (r) => r.summary.perStage.find((st) => st.stage === 'rest');
+
+test('a wet container: a 20 L/day dehumidifier lifts the rest stage RH in band clearly, and its energy and water are counted', () => {
+  const without = simulate(wetInput(), wetCtx);
+  const withDh = simulate(wetInput(20), wetCtx);
+  assert.ok(rest(without).inBand.rh < 60, `without: ${rest(without).inBand.rh}`);
+  assert.ok(rest(withDh).inBand.rh > rest(without).inBand.rh + 20, `with: ${rest(withDh).inBand.rh}`);
+  const { byMachine } = withDh.summary.energy;
+  const onS = withDh.machines.dehumidifier.reduce((sum, sp) => sum + (sp.to - sp.from), 0);
+  assert.ok(onS > 0 && withDh.machines.dehumidifier.every((sp) => sp.to > sp.from));
+  assert.ok(Math.abs(byMachine.dehumidifier - (360 * onS) / 3600 / 1000) < 0.01, `${byMachine.dehumidifier} kWh for ${onS} s`);
+  const sum = Object.values(byMachine).reduce((a, b) => a + b, 0);
+  assert.ok(Math.abs(sum - withDh.summary.energy.kWh) < 0.02);
+  assert.ok(withDh.summary.water.removedLitres > 10, `${withDh.summary.water.removedLitres} L`);
+  const perDay = withDh.summary.perDay.reduce((a, d) => a + d.kWh, 0);
+  assert.ok(Math.abs(perDay - withDh.summary.energy.kWh) < 0.2);
+});
+
+test('the dehumidifier keeps its 3 min compressor protection in a run', () => {
+  const r = simulate(wetInput(20), wetCtx);
+  const spans = r.machines.dehumidifier;
+  for (let i = 1; i < spans.length; i++) assert.ok(spans[i].from - spans[i - 1].to >= 180, `off ${spans[i].from - spans[i - 1].to} s`);
+  for (const sp of spans.slice(0, -1)) assert.ok(sp.to - sp.from >= 180, `on ${sp.to - sp.from} s`);
 });

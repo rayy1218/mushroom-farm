@@ -46,6 +46,13 @@ test('validation names the field of the first problem', () => {
   bad({ physics: { ...physics, humidifierLH: 101 } }, 'physics.humidifierLH');
   bad({ physics: { ...physics, outdoorLow: 40 } }, 'physics.outdoorLow'); // low above the high of 33
   bad({ physics: { ...physics, outdoorDew: 26 } }, 'physics.outdoorDew'); // dew above the low of 25
+  bad({ physics: { ...physics, dehumidifierLday: -1 } }, 'physics.dehumidifierLday');
+  bad({ physics: { ...physics, dehumidifierLday: 201 } }, 'physics.dehumidifierLday');
+  bad({ physics: { ...physics, dehumidifierLday: '20' } }, 'physics.dehumidifierLday');
+  bad({ physics: { ...physics, dehumidifierLday: null } }, 'physics.dehumidifierLday');
+  assert.equal(validateSimulation(body({ physics: { ...physics, dehumidifierLday: 201 } })).error, 'Dehumidifier must be a number from 0 to 200 L/day');
+  for (const v of [0, 20.5, 200]) assert.equal(validateSimulation(body({ physics: { ...physics, dehumidifierLday: v } })).input.physics.dehumidifierLday, v);
+  assert.equal('dehumidifierLday' in validateSimulation(body()).input.physics, false, 'missing stays missing (0)');
   bad({ crops: [] }, 'crops');
   bad({ crops: [{ crop: 'oyster', blocks: 0 }] }, 'crops');
   bad({ farmType: 'both' }, 'farmType');
@@ -67,6 +74,8 @@ test('start stores a queued run with the input and a snapshot of the room, and b
   assert.equal(run.input.days, 1);
   assert.equal(run.input.ctx.volume, 60);
   assert.equal(run.input.ctx.ratings.acInputW, 1050);
+  assert.equal(run.input.ctx.ratings.dehumidifierW, 380);
+  assert.equal(run.input.ctx.ratings.dehumidifierLday, 20);
   assert.equal(run.input.ctx.control.acFan, 'auto');
   assert.deepEqual(run.input.ctx.program.days, { spawn: 21, pinning: 4, fruiting: 7, rest: 10 });
   assert.deepEqual(run.input.ctx.prices, { electricity: 0.55, water: 2 });

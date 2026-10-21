@@ -5,8 +5,8 @@ const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
 const FAN_SHARE = 0.05; // the aircon in fan mode draws this share of its rated input
 const MIN_DAYS = 30; // the 7 and 30 day totals need that many days whatever `days` is
-const MACHINES = ['intake', 'exhaust', 'circulation', 'humidifier', 'ac'];
-const RATING = { intake: 'intakeW', exhaust: 'exhaustW', circulation: 'circulationW', humidifier: 'humidifierW' };
+const MACHINES = ['intake', 'exhaust', 'circulation', 'humidifier', 'dehumidifier', 'ac'];
+const RATING = { intake: 'intakeW', exhaust: 'exhaustW', circulation: 'circulationW', humidifier: 'humidifierW', dehumidifier: 'dehumidifierW' };
 
 const pad = (n) => String(n).padStart(2, '0');
 const round = (v, digits) => Math.round(v * 10 ** digits) / 10 ** digits;
@@ -213,21 +213,21 @@ export function roomDays(db, room, { now, zone, count }) {
     const work = dayWork(db, room, day, { now, zone });
     const est = estimateDay(work.ms, room);
     const isMetered = room.meterAddress !== null && work.meter.readings >= 2;
-    const others = est.intake + est.exhaust + est.circulation + est.humidifier;
+    const others = est.intake + est.exhaust + est.circulation + est.humidifier + est.dehumidifier;
     let byMachine = { ...est, rest: 0 };
     if (isMetered) {
       const metered = work.meter.kWh;
       const scale = others > metered ? metered / others : 1; // the estimates are above the meter: they cannot be all right
       byMachine = {
         intake: est.intake * scale, exhaust: est.exhaust * scale, circulation: est.circulation * scale,
-        humidifier: est.humidifier * scale, ac: 0, rest: Math.max(0, metered - others),
+        humidifier: est.humidifier * scale, dehumidifier: est.dehumidifier * scale, ac: 0, rest: Math.max(0, metered - others),
       };
     }
     const kWh = round(isMetered ? work.meter.kWh : others + est.ac, 3);
     for (const key of Object.keys(byMachine)) byMachine[key] = round(byMachine[key], 3);
     if (isMetered && others > work.meter.kWh) { // the rounding must not move the sum off kWh: the biggest machine takes the rest
       const sum = Object.values(byMachine).reduce((a, b) => a + b, 0);
-      const biggest = ['intake', 'exhaust', 'circulation', 'humidifier'].reduce((a, b) => (byMachine[b] > byMachine[a] ? b : a));
+      const biggest = ['intake', 'exhaust', 'circulation', 'humidifier', 'dehumidifier'].reduce((a, b) => (byMachine[b] > byMachine[a] ? b : a));
       byMachine[biggest] = round(byMachine[biggest] + kWh - sum, 3);
     }
     return {
