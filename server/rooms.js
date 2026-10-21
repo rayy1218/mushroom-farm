@@ -64,9 +64,11 @@ export function validateRoom(body) {
     room[field] = value;
   }
   // Whether the room has a dehumidifier on output 5 of its relay module (spec 2026-10-21-dehumidifier-design.md 2).
-  const fitted = body.dehumidifier ?? false;
-  if (typeof fitted !== 'boolean') return { error: 'Dehumidifier fitted must be true or false', field: 'dehumidifier' };
-  room.dehumidifier = fitted;
+  // Left out (an older page): undefined, so an update keeps the stored value and a new room has none.
+  if (body.dehumidifier !== undefined && typeof body.dehumidifier !== 'boolean') {
+    return { error: 'Dehumidifier fitted must be true or false', field: 'dehumidifier' };
+  }
+  if (body.dehumidifier !== undefined) room.dehumidifier = body.dehumidifier;
   // The later field of a clashing pair is blamed.
   for (let i = 1; i < ADDRESSES.length; i++) {
     const { field } = ADDRESSES[i];

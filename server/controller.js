@@ -61,10 +61,11 @@ const acDiffers = (a, d) => a.power !== d.power || a.mode !== d.mode || a.fan !=
 // humidifierDuringExchange: whether an air exchange forces the humidifier on (default false).
 // acFan: the aircon fan, 'auto' | 'low' | 'high' (default 'auto').
 // dehumidifierFitted: whether the room has a dehumidifier (default false: never on, no reason text).
+// rhUnwired: the room has no T/RH probe wired (the dehumidifier is then off).
 // readings: { co2, rh }, null when the sensor gave nothing usable this cycle (that rule then keeps its state).
 // faults: { co2, trh }, true while that sensor is faulty (timed exchange, timed humidifier). now: ms.
 // Returns { state, desired, reasons }. Pure.
-export function decide({ bands, state, readings, faults, now, humidifierDuringExchange = false, acFan = 'auto', dehumidifierFitted = false }) {
+export function decide({ bands, state, readings, faults, now, humidifierDuringExchange = false, acFan = 'auto', dehumidifierFitted = false, rhUnwired = false }) {
   const { co2 = null, rh = null } = readings ?? {};
   const was = state.exchange;
   let exchange = was;
@@ -188,7 +189,10 @@ export function decide({ bands, state, readings, faults, now, humidifierDuringEx
   if (dehumidifierFitted) {
     const high = bands.rhHigh;
     const mid = (bands.rhLow + high) / 2;
-    if (faults?.trh) {
+    if (rhUnwired) { // no probe to say when to stop: a dry room is safer than a compressor left on
+      dehumidifierBand = false;
+      reasons.dehumidifier = 'No humidity probe wired: dehumidifier off';
+    } else if (faults?.trh) {
       dehumidifierBand = false;
       reasons.dehumidifier = 'Humidity sensor fault: dehumidifier off';
     } else if (rh === null) {
@@ -443,13 +447,16 @@ export function createController({ db, machines, now = Date.now, log = console.e
         humidifierDuringExchange: c.humidifierDuringExchange,
         acFan: c.acFan,
         dehumidifierFitted: room.dehumidifier,
+        rhUnwired: unwired.trh,
       });
       const why = decided.reasons;
       db.setControlState(room.id, decided.state, at);
       cappedInRow = decided.state.cappedInRow;
       const protectedNow = protect({
         desired: decided.desired, commands, changedAt: {
-          humidifier: changed.get(`${room.id}/humidifier`), dehumidifier: changed.get(`${room.id}/dehumidifier`), ac: changed.get(`${room.id}/ac`),
+          humidifier: changed.get(`${room.id}/humidifier`), ac: changed.get(`${room.id}/ac`),
+          // after a restart or turning auto on the last switch comes from the machine log: a compressor must not restart at once
+          dehumidifier: changed.get(`${room.id}/dehumidifier`) ?? db.lastLogAt(room.id, 'dehumidifier'),
         }, now: at,
       });
       desired = protectedNow.desired;

@@ -200,8 +200,18 @@ export function createApi(db, machines = null, controller = null, poller = null,
       return send(res, 200, room);
     }
     if (req.method === 'PUT') {
-      if (!db.getRoom(id)) throw noRoom();
-      return send(res, 200, db.updateRoom(id, await readRoom(req)));
+      const before = db.getRoom(id);
+      if (!before) throw noRoom();
+      const room = await readRoom(req);
+      // A running dehumidifier taken out of the room is switched off first: afterwards nothing may command it.
+      if (before.dehumidifier && room.dehumidifier === false && machines && db.getCommands(id)?.relay.dehumidifier) {
+        try {
+          await machines.command(id, 'dehumidifier', { on: false }, { bypassAuto: true });
+        } catch {
+          // the command is saved even when the write fails; the room is updated anyway
+        }
+      }
+      return send(res, 200, db.updateRoom(id, room));
     }
     if (req.method === 'DELETE') {
       if (!db.deleteRoom(id)) throw noRoom();

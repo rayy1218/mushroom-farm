@@ -137,7 +137,7 @@ test('machine lines: log rows in the window and the last row before it, moved to
   ]);
   assert.deepEqual(h.machines.ac, [{ at: from + 100_000, on: true, setpoint: 24, mode: 'cool', fan: 'auto', source: 'auto' }]);
   assert.deepEqual(h.machines.intake, []);
-  assert.deepEqual(Object.keys(h.machines), ['intake', 'exhaust', 'circulation', 'humidifier', 'ac']);
+  assert.deepEqual(Object.keys(h.machines), ['intake', 'exhaust', 'circulation', 'humidifier', 'dehumidifier', 'ac']);
 });
 
 test('the reply of the route has the whole shape', async () => {

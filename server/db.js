@@ -291,7 +291,7 @@ const CACHE_BUCKETS = 400;
 // range hours → bucket seconds
 export const HISTORY_BUCKET_S = { 1: 15, 6: 60, 24: 300, 168: 1800, 720: 7200 };
 const SPARK_BUCKET_MS = 30 * 60_000;
-const MACHINE_KEYS = ['intake', 'exhaust', 'circulation', 'humidifier', 'ac'];
+const MACHINE_KEYS = [...RELAY_KEYS, 'ac'];
 const LEVEL_RANK = { critical: 3, serious: 2, warning: 1 };
 
 const alarmRow = (r) => ({
@@ -498,6 +498,7 @@ export function openDb(path) {
     // (humidifier 1, ac_drop 5) stay for the rooms that the upgrades gave the settings.
     insertControl: db.prepare('INSERT OR REPLACE INTO room_controls (room_id, humidifier_during_exchange, ac_drop) VALUES (?, 0, 0)'),
     deleteControl: db.prepare('DELETE FROM room_controls WHERE room_id = ?'),
+    clearDehumidifierBand: db.prepare('UPDATE room_controls SET dehumidifier = 0 WHERE room_id = ?'),
     deleteAlarms: db.prepare('DELETE FROM alarms WHERE room_id = ?'),
     deleteMachineLog: db.prepare('DELETE FROM machine_log WHERE room_id = ?'),
     deleteMeterReadings: db.prepare('DELETE FROM meter_readings WHERE room_id = ?'),
@@ -746,8 +747,14 @@ export function openDb(path) {
       if (!old) return null;
       checkName(name, id);
       checkAddresses({ trhAddress, co2Address, relayAddress, acAddress, meterAddress }, id);
+      const fitted = ratings.dehumidifier === undefined ? old.dehumidifier === 1 : ratings.dehumidifier;
       q.update.run(name, length, width, height, trhAddress, co2Address, relayAddress, acAddress, meterAddress,
-        ...ratingValues(ratings), ratings.dehumidifier ? 1 : 0, now, id);
+        ...ratingValues(ratings), fitted ? 1 : 0, now, id);
+      // A dehumidifier taken out of the room: its log ends now (no usage charged for ever) and its band state starts again.
+      if (old.dehumidifier === 1 && !fitted) {
+        this.logOff(id, 'dehumidifier', now);
+        q.clearDehumidifierBand.run(id);
+      }
       // A device that is gone or is another one no longer runs its machines: log the ones logged on as off now, else the
       // usage estimate charges them for ever.
       if (old.relay_address !== relayAddress) for (const key of RELAY_KEYS) this.logOff(id, key, now);
@@ -882,6 +889,11 @@ export function openDb(path) {
     },
 
     // Logs the machine off at `at` when its last row says on (the other fields stay as they were).
+    // When the machine's command last changed (its newest log row), or null.
+    lastLogAt(roomId, machine) {
+      return q.logBefore.get(roomId, machine, Number.MAX_SAFE_INTEGER)?.at ?? null;
+    },
+
     logOff(roomId, machine, at) {
       const last = q.logLast.get(roomId, machine);
       if (last?.on_ === 1) this.logMachine(roomId, machine, { on: false, setpoint: last.setpoint, mode: last.mode, fan: last.fan }, 'manual', at);
