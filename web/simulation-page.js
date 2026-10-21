@@ -273,14 +273,15 @@ export function mount(container, { id, runId }) {
     tl.append(tlHost, text('p', 'legend', 'A bar is a time the machine was on. The aircon row shows its setpoint.'));
     els.results.append(tl);
     // spans closer than one pixel of time are drawn as one: a long run has tens of thousands
-    charts.push(drawTimeline(tlHost, { ...common, rowsFor: (w) => timelineRows(result.machines, end / Math.max(1, w - M.left - M.right)) }));
+    charts.push(drawTimeline(tlHost, { ...common, rowsFor: (w) => timelineRows(result.machines, end / Math.max(1, w - M.left - M.right), run.input) }));
 
     // energy and water
-    const use = energyView(summary);
+    const use = energyView(summary, run.input);
     const card = text('section', 'card us-card');
     card.append(text('h2', '', 'Energy and water'));
     const usage = text('div', 'us-tiles');
     usage.append(tile('Energy', use.kWh, use.cost), tile('Water', use.litres, use.waterCost));
+    if (use.removed) usage.append(tile('Water taken out', use.removed, 'by the dehumidifier'));
     card.append(usage);
     if (use.rows.length) card.append(table('Energy by machine', ['Machine', 'kWh', 'Share'], use.rows.map((r) => [r.label, r.kWh, r.share])));
     const perDay = summary.perDay ?? [];

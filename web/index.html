@@ -141,6 +141,20 @@
           <p class="field-error" aria-live="polite" id="e-acInputW"></p>
         </div>
       </div>
+      <label class="crop-check" for="f-dehumidifier"><input id="f-dehumidifier" name="dehumidifier" type="checkbox" aria-describedby="e-dehumidifier"> Dehumidifier fitted (output 5 of the relay module)</label>
+      <p class="field-error" aria-live="polite" id="e-dehumidifier"></p>
+      <div class="sizes two" id="dehumidifier-fields" hidden>
+        <div class="field">
+          <label for="f-dehumidifierW">Dehumidifier power (W)</label>
+          <input id="f-dehumidifierW" name="dehumidifierW" type="number" min="0" max="5000" step="any" inputmode="decimal" aria-describedby="e-dehumidifierW">
+          <p class="field-error" aria-live="polite" id="e-dehumidifierW"></p>
+        </div>
+        <div class="field">
+          <label for="f-dehumidifierLday">Dehumidifier capacity (L/day)</label>
+          <input id="f-dehumidifierLday" name="dehumidifierLday" type="number" min="0" max="200" step="any" inputmode="decimal" aria-describedby="e-dehumidifierLday">
+          <p class="field-error" aria-live="polite" id="e-dehumidifierLday"></p>
+        </div>
+      </div>
     </fieldset>
 
     <div class="actions">

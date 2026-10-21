@@ -21,7 +21,7 @@ import { meterCard } from './ratings-math.js';
 // Stream B: long-range charts and the machine timeline
 import { createHistory } from './history.js';
 import { drawTimeline } from './timeline.js';
-import { timeTicks, tickCountFor, chartDrawKey, historyPoints, timelineSpans, acMarks, formatStamp, TIMELINE_ROWS } from './history-math.js';
+import { timeTicks, tickCountFor, chartDrawKey, historyPoints, timelineSpans, acMarks, formatStamp, wiredTimelineRows } from './history-math.js';
 
 const metres = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
 const cubic = new Intl.NumberFormat(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -389,8 +389,8 @@ export function mount(container, { id }) {
 
   // The machine timeline, only for a long range and only the machines the room has wired.
   function renderTimeline(data) {
-    const wiredKeys = TIMELINE_ROWS.map((r) => r.key).filter((k) => (k === 'ac' ? room.acAddress !== null : room.relayAddress !== null));
-    els.timeline.hidden = !data || wiredKeys.length === 0;
+    const wired = wiredTimelineRows(room);
+    els.timeline.hidden = !data || wired.length === 0;
     if (els.timeline.hidden) {
       timelineChart?.destroy();
       timelineChart = null;
@@ -399,7 +399,7 @@ export function mount(container, { id }) {
     const range = { from: data.from, to: data.to };
     const opts = {
       range, ticksFor: (w) => timeTicks(range.from, range.to, tickCountFor(w)), formatAt: (ms) => formatStamp(ms), onCursor: moveCursor,
-      rows: TIMELINE_ROWS.filter((r) => wiredKeys.includes(r.key)).map((r) => ({
+      rows: wired.map((r) => ({
         ...r,
         spans: timelineSpans(data.machines[r.key], range.from, range.to),
         marks: r.key === 'ac' ? acMarks(data.machines.ac) : [],
@@ -420,7 +420,7 @@ export function mount(container, { id }) {
       makeControl();
       mimic = createMimic(els.mimicHost, { idPrefix: 'room-' });
       buildCharts();
-      usageCard = createUsageCard(els.usageHost, { roomId: id });
+      usageCard = createUsageCard(els.usageHost, { roomId: id, getRoom: () => room });
       history = createHistory(els.rangeHost, { roomId: id, outdoor: true, onChange: () => { if (alive() && sensors) renderCharts(); } });
       built = true;
     }
@@ -529,6 +529,7 @@ export function mount(container, { id }) {
   function makeControl() {
     control = createControl(els.controlHost, {
       roomId: id,
+      getRoom: () => room,
       onChange: (data) => {
         machines?.setAuto(data.auto);
         if (!alive()) return;

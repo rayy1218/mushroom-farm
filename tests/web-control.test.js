@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { BANDS, exchangeLine, formatHm, reasonLine, checkBand, locateField, stateLine, inputLabel, bandsBody, HUMIDIFIER_LABEL, humidifierOn, AC_FAN_LABEL, AC_FAN_OPTIONS, acFanOf } from '../web/control-math.js';
+import { BANDS, REASONS, reasonsShown, heldLine, exchangeLine, formatHm, reasonLine, checkBand, locateField, stateLine, inputLabel, bandsBody, HUMIDIFIER_LABEL, humidifierOn, AC_FAN_LABEL, AC_FAN_OPTIONS, acFanOf } from '../web/control-math.js';
 
 const [co2, temp, rh] = BANDS;
 
@@ -115,4 +115,18 @@ test('Save sends only the fields that differ from what was loaded', async () => 
   assert.deepEqual(changedBody({ ...values, acDrop: 2 }, loaded), { acDrop: 2 });
   // a loaded object without a safety field (older server): the typed value is sent
   assert.deepEqual(changedBody({ ...values }, { ...loaded, acDrop: undefined }), { acDrop: 0 });
+});
+
+test('the reasons: the dehumidifier line comes after the humidifier and shows only when it is fitted', () => {
+  assert.deepEqual(REASONS.map((r) => r.key), ['exchange', 'humidifier', 'dehumidifier', 'ac', 'circulation']);
+  assert.equal(REASONS.find((r) => r.key === 'dehumidifier').label, 'Dehumidifier');
+  assert.deepEqual(reasonsShown(false).map((r) => r.key), ['exchange', 'humidifier', 'ac', 'circulation']);
+  assert.deepEqual(reasonsShown(true).map((r) => r.key), ['exchange', 'humidifier', 'dehumidifier', 'ac', 'circulation']);
+});
+
+test('the dehumidifier reason and its wait text read like the other machines', () => {
+  const c = { reasons: { dehumidifier: 'Dehumidifier: RH 94 ≥ 93', held: { dehumidifier: 'Dehumidifier waits: minimum on time, 1 min 20 s to go' } } };
+  assert.equal(reasonLine('Dehumidifier', c.reasons.dehumidifier), 'Dehumidifier: RH 94 ≥ 93');
+  assert.equal(heldLine(c, 'dehumidifier'), 'Dehumidifier waits: minimum on time, 1 min 20 s to go');
+  assert.equal(reasonLine('Dehumidifier', ''), 'Dehumidifier: —');
 });

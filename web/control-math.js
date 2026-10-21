@@ -13,9 +13,13 @@ export const BANDS = [
 export const REASONS = [
   { key: 'exchange', label: 'Air exchange' },
   { key: 'humidifier', label: 'Humidifier' },
+  { key: 'dehumidifier', label: 'Dehumidifier', fitted: true },
   { key: 'ac', label: 'Aircon' },
   { key: 'circulation', label: 'Circulation' },
 ];
+
+// The reason lines to show: the dehumidifier's only while the room has one.
+export const reasonsShown = (dehumidifier) => REASONS.filter((r) => !r.fitted || dehumidifier);
 
 export const HUMIDIFIER_LABEL = 'Humidifier on during air exchange';
 

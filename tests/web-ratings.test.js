@@ -2,15 +2,16 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { RATINGS, ratingTexts, parseRatings, meterAddressOf, meterCard } from '../web/ratings-math.js';
+import { RATINGS, DEHUMIDIFIER_RATINGS, ratingTexts, parseRatings, meterAddressOf, meterCard } from '../web/ratings-math.js';
 import {
   parseOutdoorAddress, parseElectricityPrice, parseWaterPrice, parseExtraSettings, EXTRA_FIELDS,
   OUTDOOR_MESSAGE, ELECTRICITY_MESSAGE, WATER_MESSAGE,
 } from '../web/settings-math.js';
 
 test('a new room starts with the spec defaults: 60, 60, 60, 80, 2.0 and 1050', () => {
-  assert.deepEqual(ratingTexts(null), { intakeW: '60', exhaustW: '60', circulationW: '60', humidifierW: '80', humidifierLH: '2', acInputW: '1050' });
+  assert.deepEqual(ratingTexts(null), { intakeW: '60', exhaustW: '60', circulationW: '60', humidifierW: '80', humidifierLH: '2', acInputW: '1050', dehumidifierW: '380', dehumidifierLday: '20' });
   assert.equal(RATINGS.length, 6);
+  assert.deepEqual(DEHUMIDIFIER_RATINGS.map((r) => r.name), ['dehumidifierW', 'dehumidifierLday']);
 });
 
 test('an edited room shows its own ratings; a missing one falls back to the default', () => {
@@ -102,4 +103,31 @@ test('the ratings inputs take any step the parser takes (two decimals)', async (
     assert.ok(tag, r.name);
     assert.match(tag, /step="any"/, r.name);
   }
+});
+
+const SIX = { intakeW: '60', exhaustW: '60', circulationW: '60', humidifierW: '80', humidifierLH: '2', acInputW: '1050' };
+
+test('dehumidifier ratings: an edited room shows its own; a room without them shows the defaults 380 W and 20 L/day', () => {
+  const t = ratingTexts({ dehumidifierW: 450, dehumidifierLday: 12.5 });
+  assert.equal(t.dehumidifierW, '450');
+  assert.equal(t.dehumidifierLday, '12.5');
+  assert.equal(ratingTexts({}).dehumidifierLday, '20');
+});
+
+test('dehumidifier ratings: checked (0 to 5000 W, 0 to 200 L/day) only when the dehumidifier is fitted', () => {
+  const bad = { ...SIX, dehumidifierW: '5001', dehumidifierLday: '201' };
+  const r = parseRatings(bad, { dehumidifier: true });
+  assert.deepEqual(Object.keys(r.errors), ['dehumidifierW', 'dehumidifierLday']);
+  assert.equal(r.errors.dehumidifierW, 'Dehumidifier power must be a number from 0 to 5000 W');
+  assert.equal(r.errors.dehumidifierLday, 'Dehumidifier capacity must be a number from 0 to 200 L/day');
+  const ok = parseRatings({ ...SIX, dehumidifierW: '400', dehumidifierLday: '200' }, { dehumidifier: true });
+  assert.equal(ok.values.dehumidifierW, 400);
+  assert.equal(ok.values.dehumidifierLday, 200);
+});
+
+test('dehumidifier ratings: not fitted, wrong ones are not an error and are left out of the values', () => {
+  const r = parseRatings({ ...SIX, dehumidifierW: 'abc', dehumidifierLday: '15' });
+  assert.equal(r.errors, undefined);
+  assert.equal('dehumidifierW' in r.values, false);
+  assert.equal(r.values.dehumidifierLday, 15);
 });

@@ -4,7 +4,7 @@
 import { CROPS, STAGES, FARM_TYPES, mixBands, rangeWarnings, validateCrops } from './crops.js';
 
 // The physics inputs of step 1. min, max and whole are those of the device app's PARAMS (device/sim-store.js; a test compares
-// them); def is the default (the humidifier's is the room's rating).
+// them); def is the default (the humidifier's is the room's rating, the dehumidifier's the room's capacity when it is fitted).
 export const PHYSICS_FIELDS = [
   { key: 'wallUA', label: 'Wall heat transfer', unit: 'W/K', min: 0, max: 100000, whole: false, def: 80 },
   { key: 'outdoorHigh', label: 'Outdoor day high', unit: '°C', min: -40, max: 60, whole: false, def: 33 },
@@ -14,6 +14,8 @@ export const PHYSICS_FIELDS = [
   { key: 'fanFlow', label: 'Fan flow', unit: 'm³/h', min: 0, max: 100000, whole: false, def: 600 },
   { key: 'acBTU', label: 'Aircon capacity', unit: 'BTU/h', min: 0, max: 200000, whole: true, def: 12000 },
   { key: 'humidifierLH', label: 'Humidifier output', unit: 'L/h', min: 0, max: 100, whole: false, def: 2 },
+  // Not a device parameter by this name (the server maps it to the dehumidifier's rating); the limit is the spec's.
+  { key: 'dehumidifierLday', label: 'Dehumidifier', unit: 'L/day', min: 0, max: 200, whole: false, def: 0, device: false },
 ];
 
 export const DEFAULT_CROPS = [{ crop: 'oyster', blocks: 500 }];
@@ -66,7 +68,9 @@ export function initialState({ room, lastRun = null, cropData = null }) {
   const before = lastRun?.input?.physics;
   const physics = {};
   for (const f of PHYSICS_FIELDS) {
-    const fallback = f.key === 'humidifierLH' && isNumber(room?.humidifierLH) ? room.humidifierLH : f.def;
+    let fallback = f.def;
+    if (f.key === 'humidifierLH' && isNumber(room?.humidifierLH)) fallback = room.humidifierLH;
+    if (f.key === 'dehumidifierLday' && room?.dehumidifier === true && isNumber(room.dehumidifierLday)) fallback = room.dehumidifierLday;
     physics[f.key] = String(isNumber(before?.[f.key]) ? before[f.key] : fallback);
   }
   const crops = Array.isArray(cropData?.crops) && cropData.crops.length ? cropData.crops : DEFAULT_CROPS;
@@ -186,7 +190,7 @@ export function summaryLines(state, room, cropData = null) {
   return [
     { label: 'Room', text: roomLine(room).replace('Room size ', 'Size ') },
     { label: 'Walls and weather', text: `Walls ${v.wallUA} W/K, sun on the roof ${v.sunW} W, outdoor ${v.outdoorLow}–${v.outdoorHigh} °C, dew point ${v.outdoorDew} °C` },
-    { label: 'Machines', text: `Fan ${v.fanFlow} m³/h, aircon ${grouped(Number(v.acBTU))} BTU/h, humidifier ${v.humidifierLH} L/h` },
+    { label: 'Machines', text: `Fan ${v.fanFlow} m³/h, aircon ${grouped(Number(v.acBTU))} BTU/h, humidifier ${v.humidifierLH} L/h, ${Number(v.dehumidifierLday) > 0 ? `dehumidifier ${v.dehumidifierLday} L/day` : 'no dehumidifier'}` },
     { label: 'Crops', text: `${crops}; ${farmWords[state.farmType]}, starting at ${STAGES[state.stage].toLowerCase().replace(' between flushes', '')}` },
     { label: 'Run', text: days },
   ];

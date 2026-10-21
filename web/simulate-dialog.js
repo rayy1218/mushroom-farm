@@ -147,7 +147,7 @@ export function openSimulateDialog(room, hooks = {}) {
     for (const f of PHYSICS_FIELDS) {
       const input = numberInput(state.physics[f.key], (v) => { state.physics[f.key] = v; }, f.whole);
       const wrap = field(`physics.${f.key}`, `${f.label} (${f.unit})`, input);
-      (['fanFlow', 'acBTU', 'humidifierLH'].includes(f.key) ? machineGrid : weatherGrid).append(wrap);
+      (['fanFlow', 'acBTU', 'humidifierLH', 'dehumidifierLday'].includes(f.key) ? machineGrid : weatherGrid).append(wrap);
     }
     weather.append(weatherGrid);
     machines.append(machineGrid);

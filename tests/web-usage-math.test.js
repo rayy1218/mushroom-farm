@@ -175,3 +175,21 @@ test('a simulation run\'s energy bars: no metered or estimated wording, no today
   assert.equal(barTip({ date: 'day 2', v: 7.5, metered: false }, 'run-energy'), 'day 2  7.5 kWh');
   assert.match(barTip({ date: '2026-10-12', v: 7.5, metered: false }, 'energy'), /estimated/);
 });
+
+test('breakdown: a Dehumidifier row after the Humidifier when the room has one, or when it used energy', () => {
+  const days = [day('2026-10-19', 8, false, { intake: 1, exhaust: 1, circulation: 2, humidifier: 1, dehumidifier: 2, ac: 1 })];
+  const b = breakdown(days, 0.5);
+  assert.deepEqual(b.rows.map((r) => r.key), ['intake', 'exhaust', 'circulation', 'humidifier', 'dehumidifier', 'ac']);
+  assert.equal(b.rows.find((r) => r.key === 'dehumidifier').label, 'Dehumidifier');
+  assert.equal(b.rows.find((r) => r.key === 'dehumidifier').kWh, 2);
+  assert.equal(b.total.kWh, 8);
+  const none = [day('2026-10-19', 5, false, { intake: 1, ac: 4 })];
+  assert.equal(breakdown(none, 0.5).rows.some((r) => r.key === 'dehumidifier'), false);
+  assert.equal(breakdown(none, 0.5, { dehumidifier: true }).rows.find((r) => r.key === 'dehumidifier').kWh, 0);
+});
+
+test('the breakdown note says the dehumidifier is estimated too when metered and fitted', () => {
+  const metered = [day('2026-10-20', 10, true, {})];
+  assert.match(breakdownNote(metered), /fans and the humidifier are estimated/);
+  assert.match(breakdownNote(metered, { dehumidifier: true }), /fans, the humidifier and the dehumidifier are estimated/);
+});

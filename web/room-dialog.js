@@ -1,7 +1,7 @@
 // The Add / Edit room dialog, shared by the list and the detail page. The markup lives in index.html.
 
 import { request, ApiError, OFFLINE } from './api.js';
-import { RATING_NAMES, ratingTexts, parseRatings, meterAddressOf } from './ratings-math.js';
+import { RATING_NAMES, DEHUMIDIFIER_NAMES, ratingTexts, parseRatings, meterAddressOf } from './ratings-math.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -12,9 +12,11 @@ const formError = $('form-error');
 const volume = $('volume');
 const save = $('save');
 
-const FIELDS = ['name', 'length', 'width', 'height', 'trhAddress', 'co2Address', 'meterAddress', 'relayAddress', 'acAddress', ...RATING_NAMES];
+const FIELDS = ['name', 'length', 'width', 'height', 'trhAddress', 'co2Address', 'meterAddress', 'relayAddress', 'acAddress', ...RATING_NAMES, ...DEHUMIDIFIER_NAMES, 'dehumidifier'];
 const inputs = Object.fromEntries(FIELDS.map((f) => [f, $(`f-${f}`)]));
 const errors = Object.fromEntries(FIELDS.map((f) => [f, $(`e-${f}`)]));
+
+const dehumidifierFields = $('dehumidifier-fields');
 
 const cubic = new Intl.NumberFormat(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
@@ -28,6 +30,11 @@ function clearErrors() {
     errors[f].textContent = '';
     inputs[f].removeAttribute('aria-invalid');
   }
+}
+
+// The dehumidifier's power and capacity show only while it is fitted.
+function updateDehumidifier() {
+  dehumidifierFields.hidden = !inputs.dehumidifier.checked;
 }
 
 function updateVolume() {
@@ -44,10 +51,12 @@ export function openRoomDialog(room, { onSaved, onGone } = {}) {
   editingId = room ? room.id : null;
   title.textContent = room ? 'Edit room' : 'Add room';
   form.reset();
-  if (room) for (const f of FIELDS) inputs[f].value = room[f] ?? '';
+  if (room) for (const f of FIELDS) if (f !== 'dehumidifier') inputs[f].value = room[f] ?? '';
   // The ratings start at the defaults for a new room (and for an older server that sends none).
   const texts = ratingTexts(room);
-  for (const f of RATING_NAMES) inputs[f].value = texts[f];
+  for (const f of [...RATING_NAMES, ...DEHUMIDIFIER_NAMES]) inputs[f].value = texts[f];
+  inputs.dehumidifier.checked = room?.dehumidifier === true;
+  updateDehumidifier();
   clearErrors();
   updateVolume();
   dialog.showModal();
@@ -81,7 +90,8 @@ form.addEventListener('submit', async (event) => {
   event.preventDefault();
   clearErrors();
   // The meter address and the ratings are checked here as the server does; the first wrong input gets the focus.
-  const ratings = parseRatings(Object.fromEntries(RATING_NAMES.map((f) => [f, inputs[f].value])));
+  const fitted = inputs.dehumidifier.checked;
+  const ratings = parseRatings(Object.fromEntries([...RATING_NAMES, ...DEHUMIDIFIER_NAMES].map((f) => [f, inputs[f].value])), { dehumidifier: fitted });
   const problems = { ...ratings.errors };
   const meter = meterAddressOf(inputs.meterAddress.value);
   if (Number.isNaN(meter)) problems.meterAddress = 'Energy meter address must be a whole number from 1 to 247, or empty for none';
@@ -104,6 +114,7 @@ form.addEventListener('submit', async (event) => {
     relayAddress: address(inputs.relayAddress),
     acAddress: address(inputs.acAddress),
     meterAddress: meter,
+    dehumidifier: fitted,
     ...ratings.values,
   };
   const mine = opened;
@@ -128,4 +139,5 @@ form.addEventListener('submit', async (event) => {
 });
 
 form.addEventListener('input', updateVolume);
+inputs.dehumidifier.addEventListener('change', updateDehumidifier);
 $('cancel').addEventListener('click', () => dialog.close());

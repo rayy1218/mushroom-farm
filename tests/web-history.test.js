@@ -2,7 +2,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { RANGES, rangeOf, timeTicks, historyPoints, timelineSpans, acMarks, thinMarks, markLabel, tickCountFor, chartDrawKey, TIMELINE_ROWS, formatStamp } from '../web/history-math.js';
+import { RANGES, rangeOf, timeTicks, historyPoints, timelineSpans, acMarks, thinMarks, markLabel, tickCountFor, chartDrawKey, TIMELINE_ROWS, wiredTimelineRows, formatStamp } from '../web/history-math.js';
 
 const at = (d, h, m = 0) => new Date(2026, 9, d, h, m).getTime();
 
@@ -84,11 +84,18 @@ test('the aircon: a span per setpoint, labelled with the setpoint where it chang
   assert.deepEqual(timelineSpans(rows, 1000, 5000), [{ from: 1000, to: 4000, source: 'auto' }]);
 });
 
-test('the timeline rows are Intake, Exhaust, Circulation, Humidifier, Aircon', () => {
-  assert.deepEqual(TIMELINE_ROWS, [
-    { key: 'intake', label: 'Intake' }, { key: 'exhaust', label: 'Exhaust' }, { key: 'circulation', label: 'Circulation' },
-    { key: 'humidifier', label: 'Humidifier' }, { key: 'ac', label: 'Aircon' },
-  ]);
+test('the timeline rows are Intake, Exhaust, Circulation, Humidifier, Dehumidifier, Aircon', () => {
+  assert.deepEqual(TIMELINE_ROWS.map((r) => r.key), ['intake', 'exhaust', 'circulation', 'humidifier', 'dehumidifier', 'ac']);
+  assert.deepEqual(TIMELINE_ROWS.map((r) => r.label), ['Intake', 'Exhaust', 'Circulation', 'Humidifier', 'Dehumidifier', 'Aircon']);
+});
+
+test('the room page shows the rows of what is wired; the Dehumidifier only when the room has one', () => {
+  const keys = (room) => wiredTimelineRows(room).map((r) => r.key);
+  assert.deepEqual(keys({ relayAddress: 3, acAddress: 4, dehumidifier: false }), ['intake', 'exhaust', 'circulation', 'humidifier', 'ac']);
+  assert.deepEqual(keys({ relayAddress: 3, acAddress: null, dehumidifier: true }), ['intake', 'exhaust', 'circulation', 'humidifier', 'dehumidifier']);
+  assert.deepEqual(keys({ relayAddress: null, acAddress: 4, dehumidifier: true }), ['ac']);
+  assert.deepEqual(keys({ relayAddress: null, acAddress: null }), []);
+  assert.deepEqual(keys({ relayAddress: 3, acAddress: null }), ['intake', 'exhaust', 'circulation', 'humidifier']);
 });
 
 test('marks closer than 40 px to the previous kept one are skipped', () => {
@@ -113,6 +120,7 @@ test('the chart redraw key changes with the bands, the sensor statuses and the r
   assert.notEqual(chartDrawKey({ tLow: 21 }, { ...sensors, co2: { status: 'offline' } }, room), key);
   assert.notEqual(chartDrawKey({ tLow: 21 }, sensors, { ...room, relayAddress: null }), key);
   assert.notEqual(chartDrawKey({ tLow: 21 }, sensors, { ...room, acAddress: 9 }), key);
+  assert.notEqual(chartDrawKey({ tLow: 21 }, sensors, { ...room, dehumidifier: true }), key);
 });
 
 test('markLabel: a label right of its mark, or left of it when it would run past the right edge', () => {
