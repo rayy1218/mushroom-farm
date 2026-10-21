@@ -13,7 +13,7 @@ const fields = { name: 'Room 1', length: 6, width: 4, height: 2.5 };
 const DEFAULT_CONTROL = {
   auto: false, co2Low: 600, co2High: 750, tLow: 21, tHigh: 23, rhLow: 85, rhHigh: 95,
   exchange: false, exchangeSince: null, humidifier: false, humidifierDuringExchange: false, acFan: 'auto',
-  co2Safety: 1250, exchangeMaxMin: 10, acDrop: 0, exchangeEndedAt: null, cappedInRow: 0, humidifierSince: null, exchangeEveryMin: 15, exchangeForced: false, freshFrom: null,
+  co2Safety: 1250, exchangeMaxMin: 10, acDrop: 0, exchangeEndedAt: null, cappedInRow: 0, humidifierSince: null, exchangeEveryMin: 15, exchangeForced: false, freshFrom: null, dehumidifier: false,
 };
 // A room that already existed at an upgrade keeps the old behaviour: humidifier forced on and the aircon 5 °C lower
 // during an exchange.
@@ -89,7 +89,7 @@ test('upgrade 2 to 3 keeps rooms, readings and commands and adds a control row p
   const db = openDb(path);
   assert.deepEqual(db.listRooms().map((r) => [r.id, r.name, r.relayAddress]), [[1, 'A', 5], [5, 'B', null]]);
   assert.deepEqual(db.getSensors(1)[0].readings, [{ at: 100, ok: true, t: 21.5, rh: 88 }]);
-  assert.deepEqual(db.getCommands(1).relay, { intake: true, exhaust: true, circulation: false, humidifier: true, sentAt: 50 });
+  assert.deepEqual(db.getCommands(1).relay, { intake: true, exhaust: true, circulation: false, humidifier: true, dehumidifier: false, sentAt: 50 });
   assert.equal(db.getCommands(1).ac.setpoint, 17);
   // exchange and humidifier start from the commanded intake and humidifier
   assert.deepEqual(db.getControl(1), { ...UPGRADED_CONTROL, exchange: true, humidifier: true });
@@ -97,7 +97,7 @@ test('upgrade 2 to 3 keeps rooms, readings and commands and adds a control row p
   db.close();
 
   const raw = new DatabaseSync(path);
-  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 11);
+  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 12);
   raw.close();
   openDb(path).close(); // opening again changes nothing
   const again = new DatabaseSync(path);
@@ -205,7 +205,7 @@ test('upgrade 3 to 4 adds humidifier_during_exchange (on) and keeps rooms, readi
   db.close();
 
   const raw = new DatabaseSync(path);
-  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 11);
+  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 12);
   raw.close();
   openDb(path).close(); // opening again changes nothing
 });

@@ -197,6 +197,7 @@ export function decide({ bands, state, readings, faults, now, humidifierDuringEx
       intake: exchange,
       exhaust: exchange,
       humidifier: forced || band,
+      dehumidifier: false, // its rule: spec 2026-10-21-dehumidifier-design.md 3 (stream server)
       circulation: true,
       ac: { power: true, mode: 'cool', setpoint, fan: acFan },
     },
@@ -310,8 +311,8 @@ export function createController({ db, machines, now = Date.now, log = console.e
       forget(roomId);
       return null;
     }
-    const { humidifier, humidifierSince, ...rest } = c; // the band state, not the machine's command
-    return { ...rest, humidifierBand: humidifier, exchangeEndsAt: exchangeEndsAt(roomId, c), checks: checksOf(roomId), reasons: { ...emptyReasons(), ...reasons.get(roomId) } };
+    const { humidifier, humidifierSince, dehumidifier, ...rest } = c; // the band states, not the machines' commands
+    return { ...rest, humidifierBand: humidifier, dehumidifierBand: dehumidifier, exchangeEndsAt: exchangeEndsAt(roomId, c), checks: checksOf(roomId), reasons: { ...emptyReasons(), ...reasons.get(roomId) } };
   }
 
   // The reading of this cycle of a sensor (even a failed poll), or null (no data, or older than the cycle).
@@ -424,7 +425,10 @@ export function createController({ db, machines, now = Date.now, log = console.e
         }
       };
       if (room.relayAddress !== null) {
-        for (const key of RELAY_KEYS) plan(key, desired[key], commands.relay[key] !== desired[key]);
+        for (const key of RELAY_KEYS) {
+          if (key === 'dehumidifier' && !room.dehumidifier) continue; // not fitted: never commanded
+          plan(key, desired[key], commands.relay[key] !== desired[key]);
+        }
       }
       if (room.acAddress !== null) plan('ac', desired.ac, acDiffers(commands.ac, desired.ac));
       reasons.set(room.id, why);

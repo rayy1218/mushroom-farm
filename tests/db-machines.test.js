@@ -52,7 +52,7 @@ CREATE INDEX readings_ok ON readings (room_id, kind, address, id) WHERE ok = 1;
 PRAGMA user_version = 1;`;
 
 const DEFAULT_COMMANDS = {
-  relay: { intake: false, exhaust: false, circulation: false, humidifier: false, sentAt: null },
+  relay: { intake: false, exhaust: false, circulation: false, humidifier: false, dehumidifier: false, sentAt: null },
   ac: { power: false, mode: 'cool', setpoint: 25, fan: 'auto', sentAt: null },
 };
 
@@ -69,9 +69,9 @@ test('upgrade 1 to 2 keeps rooms and readings and gives every room default comma
   const db = openDb(path);
   assert.deepEqual(db.listRooms(), [
     { id: 1, name: 'Old A', length: 6, width: 4, height: 2.5, volume: 60, trhAddress: 3, co2Address: 4,
-      relayAddress: null, acAddress: null, meterAddress: null, intakeW: 60, exhaustW: 60, circulationW: 60, humidifierW: 80, humidifierLH: 2, acInputW: 1050, createdAt: 10, updatedAt: 20 },
+      relayAddress: null, acAddress: null, meterAddress: null, intakeW: 60, exhaustW: 60, circulationW: 60, humidifierW: 80, humidifierLH: 2, acInputW: 1050, dehumidifierW: 380, dehumidifierLday: 20, dehumidifier: false, createdAt: 10, updatedAt: 20 },
     { id: 5, name: 'Old B', length: 5, width: 5, height: 3, volume: 75, trhAddress: null, co2Address: null,
-      relayAddress: null, acAddress: null, meterAddress: null, intakeW: 60, exhaustW: 60, circulationW: 60, humidifierW: 80, humidifierLH: 2, acInputW: 1050, createdAt: 11, updatedAt: 21 },
+      relayAddress: null, acAddress: null, meterAddress: null, intakeW: 60, exhaustW: 60, circulationW: 60, humidifierW: 80, humidifierLH: 2, acInputW: 1050, dehumidifierW: 380, dehumidifierLday: 20, dehumidifier: false, createdAt: 11, updatedAt: 21 },
   ]);
   const [trh, co2] = db.getSensors(1);
   assert.deepEqual(trh.readings, [{ at: 100, ok: true, t: 21.5, rh: 88 }]);
@@ -81,7 +81,7 @@ test('upgrade 1 to 2 keeps rooms and readings and gives every room default comma
   db.close();
 
   const raw = new DatabaseSync(path);
-  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 11);
+  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 12);
   raw.close();
   openDb(path).close(); // opening again changes nothing
   const again = new DatabaseSync(path);
@@ -184,7 +184,7 @@ test('setRelayCommand and setAcCommand save the command and when it was sent', (
   assert.equal(db.setRelayCommand(1, 'humidifier', true, 600), true);
   assert.equal(db.setRelayCommand(1, 'exhaust', false, 700), true);
   assert.equal(db.setRelayCommand(1, 'intake', true, 800), true);
-  assert.deepEqual(db.getCommands(1).relay, { intake: true, exhaust: false, circulation: false, humidifier: true, sentAt: 800 });
+  assert.deepEqual(db.getCommands(1).relay, { intake: true, exhaust: false, circulation: false, humidifier: true, dehumidifier: false, sentAt: 800 });
   assert.equal(db.setAcCommand(1, { power: true, mode: 'heat', setpoint: 23.5, fan: 'high' }, 900), true);
   assert.deepEqual(db.getCommands(1).ac, { power: true, mode: 'heat', setpoint: 23.5, fan: 'high', sentAt: 900 });
   assert.deepEqual(db.getCommands(1).relay.sentAt, 800, 'ac and relay send times are separate');

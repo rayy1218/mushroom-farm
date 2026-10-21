@@ -40,6 +40,13 @@ const CIRC_W = 60;             // circulation fan
 const INTAKE_W = 60;           // intake fan motor, in the incoming air (the exhaust fan's goes outside)
 const HUMIDIFIER_W_PER_LH = 40; // ultrasonic humidifier
 
+// Dehumidifier (spec 2026-10-21-dehumidifier-design.md 5): rated in L/day at 30 °C 80 % RH (the usual label). It takes out
+// water in proportion to the air's water above its coil's (5 °C dew point), at most 1.2 times the rating; its power and
+// the condensation heat go into the air.
+const DEHUM_COIL = 5;
+const DEHUM_MAX = 1.2;
+const dehumShare = (W) => clamp((W - satW(DEHUM_COIL)) / (wOf(30, 80) - satW(DEHUM_COIL)), 0, DEHUM_MAX);
+
 const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
 
 export function satW(T) {
@@ -196,6 +203,15 @@ function substep(s, inputs, params, dt) {
   W = clamp(W, 0, satW(T));
   Hs = clamp(Hs, 0, HS_MAX); // water beyond it runs off
 
+  // Dehumidifier: water out (never below its coil's dew point), its power and the condensation heat into the air.
+  const dehumOn = inputs.dehumidifier && (params.dehumidifierLday ?? 0) > 0;
+  let dehumG = 0;
+  if (dehumOn) {
+    dehumG = Math.min((params.dehumidifierLday * 1000 / 86400) * dehumShare(W) * dt, Math.max(0, (W - satW(DEHUM_COIL)) * volume));
+    W -= dehumG / volume;
+    T += ((params.dehumidifierW ?? 0) / 1000 * dt + dehumG * LATENT) / capAir;
+  }
+
   const act = {
     exchangeM3h,
     acCoolKW: sensKJ / dt,
@@ -209,6 +225,8 @@ function substep(s, inputs, params, dt) {
     machineKW,
     surfaceGH: ((toSurfaceG + condensedG) / dt) * 3600, // + taken up by the surfaces, − given back
     condensedGH: (condensedG / dt) * 3600,
+    dehumidifierGH: (dehumG / dt) * 3600,
+    dehumidifierKW: dehumOn ? (params.dehumidifierW ?? 0) / 1000 : 0,
   };
   return { state: { T, W, CO2: Math.max(0, CO2), Tm, Hs: Math.max(0, Hs) }, act };
 }
@@ -244,5 +262,7 @@ function nominal(inputs, params, s) {
     machineKW: ((inputs.circulation ? CIRC_W : 0) + (inputs.intake ? INTAKE_W : 0) + (inputs.humidifier ? (HUMIDIFIER_W_PER_LH * humOn) / 1000 : 0)) / 1000,
     surfaceGH: 0,
     condensedGH: 0,
+    dehumidifierGH: inputs.dehumidifier && (params.dehumidifierLday ?? 0) > 0 ? (params.dehumidifierLday * 1000 / 24) * dehumShare(s.W) : 0,
+    dehumidifierKW: inputs.dehumidifier && (params.dehumidifierLday ?? 0) > 0 ? (params.dehumidifierW ?? 0) / 1000 : 0,
   };
 }

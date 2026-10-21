@@ -276,7 +276,7 @@ test('PUT a relay machine: saves the command, writes fn 5 at once, returns the o
   const { machines, client, id, db, clock } = setup(t);
   const view = await machines.command(id, 'exhaust', { on: true });
   assert.deepEqual(client.writes, [['coil', 10, 1, true]]);
-  assert.deepEqual(db.getCommands(id).relay, { intake: false, exhaust: true, circulation: false, humidifier: false, sentAt: clock.now });
+  assert.deepEqual(db.getCommands(id).relay, { intake: false, exhaust: true, circulation: false, humidifier: false, dehumidifier: false, sentAt: clock.now });
   assert.equal(keyStatus(view, 'exhaust').commanded, true);
   assert.deepEqual(view.relay.lastWrite, { at: clock.now, ok: true, error: null });
   assert.equal(view.ac.lastWrite, null);

@@ -318,3 +318,35 @@ test('acLoad: the share of its present capacity the aircon delivered (0 without 
   const off = step(hot, { ac: { mode: 'cool', setpoint: 35, fan: 'auto' } }, params, 10).acting.acLoad;
   assert.equal(off, 0);
 });
+
+// ---- the dehumidifier (spec 2026-10-21-dehumidifier-design.md 5) ----
+
+const DRY = { ...P, blocks: 0, wallUA: 0, outdoorT: 21, outdoorRH: 84, dehumidifierLday: 20, dehumidifierW: 360 };
+const airAt = (T, RH) => ({ T, W: wOf(T, RH), CO2: 420, Tm: T, Hs: RH });
+
+test('dehumidifier: at 21 °C 84 % a 20 L/day unit takes out about half its rating; acting reports it', () => {
+  const { acting } = step(airAt(21, 84), { dehumidifier: true }, DRY, 5);
+  assert.ok(acting.dehumidifierGH > 380 && acting.dehumidifierGH < 440, `${acting.dehumidifierGH} g/h`);
+  assert.equal(acting.dehumidifierKW, 0.36);
+  // at its rating point it takes out its rating
+  const rated = step(airAt(30, 80), { dehumidifier: true }, { ...DRY, outdoorT: 30, outdoorRH: 80 }, 5).acting.dehumidifierGH;
+  assert.ok(Math.abs(rated - 20000 / 24) < 15, `${rated} g/h at 30 °C 80 %`);
+});
+
+test('dehumidifier: dries and warms the room; nothing when off, not fitted, or at a 5 °C dew point', () => {
+  const before = airAt(21, 84);
+  const on = step(before, { dehumidifier: true }, DRY, 600).state;
+  const off = step(before, { dehumidifier: false }, DRY, 600).state;
+  assert.ok(rhOf(on.T, on.W) < rhOf(off.T, off.W) - 2, 'drier');
+  assert.ok(on.T > off.T + 0.2, 'warmer: its power and the condensation heat');
+  assert.equal(step(before, { dehumidifier: true }, { ...DRY, dehumidifierLday: 0 }, 5).acting.dehumidifierGH, 0);
+  assert.equal(step(before, { dehumidifier: true }, { ...P, outdoorT: 21, outdoorRH: 84 }, 5).acting.dehumidifierGH, 0, 'params without it');
+  assert.equal(step(airAt(10, 50), { dehumidifier: true }, DRY, 5).acting.dehumidifierGH, 0, 'dew point below 5 °C');
+  assert.equal(step(before, { dehumidifier: false }, DRY, 5).acting.dehumidifierKW, 0);
+});
+
+test('dehumidifier: the nominal rates (dt 0) include it', () => {
+  const { acting } = step(airAt(21, 84), { dehumidifier: true }, DRY, 0);
+  assert.ok(acting.dehumidifierGH > 380);
+  assert.equal(acting.dehumidifierKW, 0.36);
+});
