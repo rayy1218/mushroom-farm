@@ -4,12 +4,14 @@
 import { Worker } from 'node:worker_threads';
 import { PARAMS, outdoorProblem } from '../device/sim-store.js';
 import { FARM_TYPES, validateCrops } from '../web/crops.js';
+import { candidates, estimate, TARGET_DEFAULT } from './sizing.js';
 import { readSettings } from './settings.js';
 
 const PHYSICS = ['wallUA', 'outdoorHigh', 'outdoorLow', 'outdoorDew', 'sunW', 'fanFlow', 'acBTU', 'humidifierLH'];
 const RATING_FIELDS = ['intakeW', 'exhaustW', 'circulationW', 'humidifierW', 'humidifierLH', 'acInputW', 'dehumidifierW', 'dehumidifierLday'];
 const CONTROL_FIELDS = ['exchangeMaxMin', 'acDrop', 'exchangeEveryMin', 'humidifierDuringExchange', 'acFan'];
 const MAX_UNFINISHED = 5; // queued or running runs of one room
+const SIZING_KEPT = 20; // finished suggestions kept per room
 export const RESTART_TEXT = 'Stopped by a restart of the farm app';
 
 const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -17,7 +19,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
 // Checks a request body { physics, crops, farmType, stage, days }. → { input } (only the known fields) or { error, field }.
 export function validateSimulation(body) {
   if (body === null || typeof body !== 'object' || Array.isArray(body)) return { error: 'Body must be a JSON object' };
-  const { physics, crops, farmType, stage, days } = body;
+  const { physics, crops, farmType, stage, days, control } = body;
   if (physics === null || typeof physics !== 'object' || Array.isArray(physics)) return { error: 'Physics must be an object', field: 'physics' };
   const clean = {};
   for (const field of PHYSICS) {
@@ -41,7 +43,30 @@ export function validateSimulation(body) {
   const stages = FARM_TYPES[farmType].stages;
   if (!stages.includes(stage)) return { error: `Stage must be one of ${stages.join(', ')}`, field: 'stage' };
   if (!Number.isInteger(days) || days < 1 || days > 90) return { error: 'Days must be a whole number from 1 to 90', field: 'days' };
-  return { input: { physics: clean, crops: crops.map(({ crop, blocks }) => ({ crop, blocks })), farmType, stage, days } };
+  const input = { physics: clean, crops: crops.map(({ crop, blocks }) => ({ crop, blocks })), farmType, stage, days };
+  if (control !== undefined) {
+    // The air exchange time limit of this run, instead of the room's.
+    if (control === null || typeof control !== 'object' || Array.isArray(control)) return { error: 'Control must be an object', field: 'control' };
+    if (!Number.isInteger(control.exchangeMaxMin) || control.exchangeMaxMin < 1 || control.exchangeMaxMin > 120) {
+      return { error: 'Air exchange time limit must be a whole number from 1 to 120 min', field: 'control.exchangeMaxMin' };
+    }
+    input.control = { exchangeMaxMin: control.exchangeMaxMin };
+  }
+  return { input };
+}
+
+// Checks a sizing request { physics (walls, weather, sun), crops, farmType, stage, target }. → { input } or { error, field }.
+export function validateSizing(body) {
+  if (body === null || typeof body !== 'object' || Array.isArray(body)) return { error: 'Body must be a JSON object' };
+  // The machines are what it looks for: checked as a simulation's with any machines, then dropped.
+  const dummy = { fanFlow: 100, acBTU: 9000, humidifierLH: 1 };
+  const checked = validateSimulation({ ...body, physics: body.physics !== null && typeof body.physics === 'object' && !Array.isArray(body.physics) ? { ...body.physics, ...dummy } : body.physics, days: 1, control: undefined });
+  if (checked.error) return checked;
+  const { target = TARGET_DEFAULT } = body;
+  if (!Number.isInteger(target) || target < 50 || target > 99) return { error: 'Target must be a whole number from 50 to 99 %', field: 'target' };
+  const { physics, crops, farmType, stage } = checked.input;
+  const { wallUA, outdoorHigh, outdoorLow, outdoorDew, sunW } = physics;
+  return { input: { physics: { wallUA, outdoorHigh, outdoorLow, outdoorDew, sunW }, crops, farmType, stage, target } };
 }
 
 // The default way to run a job: a worker thread. job: { input, ctx }; handlers: { onProgress(share), onDone(result),
@@ -65,10 +90,14 @@ export function spawnWorker(job, { onProgress, onDone, onError }) {
   return { stop: () => { finished = true; worker.terminate(); } };
 }
 
-// db: the farm database. now: injectable clock. spawn: how a job runs (tests pass an in-process one).
+// db: the farm database. now: injectable clock. spawn: how a job runs (tests pass an in-process one). Runs are stored in the
+// database; sizing jobs (suggest machines, spec 2026-10-22-suggest-machines-design.md 4 and 5) only in memory. Both share the
+// one queue: one job at a time.
 export function createSimulations({ db, now = Date.now, spawn = spawnWorker }) {
-  const queue = []; // { id, job }
-  let current = null; // { id, handle, stored }
+  const queue = []; // { kind: 'run' | 'sizing', id, roomId, job }
+  let current = null; // { kind, id, roomId, handle, stored }
+  const sizings = new Map(); // id → { id, roomId, status, progress, total, createdAt, finishedAt, result, error }
+  let sizingId = 0;
   db.failUnfinishedRuns(RESTART_TEXT, now());
 
   // What the run needs from the room as it is now; stored with the run so the result shows what was used.
@@ -86,16 +115,53 @@ export function createSimulations({ db, now = Date.now, spawn = spawnWorker }) {
     };
   }
 
+  // How each kind of job keeps its progress and ends. begin and progress → false when the job is gone.
+  const store = {
+    run: {
+      begin: (id) => db.setRunProgress(id, 'running', 0),
+      progress: (id, share) => db.setRunProgress(id, 'running', share),
+      end: (id, outcome) => db.finishRun(id, outcome, now()),
+    },
+    sizing: {
+      begin(id) {
+        const job = sizings.get(id);
+        if (!job) return false;
+        job.status = 'running';
+        return true;
+      },
+      progress(id, share) {
+        const job = sizings.get(id);
+        if (!job) return false;
+        job.progress = share;
+        return true;
+      },
+      end(id, outcome) {
+        const job = sizings.get(id);
+        if (!job) return;
+        Object.assign(job, { status: outcome.status, error: outcome.error ?? null, result: outcome.result ?? null, finishedAt: now() });
+        if (outcome.status === 'done') job.progress = 1;
+        prune(job.roomId);
+      },
+    },
+  };
+
+  // Keeps the newest SIZING_KEPT finished suggestions of a room.
+  function prune(roomId) {
+    const finished = [...sizings.values()].filter((j) => j.roomId === roomId && j.status !== 'queued' && j.status !== 'running');
+    for (const old of finished.slice(0, Math.max(0, finished.length - SIZING_KEPT))) sizings.delete(old.id);
+  }
+
   function pump() {
     while (!current && queue.length > 0) {
-      const { id, roomId, job } = queue.shift();
-      if (!db.setRunProgress(id, 'running', 0)) continue; // the run is gone (its room was deleted)
-      const entry = { id, roomId, handle: null, stored: 0 };
+      const { kind, id, roomId, job } = queue.shift();
+      const jobs = store[kind];
+      if (!jobs.begin(id)) continue; // the job is gone (its room was deleted)
+      const entry = { kind, id, roomId, handle: null, stored: 0 };
       current = entry;
       const finish = (outcome) => {
         if (current !== entry) return; // cancelled meanwhile
         current = null;
-        db.finishRun(id, outcome, now());
+        jobs.end(id, outcome);
         pump();
       };
       try {
@@ -105,13 +171,13 @@ export function createSimulations({ db, now = Date.now, spawn = spawnWorker }) {
             const percent = Math.round(share * 100);
             if (percent <= Math.round(entry.stored * 100)) return;
             entry.stored = share;
-            if (!db.setRunProgress(id, 'running', share)) {
-              current = null; // the run was deleted under the worker
+            if (!jobs.progress(id, share)) {
+              current = null; // the job was deleted under the worker
               entry.handle?.stop();
               pump();
             }
           },
-          onDone: (result) => finish({ status: 'done', summary: result.summary, result }),
+          onDone: (result) => finish(kind === 'run' ? { status: 'done', summary: result.summary, result } : { status: 'done', result }),
           onError: (message) => finish({ status: 'failed', error: message }),
         });
       } catch (err) {
@@ -119,6 +185,16 @@ export function createSimulations({ db, now = Date.now, spawn = spawnWorker }) {
       }
     }
   }
+
+  // Stops the job running now when `match` says so.
+  function stopCurrent(match) {
+    if (!current || !match(current)) return;
+    const { handle } = current;
+    current = null;
+    handle?.stop();
+  }
+
+  const unfinished = (j) => j.status === 'queued' || j.status === 'running';
 
   return {
     // Validates and queues a run of room `roomId` (which must exist). → { run } (queued, without result) or { error, field }.
@@ -129,41 +205,68 @@ export function createSimulations({ db, now = Date.now, spawn = spawnWorker }) {
         return { error: `This room already has ${MAX_UNFINISHED} simulations waiting or running`, conflict: true };
       }
       const ctx = contextOf(roomId);
+      // The run's own air exchange time limit instead of the room's (input.control stays in the stored input to compare).
+      if (checked.input.control) ctx.control = { ...ctx.control, ...checked.input.control };
       const run = db.createRun(roomId, { ...checked.input, ctx }, now());
-      queue.push({ id: run.id, roomId, job: { input: checked.input, ctx } });
+      queue.push({ kind: 'run', id: run.id, roomId, job: { input: checked.input, ctx } });
       pump();
       return { run };
     },
 
-    // A deleted room: drops its queued runs and stops its running worker (the database rows went with the room).
+    // Validates and queues a suggestion for room `roomId` (which must exist). → { job } or { error, field, conflict }.
+    startSizing(roomId, body) {
+      const checked = validateSizing(body);
+      if (checked.error) return checked;
+      if ([...sizings.values()].some((j) => j.roomId === roomId && unfinished(j))) {
+        return { error: 'A suggestion is already being worked out for this room', conflict: true };
+      }
+      const ctx = contextOf(roomId);
+      const id = ++sizingId;
+      const total = candidates(estimate(checked.input, ctx)).length;
+      const job = { id, roomId, status: 'queued', progress: 0, total, createdAt: now(), finishedAt: null, result: null, error: null };
+      sizings.set(id, job);
+      const queued = { ...job };
+      queue.push({ kind: 'sizing', id, roomId, job: { kind: 'sizing', input: checked.input, ctx } });
+      pump();
+      return { job: queued };
+    },
+
+    getSizing: (id) => sizings.get(id) ?? null,
+
+    // Stops a running suggestion or drops a queued one, and forgets it (a finished one is only forgotten). → false when there is none.
+    cancelSizing(id) {
+      if (!sizings.has(id)) return false;
+      stopCurrent((c) => c.kind === 'sizing' && c.id === id);
+      const i = queue.findIndex((q) => q.kind === 'sizing' && q.id === id);
+      if (i >= 0) queue.splice(i, 1);
+      sizings.delete(id);
+      pump();
+      return true;
+    },
+
+    // A deleted room: drops its queued jobs and stops its running worker (the database rows went with the room).
     forgetRoom(roomId) {
       for (let i = queue.length - 1; i >= 0; i--) if (queue[i].roomId === roomId) queue.splice(i, 1);
-      if (current?.roomId === roomId) {
-        const { handle } = current;
-        current = null;
-        handle?.stop();
-      }
+      stopCurrent((c) => c.roomId === roomId);
+      for (const [id, j] of sizings) if (j.roomId === roomId) sizings.delete(id);
       pump();
     },
 
     // Stops a running run or drops a queued one and deletes it (a finished one is only deleted). → false when there is none.
     cancel(id) {
-      if (current?.id === id) {
-        const { handle } = current;
-        current = null;
-        handle?.stop();
-      } else {
-        const i = queue.findIndex((q) => q.id === id);
-        if (i >= 0) queue.splice(i, 1);
-      }
+      stopCurrent((c) => c.kind === 'run' && c.id === id);
+      const i = queue.findIndex((q) => q.kind === 'run' && q.id === id);
+      if (i >= 0) queue.splice(i, 1);
       const deleted = db.deleteRun(id);
       pump();
       return deleted;
     },
 
-    // Stops the running worker and forgets the queue (shutdown, tests). The unfinished runs are failed at the next start.
+    // Stops the running worker and forgets the queue (shutdown, tests). The unfinished runs are failed at the next start;
+    // suggestions are only in memory.
     close() {
       queue.length = 0;
+      sizings.clear();
       const entry = current;
       current = null;
       entry?.handle?.stop();

@@ -47,8 +47,8 @@ The stages searched: the start stage and the one after it (fruiting → rest, re
 
 | Route | Reply |
 |---|---|
-| `POST /api/rooms/:id/sizing` | 202 `{ id, roomId, status, progress, createdAt }`; 400 `{ error, field }`; 404; 409 when the room already has a sizing waiting or running ("A suggestion is already being worked out for this room") |
-| `GET /api/sizing/:id` | the job with `result` when done: `{ target, days, estimate, best: [candidate…], reached, notes }` |
+| `POST /api/rooms/:id/sizing` | 202 `{ id, roomId, status, progress, total (the setups to try), createdAt, finishedAt, result: null, error: null }`; 400 `{ error, field }`; 404; 409 when the room already has a sizing waiting or running ("A suggestion is already being worked out for this room") |
+| `GET /api/sizing/:id` | the same job (`progress` 0 to 1, `error` when failed) with `result` when done: `{ target, days, estimate, best: [candidate…], reached, notes }` |
 | `DELETE /api/sizing/:id` | 204, stops it |
 
 ## 6. Simulation runs: a time limit of their own
