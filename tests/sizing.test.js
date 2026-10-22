@@ -92,13 +92,13 @@ const fake = (calls) => (inp, cx) => {
 test('runSizing: every candidate over the days of both stages with its machines and limit; the reply', () => {
   const calls = [], progress = [];
   const r = runSizing(input, ctx, { simulate: fake(calls), onProgress: (s) => progress.push(s) });
-  assert.equal(calls.length, 48);
+  assert.equal(calls.length, 36, "the two-phase plan for Container Alpha: 12 + 2 × 12");
   assert.equal(calls[0].inp.days, 17);
   assert.equal(calls[0].cx.control.exchangeMaxMin, 60);
   assert.equal(calls[0].cx.control.acFan, 'auto', 'the room\'s other control settings stay');
   assert.equal(ctx.control.exchangeMaxMin, 10, 'the room\'s context is not touched');
   assert.equal(calls[0].inp.physics.wallUA, 30);
-  assert.equal(progress.length, 48);
+  assert.equal(progress.length, 36);
   assert.equal(progress.at(-1), 1);
   assert.ok(progress.every((s, i) => i === 0 || s > progress[i - 1]));
   assert.equal(r.target, 95);
@@ -106,7 +106,8 @@ test('runSizing: every candidate over the days of both stages with its machines 
   assert.equal(r.reached, true);
   assert.deepEqual(r.notes, []);
   assert.equal(r.best.length, 5);
-  assert.deepEqual(r.best[0], { machines: r.best[0].machines, exchangeMaxMin: 60, inBand: { t: 100, rh: 99, co2: 99, all: 60 }, kWh: 15, litres: 1, removedLitres: 0 });
+  assert.deepEqual(r.best[0], { machines: r.best[0].machines, exchangeMaxMin: 60, control: { exchangeMaxMin: 60, acDrop: 0, humidifierDuringExchange: false }, inBand: { t: 100, rh: 99, co2: 99, all: 60 }, kWh: 15, litres: 1, removedLitres: 0 });
+  assert.deepEqual([calls[0].cx.control.acDrop, calls[0].cx.control.humidifierDuringExchange], [0, false], 'searched without the aircon drop and the forced humidifier');
   assert.equal(r.best[0].machines.fanFlow, 150);
   assert.equal(r.estimate.fanFlow, 150);
   assert.ok(r.estimate.why.fanFlow);
@@ -135,4 +136,39 @@ test('runSizing with the real simulation reaches the target with a fan of at mos
   assert.ok(r.best[0].machines.fanFlow <= 200);
   assert.ok(r.best[0].inBand.t >= 95 && r.best[0].inBand.rh >= 95 && r.best[0].inBand.co2 >= 95);
   assert.ok(r.best[0].kWh > 0);
+});
+
+// ---- the two-phase search (after the Room 1 check, 2026-10-22) ----
+
+test('searchPlan: phase 1 the fan and a wide aircon range, phase 2 the humidity machines around the kept two', async () => {
+  const { searchPlan } = await import('../server/sizing.js');
+  const est = { fanFlow: 200, humidifierLH: 2, dehumidifierMaxLday: 60, acBTU: 9000, exchangeMaxMin: 60 };
+  const plan = searchPlan(est);
+  const fans = [...new Set(plan.phase1.map((c) => c.machines.fanFlow))];
+  const acs = [...new Set(plan.phase1.map((c) => c.machines.acBTU))];
+  assert.deepEqual(fans, [150, 200, 250]);
+  assert.deepEqual(acs, [9000, 12000, 18000, 24000], 'from the estimate (the smallest size) to three above');
+  const p2 = plan.phase2(plan.phase1[0]);
+  assert.deepEqual([...new Set(p2.map((c) => c.machines.humidifierLH))], [1.5, 2, 3]);
+  assert.deepEqual([...new Set(p2.map((c) => c.machines.dehumidifierLday))], [0, 10, 25, 60]);
+  assert.equal(plan.total, plan.phase1.length + 2 * p2.length);
+  assert.ok(plan.total <= 60, `${plan.total} setups`);
+});
+
+test('runSizing (two phases): phase 2 keeps the best two cores and the progress reaches 1 at the planned total', async () => {
+  const { searchPlan } = await import('../server/sizing.js');
+  const seen = [];
+  const sim = (inp) => {
+    seen.push(inp.physics);
+    const big = inp.physics.acBTU >= 18000; // only a big aircon holds the temperature
+    return { summary: { inBand: { t: big ? 99 : 60, rh: inp.physics.dehumidifierLday === 10 ? 97 : 80, co2: 99, all: 90 }, energy: { kWh: inp.physics.acBTU / 1000 + inp.physics.dehumidifierLday / 10 }, water: { litres: 1, removedLitres: 0 } } };
+  };
+  const progress = [];
+  const r = runSizing(input, ctx, { simulate: sim, onProgress: (p) => progress.push(p), days: 1 });
+  const plan = searchPlan(r.estimate);
+  assert.equal(seen.length, plan.total);
+  assert.equal(progress.at(-1), 1);
+  assert.equal(r.reached, true);
+  assert.equal(r.best[0].machines.acBTU >= 18000, true);
+  assert.equal(r.best[0].machines.dehumidifierLday, 10);
 });

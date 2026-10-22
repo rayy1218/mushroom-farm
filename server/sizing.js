@@ -90,8 +90,8 @@ export function estimate(input, ctx) {
     why: {
       fanFlow: `${blocks} blocks give off ${round(co2LH, 1)} L of CO₂ an hour; ${fanFlow} m³/h holds it at ${holds} ppm`,
       humidifierLH: `One minute of ${humidifierLH} L/h moves humidity about ${round(((humidifierLH * 1000 / 60) * 100) / (volume * satW(tMid)), 1)} % in a room of ${round(volume, 1)} m³ (the narrowest band is ${rhBand} %)`,
-      dehumidifierLday: `Up to ${dehumidifierMaxLday} L/day: a 3 min run of a larger one would move humidity more than 80 % of the ${restBand} % band`,
-      acBTU: `About ${Math.round(acW)} W of heat at an outdoor ${physics.outdoorHigh} °C with the room at ${round(tMid, 1)} °C (walls, sun, blocks, fan air), with 30 % to spare`,
+      dehumidifierLday: `a 3 min run of a larger one would move humidity more than 80 % of the ${restBand} % band`,
+      acBTU: `About ${Math.round(acW)} W of heat at an outdoor ${physics.outdoorHigh} °C with the room at ${round(tMid, 1)} °C (walls, sun, blocks, fan air), with 30 % to spare; the search also tries larger ones, since drying a wet room takes part of an aircon's power`,
       exchangeMaxMin: duty > 0.5
         ? `The fan runs about ${Math.round(duty * 100)} % of the time, so a long air exchange (${LIMIT_MAX_MIN} min) is allowed`
         : `The fan runs about ${Math.round(duty * 100)} % of the time, so the room's own limit of ${roomLimit} min stays`,
@@ -142,25 +142,72 @@ const HINTS = {
   t: 'Temperature stays above the band: a bigger aircon or better insulation',
 };
 
-// Tries the candidates (each over the days of both stages) and answers the best five.
+// The two-phase search (2026-10-22, after Room 1: a sensible-heat estimate of 9000 BTU/h for a wet 120 m³ room whose 1 °C
+// band needs about 24 000). Phase 1: the fan and the aircon over a wide range (one size below the estimates, the aircon up to
+// three above), with the humidifier at its estimate and a middle dehumidifier, judged on temperature and CO₂. Phase 2: around
+// the KEEP best of phase 1, the humidifier, the dehumidifier and the time limit. → { phase1, phase2(of) } and the total count.
+const KEEP = 2;
+export function searchPlan(est) {
+  const around = (sizes, v, below, above) => {
+    const i = Math.max(0, sizes.indexOf(v));
+    return sizes.slice(Math.max(0, i - below), i + above + 1);
+  };
+  const allowed = DEHUMIDIFIER_SIZES.filter((s) => s <= est.dehumidifierMaxLday);
+  const middle = spread(allowed, 3)[Math.min(1, allowed.length - 1)] ?? 0;
+  const limits = est.exchangeMaxMin === LIMIT_MAX_MIN ? [LIMIT_MAX_MIN] : [est.exchangeMaxMin, LIMIT_MAX_MIN];
+  // The search runs with the settings that suit a fan that runs most of the time: no aircon drop during an exchange (it
+  // pulls a room below a narrow band) and no forced humidifier (Malaysian outdoor air is wet already); the reply names them.
+  const settings = { acDrop: 0, humidifierDuringExchange: false };
+  const phase1 = [];
+  for (const fanFlow of around(FAN_SIZES, est.fanFlow, 1, 1)) for (const acBTU of around(AC_SIZES, est.acBTU, 1, 3)) {
+    phase1.push({ machines: { fanFlow, humidifierLH: est.humidifierLH, dehumidifierLday: middle, acBTU }, exchangeMaxMin: est.exchangeMaxMin, ...settings });
+  }
+  const phase2 = (core) => {
+    const list = [];
+    for (const humidifierLH of around(HUMIDIFIER_SIZES, est.humidifierLH, 1, 1)) for (const dehumidifierLday of [0, ...spread(allowed, 3)]) {
+      for (const exchangeMaxMin of limits) list.push({ machines: { ...core.machines, humidifierLH, dehumidifierLday }, exchangeMaxMin, ...settings });
+    }
+    return list;
+  };
+  const kept = Math.min(KEEP, phase1.length);
+  return { phase1, phase2, total: phase1.length + kept * phase2(phase1[0]).length };
+}
+
+// Tries the setups (each over the days of both stages) and answers the best five: the two-phase search, or `list` (tests).
 // input: { physics, crops, farmType, stage, target }; ctx: as for simulate. simulate: injectable; list and days: test overrides.
 // → { target, days, estimate, best, reached, notes }.
 export function runSizing(input, ctx, { onProgress, simulate, list, days } = {}) {
   const target = input.target ?? TARGET_DEFAULT;
   const est = estimate(input, ctx);
-  const tries = list ?? candidates(est);
   const runDays = days ?? sizingDays(input, ctx);
+  const plan = list ? null : searchPlan(est);
+  const total = list ? list.length : plan.total;
   const results = [];
-  tries.forEach((c, i) => {
+  const tryOne = (c) => {
     const { machines, exchangeMaxMin } = c;
+    // control: the settings the setup was tried with (the time limit, and from the search the aircon drop and the humidifier)
+    const control = { exchangeMaxMin, ...(c.acDrop === undefined ? {} : { acDrop: c.acDrop }),
+      ...(c.humidifierDuringExchange === undefined ? {} : { humidifierDuringExchange: c.humidifierDuringExchange }) };
     const out = simulate(
       { physics: { ...input.physics, ...machines }, crops: input.crops, farmType: input.farmType, stage: input.stage, days: runDays },
-      { ...ctx, control: { ...ctx.control, exchangeMaxMin } },
+      { ...ctx, control: { ...ctx.control, ...control } },
     );
     const { inBand, energy, water } = out.summary;
-    results.push({ machines, exchangeMaxMin, inBand, kWh: energy.kWh, litres: water.litres, removedLitres: water.removedLitres });
-    onProgress?.((i + 1) / tries.length);
-  });
+    const r = { machines, exchangeMaxMin, control, inBand, kWh: energy.kWh, litres: water.litres, removedLitres: water.removedLitres };
+    results.push(r);
+    onProgress?.(results.length / total);
+    return r;
+  };
+  if (list) {
+    list.forEach(tryOne);
+  } else {
+    // phase 1: judged on temperature and CO₂ only (the humidity machines come next)
+    const core = plan.phase1.map(tryOne);
+    const coreLowest = (r) => Math.min(r.inBand.t, r.inBand.co2);
+    const ok = (r) => coreLowest(r) >= target;
+    core.sort((a, b) => (ok(a) !== ok(b) ? (ok(a) ? -1 : 1) : ok(a) ? a.kWh - b.kWh : coreLowest(b) - coreLowest(a) || a.kWh - b.kWh));
+    for (const c of core.slice(0, KEEP)) plan.phase2(c).forEach(tryOne);
+  }
   const best = rank(results, target).slice(0, 5);
   const reached = best.length > 0 && lowest(best[0]) >= target;
   const notes = reached || best.length === 0 ? [] : ['rh', 'co2', 't'].filter((k) => best[0].inBand[k] < target).map((k) => HINTS[k]);

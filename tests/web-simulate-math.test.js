@@ -286,7 +286,7 @@ test('the estimates with their reasons', () => {
     'Humidifier 0.5 L/h: Moisture the fan takes out',
     'Dehumidifier up to 20 L/day: Water the crops give off',
     'Aircon 9,000 BTU/h: Heat the walls let in',
-    'Air exchange time limit up to 30 min: A longer limit saves energy',
+    'Air exchange time limit 30 min: A longer limit saves energy',
   ]);
   assert.deepEqual(estimateLines(null), []);
   assert.equal(estimateLines({ fanFlow: 100 })[0], 'Fan 100 m³/h');
@@ -328,4 +328,24 @@ test('the summary shows the time limit of the run', () => {
 test('the fields of the sizing and the time limit belong to step 3', () => {
   assert.equal(stepOf('target'), 3);
   assert.equal(stepOf('control.exchangeMaxMin'), 3);
+  assert.equal(stepOf('control.acDrop'), 3);
+});
+
+// ---- the search's settings: aircon drop and humidifier during exchange (2026-10-22) ----
+
+test('Use this also carries the aircon drop and the humidifier setting when they differ from the room', () => {
+  const s = initialState({ room });
+  const cand = { machines: { fanFlow: 150, humidifierLH: 0.5, dehumidifierLday: 10, acBTU: 9000 }, exchangeMaxMin: 60, control: { exchangeMaxMin: 60, acDrop: 0, humidifierDuringExchange: false } };
+  useSetup(s, cand, { exchangeMaxMin: 10, acDrop: 5, humidifierDuringExchange: true });
+  assert.deepEqual(buildBody(s).control, { exchangeMaxMin: 60, acDrop: 0, humidifierDuringExchange: false });
+  const lines = summaryLines(s, room);
+  assert.equal(lines.find((l) => l.label === 'Air exchange').text, 'Air exchange time limit 60 min (the room: 10 min)');
+  assert.equal(lines.find((l) => l.label === 'Settings').text, 'Aircon lower during air exchange 0 °C (the room: 5 °C); humidifier not forced on during air exchange (the room: forced on)');
+  // a room that already has them: only the time limit
+  useSetup(s, cand, { exchangeMaxMin: 10, acDrop: 0, humidifierDuringExchange: false });
+  assert.deepEqual(buildBody(s).control, { exchangeMaxMin: 60 });
+  assert.equal(summaryLines(s, room).some((l) => l.label === 'Settings'), false);
+  // everything as the room: no control at all
+  useSetup(s, cand, { exchangeMaxMin: 60, acDrop: 0, humidifierDuringExchange: false });
+  assert.equal('control' in buildBody(s), false);
 });

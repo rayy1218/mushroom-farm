@@ -49,7 +49,7 @@ test('POST queues a suggestion: 202 with its id, status, progress and the number
   const id = newRoom();
   const res = await call('POST', `/api/rooms/${id}/sizing`, body());
   assert.equal(res.status, 202);
-  assert.deepEqual(res.body, { id: res.body.id, roomId: id, status: 'queued', progress: 0, total: 48, createdAt: res.body.createdAt, finishedAt: null, result: null, error: null });
+  assert.deepEqual(res.body, { id: res.body.id, roomId: id, status: 'queued', progress: 0, total: 36, createdAt: res.body.createdAt, finishedAt: null, result: null, error: null });
   assert.equal(typeof res.body.createdAt, 'number');
   assert.equal(jobs.length, 1);
 });
@@ -115,7 +115,13 @@ test('a simulation run with its own time limit: stored input keeps control, ctx 
   const plain = (await call('POST', `/api/rooms/${id}/simulations`, run)).body;
   assert.equal(plain.input.ctx.control.exchangeMaxMin, 10);
   assert.equal('control' in plain.input, false);
-  for (const control of [{ exchangeMaxMin: 0 }, { exchangeMaxMin: 121 }, { exchangeMaxMin: 10.5 }, { exchangeMaxMin: '60' }, {}]) {
+  assert.equal((await call('POST', `/api/rooms/${id}/simulations`, { ...run, control: {} })).body.field, 'control', 'nothing set');
+  const more = await call('POST', `/api/rooms/${id}/simulations`, { ...run, control: { acDrop: 0, humidifierDuringExchange: false } });
+  assert.deepEqual(more.body.input.control, { acDrop: 0, humidifierDuringExchange: false });
+  assert.deepEqual([more.body.input.ctx.control.acDrop, more.body.input.ctx.control.humidifierDuringExchange], [0, false]);
+  assert.equal((await call('POST', `/api/rooms/${id}/simulations`, { ...run, control: { acDrop: 11 } })).body.field, 'control.acDrop');
+  assert.equal((await call('POST', `/api/rooms/${id}/simulations`, { ...run, control: { humidifierDuringExchange: 1 } })).body.field, 'control.humidifierDuringExchange');
+  for (const control of [{ exchangeMaxMin: 0 }, { exchangeMaxMin: 121 }, { exchangeMaxMin: 10.5 }, { exchangeMaxMin: '60' }]) {
     const bad = await call('POST', `/api/rooms/${id}/simulations`, { ...run, control });
     assert.deepEqual([bad.status, bad.body.field], [400, 'control.exchangeMaxMin'], JSON.stringify(control));
   }

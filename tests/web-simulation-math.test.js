@@ -189,3 +189,9 @@ test('the inputs line names the air exchange time limit of the run', () => {
   // the one used is ctx's
   assert.ok(inputLine({ ...base, control: { exchangeMaxMin: 60 }, ctx: { control: { exchangeMaxMin: 45 } } }).includes('time limit 45 min'));
 });
+
+test('inputLine names the aircon drop and the humidifier setting of a run that set them', () => {
+  const base = { physics: { wallUA: 30, sunW: 100, outdoorLow: 25, outdoorHigh: 33, outdoorDew: 24, fanFlow: 150, acBTU: 9000, humidifierLH: 0.5, dehumidifierLday: 10 }, crops: [{ crop: 'lionsmane', blocks: 950 }], stage: 'fruiting', days: 7 };
+  const line = inputLine({ ...base, control: { acDrop: 0, humidifierDuringExchange: false }, ctx: { control: { exchangeMaxMin: 10, acDrop: 0, humidifierDuringExchange: false } } });
+  assert.ok(line.endsWith(' · aircon lower during air exchange 0 °C, humidifier not forced on during air exchange (set for this run)'), line);
+});

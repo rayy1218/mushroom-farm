@@ -55,7 +55,7 @@ export function openSimulateDialog(room, hooks = {}) {
   let run = null;
   let timer = null;
   let sending = false;
-  let roomLimit = null; // the room's own air exchange time limit, GET /api/rooms/:id/control
+  let roomControl = null; // the room's own time limit, aircon drop and humidifier setting, GET /api/rooms/:id/control
   let sizing = null; // the suggestion job as last read (GET /api/sizing/:id)
   let sizingTimer = null;
   let sizingText = ''; // an error of the suggestion that belongs to no field (409, offline)
@@ -362,7 +362,7 @@ export function openSimulateDialog(room, hooks = {}) {
         const use = button('Use this');
         use.setAttribute('aria-label', `Use setup ${r.index + 1}`);
         use.addEventListener('click', () => {
-          useSetup(state, result.best[r.index], roomLimit);
+          useSetup(state, result.best[r.index], roomControl);
           paintSummary();
           use.textContent = 'Used';
           formError.hidden = true;
@@ -567,7 +567,7 @@ export function openSimulateDialog(room, hooks = {}) {
   ]).then(([runs, crop, control]) => {
     if (!alive()) return;
     cropData = crop;
-    roomLimit = Number.isFinite(control?.exchangeMaxMin) ? control.exchangeMaxMin : null;
+    roomControl = control ? { exchangeMaxMin: Number.isFinite(control.exchangeMaxMin) ? control.exchangeMaxMin : undefined, acDrop: control.acDrop, humidifierDuringExchange: control.humidifierDuringExchange } : null;
     state = initialState({ room, lastRun: Array.isArray(runs) ? runs[0] ?? null : null, cropData });
     step = 1;
     render();

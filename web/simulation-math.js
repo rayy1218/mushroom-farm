@@ -211,11 +211,19 @@ export function inputLine(input, roomMin = null) {
   const used = input.ctx?.control?.exchangeMaxMin ?? input.control?.exchangeMaxMin;
   const limit = finite(input.control?.exchangeMaxMin) && finite(used) && used !== roomMin
     ? [`air exchange time limit ${used} min (${finite(roomMin) ? `the room: ${roomMin} min` : 'set for this run'})`] : [];
+  const own = input.control ?? {}, usedC = input.ctx?.control ?? {};
+  const settings = [];
+  if (own.acDrop !== undefined) settings.push(`aircon lower during air exchange ${usedC.acDrop ?? own.acDrop} °C`);
+  if (own.humidifierDuringExchange !== undefined) {
+    settings.push(`humidifier ${(usedC.humidifierDuringExchange ?? own.humidifierDuringExchange) ? 'forced on' : 'not forced on'} during air exchange`);
+  }
+  if (settings.length) settings[settings.length - 1] += ' (set for this run)';
   return [
     `${crops} blocks, starting at ${stage}, ${plural(input.days, 'day', 'days')}`,
     `walls ${p.wallUA} W/K, sun ${p.sunW} W, outdoor ${p.outdoorLow}–${p.outdoorHigh} °C, dew point ${p.outdoorDew} °C`,
     `fan ${p.fanFlow} m³/h, aircon ${grouped(p.acBTU)} BTU/h, humidifier ${p.humidifierLH} L/h${p.dehumidifierLday > 0 ? `, dehumidifier ${p.dehumidifierLday} L/day` : ''}`,
     ...limit,
+    ...(settings.length ? [settings.join(', ')] : []),
   ].join(' · ');
 }
 

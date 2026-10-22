@@ -45,7 +45,7 @@ test('validation: the walls, weather and sun, crops, farm type, stage and the ta
 test('start queues a job with the total candidates and starts it at once, with the room\'s context', (t) => {
   const { a, sims, jobs } = setup(t);
   const { job } = sims.startSizing(a, sizing());
-  assert.deepEqual(job, { id: 1, roomId: a, status: 'queued', progress: 0, total: 48, createdAt: 7000, finishedAt: null, result: null, error: null });
+  assert.deepEqual(job, { id: 1, roomId: a, status: 'queued', progress: 0, total: 36, createdAt: 7000, finishedAt: null, result: null, error: null });
   assert.equal(sims.getSizing(1).status, 'running');
   assert.equal(jobs.length, 1);
   assert.equal(jobs[0].job.kind, 'sizing');

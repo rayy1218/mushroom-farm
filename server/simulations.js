@@ -4,7 +4,7 @@
 import { Worker } from 'node:worker_threads';
 import { PARAMS, outdoorProblem } from '../device/sim-store.js';
 import { FARM_TYPES, validateCrops } from '../web/crops.js';
-import { candidates, estimate, TARGET_DEFAULT } from './sizing.js';
+import { searchPlan, estimate, TARGET_DEFAULT } from './sizing.js';
 import { readSettings } from './settings.js';
 
 const PHYSICS = ['wallUA', 'outdoorHigh', 'outdoorLow', 'outdoorDew', 'sunW', 'fanFlow', 'acBTU', 'humidifierLH'];
@@ -45,12 +45,29 @@ export function validateSimulation(body) {
   if (!Number.isInteger(days) || days < 1 || days > 90) return { error: 'Days must be a whole number from 1 to 90', field: 'days' };
   const input = { physics: clean, crops: crops.map(({ crop, blocks }) => ({ crop, blocks })), farmType, stage, days };
   if (control !== undefined) {
-    // The air exchange time limit of this run, instead of the room's.
+    // This run's own air exchange time limit, aircon drop and humidifier-during-exchange, instead of the room's (any of them).
     if (control === null || typeof control !== 'object' || Array.isArray(control)) return { error: 'Control must be an object', field: 'control' };
-    if (!Number.isInteger(control.exchangeMaxMin) || control.exchangeMaxMin < 1 || control.exchangeMaxMin > 120) {
-      return { error: 'Air exchange time limit must be a whole number from 1 to 120 min', field: 'control.exchangeMaxMin' };
+    const own = {};
+    if (control.exchangeMaxMin !== undefined) {
+      if (!Number.isInteger(control.exchangeMaxMin) || control.exchangeMaxMin < 1 || control.exchangeMaxMin > 120) {
+        return { error: 'Air exchange time limit must be a whole number from 1 to 120 min', field: 'control.exchangeMaxMin' };
+      }
+      own.exchangeMaxMin = control.exchangeMaxMin;
     }
-    input.control = { exchangeMaxMin: control.exchangeMaxMin };
+    if (control.acDrop !== undefined) {
+      if (!isNumber(control.acDrop) || control.acDrop < 0 || control.acDrop > 10) {
+        return { error: 'Aircon lower during air exchange must be a number from 0 to 10 °C', field: 'control.acDrop' };
+      }
+      own.acDrop = control.acDrop;
+    }
+    if (control.humidifierDuringExchange !== undefined) {
+      if (typeof control.humidifierDuringExchange !== 'boolean') {
+        return { error: 'Humidifier on during air exchange must be true or false', field: 'control.humidifierDuringExchange' };
+      }
+      own.humidifierDuringExchange = control.humidifierDuringExchange;
+    }
+    if (Object.keys(own).length === 0) return { error: 'Control must set exchangeMaxMin, acDrop or humidifierDuringExchange', field: 'control' };
+    input.control = own;
   }
   return { input };
 }
@@ -222,7 +239,7 @@ export function createSimulations({ db, now = Date.now, spawn = spawnWorker }) {
       }
       const ctx = contextOf(roomId);
       const id = ++sizingId;
-      const total = candidates(estimate(checked.input, ctx)).length;
+      const total = searchPlan(estimate(checked.input, ctx)).total;
       const job = { id, roomId, status: 'queued', progress: 0, total, createdAt: now(), finishedAt: null, result: null, error: null };
       sizings.set(id, job);
       const queued = { ...job };

@@ -157,7 +157,7 @@ export function stepOf(field) {
   if (typeof field !== 'string') return null;
   if (field === 'physics' || field.startsWith('physics.')) return 1;
   if (field === 'crops' || field === 'farmType' || field === 'stage') return 2;
-  return field === 'days' || field === 'target' || field === 'control.exchangeMaxMin' ? 3 : null;
+  return field === 'days' || field === 'target' || field === 'control' || String(field).startsWith('control.') ? 3 : null;
 }
 
 // The body of POST /api/rooms/:id/simulations from a checked state.
@@ -169,7 +169,8 @@ export function buildBody(state, cropData = null) {
     stage: state.stage,
     days: daysOf(state, cropData),
   };
-  if (isNumber(state.exchangeMaxMin)) body.control = { exchangeMaxMin: state.exchangeMaxMin };
+  const control = { ...(isNumber(state.exchangeMaxMin) ? { exchangeMaxMin: state.exchangeMaxMin } : {}), ...(state.runSettings ?? {}) };
+  if (Object.keys(control).length > 0) body.control = control;
   return body;
 }
 
@@ -201,6 +202,7 @@ export function summaryLines(state, room, cropData = null) {
     { label: 'Walls and weather', text: `Walls ${v.wallUA} W/K, sun on the roof ${v.sunW} W, outdoor ${v.outdoorLow}–${v.outdoorHigh} °C, dew point ${v.outdoorDew} °C` },
     { label: 'Machines', text: `Fan ${v.fanFlow} m³/h, aircon ${grouped(Number(v.acBTU))} BTU/h, humidifier ${v.humidifierLH} L/h, ${Number(v.dehumidifierLday) > 0 ? `dehumidifier ${v.dehumidifierLday} L/day` : 'no dehumidifier'}` },
     ...(isNumber(state.exchangeMaxMin) ? [{ label: 'Air exchange', text: limitLine(state.exchangeMaxMin, state.roomExchangeMaxMin) }] : []),
+    ...(state.runSettings && Object.keys(state.runSettings).length > 0 ? [{ label: 'Settings', text: settingsLine(state.runSettings, state.roomSettings) }] : []),
     { label: 'Crops', text: `${crops}; ${farmWords[state.farmType]}, starting at ${STAGES[state.stage].toLowerCase().replace(' between flushes', '')}` },
     { label: 'Run', text: days },
   ];
@@ -282,7 +284,7 @@ export function estimateLines(est) {
     ['Humidifier', `${est.humidifierLH} L/h`, why.humidifierLH, est.humidifierLH],
     ['Dehumidifier', `up to ${est.dehumidifierMaxLday} L/day`, why.dehumidifierLday, est.dehumidifierMaxLday],
     ['Aircon', `${isNumber(est.acBTU) ? grouped(est.acBTU) : est.acBTU} BTU/h`, why.acBTU, est.acBTU],
-    ['Air exchange time limit', `up to ${est.exchangeMaxMin} min`, why.exchangeMaxMin, est.exchangeMaxMin],
+    ['Air exchange time limit', `${est.exchangeMaxMin} min`, why.exchangeMaxMin, est.exchangeMaxMin],
   ];
   return rows.filter((r) => r[3] !== undefined && r[3] !== null).map(([name, value, reason]) => `${name} ${value}${reason ? `: ${reason}` : ''}`);
 }
@@ -292,8 +294,31 @@ export function limitLine(min, roomMin) {
   return `Air exchange time limit ${min} min (${isNumber(roomMin) ? `the room: ${roomMin} min` : 'set for this run'})`;
 }
 
-// Use this: the setup's machines into step 1's texts; the run's time limit when it is not the room's own.
-export function useSetup(state, candidate, roomMin) {
+const forcedWords = (on) => (on ? 'forced on' : 'not forced on');
+// "Aircon lower during air exchange 0 °C (the room: 5 °C); humidifier not forced on during air exchange (the room: forced on)".
+export function settingsLine(run, room = {}) {
+  const parts = [];
+  if (run.acDrop !== undefined) parts.push(`Aircon lower during air exchange ${run.acDrop} °C${isNumber(room.acDrop) ? ` (the room: ${room.acDrop} °C)` : ''}`);
+  if (run.humidifierDuringExchange !== undefined) {
+    const text = `humidifier ${forcedWords(run.humidifierDuringExchange)} during air exchange${typeof room.humidifierDuringExchange === 'boolean' ? ` (the room: ${forcedWords(room.humidifierDuringExchange)})` : ''}`;
+    parts.push(parts.length ? text : text.charAt(0).toUpperCase() + text.slice(1));
+  }
+  return parts.join('; ');
+}
+
+// Use this: the setup's machines into step 1's texts; the run's time limit, aircon drop and humidifier setting when they are
+// not the room's own. room: the room's control settings { exchangeMaxMin, acDrop, humidifierDuringExchange } (or just its
+// time limit as a number, or null when unknown).
+export function useSetup(state, candidate, roomControl) {
+  const roomC = typeof roomControl === 'number' ? { exchangeMaxMin: roomControl } : (roomControl ?? {});
+  const roomMin = roomC.exchangeMaxMin;
+  const settings = {};
+  for (const key of ['acDrop', 'humidifierDuringExchange']) {
+    const v = candidate.control?.[key];
+    if (v !== undefined && v !== roomC[key]) settings[key] = v;
+  }
+  state.runSettings = settings;
+  state.roomSettings = { acDrop: roomC.acDrop, humidifierDuringExchange: roomC.humidifierDuringExchange };
   const m = candidate.machines;
   state.physics.fanFlow = String(m.fanFlow);
   state.physics.humidifierLH = String(m.humidifierLH);
