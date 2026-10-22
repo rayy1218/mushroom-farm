@@ -209,6 +209,7 @@ export function inputLine(input, roomMin = null) {
   const crops = (input.crops ?? []).map((c) => `${CROPS[c.crop]?.name ?? c.crop} ${c.blocks}`).join(' and ');
   const stage = STAGES[input.stage]?.toLowerCase() ?? input.stage;
   const used = input.ctx?.control?.exchangeMaxMin ?? input.control?.exchangeMaxMin;
+  if (roomMin === null && finite(input.ctx?.roomControl?.exchangeMaxMin)) roomMin = input.ctx.roomControl.exchangeMaxMin; // stored with the run
   const limit = finite(input.control?.exchangeMaxMin) && finite(used) && used !== roomMin
     ? [`air exchange time limit ${used} min (${finite(roomMin) ? `the room: ${roomMin} min` : 'set for this run'})`] : [];
   const own = input.control ?? {}, usedC = input.ctx?.control ?? {};
@@ -217,7 +218,9 @@ export function inputLine(input, roomMin = null) {
   if (own.humidifierDuringExchange !== undefined) {
     settings.push(`humidifier ${(usedC.humidifierDuringExchange ?? own.humidifierDuringExchange) ? 'forced on' : 'not forced on'} during air exchange`);
   }
-  if (settings.length) settings[settings.length - 1] += ' (set for this run)';
+  const roomC = input.ctx?.roomControl ?? {};
+  if (own.acDrop !== undefined && finite(roomC.acDrop)) settings[0] += ` (the room: ${roomC.acDrop} °C)`;
+  else if (settings.length) settings[settings.length - 1] += ' (set for this run)';
   return [
     `${crops} blocks, starting at ${stage}, ${plural(input.days, 'day', 'days')}`,
     `walls ${p.wallUA} W/K, sun ${p.sunW} W, outdoor ${p.outdoorLow}–${p.outdoorHigh} °C, dew point ${p.outdoorDew} °C`,

@@ -110,6 +110,7 @@ test('a simulation run with its own time limit: stored input keeps control, ctx 
   assert.equal(res.status, 202);
   assert.deepEqual(res.body.input.control, { exchangeMaxMin: 60 });
   assert.equal(res.body.input.ctx.control.exchangeMaxMin, 60);
+  assert.deepEqual(res.body.input.ctx.roomControl, { exchangeMaxMin: 10 }, 'the room\'s own value, for its page');
   assert.equal(res.body.input.ctx.control.acFan, 'auto');
   assert.equal(jobs[0].job.ctx.control.exchangeMaxMin, 60);
   const plain = (await call('POST', `/api/rooms/${id}/simulations`, run)).body;

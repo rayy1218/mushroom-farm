@@ -224,7 +224,11 @@ export function createSimulations({ db, now = Date.now, spawn = spawnWorker }) {
       }
       const ctx = contextOf(roomId);
       // The run's own air exchange time limit instead of the room's (input.control stays in the stored input to compare).
-      if (checked.input.control) ctx.control = { ...ctx.control, ...checked.input.control };
+      if (checked.input.control) {
+        // the room's own values of what this run set, so its page can say "(the room: 10 min)"
+        ctx.roomControl = Object.fromEntries(Object.keys(checked.input.control).map((k) => [k, ctx.control[k]]));
+        ctx.control = { ...ctx.control, ...checked.input.control };
+      }
       const run = db.createRun(roomId, { ...checked.input, ctx }, now());
       queue.push({ kind: 'run', id: run.id, roomId, job: { input: checked.input, ctx } });
       pump();

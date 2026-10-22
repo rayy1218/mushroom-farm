@@ -17,6 +17,12 @@ const FAN_SHARE = 0.05; // the aircon draws at least this share of its rated inp
 // COP 3, about EER 10 BTU/Wh, a typical split unit.
 const AC_COP = 3;
 const DEHUMIDIFIER_W_PER_LDAY = 18; // a 20 L/day unit draws about 360 W
+// The fans and the humidifier are priced by the sizes asked too (the room's ratings are for the machines it has now; a
+// suggestion that tries a bigger fan must not get it at the small one's power). Both match the room defaults at the default
+// sizes: 600 m³/h → 60 W a fan, 2 L/h → 80 W.
+const FAN_W_PER_M3H = 0.1;
+const FAN_W_MIN = 20;
+const HUMIDIFIER_W_PER_LH = 40;
 const MACHINES = ['intake', 'exhaust', 'circulation', 'humidifier', 'dehumidifier'];
 const RATING = { intake: 'intakeW', exhaust: 'exhaustW', circulation: 'circulationW', humidifier: 'humidifierW', dehumidifier: 'dehumidifierW' };
 
@@ -35,7 +41,8 @@ export function simulate(input, ctx, { onProgress } = {}) {
   const acInputKW = physics.acBTU / BTU_PER_KW / AC_COP;
   const dehumidifierLday = physics.dehumidifierLday ?? 0;
   const dehumidifierW = dehumidifierLday * DEHUMIDIFIER_W_PER_LDAY; // its own rating, not the room's (like the aircon's size)
-  const watts = { ...ratings, dehumidifierW };
+  const fanW = Math.max(FAN_W_MIN, FAN_W_PER_M3H * physics.fanFlow);
+  const watts = { ...ratings, intakeW: fanW, exhaustW: fanW, humidifierW: HUMIDIFIER_W_PER_LH * physics.humidifierLH, dehumidifierW };
   const stored = ctx.program ?? {};
   const totalS = days * DAY_S;
   const steps = totalS / STEP_S;

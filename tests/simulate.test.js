@@ -182,3 +182,17 @@ test('the dehumidifier keeps its 3 min compressor protection in a run', () => {
   for (let i = 1; i < spans.length; i++) assert.ok(spans[i].from - spans[i - 1].to >= 180, `off ${spans[i].from - spans[i - 1].to} s`);
   for (const sp of spans.slice(0, -1)) assert.ok(sp.to - sp.from >= 180, `on ${sp.to - sp.from} s`);
 });
+
+test('the fans and the humidifier are priced by their sizes, not the room ratings (a bigger fan costs more)', () => {
+  // W while running = kWh ÷ hours on, from the run's own spans
+  const wOf = (over, key) => {
+    const r = simulate(input({ days: 1, physics: { ...physics, ...over } }), ctx());
+    const hours = r.machines[key].reduce((a, x) => a + x.to - x.from, 0) / 3600;
+    // kWh are kept to 0.01: the watts are known to ± 5 Wh over the hours on
+    return hours > 0 ? { w: (r.summary.energy.byMachine[key] * 1000) / hours, tol: 5 / hours + 0.5 } : null;
+  };
+  const near = (x, w, why) => assert.ok(x === null || Math.abs(x.w - w) <= x.tol, `${why}: ${x && x.w.toFixed(1)} W`);
+  near(wOf({ fanFlow: 150 }, 'intake'), 20, 'at least 20 W');
+  near(wOf({ fanFlow: 600 }, 'intake'), 60, '0.1 W per m³/h');
+  near(wOf({ humidifierLH: 1 }, 'humidifier'), 40, '40 W per L/h');
+});

@@ -288,6 +288,8 @@ export function openSimulateDialog(room, hooks = {}) {
     const row = el('div', 'sim-target');
     const go = button('Suggest machines for these crops');
     row.append(field('target', 'Target (%): time with temperature, humidity and CO₂ all in band', input), go);
+    // Enter in the target asks for a suggestion, not the form's Run simulation
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); go.click(); } });
     const out = el('div', 'sim-suggest-out');
     out.setAttribute('aria-live', 'polite');
     box.append(row, out);
@@ -476,6 +478,8 @@ export function openSimulateDialog(room, hooks = {}) {
   });
 
   async function start() {
+    // A run waits behind a suggestion on the farm's one queue: stop the suggestion first (its table goes with the step).
+    if (sizingActive()) await cancelSizing();
     sending = true;
     const submit = actions.querySelector('.primary');
     submit.disabled = true;
