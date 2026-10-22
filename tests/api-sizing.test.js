@@ -49,7 +49,7 @@ test('POST queues a suggestion: 202 with its id, status, progress and the number
   const id = newRoom();
   const res = await call('POST', `/api/rooms/${id}/sizing`, body());
   assert.equal(res.status, 202);
-  assert.deepEqual(res.body, { id: res.body.id, roomId: id, status: 'queued', progress: 0, total: 36, createdAt: res.body.createdAt, finishedAt: null, result: null, error: null });
+  assert.deepEqual(res.body, { id: res.body.id, roomId: id, status: 'queued', progress: 0, tried: 0, total: 36, createdAt: res.body.createdAt, finishedAt: null, result: null, error: null });
   assert.equal(typeof res.body.createdAt, 'number');
   assert.equal(jobs.length, 1);
 });

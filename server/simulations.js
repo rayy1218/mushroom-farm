@@ -150,13 +150,14 @@ export function createSimulations({ db, now = Date.now, spawn = spawnWorker }) {
         const job = sizings.get(id);
         if (!job) return false;
         job.progress = share;
+        job.tried = Math.round(share * job.total);
         return true;
       },
       end(id, outcome) {
         const job = sizings.get(id);
         if (!job) return;
         Object.assign(job, { status: outcome.status, error: outcome.error ?? null, result: outcome.result ?? null, finishedAt: now() });
-        if (outcome.status === 'done') job.progress = 1;
+        if (outcome.status === 'done') Object.assign(job, { progress: 1, tried: job.total });
         prune(job.roomId);
       },
     },
@@ -240,7 +241,7 @@ export function createSimulations({ db, now = Date.now, spawn = spawnWorker }) {
       const ctx = contextOf(roomId);
       const id = ++sizingId;
       const total = searchPlan(estimate(checked.input, ctx)).total;
-      const job = { id, roomId, status: 'queued', progress: 0, total, createdAt: now(), finishedAt: null, result: null, error: null };
+      const job = { id, roomId, status: 'queued', progress: 0, tried: 0, total, createdAt: now(), finishedAt: null, result: null, error: null };
       sizings.set(id, job);
       const queued = { ...job };
       queue.push({ kind: 'sizing', id, roomId, job: { kind: 'sizing', input: checked.input, ctx } });
