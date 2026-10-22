@@ -2,12 +2,19 @@
 // the run, runs one at a time in a worker thread (the others stay 'queued') and stores progress, summary and result.
 
 import { Worker } from 'node:worker_threads';
-import { PARAMS, outdoorProblem } from '../device/sim-store.js';
+import { PARAMS, outdoorProblem, filterProblem } from '../device/sim-store.js';
 import { FARM_TYPES, validateCrops } from '../web/crops.js';
 import { searchPlan, estimate, TARGET_DEFAULT } from './sizing.js';
 import { readSettings } from './settings.js';
 
 const PHYSICS = ['wallUA', 'outdoorHigh', 'outdoorLow', 'outdoorDew', 'sunW', 'fanFlow', 'acBTU', 'humidifierLH'];
+// The intake filter of a run (spec 2026-10-22-filter-design.md 8): the four settings of the device app's PARAMS, then the
+// run's own three. None of the seven given: the run has no filter.
+const FILTER_PHYSICS = ['fanMaxPa', 'filterCleanPa', 'filterFinalPa', 'filterLifeDays'];
+const FILTER_RUN = [
+  { field: 'filterChangeDays', label: 'Filter change every' },
+  { field: 'filterUsedDays', label: 'Filter in use' },
+];
 const RATING_FIELDS = ['intakeW', 'exhaustW', 'circulationW', 'humidifierW', 'humidifierLH', 'acInputW', 'dehumidifierW', 'dehumidifierLday'];
 const CONTROL_FIELDS = ['exchangeMaxMin', 'acDrop', 'exchangeEveryMin', 'humidifierDuringExchange', 'acFan'];
 const MAX_UNFINISHED = 5; // queued or running runs of one room
@@ -37,6 +44,8 @@ export function validateSimulation(body) {
   }
   const clash = outdoorProblem(clean);
   if (clash) return { error: clash.message, field: `physics.${clash.field}` };
+  const bad = checkFilter(physics, clean);
+  if (bad) return bad;
   const badCrops = validateCrops(crops);
   if (badCrops) return badCrops;
   if (!(typeof farmType === 'string' && Object.hasOwn(FARM_TYPES, farmType))) return { error: 'Farm type must be ready or full', field: 'farmType' };
@@ -70,6 +79,27 @@ export function validateSimulation(body) {
     input.control = own;
   }
   return { input };
+}
+
+// The filter fields of a run's physics into `clean`. → { error, field } or null.
+function checkFilter(physics, clean) {
+  if (![...FILTER_PHYSICS, ...FILTER_RUN.map((f) => f.field), 'filterSensor'].some((f) => physics[f] !== undefined)) return null;
+  for (const field of FILTER_PHYSICS) {
+    const { min, max, label, unit } = PARAMS[field];
+    const v = physics[field];
+    if (!Number.isInteger(v) || v < min || v > max) return { error: `${label} must be a whole number from ${min} to ${max} ${unit}`, field: `physics.${field}` };
+    clean[field] = v;
+  }
+  for (const { field, label } of FILTER_RUN) {
+    const v = physics[field] ?? 0;
+    if (!Number.isInteger(v) || v < 0 || v > 365) return { error: `${label} must be a whole number from 0 to 365 days`, field: `physics.${field}` };
+    clean[field] = v;
+  }
+  const sensor = physics.filterSensor ?? false;
+  if (typeof sensor !== 'boolean') return { error: 'Filter pressure sensor must be true or false', field: 'physics.filterSensor' };
+  clean.filterSensor = sensor;
+  const clash = filterProblem(clean);
+  return clash ? { error: clash.message, field: `physics.${clash.field}` } : null;
 }
 
 // Checks a sizing request { physics (walls, weather, sun), crops, farmType, stage, target }. → { input } or { error, field }.
