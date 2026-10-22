@@ -30,8 +30,9 @@ const nextUp = (sizes, v) => sizes.find((s) => s >= v) ?? sizes.at(-1);
 const nearest = (sizes, v) => sizes.reduce((a, b) => (Math.abs(b - v) < Math.abs(a - v) ? b : a));
 
 // The stages searched: the start stage and the one after it. → [stage, …] (one when nothing follows).
+// The flushes are the room's, as simulate() runs them: one flush that starts at rest has nothing after it.
 function stagesOf(input, ctx) {
-  const flushes = Math.max(2, ctx.program?.flushes ?? PROGRAM_DEFAULTS.flushes);
+  const flushes = Math.max(1, ctx.program?.flushes ?? PROGRAM_DEFAULTS.flushes);
   const next = nextStage({ stage: input.stage, flush: 1, flushes, done: false });
   return next ? [input.stage, next.stage] : [input.stage];
 }

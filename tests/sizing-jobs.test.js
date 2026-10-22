@@ -172,23 +172,26 @@ test('a spawn that throws fails the suggestion and the next starts', (t) => {
   assert.ok(sims.startSizing(a, sizing()).job);
 });
 
-test('the real worker thread runs a search and reports progress and the reply', async (t) => {
+test('the real worker thread runs a whole search and its reply crosses to the parent', async (t) => {
   const db = openDb(':memory:');
   const a = db.createRoom({ name: 'Room 1', length: 6, width: 4, height: 2.5 }).id;
   const progress = [];
-  const done = await new Promise((resolve, reject) => {
-    // A short search: one day of a small room (the worker's own candidate list is the full one, so only the first shares).
-    const sims = createSimulations({
-      db,
-      spawn: (job, h) => {
-        const handle = spawnWorker({ ...job, ctx: { ...job.ctx, program: { flushes: 4, days: { fruiting: 1, rest: 1 }, rampH: 4 } } }, { ...h, onProgress: (s) => { progress.push(s); h.onProgress(s); if (s >= 0.04) { handle.stop(); resolve({ progress: sims.getSizing(1).progress }); } }, onDone: reject, onError: reject });
-        return handle;
-      },
-    });
-    sims.startSizing(a, sizing({ physics: { ...physics, wallUA: 5 } }));
-    t.after(() => sims.close());
+  // A short search: one day of fruiting and one of rest (the worker runs the whole two-phase plan to its end).
+  const sims = createSimulations({
+    db,
+    spawn: (job, h) => spawnWorker({ ...job, ctx: { ...job.ctx, program: { flushes: 4, days: { fruiting: 1, rest: 1 }, rampH: 4 } } }, { ...h, onProgress: (s) => { progress.push(s); h.onProgress(s); } }),
   });
-  assert.ok(progress.length >= 1);
-  assert.ok(done.progress > 0);
-  db.close();
+  t.after(() => { sims.close(); db.close(); });
+  const { job } = sims.startSizing(a, sizing({ physics: { ...physics, wallUA: 5 } }));
+  for (let i = 0; i < 600 && sims.getSizing(job.id).status !== 'done' && sims.getSizing(job.id).status !== 'failed'; i++) await new Promise((r) => setTimeout(r, 50));
+  const end = sims.getSizing(job.id);
+  assert.equal(end.status, 'done', end.error ?? '');
+  assert.equal(end.tried, end.total);
+  assert.equal(progress.at(-1), 1);
+  const r = end.result;
+  assert.equal(r.days, 2);
+  assert.ok(r.best.length >= 1 && r.best.length <= 5);
+  assert.ok(r.best[0].machines.fanFlow > 0 && r.best[0].control.acDrop === 0);
+  assert.equal(typeof r.estimate.why.fanFlow, 'string');
+  assert.ok(Array.isArray(r.notes));
 });

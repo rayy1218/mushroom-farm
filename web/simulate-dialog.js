@@ -424,6 +424,8 @@ export function openSimulateDialog(room, hooks = {}) {
       try {
         const latest = await request('GET', `/api/sizing/${job.id}`);
         if (!alive() || sizing !== job) return;
+        // ids start again after a restart of the farm app: another room's job with the same id is not this one
+        if (latest.roomId !== room.id) { sizing = null; sizingText = 'This suggestion is gone'; paintSizing(); return; }
         sizing = latest;
       } catch (err) {
         if (!alive() || sizing !== job) return;
