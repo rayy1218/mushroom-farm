@@ -10,6 +10,13 @@ const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
 // 3.6 at 27 °C outdoors, 3.1 at 35 °C, never outside 2 to 5.
 export const copAt = (outdoorT) => clamp(3.6 - 0.06 * (outdoorT - 27), 2, 5);
 
+// The intake fan's power against its filter (spec 2026-10-22-filter-design.md 6): its rating with a clean filter, 1.15
+// times it at the fan's maximum pressure, never below the rating; 1 when the numbers do not make a fan curve.
+export function fanWattFactor(pa, cleanPa, maxPa) {
+  if (![pa, cleanPa, maxPa].every(Number.isFinite) || maxPa <= cleanPa) return 1;
+  return Math.max(1, 1 + (0.15 * (pa - cleanPa)) / (maxPa - cleanPa));
+}
+
 // acting: what the model reported (kW); inputs: the machines (ac is null when off or faulty); params: the room's
 // settings with the outdoor air now. The humidifier's draw follows its setting while it runs; the dehumidifier's is its rated power.
 export function electricW({ acting, inputs, params }) {
