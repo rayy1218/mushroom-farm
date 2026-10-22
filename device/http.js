@@ -1,4 +1,5 @@
-// The device's control page and JSON API: /api/sensors, /api/sensors/:address, /api/log, /api/sims, /api/sim-speed.
+// The device's control page and JSON API: /api/sensors, /api/sensors/:address, /api/log, /api/sims (with /reset and
+// /change-filter), /api/sim-speed.
 
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
@@ -89,12 +90,12 @@ export function createDeviceHttp(sensors, log, { webDir = WEB_DIR, sharedDir = S
       if (req.method === 'PUT') return send(res, 200, { speed: sims.setSpeed((await readJson(req)).speed) });
       throw notFound();
     }
-    const match = /^\/api\/sims\/([0-9]{1,9})(\/reset)?$/.exec(path);
+    const match = /^\/api\/sims\/([0-9]{1,9})(\/reset|\/change-filter)?$/.exec(path);
     if (!match) throw notFound();
     const id = Number(match[1]);
     if (match[2]) {
-      if (req.method === 'POST') return send(res, 200, sims.reset(id));
-      throw notFound();
+      if (req.method !== 'POST') throw notFound();
+      return send(res, 200, match[2] === '/reset' ? sims.reset(id) : sims.changeFilter(id));
     }
     if (req.method === 'PUT') return send(res, 200, sims.update(id, await readJson(req)));
     if (req.method === 'DELETE') {

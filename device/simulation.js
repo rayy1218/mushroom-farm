@@ -64,6 +64,7 @@ export function createSimulation({ sensors, sims, model = defaultModel, tickMs =
       if (device(room.trh, 'trh')) sensors.simWrite(room.trh, { t: T, rh: model.rhOf(T, W) });
       if (device(room.co2, 'co2')) sensors.simWrite(room.co2, { co2: CO2 });
       if (device(room.ac, 'ac')) sensors.simWrite(room.ac, { roomT: T });
+      if (device(room.filterProbe, 'dp')) sensors.simWrite(room.filterProbe, { pa: acting.filterPa ?? 0 });
     }
     if (now() - lastSaved >= PERSIST_MS) flush();
   }

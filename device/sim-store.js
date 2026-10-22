@@ -7,11 +7,11 @@ import * as defaultModel from './sim-model.js';
 import { outdoorAt } from './sim-model.js';
 
 const SPEEDS = [1, 10, 60];
-const LINKS = ['trh', 'co2', 'relay', 'ac', 'outdoorProbe', 'meter'];
+const LINKS = ['trh', 'co2', 'relay', 'ac', 'outdoorProbe', 'meter', 'filterProbe'];
 // The kind of device each link takes: the outdoor probe is a T/RH sensor of its own.
-const LINK_KIND = { trh: 'trh', co2: 'co2', relay: 'relay', ac: 'ac', outdoorProbe: 'trh', meter: 'meter' };
-const KIND_NAMES = { trh: 'T/RH sensor', co2: 'CO₂ sensor', relay: 'relay module', ac: 'aircon gateway', meter: 'energy meter' };
-const LINK_NAMES = { ...KIND_NAMES, outdoorProbe: 'outdoor T/RH sensor' };
+const LINK_KIND = { trh: 'trh', co2: 'co2', relay: 'relay', ac: 'ac', outdoorProbe: 'trh', meter: 'meter', filterProbe: 'dp' };
+const KIND_NAMES = { trh: 'T/RH sensor', co2: 'CO₂ sensor', relay: 'relay module', ac: 'aircon gateway', meter: 'energy meter', dp: 'filter pressure sensor' };
+const LINK_NAMES = { ...KIND_NAMES, outdoorProbe: 'outdoor T/RH sensor', filterProbe: 'filter pressure sensor' };
 const withArticle = (name) => `${/^[aeiou]/i.test(name) ? 'an' : 'a'} ${name}`;
 const KWH_MAX = 1e9;
 export const PARAMS = {
@@ -30,11 +30,18 @@ export const PARAMS = {
   humidifierLH: { min: 0, max: 100, whole: false, label: 'Humidifier output', unit: 'L/h', value: 2 },
   dehumidifierLday: { min: 0, max: 200, whole: false, label: 'Dehumidifier capacity', unit: 'L/day', value: 0 },
   dehumidifierW: { min: 0, max: 5000, whole: false, label: 'Dehumidifier power', unit: 'W', value: 380 },
+  // The intake filter (spec 2026-10-22-filter-design.md 7): the fan's maximum pressure, the clean filter's drop and the change
+  // pressure at fanFlow, and the days of fanFlow that take a clean filter to its change pressure (sim-model.js FILTER_DEFAULTS).
+  fanMaxPa: { min: 20, max: 2000, whole: true, label: 'Fan maximum pressure', unit: 'Pa', value: 200 },
+  filterCleanPa: { min: 5, max: 1000, whole: true, label: 'Clean filter pressure drop', unit: 'Pa', value: 40 },
+  filterFinalPa: { min: 5, max: 2000, whole: true, label: 'Filter change pressure', unit: 'Pa', value: 150 },
+  filterLifeDays: { min: 1, max: 365, whole: true, label: 'Filter life', unit: 'days', value: 30 },
 };
 export const BTU_PER_KW = 3412.142;
 const NAME_MAX = 40;
 const DAY_S = 86_400;
 const OUTDOOR = ['outdoorHigh', 'outdoorLow', 'outdoorDew'];
+const FILTER = ['fanMaxPa', 'filterCleanPa', 'filterFinalPa'];
 const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
 
 function checkParam(field, value) {
@@ -52,14 +59,25 @@ export function outdoorProblem({ outdoorHigh, outdoorLow, outdoorDew }) {
   return null;
 }
 
+// The filter settings must fit together: the fan pushes more than a clean filter takes, and the change pressure is above clean.
+export function filterProblem({ fanMaxPa, filterCleanPa, filterFinalPa }) {
+  if (fanMaxPa <= filterCleanPa) return { message: "Fan maximum pressure must be above the clean filter's pressure drop", field: 'fanMaxPa' };
+  if (filterFinalPa <= filterCleanPa) return { message: "Filter change pressure must be above the clean filter's pressure drop", field: 'filterFinalPa' };
+  return null;
+}
+
 function checkName(value) {
   const name = typeof value === 'string' ? value.trim() : '';
   if (!name || name.length > NAME_MAX) throw new SensorError(400, `Name must be 1 to ${NAME_MAX} characters`, 'name');
   return name;
 }
 
-// The air state to keep: T, W, CO2 and, when the model gives them, the mass temperature Tm and the surfaces' Hs.
-const airState = (s) => ({ T: s.T, W: s.W, CO2: s.CO2, ...(isNumber(s.Tm) ? { Tm: s.Tm } : {}), ...(isNumber(s.Hs) ? { Hs: s.Hs } : {}) });
+// The air state to keep: T, W, CO2 and, when the model gives them, the mass temperature Tm, the surfaces' Hs and the
+// filter's loading Lf.
+const airState = (s) => ({
+  T: s.T, W: s.W, CO2: s.CO2,
+  ...(isNumber(s.Tm) ? { Tm: s.Tm } : {}), ...(isNumber(s.Hs) ? { Hs: s.Hs } : {}), ...(isNumber(s.Lf) ? { Lf: s.Lf } : {}),
+});
 const paramsOf = (room) => Object.fromEntries(Object.keys(PARAMS).map((k) => [k, room[k]]));
 const clone = (room) => ({ ...room, state: { ...room.state } });
 
@@ -133,7 +151,7 @@ export function createSims({ sensors, statePath, model = defaultModel, now = Dat
   }
 
   function blank(id, name) {
-    const room = { id, name, enabled: false, trh: null, co2: null, relay: null, ac: null, outdoorProbe: null, meter: null, meterKWh: 0, ...Object.fromEntries(Object.entries(PARAMS).map(([k, p]) => [k, p.value])) };
+    const room = { id, name, enabled: false, trh: null, co2: null, relay: null, ac: null, outdoorProbe: null, meter: null, filterProbe: null, meterKWh: 0, ...Object.fromEntries(Object.entries(PARAMS).map(([k, p]) => [k, p.value])) };
     room.clock = clockNow();
     room.state = startState(room);
     room.acting = null;
@@ -169,18 +187,29 @@ export function createSims({ sensors, statePath, model = defaultModel, now = Dat
     if (Object.keys(next).length === 0) throw new SensorError(400, 'Nothing to change');
     const outdoor = outdoorProblem({ ...room, ...next });
     if (outdoor) throw new SensorError(400, outdoor.message, outdoor.field);
+    const filter = filterProblem({ ...room, ...next });
+    if (filter) throw new SensorError(400, filter.message, filter.field);
     // One device cannot sit on two links of the same room either.
     const linked = LINKS.map((k) => next[k] ?? room[k]).filter((v) => v !== null);
     if (new Set(linked).size !== linked.length) throw new SensorError(409, 'A device can be linked once', LINKS.find((k) => next[k] !== undefined && next[k] !== null));
     return commit(room, () => Object.assign(room, next));
   }
 
+  // The air back to its start; the filter keeps its loading (a reset does not change a real filter).
   function reset(id) {
     const room = find(id);
     return commit(room, () => {
       room.clock = clockNow();
-      room.state = startState(room);
+      room.state = { ...startState(room), ...(isNumber(room.state.Lf) ? { Lf: room.state.Lf } : {}) };
       room.acting = null;
+    });
+  }
+
+  // A clean filter in the room (the device page's Change filter); the air stays as it is.
+  function changeFilter(id) {
+    const room = find(id);
+    return commit(room, () => {
+      room.state = { ...room.state, Lf: 0 };
     });
   }
 
@@ -264,6 +293,8 @@ export function createSims({ sensors, statePath, model = defaultModel, now = Dat
     for (const field of Object.keys(PARAMS)) if ((saved[field] ?? old[field]) !== undefined) room[field] = checkParam(field, saved[field] ?? old[field]);
     // Outdoor values that do not fit together go back to the defaults (a file from before the day cycle has none).
     if (outdoorProblem(room)) for (const field of OUTDOOR) room[field] = PARAMS[field].value;
+    // Filter settings that do not fit together go back to the defaults (a file from before the filter has the defaults).
+    if (filterProblem(room)) for (const field of FILTER) room[field] = PARAMS[field].value;
     if (isNumber(saved.clock) && saved.clock >= 0 && saved.clock < DAY_S) room.clock = saved.clock;
     // The meter total is kept across a restart and a reset, as a real meter does.
     if (isNumber(saved.meterKWh) && saved.meterKWh >= 0 && saved.meterKWh <= KWH_MAX) room.meterKWh = saved.meterKWh;
@@ -305,7 +336,7 @@ export function createSims({ sensors, statePath, model = defaultModel, now = Dat
   return {
     list: () => sorted().map(view),
     get: (id) => (rooms.has(id) ? view(rooms.get(id)) : undefined),
-    add, update, reset, remove, setSpeed, setState, persist,
+    add, update, reset, changeFilter, remove, setSpeed, setState, persist,
     getSpeed: () => speed,
   };
 }
