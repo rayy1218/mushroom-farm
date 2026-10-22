@@ -11,8 +11,8 @@ export class SensorError extends Error {
   }
 }
 
-const KINDS = ['trh', 'co2', 'relay', 'ac', 'meter'];
-const KIND_NAMES = { trh: 'T/RH sensor', co2: 'CO₂ sensor', relay: 'relay module', ac: 'aircon gateway', meter: 'energy meter' };
+const KINDS = ['trh', 'co2', 'relay', 'ac', 'meter', 'dp'];
+const KIND_NAMES = { trh: 'T/RH sensor', co2: 'CO₂ sensor', relay: 'relay module', ac: 'aircon gateway', meter: 'energy meter', dp: 'filter pressure sensor' };
 const LIMITS = {
   t: { min: -40, max: 80, whole: false, label: 'Temperature', unit: '°C' },
   rh: { min: 0, max: 100, whole: false, label: 'Humidity', unit: '%' },
@@ -21,12 +21,13 @@ const LIMITS = {
   error: { min: 0, max: 255, whole: true, label: 'Error code', unit: '' },
   power: { min: 0, max: 100000, whole: false, label: 'Power', unit: 'W' },
   energy: { min: 0, max: 1e9, whole: false, label: 'Energy', unit: 'kWh', decimals: 3 },
+  pa: { min: -50, max: 2000, whole: false, label: 'Pressure', unit: 'Pa' },
 };
 // What a patch (and the state file) may carry for each kind.
-const FIELDS_OF = { trh: ['t', 'rh'], co2: ['co2'], relay: ['stuck', 'dead'], ac: ['roomT', 'error', 'refuse'], meter: ['power', 'energy'] };
-const PATCHABLE = ['t', 'rh', 'co2', 'stuck', 'dead', 'roomT', 'error', 'refuse', 'coils', 'power', 'energy', 'mode', 'setpoint', 'fan'];
+const FIELDS_OF = { trh: ['t', 'rh'], co2: ['co2'], relay: ['stuck', 'dead'], ac: ['roomT', 'error', 'refuse'], meter: ['power', 'energy'], dp: ['pa'] };
+const PATCHABLE = ['t', 'rh', 'co2', 'stuck', 'dead', 'roomT', 'error', 'refuse', 'coils', 'power', 'energy', 'mode', 'setpoint', 'fan', 'pa'];
 // The values a simulation drives, per kind. Relays have none: stuck and dead stay editable.
-const SIMULATED_FIELDS = { trh: ['t', 'rh'], co2: ['co2'], ac: ['roomT'], meter: ['power', 'energy'] };
+const SIMULATED_FIELDS = { trh: ['t', 'rh'], co2: ['co2'], ac: ['roomT'], meter: ['power', 'energy'], dp: ['pa'] };
 const OUTPUTS = 5; // intake, exhaust, circulation, humidifier, dehumidifier
 const OLD_OUTPUTS = 4; // a state file from before the dehumidifier
 const DEFAULT_SPIN_UP_MS = 2000;
@@ -111,7 +112,7 @@ export function createSensors({ statePath, spinUpMs = DEFAULT_SPIN_UP_MS, now = 
 
   function make({ address, kind }) {
     if (!isAddress(address)) throw new SensorError(400, 'Address must be a whole number from 1 to 247', 'address');
-    if (!KINDS.includes(kind)) throw new SensorError(400, 'Kind must be trh, co2, relay, ac or meter', 'kind');
+    if (!KINDS.includes(kind)) throw new SensorError(400, 'Kind must be trh, co2, relay, ac, meter or dp', 'kind');
     if (byAddress.has(address)) throw new SensorError(409, `Address ${address} is already used`, 'address');
     const base = { address, kind };
     if (kind === 'trh') return { ...base, t: 25, rh: 85, co2: null, answering: true };
@@ -120,6 +121,7 @@ export function createSensors({ statePath, spinUpMs = DEFAULT_SPIN_UP_MS, now = 
       return { ...base, coils: Array(OUTPUTS).fill(false), stuck: Array(OUTPUTS).fill(false), dead: Array(OUTPUTS).fill(false), since: Array(OUTPUTS).fill(null), answering: true };
     }
     if (kind === 'meter') return { ...base, power: 0, energy: 0, answering: true };
+    if (kind === 'dp') return { ...base, pa: 40, answering: true }; // a clean filter's drop
     return { ...base, power: false, mode: 0, setpoint: 25, fan: 0, roomT: 25, error: 0, refuse: false, answering: true };
   }
 
