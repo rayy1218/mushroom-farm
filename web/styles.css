@@ -579,5 +579,14 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
   .sim-summary { grid-template-columns: 1fr; }
   .sim-summary dd { margin-bottom: 6px; }
 }
+.sim-suggest { margin: 16px 0 12px; padding-top: 4px; border-top: 1px solid var(--border); }
+.sim-target { display: grid; gap: 8px; justify-items: start; }
+.sim-target .field { width: 100%; }
+.sim-target input { max-width: 120px; }
+.sim-suggest-out { margin-top: 8px; }
+.sim-suggest-out .us-table-wrap { margin-top: 8px; }
+.sim-setups th, .sim-setups td { font-size: var(--fs-sm); }
+.sim-setups thead th { white-space: normal; min-width: 64px; }
+.sim-setups tbody th { min-width: 130px; }
 .sim-card .us-tiles { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); }
 .sim-crops ~ button { margin-bottom: 12px; }

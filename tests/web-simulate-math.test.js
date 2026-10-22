@@ -5,6 +5,7 @@ import { PROGRAM_DEFAULTS, programDays as serverProgramDays } from '../server/pr
 import {
   PHYSICS_FIELDS, DEFAULT_CROPS, DAYS_DEFAULT, initialState, checkStep, firstField, stepOf, buildBody, mixSummary, wholeProgram,
   programDays, programOf, stagesOf, fixStage, roomLine, summaryLines, progressLine, bandLines, removeLabel,
+  TARGET_DEFAULT, checkTarget, sizingBody, sizingProgress, sizingRows, estimateLines, useSetup, limitLine,
 } from '../web/simulate-math.js';
 
 const room = { id: 3, name: 'Room 1', length: 6, width: 4, height: 3, volume: 72, humidifierLH: 1.5 };
@@ -218,4 +219,110 @@ test('the dehumidifier input: 0 to 200 L/day, 0 is none; the room (when fitted) 
   assert.equal(buildBody(s).physics.dehumidifierLday, 20);
   assert.equal(stepOf('physics.dehumidifierLday'), 1);
   assert.equal(summaryLines(s, room)[2].text, 'Fan 600 m³/h, aircon 12,000 BTU/h, humidifier 1.5 L/h, dehumidifier 20 L/day');
+});
+
+// ---- suggest machines (spec 2026-10-22 section 7) ----
+
+const job = {
+  id: 'j1', status: 'done', progress: 1,
+  result: {
+    target: 95, days: 7,
+    estimate: { fanFlow: 150, humidifierLH: 0.5, dehumidifierMaxLday: 20, acBTU: 9000, exchangeMaxMin: 30,
+      why: { fanFlow: 'Fresh air for the CO₂ of 500 blocks', humidifierLH: 'Moisture the fan takes out', dehumidifierLday: 'Water the crops give off', acBTU: 'Heat the walls let in', exchangeMaxMin: 'A longer limit saves energy' } },
+    best: [
+      { machines: { fanFlow: 150, humidifierLH: 0.5, dehumidifierLday: 10, acBTU: 9000 }, exchangeMaxMin: 30, inBand: { t: 99.12, rh: 97, co2: 98, all: 96.04 }, kWh: 41.26, litres: 12, removedLitres: 3 },
+      { machines: { fanFlow: 200, humidifierLH: 1, dehumidifierLday: 0, acBTU: 12000 }, exchangeMaxMin: 10, inBand: { t: 99, rh: 90, co2: 99, all: 88 }, kWh: 55, litres: 20, removedLitres: 0 },
+    ],
+    reached: true, notes: ['A tighter wall would save energy'],
+  },
+};
+
+test('the target: a whole number from 50 to 99, default 95', () => {
+  assert.equal(TARGET_DEFAULT, '95');
+  for (const ok of ['50', '95', '99', ' 80 ']) assert.equal(checkTarget(ok), null, ok);
+  for (const bad of ['49', '100', '', 'abc', '95.5', '-5', '9 5']) assert.equal(checkTarget(bad), 'Target must be a whole number from 50 to 99 %', bad);
+});
+
+test('the sizing body: the walls, weather and sun, the crops and the target', () => {
+  const s = initialState({ room });
+  const b = sizingBody(s, '90');
+  assert.deepEqual(Object.keys(b), ['physics', 'crops', 'farmType', 'stage', 'target']);
+  assert.deepEqual(b.physics, { wallUA: 80, outdoorHigh: 33, outdoorLow: 25, outdoorDew: 24, sunW: 300 });
+  assert.deepEqual([b.crops, b.farmType, b.stage, b.target], [[{ crop: 'oyster', blocks: 500 }], 'ready', 'fruiting', 90]);
+});
+
+test('sizing progress words', () => {
+  assert.equal(sizingProgress({ status: 'queued' }), 'Waiting for its turn…');
+  assert.equal(sizingProgress({ status: 'running', progress: 0.354 }), 'Trying setups… 35 %');
+  assert.equal(sizingProgress({ status: 'running' }), 'Trying setups… 0 %');
+  assert.equal(sizingProgress({ status: 'running', progress: 0.3, tried: 34, total: 96 }), 'Trying 34 of 96 setups…');
+  assert.equal(sizingProgress({ status: 'failed', error: 'boom' }), 'Failed: boom');
+  assert.equal(sizingProgress({ status: 'failed' }), 'Failed: the search stopped');
+  assert.equal(sizingProgress({ status: 'done' }), 'Done');
+});
+
+test('the table rows: texts, Best on the first, reached marks by words', () => {
+  const rows = sizingRows(job.result);
+  assert.equal(rows.length, 2);
+  assert.deepEqual(rows[0], {
+    index: 0, best: true, reached: true, mark: 'Best, reaches 95 %',
+    fan: '150', humidifier: '0.5', dehumidifier: '10', aircon: '9,000', limit: '30', t: '99.1', rh: '97.0', co2: '98.0', all: '96.0', kWh: '41.3',
+  });
+  assert.deepEqual([rows[1].best, rows[1].reached, rows[1].mark, rows[1].dehumidifier], [false, false, 'Below 95 %', '0']);
+  // the second reaches the target when it is lower
+  assert.equal(sizingRows({ ...job.result, target: 85 })[1].mark, 'Reaches 85 %');
+  // a Best row that misses
+  assert.equal(sizingRows({ ...job.result, target: 99 })[0].mark, 'Best, below 99 %');
+  assert.deepEqual(sizingRows({ best: [] }), []);
+  assert.deepEqual(sizingRows(null), []);
+});
+
+test('the estimates with their reasons', () => {
+  assert.deepEqual(estimateLines(job.result.estimate), [
+    'Fan 150 m³/h: Fresh air for the CO₂ of 500 blocks',
+    'Humidifier 0.5 L/h: Moisture the fan takes out',
+    'Dehumidifier up to 20 L/day: Water the crops give off',
+    'Aircon 9,000 BTU/h: Heat the walls let in',
+    'Air exchange time limit up to 30 min: A longer limit saves energy',
+  ]);
+  assert.deepEqual(estimateLines(null), []);
+  assert.equal(estimateLines({ fanFlow: 100 })[0], 'Fan 100 m³/h');
+});
+
+test('Use this fills step 1 and the run\'s time limit; the POST carries it only when it differs from the room', () => {
+  const s = initialState({ room });
+  const rows = sizingRows(job.result);
+  useSetup(s, job.result.best[0], 10);
+  assert.deepEqual([s.physics.fanFlow, s.physics.humidifierLH, s.physics.dehumidifierLday, s.physics.acBTU], ['150', '0.5', '10', '9000']);
+  assert.equal(s.physics.wallUA, '80'); // walls and weather stay
+  assert.equal(s.exchangeMaxMin, 30);
+  assert.deepEqual(buildBody(s).control, { exchangeMaxMin: 30 });
+  assert.deepEqual(Object.keys(buildBody(s)), ['physics', 'crops', 'farmType', 'stage', 'days', 'control']);
+  assert.equal(rows[0].index, 0);
+  // the same as the room's: no control in the body
+  useSetup(s, job.result.best[1], 10);
+  assert.equal(s.exchangeMaxMin, null);
+  assert.equal('control' in buildBody(s), false);
+  // the room's limit unknown: the run carries it
+  useSetup(s, job.result.best[1], null);
+  assert.equal(s.exchangeMaxMin, 10);
+  assert.deepEqual(buildBody(s).control, { exchangeMaxMin: 10 });
+  // no control by default
+  assert.equal('control' in buildBody(initialState({ room })), false);
+});
+
+test('the summary shows the time limit of the run', () => {
+  const s = initialState({ room });
+  assert.equal(summaryLines(s, room).some((l) => l.label === 'Air exchange'), false);
+  useSetup(s, job.result.best[0], 10);
+  s.roomExchangeMaxMin = 10;
+  const line = summaryLines(s, room).find((l) => l.label === 'Air exchange');
+  assert.equal(line.text, 'Air exchange time limit 30 min (the room: 10 min)');
+  assert.equal(limitLine(60, null), 'Air exchange time limit 60 min (set for this run)');
+  assert.equal(limitLine(60, 10), 'Air exchange time limit 60 min (the room: 10 min)');
+});
+
+test('the fields of the sizing and the time limit belong to step 3', () => {
+  assert.equal(stepOf('target'), 3);
+  assert.equal(stepOf('control.exchangeMaxMin'), 3);
 });

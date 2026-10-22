@@ -86,6 +86,9 @@ export function initialState({ room, lastRun = null, cropData = null }) {
     stage: fixStage(farmType, from?.stage ?? 'fruiting'),
     daysMode: 'days',
     days: String(DAYS_DEFAULT),
+    // The air exchange time limit of this run: null while it is the room's (a suggestion's Use this sets it).
+    exchangeMaxMin: null,
+    roomExchangeMaxMin: null, // the room's own, from GET /api/rooms/:id/control, when known
   };
 }
 
@@ -154,18 +157,20 @@ export function stepOf(field) {
   if (typeof field !== 'string') return null;
   if (field === 'physics' || field.startsWith('physics.')) return 1;
   if (field === 'crops' || field === 'farmType' || field === 'stage') return 2;
-  return field === 'days' ? 3 : null;
+  return field === 'days' || field === 'target' || field === 'control.exchangeMaxMin' ? 3 : null;
 }
 
 // The body of POST /api/rooms/:id/simulations from a checked state.
 export function buildBody(state, cropData = null) {
-  return {
+  const body = {
     physics: physicsValues(state),
     crops: cropsOf(state),
     farmType: state.farmType,
     stage: state.stage,
     days: daysOf(state, cropData),
   };
+  if (isNumber(state.exchangeMaxMin)) body.control = { exchangeMaxMin: state.exchangeMaxMin };
+  return body;
 }
 
 // ---- words ----
@@ -195,6 +200,7 @@ export function summaryLines(state, room, cropData = null) {
     { label: 'Room', text: roomLine(room).replace('Room size ', 'Size ') },
     { label: 'Walls and weather', text: `Walls ${v.wallUA} W/K, sun on the roof ${v.sunW} W, outdoor ${v.outdoorLow}–${v.outdoorHigh} °C, dew point ${v.outdoorDew} °C` },
     { label: 'Machines', text: `Fan ${v.fanFlow} m³/h, aircon ${grouped(Number(v.acBTU))} BTU/h, humidifier ${v.humidifierLH} L/h, ${Number(v.dehumidifierLday) > 0 ? `dehumidifier ${v.dehumidifierLday} L/day` : 'no dehumidifier'}` },
+    ...(isNumber(state.exchangeMaxMin) ? [{ label: 'Air exchange', text: limitLine(state.exchangeMaxMin, state.roomExchangeMaxMin) }] : []),
     { label: 'Crops', text: `${crops}; ${farmWords[state.farmType]}, starting at ${STAGES[state.stage].toLowerCase().replace(' between flushes', '')}` },
     { label: 'Run', text: days },
   ];
@@ -208,3 +214,87 @@ export function progressLine(run) {
   return `Running… ${Math.round((isNumber(run.progress) ? run.progress : 0) * 100)} %`;
 }
 
+
+// ---- suggest machines (spec 2026-10-22-suggest-machines-design.md section 7) ----
+
+export const TARGET_DEFAULT = '95';
+const TARGET_MESSAGE = 'Target must be a whole number from 50 to 99 %';
+
+// The error of a Target (%) text, or null.
+export function checkTarget(text) {
+  const s = String(text ?? '').trim();
+  return /^[0-9]{1,3}$/.test(s) && Number(s) >= 50 && Number(s) <= 99 ? null : TARGET_MESSAGE;
+}
+
+// The body of POST /api/rooms/:id/sizing: the walls, weather and sun of step 1 (the machines are what it looks for), the crops
+// of step 2 and the target. The state's texts are checked by the caller (checkStep 1 and 2, checkTarget).
+export function sizingBody(state, target) {
+  const v = physicsValues(state);
+  return {
+    physics: { wallUA: v.wallUA, outdoorHigh: v.outdoorHigh, outdoorLow: v.outdoorLow, outdoorDew: v.outdoorDew, sunW: v.sunW },
+    crops: cropsOf(state),
+    farmType: state.farmType,
+    stage: state.stage,
+    target: Number(String(target).trim()),
+  };
+}
+
+// The words over the progress bar of a sizing job. The server sends progress 0-1; tried and total, when it sends them, are named.
+export function sizingProgress(job) {
+  if (job.status === 'queued') return 'Waiting for its turn…';
+  if (job.status === 'done') return 'Done';
+  if (job.status === 'failed') return `Failed: ${job.error ?? 'the search stopped'}`;
+  if (isNumber(job.tried) && isNumber(job.total) && job.total > 0) return `Trying ${job.tried} of ${job.total} setups…`;
+  return `Trying setups… ${Math.round((isNumber(job.progress) ? job.progress : 0) * 100)} %`;
+}
+
+const one = (v) => (isNumber(v) ? v.toFixed(1) : '—');
+
+// result.best as the rows of the table: texts, whether the row is the best one and whether it reaches the target (in words,
+// never colour alone). index is the row's place in result.best, for Use this.
+export function sizingRows(result) {
+  const target = result?.target;
+  return (Array.isArray(result?.best) ? result.best : []).map((c, i) => {
+    const reached = isNumber(c.inBand?.all) && isNumber(target) && c.inBand.all >= target;
+    const best = i === 0;
+    const verdict = reached ? `reaches ${target} %` : `below ${target} %`;
+    const text = best ? `Best, ${verdict}` : `${verdict[0].toUpperCase()}${verdict.slice(1)}`;
+    return {
+      index: i, best, reached,
+      mark: text,
+      fan: String(c.machines?.fanFlow), humidifier: String(c.machines?.humidifierLH), dehumidifier: String(c.machines?.dehumidifierLday ?? 0),
+      aircon: grouped(Number(c.machines?.acBTU)), limit: String(c.exchangeMaxMin),
+      t: one(c.inBand?.t), rh: one(c.inBand?.rh), co2: one(c.inBand?.co2), all: one(c.inBand?.all), kWh: one(c.kWh),
+    };
+  });
+}
+
+// The estimates with their reasons, one line each: "Fan 150 m³/h: why".
+export function estimateLines(est) {
+  if (!est) return [];
+  const why = est.why ?? {};
+  const rows = [
+    ['Fan', `${est.fanFlow} m³/h`, why.fanFlow, est.fanFlow],
+    ['Humidifier', `${est.humidifierLH} L/h`, why.humidifierLH, est.humidifierLH],
+    ['Dehumidifier', `up to ${est.dehumidifierMaxLday} L/day`, why.dehumidifierLday, est.dehumidifierMaxLday],
+    ['Aircon', `${isNumber(est.acBTU) ? grouped(est.acBTU) : est.acBTU} BTU/h`, why.acBTU, est.acBTU],
+    ['Air exchange time limit', `up to ${est.exchangeMaxMin} min`, why.exchangeMaxMin, est.exchangeMaxMin],
+  ];
+  return rows.filter((r) => r[3] !== undefined && r[3] !== null).map(([name, value, reason]) => `${name} ${value}${reason ? `: ${reason}` : ''}`);
+}
+
+// "Air exchange time limit 60 min (the room: 10 min)"; roomMin unknown: "(set for this run)".
+export function limitLine(min, roomMin) {
+  return `Air exchange time limit ${min} min (${isNumber(roomMin) ? `the room: ${roomMin} min` : 'set for this run'})`;
+}
+
+// Use this: the setup's machines into step 1's texts; the run's time limit when it is not the room's own.
+export function useSetup(state, candidate, roomMin) {
+  const m = candidate.machines;
+  state.physics.fanFlow = String(m.fanFlow);
+  state.physics.humidifierLH = String(m.humidifierLH);
+  state.physics.dehumidifierLday = String(m.dehumidifierLday);
+  state.physics.acBTU = String(m.acBTU);
+  state.roomExchangeMaxMin = isNumber(roomMin) ? roomMin : null;
+  state.exchangeMaxMin = isNumber(roomMin) && candidate.exchangeMaxMin === roomMin ? null : candidate.exchangeMaxMin;
+}

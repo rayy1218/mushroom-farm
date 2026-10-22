@@ -176,3 +176,16 @@ test('the inputs line mentions the dehumidifier only above 0', () => {
   assert.ok(!/dehumidifier/.test(inputLine({ ...base, physics: { ...base.physics, dehumidifierLday: 0 } })));
   assert.ok(inputLine({ ...base, physics: { ...base.physics, dehumidifierLday: 20 } }).endsWith('humidifier 2 L/h, dehumidifier 20 L/day'));
 });
+
+test('the inputs line names the air exchange time limit of the run', () => {
+  const base = { crops: [{ crop: 'oyster', blocks: 5 }], stage: 'fruiting', days: 7,
+    physics: { wallUA: 80, sunW: 300, outdoorLow: 25, outdoorHigh: 33, outdoorDew: 24, fanFlow: 600, acBTU: 12000, humidifierLH: 2 } };
+  assert.ok(!/time limit/.test(inputLine(base)));
+  assert.ok(!/time limit/.test(inputLine({ ...base, ctx: { control: { exchangeMaxMin: 10 } } })));
+  const given = { ...base, control: { exchangeMaxMin: 60 }, ctx: { control: { exchangeMaxMin: 60 } } };
+  assert.ok(inputLine(given).endsWith(' · air exchange time limit 60 min (set for this run)'));
+  assert.ok(inputLine(given, 10).endsWith(' · air exchange time limit 60 min (the room: 10 min)'));
+  assert.ok(!/time limit/.test(inputLine(given, 60)));
+  // the one used is ctx's
+  assert.ok(inputLine({ ...base, control: { exchangeMaxMin: 60 }, ctx: { control: { exchangeMaxMin: 45 } } }).includes('time limit 45 min'));
+});

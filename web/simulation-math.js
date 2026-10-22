@@ -202,15 +202,20 @@ const grouped = (n) => n.toLocaleString('en-US', { maximumFractionDigits: 1 });
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
 // What was asked, in one line (the input as it was posted).
-export function inputLine(input) {
+// roomMin: the room's own air exchange time limit when known (a run does not keep it).
+export function inputLine(input, roomMin = null) {
   const p = input?.physics;
   if (!p) return '';
   const crops = (input.crops ?? []).map((c) => `${CROPS[c.crop]?.name ?? c.crop} ${c.blocks}`).join(' and ');
   const stage = STAGES[input.stage]?.toLowerCase() ?? input.stage;
+  const used = input.ctx?.control?.exchangeMaxMin ?? input.control?.exchangeMaxMin;
+  const limit = finite(input.control?.exchangeMaxMin) && finite(used) && used !== roomMin
+    ? [`air exchange time limit ${used} min (${finite(roomMin) ? `the room: ${roomMin} min` : 'set for this run'})`] : [];
   return [
     `${crops} blocks, starting at ${stage}, ${plural(input.days, 'day', 'days')}`,
     `walls ${p.wallUA} W/K, sun ${p.sunW} W, outdoor ${p.outdoorLow}–${p.outdoorHigh} °C, dew point ${p.outdoorDew} °C`,
     `fan ${p.fanFlow} m³/h, aircon ${grouped(p.acBTU)} BTU/h, humidifier ${p.humidifierLH} L/h${p.dehumidifierLday > 0 ? `, dehumidifier ${p.dehumidifierLday} L/day` : ''}`,
+    ...limit,
   ].join(' · ');
 }
 
