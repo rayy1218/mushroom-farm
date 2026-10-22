@@ -2,10 +2,10 @@
 
 import { DatabaseSync } from 'node:sqlite';
 import { RELAY_KEYS } from './machine-codes.js';
-import { RATINGS } from './rooms.js';
+import { RATINGS, FILTER } from './rooms.js';
 import { PROGRAM_DEFAULTS } from './program.js';
 
-const VERSION = 13;
+const VERSION = 14;
 
 // Iteration 1 (version 0) had only the rooms table without the address columns.
 const ROOMS = `
@@ -147,6 +147,41 @@ ALTER TABLE rooms ADD COLUMN dehumidifier INTEGER NOT NULL DEFAULT 0 CHECK (dehu
 ALTER TABLE rooms ADD COLUMN dehumidifier_w REAL NOT NULL DEFAULT 380;
 ALTER TABLE rooms ADD COLUMN dehumidifier_lday REAL NOT NULL DEFAULT 20;`;
 
+// The intake filter (spec 2026-10-22-filter-design.md 9): the room columns that version 14 adds, the filter pressure
+// sensor's readings and the filter changes.
+const FILTER_ROOM_COLUMNS = `
+ALTER TABLE rooms ADD COLUMN fan_max_pa REAL NOT NULL DEFAULT 200;
+ALTER TABLE rooms ADD COLUMN filter_clean_pa REAL NOT NULL DEFAULT 40;
+ALTER TABLE rooms ADD COLUMN filter_final_pa REAL NOT NULL DEFAULT 150;
+ALTER TABLE rooms ADD COLUMN filter_change_days INTEGER NOT NULL DEFAULT 30;
+ALTER TABLE rooms ADD COLUMN filter_changed_at INTEGER;
+ALTER TABLE rooms ADD COLUMN dp_address INTEGER CHECK (dp_address BETWEEN 1 AND 247);`;
+
+const FILTER_TABLES = `
+CREATE TABLE IF NOT EXISTS filter_readings (
+  id      INTEGER PRIMARY KEY,
+  room_id INTEGER NOT NULL,
+  address INTEGER NOT NULL,
+  at      INTEGER NOT NULL,
+  ok      INTEGER NOT NULL CHECK (ok IN (0, 1)),
+  pa      REAL,
+  error   TEXT
+) STRICT;
+-- the status like the energy meter's, and a covering index of the good readings for a time window
+CREATE INDEX IF NOT EXISTS filter_readings_by_sensor ON filter_readings (room_id, address, id);
+CREATE INDEX IF NOT EXISTS filter_readings_ok ON filter_readings (room_id, address, id) WHERE ok = 1;
+CREATE INDEX IF NOT EXISTS filter_readings_by_time ON filter_readings (room_id, address, at, pa) WHERE ok = 1;
+CREATE TABLE IF NOT EXISTS filter_changes (
+  id        INTEGER PRIMARY KEY,
+  room_id   INTEGER NOT NULL,
+  at        INTEGER NOT NULL,
+  pa_before REAL
+) STRICT;
+CREATE INDEX IF NOT EXISTS filter_changes_by_room ON filter_changes (room_id, at);`;
+
+// The rooms column of each filter setting of rooms.js FILTER.
+const FILTER_COLUMNS = { fanMaxPa: 'fan_max_pa', filterCleanPa: 'filter_clean_pa', filterFinalPa: 'filter_final_pa', filterChangeDays: 'filter_change_days' };
+
 const RUNS_KEPT = 20; // finished simulation runs kept per room
 
 const ALARMS = `
@@ -245,6 +280,13 @@ export const METER_SQL = {
                  COALESCE(SUM(CASE WHEN dv < 0 OR dv > 100.0 * dt / 3600000.0 THEN 1 END), 0) AS bad
           FROM (SELECT energy_kwh - LAG(energy_kwh) OVER w AS dv, at - LAG(at) OVER w AS dt
                 FROM meter_readings WHERE ${GOOD_METER} AND at >= ?3 AND at < ?4 WINDOW w AS (ORDER BY at))`,
+};
+
+export const FILTER_SQL = {
+  latest: 'SELECT * FROM (SELECT * FROM filter_readings WHERE room_id = ? AND address = ? ORDER BY id DESC LIMIT ?) ORDER BY id',
+  lastOk: 'SELECT * FROM filter_readings WHERE room_id = ? AND address = ? AND ok = 1 ORDER BY id DESC LIMIT 1',
+  failuresSince: 'SELECT COUNT(*) AS n FROM (SELECT 1 FROM filter_readings WHERE room_id = ? AND address = ? AND id > ? LIMIT 10000)',
+  window: 'SELECT at, pa FROM filter_readings WHERE room_id = ? AND address = ? AND ok = 1 AND at >= ? AND at < ? ORDER BY at',
 };
 
 export const OUTDOOR_SQL = {
@@ -392,6 +434,15 @@ function migrate(db) {
                  DROP TABLE machine_log_old;`);
       }
     }
+    if (version < 14) {
+      // The filter (spec 2026-10-22-filter-design.md 9): an existing room's filter counts as changed at the upgrade. A file
+      // that already has the columns and tables keeps them.
+      if (!db.prepare('PRAGMA table_info(rooms)').all().some((c) => c.name === 'fan_max_pa')) {
+        db.exec(FILTER_ROOM_COLUMNS);
+        db.prepare('UPDATE rooms SET filter_changed_at = ?').run(Date.now());
+      }
+      db.exec(FILTER_TABLES);
+    }
     db.exec(`PRAGMA user_version = ${VERSION}`);
     db.exec('COMMIT');
   } catch (err) {
@@ -456,6 +507,12 @@ function toRoom(row) {
     dehumidifierW: row.dehumidifier_w,
     dehumidifierLday: row.dehumidifier_lday,
     dehumidifier: row.dehumidifier === 1,
+    dpAddress: row.dp_address,
+    fanMaxPa: row.fan_max_pa,
+    filterCleanPa: row.filter_clean_pa,
+    filterFinalPa: row.filter_final_pa,
+    filterChangeDays: row.filter_change_days,
+    filterChangedAt: row.filter_changed_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -463,6 +520,9 @@ function toRoom(row) {
 
 // The six ratings in column order; one not given is the default (an older client's body).
 const ratingValues = (given) => RATINGS.map(({ field, default: d }) => given[field] ?? d);
+
+// The four filter settings in column order: one not given keeps the stored value (old: the rooms row), or is the default.
+const filterValues = (given, old = null) => FILTER.map(({ field, default: d }) => given[field] ?? old?.[FILTER_COLUMNS[field]] ?? d);
 
 function toAlarm(row) {
   return {
@@ -482,16 +542,20 @@ export function openDb(path) {
     get: db.prepare('SELECT * FROM rooms WHERE id = ?'),
     nameUsed: db.prepare('SELECT 1 FROM rooms WHERE name = ? AND id IS NOT ?'),
     addressUsed: db.prepare(`SELECT name FROM rooms WHERE id IS NOT ?1
-                             AND (trh_address = ?2 OR co2_address = ?2 OR relay_address = ?2 OR ac_address = ?2 OR meter_address = ?2)`),
+                             AND (trh_address = ?2 OR co2_address = ?2 OR relay_address = ?2 OR ac_address = ?2 OR meter_address = ?2
+                                  OR dp_address = ?2)`),
     insert: db.prepare(`INSERT INTO rooms (name, length_m, width_m, height_m, trh_address, co2_address,
                                            relay_address, ac_address, meter_address, intake_w, exhaust_w, circulation_w,
                                            humidifier_w, humidifier_lh, ac_input_w, dehumidifier_w, dehumidifier_lday,
-                                           dehumidifier, created_at, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+                                           dehumidifier, fan_max_pa, filter_clean_pa, filter_final_pa, filter_change_days,
+                                           filter_changed_at, dp_address, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
     update: db.prepare(`UPDATE rooms SET name = ?, length_m = ?, width_m = ?, height_m = ?,
                                trh_address = ?, co2_address = ?, relay_address = ?, ac_address = ?, meter_address = ?,
                                intake_w = ?, exhaust_w = ?, circulation_w = ?, humidifier_w = ?, humidifier_lh = ?, ac_input_w = ?,
-                               dehumidifier_w = ?, dehumidifier_lday = ?, dehumidifier = ?, updated_at = ?
+                               dehumidifier_w = ?, dehumidifier_lday = ?, dehumidifier = ?,
+                               fan_max_pa = ?, filter_clean_pa = ?, filter_final_pa = ?, filter_change_days = ?, dp_address = ?,
+                               updated_at = ?
                         WHERE id = ?`),
     delete: db.prepare('DELETE FROM rooms WHERE id = ?'),
     deleteReadings: db.prepare('DELETE FROM readings WHERE room_id = ?'),
@@ -507,6 +571,8 @@ export function openDb(path) {
     deleteAlarms: db.prepare('DELETE FROM alarms WHERE room_id = ?'),
     deleteMachineLog: db.prepare('DELETE FROM machine_log WHERE room_id = ?'),
     deleteMeterReadings: db.prepare('DELETE FROM meter_readings WHERE room_id = ?'),
+    deleteFilterReadings: db.prepare('DELETE FROM filter_readings WHERE room_id = ?'),
+    deleteFilterChanges: db.prepare('DELETE FROM filter_changes WHERE room_id = ?'),
     crops: db.prepare('SELECT crop, blocks FROM room_crops WHERE room_id = ? ORDER BY position'),
     deleteCrops: db.prepare('DELETE FROM room_crops WHERE room_id = ?'),
     insertCrop: db.prepare('INSERT INTO room_crops (room_id, position, crop, blocks) VALUES (?, ?, ?, ?)'),
@@ -592,6 +658,17 @@ export function openDb(path) {
     meterFirst: db.prepare(METER_SQL.first),
     meterLast: db.prepare(METER_SQL.last),
     meterChunk: db.prepare(METER_SQL.chunk),
+    // The filter pressure sensor and the filter changes (spec 2026-10-22-filter-design.md 4 and 5).
+    wiredFilters: db.prepare('SELECT id AS roomId, dp_address AS address FROM rooms WHERE dp_address IS NOT NULL ORDER BY id'),
+    addFilterReading: db.prepare(`INSERT INTO filter_readings (room_id, address, at, ok, pa, error)
+                                  SELECT ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM rooms WHERE id = ? AND dp_address = ?)`),
+    filterLatest: db.prepare(FILTER_SQL.latest),
+    filterLastOk: db.prepare(FILTER_SQL.lastOk),
+    filterFailuresSince: db.prepare(FILTER_SQL.failuresSince),
+    filterWindow: db.prepare(FILTER_SQL.window),
+    setFilterChangedAt: db.prepare('UPDATE rooms SET filter_changed_at = ? WHERE id = ?'),
+    addFilterChange: db.prepare('INSERT INTO filter_changes (room_id, at, pa_before) VALUES (?, ?, ?)'),
+    filterChanges: db.prepare('SELECT at, pa_before FROM filter_changes WHERE room_id = ? ORDER BY at DESC, id DESC LIMIT ?'),
     addOutdoor: db.prepare(`INSERT INTO outdoor_readings (address, at, ok, t, rh, error)
                             SELECT ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM settings WHERE key = 'outdoorAddress' AND value = ?)`),
     outdoorLatest: db.prepare(OUTDOOR_SQL.latest),
@@ -611,7 +688,7 @@ export function openDb(path) {
 
   // Each address may be used by one device of one room only.
   function checkAddresses(addresses, id) {
-    for (const field of ['trhAddress', 'co2Address', 'relayAddress', 'acAddress', 'meterAddress']) {
+    for (const field of ['trhAddress', 'co2Address', 'relayAddress', 'acAddress', 'meterAddress', 'dpAddress']) {
       const address = addresses[field];
       if (address == null) continue;
       const other = q.addressUsed.get(id, address);
@@ -729,13 +806,15 @@ export function openDb(path) {
     getRoom,
 
     createRoom({ name, length, width, height, trhAddress = null, co2Address = null, relayAddress = null, acAddress = null,
-      meterAddress = null, ...ratings }, now = Date.now()) {
+      meterAddress = null, dpAddress = null, ...ratings }, now = Date.now()) {
       checkName(name, null);
-      checkAddresses({ trhAddress, co2Address, relayAddress, acAddress, meterAddress }, null);
+      checkAddresses({ trhAddress, co2Address, relayAddress, acAddress, meterAddress, dpAddress }, null);
       db.exec('BEGIN');
       try {
+        // A new room's filter counts as changed when it was made.
         const { lastInsertRowid } = q.insert.run(name, length, width, height, trhAddress, co2Address,
-          relayAddress, acAddress, meterAddress, ...ratingValues(ratings), ratings.dehumidifier ? 1 : 0, now, now);
+          relayAddress, acAddress, meterAddress, ...ratingValues(ratings), ratings.dehumidifier ? 1 : 0,
+          ...filterValues(ratings), now, dpAddress, now, now);
         q.insertCommands.run(lastInsertRowid);
         q.insertControl.run(lastInsertRowid);
         db.exec('COMMIT');
@@ -748,14 +827,14 @@ export function openDb(path) {
 
     // Returns the updated room, or null when there is no room with that id.
     updateRoom(id, { name, length, width, height, trhAddress = null, co2Address = null, relayAddress = null, acAddress = null,
-      meterAddress = null, ...ratings }, now = Date.now()) {
+      meterAddress = null, dpAddress = null, ...ratings }, now = Date.now()) {
       const old = q.get.get(id);
       if (!old) return null;
       checkName(name, id);
-      checkAddresses({ trhAddress, co2Address, relayAddress, acAddress, meterAddress }, id);
+      checkAddresses({ trhAddress, co2Address, relayAddress, acAddress, meterAddress, dpAddress }, id);
       const fitted = ratings.dehumidifier === undefined ? old.dehumidifier === 1 : ratings.dehumidifier;
       q.update.run(name, length, width, height, trhAddress, co2Address, relayAddress, acAddress, meterAddress,
-        ...ratingValues(ratings), fitted ? 1 : 0, now, id);
+        ...ratingValues(ratings), fitted ? 1 : 0, ...filterValues(ratings, old), dpAddress, now, id);
       // A dehumidifier taken out of the room: its log ends now (no usage charged for ever) and its band state starts again.
       if (old.dehumidifier === 1 && !fitted) {
         this.logOff(id, 'dehumidifier', now);
@@ -988,6 +1067,8 @@ export function openDb(path) {
         q.deleteAlarms.run(id);
         q.deleteMachineLog.run(id);
         q.deleteMeterReadings.run(id);
+        q.deleteFilterReadings.run(id);
+        q.deleteFilterChanges.run(id);
         q.deleteCrops.run(id);
         q.deleteProgram.run(id);
         q.deleteRuns.run(id);
@@ -1100,6 +1181,68 @@ export function openDb(path) {
       if (before) rows.push({ ...before, at: from });
       rows.push(...q.logSince.all(roomId, machine, from, to));
       return rows.map(logRow);
+    },
+
+    // ---- Filter pressure sensor and filter changes (spec 2026-10-22-filter-design.md 4 and 5) ----
+
+    // Every room with a filter pressure sensor, by room id: [{ roomId, address }].
+    listFilterSensors() {
+      return q.wiredFilters.all().map((r) => ({ roomId: r.roomId, address: r.address }));
+    },
+
+    // One poll of the sensor (pa in Pa; kept on an out-of-range poll too); only while the room still has that address.
+    // A row inside a worked-out usage day makes it stale (its intake estimate uses the day's pressure).
+    addFilterReading({ roomId, address, at, ok, pa = null, error = null }) {
+      q.addFilterReading.run(roomId, address, at, ok ? 1 : 0, pa, error, roomId, address);
+      for (const [k, e] of usageCache.get(roomId) ?? []) if (e.ms && e.end > at) usageCache.get(roomId).delete(k);
+    },
+
+    // The room's sensor like the energy meter of getMeter: { kind: 'dp', address, status, failuresInRow, lastOk, readings },
+    // lastOk and readings carrying { at, pa }. Null when there is no such room.
+    getFilterSensor(roomId, limit = 50) {
+      const room = getRoom(roomId);
+      if (!room) return null;
+      const address = room.dpAddress;
+      const sensor = { kind: 'dp', address, status: 'not-wired', failuresInRow: 0, lastOk: null, readings: [] };
+      if (address === null) return sensor;
+      const rows = q.filterLatest.all(roomId, address, limit);
+      sensor.readings = rows.map((r) => ({ at: r.at, ok: r.ok === 1, pa: r.pa }));
+      if (rows.length === 0) {
+        sensor.status = 'no-data';
+        return sensor;
+      }
+      const ok = q.filterLastOk.get(roomId, address);
+      if (ok) sensor.lastOk = { at: ok.at, pa: ok.pa };
+      sensor.failuresInRow = q.filterFailuresSince.get(roomId, address, ok ? ok.id : 0).n;
+      const n = sensor.failuresInRow;
+      sensor.status = n === 0 ? 'online' : n < FAILS_FOR_OFFLINE ? 'timeout' : 'offline';
+      return sensor;
+    },
+
+    // The good readings of the room's present sensor address in [from, to), oldest first: [{ at, pa }].
+    filterReadingsWindow(roomId, from, to) {
+      const room = q.get.get(roomId);
+      return room?.dp_address == null ? [] : q.filterWindow.all(roomId, room.dp_address, from, to).map((r) => ({ at: r.at, pa: r.pa }));
+    },
+
+    // The filter was changed at `at` (paBefore: the last counted pressure, or null). Returns false when there is no such room.
+    markFilterChanged(roomId, at, paBefore) {
+      if (!q.get.get(roomId)) return false;
+      db.exec('BEGIN');
+      try {
+        q.setFilterChangedAt.run(at, roomId);
+        q.addFilterChange.run(roomId, at, paBefore);
+        db.exec('COMMIT');
+        return true;
+      } catch (err) {
+        db.exec('ROLLBACK');
+        throw err;
+      }
+    },
+
+    // The room's last `limit` filter changes, newest first: [{ at, paBefore }].
+    filterChanges(roomId, limit = 20) {
+      return q.filterChanges.all(roomId, limit).map((r) => ({ at: r.at, paBefore: r.pa_before }));
     },
 
     // ---- Outdoor probe (spec section 2) ----

@@ -100,7 +100,7 @@ test('after a restart the compressor still waits its 3 min: the last switch come
   assert.match(controller.get(id).reasons.held.dehumidifier, /^Dehumidifier waits: minimum off time/);
 });
 
-test('upgrade 11 to 13 rebuilds the machine log with its rows and ids, keeps its index and takes the dehumidifier', (t) => {
+test('upgrade 11 to 14 rebuilds the machine log with its rows and ids, keeps its index and takes the dehumidifier', (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'dh-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const path = join(dir, 'farm.db');
@@ -128,7 +128,7 @@ test('upgrade 11 to 13 rebuilds the machine log with its rows and ids, keeps its
   t.after(() => db.close());
   const check = new DatabaseSync(path, { readOnly: true });
   t.after(() => check.close());
-  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 13);
+  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 14);
   assert.deepEqual(check.prepare('SELECT * FROM machine_log ORDER BY id').all().map((r) => ({ ...r })), rows.filter((r) => r.machine !== 'dehumidifier').map((r) => ({ ...r })));
   assert.ok(check.prepare("SELECT 1 FROM sqlite_master WHERE name = 'machine_log_by_room'").get(), 'index kept');
   db.updateRoom(id, { ...ROOM, dehumidifier: true });
