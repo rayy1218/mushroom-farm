@@ -275,3 +275,40 @@ test('fromRoom: an aircon with a fault shows no running compressor', () => {
   assert.equal(view(fromRoom({ machines: { ac: ac('fault') } })).comp, false);
   assert.equal(view(fromRoom({ machines: { ac: ac('on') } })).comp, true);
 });
+
+// ---- the dehumidifier (drawn only when the room has one) ----
+
+const withDh = (dh) => ({ address: 2, machines: [...relay().machines, { key: 'dehumidifier', commanded: false, reported: false, running: false, status: 'off', ...dh }] });
+
+test('fromRoom: a fitted dehumidifier is a unit; not fitted (or an older server) is none', () => {
+  const on = fromRoom({ machines: { relay: withDh({ status: 'on', commanded: true, reported: true, running: true }), ac: ac() } });
+  assert.deepEqual([on.units.dh.known, on.units.dh.on, on.units.dh.state], [true, true, 'On']);
+  assert.equal(fromRoom({ machines: { relay: withDh({ status: 'not-fitted', reported: null, running: null }), ac: ac() } }).units.dh, null);
+  assert.equal(fromRoom({ machines: { relay: relay(), ac: ac() } }).units.dh, null, 'no row at all');
+  assert.equal(fromRoom({}).units.dh, null);
+  // fitted but the relay module is not wired: drawn as no data
+  const nw = fromRoom({ machines: { relay: withDh({ status: 'not-wired', reported: null, running: null }) } }).units.dh;
+  assert.deepEqual([nw.known, nw.state], [false, 'Not wired']);
+});
+
+test('fromSim: a dehumidifier when the simulated room has a capacity; its level from the water it takes out', () => {
+  const dev = [{ ...devices[0], coils: [true, true, false, true, true], running: [true, true, false, true, true] }, devices[1]];
+  const d = fromSim(simRoom({ dehumidifierLday: 24, acting: { ...simRoom().acting, dehumidifierGH: 500 } }), dev);
+  assert.equal(d.units.dh.on, true);
+  assert.equal(d.units.dh.level, 0.5); // 500 g/h of 1000 g/h (24 L/day)
+  assert.equal(fromSim(simRoom(), dev).units.dh, null, 'no capacity: none');
+  assert.equal(fromSim(simRoom({ dehumidifierLday: 0 }), dev).units.dh, null);
+  const stuck = fromSim(simRoom({ dehumidifierLday: 20 }), [{ ...devices[0], coils: [false, false, false, false, true], running: [false, false, false, false, false] }, devices[1]]);
+  assert.deepEqual([stuck.units.dh.on, stuck.units.dh.warn, stuck.units.dh.state], [false, true, 'On, not running']);
+});
+
+test('view and describe: the dehumidifier only when there is one', () => {
+  const v = view(fromRoom({ sensors, control, machines: { relay: withDh({ status: 'on', commanded: true, reported: true, running: true }), ac: ac() } }));
+  assert.equal(v.dh.name, 'Dehumidifier');
+  assert.equal(v.dh.on, true);
+  assert.match(describe(v), /Dehumidifier on/);
+  const none = view(fromRoom({ sensors, control, machines: { relay: relay(), ac: ac() } }));
+  assert.equal(none.dh, null);
+  assert.doesNotMatch(describe(none), /Dehumidifier/);
+  assert.equal(view(null).dh, null);
+});

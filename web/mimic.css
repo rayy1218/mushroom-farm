@@ -6,12 +6,12 @@
   --m-unit-on: color-mix(in srgb, var(--ink) 16%, var(--surface));
   --m-room: color-mix(in srgb, var(--ink) 3%, var(--surface));
   --m-wall: var(--border-strong);
-  --m-ac: #4f9de8; --m-air: #3aa89a; --m-hu: #62b8e0;
+  --m-ac: #4f9de8; --m-air: #3aa89a; --m-hu: #62b8e0; --m-dh: #a58be8;
   --m-good: #0ca30c; --m-warning: #fab219; --m-serious: #f08a24; --m-critical: #ff8a8a;
   display: block; max-width: 100%; height: auto;
 }
 :root[data-theme="light"] .mimic-svg {
-  --m-ac: #2a78d6; --m-air: #1a8576; --m-hu: #2b8db8;
+  --m-ac: #2a78d6; --m-air: #1a8576; --m-hu: #2b8db8; --m-dh: #6b4fc0;
   --m-good: #006300; --m-warning: #7a5200; --m-serious: #9a4a00; --m-critical: #b02a2a;
 }
 .mimic-svg text { font-family: inherit; fill: var(--ink); font-size: 13px; }
@@ -38,6 +38,10 @@
 .mimic-svg .keybar.ac { fill: var(--m-ac); }
 .mimic-svg .keybar.air { fill: var(--m-air); }
 .mimic-svg .keybar.hu { fill: var(--m-hu); }
+.mimic-svg .keybar.dh { fill: var(--m-dh); }
+.mimic-svg .grille { stroke: var(--border-strong); stroke-width: 1.5; stroke-linecap: round; }
+.mimic-svg .water { fill: var(--m-dh); opacity: .55; }
+.mimic-svg .drop { fill: var(--m-dh); }
 .mimic-svg .blade { fill: var(--ink-2, var(--muted)); }
 .mimic-svg .ring { fill: none; stroke: var(--border-strong); stroke-width: 1.5; }
 .mimic-svg .damper { fill: var(--ink-2, var(--muted)); }

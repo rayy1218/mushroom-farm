@@ -92,7 +92,7 @@ Why: a well insulated, shaded container (Container Alpha, 950 lion's mane blocks
 | Automatic control card | its reason line and held line when fitted |
 | Timeline | a Dehumidifier row when fitted |
 | Energy and water card | a Dehumidifier row in the machine share |
-| Room drawing | optional: a small dehumidifier box next to the humidifier when fitted (only if it fits the existing drawing cleanly) |
+| Room drawing | when fitted (room page) or with a capacity (device page): a wall unit with a grille, a tank and falling drops while it runs; desktop: inside the left wall under the intake fan, its name outside the wall like the intake fan's; phone: between the rack and the humidifier, its name under it |
 | Simulate stepper, step 1 | "Dehumidifier (L/day)" 0–200, 0 = none *default*, prefilled from the room (its `dehumidifierLday` when fitted, else 0) or the last run |
 | Results page | Dehumidifier in the energy table and the timeline; "Water taken out" next to Water when > 0 |
 

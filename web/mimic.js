@@ -54,6 +54,8 @@ function layoutWide(size) {
     fanOut: { ...fan(820 * k, ventY.out), tx: 836 * k, ty: ventY.out - 40 * g - 28, anchor: 'start', flows: { x1: 866 * k, x2: 990 * k, y: ventY.out } },
     hu: { s: k, ox: 0, oy: 0, tx: 680 * k, ty: 356 * k, anchor: 'end' },
     rack: { s: k, ox: 0, oy: 0, tx: 404 * k, ty: 356 * k, plume: 46 },
+    // a wall unit inside the left wall under the intake fan; its name outside the wall, like the intake fan's
+    dh: { x: 190 * k, y: 258 * k, w: 46 * k, tx: 12, ty: 280 * k, anchor: 'start' },
   };
 }
 
@@ -75,6 +77,8 @@ function layoutNarrow(size) {
     fanOut: { cx: w - 44, cy: fanY, s: 0.85, tx: w - 16, ty: fanY + 50, anchor: 'end', side: 'out', flows: { x1: w - 146, x2: w - 96, y: fanY } },
     hu: { s: hs, ox: w - 16 - 64 * hs - 690 * hs, oy: h - 18 - 412 * hs, tx: w - 16 - 64 * hs - 10, ty: h - 18 - 70 * hs, anchor: 'end' },
     rack: { s: rs, ox: 16 - 240 * rs, oy: h - 18 - 412 * rs, tx: 16, ty: 432, plume: 30 },
+    // above the floor between the rack and the humidifier, its name under it
+    dh: { x: w - 145, y: 402, w: 40, tx: w - 125, ty: 466, anchor: 'middle' }, // 40 × 47 px, its name 17 px under it
   };
 }
 
@@ -86,6 +90,7 @@ export function createMimic(host, opts = {}) {
   const anim = { fanIn: 0, fanOut: 0, cond: 0, circ: 0, acFlow: 0, airFlow: 0 };
   const mist = Array.from({ length: 16 }, (_, i) => ({ ph: i / 16, dx: (Math.random() - 0.5) * 14 }));
   const bubbles = Array.from({ length: 14 }, (_, i) => ({ ph: i / 14, dx: Math.random() * 136 }));
+  const drops = [0, 0.5].map((ph, i) => ({ ph, x: 17 + i * 12 }));
   let v = view(null), draw = null, svg = null, shape = null, h = null, alive = true, uid = 0;
 
   function build(size) {
@@ -217,6 +222,21 @@ export function createMimic(host, opts = {}) {
     h.bubbles = bubbles.map(() => S('circle', { class: 'bubble', r: 2.5 }, rg));
     T('rackName', rk.tx, rk.ty, 'm-tag').textContent = 'Growing blocks';
     T('blocks', rk.tx, rk.ty + 16, 'm-small');
+
+    // dehumidifier (shown only when the room has one): a 46 × 54 unit with a grille, a tank and drops while it runs
+    const dl = L.dh;
+    h.dhAll = S('g', {}, svg);
+    const dg = S('g', { transform: `translate(${dl.x} ${dl.y}) scale(${dl.w / 46})` }, h.dhAll);
+    h.boxes.dh = S('g', {}, dg);
+    S('rect', { class: 'unit', x: 0, y: 0, width: 46, height: 54, rx: 5 }, h.boxes.dh);
+    S('rect', { class: 'keybar dh', x: 0, y: 0, width: 46, height: 5, rx: 2 }, h.boxes.dh);
+    for (const y of [12, 17, 22]) S('line', { class: 'grille', x1: 8, x2: 38, y1: y, y2: y }, h.boxes.dh);
+    S('rect', { class: 'tank', x: 8, y: 32, width: 30, height: 16, rx: 2 }, h.boxes.dh);
+    S('rect', { class: 'water', x: 9, y: 43, width: 28, height: 4, rx: 1 }, h.boxes.dh);
+    h.drops = drops.map(() => S('circle', { class: 'drop', r: 1.8 }, dg));
+    h.text.dhName = textNode(h.dhAll, dl.tx, dl.ty, 'm-tag', dl.anchor);
+    h.text.dhName.textContent = 'Dehumidifier';
+    h.text.dhState = textNode(h.dhAll, dl.tx, dl.ty + 16, 'm-small', dl.anchor);
     if (draw !== undefined) paint(draw);
   }
 
@@ -250,6 +270,14 @@ export function createMimic(host, opts = {}) {
       e.setAttribute('r', (2.5 + m.ph * 6).toFixed(1));
       e.style.opacity = (fog * (1 - m.ph) * 0.7).toFixed(2);
     });
+    const dry = v.dh?.on ? v.dh.level : 0;
+    drops.forEach((d, i) => {
+      if (move) { d.ph += dt * (0.6 + 0.8 * dry); if (d.ph > 1) d.ph -= 1; }
+      const e = h.drops[i];
+      e.setAttribute('cx', d.x);
+      e.setAttribute('cy', (25 + d.ph * 16).toFixed(1));
+      e.style.opacity = (dry > 0 ? 0.9 * (1 - d.ph * 0.6) : 0).toFixed(2);
+    });
     const plume = h.L.rack.plume / h.L.rack.s;
     bubbles.forEach((b, i) => {
       if (move) { b.ph += dt * (0.3 + 0.3 * v.co2Rate); if (b.ph > 1) { b.ph -= 1; b.dx = Math.random() * 136; } }
@@ -276,6 +304,8 @@ export function createMimic(host, opts = {}) {
     const line = (key, unit) => put(h.text[key], unit.state === '--' ? 'No data' : `${unit.warn ? '! ' : ''}${unit.state}`);
     line('acState', u.ac); put(h.text.acSub, u.ac.sub);
     line('huState', u.hu); line('intakeState', u.intake); line('exhaustState', u.exhaust); line('circState', u.circ);
+    h.dhAll.style.display = v.dh ? '' : 'none';
+    if (v.dh) line('dhState', v.dh);
     put(h.text.blocks, v.blocks);
     for (const key of ['T', 'RH', 'CO2']) {
       const r = h.readouts[key], x = v.readouts[key];
@@ -285,6 +315,7 @@ export function createMimic(host, opts = {}) {
     const mark = (g, unit, on) => { g.classList.toggle('on', on); g.classList.toggle('nodata', !unit.known); g.classList.toggle('warn', unit.warn); };
     mark(h.boxes.ac, u.ac, u.ac.on); mark(h.boxes.cond, u.ac, u.ac.on && v.comp); mark(h.boxes.hu, u.hu, u.hu.on);
     mark(h.boxes.intake, u.intake, u.intake.on); mark(h.boxes.exhaust, u.exhaust, u.exhaust.on); mark(h.boxes.circ, u.circ, u.circ.on);
+    if (v.dh) mark(h.boxes.dh, v.dh, v.dh.on);
     for (const cap of h.caps) cap.style.transform = `scale(${v.capScale})`;
     svg.setAttribute('aria-label', describe(v));
     frame(0);

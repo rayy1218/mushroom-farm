@@ -76,6 +76,9 @@ export function fromRoom({ room, sensors, machines, control, outdoor = null, now
   const relay = Array.isArray(machines?.relay?.machines) ? machines.relay.machines : [];
   const units = { ac: acUnit(machines?.ac) };
   for (const [machine, unit] of Object.entries(RELAY_UNIT)) units[unit] = relayUnit(relay.find((m) => m.key === machine));
+  // The dehumidifier only when the room has one (an older server sends no row, a room without one 'not-fitted').
+  const dh = relay.find((m) => m.key === 'dehumidifier');
+  units.dh = dh && dh.status !== 'not-fitted' ? relayUnit(dh) : null;
   return {
     name: room?.name ?? '',
     note: noteOf(c),
@@ -131,6 +134,9 @@ export function fromSim(room, sensors) {
   const fanLevel = air === null ? 1 : Math.max(0.4, air);
   const hu = simRelayUnit(relay, 3, 1);
   if (hu.on && a && num(r.humidifierLH) > 0) hu.level = Math.max(0.2, clamp01((num(a.humidifierGH) ?? 0) / (r.humidifierLH * 1000)));
+  // A dehumidifier when the room has a capacity (output 5); its level: the water it takes out of its rating.
+  const dh = num(r.dehumidifierLday) > 0 ? simRelayUnit(relay, 4, 1) : null;
+  if (dh?.on && a) dh.level = Math.max(0.2, clamp01((num(a.dehumidifierGH) ?? 0) / ((r.dehumidifierLday * 1000) / 24)));
   const blocks = num(r.blocks), perBlock = num(r.co2PerBlock) ?? 0;
   const out = r.outdoor && (num(r.outdoor.T) !== null || num(r.outdoor.RH) !== null) ? { T: num(r.outdoor.T), RH: num(r.outdoor.RH) } : null;
   const chip = { lvl: 'none', icon: '', text: 'Simulated' };
@@ -147,6 +153,7 @@ export function fromSim(room, sensors) {
       intake: simRelayUnit(relay, 0, fanLevel),
       exhaust: simRelayUnit(relay, 1, fanLevel),
       circ: simRelayUnit(relay, 2, 1),
+      dh,
     },
     blocks: blocks !== null ? `${blocks.toLocaleString('en-US')} blocks` : '',
     co2Rate: blocks === null || r.enabled === false || blocks * perBlock <= 0 ? 0 : Math.max(0.15, clamp01((blocks * perBlock) / 1000 / 150)),
@@ -176,6 +183,7 @@ export function view(draw) {
   const units = {};
   for (const key of UNIT_KEYS) units[key] = unitView(un[key], NAMES[key]);
   const ac = units.ac;
+  const dh = un.dh ? unitView(un.dh, MACHINE_NAMES.dehumidifier) : null; // drawn only when the room has one
   const comp = ac.on && ac.mode !== 'fan' && ac.running !== false; // a fault or an idle aircon: no compressor
   return {
     night: Boolean(s.night),
@@ -191,6 +199,7 @@ export function view(draw) {
       CO2: { val: num(s.CO2) === null ? dash : `${Math.round(s.CO2).toLocaleString('en-US')} ppm`, ...chip(st.CO2) },
     },
     units,
+    dh,
     comp,
     acFlow: ac.on ? (comp ? 0.35 + 0.65 * ac.level : 0.2) : 0,
     airOn: units.intake.on || units.exhaust.on,
@@ -204,10 +213,9 @@ export function view(draw) {
 export function describe(v) {
   const r = v.readouts;
   const part = (label, x) => `${label} ${x.val === dash ? 'no data' : x.val}${x.zn ? ` (${x.zn.toLowerCase()})` : ''}`;
-  const units = UNIT_KEYS.map((k) => {
-    const u = v.units[k];
-    return `${u.name} ${u.state === dash ? 'no data' : u.state.charAt(0).toLowerCase() + u.state.slice(1)}${u.sub ? `, ${u.sub}` : ''}`;
-  });
+  const say = (u) => `${u.name} ${u.state === dash ? 'no data' : u.state.charAt(0).toLowerCase() + u.state.slice(1)}${u.sub ? `, ${u.sub}` : ''}`;
+  const units = UNIT_KEYS.map((k) => say(v.units[k]));
+  if (v.dh) units.push(say(v.dh));
   const outdoor = v.hasOut ? `Outdoor ${v.outLine}, ${v.sky.toLowerCase()}` : 'No outdoor sensor';
   return `Room drawing. ${part('Temperature', r.T)}, ${part('humidity', r.RH)}, ${part('CO₂', r.CO2)}. ${units.join('. ')}. ${outdoor}.${v.note ? ` ${v.note}.` : ''}`;
 }
