@@ -270,7 +270,9 @@ test('the table rows: texts, Best on the first, reached marks by words', () => {
   });
   assert.deepEqual([rows[1].best, rows[1].reached, rows[1].mark, rows[1].dehumidifier], [false, false, 'Below 95 %', '0']);
   // the second reaches the target when it is lower
-  assert.equal(sizingRows({ ...job.result, target: 85 })[1].mark, 'Reaches 85 %');
+  assert.equal(sizingRows({ ...job.result, target: 90 })[1].mark, 'Reaches 90 %'); // t, rh, co2 each 90 or more (all three is 88: information only)
+  assert.equal(sizingRows({ ...job.result, target: 91 })[1].mark, 'Below 91 %'); // humidity 90
+  assert.equal(sizingRows({ ...job.result, target: 98 })[0].reached, false); // rh 97
   // a Best row that misses
   assert.equal(sizingRows({ ...job.result, target: 99 })[0].mark, 'Best, below 99 %');
   assert.deepEqual(sizingRows({ best: [] }), []);

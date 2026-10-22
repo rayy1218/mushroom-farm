@@ -255,7 +255,8 @@ const one = (v) => (isNumber(v) ? v.toFixed(1) : '—');
 export function sizingRows(result) {
   const target = result?.target;
   return (Array.isArray(result?.best) ? result.best : []).map((c, i) => {
-    const reached = isNumber(c.inBand?.all) && isNumber(target) && c.inBand.all >= target;
+    // Temperature, humidity and CO₂ each at the target (spec section 4); "All three" is information only.
+    const reached = isNumber(target) && ['t', 'rh', 'co2'].every((k) => isNumber(c.inBand?.[k]) && c.inBand[k] >= target);
     const best = i === 0;
     const verdict = reached ? `reaches ${target} %` : `below ${target} %`;
     const text = best ? `Best, ${verdict}` : `${verdict[0].toUpperCase()}${verdict.slice(1)}`;
