@@ -5,7 +5,7 @@
 import { request, OFFLINE, GONE, OUTDATED, routeMissing } from './api.js';
 import { CROPS, CROP_KEYS, STAGES, FARM_TYPES, MAX_CROPS } from './crops.js';
 import {
-  PHYSICS_FIELDS, initialState, checkStep, firstField, stepOf, buildBody, mixSummary, wholeProgram, stagesOf, fixStage, roomLine,
+  PHYSICS_FIELDS, FILTER_KEYS, initialState, checkStep, firstField, stepOf, buildBody, mixSummary, wholeProgram, stagesOf, fixStage, roomLine,
   summaryLines, progressLine, removeLabel,
   TARGET_DEFAULT, checkTarget, sizingBody, sizingProgress, sizingRows, estimateLines, useSetup,
 } from './simulate-math.js';
@@ -151,16 +151,25 @@ export function openSimulateDialog(room, hooks = {}) {
     weather.append(el('legend', '', 'Walls and weather'));
     const machines = el('fieldset', 'addresses');
     machines.append(el('legend', '', 'Machines'));
+    // The intake filter (spec 2026-10-22-filter-design.md 8): the room's settings and its filter's age; with the room's
+    // pressure sensor the run changes the filter at the change pressure too.
+    const filter = el('fieldset', 'addresses');
+    filter.append(el('legend', '', 'Intake filter'));
     const weatherGrid = el('div', 'sizes two');
     const machineGrid = el('div', 'sizes two');
+    const filterGrid = el('div', 'sizes two');
     for (const f of PHYSICS_FIELDS) {
       const input = numberInput(state.physics[f.key], (v) => { state.physics[f.key] = v; }, f.whole);
       const wrap = field(`physics.${f.key}`, `${f.label} (${f.unit})`, input);
-      (['fanFlow', 'acBTU', 'humidifierLH', 'dehumidifierLday'].includes(f.key) ? machineGrid : weatherGrid).append(wrap);
+      if (FILTER_KEYS.includes(f.key)) filterGrid.append(wrap);
+      else (['fanFlow', 'acBTU', 'humidifierLH', 'dehumidifierLday'].includes(f.key) ? machineGrid : weatherGrid).append(wrap);
     }
     weather.append(weatherGrid);
     machines.append(machineGrid);
-    box.append(weather, machines);
+    filter.append(filterGrid, el('p', 'c-hint', state.filterSensor
+      ? 'The room has a filter pressure sensor: the run also changes the filter at the change pressure.'
+      : 'The room has no filter pressure sensor: the run changes the filter only every so many days (0: never).'));
+    box.append(weather, machines, filter);
     return box;
   }
 

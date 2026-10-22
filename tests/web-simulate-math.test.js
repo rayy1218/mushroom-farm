@@ -20,7 +20,8 @@ test('the limits and defaults are those of the device app (device/sim-store.js P
     assert.equal(f.whole, m[3] === 'true', `${f.key} whole`);
     if (f.key !== 'humidifierLH') assert.equal(f.def, Number(m[4]), `${f.key} default`);
   }
-  assert.deepEqual(PHYSICS_FIELDS.map((f) => f.key), ['wallUA', 'outdoorHigh', 'outdoorLow', 'outdoorDew', 'sunW', 'fanFlow', 'acBTU', 'humidifierLH', 'dehumidifierLday']);
+  assert.deepEqual(PHYSICS_FIELDS.map((f) => f.key), ['wallUA', 'outdoorHigh', 'outdoorLow', 'outdoorDew', 'sunW', 'fanFlow', 'acBTU', 'humidifierLH', 'dehumidifierLday',
+    'fanMaxPa', 'filterCleanPa', 'filterFinalPa', 'filterLifeDays', 'filterChangeDays', 'filterUsedDays']);
 });
 
 test('the page copy of programDays agrees with server/program.js', () => {
@@ -41,7 +42,8 @@ test('the page copy of programDays agrees with server/program.js', () => {
 
 test('first open: the defaults, the humidifier from the room rating, 7 days', () => {
   const s = initialState({ room });
-  assert.deepEqual(s.physics, { wallUA: '80', outdoorHigh: '33', outdoorLow: '25', outdoorDew: '24', sunW: '300', fanFlow: '600', acBTU: '12000', humidifierLH: '1.5', dehumidifierLday: '0' });
+  assert.deepEqual(s.physics, { wallUA: '80', outdoorHigh: '33', outdoorLow: '25', outdoorDew: '24', sunW: '300', fanFlow: '600', acBTU: '12000', humidifierLH: '1.5', dehumidifierLday: '0',
+    fanMaxPa: '200', filterCleanPa: '40', filterFinalPa: '150', filterLifeDays: '30', filterChangeDays: '30', filterUsedDays: '0' });
   assert.deepEqual(s.crops, [{ crop: 'oyster', blocks: '500' }]);
   assert.deepEqual([s.farmType, s.stage, s.daysMode, s.days], ['ready', 'fruiting', 'days', String(DAYS_DEFAULT)]);
   assert.equal(DEFAULT_CROPS[0].crop, 'oyster');
@@ -132,7 +134,8 @@ test('the body is what POST /api/rooms/:id/simulations takes', () => {
   s.crops = [{ crop: 'oyster', blocks: '500' }, { crop: 'pink', blocks: '20' }];
   s.days = '14';
   assert.deepEqual(buildBody(s), {
-    physics: { wallUA: 95.5, outdoorHigh: 33, outdoorLow: 25, outdoorDew: 24, sunW: 300, fanFlow: 600, acBTU: 12000, humidifierLH: 1.5, dehumidifierLday: 0 },
+    physics: { wallUA: 95.5, outdoorHigh: 33, outdoorLow: 25, outdoorDew: 24, sunW: 300, fanFlow: 600, acBTU: 12000, humidifierLH: 1.5, dehumidifierLday: 0,
+      fanMaxPa: 200, filterCleanPa: 40, filterFinalPa: 150, filterLifeDays: 30, filterChangeDays: 30, filterUsedDays: 0, filterSensor: false },
     crops: [{ crop: 'oyster', blocks: 500 }, { crop: 'pink', blocks: 20 }], farmType: 'ready', stage: 'fruiting', days: 14,
   });
   s.daysMode = 'whole';
@@ -178,13 +181,13 @@ test('the summary and the room line', () => {
   assert.equal(roomLine(room), 'Room size 6 × 4 × 3 m, 72.0 m³');
   const s = initialState({ room });
   const lines = summaryLines(s, room);
-  assert.deepEqual(lines.map((l) => l.label), ['Room', 'Walls and weather', 'Machines', 'Crops', 'Run']);
-  assert.equal(lines[3].text, 'Grey oyster, 500 blocks; ready-to-fruit blocks, starting at fruiting');
+  assert.deepEqual(lines.map((l) => l.label), ['Room', 'Walls and weather', 'Machines', 'Filter', 'Crops', 'Run']);
+  assert.equal(lines[4].text, 'Grey oyster, 500 blocks; ready-to-fruit blocks, starting at fruiting');
   assert.equal(lines[2].text, 'Fan 600 m³/h, aircon 12,000 BTU/h, humidifier 1.5 L/h, no dehumidifier');
   assert.equal(lines[1].text, 'Walls 80 W/K, sun on the roof 300 W, outdoor 25–33 °C, dew point 24 °C');
-  assert.equal(lines[4].text, '7 days');
+  assert.equal(lines[5].text, '7 days');
   s.daysMode = 'whole';
-  assert.equal(summaryLines(s, room)[4].text, 'Whole program, 68 days');
+  assert.equal(summaryLines(s, room)[5].text, 'Whole program, 68 days');
 });
 
 test('the progress line', () => {
