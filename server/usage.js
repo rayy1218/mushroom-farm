@@ -1,6 +1,9 @@
 // Energy and water usage (spec 2026-10-20-energy-water-outdoor-design.md section 5). The pure parts (run time, estimated and
 // metered energy) take plain rows; roomUsage and farmUsage read them from the database. No HTTP.
 
+import { fanWattFactor } from '../device/sim-power.js';
+import { meanCountedPa } from './filter.js';
+
 const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
 const FAN_SHARE = 0.05; // the aircon in fan mode draws this share of its rated input
@@ -79,15 +82,16 @@ export function msPerDay(intervals, days) {
   return out;
 }
 
-// Estimated kWh of each machine in one day from its run time and the room's ratings.
-export function estimateDay(ms, room) {
+// Estimated kWh of each machine in one day from its run time and the room's ratings; the intake's rating times intakeFactor
+// (its filter: spec 2026-10-22-filter-design.md 6).
+export function estimateDay(ms, room, intakeFactor = 1) {
   const kWh = (milliseconds, watts) => (milliseconds / HOUR_MS) * (watts / 1000);
   const out = {};
   for (const machine of MACHINES) {
     const m = ms[machine] ?? {};
     out[machine] = machine === 'ac'
       ? kWh(m.full ?? 0, room.acInputW) + kWh(m.fan ?? 0, room.acInputW * FAN_SHARE)
-      : kWh(m.on ?? 0, room[RATING[machine]]);
+      : kWh(m.on ?? 0, room[RATING[machine]] * (machine === 'intake' ? intakeFactor : 1));
   }
   return out;
 }
@@ -173,7 +177,8 @@ function advanceMeter(db, roomId, m, hi, final) {
   }
 }
 
-// The work of one day of a room, cached while the day is complete: its machine run times and its metered energy.
+// The work of one day of a room, cached while the day is complete: its machine run times, its metered energy and the mean
+// counted pressure of its filter sensor (pa, null without a sensor or a counted reading).
 // Today is read on from the last reading each time; a day that ended is final SETTLE_MS later and then costs nothing.
 // db.usageDays drops an entry when the room changes or a row is written inside its days.
 function dayWork(db, room, day, { now, zone }) {
@@ -198,8 +203,10 @@ function dayWork(db, room, day, { now, zone }) {
   for (const machine of MACHINES) {
     ms[machine] = msPerDay(runIntervals(db.machineLogWindow(room.id, machine, day.start, day.end), day.start, day.end, machine), [day])[0];
   }
-  if (settled) entry.ms = ms;
-  return { ...entry, ms };
+  const pa = room.dpAddress === null ? null
+    : meanCountedPa(db.filterReadingsWindow(room.id, day.start, hi), db.machineLogWindow(room.id, 'intake', day.start - 60_000, day.end));
+  if (settled) Object.assign(entry, { ms, pa });
+  return { ...entry, ms, pa };
 }
 
 // The days of a room: [{ date, kWh, metered, byMachine, waterL }], oldest first, with the unrounded numbers rounded to 3
@@ -211,7 +218,7 @@ export function roomDays(db, room, { now, zone, count }) {
   if (cache.size > 400) for (const [key, e] of cache) if (e.end < days[0].start) cache.delete(key);
   return days.map((day) => {
     const work = dayWork(db, room, day, { now, zone });
-    const est = estimateDay(work.ms, room);
+    const est = estimateDay(work.ms, room, work.pa === null ? 1 : fanWattFactor(work.pa, room.filterCleanPa, room.fanMaxPa));
     const isMetered = room.meterAddress !== null && work.meter.readings >= 2;
     const others = est.intake + est.exhaust + est.circulation + est.humidifier + est.dehumidifier;
     let byMachine = { ...est, rest: 0 };

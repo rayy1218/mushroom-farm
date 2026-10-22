@@ -2,6 +2,8 @@
 // and cycle. A condition must hold for its delay before an alarm is raised; an active alarm clears with a little
 // hysteresis. The alarms themselves are rows of the alarms table (see db.js); only the delay counts are in memory.
 
+import { FILTER_ALARM_DELAY_MS } from './filter.js';
+
 const MIN_MS = 60_000;
 const EPS = 1e-9; // for limits like tHigh + 0.8
 const HUMIDIFIER_DELAY = 30 * MIN_MS; // the humidifier too small: running this long with the humidity below the band
@@ -75,8 +77,9 @@ export function createAlarms({ db, now = Date.now }) {
     // room: { id }. input: { readings: { t, rh, co2 } (good values or null), bands (the room's control settings),
     // faults: { trh, co2 } (the fault text or null),
     // blocksDone: { flush, flushes } while the room's program is done, else null.
+    // filter: { sensor, pa, cleanPa, finalPa, changeDays, daysInUse } (filter.js filterInput), or missing: no filter alarms.
     // clear: { t, rh, co2 } (true when that value's sensor is faulty or not wired: its process alarms clear), cappedInRow, machines (the machines view or null) }.
-    evaluate(room, { readings, bands, faults, clear = {}, cappedInRow, machines, blocksDone = null }) {
+    evaluate(room, { readings, bands, faults, clear = {}, cappedInRow, machines, blocksDone = null, filter = null }) {
       const active = new Map(db.activeAlarms(room.id).map((a) => [a.key, a]));
 
       for (const rule of PROCESS) {
@@ -107,6 +110,26 @@ export function createAlarms({ db, now = Date.now }) {
         released: blocksDone === null,
         text: () => `Flush ${blocksDone.flush} of ${blocksDone.flushes} done: replace the blocks`,
       });
+
+      // The intake filter (spec 2026-10-22-filter-design.md 5): the change reminder, and from the counted pressure (null: no
+      // reading counts now, the count is dropped and an active alarm stays) a dirty or a missing filter. No sensor: they clear.
+      if (filter) {
+        const due = filter.changeDays > 0 && filter.daysInUse >= filter.changeDays;
+        apply(room, active, 'filterDue', 'warning', 0, {
+          hit: due, released: !due,
+          text: () => `Filter in use ${Math.floor(filter.daysInUse)} days, change every ${filter.changeDays}`,
+        });
+        const pa = filter.pa;
+        const judged = (rule) => (!filter.sensor ? { hit: false, released: true, text: () => '' } : pa === null ? null : rule);
+        apply(room, active, 'filterDirty', 'warning', FILTER_ALARM_DELAY_MS, judged({
+          hit: pa >= filter.finalPa, released: pa < filter.finalPa - 10,
+          text: () => `Filter pressure ${num(pa)} Pa, at or above the change pressure ${filter.finalPa}`,
+        }));
+        apply(room, active, 'filterMissing', 'warning', FILTER_ALARM_DELAY_MS, judged({
+          hit: pa < filter.cleanPa / 2, released: pa >= 0.6 * filter.cleanPa - EPS,
+          text: () => `Filter pressure ${num(pa)} Pa: filter missing or torn, or the sensor tube is off`,
+        }));
+      }
 
       // A humidifier too small for the room: running (switched on and drawing current) for HUMIDIFIER_DELAY with the humidity
       // still below the band. Not from a faulty probe; a missing reading pauses the count.
@@ -139,6 +162,11 @@ export function createAlarms({ db, now = Date.now }) {
     // Drops the delay counts of a deleted room.
     forget(roomId) {
       for (const slot of [...pending.keys()]) if (slot.startsWith(`${roomId}/`)) pending.delete(slot);
+    },
+
+    // Drops the delay counts of some of the room's alarms (a filter change: the old filter's count must not go on).
+    reset(roomId, keys) {
+      for (const key of keys) pending.delete(`${roomId}/${key}`);
     },
   };
 }
