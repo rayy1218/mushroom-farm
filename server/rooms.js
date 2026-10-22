@@ -14,6 +14,7 @@ const ADDRESSES = [
   { field: 'relayAddress', label: 'Relay module' },
   { field: 'acAddress', label: 'Aircon gateway' },
   { field: 'meterAddress', label: 'Energy meter' },
+  { field: 'dpAddress', label: 'Filter pressure sensor' },
 ];
 
 // Machine ratings (spec 2026-10-20-energy-water-outdoor-design.md section 4), in the order of the rooms columns.
@@ -28,7 +29,16 @@ export const RATINGS = [
   { field: 'dehumidifierLday', label: 'Dehumidifier capacity', unit: 'L/day', default: 20, min: 0, max: 200 },
 ];
 
-// Returns { room: { name, length, width, height, the five addresses, the six ratings } } when the input is valid,
+// The intake filter (spec 2026-10-22-filter-design.md section 3), whole numbers. One left out stays out: an update keeps the
+// stored value (an older page sends none) and a new room gets the default.
+export const FILTER = [
+  { field: 'fanMaxPa', label: 'Intake fan maximum pressure', unit: 'Pa', default: 200, min: 20, max: 2000 },
+  { field: 'filterCleanPa', label: 'Clean filter pressure drop', unit: 'Pa', default: 40, min: 5, max: 1000 },
+  { field: 'filterFinalPa', label: 'Filter change pressure', unit: 'Pa', default: 150, min: 5, max: 2000 },
+  { field: 'filterChangeDays', label: 'Change the filter every', unit: 'days', default: 30, min: 0, max: 365 },
+];
+
+// Returns { room: { name, length, width, height, the six addresses, the ratings, the filter settings given } } when the input is valid,
 // otherwise { error, field } for the first failing field (field is missing
 // when the body itself is wrong).
 export function validateRoom(body) {
@@ -69,6 +79,22 @@ export function validateRoom(body) {
     return { error: 'Dehumidifier fitted must be true or false', field: 'dehumidifier' };
   }
   if (body.dehumidifier !== undefined) room.dehumidifier = body.dehumidifier;
+  for (const { field, label, unit, min, max } of FILTER) {
+    const value = body[field] ?? null;
+    if (value === null) continue;
+    if (!Number.isInteger(value) || value < min || value > max) {
+      return { error: `${label} must be a whole number from ${min} to ${max} ${unit}`, field };
+    }
+    room[field] = value;
+  }
+  // The fan must push above the clean filter, and the filter is changed above its clean pressure drop (one left out: its default).
+  const pa = (field) => room[field] ?? FILTER.find((f) => f.field === field).default;
+  if (pa('fanMaxPa') <= pa('filterCleanPa')) {
+    return { error: "Fan maximum pressure must be above the clean filter's pressure drop", field: 'fanMaxPa' };
+  }
+  if (pa('filterFinalPa') <= pa('filterCleanPa')) {
+    return { error: "Filter change pressure must be above the clean filter's pressure drop", field: 'filterFinalPa' };
+  }
   // The later field of a clashing pair is blamed.
   for (let i = 1; i < ADDRESSES.length; i++) {
     const { field } = ADDRESSES[i];
