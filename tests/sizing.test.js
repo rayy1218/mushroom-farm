@@ -120,7 +120,7 @@ test('runSizing: when nothing reaches the target the notes say which value falls
   assert.match(r.notes[0], /^CO₂ stays above the band/);
   assert.match(r.notes[1], /^Temperature stays above the band/);
   const humid = runSizing(input, ctx, { simulate: () => ({ summary: { inBand: { t: 99, rh: 70, co2: 99, all: 70 }, energy: { kWh: 1 }, water: { litres: 1, removedLitres: 0 } } }) });
-  assert.match(humid.notes[0], /^Humidity stays above the band/);
+  assert.match(humid.notes[0], /^Humidity stays out of its band/);
   assert.equal(runSizing({ ...input, target: 60 }, ctx, { simulate: sim }).reached, true);
 });
 

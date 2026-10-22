@@ -244,7 +244,10 @@ export function sizingProgress(job) {
   if (job.status === 'queued') return 'Waiting for its turn…';
   if (job.status === 'done') return 'Done';
   if (job.status === 'failed') return `Failed: ${job.error ?? 'the search stopped'}`;
-  if (isNumber(job.tried) && isNumber(job.total) && job.total > 0) return `Trying ${job.tried} of ${job.total} setups…`;
+  if (isNumber(job.total) && job.total > 0) {
+    const tried = isNumber(job.tried) ? job.tried : Math.round((isNumber(job.progress) ? job.progress : 0) * job.total);
+    return `Trying ${tried} of ${job.total} setups…`;
+  }
   return `Trying setups… ${Math.round((isNumber(job.progress) ? job.progress : 0) * 100)} %`;
 }
 

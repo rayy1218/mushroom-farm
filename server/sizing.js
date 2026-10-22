@@ -137,7 +137,7 @@ export function rank(results, target) {
 }
 
 const HINTS = {
-  rh: 'Humidity stays above the band: the room has more water than these machines take out; fewer blocks or a wider humidity band would help',
+  rh: 'Humidity stays out of its band (in this climate usually too wet): fewer blocks, a wider humidity band or a different dehumidifier size would help',
   co2: 'CO₂ stays above the band: a bigger fan or fewer blocks',
   t: 'Temperature stays above the band: a bigger aircon or better insulation',
 };

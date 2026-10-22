@@ -256,6 +256,7 @@ test('sizing progress words', () => {
   assert.equal(sizingProgress({ status: 'running', progress: 0.354 }), 'Trying setups… 35 %');
   assert.equal(sizingProgress({ status: 'running' }), 'Trying setups… 0 %');
   assert.equal(sizingProgress({ status: 'running', progress: 0.3, tried: 34, total: 96 }), 'Trying 34 of 96 setups…');
+  assert.equal(sizingProgress({ status: 'running', progress: 0.5, total: 48 }), 'Trying 24 of 48 setups…', 'the server sends total and progress');
   assert.equal(sizingProgress({ status: 'failed', error: 'boom' }), 'Failed: boom');
   assert.equal(sizingProgress({ status: 'failed' }), 'Failed: the search stopped');
   assert.equal(sizingProgress({ status: 'done' }), 'Done');
