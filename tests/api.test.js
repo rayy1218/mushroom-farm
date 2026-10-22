@@ -273,7 +273,7 @@ test('GET /api/rooms/:id returns the room, 404 when missing', async () => {
   assert.deepEqual(missing.body, { error: 'Room not found' });
 });
 
-test('GET /api/rooms/:id/sensors returns [trh, co2, meter], 404 when missing', async () => {
+test('GET /api/rooms/:id/sensors returns [trh, co2, meter, dp], 404 when missing', async () => {
   reset();
   const room = db.createRoom({ ...fields, trhAddress: 1 });
   const at = Date.now();
@@ -289,6 +289,7 @@ test('GET /api/rooms/:id/sensors returns [trh, co2, meter], 404 when missing', a
     },
     { kind: 'co2', address: null, status: 'not-wired', failuresInRow: 0, lastOk: null, readings: [] },
     { kind: 'meter', address: null, status: 'not-wired', failuresInRow: 0, lastOk: null, readings: [] },
+    { kind: 'dp', address: null, status: 'not-wired', failuresInRow: 0, lastOk: null, readings: [] },
   ]);
   const missing = await call('GET', '/api/rooms/99/sensors');
   assert.equal(missing.status, 404);

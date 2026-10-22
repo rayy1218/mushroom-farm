@@ -128,10 +128,10 @@ test('bad ratings are 400 with the field; a taken meter address is 409', async (
   assert.equal(res.body.field, 'meterAddress');
 });
 
-test('GET /api/rooms/:id/sensors ends with the energy meter', async () => {
+test('GET /api/rooms/:id/sensors has the energy meter after the two sensors', async () => {
   const room = db.createRoom({ ...fields, meterAddress: 30 });
   let res = await call('GET', `/api/rooms/${room.id}/sensors`);
-  assert.deepEqual(res.body.map((s) => s.kind), ['trh', 'co2', 'meter']);
+  assert.deepEqual(res.body.map((s) => s.kind), ['trh', 'co2', 'meter', 'dp']);
   assert.deepEqual(res.body[2], { kind: 'meter', address: 30, status: 'no-data', failuresInRow: 0, lastOk: null, readings: [] });
   const at = Date.now();
   db.addMeterReading({ roomId: room.id, address: 30, at, ok: true, powerW: 230.5, energyKwh: 12.25 });
