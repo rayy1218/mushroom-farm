@@ -16,6 +16,7 @@ function fakeDb({ sensors = [], meters = [], outdoor = null } = {}) {
     listWiredSensors: () => db.sensors,
     listWiredMachines: () => [],
     listMeters: () => db.meters,
+    listFilterSensors: () => [],
     outdoorAddress: () => db.outdoor,
     addReading: (r) => db.readings.push(r),
     addOutdoorReading: (r) => db.outdoorReadings.push(r),

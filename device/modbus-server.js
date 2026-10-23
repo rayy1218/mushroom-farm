@@ -1,5 +1,5 @@
-// Modbus TCP server for the device's sensors, relay modules and aircon gateways
-// and energy meters (functions 01, 02, 03, 04, 05 and 16).
+// Modbus TCP server for the device's sensors, relay modules and aircon gateways, energy meters
+// and filter pressure sensors (functions 01, 02, 03, 04, 05 and 16).
 // Written on its own, not shared with the farm app's client.
 
 import net from 'node:net';
@@ -14,6 +14,8 @@ const MAP = {
   ac: { reads: { 3: { start: 0, qty: 4 }, 4: { start: 0, qty: 2 } }, writes: [16] },
   // An SDM120-style meter: two float32 values, each read on its own; any other range is an illegal address.
   meter: { reads: { 4: [{ start: 0x000c, qty: 2, field: 'power' }, { start: 0x0156, qty: 2, field: 'energy' }] } },
+  // A differential pressure transmitter across the filter: Pa x 10, signed.
+  dp: { reads: { 4: { start: 0, qty: 1 } } },
 };
 const MODES = ['cool', 'heat', 'dry', 'fan'];
 const FANS = ['auto', 'low', 'high'];
@@ -30,6 +32,7 @@ function registersOf(device, fn, range) {
   if (device.kind === 'meter') return floatRegisters(device[range.field]);
   if (device.kind === 'trh') return [Math.round(device.t * 10) & 0xffff, Math.round(device.rh * 10) & 0xffff];
   if (device.kind === 'co2') return [Math.round(device.co2) & 0xffff];
+  if (device.kind === 'dp') return [Math.round(device.pa * 10) & 0xffff];
   if (fn === 3) return [device.power ? 1 : 0, device.mode, Math.round(device.setpoint * 10), device.fan];
   return [Math.round(device.roomT * 10) & 0xffff, device.error];
 }

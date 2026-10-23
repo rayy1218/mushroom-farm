@@ -1,5 +1,5 @@
-// The polling cycle: reads the outdoor probe, then every wired sensor and energy meter through the Modbus client and stores
-// one reading per poll;
+// The polling cycle: reads the outdoor probe, then every wired sensor, filter pressure sensor and energy meter through the
+// Modbus client and stores one reading per poll;
 // also polls each wired machine (relay module, aircon gateway) and keeps its last polls in memory.
 
 import { ModbusError, registersToFloat } from './modbus.js';
@@ -13,6 +13,10 @@ const KINDS = {
 
 // Energy meter (SDM120 style): input registers (fn 4), each a float32 over two registers, high word first.
 const METER = { power: { start: 0x000c, qty: 2 }, energy: { start: 0x0156, qty: 2 } };
+
+// Filter pressure sensor (spec 2026-10-22-filter-design.md 4): input register 0 (fn 4), the pressure drop in Pa × 10, signed.
+// A value outside FILTER.min to FILTER.max is a failed poll that keeps the value.
+const FILTER = { fn: 4, start: 0, qty: 1, min: -50, max: 2000 };
 
 // Relay module: coils (fn 1) then current inputs (fn 2). Aircon gateway: settings (fn 3) then room T and error (fn 4).
 const MACHINES = {
@@ -77,6 +81,20 @@ export function createPoller({
     db.addOutdoorReading(reading);
   }
 
+  async function pollFilter({ roomId, address }, began) {
+    const at = now();
+    began(at);
+    const reading = { roomId, address, at };
+    try {
+      const [raw] = await client.readRegisters(address, FILTER.fn, FILTER.start, FILTER.qty);
+      const pa = ((raw << 16) >> 16) / 10;
+      Object.assign(reading, pa >= FILTER.min && pa <= FILTER.max ? { ok: true, pa } : { ok: false, pa, error: 'Out of range' });
+    } catch (err) {
+      Object.assign(reading, { ok: false, error: err instanceof ModbusError ? err.message : 'bad reply' });
+    }
+    db.addFilterReading(reading);
+  }
+
   // Two reads (power, then energy); a failed read, or a value that is not a number, makes the poll a failed one.
   async function pollMeter({ roomId, address }, began) {
     const at = now();
@@ -116,15 +134,20 @@ export function createPoller({
       const sensors = db.listWiredSensors();
       const wired = db.listWiredMachines();
       const meters = db.listMeters();
+      const filters = db.listFilterSensors();
       const outdoor = db.outdoorAddress();
       if (outdoor !== null && !stopped) await pollOutdoor(outdoor, began);
       const wiredKeys = new Set(wired.map((m) => `${m.roomId}/${m.kind}`));
       for (const key of machines.keys()) if (!wiredKeys.has(key)) machines.delete(key);
-      const roomIds = [...new Set([...sensors, ...meters, ...wired].map((d) => d.roomId))].sort((a, b) => a - b);
+      const roomIds = [...new Set([...sensors, ...filters, ...meters, ...wired].map((d) => d.roomId))].sort((a, b) => a - b);
       for (const roomId of roomIds) {
         for (const sensor of sensors.filter((s) => s.roomId === roomId)) {
           if (stopped) return;
           await pollOne(sensor, began);
+        }
+        for (const filter of filters.filter((f) => f.roomId === roomId)) {
+          if (stopped) return;
+          await pollFilter(filter, began);
         }
         for (const meter of meters.filter((m) => m.roomId === roomId)) {
           if (stopped) return;

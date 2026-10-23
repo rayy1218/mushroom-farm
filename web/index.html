@@ -88,6 +88,11 @@
           <input id="f-meterAddress" name="meterAddress" type="number" min="1" max="247" step="1" inputmode="numeric" placeholder="none" aria-describedby="e-meterAddress">
           <p class="field-error" aria-live="polite" id="e-meterAddress"></p>
         </div>
+        <div class="field">
+          <label for="f-dpAddress">Filter pressure sensor address</label>
+          <input id="f-dpAddress" name="dpAddress" type="number" min="1" max="247" step="1" inputmode="numeric" placeholder="none" aria-describedby="e-dpAddress">
+          <p class="field-error" aria-live="polite" id="e-dpAddress"></p>
+        </div>
       </div>
     </fieldset>
 
@@ -155,6 +160,33 @@
           <p class="field-error" aria-live="polite" id="e-dehumidifierLday"></p>
         </div>
       </div>
+    </fieldset>
+
+    <fieldset class="addresses">
+      <legend>Intake filter</legend>
+      <div class="sizes two">
+        <div class="field">
+          <label for="f-fanMaxPa">Intake fan maximum pressure (Pa)</label>
+          <input id="f-fanMaxPa" name="fanMaxPa" type="number" required min="20" max="2000" step="1" inputmode="numeric" aria-describedby="e-fanMaxPa">
+          <p class="field-error" aria-live="polite" id="e-fanMaxPa"></p>
+        </div>
+        <div class="field">
+          <label for="f-filterCleanPa">Clean filter pressure drop (Pa)</label>
+          <input id="f-filterCleanPa" name="filterCleanPa" type="number" required min="5" max="1000" step="1" inputmode="numeric" aria-describedby="e-filterCleanPa">
+          <p class="field-error" aria-live="polite" id="e-filterCleanPa"></p>
+        </div>
+        <div class="field">
+          <label for="f-filterFinalPa">Filter change pressure (Pa)</label>
+          <input id="f-filterFinalPa" name="filterFinalPa" type="number" required min="5" max="2000" step="1" inputmode="numeric" aria-describedby="e-filterFinalPa">
+          <p class="field-error" aria-live="polite" id="e-filterFinalPa"></p>
+        </div>
+        <div class="field">
+          <label for="f-filterChangeDays">Change the filter every (days, 0: no reminder)</label>
+          <input id="f-filterChangeDays" name="filterChangeDays" type="number" required min="0" max="365" step="1" inputmode="numeric" aria-describedby="e-filterChangeDays">
+          <p class="field-error" aria-live="polite" id="e-filterChangeDays"></p>
+        </div>
+      </div>
+      <p class="c-hint">Filter change pressure: the pressure sensor's reading at which to change the filter (with the intake running). It must be above the clean drop and below the fan's maximum pressure.</p>
     </fieldset>
 
     <div class="actions">

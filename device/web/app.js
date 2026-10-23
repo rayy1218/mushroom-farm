@@ -1,10 +1,11 @@
-// Device control page: table of sensors, relay modules, aircon gateways and energy meters (edit in place), add form, simulated rooms, request log. Refreshes every 2 s.
+// Device control page: table of sensors, relay modules, aircon gateways, energy meters and filter pressure sensors (edit in place),
+// add form, simulated rooms, request log. Refreshes every 2 s.
 
 import { createSimDrawing } from './sim-drawing.js';
 
 const $ = (id) => document.getElementById(id);
 const REFRESH_MS = 2000;
-const KIND_NAMES = { trh: 'T/RH probe', co2: 'CO₂ sensor', relay: 'Relay module', ac: 'Aircon gateway', meter: 'Energy meter' };
+const KIND_NAMES = { trh: 'T/RH probe', co2: 'CO₂ sensor', relay: 'Relay module', ac: 'Aircon gateway', meter: 'Energy meter', dp: 'Filter pressure sensor' };
 const MACHINES = ['Intake fan', 'Exhaust fan', 'Circulation fan', 'Humidifier', 'Dehumidifier'];
 const MODES = ['cool', 'heat', 'dry', 'fan'];
 const FANS = ['auto', 'low', 'high'];
@@ -101,6 +102,8 @@ function buildRow(sensor) {
       ...valueInput(row, address, 'power', 'Power W', { min: 0, max: 100000, step: 0.1 }),
       ...valueInput(row, address, 'energy', 'Energy kWh', { min: 0, max: 1e9, step: 0.001 }),
     );
+  } else if (kind === 'dp') {
+    values.append(...valueInput(row, address, 'pa', 'ΔP Pa', { min: -50, max: 2000, step: 0.1 }));
   } else if (kind === 'trh') {
     values.append(
       ...valueInput(row, address, 't', 'T °C', { min: -40, max: 80, step: 0.1 }),
@@ -150,7 +153,7 @@ async function save(row, address, field, input, list) {
 }
 
 // The fields a simulation drives, per kind (the server refuses edits of just these).
-const SIMULATED_FIELDS = { trh: ['t', 'rh'], co2: ['co2'], ac: ['roomT'], meter: ['power', 'energy'] };
+const SIMULATED_FIELDS = { trh: ['t', 'rh'], co2: ['co2'], ac: ['roomT'], meter: ['power', 'energy'], dp: ['pa'] };
 
 function showRow(row, sensor) {
   const simulatedBy = sensor.simulatedBy;
@@ -217,10 +220,14 @@ const SIM_PARAMS = [
   ['humidifierLH', 'Humidifier', 'L/h', 0, 100, 0.1],
   ['dehumidifierLday', 'Dehumidifier capacity', 'L/day, 0 = none', 0, 200, 0.5],
   ['dehumidifierW', 'Dehumidifier power', 'W', 0, 5000, 10],
+  ['fanMaxPa', 'Fan maximum pressure', 'Pa', 20, 2000, 10],
+  ['filterCleanPa', 'Clean filter drop', 'Pa at fan flow', 5, 1000, 5],
+  ['filterFinalPa', 'Filter change pressure', 'Pa', 5, 2000, 5],
+  ['filterLifeDays', 'Filter life', 'days of fan flow', 1, 365, 1],
 ];
-const SIM_LINKS = [['trh', 'T/RH probe'], ['co2', 'CO₂ sensor'], ['relay', 'Relay module'], ['ac', 'Aircon gateway'], ['outdoorProbe', 'Outdoor T/RH probe'], ['meter', 'Energy meter']];
+const SIM_LINKS = [['trh', 'T/RH probe'], ['co2', 'CO₂ sensor'], ['relay', 'Relay module'], ['ac', 'Aircon gateway'], ['outdoorProbe', 'Outdoor T/RH probe'], ['meter', 'Energy meter'], ['filterProbe', 'Filter pressure sensor']];
 // The kind of device each link takes (the outdoor probe is a T/RH probe of its own).
-const LINK_KIND = { trh: 'trh', co2: 'co2', relay: 'relay', ac: 'ac', outdoorProbe: 'trh', meter: 'meter' };
+const LINK_KIND = { trh: 'trh', co2: 'co2', relay: 'relay', ac: 'ac', outdoorProbe: 'trh', meter: 'meter', filterProbe: 'dp' };
 
 const simCards = new Map(); // id -> card
 const simBox = $('sims');
@@ -234,6 +241,7 @@ function clockText(s) {
 function actingText(a) {
   if (!a) return 'Nothing acting yet';
   const parts = [`Air exchange ${Math.round(a.exchangeM3h)} m³/h`];
+  if (a.unfilteredM3h > 0.5) parts.push(`${Math.round(a.unfilteredM3h)} m³/h of it unfiltered, through the leaks`);
   if (a.acCoolKW > 0.005) parts.push(`AC cooling ${a.acCoolKW.toFixed(1)} kW`);
   if (a.acHeatKW > 0.005) parts.push(`AC heating ${a.acHeatKW.toFixed(1)} kW`);
   if (a.humidifierGH > 0) parts.push(`Humidifier +${(a.humidifierGH / 1000).toFixed(1)} L/h`);
@@ -244,6 +252,14 @@ function actingText(a) {
   if (a.machineKW > 0.0005) parts.push(`Motors +${Math.round(a.machineKW * 1000)} W`);
   if (a.condensedGH > 1) parts.push(`Condensing ${(a.condensedGH / 1000).toFixed(1)} L/h`);
   if (Number.isFinite(a.electricW)) parts.push(a.electricW >= 1000 ? `Electric ${(a.electricW / 1000).toFixed(1)} kW` : `Electric ${Math.round(a.electricW)} W`);
+  return parts.join(' · ');
+}
+
+// The filter: how far it is loaded toward its change pressure and, while the intake runs, its pressure and the intake's flow.
+function filterText(room) {
+  const parts = [`Filter ${Math.round((room.state.Lf ?? 0) * 100)} % of the way to its change pressure`];
+  const a = room.enabled ? room.acting : null;
+  if (a?.filterPa > 0) parts.push(`${Math.round(a.filterPa)} Pa`, `intake at ${Math.round(a.intakeShare * 100)} % of its clean flow`);
   return parts.join(' · ');
 }
 
@@ -277,6 +293,16 @@ function buildSimCard(room) {
   reset.addEventListener('click', async () => {
     try {
       await request('POST', `/api/sims/${id}/reset`);
+    } catch (err) {
+      if (err.status !== 404) return showBanner(err.message);
+    }
+    refresh();
+  });
+  const change = el('button', { type: 'button', textContent: 'Change filter' });
+  change.setAttribute('aria-label', 'Put a clean filter in this room');
+  change.addEventListener('click', async () => {
+    try {
+      await request('POST', `/api/sims/${id}/change-filter`);
     } catch (err) {
       if (err.status !== 404) return showBanner(err.message);
     }
@@ -316,12 +342,13 @@ function buildSimCard(room) {
   card.acting = el('p', { className: 'sim-acting' });
   card.outdoor = el('p', { className: 'muted sim-outdoor' });
   card.mass = el('p', { className: 'muted sim-outdoor' });
+  card.filter = el('p', { className: 'muted sim-outdoor' });
   const live = el('p', { className: 'sim-live' },
     el('span', {}, 'T ', card.t, ' °C'), el('span', {}, 'RH ', card.rh, ' %'), el('span', {}, 'CO₂ ', card.co2, ' ppm'));
 
   card.el = el('article', { className: 'sim-card' },
-    el('div', { className: 'sim-head' }, enabled.label, card.name, el('span', { className: 'sim-actions' }, reset, remove)),
-    card.drawing.el, links, params, live, card.mass, card.outdoor, card.acting,
+    el('div', { className: 'sim-head' }, enabled.label, card.name, el('span', { className: 'sim-actions' }, reset, change, remove)),
+    card.drawing.el, links, params, live, card.mass, card.filter, card.outdoor, card.acting,
     el('p', { className: 'muted sim-note' }, 'Circulation fan: adds its 60 W of motor heat (one well-mixed zone, so no mixing effect)'),
     card.error);
   return card;
@@ -360,6 +387,7 @@ function showSimCard(card, room, sensors) {
   card.rh.textContent = room.rh.toFixed(1);
   card.co2.textContent = String(Math.round(room.state.CO2));
   card.mass.textContent = room.state.Tm === undefined ? '' : `Blocks and racks ${room.state.Tm.toFixed(1)} °C · surfaces ${Math.round(room.state.Hs)} %${room.state.Hs > 100 ? ' (wet)' : ''}`;
+  card.filter.textContent = filterText(room);
   card.outdoor.textContent = `Outdoor now ${room.outdoor.T.toFixed(1)} °C / ${Math.round(room.outdoor.RH)} % · simulated time ${clockText(room.clock)} (low at 03:00, high at 15:00, same dew point all day)`;
   card.acting.textContent = room.enabled ? actingText(room.acting) : 'Switched off';
   card.el.classList.toggle('off', !room.enabled);

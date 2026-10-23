@@ -9,6 +9,7 @@ import { createControl } from './control.js';
 import { createAlarmsCard } from './alarms.js';
 import { createCropCard } from './crop-card.js';
 import { createSimulationsCard } from './sim-card.js';
+import { createFilterCard } from './filter-card.js';
 import { closeSimulateDialog } from './simulate-dialog.js';
 import { createMimic, startLoop } from './mimic.js';
 import { fromRoom } from './mimic-math.js';
@@ -68,6 +69,7 @@ const TEMPLATE = `
       <div class="mimic-host" data-mimic-host></div>
     </section>
     <div class="sensors" data-sensors></div>
+    <section data-filter hidden></section>
     <section data-crop></section>
     <section data-control hidden></section>
     <section data-machines></section>
@@ -110,6 +112,7 @@ export function mount(container, { id }) {
     missing: q('[data-missing]'),
     body: q('[data-body]'),
     sensors: q('[data-sensors]'),
+    filterHost: q('[data-filter]'),
     alarmsHost: q('[data-alarms]'),
     mimicHost: q('[data-mimic-host]'),
     cropHost: q('[data-crop]'),
@@ -125,7 +128,7 @@ export function mount(container, { id }) {
   const alive = () => me === mountSeq;
 
   let room = null;
-  let sensors = null; // { trh, co2, meter } (meter only when the server sends one)
+  let sensors = null; // { trh, co2, meter, dp } (meter and dp only when the server sends them)
   let loadSeq = 0;
   let editedFromCard = false; // the dialog was opened from a sensor card button, which re-rendering replaces
   let timer = null;
@@ -153,6 +156,7 @@ export function mount(container, { id }) {
   let usageCard = null; // the Energy and water card, made on the first render
   let cropCard = null; // the Crop and stage card
   let simulationsCard = null; // the Simulations card
+  let filterCard = null; // the Intake filter card
 
   // ---- loading ----
 
@@ -198,7 +202,10 @@ export function mount(container, { id }) {
     const [r, list, machineData, controlData, settingsData, alarmData, outdoorData] = fetched;
     refresh = refreshMs(settingsData);
     room = r;
-    sensors = { trh: list.find((s) => s.kind === 'trh'), co2: list.find((s) => s.kind === 'co2'), meter: list.find((s) => s.kind === 'meter') ?? null };
+    sensors = {
+      trh: list.find((s) => s.kind === 'trh'), co2: list.find((s) => s.kind === 'co2'), meter: list.find((s) => s.kind === 'meter') ?? null,
+      dp: list.find((s) => s.kind === 'dp') ?? null,
+    };
     outdoor = outdoorData;
     els.banner.hidden = true;
     els.missing.hidden = true;
@@ -215,6 +222,8 @@ export function mount(container, { id }) {
     cropCard = null;
     simulationsCard?.destroy();
     simulationsCard = null;
+    filterCard?.destroy();
+    filterCard = null;
     room = null;
     sensors = null;
     els.title.textContent = 'Room not found';
@@ -426,6 +435,8 @@ export function mount(container, { id }) {
     }
     if (!cropCard) makeCrop(); // (again after a missing room came back)
     simulationsCard ??= createSimulationsCard(els.simulationsHost, { roomId: id, getRoom: () => room });
+    filterCard ??= createFilterCard(els.filterHost, { roomId: id, onChanged: () => { if (alive()) load(); } }); // the alarms clear
+    filterCard.update(room, sensors.dp);
     stopLoop ??= startLoop(() => (mimic ? [mimic] : [])); // (again after a missing room came back)
     alarmsCard.update(alarmData); // hides itself while there are no current alarms; a failed read keeps the last data
     // The card shows only once a good reply came; later failures keep the last good data.
@@ -589,6 +600,7 @@ export function mount(container, { id }) {
     usageCard?.destroy();
     cropCard?.destroy();
     simulationsCard?.destroy();
+    filterCard?.destroy();
     outdoorLiveSeq++;
     timelineChart?.destroy();
     for (const { chart } of chartCards.values()) chart?.destroy();

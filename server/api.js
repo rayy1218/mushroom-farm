@@ -1,13 +1,14 @@
 // JSON API: /api/settings, /api/alarms, /api/outdoor, /api/usage, /api/rooms, /api/rooms/:id, /api/rooms/:id/sensors, /alarms,
-// /control, /machines and /usage.
+// /control, /machines, /usage and /filter/changed, /filter/changes.
 
-import { validateRoom } from './rooms.js';
+import { validateRoom, FILTER } from './rooms.js';
 import { NameTakenError, AddressTakenError, HISTORY_BUCKET_S } from './db.js';
 import { CommandError } from './machines.js';
 import { RELAY_KEYS } from './machine-codes.js';
 import { validateSettings, readSettings, writeSettings } from './settings.js';
 import { outdoorView, outdoorHistory, RANGES } from './outdoor.js';
 import { roomUsage, farmUsage } from './usage.js';
+import { changeFilter } from './filter.js';
 import { createCropApi } from './crop-api.js';
 import { createSimulationRoutes } from './simulation-api.js';
 
@@ -42,7 +43,7 @@ async function readJson(req) {
   }
 }
 
-const ADDRESS_FIELDS = ['trhAddress', 'co2Address', 'relayAddress', 'acAddress', 'meterAddress'];
+const ADDRESS_FIELDS = ['trhAddress', 'co2Address', 'relayAddress', 'acAddress', 'meterAddress', 'dpAddress'];
 
 // The days query of the usage routes: a whole number from 1 to 90, default 30.
 function readDays(url) {
@@ -62,9 +63,14 @@ const noRoom = () => new HttpError(404, 'Room not found');
 // gets a new reading interval at once.
 export function createApi(db, machines = null, controller = null, poller = null, simulations = null) {
   const simulationRoutes = simulations && createSimulationRoutes({ db, simulations });
-  // The room body; its addresses must differ from the outdoor sensor's.
-  async function readRoom(req) {
-    const result = validateRoom(await readJson(req));
+  // The room body; its addresses must differ from the outdoor sensor's. stored: the room as it is (an update): a filter
+  // setting left out is its stored value, so the checks compare what will be saved.
+  async function readRoom(req, stored = null) {
+    const body = await readJson(req);
+    if (stored && body !== null && typeof body === 'object' && !Array.isArray(body)) {
+      for (const { field } of FILTER) body[field] ??= stored[field];
+    }
+    const result = validateRoom(body);
     if (result.error) throw new HttpError(400, result.error, result.field);
     const outdoor = db.outdoorAddress();
     const clash = outdoor === null ? undefined : ADDRESS_FIELDS.find((f) => result.room[f] === outdoor);
@@ -139,6 +145,17 @@ export function createApi(db, machines = null, controller = null, poller = null,
       if (req.method !== 'GET') throw notFound();
       return send(res, 200, db.overview());
     }
+    // ---- The intake filter (spec 2026-10-22-filter-design.md 5) ----
+    const filter = /^\/api\/rooms\/([1-9][0-9]{0,14})\/filter\/(changed|changes)$/.exec(path);
+    if (filter) {
+      const roomId = Number(filter[1]);
+      if (req.method !== (filter[2] === 'changed' ? 'POST' : 'GET')) throw notFound();
+      if (!db.getRoom(roomId)) throw noRoom();
+      if (filter[2] === 'changes') return send(res, 200, db.filterChanges(roomId));
+      const room = changeFilter(db, roomId, Date.now());
+      controller?.filterChanged(roomId);
+      return send(res, 200, room);
+    }
     const match = /^\/api\/rooms\/([1-9][0-9]{0,14})(\/sensors|\/usage|\/control|\/crop|\/history|\/machines(?:\/([a-z]+))?)?$/.exec(path);
     if (!match) throw notFound();
     const id = Number(match[1]);
@@ -188,11 +205,11 @@ export function createApi(db, machines = null, controller = null, poller = null,
       if (!usage) throw noRoom();
       return send(res, 200, usage);
     }
-    if (match[2]) { // /sensors: the two sensors, then the energy meter (kind 'meter')
+    if (match[2]) { // /sensors: the two sensors, then the energy meter (kind 'meter') and the filter pressure sensor (kind 'dp')
       if (req.method !== 'GET') throw notFound();
       const sensors = db.getSensors(id);
       if (!sensors) throw noRoom();
-      return send(res, 200, [...sensors, db.getMeter(id)]);
+      return send(res, 200, [...sensors, db.getMeter(id), db.getFilterSensor(id)]);
     }
     if (req.method === 'GET') {
       const room = db.getRoom(id);
@@ -202,7 +219,7 @@ export function createApi(db, machines = null, controller = null, poller = null,
     if (req.method === 'PUT') {
       const before = db.getRoom(id);
       if (!before) throw noRoom();
-      const room = await readRoom(req);
+      const room = await readRoom(req, before);
       // A running dehumidifier taken out of the room is switched off first: afterwards nothing may command it.
       if (before.dehumidifier && room.dehumidifier === false && machines && db.getCommands(id)?.relay.dehumidifier) {
         try {

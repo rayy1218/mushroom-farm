@@ -147,14 +147,16 @@ export function mergeSpans(spans, minGap, same = () => true) {
   return out;
 }
 
-// The rows of drawTimeline: the on-spans (seconds) of result.machines and the aircon's setpoint marks. minGap: spans closer
-// than this many seconds (one pixel of the chart) are joined; the aircon's only when the setpoint is the same.
+// The rows of drawTimeline: the on-spans (seconds) of result.machines, the aircon's setpoint marks and the filter changes
+// (seconds, summary.filter.changes) on the intake's row. minGap: spans closer than this many seconds (one pixel of the chart)
+// are joined; the aircon's only when the setpoint is the same.
 // The dehumidifier's row is there when the run had one (input.physics.dehumidifierLday above 0) or it has spans.
-export function timelineRows(machines, minGap = 0, input = null) {
+export function timelineRows(machines, minGap = 0, input = null, filterChanges = []) {
   const hadDehumidifier = hasDehumidifier(input) || (machines?.dehumidifier?.length ?? 0) > 0;
   return TIMELINE_ROWS.filter((r) => !r.fitted || hadDehumidifier).map((r) => {
     const raw = (machines?.[r.key] ?? []).map((s) => ({ from: s.from, to: s.to, source: 'auto', setpoint: s.setpoint }));
-    const marks = [];
+    // a short label: the timeline keeps marks at least 40 px apart, and "Filter" fits that
+    const marks = r.key === 'intake' && Array.isArray(filterChanges) ? filterChanges.map((at) => ({ at, text: 'Filter' })) : [];
     if (r.key === 'ac') {
       let prev = null;
       for (const s of raw) {
@@ -165,6 +167,27 @@ export function timelineRows(machines, minGap = 0, input = null) {
     const spans = mergeSpans(raw, minGap, (a, b) => a.setpoint === b.setpoint).map(({ setpoint, ...span }) => span);
     return { ...r, spans, marks };
   });
+}
+
+// ---- the intake filter (spec 2026-10-22-filter-design.md 8) ----
+
+// summary.filter → the tiles of the filter part, or null for a run without a filter.
+export function filterView(summary) {
+  const f = summary?.filter;
+  if (!f) return null;
+  const changes = Array.isArray(f.changes) ? f.changes : [];
+  return {
+    tiles: [
+      changes.length
+        ? { label: 'Filter changes', value: String(changes.length), line: changes.map(formatRunTime).join(', ') }
+        : { label: 'Filter changes', value: 'None', line: 'not changed in the run' },
+      finite(f.meanFilterPa)
+        ? { label: 'Mean filter pressure', value: `${f.meanFilterPa.toFixed(1)} Pa`, line: 'while the intake ran' }
+        : { label: 'Mean filter pressure', value: DASH, line: 'the intake never ran' },
+      { label: 'Unfiltered air', value: pct(f.unfilteredPct), line: 'of the exchanges, in through the leaks' },
+      { label: 'Mean air exchange', value: finite(f.meanExchangeM3h) ? `${Math.round(f.meanExchangeM3h)} m³/h` : DASH, line: 'over the whole run' },
+    ],
+  };
 }
 
 // ---- energy and water ----
@@ -221,12 +244,19 @@ export function inputLine(input, roomMin = null) {
   const roomC = input.ctx?.roomControl ?? {};
   if (own.acDrop !== undefined && finite(roomC.acDrop)) settings[0] += ` (the room: ${roomC.acDrop} °C)`;
   else if (settings.length) settings[settings.length - 1] += ' (set for this run)';
+  const filter = [];
+  if (finite(p.fanMaxPa)) {
+    const every = p.filterChangeDays > 0 ? `changed every ${plural(p.filterChangeDays, 'day', 'days')}` : '';
+    const when = every && p.filterSensor ? `${every} or at the change pressure` : every || (p.filterSensor ? 'changed at the change pressure' : 'never changed');
+    filter.push(`filter ${p.filterCleanPa} Pa clean, change at ${p.filterFinalPa} Pa, ${plural(p.filterUsedDays ?? 0, 'day', 'days')} in use, ${when}`);
+  }
   return [
     `${crops} blocks, starting at ${stage}, ${plural(input.days, 'day', 'days')}`,
     `walls ${p.wallUA} W/K, sun ${p.sunW} W, outdoor ${p.outdoorLow}–${p.outdoorHigh} °C, dew point ${p.outdoorDew} °C`,
     `fan ${p.fanFlow} m³/h, aircon ${grouped(p.acBTU)} BTU/h, humidifier ${p.humidifierLH} L/h${p.dehumidifierLday > 0 ? `, dehumidifier ${p.dehumidifierLday} L/day` : ''}`,
     ...limit,
     ...(settings.length ? [settings.join(', ')] : []),
+    ...filter,
   ].join(' · ');
 }
 

@@ -9,7 +9,7 @@ import { tickCountFor } from './history-math.js';
 import { progressLine } from './simulate-math.js';
 import {
   CHARTS, tileList, stageRows, dayTicks, runEnd, chartPoints, thinPoints, outdoorLine, bandSteps, timelineRows, energyView, perDayBars,
-  inputLine, headLine, formatDateTime, formatRunTime, isActive,
+  inputLine, headLine, formatDateTime, formatRunTime, isActive, filterView,
 } from './simulation-math.js';
 
 const POLL_MS = 2000;
@@ -270,10 +270,22 @@ export function mount(container, { id, runId }) {
     const tl = text('section', 'card timeline-card');
     tl.append(text('h2', '', 'Machine timeline'));
     const tlHost = text('div', 'chart-host');
-    tl.append(tlHost, text('p', 'legend', 'A bar is a time the machine was on. The aircon row shows its setpoint.'));
+    const filter = filterView(summary);
+    const changes = summary.filter?.changes ?? [];
+    tl.append(tlHost, text('p', 'legend', `A bar is a time the machine was on. The aircon row shows its setpoint${changes.length ? ', the intake row the filter changes' : ''}.`));
     els.results.append(tl);
     // spans closer than one pixel of time are drawn as one: a long run has tens of thousands
-    charts.push(drawTimeline(tlHost, { ...common, rowsFor: (w) => timelineRows(result.machines, end / Math.max(1, w - M.left - M.right), run.input) }));
+    charts.push(drawTimeline(tlHost, { ...common, rowsFor: (w) => timelineRows(result.machines, end / Math.max(1, w - M.left - M.right), run.input, changes) }));
+
+    // the intake filter (a run without one shows nothing)
+    if (filter) {
+      const card = text('section', 'card sim-card');
+      card.append(text('h2', '', 'Intake filter'));
+      const tiles = text('div', 'us-tiles');
+      tiles.append(...filter.tiles.map((t) => tile(t.label, t.value, t.line)));
+      card.append(tiles);
+      els.results.append(card);
+    }
 
     // energy and water
     const use = energyView(summary, run.input);

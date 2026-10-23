@@ -5,6 +5,7 @@ import { CommandError } from './machines.js';
 import { RELAY_KEYS } from './machine-codes.js';
 import { createSensorChecks } from './checks.js';
 import { createAlarms } from './alarms.js';
+import { filterInput, FILTER_KEYS } from './filter.js';
 import { advance, BAND_KEYS } from './program.js';
 
 export const DEFAULTS = {
@@ -510,9 +511,11 @@ export function createController({ db, machines, now = Date.now, log = console.e
       reasons.set(room.id, why);
     }
 
-    // An alarm error must not stop this room's commands.
+    // An alarm error must not stop this room's commands. The room is read again for its filter: a Filter changed may have
+    // landed while an earlier room of this run was sending (listRooms was read once, before them).
     try {
-      alarms.evaluate(room, { readings: good, bands: c, faults, clear, cappedInRow, machines: view, blocksDone });
+      const filter = filterInput(db, db.getRoom(room.id) ?? room, at, view);
+      alarms.evaluate(room, { readings: good, bands: c, faults, clear, cappedInRow, machines: view, blocksDone, filter });
     } catch (err) {
       log(err);
     }
@@ -527,6 +530,11 @@ export function createController({ db, machines, now = Date.now, log = console.e
     get,
 
     forget,
+
+    // The room's filter was changed (filter.js changeFilter cleared its alarms): the old filter's delay counts go too.
+    filterChanged(roomId) {
+      alarms.reset(roomId, FILTER_KEYS);
+    },
 
     // Applies any of auto, humidifierDuringExchange, acFan, co2Safety, exchangeMaxMin, acDrop, exchangeEveryMin and the six limits and returns the view like get.
     // Returns null when there is no such room; throws CommandError (400, with field) for a bad value.

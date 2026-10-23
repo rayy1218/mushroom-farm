@@ -176,7 +176,7 @@ test('update validates, merges and blames the low field', (t) => {
 
 test('the poller calls afterCycle with the start time at the end of each cycle', async () => {
   const calls = [];
-  const db = { listWiredSensors: () => [], listWiredMachines: () => [], listMeters: () => [], outdoorAddress: () => null, addReading() {} };
+  const db = { listWiredSensors: () => [], listWiredMachines: () => [], listMeters: () => [], listFilterSensors: () => [], outdoorAddress: () => null, addReading() {} };
   let clock = 500;
   const poller = createPoller({ db, client: {}, now: () => clock++, afterCycle: async (start) => { calls.push(start); } });
   await poller.cycle();

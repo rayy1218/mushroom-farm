@@ -16,7 +16,17 @@ export const PHYSICS_FIELDS = [
   { key: 'humidifierLH', label: 'Humidifier output', unit: 'L/h', min: 0, max: 100, whole: false, def: 2 },
   // Not a device parameter by this name (the server maps it to the dehumidifier's rating); the limit is the spec's.
   { key: 'dehumidifierLday', label: 'Dehumidifier', unit: 'L/day', min: 0, max: 200, whole: false, def: 0, device: false },
+  // The intake filter (spec 2026-10-22-filter-design.md 8): four settings of the device app, then the run's own two. room: the
+  // room field that prefills it.
+  { key: 'fanMaxPa', label: 'Fan maximum pressure', unit: 'Pa', min: 20, max: 2000, whole: true, def: 200, room: 'fanMaxPa' },
+  { key: 'filterCleanPa', label: 'Clean filter pressure drop', unit: 'Pa', min: 5, max: 1000, whole: true, def: 40, room: 'filterCleanPa' },
+  { key: 'filterFinalPa', label: 'Filter change pressure', unit: 'Pa', min: 5, max: 2000, whole: true, def: 80, room: 'filterFinalPa' },
+  { key: 'filterLifeDays', label: 'Filter life', unit: 'days', min: 1, max: 365, whole: true, def: 30 },
+  { key: 'filterChangeDays', label: 'Filter change every', unit: 'days', min: 0, max: 365, whole: true, def: 30, device: false, room: 'filterChangeDays' },
+  { key: 'filterUsedDays', label: 'Filter in use', unit: 'days', min: 0, max: 365, whole: true, def: 0, device: false },
 ];
+export const FILTER_KEYS = ['fanMaxPa', 'filterCleanPa', 'filterFinalPa', 'filterLifeDays', 'filterChangeDays', 'filterUsedDays'];
+const DAY_MS = 86_400_000;
 
 export const DEFAULT_CROPS = [{ crop: 'oyster', blocks: 500 }];
 export const DAYS_DEFAULT = 7;
@@ -64,15 +74,19 @@ export const fixStage = (farmType, stage) => (stagesOf(farmType).includes(stage)
 // ---- the state of the stepper ----
 
 // The texts of the three steps. lastRun: the room's newest run (input as it was posted), cropData: GET /api/rooms/:id/crop.
-export function initialState({ room, lastRun = null, cropData = null }) {
+// The filter's days in use are the room's now (whole days since its last change), whatever the last run had.
+export function initialState({ room, lastRun = null, cropData = null, now = Date.now() }) {
   const before = lastRun?.input?.physics;
   const physics = {};
   for (const f of PHYSICS_FIELDS) {
     let fallback = f.def;
     if (f.key === 'humidifierLH' && isNumber(room?.humidifierLH)) fallback = room.humidifierLH;
     if (f.key === 'dehumidifierLday' && room?.dehumidifier === true && isNumber(room.dehumidifierLday)) fallback = room.dehumidifierLday;
+    if (f.room && isNumber(room?.[f.room])) fallback = room[f.room];
     physics[f.key] = String(isNumber(before?.[f.key]) ? before[f.key] : fallback);
   }
+  // at most 365, the field's limit: a filter not changed for over a year is a year old for the run
+  physics.filterUsedDays = String(isNumber(room?.filterChangedAt) ? Math.min(365, Math.max(0, Math.floor((now - room.filterChangedAt) / DAY_MS))) : 0);
   // The crops: the room's, else those of its last run (a room only simulated so far), else Grey oyster 500.
   const roomCrops = Array.isArray(cropData?.crops) && cropData.crops.length > 0;
   const lastCrops = !roomCrops && Array.isArray(lastRun?.input?.crops) && lastRun.input.crops.length > 0 ? lastRun.input : null;
@@ -84,6 +98,7 @@ export function initialState({ room, lastRun = null, cropData = null }) {
     crops: crops.map((c) => ({ crop: c.crop, blocks: String(c.blocks) })),
     farmType,
     stage: fixStage(farmType, from?.stage ?? 'fruiting'),
+    filterSensor: isNumber(room?.dpAddress), // the run changes its filter at the change pressure, as the room's sensor would tell
     daysMode: 'days',
     days: String(DAYS_DEFAULT),
     // The air exchange time limit of this run: null while it is the room's (a suggestion's Use this sets it).
@@ -134,6 +149,13 @@ export function checkStep(step, state) {
     if (!errors['physics.outdoorDew'] && !errors['physics.outdoorLow'] && v.outdoorDew > v.outdoorLow) {
       errors['physics.outdoorDew'] = 'Outdoor dew point must not be above the night low';
     }
+    if (!errors['physics.filterCleanPa']) {
+      if (!errors['physics.fanMaxPa'] && v.fanMaxPa <= v.filterCleanPa) errors['physics.fanMaxPa'] = "Fan maximum pressure must be above the clean filter's pressure drop";
+      if (!errors['physics.filterFinalPa'] && v.filterFinalPa <= v.filterCleanPa) errors['physics.filterFinalPa'] = "Filter change pressure must be above the clean filter's pressure drop";
+    }
+    if (!errors['physics.fanMaxPa'] && !errors['physics.filterFinalPa'] && v.filterFinalPa >= v.fanMaxPa) {
+      errors['physics.filterFinalPa'] = "Filter change pressure must be below the fan's maximum pressure";
+    }
   } else if (step === 2) {
     const bad = validateCrops(cropsOf(state));
     if (bad) errors.crops = bad.error;
@@ -163,7 +185,7 @@ export function stepOf(field) {
 // The body of POST /api/rooms/:id/simulations from a checked state.
 export function buildBody(state, cropData = null) {
   const body = {
-    physics: physicsValues(state),
+    physics: { ...physicsValues(state), filterSensor: state.filterSensor === true },
     crops: cropsOf(state),
     farmType: state.farmType,
     stage: state.stage,
@@ -192,6 +214,17 @@ export const roomLine = (room) =>
 
 const farmWords = { ready: 'ready-to-fruit blocks', full: 'full cycle' };
 
+// The filter of a run in one line: v holds the texts (or numbers) of the filter fields.
+const days = (n) => `${n} ${Number(n) === 1 ? 'day' : 'days'}`;
+
+export function filterLine(v, sensor) {
+  const every = Number(v.filterChangeDays) > 0;
+  const when = every && sensor ? `changed every ${days(v.filterChangeDays)} or at the change pressure (pressure sensor)`
+    : every ? `changed every ${days(v.filterChangeDays)} (no pressure sensor)`
+      : sensor ? 'changed at the change pressure (pressure sensor)' : 'never changed (no reminder, no pressure sensor)';
+  return `Clean ${v.filterCleanPa} Pa, change at ${v.filterFinalPa} Pa, fan maximum ${v.fanMaxPa} Pa, life ${days(v.filterLifeDays)}; ${days(v.filterUsedDays)} in use; ${when}`;
+}
+
 // The summary of step 3: [{ label, text }].
 export function summaryLines(state, room, cropData = null) {
   const v = Object.fromEntries(PHYSICS_FIELDS.map((f) => [f.key, state.physics[f.key]]));
@@ -203,6 +236,7 @@ export function summaryLines(state, room, cropData = null) {
     { label: 'Machines', text: `Fan ${v.fanFlow} m³/h, aircon ${grouped(Number(v.acBTU))} BTU/h, humidifier ${v.humidifierLH} L/h, ${Number(v.dehumidifierLday) > 0 ? `dehumidifier ${v.dehumidifierLday} L/day` : 'no dehumidifier'}` },
     ...(isNumber(state.exchangeMaxMin) ? [{ label: 'Air exchange', text: limitLine(state.exchangeMaxMin, state.roomExchangeMaxMin) }] : []),
     ...(state.runSettings && Object.keys(state.runSettings).length > 0 ? [{ label: 'Settings', text: settingsLine(state.runSettings, state.roomSettings) }] : []),
+    { label: 'Filter', text: filterLine(v, state.filterSensor === true) },
     { label: 'Crops', text: `${crops}; ${farmWords[state.farmType]}, starting at ${STAGES[state.stage].toLowerCase().replace(' between flushes', '')}` },
     { label: 'Run', text: days },
   ];

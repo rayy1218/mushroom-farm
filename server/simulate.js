@@ -2,7 +2,8 @@
 // a time while the farm's own control (decide and protect of controller.js) and stage program (program.js) run the room, with
 // ideal sensors and machines that follow at once. Pure: no clock, no I/O, the same input gives the same result.
 
-import { step, outdoorAt, wOf, rhOf } from '../device/sim-model.js';
+import { step, outdoorAt, wOf, rhOf, hasFilter, changeFilter } from '../device/sim-model.js';
+import { fanWattFactor } from '../device/sim-power.js';
 import { BTU_PER_KW } from '../device/sim-store.js';
 import { CO2_PER_BLOCK, blocksOf, mixBands } from '../web/crops.js';
 import { DEFAULTS, decide, protect } from './controller.js';
@@ -25,12 +26,14 @@ const FAN_W_MIN = 20;
 const HUMIDIFIER_W_PER_LH = 40;
 const MACHINES = ['intake', 'exhaust', 'circulation', 'humidifier', 'dehumidifier'];
 const RATING = { intake: 'intakeW', exhaust: 'exhaustW', circulation: 'circulationW', humidifier: 'humidifierW', dehumidifier: 'dehumidifierW' };
+const FILTER_DIRTY_S = 600; // with a pressure sensor the filter is changed after this long of intake running at its change pressure
 
 const round = (v, digits) => Math.round(v * 10 ** digits) / 10 ** digits;
 const percent = (n, total) => round((n / total) * 100, 1);
 
 // input: { physics: { wallUA, outdoorHigh, outdoorLow, outdoorDew, sunW, fanFlow, acBTU, humidifierLH, dehumidifierLday (0 or
-// missing: no dehumidifier) }, crops, farmType, stage,
+// missing: no dehumidifier), the intake filter (spec 2026-10-22-filter-design.md 8; missing: no filter): fanMaxPa, filterCleanPa,
+// filterFinalPa, filterLifeDays, filterChangeDays (0: no reminder), filterUsedDays, filterSensor }, crops, farmType, stage,
 // days }. ctx: { volume, ratings (the room's machine ratings), control (the room's control settings), program (its stored
 // numbers: flushes, days, rampH; null: the defaults), prices: { electricity, water } | null }.
 // onProgress(share 0 to 1) is called at least every 1 %. → { series, machines, stages, summary }.
@@ -63,10 +66,23 @@ export function simulate(input, ctx, { onProgress } = {}) {
     acKW: physics.acBTU / BTU_PER_KW, humidifierGH: physics.humidifierLH * 1000,
     dehumidifierLday, dehumidifierW,
   };
+  // The filter: loaded as if it had passed fanFlow all its days in use; changed on the reminder or, with a sensor, at its
+  // change pressure. lastChange: when it was last changed, in s from the start (before it: its days in use).
+  const filterOn = hasFilter(physics);
+  if (filterOn) {
+    for (const key of ['fanMaxPa', 'filterCleanPa', 'filterFinalPa', 'filterLifeDays']) modelParams[key] = physics[key];
+  }
+  const changeS = filterOn ? (physics.filterChangeDays ?? 0) * DAY_S : 0;
+  let lastChange = filterOn ? -(physics.filterUsedDays ?? 0) * DAY_S : 0;
+  // intake running at or above the change pressure, added up across exchanges like the filterDirty alarm (alarms.js): it
+  // starts again only below the change pressure − 10 (between the two it waits)
+  let dirtyS = 0;
+  const changes = [];
+  const sums = { exchange: 0, exchangeIntake: 0, unfiltered: 0, pa: 0, paS: 0 };
 
   const T0 = (bands.tLow + bands.tHigh) / 2;
   const RH0 = (bands.rhLow + bands.rhHigh) / 2;
-  let state = { T: T0, W: wOf(T0, RH0), CO2: 420, Tm: T0, Hs: RH0 };
+  let state = { T: T0, W: wOf(T0, RH0), CO2: 420, Tm: T0, Hs: RH0, Lf: filterOn ? (physics.filterUsedDays ?? 0) / physics.filterLifeDays : 0 };
 
   // The controller's memory and the machines' commands (all off to start; the aircon's first command is free of the hold).
   let memory = {
@@ -88,6 +104,7 @@ export function simulate(input, ctx, { onProgress } = {}) {
   const stageCount = [count()];
   const onS = { intake: 0, exhaust: 0, circulation: 0, humidifier: 0, dehumidifier: 0 };
   let acKWh = 0;
+  let intakeKWh = 0; // the intake's own: its watts follow the filter
   const dayKWh = new Array(days).fill(0);
   const dayLitres = new Array(days).fill(0);
   const ext = { tMin: Infinity, tMax: -Infinity, rhMin: Infinity, rhMax: -Infinity, co2Max: -Infinity };
@@ -121,6 +138,13 @@ export function simulate(input, ctx, { onProgress } = {}) {
       stages.at(-1).to = at;
       stages.push({ stage: c.stage, flush: c.flush, from: at, to: totalS });
       stageCount.push(count());
+    }
+
+    if (filterOn && ((changeS > 0 && s - lastChange >= changeS) || (physics.filterSensor && dirtyS >= FILTER_DIRTY_S))) {
+      state = changeFilter(state);
+      lastChange = s;
+      dirtyS = 0;
+      changes.push(s);
     }
 
     const { T, W, CO2 } = state;
@@ -181,20 +205,32 @@ export function simulate(input, ctx, { onProgress } = {}) {
     const inputs = { intake: desired.intake, exhaust: desired.exhaust, circulation: desired.circulation, humidifier: desired.humidifier, dehumidifier: desired.dehumidifier,
       ac: a.power ? { mode: a.mode, setpoint: a.setpoint, fan: a.fan } : null };
     const params = { ...modelParams, ...out };
-    let load = 0, grams = 0, takenOut = 0;
+    let load = 0, grams = 0, takenOut = 0, intakeStepKWh = 0;
     for (let k = 0; k < STEP_S / MODEL_S; k++) {
       const r = step(state, inputs, params, MODEL_S);
       state = r.state;
       load += r.acting.acLoad * MODEL_S;
       grams += (r.acting.humidifierGH * MODEL_S) / 3600;
       takenOut += (r.acting.dehumidifierGH * MODEL_S) / 3600;
+      sums.exchange += r.acting.exchangeM3h * MODEL_S;
+      if (inputs.intake) {
+        const pa = r.acting.filterPa;
+        intakeStepKWh += ((watts.intakeW * fanWattFactor(pa, physics.filterCleanPa, physics.fanMaxPa)) / 1000) * (MODEL_S / 3600);
+        sums.exchangeIntake += r.acting.exchangeM3h * MODEL_S;
+        sums.unfiltered += r.acting.unfilteredM3h * MODEL_S;
+        sums.pa += pa * MODEL_S;
+        sums.paS += MODEL_S;
+        if (filterOn && pa >= physics.filterFinalPa) dirtyS += MODEL_S;
+        else if (pa < physics.filterFinalPa - 10) dirtyS = 0;
+      }
     }
+    intakeKWh += intakeStepKWh;
     const acStepKWh = a.power ? (acInputKW * Math.max(FAN_SHARE * STEP_S, load)) / 3600 : 0;
     acKWh += acStepKWh;
     litres += grams / 1000;
     removed += takenOut / 1000;
-    let relayKWh = 0;
-    for (const name of MACHINES) if (desired[name]) relayKWh += (watts[RATING[name]] / 1000) * (STEP_S / 3600);
+    let relayKWh = intakeStepKWh;
+    for (const name of MACHINES) if (desired[name] && name !== 'intake') relayKWh += (watts[RATING[name]] / 1000) * (STEP_S / 3600);
     dayKWh[dayIndex] += acStepKWh + relayKWh;
     dayLitres[dayIndex] += grams / 1000;
 
@@ -208,6 +244,7 @@ export function simulate(input, ctx, { onProgress } = {}) {
 
   const byMachine = {};
   for (const name of MACHINES) byMachine[name] = round((watts[RATING[name]] / 1000) * (onS[name] / 3600), 2);
+  byMachine.intake = round(intakeKWh, 2);
   byMachine.ac = round(acKWh, 2);
   const kWh = round(Object.values(byMachine).reduce((x, y) => x + y, 0), 2);
   const litresRounded = round(litres, 1);
@@ -227,6 +264,15 @@ export function simulate(input, ctx, { onProgress } = {}) {
       extremes: {
         tMin: round(ext.tMin, 1), tMax: round(ext.tMax, 1), rhMin: round(ext.rhMin, 1), rhMax: round(ext.rhMax, 1), co2Max: Math.round(ext.co2Max),
       },
+      // changes: s from the start; the mean pressure is while the intake ran; the unfiltered share is of all the air that came
+      // in while the intake ran (with the exhaust or alone): the part the exhaust pulled in through the leaks (none with the
+      // intake alone).
+      filter: filterOn ? {
+        changes,
+        meanExchangeM3h: round(sums.exchange / totalS, 1),
+        meanFilterPa: sums.paS > 0 ? round(sums.pa / sums.paS, 1) : null,
+        unfilteredPct: sums.exchangeIntake > 0 ? round((sums.unfiltered / sums.exchangeIntake) * 100, 1) : 0,
+      } : null,
     },
   };
 }

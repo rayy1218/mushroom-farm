@@ -590,3 +590,12 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
 .sim-setups tbody th { min-width: 130px; }
 .sim-card .us-tiles { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); }
 .sim-crops ~ button { margin-bottom: 12px; }
+
+/* The Intake filter card (spec 2026-10-22-filter-design.md 5) */
+.filter-card .filter-bar { position: relative; width: 100%; max-width: 360px; height: 10px; margin: 8px 0 4px; border-radius: 5px; background: var(--band); }
+.filter-card .filter-fill { height: 100%; border-radius: 5px; background: var(--muted); }
+.filter-card .filter-fill.ok { background: var(--good-text); }
+.filter-card .filter-fill.warn { background: var(--warning-text); }
+.filter-card .filter-fill.bad { background: var(--critical); }
+.filter-card .filter-tick { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--ink-2); }
+.filter-card .filter-changes { margin: 8px 0 0; padding-left: 18px; }
