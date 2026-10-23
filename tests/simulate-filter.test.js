@@ -9,7 +9,7 @@ import { runSizing } from '../server/sizing.js';
 import { DEFAULTS } from '../server/controller.js';
 
 const physics = { wallUA: 80, outdoorHigh: 33, outdoorLow: 25, outdoorDew: 24, sunW: 300, fanFlow: 600, acBTU: 12000, humidifierLH: 2 };
-const filter = { fanMaxPa: 200, filterCleanPa: 40, filterFinalPa: 150, filterLifeDays: 30, filterChangeDays: 0, filterUsedDays: 0, filterSensor: false };
+const filter = { fanMaxPa: 200, filterCleanPa: 40, filterFinalPa: 80, filterLifeDays: 30, filterChangeDays: 0, filterUsedDays: 0, filterSensor: false };
 const input = (over = {}, days = 1) => ({ physics: { ...physics, ...over }, crops: [{ crop: 'oyster', blocks: 500 }], farmType: 'ready', stage: 'fruiting', days });
 const ctx = {
   volume: 60,
@@ -34,9 +34,9 @@ test('a clean filter that never loads much: no changes, the pressure near clean,
 test('a filter already at its change pressure: higher pressure, less air, a share through the leaks', () => {
   const clean = simulate(input({ ...filter, filterLifeDays: 365 }), ctx).summary.filter;
   const dirty = simulate(input({ ...filter, filterUsedDays: 30 }), ctx).summary.filter;
-  assert.ok(dirty.meanFilterPa > 95, `mean ${dirty.meanFilterPa} Pa`);
-  // (1 − f) ÷ (1 + f) with f ≈ 0.65: about 21 % of the air of an exchange
-  assert.ok(dirty.unfilteredPct > 18 && dirty.unfilteredPct < 24, `unfiltered ${dirty.unfilteredPct} %`);
+  assert.ok(dirty.meanFilterPa >= 80 && dirty.meanFilterPa < 90, `mean ${dirty.meanFilterPa} Pa`);
+  // (1 − f) ÷ (1 + f) with f = 0.75 at the change pressure: about 14 % of the air of an exchange
+  assert.ok(dirty.unfilteredPct > 12 && dirty.unfilteredPct < 16, `unfiltered ${dirty.unfilteredPct} %`);
   assert.ok(dirty.meanExchangeM3h < clean.meanExchangeM3h);
 });
 
@@ -51,16 +51,15 @@ test('a filter in use as long as its interval at the start is changed at once', 
 });
 
 test('with a sensor the filter is changed after 10 min of intake running at or above the change pressure', () => {
-  // The sensor reads the drop at the flow the fan still moves (filterPa = resistance × share): with the defaults it reaches
-  // the change pressure 150 Pa at a loading of 4. A filter 5 life-days in use starts above it.
-  const run = simulate(input({ ...filter, filterLifeDays: 1, filterUsedDays: 5, filterSensor: true }, 3), ctx);
+  // The sensor reads the change pressure at a loading of 1: a filter one life in use starts there.
+  const run = simulate(input({ ...filter, filterLifeDays: 1, filterUsedDays: 1, filterSensor: true }, 3), ctx);
   const f = run.summary.filter;
   assert.ok(f.changes.length >= 1, 'changed at least once');
   // the intake ran at least 10 min between the start and the first change
   const onBefore = run.machines.intake.reduce((a, sp) => a + Math.max(0, Math.min(sp.to, f.changes[0]) - sp.from), 0);
   assert.ok(onBefore >= 600, `intake on ${onBefore} s before the change`);
   assert.equal(f.changes.length, 1, 'clean after the change: not again within the run');
-  assert.deepEqual(simulate(input({ ...filter, filterLifeDays: 1, filterUsedDays: 5 }, 3), ctx).summary.filter.changes, [], 'no sensor, no reminder: never changed');
+  assert.deepEqual(simulate(input({ ...filter, filterLifeDays: 1, filterUsedDays: 1 }, 3), ctx).summary.filter.changes, [], 'no sensor, no reminder: never changed');
 });
 
 test('the intake costs more against a dirty filter; the other fans do not', () => {
@@ -84,6 +83,7 @@ test('validation: no filter field is fine; with any of them the four settings ar
   assert.deepEqual(v({ ...filter, filterSensor: 'yes' }), { error: 'Filter pressure sensor must be true or false', field: 'physics.filterSensor' });
   assert.deepEqual(v({ ...filter, fanMaxPa: 40 }), { error: "Fan maximum pressure must be above the clean filter's pressure drop", field: 'physics.fanMaxPa' });
   assert.deepEqual(v({ ...filter, filterFinalPa: 30 }), { error: "Filter change pressure must be above the clean filter's pressure drop", field: 'physics.filterFinalPa' });
+  assert.deepEqual(v({ ...filter, filterFinalPa: 200 }), { error: "Filter change pressure must be below the fan's maximum pressure", field: 'physics.filterFinalPa' });
 });
 
 test('suggest machines runs with no filter: its physics carry no filter field, even when the request had them', () => {

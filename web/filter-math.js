@@ -15,7 +15,7 @@ const dateTime = (ms) => `${dayMonth(ms)} ${pad2(new Date(ms).getHours())}:${pad
 export const FILTER_SETTINGS = [
   { name: 'fanMaxPa', label: 'Intake fan maximum pressure', unit: 'Pa', def: 200, min: 20, max: 2000 },
   { name: 'filterCleanPa', label: 'Clean filter pressure drop', unit: 'Pa', def: 40, min: 5, max: 1000 },
-  { name: 'filterFinalPa', label: 'Filter change pressure', unit: 'Pa', def: 150, min: 5, max: 2000 },
+  { name: 'filterFinalPa', label: 'Filter change pressure', unit: 'Pa', def: 80, min: 5, max: 2000 },
   { name: 'filterChangeDays', label: 'Change the filter every', unit: 'days', def: 30, min: 0, max: 365 },
 ];
 export const FILTER_NAMES = FILTER_SETTINGS.map((f) => f.name);
@@ -40,6 +40,7 @@ export function parseFilter(texts) {
     if (!errors.fanMaxPa && values.fanMaxPa <= values.filterCleanPa) errors.fanMaxPa = "Fan maximum pressure must be above the clean filter's pressure drop";
     if (!errors.filterFinalPa && values.filterFinalPa <= values.filterCleanPa) errors.filterFinalPa = "Filter change pressure must be above the clean filter's pressure drop";
   }
+  if (!errors.fanMaxPa && !errors.filterFinalPa && values.filterFinalPa >= values.fanMaxPa) errors.filterFinalPa = "Filter change pressure must be below the fan's maximum pressure";
   return Object.keys(errors).length ? { errors } : { values };
 }
 

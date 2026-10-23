@@ -10,7 +10,7 @@ const PAIR = { ...OFF, intake: true, exhaust: true };
 const BASE = { volume: 60, blocks: 0, co2PerBlock: 60, wallUA: 80, sunW: 0, outdoorT: 25, outdoorRH: 70, fanFlow: 600, acKW: 3.5, humidifierGH: 2000 };
 const F = { ...BASE, ...FILTER_DEFAULTS };
 const at = (Lf, params = F) => ({ ...initialState(params), Lf });
-const F_FINAL = 200 / 310; // the intake share at the change pressure with the defaults
+const F_FINAL = 0.75; // the intake share at the change pressure with the defaults: (200 − 80) ÷ (200 − 40)
 
 function run(state, inputs, params, seconds, dt = 60) {
   let s = state, acting;
@@ -18,8 +18,8 @@ function run(state, inputs, params, seconds, dt = 60) {
   return { state: s, acting };
 }
 
-test('the defaults: 200 Pa fan, 40 Pa clean, 150 Pa change, 30 days', () => {
-  assert.deepEqual(FILTER_DEFAULTS, { fanMaxPa: 200, filterCleanPa: 40, filterFinalPa: 150, filterLifeDays: 30 });
+test('the defaults: 200 Pa fan, 40 Pa clean, 80 Pa change, 30 days', () => {
+  assert.deepEqual(FILTER_DEFAULTS, { fanMaxPa: 200, filterCleanPa: 40, filterFinalPa: 80, filterLifeDays: 30 });
 });
 
 test('hasFilter: the three pressures and a life above zero', () => {
@@ -30,15 +30,17 @@ test('hasFilter: the three pressures and a life above zero', () => {
   assert.equal(hasFilter({ ...F, filterFinalPa: '150' }), false);
 });
 
-test('filterOf: share 1 when clean, 0.65 at the change pressure, less past it; none without a filter', () => {
-  assert.deepEqual(filterOf(BASE, 0.7), { share: 1, resistancePa: 0 });
-  assert.deepEqual(filterOf(F, 0), { share: 1, resistancePa: 40 });
+test('filterOf: the sensor reading rises with the loading; share 1 when clean, 0.75 at the change pressure, 0 at the fan maximum', () => {
+  assert.deepEqual(filterOf(BASE, 0.7), { share: 1, pressurePa: 0 });
+  assert.deepEqual(filterOf(F, 0), { share: 1, pressurePa: 40 });
   const final = filterOf(F, 1);
   near(final.share, F_FINAL, 1e-12);
-  assert.equal(final.resistancePa, 150);
+  assert.equal(final.pressurePa, 80);
   const past = filterOf(F, 2);
-  assert.equal(past.resistancePa, 260);
-  near(past.share, 200 / 420, 1e-12);
+  assert.equal(past.pressurePa, 120);
+  near(past.share, 0.5, 1e-12);
+  assert.deepEqual(filterOf(F, 4), { share: 0, pressurePa: 200 });
+  assert.deepEqual(filterOf(F, 6), { share: 0, pressurePa: 200 }, 'never above the fan maximum, never a negative share');
 });
 
 test('a new state and a state from before the filter start clean; changeFilter makes it clean', () => {
@@ -53,20 +55,20 @@ test('a clogged filter: the pair moves fanFlow x (1 + f) / 2, the rest of the in
   const r = step(at(1), PAIR, F, 0);
   near(r.acting.exchangeM3h, 600 * (1 + F_FINAL) / 2, 1e-9);
   near(r.acting.intakeShare, F_FINAL, 1e-12);
-  near(r.acting.filterPa, 150 * F_FINAL, 1e-9);
+  assert.equal(r.acting.filterPa, 80);
   near(r.acting.unfilteredM3h, 600 * (1 - F_FINAL) / 2, 1e-9);
   assert.equal(r.acting.filterLoad, 1);
-  // Container Alpha's example in the spec: 150 m³/h, at the change pressure about 124 exchanged, 97 filtered, 27 through the leaks
+  // Container Alpha's example in the spec: 150 m³/h, at the change pressure 131.25 exchanged, 112.5 filtered, 18.75 through the leaks
   const alpha = step(at(1), PAIR, { ...F, fanFlow: 150 }, 0).acting;
-  near(alpha.exchangeM3h, 123.4, 0.05);
-  near(alpha.exchangeM3h - alpha.unfilteredM3h, 96.8, 0.05);
-  near(alpha.unfilteredM3h, 26.6, 0.05);
+  near(alpha.exchangeM3h, 131.25, 1e-9);
+  near(alpha.exchangeM3h - alpha.unfilteredM3h, 112.5, 1e-9);
+  near(alpha.unfilteredM3h, 18.75, 1e-9);
 });
 
 test('one fan alone: the intake moves 30 % x f, the exhaust 30 % as before; no filter pressure without the intake', () => {
   const intake = step(at(1), { ...OFF, intake: true }, F, 0).acting;
   near(intake.exchangeM3h, 0.3 * 600 * F_FINAL, 1e-9);
-  near(intake.filterPa, 150 * F_FINAL, 1e-9);
+  assert.equal(intake.filterPa, 80);
   assert.equal(intake.unfilteredM3h, 0);
   const exhaust = step(at(1), { ...OFF, exhaust: true }, F, 0).acting;
   near(exhaust.exchangeM3h, 180, 1e-9);
@@ -101,11 +103,11 @@ test('the filter loads with the air it passes, not with the time', () => {
   assert.equal(run(at(0, { ...p, fanFlow: 0 }), PAIR, { ...p, fanFlow: 0 }, 3600).state.Lf, 0, 'no fan flow, no loading');
 });
 
-test('30 days of the pair at 150 m³/h: loading about 0.82, intake share about 0.69', () => {
+test('30 days of the pair at 150 m³/h: loading about 0.88, intake share about 0.78', () => {
   const p = { ...F, fanFlow: 150 };
   const { state, acting } = run(at(0, p), PAIR, p, 30 * 86400, 3600);
-  near(state.Lf, 0.817, 0.005); // dL/dt = f / 30 days gives L + 0.275 L² = 1
-  near(acting.intakeShare, 0.69, 0.01);
+  near(state.Lf, 0.885, 0.005); // dL/dt = f / 30 days with f = 1 − L/4 gives L = 4 (1 − e^(−30/120))
+  near(acting.intakeShare, 0.779, 0.005);
 });
 
 test('a dirtier filter means less exchange: CO2 is higher after the same purge', () => {
@@ -118,7 +120,7 @@ test('a dirtier filter means less exchange: CO2 is higher after the same purge',
 test('the intake motor heat follows the filter pressure', () => {
   const s = at(1);
   const a = step(s, { ...OFF, intake: true }, { ...F, outdoorT: s.T, outdoorRH: rhOf(s.T, s.W) }, 5).acting;
-  near(a.machineKW, 0.06 * fanWattFactor(150 * F_FINAL, 40, 200), 1e-9);
+  near(a.machineKW, 0.06 * fanWattFactor(80, 40, 200), 1e-9);
   near(step(at(0), { ...OFF, intake: true }, F, 5).acting.machineKW, 0.06, 1e-9, 'clean: the rated 60 W');
 });
 

@@ -143,7 +143,7 @@ function rig(model = fake()) {
 test('a simulated room has the filter settings of the spec and an empty filter probe link', () => {
   const { sims, id } = rig();
   const room = sims.get(id);
-  assert.deepEqual([room.fanMaxPa, room.filterCleanPa, room.filterFinalPa, room.filterLifeDays], [200, 40, 150, 30]);
+  assert.deepEqual([room.fanMaxPa, room.filterCleanPa, room.filterFinalPa, room.filterLifeDays], [200, 40, 80, 30]);
   assert.deepEqual(Object.fromEntries(Object.keys(FILTER_DEFAULTS).map((k) => [k, PARAMS[k].value])), FILTER_DEFAULTS);
   assert.equal(room.filterProbe, null);
 });
@@ -162,6 +162,8 @@ test('filter settings: limits, whole numbers, and they must fit together', () =>
   assert.deepEqual([err.status, err.field, err.message], [400, 'fanMaxPa', "Fan maximum pressure must be above the clean filter's pressure drop"]);
   err = thrown(() => sims.update(id, { filterFinalPa: 60 }));
   assert.deepEqual([err.status, err.field, err.message], [400, 'filterFinalPa', "Filter change pressure must be above the clean filter's pressure drop"]);
+  err = thrown(() => sims.update(id, { filterFinalPa: 300 }));
+  assert.deepEqual([err.status, err.field, err.message], [400, 'filterFinalPa', "Filter change pressure must be below the fan's maximum pressure"]);
   err = thrown(() => sims.update(id, { filterCleanPa: 260 }));
   assert.deepEqual([err.status, err.field], [400, 'filterFinalPa']);
   assert.equal(sims.get(id).filterCleanPa, 60, 'nothing changed');
@@ -210,7 +212,7 @@ test('the runner with the real model: a running intake shows the filter pressure
   near(sensors.get(9).pa, 40, 0.1, 'a clean filter at fanFlow');
   sims.setState(id, { ...sims.get(id).state, Lf: 1 }, null);
   createSimulation({ sensors, sims, tickMs: 0 }).tick();
-  near(sensors.get(9).pa, 150 * (200 / 310), 0.1);
+  near(sensors.get(9).pa, 80, 0.1, 'the sensor reads the change pressure at a loading of 1');
   sensors.writeCoil(4, 0, false);
   createSimulation({ sensors, sims, tickMs: 0 }).tick();
   assert.equal(sensors.get(9).pa, 0, 'no pressure with the intake off');
@@ -231,8 +233,8 @@ test('the loading and the filter settings survive a restart; old rooms get the d
   assert.deepEqual([again.filterProbe, again.filterLifeDays, again.state.Lf], [9, 45, 0.4]);
   writeFileSync(`${statePath}.sim`, JSON.stringify({ speed: 1, rooms: [{ id: 1, name: 'Old', fanFlow: 700 }, { id: 2, name: 'Odd', fanMaxPa: 100, filterCleanPa: 120, filterFinalPa: 300 }] }));
   const [old, odd] = createSims({ sensors: createSensors({}), statePath: `${statePath}.sim`, model: fake() }).list();
-  assert.deepEqual([old.fanMaxPa, old.filterCleanPa, old.filterFinalPa, old.filterLifeDays, old.filterProbe], [200, 40, 150, 30, null]);
-  assert.deepEqual([odd.fanMaxPa, odd.filterCleanPa, odd.filterFinalPa], [200, 40, 150]);
+  assert.deepEqual([old.fanMaxPa, old.filterCleanPa, old.filterFinalPa, old.filterLifeDays, old.filterProbe], [200, 40, 80, 30, null]);
+  assert.deepEqual([odd.fanMaxPa, odd.filterCleanPa, odd.filterFinalPa], [200, 40, 80]);
 });
 
 test('POST /api/sims/:id/change-filter changes the filter; other methods and unknown rooms are 404', async () => {

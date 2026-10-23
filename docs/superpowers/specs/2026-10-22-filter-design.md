@@ -19,18 +19,18 @@ Why: nothing in v2 knows about the filter on a room's intake. The simulator move
 | Item | Rule |
 |---|---|
 | Parameters | `fanFlow` (exists; now "with a clean filter"), `fanMaxPa`, `filterCleanPa`, `filterFinalPa` (section 3), `filterLifeDays` (section 8) |
-| State | the model state gains `Lf`, the filter's loading (0 = clean, 1 = at its final pressure, may go past 1). A state from before this iteration starts at `Lf` = 0 |
+| State | the model state gains `Lf`, the filter's loading (0 = clean, 1 = at its change pressure, may go past 1). A state from before this iteration starts at `Lf` = 0 |
 | Fan curve | a straight line from (0, `fanMaxPa`) through the clean operating point (`fanFlow`, `filterCleanPa`). The duct and grille are part of that clean point |
-| Filter resistance | `R` = `filterCleanPa` + (`filterFinalPa` − `filterCleanPa`) × `Lf`: the filter's pressure drop at `fanFlow`, in proportion to the flow at other flows |
-| Intake share | `f` = `fanMaxPa` ÷ (`fanMaxPa` − `filterCleanPa` + `R`): the intake flow ÷ `fanFlow` where the two lines meet (1 when clean; 0.65 at the final pressure with the defaults) |
-| Filter pressure | `R` × `f` while the intake fan runs, else 0: the drop at the flow the fan still moves, which is what a sensor reads. It is below `R`, so a sensor reads `filterFinalPa` only past `Lf` = 1 (at `Lf` = 4 with the defaults, `f` ≈ 0.31) |
+| Filter pressure | `p` = min(`fanMaxPa`, `filterCleanPa` + (`filterFinalPa` − `filterCleanPa`) × `Lf`): what a sensor across the filter reads while the intake runs (`filterFinalPa` at `Lf` = 1). `acting.filterPa` = `p` while the intake fan runs, else 0 |
+| Intake share | `f` = max(0, (`fanMaxPa` − `p`) ÷ (`fanMaxPa` − `filterCleanPa`)): the intake flow ÷ `fanFlow` on the fan's curve at `p` (1 when clean; 0.75 at the change pressure with the defaults; 0 at the fan's maximum) |
+| `filterOf(params, Lf)` | → `{ share, pressurePa }`; no filter: `{ share: 1, pressurePa: 0 }` |
 | Air exchange | both fans: `fanFlow` × (1 + `f`) ÷ 2 (the exhaust fan keeps pulling; the shortfall comes in through the leaks, unfiltered); intake alone: `SINGLE_FAN` × `fanFlow` × `f`; exhaust alone: as now; never below the leakage, as now |
 | Unfiltered share | both fans: (1 − `f`) ÷ (1 + `f`) of the exchange; reported, not used by the physics |
 | Loading | each sub-step `Lf` += air through the filter (m³) ÷ (`filterLifeDays` × 24 × `fanFlow`). Air through the filter = `fanFlow` × `f` (both fans) or `SINGLE_FAN` × `fanFlow` × `f` (intake alone), × the step time. The filter loads with the air it passes, not with the days |
 | Change | `changeFilter(state)` → the state with `Lf` = 0 |
 | Reply | `acting` gains `filterPa`, `intakeShare` (`f`), `unfilteredM3h`, `filterLoad` (`Lf`) |
 
-Example (defaults, Container Alpha, 150 m³/h, both fans on all the time): clean 150 m³/h all through the filter; after 30 days `Lf` ≈ 0.8, `f` ≈ 0.70; at `Lf` = 1, about 124 m³/h of exchange, 97 through the filter and 27 through the leaks.
+Example (defaults 40 / 80 / 200 Pa, Container Alpha, 150 m³/h, both fans on all the time): clean 150 m³/h all through the filter; after 30 days `Lf` ≈ 0.88, `f` ≈ 0.78 (`f` = 1 − `Lf` ÷ 4 gives `Lf` = 4 (1 − e^(−t ÷ 120 days))); at `Lf` = 1 the sensor reads 80 Pa, `f` = 0.75: 131 m³/h of exchange, 112.5 through the filter and 18.75 through the leaks.
 
 ## 3. Room settings
 
@@ -38,7 +38,7 @@ Example (defaults, Container Alpha, 150 m³/h, both fans on all the time): clean
 |---|---|---|---|---|
 | `fanMaxPa` | Intake fan maximum pressure (from its datasheet) | 200 Pa | 20–2000, whole | energy estimate, simulation runs (prefill) |
 | `filterCleanPa` | Clean filter pressure drop | 40 Pa | 5–1000, whole | `filterMissing`, energy estimate, simulation runs (prefill) |
-| `filterFinalPa` | Filter change pressure | 150 Pa | above `filterCleanPa`, at most 2000, whole | `filterDirty`, simulation runs (prefill) |
+| `filterFinalPa` | Filter change pressure: the pressure sensor's reading at which to change the filter (with the intake running) | 80 Pa | above `filterCleanPa`, below `fanMaxPa`, whole | `filterDirty`, simulation runs (prefill) |
 | `filterChangeDays` | Change the filter every | 30 days | 0–365, whole; 0 = no reminder | `filterDue`, simulation runs (prefill) |
 | `filterChangedAt` | (not edited; set by **Filter changed**) | the room's creation, or the upgrade time for an existing room | ms | `filterDue`, the Filter card |
 | `dpAddress` | Filter pressure sensor address (Sensors section) | empty | 1–247, unique like the other addresses | polling |
@@ -47,6 +47,9 @@ Example (defaults, Container Alpha, 150 m³/h, both fans on all the time): clean
 |---|---|
 | `fanMaxPa` ≤ `filterCleanPa` | "Fan maximum pressure must be above the clean filter's pressure drop", `fanMaxPa` |
 | `filterFinalPa` ≤ `filterCleanPa` | "Filter change pressure must be above the clean filter's pressure drop", `filterFinalPa` |
+| `filterFinalPa` ≥ `fanMaxPa` | "Filter change pressure must be below the fan's maximum pressure", `filterFinalPa` (the sensor never reads more than the fan pushes) |
+
+The three checks are made in the same order by the device app (`filterProblem`), the room settings, the simulation runs, the room dialog and the Simulate stepper.
 
 The room dialog gets a section **Intake filter** with the first four fields; `dpAddress` goes in the Sensors section. A save that leaves out a filter setting keeps the stored value (a new room gets the default; the cross checks take a left-out value as its default), so the dialog always sends all four.
 
@@ -105,7 +108,7 @@ The room dialog gets a section **Intake filter** with the first four fields; `dp
 
 | Change | Detail |
 |---|---|
-| `rooms` columns | `fan_max_pa REAL NOT NULL DEFAULT 200`, `filter_clean_pa REAL NOT NULL DEFAULT 40`, `filter_final_pa REAL NOT NULL DEFAULT 150`, `filter_change_days INTEGER NOT NULL DEFAULT 30`, `filter_changed_at INTEGER` (set to the upgrade time for existing rooms), `dp_address INTEGER` (1–247) |
+| `rooms` columns | `fan_max_pa REAL NOT NULL DEFAULT 200`, `filter_clean_pa REAL NOT NULL DEFAULT 40`, `filter_final_pa REAL NOT NULL DEFAULT 80`, `filter_change_days INTEGER NOT NULL DEFAULT 30`, `filter_changed_at INTEGER` (set to the upgrade time for existing rooms), `dp_address INTEGER` (1–247) |
 | Tables | `filter_readings` (section 4), `filter_changes` (section 5) |
 | Test | the upgrade run on a v13 copy of the owner's database, as for upgrade 12 |
 

@@ -22,7 +22,7 @@ test('a new room has the filter defaults, no sensor and its filter changed when 
   const room = db.createRoom(ROOM, 5000);
   assert.deepEqual(
     [room.fanMaxPa, room.filterCleanPa, room.filterFinalPa, room.filterChangeDays, room.filterChangedAt, room.dpAddress],
-    [200, 40, 150, 30, 5000, null],
+    [200, 40, 80, 30, 5000, null],
   );
 });
 
@@ -131,7 +131,7 @@ test('upgrade 13 to 14: the filter columns with their defaults, the change time 
   t.after(() => db.close());
   const room = db.getRoom(id);
   assert.deepEqual([room.fanMaxPa, room.filterCleanPa, room.filterFinalPa, room.filterChangeDays, room.dpAddress, room.trhAddress],
-    [200, 40, 150, 30, null, 1]);
+    [200, 40, 80, 30, null, 1]);
   assert.ok(room.filterChangedAt >= before && room.filterChangedAt <= Date.now());
   db.updateRoom(id, { ...ROOM, dpAddress: 7 });
   db.addFilterReading({ roomId: id, address: 7, at: 100, ok: true, pa: 50 });

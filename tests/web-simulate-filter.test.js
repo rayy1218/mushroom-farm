@@ -22,7 +22,7 @@ test('the filter fields come from the room: its settings, the whole days since i
   const plain = initialState({ room: { id: 1, name: 'R', length: 2, width: 2, height: 2, volume: 8 }, now });
   assert.deepEqual(
     ['fanMaxPa', 'filterCleanPa', 'filterFinalPa', 'filterLifeDays', 'filterChangeDays', 'filterUsedDays'].map((k) => plain.physics[k]),
-    ['200', '40', '150', '30', '30', '0'],
+    ['200', '40', '80', '30', '30', '0'],
   );
   assert.equal(plain.filterSensor, false);
 });
@@ -51,6 +51,9 @@ test('step 1 checks the filter numbers and that the fan and the change pressure 
   assert.equal(e['physics.fanMaxPa'], "Fan maximum pressure must be above the clean filter's pressure drop");
   assert.equal(e['physics.filterFinalPa'], "Filter change pressure must be above the clean filter's pressure drop");
   assert.equal(firstField(e), 'physics.fanMaxPa');
+  const u = initialState({ room, now });
+  u.physics.filterFinalPa = '250';
+  assert.deepEqual(checkStep(1, u), { 'physics.filterFinalPa': "Filter change pressure must be below the fan's maximum pressure" });
 });
 
 test("the body sends the filter with the room's sensor", () => {

@@ -33,7 +33,7 @@ test('createRoom stores the room and returns it with volume and times', (t) => {
     relayAddress: null,
     acAddress: null,
     meterAddress: null, intakeW: 60, exhaustW: 60, circulationW: 60, humidifierW: 80, humidifierLH: 2, acInputW: 1050, dehumidifierW: 380, dehumidifierLday: 20, dehumidifier: false,
-    dpAddress: null, fanMaxPa: 200, filterCleanPa: 40, filterFinalPa: 150, filterChangeDays: 30, filterChangedAt: 1000,
+    dpAddress: null, fanMaxPa: 200, filterCleanPa: 40, filterFinalPa: 80, filterChangeDays: 30, filterChangedAt: 1000,
     createdAt: 1000,
     updatedAt: 1000,
   });
@@ -85,7 +85,7 @@ test('updateRoom changes the fields and updatedAt only', (t) => {
     relayAddress: null,
     acAddress: null,
     meterAddress: null, intakeW: 60, exhaustW: 60, circulationW: 60, humidifierW: 80, humidifierLH: 2, acInputW: 1050, dehumidifierW: 380, dehumidifierLday: 20, dehumidifier: false,
-    dpAddress: null, fanMaxPa: 200, filterCleanPa: 40, filterFinalPa: 150, filterChangeDays: 30, filterChangedAt: 1000,
+    dpAddress: null, fanMaxPa: 200, filterCleanPa: 40, filterFinalPa: 80, filterChangeDays: 30, filterChangedAt: 1000,
     createdAt: 1000,
     updatedAt: 2000,
   });
@@ -178,7 +178,7 @@ test('an iteration 1 database file is upgraded and keeps its rooms', (t) => {
   assert.deepEqual(db.getRoom(1), {
     id: 1, name: 'Old room', length: 5, width: 4, height: 3, volume: 60,
     trhAddress: null, co2Address: null, relayAddress: null, acAddress: null, meterAddress: null, intakeW: 60, exhaustW: 60, circulationW: 60, humidifierW: 80, humidifierLH: 2, acInputW: 1050, dehumidifierW: 380, dehumidifierLday: 20, dehumidifier: false, createdAt: 10, updatedAt: 20,
-    dpAddress: null, fanMaxPa: 200, filterCleanPa: 40, filterFinalPa: 150, filterChangeDays: 30, filterChangedAt: db.getRoom(1).filterChangedAt, // the upgrade time
+    dpAddress: null, fanMaxPa: 200, filterCleanPa: 40, filterFinalPa: 80, filterChangeDays: 30, filterChangedAt: db.getRoom(1).filterChangedAt, // the upgrade time
   });
   assert.deepEqual(db.getSensors(1).map((s) => s.status), ['not-wired', 'not-wired']);
   db.updateRoom(1, { name: 'Old room', length: 5, width: 4, height: 3, trhAddress: 4 });

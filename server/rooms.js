@@ -34,7 +34,7 @@ export const RATINGS = [
 export const FILTER = [
   { field: 'fanMaxPa', label: 'Intake fan maximum pressure', unit: 'Pa', default: 200, min: 20, max: 2000 },
   { field: 'filterCleanPa', label: 'Clean filter pressure drop', unit: 'Pa', default: 40, min: 5, max: 1000 },
-  { field: 'filterFinalPa', label: 'Filter change pressure', unit: 'Pa', default: 150, min: 5, max: 2000 },
+  { field: 'filterFinalPa', label: 'Filter change pressure', unit: 'Pa', default: 80, min: 5, max: 2000 },
   { field: 'filterChangeDays', label: 'Change the filter every', unit: 'days', default: 30, min: 0, max: 365 },
 ];
 
@@ -94,6 +94,10 @@ export function validateRoom(body) {
   }
   if (pa('filterFinalPa') <= pa('filterCleanPa')) {
     return { error: "Filter change pressure must be above the clean filter's pressure drop", field: 'filterFinalPa' };
+  }
+  // The sensor cannot read more than the fan pushes: a change pressure at or above it is never reached.
+  if (pa('filterFinalPa') >= pa('fanMaxPa')) {
+    return { error: "Filter change pressure must be below the fan's maximum pressure", field: 'filterFinalPa' };
   }
   // The later field of a clashing pair is blamed.
   for (let i = 1; i < ADDRESSES.length; i++) {

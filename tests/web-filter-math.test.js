@@ -15,13 +15,14 @@ test('the settings are those of the server (server/rooms.js FILTER)', () => {
 });
 
 test('texts: the room\'s, else the defaults', () => {
-  assert.deepEqual(filterTexts(null), { fanMaxPa: '200', filterCleanPa: '40', filterFinalPa: '150', filterChangeDays: '30' });
+  assert.deepEqual(filterTexts(null), { fanMaxPa: '200', filterCleanPa: '40', filterFinalPa: '80', filterChangeDays: '30' });
   assert.deepEqual(filterTexts({ fanMaxPa: 300, filterCleanPa: 25, filterFinalPa: 120, filterChangeDays: 0 }),
     { fanMaxPa: '300', filterCleanPa: '25', filterFinalPa: '120', filterChangeDays: '0' });
 });
 
 test('parse: whole numbers in range, the fan and the change pressure above the clean drop, as the server says it', () => {
-  assert.deepEqual(parseFilter(filterTexts(null)), { values: { fanMaxPa: 200, filterCleanPa: 40, filterFinalPa: 150, filterChangeDays: 30 } });
+  assert.deepEqual(parseFilter(filterTexts(null)), { values: { fanMaxPa: 200, filterCleanPa: 40, filterFinalPa: 80, filterChangeDays: 30 } });
+  assert.deepEqual(parseFilter({ ...filterTexts(null), filterFinalPa: '200' }).errors, { filterFinalPa: "Filter change pressure must be below the fan's maximum pressure" });
   assert.deepEqual(parseFilter({ fanMaxPa: '10', filterCleanPa: '40.5', filterFinalPa: '150', filterChangeDays: '366' }).errors, {
     fanMaxPa: 'Intake fan maximum pressure must be a whole number from 20 to 2000 Pa',
     filterCleanPa: 'Clean filter pressure drop must be a whole number from 5 to 1000 Pa',
@@ -41,15 +42,15 @@ test('the pressure sensor address: blank is none, else 1 to 247', () => {
   assert.ok(Number.isNaN(dpAddressOf('2.5')));
 });
 
-const room = { fanMaxPa: 200, filterCleanPa: 40, filterFinalPa: 150, filterChangeDays: 30, filterChangedAt: now - 12.4 * DAY, dpAddress: 9 };
-const sensor = (over = {}) => ({ kind: 'dp', address: 9, status: 'online', failuresInRow: 0, lastOk: { at: now - 5000, pa: 97.2 }, readings: [], ...over });
+const room = { fanMaxPa: 200, filterCleanPa: 40, filterFinalPa: 80, filterChangeDays: 30, filterChangedAt: now - 12.4 * DAY, dpAddress: 9 };
+const sensor = (over = {}) => ({ kind: 'dp', address: 9, status: 'online', failuresInRow: 0, lastOk: { at: now - 5000, pa: 62.4 }, readings: [], ...over });
 
 test('the card: pressure on the bar between clean and the change pressure, days in use and when it is due', () => {
   const c = filterCard({ room, sensor: sensor(), changes: [], now });
-  assert.equal(c.pressure.text, '97.2 Pa');
+  assert.equal(c.pressure.text, '62.4 Pa');
   assert.equal(c.pressure.status, 'Online');
-  assert.deepEqual([c.pressure.min, c.pressure.clean, c.pressure.final, c.pressure.max], [0, 40, 150, 200]);
-  assert.equal(c.pressure.value, 97.2);
+  assert.deepEqual([c.pressure.min, c.pressure.clean, c.pressure.final, c.pressure.max], [0, 40, 80, 200]);
+  assert.equal(c.pressure.value, 62.4);
   assert.equal(c.pressure.over, false);
   assert.equal(c.age, '12 days in use');
   const due = new Date(room.filterChangedAt + 30 * DAY);

@@ -34,7 +34,7 @@ export const PARAMS = {
   // pressure at fanFlow, and the days of fanFlow that take a clean filter to its change pressure (sim-model.js FILTER_DEFAULTS).
   fanMaxPa: { min: 20, max: 2000, whole: true, label: 'Fan maximum pressure', unit: 'Pa', value: 200 },
   filterCleanPa: { min: 5, max: 1000, whole: true, label: 'Clean filter pressure drop', unit: 'Pa', value: 40 },
-  filterFinalPa: { min: 5, max: 2000, whole: true, label: 'Filter change pressure', unit: 'Pa', value: 150 },
+  filterFinalPa: { min: 5, max: 2000, whole: true, label: 'Filter change pressure', unit: 'Pa', value: 80 },
   filterLifeDays: { min: 1, max: 365, whole: true, label: 'Filter life', unit: 'days', value: 30 },
 };
 export const BTU_PER_KW = 3412.142;
@@ -59,10 +59,12 @@ export function outdoorProblem({ outdoorHigh, outdoorLow, outdoorDew }) {
   return null;
 }
 
-// The filter settings must fit together: the fan pushes more than a clean filter takes, and the change pressure is above clean.
+// The filter settings must fit together: the fan pushes more than a clean filter takes, and the change pressure (what a sensor
+// across the filter reads with the intake running) is above clean and below the fan's maximum.
 export function filterProblem({ fanMaxPa, filterCleanPa, filterFinalPa }) {
   if (fanMaxPa <= filterCleanPa) return { message: "Fan maximum pressure must be above the clean filter's pressure drop", field: 'fanMaxPa' };
   if (filterFinalPa <= filterCleanPa) return { message: "Filter change pressure must be above the clean filter's pressure drop", field: 'filterFinalPa' };
+  if (filterFinalPa >= fanMaxPa) return { message: "Filter change pressure must be below the fan's maximum pressure", field: 'filterFinalPa' };
   return null;
 }
 

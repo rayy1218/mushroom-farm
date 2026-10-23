@@ -51,7 +51,7 @@ test('upgrade 8 to 9 keeps rooms and gives them the default ratings and no meter
     id: 1, name: 'A', length: 6, width: 4, height: 2.5, volume: 60, trhAddress: 3, co2Address: null, relayAddress: null,
     acAddress: null, meterAddress: null, intakeW: 60, exhaustW: 60, circulationW: 60, humidifierW: 80, humidifierLH: 2,
     acInputW: 1050, dehumidifierW: 380, dehumidifierLday: 20, dehumidifier: false, createdAt: 10, updatedAt: 10,
-    dpAddress: null, fanMaxPa: 200, filterCleanPa: 40, filterFinalPa: 150, filterChangeDays: 30, filterChangedAt: db.getRoom(1).filterChangedAt, // the upgrade time
+    dpAddress: null, fanMaxPa: 200, filterCleanPa: 40, filterFinalPa: 80, filterChangeDays: 30, filterChangedAt: db.getRoom(1).filterChangedAt, // the upgrade time
   });
   db.close();
   openDb(path).close(); // opening again changes nothing

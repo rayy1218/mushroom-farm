@@ -166,9 +166,10 @@ export function openSimulateDialog(room, hooks = {}) {
     }
     weather.append(weatherGrid);
     machines.append(machineGrid);
-    filter.append(filterGrid, el('p', 'c-hint', state.filterSensor
-      ? 'The room has a filter pressure sensor: the run also changes the filter at the change pressure.'
-      : 'The room has no filter pressure sensor: the run changes the filter only every so many days (0: never).'));
+    filter.append(filterGrid, el('p', 'c-hint', "Filter change pressure: the pressure sensor's reading at which to change the filter (with the intake running)."),
+      el('p', 'c-hint', state.filterSensor
+        ? 'The room has a filter pressure sensor: the run also changes the filter at the change pressure.'
+        : 'The room has no filter pressure sensor: the run changes the filter only every so many days (0: never).'));
     box.append(weather, machines, filter);
     return box;
   }

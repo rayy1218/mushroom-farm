@@ -20,7 +20,7 @@ export const PHYSICS_FIELDS = [
   // room field that prefills it.
   { key: 'fanMaxPa', label: 'Fan maximum pressure', unit: 'Pa', min: 20, max: 2000, whole: true, def: 200, room: 'fanMaxPa' },
   { key: 'filterCleanPa', label: 'Clean filter pressure drop', unit: 'Pa', min: 5, max: 1000, whole: true, def: 40, room: 'filterCleanPa' },
-  { key: 'filterFinalPa', label: 'Filter change pressure', unit: 'Pa', min: 5, max: 2000, whole: true, def: 150, room: 'filterFinalPa' },
+  { key: 'filterFinalPa', label: 'Filter change pressure', unit: 'Pa', min: 5, max: 2000, whole: true, def: 80, room: 'filterFinalPa' },
   { key: 'filterLifeDays', label: 'Filter life', unit: 'days', min: 1, max: 365, whole: true, def: 30 },
   { key: 'filterChangeDays', label: 'Filter change every', unit: 'days', min: 0, max: 365, whole: true, def: 30, device: false, room: 'filterChangeDays' },
   { key: 'filterUsedDays', label: 'Filter in use', unit: 'days', min: 0, max: 365, whole: true, def: 0, device: false },
@@ -151,6 +151,9 @@ export function checkStep(step, state) {
     if (!errors['physics.filterCleanPa']) {
       if (!errors['physics.fanMaxPa'] && v.fanMaxPa <= v.filterCleanPa) errors['physics.fanMaxPa'] = "Fan maximum pressure must be above the clean filter's pressure drop";
       if (!errors['physics.filterFinalPa'] && v.filterFinalPa <= v.filterCleanPa) errors['physics.filterFinalPa'] = "Filter change pressure must be above the clean filter's pressure drop";
+    }
+    if (!errors['physics.fanMaxPa'] && !errors['physics.filterFinalPa'] && v.filterFinalPa >= v.fanMaxPa) {
+      errors['physics.filterFinalPa'] = "Filter change pressure must be below the fan's maximum pressure";
     }
   } else if (step === 2) {
     const bad = validateCrops(cropsOf(state));

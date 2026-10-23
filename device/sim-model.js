@@ -50,18 +50,20 @@ const DEHUM_COIL = 5;
 const DEHUM_MAX = 1.2;
 const dehumShare = (W) => clamp((W - satW(DEHUM_COIL)) / (wOf(30, 80) - satW(DEHUM_COIL)), 0, DEHUM_MAX);
 
-// Intake filter (spec 2026-10-22-filter-design.md 2): the fan's curve is a straight line from (0, fanMaxPa) through the
-// clean operating point (fanFlow, filterCleanPa); the filter's drop at fanFlow rises from clean to final with its loading,
-// in proportion to the flow. Where the two lines meet gives the intake's share of fanFlow. The filter loads with the air it
-// passes: filterLifeDays of fanFlow takes it to its change pressure. A room without these settings has no filter.
-export const FILTER_DEFAULTS = { fanMaxPa: 200, filterCleanPa: 40, filterFinalPa: 150, filterLifeDays: 30 };
+// Intake filter (spec 2026-10-22-filter-design.md 2): the pressure a sensor across the filter reads while the intake runs
+// rises from clean to the change pressure with the loading (at most the fan's maximum pressure). The fan's curve is a
+// straight line from (0, fanMaxPa) through the clean operating point (fanFlow, filterCleanPa): at that pressure it moves
+// this share of fanFlow. The filter loads with the air it passes: filterLifeDays of fanFlow takes it to its change pressure.
+// A room without these settings has no filter.
+export const FILTER_DEFAULTS = { fanMaxPa: 200, filterCleanPa: 40, filterFinalPa: 80, filterLifeDays: 30 };
 export const hasFilter = (p) => [p.fanMaxPa, p.filterCleanPa, p.filterFinalPa].every(Number.isFinite) && p.filterLifeDays > 0;
 
 export function filterOf(params, Lf) {
-  if (!hasFilter(params)) return { share: 1, resistancePa: 0 };
+  if (!hasFilter(params)) return { share: 1, pressurePa: 0 };
   const { fanMaxPa, filterCleanPa, filterFinalPa } = params;
-  const resistancePa = filterCleanPa + (filterFinalPa - filterCleanPa) * Lf;
-  return { share: fanMaxPa / (fanMaxPa - filterCleanPa + resistancePa), resistancePa };
+  const pressurePa = Math.min(fanMaxPa, filterCleanPa + (filterFinalPa - filterCleanPa) * Lf);
+  const span = fanMaxPa - filterCleanPa;
+  return { share: span > 0 ? Math.max(0, (fanMaxPa - pressurePa) / span) : 1, pressurePa };
 }
 
 export const changeFilter = (state) => ({ ...state, Lf: 0 });
@@ -129,11 +131,11 @@ function exchangeOf(inputs, params, share = 1) {
 
 // The filter now: its pressure while the intake runs, the air through it, and the air the exhaust pulls in through the leaks.
 function filterNow(inputs, params, Lf) {
-  const { share, resistancePa } = filterOf(params, Lf);
+  const { share, pressurePa } = filterOf(params, Lf);
   const flow = params.fanFlow;
   return {
     share,
-    filterPa: inputs.intake ? resistancePa * share : 0,
+    filterPa: inputs.intake ? pressurePa : 0,
     throughM3h: inputs.intake ? (inputs.exhaust ? flow : SINGLE_FAN * flow) * share : 0,
     unfilteredM3h: inputs.intake && inputs.exhaust ? (flow * (1 - share)) / 2 : 0,
   };

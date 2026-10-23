@@ -59,7 +59,7 @@ test('filterInput: the alarm input of a room from its settings, sensor readings 
   db.logMachine(id, 'intake', { on: true }, 'auto', 0);
   db.addFilterReading({ roomId: id, address: 7, at: 2 * DAY, ok: true, pa: 88 });
   assert.deepEqual(filterInput(db, db.getRoom(id), 2 * DAY + 5 * S), {
-    sensor: true, pa: 88, cleanPa: 40, finalPa: 150, changeDays: 14, daysInUse: (2 * DAY + 5 * S) / DAY,
+    sensor: true, pa: 88, cleanPa: 40, finalPa: 80, changeDays: 14, daysInUse: (2 * DAY + 5 * S) / DAY,
   });
   db.logMachine(id, 'intake', { on: false }, 'auto', 2 * DAY + 10 * S);
   db.logMachine(id, 'intake', { on: true }, 'auto', 2 * DAY + 20 * S);

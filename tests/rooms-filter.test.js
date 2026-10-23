@@ -10,7 +10,7 @@ test('the four filter settings with their defaults, ranges and units', () => {
   assert.deepEqual(FILTER.map((f) => [f.field, f.default, f.min, f.max, f.unit]), [
     ['fanMaxPa', 200, 20, 2000, 'Pa'],
     ['filterCleanPa', 40, 5, 1000, 'Pa'],
-    ['filterFinalPa', 150, 5, 2000, 'Pa'],
+    ['filterFinalPa', 80, 5, 2000, 'Pa'],
     ['filterChangeDays', 30, 0, 365, 'days'],
   ]);
 });
@@ -39,16 +39,20 @@ test('each filter setting must be a whole number in its range', () => {
   for (const [field, value, error] of cases) assert.deepEqual(validateRoom({ ...BASE, [field]: value }), { error, field });
 });
 
-test('the fan must push above the clean filter, and the change pressure must be above the clean one', () => {
+test('the fan must push above the clean filter, and the change pressure must be above the clean one and below the fan maximum', () => {
   assert.deepEqual(validateRoom({ ...BASE, fanMaxPa: 40, filterCleanPa: 40 }), {
     error: "Fan maximum pressure must be above the clean filter's pressure drop", field: 'fanMaxPa',
   });
   assert.deepEqual(validateRoom({ ...BASE, filterCleanPa: 60, filterFinalPa: 60 }), {
     error: "Filter change pressure must be above the clean filter's pressure drop", field: 'filterFinalPa',
   });
+  assert.deepEqual(validateRoom({ ...BASE, fanMaxPa: 150, filterFinalPa: 150 }), {
+    error: "Filter change pressure must be below the fan's maximum pressure", field: 'filterFinalPa',
+  });
   // A value left out is compared as its default (the pages send all four).
   assert.equal(validateRoom({ ...BASE, filterCleanPa: 150 }).field, 'filterFinalPa');
-  assert.equal(validateRoom({ ...BASE, filterCleanPa: 190, filterFinalPa: 300 }).room.filterCleanPa, 190);
+  assert.equal(validateRoom({ ...BASE, filterFinalPa: 200 }).error, "Filter change pressure must be below the fan's maximum pressure");
+  assert.equal(validateRoom({ ...BASE, fanMaxPa: 400, filterCleanPa: 190, filterFinalPa: 300 }).room.filterCleanPa, 190);
 });
 
 test('the filter pressure sensor address: 1 to 247, and not one of the room\'s other addresses', () => {
