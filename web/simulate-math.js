@@ -85,7 +85,8 @@ export function initialState({ room, lastRun = null, cropData = null, now = Date
     if (f.room && isNumber(room?.[f.room])) fallback = room[f.room];
     physics[f.key] = String(isNumber(before?.[f.key]) ? before[f.key] : fallback);
   }
-  physics.filterUsedDays = String(isNumber(room?.filterChangedAt) ? Math.max(0, Math.floor((now - room.filterChangedAt) / DAY_MS)) : 0);
+  // at most 365, the field's limit: a filter not changed for over a year is a year old for the run
+  physics.filterUsedDays = String(isNumber(room?.filterChangedAt) ? Math.min(365, Math.max(0, Math.floor((now - room.filterChangedAt) / DAY_MS))) : 0);
   // The crops: the room's, else those of its last run (a room only simulated so far), else Grey oyster 500.
   const roomCrops = Array.isArray(cropData?.crops) && cropData.crops.length > 0;
   const lastCrops = !roomCrops && Array.isArray(lastRun?.input?.crops) && lastRun.input.crops.length > 0 ? lastRun.input : null;
@@ -214,12 +215,14 @@ export const roomLine = (room) =>
 const farmWords = { ready: 'ready-to-fruit blocks', full: 'full cycle' };
 
 // The filter of a run in one line: v holds the texts (or numbers) of the filter fields.
+const days = (n) => `${n} ${Number(n) === 1 ? 'day' : 'days'}`;
+
 export function filterLine(v, sensor) {
   const every = Number(v.filterChangeDays) > 0;
-  const when = every && sensor ? `changed every ${v.filterChangeDays} days or at the change pressure (pressure sensor)`
-    : every ? `changed every ${v.filterChangeDays} days (no pressure sensor)`
+  const when = every && sensor ? `changed every ${days(v.filterChangeDays)} or at the change pressure (pressure sensor)`
+    : every ? `changed every ${days(v.filterChangeDays)} (no pressure sensor)`
       : sensor ? 'changed at the change pressure (pressure sensor)' : 'never changed (no reminder, no pressure sensor)';
-  return `Clean ${v.filterCleanPa} Pa, change at ${v.filterFinalPa} Pa, fan maximum ${v.fanMaxPa} Pa, life ${v.filterLifeDays} days; ${v.filterUsedDays} days in use; ${when}`;
+  return `Clean ${v.filterCleanPa} Pa, change at ${v.filterFinalPa} Pa, fan maximum ${v.fanMaxPa} Pa, life ${days(v.filterLifeDays)}; ${days(v.filterUsedDays)} in use; ${when}`;
 }
 
 // The summary of step 3: [{ label, text }].

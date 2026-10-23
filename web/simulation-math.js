@@ -155,7 +155,8 @@ export function timelineRows(machines, minGap = 0, input = null, filterChanges =
   const hadDehumidifier = hasDehumidifier(input) || (machines?.dehumidifier?.length ?? 0) > 0;
   return TIMELINE_ROWS.filter((r) => !r.fitted || hadDehumidifier).map((r) => {
     const raw = (machines?.[r.key] ?? []).map((s) => ({ from: s.from, to: s.to, source: 'auto', setpoint: s.setpoint }));
-    const marks = r.key === 'intake' ? filterChanges.map((at) => ({ at, text: 'Filter changed' })) : [];
+    // a short label: the timeline keeps marks at least 40 px apart, and "Filter" fits that
+    const marks = r.key === 'intake' && Array.isArray(filterChanges) ? filterChanges.map((at) => ({ at, text: 'Filter' })) : [];
     if (r.key === 'ac') {
       let prev = null;
       for (const s of raw) {
@@ -245,7 +246,7 @@ export function inputLine(input, roomMin = null) {
   else if (settings.length) settings[settings.length - 1] += ' (set for this run)';
   const filter = [];
   if (finite(p.fanMaxPa)) {
-    const every = p.filterChangeDays > 0 ? `changed every ${p.filterChangeDays} days` : '';
+    const every = p.filterChangeDays > 0 ? `changed every ${plural(p.filterChangeDays, 'day', 'days')}` : '';
     const when = every && p.filterSensor ? `${every} or at the change pressure` : every || (p.filterSensor ? 'changed at the change pressure' : 'never changed');
     filter.push(`filter ${p.filterCleanPa} Pa clean, change at ${p.filterFinalPa} Pa, ${plural(p.filterUsedDays ?? 0, 'day', 'days')} in use, ${when}`);
   }

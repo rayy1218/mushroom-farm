@@ -36,6 +36,11 @@ test('the filter tiles; none for a run without a filter', () => {
 test('the intake row of the timeline marks the filter changes', () => {
   const machines = { intake: [{ from: 0, to: 600 }], exhaust: [], circulation: [], humidifier: [], dehumidifier: [], ac: [] };
   const rows = timelineRows(machines, 0, input(filter), [86400]);
-  assert.deepEqual(rows.find((r) => r.key === 'intake').marks, [{ at: 86400, text: 'Filter changed' }]);
+  assert.deepEqual(rows.find((r) => r.key === 'intake').marks, [{ at: 86400, text: 'Filter' }]);
   assert.deepEqual(timelineRows(machines, 0, input()).find((r) => r.key === 'intake').marks, []);
+  assert.deepEqual(timelineRows(machines, 0, input(filter), null).find((r) => r.key === 'intake').marks, [], 'not a list: no marks');
+});
+
+test('one day is "1 day" in the input line', () => {
+  assert.match(inputLine(input({ ...filter, filterChangeDays: 1, filterUsedDays: 1, filterSensor: false })), / · filter 40 Pa clean, change at 150 Pa, 1 day in use, changed every 1 day$/);
 });

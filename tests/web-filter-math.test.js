@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { FILTER } from '../server/rooms.js';
-import { FILTER_SETTINGS, filterTexts, parseFilter, dpAddressOf, filterCard } from '../web/filter-math.js';
+import { FILTER_SETTINGS, filterTexts, parseFilter, dpAddressOf, filterCard, filterBar, changesStale } from '../web/filter-math.js';
 
 const DAY = 86_400_000;
 const now = new Date(2026, 9, 22, 12, 0).getTime();
@@ -103,4 +103,43 @@ test('the room page shows the Filter card with the room and its dp sensor; the c
   const card = readFileSync(new URL('../web/filter-card.js', import.meta.url), 'utf8');
   assert.match(card, /request\('POST', `\/api\/rooms\/\$\{roomId\}\/filter\/changed`\)/);
   assert.match(card, /request\('GET', `\/api\/rooms\/\$\{roomId\}\/filter\/changes`\)/);
+  assert.doesNotMatch(card, /'meter'/, 'a plain bar, not a <meter>');
+  assert.match(card, /if \(loading \|\| !room \|\| !changesStale\(seen, room\)\) return;/);
+  assert.match(card, /update\(r, s\) \{\n      room = r;\n      sensor = s \?\? null;\n      paint\(\);\n      loadChanges\(\);/);
+});
+
+test('the bar: the fill is the reading over the scale, clamped; ticks at clean and change; its colour by range', () => {
+  const room = { fanMaxPa: 200, filterCleanPa: 40, filterFinalPa: 80 };
+  assert.deepEqual(filterBar(room, 62.4), { fill: 62.4 / 200, cleanAt: 0.2, finalAt: 0.4, tone: 'ok' });
+  assert.deepEqual(filterBar(room, 19.9), { fill: 19.9 / 200, cleanAt: 0.2, finalAt: 0.4, tone: 'warn' }, 'below half the clean drop: missing or torn');
+  assert.equal(filterBar(room, 20).tone, 'ok');
+  assert.equal(filterBar(room, 79.9).tone, 'ok');
+  assert.equal(filterBar(room, 80).tone, 'bad');
+  assert.deepEqual(filterBar(room, 250), { fill: 1, cleanAt: 0.2, finalAt: 0.4, tone: 'bad' }, 'above the fan maximum: full');
+  assert.equal(filterBar(room, -5).fill, 0);
+  assert.deepEqual(filterBar(room, null), { fill: 0, cleanAt: 0.2, finalAt: 0.4, tone: null });
+  const now = new Date(2026, 9, 22, 12).getTime();
+  const card = filterCard({ room: { ...room, filterChangeDays: 30, filterChangedAt: now, dpAddress: 9 }, sensor: { status: 'online', lastOk: { at: now, pa: 62.4 } }, changes: [], now });
+  assert.deepEqual(card.pressure.bar, filterBar(room, 62.4));
+});
+
+test('wording: one day is "1 day"; Changed today means the same local calendar day', () => {
+  const at = (d, h, m = 0) => new Date(2026, 9, d, h, m).getTime();
+  const card = (changedAt, now, every = 30) => filterCard({ room: { fanMaxPa: 200, filterCleanPa: 40, filterFinalPa: 80, filterChangeDays: every, filterChangedAt: changedAt, dpAddress: null }, sensor: null, changes: [], now });
+  assert.equal(card(at(22, 0, 30), at(22, 23, 30)).age, 'Changed today', '23 h, the same day');
+  assert.equal(card(at(21, 23), at(22, 1)).age, '1 day in use', '2 h, but yesterday');
+  assert.equal(card(at(20, 12), at(22, 9)).age, '2 days in use');
+  assert.match(card(at(22, 8), at(22, 9), 1).due, /^Change by \d+ \w+ \(every 1 day\)$/);
+  assert.match(card(at(22, 8), at(22, 9), 2).due, /\(every 2 days\)$/);
+});
+
+test('the changes list is asked again when the change time moved or the last load failed; a failed load says so', () => {
+  assert.equal(changesStale({ seenChangedAt: 100, failed: false }, { filterChangedAt: 100 }), false);
+  assert.equal(changesStale({ seenChangedAt: 100, failed: false }, { filterChangedAt: 200 }), true, 'a change made elsewhere');
+  assert.equal(changesStale({ seenChangedAt: 100, failed: true }, { filterChangedAt: 100 }), true);
+  assert.equal(changesStale({ seenChangedAt: undefined, failed: false }, { filterChangedAt: 100 }), true, 'never loaded');
+  const now = new Date(2026, 9, 22, 12).getTime();
+  const room = { fanMaxPa: 200, filterCleanPa: 40, filterFinalPa: 80, filterChangeDays: 30, filterChangedAt: now, dpAddress: null };
+  assert.equal(filterCard({ room, sensor: null, changes: [], now, changesFailed: true }).changesError, "Couldn't load the filter changes");
+  assert.equal(filterCard({ room, sensor: null, changes: [], now }).changesError, null);
 });

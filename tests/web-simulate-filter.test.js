@@ -74,3 +74,13 @@ test('the summary says the filter in one line', () => {
   s.filterSensor = true;
   assert.equal(line(s), 'Clean 30 Pa, change at 120 Pa, fan maximum 250 Pa, life 30 days; 9 days in use; changed at the change pressure (pressure sensor)');
 });
+
+test('review fixes: the days in use at most 365; one day is "1 day" in the summary', () => {
+  const s = initialState({ room: { ...room, filterChangedAt: now - 400 * DAY }, now });
+  assert.equal(s.physics.filterUsedDays, '365');
+  assert.deepEqual(checkStep(1, s), {});
+  const t = initialState({ room: { ...room, filterChangedAt: now - 1.5 * DAY, filterChangeDays: 1 }, now });
+  t.filterSensor = false;
+  assert.equal(summaryLines(t, room).find((l) => l.label === 'Filter').text,
+    'Clean 30 Pa, change at 120 Pa, fan maximum 250 Pa, life 30 days; 1 day in use; changed every 1 day (no pressure sensor)');
+});
