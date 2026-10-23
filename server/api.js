@@ -1,7 +1,7 @@
 // JSON API: /api/settings, /api/alarms, /api/outdoor, /api/usage, /api/rooms, /api/rooms/:id, /api/rooms/:id/sensors, /alarms,
 // /control, /machines, /usage and /filter/changed, /filter/changes.
 
-import { validateRoom } from './rooms.js';
+import { validateRoom, FILTER } from './rooms.js';
 import { NameTakenError, AddressTakenError, HISTORY_BUCKET_S } from './db.js';
 import { CommandError } from './machines.js';
 import { RELAY_KEYS } from './machine-codes.js';
@@ -63,9 +63,14 @@ const noRoom = () => new HttpError(404, 'Room not found');
 // gets a new reading interval at once.
 export function createApi(db, machines = null, controller = null, poller = null, simulations = null) {
   const simulationRoutes = simulations && createSimulationRoutes({ db, simulations });
-  // The room body; its addresses must differ from the outdoor sensor's.
-  async function readRoom(req) {
-    const result = validateRoom(await readJson(req));
+  // The room body; its addresses must differ from the outdoor sensor's. stored: the room as it is (an update): a filter
+  // setting left out is its stored value, so the checks compare what will be saved.
+  async function readRoom(req, stored = null) {
+    const body = await readJson(req);
+    if (stored && body !== null && typeof body === 'object' && !Array.isArray(body)) {
+      for (const { field } of FILTER) body[field] ??= stored[field];
+    }
+    const result = validateRoom(body);
     if (result.error) throw new HttpError(400, result.error, result.field);
     const outdoor = db.outdoorAddress();
     const clash = outdoor === null ? undefined : ADDRESS_FIELDS.find((f) => result.room[f] === outdoor);
@@ -214,7 +219,7 @@ export function createApi(db, machines = null, controller = null, poller = null,
     if (req.method === 'PUT') {
       const before = db.getRoom(id);
       if (!before) throw noRoom();
-      const room = await readRoom(req);
+      const room = await readRoom(req, before);
       // A running dehumidifier taken out of the room is switched off first: afterwards nothing may command it.
       if (before.dehumidifier && room.dehumidifier === false && machines && db.getCommands(id)?.relay.dehumidifier) {
         try {

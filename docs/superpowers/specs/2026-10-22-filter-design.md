@@ -51,7 +51,7 @@ Example (defaults 40 / 80 / 200 Pa, Container Alpha, 150 m³/h, both fans on all
 
 The three checks are made in the same order by the device app (`filterProblem`), the room settings, the simulation runs, the room dialog and the Simulate stepper.
 
-The room dialog gets a section **Intake filter** with the first four fields; `dpAddress` goes in the Sensors section. A save that leaves out a filter setting keeps the stored value (a new room gets the default; the cross checks take a left-out value as its default), so the dialog always sends all four.
+The room dialog gets a section **Intake filter** with the first four fields; `dpAddress` goes in the Sensors section. A save that leaves out a filter setting keeps the stored value (a new room gets the default); the cross checks compare what will be saved: an update merges the room's stored settings into the body first, a new room takes the defaults. The dialog always sends all four.
 
 ## 4. Pressure sensor
 
@@ -62,14 +62,14 @@ The room dialog gets a section **Intake filter** with the first four fields; `dp
 | Bad reading | outside −50 to 2000 Pa: stored with `ok` 0, the value kept, and the error "Out of range" |
 | Status | as the energy meter: online, timeout (1–2 failed in a row), offline (3 or more), `no-data`, `not-wired` (no address) |
 | Storage | table `filter_readings (id INTEGER PRIMARY KEY, room_id INTEGER NOT NULL, address INTEGER NOT NULL, at INTEGER NOT NULL, ok INTEGER NOT NULL CHECK (ok IN (0,1)), pa REAL, error TEXT)`, the energy meter readings' three indexes on `(room_id, address, …)`; deleted with the room |
-| Counts when | the intake fan has been commanded on for at least 60 s (from `machine_log`); a reading at other times is stored and shown but judged by nothing |
+| Counts when | the intake fan has been commanded on for at least 60 s (from `machine_log`) and, when the controller has a machines view with the relay module, its intake status is `on` (a dead fan or a relay that does not answer reads about 0 Pa and must not look like a missing filter); a reading from before the last filter change is the old filter's and never counts. A reading at other times is stored and shown but judged by nothing. The controller reads the room again before it judges the filter (a **Filter changed** may land while it sends to another room) |
 | API | `GET /api/rooms/:id/sensors` returns a fourth element `{ kind: 'dp', address, status, failuresInRow, lastOk: { at, pa } \| null, readings }`, like the energy meter |
 
 ## 5. Change reminder and alarms
 
 | Item | Rule |
 |---|---|
-| **Filter changed** | `POST /api/rooms/:id/filter/changed` → sets `filterChangedAt` to now, adds a row to `filter_changes (id INTEGER PRIMARY KEY, room_id INTEGER NOT NULL, at INTEGER NOT NULL, pa_before REAL)` (`pa_before`: the last counted reading of the past day, or null: the intake is usually off while the filter is changed), clears `filterDue`, `filterDirty` and `filterMissing`; returns the room. `GET /api/rooms/:id/filter/changes` → the last 20, newest first |
+| **Filter changed** | `POST /api/rooms/:id/filter/changed` → sets `filterChangedAt` to now, adds a row to `filter_changes (id INTEGER PRIMARY KEY, room_id INTEGER NOT NULL, at INTEGER NOT NULL, pa_before REAL)` (`pa_before`: the last counted reading of the past day since the previous change, or null: the intake is usually off while the filter is changed), clears `filterDue`, `filterDirty` and `filterMissing`; returns the room. `GET /api/rooms/:id/filter/changes` → the last 20, newest first |
 | `filterDue` (warning, no delay) | `filterChangeDays` > 0 and days since `filterChangedAt` ≥ `filterChangeDays`. Text "Filter in use 32 days, change every 30". Clears on **Filter changed** or when the setting moves the due date past now |
 | `filterDirty` (warning, 10 min counted) | a sensor is set and the counted ΔP ≥ `filterFinalPa`. Text "Filter pressure 85 Pa, at or above the change pressure 80". Clears below `filterFinalPa` − 10 or on **Filter changed** |
 | `filterMissing` (warning, 10 min counted) | a sensor is set and the counted ΔP < `filterCleanPa` ÷ 2. Text "Filter pressure 12 Pa: filter missing or torn, or the sensor tube is off". Clears at or above 0.6 × `filterCleanPa` or on **Filter changed** |
@@ -80,7 +80,7 @@ The room dialog gets a section **Intake filter** with the first four fields; `dp
 
 | Item | Rule |
 |---|---|
-| Intake fan watts | rated × (1 + 0.15 × (p − `filterCleanPa`) ÷ (`fanMaxPa` − `filterCleanPa`)), never below rated: rated with a clean filter, 1.15 × rated at the fan's maximum pressure. Small fixed-speed AC fans lose air, not watts, on a dirty filter |
+| Intake fan watts | rated × (1 + 0.15 × (p − `filterCleanPa`) ÷ (`fanMaxPa` − `filterCleanPa`)), never below rated and never above 1.15 × rated (p is taken at most `fanMaxPa`): rated with a clean filter, 1.15 × rated at the fan's maximum pressure. Small fixed-speed AC fans lose air, not watts, on a dirty filter |
 | Simulator (`device/sim-power.js`, `server/simulate.js`) | p = the model's `filterPa` |
 | Real-room estimate (`server/usage.js`) | with a sensor: p = the day's mean counted ΔP (no counted reading that day: rated); without a sensor: rated, as now |
 | Exhaust and circulation fans | unchanged |

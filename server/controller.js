@@ -511,9 +511,11 @@ export function createController({ db, machines, now = Date.now, log = console.e
       reasons.set(room.id, why);
     }
 
-    // An alarm error must not stop this room's commands.
+    // An alarm error must not stop this room's commands. The room is read again for its filter: a Filter changed may have
+    // landed while an earlier room of this run was sending (listRooms was read once, before them).
     try {
-      alarms.evaluate(room, { readings: good, bands: c, faults, clear, cappedInRow, machines: view, blocksDone, filter: filterInput(db, room, at) });
+      const filter = filterInput(db, db.getRoom(room.id) ?? room, at, view);
+      alarms.evaluate(room, { readings: good, bands: c, faults, clear, cappedInRow, machines: view, blocksDone, filter });
     } catch (err) {
       log(err);
     }
