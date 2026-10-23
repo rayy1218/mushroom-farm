@@ -264,8 +264,9 @@ export function simulate(input, ctx, { onProgress } = {}) {
       extremes: {
         tMin: round(ext.tMin, 1), tMax: round(ext.tMax, 1), rhMin: round(ext.rhMin, 1), rhMax: round(ext.rhMax, 1), co2Max: Math.round(ext.co2Max),
       },
-      // changes: s from the start; the mean pressure is while the intake ran; the unfiltered share is of the air of the
-      // exchanges (both fans on), the part the exhaust pulled in through the leaks.
+      // changes: s from the start; the mean pressure is while the intake ran; the unfiltered share is of all the air that came
+      // in while the intake ran (with the exhaust or alone): the part the exhaust pulled in through the leaks (none with the
+      // intake alone).
       filter: filterOn ? {
         changes,
         meanExchangeM3h: round(sums.exchange / totalS, 1),

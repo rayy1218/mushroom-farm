@@ -78,7 +78,7 @@ function checkName(value) {
 // filter's loading Lf.
 const airState = (s) => ({
   T: s.T, W: s.W, CO2: s.CO2,
-  ...(isNumber(s.Tm) ? { Tm: s.Tm } : {}), ...(isNumber(s.Hs) ? { Hs: s.Hs } : {}), ...(isNumber(s.Lf) ? { Lf: s.Lf } : {}),
+  ...(isNumber(s.Tm) ? { Tm: s.Tm } : {}), ...(isNumber(s.Hs) ? { Hs: s.Hs } : {}), ...(isNumber(s.Lf) ? { Lf: Math.max(0, s.Lf) } : {}),
 });
 const paramsOf = (room) => Object.fromEntries(Object.keys(PARAMS).map((k) => [k, room[k]]));
 const clone = (room) => ({ ...room, state: { ...room.state } });

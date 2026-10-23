@@ -56,14 +56,19 @@ const dehumShare = (W) => clamp((W - satW(DEHUM_COIL)) / (wOf(30, 80) - satW(DEH
 // this share of fanFlow. The filter loads with the air it passes: filterLifeDays of fanFlow takes it to its change pressure.
 // A room without these settings has no filter.
 export const FILTER_DEFAULTS = { fanMaxPa: 200, filterCleanPa: 40, filterFinalPa: 80, filterLifeDays: 30 };
-export const hasFilter = (p) => [p.fanMaxPa, p.filterCleanPa, p.filterFinalPa].every(Number.isFinite) && p.filterLifeDays > 0;
+export const hasFilter = (p) => Number.isFinite(p.fanMaxPa) && Number.isFinite(p.filterCleanPa) && Number.isFinite(p.filterFinalPa)
+  && p.filterLifeDays > 0;
+
+// A loading that is not a finite number counts as a clean filter; it is never below 0.
+const loadOf = (Lf) => (Number.isFinite(Lf) ? Math.max(0, Lf) : 0);
+// The sensor reading at a loading, and the intake's share at that reading (numbers, so a sub-step makes no object for them).
+const pressureAt = (p, Lf) => Math.min(p.fanMaxPa, p.filterCleanPa + (p.filterFinalPa - p.filterCleanPa) * loadOf(Lf));
+const shareAt = (p, pa) => (p.fanMaxPa > p.filterCleanPa ? Math.max(0, (p.fanMaxPa - pa) / (p.fanMaxPa - p.filterCleanPa)) : 1);
 
 export function filterOf(params, Lf) {
   if (!hasFilter(params)) return { share: 1, pressurePa: 0 };
-  const { fanMaxPa, filterCleanPa, filterFinalPa } = params;
-  const pressurePa = Math.min(fanMaxPa, filterCleanPa + (filterFinalPa - filterCleanPa) * Lf);
-  const span = fanMaxPa - filterCleanPa;
-  return { share: span > 0 ? Math.max(0, (fanMaxPa - pressurePa) / span) : 1, pressurePa };
+  const pressurePa = pressureAt(params, Lf);
+  return { share: shareAt(params, pressurePa), pressurePa };
 }
 
 export const changeFilter = (state) => ({ ...state, Lf: 0 });
@@ -116,7 +121,7 @@ const full = (s) => ({
   T: s.T, W: s.W, CO2: s.CO2,
   Tm: Number.isFinite(s.Tm) ? s.Tm : s.T,
   Hs: Number.isFinite(s.Hs) ? s.Hs : rhOf(s.T, s.W),
-  Lf: Number.isFinite(s.Lf) ? s.Lf : 0,
+  Lf: loadOf(s.Lf),
 });
 
 // share: the intake's share of fanFlow through its filter. With both fans the exhaust keeps pulling and the shortfall comes
@@ -129,20 +134,15 @@ function exchangeOf(inputs, params, share = 1) {
   return leak;
 }
 
-// The filter now: its pressure while the intake runs, the air through it, and the air the exhaust pulls in through the leaks.
-function filterNow(inputs, params, Lf) {
-  const { share, pressurePa } = filterOf(params, Lf);
-  const flow = params.fanFlow;
-  return {
-    share,
-    filterPa: inputs.intake ? pressurePa : 0,
-    throughM3h: inputs.intake ? (inputs.exhaust ? flow : SINGLE_FAN * flow) * share : 0,
-    unfilteredM3h: inputs.intake && inputs.exhaust ? (flow * (1 - share)) / 2 : 0,
-  };
-}
+// The filter now (filtered: hasFilter(params)): the intake's share, its pressure while the intake runs, the air through it,
+// and the air the exhaust pulls in through the leaks.
+const shareNow = (params, Lf, filtered) => (filtered ? shareAt(params, pressureAt(params, Lf)) : 1);
+const filterPaNow = (inputs, params, Lf, filtered) => (filtered && inputs.intake ? pressureAt(params, Lf) : 0);
+const throughNow = (inputs, params, share) => (inputs.intake ? (inputs.exhaust ? params.fanFlow : SINGLE_FAN * params.fanFlow) * share : 0);
+const unfilteredNow = (inputs, params, share) => (inputs.intake && inputs.exhaust ? (params.fanFlow * (1 - share)) / 2 : 0);
 
 // The intake motor's heat: more against a dirtier filter.
-const intakeW = (filter, params) => INTAKE_W * fanWattFactor(filter.filterPa, params.filterCleanPa, params.fanMaxPa);
+const intakeW = (filterPa, params) => INTAKE_W * fanWattFactor(filterPa, params.filterCleanPa, params.fanMaxPa);
 
 // The aircon now: total capacity P (kW) and its sensible share, or heat.
 function acOf(ac, params, T, W) {
@@ -164,7 +164,7 @@ function acOf(ac, params, T, W) {
   return none;
 }
 
-function substep(s, inputs, params, dt) {
+function substep(s, inputs, params, dt, filtered) {
   const { volume, outdoorT, outdoorRH, blocks, co2PerBlock, wallUA } = params;
   const capAir = volume * AIR_CP * AIR_CONTENTS;                        // kJ/K
   const capMass = volume * MASS_KJ_PER_M3 + blocks * BLOCK_KJ;          // kJ/K
@@ -172,8 +172,9 @@ function substep(s, inputs, params, dt) {
   const outW = wOf(outdoorT, outdoorRH);
   let { T, W, CO2, Tm, Hs, Lf } = s;
 
-  const filter = filterNow(inputs, params, Lf);
-  const exchangeM3h = exchangeOf(inputs, params, filter.share);
+  const share = shareNow(params, Lf, filtered);
+  const filterPa = filterPaNow(inputs, params, Lf, filtered);
+  const exchangeM3h = exchangeOf(inputs, params, share);
 
   // Humidifier: evaporation stops at saturation, counting the cooling it causes (a cooler air holds less); its motor
   // and driver warm the air.
@@ -188,7 +189,7 @@ function substep(s, inputs, params, dt) {
   const blocksKJ = blocks * co2PerBlock * RESP_KJ_PER_ML * (dt / 3600) - blockG * LATENT;
 
   const sunKW = ((params.sunW ?? 0) * (params.sun ?? 0)) / 1000;
-  const machineKW = ((inputs.circulation ? CIRC_W : 0) + (inputs.intake ? intakeW(filter, params) : 0)
+  const machineKW = ((inputs.circulation ? CIRC_W : 0) + (inputs.intake ? intakeW(filterPa, params) : 0)
     + (inputs.humidifier ? (HUMIDIFIER_W_PER_LH * humOn) / 1000 : 0)) / 1000;
 
   T += (-humG * LATENT + (sunKW + machineKW) * dt) / capAir;
@@ -253,7 +254,7 @@ function substep(s, inputs, params, dt) {
     T += ((params.dehumidifierW ?? 0) / 1000 * dt + dehumG * LATENT) / capAir;
   }
 
-  if (hasFilter(params) && params.fanFlow > 0) Lf += (filter.throughM3h * dt) / 3600 / (params.filterLifeDays * 24 * params.fanFlow);
+  if (filtered && params.fanFlow > 0) Lf += (throughNow(inputs, params, share) * dt) / 3600 / (params.filterLifeDays * 24 * params.fanFlow);
 
   const act = {
     exchangeM3h,
@@ -270,9 +271,9 @@ function substep(s, inputs, params, dt) {
     condensedGH: (condensedG / dt) * 3600,
     dehumidifierGH: (dehumG / dt) * 3600,
     dehumidifierKW: dehumOn ? (params.dehumidifierW ?? 0) / 1000 : 0,
-    filterPa: filter.filterPa,
-    intakeShare: filter.share,
-    unfilteredM3h: filter.unfilteredM3h,
+    filterPa,
+    intakeShare: share,
+    unfilteredM3h: unfilteredNow(inputs, params, share),
     filterLoad: Lf,
   };
   return { state: { T, W, CO2: Math.max(0, CO2), Tm, Hs: Math.max(0, Hs), Lf }, act };
@@ -283,9 +284,10 @@ export function step(state, inputs, params, dt) {
   if (!(dt > 0)) return { state: s, acting: nominal(inputs, params, s) };
   const n = Math.max(1, Math.ceil(dt / SUB - 1e-9));
   const h = dt / n;
+  const filtered = hasFilter(params); // once per step: the settings do not change inside it
   let act;
   for (let i = 0; i < n; i++) {
-    const out = substep(s, inputs, params, h);
+    const out = substep(s, inputs, params, h, filtered);
     s = out.state;
     act = out.act;
   }
@@ -297,9 +299,11 @@ function nominal(inputs, params, s) {
   const ac = acOf(inputs.ac, params, s.T, s.W);
   const humOn = inputs.humidifier ? params.humidifierGH : 0;
   const dryness = clamp((100 - rhOf(s.T, s.W)) / 10, 0, 3);
-  const filter = filterNow(inputs, params, s.Lf);
+  const filtered = hasFilter(params);
+  const share = shareNow(params, s.Lf, filtered);
+  const filterPa = filterPaNow(inputs, params, s.Lf, filtered);
   return {
-    exchangeM3h: exchangeOf(inputs, params, filter.share),
+    exchangeM3h: exchangeOf(inputs, params, share),
     acCoolKW: ac.coolKW * ac.shr,
     acLatentKW: ac.coolKW * (1 - ac.shr),
     acHeatKW: ac.heatKW,
@@ -307,14 +311,14 @@ function nominal(inputs, params, s) {
     humidifierGH: humOn,
     blocksKW: (params.blocks * (params.co2PerBlock * RESP_KJ_PER_ML - BLOCK_GH * dryness * LATENT)) / 3600,
     sunKW: ((params.sunW ?? 0) * (params.sun ?? 0)) / 1000,
-    machineKW: ((inputs.circulation ? CIRC_W : 0) + (inputs.intake ? intakeW(filter, params) : 0) + (inputs.humidifier ? (HUMIDIFIER_W_PER_LH * humOn) / 1000 : 0)) / 1000,
+    machineKW: ((inputs.circulation ? CIRC_W : 0) + (inputs.intake ? intakeW(filterPa, params) : 0) + (inputs.humidifier ? (HUMIDIFIER_W_PER_LH * humOn) / 1000 : 0)) / 1000,
     surfaceGH: 0,
     condensedGH: 0,
     dehumidifierGH: inputs.dehumidifier && (params.dehumidifierLday ?? 0) > 0 ? (params.dehumidifierLday * 1000 / 24) * dehumShare(s.W) : 0,
     dehumidifierKW: inputs.dehumidifier && (params.dehumidifierLday ?? 0) > 0 ? (params.dehumidifierW ?? 0) / 1000 : 0,
-    filterPa: filter.filterPa,
-    intakeShare: filter.share,
-    unfilteredM3h: filter.unfilteredM3h,
+    filterPa,
+    intakeShare: share,
+    unfilteredM3h: unfilteredNow(inputs, params, share),
     filterLoad: s.Lf,
   };
 }

@@ -97,10 +97,10 @@ The room dialog gets a section **Intake filter** with the first four fields; `dp
 
 | Item | Rule |
 |---|---|
-| New physics fields | `fanMaxPa`, `filterCleanPa`, `filterFinalPa`, `filterChangeDays` (prefilled from the room), `filterLifeDays` (default 30, 1–365), `filterUsedDays` (the filter's age at the start: prefilled with the room's whole days since `filterChangedAt`, 0–365), `filterSensor` (true when the room has `dpAddress`; not asked). As the other fields, the stepper prefills from the room's last run first, except `filterUsedDays`, always the room's now. Any filter field sent: the first four are required; `filterChangeDays` and `filterUsedDays` default to 0, `filterSensor` to false. None sent: no filter |
+| New physics fields | `fanMaxPa`, `filterCleanPa`, `filterFinalPa`, `filterChangeDays` (prefilled from the room), `filterLifeDays` (default 30, 1–365), `filterUsedDays` (the filter's age at the start: prefilled with the room's whole days since `filterChangedAt`, 0–365), `filterSensor` (true when the room has `dpAddress`; not asked). As the other fields, the stepper prefills from the room's last run first, except `filterUsedDays`, always the room's now. When any of the seven is sent, `fanMaxPa`, `filterCleanPa`, `filterFinalPa` and `filterLifeDays` are required (whole numbers in the device app's ranges, with the three checks of section 3); `filterChangeDays` and `filterUsedDays` default to 0 and `filterSensor` to false. None of the seven sent: no filter |
 | Start | `Lf` = `filterUsedDays` ÷ `filterLifeDays`, as if the filter had passed `fanFlow` all that time (a conservative start) |
 | Changes in the run | at the start of a 10 s step, the filter is changed (`Lf` = 0) when `filterChangeDays` > 0 and that many days passed since the last change (before the run: `filterUsedDays` ago, so a filter in use that long is changed at once), or, with `filterSensor`, after 10 min of intake running at or above `filterFinalPa`, added up over the exchanges like the `filterDirty` alarm (it starts again only below `filterFinalPa` − 10; the model has no spin-up) |
-| Results | `summary.filter` = `{ changes (s from the start), meanExchangeM3h (over the whole run), meanFilterPa (while the intake ran; null if it never ran), unfilteredPct (of the exchange while the intake ran, the part through the leaks) }`, or null without a filter. The page shows them as an **Intake filter** card, the changes as marks on the intake row and the filter in the input line |
+| Results | `summary.filter` = `{ changes (s from the start), meanExchangeM3h (over the whole run), meanFilterPa (while the intake ran; null if it never ran), unfilteredPct (of all the air that came in while the intake ran, with the exhaust or alone, the part through the leaks) }`, or null without a filter. The page shows them as an **Intake filter** card, the changes as marks on the intake row and the filter in the input line |
 | Old runs | runs saved before this iteration show no filter lines; a run without filter fields has no filter (`Lf` 0) |
 | Suggest machines | unchanged: it passes no filter fields, and a run without them keeps `Lf` at 0 (`f` = 1) |
 
@@ -116,7 +116,7 @@ The room dialog gets a section **Intake filter** with the first four fields; `dp
 
 | Area | Cases |
 |---|---|
-| Physics | `f` = 1 clean; 0.65 at `Lf` 1 with the defaults; falls past 1; the pair, intake-alone, exhaust-alone and no-fan exchanges; loading in proportion to the air through the filter (half the run time, half the loading); `changeFilter`; a state without `Lf` |
+| Physics | `f` = 1 clean; 0.75 at `Lf` 1 with the defaults; falls past 1; the pair, intake-alone, exhaust-alone and no-fan exchanges; loading in proportion to the air through the filter (half the run time, half the loading); `changeFilter`; a state without `Lf` |
 | Power | rated at clean, 1.15 × rated at `fanMaxPa`, never below rated |
 | Room settings | defaults, ranges, the two cross checks, `dpAddress` uniqueness against every other address and the outdoor sensor |
 | Sensor | register decode (signed × 10), out of range, statuses, polling order, counted only after 60 s of intake |

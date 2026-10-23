@@ -142,3 +142,19 @@ test('electricW: the intake fan draws more on a dirty filter, the exhaust fan do
   assert.equal(run1({ exhaust: true }, 200), 60);
   assert.equal(electricW({ acting: { acCoolKW: 0, acLatentKW: 0, acHeatKW: 0 }, inputs: { ac: null, intake: true }, params: { outdoorT: 27 } }), 60, 'no filter settings: rated');
 });
+
+test('a negative or missing loading counts as clean: in the state, in filterOf and in the device store', async () => {
+  for (const Lf of [-0.5, NaN, undefined, null, Infinity]) {
+    const r = step({ T: 25, W: wOf(25, 70), CO2: 500, Lf }, OFF, F, 5);
+    assert.equal(r.state.Lf, 0, String(Lf));
+  }
+  for (const Lf of [undefined, null, NaN, Infinity]) assert.deepEqual(filterOf(F, Lf), { share: 1, pressurePa: 40 }, String(Lf));
+  const { createSensors } = await import('../device/sensors.js');
+  const { createSims } = await import('../device/sim-store.js');
+  const sims = createSims({ sensors: createSensors({}) });
+  const { id } = sims.add({ name: 'Room' });
+  sims.setState(id, { T: 20, W: 8, CO2: 700, Lf: -2 }, null);
+  assert.equal(sims.get(id).state.Lf, 0);
+  sims.setState(id, { T: 20, W: 8, CO2: 700, Lf: 0.4 }, null);
+  assert.equal(sims.get(id).state.Lf, 0.4);
+});
