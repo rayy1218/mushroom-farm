@@ -23,7 +23,7 @@ Why: nothing in v2 knows about the filter on a room's intake. The simulator move
 | Fan curve | a straight line from (0, `fanMaxPa`) through the clean operating point (`fanFlow`, `filterCleanPa`). The duct and grille are part of that clean point |
 | Filter resistance | `R` = `filterCleanPa` + (`filterFinalPa` − `filterCleanPa`) × `Lf`: the filter's pressure drop at `fanFlow`, in proportion to the flow at other flows |
 | Intake share | `f` = `fanMaxPa` ÷ (`fanMaxPa` − `filterCleanPa` + `R`): the intake flow ÷ `fanFlow` where the two lines meet (1 when clean; 0.65 at the final pressure with the defaults) |
-| Filter pressure | `R` × `f` while the intake fan runs, else 0 |
+| Filter pressure | `R` × `f` while the intake fan runs, else 0: the drop at the flow the fan still moves, which is what a sensor reads. It is below `R`, so a sensor reads `filterFinalPa` only past `Lf` = 1 (at `Lf` = 4 with the defaults, `f` ≈ 0.31) |
 | Air exchange | both fans: `fanFlow` × (1 + `f`) ÷ 2 (the exhaust fan keeps pulling; the shortfall comes in through the leaks, unfiltered); intake alone: `SINGLE_FAN` × `fanFlow` × `f`; exhaust alone: as now; never below the leakage, as now |
 | Unfiltered share | both fans: (1 − `f`) ÷ (1 + `f`) of the exchange; reported, not used by the physics |
 | Loading | each sub-step `Lf` += air through the filter (m³) ÷ (`filterLifeDays` × 24 × `fanFlow`). Air through the filter = `fanFlow` × `f` (both fans) or `SINGLE_FAN` × `fanFlow` × `f` (intake alone), × the step time. The filter loads with the air it passes, not with the days |
@@ -48,17 +48,17 @@ Example (defaults, Container Alpha, 150 m³/h, both fans on all the time): clean
 | `fanMaxPa` ≤ `filterCleanPa` | "Fan maximum pressure must be above the clean filter's pressure drop", `fanMaxPa` |
 | `filterFinalPa` ≤ `filterCleanPa` | "Filter change pressure must be above the clean filter's pressure drop", `filterFinalPa` |
 
-The room dialog gets a section **Filter** with the first four fields; `dpAddress` goes in the Sensors section.
+The room dialog gets a section **Intake filter** with the first four fields; `dpAddress` goes in the Sensors section. A save that leaves out a filter setting keeps the stored value (a new room gets the default; the cross checks take a left-out value as its default), so the dialog always sends all four.
 
 ## 4. Pressure sensor
 
 | Item | Rule |
 |---|---|
 | Device | an RS485 differential pressure transmitter across the filter: function 04, input register 0 = ΔP in Pa × 10, signed. *Default, to be checked against the owner's transmitter* |
-| Polling | after the room's T/RH and CO₂ sensors, before the energy meter; one read; a failed read = a failed poll |
-| Bad reading | outside −50 to 2000 Pa: stored with `ok` 0 and the error "Out of range" |
-| Status | as the other sensors: online, timeout (1–2 failed in a row), offline (3 or more), `no-data`, `not-set` |
-| Storage | table `filter_readings (id INTEGER PRIMARY KEY, room_id INTEGER NOT NULL, address INTEGER NOT NULL, at INTEGER NOT NULL, ok INTEGER NOT NULL CHECK (ok IN (0,1)), pa REAL, error TEXT)`, index `(room_id, at)`; deleted with the room |
+| Polling | after the room's T/RH and CO₂ sensors, before the energy meter; one read; a failed read = a failed poll. The poller decodes the register; the Modbus client stays generic |
+| Bad reading | outside −50 to 2000 Pa: stored with `ok` 0, the value kept, and the error "Out of range" |
+| Status | as the energy meter: online, timeout (1–2 failed in a row), offline (3 or more), `no-data`, `not-wired` (no address) |
+| Storage | table `filter_readings (id INTEGER PRIMARY KEY, room_id INTEGER NOT NULL, address INTEGER NOT NULL, at INTEGER NOT NULL, ok INTEGER NOT NULL CHECK (ok IN (0,1)), pa REAL, error TEXT)`, the energy meter readings' three indexes on `(room_id, address, …)`; deleted with the room |
 | Counts when | the intake fan has been commanded on for at least 60 s (from `machine_log`); a reading at other times is stored and shown but judged by nothing |
 | API | `GET /api/rooms/:id/sensors` returns a fourth element `{ kind: 'dp', address, status, failuresInRow, lastOk: { at, pa } \| null, readings }`, like the energy meter |
 
@@ -66,7 +66,7 @@ The room dialog gets a section **Filter** with the first four fields; `dpAddress
 
 | Item | Rule |
 |---|---|
-| **Filter changed** | `POST /api/rooms/:id/filter/changed` → sets `filterChangedAt` to now, adds a row to `filter_changes (id INTEGER PRIMARY KEY, room_id INTEGER NOT NULL, at INTEGER NOT NULL, pa_before REAL)` (`pa_before`: the last counted reading, or null), clears `filterDue`, `filterDirty` and `filterMissing`; returns the room. `GET /api/rooms/:id/filter/changes` → the last 20, newest first |
+| **Filter changed** | `POST /api/rooms/:id/filter/changed` → sets `filterChangedAt` to now, adds a row to `filter_changes (id INTEGER PRIMARY KEY, room_id INTEGER NOT NULL, at INTEGER NOT NULL, pa_before REAL)` (`pa_before`: the last counted reading of the past day, or null: the intake is usually off while the filter is changed), clears `filterDue`, `filterDirty` and `filterMissing`; returns the room. `GET /api/rooms/:id/filter/changes` → the last 20, newest first |
 | `filterDue` (warning, no delay) | `filterChangeDays` > 0 and days since `filterChangedAt` ≥ `filterChangeDays`. Text "Filter in use 32 days, change every 30". Clears on **Filter changed** or when the setting moves the due date past now |
 | `filterDirty` (warning, 10 min) | a sensor is set and the counted ΔP ≥ `filterFinalPa`. Text "Filter pressure 162 Pa, at or above the change pressure 150". Clears below `filterFinalPa` − 10 or on **Filter changed** |
 | `filterMissing` (warning, 10 min) | a sensor is set and the counted ΔP < `filterCleanPa` ÷ 2. Text "Filter pressure 12 Pa: filter missing or torn, or the sensor tube is off". Clears at or above 0.6 × `filterCleanPa` or on **Filter changed** |
@@ -87,17 +87,17 @@ The room dialog gets a section **Filter** with the first four fields; `dpAddress
 | Item | Rule |
 |---|---|
 | Sensor kind | `dp`, value `pa` (−50 to 2000), typed by hand, answering as section 4 |
-| Simulated room | parameters `fanMaxPa`, `filterCleanPa`, `filterFinalPa`, `filterLifeDays` with the section 3 defaults (old saved simulations get them); a seventh link `filterProbe` (a `dp` device) that each tick gets `filterPa`; the sim card shows the filter pressure and loading and a **Change filter** button (`changeFilter`) |
+| Simulated room | parameters `fanMaxPa`, `filterCleanPa`, `filterFinalPa`, `filterLifeDays` with the section 3 defaults (old saved simulations get them); a seventh link `filterProbe` (a `dp` device) that each tick gets `filterPa`; the sim card shows the filter pressure and loading and a **Change filter** button (`changeFilter`). A **Reset** puts the air back and keeps the filter as it is |
 | Two buttons | the device's **Change filter** changes the simulated filter; the farm's **Filter changed** records it. The owner presses both, as with a real filter |
 
 ## 8. Simulation runs
 
 | Item | Rule |
 |---|---|
-| New physics fields | `fanMaxPa`, `filterCleanPa`, `filterFinalPa`, `filterChangeDays` (prefilled from the room), `filterLifeDays` (default 30, 1–365), `filterUsedDays` (the filter's age at the start: prefilled with the room's days since `filterChangedAt`, 0–365), `filterSensor` (true when the room has `dpAddress`) |
+| New physics fields | `fanMaxPa`, `filterCleanPa`, `filterFinalPa`, `filterChangeDays` (prefilled from the room), `filterLifeDays` (default 30, 1–365), `filterUsedDays` (the filter's age at the start: prefilled with the room's whole days since `filterChangedAt`, 0–365), `filterSensor` (true when the room has `dpAddress`; not asked). As the other fields, the stepper prefills from the room's last run first, except `filterUsedDays`, always the room's now. Any filter field sent: the first four are required; `filterChangeDays` and `filterUsedDays` default to 0, `filterSensor` to false. None sent: no filter |
 | Start | `Lf` = `filterUsedDays` ÷ `filterLifeDays`, as if the filter had passed `fanFlow` all that time (a conservative start) |
-| Changes in the run | the filter is changed (`Lf` = 0) when `filterChangeDays` > 0 and that many days passed since the last change, or, with `filterSensor`, when `filterPa` stayed at or above `filterFinalPa` for 10 min with the intake running |
-| Results | adds the change times (marks on the timeline), the mean exchange flow, the mean filter pressure while the intake ran and the unfiltered share (% of the fresh air through the leaks) |
+| Changes in the run | at the start of a 10 s step, the filter is changed (`Lf` = 0) when `filterChangeDays` > 0 and that many days passed since the last change (before the run: `filterUsedDays` ago, so a filter in use that long is changed at once), or, with `filterSensor`, after 10 min of intake running at or above `filterFinalPa`, added up over the exchanges and started again when the intake runs below it |
+| Results | `summary.filter` = `{ changes (s from the start), meanExchangeM3h (over the whole run), meanFilterPa (while the intake ran; null if it never ran), unfilteredPct (of the exchange while the intake ran, the part through the leaks) }`, or null without a filter. The page shows them as an **Intake filter** card, the changes as marks on the intake row and the filter in the input line |
 | Old runs | runs saved before this iteration show no filter lines; a run without filter fields has no filter (`Lf` 0) |
 | Suggest machines | unchanged: it passes no filter fields, and a run without them keeps `Lf` at 0 (`f` = 1) |
 
