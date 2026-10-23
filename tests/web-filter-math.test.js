@@ -91,3 +91,15 @@ test('the room dialog has an input and an error line for the sensor address and 
   assert.match(js, /dpAddress: dp,/);
   assert.match(js, /\.\.\.filter\.values,/);
 });
+
+test('the room page shows the Filter card with the room and its dp sensor; the card uses the two filter routes', () => {
+  const page = readFileSync(new URL('../web/room-detail.js', import.meta.url), 'utf8');
+  assert.match(page, /import \{ createFilterCard \} from '\.\/filter-card\.js';/);
+  assert.match(page, /<section data-filter hidden><\/section>/);
+  assert.match(page, /dp: list\.find\(\(s\) => s\.kind === 'dp'\) \?\? null/);
+  assert.match(page, /filterCard\.update\(room, sensors\.dp\)/);
+  assert.match(page, /filterCard\?\.destroy\(\);[\s\S]*filterCard\?\.destroy\(\);/); // a missing room and unmount
+  const card = readFileSync(new URL('../web/filter-card.js', import.meta.url), 'utf8');
+  assert.match(card, /request\('POST', `\/api\/rooms\/\$\{roomId\}\/filter\/changed`\)/);
+  assert.match(card, /request\('GET', `\/api\/rooms\/\$\{roomId\}\/filter\/changes`\)/);
+});
