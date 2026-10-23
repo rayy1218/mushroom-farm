@@ -69,21 +69,42 @@ export function filterBar(room, value) {
 // page), or the last load failed. seen: { seenChangedAt (undefined: never loaded), failed }.
 export const changesStale = (seen, room) => seen.failed || seen.seenChangedAt !== room.filterChangedAt;
 
+// Whether the intake fan runs, from the machines view (GET /api/rooms/:id/machines): true when its status is on, false for any
+// other status, null when it cannot be told (no view, no relay module, the intake not wired).
+export function intakeRunning(view) {
+  const status = view?.relay?.machines?.find((m) => m.key === 'intake')?.status;
+  if (status === undefined || status === 'not-wired') return null;
+  return status === 'on';
+}
+
+// The last reading taken with the intake on ({ at, pa } or null): a new good reading replaces it unless the intake is off
+// (with the fan stopped the sensor reads about 0, which says nothing about the filter).
+export function lastRunningOf(last, intake, sensor) {
+  const ok = sensor?.lastOk;
+  if (intake === false || !finite(ok?.pa) || !finite(ok?.at)) return last ?? null;
+  return last && last.at >= ok.at ? last : { at: ok.at, pa: ok.pa };
+}
+
 // The Filter card of the room page. room: GET /api/rooms/:id; sensor: the 'dp' element of the sensors reply (or null);
-// changes: GET /api/rooms/:id/filter/changes; changesFailed: that list could not be loaded. →
-// { pressure: { text, status, value, min, clean, final, max, over, bar } | null (no sensor), noSensor, age, due, overdue,
-//   changes: [text], changesError (text or null) }.
-export function filterCard({ room, sensor, changes, now, changesFailed = false }) {
+// changes: GET /api/rooms/:id/filter/changes; changesFailed: that list could not be loaded; intake: intakeRunning(); lastRunning:
+// lastRunningOf(), shown while the intake is off (a reading from before the last filter change is the old filter's: not shown). →
+// { pressure: { text, status, value, min, clean, final, max, over, bar, idle (text or null) } | null (no sensor), noSensor, age,
+//   due, overdue, changes: [text], changesError (text or null) }.
+export function filterCard({ room, sensor, changes, now, changesFailed = false, intake = null, lastRunning = null }) {
   const hasSensor = finite(room?.dpAddress) && sensor && sensor.status !== 'not-wired';
   let pressure = null;
   if (hasSensor) {
-    const pa = finite(sensor.lastOk?.pa) ? sensor.lastOk.pa : null;
+    const off = intake === false;
+    const held = off && lastRunning && !(lastRunning.at < room.filterChangedAt) ? lastRunning : null;
+    const pa = off ? held?.pa ?? null : finite(sensor.lastOk?.pa) ? sensor.lastOk.pa : null;
+    const hhmm = held ? `${pad2(new Date(held.at).getHours())}:${pad2(new Date(held.at).getMinutes())}` : '';
     pressure = {
-      text: pa === null ? 'No reading yet' : `${pa.toFixed(1)} Pa`,
+      text: pa !== null ? `${pa.toFixed(1)} Pa` : off ? 'Intake off: no reading with the intake on yet' : 'No reading yet',
       status: STATUS_WORDS[sensor.status] ?? String(sensor.status),
       value: pa, min: 0, clean: room.filterCleanPa, final: room.filterFinalPa, max: Math.max(room.fanMaxPa, pa ?? 0),
       over: pa !== null && pa >= room.filterFinalPa,
       bar: filterBar(room, pa),
+      idle: held ? `Intake off: reading from ${hhmm}, with the intake on` : null,
     };
   }
   const since = finite(room?.filterChangedAt) ? room.filterChangedAt : now;

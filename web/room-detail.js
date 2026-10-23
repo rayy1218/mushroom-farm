@@ -10,6 +10,7 @@ import { createAlarmsCard } from './alarms.js';
 import { createCropCard } from './crop-card.js';
 import { createSimulationsCard } from './sim-card.js';
 import { createFilterCard } from './filter-card.js';
+import { intakeRunning } from './filter-math.js';
 import { closeSimulateDialog } from './simulate-dialog.js';
 import { createMimic, startLoop } from './mimic.js';
 import { fromRoom } from './mimic-math.js';
@@ -436,7 +437,7 @@ export function mount(container, { id }) {
     if (!cropCard) makeCrop(); // (again after a missing room came back)
     simulationsCard ??= createSimulationsCard(els.simulationsHost, { roomId: id, getRoom: () => room });
     filterCard ??= createFilterCard(els.filterHost, { roomId: id, onChanged: () => { if (alive()) load(); } }); // the alarms clear
-    filterCard.update(room, sensors.dp);
+    filterCard.update(room, sensors.dp, intakeRunning(machineData ?? lastMachines));
     stopLoop ??= startLoop(() => (mimic ? [mimic] : [])); // (again after a missing room came back)
     alarmsCard.update(alarmData); // hides itself while there are no current alarms; a failed read keeps the last data
     // The card shows only once a good reply came; later failures keep the last good data.

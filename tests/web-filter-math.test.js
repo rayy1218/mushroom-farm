@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { FILTER } from '../server/rooms.js';
-import { FILTER_SETTINGS, filterTexts, parseFilter, dpAddressOf, filterCard, filterBar, changesStale } from '../web/filter-math.js';
+import { FILTER_SETTINGS, filterTexts, parseFilter, dpAddressOf, filterCard, filterBar, changesStale, intakeRunning, lastRunningOf } from '../web/filter-math.js';
 
 const DAY = 86_400_000;
 const now = new Date(2026, 9, 22, 12, 0).getTime();
@@ -98,14 +98,14 @@ test('the room page shows the Filter card with the room and its dp sensor; the c
   assert.match(page, /import \{ createFilterCard \} from '\.\/filter-card\.js';/);
   assert.match(page, /<section data-filter hidden><\/section>/);
   assert.match(page, /dp: list\.find\(\(s\) => s\.kind === 'dp'\) \?\? null/);
-  assert.match(page, /filterCard\.update\(room, sensors\.dp\)/);
+  assert.match(page, /filterCard\.update\(room, sensors\.dp, intakeRunning\(machineData \?\? lastMachines\)\)/);
   assert.match(page, /filterCard\?\.destroy\(\);[\s\S]*filterCard\?\.destroy\(\);/); // a missing room and unmount
   const card = readFileSync(new URL('../web/filter-card.js', import.meta.url), 'utf8');
   assert.match(card, /request\('POST', `\/api\/rooms\/\$\{roomId\}\/filter\/changed`\)/);
   assert.match(card, /request\('GET', `\/api\/rooms\/\$\{roomId\}\/filter\/changes`\)/);
   assert.doesNotMatch(card, /'meter'/, 'a plain bar, not a <meter>');
   assert.match(card, /if \(loading \|\| !room \|\| !changesStale\(seen, room\)\) return;/);
-  assert.match(card, /update\(r, s\) \{\n      room = r;\n      sensor = s \?\? null;\n      paint\(\);\n      loadChanges\(\);/);
+  assert.match(card, /update\(r, s, running = null\) \{\n      room = r;\n      sensor = s \?\? null;\n      intake = running;\n      lastRunning = lastRunningOf\(lastRunning, intake, sensor\);\n      paint\(\);\n      loadChanges\(\);/);
 });
 
 test('the bar: the fill is the reading over the scale, clamped; ticks at clean and change; its colour by range', () => {
@@ -142,4 +142,45 @@ test('the changes list is asked again when the change time moved or the last loa
   const room = { fanMaxPa: 200, filterCleanPa: 40, filterFinalPa: 80, filterChangeDays: 30, filterChangedAt: now, dpAddress: null };
   assert.equal(filterCard({ room, sensor: null, changes: [], now, changesFailed: true }).changesError, "Couldn't load the filter changes");
   assert.equal(filterCard({ room, sensor: null, changes: [], now }).changesError, null);
+});
+
+test('the intake: running when the machines view says on, off for any other status, unknown without a relay or an intake', () => {
+  const view = (status) => ({ relay: { machines: [{ key: 'intake', status }, { key: 'exhaust', status: 'on' }] } });
+  assert.equal(intakeRunning(view('on')), true);
+  assert.equal(intakeRunning(view('off')), false);
+  assert.equal(intakeRunning(view('not-running')), false);
+  assert.equal(intakeRunning(view('not-wired')), null);
+  assert.equal(intakeRunning({ relay: null }), null);
+  assert.equal(intakeRunning(null), null);
+});
+
+test('the last reading with the intake on: kept while it runs, held while it is off', () => {
+  const s = (at, pa) => sensor({ lastOk: { at, pa } });
+  assert.deepEqual(lastRunningOf(null, true, s(now, 47)), { at: now, pa: 47 });
+  assert.deepEqual(lastRunningOf({ at: now - 9000, pa: 45 }, false, s(now, 0)), { at: now - 9000, pa: 45 });
+  assert.deepEqual(lastRunningOf({ at: now - 9000, pa: 45 }, null, s(now, 50)), { at: now, pa: 50 });
+  assert.equal(lastRunningOf(null, false, s(now, 0)), null);
+  assert.equal(lastRunningOf(null, true, sensor({ lastOk: null })), null);
+});
+
+test('the card with the intake off: the last reading with it on and when, or says there is none; never the idle zero', () => {
+  const hhmm = (ms) => `${String(new Date(ms).getHours()).padStart(2, '0')}:${String(new Date(ms).getMinutes()).padStart(2, '0')}`;
+  const idle = sensor({ lastOk: { at: now - 2000, pa: 0.2 } });
+  const held = filterCard({ room, sensor: idle, changes: [], now, intake: false, lastRunning: { at: now - 600_000, pa: 47.3 } });
+  assert.equal(held.pressure.value, 47.3);
+  assert.equal(held.pressure.text, '47.3 Pa');
+  assert.equal(held.pressure.idle, `Intake off: reading from ${hhmm(now - 600_000)}, with the intake on`);
+  assert.equal(held.pressure.bar.tone, 'ok');
+  const none = filterCard({ room, sensor: idle, changes: [], now, intake: false, lastRunning: null });
+  assert.equal(none.pressure.value, null);
+  assert.equal(none.pressure.text, 'Intake off: no reading with the intake on yet');
+  assert.equal(none.pressure.idle, null);
+  // A reading from before the last filter change is the old filter's: not shown.
+  const old = filterCard({ room, sensor: idle, changes: [], now, intake: false, lastRunning: { at: room.filterChangedAt - 1000, pa: 79 } });
+  assert.equal(old.pressure.value, null);
+  // Running or unknown: the reading as it is, no note.
+  const on = filterCard({ room, sensor: sensor(), changes: [], now, intake: true, lastRunning: { at: now - 5000, pa: 62.4 } });
+  assert.equal(on.pressure.value, 62.4);
+  assert.equal(on.pressure.idle, null);
+  assert.equal(filterCard({ room, sensor: sensor(), changes: [], now }).pressure.idle, null);
 });

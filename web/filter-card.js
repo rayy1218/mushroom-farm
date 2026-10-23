@@ -5,7 +5,7 @@
 // one last loaded (a change made here or on another page) or the last load failed.
 
 import { request, OFFLINE } from './api.js';
-import { filterCard, changesStale } from './filter-math.js';
+import { filterCard, changesStale, lastRunningOf } from './filter-math.js';
 
 function el(tag, className, content) {
   const node = document.createElement(tag);
@@ -18,6 +18,8 @@ export function createFilterCard(host, { roomId, onChanged }) {
   let alive = true;
   let room = null;
   let sensor = null;
+  let intake = null; // the intake fan runs: true, false, or null (cannot be told)
+  let lastRunning = null; // the last reading with the intake on, shown while it is off
   let changes = [];
   let seen = { seenChangedAt: undefined, failed: false }; // the change time the list was loaded for, and whether that failed
   let loading = false;
@@ -69,7 +71,7 @@ export function createFilterCard(host, { roomId, onChanged }) {
 
   function paint() {
     if (!room) return;
-    const c = filterCard({ room, sensor, changes, now: Date.now(), changesFailed: seen.failed });
+    const c = filterCard({ room, sensor, changes, now: Date.now(), changesFailed: seen.failed, intake, lastRunning });
     const parts = [];
     if (c.pressure) {
       const p = c.pressure;
@@ -82,6 +84,7 @@ export function createFilterCard(host, { roomId, onChanged }) {
         parts.push(line);
         parts.push(barNode(p));
       }
+      if (p.idle) parts.push(el('p', 'meta', p.idle));
       parts.push(el('p', 'meta', `clean ${p.clean} Pa · change at ${p.final} Pa · ${p.status}`));
       if (p.over) parts.push(el('p', 'meta warn', 'At or above the change pressure: change the filter'));
     } else {
@@ -138,10 +141,12 @@ export function createFilterCard(host, { roomId, onChanged }) {
   });
 
   return {
-    // room: GET /api/rooms/:id; s: the 'dp' element of the sensors reply, or null.
-    update(r, s) {
+    // room: GET /api/rooms/:id; s: the 'dp' element of the sensors reply, or null; running: intakeRunning() of the machines view.
+    update(r, s, running = null) {
       room = r;
       sensor = s ?? null;
+      intake = running;
+      lastRunning = lastRunningOf(lastRunning, intake, sensor);
       paint();
       loadChanges();
     },
