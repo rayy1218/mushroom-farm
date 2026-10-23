@@ -74,7 +74,9 @@ export function simulate(input, ctx, { onProgress } = {}) {
   }
   const changeS = filterOn ? (physics.filterChangeDays ?? 0) * DAY_S : 0;
   let lastChange = filterOn ? -(physics.filterUsedDays ?? 0) * DAY_S : 0;
-  let dirtyS = 0; // intake running at or above the change pressure since it last ran below it
+  // intake running at or above the change pressure, added up across exchanges like the filterDirty alarm (alarms.js): it
+  // starts again only below the change pressure − 10 (between the two it waits)
+  let dirtyS = 0;
   const changes = [];
   const sums = { exchange: 0, exchangeIntake: 0, unfiltered: 0, pa: 0, paS: 0 };
 
@@ -218,7 +220,8 @@ export function simulate(input, ctx, { onProgress } = {}) {
         sums.unfiltered += r.acting.unfilteredM3h * MODEL_S;
         sums.pa += pa * MODEL_S;
         sums.paS += MODEL_S;
-        dirtyS = filterOn && pa >= physics.filterFinalPa ? dirtyS + MODEL_S : 0;
+        if (filterOn && pa >= physics.filterFinalPa) dirtyS += MODEL_S;
+        else if (pa < physics.filterFinalPa - 10) dirtyS = 0;
       }
     }
     intakeKWh += intakeStepKWh;

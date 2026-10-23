@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDb } from '../server/db.js';
-import { intakeOnThrough, countedPa, meanCountedPa, daysInUse, filterInput, changeFilter, FILTER_KEYS } from '../server/filter.js';
+import { intakeOnThrough, countingFrom, countedPa, meanCountedPa, daysInUse, filterInput, changeFilter, FILTER_KEYS } from '../server/filter.js';
 
 const S = 1000;
 const DAY = 86_400_000;
@@ -18,6 +18,16 @@ test('intakeOnThrough: commanded on at `from` and never off up to `to`', () => {
   assert.equal(intakeOnThrough([on(0), off(80 * S)], 10 * S, 70 * S), true, 'off only after `to`');
   assert.equal(intakeOnThrough([off(0)], 10 * S, 70 * S), false);
   assert.equal(intakeOnThrough([], 10 * S, 70 * S), false);
+});
+
+test("countingFrom: when the intake's present run passed its 60 s spin-up, null while it is off or spinning up", () => {
+  assert.equal(countingFrom([on(0)], 100 * S), 60 * S);
+  assert.equal(countingFrom([on(0)], 60 * S), 60 * S);
+  assert.equal(countingFrom([on(0)], 59 * S), null, 'still spinning up');
+  assert.equal(countingFrom([on(0), off(30 * S), on(40 * S)], 120 * S), 100 * S, 'the present run');
+  assert.equal(countingFrom([on(0), on(50 * S)], 120 * S), 60 * S, 'a repeated on does not start a new run');
+  assert.equal(countingFrom([on(0), off(80 * S)], 90 * S), null, 'off now');
+  assert.equal(countingFrom([], 90 * S), null);
 });
 
 test('countedPa: the newest good reading at most 120 s old, taken after 60 s of intake', () => {
@@ -59,13 +69,21 @@ test('filterInput: the alarm input of a room from its settings, sensor readings 
   db.logMachine(id, 'intake', { on: true }, 'auto', 0);
   db.addFilterReading({ roomId: id, address: 7, at: 2 * DAY, ok: true, pa: 88 });
   assert.deepEqual(filterInput(db, db.getRoom(id), 2 * DAY + 5 * S), {
-    sensor: true, pa: 88, cleanPa: 40, finalPa: 80, changeDays: 14, daysInUse: (2 * DAY + 5 * S) / DAY,
-  });
+    sensor: true, pa: 88, countFrom: 2 * DAY - 115 * S, cleanPa: 40, finalPa: 80, changeDays: 14, daysInUse: (2 * DAY + 5 * S) / DAY,
+  }); // the intake has run all along: its run is known from the start of the log window (120 + 60 s back), plus the spin-up
   db.logMachine(id, 'intake', { on: false }, 'auto', 2 * DAY + 10 * S);
   db.logMachine(id, 'intake', { on: true }, 'auto', 2 * DAY + 20 * S);
   db.addFilterReading({ roomId: id, address: 7, at: 2 * DAY + 30 * S, ok: true, pa: 2 });
-  assert.equal(filterInput(db, db.getRoom(id), 2 * DAY + 35 * S).pa, 88, 'the spin-up reading does not count');
-  assert.equal(filterInput(db, db.getRoom(id), 2 * DAY + 200 * S).pa, null, 'nothing counted lately');
+  const spinning = filterInput(db, db.getRoom(id), 2 * DAY + 35 * S);
+  assert.deepEqual([spinning.pa, spinning.countFrom], [null, null], 'switched on again 15 s ago: nothing counts now');
+  db.addFilterReading({ roomId: id, address: 7, at: 2 * DAY + 85 * S, ok: true, pa: 91 });
+  const again = filterInput(db, db.getRoom(id), 2 * DAY + 90 * S);
+  assert.deepEqual([again.pa, again.countFrom], [91, 2 * DAY + 80 * S]);
+  db.addFilterReading({ roomId: id, address: 7, at: 2 * DAY + 95 * S, ok: false, error: 'Timeout' });
+  assert.equal(filterInput(db, db.getRoom(id), 2 * DAY + 100 * S).pa, null, 'the sensor did not answer the last poll');
+  db.addFilterReading({ roomId: id, address: 7, at: 2 * DAY + 105 * S, ok: true, pa: 92 });
+  assert.equal(filterInput(db, db.getRoom(id), 2 * DAY + 110 * S).pa, 92);
+  assert.equal(filterInput(db, db.getRoom(id), 2 * DAY + 300 * S).pa, null, 'nothing counted lately');
   db.updateRoom(id, { name: 'Room 1', length: 6, width: 4, height: 2.5, relayAddress: 3 });
   assert.deepEqual(filterInput(db, db.getRoom(id), 2 * DAY).sensor, false);
 });

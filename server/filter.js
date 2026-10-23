@@ -17,6 +17,18 @@ export function intakeOnThrough(log, from, to) {
   return log.every((r) => r.at <= from || r.at > to || r.on);
 }
 
+// When the intake's present run passed its spin-up (COUNT_AFTER_MS after it was switched on), or null while it is off or
+// still spinning up. log: as for intakeOnThrough, oldest first.
+export function countingFrom(log, now) {
+  let since = null;
+  for (const r of log) {
+    if (r.at > now) break;
+    if (!r.on) since = null;
+    else if (since === null) since = r.at;
+  }
+  return since !== null && now - since >= COUNT_AFTER_MS ? since + COUNT_AFTER_MS : null;
+}
+
 // The newest good reading [{ at, pa, ok? }] (oldest first) at most maxAgeMs old and taken after the intake had been on
 // COUNT_AFTER_MS without a break: { at, pa }, or null. With the fan off the sensor reads about 0 and says nothing.
 export function countedPa(readings, intakeLog, now, maxAgeMs = MAX_AGE_MS) {
@@ -40,14 +52,21 @@ export function daysInUse(room, now) {
   return room.filterChangedAt === null ? 0 : Math.max(0, (now - room.filterChangedAt) / DAY_MS);
 }
 
-// The `filter` input of alarms.evaluate: { sensor, pa (the counted pressure or null), cleanPa, finalPa, changeDays, daysInUse }.
+// The `filter` input of alarms.evaluate: { sensor, pa, countFrom, cleanPa, finalPa, changeDays, daysInUse }. pa: the counted
+// pressure now, null unless the intake is past its spin-up now and the sensor answered its last poll (the alarms' count
+// pauses). countFrom: when the intake's present run passed its spin-up (at most this far back: the log window), or null.
 export function filterInput(db, room, now) {
   const sensor = room.dpAddress !== null;
-  const counted = sensor
-    ? countedPa(db.filterReadingsWindow(room.id, now - MAX_AGE_MS, now + 1), db.machineLogWindow(room.id, 'intake', now - MAX_AGE_MS - COUNT_AFTER_MS, now), now)
-    : null;
+  let pa = null, countFrom = null;
+  if (sensor) {
+    const log = db.machineLogWindow(room.id, 'intake', now - MAX_AGE_MS - COUNT_AFTER_MS, now);
+    countFrom = countingFrom(log, now);
+    if (countFrom !== null && db.getFilterSensor(room.id, 1)?.status === 'online') {
+      pa = countedPa(db.filterReadingsWindow(room.id, now - MAX_AGE_MS, now + 1), log, now)?.pa ?? null;
+    }
+  }
   return {
-    sensor, pa: counted?.pa ?? null, cleanPa: room.filterCleanPa, finalPa: room.filterFinalPa,
+    sensor, pa, countFrom, cleanPa: room.filterCleanPa, finalPa: room.filterFinalPa,
     changeDays: room.filterChangeDays, daysInUse: daysInUse(room, now),
   };
 }
