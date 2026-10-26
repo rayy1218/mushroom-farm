@@ -13,6 +13,7 @@ import { createController } from './controller.js';
 import { readSettings } from './settings.js';
 import { warmUsage } from './usage.js';
 import { createSimulations } from './simulations.js';
+import { createTelegram } from './telegram.js';
 
 const DEFAULT_DB = fileURLToPath(new URL('../data/v2.db', import.meta.url));
 
@@ -43,7 +44,8 @@ const poller = createPoller({ db, client, intervalMs: pollSeconds * 1000, afterC
 const machines = createMachines({ db, client, poller });
 controller = createController({ db, machines });
 const simulations = createSimulations({ db });
-const server = createApp(db, { machines, controller, poller, simulations });
+const telegram = createTelegram({ db });
+const server = createApp(db, { machines, controller, poller, simulations, telegram });
 
 server.on('error', (err) => fail(`Could not start the server: ${err.message}`));
 server.listen(Number(portText), () => {
@@ -58,6 +60,7 @@ async function stop() {
   stopping = true;
   await poller.stop();
   simulations.close();
+  telegram.close();
   client.close();
   server.close();
   db.close();

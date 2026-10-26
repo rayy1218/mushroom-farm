@@ -1,6 +1,7 @@
 // Settings page: the farm-wide reading interval, the outdoor sensor address and the electricity and water prices.
 
 import { request, OFFLINE } from './api.js';
+import { mountTelegram } from './telegram-card.js';
 import { parsePoll, POLL_MESSAGE, POLL_MIN, POLL_MAX, EXTRA_FIELDS, parseExtraSettings } from './settings-math.js';
 
 const COMMAND_TIMEOUT = 15000;
@@ -51,7 +52,8 @@ const TEMPLATE = `
       <span class="unsent" data-unsent hidden>Unsent changes</span>
     </div>
     <p class="s-saved" data-saved role="status" hidden></p>
-  </form>`;
+  </form>
+  <div data-telegram></div>`;
 
 let mountSeq = 0; // every mount gets a token; a reply that finds the token changed is dropped
 
@@ -175,9 +177,11 @@ export function mount(container) {
 
   retry.addEventListener('click', load);
   load();
+  const unmountTelegram = mountTelegram(q('[data-telegram]'));
 
   return function unmount() {
     mountSeq++;
+    unmountTelegram();
     document.title = 'Rooms · Mushroom farm';
     container.replaceChildren();
   };

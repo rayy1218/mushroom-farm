@@ -4,6 +4,7 @@ import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDb } from '../server/db.js';
 import { createApp } from '../server/app.js';
+import { TELEGRAM_VIEW_DEFAULT } from '../server/settings.js';
 
 let db;
 let server;
@@ -41,7 +42,7 @@ async function call(method, path, body) {
 }
 
 const fields = { name: 'A', length: 6, width: 4, height: 2.5 };
-const DEFAULTS = { pollSeconds: 5, outdoorAddress: null, electricityPrice: 0.55, waterPrice: null };
+const DEFAULTS = { pollSeconds: 5, outdoorAddress: null, electricityPrice: 0.55, waterPrice: null, ...TELEGRAM_VIEW_DEFAULT };
 
 test('GET /api/settings returns all four settings', async () => {
   assert.deepEqual((await call('GET', '/api/settings')).body, DEFAULTS);
@@ -53,10 +54,10 @@ test('PUT /api/settings accepts any subset, keeps the rest and answers with all 
   assert.deepEqual(res.body, { ...DEFAULTS, electricityPrice: 0.6 });
   assert.deepEqual(intervals, []); // the poller is told only about a new interval
   res = await call('PUT', '/api/settings', { outdoorAddress: 9, waterPrice: 2.2, pollSeconds: 8 });
-  assert.deepEqual(res.body, { pollSeconds: 8, outdoorAddress: 9, electricityPrice: 0.6, waterPrice: 2.2 });
+  assert.deepEqual(res.body, { ...DEFAULTS, pollSeconds: 8, outdoorAddress: 9, electricityPrice: 0.6, waterPrice: 2.2 });
   assert.deepEqual(intervals, [8000]);
   res = await call('PUT', '/api/settings', { outdoorAddress: null, waterPrice: null });
-  assert.deepEqual(res.body, { pollSeconds: 8, outdoorAddress: null, electricityPrice: 0.6, waterPrice: null });
+  assert.deepEqual(res.body, { ...DEFAULTS, pollSeconds: 8, outdoorAddress: null, electricityPrice: 0.6, waterPrice: null });
   assert.deepEqual((await call('GET', '/api/settings')).body, res.body);
 });
 

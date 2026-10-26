@@ -5,7 +5,7 @@ import { validateRoom, FILTER } from './rooms.js';
 import { NameTakenError, AddressTakenError, HISTORY_BUCKET_S } from './db.js';
 import { CommandError } from './machines.js';
 import { RELAY_KEYS } from './machine-codes.js';
-import { validateSettings, readSettings, writeSettings } from './settings.js';
+import { validateSettings, readSettings, writeSettings, settingsView } from './settings.js';
 import { outdoorView, outdoorHistory, RANGES } from './outdoor.js';
 import { roomUsage, farmUsage } from './usage.js';
 import { changeFilter } from './filter.js';
@@ -61,7 +61,7 @@ const noRoom = () => new HttpError(404, 'Room not found');
 // machines (from createMachines) and controller (from createController) are optional:
 // without them the machine or control routes do not exist. poller (from createPoller), when given,
 // gets a new reading interval at once.
-export function createApi(db, machines = null, controller = null, poller = null, simulations = null) {
+export function createApi(db, machines = null, controller = null, poller = null, simulations = null, telegram = null) {
   const simulationRoutes = simulations && createSimulationRoutes({ db, simulations });
   // The room body; its addresses must differ from the outdoor sensor's. stored: the room as it is (an update): a filter
   // setting left out is its stored value, so the checks compare what will be saved.
@@ -88,7 +88,7 @@ export function createApi(db, machines = null, controller = null, poller = null,
   async function route(req, res, path, url) {
     if (simulationRoutes && await simulationRoutes(req, res, path, { send, readJson, HttpError })) return;
     if (path === '/api/settings') {
-      if (req.method === 'GET') return send(res, 200, readSettings(db));
+      if (req.method === 'GET') return send(res, 200, settingsView(db, telegram?.status()));
       if (req.method !== 'PUT') throw notFound();
       const result = validateSettings(await readJson(req));
       if (result.error) throw new HttpError(400, result.error, result.field);
@@ -98,7 +98,22 @@ export function createApi(db, machines = null, controller = null, poller = null,
       writeSettings(db, result.settings);
       const settings = readSettings(db);
       if (result.settings.pollSeconds !== undefined) poller?.setIntervalMs(settings.pollSeconds * 1000);
-      return send(res, 200, settings);
+      return send(res, 200, settingsView(db, telegram?.status()));
+    }
+    if (path === '/api/settings/telegram/test' && telegram) {
+      if (req.method !== 'POST') throw notFound();
+      // Optionally the token and chat id as typed on the page, not saved yet; an empty token means the stored one.
+      const body = Number(req.headers['content-length'] ?? 0) > 0 || req.headers['transfer-encoding'] ? await readJson(req) : {};
+      const typed = {};
+      if (body !== null && typeof body === 'object' && !Array.isArray(body)) {
+        const checked = validateSettings(Object.fromEntries(['telegramToken', 'telegramChatId'].filter((f) => body[f] !== undefined && body[f] !== '').map((f) => [f, body[f]])));
+        if (checked.error && checked.field) throw new HttpError(400, checked.error, checked.field);
+        Object.assign(typed, checked.settings);
+      }
+      const r = await telegram.test(typed);
+      if (r.field) throw new HttpError(400, r.error, r.field);
+      if (r.error) return send(res, 502, { error: r.error });
+      return send(res, 200, { ok: true });
     }
     if (path === '/api/outdoor') {
       if (req.method !== 'GET') throw notFound();

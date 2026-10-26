@@ -4,7 +4,9 @@ import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDb } from '../server/db.js';
 import { createApp } from '../server/app.js';
-import { DEFAULT_SETTINGS } from '../server/settings.js';
+import { DEFAULT_SETTINGS as BASE_SETTINGS, TELEGRAM_VIEW_DEFAULT } from '../server/settings.js';
+
+const DEFAULT_SETTINGS = { ...BASE_SETTINGS, ...TELEGRAM_VIEW_DEFAULT };
 
 let db;
 let server;
