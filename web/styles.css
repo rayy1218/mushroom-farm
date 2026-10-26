@@ -262,6 +262,8 @@ html { scroll-padding-top: var(--topbar-h); }
 .addresses .field { margin-bottom: 0; }
 .sizes.two { grid-template-columns: repeat(2, 1fr); }
 @media (max-width: 600px) { .sizes.two { grid-template-columns: 1fr 1fr; gap: 12px; } }
+/* the fitted machines' numbers under the ratings (dehumidifier, lights): the same space as between the rows above */
+.sizes + .sizes { margin-top: 12px; }
 
 /* ---- Room detail ---- */
 /* The Room card's crop facts (Growing, Stage, In this stage, Normally, Next), a link to the Crop tab: five in a row, two on a
@@ -388,6 +390,9 @@ button.toggle[data-on="true"]:hover { opacity: .85; background: var(--ink); }
 .c-group-title { margin: 10px 0 2px; font-size: var(--fs-md); }
 .c-group > .c-band:last-of-type, .c-group > .c-humidifier:last-of-type, .c-group > .c-acfan:last-of-type { border-bottom: 0; }
 .c-group .c-reasons:empty { display: none; }
+.c-light { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; padding: 8px 0 2px; }
+.c-light-today { margin: 0; font-weight: 600; }
+.c-light-link { font-size: var(--fs-sm); font-weight: 600; color: var(--ink-2); text-decoration: underline; text-decoration-color: var(--axis); text-underline-offset: 3px; }
 .c-band.c-outdoor { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 10px 0; }
 .c-band.c-outdoor .c-hint { flex-basis: 100%; margin: 0; }
 .c-acfan .ctl { flex: 0 0 auto; width: auto; min-width: 120px; }
@@ -634,6 +639,7 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
 .cp-edit { margin-top: 12px; padding: 12px 12px 0; border: 1px solid var(--border); border-radius: 8px; background: var(--band); }
 .cp-edit-fields { display: flex; flex-wrap: wrap; gap: 0 16px; }
 .cp-edit-fields .field { width: 140px; }
+.cp-edit-fields .field.cp-light-h { width: 170px; }
 .cp-edit .ac-send { margin-bottom: 12px; }
 .cp-edit > .m-error { margin: -4px 0 12px; }
 .cp-targets-title { margin: 14px 0 6px; font-size: var(--fs-xs); font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
@@ -671,10 +677,11 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
 .cp-step[data-state="next"] .cp-dot { border-color: var(--ink-2); }
 .cp-more { display: none; margin-top: 8px; min-height: 32px; padding: 4px 12px; font-size: var(--fs-sm); }
 
-/* the program row: Ramp (h) and Automatic change */
+/* the program row: Ramp (h), Lights from and Automatic change */
 .cp-program { grid-area: program; display: flex; flex-wrap: wrap; gap: 4px 32px; padding: 14px 16px 2px; border: 1px solid var(--border); border-radius: 8px; }
 .cp-inline { display: flex; gap: 8px; align-items: center; }
 .cp-ramp input { width: 90px; }
+.cp-light-start input { width: 90px; }
 .cp-hint { margin: 0; color: var(--muted); font-size: var(--fs-xs); max-width: 280px; }
 .cp-auto { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
 .cp-auto .crop-check { font-size: 0.9rem; font-weight: 600; min-height: 0; }

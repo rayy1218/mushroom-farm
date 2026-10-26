@@ -1,7 +1,7 @@
 // Automatic control (spec 2026-10-19-controller-design.md): the pure decision, the validation of the
 // settings and the runner that sends the differences after each poll cycle.
 
-import { CommandError } from './machines.js';
+import { CommandError, fitted } from './machines.js';
 import { RELAY_KEYS } from './machine-codes.js';
 import { createSensorChecks } from './checks.js';
 import { createAlarms } from './alarms.js';
@@ -9,6 +9,7 @@ import { filterInput, FILTER_KEYS } from './filter.js';
 import { advance, BAND_KEYS } from './program.js';
 import { outdoorReading } from './outdoor.js';
 import { wOf, dewOf } from '../device/sim-model.js';
+import { lightsNow, localAt } from '../web/light-math.js';
 
 export const DEFAULTS = {
   auto: false, co2Low: 600, co2High: 750, tLow: 21, tHigh: 23, rhLow: 85, rhHigh: 95, humidifierDuringExchange: false, acFan: 'auto',
@@ -86,8 +87,12 @@ const acDiffers = (a, d) => a.power !== d.power || a.mode !== d.mode || a.fan !=
 // t, rh and outdoor, and bands.outdoorAir not false (default true).
 // state.exchangeKind: why the running exchange started, 'co2' | 'fresh' | 'cooling' | 'drying' | 'timed'; the result's state has it too (null when off).
 // faults: { co2, trh }, true while that sensor is faulty (timed exchange, timed humidifier). now: ms.
+// lightsFitted: whether the room has lights (default false: never on, no reason text); program: the room's crop program with
+// its light schedule (null: none, the lights are off); clockAt(ms, h, m, days): the time h:m on the day of ms (default the
+// farm's local clock, light-math.js localAt; a simulation run's clock is runAt, its second 0 is midnight).
 // Returns { state, desired, reasons }. Pure.
-export function decide({ bands, state, readings, faults, now, humidifierDuringExchange = false, acFan = 'auto', dehumidifierFitted = false, rhUnwired = false }) {
+export function decide({ bands, state, readings, faults, now, humidifierDuringExchange = false, acFan = 'auto', dehumidifierFitted = false, rhUnwired = false,
+  lightsFitted = false, program = null, clockAt = localAt }) {
   const { co2 = null, rh = null, t = null, outdoor = null } = readings ?? {};
   const was = state.exchange;
   let exchange = was;
@@ -340,6 +345,10 @@ export function decide({ bands, state, readings, faults, now, humidifierDuringEx
     : `Aircon: ${setpoint.toFixed(1)} °C (middle of ${bands.tLow}–${bands.tHigh})${fanNote}`;
   reasons.circulation = 'Circulation: always on';
 
+  // Lights (spec 2026-10-26-lighting-design.md 4): the stage's daily window of the crop program; no hold.
+  const lights = lightsFitted ? lightsNow(program, now, clockAt) : { on: false, reason: '' };
+  reasons.lights = lights.reason;
+
   return {
     state: {
       exchange, exchangeSince: since, exchangeEndedAt: endedAt, exchangeForced: freshRun, exchangeKind: kind, freshFrom,
@@ -351,6 +360,7 @@ export function decide({ bands, state, readings, faults, now, humidifierDuringEx
       exhaust: exchange,
       humidifier: forced || band,
       dehumidifier: dehumidifierFitted && dehumidifierBand,
+      lights: lights.on,
       circulation: true,
       ac: { power: true, mode: 'cool', setpoint, fan: acFan },
     },
@@ -432,11 +442,11 @@ export function validateControl(c, { compareSafety = true } = {}) {
   return null;
 }
 
-const emptyReasons = () => ({ exchange: '', humidifier: '', dehumidifier: '', ac: '', circulation: '', held: { humidifier: '', dehumidifier: '', ac: '' } });
+const emptyReasons = () => ({ exchange: '', humidifier: '', dehumidifier: '', lights: '', ac: '', circulation: '', held: { humidifier: '', dehumidifier: '', ac: '' } });
 const BYPASS = { bypassAuto: true };
 const RESENDS = 3;
-const NAMES = { intake: 'Intake fan', exhaust: 'Exhaust fan', circulation: 'Circulation fan', humidifier: 'Humidifier', dehumidifier: 'Dehumidifier', ac: 'Aircon' };
-const REASON_OF = { intake: 'exchange', exhaust: 'exchange', circulation: 'circulation', humidifier: 'humidifier', dehumidifier: 'dehumidifier', ac: 'ac' };
+const NAMES = { intake: 'Intake fan', exhaust: 'Exhaust fan', circulation: 'Circulation fan', humidifier: 'Humidifier', dehumidifier: 'Dehumidifier', lights: 'Lights', ac: 'Aircon' };
+const REASON_OF = { intake: 'exchange', exhaust: 'exchange', circulation: 'circulation', humidifier: 'humidifier', dehumidifier: 'dehumidifier', lights: 'lights', ac: 'ac' };
 
 // db: the farm database. machines: from createMachines. now is injectable. checks (createSensorChecks) and alarms
 // (createAlarms) are made here unless a test passes its own.
@@ -500,11 +510,12 @@ export function createController({ db, machines, now = Date.now, log = console.e
     const at = now();
 
     // The stage program (auto on or off): a due stage change, and the ramped bands written to the settings when they differ.
-    const program = db.getProgram(room.id);
+    let program = db.getProgram(room.id);
     let blocksDone = null;
     if (program.crops.length > 0) {
       const next = advance(program, at, c);
       if (next.program !== program) db.setProgram(room.id, next.program);
+      program = next.program; // the lights follow the stage of now
       if (next.bands && BAND_KEYS.some((k) => next.bands[k] !== c[k])) {
         db.setControl(room.id, { ...c, ...next.bands });
         c = db.getControl(room.id);
@@ -563,6 +574,8 @@ export function createController({ db, machines, now = Date.now, log = console.e
         acFan: c.acFan,
         dehumidifierFitted: room.dehumidifier,
         rhUnwired: unwired.trh,
+        lightsFitted: room.lights,
+        program,
       });
       const why = decided.reasons;
       db.setControlState(room.id, decided.state, at);
@@ -604,7 +617,7 @@ export function createController({ db, machines, now = Date.now, log = console.e
       };
       if (room.relayAddress !== null) {
         for (const key of RELAY_KEYS) {
-          if (key === 'dehumidifier' && !room.dehumidifier) continue; // not fitted: never commanded
+          if (!fitted(room, key)) continue; // not fitted: never commanded
           plan(key, desired[key], commands.relay[key] !== desired[key]);
         }
       }

@@ -147,7 +147,7 @@ test('the card sends what the pure parts build: start, save and new blocks', () 
   for (const name of ['startBody', 'saveBody', 'newBlocksBody', 'checkCropForm', 'stagePlan', 'stageTargets', 'cropHeadline']) {
     assert.match(src, new RegExp(`\\b${name}\\(`), `the card calls ${name}`);
   }
-  assert.match(src, /export function createCropCard\(host, \{ roomId, onChange, onData, onOffline, onGone \}\)/);
+  assert.match(src, /export function createCropCard\(host, \{ roomId, onChange, onData, onOffline, onGone, getRoom \}\)/);
   assert.match(src, /Start this stage/);
   assert.match(src, /Bands at once \(skip the/);
 });

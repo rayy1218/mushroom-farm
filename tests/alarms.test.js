@@ -168,7 +168,7 @@ test('air exchange too small: raised at 3 in a row, cleared when the count is ba
 });
 
 function machineView(overrides = {}, ac = {}) {
-  const relay = ['intake', 'exhaust', 'circulation', 'humidifier', 'dehumidifier'].map((key) => ({ key, status: overrides[key] ?? 'on' }));
+  const relay = ['intake', 'exhaust', 'circulation', 'humidifier', 'dehumidifier', 'lights'].map((key) => ({ key, status: overrides[key] ?? 'on' }));
   return { relay: { machines: relay }, ac: { status: 'on', errorCode: 0, ...ac } };
 }
 
@@ -222,6 +222,20 @@ test('machine alarms: a dehumidifier that is not fitted raises nothing and clear
   assert.deepEqual(s.keys(), []);
   s.tick(0, { machines: machineView({ dehumidifier: 'not-fitted' }) });
   s.tick(5 * MIN, { machines: machineView({ dehumidifier: 'not-fitted' }) });
+  assert.deepEqual(s.keys(), []);
+});
+
+test('machine alarms: lights like the other relay machines (spec 2026-10-26-lighting-design.md 8); not fitted, nothing', (t) => {
+  const s = setup(t);
+  s.tick(0, { machines: machineView({ lights: 'not-running' }) });
+  s.tick(MIN, { machines: machineView({ lights: 'not-running' }) });
+  assert.deepEqual(s.keys(), ['machine.lights']);
+  assert.equal(s.db.activeAlarms(s.room.id)[0].text, 'Lights: not running (switch on, no current)');
+  assert.equal(s.db.activeAlarms(s.room.id)[0].level, 'serious');
+  s.tick(1000, { machines: machineView({ lights: 'not-fitted' }) });
+  assert.deepEqual(s.keys(), []);
+  s.tick(0, { machines: machineView({ lights: 'not-fitted' }) });
+  s.tick(5 * MIN, { machines: machineView({ lights: 'not-fitted' }) });
   assert.deepEqual(s.keys(), []);
 });
 

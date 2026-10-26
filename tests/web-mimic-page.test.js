@@ -29,7 +29,7 @@ test('the room page uses the Room card: the picture inside it, the card\'s words
   assert.match(room, /roomCardUi\.paint\(roomCard\(\{ draw, control: lastControl, filter, crop: cropData, now \}\), draw\)/);
   assert.match(room, /startLoop\(\(\) => \(roomCardUi \? \[roomCardUi\.mimic\] : \[\]\)\)/);
   assert.match(room, /roomCardUi\?\.destroy\(\);/);
-  assert.match(room, /onData: \(data\) => \{ if \(!alive\(\)\) return; cropData = data \?\? null; paintDrawing\(\); \}/);
+  assert.match(room, /onData: \(data\) => \{[^}]*if \(!alive\(\)\) return;\s*cropData = data \?\? null;\s*control\?\.setCrop\(cropData\);\s*paintDrawing\(\);\s*\}/);
   assert.match(room, /createRoomCard\(els\.roomCardHost, \{ idPrefix: 'room-', cropHref: roomHash\(id, 'crop'\) \}\)/);
   const card = source('../web/room-card.js');
   assert.match(card, /import \{ createMimic \} from '\.\/mimic\.js';/);

@@ -1,6 +1,7 @@
 // Pure mapping for the room drawing (web/mimic.js): the DrawState, how the farm room page and the device's simulated
 // room fill it, and the plain data the painter writes (texts, levels, flags). No DOM, so Node tests cover it.
-// DrawState: see docs/superpowers/specs/2026-10-20-room-drawing-design.md, plus filterPa (2026-10-26-room-picture-design.md).
+// DrawState: see docs/superpowers/specs/2026-10-20-room-drawing-design.md, plus filterPa (2026-10-26-room-picture-design.md) and
+// units.lights (2026-10-26-lighting-design.md 8: null when the room has none, like units.dh).
 
 import { MACHINE_NAMES, MODES, FANS, statusWord } from './machines-math.js';
 import { outdoorForDrawing } from './outdoor-math.js';
@@ -66,9 +67,11 @@ export function fromRoom({ room, sensors, machines, control, outdoor = null, fil
   const relay = Array.isArray(machines?.relay?.machines) ? machines.relay.machines : [];
   const units = { ac: acUnit(machines?.ac) };
   for (const [machine, unit] of Object.entries(RELAY_UNIT)) units[unit] = relayUnit(relay.find((m) => m.key === machine));
-  // The dehumidifier only when the room has one (an older server sends no row, a room without one 'not-fitted').
+  // The dehumidifier and the lights only when the room has them (an older server sends no row, a room without one 'not-fitted').
   const dh = relay.find((m) => m.key === 'dehumidifier');
   units.dh = dh && dh.status !== 'not-fitted' ? relayUnit(dh) : null;
+  const lights = relay.find((m) => m.key === 'lights');
+  units.lights = lights && lights.status !== 'not-fitted' ? relayUnit(lights) : null;
   return {
     name: room?.name ?? '',
     note: noteOf(c),
@@ -128,6 +131,8 @@ export function fromSim(room, sensors) {
   // A dehumidifier when the room has a capacity (output 5); its level: the water it takes out of its rating.
   const dh = num(r.dehumidifierLday) > 0 ? simRelayUnit(relay, 4, 1) : null;
   if (dh?.on && a) dh.level = Math.max(0.2, clamp01((num(a.dehumidifierGH) ?? 0) / ((r.dehumidifierLday * 1000) / 24)));
+  // Lights when the room has a lights power (output 6).
+  const lights = num(r.lightsW) > 0 ? simRelayUnit(relay, 5, 1) : null;
   const blocks = num(r.blocks), perBlock = num(r.co2PerBlock) ?? 0;
   const out = r.outdoor && (num(r.outdoor.T) !== null || num(r.outdoor.RH) !== null) ? { T: num(r.outdoor.T), RH: num(r.outdoor.RH) } : null;
   const chip = { lvl: 'none', icon: '', text: 'Simulated' };
@@ -145,6 +150,7 @@ export function fromSim(room, sensors) {
       exhaust: simRelayUnit(relay, 1, fanLevel),
       circ: simRelayUnit(relay, 2, 1),
       dh,
+      lights,
     },
     // the filter probe reads only while the intake runs (0 otherwise)
     filterPa: r.filterProbe != null && num(a?.filterPa) > 0 ? a.filterPa : null,
@@ -177,6 +183,7 @@ export function view(draw) {
   for (const key of UNIT_KEYS) units[key] = unitView(un[key], NAMES[key]);
   const ac = units.ac;
   const dh = un.dh ? unitView(un.dh, MACHINE_NAMES.dehumidifier) : null; // drawn only when the room has one
+  const lights = un.lights ? unitView(un.lights, MACHINE_NAMES.lights) : null; // the same
   const comp = ac.on && ac.mode !== 'fan' && ac.running !== false; // a fault or an idle aircon: no compressor
   return {
     night: Boolean(s.night),
@@ -193,6 +200,7 @@ export function view(draw) {
     },
     units,
     dh,
+    lights,
     comp,
     acFlow: ac.on ? (comp ? 0.35 + 0.65 * ac.level : 0.2) : 0,
     airOn: units.intake.on || units.exhaust.on,
@@ -210,6 +218,7 @@ export function describe(v) {
   const say = (u) => `${u.name} ${u.state === dash ? 'no data' : u.state.charAt(0).toLowerCase() + u.state.slice(1)}${u.sub ? `, ${u.sub}` : ''}`;
   const units = UNIT_KEYS.map((k) => say(v.units[k]));
   if (v.dh) units.push(say(v.dh));
+  if (v.lights) units.push(say(v.lights));
   const outdoor = v.hasOut ? `Outdoor ${v.outLine}, ${v.sky.toLowerCase()}` : 'No outdoor sensor';
   return `Room drawing. ${part('Temperature', r.T)}, ${part('humidity', r.RH)}, ${part('CO₂', r.CO2)}. ${units.join('. ')}. ${outdoor}.${v.note ? ` ${v.note}.` : ''}`;
 }

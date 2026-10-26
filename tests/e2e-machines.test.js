@@ -58,7 +58,7 @@ test('switching a relay machine on: the coil, the reading and the running input 
 
 test('a stuck relay shows not-following, a dead motor not-running', async (t) => {
   const { device, room, machines, relay, settle } = await setup(t);
-  device.sensors.update(10, { stuck: [false, true, false, false, false], dead: [false, false, true, false, false] });
+  device.sensors.update(10, { stuck: [false, true, false, false, false, false], dead: [false, false, true, false, false, false] });
 
   await machines.command(room.id, 'exhaust', { on: true });
   await machines.command(room.id, 'circulation', { on: true });

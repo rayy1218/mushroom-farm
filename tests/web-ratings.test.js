@@ -9,7 +9,7 @@ import {
 } from '../web/settings-math.js';
 
 test('a new room starts with the spec defaults: 60, 60, 60, 80, 2.0 and 1050', () => {
-  assert.deepEqual(ratingTexts(null), { intakeW: '60', exhaustW: '60', circulationW: '60', humidifierW: '80', humidifierLH: '2', acInputW: '1050', dehumidifierW: '380', dehumidifierLday: '20' });
+  assert.deepEqual(ratingTexts(null), { intakeW: '60', exhaustW: '60', circulationW: '60', humidifierW: '80', humidifierLH: '2', acInputW: '1050', dehumidifierW: '380', dehumidifierLday: '20', lightsW: '60' });
   assert.equal(RATINGS.length, 6);
   assert.deepEqual(DEHUMIDIFIER_RATINGS.map((r) => r.name), ['dehumidifierW', 'dehumidifierLday']);
 });

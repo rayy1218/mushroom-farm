@@ -87,35 +87,45 @@ async function ask(unit, pdu, { expectSilence = false } = {}) {
 const replyPdu = (r) => hex(r.data.subarray(7));
 
 test('fn 01 packs the four coils into one byte, coil 0 in bit 0', async () => {
-  assert.equal(replyPdu(await ask(10, pdu16(1, 0, 5))), '010100');
+  assert.equal(replyPdu(await ask(10, pdu16(1, 0, 6))), '010100');
   sensors.writeCoil(10, 0, true);
-  assert.equal(replyPdu(await ask(10, pdu16(1, 0, 5))), '010101');
+  assert.equal(replyPdu(await ask(10, pdu16(1, 0, 6))), '010101');
   sensors.writeCoil(10, 3, true);
-  assert.equal(replyPdu(await ask(10, pdu16(1, 0, 5))), '010109');
+  assert.equal(replyPdu(await ask(10, pdu16(1, 0, 6))), '010109');
   sensors.writeCoil(10, 1, true);
   sensors.writeCoil(10, 2, true);
-  const r = await ask(10, pdu16(1, 0, 5));
+  const r = await ask(10, pdu16(1, 0, 6));
   assert.equal(replyPdu(r), '01010f');
   assert.equal(hex(r.data.subarray(0, 7)), '0001' + '0000' + '0004' + '0a');
 });
 
 test('the 5th coil and input (dehumidifier) are bit 4, and coil 4 can be written', async () => {
   assert.equal(replyPdu(await ask(10, pdu16(5, 4, 0xff00))), '050004ff00');
+  assert.equal(replyPdu(await ask(10, pdu16(1, 0, 6))), '010110');
+  assert.equal(replyPdu(await ask(10, pdu16(2, 0, 6))), '020110');
+  sensors.update(10, { dead: [false, false, false, false, true, false] });
+  assert.equal(replyPdu(await ask(10, pdu16(2, 0, 6))), '020100');
+  assert.equal(replyPdu(await ask(10, pdu16(1, 0, 4))), '010100'); // a 4-coil read (a room without a dehumidifier): bits 0–3
   assert.equal(replyPdu(await ask(10, pdu16(1, 0, 5))), '010110');
-  assert.equal(replyPdu(await ask(10, pdu16(2, 0, 5))), '020110');
-  sensors.update(10, { dead: [false, false, false, false, true] });
-  assert.equal(replyPdu(await ask(10, pdu16(2, 0, 5))), '020100');
-  assert.equal(replyPdu(await ask(10, pdu16(1, 0, 4))), '8102'); // the old 4-coil read is an illegal address
+});
+
+test('the 6th coil and input (lights) are bit 5, and coil 5 can be written', async () => {
+  assert.equal(replyPdu(await ask(10, pdu16(5, 5, 0xff00))), '050005ff00');
+  assert.equal(replyPdu(await ask(10, pdu16(1, 0, 6))), '010120');
+  assert.equal(replyPdu(await ask(10, pdu16(2, 0, 6))), '020120');
+  sensors.update(10, { dead: [false, false, false, false, false, true] });
+  assert.equal(replyPdu(await ask(10, pdu16(2, 0, 6))), '020100');
+  assert.equal(replyPdu(await ask(10, pdu16(1, 0, 5))), '010100'); // a 5-coil read leaves the lights out
 });
 
 test('fn 02 reports running: coil on, not dead; dead reads 0', async () => {
-  assert.equal(replyPdu(await ask(10, pdu16(2, 0, 5))), '020100');
+  assert.equal(replyPdu(await ask(10, pdu16(2, 0, 6))), '020100');
   sensors.writeCoil(10, 0, true);
   sensors.writeCoil(10, 2, true);
-  sensors.update(10, { dead: [false, false, true, false, false] });
-  assert.equal(replyPdu(await ask(10, pdu16(2, 0, 5))), '020101');
-  sensors.update(10, { dead: [true, false, false, false, false] });
-  assert.equal(replyPdu(await ask(10, pdu16(2, 0, 5))), '020104');
+  sensors.update(10, { dead: [false, false, true, false, false, false] });
+  assert.equal(replyPdu(await ask(10, pdu16(2, 0, 6))), '020101');
+  sensors.update(10, { dead: [true, false, false, false, false, false] });
+  assert.equal(replyPdu(await ask(10, pdu16(2, 0, 6))), '020104');
 });
 
 test('fn 02 shows not running during the spin-up', async () => {
@@ -130,7 +140,7 @@ test('fn 02 shows not running during the spin-up', async () => {
     const socket = net.connect(p, '127.0.0.1');
     const chunk = new Promise((resolve) => socket.once('data', resolve));
     await new Promise((resolve) => socket.once('connect', resolve));
-    socket.write(adu(1, 5, pdu16(2, 0, 5)));
+    socket.write(adu(1, 5, pdu16(2, 0, 6)));
     const data = await chunk;
     socket.destroy();
     return data[9];
@@ -144,33 +154,34 @@ test('fn 02 shows not running during the spin-up', async () => {
 test('fn 05 switches a coil on and off and echoes the request', async () => {
   const r = await ask(10, pdu16(5, 1, 0xff00));
   assert.equal(hex(r.data), hex(adu(1, 10, pdu16(5, 1, 0xff00))));
-  assert.deepEqual(sensors.get(10).coils, [false, true, false, false, false]);
+  assert.deepEqual(sensors.get(10).coils, [false, true, false, false, false, false]);
   const off = await ask(10, pdu16(5, 1, 0));
   assert.equal(replyPdu(off), '05' + '0001' + '0000');
-  assert.deepEqual(sensors.get(10).coils, [false, false, false, false, false]);
+  assert.deepEqual(sensors.get(10).coils, [false, false, false, false, false, false]);
   assert.deepEqual(log.map((e) => e.result), ['write coil 1 on', 'write coil 1 off']);
 });
 
 test('fn 05 on a stuck relay is echoed and nothing changes', async () => {
-  sensors.update(10, { stuck: [false, false, false, true, false] });
+  sensors.update(10, { stuck: [false, false, false, true, false, false] });
   const r = await ask(10, pdu16(5, 3, 0xff00));
   assert.equal(replyPdu(r), '05' + '0003' + 'ff00');
   assert.equal(sensors.get(10).coils[3], false);
   assert.equal(log[0].result, 'write coil 3 on (stuck)');
 });
 
-test('fn 05: address above 4 is exception 2, bad value is exception 3', async () => {
-  assert.equal(replyPdu(await ask(10, pdu16(5, 5, 0xff00))), '8502');
+test('fn 05: address above 5 is exception 2, bad value is exception 3', async () => {
+  assert.equal(replyPdu(await ask(10, pdu16(5, 6, 0xff00))), '8502');
   for (const value of [1, 0xff01, 0x00ff, 0xffff]) {
     assert.equal(replyPdu(await ask(10, pdu16(5, 0, value))), '8503', String(value));
   }
-  assert.deepEqual(sensors.get(10).coils, [false, false, false, false, false]);
+  assert.deepEqual(sensors.get(10).coils, [false, false, false, false, false, false]);
   assert.deepEqual(log.map((e) => e.result), ['exception 2', 'exception 3', 'exception 3', 'exception 3', 'exception 3']);
 });
 
-test('relay: wrong start or quantity on fn 01/02 is exception 2', async () => {
+test('relay: start 0 with 1 to 6 bits is answered; another start or quantity on fn 01/02 is exception 2', async () => {
+  for (const fn of [1, 2]) for (const qty of [1, 4, 5, 6]) assert.equal(replyPdu(await ask(10, pdu16(fn, 0, qty))), `0${fn}0100`, `${fn} ${qty}`);
   for (const fn of [1, 2]) {
-    for (const [start, qty] of [[1, 5], [0, 3], [0, 4], [0, 6], [0, 1], [5, 5]]) {
+    for (const [start, qty] of [[1, 6], [1, 4], [0, 0], [0, 7], [0, 16], [6, 6]]) {
       assert.equal(replyPdu(await ask(10, pdu16(fn, start, qty))), `${(fn | 0x80).toString(16)}02`, `${fn} ${start} ${qty}`);
     }
   }
@@ -263,7 +274,7 @@ test('fn 16 on a refusing aircon with a bad value is still exception 3', async (
 test('fn 16 and 05 on a sensor are exception 1', async () => {
   assert.equal(replyPdu(await ask(1, write16(0, 4, [1, 0, 200, 0]))), '9001');
   assert.equal(replyPdu(await ask(1, pdu16(5, 0, 0xff00))), '8501');
-  assert.equal(replyPdu(await ask(1, pdu16(1, 0, 5))), '8101');
+  assert.equal(replyPdu(await ask(1, pdu16(1, 0, 6))), '8101');
 });
 
 test('answering off: silence for relay and ac, also for writes', async () => {
@@ -272,7 +283,7 @@ test('answering off: silence for relay and ac, also for writes', async () => {
   const silent = { expectSilence: true };
   const a = await ask(10, pdu16(5, 0, 0xff00), silent);
   const b = await ask(20, write16(0, 4, [1, 0, 200, 0]), silent);
-  const c = await ask(10, pdu16(1, 0, 5), silent);
+  const c = await ask(10, pdu16(1, 0, 6), silent);
   assert.equal(a.data.length + b.data.length + c.data.length, 0);
   assert.equal(sensors.get(10).coils[0], false);
   assert.equal(sensors.get(20).power, false);
@@ -282,7 +293,7 @@ test('answering off: silence for relay and ac, also for writes', async () => {
 test('a truncated fn 16 or fn 05 frame closes the connection', async () => {
   assert.equal((await ask(20, write16(0, 4, [1, 0, 200, 0]).subarray(0, 8))).closed, true);
   assert.equal((await ask(10, pdu16(5, 0, 0xff00).subarray(0, 4))).closed, true);
-  assert.equal((await ask(10, pdu16(1, 0, 5).subarray(0, 4))).closed, true);
+  assert.equal((await ask(10, pdu16(1, 0, 6).subarray(0, 4))).closed, true);
   assert.equal((await ask(20, Buffer.from([16]))).closed, true);
 });
 

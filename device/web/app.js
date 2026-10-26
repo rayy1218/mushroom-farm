@@ -6,7 +6,7 @@ import { createSimDrawing } from './sim-drawing.js';
 const $ = (id) => document.getElementById(id);
 const REFRESH_MS = 2000;
 const KIND_NAMES = { trh: 'T/RH probe', co2: 'CO₂ sensor', relay: 'Relay module', ac: 'Aircon gateway', meter: 'Energy meter', dp: 'Filter pressure sensor' };
-const MACHINES = ['Intake fan', 'Exhaust fan', 'Circulation fan', 'Humidifier', 'Dehumidifier'];
+const MACHINES = ['Intake fan', 'Exhaust fan', 'Circulation fan', 'Humidifier', 'Dehumidifier', 'Lights'];
 const MODES = ['cool', 'heat', 'dry', 'fan'];
 const FANS = ['auto', 'low', 'high'];
 
@@ -220,6 +220,7 @@ const SIM_PARAMS = [
   ['humidifierLH', 'Humidifier', 'L/h', 0, 100, 0.1],
   ['dehumidifierLday', 'Dehumidifier capacity', 'L/day, 0 = none', 0, 200, 0.5],
   ['dehumidifierW', 'Dehumidifier power', 'W', 0, 5000, 10],
+  ['lightsW', 'Lights power', 'W, output 6, 0 = none', 0, 5000, 10],
   ['fanMaxPa', 'Fan maximum pressure', 'Pa', 20, 2000, 10],
   ['filterCleanPa', 'Clean filter drop', 'Pa at fan flow', 5, 1000, 5],
   ['filterFinalPa', 'Filter change pressure', 'Pa', 5, 2000, 5],
@@ -249,7 +250,9 @@ function actingText(a) {
   if (a.acLatentKW > 0.005) parts.push(`AC drying ${(a.acLatentKW / 2.45 * 3.6).toFixed(1)} L/h`);
   parts.push(`Blocks ${a.blocksKW < 0 ? '−' : '+'}${Math.abs(Math.round(a.blocksKW * 1000))} W`);
   if (a.sunKW > 0.0005) parts.push(`Sun +${Math.round(a.sunKW * 1000)} W`);
-  if (a.machineKW > 0.0005) parts.push(`Motors +${Math.round(a.machineKW * 1000)} W`);
+  const lightsKW = a.lightsKW ?? 0; // in machineKW too: shown on its own
+  if (a.machineKW - lightsKW > 0.0005) parts.push(`Motors +${Math.round((a.machineKW - lightsKW) * 1000)} W`);
+  if (lightsKW > 0.0005) parts.push(`Lights +${Math.round(lightsKW * 1000)} W`);
   if (a.condensedGH > 1) parts.push(`Condensing ${(a.condensedGH / 1000).toFixed(1)} L/h`);
   if (Number.isFinite(a.electricW)) parts.push(a.electricW >= 1000 ? `Electric ${(a.electricW / 1000).toFixed(1)} kW` : `Electric ${Math.round(a.electricW)} W`);
   return parts.join(' · ');

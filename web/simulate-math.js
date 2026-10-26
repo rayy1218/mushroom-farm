@@ -233,7 +233,7 @@ export function summaryLines(state, room, cropData = null) {
   return [
     { label: 'Room', text: roomLine(room).replace('Room size ', 'Size ') },
     { label: 'Walls and weather', text: `Walls ${v.wallUA} W/K, sun on the roof ${v.sunW} W, outdoor ${v.outdoorLow}–${v.outdoorHigh} °C, dew point ${v.outdoorDew} °C` },
-    { label: 'Machines', text: `Fan ${v.fanFlow} m³/h, aircon ${grouped(Number(v.acBTU))} BTU/h, humidifier ${v.humidifierLH} L/h, ${Number(v.dehumidifierLday) > 0 ? `dehumidifier ${v.dehumidifierLday} L/day` : 'no dehumidifier'}` },
+    { label: 'Machines', text: `Fan ${v.fanFlow} m³/h, aircon ${grouped(Number(v.acBTU))} BTU/h, humidifier ${v.humidifierLH} L/h, ${Number(v.dehumidifierLday) > 0 ? `dehumidifier ${v.dehumidifierLday} L/day` : 'no dehumidifier'}${room?.lights === true ? `, lights ${room.lightsW} W on the room's schedule` : ''}` },
     ...(isNumber(state.exchangeMaxMin) ? [{ label: 'Air exchange', text: limitLine(state.exchangeMaxMin, state.roomExchangeMaxMin) }] : []),
     ...(state.runSettings && Object.keys(state.runSettings).length > 0 ? [{ label: 'Settings', text: settingsLine(state.runSettings, state.roomSettings) }] : []),
     { label: 'Filter', text: filterLine(v, state.filterSensor === true) },

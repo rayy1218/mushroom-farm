@@ -3,6 +3,7 @@
 
 import { CROPS, STAGES, FARM_TYPES, validateCrops, mixBands, rangeWarnings } from './crops.js';
 import { formatDateTime } from './simulation-math.js';
+import { lightRow, isClock, isLightHours, normaliseClock } from './light-math.js';
 
 const DAY_MS = 86_400_000;
 const pad2 = (n) => String(n).padStart(2, '0');
@@ -51,9 +52,13 @@ export const formFromData = (c) => ({
   days: Object.fromEntries(Object.keys(STAGES).map((s) => [s, String(c.days?.[s])])),
   rampH: String(c.rampH),
   autoAdvance: c.autoAdvance !== false,
+  // the light schedule (spec 2026-10-26-lighting-design.md 3), when the server sends it
+  ...(c.lightHours ? { lightHours: Object.fromEntries(Object.keys(STAGES).map((s) => [s, String(c.lightHours[s])])) } : {}),
+  ...(typeof c.lightStart === 'string' ? { lightStart: c.lightStart } : {}),
 });
 
-export const FORM_FIELD_ORDER = ['crops', 'farmType', 'flushes', 'days.spawn', 'days.pinning', 'days.fruiting', 'days.rest', 'rampH', 'autoAdvance'];
+export const FORM_FIELD_ORDER = ['crops', 'farmType', 'flushes', 'days.spawn', 'days.pinning', 'days.fruiting', 'days.rest', 'rampH', 'autoAdvance',
+  'lightHours.spawn', 'lightHours.pinning', 'lightHours.fruiting', 'lightHours.rest', 'lightStart'];
 
 // Checks the form like the server (validateProgram). → { values (what Save sends, only the farm type's stages in days), errors }.
 export function checkCropForm(form) {
@@ -71,7 +76,21 @@ export function checkCropForm(form) {
   }
   const rampH = /^[0-9]{1,2}(\.[0-9]+)?$/.test(String(form.rampH).trim()) ? Number(form.rampH) : NaN;
   if (!(rampH >= 0 && rampH <= 48)) errors.rampH = 'Ramp must be a number from 0 to 48 h';
-  return { values: { crops, farmType: form.farmType, flushes, days, rampH, autoAdvance: Boolean(form.autoAdvance) }, errors };
+  const values = { crops, farmType: form.farmType, flushes, days, rampH, autoAdvance: Boolean(form.autoAdvance) };
+  if (form.lightHours) {
+    values.lightHours = {};
+    for (const stage of Object.keys(STAGES)) {
+      const n = /^[0-9]{1,2}$/.test(String(form.lightHours[stage]).trim()) ? Number(form.lightHours[stage]) : NaN;
+      if (!isLightHours(n)) errors[`lightHours.${stage}`] = 'Light hours must be a whole number from 0 to 24';
+      values.lightHours[stage] = n;
+    }
+  }
+  if (form.lightStart !== undefined) {
+    const start = normaliseClock(form.lightStart); // "7:00" and "0700" are 07:00
+    if (!isClock(start)) errors.lightStart = 'Light start must be a time like 07:00';
+    values.lightStart = start;
+  }
+  return { values, errors };
 }
 
 const sameRows = (a, b) => a.length === b.length && a.every((r, i) => r.crop === b[i].crop && r.blocks === b[i].blocks);
@@ -89,6 +108,11 @@ export function saveBody(values, c, stage) {
   if (Object.keys(days).length) body.days = days;
   if (values.rampH !== c?.rampH) body.rampH = values.rampH;
   if (values.autoAdvance !== c?.autoAdvance) body.autoAdvance = values.autoAdvance;
+  if (values.lightHours) {
+    const hours = Object.fromEntries(Object.entries(values.lightHours).filter(([s, n]) => n !== c?.lightHours?.[s]));
+    if (Object.keys(hours).length) body.lightHours = hours;
+  }
+  if (values.lightStart !== undefined && values.lightStart !== c?.lightStart) body.lightStart = values.lightStart;
   if (stage && crops.length === 0 && body.crops?.length) body.stage = stage;
   return body;
 }
@@ -182,17 +206,23 @@ export function stagePlan(c, now = Date.now()) {
   return out;
 }
 
-// The Targets table of a stage for the crops: [{ key: 't' | 'rh' | 'co2' | 'safety', name, value }], [] without crops.
-export function stageTargets(crops, stage) {
+// The Targets table of a stage for the crops: [{ key: 't' | 'rh' | 'co2' | 'safety' | 'light', name, value }], [] without
+// crops. light: the stage's { hours, start } of the light schedule (none from an older server: no Light row).
+export function stageTargets(crops, stage, light = null) {
   if (!Array.isArray(crops) || crops.length === 0) return [];
   const b = mixBands(crops, stage).bands;
-  return [
+  const rows = [
     { key: 't', name: 'Temperature', value: `${b.tLow}–${b.tHigh} °C` },
     { key: 'rh', name: 'Humidity', value: `${b.rhLow}–${b.rhHigh} %` },
     { key: 'co2', name: 'CO₂ kept between', value: `${grouped(b.co2Low)}–${grouped(b.co2High)} ppm` },
     { key: 'safety', name: 'CO₂ safety level', value: `${grouped(b.co2Safety)} ppm` },
   ];
+  if (light && Number.isFinite(light.hours)) rows.push({ key: 'light', name: 'Light', value: lightRow(light.hours, light.start) });
+  return rows;
 }
+
+// The light schedule of a stage from a reply: { hours, start }, or null from an older server without it.
+export const lightOf = (c, stage) => (c?.lightHours && Number.isFinite(c.lightHours[stage]) ? { hours: c.lightHours[stage], start: c.lightStart } : null);
 
 // The warnings of a stage for the crops, as the server words them: the mix, then the crops' good ranges (fruiting only).
 export function stageWarnings(crops, stage) {

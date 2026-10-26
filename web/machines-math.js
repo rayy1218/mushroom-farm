@@ -6,6 +6,7 @@ export const MACHINE_NAMES = {
   circulation: 'Circulation fan',
   humidifier: 'Humidifier',
   dehumidifier: 'Dehumidifier',
+  lights: 'Lights',
 };
 
 export const STATUS_WORDS = {
@@ -28,7 +29,7 @@ export const FANS = { auto: 'Auto', low: 'Low', high: 'High' };
 export const SETPOINT_MIN = 16;
 export const SETPOINT_MAX = 30;
 
-// The relay machines to show: one the room does not have (a dehumidifier that is not fitted) is left out.
+// The relay machines to show: one the room does not have (a dehumidifier or lights that are not fitted) is left out.
 export function shownMachines(machines) {
   return (machines ?? []).filter((m) => m.status !== 'not-fitted');
 }

@@ -27,6 +27,7 @@ export const RATINGS = [
   { field: 'acInputW', label: 'Aircon rated input', unit: 'W', default: 1050, min: 0, max: 20000 },
   { field: 'dehumidifierW', label: 'Dehumidifier power', unit: 'W', default: 380, min: 0, max: 5000 },
   { field: 'dehumidifierLday', label: 'Dehumidifier capacity', unit: 'L/day', default: 20, min: 0, max: 200 },
+  { field: 'lightsW', label: 'Lights power', unit: 'W', default: 60, min: 0, max: 5000 },
 ];
 
 // The intake filter (spec 2026-10-22-filter-design.md section 3), whole numbers. One left out stays out: an update keeps the
@@ -79,6 +80,11 @@ export function validateRoom(body) {
     return { error: 'Dehumidifier fitted must be true or false', field: 'dehumidifier' };
   }
   if (body.dehumidifier !== undefined) room.dehumidifier = body.dehumidifier;
+  // Lights on output 6 (spec 2026-10-26-lighting-design.md 2), kept the same way when left out.
+  if (body.lights !== undefined && typeof body.lights !== 'boolean') {
+    return { error: 'Lights fitted must be true or false', field: 'lights' };
+  }
+  if (body.lights !== undefined) room.lights = body.lights;
   for (const { field, label, unit, min, max } of FILTER) {
     const value = body[field] ?? null;
     if (value === null) continue;

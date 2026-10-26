@@ -84,9 +84,9 @@ test('the aircon: a span per setpoint, labelled with the setpoint where it chang
   assert.deepEqual(timelineSpans(rows, 1000, 5000), [{ from: 1000, to: 4000, source: 'auto' }]);
 });
 
-test('the timeline rows are Intake, Exhaust, Circulation, Humidifier, Dehumidifier, Aircon', () => {
-  assert.deepEqual(TIMELINE_ROWS.map((r) => r.key), ['intake', 'exhaust', 'circulation', 'humidifier', 'dehumidifier', 'ac']);
-  assert.deepEqual(TIMELINE_ROWS.map((r) => r.label), ['Intake', 'Exhaust', 'Circulation', 'Humidifier', 'Dehumidifier', 'Aircon']);
+test('the timeline rows are Intake, Exhaust, Circulation, Humidifier, Dehumidifier, Lights, Aircon', () => {
+  assert.deepEqual(TIMELINE_ROWS.map((r) => r.key), ['intake', 'exhaust', 'circulation', 'humidifier', 'dehumidifier', 'lights', 'ac']);
+  assert.deepEqual(TIMELINE_ROWS.map((r) => r.label), ['Intake', 'Exhaust', 'Circulation', 'Humidifier', 'Dehumidifier', 'Lights', 'Aircon']);
 });
 
 test('the room page shows the rows of what is wired; the Dehumidifier only when the room has one', () => {

@@ -4,7 +4,8 @@
 //   createMimic(host, { idPrefix, readouts }) → { paint(drawState), tick(dtSeconds), destroy() }
 //   startLoop(() => [mimic, ...]) → stop(): the requestAnimationFrame loop (paused while the tab is hidden)
 // One layout, viewBox 840 × 380, scaled to the host's width. Below 640 px of host width the small texts are hidden (the names,
-// the outdoor air, the aircon's state, the blocks, the readings: the page says them elsewhere). readouts: the three readings
+// the outdoor air, the aircon's state, the blocks, the readings: the page says them elsewhere). The lights (a lamp under the
+// ceiling, spec 2026-10-26-lighting-design.md 8) and the dehumidifier only when the room has them. readouts: the three readings
 // drawn by the room (the device app, which has no reading tiles).
 // The mapping from data is in mimic-math.js (pure, tested); colours in mimic.css.
 
@@ -134,6 +135,17 @@ export function createMimic(host, opts = {}) {
   rack(svg, 258, 178);
   rack(svg, 392, 178);
 
+  // the lights under the ceiling over the left rack (only when the room has them): a lamp on its cord, a warm glow round it
+  // and light falling on the blocks while they are on; its name left of it
+  h.lights = S('g', {}, svg);
+  h.units.lights = S('g', { class: 'lights' }, h.lights);
+  S('path', { class: 'light-cone', d: 'M309 148 H329 L378 312 H260 Z' }, h.units.lights);
+  S('circle', { class: 'light-glow', cx: 319, cy: 146, r: 15 }, h.units.lights);
+  S('rect', { class: 'rack', x: 318, y: 126, width: 2, height: 10 }, h.units.lights);
+  S('path', { class: 'unit', d: 'M306 147 L311 136 H327 L332 147 Z' }, h.units.lights);
+  S('circle', { class: 'bulb', cx: 319, cy: 148, r: 3.5 }, h.units.lights);
+  h.tags.lights = tag(h.lights, 298, 146, 'Lights', 'end');
+
   // the air path, under the fans and the machines
   h.air = S('path', { class: 'air-path', d: AIR_PATH }, svg);
 
@@ -257,6 +269,8 @@ export function createMimic(host, opts = {}) {
     show(h.tags.hu, u.hu);
     h.dh.style.display = v.dh ? '' : 'none';
     if (v.dh) show(h.tags.dh, v.dh);
+    h.lights.style.display = v.lights ? '' : 'none';
+    if (v.lights) show(h.tags.lights, v.lights);
 
     const ac = u.ac;
     const acWord = !ac.known ? 'no data' : ac.warn && ac.state.startsWith('Fault') ? '! fault' : `${ac.warn ? '! ' : ''}${lower(ac.state)}`;
@@ -287,6 +301,7 @@ export function createMimic(host, opts = {}) {
     mark('exhaust', u.exhaust, u.exhaust.on);
     mark('circ', u.circ, u.circ.on);
     if (v.dh) mark('dh', v.dh, v.dh.on);
+    if (v.lights) mark('lights', v.lights, v.lights.on);
     for (const key of ['intake', 'exhaust', 'circ']) h.fans[key].g.classList.toggle('on', u[key].known && u[key].on);
     h.fans.cond.g.classList.toggle('on', ac.known && v.comp);
 

@@ -15,6 +15,11 @@ export class CommandError extends Error {
 
 const SWITCHING_MS = 10_000;
 
+// The relay machines a room may not have (spec 2026-10-21-dehumidifier-design.md 2, 2026-10-26-lighting-design.md 2):
+// not fitted, they are never commanded and show as not-fitted.
+export const FITTED = ['dehumidifier', 'lights'];
+export const fitted = (room, key) => !FITTED.includes(key) || Boolean(room[key]);
+
 // Still switching: the command is under 10 s old, or the latest poll began at or before it was sent
 // (so that poll cannot have seen the write and a slow cycle never shows a false not-following).
 const isSwitching = (sentAt, latest, now) => sentAt !== null && (now - sentAt < SWITCHING_MS || (latest?.at ?? Infinity) <= sentAt);
@@ -77,10 +82,11 @@ export function createMachines({ db, client, poller, now = Date.now }) {
     const machines = RELAY_KEYS.map((key, i) => {
       const commanded = commands[key];
       const m = { key, commanded, reported: null, running: null, status: 'not-wired' };
-      if (key === 'dehumidifier' && !room.dehumidifier) return { ...m, status: 'not-fitted' };
+      if (!fitted(room, key)) return { ...m, status: 'not-fitted' };
       if (address === null) return m;
       if (!latest) return { ...m, status: 'no-data' };
       if (!latest.ok) return { ...m, status: 'no-answer' };
+      if (i >= latest.coils.length) return { ...m, status: 'no-data' }; // just fitted: the last poll did not read it yet
       m.reported = latest.coils[i];
       m.running = latest.inputs[i];
       if (m.reported !== commanded) m.status = switching ? 'switching' : 'not-following';
@@ -140,10 +146,11 @@ export function createMachines({ db, client, poller, now = Date.now }) {
     get,
     forget,
 
-    // key is a relay machine or 'ac'. Saves the command, then writes it and returns the machines object.
+    // key is a relay machine or 'ac'. Saves the command, then writes it and returns the machines object. unfitted: an off
+    // command for a machine just taken out of the room (the room route), allowed although it is no longer fitted.
     // Throws CommandError (409 while automatic control is on, unless the controller itself sends with bypassAuto).
     // A failed write is not an error: it shows as lastWrite.
-    async command(roomId, key, body, { bypassAuto = false } = {}) {
+    async command(roomId, key, body, { bypassAuto = false, unfitted = false } = {}) {
       const room = db.getRoom(roomId);
       if (!room) throw new CommandError(404, 'Room not found');
       const index = RELAY_KEYS.indexOf(key);
@@ -152,7 +159,7 @@ export function createMachines({ db, client, poller, now = Date.now }) {
       if (!bypassAuto && db.getControl(roomId)?.auto) throw new CommandError(409, 'Automatic control is on');
       if (index >= 0) {
         const { on } = relayBody(body);
-        if (key === 'dehumidifier' && !room.dehumidifier) throw new CommandError(400, 'This room has no dehumidifier', 'dehumidifier');
+        if (!fitted(room, key) && !(unfitted && !on)) throw new CommandError(400, `This room has no ${key}`, key);
         if (room.relayAddress === null) throw new CommandError(400, 'No relay module address set');
         const address = room.relayAddress;
         db.setRelayCommand(roomId, key, on, now());

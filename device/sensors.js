@@ -28,8 +28,8 @@ const FIELDS_OF = { trh: ['t', 'rh'], co2: ['co2'], relay: ['stuck', 'dead'], ac
 const PATCHABLE = ['t', 'rh', 'co2', 'stuck', 'dead', 'roomT', 'error', 'refuse', 'coils', 'power', 'energy', 'mode', 'setpoint', 'fan', 'pa'];
 // The values a simulation drives, per kind. Relays have none: stuck and dead stay editable.
 const SIMULATED_FIELDS = { trh: ['t', 'rh'], co2: ['co2'], ac: ['roomT'], meter: ['power', 'energy'], dp: ['pa'] };
-const OUTPUTS = 5; // intake, exhaust, circulation, humidifier, dehumidifier
-const OLD_OUTPUTS = 4; // a state file from before the dehumidifier
+const OUTPUTS = 6; // intake, exhaust, circulation, humidifier, dehumidifier, lights
+const OLD_OUTPUTS = [4, 5]; // a state file from before the dehumidifier (4) or the lights (5)
 const DEFAULT_SPIN_UP_MS = 2000;
 
 const isAddress = (n) => Number.isInteger(n) && n >= 1 && n <= 247;
@@ -258,10 +258,11 @@ export function createSensors({ statePath, spinUpMs = DEFAULT_SPIN_UP_MS, now = 
   function restore(saved) {
     const entry = make(saved ?? {});
     if (entry.kind === 'relay') {
-      // A relay saved with 4 outputs gets the 5th off (the dehumidifier did not exist).
+      // A relay saved with 4 or 5 outputs gets the missing ones off (the dehumidifier and the lights did not exist).
       saved = { ...saved };
       for (const field of ['coils', 'stuck', 'dead']) {
-        if (Array.isArray(saved[field]) && saved[field].length === OLD_OUTPUTS) saved[field] = [...saved[field], false];
+        const v = saved[field];
+        if (Array.isArray(v) && OLD_OUTPUTS.includes(v.length)) saved[field] = [...v, ...Array(OUTPUTS - v.length).fill(false)];
       }
     }
     if (entry.kind === 'relay') {

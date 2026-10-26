@@ -250,15 +250,21 @@ export function createApi(db, machines = null, controller = null, poller = null,
       const before = db.getRoom(id);
       if (!before) throw noRoom();
       const room = await readRoom(req, before);
-      // A running dehumidifier taken out of the room is switched off first: afterwards nothing may command it.
-      if (before.dehumidifier && room.dehumidifier === false && machines && db.getCommands(id)?.relay.dehumidifier) {
+      // A running dehumidifier or lights taken out of the room: the room is saved first, so from then on nothing (the
+      // controller, a manual command) may switch them on; then they are switched off. With a new relay address in the same
+      // change the old module is switched off first (afterwards the room no longer reaches it).
+      const running = ['dehumidifier', 'lights'].filter((key) => before[key] && room[key] === false && db.getCommands(id)?.relay[key]);
+      const off = async (key, opts) => {
         try {
-          await machines.command(id, 'dehumidifier', { on: false }, { bypassAuto: true });
+          await machines.command(id, key, { on: false }, { bypassAuto: true, ...opts });
         } catch {
           // the command is saved even when the write fails; the room is updated anyway
         }
-      }
+      };
+      const moved = room.relayAddress !== before.relayAddress;
+      if (machines && moved) for (const key of running) await off(key);
       const updated = db.updateRoom(id, room);
+      if (machines && !moved) for (const key of running) await off(key, { unfitted: true });
       publishRoom(id, 'room');
       return send(res, 200, updated);
     }

@@ -26,13 +26,14 @@ export const TIMELINE_ROWS = [
   { key: 'circulation', label: 'Circulation' },
   { key: 'humidifier', label: 'Humidifier' },
   { key: 'dehumidifier', label: 'Dehumidifier', fitted: true },
+  { key: 'lights', label: 'Lights', fitted: true },
   { key: 'ac', label: 'Aircon' },
 ];
 
 // The timeline rows of a room: what is wired (relay machines need the relay address, the aircon its gateway) and, for
-// the dehumidifier, fitted.
+// the dehumidifier and the lights, fitted (the room field of the same name).
 export function wiredTimelineRows(room) {
-  return TIMELINE_ROWS.filter((r) => (r.key === 'ac' ? room?.acAddress != null : room?.relayAddress != null && (!r.fitted || room.dehumidifier === true)));
+  return TIMELINE_ROWS.filter((r) => (r.key === 'ac' ? room?.acAddress != null : room?.relayAddress != null && (!r.fitted || room[r.key] === true)));
 }
 
 const TICK_STEPS = [MIN, 2 * MIN, 5 * MIN, 10 * MIN, 15 * MIN, 30 * MIN, HOUR, 2 * HOUR, 3 * HOUR, 4 * HOUR, 6 * HOUR, 12 * HOUR,
@@ -48,7 +49,7 @@ export function formatStamp(ms, now = Date.now()) {
 // What a long-range chart was drawn from besides the data: when this key and the data object are unchanged,
 // the 5 s refresh need not redraw (a redraw drops the hover). room carries the wired addresses of the timeline rows.
 export const chartDrawKey = (bands, sensors, room) =>
-  `${bands ? JSON.stringify(bands) : ''}/${sensors.trh.status}/${sensors.co2.status}/${room?.relayAddress ?? null}/${room?.acAddress ?? null}/${room?.dehumidifier === true}`;
+  `${bands ? JSON.stringify(bands) : ''}/${sensors.trh.status}/${sensors.co2.status}/${room?.relayAddress ?? null}/${room?.acAddress ?? null}/${room?.dehumidifier === true}/${room?.lights === true}`;
 
 // How many axis labels fit a chart of this pixel width: about one per 90 px.
 export const tickCountFor = (width) => Math.max(2, Math.floor(width / 90));

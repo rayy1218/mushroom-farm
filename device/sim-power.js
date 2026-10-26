@@ -19,7 +19,8 @@ export function fanWattFactor(pa, cleanPa, maxPa) {
 }
 
 // acting: what the model reported (kW); inputs: the machines (ac is null when off or faulty); params: the room's
-// settings with the outdoor air now. The humidifier's draw follows its setting while it runs; the dehumidifier's is its rated power.
+// settings with the outdoor air now. The humidifier's draw follows its setting while it runs; the dehumidifier's is its rated power;
+// the lights' is lightsW.
 export function electricW({ acting, inputs, params }) {
   const cop = copAt(params.outdoorT ?? 27);
   const heat = ((acting?.acCoolKW ?? 0) + (acting?.acLatentKW ?? 0) + (acting?.acHeatKW ?? 0)) * 1000;
@@ -30,5 +31,6 @@ export function electricW({ acting, inputs, params }) {
   if (inputs.circulation) w += MOTOR_W;
   if (inputs.humidifier) w += (HUMIDIFIER_W_PER_LH * (params.humidifierGH ?? 0)) / 1000;
   if (inputs.dehumidifier) w += (acting?.dehumidifierKW ?? 0) * 1000;
+  if (inputs.lights) w += params.lightsW ?? 0;
   return w;
 }

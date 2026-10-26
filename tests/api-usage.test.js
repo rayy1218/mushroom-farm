@@ -190,7 +190,7 @@ test('GET /api/rooms/:id/usage and /api/usage: shape, days, prices, errors', asy
   assert.equal(res.body.days.length, 30);
   assert.match(res.body.days[0].date, /^\d{4}-\d{2}-\d{2}$/);
   assert.deepEqual(Object.keys(res.body.days[29]), ['date', 'kWh', 'metered', 'byMachine', 'waterL']);
-  assert.deepEqual(Object.keys(res.body.days[29].byMachine), ['intake', 'exhaust', 'circulation', 'humidifier', 'dehumidifier', 'ac', 'rest']);
+  assert.deepEqual(Object.keys(res.body.days[29].byMachine), ['intake', 'exhaust', 'circulation', 'humidifier', 'dehumidifier', 'lights', 'ac', 'rest']);
   // The hour may straddle midnight, so look at the 30 days.
   assert.ok(Math.abs(res.body.last30.kWh - 1) < 0.01, String(res.body.last30.kWh));
   assert.ok(Math.abs(res.body.last30.waterL - 10) < 0.1);

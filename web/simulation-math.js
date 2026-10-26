@@ -132,8 +132,10 @@ export function bandSteps(series, lowKey, highKey, endS) {
 
 // ---- machine timeline ----
 
-// Whether the run was asked to have a dehumidifier (the input as it was posted).
+// Whether the run was asked to have a dehumidifier (the input as it was posted), and whether its room had lights (the
+// run's ctx.ratings: the lights follow the room's schedule).
 const hasDehumidifier = (input) => input?.physics?.dehumidifierLday > 0;
+const hasLights = (input) => input?.ctx?.ratings?.lights === true;
 
 // Spans closer together than minGap seconds drawn as one (a long run has tens of thousands; they cannot be told apart).
 // A span keeps its own length, so a short one stays; `same` (optional) says whether two neighbours may be joined.
@@ -150,10 +152,14 @@ export function mergeSpans(spans, minGap, same = () => true) {
 // The rows of drawTimeline: the on-spans (seconds) of result.machines, the aircon's setpoint marks and the filter changes
 // (seconds, summary.filter.changes) on the intake's row. minGap: spans closer than this many seconds (one pixel of the chart)
 // are joined; the aircon's only when the setpoint is the same.
-// The dehumidifier's row is there when the run had one (input.physics.dehumidifierLday above 0) or it has spans.
+// The dehumidifier's row is there when the run had one (input.physics.dehumidifierLday above 0) or it has spans; the lights'
+// the same (the room's lights, input.ctx.ratings.lights).
 export function timelineRows(machines, minGap = 0, input = null, filterChanges = []) {
-  const hadDehumidifier = hasDehumidifier(input) || (machines?.dehumidifier?.length ?? 0) > 0;
-  return TIMELINE_ROWS.filter((r) => !r.fitted || hadDehumidifier).map((r) => {
+  const had = {
+    dehumidifier: hasDehumidifier(input) || (machines?.dehumidifier?.length ?? 0) > 0,
+    lights: hasLights(input) || (machines?.lights?.length ?? 0) > 0,
+  };
+  return TIMELINE_ROWS.filter((r) => !r.fitted || had[r.key]).map((r) => {
     const raw = (machines?.[r.key] ?? []).map((s) => ({ from: s.from, to: s.to, source: 'auto', setpoint: s.setpoint }));
     // a short label: the timeline keeps marks at least 40 px apart, and "Filter" fits that
     const marks = r.key === 'intake' && Array.isArray(filterChanges) ? filterChanges.map((at) => ({ at, text: 'Filter' })) : [];
@@ -192,10 +198,10 @@ export function filterView(summary) {
 
 // ---- energy and water ----
 
-const MACHINES = [['intake', 'Intake'], ['exhaust', 'Exhaust'], ['circulation', 'Circulation'], ['humidifier', 'Humidifier'], ['dehumidifier', 'Dehumidifier'], ['ac', 'Aircon']];
+const MACHINES = [['intake', 'Intake'], ['exhaust', 'Exhaust'], ['circulation', 'Circulation'], ['humidifier', 'Humidifier'], ['dehumidifier', 'Dehumidifier'], ['lights', 'Lights'], ['ac', 'Aircon']];
 
 // summary → the texts of the energy and water part: totals, cost (null without a price) and a row per machine.
-// The dehumidifier's row is there when the run had one (input) or it used energy; removed is the "Water taken out" text, or null.
+// The dehumidifier's and the lights' rows are there when the run had them (input) or they used energy; removed is the "Water taken out" text, or null.
 export function energyView(summary, input = null) {
   const e = summary?.energy;
   const w = summary?.water;
@@ -207,7 +213,8 @@ export function energyView(summary, input = null) {
     litres: formatLitres(w?.litres),
     waterCost: finite(w?.cost) ? formatRM(w.cost) : null,
     removed: finite(w?.removedLitres) && w.removedLitres > 0 ? formatLitres(w.removedLitres) : null,
-    rows: by ? MACHINES.filter(([key]) => key !== 'dehumidifier' || hasDehumidifier(input) || by.dehumidifier > 0).map(([key, label]) => ({
+    rows: by ? MACHINES.filter(([key]) => (key === 'dehumidifier' ? hasDehumidifier(input) || by.dehumidifier > 0
+      : key === 'lights' ? hasLights(input) || by.lights > 0 : true)).map(([key, label]) => ({
       key, label, kWh: formatKWh(by[key]), share: total > 0 && finite(by[key]) ? `${Math.round((by[key] / total) * 100)} %` : DASH,
     })) : [],
   };

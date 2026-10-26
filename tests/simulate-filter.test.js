@@ -109,7 +109,7 @@ test('a run without filter settings gives the numbers it gave before the filter 
   const { inBand, energy, water, extremes } = r.summary;
   assert.deepEqual({ inBand, energy, water, extremes, series: r.series.length, last: r.series.at(-1) }, {
     inBand: { t: 100, rh: 99.2, co2: 97.3, all: 96.5 },
-    energy: { byMachine: { intake: 1.19, exhaust: 1.19, circulation: 4.32, humidifier: 0.66, dehumidifier: 0, ac: 17.24 }, kWh: 24.6, cost: 13.53 },
+    energy: { byMachine: { intake: 1.19, exhaust: 1.19, circulation: 4.32, humidifier: 0.66, dehumidifier: 0, lights: 0, ac: 17.24 }, kWh: 24.6, cost: 13.53 },
     water: { litres: 16.5, removedLitres: 0, cost: 0 },
     extremes: { tMin: 25, tMax: 25.2, rhMin: 84.8, rhMax: 91.2, co2Max: 903 },
     series: 864,

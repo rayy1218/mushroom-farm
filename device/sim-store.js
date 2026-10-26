@@ -30,6 +30,9 @@ export const PARAMS = {
   humidifierLH: { min: 0, max: 100, whole: false, label: 'Humidifier output', unit: 'L/h', value: 2 },
   dehumidifierLday: { min: 0, max: 200, whole: false, label: 'Dehumidifier capacity', unit: 'L/day', value: 0 },
   dehumidifierW: { min: 0, max: 5000, whole: false, label: 'Dehumidifier power', unit: 'W', value: 380 },
+  // The lights on the relay's output 6 (spec 2026-10-26-lighting-design.md 5): their power goes into the air as heat. 0: none
+  // (like the dehumidifier: a simulated room has no lamp unless it is set; an older saved room gets 0 too).
+  lightsW: { min: 0, max: 5000, whole: false, label: 'Lights power', unit: 'W', value: 0 },
   // The intake filter (spec 2026-10-22-filter-design.md 7): the fan's maximum pressure, the clean filter's drop and the change
   // pressure at fanFlow, and the days of fanFlow that take a clean filter to its change pressure (sim-model.js FILTER_DEFAULTS).
   fanMaxPa: { min: 20, max: 2000, whole: true, label: 'Fan maximum pressure', unit: 'Pa', value: 200 },

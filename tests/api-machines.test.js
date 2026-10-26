@@ -139,6 +139,7 @@ test('GET /api/rooms/:id/machines returns the machines object', async () => {
         ...['intake', 'exhaust', 'circulation', 'humidifier'].map((key) => (
           { key, commanded: false, reported: false, running: false, status: 'off' })),
         { key: 'dehumidifier', commanded: false, reported: null, running: null, status: 'not-fitted' },
+        { key: 'lights', commanded: false, reported: null, running: null, status: 'not-fitted' },
       ],
     },
     ac: {
@@ -158,7 +159,7 @@ test('GET machines for a room without devices: not-wired, null values', async ()
   const room = db.createRoom(fields);
   const { body } = await call('GET', `/api/rooms/${room.id}/machines`);
   assert.equal(body.relay.address, null);
-  assert.deepEqual(body.relay.machines.map((m) => m.status), ['not-wired', 'not-wired', 'not-wired', 'not-wired', 'not-fitted']);
+  assert.deepEqual(body.relay.machines.map((m) => m.status), ['not-wired', 'not-wired', 'not-wired', 'not-wired', 'not-fitted', 'not-fitted']);
   assert.deepEqual(body.ac, {
     address: null, lastWrite: null, commanded: { power: false, mode: 'cool', setpoint: 25, fan: 'auto' },
     reported: null, roomT: null, errorCode: null, status: 'not-wired',
