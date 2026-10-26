@@ -125,6 +125,8 @@ export function decide({ bands, state, readings, faults, now, humidifierDuringEx
   const coolText = () => `Free cooling: outdoor ${num(air.tOut)} °C, the room ${num(air.tIn)} °C`;
   const dryText = () => `Outdoor drying: outdoor air ${num(air.wOut)} g/m³, the room ${num(air.wIn)} g/m³`;
   // Free cooling, then outdoor drying; starts the exchange with its reason, false when neither is due. Both need the minimum off time.
+  // They start deliberately also while the CO₂ reading is unusable: they do not depend on it, and the CO₂ safety level and
+  // sensor fault rules above them have already had their say.
   const startOutdoor = () => {
     if (!air || offFor < MIN_OFF_MS) return false;
     if (air.tOut <= air.tIn - COOL_START_DROP && air.tIn > middle + COOL_START_WIDTH * (bands.tHigh - bands.tLow)
@@ -173,6 +175,8 @@ export function decide({ bands, state, readings, faults, now, humidifierDuringEx
     else reasons.exchange = `Fresh air waits: ${why}, at the latest ${clock(freshFrom + 2 * every)}`;
   };
   const outdoorWas = was && (state.exchangeKind === 'cooling' || state.exchangeKind === 'drying') ? state.exchangeKind : null;
+  // A running free cooling or drying keeps its kind when the CO₂ rule takes it over (its time limit then is not a "too small" count).
+  if (outdoorWas && !faults?.co2) outdoorKind = outdoorWas;
   // The timed exchange of a CO2 fault rests at most the fresh-air interval.
   const timedOff = every > 0 ? Math.min(TIMED_EXCHANGE_OFF_MS, every) : TIMED_EXCHANGE_OFF_MS;
 
@@ -247,7 +251,7 @@ export function decide({ bands, state, readings, faults, now, humidifierDuringEx
     }
   } else if (onFor >= bands.exchangeMaxMin * 60_000) {
     stop();
-    capped++;
+    if (!outdoorWas) capped++;
     reasons.exchange = `Air exchange stopped at the ${bands.exchangeMaxMin} min limit: CO₂ ${num(co2)} above ${co2Low}`;
   } else if (co2 >= co2High) {
     freshRun = false;
@@ -259,7 +263,10 @@ export function decide({ bands, state, readings, faults, now, humidifierDuringEx
   // Humidifier band: on at or below the lower RH limit, off at or above the upper, kept between; with a dehumidifier it waits
   // 10 min after the dehumidifier stopped unless the room is 3 % below the band.
   // A faulty T/RH probe: on for 10 min, off for 10 min, repeating.
-  const forced = exchange && humidifierDuringExchange;
+  // The humidifier is forced on only in exchanges of the CO₂ rule, fresh air and the timed fallback; free cooling and outdoor
+  // drying leave it on its own rule (and do not count as a humidifier run for the dehumidifier's wait).
+  const kind = !exchange ? null : faults?.co2 ? 'timed' : freshRun ? 'fresh' : outdoorKind ?? 'co2';
+  const forced = exchange && humidifierDuringExchange && kind !== 'cooling' && kind !== 'drying';
   const offAt = dehumidifierFitted ? (state.dehumidifierOffAt ?? null) : null;
   const dryingLeft = offAt === null ? 0 : AFTER_DRY_WAIT_MS - (now - offAt);
   const note = exchange && !humidifierDuringExchange ? '; not forced during air exchange' : '';
@@ -324,7 +331,6 @@ export function decide({ bands, state, readings, faults, now, humidifierDuringEx
   }
 
   const drop = bands.acDrop ?? 0;
-  const kind = !exchange ? null : faults?.co2 ? 'timed' : freshRun ? 'fresh' : outdoorKind ?? 'co2';
   const lowered = exchange && drop > 0 && kind !== 'cooling'; // free cooling brings cooler air: the aircon is not lowered for it
   const target = lowered ? middle - drop : middle;
   const setpoint = Math.round(Math.min(AC_MAX, Math.max(AC_MIN, target)) * 2) / 2;
@@ -546,7 +552,7 @@ export function createController({ db, machines, now = Date.now, log = console.e
         bands: c,
         state: {
           exchange: c.exchange, exchangeSince: c.exchangeSince, exchangeEndedAt: c.exchangeEndedAt,
-          exchangeForced: c.exchangeForced, freshFrom: c.freshFrom,
+          exchangeForced: c.exchangeForced, exchangeKind: c.exchangeKind, freshFrom: c.freshFrom,
           cappedInRow: c.cappedInRow, humidifier: c.humidifier, humidifierSince: c.humidifierSince, dehumidifier: c.dehumidifier,
           humidifierLastOn: c.humidifierLastOn, dehumidifierOffAt: c.dehumidifierOffAt,
         },
@@ -658,7 +664,7 @@ export function createController({ db, machines, now = Date.now, log = console.e
         db.setControlState(roomId, { exchange: false, humidifier: false, dehumidifier: false }, now());
         db.setControlState(roomId, {
           exchange: relay.intake, humidifier: relay.humidifier, dehumidifier: relay.dehumidifier, exchangeEndedAt: null, cappedInRow: 0, humidifierSince: null,
-          exchangeForced: false, freshFrom: null, // the fresh-air wait counts from the first cycle
+          exchangeForced: false, exchangeKind: null, freshFrom: null, // the fresh-air wait counts from the first cycle
         }, now());
       } else if (!merged.auto && current.auto) {
         // Turning auto off: nothing is switched; the "too small" count and the timed humidifier start over.

@@ -44,10 +44,10 @@ The owner asked (2026-10-26) for three parts at once: live updates pushed to the
 | Free cooling and the aircon drop | the aircon drop (`acDrop`) is not applied during free cooling |
 | Wet outdoor air | a fresh-air run (iteration 10, not the CO₂ rule) waits while outdoor W ≥ room W + 3 or outdoor T ≥ room T + 8, for at most one more interval (so at most 2 × `exchangeEveryMin` without fresh air); reason "Fresh air waits: outdoor air is very wet (dew 25.3 °C), at the latest 16:40" |
 | Order | the CO₂ safety level, a CO₂ sensor fault, the CO₂ rule, then free cooling and drying, then fresh air; free cooling and drying obey the exchange's minimum on and off times and its time limit (`exchangeMaxMin`), and count as an exchange for the fresh-air wait |
-| State | `exchangeKind` (prep — stored): 'co2', 'fresh', 'cooling', 'drying', 'timed' (sensor fault), null when off |
-| Humidifier, dehumidifier, aircon | unchanged (the humidifier forced on during an exchange and the aircon drop apply to these exchanges too) |
+| State | `exchangeKind` (prep — stored): 'co2', 'fresh', 'cooling', 'drying', 'timed' (sensor fault), null when off; a free cooling or drying exchange that the CO₂ rule takes over (CO₂ at the upper limit) keeps its kind, and its time limit is not counted as "too small" |
+| Humidifier, dehumidifier, aircon | the humidifier forced on during an exchange (`humidifierDuringExchange`) applies to the CO₂, fresh-air and timed exchanges only; free cooling and outdoor drying leave the humidifier on its normal rule and do not count as a humidifier run for the dehumidifier's 30 min wait; the aircon drop applies to drying, not to free cooling |
 | Simulation | `simulate` passes the outdoor air of each step (`outdoorAt`) as `readings.outdoor`, and the room's `outdoorAir` through `ctx.control` (a run's `control` may set `outdoorAir`); Suggest machines searches with the room's setting |
-| Page | the control card: the setting (with the room's other control settings), the exchange line names the kind ("Air exchange on since 10:42 · free cooling"), the reasons as now |
+| Page | the control card: the setting (with the room's other control settings), the exchange line names the kind ("Air exchange on since 10:42 · free cooling"), the reasons as now; the control view has `outdoorSet` (an outdoor sensor is set), the note "needs an outdoor sensor (Settings)" shows when it is false |
 
 ## 5. Phone alarms (Telegram)
 
