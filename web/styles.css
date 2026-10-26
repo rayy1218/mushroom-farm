@@ -385,6 +385,15 @@ button.toggle[data-on="true"]:hover { opacity: .85; background: var(--ink); }
 .s-hint { margin: 0 0 16px; font-size: var(--fs-sm); }
 .settings .ac-send { margin-bottom: 0; }
 .s-saved { margin: 12px 0 0; font-weight: 600; color: var(--good-text); }
+.telegram { margin-top: 16px; }
+.tg-steps { padding-left: 20px; margin: 0 0 16px; }
+.tg-steps li { margin-bottom: 4px; }
+.settings .telegram-wide, .telegram .field input[type="text"], .telegram .field input[type="password"] { max-width: 100%; }
+.tg-levels { border: 0; padding: 0; margin: 0 0 8px; }
+.tg-levels legend { font-size: 0.9rem; font-weight: 600; padding: 0; margin-bottom: 4px; }
+.tg-check { display: flex; align-items: center; gap: 8px; min-height: 32px; margin-bottom: 4px; }
+.tg-test { margin: 12px 0 0; }
+.tg-status { margin: 12px 0 0; }
 
 /* ---- Alarms (safety stream): the Alarms card, the Rooms list chip, the control card additions ---- */
 .alarms { margin-bottom: 16px; border-color: var(--critical-text); }
