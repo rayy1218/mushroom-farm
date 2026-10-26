@@ -1,7 +1,7 @@
 // Pure helpers for the Crop and stage card of the room page (no DOM, so they can be tested in Node).
 // Spec 2026-10-20-crops-and-simulation-design.md sections 3.4 and 3.5 (the reply of GET /api/rooms/:id/crop).
 
-import { STAGES, FARM_TYPES, validateCrops } from './crops.js';
+import { CROPS, STAGES, FARM_TYPES, validateCrops, mixBands, rangeWarnings } from './crops.js';
 import { formatDateTime } from './simulation-math.js';
 
 const DAY_MS = 86_400_000;
@@ -98,3 +98,97 @@ export const newBlocksBody = (values) => ({ crops: values.crops, newBlocks: true
 
 // The body of Start stage; applyNow skips the slow change of the bands.
 export const startBody = (stage, applyNow) => (applyNow ? { stage, applyNow: true } : { stage });
+
+// ---- the stage plan (spec 2026-10-26-crop-stage-plan-design.md) ----
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const dayOf = (ms) => { const d = new Date(ms); return `${d.getDate()} ${MONTHS[d.getMonth()]}`; };
+const grouped = (n) => n.toLocaleString('en-US');
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+const shortName = (key) => (CROPS[key] ? CROPS[key].name.replace(/\s*\(.*\)$/, '') : key);
+const hasFlush = (stage) => stage === 'fruiting' || stage === 'rest';
+
+// The head of the card: { title: "Lion's mane · 950 blocks" or "Grey oyster 300 + Golden oyster 200 blocks", farm: the farm type }.
+export function cropHeadline(c) {
+  if (!hasCrops(c)) return { title: 'No crop set: the bands are set by hand', farm: '' };
+  const title = c.crops.length === 1
+    ? `${shortName(c.crops[0].crop)} · ${grouped(c.crops[0].blocks)} blocks`
+    : `${c.crops.map((r) => `${shortName(r.crop)} ${grouped(r.blocks)}`).join(' + ')} blocks`;
+  return { title, farm: FARM_TYPES[c.farmType]?.name ?? '' };
+}
+
+// "7 days"; fruiting "7 days × 4 flushes".
+export function stageLength(c, stage) {
+  const n = c?.days?.[stage];
+  if (!Number.isFinite(n)) return '';
+  const length = plural(n, 'day', 'days');
+  return stage === 'fruiting' ? `${length} × ${plural(c.flushes, 'flush', 'flushes')}` : length;
+}
+
+// The mark of a stage section: { kind: 'current' | 'next' | '', text }: "Current · day 2 of 7 · flush 1 of 4",
+// "Next · about 2 Nov 09:55" (or "Next · when you start it" without automatic change), "Current · flush 4 of 4 done".
+export function stageMark(c, stage, now = Date.now()) {
+  if (!hasCrops(c)) return { kind: '', text: '' };
+  if (stage === c.stage) {
+    if (c.done) return { kind: 'current', text: `Current · flush ${c.flushes} of ${c.flushes} done` };
+    const parts = ['Current'];
+    if (Number.isFinite(c.stageSince)) {
+      const day = Math.max(1, Math.floor((now - c.stageSince) / DAY_MS) + 1);
+      const length = c.days?.[stage];
+      parts.push(c.autoAdvance && length ? `day ${Math.min(day, length)} of ${length}` : `day ${day}`);
+    }
+    if (hasFlush(stage)) parts.push(`flush ${c.flush} of ${c.flushes}`);
+    return { kind: 'current', text: parts.join(' · ') };
+  }
+  if (!c.done && c.nextStage?.stage === stage) {
+    return { kind: 'next', text: Number.isFinite(c.nextStage.at) ? `Next · about ${formatDateTime(c.nextStage.at)}` : 'Next · when you start it' };
+  }
+  return { kind: '', text: '' };
+}
+
+// The Stages list: the whole program of the farm type (spawn and pinning once, then fruiting and rest for every flush), each
+// entry { key, stage, flush, name, state: 'done' | 'current' | 'next' | 'later', dates }. The entries before the current one
+// are done, without dates; the current one "26 Oct → 2 Nov" (without automatic change "since 26 Oct", and no dates after it);
+// the ones after follow on from its end. A done room: every entry done, then "Replace the blocks". [] without crops.
+export function stagePlan(c, now = Date.now()) {
+  if (!hasCrops(c)) return [];
+  const entries = [];
+  for (const stage of (FARM_TYPES[c.farmType] ?? FARM_TYPES.ready).stages) {
+    if (!hasFlush(stage)) entries.push({ key: stage, stage, flush: null, name: STAGES[stage] });
+  }
+  for (let f = 1; f <= c.flushes; f++) {
+    for (const stage of ['fruiting', 'rest']) entries.push({ key: `${stage}-${f}`, stage, flush: f, name: `${STAGES[stage]} · flush ${f}` });
+  }
+  const current = c.done ? entries.length : entries.findIndex((e) => e.stage === c.stage && (e.flush === null || e.flush === c.flush));
+  let from = Number.isFinite(c.stageSince) ? c.stageSince : now;
+  const out = entries.map((e, i) => {
+    if (current < 0 || i < current) return { ...e, state: current < 0 ? 'later' : 'done', dates: '' };
+    const state = i === current ? 'current' : i === current + 1 ? 'next' : 'later';
+    if (!c.autoAdvance) return { ...e, state, dates: i === current ? `since ${dayOf(from)}` : '' };
+    const to = from + c.days[e.stage] * DAY_MS;
+    const dates = `${dayOf(from)} → ${dayOf(to)}`;
+    from = to;
+    return { ...e, state, dates };
+  });
+  if (c.done) out.push({ key: 'replace', stage: null, flush: null, name: 'Replace the blocks', state: 'current', dates: '' });
+  return out;
+}
+
+// The Targets table of a stage for the crops: [{ key: 't' | 'rh' | 'co2' | 'safety', name, value }], [] without crops.
+export function stageTargets(crops, stage) {
+  if (!Array.isArray(crops) || crops.length === 0) return [];
+  const b = mixBands(crops, stage).bands;
+  return [
+    { key: 't', name: 'Temperature', value: `${b.tLow}–${b.tHigh} °C` },
+    { key: 'rh', name: 'Humidity', value: `${b.rhLow}–${b.rhHigh} %` },
+    { key: 'co2', name: 'CO₂ kept between', value: `${grouped(b.co2Low)}–${grouped(b.co2High)} ppm` },
+    { key: 'safety', name: 'CO₂ safety level', value: `${grouped(b.co2Safety)} ppm` },
+  ];
+}
+
+// The warnings of a stage for the crops, as the server words them: the mix, then the crops' good ranges (fruiting only).
+export function stageWarnings(crops, stage) {
+  if (!Array.isArray(crops) || crops.length === 0) return [];
+  const mixed = mixBands(crops, stage);
+  return [...mixed.warnings, ...rangeWarnings(crops, mixed.bands, stage)];
+}
