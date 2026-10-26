@@ -168,7 +168,7 @@ test('upgrade to 10: existing rooms get the rule at 15 min', (t) => {
   assert.equal(again.getControl(id).exchangeForced, false);
   const check = new DatabaseSync(path, { readOnly: true });
   t.after(() => check.close());
-  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 14);
+  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 15);
 });
 
 // ---- runner ----

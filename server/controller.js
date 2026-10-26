@@ -10,7 +10,7 @@ import { advance, BAND_KEYS } from './program.js';
 
 export const DEFAULTS = {
   auto: false, co2Low: 600, co2High: 750, tLow: 21, tHigh: 23, rhLow: 85, rhHigh: 95, humidifierDuringExchange: false, acFan: 'auto',
-  co2Safety: 1250, exchangeMaxMin: 10, acDrop: 0, exchangeEveryMin: 15,
+  co2Safety: 1250, exchangeMaxMin: 10, acDrop: 0, exchangeEveryMin: 15, outdoorAir: true,
 };
 export const AC_FANS = ['auto', 'low', 'high'];
 
@@ -328,6 +328,7 @@ export function validateControl(c, { compareSafety = true } = {}) {
   if (!Number.isInteger(c.exchangeEveryMin) || c.exchangeEveryMin < 0 || c.exchangeEveryMin > EVERY_MAX) {
     return { error: `Fresh air interval must be a whole number from 0 to ${EVERY_MAX} min (0: off)`, field: 'exchangeEveryMin' };
   }
+  if (typeof (c.outdoorAir ?? true) !== 'boolean') return { error: 'Use outdoor air must be true or false', field: 'outdoorAir' };
   return null;
 }
 

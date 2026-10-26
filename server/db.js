@@ -5,7 +5,7 @@ import { RELAY_KEYS } from './machine-codes.js';
 import { RATINGS, FILTER } from './rooms.js';
 import { PROGRAM_DEFAULTS } from './program.js';
 
-const VERSION = 14;
+const VERSION = 15;
 
 // Iteration 1 (version 0) had only the rooms table without the address columns.
 const ROOMS = `
@@ -82,7 +82,9 @@ CREATE TABLE room_controls (
   fresh_from INTEGER,
   dehumidifier INTEGER NOT NULL DEFAULT 0 CHECK (dehumidifier IN (0, 1)),
   humidifier_last_on INTEGER,
-  dehumidifier_off_at INTEGER
+  dehumidifier_off_at INTEGER,
+  outdoor_air INTEGER NOT NULL DEFAULT 1 CHECK (outdoor_air IN (0, 1)),
+  exchange_kind TEXT
 ) STRICT;`;
 
 // Safety and history (spec 2026-10-19-safety-and-history-design.md 3.2 and 4): the room_controls columns
@@ -443,6 +445,12 @@ function migrate(db) {
       }
       db.exec(FILTER_TABLES);
     }
+    // Outdoor air in control (spec 2026-10-26-live-alarms-outdoor-design.md 4): the room setting and why the exchange runs.
+    if (version >= 3 && version < 15) {
+      const cols = db.prepare('PRAGMA table_info(room_controls)').all().map((c) => c.name);
+      if (!cols.includes('outdoor_air')) db.exec('ALTER TABLE room_controls ADD COLUMN outdoor_air INTEGER NOT NULL DEFAULT 1 CHECK (outdoor_air IN (0, 1))');
+      if (!cols.includes('exchange_kind')) db.exec('ALTER TABLE room_controls ADD COLUMN exchange_kind TEXT');
+    }
     db.exec(`PRAGMA user_version = ${VERSION}`);
     db.exec('COMMIT');
   } catch (err) {
@@ -533,7 +541,14 @@ function toAlarm(row) {
 
 // path is a file path or ':memory:'. Fields passed in must already be valid
 // (see validateRoom in rooms.js).
-export function openDb(path) {
+export function openDb(path, { log = console.error } = {}) {
+  const alarmListeners = new Set();
+  const safe = (fn) => { try { fn(); } catch (err) { log(err); } };
+  const tellAlarm = (change, alarmOf) => {
+    if (alarmListeners.size === 0) return;
+    const alarm = alarmOf();
+    for (const fn of [...alarmListeners]) safe(() => fn({ change, alarm }));
+  };
   const db = new DatabaseSync(path);
   migrate(db);
 
@@ -599,11 +614,11 @@ export function openDb(path) {
     control: db.prepare('SELECT * FROM room_controls WHERE room_id = ?'),
     setControl: db.prepare(`UPDATE room_controls SET auto = ?, co2_low = ?, co2_high = ?, t_low = ?, t_high = ?,
                                    rh_low = ?, rh_high = ?, humidifier_during_exchange = ?, ac_fan = ?,
-                                   co2_safety = ?, exchange_max_min = ?, ac_drop = ?, exchange_every_min = ? WHERE room_id = ?`),
+                                   co2_safety = ?, exchange_max_min = ?, ac_drop = ?, exchange_every_min = ?, outdoor_air = ? WHERE room_id = ?`),
     setControlState: db.prepare(`UPDATE room_controls SET exchange = ?, humidifier = ?, exchange_since = ?,
                                         exchange_ended_at = ?, capped_in_row = ?, humidifier_since = ?,
-                                        exchange_forced = ?, fresh_from = ?, dehumidifier = ?, humidifier_last_on = ?, dehumidifier_off_at = ?
-                                        WHERE room_id = ?`),
+                                        exchange_forced = ?, fresh_from = ?, dehumidifier = ?, humidifier_last_on = ?, dehumidifier_off_at = ?,
+                                        exchange_kind = ? WHERE room_id = ?`),
     setRelay: Object.fromEntries(RELAY_KEYS.map((key) => [key,
       db.prepare(`UPDATE machine_commands SET ${key} = ?, relay_sent_at = ? WHERE room_id = ?`)])),
     setAc: db.prepare(`UPDATE machine_commands SET ac_power = ?, ac_mode = ?, ac_setpoint = ?, ac_fan = ?, ac_sent_at = ?
@@ -881,19 +896,20 @@ export function openDb(path) {
         cappedInRow: r.capped_in_row, humidifierSince: r.humidifier_since, dehumidifier: r.dehumidifier === 1,
         humidifierLastOn: r.humidifier_last_on, dehumidifierOffAt: r.dehumidifier_off_at,
         exchangeEveryMin: r.exchange_every_min, exchangeForced: r.exchange_forced === 1, freshFrom: r.fresh_from,
+        outdoorAir: r.outdoor_air === 1, exchangeKind: r.exchange_kind,
       };
     },
 
     // Returns true when the room exists. Settings must be valid (see validateControl in controller.js).
-    setControl(roomId, { auto, co2Low, co2High, tLow, tHigh, rhLow, rhHigh, humidifierDuringExchange, acFan, co2Safety, exchangeMaxMin, acDrop, exchangeEveryMin }) {
+    setControl(roomId, { auto, co2Low, co2High, tLow, tHigh, rhLow, rhHigh, humidifierDuringExchange, acFan, co2Safety, exchangeMaxMin, acDrop, exchangeEveryMin, outdoorAir = true }) {
       return q.setControl.run(auto ? 1 : 0, co2Low, co2High, tLow, tHigh, rhLow, rhHigh, humidifierDuringExchange ? 1 : 0, acFan,
-        co2Safety, exchangeMaxMin, acDrop, exchangeEveryMin, roomId).changes > 0;
+        co2Safety, exchangeMaxMin, acDrop, exchangeEveryMin, outdoorAir ? 1 : 0, roomId).changes > 0;
     },
 
     // Without exchangeSince it keeps the time the exchange began and is cleared when it ends. exchangeEndedAt, cappedInRow,
     // humidifierSince, exchangeForced and freshFrom are kept when not given (null is a value).
     // dehumidifier: its band state (spec 2026-10-21-dehumidifier-design.md 3), kept when not given.
-    setControlState(roomId, { exchange, humidifier, exchangeSince, exchangeEndedAt, cappedInRow, humidifierSince, exchangeForced, freshFrom, dehumidifier, humidifierLastOn, dehumidifierOffAt }, at) {
+    setControlState(roomId, { exchange, humidifier, exchangeSince, exchangeEndedAt, cappedInRow, humidifierSince, exchangeForced, freshFrom, dehumidifier, humidifierLastOn, dehumidifierOffAt, exchangeKind }, at) {
       const r = q.control.get(roomId);
       if (!r) return false;
       const since = exchangeSince !== undefined ? exchangeSince : exchange ? (r.exchange_since ?? at) : null;
@@ -905,7 +921,8 @@ export function openDb(path) {
         freshFrom !== undefined ? freshFrom : r.fresh_from,
         dehumidifier !== undefined ? (dehumidifier ? 1 : 0) : r.dehumidifier,
         humidifierLastOn !== undefined ? humidifierLastOn : r.humidifier_last_on,
-        dehumidifierOffAt !== undefined ? dehumidifierOffAt : r.dehumidifier_off_at, roomId).changes > 0;
+        dehumidifierOffAt !== undefined ? dehumidifierOffAt : r.dehumidifier_off_at,
+        exchangeKind !== undefined ? exchangeKind : r.exchange_kind, roomId).changes > 0;
     },
 
     // ---- Alarms (spec 2026-10-19-safety-and-history-design.md section 3) ----
@@ -913,12 +930,24 @@ export function openDb(path) {
 
     // Raises an alarm and returns its id. Throws when the room already has an active alarm with that key.
     raiseAlarm(roomId, key, level, text, at) {
-      return Number(q.insertAlarm.run(roomId, key, level, text, at).lastInsertRowid);
+      const id = Number(q.insertAlarm.run(roomId, key, level, text, at).lastInsertRowid);
+      tellAlarm('raised', () => this.getAlarm(id));
+      return id;
     },
 
     // Returns true when an active alarm was cleared.
     clearAlarm(roomId, key, at) {
-      return q.clearAlarm.run(at, roomId, key).changes > 0;
+      const active = alarmListeners.size ? q.activeAlarms.all(roomId).find((r) => r.key === key) : null;
+      const cleared = q.clearAlarm.run(at, roomId, key).changes > 0;
+      if (cleared && active) tellAlarm('cleared', () => this.getAlarm(active.id));
+      return cleared;
+    },
+
+    // Calls fn({ change: 'raised' | 'cleared' | 'acked' | 'acked-room', alarm?, roomId? }) after every alarm change; returns
+    // the unsubscribe. A listener that throws is logged and does not stop the change (spec 2026-10-26 section 2).
+    onAlarmChange(fn) {
+      alarmListeners.add(fn);
+      return () => alarmListeners.delete(fn);
     },
 
     getAlarm(id) {
@@ -944,12 +973,16 @@ export function openDb(path) {
     // Acknowledging again keeps the first time. Returns the alarm, or null when there is none.
     ackAlarm(id, at) {
       if (q.ackAlarm.run(at, id).changes === 0) return null;
-      return this.getAlarm(id);
+      const alarm = this.getAlarm(id);
+      tellAlarm('acked', () => alarm);
+      return alarm;
     },
 
     // Acknowledges every unacknowledged alarm of the room (all of them are current). Returns how many.
     ackRoomAlarms(roomId, at) {
-      return Number(q.ackRoomAlarms.run(at, roomId).changes);
+      const n = Number(q.ackRoomAlarms.run(at, roomId).changes);
+      if (n > 0) for (const fn of [...alarmListeners]) safe(() => fn({ change: 'acked-room', roomId }));
+      return n;
     },
 
     // Both of these return true when the room exists.

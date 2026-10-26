@@ -139,5 +139,5 @@ test('upgrade 13 to 14: the filter columns with their defaults, the change time 
   assert.equal(db.filterChanges(id).length, 1);
   const check = new DatabaseSync(path, { readOnly: true });
   t.after(() => check.close());
-  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 14);
+  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 15);
 });
