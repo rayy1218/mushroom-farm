@@ -93,15 +93,37 @@ export function filterInput(db, room, now, view = null) {
   };
 }
 
+// The last reading that counts (taken after COUNT_AFTER_MS of intake without a break) of the past day and since the last filter
+// change: { at, pa } or null (no sensor, or none). The room page shows it while the intake is off, when the sensor reads about 0.
+// Goes through the intake's runs newest first and asks the database for the newest reading of each.
+export function lastCounted(db, room, now) {
+  if (room.dpAddress === null) return null;
+  const from = Math.max(now - DAY_MS, room.filterChangedAt ?? -Infinity);
+  const runs = [];
+  let start = null;
+  for (const r of db.machineLogWindow(room.id, 'intake', from - COUNT_AFTER_MS, now)) {
+    if (r.on) start ??= r.at;
+    else if (start !== null) {
+      runs.push([start, r.at]); // a reading at the switch-off itself does not count
+      start = null;
+    }
+  }
+  if (start !== null) runs.push([start, now + 1]);
+  for (let i = runs.length - 1; i >= 0; i--) {
+    const [s, end] = runs[i];
+    const reading = db.lastFilterReading(room.id, Math.max(s + COUNT_AFTER_MS, from), end);
+    if (reading) return reading;
+  }
+  return null;
+}
+
 // **Filter changed**: the change time, a change row with the last counted pressure of the past day since the last change
 // (null without one), and the filter alarms cleared. Returns the room, or null when there is no such room. The caller drops
 // the alarms' delay counts.
 export function changeFilter(db, roomId, at) {
   const room = db.getRoom(roomId);
   if (!room) return null;
-  const readings = db.filterReadingsWindow(roomId, Math.max(at - DAY_MS, room.filterChangedAt ?? -Infinity), at + 1);
-  const counted = countedPa(readings, db.machineLogWindow(roomId, 'intake', at - DAY_MS - COUNT_AFTER_MS, at), at, Infinity);
-  db.markFilterChanged(roomId, at, counted?.pa ?? null);
+  db.markFilterChanged(roomId, at, lastCounted(db, room, at)?.pa ?? null);
   for (const key of FILTER_KEYS) db.clearAlarm(roomId, key, at);
   return db.getRoom(roomId);
 }

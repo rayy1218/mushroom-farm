@@ -287,6 +287,7 @@ export const FILTER_SQL = {
   lastOk: 'SELECT * FROM filter_readings WHERE room_id = ? AND address = ? AND ok = 1 ORDER BY id DESC LIMIT 1',
   failuresSince: 'SELECT COUNT(*) AS n FROM (SELECT 1 FROM filter_readings WHERE room_id = ? AND address = ? AND id > ? LIMIT 10000)',
   window: 'SELECT at, pa FROM filter_readings WHERE room_id = ? AND address = ? AND ok = 1 AND at >= ? AND at < ? ORDER BY at',
+  lastIn: 'SELECT at, pa FROM filter_readings WHERE room_id = ? AND address = ? AND ok = 1 AND at >= ? AND at < ? ORDER BY at DESC LIMIT 1',
 };
 
 export const OUTDOOR_SQL = {
@@ -666,6 +667,7 @@ export function openDb(path) {
     filterLastOk: db.prepare(FILTER_SQL.lastOk),
     filterFailuresSince: db.prepare(FILTER_SQL.failuresSince),
     filterWindow: db.prepare(FILTER_SQL.window),
+    filterLastIn: db.prepare(FILTER_SQL.lastIn),
     setFilterChangedAt: db.prepare('UPDATE rooms SET filter_changed_at = ? WHERE id = ?'),
     addFilterChange: db.prepare('INSERT INTO filter_changes (room_id, at, pa_before) VALUES (?, ?, ?)'),
     filterChanges: db.prepare('SELECT at, pa_before FROM filter_changes WHERE room_id = ? ORDER BY at DESC, id DESC LIMIT ?'),
@@ -1223,6 +1225,13 @@ export function openDb(path) {
     filterReadingsWindow(roomId, from, to) {
       const room = q.get.get(roomId);
       return room?.dp_address == null ? [] : q.filterWindow.all(roomId, room.dp_address, from, to).map((r) => ({ at: r.at, pa: r.pa }));
+    },
+
+    // The newest good reading of the room's present sensor address in [from, to): { at, pa } or null.
+    lastFilterReading(roomId, from, to) {
+      const room = q.get.get(roomId);
+      const r = room?.dp_address == null ? undefined : q.filterLastIn.get(roomId, room.dp_address, from, to);
+      return r ? { at: r.at, pa: r.pa } : null;
     },
 
     // The filter was changed at `at` (paBefore: the last counted pressure, or null). Returns false when there is no such room.

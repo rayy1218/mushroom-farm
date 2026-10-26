@@ -8,7 +8,7 @@ import { RELAY_KEYS } from './machine-codes.js';
 import { validateSettings, readSettings, writeSettings } from './settings.js';
 import { outdoorView, outdoorHistory, RANGES } from './outdoor.js';
 import { roomUsage, farmUsage } from './usage.js';
-import { changeFilter } from './filter.js';
+import { changeFilter, lastCounted } from './filter.js';
 import { createCropApi } from './crop-api.js';
 import { createSimulationRoutes } from './simulation-api.js';
 
@@ -209,7 +209,9 @@ export function createApi(db, machines = null, controller = null, poller = null,
       if (req.method !== 'GET') throw notFound();
       const sensors = db.getSensors(id);
       if (!sensors) throw noRoom();
-      return send(res, 200, [...sensors, db.getMeter(id), db.getFilterSensor(id)]);
+      // The filter sensor also carries the last reading taken with the intake running (the page shows it while the fan is off).
+      const dp = { ...db.getFilterSensor(id), lastRunning: lastCounted(db, db.getRoom(id), Date.now()) };
+      return send(res, 200, [...sensors, db.getMeter(id), dp]);
     }
     if (req.method === 'GET') {
       const room = db.getRoom(id);

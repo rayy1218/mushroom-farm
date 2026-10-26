@@ -63,7 +63,7 @@ The room dialog gets a section **Intake filter** with the first four fields; `dp
 | Status | as the energy meter: online, timeout (1–2 failed in a row), offline (3 or more), `no-data`, `not-wired` (no address) |
 | Storage | table `filter_readings (id INTEGER PRIMARY KEY, room_id INTEGER NOT NULL, address INTEGER NOT NULL, at INTEGER NOT NULL, ok INTEGER NOT NULL CHECK (ok IN (0,1)), pa REAL, error TEXT)`, the energy meter readings' three indexes on `(room_id, address, …)`; deleted with the room |
 | Counts when | the intake fan has been commanded on for at least 60 s (from `machine_log`) and, when the controller has a machines view with the relay module, its intake status is `on` (a dead fan or a relay that does not answer reads about 0 Pa and must not look like a missing filter); a reading from before the last filter change is the old filter's and never counts. A reading at other times is stored and shown but judged by nothing. The controller reads the room again before it judges the filter (a **Filter changed** may land while it sends to another room) |
-| API | `GET /api/rooms/:id/sensors` returns a fourth element `{ kind: 'dp', address, status, failuresInRow, lastOk: { at, pa } \| null, readings }`, like the energy meter |
+| API | `GET /api/rooms/:id/sensors` returns a fourth element `{ kind: 'dp', address, status, failuresInRow, lastOk: { at, pa } \| null, readings, lastRunning: { at, pa } \| null }`, like the energy meter. `lastRunning`: the last reading that counts (after 60 s of intake) of the past day and since the last filter change; the Filter card shows it while the intake is off |
 
 ## 5. Change reminder and alarms
 

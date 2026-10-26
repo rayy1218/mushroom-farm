@@ -78,11 +78,15 @@ export function intakeRunning(view) {
 }
 
 // The last reading taken with the intake on ({ at, pa } or null): a new good reading replaces it unless the intake is off
-// (with the fan stopped the sensor reads about 0, which says nothing about the filter).
+// (with the fan stopped the sensor reads about 0, which says nothing about the filter). The server's (sensor.lastRunning, the
+// last counted reading of the past day) seeds it after a page load; the newest of them wins.
 export function lastRunningOf(last, intake, sensor) {
+  const newer = (a, b) => (a && (!b || a.at >= b.at) ? a : b ?? null);
+  const server = finite(sensor?.lastRunning?.pa) && finite(sensor?.lastRunning?.at) ? sensor.lastRunning : null;
+  let best = newer(last ?? null, server);
   const ok = sensor?.lastOk;
-  if (intake === false || !finite(ok?.pa) || !finite(ok?.at)) return last ?? null;
-  return last && last.at >= ok.at ? last : { at: ok.at, pa: ok.pa };
+  if (intake !== false && finite(ok?.pa) && finite(ok?.at)) best = newer(best, { at: ok.at, pa: ok.pa });
+  return best;
 }
 
 // The Filter card of the room page. room: GET /api/rooms/:id; sensor: the 'dp' element of the sensors reply (or null);
