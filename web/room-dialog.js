@@ -13,7 +13,7 @@ const formError = $('form-error');
 const volume = $('volume');
 const save = $('save');
 
-const FIELDS = ['name', 'length', 'width', 'height', 'trhAddress', 'co2Address', 'meterAddress', 'dpAddress', 'relayAddress', 'acAddress', 'lights', ...RATING_NAMES, ...DEHUMIDIFIER_NAMES, 'dehumidifier', ...LIGHTS_NAMES, ...FILTER_NAMES];
+const FIELDS = ['name', 'length', 'width', 'height', 'trhAddress', 'co2Address', 'meterAddress', 'dpAddress', 'relayAddress', 'acAddress', 'dehumidifier', 'lights', ...RATING_NAMES, ...DEHUMIDIFIER_NAMES, ...LIGHTS_NAMES, ...FILTER_NAMES];
 const CHECKBOXES = ['dehumidifier', 'lights'];
 const inputs = Object.fromEntries(FIELDS.map((f) => [f, $(`f-${f}`)]));
 const errors = Object.fromEntries(FIELDS.map((f) => [f, $(`e-${f}`)]));

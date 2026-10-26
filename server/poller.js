@@ -18,11 +18,12 @@ const METER = { power: { start: 0x000c, qty: 2 }, energy: { start: 0x0156, qty: 
 // A value outside FILTER.min to FILTER.max is a failed poll that keeps the value.
 const FILTER = { fn: 4, start: 0, qty: 1, min: -50, max: 2000 };
 
-// Relay module: coils (fn 1) then current inputs (fn 2). Aircon gateway: settings (fn 3) then room T and error (fn 4).
+// Relay module: coils (fn 1) then current inputs (fn 2), as many as the room uses (outputs: 4, 5 with a dehumidifier, 6 with
+// lights; all six when not given). Aircon gateway: settings (fn 3) then room T and error (fn 4).
 const MACHINES = {
-  relay: async (client, unit) => ({
-    coils: await client.readBits(unit, 1, 0, RELAY_KEYS.length),
-    inputs: await client.readBits(unit, 2, 0, RELAY_KEYS.length),
+  relay: async (client, unit, outputs = RELAY_KEYS.length) => ({
+    coils: await client.readBits(unit, 1, 0, outputs),
+    inputs: await client.readBits(unit, 2, 0, outputs),
   }),
   ac: async (client, unit) => {
     const [power, mode, setpoint, fan] = await client.readRegisters(unit, 3, 0, 4);
@@ -111,12 +112,12 @@ export function createPoller({
     db.addMeterReading(reading);
   }
 
-  async function pollMachine({ roomId, kind, address }, began) {
+  async function pollMachine({ roomId, kind, address, outputs }, began) {
     const at = now();
     began(at);
     let poll;
     try {
-      poll = { at, ok: true, ...await MACHINES[kind](client, address) };
+      poll = { at, ok: true, ...await MACHINES[kind](client, address, outputs) };
     } catch (err) {
       poll = { at, ok: false, error: err instanceof ModbusError ? err.message : 'bad reply' };
     }

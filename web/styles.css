@@ -262,6 +262,8 @@ html { scroll-padding-top: var(--topbar-h); }
 .addresses .field { margin-bottom: 0; }
 .sizes.two { grid-template-columns: repeat(2, 1fr); }
 @media (max-width: 600px) { .sizes.two { grid-template-columns: 1fr 1fr; gap: 12px; } }
+/* the fitted machines' numbers under the ratings (dehumidifier, lights): the same space as between the rows above */
+.sizes + .sizes { margin-top: 12px; }
 
 /* ---- Room detail ---- */
 /* The Room card's crop facts (Growing, Stage, In this stage, Normally, Next), a link to the Crop tab: five in a row, two on a

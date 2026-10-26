@@ -656,9 +656,13 @@ export function openDb(path, { log = console.error } = {}) {
       db.prepare(`UPDATE machine_commands SET ${key} = ?, relay_sent_at = ? WHERE room_id = ?`)])),
     setAc: db.prepare(`UPDATE machine_commands SET ac_power = ?, ac_mode = ?, ac_setpoint = ?, ac_fan = ?, ac_sent_at = ?
                        WHERE room_id = ?`),
-    wiredMachines: db.prepare(`SELECT id AS roomId, 'relay' AS kind, relay_address AS address FROM rooms WHERE relay_address IS NOT NULL
+    // outputs: how many coils and inputs the relay is read with: what the room has fitted (a relay module with 4 outputs
+    // and no dehumidifier or lights must not be asked for 6)
+    wiredMachines: db.prepare(`SELECT id AS roomId, 'relay' AS kind, relay_address AS address,
+                                      CASE WHEN lights = 1 THEN 6 WHEN dehumidifier = 1 THEN 5 ELSE 4 END AS outputs
+                               FROM rooms WHERE relay_address IS NOT NULL
                                UNION ALL
-                               SELECT id, 'ac', ac_address FROM rooms WHERE ac_address IS NOT NULL
+                               SELECT id, 'ac', ac_address, NULL FROM rooms WHERE ac_address IS NOT NULL
                                ORDER BY 1, 2 DESC`),
     wired: db.prepare(`SELECT id AS roomId, 'trh' AS kind, trh_address AS address FROM rooms WHERE trh_address IS NOT NULL
                        UNION ALL
@@ -1124,7 +1128,9 @@ export function openDb(path, { log = console.error } = {}) {
 
     // Every wired relay module and aircon gateway: rooms by id, relay before ac.
     listWiredMachines() {
-      return q.wiredMachines.all().map((r) => ({ roomId: r.roomId, kind: r.kind, address: r.address }));
+      return q.wiredMachines.all().map((r) => (r.kind === 'relay'
+        ? { roomId: r.roomId, kind: r.kind, address: r.address, outputs: r.outputs }
+        : { roomId: r.roomId, kind: r.kind, address: r.address }));
     },
 
     // Returns true when a room was deleted.

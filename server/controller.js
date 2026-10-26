@@ -9,7 +9,7 @@ import { filterInput, FILTER_KEYS } from './filter.js';
 import { advance, BAND_KEYS } from './program.js';
 import { outdoorReading } from './outdoor.js';
 import { wOf, dewOf } from '../device/sim-model.js';
-import { lightsNow, localStartOfDay } from '../web/light-math.js';
+import { lightsNow, localAt } from '../web/light-math.js';
 
 export const DEFAULTS = {
   auto: false, co2Low: 600, co2High: 750, tLow: 21, tHigh: 23, rhLow: 85, rhHigh: 95, humidifierDuringExchange: false, acFan: 'auto',
@@ -88,11 +88,11 @@ const acDiffers = (a, d) => a.power !== d.power || a.mode !== d.mode || a.fan !=
 // state.exchangeKind: why the running exchange started, 'co2' | 'fresh' | 'cooling' | 'drying' | 'timed'; the result's state has it too (null when off).
 // faults: { co2, trh }, true while that sensor is faulty (timed exchange, timed humidifier). now: ms.
 // lightsFitted: whether the room has lights (default false: never on, no reason text); program: the room's crop program with
-// its light schedule (null: none, the lights are off); startOfDay(ms): the start of the day of a time (default the local
-// midnight; a simulation run's day starts at its second 0).
+// its light schedule (null: none, the lights are off); clockAt(ms, h, m, days): the time h:m on the day of ms (default the
+// farm's local clock, light-math.js localAt; a simulation run's clock is runAt, its second 0 is midnight).
 // Returns { state, desired, reasons }. Pure.
 export function decide({ bands, state, readings, faults, now, humidifierDuringExchange = false, acFan = 'auto', dehumidifierFitted = false, rhUnwired = false,
-  lightsFitted = false, program = null, startOfDay = localStartOfDay }) {
+  lightsFitted = false, program = null, clockAt = localAt }) {
   const { co2 = null, rh = null, t = null, outdoor = null } = readings ?? {};
   const was = state.exchange;
   let exchange = was;
@@ -346,7 +346,7 @@ export function decide({ bands, state, readings, faults, now, humidifierDuringEx
   reasons.circulation = 'Circulation: always on';
 
   // Lights (spec 2026-10-26-lighting-design.md 4): the stage's daily window of the crop program; no hold.
-  const lights = lightsFitted ? lightsNow(program, now, startOfDay) : { on: false, reason: '' };
+  const lights = lightsFitted ? lightsNow(program, now, clockAt) : { on: false, reason: '' };
   reasons.lights = lights.reason;
 
   return {

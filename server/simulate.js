@@ -8,7 +8,7 @@ import { BTU_PER_KW } from '../device/sim-store.js';
 import { CO2_PER_BLOCK, blocksOf, mixBands } from '../web/crops.js';
 import { DEFAULTS, decide, protect } from './controller.js';
 import { PROGRAM_DEFAULTS, advance, startStage } from './program.js';
-import { runStartOfDay } from '../web/light-math.js';
+import { runAt } from '../web/light-math.js';
 
 const STEP_S = 10; // the controller decides every step
 const MODEL_S = 5; // the model's own sub-step (device/sim-model.js), stepped here to add up its water and aircon load
@@ -186,7 +186,7 @@ export function simulate(input, ctx, { onProgress } = {}) {
     // The control decides from ideal readings; the commands go to the machines at once.
     const decided = decide({
       bands: { ...extra, ...bands }, state: memory, readings: { co2: CO2, rh, t: T, outdoor: { t: out.outdoorT, rh: out.outdoorRH } }, faults: null, now: ms, humidifierDuringExchange, acFan,
-      dehumidifierFitted: dehumidifierLday > 0, lightsFitted, program, startOfDay: runStartOfDay,
+      dehumidifierFitted: dehumidifierLday > 0, lightsFitted, program, clockAt: runAt,
     });
     memory = decided.state;
     const { desired } = protect({ desired: decided.desired, commands, changedAt, now: ms });

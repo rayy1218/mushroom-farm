@@ -77,7 +77,8 @@ export function estimate(input, ctx) {
   const dHigh = Math.max(0, physics.outdoorHigh - tMid);
   const blocksW = (blocks * CO2_PER_BLOCK * CO2_J_PER_ML) / 3600;
   const fanW = (fanFlow * AIR_KJ_PER_M3K * dHigh) / 3.6;
-  const acW = AC_MARGIN * (physics.wallUA * dHigh + physics.sunW + blocksW + fanW + FANS_W);
+  const lightsW = ctx.ratings?.lights === true ? (ctx.ratings.lightsW ?? 0) : 0; // fitted lights: their power is heat in the room
+  const acW = AC_MARGIN * (physics.wallUA * dHigh + physics.sunW + blocksW + fanW + FANS_W + lightsW);
   const acNeed = acW * BTU_PER_KW / 1000;
   const acBTU = nextUp(AC_SIZES, acNeed);
 
@@ -92,7 +93,7 @@ export function estimate(input, ctx) {
       fanFlow: `${blocks} blocks give off ${round(co2LH, 1)} L of CO₂ an hour; ${fanFlow} m³/h holds it at ${holds} ppm`,
       humidifierLH: `One minute of ${humidifierLH} L/h moves humidity about ${round(((humidifierLH * 1000 / 60) * 100) / (volume * satW(tMid)), 1)} % in a room of ${round(volume, 1)} m³ (the narrowest band is ${rhBand} %)`,
       dehumidifierLday: `a 3 min run of a larger one would move humidity more than 80 % of the ${restBand} % band`,
-      acBTU: `About ${Math.round(acW)} W of heat at an outdoor ${physics.outdoorHigh} °C with the room at ${round(tMid, 1)} °C (walls, sun, blocks, fan air), with 30 % to spare; the search also tries larger ones, since drying a wet room takes part of an aircon's power`,
+      acBTU: `About ${Math.round(acW)} W of heat at an outdoor ${physics.outdoorHigh} °C with the room at ${round(tMid, 1)} °C (walls, sun, blocks, fan air${lightsW > 0 ? ', lights' : ''}), with 30 % to spare; the search also tries larger ones, since drying a wet room takes part of an aircon's power`,
       exchangeMaxMin: duty > 0.5
         ? `The fan runs about ${Math.round(duty * 100)} % of the time, so a long air exchange (${LIMIT_MAX_MIN} min) is allowed`
         : `The fan runs about ${Math.round(duty * 100)} % of the time, so the room's own limit of ${roomLimit} min stays`,

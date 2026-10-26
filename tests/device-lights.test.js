@@ -44,19 +44,19 @@ test('a relay saved with 5 outputs (or 4) loads with the lights off', () => {
   }
 });
 
-test('sim parameter lightsW: Lights power, 0–5000 W, default 60; an older file gets the default', () => {
+test('sim parameter lightsW: Lights power, 0–5000 W, default 0 (none); an older file gets 0', () => {
   const { min, max, label, unit, value } = PARAMS.lightsW;
-  assert.deepEqual([min, max, label, unit, value], [0, 5000, 'Lights power', 'W', 60]);
+  assert.deepEqual([min, max, label, unit, value], [0, 5000, 'Lights power', 'W', 0]);
   const sims = createSims({ sensors: createSensors({}) });
   const room = sims.add({ name: 'R' });
-  assert.equal(room.lightsW, 60);
+  assert.equal(room.lightsW, 0);
   assert.equal(sims.update(room.id, { lightsW: 150 }).lightsW, 150);
   assert.throws(() => sims.update(room.id, { lightsW: 5001 }), (err) => err.field === 'lightsW');
   const dir = mkdtempSync(join(tmpdir(), 'dev-lights-'));
   try {
     const file = join(dir, 'state.json.sim');
     writeFileSync(file, JSON.stringify({ speed: 1, rooms: [{ id: 1, name: 'Old' }] }));
-    assert.equal(createSims({ sensors: createSensors({}), statePath: file }).list()[0].lightsW, 60);
+    assert.equal(createSims({ sensors: createSensors({}), statePath: file }).list()[0].lightsW, 0);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -4,7 +4,8 @@
 // table), a Stages list down the right with the dates, and the Ramp, Lights from and Automatic change row. GET and PUT
 // /api/rooms/:id/crop. The light schedule (spec 2026-10-26-lighting-design.md 8): a Light row in each Targets table, the
 // stage's light hours in its pencil, and the time the lights come on in the program row.
-// createCropCard(host, { roomId, onChange, onData, onOffline, onGone }) → { refresh(), destroy() }. onChange(): the crops or the
+// createCropCard(host, { roomId, onChange, onData, onOffline, onGone, getRoom }) → { refresh(), setLights(fitted), destroy() }.
+// The light schedule shows only while the room has lights fitted (getRoom().lights); setLights: the room changed, paint again. onChange(): the crops or the
 // stage were saved (the bands may have changed); onData(crop): every reply shown (the Room card writes the blocks from it). An
 // open editor or pencil is never replaced by a refresh.
 
@@ -71,7 +72,9 @@ function setText(node, text) {
 
 const errorText = (err) => (err.status === 0 ? `${OFFLINE}. Try again.` : err.message);
 
-export function createCropCard(host, { roomId, onChange, onData, onOffline, onGone }) {
+export function createCropCard(host, { roomId, onChange, onData, onOffline, onGone, getRoom }) {
+  const lit = () => getRoom?.()?.lights === true;
+  let litShown = null; // whether the last paint showed the light schedule
   let alive = true;
   let seq = 0; // every load or command takes a token; a reply that finds it changed is dropped
   let last = null; // the last reply painted
@@ -500,7 +503,7 @@ export function createCropCard(host, { roomId, onChange, onData, onOffline, onGo
       inputs.get(`days.${stage}`).value = String(last.days?.[stage] ?? '');
       inputs.get('flushes') && (inputs.get('flushes').value = String(last.flushes));
       const light = inputs.get(`lightHours.${stage}`);
-      light.closest('.field').hidden = !last.lightHours; // an older server has no light schedule
+      light.closest('.field').hidden = !last.lightHours || !lit(); // an older server has no light schedule; a room without lights
       light.value = String(last.lightHours?.[stage] ?? '');
       edit.hidden = false;
       pencil.setAttribute('aria-expanded', 'true');
@@ -555,7 +558,7 @@ export function createCropCard(host, { roomId, onChange, onData, onOffline, onGo
     sec.start.hidden = mark.kind === 'current';
     const warnings = stageWarnings(c.crops, sec.stage);
     sec.warnings.replaceChildren(...warnings.map((w) => el('p', 'sim-warn', w)));
-    const rows = stageTargets(c.crops, sec.stage, lightOf(c, sec.stage));
+    const rows = stageTargets(c.crops, sec.stage, lit() ? lightOf(c, sec.stage) : null);
     const key = JSON.stringify(rows);
     if (key !== sec.rows) {
       sec.rows = key;
@@ -653,6 +656,7 @@ export function createCropCard(host, { roomId, onChange, onData, onOffline, onGo
 
   function paint(c) {
     last = c;
+    litShown = lit();
     onData?.(c);
     loading.hidden = true;
     head.hidden = false;
@@ -689,7 +693,7 @@ export function createCropCard(host, { roomId, onChange, onData, onOffline, onGo
       rampInput.value = String(c.rampH);
       rampSave.hidden = true;
     }
-    lightField.hidden = typeof c.lightStart !== 'string'; // an older server has no light schedule
+    lightField.hidden = typeof c.lightStart !== 'string' || !lit(); // an older server has no light schedule; a room without lights
     if (!lightDirty && document.activeElement !== lightInput) {
       lightInput.value = c.lightStart ?? '';
       lightSave.hidden = true;
@@ -726,6 +730,9 @@ export function createCropCard(host, { roomId, onChange, onData, onOffline, onGo
 
   return {
     refresh,
+    setLights(fitted) {
+      if (alive && last && fitted !== litShown) paint(last);
+    },
     destroy() { alive = false; seq++; clearTimeout(timer); if (confirm.open) confirm.close(); host.replaceChildren(); },
   };
 }

@@ -496,6 +496,7 @@ export function mount(container, { id, tab = 'overview' }) {
       built = true;
     }
     if (!cropCard) makeCrop(); // (again after a missing room came back)
+    cropCard?.setLights(room?.lights === true); // lights fitted or taken out: the schedule shows or goes
     simulationsCard ??= createSimulationsCard(els.simulationsHost, { roomId: id, getRoom: () => room });
     filterCard ??= createFilterCard(els.filterHost, { roomId: id, onChanged: () => { if (alive()) load(); } }); // the alarms clear
     filterCard.update(room, sensors.dp, intakeRunning(machineData ?? lastMachines));
@@ -597,6 +598,7 @@ export function mount(container, { id, tab = 'overview' }) {
   function makeCrop() {
     cropCard = createCropCard(els.cropHost, {
       roomId: id,
+      getRoom: () => room,
       onChange: () => { if (alive()) load(); },
       onData: (data) => { // the blocks and the stage on the Room card, the lights' hours on the Climate tab
         if (!alive()) return;

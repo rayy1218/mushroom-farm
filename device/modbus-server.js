@@ -10,7 +10,8 @@ const MAX_LENGTH = 254; // unit id + PDU
 const MAP = {
   trh: { reads: { 4: { start: 1, qty: 2 } } },
   co2: { reads: { 3: { start: 0, qty: 1 } } },
-  relay: { reads: { 1: { start: 0, qty: 6 }, 2: { start: 0, qty: 6 } }, writes: [5] },
+  // a relay module answers any count of its six coils or inputs from the first, like the real one (the farm reads 4 to 6)
+  relay: { reads: { 1: { start: 0, qty: 6, upTo: true }, 2: { start: 0, qty: 6, upTo: true } }, writes: [5] },
   ac: { reads: { 3: { start: 0, qty: 4 }, 4: { start: 0, qty: 2 } }, writes: [16] },
   // An SDM120-style meter: two float32 values, each read on its own; any other range is an illegal address.
   meter: { reads: { 4: [{ start: 0x000c, qty: 2, field: 'power' }, { start: 0x0156, qty: 2, field: 'energy' }] } },
@@ -118,12 +119,12 @@ export function createModbusServer(sensors, { onRequest = () => {} } = {}) {
       try {
         if (reads.length > 0) {
           const start = pdu.readUInt16BE(1), qty = pdu.readUInt16BE(3);
-          const read = reads.find((r) => r.start === start && r.qty === qty);
+          const read = reads.find((r) => r.start === start && (r.upTo ? qty >= 1 && qty <= r.qty : r.qty === qty));
           if (!read) {
             out = fail(tid, unit, fn, entry, 2);
           } else {
             entry.result = 'answered';
-            if (device.kind === 'relay') out = bits(tid, unit, fn, packBits(fn === 1 ? device.coils : device.running));
+            if (device.kind === 'relay') out = bits(tid, unit, fn, packBits((fn === 1 ? device.coils : device.running).slice(0, qty)));
             else out = normal(tid, unit, fn, registersOf(device, fn, read));
           }
         } else if (map.writes?.includes(fn)) {

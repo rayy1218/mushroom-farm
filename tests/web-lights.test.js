@@ -133,7 +133,7 @@ test('Crop: the form carries the light hours and start; checks and the body of w
   const ok = checkCropForm({ ...f, lightHours: { ...f.lightHours, fruiting: '10' }, lightStart: '06:30' });
   assert.deepEqual(ok.errors, {});
   assert.deepEqual(saveBody(ok.values, crop), { lightHours: { fruiting: 10 }, lightStart: '06:30' });
-  const bad = checkCropForm({ ...f, lightHours: { ...f.lightHours, pinning: '25' }, lightStart: '7:00' });
+  const bad = checkCropForm({ ...f, lightHours: { ...f.lightHours, pinning: '25' }, lightStart: '7:60' });
   assert.equal(bad.errors['lightHours.pinning'], 'Light hours must be a whole number from 0 to 24');
   assert.equal(bad.errors.lightStart, 'Light start must be a time like 07:00');
   assert.deepEqual(saveBody(checkCropForm(f).values, crop), {}, 'nothing changed');
@@ -149,7 +149,7 @@ test('Crop card: the stage pencil edits its light hours, the program row has Lig
   assert.match(card, /fieldOf\(`lightHours\.\$\{stage\}`, 'Light hours \(0–24\)'\)/);
   assert.match(card, /'Lights from'/);
   assert.match(card, /light: '/, 'an icon for the Light row');
-  assert.match(card, /stageTargets\(c\.crops, sec\.stage, lightOf\(c, sec\.stage\)\)/);
+  assert.match(card, /stageTargets\(c\.crops, sec\.stage, lit\(\) \? lightOf\(c, sec\.stage\) : null\)/);
 });
 
 // ---- room dialog ----

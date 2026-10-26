@@ -220,7 +220,7 @@ const SIM_PARAMS = [
   ['humidifierLH', 'Humidifier', 'L/h', 0, 100, 0.1],
   ['dehumidifierLday', 'Dehumidifier capacity', 'L/day, 0 = none', 0, 200, 0.5],
   ['dehumidifierW', 'Dehumidifier power', 'W', 0, 5000, 10],
-  ['lightsW', 'Lights power', 'W, output 6', 0, 5000, 10],
+  ['lightsW', 'Lights power', 'W, output 6, 0 = none', 0, 5000, 10],
   ['fanMaxPa', 'Fan maximum pressure', 'Pa', 20, 2000, 10],
   ['filterCleanPa', 'Clean filter drop', 'Pa at fan flow', 5, 1000, 5],
   ['filterFinalPa', 'Filter change pressure', 'Pa', 5, 2000, 5],

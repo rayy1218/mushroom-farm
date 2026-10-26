@@ -173,7 +173,7 @@ test('listWiredMachines lists relay then ac, rooms by id', (t) => {
   db.createRoom({ ...fields, name: 'C', relayAddress: 5, acAddress: 6 });
   assert.deepEqual(db.listWiredMachines(), [
     { roomId: 1, kind: 'ac', address: 7 },
-    { roomId: 3, kind: 'relay', address: 5 },
+    { roomId: 3, kind: 'relay', address: 5, outputs: 4 },
     { roomId: 3, kind: 'ac', address: 6 },
   ]);
 });

@@ -86,6 +86,7 @@ export function createMachines({ db, client, poller, now = Date.now }) {
       if (address === null) return m;
       if (!latest) return { ...m, status: 'no-data' };
       if (!latest.ok) return { ...m, status: 'no-answer' };
+      if (i >= latest.coils.length) return { ...m, status: 'no-data' }; // just fitted: the last poll did not read it yet
       m.reported = latest.coils[i];
       m.running = latest.inputs[i];
       if (m.reported !== commanded) m.status = switching ? 'switching' : 'not-following';
@@ -145,10 +146,11 @@ export function createMachines({ db, client, poller, now = Date.now }) {
     get,
     forget,
 
-    // key is a relay machine or 'ac'. Saves the command, then writes it and returns the machines object.
+    // key is a relay machine or 'ac'. Saves the command, then writes it and returns the machines object. unfitted: an off
+    // command for a machine just taken out of the room (the room route), allowed although it is no longer fitted.
     // Throws CommandError (409 while automatic control is on, unless the controller itself sends with bypassAuto).
     // A failed write is not an error: it shows as lastWrite.
-    async command(roomId, key, body, { bypassAuto = false } = {}) {
+    async command(roomId, key, body, { bypassAuto = false, unfitted = false } = {}) {
       const room = db.getRoom(roomId);
       if (!room) throw new CommandError(404, 'Room not found');
       const index = RELAY_KEYS.indexOf(key);
@@ -157,7 +159,7 @@ export function createMachines({ db, client, poller, now = Date.now }) {
       if (!bypassAuto && db.getControl(roomId)?.auto) throw new CommandError(409, 'Automatic control is on');
       if (index >= 0) {
         const { on } = relayBody(body);
-        if (!fitted(room, key)) throw new CommandError(400, `This room has no ${key}`, key);
+        if (!fitted(room, key) && !(unfitted && !on)) throw new CommandError(400, `This room has no ${key}`, key);
         if (room.relayAddress === null) throw new CommandError(400, 'No relay module address set');
         const address = room.relayAddress;
         db.setRelayCommand(roomId, key, on, now());

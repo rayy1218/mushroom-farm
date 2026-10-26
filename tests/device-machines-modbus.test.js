@@ -105,7 +105,8 @@ test('the 5th coil and input (dehumidifier) are bit 4, and coil 4 can be written
   assert.equal(replyPdu(await ask(10, pdu16(2, 0, 6))), '020110');
   sensors.update(10, { dead: [false, false, false, false, true, false] });
   assert.equal(replyPdu(await ask(10, pdu16(2, 0, 6))), '020100');
-  assert.equal(replyPdu(await ask(10, pdu16(1, 0, 4))), '8102'); // the old 4-coil read is an illegal address
+  assert.equal(replyPdu(await ask(10, pdu16(1, 0, 4))), '010100'); // a 4-coil read (a room without a dehumidifier): bits 0–3
+  assert.equal(replyPdu(await ask(10, pdu16(1, 0, 5))), '010110');
 });
 
 test('the 6th coil and input (lights) are bit 5, and coil 5 can be written', async () => {
@@ -114,7 +115,7 @@ test('the 6th coil and input (lights) are bit 5, and coil 5 can be written', asy
   assert.equal(replyPdu(await ask(10, pdu16(2, 0, 6))), '020120');
   sensors.update(10, { dead: [false, false, false, false, false, true] });
   assert.equal(replyPdu(await ask(10, pdu16(2, 0, 6))), '020100');
-  assert.equal(replyPdu(await ask(10, pdu16(1, 0, 5))), '8102'); // the old 5-coil read is an illegal address
+  assert.equal(replyPdu(await ask(10, pdu16(1, 0, 5))), '010100'); // a 5-coil read leaves the lights out
 });
 
 test('fn 02 reports running: coil on, not dead; dead reads 0', async () => {
@@ -177,9 +178,10 @@ test('fn 05: address above 5 is exception 2, bad value is exception 3', async ()
   assert.deepEqual(log.map((e) => e.result), ['exception 2', 'exception 3', 'exception 3', 'exception 3', 'exception 3']);
 });
 
-test('relay: wrong start or quantity on fn 01/02 is exception 2', async () => {
+test('relay: start 0 with 1 to 6 bits is answered; another start or quantity on fn 01/02 is exception 2', async () => {
+  for (const fn of [1, 2]) for (const qty of [1, 4, 5, 6]) assert.equal(replyPdu(await ask(10, pdu16(fn, 0, qty))), `0${fn}0100`, `${fn} ${qty}`);
   for (const fn of [1, 2]) {
-    for (const [start, qty] of [[1, 6], [0, 3], [0, 4], [0, 5], [0, 7], [0, 1], [6, 6]]) {
+    for (const [start, qty] of [[1, 6], [1, 4], [0, 0], [0, 7], [0, 16], [6, 6]]) {
       assert.equal(replyPdu(await ask(10, pdu16(fn, start, qty))), `${(fn | 0x80).toString(16)}02`, `${fn} ${start} ${qty}`);
     }
   }

@@ -3,7 +3,7 @@
 
 import { CROPS, STAGES, FARM_TYPES, validateCrops, mixBands, rangeWarnings } from './crops.js';
 import { formatDateTime } from './simulation-math.js';
-import { lightRow, isClock, isLightHours } from './light-math.js';
+import { lightRow, isClock, isLightHours, normaliseClock } from './light-math.js';
 
 const DAY_MS = 86_400_000;
 const pad2 = (n) => String(n).padStart(2, '0');
@@ -86,7 +86,7 @@ export function checkCropForm(form) {
     }
   }
   if (form.lightStart !== undefined) {
-    const start = String(form.lightStart).trim();
+    const start = normaliseClock(form.lightStart); // "7:00" and "0700" are 07:00
     if (!isClock(start)) errors.lightStart = 'Light start must be a time like 07:00';
     values.lightStart = start;
   }
