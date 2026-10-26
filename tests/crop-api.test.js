@@ -54,6 +54,7 @@ test('GET: the defaults of a room without crops', async () => {
   assert.deepEqual(r.body, {
     crops: [], farmType: 'ready', stage: 'fruiting', stageSince: null, flush: 1, flushes: 4,
     days: { spawn: 21, pinning: 4, fruiting: 7, rest: 10 }, rampH: 4, autoAdvance: true, done: false,
+    lightHours: { spawn: 0, pinning: 12, fruiting: 12, rest: 0 }, lightStart: '07:00',
     ramp: null, nextStage: null, targets: null,
   });
 });

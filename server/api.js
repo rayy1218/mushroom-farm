@@ -250,10 +250,11 @@ export function createApi(db, machines = null, controller = null, poller = null,
       const before = db.getRoom(id);
       if (!before) throw noRoom();
       const room = await readRoom(req, before);
-      // A running dehumidifier taken out of the room is switched off first: afterwards nothing may command it.
-      if (before.dehumidifier && room.dehumidifier === false && machines && db.getCommands(id)?.relay.dehumidifier) {
+      // A running dehumidifier or lights taken out of the room are switched off first: afterwards nothing may command them.
+      for (const key of ['dehumidifier', 'lights']) {
+        if (!(before[key] && room[key] === false && machines && db.getCommands(id)?.relay[key])) continue;
         try {
-          await machines.command(id, 'dehumidifier', { on: false }, { bypassAuto: true });
+          await machines.command(id, key, { on: false }, { bypassAuto: true });
         } catch {
           // the command is saved even when the write fails; the room is updated anyway
         }

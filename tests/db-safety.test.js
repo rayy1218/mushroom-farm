@@ -92,7 +92,7 @@ function indexes(raw) {
 }
 
 function checkVersion7(raw) {
-  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 15);
+  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 16);
   assert.deepEqual(columns(raw, 'alarms'), ['id', 'room_id', 'key', 'level', 'text', 'raised_at', 'cleared_at', 'acked_at']);
   assert.deepEqual(columns(raw, 'machine_log'), ['id', 'room_id', 'machine', 'at', 'on_', 'setpoint', 'mode', 'fan', 'source']);
   for (const name of Object.keys(NEW_CONTROL_COLUMNS)) assert.ok(columns(raw, 'room_controls').includes(name), name);
@@ -103,7 +103,7 @@ function checkVersion7(raw) {
   }
 }
 
-test('a new database is at version 15 with the alarms, machine_log and new control columns', (t) => {
+test('a new database is at version 16 with the alarms, machine_log and new control columns', (t) => {
   const path = join(tempDir(t), 'farm.db');
   openDb(path).close();
   const raw = new DatabaseSync(path);
@@ -156,7 +156,7 @@ test('the new tables enforce their checks and one active alarm per room and key'
   assert.throws(() => alarm.run(1, 'co2High', 'loud', 'x', 1, null), /CHECK/);
   const log = raw.prepare('INSERT INTO machine_log (room_id, machine, at, on_, source) VALUES (?, ?, ?, ?, ?)');
   log.run(1, 'intake', 1, 1, 'auto');
-  assert.throws(() => log.run(1, 'lights', 1, 1, 'auto'), /CHECK/);
+  assert.throws(() => log.run(1, 'heater', 1, 1, 'auto'), /CHECK/);
   assert.throws(() => log.run(1, 'intake', 1, 1, 'robot'), /CHECK/);
 });
 

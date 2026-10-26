@@ -18,7 +18,7 @@ export function createCropApi({ db, now = Date.now }) {
     }
     return {
       crops: p.crops, farmType: p.farmType, stage: p.stage, stageSince: p.stageSince, flush: p.flush, flushes: p.flushes, days: p.days,
-      rampH: p.rampH, autoAdvance: p.autoAdvance, done: p.done,
+      rampH: p.rampH, autoAdvance: p.autoAdvance, done: p.done, lightHours: p.lightHours, lightStart: p.lightStart,
       ramp: p.ramp ? { to: p.ramp.to, endAt: p.ramp.endAt } : null,
       nextStage: at === null ? null : { stage: next.stage, flush: next.flush, at },
       targets,
@@ -31,15 +31,19 @@ export function createCropApi({ db, now = Date.now }) {
       return db.getRoom(roomId) ? view(roomId) : null;
     },
 
-    // Applies any of crops, farmType, stage, flushes, days (per stage), rampH, autoAdvance, applyNow and newBlocks; returns the reply.
+    // Applies any of crops, farmType, stage, flushes, days (per stage), rampH, autoAdvance, lightHours (per stage), lightStart,
+    // applyNow and newBlocks; returns the reply.
     // Throws CommandError (400, with field) for a bad value. Returns null when there is no such room.
     put(roomId, body) {
       if (!db.getRoom(roomId)) return null;
       if (body === null || typeof body !== 'object' || Array.isArray(body)) throw new CommandError(400, 'Body must be a JSON object');
       const was = db.getProgram(roomId);
       const next = { ...was };
-      for (const key of ['crops', 'farmType', 'stage', 'flushes', 'rampH', 'autoAdvance']) if (key in body) next[key] = body[key];
-      if ('days' in body) next.days = body.days !== null && typeof body.days === 'object' && !Array.isArray(body.days) ? { ...was.days, ...body.days } : body.days;
+      for (const key of ['crops', 'farmType', 'stage', 'flushes', 'rampH', 'autoAdvance', 'lightStart']) if (key in body) next[key] = body[key];
+      // days and lightHours: any of the four stages, the others kept
+      const merge = (given, kept) => (given !== null && typeof given === 'object' && !Array.isArray(given) ? { ...kept, ...given } : given);
+      if ('days' in body) next.days = merge(body.days, was.days);
+      if ('lightHours' in body) next.lightHours = merge(body.lightHours, was.lightHours);
       // New blocks on a done room (newBlocks: true, or crops that differ from the stored ones): flush 1 from the farm type's
       // first stage (unless a stage is given). The same crops sent with another change (e.g. more flushes) are not new blocks.
       const sameCrops = JSON.stringify(body.crops) === JSON.stringify(was.crops);

@@ -15,7 +15,7 @@ const FILTER_RUN = [
   { field: 'filterChangeDays', label: 'Filter change every' },
   { field: 'filterUsedDays', label: 'Filter in use' },
 ];
-const RATING_FIELDS = ['intakeW', 'exhaustW', 'circulationW', 'humidifierW', 'humidifierLH', 'acInputW', 'dehumidifierW', 'dehumidifierLday'];
+const RATING_FIELDS = ['intakeW', 'exhaustW', 'circulationW', 'humidifierW', 'humidifierLH', 'acInputW', 'dehumidifierW', 'dehumidifierLday', 'lights', 'lightsW'];
 const CONTROL_FIELDS = ['exchangeMaxMin', 'acDrop', 'exchangeEveryMin', 'humidifierDuringExchange', 'acFan', 'outdoorAir'];
 const MAX_UNFINISHED = 5; // queued or running runs of one room
 const SIZING_KEPT = 20; // finished suggestions kept per room
@@ -162,7 +162,7 @@ export function createSimulations({ db, now = Date.now, spawn = spawnWorker, onC
       volume: room.volume,
       ratings: Object.fromEntries(RATING_FIELDS.map((f) => [f, room[f]])),
       control: Object.fromEntries(CONTROL_FIELDS.map((f) => [f, control[f]])),
-      program: { flushes: program.flushes, days: program.days, rampH: program.rampH },
+      program: { flushes: program.flushes, days: program.days, rampH: program.rampH, lightHours: program.lightHours, lightStart: program.lightStart },
       prices: { electricity: electricityPrice, water: waterPrice },
     };
   }

@@ -76,26 +76,26 @@ test('values are clamped to the device limits', () => {
 test('intake, exhaust, circulation and humidifier follow the relay running state', () => {
   const { sensors, sim, model } = setup();
   sim.tick();
-  assert.deepEqual(lastInputs(model), { intake: false, exhaust: false, circulation: false, humidifier: false, dehumidifier: false, ac: null });
+  assert.deepEqual(lastInputs(model), { intake: false, exhaust: false, circulation: false, humidifier: false, dehumidifier: false, lights: false, ac: null });
   sensors.writeCoil(3, 0, true);
   sensors.writeCoil(3, 2, true);
   sim.tick();
-  assert.deepEqual(lastInputs(model), { intake: true, exhaust: false, circulation: true, humidifier: false, dehumidifier: false, ac: null });
+  assert.deepEqual(lastInputs(model), { intake: true, exhaust: false, circulation: true, humidifier: false, dehumidifier: false, lights: false, ac: null });
   sensors.writeCoil(3, 1, true);
   sensors.writeCoil(3, 3, true);
   sim.tick();
-  assert.deepEqual(lastInputs(model), { intake: true, exhaust: true, circulation: true, humidifier: true, dehumidifier: false, ac: null });
+  assert.deepEqual(lastInputs(model), { intake: true, exhaust: true, circulation: true, humidifier: true, dehumidifier: false, lights: false, ac: null });
 });
 
 test('a stuck coil, a dead motor and a relay still spinning up do not count as running', () => {
   const { sensors, sim, model } = setup();
-  sensors.update(3, { stuck: [false, true, false, false, false] });
+  sensors.update(3, { stuck: [false, true, false, false, false, false] });
   sensors.writeCoil(3, 0, true);
   sensors.writeCoil(3, 1, true); // stuck: acknowledged, does not move
-  sensors.update(3, { dead: [false, false, false, true, false] });
+  sensors.update(3, { dead: [false, false, false, true, false, false] });
   sensors.writeCoil(3, 3, true); // coil on, motor dead
   sim.tick();
-  assert.deepEqual(lastInputs(model), { intake: true, exhaust: false, circulation: false, humidifier: false, dehumidifier: false, ac: null });
+  assert.deepEqual(lastInputs(model), { intake: true, exhaust: false, circulation: false, humidifier: false, dehumidifier: false, lights: false, ac: null });
 
   const slow = createSensors({ spinUpMs: 60_000 });
   slow.add({ address: 3, kind: 'relay' });
@@ -153,7 +153,7 @@ test('a missing, unlinked or wrong-kind link means that machine is off and its s
   sensors.remove(4);
   sensors.remove(2);
   sim.tick();
-  assert.deepEqual(lastInputs(model), { intake: false, exhaust: false, circulation: false, humidifier: false, dehumidifier: false, ac: null });
+  assert.deepEqual(lastInputs(model), { intake: false, exhaust: false, circulation: false, humidifier: false, dehumidifier: false, lights: false, ac: null });
   assert.equal(sensors.get(1).t, 21.3);
 
   // The address comes back as another kind: not a relay, so it is not read as one.
@@ -280,7 +280,7 @@ test('the dehumidifier input is output 5 really running; the model gets its two 
   sim.tick();
   assert.deepEqual([lastInputs(model).dehumidifier, lastInputs(model).humidifier], [true, false]);
   assert.deepEqual([model.calls.at(-1).params.dehumidifierLday, model.calls.at(-1).params.dehumidifierW], [25, 410]);
-  sensors.update(3, { dead: [false, false, false, false, true] }); // coil on, motor dead: not running
+  sensors.update(3, { dead: [false, false, false, false, true, false] }); // coil on, motor dead: not running
   sim.tick();
   assert.equal(lastInputs(model).dehumidifier, false);
 });

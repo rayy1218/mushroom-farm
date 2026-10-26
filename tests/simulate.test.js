@@ -27,7 +27,7 @@ test('the result has the four parts of the spec', () => {
   assert.equal(day.series[0].s, 0);
   assert.equal(day.series[1].s, 300);
   assert.equal(day.series[0].stage, 'fruiting');
-  assert.deepEqual(Object.keys(day.machines).sort(), ['ac', 'circulation', 'dehumidifier', 'exhaust', 'humidifier', 'intake']);
+  assert.deepEqual(Object.keys(day.machines).sort(), ['ac', 'circulation', 'dehumidifier', 'exhaust', 'humidifier', 'intake', 'lights']);
   for (const spans of Object.values(day.machines)) for (const sp of spans) assert.ok(sp.to > sp.from && sp.from >= 0 && sp.to <= 86400);
   assert.ok(day.machines.ac.every((sp) => typeof sp.setpoint === 'number'));
   assert.deepEqual(day.stages, [{ stage: 'fruiting', flush: 1, from: 0, to: 86400 }]);
@@ -37,7 +37,7 @@ test('the result has the four parts of the spec', () => {
   assert.equal(s.days, 1);
   assert.deepEqual(Object.keys(s.inBand).sort(), ['all', 'co2', 'rh', 't']);
   assert.deepEqual(Object.keys(s.energy).sort(), ['byMachine', 'cost', 'kWh']);
-  assert.deepEqual(Object.keys(s.energy.byMachine).sort(), ['ac', 'circulation', 'dehumidifier', 'exhaust', 'humidifier', 'intake']);
+  assert.deepEqual(Object.keys(s.energy.byMachine).sort(), ['ac', 'circulation', 'dehumidifier', 'exhaust', 'humidifier', 'intake', 'lights']);
   assert.deepEqual(Object.keys(s.extremes).sort(), ['co2Max', 'rhMax', 'rhMin', 'tMax', 'tMin']);
   assert.equal(s.perDay.length, 1);
   assert.deepEqual(Object.keys(s.perDay[0]).sort(), ['day', 'kWh', 'litres']);

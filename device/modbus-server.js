@@ -10,7 +10,7 @@ const MAX_LENGTH = 254; // unit id + PDU
 const MAP = {
   trh: { reads: { 4: { start: 1, qty: 2 } } },
   co2: { reads: { 3: { start: 0, qty: 1 } } },
-  relay: { reads: { 1: { start: 0, qty: 5 }, 2: { start: 0, qty: 5 } }, writes: [5] },
+  relay: { reads: { 1: { start: 0, qty: 6 }, 2: { start: 0, qty: 6 } }, writes: [5] },
   ac: { reads: { 3: { start: 0, qty: 4 }, 4: { start: 0, qty: 2 } }, writes: [16] },
   // An SDM120-style meter: two float32 values, each read on its own; any other range is an illegal address.
   meter: { reads: { 4: [{ start: 0x000c, qty: 2, field: 'power' }, { start: 0x0156, qty: 2, field: 'energy' }] } },
@@ -83,7 +83,7 @@ export function createModbusServer(sensors, { onRequest = () => {} } = {}) {
   // Function 05: one coil. Replies with the request itself.
   function writeCoil(tid, unit, pdu, entry) {
     const [fn, index, value] = [pdu[0], pdu.readUInt16BE(1), pdu.readUInt16BE(3)];
-    if (index > 4) return fail(tid, unit, fn, entry, 2);
+    if (index > 5) return fail(tid, unit, fn, entry, 2); // six outputs: 0 to 5
     if (value !== COIL_ON && value !== 0) return fail(tid, unit, fn, entry, 3);
     const stuck = sensors.get(unit).stuck[index];
     sensors.writeCoil(unit, index, value === COIL_ON);

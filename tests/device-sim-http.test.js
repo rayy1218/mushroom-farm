@@ -212,7 +212,7 @@ test('a simulated sensor refuses manual values with 409 while its room is enable
   // Answering, faults and the relay's stuck/dead stay editable.
   assert.equal((await call('PUT', '/api/sensors/1', { answering: false })).status, 200);
   assert.equal((await call('PUT', '/api/sensors/4', { error: 3, refuse: true })).status, 200);
-  assert.equal((await call('PUT', '/api/sensors/3', { stuck: [true, false, false, false, false] })).status, 200);
+  assert.equal((await call('PUT', '/api/sensors/3', { stuck: [true, false, false, false, false, false] })).status, 200);
   // Disabling or removing the room lifts the lock.
   await call('PUT', `/api/sims/${id}`, { enabled: false });
   assert.equal((await call('PUT', '/api/sensors/1', { t: 22 })).status, 200);

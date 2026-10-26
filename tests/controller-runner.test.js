@@ -204,7 +204,7 @@ test('forget drops the reasons of a deleted room; a new room starts empty', asyn
   s.db.deleteRoom(s.id);
   s.controller.forget(s.id);
   const other = s.db.createRoom({ ...WIRED, name: 'Room 2', trhAddress: 11, co2Address: 12, relayAddress: 13, acAddress: 14 }).id;
-  assert.deepEqual(s.controller.get(other).reasons, { exchange: '', humidifier: '', dehumidifier: '', ac: '', circulation: '', held: { humidifier: '', dehumidifier: '', ac: '' } });
+  assert.deepEqual(s.controller.get(other).reasons, { exchange: '', humidifier: '', dehumidifier: '', lights: '', ac: '', circulation: '', held: { humidifier: '', dehumidifier: '', ac: '' } });
   if (other === s.id) assert.equal(s.controller.get(other).reasons.exchange, '');
 });
 

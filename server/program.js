@@ -2,10 +2,12 @@
 // change of the bands (ramp). Pure: used by the live controller and by the simulation.
 //
 // A program is { crops: [{ crop, blocks }], farmType, stage, stageSince (ms), flush, flushes, days: { spawn, pinning, fruiting,
-// rest }, rampH, autoAdvance, ramp: { from, to, startAt, endAt } | null, done }. Bands are
+// rest }, rampH, autoAdvance, ramp: { from, to, startAt, endAt } | null, done, lightHours: { spawn, pinning, fruiting, rest },
+// lightStart: 'HH:MM' } (the light schedule: spec 2026-10-26-lighting-design.md 3). Bands are
 // { co2Low, co2High, co2Safety, tLow, tHigh, rhLow, rhHigh }.
 
 import { FARM_TYPES, STAGE_KEYS, mixBands, validateCrops } from '../web/crops.js';
+import { LIGHT_HOURS, LIGHT_START, isClock, isLightHours } from '../web/light-math.js';
 
 const DAY_MS = 86_400_000;
 const HOUR_MS = 3_600_000;
@@ -16,6 +18,7 @@ const STEP = { tLow: 0.1, tHigh: 0.1, rhLow: 1, rhHigh: 1, co2Low: 10, co2High: 
 export const PROGRAM_DEFAULTS = {
   crops: [], farmType: 'ready', stage: 'fruiting', stageSince: null, flush: 1, flushes: 4,
   days: { spawn: 21, pinning: 4, fruiting: 7, rest: 10 }, rampH: 4, autoAdvance: true, ramp: null, done: false,
+  lightHours: LIGHT_HOURS, lightStart: LIGHT_START,
 };
 
 // The first stage of each farm type (new blocks start there).
@@ -42,6 +45,13 @@ export function validateProgram(p) {
     return { error: 'Ramp must be a number from 0 to 48 h', field: 'rampH' };
   }
   if (typeof p.autoAdvance !== 'boolean') return { error: 'autoAdvance must be true or false', field: 'autoAdvance' };
+  if (p.lightHours === null || typeof p.lightHours !== 'object' || Array.isArray(p.lightHours)) {
+    return { error: 'Light hours must be given per stage', field: 'lightHours' };
+  }
+  for (const stage of STAGE_KEYS) {
+    if (!isLightHours(p.lightHours[stage])) return { error: 'Light hours must be a whole number from 0 to 24', field: `lightHours.${stage}` };
+  }
+  if (!isClock(p.lightStart)) return { error: 'Light start must be a time like 07:00', field: 'lightStart' };
   return null;
 }
 

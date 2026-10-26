@@ -83,6 +83,7 @@ test('the exact shape: relay machines in order, ac commanded and reported', (t) 
         { key: 'circulation', commanded: false, reported: false, running: false, status: 'off' },
         { key: 'humidifier', commanded: false, reported: false, running: false, status: 'off' },
         { key: 'dehumidifier', commanded: false, reported: null, running: null, status: 'not-fitted' },
+        { key: 'lights', commanded: false, reported: null, running: null, status: 'not-fitted' },
       ],
     },
     ac: {
@@ -105,7 +106,7 @@ test('relay status: not-wired without an address (commanded still shown, nothing
   const view = machines.get(id);
   assert.equal(view.relay.address, null);
   assert.deepEqual(view.relay.machines[0], { key: 'intake', commanded: true, reported: null, running: null, status: 'not-wired' });
-  assert.deepEqual(view.relay.machines.map((m) => m.status), ['not-wired', 'not-wired', 'not-wired', 'not-wired', 'not-fitted']);
+  assert.deepEqual(view.relay.machines.map((m) => m.status), ['not-wired', 'not-wired', 'not-wired', 'not-wired', 'not-fitted', 'not-fitted']);
   assert.equal(view.ac.status, 'not-wired');
   assert.deepEqual([view.ac.reported, view.ac.roomT, view.ac.errorCode, view.ac.address], [null, null, null, null]);
 });
@@ -277,7 +278,7 @@ test('PUT a relay machine: saves the command, writes fn 5 at once, returns the o
   const { machines, client, id, db, clock } = setup(t);
   const view = await machines.command(id, 'exhaust', { on: true });
   assert.deepEqual(client.writes, [['coil', 10, 1, true]]);
-  assert.deepEqual(db.getCommands(id).relay, { intake: false, exhaust: true, circulation: false, humidifier: false, dehumidifier: false, sentAt: clock.now });
+  assert.deepEqual(db.getCommands(id).relay, { intake: false, exhaust: true, circulation: false, humidifier: false, dehumidifier: false, lights: false, sentAt: clock.now });
   assert.equal(keyStatus(view, 'exhaust').commanded, true);
   assert.deepEqual(view.relay.lastWrite, { at: clock.now, ok: true, error: null });
   assert.equal(view.ac.lastWrite, null);

@@ -164,6 +164,9 @@ function acOf(ac, params, T, W) {
   return none;
 }
 
+// The lights (spec 2026-10-26-lighting-design.md 5): all their electric power ends up as heat in the air (params.lightsW, W).
+const lightsKWOf = (inputs, params) => (inputs.lights ? (params.lightsW ?? 0) / 1000 : 0);
+
 function substep(s, inputs, params, dt, filtered) {
   const { volume, outdoorT, outdoorRH, blocks, co2PerBlock, wallUA } = params;
   const capAir = volume * AIR_CP * AIR_CONTENTS;                        // kJ/K
@@ -189,8 +192,9 @@ function substep(s, inputs, params, dt, filtered) {
   const blocksKJ = blocks * co2PerBlock * RESP_KJ_PER_ML * (dt / 3600) - blockG * LATENT;
 
   const sunKW = ((params.sunW ?? 0) * (params.sun ?? 0)) / 1000;
+  const lightsKW = lightsKWOf(inputs, params);
   const machineKW = ((inputs.circulation ? CIRC_W : 0) + (inputs.intake ? intakeW(filterPa, params) : 0)
-    + (inputs.humidifier ? (HUMIDIFIER_W_PER_LH * humOn) / 1000 : 0)) / 1000;
+    + (inputs.humidifier ? (HUMIDIFIER_W_PER_LH * humOn) / 1000 : 0)) / 1000 + lightsKW;
 
   T += (-humG * LATENT + (sunKW + machineKW) * dt) / capAir;
   Tm += blocksKJ / capMass;
@@ -267,6 +271,7 @@ function substep(s, inputs, params, dt, filtered) {
     blocksKW: blocksKJ / dt,
     sunKW,
     machineKW,
+    lightsKW,
     surfaceGH: ((toSurfaceG + condensedG) / dt) * 3600, // + taken up by the surfaces, − given back
     condensedGH: (condensedG / dt) * 3600,
     dehumidifierGH: (dehumG / dt) * 3600,
@@ -311,7 +316,9 @@ function nominal(inputs, params, s) {
     humidifierGH: humOn,
     blocksKW: (params.blocks * (params.co2PerBlock * RESP_KJ_PER_ML - BLOCK_GH * dryness * LATENT)) / 3600,
     sunKW: ((params.sunW ?? 0) * (params.sun ?? 0)) / 1000,
-    machineKW: ((inputs.circulation ? CIRC_W : 0) + (inputs.intake ? intakeW(filterPa, params) : 0) + (inputs.humidifier ? (HUMIDIFIER_W_PER_LH * humOn) / 1000 : 0)) / 1000,
+    machineKW: ((inputs.circulation ? CIRC_W : 0) + (inputs.intake ? intakeW(filterPa, params) : 0) + (inputs.humidifier ? (HUMIDIFIER_W_PER_LH * humOn) / 1000 : 0)) / 1000
+      + lightsKWOf(inputs, params),
+    lightsKW: lightsKWOf(inputs, params),
     surfaceGH: 0,
     condensedGH: 0,
     dehumidifierGH: inputs.dehumidifier && (params.dehumidifierLday ?? 0) > 0 ? (params.dehumidifierLday * 1000 / 24) * dehumShare(s.W) : 0,

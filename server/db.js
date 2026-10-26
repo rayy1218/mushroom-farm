@@ -5,7 +5,7 @@ import { RELAY_KEYS } from './machine-codes.js';
 import { RATINGS, FILTER } from './rooms.js';
 import { PROGRAM_DEFAULTS } from './program.js';
 
-const VERSION = 15;
+const VERSION = 16;
 
 // Iteration 1 (version 0) had only the rooms table without the address columns.
 const ROOMS = `
@@ -46,6 +46,7 @@ CREATE TABLE machine_commands (
   circulation  INTEGER NOT NULL DEFAULT 0,
   humidifier   INTEGER NOT NULL DEFAULT 0,
   dehumidifier INTEGER NOT NULL DEFAULT 0,
+  lights       INTEGER NOT NULL DEFAULT 0,
   ac_power     INTEGER NOT NULL DEFAULT 0,
   ac_mode      TEXT    NOT NULL DEFAULT 'cool',
   ac_setpoint  REAL    NOT NULL DEFAULT 25,
@@ -149,6 +150,19 @@ ALTER TABLE rooms ADD COLUMN dehumidifier INTEGER NOT NULL DEFAULT 0 CHECK (dehu
 ALTER TABLE rooms ADD COLUMN dehumidifier_w REAL NOT NULL DEFAULT 380;
 ALTER TABLE rooms ADD COLUMN dehumidifier_lday REAL NOT NULL DEFAULT 20;`;
 
+// Lights on a schedule per stage (spec 2026-10-26-lighting-design.md 6): the columns that version 16 adds, each only when the
+// file does not have it yet (a re-run, or a table made above with it).
+const LIGHTS_COLUMNS = [
+  ['rooms', 'lights', 'INTEGER NOT NULL DEFAULT 0 CHECK (lights IN (0, 1))'],
+  ['rooms', 'lights_w', 'REAL NOT NULL DEFAULT 60'],
+  ['machine_commands', 'lights', 'INTEGER NOT NULL DEFAULT 0'],
+  ['room_programs', 'light_spawn', 'INTEGER NOT NULL DEFAULT 0'],
+  ['room_programs', 'light_pinning', 'INTEGER NOT NULL DEFAULT 12'],
+  ['room_programs', 'light_fruiting', 'INTEGER NOT NULL DEFAULT 12'],
+  ['room_programs', 'light_rest', 'INTEGER NOT NULL DEFAULT 0'],
+  ['room_programs', 'light_start', "TEXT NOT NULL DEFAULT '07:00'"],
+];
+
 // The intake filter (spec 2026-10-22-filter-design.md 9): the room columns that version 14 adds, the filter pressure
 // sensor's readings and the filter changes.
 const FILTER_ROOM_COLUMNS = `
@@ -184,6 +198,8 @@ CREATE INDEX IF NOT EXISTS filter_changes_by_room ON filter_changes (room_id, at
 // The rooms column of each filter setting of rooms.js FILTER.
 const FILTER_COLUMNS = { fanMaxPa: 'fan_max_pa', filterCleanPa: 'filter_clean_pa', filterFinalPa: 'filter_final_pa', filterChangeDays: 'filter_change_days' };
 
+const LIGHT_STAGES = ['spawn', 'pinning', 'fruiting', 'rest']; // the order of the light_ columns
+
 const RUNS_KEPT = 20; // finished simulation runs kept per room
 
 const ALARMS = `
@@ -204,7 +220,7 @@ const MACHINE_LOG = `
 CREATE TABLE machine_log (
   id       INTEGER PRIMARY KEY,
   room_id  INTEGER NOT NULL,
-  machine  TEXT    NOT NULL CHECK (machine IN ('intake', 'exhaust', 'circulation', 'humidifier', 'dehumidifier', 'ac')),
+  machine  TEXT    NOT NULL CHECK (machine IN ('intake', 'exhaust', 'circulation', 'humidifier', 'dehumidifier', 'lights', 'ac')),
   at       INTEGER NOT NULL,
   on_      INTEGER NOT NULL CHECK (on_ IN (0, 1)),
   setpoint REAL,
@@ -386,7 +402,7 @@ function migrate(db) {
       db.exec(MACHINE_LOG);
       // The log starts with what each room has commanded now, so machines already on show on the timeline.
       const at = Date.now();
-      for (const key of RELAY_KEYS.filter((k) => k !== 'dehumidifier')) { // the dehumidifier came later (upgrade 12)
+      for (const key of RELAY_KEYS.filter((k) => k !== 'dehumidifier' && k !== 'lights')) { // those came later (upgrades 12, 16)
         db.prepare(`INSERT INTO machine_log (room_id, machine, at, on_, source)
                     SELECT m.room_id, ?, ?, m.${key}, CASE WHEN c.auto = 1 THEN 'auto' ELSE 'manual' END
                     FROM machine_commands m JOIN room_controls c ON c.room_id = m.room_id`).run(key, at);
@@ -452,6 +468,19 @@ function migrate(db) {
       if (!cols.includes('outdoor_air')) db.exec('ALTER TABLE room_controls ADD COLUMN outdoor_air INTEGER NOT NULL DEFAULT 1 CHECK (outdoor_air IN (0, 1))');
       if (!cols.includes('exchange_kind')) db.exec('ALTER TABLE room_controls ADD COLUMN exchange_kind TEXT');
     }
+    if (version < 16) {
+      const has = (table, column) => db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
+      for (const [table, column, type] of LIGHTS_COLUMNS) if (!has(table, column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+      // machine_log's CHECK must allow the lights: rebuild it with its rows, unless it already allows them.
+      const { sql } = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'machine_log'").get();
+      if (!sql.includes("'lights'")) {
+        db.exec(`ALTER TABLE machine_log RENAME TO machine_log_old;
+                 DROP INDEX machine_log_by_room;
+                 ${MACHINE_LOG}
+                 INSERT INTO machine_log SELECT * FROM machine_log_old;
+                 DROP TABLE machine_log_old;`);
+      }
+    }
     db.exec(`PRAGMA user_version = ${VERSION}`);
     db.exec('COMMIT');
   } catch (err) {
@@ -516,6 +545,8 @@ function toRoom(row) {
     dehumidifierW: row.dehumidifier_w,
     dehumidifierLday: row.dehumidifier_lday,
     dehumidifier: row.dehumidifier === 1,
+    lightsW: row.lights_w,
+    lights: row.lights === 1,
     dpAddress: row.dp_address,
     fanMaxPa: row.fan_max_pa,
     filterCleanPa: row.filter_clean_pa,
@@ -562,14 +593,14 @@ export function openDb(path, { log = console.error } = {}) {
                                   OR dp_address = ?2)`),
     insert: db.prepare(`INSERT INTO rooms (name, length_m, width_m, height_m, trh_address, co2_address,
                                            relay_address, ac_address, meter_address, intake_w, exhaust_w, circulation_w,
-                                           humidifier_w, humidifier_lh, ac_input_w, dehumidifier_w, dehumidifier_lday,
-                                           dehumidifier, fan_max_pa, filter_clean_pa, filter_final_pa, filter_change_days,
+                                           humidifier_w, humidifier_lh, ac_input_w, dehumidifier_w, dehumidifier_lday, lights_w,
+                                           dehumidifier, lights, fan_max_pa, filter_clean_pa, filter_final_pa, filter_change_days,
                                            filter_changed_at, dp_address, created_at, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
     update: db.prepare(`UPDATE rooms SET name = ?, length_m = ?, width_m = ?, height_m = ?,
                                trh_address = ?, co2_address = ?, relay_address = ?, ac_address = ?, meter_address = ?,
                                intake_w = ?, exhaust_w = ?, circulation_w = ?, humidifier_w = ?, humidifier_lh = ?, ac_input_w = ?,
-                               dehumidifier_w = ?, dehumidifier_lday = ?, dehumidifier = ?,
+                               dehumidifier_w = ?, dehumidifier_lday = ?, lights_w = ?, dehumidifier = ?, lights = ?,
                                fan_max_pa = ?, filter_clean_pa = ?, filter_final_pa = ?, filter_change_days = ?, dp_address = ?,
                                updated_at = ?
                         WHERE id = ?`),
@@ -595,8 +626,9 @@ export function openDb(path, { log = console.error } = {}) {
     program: db.prepare('SELECT * FROM room_programs WHERE room_id = ?'),
     deleteProgram: db.prepare('DELETE FROM room_programs WHERE room_id = ?'),
     setProgram: db.prepare(`INSERT OR REPLACE INTO room_programs (room_id, farm_type, stage, stage_since, flush, flushes, days_spawn,
-                              days_pinning, days_fruiting, days_rest, ramp_h, auto_advance, ramp, done)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+                              days_pinning, days_fruiting, days_rest, ramp_h, auto_advance, ramp, done, light_spawn,
+                              light_pinning, light_fruiting, light_rest, light_start)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
     insertRun: db.prepare(`INSERT INTO simulation_runs (room_id, created_at, status, progress, input) VALUES (?, ?, 'queued', 0, ?)`),
     run: db.prepare('SELECT * FROM simulation_runs WHERE id = ?'),
     runHead: db.prepare(`SELECT id, room_id, created_at, status, progress, input, summary, error, finished_at
@@ -830,7 +862,7 @@ export function openDb(path, { log = console.error } = {}) {
       try {
         // A new room's filter counts as changed when it was made.
         const { lastInsertRowid } = q.insert.run(name, length, width, height, trhAddress, co2Address,
-          relayAddress, acAddress, meterAddress, ...ratingValues(ratings), ratings.dehumidifier ? 1 : 0,
+          relayAddress, acAddress, meterAddress, ...ratingValues(ratings), ratings.dehumidifier ? 1 : 0, ratings.lights ? 1 : 0,
           ...filterValues(ratings), now, dpAddress, now, now);
         q.insertCommands.run(lastInsertRowid);
         q.insertControl.run(lastInsertRowid);
@@ -850,8 +882,11 @@ export function openDb(path, { log = console.error } = {}) {
       checkName(name, id);
       checkAddresses({ trhAddress, co2Address, relayAddress, acAddress, meterAddress, dpAddress }, id);
       const fitted = ratings.dehumidifier === undefined ? old.dehumidifier === 1 : ratings.dehumidifier;
+      const lit = ratings.lights === undefined ? old.lights === 1 : ratings.lights;
       q.update.run(name, length, width, height, trhAddress, co2Address, relayAddress, acAddress, meterAddress,
-        ...ratingValues(ratings), fitted ? 1 : 0, ...filterValues(ratings, old), dpAddress, now, id);
+        ...ratingValues(ratings), fitted ? 1 : 0, lit ? 1 : 0, ...filterValues(ratings, old), dpAddress, now, id);
+      // Lights taken out: their log ends now (no usage charged for ever).
+      if (old.lights === 1 && !lit) this.logOff(id, 'lights', now);
       // A dehumidifier taken out of the room: its log ends now (no usage charged for ever) and its band state starts again.
       if (old.dehumidifier === 1 && !fitted) {
         this.logOff(id, 'dehumidifier', now);
@@ -866,14 +901,14 @@ export function openDb(path, { log = console.error } = {}) {
     },
 
     // What was last commanded, or null when there is no such room:
-    // { relay: { intake, exhaust, circulation, humidifier, dehumidifier, sentAt }, ac: { power, mode, setpoint, fan, sentAt } }
+    // { relay: { intake, exhaust, circulation, humidifier, dehumidifier, lights, sentAt }, ac: { power, mode, setpoint, fan, sentAt } }
     getCommands(roomId) {
       const r = q.commands.get(roomId);
       if (!r) return null;
       return {
         relay: {
           intake: r.intake === 1, exhaust: r.exhaust === 1, circulation: r.circulation === 1,
-          humidifier: r.humidifier === 1, dehumidifier: r.dehumidifier === 1, sentAt: r.relay_sent_at,
+          humidifier: r.humidifier === 1, dehumidifier: r.dehumidifier === 1, lights: r.lights === 1, sentAt: r.relay_sent_at,
         },
         ac: { power: r.ac_power === 1, mode: r.ac_mode, setpoint: r.ac_setpoint, fan: r.ac_fan, sentAt: r.ac_sent_at },
       };
@@ -1338,11 +1373,12 @@ export function openDb(path, { log = console.error } = {}) {
       if (!q.get.get(roomId)) return null;
       const r = q.program.get(roomId);
       const crops = q.crops.all(roomId).map((c) => ({ crop: c.crop, blocks: c.blocks }));
-      if (!r) return { ...PROGRAM_DEFAULTS, days: { ...PROGRAM_DEFAULTS.days }, crops };
+      if (!r) return { ...PROGRAM_DEFAULTS, days: { ...PROGRAM_DEFAULTS.days }, lightHours: { ...PROGRAM_DEFAULTS.lightHours }, crops };
       return {
         crops, farmType: r.farm_type, stage: r.stage, stageSince: r.stage_since, flush: r.flush, flushes: r.flushes,
         days: { spawn: r.days_spawn, pinning: r.days_pinning, fruiting: r.days_fruiting, rest: r.days_rest },
         rampH: r.ramp_h, autoAdvance: r.auto_advance === 1, ramp: r.ramp === null ? null : JSON.parse(r.ramp), done: r.done === 1,
+        lightHours: { spawn: r.light_spawn, pinning: r.light_pinning, fruiting: r.light_fruiting, rest: r.light_rest }, lightStart: r.light_start,
       };
     },
 
@@ -1354,7 +1390,8 @@ export function openDb(path, { log = console.error } = {}) {
         q.deleteCrops.run(roomId);
         p.crops.forEach((c, i) => q.insertCrop.run(roomId, i, c.crop, c.blocks));
         q.setProgram.run(roomId, p.farmType, p.stage, p.stageSince, p.flush, p.flushes, p.days.spawn, p.days.pinning,
-          p.days.fruiting, p.days.rest, p.rampH, p.autoAdvance ? 1 : 0, p.ramp === null ? null : JSON.stringify(p.ramp), p.done ? 1 : 0);
+          p.days.fruiting, p.days.rest, p.rampH, p.autoAdvance ? 1 : 0, p.ramp === null ? null : JSON.stringify(p.ramp), p.done ? 1 : 0,
+          ...LIGHT_STAGES.map((s) => p.lightHours?.[s] ?? PROGRAM_DEFAULTS.lightHours[s]), p.lightStart ?? PROGRAM_DEFAULTS.lightStart);
         db.exec('COMMIT');
         return true;
       } catch (err) {
