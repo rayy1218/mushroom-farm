@@ -1,9 +1,12 @@
-// Room detail page: the Room card (the room picture, the readings against their bands, the machines in air-path order), the
-// room's two sensors and the energy meter if it has one (status, latest values), its machines, three charts of the last 50
-// polls (the T and RH charts with the outdoor line) and the energy and water card.
+// Room detail page: the alarms, then tabs (the address names the tab: #/rooms/7, #/rooms/7/charts, ...): Overview (the Room
+// card: the room picture, the readings against their bands, the machines in air-path order), Charts (three charts of the last
+// 50 polls, the T and RH charts with the outdoor line, and the machine timeline), Control (automatic control and the
+// machines), Crop, Sensors (the room's two sensors, the energy meter if it has one, the intake filter), Energy (the energy and
+// water card) and Simulations. Every tab is loaded and kept up to date; a tab change only shows and hides panels.
 // Refreshes every reading interval (2–30 s; 5 s when the settings cannot be read) while shown.
 
 import { request, OFFLINE } from './api.js';
+import { ROOM_TABS, roomHash } from './route.js';
 import { openRoomDialog, closeRoomDialog } from './room-dialog.js';
 import { createMachines } from './machines.js';
 import { createControl } from './control.js';
@@ -70,21 +73,36 @@ const TEMPLATE = `
   </div>
   <div data-body hidden>
     <section data-alarms hidden></section>
-    <section data-room-card></section>
-    <div class="sensors" data-sensors></div>
-    <section data-filter hidden></section>
-    <section data-crop></section>
-    <section data-control hidden></section>
-    <section data-machines></section>
-    <div data-range></div>
-    <div class="charts" data-charts></div>
-    <section class="card timeline-card" data-timeline hidden>
-      <h2>Machine timeline</h2>
-      <div class="chart-host" data-timeline-host></div>
-      <p class="legend"><span class="swatch swatch-auto" aria-hidden="true"></span>Automatic <span class="swatch swatch-manual" aria-hidden="true"></span>Manual</p>
-    </section>
-    <section data-usage></section>
-    <section data-simulations></section>
+    <nav class="room-tabs" data-tabs aria-label="Room sections"></nav>
+    <div data-panel="overview">
+      <section data-room-card></section>
+    </div>
+    <div data-panel="charts" hidden>
+      <div data-range></div>
+      <div class="charts" data-charts></div>
+      <section class="card timeline-card" data-timeline hidden>
+        <h2>Machine timeline</h2>
+        <div class="chart-host" data-timeline-host></div>
+        <p class="legend"><span class="swatch swatch-auto" aria-hidden="true"></span>Automatic <span class="swatch swatch-manual" aria-hidden="true"></span>Manual</p>
+      </section>
+    </div>
+    <div data-panel="control" hidden>
+      <section data-control hidden></section>
+      <section data-machines></section>
+    </div>
+    <div data-panel="crop" hidden>
+      <section data-crop></section>
+    </div>
+    <div data-panel="sensors" hidden>
+      <div class="sensors" data-sensors></div>
+      <section data-filter hidden></section>
+    </div>
+    <div data-panel="energy" hidden>
+      <section data-usage></section>
+    </div>
+    <div data-panel="simulations" hidden>
+      <section data-simulations></section>
+    </div>
   </div>`;
 
 let mountSeq = 0; // every mount gets a token; a reply that finds the token changed is dropped
@@ -100,10 +118,31 @@ function plural(n, one, many) {
   return `${n} ${n === 1 ? one : many}`;
 }
 
-export function mount(container, { id }) {
+export function mount(container, { id, tab = 'overview' }) {
   const me = ++mountSeq;
   container.innerHTML = TEMPLATE;
   const q = (sel) => container.querySelector(sel);
+
+  // The tab bar: a link per tab (the router calls setTab when the address changes); the current one marked.
+  const tabBar = q('[data-tabs]');
+  for (const t of ROOM_TABS) {
+    const a = document.createElement('a');
+    a.href = roomHash(id, t.key);
+    a.textContent = t.label;
+    a.dataset.tab = t.key;
+    tabBar.append(a);
+  }
+  function setTab(next) {
+    tab = next;
+    for (const a of tabBar.children) {
+      if (a.dataset.tab === tab) {
+        a.setAttribute('aria-current', 'page');
+        tabBar.scrollLeft = Math.max(0, a.offsetLeft - (tabBar.clientWidth - a.offsetWidth) / 2); // a phone's row: the tab in view
+      } else a.removeAttribute('aria-current');
+    }
+    for (const panel of container.querySelectorAll('[data-panel]')) panel.hidden = panel.dataset.panel !== tab;
+  }
+  setTab(tab);
   const els = {
     title: q('[data-title]'),
     sub: q('[data-sub]'),
@@ -615,7 +654,7 @@ export function mount(container, { id }) {
 
   load();
 
-  return function unmount() {
+  function unmount() {
     mountSeq++;
     reload.cancel();
     for (const off of offLive) off();
@@ -638,5 +677,7 @@ export function mount(container, { id }) {
     closeSimulateDialog();
     document.title = 'Rooms · Mushroom farm';
     container.replaceChildren();
-  };
+  }
+  unmount.setTab = setTab; // a tab change: the router shows another panel instead of mounting the page again
+  return unmount;
 }

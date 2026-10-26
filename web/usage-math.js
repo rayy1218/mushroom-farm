@@ -2,6 +2,8 @@
 // Spec 2026-10-20-energy-water-outdoor-design.md sections 5 and 7. Every function takes a missing or odd reply
 // (an older server) and shows dashes instead of throwing.
 
+import { roomHash } from './route.js';
+
 const finite = (x) => typeof x === 'number' && Number.isFinite(x);
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const DASH = '—';
@@ -203,7 +205,7 @@ export function breakdownNote(days, { dehumidifier = false } = {}) {
 export function roomLines(usage) {
   return (Array.isArray(usage?.rooms) ? usage.rooms : []).map((r) => ({
     id: r.id,
-    href: `#/rooms/${r.id}`,
+    href: roomHash(r.id, 'energy'),
     name: r.name,
     today: `${formatKWh(r.today?.kWh)} · ${formatRM(r.today?.cost)}`,
     last30: `${formatKWh(r.last30?.kWh)} · ${formatRM(r.last30?.cost)}`,

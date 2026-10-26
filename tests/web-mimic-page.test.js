@@ -19,13 +19,13 @@ test('the farm serves the room page, the Room card, the picture and its styleshe
   }
 });
 
-test('the room page uses the Room card: the picture inside it, the card\'s words, the sensor cards under it', () => {
+test('the room page uses the Room card: the picture inside it, the card\'s words, on the Overview tab', () => {
   const room = source('../web/room-detail.js');
   assert.match(room, /import \{ createRoomCard \} from '\.\/room-card\.js';/);
   assert.match(room, /import \{ roomCard, filterFrom, freshAirLine, blocksLine \} from '\.\/room-card-math\.js';/);
   assert.match(room, /import \{ startLoop \} from '\.\/mimic\.js';/);
   assert.doesNotMatch(room, /createMimic/, 'the card makes the picture');
-  assert.match(room, /<section data-room-card><\/section>\n\s*<div class="sensors" data-sensors><\/div>/);
+  assert.match(room, /<div data-panel="overview">\n\s*<section data-room-card><\/section>\n\s*<\/div>/); // the sensor cards: the Sensors tab
   assert.match(room, /roomCardUi\.paint\(roomCard\(\{ draw, control: lastControl, filter, now \}\), draw\)/);
   assert.match(room, /startLoop\(\(\) => \(roomCardUi \? \[roomCardUi\.mimic\] : \[\]\)\)/);
   assert.match(room, /roomCardUi\?\.destroy\(\);/);

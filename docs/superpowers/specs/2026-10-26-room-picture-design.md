@@ -58,3 +58,13 @@ The owner asked (2026-10-26) to revise the Room card. Five variants and two comb
 | `mimic-math.js` | the existing tests keep passing (DrawState unchanged); `view` gains the filter text |
 | Page source checks | room-detail uses the card; the device app passes `readouts: true`; the picture rotates blades about their origin (no `transform-box: fill-box` for the fans) |
 | Browser check | a throwaway farm and device app (random ports, temp files): desktop and phone, dark and light, a room with the fans off and one during fresh air; compare with the mockup |
+
+## 6. Room page tabs (owner, 2026-10-26: "page is too long make it tab"; chose 7 tabs)
+
+| Item | Rule |
+|---|---|
+| Above the tabs | the title, Edit, the banner and the alarms (always seen) |
+| Tabs, with their address | Overview `#/rooms/:id` (the Room card) · Charts `#/rooms/:id/charts` (range, charts, machine timeline) · Control `/control` (automatic control, machines) · Crop `/crop` · Sensors `/sensors` (T/RH probe, CO₂ sensor, energy meter, intake filter) · Energy `/energy` (usage) · Simulations `/simulations` |
+| Tab bar | links (`web/route.js` `ROOM_TABS`, `roomHash`), the current one underlined and `aria-current="page"`; on a phone the row scrolls sideways with the current tab kept in view |
+| Changing tab | the router shows the tab's panel and hides the others; the page is not mounted again (its data, live updates and timers stay); Back and reload keep the tab |
+| Links in | a simulation run's back link opens Simulations; the farm energy card's room links open Energy; the rest open Overview |

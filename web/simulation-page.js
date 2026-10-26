@@ -2,6 +2,7 @@
 // the progress while it runs, then the time in band, the charts with the band as it moved, the machine timeline, energy and water.
 
 import { request, OFFLINE, OUTDATED, routeMissing } from './api.js';
+import { roomHash } from './route.js';
 import { drawLineChart, M } from './chart.js';
 import { drawTimeline } from './timeline.js';
 import { drawBarChart } from './usage.js';
@@ -103,7 +104,7 @@ export function mount(container, { id, runId }) {
   const alive = () => me === mountSeq;
   const abort = new AbortController();
 
-  els.back.href = `#/rooms/${id}`;
+  els.back.href = roomHash(id, 'simulations');
   els.missingBack.href = `#/rooms/${id}`;
 
   let roomName = null;
