@@ -38,6 +38,10 @@ const TEMPLATE = `
       <p>No rooms yet</p>
       <a href="#/rooms">Go to Rooms to add one</a>
     </div>
+    <div class="ov-section-head">
+      <h2>Rooms</h2>
+      <a href="#/rooms">Show all rooms</a>
+    </div>
     <div class="ov-rooms" data-rooms></div>
   </div>`;
 

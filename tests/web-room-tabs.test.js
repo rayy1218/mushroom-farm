@@ -21,10 +21,13 @@ const PANELS = {
   simulations: ['data-simulations'],
 };
 
-test('the alarms sit above the tab bar, outside every panel', () => {
-  const alarms = template.indexOf('data-alarms'), bar = template.indexOf('data-tabs');
-  assert.ok(alarms > 0 && bar > alarms, 'alarms first, then the tab bar');
-  assert.ok(template.indexOf('data-panel=') > bar, 'the panels after the bar');
+test('a side bar of tabs beside the content; the alarms at the top of the content, outside every panel (seen on every tab)', () => {
+  const layout = template.indexOf('class="room-layout"'), bar = template.indexOf('data-tabs'), main = template.indexOf('class="room-main"');
+  const alarms = template.indexOf('data-alarms'), panel = template.indexOf('data-panel=');
+  assert.ok(layout > 0 && bar > layout && main > bar && alarms > main && panel > alarms, 'layout: the tab bar, then the content: alarms, then the panels');
+  const css = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
+  assert.match(css, /\.room-layout \{ display: grid; grid-template-columns: 196px minmax\(0, 1fr\);/, 'a side bar from 900 px');
+  assert.match(css, /\.room-tabs \{ flex-direction: column;/);
 });
 
 test('one panel per tab, holding its sections', () => {

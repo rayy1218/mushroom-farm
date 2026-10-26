@@ -28,7 +28,7 @@
 :root {
   --radius: 6px;
   --fs-xs: 12px; --fs-sm: 13px; --fs-md: 15px; --fs-lg: 18px; --fs-xl: 22px; --fs-2xl: 28px;
-  --side-w: 232px; --topbar-h: 52px; --tab-h: 56px;
+  --topbar-h: 52px;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   color: var(--ink);
   background: var(--page);
@@ -193,43 +193,41 @@ dialog::backdrop { background: var(--backdrop); }
   .sizes { grid-template-columns: 1fr; gap: 0; }
 }
 
-/* ---- App shell (from the previous app): side bar >= 900 px, top bar below ---- */
-.app { display: flex; min-height: 100vh; min-height: 100dvh; }
-.col { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.col > main { flex: 1; align-content: start; padding: 14px 14px calc(var(--tab-h) + env(safe-area-inset-bottom) + 28px); outline: none; }
+/* ---- App shell: one bar on top at every width (owner, 2026-10-26: no side bar); the page under it, at most 1400 px wide ---- */
+.app { display: flex; flex-direction: column; min-height: 100vh; min-height: 100dvh; }
+.app > main { flex: 1; width: 100%; max-width: 1400px; margin: 0 auto; align-content: start; padding: 14px 14px 40px; outline: none; }
 html { scroll-padding-top: var(--topbar-h); }
-@media (max-width: 899px) { html { scroll-padding-bottom: calc(var(--tab-h) + env(safe-area-inset-bottom)); } }
 .skip { position: absolute; left: 8px; top: -60px; z-index: 50; padding: 8px 14px; border-radius: 6px; background: var(--ink); color: var(--surface); text-decoration: none; font-weight: 600; }
 .skip:focus { top: 8px; }
 
-.side { display: none; }
-.tabbar { display: flex; position: fixed; inset: auto 0 0 0; z-index: 20; background: var(--surface); border-top: 1px solid var(--border);
-  padding-bottom: env(safe-area-inset-bottom); padding-inline: env(safe-area-inset-left) env(safe-area-inset-right); }
-.tabbar a { flex: 1; min-height: var(--tab-h); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
-  color: var(--muted); text-decoration: none; font: 600 11px/1.1 system-ui, sans-serif; position: relative; }
-.tabbar a .ico { width: 22px; height: 22px; }
-.tabbar a:focus-visible { outline: 2px solid var(--ink); outline-offset: -4px; }
-.tabbar a[aria-current="page"] { color: var(--ink); }
-.tabbar a[aria-current="page"]::before { content: ""; position: absolute; top: 0; left: 28%; right: 28%; height: 3px; border-radius: 0 0 3px 3px; background: var(--ink); }
 .brand { display: flex; align-items: center; gap: 10px; }
 .brand-mark { width: 26px; height: 26px; border-radius: 8px; flex: none; background: var(--ink); position: relative; }
 .brand-mark::before { content: ""; position: absolute; left: 4px; right: 4px; top: 5px; height: 11px; border-radius: 11px 11px 3px 3px; background: var(--surface); }
 .brand-mark::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: 4px; height: 7px; border-radius: 2px; background: var(--surface); }
-.brand-text { display: grid; line-height: 1.2; }
-.brand-text strong, .brand-top strong { font-size: var(--fs-md); font-weight: 700; letter-spacing: -.01em; white-space: nowrap; }
-.brand-text small { color: var(--muted); font-size: var(--fs-xs); }
+.brand-text { display: grid; line-height: 1.2; min-width: 0; }
+.brand-text strong { font-size: var(--fs-md); font-weight: 700; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.brand-text small { color: var(--muted); font-size: var(--fs-xs); white-space: nowrap; }
 
 .topbar { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 8px; min-height: var(--topbar-h);
   padding: 8px 14px; padding-top: calc(8px + env(safe-area-inset-top)); background: color-mix(in srgb, var(--surface) 88%, transparent);
   -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); }
-.topbar .brand-top { flex: 1 1 0; min-width: 0; }
-.topbar .brand-top strong { overflow: hidden; text-overflow: ellipsis; }
+.topbar .brand-top { flex: 1 1 0; min-width: 0; color: var(--ink); text-decoration: none; border-radius: 8px; padding: 2px 4px; margin-left: -4px; }
+.topbar .brand-top:focus-visible, .top-link:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.topbar .brand-top .nav-badge { margin-left: 4px; flex: none; }
 .topbar .theme-btn { min-height: 36px; padding: 4px 12px; flex: none; }
+.top-link { display: inline-flex; align-items: center; gap: 8px; flex: none; min-height: 36px; padding: 4px 12px; border-radius: 8px;
+  color: var(--ink-2); text-decoration: none; font-weight: 600; }
+.top-link:hover { background: var(--band); color: var(--ink); }
+.top-link[aria-current="page"] { background: var(--ink); color: var(--surface); }
 .live-mark { display: inline-flex; align-items: center; gap: 6px; flex: none; font-size: 0.8125rem; font-weight: 600; color: var(--ink-2); }
 .live-dot { width: 8px; height: 8px; border-radius: 50%; border: 2px solid currentColor; box-sizing: border-box; }
 .live-mark[data-live="on"] { color: var(--ink); }
 .live-mark[data-live="on"] .live-dot { background: var(--good-text); border-color: var(--good-text); }
 .live-mark[data-live="off"] { color: var(--muted); font-weight: 500; }
+@media (max-width: 600px) {
+  .brand-text small { display: none; }
+  .top-link span { display: none; } /* the gear alone; its name stays for screen readers through aria-label below */
+}
 
 .theme-btn { border-color: transparent; background: transparent; color: var(--ink-2); font-weight: 500; }
 .theme-btn:hover { background: var(--band); }
@@ -244,29 +242,13 @@ html { scroll-padding-top: var(--topbar-h); }
 .back:hover { color: var(--ink); text-decoration: underline; }
 
 @media (min-width: 900px) {
-  :root { --tab-h: 0px; }
-  .tabbar { display: none; }
-  .side { display: flex; flex-direction: column; gap: 20px; flex: none; width: var(--side-w); height: 100vh; height: 100dvh; position: sticky; top: 0;
-    padding: 18px 12px 14px; background: var(--surface); border-right: 1px solid var(--border); overflow-y: auto; }
-  .side .brand { padding: 4px 8px 0; }
-  .topbar { display: none; }
-  .menu { display: grid; gap: 2px; align-content: start; flex: 1; }
-  .menu a { display: flex; align-items: center; gap: 12px; padding: 9px 10px; border-radius: 8px; color: var(--ink-2); text-decoration: none;
-    font: 500 var(--fs-md)/1.2 system-ui, sans-serif; }
-  .menu a .ico { flex: none; opacity: .85; }
-  .menu a:hover { background: var(--band); color: var(--ink); }
-  .menu a[aria-current="page"] { background: var(--ink); color: var(--surface); font-weight: 600; }
-  .menu a[aria-current="page"] .ico { opacity: 1; }
-  .side-foot { display: grid; gap: 8px; padding-top: 12px; border-top: 1px solid var(--border); }
-  .side-foot .theme-btn { text-align: left; }
-  .side-foot .live-mark { padding: 0 12px; }
-  .col > main { padding: 24px 28px 56px; }
+  .app > main { padding: 24px 28px 56px; }
   .page-actions { flex: 0 0 auto; margin-left: auto; }
   .page-actions > button { flex: 0 1 auto; }
   .page-title { font-size: var(--fs-2xl); }
   .page-sub { font-size: var(--fs-md); }
 }
-@media print { .side, .topbar, .tabbar { display: none !important; } }
+@media print { .topbar { display: none !important; } }
 
 /* ---- Rooms list ---- */
 .rooms .name a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--axis); text-decoration-thickness: 1px; text-underline-offset: 3px; }
@@ -282,14 +264,26 @@ html { scroll-padding-top: var(--topbar-h); }
 @media (max-width: 600px) { .sizes.two { grid-template-columns: 1fr 1fr; gap: 12px; } }
 
 /* ---- Room detail ---- */
-/* The room page's tabs: links along a line, the current one underlined; on a phone the row scrolls sideways. */
+/* The room page's tabs: a side bar beside the content from 900 px (owner, 2026-10-26), a sideways-scrolling row above it on a
+   phone; the current tab filled like the old main menu. */
 .room-tabs { display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; border-bottom: 1px solid var(--border-strong); margin: 0 0 16px; }
 .room-tabs::-webkit-scrollbar { display: none; }
-.room-tabs a { flex: none; padding: 10px 14px; color: var(--muted); text-decoration: none; font-weight: 600; white-space: nowrap;
-  border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.room-tabs a { flex: none; display: flex; align-items: center; gap: 8px; padding: 10px 14px; color: var(--muted); text-decoration: none; font-weight: 600;
+  white-space: nowrap; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.room-tabs a .ico { flex: none; opacity: .85; }
 .room-tabs a:hover { color: var(--ink); }
 .room-tabs a[aria-current="page"] { color: var(--ink); border-bottom-color: var(--ink); }
 .room-tabs a:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; border-radius: 4px; }
+.room-main { min-width: 0; }
+@media (max-width: 899px) { .room-tabs a .ico { display: none; } }
+@media (min-width: 900px) {
+  .room-layout { display: grid; grid-template-columns: 196px minmax(0, 1fr); gap: 24px; align-items: start; }
+  .room-tabs { flex-direction: column; overflow: visible; border-bottom: 0; margin: 0; position: sticky; top: calc(var(--topbar-h) + 16px); }
+  .room-tabs a { padding: 9px 10px; border-radius: 8px; border-bottom: 0; margin: 0; color: var(--ink-2); font-weight: 500; }
+  .room-tabs a:hover { background: var(--band); }
+  .room-tabs a[aria-current="page"] { background: var(--ink); color: var(--surface); font-weight: 600; }
+  .room-tabs a[aria-current="page"] .ico { opacity: 1; }
+}
 .sensors { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-bottom: 16px; }
 .card { background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 16px; min-width: 0; }
 .card h2 { margin: 0 0 4px; font-size: var(--fs-lg); }
@@ -452,10 +446,12 @@ button.toggle[data-on="true"]:hover { opacity: .85; background: var(--ink); }
 .swatch-manual { background: repeating-linear-gradient(45deg, var(--ink-2) 0 2px, transparent 2px 5px); }
 
 /* ---- Overview and the nav alarm badge (Stream B) ---- */
-.menu a, .tabbar a { position: relative; }
 .nav-badge { min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--critical); color: var(--on-critical); font: 700 11px/18px system-ui, sans-serif; text-align: center; }
-.menu a .nav-badge { margin-left: auto; }
-.tabbar a .nav-badge { position: absolute; top: 4px; left: calc(50% + 6px); }
+/* A section's title on the Overview with a link at its right ("Rooms ... Show all rooms"). */
+.ov-section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 8px 0 10px; }
+.ov-section-head h2 { margin: 0; font-size: var(--fs-lg); }
+.ov-section-head a { color: var(--ink-2); font-weight: 600; font-size: var(--fs-sm); }
+.ov-section-head a:hover { color: var(--ink); }
 .ov-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 16px; }
 .ov-tile { padding: 14px 16px; }
 .ov-tile p { margin: 0; }

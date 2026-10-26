@@ -1,4 +1,5 @@
-// Room detail page: the alarms, then tabs (the address names the tab: #/rooms/7, #/rooms/7/charts, ...): Overview (the Room
+// Room detail page: a side bar of tabs (a row on a phone; the address names the tab: #/rooms/7, #/rooms/7/charts, ...) and,
+// beside it, the alarms on every tab, then the tab's panel: Overview (the Room
 // card: the room picture, the readings against their bands, the machines in air-path order), Charts (three charts of the last
 // 50 polls, the T and RH charts with the outdoor line, and the machine timeline), Control (automatic control and the
 // machines), Crop, Sensors (the room's two sensors, the energy meter if it has one, the intake filter), Energy (the energy and
@@ -72,38 +73,53 @@ const TEMPLATE = `
     <a href="#/rooms">Back to the rooms</a>
   </div>
   <div data-body hidden>
-    <section data-alarms hidden></section>
-    <nav class="room-tabs" data-tabs aria-label="Room sections"></nav>
-    <div data-panel="overview">
-      <section data-room-card></section>
-    </div>
-    <div data-panel="charts" hidden>
-      <div data-range></div>
-      <div class="charts" data-charts></div>
-      <section class="card timeline-card" data-timeline hidden>
-        <h2>Machine timeline</h2>
-        <div class="chart-host" data-timeline-host></div>
-        <p class="legend"><span class="swatch swatch-auto" aria-hidden="true"></span>Automatic <span class="swatch swatch-manual" aria-hidden="true"></span>Manual</p>
-      </section>
-    </div>
-    <div data-panel="control" hidden>
-      <section data-control hidden></section>
-      <section data-machines></section>
-    </div>
-    <div data-panel="crop" hidden>
-      <section data-crop></section>
-    </div>
-    <div data-panel="sensors" hidden>
-      <div class="sensors" data-sensors></div>
-      <section data-filter hidden></section>
-    </div>
-    <div data-panel="energy" hidden>
-      <section data-usage></section>
-    </div>
-    <div data-panel="simulations" hidden>
-      <section data-simulations></section>
+    <div class="room-layout">
+      <nav class="room-tabs" data-tabs aria-label="Room sections"></nav>
+      <div class="room-main">
+        <section data-alarms hidden></section>
+        <div data-panel="overview">
+          <section data-room-card></section>
+        </div>
+        <div data-panel="charts" hidden>
+          <div data-range></div>
+          <div class="charts" data-charts></div>
+          <section class="card timeline-card" data-timeline hidden>
+            <h2>Machine timeline</h2>
+            <div class="chart-host" data-timeline-host></div>
+            <p class="legend"><span class="swatch swatch-auto" aria-hidden="true"></span>Automatic <span class="swatch swatch-manual" aria-hidden="true"></span>Manual</p>
+          </section>
+        </div>
+        <div data-panel="control" hidden>
+          <section data-control hidden></section>
+          <section data-machines></section>
+        </div>
+        <div data-panel="crop" hidden>
+          <section data-crop></section>
+        </div>
+        <div data-panel="sensors" hidden>
+          <div class="sensors" data-sensors></div>
+          <section data-filter hidden></section>
+        </div>
+        <div data-panel="energy" hidden>
+          <section data-usage></section>
+        </div>
+        <div data-panel="simulations" hidden>
+          <section data-simulations></section>
+        </div>
+      </div>
     </div>
   </div>`;
+
+// The tabs' icons (inner SVG, 24 × 24, drawn in strokes).
+const TAB_ICONS = {
+  overview: '<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>',
+  charts: '<path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 6-7"/>',
+  control: '<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
+  crop: '<path d="M4 12a8 7 0 0116 0z"/><path d="M10 12v6a2 2 0 004 0v-6"/>',
+  sensors: '<path d="M10 14V5a2 2 0 014 0v9a4 4 0 11-4 0z"/><path d="M12 14v-4"/>',
+  energy: '<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>',
+  simulations: '<path d="M9 3h6M10 3v6l-5 9a2 2 0 002 3h10a2 2 0 002-3l-5-9V3"/><path d="M7.5 15h9"/>',
+};
 
 let mountSeq = 0; // every mount gets a token; a reply that finds the token changed is dropped
 
@@ -123,13 +139,14 @@ export function mount(container, { id, tab = 'overview' }) {
   container.innerHTML = TEMPLATE;
   const q = (sel) => container.querySelector(sel);
 
-  // The tab bar: a link per tab (the router calls setTab when the address changes); the current one marked.
+  // The tab bar: a link per tab with its icon (the router calls setTab when the address changes); the current one marked.
   const tabBar = q('[data-tabs]');
   for (const t of ROOM_TABS) {
     const a = document.createElement('a');
     a.href = roomHash(id, t.key);
-    a.textContent = t.label;
     a.dataset.tab = t.key;
+    a.innerHTML = `<svg class="ico" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${TAB_ICONS[t.key]}</svg>`;
+    a.append(text('span', '', t.label));
     tabBar.append(a);
   }
   function setTab(next) {

@@ -63,8 +63,17 @@ The owner asked (2026-10-26) to revise the Room card. Five variants and two comb
 
 | Item | Rule |
 |---|---|
-| Above the tabs | the title, Edit, the banner and the alarms (always seen) |
+| Above the tabs | the title, Edit and the banner; the alarms sit at the top of the content beside the tabs, outside every panel (seen on every tab) |
 | Tabs, with their address | Overview `#/rooms/:id` (the Room card) · Charts `#/rooms/:id/charts` (range, charts, machine timeline) · Control `/control` (automatic control, machines) · Crop `/crop` · Sensors `/sensors` (T/RH probe, CO₂ sensor, energy meter, intake filter) · Energy `/energy` (usage) · Simulations `/simulations` |
-| Tab bar | links (`web/route.js` `ROOM_TABS`, `roomHash`), the current one underlined and `aria-current="page"`; on a phone the row scrolls sideways with the current tab kept in view |
+| Tab bar | links with an icon each (`web/route.js` `ROOM_TABS`, `roomHash`), `aria-current="page"` on the current one. From 900 px a side bar left of the content (owner: "use sidebar here for the tabs"), the current tab filled, sticky under the top bar; below 900 px a row above the content (no icons), the current one underlined, scrolling sideways with the current tab kept in view |
 | Changing tab | the router shows the tab's panel and hides the others; the page is not mounted again (its data, live updates and timers stay); Back and reload keep the tab |
 | Links in | a simulation run's back link opens Simulations; the farm energy card's room links open Energy; the rest open Overview |
+
+## 7. The app's frame (owner, 2026-10-26: "remove the sidebar, add settings on top right, add title before the rooms card and a show all room for the room listing page")
+
+| Item | Rule |
+|---|---|
+| Side bar and bottom tab bar | gone at every width |
+| Top bar | the farm's name (a link to the Overview, with the alarm count badge), then right: Live, the theme button, Settings (a gear with its name; the gear alone below 600 px, named for screen readers) |
+| Page width | the page under the bar at most 1400 px wide, centred |
+| Overview | a "Rooms" title over the room cards with "Show all rooms" at its right, to the room list (#/rooms) |

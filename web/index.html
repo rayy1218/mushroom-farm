@@ -14,32 +14,16 @@
 <body>
 <a class="skip" href="#view" data-skip>Skip to content</a>
 <div class="app">
-  <aside class="side">
-    <div class="brand"><span class="brand-mark" aria-hidden="true"></span><span class="brand-text"><strong>Mushroom farm</strong><small>Climate and harvest</small></span></div>
-    <nav class="menu" aria-label="Main menu">
-      <a href="#/overview" data-nav="overview"><svg class="ico" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg><span>Overview</span><span class="nav-badge" data-badge hidden></span></a>
-      <a href="#/rooms" data-nav="rooms"><svg class="ico" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/></svg><span>Rooms</span></a>
-      <a href="#/settings" data-nav="settings"><svg class="ico" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg><span>Settings</span></a>
-    </nav>
-    <div class="side-foot">
-      <span class="live-mark" data-live="off"><span class="live-dot" aria-hidden="true"></span><span data-live-text>Not live</span></span>
-      <button type="button" class="theme-btn" aria-label="Switch colour theme">Light mode</button>
-    </div>
-  </aside>
-  <div class="col">
-    <header class="topbar">
-      <span class="brand brand-top"><span class="brand-mark" aria-hidden="true"></span><strong>Mushroom farm</strong></span>
-      <span class="live-mark" data-live="off"><span class="live-dot" aria-hidden="true"></span><span data-live-text>Not live</span></span>
-      <button type="button" class="theme-btn" aria-label="Switch colour theme">Light mode</button>
-    </header>
-    <main id="view" tabindex="-1"></main>
-  </div>
+  <!-- One bar on top (owner, 2026-10-26: no side bar): the farm's name goes to the Overview (with the alarm count), Settings
+       top right. The Rooms list is reached from the Overview's "Show all rooms". -->
+  <header class="topbar">
+    <a class="brand brand-top" href="#/overview" data-nav="overview" aria-label="Mushroom farm: Overview"><span class="brand-mark" aria-hidden="true"></span><span class="brand-text"><strong>Mushroom farm</strong><small>Climate and harvest</small></span><span class="nav-badge" data-badge hidden></span></a>
+    <span class="live-mark" data-live="off"><span class="live-dot" aria-hidden="true"></span><span data-live-text>Not live</span></span>
+    <button type="button" class="theme-btn" aria-label="Switch colour theme">Light mode</button>
+    <a class="top-link" href="#/settings" data-nav="settings" aria-label="Settings"><svg class="ico" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg><span>Settings</span></a>
+  </header>
+  <main id="view" tabindex="-1"></main>
 </div>
-<nav class="tabbar" aria-label="Main menu">
-  <a href="#/overview" data-nav="overview"><svg class="ico" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg><span>Overview</span><span class="nav-badge" data-badge hidden></span></a>
-  <a href="#/rooms" data-nav="rooms"><svg class="ico" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/></svg><span>Rooms</span></a>
-  <a href="#/settings" data-nav="settings"><svg class="ico" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg><span>Settings</span></a>
-</nav>
 
 <dialog id="room-dialog" aria-labelledby="room-title">
   <form id="room-form">
