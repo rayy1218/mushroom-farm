@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Room card: five variants</title>
+<style>
+/* The app's own tokens (web/styles.css), so the variants look like they belong. */
+:root, :root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0f1113; --surface: #1c1f22; --surface-2: #24282c; --ink: #f1f3f4; --muted: #959ba2; --ink-2: #c3c8cd;
+  --border: rgba(255,255,255,.1); --border-strong: rgba(255,255,255,.24); --band: rgba(255,255,255,.075);
+  --good-text: #0ca30c; --warning-text: #fab219; --critical-text: #ff8a8a;
+  --ac: #3987e5; --run: #2fae9e; --run-bg: rgba(47,174,158,.16); --hu: #2b8db8; --dh: #8b6fe0; --wall: #3a3f45;
+  --track: #2c3135; --bandfill: rgba(47,174,158,.28);
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --page: #dde0e3; --surface: #f4f5f6; --surface-2: #e9ebed; --ink: #15181b; --muted: #565c63; --ink-2: #464c53;
+  --border: rgba(21,24,27,.13); --border-strong: rgba(21,24,27,.28); --band: rgba(21,24,27,.075);
+  --good-text: #006300; --warning-text: #7a5200; --critical-text: #b02a2a;
+  --ac: #2a78d6; --run: #13806f; --run-bg: rgba(19,128,111,.13); --hu: #1f7aa3; --dh: #6b4fc0; --wall: #b9bfc6;
+  --track: #d5d9dd; --bandfill: rgba(19,128,111,.25);
+}
+* { box-sizing: border-box; }
+body { margin: 0; font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--ink); background: var(--page); }
+header.bar { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center;
+  padding: 12px 20px; background: var(--surface); border-bottom: 1px solid var(--border); }
+header.bar h1 { font-size: 16px; margin: 0 10px 0 0; }
+.seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: 6px; overflow: hidden; }
+.seg button { background: none; border: 0; color: var(--ink-2); padding: 6px 12px; font: inherit; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--border); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+main { padding: 20px; display: grid; gap: 14px; justify-items: center; }
+.frame { width: 100%; max-width: 1180px; transition: max-width .2s; }
+.frame.phone { max-width: 400px; }
+.why { max-width: 1180px; width: 100%; color: var(--ink-2); font-size: 13px; margin: 0; }
+.why b { color: var(--ink); }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px 18px 18px; }
+.card > h2 { margin: 0 0 12px; font-size: 18px; display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.card > h2 small { font-size: 12px; font-weight: 500; color: var(--muted); }
+.variant { display: none; } .variant.on { display: block; }
+.muted { color: var(--muted); } .small { font-size: 12px; }
+
+/* ---- shared pieces ---- */
+.pill { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 99px;
+  border: 1px solid var(--border-strong); color: var(--muted); white-space: nowrap; }
+.pill.on { color: var(--run); border-color: var(--run); background: var(--run-bg); }
+.pill.on::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--run); }
+.status { font-size: 12px; font-weight: 600; display: inline-flex; gap: 4px; align-items: center; }
+.status.good { color: var(--good-text); } .status.warn { color: var(--warning-text); } .status.bad { color: var(--critical-text); }
+.strip { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; font-size: 13px; color: var(--ink-2); }
+.strip b { color: var(--ink); font-weight: 600; }
+.strip .dot::before { content: "•"; color: var(--muted); margin-right: 12px; }
+
+/* The band bar: the scale as a track, the target band as a lighter zone with its limits, the reading as a marker. */
+.bandbar { position: relative; height: 22px; margin-top: 6px; }
+.bandbar .track { position: absolute; left: 0; right: 0; top: 8px; height: 6px; border-radius: 3px; background: var(--track); }
+.bandbar .zone { position: absolute; top: 5px; height: 12px; border-radius: 3px; background: var(--bandfill); }
+.bandbar .mark { position: absolute; top: 1px; width: 4px; height: 20px; margin-left: -2px; border-radius: 2px; background: var(--ink);
+  box-shadow: 0 0 0 2px var(--surface); }
+.bandbar .lim { position: absolute; top: 22px; font-size: 11px; color: var(--muted); transform: translateX(-50%); }
+.tile .bandbar { margin-bottom: 14px; }
+
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+.tile { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px 6px; }
+.tile.warn { border-color: var(--warning-text); }
+.tile .lab { font-size: 12px; color: var(--muted); display: flex; justify-content: space-between; gap: 6px; }
+.tile .val { font-size: 30px; font-weight: 650; letter-spacing: -.5px; line-height: 1.1; margin-top: 2px; }
+.tile .val small { font-size: 14px; font-weight: 500; color: var(--muted); margin-left: 3px; }
+
+.mgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; }
+.mtile { display: grid; grid-template-columns: 34px 1fr; gap: 2px 10px; align-items: center; padding: 9px 10px;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); }
+.mtile.on { border-color: var(--run); }
+.mtile svg { grid-row: span 2; width: 34px; height: 34px; }
+.mtile .n { font-weight: 600; font-size: 13px; display: flex; justify-content: space-between; gap: 6px; align-items: center; }
+.mtile .d { font-size: 12px; color: var(--muted); }
+
+/* drawings */
+svg text { font-family: inherit; fill: var(--ink); }
+.ico { fill: none; stroke: var(--ink-2); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.ico.on { stroke: var(--run); }
+.ico .blades { fill: var(--ink-2); stroke: none; }
+.ico.on .blades { fill: var(--run); }
+.spin { transform-box: fill-box; transform-origin: center; animation: spin 1.6s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.flow { stroke-dasharray: 6 8; animation: flow 1s linear infinite; }
+@keyframes flow { to { stroke-dashoffset: -14; } }
+@media (prefers-reduced-motion: reduce) { .spin, .flow { animation: none; } }
+
+/* C: air path */
+.path { display: grid; grid-template-columns: 1fr auto 1.1fr auto 3fr auto 1fr; align-items: center; gap: 0; }
+.node { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; background: var(--surface-2); min-width: 0; }
+.node h4 { margin: 0 0 4px; font-size: 12px; color: var(--muted); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.arrow { width: 44px; height: 24px; }
+.room { border: 2px solid var(--border-strong); border-radius: 10px; padding: 12px; background: var(--surface); }
+.room .reads { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.room .reads .r { background: var(--surface-2); border-radius: 6px; padding: 6px 8px; border: 1px solid var(--border); }
+.room .reads .r.warn { border-color: var(--warning-text); }
+.room .reads .v { font-size: 22px; font-weight: 650; }
+.room .reads .v small { font-size: 12px; color: var(--muted); font-weight: 500; margin-left: 2px; }
+.conds { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.cond { display: inline-flex; gap: 6px; align-items: center; border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font-size: 12px; color: var(--muted); }
+.cond.on { color: var(--ink); border-color: var(--run); background: var(--run-bg); }
+.cond .eff { font-weight: 700; }
+.cond.on .eff { color: var(--run); }
+
+/* D: compact rows */
+.rows { display: grid; gap: 4px; }
+.row { display: grid; grid-template-columns: 110px 92px 1fr 104px; gap: 12px; align-items: center; padding: 8px 4px; border-bottom: 1px solid var(--border); }
+.row .k { color: var(--muted); font-size: 13px; }
+.row .v { font-size: 20px; font-weight: 650; }
+.row .v small { font-size: 12px; color: var(--muted); font-weight: 500; margin-left: 2px; }
+.row .bandbar { margin: 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 99px; border: 1px solid var(--border-strong); font-size: 13px; color: var(--muted); }
+.chip.on { color: var(--ink); border-color: var(--run); background: var(--run-bg); }
+.chip i { width: 8px; height: 8px; border-radius: 50%; background: var(--track); display: inline-block; }
+.chip.on i { background: var(--run); }
+
+/* E: hybrid */
+.hyb { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(220px, 1fr); gap: 14px; align-items: start; }
+.hyb .side { display: grid; gap: 8px; }
+
+/* phone */
+.phone .hyb { grid-template-columns: 1fr; }
+.phone .path { grid-template-columns: 1fr; gap: 6px; }
+.phone .path .arrow { transform: rotate(90deg); justify-self: center; }
+.phone .row { grid-template-columns: 82px 78px 1fr; }
+.phone .row .status { grid-column: 2 / -1; }
+.phone .room .reads { grid-template-columns: 1fr; }
+</style>
+</head>
+<body>
+<header class="bar">
+  <h1>Room card, five ways</h1>
+  <div class="seg" id="tabs" role="group" aria-label="Variant"></div>
+  <div class="seg" role="group" aria-label="Width">
+    <button data-w="desk" aria-pressed="true">Desktop</button><button data-w="phone" aria-pressed="false">Phone</button>
+  </div>
+  <div class="seg" role="group" aria-label="Theme">
+    <button data-t="dark" aria-pressed="true">Dark</button><button data-t="light" aria-pressed="false">Light</button>
+  </div>
+</header>
+<main>
+  <p class="why" id="why"></p>
+  <div class="frame" id="frame"></div>
+</main>
+
+<script>
+// One room state for every variant (as in the screenshot), with outdoor air added.
+const S = {
+  auto: true, nextExchangeMin: 8, everyMin: 15, outdoor: { t: 32.9, rh: 62 },
+  reads: [
+    { k: 't', name: 'Temperature', v: 21.5, unit: '°C', lo: 21, hi: 23, min: 15, max: 30, dec: 1 },
+    { k: 'rh', name: 'Humidity', v: 92, unit: '% RH', lo: 90, hi: 95, min: 70, max: 100, dec: 0 },
+    { k: 'co2', name: 'CO₂', v: 500, unit: 'ppm', lo: 600, hi: 900, min: 400, max: 1500, dec: 0 },
+  ],
+  m: {
+    ac: { name: 'Aircon', on: true, d: 'Cool to 21.5 °C · fan auto', d2: 'Compressor running' },
+    intake: { name: 'Intake fan', on: false, d: 'Next fresh air in 8 min', d2: 'Filter 40 Pa' },
+    exhaust: { name: 'Exhaust fan', on: false, d: 'With the intake' },
+    circulation: { name: 'Circulation', on: true, d: 'Always on' },
+    humidifier: { name: 'Humidifier', on: false, d: 'Below 90 %' },
+    dehumidifier: { name: 'Dehumidifier', on: false, d: 'Above 95 %' },
+  },
+};
+const stateOf = (r) => (r.v < r.lo ? { cls: 'warn', text: '▼ Below band' } : r.v > r.hi ? { cls: 'warn', text: '▲ Above band' } : { cls: 'good', text: '✓ In band' });
+const fmt = (r) => r.v.toFixed(r.dec);
+const pct = (r, x) => ((x - r.min) / (r.max - r.min)) * 100;
+const bandbar = (r, limits = true) => `
+  <div class="bandbar" role="img" aria-label="${r.name} ${fmt(r)} ${r.unit}, band ${r.lo} to ${r.hi}">
+    <div class="track"></div>
+    <div class="zone" style="left:${pct(r, r.lo)}%;width:${pct(r, r.hi) - pct(r, r.lo)}%"></div>
+    <div class="mark" style="left:${pct(r, r.v)}%"></div>
+    ${limits ? `<span class="lim" style="left:${pct(r, r.lo)}%">${r.lo}</span><span class="lim" style="left:${pct(r, r.hi)}%">${r.hi}</span>` : ''}
+  </div>`;
+const pill = (on) => `<span class="pill ${on ? 'on' : ''}">${on ? 'On' : 'Off'}</span>`;
+
+// Three filled blades and a hub; they turn while the machine runs.
+const BLADES = (on) => `<g class="blades ${on ? 'spin' : ''}">${[0, 120, 240].map((a) => `<path transform="rotate(${a} 12 12)" d="M12 12 C9.5 9 9.6 4.2 12.6 3.4 C15.6 3.3 15.4 8.4 12 12 Z"/>`).join('')}<circle cx="12" cy="12" r="1.8"/></g>`;
+// Small machine icons (24 x 24 grid, drawn in strokes so the running colour is just the stroke).
+const ICON = {
+  fan: (on) => `<g class="ico ${on ? 'on' : ''}"><circle cx="12" cy="12" r="10.5"/>${BLADES(on)}</g>`,
+  ac: (on) => `<g class="ico ${on ? 'on' : ''}"><rect x="2" y="5" width="20" height="9" rx="2"/><path d="M5 11h14"/><path class="${on ? 'flow' : ''}" d="M7 17v3M12 17v4M17 17v3"/></g>`,
+  hu: (on) => `<g class="ico ${on ? 'on' : ''}"><path d="M12 3 C8 9 6 12 6 15 a6 6 0 0 0 12 0 c0-3-2-6-6-12z"/><path d="M9.5 15.5a2.5 2.5 0 0 0 2.5 2.5"/></g>`,
+  dh: (on) => `<g class="ico ${on ? 'on' : ''}"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 7h8M8 10h8"/><path d="M12 13 c-2 3-2 4-2 5 a2 2 0 0 0 4 0 c0-1 0-2-2-5z"/></g>`,
+  circ: (on) => `<g class="ico ${on ? 'on' : ''}"><circle cx="12" cy="12" r="10.5" stroke-dasharray="3 3"/>${BLADES(on)}</g>`,
+};
+const iconSvg = (key, on) => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICON[key](on)}</svg>`;
+const KEYS = [['ac', 'ac'], ['circulation', 'circ'], ['intake', 'fan'], ['exhaust', 'fan'], ['humidifier', 'hu'], ['dehumidifier', 'dh']];
+
+// The room drawing, simplified: every machine has its label and state right under it; only running parts move.
+function drawing({ readings = false, compact = false } = {}) {
+  const m = S.m;
+  const lab = (x, y, name, on, anchor = 'middle', extra = '') => `
+    <text x="${x}" y="${y}" text-anchor="${anchor}" font-size="13" font-weight="600">${name}</text>
+    <text x="${x}" y="${y + 16}" text-anchor="${anchor}" font-size="12" fill="${on ? 'var(--run)' : 'var(--muted)'}" style="fill:${on ? 'var(--run)' : 'var(--muted)'}">${on ? '● On' : 'Off'}${extra}</text>`;
+  const fanAt = (x, y, r, on) => `<g transform="translate(${x - r},${y - r}) scale(${(2 * r) / 24})">${ICON.fan(on)}</g>`;
+  const reads = readings ? S.reads.map((r, i) => {
+    const st = stateOf(r);
+    const x = 470 + i * 0, y = 150 + i * 52;
+    return `<g transform="translate(560,${118 + i * 50})">
+      <rect width="150" height="42" rx="6" fill="var(--surface-2)" stroke="${st.cls === 'warn' ? 'var(--warning-text)' : 'var(--border-strong)'}" stroke-width="${st.cls === 'warn' ? 1.5 : 1}"/>
+      <text x="10" y="19" font-size="16" font-weight="650">${fmt(r)} ${r.unit}</text>
+      <text x="10" y="35" font-size="11" style="fill:${st.cls === 'warn' ? 'var(--warning-text)' : 'var(--good-text)'}">${st.text} · ${r.lo}–${r.hi}</text></g>`;
+  }).join('') : '';
+  return `<svg viewBox="0 0 900 ${compact ? 330 : 350}" width="100%" role="img" aria-label="Room drawing">
+    <!-- outdoor -->
+    <g transform="translate(14,20)">
+      <text font-size="11" font-weight="700" letter-spacing="1.5" style="fill:var(--muted)">OUTDOOR</text>
+      <text y="24" font-size="18" font-weight="650">${S.outdoor.t} °C</text>
+      <text y="42" font-size="12" style="fill:var(--muted)">${S.outdoor.rh} % RH</text>
+    </g>
+    <!-- room shell -->
+    <rect x="200" y="70" width="640" height="250" rx="4" fill="var(--band)" stroke="var(--wall)" stroke-width="6"/>
+    <line x1="0" y1="323" x2="900" y2="323" stroke="var(--wall)" stroke-width="2"/>
+    <!-- condenser on the roof, aircon under the ceiling -->
+    <g transform="translate(395,12)"><rect width="56" height="44" rx="5" fill="var(--surface-2)" stroke="var(--border-strong)"/>
+      <g transform="translate(10,4) scale(1.5)">${ICON.fan(m.ac.on)}</g></g>
+    <line x1="423" y1="56" x2="423" y2="84" stroke="var(--wall)" stroke-width="4"/>
+    <text x="462" y="30" font-size="12" style="fill:var(--muted)">Condenser · ${m.ac.on ? 'running' : 'off'}</text>
+    <rect x="340" y="84" width="170" height="38" rx="6" fill="var(--surface-2)" stroke="${m.ac.on ? 'var(--ac)' : 'var(--border-strong)'}" stroke-width="1.5"/>
+    <rect x="340" y="84" width="5" height="38" rx="2" fill="var(--ac)"/>
+    <text x="354" y="100" font-size="13" font-weight="600">Aircon</text>
+    <text x="354" y="115" font-size="11" style="fill:var(--muted)">Cool 21.5 °C · fan auto</text>
+    ${m.ac.on ? [370, 425, 480].map((x) => `<path class="flow" d="M${x} 126 q -6 26 -14 46" stroke="var(--ac)" stroke-width="2" fill="none"/>`).join('') : ''}
+    <!-- intake with its filter on the left wall -->
+    <rect x="166" y="96" width="12" height="52" fill="url(#hatch)" stroke="var(--border-strong)"/>
+    <text x="172" y="166" text-anchor="middle" font-size="11" style="fill:var(--muted)">filter 40 Pa</text>
+    ${fanAt(200, 122, 24, m.intake.on)}
+    ${lab(110, 112, 'Intake fan', m.intake.on, 'middle')}
+    <text x="110" y="144" text-anchor="middle" font-size="11" style="fill:var(--muted)">next in ${S.nextExchangeMin} min</text>
+    ${m.intake.on ? `<path class="flow" d="M120 160 H 230" stroke="var(--run)" stroke-width="2"/>` : ''}
+    <!-- exhaust on the right wall, low -->
+    ${fanAt(840, 262, 24, m.exhaust.on)}
+    ${lab(840, 214, 'Exhaust fan', m.exhaust.on)}
+    <!-- circulation under the ceiling -->
+    <g transform="translate(728,88) scale(1.6)">${ICON.circ(m.circulation.on)}</g>
+    ${lab(747, 140, 'Circulation', m.circulation.on)}
+    <!-- dehumidifier on the left wall -->
+    <g transform="translate(212,200) scale(1.7)">${ICON.dh(m.dehumidifier.on)}</g>
+    ${lab(232, 262, 'Dehumidifier', m.dehumidifier.on)}
+    <!-- racks -->
+    <g stroke="var(--border-strong)" fill="var(--surface-2)">
+      ${[0, 1].map((row) => [0, 1, 2, 3, 4].map((c) => `<rect x="${330 + c * 34}" y="${236 + row * 42}" width="28" height="34" rx="6"/>`).join('')).join('')}
+    </g>
+    <path d="M324 232 V320 M502 232 V320 M324 274 H502" stroke="var(--ink-2)" stroke-width="3" fill="none"/>
+    <text x="512" y="282" font-size="12" style="fill:var(--muted)">950 blocks</text>
+    <!-- humidifier on the floor -->
+    <g transform="translate(626,262) scale(2.2)">${ICON.hu(m.humidifier.on)}</g>
+    ${lab(690, 286, 'Humidifier', m.humidifier.on, 'start')}
+    ${reads}
+    <defs><pattern id="hatch" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="5" stroke="var(--muted)" stroke-width="1.5"/></pattern></defs>
+  </svg>`;
+}
+
+const header = (extra = '') => `<h2>Room <small>${S.auto ? 'Automatic control on' : 'Manual'} · fresh air every ${S.everyMin} min${extra}</small></h2>`;
+const tile = (r) => {
+  const st = stateOf(r);
+  return `<div class="tile ${st.cls === 'warn' ? 'warn' : ''}">
+    <div class="lab"><span>${r.name}</span><span class="status ${st.cls}">${st.text}</span></div>
+    <div class="val">${fmt(r)}<small>${r.unit}</small></div>${bandbar(r)}</div>`;
+};
+const machineTile = ([key, ico]) => {
+  const m = S.m[key];
+  return `<div class="mtile ${m.on ? 'on' : ''}">${iconSvg(ico, m.on)}
+    <div class="n"><span>${m.name}</span>${pill(m.on)}</div><div class="d">${m.d}</div></div>`;
+};
+
+const VARIANTS = [
+  {
+    id: 'A', name: 'A · Tidied drawing',
+    why: '<b>Smallest change.</b> Keeps the drawing, but every machine has its name and On/Off right under it (no more labels floating away from their icons), only running parts move, the intake shows its filter and when the next fresh air comes, and the readings sit inside the room with their band.',
+    html: () => `<div class="card">${header()}${drawing({ readings: true })}</div>`,
+  },
+  {
+    id: 'B', name: 'B · Tiles, no drawing',
+    why: '<b>Most information, least decoration.</b> Three reading tiles with a band bar (the shaded zone is the target band, the mark is now), then one tile per machine with what it is doing and why. Works the same on a phone. Loses the at-a-glance picture of the room.',
+    html: () => `<div class="card">${header()}<div class="tiles">${S.reads.map(tile).join('')}</div>
+      <div style="height:12px"></div><div class="mgrid">${KEYS.map(machineTile).join('')}</div>
+      <div style="height:10px"></div><div class="strip"><span>Outdoor <b>${S.outdoor.t} °C</b> · ${S.outdoor.rh} % RH</span><span class="dot">Next fresh air in <b>${S.nextExchangeMin} min</b></span><span class="dot">Filter <b>40 Pa</b></span></div></div>`,
+  },
+  {
+    id: 'C', name: 'C · Air path',
+    why: '<b>Shows how air moves.</b> Outdoor → filter → intake → room → exhaust → outdoor, left to right; the room box holds the readings and the machines that change its air, each with what it does (−T, +RH, −RH). Arrows run only when air moves. Good for explaining exchanges and the filter; on a phone it stacks top to bottom.',
+    html: () => {
+      const m = S.m;
+      const arrow = (on) => `<svg class="arrow" viewBox="0 0 44 24" aria-hidden="true"><path class="${on ? 'flow' : ''}" d="M2 12 H36" stroke="${on ? 'var(--run)' : 'var(--border-strong)'}" stroke-width="2.5" ${on ? '' : 'stroke-dasharray="3 5"'}/><path d="M34 6 L42 12 L34 18" fill="none" stroke="${on ? 'var(--run)' : 'var(--border-strong)'}" stroke-width="2.5"/></svg>`;
+      const cond = (key, ico, eff) => `<span class="cond ${m[key].on ? 'on' : ''}">${iconSvg(ico, m[key].on).replace('<svg', '<svg width="18" height="18"')} ${m[key].name} <span class="eff">${eff}</span> ${pill(m[key].on)}</span>`;
+      return `<div class="card">${header()}
+        <div class="path">
+          <div class="node"><h4>Outdoor</h4><b style="font-size:18px">${S.outdoor.t} °C</b><div class="muted small">${S.outdoor.rh} % RH</div></div>
+          ${arrow(m.intake.on)}
+          <div class="node"><h4>In</h4><div style="display:flex;gap:8px;align-items:center">${iconSvg('fan', m.intake.on).replace('<svg', '<svg width="28" height="28"')}<div><b>Intake</b> ${pill(m.intake.on)}<div class="muted small">filter 40 Pa · next in ${S.nextExchangeMin} min</div></div></div></div>
+          ${arrow(m.intake.on)}
+          <div class="room"><div class="reads">${S.reads.map((r) => { const st = stateOf(r); return `<div class="r ${st.cls === 'warn' ? 'warn' : ''}"><div class="muted small">${r.name}</div><div class="v">${fmt(r)}<small>${r.unit}</small></div><span class="status ${st.cls}">${st.text}</span>${bandbar(r, false)}</div>`; }).join('')}</div>
+            <div class="conds">${cond('ac', 'ac', '−T')}${cond('circulation', 'circ', 'mix')}${cond('humidifier', 'hu', '+RH')}${cond('dehumidifier', 'dh', '−RH')}</div></div>
+          ${arrow(m.exhaust.on)}
+          <div class="node"><h4>Out</h4><div style="display:flex;gap:8px;align-items:center">${iconSvg('fan', m.exhaust.on).replace('<svg', '<svg width="28" height="28"')}<div><b>Exhaust</b> ${pill(m.exhaust.on)}<div class="muted small">with the intake</div></div></div></div>
+        </div></div>`;
+    },
+  },
+  {
+    id: 'D', name: 'D · Compact rows',
+    why: '<b>Phone first, and reusable on the Overview for many rooms.</b> One line per reading (value, band bar, state) and a row of machine chips. Fits in a third of the height; nothing to learn. Least visual.',
+    html: () => `<div class="card">${header()}
+      <div class="rows">${S.reads.map((r) => { const st = stateOf(r); return `<div class="row"><span class="k">${r.name}</span><span class="v">${fmt(r)}<small>${r.unit}</small></span>${bandbar(r)}<span class="status ${st.cls}">${st.text}</span></div>`; }).join('')}</div>
+      <div class="chips">${KEYS.map(([k]) => `<span class="chip ${S.m[k].on ? 'on' : ''}"><i></i>${S.m[k].name}</span>`).join('')}</div>
+      <div style="height:10px"></div><div class="strip"><span>Outdoor <b>${S.outdoor.t} °C</b> · ${S.outdoor.rh} %</span><span class="dot">Next fresh air <b>${S.nextExchangeMin} min</b></span><span class="dot">Filter <b>40 Pa</b></span></div></div>`,
+  },
+  {
+    id: 'E', name: 'E · Drawing + tiles (recommended)',
+    why: '<b>Keeps the picture you asked to bring back, adds the numbers it was missing.</b> The tidied drawing (machines and what runs) on the left, the three readings as tiles with band bars on the right, so the numbers are read in one look and the drawing does not have to carry them. On a phone the tiles go first, then the machines as chips, with the drawing folded away (it is too small to read there).',
+    html: () => `<div class="card">${header()}
+      <div class="hyb"><div>${drawing({ readings: false, compact: true })}</div>
+        <div class="side">${S.reads.map(tile).join('')}
+          <div class="strip" style="margin-top:4px"><span>Next fresh air in <b>${S.nextExchangeMin} min</b></span></div></div></div></div>`,
+  },
+];
+
+let current = 'E';
+const tabs = document.getElementById('tabs');
+tabs.innerHTML = VARIANTS.map((v) => `<button data-v="${v.id}" aria-pressed="${v.id === current}">${v.name.split(' · ')[0]}</button>`).join('');
+function render() {
+  const v = VARIANTS.find((x) => x.id === current);
+  document.getElementById('why').innerHTML = `<b>${v.name}.</b> ${v.why}`;
+  const frame = document.getElementById('frame');
+  frame.innerHTML = v.html();
+  // On a phone the hybrid puts the tiles first, the machines as chips, and folds the drawing away (too small to read there).
+  if (current === 'E' && frame.classList.contains('phone')) {
+    const hyb = frame.querySelector('.hyb');
+    const drawingBox = hyb.firstElementChild;
+    hyb.prepend(hyb.querySelector('.side'));
+    const chips = document.createElement('div');
+    chips.className = 'chips';
+    chips.innerHTML = KEYS.map(([k]) => `<span class="chip ${S.m[k].on ? 'on' : ''}"><i></i>${S.m[k].name}</span>`).join('');
+    const fold = document.createElement('details');
+    fold.innerHTML = '<summary class="muted small" style="margin-top:10px;cursor:pointer">Room drawing</summary>';
+    fold.append(drawingBox.firstElementChild);
+    drawingBox.replaceChildren(chips, fold);
+    hyb.append(drawingBox);
+  }
+  for (const b of tabs.querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.v === current));
+}
+tabs.addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) { current = b.dataset.v; render(); } });
+document.querySelectorAll('[data-w]').forEach((b) => b.addEventListener('click', () => {
+  document.getElementById('frame').classList.toggle('phone', b.dataset.w === 'phone');
+  document.querySelectorAll('[data-w]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+  render();
+}));
+document.querySelectorAll('[data-t]').forEach((b) => b.addEventListener('click', () => {
+  document.documentElement.dataset.theme = b.dataset.t;
+  document.querySelectorAll('[data-t]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+}));
+// ?v=A&w=phone&t=light opens a given view (used for screenshots).
+const q = new URLSearchParams(location.search);
+if (q.get('v')) current = q.get('v');
+if (q.get('w') === 'phone') document.querySelector('[data-w="phone"]').click();
+if (q.get('t') === 'light') document.querySelector('[data-t="light"]').click();
+render();
+</script>
+</body>
+</html>
