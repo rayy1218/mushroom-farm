@@ -458,6 +458,10 @@ button.toggle[data-on="true"]:hover { opacity: .85; background: var(--ink); }
 .range-bar button[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--surface); }
 .range-bar button[aria-pressed="true"]:hover { background: var(--ink); opacity: .85; }
 .timeline-card { margin-top: 12px; }
+.usage-charts { margin-top: 12px; }
+.usage-charts h3 { margin: 12px 0 6px; font-size: var(--fs-sm); font-weight: 600; color: var(--ink-2); }
+.usage-totals { margin: 0 0 4px; font-size: var(--fs-md); font-weight: 600; font-variant-numeric: tabular-nums; }
+.usage-totals .us-basis { margin-left: 8px; font-weight: 400; }
 .timeline-card h2 { font-size: var(--fs-md); margin: 0 0 8px; }
 .timeline-card .chart-host { min-height: 0; }
 .legend { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; margin: 8px 0 0; color: var(--ink-2); font-size: var(--fs-xs); }
