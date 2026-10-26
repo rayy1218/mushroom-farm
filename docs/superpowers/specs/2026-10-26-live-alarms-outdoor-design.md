@@ -18,7 +18,7 @@ The owner asked (2026-10-26) for three parts at once: live updates pushed to the
 |---|---|
 | Bus | `createEvents({ log })` → `publish(type, data)`, `subscribe(fn(type, data))` → unsubscribe, `listeners()`; a throwing listener is logged, the others still run |
 | Alarm hooks (prep — built) | `db.onAlarmChange(fn)`: `fn({ change: 'raised' \| 'cleared' \| 'acked', alarm })` and `fn({ change: 'acked-room', roomId })` after the change; a throwing listener is logged |
-| Types published (SSE stream builds them) | `room` `{ id, part }` with `part` one of `readings` (after a poll cycle, every room polled), `machines` (after a command or a machine status change), `control` (control settings saved, or the controller changed what it commands), `crop` (crop or stage saved or changed by the program), `filter` (a filter change); `alarms` `{ count }` (active alarms of the farm, after any alarm change); `outdoor` `{}` (after the outdoor probe was polled); `simulation` `{ id, roomId, status, progress }` and `sizing` `{ id, roomId, status, progress, tried, total }` (a job's progress or end) |
+| Types published (SSE stream builds them) | `room` `{ id, part }` with `part` one of `readings` (after a poll cycle, every room polled), `machines` (after a command or a machine status change), `control` (control settings saved, or the controller changed what it commands), `crop` (crop or stage saved or changed by the program), `filter` (a filter change), `room` (a room made, edited or deleted); `alarms` `{ count }` (the farm's alarms that are active and not acknowledged, as on the nav badge, after any alarm change); `outdoor` `{}` (after the outdoor probe was polled); `simulation` `{ id, roomId, status, progress }` and `sizing` `{ id, roomId, status, progress, tried, total }` (a job's progress or end) |
 
 ## 3. Live updates (SSE)
 
@@ -27,7 +27,10 @@ The owner asked (2026-10-26) for three parts at once: live updates pushed to the
 | Route | `GET /api/events` → `200 text/event-stream`, `Cache-Control: no-cache`, `Connection: keep-alive`; first `event: hello` with `data: {"at": ms}`; each bus event as `event: <type>` and `data: <json>`; a comment line `: ping` every 25 s *default* |
 | Clients | at most 20 *default* open streams (the 21st gets 503 `{ "error": "Too many live connections" }`); a closed request unsubscribes at once |
 | Pages | one shared `web/live.js`: a single `EventSource('/api/events')` for the whole app, `on(type, fn)` → off, `connected()`; the browser reconnects by itself |
-| What refreshes | the room page on `room` of its id (any part; 300 ms debounce *default*), the Overview on `room`, `alarms` and `outdoor`, the nav alarm badge on `alarms` (use its `count`), the simulation results page and the stepper on `simulation` / `sizing` of their id (instead of polling every 1–2 s; one GET at the end for the result) |
+| Hidden tab | a hidden tab closes its stream (a browser allows few per site) and counts as connected, so its pages keep their slow timers and ask for nothing; shown again, it opens the stream and the pages ask once |
+| Throttles | the room page and the Overview load at most once per 2 s because of events (the first at once, the rest of the wait once at its end); the Simulations card the same; a run's or suggestion's progress is painted from the event data (never backwards), and the page asks once when it is done or failed |
+| Slow clients | a stream with more than 64 KiB waiting to be sent is closed (the browser reconnects); TCP keep-alive 30 s |
+| What refreshes | the room page on `room` of its id (any part, a deleted room shows as gone), the Overview on `room`, `alarms` and `outdoor`, the nav alarm badge on `alarms` (use its `count`), the simulation results page and the stepper on `simulation` / `sizing` of their id (instead of polling every 1–2 s; one GET at the end for the result) |
 | Fallback | while connected the pages' own timers slow to 60 s *default*; disconnected, they run as now |
 | Mark | a small "Live" dot in the top bar while connected, "Not live" (muted) when not *default* |
 

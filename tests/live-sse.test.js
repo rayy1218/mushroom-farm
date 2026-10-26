@@ -10,7 +10,7 @@ import { createEvents } from '../server/events.js';
 import { createMachines } from '../server/machines.js';
 import { createController } from '../server/controller.js';
 import { createSimulations } from '../server/simulations.js';
-import { createLive, watchAlarms, alarmCount } from '../server/live.js';
+import { createLive, createSse, watchAlarms, alarmCount, MAX_BACKLOG } from '../server/live.js';
 
 const physics = { wallUA: 80, outdoorHigh: 33, outdoorLow: 25, outdoorDew: 24, sunW: 300, fanFlow: 600, acBTU: 12000, humidifierLH: 2 };
 
@@ -170,7 +170,7 @@ test('a poll cycle publishes readings for the rooms with a device and outdoor wh
   machineView = { a: 2 };
   controlView = { b: 2 };
   live.afterCycle();
-  assert.deepEqual(got.map(([, d]) => `${d.id}/${d.part}`), [`${wired}/readings`, `${bare}/machines`, `${bare}/control`, `${wired}/machines`, `${wired}/control`]);
+  assert.deepEqual(got.map(([, d]) => `${d.id}/${d.part}`), [`${bare}/machines`, `${bare}/control`, `${wired}/readings`, `${wired}/machines`, `${wired}/control`]);
   got.length = 0;
   live.afterCycle();
   assert.deepEqual(got.map(([, d]) => d.part), ['readings'], 'nothing changed: only the readings');
@@ -210,4 +210,45 @@ test('simulation and sizing jobs publish queued, running, progress and the end',
   assert.deepEqual(got.map(([type, d]) => [type, d.status]), [['sizing', 'queued'], ['sizing', 'running'], ['sizing', 'running'], ['sizing', 'done']]);
   assert.deepEqual(Object.keys(got[0][1]), ['id', 'roomId', 'status', 'progress', 'tried', 'total']);
   assert.equal(got[3][1].tried, job.total);
+});
+
+test('a room made, edited or deleted publishes room part room', async (t) => {
+  const { events, base } = await start(t);
+  const got = collect(events);
+  const body = { name: 'Room 1', length: 6, width: 4, height: 2.5 };
+  const made = await (await fetch(`${base}/api/rooms`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })).json();
+  assert.equal(await put(base, `/api/rooms/${made.id}`, { ...body, length: 7 }), 200);
+  assert.equal((await fetch(`${base}/api/rooms/${made.id}`, { method: 'DELETE' })).status, 204);
+  assert.deepEqual(got, [['room', { id: made.id, part: 'room' }], ['room', { id: made.id, part: 'room' }], ['room', { id: made.id, part: 'room' }]]);
+});
+
+test('a client that does not read is dropped once too much waits for it; a failing room does not hide the others', (t) => {
+  const events = createEvents();
+  const sse = createSse({ events });
+  const res = {
+    backlog: 0, destroyed: false, handlers: {},
+    writeHead() {}, flushHeaders() {}, end() {},
+    write(text) { this.backlog += text.length; },
+    get writableLength() { return this.backlog; },
+    destroy() { this.destroyed = true; },
+    on(type, fn) { this.handlers[type] = fn; },
+  };
+  const req = { method: 'GET', socket: { setTimeout() {}, setNoDelay() {}, setKeepAlive(on, ms) { this.keep = [on, ms]; } } };
+  sse.handler(req, res);
+  t.after(() => res.handlers.close?.());
+  assert.deepEqual(req.socket.keep, [true, 30_000]);
+  assert.equal(res.destroyed, false);
+  events.publish('room', { id: 1, part: 'x'.repeat(MAX_BACKLOG) });
+  assert.equal(res.destroyed, true);
+
+  const db = openDb(':memory:');
+  t.after(() => db.close());
+  db.createRoom({ name: 'A', length: 6, width: 4, height: 2.5, trhAddress: 1 });
+  const b = db.createRoom({ name: 'B', length: 6, width: 4, height: 2.5, trhAddress: 2 }).id;
+  const got = collect(events);
+  const logged = [];
+  const live = createLive({ db, events, machines: { get: (id) => { if (id !== b) throw new Error('boom'); return {}; } }, log: (e) => logged.push(e.message) });
+  live.afterCycle();
+  assert.deepEqual(got.map(([, d]) => d.id), [1, b], 'readings of both rooms');
+  assert.deepEqual(logged, ['boom']);
 });

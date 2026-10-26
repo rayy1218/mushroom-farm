@@ -133,7 +133,11 @@ export function createApi(db, machines = null, controller = null, poller = null,
     }
     if (path === '/api/rooms') {
       if (req.method === 'GET') return send(res, 200, db.listRooms());
-      if (req.method === 'POST') return send(res, 201, db.createRoom(await readRoom(req)));
+      if (req.method === 'POST') {
+        const created = db.createRoom(await readRoom(req));
+        publishRoom(created.id, 'room');
+        return send(res, 201, created);
+      }
       throw notFound();
     }
     // ---- Alarms (spec 2026-10-19-safety-and-history-design.md section 5) ----
@@ -252,13 +256,16 @@ export function createApi(db, machines = null, controller = null, poller = null,
           // the command is saved even when the write fails; the room is updated anyway
         }
       }
-      return send(res, 200, db.updateRoom(id, room));
+      const updated = db.updateRoom(id, room);
+      publishRoom(id, 'room');
+      return send(res, 200, updated);
     }
     if (req.method === 'DELETE') {
       if (!db.deleteRoom(id)) throw noRoom();
       machines?.forget(id);
       controller?.forget(id);
       simulations?.forgetRoom(id);
+      publishRoom(id, 'room');
       res.writeHead(204);
       return res.end();
     }

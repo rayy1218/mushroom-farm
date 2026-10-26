@@ -3,7 +3,7 @@
 // While a run is going the list is asked every 2 s, otherwise only when asked for (after a run was started).
 
 import { live } from './live.js';
-import { fallbackMs, createDebounce } from './live-math.js';
+import { fallbackMs, createThrottle } from './live-math.js';
 import { request } from './api.js';
 import { openSimulateDialog } from './simulate-dialog.js';
 import { runRow, isActive } from './simulation-math.js';
@@ -76,18 +76,16 @@ export function createSimulationsCard(host, { roomId, getRoom }) {
     if (room) openSimulateDialog(room, { onStarted: () => { if (alive) refresh(); }, onFinished: () => { if (alive) refresh(); } });
   });
   more.addEventListener('click', () => { all = !all; paint(); });
-  // A run of this room moving (a new status) asks again, instead of waiting for the timer.
-  const reload = createDebounce(() => { if (alive) refresh(); });
-  const seen = new Map(); // run id → the status last heard
-  const offLive = live.on('simulation', (data) => {
-    if (data.roomId !== roomId || seen.get(data.id) === data.status) return;
-    seen.set(data.id, data.status);
-    reload.call();
-  });
+  // A run of this room moving asks again (at most once in 2 s), instead of waiting for the timer.
+  const reload = createThrottle(() => { if (alive) refresh(); }, 2000);
+  const offLive = [
+    live.on('simulation', (data) => { if (data.roomId === roomId) reload.call(); }),
+    live.onStatus(() => { if (alive) refresh(); }), // up: once, in case events were missed; down: refresh sets the short timer
+  ];
   refresh();
 
   return {
     refresh,
-    destroy() { alive = false; seq++; clearTimeout(timer); reload.cancel(); offLive(); host.replaceChildren(); },
+    destroy() { alive = false; seq++; clearTimeout(timer); reload.cancel(); offLive.forEach((off) => off()); host.replaceChildren(); },
   };
 }

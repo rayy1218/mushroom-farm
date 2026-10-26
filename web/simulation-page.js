@@ -6,7 +6,7 @@ import { drawLineChart, M } from './chart.js';
 import { drawTimeline } from './timeline.js';
 import { drawBarChart } from './usage.js';
 import { live } from './live.js';
-import { fallbackMs, createDebounce } from './live-math.js';
+import { fallbackMs, withProgress, isStale } from './live-math.js';
 import { tickCountFor } from './history-math.js';
 import { progressLine } from './simulate-math.js';
 import {
@@ -135,6 +135,7 @@ export function mount(container, { id, runId }) {
         showMissing();
         return;
       }
+      if (run && isStale(run, data)) return void (timer = setTimeout(load, fallbackMs(POLL_MS, live.connected()))); // an event came after it was asked
       run = data;
       retry = load;
       els.banner.hidden = true;
@@ -343,13 +344,20 @@ export function mount(container, { id, runId }) {
   load();
 
   // Live updates: this run's progress and end ask again instead of the 2 s timer (which is only the fallback while the stream is up).
-  const reload = createDebounce(() => { if (alive()) load(); });
+  // Progress is painted from the event; the end asks once (the summary, then the results).
   const offLive = [
-    live.on('simulation', (data) => { if (data.id === Number(runId)) reload.call(); }),
+    live.on('simulation', (data) => {
+      if (data.id !== Number(runId) || !alive()) return;
+      if (data.status === 'done' || data.status === 'failed') return void load();
+      const next = run && withProgress(run, data);
+      if (next) {
+        run = next;
+        render();
+      } else if (!run) load();
+    }),
     live.onStatus((up) => {
-      if (!isActive(run) && run) return; // nothing more to wait for
-      if (up) reload.call();
-      else load();
+      if (run && !isActive(run)) return; // nothing more to wait for
+      load(); // up: once, in case events were missed; down: the short timer again
     }),
   ];
 
