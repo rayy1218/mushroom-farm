@@ -10,6 +10,7 @@ import { CROPS } from './crops.js';
 const num = (x) => (typeof x === 'number' && Number.isFinite(x) ? x : null);
 const clamp01 = (x) => Math.min(1, Math.max(0, x));
 const DASH = '—';
+const limit = (x) => String(Math.round(x * 10) / 10); // a ramping band moves in small steps: 20.9333 → "20.9"
 
 // ---------------- reading tiles ----------------
 
@@ -44,7 +45,7 @@ export function bandBar(key, value, low, high, safety) {
   return {
     zone: hasBand ? { from: at(low), to: at(high) } : null,
     mark: num(value) === null ? null : at(value),
-    limits: hasBand ? [{ at: at(low), text: String(low) }, { at: at(high), text: String(high) }] : [],
+    limits: hasBand ? [{ at: at(low), text: limit(low) }, { at: at(high), text: limit(high) }] : [],
   };
 }
 
@@ -65,7 +66,7 @@ export function readingTiles(draw, control) {
       chip: { lvl: st.lvl || 'none', text: `${st.icon ? `${st.icon} ` : ''}${st.text || ''}` },
       edge: EDGE[st.lvl] ?? 'none',
       bar: bandBar(r.key, value, low, high, r.safety ? num(control?.[r.safety]) : null),
-      label: value === null ? `${r.name} no data` : `${r.name} ${shown} ${r.unit}${low !== null && high !== null ? `, band ${low} to ${high}` : ''}`,
+      label: value === null ? `${r.name} no data` : `${r.name} ${shown} ${r.unit}${low !== null && high !== null ? `, band ${limit(low)} to ${limit(high)}` : ''}`,
     };
   });
 }

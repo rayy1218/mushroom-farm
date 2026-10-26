@@ -1,7 +1,8 @@
 // The Crop and stage card of the room page (spec 2026-10-20-crops-and-simulation-design.md 3.5): the room's crops and farm type,
 // the stage and when the next one starts, the program numbers, Start stage and Save. GET and PUT /api/rooms/:id/crop.
-// createCropCard(host, { roomId, onChange, onOffline, onGone }) → { refresh(), destroy() }. onChange(): the crops or the stage were
-// saved (the bands may have changed). The form is updated in place: a refresh never replaces what the person is editing.
+// createCropCard(host, { roomId, onChange, onData, onOffline, onGone }) → { refresh(), destroy() }. onChange(): the crops or the stage were
+// saved (the bands may have changed); onData(crop): every reply shown (the Room card writes the blocks from it). The form is
+// updated in place: a refresh never replaces what the person is editing.
 
 import { request, OFFLINE } from './api.js';
 import { CROPS, CROP_KEYS, STAGES, FARM_TYPES, MAX_CROPS } from './crops.js';
@@ -30,7 +31,7 @@ function button(label, className) {
 
 const errorText = (err) => (err.status === 0 ? `${OFFLINE}. Try again.` : err.message);
 
-export function createCropCard(host, { roomId, onChange, onOffline, onGone }) {
+export function createCropCard(host, { roomId, onChange, onData, onOffline, onGone }) {
   let alive = true;
   let seq = 0; // every load or command takes a token; a reply that finds it changed is dropped
   let last = null; // the last reply painted
@@ -250,6 +251,7 @@ export function createCropCard(host, { roomId, onChange, onOffline, onGone }) {
 
   function paint(c) {
     last = c;
+    onData?.(c);
     loading.hidden = true;
     const has = hasCrops(c);
     none.hidden = has || adding;

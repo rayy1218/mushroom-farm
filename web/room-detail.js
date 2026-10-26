@@ -1,5 +1,6 @@
-// Room detail page: the room, its two sensors and the energy meter if it has one (status, latest values), its machines,
-// three charts of the last 50 polls (the T and RH charts with the outdoor line) and the energy and water card.
+// Room detail page: the Room card (the room picture, the readings against their bands, the machines in air-path order), the
+// room's two sensors and the energy meter if it has one (status, latest values), its machines, three charts of the last 50
+// polls (the T and RH charts with the outdoor line) and the energy and water card.
 // Refreshes every reading interval (2–30 s; 5 s when the settings cannot be read) while shown.
 
 import { request, OFFLINE } from './api.js';
@@ -10,10 +11,12 @@ import { createAlarmsCard } from './alarms.js';
 import { createCropCard } from './crop-card.js';
 import { createSimulationsCard } from './sim-card.js';
 import { createFilterCard } from './filter-card.js';
-import { intakeRunning } from './filter-math.js';
+import { intakeRunning, lastRunningOf } from './filter-math.js';
 import { closeSimulateDialog } from './simulate-dialog.js';
-import { createMimic, startLoop } from './mimic.js';
+import { startLoop } from './mimic.js';
 import { fromRoom } from './mimic-math.js';
+import { createRoomCard } from './room-card.js';
+import { roomCard, filterSummary, freshAirLine, blocksLine } from './room-card-math.js';
 import { drawLineChart } from './chart.js';
 import { refreshMs } from './settings-math.js';
 import { live } from './live.js';
@@ -67,10 +70,7 @@ const TEMPLATE = `
   </div>
   <div data-body hidden>
     <section data-alarms hidden></section>
-    <section class="card mimic-card" data-mimic>
-      <h2>Room</h2>
-      <div class="mimic-host" data-mimic-host></div>
-    </section>
+    <section data-room-card></section>
     <div class="sensors" data-sensors></div>
     <section data-filter hidden></section>
     <section data-crop></section>
@@ -117,7 +117,7 @@ export function mount(container, { id }) {
     sensors: q('[data-sensors]'),
     filterHost: q('[data-filter]'),
     alarmsHost: q('[data-alarms]'),
-    mimicHost: q('[data-mimic-host]'),
+    roomCardHost: q('[data-room-card]'),
     cropHost: q('[data-crop]'),
     controlHost: q('[data-control]'),
     machinesHost: q('[data-machines]'),
@@ -139,8 +139,10 @@ export function mount(container, { id }) {
   let machines = null; // the Machines card, made on the first render
   let control = null; // the Automatic control card, made on the first render
   let alarmsCard = null; // the Alarms card, made on the first render
-  let mimic = null; // the room drawing, made on the first render
-  let stopLoop = null; // stops its animation
+  let roomCardUi = null; // the Room card with the room picture, made on the first render
+  let stopLoop = null; // stops the picture's animation
+  let filterLast = null; // the last filter reading with the intake on (shown while it is off, like the Filter card)
+  let crops = null; // the room's crops, from the Crop and stage card's replies (for the blocks under the picture)
   let lastMachines = null; // the last good replies, so a failed optional read keeps the drawing's machines
   let lastControl = null;
   let ticker = null;
@@ -430,7 +432,7 @@ export function mount(container, { id }) {
       makeAlarms();
       makeMachines();
       makeControl();
-      mimic = createMimic(els.mimicHost, { idPrefix: 'room-' });
+      roomCardUi = createRoomCard(els.roomCardHost, { idPrefix: 'room-' });
       buildCharts();
       usageCard = createUsageCard(els.usageHost, { roomId: id, getRoom: () => room });
       history = createHistory(els.rangeHost, { roomId: id, outdoor: true, onChange: () => { if (alive() && sensors) renderCharts(); } });
@@ -440,7 +442,7 @@ export function mount(container, { id }) {
     simulationsCard ??= createSimulationsCard(els.simulationsHost, { roomId: id, getRoom: () => room });
     filterCard ??= createFilterCard(els.filterHost, { roomId: id, onChanged: () => { if (alive()) load(); } }); // the alarms clear
     filterCard.update(room, sensors.dp, intakeRunning(machineData ?? lastMachines));
-    stopLoop ??= startLoop(() => (mimic ? [mimic] : [])); // (again after a missing room came back)
+    stopLoop ??= startLoop(() => (roomCardUi ? [roomCardUi.mimic] : [])); // (again after a missing room came back)
     alarmsCard.update(alarmData); // hides itself while there are no current alarms; a failed read keeps the last data
     // The card shows only once a good reply came; later failures keep the last good data.
     // It is updated before the sensor cards so focus handling there sees the final page.
@@ -464,9 +466,18 @@ export function mount(container, { id }) {
     usageCard.refresh(); // not more than once a minute
   }
 
-  // The room drawing from the latest painted replies (also right after a command, not only on the next refresh).
+  // The Room card from the latest painted replies (also right after a command, not only on the next refresh).
   function paintDrawing() {
-    if (mimic && room) mimic.paint(fromRoom({ room, sensors, machines: lastMachines, control: lastControl, outdoor }));
+    if (!roomCardUi || !room || !sensors) return;
+    const now = Date.now();
+    const intake = intakeRunning(lastMachines);
+    filterLast = lastRunningOf(filterLast, intake, sensors.dp);
+    const filter = filterSummary({ room, sensor: sensors.dp, intake, lastRunning: filterLast, now });
+    const draw = {
+      ...fromRoom({ room, sensors, machines: lastMachines, control: lastControl, outdoor, filterPa: filter ? filter.pa : null, now }),
+      blocks: blocksLine(crops),
+    };
+    roomCardUi.paint(roomCard({ draw, control: lastControl, filter, now }), draw);
   }
 
   // The outdoor line of the Live charts: the history of the last hour, asked at most once a minute and only when a sensor
@@ -530,6 +541,7 @@ export function mount(container, { id }) {
     cropCard = createCropCard(els.cropHost, {
       roomId: id,
       onChange: () => { if (alive()) load(); },
+      onData: (data) => { if (!alive()) return; crops = data?.crops ?? null; paintDrawing(); }, // the blocks under the picture
       onOffline: () => {
         if (!els.banner.hidden) return;
         els.bannerText.textContent = OFFLINE;
@@ -561,11 +573,12 @@ export function mount(container, { id }) {
     });
   }
 
-  // "n s ago" counts on between refreshes.
+  // "n s ago" and the Room card's fresh-air minutes count on between refreshes.
   ticker = setInterval(() => {
     for (const node of els.sensors.querySelectorAll('[data-ago-at]')) {
       node.textContent = formatAgo(Date.now() - Number(node.dataset.agoAt));
     }
+    if (roomCardUi && room) roomCardUi.setFresh(freshAirLine(lastControl));
   }, 1000);
 
   // ---- wiring ----
@@ -611,7 +624,7 @@ export function mount(container, { id }) {
     control?.destroy();
     alarmsCard?.destroy();
     stopLoop?.();
-    mimic?.destroy();
+    roomCardUi?.destroy();
     history?.destroy();
     usageCard?.destroy();
     cropCard?.destroy();

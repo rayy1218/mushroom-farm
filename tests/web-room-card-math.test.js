@@ -40,6 +40,7 @@ test('bandBar: the band as a zone and the reading as a mark, as shares of the sc
   assert.equal(b.mark, 7.5 / 15);
   assert.deepEqual(b.limits, [{ at: 6 / 15, text: '21' }, { at: 9 / 15, text: '24' }]);
   assert.deepEqual(bandBar('T', 21.5, 21.5, 23).limits[0], { at: 6.5 / 15, text: '21.5' });
+  assert.deepEqual(bandBar('T', 21, 20.93333, 22.96667).limits.map((l) => l.text), ['20.9', '23'], 'a ramping band: one decimal');
   const none = bandBar('RH', null, undefined, undefined);
   assert.equal(none.zone, null);
   assert.equal(none.mark, null);
