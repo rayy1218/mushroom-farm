@@ -32,6 +32,7 @@ import { meterCard } from './ratings-math.js';
 // Stream B: long-range charts and the machine timeline
 import { createHistory } from './history.js';
 import { createUsageSection } from './usage-section.js';
+import { createExchangeSection } from './exchange-section.js';
 import { drawTimeline } from './timeline.js';
 import { timeTicks, tickCountFor, chartDrawKey, historyPoints, timelineSpans, acMarks, formatStamp, wiredTimelineRows } from './history-math.js';
 
@@ -85,6 +86,7 @@ const TEMPLATE = `
           <div data-range></div>
           <div class="charts" data-charts></div>
           <section class="card chart-card usage-charts" data-usage-charts></section>
+          <section class="card chart-card usage-charts" data-exchange hidden></section>
           <section class="card timeline-card" data-timeline hidden>
             <h2>Machine timeline</h2>
             <div class="chart-host" data-timeline-host></div>
@@ -184,6 +186,7 @@ export function mount(container, { id, tab = 'overview' }) {
     timeline: q('[data-timeline]'),
     timelineHost: q('[data-timeline-host]'),
     usageCharts: q('[data-usage-charts]'),
+    exchange: q('[data-exchange]'),
     usageHost: q('[data-usage]'),
     simulationsHost: q('[data-simulations]'),
   };
@@ -210,6 +213,7 @@ export function mount(container, { id, tab = 'overview' }) {
   let history = null; // the range choice and the data of the other ranges (Stream B)
   let timelineChart = null;
   let usageSection = null; // Electricity and water under the charts (spec 2026-10-26-usage-charts-design.md)
+  let exchangeSection = null; // Air exchange: its own hourly or daily switch
   let price = null; // the electricity price of the settings, for the cost in the usage totals
   let drawnData = null; // the history reply last drawn
   let drawnWith = null;
@@ -500,6 +504,7 @@ export function mount(container, { id, tab = 'overview' }) {
       roomCardUi = createRoomCard(els.roomCardHost, { idPrefix: 'room-', cropHref: roomHash(id, 'crop') });
       buildCharts();
       usageSection = createUsageSection(els.usageCharts, { onCursor: moveCursor });
+      exchangeSection = createExchangeSection(els.exchange, { roomId: id });
       usageCard = createUsageCard(els.usageHost, { roomId: id, getRoom: () => room });
       history = createHistory(els.rangeHost, { roomId: id, outdoor: true, onChange: () => { if (alive() && sensors) renderCharts(); } });
       built = true;
@@ -529,6 +534,7 @@ export function mount(container, { id, tab = 'overview' }) {
       }
     }
     renderSensors();
+    exchangeSection.update(room);
     renderCharts();
     paintDrawing();
     usageCard.refresh(); // not more than once a minute
@@ -699,6 +705,7 @@ export function mount(container, { id, tab = 'overview' }) {
     outdoorLiveSeq++;
     timelineChart?.destroy();
     usageSection?.destroy();
+    exchangeSection?.destroy();
     for (const { chart } of chartCards.values()) chart?.destroy();
     closeRoomDialog();
     closeSimulateDialog();
