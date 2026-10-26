@@ -140,10 +140,18 @@ export function stageMark(c, stage, now = Date.now()) {
     if (hasFlush(stage)) parts.push(`flush ${c.flush} of ${c.flushes}`);
     return { kind: 'current', text: parts.join(' · ') };
   }
-  if (!c.done && c.nextStage?.stage === stage) {
-    return { kind: 'next', text: Number.isFinite(c.nextStage.at) ? `Next · about ${formatDateTime(c.nextStage.at)}` : 'Next · when you start it' };
+  const next = c.done ? null : c.nextStage ?? followingStage(c); // the server sends no next stage while automatic change is off
+  if (next?.stage === stage) {
+    return { kind: 'next', text: Number.isFinite(next.at) ? `Next · about ${formatDateTime(next.at)}` : 'Next · when you start it' };
   }
   return { kind: '', text: '' };
+}
+
+// The stage after the present one by the program's rules (server/program.js nextStage), without a time; null after the last rest.
+function followingStage(c) {
+  if (c.stage === 'spawn') return { stage: 'pinning', at: null };
+  if (c.stage === 'pinning' || (c.stage === 'rest' && c.flush < c.flushes)) return { stage: 'fruiting', at: null };
+  return c.stage === 'fruiting' ? { stage: 'rest', at: null } : null;
 }
 
 // The Stages list: the whole program of the farm type (spawn and pinning once, then fruiting and rest for every flush), each

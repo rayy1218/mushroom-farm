@@ -130,6 +130,12 @@ test('the mark of a stage: current with its day and flush, next with when, or no
   const off = { ...ready, autoAdvance: false, nextStage: { stage: 'rest', flush: 1, at: null } };
   assert.deepEqual(stageMark(off, 'fruiting', at(30, 12, 0)), { kind: 'current', text: 'Current · day 5 · flush 1 of 2' });
   assert.deepEqual(stageMark(off, 'rest', now), { kind: 'next', text: 'Next · when you start it' });
+  // the server sends nextStage null while automatic change is off: the next stage by the program's rules, without a time
+  const none = { ...off, nextStage: null };
+  assert.deepEqual(stageMark(none, 'rest', now), { kind: 'next', text: 'Next · when you start it' });
+  assert.deepEqual(stageMark({ ...none, stage: 'spawn', farmType: 'full' }, 'pinning', now), { kind: 'next', text: 'Next · when you start it' });
+  assert.deepEqual(stageMark({ ...none, stage: 'rest' }, 'fruiting', now), { kind: 'next', text: 'Next · when you start it' });
+  assert.deepEqual(stageMark({ ...none, stage: 'rest', flush: 2 }, 'fruiting', now), { kind: '', text: '' }, 'after the last rest nothing follows');
   const done = { ...ready, stage: 'rest', flush: 2, done: true, nextStage: null };
   assert.deepEqual(stageMark(done, 'rest', now), { kind: 'current', text: 'Current · flush 2 of 2 done' });
   assert.deepEqual(stageMark(done, 'fruiting', now), { kind: '', text: '' });
