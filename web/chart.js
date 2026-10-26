@@ -3,6 +3,8 @@
 
 import { formatClock, yRange, xFor, segments, nearestIndex, clipSeries, stepShapes, stepValues } from './chart-math.js';
 
+const OUTDOOR_DOTS = '0.1 5'; // round dots 5 px apart (with a round cap a zero-length dash draws a dot)
+
 const NS = 'http://www.w3.org/2000/svg';
 export const M = { left: 64, right: 12, top: 10, bottom: 24 }; // the timeline lines up with these
 
@@ -146,18 +148,19 @@ export function drawLineChart(host, opts) {
       svg.append(el('line', { x1: xs[i], x2: xs[i], y1: y0 - 12, y2: y0, style: 'stroke:var(--critical-text)', 'stroke-width': 2 }));
     });
 
-    // The second line (outdoor): dashed and muted, under the main one, with its name at the top right.
+    // The second line (outdoor): dotted in the chart's own colour (the grey dashes are the band limits), under the main one, with
+    // its name and latest value at the top left (the band limits are labelled at the right edge).
     if (secondValues.length) {
+      const dots = { fill: 'none', 'stroke-width': 2.5, 'stroke-dasharray': OUTDOOR_DOTS, 'stroke-linecap': 'round', style: `stroke:${current.color ?? 'var(--ink)'};opacity:.8` };
       for (const run of segments(second)) {
         if (run.length < 2) continue;
         const d = run.map((p, k) => `${k ? 'L' : 'M'}${xFor(p.at, t0, t1, x0, x1).toFixed(1)} ${yFor(p.value).toFixed(1)}`).join(' ');
-        svg.append(el('path', {
-          d, fill: 'none', 'stroke-width': 1.5, 'stroke-dasharray': '5 4', 'stroke-linejoin': 'round', style: 'stroke:var(--muted)',
-        }));
+        svg.append(el('path', { d, ...dots }));
       }
-      // top left: the band limits are labelled at the right edge
-      svg.append(el('line', { x1: x0 + 8, x2: x0 + 28, y1: y1 + 8, y2: y1 + 8, 'stroke-width': 1.5, 'stroke-dasharray': '5 4', style: 'stroke:var(--muted)' }));
-      svg.append(el('text', { x: x0 + 34, y: y1 + 12, style: 'fill:var(--muted)', 'font-size': 11 }, current.second.label ?? 'Outdoor'));
+      const lastSecond = [...second].reverse().find((p) => p.value !== null && Number.isFinite(p.value));
+      svg.append(el('line', { x1: x0 + 8, x2: x0 + 28, y1: y1 + 8, y2: y1 + 8, ...dots }));
+      svg.append(el('text', { x: x0 + 34, y: y1 + 12, style: 'fill:var(--ink-2)', 'font-size': 11 },
+        `${current.second.label ?? 'Outdoor'}${lastSecond ? ` ${fmt(lastSecond.value)}` : ''}`));
     }
 
     // The line, one path per run; a run of one point is a dot.
