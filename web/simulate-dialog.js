@@ -3,6 +3,8 @@
 // openSimulateDialog(room, { onStarted(run), onFinished() }); closeSimulateDialog() for a page that goes away.
 
 import { request, OFFLINE, GONE, OUTDATED, routeMissing } from './api.js';
+import { live } from './live.js';
+import { fallbackMs } from './live-math.js';
 import { CROPS, CROP_KEYS, STAGES, FARM_TYPES, MAX_CROPS } from './crops.js';
 import {
   PHYSICS_FIELDS, FILTER_KEYS, initialState, checkStep, firstField, stepOf, buildBody, mixSummary, wholeProgram, stagesOf, fixStage, roomLine,
@@ -429,20 +431,24 @@ export function openSimulateDialog(room, hooks = {}) {
     const job = sizing;
     paintSizing();
     if (!sizingActive()) return;
-    sizingTimer = setTimeout(async () => {
+    sizingTimer = setTimeout(() => checkSizing(job), fallbackMs(SIZING_POLL_MS, live.connected()));
+  }
+
+  // One look at the suggestion: on the timer, or at once when the stream says it moved.
+  async function checkSizing(job) {
+    clearTimeout(sizingTimer);
+    if (!alive() || sizing !== job) return;
+    try {
+      const latest = await request('GET', `/api/sizing/${job.id}`);
       if (!alive() || sizing !== job) return;
-      try {
-        const latest = await request('GET', `/api/sizing/${job.id}`);
-        if (!alive() || sizing !== job) return;
-        // ids start again after a restart of the farm app: another room's job with the same id is not this one
-        if (latest.roomId !== room.id) { sizing = null; sizingText = 'This suggestion is gone'; paintSizing(); return; }
-        sizing = latest;
-      } catch (err) {
-        if (!alive() || sizing !== job) return;
-        if (err.status === 404) { sizing = null; sizingText = 'This suggestion is gone'; paintSizing(); return; }
-      }
-      pollSizing();
-    }, SIZING_POLL_MS);
+      // ids start again after a restart of the farm app: another room's job with the same id is not this one
+      if (latest.roomId !== room.id) { sizing = null; sizingText = 'This suggestion is gone'; paintSizing(); return; }
+      sizing = latest;
+    } catch (err) {
+      if (!alive() || sizing !== job) return;
+      if (err.status === 404) { sizing = null; sizingText = 'This suggestion is gone'; paintSizing(); return; }
+    }
+    pollSizing();
   }
 
   async function cancelSizing() {
@@ -546,23 +552,28 @@ export function openSimulateDialog(room, hooks = {}) {
 
   function poll() {
     clearTimeout(timer);
-    timer = setTimeout(async () => {
+    timer = setTimeout(checkRun, fallbackMs(POLL_MS, live.connected()));
+  }
+
+  // One look at the run: on the timer, or at once when the stream says it moved.
+  async function checkRun() {
+    clearTimeout(timer);
+    const over = () => run.status === 'done' || run.status === 'failed'; // an answer that came meanwhile (timer and stream) ended it
+    if (!alive() || over()) return;
+    try {
+      const latest = await request('GET', `/api/simulations/${run.id}?result=0`); // never needs the result
+      if (!alive() || over()) return;
+      run = latest;
+      paintRun();
+      if (run.status === 'done' || run.status === 'failed') { hooks.onFinished?.(run); return; }
+    } catch (err) {
       if (!alive()) return;
-      try {
-        const latest = await request('GET', `/api/simulations/${run.id}?result=0`); // never needs the result
-        if (!alive()) return;
-        run = latest;
-        paintRun();
-        if (run.status === 'done' || run.status === 'failed') { hooks.onFinished?.(run); return; }
-      } catch (err) {
-        if (!alive()) return;
-        if (err.status === 404) { // deleted meanwhile
-          body.replaceChildren(el('p', 'sim-warn', 'This simulation was deleted'));
-          return;
-        }
+      if (err.status === 404) { // deleted meanwhile
+        body.replaceChildren(el('p', 'sim-warn', 'This simulation was deleted'));
+        return;
       }
-      poll();
-    }, POLL_MS);
+    }
+    poll();
   }
 
   // ---- open ----
@@ -570,6 +581,12 @@ export function openSimulateDialog(room, hooks = {}) {
   body.append(el('p', 'muted', 'Loading…'));
   actions.append(button('Cancel'));
   actions.firstChild.addEventListener('click', () => d.close());
+  // The stream says a job moved: look at once instead of waiting for the timer.
+  const offLive = [
+    live.on('sizing', (data) => { if (sizing && data.id === sizing.id && data.roomId === room.id && sizingActive()) checkSizing(sizing); }),
+    live.on('simulation', (data) => { if (run && data.id === run.id) checkRun(); }),
+  ];
+  d.addEventListener('close', () => offLive.forEach((off) => off()), { once: true });
   d.addEventListener('close', () => { // a suggestion nobody waits for stops, so the room is free for the next one
     clearTimeout(sizingTimer);
     if (sizingActive()) request('DELETE', `/api/sizing/${sizing.id}`).catch(() => {});

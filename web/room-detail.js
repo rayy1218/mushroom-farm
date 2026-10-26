@@ -16,6 +16,8 @@ import { createMimic, startLoop } from './mimic.js';
 import { fromRoom } from './mimic-math.js';
 import { drawLineChart } from './chart.js';
 import { refreshMs } from './settings-math.js';
+import { live } from './live.js';
+import { fallbackMs, createDebounce } from './live-math.js';
 import { formatClock, formatAgo, chartPoints } from './chart-math.js';
 import { createUsageCard } from './usage.js';
 import { outdoorLine, pushOutdoorTail, liveOutdoor } from './outdoor-math.js';
@@ -163,7 +165,7 @@ export function mount(container, { id }) {
 
   function schedule() {
     clearTimeout(timer);
-    timer = setTimeout(load, refresh);
+    timer = setTimeout(load, fallbackMs(refresh, live.connected()));
   }
 
   async function load() {
@@ -586,10 +588,23 @@ export function mount(container, { id }) {
   });
   els.retry.addEventListener('click', load);
 
+  // Live updates: the room's events ask for the data again (a minute's timer is the fallback while the stream is up).
+  const reload = createDebounce(() => { if (alive()) load(); });
+  const offLive = [
+    live.on('room', (data) => {
+      if (data.id !== id) return;
+      if (data.part === 'crop') cropCard?.refresh();
+      reload.call();
+    }),
+    live.onStatus((up) => { if (up) reload.call(); else schedule(); }), // back: catch up; gone: the short timer again
+  ];
+
   load();
 
   return function unmount() {
     mountSeq++;
+    reload.cancel();
+    for (const off of offLive) off();
     clearTimeout(timer);
     clearInterval(ticker);
     machines?.destroy();

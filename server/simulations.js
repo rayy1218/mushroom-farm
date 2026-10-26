@@ -143,8 +143,9 @@ export function spawnWorker(job, { onProgress, onDone, onError }) {
 
 // db: the farm database. now: injectable clock. spawn: how a job runs (tests pass an in-process one). Runs are stored in the
 // database; sizing jobs (suggest machines, spec 2026-10-22-suggest-machines-design.md 4 and 5) only in memory. Both share the
-// one queue: one job at a time.
-export function createSimulations({ db, now = Date.now, spawn = spawnWorker }) {
+// one queue: one job at a time. onChange(type, data), when given, is told of every change of a job (spec 2026-10-26 section 2):
+// 'simulation' { id, roomId, status, progress } and 'sizing' { id, roomId, status, progress, tried, total }.
+export function createSimulations({ db, now = Date.now, spawn = spawnWorker, onChange = null }) {
   const queue = []; // { kind: 'run' | 'sizing', id, roomId, job }
   let current = null; // { kind, id, roomId, handle, stored }
   const sizings = new Map(); // id → { id, roomId, status, progress, total, createdAt, finishedAt, result, error }
@@ -196,6 +197,32 @@ export function createSimulations({ db, now = Date.now, spawn = spawnWorker }) {
       },
     },
   };
+
+  // Tells onChange where a job stands now. A listener that throws never stops the job.
+  function announce(kind, id) {
+    if (!onChange) return;
+    try {
+      if (kind === 'run') {
+        const run = db.getRun(id, { withResult: false });
+        if (run) onChange('simulation', { id, roomId: run.roomId, status: run.status, progress: run.progress });
+      } else {
+        const job = sizings.get(id);
+        if (job) onChange('sizing', { id, roomId: job.roomId, status: job.status, progress: job.progress, tried: job.tried, total: job.total });
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  }
+  for (const [kind, jobs] of Object.entries(store)) {
+    for (const step of ['begin', 'progress', 'end']) {
+      const inner = jobs[step];
+      jobs[step] = (id, ...args) => {
+        const result = inner(id, ...args);
+        if (result !== false) announce(kind, id);
+        return result;
+      };
+    }
+  }
 
   // Keeps the newest SIZING_KEPT finished suggestions of a room.
   function prune(roomId) {
@@ -264,6 +291,7 @@ export function createSimulations({ db, now = Date.now, spawn = spawnWorker }) {
         ctx.control = { ...ctx.control, ...checked.input.control };
       }
       const run = db.createRun(roomId, { ...checked.input, ctx }, now());
+      announce('run', run.id);
       queue.push({ kind: 'run', id: run.id, roomId, job: { input: checked.input, ctx } });
       pump();
       return { run };
@@ -282,6 +310,7 @@ export function createSimulations({ db, now = Date.now, spawn = spawnWorker }) {
       const job = { id, roomId, status: 'queued', progress: 0, tried: 0, total, createdAt: now(), finishedAt: null, result: null, error: null };
       sizings.set(id, job);
       const queued = { ...job };
+      announce('sizing', id);
       queue.push({ kind: 'sizing', id, roomId, job: { kind: 'sizing', input: checked.input, ctx } });
       pump();
       return { job: queued };
