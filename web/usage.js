@@ -173,7 +173,7 @@ export function createUsageCard(host, { roomId, getRoom }) {
     else energyChart.update(energy);
     if (!waterChart) waterChart = drawBarChart(waterHost, water);
     else waterChart.update(water);
-    tableBox.replaceChildren(...(days.length ? [breakdownTable(days, usage?.prices?.electricity, getRoom?.()?.dehumidifier === true)] : []));
+    tableBox.replaceChildren(...(days.length ? [breakdownTable(days, usage?.prices?.electricity, getRoom?.()?.dehumidifier === true, getRoom?.()?.lights === true)] : []));
   }
 
   async function refresh(force = false) {
@@ -207,8 +207,8 @@ export function createUsageCard(host, { roomId, getRoom }) {
 }
 
 // The 30-day breakdown per machine: kWh, share and cost; a total row; one line on how the days were worked out.
-function breakdownTable(days, price, dehumidifier) {
-  const b = breakdown(days, price, { dehumidifier });
+function breakdownTable(days, price, dehumidifier, lights) {
+  const b = breakdown(days, price, { dehumidifier, lights });
   const wrap = text('div', 'us-table-wrap');
   const table = text('table', 'us-table');
   table.append(text('caption', '', 'Energy by machine, last 30 days'));
@@ -235,6 +235,6 @@ function breakdownTable(days, price, dehumidifier) {
   foot.append(th, text('td', 'num', formatKWh(b.total.kWh)), text('td', 'num', ''), text('td', 'num', formatRM(b.total.cost)));
   body.append(foot);
   table.append(body);
-  wrap.append(table, text('p', 'muted us-note', breakdownNote(days, { dehumidifier })));
+  wrap.append(table, text('p', 'muted us-note', breakdownNote(days, { dehumidifier, lights })));
   return wrap;
 }

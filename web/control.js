@@ -1,9 +1,10 @@
 // The Automatic control card on the room page: the Auto switch, the three bands, the air exchange state and the reasons.
-// createControl(host, { roomId, onOffline, onGone, onChange }) → { update(data, token) → painted, token(), destroy() }.
+// createControl(host, { roomId, onOffline, onGone, onChange, getRoom, cropHref }) → { update(data, token) → painted, token(),
+// setCrop(crop), destroy() }. setCrop: the crop program (GET /api/rooms/:id/crop) for the Lighting group's line of today.
 // Controls are updated in place, so a refresh never replaces an input the person is using or has edited.
 
 import { request, OFFLINE } from './api.js';
-import { BANDS, REASONS, reasonsShown, stateLine, inputLabel, reasonLine, checkBand, locateField, SAFETY_FIELDS, checkSafety, locateSafetyField, changedBody, checkLines, heldLine, HUMIDIFIER_LABEL, humidifierOn, OUTDOOR_LABEL, outdoorOn, outdoorNote, AC_FAN_LABEL, AC_FAN_OPTIONS, acFanOf, CONTROL_GROUPS } from './control-math.js';
+import { BANDS, REASONS, reasonsShown, stateLine, inputLabel, reasonLine, checkBand, locateField, SAFETY_FIELDS, checkSafety, locateSafetyField, changedBody, checkLines, heldLine, HUMIDIFIER_LABEL, humidifierOn, OUTDOOR_LABEL, outdoorOn, outdoorNote, AC_FAN_LABEL, AC_FAN_OPTIONS, acFanOf, CONTROL_GROUPS, lightingLine, CROP_TAB_LINK } from './control-math.js';
 
 const COMMAND_TIMEOUT = 30000;
 
@@ -40,7 +41,7 @@ function errorText(err) {
   return err.status === 0 ? `${OFFLINE}. Try again.` : err.message;
 }
 
-export function createControl(host, { roomId, onOffline, onGone, onChange, getRoom }) {
+export function createControl(host, { roomId, onOffline, onGone, onChange, getRoom, cropHref }) {
   let alive = true;
   let version = 0; // bumped by every command, so a refresh that began earlier is dropped
   let inflight = 0;
@@ -190,11 +191,20 @@ export function createControl(host, { roomId, onOffline, onGone, onChange, getRo
   fanRow.append(fanLabel, fanSelect, fanState);
   const fanErr = errorNode();
 
-  // ---- the groups: CO₂, Temperature, Humidity, Air circulation, each with its rows, its own settings and its reasons ----
+  // ---- the lights' window of today (from the crop program) and the way to change it ----
+  let crop = null;
+  const lightRow = el('div', 'c-light');
+  const lightToday = el('p', 'c-light-today', lightingLine(null));
+  const lightLink = el('a', 'c-light-link', CROP_TAB_LINK);
+  if (cropHref) lightLink.href = cropHref;
+  lightRow.append(lightToday, lightLink);
+
+  // ---- the groups: CO₂, Temperature, Humidity, Air circulation, Lighting, each with its rows, its own settings and its reasons ----
   const rowOf = (key) => form.querySelector(`[data-key="${key}"]`);
-  const own = { acFan: [fanRow, fanErr], humidifier: [humRow, humErr] };
+  const own = { acFan: [fanRow, fanErr], humidifier: [humRow, humErr], lightToday: [lightRow] };
   const reasonLists = [];
   const groups = [];
+  const fittedGroups = []; // [box, room field]: shown only while the room has that machine
   for (const g of CONTROL_GROUPS) {
     const box = el('section', 'c-group');
     box.dataset.group = g.key;
@@ -206,6 +216,7 @@ export function createControl(host, { roomId, onOffline, onGone, onChange, getRo
     reasonLists.push(list);
     box.append(list);
     groups.push(box);
+    if (g.fitted) fittedGroups.push([box, g.fitted]);
   }
   // What is left in the form, Use outdoor air, serves all of them: a box of its own after the groups.
   form.classList.add('c-group');
@@ -318,6 +329,11 @@ export function createControl(host, { roomId, onOffline, onGone, onChange, getRo
     fanState.hidden = !switchingFan;
   }
 
+  function paintLight() {
+    const text = lightingLine(crop);
+    if (lightToday.textContent !== text) lightToday.textContent = text;
+  }
+
   function paint(c) {
     last = c;
     paintAuto();
@@ -335,7 +351,10 @@ export function createControl(host, { roomId, onOffline, onGone, onChange, getRo
     checkList.replaceChildren(...lines.map((text) => el('li', 'warn', text)));
     checkList.hidden = lines.length === 0;
     for (const list of reasonLists) list.hidden = !c.auto; // the reasons are of the last decision: not shown once auto is off
-    const shown = reasonsShown(getRoom?.()?.dehumidifier === true);
+    const room = getRoom?.();
+    for (const [box, field] of fittedGroups) box.hidden = room?.[field] !== true;
+    paintLight();
+    const shown = reasonsShown(room);
     for (const r of REASONS) {
       const item = reasonItems.get(r.key);
       item.li.hidden = !shown.includes(r);
@@ -532,6 +551,10 @@ export function createControl(host, { roomId, onOffline, onGone, onChange, getRo
       if (!alive || token !== version || inflight > 0) return false;
       paint(data);
       return true;
+    },
+    setCrop(data) {
+      crop = data ?? null;
+      if (alive) paintLight();
     },
     destroy() { alive = false; host.replaceChildren(); },
   };

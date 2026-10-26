@@ -1,5 +1,7 @@
 // Pure helpers for the Automatic control card (no DOM, so they can be tested in Node).
 
+import { lightSummary } from './light-math.js';
+
 // Rows of the card: server field names, label, unit, limits (spec section 2) and the typical band of the crops grown here.
 export const BANDS = [
   { key: 'co2', label: 'CO₂', unit: 'ppm', name: 'CO₂ band', low: 'co2Low', high: 'co2High', min: 450, max: 5000, step: '1',
@@ -18,18 +20,26 @@ export const CONTROL_GROUPS = [
   { key: 't', title: 'Temperature', fields: ['t', 'acDrop'], own: ['acFan'], reasons: ['ac'] },
   { key: 'rh', title: 'Humidity', fields: ['rh'], own: ['humidifier'], reasons: ['humidifier', 'dehumidifier'] },
   { key: 'air', title: 'Air circulation', fields: [], own: [], reasons: ['circulation'] },
+  // the lights (spec 2026-10-26-lighting-design.md 8): today's window from the crop program, its reason; only when fitted
+  { key: 'light', title: 'Lighting', fields: [], own: ['lightToday'], reasons: ['lights'], fitted: 'lights' },
 ];
 
+// fitted: the room field that says whether the room has that machine.
 export const REASONS = [
   { key: 'exchange', label: 'Air exchange' },
   { key: 'humidifier', label: 'Humidifier' },
-  { key: 'dehumidifier', label: 'Dehumidifier', fitted: true },
+  { key: 'dehumidifier', label: 'Dehumidifier', fitted: 'dehumidifier' },
   { key: 'ac', label: 'Aircon' },
   { key: 'circulation', label: 'Circulation' },
+  { key: 'lights', label: 'Lights', fitted: 'lights' },
 ];
 
-// The reason lines to show: the dehumidifier's only while the room has one.
-export const reasonsShown = (dehumidifier) => REASONS.filter((r) => !r.fitted || dehumidifier);
+// The reason lines to show for a room: the dehumidifier's and the lights' only while the room has them.
+export const reasonsShown = (room) => REASONS.filter((r) => !r.fitted || room?.[r.fitted] === true);
+
+// The Lighting group's line for today, from the crop program (GET /api/rooms/:id/crop): "On 07:00–19:00 (12 h) for fruiting".
+export const lightingLine = (crop) => lightSummary(crop);
+export const CROP_TAB_LINK = 'Change the hours on the Crop tab';
 
 export const HUMIDIFIER_LABEL = 'Humidifier on during air exchange';
 

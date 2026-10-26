@@ -8,6 +8,7 @@ import { filterCard, intakeRunning, lastRunningOf } from './filter-math.js';
 import { CROPS, STAGES } from './crops.js';
 import { hasCrops } from './crop-math.js';
 import { formatDateTime } from './simulation-math.js';
+import { lightShort } from './light-math.js';
 
 const num = (x) => (typeof x === 'number' && Number.isFinite(x) ? x : null);
 const clamp01 = (x) => Math.min(1, Math.max(0, x));
@@ -106,12 +107,13 @@ export function freshAirLine(c, now = Date.now()) {
 
 const fanWord = (sub) => sub.replace(/^fan (\S+)/, (_, f) => `fan ${f.toLowerCase()}`);
 
-// In the order the air meets them; the dehumidifier only when the room has one.
+// In the order the air meets them, the lights after the circulation; the dehumidifier and the lights only when the room has them.
 const MACHINES = [
   { key: 'intake', name: 'Intake fan', effect: 'Air in',
     detail: (u, c, f) => (!f ? 'No filter sensor' : f.pa === null ? 'Filter: no reading yet' : `Filter ${Math.round(f.pa)} Pa`) },
   { key: 'ac', name: 'Aircon', effect: '− Temperature', detail: (u) => (u.sub ? `${u.state} · ${fanWord(u.sub)}` : u.state) },
   { key: 'circ', name: 'Circulation', effect: 'Mixes the air', detail: (u, c) => (c?.auto ? 'Always on' : 'Set by hand') },
+  { key: 'lights', name: 'Lights', effect: 'Light for the crop', detail: (u, c, f, crop) => (c?.auto ? lightShort(crop) : 'Set by hand') },
   { key: 'hu', name: 'Humidifier', effect: '+ Humidity', detail: (u, c) => (num(c?.rhLow) !== null ? `Below ${c.rhLow} %` : 'Below the band') },
   { key: 'dh', name: 'Dehumidifier', effect: '− Humidity', detail: (u, c) => (num(c?.rhHigh) !== null ? `Above ${c.rhHigh} %` : 'Above the band') },
   { key: 'exhaust', name: 'Exhaust fan', effect: 'Air out', detail: () => 'With the intake' },
@@ -127,16 +129,17 @@ function pillOf(key, u) {
   return u.on ? { text: 'On', tone: 'on' } : { text: 'Off', tone: 'off' };
 }
 
-// DrawState, the control view and filterSummary() → [{ key, step, name, effect, on, pill: { text, tone }, detail }].
-export function machineTiles(draw, control, filter) {
+// DrawState, the control view, filterSummary() and the crop program (the lights' schedule) → [{ key, step, name, effect, on,
+// pill: { text, tone }, detail }].
+export function machineTiles(draw, control, filter, crop = null) {
   const v = view(draw);
-  const unitOf = (key) => (key === 'dh' ? v.dh : v.units[key]);
+  const unitOf = (key) => (key === 'dh' || key === 'lights' ? v[key] : v.units[key]);
   return MACHINES.filter((m) => unitOf(m.key)).map((m, i) => {
     const u = unitOf(m.key);
     return {
       key: m.key, step: i + 1, name: m.name, effect: m.effect, on: u.on,
       pill: pillOf(m.key, u),
-      detail: u.known || m.key !== 'ac' ? m.detail(u, control, filter) : '', // the pill already says "No data"
+      detail: u.known || m.key !== 'ac' ? m.detail(u, control, filter, crop) : '', // the pill already says "No data"
     };
   });
 }
@@ -229,7 +232,7 @@ export function roomCard({ draw = null, control = null, filter = null, crop = nu
     crop: cropFacts(crop, now),
     tiles: readingTiles(draw, control),
     fresh: freshAirLine(control, now),
-    machines: machineTiles(draw, control, filter),
+    machines: machineTiles(draw, control, filter, crop),
     bottom: bottomLine(draw, filter),
   };
 }

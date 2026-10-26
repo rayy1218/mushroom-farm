@@ -17,27 +17,35 @@ export const DEHUMIDIFIER_RATINGS = [
   { name: 'dehumidifierLday', label: 'Dehumidifier capacity', unit: 'L/day', def: 20, max: 200, step: 0.1 },
 ];
 
+// The lights' power (spec 2026-10-26-lighting-design.md 8): shown, and required, only while they are fitted.
+export const LIGHTS_RATINGS = [
+  { name: 'lightsW', label: 'Lights power', unit: 'W', def: 60, max: 5000, step: 1 },
+];
+
 export const RATING_NAMES = RATINGS.map((r) => r.name);
 export const DEHUMIDIFIER_NAMES = DEHUMIDIFIER_RATINGS.map((r) => r.name);
+export const LIGHTS_NAMES = LIGHTS_RATINGS.map((r) => r.name);
+const ALL = [...RATINGS, ...DEHUMIDIFIER_RATINGS, ...LIGHTS_RATINGS];
 
 export const ratingMessage = (r) => `${r.label} must be a number from 0 to ${r.max} ${r.unit}`;
 
 // A room (or null, for a new room) → the text of each rating input; a missing number falls back to the default.
 export function ratingTexts(room) {
-  return Object.fromEntries([...RATINGS, ...DEHUMIDIFIER_RATINGS].map((r) => [r.name, String(Number.isFinite(room?.[r.name]) ? room[r.name] : r.def)]));
+  return Object.fromEntries(ALL.map((r) => [r.name, String(Number.isFinite(room?.[r.name]) ? room[r.name] : r.def)]));
 }
 
 // The inputs' texts → { values } or { errors: { name: message } }. A rating is a number from 0 to its maximum
-// (at most two decimals); anything else is an error on that input. The dehumidifier's two are errors only when it is
-// fitted; otherwise they are sent when they are fine (the room keeps them) and left out when not.
-export function parseRatings(texts, { dehumidifier = false } = {}) {
+// (at most two decimals); anything else is an error on that input. The dehumidifier's two and the lights' power are errors
+// only when fitted; otherwise they are sent when they are fine (the room keeps them) and left out when not.
+export function parseRatings(texts, { dehumidifier = false, lights = false } = {}) {
   const values = {};
   const errors = {};
-  for (const r of [...RATINGS, ...DEHUMIDIFIER_RATINGS]) {
+  for (const r of ALL) {
     const s = String(texts?.[r.name] ?? '').trim();
     const n = /^[0-9]{1,5}(\.[0-9]{1,2})?$/.test(s) ? Number(s) : NaN;
+    const needed = DEHUMIDIFIER_RATINGS.includes(r) ? dehumidifier : LIGHTS_RATINGS.includes(r) ? lights : true;
     if (n >= 0 && n <= r.max) values[r.name] = n;
-    else if (dehumidifier || !DEHUMIDIFIER_RATINGS.includes(r)) errors[r.name] = ratingMessage(r);
+    else if (needed) errors[r.name] = ratingMessage(r);
   }
   return Object.keys(errors).length ? { errors } : { values };
 }

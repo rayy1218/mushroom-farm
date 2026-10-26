@@ -598,7 +598,12 @@ export function mount(container, { id, tab = 'overview' }) {
     cropCard = createCropCard(els.cropHost, {
       roomId: id,
       onChange: () => { if (alive()) load(); },
-      onData: (data) => { if (!alive()) return; cropData = data ?? null; paintDrawing(); }, // the blocks and the stage on the Room card
+      onData: (data) => { // the blocks and the stage on the Room card, the lights' hours on the Climate tab
+        if (!alive()) return;
+        cropData = data ?? null;
+        control?.setCrop(cropData);
+        paintDrawing();
+      },
       onOffline: () => {
         if (!els.banner.hidden) return;
         els.bannerText.textContent = OFFLINE;
@@ -613,6 +618,7 @@ export function mount(container, { id, tab = 'overview' }) {
     control = createControl(els.controlHost, {
       roomId: id,
       getRoom: () => room,
+      cropHref: roomHash(id, 'crop'),
       onChange: (data) => {
         machines?.setAuto(data.auto);
         if (!alive()) return;

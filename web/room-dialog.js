@@ -1,7 +1,7 @@
 // The Add / Edit room dialog, shared by the list and the detail page. The markup lives in index.html.
 
 import { request, ApiError, OFFLINE } from './api.js';
-import { RATING_NAMES, DEHUMIDIFIER_NAMES, ratingTexts, parseRatings, meterAddressOf } from './ratings-math.js';
+import { RATING_NAMES, DEHUMIDIFIER_NAMES, LIGHTS_NAMES, ratingTexts, parseRatings, meterAddressOf } from './ratings-math.js';
 import { FILTER_NAMES, filterTexts, parseFilter, dpAddressOf } from './filter-math.js';
 
 const $ = (id) => document.getElementById(id);
@@ -13,11 +13,13 @@ const formError = $('form-error');
 const volume = $('volume');
 const save = $('save');
 
-const FIELDS = ['name', 'length', 'width', 'height', 'trhAddress', 'co2Address', 'meterAddress', 'dpAddress', 'relayAddress', 'acAddress', ...RATING_NAMES, ...DEHUMIDIFIER_NAMES, 'dehumidifier', ...FILTER_NAMES];
+const FIELDS = ['name', 'length', 'width', 'height', 'trhAddress', 'co2Address', 'meterAddress', 'dpAddress', 'relayAddress', 'acAddress', 'lights', ...RATING_NAMES, ...DEHUMIDIFIER_NAMES, 'dehumidifier', ...LIGHTS_NAMES, ...FILTER_NAMES];
+const CHECKBOXES = ['dehumidifier', 'lights'];
 const inputs = Object.fromEntries(FIELDS.map((f) => [f, $(`f-${f}`)]));
 const errors = Object.fromEntries(FIELDS.map((f) => [f, $(`e-${f}`)]));
 
 const dehumidifierFields = $('dehumidifier-fields');
+const lightsFields = $('lights-fields');
 
 const cubic = new Intl.NumberFormat(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
@@ -38,6 +40,11 @@ function updateDehumidifier() {
   dehumidifierFields.hidden = !inputs.dehumidifier.checked;
 }
 
+// The lights' power shows only while they are fitted.
+function updateLights() {
+  lightsFields.hidden = !inputs.lights.checked;
+}
+
 function updateVolume() {
   const v = inputs.length.valueAsNumber * inputs.width.valueAsNumber * inputs.height.valueAsNumber;
   volume.textContent = Number.isFinite(v) ? `Volume: ${cubic.format(v)} m³` : 'Volume: — m³';
@@ -52,12 +59,14 @@ export function openRoomDialog(room, { onSaved, onGone } = {}) {
   editingId = room ? room.id : null;
   title.textContent = room ? 'Edit room' : 'Add room';
   form.reset();
-  if (room) for (const f of FIELDS) if (f !== 'dehumidifier') inputs[f].value = room[f] ?? '';
+  if (room) for (const f of FIELDS) if (!CHECKBOXES.includes(f)) inputs[f].value = room[f] ?? '';
   // The ratings start at the defaults for a new room (and for an older server that sends none).
   const texts = { ...ratingTexts(room), ...filterTexts(room) };
-  for (const f of [...RATING_NAMES, ...DEHUMIDIFIER_NAMES, ...FILTER_NAMES]) inputs[f].value = texts[f];
+  for (const f of [...RATING_NAMES, ...DEHUMIDIFIER_NAMES, ...LIGHTS_NAMES, ...FILTER_NAMES]) inputs[f].value = texts[f];
   inputs.dehumidifier.checked = room?.dehumidifier === true;
+  inputs.lights.checked = room?.lights === true;
   updateDehumidifier();
+  updateLights();
   clearErrors();
   updateVolume();
   dialog.showModal();
@@ -93,7 +102,8 @@ form.addEventListener('submit', async (event) => {
   // The meter and filter sensor addresses, the ratings and the filter settings are checked here as the server does; the first
   // wrong input gets the focus. All four filter settings are sent: the server keeps one that is left out.
   const fitted = inputs.dehumidifier.checked;
-  const ratings = parseRatings(Object.fromEntries([...RATING_NAMES, ...DEHUMIDIFIER_NAMES].map((f) => [f, inputs[f].value])), { dehumidifier: fitted });
+  const lit = inputs.lights.checked;
+  const ratings = parseRatings(Object.fromEntries([...RATING_NAMES, ...DEHUMIDIFIER_NAMES, ...LIGHTS_NAMES].map((f) => [f, inputs[f].value])), { dehumidifier: fitted, lights: lit });
   const filter = parseFilter(Object.fromEntries(FILTER_NAMES.map((f) => [f, inputs[f].value])));
   const problems = { ...ratings.errors, ...filter.errors };
   const meter = meterAddressOf(inputs.meterAddress.value);
@@ -121,6 +131,7 @@ form.addEventListener('submit', async (event) => {
     meterAddress: meter,
     dpAddress: dp,
     dehumidifier: fitted,
+    lights: lit,
     ...ratings.values,
     ...filter.values,
   };
@@ -147,4 +158,5 @@ form.addEventListener('submit', async (event) => {
 
 form.addEventListener('input', updateVolume);
 inputs.dehumidifier.addEventListener('change', updateDehumidifier);
+inputs.lights.addEventListener('change', updateLights);
 $('cancel').addEventListener('click', () => dialog.close());

@@ -6,7 +6,7 @@
   --m-steel: #2f6164; --m-rib: #24494c; --m-inside: #262b30; --m-floor: #15181b;
   --m-unit: #eef1f4; --m-unit-2: #c9d0d7; --m-unit-ink: #3a4148; --m-unit-edge: transparent;
   --m-rack: #8a939c; --m-bag: #d9c8a5; --m-cap: #fffaf0;
-  --m-ac: #3987e5; --m-hu: #2b9fd0; --m-dh: #8b6fe0;
+  --m-ac: #3987e5; --m-hu: #2b9fd0; --m-dh: #8b6fe0; --m-light: #ffd27a;
   --m-run: #2fd0b5; --m-cool: #6ec3ff; --m-warm: #ff9a5a; --m-mist: #cfeeff; --m-sun: #f7c95c; --m-moon: #e6ebf3;
   --m-warn: #fab219; --m-good: #0ca30c; --m-serious: #f08a24; --m-critical: #ff8a8a;
   --m-sky-ink: var(--ink); --m-sky-muted: var(--muted); --m-sky-run: var(--m-run);
@@ -17,7 +17,7 @@
   --m-steel: #4f8a8c; --m-rib: #3f7476; --m-inside: #f2f4f6; --m-floor: #c9cfd5;
   --m-unit: #ffffff; --m-unit-2: #dfe4e9; --m-unit-ink: #3a4148; --m-unit-edge: #b9c1c9;
   --m-rack: #6f7983; --m-bag: #e3d3b0; --m-cap: #ffffff;
-  --m-ac: #2a78d6; --m-hu: #1f8fc0; --m-dh: #6b4fc0;
+  --m-ac: #2a78d6; --m-hu: #1f8fc0; --m-dh: #6b4fc0; --m-light: #f2a91c;
   --m-run: #0f8a76; --m-cool: #2f8fe0; --m-warm: #f07a32; --m-mist: #8ccff5; --m-sun: #f2b632; --m-moon: #f3f5f9;
   --m-warn: #c98500; --m-good: #006300; --m-serious: #9a4a00; --m-critical: #b02a2a;
 }
@@ -49,6 +49,13 @@
 .mimic-svg .keybar.dh { fill: var(--m-dh); }
 .mimic-svg .lamp { fill: var(--m-unit-2); }
 .mimic-svg .lamp.on { fill: var(--m-cool); }
+
+/* the lights: a grey bulb when off; on, a warm bulb, a glow round it and light falling on the blocks */
+.mimic-svg .bulb { fill: var(--m-unit-2); }
+.mimic-svg .light-cone, .mimic-svg .light-glow { fill: var(--m-light); opacity: 0; }
+.mimic-svg .lights.on .bulb { fill: var(--m-light); }
+.mimic-svg .lights.on .light-glow { opacity: .35; }
+.mimic-svg .lights.on .light-cone { opacity: .16; }
 
 /* fans: grey blades when off, the running colour when on */
 .mimic-svg .fan .ring { fill: var(--m-unit); stroke: var(--m-unit-2); stroke-width: 1.6; }

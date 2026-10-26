@@ -84,7 +84,7 @@ export function createRoomCard(host, { idPrefix = 'room-', cropHref = '' } = {})
     });
   }
 
-  // The machine tiles, made again only when the machines change (a dehumidifier fitted or taken out).
+  // The machine tiles, made again only when the machines change (a dehumidifier or lights fitted or taken out).
   let shownKeys = '';
   let machineNodes = [];
   function paintMachines(list) {
@@ -99,7 +99,7 @@ export function createRoomCard(host, { idPrefix = 'room-', cropHref = '' } = {})
         return n;
       });
       grid.replaceChildren(...machineNodes.map((n) => n.node));
-      grid.style.setProperty('--mt-n', String(list.length)); // one row on a desktop: six, or five without a dehumidifier
+      grid.style.setProperty('--mt-n', String(list.length)); // one row on a desktop: five to seven, by what the room has
     }
     list.forEach((m, i) => {
       const n = machineNodes[i];

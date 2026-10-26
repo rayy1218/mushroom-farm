@@ -120,10 +120,10 @@ test('Save sends only the fields that differ from what was loaded', async () => 
 });
 
 test('the reasons: the dehumidifier line comes after the humidifier and shows only when it is fitted', () => {
-  assert.deepEqual(REASONS.map((r) => r.key), ['exchange', 'humidifier', 'dehumidifier', 'ac', 'circulation']);
+  assert.deepEqual(REASONS.map((r) => r.key), ['exchange', 'humidifier', 'dehumidifier', 'ac', 'circulation', 'lights']);
   assert.equal(REASONS.find((r) => r.key === 'dehumidifier').label, 'Dehumidifier');
-  assert.deepEqual(reasonsShown(false).map((r) => r.key), ['exchange', 'humidifier', 'ac', 'circulation']);
-  assert.deepEqual(reasonsShown(true).map((r) => r.key), ['exchange', 'humidifier', 'dehumidifier', 'ac', 'circulation']);
+  assert.deepEqual(reasonsShown({ dehumidifier: false }).map((r) => r.key), ['exchange', 'humidifier', 'ac', 'circulation']);
+  assert.deepEqual(reasonsShown({ dehumidifier: true }).map((r) => r.key), ['exchange', 'humidifier', 'dehumidifier', 'ac', 'circulation']);
 });
 
 test('the dehumidifier reason and its wait text read like the other machines', () => {
@@ -171,6 +171,7 @@ test('the card in groups (owner, 2026-10-26): CO₂, Temperature, Humidity, Air 
     { key: 't', title: 'Temperature', fields: ['t', 'acDrop'], own: ['acFan'], reasons: ['ac'] },
     { key: 'rh', title: 'Humidity', fields: ['rh'], own: ['humidifier'], reasons: ['humidifier', 'dehumidifier'] },
     { key: 'air', title: 'Air circulation', fields: [], own: [], reasons: ['circulation'] },
+    { key: 'light', title: 'Lighting', fields: [], own: ['lightToday'], reasons: ['lights'], fitted: 'lights' },
   ]);
   const card = readFileSync(new URL('../web/control.js', import.meta.url), 'utf8');
   assert.match(card, /for \(const g of CONTROL_GROUPS\)/);

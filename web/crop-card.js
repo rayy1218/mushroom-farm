@@ -1,7 +1,9 @@
 // The Crop tab as a stage plan (spec 2026-10-26-crop-stage-plan-design.md; replaces the layout of the Crop and stage card of
 // spec 2026-10-20-crops-and-simulation-design.md 3.5): the crops and the farm type with Edit crops, one section per stage of
 // the farm type (its length, a Current or Next mark, the warnings, Start this stage, a pencil for its days, the Targets
-// table), a Stages list down the right with the dates, and the Ramp and Automatic change row. GET and PUT /api/rooms/:id/crop.
+// table), a Stages list down the right with the dates, and the Ramp, Lights from and Automatic change row. GET and PUT
+// /api/rooms/:id/crop. The light schedule (spec 2026-10-26-lighting-design.md 8): a Light row in each Targets table, the
+// stage's light hours in its pencil, and the time the lights come on in the program row.
 // createCropCard(host, { roomId, onChange, onData, onOffline, onGone }) → { refresh(), destroy() }. onChange(): the crops or the
 // stage were saved (the bands may have changed); onData(crop): every reply shown (the Room card writes the blocks from it). An
 // open editor or pencil is never replaced by a refresh.
@@ -11,7 +13,7 @@ import { CROPS, CROP_KEYS, STAGES, FARM_TYPES, MAX_CROPS } from './crops.js';
 import { removeLabel } from './simulate-math.js';
 import {
   hasCrops, rampLine, doneLine, formFromData, checkCropForm, saveBody, newBlocksBody, startBody,
-  stagePlan, stageTargets, stageWarnings, cropHeadline, stageLength, stageMark,
+  stagePlan, stageTargets, stageWarnings, cropHeadline, stageLength, stageMark, lightOf,
 } from './crop-math.js';
 
 const REFRESH_MS = 30_000; // the marks count days: asked now and then
@@ -24,6 +26,7 @@ const ICONS = {
   rh: '<path d="M12 3s6 6.5 6 11a6 6 0 01-12 0c0-4.5 6-11 6-11z"/>',
   co2: '<path d="M3 8h10a3 3 0 10-3-3"/><path d="M3 12h15a3 3 0 11-3 3"/><path d="M3 16h7"/>',
   safety: '<path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z"/><path d="M12 8v4"/><path d="M12 15.5v.5"/>',
+  light: '<path d="M9 18h6"/><path d="M10 21h4"/><path d="M12 3a6 6 0 00-4 10.5c.8.8 1 1.6 1 2.5h6c0-.9.2-1.7 1-2.5A6 6 0 0012 3z"/>',
   pencil: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>',
 };
 
@@ -173,6 +176,25 @@ export function createCropCard(host, { roomId, onChange, onData, onOffline, onGo
   rampField.append(rampLabel, rampRow, rampHint, rampErr);
   actionButtons.add(rampSave);
   let rampDirty = false;
+  const lightField = el('div', 'field cp-light-start');
+  const lightInput = el('input');
+  lightInput.type = 'time';
+  lightInput.step = '60';
+  lightInput.id = id('light-start');
+  const lightLabel = el('label', '', 'Lights from');
+  lightLabel.htmlFor = lightInput.id;
+  const lightErr = el('p', 'field-error');
+  lightErr.id = id('light-start-error');
+  lightErr.setAttribute('aria-live', 'polite');
+  const lightHint = el('p', 'cp-hint', 'The lights come on at this time for the hours of the stage');
+  lightHint.id = id('light-start-hint');
+  lightInput.setAttribute('aria-describedby', `${lightHint.id} ${lightErr.id}`);
+  const lightSave = button('Save');
+  const lightRowBox = el('div', 'cp-inline');
+  lightRowBox.append(lightInput, lightSave);
+  lightField.append(lightLabel, lightRowBox, lightHint, lightErr);
+  actionButtons.add(lightSave);
+  let lightDirty = false;
   const autoField = el('div', 'cp-auto');
   const auto = el('input');
   auto.type = 'checkbox';
@@ -189,8 +211,11 @@ export function createCropCard(host, { roomId, onChange, onData, onOffline, onGo
   const programErr = el('p', 'm-error');
   programErr.setAttribute('role', 'status');
   programErr.hidden = true;
-  program.append(rampField, autoField, programErr);
-  const programFields = { errors: new Map([['rampH', rampErr], ['autoAdvance', autoErr]]), inputs: new Map([['rampH', rampInput], ['autoAdvance', auto]]), fallback: programErr };
+  program.append(rampField, lightField, autoField, programErr);
+  const programFields = {
+    errors: new Map([['rampH', rampErr], ['lightStart', lightErr], ['autoAdvance', autoErr]]),
+    inputs: new Map([['rampH', rampInput], ['lightStart', lightInput], ['autoAdvance', auto]]), fallback: programErr,
+  };
 
   layout.append(stagesBox, aside, program);
   layout.hidden = true;
@@ -406,7 +431,7 @@ export function createCropCard(host, { roomId, onChange, onData, onOffline, onGo
     const actions = el('div', 'cp-stage-actions');
     const pencil = button('', 'cp-pencil');
     pencil.append(icon('pencil'));
-    pencil.setAttribute('aria-label', stage === 'fruiting' ? 'Edit the days and flushes of Fruiting' : `Edit the days of ${STAGES[stage]}`);
+    pencil.setAttribute('aria-label', stage === 'fruiting' ? 'Edit the days, flushes and light of Fruiting' : `Edit the days and light of ${STAGES[stage]}`);
     pencil.title = pencil.getAttribute('aria-label');
     pencil.setAttribute('aria-expanded', 'false');
     const start = button('Start this stage');
@@ -442,6 +467,7 @@ export function createCropCard(host, { roomId, onChange, onData, onOffline, onGo
     };
     grid.append(fieldOf(`days.${stage}`, 'Days (1–90)'));
     if (stage === 'fruiting') grid.append(fieldOf('flushes', 'Flushes (1–10)'));
+    grid.append(fieldOf(`lightHours.${stage}`, 'Light (h a day, 0–24)'));
     const editSave = button('Save', 'primary');
     const editCancel = button('Cancel');
     const editRow = el('div', 'ac-send');
@@ -472,6 +498,9 @@ export function createCropCard(host, { roomId, onChange, onData, onOffline, onGo
       clearFields(fields);
       inputs.get(`days.${stage}`).value = String(last.days?.[stage] ?? '');
       inputs.get('flushes') && (inputs.get('flushes').value = String(last.flushes));
+      const light = inputs.get(`lightHours.${stage}`);
+      light.closest('.field').hidden = !last.lightHours; // an older server has no light schedule
+      light.value = String(last.lightHours?.[stage] ?? '');
       edit.hidden = false;
       pencil.setAttribute('aria-expanded', 'true');
       inputs.get(`days.${stage}`).focus();
@@ -482,6 +511,7 @@ export function createCropCard(host, { roomId, onChange, onData, onOffline, onGo
       const f = formFromData(last);
       f.days[stage] = inputs.get(`days.${stage}`).value;
       if (inputs.get('flushes')) f.flushes = inputs.get('flushes').value;
+      if (f.lightHours) f.lightHours[stage] = inputs.get(`lightHours.${stage}`).value;
       const checked = checkCropForm(f);
       if (showChecks(checked.errors, fields, [...inputs.keys()])) return;
       const body = saveBody(checked.values, last); // only what changed
@@ -524,7 +554,7 @@ export function createCropCard(host, { roomId, onChange, onData, onOffline, onGo
     sec.start.hidden = mark.kind === 'current';
     const warnings = stageWarnings(c.crops, sec.stage);
     sec.warnings.replaceChildren(...warnings.map((w) => el('p', 'sim-warn', w)));
-    const rows = stageTargets(c.crops, sec.stage);
+    const rows = stageTargets(c.crops, sec.stage, lightOf(c, sec.stage));
     const key = JSON.stringify(rows);
     if (key !== sec.rows) {
       sec.rows = key;
@@ -594,6 +624,21 @@ export function createCropCard(host, { roomId, onChange, onData, onOffline, onGo
       rampSave.hidden = true;
     }
   });
+  lightInput.addEventListener('input', () => { lightDirty = true; lightErr.textContent = ''; lightInput.removeAttribute('aria-invalid'); setText(programErr, ''); lightSave.hidden = false; });
+  lightInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') lightSave.click(); });
+  lightSave.addEventListener('click', async () => {
+    clearFields(programFields);
+    const f = formFromData(last);
+    f.lightStart = lightInput.value;
+    const checked = checkCropForm(f);
+    if (showChecks(checked.errors, programFields, ['lightStart'])) return;
+    const body = saveBody(checked.values, last);
+    if (Object.keys(body).length === 0 || await send(body, programFields)) {
+      lightDirty = false;
+      lightInput.value = last.lightStart ?? '';
+      lightSave.hidden = true;
+    }
+  });
   auto.addEventListener('change', async () => {
     clearFields(programFields);
     const f = formFromData(last);
@@ -642,6 +687,11 @@ export function createCropCard(host, { roomId, onChange, onData, onOffline, onGo
     if (!rampDirty && document.activeElement !== rampInput) {
       rampInput.value = String(c.rampH);
       rampSave.hidden = true;
+    }
+    lightField.hidden = typeof c.lightStart !== 'string'; // an older server has no light schedule
+    if (!lightDirty && document.activeElement !== lightInput) {
+      lightInput.value = c.lightStart ?? '';
+      lightSave.hidden = true;
     }
     if (!busy) auto.checked = c.autoAdvance !== false;
   }
