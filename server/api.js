@@ -99,6 +99,7 @@ export function createApi(db, machines = null, controller = null, poller = null,
       writeSettings(db, result.settings);
       const settings = readSettings(db);
       if (result.settings.pollSeconds !== undefined) poller?.setIntervalMs(settings.pollSeconds * 1000);
+      telegram?.settingsChanged();
       return send(res, 200, settingsView(db, telegram?.status()));
     }
     if (path === '/api/settings/telegram/test' && telegram) {

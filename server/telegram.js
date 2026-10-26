@@ -39,7 +39,7 @@ export async function fetchTransport({ token, chatId, text }) {
   let body = null;
   try { body = await res.json(); } catch { /* not JSON */ }
   if (res.ok && body?.ok !== false) return { ok: true };
-  return { ok: false, description: body?.description ?? `HTTP ${res.status}` };
+  return { ok: false, description: body?.description ?? `HTTP ${res.status}`, retryAfter: Number(body?.parameters?.retry_after) || 0 };
 }
 
 export function createTelegram({
@@ -53,28 +53,34 @@ export function createTelegram({
   const sent = new Map(); // alarm id → { alarm, timer } for alarms a message went out for (timer: the next repeat)
 
   // Anything that may carry the token is passed through here before it is stored or logged.
-  const mask = (text) => {
-    const { telegramToken: token } = settings();
+  const mask = (text, token) => {
+    if (token === undefined) { try { token = settings().telegramToken; } catch { token = ''; } }
     let out = String(text);
     if (token) out = out.split(token).join('***');
     return out.replace(/bot[0-9]{3,20}:[A-Za-z0-9_-]{10,}/g, 'bot***');
   };
-  const safeLog = (message) => { try { log(mask(message)); } catch { /* logging must not throw */ } };
+  const safeLog = (message, token) => { try { log(mask(message, token)); } catch { /* logging must not throw */ } };
 
   // One try: { ok: true } or { error } with a text that is safe to show.
   async function attempt(text, s) {
+    const token = s.telegramToken; // read once: the same token is sent and masked
     try {
-      const r = await transport({ token: s.telegramToken, chatId: s.telegramChatId, text });
+      const r = await transport({ token, chatId: s.telegramChatId, text });
       if (r?.ok) return { ok: true };
-      return { error: mask(`Telegram said: ${r?.description ?? 'no reason given'}`) };
+      return { error: mask(`Telegram said: ${r?.description ?? 'no reason given'}`, token), retryAfter: Number(r?.retryAfter) || 0 };
     } catch (err) {
-      return { error: mask(`No answer from Telegram: ${err?.message ?? err}`) };
+      return { error: mask(`No answer from Telegram: ${err?.message ?? err}`, token), retryAfter: 0 };
     }
   }
 
   const configured = (s) => Boolean(s.telegramToken && s.telegramChatId);
 
-  async function pump() {
+  // Never rejects: after a close (a closed database) a failure here must not become an unhandled rejection.
+  function pump() {
+    run().catch((err) => { sending = false; safeLog(`Telegram: ${err?.message ?? err}`); });
+  }
+
+  async function run() {
     if (sending || closed) return;
     const item = queue[0];
     if (!item || item.timer) return;
@@ -96,15 +102,16 @@ export function createTelegram({
         queue.shift(); // the third retry failed too: dropped
         safeLog('Telegram message dropped after 3 retries');
       } else {
-        item.timer = setTimer(() => { item.timer = null; item.attempt += 1; pump(); }, RETRY_DELAYS[item.attempt]);
+        item.timer = setTimer(() => { item.timer = null; item.attempt += 1; pump(); }, Math.max(RETRY_DELAYS[item.attempt], r.retryAfter * 1000));
         return;
       }
     }
     pump();
   }
 
+  // Returns true when the message was queued (a token and a chat id are set).
   function enqueue(text) {
-    if (closed || !configured(settings())) return;
+    if (closed || !configured(settings())) return false;
     queue.push({ text, attempt: 0, timer: null });
     while (queue.length > MAX_WAITING) {
       const i = sending ? 1 : 0; // the one in flight stays
@@ -112,6 +119,7 @@ export function createTelegram({
       if (dropped.timer) clearTimer(dropped.timer);
     }
     pump();
+    return true;
   }
 
   function stopRepeat(id) {
@@ -120,16 +128,26 @@ export function createTelegram({
     sent.delete(id);
   }
 
+  // The next repeat of a critical alarm is due telegramRepeatMin after the last message about it (entry.lastAt), at once
+  // when that is already past. Turned off (0), no timer.
   function scheduleRepeat(entry) {
-    const min = settings().telegramRepeatMin;
-    if (!(min > 0)) { entry.timer = null; return; }
+    if (entry.timer) clearTimer(entry.timer);
+    entry.timer = null;
+    const s = settings();
+    const min = s.telegramRepeatMin;
+    if (closed || !(min > 0) || !s.telegramLevels.includes('critical') || !configured(s)) return;
     entry.timer = setTimer(() => {
       entry.timer = null;
-      if (closed || !sent.has(entry.alarm.id)) return;
-      const s = settings();
-      if (s.telegramLevels.includes('critical')) enqueue(repeatText(entry.alarm, now()));
-      scheduleRepeat(entry);
-    }, min * MIN_MS);
+      try {
+        if (closed) return;
+        const fresh = db.getAlarm(entry.alarm.id); // gone (a deleted room), cleared or acknowledged: stop
+        if (!fresh || fresh.clearedAt !== null || fresh.ackedAt !== null) { sent.delete(entry.alarm.id); return; }
+        entry.alarm = fresh;
+        const now_ = settings();
+        if (now_.telegramRepeatMin > 0 && now_.telegramLevels.includes('critical') && enqueue(repeatText(fresh, now()))) entry.lastAt = now();
+        scheduleRepeat(entry);
+      } catch (err) { safeLog(`Telegram: ${err?.message ?? err}`); }
+    }, Math.max(0, entry.lastAt + min * MIN_MS - now()));
   }
 
   function onChange(event) {
@@ -138,8 +156,8 @@ export function createTelegram({
     const { change, alarm } = event;
     if (change === 'raised') {
       if (!s.telegramLevels.includes(alarm.level)) return;
-      enqueue(raiseText(alarm));
-      const entry = { alarm, timer: null };
+      if (!enqueue(raiseText(alarm))) return;
+      const entry = { alarm, timer: null, lastAt: now() };
       sent.set(alarm.id, entry);
       if (alarm.level === 'critical') scheduleRepeat(entry);
     } else if (change === 'cleared') {
@@ -160,7 +178,36 @@ export function createTelegram({
     try { onChange(event); } catch (err) { safeLog(`Telegram: ${err?.message ?? err}`); }
   });
 
+  // After a restart: the active alarms of the chosen levels count as sent (no raised message again; their cleared message
+  // still goes), and the unacknowledged critical ones repeat, counted from when they were raised.
+  try {
+    const s = settings();
+    if (configured(s)) {
+      for (const room of db.listRooms()) {
+        for (const alarm of db.activeAlarms(room.id)) {
+          if (!s.telegramLevels.includes(alarm.level)) continue;
+          const entry = { alarm, timer: null, lastAt: alarm.raisedAt };
+          sent.set(alarm.id, entry);
+          if (alarm.level === 'critical' && alarm.ackedAt === null) scheduleRepeat(entry);
+        }
+      }
+    }
+  } catch (err) { safeLog(`Telegram: ${err?.message ?? err}`); }
+
   return {
+    // The phone-alarm settings were saved: the repeats start, stop or move to the new interval.
+    settingsChanged() {
+      try {
+        for (const entry of [...sent.values()]) {
+          if (entry.alarm.level !== 'critical') continue;
+          const fresh = db.getAlarm(entry.alarm.id);
+          if (!fresh || fresh.clearedAt !== null) { stopRepeat(entry.alarm.id); continue; }
+          entry.alarm = fresh;
+          if (fresh.ackedAt !== null) continue;
+          scheduleRepeat(entry);
+        }
+      } catch (err) { safeLog(`Telegram: ${err?.message ?? err}`); }
+    },
     // Sends a test message now. override: { telegramToken, telegramChatId } to try values that are not saved yet.
     // Returns { ok: true } or { error, field? } (field when the token or the chat id is missing).
     async test(override = {}) {
@@ -172,7 +219,7 @@ export function createTelegram({
         status.lastSentAt = now();
         status.lastError = null;
       } else status.lastError = r.error;
-      return r;
+      return r.ok ? { ok: true } : { error: r.error };
     },
     status: () => ({ ...status }),
     waiting: () => queue.length,
