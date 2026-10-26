@@ -84,11 +84,31 @@ test('free cooling does not start at the CO₂ safety level, the CO₂ rule goes
   assert.equal(high.reasons.exchange, 'Air exchange: CO₂ 800 ≥ 750');
 });
 
-test('a running free cooling at the CO₂ upper limit is handed to the CO₂ rule (kind co2, normal time limit)', () => {
+test('a running free cooling at the CO₂ upper limit is handed to the CO₂ rule and keeps its kind; its time limit is not a "too small" count', () => {
   const r = go(on('cooling', 2 * MIN), { co2: 800, t: 22 });
   assert.equal(r.state.exchange, true);
-  assert.equal(r.state.exchangeKind, 'co2');
+  assert.equal(r.state.exchangeKind, 'cooling');
   assert.equal(r.reasons.exchange, 'Air exchange: CO₂ 800 ≥ 750');
+  const limit = go(on('cooling', 10 * MIN), { co2: 800 });
+  assert.equal(limit.state.exchange, false);
+  assert.equal(limit.state.cappedInRow, 0);
+  assert.equal(go(on('co2', 10 * MIN), { co2: 800, outdoor: null }).state.cappedInRow, 1);
+});
+
+test('humidifierDuringExchange forces the humidifier in CO₂, fresh and timed exchanges, not in free cooling or outdoor drying', () => {
+  const forced = { humidifierDuringExchange: true };
+  assert.equal(go(off(), { co2: 800, outdoor: null }, forced).desired.humidifier, true);
+  assert.equal(go(off(), {}, forced).state.exchangeKind, 'cooling');
+  assert.equal(go(off(), {}, forced).desired.humidifier, false);
+  assert.equal(go(on('cooling', 2 * MIN), {}, forced).desired.humidifier, false);
+  assert.equal(go(on('drying', 2 * MIN), { t: 22, rh: 96, outdoor: { t: 20, rh: 60 } }, forced).desired.humidifier, false);
+  assert.equal(go(off(), { t: 22, rh: 96, outdoor: { t: 20, rh: 60 } }, forced).desired.humidifier, false);
+  assert.equal(goB(due(), { exchangeEveryMin: 15 }, { ...calm, outdoor: null }, forced).desired.humidifier, true);
+  // the humidifier's own rule still works during free cooling
+  assert.equal(go(on('cooling', 2 * MIN), { rh: 80 }, forced).desired.humidifier, true);
+  // and a free-cooling run is not a humidifier run for the dehumidifier's wait
+  assert.equal(go(on('cooling', 2 * MIN), {}, forced).state.humidifierLastOn ?? null, null);
+  assert.equal(go(on('co2', 2 * MIN), { outdoor: null }, forced).state.humidifierLastOn, NOW);
 });
 
 test('free cooling and outdoor drying keep the minimum off time', () => {
@@ -324,6 +344,32 @@ test('runRoom: a fresh outdoor reading starts free cooling, the exchange kind is
   assert.equal(c.exchange, true);
   assert.equal(c.exchangeKind, 'cooling');
   assert.equal(c.reasons.exchange, 'Free cooling: outdoor 20 °C, the room 25 °C');
+});
+
+test('runRoom: free cooling keeps its kind over many cycles, also with the CO₂ at or below the lower limit, until its own stop rule', async (t) => {
+  const s = setup(t);
+  s.controller.update(s.id, { auto: true });
+  const kinds = [];
+  for (let i = 0; i < 6; i++) {
+    s.addOutdoor(s.clock() + 29_000, 20, 80);
+    await s.cycle({ co2: i < 2 ? 650 : 590 });
+    const c = s.controller.get(s.id);
+    kinds.push([c.exchange, c.exchangeKind]);
+  }
+  assert.deepEqual(kinds.slice(1), Array(5).fill([true, 'cooling']));
+  // the room cools to the middle: free cooling ends by its own rule
+  await s.cycle({ co2: 590, t: 22 });
+  const c = s.controller.get(s.id);
+  assert.equal(c.exchange, false);
+  assert.equal(c.exchangeKind, null);
+  assert.equal(c.reasons.exchange, 'Free cooling ends: the room is at 22 °C');
+});
+
+test('turning auto on clears a stale exchange kind', async (t) => {
+  const s = setup(t);
+  s.db.setControlState(s.id, { exchange: true, exchangeKind: 'cooling' }, 1);
+  s.controller.update(s.id, { auto: true });
+  assert.equal(s.controller.get(s.id).exchangeKind, null);
 });
 
 test('runRoom: an outdoor reading older than 5 min, a failed one, no outdoor probe or the setting off are ignored', async (t) => {

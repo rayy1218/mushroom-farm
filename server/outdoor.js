@@ -30,9 +30,10 @@ const state = new WeakMap(); // db → { address, checks, lastAt, result }
 function checkOf(db, address, now) {
   let st = state.get(db);
   if (st?.address !== address) {
-    st = { address, checks: createSensorChecks({ now: () => now }), lastAt: now - CHECK_WINDOW_MS - 1, result: null };
+    st = { address, now, checks: createSensorChecks({ now: () => st.now }), lastAt: now - CHECK_WINDOW_MS - 1, result: null };
     state.set(db, st);
   }
+  st.now = now; // the checks read the clock only for a reading without a time; they must not keep the first call's
   for (const row of db.outdoorSince(st.lastAt + 1)) {
     const r = st.checks.check('outdoor', 'trh', row);
     st.result = { ok: r.ok, why: r.why, fault: r.fault };
