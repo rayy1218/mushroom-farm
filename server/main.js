@@ -46,8 +46,11 @@ const events = createEvents();
 watchAlarms(db, events);
 const { pollSeconds } = readSettings(db);
 const afterCycle = async (cycleStart) => {
-  await controller.run(cycleStart);
-  live.afterCycle();
+  try {
+    await controller.run(cycleStart);
+  } finally {
+    live.afterCycle(); // the pages hear of the readings even when the controller failed
+  }
 };
 const poller = createPoller({ db, client, intervalMs: pollSeconds * 1000, afterCycle });
 const machines = createMachines({ db, client, poller });

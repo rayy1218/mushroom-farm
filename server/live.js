@@ -6,6 +6,8 @@
 
 export const PING_MS = 25_000;
 export const MAX_CLIENTS = 20;
+export const MAX_BACKLOG = 64 * 1024; // bytes waiting for a client that does not read: it is dropped (the browser reconnects)
+const KEEPALIVE_MS = 30_000;
 
 // The farm's active alarms nobody has acknowledged: the number on the nav badge.
 export function alarmCount(db) {
@@ -31,6 +33,7 @@ export function createSse({ events, pingMs = PING_MS, maxClients = MAX_CLIENTS, 
     if (open.size >= maxClients) return json(res, 503, { error: 'Too many live connections' });
     req.socket.setTimeout(0);
     req.socket.setNoDelay(true);
+    req.socket.setKeepAlive?.(true, KEEPALIVE_MS); // a phone that went away is noticed
     res.writeHead(200, {
       'content-type': 'text/event-stream; charset=utf-8',
       'cache-control': 'no-cache',
@@ -40,9 +43,13 @@ export function createSse({ events, pingMs = PING_MS, maxClients = MAX_CLIENTS, 
     res.flushHeaders();
     const client = { res, off: null, ping: null };
     open.add(client);
-    res.write(`event: hello\ndata: ${JSON.stringify({ at: now() })}\n\n`);
-    client.off = events.subscribe((type, data) => res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`));
-    client.ping = setInterval(() => res.write(': ping\n\n'), pingMs);
+    const write = (text) => {
+      res.write(text);
+      if (res.writableLength > MAX_BACKLOG) res.destroy(); // a client that does not read must not fill the memory
+    };
+    write(`event: hello\ndata: ${JSON.stringify({ at: now() })}\n\n`);
+    client.off = events.subscribe((type, data) => write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`));
+    client.ping = setInterval(() => write(': ping\n\n'), pingMs);
     res.on('close', () => drop(client));
   }
 
@@ -81,21 +88,31 @@ export function createLive({ db, events, machines = null, controller = null, log
 
   return {
     afterCycle() {
+      // A live update must never break the control loop, and one room's failure must not hide the others.
+      let rooms = [];
       try {
-        const rooms = db.listRooms();
+        rooms = db.listRooms();
         const live = new Set(rooms.map((r) => r.id));
         for (const key of seen.keys()) if (!live.has(Number(key.slice(key.indexOf('/') + 1)))) seen.delete(key);
-        const wired = rooms.filter((r) => r.trhAddress !== null || r.co2Address !== null || r.relayAddress !== null
-          || r.acAddress !== null || r.meterAddress !== null || r.dpAddress !== null);
-        for (const { id } of wired) events.publish('room', { id, part: 'readings' });
-        for (const { id } of rooms) {
+      } catch (err) {
+        log(err);
+      }
+      for (const room of rooms) {
+        try {
+          const { id } = room;
+          if (room.trhAddress !== null || room.co2Address !== null || room.relayAddress !== null
+            || room.acAddress !== null || room.meterAddress !== null || room.dpAddress !== null) events.publish('room', { id, part: 'readings' });
           if (machines && changed('machines', id, machines.get(id))) events.publish('room', { id, part: 'machines' });
           if (controller && changed('control', id, controller.get(id))) events.publish('room', { id, part: 'control' });
           if (changed('crop', id, db.getProgram(id))) events.publish('room', { id, part: 'crop' });
+        } catch (err) {
+          log(err);
         }
+      }
+      try {
         if (db.outdoorAddress() !== null) events.publish('outdoor', {});
       } catch (err) {
-        log(err); // a live update must never break the control loop
+        log(err);
       }
     },
   };

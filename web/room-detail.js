@@ -17,7 +17,7 @@ import { fromRoom } from './mimic-math.js';
 import { drawLineChart } from './chart.js';
 import { refreshMs } from './settings-math.js';
 import { live } from './live.js';
-import { fallbackMs, createDebounce } from './live-math.js';
+import { fallbackMs, createThrottle } from './live-math.js';
 import { formatClock, formatAgo, chartPoints } from './chart-math.js';
 import { createUsageCard } from './usage.js';
 import { outdoorLine, pushOutdoorTail, liveOutdoor } from './outdoor-math.js';
@@ -589,7 +589,7 @@ export function mount(container, { id }) {
   els.retry.addEventListener('click', load);
 
   // Live updates: the room's events ask for the data again (a minute's timer is the fallback while the stream is up).
-  const reload = createDebounce(() => { if (alive()) load(); });
+  const reload = createThrottle(() => { if (alive()) load(); }); // at most one load in 2 s
   const offLive = [
     live.on('room', (data) => {
       if (data.id !== id) return;

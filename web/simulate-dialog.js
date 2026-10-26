@@ -4,7 +4,7 @@
 
 import { request, OFFLINE, GONE, OUTDATED, routeMissing } from './api.js';
 import { live } from './live.js';
-import { fallbackMs } from './live-math.js';
+import { fallbackMs, isStale, withProgress } from './live-math.js';
 import { CROPS, CROP_KEYS, STAGES, FARM_TYPES, MAX_CROPS } from './crops.js';
 import {
   PHYSICS_FIELDS, FILTER_KEYS, initialState, checkStep, firstField, stepOf, buildBody, mixSummary, wholeProgram, stagesOf, fixStage, roomLine,
@@ -443,6 +443,7 @@ export function openSimulateDialog(room, hooks = {}) {
       if (!alive() || sizing !== job) return;
       // ids start again after a restart of the farm app: another room's job with the same id is not this one
       if (latest.roomId !== room.id) { sizing = null; sizingText = 'This suggestion is gone'; paintSizing(); return; }
+      if (isStale(sizing, latest)) return pollSizing(); // an event told more since it was asked
       sizing = latest;
     } catch (err) {
       if (!alive() || sizing !== job) return;
@@ -563,6 +564,7 @@ export function openSimulateDialog(room, hooks = {}) {
     try {
       const latest = await request('GET', `/api/simulations/${run.id}?result=0`); // never needs the result
       if (!alive() || over()) return;
+      if (isStale(run, latest)) return poll(); // an event told more since it was asked
       run = latest;
       paintRun();
       if (run.status === 'done' || run.status === 'failed') { hooks.onFinished?.(run); return; }
@@ -583,8 +585,23 @@ export function openSimulateDialog(room, hooks = {}) {
   actions.firstChild.addEventListener('click', () => d.close());
   // The stream says a job moved: look at once instead of waiting for the timer.
   const offLive = [
-    live.on('sizing', (data) => { if (sizing && data.id === sizing.id && data.roomId === room.id && sizingActive()) checkSizing(sizing); }),
-    live.on('simulation', (data) => { if (run && data.id === run.id) checkRun(); }),
+    live.on('sizing', (data) => {
+      if (!alive() || !sizing || data.id !== sizing.id || data.roomId !== room.id || !sizingActive()) return;
+      if (data.status === 'done' || data.status === 'failed') return void checkSizing(sizing); // the result, once
+      const next = withProgress(sizing, data);
+      if (next) { sizing = next; pollSizing(); }
+    }),
+    live.on('simulation', (data) => {
+      if (!alive() || !run || data.id !== run.id || run.status === 'done' || run.status === 'failed') return;
+      if (data.status === 'done' || data.status === 'failed') return void checkRun();
+      const next = withProgress(run, data);
+      if (next) { run = next; paintRun(); poll(); }
+    }),
+    live.onStatus(() => { // up: look once, in case events were missed; down: the short timers again
+      if (!alive()) return;
+      if (sizing && sizingActive()) checkSizing(sizing);
+      if (run && run.status !== 'done' && run.status !== 'failed') checkRun();
+    }),
   ];
   d.addEventListener('close', () => offLive.forEach((off) => off()), { once: true });
   d.addEventListener('close', () => { // a suggestion nobody waits for stops, so the room is free for the next one

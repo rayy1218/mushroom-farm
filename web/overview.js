@@ -4,7 +4,7 @@
 import { request, OFFLINE } from './api.js';
 import { refreshMs } from './settings-math.js';
 import { live } from './live.js';
-import { fallbackMs, createDebounce } from './live-math.js';
+import { fallbackMs, createThrottle } from './live-math.js';
 import { loadOverview } from './overview-data.js';
 import { tiles, roomCard, alarmTimeText, SPARK_W, SPARK_H } from './overview-math.js';
 import { outdoorCard } from './outdoor-math.js';
@@ -281,10 +281,10 @@ export function mount(container) {
   els.retry.addEventListener('click', load);
 
   // Live updates: a room, an alarm or the outdoor probe changing asks again (a minute's timer is the fallback while the stream is up).
-  const reload = createDebounce(() => { if (alive()) load(); });
+  const reload = createThrottle(() => { if (alive()) load(); }); // at most one load in 2 s
   const offLive = [
     ...['room', 'alarms', 'outdoor'].map((type) => live.on(type, () => reload.call())),
-    live.onStatus((up) => { if (up) reload.call(); else if (shown) { clearTimeout(timer); timer = setTimeout(load, refresh); } }),
+    live.onStatus((up) => { if (up) reload.call(); else { clearTimeout(timer); timer = setTimeout(load, refresh); } }),
   ];
 
   document.title = 'Overview · Mushroom farm';
