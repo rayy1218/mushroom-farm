@@ -27,9 +27,10 @@ export function createRoomCard(host, { idPrefix = 'room-', cropHref = '' } = {})
   const note = el('small', 'rc-note');
   const head = el('h2', 'rc-head');
   head.append(el('span', '', 'Room'), note);
-  // The crop stage, a link to the Crop tab: "Fruiting · since … · day 1 of 7 · flush 1 of 4 · Next: …".
-  const stage = el('a', 'rc-stage');
+  // The crop facts, a link to the Crop tab: Growing, Stage, In this stage, Normally, Next (a label, a value, a line under it).
+  const stage = el('a', 'rc-crop');
   if (cropHref) stage.href = cropHref;
+  stage.setAttribute('aria-label', 'Crop and stage (open the Crop tab)');
   stage.hidden = true;
   const pic = el('div', 'mimic-host rc-pic');
   pic.dataset.mimicHost = '';
@@ -117,10 +118,13 @@ export function createRoomCard(host, { idPrefix = 'room-', cropHref = '' } = {})
     paint(card, draw) {
       mimic.paint(draw);
       put(note, card.note);
-      stage.hidden = !card.stage;
-      if (card.stage) {
-        const words = [card.stage.detail, card.stage.next].filter(Boolean).join(' · ');
-        stage.replaceChildren(el('b', '', card.stage.stage), document.createTextNode(words ? ` · ${words}` : ''));
+      stage.hidden = !card.crop;
+      if (card.crop) {
+        stage.replaceChildren(...card.crop.items.map((x) => {
+          const item = el('div', 'rc-fact');
+          item.append(el('small', '', x.label), el('b', '', x.value), el('span', '', x.sub));
+          return item;
+        }));
       }
       card.tiles.forEach((x, i) => paintTile(tiles[i], x));
       put(fresh, card.fresh);

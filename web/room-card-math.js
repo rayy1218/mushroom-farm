@@ -6,7 +6,8 @@ import { view } from './mimic-math.js';
 import { exchangeLine } from './control-math.js';
 import { filterCard, intakeRunning, lastRunningOf } from './filter-math.js';
 import { CROPS, STAGES } from './crops.js';
-import { hasCrops, stageLine, nextLine, doneLine } from './crop-math.js';
+import { hasCrops } from './crop-math.js';
+import { formatDateTime } from './simulation-math.js';
 
 const num = (x) => (typeof x === 'number' && Number.isFinite(x) ? x : null);
 const clamp01 = (x) => Math.min(1, Math.max(0, x));
@@ -184,20 +185,48 @@ export function blocksLine(crops, stage = '') {
   return `${n(rows.reduce((s, c) => s + c.blocks, 0))} blocks: ${rows.map((c) => `${n(c.blocks)} ${cropWord(c.crop) || 'blocks'}`).join(', ')}${tail}`;
 }
 
-// The crop stage line at the top of the Room card (owner, 2026-10-26: "add the stage of crop"), from the Crop card's reply
-// (GET /api/rooms/:id/crop): { stage, detail, next, short } with the Crop card's own words, or null without crops.
-// short: the stage for the line under the picture.
-export function stageStrip(crop, now = Date.now()) {
-  if (!hasCrops(crop) || !crop.stage) return null;
-  const stage = STAGES[crop.stage] ?? crop.stage;
-  return { stage, detail: stageLine(crop, now), next: doneLine(crop) || nextLine(crop), short: stage };
+// How long something has lasted: "12 min", "5 h 20 min", "1 day 6 h", "3 days".
+export function stayed(ms) {
+  const min = Math.max(0, Math.floor((num(ms) ?? 0) / 60_000));
+  const days = Math.floor(min / 1440), h = Math.floor((min % 1440) / 60), m = min % 60;
+  if (days > 0) return `${days} ${days === 1 ? 'day' : 'days'}${h ? ` ${h} h` : ''}`;
+  return h > 0 ? `${h} h${m ? ` ${m} min` : ''}` : `${m} min`;
 }
 
-// Everything the Room card shows besides the picture.
+const cropName = (key) => (CROPS[key] ? CROPS[key].name.replace(/\s*\(.*\)$/, '') : key);
+
+// The crop facts at the top of the Room card (owner, 2026-10-26: what we grow, what stage it is, what is the next stage, how
+// long it has been in this stage, how long it normally is), from the Crop card's reply (GET /api/rooms/:id/crop):
+// { items: [{ label, value, sub }] × 5, short } or null without crops. short: the stage for the line under the picture.
+export function cropFacts(crop, now = Date.now()) {
+  if (!hasCrops(crop) || !crop.stage) return null;
+  const rows = crop.crops.filter((c) => num(c?.blocks) !== null);
+  const blocks = rows.reduce((s, c) => s + c.blocks, 0).toLocaleString('en-US');
+  const stage = STAGES[crop.stage] ?? crop.stage;
+  const flushes = crop.stage === 'fruiting' || crop.stage === 'rest';
+  const length = num(crop.days?.[crop.stage]);
+  const next = crop.nextStage;
+  return {
+    short: stage,
+    items: [
+      { label: 'Growing', value: rows.map((c) => cropName(c.crop)).join(' + '),
+        sub: rows.length > 1 ? `${blocks} blocks (${rows.map((c) => c.blocks.toLocaleString('en-US')).join(' + ')})` : `${blocks} blocks` },
+      { label: 'Stage', value: stage, sub: flushes ? `flush ${crop.flush} of ${crop.flushes}` : '' },
+      { label: 'In this stage', value: num(crop.stageSince) === null ? '—' : stayed(now - crop.stageSince),
+        sub: num(crop.stageSince) === null ? '' : `since ${formatDateTime(crop.stageSince)}` },
+      { label: 'Normally', value: length === null ? '—' : `${length} ${length === 1 ? 'day' : 'days'}`,
+        sub: crop.autoAdvance ? 'then it changes by itself' : 'you change it (automatic change is off)' },
+      crop.done ? { label: 'Next', value: 'Replace the blocks', sub: `flush ${crop.flushes} of ${crop.flushes} done` }
+        : next ? { label: 'Next', value: STAGES[next.stage] ?? next.stage, sub: num(next.at) === null ? 'when you start it' : `about ${formatDateTime(next.at)}` }
+          : { label: 'Next', value: '—', sub: '' },
+    ],
+  };
+}
+
 export function roomCard({ draw = null, control = null, filter = null, crop = null, now = Date.now() } = {}) {
   return {
     note: controlNote(control),
-    stage: stageStrip(crop, now),
+    crop: cropFacts(crop, now),
     tiles: readingTiles(draw, control),
     fresh: freshAirLine(control, now),
     machines: machineTiles(draw, control, filter),

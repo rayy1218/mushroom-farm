@@ -22,7 +22,7 @@ test('the farm serves the room page, the Room card, the picture and its styleshe
 test('the room page uses the Room card: the picture inside it, the card\'s words, on the Overview tab', () => {
   const room = source('../web/room-detail.js');
   assert.match(room, /import \{ createRoomCard \} from '\.\/room-card\.js';/);
-  assert.match(room, /import \{ roomCard, filterFrom, freshAirLine, blocksLine, stageStrip \} from '\.\/room-card-math\.js';/);
+  assert.match(room, /import \{ roomCard, filterFrom, freshAirLine, blocksLine, cropFacts \} from '\.\/room-card-math\.js';/);
   assert.match(room, /import \{ startLoop \} from '\.\/mimic\.js';/);
   assert.doesNotMatch(room, /createMimic/, 'the card makes the picture');
   assert.match(room, /<div data-panel="overview">\n\s*<section data-room-card><\/section>\n\s*<\/div>/); // the sensor cards: the Sensors tab

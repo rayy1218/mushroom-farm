@@ -20,7 +20,7 @@ import { closeSimulateDialog } from './simulate-dialog.js';
 import { startLoop } from './mimic.js';
 import { fromRoom } from './mimic-math.js';
 import { createRoomCard } from './room-card.js';
-import { roomCard, filterFrom, freshAirLine, blocksLine, stageStrip } from './room-card-math.js';
+import { roomCard, filterFrom, freshAirLine, blocksLine, cropFacts } from './room-card-math.js';
 import { drawLineChart } from './chart.js';
 import { refreshMs } from './settings-math.js';
 import { live } from './live.js';
@@ -532,7 +532,7 @@ export function mount(container, { id, tab = 'overview' }) {
     const filter = filterNow; // worked out with the page's replies (render), not again after a command
     const draw = {
       ...fromRoom({ room, sensors, machines: lastMachines, control: lastControl, outdoor, filterPa: filter ? filter.pa : null, now }),
-      blocks: blocksLine(cropData?.crops, stageStrip(cropData)?.short),
+      blocks: blocksLine(cropData?.crops, cropFacts(cropData)?.short),
     };
     roomCardUi.paint(roomCard({ draw, control: lastControl, filter, crop: cropData, now }), draw);
   }

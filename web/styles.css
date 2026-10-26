@@ -264,10 +264,18 @@ html { scroll-padding-top: var(--topbar-h); }
 @media (max-width: 600px) { .sizes.two { grid-template-columns: 1fr 1fr; gap: 12px; } }
 
 /* ---- Room detail ---- */
-/* The Room card's crop stage line, a link to the Crop tab. */
-.rc-stage { display: block; margin: -4px 0 12px; color: var(--ink-2); font-size: var(--fs-sm); text-decoration: none; }
-.rc-stage b { color: var(--ink); }
-.rc-stage[href]:hover { color: var(--ink); text-decoration: underline; }
+/* The Room card's crop facts (Growing, Stage, In this stage, Normally, Next), a link to the Crop tab: five in a row, two on a
+   narrow card. */
+.rc-crop { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px 16px; margin: 0 0 12px; padding: 10px 14px;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--band); color: var(--ink); text-decoration: none; }
+.rc-crop[href]:hover { border-color: var(--border-strong); }
+.rc-crop:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.rc-fact { display: grid; gap: 1px; min-width: 0; }
+.rc-fact small { color: var(--muted); font-size: var(--fs-xs); }
+.rc-fact b { font-size: var(--fs-md); overflow-wrap: anywhere; }
+.rc-fact span { color: var(--ink-2); font-size: var(--fs-xs); }
+.rc-fact span:empty { display: none; }
+@container (max-width: 719px) { .rc-crop { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 /* The room page's tabs: a side bar beside the content from 900 px (owner, 2026-10-26), a sideways-scrolling row above it on a
    phone; the current tab filled like the old main menu. */

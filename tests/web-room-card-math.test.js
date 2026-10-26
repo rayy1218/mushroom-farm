@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  scaleFor, bandBar, readingTiles, controlNote, freshAirLine, machineTiles, filterSummary, filterFrom, bottomLine, blocksLine, roomCard, stageStrip,
+  scaleFor, bandBar, readingTiles, controlNote, freshAirLine, machineTiles, filterSummary, filterFrom, bottomLine, blocksLine, roomCard, cropFacts, stayed,
 } from '../web/room-card-math.js';
 import { formatDateTime } from '../web/simulation-math.js';
 import { fromRoom } from '../web/mimic-math.js';
@@ -230,20 +230,40 @@ test('roomCard puts it together and never throws', () => {
   assert.equal(empty.tiles.length, 3);
 });
 
-test('the crop stage line: the stage, the Crop card\'s since · day · flush words, what comes next; done; nothing without crops', () => {
+test('the crop facts: what grows, the stage, how long in it, how long it normally lasts, what comes next', () => {
   const now = Date.UTC(2026, 9, 27, 4);
-  const since = now - 1.5 * 86_400_000, next = now + 5 * 86_400_000;
+  const since = now - (30 * 3_600_000 + 20 * 60_000), next = now + 5 * 86_400_000;
   const crop = { crops: [{ crop: 'lionsmane', blocks: 950 }], stage: 'fruiting', stageSince: since, flush: 1, flushes: 4,
     days: { fruiting: 7, rest: 10 }, autoAdvance: true, done: false, ramp: null, nextStage: { stage: 'rest', flush: 1, at: next } };
-  assert.deepEqual(stageStrip(crop, now), {
-    stage: 'Fruiting', detail: `since ${formatDateTime(since)} · day 2 of 7 · flush 1 of 4`,
-    next: `Next: Rest between flushes, about ${formatDateTime(next)}`, short: 'Fruiting',
-  });
-  const done = stageStrip({ ...crop, stage: 'rest', done: true, nextStage: null, flush: 4 }, now);
-  assert.equal(done.stage, 'Rest between flushes');
-  assert.equal(done.next, 'Flush 4 of 4 done: replace the blocks');
-  assert.equal(stageStrip({ ...crop, crops: [] }, now), null, 'no crops: no line');
-  assert.equal(stageStrip(null, now), null);
+  const f = cropFacts(crop, now);
+  assert.equal(f.short, 'Fruiting');
+  assert.deepEqual(f.items, [
+    { label: 'Growing', value: "Lion's mane", sub: '950 blocks' },
+    { label: 'Stage', value: 'Fruiting', sub: 'flush 1 of 4' },
+    { label: 'In this stage', value: '1 day 6 h', sub: `since ${formatDateTime(since)}` },
+    { label: 'Normally', value: '7 days', sub: 'then it changes by itself' },
+    { label: 'Next', value: 'Rest between flushes', sub: `about ${formatDateTime(next)}` },
+  ]);
+  // Two crops; a stage without flushes; automatic change off; the program done.
+  const two = cropFacts({ ...crop, crops: [{ crop: 'oyster', blocks: 300 }, { crop: 'golden', blocks: 200 }], stage: 'spawn', days: { spawn: 21 } }, now);
+  assert.deepEqual(two.items[0], { label: 'Growing', value: 'Grey oyster + Golden oyster', sub: '500 blocks (300 + 200)' });
+  assert.deepEqual(two.items[1], { label: 'Stage', value: 'Spawn run', sub: '' });
+  assert.deepEqual(two.items[3], { label: 'Normally', value: '21 days', sub: 'then it changes by itself' });
+  const manual = cropFacts({ ...crop, autoAdvance: false, nextStage: { stage: 'rest', flush: 1, at: null } }, now);
+  assert.deepEqual(manual.items[3], { label: 'Normally', value: '7 days', sub: 'you change it (automatic change is off)' });
+  assert.deepEqual(manual.items[4], { label: 'Next', value: 'Rest between flushes', sub: 'when you start it' });
+  const done = cropFacts({ ...crop, stage: 'rest', flush: 4, done: true, nextStage: null }, now);
+  assert.deepEqual(done.items[4], { label: 'Next', value: 'Replace the blocks', sub: 'flush 4 of 4 done' });
+  assert.equal(cropFacts({ ...crop, crops: [] }, now), null, 'no crops: nothing');
+  assert.equal(cropFacts(null, now), null);
+});
+
+test('how long: minutes, hours, days', () => {
+  assert.equal(stayed(12 * 60_000), '12 min');
+  assert.equal(stayed(5 * 3_600_000 + 20 * 60_000), '5 h 20 min');
+  assert.equal(stayed(30 * 3_600_000), '1 day 6 h');
+  assert.equal(stayed(3 * 86_400_000), '3 days');
+  assert.equal(stayed(-5), '0 min');
 });
 
 test('the blocks under the picture carry the stage', () => {
