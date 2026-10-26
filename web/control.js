@@ -3,7 +3,7 @@
 // Controls are updated in place, so a refresh never replaces an input the person is using or has edited.
 
 import { request, OFFLINE } from './api.js';
-import { BANDS, REASONS, reasonsShown, stateLine, inputLabel, reasonLine, checkBand, locateField, SAFETY_FIELDS, checkSafety, locateSafetyField, changedBody, checkLines, heldLine, HUMIDIFIER_LABEL, humidifierOn, AC_FAN_LABEL, AC_FAN_OPTIONS, acFanOf } from './control-math.js';
+import { BANDS, REASONS, reasonsShown, stateLine, inputLabel, reasonLine, checkBand, locateField, SAFETY_FIELDS, checkSafety, locateSafetyField, changedBody, checkLines, heldLine, HUMIDIFIER_LABEL, humidifierOn, OUTDOOR_LABEL, outdoorOn, outdoorNote, AC_FAN_LABEL, AC_FAN_OPTIONS, acFanOf } from './control-math.js';
 
 const COMMAND_TIMEOUT = 30000;
 
@@ -122,6 +122,25 @@ export function createControl(host, { roomId, onOffline, onGone, onChange, getRo
     input.addEventListener('input', () => markSafetyDirty(f.key));
     form.append(row);
   }
+
+  // ---- use outdoor air (saved with the bands) ----
+  const outdoorRow = el('div', 'c-band c-outdoor');
+  const outdoorBox = el('input');
+  outdoorBox.type = 'checkbox';
+  outdoorBox.id = `ctl-${n}-outdoorAir`;
+  const outdoorName = el('label', 'm-name', OUTDOOR_LABEL);
+  outdoorName.htmlFor = outdoorBox.id;
+  const outdoorHint = el('p', 'c-hint');
+  outdoorHint.id = `ctl-${n}-outdoorAir-note`;
+  outdoorHint.hidden = true;
+  outdoorBox.setAttribute('aria-describedby', outdoorHint.id);
+  outdoorRow.append(outdoorBox, outdoorName, outdoorHint);
+  outdoorBox.addEventListener('change', () => {
+    dirty = true;
+    showError(saveErr, '');
+    paintDirty();
+  });
+  form.append(outdoorRow);
 
   const save = button('Save', 'primary');
   const reset = button('Reset');
@@ -247,6 +266,7 @@ export function createControl(host, { roomId, onOffline, onGone, onChange, getRo
   function setInputs(c) {
     loaded = c;
     for (const f of SAFETY_FIELDS) if (c[f.key] !== undefined) safetyRows.get(f.key).input.value = String(c[f.key]);
+    outdoorBox.checked = outdoorOn(c);
     for (const band of BANDS) {
       const row = rows.get(band.key);
       row.low.value = String(c[band.low]);
@@ -287,6 +307,9 @@ export function createControl(host, { roomId, onOffline, onGone, onChange, getRo
     if (!holding) setInputs(c);
     paintDirty();
     stateNode.textContent = stateLine(c);
+    const note = outdoorNote(c);
+    outdoorHint.textContent = note;
+    outdoorHint.hidden = note === '';
     const lines = checkLines(c.checks);
     checkList.replaceChildren(...lines.map((text) => el('li', 'warn', text)));
     checkList.hidden = lines.length === 0;
@@ -411,6 +434,7 @@ export function createControl(host, { roomId, onOffline, onGone, onChange, getRo
       }
     }
     for (const f of SAFETY_FIELDS) values[f.key] = safetyRows.get(f.key).input.valueAsNumber;
+    values.outdoorAir = outdoorBox.checked;
     if (!firstBad) {
       const bad = checkSafety(values.co2High, values.co2Safety, values.exchangeMaxMin, values.acDrop, values.exchangeEveryMin);
       if (bad) {

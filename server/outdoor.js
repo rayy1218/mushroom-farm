@@ -41,6 +41,19 @@ function checkOf(db, address, now) {
   return st.lastAt >= now - CHECK_WINDOW_MS ? st.result : null;
 }
 
+// The outdoor reading the room control may use: the probe's last good reading when it is at most maxAgeMs old and the
+// probe's checks give no fault, else null. → { t, rh } | null.
+export function outdoorReading(db, now = Date.now(), maxAgeMs = 5 * 60_000) {
+  const sensor = db.getOutdoor(1);
+  const ok = sensor.lastOk;
+  if (!ok || sensor.address === null || now - ok.at > maxAgeMs) return null;
+  // A later failed poll leaves the last good reading in use (until it is too old); the check of the reading itself must pass.
+  const check = checkOf(db, sensor.address, now);
+  const latest = sensor.readings[0];
+  if (check && (latest?.at === ok.at ? !check.ok : check.fault)) return null;
+  return { t: ok.t, rh: ok.rh };
+}
+
 // GET /api/outdoor:
 // { address, status, last: { at, t, rh, dew } | null, check: { ok, why, fault } | null, spark: { t: [{ at, v }], rh: [...] } }
 export function outdoorView(db, now = Date.now()) {
