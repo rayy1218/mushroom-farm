@@ -169,6 +169,22 @@ test('outdoor drying keeps the minimum on time and the time limit', () => {
   assert.equal(limit.reasons.exchange, 'Outdoor drying stopped at the 10 min limit');
 });
 
+test('outdoor drying does not take the room out of its temperature band', () => {
+  // band 21–23: with cooler outdoor air it starts only above 21.5 and ends at 21; with warmer air only below 22.5 and ends at 23
+  assert.equal(go(off(), { t: 21.6, rh: 96, outdoor: { t: 18, rh: 60 } }).state.exchange, true);
+  assert.equal(go(off(), { t: 21.5, rh: 96, outdoor: { t: 18, rh: 60 } }).state.exchange, false);
+  assert.equal(go(off(), { t: 22.4, rh: 96, outdoor: { t: 24, rh: 40 } }).state.exchange, true);
+  assert.equal(go(off(), { t: 22.5, rh: 96, outdoor: { t: 24, rh: 40 } }).state.exchange, false);
+  const run = on('drying', 2 * MIN);
+  assert.equal(go(run, { t: 21.1, rh: 93, outdoor: { t: 18, rh: 60 } }).state.exchange, true);
+  const cold = go(run, { t: 21, rh: 93, outdoor: { t: 18, rh: 60 } });
+  assert.equal(cold.state.exchange, false);
+  assert.equal(cold.reasons.exchange, 'Outdoor drying ends: the cooler outdoor air took the room to 21 °C');
+  const warm = go(run, { t: 23, rh: 93, outdoor: { t: 24, rh: 40 } });
+  assert.equal(warm.state.exchange, false);
+  assert.equal(warm.reasons.exchange, 'Outdoor drying ends: the warmer outdoor air took the room to 23 °C');
+});
+
 test('cooling comes before drying when both would start', () => {
   const r = go(off(), { t: 25, rh: 96, outdoor: { t: 20, rh: 50 } });
   assert.equal(r.state.exchangeKind, 'cooling');

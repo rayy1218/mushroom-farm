@@ -53,6 +53,7 @@ const DRY_START_DRIER = 1; // outdoor drying starts with the outside this much d
 const DRY_START_WARM = 4; // … this much above it)
 const DRY_STOP_DRIER = 0.5; // … ends when the outside is less than this much drier
 const DRY_STOP_WARM = 5; // … or hotter than this much above the room
+const DRY_T_MARGIN = 0.25; // drying with cooler (warmer) outside air starts only with the room this share of the band's width above tLow (below tHigh), and ends at the band's edge
 const WET_WAIT = 3; // a fresh-air run waits while the outside holds this much more moisture than the room …
 const HOT_WAIT = 8; // … or is this much hotter, for at most one more interval
 
@@ -133,7 +134,9 @@ export function decide({ bands, state, readings, faults, now, humidifierDuringEx
       reasons.exchange = coolText();
       return true;
     }
-    if (rh >= bands.rhHigh && air.wOut <= air.wIn - DRY_START_DRIER && air.tOut <= air.tIn + DRY_START_WARM) {
+    const tRoom = DRY_T_MARGIN * (bands.tHigh - bands.tLow);
+    if (rh >= bands.rhHigh && air.wOut <= air.wIn - DRY_START_DRIER && air.tOut <= air.tIn + DRY_START_WARM
+      && (air.tOut >= air.tIn || air.tIn > bands.tLow + tRoom) && (air.tOut <= air.tIn || air.tIn < bands.tHigh - tRoom)) {
       start();
       outdoorKind = 'drying';
       reasons.exchange = dryText();
@@ -153,6 +156,8 @@ export function decide({ bands, state, readings, faults, now, humidifierDuringEx
     if (rh <= rhMiddle) return `Outdoor drying ends: RH ${num(rh)} ≤ ${num(rhMiddle)}`;
     if (air.wOut > air.wIn - DRY_STOP_DRIER) return `Outdoor drying ends: outdoor air ${num(air.wOut)} g/m³, the room ${num(air.wIn)} g/m³`;
     if (air.tOut > air.tIn + DRY_STOP_WARM) return `Outdoor drying ends: outdoor ${num(air.tOut)} °C, the room ${num(air.tIn)} °C`;
+    if (air.tOut < air.tIn && air.tIn <= bands.tLow) return `Outdoor drying ends: the cooler outdoor air took the room to ${num(air.tIn)} °C`;
+    if (air.tOut > air.tIn && air.tIn >= bands.tHigh) return `Outdoor drying ends: the warmer outdoor air took the room to ${num(air.tIn)} °C`;
     return '';
   };
   // A due fresh-air run waits for very wet or hot outdoor air, for at most one more interval.
