@@ -18,9 +18,9 @@ test('a room id means the detail page, on its Overview tab', () => {
 });
 
 test('a room page tab is part of the address; an unknown tab means the Overview page', () => {
-  assert.deepEqual(ROOM_TABS.map((t) => t.key), ['overview', 'charts', 'control', 'crop', 'sensors', 'energy', 'simulations']);
-  assert.deepEqual(ROOM_TABS.map((t) => t.label), ['Overview', 'Charts', 'Control', 'Crop', 'Sensors', 'Energy', 'Simulations']);
-  for (const tab of ['charts', 'control', 'crop', 'sensors', 'energy', 'simulations']) {
+  assert.deepEqual(ROOM_TABS.map((t) => t.key), ['overview', 'charts', 'climate', 'crop', 'sensors', 'energy', 'simulations']);
+  assert.deepEqual(ROOM_TABS.map((t) => t.label), ['Overview', 'Charts', 'Climate', 'Crop', 'Sensors', 'Energy', 'Simulations']);
+  for (const tab of ['charts', 'climate', 'crop', 'sensors', 'energy', 'simulations']) {
     assert.deepEqual(parseRoute(`#/rooms/7/${tab}`), { name: 'detail', id: 7, tab });
     assert.deepEqual(parseRoute(`#/rooms/7/${tab}/`), { name: 'detail', id: 7, tab });
     assert.equal(isCanonical(`#/rooms/7/${tab}`), true);

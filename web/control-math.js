@@ -10,6 +10,16 @@ export const BANDS = [
     hint: 'Typical: 85 to 95 for oyster, about 90 for lion’s mane.' },
 ];
 
+// The card's groups (owner, 2026-10-26: "group by co2, temp, humid", "add group for air circulation"): each holds its band
+// (fields: a BANDS key) and settings saved with Save (fields: SAFETY_FIELDS keys), its settings sent at once (own: 'acFan',
+// 'humidifier') and the reason lines of its machines (REASONS keys).
+export const CONTROL_GROUPS = [
+  { key: 'co2', title: 'CO₂', fields: ['co2', 'co2Safety', 'exchangeMaxMin', 'exchangeEveryMin'], own: [], reasons: ['exchange'] },
+  { key: 't', title: 'Temperature', fields: ['t', 'acDrop'], own: ['acFan'], reasons: ['ac'] },
+  { key: 'rh', title: 'Humidity', fields: ['rh'], own: ['humidifier'], reasons: ['humidifier', 'dehumidifier'] },
+  { key: 'air', title: 'Air circulation', fields: [], own: [], reasons: ['circulation'] },
+];
+
 export const REASONS = [
   { key: 'exchange', label: 'Air exchange' },
   { key: 'humidifier', label: 'Humidifier' },

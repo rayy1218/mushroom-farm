@@ -4,7 +4,7 @@
 export const ROOM_TABS = [
   { key: 'overview', label: 'Overview' },
   { key: 'charts', label: 'Charts' },
-  { key: 'control', label: 'Control' },
+  { key: 'climate', label: 'Climate' },
   { key: 'crop', label: 'Crop' },
   { key: 'sensors', label: 'Sensors' },
   { key: 'energy', label: 'Energy' },

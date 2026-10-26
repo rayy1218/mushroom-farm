@@ -383,6 +383,14 @@ button.toggle[data-on="true"]:hover { opacity: .85; background: var(--ink); }
 .c-auto { display: flex; align-items: center; gap: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
 .c-humidifier, .c-acfan { display: flex; align-items: center; gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--border); }
 .c-bands { display: grid; }
+/* The card's groups: CO₂, Temperature, Humidity, Air circulation (owner, 2026-10-26), each boxed with its title. */
+.c-group { border: 1px solid var(--border); border-radius: 8px; padding: 2px 14px 10px; margin: 12px 0; }
+.c-group-title { margin: 10px 0 2px; font-size: var(--fs-md); }
+.c-group > .c-band:last-of-type, .c-group > .c-humidifier:last-of-type, .c-group > .c-acfan:last-of-type { border-bottom: 0; }
+.c-group .c-reasons:empty { display: none; }
+.c-band.c-outdoor { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 10px 0; }
+.c-band.c-outdoor .c-hint { flex-basis: 100%; margin: 0; }
+.c-acfan .ctl { flex: 0 0 auto; width: auto; min-width: 120px; }
 .c-band { display: grid; grid-template-columns: minmax(0, 200px) minmax(0, 120px) minmax(0, 120px); align-items: end; gap: 4px 16px; padding: 10px 0; border-bottom: 1px solid var(--border); }
 .c-band .m-name { align-self: center; }
 .c-hint { grid-column: 1 / -1; margin: 0; font-size: var(--fs-sm); color: var(--muted); max-width: 60ch; }

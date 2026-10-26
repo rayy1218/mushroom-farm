@@ -1,7 +1,7 @@
 // Room detail page: a side bar of tabs (a row on a phone; the address names the tab: #/rooms/7, #/rooms/7/charts, ...) and,
 // beside it, the alarms on every tab, then the tab's panel: Overview (the Room
 // card: the room picture, the readings against their bands, the machines in air-path order), Charts (three charts of the last
-// 50 polls, the T and RH charts with the outdoor line, and the machine timeline), Control (automatic control and the
+// 50 polls, the T and RH charts with the outdoor line, and the machine timeline), Climate (automatic control and the
 // machines), Crop, Sensors (the room's two sensors, the energy meter if it has one, the intake filter), Energy (the energy and
 // water card) and Simulations. Every tab is loaded and kept up to date; a tab change only shows and hides panels.
 // Refreshes every reading interval (2–30 s; 5 s when the settings cannot be read) while shown.
@@ -89,7 +89,7 @@ const TEMPLATE = `
             <p class="legend"><span class="swatch swatch-auto" aria-hidden="true"></span>Automatic <span class="swatch swatch-manual" aria-hidden="true"></span>Manual</p>
           </section>
         </div>
-        <div data-panel="control" hidden>
+        <div data-panel="climate" hidden>
           <section data-control hidden></section>
           <section data-machines></section>
         </div>
@@ -114,7 +114,7 @@ const TEMPLATE = `
 const TAB_ICONS = {
   overview: '<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>',
   charts: '<path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 6-7"/>',
-  control: '<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
+  climate: '<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
   crop: '<path d="M4 12a8 7 0 0116 0z"/><path d="M10 12v6a2 2 0 004 0v-6"/>',
   sensors: '<path d="M10 14V5a2 2 0 014 0v9a4 4 0 11-4 0z"/><path d="M12 14v-4"/>',
   energy: '<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>',

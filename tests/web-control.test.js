@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { BANDS, REASONS, reasonsShown, heldLine, exchangeLine, formatHm, reasonLine, checkBand, locateField, stateLine, inputLabel, bandsBody, HUMIDIFIER_LABEL, humidifierOn, AC_FAN_LABEL, AC_FAN_OPTIONS, acFanOf } from '../web/control-math.js';
+import { CONTROL_GROUPS } from '../web/control-math.js';
+import { readFileSync } from 'node:fs';
 
 const [co2, temp, rh] = BANDS;
 
@@ -161,4 +163,17 @@ test('the outdoor air setting: label, default on, the note without an outdoor se
   const loaded = { ...six, co2Safety: 1250, exchangeMaxMin: 10, acDrop: 0, exchangeEveryMin: 15, outdoorAir: true };
   assert.deepEqual(changedBody({ ...loaded }, loaded), {});
   assert.deepEqual(changedBody({ ...loaded, outdoorAir: false }, loaded), { outdoorAir: false });
+});
+
+test('the card in groups (owner, 2026-10-26): CO₂, Temperature, Humidity, Air circulation, each with its band, its settings and why its machines do what they do', () => {
+  assert.deepEqual(CONTROL_GROUPS, [
+    { key: 'co2', title: 'CO₂', fields: ['co2', 'co2Safety', 'exchangeMaxMin', 'exchangeEveryMin'], own: [], reasons: ['exchange'] },
+    { key: 't', title: 'Temperature', fields: ['t', 'acDrop'], own: ['acFan'], reasons: ['ac'] },
+    { key: 'rh', title: 'Humidity', fields: ['rh'], own: ['humidifier'], reasons: ['humidifier', 'dehumidifier'] },
+    { key: 'air', title: 'Air circulation', fields: [], own: [], reasons: ['circulation'] },
+  ]);
+  const card = readFileSync(new URL('../web/control.js', import.meta.url), 'utf8');
+  assert.match(card, /for \(const g of CONTROL_GROUPS\)/);
+  assert.match(card, /el\('h3', 'c-group-title', g\.title\)/);
+  assert.match(card, /for \(const list of reasonLists\) list\.hidden = !c\.auto;/);
 });

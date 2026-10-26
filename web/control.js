@@ -3,7 +3,7 @@
 // Controls are updated in place, so a refresh never replaces an input the person is using or has edited.
 
 import { request, OFFLINE } from './api.js';
-import { BANDS, REASONS, reasonsShown, stateLine, inputLabel, reasonLine, checkBand, locateField, SAFETY_FIELDS, checkSafety, locateSafetyField, changedBody, checkLines, heldLine, HUMIDIFIER_LABEL, humidifierOn, OUTDOOR_LABEL, outdoorOn, outdoorNote, AC_FAN_LABEL, AC_FAN_OPTIONS, acFanOf } from './control-math.js';
+import { BANDS, REASONS, reasonsShown, stateLine, inputLabel, reasonLine, checkBand, locateField, SAFETY_FIELDS, checkSafety, locateSafetyField, changedBody, checkLines, heldLine, HUMIDIFIER_LABEL, humidifierOn, OUTDOOR_LABEL, outdoorOn, outdoorNote, AC_FAN_LABEL, AC_FAN_OPTIONS, acFanOf, CONTROL_GROUPS } from './control-math.js';
 
 const COMMAND_TIMEOUT = 30000;
 
@@ -135,6 +135,7 @@ export function createControl(host, { roomId, onOffline, onGone, onChange, getRo
   outdoorHint.hidden = true;
   outdoorBox.setAttribute('aria-describedby', outdoorHint.id);
   outdoorRow.append(outdoorBox, outdoorName, outdoorHint);
+  // Use outdoor air stays under the groups: it serves all of them (free cooling, drying, waiting out wet air).
   outdoorBox.addEventListener('change', () => {
     dirty = true;
     showError(saveErr, '');
@@ -153,7 +154,6 @@ export function createControl(host, { roomId, onOffline, onGone, onChange, getRo
 
   const stateNode = el('p', 'c-state');
   const checkList = el('ul', 'c-checks'); // a sensor whose last check was not ok
-  const reasonList = el('ul', 'c-reasons');
   const reasonItems = new Map(); // machine key → { li, line, held }
   for (const r of REASONS) {
     const li = el('li', 'meta');
@@ -162,7 +162,6 @@ export function createControl(host, { roomId, onOffline, onGone, onChange, getRo
     held.hidden = true;
     li.append(line, held);
     reasonItems.set(r.key, { li, line, held });
-    reasonList.append(li);
   }
 
   // ---- humidifier during air exchange (a setting of its own: sent at once, not part of Save) ----
@@ -191,7 +190,29 @@ export function createControl(host, { roomId, onOffline, onGone, onChange, getRo
   fanRow.append(fanLabel, fanSelect, fanState);
   const fanErr = errorNode();
 
-  host.append(autoRow, autoErr, form, sendRow, saveErr, humRow, humErr, fanRow, fanErr, stateNode, checkList, reasonList);
+  // ---- the groups: CO₂, Temperature, Humidity, Air circulation, each with its rows, its own settings and its reasons ----
+  const rowOf = (key) => form.querySelector(`[data-key="${key}"]`);
+  const own = { acFan: [fanRow, fanErr], humidifier: [humRow, humErr] };
+  const reasonLists = [];
+  const groups = [];
+  for (const g of CONTROL_GROUPS) {
+    const box = el('section', 'c-group');
+    box.dataset.group = g.key;
+    box.append(el('h3', 'c-group-title', g.title));
+    for (const key of g.fields) box.append(rowOf(key));
+    for (const key of g.own) box.append(...own[key]);
+    const list = el('ul', 'c-reasons');
+    for (const key of g.reasons) list.append(reasonItems.get(key).li);
+    reasonLists.push(list);
+    box.append(list);
+    groups.push(box);
+  }
+  // What is left in the form, Use outdoor air, serves all of them: a box of its own after the groups.
+  form.classList.add('c-group');
+  form.dataset.group = 'outdoor';
+  form.prepend(el('h3', 'c-group-title', 'Outdoor air'));
+
+  host.append(autoRow, autoErr, ...groups, form, sendRow, saveErr, stateNode, checkList);
 
   // ---- drawing ----
 
@@ -313,7 +334,7 @@ export function createControl(host, { roomId, onOffline, onGone, onChange, getRo
     const lines = checkLines(c.checks);
     checkList.replaceChildren(...lines.map((text) => el('li', 'warn', text)));
     checkList.hidden = lines.length === 0;
-    reasonList.hidden = !c.auto; // the reasons are of the last decision: not shown once auto is off
+    for (const list of reasonLists) list.hidden = !c.auto; // the reasons are of the last decision: not shown once auto is off
     const shown = reasonsShown(getRoom?.()?.dehumidifier === true);
     for (const r of REASONS) {
       const item = reasonItems.get(r.key);

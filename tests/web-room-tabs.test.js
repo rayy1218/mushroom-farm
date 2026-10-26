@@ -14,7 +14,7 @@ const template = page.slice(page.indexOf('const TEMPLATE'), page.indexOf('`;', p
 const PANELS = {
   overview: ['data-room-card'],
   charts: ['data-range', 'data-charts', 'data-timeline'],
-  control: ['data-control', 'data-machines'],
+  climate: ['data-control', 'data-machines'],
   crop: ['data-crop'],
   sensors: ['data-sensors', 'data-filter'],
   energy: ['data-usage'],
