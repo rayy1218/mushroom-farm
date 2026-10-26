@@ -4,8 +4,13 @@ import { request, OFFLINE } from './api.js';
 import { LEVELS, tokenHint, buildTelegramBody, testBody, statusLines, cardValues } from './telegram-math.js';
 
 const COMMAND_TIMEOUT = 15000;
+const TEST_TIMEOUT = 20000; // the server gives up on Telegram after 15 s and says so first
 
 const TEMPLATE = `
+  <div class="banner" role="alert" data-tg-banner hidden>
+    <span data-tg-banner-text></span>
+    <button type="button" data-tg-retry>Retry</button>
+  </div>
   <form class="card settings telegram" data-tg-form novalidate hidden>
     <h2>Phone alarms (Telegram)</h2>
     <ol class="s-hint tg-steps">
@@ -60,6 +65,9 @@ export function mountTelegram(container) {
   const clear = q('[data-tg-clear]');
   const saved = q('[data-tg-saved]');
   const result = q('[data-tg-result]');
+  const banner = q('[data-tg-banner]');
+  const bannerText = q('[data-tg-banner-text]');
+  q('[data-tg-retry]').addEventListener('click', () => load());
   let last = null;
 
   function setError(name, text) {
@@ -94,13 +102,16 @@ export function mountTelegram(container) {
   }
 
   async function load() {
+    banner.hidden = true;
     try {
       const data = await request('GET', '/api/settings');
       if (!alive) return;
       paint(data);
       form.hidden = false;
-    } catch {
-      // the Settings form above shows the load error and its Retry
+    } catch (err) {
+      if (!alive) return;
+      bannerText.textContent = `Phone alarms: ${err.status === 0 ? OFFLINE : err.message}`;
+      banner.hidden = false;
     }
   }
 
@@ -157,7 +168,7 @@ export function mountTelegram(container) {
     result.textContent = 'Sending…';
     result.hidden = false;
     try {
-      await request('POST', '/api/settings/telegram/test', typed.body, COMMAND_TIMEOUT);
+      await request('POST', '/api/settings/telegram/test', typed.body, TEST_TIMEOUT);
       if (!alive) return;
       result.textContent = 'Test message sent. Check Telegram.';
       result.className = 'tg-test s-saved';

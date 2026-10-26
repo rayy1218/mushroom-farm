@@ -115,3 +115,12 @@ test('the test route with the real sender and a fake transport: network error te
   assert.match(text, /No answer from Telegram/);
   assert.ok(!text.includes(TOKEN));
 });
+
+test('PUT tells the sender its settings changed, only after a successful write', async (t) => {
+  let n = 0;
+  const { call } = await setup(t, { status: () => ({}), settingsChanged: () => { n += 1; } });
+  await call('PUT', '/api/settings', { telegramRepeatMin: 5 });
+  assert.equal(n, 1);
+  await call('PUT', '/api/settings', { telegramRepeatMin: 5000 });
+  assert.equal(n, 1);
+});

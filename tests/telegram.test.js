@@ -10,10 +10,11 @@ const MIN = 60_000;
 const T0 = new Date(2026, 9, 26, 16, 20).getTime();
 
 // A telegram on a fake clock, fake timers and a fake transport (never the network). script: results by call number.
-function setup(t, { settings = {}, script = [] } = {}) {
+function setup(t, { settings = {}, script = [], before = null } = {}) {
   const db = openDb(':memory:');
-  t.after(() => db.close());
+  t.after(() => { try { db.close(); } catch { /* closed by the test */ } });
   const roomId = db.createRoom({ name: 'Room 1', length: 6, width: 4, height: 2.5 }).id;
+  if (before) before(db, roomId);
   const state = { time: T0, calls: [], timers: [], logs: [] };
   const cfg = { telegramToken: TOKEN, telegramChatId: '-100', telegramLevels: ['critical', 'serious'], telegramCleared: true, telegramRepeatMin: 30, ...settings };
   const transport = async (m) => {
@@ -206,4 +207,96 @@ test('close stops listening and clears the timers', async (t) => {
   db.raiseAlarm(roomId, 'sensorTrh', 'serious', 's', T0);
   await flush();
   assert.equal(state.calls.length, 1);
+});
+
+test('a repeat stops when its alarm is gone (room deleted), cleared or acknowledged without an event', async (t) => {
+  const a = setup(t);
+  a.db.raiseAlarm(a.roomId, 'co2Safety', 'critical', 'c', T0);
+  a.db.deleteRoom(a.roomId);
+  a.state.time = T0 + 30 * MIN;
+  await a.fire(a.live()[0]);
+  assert.equal(a.state.calls.length, 1);
+  assert.equal(a.live().length, 0);
+});
+
+test('restart: active alarms of the chosen levels repeat from their raised time, no raised message again', async (t) => {
+  const { state, live, fire } = setup(t, {
+    before: (db, roomId) => {
+      db.raiseAlarm(roomId, 'co2Safety', 'critical', 'old', T0 - 100 * MIN);
+      db.raiseAlarm(roomId, 'sensorCo2', 'serious', 'ser', T0 - 100 * MIN);
+      db.raiseAlarm(roomId, 'tHigh', 'warning', 'war', T0 - 100 * MIN);
+    },
+  });
+  await flush();
+  assert.equal(state.calls.length, 0);
+  assert.deepEqual(live().map((x) => x.ms), [0]); // overdue: at once
+  await fire(live()[0]);
+  assert.match(state.calls[0].text, /^🔁 Still on for 100 min, not acknowledged · Room 1 · old/);
+  assert.deepEqual(live().map((x) => x.ms), [30 * MIN]);
+});
+
+test('restart: not before the next due time, nothing without a token, acknowledged ones stay quiet', async (t) => {
+  const a = setup(t, { before: (db, id) => db.raiseAlarm(id, 'co2Safety', 'critical', 'c', T0 - 10 * MIN) });
+  assert.deepEqual(a.live().map((x) => x.ms), [20 * MIN]);
+  const b = setup(t, { settings: { telegramToken: '' }, before: (db, id) => db.raiseAlarm(id, 'co2Safety', 'critical', 'c', T0 - 10 * MIN) });
+  assert.equal(b.live().length, 0);
+  const c = setup(t, { before: (db, id) => { const x = db.raiseAlarm(id, 'co2Safety', 'critical', 'c', T0 - 10 * MIN); db.ackAlarm(x, T0); } });
+  assert.equal(c.live().length, 0);
+});
+
+test('no message and no repeat entry without a token', async (t) => {
+  const { db, roomId, state, live, cfg } = setup(t, { settings: { telegramToken: '' } });
+  db.raiseAlarm(roomId, 'co2Safety', 'critical', 'c', T0);
+  cfg.telegramToken = TOKEN;
+  cfg.telegramRepeatMin = 5;
+  await flush();
+  assert.equal(live().length, 0);
+  assert.equal(state.calls.length, 0);
+});
+
+test('settingsChanged: 0 cancels, a new value counts from the last send, 0 to on starts, critical off stops', async (t) => {
+  const { db, roomId, state, tg, cfg, live } = setup(t);
+  db.raiseAlarm(roomId, 'co2Safety', 'critical', 'c', T0);
+  state.time = T0 + 10 * MIN;
+  cfg.telegramRepeatMin = 45;
+  tg.settingsChanged();
+  assert.deepEqual(live().map((x) => x.ms), [35 * MIN]);
+  cfg.telegramRepeatMin = 0;
+  tg.settingsChanged();
+  assert.equal(live().length, 0);
+  cfg.telegramRepeatMin = 20;
+  tg.settingsChanged();
+  assert.deepEqual(live().map((x) => x.ms), [10 * MIN]);
+  cfg.telegramLevels = ['serious'];
+  tg.settingsChanged();
+  assert.equal(live().length, 0);
+});
+
+test('a repeat with 0 minutes at fire time is not sent', async (t) => {
+  const { db, roomId, state, cfg, live, fire } = setup(t);
+  db.raiseAlarm(roomId, 'co2Safety', 'critical', 'c', T0);
+  await flush();
+  cfg.telegramRepeatMin = 0;
+  await fire(live()[0]);
+  assert.equal(state.calls.length, 1);
+  assert.equal(live().length, 0);
+});
+
+test('429: the retry waits at least retry_after seconds', async (t) => {
+  const { db, roomId, state, live } = setup(t, { script: [{ ok: false, description: 'Too Many Requests', retryAfter: 120 }] });
+  db.raiseAlarm(roomId, 'sensorTrh', 'serious', 'one', T0);
+  await flush();
+  assert.equal(state.calls.length, 1);
+  assert.deepEqual(live().map((x) => x.ms), [120_000]);
+});
+
+test('the typed token of a test is masked in its error; a closed database does not leave an unhandled rejection', async (t) => {
+  const typed = '999999:ZZZ-typed-token-0123456789abc';
+  const { tg } = setup(t, { script: [new Error(`boom ${typed}`)] });
+  const r = await tg.test({ telegramToken: typed });
+  assert.ok(!r.error.includes(typed));
+  const x = setup(t, { settings: {} });
+  x.db.raiseAlarm(x.roomId, 'sensorTrh', 'serious', 'one', T0);
+  x.db.close();
+  await flush();
 });
