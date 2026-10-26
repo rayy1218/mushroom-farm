@@ -22,11 +22,15 @@ function lineNode(parts) {
   return span;
 }
 
-export function createRoomCard(host, { idPrefix = 'room-' } = {}) {
+export function createRoomCard(host, { idPrefix = 'room-', cropHref = '' } = {}) {
   host.classList.add('card', 'room-card');
   const note = el('small', 'rc-note');
   const head = el('h2', 'rc-head');
   head.append(el('span', '', 'Room'), note);
+  // The crop stage, a link to the Crop tab: "Fruiting · since … · day 1 of 7 · flush 1 of 4 · Next: …".
+  const stage = el('a', 'rc-stage');
+  if (cropHref) stage.href = cropHref;
+  stage.hidden = true;
   const pic = el('div', 'mimic-host rc-pic');
   pic.dataset.mimicHost = '';
   const tilesBox = el('div', 'rc-tiles');
@@ -39,7 +43,7 @@ export function createRoomCard(host, { idPrefix = 'room-' } = {}) {
   mhead.append(el('b', '', 'Machines'), el('span', '', 'in the order the air meets them: in → treated → out'));
   const grid = el('div', 'rc-mgrid');
   const strip = el('p', 'rc-strip');
-  host.replaceChildren(head, top, mhead, grid, strip);
+  host.replaceChildren(head, stage, top, mhead, grid, strip);
   const mimic = createMimic(pic, { idPrefix });
 
   // The three reading tiles, made once so the mark can slide to a new reading.
@@ -113,6 +117,11 @@ export function createRoomCard(host, { idPrefix = 'room-' } = {}) {
     paint(card, draw) {
       mimic.paint(draw);
       put(note, card.note);
+      stage.hidden = !card.stage;
+      if (card.stage) {
+        const words = [card.stage.detail, card.stage.next].filter(Boolean).join(' · ');
+        stage.replaceChildren(el('b', '', card.stage.stage), document.createTextNode(words ? ` · ${words}` : ''));
+      }
       card.tiles.forEach((x, i) => paintTile(tiles[i], x));
       put(fresh, card.fresh);
       fresh.hidden = !card.fresh;

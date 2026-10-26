@@ -20,7 +20,7 @@ import { closeSimulateDialog } from './simulate-dialog.js';
 import { startLoop } from './mimic.js';
 import { fromRoom } from './mimic-math.js';
 import { createRoomCard } from './room-card.js';
-import { roomCard, filterFrom, freshAirLine, blocksLine } from './room-card-math.js';
+import { roomCard, filterFrom, freshAirLine, blocksLine, stageStrip } from './room-card-math.js';
 import { drawLineChart } from './chart.js';
 import { refreshMs } from './settings-math.js';
 import { live } from './live.js';
@@ -199,7 +199,7 @@ export function mount(container, { id, tab = 'overview' }) {
   let stopLoop = null; // stops the picture's animation
   let filterLast = null; // the last filter reading with the intake on (shown while it is off, like the Filter card)
   let filterNow = null; // the Room card's filter (filterFrom), from the last load
-  let crops = null; // the room's crops, from the Crop and stage card's replies (for the blocks under the picture)
+  let cropData = null; // the Crop and stage card's latest reply: the blocks under the picture and the stage line on the Room card
   let lastMachines = null; // the last good replies, so a failed optional read keeps the drawing's machines
   let lastControl = null;
   let ticker = null;
@@ -489,7 +489,7 @@ export function mount(container, { id, tab = 'overview' }) {
       makeAlarms();
       makeMachines();
       makeControl();
-      roomCardUi = createRoomCard(els.roomCardHost, { idPrefix: 'room-' });
+      roomCardUi = createRoomCard(els.roomCardHost, { idPrefix: 'room-', cropHref: roomHash(id, 'crop') });
       buildCharts();
       usageCard = createUsageCard(els.usageHost, { roomId: id, getRoom: () => room });
       history = createHistory(els.rangeHost, { roomId: id, outdoor: true, onChange: () => { if (alive() && sensors) renderCharts(); } });
@@ -532,9 +532,9 @@ export function mount(container, { id, tab = 'overview' }) {
     const filter = filterNow; // worked out with the page's replies (render), not again after a command
     const draw = {
       ...fromRoom({ room, sensors, machines: lastMachines, control: lastControl, outdoor, filterPa: filter ? filter.pa : null, now }),
-      blocks: blocksLine(crops),
+      blocks: blocksLine(cropData?.crops, stageStrip(cropData)?.short),
     };
-    roomCardUi.paint(roomCard({ draw, control: lastControl, filter, now }), draw);
+    roomCardUi.paint(roomCard({ draw, control: lastControl, filter, crop: cropData, now }), draw);
   }
 
   // The outdoor line of the Live charts: the history of the last hour, asked at most once a minute and only when a sensor
@@ -598,7 +598,7 @@ export function mount(container, { id, tab = 'overview' }) {
     cropCard = createCropCard(els.cropHost, {
       roomId: id,
       onChange: () => { if (alive()) load(); },
-      onData: (data) => { if (!alive()) return; crops = data?.crops ?? null; paintDrawing(); }, // the blocks under the picture
+      onData: (data) => { if (!alive()) return; cropData = data ?? null; paintDrawing(); }, // the blocks and the stage on the Room card
       onOffline: () => {
         if (!els.banner.hidden) return;
         els.bannerText.textContent = OFFLINE;

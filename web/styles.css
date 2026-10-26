@@ -264,6 +264,11 @@ html { scroll-padding-top: var(--topbar-h); }
 @media (max-width: 600px) { .sizes.two { grid-template-columns: 1fr 1fr; gap: 12px; } }
 
 /* ---- Room detail ---- */
+/* The Room card's crop stage line, a link to the Crop tab. */
+.rc-stage { display: block; margin: -4px 0 12px; color: var(--ink-2); font-size: var(--fs-sm); text-decoration: none; }
+.rc-stage b { color: var(--ink); }
+.rc-stage[href]:hover { color: var(--ink); text-decoration: underline; }
+
 /* The room page's tabs: a side bar beside the content from 900 px (owner, 2026-10-26), a sideways-scrolling row above it on a
    phone; the current tab filled like the old main menu. */
 .room-tabs { display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; border-bottom: 1px solid var(--border-strong); margin: 0 0 16px; }

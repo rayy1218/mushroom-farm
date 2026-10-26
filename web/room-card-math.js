@@ -5,7 +5,8 @@
 import { view } from './mimic-math.js';
 import { exchangeLine } from './control-math.js';
 import { filterCard, intakeRunning, lastRunningOf } from './filter-math.js';
-import { CROPS } from './crops.js';
+import { CROPS, STAGES } from './crops.js';
+import { hasCrops, stageLine, nextLine, doneLine } from './crop-math.js';
 
 const num = (x) => (typeof x === 'number' && Number.isFinite(x) ? x : null);
 const clamp01 = (x) => Math.min(1, Math.max(0, x));
@@ -174,18 +175,29 @@ export function bottomLine(draw, filter) {
 const cropWord = (key) => (CROPS[key] ? CROPS[key].name.replace(/\s*\(.*\)$/, '').replace(/^./, (x) => x.toLowerCase()) : '');
 
 // The crops' blocks under the container: "950 lion's mane blocks", "950 blocks: 500 grey oyster, 450 reishi", or ''.
-export function blocksLine(crops) {
+export function blocksLine(crops, stage = '') {
   const rows = (Array.isArray(crops) ? crops : []).filter((c) => num(c?.blocks) !== null && c.blocks > 0);
   if (!rows.length) return '';
   const n = (x) => x.toLocaleString('en-US');
-  if (rows.length === 1) return `${n(rows[0].blocks)}${cropWord(rows[0].crop) ? ` ${cropWord(rows[0].crop)}` : ''} blocks`;
-  return `${n(rows.reduce((s, c) => s + c.blocks, 0))} blocks: ${rows.map((c) => `${n(c.blocks)} ${cropWord(c.crop) || 'blocks'}`).join(', ')}`;
+  const tail = stage ? ` · ${stage}` : ''; // the stage after the blocks under the picture
+  if (rows.length === 1) return `${n(rows[0].blocks)}${cropWord(rows[0].crop) ? ` ${cropWord(rows[0].crop)}` : ''} blocks${tail}`;
+  return `${n(rows.reduce((s, c) => s + c.blocks, 0))} blocks: ${rows.map((c) => `${n(c.blocks)} ${cropWord(c.crop) || 'blocks'}`).join(', ')}${tail}`;
+}
+
+// The crop stage line at the top of the Room card (owner, 2026-10-26: "add the stage of crop"), from the Crop card's reply
+// (GET /api/rooms/:id/crop): { stage, detail, next, short } with the Crop card's own words, or null without crops.
+// short: the stage for the line under the picture.
+export function stageStrip(crop, now = Date.now()) {
+  if (!hasCrops(crop) || !crop.stage) return null;
+  const stage = STAGES[crop.stage] ?? crop.stage;
+  return { stage, detail: stageLine(crop, now), next: doneLine(crop) || nextLine(crop), short: stage };
 }
 
 // Everything the Room card shows besides the picture.
-export function roomCard({ draw = null, control = null, filter = null, now = Date.now() } = {}) {
+export function roomCard({ draw = null, control = null, filter = null, crop = null, now = Date.now() } = {}) {
   return {
     note: controlNote(control),
+    stage: stageStrip(crop, now),
     tiles: readingTiles(draw, control),
     fresh: freshAirLine(control, now),
     machines: machineTiles(draw, control, filter),

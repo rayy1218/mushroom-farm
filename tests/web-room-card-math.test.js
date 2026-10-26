@@ -1,8 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  scaleFor, bandBar, readingTiles, controlNote, freshAirLine, machineTiles, filterSummary, filterFrom, bottomLine, blocksLine, roomCard,
+  scaleFor, bandBar, readingTiles, controlNote, freshAirLine, machineTiles, filterSummary, filterFrom, bottomLine, blocksLine, roomCard, stageStrip,
 } from '../web/room-card-math.js';
+import { formatDateTime } from '../web/simulation-math.js';
 import { fromRoom } from '../web/mimic-math.js';
 
 // A line of parts (plain and bold text taking turns) as one text.
@@ -227,4 +228,26 @@ test('roomCard puts it together and never throws', () => {
   assert.equal(empty.note, '');
   assert.equal(empty.fresh, '');
   assert.equal(empty.tiles.length, 3);
+});
+
+test('the crop stage line: the stage, the Crop card\'s since · day · flush words, what comes next; done; nothing without crops', () => {
+  const now = Date.UTC(2026, 9, 27, 4);
+  const since = now - 1.5 * 86_400_000, next = now + 5 * 86_400_000;
+  const crop = { crops: [{ crop: 'lionsmane', blocks: 950 }], stage: 'fruiting', stageSince: since, flush: 1, flushes: 4,
+    days: { fruiting: 7, rest: 10 }, autoAdvance: true, done: false, ramp: null, nextStage: { stage: 'rest', flush: 1, at: next } };
+  assert.deepEqual(stageStrip(crop, now), {
+    stage: 'Fruiting', detail: `since ${formatDateTime(since)} · day 2 of 7 · flush 1 of 4`,
+    next: `Next: Rest between flushes, about ${formatDateTime(next)}`, short: 'Fruiting',
+  });
+  const done = stageStrip({ ...crop, stage: 'rest', done: true, nextStage: null, flush: 4 }, now);
+  assert.equal(done.stage, 'Rest between flushes');
+  assert.equal(done.next, 'Flush 4 of 4 done: replace the blocks');
+  assert.equal(stageStrip({ ...crop, crops: [] }, now), null, 'no crops: no line');
+  assert.equal(stageStrip(null, now), null);
+});
+
+test('the blocks under the picture carry the stage', () => {
+  assert.equal(blocksLine([{ crop: 'lionsmane', blocks: 950 }], 'Fruiting'), "950 lion's mane blocks · Fruiting");
+  assert.equal(blocksLine([{ crop: 'lionsmane', blocks: 950 }]), "950 lion's mane blocks");
+  assert.equal(blocksLine([], 'Fruiting'), '');
 });
