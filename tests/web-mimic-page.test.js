@@ -22,5 +22,5 @@ test('the farm serves the room page, the drawing and its stylesheet', async (t) 
 
 test('the modules import in Node (no DOM needed at load time)', async () => {
   const mimic = await import('../web/mimic.js');
-  for (const name of ['createMimic', 'startLoop', 'fromRoom', 'fromSim', 'sizeFor', 'view', 'describe']) assert.equal(typeof mimic[name], 'function', name);
+  for (const name of ['createMimic', 'startLoop', 'fromRoom', 'fromSim', 'view', 'describe']) assert.equal(typeof mimic[name], 'function', name);
 });
