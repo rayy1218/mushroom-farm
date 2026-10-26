@@ -181,6 +181,8 @@ button.danger-text { color: var(--critical-text); }
   border-radius: var(--radius);
 }
 .sim-card.off .sim-live, .sim-card.off .sim-acting { color: var(--muted); }
+/* the room picture (web/mimic.js): at most about its own size, framed like the farm's Room card */
+.sim-drawing { max-width: 900px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
 .sim-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
 .sim-head > input[type="text"] { flex: 1 1 180px; min-width: 0; font-weight: 600; }
 .sim-actions { display: inline-flex; gap: 8px; margin-left: auto; }

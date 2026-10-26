@@ -1,21 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { sizeFor, readoutStatus, fromRoom, fromSim, isNight, view, describe, NARROW_BELOW, NARROW_H } from '../web/mimic-math.js';
-
-// ---- sizes ----
-
-test('sizeFor: stacked below 720 px, the cross-section from 720 px, never smaller than 280 px', () => {
-  assert.deepEqual(sizeFor(390), { mode: 'narrow', w: 390, h: NARROW_H, k: 1 });
-  assert.equal(sizeFor(NARROW_BELOW - 1).mode, 'narrow');
-  assert.equal(sizeFor(NARROW_BELOW).mode, 'wide');
-  assert.equal(sizeFor(100).w, 280);
-  assert.equal(sizeFor(NaN).w, 280);
-  assert.equal(sizeFor(1000).k, 1);
-  assert.equal(sizeFor(1000).h, 420);
-  assert.equal(sizeFor(1200).k, 1.2);
-  assert.equal(sizeFor(3000).k, 1.35); // capped
-  assert.equal(sizeFor(720).k, 0.72);
-});
+import { readoutStatus, fromRoom, fromSim, isNight, view, describe } from '../web/mimic-math.js';
 
 // ---- readout chips ----
 
@@ -311,4 +296,21 @@ test('view and describe: the dehumidifier only when there is one', () => {
   assert.equal(none.dh, null);
   assert.doesNotMatch(describe(none), /Dehumidifier/);
   assert.equal(view(null).dh, null);
+});
+
+test('the filter reading: from the room\'s pressure sensor or the one given, from a simulated room\'s filter probe', () => {
+  const dp = (over = {}) => ({ trh: sensors.trh, co2: sensors.co2, dp: { status: 'online', lastOk: { pa: 40.4, at: 1 }, ...over } });
+  assert.equal(fromRoom({ sensors: dp() }).filterPa, 40.4);
+  assert.equal(view(fromRoom({ sensors: dp() })).filter, 'filter 40 Pa');
+  assert.equal(fromRoom({ sensors: dp(), filterPa: 51 }).filterPa, 51, 'the Filter card\'s reading wins (the last one with the intake on)');
+  assert.equal(fromRoom({ sensors: dp(), filterPa: null }).filterPa, null);
+  assert.equal(fromRoom({ sensors: dp({ status: 'not-wired', lastOk: null }) }).filterPa, null);
+  assert.equal(fromRoom({ sensors }).filterPa, null);
+  assert.equal(view(fromRoom({ sensors })).filter, '');
+  assert.equal(view(undefined).filter, '');
+  const acting = { ...simRoom().acting, filterPa: 62.4 };
+  assert.equal(fromSim(simRoom({ filterProbe: 14, acting }), devices).filterPa, 62.4);
+  assert.equal(view(fromSim(simRoom({ filterProbe: 14, acting }), devices)).filter, 'filter 62 Pa');
+  assert.equal(fromSim(simRoom({ filterProbe: null, acting }), devices).filterPa, null, 'no filter probe linked');
+  assert.equal(fromSim(simRoom({ filterProbe: 14, acting: { ...acting, filterPa: 0 } }), devices).filterPa, null, 'the intake is off');
 });

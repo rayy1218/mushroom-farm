@@ -11,7 +11,7 @@ let stop = null;
 export function createSimDrawing(id) {
   const el = document.createElement('div');
   el.className = 'mimic-host sim-drawing';
-  const mimic = createMimic(el, { idPrefix: `sim-${id}-` });
+  const mimic = createMimic(el, { idPrefix: `sim-${id}-`, readouts: true }); // no reading tiles here: the readings go in the picture
   drawings.add(mimic);
   stop ??= startLoop(() => drawings);
   return {

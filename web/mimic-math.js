@@ -1,6 +1,6 @@
 // Pure mapping for the room drawing (web/mimic.js): the DrawState, how the farm room page and the device's simulated
 // room fill it, and the plain data the painter writes (texts, levels, flags). No DOM, so Node tests cover it.
-// DrawState: see docs/superpowers/specs/2026-10-20-room-drawing-design.md.
+// DrawState: see docs/superpowers/specs/2026-10-20-room-drawing-design.md, plus filterPa (2026-10-26-room-picture-design.md).
 
 import { MACHINE_NAMES, MODES, FANS, statusWord } from './machines-math.js';
 import { outdoorForDrawing } from './outdoor-math.js';
@@ -16,19 +16,6 @@ const FAN_BY_INDEX = ['auto', 'low', 'high'];
 const num = (x) => (typeof x === 'number' && Number.isFinite(x) ? x : null);
 const clamp01 = (x) => Math.min(1, Math.max(0, x));
 const unknownUnit = (state) => ({ known: false, on: false, level: 0, state, sub: '', warn: false });
-
-// ---------------- sizes ----------------
-
-export const NARROW_BELOW = 720; // px of host width: a stacked drawing below, the cross-section above
-export const NARROW_H = 580;
-
-// The drawing's pixel size for a host width: it is drawn 1:1, only the shapes scale, never the text.
-export function sizeFor(width) {
-  const w = Math.max(280, Math.round(num(width) ?? 0));
-  if (w < NARROW_BELOW) return { mode: 'narrow', w, h: NARROW_H, k: 1 };
-  const k = Math.min(1.35, Math.max(0.72, w / 1000));
-  return { mode: 'wide', w, h: Math.round(420 * k), k };
-}
 
 // ---------------- the room page ----------------
 
@@ -70,8 +57,11 @@ const noteOf = (c) => (!c ? '' : c.auto ? (c.exchange ? 'Automatic control · ai
 
 // What the room page already loads → DrawState. Anything missing draws as "no data"; never throws.
 // outdoor: GET /api/outdoor (the farm's outdoor sensor), or null when there is none or the server did not answer.
-export function fromRoom({ room, sensors, machines, control, outdoor = null, now = Date.now() } = {}) {
+// filterPa: the filter reading to show (the Filter card's: the last one with the intake on while it is off); without it the
+// pressure sensor's last reading.
+export function fromRoom({ room, sensors, machines, control, outdoor = null, filterPa, now = Date.now() } = {}) {
   const trh = sensors?.trh ?? null, co2 = sensors?.co2 ?? null, c = control ?? null;
+  const dp = sensors?.dp && sensors.dp.status !== 'not-wired' ? sensors.dp : null;
   const T = num(trh?.lastOk?.t), RH = num(trh?.lastOk?.rh), CO2 = num(co2?.lastOk?.co2);
   const relay = Array.isArray(machines?.relay?.machines) ? machines.relay.machines : [];
   const units = { ac: acUnit(machines?.ac) };
@@ -90,6 +80,7 @@ export function fromRoom({ room, sensors, machines, control, outdoor = null, now
       CO2: readoutStatus(co2, CO2, c?.co2Low, c?.co2High, c?.co2Safety),
     },
     units,
+    filterPa: filterPa !== undefined ? num(filterPa) : num(dp?.lastOk?.pa),
     blocks: '',
     co2Rate: CO2 === null ? 0 : clamp01(CO2 / 3000),
     capScale: 0.6,
@@ -155,6 +146,8 @@ export function fromSim(room, sensors) {
       circ: simRelayUnit(relay, 2, 1),
       dh,
     },
+    // the filter probe reads only while the intake runs (0 otherwise)
+    filterPa: r.filterProbe != null && num(a?.filterPa) > 0 ? a.filterPa : null,
     blocks: blocks !== null ? `${blocks.toLocaleString('en-US')} blocks` : '',
     co2Rate: blocks === null || r.enabled === false || blocks * perBlock <= 0 ? 0 : Math.max(0.15, clamp01((blocks * perBlock) / 1000 / 150)),
     capScale: 0.6,
@@ -203,6 +196,7 @@ export function view(draw) {
     comp,
     acFlow: ac.on ? (comp ? 0.35 + 0.65 * ac.level : 0.2) : 0,
     airOn: units.intake.on || units.exhaust.on,
+    filter: num(s.filterPa) === null ? '' : `filter ${Math.round(s.filterPa)} Pa`,
     blocks: s.blocks ? String(s.blocks) : '',
     co2Rate: num(s.co2Rate) === null ? 0 : clamp01(s.co2Rate),
     capScale: num(s.capScale) === null ? 0 : clamp01(s.capScale),

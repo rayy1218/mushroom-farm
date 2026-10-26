@@ -1,68 +1,93 @@
-/* The room drawing (web/mimic.js). Uses the page's theme tokens (--ink, --surface, --muted ...); the drawing's own
-   colours are set per theme here so the farm page and the device page look the same. */
-.mimic-host { min-width: 0; width: 100%; }
-.mimic-svg {
-  --m-unit: color-mix(in srgb, var(--ink) 7%, var(--surface));
-  --m-unit-on: color-mix(in srgb, var(--ink) 16%, var(--surface));
-  --m-room: color-mix(in srgb, var(--ink) 3%, var(--surface));
-  --m-wall: var(--border-strong);
-  --m-ac: #4f9de8; --m-air: #3aa89a; --m-hu: #62b8e0; --m-dh: #a58be8;
-  --m-good: #0ca30c; --m-warning: #fab219; --m-serious: #f08a24; --m-critical: #ff8a8a;
-  display: block; max-width: 100%; height: auto;
+/* The room picture (web/mimic.js): flat shapes, one colour per thing (no gradients, shadows or hatching). Its colours are set
+   here per theme, on the host, so the farm page and the device page look the same and a card can paint the ground around it.
+   Texts use the page's --ink and --muted. */
+.mimic-host {
+  --m-sky: #1b2c3d; --m-night: #0d1522; --m-ground: #262320;
+  --m-steel: #2f6164; --m-rib: #24494c; --m-inside: #262b30; --m-floor: #15181b;
+  --m-unit: #eef1f4; --m-unit-2: #c9d0d7; --m-unit-ink: #3a4148; --m-unit-edge: transparent;
+  --m-rack: #8a939c; --m-bag: #d9c8a5; --m-cap: #fffaf0;
+  --m-ac: #3987e5; --m-hu: #2b9fd0; --m-dh: #8b6fe0;
+  --m-run: #2fd0b5; --m-cool: #6ec3ff; --m-warm: #ff9a5a; --m-mist: #cfeeff; --m-sun: #f7c95c; --m-moon: #e6ebf3;
+  --m-warn: #fab219; --m-good: #0ca30c; --m-serious: #f08a24; --m-critical: #ff8a8a;
+  --m-sky-ink: var(--ink); --m-sky-muted: var(--muted); --m-sky-run: var(--m-run);
+  min-width: 0; width: 100%;
 }
-:root[data-theme="light"] .mimic-svg {
-  --m-ac: #2a78d6; --m-air: #1a8576; --m-hu: #2b8db8; --m-dh: #6b4fc0;
-  --m-good: #006300; --m-warning: #7a5200; --m-serious: #9a4a00; --m-critical: #b02a2a;
+:root[data-theme="light"] .mimic-host {
+  --m-sky: #d6ebf7; --m-night: #3a4863; --m-ground: #d3c8b5;
+  --m-steel: #4f8a8c; --m-rib: #3f7476; --m-inside: #f2f4f6; --m-floor: #c9cfd5;
+  --m-unit: #ffffff; --m-unit-2: #dfe4e9; --m-unit-ink: #3a4148; --m-unit-edge: #b9c1c9;
+  --m-rack: #6f7983; --m-bag: #e3d3b0; --m-cap: #ffffff;
+  --m-ac: #2a78d6; --m-hu: #1f8fc0; --m-dh: #6b4fc0;
+  --m-run: #0f8a76; --m-cool: #2f8fe0; --m-warm: #f07a32; --m-mist: #8ccff5; --m-sun: #f2b632; --m-moon: #f3f5f9;
+  --m-warn: #c98500; --m-good: #006300; --m-serious: #9a4a00; --m-critical: #b02a2a;
 }
-.mimic-svg text { font-family: inherit; fill: var(--ink); font-size: 13px; }
-.mimic-svg .m-eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .1em; fill: var(--muted); }
-.mimic-svg .m-big { font-size: 22px; font-weight: 500; font-variant-numeric: tabular-nums; }
-.mimic-svg .m-small { font-size: 13px; fill: var(--ink-2, var(--muted)); }
-.mimic-svg .m-tag { font-size: 13px; font-weight: 700; }
-.mimic-svg .m-note { fill: var(--muted); }
-.mimic-svg .wall { stroke: var(--m-wall); stroke-width: 1; }
-.mimic-svg .hatch-bg { fill: var(--surface); }
-.mimic-svg .hatch-line { stroke: var(--m-wall); stroke-width: 1.4; }
-.mimic-svg .room { fill: var(--m-room); }
-.mimic-svg .ground { stroke: var(--m-wall); stroke-width: 2; }
-.mimic-svg .unit { fill: var(--m-unit); stroke: var(--border-strong); stroke-width: 1.5; transition: fill .3s; }
-.mimic-svg .on > .unit, .mimic-svg .on .unit.body { fill: var(--m-unit-on); }
+/* the light theme's night sky is dark: the words on it turn light */
+:root[data-theme="light"] .mimic-svg.night { --m-sky-ink: #f1f3f4; --m-sky-muted: #c3c8cd; --m-sky-run: #2fd0b5; }
+
+.mimic-svg { display: block; width: 100%; height: auto; }
+.mimic-svg text { font-family: inherit; fill: var(--ink); }
+.mimic-svg .sky { fill: var(--m-sky); }
+.mimic-svg.night .sky { fill: var(--m-night); }
+.mimic-svg .ground { fill: var(--m-ground); }
+.mimic-svg .sun { fill: var(--m-sun); }
+.mimic-svg .moon { fill: var(--m-moon); }
+.mimic-svg .steel { fill: var(--m-steel); }
+.mimic-svg .ribs { stroke: var(--m-rib); stroke-width: 3; }
+.mimic-svg .inside { fill: var(--m-inside); }
+.mimic-svg .floor { fill: var(--m-floor); }
+.mimic-svg .rack { fill: var(--m-rack); }
+.mimic-svg .bag { fill: var(--m-bag); }
+.mimic-svg .cap { fill: var(--m-cap); }
+
+/* white machine units: an edge in the light theme only, where the room is white too */
+.mimic-svg .unit { fill: var(--m-unit); stroke: var(--m-unit-edge); stroke-width: 1; }
+.mimic-svg .warn .unit, .mimic-svg .warn .ring { stroke: var(--m-warn); stroke-width: 2.5; }
 .mimic-svg .nodata { opacity: .6; }
-.mimic-svg .warn > .unit { stroke: var(--m-warning); stroke-width: 2.5; }
-.mimic-svg .pipe { fill: none; stroke: var(--m-wall); stroke-width: 2.5; }
-.mimic-svg .flow { fill: none; stroke-width: 2; stroke-linecap: round; stroke-dasharray: 5 9; opacity: 0; }
-.mimic-svg .flow.ac { stroke: var(--m-ac); }
-.mimic-svg .flow.air { stroke: var(--m-air); }
-.mimic-svg .arrowhead.ac { fill: var(--m-ac); }
-.mimic-svg .arrowhead.air { fill: var(--m-air); }
+.mimic-svg .louvre { stroke: var(--m-unit-2); stroke-width: 2; stroke-linecap: round; }
 .mimic-svg .keybar.ac { fill: var(--m-ac); }
-.mimic-svg .keybar.air { fill: var(--m-air); }
 .mimic-svg .keybar.hu { fill: var(--m-hu); }
 .mimic-svg .keybar.dh { fill: var(--m-dh); }
-.mimic-svg .grille { stroke: var(--border-strong); stroke-width: 1.5; stroke-linecap: round; }
-.mimic-svg .water { fill: var(--m-dh); opacity: .55; }
-.mimic-svg .drop { fill: var(--m-dh); }
-.mimic-svg .blade { fill: var(--ink-2, var(--muted)); }
-.mimic-svg .ring { fill: none; stroke: var(--border-strong); stroke-width: 1.5; }
-.mimic-svg .damper { fill: var(--ink-2, var(--muted)); }
-.mimic-svg .on > .damper { display: none; }
-.mimic-svg .tank { fill: var(--m-room); stroke: var(--border-strong); }
-.mimic-svg .mist { fill: var(--m-hu); }
-.mimic-svg .bubble { fill: none; stroke: var(--muted); stroke-width: 1.2; }
-.mimic-svg .post { stroke: var(--ink-2, var(--muted)); stroke-width: 3; }
-.mimic-svg .shelf { stroke: var(--ink-2, var(--muted)); stroke-width: 2; }
-.mimic-svg .bag { fill: var(--m-unit); stroke: var(--border-strong); stroke-width: 1.2; }
-.mimic-svg .cap { fill: var(--muted); stroke: var(--m-room); stroke-width: 1; transition: transform .6s; }
-.mimic-svg .sun { fill: none; stroke: var(--ink-2, var(--muted)); stroke-width: 1.5; }
-.mimic-svg .moon { fill: var(--ink-2, var(--muted)); }
-.mimic-svg .moon-cut { fill: var(--surface); }
-.mimic-svg .readout rect { fill: var(--m-unit); stroke: var(--border-strong); stroke-width: 1.2; }
-.mimic-svg .readout .val { font-size: 16px; font-weight: 500; font-variant-numeric: tabular-nums; }
-.mimic-svg .readout .zn { font-size: 12px; fill: var(--muted); }
-.mimic-svg .readout .ico { font-size: 13px; font-weight: 700; fill: var(--lvl, var(--muted)); }
+.mimic-svg .lamp { fill: var(--m-unit-2); }
+.mimic-svg .lamp.on { fill: var(--m-cool); }
+
+/* fans: grey blades when off, the running colour when on */
+.mimic-svg .fan .ring { fill: var(--m-unit); stroke: var(--m-unit-2); stroke-width: 1.6; }
+.mimic-svg .fan .blades { fill: var(--m-unit-ink); }
+.mimic-svg .fan.on .ring { stroke: var(--m-run); }
+.mimic-svg .fan.on .blades { fill: var(--m-run); }
+
+/* air: cool air under the aircon, mist, drops, the air path (moved by the loop in mimic.js) */
+.mimic-svg .plume { fill: none; stroke: var(--m-cool); stroke-width: 3; stroke-linecap: round; stroke-dasharray: 10 14; opacity: 0; }
+.mimic-svg .plume.warm { stroke: var(--m-warm); }
+.mimic-svg .mist { fill: var(--m-mist); opacity: 0; }
+.mimic-svg .drop { fill: var(--m-cool); opacity: 0; }
+.mimic-svg .air-path { fill: none; stroke: var(--muted); stroke-width: 1.5; stroke-linecap: round; stroke-dasharray: 2 7; opacity: .45; }
+.mimic-svg .air-path.on { stroke: var(--m-cool); stroke-width: 2.5; stroke-dasharray: 3 11; opacity: 1; }
+.mimic-svg .arrowhead { fill: var(--m-cool); }
+
+/* words */
+.mimic-svg .m-eyebrow { font-size: 11px; font-weight: 700; letter-spacing: 1.4px; fill: var(--m-sky-muted); }
+.mimic-svg .m-big { font-size: 18px; font-weight: 700; fill: var(--m-sky-ink); font-variant-numeric: tabular-nums; }
+.mimic-svg .m-small { font-size: 12px; fill: var(--m-sky-muted); }
+.mimic-svg .m-name { font-size: 12.5px; font-weight: 650; }
+.mimic-svg .m-state { font-size: 11.5px; font-weight: 600; fill: var(--muted); }
+.mimic-svg .m-state.on { fill: var(--m-run); }
+.mimic-svg .m-sub { font-weight: 400; fill: var(--muted); }
+.mimic-svg .on-sky .m-name { fill: var(--m-sky-ink); }
+.mimic-svg .on-sky .m-state, .mimic-svg .on-sky .m-sub { fill: var(--m-sky-muted); }
+.mimic-svg .on-sky .m-state.on { fill: var(--m-sky-run); }
+.mimic-svg .m-ac { font-size: 11.5px; font-weight: 700; fill: var(--m-unit-ink); }
+.mimic-svg .m-blocks { font-size: 11.5px; fill: var(--muted); }
+/* a narrow host (a phone): the small texts are too small to read; the page says them elsewhere (tiles, the device's line) */
+.mimic-narrow .mimic-svg .tag, .mimic-narrow .mimic-svg .small { display: none; }
+
+/* the readings by the room (the device app) */
+.mimic-svg .readout rect { fill: var(--surface); stroke: var(--border-strong); stroke-width: 1.2; }
+.mimic-svg .readout .val { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.mimic-svg .readout .zn { font-size: 11px; fill: var(--muted); }
+.mimic-svg .readout .ico { font-weight: 700; fill: var(--lvl, var(--muted)); }
 .mimic-svg .readout[data-lvl="good"] { --lvl: var(--m-good); }
-.mimic-svg .readout[data-lvl="warning"] { --lvl: var(--m-warning); }
+.mimic-svg .readout[data-lvl="warning"] { --lvl: var(--m-warn); }
 .mimic-svg .readout[data-lvl="serious"] { --lvl: var(--m-serious); }
 .mimic-svg .readout[data-lvl="critical"] { --lvl: var(--m-critical); }
 .mimic-svg .readout[data-lvl="warning"] rect, .mimic-svg .readout[data-lvl="serious"] rect, .mimic-svg .readout[data-lvl="critical"] rect { stroke: var(--lvl); stroke-width: 2.5; }
-@media (prefers-reduced-motion: reduce) { .mimic-svg .cap, .mimic-svg .unit { transition: none; } }

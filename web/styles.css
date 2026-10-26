@@ -614,3 +614,68 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
 .filter-card .filter-fill.bad { background: var(--critical); }
 .filter-card .filter-tick { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--ink-2); }
 .filter-card .filter-changes { margin: 8px 0 0; padding-left: 18px; }
+
+/* ---- Room card (web/room-card.js): the picture beside the reading tiles, the machine tiles, the outdoor and filter line ---- */
+.room-card {
+  --rc-run: #2fd0b5; --rc-run-soft: rgba(47,208,181,.16); --rc-track: #2c3135; --rc-band: rgba(47,208,181,.28);
+  --rc-tile: color-mix(in srgb, var(--ink) 4%, var(--surface));
+  margin-bottom: 16px; container-type: inline-size;
+}
+:root[data-theme="light"] .room-card { --rc-run: #0f8a76; --rc-run-soft: rgba(15,138,118,.13); --rc-track: #d5d9dd; --rc-band: rgba(15,138,118,.25); }
+.room-card .rc-head { display: flex; justify-content: space-between; align-items: baseline; gap: 4px 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.rc-note { font-size: var(--fs-xs); font-weight: 500; color: var(--muted); }
+/* a wide card (1100 px and more): the picture beside the tiles, each at its own height */
+.rc-top { display: grid; grid-template-columns: minmax(0, 1fr) minmax(230px, 280px); gap: 14px; align-items: start; }
+.rc-pic { border-radius: 8px; overflow: hidden; border: 1px solid var(--border); align-self: start; }
+.rc-side { display: grid; gap: 8px; align-content: start; min-width: 0; }
+.rc-tiles { display: grid; gap: 8px; }
+.rc-fresh { margin: 2px 0 0; font-size: var(--fs-sm); color: var(--ink-2); }
+
+.rt-tile { background: var(--rc-tile); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px 6px; min-width: 0; }
+.rt-tile[data-edge="warn"] { border-color: var(--warning-text); }
+.rt-tile[data-edge="bad"] { border-color: var(--critical-text); box-shadow: inset 0 0 0 1px var(--critical-text); }
+.rt-tile[data-edge="none"] { border-color: var(--border-strong); }
+.rt-lab { display: flex; justify-content: space-between; gap: 6px; font-size: var(--fs-xs); color: var(--muted); }
+.rt-chip { font-weight: 600; white-space: nowrap; }
+.rt-chip[data-lvl="good"] { color: var(--good-text); }
+.rt-chip[data-lvl="warning"] { color: var(--warning-text); }
+.rt-chip[data-lvl="serious"], .rt-chip[data-lvl="critical"] { color: var(--critical-text); }
+.rt-val { font-size: 30px; font-weight: 650; letter-spacing: -.5px; line-height: 1.1; margin-top: 2px; font-variant-numeric: tabular-nums; }
+.rt-val small { font-size: 14px; font-weight: 500; color: var(--muted); margin-left: 3px; letter-spacing: 0; }
+.rt-bar { position: relative; height: 22px; margin: 6px 0 14px; }
+.rt-track { position: absolute; left: 0; right: 0; top: 8px; height: 6px; border-radius: 3px; background: var(--rc-track); }
+.rt-zone { position: absolute; top: 5px; height: 12px; border-radius: 3px; background: var(--rc-band); }
+.rt-mark { position: absolute; top: 1px; width: 4px; height: 20px; margin-left: -2px; border-radius: 2px; background: var(--ink); box-shadow: 0 0 0 2px var(--rc-tile); transition: left .6s; }
+.rt-lim { position: absolute; top: 22px; font-size: 11px; color: var(--muted); transform: translateX(-50%); font-variant-numeric: tabular-nums; }
+
+.rc-mhead { display: flex; justify-content: space-between; align-items: baseline; gap: 4px 10px; flex-wrap: wrap; margin: 14px 0 8px; }
+.rc-mhead b { font-size: var(--fs-sm); }
+.rc-mhead span { font-size: var(--fs-xs); color: var(--muted); }
+.rc-mgrid { display: grid; grid-template-columns: repeat(var(--mt-n, 6), minmax(0, 1fr)); gap: 12px 8px; padding-top: 6px; }
+.mt-tile { position: relative; display: grid; gap: 3px; align-content: start; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--rc-tile); min-width: 0; }
+.mt-tile.on { border-color: var(--rc-run); box-shadow: inset 0 0 0 1px var(--rc-run-soft); }
+.mt-n { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 4px 6px; font-weight: 600; font-size: var(--fs-sm); }
+.mt-eff { font-size: 11px; font-weight: 700; color: var(--muted); letter-spacing: .02em; }
+.mt-tile.on .mt-eff { color: var(--rc-run); }
+.mt-d { font-size: var(--fs-xs); color: var(--muted); overflow-wrap: anywhere; }
+.mt-step { position: absolute; top: -9px; left: 10px; font-size: 10px; line-height: 16px; padding: 0 5px; border-radius: 4px; background: var(--surface); color: var(--muted); border: 1px solid var(--border); }
+.mt-pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 99px; border: 1px solid var(--border-strong); color: var(--muted); white-space: nowrap; }
+.mt-pill[data-tone="on"] { color: var(--rc-run); border-color: var(--rc-run); background: var(--rc-run-soft); }
+.mt-pill[data-tone="on"]::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--rc-run); }
+.mt-pill[data-tone="warn"] { color: var(--warning-text); border-color: var(--warning-text); }
+.rc-strip { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 12px 0 0; font-size: var(--fs-sm); color: var(--ink-2); }
+.rc-strip b { color: var(--ink); }
+
+/* below 1100 px: the picture full width, the three tiles in a row under it, then the fresh-air line; a tablet: three machine
+   columns; a phone (card below 720 px): the tiles stacked first, then the picture; two machine columns */
+@container (max-width: 1099px) {
+  .rc-top { grid-template-columns: minmax(0, 1fr); }
+  .rc-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@container (max-width: 959px) { .rc-mgrid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@container (max-width: 719px) {
+  .rc-side { order: -1; }
+  .rc-tiles { grid-template-columns: minmax(0, 1fr); }
+  .rc-mgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (prefers-reduced-motion: reduce) { .rt-mark { transition: none; } }
