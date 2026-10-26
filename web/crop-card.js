@@ -177,16 +177,16 @@ export function createCropCard(host, { roomId, onChange, onData, onOffline, onGo
   actionButtons.add(rampSave);
   let rampDirty = false;
   const lightField = el('div', 'field cp-light-start');
-  const lightInput = el('input');
-  lightInput.type = 'time';
-  lightInput.step = '60';
+  const lightInput = textInput(false); // a 24 h "07:00" like the rest of the page (a time input follows the browser's locale)
+  lightInput.maxLength = 5;
+  lightInput.placeholder = '07:00';
   lightInput.id = id('light-start');
   const lightLabel = el('label', '', 'Lights from');
   lightLabel.htmlFor = lightInput.id;
   const lightErr = el('p', 'field-error');
   lightErr.id = id('light-start-error');
   lightErr.setAttribute('aria-live', 'polite');
-  const lightHint = el('p', 'cp-hint', 'The lights come on at this time for the hours of the stage');
+  const lightHint = el('p', 'cp-hint', 'The lights come on at this time (24 h, like 07:00) for the hours of the stage');
   lightHint.id = id('light-start-hint');
   lightInput.setAttribute('aria-describedby', `${lightHint.id} ${lightErr.id}`);
   const lightSave = button('Save');
@@ -467,7 +467,8 @@ export function createCropCard(host, { roomId, onChange, onData, onOffline, onGo
     };
     grid.append(fieldOf(`days.${stage}`, 'Days (1–90)'));
     if (stage === 'fruiting') grid.append(fieldOf('flushes', 'Flushes (1–10)'));
-    grid.append(fieldOf(`lightHours.${stage}`, 'Light (h a day, 0–24)'));
+    grid.append(fieldOf(`lightHours.${stage}`, 'Light hours (0–24)'));
+    grid.lastChild.classList.add('cp-light-h');
     const editSave = button('Save', 'primary');
     const editCancel = button('Cancel');
     const editRow = el('div', 'ac-send');

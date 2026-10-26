@@ -146,7 +146,7 @@ test('Crop: the form carries the light hours and start; checks and the body of w
 
 test('Crop card: the stage pencil edits its light hours, the program row has Lights from', () => {
   const card = src('crop-card.js');
-  assert.match(card, /fieldOf\(`lightHours\.\$\{stage\}`, 'Light \(h a day, 0–24\)'\)/);
+  assert.match(card, /fieldOf\(`lightHours\.\$\{stage\}`, 'Light hours \(0–24\)'\)/);
   assert.match(card, /'Lights from'/);
   assert.match(card, /light: '/, 'an icon for the Light row');
   assert.match(card, /stageTargets\(c\.crops, sec\.stage, lightOf\(c, sec\.stage\)\)/);
