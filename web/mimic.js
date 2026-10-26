@@ -3,8 +3,9 @@
 // the intake to the exhaust (spec 2026-10-26-room-picture-design.md section 2; the look of docs/mockups/room-overview-minimal-colour.html).
 //   createMimic(host, { idPrefix, readouts }) → { paint(drawState), tick(dtSeconds), destroy() }
 //   startLoop(() => [mimic, ...]) → stop(): the requestAnimationFrame loop (paused while the tab is hidden)
-// One layout, viewBox 840 × 380, scaled to the host's width. Below 560 px of host width the names are hidden (the page says
-// them elsewhere). readouts: the three readings drawn by the room (the device app, which has no reading tiles).
+// One layout, viewBox 840 × 380, scaled to the host's width. Below 640 px of host width the small texts are hidden (the names,
+// the outdoor air, the aircon's state, the blocks, the readings: the page says them elsewhere). readouts: the three readings
+// drawn by the room (the device app, which has no reading tiles).
 // The mapping from data is in mimic-math.js (pure, tested); colours in mimic.css.
 
 import { view, describe, UNIT_KEYS } from './mimic-math.js';
@@ -14,7 +15,7 @@ export { fromRoom, fromSim, view, describe } from './mimic-math.js';
 const NS = 'http://www.w3.org/2000/svg';
 const W = 840;
 const H = 380;
-const NARROW_BELOW = 560; // px of host width: the names inside the picture are hidden below
+const NARROW_BELOW = 640; // px of host width: the small texts inside the picture are hidden below
 let made = 0; // pictures made, for ids unique on the page
 // One blade about the hub at (0, 0), in a fan 24 units across; three of them, 120° apart.
 const BLADE = 'M0 0 C-2.5 -3 -2.4 -7.8 0.6 -8.6 C3.6 -8.7 3.4 -3.6 0 0 Z';
@@ -101,7 +102,7 @@ export function createMimic(host, opts = {}) {
   h.moon = S('g', {}, svg);
   S('circle', { class: 'moon', cx: 46, cy: 46, r: 13 }, h.moon);
   S('circle', { class: 'sky', cx: 52, cy: 41, r: 11 }, h.moon);
-  const outdoor = S('g', { class: 'on-sky' }, svg);
+  const outdoor = S('g', { class: 'on-sky small' }, svg);
   textNode(outdoor, 70, 40, 'm-eyebrow').textContent = 'OUTDOOR';
   h.outT = textNode(outdoor, 70, 59, 'm-big');
   h.outRH = textNode(outdoor, 70, 75, 'm-small');
@@ -125,7 +126,7 @@ export function createMimic(host, opts = {}) {
   h.units.ac = S('g', {}, svg);
   S('rect', { class: 'unit', x: 352, y: 134, width: 150, height: 30, rx: 8 }, h.units.ac);
   S('rect', { class: 'keybar ac', x: 352, y: 134, width: 5, height: 30, rx: 2 }, h.units.ac);
-  h.acText = textNode(h.units.ac, 366, 153, 'm-ac');
+  h.acText = textNode(h.units.ac, 366, 153, 'm-ac small');
   h.acLamp = S('circle', { class: 'lamp', cx: 491, cy: 143, r: 3 }, h.units.ac);
   h.plumes = [0, 1, 2].map((i) => S('path', { class: 'plume', d: `M${384 + i * 40} 170 q -6 26 -16 50` }, svg));
 
@@ -171,14 +172,14 @@ export function createMimic(host, opts = {}) {
   h.fans.exhaust = fan(h.units.exhaust, 683, 270, 18);
   h.tags.exhaust = tag(svg, 728, 298, 'Exhaust fan', 'start', { sky: true, max: 108 });
 
-  h.blocks = textNode(svg, 386, 358, 'm-blocks', 'middle');
+  h.blocks = textNode(svg, 386, 358, 'm-blocks small', 'middle');
 
   // the readings by the room (the device app): value and chip text, right of the container above the exhaust
   h.readouts = {};
   if (opts.readouts) {
     ['T', 'RH', 'CO2'].forEach((key, i) => {
       const y = 130 + i * 38;
-      const g = S('g', { class: 'readout' }, svg);
+      const g = S('g', { class: 'readout small' }, svg);
       S('rect', { x: 706, y, width: 126, height: 32, rx: 5 }, g);
       const val = textNode(g, 714, y + 14, 'val');
       const chip = textNode(g, 714, y + 27, 'zn');
@@ -301,7 +302,7 @@ export function createMimic(host, opts = {}) {
     frame(0);
   }
 
-  // The names go below 560 px of host width; a hidden host (width 0) keeps its class.
+  // The small texts go below 640 px of host width; a hidden host (width 0) keeps its class.
   function fit() {
     if (!alive) return;
     const width = host.clientWidth;

@@ -11,12 +11,12 @@ import { createAlarmsCard } from './alarms.js';
 import { createCropCard } from './crop-card.js';
 import { createSimulationsCard } from './sim-card.js';
 import { createFilterCard } from './filter-card.js';
-import { intakeRunning, lastRunningOf } from './filter-math.js';
+import { intakeRunning } from './filter-math.js';
 import { closeSimulateDialog } from './simulate-dialog.js';
 import { startLoop } from './mimic.js';
 import { fromRoom } from './mimic-math.js';
 import { createRoomCard } from './room-card.js';
-import { roomCard, filterSummary, freshAirLine, blocksLine } from './room-card-math.js';
+import { roomCard, filterFrom, freshAirLine, blocksLine } from './room-card-math.js';
 import { drawLineChart } from './chart.js';
 import { refreshMs } from './settings-math.js';
 import { live } from './live.js';
@@ -142,6 +142,7 @@ export function mount(container, { id }) {
   let roomCardUi = null; // the Room card with the room picture, made on the first render
   let stopLoop = null; // stops the picture's animation
   let filterLast = null; // the last filter reading with the intake on (shown while it is off, like the Filter card)
+  let filterNow = null; // the Room card's filter (filterFrom), from the last load
   let crops = null; // the room's crops, from the Crop and stage card's replies (for the blocks under the picture)
   let lastMachines = null; // the last good replies, so a failed optional read keeps the drawing's machines
   let lastControl = null;
@@ -442,6 +443,8 @@ export function mount(container, { id }) {
     simulationsCard ??= createSimulationsCard(els.simulationsHost, { roomId: id, getRoom: () => room });
     filterCard ??= createFilterCard(els.filterHost, { roomId: id, onChanged: () => { if (alive()) load(); } }); // the alarms clear
     filterCard.update(room, sensors.dp, intakeRunning(machineData ?? lastMachines));
+    // The Room card's filter from the replies of this load: a command later does not make the old pressure reading new.
+    ({ last: filterLast, filter: filterNow } = filterFrom({ last: filterLast, room, sensor: sensors.dp, machines: machineData ?? lastMachines }));
     stopLoop ??= startLoop(() => (roomCardUi ? [roomCardUi.mimic] : [])); // (again after a missing room came back)
     alarmsCard.update(alarmData); // hides itself while there are no current alarms; a failed read keeps the last data
     // The card shows only once a good reply came; later failures keep the last good data.
@@ -470,9 +473,7 @@ export function mount(container, { id }) {
   function paintDrawing() {
     if (!roomCardUi || !room || !sensors) return;
     const now = Date.now();
-    const intake = intakeRunning(lastMachines);
-    filterLast = lastRunningOf(filterLast, intake, sensors.dp);
-    const filter = filterSummary({ room, sensor: sensors.dp, intake, lastRunning: filterLast, now });
+    const filter = filterNow; // worked out with the page's replies (render), not again after a command
     const draw = {
       ...fromRoom({ room, sensors, machines: lastMachines, control: lastControl, outdoor, filterPa: filter ? filter.pa : null, now }),
       blocks: blocksLine(crops),

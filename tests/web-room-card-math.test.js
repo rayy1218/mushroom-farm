@@ -1,9 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  scaleFor, bandBar, readingTiles, controlNote, freshAirLine, machineTiles, filterSummary, bottomLine, blocksLine, roomCard, lineText,
+  scaleFor, bandBar, readingTiles, controlNote, freshAirLine, machineTiles, filterSummary, filterFrom, bottomLine, blocksLine, roomCard,
 } from '../web/room-card-math.js';
 import { fromRoom } from '../web/mimic-math.js';
+
+// A line of parts (plain and bold text taking turns) as one text.
+const lineText = (parts) => parts.join('');
 
 const relay = (over = {}) => ({ address: 2, machines: ['intake', 'exhaust', 'circulation', 'humidifier', 'dehumidifier'].map((key) => ({ key, commanded: false, reported: false, running: false, status: 'off', ...over[key] })) });
 const ac = (over = {}) => ({ address: 3, commanded: {}, reported: { power: true, mode: 'cool', setpoint: 21.5, fan: 'auto' }, roomT: 22, errorCode: 0, status: 'on', ...over });
@@ -41,6 +44,7 @@ test('bandBar: the band as a zone and the reading as a mark, as shares of the sc
   assert.deepEqual(b.limits, [{ at: 6 / 15, text: '21' }, { at: 9 / 15, text: '24' }]);
   assert.deepEqual(bandBar('T', 21.5, 21.5, 23).limits[0], { at: 6.5 / 15, text: '21.5' });
   assert.deepEqual(bandBar('T', 21, 20.93333, 22.96667).limits.map((l) => l.text), ['20.9', '23'], 'a ramping band: one decimal');
+  assert.deepEqual(bandBar('CO2', 900, 800, 1200, 2000).limits.map((l) => l.text), ['800', '1,200'], 'CO₂ thousands grouped like the value');
   const none = bandBar('RH', null, undefined, undefined);
   assert.equal(none.zone, null);
   assert.equal(none.mark, null);
@@ -99,6 +103,9 @@ test('freshAirLine: exchange on, auto off, waits, next in N min, due, fresh air 
   assert.equal(freshAirLine({ ...control, freshFrom: now - 7 * 60_000 - 10_000 }, now), 'Next fresh air in 8 min');
   assert.equal(freshAirLine({ ...control, freshFrom: now - 14 * 60_000 - 50_000 }, now), 'Next fresh air in 1 min');
   assert.equal(freshAirLine({ ...control, freshFrom: now - 15 * 60_000 }, now), 'Fresh air due');
+  assert.equal(freshAirLine({ ...control, freshFrom: null, exchangeEndedAt: now - 5 * 60_000 }, now), 'Next fresh air in 10 min',
+    'no fresh-air start yet: it counts from the end of the last exchange, as the controller does');
+  assert.equal(freshAirLine({ ...control, freshFrom: null, exchangeEndedAt: null }, now), 'Fresh air every 15 min');
   assert.equal(freshAirLine({ ...control, freshFrom: null }, now), 'Fresh air every 15 min');
   assert.equal(freshAirLine({ ...control, exchangeEveryMin: 0, freshFrom: now }, now), '');
   assert.equal(freshAirLine(null, now), '');
@@ -142,7 +149,8 @@ test('machineTiles: no data and fault words in the pill', () => {
   assert.deepEqual(by.hu.pill, { text: 'No answer', tone: 'none' });
   const nothing = machineTiles(fromRoom({}), null, null);
   assert.deepEqual(nothing[0].pill, { text: 'No data', tone: 'none' });
-  assert.equal(nothing[1].detail, 'No data');
+  assert.deepEqual(nothing[1].pill, { text: 'No data', tone: 'none' });
+  assert.equal(nothing[1].detail, '', 'the aircon\'s pill says it: no second "No data"');
   assert.equal(nothing[3].detail, 'Below the band');
   assert.equal(nothing.length, 5);
   const notFollowing = machineTiles(draw({ machines: { relay: relay(), ac: ac({ status: 'not-following' }) } }), control, null)[1];
@@ -178,6 +186,24 @@ test('bottomLine: outdoor air and the filter', () => {
   assert.deepEqual(lines.map(lineText), ['Outdoor 32.9 °C · 62 % RH', 'Filter 40 Pa, change by 22 Nov']);
   assert.deepEqual(lines[0], ['Outdoor ', '32.9 °C', ' · 62 % RH']);
   assert.deepEqual(bottomLine(fromRoom({}), null).map(lineText), ['No outdoor sensor']);
+  const half = fromRoom({ outdoor: { address: 7, status: 'offline', last: { t: null, rh: 61.6, at: 1000 } }, now: 2000 });
+  assert.deepEqual(bottomLine(half, null).map(lineText), ['Outdoor — · 62 % RH'], 'a missing value: a dash, like the tiles');
+  const none = fromRoom({ outdoor: { address: 7, status: 'no-data', last: null }, now: 2000 });
+  assert.deepEqual(bottomLine(none, null).map(lineText), ['Outdoor — · —']);
+});
+
+test('filterFrom: the filter from replies that came in together; the last reading with the intake on is kept', () => {
+  const now = new Date(2026, 9, 26, 12).getTime();
+  const room = { dpAddress: 9, fanMaxPa: 200, filterCleanPa: 40, filterFinalPa: 80, filterChangeDays: 30, filterChangedAt: new Date(2026, 9, 23, 9).getTime() };
+  const machines = (intake) => ({ relay: relay({ intake: { status: intake ? 'on' : 'off', running: intake } }) });
+  const on = filterFrom({ last: null, room, sensor: { status: 'online', lastOk: { pa: 51.2, at: now - 5000 } }, machines: machines(true), now });
+  assert.equal(on.filter.pa, 51.2);
+  assert.deepEqual(on.last, { at: now - 5000, pa: 51.2 });
+  // the intake stops: its sensor reads about 0, the card keeps the reading taken with it on
+  const off = filterFrom({ last: on.last, room, sensor: { status: 'online', lastOk: { pa: 0.1, at: now } }, machines: machines(false), now });
+  assert.equal(off.filter.pa, 51.2);
+  assert.deepEqual(off.last, on.last);
+  assert.deepEqual(filterFrom({ last: null, room: { ...room, dpAddress: null }, sensor: null, machines: null, now }), { last: null, filter: null });
 });
 
 test('blocksLine: the crops\' blocks under the container', () => {

@@ -22,7 +22,7 @@ test('the farm serves the room page, the Room card, the picture and its styleshe
 test('the room page uses the Room card: the picture inside it, the card\'s words, the sensor cards under it', () => {
   const room = source('../web/room-detail.js');
   assert.match(room, /import \{ createRoomCard \} from '\.\/room-card\.js';/);
-  assert.match(room, /import \{ roomCard, filterSummary, freshAirLine, blocksLine \} from '\.\/room-card-math\.js';/);
+  assert.match(room, /import \{ roomCard, filterFrom, freshAirLine, blocksLine \} from '\.\/room-card-math\.js';/);
   assert.match(room, /import \{ startLoop \} from '\.\/mimic\.js';/);
   assert.doesNotMatch(room, /createMimic/, 'the card makes the picture');
   assert.match(room, /<section data-room-card><\/section>\n\s*<div class="sensors" data-sensors><\/div>/);
@@ -34,6 +34,30 @@ test('the room page uses the Room card: the picture inside it, the card\'s words
   assert.match(card, /import \{ createMimic \} from '\.\/mimic\.js';/);
   assert.match(card, /createMimic\(pic, \{ idPrefix \}\)/);
   assert.doesNotMatch(card, /request\(/, 'no new requests: the page gives it its data');
+});
+
+test('the Room card\'s filter is worked out on a load, with the replies of that load; a command only repaints it', () => {
+  const room = source('../web/room-detail.js');
+  const render = room.slice(room.indexOf('  function render('), room.indexOf('  // The Room card from the latest painted replies'));
+  const paint = room.slice(room.indexOf('  function paintDrawing('), room.indexOf('  // The outdoor line of the Live charts'));
+  assert.match(render, /\(\{ last: filterLast, filter: filterNow \} = filterFrom\(\{ last: filterLast, room, sensor: sensors\.dp, machines: machineData \?\? lastMachines \}\)\);/);
+  assert.ok(render.indexOf('filterFrom(') < render.indexOf('paintDrawing();'), 'before the card is painted');
+  assert.doesNotMatch(paint, /filterFrom|lastRunningOf|filterSummary|intakeRunning/, 'not again with a machines reply alone (Filter 0 Pa after turning the intake on)');
+  assert.match(paint, /const filter = filterNow;/);
+  assert.match(room, /onCommand: \(data\) => \{ if \(!alive\(\)\) return; lastMachines = data; paintDrawing\(\); \}/);
+});
+
+test('narrow pictures hide every small text; the card\'s layout by its width; no motion for those who asked for less', () => {
+  const js = source('../web/mimic.js');
+  const css = source('../web/mimic.css');
+  const page = source('../web/styles.css');
+  assert.match(js, /const NARROW_BELOW = 640;/);
+  for (const re of [/S\('g', \{ class: 'on-sky small' \}, svg\)/, /'m-ac small'/, /'m-blocks small'/, /\{ class: 'readout small' \}/]) assert.match(js, re);
+  assert.match(css, /\.mimic-narrow \.mimic-svg \.tag, \.mimic-narrow \.mimic-svg \.small \{ display: none; \}/);
+  assert.match(page, /\.rc-top \{ display: grid; grid-template-columns: minmax\(0, 1fr\) minmax\(230px, 280px\); gap: 14px; align-items: start; \}/);
+  assert.match(page, /@container \(max-width: 1099px\) \{\n  \.rc-top \{ grid-template-columns: minmax\(0, 1fr\); \}\n  \.rc-tiles \{ grid-template-columns: repeat\(3, minmax\(0, 1fr\)\); \}/);
+  assert.match(page, /@media \(prefers-reduced-motion: reduce\) \{ \.rt-mark \{ transition: none; \} \}/);
+  assert.doesNotMatch(page.slice(page.indexOf('/* ---- Room card')), /background: var\(--m-ground\)/, 'no ground fill below the picture');
 });
 
 test('the device app draws its simulated rooms with the readings inside the picture', () => {

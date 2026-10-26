@@ -4,13 +4,15 @@
 
 import { view } from './mimic-math.js';
 import { exchangeLine } from './control-math.js';
-import { filterCard } from './filter-math.js';
+import { filterCard, intakeRunning, lastRunningOf } from './filter-math.js';
 import { CROPS } from './crops.js';
 
 const num = (x) => (typeof x === 'number' && Number.isFinite(x) ? x : null);
 const clamp01 = (x) => Math.min(1, Math.max(0, x));
 const DASH = '—';
-const limit = (x) => String(Math.round(x * 10) / 10); // a ramping band moves in small steps: 20.9333 → "20.9"
+// A band limit as written under the bar: CO₂ grouped like its value, the others to one decimal (a ramping band moves in
+// small steps: 20.9333 → "20.9").
+const limit = (x, key) => (key === 'CO2' ? Math.round(x).toLocaleString('en-US') : String(Math.round(x * 10) / 10));
 
 // ---------------- reading tiles ----------------
 
@@ -45,7 +47,7 @@ export function bandBar(key, value, low, high, safety) {
   return {
     zone: hasBand ? { from: at(low), to: at(high) } : null,
     mark: num(value) === null ? null : at(value),
-    limits: hasBand ? [{ at: at(low), text: limit(low) }, { at: at(high), text: limit(high) }] : [],
+    limits: hasBand ? [{ at: at(low), text: limit(low, key) }, { at: at(high), text: limit(high, key) }] : [],
   };
 }
 
@@ -66,7 +68,7 @@ export function readingTiles(draw, control) {
       chip: { lvl: st.lvl || 'none', text: `${st.icon ? `${st.icon} ` : ''}${st.text || ''}` },
       edge: EDGE[st.lvl] ?? 'none',
       bar: bandBar(r.key, value, low, high, r.safety ? num(control?.[r.safety]) : null),
-      label: value === null ? `${r.name} no data` : `${r.name} ${shown} ${r.unit}${low !== null && high !== null ? `, band ${limit(low)} to ${limit(high)}` : ''}`,
+      label: value === null ? `${r.name} no data` : `${r.name} ${shown} ${r.unit}${low !== null && high !== null ? `, band ${limit(low, r.key)} to ${limit(high, r.key)}` : ''}`,
     };
   });
 }
@@ -90,8 +92,11 @@ export function freshAirLine(c, now = Date.now()) {
   if (every(c) <= 0) return '';
   const why = c.reasons?.exchange;
   if (typeof why === 'string' && why.startsWith('Fresh air waits')) return why;
-  if (num(c.freshFrom) === null) return `Fresh air every ${every(c)} min`; // the wait counts from the next cycle
-  const left = c.freshFrom + every(c) * 60_000 - now;
+  // the wait counts from freshFrom, else the end of the last exchange (as server/controller.js decide); with neither, from
+  // the next cycle
+  const from = num(c.freshFrom) ?? num(c.exchangeEndedAt);
+  if (from === null) return `Fresh air every ${every(c)} min`;
+  const left = from + every(c) * 60_000 - now;
   return left > 0 ? `Next fresh air in ${Math.ceil(left / 60_000)} min` : 'Fresh air due';
 }
 
@@ -129,15 +134,12 @@ export function machineTiles(draw, control, filter) {
     return {
       key: m.key, step: i + 1, name: m.name, effect: m.effect, on: u.on,
       pill: pillOf(m.key, u),
-      detail: u.known || m.key !== 'ac' ? m.detail(u, control, filter) : u.state,
+      detail: u.known || m.key !== 'ac' ? m.detail(u, control, filter) : '', // the pill already says "No data"
     };
   });
 }
 
 // ---------------- the filter, the bottom line and the blocks ----------------
-
-// A line of parts: plain text and bold text taking turns (the even parts plain, the odd ones bold).
-export const lineText = (parts) => parts.join('');
 
 // The filter as the Filter card shows it (the reading, the last one with the intake on while it is off, and the due date):
 // { pa (null: no reading yet), line } or null when the room has no filter pressure sensor.
@@ -150,10 +152,21 @@ export function filterSummary({ room, sensor, intake = null, lastRunning = null,
   return { pa, line: pa === null ? [`Filter: no reading yet${due}`] : ['Filter ', `${Math.round(pa)} Pa`, due] };
 }
 
-// "Outdoor 32.9 °C · 62 % RH" (or "No outdoor sensor") and the filter's line when the room has one.
+// The filter from replies that came in together (a page load: the room, its sensors and the machines): { last, filter }.
+// last: the last reading with the intake on, kept between loads. Not for a machines reply alone (after a command): the
+// pressure reading of the last load was taken before it, with the intake in its old state.
+export function filterFrom({ last = null, room, sensor, machines, now = Date.now() } = {}) {
+  const intake = intakeRunning(machines);
+  const next = lastRunningOf(last, intake, sensor);
+  return { last: next, filter: filterSummary({ room, sensor, intake, lastRunning: next, now }) };
+}
+
+// "Outdoor 32.9 °C · 62 % RH" (or "No outdoor sensor"; a missing value "—", like the tiles) and the filter's line when the
+// room has one. A line is parts: plain and bold text taking turns (the even parts plain, the odd ones bold).
 export function bottomLine(draw, filter) {
   const v = view(draw);
-  const outdoor = v.hasOut ? ['Outdoor ', v.outT, ` · ${v.outRH}`] : [v.outLine];
+  const dash = (x) => (x.startsWith('--') ? DASH : x);
+  const outdoor = v.hasOut ? ['Outdoor ', dash(v.outT), ` · ${dash(v.outRH)}`] : [v.outLine];
   return filter ? [outdoor, filter.line] : [outdoor];
 }
 

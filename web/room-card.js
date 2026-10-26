@@ -103,6 +103,7 @@ export function createRoomCard(host, { idPrefix = 'room-' } = {}) {
       n.pill.dataset.tone = m.pill.tone;
       put(n.effect, m.effect);
       put(n.detail, m.detail);
+      n.detail.hidden = !m.detail;
     });
   }
 

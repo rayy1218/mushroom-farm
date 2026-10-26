@@ -78,8 +78,8 @@
 .mimic-svg .on-sky .m-state.on { fill: var(--m-sky-run); }
 .mimic-svg .m-ac { font-size: 11.5px; font-weight: 700; fill: var(--m-unit-ink); }
 .mimic-svg .m-blocks { font-size: 11.5px; fill: var(--muted); }
-/* a narrow host (a phone): the names are too small to read; the page says them elsewhere */
-.mimic-narrow .mimic-svg .tag { display: none; }
+/* a narrow host (a phone): the small texts are too small to read; the page says them elsewhere (tiles, the device's line) */
+.mimic-narrow .mimic-svg .tag, .mimic-narrow .mimic-svg .small { display: none; }
 
 /* the readings by the room (the device app) */
 .mimic-svg .readout rect { fill: var(--surface); stroke: var(--border-strong); stroke-width: 1.2; }
