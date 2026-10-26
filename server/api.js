@@ -8,6 +8,7 @@ import { RELAY_KEYS } from './machine-codes.js';
 import { validateSettings, readSettings, writeSettings, settingsView } from './settings.js';
 import { outdoorView, outdoorHistory, RANGES } from './outdoor.js';
 import { roomUsage, farmUsage } from './usage.js';
+import { bucketUsage } from './usage-buckets.js';
 import { changeFilter, lastCounted } from './filter.js';
 import { createCropApi } from './crop-api.js';
 import { createSimulationRoutes } from './simulation-api.js';
@@ -204,7 +205,8 @@ export function createApi(db, machines = null, controller = null, poller = null,
       if (!(hours in HISTORY_BUCKET_S)) throw new HttpError(400, 'hours must be 1, 6, 24, 168 or 720', 'hours');
       const history = db.history(id, hours);
       if (!history) throw noRoom();
-      return send(res, 200, { ...history, pollSeconds: readSettings(db).pollSeconds });
+      const usage = bucketUsage(db, db.getRoom(id), history); // electricity and water per bucket (spec 2026-10-26-usage-charts)
+      return send(res, 200, { ...history, pollSeconds: readSettings(db).pollSeconds, usage });
     }
     if (match[2] === '/control') {
       if (!controller) throw notFound();

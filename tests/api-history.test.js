@@ -145,10 +145,47 @@ test('the reply of the route has the whole shape', async () => {
   const now = Date.now();
   trh(id, now - 1000, 20, 80);
   const { body } = await get(`/api/rooms/${id}/history?hours=1`);
-  assert.deepEqual(Object.keys(body).sort(), ['bucketS', 'co2', 'from', 'machines', 'pollSeconds', 'to', 'trh']);
+  assert.deepEqual(Object.keys(body).sort(), ['bucketS', 'co2', 'from', 'machines', 'pollSeconds', 'to', 'trh', 'usage']);
   assert.equal(body.trh.length, 1);
   assert.equal(body.pollSeconds, 5);
   db.setSetting('pollSeconds', '120');
   assert.equal((await get(`/api/rooms/${id}/history?hours=1`)).body.pollSeconds, 120);
   db.setSetting('pollSeconds', '5');
+});
+
+// Electricity and water per bucket (spec 2026-10-26-usage-charts-design.md section 2).
+test('every range carries usage: one entry per bucket at the bucket middles, metered or not, and its totals', async () => {
+  const { id } = room();
+  db.logMachine(id, 'humidifier', { on: true }, 'auto', Date.now() - 30 * 60_000);
+  for (const h of [1, 6, 24, 168, 720]) {
+    const { body } = await get(`/api/rooms/${id}/history?hours=${h}`);
+    const { usage } = body;
+    assert.equal(usage.metered, false, String(h));
+    const b = body.bucketS * 1000;
+    assert.equal(usage.buckets.length, Math.floor(body.to / b) - Math.ceil(body.from / b) + 1, String(h));
+    assert.equal(usage.buckets[0].at, Math.ceil(body.from / b) * b + b / 2);
+    for (const x of usage.buckets) assert.ok(Number.isFinite(x.kWh) && Number.isFinite(x.waterL));
+    assert.ok(usage.totals.kWh > 0 && usage.totals.waterL > 0.9, `${h}: ${JSON.stringify(usage.totals)}`); // 30 min at 2 L/h
+  }
+});
+
+test('a room without ratings: the usage buckets at 0', async () => {
+  for (const r of db.listRooms()) db.deleteRoom(r.id);
+  const { id } = db.createRoom({ ...fields, intakeW: 0, exhaustW: 0, circulationW: 0, humidifierW: 0, humidifierLH: 0, acInputW: 0 });
+  db.logMachine(id, 'intake', { on: true }, 'auto', Date.now() - 30 * 60_000);
+  const { body } = await get(`/api/rooms/${id}/history?hours=1`);
+  assert.deepEqual(body.usage.totals, { kWh: 0, waterL: 0 });
+  assert.ok(body.usage.buckets.every((x) => x.kWh === 0 && x.waterL === 0));
+});
+
+test('a room with an energy meter is metered: buckets without readings null', async () => {
+  for (const r of db.listRooms()) db.deleteRoom(r.id);
+  const { id } = db.createRoom({ ...fields, meterAddress: 30 });
+  const now = Date.now();
+  db.addMeterReading({ roomId: id, address: 30, at: now - 120_000, ok: true, powerW: 500, energyKwh: 10 });
+  db.addMeterReading({ roomId: id, address: 30, at: now - 60_000, ok: true, powerW: 500, energyKwh: 10.01 });
+  const { body } = await get(`/api/rooms/${id}/history?hours=1`);
+  assert.equal(body.usage.metered, true);
+  assert.equal(body.usage.buckets.filter((x) => x.kWh !== null).length, 2);
+  assert.ok(Math.abs(body.usage.totals.kWh - 0.01) < 1e-9);
 });
