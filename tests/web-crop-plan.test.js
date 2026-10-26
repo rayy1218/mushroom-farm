@@ -141,3 +141,13 @@ test('the mark of a stage: current with its day and flush, next with when, or no
   assert.deepEqual(stageMark(done, 'fruiting', now), { kind: '', text: '' });
   assert.deepEqual(stageMark({ ...ready, crops: [] }, 'fruiting', now), { kind: '', text: '' });
 });
+
+test('the card sends what the pure parts build: start, save and new blocks', () => {
+  const src = readFileSync(new URL('../web/crop-card.js', import.meta.url), 'utf8');
+  for (const name of ['startBody', 'saveBody', 'newBlocksBody', 'checkCropForm', 'stagePlan', 'stageTargets', 'cropHeadline']) {
+    assert.match(src, new RegExp(`\\b${name}\\(`), `the card calls ${name}`);
+  }
+  assert.match(src, /export function createCropCard\(host, \{ roomId, onChange, onData, onOffline, onGone \}\)/);
+  assert.match(src, /Start this stage/);
+  assert.match(src, /Bands at once \(skip the/);
+});
