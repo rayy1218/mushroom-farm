@@ -8,7 +8,7 @@ const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
 const FAN_SHARE = 0.05; // the aircon in fan mode draws this share of its rated input
 const MIN_DAYS = 30; // the 7 and 30 day totals need that many days whatever `days` is
-const MACHINES = ['intake', 'exhaust', 'circulation', 'humidifier', 'dehumidifier', 'lights', 'ac'];
+export const MACHINES = ['intake', 'exhaust', 'circulation', 'humidifier', 'dehumidifier', 'lights', 'ac'];
 const RATING = { intake: 'intakeW', exhaust: 'exhaustW', circulation: 'circulationW', humidifier: 'humidifierW', dehumidifier: 'dehumidifierW', lights: 'lightsW' };
 
 const pad = (n) => String(n).padStart(2, '0');
@@ -102,7 +102,7 @@ const SETTLE_MS = 60_000; // a day is complete this long after its end (a readin
 
 // The state of reading a meter total: `base` the highest total seen (null before the first reading), `at` the time of
 // the last reading, `low` how many readings in a row were below the base.
-const newMeterState = () => ({ base: null, at: 0, low: 0 });
+export const newMeterState = () => ({ base: null, at: 0, low: 0 });
 
 // One good reading { at, energy } into the state; returns the kWh it adds. Only an increase above the base counts, and not
 // when it is more than MAX_KW over the time since the last reading (a swap to a meter with a higher total: the base moves
@@ -151,7 +151,7 @@ export function meteredDays(readings, days) {
 // new readings in one pass; only when a step is not plain (a decrease or an implausible one: rare) are the readings
 // stepped here. `final`: no reading can come any more, so the entry is complete up to `hi`; otherwise it is complete up
 // to just after its last reading, which is where the next call goes on.
-function advanceMeter(db, roomId, m, hi, final) {
+export function advanceMeter(db, roomId, m, hi, final) {
   const c = db.meterChunk(roomId, m.upto, hi);
   if (c.n > 0) {
     const s = m.state;
@@ -181,7 +181,7 @@ function advanceMeter(db, roomId, m, hi, final) {
 // counted pressure of its filter sensor (pa, null without a sensor or a counted reading).
 // Today is read on from the last reading each time; a day that ended is final SETTLE_MS later and then costs nothing.
 // db.usageDays drops an entry when the room changes or a row is written inside its days.
-function dayWork(db, room, day, { now, zone }) {
+export function dayWork(db, room, day, { now, zone }) {
   const cache = db.usageDays(room.id);
   const end = zone.addDays(day.start, 1);
   const key = `${day.start}/${end}`;
