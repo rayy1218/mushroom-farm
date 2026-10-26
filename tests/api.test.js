@@ -289,7 +289,7 @@ test('GET /api/rooms/:id/sensors returns [trh, co2, meter, dp], 404 when missing
     },
     { kind: 'co2', address: null, status: 'not-wired', failuresInRow: 0, lastOk: null, readings: [] },
     { kind: 'meter', address: null, status: 'not-wired', failuresInRow: 0, lastOk: null, readings: [] },
-    { kind: 'dp', address: null, status: 'not-wired', failuresInRow: 0, lastOk: null, readings: [] },
+    { kind: 'dp', address: null, status: 'not-wired', failuresInRow: 0, lastOk: null, readings: [], lastRunning: null },
   ]);
   const missing = await call('GET', '/api/rooms/99/sensors');
   assert.equal(missing.status, 404);

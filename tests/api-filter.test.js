@@ -51,7 +51,20 @@ test('/sensors gives the filter pressure sensor fourth, after the energy meter',
   db.addFilterReading({ roomId: id, address: 7, at: 100, ok: true, pa: 61.5 });
   const { body } = await call('GET', `/api/rooms/${id}/sensors`);
   assert.deepEqual(body.map((s) => s.kind), ['trh', 'co2', 'meter', 'dp']);
-  assert.deepEqual(body[3], { kind: 'dp', address: 7, status: 'online', failuresInRow: 0, lastOk: { at: 100, pa: 61.5 }, readings: [{ at: 100, ok: true, pa: 61.5 }] });
+  assert.deepEqual(body[3], { kind: 'dp', address: 7, status: 'online', failuresInRow: 0, lastOk: { at: 100, pa: 61.5 }, readings: [{ at: 100, ok: true, pa: 61.5 }], lastRunning: null });
+});
+
+test('/sensors: the filter sensor carries the last reading taken with the intake running', async (t) => {
+  const { db, call } = await app(t);
+  const now = Date.now();
+  const id = db.createRoom({ ...ROOM, dpAddress: 7 }, now - 3_600_000).id; // its filter counts as changed then
+  db.logMachine(id, 'intake', { on: true }, 'auto', now - 600_000);
+  db.addFilterReading({ roomId: id, address: 7, at: now - 400_000, ok: true, pa: 52.5 });
+  db.logMachine(id, 'intake', { on: false }, 'auto', now - 300_000);
+  db.addFilterReading({ roomId: id, address: 7, at: now - 1000, ok: true, pa: 0.1 });
+  const { body } = await call('GET', `/api/rooms/${id}/sensors`);
+  assert.deepEqual(body[3].lastOk, { at: now - 1000, pa: 0.1 });
+  assert.deepEqual(body[3].lastRunning, { at: now - 400_000, pa: 52.5 });
 });
 
 test('Filter changed: the change time, a change row, the filter alarms cleared, the controller told; the list of changes', async (t) => {

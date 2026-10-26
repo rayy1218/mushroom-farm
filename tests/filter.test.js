@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDb } from '../server/db.js';
-import { intakeOnThrough, countingFrom, countedPa, meanCountedPa, daysInUse, filterInput, changeFilter, FILTER_KEYS } from '../server/filter.js';
+import { intakeOnThrough, countingFrom, countedPa, meanCountedPa, daysInUse, filterInput, changeFilter, lastCounted, FILTER_KEYS } from '../server/filter.js';
 
 const S = 1000;
 const DAY = 86_400_000;
@@ -107,4 +107,31 @@ test('changeFilter without a sensor or a counted reading: no pressure before', (
   const { db, id } = room(t, { dpAddress: null });
   changeFilter(db, id, 1000);
   assert.deepEqual(db.filterChanges(id), [{ at: 1000, paBefore: null }]);
+});
+
+test('lastCounted: the newest reading of the past day taken after 60 s of intake, never the old filter\'s nor one with the fan off', (t) => {
+  const { db, id } = room(t);
+  db.logMachine(id, 'intake', { on: true }, 'auto', 10 * DAY);
+  db.addFilterReading({ roomId: id, address: 7, at: 10 * DAY + 30 * S, ok: true, pa: 5 }); // spinning up
+  db.addFilterReading({ roomId: id, address: 7, at: 10 * DAY + 100 * S, ok: true, pa: 47 });
+  db.addFilterReading({ roomId: id, address: 7, at: 10 * DAY + 150 * S, ok: false, error: 'Timeout' });
+  db.logMachine(id, 'intake', { on: false }, 'auto', 10 * DAY + 200 * S);
+  db.addFilterReading({ roomId: id, address: 7, at: 10 * DAY + 300 * S, ok: true, pa: 0.3 }); // fan off
+  assert.deepEqual(lastCounted(db, db.getRoom(id), 10 * DAY + 400 * S), { at: 10 * DAY + 100 * S, pa: 47 });
+  // The next run: a reading in its spin-up does not count, the earlier run's still shows.
+  db.logMachine(id, 'intake', { on: true }, 'auto', 10 * DAY + 900 * S);
+  db.addFilterReading({ roomId: id, address: 7, at: 10 * DAY + 930 * S, ok: true, pa: 6 });
+  assert.deepEqual(lastCounted(db, db.getRoom(id), 10 * DAY + 940 * S), { at: 10 * DAY + 100 * S, pa: 47 });
+  db.addFilterReading({ roomId: id, address: 7, at: 10 * DAY + 970 * S, ok: true, pa: 48 });
+  assert.deepEqual(lastCounted(db, db.getRoom(id), 10 * DAY + 980 * S), { at: 10 * DAY + 970 * S, pa: 48 });
+  // A run that began long before the past day still counts inside it.
+  assert.deepEqual(lastCounted(db, db.getRoom(id), 11 * DAY + 500 * S), { at: 10 * DAY + 970 * S, pa: 48 });
+  assert.equal(lastCounted(db, db.getRoom(id), 12 * DAY + 2000 * S), null, 'nothing in the past day');
+  changeFilter(db, id, 10 * DAY + 990 * S);
+  assert.equal(lastCounted(db, db.getRoom(id), 10 * DAY + 995 * S), null, 'the old filter\'s readings');
+});
+
+test('lastCounted without a sensor: null', (t) => {
+  const { db, id } = room(t, { dpAddress: null });
+  assert.equal(lastCounted(db, db.getRoom(id), DAY), null);
 });

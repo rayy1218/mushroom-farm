@@ -161,6 +161,9 @@ test('the last reading with the intake on: kept while it runs, held while it is 
   assert.deepEqual(lastRunningOf({ at: now - 9000, pa: 45 }, null, s(now, 50)), { at: now, pa: 50 });
   assert.equal(lastRunningOf(null, false, s(now, 0)), null);
   assert.equal(lastRunningOf(null, true, sensor({ lastOk: null })), null);
+  // The server's last reading with the intake running (after a page load) seeds it; a newer one of the page wins.
+  assert.deepEqual(lastRunningOf(null, false, sensor({ lastOk: { at: now, pa: 0 }, lastRunning: { at: now - 9000, pa: 44 } })), { at: now - 9000, pa: 44 });
+  assert.deepEqual(lastRunningOf({ at: now - 2000, pa: 46 }, false, sensor({ lastRunning: { at: now - 9000, pa: 44 } })), { at: now - 2000, pa: 46 });
 });
 
 test('the card with the intake off: the last reading with it on and when, or says there is none; never the idle zero', () => {
