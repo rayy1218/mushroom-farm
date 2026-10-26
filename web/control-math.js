@@ -28,6 +28,15 @@ export function humidifierOn(c) {
   return c?.humidifierDuringExchange !== false;
 }
 
+export const OUTDOOR_LABEL = 'Use outdoor air (free cooling, drying, wait out wet air)';
+export const OUTDOOR_NOTE = 'needs an outdoor sensor (Settings)';
+
+// The setting as shown on its checkbox; a reply without it counts as on (the default).
+export const outdoorOn = (c) => c?.outdoorAir !== false;
+
+// The note under the setting: that it does nothing without an outdoor sensor, or ''. A reply without the field says nothing.
+export const outdoorNote = (c) => (c?.outdoorSet === false ? OUTDOOR_NOTE : '');
+
 export const AC_FAN_LABEL = 'Aircon fan';
 export const AC_FAN_OPTIONS = [
   { value: 'auto', label: 'Auto' },
@@ -52,20 +61,24 @@ export function formatHm(ms) {
   return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
 
+// Why the running exchange started (exchangeKind), named at the end of its line; a fresh-air run's line says it already.
+const KIND_LABEL = { co2: 'CO₂', cooling: 'free cooling', drying: 'outdoor drying', timed: 'timed (CO₂ sensor fault)' };
+
 // "Air exchange on since 10:42 (stops by 10:52)" with the planned end the server sends (exchangeEndsAt); without one
 // (no limit at the safety level) "(12 min)" for how long it has run; or "Air exchange off". now is injectable.
 export function exchangeLine(c, now = Date.now()) {
   if (!c.exchange) return 'Air exchange off';
-  if (c.exchangeSince == null) return 'Air exchange on';
+  const kind = KIND_LABEL[c.exchangeKind] ? ` · ${KIND_LABEL[c.exchangeKind]}` : '';
+  if (c.exchangeSince == null) return `Air exchange on${kind}`;
   if (c.exchangeForced && Number.isFinite(c.exchangeEndsAt)) {
     return `Fresh air on since ${formatHm(c.exchangeSince)} (stops by ${formatHm(c.exchangeEndsAt)})`;
   }
   if (Number.isFinite(c.exchangeEndsAt)) {
-    return `Air exchange on since ${formatHm(c.exchangeSince)} (stops by ${formatHm(c.exchangeEndsAt)})`;
+    return `Air exchange on since ${formatHm(c.exchangeSince)} (stops by ${formatHm(c.exchangeEndsAt)})${kind}`;
   }
   const min = Math.max(0, Math.floor((now - c.exchangeSince) / 60000));
   const length = min >= 60 ? `${Math.floor(min / 60)} h ${min % 60} min` : `${min} min`;
-  return `Air exchange on since ${formatHm(c.exchangeSince)} (${length})`;
+  return `Air exchange on since ${formatHm(c.exchangeSince)} (${length})${kind}`;
 }
 
 // The state line under the card: the exchange while auto is on, otherwise that auto is off.
@@ -102,7 +115,7 @@ export function locateField(field) {
   return null;
 }
 
-// The values the card sends with Save: the six band values, and the safety values when they are given.
+// The values the card sends with Save: the six band values, and the safety values and outdoorAir when they are given.
 export function bandsBody(values) {
   const body = {};
   for (const band of BANDS) {
@@ -110,6 +123,7 @@ export function bandsBody(values) {
     body[band.high] = values[band.high];
   }
   for (const f of SAFETY_FIELDS) if (values[f.key] !== undefined) body[f.key] = values[f.key];
+  if (values.outdoorAir !== undefined) body.outdoorAir = values.outdoorAir;
   return body;
 }
 

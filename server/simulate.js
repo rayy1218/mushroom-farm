@@ -91,7 +91,7 @@ export function simulate(input, ctx, { onProgress } = {}) {
   };
   let commands = { relay: { intake: false, exhaust: false, circulation: false, humidifier: false, dehumidifier: false }, ac: { power: false, mode: 'cool', setpoint: 25, fan: 'auto' } };
   const changedAt = {};
-  const extra = { exchangeMaxMin: control.exchangeMaxMin ?? DEFAULTS.exchangeMaxMin, exchangeEveryMin: control.exchangeEveryMin ?? DEFAULTS.exchangeEveryMin, acDrop: control.acDrop ?? 0 };
+  const extra = { exchangeMaxMin: control.exchangeMaxMin ?? DEFAULTS.exchangeMaxMin, exchangeEveryMin: control.exchangeEveryMin ?? DEFAULTS.exchangeEveryMin, acDrop: control.acDrop ?? 0, outdoorAir: control.outdoorAir ?? DEFAULTS.outdoorAir };
   const humidifierDuringExchange = control.humidifierDuringExchange ?? DEFAULTS.humidifierDuringExchange;
   const acFan = control.acFan ?? DEFAULTS.acFan;
 
@@ -178,7 +178,7 @@ export function simulate(input, ctx, { onProgress } = {}) {
 
     // The control decides from ideal readings; the commands go to the machines at once.
     const decided = decide({
-      bands: { ...extra, ...bands }, state: memory, readings: { co2: CO2, rh }, faults: null, now: ms, humidifierDuringExchange, acFan,
+      bands: { ...extra, ...bands }, state: memory, readings: { co2: CO2, rh, t: T, outdoor: { t: out.outdoorT, rh: out.outdoorRH } }, faults: null, now: ms, humidifierDuringExchange, acFan,
       dehumidifierFitted: dehumidifierLday > 0,
     });
     memory = decided.state;

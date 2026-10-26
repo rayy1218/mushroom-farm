@@ -7,6 +7,8 @@ import { createSensorChecks } from './checks.js';
 import { createAlarms } from './alarms.js';
 import { filterInput, FILTER_KEYS } from './filter.js';
 import { advance, BAND_KEYS } from './program.js';
+import { outdoorReading } from './outdoor.js';
+import { wOf, dewOf } from '../device/sim-model.js';
 
 export const DEFAULTS = {
   auto: false, co2Low: 600, co2High: 750, tLow: 21, tHigh: 23, rhLow: 85, rhHigh: 95, humidifierDuringExchange: false, acFan: 'auto',
@@ -41,6 +43,18 @@ const AFTER_DRY_WAIT_MS = 10 * 60_000; // the humidifier waits this long after t
 const AFTER_DRY_MARGIN = 3; // … unless RH is this many % below the band
 const AFTER_DRY_IGNORE_MS = 15 * 60_000; // a humidifier run this soon after the dehumidifier stopped does not hold the next start
 const DEHUMIDIFIER_HOLD_MS = 180_000; // a compressor: 3 min on, 3 min off
+// Outdoor air (spec 2026-10-26-live-alarms-outdoor-design.md 4): temperatures in °C, moisture as absolute humidity in g/m³.
+const COOL_START_DROP = 2; // free cooling starts with the outside this much cooler than the room …
+const COOL_STOP_DROP = 1; // … and ends when it is less than this cooler
+const COOL_START_WIDTH = 0.25; // … while the room is above the middle of its band plus this share of the band's width
+const COOL_WET_START = 0.5; // … and the outside holds at most this much more moisture than the room
+const COOL_WET_STOP = 1; // … ends when it holds more than this much more
+const DRY_START_DRIER = 1; // outdoor drying starts with the outside this much drier than the room (and not hotter than …
+const DRY_START_WARM = 4; // … this much above it)
+const DRY_STOP_DRIER = 0.5; // … ends when the outside is less than this much drier
+const DRY_STOP_WARM = 5; // … or hotter than this much above the room
+const WET_WAIT = 3; // a fresh-air run waits while the outside holds this much more moisture than the room …
+const HOT_WAIT = 8; // … or is this much hotter, for at most one more interval
 
 const num = (x) => String(Math.round(x * 10) / 10);
 const word = (on) => (on ? 'on' : 'off');
@@ -66,11 +80,14 @@ const acDiffers = (a, d) => a.power !== d.power || a.mode !== d.mode || a.fan !=
 // acFan: the aircon fan, 'auto' | 'low' | 'high' (default 'auto').
 // dehumidifierFitted: whether the room has a dehumidifier (default false: never on, no reason text).
 // rhUnwired: the room has no T/RH probe wired (the dehumidifier is then off).
-// readings: { co2, rh }, null when the sensor gave nothing usable this cycle (that rule then keeps its state).
+// readings: { co2, rh, t, outdoor }, null when the sensor gave nothing usable this cycle (that rule then keeps its state);
+// t: the room temperature; outdoor: { t, rh } of the outdoor probe, null without a fresh good reading. The outdoor rules need
+// t, rh and outdoor, and bands.outdoorAir not false (default true).
+// state.exchangeKind: why the running exchange started, 'co2' | 'fresh' | 'cooling' | 'drying' | 'timed'; the result's state has it too (null when off).
 // faults: { co2, trh }, true while that sensor is faulty (timed exchange, timed humidifier). now: ms.
 // Returns { state, desired, reasons }. Pure.
 export function decide({ bands, state, readings, faults, now, humidifierDuringExchange = false, acFan = 'auto', dehumidifierFitted = false, rhUnwired = false }) {
-  const { co2 = null, rh = null } = readings ?? {};
+  const { co2 = null, rh = null, t = null, outdoor = null } = readings ?? {};
   const was = state.exchange;
   let exchange = was;
   // An exchange that is on with no start time (from the upgrade) starts counting now.
@@ -89,6 +106,7 @@ export function decide({ bands, state, readings, faults, now, humidifierDuringEx
   const onFor = was ? now - since : 0;
   const offFor = was || endedAt === null ? Infinity : now - endedAt;
   const { co2Low, co2High, co2Safety } = bands;
+  const middle = (bands.tLow + bands.tHigh) / 2;
   // Fresh air: with no air exchange for `every` ms, the fans run for FRESH_AIR_RUN_MS whatever the CO2.
   const every = (bands.exchangeEveryMin ?? 0) * 60_000;
   const freshDue = !was && every > 0 && now - freshFrom >= every;
@@ -97,6 +115,59 @@ export function decide({ bands, state, readings, faults, now, humidifierDuringEx
     freshRun = true;
     reasons.exchange = `Fresh air: no air exchange for ${bands.exchangeEveryMin} min, fans on for ${FRESH_AIR_RUN_MS / 60_000} min`;
   };
+  // Outdoor air: the room's and the outside's temperature and moisture, null without all the readings or with the setting off.
+  const air = bands.outdoorAir !== false && outdoor && t !== null && rh !== null
+    ? { tIn: t, wIn: wOf(t, rh), tOut: outdoor.t, wOut: wOf(outdoor.t, outdoor.rh) } : null;
+  const rhMiddle = (bands.rhLow + bands.rhHigh) / 2;
+  let outdoorKind = null; // 'cooling' | 'drying' while one of those runs
+  const clock = (ms) => `${String(new Date(ms).getHours()).padStart(2, '0')}:${String(new Date(ms).getMinutes()).padStart(2, '0')}`;
+  const coolText = () => `Free cooling: outdoor ${num(air.tOut)} °C, the room ${num(air.tIn)} °C`;
+  const dryText = () => `Outdoor drying: outdoor air ${num(air.wOut)} g/m³, the room ${num(air.wIn)} g/m³`;
+  // Free cooling, then outdoor drying; starts the exchange with its reason, false when neither is due. Both need the minimum off time.
+  const startOutdoor = () => {
+    if (!air || offFor < MIN_OFF_MS) return false;
+    if (air.tOut <= air.tIn - COOL_START_DROP && air.tIn > middle + COOL_START_WIDTH * (bands.tHigh - bands.tLow)
+      && air.wOut <= air.wIn + COOL_WET_START) {
+      start();
+      outdoorKind = 'cooling';
+      reasons.exchange = coolText();
+      return true;
+    }
+    if (rh >= bands.rhHigh && air.wOut <= air.wIn - DRY_START_DRIER && air.tOut <= air.tIn + DRY_START_WARM) {
+      start();
+      outdoorKind = 'drying';
+      reasons.exchange = dryText();
+      return true;
+    }
+    return false;
+  };
+  // Why the running free cooling or outdoor drying ends now, or '' to go on (without the outdoor reading it ends).
+  const outdoorEnd = (kind) => {
+    if (!air) return `${kind === 'cooling' ? 'Free cooling' : 'Outdoor drying'} ends: ${bands.outdoorAir === false ? 'outdoor air is off' : 'no outdoor reading'}`;
+    if (kind === 'cooling') {
+      if (air.tIn <= middle) return `Free cooling ends: the room is at ${num(air.tIn)} °C`;
+      if (air.tOut > air.tIn - COOL_STOP_DROP) return `Free cooling ends: outdoor ${num(air.tOut)} °C, the room ${num(air.tIn)} °C`;
+      if (air.wOut > air.wIn + COOL_WET_STOP) return `Free cooling ends: outdoor air is wetter, ${num(air.wOut)} g/m³ against ${num(air.wIn)}`;
+      return '';
+    }
+    if (rh <= rhMiddle) return `Outdoor drying ends: RH ${num(rh)} ≤ ${num(rhMiddle)}`;
+    if (air.wOut > air.wIn - DRY_STOP_DRIER) return `Outdoor drying ends: outdoor air ${num(air.wOut)} g/m³, the room ${num(air.wIn)} g/m³`;
+    if (air.tOut > air.tIn + DRY_STOP_WARM) return `Outdoor drying ends: outdoor ${num(air.tOut)} °C, the room ${num(air.tIn)} °C`;
+    return '';
+  };
+  // A due fresh-air run waits for very wet or hot outdoor air, for at most one more interval.
+  const freshWait = () => {
+    if (!air || now - freshFrom >= 2 * every) return null;
+    if (air.wOut >= air.wIn + WET_WAIT) return `outdoor air is very wet (dew ${num(dewOf(air.wOut))} °C)`;
+    if (air.tOut >= air.tIn + HOT_WAIT) return `outdoor air is very hot (${num(air.tOut)} °C)`;
+    return null;
+  };
+  const freshOrWait = () => {
+    const why = freshWait();
+    if (why === null) startFresh();
+    else reasons.exchange = `Fresh air waits: ${why}, at the latest ${clock(freshFrom + 2 * every)}`;
+  };
+  const outdoorWas = was && (state.exchangeKind === 'cooling' || state.exchangeKind === 'drying') ? state.exchangeKind : null;
   // The timed exchange of a CO2 fault rests at most the fresh-air interval.
   const timedOff = every > 0 ? Math.min(TIMED_EXCHANGE_OFF_MS, every) : TIMED_EXCHANGE_OFF_MS;
 
@@ -110,6 +181,22 @@ export function decide({ bands, state, readings, faults, now, humidifierDuringEx
       start();
     }
     reasons.exchange = `CO₂ sensor fault: timed air exchange, 10 min of every ${(TIMED_EXCHANGE_ON_MS + timedOff) / 60_000}`;
+  } else if (outdoorWas && (co2 === null || co2 < co2High)) {
+    // Free cooling or outdoor drying: its own stop rules, the minimum on time and the time limit; a CO₂ at the upper limit hands it to the CO₂ rule below.
+    outdoorKind = outdoorWas;
+    const label = outdoorKind === 'cooling' ? 'Free cooling' : 'Outdoor drying';
+    const ends = outdoorEnd(outdoorKind);
+    if (ends && onFor >= MIN_ON_MS) {
+      stop();
+      reasons.exchange = ends;
+    } else if (onFor >= bands.exchangeMaxMin * 60_000) {
+      stop();
+      reasons.exchange = `${label} stopped at the ${bands.exchangeMaxMin} min limit`;
+    } else if (ends) {
+      reasons.exchange = `Air exchange waits: minimum on time, ${wait(MIN_ON_MS - onFor)} to go`;
+    } else {
+      reasons.exchange = outdoorKind === 'cooling' ? coolText() : dryText();
+    }
   } else if (freshRun && (co2 === null || co2 < co2High)) {
     // A fresh-air run: its minute, even below the lower limit; one that reaches the upper limit goes on below as normal.
     if (onFor >= FRESH_AIR_RUN_MS) {
@@ -119,7 +206,7 @@ export function decide({ bands, state, readings, faults, now, humidifierDuringEx
       reasons.exchange = `Fresh air: fans on, ${wait(FRESH_AIR_RUN_MS - onFor)} to go`;
     }
   } else if (co2 === null) {
-    if (freshDue) startFresh();
+    if (!was && startOutdoor()) { /* started, with its reason */ } else if (freshDue) freshOrWait();
     else reasons.exchange = `CO₂ reading not usable: air exchange kept ${word(exchange)}`;
   } else if (!was) {
     if (co2 >= co2Safety) {
@@ -132,8 +219,10 @@ export function decide({ bands, state, readings, faults, now, humidifierDuringEx
       } else {
         reasons.exchange = `Air exchange waits: minimum off time, ${wait(MIN_OFF_MS - offFor)} to go`;
       }
+    } else if (startOutdoor()) {
+      // free cooling or outdoor drying, with its reason
     } else if (freshDue) {
-      startFresh();
+      freshOrWait();
     } else if (co2 <= co2Low) {
       reasons.exchange = `Air exchange: CO₂ ${num(co2)} ≤ ${co2Low}`;
     } else {
@@ -229,9 +318,9 @@ export function decide({ bands, state, readings, faults, now, humidifierDuringEx
     }
   }
 
-  const middle = (bands.tLow + bands.tHigh) / 2;
   const drop = bands.acDrop ?? 0;
-  const lowered = exchange && drop > 0;
+  const kind = !exchange ? null : faults?.co2 ? 'timed' : freshRun ? 'fresh' : outdoorKind ?? 'co2';
+  const lowered = exchange && drop > 0 && kind !== 'cooling'; // free cooling brings cooler air: the aircon is not lowered for it
   const target = lowered ? middle - drop : middle;
   const setpoint = Math.round(Math.min(AC_MAX, Math.max(AC_MIN, target)) * 2) / 2;
   const fanNote = acFan === 'auto' ? '' : `, fan ${acFan}`;
@@ -242,7 +331,7 @@ export function decide({ bands, state, readings, faults, now, humidifierDuringEx
 
   return {
     state: {
-      exchange, exchangeSince: since, exchangeEndedAt: endedAt, exchangeForced: freshRun, freshFrom,
+      exchange, exchangeSince: since, exchangeEndedAt: endedAt, exchangeForced: freshRun, exchangeKind: kind, freshFrom,
       cappedInRow: capped, humidifier: band, humidifierSince, dehumidifier: dehumidifierBand, humidifierLastOn,
       dehumidifierOffAt: state.dehumidifier && !dehumidifierBand ? now : (state.dehumidifierOffAt ?? null),
     },
@@ -383,7 +472,7 @@ export function createController({ db, machines, now = Date.now, log = console.e
       return null;
     }
     const { humidifier, humidifierSince, dehumidifier, humidifierLastOn, dehumidifierOffAt, ...rest } = c; // the band states, not the machines' commands
-    return { ...rest, humidifierBand: humidifier, dehumidifierBand: dehumidifier, exchangeEndsAt: exchangeEndsAt(roomId, c), checks: checksOf(roomId), reasons: { ...emptyReasons(), ...reasons.get(roomId) } };
+    return { ...rest, humidifierBand: humidifier, dehumidifierBand: dehumidifier, exchangeEndsAt: exchangeEndsAt(roomId, c), outdoorSet: db.outdoorAddress() !== null, checks: checksOf(roomId), reasons: { ...emptyReasons(), ...reasons.get(roomId) } };
   }
 
   // The reading of this cycle of a sensor (even a failed poll), or null (no data, or older than the cycle).
@@ -456,7 +545,7 @@ export function createController({ db, machines, now = Date.now, log = console.e
           cappedInRow: c.cappedInRow, humidifier: c.humidifier, humidifierSince: c.humidifierSince, dehumidifier: c.dehumidifier,
           humidifierLastOn: c.humidifierLastOn, dehumidifierOffAt: c.dehumidifierOffAt,
         },
-        readings: { rh: good.rh, co2: good.co2 },
+        readings: { rh: good.rh, co2: good.co2, t: good.t, outdoor: c.outdoorAir ? outdoorReading(db, at) : null },
         faults: { trh: Boolean(status.trh?.parts.rh.fault), co2: faults.co2 !== null }, // only an RH fault times the humidifier
         now: at,
         humidifierDuringExchange: c.humidifierDuringExchange,

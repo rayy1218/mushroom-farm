@@ -130,3 +130,35 @@ test('the dehumidifier reason and its wait text read like the other machines', (
   assert.equal(heldLine(c, 'dehumidifier'), 'Dehumidifier waits: minimum on time, 1 min 20 s to go');
   assert.equal(reasonLine('Dehumidifier', ''), 'Dehumidifier: —');
 });
+
+// ---- outdoor air (spec 2026-10-26-live-alarms-outdoor-design.md 4) ----
+
+test('the exchange line names why it runs: free cooling, outdoor drying, CO₂; fresh air says it already', async () => {
+  const { exchangeLine: line, formatHm: hm } = await import('../web/control-math.js');
+  const base = { exchange: true, exchangeSince: 1_000_000, exchangeEndsAt: 1_600_000 };
+  const since = hm(1_000_000);
+  const ends = hm(1_600_000);
+  assert.equal(line({ ...base, exchangeKind: 'cooling' }), `Air exchange on since ${since} (stops by ${ends}) · free cooling`);
+  assert.equal(line({ ...base, exchangeKind: 'drying' }), `Air exchange on since ${since} (stops by ${ends}) · outdoor drying`);
+  assert.equal(line({ ...base, exchangeKind: 'co2' }), `Air exchange on since ${since} (stops by ${ends}) · CO₂`);
+  assert.equal(line({ ...base, exchangeKind: 'fresh', exchangeForced: true }), `Fresh air on since ${since} (stops by ${ends})`);
+  assert.equal(line({ ...base, exchangeEndsAt: null, exchangeKind: 'cooling' }, 1_000_000 + 12 * 60_000), `Air exchange on since ${since} (12 min) · free cooling`);
+  assert.equal(line(base), `Air exchange on since ${since} (stops by ${ends})`);
+  assert.equal(line({ exchange: false, exchangeKind: null }), 'Air exchange off');
+});
+
+test('the outdoor air setting: label, default on, the note without an outdoor sensor, sent with Save only when changed', async () => {
+  const { OUTDOOR_LABEL, outdoorOn, outdoorNote, bandsBody: body, changedBody } = await import('../web/control-math.js');
+  assert.equal(OUTDOOR_LABEL, 'Use outdoor air (free cooling, drying, wait out wet air)');
+  assert.equal(outdoorOn({}), true);
+  assert.equal(outdoorOn({ outdoorAir: false }), false);
+  assert.equal(outdoorNote({ outdoorSet: false }), 'needs an outdoor sensor (Settings)');
+  assert.equal(outdoorNote({ outdoorSet: true }), '');
+  assert.equal(outdoorNote({}), '');
+  const six = { co2Low: 600, co2High: 750, tLow: 21, tHigh: 23, rhLow: 85, rhHigh: 95 };
+  assert.equal(body({ ...six, outdoorAir: false }).outdoorAir, false);
+  assert.equal('outdoorAir' in body(six), false);
+  const loaded = { ...six, co2Safety: 1250, exchangeMaxMin: 10, acDrop: 0, exchangeEveryMin: 15, outdoorAir: true };
+  assert.deepEqual(changedBody({ ...loaded }, loaded), {});
+  assert.deepEqual(changedBody({ ...loaded, outdoorAir: false }, loaded), { outdoorAir: false });
+});

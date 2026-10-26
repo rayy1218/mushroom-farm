@@ -16,7 +16,7 @@ const FILTER_RUN = [
   { field: 'filterUsedDays', label: 'Filter in use' },
 ];
 const RATING_FIELDS = ['intakeW', 'exhaustW', 'circulationW', 'humidifierW', 'humidifierLH', 'acInputW', 'dehumidifierW', 'dehumidifierLday'];
-const CONTROL_FIELDS = ['exchangeMaxMin', 'acDrop', 'exchangeEveryMin', 'humidifierDuringExchange', 'acFan'];
+const CONTROL_FIELDS = ['exchangeMaxMin', 'acDrop', 'exchangeEveryMin', 'humidifierDuringExchange', 'acFan', 'outdoorAir'];
 const MAX_UNFINISHED = 5; // queued or running runs of one room
 const SIZING_KEPT = 20; // finished suggestions kept per room
 export const RESTART_TEXT = 'Stopped by a restart of the farm app';
@@ -75,7 +75,11 @@ export function validateSimulation(body) {
       }
       own.humidifierDuringExchange = control.humidifierDuringExchange;
     }
-    if (Object.keys(own).length === 0) return { error: 'Control must set exchangeMaxMin, acDrop or humidifierDuringExchange', field: 'control' };
+    if (control.outdoorAir !== undefined) {
+      if (typeof control.outdoorAir !== 'boolean') return { error: 'Use outdoor air must be true or false', field: 'control.outdoorAir' };
+      own.outdoorAir = control.outdoorAir;
+    }
+    if (Object.keys(own).length === 0) return { error: 'Control must set exchangeMaxMin, acDrop, humidifierDuringExchange or outdoorAir', field: 'control' };
     input.control = own;
   }
   return { input };
