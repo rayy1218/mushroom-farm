@@ -32,3 +32,15 @@ The owner asked (2026-10-26): "chart add section for electrical and water usage"
 | Buckets | estimate per bucket matches the day estimate summed; metered steps per bucket, a reset skipped, a bucket without readings null; water from the humidifier's run time; totals |
 | API | the history reply carries `usage` for every range; a room without ratings |
 | Page | the section's charts and totals, Live with and without a meter; browser check on a throwaway app |
+
+## 4. Air exchange activity (owner, 2026-10-26: "add chart for hourly and daily air circulation activation count and time"; chose "Air exchange only")
+
+| Item | Rule |
+|---|---|
+| Where | the Charts tab, a section "Air exchange" after "Electricity and water", before the machine timeline; shown when the room has a relay module |
+| Its own switch | **Hourly** (the last 24 h, one bar per hour; *default*) · **Daily** (the last 30 days, one bar per local day); independent of the tab's range buttons |
+| Charts | "Exchanges started" (count per hour / day) and "Minutes the fans ran" (per hour / day), bars; hover: the hour or day and the number |
+| Totals line | "24 h: 41 exchanges, 2 h 35 min in all · longest 10 min" (Daily: "30 days: …") |
+| What counts | a run of the intake fan as the machine log has it (commanded on → off; the exchange switches intake and exhaust together); a run that spans a bucket edge counts its minutes in each bucket and its start in the bucket it started in; a run still on counts up to now |
+| Data | the history reply's machine log (`machines.intake`) of the 24 h and 30 d ranges, asked by the section itself; worked out in a pure function (e.g. `exchangeActivity(rows, from, to, stepMs)` → `[{ at, starts, minutes }]`), no server change |
+| Tests | runs inside one bucket, across an edge, still on, none; hourly and daily steps (local days); totals and the longest run |
