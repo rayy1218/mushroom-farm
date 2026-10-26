@@ -259,6 +259,7 @@ html { scroll-padding-top: var(--topbar-h); }
   .menu a[aria-current="page"] .ico { opacity: 1; }
   .side-foot { display: grid; gap: 8px; padding-top: 12px; border-top: 1px solid var(--border); }
   .side-foot .theme-btn { text-align: left; }
+  .side-foot .live-mark { padding: 0 12px; }
   .col > main { padding: 24px 28px 56px; }
   .page-actions { flex: 0 0 auto; margin-left: auto; }
   .page-actions > button { flex: 0 1 auto; }
