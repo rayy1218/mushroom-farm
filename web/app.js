@@ -9,6 +9,8 @@ import * as settings from './settings-page.js';
 import * as overview from './overview.js';
 import { loadBadge } from './overview-data.js';
 import { withTitlePrefix } from './overview-math.js';
+import { live } from './live.js';
+import { fallbackMs, liveMark } from './live-math.js';
 
 const view = document.getElementById('view');
 const menuLinks = {
@@ -85,7 +87,8 @@ document.querySelector('[data-skip]').addEventListener('click', (e) => {
 });
 
 // The alarm badge on the Overview entry and "(2) " in front of the page title: the number of active, unacknowledged
-// alarms, asked every 30 s (and again when the page changes, so an Acknowledge shows at once).
+// alarms, asked every 30 s (every minute while the live stream is up, which also pushes the number) and again when the page
+// changes, so an Acknowledge shows at once.
 const BADGE_MS = 30_000;
 const titleNode = document.querySelector('title');
 let badge = 0;
@@ -111,7 +114,35 @@ async function refreshBadge() {
 }
 
 new MutationObserver(showBadge).observe(titleNode, { childList: true });
-setInterval(refreshBadge, BADGE_MS);
+
+function scheduleBadge() {
+  setTimeout(() => {
+    refreshBadge();
+    scheduleBadge();
+  }, fallbackMs(BADGE_MS, live.connected()));
+}
+scheduleBadge();
+live.on('alarms', (data) => {
+  badgeSeq++; // a read still on its way is older than this
+  badge = Number.isInteger(data.count) ? data.count : badge;
+  showBadge();
+});
+
+// The Live mark in the top bar: words, with a dot that is only a help.
+const liveMarks = document.querySelectorAll('[data-live]');
+function showLive(connected) {
+  const { text, title, live: on } = liveMark(connected);
+  for (const el of liveMarks) {
+    el.querySelector('[data-live-text]').textContent = text;
+    el.title = title;
+    el.dataset.live = on ? 'on' : 'off';
+  }
+}
+showLive(live.connected());
+live.onStatus((up) => {
+  showLive(up);
+  if (up) refreshBadge(); // events were missed while it was down
+});
 window.addEventListener('farm:alarms-changed', refreshBadge); // after an Acknowledge
 
 window.addEventListener('hashchange', () => { show(); refreshBadge(); });

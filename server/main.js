@@ -13,6 +13,8 @@ import { createController } from './controller.js';
 import { readSettings } from './settings.js';
 import { warmUsage } from './usage.js';
 import { createSimulations } from './simulations.js';
+import { createEvents } from './events.js';
+import { createLive, watchAlarms } from './live.js';
 
 const DEFAULT_DB = fileURLToPath(new URL('../data/v2.db', import.meta.url));
 
@@ -38,12 +40,20 @@ const db = openDb(dbPath);
 const client = createModbusClient({ host: gatewayMatch[1].replace(/^\[(.*)\]$/, '$1'), port: Number(gatewayMatch[2]) });
 // The poller calls the controller after each cycle; the controller needs the machines, which need the poller.
 let controller = null;
+let live = null;
+const events = createEvents();
+watchAlarms(db, events);
 const { pollSeconds } = readSettings(db);
-const poller = createPoller({ db, client, intervalMs: pollSeconds * 1000, afterCycle: (cycleStart) => controller.run(cycleStart) });
+const afterCycle = async (cycleStart) => {
+  await controller.run(cycleStart);
+  live.afterCycle();
+};
+const poller = createPoller({ db, client, intervalMs: pollSeconds * 1000, afterCycle });
 const machines = createMachines({ db, client, poller });
 controller = createController({ db, machines });
-const simulations = createSimulations({ db });
-const server = createApp(db, { machines, controller, poller, simulations });
+live = createLive({ db, events, machines, controller });
+const simulations = createSimulations({ db, onChange: (type, data) => events.publish(type, data) });
+const server = createApp(db, { machines, controller, poller, simulations, events });
 
 server.on('error', (err) => fail(`Could not start the server: ${err.message}`));
 server.listen(Number(portText), () => {

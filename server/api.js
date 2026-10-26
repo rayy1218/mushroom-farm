@@ -61,7 +61,8 @@ const noRoom = () => new HttpError(404, 'Room not found');
 // machines (from createMachines) and controller (from createController) are optional:
 // without them the machine or control routes do not exist. poller (from createPoller), when given,
 // gets a new reading interval at once.
-export function createApi(db, machines = null, controller = null, poller = null, simulations = null) {
+export function createApi(db, machines = null, controller = null, poller = null, simulations = null, events = null) {
+  const publishRoom = (id, part) => events?.publish('room', { id, part }); // the live pages ask again (spec 2026-10-26 section 2)
   const simulationRoutes = simulations && createSimulationRoutes({ db, simulations });
   // The room body; its addresses must differ from the outdoor sensor's. stored: the room as it is (an update): a filter
   // setting left out is its stored value, so the checks compare what will be saved.
@@ -154,6 +155,7 @@ export function createApi(db, machines = null, controller = null, poller = null,
       if (filter[2] === 'changes') return send(res, 200, db.filterChanges(roomId));
       const room = changeFilter(db, roomId, Date.now());
       controller?.filterChanged(roomId);
+      publishRoom(roomId, 'filter');
       return send(res, 200, room);
     }
     const match = /^\/api\/rooms\/([1-9][0-9]{0,14})(\/sensors|\/usage|\/control|\/crop|\/history|\/machines(?:\/([a-z]+))?)?$/.exec(path);
@@ -172,6 +174,7 @@ export function createApi(db, machines = null, controller = null, poller = null,
       if (!db.getRoom(id)) throw noRoom();
       const view = await machines.command(id, key, await readJson(req));
       if (!view) throw noRoom();
+      publishRoom(id, 'machines');
       return send(res, 200, { ...view, auto: db.getControl(id)?.auto ?? false });
     }
     // Stream B: bucketed readings and machine lines for the charts.
@@ -192,12 +195,17 @@ export function createApi(db, machines = null, controller = null, poller = null,
       }
       if (req.method !== 'PUT') throw notFound();
       if (!db.getRoom(id)) throw noRoom();
-      return send(res, 200, controller.update(id, await readJson(req)));
+      const updated = controller.update(id, await readJson(req));
+      publishRoom(id, 'control');
+      return send(res, 200, updated);
     }
     if (match[2] === '/crop') {
       if (req.method !== 'GET' && req.method !== 'PUT') throw notFound();
       if (!db.getRoom(id)) throw noRoom();
-      return send(res, 200, req.method === 'GET' ? crop.get(id) : crop.put(id, await readJson(req)));
+      if (req.method === 'GET') return send(res, 200, crop.get(id));
+      const saved = crop.put(id, await readJson(req));
+      publishRoom(id, 'crop');
+      return send(res, 200, saved);
     }
     if (match[2] === '/usage') {
       if (req.method !== 'GET') throw notFound();

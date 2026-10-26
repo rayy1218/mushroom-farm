@@ -5,6 +5,8 @@ import { request, OFFLINE, OUTDATED, routeMissing } from './api.js';
 import { drawLineChart, M } from './chart.js';
 import { drawTimeline } from './timeline.js';
 import { drawBarChart } from './usage.js';
+import { live } from './live.js';
+import { fallbackMs, createDebounce } from './live-math.js';
 import { tickCountFor } from './history-math.js';
 import { progressLine } from './simulate-math.js';
 import {
@@ -156,7 +158,7 @@ export function mount(container, { id, runId }) {
         els.banner.hidden = false;
       }
     }
-    if (isActive(run) || !run) timer = setTimeout(load, POLL_MS);
+    if (isActive(run) || !run) timer = setTimeout(load, fallbackMs(POLL_MS, live.connected()));
     else if (run.status === 'done' && !run.result) loadResult();
   }
 
@@ -340,9 +342,22 @@ export function mount(container, { id, runId }) {
   els.retry.addEventListener('click', () => { els.banner.hidden = true; (retry ?? load)(); });
   load();
 
+  // Live updates: this run's progress and end ask again instead of the 2 s timer (which is only the fallback while the stream is up).
+  const reload = createDebounce(() => { if (alive()) load(); });
+  const offLive = [
+    live.on('simulation', (data) => { if (data.id === Number(runId)) reload.call(); }),
+    live.onStatus((up) => {
+      if (!isActive(run) && run) return; // nothing more to wait for
+      if (up) reload.call();
+      else load();
+    }),
+  ];
+
   return function unmount() {
     mountSeq++;
     resultSeq++;
+    reload.cancel();
+    for (const off of offLive) off();
     abort.abort();
     clearTimeout(timer);
     clearCharts();

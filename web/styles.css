@@ -225,6 +225,11 @@ html { scroll-padding-top: var(--topbar-h); }
 .topbar .brand-top { flex: 1 1 0; min-width: 0; }
 .topbar .brand-top strong { overflow: hidden; text-overflow: ellipsis; }
 .topbar .theme-btn { min-height: 36px; padding: 4px 12px; flex: none; }
+.live-mark { display: inline-flex; align-items: center; gap: 6px; flex: none; font-size: 0.8125rem; font-weight: 600; color: var(--ink-2); }
+.live-dot { width: 8px; height: 8px; border-radius: 50%; border: 2px solid currentColor; box-sizing: border-box; }
+.live-mark[data-live="on"] { color: var(--ink); }
+.live-mark[data-live="on"] .live-dot { background: var(--good-text); border-color: var(--good-text); }
+.live-mark[data-live="off"] { color: var(--muted); font-weight: 500; }
 
 .theme-btn { border-color: transparent; background: transparent; color: var(--ink-2); font-weight: 500; }
 .theme-btn:hover { background: var(--band); }

@@ -2,6 +2,8 @@
 // the same stepper as the Rooms list. createSimulationsCard(host, { roomId, getRoom, onOffline }) → { refresh(), destroy() }.
 // While a run is going the list is asked every 2 s, otherwise only when asked for (after a run was started).
 
+import { live } from './live.js';
+import { fallbackMs, createDebounce } from './live-math.js';
 import { request } from './api.js';
 import { openSimulateDialog } from './simulate-dialog.js';
 import { runRow, isActive } from './simulation-math.js';
@@ -66,7 +68,7 @@ export function createSimulationsCard(host, { roomId, getRoom }) {
       if (err.status === 404 && !runs) { host.hidden = true; return; } // an older server
       if (!runs) msg.textContent = "Couldn't load the simulations";
     }
-    if (alive && runs?.some(isActive)) timer = setTimeout(refresh, ACTIVE_MS);
+    if (alive && runs?.some(isActive)) timer = setTimeout(refresh, fallbackMs(ACTIVE_MS, live.connected()));
   }
 
   simulate.addEventListener('click', () => {
@@ -74,10 +76,18 @@ export function createSimulationsCard(host, { roomId, getRoom }) {
     if (room) openSimulateDialog(room, { onStarted: () => { if (alive) refresh(); }, onFinished: () => { if (alive) refresh(); } });
   });
   more.addEventListener('click', () => { all = !all; paint(); });
+  // A run of this room moving (a new status) asks again, instead of waiting for the timer.
+  const reload = createDebounce(() => { if (alive) refresh(); });
+  const seen = new Map(); // run id → the status last heard
+  const offLive = live.on('simulation', (data) => {
+    if (data.roomId !== roomId || seen.get(data.id) === data.status) return;
+    seen.set(data.id, data.status);
+    reload.call();
+  });
   refresh();
 
   return {
     refresh,
-    destroy() { alive = false; seq++; clearTimeout(timer); host.replaceChildren(); },
+    destroy() { alive = false; seq++; clearTimeout(timer); reload.cancel(); offLive(); host.replaceChildren(); },
   };
 }

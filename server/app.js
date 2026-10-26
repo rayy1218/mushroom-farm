@@ -4,15 +4,18 @@ import http from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { createApi } from './api.js';
 import { createStatic } from './static.js';
+import { createSse } from './live.js';
 
 const WEB_DIR = fileURLToPath(new URL('../web/', import.meta.url));
 
-export function createApp(db, { webDir = WEB_DIR, machines = null, controller = null, poller = null, simulations = null } = {}) {
-  const api = createApi(db, machines, controller, poller, simulations);
+export function createApp(db, { webDir = WEB_DIR, machines = null, controller = null, poller = null, simulations = null, events = null, ssePingMs } = {}) {
+  const api = createApi(db, machines, controller, poller, simulations, events);
+  const sse = events && createSse({ events, pingMs: ssePingMs });
   const files = createStatic(webDir);
-  return http.createServer(async (req, res) => {
+  const server = http.createServer(async (req, res) => {
     try {
       const url = new URL(req.url, 'http://localhost');
+      if (sse && url.pathname === '/api/events') return sse.handler(req, res);
       if (url.pathname === '/api' || url.pathname.startsWith('/api/')) return await api(req, res, url);
       await files(req, res, url);
     } catch (err) {
@@ -21,4 +24,5 @@ export function createApp(db, { webDir = WEB_DIR, machines = null, controller = 
       res.end('Something went wrong');
     }
   });
+  return server;
 }
