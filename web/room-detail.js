@@ -110,6 +110,13 @@ const TEMPLATE = `
         <div data-panel="simulations" hidden>
           <section data-simulations></section>
         </div>
+        <div data-panel="profile" hidden>
+          <form class="card room-form" data-profile novalidate></form>
+          <section class="card room-delete" data-delete></section>
+        </div>
+        <div data-panel="equipment" hidden>
+          <form class="room-form" data-equipment novalidate></form>
+        </div>
       </div>
     </div>
   </div>`;
@@ -123,6 +130,8 @@ const TAB_ICONS = {
   sensors: '<path d="M10 14V5a2 2 0 014 0v9a4 4 0 11-4 0z"/><path d="M12 14v-4"/>',
   energy: '<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>',
   simulations: '<path d="M9 3h6M10 3v6l-5 9a2 2 0 002 3h10a2 2 0 002-3l-5-9V3"/><path d="M7.5 15h9"/>',
+  profile: '<path d="M3 17L17 3l4 4L7 21z"/><path d="M7 13l2 2M10 10l2 2M13 7l2 2"/>',
+  equipment: '<rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/>',
 };
 
 let mountSeq = 0; // every mount gets a token; a reply that finds the token changed is dropped

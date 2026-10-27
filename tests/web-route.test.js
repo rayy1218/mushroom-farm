@@ -18,9 +18,9 @@ test('a room id means the detail page, on its Overview tab', () => {
 });
 
 test('a room page tab is part of the address; an unknown tab means the Overview page', () => {
-  assert.deepEqual(ROOM_TABS.map((t) => t.key), ['overview', 'charts', 'climate', 'crop', 'sensors', 'energy', 'simulations']);
-  assert.deepEqual(ROOM_TABS.map((t) => t.label), ['Overview', 'Charts', 'Climate', 'Crop', 'Sensors', 'Energy', 'Simulations']);
-  for (const tab of ['charts', 'climate', 'crop', 'sensors', 'energy', 'simulations']) {
+  assert.deepEqual(ROOM_TABS.map((t) => t.key), ['overview', 'charts', 'climate', 'crop', 'sensors', 'energy', 'simulations', 'profile', 'equipment']);
+  assert.deepEqual(ROOM_TABS.map((t) => t.label), ['Overview', 'Charts', 'Climate', 'Crop', 'Sensors', 'Energy', 'Simulations', 'Room profile', 'Equipment']);
+  for (const tab of ['charts', 'climate', 'crop', 'sensors', 'energy', 'simulations', 'profile', 'equipment']) {
     assert.deepEqual(parseRoute(`#/rooms/7/${tab}`), { name: 'detail', id: 7, tab });
     assert.deepEqual(parseRoute(`#/rooms/7/${tab}/`), { name: 'detail', id: 7, tab });
     assert.equal(isCanonical(`#/rooms/7/${tab}`), true);
@@ -32,6 +32,8 @@ test('a room page tab is part of the address; an unknown tab means the Overview 
   assert.equal(roomHash(7, 'overview'), '#/rooms/7');
   assert.equal(roomHash(7, 'charts'), '#/rooms/7/charts');
   assert.equal(roomHash(7, 'nonsense'), '#/rooms/7');
+  assert.equal(roomHash(7, 'profile'), '#/rooms/7/profile');
+  assert.equal(roomHash(7, 'equipment'), '#/rooms/7/equipment');
 });
 
 test('canonical hashes are left alone, others are tidied', () => {
