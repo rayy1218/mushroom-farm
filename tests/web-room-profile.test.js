@@ -1,6 +1,7 @@
-// The Room profile and Equipment tabs instead of the Edit dialog (spec 2026-10-26-room-profile-equipment-design.md): the Add
-// room dialog and both tabs build their inputs from web/room-fields.js; the room page has no Edit button; the Rooms list's Edit
-// opens the Room profile tab. Source checks, like the other page tests.
+// The Room profile and Equipment tabs instead of the Edit dialog (spec 2026-10-26-room-profile-equipment-design.md; the
+// Equipment tab's cards: 2026-10-27-equipment-cards-design.md): the Add room dialog and both tabs build their inputs from
+// web/room-fields.js; the room page has no Edit button; the Rooms list's Edit opens the Room profile tab. Source checks, like
+// the other page tests.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -25,7 +26,7 @@ test('the Add room dialog: every field built from the shared definitions, checke
 
 test('the shared inputs: a fitted machine\'s ratings follow its box, a bad number is not read as blank, errors under the fields', () => {
   const js = src('room-form.js');
-  assert.match(js, /import \{ fieldsOf, fieldLabel, isShown, volumeText, NAME_MAX \} from '\.\/room-fields\.js';/);
+  assert.match(js, /import \{ ROOM_FIELDS, fieldsOf, fieldLabel, isShown, volumeText, NAME_MAX \} from '\.\/room-fields\.js';/);
   assert.match(js, /wrap\.hidden = !isShown\(f, t\)/);
   assert.match(js, /input\.validity\?\.badInput \? '\?' : input\.value/);
   assert.match(js, /input\.setAttribute\('aria-invalid', 'true'\)/);
@@ -48,30 +49,59 @@ test('the Rooms list: Edit opens the room\'s Room profile tab, Add room the dial
   assert.match(list, /els\.add\.addEventListener\('click', openAdd\);/);
 });
 
-test('the two tabs: the profile fields in one card, the equipment in four, each tab its own form with one Save and Reset', () => {
+test('the Room profile tab: the profile fields in one card, its own form with one Save and Reset', () => {
   assert.match(page, /import \{ createRoomEdit, createDeleteCard \} from '\.\/room-edit\.js';/);
   assert.match(page, /createRoomEdit\(els\.profileHost, \{ roomId: id, groups: \['profile'\], idPrefix: 'rp-'/);
-  assert.match(page, /createRoomEdit\(els\.equipmentHost, \{ roomId: id, groups: \['sensors', 'machines', 'power', 'filter'\], idPrefix: 're-'/);
-  assert.match(page, /profileTab\.update\(room\);\n\s*equipmentTab\.update\(room\);/);
+  assert.match(page, /profileTab\.update\(room\);\n\s*equipmentTab\.update\(room, \{ sensors, machines: machineData \?\? lastMachines \}\);/);
   const edit = src('room-edit.js');
   assert.match(edit, /import \{ ROOM_GROUPS, fieldsOf, fieldTexts, parseRoomFields, roomBody \} from '\.\/room-fields\.js';/);
   assert.match(edit, /import \{ createRoomForm \} from '\.\/room-form\.js';/);
   assert.match(edit, /const names = groups\.flatMap\(\(key\) => fieldsOf\(key\)\.map\(\(f\) => f\.name\)\);/);
-  assert.match(edit, /parseRoomFields\(fields\.texts\(\), names\)/);
-  // PUT replaces what is left out: the tab's values go over the loaded room.
+  assert.match(edit, /check: \(texts\) => parseRoomFields\(texts, names\)/);
+  assert.match(edit, /const checked = check\(fields\.texts\(\), loaded\);/);
+  // PUT replaces what is left out: the form's values go over the loaded room.
   assert.match(edit, /request\('PUT', `\/api\/rooms\/\$\{roomId\}`, roomBody\(loaded, checked\.values\), SAVE_TIMEOUT\)/);
   assert.match(edit, /reset\.hidden = !dirty;/);
+  assert.match(edit, /if \(saveWhenDirty\) sendRow\.hidden = !dirty;/, 'only the Equipment cards hide their Save');
 });
 
 test('a refresh never replaces what the person is editing or has edited and not saved (like the Crop card)', () => {
   const edit = src('room-edit.js');
-  assert.match(edit, /const holding = dirty \|\| saving \|\| form\.contains\(document\.activeElement\);\n\s*if \(!holding\) fields\.fill\(fieldTexts\(room\)\);/);
+  assert.match(edit, /const holding = dirty \|\| saving \|\| form\.contains\(document\.activeElement\);\n\s*if \(!holding\) fill\(room\);/);
   assert.match(edit, /loaded = room;/, 'the room is kept: a Save sends the newest one');
 });
 
 test('a Save with nothing changed sends nothing: it shows the newest room instead of writing old values over it', () => {
   const edit = src('room-edit.js');
-  assert.match(edit, /if \(!dirty\) \{\n\s*fields\.fill\(fieldTexts\(loaded\)\);\n\s*return;\n\s*\}\n\s*const checked = parseRoomFields/);
+  assert.match(edit, /if \(!dirty\) \{\n\s*fill\(loaded\);\n\s*return;\n\s*\}\n\s*const checked = check/);
+  assert.match(edit, /function fill\(room\) \{\n\s*fields\.fill\(fieldTexts\(room\)\);/);
+});
+
+test('the Equipment tab: two sections of cards, one form per card with its own Save, its values over the newest room', () => {
+  assert.match(template, /<div class="equipment" data-equipment><\/div>/);
+  assert.match(page, /import \{ createEquipment \} from '\.\/equipment\.js';/);
+  assert.match(page, /equipmentTab = createEquipment\(els\.equipmentHost, \{ roomId: id, idPrefix: 're-', \.\.\.saved \}\);/);
+  const eq = src('equipment.js');
+  assert.match(eq, /import \{ createEditForm \} from '\.\/room-edit\.js';/);
+  assert.match(eq, /for \(const s of EQUIPMENT_SECTIONS\)/);
+  assert.match(eq, /const form = el\('form', 'card eq-card'\);\n\s*form\.noValidate = true;/);
+  assert.match(eq, /groups: \[cardGroup\(c\)\],/);
+  assert.match(eq, /check: \(texts, room\) => parseCard\(c, texts, room\),/);
+  assert.match(eq, /saveWhenDirty: true,/);
+  // After a save the other cards take the saved room; one holding an unsent edit keeps it (createEditForm's update).
+  assert.match(eq, /for \(const \[key, other\] of cards\) if \(key !== c\.key\) other\.edit\.update\(room\);/);
+  assert.match(eq, /form\.classList\.toggle\('unfitted', unfitted\);/);
+  assert.match(eq, /const c = cardOf\(name\);\n\s*if \(c\) cards\.get\(c\.key\)\.edit\.focus\(name\);/, 'Set address: the card of that field');
+  const edit = src('room-edit.js');
+  assert.match(edit, /fields\.showErrors\(checked\.errors\)\?\.focus\(\);\n\s*showError\(formErr, checked\.other \?\? ''\);/, 'a rule that blames another card: under the Save');
+});
+
+test('the Equipment grid: cards at least 260 px wide, 16 px apart, one column on a phone; an unfitted card dimmed', () => {
+  const css = src('styles.css');
+  assert.match(css, /\.eq-grid \{ display: grid; grid-template-columns: repeat\(auto-fill, minmax\(260px, 1fr\)\); gap: 16px; \}/);
+  assert.match(css, /@media \(max-width: 600px\) \{ \.eq-grid \{ grid-template-columns: 1fr;/);
+  assert.match(css, /\.eq-card\.unfitted \{/);
+  assert.doesNotMatch(css, /\.equipment[^{]*\{[^}]*max-width/, 'the tab is not capped at 760 px');
 });
 
 test('Delete room: a danger button, the Rooms list\'s confirm, then the Rooms list', () => {

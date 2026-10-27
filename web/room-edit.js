@@ -1,9 +1,10 @@
-// The room page's Room profile and Equipment tabs (spec 2026-10-26-room-profile-equipment-design.md sections 2 and 3), instead
-// of the Edit dialog.
+// The room page's Room profile tab (spec 2026-10-26-room-profile-equipment-design.md section 2), instead of the Edit dialog, and
+// the form behind each Equipment card (web/equipment.js, spec 2026-10-27-equipment-cards-design.md section 3).
 // createRoomEdit(host, { roomId, groups, idPrefix, onSaved, onGone }) → { update(room), focus(name), destroy() }: a form of the
 // room fields of those groups (web/room-fields.js), a card per group, one Save and Reset. update(room): the room the page loaded;
 // a refresh never replaces what the person is editing or has edited and not saved. Save sends the whole room (PUT replaces a
 // field left out): the form's values over the room last loaded. onSaved(room): saved; onGone(): the room no longer exists.
+// createEditForm(form, options): the form behind it, also used by each Equipment card (below).
 // createDeleteCard(host, { roomId, getRoom, onGone }) → { destroy() }: the Delete room card, with the Rooms list's confirm.
 
 import { request, OFFLINE } from './api.js';
@@ -32,19 +33,42 @@ function showError(node, text) {
 }
 
 export function createRoomEdit(host, { roomId, groups, idPrefix, onSaved, onGone }) {
+  const names = groups.flatMap((key) => fieldsOf(key).map((f) => f.name));
+  const shown = ROOM_GROUPS.filter((g) => groups.includes(g.key));
+  const edit = createEditForm(host, { roomId, groups: shown, idPrefix, check: (texts) => parseRoomFields(texts, names), onSaved, onGone });
+
+  // A card per group; one group (the profile): Save in its card, else under the cards.
+  const cards = shown.map((g) => {
+    const card = el('section', 'card');
+    card.dataset.group = g.key;
+    card.append(el('h2', '', g.title), ...edit.fields.parts[g.key]);
+    return card;
+  });
+  const end = groups.length === 1 ? cards[0] : el('div', 'room-send');
+  end.append(...edit.end);
+  host.append(...cards);
+  if (end !== cards[0]) host.append(end);
+  return { update: edit.update, focus: edit.focus, destroy: edit.destroy };
+}
+
+// createEditForm(form, { roomId, groups, idPrefix, check, saveWhenDirty, rest, onPaint, onSaved, onGone }) → { fields, end,
+// update(room), focus(name), destroy() }. groups: groups of web/room-form.js. check(texts, room) → { values } or { errors, other }
+// (other: words for under the Save, a rule that blames a field elsewhere). end: the error line, the Save row and "Saved", for the
+// caller to place. saveWhenDirty: the Save row shows only with unsaved edits; when it hides, the cursor goes to rest.
+// onPaint(texts): the inputs were filled or changed.
+export function createEditForm(form, { roomId, groups, idPrefix, check, saveWhenDirty = false, rest, onPaint, onSaved, onGone }) {
   let alive = true;
   let loaded = null; // the room as the server last sent it
   let dirty = false;
   let saving = false;
-  const form = host;
-  const names = groups.flatMap((key) => fieldsOf(key).map((f) => f.name));
-  const fields = createRoomForm(ROOM_GROUPS.filter((g) => groups.includes(g.key)), {
+  const fields = createRoomForm(groups, {
     idPrefix,
     onInput: () => {
       dirty = true;
       showError(formErr, '');
       saved.hidden = true;
       paintDirty();
+      onPaint?.(fields.texts());
     },
   });
 
@@ -62,21 +86,21 @@ export function createRoomEdit(host, { roomId, groups, idPrefix, onSaved, onGone
   saved.setAttribute('role', 'status');
   saved.hidden = true;
 
-  // A card per group; one group (the profile): Save in its card, else under the cards.
-  const cards = ROOM_GROUPS.filter((g) => groups.includes(g.key)).map((g) => {
-    const card = el('section', 'card');
-    card.dataset.group = g.key;
-    card.append(el('h2', '', g.title), ...fields.parts[g.key]);
-    return card;
-  });
-  const end = groups.length === 1 ? cards[0] : el('div', 'room-send');
-  end.append(formErr, sendRow, saved);
-  form.append(...cards);
-  if (end !== cards[0]) form.append(end);
-
   function paintDirty() {
     unsent.hidden = !dirty;
     reset.hidden = !dirty;
+    if (saveWhenDirty) sendRow.hidden = !dirty;
+  }
+  paintDirty();
+
+  function fill(room) {
+    fields.fill(fieldTexts(room));
+    onPaint?.(fields.texts());
+  }
+
+  // The Save row about to hide with the cursor in it: the cursor goes to rest, not to the top of the page.
+  function keepCursor() {
+    if (saveWhenDirty && sendRow.contains(document.activeElement)) rest?.focus();
   }
 
   form.addEventListener('submit', async (event) => {
@@ -87,12 +111,13 @@ export function createRoomEdit(host, { roomId, groups, idPrefix, onSaved, onGone
     saved.hidden = true;
     // Nothing typed: the form may hold values older than the room (a refresh skipped while a field had focus).
     if (!dirty) {
-      fields.fill(fieldTexts(loaded));
+      fill(loaded);
       return;
     }
-    const checked = parseRoomFields(fields.texts(), names);
+    const checked = check(fields.texts(), loaded);
     if (checked.errors) {
-      fields.showErrors(checked.errors).focus();
+      fields.showErrors(checked.errors)?.focus();
+      showError(formErr, checked.other ?? '');
       return;
     }
     saving = true;
@@ -103,7 +128,8 @@ export function createRoomEdit(host, { roomId, groups, idPrefix, onSaved, onGone
       if (!alive) return;
       loaded = room;
       dirty = false;
-      fields.fill(fieldTexts(room));
+      fill(room);
+      keepCursor();
       paintDirty();
       saved.hidden = false;
       onSaved?.(room);
@@ -113,7 +139,7 @@ export function createRoomEdit(host, { roomId, groups, idPrefix, onSaved, onGone
         onGone?.();
         return;
       }
-      // A field of this tab: the server's words under it; any other (or no field): under the form.
+      // A field of this form: the server's words under it; any other (or no field): under the form.
       const input = (err.status === 400 || err.status === 409) && err.field ? fields.showErrors({ [err.field]: err.message }) : null;
       if (input) input.focus();
       else showError(formErr, err.status === 0 ? `${OFFLINE}. Try again.` : err.message);
@@ -130,18 +156,21 @@ export function createRoomEdit(host, { roomId, groups, idPrefix, onSaved, onGone
     dirty = false;
     fields.clearErrors();
     showError(formErr, '');
-    if (loaded) fields.fill(fieldTexts(loaded));
+    if (loaded) fill(loaded);
+    keepCursor();
     paintDirty();
-    save.focus();
+    if (!saveWhenDirty) save.focus();
   });
 
   return {
+    fields,
+    end: [formErr, sendRow, saved],
     update(room) {
       if (!alive || !room) return;
       loaded = room;
       // A refresh leaves alone what the person is editing, or has edited and not saved.
       const holding = dirty || saving || form.contains(document.activeElement);
-      if (!holding) fields.fill(fieldTexts(room));
+      if (!holding) fill(room);
     },
     // Put the cursor in a field (a "Set address" button of another tab).
     focus(name) {
