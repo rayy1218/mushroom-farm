@@ -69,14 +69,14 @@ export function createRoomForm(groups, { idPrefix, onInput }) {
     } else if (group.key === 'profile') { // the name on its own line, the three sizes in a row, the volume under them
       nodes.push(field(list[0]));
       const sizes = el('div', 'sizes');
-      sizes.append(...list.slice(1).map(field));
+      sizes.append(...list.slice(1).map((f) => field(f)));
       volume = el('p', 'volume', volumeText({}));
       volume.setAttribute('aria-live', 'polite');
       nodes.push(sizes, volume);
     } else {
       const grid = el('div', 'sizes two');
-      grid.append(...list.filter((f) => f.kind !== 'check').map(field));
-      nodes.push(grid, ...list.filter((f) => f.kind === 'check').map(field));
+      grid.append(...list.filter((f) => f.kind !== 'check').map((f) => field(f)));
+      nodes.push(grid, ...list.filter((f) => f.kind === 'check').map((f) => field(f)));
       if (group.hint) nodes.push(el('p', 'c-hint', group.hint));
     }
     parts[group.key] = nodes;
