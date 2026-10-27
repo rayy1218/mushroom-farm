@@ -76,7 +76,7 @@ test('an Equipment card: its own short labels', async (t) => {
   assert.deepEqual(labels(form.parts.dehumidifier.flatMap(all)), { dehumidifier: 'Fitted', dehumidifierW: 'Power (W)', dehumidifierLday: 'Capacity (L/day)' });
 });
 
-test('two cards saved together: the second waits, then builds its body from the room the first save returned', { todo: 'save queue' }, async (t) => {
+test('two cards saved together: the second waits, then builds its body from the room the first save returned', async (t) => {
   const { calls, answer } = setup(t);
   const { createEquipment } = await import('../web/equipment.js');
   const { createSaveQueue } = await import('../web/room-edit.js');
@@ -112,7 +112,7 @@ test('two cards saved together: the second waits, then builds its body from the 
   assert.deepEqual(fieldTexts(saved[1]).exhaustW, '75');
 });
 
-test('a waiting card is checked again against the newer room: a clash with what the earlier save set shows, nothing is sent', { todo: 'save queue' }, async (t) => {
+test('a waiting card is checked again against the newer room: a clash with what the earlier save set shows, nothing is sent', async (t) => {
   const { calls, answer } = setup(t);
   const { createEquipment } = await import('../web/equipment.js');
   const { createSaveQueue } = await import('../web/room-edit.js');

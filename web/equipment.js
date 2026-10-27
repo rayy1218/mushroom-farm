@@ -1,9 +1,11 @@
 // The room page's Equipment tab (spec 2026-10-27-equipment-cards-design.md): two sections, Sensors and Machines, each a grid of
 // cards, one per device (web/equipment-cards.js), with that device's settings in it and its own Save and Reset.
-// createEquipment(host, { roomId, idPrefix, onSaved, onGone }) → { update(room, data), focus(name), destroy() }.
+// createEquipment(host, { roomId, idPrefix, queue, onSaved, onGone }) → { update(room, data), focus(name), destroy() }.
 // update(room, { sensors, machines }): the room and the replies the page loaded; a card with unsaved edits, saving or with the
 // cursor in it is not refilled (the status lines always are). A card's Save sends its values over the newest room, so it never
-// sends another card's unsent edits; the other cards then show the saved room. onSaved(room); onGone(): the room is gone.
+// sends another card's unsent edits; the other cards then show the saved room. queue: the page's save queue (web/room-edit.js),
+// so two cards saved together go one after the other, the second over the room the first returned. onSaved(room); onGone(): the
+// room is gone.
 
 import { EQUIPMENT_CARDS, EQUIPMENT_SECTIONS, cardOf, cardGroup, cardLine, cardStatus, parseCard } from './equipment-cards.js';
 import { createEditForm } from './room-edit.js';
@@ -15,8 +17,8 @@ function el(tag, className, content) {
   return node;
 }
 
-export function createEquipment(host, { roomId, idPrefix, onSaved, onGone }) {
-  const cards = new Map(); // card key → { edit, paintStatus }
+export function createEquipment(host, { roomId, idPrefix, queue, onSaved, onGone }) {
+  const cards = new Map(); // card key → { edit, setStatus }
 
   function card(c) {
     const form = el('form', 'card eq-card');
@@ -45,6 +47,7 @@ export function createEquipment(host, { roomId, idPrefix, onSaved, onGone }) {
     const edit = createEditForm(form, {
       roomId,
       groups: [cardGroup(c)],
+      queue,
       idPrefix,
       check: (texts, room) => parseCard(c, texts, room),
       saveWhenDirty: true,

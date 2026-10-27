@@ -32,10 +32,10 @@ function showError(node, text) {
   node.hidden = text === '';
 }
 
-export function createRoomEdit(host, { roomId, groups, idPrefix, onSaved, onGone }) {
+export function createRoomEdit(host, { roomId, groups, idPrefix, queue, onSaved, onGone }) {
   const names = groups.flatMap((key) => fieldsOf(key).map((f) => f.name));
   const shown = ROOM_GROUPS.filter((g) => groups.includes(g.key));
-  const edit = createEditForm(host, { roomId, groups: shown, idPrefix, check: (texts) => parseRoomFields(texts, names), onSaved, onGone });
+  const edit = createEditForm(host, { roomId, groups: shown, idPrefix, queue, check: (texts) => parseRoomFields(texts, names), onSaved, onGone });
 
   // A card per group; one group (the profile): Save in its card, else under the cards.
   const cards = shown.map((g) => {
@@ -51,12 +51,24 @@ export function createRoomEdit(host, { roomId, groups, idPrefix, onSaved, onGone
   return { update: edit.update, focus: edit.focus, destroy: edit.destroy };
 }
 
-// createEditForm(form, { roomId, groups, idPrefix, check, saveWhenDirty, rest, onPaint, onSaved, onGone }) → { fields, end,
-// update(room), focus(name), destroy() }. groups: groups of web/room-form.js. check(texts, room) → { values } or { errors, other }
-// (other: words for under the Save, a rule that blames a field elsewhere). end: the error line, the Save row and "Saved", for the
-// caller to place. saveWhenDirty: the Save row shows only with unsaved edits; when it hides, the cursor goes to rest.
-// onPaint(texts): the inputs were filled or changed.
-export function createEditForm(form, { roomId, groups, idPrefix, check, saveWhenDirty = false, rest, onPaint, onSaved, onGone }) {
+// createSaveQueue() → queue(run): the room page's saves one at a time (run: an async function; queue returns its result). A PUT
+// replaces the whole room, so a form must not build its body until an earlier save has answered and every form has its room.
+export function createSaveQueue() {
+  let last = Promise.resolve();
+  return (run) => {
+    const next = last.then(run);
+    last = next.catch(() => {});
+    return next;
+  };
+}
+
+// createEditForm(form, { roomId, groups, idPrefix, queue, check, saveWhenDirty, rest, onPaint, onSaved, onGone }) → { fields,
+// end, update(room), focus(name), destroy() }. groups: groups of web/room-form.js. queue: the page's save queue (none: saves
+// at once). check(texts, room) → { values } or { errors, other } (other: words for under the Save, a rule that blames a field
+// elsewhere). end: the error line, the Save row and "Saved", for the caller to place. saveWhenDirty: the Save row shows only with
+// unsaved edits; when it hides, the cursor goes to rest. onPaint(texts): the inputs were filled or changed. onSaved(room) runs
+// before the next queued save starts, so the other forms can take the room first.
+export function createEditForm(form, { roomId, groups, idPrefix, queue = (run) => run(), check, saveWhenDirty = false, rest, onPaint, onSaved, onGone }) {
   let alive = true;
   let loaded = null; // the room as the server last sent it
   let dirty = false;
@@ -98,9 +110,12 @@ export function createEditForm(form, { roomId, groups, idPrefix, check, saveWhen
     onPaint?.(fields.texts());
   }
 
-  // The Save row about to hide with the cursor in it: the cursor goes to rest, not to the top of the page.
+  // The cursor was in the form and got lost (the Save button disabled while saving, or its row hidden after): back to the Save,
+  // or to rest when the row is hidden, not to the top of the page.
   function keepCursor() {
-    if (saveWhenDirty && sendRow.contains(document.activeElement)) rest?.focus();
+    const at = document.activeElement;
+    if (at && at !== document.body && !(sendRow.hidden && sendRow.contains(at))) return;
+    (sendRow.hidden ? rest : save)?.focus();
   }
 
   form.addEventListener('submit', async (event) => {
@@ -114,25 +129,36 @@ export function createEditForm(form, { roomId, groups, idPrefix, check, saveWhen
       fill(loaded);
       return;
     }
-    const checked = check(fields.texts(), loaded);
-    if (checked.errors) {
+    const showChecks = (checked) => {
       fields.showErrors(checked.errors)?.focus();
       showError(formErr, checked.other ?? '');
+    };
+    const checked = check(fields.texts(), loaded);
+    if (checked.errors) {
+      showChecks(checked);
       return;
     }
+    const hadCursor = form.contains(document.activeElement);
     saving = true;
     save.disabled = true;
     reset.disabled = true;
     try {
-      const room = await request('PUT', `/api/rooms/${roomId}`, roomBody(loaded, checked.values), SAVE_TIMEOUT);
-      if (!alive) return;
-      loaded = room;
-      dirty = false;
-      fill(room);
-      keepCursor();
-      paintDirty();
-      saved.hidden = false;
-      onSaved?.(room);
+      // After waiting for another form's save, the room may be newer: checked again and the body built over it.
+      const late = await queue(async () => {
+        if (!alive) return null;
+        const now = check(fields.texts(), loaded);
+        if (now.errors) return now;
+        const room = await request('PUT', `/api/rooms/${roomId}`, roomBody(loaded, now.values), SAVE_TIMEOUT);
+        if (!alive) return null;
+        loaded = room;
+        dirty = false;
+        fill(room);
+        paintDirty();
+        saved.hidden = false;
+        onSaved?.(room);
+        return null;
+      });
+      if (late && alive) showChecks(late);
     } catch (err) {
       if (!alive) return;
       if (err.status === 404) {
@@ -148,6 +174,7 @@ export function createEditForm(form, { roomId, groups, idPrefix, check, saveWhen
       if (alive) {
         save.disabled = false;
         reset.disabled = false;
+        if (hadCursor) keepCursor();
       }
     }
   });
@@ -157,9 +184,8 @@ export function createEditForm(form, { roomId, groups, idPrefix, check, saveWhen
     fields.clearErrors();
     showError(formErr, '');
     if (loaded) fill(loaded);
-    keepCursor();
     paintDirty();
-    if (!saveWhenDirty) save.focus();
+    (saveWhenDirty ? rest : save)?.focus();
   });
 
   return {

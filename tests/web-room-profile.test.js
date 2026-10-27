@@ -50,7 +50,8 @@ test('the Rooms list: Edit opens the room\'s Room profile tab, Add room the dial
 });
 
 test('the Room profile tab: the profile fields in one card, its own form with one Save and Reset', () => {
-  assert.match(page, /import \{ createRoomEdit, createDeleteCard \} from '\.\/room-edit\.js';/);
+  assert.match(page, /import \{ createRoomEdit, createDeleteCard, createSaveQueue \} from '\.\/room-edit\.js';/);
+  assert.match(page, /queue: createSaveQueue\(\), /, 'one save queue for both tabs');
   assert.match(page, /createRoomEdit\(els\.profileHost, \{ roomId: id, groups: \['profile'\], idPrefix: 'rp-'/);
   assert.match(page, /profileTab\.update\(room\);\n\s*equipmentTab\.update\(room, \{ sensors, machines: machineData \?\? lastMachines \}\);/);
   const edit = src('room-edit.js');
@@ -60,7 +61,7 @@ test('the Room profile tab: the profile fields in one card, its own form with on
   assert.match(edit, /check: \(texts\) => parseRoomFields\(texts, names\)/);
   assert.match(edit, /const checked = check\(fields\.texts\(\), loaded\);/);
   // PUT replaces what is left out: the form's values go over the loaded room.
-  assert.match(edit, /request\('PUT', `\/api\/rooms\/\$\{roomId\}`, roomBody\(loaded, checked\.values\), SAVE_TIMEOUT\)/);
+  assert.match(edit, /const now = check\(fields\.texts\(\), loaded\);\n\s*if \(now\.errors\) return now;\n\s*const room = await request\('PUT', `\/api\/rooms\/\$\{roomId\}`, roomBody\(loaded, now\.values\), SAVE_TIMEOUT\)/);
   assert.match(edit, /reset\.hidden = !dirty;/);
   assert.match(edit, /if \(saveWhenDirty\) sendRow\.hidden = !dirty;/, 'only the Equipment cards hide their Save');
 });
@@ -73,7 +74,7 @@ test('a refresh never replaces what the person is editing or has edited and not 
 
 test('a Save with nothing changed sends nothing: it shows the newest room instead of writing old values over it', () => {
   const edit = src('room-edit.js');
-  assert.match(edit, /if \(!dirty\) \{\n\s*fill\(loaded\);\n\s*return;\n\s*\}\n\s*const checked = check/);
+  assert.match(edit, /if \(!dirty\) \{\n\s*fill\(loaded\);\n\s*return;\n\s*\}\n\s*const showChecks/);
   assert.match(edit, /function fill\(room\) \{\n\s*fields\.fill\(fieldTexts\(room\)\);/);
 });
 

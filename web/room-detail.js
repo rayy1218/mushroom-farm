@@ -10,7 +10,7 @@
 
 import { request, OFFLINE } from './api.js';
 import { ROOM_TABS, roomHash } from './route.js';
-import { createRoomEdit, createDeleteCard } from './room-edit.js';
+import { createRoomEdit, createDeleteCard, createSaveQueue } from './room-edit.js';
 import { createEquipment } from './equipment.js';
 import { createMachines } from './machines.js';
 import { createControl } from './control.js';
@@ -520,7 +520,15 @@ export function mount(container, { id, tab = 'overview' }) {
       usageCard = createUsageCard(els.usageHost, { roomId: id, getRoom: () => room });
       history = createHistory(els.rangeHost, { roomId: id, outdoor: true, onChange: () => { if (alive() && sensors) renderCharts(); } });
       const saved = { // the head and the other tabs show the change; new ratings change the estimates
-        onSaved: () => { if (alive()) { load(); usageCard?.refresh(true); } },
+        queue: createSaveQueue(), // one save at a time on the page: each PUT sends the whole room
+        onSaved: (r) => {
+          if (!alive()) return;
+          // The forms take the saved room at once (before the next queued save builds its body), the rest on the load.
+          profileTab.update(r);
+          equipmentTab.update(r, { sensors, machines: lastMachines });
+          load();
+          usageCard?.refresh(true);
+        },
         onGone: () => { if (alive()) showMissing(); },
       };
       profileTab = createRoomEdit(els.profileHost, { roomId: id, groups: ['profile'], idPrefix: 'rp-', ...saved });
