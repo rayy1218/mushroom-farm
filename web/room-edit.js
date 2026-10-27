@@ -85,6 +85,11 @@ export function createRoomEdit(host, { roomId, groups, idPrefix, onSaved, onGone
     fields.clearErrors();
     showError(formErr, '');
     saved.hidden = true;
+    // Nothing typed: the form may hold values older than the room (a refresh skipped while a field had focus).
+    if (!dirty) {
+      fields.fill(fieldTexts(loaded));
+      return;
+    }
     const checked = parseRoomFields(fields.texts(), names);
     if (checked.errors) {
       fields.showErrors(checked.errors).focus();

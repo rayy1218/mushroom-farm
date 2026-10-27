@@ -9,7 +9,7 @@ export const NAME_MAX = 60;
 export const ROOM_GROUPS = [
   { key: 'profile', title: 'Room profile' },
   { key: 'sensors', title: 'Sensors (Modbus address)' },
-  { key: 'machines', title: 'Machines (Modbus address)' },
+  { key: 'machines', title: 'Machines' },
   { key: 'power', title: 'Power and water (for the usage estimates)' },
   {
     key: 'filter', title: 'Intake filter',

@@ -25,7 +25,7 @@ test('the groups, in the order of the dialog and the tabs, and each field in one
   assert.deepEqual(ROOM_GROUPS.map((g) => [g.key, g.title]), [
     ['profile', 'Room profile'],
     ['sensors', 'Sensors (Modbus address)'],
-    ['machines', 'Machines (Modbus address)'],
+    ['machines', 'Machines'],
     ['power', 'Power and water (for the usage estimates)'],
     ['filter', 'Intake filter'],
   ]);

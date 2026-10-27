@@ -69,6 +69,11 @@ test('a refresh never replaces what the person is editing or has edited and not 
   assert.match(edit, /loaded = room;/, 'the room is kept: a Save sends the newest one');
 });
 
+test('a Save with nothing changed sends nothing: it shows the newest room instead of writing old values over it', () => {
+  const edit = src('room-edit.js');
+  assert.match(edit, /if \(!dirty\) \{\n\s*fields\.fill\(fieldTexts\(loaded\)\);\n\s*return;\n\s*\}\n\s*const checked = parseRoomFields/);
+});
+
 test('Delete room: a danger button, the Rooms list\'s confirm, then the Rooms list', () => {
   const edit = src('room-edit.js');
   assert.match(edit, /deleteText\.textContent = `Delete \$\{room\.name\}\? This can't be undone\.`;/);
