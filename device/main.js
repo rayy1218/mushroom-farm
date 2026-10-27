@@ -1,4 +1,4 @@
-// Starts the device app: reads DEVICE_MODBUS_PORT, DEVICE_HTTP_PORT and DEVICE_STATE.
+// Starts the device app: reads DEVICE_MODBUS_PORT, DEVICE_HTTP_PORT, DEVICE_STATE and DEVICE_HOST.
 
 import { fileURLToPath } from 'node:url';
 import { startDevice } from './server.js';
@@ -19,14 +19,16 @@ function readPort(name, fallback) {
 const modbusPort = readPort('DEVICE_MODBUS_PORT', 1502);
 const httpPort = readPort('DEVICE_HTTP_PORT', 8090);
 const statePath = process.env.DEVICE_STATE || DEFAULT_STATE;
+// 0.0.0.0 in a container, so the farm app's container and the host can reach it.
+const host = process.env.DEVICE_HOST || '127.0.0.1';
 
 let device;
 try {
-  device = await startDevice({ modbusPort, httpPort, statePath });
+  device = await startDevice({ modbusPort, httpPort, statePath, host });
 } catch (err) {
   fail(`Could not start the device app: ${err.message}`);
 }
-console.log(`Device app: Modbus on :${device.modbusPort}, control page http://localhost:${device.httpPort}`);
+console.log(`Device app: Modbus on ${host}:${device.modbusPort}, control page http://localhost:${device.httpPort}`);
 
 async function stop() {
   await device.close();

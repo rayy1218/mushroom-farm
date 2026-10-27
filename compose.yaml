@@ -1,0 +1,35 @@
+# Farm app on http://localhost:8080 and the device app (simulated sensors and machines) on http://localhost:8090.
+# Start: docker compose up -d --build     Stop: docker compose down     Logs: docker compose logs -f
+# For a real Modbus gateway instead of the device app: set FARM_GATEWAY (e.g. in a .env file next to this one)
+# to the gateway's host:port and start only the farm app: docker compose up -d --build farm
+services:
+  farm:
+    build: .
+    image: mushroom-farm
+    restart: unless-stopped
+    environment:
+      FARM_DB: /data/v2.db
+      FARM_GATEWAY: ${FARM_GATEWAY:-device:1502}
+      TZ: ${TZ:-Asia/Kuala_Lumpur}
+    ports:
+      - "8080:8080"
+    volumes:
+      - farm-data:/data
+
+  device:
+    build: .
+    image: mushroom-farm
+    restart: unless-stopped
+    command: ["node", "--disable-warning=ExperimentalWarning", "device/main.js"]
+    environment:
+      DEVICE_HOST: 0.0.0.0
+      DEVICE_STATE: /data/state.json
+      TZ: ${TZ:-Asia/Kuala_Lumpur}
+    ports:
+      - "8090:8090"
+    volumes:
+      - device-data:/data
+
+volumes:
+  farm-data:
+  device-data:

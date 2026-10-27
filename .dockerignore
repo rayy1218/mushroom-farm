@@ -1,0 +1,9 @@
+.git
+.claude
+node_modules
+data
+docs
+research
+tests
+device/state*.json*
+*.log

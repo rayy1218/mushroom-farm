@@ -69,6 +69,7 @@ The farm app polls every wired sensor and machine every reading interval (5 s by
 | `DEVICE_MODBUS_PORT` | `1502` | Modbus TCP port the farm app polls |
 | `DEVICE_HTTP_PORT` | `8090` | control page |
 | `DEVICE_STATE` | `device/state.json` | where the sensors and their values are kept |
+| `DEVICE_HOST` | `127.0.0.1` | address both ports listen on (`0.0.0.0` in Docker) |
 
 ### Devices (register map)
 
@@ -83,6 +84,37 @@ The farm app polls every wired sensor and machine every reading interval (5 s by
 | Aircon gateway | holding 0–3 (fn 03 read, fn 16 write), input 0–1 (fn 04) | power, mode (0 cool, 1 heat, 2 dry, 3 fan), setpoint × 10, fan (0 auto, 1 low, 2 high); room T × 10, error code |
 
 A real RS-485 farm uses the same requests through an Ethernet-to-RS-485 gateway: point `FARM_GATEWAY` at it.
+
+## Run with Docker (Windows, macOS, Linux)
+
+Needs Docker Desktop (on Windows with the WSL 2 backend, its default). In the project folder, in PowerShell or any terminal:
+
+```bash
+docker compose up -d --build
+```
+
+Open http://localhost:8080 (farm app) and http://localhost:8090 (device app). Both start again with Docker. The containers run on Malaysia time (`TZ` in `compose.yaml`; the lights follow that clock).
+
+| Task | Command |
+|---|---|
+| Stop | `docker compose down` (the data stays) |
+| Logs | `docker compose logs -f` |
+| Update after a `git pull` | `docker compose up -d --build` |
+| Use a real Modbus gateway | put `FARM_GATEWAY=192.168.1.50:502` (its address) in a `.env` file next to `compose.yaml`, then `docker compose up -d --build farm` (no device app) |
+| Back up the database | `docker compose cp farm:/data/v2.db ./v2-backup.db` (with the farm app stopped: `docker compose stop farm`) |
+| Delete every room, reading and setting | `docker compose down -v` |
+
+The data lives in two Docker volumes, `farm-data` (the database, `/data/v2.db`) and `device-data` (the device app's sensors, `/data/state.json`), not in the project folder. To bring in data from another computer (its `data/v2.db`, `device/state.json` and `device/state.json.sim`, taken with both apps stopped), copy the files in, then give them to the app's user:
+
+```bash
+docker compose stop
+docker compose cp v2.db farm:/data/v2.db
+docker compose cp state.json device:/data/state.json
+docker compose cp state.json.sim device:/data/state.json.sim
+docker compose run --rm --no-deps --user root farm chown -R node:node /data
+docker compose run --rm --no-deps --user root device chown -R node:node /data
+docker compose start
+```
 
 ## Test
 
