@@ -111,6 +111,8 @@ test('the Equipment grid: cards at least 260 px wide, 16 px apart, one column on
   assert.match(css, /\.eq-grid \{ display: grid; grid-template-columns: repeat\(auto-fill, minmax\(260px, 1fr\)\); gap: 16px; \}/);
   assert.match(css, /@media \(max-width: 600px\) \{ \.eq-grid \{ grid-template-columns: 1fr;/);
   assert.match(css, /\.eq-card\.unfitted \{/);
+  // The four sensors two by two (owner 2026-10-27); a phone keeps one column.
+  assert.match(css, /@media \(min-width: 601px\) \{ \.eq-section\[data-section="sensors"\] \.eq-grid \{ grid-template-columns: repeat\(2, 1fr\); \} \}/);
   assert.doesNotMatch(css, /\.equipment[^{]*\{[^}]*max-width/, 'the tab is not capped at 760 px');
 });
 

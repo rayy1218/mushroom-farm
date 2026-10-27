@@ -305,6 +305,8 @@ html { scroll-padding-top: var(--topbar-h); }
 .eq-card.unfitted { background: transparent; border-style: dashed; }
 .eq-card.unfitted h3, .eq-card.unfitted .addr { color: var(--muted); }
 @media (max-width: 600px) { .eq-grid { grid-template-columns: 1fr; gap: 12px; } }
+/* The four sensors two by two (owner 2026-10-27); a phone keeps one column */
+@media (min-width: 601px) { .eq-section[data-section="sensors"] .eq-grid { grid-template-columns: repeat(2, 1fr); } }
 
 /* ---- Room detail ---- */
 /* The Room card's crop facts (Growing, Stage, In this stage, Normally, Next), a link to the Crop tab: five in a row, two on a
