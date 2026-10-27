@@ -91,3 +91,9 @@ test('"Set address" on a sensor or machine without one opens the Equipment tab a
   assert.match(machines, /notWired\('No aircon gateway address set', \(\) => onEdit\('acAddress'\)\)/);
   assert.match(machines, /button\('Set address'\)/);
 });
+
+test('two-column fields share their label, input and error rows: a two-line label or an error never moves the input beside it', () => {
+  const css = src('styles.css');
+  assert.match(css, /\.room-form \.sizes\.two \.field, #room-fields \.sizes\.two \.field \{ display: grid; grid-row: span 3; grid-template-rows: subgrid; row-gap: 4px; \}/);
+  assert.match(css, /\.room-form \.sizes\.two \.field label, #room-fields \.sizes\.two \.field label \{ align-self: end; \}/);
+});

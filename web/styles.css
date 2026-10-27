@@ -268,8 +268,10 @@ html { scroll-padding-top: var(--topbar-h); }
 .room-check { margin-top: 4px; }
 .room-check .field-error:empty { display: none; }
 .sizes + .room-check { margin-top: 12px; }
-/* a label on two lines (a phone's two columns) must not push its input below its neighbour's */
-.room-form .sizes.two .field, #room-fields .sizes.two .field { justify-content: flex-end; }
+/* Neighbours share their label, input and error rows (subgrid): a label on two lines (a phone's two columns) or an error
+   under one field never moves the input beside it. */
+.room-form .sizes.two .field, #room-fields .sizes.two .field { display: grid; grid-row: span 3; grid-template-rows: subgrid; row-gap: 4px; }
+.room-form .sizes.two .field label, #room-fields .sizes.two .field label { align-self: end; }
 
 /* ---- Room page: the Room profile and Equipment tabs (spec 2026-10-26-room-profile-equipment-design.md) ---- */
 .room-form, .room-delete { max-width: 760px; }
