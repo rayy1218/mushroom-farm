@@ -3,14 +3,15 @@
 // card: the room picture, the readings against their bands, the machines in air-path order), Charts (three charts of the last
 // 50 polls, the T and RH charts with the outdoor line, and the machine timeline), Climate (automatic control and the
 // machines), Crop, Sensors (the room's two sensors, the energy meter if it has one, the intake filter), Energy (the energy and
-// water card), Simulations, Room profile (the name and size, Delete room) and Equipment (the sensors, machines, ratings and
-// filter settings; spec 2026-10-26-room-profile-equipment-design.md). Every tab is loaded and kept up to date; a tab change only
-// shows and hides panels.
+// water card), Simulations, Room profile (the name and size, Delete room) and Equipment (a card per sensor and machine with its
+// settings; specs 2026-10-26-room-profile-equipment-design.md and 2026-10-27-equipment-cards-design.md). Every tab is loaded
+// and kept up to date; a tab change only shows and hides panels.
 // Refreshes every reading interval (2–30 s; 5 s when the settings cannot be read) while shown.
 
 import { request, OFFLINE } from './api.js';
 import { ROOM_TABS, roomHash } from './route.js';
-import { createRoomEdit, createDeleteCard } from './room-edit.js';
+import { createRoomEdit, createDeleteCard, createSaveQueue } from './room-edit.js';
+import { createEquipment } from './equipment.js';
 import { createMachines } from './machines.js';
 import { createControl } from './control.js';
 import { createAlarmsCard } from './alarms.js';
@@ -116,7 +117,7 @@ const TEMPLATE = `
           <section class="card room-delete" data-delete></section>
         </div>
         <div data-panel="equipment" hidden>
-          <form class="room-form" data-equipment novalidate></form>
+          <div class="equipment" data-equipment></div>
         </div>
       </div>
     </div>
@@ -154,7 +155,7 @@ export function mount(container, { id, tab = 'overview' }) {
   const q = (sel) => container.querySelector(sel);
 
   let pendingField = null; // a "Set address" button's field, to put the cursor in once the Equipment tab shows
-  let equipmentTab = null; // the Equipment tab's form, made on the first render
+  let equipmentTab = null; // the Equipment tab's cards, made on the first render
 
   // The tab bar: a link per tab with its icon (the router calls setTab when the address changes); the current one marked.
   const tabBar = q('[data-tabs]');
@@ -519,16 +520,24 @@ export function mount(container, { id, tab = 'overview' }) {
       usageCard = createUsageCard(els.usageHost, { roomId: id, getRoom: () => room });
       history = createHistory(els.rangeHost, { roomId: id, outdoor: true, onChange: () => { if (alive() && sensors) renderCharts(); } });
       const saved = { // the head and the other tabs show the change; new ratings change the estimates
-        onSaved: () => { if (alive()) { load(); usageCard?.refresh(true); } },
+        queue: createSaveQueue(), // one save at a time on the page: each PUT sends the whole room
+        onSaved: (r) => {
+          if (!alive()) return;
+          // The forms take the saved room at once (before the next queued save builds its body), the rest on the load.
+          profileTab.update(r);
+          equipmentTab.update(r, { sensors, machines: lastMachines });
+          load();
+          usageCard?.refresh(true);
+        },
         onGone: () => { if (alive()) showMissing(); },
       };
       profileTab = createRoomEdit(els.profileHost, { roomId: id, groups: ['profile'], idPrefix: 'rp-', ...saved });
-      equipmentTab = createRoomEdit(els.equipmentHost, { roomId: id, groups: ['sensors', 'machines', 'power', 'filter'], idPrefix: 're-', ...saved });
+      equipmentTab = createEquipment(els.equipmentHost, { roomId: id, idPrefix: 're-', ...saved });
       deleteCard = createDeleteCard(els.deleteHost, { roomId: id, getRoom: () => room, onGone: () => { if (alive()) showMissing(); } });
       built = true;
     }
     profileTab.update(room);
-    equipmentTab.update(room);
+    equipmentTab.update(room, { sensors, machines: machineData ?? lastMachines }); // the cards' status lines
     if (!cropCard) makeCrop(); // (again after a missing room came back)
     cropCard?.setLights(room?.lights === true); // lights fitted or taken out: the schedule shows or goes
     simulationsCard ??= createSimulationsCard(els.simulationsHost, { roomId: id, getRoom: () => room });

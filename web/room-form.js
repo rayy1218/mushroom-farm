@@ -1,9 +1,10 @@
-// The inputs of a room's fields, built from web/room-fields.js: used by the Add room dialog and the room page's Room profile and
-// Equipment tabs. createRoomForm(groups, { idPrefix, onInput }) → { parts, inputs, texts(), fill(texts), paint(), showErrors(errors)
-// → the first wrong input, clearErrors(), clearError(name) }. parts: group key → the nodes of that group (the caller puts them in a
-// card or a fieldset). onInput(name): a field was changed by the person.
+// The inputs of a room's fields, built from web/room-fields.js: used by the Add room dialog, the room page's Room profile tab and
+// the Equipment tab's cards. createRoomForm(groups, { idPrefix, onInput }) → { parts, inputs, texts(), fill(texts), paint(),
+// showErrors(errors) → the first wrong input, clearErrors(), clearError(name) }. parts: group key → the nodes of that group (the
+// caller puts them in a card or a fieldset). onInput(name): a field was changed by the person. A group with names (an Equipment
+// card, web/equipment-cards.js): those fields stacked one per row in that order, labels: a label per field instead of its own.
 
-import { fieldsOf, fieldLabel, isShown, volumeText, NAME_MAX } from './room-fields.js';
+import { ROOM_FIELDS, fieldsOf, fieldLabel, isShown, volumeText, NAME_MAX } from './room-fields.js';
 
 function el(tag, className, content) {
   const node = document.createElement(tag);
@@ -25,7 +26,7 @@ export function createRoomForm(groups, { idPrefix, onInput }) {
   const parts = {};
   let volume = null;
 
-  function field(f) {
+  function field(f, text = fieldLabel(f)) {
     const input = el('input');
     input.id = `${idPrefix}${f.name}`;
     input.name = f.name;
@@ -39,13 +40,13 @@ export function createRoomForm(groups, { idPrefix, onInput }) {
       wrap = el('div', 'room-check');
       const label = el('label', 'crop-check');
       label.htmlFor = input.id;
-      label.append(input, ` ${fieldLabel(f)}`);
+      label.append(input, ` ${text}`);
       wrap.append(label, err);
     } else {
       if (f.kind === 'text') Object.assign(input, { type: 'text', maxLength: NAME_MAX, autocomplete: 'off', required: true });
       else Object.assign(input, { type: 'number' }, NUMBER[f.kind](f));
       wrap = el('div', 'field');
-      const label = el('label', '', fieldLabel(f));
+      const label = el('label', '', text);
       label.htmlFor = input.id;
       wrap.append(label, input, err);
     }
@@ -59,19 +60,23 @@ export function createRoomForm(groups, { idPrefix, onInput }) {
   }
 
   for (const group of groups) {
-    const list = fieldsOf(group.key);
+    const list = group.names ? group.names.map((name) => ROOM_FIELDS.find((f) => f.name === name)) : fieldsOf(group.key);
     const nodes = [];
-    if (group.key === 'profile') { // the name on its own line, the three sizes in a row, the volume under them
+    if (group.names) { // a card: one per row, then the hint and the note
+      nodes.push(...list.map((f) => field(f, fieldLabel({ ...f, label: group.labels?.[f.name] ?? f.label }))));
+      if (group.hint) nodes.push(el('p', 'c-hint', group.hint));
+      if (group.note) nodes.push(el('p', 'c-hint', group.note));
+    } else if (group.key === 'profile') { // the name on its own line, the three sizes in a row, the volume under them
       nodes.push(field(list[0]));
       const sizes = el('div', 'sizes');
-      sizes.append(...list.slice(1).map(field));
+      sizes.append(...list.slice(1).map((f) => field(f)));
       volume = el('p', 'volume', volumeText({}));
       volume.setAttribute('aria-live', 'polite');
       nodes.push(sizes, volume);
     } else {
       const grid = el('div', 'sizes two');
-      grid.append(...list.filter((f) => f.kind !== 'check').map(field));
-      nodes.push(grid, ...list.filter((f) => f.kind === 'check').map(field));
+      grid.append(...list.filter((f) => f.kind !== 'check').map((f) => field(f)));
+      nodes.push(grid, ...list.filter((f) => f.kind === 'check').map((f) => field(f)));
       if (group.hint) nodes.push(el('p', 'c-hint', group.hint));
     }
     parts[group.key] = nodes;
