@@ -4,6 +4,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { validateRoom, RATINGS, FILTER, NAME_MAX as SERVER_NAME_MAX } from '../server/rooms.js';
 import {
   ROOM_GROUPS, ROOM_FIELDS, NAME_MAX, PROFILE_NAMES, EQUIPMENT_NAMES, fieldsOf, fieldLabel, fieldTexts, parseRoomFields,
@@ -152,4 +153,13 @@ test('the volume, worked out live from the three sizes', () => {
   assert.match(volumeText({ length: '4', width: '3', height: '2.5' }), /^Volume: 30[.,]0 m³$/);
   assert.equal(volumeText({ length: '4', width: '', height: '2.5' }), 'Volume: — m³');
   assert.equal(volumeText({ length: 'x', width: '3', height: '2.5' }), 'Volume: — m³');
+});
+
+// The browser checks step before the form's own check runs, so a rating of 62.5 W must not be blocked by the markup.
+test('ratings take two decimals, and their inputs any step', () => {
+  const { values } = parseRoomFields({ ...fieldTexts(ROOM), intakeW: '62.5', humidifierLH: '2.25', acInputW: '1050.75' }, EQUIPMENT_NAMES);
+  assert.deepEqual([values.intakeW, values.humidifierLH, values.acInputW], [62.5, 2.25, 1050.75]);
+  assert.equal(parseRoomFields({ ...fieldTexts(ROOM), intakeW: '62.125' }, EQUIPMENT_NAMES).errors.intakeW, 'Intake fan power must be a number from 0 to 5000 W');
+  const form = readFileSync(new URL('../web/room-form.js', import.meta.url), 'utf8');
+  assert.match(form, /rating: \(f\) => \(\{ min: f\.min, max: f\.max, step: 'any',/);
 });
