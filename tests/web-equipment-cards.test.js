@@ -101,7 +101,7 @@ test('the status line of a sensor: its status and latest value', () => {
   const status = (key, sensors = SENSORS) => cardStatus(card(key), { sensors, machines: MACHINES });
   assert.deepEqual(status('trh'), { status: 'online', word: 'Online', value: '20.1 °C · 92 %' });
   assert.deepEqual(status('co2'), { status: 'timeout', word: 'Timeout', value: '638 ppm' });
-  assert.deepEqual(status('meter'), { status: 'not-wired', word: 'No address', value: '' });
+  assert.equal(status('meter'), null, 'no address: the line under the title says so, no status line');
   assert.deepEqual(status('filter'), { status: 'offline', word: 'Offline', value: '40 Pa' });
   assert.deepEqual(status('meter', { ...SENSORS, meter: { address: 5, status: 'online', lastOk: { at: 1, power: 372.4, energy: 3 } } }),
     { status: 'online', word: 'Online', value: '372 W' });
@@ -120,7 +120,8 @@ test('the status line of a machine: its state as the Climate tab names it', () =
   assert.deepEqual(status('relay'), { status: 'online', word: 'Online', value: '' });
   const quiet = { ...MACHINES, relay: { address: 3, machines: MACHINES.relay.machines.map((m) => ({ ...m, status: m.status === 'not-fitted' ? m.status : 'no-answer' })) } };
   assert.deepEqual(status('relay', quiet), { status: 'no-answer', word: 'No answer', value: '' });
-  assert.deepEqual(status('relay', { ...MACHINES, relay: { address: null, machines: [relayMachine('intake', 'not-wired')] } }), { status: 'not-wired', word: 'No address', value: '' });
+  assert.equal(status('relay', { ...MACHINES, relay: { address: null, machines: [relayMachine('intake', 'not-wired')] } }), null, 'no address: said once');
+  assert.equal(status('ac', { ...MACHINES, ac: { address: null, status: 'not-wired' } }), null);
   assert.deepEqual(status('intake', { ...MACHINES, relay: { address: null, machines: [relayMachine('intake', 'not-wired')] } }), { status: 'not-wired', word: 'Not wired', value: '' });
   assert.equal(status('intake', null), null, 'no machines reply: left out');
 });

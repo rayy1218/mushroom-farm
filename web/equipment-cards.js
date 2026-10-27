@@ -58,7 +58,7 @@ export function cardLine(c, texts) {
   return n === null ? 'No address' : `Modbus address ${n}`;
 }
 
-const SENSOR_WORDS = { 'not-wired': 'No address', 'no-data': 'No data yet', online: 'Online', timeout: 'Timeout', offline: 'Offline' };
+const SENSOR_WORDS = { 'no-data': 'No data yet', online: 'Online', timeout: 'Timeout', offline: 'Offline' };
 
 const fixed = (v, digits) => (typeof v === 'number' && Number.isFinite(v) ? v.toFixed(digits) : null);
 
@@ -74,27 +74,27 @@ function sensorValue(kind, ok) {
 
 // The relay module from its machines: no answer from the last poll, waiting for the first, or online.
 function relayState(relay) {
-  if (relay.address == null) return 'not-wired';
   const fitted = (relay.machines ?? []).filter((m) => m.status !== 'not-fitted');
   if (fitted.some((m) => m.status === 'no-answer')) return 'no-answer';
   return fitted.every((m) => m.status === 'no-data') ? 'no-data' : 'online';
 }
 
-// The status line from the room page's replies: { status, word, value } or null where the page has no such data.
+// The status line from the room page's replies: { status, word, value } or null where the page has no such data, or where the
+// device has no address (the line under the title says so already).
 // sensors: { trh, co2, meter, dp } of the sensors reply; machines: the machines reply.
 export function cardStatus(c, { sensors, machines }) {
   if (c.sensor) {
     const s = sensors?.[c.sensor];
-    if (!s) return null;
-    return { status: s.status, word: SENSOR_WORDS[s.status] ?? s.status, value: s.status === 'not-wired' ? '' : sensorValue(c.sensor, s.lastOk) };
+    if (!s || s.status === 'not-wired') return null;
+    return { status: s.status, word: SENSOR_WORDS[s.status] ?? s.status, value: sensorValue(c.sensor, s.lastOk) };
   }
   if (c.key === 'relay') {
-    if (!machines?.relay) return null;
+    if (machines?.relay?.address == null) return null;
     const status = relayState(machines.relay);
-    return { status, word: status === 'online' ? 'Online' : status === 'not-wired' ? 'No address' : MACHINE_WORDS[status], value: '' };
+    return { status, word: status === 'online' ? 'Online' : MACHINE_WORDS[status], value: '' };
   }
   const m = c.key === 'ac' ? machines?.ac : machines?.relay?.machines?.find((x) => x.key === c.key);
-  if (!m) return null;
+  if (!m || (c.key === 'ac' && m.status === 'not-wired')) return null;
   return { status: m.status, word: MACHINE_WORDS[m.status] ?? m.status, value: '' };
 }
 
