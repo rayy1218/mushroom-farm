@@ -78,6 +78,15 @@ test('a Save with nothing changed sends nothing: it shows the newest room instea
   assert.match(edit, /function fill\(room\) \{\n\s*fields\.fill\(fieldTexts\(room\)\);/);
 });
 
+test('while saving the Save and Reset only look disabled, so the cursor stays on the Save (a disabled button loses it to the page)', () => {
+  const edit = src('room-edit.js');
+  assert.doesNotMatch(edit, /(save|reset)\.disabled = /);
+  assert.match(edit, /if \(on\) b\.setAttribute\('aria-disabled', 'true'\);/);
+  assert.match(edit, /reset\.addEventListener\('click', \(\) => \{\n\s*if \(saving\) return;/);
+  assert.match(edit, /if \(saving \|\| !loaded\) return;/, 'a second submit while saving does nothing');
+  assert.match(src('styles.css'), /button:disabled, button\[aria-disabled="true"\] \{ opacity: 0\.6;/);
+});
+
 test('the Equipment tab: two sections of cards, one form per card with its own Save, its values over the newest room', () => {
   assert.match(template, /<div class="equipment" data-equipment><\/div>/);
   assert.match(page, /import \{ createEquipment \} from '\.\/equipment\.js';/);

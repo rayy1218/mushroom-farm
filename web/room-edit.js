@@ -110,12 +110,17 @@ export function createEditForm(form, { roomId, groups, idPrefix, queue = (run) =
     onPaint?.(fields.texts());
   }
 
-  // The cursor was in the form and got lost (the Save button disabled while saving, or its row hidden after): back to the Save,
-  // or to rest when the row is hidden, not to the top of the page.
+  // The Save row hidden with the cursor in it: the cursor goes to rest, not to the top of the page.
   function keepCursor() {
-    const at = document.activeElement;
-    if (at && at !== document.body && !(sendRow.hidden && sendRow.contains(at))) return;
-    (sendRow.hidden ? rest : save)?.focus();
+    if (sendRow.hidden && sendRow.contains(document.activeElement)) rest?.focus();
+  }
+
+  // While saving the buttons only look disabled (aria-disabled): a disabled button would lose the cursor to the page.
+  function busy(on) {
+    for (const b of [save, reset]) {
+      if (on) b.setAttribute('aria-disabled', 'true');
+      else b.removeAttribute('aria-disabled');
+    }
   }
 
   form.addEventListener('submit', async (event) => {
@@ -138,10 +143,8 @@ export function createEditForm(form, { roomId, groups, idPrefix, queue = (run) =
       showChecks(checked);
       return;
     }
-    const hadCursor = form.contains(document.activeElement);
     saving = true;
-    save.disabled = true;
-    reset.disabled = true;
+    busy(true);
     try {
       // After waiting for another form's save, the room may be newer: checked again and the body built over it.
       const late = await queue(async () => {
@@ -154,6 +157,7 @@ export function createEditForm(form, { roomId, groups, idPrefix, queue = (run) =
         dirty = false;
         fill(room);
         paintDirty();
+        keepCursor();
         saved.hidden = false;
         onSaved?.(room);
         return null;
@@ -171,15 +175,12 @@ export function createEditForm(form, { roomId, groups, idPrefix, queue = (run) =
       else showError(formErr, err.status === 0 ? `${OFFLINE}. Try again.` : err.message);
     } finally {
       saving = false;
-      if (alive) {
-        save.disabled = false;
-        reset.disabled = false;
-        if (hadCursor) keepCursor();
-      }
+      if (alive) busy(false);
     }
   });
 
   reset.addEventListener('click', () => {
+    if (saving) return;
     dirty = false;
     fields.clearErrors();
     showError(formErr, '');
