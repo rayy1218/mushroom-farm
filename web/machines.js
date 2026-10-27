@@ -1,6 +1,7 @@
 // The Machines card on the room page: relay module rows and the aircon panel.
 // createMachines(host, { roomId, onEdit, onOffline, onGone, onCommand }) → { update(data, token) → painted, token(), setAuto(on),
-// destroy() }. onCommand(data) gets the reply of each command the card sent.
+// destroy() }. onCommand(data) gets the reply of each command the card sent. onEdit(field): "Set address" on a module without
+// one ('relayAddress' or 'acAddress').
 // Controls are updated in place, so a refresh never replaces a button or input the person is using.
 
 import { request, OFFLINE } from './api.js';
@@ -69,7 +70,7 @@ function lastWriteText(w, inSync) {
 function notWired(text, onEdit) {
   const wrap = el('div', 'not-wired');
   wrap.append(el('p', 'addr', text));
-  const edit = button('Edit room');
+  const edit = button('Set address');
   edit.dataset.action = 'edit';
   edit.addEventListener('click', onEdit);
   wrap.append(edit);
@@ -109,7 +110,7 @@ export function createMachines(host, { roomId, onEdit, onOffline, onGone, onComm
     relayHost.append(el('h3', '', 'Relay module'));
     relay = { wired: r.address != null, sig: null, rows: new Map(), moduleError: null, addr: null };
     if (!relay.wired) {
-      relayHost.append(notWired('No relay module address set', onEdit));
+      relayHost.append(notWired('No relay module address set', () => onEdit('relayAddress')));
       return;
     }
     relay.addr = el('p', 'addr');
@@ -212,7 +213,7 @@ export function createMachines(host, { roomId, onEdit, onOffline, onGone, onComm
     const n = ++uid;
     ac = { wired: a.address != null, dirty: false, sending: false, localError: '', draftPower: false, addr: null };
     if (!ac.wired) {
-      acHost.append(notWired('No aircon gateway address set', onEdit));
+      acHost.append(notWired('No aircon gateway address set', () => onEdit('acAddress')));
       return;
     }
     ac.addr = el('p', 'addr');

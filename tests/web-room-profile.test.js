@@ -31,3 +31,58 @@ test('the shared inputs: a fitted machine\'s ratings follow its box, a bad numbe
   assert.match(js, /input\.setAttribute\('aria-invalid', 'true'\)/);
   assert.match(js, /input\.setAttribute\('aria-describedby', err\.id\)/);
 });
+
+const page = src('room-detail.js');
+const template = page.slice(page.indexOf('const TEMPLATE'), page.indexOf('`;', page.indexOf('const TEMPLATE')));
+
+test('the room page has no Edit button and no Edit dialog: the two tabs replace them', () => {
+  assert.doesNotMatch(template, /data-edit|>Edit</);
+  assert.doesNotMatch(page, /room-dialog\.js|openRoomDialog/);
+  assert.doesNotMatch(page, /'Edit room'/);
+});
+
+test('the Rooms list: Edit opens the room\'s Room profile tab, Add room the dialog', () => {
+  const list = src('rooms-list.js');
+  assert.match(list, /if \(b\.dataset\.action === 'edit'\) location\.hash = roomHash\(room\.id, 'profile'\);/);
+  assert.match(list, /openRoomDialog\(\{ onSaved: /);
+  assert.match(list, /els\.add\.addEventListener\('click', openAdd\);/);
+});
+
+test('the two tabs: the profile fields in one card, the equipment in four, each tab its own form with one Save and Reset', () => {
+  assert.match(page, /import \{ createRoomEdit, createDeleteCard \} from '\.\/room-edit\.js';/);
+  assert.match(page, /createRoomEdit\(els\.profileHost, \{ roomId: id, groups: \['profile'\], idPrefix: 'rp-'/);
+  assert.match(page, /createRoomEdit\(els\.equipmentHost, \{ roomId: id, groups: \['sensors', 'machines', 'power', 'filter'\], idPrefix: 're-'/);
+  assert.match(page, /profileTab\.update\(room\);\n\s*equipmentTab\.update\(room\);/);
+  const edit = src('room-edit.js');
+  assert.match(edit, /import \{ ROOM_GROUPS, fieldsOf, fieldTexts, parseRoomFields, roomBody \} from '\.\/room-fields\.js';/);
+  assert.match(edit, /import \{ createRoomForm \} from '\.\/room-form\.js';/);
+  assert.match(edit, /const names = groups\.flatMap\(\(key\) => fieldsOf\(key\)\.map\(\(f\) => f\.name\)\);/);
+  assert.match(edit, /parseRoomFields\(fields\.texts\(\), names\)/);
+  // PUT replaces what is left out: the tab's values go over the loaded room.
+  assert.match(edit, /request\('PUT', `\/api\/rooms\/\$\{roomId\}`, roomBody\(loaded, checked\.values\), SAVE_TIMEOUT\)/);
+  assert.match(edit, /reset\.hidden = !dirty;/);
+});
+
+test('a refresh never replaces what the person is editing or has edited and not saved (like the Crop card)', () => {
+  const edit = src('room-edit.js');
+  assert.match(edit, /const holding = dirty \|\| saving \|\| form\.contains\(document\.activeElement\);\n\s*if \(!holding\) fields\.fill\(fieldTexts\(room\)\);/);
+  assert.match(edit, /loaded = room;/, 'the room is kept: a Save sends the newest one');
+});
+
+test('Delete room: a danger button, the Rooms list\'s confirm, then the Rooms list', () => {
+  const edit = src('room-edit.js');
+  assert.match(edit, /deleteText\.textContent = `Delete \$\{room\.name\}\? This can't be undone\.`;/);
+  assert.match(edit, /button\('Delete room', 'danger'\)/);
+  assert.match(edit, /await request\('DELETE', `\/api\/rooms\/\$\{roomId\}`\);/);
+  assert.match(edit, /location\.hash = '#\/rooms';/);
+  assert.match(page, /createDeleteCard\(els\.deleteHost, \{ roomId: id, getRoom: \(\) => room, onGone: /);
+});
+
+test('"Set address" on a sensor or machine without one opens the Equipment tab at that field', () => {
+  assert.match(page, /pendingField = field;\n\s*location\.hash = roomHash\(id, 'equipment'\);/);
+  assert.match(page, /if \(tab === 'equipment' && pendingField\)/);
+  const machines = src('machines.js');
+  assert.match(machines, /notWired\('No relay module address set', \(\) => onEdit\('relayAddress'\)\)/);
+  assert.match(machines, /notWired\('No aircon gateway address set', \(\) => onEdit\('acAddress'\)\)/);
+  assert.match(machines, /button\('Set address'\)/);
+});
