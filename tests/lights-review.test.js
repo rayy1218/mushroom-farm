@@ -189,15 +189,12 @@ test('Crop tab: the Light rows, the pencil field and Lights from only with light
   assert.match(page, /cropCard\?\.setLights\(room\?\.lights === true\)/);
 });
 
-test('room dialog: Dehumidifier fitted and Lights fitted both in the Machines fieldset', () => {
-  const html = src('web/index.html');
-  const machines = html.slice(html.indexOf('<legend>Machines'), html.indexOf('<legend>Power and water'));
-  assert.match(machines, /id="f-dehumidifier"[^>]*> Dehumidifier fitted/);
-  assert.match(machines, /id="f-lights"[^>]*> Lights fitted/);
-  const power = html.slice(html.indexOf('<legend>Power and water'), html.indexOf('<legend>Intake filter'));
-  assert.doesNotMatch(power, /type="checkbox"/);
-  assert.match(power, /id="dehumidifier-fields"/);
-  assert.match(power, /id="lights-fields"/);
+test('room fields: Dehumidifier fitted and Lights fitted both in Machines; Power and water has their ratings, no boxes', async () => {
+  const { fieldsOf } = await import('../web/room-fields.js');
+  assert.deepEqual(fieldsOf('machines').filter((f) => f.kind === 'check').map((f) => f.name), ['dehumidifier', 'lights']);
+  const power = fieldsOf('power');
+  assert.equal(power.some((f) => f.kind === 'check'), false);
+  assert.deepEqual(power.filter((f) => f.fitted).map((f) => [f.name, f.fitted]), [['dehumidifierW', 'dehumidifier'], ['dehumidifierLday', 'dehumidifier'], ['lightsW', 'lights']]);
 });
 
 test('simulate dialog: the machines summary mentions the lights when the room has them', () => {

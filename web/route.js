@@ -9,6 +9,8 @@ export const ROOM_TABS = [
   { key: 'sensors', label: 'Sensors' },
   { key: 'energy', label: 'Energy' },
   { key: 'simulations', label: 'Simulations' },
+  { key: 'profile', label: 'Room profile' },
+  { key: 'equipment', label: 'Equipment' },
 ];
 const NAMED_TABS = ROOM_TABS.slice(1).map((t) => t.key);
 const ID = '([1-9][0-9]{0,14})';

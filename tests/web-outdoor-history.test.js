@@ -2,7 +2,6 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 
 function fakeElement() {
   return {
@@ -74,10 +73,3 @@ test('without the option the outdoor route is not asked (the Live-only and old c
   h.destroy();
 });
 
-test('the dialog markup has the meter address and the six ratings, each with an error line', async () => {
-  const html = await readFile(new URL('../web/index.html', import.meta.url), 'utf8');
-  for (const name of ['meterAddress', 'intakeW', 'exhaustW', 'circulationW', 'humidifierW', 'humidifierLH', 'acInputW']) {
-    assert.match(html, new RegExp(`id="f-${name}"`));
-    assert.match(html, new RegExp(`id="e-${name}"`));
-  }
-});

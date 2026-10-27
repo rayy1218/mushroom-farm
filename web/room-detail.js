@@ -3,12 +3,14 @@
 // card: the room picture, the readings against their bands, the machines in air-path order), Charts (three charts of the last
 // 50 polls, the T and RH charts with the outdoor line, and the machine timeline), Climate (automatic control and the
 // machines), Crop, Sensors (the room's two sensors, the energy meter if it has one, the intake filter), Energy (the energy and
-// water card) and Simulations. Every tab is loaded and kept up to date; a tab change only shows and hides panels.
+// water card), Simulations, Room profile (the name and size, Delete room) and Equipment (the sensors, machines, ratings and
+// filter settings; spec 2026-10-26-room-profile-equipment-design.md). Every tab is loaded and kept up to date; a tab change only
+// shows and hides panels.
 // Refreshes every reading interval (2–30 s; 5 s when the settings cannot be read) while shown.
 
 import { request, OFFLINE } from './api.js';
 import { ROOM_TABS, roomHash } from './route.js';
-import { openRoomDialog, closeRoomDialog } from './room-dialog.js';
+import { createRoomEdit, createDeleteCard } from './room-edit.js';
 import { createMachines } from './machines.js';
 import { createControl } from './control.js';
 import { createAlarmsCard } from './alarms.js';
@@ -64,7 +66,6 @@ const TEMPLATE = `
       <h1 class="page-title" tabindex="-1" data-title>Room</h1>
       <p class="page-sub" data-sub>Loading…</p>
     </div>
-    <div class="page-actions" data-actions hidden><button type="button" data-edit>Edit</button></div>
   </div>
   <div class="banner" role="alert" hidden>
     <span data-banner-text></span>
@@ -110,6 +111,13 @@ const TEMPLATE = `
         <div data-panel="simulations" hidden>
           <section data-simulations></section>
         </div>
+        <div data-panel="profile" hidden>
+          <form class="room-form" data-profile novalidate></form>
+          <section class="card room-delete" data-delete></section>
+        </div>
+        <div data-panel="equipment" hidden>
+          <form class="room-form" data-equipment novalidate></form>
+        </div>
       </div>
     </div>
   </div>`;
@@ -123,6 +131,8 @@ const TAB_ICONS = {
   sensors: '<path d="M10 14V5a2 2 0 014 0v9a4 4 0 11-4 0z"/><path d="M12 14v-4"/>',
   energy: '<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>',
   simulations: '<path d="M9 3h6M10 3v6l-5 9a2 2 0 002 3h10a2 2 0 002-3l-5-9V3"/><path d="M7.5 15h9"/>',
+  profile: '<path d="M3 17L17 3l4 4L7 21z"/><path d="M7 13l2 2M10 10l2 2M13 7l2 2"/>',
+  equipment: '<rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/>',
 };
 
 let mountSeq = 0; // every mount gets a token; a reply that finds the token changed is dropped
@@ -143,6 +153,9 @@ export function mount(container, { id, tab = 'overview' }) {
   container.innerHTML = TEMPLATE;
   const q = (sel) => container.querySelector(sel);
 
+  let pendingField = null; // a "Set address" button's field, to put the cursor in once the Equipment tab shows
+  let equipmentTab = null; // the Equipment tab's form, made on the first render
+
   // The tab bar: a link per tab with its icon (the router calls setTab when the address changes); the current one marked.
   const tabBar = q('[data-tabs]');
   for (const t of ROOM_TABS) {
@@ -162,13 +175,15 @@ export function mount(container, { id, tab = 'overview' }) {
       } else a.removeAttribute('aria-current');
     }
     for (const panel of container.querySelectorAll('[data-panel]')) panel.hidden = panel.dataset.panel !== tab;
+    if (tab === 'equipment' && pendingField) {
+      equipmentTab?.focus(pendingField);
+      pendingField = null;
+    }
   }
   setTab(tab);
   const els = {
     title: q('[data-title]'),
     sub: q('[data-sub]'),
-    edit: q('[data-edit]'),
-    actions: q('[data-actions]'),
     banner: q('.banner'),
     bannerText: q('[data-banner-text]'),
     retry: q('[data-retry]'),
@@ -189,13 +204,15 @@ export function mount(container, { id, tab = 'overview' }) {
     exchange: q('[data-exchange]'),
     usageHost: q('[data-usage]'),
     simulationsHost: q('[data-simulations]'),
+    profileHost: q('[data-profile]'),
+    deleteHost: q('[data-delete]'),
+    equipmentHost: q('[data-equipment]'),
   };
   const alive = () => me === mountSeq;
 
   let room = null;
   let sensors = null; // { trh, co2, meter, dp } (meter and dp only when the server sends them)
   let loadSeq = 0;
-  let editedFromCard = false; // the dialog was opened from a sensor card button, which re-rendering replaces
   let timer = null;
   let refresh = refreshMs(null);
   let machines = null; // the Machines card, made on the first render
@@ -228,6 +245,8 @@ export function mount(container, { id, tab = 'overview' }) {
   let cropCard = null; // the Crop and stage card
   let simulationsCard = null; // the Simulations card
   let filterCard = null; // the Intake filter card
+  let profileTab = null; // the Room profile tab's form
+  let deleteCard = null; // the Delete room card under it
 
   // ---- loading ----
 
@@ -300,8 +319,6 @@ export function mount(container, { id, tab = 'overview' }) {
     sensors = null;
     els.title.textContent = 'Room not found';
     els.sub.textContent = '';
-    els.edit.hidden = true;
-    els.actions.hidden = true;
     els.body.hidden = true;
     els.banner.hidden = true;
     els.missing.hidden = false;
@@ -313,8 +330,6 @@ export function mount(container, { id, tab = 'overview' }) {
   function renderHead() {
     els.title.textContent = room.name;
     els.sub.textContent = `${metres.format(room.length)} × ${metres.format(room.width)} × ${metres.format(room.height)} m · ${cubic.format(room.volume)} m³`;
-    els.edit.hidden = false;
-    els.actions.hidden = false;
     document.title = `${room.name} · Mushroom farm`;
   }
 
@@ -337,9 +352,10 @@ export function mount(container, { id, tab = 'overview' }) {
     if (s.status === 'not-wired') {
       card.append(text('p', 'addr', 'No sensor address set'));
       const actions = text('div', 'card-actions');
-      const edit = text('button', '', 'Edit room');
+      const edit = text('button', '', 'Set address');
       edit.type = 'button';
       edit.dataset.action = 'edit';
+      edit.dataset.field = `${kind}Address`;
       actions.append(edit);
       card.append(actions);
       return card;
@@ -405,11 +421,6 @@ export function mount(container, { id, tab = 'overview' }) {
     const meter = meterCard(sensors.meter);
     els.sensors.replaceChildren(sensorCard('trh', sensors.trh), sensorCard('co2', sensors.co2), ...(meter ? [meterNode(meter)] : []));
     if (hadFocus) els.sensors.querySelector(`[data-kind="${hadFocus}"] button`)?.focus();
-    // The focused "Edit room" button may be gone (its sensor is wired now) or the dialog just closed.
-    else if (editedFromCard && document.activeElement === document.body && !document.querySelector('dialog[open]')) {
-      editedFromCard = false;
-      els.edit.focus();
-    }
   }
 
   function buildCharts() {
@@ -507,8 +518,17 @@ export function mount(container, { id, tab = 'overview' }) {
       exchangeSection = createExchangeSection(els.exchange, { roomId: id });
       usageCard = createUsageCard(els.usageHost, { roomId: id, getRoom: () => room });
       history = createHistory(els.rangeHost, { roomId: id, outdoor: true, onChange: () => { if (alive() && sensors) renderCharts(); } });
+      const saved = { // the head and the other tabs show the change; new ratings change the estimates
+        onSaved: () => { if (alive()) { load(); usageCard?.refresh(true); } },
+        onGone: () => { if (alive()) showMissing(); },
+      };
+      profileTab = createRoomEdit(els.profileHost, { roomId: id, groups: ['profile'], idPrefix: 'rp-', ...saved });
+      equipmentTab = createRoomEdit(els.equipmentHost, { roomId: id, groups: ['sensors', 'machines', 'power', 'filter'], idPrefix: 're-', ...saved });
+      deleteCard = createDeleteCard(els.deleteHost, { roomId: id, getRoom: () => room, onGone: () => { if (alive()) showMissing(); } });
       built = true;
     }
+    profileTab.update(room);
+    equipmentTab.update(room);
     if (!cropCard) makeCrop(); // (again after a missing room came back)
     cropCard?.setLights(room?.lights === true); // lights fitted or taken out: the schedule shows or goes
     simulationsCard ??= createSimulationsCard(els.simulationsHost, { roomId: id, getRoom: () => room });
@@ -595,7 +615,7 @@ export function mount(container, { id, tab = 'overview' }) {
   function makeMachines() {
     machines = createMachines(els.machinesHost, {
       roomId: id,
-      onEdit: () => { editedFromCard = true; edit(); },
+      onEdit: (field) => editEquipment(field),
       onOffline: () => {
         if (!els.banner.hidden) return; // do not re-announce an alert that is already showing
         els.bannerText.textContent = OFFLINE;
@@ -663,21 +683,15 @@ export function mount(container, { id, tab = 'overview' }) {
 
   // ---- wiring ----
 
-  function edit() {
-    if (!room) return;
-    els.banner.hidden = true;
-    openRoomDialog(room, {
-      onSaved: () => { if (alive()) { load(); usageCard?.refresh(true); } }, // new ratings change the estimates
-      onGone: () => { if (alive()) showMissing(); },
-    });
+  // "Set address" on a sensor or machine without one: the Equipment tab, the cursor in that field.
+  function editEquipment(field) {
+    pendingField = field;
+    location.hash = roomHash(id, 'equipment');
   }
 
-  els.edit.addEventListener('click', edit);
   els.sensors.addEventListener('click', (event) => {
-    if (event.target.closest('button[data-action="edit"]')) {
-      editedFromCard = true;
-      edit();
-    }
+    const b = event.target.closest('button[data-action="edit"]');
+    if (b) editEquipment(b.dataset.field);
   });
   els.retry.addEventListener('click', load);
 
@@ -710,12 +724,14 @@ export function mount(container, { id, tab = 'overview' }) {
     cropCard?.destroy();
     simulationsCard?.destroy();
     filterCard?.destroy();
+    profileTab?.destroy();
+    equipmentTab?.destroy();
+    deleteCard?.destroy();
     outdoorLiveSeq++;
     timelineChart?.destroy();
     usageSection?.destroy();
     exchangeSection?.destroy();
     for (const { chart } of chartCards.values()) chart?.destroy();
-    closeRoomDialog();
     closeSimulateDialog();
     document.title = 'Rooms · Mushroom farm';
     container.replaceChildren();

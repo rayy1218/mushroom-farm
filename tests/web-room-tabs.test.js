@@ -19,6 +19,8 @@ const PANELS = {
   sensors: ['data-sensors', 'data-filter'],
   energy: ['data-usage'],
   simulations: ['data-simulations'],
+  profile: ['data-profile', 'data-delete'],
+  equipment: ['data-equipment'],
 };
 
 test('a side bar of tabs beside the content; the alarms at the top of the content, outside every panel (seen on every tab)', () => {

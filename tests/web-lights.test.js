@@ -9,7 +9,7 @@ import { fromRoom, fromSim, view, describe } from '../web/mimic-math.js';
 import { machineTiles, roomCard } from '../web/room-card-math.js';
 import { CONTROL_GROUPS, REASONS, reasonsShown, lightingLine, CROP_TAB_LINK } from '../web/control-math.js';
 import { stageTargets, formFromData, checkCropForm, saveBody, FORM_FIELD_ORDER } from '../web/crop-math.js';
-import { LIGHTS_RATINGS, ratingTexts, parseRatings } from '../web/ratings-math.js';
+import { ROOM_FIELDS, fieldTexts, parseRoomFields, fieldLabel, isShown } from '../web/room-fields.js';
 import { TIMELINE_ROWS, wiredTimelineRows } from '../web/history-math.js';
 import { breakdown } from '../web/usage-math.js';
 import { timelineRows, energyView } from '../web/simulation-math.js';
@@ -154,22 +154,18 @@ test('Crop card: the stage pencil edits its light hours, the program row has Lig
 
 // ---- room dialog ----
 
-test('room dialog: Lights fitted in Machines, Lights power in Power and water (shown while fitted)', () => {
-  assert.deepEqual(LIGHTS_RATINGS, [{ name: 'lightsW', label: 'Lights power', unit: 'W', def: 60, max: 5000, step: 1 }]);
-  assert.equal(ratingTexts(null).lightsW, '60');
-  assert.equal(ratingTexts({ lightsW: 90 }).lightsW, '90');
-  const texts = { ...ratingTexts(null), lightsW: 'x' };
-  assert.equal(parseRatings(texts, { lights: true }).errors.lightsW, 'Lights power must be a number from 0 to 5000 W');
-  assert.equal(parseRatings(texts).values.lightsW, undefined, 'not fitted: a bad value is left out');
-  assert.equal(parseRatings({ ...texts, lightsW: '120' }, { lights: true }).values.lightsW, 120);
-  const html = readFileSync(new URL('../web/index.html', import.meta.url), 'utf8');
-  const machines = html.slice(html.indexOf('<legend>Machines'), html.indexOf('<legend>Power and water'));
-  assert.match(machines, /<input id="f-lights" name="lights" type="checkbox"[^>]*> Lights fitted \(output 6 of the relay module\)/);
-  const power = html.slice(html.indexOf('<legend>Power and water'), html.indexOf('<legend>Intake filter'));
-  assert.match(power, /<div class="sizes two" id="lights-fields" hidden>[\s\S]*<label for="f-lightsW">Lights power \(W\)<\/label>/);
-  const dialog = src('room-dialog.js');
-  assert.match(dialog, /lights: lit/);
-  assert.match(dialog, /inputs\.lights\.addEventListener\('change', updateLights\)/);
+test('room fields: Lights fitted in Machines, Lights power in Power and water (shown and needed while fitted)', () => {
+  const lights = ROOM_FIELDS.find((f) => f.name === 'lights');
+  const lightsW = ROOM_FIELDS.find((f) => f.name === 'lightsW');
+  assert.equal(lights.group, 'machines');
+  assert.equal(fieldLabel(lights), 'Lights fitted (output 6 of the relay module)');
+  assert.deepEqual([lightsW.group, lightsW.def, lightsW.fitted], ['power', 60, 'lights']);
+  assert.equal(fieldTexts({ lightsW: 90 }).lightsW, '90');
+  const texts = { ...fieldTexts(null), lightsW: 'x' };
+  assert.equal(parseRoomFields({ ...texts, lights: true }, ['lights', 'lightsW']).errors.lightsW, 'Lights power must be a number from 0 to 5000 W');
+  assert.equal(parseRoomFields(texts, ['lights', 'lightsW']).values.lightsW, undefined, 'not fitted: a bad value is left out');
+  assert.equal(parseRoomFields({ ...texts, lights: true, lightsW: '120' }, ['lights', 'lightsW']).values.lightsW, 120);
+  assert.equal(isShown(lightsW, { lights: false }), false);
 });
 
 // ---- timeline, energy, simulation runs ----

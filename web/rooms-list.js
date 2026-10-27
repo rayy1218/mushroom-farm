@@ -1,6 +1,7 @@
-// The Rooms list page: list rooms, add and edit them in the shared dialog, delete with a confirm.
+// The Rooms list page: list rooms, add one in the Add room dialog, edit one on its page's Room profile tab, delete with a confirm.
 
 import { request, OFFLINE, GONE } from './api.js';
+import { roomHash } from './route.js';
 import { openRoomDialog, closeRoomDialog } from './room-dialog.js';
 import { openSimulateDialog, closeSimulateDialog } from './simulate-dialog.js';
 import { activeCounts, chipText, levelLabel } from './alarms-math.js';
@@ -159,18 +160,9 @@ export function mount(container) {
     if (keep) (els.table.querySelector(`button[data-action="${action}"][data-id="${id}"]`) ?? els.add).focus();
   }
 
-  const dialogHooks = {
-    onSaved: () => { if (alive()) load(); },
-    onGone: async () => {
-      if (!alive()) return;
-      showBanner(GONE);
-      await load();
-    },
-  };
-
-  function openEdit(room) {
+  function openAdd() {
     if (loaded) hideBanner(); // keep the load-failure banner (with Retry) until a load succeeds
-    openRoomDialog(room, dialogHooks);
+    openRoomDialog({ onSaved: () => { if (alive()) load(); } });
   }
 
   function openDelete(room) {
@@ -198,8 +190,8 @@ export function mount(container) {
     }
   }, { signal });
 
-  els.add.addEventListener('click', () => openEdit(null));
-  els.addEmpty.addEventListener('click', () => openEdit(null));
+  els.add.addEventListener('click', openAdd);
+  els.addEmpty.addEventListener('click', openAdd);
   els.retry.addEventListener('click', load);
 
   els.table.addEventListener('click', (event) => {
@@ -207,7 +199,7 @@ export function mount(container) {
     if (!b) return;
     const room = rooms.find((r) => r.id === Number(b.dataset.id));
     if (!room) return;
-    if (b.dataset.action === 'edit') openEdit(room);
+    if (b.dataset.action === 'edit') location.hash = roomHash(room.id, 'profile'); // the room page's Room profile tab
     else if (b.dataset.action === 'simulate') openSimulateDialog(room);
     else openDelete(room);
   });

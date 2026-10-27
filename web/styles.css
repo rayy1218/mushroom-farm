@@ -262,8 +262,28 @@ html { scroll-padding-top: var(--topbar-h); }
 .addresses .field { margin-bottom: 0; }
 .sizes.two { grid-template-columns: repeat(2, 1fr); }
 @media (max-width: 600px) { .sizes.two { grid-template-columns: 1fr 1fr; gap: 12px; } }
-/* the fitted machines' numbers under the ratings (dehumidifier, lights): the same space as between the rows above */
+/* two grids one under the other: the same space as between their rows */
 .sizes + .sizes { margin-top: 12px; }
+/* a box under a grid of fields (Dehumidifier fitted, Lights fitted), its error line under it */
+.room-check { margin-top: 4px; }
+.room-check .field-error:empty { display: none; }
+.sizes + .room-check { margin-top: 12px; }
+/* a label on two lines (a phone's two columns) must not push its input below its neighbour's */
+.room-form .sizes.two .field, #room-fields .sizes.two .field { justify-content: flex-end; }
+
+/* ---- Room page: the Room profile and Equipment tabs (spec 2026-10-26-room-profile-equipment-design.md) ---- */
+.room-form, .room-delete { max-width: 760px; }
+.room-form > .card { margin-bottom: 16px; }
+.room-form .card h2 { margin-bottom: 12px; }
+.room-form .sizes .field { margin-bottom: 0; }
+.room-form .volume { margin-bottom: 16px; }
+.room-form .c-hint { margin-top: 12px; }
+.room-form .ac-send { margin-bottom: 0; }
+.room-form .m-error { margin-bottom: 8px; }
+.room-send { margin-bottom: 16px; }
+.room-delete .muted { margin: 0 0 12px; }
+.room-delete .m-error { margin-top: 8px; }
+@media (max-width: 600px) { .room-form .sizes:not(.two) { gap: 12px; } }
 
 /* ---- Room detail ---- */
 /* The Room card's crop facts (Growing, Stage, In this stage, Normally, Next), a link to the Crop tab: five in a row, two on a
