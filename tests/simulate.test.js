@@ -197,3 +197,55 @@ test('the fans and the humidifier are priced by their sizes, not the room rating
   near(wOf({ fanFlow: 600 }, 'intake'), 60, '0.1 W per m³/h');
   near(wOf({ humidifierLH: 1 }, 'humidifier'), 40, '40 W per L/h');
 });
+
+// ---- the cool-down (start from outdoor air at an hour of the day) ----
+
+test('start outdoor at 14:00: the room starts as the outdoor air then, its mass and surfaces with it, and cools down', () => {
+  const r = simulate(input({ start: 'outdoor', startHour: 14 }), ctx());
+  const first = r.series[0];
+  const out = 29 - 4 * Math.cos((2 * Math.PI * 11) / 24); // the cosine from 25 at 03:00 to 33 at 15:00, at 14:00
+  assert.equal(first.s, 0, 'the series keeps seconds from the start');
+  assert.equal(first.outT, Math.round(out * 10) / 10);
+  assert.equal(first.t, Math.round(out * 100) / 100);
+  assert.equal(first.rh, first.outRH);
+  assert.equal(first.co2, 420);
+  const { coolDownS } = r.summary;
+  assert.ok(Number.isInteger(coolDownS) && coolDownS > 600 && coolDownS < 6 * 3600, String(coolDownS));
+  assert.equal(coolDownS % 10, 0, 'on a step');
+  // from then on, for a whole hour, never more than 0.5 °C warmer nor 2 % RH drier than the band (wetter may be: the band
+  // control's matter, counted in the time in band)
+  const hour = r.series.filter((x) => x.s >= coolDownS && x.s < coolDownS + 3600);
+  assert.ok(hour.length >= 11);
+  for (const x of hour) assert.ok(x.t <= x.tHigh + 0.5 && x.rh >= x.rhLow - 2, JSON.stringify(x));
+  // before it, too warm or too dry
+  assert.ok(r.series.some((x) => x.s < coolDownS && (x.t > x.tHigh || x.rh < x.rhLow)));
+});
+
+test('a cool-down that never happens is null, and a run from the band has no coolDownS', () => {
+  const tiny = simulate(input({ start: 'outdoor', startHour: 14, physics: { ...physics, outdoorLow: 31, acBTU: 2000 } }), ctx());
+  assert.equal(tiny.summary.coolDownS, null);
+  assert.equal(Object.hasOwn(day.summary, 'coolDownS'), false);
+});
+
+test('startHour moves the clock of the weather and the lights, not the seconds of the series, spans and days', () => {
+  const lit = ctx({ ratings: { ...ctx().ratings, lights: true, lightsW: 100 } });
+  const at0 = simulate(input(), lit);
+  const at14 = simulate(input({ startHour: 14 }), lit);
+  assert.equal(at14.series[0].s, 0);
+  assert.equal(at14.series.length, at0.series.length);
+  // the outdoor air at second s of the 14:00 run is the midnight run's at s + 14 h
+  const byS = new Map(at0.series.map((x) => [x.s, x]));
+  assert.equal(at14.series[0].outT, byS.get(14 * 3600).outT);
+  assert.equal(at14.series.find((x) => x.s === 3600).outT, byS.get(15 * 3600).outT);
+  // the lights: 07:00–19:00 → from the start to 5 h later, then again 17 h on (07:00 the next day)
+  assert.deepEqual(at0.machines.lights.map((sp) => [sp.from, sp.to]), [[7 * 3600, 19 * 3600]]);
+  assert.deepEqual(at14.machines.lights.map((sp) => [sp.from, sp.to]), [[0, 5 * 3600], [17 * 3600, 86400]]);
+  assert.deepEqual(at14.stages, [{ stage: 'fruiting', flush: 1, from: 0, to: 86400 }]);
+  assert.equal(at14.summary.perDay.length, 1);
+});
+
+test('the default start is the band at midnight: the same result as before', () => {
+  assert.deepEqual(simulate(input({ start: 'band', startHour: 0 }), ctx()), day);
+  const mid = day.series[0];
+  assert.equal(mid.t, (mid.tLow + mid.tHigh) / 2);
+});

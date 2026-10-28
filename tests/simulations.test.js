@@ -64,6 +64,17 @@ test('validation names the field of the first problem', () => {
   assert.equal(validateSimulation(body({ farmType: 'full', stage: 'spawn' })).error, undefined);
 });
 
+test('validation: the start (band or outdoor) and its hour (whole, 0 to 23), kept in the input only when given', () => {
+  const bad = (over, field, error) => assert.deepEqual(validateSimulation(body(over)), { error, field });
+  for (const start of ['door', '', null, 1]) bad({ start }, 'start', 'Start must be band or outdoor');
+  for (const startHour of [-1, 24, 14.5, '14', null]) bad({ startHour }, 'startHour', 'Start hour must be a whole number from 0 to 23');
+  const { input } = validateSimulation(body({ start: 'outdoor', startHour: 14 }));
+  assert.deepEqual([input.start, input.startHour], ['outdoor', 14]);
+  assert.deepEqual([validateSimulation(body({ start: 'band' })).input.start, validateSimulation(body({ startHour: 0 })).input.startHour], ['band', 0]);
+  const plain = validateSimulation(body()).input;
+  assert.equal('start' in plain || 'startHour' in plain, false);
+});
+
 test('start stores a queued run with the input and a snapshot of the room, and begins the first at once', (t) => {
   const { db, id, sims, jobs } = setup(t);
   db.setSetting('waterPrice', '2');

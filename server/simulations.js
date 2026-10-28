@@ -23,10 +23,11 @@ export const RESTART_TEXT = 'Stopped by a restart of the farm app';
 
 const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
 
-// Checks a request body { physics, crops, farmType, stage, days }. → { input } (only the known fields) or { error, field }.
+// Checks a request body { physics, crops, farmType, stage, days, start, startHour }. → { input } (only the known fields; start
+// and startHour only when given) or { error, field }.
 export function validateSimulation(body) {
   if (body === null || typeof body !== 'object' || Array.isArray(body)) return { error: 'Body must be a JSON object' };
-  const { physics, crops, farmType, stage, days, control } = body;
+  const { physics, crops, farmType, stage, days, control, start, startHour } = body;
   if (physics === null || typeof physics !== 'object' || Array.isArray(physics)) return { error: 'Physics must be an object', field: 'physics' };
   const clean = {};
   for (const field of PHYSICS) {
@@ -52,7 +53,12 @@ export function validateSimulation(body) {
   const stages = FARM_TYPES[farmType].stages;
   if (!stages.includes(stage)) return { error: `Stage must be one of ${stages.join(', ')}`, field: 'stage' };
   if (!Number.isInteger(days) || days < 1 || days > 90) return { error: 'Days must be a whole number from 1 to 90', field: 'days' };
-  const input = { physics: clean, crops: crops.map(({ crop, blocks }) => ({ crop, blocks })), farmType, stage, days };
+  if (start !== undefined && start !== 'band' && start !== 'outdoor') return { error: 'Start must be band or outdoor', field: 'start' };
+  if (startHour !== undefined && !(Number.isInteger(startHour) && startHour >= 0 && startHour <= 23)) {
+    return { error: 'Start hour must be a whole number from 0 to 23', field: 'startHour' };
+  }
+  const input = { physics: clean, crops: crops.map(({ crop, blocks }) => ({ crop, blocks })), farmType, stage, days,
+    ...(start === undefined ? {} : { start }), ...(startHour === undefined ? {} : { startHour }) };
   if (control !== undefined) {
     // This run's own air exchange time limit, aircon drop and humidifier-during-exchange, instead of the room's (any of them).
     if (control === null || typeof control !== 'object' || Array.isArray(control)) return { error: 'Control must be an object', field: 'control' };

@@ -2,7 +2,7 @@
 // a time while the farm's own control (decide and protect of controller.js) and stage program (program.js) run the room, with
 // ideal sensors and machines that follow at once. Pure: no clock, no I/O, the same input gives the same result.
 
-import { step, outdoorAt, wOf, rhOf, hasFilter, changeFilter } from '../device/sim-model.js';
+import { step, outdoorAt, satW, wOf, rhOf, hasFilter, changeFilter } from '../device/sim-model.js';
 import { fanWattFactor } from '../device/sim-power.js';
 import { BTU_PER_KW } from '../device/sim-store.js';
 import { CO2_PER_BLOCK, blocksOf, mixBands } from '../web/crops.js';
@@ -29,6 +29,11 @@ const MACHINES = ['intake', 'exhaust', 'circulation', 'humidifier', 'dehumidifie
 const RATING = { intake: 'intakeW', exhaust: 'exhaustW', circulation: 'circulationW', humidifier: 'humidifierW', dehumidifier: 'dehumidifierW', lights: 'lightsW' };
 const LIGHTS_W = 60; // a room from before the lights (rooms.js default)
 const FILTER_DIRTY_S = 600; // with a pressure sensor the filter is changed after this long of intake running at its change pressure
+// A cool-down (a run that starts outdoor) ends when the room is in band and holds it for SETTLED_S: never more than these
+// warmer or drier than the band (the humidifier switches on at the lower limit, so the room dips past it now and then).
+const SETTLED_S = 3600;
+const COOL_T_MARGIN = 0.5; // °C
+const COOL_RH_MARGIN = 2; // % RH
 
 const round = (v, digits) => Math.round(v * 10 ** digits) / 10 ** digits;
 const percent = (n, total) => round((n / total) * 100, 1);
@@ -36,12 +41,17 @@ const percent = (n, total) => round((n / total) * 100, 1);
 // input: { physics: { wallUA, outdoorHigh, outdoorLow, outdoorDew, sunW, fanFlow, acBTU, humidifierLH, dehumidifierLday (0 or
 // missing: no dehumidifier), the intake filter (spec 2026-10-22-filter-design.md 8; missing: no filter): fanMaxPa, filterCleanPa,
 // filterFinalPa, filterLifeDays, filterChangeDays (0: no reminder), filterUsedDays, filterSensor }, crops, farmType, stage,
-// days }. ctx: { volume, ratings (the room's machine ratings, and whether it has lights: lights, lightsW), control (the room's
+// days, start ('band', the default: the room starts in the middle of its bands; 'outdoor': as the outdoor air at the run's
+// first second, its mass and surfaces with it: just loaded, or after the door was open), startHour (0 to 23, default 0) }.
+// ctx: { volume, ratings (the room's machine ratings, and whether it has lights: lights, lightsW), control (the room's
 // control settings), program (its stored numbers: flushes, days, rampH, lightHours, lightStart; null: the defaults),
-// prices: { electricity, water } | null }. The lights follow the schedule with the run's clock: its second 0 is midnight.
+// prices: { electricity, water } | null }. The run's clock: its second 0 is startHour o'clock; the weather and the lights
+// follow it, while the series, the spans, the stages and the days count seconds from the start. A run that starts outdoor
+// has summary.coolDownS: the first second with temperature and humidity in band that starts an hour of the room holding
+// its band (SETTLED_S), or null.
 // onProgress(share 0 to 1) is called at least every 1 %. → { series, machines, stages, summary }.
 export function simulate(input, ctx, { onProgress } = {}) {
-  const { physics, crops, farmType, stage: startName, days } = input;
+  const { physics, crops, farmType, stage: startName, days, start = 'band', startHour = 0 } = input;
   const { volume, ratings, control = DEFAULTS } = ctx;
   const prices = ctx.prices ?? { electricity: null, water: null };
   const acInputKW = physics.acBTU / BTU_PER_KW / AC_COP;
@@ -54,6 +64,9 @@ export function simulate(input, ctx, { onProgress } = {}) {
   const stored = ctx.program ?? {};
   const totalS = days * DAY_S;
   const steps = totalS / STEP_S;
+  const clockS = startHour * 3600; // the time of day at the start
+  // The light schedule's clock moved by the start hour: the time h:m on the day of the run's ms, in the run's ms.
+  const clockAt = clockS === 0 ? runAt : (ms, h, m, d) => runAt(ms + clockS * 1000, h, m, d) - clockS * 1000;
 
   let program = {
     ...PROGRAM_DEFAULTS,
@@ -87,9 +100,13 @@ export function simulate(input, ctx, { onProgress } = {}) {
   const changes = [];
   const sums = { exchange: 0, exchangeIntake: 0, unfiltered: 0, pa: 0, paS: 0 };
 
-  const T0 = (bands.tLow + bands.tHigh) / 2;
-  const RH0 = (bands.rhLow + bands.rhHigh) / 2;
-  let state = { T: T0, W: wOf(T0, RH0), CO2: 420, Tm: T0, Hs: RH0, Lf: filterOn ? (physics.filterUsedDays ?? 0) / physics.filterLifeDays : 0 };
+  const outdoor = start === 'outdoor';
+  const outdoor0 = outdoorAt(physics, clockS);
+  const T0 = outdoor ? outdoor0.outdoorT : (bands.tLow + bands.tHigh) / 2;
+  const RH0 = outdoor ? outdoor0.outdoorRH : (bands.rhLow + bands.rhHigh) / 2;
+  let state = { T: T0, W: outdoor ? satW(physics.outdoorDew) : wOf(T0, RH0), CO2: 420, Tm: T0, Hs: RH0, Lf: filterOn ? (physics.filterUsedDays ?? 0) / physics.filterLifeDays : 0 };
+  let settledFrom = null; // since when temperature and humidity are both in band (the cool-down)
+  let coolDownS = null;
 
   // The controller's memory and the machines' commands (all off to start; the aircon's first command is free of the hold).
   let memory = {
@@ -161,6 +178,13 @@ export function simulate(input, ctx, { onProgress } = {}) {
     const inT = T >= bands.tLow && T <= bands.tHigh;
     const inRH = rh >= bands.rhLow && rh <= bands.rhHigh;
     const inCO2 = CO2 <= bands.co2High;
+    if (outdoor && coolDownS === null) {
+      // The cool-down's own sides, with the dips the band control makes at an edge: too warm and too dry (a wet spell after
+      // an air exchange is the band control's, counted in the time in band).
+      if (T > bands.tHigh + COOL_T_MARGIN || rh < bands.rhLow - COOL_RH_MARGIN) settledFrom = null;
+      else if (settledFrom === null && inT && inRH) settledFrom = s;
+      if (settledFrom !== null && s + STEP_S - settledFrom >= SETTLED_S) coolDownS = settledFrom;
+    }
     for (const c of [total, stageCount.at(-1)]) {
       c.n++;
       if (inT) c.t++;
@@ -174,7 +198,7 @@ export function simulate(input, ctx, { onProgress } = {}) {
     if (rh > ext.rhMax) ext.rhMax = rh;
     if (CO2 > ext.co2Max) ext.co2Max = CO2;
 
-    const out = outdoorAt(physics, s);
+    const out = outdoorAt(physics, clockS + s);
     if (s % SAMPLE_S === 0) {
       series.push({
         s, t: round(T, 2), rh: round(rh, 1), co2: Math.round(CO2), outT: round(out.outdoorT, 1), outRH: round(out.outdoorRH, 1),
@@ -186,7 +210,7 @@ export function simulate(input, ctx, { onProgress } = {}) {
     // The control decides from ideal readings; the commands go to the machines at once.
     const decided = decide({
       bands: { ...extra, ...bands }, state: memory, readings: { co2: CO2, rh, t: T, outdoor: { t: out.outdoorT, rh: out.outdoorRH } }, faults: null, now: ms, humidifierDuringExchange, acFan,
-      dehumidifierFitted: dehumidifierLday > 0, lightsFitted, program, clockAt: runAt,
+      dehumidifierFitted: dehumidifierLday > 0, lightsFitted, program, clockAt,
     });
     memory = decided.state;
     const { desired } = protect({ desired: decided.desired, commands, changedAt, now: ms });
@@ -280,6 +304,7 @@ export function simulate(input, ctx, { onProgress } = {}) {
         meanFilterPa: sums.paS > 0 ? round(sums.pa / sums.paS, 1) : null,
         unfilteredPct: sums.exchangeIntake > 0 ? round((sums.unfiltered / sums.exchangeIntake) * 100, 1) : 0,
       } : null,
+      ...(outdoor ? { coolDownS } : {}),
     },
   };
 }
