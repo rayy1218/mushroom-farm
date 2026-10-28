@@ -22,6 +22,7 @@ import { closeSimulateDialog } from './simulate-dialog.js';
 import { startLoop } from './mimic.js';
 import { fromRoom } from './mimic-math.js';
 import { createRoomCard } from './room-card.js';
+import { trendOf } from './band-math.js';
 import { roomCard, filterFrom, freshAirLine, blocksLine, cropFacts, traceOf, hourPoints, traceScale } from './room-card-math.js';
 import { drawLineChart } from './chart.js';
 import { refreshMs } from './settings-math.js';
@@ -40,6 +41,7 @@ import { timeTicks, tickCountFor, chartDrawKey, historyPoints, timelineSpans, ac
 // The Now tab's Machines rows → the relay machines the switches command (the aircon has its own panel).
 const RELAY_KEY = { intake: 'intake', circ: 'circulation', lights: 'lights', hu: 'humidifier', dh: 'dehumidifier', exhaust: 'exhaust' };
 const clockOf = (ms) => { const d = new Date(ms); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+const TREND_MS = 10 * 60_000; // a reading near the bottom of its band: falling over the last 10 min
 
 // "10:12" today, "27 Oct 10:12" before.
 function manualSince(d, now) {
@@ -510,17 +512,19 @@ export function mount(container, { id, tab = 'now' }) {
     const pts = (kind, field) => hourPoints(h ? historyPoints(h[kind], field, h.bucketS, h.pollSeconds) : null, chartPoints(sensors[kind], field), now);
     // the reading cards' traces: the last hour against the band, on a scale set by the band (traceScale)
     const trace = (key, p, low, high) => traceOf(p, low, high, { scale: traceScale(key, low, high) });
+    const p = { T: pts('trh', 't'), RH: pts('trh', 'rh'), CO2: pts('co2', 'co2') };
     const traces = {
-      T: trace('T', pts('trh', 't'), c?.tLow, c?.tHigh),
-      RH: trace('RH', pts('trh', 'rh'), c?.rhLow, c?.rhHigh),
-      CO2: trace('CO2', pts('co2', 'co2'), c?.co2Low, c?.co2High),
+      T: trace('T', p.T, c?.tLow, c?.tHigh),
+      RH: trace('RH', p.RH, c?.rhLow, c?.rhHigh),
+      CO2: trace('CO2', p.CO2, c?.co2Low, c?.co2High),
     };
+    const trends = { T: trendOf(p.T, TREND_MS), RH: trendOf(p.RH, TREND_MS), CO2: trendOf(p.CO2, TREND_MS) }; // near an edge: rising or falling
     const switches = { // Manual: a switch on each relay machine's row
       manual: Boolean(lastControl) && !lastControl.auto,
       state: (key) => (RELAY_KEY[key] ? machines?.switchState(RELAY_KEY[key]) ?? null : null),
     };
     els.machinesHost.hidden = !switches.manual || !lastMachines; // the aircon's own panel, in Manual only
-    roomCardUi.paint(roomCard({ draw, control: lastControl, filter, crop: cropData, now }), draw, traces, switches);
+    roomCardUi.paint(roomCard({ draw, control: lastControl, filter, crop: cropData, now, trends }), draw, traces, switches);
     // Manual on every tab, by the room's name, with the time it began when the server knows it (a link to the switch).
     const controllable = room.relayAddress != null || room.acAddress != null; // a room with nothing to switch is not "in Manual"
     els.manualChip.hidden = !switches.manual || !controllable;

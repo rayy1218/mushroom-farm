@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   farmStatus, sortRooms, phoneAlarms,
-  sparkPath, tiles, badgeCount, withTitlePrefix, sensorText, exchangeText, alarmLevelRank, sortAlarms, alarmTimeText, SPARKS,
+  roomCard, sparkPath, tiles, badgeCount, withTitlePrefix, sensorText, exchangeText, alarmLevelRank, sortAlarms, alarmTimeText, SPARKS,
 } from '../web/overview-math.js';
 import { parseRoute, isCanonical } from '../web/route.js';
 
@@ -152,4 +152,21 @@ test('phoneAlarms: a line on the Overview when alarms cannot reach a phone, none
   assert.equal(phoneAlarms({ ...ok, telegramChatId: '' }).link, 'Set them up on Settings');
   assert.equal(phoneAlarms({ ...ok, telegramLastError: 'Forbidden: bot was blocked by the user' }).text, 'Phone alarms are failing: Forbidden: bot was blocked by the user');
   assert.equal(phoneAlarms({ ...ok, telegramLevels: [] }).text, 'Phone alarms are off for every level');
+});
+
+test('the Overview chip says what the room page says: near an edge that hurts is amber (CO₂ low stays green)', () => {
+  const now = at(28, 12);
+  const base = {
+    id: 1, name: 'Room 1', auto: true, exchange: false, alarms: { count: 0, level: null },
+    bands: { tLow: 19, tHigh: 21, rhLow: 87, rhHigh: 93, co2Low: 700, co2High: 800 },
+    trh: { status: 'online', t: 20.95, rh: 90 }, co2: { status: 'online', co2: 705 },
+    spark: { t: [], rh: [], co2: [] },
+  };
+  const chips = (room) => Object.fromEntries(roomCard(room, now).values.map((v) => [v.key, v.chip]));
+  const c = chips(base);
+  assert.deepEqual(c.t, { text: 'In band · near the top', tone: 'amber' });
+  assert.deepEqual(c.rh, { text: 'In band', tone: 'good' });
+  assert.deepEqual(c.co2, { text: 'In band', tone: 'good' }, 'low CO₂ is good');
+  const falling = chips({ ...base, trh: { status: 'online', t: 20, rh: 87.4 }, spark: { ...base.spark, rh: [{ at: now - 60 * 60_000, v: 89 }, { at: now - 30 * 60_000, v: 88.2 }] } });
+  assert.deepEqual(falling.rh, { text: 'In band · near the bottom and falling', tone: 'amber' });
 });

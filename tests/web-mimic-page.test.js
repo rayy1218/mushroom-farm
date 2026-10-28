@@ -26,8 +26,8 @@ test('the room page uses the room cards: the readings, the picture, the machines
   assert.match(room, /import \{ startLoop \} from '\.\/mimic\.js';/);
   assert.doesNotMatch(room, /createMimic/, 'the card makes the picture');
   assert.match(room, /<div class="now" data-panel="now">\n\s*<div class="now-main">\n\s*<div data-readings><\/div>\n\s*<section data-picture><\/section>/);
-  assert.match(room, /roomCardUi\.paint\(roomCard\(\{ draw, control: lastControl, filter, crop: cropData, now \}\), draw, traces, switches\)/);
-  assert.match(room, /T: trace\('T', pts\('trh', 't'\), c\?\.tLow, c\?\.tHigh\)/, 'the traces: the last hour against the band');
+  assert.match(room, /roomCardUi\.paint\(roomCard\(\{ draw, control: lastControl, filter, crop: cropData, now, trends \}\), draw, traces, switches\)/);
+  assert.match(room, /const p = \{ T: pts\('trh', 't'\)[\s\S]*T: trace\('T', p\.T, c\?\.tLow, c\?\.tHigh\)/, 'the traces: the last hour against the band');
   assert.match(room, /traceOf\(p, low, high, \{ scale: traceScale\(key, low, high\) \}\)/, 'on each reading\'s fixed scale');
   assert.match(room, /request\('GET', `\/api\/rooms\/\$\{id\}\/history\?hours=1`\)/, 'the hour from the room history');
   assert.match(room, /startLoop\(\(\) => \(roomCardUi \? \[roomCardUi\.mimic\] : \[\]\)\)/);

@@ -2,6 +2,7 @@
 // note and the fresh-air line, the machine tiles in air-path order and the line with the outdoor air and the filter.
 // No DOM, so Node tests cover it. Spec 2026-10-26-room-picture-design.md section 3.
 
+import { nearEdge, nearText } from './band-math.js';
 import { view } from './mimic-math.js';
 import { exchangeLine } from './control-math.js';
 import { filterCard, intakeRunning, lastRunningOf } from './filter-math.js';
@@ -58,7 +59,7 @@ export function bandBar(key, value, low, high, safety) {
 const EDGE = { good: '', warning: 'warn', critical: 'bad', serious: 'none', none: 'none' };
 
 // DrawState (fromRoom) and the control view → three tiles { key, name, value, unit, chip: { lvl, text }, edge, bar, label }.
-export function readingTiles(draw, control) {
+export function readingTiles(draw, control, trends = {}) {
   const d = draw || {};
   return READINGS.map((r) => {
     const value = num(d[r.key]);
@@ -66,13 +67,9 @@ export function readingTiles(draw, control) {
     const low = num(control?.[r.low]);
     const high = num(control?.[r.high]);
     const shown = value === null ? DASH : r.text(value);
-    // In band but close to an edge (within 15 % of the band's width): say which, so a worker sees it coming.
-    let near = '';
-    if (st.lvl === 'good' && value !== null && low !== null && high !== null && high > low) {
-      const room = 0.15 * (high - low);
-      if (high - value <= room) near = ' · near the top';
-      else if (value - low <= room) near = ' · near the bottom';
-    }
+    // In band but close to an edge that hurts (band-math.js): say which, so a worker sees it coming.
+    const edge = st.lvl === 'good' ? nearEdge(r.key, value, low, high, trends[r.key] ?? null) : null;
+    const near = edge ? ` · ${nearText(edge)}` : '';
     return {
       key: r.key, name: r.name, value: shown, unit: r.unit,
       band: low !== null && high !== null ? `Band ${limit(low, r.key)}–${limit(high, r.key)} ${r.unit}` : '',
@@ -337,12 +334,12 @@ export function cropSummary(crop, now = Date.now()) {
   };
 }
 
-export function roomCard({ draw = null, control = null, filter = null, crop = null, now = Date.now() } = {}) {
+export function roomCard({ draw = null, control = null, filter = null, crop = null, now = Date.now(), trends = {} } = {}) {
   return {
     note: controlNote(control),
     crop: cropFacts(crop, now),
     summary: cropSummary(crop, now),
-    tiles: readingTiles(draw, control),
+    tiles: readingTiles(draw, control, trends),
     fresh: freshAirLine(control, now),
     machines: machineTiles(draw, control, filter, crop),
     bottom: bottomLine(draw, filter),

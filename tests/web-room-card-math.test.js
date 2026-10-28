@@ -360,8 +360,22 @@ test('readingTiles: in band but within 15 % of the band\'s width of an edge says
   assert.equal(near[1].chip.text, '✓ In band · near the top', 'RH 94.5 in 90–95');
   const mid = readingTiles(draw({ sensors: { ...sensors, trh: { status: 'online', lastOk: { t: 22, rh: 92.5, at: 1 } } } }), control);
   assert.equal(mid[0].chip.text, '✓ In band');
+  const lowT = readingTiles(draw({ sensors: { ...sensors, trh: { status: 'online', lastOk: { t: 21.2, rh: 92.5, at: 1 } } } }), control)[0];
+  assert.equal(lowT.chip.text, '✓ In band · near the bottom', 'temperature: both edges hurt');
+});
+
+// Only the edge that hurts (critique 2026-10-28): low CO₂ is good; humidity at the bottom is the humidifier's switch point
+// unless it is falling.
+test('readingTiles: CO₂ near the bottom is calm; humidity near the bottom only while falling', () => {
   const low = readingTiles(draw({ sensors: { ...sensors, co2: { status: 'online', lastOk: { co2: 620, at: 1 } } } }), control)[2];
-  assert.equal(low.chip.text, '✓ In band · near the bottom');
+  assert.equal(low.chip.text, '✓ In band');
+  assert.equal(low.chip.lvl, 'good');
+  const rhLow = draw({ sensors: { ...sensors, trh: { status: 'online', lastOk: { t: 22, rh: 90.4, at: 1 } } } });
+  assert.equal(readingTiles(rhLow, control)[1].chip.text, '✓ In band', 'no trend known');
+  assert.equal(readingTiles(rhLow, control, { RH: 0.4 })[1].chip.text, '✓ In band', 'rising: the humidifier is on');
+  const falling = readingTiles(rhLow, control, { RH: -0.8 })[1];
+  assert.equal(falling.chip.text, '✓ In band · near the bottom and falling');
+  assert.equal(falling.chip.lvl, 'near');
 });
 
 test('traceScale: the band and twice its width either side, so the band is always a fifth of the trace; humidity stays 0–100', () => {

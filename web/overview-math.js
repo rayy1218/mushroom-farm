@@ -1,6 +1,7 @@
 // Pure helpers for the Overview page and the nav badge (no DOM, so they can be tested in Node).
 // Spec 2026-10-19-safety-and-history-design.md section 6 (Overview, Nav).
 
+import { nearEdge, nearText, trendOf } from './band-math.js';
 import { formatStamp } from './history-math.js';
 
 const finite = (x) => typeof x === 'number' && Number.isFinite(x);
@@ -134,13 +135,17 @@ export function sensorText(sensor, field, digits, unit) {
   return STATUS_WORDS[sensor.status] ? `${value} · ${STATUS_WORDS[sensor.status]}` : value;
 }
 
-// A reading against its band, from an online sensor only: { text, tone } or null.
-function bandChip(sensor, field, low, high) {
+// A reading against its band, from an online sensor only: { text, tone } or null. Near an edge that hurts by the room
+// page's rule (band-math.js); the trend is the last hour of the sparkline.
+function bandChip(sensor, field, low, high, spark) {
   const v = sensor?.status === 'online' ? sensor[field] : null;
   if (!finite(v) || !finite(low) || !finite(high)) return null;
   if (v > high) return { text: 'Above band', tone: 'amber' };
   if (v < low) return { text: 'Below band', tone: 'amber' };
-  return { text: 'In band', tone: 'good' };
+  const points = (spark ?? []).map((p) => ({ at: p.at, value: p.v }));
+  if (points.length) points.push({ at: Math.max(...points.map((p) => p.at)) + 1, value: v }); // the live value ends it
+  const edge = nearEdge(field, v, low, high, trendOf(points, 60 * 60_000));
+  return edge ? { text: `In band · ${nearText(edge)}`, tone: 'amber' } : { text: 'In band', tone: 'good' };
 }
 
 export function exchangeText(room, now = Date.now()) {
@@ -167,7 +172,7 @@ export function roomCard(room, now = Date.now()) {
       label: def.label,
       color: def.color,
       text: sensorText(sensor, def.key, def.digits, def.unit),
-      chip: bandChip(sensor, def.key, room.bands[def.low], room.bands[def.high]),
+      chip: bandChip(sensor, def.key, room.bands[def.low], room.bands[def.high], room.spark?.[def.key]),
       spark: sparkPath(room.spark[def.key], SPARK_W, SPARK_H, { low: room.bands[def.low], high: room.bands[def.high] },
         { from: now - SPARK_WINDOW_MS, to: now, gapMs: 3 * SPARK_BUCKET_MS }),
     };
