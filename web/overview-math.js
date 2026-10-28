@@ -1,7 +1,7 @@
 // Pure helpers for the Overview page and the nav badge (no DOM, so they can be tested in Node).
 // Spec 2026-10-19-safety-and-history-design.md section 6 (Overview, Nav).
 
-import { nearEdge, nearText, trendOf, co2Status } from './band-math.js';
+import { nearChip, trendOf, co2Status } from './band-math.js';
 import { formatStamp } from './history-math.js';
 
 const finite = (x) => typeof x === 'number' && Number.isFinite(x);
@@ -161,18 +161,23 @@ export function sensorText(sensor, field, digits, unit) {
   return STATUS_WORDS[sensor.status] ? `${value} · ${STATUS_WORDS[sensor.status]}` : value;
 }
 
-// A reading against its band, from an online sensor only: { text, tone } or null. Near an edge that hurts by the room
-// page's rule (band-math.js); the trend is the last hour of the sparkline. CO₂ in the air exchange's words (co2Status).
+// A reading against its band, from an online sensor only: { text, tone } or null. Near an edge by the room page's rule
+// (band-math.js nearChip): amber only while the machine that should act is not (room.machines) or after 15 min there; the
+// trend is the last hour of the sparkline. CO₂ in the air exchange's words (co2Status), "Exchange off" with its start point
+// (critique 2026-10-28: 1,241 ppm and the exchange off read as a contradiction without it).
 function bandChip(sensor, field, low, high, spark, room) {
   const v = sensor?.status === 'online' ? sensor[field] : null;
   if (!finite(v) || !finite(low) || !finite(high)) return null;
-  if (field === 'co2') return co2Status(v, { stop: low, start: high, safety: room.bands.co2Safety ?? null, exchange: Boolean(room.exchange) });
+  if (field === 'co2') {
+    const st = co2Status(v, { stop: low, start: high, safety: room.bands.co2Safety ?? null, exchange: Boolean(room.exchange) });
+    return st?.text === 'Exchange off' ? { ...st, text: `Exchange off · starts at ${grouped(high, 0)} ppm` } : st;
+  }
   if (v > high) return { text: 'Above band', tone: 'amber' };
   if (v < low) return { text: 'Below band', tone: 'amber' };
   const points = (spark ?? []).map((p) => ({ at: p.at, value: p.v }));
   if (points.length) points.push({ at: Math.max(...points.map((p) => p.at)) + 1, value: v }); // the live value ends it
-  const edge = nearEdge(field, v, low, high, trendOf(points, 60 * 60_000));
-  return edge ? { text: `In band · ${nearText(edge)}`, tone: 'amber' } : { text: 'In band', tone: 'good' };
+  const near = nearChip(field, v, low, high, { trend: trendOf(points, 60 * 60_000), points, machines: room.machines ?? null });
+  return near ? { text: near.text, tone: 'amber' } : { text: 'In band', tone: 'good' };
 }
 
 // A room's values now for the "now" beside its alarms (alarms-math.js nowText): online sensors only, and the filter's

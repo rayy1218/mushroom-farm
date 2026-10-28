@@ -156,27 +156,32 @@ test('phoneAlarms: a line on the Overview when alarms cannot reach a phone, none
   assert.equal(phoneAlarms({ ...ok, telegramLevels: [] }).text, 'Phone alarms are off for every level');
 });
 
-test('the Overview chip says what the room page says: near an edge that hurts is amber; CO₂ in the exchange\'s words', () => {
+test('the Overview chip says what the room page says: near an edge with its machine not acting is amber; CO₂ in the exchange\'s words', () => {
   const now = at(28, 12);
   const base = {
     id: 1, name: 'Room 1', auto: true, exchange: false, alarms: { count: 0, level: null },
     bands: { tLow: 19, tHigh: 21, rhLow: 87, rhHigh: 93, co2Low: 700, co2High: 800 },
     trh: { status: 'online', t: 20.95, rh: 90 }, co2: { status: 'online', co2: 705 },
-    spark: { t: [], rh: [], co2: [] },
+    spark: { t: [], rh: [], co2: [] }, machines: { humidifier: true, dehumidifier: null, cooling: false },
   };
   const chips = (room) => Object.fromEntries(roomCard(room, now).values.map((v) => [v.key, v.chip]));
   const c = chips(base);
-  assert.deepEqual(c.t, { text: 'In band · near the top', tone: 'amber' });
+  assert.deepEqual(c.t, { text: 'Near high', tone: 'amber' }, 'the aircon not cooling');
+  assert.deepEqual(chips({ ...base, machines: { ...base.machines, cooling: true } }).t, { text: 'In band', tone: 'good' }, 'the aircon on it: calm');
+  assert.deepEqual(chips({ ...base, machines: undefined }).t, { text: 'In band', tone: 'good' }, 'an older server: only after 15 min');
   assert.deepEqual(c.rh, { text: 'In band', tone: 'good' });
-  assert.deepEqual(c.co2, { text: 'Exchange off', tone: 'good' });
+  assert.deepEqual(c.co2, { text: 'Exchange off · starts at 800 ppm', tone: 'good' });
   assert.deepEqual(chips({ ...base, co2: { status: 'online', co2: 650 } }).co2, { text: 'Below the stop point', tone: 'good' }, 'low CO₂ is good');
   assert.deepEqual(chips({ ...base, exchange: true, co2: { status: 'online', co2: 850 } }).co2, { text: 'Exchange running', tone: 'neutral' });
   assert.deepEqual(chips({ ...base, co2: { status: 'online', co2: 850 } }).co2, { text: 'Over the start point', tone: 'amber' });
   const safe = { ...base, bands: { ...base.bands, co2Safety: 1500 } };
   assert.deepEqual(chips({ ...safe, exchange: true, co2: { status: 'online', co2: 1420 } }).co2, { text: 'Near the safety level', tone: 'amber' });
   assert.deepEqual(chips({ ...safe, exchange: true, co2: { status: 'online', co2: 1600 } }).co2, { text: 'At the safety level', tone: 'critical' });
-  const falling = chips({ ...base, trh: { status: 'online', t: 20, rh: 87.4 }, spark: { ...base.spark, rh: [{ at: now - 60 * 60_000, v: 89 }, { at: now - 30 * 60_000, v: 88.2 }] } });
-  assert.deepEqual(falling.rh, { text: 'In band · near the bottom and falling', tone: 'amber' });
+  const low = { ...base, trh: { status: 'online', t: 20, rh: 87.4 }, spark: { ...base.spark, rh: [{ at: now - 60 * 60_000, v: 89 }, { at: now - 30 * 60_000, v: 88.2 }] } };
+  assert.deepEqual(chips(low).rh, { text: 'In band', tone: 'good' }, 'falling, but the humidifier is on');
+  assert.deepEqual(chips({ ...low, machines: { ...base.machines, humidifier: false } }).rh, { text: 'Near low · falling', tone: 'amber' });
+  const stayed = { ...low, spark: { ...base.spark, rh: [{ at: now - 45 * 60_000, v: 87.5 }, { at: now - 15 * 60_000, v: 87.6 }] } };
+  assert.deepEqual(chips(stayed).rh, { text: 'Near low', tone: 'amber' }, 'near the bottom for over 15 min, the humidifier on');
 });
 
 test('the Overview offline: the last readings greyed with their time, not claimed as now', async () => {

@@ -354,14 +354,19 @@ test('traceOf with a scale: a fixed range per reading (normal cycling stays calm
   assert.ok(wide.line.startsWith('M0 10'), 'a value below the scale widens it (the lowest point at the bottom)');
 });
 
-test('readingTiles: in band but within 15 % of the band\'s width of an edge says which ("near the top")', () => {
-  const near = readingTiles(draw({ sensors: { ...sensors, trh: { status: 'online', lastOk: { t: 22.8, rh: 94.5, at: 1 } } } }), control);
-  assert.equal(near[0].chip.text, '✓ In band · near the top', 'T 22.8 in 21–23: 0.2 of 2 from the top');
-  assert.equal(near[1].chip.text, '✓ In band · near the top', 'RH 94.5 in 90–95');
+// Critique 2026-10-28 (owner): near an edge is amber only when the machine that should act is not acting, or after 15 min
+// there; the words fit one line.
+test('readingTiles: near an edge with the machine that should act not acting says which ("Near high"), in amber', () => {
+  const hot = { sensors: { ...sensors, trh: { status: 'online', lastOk: { t: 22.8, rh: 94.5, at: 1 } } } };
+  const cooling = readingTiles(draw(hot), control);
+  assert.equal(cooling[0].chip.text, '✓ In band', 'T 22.8 in 21–23 with the aircon cooling: calm');
+  assert.deepEqual(cooling[1].chip, { lvl: 'near', text: 'Near high' }, 'RH 94.5 in 90–95 with the dehumidifier off');
+  const off = readingTiles(draw({ ...hot, machines: { relay: relay(), ac: ac({ reported: { power: false, mode: 'cool', setpoint: 21.5, fan: 'auto' }, status: 'off' }) } }), control);
+  assert.deepEqual(off[0].chip, { lvl: 'near', text: 'Near high' }, 'the aircon off');
   const mid = readingTiles(draw({ sensors: { ...sensors, trh: { status: 'online', lastOk: { t: 22, rh: 92.5, at: 1 } } } }), control);
   assert.equal(mid[0].chip.text, '✓ In band');
   const lowT = readingTiles(draw({ sensors: { ...sensors, trh: { status: 'online', lastOk: { t: 21.2, rh: 92.5, at: 1 } } } }), control)[0];
-  assert.equal(lowT.chip.text, '✓ In band · near the bottom', 'temperature: both edges hurt');
+  assert.deepEqual(lowT.chip, { lvl: 'near', text: 'Near low' }, 'the aircon cooling a room near its bottom');
 });
 
 // Only the edge that hurts (critique 2026-10-28): low CO₂ is good; humidity at the bottom is the humidifier's switch point
@@ -382,16 +387,18 @@ test('readingTiles: CO₂ in the exchange\'s words: below the stop point, runnin
   assert.deepEqual([safety.chip.text, safety.chip.lvl, safety.edge], ['▲ At the safety level', 'critical', 'bad']);
 });
 
-test('readingTiles: CO₂ near the stop point is calm; humidity near the bottom only while falling', () => {
+test('readingTiles: CO₂ near the stop point is calm; humidity near low is amber with the humidifier off or after 15 min there', () => {
   const low = readingTiles(draw({ sensors: { ...sensors, co2: { status: 'online', lastOk: { co2: 620, at: 1 } } } }), control)[2];
   assert.equal(low.chip.text, '✓ Exchange off');
   assert.equal(low.chip.lvl, 'good');
   const rhLow = draw({ sensors: { ...sensors, trh: { status: 'online', lastOk: { t: 22, rh: 90.4, at: 1 } } } });
-  assert.equal(readingTiles(rhLow, control)[1].chip.text, '✓ In band', 'no trend known');
-  assert.equal(readingTiles(rhLow, control, { RH: 0.4 })[1].chip.text, '✓ In band', 'rising: the humidifier is on');
-  const falling = readingTiles(rhLow, control, { RH: -0.8 })[1];
-  assert.equal(falling.chip.text, '✓ In band · near the bottom and falling');
-  assert.equal(falling.chip.lvl, 'near');
+  assert.deepEqual(readingTiles(rhLow, control)[1].chip, { lvl: 'near', text: 'Near low' }, 'the humidifier off');
+  assert.deepEqual(readingTiles(rhLow, control, { RH: -0.8 })[1].chip, { lvl: 'near', text: 'Near low · falling' });
+  const humid = { relay: relay({ humidifier: { commanded: true, reported: true, running: true, status: 'on' } }), ac: ac() };
+  const on = draw({ sensors: { ...sensors, trh: { status: 'online', lastOk: { t: 22, rh: 90.4, at: 1 } } }, machines: humid });
+  assert.equal(readingTiles(on, control, { RH: -0.8 })[1].chip.text, '✓ In band', 'the humidifier is on it');
+  const stayed = [{ at: 0, value: 90.5 }, { at: 16 * 60_000, value: 90.4 }];
+  assert.deepEqual(readingTiles(on, control, {}, { RH: stayed })[1].chip, { lvl: 'near', text: 'Near low' }, '16 min near the bottom');
 });
 
 test('traceScale: the band and twice its width either side, so the band is always a fifth of the trace; humidity stays 0–100', () => {

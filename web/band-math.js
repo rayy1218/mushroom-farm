@@ -2,12 +2,10 @@
 // good, and on a humidity the humidifier holds at the band's low edge on purpose, taught people to ignore amber).
 
 const KEY = { t: 'T', rh: 'RH', co2: 'CO2', T: 'T', RH: 'RH', CO2: 'CO2' };
-// Which edge hurts: temperature both; humidity the top, and the bottom only while it is falling (the humidifier switches
-// on there, so a steady or rising humidity at the bottom is the controller working). CO₂ has no band to stay in: its words
-// say what the air exchange is doing (co2Status).
-const HARM = { T: { top: true, bottom: true }, RH: { top: true, bottom: 'falling' } };
-const FALLING = -0.3; // % RH over the trend's span: less than this is falling
 export const NEAR_SHARE = 0.15; // within 15 % of the band's width of an edge
+export const NEAR_DWELL_MS = 15 * 60_000; // near an edge this long is amber whatever the machines do
+// A trend toward an edge over the trend's span worth a word: humidity in % RH, temperature in °C.
+const TREND_WORD = { T: 0.1, RH: 0.3 };
 
 const num = (x) => (typeof x === 'number' && Number.isFinite(x) ? x : null);
 
@@ -20,22 +18,51 @@ export function trendOf(points, spanMs) {
   return first && first !== last ? last.value - first.value : null;
 }
 
-// 'top', 'bottom', 'falling' (near the bottom and falling) or null: an in-band value near an edge that hurts. trend: trendOf the reading (null: not known).
-export function nearEdge(key, value, low, high, trend = null) {
-  const harm = HARM[KEY[key]];
-  if (!harm || num(value) === null || num(low) === null || num(high) === null || !(high > low)) return null;
+// 'top', 'bottom' or null: an in-band temperature or humidity within 15 % of the band's width of an edge. CO₂ has no band
+// to stay in: its words say what the air exchange is doing (co2Status).
+export function nearEdge(key, value, low, high) {
+  if (!TREND_WORD[KEY[key]] || num(value) === null || num(low) === null || num(high) === null || !(high > low)) return null;
   if (value > high || value < low) return null;
   const room = NEAR_SHARE * (high - low);
-  if (high - value <= room) return harm.top ? 'top' : null;
-  if (value - low <= room) {
-    if (harm.bottom === 'falling') return num(trend) !== null && trend < FALLING ? 'falling' : null;
-    return harm.bottom ? 'bottom' : null;
-  }
+  if (high - value <= room) return 'top';
+  if (value - low <= room) return 'bottom';
   return null;
 }
 
-const NEAR_TEXT = { top: 'near the top', bottom: 'near the bottom', falling: 'near the bottom and falling' };
-export const nearText = (edge) => NEAR_TEXT[edge] ?? '';
+// How long (ms) the readings [{ at, value }] have stayed near that edge or past it: the newest stretch, a failed poll (value
+// null) not breaking it. 0 when the newest reading is not near it.
+export function nearFor(points, low, high, edge) {
+  const list = (points ?? []).filter((p) => p && num(p.at) !== null && num(p.value) !== null);
+  if (!list.length || num(low) === null || num(high) === null) return 0;
+  const room = NEAR_SHARE * (high - low);
+  const near = (v) => (edge === 'top' ? v >= high - room : v <= low + room);
+  let first = null;
+  for (let i = list.length - 1; i >= 0 && near(list[i].value); i--) first = list[i];
+  return first ? list[list.length - 1].at - first.at : 0;
+}
+
+// Whether the machine that should act at this edge is known not to: humidity low and the humidifier off; humidity high and
+// a fitted dehumidifier off; temperature high and the aircon not cooling; temperature low and the aircon cooling.
+// machines: { humidifier, dehumidifier, cooling }, each true (running), false (fitted and not running) or null (none, or
+// not known): null is never "not acting", so such a reading turns amber only after 15 min near the edge.
+function notActing(key, edge, machines) {
+  const m = machines ?? {};
+  if (key === 'RH') return edge === 'bottom' ? m.humidifier === false : m.dehumidifier === false;
+  return edge === 'top' ? m.cooling === false : m.cooling === true;
+}
+
+// The amber near-edge words (critique 2026-10-28, owner: amber on a reading the machines were holding taught people to
+// ignore it): { edge, text } when an in-band temperature or humidity is near an edge and the machine that should act is not
+// acting, or the reading has stayed near that edge 15 min (points: its recent readings, oldest first); null otherwise (the
+// calm state). text: "Near low", "Near high", with "· falling" or "· rising" when the trend runs toward that edge.
+export function nearChip(key, value, low, high, { trend = null, points = null, machines = null } = {}) {
+  const k = KEY[key];
+  const edge = nearEdge(k, value, low, high);
+  if (!edge) return null;
+  if (!notActing(k, edge, machines) && nearFor(points, low, high, edge) < NEAR_DWELL_MS) return null;
+  const toward = num(trend) !== null && (edge === 'top' ? trend > TREND_WORD[k] : trend < -TREND_WORD[k]);
+  return { edge, text: `Near ${edge === 'top' ? 'high' : 'low'}${toward ? ` · ${edge === 'top' ? 'rising' : 'falling'}` : ''}` };
+}
 
 // The two CO₂ numbers are where the air exchange starts (co2High) and stops (co2Low), not a band to stay in (owner,
 // 2026-10-28): "starts at 900 ppm, stops at 700 ppm". fmt: how a number is written (grouped by default).

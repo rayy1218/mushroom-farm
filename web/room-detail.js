@@ -42,7 +42,7 @@ import { timeTicks, tickCountFor, chartDrawKey, historyPoints, timelineSpans, ac
 // The Now tab's Machines rows → the relay machines the switches command (the aircon has its own panel).
 const RELAY_KEY = { intake: 'intake', circ: 'circulation', lights: 'lights', hu: 'humidifier', dh: 'dehumidifier', exhaust: 'exhaust' };
 const clockOf = (ms) => { const d = new Date(ms); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
-const TREND_MS = 10 * 60_000; // a reading near the bottom of its band: falling over the last 10 min
+const TREND_MS = 10 * 60_000; // a reading near an edge of its band: rising or falling over the last 10 min
 
 // "10:12" today, "27 Oct 10:12" before.
 function manualSince(d, now) {
@@ -559,7 +559,7 @@ export function mount(container, { id, tab = 'now' }) {
       state: (key) => (RELAY_KEY[key] ? machines?.switchState(RELAY_KEY[key]) ?? null : null),
     };
     els.machinesHost.hidden = !switches.manual || !lastMachines || room.acAddress == null; // the aircon's own panel, in Manual with an aircon only
-    roomCardUi.paint(roomCard({ draw, control: lastControl, filter, crop: cropData, now, trends }), draw, traces, switches);
+    roomCardUi.paint(roomCard({ draw, control: lastControl, filter, crop: cropData, now, trends, points: p }), draw, traces, switches);
     // Manual on every tab, by the room's name, with the time it began when the server knows it (a link to the switch).
     const controllable = room.relayAddress != null || room.acAddress != null; // a room with nothing to switch is not "in Manual"
     els.manualChip.hidden = !switches.manual || !controllable;

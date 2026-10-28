@@ -72,8 +72,23 @@ test('a room with no sensors wired and nothing read', async () => {
     bands: { tLow: 21, tHigh: 23, rhLow: 85, rhHigh: 95, co2Low: 600, co2High: 750, co2Safety: 1250 },
     alarms: { count: 0, level: null },
     spark: { t: [], rh: [], co2: [] },
+    machines: { humidifier: null, dehumidifier: null, cooling: null },
     filterPa: null,
   }]);
+});
+
+// Near an edge is amber only when the machine that should act is not acting (critique 2026-10-28): the Overview is told
+// what the room's humidifier, dehumidifier and aircon are commanded to do; null for a machine the room does not have.
+test('the machines that act on a band edge: commanded on or off, null when not wired or not fitted', async () => {
+  reset();
+  const room = db.createRoom({ ...fields, relayAddress: 3, acAddress: 4 });
+  const now = Date.now();
+  db.setRelayCommand(room.id, 'humidifier', true, now);
+  db.setAcCommand(room.id, { power: true, mode: 'cool', setpoint: 18, fan: 'auto' }, now);
+  assert.deepEqual((await overview()).rooms[0].machines, { humidifier: true, dehumidifier: null, cooling: true });
+  db.updateRoom(room.id, { ...db.getRoom(room.id), dehumidifier: true });
+  db.setAcCommand(room.id, { power: true, mode: 'fan', setpoint: 18, fan: 'auto' }, now);
+  assert.deepEqual((await overview()).rooms[0].machines, { humidifier: true, dehumidifier: false, cooling: false });
 });
 
 test('the filter\'s last counted pressure (with the intake up to speed) rides along for the "now" beside a filter alarm', async () => {
