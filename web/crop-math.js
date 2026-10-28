@@ -238,7 +238,7 @@ export function roomBandNote(crops, stage, control, c = null, now = Date.now()) 
   const parts = [];
   if (control.tLow !== b.tLow || control.tHigh !== b.tHigh) parts.push(`temperature ${n(control.tLow)}–${n(control.tHigh)} °C`);
   if (control.rhLow !== b.rhLow || control.rhHigh !== b.rhHigh) parts.push(`humidity ${n(control.rhLow)}–${n(control.rhHigh)} % RH`);
-  if (control.co2Low !== b.co2Low || control.co2High !== b.co2High) parts.push(`the air exchange starting at ${n(control.co2High)} and stopping at ${n(control.co2Low)} ppm`);
+  if (control.co2Low !== b.co2Low || control.co2High !== b.co2High) parts.push(`the air exchange starting at ${n(control.co2High)} ppm and stopping at ${n(control.co2Low)} ppm`);
   if (Number.isFinite(control.co2Safety) && control.co2Safety !== b.co2Safety) parts.push(`a CO₂ safety level of ${n(control.co2Safety)} ppm`);
   if (!parts.length) return '';
   const list = parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}`;

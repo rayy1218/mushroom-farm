@@ -502,7 +502,10 @@ export function mount(container, { id, tab = 'now' }) {
     // The Room card's filter from the replies of this load: a command later does not make the old pressure reading new.
     ({ last: filterLast, filter: filterNow } = filterFrom({ last: filterLast, room, sensor: sensors.dp, machines: machineData ?? lastMachines }));
     stopLoop ??= startLoop(() => (roomCardUi ? [roomCardUi.mimic] : [])); // (again after a missing room came back)
-    alarmsCard.update(alarmData); // hides itself while there are no current alarms; a failed read keeps the last data
+    // hides itself while there are no current alarms; a failed read keeps the last data. The values now go beside the alarms
+    // (online sensors only; the filter's pressure from its last reading with the intake on).
+    const online = (s, field) => (s?.status === 'online' ? s.lastOk?.[field] ?? null : null);
+    alarmsCard.update(alarmData, { t: online(sensors.trh, 't'), rh: online(sensors.trh, 'rh'), co2: online(sensors.co2, 'co2'), pa: filterNow?.pa ?? null });
     // The drawing keeps only replies a card painted: a stale one (a command began since its fetch) must not show. The aircon
     // panel shows in Manual once a good reply came (paintDrawing); later failures keep the last good data.
     if (machineData) {

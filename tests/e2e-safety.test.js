@@ -76,7 +76,7 @@ test('CO₂ held between the limits: the exchange stops at the time limit, resta
   await until('too small alarm', () => db.activeAlarms(room.id).some((a) => a.key === 'exchangeTooSmall'));
   assert.equal(controller.get(room.id).cappedInRow, 3);
   const alarm = db.activeAlarms(room.id).find((a) => a.key === 'exchangeTooSmall');
-  assert.match(alarm.text, /^Air exchange too small: 3 exchanges in a row stopped at the 10 min limit before CO₂ reached 600 ppm$/);
+  assert.match(alarm.text, /^Air exchange too small: 3 exchanges in a row stopped at the 10 min limit before CO₂ fell to the stop point \(600 ppm\)$/);
   assert.equal(alarm.level, 'warning');
   // no sensor or process alarms came from this
   assert.deepEqual(db.currentAlarms(room.id).map((a) => a.key).filter((k) => k.startsWith('sensor')), []);

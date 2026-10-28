@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   levelLabel, isActive, isDimmed, highestLevel, activeCounts, chipText, alarmTime, timesLine, unackedCount, ackLabel,
+  nowText, cardTone, newAlarmText,
 } from '../web/alarms-math.js';
 import { fetchAlarms, fetchRoomAlarms, ackAlarm, ackAllAlarms } from '../web/alarms.js';
 import {
@@ -63,6 +64,49 @@ test('times: 10:42 today, with the date before today', () => {
   assert.equal(timesLine(alarm({ raisedAt: at(19, 10, 42) }), now), 'Raised 10:42');
   assert.equal(timesLine(alarm({ raisedAt: at(19, 10, 42), clearedAt: at(19, 10, 50) }), now), 'Raised 10:42 · Cleared 10:50');
   assert.equal(timesLine(alarm({ raisedAt: at(18, 23, 58), clearedAt: at(19, 0, 3) }), now), 'Raised 18 Oct 23:58 · Cleared 00:03');
+});
+
+test('an acknowledged alarm still active says so in words, not by fading alone', () => {
+  const now = at(19, 12, 0);
+  assert.equal(timesLine(alarm({ raisedAt: at(19, 10, 42), ackedAt: at(19, 10, 45) }), now), 'Raised 10:42 · Acknowledged');
+  assert.equal(timesLine(alarm({ raisedAt: at(19, 10, 42), ackedAt: at(19, 10, 45), clearedAt: at(19, 10, 50) }), now),
+    'Raised 10:42 · Cleared 10:50', 'history: cleared says enough');
+});
+
+test('the value now beside an alarm about a reading; nothing for a cleared one or one not about a reading', () => {
+  const readings = { t: 25.04, rh: 84, co2: 1301.4, pa: 40.25 };
+  assert.equal(nowText(alarm({ key: 'tHigh' }), readings), 'now 25.0 °C');
+  assert.equal(nowText(alarm({ key: 'tLow' }), readings), 'now 25.0 °C');
+  assert.equal(nowText(alarm({ key: 'rhLow' }), readings), 'now 84.0 % RH');
+  assert.equal(nowText(alarm({ key: 'rhHigh' }), readings), 'now 84.0 % RH');
+  assert.equal(nowText(alarm({ key: 'humidifierTooSmall' }), readings), 'now 84.0 % RH');
+  assert.equal(nowText(alarm({ key: 'co2High' }), readings), 'now 1,301 ppm');
+  assert.equal(nowText(alarm({ key: 'co2Safety' }), readings), 'now 1,301 ppm');
+  assert.equal(nowText(alarm({ key: 'filterDirty' }), readings), 'now 40.3 Pa');
+  assert.equal(nowText(alarm({ key: 'filterMissing' }), readings), 'now 40.3 Pa');
+  assert.equal(nowText(alarm({ key: 'tHigh', clearedAt: 5 }), readings), '', 'cleared');
+  assert.equal(nowText(alarm({ key: 'manualLong' }), readings), '', 'not about a reading');
+  assert.equal(nowText(alarm({ key: 'tHigh' }), { t: null }), '', 'no reading now');
+  assert.equal(nowText(alarm({ key: 'tHigh' }), null), '');
+});
+
+test('the Alarms card takes the tone of its worst active alarm', () => {
+  assert.equal(cardTone([alarm({ level: 'warning' })]), 'warning');
+  assert.equal(cardTone([alarm({ level: 'warning' }), alarm({ level: 'serious' })]), 'critical');
+  assert.equal(cardTone([alarm({ level: 'critical' })]), 'critical');
+  assert.equal(cardTone([alarm({ level: 'critical', clearedAt: 5 }), alarm({ level: 'warning' })]), 'warning', 'a cleared one does not count');
+  assert.equal(cardTone([alarm({ level: 'serious', clearedAt: 5 })]), 'none', 'only cleared ones left');
+});
+
+test('the live line names only the alarms that are new since the last paint', () => {
+  const a = alarm({ id: 1, level: 'warning', text: 'Temperature 25.0 °C: more than 1 °C over the band (21–23 °C)' });
+  const b = alarm({ id: 2, level: 'critical', text: 'CO₂ 1,300 ppm: at or above the safety level (1,250 ppm)' });
+  assert.equal(newAlarmText(null, [a]), '', 'the first paint announces nothing');
+  assert.equal(newAlarmText(new Set(), [a]), 'New alarm: Warning, Temperature 25.0 °C: more than 1 °C over the band (21–23 °C)');
+  assert.equal(newAlarmText(new Set([1]), [a]), '');
+  assert.equal(newAlarmText(new Set([1]), [a, b]), 'New alarm: Critical, CO₂ 1,300 ppm: at or above the safety level (1,250 ppm)');
+  assert.equal(newAlarmText(new Set(), [a, b]), 'New alarms: Warning, Temperature 25.0 °C: more than 1 °C over the band (21–23 °C); Critical, CO₂ 1,300 ppm: at or above the safety level (1,250 ppm)');
+  assert.equal(newAlarmText(new Set(), [alarm({ id: 3, clearedAt: 4 })]), '', 'a cleared one is not new');
 });
 
 // ---- the calls, with a stubbed fetch ----

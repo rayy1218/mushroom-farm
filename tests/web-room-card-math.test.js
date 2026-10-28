@@ -64,7 +64,7 @@ test('readingTiles: name, value and unit (humidity to one decimal, as the bands 
   assert.deepEqual(t.chip, { lvl: 'good', text: '✓ In band' });
   assert.equal(t.edge, '');
   assert.deepEqual([rh.name, rh.value, rh.unit, rh.chip.text, rh.edge], ['Humidity', '88.0', '% RH', '▼ Below band', 'warn']);
-  assert.deepEqual([co2.name, co2.value, co2.unit, co2.chip.text, co2.edge], ['CO₂', '960', 'ppm', '▲ Above band', 'warn']);
+  assert.deepEqual([co2.name, co2.value, co2.unit, co2.chip.text, co2.edge], ['CO₂', '960', 'ppm', '▲ Over the start point', 'warn'], 'over the start point and the exchange off');
   assert.equal(t.label, 'Temperature 21.5 °C, band 21 to 23');
   assert.deepEqual(t.bar.zone, { from: 6 / 15, to: 8 / 15 });
 });
@@ -73,7 +73,7 @@ test('readingTiles: the band written out for the reading card ("Band 21–23 °C
   const [t, rh, co2] = readingTiles(draw(), control);
   assert.equal(t.band, 'Band 21–23 °C');
   assert.equal(rh.band, 'Band 90–95 % RH');
-  assert.equal(co2.band, 'Air exchange starts at 900, stops at 600 ppm');
+  assert.equal(co2.band, 'Air exchange starts at 900 ppm, stops at 600 ppm');
   assert.equal(readingTiles(draw(), null)[0].band, '');
 });
 
@@ -105,7 +105,7 @@ test('traceOf: a failed poll breaks the line; no band without one; nothing with 
 
 test('readingTiles: red edge at the safety level, grey without data; thousands grouped', () => {
   const high = readingTiles(draw({ sensors: { ...sensors, co2: { status: 'online', lastOk: { co2: 1400 } } } }), control)[2];
-  assert.deepEqual([high.value, high.chip.text, high.chip.lvl, high.edge], ['1,400', '▲ Safety level', 'critical', 'bad']);
+  assert.deepEqual([high.value, high.chip.text, high.chip.lvl, high.edge], ['1,400', '▲ At the safety level', 'critical', 'bad']);
   const none = readingTiles(fromRoom({}), null);
   for (const tile of none) {
     assert.equal(tile.value, '—');
@@ -366,9 +366,25 @@ test('readingTiles: in band but within 15 % of the band\'s width of an edge says
 
 // Only the edge that hurts (critique 2026-10-28): low CO₂ is good; humidity at the bottom is the humidifier's switch point
 // unless it is falling.
-test('readingTiles: CO₂ near the bottom is calm; humidity near the bottom only while falling', () => {
+// CO₂'s words say what the air exchange is doing (critique 2026-10-28), from the control view in Auto and the two fans in Manual.
+test('readingTiles: CO₂ in the exchange\'s words: below the stop point, running (neutral), near and at the safety level', () => {
+  const at = (co2, over = {}) => readingTiles(draw({ sensors: { ...sensors, co2: { status: 'online', lastOk: { co2, at: 1 } } }, ...over }), control)[2];
+  const below = at(550);
+  assert.deepEqual([below.chip.text, below.chip.lvl, below.edge], ['✓ Below the stop point', 'good', '']);
+  const running = readingTiles(draw({ control: { ...control, exchange: true } }), { ...control, exchange: true })[2];
+  assert.deepEqual([running.chip.text, running.chip.lvl, running.edge], ['Exchange running', 'neutral', ''], 'not amber while it runs');
+  const manual = { ...control, auto: false };
+  const fans = { relay: relay({ intake: { running: true, reported: true, status: 'on' }, exhaust: { running: true, reported: true, status: 'on' } }), ac: ac() };
+  assert.equal(readingTiles(draw({ control: manual, machines: fans }), manual)[2].chip.text, 'Exchange running', 'Manual: both fans running');
+  const near = at(1200);
+  assert.deepEqual([near.chip.text, near.chip.lvl, near.edge], ['▲ Near the safety level', 'warning', 'warn']);
+  const safety = at(1300);
+  assert.deepEqual([safety.chip.text, safety.chip.lvl, safety.edge], ['▲ At the safety level', 'critical', 'bad']);
+});
+
+test('readingTiles: CO₂ near the stop point is calm; humidity near the bottom only while falling', () => {
   const low = readingTiles(draw({ sensors: { ...sensors, co2: { status: 'online', lastOk: { co2: 620, at: 1 } } } }), control)[2];
-  assert.equal(low.chip.text, '✓ In band');
+  assert.equal(low.chip.text, '✓ Exchange off');
   assert.equal(low.chip.lvl, 'good');
   const rhLow = draw({ sensors: { ...sensors, trh: { status: 'online', lastOk: { t: 22, rh: 90.4, at: 1 } } } });
   assert.equal(readingTiles(rhLow, control)[1].chip.text, '✓ In band', 'no trend known');

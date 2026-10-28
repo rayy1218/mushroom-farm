@@ -69,10 +69,22 @@ test('a room with no sensors wired and nothing read', async () => {
     auto: false,
     exchange: false,
     exchangeSince: null,
-    bands: { tLow: 21, tHigh: 23, rhLow: 85, rhHigh: 95, co2Low: 600, co2High: 750 },
+    bands: { tLow: 21, tHigh: 23, rhLow: 85, rhHigh: 95, co2Low: 600, co2High: 750, co2Safety: 1250 },
     alarms: { count: 0, level: null },
     spark: { t: [], rh: [], co2: [] },
+    filterPa: null,
   }]);
+});
+
+test('the filter\'s last counted pressure (with the intake up to speed) rides along for the "now" beside a filter alarm', async () => {
+  reset();
+  const room = db.createRoom({ ...fields, dpAddress: 7 });
+  const now = Date.now();
+  raw.prepare('UPDATE rooms SET filter_changed_at = ? WHERE id = ?').run(now - 60 * 60_000, room.id); // the filter in for an hour
+  db.logMachine(room.id, 'intake', { on: true }, 'auto', now - 10 * 60_000);
+  db.addFilterReading({ roomId: room.id, address: 7, at: now - 60_000, ok: true, pa: 41.2 });
+  const { rooms } = await overview();
+  assert.equal(rooms[0].filterPa, 41.2);
 });
 
 test('latest good values with the sensor status, control state and the 24 h sparklines', async () => {

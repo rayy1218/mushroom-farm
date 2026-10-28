@@ -272,7 +272,9 @@ On screens up to 600 px the three smallest steps grow by 1 px (13, 14, 15) for r
 ### Named Rules
 **The Tabular Figures Rule.** Every number that can change or line up (readings, bands, kWh, RM, timestamps, table cells) sets `font-variant-numeric: tabular-nums`.
 
-**The Near-Edge Rule.** A reading in band but within 15 % of the band's width of an edge that hurts says so ("In band · near the top") in amber: it is coming, not here. Only the harmful side counts (web/band-math.js, the same on the Overview and the room page): temperature both edges; humidity the top, and the bottom only while falling ("near the bottom and falling"; the humidifier switches on there); CO₂ the top only (low is good). Out of band is amber, a fault or the safety level red.
+**The Near-Edge Rule.** A temperature or humidity in band but within 15 % of the band's width of an edge that hurts says so ("In band · near the top") in amber: it is coming, not here. Only the harmful side counts (web/band-math.js, the same on the Overview and the room page): temperature both edges; humidity the top, and the bottom only while falling ("near the bottom and falling"; the humidifier switches on there). Out of band is amber, a fault red.
+
+**The Exchange Words Rule.** CO₂ has no band to stay in: its two numbers are where the air exchange starts and stops, so its status says what the exchange is doing (web/band-math.js `co2Status`, the same on the Overview, the reading card and the drawing). Below the stop point and "Exchange off" are green; "Exchange running" is neutral (`ink-2`), never amber; "Over the start point" with the exchange not running is amber; within 15 % of the gap from the start point to the safety level "Near the safety level" is amber; at the safety level red.
 
 **The Units Rule.** Every number on screen carries its unit, the controller's reasons included ("CO₂ 744 ppm between 700 and 800 ppm"); thousands are grouped (1,000 ppm); a range of dates takes an en dash. An aircon is entered and shown in kW; its BTU/h class (the size shops sell) is a picker and a note in brackets, never the input's unit.
 
@@ -327,13 +329,13 @@ Quiet and solid: most buttons are neutral, so the one blue button is the obvious
 
 ### Status pills
 - **Style:** full-round, 12 px 600, 2 × 9 px padding, tinted background with its own text colour.
-- **Tones:** running (`accent-soft` / `accent-text`, with a 6 px dot), good (green), warning (amber), fault (`critical-bg` / `critical-text`), off (`band` / `ink-2`), no data (`muted`). Alarm level chips are outlined in their colour; critical is a solid red fill.
+- **Tones:** running (`accent-soft` / `accent-text`, with a 6 px dot), good (green), warning (amber), fault (`critical-bg` / `critical-text`), off (`band` / `ink-2`), no data (`muted`). Alarm level chips are outlined in their colour; critical is a solid red fill. An acknowledged alarm that is still active is not faded: its chip turns a neutral outline (`border-strong` / `ink-2`), its text `ink-2`, and its times line says "Acknowledged". An active alarm about a reading puts the value now beside the value that raised it ("· now 84.0 % RH").
 
 ### Cards / Containers
 - **Corner Style:** 12 px.
 - **Background:** `surface`.
 - **Shadow Strategy:** none in dark; 1 px lift in light (see Elevation).
-- **Border:** 1 px `border`; an alarm card uses `critical-text`; a reading out of band uses `critical` with an inset 1 px ring, a warning reading amber at 55 %.
+- **Border:** 1 px `border`; an alarm card takes its worst active alarm's colour (`warning-text` for warnings, `critical-text` from serious up); a reading out of band uses `critical` with an inset 1 px ring, a warning reading amber at 55 %.
 - **Internal Padding:** 20 px (16 px on a phone). A card head puts a 14 px 600 title at the left and a quiet `muted` note or a control at the right.
 
 ### Reading card (signature)

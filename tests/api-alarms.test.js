@@ -37,15 +37,15 @@ async function call(method, path) {
 
 test('GET /api/alarms: the current alarms of every room, critical first, then newest, with the room name', async () => {
   assert.deepEqual((await call('GET', '/api/alarms')).body, []);
-  const warn = db.raiseAlarm(a, 'tHigh', 'warning', 'Temperature 24.3 °C, above 23 + 1', 1000);
-  const crit = db.raiseAlarm(b, 'co2Safety', 'critical', 'CO₂ 1300 ppm, at or above the safety level 1250', 900);
-  const newer = db.raiseAlarm(b, 'rhLow', 'warning', 'Humidity 78 %, below 85 − 5', 2000);
+  const warn = db.raiseAlarm(a, 'tHigh', 'warning', 'Temperature 24.3 °C: more than 1 °C over the band (21–23 °C)', 1000);
+  const crit = db.raiseAlarm(b, 'co2Safety', 'critical', 'CO₂ 1,300 ppm: at or above the safety level (1,250 ppm)', 900);
+  const newer = db.raiseAlarm(b, 'rhLow', 'warning', 'Humidity 78.0 % RH: more than 5 % RH under the band (85–95 % RH)', 2000);
   const r = await call('GET', '/api/alarms');
   assert.equal(r.status, 200);
   assert.deepEqual(r.body.map((x) => x.id), [crit, newer, warn]);
   assert.deepEqual(r.body[0], {
     id: crit, roomId: b, roomName: 'Room B', key: 'co2Safety', level: 'critical',
-    text: 'CO₂ 1300 ppm, at or above the safety level 1250', raisedAt: 900, clearedAt: null, ackedAt: null,
+    text: 'CO₂ 1,300 ppm: at or above the safety level (1,250 ppm)', raisedAt: 900, clearedAt: null, ackedAt: null,
   });
 });
 

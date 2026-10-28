@@ -35,9 +35,9 @@ test('control: the safety settings and states have defaults and are stored', (t)
 
 test('raise, list, clear: one active alarm per room and key', (t) => {
   const { db, a } = setup(t);
-  const id = db.raiseAlarm(a, 'tHigh', 'warning', 'Temperature 24.3 °C, above 23 + 1', 1000);
+  const id = db.raiseAlarm(a, 'tHigh', 'warning', 'Temperature 24.3 °C: more than 1 °C over the band (21–23 °C)', 1000);
   assert.deepEqual(db.getAlarm(id), {
-    id, roomId: a, roomName: 'Room 1', key: 'tHigh', level: 'warning', text: 'Temperature 24.3 °C, above 23 + 1',
+    id, roomId: a, roomName: 'Room 1', key: 'tHigh', level: 'warning', text: 'Temperature 24.3 °C: more than 1 °C over the band (21–23 °C)',
     raisedAt: 1000, clearedAt: null, ackedAt: null,
   });
   assert.deepEqual(db.activeAlarms(a).map((x) => x.key), ['tHigh']);

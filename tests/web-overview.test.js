@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import {
   farmStatus, sortRooms, phoneAlarms,
   roomCard, sparkPath, tiles, badgeCount, withTitlePrefix, sensorText, exchangeText, alarmLevelRank, sortAlarms, alarmTimeText, SPARKS,
+  roomReadings,
 } from '../web/overview-math.js';
 import { parseRoute, isCanonical } from '../web/route.js';
 
@@ -95,6 +96,7 @@ test('sensor text: the value, and the status word when the sensor is not online'
   assert.equal(sensorText({ status: 'timeout', co2: null }, 'co2', 0, 'ppm'), '— · Timeout');
   assert.equal(sensorText({ status: 'not-wired' }, 'co2', 0, 'ppm'), 'Not wired');
   assert.equal(sensorText({ status: 'no-data' }, 'co2', 0, 'ppm'), 'No data yet');
+  assert.equal(sensorText({ status: 'online', co2: 1301.2 }, 'co2', 0, 'ppm'), '1,301 ppm', 'grouped, as on the room page');
 });
 
 test('exchange line', () => {
@@ -154,7 +156,7 @@ test('phoneAlarms: a line on the Overview when alarms cannot reach a phone, none
   assert.equal(phoneAlarms({ ...ok, telegramLevels: [] }).text, 'Phone alarms are off for every level');
 });
 
-test('the Overview chip says what the room page says: near an edge that hurts is amber (CO₂ low stays green)', () => {
+test('the Overview chip says what the room page says: near an edge that hurts is amber; CO₂ in the exchange\'s words', () => {
   const now = at(28, 12);
   const base = {
     id: 1, name: 'Room 1', auto: true, exchange: false, alarms: { count: 0, level: null },
@@ -166,7 +168,13 @@ test('the Overview chip says what the room page says: near an edge that hurts is
   const c = chips(base);
   assert.deepEqual(c.t, { text: 'In band · near the top', tone: 'amber' });
   assert.deepEqual(c.rh, { text: 'In band', tone: 'good' });
-  assert.deepEqual(c.co2, { text: 'In band', tone: 'good' }, 'low CO₂ is good');
+  assert.deepEqual(c.co2, { text: 'Exchange off', tone: 'good' });
+  assert.deepEqual(chips({ ...base, co2: { status: 'online', co2: 650 } }).co2, { text: 'Below the stop point', tone: 'good' }, 'low CO₂ is good');
+  assert.deepEqual(chips({ ...base, exchange: true, co2: { status: 'online', co2: 850 } }).co2, { text: 'Exchange running', tone: 'neutral' });
+  assert.deepEqual(chips({ ...base, co2: { status: 'online', co2: 850 } }).co2, { text: 'Over the start point', tone: 'amber' });
+  const safe = { ...base, bands: { ...base.bands, co2Safety: 1500 } };
+  assert.deepEqual(chips({ ...safe, exchange: true, co2: { status: 'online', co2: 1420 } }).co2, { text: 'Near the safety level', tone: 'amber' });
+  assert.deepEqual(chips({ ...safe, exchange: true, co2: { status: 'online', co2: 1600 } }).co2, { text: 'At the safety level', tone: 'critical' });
   const falling = chips({ ...base, trh: { status: 'online', t: 20, rh: 87.4 }, spark: { ...base.spark, rh: [{ at: now - 60 * 60_000, v: 89 }, { at: now - 30 * 60_000, v: 88.2 }] } });
   assert.deepEqual(falling.rh, { text: 'In band · near the bottom and falling', tone: 'amber' });
 });
@@ -179,4 +187,11 @@ test('the Overview offline: the last readings greyed with their time, not claime
   const css = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
   assert.match(css, /\[data-stale\] \.pill, \[data-stale\] \.ov-band, \[data-stale\] \.ov-status-dot \{ filter: grayscale\(1\)/);
   assert.match(css, /\.ov-rooms \{ display: grid; grid-template-columns: repeat\(auto-fit, minmax\(320px, 1fr\)\);/);
+});
+
+test('the readings beside an Overview alarm: from online sensors only, the filter pressure when the server sends it', () => {
+  const r = { trh: { status: 'online', t: 24.2, rh: 84 }, co2: { status: 'offline', co2: 900 }, filterPa: 41.2 };
+  assert.deepEqual(roomReadings(r), { t: 24.2, rh: 84, co2: null, pa: 41.2 });
+  assert.deepEqual(roomReadings({ trh: { status: 'not-wired' }, co2: { status: 'online', co2: 1301 } }), { t: null, rh: null, co2: 1301, pa: null });
+  assert.deepEqual(roomReadings(null), { t: null, rh: null, co2: null, pa: null });
 });

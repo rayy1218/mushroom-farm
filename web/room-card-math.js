@@ -55,8 +55,9 @@ export function bandBar(key, value, low, high, safety) {
   };
 }
 
-// The tile's edge by the chip's level: amber out of band, red at the safety level, grey without a current reading.
-const EDGE = { good: '', warning: 'warn', critical: 'bad', serious: 'none', none: 'none' };
+// The tile's edge by the chip's level: amber out of band (CO₂: over the start point or near the safety level), red at the
+// safety level, grey without a current reading.
+const EDGE = { good: '', neutral: '', warning: 'warn', critical: 'bad', serious: 'none', none: 'none' };
 
 // DrawState (fromRoom) and the control view → three tiles { key, name, value, unit, chip: { lvl, text }, edge, bar, label }.
 export function readingTiles(draw, control, trends = {}) {

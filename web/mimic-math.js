@@ -5,6 +5,7 @@
 
 import { MACHINE_NAMES, MODES, FANS, statusWord } from './machines-math.js';
 import { outdoorForDrawing } from './outdoor-math.js';
+import { co2Status } from './band-math.js';
 
 export const NAMES = { ac: 'Aircon', hu: MACHINE_NAMES.humidifier, intake: MACHINE_NAMES.intake, exhaust: MACHINE_NAMES.exhaust, circ: MACHINE_NAMES.circulation };
 export const UNIT_KEYS = ['ac', 'hu', 'intake', 'exhaust', 'circ'];
@@ -31,6 +32,18 @@ export function readoutStatus(sensor, value, low, high, critical) {
   if (value < low) return { lvl: 'warning', icon: '▼', text: 'Below band' };
   if (value > high) return { lvl: 'warning', icon: '▲', text: 'Above band' };
   return { lvl: 'good', icon: '✓', text: 'In band' };
+}
+
+// CO₂'s chip in the air exchange's words (band-math.js co2Status): the sensor's own states first, then below the stop point,
+// exchange off or running (neutral), over the start point, near and at the safety level. exchange: whether it runs (null: not known).
+const CO2_CHIP = { good: ['good', '✓'], neutral: ['neutral', ''], amber: ['warning', '▲'], critical: ['critical', '▲'] };
+export function co2Readout(sensor, value, c, exchange = null) {
+  const own = readoutStatus(sensor, value);
+  if (own.lvl !== 'good') return own;
+  const st = co2Status(value, { stop: num(c?.co2Low), start: num(c?.co2High), safety: num(c?.co2Safety), exchange });
+  if (!st) return readoutStatus(sensor, value, null, null, c?.co2Safety);
+  const [lvl, icon] = CO2_CHIP[st.tone];
+  return { lvl, icon, text: st.text };
 }
 
 function relayUnit(m) {
@@ -80,7 +93,8 @@ export function fromRoom({ room, sensors, machines, control, outdoor = null, fil
     status: {
       T: readoutStatus(trh, T, c?.tLow, c?.tHigh),
       RH: readoutStatus(trh, RH, c?.rhLow, c?.rhHigh),
-      CO2: readoutStatus(co2, CO2, c?.co2Low, c?.co2High, c?.co2Safety),
+      // the exchange: the controller's in Auto, the two fans running in Manual
+      CO2: co2Readout(co2, CO2, c, !c ? null : c.auto ? c.exchange === true : units.intake.on && units.exhaust.on),
     },
     units,
     filterPa: filterPa !== undefined ? num(filterPa) : num(dp?.lastOk?.pa),

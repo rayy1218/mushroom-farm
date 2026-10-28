@@ -522,13 +522,18 @@ button.toggle[data-on="true"]:hover { background: color-mix(in srgb, var(--accen
 .tg-status { margin: 12px 0 0; }
 
 /* ---- Alarms (safety stream): the Alarms card, the Rooms list chip, the control card additions ---- */
-.alarms { margin-bottom: 16px; border-color: var(--critical-text); }
+.alarms { margin-bottom: 16px; }
+.alarms[data-tone="warning"] { border-color: var(--warning-text); } /* toned by its worst active alarm */
+.alarms[data-tone="critical"] { border-color: var(--critical-text); }
 .al-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-bottom: 8px; }
 .al-head h2 { margin: 0; }
 .al-list { list-style: none; margin: 0; padding: 0; display: grid; }
 .al-item { display: grid; grid-template-columns: 84px minmax(0, 1fr) auto; align-items: center; gap: 4px 12px; padding: 8px 0; border-bottom: 1px solid var(--border); }
 .al-item:last-child { border-bottom: 0; }
-.al-item.dimmed { opacity: .55; }
+/* Acknowledged and still active: quieter colours that keep 4.5:1, the chip outlined neutral, and the word in the times line */
+.al-item.dimmed .al-text { font-weight: 400; color: var(--ink-2); }
+.al-item.dimmed .al-level { background: none; border-color: var(--border-strong); color: var(--ink-2); }
+.al-now { font-weight: 400; color: var(--ink-2); }
 .al-body { display: flex; flex-direction: column; min-width: 0; }
 .al-text { overflow-wrap: anywhere; font-weight: 600; }
 .al-times { color: var(--muted); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
@@ -590,6 +595,8 @@ button.toggle[data-on="true"]:hover { background: color-mix(in srgb, var(--accen
 .ov-band { margin-left: 8px; font-size: var(--fs-xs); font-weight: 600; color: var(--muted); }
 .ov-band[data-tone="good"] { color: var(--good-text); }
 .ov-band[data-tone="amber"] { color: var(--warning-text); }
+.ov-band[data-tone="critical"] { color: var(--critical-text); }
+.ov-band[data-tone="neutral"] { color: var(--ink-2); } /* CO₂ while the exchange runs: not a warning */
 .ov-section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 8px 0 10px; }
 .ov-section-head h2 { margin: 0; font-size: var(--fs-lg); }
 .ov-section-head a { color: var(--ink-2); font-weight: 600; font-size: var(--fs-sm); }
@@ -604,7 +611,9 @@ button.toggle[data-on="true"]:hover { background: color-mix(in srgb, var(--accen
 .ov-alarm-list { margin: 0; padding: 0; list-style: none; }
 .ov-alarm { display: grid; grid-template-columns: auto minmax(0, 12ch) minmax(0, 1fr) auto auto; align-items: center; gap: 4px 12px; padding: 8px 0; border-bottom: 1px solid var(--border); }
 .ov-alarm:last-child { border-bottom: 0; }
-.ov-alarm.acked { opacity: .6; }
+.ov-alarm.acked .ov-alarm-text, .ov-alarm.acked .ov-alarm-room { color: var(--ink-2); font-weight: 400; }
+.ov-alarm.acked .ov-chip { background: none; border-color: var(--border-strong); color: var(--ink-2); }
+.ov-alarm-now { color: var(--ink-2); }
 .ov-alarm-room { color: var(--ink); font-weight: 600; overflow-wrap: anywhere; }
 .ov-alarm-text { overflow-wrap: anywhere; }
 .ov-alarm-time { color: var(--muted); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -923,6 +932,7 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
 .rd .rd-name { margin: 0; font-size: var(--fs-sm); font-weight: 500; color: var(--ink-2); }
 .rd-chip { font-size: var(--fs-xs); font-weight: 600; white-space: nowrap; color: var(--muted); }
 .rd-chip[data-lvl="good"] { color: var(--good-text); }
+.rd-chip[data-lvl="neutral"] { color: var(--ink-2); }
 .rd-chip[data-lvl="warning"], .rd-chip[data-lvl="near"] { color: var(--warning-text); }
 .rd-chip[data-lvl="serious"], .rd-chip[data-lvl="critical"] { color: var(--critical-text); }
 .rd-val { margin: 4px 0 0; font-variant-numeric: tabular-nums; line-height: 1.1; }

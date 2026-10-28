@@ -7,7 +7,8 @@ import { refreshMs } from './settings-math.js';
 import { live } from './live.js';
 import { fallbackMs, createThrottle } from './live-math.js';
 import { loadOverview } from './overview-data.js';
-import { farmStatus, phoneAlarms, sortRooms, roomCard, alarmTimeText, SPARK_W, SPARK_H } from './overview-math.js';
+import { farmStatus, phoneAlarms, sortRooms, roomCard, roomReadings, alarmTimeText, grouped, SPARK_W, SPARK_H } from './overview-math.js';
+import { nowText, isDimmed } from './alarms-math.js';
 import { outdoorCard } from './outdoor-math.js';
 import { roomLines, USAGE_DAYS, USAGE_REFRESH_MS } from './usage-math.js';
 import { usageTileNodes } from './usage.js';
@@ -84,7 +85,7 @@ function sparkline(value) {
   const s = value.spark;
   const el = svg('svg', { width: SPARK_W, height: SPARK_H, viewBox: `0 0 ${SPARK_W} ${SPARK_H}`, role: 'img', class: 'ov-spark' });
   const d = value.key === 'co2' ? 0 : 1; // ppm in whole numbers, as shown
-  el.setAttribute('aria-label', `${value.label}, last 24 hours: ${s.min.toFixed(d)} to ${s.max.toFixed(d)}`);
+  el.setAttribute('aria-label', `${value.label}, last 24 hours: ${grouped(s.min, d)} to ${grouped(s.max, d)}`);
   if (s.band) el.append(svg('rect', { x: 0, y: s.band.y, width: SPARK_W, height: s.band.h, style: 'fill:var(--band)' }));
   el.append(svg('path', { d: s.d, fill: 'none', 'stroke-width': 1.5, 'stroke-linejoin': 'round', style: `stroke:${value.color}` }));
   el.append(svg('circle', { cx: s.last.x, cy: s.last.y, r: 2.5, style: `fill:${value.color}` }));
@@ -122,6 +123,7 @@ export function mount(container) {
   let okAt = null; // when the rooms last loaded
   let roomOrder = []; // the room cards' ids in order, for the energy table
   let phone = null; // the phone-alarm line (phoneAlarms), null when alarms reach a phone
+  let readings = new Map(); // room id → its values now (roomReadings), for the "now" beside an alarm
 
   function showBanner(text, retry = false) {
     if (!els.banner.hidden && els.bannerText.textContent === text) return; // do not re-announce the same alert
@@ -155,6 +157,7 @@ export function mount(container) {
     const stale = Boolean(failed.overview) && shown;
     for (const host of [els.status, els.rooms]) host.toggleAttribute('data-stale', stale);
     els.staleNote.hidden = !stale;
+    if (stale) readings = new Map(); // no "now" beside the alarms from readings that are not now
     if (stale) els.staleNote.textContent = `These are the readings from ${alarmTimeText(okAt)}; the farm server can't be reached.`;
     // A part that failed keeps what is on screen.
     if (overview) {
@@ -192,6 +195,7 @@ export function mount(container) {
     const now = Date.now();
     const sorted = sortRooms(rooms);
     roomOrder = sorted.map((r) => r.id);
+    readings = new Map(rooms.map((r) => [r.id, roomReadings(r)]));
     els.rooms.replaceChildren(...sorted.map((room) => {
       const c = roomCard(room, now);
       const card = node('section', 'card ov-room');
@@ -293,11 +297,17 @@ export function mount(container) {
     const now = Date.now();
     els.alarmList.replaceChildren(...alarms.map((a) => {
       const li = node('li', 'ov-alarm');
-      if (a.ackedAt !== null) li.classList.add('acked');
+      if (isDimmed(a)) li.classList.add('acked'); // quieter, and the word says why (not the colour alone)
       const room = node('a', 'ov-alarm-room', a.roomName);
       room.href = `#/rooms/${a.roomId}`;
-      const when = node('span', 'ov-alarm-time', a.clearedAt === null ? alarmTimeText(a.raisedAt, now) : `${alarmTimeText(a.raisedAt, now)} · Cleared ${alarmTimeText(a.clearedAt, now)}`);
-      li.append(levelChip(a.level), room, node('span', 'ov-alarm-text', a.text), when);
+      const raised = alarmTimeText(a.raisedAt, now);
+      const when = node('span', 'ov-alarm-time', a.clearedAt !== null ? `${raised} · Cleared ${alarmTimeText(a.clearedAt, now)}`
+        : isDimmed(a) ? `${raised} · Acknowledged` : raised);
+      // the text keeps the value that raised the alarm; the value now goes beside it
+      const text = node('span', 'ov-alarm-text', a.text);
+      const valueNow = nowText(a, readings.get(a.roomId));
+      if (valueNow) text.append(node('span', 'ov-alarm-now', ` · ${valueNow}`));
+      li.append(levelChip(a.level), room, text, when);
       if (a.ackedAt === null) {
         const ack = node('button', '', 'Acknowledge');
         ack.type = 'button';
