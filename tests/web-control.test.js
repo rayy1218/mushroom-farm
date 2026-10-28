@@ -15,7 +15,7 @@ test('exchange line shows the start time or off', () => {
 });
 
 test('reason lines carry the machine name once', () => {
-  assert.equal(reasonLine('Air exchange', 'Air exchange: CO₂ 762 ≥ 750'), 'Air exchange: CO₂ 762 ≥ 750');
+  assert.equal(reasonLine('Air exchange', 'Air exchange: CO₂ 762 ppm ≥ 750 ppm'), 'Air exchange: CO₂ 762 ppm ≥ 750 ppm');
   assert.equal(reasonLine('Circulation', 'always on'), 'Circulation: always on');
   assert.equal(reasonLine('Aircon', undefined), 'Aircon: —');
 });
@@ -94,7 +94,7 @@ test('the card shows typical crop bands, the CO₂ minimum of 450 and the aircon
   assert.match(BANDS.find((b) => b.key === 't').hint, /grey oyster about 24 to 28, lion’s mane about 18 to 22/);
   const safety = SAFETY_FIELDS.find((f) => f.key === 'co2Safety');
   assert.match(safety.label, /for the crop/);
-  assert.match(safety.hint, /5000 ppm over 8 h/);
+  assert.match(safety.hint, /5,000 ppm over 8 h/);
   const drop = SAFETY_FIELDS.find((f) => f.key === 'acDrop');
   assert.deepEqual([drop.min, drop.max, drop.step], [0, 10, '0.5']);
   assert.equal(checkSafety(750, 1250, 10, 0), null);
@@ -127,8 +127,8 @@ test('the reasons: the dehumidifier line comes after the humidifier and shows on
 });
 
 test('the dehumidifier reason and its wait text read like the other machines', () => {
-  const c = { reasons: { dehumidifier: 'Dehumidifier: RH 94 ≥ 93', held: { dehumidifier: 'Dehumidifier waits: minimum on time, 1 min 20 s to go' } } };
-  assert.equal(reasonLine('Dehumidifier', c.reasons.dehumidifier), 'Dehumidifier: RH 94 ≥ 93');
+  const c = { reasons: { dehumidifier: 'Dehumidifier: RH 94 % ≥ 93 %', held: { dehumidifier: 'Dehumidifier waits: minimum on time, 1 min 20 s to go' } } };
+  assert.equal(reasonLine('Dehumidifier', c.reasons.dehumidifier), 'Dehumidifier: RH 94 % ≥ 93 %');
   assert.equal(heldLine(c, 'dehumidifier'), 'Dehumidifier waits: minimum on time, 1 min 20 s to go');
   assert.equal(reasonLine('Dehumidifier', ''), 'Dehumidifier: —');
 });

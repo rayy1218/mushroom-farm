@@ -40,7 +40,7 @@ test('no air exchange for 15 min: the fans run for 1 min, whatever the CO₂', (
 
 test('the fresh-air wait: not before 15 min, counted from the last exchange end or the time it began counting', () => {
   assert.equal(go(offFor(15 * MIN - S), 650).state.exchange, false);
-  assert.equal(go(offFor(15 * MIN - S), 650).reasons.exchange, 'Air exchange kept off: CO₂ 650 between 600 and 750');
+  assert.equal(go(offFor(15 * MIN - S), 650).reasons.exchange, 'Air exchange kept off: CO₂ 650 ppm between 600 and 750 ppm');
   // freshFrom (the auto-on time) wins over an older end
   assert.equal(go(offFor(60 * MIN, { freshFrom: NOW - 10 * MIN }), 650).state.exchange, false);
   assert.equal(go(offFor(60 * MIN, { freshFrom: NOW - 15 * MIN }), 650).state.exchange, true);
@@ -79,7 +79,7 @@ test('a fresh-air run whose CO₂ reaches the upper limit becomes a normal excha
   assert.equal(r.state.exchange, true);
   assert.equal(r.state.exchangeForced, false);
   assert.equal(r.state.exchangeSince, NOW - 40 * S, 'its start time is kept');
-  assert.equal(r.reasons.exchange, 'Air exchange: CO₂ 760 ≥ 750');
+  assert.equal(r.reasons.exchange, 'Air exchange: CO₂ 760 ppm ≥ 750 ppm');
   const safety = go(forcedFor(2 * MIN), 1300);
   assert.equal(safety.state.exchange, true);
   assert.equal(safety.state.exchangeForced, false);
@@ -113,7 +113,7 @@ test('a normal exchange is not changed by the rule', () => {
   const r = go({ ...offFor(null), exchange: true, exchangeSince: NOW - 5 * MIN }, 650);
   assert.equal(r.state.exchange, true);
   assert.equal(r.state.exchangeForced, false);
-  assert.equal(r.reasons.exchange, 'Air exchange kept on: CO₂ 650 between 600 and 750');
+  assert.equal(r.reasons.exchange, 'Air exchange kept on: CO₂ 650 ppm between 600 and 750 ppm');
 });
 
 // ---- validation ----

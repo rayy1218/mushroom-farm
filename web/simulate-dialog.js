@@ -233,6 +233,10 @@ export function openSimulateDialog(room, hooks = {}) {
         wrap.append(select, blocks, el('span', 'sim-unit', 'blocks'), remove);
         return wrap;
       }));
+      const head = el('div', 'sim-crop-row sim-crop-head');
+      head.setAttribute('aria-hidden', 'true'); // the column names for the eye; each field has its own name
+      head.append(el('span', '', 'Crop'), el('span', '', 'Blocks'));
+      list.prepend(head);
       add.disabled = state.crops.length >= MAX_CROPS;
     }
 
@@ -249,7 +253,7 @@ export function openSimulateDialog(room, hooks = {}) {
       const m = mixSummary(state);
       mix.replaceChildren();
       if (!m) return;
-      mix.append(el('p', 'sim-mix-title', 'The room is held in these bands'));
+      mix.append(el('p', 'sim-mix-title', "The run holds the room in the crops' bands for each stage (not changes made by hand on the Setup tab)"));
       const ul = el('ul', 'sim-mix-lines');
       ul.append(...m.lines.map((t) => el('li', '', t)));
       mix.append(ul);

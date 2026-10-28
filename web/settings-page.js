@@ -12,7 +12,7 @@ const TEMPLATE = `
   <div class="page-head">
     <div class="page-titles">
       <h1 class="page-title" tabindex="-1">Settings</h1>
-      <p class="page-sub">Farm-wide settings.</p>
+      <p class="page-sub">How often rooms are read, prices, the outdoor sensor and phone alarms: one set for the whole farm.</p>
     </div>
   </div>
   <div class="banner" role="alert" hidden>

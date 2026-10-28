@@ -79,7 +79,7 @@ export function createFilterCard(host, { roomId, onChanged }) {
       else {
         const line = el('p', 'reading');
         const span = el('span');
-        span.append(el('span', 'val', p.value.toFixed(1)), el('span', 'unit', 'Pa'));
+        span.append(el('span', 'val', p.value.toFixed(1)), ' ', el('span', 'unit', 'Pa'));
         line.append(span);
         parts.push(line);
         parts.push(barNode(p));

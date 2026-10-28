@@ -19,10 +19,10 @@ const pick = (plan) => plan.map((e) => [e.name, e.state, e.dates]);
 
 test('the plan of a ready room: fruiting and rest repeat until the last flush, each with its dates', () => {
   assert.deepEqual(pick(stagePlan(ready, at(27, 12, 0))), [
-    ['Fruiting · flush 1', 'current', '26 Oct → 2 Nov'],
-    ['Rest between flushes · flush 1', 'next', '2 Nov → 12 Nov'],
-    ['Fruiting · flush 2', 'later', '12 Nov → 19 Nov'],
-    ['Rest between flushes · flush 2', 'later', '19 Nov → 29 Nov'],
+    ['Fruiting · flush 1', 'current', '26 Oct – 2 Nov'],
+    ['Rest between flushes · flush 1', 'next', '2 Nov – 12 Nov'],
+    ['Fruiting · flush 2', 'later', '12 Nov – 19 Nov'],
+    ['Rest between flushes · flush 2', 'later', '19 Nov – 29 Nov'],
   ]);
   const plan = stagePlan(ready, at(27, 12, 0));
   assert.deepEqual(plan.map((e) => [e.stage, e.flush]), [['fruiting', 1], ['rest', 1], ['fruiting', 2], ['rest', 2]]);
@@ -31,10 +31,10 @@ test('the plan of a ready room: fruiting and rest repeat until the last flush, e
 
 test('the plan of a full-cycle room: spawn and pinning once, before the flushes', () => {
   assert.deepEqual(pick(stagePlan(full, at(27, 12, 0))), [
-    ['Spawn run', 'current', '26 Oct → 16 Nov'],
-    ['Pinning', 'next', '16 Nov → 20 Nov'],
-    ['Fruiting · flush 1', 'later', '20 Nov → 27 Nov'],
-    ['Rest between flushes · flush 1', 'later', '27 Nov → 7 Dec'],
+    ['Spawn run', 'current', '26 Oct – 16 Nov'],
+    ['Pinning', 'next', '16 Nov – 20 Nov'],
+    ['Fruiting · flush 1', 'later', '20 Nov – 27 Nov'],
+    ['Rest between flushes · flush 1', 'later', '27 Nov – 7 Dec'],
   ]);
 });
 
@@ -42,9 +42,9 @@ test('the entries before the current one are done, without dates', () => {
   const rest = { ...ready, stage: 'rest', stageSince: at(2, 9, 55, 10), nextStage: { stage: 'fruiting', flush: 2, at: at(12, 9, 55, 10) } };
   assert.deepEqual(pick(stagePlan(rest, at(3, 0, 0, 10))), [
     ['Fruiting · flush 1', 'done', ''],
-    ['Rest between flushes · flush 1', 'current', '2 Nov → 12 Nov'],
-    ['Fruiting · flush 2', 'next', '12 Nov → 19 Nov'],
-    ['Rest between flushes · flush 2', 'later', '19 Nov → 29 Nov'],
+    ['Rest between flushes · flush 1', 'current', '2 Nov – 12 Nov'],
+    ['Fruiting · flush 2', 'next', '12 Nov – 19 Nov'],
+    ['Rest between flushes · flush 2', 'later', '19 Nov – 29 Nov'],
   ]);
   const second = { ...ready, flush: 2, stageSince: at(12, 9, 55, 10) };
   assert.deepEqual(pick(stagePlan(second, at(13, 0, 0, 10))).map((e) => e[1]), ['done', 'done', 'current', 'next']);

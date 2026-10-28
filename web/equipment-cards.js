@@ -62,10 +62,10 @@ const SENSOR_WORDS = { 'no-data': 'No data yet', online: 'Online', timeout: 'Tim
 
 const fixed = (v, digits) => (typeof v === 'number' && Number.isFinite(v) ? v.toFixed(digits) : null);
 
-// A sensor's latest good value: "20.1 °C · 92 %", "638 ppm", "372 W", "40 Pa"; '' before the first.
+// A sensor's latest good value: "20.1 °C · 92.0 % RH", "638 ppm", "372 W", "40 Pa"; '' before the first.
 function sensorValue(kind, ok) {
   if (!ok) return '';
-  const parts = kind === 'trh' ? [[fixed(ok.t, 1), '°C'], [fixed(ok.rh, 1), '%']]
+  const parts = kind === 'trh' ? [[fixed(ok.t, 1), '°C'], [fixed(ok.rh, 1), '% RH']]
     : kind === 'co2' ? [[fixed(ok.co2, 0), 'ppm']]
       : kind === 'meter' ? [[fixed(ok.power, 0), 'W']]
         : [[fixed(ok.pa, 0), 'Pa']];

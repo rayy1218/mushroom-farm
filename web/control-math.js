@@ -5,7 +5,7 @@ import { lightSummary } from './light-math.js';
 // Rows of the card: server field names, label, unit, limits (spec section 2) and the typical band of the crops grown here.
 export const BANDS = [
   { key: 'co2', label: 'CO₂', unit: 'ppm', name: 'CO₂ band', low: 'co2Low', high: 'co2High', min: 450, max: 5000, step: '1',
-    hint: 'Typical: oyster under about 1000, lion’s mane under about 750 to 1000. Outdoor air is about 420, so a lower limit near it takes a lot of air.' },
+    hint: 'Typical: oyster under about 1,000 ppm, lion’s mane under about 750–1,000 ppm. Outdoor air is about 420 ppm, so a lower limit near it takes a lot of air.' },
   { key: 't', label: 'Temperature', unit: '°C', name: 'Temperature band', low: 'tLow', high: 'tHigh', min: 16, max: 35, step: '0.5',
     hint: 'Typical fruiting: grey oyster about 24 to 28, lion’s mane about 18 to 22.' },
   { key: 'rh', label: 'Humidity', unit: '% RH', name: 'Humidity band', low: 'rhLow', high: 'rhHigh', min: 40, max: 100, step: '0.5',
@@ -166,7 +166,7 @@ export function changedBody(values, loaded) {
 // The two inputs next to the bands, saved with Save.
 export const SAFETY_FIELDS = [
   { key: 'co2Safety', label: 'CO₂ safety level for the crop (ppm)', min: 300, max: 10000, step: '1',
-    hint: 'At or above it the air exchange runs with no time limit and a critical alarm is raised. Not a limit for people: 5000 ppm over 8 h.' },
+    hint: 'At or above it the air exchange runs with no time limit and a critical alarm is raised. Not a limit for people: 5,000 ppm over 8 h.' },
   { key: 'exchangeMaxMin', label: 'Air exchange time limit (min)', min: 1, max: 120, step: '1' },
   { key: 'exchangeEveryMin', label: 'Fresh air at least every (min)', min: 0, max: 240, step: '1',
     hint: 'With no air exchange for this long, the fans run for 1 min whatever the CO₂. 0 turns it off.' },

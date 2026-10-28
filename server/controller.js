@@ -160,7 +160,7 @@ export function decide({ bands, state, readings, faults, now, humidifierDuringEx
       if (air.wOut > air.wIn + COOL_WET_STOP) return `Free cooling ends: outdoor air is wetter, ${num(air.wOut)} g/m³ against ${num(air.wIn)}`;
       return '';
     }
-    if (rh <= rhMiddle) return `Outdoor drying ends: RH ${num(rh)} ≤ ${num(rhMiddle)}`;
+    if (rh <= rhMiddle) return `Outdoor drying ends: RH ${num(rh)} % ≤ ${num(rhMiddle)} %`;
     if (air.wOut > air.wIn - DRY_STOP_DRIER) return `Outdoor drying ends: outdoor air ${num(air.wOut)} g/m³, the room ${num(air.wIn)} g/m³`;
     if (air.tOut > air.tIn + DRY_STOP_WARM) return `Outdoor drying ends: outdoor ${num(air.tOut)} °C, the room ${num(air.tIn)} °C`;
     if (air.tOut < air.tIn && air.tIn <= bands.tLow) return `Outdoor drying ends: the cooler outdoor air took the room to ${num(air.tIn)} °C`;
@@ -225,11 +225,11 @@ export function decide({ bands, state, readings, faults, now, humidifierDuringEx
   } else if (!was) {
     if (co2 >= co2Safety) {
       start();
-      reasons.exchange = `Air exchange: CO₂ ${num(co2)} ≥ safety level ${co2Safety}`;
+      reasons.exchange = `Air exchange: CO₂ ${num(co2)} ppm ≥ safety level ${co2Safety} ppm`;
     } else if (co2 >= co2High) {
       if (offFor >= MIN_OFF_MS) {
         start();
-        reasons.exchange = `Air exchange: CO₂ ${num(co2)} ≥ ${co2High}`;
+        reasons.exchange = `Air exchange: CO₂ ${num(co2)} ppm ≥ ${co2High} ppm`;
       } else {
         reasons.exchange = `Air exchange waits: minimum off time, ${wait(MIN_OFF_MS - offFor)} to go`;
       }
@@ -238,31 +238,31 @@ export function decide({ bands, state, readings, faults, now, humidifierDuringEx
     } else if (freshDue) {
       freshOrWait();
     } else if (co2 <= co2Low) {
-      reasons.exchange = `Air exchange: CO₂ ${num(co2)} ≤ ${co2Low}`;
+      reasons.exchange = `Air exchange: CO₂ ${num(co2)} ppm ≤ ${co2Low} ppm`;
     } else {
-      reasons.exchange = `Air exchange kept off: CO₂ ${num(co2)} between ${co2Low} and ${co2High}`;
+      reasons.exchange = `Air exchange kept off: CO₂ ${num(co2)} ppm between ${co2Low} and ${co2High} ppm`;
     }
   } else if (co2 >= co2Safety) {
     freshRun = false;
-    reasons.exchange = `Air exchange: CO₂ ${num(co2)} ≥ safety level ${co2Safety}, no time limit`;
+    reasons.exchange = `Air exchange: CO₂ ${num(co2)} ppm ≥ safety level ${co2Safety} ppm, no time limit`;
   } else if (co2 <= co2Low) {
     freshRun = false;
     if (onFor >= MIN_ON_MS) {
       stop();
       capped = 0;
-      reasons.exchange = `Air exchange: CO₂ ${num(co2)} ≤ ${co2Low}`;
+      reasons.exchange = `Air exchange: CO₂ ${num(co2)} ppm ≤ ${co2Low} ppm`;
     } else {
       reasons.exchange = `Air exchange waits: minimum on time, ${wait(MIN_ON_MS - onFor)} to go`;
     }
   } else if (onFor >= bands.exchangeMaxMin * 60_000) {
     stop();
     if (!outdoorWas) capped++;
-    reasons.exchange = `Air exchange stopped at the ${bands.exchangeMaxMin} min limit: CO₂ ${num(co2)} above ${co2Low}`;
+    reasons.exchange = `Air exchange stopped at the ${bands.exchangeMaxMin} min limit: CO₂ ${num(co2)} ppm above ${co2Low} ppm`;
   } else if (co2 >= co2High) {
     freshRun = false;
-    reasons.exchange = `Air exchange: CO₂ ${num(co2)} ≥ ${co2High}`;
+    reasons.exchange = `Air exchange: CO₂ ${num(co2)} ppm ≥ ${co2High} ppm`;
   } else {
-    reasons.exchange = `Air exchange kept on: CO₂ ${num(co2)} between ${co2Low} and ${co2High}`;
+    reasons.exchange = `Air exchange kept on: CO₂ ${num(co2)} ppm between ${co2Low} and ${co2High} ppm`;
   }
 
   // Humidifier band: on at or below the lower RH limit, off at or above the upper, kept between; with a dehumidifier it waits
@@ -286,16 +286,16 @@ export function decide({ bands, state, readings, faults, now, humidifierDuringEx
   } else if (rh <= bands.rhLow && !band && dryingLeft > 0 && rh > bands.rhLow - AFTER_DRY_MARGIN) {
     // Just below the band right after the dehumidifier stopped: its own overshoot (its 3 min minimum run), which the room
     // makes up by itself; a humidifier now would wet it again and wake the dehumidifier.
-    why = `Humidifier waits: RH ${num(rh)} after the dehumidifier dried the room (on below ${num(bands.rhLow - AFTER_DRY_MARGIN)} or in ${Math.ceil(dryingLeft / 60_000)} min)`;
+    why = `Humidifier waits: RH ${num(rh)} % after the dehumidifier dried the room (on below ${num(bands.rhLow - AFTER_DRY_MARGIN)} % or in ${Math.ceil(dryingLeft / 60_000)} min)`;
   } else if (rh <= bands.rhLow) {
     band = true;
-    why = exchange && !humidifierDuringExchange ? `Humidifier: on (RH ${num(rh)} ≤ ${bands.rhLow})` : `Humidifier: RH ${num(rh)} ≤ ${bands.rhLow}`;
+    why = exchange && !humidifierDuringExchange ? `Humidifier: on (RH ${num(rh)} % ≤ ${bands.rhLow} %)` : `Humidifier: RH ${num(rh)} % ≤ ${bands.rhLow} %`;
   } else if (rh >= bands.rhHigh) {
     band = false;
     why = exchange && !humidifierDuringExchange
-      ? `Humidifier: off (RH ${num(rh)} ≥ ${bands.rhHigh}${note})` : `Humidifier: RH ${num(rh)} ≥ ${bands.rhHigh}`;
+      ? `Humidifier: off (RH ${num(rh)} % ≥ ${bands.rhHigh} %${note})` : `Humidifier: RH ${num(rh)} % ≥ ${bands.rhHigh} %`;
   } else {
-    why = `Humidifier kept ${word(band)}: RH ${num(rh)} between ${bands.rhLow} and ${bands.rhHigh}`;
+    why = `Humidifier kept ${word(band)}: RH ${num(rh)} % between ${bands.rhLow} and ${bands.rhHigh} %`;
   }
   reasons.humidifier = forced ? 'Humidifier: on during air exchange' : why;
   // When the humidifier was last decided on for a dry room (a run just after the dehumidifier stopped is its overshoot).
@@ -321,17 +321,17 @@ export function decide({ bands, state, readings, faults, now, humidifierDuringEx
       reasons.dehumidifier = 'Dehumidifier off: the humidifier is on';
     } else if (!dehumidifierBand && rh >= high && humidifierLastOn !== null && now - humidifierLastOn < DEHUMIDIFIER_QUIET_MS) {
       // A room that needed the humidifier a moment ago is not wet by itself (an air exchange wets it for a few minutes).
-      reasons.dehumidifier = `Dehumidifier waits: RH ${num(rh)}, but the humidifier ran in the last ${DEHUMIDIFIER_QUIET_MS / 60_000} min`;
+      reasons.dehumidifier = `Dehumidifier waits: RH ${num(rh)} %, but the humidifier ran in the last ${DEHUMIDIFIER_QUIET_MS / 60_000} min`;
     } else if (!dehumidifierBand && rh >= high) {
       dehumidifierBand = true;
-      reasons.dehumidifier = `Dehumidifier: RH ${num(rh)} ≥ ${num(high)}`;
+      reasons.dehumidifier = `Dehumidifier: RH ${num(rh)} % ≥ ${num(high)} %`;
     } else if (dehumidifierBand && rh <= mid) {
       dehumidifierBand = false;
-      reasons.dehumidifier = `Dehumidifier: RH ${num(rh)} ≤ ${num(mid)}`;
+      reasons.dehumidifier = `Dehumidifier: RH ${num(rh)} % ≤ ${num(mid)} %`;
     } else if (rh > mid && rh < high) {
-      reasons.dehumidifier = `Dehumidifier kept ${word(dehumidifierBand)}: RH ${num(rh)} between ${num(mid)} and ${num(high)}`;
+      reasons.dehumidifier = `Dehumidifier kept ${word(dehumidifierBand)}: RH ${num(rh)} % between ${num(mid)} and ${num(high)} %`;
     } else {
-      reasons.dehumidifier = `Dehumidifier kept ${word(dehumidifierBand)}: RH ${num(rh)} ${rh <= mid ? `≤ ${num(mid)}` : `≥ ${num(high)}`}`;
+      reasons.dehumidifier = `Dehumidifier kept ${word(dehumidifierBand)}: RH ${num(rh)} % ${rh <= mid ? `≤ ${num(mid)} %` : `≥ ${num(high)} %`}`;
     }
   }
 

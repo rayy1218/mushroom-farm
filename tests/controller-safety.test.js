@@ -27,7 +27,7 @@ test('safety level: starts at once, even right after a stop', () => {
   assert.equal(r.state.exchange, true);
   assert.equal(r.state.exchangeSince, NOW);
   assert.equal(r.desired.intake, true);
-  assert.equal(r.reasons.exchange, 'Air exchange: CO₂ 1300 ≥ safety level 1250');
+  assert.equal(r.reasons.exchange, 'Air exchange: CO₂ 1300 ppm ≥ safety level 1250 ppm');
   assert.equal(go(offFor(5 * S), 1250).state.exchange, true, 'at the level counts');
   assert.equal(go(offFor(5 * S), 1249).state.exchange, false);
 });
@@ -36,7 +36,7 @@ test('safety level: a running exchange has no time limit', () => {
   const r = go(onFor(30 * MIN), 1300);
   assert.equal(r.state.exchange, true);
   assert.equal(r.state.cappedInRow, 0);
-  assert.equal(r.reasons.exchange, 'Air exchange: CO₂ 1300 ≥ safety level 1250, no time limit');
+  assert.equal(r.reasons.exchange, 'Air exchange: CO₂ 1300 ppm ≥ safety level 1250 ppm, no time limit');
 });
 
 test('starts at the upper limit only after 60 s off, else waits with the seconds to go', () => {
@@ -48,7 +48,7 @@ test('starts at the upper limit only after 60 s off, else waits with the seconds
   const start = go(offFor(60 * S), 762);
   assert.equal(start.state.exchange, true);
   assert.equal(start.state.exchangeSince, NOW);
-  assert.equal(start.reasons.exchange, 'Air exchange: CO₂ 762 ≥ 750');
+  assert.equal(start.reasons.exchange, 'Air exchange: CO₂ 762 ppm ≥ 750 ppm');
   assert.equal(go(offFor(null), 762).state.exchange, true, 'never ended: no wait');
 });
 
@@ -58,16 +58,16 @@ test('stops at the lower limit only after 30 s on; resets the too-small count', 
   assert.equal(wait.reasons.exchange, 'Air exchange waits: minimum on time, 20 s to go');
   const stop = go(onFor(30 * S, { cappedInRow: 2 }), 590);
   assert.deepEqual([stop.state.exchange, stop.state.exchangeSince, stop.state.exchangeEndedAt, stop.state.cappedInRow], [false, null, NOW, 0]);
-  assert.equal(stop.reasons.exchange, 'Air exchange: CO₂ 590 ≤ 600');
+  assert.equal(stop.reasons.exchange, 'Air exchange: CO₂ 590 ppm ≤ 600 ppm');
 });
 
 test('time limit: stops, counts it, and stays off between the limits', () => {
   const keep = go(onFor(9 * MIN + 59 * S, { cappedInRow: 1 }), 667);
   assert.equal(keep.state.exchange, true);
-  assert.equal(keep.reasons.exchange, 'Air exchange kept on: CO₂ 667 between 600 and 750');
+  assert.equal(keep.reasons.exchange, 'Air exchange kept on: CO₂ 667 ppm between 600 and 750 ppm');
   const stop = go(onFor(10 * MIN, { cappedInRow: 1 }), 667);
   assert.deepEqual([stop.state.exchange, stop.state.exchangeEndedAt, stop.state.cappedInRow], [false, NOW, 2]);
-  assert.equal(stop.reasons.exchange, 'Air exchange stopped at the 10 min limit: CO₂ 667 above 600');
+  assert.equal(stop.reasons.exchange, 'Air exchange stopped at the 10 min limit: CO₂ 667 ppm above 600 ppm');
   assert.equal(stop.desired.intake, false);
   // a later cycle, between the limits: it stays off (the band rule)
   const later = go(offFor(2 * MIN, { cappedInRow: 2 }), 667);
@@ -319,7 +319,7 @@ test('the safety level starts the exchange at once and raises the critical alarm
   await s.cycle({ co2: 1100, dt: 20_000 });
   await s.cycle({ co2: 1300, dt: 20_000 });
   assert.equal(s.controller.get(s.id).exchange, true);
-  assert.equal(s.controller.get(s.id).reasons.exchange, 'Air exchange: CO₂ 1300 ≥ safety level 1250, no time limit');
+  assert.equal(s.controller.get(s.id).reasons.exchange, 'Air exchange: CO₂ 1300 ppm ≥ safety level 1250 ppm, no time limit');
   await s.cycle({ co2: 1290, dt: 30_000 });
   await s.cycle({ co2: 1290, dt: 30_000 });
   assert.equal(s.keys().includes('co2Safety'), true);

@@ -176,6 +176,7 @@ export function createControl(host, { roomId, onOffline, onGone, onChange, getRo
   // ---- humidifier during air exchange (a setting of its own: sent at once, not part of Save) ----
   const humRow = el('div', 'c-humidifier');
   const humName = el('span', 'm-name', HUMIDIFIER_LABEL);
+  humName.setAttribute('aria-hidden', 'true'); // the button says it (its own name), so it is not read twice
   const humBtn = button('', 'toggle');
   const humState = el('span', 'toggle-state');
   humState.setAttribute('aria-hidden', 'true');

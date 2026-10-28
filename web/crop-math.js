@@ -203,7 +203,7 @@ export function stagePlan(c, now = Date.now()) {
     const state = i === current ? 'current' : i === current + 1 ? 'next' : 'later';
     if (!c.autoAdvance) return { ...e, state, dates: i === current ? `since ${dayOf(from)}` : '' };
     const to = from + c.days[e.stage] * DAY_MS;
-    const dates = `${dayOf(from)} → ${dayOf(to)}`;
+    const dates = `${dayOf(from)} – ${dayOf(to)}`;
     from = to;
     return { ...e, state, dates };
   });

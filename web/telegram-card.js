@@ -23,7 +23,8 @@ const TEMPLATE = `
       <input id="f-telegramToken" name="telegramToken" type="password" autocomplete="off" spellcheck="false" aria-describedby="e-telegramToken s-tg-token">
       <p class="field-error" id="e-telegramToken" role="status"></p>
     </div>
-    <p class="muted s-hint" id="s-tg-token"><span data-tg-token-hint></span> <button type="button" data-tg-clear hidden>Clear token</button></p>
+    <p class="muted s-hint" id="s-tg-token"><span data-tg-token-hint></span></p>
+    <p class="tg-clear-row"><button type="button" class="danger-text" data-tg-clear hidden>Clear token</button></p>
     <div class="field">
       <label for="f-telegramChatId">Chat id</label>
       <input id="f-telegramChatId" name="telegramChatId" type="text" autocomplete="off" spellcheck="false" placeholder="-1001234567890 or @name" aria-describedby="e-telegramChatId">

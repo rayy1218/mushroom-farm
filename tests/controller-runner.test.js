@@ -65,7 +65,7 @@ test('the first cycle sends circulation and the aircon; then nothing again for t
   assert.deepEqual(s.writes, []);
   const view = s.controller.get(s.id);
   assert.equal(view.reasons.circulation, 'Circulation: always on');
-  assert.equal(view.reasons.exchange, 'Air exchange kept off: CO₂ 650 between 600 and 750');
+  assert.equal(view.reasons.exchange, 'Air exchange kept off: CO₂ 650 ppm between 600 and 750 ppm');
 });
 
 test('an air exchange starts at the upper limit and ends at the lower; only differences are written', async (t) => {
@@ -342,7 +342,7 @@ test('humidifier during exchange off: changed between cycles, the next cycle sen
   await s.cycle({ co2: 800, rh: 96, dt: 60_000 }); // the humidifier command changes at most once a minute
   assert.equal(s.db.getCommands(s.id).relay.humidifier, false);
   assert.equal(s.db.getCommands(s.id).relay.intake, true);
-  assert.equal(s.controller.get(s.id).reasons.humidifier, 'Humidifier: off (RH 96 ≥ 95; not forced during air exchange)');
+  assert.equal(s.controller.get(s.id).reasons.humidifier, 'Humidifier: off (RH 96 % ≥ 95 %; not forced during air exchange)');
   assert.equal(s.controller.get(s.id).humidifierDuringExchange, false);
 });
 

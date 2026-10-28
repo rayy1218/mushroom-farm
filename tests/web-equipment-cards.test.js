@@ -99,7 +99,7 @@ const MACHINES = {
 
 test('the status line of a sensor: its status and latest value', () => {
   const status = (key, sensors = SENSORS) => cardStatus(card(key), { sensors, machines: MACHINES });
-  assert.deepEqual(status('trh'), { status: 'online', word: 'Online', value: '20.1 °C · 91.7 %' });
+  assert.deepEqual(status('trh'), { status: 'online', word: 'Online', value: '20.1 °C · 91.7 % RH' });
   assert.deepEqual(status('co2'), { status: 'timeout', word: 'Timeout', value: '638 ppm' });
   assert.equal(status('meter'), null, 'no address: the line under the title says so, no status line');
   assert.equal(status('filter'), null, 'the filter pressure has one home: the Intake filter card');
