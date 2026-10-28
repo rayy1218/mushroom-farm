@@ -11,11 +11,11 @@
   --page: #0d0f12; --surface: #15181c; --raised: #1c2026; --ink: #e9ebee; --ink-2: #b6bcc5; --muted: #8a919b;
   --border: rgba(255,255,255,.075); --border-strong: rgba(255,255,255,.13); --band: rgba(255,255,255,.05);
   --grid: #23272d; --axis: #3b414a;
-  --accent: #4d8dff; --accent-hover: #6aa0ff; --on-accent: #fff; --accent-soft: rgba(77,141,255,.14); --accent-text: #7fb0ff;
+  --accent: #336fe6; --accent-hover: #2f68dd; --on-accent: #fff; --accent-soft: rgba(77,141,255,.14); --accent-text: #7fb0ff; /* white on the accent: 4.6:1 */
   --good: #2eb872; --good-text: #3fcf85; --good-soft: rgba(46,184,114,.14);
   --warning: #e3a008; --warning-text: #f2bd4b; --warning-soft: rgba(227,160,8,.14);
   --s-t: #f39a5b; --s-rh: #3cb4f0; --s-co2: #a98bfa;
-  --critical: #e5484d; --critical-text: #ff8085;
+  --critical: #d63c42; --critical-text: #ff8085;
   --on-critical: #fff;
   --critical-bg: rgba(229,72,77,.13); /* red tint over surface */
   --backdrop: rgba(0,0,0,.6); --shadow: rgba(0,0,0,.55);
@@ -55,7 +55,8 @@
 
 body { margin: 0; background: var(--page); color: var(--ink); font: 400 var(--fs-md)/1.45 var(--font-body); -webkit-font-smoothing: antialiased; }
 
-h1, h2 { margin: 0; font-weight: 600; letter-spacing: -.01em; }
+h1, h2 { margin: 0; font-weight: 600; letter-spacing: -.01em; text-wrap: balance; }
+p, li { text-wrap: pretty; }
 h1 { font-size: var(--fs-2xl); }
 h2 { font-size: var(--fs-lg); margin-bottom: 16px; }
 a { color: var(--accent-text); text-underline-offset: 3px; }
@@ -906,7 +907,7 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
 .cs-link { display: none; }
 
 /* The room picture */
-.pic-card .rc-pic { border-radius: 10px; overflow: hidden; border: 1px solid var(--border); }
+.pic-card .rc-pic { border-radius: 10px; overflow: hidden; }
 .rc-fresh { margin: 12px 0 0; font-size: var(--fs-sm); color: var(--ink-2); }
 .rc-strip { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 6px 0 0; font-size: var(--fs-sm); color: var(--muted); }
 .rc-strip b { color: var(--ink-2); font-weight: 600; }
