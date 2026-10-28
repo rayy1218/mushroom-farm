@@ -10,7 +10,7 @@ import { AC_CLASSES, acClassOf, kwOfBtu, btuOfKw } from './simulation-math.js';
 import {
   PHYSICS_FIELDS, FILTER_KEYS, initialState, checkStep, firstField, stepOf, buildBody, mixSummary, wholeProgram, stagesOf, fixStage, roomLine,
   summaryLines, progressLine, removeLabel,
-  TARGET_DEFAULT, checkTarget, sizingBody, sizingProgress, sizingRows, estimateLines, useSetup,
+  TARGET_DEFAULT, checkTarget, sizingBody, sizingProgress, sizingRows, estimateLines, useSetup, coolDownLine, startChoices,
 } from './simulate-math.js';
 
 const STEPS = ['Room and machines', 'Crops', 'Run'];
@@ -317,8 +317,21 @@ export function openSimulateDialog(room, hooks = {}) {
     daysInput.setAttribute('aria-describedby', err.id);
     const wholeText = whole.capped ? `First ${whole.days} days of the program (${whole.total} days in all)` : `Whole program (${whole.days} days)`;
     radios.append(choice('days', [el('span', '', 'Run for'), daysInput, el('span', '', 'days')]), err, choice('whole', [el('span', '', wholeText)]));
+    // Start from: a room that is running, or one just loaded at the heat of the day (its cool-down)
+    const starts = el('fieldset', 'sim-days');
+    starts.append(el('legend', '', 'Start from'));
+    for (const c of startChoices) {
+      const label = el('label', 'sim-choice');
+      const radio = el('input');
+      radio.type = 'radio';
+      radio.name = 'sim-start';
+      radio.checked = state.start === c.value;
+      radio.addEventListener('change', () => { state.start = c.value; paintSummary(); });
+      label.append(radio, el('span', '', c.label));
+      starts.append(label);
+    }
     paintSummary();
-    box.append(radios, el('h3', 'sim-sub', 'Your choices'), list, suggestBox(paintSummary));
+    box.append(radios, starts, el('h3', 'sim-sub', 'Your choices'), list, suggestBox(paintSummary));
     return box;
   }
 
@@ -395,7 +408,7 @@ export function openSimulateDialog(room, hooks = {}) {
       const table = el('table', 'us-table sim-setups');
       table.append(el('caption', '', `Best setups over ${result.days} days, in order`));
       const head = el('tr');
-      const columns = ['Setup', 'Fan m³/h', 'Humidifier L/h', 'Dehumidifier L/day (0 = none)', 'Aircon', 'Time limit min', 'Temperature %', 'Humidity %', 'CO₂ %', 'All three %', `kWh in ${result.days} days`, ''];
+      const columns = ['Setup', 'Fan m³/h', 'Humidifier L/h', 'Dehumidifier L/day (0 = none)', 'Aircon', 'Time limit min', 'Temperature %', 'Humidity %', 'CO₂ %', 'All three %', `kWh in ${result.days} days`, 'Cools down in', ''];
       columns.forEach((c, i) => { const th = el('th', i > 0 && i < columns.length - 1 ? 'num' : '', c); th.scope = 'col'; head.append(th); });
       const thead = el('thead');
       thead.append(head);
@@ -405,7 +418,7 @@ export function openSimulateDialog(room, hooks = {}) {
         const mark = el('th', '', `${r.reached ? '✓ ' : ''}${r.mark}`);
         mark.scope = 'row';
         tr.append(mark);
-        for (const v of [r.fan, r.humidifier, r.dehumidifier, r.aircon, r.limit, r.t, r.rh, r.co2, r.all, r.kWh]) tr.append(el('td', 'num', v));
+        for (const v of [r.fan, r.humidifier, r.dehumidifier, r.aircon, r.limit, r.t, r.rh, r.co2, r.all, r.kWh, r.coolDown]) tr.append(el('td', 'num', v));
         const use = button('Use this');
         use.setAttribute('aria-label', `Use setup ${r.index + 1}`);
         use.addEventListener('click', () => {
@@ -421,8 +434,11 @@ export function openSimulateDialog(room, hooks = {}) {
       }
       table.append(thead, tbody);
       wrap.append(table);
-      nodes.push(wrap);
-      if (!rows.some((r) => r.reached)) nodes.push(el('p', 'sim-warn', `No setup reached ${result.target} %.`));
+      const cool = coolDownLine(result);
+      nodes.push(wrap, ...(cool ? [el('p', 'muted', cool)] : []));
+      if (!rows.some((r) => r.reached)) {
+        nodes.push(el('p', 'sim-warn', `No setup reached ${result.target} %${cool ? ` and cooled down within ${result.coolDownMaxH} h` : ''}.`));
+      }
     }
     for (const n of result.notes ?? []) nodes.push(el('p', 'us-note', n));
     return nodes;

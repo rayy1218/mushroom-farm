@@ -1,5 +1,6 @@
 // Pure helpers for the simulation results page and the Simulations card (no DOM, so they can be tested in Node).
-// Spec 2026-10-20-crops-and-simulation-design.md sections 4.3 and 4.5. Times of a run are seconds from its start (day 1, 00:00).
+// Spec 2026-10-20-crops-and-simulation-design.md sections 4.3 and 4.5. Times of a run are seconds from its start (day 1, at
+// its start hour: 00:00 unless the run says startHour).
 
 import { CROPS, STAGES } from './crops.js';
 import { formatKWh, formatRM, formatLitres } from './usage-math.js';
@@ -53,10 +54,10 @@ export function stageRows(perStage) {
 
 // ---- charts ----
 
-// "day 3 13:05" for a second of the run.
-export function formatRunTime(s) {
+// "day 3 13:05" for a second of the run; startHour: the hour of the day the run started at (the days are the run's).
+export function formatRunTime(s, startHour = 0) {
   const day = Math.floor(s / DAY_S) + 1;
-  const m = Math.floor((s % DAY_S) / 60);
+  const m = Math.floor(((s + startHour * 3600) % DAY_S) / 60);
   return `day ${day} ${pad2(Math.floor(m / 60))}:${pad2(m % 60)}`;
 }
 
@@ -68,8 +69,9 @@ export function runEnd(result) {
 }
 
 // Axis ticks "day 1, day 2 …" at the start of days, every few days when there are many; a run shorter than two days gets
-// hour ticks ("04:00") with day starts labelled. at is in seconds. Never more than maxTicks.
-export function dayTicks(totalS, maxTicks) {
+// hour ticks ("04:00", the time of day of a run that started at startHour) with day starts labelled. at is in seconds. Never
+// more than maxTicks.
+export function dayTicks(totalS, maxTicks, startHour = 0) {
   const ticks = [];
   if (totalS >= 2 * DAY_S) {
     const step = Math.ceil(totalS / DAY_S / Math.max(1, maxTicks));
@@ -80,7 +82,7 @@ export function dayTicks(totalS, maxTicks) {
   const step = [1, 2, 3, 4, 6, 12].find((h) => Math.ceil(hours / h) <= maxTicks) ?? 12;
   for (let h = 0; h * 3600 < totalS; h += step) {
     const at = h * 3600;
-    ticks.push({ at, label: at % DAY_S === 0 ? `day ${at / DAY_S + 1}` : `${pad2(h % 24)}:00` });
+    ticks.push({ at, label: at % DAY_S === 0 ? `day ${at / DAY_S + 1}` : `${pad2((h + startHour) % 24)}:00` });
   }
   return ticks;
 }
@@ -180,14 +182,15 @@ export function timelineRows(machines, minGap = 0, input = null, filterChanges =
 // ---- the intake filter (spec 2026-10-22-filter-design.md 8) ----
 
 // summary.filter → the tiles of the filter part, or null for a run without a filter.
-export function filterView(summary) {
+// startHour: the hour of the day the run started at (its change times are times of day).
+export function filterView(summary, startHour = 0) {
   const f = summary?.filter;
   if (!f) return null;
   const changes = Array.isArray(f.changes) ? f.changes : [];
   return {
     tiles: [
       changes.length
-        ? { label: 'Filter changes', value: String(changes.length), line: changes.map(formatRunTime).join(', ') }
+        ? { label: 'Filter changes', value: String(changes.length), line: changes.map((at) => formatRunTime(at, startHour)).join(', ') }
         : { label: 'Filter changes', value: 'None', line: 'not changed in the run' },
       finite(f.meanFilterPa)
         ? { label: 'Mean filter pressure', value: `${f.meanFilterPa.toFixed(1)} Pa`, line: 'while the intake ran' }
@@ -254,9 +257,11 @@ export function inputRows(input) {
   const p = input?.physics;
   if (!p) return [];
   const crops = (input.crops ?? []).map((c) => `${CROPS[c.crop]?.name ?? c.crop} ${c.blocks}`).join(' and ');
+  const started = startedFrom(input);
   return [
     { label: 'Crops', value: `${crops} blocks` },
     { label: 'Run', value: `from ${STAGES[input.stage]?.toLowerCase() ?? input.stage}, ${plural(input.days, 'day', 'days')}` },
+    ...(started ? [{ label: 'Started from', value: started }] : []),
     { label: 'Room', value: `walls ${p.wallUA} W/K, sun ${p.sunW} W` },
     { label: 'Outdoor', value: `${p.outdoorLow}–${p.outdoorHigh} °C, dew point ${p.outdoorDew} °C` },
     { label: 'Aircon', value: acSize(p.acBTU) },
@@ -265,6 +270,13 @@ export function inputRows(input) {
     { label: 'Dehumidifier', value: p.dehumidifierLday > 0 ? `${p.dehumidifierLday} L/day` : 'none' },
     ...controlRows(input.ctx?.control ?? input.control),
   ];
+}
+
+// Where a run started, when not in band at midnight: "outdoor air at 14:00", "in band at 07:00"; else null.
+function startedFrom(input) {
+  const hour = `${pad2(finite(input.startHour) ? input.startHour : 0)}:00`;
+  if (input.start === 'outdoor') return `outdoor air at ${hour}`;
+  return finite(input.startHour) && input.startHour > 0 ? `in band at ${hour}` : null;
 }
 
 // How the room was run (the control the run used; an older run without it gives none).
@@ -286,7 +298,9 @@ const MISSES = [
   { key: 'co2', low: 'co2Low', high: 'co2High', below: 'CO₂ under the air exchange stop point', above: 'CO₂ above the air exchange start point', unit: 'ppm', fmt: (v) => grouped(Math.round(v)),
     bandText: (b) => `the air exchange starts at ${grouped(b[1])} and stops at ${grouped(b[0])} ppm` },
 ];
-export function runVerdict(series, inBand) {
+// coolDownS: of a run that started from outdoor air (summary.coolDownS: null when it did not cool down; undefined: a run from
+// the band, which says nothing of it).
+export function runVerdict(series, inBand, coolDownS) {
   if (!series?.length) return null;
   const all = finite(inBand?.all) ? inBand.all : null;
   const share = all === null ? '' : `${Number(all.toFixed(1))} %`;
@@ -305,8 +319,10 @@ export function runVerdict(series, inBand) {
     if (above / n >= 0.05) lines.push(`${m.above} ${Math.round((above / n) * 100)} % of the time (up to ${m.fmt(max)} ${m.unit}; ${band(bandAbove)})`);
   }
   const tone = inBandTone(all);
-  const text = all === null ? '' : all >= 95 ? `The room stayed in band ${share} of the time.` : `The room was in band ${share} of the time.`;
-  return { tone, text, lines };
+  const sentences = [all === null ? '' : all >= 95 ? `The room stayed in band ${share} of the time.` : `The room was in band ${share} of the time.`];
+  if (finite(coolDownS)) sentences.push(`Cooled down in ${(coolDownS / 3600).toFixed(1)} h.`);
+  else if (coolDownS === null) sentences.push('Did not cool down within the run.');
+  return { tone, text: sentences.filter(Boolean).join(' '), lines };
 }
 
 // Why a run missed, from what the machines did (result.machines) and the control it ran with: lines for the verdict card.
@@ -381,7 +397,7 @@ export function inputLine(input, roomMin = null) {
     filter.push(`filter ${p.filterCleanPa} Pa clean, change at ${p.filterFinalPa} Pa, ${plural(p.filterUsedDays ?? 0, 'day', 'days')} in use, ${when}`);
   }
   return [
-    `${crops} blocks, starting at ${stage}, ${plural(input.days, 'day', 'days')}`,
+    `${crops} blocks, starting at ${stage}${input.start === 'outdoor' ? ` from ${startedFrom(input)}` : ''}, ${plural(input.days, 'day', 'days')}`,
     `walls ${p.wallUA} W/K, sun ${p.sunW} W, outdoor ${p.outdoorLow}–${p.outdoorHigh} °C, dew point ${p.outdoorDew} °C`,
     `fan ${p.fanFlow} m³/h, aircon ${acSize(p.acBTU)}, humidifier ${p.humidifierLH} L/h${p.dehumidifierLday > 0 ? `, dehumidifier ${p.dehumidifierLday} L/day` : ''}`,
     ...limit,

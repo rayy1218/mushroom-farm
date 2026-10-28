@@ -44,3 +44,8 @@ test('the intake row of the timeline marks the filter changes', () => {
 test('one day is "1 day" in the input line', () => {
   assert.match(inputLine(input({ ...filter, filterChangeDays: 1, filterUsedDays: 1, filterSensor: false })), / · filter 40 Pa clean, change at 150 Pa, 1 day in use, changed every 1 day$/);
 });
+
+test('filter changes of a run that started at 14:00 are told on its clock', () => {
+  const v = filterView({ days: 7, filter: { changes: [86400, 2 * 86400 + 3600 * 5 + 60 * 3], meanExchangeM3h: 1, meanFilterPa: 1, unfilteredPct: 0 } }, 14);
+  assert.equal(v.tiles[0].line, 'day 2 14:00, day 3 19:03');
+});

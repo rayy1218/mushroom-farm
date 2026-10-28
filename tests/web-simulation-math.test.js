@@ -337,3 +337,33 @@ test('the Simulations list: a refresh with nothing new leaves it alone; each Com
   assert.match(card, /'Tick one more run to compare the two side by side\.'/);
   assert.match(card, /el\('span', 'sim-status', run\.status === 'done' \? '' : r\.status\)/, 'Done is the usual: only other states are said');
 });
+
+// ---- a run that started from outdoor air (2026-10-28) ----
+
+test('runVerdict: a run from outdoor air says how long it took to cool down', async () => {
+  const { runVerdict } = await import('../web/simulation-math.js');
+  const row = (t, rh, co2) => ({ t, rh, co2, tLow: 19, tHigh: 21, rhLow: 87, rhHigh: 93, co2Low: 700, co2High: 800 });
+  const series = [row(20, 90, 750), row(20.5, 91, 760)];
+  assert.equal(runVerdict(series, { all: 100 }, 5400).text, 'The room stayed in band 100 % of the time. Cooled down in 1.5 h.');
+  assert.equal(runVerdict(series, { all: 90 }, null).text, 'The room was in band 90 % of the time. Did not cool down within the run.');
+  assert.equal(runVerdict(series, { all: 100 }).text, 'The room stayed in band 100 % of the time.', 'a run from the band says nothing of it');
+});
+
+test('inputRows: where a run started', async () => {
+  const { inputRows } = await import('../web/simulation-math.js');
+  const input = { physics: { wallUA: 80, outdoorHigh: 33, outdoorLow: 25, outdoorDew: 24, sunW: 300, fanFlow: 600, acBTU: 12000, humidifierLH: 2 },
+    crops: [{ crop: 'oyster', blocks: 500 }], farmType: 'ready', stage: 'fruiting', days: 1 };
+  const rows = inputRows({ ...input, start: 'outdoor', startHour: 14 });
+  assert.deepEqual(rows[2], { label: 'Started from', value: 'outdoor air at 14:00' });
+  assert.deepEqual(inputRows({ ...input, startHour: 7 })[2], { label: 'Started from', value: 'in band at 07:00' });
+  assert.equal(inputRows(input).some((r) => r.label === 'Started from'), false);
+  assert.match(inputLine({ ...input, start: 'outdoor', startHour: 14 }), /^Grey oyster 500 blocks, starting at fruiting from outdoor air at 14:00, 1 day · /);
+});
+
+test('the time of day of a run that started at 14:00: the clock moves, the days and seconds do not', () => {
+  assert.equal(formatRunTime(0, 14), 'day 1 14:00');
+  assert.equal(formatRunTime(11 * 3600, 14), 'day 1 01:00');
+  assert.equal(formatRunTime(DAY_S + 3600, 14), 'day 2 15:00');
+  assert.deepEqual(dayTicks(DAY_S, 6, 14).slice(0, 3), [{ at: 0, label: 'day 1' }, { at: 4 * 3600, label: '18:00' }, { at: 8 * 3600, label: '22:00' }]);
+  assert.deepEqual(dayTicks(3 * DAY_S, 10, 14).map((x) => x.label), ['day 1', 'day 2', 'day 3']);
+});

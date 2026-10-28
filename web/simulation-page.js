@@ -257,10 +257,11 @@ export function mount(container, { id, runId }) {
     const { summary } = result;
     const end = runEnd(result);
     const range = { from: 0, to: end };
-    const common = { range, ticksFor: (w) => dayTicks(end, tickCountFor(w)), formatAt: formatRunTime, onCursor: moveCursor };
+    const startHour = Number.isInteger(run.input?.startHour) ? run.input.startHour : 0; // the clock of the charts
+    const common = { range, ticksFor: (w) => dayTicks(end, tickCountFor(w), startHour), formatAt: (s) => formatRunTime(s, startHour), onCursor: moveCursor };
 
-    // the verdict: how the run went, and which way each reading missed
-    const verdict = runVerdict(result.series, summary.inBand);
+    // the verdict: how the run went, which way each reading missed, and the cool-down of a run from outdoor air
+    const verdict = runVerdict(result.series, summary.inBand, summary.coolDownS);
     if (verdict) {
       const v = text('section', 'card sim-verdict');
       v.dataset.tone = verdict.tone;
@@ -315,7 +316,7 @@ export function mount(container, { id, runId }) {
     const tl = text('section', 'card timeline-card');
     tl.append(text('h2', '', 'Machine timeline'));
     const tlHost = text('div', 'chart-host');
-    const filter = filterView(summary);
+    const filter = filterView(summary, startHour);
     const changes = summary.filter?.changes ?? [];
     tl.append(tlHost, text('p', 'legend', `A bar is a time the machine was on. The aircon row shows its setpoint${changes.length ? ', the intake row the filter changes' : ''}.`));
     els.results.append(tl);

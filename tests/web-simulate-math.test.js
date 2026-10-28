@@ -6,7 +6,9 @@ import {
   PHYSICS_FIELDS, DEFAULT_CROPS, DAYS_DEFAULT, initialState, checkStep, firstField, stepOf, buildBody, mixSummary, wholeProgram,
   programDays, programOf, stagesOf, fixStage, roomLine, summaryLines, progressLine, bandLines, removeLabel,
   TARGET_DEFAULT, checkTarget, sizingBody, sizingProgress, sizingRows, estimateLines, useSetup, limitLine,
+  COOL_START_HOUR, coolDownLine, startChoices,
 } from '../web/simulate-math.js';
+import { COOL_START_HOUR as SERVER_COOL_START_HOUR } from '../server/sizing.js';
 
 const room = { id: 3, name: 'Room 1', length: 6, width: 4, height: 3, volume: 72, humidifierLH: 1.5 };
 
@@ -271,6 +273,7 @@ test('the table rows: texts, Best on the first, reached marks by words', () => {
   assert.deepEqual(rows[0], {
     index: 0, best: true, reached: true, mark: 'Best, reaches 95 %',
     fan: '150', humidifier: '0.5', dehumidifier: '10', aircon: '2.6 kW (9,000 BTU/h class)', limit: '30', t: '99.1', rh: '97.0', co2: '98.0', all: '96.0', kWh: '41.3',
+    coolDown: '—', // a suggestion from before the cool-down check
   });
   assert.deepEqual([rows[1].best, rows[1].reached, rows[1].mark, rows[1].dehumidifier], [false, false, 'Below 95 %', '0']);
   // the second reaches the target when it is lower
@@ -351,4 +354,58 @@ test('Use this also carries the aircon drop and the humidifier setting when they
   // everything as the room: no control at all
   useSetup(s, cand, { exchangeMaxMin: 60, acDrop: 0, humidifierDuringExchange: false });
   assert.equal('control' in buildBody(s), false);
+});
+
+// ---- the cool-down (2026-10-28) ----
+
+const cooled = {
+  ...job.result, coolDownMaxH: 3, coolDownStartHour: 14,
+  best: [
+    { ...job.result.best[0], coolDownH: 1.5 },
+    { ...job.result.best[0], coolDownH: 4.2, kWh: 30 },
+    { ...job.result.best[0], coolDownH: null, kWh: 20 },
+    { ...job.result.best[1], coolDownH: 3 },
+    { ...job.result.best[1], coolDownH: null },
+  ],
+};
+
+test('the table rows: Cools down in, and a row that cools down too slowly says so like one below the target', () => {
+  const rows = sizingRows(cooled);
+  assert.deepEqual(rows.map((r) => r.coolDown), ['1.5 h', '4.2 h', 'not in a day', '3.0 h', 'not in a day']);
+  assert.deepEqual(rows.map((r) => r.reached), [true, false, false, false, false]);
+  assert.deepEqual(rows.map((r) => r.mark), [
+    'Best, reaches 95 %', 'Reaches 95 %, cools down in over 3 h', 'Reaches 95 %, cools down in over 3 h', 'Below 95 %', 'Below 95 %, cools down in over 3 h',
+  ]);
+  assert.equal(sizingRows({ ...cooled, coolDownMaxH: 5 })[1].reached, true);
+});
+
+test('the line that says what the cool-down is', () => {
+  assert.equal(coolDownLine(cooled), 'Cool-down: from outdoor air at 14:00 (just loaded, or after the door was open) until temperature and humidity are in band and hold it for an hour (at most 0.5 °C too warm or 2 % RH too dry now and then); at most 3 h.');
+  assert.match(coolDownLine({ ...cooled, coolDownMaxH: 1.5 }), /; at most 1.5 h\.$/);
+  assert.equal(coolDownLine(job.result), null, 'none before the check');
+});
+
+test('the estimates: the cool-down line after the aircon', () => {
+  const est = { ...job.result.estimate, acCoolBTU: 12000, humidifierCoolLH: 2, why: { ...job.result.estimate.why, coolDown: 'From outdoor air at 14:00' } };
+  assert.equal(estimateLines(est)[4], 'Cool-down aircon 3.5 kW (12,000 BTU/h class), humidifier 2 L/h: From outdoor air at 14:00');
+  assert.equal(estimateLines(est).length, 6);
+});
+
+test('Start from: in band (a room that is running) by default, or outdoor air at 14:00; the body carries it only from outdoor air', () => {
+  assert.equal(COOL_START_HOUR, SERVER_COOL_START_HOUR);
+  assert.deepEqual(startChoices, [
+    { value: 'band', label: 'In band (a room that is running)' },
+    { value: 'outdoor', label: 'Outdoor air at 14:00 (just loaded)' },
+  ]);
+  const s = initialState({ room });
+  assert.equal(s.start, 'band');
+  assert.equal('start' in buildBody(s) || 'startHour' in buildBody(s), false);
+  s.start = 'outdoor';
+  const body = buildBody(s);
+  assert.deepEqual([body.start, body.startHour], ['outdoor', 14]);
+  assert.deepEqual(summaryLines(s, room).find((l) => l.label === 'Start'), { label: 'Start', text: 'From outdoor air at 14:00 (just loaded)' });
+  assert.equal(summaryLines(initialState({ room }), room).some((l) => l.label === 'Start'), false);
+  assert.equal(stepOf('start'), 3);
+  assert.equal(stepOf('startHour'), 3);
+  assert.equal(stepOf('coolDownMaxH'), 3);
 });

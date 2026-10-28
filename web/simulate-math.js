@@ -32,6 +32,15 @@ export const FILTER_KEYS = ['fanMaxPa', 'filterCleanPa', 'filterFinalPa', 'filte
 const DAY_MS = 86_400_000;
 
 export const DEFAULT_CROPS = [{ crop: 'oyster', blocks: 500 }];
+// The hour a run from outdoor air starts at, the cool-down's of Suggest machines (server/sizing.js COOL_START_HOUR; a test
+// compares them): the heat of the day.
+export const COOL_START_HOUR = 14;
+const clockHour = (h) => `${String(h).padStart(2, '0')}:00`;
+// Step 3's Start from.
+export const startChoices = [
+  { value: 'band', label: 'In band (a room that is running)' },
+  { value: 'outdoor', label: `Outdoor air at ${clockHour(COOL_START_HOUR)} (just loaded)` },
+];
 export const DAYS_DEFAULT = 7;
 export const DAYS_MAX = 90;
 
@@ -104,6 +113,7 @@ export function initialState({ room, lastRun = null, cropData = null, now = Date
     filterSensor: isNumber(room?.dpAddress), // the run changes its filter at the change pressure, as the room's sensor would tell
     daysMode: 'days',
     days: String(DAYS_DEFAULT),
+    start: 'band', // Start from: 'band' or 'outdoor' (at COOL_START_HOUR)
     // The air exchange time limit of this run: null while it is the room's (a suggestion's Use this sets it).
     exchangeMaxMin: null,
     roomExchangeMaxMin: null, // the room's own, from GET /api/rooms/:id/control, when known
@@ -183,7 +193,7 @@ export function stepOf(field) {
   if (typeof field !== 'string') return null;
   if (field === 'physics' || field.startsWith('physics.')) return 1;
   if (field === 'crops' || field === 'farmType' || field === 'stage') return 2;
-  return field === 'days' || field === 'target' || field === 'control' || String(field).startsWith('control.') ? 3 : null;
+  return ['days', 'target', 'control', 'start', 'startHour', 'coolDownMaxH'].includes(field) || String(field).startsWith('control.') ? 3 : null;
 }
 
 // The body of POST /api/rooms/:id/simulations from a checked state.
@@ -194,6 +204,7 @@ export function buildBody(state, cropData = null) {
     farmType: state.farmType,
     stage: state.stage,
     days: daysOf(state, cropData),
+    ...(state.start === 'outdoor' ? { start: 'outdoor', startHour: COOL_START_HOUR } : {}),
   };
   const control = { ...(isNumber(state.exchangeMaxMin) ? { exchangeMaxMin: state.exchangeMaxMin } : {}), ...(state.runSettings ?? {}) };
   if (Object.keys(control).length > 0) body.control = control;
@@ -242,6 +253,7 @@ export function summaryLines(state, room, cropData = null) {
     ...(state.runSettings && Object.keys(state.runSettings).length > 0 ? [{ label: 'Settings', text: settingsLine(state.runSettings, state.roomSettings) }] : []),
     { label: 'Filter', text: filterLine(v, state.filterSensor === true) },
     { label: 'Crops', text: `${crops}; ${farmWords[state.farmType]}, starting at ${STAGES[state.stage].toLowerCase().replace(' between flushes', '')}` },
+    ...(state.start === 'outdoor' ? [{ label: 'Start', text: `From outdoor air at ${clockHour(COOL_START_HOUR)} (just loaded)` }] : []),
     { label: 'Run', text: days },
   ];
 }
@@ -293,15 +305,19 @@ export function sizingProgress(job) {
 
 const one = (v) => (isNumber(v) ? v.toFixed(1) : '—');
 
-// result.best as the rows of the table: texts, whether the row is the best one and whether it reaches the target (in words,
-// never colour alone). index is the row's place in result.best, for Use this.
+// result.best as the rows of the table: texts, whether the row is the best one and whether it reaches the target and cools
+// down in time (in words, never colour alone). index is the row's place in result.best, for Use this. A result from before
+// the cool-down check (no coolDownMaxH) is judged on the target alone.
 export function sizingRows(result) {
   const target = result?.target;
+  const maxH = isNumber(result?.coolDownMaxH) ? result.coolDownMaxH : null;
   return (Array.isArray(result?.best) ? result.best : []).map((c, i) => {
     // Temperature, humidity and CO₂ each at the target (spec section 4); "All three" is information only.
-    const reached = isNumber(target) && ['t', 'rh', 'co2'].every((k) => isNumber(c.inBand?.[k]) && c.inBand[k] >= target);
+    const held = isNumber(target) && ['t', 'rh', 'co2'].every((k) => isNumber(c.inBand?.[k]) && c.inBand[k] >= target);
+    const cools = maxH === null || (isNumber(c.coolDownH) && c.coolDownH <= maxH);
+    const reached = held && cools;
     const best = i === 0;
-    const verdict = reached ? `reaches ${target} %` : `below ${target} %`;
+    const verdict = [held ? `reaches ${target} %` : `below ${target} %`, ...(cools ? [] : [`cools down in over ${maxH} h`])].join(', ');
     const text = best ? `Best, ${verdict}` : `${verdict[0].toUpperCase()}${verdict.slice(1)}`;
     return {
       index: i, best, reached,
@@ -309,8 +325,16 @@ export function sizingRows(result) {
       fan: String(c.machines?.fanFlow), humidifier: String(c.machines?.humidifierLH), dehumidifier: String(c.machines?.dehumidifierLday ?? 0),
       aircon: acSize(Number(c.machines?.acBTU)), limit: String(c.exchangeMaxMin),
       t: one(c.inBand?.t), rh: one(c.inBand?.rh), co2: one(c.inBand?.co2), all: one(c.inBand?.all), kWh: one(c.kWh),
+      coolDown: maxH === null ? '—' : isNumber(c.coolDownH) ? `${c.coolDownH.toFixed(1)} h` : 'not in a day',
     };
   });
+}
+
+// What the table's Cools down in measures, or null for a result from before the cool-down check.
+export function coolDownLine(result) {
+  if (!isNumber(result?.coolDownMaxH)) return null;
+  const hour = clockHour(isNumber(result.coolDownStartHour) ? result.coolDownStartHour : COOL_START_HOUR);
+  return `Cool-down: from outdoor air at ${hour} (just loaded, or after the door was open) until temperature and humidity are in band and hold it for an hour (at most 0.5 °C too warm or 2 % RH too dry now and then); at most ${result.coolDownMaxH} h.`;
 }
 
 // The estimates with their reasons, one line each: "Fan 150 m³/h: why".
@@ -322,6 +346,7 @@ export function estimateLines(est) {
     ['Humidifier', `${est.humidifierLH} L/h`, why.humidifierLH, est.humidifierLH],
     ['Dehumidifier', `up to ${est.dehumidifierMaxLday} L/day`, why.dehumidifierLday, est.dehumidifierMaxLday],
     ['Aircon', isNumber(est.acBTU) ? acSize(est.acBTU) : est.acBTU, why.acBTU, est.acBTU],
+    ['Cool-down', `aircon ${acSize(est.acCoolBTU)}, humidifier ${est.humidifierCoolLH} L/h`, why.coolDown, est.acCoolBTU],
     ['Air exchange time limit', `${est.exchangeMaxMin} min`, why.exchangeMaxMin, est.exchangeMaxMin],
   ];
   return rows.filter((r) => r[3] !== undefined && r[3] !== null).map(([name, value, reason]) => `${name} ${value}${reason ? `: ${reason}` : ''}`);
