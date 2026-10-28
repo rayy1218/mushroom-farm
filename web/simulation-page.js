@@ -205,6 +205,7 @@ export function mount(container, { id, runId }) {
   function render() {
     const name = roomName ?? 'the room';
     els.title.textContent = headLine(name);
+    if (roomName !== null) els.back.textContent = `← ${roomName}`; // back to which room
     els.sub.textContent = [formatDateTime(run.createdAt), inputLine(run.input)].filter(Boolean).join(' · ');
     els.actions.hidden = false;
     document.title = `${headLine(name)} · Mushroom farm`;
