@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseRoute, isCanonical, ROOM_TABS, roomHash } from '../web/route.js';
+import { parseRoute, isCanonical, ROOM_TABS, roomHash, suggestHash, canonicalHash } from '../web/route.js';
 
 test('empty and unknown hashes mean the Overview', () => {
   for (const h of ['', '#', '#/', '#/other', '#/rooms/abc', '#/rooms/0', '#/rooms/01', '#/rooms/1/x', '#/rooms/-1', undefined]) {
@@ -62,4 +62,18 @@ test('a simulation run of a room is its own page', () => {
   assert.equal(isCanonical('#/rooms/3/simulations/12'), true);
   assert.equal(isCanonical('#/rooms/3/simulations/12/'), false);
   assert.equal(isCanonical('#/rooms/3/simulations/0'), false);
+});
+
+test('Suggest machines is a page of its room (owner 2026-10-28: out of the Simulate dialog)', () => {
+  assert.deepEqual(parseRoute('#/rooms/3/suggest'), { name: 'suggest', id: 3 });
+  assert.deepEqual(parseRoute('#/rooms/3/suggest/'), { name: 'suggest', id: 3 });
+  assert.equal(isCanonical('#/rooms/3/suggest'), true);
+  assert.equal(isCanonical('#/rooms/3/suggest/'), false);
+  assert.deepEqual(parseRoute('#/rooms/0/suggest'), { name: 'overview' });
+  assert.equal(suggestHash(3), '#/rooms/3/suggest');
+  assert.equal(canonicalHash({ name: 'suggest', id: 3 }), '#/rooms/3/suggest');
+  assert.equal(canonicalHash({ name: 'simulation', id: 3, runId: 12 }), '#/rooms/3/simulations/12');
+  assert.equal(canonicalHash({ name: 'detail', id: 3, tab: 'history' }), '#/rooms/3/history');
+  assert.equal(canonicalHash({ name: 'settings' }), '#/settings');
+  assert.equal(canonicalHash({ name: 'overview' }), '#/overview');
 });
