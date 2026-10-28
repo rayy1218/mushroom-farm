@@ -9,11 +9,14 @@ import { HUMIDIFIER_LABEL, OUTDOOR_LABEL } from './control-math.js';
 // The physics inputs of step 1. min, max and whole are those of the device app's PARAMS (device/sim-store.js; a test compares
 // them); def is the default (the humidifier's is the room's rating, the dehumidifier's the room's capacity when it is fitted).
 export const PHYSICS_FIELDS = [
-  { key: 'wallUA', label: 'Wall heat transfer', unit: 'W/K', min: 0, max: 100000, whole: false, def: 80 },
+  // hint: typical values (spec 2026-10-19-simulation-design.md for a 60 m³ room; device/sim-store.js PARAMS for the sun)
+  { key: 'wallUA', label: 'Wall heat transfer', unit: 'W/K', min: 0, max: 100000, whole: false, def: 80,
+    hint: 'Heat through the walls, roof and floor per °C between outdoors and the room: about 30 W/K for an insulated 20 ft container or 50 mm PU panels, about 280 W/K for brick walls under a bare zinc roof.' },
   { key: 'outdoorHigh', label: 'Outdoor day high', unit: '°C', min: -40, max: 60, whole: false, def: 33 },
   { key: 'outdoorLow', label: 'Outdoor night low', unit: '°C', min: -40, max: 60, whole: false, def: 25 },
   { key: 'outdoorDew', label: 'Outdoor dew point', unit: '°C', min: -40, max: 60, whole: false, def: 24 },
-  { key: 'sunW', label: 'Sun on the roof', unit: 'W', min: 0, max: 100000, whole: false, def: 300 },
+  { key: 'sunW', label: 'Sun on the roof', unit: 'W', min: 0, max: 100000, whole: false, def: 300,
+    hint: 'Peak sun heat through the roof at 13:00: about 300 W for an insulated roof of 20 m², several kW for bare zinc.' },
   { key: 'fanFlow', label: 'Fan flow', unit: 'm³/h', min: 0, max: 100000, whole: false, def: 600 },
   // kept in BTU/h (the device app's parameter); entered in kW, with the BTU/h class it is sold by as a picker (kw)
   { key: 'acBTU', label: 'Aircon size', unit: 'BTU/h', min: 0, max: 200000, whole: true, def: 12000, kw: true },
@@ -29,6 +32,8 @@ export const PHYSICS_FIELDS = [
   { key: 'filterChangeDays', label: 'Filter change every', unit: 'days', min: 0, max: 365, whole: true, def: 30, device: false, room: 'filterChangeDays' },
   { key: 'filterUsedDays', label: 'Filter in use', unit: 'days', min: 0, max: 365, whole: true, def: 0, device: false },
 ];
+// The walls and weather: what Suggest machines asks (the machines are what it looks for).
+export const SIZING_FIELDS = PHYSICS_FIELDS.filter((f) => ['wallUA', 'outdoorHigh', 'outdoorLow', 'outdoorDew', 'sunW'].includes(f.key));
 export const FILTER_KEYS = ['fanMaxPa', 'filterCleanPa', 'filterFinalPa', 'filterLifeDays', 'filterChangeDays', 'filterUsedDays'];
 const DAY_MS = 86_400_000;
 
@@ -289,10 +294,12 @@ export function progressLine(run) {
 }
 
 
-// ---- suggest machines (spec 2026-10-22-suggest-machines-design.md section 7) ----
+// ---- suggest machines (spec 2026-10-22-suggest-machines-design.md section 7; its own page since 2026-10-28) ----
 
 export const TARGET_DEFAULT = '95';
 const TARGET_MESSAGE = 'Target must be a whole number from 50 to 99 %';
+export const COOL_DOWN_DEFAULT = '3';
+const COOL_DOWN_MESSAGE = 'Longest cool-down must be a number from 0.5 to 24 h';
 
 // The error of a Target (%) text, or null.
 export function checkTarget(text) {
@@ -300,16 +307,35 @@ export function checkTarget(text) {
   return /^[0-9]{1,3}$/.test(s) && Number(s) >= 50 && Number(s) <= 99 ? null : TARGET_MESSAGE;
 }
 
-// The body of POST /api/rooms/:id/sizing: the walls, weather and sun of step 1 (the machines are what it looks for), the crops
-// of step 2 and the target. The state's texts are checked by the caller (checkStep 1 and 2, checkTarget).
-export function sizingBody(state, target) {
+// The error of a Longest cool-down (h) text, or null (the server's limits).
+export function checkCoolDown(text) {
+  const n = numberOf(text);
+  return Number.isFinite(n) && n >= 0.5 && n <= 24 ? null : COOL_DOWN_MESSAGE;
+}
+
+// The errors of the Suggest machines page: the walls and weather, the crops (step 1 and 2 of Simulate), the target and the
+// longest cool-down; the machines are not asked.
+export function checkSuggest(state, target, coolDown) {
+  const walls = Object.entries(checkStep(1, state)).filter(([k]) => SIZING_FIELDS.some((f) => k === `physics.${f.key}`));
+  const errors = { ...Object.fromEntries(walls), ...checkStep(2, state) };
+  const badTarget = checkTarget(target);
+  if (badTarget) errors.target = badTarget;
+  const badCool = checkCoolDown(coolDown);
+  if (badCool) errors.coolDownMaxH = badCool;
+  return errors;
+}
+
+// The body of POST /api/rooms/:id/sizing: the walls, weather and sun (the machines are what it looks for), the crops, the
+// target and, when given, the longest cool-down. The state's texts are checked by the caller (checkSuggest).
+export function sizingBody(state, target, coolDownMaxH) {
   const v = physicsValues(state);
   return {
-    physics: { wallUA: v.wallUA, outdoorHigh: v.outdoorHigh, outdoorLow: v.outdoorLow, outdoorDew: v.outdoorDew, sunW: v.sunW },
+    physics: Object.fromEntries(SIZING_FIELDS.map((f) => [f.key, v[f.key]])),
     crops: cropsOf(state),
     farmType: state.farmType,
     stage: state.stage,
     target: Number(String(target).trim()),
+    ...(coolDownMaxH === undefined ? {} : { coolDownMaxH: numberOf(coolDownMaxH) }),
   };
 }
 
@@ -323,33 +349,6 @@ export function sizingProgress(job) {
     return `Trying ${tried} of ${job.total} setups…`;
   }
   return `Trying setups… ${Math.round((isNumber(job.progress) ? job.progress : 0) * 100)} %`;
-}
-
-const one = (v) => (isNumber(v) ? v.toFixed(1) : '—');
-
-// result.best as the rows of the table: texts, whether the row is the best one and whether it reaches the target and cools
-// down in time (in words, never colour alone). index is the row's place in result.best, for Use this. A result from before
-// the cool-down check (no coolDownMaxH) is judged on the target alone.
-export function sizingRows(result) {
-  const target = result?.target;
-  const maxH = isNumber(result?.coolDownMaxH) ? result.coolDownMaxH : null;
-  return (Array.isArray(result?.best) ? result.best : []).map((c, i) => {
-    // Temperature, humidity and CO₂ each at the target (spec section 4); "All three" is information only.
-    const held = isNumber(target) && ['t', 'rh', 'co2'].every((k) => isNumber(c.inBand?.[k]) && c.inBand[k] >= target);
-    const cools = maxH === null || (isNumber(c.coolDownH) && c.coolDownH <= maxH);
-    const reached = held && cools;
-    const best = i === 0;
-    const verdict = [held ? `reaches ${target} %` : `below ${target} %`, ...(cools ? [] : [`cools down in over ${maxH} h`])].join(', ');
-    const text = best ? `Best, ${verdict}` : `${verdict[0].toUpperCase()}${verdict.slice(1)}`;
-    return {
-      index: i, best, reached,
-      mark: text,
-      fan: String(c.machines?.fanFlow), humidifier: String(c.machines?.humidifierLH), dehumidifier: String(c.machines?.dehumidifierLday ?? 0),
-      aircon: acSize(Number(c.machines?.acBTU)), limit: String(c.exchangeMaxMin),
-      t: one(c.inBand?.t), rh: one(c.inBand?.rh), co2: one(c.inBand?.co2), all: one(c.inBand?.all), kWh: one(c.kWh),
-      coolDown: maxH === null ? '—' : isNumber(c.coolDownH) ? `${c.coolDownH.toFixed(1)} h` : 'not in a day',
-    };
-  });
 }
 
 // What the table's Cools down in measures, or null for a result from before the cool-down check.
@@ -393,6 +392,21 @@ export function useSetup(state, candidate, roomControl = state.roomControl) {
   state.physics.dehumidifierLday = String(m.dehumidifierLday);
   state.physics.acBTU = String(m.acBTU);
   state.exchangeMaxMin = isNumber(roomC.exchangeMaxMin) && candidate.exchangeMaxMin === roomC.exchangeMaxMin ? null : candidate.exchangeMaxMin;
+}
+
+// What a search was given (input: the sizing body) into the state's texts: its walls, weather and crops.
+export function applySizingInput(state, input) {
+  for (const f of SIZING_FIELDS) if (isNumber(input?.physics?.[f.key])) state.physics[f.key] = String(input.physics[f.key]);
+  if (Array.isArray(input?.crops) && input.crops.length > 0) state.crops = input.crops.map((c) => ({ crop: c.crop, blocks: String(c.blocks) }));
+  if (Object.hasOwn(FARM_TYPES, input?.farmType ?? '')) state.farmType = input.farmType;
+  state.stage = fixStage(state.farmType, input?.stage ?? state.stage);
+}
+
+// Use this on the Suggest machines page: Simulate starts from what the search was given and the setup's machines and
+// settings (useSetup).
+export function applySuggestion(state, input, candidate) {
+  applySizingInput(state, input);
+  useSetup(state, candidate);
 }
 
 // ---- the control settings of a run (step 3's Control row and Change for this run; critique 2026-10-28) ----

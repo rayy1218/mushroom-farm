@@ -918,15 +918,49 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
   .sim-summary { grid-template-columns: 1fr; }
   .sim-summary dd { margin-bottom: 6px; }
 }
-.sim-suggest { margin: 16px 0 12px; padding-top: 4px; border-top: 1px solid var(--border); }
-.sim-target { display: grid; gap: 8px; justify-items: start; }
-.sim-target .field { width: 100%; }
-.sim-target input { max-width: 120px; }
-.sim-suggest-out { margin-top: 8px; }
-.sim-suggest-out .us-table-wrap { margin-top: 8px; }
-.sim-setups th, .sim-setups td { font-size: var(--fs-sm); }
-.sim-setups thead th { white-space: normal; min-width: 64px; }
-.sim-setups tbody th { min-width: 130px; }
+/* Suggest machines, its own page since 2026-10-28 (owner): the form, then the setups as rows of five columns with their details
+   under them; on a phone each row stacks with its labels (no sideways scroll). Step 3 of Simulate links to it. */
+.sim-suggest { margin: 16px 0 12px; padding-top: 8px; border-top: 1px solid var(--border); }
+.sim-suggest-link { display: inline-flex; align-items: center; min-height: 44px; color: var(--ink); font-weight: 500; }
+.sim-card-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.sg-form { margin-bottom: 16px; }
+.sg-form h2 { margin: 0 0 4px; }
+.sg-form .sizes.two { align-items: start; }
+.sg-go { display: flex; justify-content: flex-end; padding-top: 16px; border-top: 1px solid var(--border); }
+.sg-out h2 { margin: 0 0 8px; }
+.sg-caption { margin: 0 0 8px; font-weight: 600; }
+.sg-list { margin: 8px 0 12px; padding: 0; list-style: none; }
+.sg-row { display: grid; grid-template-columns: minmax(0, 1fr) 112px 120px 112px auto; gap: 4px 16px; align-items: start; padding: 12px 0; border-top: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+.sg-head { padding: 0 0 6px; border-top: 0; color: var(--ink-2); font-size: var(--fs-sm); font-weight: 600; } /* like the other tables' heads */
+.sg-head > :nth-child(n+2):nth-child(-n+4), .sg-cell { text-align: right; }
+.sg-setup p { margin: 0; }
+.sg-machines { font-weight: 500; }
+.sg-part { white-space: nowrap; } /* a machine and its size on one line; the line breaks between machines */
+.sg-rank { margin-right: 6px; color: var(--muted); }
+.sg-setup .sg-verdict { display: flex; align-items: baseline; gap: 6px; margin-top: 4px; font-size: var(--fs-sm); }
+.sg-verdict::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: currentColor; translate: 0 -1px; }
+.sg-verdict[data-tone="good"] { color: var(--good-text); }
+.sg-verdict[data-tone="amber"] { color: var(--warning-text); }
+.sg-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; } /* the head says it for the eye */
+.sg-value { font-weight: 500; }
+.sg-use { justify-self: end; }
+.sg-more { grid-column: 1 / -1; }
+.sg-more > summary { display: inline-flex; align-items: center; min-height: 32px; cursor: pointer; color: var(--ink-2); font-size: var(--fs-sm); }
+.sg-dl { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px 24px; margin: 4px 0; }
+.sg-dl dt { color: var(--muted); font-size: var(--fs-xs); }
+.sg-dl dd { margin: 2px 0 0; font-variant-numeric: tabular-nums; }
+.sg-note { margin: 8px 0 0; font-size: var(--fs-sm); max-width: 80ch; }
+.sg-estimates { color: var(--ink-2); }
+@media (max-width: 760px) {
+  .sg-head { display: none; }
+  .sg-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .sg-setup, .sg-use, .sg-more { grid-column: 1 / -1; }
+  .sg-cell { text-align: left; }
+  .sg-label { position: static; width: auto; height: auto; overflow: visible; clip: auto; white-space: normal; display: block; color: var(--muted); font-size: var(--fs-xs); }
+  .sg-use { justify-self: stretch; }
+  .sg-use button { width: 100%; }
+  .sg-more > summary { min-height: 44px; }
+}
 .sim-card .us-tiles { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); }
 .sim-crops ~ button { margin-bottom: 12px; }
 

@@ -3,7 +3,7 @@
 
 import { openSimulateDialog, closeSimulateDialog } from './simulate-dialog.js';
 import { request, OFFLINE, OUTDATED, routeMissing } from './api.js';
-import { roomHash } from './route.js';
+import { roomHash, suggestHash } from './route.js';
 import { drawLineChart, M } from './chart.js';
 import { drawTimeline } from './timeline.js';
 import { drawBarChart } from './usage.js';
@@ -317,7 +317,13 @@ export function mount(container, { id, runId }) {
             v.append(list);
           }
           v.append(text('p', 'muted sim-verdict-next', 'These are the room\'s control settings (Setup tab, Automatic control). Change them there, or for one run in Simulate (step 3, Change for this run), and simulate again before buying other machines.'));
-        } else v.append(text('p', 'muted sim-verdict-next', 'Simulate again with other machines, or let Suggest machines (the last step of Simulate) pick them.'));
+        } else {
+          const next = text('p', 'muted sim-verdict-next', 'Simulate again with other machines, or let ');
+          const link = text('a', '', 'Suggest machines');
+          link.href = suggestHash(id);
+          next.append(link, ' pick them.');
+          v.append(next);
+        }
       }
       els.results.append(v);
     }
