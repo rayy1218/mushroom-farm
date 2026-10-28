@@ -106,6 +106,9 @@ test('the status line of a sensor: its status and latest value', () => {
   assert.equal(status('filter'), null, 'the filter pressure has one home: the Intake filter card');
   assert.deepEqual(status('meter', { ...SENSORS, meter: { address: 5, status: 'online', lastOk: { at: 1, power: 372.4, energy: 3 } } }),
     { status: 'online', word: 'Online', value: '372 W' });
+  // thousands grouped (critique 2026-10-28: "2481 W" on the energy meter)
+  assert.equal(status('meter', { ...SENSORS, meter: { address: 5, status: 'online', lastOk: { at: 1, power: 2481.2, energy: 3 } } }).value, '2,481 W');
+  assert.equal(status('co2', { ...SENSORS, co2: { address: 2, status: 'online', lastOk: { at: 1, co2: 1301.4 } } }).value, '1,301 ppm');
   assert.deepEqual(status('trh', { ...SENSORS, trh: { address: 1, status: 'no-data', lastOk: null } }), { status: 'no-data', word: 'No data yet', value: '' });
   assert.equal(cardStatus(card('trh'), { sensors: null, machines: null }), null);
 });
