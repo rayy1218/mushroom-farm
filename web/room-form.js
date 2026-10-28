@@ -4,7 +4,7 @@
 // caller puts them in a card or a fieldset). onInput(name): a field was changed by the person. A group with names (an Equipment
 // card, web/equipment-cards.js): those fields stacked one per row in that order, labels: a label per field instead of its own.
 
-import { ROOM_FIELDS, fieldsOf, fieldLabel, isShown, volumeText, NAME_MAX } from './room-fields.js';
+import { ROOM_FIELDS, fieldsOf, fieldLabel, isShown, volumeText, NAME_MAX, GATEWAY_MAX } from './room-fields.js';
 
 function el(tag, className, content) {
   const node = document.createElement(tag);
@@ -44,6 +44,7 @@ export function createRoomForm(groups, { idPrefix, onInput }) {
       wrap.append(label, err);
     } else {
       if (f.kind === 'text') Object.assign(input, { type: 'text', maxLength: NAME_MAX, autocomplete: 'off', required: true });
+      else if (f.kind === 'gateway') Object.assign(input, { type: 'text', maxLength: GATEWAY_MAX, autocomplete: 'off', spellcheck: false, placeholder: "the farm's" });
       else Object.assign(input, { type: 'number' }, NUMBER[f.kind](f));
       wrap = el('div', 'field');
       const label = el('label', '', text);

@@ -1,13 +1,13 @@
-// The room page's Equipment tab (spec 2026-10-27-equipment-cards-design.md): two sections, Sensors and Machines, each a grid of
-// cards, one per device (web/equipment-cards.js), with that device's settings in it and its own Save and Reset.
+// The room page's Equipment tab (spec 2026-10-27-equipment-cards-design.md): three sections, Gateway, Sensors and Machines, each
+// a grid of cards, one per device (web/equipment-cards.js), with that device's settings in it and its own Save and Reset.
 // createEquipment(host, { roomId, idPrefix, queue, onSaved, onGone }) → { update(room, data), focus(name), destroy() }.
-// update(room, { sensors, machines }): the room and the replies the page loaded; a card with unsaved edits, saving or with the
-// cursor in it is not refilled (the status lines always are). A card's Save sends its values over the newest room, so it never
+// update(room, { sensors, machines, farmGateway }): the room and the replies the page loaded; a card with unsaved edits, saving or
+// with the cursor in it is not refilled (the status lines and hints always are). A card's Save sends its values over the newest room, so it never
 // sends another card's unsent edits; the other cards then show the saved room. queue: the page's save queue (web/room-edit.js),
 // so two cards saved together go one after the other, the second over the room the first returned. onSaved(room); onGone(): the
 // room is gone.
 
-import { EQUIPMENT_CARDS, EQUIPMENT_SECTIONS, cardOf, cardGroup, cardLine, cardStatus, parseCard } from './equipment-cards.js';
+import { EQUIPMENT_CARDS, EQUIPMENT_SECTIONS, cardOf, cardGroup, cardLine, cardStatus, cardHint, parseCard } from './equipment-cards.js';
 import { createEditForm } from './room-edit.js';
 
 function el(tag, className, content) {
@@ -65,11 +65,14 @@ export function createEquipment(host, { roomId, idPrefix, queue, onSaved, onGone
       onGone,
     });
     form.append(title, line, statusLine, ...edit.fields.parts[c.key], ...edit.end);
+    const hint = c.hint ? edit.fields.parts[c.key].find((node) => node.className === 'c-hint') : null;
     cards.set(c.key, {
       edit,
       setStatus(replies) {
         data = cardStatus(c, replies);
         paintStatus();
+        const text = cardHint(c, replies);
+        if (hint && hint.textContent !== text) hint.textContent = text;
       },
     });
     return form;

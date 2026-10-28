@@ -30,7 +30,7 @@ test('the Add room dialog: every field built from the shared definitions, checke
 
 test('the shared inputs: a fitted machine\'s ratings follow its box, a bad number is not read as blank, errors under the fields', () => {
   const js = src('room-form.js');
-  assert.match(js, /import \{ ROOM_FIELDS, fieldsOf, fieldLabel, isShown, volumeText, NAME_MAX \} from '\.\/room-fields\.js';/);
+  assert.match(js, /import \{ ROOM_FIELDS, fieldsOf, fieldLabel, isShown, volumeText, NAME_MAX, GATEWAY_MAX \} from '\.\/room-fields\.js';/);
   assert.match(js, /wrap\.hidden = !isShown\(f, t\)/);
   assert.match(js, /input\.validity\?\.badInput \? '\?' : input\.value/);
   assert.match(js, /input\.setAttribute\('aria-invalid', 'true'\)/);
@@ -50,7 +50,7 @@ test('the Room profile tab: the profile fields in one card, its own form with on
   assert.match(page, /import \{ createRoomEdit, createDeleteCard, createSaveQueue \} from '\.\/room-edit\.js';/);
   assert.match(page, /queue: createSaveQueue\(\), /, 'one save queue for both tabs');
   assert.match(page, /createRoomEdit\(els\.profileHost, \{ roomId: id, groups: \['profile'\], idPrefix: 'rp-'/);
-  assert.match(page, /profileTab\.update\(room\);\n\s*equipmentTab\.update\(room, \{ sensors, machines: machineData \?\? lastMachines \}\);/);
+  assert.match(page, /profileTab\.update\(room\);\n\s*equipmentTab\.update\(room, \{ sensors, machines: machineData \?\? lastMachines, farmGateway \}\);/);
   const edit = src('room-edit.js');
   assert.match(edit, /import \{ ROOM_GROUPS, fieldsOf, fieldTexts, parseRoomFields, roomBody \} from '\.\/room-fields\.js';/);
   assert.match(edit, /import \{ createRoomForm \} from '\.\/room-form\.js';/);
@@ -108,8 +108,8 @@ test('the Equipment grid: cards at least 260 px wide, 16 px apart, one column on
   assert.match(css, /\.eq-grid \{ display: grid; grid-template-columns: repeat\(auto-fill, minmax\(260px, 1fr\)\); gap: 16px; align-items: start; \}/, "cards keep their own height");
   assert.match(css, /@media \(max-width: 600px\) \{ \.eq-grid \{ grid-template-columns: 1fr;/);
   assert.match(css, /\.eq-card\.unfitted \{/);
-  // The four sensors two by two (owner 2026-10-27); a phone keeps one column.
-  assert.match(css, /@media \(min-width: 601px\) \{ \.eq-section\[data-section="sensors"\] \.eq-grid \{ grid-template-columns: repeat\(2, 1fr\); \} \}/);
+  // The four sensors two by two (owner 2026-10-27), the gateway card as wide as one of them; a phone keeps one column.
+  assert.match(css, /@media \(min-width: 601px\) \{ \.eq-section:is\(\[data-section="gateway"\], \[data-section="sensors"\]\) \.eq-grid \{ grid-template-columns: repeat\(2, 1fr\); \} \}/);
   assert.doesNotMatch(css, /\.equipment[^{]*\{[^}]*max-width/, 'the tab is not capped at 760 px');
 });
 

@@ -36,7 +36,8 @@ test('the groups, in the order of the dialog and the tabs, and each field in one
   assert.deepEqual(fieldsOf('filter').map((f) => f.name), ['fanMaxPa', 'filterCleanPa', 'filterFinalPa', 'filterChangeDays']);
   assert.deepEqual(PROFILE_NAMES, ['name', 'length', 'width', 'height']);
   assert.equal(EQUIPMENT_NAMES.length + PROFILE_NAMES.length, ROOM_FIELDS.length);
-  assert.ok(ROOM_FIELDS.every((f) => ROOM_GROUPS.some((g) => g.key === f.group)));
+  // The gateway is set on the Equipment tab only: its group is none of the dialog's.
+  assert.deepEqual(ROOM_FIELDS.filter((f) => !ROOM_GROUPS.some((g) => g.key === f.group)).map((f) => [f.name, f.group]), [['gateway', 'gateway']]);
 });
 
 test('the ranges and defaults are the server\'s', () => {

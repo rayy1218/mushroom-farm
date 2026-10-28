@@ -58,12 +58,12 @@ const ROOM = {
   fanMaxPa: 200, filterCleanPa: 40, filterFinalPa: 80, filterChangeDays: 30,
 };
 
-test('the Add room dialog and the Room profile tab: every input labelled with its field\'s own label', async (t) => {
+test('the Add room dialog and the Room profile tab: every input labelled with its field\'s own label (the gateway: Equipment only)', async (t) => {
   setup(t);
   const { createRoomForm } = await import('../web/room-form.js');
   const form = createRoomForm(ROOM_GROUPS, { idPrefix: 'f-' });
   const nodes = Object.values(form.parts).flat().flatMap(all);
-  assert.deepEqual(labels(nodes), Object.fromEntries(ROOM_FIELDS.map((f) => [f.name, fieldLabel(f)])));
+  assert.deepEqual(labels(nodes), Object.fromEntries(ROOM_FIELDS.filter((f) => f.name !== 'gateway').map((f) => [f.name, fieldLabel(f)])));
   const profile = createRoomForm(ROOM_GROUPS.filter((g) => g.key === 'profile'), { idPrefix: 'rp-' });
   assert.deepEqual(labels(profile.parts.profile.flatMap(all)), { name: 'Name', length: 'Length (m)', width: 'Width (m)', height: 'Height (m)' });
 });

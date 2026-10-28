@@ -11,6 +11,7 @@ import { request, OFFLINE } from './api.js';
 import { ROOM_TABS, roomHash } from './route.js';
 import { createRoomEdit, createDeleteCard, createSaveQueue } from './room-edit.js';
 import { createEquipment } from './equipment.js';
+import { roomSubLine } from './room-fields.js';
 import { createMachines } from './machines.js';
 import { createControl } from './control.js';
 import { createAlarmsCard } from './alarms.js';
@@ -49,8 +50,6 @@ function manualSince(d, now) {
   return d.toDateString() === new Date(now).toDateString() ? hm : `${d.getDate()} ${d.toLocaleString('en-GB', { month: 'short' })} ${hm}`;
 }
 const BAND_KEYS = ['tLow', 'tHigh', 'rhLow', 'rhHigh', 'co2Low', 'co2High', 'co2Safety'];
-const metres = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
-const cubic = new Intl.NumberFormat(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
 // Three charts: which sensor, which reading field, how to show it.
 const CHARTS = [
@@ -254,6 +253,7 @@ export function mount(container, { id, tab = 'now' }) {
   let usageSection = null; // Electricity and water under the charts (spec 2026-10-26-usage-charts-design.md)
   let exchangeSection = null; // Air exchange: its own hourly or daily switch
   let price = null; // the electricity price of the settings, for the cost in the usage totals
+  let farmGateway = null; // the farm's gateway of the settings, for the Equipment tab's gateway card
   let drawnData = null; // the history reply last drawn
   let drawnWith = null;
   let drawnOutdoor = null; // the outdoor history last drawn
@@ -318,7 +318,10 @@ export function mount(container, { id, tab = 'now' }) {
     if (!alive() || seq !== loadSeq) return;
     const [r, list, machineData, controlData, settingsData, alarmData, outdoorData] = fetched;
     refresh = refreshMs(settingsData);
-    if (settingsData) price = settingsData.electricityPrice;
+    if (settingsData) {
+      price = settingsData.electricityPrice;
+      farmGateway = settingsData.farmGateway ?? null; // an older server: not known
+    }
     room = r;
     sensors = {
       trh: list.find((s) => s.kind === 'trh'), co2: list.find((s) => s.kind === 'co2'), meter: list.find((s) => s.kind === 'meter') ?? null,
@@ -359,7 +362,7 @@ export function mount(container, { id, tab = 'now' }) {
 
   function renderHead() {
     els.title.textContent = room.name;
-    els.sub.textContent = `${metres.format(room.length)} × ${metres.format(room.width)} × ${metres.format(room.height)} m · ${cubic.format(room.volume)} m³`;
+    els.sub.textContent = roomSubLine(room);
     document.title = `${room.name} · Mushroom farm`;
   }
 
@@ -478,7 +481,7 @@ export function mount(container, { id, tab = 'now' }) {
           if (!alive()) return;
           // The forms take the saved room at once (before the next queued save builds its body), the rest on the load.
           profileTab.update(r);
-          equipmentTab.update(r, { sensors, machines: lastMachines });
+          equipmentTab.update(r, { sensors, machines: lastMachines, farmGateway });
           load();
           usageCard?.refresh(true);
         },
@@ -490,7 +493,7 @@ export function mount(container, { id, tab = 'now' }) {
       built = true;
     }
     profileTab.update(room);
-    equipmentTab.update(room, { sensors, machines: machineData ?? lastMachines }); // the cards' status lines
+    equipmentTab.update(room, { sensors, machines: machineData ?? lastMachines, farmGateway }); // the cards' status lines and hints
     if (!cropCard) makeCrop(); // (again after a missing room came back)
     cropCard?.setLights(room?.lights === true); // lights fitted or taken out: the schedule shows or goes
     simulationsCard ??= createSimulationsCard(els.simulationsHost, { roomId: id, getRoom: () => room });

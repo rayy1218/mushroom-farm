@@ -4,6 +4,8 @@
 // compares them field by field).
 
 export const NAME_MAX = 60;
+export const GATEWAY_MAX = 100;
+const GATEWAY_ERROR = "Gateway must look like host:port, such as 192.168.1.50:502, or be empty for the farm's gateway";
 
 // The cards of the tabs and the sections of the dialog, in order. hint: a line under the group's inputs.
 export const ROOM_GROUPS = [
@@ -18,7 +20,7 @@ export const ROOM_GROUPS = [
 ];
 
 // kind: text (the name), size (m), address (1 to 247, blank: none), check (a box), rating (from 0, two decimals at most),
-// whole (a filter setting, a whole number). word: the field in the server's messages, when not its label. fitted: the box that
+// whole (a filter setting, a whole number), gateway (host:port, blank: the farm's). word: the field in the server's messages, when not its label. fitted: the box that
 // shows the field (and makes it required). def: a new room's value. note: added to the unit in the label.
 export const ROOM_FIELDS = [
   { name: 'name', group: 'profile', kind: 'text', label: 'Name' },
@@ -46,6 +48,8 @@ export const ROOM_FIELDS = [
   { name: 'filterCleanPa', group: 'filter', kind: 'whole', label: 'Clean filter pressure drop', unit: 'Pa', def: 40, min: 5, max: 1000 },
   { name: 'filterFinalPa', group: 'filter', kind: 'whole', label: 'Filter change pressure', unit: 'Pa', def: 80, min: 5, max: 2000 },
   { name: 'filterChangeDays', group: 'filter', kind: 'whole', label: 'Change the filter every', unit: 'days', def: 30, min: 0, max: 365, note: '0: no reminder' },
+  // The room's own Modbus gateway: set on the Equipment tab only (its group is none of the dialog's), a new room is on the farm's.
+  { name: 'gateway', group: 'gateway', kind: 'gateway', label: 'Gateway (host:port)' },
 ];
 
 export const fieldsOf = (group) => ROOM_FIELDS.filter((f) => f.group === group);
@@ -55,6 +59,7 @@ export const EQUIPMENT_NAMES = ROOM_FIELDS.filter((f) => f.group !== 'profile').
 // The server compares the addresses in this order and blames the later one of a clashing pair.
 const ADDRESS_ORDER = ['trhAddress', 'co2Address', 'relayAddress', 'acAddress', 'meterAddress', 'dpAddress'];
 
+const metres = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
 const cubic = new Intl.NumberFormat(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const finite = (v) => typeof v === 'number' && Number.isFinite(v);
 
@@ -72,7 +77,7 @@ export function fieldTexts(room) {
   return Object.fromEntries(ROOM_FIELDS.map((f) => {
     const v = room?.[f.name];
     if (f.kind === 'check') return [f.name, v === true];
-    if (f.kind === 'text') return [f.name, typeof v === 'string' ? v : ''];
+    if (f.kind === 'text' || f.kind === 'gateway') return [f.name, typeof v === 'string' ? v : ''];
     return [f.name, finite(v) ? String(v) : f.def !== undefined ? String(f.def) : ''];
   }));
 }
@@ -89,6 +94,11 @@ function check(f, text, texts) {
   if (f.kind === 'size') {
     const n = s === '' ? NaN : Number(s);
     return n >= f.min && n <= f.max ? { value: n } : { error: `${f.label} must be a number from ${f.min} to ${f.max} m` };
+  }
+  if (f.kind === 'gateway') {
+    if (s === '') return { value: null };
+    const port = Number(/^\S+:([0-9]{1,5})$/.exec(s)?.[1] ?? 0);
+    return port >= 1 && port <= 65535 && s.length <= GATEWAY_MAX ? { value: s } : { error: GATEWAY_ERROR };
   }
   if (f.kind === 'address') {
     if (s === '') return { value: null };
@@ -141,6 +151,12 @@ export function roomBody(room, values) {
     if (f.kind === 'check') return [f.name, room?.[f.name] === true];
     return [f.name, room?.[f.name] ?? null];
   }));
+}
+
+// The room page's sub line: "5.9 × 2.3 × 2.4 m · 32.6 m³", and the room's own gateway when it has one (null: the farm's).
+export function roomSubLine(room) {
+  const sizes = `${metres.format(room.length)} × ${metres.format(room.width)} × ${metres.format(room.height)} m · ${cubic.format(room.volume)} m³`;
+  return room.gateway ? `${sizes} · gateway ${room.gateway}` : sizes;
 }
 
 // "Volume: 30.0 m³" from the three sizes as typed; a dash until all three are numbers.

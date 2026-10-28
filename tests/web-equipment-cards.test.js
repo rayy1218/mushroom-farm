@@ -16,8 +16,9 @@ const ROOM = {
 };
 const card = (key) => EQUIPMENT_CARDS.find((c) => c.key === key);
 
-test('the cards, in order: four sensors, then the relay module, the six relay machines and the aircon', () => {
+test('the cards, in order: the gateway, four sensors, then the relay module, the six relay machines and the aircon', () => {
   assert.deepEqual(EQUIPMENT_CARDS.map((c) => [c.section, c.title, c.fields]), [
+    ['gateway', 'Modbus gateway', ['gateway']],
     ['sensors', 'T/RH probe', ['trhAddress']],
     ['sensors', 'CO₂ sensor', ['co2Address']],
     ['sensors', 'Energy meter', ['meterAddress']],

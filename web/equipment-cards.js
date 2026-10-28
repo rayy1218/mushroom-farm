@@ -1,16 +1,22 @@
 // The Equipment tab's cards (spec 2026-10-27-equipment-cards-design.md): a card per sensor and machine, with its settings (the
-// room fields of web/room-fields.js) in it. Pure (no DOM, so it can be tested in Node): the card list, the line under a card's
-// title, its status line from the data the room page loads, and a card's check over the newest room.
+// room fields of web/room-fields.js) in it, and the Modbus gateway the room's devices sit behind. Pure (no DOM, so it can be
+// tested in Node): the card list, the line under a card's title, its status line and hint from the data the room page loads,
+// and a card's check over the newest room.
 
 import { ROOM_GROUPS, EQUIPMENT_NAMES, fieldTexts, parseRoomFields } from './room-fields.js';
 import { STATUS_WORDS as MACHINE_WORDS } from './machines-math.js';
 
 const FILTER_HINT = ROOM_GROUPS.find((g) => g.key === 'filter').hint;
 
-// section: sensors or machines. fields: its settings, in order. labels: an input's label where the card already names the device
+// The gateway card's hint, with the farm's gateway (FARM_GATEWAY, from GET /api/settings) once it is known.
+export const gatewayHint = (farm) => `Empty: the farm's gateway${farm ? ` (${farm})` : ''}. A room behind its own Modbus gateway, such as a `
+  + "container, takes that gateway's address; device addresses then only need to differ within that gateway.";
+
+// section: gateway, sensors or machines. fields: its settings, in order. labels: an input's label where the card already names the device
 // (the field's own label otherwise; the unit is added). sensor: the sensors reply's kind; output: the relay output (from 1);
 // fitted: the box that says the room has the machine; note: a muted line under the inputs.
 export const EQUIPMENT_CARDS = [
+  { key: 'gateway', section: 'gateway', title: 'Modbus gateway', fields: ['gateway'], hint: gatewayHint(null) },
   { key: 'trh', section: 'sensors', title: 'T/RH probe', fields: ['trhAddress'], labels: { trhAddress: 'Address' }, sensor: 'trh' },
   { key: 'co2', section: 'sensors', title: 'CO₂ sensor', fields: ['co2Address'], labels: { co2Address: 'Address' }, sensor: 'co2' },
   { key: 'meter', section: 'sensors', title: 'Energy meter', fields: ['meterAddress'], labels: { meterAddress: 'Address' }, sensor: 'meter' },
@@ -34,7 +40,7 @@ export const EQUIPMENT_CARDS = [
   { key: 'ac', section: 'machines', title: 'Aircon', fields: ['acAddress', 'acInputW'], labels: { acAddress: 'Gateway address', acInputW: 'Rated input' } },
 ];
 
-export const EQUIPMENT_SECTIONS = [{ key: 'sensors', title: 'Sensors' }, { key: 'machines', title: 'Machines' }];
+export const EQUIPMENT_SECTIONS = [{ key: 'gateway', title: 'Gateway' }, { key: 'sensors', title: 'Sensors' }, { key: 'machines', title: 'Machines' }];
 
 // The card that holds a field (a "Set address" button names the field).
 export const cardOf = (name) => EQUIPMENT_CARDS.find((c) => c.fields.includes(name));
@@ -50,6 +56,10 @@ function address(text) {
 
 // The muted line under the title, from the form's texts (it follows the box and the address as typed).
 export function cardLine(c, texts) {
+  if (c.key === 'gateway') {
+    const gateway = String(texts?.gateway ?? '').trim();
+    return gateway === '' ? "The farm's gateway" : `Own gateway ${gateway}`;
+  }
   if (c.fitted && texts?.[c.fitted] !== true) return 'Not fitted';
   if (c.output) return `Relay output ${c.output}`;
   const n = address(texts?.[c.fields[0]]);
@@ -83,6 +93,7 @@ function relayState(relay) {
 // device has no address (the line under the title says so already).
 // sensors: { trh, co2, meter, dp } of the sensors reply; machines: the machines reply.
 export function cardStatus(c, { sensors, machines }) {
+  if (c.key === 'gateway') return null; // its devices say whether it answers
   if (c.sensor) {
     const s = sensors?.[c.sensor];
     if (!s || s.status === 'not-wired') return null;
@@ -104,6 +115,9 @@ export function cardStatus(c, { sensors, machines }) {
   if (!m || (c.key === 'ac' && m.status === 'not-wired')) return null;
   return { status: m.status, word: MACHINE_WORDS[m.status] ?? m.status, value: '' };
 }
+
+// The line under a card's inputs. replies: as for cardStatus, with farmGateway (GET /api/settings) for the gateway card.
+export const cardHint = (c, replies) => (c.key === 'gateway' ? gatewayHint(replies?.farmGateway ?? null) : c.hint);
 
 // A card's check: its texts over the newest room, checked as the whole room is (so a clash with another card's saved address
 // or the filter pressures against the fan's maximum are caught). → { values } of its fields, or { errors } of its fields and
