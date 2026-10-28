@@ -92,3 +92,11 @@ test('the section: the heading, the totals, Live with and without a meter, meter
   assert.match(section, /drawTimeBars\(/);
   assert.match(section, /hatch: !data\.usage\.metered|hatch: !usage\.metered/);
 });
+
+// Critique 2026-10-28: the line said 35 L while the water chart, without the bars inside the gaps, added up to 4.8 L.
+test('the totals line adds up the bars the charts show when they are given', () => {
+  const bars = { kWh: [{ v: 1.5 }, { v: null }, { v: 2 }], waterL: [{ v: 0.5 }, { v: 0.25 }] };
+  assert.equal(usageTotalsLine(usage([], true, { kWh: 12.4, waterL: 35 }), null, bars).text, '3.5 kWh · 0.8 L water');
+  assert.equal(usageTotalsLine(usage([], true), null, { kWh: [{ v: null }], waterL: [] }).text, 'No meter readings in this range · 0.0 L water');
+  assert.match(section, /usageTotalsLine\(usage, price, data \? \{ kWh: kwhBars, waterL: waterBars \} : null\)/);
+});

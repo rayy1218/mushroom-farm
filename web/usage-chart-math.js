@@ -20,10 +20,12 @@ export function bucketWord(bucketS) {
 }
 
 // The range's totals in the Energy card's words: { text: "12.4 kWh · RM 6.82 · 4.6 L water", basis: 'metered' | 'estimated' },
-// without the RM when there is no price; null without usage.
-export function usageTotalsLine(usage, price) {
+// without the RM when there is no price; null without usage. bars: { kWh, waterL } the bars the charts show (outside
+// the gaps in the readings), so the line and the charts add up to the same; without them the reply's totals.
+export function usageTotalsLine(usage, price, bars = null) {
   if (!okUsage(usage)) return null;
-  const { kWh, waterL } = usage.totals;
+  const sum = (list) => { const have = list.filter((x) => finite(x.v)); return have.length ? have.reduce((s, x) => s + x.v, 0) : null; };
+  const { kWh, waterL } = bars ? { kWh: sum(bars.kWh), waterL: sum(bars.waterL) } : usage.totals;
   const parts = finite(kWh) ? [formatKWh(kWh), ...(finite(price) ? [formatRM(kWh * price)] : [])] : ['No meter readings in this range'];
   parts.push(`${formatLitres(finite(waterL) ? waterL : 0)} water`);
   return { text: parts.join(' · '), basis: usage.metered === true ? 'metered' : 'estimated' };

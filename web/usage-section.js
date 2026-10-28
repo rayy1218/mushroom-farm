@@ -80,11 +80,16 @@ export function createUsageSection(host, { onCursor }) {
     const word = data ? bucketWord(data.bucketS) : '';
     energy.title.textContent = data ? `Electricity (kWh per ${word})` : 'Electricity (kWh)';
     water.title.textContent = data ? `Water (L per ${word})` : 'Water (L)';
-    const line = usageTotalsLine(usage, price);
+    // No bars where there were no readings (the History tab's gaps): an amount the app did not see is not shown as measured,
+    // and the totals line adds up the same bars as the charts.
+    const range = data ? { from: data.from, to: data.to } : null;
+    const kwhBars = data ? barsOutsideGaps(usageBars(usage, 'kWh', data.bucketS, range), gaps) : [];
+    const waterBars = data ? barsOutsideGaps(usageBars(usage, 'waterL', data.bucketS, range), gaps) : [];
+    const line = usageTotalsLine(usage, price, data ? { kWh: kwhBars, waterL: waterBars } : null);
     totals.hidden = line === null;
     if (line) {
       totalsText.textContent = line.text;
-      basis.textContent = line.basis;
+      basis.textContent = gaps.length ? `${line.basis} · times without readings not counted` : line.basis;
     }
     if (!data || !line) {
       const message = !data ? (hist.failed ? OFFLINE : 'Loading…') : 'Usage is not available on this server';
@@ -92,12 +97,8 @@ export function createUsageSection(host, { onCursor }) {
       show(water, 'bars', null, message);
       return;
     }
-    const range = { from: data.from, to: data.to };
     const common = { range, ticksFor: (w) => timeTicks(range.from, range.to, tickCountFor(w)), onCursor };
     const formatAt = (ms) => formatStamp(ms);
-    // No bars where there were no readings (the History tab's gaps): an amount the app did not see is not shown as measured.
-    const kwhBars = barsOutsideGaps(usageBars(usage, 'kWh', data.bucketS, range), gaps);
-    const waterBars = barsOutsideGaps(usageBars(usage, 'waterL', data.bucketS, range), gaps);
     show(energy, 'bars', {
       ...common, bars: kwhBars, color: ENERGY_COLOR, hatch: !usage.metered,
       label: usageSummary(kwhBars, { title: `Electricity per ${word}`, unit: 'kWh', metered: usage.metered, formatAt }),

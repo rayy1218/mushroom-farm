@@ -640,8 +640,8 @@ button.toggle[data-on="true"]:hover { background: color-mix(in srgb, var(--accen
 .us-hint { margin: 0 0 12px; font-size: var(--fs-sm); }
 .us-charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin: 4px 0 16px; }
 .us-chart { min-width: 0; }
-.swatch-solid { background: var(--s-co2); border-color: var(--s-co2); }
-.swatch-hatch { border-color: var(--s-co2); background: repeating-linear-gradient(45deg, var(--s-co2) 0 2px, transparent 2px 5px); }
+.swatch-solid { background: var(--s-energy); border-color: var(--s-energy); }
+.swatch-hatch { border-color: var(--s-energy); background: repeating-linear-gradient(45deg, var(--s-energy) 0 2px, transparent 2px 5px); }
 .us-table-wrap { overflow-x: auto; }
 .us-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .us-table caption { text-align: left; font-weight: 600; padding-bottom: 6px; }
