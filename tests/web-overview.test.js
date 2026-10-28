@@ -208,3 +208,11 @@ test('the Overview on a phone: the whole card opens the room, the 30 days keep a
   assert.match(css, /\.ov-alarm-room \{ display: inline-flex; align-items: center; min-height: 44px; \}/);
   assert.match(css, /\.ov-alarm \{ display: grid; grid-template-columns: auto minmax\(0, 20ch\)/, 'room for "Container / Gamma"');
 });
+
+test('One Format: the Simulations list head in sentence case like the other tables, no capitals or tracking', async () => {
+  const { readFileSync } = await import('node:fs');
+  const css = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
+  const rule = /\.sim-list-head \{([^}]*)\}/.exec(css)[1];
+  assert.doesNotMatch(rule, /text-transform|letter-spacing/);
+  assert.doesNotMatch(css, /text-transform: uppercase/, 'no capitals anywhere');
+});
