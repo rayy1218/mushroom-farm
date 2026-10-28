@@ -144,7 +144,6 @@ export function createRoomCard(hosts, { idPrefix = 'room-', cropHref = '', onSwi
   // ---- the crop and its stage (a link to the Crop tab) ----
   const crop = { stage: el('span', 'pill'), name: el('p', 'cs-name'), sub: el('p', 'cs-sub'), bar: el('div', 'cs-bar'),
     fill: el('div', 'cs-fill'), day: el('span', 'cs-day'), next: el('span', 'cs-next'), empty: el('p', 'cs-empty', 'No crop set. Add one on the Crop tab.') };
-  crop.stage.dataset.tone = 'good';
   hosts.crop.classList.add('card', 'crop-sum');
   crop.bar.append(crop.fill);
   const foot = el('div', 'cs-foot');
