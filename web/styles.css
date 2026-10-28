@@ -470,6 +470,7 @@ button.toggle[data-on="true"]:hover { background: var(--accent-hover); border-co
 .machines .m-relay + .m-section { margin-top: 0; padding-top: 0; border-top: 0; }
 /* the aircon's panel on the Now tab, under the Machines list: its state once (the Power choice and what the aircon reports),
    one filled button (Send) */
+.now .machines { margin: 0; }
 .now .machines > .m-section > .status, .now .machines .ac-roomt { display: none; }
 .now .machines .ac-form { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 0; }
 .now .machines button.toggle[data-on="true"] { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 55%, transparent); color: var(--accent-text); }
