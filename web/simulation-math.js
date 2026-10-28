@@ -404,7 +404,7 @@ export function runRow(run, roomId) {
     kWh: done ? formatKWh(run.summary?.energy?.kWh) : DASH,
     litres: done ? formatLitres(run.summary?.water?.litres) : DASH,
     // the machines it ran with, so runs can be told apart in the list
-    machines: run.input?.physics ? [`aircon ${acKW(run.input.physics.acBTU)}`, `fan ${run.input.physics.fanFlow} m³/h`, `humidifier ${run.input.physics.humidifierLH} L/h`,
+    machines: run.input?.physics ? [`Aircon ${acKW(run.input.physics.acBTU)}`, `fan ${run.input.physics.fanFlow} m³/h`, `humidifier ${run.input.physics.humidifierLH} L/h`,
       ...(run.input.physics.dehumidifierLday > 0 ? [`dehumidifier ${run.input.physics.dehumidifierLday} L/day`] : [])].join(' · ') : '',
     status: run.status === 'running' ? `Running ${Math.round((finite(run.progress) ? run.progress : 0) * 100)} %` : STATUS_WORDS[run.status] ?? String(run.status),
   };

@@ -220,7 +220,7 @@ test('acSize: an aircon in kW, with the BTU/h class it is sold by in brackets (P
 test('runRow: the machines of a run, so runs can be told apart in the list', () => {
   const input = { physics: { fanFlow: 150, acBTU: 9000, humidifierLH: 1.5, dehumidifierLday: 25 } };
   const r = runRow({ id: 5, createdAt: 0, status: 'done', input, summary: { days: 7, inBand: { all: 98 } } }, 3);
-  assert.equal(r.machines, 'aircon 2.6 kW · fan 150 m³/h · humidifier 1.5 L/h · dehumidifier 25 L/day');
+  assert.equal(r.machines, 'Aircon 2.6 kW · fan 150 m³/h · humidifier 1.5 L/h · dehumidifier 25 L/day');
 });
 
 test('inputRows: what a run was asked, as label and value rows instead of one long sentence', async () => {
@@ -327,4 +327,13 @@ test('a result page: Simulate again with these at the head, Delete run at the fo
   assert.match(page, /<div class="page-foot" data-foot hidden><button type="button" class="danger-text" data-delete>Delete run<\/button><\/div>`;/);
   assert.match(page, /openSimulateDialog\(roomData, \{ from: run \}\)/);
   assert.match(page, /closeSimulateDialog\(\);/);
+});
+
+test('the Simulations list: a refresh with nothing new leaves it alone; each Compare box named by its run; one ticked asks for another', async () => {
+  const { readFileSync } = await import('node:fs');
+  const card = readFileSync(new URL('../web/sim-card.js', import.meta.url), 'utf8');
+  assert.match(card, /if \(key === painted\) return;/);
+  assert.match(card, /box\.setAttribute\('aria-label', `Compare the run of \$\{r\.date\}`\);/);
+  assert.match(card, /'Tick one more run to compare the two side by side\.'/);
+  assert.match(card, /el\('span', 'sim-status', run\.status === 'done' \? '' : r\.status\)/, 'Done is the usual: only other states are said');
 });

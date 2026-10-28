@@ -40,15 +40,25 @@ export function createSimulationsCard(host, { roomId, getRoom }) {
   compare.hidden = true;
   host.append(head, msg, list, more, compare);
 
+  let painted = ''; // what the list shows: a refresh with nothing new leaves it (and its focus and clicks) alone
+
   function paint() {
     const shown = all ? runs : runs.slice(0, SHOWN);
+    const key = JSON.stringify([all, picked, shown.map((r) => [r.id, r.status, r.progress, r.summary?.inBand?.all])]);
+    if (key === painted) return;
+    painted = key;
+    const focused = list.contains(document.activeElement) ? document.activeElement.dataset.focusKey : null;
     msg.hidden = runs.length > 0;
     msg.textContent = 'No simulations yet. Simulate shows how this room would do over days, with your crops and machines.';
-    list.replaceChildren(...shown.map((run) => {
+    const header = el('li', 'sim-item sim-list-head');
+    header.setAttribute('aria-hidden', 'true'); // the columns' names for the eye; each cell says what it is to a screen reader
+    header.append(el('span', '', 'Run and machines'), el('span', '', 'Length'), el('span', '', 'In band'), el('span', '', 'Energy · water'), el('span', ''), el('span', '', 'Compare'));
+    list.replaceChildren(...(shown.length ? [header] : []), ...shown.map((run) => {
       const r = runRow(run, roomId);
       const li = el('li', 'sim-item');
       const link = el('a', '', r.date);
       link.href = r.href;
+      link.dataset.focusKey = `link-${run.id}`;
       const name = el('div', 'sim-name');
       name.append(link, el('span', 'sim-machines', r.machines));
       const inBand = el('span', 'sim-all pill', run.status === 'done' ? `${r.all} in band` : '');
@@ -58,16 +68,19 @@ export function createSimulationsCard(host, { roomId, getRoom }) {
       box.type = 'checkbox';
       box.checked = picked.includes(run.id);
       box.disabled = run.status !== 'done';
+      box.setAttribute('aria-label', `Compare the run of ${r.date}`);
+      box.dataset.focusKey = `pick-${run.id}`;
       box.addEventListener('change', () => {
         picked = box.checked ? [...picked.filter((x) => x !== run.id), run.id].slice(-2) : picked.filter((x) => x !== run.id);
         paint();
       });
-      pick.append(box, el('span', '', 'Compare'));
+      pick.append(box, el('span', 'sim-pick-word', 'Compare'));
       li.append(name, el('span', 'sim-days', r.days), inBand,
-        el('span', 'sim-use', run.status === 'done' ? `${r.kWh} · ${r.litres}` : ''), el('span', 'sim-status', r.status), pick);
+        el('span', 'sim-use', run.status === 'done' ? `${r.kWh} · ${r.litres}` : ''), el('span', 'sim-status', run.status === 'done' ? '' : r.status), pick);
       li.dataset.status = run.status;
       return li;
     }));
+    if (focused) list.querySelector(`[data-focus-key="${focused}"]`)?.focus();
     paintCompare();
     more.hidden = runs.length <= SHOWN;
     more.textContent = all ? 'Show fewer' : `Show all ${runs.length}`;
@@ -76,6 +89,11 @@ export function createSimulationsCard(host, { roomId, getRoom }) {
   // Two runs picked: their inputs and results side by side, the rows that differ in bold.
   function paintCompare() {
     const [a, b] = picked.map((id) => runs.find((x) => x.id === id)).filter(Boolean);
+    if (a && !b) { // one ticked: say what the tick is for
+      compare.hidden = false;
+      compare.replaceChildren(el('p', 'muted sim-compare-hint', 'Tick one more run to compare the two side by side.'));
+      return;
+    }
     compare.hidden = !(a && b);
     if (compare.hidden) { compare.replaceChildren(); return; }
     const table = el('table', 'us-table sim-compare-table');
