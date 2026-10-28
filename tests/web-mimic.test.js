@@ -301,7 +301,7 @@ test('view and describe: the dehumidifier only when there is one', () => {
 test('the filter reading: from the room\'s pressure sensor or the one given, from a simulated room\'s filter probe', () => {
   const dp = (over = {}) => ({ trh: sensors.trh, co2: sensors.co2, dp: { status: 'online', lastOk: { pa: 40.4, at: 1 }, ...over } });
   assert.equal(fromRoom({ sensors: dp() }).filterPa, 40.4);
-  assert.equal(view(fromRoom({ sensors: dp() })).filter, 'filter 40 Pa');
+  assert.equal(view(fromRoom({ sensors: dp() })).filter, 'filter 40.4 Pa', 'one decimal, as the Filter card and the Machines row');
   assert.equal(fromRoom({ sensors: dp(), filterPa: 51 }).filterPa, 51, 'the Filter card\'s reading wins (the last one with the intake on)');
   assert.equal(fromRoom({ sensors: dp(), filterPa: null }).filterPa, null);
   assert.equal(fromRoom({ sensors: dp({ status: 'not-wired', lastOk: null }) }).filterPa, null);
@@ -310,7 +310,7 @@ test('the filter reading: from the room\'s pressure sensor or the one given, fro
   assert.equal(view(undefined).filter, '');
   const acting = { ...simRoom().acting, filterPa: 62.4 };
   assert.equal(fromSim(simRoom({ filterProbe: 14, acting }), devices).filterPa, 62.4);
-  assert.equal(view(fromSim(simRoom({ filterProbe: 14, acting }), devices)).filter, 'filter 62 Pa');
+  assert.equal(view(fromSim(simRoom({ filterProbe: 14, acting }), devices)).filter, 'filter 62.4 Pa');
   assert.equal(fromSim(simRoom({ filterProbe: null, acting }), devices).filterPa, null, 'no filter probe linked');
   assert.equal(fromSim(simRoom({ filterProbe: 14, acting: { ...acting, filterPa: 0 } }), devices).filterPa, null, 'the intake is off');
 });

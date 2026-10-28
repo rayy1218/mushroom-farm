@@ -75,11 +75,11 @@ const TEMPLATE = `
         <div class="now-main">
           <div data-readings></div>
           <section data-picture></section>
-          <section data-machines></section>
         </div>
         <div class="now-side" data-now-side>
           <section data-mode hidden></section>
           <section data-machine-list></section>
+          <section data-machines></section>
           <a data-crop-sum></a>
         </div>
       </div>

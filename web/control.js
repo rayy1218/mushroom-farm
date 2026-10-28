@@ -212,6 +212,9 @@ export function createControl(host, { roomId, onOffline, onGone, onChange, getRo
   const own = { acFan: [fanRow, fanErr], humidifier: [humRow, humErr], lightToday: [lightRow] };
   const reasonLists = [];
   const groups = [];
+  // With the switch on the Now tab (modeHost) the reasons gather in one quiet footer above Save: what the farm does now.
+  const statusBox = el('div', 'c-status');
+  if (modeHost) statusBox.append(el('h3', 'c-group-title', 'What the farm is doing now'));
   const fittedGroups = []; // [box, room field]: shown only while the room has that machine
   for (const g of CONTROL_GROUPS) {
     const box = el('section', 'c-group');
@@ -222,7 +225,7 @@ export function createControl(host, { roomId, onOffline, onGone, onChange, getRo
     const list = el('ul', 'c-reasons');
     for (const key of g.reasons) list.append(reasonItems.get(key).li);
     reasonLists.push(list);
-    box.append(list);
+    (modeHost ? statusBox : box).append(list);
     groups.push(box);
     if (g.fitted) fittedGroups.push([box, g.fitted]);
   }
@@ -231,7 +234,21 @@ export function createControl(host, { roomId, onOffline, onGone, onChange, getRo
   form.dataset.group = 'outdoor';
   form.prepend(el('h3', 'c-group-title', 'Outdoor air'));
 
-  if (modeHost) host.append(...groups, form, stateNode, checkList, sendRow, saveErr); // the state above Save, not alone under it
+  if (modeHost) { // the state above Save, not alone under it
+    statusBox.append(stateNode, checkList);
+    // Two columns on a wide screen, filled to about the same height: CO₂, air circulation and outdoor air at the left;
+    // temperature, humidity and lighting at the right.
+    const cols = el('div', 'c-cols');
+    const left = el('div', 'c-col');
+    const right = el('div', 'c-col');
+    for (const box of groups) {
+      if (!box.querySelector('input, select, button, .c-light')) continue; // only reasons (Air circulation): they are in the footer
+      (['t', 'rh', 'light'].includes(box.dataset.group) ? right : left).append(box);
+    }
+    left.append(form);
+    cols.append(left, right);
+    host.append(cols, statusBox, sendRow, saveErr);
+  }
   else host.append(autoRow, modeLine, autoErr, ...groups, form, sendRow, saveErr, stateNode, checkList);
 
   // ---- drawing ----

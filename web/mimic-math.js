@@ -204,7 +204,7 @@ export function view(draw) {
     comp,
     acFlow: ac.on ? (comp ? 0.35 + 0.65 * ac.level : 0.2) : 0,
     airOn: units.intake.on || units.exhaust.on,
-    filter: num(s.filterPa) === null ? '' : `filter ${Math.round(s.filterPa)} Pa`,
+    filter: num(s.filterPa) === null ? '' : `filter ${s.filterPa.toFixed(1)} Pa`, // one decimal, as the Filter card
     blocks: s.blocks ? String(s.blocks) : '',
     co2Rate: num(s.co2Rate) === null ? 0 : clamp01(s.co2Rate),
     capScale: num(s.capScale) === null ? 0 : clamp01(s.capScale),
