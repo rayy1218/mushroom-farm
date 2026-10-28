@@ -51,7 +51,7 @@ const cubic = new Intl.NumberFormat(undefined, { minimumFractionDigits: 1, maxim
 // Three charts: which sensor, which reading field, how to show it.
 const CHARTS = [
   { id: 'chart-t', outdoor: true, band: ['tLow', 'tHigh'], kind: 'trh', field: 't', label: 'Temperature', unit: '°C', color: 'var(--s-t)', digits: 1, minSpan: 1 },
-  { id: 'chart-rh', outdoor: true, band: ['rhLow', 'rhHigh'], kind: 'trh', field: 'rh', label: 'Humidity', unit: '%RH', color: 'var(--s-rh)', digits: 1, minSpan: 5, bounds: [0, 100] },
+  { id: 'chart-rh', outdoor: true, band: ['rhLow', 'rhHigh'], kind: 'trh', field: 'rh', label: 'Humidity', unit: '% RH', color: 'var(--s-rh)', digits: 1, minSpan: 5, bounds: [0, 100] },
   { id: 'chart-co2', band: ['co2Low', 'co2High'], kind: 'co2', field: 'co2', label: 'CO₂', unit: 'ppm', color: 'var(--s-co2)', digits: 0, minSpan: 100 },
 ];
 

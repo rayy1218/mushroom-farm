@@ -1,4 +1,5 @@
-// The Overview page, #/overview: "is the farm OK?" at a glance. Tiles, the newest alarms and a card per room.
+// The Overview page, #/overview: "is the farm OK?" at a glance. One status line, the newest alarms, the outdoor air and the
+// farm's energy, and a card per room with its state, its readings against their bands and their last 24 hours.
 // Refreshes every reading interval while shown (like the room page).
 
 import { request, OFFLINE } from './api.js';
@@ -6,7 +7,7 @@ import { refreshMs } from './settings-math.js';
 import { live } from './live.js';
 import { fallbackMs, createThrottle } from './live-math.js';
 import { loadOverview } from './overview-data.js';
-import { tiles, roomCard, alarmTimeText, SPARK_W, SPARK_H } from './overview-math.js';
+import { farmStatus, roomCard, alarmTimeText, SPARK_W, SPARK_H } from './overview-math.js';
 import { outdoorCard } from './outdoor-math.js';
 import { roomLines, USAGE_DAYS, USAGE_REFRESH_MS } from './usage-math.js';
 import { usageTileNodes } from './usage.js';
@@ -28,12 +29,11 @@ const TEMPLATE = `
   </div>
   <p class="muted" data-loading>Loading…</p>
   <div data-body hidden>
-    <div class="ov-tiles" data-tiles></div>
+    <section class="card ov-status" data-status aria-live="polite"></section>
     <section class="card ov-alarms" data-alarms hidden>
       <h2>Alarms</h2>
       <ul class="ov-alarm-list" data-alarm-list></ul>
     </section>
-    <div class="ov-farm" data-farm></div>
     <div class="empty" data-empty hidden>
       <p>No rooms yet</p>
       <a href="#/rooms">Go to Rooms to add one</a>
@@ -43,6 +43,7 @@ const TEMPLATE = `
       <a href="#/rooms">Show all rooms</a>
     </div>
     <div class="ov-rooms" data-rooms></div>
+    <div class="ov-farm" data-farm></div>
   </div>`;
 
 let mountSeq = 0; // every mount gets a token; a reply that finds the token changed is dropped
@@ -67,12 +68,11 @@ function levelChip(level, text = LEVEL_WORDS[level] ?? level) {
   return chip;
 }
 
-function tile(label, value, note, level) {
-  const t = node('div', 'card ov-tile');
-  t.append(node('p', 'ov-tile-label', label), node('p', 'ov-tile-value', value));
-  if (note) t.append(node('p', 'ov-tile-note', note));
-  if (level) t.dataset.level = level;
-  return t;
+// A state pill (the room page's): the word, its tone as colour.
+function pill(text, tone) {
+  const p = node('span', 'pill', text);
+  p.dataset.tone = tone === 'critical' || tone === 'serious' ? 'warn' : tone === 'warning' ? 'amber' : tone;
+  return p;
 }
 
 // A 24 h sparkline with the band shaded; null when there is too little data.
@@ -97,7 +97,7 @@ export function mount(container) {
     retry: q('[data-retry]'),
     loading: q('[data-loading]'),
     body: q('[data-body]'),
-    tiles: q('[data-tiles]'),
+    status: q('[data-status]'),
     alarms: q('[data-alarms]'),
     alarmList: q('[data-alarm-list]'),
     empty: q('[data-empty]'),
@@ -154,12 +154,17 @@ export function mount(container) {
   }
 
   function renderRooms(rooms) {
-    const t = tiles(rooms);
-    els.tiles.replaceChildren(
-      tile('Rooms', String(t.rooms), t.rooms === 0 ? '' : `${t.roomsOk} of ${t.rooms} OK`, t.roomsOk < t.rooms ? 'warning' : ''),
-      tile('Alarms', String(t.alarms), t.alarms === 0 ? 'None active' : 'Active', t.level),
-      tile('Air exchanges running', String(t.exchanges)),
-    );
+    const st = farmStatus(rooms);
+    els.status.hidden = !st;
+    if (st) {
+      const head = node('p', 'ov-status-text');
+      const dot = node('span', 'ov-status-dot');
+      dot.dataset.tone = st.tone;
+      head.append(dot, node('span', '', st.text));
+      const facts = node('ul', 'ov-facts');
+      facts.append(...st.facts.map((f) => node('li', '', f)));
+      els.status.replaceChildren(head, facts);
+    }
     els.empty.hidden = rooms.length > 0;
     const now = Date.now();
     els.rooms.replaceChildren(...rooms.map((room) => {
@@ -170,13 +175,14 @@ export function mount(container) {
       const link = node('a', '', c.name);
       link.href = c.href;
       name.append(link);
-      head.append(name);
-      if (c.alarm) head.append(levelChip(c.alarm.level, c.alarm.text));
+      head.append(name, pill(c.state.text, c.state.tone));
       card.append(head);
       for (const v of c.values) {
         const row = node('div', 'ov-value');
         const text = node('div', 'ov-value-text');
-        text.append(node('span', 'ov-value-label', v.label), node('span', 'ov-value-now', v.text));
+        const label = node('span', 'ov-value-label', v.label);
+        if (v.chip) { const chip = node('span', 'ov-band', v.chip.text); chip.dataset.tone = v.chip.tone; label.append(chip); }
+        text.append(label, node('span', 'ov-value-now', v.text));
         row.append(text, sparkline(v));
         card.append(row);
       }

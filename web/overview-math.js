@@ -9,7 +9,7 @@ const round1 = (n) => Math.round(n * 10) / 10;
 // The three sparklines of a room card: the key in overview.spark, the band keys in overview.bands.
 export const SPARKS = [
   { key: 't', label: 'Temperature', unit: '°C', digits: 1, low: 'tLow', high: 'tHigh', color: 'var(--s-t)' },
-  { key: 'rh', label: 'Humidity', unit: '%RH', digits: 0, low: 'rhLow', high: 'rhHigh', color: 'var(--s-rh)' },
+  { key: 'rh', label: 'Humidity', unit: '% RH', digits: 1, low: 'rhLow', high: 'rhHigh', color: 'var(--s-rh)' }, // one decimal, as the room page
   { key: 'co2', label: 'CO₂', unit: 'ppm', digits: 0, low: 'co2Low', high: 'co2High', color: 'var(--s-co2)' },
 ];
 
@@ -61,6 +61,28 @@ export function tiles(rooms) {
   };
 }
 
+// A room has something to watch: a wired sensor (a room with nothing wired in Manual is not a worry).
+const wired = (r) => r.trh?.status !== 'not-wired' || r.co2?.status !== 'not-wired';
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+
+// The line at the top of the Overview (redesign 2026-10-28, in place of three number tiles): { text, tone, facts } or null
+// without rooms. A room needs attention with an alarm or in Manual (with something wired); the tone is the worst alarm's level,
+// amber for Manual alone.
+export function farmStatus(rooms) {
+  if (!rooms?.length) return null;
+  const t = tiles(rooms);
+  const manual = rooms.filter((r) => !r.auto && wired(r)).length;
+  const attention = rooms.filter((r) => r.alarms.count > 0 || (!r.auto && wired(r))).length;
+  const facts = [t.alarms === 0 ? 'No alarms' : plural(t.alarms, 'alarm', 'alarms')];
+  if (manual > 0) facts.push(`${plural(manual, 'room', 'rooms')} in Manual`);
+  facts.push(t.exchanges === 0 ? 'No air exchange running' : `${plural(t.exchanges, 'air exchange', 'air exchanges')} running`);
+  if (attention === 0) return { text: `All ${plural(rooms.length, 'room', 'rooms')} OK`, tone: 'good', facts };
+  return {
+    text: `${attention} of ${plural(rooms.length, 'room', 'rooms')} ${attention === 1 ? 'needs' : 'need'} attention`,
+    tone: t.level ?? 'amber', facts,
+  };
+}
+
 // Critical first, then newest (the order of GET /api/alarms).
 export function sortAlarms(alarms) {
   return [...alarms].sort((a, b) => (b.level === 'critical') - (a.level === 'critical') || b.raisedAt - a.raisedAt || b.id - a.id);
@@ -87,6 +109,15 @@ export function sensorText(sensor, field, digits, unit) {
   return STATUS_WORDS[sensor.status] ? `${value} · ${STATUS_WORDS[sensor.status]}` : value;
 }
 
+// A reading against its band, from an online sensor only: { text, tone } or null.
+function bandChip(sensor, field, low, high) {
+  const v = sensor?.status === 'online' ? sensor[field] : null;
+  if (!finite(v) || !finite(low) || !finite(high)) return null;
+  if (v > high) return { text: 'Above band', tone: 'amber' };
+  if (v < low) return { text: 'Below band', tone: 'amber' };
+  return { text: 'In band', tone: 'good' };
+}
+
 export function exchangeText(room, now = Date.now()) {
   if (!room.exchange) return 'Air exchange off';
   if (!finite(room.exchangeSince)) return 'Air exchange on';
@@ -111,16 +142,22 @@ export function roomCard(room, now = Date.now()) {
       label: def.label,
       color: def.color,
       text: sensorText(sensor, def.key, def.digits, def.unit),
+      chip: bandChip(sensor, def.key, room.bands[def.low], room.bands[def.high]),
       spark: sparkPath(room.spark[def.key], SPARK_W, SPARK_H, { low: room.bands[def.low], high: room.bands[def.high] },
         { from: now - SPARK_WINDOW_MS, to: now, gapMs: 3 * SPARK_BUCKET_MS }),
     };
   });
   const n = room.alarms.count;
+  // The room's state in one pill: its alarms first, then Manual, OK, or nothing wired.
+  const state = n > 0 ? { text: `${n} ${n === 1 ? 'alarm' : 'alarms'}`, tone: room.alarms.level }
+    : !wired(room) ? { text: 'Not wired', tone: 'none' }
+      : !room.auto ? { text: 'Manual', tone: 'amber' } : { text: 'OK', tone: 'good' };
   return {
     href: `#/rooms/${room.id}`,
     name: room.name,
     values,
-    auto: room.auto ? 'Auto on' : 'Auto off',
+    state,
+    auto: room.auto ? 'Auto' : 'Manual',
     exchange: exchangeText(room, now),
     alarm: n > 0 ? { text: `${n} ${n === 1 ? 'alarm' : 'alarms'}`, level: room.alarms.level } : null,
   };

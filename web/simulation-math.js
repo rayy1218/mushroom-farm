@@ -86,7 +86,7 @@ export function dayTicks(totalS, maxTicks) {
 // The three charts: result.series field, the band's fields, the outdoor field (none for CO₂).
 export const CHARTS = [
   { id: 'sim-t', field: 't', low: 'tLow', high: 'tHigh', outdoor: 'outT', label: 'Temperature', unit: '°C', color: 'var(--s-t)', digits: 1, minSpan: 1 },
-  { id: 'sim-rh', field: 'rh', low: 'rhLow', high: 'rhHigh', outdoor: 'outRH', label: 'Humidity', unit: '%RH', color: 'var(--s-rh)', digits: 1, minSpan: 5, bounds: [0, 100] },
+  { id: 'sim-rh', field: 'rh', low: 'rhLow', high: 'rhHigh', outdoor: 'outRH', label: 'Humidity', unit: '% RH', color: 'var(--s-rh)', digits: 1, minSpan: 5, bounds: [0, 100] },
   { id: 'sim-co2', field: 'co2', low: 'co2Low', high: 'co2High', label: 'CO₂', unit: 'ppm', color: 'var(--s-co2)', digits: 0, minSpan: 100 },
 ];
 

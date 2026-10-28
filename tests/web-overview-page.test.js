@@ -80,8 +80,10 @@ test('a room card: values with status words, exchange, auto, alarm chip and thre
   }, at(19, 12));
   assert.equal(card.href, '#/rooms/3');
   assert.equal(card.name, 'Fruiting');
-  assert.deepEqual(card.values.map((v) => v.text), ['22.0 °C', '91 %RH', '650 ppm · Offline']);
-  assert.equal(card.auto, 'Auto on');
+  assert.deepEqual(card.values.map((v) => v.text), ['22.0 °C', '91.2 % RH', '650 ppm · Offline'], 'humidity to one decimal, as on the room page');
+  assert.deepEqual(card.values.map((v) => v.chip), [{ text: 'In band', tone: 'good' }, { text: 'In band', tone: 'good' }, null], 'no chip from an offline sensor');
+  assert.deepEqual(card.state, { text: '2 alarms', tone: 'serious' });
+  assert.equal(card.auto, 'Auto');
   assert.equal(card.exchange, 'Air exchange on since 10:42');
   assert.deepEqual(card.alarm, { text: '2 alarms', level: 'serious' });
   assert.ok(card.values[0].spark.d);
@@ -95,5 +97,17 @@ test('a room card without alarms has no chip; "1 alarm" in the singular; Auto of
   };
   assert.equal(roomCard({ ...base, alarms: { count: 0, level: null } }, 0).alarm, null);
   assert.equal(roomCard({ ...base, alarms: { count: 1, level: 'warning' } }, 0).alarm.text, '1 alarm');
-  assert.equal(roomCard({ ...base, alarms: { count: 0, level: null } }, 0).auto, 'Auto off');
+  assert.equal(roomCard({ ...base, alarms: { count: 0, level: null } }, 0).auto, 'Manual');
 });
+
+test('a room card says the room\'s state in one pill: alarms first, then Manual, OK, or nothing wired; out of band says which side', () => {
+  const room = (over) => ({ id: 1, name: 'A', trh: { status: 'online', t: 22, rh: 90, at: 1 }, co2: { status: 'online', co2: 700, at: 1 }, auto: true,
+    exchange: false, exchangeSince: null, bands, spark: { t: [], rh: [], co2: [] }, alarms: { count: 0, level: null }, ...over });
+  assert.deepEqual(roomCard(room({}), 0).state, { text: 'OK', tone: 'good' });
+  assert.deepEqual(roomCard(room({ auto: false }), 0).state, { text: 'Manual', tone: 'amber' });
+  assert.deepEqual(roomCard(room({ auto: false, alarms: { count: 1, level: 'critical' } }), 0).state, { text: '1 alarm', tone: 'critical' });
+  assert.deepEqual(roomCard(room({ trh: { status: 'not-wired' }, co2: { status: 'not-wired' }, auto: false }), 0).state, { text: 'Not wired', tone: 'none' });
+  const out = roomCard(room({ trh: { status: 'online', t: 24.1, rh: 80, at: 1 }, co2: { status: 'online', co2: 900, at: 1 } }), 0);
+  assert.deepEqual(out.values.map((v) => v.chip), [{ text: 'Above band', tone: 'amber' }, { text: 'Below band', tone: 'amber' }, { text: 'Above band', tone: 'amber' }]);
+});
+

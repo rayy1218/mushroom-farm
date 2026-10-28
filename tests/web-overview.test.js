@@ -3,6 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  farmStatus,
   sparkPath, tiles, badgeCount, withTitlePrefix, sensorText, exchangeText, alarmLevelRank, sortAlarms, alarmTimeText, SPARKS,
 } from '../web/overview-math.js';
 import { parseRoute, isCanonical } from '../web/route.js';
@@ -118,4 +119,14 @@ test('an empty or unknown hash is the Overview; #/rooms stays the Rooms list', (
   assert.equal(isCanonical('#/overview'), true);
   assert.equal(isCanonical('#/overview/'), false);
   assert.equal(isCanonical(''), false);
+});
+
+test('farmStatus: one line at the top of the Overview instead of three number tiles', () => {
+  const r = (over) => ({ alarms: { count: 0, level: null }, exchange: false, auto: true, trh: { status: 'online' }, co2: { status: 'online' }, ...over });
+  assert.deepEqual(farmStatus([r({}), r({ exchange: true })]), { text: 'All 2 rooms OK', tone: 'good', facts: ['No alarms', '1 air exchange running'] });
+  assert.deepEqual(farmStatus([r({ alarms: { count: 2, level: 'serious' } }), r({ auto: false })]),
+    { text: '2 of 2 rooms need attention', tone: 'serious', facts: ['2 alarms', '1 room in Manual', 'No air exchange running'] });
+  assert.deepEqual(farmStatus([r({ auto: false })]), { text: '1 of 1 room needs attention', tone: 'amber', facts: ['No alarms', '1 room in Manual', 'No air exchange running'] });
+  assert.deepEqual(farmStatus([r({ auto: false, trh: { status: 'not-wired' }, co2: { status: 'not-wired' } })]).text, 'All 1 room OK', 'a room with nothing wired in Manual is not a worry');
+  assert.equal(farmStatus([]), null);
 });

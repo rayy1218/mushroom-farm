@@ -64,7 +64,7 @@ export function outdoorCard(data, now = Date.now()) {
   const text = (v, digits, unit) => (finite(v) ? `${v.toFixed(digits)} ${unit}` : '—');
   const values = [
     { key: 't', label: 'Temperature', unit: '°C', text: text(last?.t, 1, '°C'), color: OUTDOOR_COLOR.t, spark: spark('t') },
-    { key: 'rh', label: 'Humidity', unit: '%RH', text: text(last?.rh, 0, '%RH'), color: OUTDOOR_COLOR.rh, spark: spark('rh') },
+    { key: 'rh', label: 'Humidity', unit: '% RH', text: text(last?.rh, 1, '% RH'), color: OUTDOOR_COLOR.rh, spark: spark('rh') },
     { key: 'dew', label: 'Dew point', unit: '°C', text: text(dew, 1, '°C'), color: null, spark: null },
   ];
   const c = data.check ?? null;

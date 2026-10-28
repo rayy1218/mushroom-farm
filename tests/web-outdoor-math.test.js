@@ -82,7 +82,7 @@ test('the Overview card with a sensor: T, RH, dew point, status, sparklines and 
   }, now);
   assert.equal(c.set, true);
   assert.equal(c.statusText, 'Online');
-  assert.deepEqual(c.values.map((v) => v.text), ['31.2 °C', '64 %RH', '23.1 °C']);
+  assert.deepEqual(c.values.map((v) => v.text), ['31.2 °C', '64.0 % RH', '23.1 °C']);
   assert.ok(c.values[0].spark && c.values[1].spark);
   assert.equal(c.values[2].spark, null);
   assert.equal(c.fault, null);

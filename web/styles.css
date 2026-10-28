@@ -552,19 +552,20 @@ button.toggle[data-on="true"]:hover { background: color-mix(in srgb, var(--accen
 /* ---- Overview and the nav alarm badge (Stream B) ---- */
 .nav-badge { min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--critical); color: var(--on-critical); font: 700 11px/18px var(--font-body); text-align: center; }
 /* A section's title on the Overview with a link at its right ("Rooms ... Show all rooms"). */
+.ov-status { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 24px; margin-bottom: 16px; padding: 16px 20px; }
+.ov-status-text { display: flex; align-items: center; gap: 10px; margin: 0; font-size: var(--fs-lg); font-weight: 600; }
+.ov-status-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex: none; }
+.ov-status-dot[data-tone="good"] { background: var(--good); }
+.ov-status-dot[data-tone="amber"], .ov-status-dot[data-tone="warning"] { background: var(--warning); }
+.ov-status-dot[data-tone="serious"], .ov-status-dot[data-tone="critical"] { background: var(--critical); }
+.ov-facts { display: flex; flex-wrap: wrap; gap: 4px 20px; margin: 0; padding: 0; list-style: none; color: var(--ink-2); font-size: var(--fs-sm); }
+.ov-band { margin-left: 8px; font-size: var(--fs-xs); font-weight: 600; color: var(--muted); }
+.ov-band[data-tone="good"] { color: var(--good-text); }
+.ov-band[data-tone="amber"] { color: var(--warning-text); }
 .ov-section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 8px 0 10px; }
 .ov-section-head h2 { margin: 0; font-size: var(--fs-lg); }
 .ov-section-head a { color: var(--ink-2); font-weight: 600; font-size: var(--fs-sm); }
 .ov-section-head a:hover { color: var(--ink); }
-.ov-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 16px; }
-.ov-tile { padding: 14px 16px; }
-.ov-tile p { margin: 0; }
-.ov-tile-label { color: var(--ink-2); font-size: var(--fs-sm); }
-.ov-tile-value { font-size: var(--fs-2xl); font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.2; }
-.ov-tile-note { color: var(--muted); font-size: var(--fs-sm); }
-.ov-tile[data-level="critical"] .ov-tile-value, .ov-tile[data-level="critical"] .ov-tile-note { color: var(--critical-text); }
-.ov-tile[data-level="serious"] .ov-tile-value, .ov-tile[data-level="serious"] .ov-tile-note,
-.ov-tile[data-level="warning"] .ov-tile-value, .ov-tile[data-level="warning"] .ov-tile-note { color: var(--warning-text); }
 .ov-chip { display: inline-block; padding: 1px 8px; border-radius: 10px; border: 1px solid var(--border-strong); color: var(--ink-2);
   font-size: var(--fs-xs); font-weight: 600; white-space: nowrap; }
 .ov-chip[data-level="critical"] { background: var(--critical); border-color: var(--critical); color: var(--on-critical); }
@@ -580,14 +581,14 @@ button.toggle[data-on="true"]:hover { background: color-mix(in srgb, var(--accen
 .ov-alarm-text { overflow-wrap: anywhere; }
 .ov-alarm-time { color: var(--muted); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ov-alarm button { min-height: 32px; padding: 2px 12px; font-size: var(--fs-sm); }
-.ov-rooms { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+.ov-rooms { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
 .ov-room-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
 .ov-room-head h2 { margin: 0; font-size: var(--fs-lg); overflow-wrap: anywhere; }
 .ov-room-head a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--axis); text-underline-offset: 3px; }
 .ov-value { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; border-top: 1px solid var(--border); }
 .ov-value-text { display: grid; min-width: 0; }
 .ov-value-label { color: var(--muted); font-size: var(--fs-xs); }
-.ov-value-now { font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.ov-value-now { font-size: var(--fs-lg); font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .ov-spark { flex: none; }
 .ov-spark-none { color: var(--muted); font-size: var(--fs-xs); }
 .ov-room-foot { margin: 8px 0 0; color: var(--ink-2); font-size: var(--fs-sm); }
@@ -621,7 +622,7 @@ button.toggle[data-on="true"]:hover { background: color-mix(in srgb, var(--accen
 .us-table .total th, .us-table .total td { font-weight: 700; border-top: 1px solid var(--border-strong); }
 @media (max-width: 600px) { .us-table th, .us-table td { padding: 6px 3px; font-size: var(--fs-xs); } .us-table th:first-child, .us-table td:first-child { padding-left: 0; } .us-table th:last-child, .us-table td:last-child { padding-right: 0; } }
 .us-note { margin: 8px 0 0; font-size: var(--fs-sm); }
-.ov-farm { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.ov-farm { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin: 16px 0; } /* after the rooms: the rooms come first */
 .ov-farm:empty { display: none; }
 .ov-outdoor > .ov-chip { margin-bottom: 8px; }
 .ov-outdoor a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--axis); text-underline-offset: 3px; }
