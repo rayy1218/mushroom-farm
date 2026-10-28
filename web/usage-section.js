@@ -12,8 +12,8 @@ import {
   LIVE_NO_METER, LIVE_WATER, bucketWord, usageTotalsLine, usageBars, usageTip, usageSummary, livePowerPoints,
 } from './usage-chart-math.js';
 
-const ENERGY_COLOR = 'var(--s-co2)'; // the Energy card's colours
-const WATER_COLOR = 'var(--s-rh)';
+const ENERGY_COLOR = 'var(--s-energy)'; // their own hues, not the climate readings' (DESIGN.md Series Identity)
+const WATER_COLOR = 'var(--s-water)';
 
 function text(tag, className, content) {
   const node = document.createElement(tag);

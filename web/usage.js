@@ -166,8 +166,8 @@ export function createUsageCard(host, { roomId, getRoom }) {
     msg.hidden = days.length > 0;
     if (days.length === 0) msg.textContent = usage ? 'No usage recorded yet' : msg.textContent;
     charts.hidden = days.length === 0;
-    const energy = { series: barSeries(days, 'kWh'), kind: 'energy', color: 'var(--s-co2)' };
-    const water = { series: barSeries(days, 'waterL'), kind: 'water', color: 'var(--s-rh)' };
+    const energy = { series: barSeries(days, 'kWh'), kind: 'energy', color: 'var(--s-energy)' };
+    const water = { series: barSeries(days, 'waterL'), kind: 'water', color: 'var(--s-water)' };
     legend.hidden = !energy.series.some((s) => s.v !== null);
     if (!energyChart) energyChart = drawBarChart(energyHost, energy);
     else energyChart.update(energy);

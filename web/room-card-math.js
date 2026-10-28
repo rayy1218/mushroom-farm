@@ -76,7 +76,7 @@ export function readingTiles(draw, control) {
     return {
       key: r.key, name: r.name, value: shown, unit: r.unit,
       band: low !== null && high !== null ? `Band ${limit(low, r.key)}–${limit(high, r.key)} ${r.unit}` : '',
-      chip: { lvl: st.lvl || 'none', text: `${st.icon ? `${st.icon} ` : ''}${st.text || ''}${near}` },
+      chip: { lvl: near ? 'near' : st.lvl || 'none', text: `${st.icon ? `${st.icon} ` : ''}${st.text || ''}${near}` }, // near an edge: amber
       edge: EDGE[st.lvl] ?? 'none',
       bar: bandBar(r.key, value, low, high, r.safety ? num(control?.[r.safety]) : null),
       label: value === null ? `${r.name} no data` : `${r.name} ${shown} ${r.unit}${low !== null && high !== null ? `, band ${limit(low, r.key)} to ${limit(high, r.key)}` : ''}`,

@@ -306,7 +306,7 @@ export function mount(container, { id, runId }) {
     const perDay = summary.perDay ?? [];
     if (perDay.length) {
       const bars = text('div', 'us-charts');
-      for (const [title, key, kind, color] of [['Energy per day (kWh)', 'kWh', 'run-energy', 'var(--s-co2)'], ['Water per day (L)', 'litres', 'run-water', 'var(--s-rh)']]) {
+      for (const [title, key, kind, color] of [['Energy per day (kWh)', 'kWh', 'run-energy', 'var(--s-energy)'], ['Water per day (L)', 'litres', 'run-water', 'var(--s-water)']]) {
         const box = text('div', 'us-chart');
         const host = text('div', 'chart-host');
         box.append(text('h3', '', title), host);
