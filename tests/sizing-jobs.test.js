@@ -53,7 +53,7 @@ test('validation: the longest cool-down (default 3 h, a number from 0.5 to 24 h)
 test('start queues a job with the total candidates and starts it at once, with the room\'s context', (t) => {
   const { a, sims, jobs } = setup(t);
   const { job } = sims.startSizing(a, sizing());
-  assert.deepEqual(job, { id: 1, roomId: a, status: 'queued', progress: 0, tried: 0, total: 47, createdAt: 7000, finishedAt: null, result: null, error: null });
+  assert.deepEqual(job, { id: 1, roomId: a, status: 'queued', progress: 0, tried: 0, total: 45, createdAt: 7000, finishedAt: null, result: null, error: null });
   assert.equal(sims.getSizing(1).status, 'running');
   assert.equal(jobs.length, 1);
   assert.equal(jobs[0].job.kind, 'sizing');
@@ -69,10 +69,10 @@ test('progress, done and failed', (t) => {
   sims.startSizing(a, sizing());
   jobs[0].handlers.onProgress(0.25);
   assert.equal(sims.getSizing(1).progress, 0.25);
-  assert.equal(sims.getSizing(1).tried, 12); // a quarter of the 47 setups
+  assert.equal(sims.getSizing(1).tried, 11); // a quarter of the 45 setups
   jobs[0].handlers.onDone(reply);
   assert.deepEqual([sims.getSizing(1).status, sims.getSizing(1).progress, sims.getSizing(1).finishedAt, sims.getSizing(1).result], ['done', 1, 7000, reply]);
-  assert.equal(sims.getSizing(1).tried, 47);
+  assert.equal(sims.getSizing(1).tried, 45);
   sims.startSizing(b, sizing());
   jobs[1].handlers.onError('boom');
   assert.deepEqual([sims.getSizing(2).status, sims.getSizing(2).error, sims.getSizing(2).result], ['failed', 'boom', null]);

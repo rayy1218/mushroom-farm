@@ -123,7 +123,7 @@ test('runSizing: every candidate over the days of both stages and a cool-down da
   const calls = [], progress = [];
   const r = runSizing(input, ctx, { simulate: fake(calls), onProgress: (s) => progress.push(s) });
   const total = searchPlan(estimate(input, ctx)).total;
-  assert.equal(total, 47, 'the two-phase plan for Container Alpha: 15 + 2 × 16');
+  assert.equal(total, 45, 'the two-phase plan for Container Alpha: 15 + 2 × 15 (16 less the core)');
   assert.equal(calls.length, 2 * total, 'each setup held in band and cooled down');
   assert.equal(calls[0].inp.days, 17);
   assert.equal('start' in calls[0].inp, false, 'the steady run starts in band');
@@ -214,7 +214,10 @@ test('searchPlan: phase 1 with the cool-down\'s humidifier; phase 2 also near it
   assert.deepEqual([...new Set(plan.phase1.map((c) => c.machines.acBTU))], [9000, 12000, 18000, 24000, 30000]);
   const p2 = plan.phase2(plan.phase1[0]);
   assert.deepEqual([...new Set(p2.map((c) => c.machines.humidifierLH))], [0.5, 1, 2, 3], 'the estimate and the one above, the cool-down\'s and the one below');
-  assert.equal(plan.total, 15 + 2 * 16);
+  assert.equal(plan.total, 15 + 2 * 15, 'phase 2 without the core it starts from');
+  const core = plan.phase1[0];
+  assert.equal(p2.some((c) => JSON.stringify(c) === JSON.stringify(core)), false);
+  assert.equal(p2.length, 4 * 4 - 1);
   const near = searchPlan({ ...est, humidifierCoolLH: 1 });
   assert.deepEqual([...new Set(near.phase2(near.phase1[0]).map((c) => c.machines.humidifierLH))], [0.3, 0.5, 1], 'next to it: around the estimate');
   assert.deepEqual([...new Set(near.phase1.map((c) => c.machines.humidifierLH))], [1]);
@@ -231,6 +234,8 @@ test('runSizing (two phases): phase 2 keeps the best two cores and the progress 
   const r = runSizing(input, ctx, { simulate: sim, onProgress: (p) => progress.push(p), days: 1 });
   const plan = searchPlan(r.estimate);
   assert.equal(seen.length, plan.total);
+  const keys = seen.map((p) => JSON.stringify(p));
+  assert.equal(new Set(keys).size, keys.length, 'no setup tried twice');
   assert.equal(progress.at(-1), 1);
   assert.equal(r.reached, true);
   assert.equal(r.best[0].machines.acBTU >= 18000, true);

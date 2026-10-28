@@ -218,10 +218,15 @@ export function searchPlan(est) {
   const h = HUMIDIFIER_SIZES.indexOf(est.humidifierLH), c = HUMIDIFIER_SIZES.indexOf(coolLH);
   const humidifiers = c <= h + 1 ? around(HUMIDIFIER_SIZES, est.humidifierLH, 1, 1)
     : [...new Set([h, h + 1, c - 1, c].map((k) => HUMIDIFIER_SIZES[k]))];
+  // Without the core itself: it was tried in phase 1 (its humidifier, middle dehumidifier and limit are among these).
   const phase2 = (core) => {
     const list = [];
     for (const humidifierLH of humidifiers) for (const dehumidifierLday of [0, ...spread(allowed, 3)]) {
-      for (const exchangeMaxMin of limits) list.push({ machines: { ...core.machines, humidifierLH, dehumidifierLday }, exchangeMaxMin, ...settings });
+      for (const exchangeMaxMin of limits) {
+        const m = core.machines;
+        if (humidifierLH === m.humidifierLH && dehumidifierLday === m.dehumidifierLday && exchangeMaxMin === core.exchangeMaxMin) continue;
+        list.push({ machines: { ...m, humidifierLH, dehumidifierLday }, exchangeMaxMin, ...settings });
+      }
     }
     return list;
   };
