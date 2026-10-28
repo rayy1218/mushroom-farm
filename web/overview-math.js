@@ -200,13 +200,25 @@ export const SPARK_WINDOW_MS = 24 * 3_600_000; // the sparklines show the last 2
 export const SPARK_BUCKET_MS = 30 * 60_000;
 export const SPARK_W = 140;
 export const SPARK_H = 36;
+const SHORT_MS = 2 * 3_600_000; // traces of less than this are scaled to the data (a hook at the right edge otherwise)
+const MIN_SPAN_MS = 10 * 60_000;
+
+// The window of a room card's traces (critique 2026-10-28): the last 24 h, or from the room's first point when its data
+// covers less than 2 h of it (at least 10 min wide). → { from, text }: text 'last 24 hours' or 'since 17:08'.
+export function traceWindow(spark, now) {
+  const ats = ['t', 'rh', 'co2'].flatMap((k) => (spark?.[k] ?? []).map((p) => p.at)).filter(finite);
+  const first = ats.length ? Math.min(...ats) : null;
+  if (first === null || now - first >= SHORT_MS) return { from: now - SPARK_WINDOW_MS, text: 'last 24 hours' };
+  return { from: Math.min(first, now - MIN_SPAN_MS), text: `since ${formatStamp(first, now)}` };
+}
 
 const withLive = (points, sensor, key, now) => (sensor?.status === 'online' && finite(sensor[key]) && points?.length
   ? [...points, { at: now, v: sensor[key] }] : points);
 
 // What one room card shows, from a room of GET /api/overview:
-// { href, name, values: [{ label, text, color, spark, ... }], auto, exchange, alarm: { text, level } | null }
+// { href, name, values: [{ label, text, color, spark, ... }], auto, exchange, traces, alarm: { text, level } | null }
 export function roomCard(room, now = Date.now()) {
+  const span = traceWindow(room.spark, now);
   const values = SPARKS.map((def) => {
     const sensor = def.key === 'co2' ? room.co2 : room.trh;
     return {
@@ -217,7 +229,7 @@ export function roomCard(room, now = Date.now()) {
       chip: bandChip(sensor, def.key, room.bands[def.low], room.bands[def.high], room.spark?.[def.key], room),
       // the trace ends at the reading shown beside it (the buckets are 30 min averages, so the last one can lag it)
       spark: sparkPath(withLive(room.spark[def.key], sensor, def.key, now), SPARK_W, SPARK_H, { low: room.bands[def.low], high: room.bands[def.high] },
-        { from: now - SPARK_WINDOW_MS, to: now, gapMs: 3 * SPARK_BUCKET_MS }),
+        { from: span.from, to: now, gapMs: 3 * SPARK_BUCKET_MS }),
     };
   });
   const n = room.alarms.count;
@@ -234,6 +246,7 @@ export function roomCard(room, now = Date.now()) {
     setupHref: `#/rooms/${room.id}/setup`,
     auto: room.auto ? 'Auto' : 'Manual',
     exchange: exchangeText(room, now),
+    traces: span.text, // the traces' window, said on the card when it is not the section's 24 h
     alarm: n > 0 ? { text: `${n} ${n === 1 ? 'alarm' : 'alarms'}`, level: room.alarms.level } : null,
   };
 }

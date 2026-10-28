@@ -254,3 +254,20 @@ test('sortRooms: alarms, then out of band, then Manual, then OK, then not set up
   ]).map((x) => x.name);
   assert.deepEqual(order, ['alarm', 'out', 'manual', 'ok']);
 });
+
+// Critique 2026-10-28: a room with minutes of data drew a hook at the right edge of a flat 24 h band.
+test('roomCard: traces of less than 2 hours are scaled to the data and say since when', () => {
+  const now = at(28, 17, 30);
+  const room = {
+    id: 1, name: 'A', auto: true, exchange: false, alarms: { count: 0, level: null },
+    bands: { tLow: 19, tHigh: 21, rhLow: 87, rhHigh: 93, co2Low: 700, co2High: 900 },
+    trh: { status: 'online', t: 20, rh: 90 }, co2: { status: 'online', co2: 800 },
+    spark: { t: [{ at: at(28, 17, 8), v: 20.2 }], rh: [{ at: at(28, 17, 8), v: 89 }], co2: [{ at: at(28, 17, 10), v: 790 }] },
+  };
+  const c = roomCard(room, now);
+  assert.equal(c.traces, 'since 17:08');
+  assert.match(c.values[0].spark.d, /^M3 /, 'the first point at the left edge, not at the right of a 24 h window');
+  const day = roomCard({ ...room, spark: { ...room.spark, t: [{ at: at(28, 9), v: 20 }, ...room.spark.t] } }, now);
+  assert.equal(day.traces, 'last 24 hours');
+  assert.doesNotMatch(day.values[0].spark.d, /^M3 /);
+});
