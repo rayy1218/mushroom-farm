@@ -233,11 +233,19 @@ export const headLine = (roomName) => `Simulation of ${roomName}`;
 const grouped = (n) => n.toLocaleString('en-US', { maximumFractionDigits: 1 });
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
-// An aircon's size: kW first, the BTU/h class it is sold by in brackets (PRODUCT.md: metric first; the class is its trade size).
+// An aircon's size: kW first, the BTU/h class it is sold by in brackets when it is one (PRODUCT.md: metric first; the
+// class is its trade size).
+const KW_PER_BTU = 0.00029307107;
+export const AC_CLASSES = [5000, 7000, 9000, 12000, 18000, 24000, 30000, 36000, 48000];
+export const kwOfBtu = (btu) => btu * KW_PER_BTU;
+export const btuOfKw = (kw) => Math.round(kw / KW_PER_BTU);
+// The class a size is sold as: within 2 % of one, else null.
+export const acClassOf = (btu) => (finite(btu) ? AC_CLASSES.find((c) => Math.abs(btu - c) <= 0.02 * c) ?? null : null);
 export function acSize(btu) {
   if (!finite(btu)) return '—';
   if (btu === 0) return 'none';
-  return `${(btu * 0.00029307107).toFixed(1)} kW (${grouped(btu)} BTU/h class)`;
+  const cls = acClassOf(btu);
+  return `${kwOfBtu(btu).toFixed(1)} kW${cls ? ` (${grouped(cls)} BTU/h class)` : ''}`;
 }
 const acKW = (btu) => (finite(btu) && btu > 0 ? `${(btu * 0.00029307107).toFixed(1)} kW` : 'none');
 

@@ -6,6 +6,7 @@ import { request, OFFLINE, GONE, OUTDATED, routeMissing } from './api.js';
 import { live } from './live.js';
 import { fallbackMs, isStale, withProgress } from './live-math.js';
 import { CROPS, CROP_KEYS, STAGES, FARM_TYPES, MAX_CROPS } from './crops.js';
+import { AC_CLASSES, acClassOf, kwOfBtu, btuOfKw } from './simulation-math.js';
 import {
   PHYSICS_FIELDS, FILTER_KEYS, initialState, checkStep, firstField, stepOf, buildBody, mixSummary, wholeProgram, stagesOf, fixStage, roomLine,
   summaryLines, progressLine, removeLabel,
@@ -99,6 +100,34 @@ export function openSimulateDialog(room, hooks = {}) {
     return wrap;
   }
 
+  // The aircon: typed in kW (kept in BTU/h, the device app's unit), with the BTU/h class shops sell it by as a picker.
+  function acField(f) {
+    const btu = Number(state.physics[f.key]);
+    const shown = /^[0-9]+$/.test(String(state.physics[f.key]).trim()) ? kwOfBtu(btu).toFixed(1) : state.physics[f.key];
+    const sold = el('select');
+    sold.setAttribute('aria-label', 'Aircon sold as');
+    const none = el('option', '', 'Other size');
+    none.value = '';
+    sold.append(none, ...AC_CLASSES.map((c) => { const o = el('option', '', `${c.toLocaleString('en-US')} BTU/h class (${kwOfBtu(c).toFixed(1)} kW)`); o.value = String(c); return o; }));
+    sold.value = String(acClassOf(btu) ?? '');
+    const input = numberInput(shown, (v) => {
+      const kw = /^[0-9]{1,3}(\.[0-9]{1,2})?$/.test(v.trim()) ? Number(v) : NaN;
+      state.physics[f.key] = Number.isFinite(kw) ? String(btuOfKw(kw)) : v; // a text that is not a size stays as typed: the check says so
+      sold.value = String(Number.isFinite(kw) ? acClassOf(btuOfKw(kw)) ?? '' : '');
+    }, false);
+    sold.addEventListener('change', () => {
+      if (!sold.value) return;
+      state.physics[f.key] = sold.value;
+      input.value = kwOfBtu(Number(sold.value)).toFixed(1);
+      clearError(`physics.${f.key}`);
+    });
+    const wrap = field(`physics.${f.key}`, `${f.label} (kW)`, input);
+    const row = el('div', 'sim-ac');
+    input.replaceWith(row);
+    row.append(input, sold);
+    return wrap;
+  }
+
   function numberInput(value, onInput, whole) {
     const input = el('input');
     input.type = 'text';
@@ -161,8 +190,8 @@ export function openSimulateDialog(room, hooks = {}) {
     const machineGrid = el('div', 'sizes two');
     const filterGrid = el('div', 'sizes two');
     for (const f of PHYSICS_FIELDS) {
-      const input = numberInput(state.physics[f.key], (v) => { state.physics[f.key] = v; }, f.whole);
-      const wrap = field(`physics.${f.key}`, `${f.label} (${f.unit})`, input);
+      const wrap = f.kw ? acField(f) : field(`physics.${f.key}`, `${f.label} (${f.unit})`,
+        numberInput(state.physics[f.key], (v) => { state.physics[f.key] = v; }, f.whole));
       if (FILTER_KEYS.includes(f.key)) filterGrid.append(wrap);
       else (['fanFlow', 'acBTU', 'humidifierLH', 'dehumidifierLday'].includes(f.key) ? machineGrid : weatherGrid).append(wrap);
     }
@@ -618,7 +647,8 @@ export function openSimulateDialog(room, hooks = {}) {
     if (!alive()) return;
     cropData = crop;
     roomControl = control ? { exchangeMaxMin: Number.isFinite(control.exchangeMaxMin) ? control.exchangeMaxMin : undefined, acDrop: control.acDrop, humidifierDuringExchange: control.humidifierDuringExchange } : null;
-    state = initialState({ room, lastRun: Array.isArray(runs) ? runs[0] ?? null : null, cropData });
+    // hooks.from: a run to start from (Simulate again on a result page), else the room's newest
+    state = initialState({ room, lastRun: hooks.from ?? (Array.isArray(runs) ? runs[0] ?? null : null), cropData });
     step = 1;
     render();
     body.querySelector('input')?.focus();

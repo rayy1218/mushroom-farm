@@ -79,7 +79,7 @@ test('step 1 checks the numbers like the device app and the outdoor order', () =
   s.physics.outdoorHigh = '61';
   const e = checkStep(1, s);
   assert.equal(e['physics.wallUA'], 'Wall heat transfer must be a number from 0 to 100000 W/K');
-  assert.equal(e['physics.acBTU'], 'Aircon size must be a whole number from 0 to 200000 BTU/h');
+  assert.equal(e['physics.acBTU'], 'Aircon size must be a number from 0 to 58.6 kW');
   assert.ok(e['physics.fanFlow']);
   assert.equal(e['physics.outdoorHigh'], 'Outdoor day high must be a number from -40 to 60 °C');
   assert.equal(firstField(e), 'physics.wallUA');

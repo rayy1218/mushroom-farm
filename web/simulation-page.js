@@ -1,6 +1,7 @@
 // The results page of one simulation run, #/rooms/:id/simulations/:runId (spec 2026-10-20-crops-and-simulation-design.md 4.5):
 // the progress while it runs, then the time in band, the charts with the band as it moved, the machine timeline, energy and water.
 
+import { openSimulateDialog, closeSimulateDialog } from './simulate-dialog.js';
 import { request, OFFLINE, OUTDATED, routeMissing } from './api.js';
 import { roomHash } from './route.js';
 import { drawLineChart, M } from './chart.js';
@@ -26,7 +27,7 @@ const TEMPLATE = `
       <h1 class="page-title" tabindex="-1" data-title>Simulation</h1>
       <p class="page-sub" data-sub>Loading…</p>
     </div>
-    <div class="page-actions" data-actions hidden><button type="button" class="danger-text" data-delete>Delete run</button></div>
+    <div class="page-actions" data-actions hidden><button type="button" data-again hidden>Simulate again with these</button></div>
   </div>
   <div class="banner" role="alert" hidden>
     <span data-banner-text></span>
@@ -47,7 +48,8 @@ const TEMPLATE = `
     <p class="sim-progress" role="status" data-progress></p>
     <p class="sim-warn" data-failed hidden></p>
   </section>
-  <div data-results hidden></div>`;
+  <div data-results hidden></div>
+  <div class="page-foot" data-foot hidden><button type="button" class="danger-text" data-delete>Delete run</button></div>`;
 
 let mountSeq = 0; // every mount gets a token; a reply that finds the token changed is dropped
 
@@ -102,7 +104,7 @@ export function mount(container, { id, runId }) {
   const q = (sel) => container.querySelector(sel);
   const els = {
     inputs: q('[data-inputs]'), inputRowsHost: q('[data-input-rows]'), inputLineHost: q('[data-input-line]'),
-    back: q('[data-back]'), title: q('[data-title]'), sub: q('[data-sub]'), actions: q('[data-actions]'), del: q('[data-delete]'),
+    back: q('[data-back]'), title: q('[data-title]'), sub: q('[data-sub]'), actions: q('[data-actions]'), del: q('[data-delete]'), foot: q('[data-foot]'), again: q('[data-again]'),
     banner: q('.banner'), bannerText: q('[data-banner-text]'), retry: q('[data-retry]'), missing: q('[data-missing]'), missingBack: q('[data-missing-back]'),
     run: q('[data-run]'), bar: q('progress'), progress: q('[data-progress]'), failed: q('[data-failed]'), results: q('[data-results]'),
   };
@@ -116,6 +118,7 @@ export function mount(container, { id, runId }) {
   els.missingBack.href = `#/rooms/${id}`;
 
   let roomName = null;
+  let roomData = null; // GET /api/rooms/:id, for Simulate again
   let run = null;
   let timer = null;
   let loadSeq = 0;
@@ -139,7 +142,7 @@ export function mount(container, { id, runId }) {
         roomName === null ? request('GET', `/api/rooms/${id}`).catch(() => null) : Promise.resolve(null), // optional: the name
       ]);
       if (!alive() || seq !== loadSeq) return;
-      if (room) roomName = room.name;
+      if (room) { roomName = room.name; roomData = room; }
       if (data.roomId !== undefined && data.roomId !== id) { // a run of another room is not this room's
         showMissing();
         return;
@@ -200,6 +203,7 @@ export function mount(container, { id, runId }) {
     els.title.textContent = 'Simulation not found';
     els.sub.textContent = '';
     els.actions.hidden = true;
+    els.foot.hidden = true;
     els.run.hidden = true;
     els.results.hidden = true;
     els.banner.hidden = true;
@@ -219,6 +223,8 @@ export function mount(container, { id, runId }) {
     els.inputRowsHost.replaceChildren(...rows.map((r) => { const d = text('div'); d.append(text('dt', '', r.label), text('dd', '', r.value)); return d; }));
     els.inputLineHost.textContent = inputLine(run.input);
     els.actions.hidden = false;
+    els.foot.hidden = false; // Delete run at the foot, away from the thumb (critique 2026-10-28)
+    els.again.hidden = roomData === null || !run?.input?.physics;
     document.title = `${headLine(name)} · Mushroom farm`;
     const active = isActive(run);
     const loadingResult = run.status === 'done' && !run.result;
@@ -350,6 +356,12 @@ export function mount(container, { id, runId }) {
     els.results.append(card);
   }
 
+  // ---- simulate again: the Simulate stepper, filled from this run ----
+
+  els.again.addEventListener('click', () => {
+    if (roomData && run) openSimulateDialog(roomData, { from: run });
+  });
+
   // ---- delete ----
 
   els.del.addEventListener('click', () => {
@@ -405,6 +417,7 @@ export function mount(container, { id, runId }) {
     clearTimeout(timer);
     clearCharts();
     if (deleteDialog.open) deleteDialog.close();
+    closeSimulateDialog();
     deleteTitle.textContent = 'Delete room';
     document.title = 'Rooms · Mushroom farm';
     container.replaceChildren();

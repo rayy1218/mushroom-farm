@@ -1,7 +1,7 @@
 // Pure helpers for the simulation stepper (no DOM, so they can be tested in Node).
 // Spec 2026-10-20-crops-and-simulation-design.md section 4.1. Every input is kept as the text typed; checks speak like the server.
 
-import { acSize } from './simulation-math.js';
+import { acSize, kwOfBtu } from './simulation-math.js';
 import { CROPS, STAGES, FARM_TYPES, mixBands, rangeWarnings, validateCrops } from './crops.js';
 
 // The physics inputs of step 1. min, max and whole are those of the device app's PARAMS (device/sim-store.js; a test compares
@@ -13,7 +13,8 @@ export const PHYSICS_FIELDS = [
   { key: 'outdoorDew', label: 'Outdoor dew point', unit: '°C', min: -40, max: 60, whole: false, def: 24 },
   { key: 'sunW', label: 'Sun on the roof', unit: 'W', min: 0, max: 100000, whole: false, def: 300 },
   { key: 'fanFlow', label: 'Fan flow', unit: 'm³/h', min: 0, max: 100000, whole: false, def: 600 },
-  { key: 'acBTU', label: 'Aircon size', unit: 'BTU/h', min: 0, max: 200000, whole: true, def: 12000 }, // entered as sold (its BTU/h class), shown back in kW (acSize)
+  // kept in BTU/h (the device app's parameter); entered in kW, with the BTU/h class it is sold by as a picker (kw)
+  { key: 'acBTU', label: 'Aircon size', unit: 'BTU/h', min: 0, max: 200000, whole: true, def: 12000, kw: true },
   { key: 'humidifierLH', label: 'Humidifier output', unit: 'L/h', min: 0, max: 100, whole: false, def: 2 },
   // Not a device parameter by this name (the server maps it to the dehumidifier's rating); the limit is the spec's.
   { key: 'dehumidifierLday', label: 'Dehumidifier', unit: 'L/day', min: 0, max: 200, whole: false, def: 0, device: false },
@@ -111,7 +112,8 @@ export function initialState({ room, lastRun = null, cropData = null, now = Date
 // The crop rows with the blocks as numbers; a blocks text that is not a whole number stays NaN (the check reports it).
 const cropsOf = (state) => state.crops.map((c) => ({ crop: c.crop, blocks: /^[0-9]{1,9}$/.test(String(c.blocks).trim()) ? Number(c.blocks) : NaN }));
 
-const physicsMessage = (f) => `${f.label} must be ${f.whole ? 'a whole number' : 'a number'} from ${f.min} to ${f.max} ${f.unit}`;
+const physicsMessage = (f) => (f.kw ? `${f.label} must be a number from 0 to ${kwOfBtu(f.max).toFixed(1)} kW`
+  : `${f.label} must be ${f.whole ? 'a whole number' : 'a number'} from ${f.min} to ${f.max} ${f.unit}`);
 
 // The number of a physics text, or NaN.
 function numberOf(text) {

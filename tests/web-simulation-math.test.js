@@ -296,3 +296,35 @@ test('inputRows: how the room was run (air exchange, the aircon and the humidifi
   ]);
   assert.equal(inputRows({ physics, crops: [], stage: 'fruiting', days: 7 }).at(-1).label, 'Dehumidifier');
 });
+
+test('the aircon in kW: the class it is sold as only when it is one, kW and BTU/h both ways', async () => {
+  const { acSize, acClassOf, kwOfBtu, btuOfKw, AC_CLASSES } = await import('../web/simulation-math.js');
+  assert.equal(acSize(btuOfKw(3.5)), '3.5 kW (12,000 BTU/h class)', '3.5 kW is about 11,942 BTU/h: sold as the 12,000 class');
+  assert.equal(acSize(btuOfKw(4.2)), '4.2 kW', 'not a class');
+  assert.equal(acClassOf(9000), 9000);
+  assert.equal(acClassOf(10000), null);
+  assert.equal(Number(kwOfBtu(18000).toFixed(1)), 5.3);
+  assert.ok(AC_CLASSES.includes(24000));
+});
+
+test('the Simulate dialog asks for the aircon in kW, with a Sold as picker of BTU/h classes', async () => {
+  const { readFileSync } = await import('node:fs');
+  const dialog = readFileSync(new URL('../web/simulate-dialog.js', import.meta.url), 'utf8');
+  assert.match(dialog, /field\(`physics\.\$\{f\.key\}`, `\$\{f\.label\} \(kW\)`, input\)/);
+  assert.match(dialog, /sold\.setAttribute\('aria-label', 'Aircon sold as'\)/);
+  const { checkStep, initialState } = await import('../web/simulate-math.js');
+  const state = initialState({ room: {} });
+  state.physics.acBTU = 'abc';
+  assert.match(JSON.stringify(checkStep(1, state)), /Aircon size must be a number from 0 to 58\.6 kW/);
+});
+
+test('a result page: Simulate again with these at the head, Delete run at the foot (away from the thumb)', async () => {
+  const { readFileSync } = await import('node:fs');
+  const page = readFileSync(new URL('../web/simulation-page.js', import.meta.url), 'utf8');
+  const head = page.slice(page.indexOf('<div class="page-head">'), page.indexOf('<div class="banner"'));
+  assert.match(head, /data-again hidden>Simulate again with these</);
+  assert.doesNotMatch(head, /data-delete/);
+  assert.match(page, /<div class="page-foot" data-foot hidden><button type="button" class="danger-text" data-delete>Delete run<\/button><\/div>`;/);
+  assert.match(page, /openSimulateDialog\(roomData, \{ from: run \}\)/);
+  assert.match(page, /closeSimulateDialog\(\);/);
+});

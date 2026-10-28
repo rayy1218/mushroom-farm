@@ -1030,3 +1030,5 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
   #setup-room .room-form > .card { margin-bottom: 0; }
 }
 
+.sim-ac { display: grid; grid-template-columns: minmax(0, 7rem) minmax(0, 1fr); gap: 8px; }
+.page-foot { display: flex; justify-content: flex-end; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); }
