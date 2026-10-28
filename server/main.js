@@ -2,6 +2,7 @@
 // serves HTTP and polls the gateways (sensors, relay modules, aircon gateways): the farm's, and a room's own when it has one.
 
 import { mkdirSync } from 'node:fs';
+import { setDefaultAutoSelectFamilyAttemptTimeout } from 'node:net';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openDb } from './db.js';
@@ -16,6 +17,10 @@ import { createSimulations } from './simulations.js';
 import { createTelegram } from './telegram.js';
 import { createEvents } from './events.js';
 import { createLive, watchAlarms } from './live.js';
+
+// Telegram (phone alarms) answers on IPv4 in 170–300 ms from the farm, and Node gives each address only 250 ms before trying
+// the next: alarms then failed with "fetch failed" now and then (2026-10-28). 2 s per address.
+setDefaultAutoSelectFamilyAttemptTimeout(2000);
 
 const DEFAULT_DB = fileURLToPath(new URL('../data/v2.db', import.meta.url));
 

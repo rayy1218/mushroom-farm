@@ -300,3 +300,9 @@ test('the typed token of a test is masked in its error; a closed database does n
   x.db.close();
   await flush();
 });
+
+test('the farm app gives each address 2 s to connect (Telegram took longer than Node\'s 250 ms and alarms failed now and then)', async () => {
+  const { readFileSync } = await import('node:fs');
+  const main = readFileSync(new URL('../server/main.js', import.meta.url), 'utf8');
+  assert.match(main, /setDefaultAutoSelectFamilyAttemptTimeout\(2000\);/);
+});
