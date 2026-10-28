@@ -167,7 +167,7 @@ test('farm type decides the stages', () => {
 test('the mix: bands and warnings in words', () => {
   const s = initialState({ room });
   const m = mixSummary(s);
-  assert.deepEqual(m.lines, ['Temperature 24–26 °C', 'Humidity 85–91 % RH', 'Air exchange starts at 900, stops at 700 ppm']);
+  assert.deepEqual(m.lines, ['Temperature 24–26 °C', 'Humidity 85–91 % RH', 'Air exchange starts at 900 ppm, stops at 700 ppm']);
   assert.deepEqual(m.warnings, []);
   s.crops = [{ crop: 'oyster', blocks: '500' }, { crop: 'milky', blocks: '10' }];
   assert.ok(mixSummary(s).warnings.some((w) => /do not fit one temperature band/.test(w)));
@@ -177,7 +177,7 @@ test('the mix: bands and warnings in words', () => {
   assert.ok(mixSummary(s).warnings.length >= 1);
   s.crops = [{ crop: 'oyster', blocks: 'x' }];
   assert.equal(mixSummary(s), null);
-  assert.deepEqual(bandLines({ tLow: 24, tHigh: 26, rhLow: 85, rhHigh: 91, co2Low: 700, co2High: 900, co2Safety: 1500 }), ['Temperature 24–26 °C', 'Humidity 85–91 % RH', 'Air exchange starts at 900, stops at 700 ppm']);
+  assert.deepEqual(bandLines({ tLow: 24, tHigh: 26, rhLow: 85, rhHigh: 91, co2Low: 700, co2High: 900, co2Safety: 1500 }), ['Temperature 24–26 °C', 'Humidity 85–91 % RH', 'Air exchange starts at 900 ppm, stops at 700 ppm']);
 });
 
 test('the summary and the room line', () => {

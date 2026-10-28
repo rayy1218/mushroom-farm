@@ -73,26 +73,26 @@
 .mimic-svg .air-path.on { stroke: var(--m-cool); stroke-width: 2.5; stroke-dasharray: 3 11; opacity: 1; }
 .mimic-svg .arrowhead { fill: var(--m-cool); }
 
-/* words */
+/* words: 13 px in the drawing's own units, so at a phone's 0.95 scale they stay about 12 px (the aircon's, hidden on a phone, fits its box at 12.5) */
 .mimic-svg .m-eyebrow { font-size: 13px; font-weight: 500; fill: var(--m-sky-muted); }
 .mimic-svg .m-big { font-size: 18px; font-weight: 700; fill: var(--m-sky-ink); font-variant-numeric: tabular-nums; }
-.mimic-svg .m-small { font-size: 12px; fill: var(--m-sky-muted); }
-.mimic-svg .m-name { font-size: 12.5px; font-weight: 650; }
-.mimic-svg .m-state { font-size: 12.5px; font-weight: 600; fill: var(--muted); }
+.mimic-svg .m-small { font-size: 13px; fill: var(--m-sky-muted); }
+.mimic-svg .m-name { font-size: 13px; font-weight: 650; }
+.mimic-svg .m-state { font-size: 13px; font-weight: 600; fill: var(--muted); }
 .mimic-svg .m-state.on { fill: var(--m-run); }
 .mimic-svg .m-sub { font-weight: 400; fill: var(--muted); }
 .mimic-svg .on-sky .m-name { fill: var(--m-sky-ink); }
 .mimic-svg .on-sky .m-state, .mimic-svg .on-sky .m-sub { fill: var(--m-sky-muted); }
 .mimic-svg .on-sky .m-state.on { fill: var(--m-sky-run); }
 .mimic-svg .m-ac { font-size: 12.5px; font-weight: 700; fill: var(--m-unit-ink); }
-.mimic-svg .m-blocks { font-size: 12.5px; fill: var(--muted); }
+.mimic-svg .m-blocks { font-size: 13px; fill: var(--muted); }
 /* a narrow host (a phone): the small texts are too small to read; the page says them elsewhere (tiles, the device's line) */
 .mimic-narrow .mimic-svg .tag, .mimic-narrow .mimic-svg .small { display: none; }
 
 /* the readings by the room (the device app) */
 .mimic-svg .readout rect { fill: var(--surface); stroke: var(--border-strong); stroke-width: 1.2; }
 .mimic-svg .readout .val { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
-.mimic-svg .readout .zn { font-size: 12px; fill: var(--muted); }
+.mimic-svg .readout .zn { font-size: 13px; fill: var(--muted); }
 .mimic-svg .readout .ico { font-weight: 700; fill: var(--lvl, var(--muted)); }
 .mimic-svg .readout[data-lvl="good"] { --lvl: var(--m-good); }
 .mimic-svg .readout[data-lvl="warning"] { --lvl: var(--m-warn); }

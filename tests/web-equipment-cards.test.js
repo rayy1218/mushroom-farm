@@ -58,7 +58,7 @@ test('the inputs\' labels: short where the card names the device, the field\'s o
   assert.equal(label('filter', 'filterFinalPa'), undefined, 'its own: Filter change pressure');
   assert.equal(label('exhaust', 'exhaustW'), 'Power');
   assert.equal(label('intake', 'fanMaxPa'), 'Maximum pressure');
-  assert.equal(label('ac', 'acAddress'), 'Gateway address');
+  assert.equal(label('ac', 'acAddress'), 'Aircon gateway address', 'not the room\'s Modbus gateway');
   const g = cardGroup(card('filter'));
   assert.deepEqual([g.key, g.names], ['filter', card('filter').fields]);
   assert.match(g.hint, /^Filter change pressure: /);

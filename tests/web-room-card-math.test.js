@@ -64,7 +64,7 @@ test('readingTiles: name, value and unit (humidity to one decimal, as the bands 
   assert.deepEqual(t.chip, { lvl: 'good', text: '✓ In band' });
   assert.equal(t.edge, '');
   assert.deepEqual([rh.name, rh.value, rh.unit, rh.chip.text, rh.edge], ['Humidity', '88.0', '% RH', '▼ Below band', 'warn']);
-  assert.deepEqual([co2.name, co2.value, co2.unit, co2.chip.text, co2.edge], ['CO₂', '960', 'ppm', '▲ Above band', 'warn']);
+  assert.deepEqual([co2.name, co2.value, co2.unit, co2.chip.text, co2.edge], ['CO₂', '960', 'ppm', '▲ Over the start point', 'warn'], 'over the start point and the exchange off');
   assert.equal(t.label, 'Temperature 21.5 °C, band 21 to 23');
   assert.deepEqual(t.bar.zone, { from: 6 / 15, to: 8 / 15 });
 });
@@ -73,7 +73,7 @@ test('readingTiles: the band written out for the reading card ("Band 21–23 °C
   const [t, rh, co2] = readingTiles(draw(), control);
   assert.equal(t.band, 'Band 21–23 °C');
   assert.equal(rh.band, 'Band 90–95 % RH');
-  assert.equal(co2.band, 'Air exchange starts at 900, stops at 600 ppm');
+  assert.equal(co2.band, 'Air exchange starts at 900 ppm, stops at 600 ppm');
   assert.equal(readingTiles(draw(), null)[0].band, '');
 });
 
@@ -105,7 +105,7 @@ test('traceOf: a failed poll breaks the line; no band without one; nothing with 
 
 test('readingTiles: red edge at the safety level, grey without data; thousands grouped', () => {
   const high = readingTiles(draw({ sensors: { ...sensors, co2: { status: 'online', lastOk: { co2: 1400 } } } }), control)[2];
-  assert.deepEqual([high.value, high.chip.text, high.chip.lvl, high.edge], ['1,400', '▲ Safety level', 'critical', 'bad']);
+  assert.deepEqual([high.value, high.chip.text, high.chip.lvl, high.edge], ['1,400', '▲ At the safety level', 'critical', 'bad']);
   const none = readingTiles(fromRoom({}), null);
   for (const tile of none) {
     assert.equal(tile.value, '—');
@@ -132,7 +132,7 @@ test('freshAirLine: exchange on, auto off, waits, next in N min, due, fresh air 
   const since = new Date(2026, 9, 26, 10, 42).getTime();
   const ends = new Date(2026, 9, 26, 10, 52).getTime();
   assert.equal(freshAirLine({ ...control, exchange: true, exchangeSince: since, exchangeEndsAt: ends, exchangeKind: 'co2' }, now),
-    'Air exchange on since 10:42 (stops by 10:52) · CO₂');
+    'Air exchange on since 10:42 (stops by 10:52)\u00a0·\u00a0CO₂', 'no-break: "· CO₂" never alone on a line');
   assert.equal(freshAirLine({ ...control, auto: false, exchange: true }, now), '', 'auto off: the Control card says Manual, no line here');
   assert.equal(freshAirLine({ ...control, freshFrom: now - 20 * 60_000, reasons: { exchange: 'Fresh air waits: outdoor air is very wet (dew 26.0 °C), at the latest 11:10' } }, now),
     'Fresh air waits: outdoor air is very wet (dew 26.0 °C), at the latest 11:10');
@@ -156,7 +156,7 @@ test('machineTiles: six in air-path order with their effect and detail', () => {
     [1, 'Intake fan', 'Air in'], [2, 'Aircon', 'Cools'], [3, 'Circulation', 'Mixes the air'],
     [4, 'Humidifier', 'Adds moisture'], [5, 'Dehumidifier', 'Dries'], [6, 'Exhaust fan', 'Air out'],
   ]);
-  assert.deepEqual(tiles.map((m) => m.detail), ['Filter 40.4 Pa', 'Cool 21.5 °C · fan auto', 'Always on', 'On at 90 %, off at 95 %', 'On at 95 %, off at 92.5 %', 'With the intake']);
+  assert.deepEqual(tiles.map((m) => m.detail), ['Filter 40.4 Pa', 'Cool 21.5 °C · fan auto', 'Always on', 'On at 90 % RH, off at 95 % RH', 'On at 95 % RH, off at 92.5 % RH', 'With the intake']);
   // the role lines say the controller's real rule (server/controller.js): the humidifier on at the lower limit and off at the
   // upper, the dehumidifier on at the upper and off at the middle of the band
   assert.deepEqual(tiles.map((m) => m.on), [false, true, true, false, false, false]);
@@ -366,9 +366,25 @@ test('readingTiles: in band but within 15 % of the band\'s width of an edge says
 
 // Only the edge that hurts (critique 2026-10-28): low CO₂ is good; humidity at the bottom is the humidifier's switch point
 // unless it is falling.
-test('readingTiles: CO₂ near the bottom is calm; humidity near the bottom only while falling', () => {
+// CO₂'s words say what the air exchange is doing (critique 2026-10-28), from the control view in Auto and the two fans in Manual.
+test('readingTiles: CO₂ in the exchange\'s words: below the stop point, running (neutral), near and at the safety level', () => {
+  const at = (co2, over = {}) => readingTiles(draw({ sensors: { ...sensors, co2: { status: 'online', lastOk: { co2, at: 1 } } }, ...over }), control)[2];
+  const below = at(550);
+  assert.deepEqual([below.chip.text, below.chip.lvl, below.edge], ['✓ Below the stop point', 'good', '']);
+  const running = readingTiles(draw({ control: { ...control, exchange: true } }), { ...control, exchange: true })[2];
+  assert.deepEqual([running.chip.text, running.chip.lvl, running.edge], ['Exchange running', 'neutral', ''], 'not amber while it runs');
+  const manual = { ...control, auto: false };
+  const fans = { relay: relay({ intake: { running: true, reported: true, status: 'on' }, exhaust: { running: true, reported: true, status: 'on' } }), ac: ac() };
+  assert.equal(readingTiles(draw({ control: manual, machines: fans }), manual)[2].chip.text, 'Exchange running', 'Manual: both fans running');
+  const near = at(1200);
+  assert.deepEqual([near.chip.text, near.chip.lvl, near.edge], ['▲ Near the safety level', 'warning', 'warn']);
+  const safety = at(1300);
+  assert.deepEqual([safety.chip.text, safety.chip.lvl, safety.edge], ['▲ At the safety level', 'critical', 'bad']);
+});
+
+test('readingTiles: CO₂ near the stop point is calm; humidity near the bottom only while falling', () => {
   const low = readingTiles(draw({ sensors: { ...sensors, co2: { status: 'online', lastOk: { co2: 620, at: 1 } } } }), control)[2];
-  assert.equal(low.chip.text, '✓ In band');
+  assert.equal(low.chip.text, '✓ Exchange off');
   assert.equal(low.chip.lvl, 'good');
   const rhLow = draw({ sensors: { ...sensors, trh: { status: 'online', lastOk: { t: 22, rh: 90.4, at: 1 } } } });
   assert.equal(readingTiles(rhLow, control)[1].chip.text, '✓ In band', 'no trend known');

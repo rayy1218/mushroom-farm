@@ -72,7 +72,7 @@ test('Filter changed: the change time, a change row, the filter alarms cleared, 
   const controller = { filterChanged: (id) => told.push(id), forget() {}, get: () => null };
   const { db, call } = await app(t, { controller });
   const id = db.createRoom(ROOM, 0).id;
-  db.raiseAlarm(id, 'filterDue', 'warning', 'Filter in use 31 days, change every 30', 1000);
+  db.raiseAlarm(id, 'filterDue', 'warning', 'Filter in use 31 days: change every 30 days', 1000);
   const before = Date.now();
   const r = await call('POST', `/api/rooms/${id}/filter/changed`);
   assert.equal(r.status, 200);

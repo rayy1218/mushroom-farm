@@ -14,9 +14,8 @@ import { CROPS, CROP_KEYS, STAGES, FARM_TYPES, MAX_CROPS } from './crops.js';
 import { removeLabel } from './simulate-math.js';
 import {
   hasCrops, rampLine, doneLine, formFromData, checkCropForm, saveBody, newBlocksBody, startBody,
-  stagePlan, stageTargets, stageWarnings, cropHeadline, stageLength, stageMark, lightOf, roomBandNote, runningTargets,
+  stagePlan, stageTargets, stageWarnings, cropHeadline, stageLength, stageMark, lightOf, roomBandNote, runningTargets, stageBody,
 } from './crop-math.js';
-import { mixBands } from './crops.js';
 
 const REFRESH_MS = 30_000; // the marks count days: asked now and then
 const COMMAND_TIMEOUT = 30000;
@@ -508,13 +507,10 @@ export function createCropCard(host, { roomId, onChange, onData, onOffline, onGo
     // The stage's own bands back on the room (the same as starting the stage would set, without its ramp).
     backBtn.addEventListener('click', async () => {
       if (backBtn.disabled || !last) return;
-      const b = mixBands(last.crops, stage).bands;
       backBtn.disabled = true;
       setText(backErr, '');
       try {
-        await request('PUT', `/api/rooms/${roomId}/control`, {
-          tLow: b.tLow, tHigh: b.tHigh, rhLow: b.rhLow, rhHigh: b.rhHigh, co2Low: b.co2Low, co2High: b.co2High, co2Safety: b.co2Safety,
-        }, COMMAND_TIMEOUT);
+        await request('PUT', `/api/rooms/${roomId}/control`, stageBody(last.crops, stage), COMMAND_TIMEOUT);
         if (alive) onChange?.();
       } catch (err) {
         if (!alive) return;

@@ -2,7 +2,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { RANGES, rangeOf, timeTicks, historyPoints, timelineSpans, acMarks, thinMarks, markLabel, tickCountFor, chartDrawKey, TIMELINE_ROWS, wiredTimelineRows, formatStamp } from '../web/history-math.js';
+import { RANGES, rangeOf, timeTicks, historyPoints, timelineSpans, acMarks, markLabel, markRuns, tickCountFor, chartDrawKey, TIMELINE_ROWS, wiredTimelineRows, formatStamp } from '../web/history-math.js';
 
 const at = (d, h, m = 0) => new Date(2026, 9, d, h, m).getTime();
 
@@ -80,7 +80,7 @@ test('the aircon: a span per setpoint, labelled with the setpoint where it chang
     { at: 3000, on: true, setpoint: 23.5, mode: 'cool', fan: 'high', source: 'auto' },
     { at: 4000, on: false, setpoint: 23.5, mode: 'cool', fan: 'high', source: 'auto' },
   ];
-  assert.deepEqual(acMarks(rows), [{ at: 1000, text: '24 °C' }, { at: 2000, text: '23.5 °C' }]);
+  assert.deepEqual(acMarks(rows), [{ at: 1000, text: '24 °C', value: 24 }, { at: 2000, text: '23.5 °C', value: 23.5 }]);
   assert.deepEqual(timelineSpans(rows, 1000, 5000), [{ from: 1000, to: 4000, source: 'auto' }]);
 });
 
@@ -98,16 +98,20 @@ test('the room page shows the rows of what is wired; the Dehumidifier only when 
   assert.deepEqual(keys({ relayAddress: 3, acAddress: null }), ['intake', 'exhaust', 'circulation', 'humidifier']);
 });
 
-test('marks closer than 40 px to the previous kept one are skipped', () => {
-  const marks = [{ at: 0, text: 'a' }, { at: 30, text: 'b' }, { at: 40, text: 'c' }, { at: 70, text: 'd' }, { at: 90, text: 'e' }];
-  assert.deepEqual(thinMarks(marks, (at) => at).map((m) => m.text), ['a', 'c', 'e']);
-  assert.deepEqual(thinMarks(marks, (at) => at / 10).map((m) => m.text), ['a']);
-  assert.deepEqual(thinMarks(undefined, (at) => at), []);
-});
-
-test('a mark that says what the last kept one said is skipped (the aircon "20 °C" repeated along a run)', () => {
-  const marks = [{ at: 0, text: '20 °C' }, { at: 100, text: '20 °C' }, { at: 200, text: '16 °C' }, { at: 300, text: '20 °C' }];
-  assert.deepEqual(thinMarks(marks, (at) => at).map((m) => m.text), ['20 °C', '16 °C', '20 °C']);
+// Critique 2026-10-28: a setpoint switching 16 ↔ 20 °C faster than labels fit showed a tidy "20 °C 16 °C 20 °C" that
+// was not what happened. A run of marks too close to label each is named once.
+test('markRuns: a run of setpoints switching faster than labels fit is labelled once ("16–20 °C, switching")', () => {
+  const mark = (at, v) => ({ at, text: `${v} °C`, value: v });
+  const fast = [mark(0, 20), mark(10, 16), mark(20, 20), mark(30, 16), mark(40, 20), mark(300, 18)];
+  assert.deepEqual(markRuns(fast, (at) => at, 1000), [
+    { at: 0, x: 3, anchor: 'start', text: '16–20 °C, switching' },
+    { at: 300, x: 303, anchor: 'start', text: '18 °C' },
+  ]);
+  assert.deepEqual(markRuns([mark(0, 20), mark(20, 16), mark(300, 16)], (at) => at, 1000).map((l) => l.text), ['20 → 16 °C'], 'two close marks: the change; the same words again are not repeated');
+  assert.deepEqual(markRuns([mark(0, 20), mark(100, 20), mark(200, 16)], (at) => at, 1000).map((l) => l.text), ['20 °C', '16 °C']);
+  assert.deepEqual(markRuns([...fast.slice(0, 5), mark(100, 18)], (at) => at, 1000).map((l) => l.text), ['16–20 °C, switching'], 'a label that would run over the last one is left out');
+  assert.deepEqual(markRuns([mark(990, 20)], (at) => at, 1000), [{ at: 990, x: 987, anchor: 'end', text: '20 °C' }], 'kept inside on the right');
+  assert.deepEqual(markRuns(undefined, (at) => at, 1000), []);
 });
 
 test('one axis label per 90 px, at least 2', () => {
@@ -154,4 +158,12 @@ test('outsideGaps: a bar inside a gap is dropped; a timeline span is cut where t
   assert.deepEqual(spansOutsideGaps([{ from: 50, to: 250, source: 'auto' }, { from: 130, to: 170, source: 'manual' }], gaps),
     [{ from: 50, to: 100, source: 'auto' }, { from: 200, to: 250, source: 'auto' }]);
   assert.deepEqual(spansOutsideGaps([{ from: 0, to: 10, source: 'auto' }], []), [{ from: 0, to: 10, source: 'auto' }]);
+});
+
+test('the timeline writes its row names and setpoint labels at 12 px, the setpoints through markRuns', async () => {
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('../web/timeline.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(src, /'font-size': 11/);
+  assert.match(src, /svg\.append\(el\('text', \{ x: 4, y: y \+ 11, style: 'fill:var\(--muted\)', 'font-size': 12 \}, row\.label\)\);/, 'above its bar: wider than the margin at 12 px');
+  assert.match(src, /for \(const label of markRuns\(row\.marks, xAt, width - 2\)\)/);
 });

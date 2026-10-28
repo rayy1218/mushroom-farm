@@ -59,10 +59,47 @@ export function alarmTime(ms, now = Date.now()) {
   return today ? hm : `${d.getDate()} ${MONTHS[d.getMonth()]} ${hm}`;
 }
 
-// "Raised 10:42" and, once cleared, "Raised 10:42 · Cleared 10:50".
+// "Raised 10:42", "Raised 10:42 · Acknowledged" while acknowledged and active (a word, not the dimming alone) and, once
+// cleared, "Raised 10:42 · Cleared 10:50".
 export function timesLine(a, now = Date.now()) {
   const raised = `Raised ${alarmTime(a.raisedAt, now)}`;
+  if (isDimmed(a)) return `${raised} · Acknowledged`;
   return a.clearedAt == null ? raised : `${raised} · Cleared ${alarmTime(a.clearedAt, now)}`;
+}
+
+// The reading each alarm is about, and how it is written (the room page's formats).
+const READING_OF = {
+  tHigh: 't', tLow: 't', rhLow: 'rh', rhHigh: 'rh', humidifierTooSmall: 'rh', co2High: 'co2', co2Safety: 'co2', filterDirty: 'pa', filterMissing: 'pa',
+};
+const FORMAT = {
+  t: (v) => `${v.toFixed(1)} °C`,
+  rh: (v) => `${v.toFixed(1)} % RH`,
+  co2: (v) => `${Math.round(v).toLocaleString('en-US')} ppm`,
+  pa: (v) => `${v.toFixed(1)} Pa`,
+};
+
+// The value now beside an active alarm's text (the text keeps the value that raised it): "now 84.0 % RH", or '' for a
+// cleared alarm, one not about a reading, or no reading now. readings: { t, rh, co2, pa }, null where not known.
+export function nowText(a, readings) {
+  const key = READING_OF[a.key];
+  const v = readings?.[key];
+  if (!key || !isActive(a) || typeof v !== 'number' || !Number.isFinite(v)) return '';
+  return `now ${FORMAT[key](v)}`;
+}
+
+// The Alarms card's tone from its worst active alarm: 'warning' (amber), 'critical' (red, for serious and critical) or 'none'.
+export function cardTone(alarms) {
+  const level = highestLevel((alarms ?? []).filter(isActive));
+  return level === null ? 'none' : level === 'warning' ? 'warning' : 'critical';
+}
+
+// The live line for a screen reader: the active alarms not among the ids of the last paint ("New alarm: Warning, …"), or ''.
+// seen: the ids painted before (null on the first paint, which announces nothing).
+export function newAlarmText(seen, alarms) {
+  if (!seen) return '';
+  const fresh = (alarms ?? []).filter((a) => isActive(a) && !seen.has(a.id));
+  if (!fresh.length) return '';
+  return `${fresh.length === 1 ? 'New alarm' : 'New alarms'}: ${fresh.map((a) => `${levelLabel(a.level)}, ${a.text}`).join('; ')}`;
 }
 
 // How many alarms of the list still need an acknowledgement.

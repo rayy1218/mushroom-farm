@@ -35,15 +35,15 @@ function setup(t, { settings = {}, script = [], before = null } = {}) {
 }
 const flush = async () => { for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r)); };
 
-const alarm = { id: 1, roomId: 1, roomName: 'Room 1', key: 'co2Safety', level: 'critical', text: 'CO₂ 1400 ppm, at or above the safety level 1250', raisedAt: T0, clearedAt: null, ackedAt: null };
+const alarm = { id: 1, roomId: 1, roomName: 'Room 1', key: 'co2Safety', level: 'critical', text: 'CO₂ 1,400 ppm: at or above the safety level (1,250 ppm)', raisedAt: T0, clearedAt: null, ackedAt: null };
 
 test('texts: raise per level, cleared and repeat; local date', () => {
   assert.equal(formatWhen(T0), '26 Oct 16:20');
-  assert.equal(raiseText(alarm), '🔴 Critical · Room 1 · CO₂ 1400 ppm, at or above the safety level 1250 · 26 Oct 16:20');
+  assert.equal(raiseText(alarm), '🔴 Critical · Room 1 · CO₂ 1,400 ppm: at or above the safety level (1,250 ppm) · 26 Oct 16:20');
   assert.match(raiseText({ ...alarm, level: 'serious' }), /^🟠 Serious · Room 1 /);
   assert.match(raiseText({ ...alarm, level: 'warning' }), /^🟡 Warning · Room 1 /);
-  assert.equal(clearedText({ ...alarm, clearedAt: T0 + 12 * MIN }), '✅ Cleared after 12 min · Room 1 · CO₂ 1400 ppm, at or above the safety level 1250 · 26 Oct 16:32');
-  assert.equal(repeatText(alarm, T0 + 35 * MIN), '🔁 Still on for 35 min, not acknowledged · Room 1 · CO₂ 1400 ppm, at or above the safety level 1250 · 26 Oct 16:55');
+  assert.equal(clearedText({ ...alarm, clearedAt: T0 + 12 * MIN }), '✅ Cleared after 12 min · Room 1 · CO₂ 1,400 ppm: at or above the safety level (1,250 ppm) · 26 Oct 16:32');
+  assert.equal(repeatText(alarm, T0 + 35 * MIN), '🔁 Still on for 35 min, not acknowledged · Room 1 · CO₂ 1,400 ppm: at or above the safety level (1,250 ppm) · 26 Oct 16:55');
 });
 
 test('a raised alarm of a chosen level is sent to the chat; a level not chosen is not', async (t) => {

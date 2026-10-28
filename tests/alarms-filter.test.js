@@ -50,7 +50,7 @@ test('filterDue: at once when the days in use reach the interval; not with no re
   s.tick(0, { daysInUse: 29.99 });
   assert.deepEqual(s.active(), []);
   s.tick(0, { daysInUse: 32.4 });
-  assert.deepEqual(s.active(), [['filterDue', 'warning', 'Filter in use 32 days, change every 30']]);
+  assert.deepEqual(s.active(), [['filterDue', 'warning', 'Filter in use 32 days: change every 30 days']]);
   s.tick(MIN, { daysInUse: 32.5, changeDays: 40 }); // the interval made longer
   assert.deepEqual(s.active(), []);
   s.tick(MIN, { daysInUse: 400, changeDays: 0 });
@@ -63,7 +63,7 @@ test('filterDirty: 10 min of counted time at or above the change pressure; clear
   s.minutes(9, { pa: 85 });
   assert.deepEqual(s.active(), []);
   s.minutes(1, { pa: 85 });
-  assert.deepEqual(s.active(), [['filterDirty', 'warning', 'Filter pressure 85 Pa, at or above the change pressure 80']]);
+  assert.deepEqual(s.active(), [['filterDirty', 'warning', 'Filter pressure 85.0 Pa: at or above the change pressure (80 Pa)']]);
   s.minutes(1, { pa: 71 });
   assert.equal(s.active().length, 1, 'inside the hysteresis');
   s.minutes(1, { pa: 69.9 });
@@ -74,7 +74,7 @@ test('filterMissing: 10 min of counted time below half the clean pressure; clear
   const s = setup(t);
   s.tick(0, { pa: 12 });
   s.minutes(10, { pa: 12 });
-  assert.deepEqual(s.active(), [['filterMissing', 'warning', 'Filter pressure 12 Pa: filter missing or torn, or the sensor tube is off']]);
+  assert.deepEqual(s.active(), [['filterMissing', 'warning', 'Filter pressure 12.0 Pa: filter missing or torn, or the sensor tube is off']]);
   s.minutes(1, { pa: 23 });
   assert.equal(s.active().length, 1);
   s.minutes(1, { pa: 24 });

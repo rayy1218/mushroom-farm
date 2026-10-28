@@ -110,6 +110,6 @@ test('a room card says the room\'s state in one pill: alarms first, then Manual,
   assert.deepEqual(bare.state, { text: 'Not set up', tone: 'none' });
   assert.deepEqual([bare.unwired, bare.setupHref], [true, '#/rooms/1/setup'], 'a room with nothing wired: one line and a Set up link');
   const out = roomCard(room({ trh: { status: 'online', t: 24.1, rh: 80, at: 1 }, co2: { status: 'online', co2: 900, at: 1 } }), 0);
-  assert.deepEqual(out.values.map((v) => v.chip), [{ text: 'Above band', tone: 'amber' }, { text: 'Below band', tone: 'amber' }, { text: 'Above band', tone: 'amber' }]);
+  assert.deepEqual(out.values.map((v) => v.chip), [{ text: 'Above band', tone: 'amber' }, { text: 'Below band', tone: 'amber' }, { text: 'Over the start point', tone: 'amber' }]);
 });
 

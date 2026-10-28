@@ -40,10 +40,10 @@ test('nothing raised for a room in its bands', (t) => {
 
 test('each process alarm: raised after its delay, with its text, level and threshold', (t) => {
   const cases = [
-    ['tHigh', 'warning', { t: 24.3 }, 'Temperature 24.3 °C, above 23 + 1', { t: 24 }],
-    ['tLow', 'warning', { t: 19.6 }, 'Temperature 19.6 °C, below 21 − 1', { t: 20 }],
-    ['rhLow', 'warning', { rh: 78 }, 'Humidity 78 %, below 85 − 5', { rh: 80 }],
-    ['co2High', 'warning', { co2: 880 }, 'CO₂ 880 ppm, above 750 + 100', { co2: 850 }],
+    ['tHigh', 'warning', { t: 24.3 }, 'Temperature 24.3 °C: more than 1 °C over the band (21–23 °C)', { t: 24 }],
+    ['tLow', 'warning', { t: 19.6 }, 'Temperature 19.6 °C: more than 1 °C under the band (21–23 °C)', { t: 20 }],
+    ['rhLow', 'warning', { rh: 78 }, 'Humidity 78.0 % RH: more than 5 % RH under the band (85–95 % RH)', { rh: 80 }],
+    ['co2High', 'warning', { co2: 880 }, 'CO₂ 880 ppm: more than 100 ppm over the air exchange start point (750 ppm)', { co2: 850 }],
   ];
   for (const [key, level, bad, text, edge] of cases) {
     const s = setup(t);
@@ -67,12 +67,29 @@ test('the safety level alarm is critical and waits 60 s', (t) => {
   assert.deepEqual(s.keys(), []);
   s.tick(1000, readings({ co2: 1300 }));
   const a = s.db.activeAlarms(s.room.id)[0];
-  assert.deepEqual([a.key, a.level, a.text], ['co2Safety', 'critical', 'CO₂ 1300 ppm, at or above the safety level 1250']);
+  assert.deepEqual([a.key, a.level, a.text], ['co2Safety', 'critical', 'CO₂ 1,300 ppm: at or above the safety level (1,250 ppm)']);
   // exactly at the level counts
   const e = setup(t);
   e.tick(0, readings({ co2: 1250 }));
   e.tick(MIN, readings({ co2: 1250 }));
   assert.deepEqual(e.keys(), ['co2Safety']);
+});
+
+test('alarm texts carry a unit on every number and group the thousands (no arithmetic)', (t) => {
+  const s = setup(t);
+  const high = { readings: { t: 22, rh: 90, co2: 1050 }, bands: { ...bands, co2Low: 700, co2High: 900, co2Safety: 1500 } };
+  s.tick(0, high);
+  s.tick(5 * MIN, high);
+  assert.deepEqual(s.db.activeAlarms(s.room.id).map((a) => a.text),
+    ['CO₂ 1,050 ppm: more than 100 ppm over the air exchange start point (900 ppm)']);
+  const hot = setup(t);
+  const tropic = { readings: { t: 29.8, rh: 66.9, co2: 650 }, bands: { ...bands, tLow: 24, tHigh: 26, rhLow: 85, rhHigh: 91 } };
+  hot.tick(0, tropic);
+  hot.tick(5 * MIN, tropic);
+  assert.deepEqual(hot.db.activeAlarms(hot.room.id).map((a) => a.text).sort(), [
+    'Humidity 66.9 % RH: more than 5 % RH under the band (85–91 % RH)',
+    'Temperature 29.8 °C: more than 1 °C over the band (24–26 °C)',
+  ]);
 });
 
 test('the high humidity alarm waits 15 min (longer than one air exchange) above the upper limit + 3', (t) => {
@@ -85,7 +102,7 @@ test('the high humidity alarm waits 15 min (longer than one air exchange) above 
   assert.deepEqual(s.keys(), [], 'a 10 min exchange that wets the room is not an alarm');
   s.tick(1000, readings({ rh: 99.5 }));
   const a = s.db.activeAlarms(s.room.id)[0];
-  assert.deepEqual([a.key, a.level, a.text], ['rhHigh', 'warning', 'Humidity 99.5 %, above 95 + 3']);
+  assert.deepEqual([a.key, a.level, a.text], ['rhHigh', 'warning', 'Humidity 99.5 % RH: more than 3 % RH over the band (85–95 % RH)']);
   s.tick(5000, readings({ rh: 97.1 }));
   assert.deepEqual(s.keys(), ['rhHigh'], 'stays above 95 + 2');
   s.tick(5000, readings({ rh: 97 }));
@@ -160,7 +177,7 @@ test('air exchange too small: raised at 3 in a row, cleared when the count is ba
   s.tick(5000, { cappedInRow: 3 });
   const a = s.db.activeAlarms(s.room.id)[0];
   assert.deepEqual([a.key, a.level, a.text], ['exchangeTooSmall', 'warning',
-    'Air exchange too small: 3 exchanges in a row stopped at the 10 min limit before CO₂ reached 600 ppm']);
+    'Air exchange too small: 3 exchanges in a row stopped at the 10 min limit before CO₂ fell to the stop point (600 ppm)']);
   s.tick(5000, { cappedInRow: 4 });
   assert.equal(s.db.activeAlarms(s.room.id).length, 1);
   s.tick(5000, { cappedInRow: 0 });
@@ -245,7 +262,7 @@ test('one active alarm per key: the text is fixed at raise time and a later eval
   s.tick(5 * MIN, readings({ t: 25 }));
   s.tick(5 * MIN, readings({ t: 27 }));
   assert.equal(s.db.activeAlarms(s.room.id).length, 1);
-  assert.equal(s.db.currentAlarms()[0].text, 'Temperature 25 °C, above 23 + 1');
+  assert.equal(s.db.currentAlarms()[0].text, 'Temperature 25.0 °C: more than 1 °C over the band (21–23 °C)');
 });
 
 test('after a clear the same condition can raise a new alarm; the old one stays until acknowledged', (t) => {
@@ -307,7 +324,7 @@ test('humidifier too small: running 30 min with the humidity still below the ban
   assert.deepEqual(s.keys(), ['humidifierTooSmall']);
   const [alarm] = s.db.activeAlarms(s.room.id);
   assert.equal(alarm.level, 'warning');
-  assert.equal(alarm.text, 'Humidifier too small: running 30 min and the humidity is still 80 %, below 85');
+  assert.equal(alarm.text, 'Humidifier too small: after 30 min on, humidity was 80.0 % RH (band from 85 % RH)');
   s.tick(MIN, { ...readings({ rh: 85 }), machines: humidifier('on') });
   assert.deepEqual(s.keys(), [], 'cleared at the lower limit');
 });

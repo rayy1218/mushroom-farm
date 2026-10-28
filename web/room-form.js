@@ -44,7 +44,7 @@ export function createRoomForm(groups, { idPrefix, onInput }) {
       wrap.append(label, err);
     } else {
       if (f.kind === 'text') Object.assign(input, { type: 'text', maxLength: NAME_MAX, autocomplete: 'off', required: true });
-      else if (f.kind === 'gateway') Object.assign(input, { type: 'text', maxLength: GATEWAY_MAX, autocomplete: 'off', spellcheck: false, placeholder: "the farm's" });
+      else if (f.kind === 'gateway') Object.assign(input, { type: 'text', maxLength: GATEWAY_MAX, autocomplete: 'off', spellcheck: false, placeholder: "Empty: the farm's gateway" });
       else Object.assign(input, { type: 'number' }, NUMBER[f.kind](f));
       wrap = el('div', 'field');
       const label = el('label', '', text);

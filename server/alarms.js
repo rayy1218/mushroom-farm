@@ -11,7 +11,13 @@ const HOUR_MS = 60 * MIN_MS;
 // A room left in Manual by mistake (a worker taps Manual and walks away): the reminder after auto has been off this long.
 export const MANUAL_REMIND_MS = 2 * HOUR_MS;
 
-const num = (x) => String(Math.round(x * 10) / 10);
+const num = (x) => (Math.round(x * 10) / 10).toLocaleString('en-US'); // a limit as set: 85, 21.5, 1,250
+const one = (x) => x.toFixed(1); // a measured temperature, humidity or pressure: 66.9, 78.0
+const ppm = (x) => Math.round(x).toLocaleString('en-US'); // 1,050
+// The texts say what was measured and against which limit, every number with its unit (critique 2026-10-28: no arithmetic
+// like "below 85 − 5"). They are written when the alarm is raised; the pages put the value now beside them.
+const tBand = (b) => `the band (${num(b.tLow)}–${num(b.tHigh)} °C)`;
+const rhBand = (b) => `the band (${num(b.rhLow)}–${num(b.rhHigh)} % RH)`;
 
 export const MACHINE_NAMES = { intake: 'Intake fan', exhaust: 'Exhaust fan', circulation: 'Circulation fan', humidifier: 'Humidifier', dehumidifier: 'Dehumidifier', lights: 'Lights', ac: 'Aircon' };
 export const MACHINE_KEYS = Object.keys(MACHINE_NAMES);
@@ -28,24 +34,24 @@ const BAD_STATUS = {
 const PROCESS = [
   { key: 'tHigh', sensor: 't', level: 'warning', delay: 5 * MIN_MS, read: (r) => r.t,
     hit: (v, b) => v > b.tHigh + 1, released: (v, b) => v <= b.tHigh + 0.8 + EPS,
-    text: (v, b) => `Temperature ${num(v)} °C, above ${b.tHigh} + 1` },
+    text: (v, b) => `Temperature ${one(v)} °C: more than 1 °C over ${tBand(b)}` },
   { key: 'tLow', sensor: 't', level: 'warning', delay: 5 * MIN_MS, read: (r) => r.t,
     hit: (v, b) => v < b.tLow - 1, released: (v, b) => v >= b.tLow - 0.8 - EPS,
-    text: (v, b) => `Temperature ${num(v)} °C, below ${b.tLow} − 1` },
+    text: (v, b) => `Temperature ${one(v)} °C: more than 1 °C under ${tBand(b)}` },
   { key: 'rhLow', sensor: 'rh', level: 'warning', delay: 5 * MIN_MS, read: (r) => r.rh,
     hit: (v, b) => v < b.rhLow - 5, released: (v, b) => v >= b.rhLow - 4 - EPS,
-    text: (v, b) => `Humidity ${num(v)} %, below ${b.rhLow} − 5` },
+    text: (v, b) => `Humidity ${one(v)} % RH: more than 5 % RH under ${rhBand(b)}` },
   // A wet room (water on caps and walls: blotch, soft mushrooms). The delay is longer than one air exchange, which
   // can wet the room for a while in Malaysian air.
   { key: 'rhHigh', sensor: 'rh', level: 'warning', delay: 15 * MIN_MS, read: (r) => r.rh,
     hit: (v, b) => v > b.rhHigh + 3, released: (v, b) => v <= b.rhHigh + 2 + EPS,
-    text: (v, b) => `Humidity ${num(v)} %, above ${b.rhHigh} + 3` },
+    text: (v, b) => `Humidity ${one(v)} % RH: more than 3 % RH over ${rhBand(b)}` },
   { key: 'co2High', sensor: 'co2', level: 'warning', delay: 5 * MIN_MS, read: (r) => r.co2,
     hit: (v, b) => v > b.co2High + 100, released: (v, b) => v <= b.co2High + 80 + EPS,
-    text: (v, b) => `CO₂ ${num(v)} ppm, above ${b.co2High} + 100` },
+    text: (v, b) => `CO₂ ${ppm(v)} ppm: more than 100 ppm over the air exchange start point (${ppm(b.co2High)} ppm)` },
   { key: 'co2Safety', sensor: 'co2', level: 'critical', delay: MIN_MS, read: (r) => r.co2,
     hit: (v, b) => v >= b.co2Safety, released: (v, b) => v < b.co2Safety - 20,
-    text: (v, b) => `CO₂ ${num(v)} ppm, at or above the safety level ${b.co2Safety}` },
+    text: (v, b) => `CO₂ ${ppm(v)} ppm: at or above the safety level (${ppm(b.co2Safety)} ppm)` },
 ];
 
 // db: the farm database (alarm queries). now is injectable.
@@ -129,7 +135,7 @@ export function createAlarms({ db, now = Date.now }) {
       apply(room, active, 'exchangeTooSmall', 'warning', 0, {
         hit: cappedInRow >= 3,
         released: cappedInRow === 0,
-        text: () => `Air exchange too small: ${cappedInRow} exchanges in a row stopped at the ${bands.exchangeMaxMin} min limit before CO₂ reached ${bands.co2Low} ppm`,
+        text: () => `Air exchange too small: ${cappedInRow} exchanges in a row stopped at the ${bands.exchangeMaxMin} min limit before CO₂ fell to the stop point (${ppm(bands.co2Low)} ppm)`,
       });
 
       // Left in Manual: auto off for MANUAL_REMIND_MS (bands.autoChangedAt, null when not known) in a room with something to
@@ -158,7 +164,7 @@ export function createAlarms({ db, now = Date.now }) {
         const due = filter.changeDays > 0 && filter.daysInUse >= filter.changeDays;
         apply(room, active, 'filterDue', 'warning', 0, {
           hit: due, released: !due,
-          text: () => `Filter in use ${Math.floor(filter.daysInUse)} days, change every ${filter.changeDays}`,
+          text: () => `Filter in use ${Math.floor(filter.daysInUse)} days: change every ${filter.changeDays} days`,
         });
         const pa = filter.pa;
         const credit = pa === null || prevAt === undefined || !Number.isFinite(filter.countFrom) ? 0
@@ -166,11 +172,11 @@ export function createAlarms({ db, now = Date.now }) {
         const judged = (rule) => (!filter.sensor ? { hit: false, released: true, text: () => '' } : pa === null ? null : rule);
         addUp(room, active, 'filterDirty', FILTER_ALARM_DELAY_MS, judged({
           hit: pa >= filter.finalPa, released: pa < filter.finalPa - 10,
-          text: () => `Filter pressure ${num(pa)} Pa, at or above the change pressure ${filter.finalPa}`,
+          text: () => `Filter pressure ${one(pa)} Pa: at or above the change pressure (${num(filter.finalPa)} Pa)`,
         }), credit);
         addUp(room, active, 'filterMissing', FILTER_ALARM_DELAY_MS, judged({
           hit: pa < filter.cleanPa / 2, released: pa >= 0.6 * filter.cleanPa - EPS,
-          text: () => `Filter pressure ${num(pa)} Pa: filter missing or torn, or the sensor tube is off`,
+          text: () => `Filter pressure ${one(pa)} Pa: filter missing or torn, or the sensor tube is off`,
         }), credit);
       }
 
@@ -185,7 +191,7 @@ export function createAlarms({ db, now = Date.now }) {
         apply(room, active, 'humidifierTooSmall', 'warning', HUMIDIFIER_DELAY, rh === null || rh === undefined ? null : {
           hit: humidifierOn && rh < bands.rhLow,
           released: !humidifierOn || rh >= bands.rhLow,
-          text: () => `Humidifier too small: running ${HUMIDIFIER_DELAY / MIN_MS} min and the humidity is still ${num(rh)} %, below ${bands.rhLow}`,
+          text: () => `Humidifier too small: after ${HUMIDIFIER_DELAY / MIN_MS} min on, humidity was ${one(rh)} % RH (band from ${num(bands.rhLow)} % RH)`,
         });
       }
 

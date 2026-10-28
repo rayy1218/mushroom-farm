@@ -1,9 +1,11 @@
 // The Alarms card on the room page, and the calls to the alarm routes.
-// createAlarmsCard(host, { roomId, onChange, onOffline }) → { update(data), destroy() }; data is the reply of
-// GET /api/rooms/:id/alarms ({ current, history }). The card is hidden while there are no current alarms.
+// createAlarmsCard(host, { roomId, onChange, onOffline }) → { update(data, readings), destroy() }; data is the reply of
+// GET /api/rooms/:id/alarms ({ current, history }), readings the room's values now ({ t, rh, co2, pa }, null where not
+// known) for the "now" beside an alarm's text. The card is hidden while there are no current alarms; it takes the tone of
+// its worst active alarm, and a visually hidden live line announces only the alarms that are new.
 
 import { request, OFFLINE } from './api.js';
-import { levelLabel, isDimmed, timesLine, unackedCount, ackLabel } from './alarms-math.js';
+import { levelLabel, isDimmed, timesLine, unackedCount, ackLabel, nowText, cardTone, newAlarmText } from './alarms-math.js';
 
 const COMMAND_TIMEOUT = 30000;
 
@@ -19,8 +21,8 @@ function el(tag, className, content) {
   return node;
 }
 
-// One alarm as a list item: the level chip, the text, the times and (when asked) its Acknowledge button.
-function alarmItem(a, { withAck }) {
+// One alarm as a list item: the level chip, the text (with the value now), the times and (when asked) its Acknowledge button.
+function alarmItem(a, { withAck, readings = null }) {
   const li = el('li', 'al-item');
   li.dataset.level = a.level;
   li.dataset.id = a.id;
@@ -28,7 +30,10 @@ function alarmItem(a, { withAck }) {
   const chip = el('span', 'al-level', levelLabel(a.level));
   chip.dataset.level = a.level;
   const body = el('div', 'al-body');
-  body.append(el('span', 'al-text', a.text), el('span', 'al-times', timesLine(a)));
+  const text = el('span', 'al-text', a.text);
+  const now = nowText(a, readings);
+  if (now) text.append(el('span', 'al-now', ` · ${now}`));
+  body.append(text, el('span', 'al-times', timesLine(a)));
   li.append(chip, body);
   if (withAck && a.ackedAt == null) {
     const b = el('button', 'al-ack', 'Acknowledge');
@@ -57,8 +62,11 @@ export function createAlarmsCard(host, { roomId, onChange, onOffline }) {
   details.append(el('summary', '', 'History'));
   const historyList = el('ul', 'al-list');
   details.append(historyList);
-  host.append(head, list, err, details);
+  const said = el('p', 'sr-only');
+  said.setAttribute('aria-live', 'polite'); // only the new alarms' line, not the whole list on every refresh
+  host.append(head, said, list, err, details);
   host.hidden = true;
+  let seen = null; // the ids of the alarms painted last (null before the first paint)
 
   function showError(text) {
     if (err.textContent !== text) err.textContent = text;
@@ -101,12 +109,16 @@ export function createAlarmsCard(host, { roomId, onChange, onOffline }) {
   ackAll.addEventListener('click', () => run(() => ackAllAlarms(roomId)));
 
   return {
-    update(data) {
+    update(data, readings = null) {
       if (!alive || !data) return;
       const current = data.current ?? [];
       const hadFocus = host.contains(document.activeElement);
       host.hidden = current.length === 0;
-      list.replaceChildren(...current.map((a) => alarmItem(a, { withAck: true })));
+      host.dataset.tone = cardTone(current); // amber for warnings only, red from serious up
+      const fresh = newAlarmText(seen, current);
+      if (fresh) said.textContent = fresh;
+      seen = new Set(current.map((a) => a.id));
+      list.replaceChildren(...current.map((a) => alarmItem(a, { withAck: true, readings })));
       ackAll.hidden = unackedCount(current) < 1;
       paintBusy();
       historyList.replaceChildren(...(data.history ?? []).map((a) => alarmItem(a, { withAck: false })));

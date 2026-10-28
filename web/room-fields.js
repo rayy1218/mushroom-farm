@@ -153,10 +153,9 @@ export function roomBody(room, values) {
   }));
 }
 
-// The room page's sub line: "5.9 × 2.3 × 2.4 m · 32.6 m³", and the room's own gateway when it has one (null: the farm's).
+// The room page's sub line: "5.9 × 2.3 × 2.4 m · 32.6 m³". The room's gateway is wiring, shown on the Setup tab only.
 export function roomSubLine(room) {
-  const sizes = `${metres.format(room.length)} × ${metres.format(room.width)} × ${metres.format(room.height)} m · ${cubic.format(room.volume)} m³`;
-  return room.gateway ? `${sizes} · gateway ${room.gateway}` : sizes;
+  return `${metres.format(room.length)} × ${metres.format(room.width)} × ${metres.format(room.height)} m · ${cubic.format(room.volume)} m³`;
 }
 
 // "Volume: 30.0 m³" from the three sizes as typed; a dash until all three are numbers.

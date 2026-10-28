@@ -140,11 +140,11 @@ test('the exchange line names why it runs: free cooling, outdoor drying, CO₂; 
   const base = { exchange: true, exchangeSince: 1_000_000, exchangeEndsAt: 1_600_000 };
   const since = hm(1_000_000);
   const ends = hm(1_600_000);
-  assert.equal(line({ ...base, exchangeKind: 'cooling' }), `Air exchange on since ${since} (stops by ${ends}) · free cooling`);
-  assert.equal(line({ ...base, exchangeKind: 'drying' }), `Air exchange on since ${since} (stops by ${ends}) · outdoor drying`);
-  assert.equal(line({ ...base, exchangeKind: 'co2' }), `Air exchange on since ${since} (stops by ${ends}) · CO₂`);
+  assert.equal(line({ ...base, exchangeKind: 'cooling' }), `Air exchange on since ${since} (stops by ${ends})\u00a0·\u00a0free cooling`);
+  assert.equal(line({ ...base, exchangeKind: 'drying' }), `Air exchange on since ${since} (stops by ${ends})\u00a0·\u00a0outdoor drying`);
+  assert.equal(line({ ...base, exchangeKind: 'co2' }), `Air exchange on since ${since} (stops by ${ends})\u00a0·\u00a0CO₂`);
   assert.equal(line({ ...base, exchangeKind: 'fresh', exchangeForced: true }), `Fresh air on since ${since} (stops by ${ends})`);
-  assert.equal(line({ ...base, exchangeEndsAt: null, exchangeKind: 'cooling' }, 1_000_000 + 12 * 60_000), `Air exchange on since ${since} (12 min) · free cooling`);
+  assert.equal(line({ ...base, exchangeEndsAt: null, exchangeKind: 'cooling' }, 1_000_000 + 12 * 60_000), `Air exchange on since ${since} (12 min)\u00a0·\u00a0free cooling`);
   assert.equal(line(base), `Air exchange on since ${since} (stops by ${ends})`);
   assert.equal(line({ exchange: false, exchangeKind: null }), 'Air exchange off');
 });
@@ -190,4 +190,16 @@ test('the CO₂ row: Air exchange (ppm), Starts at first, then Stops at; its che
   assert.equal(checkBand(co2, 300, 800).message, 'Air exchange stop point must be 450 to 5000 ppm');
   const t = BANDS.find((b) => b.key === 't');
   assert.equal(inputLabel(t, 'low'), 'Temperature band low limit, °C', 'the other bands keep low and high');
+});
+
+test('Setup keeps the By-Hand Rule: a band set by hand in the accent text with the stage\'s value under it, and one way back', () => {
+  const src = readFileSync(new URL('../web/control.js', import.meta.url), 'utf8');
+  assert.match(src, /const diffs = byHandValues\(crop, last\);/);
+  assert.match(src, /input\.classList\.toggle\('by-hand', text !== ''\);/);
+  assert.match(src, /const backBtn = button\('Back to stage values'\);/);
+  assert.match(src, /request\('PUT', `\/api\/rooms\/\$\{roomId\}\/control`, stageBody\(crop\.crops, crop\.stage\), COMMAND_TIMEOUT\)/);
+  const crop = readFileSync(new URL('../web/crop-card.js', import.meta.url), 'utf8');
+  assert.match(crop, /stageBody\(last\.crops, stage\)/, 'the Crop tab\'s button sends the same body');
+  const css = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
+  assert.match(css, /\.c-band \.ctl\.by-hand \{ color: var\(--accent-text\); \}/);
 });

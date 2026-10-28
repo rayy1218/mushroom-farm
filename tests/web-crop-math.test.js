@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { roomBandNote, runningTargets, stageTargets, stageLine, nextLine, rampLine, doneLine, cropWarnings, formFromData, checkCropForm, saveBody, newBlocksBody, startBody, hasCrops, FORM_FIELD_ORDER } from '../web/crop-math.js';
+import { roomBandNote, runningTargets, stageBody, byHandValues, stageTargets, stageLine, nextLine, rampLine, doneLine, cropWarnings, formFromData, checkCropForm, saveBody, newBlocksBody, startBody, hasCrops, FORM_FIELD_ORDER } from '../web/crop-math.js';
 
 const DAY = 86_400_000;
 const at = (d, h, m) => new Date(2026, 9, d, h, m).getTime();
@@ -116,12 +116,12 @@ test("roomBandNote: on the current stage, the bands the room really runs when th
     const [lo, hi] = t[k].replace(/[^0-9–]/g, '').split('–').map(Number);
     targets[v[0]] = lo; targets[v[1]] = hi;
   }
-  const [, start, stop] = /starts at ([0-9,]+), stops at ([0-9,]+) ppm/.exec(t.co2).map((x) => Number(String(x).replace(/,/g, '')));
+  const [, start, stop] = /starts at ([0-9,]+) ppm, stops at ([0-9,]+) ppm/.exec(t.co2).map((x) => Number(String(x).replace(/,/g, '')));
   targets.co2High = start; targets.co2Low = stop;
   targets.co2Safety = Number(t.safety.replace(/[^0-9]/g, ''));
   assert.equal(roomBandNote(crops, 'fruiting', targets), '');
   assert.equal(roomBandNote(crops, 'fruiting', { ...targets, co2High: targets.co2High - 100, co2Safety: 1000 }),
-    `The room runs the air exchange starting at ${(targets.co2High - 100).toLocaleString('en-US')} and stopping at ${targets.co2Low} ppm and a CO₂ safety level of 1,000 ppm: changed by hand on the Setup tab, until the next stage sets the targets again.`);
+    `The room runs the air exchange starting at ${(targets.co2High - 100).toLocaleString('en-US')} ppm and stopping at ${targets.co2Low} ppm and a CO₂ safety level of 1,000 ppm: changed by hand on the Setup tab, until the next stage sets the targets again.`);
   assert.equal(roomBandNote(crops, 'fruiting', { ...targets, tLow: 18.5 }),
     `The room runs temperature 18.5–${targets.tHigh} °C: changed by hand on the Setup tab, until the next stage sets the targets again.`);
   assert.equal(roomBandNote(crops, 'fruiting', null), '', 'before the control settings loaded');
@@ -133,7 +133,7 @@ test("runningTargets: the current stage's rows show the bands the room runs firs
   const crops = [{ crop: 'lionsmane', blocks: 950 }];
   const rows = stageTargets(crops, 'fruiting');
   const byKey = Object.fromEntries(rows.map((r) => [r.key, r.value]));
-  const co2 = /starts at ([0-9,]+), stops at ([0-9,]+)/.exec(byKey.co2).slice(1).map((x) => Number(x.replace(',', ''))).reverse(); // [stop, start]
+  const co2 = /starts at ([0-9,]+) ppm, stops at ([0-9,]+) ppm/.exec(byKey.co2).slice(1).map((x) => Number(x.replace(',', ''))).reverse(); // [stop, start]
   const t = /([0-9.]+)–([0-9.]+)/.exec(byKey.t).slice(1).map(Number);
   const rh = /([0-9.]+)–([0-9.]+)/.exec(byKey.rh).slice(1).map(Number);
   const safety = Number(byKey.safety.replace(/[^0-9]/g, ''));
@@ -141,10 +141,30 @@ test("runningTargets: the current stage's rows show the bands the room runs firs
   assert.deepEqual(runningTargets(rows, same).map((r) => [r.value, r.stageValue]), rows.map((r) => [r.value, null]), 'the same: as before');
   const out = runningTargets(rows, { ...same, co2High: co2[1] - 100, co2Safety: 1000 });
   const c = out.find((r) => r.key === 'co2');
-  assert.equal(c.value, `starts at ${(co2[1] - 100).toLocaleString('en-US')}, stops at ${co2[0]} ppm`);
+  assert.equal(c.value, `starts at ${(co2[1] - 100).toLocaleString('en-US')} ppm, stops at ${co2[0]} ppm`);
   assert.equal(c.stageValue, byKey.co2);
   const s = out.find((r) => r.key === 'safety');
   assert.deepEqual([s.value, s.stageValue], ['1,000 ppm', byKey.safety]);
   assert.equal(out.find((r) => r.key === 't').stageValue, null);
   assert.deepEqual(runningTargets(rows, null), rows.map((r) => ({ ...r, stageValue: null })), 'before the control settings loaded');
+});
+
+// The By-Hand Rule on Setup (critique 2026-10-28): a band input that differs from the current stage says the stage's value.
+test('byHandValues: the current stage\'s own value for each band setting that differs from what the room runs', () => {
+  const crops = [{ crop: 'lionsmane', blocks: 950 }];
+  const body = stageBody(crops, 'fruiting');
+  assert.deepEqual(Object.keys(body), ['tLow', 'tHigh', 'rhLow', 'rhHigh', 'co2Low', 'co2High', 'co2Safety']);
+  const c = { crops, stage: 'fruiting' };
+  assert.deepEqual(byHandValues(c, { ...body, auto: true }), {}, 'the same: quiet');
+  const out = byHandValues(c, { ...body, co2High: body.co2High - 100, tLow: body.tLow - 0.5, co2Safety: 1000 });
+  assert.deepEqual(out, {
+    tLow: `stage: ${body.tLow} °C`,
+    co2High: `stage: ${body.co2High.toLocaleString('en-US')} ppm`,
+    co2Safety: `stage: ${body.co2Safety.toLocaleString('en-US')} ppm`,
+  });
+  assert.deepEqual(byHandValues(c, { ...body, rhLow: 80 }), { rhLow: `stage: ${body.rhLow} % RH` });
+  assert.deepEqual(byHandValues(null, body), {}, 'no crop program yet');
+  assert.deepEqual(byHandValues({ crops: [], stage: 'fruiting' }, body), {}, 'no crops');
+  assert.deepEqual(byHandValues(c, null), {}, 'before the control settings loaded');
+  assert.deepEqual(byHandValues({ ...c, ramp: { endAt: 2000 } }, { ...body, tLow: 10 }, 1000), {}, 'while the stage ramps the bands differ by design');
 });

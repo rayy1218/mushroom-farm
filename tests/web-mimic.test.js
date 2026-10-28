@@ -48,7 +48,7 @@ test('fromRoom: readings, bands and the control note', () => {
   assert.deepEqual([d.T, d.RH, d.CO2], [24.1, 86.4, 1234.4]);
   assert.equal(d.status.T.text, 'In band');
   assert.equal(d.status.RH.text, 'In band');
-  assert.equal(d.status.CO2.text, 'Above band');
+  assert.equal(d.status.CO2.text, 'Exchange running', 'CO₂ in the air exchange\'s words');
   assert.equal(d.note, 'Automatic control · air exchange on');
   assert.equal(fromRoom({ control: { auto: true, exchange: false } }).note, 'Automatic control on');
   assert.equal(fromRoom({ control: { auto: false } }).note, 'Automatic control off');
@@ -147,7 +147,7 @@ test('view is null-safe and flags the compressor, air flow and levels', () => {
 test('describe says the state in words', () => {
   const text = describe(view(fromRoom({ sensors, control, machines: { relay: relay({ intake: { status: 'on', reported: true, running: true } }), ac: ac() } })));
   assert.match(text, /Temperature 24\.1 °C \(in band\)/);
-  assert.match(text, /CO₂ 1,234 ppm \(above band\)/);
+  assert.match(text, /CO₂ 1,234 ppm \(exchange running\)/);
   assert.match(text, /Aircon cool 23\.5 °C, fan Auto/);
   assert.match(text, /Intake fan on/);
   assert.match(text, /Exhaust fan off/);

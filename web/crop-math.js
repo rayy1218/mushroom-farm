@@ -238,11 +238,33 @@ export function roomBandNote(crops, stage, control, c = null, now = Date.now()) 
   const parts = [];
   if (control.tLow !== b.tLow || control.tHigh !== b.tHigh) parts.push(`temperature ${n(control.tLow)}–${n(control.tHigh)} °C`);
   if (control.rhLow !== b.rhLow || control.rhHigh !== b.rhHigh) parts.push(`humidity ${n(control.rhLow)}–${n(control.rhHigh)} % RH`);
-  if (control.co2Low !== b.co2Low || control.co2High !== b.co2High) parts.push(`the air exchange starting at ${n(control.co2High)} and stopping at ${n(control.co2Low)} ppm`);
+  if (control.co2Low !== b.co2Low || control.co2High !== b.co2High) parts.push(`the air exchange starting at ${n(control.co2High)} ppm and stopping at ${n(control.co2Low)} ppm`);
   if (Number.isFinite(control.co2Safety) && control.co2Safety !== b.co2Safety) parts.push(`a CO₂ safety level of ${n(control.co2Safety)} ppm`);
   if (!parts.length) return '';
   const list = parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}`;
   return `The room runs ${list}: changed by hand on the Setup tab, until the next stage sets the targets again.`;
+}
+
+// The bands a stage sets on the room (what Back to stage values sends: the same as starting the stage, without its ramp).
+export function stageBody(crops, stage) {
+  const b = mixBands(crops, stage).bands;
+  return { tLow: b.tLow, tHigh: b.tHigh, rhLow: b.rhLow, rhHigh: b.rhHigh, co2Low: b.co2Low, co2High: b.co2High, co2Safety: b.co2Safety };
+}
+
+const STAGE_UNITS = { tLow: '°C', tHigh: '°C', rhLow: '% RH', rhHigh: '% RH', co2Low: 'ppm', co2High: 'ppm', co2Safety: 'ppm' };
+
+// The By-Hand Rule on the Setup tab: for each band setting the room runs that differs from the current stage's own value,
+// that value as "stage: 900 ppm" ({ co2High: 'stage: 900 ppm' }); {} when they agree, without crops or control settings, or
+// while the stage's ramp moves the bands (as roomBandNote). c: the crop reply; control: GET /api/rooms/:id/control.
+export function byHandValues(c, control, now = Date.now()) {
+  if (!control || !hasCrops(c) || !STAGES[c.stage]) return {};
+  if (Number.isFinite(c.ramp?.endAt) && c.ramp.endAt > now) return {};
+  const stage = stageBody(c.crops, c.stage);
+  const out = {};
+  for (const [key, unit] of Object.entries(STAGE_UNITS)) {
+    if (Number.isFinite(control[key]) && control[key] !== stage[key]) out[key] = `stage: ${grouped(Math.round(stage[key] * 10) / 10)} ${unit}`;
+  }
+  return out;
 }
 
 // The current stage's Targets rows with the bands the room really runs (control: GET /api/rooms/:id/control): each row's value

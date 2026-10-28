@@ -1,7 +1,7 @@
 // Pure helpers for the Overview page and the nav badge (no DOM, so they can be tested in Node).
 // Spec 2026-10-19-safety-and-history-design.md section 6 (Overview, Nav).
 
-import { nearEdge, nearText, trendOf } from './band-math.js';
+import { nearEdge, nearText, trendOf, co2Status } from './band-math.js';
 import { formatStamp } from './history-math.js';
 
 const finite = (x) => typeof x === 'number' && Number.isFinite(x);
@@ -127,25 +127,36 @@ export function withTitlePrefix(title, count) {
 
 const STATUS_WORDS = { timeout: 'Timeout', offline: 'Offline' };
 
+// A value to its digits, the thousands grouped like the room page: "23.5", "1,301".
+export const grouped = (x, digits) => x.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+
 // The value of a sensor on a room card: "23.5 °C", with the status word after it when the sensor is not online.
 export function sensorText(sensor, field, digits, unit) {
   if (sensor.status === 'not-wired') return 'Not wired';
   if (sensor.status === 'no-data') return 'No data yet';
-  const value = finite(sensor[field]) ? `${sensor[field].toFixed(digits)} ${unit}` : '—';
+  const value = finite(sensor[field]) ? `${grouped(sensor[field], digits)} ${unit}` : '—';
   return STATUS_WORDS[sensor.status] ? `${value} · ${STATUS_WORDS[sensor.status]}` : value;
 }
 
 // A reading against its band, from an online sensor only: { text, tone } or null. Near an edge that hurts by the room
-// page's rule (band-math.js); the trend is the last hour of the sparkline.
-function bandChip(sensor, field, low, high, spark) {
+// page's rule (band-math.js); the trend is the last hour of the sparkline. CO₂ in the air exchange's words (co2Status).
+function bandChip(sensor, field, low, high, spark, room) {
   const v = sensor?.status === 'online' ? sensor[field] : null;
   if (!finite(v) || !finite(low) || !finite(high)) return null;
+  if (field === 'co2') return co2Status(v, { stop: low, start: high, safety: room.bands.co2Safety ?? null, exchange: Boolean(room.exchange) });
   if (v > high) return { text: 'Above band', tone: 'amber' };
   if (v < low) return { text: 'Below band', tone: 'amber' };
   const points = (spark ?? []).map((p) => ({ at: p.at, value: p.v }));
   if (points.length) points.push({ at: Math.max(...points.map((p) => p.at)) + 1, value: v }); // the live value ends it
   const edge = nearEdge(field, v, low, high, trendOf(points, 60 * 60_000));
   return edge ? { text: `In band · ${nearText(edge)}`, tone: 'amber' } : { text: 'In band', tone: 'good' };
+}
+
+// A room's values now for the "now" beside its alarms (alarms-math.js nowText): online sensors only, and the filter's
+// last counted pressure when the server sends it. { t, rh, co2, pa }, null where not known.
+export function roomReadings(room) {
+  const on = (s, field) => (s?.status === 'online' && finite(s[field]) ? s[field] : null);
+  return { t: on(room?.trh, 't'), rh: on(room?.trh, 'rh'), co2: on(room?.co2, 'co2'), pa: finite(room?.filterPa) ? room.filterPa : null };
 }
 
 export function exchangeText(room, now = Date.now()) {
@@ -175,7 +186,7 @@ export function roomCard(room, now = Date.now()) {
       label: def.label,
       color: def.color,
       text: sensorText(sensor, def.key, def.digits, def.unit),
-      chip: bandChip(sensor, def.key, room.bands[def.low], room.bands[def.high], room.spark?.[def.key]),
+      chip: bandChip(sensor, def.key, room.bands[def.low], room.bands[def.high], room.spark?.[def.key], room),
       // the trace ends at the reading shown beside it (the buckets are 30 min averages, so the last one can lag it)
       spark: sparkPath(withLive(room.spark[def.key], sensor, def.key, now), SPARK_W, SPARK_H, { low: room.bands[def.low], high: room.bands[def.high] },
         { from: now - SPARK_WINDOW_MS, to: now, gapMs: 3 * SPARK_BUCKET_MS }),

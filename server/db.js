@@ -1140,7 +1140,7 @@ export function openDb(path, { log = console.error } = {}) {
           auto: c.auto,
           exchange,
           exchangeSince: c.auto ? c.exchangeSince : null,
-          bands: { tLow: c.tLow, tHigh: c.tHigh, rhLow: c.rhLow, rhHigh: c.rhHigh, co2Low: c.co2Low, co2High: c.co2High },
+          bands: { tLow: c.tLow, tHigh: c.tHigh, rhLow: c.rhLow, rhHigh: c.rhHigh, co2Low: c.co2Low, co2High: c.co2High, co2Safety: c.co2Safety },
           alarms: perRoom.get(room.id) ?? { count: 0, level: null },
           spark: { t: line(trhDay, 't'), rh: line(trhDay, 'rh'), co2: line(day('co2'), 'co2') },
         };

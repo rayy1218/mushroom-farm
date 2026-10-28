@@ -1,7 +1,7 @@
 // A small inline-SVG line chart. Drawn 1:1 at the host's pixel width (re-drawn by a ResizeObserver),
 // so text keeps its real size on a phone. Colours come from the theme tokens through CSS variables.
 
-import { niceRange, formatClock, yRange, xFor, segments, nearestIndex, clipSeries, stepShapes, stepValues } from './chart-math.js';
+import { niceRange, formatClock, yRange, xFor, segments, nearestIndex, clipSeries, stepShapes, stepValues, secondLegend } from './chart-math.js';
 
 const OUTDOOR_DOTS = '0.1 5'; // round dots 5 px apart (with a round cap a zero-length dash draws a dot)
 
@@ -177,19 +177,22 @@ export function drawLineChart(host, opts) {
         svg.append(el('path', { d, ...dots }));
       }
       const lastSecond = [...second].reverse().find((p) => p.value !== null && Number.isFinite(p.value));
-      // its scale: the numbers at the right edge, dotted ticks like its line
+      // its scale: the numbers at the right edge, under a dotted mark like its line (the legend may be too narrow to say it)
       for (const [v, y] of [[s2.max, y1], [s2.min, y0]]) {
         svg.append(el('text', { x: x1 + 6, y: y + 4, 'text-anchor': 'start', style: 'fill:var(--muted)', 'font-size': 12 }, v.toFixed(dg)));
       }
+      svg.append(el('line', { x1: x1 + 7, x2: x1 + 27, y1: y1 - 10, y2: y1 - 10, ...dots }));
       // the legend above the plot, clear of the band's lines: the room's line, then the outdoor one and where its scale is
       const solid = { 'stroke-width': 2.5, 'stroke-linecap': 'round', style: `stroke:${current.color ?? 'var(--ink)'}` };
-      svg.append(el('line', { x1: x0, x2: x0 + 16, y1: 12, y2: 12, ...solid }));
-      const roomText = el('text', { x: x0 + 22, y: 16, style: 'fill:var(--ink-2)', 'font-size': 12 }, 'Room');
+      // from the card's left edge (over the axis numbers' margin), so a phone has room for the outdoor value
+      svg.append(el('line', { x1: 4, x2: 20, y1: 12, y2: 12, ...solid }));
+      const roomText = el('text', { x: 26, y: 16, style: 'fill:var(--ink-2)', 'font-size': 12 }, 'Room');
       svg.append(roomText);
-      const lx = x0 + 70;
+      const lx = 74;
       svg.append(el('line', { x1: lx, x2: lx + 20, y1: 12, y2: 12, ...dots }));
+      // as long as fits left of the right scale's mark (a phone's chart clipped "· right scale")
       svg.append(el('text', { x: lx + 26, y: 16, style: 'fill:var(--ink-2)', 'font-size': 12 },
-        `${current.second.label ?? 'Outdoor'}${lastSecond ? ` ${fmt(lastSecond.value)}` : ''}${width < 560 ? ' · right scale' : ' · its scale on the right'}`));
+        secondLegend(current.second.label ?? 'Outdoor', lastSecond ? fmt(lastSecond.value) : '', x1 - (lx + 26) - 4)));
     }
 
     // The line, one path per run; a run of one point is a dot.

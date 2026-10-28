@@ -170,10 +170,14 @@ export function createApi(db, machines = null, controller = null, poller = null,
     }
     // ---- end of alarms ----
 
-    // Stream B: the Overview page's reply.
+    // Stream B: the Overview page's reply, with each room's last counted filter pressure (null without one) for the value
+    // now beside a filter alarm.
     if (path === '/api/overview') {
       if (req.method !== 'GET') throw notFound();
-      return send(res, 200, db.overview());
+      const now = Date.now();
+      const reply = db.overview(now);
+      for (const room of reply.rooms) room.filterPa = lastCounted(db, db.getRoom(room.id), now)?.pa ?? null;
+      return send(res, 200, reply);
     }
     // ---- The intake filter (spec 2026-10-22-filter-design.md 5) ----
     const filter = /^\/api\/rooms\/([1-9][0-9]{0,14})\/filter\/(changed|changes)$/.exec(path);

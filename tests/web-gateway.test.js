@@ -83,10 +83,18 @@ test('the line under its title says which gateway; it has no status line', () =>
   assert.equal(cardStatus(card, { sensors: {}, machines: { relay: { address: 3, machines: [] } } }), null);
 });
 
-test('the room page\'s sub line names the gateway only when it is not the farm\'s', () => {
-  assert.match(roomSubLine(ROOM), /^5[.,]9 × 2[.,]3 × 2[.,]4 m · 32[.,]6 m³ · gateway 127\.0\.0\.1:1512$/);
+// The gateway is wiring, said on the Setup tab's gateway card only (owner, 2026-10-28), not under every room's name.
+test('the room page\'s sub line is the room\'s size only, never its gateway', () => {
+  assert.match(roomSubLine(ROOM), /^5[.,]9 × 2[.,]3 × 2[.,]4 m · 32[.,]6 m³$/);
   assert.match(roomSubLine({ ...ROOM, gateway: null }), /^5[.,]9 × 2[.,]3 × 2[.,]4 m · 32[.,]6 m³$/);
-  assert.match(roomSubLine({ ...ROOM, gateway: undefined }), /m³$/, 'an older server');
+});
+
+test('the gateway field says what empty means; the outdoor sensor\'s address hint names the farm\'s gateway', async () => {
+  const { readFileSync } = await import('node:fs');
+  const form = readFileSync(new URL('../web/room-form.js', import.meta.url), 'utf8');
+  assert.match(form, /placeholder: "Empty: the farm's gateway"/);
+  const settings = readFileSync(new URL('../web/settings-page.js', import.meta.url), 'utf8');
+  assert.match(settings, /It cannot share an address with the sensor of a room on the farm's gateway\./);
 });
 
 // ---- the card in a minimal fake DOM ----

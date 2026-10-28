@@ -3,7 +3,7 @@
 
 import { M } from './chart.js';
 import { xFor } from './chart-math.js';
-import { thinMarks, markLabel } from './history-math.js';
+import { markRuns } from './history-math.js';
 
 const NS = 'http://www.w3.org/2000/svg';
 const ROW_H = 30;
@@ -59,7 +59,8 @@ export function drawTimeline(host, opts) {
     rows.forEach((row, i) => {
       const y = i * ROW_H;
       svg.append(el('line', { x1: x0, x2: x1, y1: y + ROW_H, y2: y + ROW_H, style: 'stroke:var(--grid)', 'stroke-width': 1 }));
-      svg.append(el('text', { x: 4, y: y + 19, style: 'fill:var(--muted)', 'font-size': 11 }, row.label)); // own column left of the plot
+      // above its bar at the left: at 12 px "Dehumidifier" is wider than the margin, so it must not sit on the bar's line
+      svg.append(el('text', { x: 4, y: y + 11, style: 'fill:var(--muted)', 'font-size': 12 }, row.label));
       for (const s of row.spans) {
         const xa = xAt(s.from);
         const w = Math.max(2, xAt(s.to) - xa);
@@ -67,9 +68,9 @@ export function drawTimeline(host, opts) {
         rect.setAttribute('fill', s.source === 'manual' ? `url(#${pattern})` : 'var(--ink-2)');
         svg.append(rect);
       }
-      for (const m of thinMarks(row.marks, xAt, 52)) {
-        const label = markLabel(xAt(m.at), m.text, width - 2);
-        svg.append(el('text', { x: label.x, y: y + 11, 'text-anchor': label.anchor, style: 'fill:var(--ink)', 'font-size': 11 }, m.text));
+      // a run of setpoints too close to label each is named once ("16–20 °C, switching"), not as a tidy pattern
+      for (const label of markRuns(row.marks, xAt, width - 2)) {
+        svg.append(el('text', { x: label.x, y: y + 11, 'text-anchor': label.anchor, style: 'fill:var(--ink)', 'font-size': 12 }, label.text));
       }
     });
     const yAxis = rows.length * ROW_H;

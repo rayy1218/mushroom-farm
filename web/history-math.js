@@ -139,7 +139,7 @@ export function acMarks(rows) {
   let setpoint = null; // the setpoint while it is on
   for (const r of rows ?? []) {
     if (!r.on) { setpoint = null; continue; }
-    if (r.setpoint !== setpoint) marks.push({ at: r.at, text: `${r.setpoint} °C` });
+    if (r.setpoint !== setpoint) marks.push({ at: r.at, text: `${r.setpoint} °C`, value: r.setpoint });
     setpoint = r.setpoint;
   }
   return marks;
@@ -152,17 +152,37 @@ export function markLabel(x, text, right, fontPx = 11) {
   return x + 3 + width > right ? { x: x - 3, anchor: 'end' } : { x: x + 3, anchor: 'start' };
 }
 
-// Keeps the marks that are at least minPx right of the previously kept one; xOf(at) is the mark's x position.
-export function thinMarks(marks, xOf, minPx = 40) {
-  const kept = [];
-  let last = -Infinity;
-  let lastText = null;
+// The timeline's labels for a row's marks ([{ at, text, value }], value in °C): marks closer than minPx to the one before
+// make a run, labelled once at its start: one mark its text, two "20 → 16 °C", more "16–20 °C, switching" (a setpoint that
+// alternates faster than labels fit must not print a tidy pattern that did not happen). A single mark that says the setpoint
+// the last label ended at, or a label that would run over the last one, is left out. → [{ at, x, anchor, text }] (markLabel's placement, `right` the edge).
+export function markRuns(marks, xOf, right, { minPx = 52, fontPx = 12 } = {}) {
+  const runs = [];
+  let prev = -Infinity;
   for (const m of marks ?? []) {
     const x = xOf(m.at);
-    if (x - last < minPx || m.text === lastText) continue; // too close, or the same words as the last label
-    kept.push(m);
-    last = x;
-    lastText = m.text;
+    if (runs.length && x - prev < minPx) runs.at(-1).push(m);
+    else runs.push([m]);
+    prev = x;
   }
-  return kept;
+  const out = [];
+  let end = -Infinity;
+  let lastText = null; // the words the last label ended at: a run's last mark
+  for (const run of runs) {
+    const values = run.map((m) => m.value);
+    const differ = new Set(run.map((m) => m.text)).size > 1;
+    const text = !differ ? run[0].text
+      : run.length === 2 ? `${values[0]} → ${values[1]} °C`
+        : `${Math.min(...values)}–${Math.max(...values)} °C, switching`;
+    if (!differ && run[0].text === lastText) continue;
+    const at = run[0].at;
+    const place = markLabel(xOf(at), text, right, fontPx);
+    const width = text.length * fontPx * 0.6;
+    const start = place.anchor === 'start' ? place.x : place.x - width;
+    if (start < end + 6) continue;
+    out.push({ at, ...place, text });
+    end = start + width;
+    lastText = run.at(-1).text;
+  }
+  return out;
 }

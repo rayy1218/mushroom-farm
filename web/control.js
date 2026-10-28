@@ -1,10 +1,13 @@
 // The Automatic control card on the room page: the Auto | Manual switch, the three bands, the air exchange state and the reasons.
 // createControl(host, { roomId, onOffline, onGone, onChange, getRoom, cropHref, modeHost }) → { update(data, token) → painted,
 // token(), setCrop(crop), destroy() }. modeHost: the Now tab's Control card, which then holds the Auto | Manual switch (redesign
-// 2026-10-28: the switch where the machines are, the bands on the Setup tab). setCrop: the crop program (GET /api/rooms/:id/crop) for the Lighting group's line of today.
+// 2026-10-28: the switch where the machines are, the bands on the Setup tab). setCrop: the crop program (GET /api/rooms/:id/crop) for the Lighting group's line of today
+// and the By-Hand Rule: a band setting that differs from the current stage's is shown in the accent text with the stage's value
+// under it, and one Back to stage values puts the stage's bands back (as on the Crop tab).
 // Controls are updated in place, so a refresh never replaces an input the person is using or has edited.
 
 import { request, OFFLINE } from './api.js';
+import { byHandValues, stageBody } from './crop-math.js';
 import { BANDS, REASONS, reasonsShown, stateLine, inputLabel, reasonLine, checkBand, locateField, SAFETY_FIELDS, checkSafety, locateSafetyField, changedBody, checkLines, heldLine, HUMIDIFIER_LABEL, humidifierOn, OUTDOOR_LABEL, outdoorOn, outdoorNote, AC_FAN_LABEL, AC_FAN_OPTIONS, acFanOf, CONTROL_GROUPS, lightingLine, CROP_TAB_LINK } from './control-math.js';
 
 const COMMAND_TIMEOUT = 30000;
@@ -53,7 +56,9 @@ export function createControl(host, { roomId, onOffline, onGone, onChange, getRo
   let switching = false;
   let switchingHum = false;
   let switchingFan = false;
+  let backing = false; // Back to stage values is being sent
   const n = ++uid;
+  const stageNotes = new Map(); // control field → { input, note }: the stage's own value under an input set by hand
 
   host.className = 'card control';
   host.append(el('h2', '', 'Automatic control'));
@@ -95,7 +100,10 @@ export function createControl(host, { roomId, onOffline, onGone, onChange, getRo
       const field = el('div', 'ac-field');
       const caption = el('label', 'ac-label', band.sides?.[side] ?? (side === 'low' ? 'Low' : 'High'));
       caption.htmlFor = input.id;
-      field.append(caption, input);
+      const note = el('span', 'c-stage-val');
+      note.hidden = true;
+      field.append(caption, input, note);
+      stageNotes.set(band[side], { input, note });
       row.append(field);
       inputs[side] = input;
       input.addEventListener('input', () => markDirty(band));
@@ -122,7 +130,10 @@ export function createControl(host, { roomId, onOffline, onGone, onChange, getRo
     input.inputMode = f.step === '1' ? 'numeric' : 'decimal';
     input.setAttribute('aria-label', f.label);
     const field = el('div', 'ac-field');
-    field.append(input);
+    const note = el('span', 'c-stage-val');
+    note.hidden = true;
+    field.append(input, note);
+    stageNotes.set(f.key, { input, note });
     row.append(field);
     const err = errorNode(`ctl-${n}-${f.key}-error`);
     row.append(err);
@@ -160,6 +171,13 @@ export function createControl(host, { roomId, onOffline, onGone, onChange, getRo
   const sendRow = el('div', 'ac-send');
   sendRow.append(save, reset, unsent);
   const saveErr = errorNode();
+
+  // ---- the bands changed by hand: a way back to the current stage's (the By-Hand Rule) ----
+  const byHandRow = el('div', 'c-byhand');
+  byHandRow.hidden = true;
+  const backBtn = button('Back to stage values');
+  byHandRow.append(el('span', '', 'Changed by hand: the room runs these until the next stage.'), backBtn);
+  const backErr = errorNode();
 
   const stateNode = el('p', 'c-state');
   const checkList = el('ul', 'c-checks'); // a sensor whose last check was not ok
@@ -248,9 +266,9 @@ export function createControl(host, { roomId, onOffline, onGone, onChange, getRo
     }
     left.append(form);
     cols.append(left, right);
-    host.append(cols, statusBox, sendRow, saveErr);
+    host.append(cols, byHandRow, backErr, statusBox, sendRow, saveErr);
   }
-  else host.append(autoRow, modeLine, autoErr, ...groups, form, sendRow, saveErr, stateNode, checkList);
+  else host.append(autoRow, modeLine, autoErr, ...groups, form, byHandRow, backErr, sendRow, saveErr, stateNode, checkList);
 
   // ---- drawing ----
 
@@ -369,6 +387,19 @@ export function createControl(host, { roomId, onOffline, onGone, onChange, getRo
     if (lightToday.textContent !== text) lightToday.textContent = text;
   }
 
+  // The settings the room runs that differ from the current stage's: the input in the accent text, the stage's value under it.
+  function paintByHand() {
+    const diffs = byHandValues(crop, last);
+    for (const [key, { input, note }] of stageNotes) {
+      const text = diffs[key] ?? '';
+      input.classList.toggle('by-hand', text !== '');
+      if (note.textContent !== text) note.textContent = text;
+      note.hidden = text === '';
+    }
+    byHandRow.hidden = Object.keys(diffs).length === 0;
+    backBtn.disabled = backing;
+  }
+
   function paint(c) {
     last = c;
     paintAuto();
@@ -389,6 +420,7 @@ export function createControl(host, { roomId, onOffline, onGone, onChange, getRo
     const room = getRoom?.();
     for (const [box, field] of fittedGroups) box.hidden = room?.[field] !== true;
     paintLight();
+    paintByHand();
     const shown = reasonsShown(room);
     for (const r of REASONS) {
       const item = reasonItems.get(r.key);
@@ -566,7 +598,40 @@ export function createControl(host, { roomId, onOffline, onGone, onChange, getRo
     }
   }
 
+  // Back to stage values: the current stage's bands on the room again (the Crop tab's button does the same).
+  async function backToStage() {
+    if (backing || !last || !crop?.crops?.length) return;
+    const hadFocus = document.activeElement === backBtn;
+    backing = true;
+    paintByHand();
+    showError(backErr, '');
+    version++;
+    inflight++;
+    try {
+      const data = await request('PUT', `/api/rooms/${roomId}/control`, stageBody(crop.crops, crop.stage), COMMAND_TIMEOUT);
+      if (!alive) return;
+      backing = false;
+      dirty = false;
+      clearErrors();
+      setInputs(data);
+      paint(data);
+      onChange?.(data);
+    } catch (err) {
+      if (!alive) return;
+      failed(err, (e) => showError(backErr, errorText(e)));
+    } finally {
+      inflight--;
+      backing = false;
+      if (alive) {
+        paintByHand();
+        // the button goes with the difference: keep the focus in the card
+        if (hadFocus && !document.activeElement?.closest?.('dialog')) (byHandRow.hidden ? save : backBtn).focus();
+      }
+    }
+  }
+
   autoBtn.addEventListener('click', () => { if (last && !last.auto) toggleAuto(); });
+  backBtn.addEventListener('click', backToStage);
   manualBtn.addEventListener('click', () => { if (last?.auto) toggleAuto(); });
   humBtn.addEventListener('click', toggleHumidifier);
   fanSelect.addEventListener('change', changeFan);
@@ -590,7 +655,7 @@ export function createControl(host, { roomId, onOffline, onGone, onChange, getRo
     },
     setCrop(data) {
       crop = data ?? null;
-      if (alive) paintLight();
+      if (alive) { paintLight(); paintByHand(); }
     },
     destroy() { alive = false; host.replaceChildren(); modeHost?.replaceChildren(); },
   };
