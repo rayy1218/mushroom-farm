@@ -98,11 +98,16 @@ const TEMPLATE = `
         </div>
       </div>
       <div data-panel="history" hidden>
-        <div data-range></div>
-        <div class="charts" data-charts></div>
-        <section class="card chart-card usage-charts" data-usage-charts></section>
-        <section class="card chart-card usage-charts" data-exchange hidden></section>
-        <section class="card timeline-card" data-timeline hidden>
+        <div class="history-head">
+          <div data-range></div>
+          <nav class="setup-nav history-nav" aria-label="History sections">
+            <a href="#hist-climate" data-jump>Climate</a><a href="#hist-energy" data-jump>Energy and water</a><a href="#hist-exchange" data-jump>Air exchange</a><a href="#hist-timeline" data-jump>Machines</a>
+          </nav>
+        </div>
+        <div class="charts hist-part" id="hist-climate" tabindex="-1" data-charts></div>
+        <section class="card chart-card usage-charts hist-part" id="hist-energy" tabindex="-1" data-usage-charts></section>
+        <section class="card chart-card usage-charts hist-part" id="hist-exchange" tabindex="-1" data-exchange hidden></section>
+        <section class="card timeline-card hist-part" id="hist-timeline" tabindex="-1" data-timeline hidden>
           <h2>Machine timeline</h2>
           <div class="chart-host" data-timeline-host></div>
           <p class="legend"><span class="swatch swatch-auto" aria-hidden="true"></span>Automatic <span class="swatch swatch-manual" aria-hidden="true"></span>Manual</p>
@@ -122,19 +127,19 @@ const TEMPLATE = `
         <div class="setup-part" id="setup-control" tabindex="-1">
           <section data-control hidden></section>
         </div>
-        <div class="setup-part" id="setup-equipment" tabindex="-1">
-          <h2 class="part-title">Equipment</h2>
+        <details class="setup-part" id="setup-equipment" tabindex="-1" open>
+          <summary class="part-title"><h2>Equipment</h2></summary>
           <div class="equipment" data-equipment></div>
-        </div>
-        <div class="setup-part" id="setup-filter" tabindex="-1">
-          <h2 class="part-title">Intake filter</h2>
+        </details>
+        <details class="setup-part" id="setup-filter" tabindex="-1" open>
+          <summary class="part-title"><h2>Intake filter</h2></summary>
           <section data-filter hidden></section>
-        </div>
-        <div class="setup-part" id="setup-room" tabindex="-1">
-          <h2 class="part-title">Room</h2>
+        </details>
+        <details class="setup-part" id="setup-room" tabindex="-1" open>
+          <summary class="part-title"><h2>Room</h2></summary>
           <form class="room-form" data-profile novalidate></form>
           <section class="card room-delete" data-delete></section>
-        </div>
+        </details>
       </div>
     </div>
   </div>`;
@@ -182,10 +187,13 @@ export function mount(container, { id, tab = 'now' }) {
     if (tab === 'now') { if (alarmsNode.parentNode !== nowSide) nowSide.prepend(alarmsNode); }
     else if (alarmsNode.parentNode !== main) main.prepend(alarmsNode);
     if (tab === 'setup' && pendingField) {
+      container.querySelector('#setup-equipment').open = true; // folded on a phone
       equipmentTab?.focus(pendingField);
       pendingField = null;
     }
   }
+  // A phone: the Setup tab's long parts start folded under their titles (critique 2026-10-28: about 6,700 px of scroll).
+  if (matchMedia('(max-width: 760px)').matches) for (const d of container.querySelectorAll('details.setup-part')) d.open = false;
   setTab(tab);
   const els = {
     title: q('[data-title]'),
@@ -367,6 +375,11 @@ export function mount(container, { id, tab = 'now' }) {
     }
   }
 
+  // The History links: only to the parts that show (air exchange and the timeline need their machines).
+  function syncHistoryNav() {
+    for (const a of container.querySelectorAll('.history-nav a')) a.hidden = Boolean(container.querySelector(a.getAttribute('href'))?.hidden);
+  }
+
   function renderCharts() {
     const hist = history?.current() ?? null; // null: Live (the last 50 polls)
     const data = hist?.data ?? null;
@@ -458,7 +471,7 @@ export function mount(container, { id, tab = 'now' }) {
       usageSection = createUsageSection(els.usageCharts, { onCursor: moveCursor });
       exchangeSection = createExchangeSection(els.exchange, { roomId: id });
       usageCard = createUsageCard(els.usageHost, { roomId: id, getRoom: () => room });
-      history = createHistory(els.rangeHost, { roomId: id, outdoor: true, initial: '24h', onChange: () => { if (alive() && sensors) renderCharts(); } });
+      history = createHistory(els.rangeHost, { roomId: id, outdoor: true, initial: '24h', onChange: () => { if (alive() && sensors) { renderCharts(); syncHistoryNav(); } } });
       const saved = { // the head and the other tabs show the change; new ratings change the estimates
         queue: createSaveQueue(), // one save at a time on the page: each PUT sends the whole room
         onSaved: (r) => {
@@ -506,6 +519,7 @@ export function mount(container, { id, tab = 'now' }) {
     }
     exchangeSection.update(room);
     renderCharts();
+    syncHistoryNav();
     paintDrawing();
     usageCard.refresh(); // not more than once a minute
   }
@@ -679,11 +693,12 @@ export function mount(container, { id, tab = 'now' }) {
   container.querySelector('[data-bare-setup]').addEventListener('click', () => editEquipment('trhAddress'));
 
   // The Setup tab's section links: scroll there without changing the address (a hash would leave the room page).
-  container.querySelector('.setup-nav').addEventListener('click', (event) => {
+  container.addEventListener('click', (event) => {
     const a = event.target.closest('a[data-jump]');
     if (!a) return;
     event.preventDefault();
     const part = container.querySelector(a.getAttribute('href'));
+    if (part?.tagName === 'DETAILS') part.open = true; // a folded Setup part opens
     part?.scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
     part?.focus({ preventScroll: true });
   });

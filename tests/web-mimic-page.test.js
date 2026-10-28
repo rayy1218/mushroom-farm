@@ -104,3 +104,14 @@ test('a room with nothing wired: one empty state with the way to wire it; Auto |
   assert.match(room, /els\.modeHost\.hidden = room\.relayAddress == null && room\.acAddress == null;/);
   assert.match(room, /\[data-bare-setup\]'\)\.addEventListener\('click', \(\) => editEquipment\('trhAddress'\)\)/);
 });
+
+test('History: the range and links to its parts stay under the top bar; Setup parts fold (folded at first on a phone)', () => {
+  const room = source('../web/room-detail.js');
+  assert.match(room, /<div class="history-head">\n\s*<div data-range><\/div>\n\s*<nav class="setup-nav history-nav" aria-label="History sections">/);
+  assert.match(room, /<details class="setup-part" id="setup-equipment" tabindex="-1" open>\n\s*<summary class="part-title"><h2>Equipment<\/h2><\/summary>/);
+  assert.match(room, /if \(matchMedia\('\(max-width: 760px\)'\)\.matches\) for \(const d of container\.querySelectorAll\('details\.setup-part'\)\) d\.open = false;/);
+  assert.match(room, /container\.querySelector\('#setup-equipment'\)\.open = true;/);
+  const css = source('../web/styles.css');
+  assert.match(css, /\.history-head \{ position: sticky; top: var\(--topbar-h\);/);
+  assert.match(css, /\.top-link, \.top-alarm, \.topbar \.theme-btn, \.room-switch select, \.room-tabs a \{ min-height: 44px; \}/);
+});

@@ -1000,7 +1000,7 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
 .rc-swipe { display: none; margin: 8px 0 0; color: var(--muted); font-size: var(--fs-xs); }
 @media (max-width: 600px) {
   .rc-scroll { overflow-x: auto; overscroll-behavior-x: contain; border-radius: 10px; }
-  .rc-scroll .rc-pic { min-width: 680px; }
+  .rc-scroll .rc-pic { min-width: 800px; } /* the labels near 12 px: the drawing at about its own size */
   .rc-swipe { display: block; }
 }
 .rc-fresh { margin: 12px 0 0; font-size: var(--fs-sm); color: var(--ink-2); }
@@ -1046,3 +1046,28 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
 .sim-list-head > :last-child { justify-self: end; }
 .sim-compare-hint { margin: 0; font-size: var(--fs-sm); }
 @media (max-width: 600px) { .sim-list-head { display: none; } }
+/* Setup parts fold under their titles (folded at first on a phone) */
+summary.part-title { display: flex; align-items: center; gap: 10px; min-height: 44px; cursor: pointer; list-style: none; }
+summary.part-title::-webkit-details-marker { display: none; }
+summary.part-title h2 { margin: 0; font: inherit; }
+summary.part-title::after { content: ""; width: 8px; height: 8px; margin-left: auto; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg); translate: 0 -2px; }
+details[open] > summary.part-title::after { transform: rotate(-135deg); translate: 0 2px; }
+details.setup-part:not([open]) > summary.part-title { margin-bottom: 0; }
+/* History: the range and the links to its parts stay under the top bar while the long tab scrolls */
+.history-head { position: sticky; top: var(--topbar-h); z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 0 0 16px; padding: 8px 0; background: var(--page); border-bottom: 1px solid var(--border); }
+.history-head .range-bar { margin: 0; }
+.history-head .history-nav { margin: 0; }
+.hist-part { scroll-margin-top: calc(var(--topbar-h) + 120px); outline: none; }
+@media (max-width: 760px) {
+  .history-head { margin: 0 -14px 16px; padding: 8px 14px; }
+  .history-head .history-nav { position: static; margin: 0; padding: 0; border: 0; flex: 1 1 100%; }
+}
+@media (max-width: 600px) { .range-bar button { min-height: 44px; } }
+/* A phone: every control at least 44 px (last in the file, so the rules above with their 30–36 px heights give way) */
+@media (max-width: 600px) {
+  .top-link, .top-alarm, .topbar .theme-btn, .room-switch select, .room-tabs a { min-height: 44px; }
+  .topbar .theme-btn { min-width: 44px; }
+  .tg-check { display: flex; align-items: center; gap: 10px; min-height: 44px; }
+  .tg-check input, .sim-pick input { width: 20px; height: 20px; }
+  .sim-pick { min-height: 44px; }
+}
