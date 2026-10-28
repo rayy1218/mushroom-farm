@@ -72,7 +72,9 @@ export function drawLineChart(host, opts) {
     const t1 = current.range ? current.range.to : points.length ? points[points.length - 1].at : 0;
     const second = current.second ? clipSeries(current.second.points, t0, t1) : [];
     const secondValues = second.map((p) => p.value).filter((v) => v !== null && Number.isFinite(v));
-    const { min, max } = yRange(values, current.minSpan ?? 1, current.bounds, [...(band ? [band.low, band.high] : []), ...stepValues(steps), ...secondValues]);
+    const { min, max } = yRange(values, current.minSpan ?? 1, current.bounds, [...(band ? [band.low, band.high] : []), ...stepValues(steps)]);
+    // The outdoor line on its own scale (owner, 2026-10-28), so the room's line keeps the chart's height; its legend names it.
+    const s2 = secondValues.length ? yRange(secondValues, current.minSpan ?? 1, current.bounds) : null;
     const xs = points.map((p) => xFor(p.at, t0, t1, x0, x1));
     const yFor = (v) => y0 - ((v - min) / (max - min)) * (y0 - y1);
     const ys = points.map((p) => (p.value === null ? null : yFor(p.value)));
@@ -148,19 +150,36 @@ export function drawLineChart(host, opts) {
       svg.append(el('line', { x1: xs[i], x2: xs[i], y1: y0 - 12, y2: y0, style: 'stroke:var(--critical-text)', 'stroke-width': 2 }));
     });
 
+    // A gap in the readings on a long range (historyPoints puts a null where the polls stopped: the app or the sensor was off):
+    // a quiet strip between the readings either side, named when it is wide enough, so the gap is not taken for a flat room.
+    if (current.range) {
+      points.forEach((p, i) => {
+        if (p.value !== null || i === 0 || i === points.length - 1) return;
+        const a = xs[i - 1];
+        const b = xs[i + 1];
+        if (!(b > a)) return;
+        svg.append(el('rect', { x: a.toFixed(1), y: y1, width: (b - a).toFixed(1), height: y0 - y1, style: 'fill:var(--band)' }));
+        if (b - a > 90) {
+          svg.append(el('text', { x: ((a + b) / 2).toFixed(1), y: (y1 + y0) / 2 + 4, 'text-anchor': 'middle', style: 'fill:var(--muted)', 'font-size': 11 }, 'No readings'));
+        }
+      });
+    }
+
     // The second line (outdoor): dotted in the chart's own colour (the grey dashes are the band limits), under the main one, with
     // its name and latest value at the top left (the band limits are labelled at the right edge).
     if (secondValues.length) {
+      const yFor2 = (v) => y0 - ((v - s2.min) / (s2.max - s2.min)) * (y0 - y1);
+      const dg = current.digits ?? 1;
       const dots = { fill: 'none', 'stroke-width': 2.5, 'stroke-dasharray': OUTDOOR_DOTS, 'stroke-linecap': 'round', style: `stroke:${current.color ?? 'var(--ink)'};opacity:.8` };
       for (const run of segments(second)) {
         if (run.length < 2) continue;
-        const d = run.map((p, k) => `${k ? 'L' : 'M'}${xFor(p.at, t0, t1, x0, x1).toFixed(1)} ${yFor(p.value).toFixed(1)}`).join(' ');
+        const d = run.map((p, k) => `${k ? 'L' : 'M'}${xFor(p.at, t0, t1, x0, x1).toFixed(1)} ${yFor2(p.value).toFixed(1)}`).join(' ');
         svg.append(el('path', { d, ...dots }));
       }
       const lastSecond = [...second].reverse().find((p) => p.value !== null && Number.isFinite(p.value));
       svg.append(el('line', { x1: x0 + 8, x2: x0 + 28, y1: y1 + 8, y2: y1 + 8, ...dots }));
       svg.append(el('text', { x: x0 + 34, y: y1 + 12, style: 'fill:var(--ink-2)', 'font-size': 11 },
-        `${current.second.label ?? 'Outdoor'}${lastSecond ? ` ${fmt(lastSecond.value)}` : ''}`));
+        `${current.second.label ?? 'Outdoor'}${lastSecond ? ` ${fmt(lastSecond.value)}` : ''} · own scale ${s2.min.toFixed(dg)}–${s2.max.toFixed(dg)}`));
     }
 
     // The line, one path per run; a run of one point is a dot.
