@@ -22,6 +22,20 @@ export function formatAgo(ms) {
 // A flat line (or one value) still gets a range of at least minSpan, centred on the value.
 // `bounds` ([lo, hi]) keeps the axis inside the measure's physical range (relative humidity: 0 to 100).
 // include: extra values the range must show (the band limits), even when no reading is near them.
+// A range's ends rounded out to a round step (at least an eighth of the span: 1, 2 or 5 times a power of ten), so the
+// axis reads 18.5–21.5 rather than 18.8–21.2; bounds still apply.
+export function niceRange({ min, max }, bounds = null) {
+  const raw = (max - min) / 8;
+  if (!(raw > 0)) return { min, max };
+  const p = 10 ** Math.floor(Math.log10(raw));
+  const step = [1, 2, 5, 10].map((k) => k * p).find((s) => s >= raw);
+  const r = (x) => Number(x.toFixed(10));
+  let lo = r(Math.floor(r(min / step)) * step);
+  let hi = r(Math.ceil(r(max / step)) * step);
+  if (bounds) { lo = Math.max(lo, bounds[0]); hi = Math.min(hi, bounds[1]); }
+  return { min: lo, max: hi };
+}
+
 export function yRange(values, minSpan = 1, bounds = null, include = []) {
   const data = values.filter((x) => Number.isFinite(x));
   if (data.length === 0) return { min: 0, max: minSpan };

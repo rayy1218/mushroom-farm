@@ -17,14 +17,18 @@ test('the outdoor line is dotted, round-capped, in the chart\'s colour; the band
   assert.match(chart, /'stroke-dasharray': '4 4'/, 'the band limits keep their dashes');
 });
 
-test('its legend says the latest outdoor value and, wider than a phone, its own scale', () => {
-  assert.match(part, /`\$\{current\.second\.label \?\? 'Outdoor'\}\$\{lastSecond \? ` \$\{fmt\(lastSecond\.value\)\}` : ''\}\$\{width < 560 \? '' : ` · own scale \$\{s2\.min\.toFixed\(dg\)\}–\$\{s2\.max\.toFixed\(dg\)\}`\}`/);
+// Critique 2026-10-28: "own scale 25.8–32.6" in the plot was struck through by the band's line and gone on a phone.
+test('its legend sits above the plot (Room, then Outdoor and its latest value); its scale is numbered on the right', () => {
+  assert.match(part, /'Room'/);
+  assert.match(part, /`\$\{current\.second\.label \?\? 'Outdoor'\}\$\{lastSecond \? ` \$\{fmt\(lastSecond\.value\)\}` : ''\}\$\{width < 560 \? ' · right scale' : ' · its scale on the right'\}`/);
+  assert.match(part, /for \(const \[v, y\] of \[\[s2\.max, y1\], \[s2\.min, y0\]\]\)/);
+  assert.match(chart, /export const M = \{ left: 64, right: 48,/);
 });
 
 test('the outdoor line has its own scale (owner, 2026-10-28): the room line keeps the full height', () => {
-  const main = chart.slice(chart.indexOf('const { min, max } = yRange('), chart.indexOf('// The outdoor line on its own scale'));
+  const main = chart.slice(chart.indexOf('const { min, max } = niceRange(yRange('), chart.indexOf('// The outdoor line on its own scale'));
   assert.doesNotMatch(main, /secondValues/, 'the room\'s scale leaves the outdoor values out');
-  assert.match(chart, /const s2 = secondValues\.length \? yRange\(secondValues, current\.minSpan \?\? 1, current\.bounds\) : null;/);
+  assert.match(chart, /const s2 = secondValues\.length \? niceRange\(yRange\(secondValues, current\.minSpan \?\? 1, current\.bounds\), current\.bounds\) : null;/);
   assert.match(part, /yFor2\(p\.value\)/);
 });
 

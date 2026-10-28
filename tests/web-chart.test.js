@@ -65,3 +65,12 @@ test('chartPoints maps failed polls to null', () => {
   assert.deepEqual(chartPoints(sensor, 't'), [{ at: 1, value: 25 }, { at: 2, value: null }, { at: 3, value: 0 }]);
   assert.deepEqual(chartPoints(null, 't'), []);
 });
+
+test('niceRange: axis ends rounded out to a round step (18.5–21.5, not 18.8–21.2); bounds still apply', async () => {
+  const { niceRange } = await import('../web/chart-math.js');
+  assert.deepEqual(niceRange({ min: 18.8, max: 21.2 }), { min: 18.5, max: 21.5 });
+  assert.deepEqual(niceRange({ min: 25.8, max: 32.6 }), { min: 25, max: 33 });
+  assert.deepEqual(niceRange({ min: 640, max: 915 }), { min: 600, max: 950 });
+  assert.deepEqual(niceRange({ min: 84, max: 101 }, [0, 100]), { min: 80, max: 100 });
+  assert.deepEqual(niceRange({ min: 5, max: 5 }), { min: 5, max: 5 });
+});

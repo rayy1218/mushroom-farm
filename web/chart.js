@@ -1,12 +1,12 @@
 // A small inline-SVG line chart. Drawn 1:1 at the host's pixel width (re-drawn by a ResizeObserver),
 // so text keeps its real size on a phone. Colours come from the theme tokens through CSS variables.
 
-import { formatClock, yRange, xFor, segments, nearestIndex, clipSeries, stepShapes, stepValues } from './chart-math.js';
+import { niceRange, formatClock, yRange, xFor, segments, nearestIndex, clipSeries, stepShapes, stepValues } from './chart-math.js';
 
 const OUTDOOR_DOTS = '0.1 5'; // round dots 5 px apart (with a round cap a zero-length dash draws a dot)
 
 const NS = 'http://www.w3.org/2000/svg';
-export const M = { left: 64, right: 12, top: 10, bottom: 24 }; // the timeline lines up with these
+export const M = { left: 64, right: 48, top: 10, bottom: 24 }; // the timeline lines up with these; right: the outdoor scale's numbers
 
 function el(name, attrs = {}, text) {
   const node = document.createElementNS(NS, name);
@@ -63,7 +63,7 @@ export function drawLineChart(host, opts) {
     const x0 = M.left;
     const x1 = width - M.right;
     const y0 = height - M.bottom; // bottom
-    const y1 = M.top; // top
+    const y1 = current.second?.points?.some((p) => p.value !== null && Number.isFinite(p.value)) ? 30 : M.top; // a chart with an outdoor line: its legend above the plot
 
     const values = points.map((p) => p.value).filter((v) => v !== null && Number.isFinite(v));
     const steps = current.bandSteps?.length ? current.bandSteps : null;
@@ -72,9 +72,9 @@ export function drawLineChart(host, opts) {
     const t1 = current.range ? current.range.to : points.length ? points[points.length - 1].at : 0;
     const second = current.second ? clipSeries(current.second.points, t0, t1) : [];
     const secondValues = second.map((p) => p.value).filter((v) => v !== null && Number.isFinite(v));
-    const { min, max } = yRange(values, current.minSpan ?? 1, current.bounds, [...(band ? [band.low, band.high] : []), ...stepValues(steps)]);
-    // The outdoor line on its own scale (owner, 2026-10-28), so the room's line keeps the chart's height; its legend names it.
-    const s2 = secondValues.length ? yRange(secondValues, current.minSpan ?? 1, current.bounds) : null;
+    const { min, max } = niceRange(yRange(values, current.minSpan ?? 1, current.bounds, [...(band ? [band.low, band.high] : []), ...stepValues(steps)]), current.bounds);
+    // The outdoor line on its own scale (owner, 2026-10-28), so the room's line keeps the chart's height; its numbers on the right.
+    const s2 = secondValues.length ? niceRange(yRange(secondValues, current.minSpan ?? 1, current.bounds), current.bounds) : null;
     const xs = points.map((p) => xFor(p.at, t0, t1, x0, x1));
     const yFor = (v) => y0 - ((v - min) / (max - min)) * (y0 - y1);
     const ys = points.map((p) => (p.value === null ? null : yFor(p.value)));
@@ -106,7 +106,7 @@ export function drawLineChart(host, opts) {
           x1: x0, x2: x1, y1: y, y2: y, style: 'stroke:var(--muted)', 'stroke-width': 1, 'stroke-dasharray': '4 4',
         }));
         svg.append(el('text', {
-          x: x1 - 4, y: y + dy, 'text-anchor': 'end', style: 'fill:var(--muted)', 'font-size': 11,
+          x: x1 - 4, y: y + dy, 'text-anchor': 'end', style: 'fill:var(--muted)', 'font-size': 12,
         }, v.toFixed(current.digits ?? 1)));
       }
     }
@@ -120,7 +120,7 @@ export function drawLineChart(host, opts) {
       }
       const end = steps[steps.length - 1];
       for (const [v, dy] of [[end.high, -4], [end.low, 13]]) {
-        svg.append(el('text', { x: x1 - 4, y: yFor(v) + dy, 'text-anchor': 'end', style: 'fill:var(--muted)', 'font-size': 11 }, v.toFixed(current.digits ?? 1)));
+        svg.append(el('text', { x: x1 - 4, y: yFor(v) + dy, 'text-anchor': 'end', style: 'fill:var(--muted)', 'font-size': 12 }, v.toFixed(current.digits ?? 1)));
       }
     }
 
@@ -177,9 +177,19 @@ export function drawLineChart(host, opts) {
         svg.append(el('path', { d, ...dots }));
       }
       const lastSecond = [...second].reverse().find((p) => p.value !== null && Number.isFinite(p.value));
-      svg.append(el('line', { x1: x0 + 8, x2: x0 + 28, y1: y1 + 8, y2: y1 + 8, ...dots }));
-      svg.append(el('text', { x: x0 + 34, y: y1 + 12, style: 'fill:var(--ink-2)', 'font-size': 11 },
-        `${current.second.label ?? 'Outdoor'}${lastSecond ? ` ${fmt(lastSecond.value)}` : ''}${width < 560 ? '' : ` · own scale ${s2.min.toFixed(dg)}–${s2.max.toFixed(dg)}`}`)); // a phone: the value only, clear of the band labels
+      // its scale: the numbers at the right edge, dotted ticks like its line
+      for (const [v, y] of [[s2.max, y1], [s2.min, y0]]) {
+        svg.append(el('text', { x: x1 + 6, y: y + 4, 'text-anchor': 'start', style: 'fill:var(--muted)', 'font-size': 12 }, v.toFixed(dg)));
+      }
+      // the legend above the plot, clear of the band's lines: the room's line, then the outdoor one and where its scale is
+      const solid = { 'stroke-width': 2.5, 'stroke-linecap': 'round', style: `stroke:${current.color ?? 'var(--ink)'}` };
+      svg.append(el('line', { x1: x0, x2: x0 + 16, y1: 12, y2: 12, ...solid }));
+      const roomText = el('text', { x: x0 + 22, y: 16, style: 'fill:var(--ink-2)', 'font-size': 12 }, 'Room');
+      svg.append(roomText);
+      const lx = x0 + 70;
+      svg.append(el('line', { x1: lx, x2: lx + 20, y1: 12, y2: 12, ...dots }));
+      svg.append(el('text', { x: lx + 26, y: 16, style: 'fill:var(--ink-2)', 'font-size': 12 },
+        `${current.second.label ?? 'Outdoor'}${lastSecond ? ` ${fmt(lastSecond.value)}` : ''}${width < 560 ? ' · right scale' : ' · its scale on the right'}`));
     }
 
     // The line, one path per run; a run of one point is a dot.
