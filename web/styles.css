@@ -894,6 +894,11 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
 .seg-btn:disabled { opacity: 1; cursor: default; }
 .mode-card .card-head { margin-bottom: 8px; }
 .mode-line { margin: 0; color: var(--ink-2); font-size: var(--fs-sm); }
+.mode-card[data-manual="true"] { border-color: color-mix(in srgb, var(--warning) 55%, transparent); }
+.mode-card[data-manual="true"] .mode-line { color: var(--warning-text); }
+.room-title-row { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; }
+.manual-chip { text-decoration: none; }
+@media (max-width: 600px) { .seg-btn { min-height: 44px; padding: 8px 18px; } .room-head .back { display: inline-block; padding: 10px 0; } }
 .mode-card .m-error { margin-top: 8px; }
 
 /* The machines, in the order the air meets them */

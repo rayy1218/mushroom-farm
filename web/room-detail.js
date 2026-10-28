@@ -39,6 +39,11 @@ import { timeTicks, tickCountFor, chartDrawKey, historyPoints, timelineSpans, ac
 
 // The Now tab's Machines rows → the relay machines the switches command (the aircon has its own panel).
 const RELAY_KEY = { intake: 'intake', circ: 'circulation', lights: 'lights', hu: 'humidifier', dh: 'dehumidifier', exhaust: 'exhaust' };
+// "10:12" today, "27 Oct 10:12" before.
+function manualSince(d, now) {
+  const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  return d.toDateString() === new Date(now).toDateString() ? hm : `${d.getDate()} ${d.toLocaleString('en-GB', { month: 'short' })} ${hm}`;
+}
 const BAND_KEYS = ['tLow', 'tHigh', 'rhLow', 'rhHigh', 'co2Low', 'co2High', 'co2Safety'];
 const metres = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
 const cubic = new Intl.NumberFormat(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -54,7 +59,7 @@ const TEMPLATE = `
   <div class="page-head room-head">
     <div class="page-titles">
       <a class="back" href="#/rooms">Rooms</a>
-      <h1 class="page-title" tabindex="-1" data-title>Room</h1>
+      <div class="room-title-row"><h1 class="page-title" tabindex="-1" data-title>Room</h1><a class="pill manual-chip" data-tone="amber" data-manual-chip hidden></a></div>
       <p class="page-sub" data-sub>Loading…</p>
     </div>
     <label class="room-switch" data-switch-box hidden><span>Room</span><select name="room" data-switch></select></label>
@@ -189,6 +194,7 @@ export function mount(container, { id, tab = 'now' }) {
     cropSumHost: q('[data-crop-sum]'),
     modeHost: q('[data-mode]'),
     switchBox: q('[data-switch-box]'),
+    manualChip: q('[data-manual-chip]'),
     switchSelect: q('[data-switch]'),
     cropHost: q('[data-crop]'),
     controlHost: q('[data-control]'),
@@ -505,6 +511,13 @@ export function mount(container, { id, tab = 'now' }) {
     };
     els.machinesHost.hidden = !switches.manual || !lastMachines; // the aircon's own panel, in Manual only
     roomCardUi.paint(roomCard({ draw, control: lastControl, filter, crop: cropData, now }), draw, traces, switches);
+    // Manual on every tab, by the room's name, with the time it began when the server knows it (a link to the switch).
+    els.manualChip.hidden = !switches.manual;
+    if (switches.manual) {
+      const t = Number.isFinite(lastControl.autoChangedAt) ? new Date(lastControl.autoChangedAt) : null;
+      const text = t ? `Manual since ${manualSince(t, now)}` : 'Manual';
+      if (els.manualChip.textContent !== text) els.manualChip.textContent = text;
+    }
   }
 
   // The reading cards' last hour: the room history of 1 h, asked at most once a minute (the live polls fill in between).
@@ -658,6 +671,7 @@ export function mount(container, { id, tab = 'now' }) {
     }));
     els.switchBox.hidden = false;
   }).catch(() => {});
+  els.manualChip.href = roomHash(id, 'now');
   els.switchSelect.addEventListener('change', () => { location.hash = roomHash(Number(els.switchSelect.value), tab); });
 
   // Live updates: the room's events ask for the data again (a minute's timer is the fallback while the stream is up).
