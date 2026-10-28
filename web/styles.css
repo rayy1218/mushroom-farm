@@ -602,6 +602,7 @@ button.toggle[data-on="true"]:hover { background: var(--accent-hover); border-co
 .us-table tbody th { font-weight: 600; }
 .us-table .num { text-align: right; white-space: nowrap; }
 .us-table .total th, .us-table .total td { font-weight: 700; border-top: 1px solid var(--border-strong); }
+@media (max-width: 600px) { .us-table th, .us-table td { padding: 6px 3px; font-size: var(--fs-xs); } .us-table th:first-child, .us-table td:first-child { padding-left: 0; } .us-table th:last-child, .us-table td:last-child { padding-right: 0; } }
 .us-note { margin: 8px 0 0; font-size: var(--fs-sm); }
 .ov-farm { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; margin-bottom: 16px; }
 .ov-farm:empty { display: none; }
@@ -912,6 +913,12 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
 
 /* The Setup tab: links to its parts, each part under its title */
 .setup-nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 20px; }
+/* a phone: the links stay under the top bar while the long Setup tab scrolls */
+@media (max-width: 760px) {
+  .setup-nav { position: sticky; top: var(--topbar-h); z-index: 5; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 -14px 16px; padding: 8px 14px;
+    background: var(--page); border-bottom: 1px solid var(--border); }
+  .setup-nav a { flex: none; }
+}
 .setup-nav a { padding: 6px 12px; border-radius: 999px; border: 1px solid var(--border-strong); color: var(--ink-2); text-decoration: none; font-size: var(--fs-sm); font-weight: 500; }
 .setup-nav a:hover { color: var(--ink); border-color: var(--ink-2); }
 .setup-part { scroll-margin-top: calc(var(--topbar-h) + 12px); outline: none; }

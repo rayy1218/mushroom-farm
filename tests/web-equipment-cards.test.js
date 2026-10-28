@@ -165,3 +165,10 @@ test('a fitted card: a bad rating does not matter while the box is unticked', ()
   assert.deepEqual(Object.keys(parseCard(card('lights'), { ...texts, lights: true }, ROOM).errors), ['lightsW']);
   assert.ok(ROOM_FIELDS.filter((f) => f.fitted).every((f) => cardOf(f.name).fitted === f.fitted));
 });
+
+test('the filter pressure says when the intake is off (it reads near 0 Pa then; the Intake filter card keeps the last with it on)', () => {
+  const dp = { address: 9, status: 'online', failuresInRow: 0, lastOk: { at: 1, pa: 0.2 } };
+  const machines = (status) => ({ ...MACHINES, relay: { ...MACHINES.relay, machines: MACHINES.relay.machines.map((m) => (m.key === 'intake' ? { ...m, status } : m)) } });
+  assert.equal(cardStatus(card('filter'), { sensors: { ...SENSORS, dp }, machines: machines('off') }).value, '0 Pa · intake off');
+  assert.equal(cardStatus(card('filter'), { sensors: { ...SENSORS, dp: { ...dp, lastOk: { at: 1, pa: 40.4 } } }, machines: machines('on') }).value, '40 Pa');
+});

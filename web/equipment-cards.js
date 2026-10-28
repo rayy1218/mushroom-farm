@@ -4,6 +4,7 @@
 
 import { ROOM_GROUPS, EQUIPMENT_NAMES, fieldTexts, parseRoomFields } from './room-fields.js';
 import { STATUS_WORDS as MACHINE_WORDS } from './machines-math.js';
+import { intakeRunning } from './filter-math.js';
 
 const FILTER_HINT = ROOM_GROUPS.find((g) => g.key === 'filter').hint;
 
@@ -89,7 +90,10 @@ export function cardStatus(c, { sensors, machines }) {
     const word = SENSOR_WORDS[s.status] ?? s.status;
     const n = s.failuresInRow;
     const failing = (s.status === 'timeout' || s.status === 'offline') && Number.isInteger(n) && n > 0;
-    return { status: s.status, word: failing ? `${word} · ${n} failed ${n === 1 ? 'poll' : 'polls'} in a row` : word, value: sensorValue(c.sensor, s.lastOk) };
+    let value = sensorValue(c.sensor, s.lastOk);
+    // the filter's pressure means something only with the intake running: say so when it is off
+    if (c.sensor === 'dp' && value && intakeRunning(machines) === false) value += ' · intake off';
+    return { status: s.status, word: failing ? `${word} · ${n} failed ${n === 1 ? 'poll' : 'polls'} in a row` : word, value };
   }
   if (c.key === 'relay') {
     if (machines?.relay?.address == null) return null;
