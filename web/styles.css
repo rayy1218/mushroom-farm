@@ -756,8 +756,8 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
 .sim-item .sim-status { text-align: right; color: var(--ink-2); }
 .sim-item[data-status="failed"] .sim-status { color: var(--critical-text); }
 /* Simulate fits the screen (critique 2026-10-28): the step scrolls, Cancel, Back and Next stay in a footer at its foot */
-.sim-dialog { max-height: calc(100dvh - max(16px, 6vh) - 16px); }
-.sim-dialog .actions { position: sticky; bottom: 0; z-index: 1; margin: 16px -24px -24px; padding: 12px 24px 16px; background: var(--surface); border-top: 1px solid var(--border); }
+.sim-dialog { max-height: calc(100dvh - max(16px, 6vh) - 16px); padding-bottom: 0; } /* the footer holds the bottom padding: a sticky one stops at the padding */
+.sim-dialog .actions { position: sticky; bottom: 0; z-index: 1; margin: 16px -24px 0; padding: 12px 24px 20px; background: var(--surface); border-top: 1px solid var(--border); }
 .sim-dialog #sim-title:focus { outline: none; } /* it takes the focus on each step; a field would pop up a phone's keyboard */
 @media (max-width: 600px) { .sim-dialog .sizes.two > .field:has(.sim-ac) { grid-column: 1 / -1; } }
 /* the intake filter of step 1, folded while it holds the room's own values */
@@ -772,6 +772,7 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
 .sim-fold-note { color: var(--muted); font-weight: 400; }
 /* step 3's Change for this run: the time limit and the aircon drop as fields, the humidifier and outdoor air as checkboxes */
 .sim-run-control { margin-bottom: 12px; }
+.sim-run-control .sizes.two { align-items: end; } /* a label on two lines keeps the inputs level */
 .sim-switches { margin-top: 12px; }
 .sim-check { display: flex; align-items: center; gap: 10px; min-height: 36px; }
 .sim-check input { width: 18px; height: 18px; margin: 0; flex: none; }

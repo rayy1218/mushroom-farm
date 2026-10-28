@@ -17,7 +17,7 @@ test('the heading takes the focus on opening and on every step, never the first 
 });
 
 test('the dialog fits the screen and its buttons stay in a footer that does not scroll away', () => {
-  assert.match(css, /\.sim-dialog \{[^}]*max-height: calc\(100dvh - max\(16px, 6vh\) - 16px\);/);
+  assert.match(css, /\.sim-dialog \{[^}]*max-height: calc\(100dvh - max\(16px, 6vh\) - 16px\); padding-bottom: 0;/);
   assert.match(css, /\.sim-dialog \.actions \{[^}]*position: sticky; bottom: 0;/);
 });
 
