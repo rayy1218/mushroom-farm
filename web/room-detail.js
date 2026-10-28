@@ -81,6 +81,11 @@ const TEMPLATE = `
     <div class="room-main">
       <section data-alarms hidden></section>
       <div class="now" data-panel="now">
+        <section class="card now-bare" data-bare hidden>
+          <h2>Nothing wired yet</h2>
+          <p>Give the room's T/RH probe, CO₂ sensor and relay module their addresses on the Setup tab. The readings, the drawing and the machines show here once they answer.</p>
+          <button type="button" class="primary" data-bare-setup>Set up the equipment</button>
+        </section>
         <div class="now-main">
           <div data-readings></div>
           <section data-picture></section>
@@ -214,6 +219,8 @@ export function mount(container, { id, tab = 'now' }) {
     profileHost: q('[data-profile]'),
     deleteHost: q('[data-delete]'),
     equipmentHost: q('[data-equipment]'),
+    bare: q('[data-bare]'),
+    nowMain: q('.now-main'),
   };
   const alive = () => me === mountSeq;
 
@@ -436,6 +443,11 @@ export function mount(container, { id, tab = 'now' }) {
   function render(machineData, token, controlData, controlToken, alarmData) {
     renderHead();
     els.body.hidden = false;
+    // A room with nothing wired: one empty state and the way to wire it, not cards of dashes (critique 2026-10-28).
+    const bare = [room.trhAddress, room.co2Address, room.relayAddress, room.acAddress].every((a) => a == null);
+    els.bare.hidden = !bare;
+    els.nowMain.hidden = bare;
+    els.machineListHost.hidden = bare; // the side keeps the alarms and the crop
     if (!built) {
       makeAlarms();
       makeMachines();
@@ -486,7 +498,7 @@ export function mount(container, { id, tab = 'now' }) {
       if (bandKey !== shownBandKey) { shownBandKey = bandKey; cropCard?.bandsChanged(); }
       const painted = control.update(controlData, controlToken ?? control.token());
       els.controlHost.hidden = false;
-      els.modeHost.hidden = false;
+      els.modeHost.hidden = room.relayAddress == null && room.acAddress == null; // Auto | Manual only with something to switch
       if (painted) {
         machines.setAuto(controlData.auto); // a stale refresh must not relock the card
         lastControl = controlData;
@@ -664,6 +676,7 @@ export function mount(container, { id, tab = 'now' }) {
   }
 
   els.retry.addEventListener('click', load);
+  container.querySelector('[data-bare-setup]').addEventListener('click', () => editEquipment('trhAddress'));
 
   // The Setup tab's section links: scroll there without changing the address (a hash would leave the room page).
   container.querySelector('.setup-nav').addEventListener('click', (event) => {

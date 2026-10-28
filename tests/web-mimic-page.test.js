@@ -25,7 +25,7 @@ test('the room page uses the room cards: the readings, the picture, the machines
   assert.match(room, /import \{ roomCard, filterFrom, freshAirLine, blocksLine, cropFacts, traceOf, hourPoints, traceScale \} from '\.\/room-card-math\.js';/);
   assert.match(room, /import \{ startLoop \} from '\.\/mimic\.js';/);
   assert.doesNotMatch(room, /createMimic/, 'the card makes the picture');
-  assert.match(room, /<div class="now" data-panel="now">\n\s*<div class="now-main">\n\s*<div data-readings><\/div>\n\s*<section data-picture><\/section>/);
+  assert.match(room, /<div class="now" data-panel="now">\n[\s\S]*?<div class="now-main">\n\s*<div data-readings><\/div>\n\s*<section data-picture><\/section>/);
   assert.match(room, /roomCardUi\.paint\(roomCard\(\{ draw, control: lastControl, filter, crop: cropData, now, trends \}\), draw, traces, switches\)/);
   assert.match(room, /const p = \{ T: pts\('trh', 't'\)[\s\S]*T: trace\('T', p\.T, c\?\.tLow, c\?\.tHigh\)/, 'the traces: the last hour against the band');
   assert.match(room, /traceOf\(p, low, high, \{ scale: traceScale\(key, low, high\) \}\)/, 'on each reading\'s fixed scale');
@@ -94,4 +94,13 @@ test('the modules import in Node (no DOM needed at load time)', async () => {
   assert.equal(mimic.sizeFor, undefined, 'one layout: sizeFor is gone');
   const card = await import('../web/room-card.js');
   assert.equal(typeof card.createRoomCard, 'function');
+});
+
+// Critique 2026-10-28: an unwired room was three cards of dashes, a drawing saying "No data" and Manual with nothing to switch.
+test('a room with nothing wired: one empty state with the way to wire it; Auto | Manual only with something to switch', () => {
+  const room = source('../web/room-detail.js');
+  assert.match(room, /<section class="card now-bare" data-bare hidden>\n\s*<h2>Nothing wired yet<\/h2>/);
+  assert.match(room, /const bare = \[room\.trhAddress, room\.co2Address, room\.relayAddress, room\.acAddress\]\.every\(\(a\) => a == null\);/);
+  assert.match(room, /els\.modeHost\.hidden = room\.relayAddress == null && room\.acAddress == null;/);
+  assert.match(room, /\[data-bare-setup\]'\)\.addEventListener\('click', \(\) => editEquipment\('trhAddress'\)\)/);
 });
