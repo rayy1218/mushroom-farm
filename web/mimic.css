@@ -1,28 +1,28 @@
-/* The room picture (web/mimic.js): flat shapes, one colour per thing (no gradients, shadows or hatching). Its colours are set
+/* The room picture (web/mimic.js; colours from the redesign 2026-10-28: neutral slate, blue for running): flat shapes, one colour per thing (no gradients, shadows or hatching). Its colours are set
    here per theme, on the host, so the farm page and the device page look the same and a card can paint the ground around it.
    Texts use the page's --ink and --muted. */
 .mimic-host {
-  --m-sky: #1b2c3d; --m-night: #0d1522; --m-ground: #262320;
-  --m-steel: #2f6164; --m-rib: #24494c; --m-inside: #262b30; --m-floor: #15181b;
+  --m-sky: #172029; --m-night: #0d1218; --m-ground: #1b1e23;
+  --m-steel: #3a4350; --m-rib: #2c333d; --m-inside: #1e2329; --m-floor: #14171b;
   --m-unit: #eef1f4; --m-unit-2: #c9d0d7; --m-unit-ink: #3a4148; --m-unit-edge: transparent;
   --m-rack: #8a939c; --m-bag: #d9c8a5; --m-cap: #fffaf0;
   --m-ac: #3987e5; --m-hu: #2b9fd0; --m-dh: #8b6fe0; --m-light: #ffd27a;
-  --m-run: #2fd0b5; --m-cool: #6ec3ff; --m-warm: #ff9a5a; --m-mist: #cfeeff; --m-sun: #f7c95c; --m-moon: #e6ebf3;
-  --m-warn: #fab219; --m-good: #0ca30c; --m-serious: #f08a24; --m-critical: #ff8a8a;
+  --m-run: #4d8dff; --m-cool: #6ec3ff; --m-warm: #ff9a5a; --m-mist: #cfeeff; --m-sun: #f7c95c; --m-moon: #e6ebf3;
+  --m-warn: #f2bd4b; --m-good: #3fcf85; --m-serious: #f08a24; --m-critical: #ff8085;
   --m-sky-ink: var(--ink); --m-sky-muted: var(--muted); --m-sky-run: var(--m-run);
   min-width: 0; width: 100%;
 }
 :root[data-theme="light"] .mimic-host {
-  --m-sky: #d6ebf7; --m-night: #3a4863; --m-ground: #d3c8b5;
-  --m-steel: #4f8a8c; --m-rib: #3f7476; --m-inside: #f2f4f6; --m-floor: #c9cfd5;
+  --m-sky: #e6edf5; --m-night: #33405a; --m-ground: #dde1e7;
+  --m-steel: #8592a3; --m-rib: #707d90; --m-inside: #f7f8fa; --m-floor: #d5dae1;
   --m-unit: #ffffff; --m-unit-2: #dfe4e9; --m-unit-ink: #3a4148; --m-unit-edge: #b9c1c9;
   --m-rack: #6f7983; --m-bag: #e3d3b0; --m-cap: #ffffff;
   --m-ac: #2a78d6; --m-hu: #1f8fc0; --m-dh: #6b4fc0; --m-light: #f2a91c;
-  --m-run: #0f8a76; --m-cool: #2f8fe0; --m-warm: #f07a32; --m-mist: #8ccff5; --m-sun: #f2b632; --m-moon: #f3f5f9;
-  --m-warn: #c98500; --m-good: #006300; --m-serious: #9a4a00; --m-critical: #b02a2a;
+  --m-run: #2563eb; --m-cool: #2f8fe0; --m-warm: #f07a32; --m-mist: #8ccff5; --m-sun: #f2b632; --m-moon: #f3f5f9;
+  --m-warn: #a35a00; --m-good: #15803d; --m-serious: #9a4a00; --m-critical: #b91c1c;
 }
 /* the light theme's night sky is dark: the words on it turn light */
-:root[data-theme="light"] .mimic-svg.night { --m-sky-ink: #f1f3f4; --m-sky-muted: #c3c8cd; --m-sky-run: #2fd0b5; }
+:root[data-theme="light"] .mimic-svg.night { --m-sky-ink: #f1f3f4; --m-sky-muted: #c3c8cd; --m-sky-run: #7fb0ff; }
 
 .mimic-svg { display: block; width: 100%; height: auto; }
 .mimic-svg text { font-family: inherit; fill: var(--ink); }

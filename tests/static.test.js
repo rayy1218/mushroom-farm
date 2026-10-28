@@ -18,6 +18,7 @@ before(async () => {
   writeFileSync(join(dir, 'app.js'), 'export {};');
   writeFileSync(join(dir, 'styles.css'), 'body {}');
   writeFileSync(join(dir, 'notes.txt'), 'secret');
+  writeFileSync(join(dir, 'inter.woff2'), 'wOF2');
   mkdirSync(join(dir, 'sub'));
   writeFileSync(join(dir, 'sub', 'x.js'), 'export {};');
   db = openDb(':memory:');
@@ -60,6 +61,12 @@ test('app.js and styles.css are served with their types', async () => {
   const css = await get('/styles.css');
   assert.equal(css.status, 200);
   assert.equal(css.type, 'text/css; charset=utf-8');
+});
+
+test('the page font (inter.woff2) is served as font/woff2, so the app needs no internet for its type', async () => {
+  const res = await get('/inter.woff2');
+  assert.equal(res.status, 200);
+  assert.equal(res.type, 'font/woff2');
 });
 
 test('HEAD gets headers without a body', async () => {

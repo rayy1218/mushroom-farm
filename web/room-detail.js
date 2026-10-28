@@ -1,11 +1,10 @@
-// Room detail page: a side bar of tabs (a row on a phone; the address names the tab: #/rooms/7, #/rooms/7/charts, ...) and,
-// beside it, the alarms on every tab, then the tab's panel: Overview (the Room
-// card: the room picture, the readings against their bands, the machines in air-path order), Charts (three charts of the last
-// 50 polls, the T and RH charts with the outdoor line, and the machine timeline), Climate (automatic control and the
-// machines), Crop, Sensors (the room's two sensors, the energy meter if it has one, the intake filter), Energy (the energy and
-// water card), Simulations, Room profile (the name and size, Delete room) and Equipment (a card per sensor and machine with its
-// settings; specs 2026-10-26-room-profile-equipment-design.md and 2026-10-27-equipment-cards-design.md). Every tab is loaded
-// and kept up to date; a tab change only shows and hides panels.
+// Room detail page (redesign 2026-10-28, brief .impeccable/surfaces/web-room-detail-js.md): the room's name with a switch to
+// the other rooms, five tabs under it (the address names the tab: #/rooms/7, #/rooms/7/history, ...) and the tab's panel:
+// Now (the readings first, the alarms, Auto | Manual, the crop, the room picture, the machines in air-path order and the
+// switches), History (the charts, electricity and water, the machine timeline, the energy and water card), Crop,
+// Simulations and Setup (the bands and automatic control, the sensors and the intake filter, the equipment cards, the room's
+// name and size and Delete room). The alarms sit in the Now tab's side column, above the panel on the other tabs. Every tab
+// is loaded and kept up to date; a tab change only shows and hides panels.
 // Refreshes every reading interval (2–30 s; 5 s when the settings cannot be read) while shown.
 
 import { request, OFFLINE } from './api.js';
@@ -23,7 +22,7 @@ import { closeSimulateDialog } from './simulate-dialog.js';
 import { startLoop } from './mimic.js';
 import { fromRoom } from './mimic-math.js';
 import { createRoomCard } from './room-card.js';
-import { roomCard, filterFrom, freshAirLine, blocksLine, cropFacts } from './room-card-math.js';
+import { roomCard, filterFrom, freshAirLine, blocksLine, cropFacts, traceOf } from './room-card-math.js';
 import { drawLineChart } from './chart.js';
 import { refreshMs } from './settings-math.js';
 import { live } from './live.js';
@@ -61,12 +60,13 @@ const CHARTS = [
 ];
 
 const TEMPLATE = `
-  <a class="back" href="#/rooms">← Rooms</a>
-  <div class="page-head">
+  <div class="page-head room-head">
     <div class="page-titles">
+      <a class="back" href="#/rooms">Rooms</a>
       <h1 class="page-title" tabindex="-1" data-title>Room</h1>
       <p class="page-sub" data-sub>Loading…</p>
     </div>
+    <label class="room-switch" data-switch-box hidden><span>Room</span><select data-switch></select></label>
   </div>
   <div class="banner" role="alert" hidden>
     <span data-banner-text></span>
@@ -77,64 +77,63 @@ const TEMPLATE = `
     <a href="#/rooms">Back to the rooms</a>
   </div>
   <div data-body hidden>
-    <div class="room-layout">
-      <nav class="room-tabs" data-tabs aria-label="Room sections"></nav>
-      <div class="room-main">
-        <section data-alarms hidden></section>
-        <div data-panel="overview">
-          <section data-room-card></section>
-        </div>
-        <div data-panel="charts" hidden>
-          <div data-range></div>
-          <div class="charts" data-charts></div>
-          <section class="card chart-card usage-charts" data-usage-charts></section>
-          <section class="card chart-card usage-charts" data-exchange hidden></section>
-          <section class="card timeline-card" data-timeline hidden>
-            <h2>Machine timeline</h2>
-            <div class="chart-host" data-timeline-host></div>
-            <p class="legend"><span class="swatch swatch-auto" aria-hidden="true"></span>Automatic <span class="swatch swatch-manual" aria-hidden="true"></span>Manual</p>
-          </section>
-        </div>
-        <div data-panel="climate" hidden>
-          <section data-control hidden></section>
+    <nav class="room-tabs" data-tabs aria-label="Room sections"></nav>
+    <div class="room-main">
+      <section data-alarms hidden></section>
+      <div class="now" data-panel="now">
+        <div class="now-main">
+          <div data-readings></div>
+          <section data-picture></section>
           <section data-machines></section>
         </div>
-        <div data-panel="crop" hidden>
-          <section data-crop></section>
+        <div class="now-side" data-now-side>
+          <section data-mode hidden></section>
+          <section data-machine-list></section>
+          <a data-crop-sum></a>
         </div>
-        <div data-panel="sensors" hidden>
+      </div>
+      <div data-panel="history" hidden>
+        <div data-range></div>
+        <div class="charts" data-charts></div>
+        <section class="card chart-card usage-charts" data-usage-charts></section>
+        <section class="card chart-card usage-charts" data-exchange hidden></section>
+        <section class="card timeline-card" data-timeline hidden>
+          <h2>Machine timeline</h2>
+          <div class="chart-host" data-timeline-host></div>
+          <p class="legend"><span class="swatch swatch-auto" aria-hidden="true"></span>Automatic <span class="swatch swatch-manual" aria-hidden="true"></span>Manual</p>
+        </section>
+        <section data-usage></section>
+      </div>
+      <div data-panel="crop" hidden>
+        <section data-crop></section>
+      </div>
+      <div data-panel="simulations" hidden>
+        <section data-simulations></section>
+      </div>
+      <div class="setup" data-panel="setup" hidden>
+        <nav class="setup-nav" aria-label="Setup sections">
+          <a href="#setup-control" data-jump>Bands and control</a><a href="#setup-sensors" data-jump>Sensors</a><a href="#setup-equipment" data-jump>Equipment</a><a href="#setup-room" data-jump>Room</a>
+        </nav>
+        <div class="setup-part" id="setup-control" tabindex="-1">
+          <section data-control hidden></section>
+        </div>
+        <div class="setup-part" id="setup-sensors" tabindex="-1">
+          <h2 class="part-title">Sensors</h2>
           <div class="sensors" data-sensors></div>
           <section data-filter hidden></section>
         </div>
-        <div data-panel="energy" hidden>
-          <section data-usage></section>
+        <div class="setup-part" id="setup-equipment" tabindex="-1">
+          <h2 class="part-title">Equipment</h2>
+          <div class="equipment" data-equipment></div>
         </div>
-        <div data-panel="simulations" hidden>
-          <section data-simulations></section>
-        </div>
-        <div data-panel="profile" hidden>
+        <div class="setup-part" id="setup-room" tabindex="-1">
+          <h2 class="part-title">Room</h2>
           <form class="room-form" data-profile novalidate></form>
           <section class="card room-delete" data-delete></section>
-        </div>
-        <div data-panel="equipment" hidden>
-          <div class="equipment" data-equipment></div>
         </div>
       </div>
     </div>
   </div>`;
-
-// The tabs' icons (inner SVG, 24 × 24, drawn in strokes).
-const TAB_ICONS = {
-  overview: '<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>',
-  charts: '<path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 6-7"/>',
-  climate: '<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
-  crop: '<path d="M4 12a8 7 0 0116 0z"/><path d="M10 12v6a2 2 0 004 0v-6"/>',
-  sensors: '<path d="M10 14V5a2 2 0 014 0v9a4 4 0 11-4 0z"/><path d="M12 14v-4"/>',
-  energy: '<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>',
-  simulations: '<path d="M9 3h6M10 3v6l-5 9a2 2 0 002 3h10a2 2 0 002-3l-5-9V3"/><path d="M7.5 15h9"/>',
-  profile: '<path d="M3 17L17 3l4 4L7 21z"/><path d="M7 13l2 2M10 10l2 2M13 7l2 2"/>',
-  equipment: '<rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/>',
-};
 
 let mountSeq = 0; // every mount gets a token; a reply that finds the token changed is dropped
 
@@ -149,7 +148,7 @@ function plural(n, one, many) {
   return `${n} ${n === 1 ? one : many}`;
 }
 
-export function mount(container, { id, tab = 'overview' }) {
+export function mount(container, { id, tab = 'now' }) {
   const me = ++mountSeq;
   container.innerHTML = TEMPLATE;
   const q = (sel) => container.querySelector(sel);
@@ -157,16 +156,19 @@ export function mount(container, { id, tab = 'overview' }) {
   let pendingField = null; // a "Set address" button's field, to put the cursor in once the Equipment tab shows
   let equipmentTab = null; // the Equipment tab's cards, made on the first render
 
-  // The tab bar: a link per tab with its icon (the router calls setTab when the address changes); the current one marked.
+  // The tab bar: a link per tab (the router calls setTab when the address changes); the current one marked.
   const tabBar = q('[data-tabs]');
   for (const t of ROOM_TABS) {
     const a = document.createElement('a');
     a.href = roomHash(id, t.key);
     a.dataset.tab = t.key;
-    a.innerHTML = `<svg class="ico" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${TAB_ICONS[t.key]}</svg>`;
     a.append(text('span', '', t.label));
     tabBar.append(a);
   }
+  // The alarms: in the Now tab's side column, above the panel on the other tabs.
+  const alarmsNode = q('[data-alarms]');
+  const nowSide = q('[data-now-side]');
+  const main = q('.room-main');
   function setTab(next) {
     tab = next;
     for (const a of tabBar.children) {
@@ -176,7 +178,9 @@ export function mount(container, { id, tab = 'overview' }) {
       } else a.removeAttribute('aria-current');
     }
     for (const panel of container.querySelectorAll('[data-panel]')) panel.hidden = panel.dataset.panel !== tab;
-    if (tab === 'equipment' && pendingField) {
+    if (tab === 'now') { if (alarmsNode.parentNode !== nowSide) nowSide.prepend(alarmsNode); }
+    else if (alarmsNode.parentNode !== main) main.prepend(alarmsNode);
+    if (tab === 'setup' && pendingField) {
       equipmentTab?.focus(pendingField);
       pendingField = null;
     }
@@ -193,7 +197,13 @@ export function mount(container, { id, tab = 'overview' }) {
     sensors: q('[data-sensors]'),
     filterHost: q('[data-filter]'),
     alarmsHost: q('[data-alarms]'),
-    roomCardHost: q('[data-room-card]'),
+    readingsHost: q('[data-readings]'),
+    pictureHost: q('[data-picture]'),
+    machineListHost: q('[data-machine-list]'),
+    cropSumHost: q('[data-crop-sum]'),
+    modeHost: q('[data-mode]'),
+    switchBox: q('[data-switch-box]'),
+    switchSelect: q('[data-switch]'),
     cropHost: q('[data-crop]'),
     controlHost: q('[data-control]'),
     machinesHost: q('[data-machines]'),
@@ -513,7 +523,8 @@ export function mount(container, { id, tab = 'overview' }) {
       makeAlarms();
       makeMachines();
       makeControl();
-      roomCardUi = createRoomCard(els.roomCardHost, { idPrefix: 'room-', cropHref: roomHash(id, 'crop') });
+      roomCardUi = createRoomCard({ readings: els.readingsHost, picture: els.pictureHost, machines: els.machineListHost, crop: els.cropSumHost },
+        { idPrefix: 'room-', cropHref: roomHash(id, 'crop') });
       buildCharts();
       usageSection = createUsageSection(els.usageCharts, { onCursor: moveCursor });
       exchangeSection = createExchangeSection(els.exchange, { roomId: id });
@@ -558,6 +569,7 @@ export function mount(container, { id, tab = 'overview' }) {
       bands = controlData;
       const painted = control.update(controlData, controlToken ?? control.token());
       els.controlHost.hidden = false;
+      els.modeHost.hidden = false;
       if (painted) {
         machines.setAuto(controlData.auto); // a stale refresh must not relock the card
         lastControl = controlData;
@@ -579,7 +591,13 @@ export function mount(container, { id, tab = 'overview' }) {
       ...fromRoom({ room, sensors, machines: lastMachines, control: lastControl, outdoor, filterPa: filter ? filter.pa : null, now }),
       blocks: blocksLine(cropData?.crops, cropFacts(cropData)?.short),
     };
-    roomCardUi.paint(roomCard({ draw, control: lastControl, filter, crop: cropData, now }), draw);
+    const c = lastControl;
+    const traces = { // the reading cards' traces: the recent polls against the band
+      T: traceOf(chartPoints(sensors.trh, 't'), c?.tLow, c?.tHigh),
+      RH: traceOf(chartPoints(sensors.trh, 'rh'), c?.rhLow, c?.rhHigh),
+      CO2: traceOf(chartPoints(sensors.co2, 'co2'), c?.co2Low, c?.co2High),
+    };
+    roomCardUi.paint(roomCard({ draw, control: lastControl, filter, crop: cropData, now }), draw, traces);
   }
 
   // The outdoor line of the Live charts: the history of the last hour, asked at most once a minute and only when a sensor
@@ -663,6 +681,7 @@ export function mount(container, { id, tab = 'overview' }) {
   function makeControl() {
     control = createControl(els.controlHost, {
       roomId: id,
+      modeHost: els.modeHost,
       getRoom: () => room,
       cropHref: roomHash(id, 'crop'),
       onChange: (data) => {
@@ -695,7 +714,7 @@ export function mount(container, { id, tab = 'overview' }) {
   // "Set address" on a sensor or machine without one: the Equipment tab, the cursor in that field.
   function editEquipment(field) {
     pendingField = field;
-    location.hash = roomHash(id, 'equipment');
+    location.hash = roomHash(id, 'setup');
   }
 
   els.sensors.addEventListener('click', (event) => {
@@ -703,6 +722,29 @@ export function mount(container, { id, tab = 'overview' }) {
     if (b) editEquipment(b.dataset.field);
   });
   els.retry.addEventListener('click', load);
+
+  // The Setup tab's section links: scroll there without changing the address (a hash would leave the room page).
+  container.querySelector('.setup-nav').addEventListener('click', (event) => {
+    const a = event.target.closest('a[data-jump]');
+    if (!a) return;
+    event.preventDefault();
+    const part = container.querySelector(a.getAttribute('href'));
+    part?.scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+    part?.focus({ preventScroll: true });
+  });
+
+  // The switch to another room: the same tab of that room. The list is read once; a failure leaves the switch hidden.
+  request('GET', '/api/rooms').then((list) => {
+    if (!alive() || !Array.isArray(list) || list.length < 2) return;
+    els.switchSelect.replaceChildren(...list.map((r) => {
+      const o = text('option', '', r.name);
+      o.value = String(r.id);
+      o.selected = r.id === id;
+      return o;
+    }));
+    els.switchBox.hidden = false;
+  }).catch(() => {});
+  els.switchSelect.addEventListener('change', () => { location.hash = roomHash(Number(els.switchSelect.value), tab); });
 
   // Live updates: the room's events ask for the data again (a minute's timer is the fallback while the stream is up).
   const reload = createThrottle(() => { if (alive()) load(); }); // at most one load in 2 s

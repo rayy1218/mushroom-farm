@@ -1,4 +1,4 @@
-// The room picture, shared by the farm's room page and the device app's simulated rooms: a teal container cut open on the
+// The room picture, shared by the farm's room page and the device app's simulated rooms: a container cut open on the
 // ground under the sky, its machines as white units with one accent colour each, two racks of blocks and the air path from
 // the intake to the exhaust (spec 2026-10-26-room-picture-design.md section 2; the look of docs/mockups/room-overview-minimal-colour.html).
 //   createMimic(host, { idPrefix, readouts }) → { paint(drawState), tick(dtSeconds), destroy() }
@@ -108,7 +108,7 @@ export function createMimic(host, opts = {}) {
   h.outT = textNode(outdoor, 70, 59, 'm-big');
   h.outRH = textNode(outdoor, 70, 75, 'm-small');
 
-  // the container: a teal shell cut open, ribs on the roof edge, the room inside and its floor
+  // the container: a steel shell cut open, ribs on the roof edge, the room inside and its floor
   S('rect', { class: 'steel', x: 150, y: 112, width: 540, height: 222, rx: 6 }, svg);
   const ribs = S('g', { class: 'ribs' }, svg);
   for (let i = 0; i < 26; i++) S('line', { x1: 164 + i * 20, y1: 114, x2: 164 + i * 20, y2: 124 }, ribs);

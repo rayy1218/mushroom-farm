@@ -19,18 +19,19 @@ test('the farm serves the room page, the Room card, the picture and its styleshe
   }
 });
 
-test('the room page uses the Room card: the picture inside it, the card\'s words, on the Overview tab', () => {
+test('the room page uses the room cards: the readings, the picture, the machines and the crop, on the Now tab', () => {
   const room = source('../web/room-detail.js');
   assert.match(room, /import \{ createRoomCard \} from '\.\/room-card\.js';/);
-  assert.match(room, /import \{ roomCard, filterFrom, freshAirLine, blocksLine, cropFacts \} from '\.\/room-card-math\.js';/);
+  assert.match(room, /import \{ roomCard, filterFrom, freshAirLine, blocksLine, cropFacts, traceOf \} from '\.\/room-card-math\.js';/);
   assert.match(room, /import \{ startLoop \} from '\.\/mimic\.js';/);
   assert.doesNotMatch(room, /createMimic/, 'the card makes the picture');
-  assert.match(room, /<div data-panel="overview">\n\s*<section data-room-card><\/section>\n\s*<\/div>/); // the sensor cards: the Sensors tab
-  assert.match(room, /roomCardUi\.paint\(roomCard\(\{ draw, control: lastControl, filter, crop: cropData, now \}\), draw\)/);
+  assert.match(room, /<div class="now" data-panel="now">\n\s*<div class="now-main">\n\s*<div data-readings><\/div>\n\s*<section data-picture><\/section>/);
+  assert.match(room, /roomCardUi\.paint\(roomCard\(\{ draw, control: lastControl, filter, crop: cropData, now \}\), draw, traces\)/);
+  assert.match(room, /T: traceOf\(chartPoints\(sensors\.trh, 't'\), c\?\.tLow, c\?\.tHigh\)/, 'the traces: the recent polls against the band');
   assert.match(room, /startLoop\(\(\) => \(roomCardUi \? \[roomCardUi\.mimic\] : \[\]\)\)/);
   assert.match(room, /roomCardUi\?\.destroy\(\);/);
   assert.match(room, /onData: \(data\) => \{[^}]*if \(!alive\(\)\) return;\s*cropData = data \?\? null;\s*control\?\.setCrop\(cropData\);\s*paintDrawing\(\);\s*\}/);
-  assert.match(room, /createRoomCard\(els\.roomCardHost, \{ idPrefix: 'room-', cropHref: roomHash\(id, 'crop'\) \}\)/);
+  assert.match(room, /createRoomCard\(\{ readings: els\.readingsHost, picture: els\.pictureHost, machines: els\.machineListHost, crop: els\.cropSumHost \},\n\s*\{ idPrefix: 'room-', cropHref: roomHash\(id, 'crop'\) \}\)/);
   const card = source('../web/room-card.js');
   assert.match(card, /import \{ createMimic \} from '\.\/mimic\.js';/);
   assert.match(card, /createMimic\(pic, \{ idPrefix \}\)/);
@@ -48,17 +49,16 @@ test('the Room card\'s filter is worked out on a load, with the replies of that 
   assert.match(room, /onCommand: \(data\) => \{ if \(!alive\(\)\) return; lastMachines = data; paintDrawing\(\); \}/);
 });
 
-test('narrow pictures hide every small text; the card\'s layout by its width; no motion for those who asked for less', () => {
+test('narrow pictures hide every small text; the reading cards stack on a phone', () => {
   const js = source('../web/mimic.js');
   const css = source('../web/mimic.css');
   const page = source('../web/styles.css');
   assert.match(js, /const NARROW_BELOW = 640;/);
   for (const re of [/S\('g', \{ class: 'on-sky small' \}, svg\)/, /'m-ac small'/, /'m-blocks small'/, /\{ class: 'readout small' \}/]) assert.match(js, re);
   assert.match(css, /\.mimic-narrow \.mimic-svg \.tag, \.mimic-narrow \.mimic-svg \.small \{ display: none; \}/);
-  assert.match(page, /\.rc-top \{ display: grid; grid-template-columns: minmax\(0, 1fr\) minmax\(230px, 280px\); gap: 14px; align-items: start; \}/);
-  assert.match(page, /@container \(max-width: 1099px\) \{\n  \.rc-top \{ grid-template-columns: minmax\(0, 1fr\); \}\n  \.rc-tiles \{ grid-template-columns: repeat\(3, minmax\(0, 1fr\)\); \}/);
-  assert.match(page, /@media \(prefers-reduced-motion: reduce\) \{ \.rt-mark \{ transition: none; \} \}/);
-  assert.doesNotMatch(page.slice(page.indexOf('/* ---- Room card')), /background: var\(--m-ground\)/, 'no ground fill below the picture');
+  assert.match(page, /\.rd-row \{ display: grid; grid-template-columns: repeat\(3, minmax\(0, 1fr\)\); gap: 16px; \}/);
+  assert.match(page, /@media \(max-width: 760px\) \{\n  \.rd-row \{ grid-template-columns: minmax\(0, 1fr\); gap: 12px; \}/);
+  assert.doesNotMatch(page.slice(page.indexOf('/* ---- The room page (redesign')), /background: var\(--m-ground\)/, 'no ground fill below the picture');
 });
 
 test('the device app draws its simulated rooms with the readings inside the picture', () => {

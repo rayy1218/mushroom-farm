@@ -12,28 +12,35 @@ test('#/rooms is the Rooms list', () => {
   assert.deepEqual(parseRoute('#/rooms'), { name: 'list' });
 });
 
-test('a room id means the detail page, on its Overview tab', () => {
-  assert.deepEqual(parseRoute('#/rooms/7'), { name: 'detail', id: 7, tab: 'overview' });
-  assert.deepEqual(parseRoute('#/rooms/123/'), { name: 'detail', id: 123, tab: 'overview' });
+test('a room id means the detail page, on its Now tab', () => {
+  assert.deepEqual(parseRoute('#/rooms/7'), { name: 'detail', id: 7, tab: 'now' });
+  assert.deepEqual(parseRoute('#/rooms/123/'), { name: 'detail', id: 123, tab: 'now' });
 });
 
-test('a room page tab is part of the address; an unknown tab means the Overview page', () => {
-  assert.deepEqual(ROOM_TABS.map((t) => t.key), ['overview', 'charts', 'climate', 'crop', 'sensors', 'energy', 'simulations', 'profile', 'equipment']);
-  assert.deepEqual(ROOM_TABS.map((t) => t.label), ['Overview', 'Charts', 'Climate', 'Crop', 'Sensors', 'Energy', 'Simulations', 'Room profile', 'Equipment']);
-  for (const tab of ['charts', 'climate', 'crop', 'sensors', 'energy', 'simulations', 'profile', 'equipment']) {
+test('five room tabs (redesign 2026-10-28: Now, History, Crop, Simulations, Setup); a tab is part of the address', () => {
+  assert.deepEqual(ROOM_TABS.map((t) => t.key), ['now', 'history', 'crop', 'simulations', 'setup']);
+  assert.deepEqual(ROOM_TABS.map((t) => t.label), ['Now', 'History', 'Crop', 'Simulations', 'Setup']);
+  for (const tab of ['history', 'crop', 'simulations', 'setup']) {
     assert.deepEqual(parseRoute(`#/rooms/7/${tab}`), { name: 'detail', id: 7, tab });
     assert.deepEqual(parseRoute(`#/rooms/7/${tab}/`), { name: 'detail', id: 7, tab });
     assert.equal(isCanonical(`#/rooms/7/${tab}`), true);
     assert.equal(isCanonical(`#/rooms/7/${tab}/`), false);
   }
-  assert.deepEqual(parseRoute('#/rooms/7/overview'), { name: 'overview' }, 'the Overview tab has no name in the address');
   assert.deepEqual(parseRoute('#/rooms/7/alarms'), { name: 'overview' });
   assert.equal(roomHash(7), '#/rooms/7');
-  assert.equal(roomHash(7, 'overview'), '#/rooms/7');
-  assert.equal(roomHash(7, 'charts'), '#/rooms/7/charts');
+  assert.equal(roomHash(7, 'now'), '#/rooms/7');
+  assert.equal(roomHash(7, 'history'), '#/rooms/7/history');
   assert.equal(roomHash(7, 'nonsense'), '#/rooms/7');
-  assert.equal(roomHash(7, 'profile'), '#/rooms/7/profile');
-  assert.equal(roomHash(7, 'equipment'), '#/rooms/7/equipment');
+  assert.equal(roomHash(7, 'setup'), '#/rooms/7/setup');
+});
+
+test("the old nine tabs' addresses (bookmarks, links) open the tab that holds them now, and are tidied to it", () => {
+  const OLD = { overview: 'now', charts: 'history', energy: 'history', climate: 'setup', sensors: 'setup', profile: 'setup', equipment: 'setup' };
+  for (const [old, tab] of Object.entries(OLD)) {
+    assert.deepEqual(parseRoute(`#/rooms/7/${old}`), { name: 'detail', id: 7, tab }, old);
+    assert.equal(isCanonical(`#/rooms/7/${old}`), false, `${old} is tidied`);
+    assert.equal(roomHash(7, old), roomHash(7, tab), `roomHash(${old})`);
+  }
 });
 
 test('canonical hashes are left alone, others are tidied', () => {

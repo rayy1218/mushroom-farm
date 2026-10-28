@@ -1,9 +1,14 @@
-// The Room card of the room page (spec 2026-10-26-room-picture-design.md section 3): the room picture (mimic.js) beside three
-// reading tiles with band bars and the fresh-air line, the machines as tiles in the order the air meets them, and a line with
-// the outdoor air and the filter. The words come from room-card-math.js (pure, tested); this file only builds and fills nodes.
-//   createRoomCard(host, { idPrefix }) → { mimic, paint(card, drawState), setFresh(text), destroy() }
+// The Now tab's room cards (redesign 2026-10-28; spec 2026-10-26-room-picture-design.md section 3 for the words): three
+// reading cards (the value, the status, the band and a trace of the recent readings with the band shaded), the room picture
+// (mimic.js) with the fresh-air line and the outdoor and filter line, the machines in the order the air meets them, and the
+// crop with the day of its stage. The words come from room-card-math.js (pure, tested); this file only builds and fills nodes.
+//   createRoomCard({ readings, picture, machines, crop }, { idPrefix, cropHref })
+//     → { mimic, paint(card, drawState, traces), setFresh(text), destroy() }
+//   traces: { T, RH, CO2 } → traceOf() of each reading (or null).
 
 import { createMimic } from './mimic.js';
+
+const SVG = 'http://www.w3.org/2000/svg';
 
 function el(tag, className, content) {
   const node = document.createElement(tag);
@@ -12,8 +17,14 @@ function el(tag, className, content) {
   return node;
 }
 
+function svg(tag, attrs = {}, parent) {
+  const node = document.createElementNS(SVG, tag);
+  for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+  parent?.append(node);
+  return node;
+}
+
 const put = (node, text) => { if (node.textContent !== text) node.textContent = text; };
-const pct = (share) => `${(share * 100).toFixed(2)}%`;
 
 // Parts of a line: the even ones plain, the odd ones bold.
 function lineNode(parts) {
@@ -22,88 +33,91 @@ function lineNode(parts) {
   return span;
 }
 
-export function createRoomCard(host, { idPrefix = 'room-', cropHref = '' } = {}) {
-  host.classList.add('card', 'room-card');
-  const note = el('small', 'rc-note');
-  const head = el('h2', 'rc-head');
-  head.append(el('span', '', 'Room'), note);
-  // The crop facts, a link to the Crop tab: Growing, Stage, In this stage, Normally, Next (a label, a value, a line under it).
-  const stage = el('a', 'rc-crop');
-  if (cropHref) stage.href = cropHref;
-  stage.setAttribute('aria-label', 'Crop and stage (open the Crop tab)');
-  stage.hidden = true;
-  const pic = el('div', 'mimic-host rc-pic');
-  pic.dataset.mimicHost = '';
-  const tilesBox = el('div', 'rc-tiles');
-  const fresh = el('p', 'rc-fresh');
-  const side = el('div', 'rc-side');
-  side.append(tilesBox, fresh);
-  const top = el('div', 'rc-top');
-  top.append(pic, side);
-  const mhead = el('div', 'rc-mhead');
-  mhead.append(el('b', '', 'Machines'), el('span', '', 'in the order the air meets them: in → treated → out'));
-  const grid = el('div', 'rc-mgrid');
-  const strip = el('p', 'rc-strip');
-  host.replaceChildren(head, stage, top, mhead, grid, strip);
-  const mimic = createMimic(pic, { idPrefix });
+// A card's head: its title at the left, a quiet note at the right.
+function cardHead(title, note) {
+  const head = el('div', 'card-head');
+  head.append(el('h2', '', title), note);
+  return head;
+}
 
-  // The three reading tiles, made once so the mark can slide to a new reading.
-  const tiles = [0, 1, 2].map(() => {
-    const t = { node: el('div', 'rt-tile'), name: el('span'), chip: el('span', 'rt-chip'), num: el('span'), unit: el('small') };
-    const lab = el('div', 'rt-lab');
-    lab.append(t.name, t.chip);
-    const val = el('div', 'rt-val');
+const SERIES = { T: 'var(--s-t)', RH: 'var(--s-rh)', CO2: 'var(--s-co2)' };
+
+export function createRoomCard(hosts, { idPrefix = 'room-', cropHref = '' } = {}) {
+  // ---- the three reading cards ----
+  hosts.readings.classList.add('rd-row');
+  const tiles = ['T', 'RH', 'CO2'].map((key) => {
+    const t = { key, node: el('section', 'card rd'), name: el('h2', 'rd-name'), chip: el('span', 'rd-chip'), num: el('span', 'rd-num'),
+      unit: el('span', 'rd-unit'), band: el('p', 'rd-band'), span: el('span', 'rd-span') };
+    t.node.dataset.key = key;
+    const head = el('div', 'rd-head');
+    head.append(t.name, t.chip);
+    const val = el('p', 'rd-val');
     val.append(t.num, t.unit);
-    t.bar = el('div', 'rt-bar');
-    t.bar.setAttribute('role', 'img');
-    t.zone = el('div', 'rt-zone');
-    t.mark = el('div', 'rt-mark');
-    t.lims = [el('span', 'rt-lim'), el('span', 'rt-lim')];
-    t.bar.append(el('div', 'rt-track'), t.zone, t.mark, ...t.lims);
-    t.node.append(lab, val, t.bar);
-    tilesBox.append(t.node);
+    t.trace = el('div', 'rd-trace');
+    t.trace.setAttribute('role', 'img');
+    t.svg = svg('svg', { viewBox: '0 0 100 32', preserveAspectRatio: 'none', 'aria-hidden': 'true' });
+    t.zone = svg('rect', { class: 'rd-zone', x: 0, width: 100, fill: SERIES[key] }, t.svg);
+    t.path = svg('path', { class: 'rd-line', fill: 'none', stroke: SERIES[key], 'vector-effect': 'non-scaling-stroke' }, t.svg);
+    t.trace.append(t.svg, t.span);
+    t.node.append(head, val, t.band, t.trace);
+    hosts.readings.append(t.node);
     return t;
   });
 
-  function paintTile(t, x) {
+  function paintTile(t, x, trace) {
     put(t.name, x.name);
     put(t.chip, x.chip.text);
     t.chip.dataset.lvl = x.chip.lvl;
     put(t.num, x.value);
     put(t.unit, x.unit);
+    put(t.band, x.band);
+    t.band.hidden = !x.band;
     t.node.dataset.edge = x.edge;
-    t.bar.setAttribute('aria-label', x.label);
-    const { zone, mark, limits } = x.bar;
-    t.zone.hidden = !zone;
-    if (zone) { t.zone.style.left = pct(zone.from); t.zone.style.width = pct(zone.to - zone.from); }
-    t.mark.hidden = mark === null;
-    if (mark !== null) t.mark.style.left = pct(mark);
-    t.lims.forEach((node, i) => {
-      node.hidden = !limits[i];
-      if (limits[i]) { put(node, limits[i].text); node.style.left = pct(limits[i].at); }
-    });
+    t.trace.setAttribute('aria-label', x.label);
+    t.trace.hidden = !trace;
+    if (!trace) return;
+    t.path.setAttribute('d', trace.line);
+    t.zone.style.display = trace.band ? '' : 'none';
+    if (trace.band) { t.zone.setAttribute('y', trace.band.y); t.zone.setAttribute('height', Math.max(0, trace.band.h)); }
+    put(t.span, trace.span);
   }
 
-  // The machine tiles, made again only when the machines change (a dehumidifier or lights fitted or taken out).
+  // ---- the room picture ----
+  const note = el('span', 'card-note');
+  hosts.picture.classList.add('card', 'pic-card');
+  const pic = el('div', 'mimic-host rc-pic');
+  pic.dataset.mimicHost = '';
+  const fresh = el('p', 'rc-fresh');
+  const strip = el('p', 'rc-strip');
+  hosts.picture.replaceChildren(cardHead('Room', note), pic, fresh, strip);
+  hosts.picture.style.containerType = 'inline-size';
+  const mimic = createMimic(pic, { idPrefix });
+
+  // ---- the machines, in the order the air meets them ----
+  hosts.machines.classList.add('card', 'mc-card');
+  const list = el('ul', 'mc-list');
+  hosts.machines.replaceChildren(cardHead('Machines', el('span', 'card-note', 'In the order the air meets them')), list);
   let shownKeys = '';
   let machineNodes = [];
-  function paintMachines(list) {
-    const keys = list.map((m) => m.key).join();
-    if (keys !== shownKeys) {
+  function paintMachines(rows) {
+    const keys = rows.map((m) => m.key).join();
+    if (keys !== shownKeys) { // made again only when the machines change (a dehumidifier or lights fitted or taken out)
       shownKeys = keys;
-      machineNodes = list.map((m) => {
-        const n = { node: el('div', 'mt-tile'), pill: el('span', 'mt-pill'), effect: el('div', 'mt-eff'), detail: el('div', 'mt-d') };
-        const name = el('div', 'mt-n');
-        name.append(el('span', '', m.name), n.pill);
-        n.node.append(el('span', 'mt-step', String(m.step)), name, n.effect, n.detail);
+      machineNodes = rows.map((m) => {
+        const n = { node: el('li', 'mc-row'), pill: el('span', 'pill'), effect: el('span', 'mc-eff'), detail: el('span', 'mc-d') };
+        n.node.dataset.key = m.key;
+        const text = el('div', 'mc-text');
+        const line = el('div', 'mc-sub');
+        line.append(n.effect, n.detail);
+        text.append(el('span', 'mc-name', m.name), line);
+        n.node.append(el('span', 'mc-step', String(m.step)), text, n.pill);
         return n;
       });
-      grid.replaceChildren(...machineNodes.map((n) => n.node));
-      grid.style.setProperty('--mt-n', String(list.length)); // one row on a desktop: five to seven, by what the room has
+      list.replaceChildren(...machineNodes.map((n) => n.node));
     }
-    list.forEach((m, i) => {
+    rows.forEach((m, i) => {
       const n = machineNodes[i];
-      n.node.classList.toggle('on', m.on && m.pill.tone === 'on');
+      n.node.dataset.tone = m.pill.tone;
       put(n.pill, m.pill.text);
       n.pill.dataset.tone = m.pill.tone;
       put(n.effect, m.effect);
@@ -112,31 +126,52 @@ export function createRoomCard(host, { idPrefix = 'room-', cropHref = '' } = {})
     });
   }
 
+  // ---- the crop and its stage (a link to the Crop tab) ----
+  const crop = { stage: el('span', 'pill'), name: el('p', 'cs-name'), sub: el('p', 'cs-sub'), bar: el('div', 'cs-bar'),
+    fill: el('div', 'cs-fill'), day: el('span', 'cs-day'), next: el('span', 'cs-next'), empty: el('p', 'cs-empty', 'No crop set. Add one on the Crop tab.') };
+  crop.stage.dataset.tone = 'good';
+  hosts.crop.classList.add('card', 'crop-sum');
+  crop.bar.append(crop.fill);
+  const foot = el('div', 'cs-foot');
+  foot.append(crop.day, crop.next);
+  const link = el('a', 'cs-link', 'Open the Crop tab');
+  if (cropHref) link.href = cropHref;
+  hosts.crop.replaceChildren(cardHead('Crop', crop.stage), crop.name, crop.sub, crop.bar, foot, crop.empty, link);
+
+  function paintCrop(s) {
+    for (const node of [crop.stage, crop.name, crop.sub, crop.bar, foot]) node.hidden = !s;
+    crop.empty.hidden = Boolean(s);
+    if (!s) return;
+    put(crop.stage, s.stage);
+    put(crop.name, s.name);
+    put(crop.sub, s.sub);
+    crop.bar.hidden = s.share === null;
+    crop.fill.style.width = `${Math.round((s.share ?? 0) * 100)}%`;
+    put(crop.day, s.day);
+    put(crop.next, s.next);
+  }
+
   return {
     mimic,
-    // card: roomCard() of room-card-math.js; draw: the DrawState of the picture.
-    paint(card, draw) {
+    // card: roomCard() of room-card-math.js; draw: the DrawState of the picture; traces: traceOf() per reading.
+    paint(card, draw, traces = {}) {
       mimic.paint(draw);
       put(note, card.note);
-      stage.hidden = !card.crop;
-      if (card.crop) {
-        stage.replaceChildren(...card.crop.items.map((x) => {
-          const item = el('div', 'rc-fact');
-          item.append(el('small', '', x.label), el('b', '', x.value), el('span', '', x.sub));
-          return item;
-        }));
-      }
-      card.tiles.forEach((x, i) => paintTile(tiles[i], x));
+      card.tiles.forEach((x, i) => paintTile(tiles[i], x, traces[x.key] ?? null));
       put(fresh, card.fresh);
       fresh.hidden = !card.fresh;
       paintMachines(card.machines);
       strip.replaceChildren(...card.bottom.map(lineNode));
+      paintCrop(card.summary);
     },
     // The fresh-air line between refreshes (its minutes count down).
     setFresh(text) {
       put(fresh, text);
       fresh.hidden = !text;
     },
-    destroy() { mimic.destroy(); host.replaceChildren(); },
+    destroy() {
+      mimic.destroy();
+      for (const host of Object.values(hosts)) host.replaceChildren();
+    },
   };
 }

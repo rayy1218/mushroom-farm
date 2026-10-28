@@ -1,6 +1,7 @@
-// The Automatic control card on the room page: the Auto switch, the three bands, the air exchange state and the reasons.
-// createControl(host, { roomId, onOffline, onGone, onChange, getRoom, cropHref }) → { update(data, token) → painted, token(),
-// setCrop(crop), destroy() }. setCrop: the crop program (GET /api/rooms/:id/crop) for the Lighting group's line of today.
+// The Automatic control card on the room page: the Auto | Manual switch, the three bands, the air exchange state and the reasons.
+// createControl(host, { roomId, onOffline, onGone, onChange, getRoom, cropHref, modeHost }) → { update(data, token) → painted,
+// token(), setCrop(crop), destroy() }. modeHost: the Now tab's Control card, which then holds the Auto | Manual switch (redesign
+// 2026-10-28: the switch where the machines are, the bands on the Setup tab). setCrop: the crop program (GET /api/rooms/:id/crop) for the Lighting group's line of today.
 // Controls are updated in place, so a refresh never replaces an input the person is using or has edited.
 
 import { request, OFFLINE } from './api.js';
@@ -41,7 +42,7 @@ function errorText(err) {
   return err.status === 0 ? `${OFFLINE}. Try again.` : err.message;
 }
 
-export function createControl(host, { roomId, onOffline, onGone, onChange, getRoom, cropHref }) {
+export function createControl(host, { roomId, onOffline, onGone, onChange, getRoom, cropHref, modeHost = null }) {
   let alive = true;
   let version = 0; // bumped by every command, so a refresh that began earlier is dropped
   let inflight = 0;
@@ -57,15 +58,22 @@ export function createControl(host, { roomId, onOffline, onGone, onChange, getRo
   host.className = 'card control';
   host.append(el('h2', '', 'Automatic control'));
 
-  // ---- Auto switch ----
-  const autoRow = el('div', 'c-auto');
-  const autoName = el('span', 'm-name', 'Auto');
-  const autoBtn = button('', 'toggle');
-  const autoState = el('span', 'toggle-state');
-  autoState.setAttribute('aria-hidden', 'true');
-  autoBtn.append(el('span', 'sr-only', 'Auto (automatic control)'), autoState);
-  autoRow.append(autoName, autoBtn);
+  // ---- Auto | Manual: two buttons, the current one pressed, and a line saying what the mode means ----
+  const autoRow = el('div', 'seg');
+  autoRow.setAttribute('role', 'group');
+  autoRow.setAttribute('aria-label', 'Control mode');
+  const autoBtn = button('Auto', 'seg-btn');
+  const manualBtn = button('Manual', 'seg-btn');
+  autoRow.append(autoBtn, manualBtn);
+  const modeLine = el('p', 'mode-line');
+  modeLine.setAttribute('aria-live', 'polite');
   const autoErr = errorNode();
+  if (modeHost) {
+    modeHost.className = 'card mode-card';
+    const head = el('div', 'card-head');
+    head.append(el('h2', '', 'Control'), autoRow);
+    modeHost.append(head, modeLine, autoErr);
+  }
 
   // ---- bands ----
   const form = el('div', 'c-bands');
@@ -223,7 +231,8 @@ export function createControl(host, { roomId, onOffline, onGone, onChange, getRo
   form.dataset.group = 'outdoor';
   form.prepend(el('h3', 'c-group-title', 'Outdoor air'));
 
-  host.append(autoRow, autoErr, ...groups, form, sendRow, saveErr, stateNode, checkList);
+  if (modeHost) host.append(...groups, form, sendRow, saveErr, stateNode, checkList);
+  else host.append(autoRow, modeLine, autoErr, ...groups, form, sendRow, saveErr, stateNode, checkList);
 
   // ---- drawing ----
 
@@ -308,10 +317,13 @@ export function createControl(host, { roomId, onOffline, onGone, onChange, getRo
 
   function paintAuto() {
     const on = Boolean(last?.auto);
-    autoState.textContent = switching ? 'Sending…' : on ? 'On' : 'Off';
-    autoBtn.dataset.on = String(on);
     autoBtn.setAttribute('aria-pressed', String(on));
+    manualBtn.setAttribute('aria-pressed', String(!on));
     autoBtn.disabled = switching;
+    manualBtn.disabled = switching;
+    const every = Number(last?.exchangeEveryMin) > 0 ? ` · fresh air every ${last.exchangeEveryMin} min` : '';
+    modeLine.textContent = switching ? 'Sending…' : !last ? ''
+      : on ? `The farm runs the machines from the bands${every}.` : 'Manual: the machines stay as you set them until you switch back to Auto.';
   }
 
   function paintHumidifier() {
@@ -376,7 +388,7 @@ export function createControl(host, { roomId, onOffline, onGone, onChange, getRo
 
   async function toggleAuto() {
     if (switching || !last) return;
-    const hadFocus = document.activeElement === autoBtn;
+    const hadFocus = document.activeElement === autoBtn ? autoBtn : document.activeElement === manualBtn ? manualBtn : null;
     switching = true;
     paintAuto();
     showError(autoErr, '');
@@ -395,7 +407,7 @@ export function createControl(host, { roomId, onOffline, onGone, onChange, getRo
       switching = false;
       if (alive) {
         paintAuto();
-        if (hadFocus && !document.activeElement?.closest?.('dialog')) autoBtn.focus();
+        if (hadFocus && !document.activeElement?.closest?.('dialog')) hadFocus.focus();
       }
     }
   }
@@ -531,7 +543,8 @@ export function createControl(host, { roomId, onOffline, onGone, onChange, getRo
     }
   }
 
-  autoBtn.addEventListener('click', toggleAuto);
+  autoBtn.addEventListener('click', () => { if (last && !last.auto) toggleAuto(); });
+  manualBtn.addEventListener('click', () => { if (last?.auto) toggleAuto(); });
   humBtn.addEventListener('click', toggleHumidifier);
   fanSelect.addEventListener('change', changeFan);
   save.addEventListener('click', saveBands);
@@ -556,6 +569,6 @@ export function createControl(host, { roomId, onOffline, onGone, onChange, getRo
       crop = data ?? null;
       if (alive) paintLight();
     },
-    destroy() { alive = false; host.replaceChildren(); },
+    destroy() { alive = false; host.replaceChildren(); modeHost?.replaceChildren(); },
   };
 }

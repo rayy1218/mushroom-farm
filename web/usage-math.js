@@ -208,7 +208,7 @@ export function breakdownNote(days, { dehumidifier = false, lights = false } = {
 export function roomLines(usage) {
   return (Array.isArray(usage?.rooms) ? usage.rooms : []).map((r) => ({
     id: r.id,
-    href: roomHash(r.id, 'energy'),
+    href: roomHash(r.id, 'history'),
     name: r.name,
     today: `${formatKWh(r.today?.kWh)} · ${formatRM(r.today?.cost)}`,
     last30: `${formatKWh(r.last30?.kWh)} · ${formatRM(r.last30?.cost)}`,

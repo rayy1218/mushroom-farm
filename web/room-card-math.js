@@ -6,7 +6,7 @@ import { view } from './mimic-math.js';
 import { exchangeLine } from './control-math.js';
 import { filterCard, intakeRunning, lastRunningOf } from './filter-math.js';
 import { CROPS, STAGES } from './crops.js';
-import { hasCrops } from './crop-math.js';
+import { hasCrops, stageDay } from './crop-math.js';
 import { formatDateTime } from './simulation-math.js';
 import { lightShort } from './light-math.js';
 
@@ -68,12 +68,56 @@ export function readingTiles(draw, control) {
     const shown = value === null ? DASH : r.text(value);
     return {
       key: r.key, name: r.name, value: shown, unit: r.unit,
+      band: low !== null && high !== null ? `Band ${limit(low, r.key)}–${limit(high, r.key)} ${r.unit}` : '',
       chip: { lvl: st.lvl || 'none', text: `${st.icon ? `${st.icon} ` : ''}${st.text || ''}` },
       edge: EDGE[st.lvl] ?? 'none',
       bar: bandBar(r.key, value, low, high, r.safety ? num(control?.[r.safety]) : null),
       label: value === null ? `${r.name} no data` : `${r.name} ${shown} ${r.unit}${low !== null && high !== null ? `, band ${limit(low, r.key)} to ${limit(high, r.key)}` : ''}`,
     };
   });
+}
+
+// ---------------- the reading cards' trace (redesign 2026-10-28) ----------------
+
+const r2 = (x) => Number(x.toFixed(2));
+
+// How long the recent readings span: "Last 15 s", "Last 4 min", "Last 2 h".
+function spanText(ms) {
+  if (ms < 60_000) return `Last ${Math.round(ms / 1000)} s`;
+  if (ms < 3_600_000) return `Last ${Math.round(ms / 60_000)} min`;
+  return `Last ${Math.round(ms / 3_600_000)} h`;
+}
+
+// The small trace on a reading card: the recent readings ([{ at, value }], value null for a failed poll) as an SVG path in a
+// w × h box over the time they span, zoomed to the readings and the band (15 % air above and below), the band as a shaded
+// strip. → { line, band: { y, h } | null, span } or null with fewer than two readings.
+export function traceOf(points, low, high, { w = 100, h = 32 } = {}) {
+  const list = (points ?? []).filter((p) => p && Number.isFinite(p.at));
+  const values = list.map((p) => num(p.value)).filter((v) => v !== null);
+  if (values.length < 2) return null;
+  const hasBand = num(low) !== null && num(high) !== null;
+  let lo = Math.min(...values, ...(hasBand ? [low] : []));
+  let hi = Math.max(...values, ...(hasBand ? [high] : []));
+  const pad = hi > lo ? (hi - lo) * 0.15 : 0.5;
+  lo -= pad;
+  hi += pad;
+  const t0 = list[0].at;
+  const t1 = list[list.length - 1].at;
+  const x = (at) => r2(t1 > t0 ? ((at - t0) / (t1 - t0)) * w : 0);
+  const y = (v) => r2(h - ((v - lo) / (hi - lo)) * h);
+  let line = '';
+  let pen = false;
+  for (const p of list) {
+    const v = num(p.value);
+    if (v === null) { pen = false; continue; }
+    line += `${pen ? 'L' : 'M'}${x(p.at)} ${y(v)}`;
+    pen = true;
+  }
+  return {
+    line,
+    band: hasBand ? { y: y(high), h: r2(y(low) - y(high)) } : null,
+    span: spanText(t1 - t0),
+  };
 }
 
 // ---------------- the header note and the fresh-air line ----------------
@@ -226,10 +270,30 @@ export function cropFacts(crop, now = Date.now()) {
   };
 }
 
+// The Now tab's Crop card: { name, stage, sub: '950 blocks · flush 1 of 4', day: 'Day 2 of 7', share (of the stage's length,
+// null without one), next, done } or null without crops or a stage. The day is stageDay's, as on the Crop tab.
+export function cropSummary(crop, now = Date.now()) {
+  const facts = cropFacts(crop, now);
+  if (!facts) return null;
+  const [growing, stage] = facts.items;
+  const d = stageDay(crop, now);
+  const nextStage = crop.nextStage;
+  let next = '';
+  if (crop.done) next = `Replace the blocks: flush ${crop.flushes} of ${crop.flushes} done`;
+  else if (nextStage) next = `Next: ${STAGES[nextStage.stage] ?? nextStage.stage} · ${num(nextStage.at) === null ? 'when you start it' : `about ${formatDateTime(nextStage.at)}`}`;
+  return {
+    name: growing.value, stage: stage.value, sub: [growing.sub, stage.sub].filter(Boolean).join(' · '),
+    day: d ? (d.length ? `Day ${d.day} of ${d.length}` : `Day ${d.day}`) : '',
+    share: d?.length ? d.day / d.length : null,
+    next, done: Boolean(crop.done),
+  };
+}
+
 export function roomCard({ draw = null, control = null, filter = null, crop = null, now = Date.now() } = {}) {
   return {
     note: controlNote(control),
     crop: cropFacts(crop, now),
+    summary: cropSummary(crop, now),
     tiles: readingTiles(draw, control),
     fresh: freshAirLine(control, now),
     machines: machineTiles(draw, control, filter, crop),

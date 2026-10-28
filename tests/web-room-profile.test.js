@@ -84,7 +84,7 @@ test('while saving the Save and Reset only look disabled, so the cursor stays on
   assert.match(edit, /if \(on\) b\.setAttribute\('aria-disabled', 'true'\);/);
   assert.match(edit, /reset\.addEventListener\('click', \(\) => \{\n\s*if \(saving\) return;/);
   assert.match(edit, /if \(saving \|\| !loaded\) return;/, 'a second submit while saving does nothing');
-  assert.match(src('styles.css'), /button:disabled, button\[aria-disabled="true"\] \{ opacity: 0\.6;/);
+  assert.match(src('styles.css'), /button:disabled, button\[aria-disabled="true"\] \{ opacity: 0\.55;/);
 });
 
 test('the Equipment tab: two sections of cards, one form per card with its own Save, its values over the newest room', () => {
@@ -125,9 +125,9 @@ test('Delete room: a danger button, the Rooms list\'s confirm, then the Rooms li
   assert.match(page, /createDeleteCard\(els\.deleteHost, \{ roomId: id, getRoom: \(\) => room, onGone: /);
 });
 
-test('"Set address" on a sensor or machine without one opens the Equipment tab at that field', () => {
-  assert.match(page, /pendingField = field;\n\s*location\.hash = roomHash\(id, 'equipment'\);/);
-  assert.match(page, /if \(tab === 'equipment' && pendingField\)/);
+test('"Set address" on a sensor or machine without one opens the Setup tab (where the equipment cards are) at that field', () => {
+  assert.match(page, /pendingField = field;\n\s*location\.hash = roomHash\(id, 'setup'\);/);
+  assert.match(page, /if \(tab === 'setup' && pendingField\)/);
   const machines = src('machines.js');
   assert.match(machines, /notWired\('No relay module address set', \(\) => onEdit\('relayAddress'\)\)/);
   assert.match(machines, /notWired\('No aircon gateway address set', \(\) => onEdit\('acAddress'\)\)/);

@@ -69,7 +69,7 @@ export function acFanOf(c) {
   return AC_FAN_OPTIONS.some((o) => o.value === c?.acFan) ? c.acFan : 'auto';
 }
 
-export const AUTO_NOTE = 'Automatic control is on';
+export const AUTO_NOTE = 'Automatic control is on: switch Control to Manual to set the machines by hand';
 
 function pad2(n) {
   return String(n).padStart(2, '0');

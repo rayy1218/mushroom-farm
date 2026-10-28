@@ -7,6 +7,7 @@ const TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
+  '.woff2': 'font/woff2', // the page font (web/inter.woff2), so the app needs no internet for its type
 };
 
 function notFound(res) {
@@ -17,7 +18,7 @@ function notFound(res) {
 export function createStatic(dir) {
   return async function serve(req, res, url) {
     const name = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
-    const ext = /^[a-z0-9-]+(\.[a-z]+)$/.exec(name)?.[1];
+    const ext = /^[a-z0-9-]+(\.[a-z0-9]+)$/.exec(name)?.[1];
     if ((req.method !== 'GET' && req.method !== 'HEAD') || !TYPES[ext]) return notFound(res);
     let data;
     try {

@@ -10,13 +10,21 @@ const pad2 = (n) => String(n).padStart(2, '0');
 
 export const hasCrops = (c) => Array.isArray(c?.crops) && c.crops.length > 0;
 
-// "since 20 Oct 10:42 · day 3 of 7 · flush 1 of 4": the day counts from the start of the stage and stops at its length once
-// the change is due; without automatic change there is no length. Spawn and pinning have no flush. '' without a start.
-export function stageLine(c, now = Date.now()) {
-  if (!hasCrops(c) || !Number.isFinite(c.stageSince)) return '';
+// The day of the stage, the one rule every tab uses: it counts from the start of the stage (day 1) and stops at the stage's
+// length once the change is due; without automatic change there is no length. → { day, length | null } or null without a start.
+export function stageDay(c, now = Date.now()) {
+  if (!hasCrops(c) || !Number.isFinite(c.stageSince)) return null;
   const day = Math.max(1, Math.floor((now - c.stageSince) / DAY_MS) + 1);
-  const length = c.days?.[c.stage];
-  const parts = [`since ${formatDateTime(c.stageSince)}`, c.autoAdvance && length ? `day ${Math.min(day, length)} of ${length}` : `day ${day}`];
+  const length = c.autoAdvance && c.days?.[c.stage] ? c.days[c.stage] : null;
+  return { day: length ? Math.min(day, length) : day, length };
+}
+const dayText = (d) => (d.length ? `day ${d.day} of ${d.length}` : `day ${d.day}`);
+
+// "since 20 Oct 10:42 · day 3 of 7 · flush 1 of 4" (the day: stageDay). Spawn and pinning have no flush. '' without a start.
+export function stageLine(c, now = Date.now()) {
+  const d = stageDay(c, now);
+  if (!d) return '';
+  const parts = [`since ${formatDateTime(c.stageSince)}`, dayText(d)];
   if (c.stage === 'fruiting' || c.stage === 'rest') parts.push(`flush ${c.flush} of ${c.flushes}`);
   return parts.join(' · ');
 }
@@ -156,11 +164,8 @@ export function stageMark(c, stage, now = Date.now()) {
   if (stage === c.stage) {
     if (c.done) return { kind: 'current', text: `Current · flush ${c.flushes} of ${c.flushes} done` };
     const parts = ['Current'];
-    if (Number.isFinite(c.stageSince)) {
-      const day = Math.max(1, Math.floor((now - c.stageSince) / DAY_MS) + 1);
-      const length = c.days?.[stage];
-      parts.push(c.autoAdvance && length ? `day ${Math.min(day, length)} of ${length}` : `day ${day}`);
-    }
+    const d = stageDay(c, now);
+    if (d) parts.push(dayText(d));
     if (hasFlush(stage)) parts.push(`flush ${c.flush} of ${c.flushes}`);
     return { kind: 'current', text: parts.join(' · ') };
   }

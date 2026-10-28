@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   scaleFor, bandBar, readingTiles, controlNote, freshAirLine, machineTiles, filterSummary, filterFrom, bottomLine, blocksLine, roomCard, cropFacts, stayed,
+  traceOf, cropSummary,
 } from '../web/room-card-math.js';
 import { formatDateTime } from '../web/simulation-math.js';
 import { fromRoom } from '../web/mimic-math.js';
@@ -66,6 +67,40 @@ test('readingTiles: name, value and unit, chip, edge and bar per reading', () =>
   assert.deepEqual([co2.name, co2.value, co2.unit, co2.chip.text, co2.edge], ['CO₂', '960', 'ppm', '▲ Above band', 'warn']);
   assert.equal(t.label, 'Temperature 21.5 °C, band 21 to 23');
   assert.deepEqual(t.bar.zone, { from: 6 / 15, to: 8 / 15 });
+});
+
+test('readingTiles: the band written out for the reading card ("Band 21–23 °C"), empty before the bands loaded', () => {
+  const [t, rh, co2] = readingTiles(draw(), control);
+  assert.equal(t.band, 'Band 21–23 °C');
+  assert.equal(rh.band, 'Band 90–95 % RH');
+  assert.equal(co2.band, 'Band 600–900 ppm');
+  assert.equal(readingTiles(draw(), null)[0].band, '');
+});
+
+// ---- the reading cards' trace of the recent readings (redesign 2026-10-28) ----
+
+test('traceOf: a line through the recent readings over the time they span, the band shaded, zoomed to the band and the values', () => {
+  const pts = [{ at: 0, value: 20 }, { at: 60_000, value: 21 }, { at: 120_000, value: 22 }];
+  const tr = traceOf(pts, 19, 21, { w: 100, h: 30 });
+  // range: 19..22 padded by 15 % of 3 (0.45) → 18.55..22.45; y = 30 − (v − 18.55) / 3.9 × 30
+  const y = (v) => Number((30 - ((v - 18.55) / 3.9) * 30).toFixed(2));
+  assert.equal(tr.line, `M0 ${y(20)}L50 ${y(21)}L100 ${y(22)}`);
+  assert.deepEqual(tr.band, { y: y(21), h: Number((y(19) - y(21)).toFixed(2)) });
+  assert.equal(tr.span, 'Last 2 min');
+});
+
+test('traceOf: a failed poll breaks the line; no band without one; nothing with fewer than two readings', () => {
+  const pts = [{ at: 0, value: 800 }, { at: 5_000, value: null }, { at: 10_000, value: 820 }, { at: 15_000, value: 840 }];
+  const tr = traceOf(pts, null, null, { w: 30, h: 10 });
+  assert.match(tr.line, /^M0 [\d.]+M20 [\d.]+L30 [\d.]+$/, 'a new M after the gap');
+  assert.equal(tr.band, null);
+  assert.equal(tr.span, 'Last 15 s');
+  assert.equal(traceOf([{ at: 0, value: 1 }], 0, 2), null);
+  assert.equal(traceOf([], 0, 2), null);
+  assert.equal(traceOf(undefined, 0, 2), null);
+  const flat = traceOf([{ at: 0, value: 5 }, { at: 3_600_000, value: 5 }], null, null, { w: 10, h: 10 });
+  assert.equal(flat.line, 'M0 5L10 5', 'a flat line sits in the middle');
+  assert.equal(flat.span, 'Last 1 h');
 });
 
 test('readingTiles: red edge at the safety level, grey without data; thousands grouped', () => {
@@ -270,4 +305,27 @@ test('the blocks under the picture carry the stage', () => {
   assert.equal(blocksLine([{ crop: 'lionsmane', blocks: 950 }], 'Fruiting'), "950 lion's mane blocks · Fruiting");
   assert.equal(blocksLine([{ crop: 'lionsmane', blocks: 950 }]), "950 lion's mane blocks");
   assert.equal(blocksLine([], 'Fruiting'), '');
+});
+
+test("cropSummary: the Now tab's Crop card (name, stage, blocks and flush, the day of the stage as on the Crop tab, what is next)", () => {
+  const now = Date.UTC(2026, 9, 27, 4);
+  const since = now - (30 * 3_600_000 + 20 * 60_000), next = now + 5 * 86_400_000;
+  const crop = { crops: [{ crop: 'lionsmane', blocks: 950 }], stage: 'fruiting', stageSince: since, flush: 1, flushes: 4,
+    days: { fruiting: 7, rest: 10 }, autoAdvance: true, done: false, ramp: null, nextStage: { stage: 'rest', flush: 1, at: next } };
+  assert.deepEqual(cropSummary(crop, now), {
+    name: "Lion's mane", stage: 'Fruiting', sub: '950 blocks · flush 1 of 4', day: 'Day 2 of 7', share: 2 / 7,
+    next: `Next: Rest between flushes · about ${formatDateTime(next)}`, done: false,
+  });
+  const manual = cropSummary({ ...crop, autoAdvance: false, nextStage: { stage: 'rest', flush: 1, at: null } }, now);
+  assert.equal(manual.day, 'Day 2', 'no length without automatic change, as the Crop tab');
+  assert.equal(manual.share, null);
+  assert.equal(manual.next, 'Next: Rest between flushes · when you start it');
+  const late = cropSummary({ ...crop, stageSince: now - 9 * 86_400_000 }, now);
+  assert.equal(late.day, 'Day 7 of 7', 'stops at the length once the change is due');
+  assert.equal(late.share, 1);
+  const done = cropSummary({ ...crop, stage: 'rest', flush: 4, done: true, nextStage: null }, now);
+  assert.equal(done.next, 'Replace the blocks: flush 4 of 4 done');
+  assert.equal(done.done, true);
+  assert.equal(cropSummary({ ...crop, crops: [] }, now), null);
+  assert.equal(cropSummary(null, now), null);
 });
