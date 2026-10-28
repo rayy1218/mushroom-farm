@@ -272,7 +272,9 @@ On screens up to 600 px the three smallest steps grow by 1 px (13, 14, 15) for r
 ### Named Rules
 **The Tabular Figures Rule.** Every number that can change or line up (readings, bands, kWh, RM, timestamps, table cells) sets `font-variant-numeric: tabular-nums`.
 
-**The Near-Edge Rule.** A reading in band but within 15 % of the band's width of an edge says so ("In band · near the top") in amber: it is coming, not here. Out of band is amber, a fault or the safety level red.
+**The Near-Edge Rule.** A reading in band but within 15 % of the band's width of an edge that hurts says so ("In band · near the top") in amber: it is coming, not here. Only the harmful side counts (web/band-math.js, the same on the Overview and the room page): temperature both edges; humidity the top, and the bottom only while falling ("near the bottom and falling"; the humidifier switches on there); CO₂ the top only (low is good). Out of band is amber, a fault or the safety level red.
+
+**The Units Rule.** Every number on screen carries its unit, the controller's reasons included ("CO₂ 744 ppm between 700 and 800 ppm"); thousands are grouped (1,000 ppm); a range of dates takes an en dash. An aircon is entered and shown in kW; its BTU/h class (the size shops sell) is a picker and a note in brackets, never the input's unit.
 
 **The By-Hand Rule.** A value a person set that differs from the program (a band changed on Setup) is shown in the accent text colour with the program's own value under it and a way back ("Back to stage values"): a choice, not a warning.
 
