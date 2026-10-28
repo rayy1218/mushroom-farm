@@ -78,8 +78,8 @@ export function openSimulateDialog(room, hooks = {}) {
 
   // ---- fields ----
 
-  // A labelled input with its error line; the input is registered under the server's field name.
-  function field(name, label, input) {
+  // A labelled input with its error line and, when given, a hint; the input is registered under the server's field name.
+  function field(name, label, input, hint) {
     const wrap = el('div', 'field');
     const id = `sim-${name.replace('.', '-')}`;
     input.id = id;
@@ -88,10 +88,16 @@ export function openSimulateDialog(room, hooks = {}) {
     err.id = `${id}-error`;
     err.dataset.error = name;
     err.setAttribute('aria-live', 'polite');
-    input.setAttribute('aria-describedby', err.id);
     const lab = el('label', '', label);
     lab.htmlFor = id;
-    wrap.append(lab, input, err);
+    wrap.append(lab, input);
+    if (hint) {
+      const h = el('p', 'c-hint', hint);
+      h.id = `${id}-hint`;
+      wrap.append(h);
+    }
+    wrap.append(err);
+    input.setAttribute('aria-describedby', hint ? `${id}-hint ${err.id}` : err.id);
     return wrap;
   }
 
@@ -196,7 +202,7 @@ export function openSimulateDialog(room, hooks = {}) {
     const filterGrid = el('div', 'sizes two');
     for (const f of PHYSICS_FIELDS) {
       const wrap = f.kw ? acField(f) : field(`physics.${f.key}`, `${f.label} (${f.unit})`,
-        numberInput(state.physics[f.key], (v) => { state.physics[f.key] = v; }, f.whole));
+        numberInput(state.physics[f.key], (v) => { state.physics[f.key] = v; }, f.whole), f.hint);
       if (FILTER_KEYS.includes(f.key)) filterGrid.append(wrap);
       else (['fanFlow', 'acBTU', 'humidifierLH', 'dehumidifierLday'].includes(f.key) ? machineGrid : weatherGrid).append(wrap);
     }

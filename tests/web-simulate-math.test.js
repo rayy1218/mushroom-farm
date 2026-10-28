@@ -188,7 +188,10 @@ test('the summary and the room line', () => {
   const line = (label, of = lines) => of.find((l) => l.label === label).text;
   assert.deepEqual(lines.map((l) => l.label), ['Room', 'Walls and weather', 'Machines', 'Control', 'Filter', 'Crops', 'Run']);
   assert.equal(line('Crops'), 'Grey oyster, 500 blocks; ready-to-fruit blocks, starting at fruiting');
-  assert.equal(line('Machines'), 'Fan 600 m³/h, aircon 3.5 kW (12,000 BTU/h class), humidifier 1.5 L/h, no dehumidifier');
+  // a number keeps its unit on its line (critique 2026-10-28: 'L/day' alone on a line)
+  assert.equal(line('Machines'), 'Fan 600\u00a0m³/h, aircon 3.5\u00a0kW (12,000\u00a0BTU/h class), humidifier 1.5\u00a0L/h, no dehumidifier');
+  const wet = initialState({ room: { ...room, dehumidifier: true, dehumidifierLday: 12, lights: true, lightsW: 40 } });
+  assert.match(line('Machines', summaryLines(wet, { ...room, lights: true, lightsW: 40 })), /, dehumidifier 12\u00a0L\/day, lights 40\u00a0W on the room's schedule$/);
   assert.equal(line('Walls and weather'), 'Walls 80 W/K, sun on the roof 300 W, outdoor 25–33 °C, dew point 24 °C');
   assert.equal(line('Run'), '7 days');
   s.daysMode = 'whole';
@@ -226,7 +229,7 @@ test('the dehumidifier input: 0 to 200 L/day, 0 is none; the room (when fitted) 
   assert.deepEqual(checkStep(1, s), {});
   assert.equal(buildBody(s).physics.dehumidifierLday, 20);
   assert.equal(stepOf('physics.dehumidifierLday'), 1);
-  assert.equal(summaryLines(s, room).find((l) => l.label === 'Machines').text, 'Fan 600 m³/h, aircon 3.5 kW (12,000 BTU/h class), humidifier 1.5 L/h, dehumidifier 20 L/day');
+  assert.equal(summaryLines(s, room).find((l) => l.label === 'Machines').text.replaceAll('\u00a0', ' '), 'Fan 600 m³/h, aircon 3.5 kW (12,000 BTU/h class), humidifier 1.5 L/h, dehumidifier 20 L/day');
 });
 
 // ---- suggest machines (spec 2026-10-22 section 7) ----

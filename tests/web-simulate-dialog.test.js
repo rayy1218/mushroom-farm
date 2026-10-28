@@ -58,3 +58,25 @@ test('Suggest machines is a page of its own (owner 2026-10-28): step 3 links to 
 test("the page's Use this opens Simulate on step 3 with the search's walls, weather and crops and the setup", () => {
   assert.match(dialog, /if \(hooks\.suggestion\) \{[^\n]*\n\s*applySuggestion\(state, hooks\.suggestion\.input, hooks\.suggestion\.candidate\);\s*step = 3;\s*\}/);
 });
+
+// ---- critique 2026-10-28, the smaller Simulate items ----
+
+test('step 3: the How long and Start from rows are 44 px tall', () => {
+  assert.match(css, /\.sim-choice \{[^}]*min-height: 44px;/);
+  assert.match(css, /\.sim-choice input\[type="radio"\] \{[^}]*width: 20px; height: 20px;/);
+});
+
+test('the step marks: the current one carries aria-current and an accent underline, not weight alone', () => {
+  assert.match(dialog, /if \(i \+ 1 === step\) li\.setAttribute\('aria-current', 'step'\);/);
+  assert.match(css, /\.sim-steps \[aria-current="step"\] \{[^}]*text-decoration: underline 2px var\(--accent\);/);
+});
+
+test("step 1: the wall heat transfer and the sun on the roof have hints with typical values", () => {
+  assert.match(dialog, /function field\(name, label, input, hint\) \{/);
+  assert.match(dialog, /field\(`physics\.\$\{f\.key\}`, `\$\{f\.label\} \(\$\{f\.unit\}\)`,\s*numberInput\(state\.physics\[f\.key\], \(v\) => \{ state\.physics\[f\.key\] = v; \}, f\.whole\), f\.hint\)/);
+});
+
+test('step 2: the crop rows share one grid, so Blocks sits over its input', () => {
+  assert.match(css, /\.sim-crops \{ display: grid; grid-template-columns: minmax\(0, 1fr\) 92px auto auto;/);
+  assert.match(css, /\.sim-crop-row \{ grid-column: 1 \/ -1; display: grid; grid-template-columns: subgrid;/);
+});

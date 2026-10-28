@@ -268,6 +268,9 @@ export function filterLine(v, sensor) {
   return `Clean ${v.filterCleanPa} Pa, change at ${v.filterFinalPa} Pa, fan maximum ${v.fanMaxPa} Pa, life ${days(v.filterLifeDays)}; ${days(v.filterUsedDays)} in use; ${when}`;
 }
 
+// A number keeps its unit on its line (critique 2026-10-28: step 3 left 'L/day' alone on a line): a no-break space before it.
+const keepUnits = (text) => text.replace(/ (?=(?:m³\/h|kW|BTU\/h|L\/h|L\/day|W)(?![\w/]))/g, '\u00a0');
+
 // The summary of step 3: [{ label, text }].
 export function summaryLines(state, room, cropData = null) {
   const v = Object.fromEntries(PHYSICS_FIELDS.map((f) => [f.key, state.physics[f.key]]));
@@ -276,7 +279,7 @@ export function summaryLines(state, room, cropData = null) {
   return [
     { label: 'Room', text: roomLine(room).replace('Room size ', 'Size ') },
     { label: 'Walls and weather', text: `Walls ${v.wallUA} W/K, sun on the roof ${v.sunW} W, outdoor ${v.outdoorLow}–${v.outdoorHigh} °C, dew point ${v.outdoorDew} °C` },
-    { label: 'Machines', text: `Fan ${v.fanFlow} m³/h, aircon ${acSize(Number(v.acBTU))}, humidifier ${v.humidifierLH} L/h, ${Number(v.dehumidifierLday) > 0 ? `dehumidifier ${v.dehumidifierLday} L/day` : 'no dehumidifier'}${room?.lights === true ? `, lights ${room.lightsW} W on the room's schedule` : ''}` },
+    { label: 'Machines', text: keepUnits(`Fan ${v.fanFlow} m³/h, aircon ${acSize(Number(v.acBTU))}, humidifier ${v.humidifierLH} L/h, ${Number(v.dehumidifierLday) > 0 ? `dehumidifier ${v.dehumidifierLday} L/day` : 'no dehumidifier'}${room?.lights === true ? `, lights ${room.lightsW} W on the room's schedule` : ''}`) },
     { label: 'Control', text: controlLine(state) },
     { label: 'Filter', text: filterLine(v, state.filterSensor === true) },
     { label: 'Crops', text: `${crops}; ${farmWords[state.farmType]}, starting at ${STAGES[state.stage].toLowerCase().replace(' between flushes', '')}` },
