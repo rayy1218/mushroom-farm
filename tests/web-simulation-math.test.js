@@ -118,9 +118,13 @@ test('the inputs in one line and the head', () => {
   const at = new Date(2026, 9, 20, 10, 42).getTime();
   assert.equal(headLine('Room 1'), 'Simulation of Room 1');
   assert.deepEqual(runRow({ id: 5, roomId: 3, createdAt: at, status: 'done', input: { days: 7 }, summary: { days: 7, inBand: { all: 81.26 }, energy: { kWh: 43.2 }, water: { litres: 120.4 } } }, 3),
-    { id: 5, href: '#/rooms/3/simulations/5', date: '20 Oct 10:42', days: '7 days', all: '81.3 %', kWh: '43.2 kWh', litres: '120 L', status: 'Done' });
+    { id: 5, href: '#/rooms/3/simulations/5', date: '20 Oct 10:42', days: '7 days', all: '81.3 %', tone: 'amber', kWh: '43.2 kWh', litres: '120 L', status: 'Done' });
+  // the time in band as a verdict (redesign 2026-10-28: a bad run must not look like a good one): 95 % and up good (the
+  // Suggest machines target), under 50 % bad, between them a warning; nothing before the run is done
+  const tone = (all) => runRow({ id: 5, createdAt: at, status: 'done', summary: { days: 7, inBand: { all } } }, 3).tone;
+  assert.deepEqual([tone(98.3), tone(95), tone(94.9), tone(50), tone(0.8), tone(undefined)], ['good', 'good', 'amber', 'amber', 'warn', 'none']);
   const running = runRow({ id: 6, createdAt: at, status: 'running', progress: 0.35, input: { days: 1 } }, 3);
-  assert.deepEqual([running.status, running.all, running.days, running.kWh], ['Running 35 %', '—', '1 day', '—']);
+  assert.deepEqual([running.status, running.all, running.days, running.kWh, running.tone], ['Running 35 %', '—', '1 day', '—', 'none']);
   assert.equal(runRow({ id: 7, createdAt: at, status: 'failed', error: 'x' }, 3).status, 'Failed');
   assert.equal(runRow({ id: 8, createdAt: at, status: 'queued' }, 3).status, 'Waiting');
 });

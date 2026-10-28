@@ -395,7 +395,7 @@ html { scroll-padding-top: var(--topbar-h); }
   padding: 8px 0; border-bottom: 1px solid var(--border); }
 .m-row:last-child { border-bottom: 0; }
 .m-name, .m-info, .run, .m-row .status { min-width: 0; overflow-wrap: anywhere; }
-.m-name { font-weight: 600; }
+.m-name { font-weight: 500; }
 .m-info, .run { color: var(--ink-2); font-size: var(--fs-sm); }
 .run { display: inline-flex; align-items: center; gap: 8px; }
 .run-dot { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--muted); flex: none; }
@@ -432,8 +432,9 @@ button.toggle[data-on="true"]:hover { background: var(--accent-hover); border-co
 .c-humidifier, .c-acfan { display: flex; align-items: center; gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--border); }
 .c-bands { display: grid; }
 /* The card's groups: CO₂, Temperature, Humidity, Air circulation (owner, 2026-10-26), each boxed with its title. */
-.c-group { border: 1px solid var(--border); border-radius: 8px; padding: 2px 14px 10px; margin: 12px 0; }
-.c-group-title { margin: 10px 0 2px; font-size: var(--fs-md); }
+.c-group { padding: 16px 0 4px; margin: 0; border-top: 1px solid var(--border); }
+.c-group:first-of-type { border-top: 0; padding-top: 4px; }
+.c-group-title { margin: 0 0 4px; font-size: var(--fs-md); font-weight: 600; }
 .c-group > .c-band:last-of-type, .c-group > .c-humidifier:last-of-type, .c-group > .c-acfan:last-of-type { border-bottom: 0; }
 .c-group .c-reasons:empty { display: none; }
 .c-light { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; padding: 8px 0 2px; }
@@ -442,7 +443,8 @@ button.toggle[data-on="true"]:hover { background: var(--accent-hover); border-co
 .c-band.c-outdoor { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 10px 0; }
 .c-band.c-outdoor .c-hint { flex-basis: 100%; margin: 0; }
 .c-acfan .ctl { flex: 0 0 auto; width: auto; min-width: 120px; }
-.c-band { display: grid; grid-template-columns: minmax(0, 200px) minmax(0, 120px) minmax(0, 120px); align-items: end; gap: 4px 16px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.c-band { display: grid; grid-template-columns: minmax(0, 240px) minmax(0, 120px) minmax(0, 120px); align-items: end; gap: 4px 12px; padding: 10px 0; border-bottom: 1px dashed var(--border); }
+.c-band .m-name, .c-humidifier .m-name, .c-acfan .m-name { font-weight: 500; color: var(--ink-2); }
 .c-band .m-name { align-self: center; }
 .c-hint { grid-column: 1 / -1; margin: 0; font-size: var(--fs-sm); color: var(--muted); max-width: 60ch; }
 .c-band .ctl[aria-invalid="true"] { border-color: var(--critical-text); }
@@ -499,15 +501,16 @@ button.toggle[data-on="true"]:hover { background: var(--accent-hover); border-co
   .al-body { grid-column: 1 / -1; }
 }
 
-.c-safety { grid-template-columns: minmax(0, 200px) minmax(0, 120px); }
+.c-safety { grid-template-columns: minmax(0, 240px) minmax(0, 120px); }
 .c-checks { margin: 8px 0 0; padding: 0; list-style: none; display: grid; gap: 2px; }
 .c-checks .warn { color: var(--critical-text); font-weight: 600; }
 .c-held { display: block; color: var(--warning-text); font-size: var(--fs-sm); }
 /* ---- History: chart range choice and machine timeline (Stream B) ---- */
-.range-bar { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
-.range-bar button { min-height: 36px; padding: 4px 14px; }
-.range-bar button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
-.range-bar button[aria-pressed="true"]:hover { background: var(--accent-hover); opacity: 1; }
+.range-bar { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 3px; margin: 0 0 16px; border-radius: 10px; background: var(--band); border: 1px solid var(--border); }
+.range-bar button { min-height: 30px; padding: 4px 12px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); font-variant-numeric: tabular-nums; }
+.range-bar button:hover { background: transparent; color: var(--ink); border: 0; }
+.range-bar button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px var(--shadow), 0 0 0 1px var(--border); }
+.range-bar button[aria-pressed="true"]:hover { background: var(--surface); }
 .timeline-card { margin-top: 12px; }
 .usage-charts { margin-top: 12px; }
 .usage-charts h3 { margin: 12px 0 6px; font-size: var(--fs-sm); font-weight: 600; color: var(--ink-2); }
@@ -575,7 +578,7 @@ button.toggle[data-on="true"]:hover { background: var(--accent-hover); border-co
 .us-card { margin-top: 12px; }
 .us-card h3 { margin: 0 0 8px; font-size: var(--fs-md); font-weight: 600; }
 .us-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 8px 0 12px; }
-.us-tile { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; min-width: 0; }
+.us-tile { padding: 2px 0 2px 14px; border-left: 1px solid var(--border-strong); min-width: 0; }
 .us-tile p { margin: 0; font-variant-numeric: tabular-nums; }
 .us-label { color: var(--ink-2); font-size: var(--fs-sm); }
 .us-kwh { font-size: var(--fs-xl); font-weight: 700; line-height: 1.25; }
@@ -652,26 +655,30 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
 .sim-card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
 .sim-card-head h2 { margin: 0; }
 .sim-list { margin: 0 0 8px; padding: 0; list-style: none; }
-.sim-item { display: grid; grid-template-columns: minmax(0, 1.2fr) auto auto minmax(0, 1.4fr) auto; gap: 4px 12px; padding: 8px 0; border-top: 1px solid var(--border); font-variant-numeric: tabular-nums; }
-.sim-item a { color: var(--ink); }
+.sim-item { display: grid; grid-template-columns: minmax(0, 1fr) 72px 150px minmax(0, 200px) 96px; align-items: center; gap: 4px 16px; padding: 12px 0; border-top: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+.sim-item a { color: var(--ink); font-weight: 500; }
+.sim-item .sim-all { justify-self: start; }
+.sim-item .sim-use { color: var(--ink-2); }
 .sim-item .sim-status { text-align: right; color: var(--ink-2); }
 .sim-item[data-status="failed"] .sim-status { color: var(--critical-text); }
 /* The Crop tab as a stage plan (spec 2026-10-26-crop-stage-plan-design.md): the head, one section per stage with its Targets
    table, the Stages list down the right (sticky), the Ramp and Automatic change row; one column on a card under 720 px. */
 .crop-card { container-type: inline-size; padding: 20px; }
+/* The Crop tab: the head and its parts on the page, each stage, the Stages list and the program a card of its own (one level). */
+.crop-card.card { background: none; border: 0; padding: 0; box-shadow: none; }
 .crop-check { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; }
 .cp-head { display: flex; justify-content: space-between; align-items: center; gap: 8px 16px; flex-wrap: wrap; }
 .cp-head-text { min-width: 0; }
 .crop-card .cp-title { margin: 0; font-size: var(--fs-xl); font-weight: 700; overflow-wrap: anywhere; }
 .crop-card .cp-title.muted { font-size: var(--fs-md); font-weight: 500; }
 .cp-farm { margin: 2px 0 0; color: var(--muted); font-size: var(--fs-sm); }
-.cp-editor { margin-top: 16px; padding: 14px 16px 2px; border: 1px solid var(--border); border-radius: 8px; background: var(--band); }
+.cp-editor { margin-top: 16px; padding: 18px 20px 6px; border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface); }
 .cp-editor .field select { max-width: 420px; }
 .cp-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 270px); grid-template-areas: "stages list" "program list";
   gap: 16px 24px; align-items: start; margin-top: 20px; }
 .cp-stages { grid-area: stages; display: grid; gap: 14px; min-width: 0; }
-.cp-stage { padding: 14px 16px 16px; border: 1px solid var(--border); border-radius: 8px; scroll-margin-top: calc(var(--topbar-h) + 16px); }
-.cp-stage[data-kind="current"] { border-color: var(--ink-2); box-shadow: inset 3px 0 0 var(--ink); }
+.cp-stage { padding: 18px 20px 20px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); scroll-margin-top: calc(var(--topbar-h) + 16px); }
+.cp-stage[data-kind="current"] { border-color: color-mix(in srgb, var(--accent) 60%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent); }
 .cp-stage-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px 12px; flex-wrap: wrap; }
 .cp-stage-names { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 10px; min-width: 0; }
 .cp-stage-name { margin: 0; font-size: var(--fs-lg); font-weight: 650; }
@@ -695,7 +702,7 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
 .cp-edit-fields .field.cp-light-h { width: 170px; }
 .cp-edit .ac-send { margin-bottom: 12px; }
 .cp-edit > .m-error { margin: -4px 0 12px; }
-.cp-targets-title { margin: 14px 0 6px; font-size: var(--fs-xs); font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.cp-targets-title { margin: 14px 0 6px; font-size: var(--fs-sm); font-weight: 500; color: var(--muted); }
 .cp-targets { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
 .cp-targets th, .cp-targets td { padding: 7px 0; border-top: 1px solid var(--border); text-align: left; }
 .cp-targets th { font-weight: 500; color: var(--ink-2); }
@@ -709,7 +716,7 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
 .crop-card .cp-ramp-line { margin-top: 8px; }
 
 /* the Stages list: a line of dots, the current entry with a bar */
-.cp-list { grid-area: list; position: sticky; top: calc(var(--topbar-h) + 16px); padding: 14px 16px; border: 1px solid var(--border); border-radius: 8px; }
+.cp-list { grid-area: list; position: sticky; top: calc(var(--topbar-h) + 16px); padding: 18px 20px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); }
 .cp-list h3 { margin: 0 0 10px; font-size: var(--fs-md); font-weight: 650; }
 .cp-steps { margin: 0; padding: 0; list-style: none; }
 .cp-step { position: relative; }
@@ -724,14 +731,14 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
 .cp-step[data-state="done"] .cp-step-name { color: var(--muted); font-weight: 500; }
 .cp-step[data-state="done"] .cp-dot { background: var(--muted); border-color: var(--muted); }
 .cp-step[data-state="current"] .cp-step-btn { background: var(--band); }
-.cp-step[data-state="current"] .cp-step-btn::before { content: ""; position: absolute; left: -16px; top: 4px; bottom: 4px; width: 4px; border-radius: 0 2px 2px 0; background: var(--accent); }
+.cp-step[data-state="current"] .cp-step-btn { background: var(--accent-soft); }
 .cp-step[data-state="current"] .cp-dot { border-color: var(--accent); background: var(--accent); box-shadow: 0 0 0 3px var(--surface), 0 0 0 4px var(--accent); }
 .cp-step[data-state="current"] .cp-step-dates { color: var(--ink-2); }
 .cp-step[data-state="next"] .cp-dot { border-color: var(--ink-2); }
 .cp-more { display: none; margin-top: 8px; min-height: 32px; padding: 4px 12px; font-size: var(--fs-sm); }
 
 /* the program row: Ramp (h), Lights from and Automatic change */
-.cp-program { grid-area: program; display: flex; flex-wrap: wrap; gap: 4px 32px; padding: 14px 16px 2px; border: 1px solid var(--border); border-radius: 8px; }
+.cp-program { grid-area: program; display: flex; flex-wrap: wrap; gap: 4px 32px; padding: 18px 20px 6px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); }
 .cp-inline { display: flex; gap: 8px; align-items: center; }
 .cp-ramp input { width: 90px; }
 .cp-light-start input { width: 90px; }
@@ -807,6 +814,8 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
 .pill[data-tone="good"] { background: var(--good-soft); color: var(--good-text); }
 .pill[data-tone="warn"] { background: var(--critical-bg); color: var(--critical-text); }
 .pill[data-tone="none"] { color: var(--muted); }
+.pill[data-tone="amber"] { background: var(--warning-soft); color: var(--warning-text); }
+.pill:empty { display: none; }
 
 /* The Now tab: the readings, the picture and the switches at the left; the alarms, Auto | Manual, the machines and the crop
    at the right. A phone: one column, the readings first, then the alarms, the control, the machines, the picture, the crop. */
@@ -902,3 +911,5 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
 .setup-part { scroll-margin-top: calc(var(--topbar-h) + 12px); outline: none; }
 .setup-part + .setup-part { margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--border); }
 .part-title { margin: 0 0 14px; font-size: var(--fs-xl); font-weight: 600; }
+.setup .control { max-width: 880px; }
+.setup .filter-card { max-width: 880px; }

@@ -46,7 +46,9 @@ export function createSimulationsCard(host, { roomId, getRoom }) {
       const li = el('li', 'sim-item');
       const link = el('a', '', r.date);
       link.href = r.href;
-      li.append(link, el('span', 'sim-days', r.days), el('span', 'sim-all', run.status === 'done' ? `${r.all} in band` : ''),
+      const inBand = el('span', 'sim-all pill', run.status === 'done' ? `${r.all} in band` : '');
+      inBand.dataset.tone = r.tone;
+      li.append(link, el('span', 'sim-days', r.days), inBand,
         el('span', 'sim-use', run.status === 'done' ? `${r.kWh} · ${r.litres}` : ''), el('span', 'sim-status', r.status));
       li.dataset.status = run.status;
       return li;

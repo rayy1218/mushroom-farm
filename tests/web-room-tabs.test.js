@@ -16,7 +16,7 @@ const PANELS = {
   history: ['data-range', 'data-charts', 'data-usage-charts', 'data-timeline', 'data-usage>'],
   crop: ['data-crop'],
   simulations: ['data-simulations'],
-  setup: ['data-control', 'data-sensors', 'data-filter', 'data-equipment', 'data-profile', 'data-delete'],
+  setup: ['data-control', 'data-equipment', 'data-filter', 'data-profile', 'data-delete'],
 };
 
 test('the tabs under the title; the alarms before the panels (moved into the Now tab\'s side column while it shows)', () => {

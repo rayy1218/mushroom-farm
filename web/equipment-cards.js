@@ -86,7 +86,10 @@ export function cardStatus(c, { sensors, machines }) {
   if (c.sensor) {
     const s = sensors?.[c.sensor];
     if (!s || s.status === 'not-wired') return null;
-    return { status: s.status, word: SENSOR_WORDS[s.status] ?? s.status, value: sensorValue(c.sensor, s.lastOk) };
+    const word = SENSOR_WORDS[s.status] ?? s.status;
+    const n = s.failuresInRow;
+    const failing = (s.status === 'timeout' || s.status === 'offline') && Number.isInteger(n) && n > 0;
+    return { status: s.status, word: failing ? `${word} · ${n} failed ${n === 1 ? 'poll' : 'polls'} in a row` : word, value: sensorValue(c.sensor, s.lastOk) };
   }
   if (c.key === 'relay') {
     if (machines?.relay?.address == null) return null;

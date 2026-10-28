@@ -110,6 +110,13 @@ test('the status line of a sensor: its status and latest value', () => {
   assert.equal(cardStatus(card('trh'), { sensors: null, machines: null }), null);
 });
 
+test('a sensor not answering says how many polls failed in a row (the Setup tab has no separate sensor cards since the redesign)', () => {
+  const status = (s) => cardStatus(card('co2'), { sensors: { ...SENSORS, co2: s }, machines: MACHINES });
+  assert.equal(status({ address: 2, status: 'timeout', failuresInRow: 2, lastOk: { at: 1, co2: 638 } }).word, 'Timeout · 2 failed polls in a row');
+  assert.equal(status({ address: 2, status: 'offline', failuresInRow: 1, lastOk: null }).word, 'Offline · 1 failed poll in a row');
+  assert.equal(status({ address: 2, status: 'online', failuresInRow: 0, lastOk: { at: 1, co2: 638 } }).word, 'Online');
+});
+
 test('the status line of a machine: its state as the Climate tab names it', () => {
   const status = (key, machines = MACHINES) => cardStatus(card(key), { sensors: SENSORS, machines });
   assert.deepEqual(status('intake'), { status: 'on', word: 'On', value: '' });

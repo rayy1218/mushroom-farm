@@ -27,10 +27,9 @@ import { drawLineChart } from './chart.js';
 import { refreshMs } from './settings-math.js';
 import { live } from './live.js';
 import { fallbackMs, createThrottle } from './live-math.js';
-import { formatClock, formatAgo, chartPoints } from './chart-math.js';
+import { chartPoints } from './chart-math.js';
 import { createUsageCard } from './usage.js';
 import { outdoorLine, pushOutdoorTail, liveOutdoor } from './outdoor-math.js';
-import { meterCard } from './ratings-math.js';
 // Stream B: long-range charts and the machine timeline
 import { createHistory } from './history.js';
 import { createUsageSection } from './usage-section.js';
@@ -41,17 +40,6 @@ import { timeTicks, tickCountFor, chartDrawKey, historyPoints, timelineSpans, ac
 const metres = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
 const cubic = new Intl.NumberFormat(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
-const KINDS = {
-  trh: { title: 'T/RH probe' },
-  co2: { title: 'CO₂ sensor' },
-};
-const STATUS_WORDS = {
-  'not-wired': 'Not wired',
-  'no-data': 'No data yet',
-  online: 'Online',
-  timeout: 'Timeout',
-  offline: 'Offline',
-};
 // Three charts: which sensor, which reading field, how to show it.
 const CHARTS = [
   { id: 'chart-t', outdoor: true, band: ['tLow', 'tHigh'], kind: 'trh', field: 't', label: 'Temperature', unit: '°C', color: 'var(--s-t)', digits: 1, minSpan: 1 },
@@ -112,19 +100,18 @@ const TEMPLATE = `
       </div>
       <div class="setup" data-panel="setup" hidden>
         <nav class="setup-nav" aria-label="Setup sections">
-          <a href="#setup-control" data-jump>Bands and control</a><a href="#setup-sensors" data-jump>Sensors</a><a href="#setup-equipment" data-jump>Equipment</a><a href="#setup-room" data-jump>Room</a>
+          <a href="#setup-control" data-jump>Bands and control</a><a href="#setup-equipment" data-jump>Equipment</a><a href="#setup-filter" data-jump>Intake filter</a><a href="#setup-room" data-jump>Room</a>
         </nav>
         <div class="setup-part" id="setup-control" tabindex="-1">
           <section data-control hidden></section>
         </div>
-        <div class="setup-part" id="setup-sensors" tabindex="-1">
-          <h2 class="part-title">Sensors</h2>
-          <div class="sensors" data-sensors></div>
-          <section data-filter hidden></section>
-        </div>
         <div class="setup-part" id="setup-equipment" tabindex="-1">
           <h2 class="part-title">Equipment</h2>
           <div class="equipment" data-equipment></div>
+        </div>
+        <div class="setup-part" id="setup-filter" tabindex="-1">
+          <h2 class="part-title">Intake filter</h2>
+          <section data-filter hidden></section>
         </div>
         <div class="setup-part" id="setup-room" tabindex="-1">
           <h2 class="part-title">Room</h2>
@@ -144,9 +131,6 @@ function text(tag, className, content) {
   return node;
 }
 
-function plural(n, one, many) {
-  return `${n} ${n === 1 ? one : many}`;
-}
 
 export function mount(container, { id, tab = 'now' }) {
   const me = ++mountSeq;
@@ -194,7 +178,6 @@ export function mount(container, { id, tab = 'now' }) {
     retry: q('[data-retry]'),
     missing: q('[data-missing]'),
     body: q('[data-body]'),
-    sensors: q('[data-sensors]'),
     filterHost: q('[data-filter]'),
     alarmsHost: q('[data-alarms]'),
     readingsHost: q('[data-readings]'),
@@ -344,96 +327,6 @@ export function mount(container, { id, tab = 'now' }) {
     document.title = `${room.name} · Mushroom farm`;
   }
 
-  function valueLine(kind, last) {
-    const line = text('p', 'reading');
-    const part = (value, unit, digits) => {
-      const span = text('span');
-      span.append(text('span', 'val', value == null ? '—' : value.toFixed(digits)), text('span', 'unit', unit));
-      return span;
-    };
-    if (kind === 'trh') line.append(part(last?.t, '°C', 1), part(last?.rh, '%RH', 1));
-    else line.append(part(last?.co2, 'ppm', 0));
-    return line;
-  }
-
-  function sensorCard(kind, s) {
-    const card = text('section', 'card');
-    card.dataset.kind = kind;
-    card.append(text('h2', '', KINDS[kind].title));
-    if (s.status === 'not-wired') {
-      card.append(text('p', 'addr', 'No sensor address set'));
-      const actions = text('div', 'card-actions');
-      const edit = text('button', '', 'Set address');
-      edit.type = 'button';
-      edit.dataset.action = 'edit';
-      edit.dataset.field = `${kind}Address`;
-      actions.append(edit);
-      card.append(actions);
-      return card;
-    }
-    card.append(text('p', 'addr', `address ${s.address}`));
-    const status = text('span', 'status', STATUS_WORDS[s.status] ?? s.status);
-    status.dataset.status = s.status;
-    card.append(status);
-    if (s.status === 'no-data') {
-      card.append(text('p', 'meta', 'Waiting for the first poll'));
-      return card;
-    }
-    card.append(valueLine(kind, s.lastOk));
-    if (s.lastOk) {
-      const ago = text('p', 'meta');
-      ago.dataset.agoAt = s.lastOk.at;
-      ago.textContent = formatAgo(Date.now() - s.lastOk.at);
-      card.append(ago);
-    }
-    if (s.status !== 'online') {
-      card.append(text('p', 'meta', `Last answer: ${s.lastOk ? formatClock(s.lastOk.at) : 'never'}`));
-      card.append(text('p', 'meta warn', `${plural(s.failuresInRow, 'failed poll', 'failed polls')} in a row`));
-    }
-    return card;
-  }
-
-  // The "Energy meter" card: status, power now, the meter's total and when it answered last. Only for a room with a meter.
-  function meterNode(m) {
-    const card = text('section', 'card');
-    card.dataset.kind = 'meter';
-    card.append(text('h2', '', 'Energy meter'), text('p', 'addr', `address ${m.address}`));
-    const status = text('span', 'status', STATUS_WORDS[m.status] ?? m.status);
-    status.dataset.status = m.status;
-    card.append(status);
-    if (m.status === 'no-data') {
-      card.append(text('p', 'meta', 'Waiting for the first poll'));
-      return card;
-    }
-    const line = text('p', 'reading');
-    const part = (value, unit, digits) => {
-      const span = text('span');
-      span.append(text('span', 'val', value == null ? '—' : value.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })), text('span', 'unit', unit));
-      return span;
-    };
-    line.append(part(m.power, 'W', 0), part(m.energy, 'kWh total', 1));
-    card.append(line);
-    if (m.at !== null) {
-      const ago = text('p', 'meta');
-      ago.dataset.agoAt = m.at;
-      ago.textContent = formatAgo(Date.now() - m.at);
-      card.append(ago);
-    }
-    if (m.status !== 'online') {
-      card.append(text('p', 'meta', `Last answer: ${m.at !== null ? formatClock(m.at) : 'never'}`));
-      card.append(text('p', 'meta warn', `${plural(m.failures, 'failed poll', 'failed polls')} in a row`));
-    }
-    return card;
-  }
-
-  function renderSensors() {
-    // Re-rendering replaces the cards; keep focus on the same button.
-    const hadFocus = els.sensors.contains(document.activeElement) ? document.activeElement.closest('[data-kind]')?.dataset.kind : null;
-    const meter = meterCard(sensors.meter);
-    els.sensors.replaceChildren(sensorCard('trh', sensors.trh), sensorCard('co2', sensors.co2), ...(meter ? [meterNode(meter)] : []));
-    if (hadFocus) els.sensors.querySelector(`[data-kind="${hadFocus}"] button`)?.focus();
-  }
-
   function buildCharts() {
     for (const def of CHARTS) {
       const card = text('section', 'card chart-card');
@@ -575,7 +468,6 @@ export function mount(container, { id, tab = 'now' }) {
         lastControl = controlData;
       }
     }
-    renderSensors();
     exchangeSection.update(room);
     renderCharts();
     paintDrawing();
@@ -703,9 +595,6 @@ export function mount(container, { id, tab = 'now' }) {
 
   // "n s ago" and the Room card's fresh-air minutes count on between refreshes.
   ticker = setInterval(() => {
-    for (const node of els.sensors.querySelectorAll('[data-ago-at]')) {
-      node.textContent = formatAgo(Date.now() - Number(node.dataset.agoAt));
-    }
     if (roomCardUi && room) roomCardUi.setFresh(freshAirLine(lastControl));
   }, 1000);
 
@@ -717,10 +606,6 @@ export function mount(container, { id, tab = 'now' }) {
     location.hash = roomHash(id, 'setup');
   }
 
-  els.sensors.addEventListener('click', (event) => {
-    const b = event.target.closest('button[data-action="edit"]');
-    if (b) editEquipment(b.dataset.field);
-  });
   els.retry.addEventListener('click', load);
 
   // The Setup tab's section links: scroll there without changing the address (a hash would leave the room page).
