@@ -39,7 +39,12 @@ function show() {
     return;
   }
   mounted = route;
-  unmount?.();
+  // A page that fails to clean up must not keep the next one from showing (it would stay on screen under a new address).
+  try {
+    unmount?.();
+  } catch (err) {
+    console.error('Leaving the page failed:', err);
+  }
   view.replaceChildren();
   unmount = route.name === 'simulation' ? simulation.mount(view, { id: route.id, runId: route.runId })
     : route.name === 'detail' ? detail.mount(view, { id: route.id, tab: route.tab })
