@@ -719,6 +719,7 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
 .sim-verdict-text { margin: 0; font-size: var(--fs-lg); font-weight: 600; }
 .sim-verdict-lines { margin: 8px 0 0; padding-left: 18px; color: var(--ink-2); }
 .sim-verdict-next { margin: 8px 0 0; font-size: var(--fs-sm); }
+.sim-verdict-why { margin: 12px 0 0; font-size: var(--fs-sm); font-weight: 600; color: var(--ink); }
 .sim-card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
 .sim-card-head h2 { margin: 0; }
 .sim-list { margin: 0 0 8px; padding: 0; list-style: none; }
@@ -728,7 +729,8 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
 .sim-machines { color: var(--muted); font-size: var(--fs-xs); }
 .sim-pick { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); font-size: var(--fs-sm); justify-self: end; }
 .sim-compare { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
-.sim-compare-table tr[data-differ="true"] td { font-weight: 600; color: var(--ink); }
+.sim-compare-table tr[data-differ="true"] td, .sim-compare-table tr[data-differ="true"] th { font-weight: 600; color: var(--ink); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.sim-compare-table tr[data-differ="true"] th { box-shadow: inset 3px 0 0 var(--accent); }
 .sim-compare-table td { color: var(--ink-2); }
 .sim-compare button { margin-top: 10px; }
 .sim-item .sim-all { justify-self: start; }

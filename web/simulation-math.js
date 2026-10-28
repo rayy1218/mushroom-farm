@@ -255,7 +255,18 @@ export function inputRows(input) {
     { label: 'Fan', value: `${p.fanFlow} m³/h` },
     { label: 'Humidifier', value: `${p.humidifierLH} L/h` },
     { label: 'Dehumidifier', value: p.dehumidifierLday > 0 ? `${p.dehumidifierLday} L/day` : 'none' },
+    ...controlRows(input.ctx?.control ?? input.control),
   ];
+}
+
+// How the room was run (the control the run used; an older run without it gives none).
+function controlRows(c) {
+  if (!c) return [];
+  const rows = [];
+  if (finite(c.exchangeEveryMin) || finite(c.exchangeMaxMin)) rows.push({ label: 'Air exchange', value: `every ${c.exchangeEveryMin ?? '?'} min, up to ${c.exchangeMaxMin ?? '?'} min` });
+  if (finite(c.acDrop)) rows.push({ label: 'Aircon during air exchange', value: c.acDrop > 0 ? `${c.acDrop} °C lower` : 'not lowered' });
+  if (typeof c.humidifierDuringExchange === 'boolean') rows.push({ label: 'Humidifier during air exchange', value: c.humidifierDuringExchange ? 'on' : 'off' });
+  return rows;
 }
 
 // How a run went, from its series: { tone, text, lines: [which way each reading missed] } or null without a series. A reading
@@ -286,6 +297,33 @@ export function runVerdict(series, inBand) {
   const tone = inBandTone(all);
   const text = all === null ? '' : all >= 95 ? `The room stayed in band ${share} of the time.` : `The room was in band ${share} of the time.`;
   return { tone, text, lines };
+}
+
+// Why a run missed, from what the machines did (result.machines) and the control it ran with: lines for the verdict card.
+// Critique 2026-10-28: two runs of the same aircon scored 98 % and 1 %; the second had the aircon set below the band during
+// air exchanges, and air exchange ran most of the time, which nothing on the page said.
+export function runCauses(result, input) {
+  const series = result?.series ?? [];
+  const end = series.length ? series[series.length - 1].s : 0;
+  if (!(end > 0)) return [];
+  const on = (spans, keep = () => true) => (spans ?? []).filter(keep).reduce((t, x) => t + Math.max(0, Math.min(x.to, end) - x.from), 0);
+  const share = (ms) => Math.round((ms / end) * 100);
+  const control = input?.ctx?.control ?? input?.control ?? {};
+  const lines = [];
+  const exchange = share(on(result.machines?.intake));
+  if (exchange >= 30) lines.push(`Air exchange ran ${exchange} % of the time (every ${control.exchangeEveryMin ?? '?'} min, up to ${control.exchangeMaxMin ?? '?'} min each).`);
+  const tLow = series.find((r) => finite(r.tLow))?.tLow;
+  if (finite(tLow)) {
+    const low = (result.machines?.ac ?? []).filter((x) => finite(x.setpoint) && x.setpoint < tLow);
+    const lowShare = share(on(low));
+    if (lowShare >= 5) {
+      const setpoint = Math.min(...low.map((x) => x.setpoint));
+      const why = finite(control.acDrop) && control.acDrop > 0 ? `: it is set ${control.acDrop} °C lower during air exchange` : '';
+      lines.push(`The aircon was set to ${setpoint} °C, below the ${tLow} °C band, ${lowShare} % of the time${why}.`);
+    }
+  }
+  if (control.humidifierDuringExchange === true && exchange >= 30) lines.push('The humidifier also ran during every air exchange.');
+  return lines;
 }
 
 // Two runs side by side: what they were asked and how they went; differ marks the rows that are not the same.

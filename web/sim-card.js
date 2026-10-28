@@ -79,7 +79,7 @@ export function createSimulationsCard(host, { roomId, getRoom }) {
     compare.hidden = !(a && b);
     if (compare.hidden) { compare.replaceChildren(); return; }
     const table = el('table', 'us-table sim-compare-table');
-    table.append(el('caption', '', 'Two runs side by side'));
+    table.append(el('caption', '', 'Two runs side by side (the rows that differ are marked)'));
     const head = el('tr');
     head.append(el('th', '', ''), el('th', '', runRow(a, roomId).date), el('th', '', runRow(b, roomId).date));
     const thead = el('thead');
@@ -90,6 +90,7 @@ export function createSimulationsCard(host, { roomId, getRoom }) {
       if (row.differ) tr.dataset.differ = 'true';
       const th = el('th', '', row.label);
       th.scope = 'row';
+      if (row.differ) th.append(el('span', 'sr-only', ' (differs)'));
       tr.append(th, el('td', '', row.a), el('td', '', row.b));
       body.append(tr);
     }

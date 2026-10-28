@@ -12,7 +12,7 @@ import { tickCountFor } from './history-math.js';
 import { progressLine } from './simulate-math.js';
 import {
   CHARTS, tileList, stageRows, dayTicks, runEnd, chartPoints, thinPoints, outdoorLine, bandSteps, timelineRows, energyView, perDayBars,
-  inputLine, inputRows, runVerdict, headLine, formatDateTime, formatRunTime, isActive, filterView,
+  inputLine, inputRows, runVerdict, runCauses, headLine, formatDateTime, formatRunTime, isActive, filterView,
 } from './simulation-math.js';
 
 const POLL_MS = 2000;
@@ -262,7 +262,14 @@ export function mount(container, { id, runId }) {
       if (verdict.lines.length) {
         const ul = text('ul', 'sim-verdict-lines');
         ul.append(...verdict.lines.map((l) => text('li', '', l)));
-        v.append(ul, text('p', 'muted sim-verdict-next', 'Simulate again with other machines, or let Suggest machines (the last step of Simulate) pick them.'));
+        v.append(ul);
+        const causes = runCauses(result, run.input);
+        if (causes.length) { // what the machines did, so a miss is not read as the machines' size
+          v.append(text('h3', 'sim-verdict-why', 'Why'));
+          const why = text('ul', 'sim-verdict-lines');
+          why.append(...causes.map((l) => text('li', '', l)));
+          v.append(why, text('p', 'muted sim-verdict-next', 'These are the room\'s control settings (Setup tab, Automatic control). Change them there, or for one run in Simulate, and simulate again before buying other machines.'));
+        } else v.append(text('p', 'muted sim-verdict-next', 'Simulate again with other machines, or let Suggest machines (the last step of Simulate) pick them.'));
       }
       els.results.append(v);
     }

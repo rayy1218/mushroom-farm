@@ -261,3 +261,38 @@ test('compareRuns: two runs side by side, their inputs and results, the rows tha
   assert.equal(rows.find((r) => r.label === 'Fan').differ, false);
   assert.deepEqual(rows.find((r) => r.label === 'All three in band'), { label: 'All three in band', a: '0.8 %', b: '98.2 %', differ: true });
 });
+
+// Critique 2026-10-28: the same aircon scored 98 % and 1 %, and nothing said the second run had the aircon set below the
+// band during air exchanges that ran most of the time.
+test('runCauses: air exchange share, the aircon below the band and why, the humidifier during exchange', async () => {
+  const { runCauses } = await import('../web/simulation-math.js');
+  const H = 3_600_000;
+  const series = [{ s: 0, tLow: 19 }, { s: 10 * H, tLow: 19 }];
+  const result = {
+    series,
+    machines: {
+      intake: [{ from: 0, to: 8 * H }],
+      ac: [{ from: 0, to: 2 * H, setpoint: 20 }, { from: 2 * H, to: 10 * H, setpoint: 16 }],
+    },
+  };
+  const input = { ctx: { control: { exchangeEveryMin: 15, exchangeMaxMin: 10, acDrop: 5, humidifierDuringExchange: true } } };
+  assert.deepEqual(runCauses(result, input), [
+    'Air exchange ran 80 % of the time (every 15 min, up to 10 min each).',
+    'The aircon was set to 16 °C, below the 19 °C band, 80 % of the time: it is set 5 °C lower during air exchange.',
+    'The humidifier also ran during every air exchange.',
+  ]);
+  assert.deepEqual(runCauses({ series, machines: { intake: [{ from: 0, to: H }], ac: [{ from: 0, to: 10 * H, setpoint: 20 }] } }, input), []);
+  assert.deepEqual(runCauses(null, input), []);
+});
+
+test('inputRows: how the room was run (air exchange, the aircon and the humidifier during it) when the run kept it', async () => {
+  const { inputRows } = await import('../web/simulation-math.js');
+  const physics = { wallUA: 30, sunW: 300, outdoorLow: 25, outdoorHigh: 33, outdoorDew: 24, acBTU: 12000, fanFlow: 150, humidifierLH: 1.5, dehumidifierLday: 0 };
+  const rows = inputRows({ physics, crops: [], stage: 'fruiting', days: 7, ctx: { control: { exchangeEveryMin: 15, exchangeMaxMin: 10, acDrop: 5, humidifierDuringExchange: true } } });
+  assert.deepEqual(rows.slice(-3), [
+    { label: 'Air exchange', value: 'every 15 min, up to 10 min' },
+    { label: 'Aircon during air exchange', value: '5 °C lower' },
+    { label: 'Humidifier during air exchange', value: 'on' },
+  ]);
+  assert.equal(inputRows({ physics, crops: [], stage: 'fruiting', days: 7 }).at(-1).label, 'Dehumidifier');
+});
