@@ -90,7 +90,7 @@ test('timeline rows from the machine spans', () => {
     ac: [{ from: 0, to: 50, setpoint: 24 }, { from: 50, to: 80, setpoint: 24 }, { from: 200, to: 300, setpoint: 23.5 }] });
   assert.deepEqual(rows.map((r) => r.key), ['intake', 'exhaust', 'circulation', 'humidifier', 'ac']);
   assert.deepEqual(rows[0].spans, [{ from: 10, to: 20, source: 'auto' }]);
-  assert.deepEqual(rows[4].marks, [{ at: 0, text: '24 °C' }, { at: 200, text: '23.5 °C' }]);
+  assert.deepEqual(rows[4].marks, [{ at: 0, text: '24 °C', value: 24 }, { at: 200, text: '23.5 °C', value: 23.5 }]);
   assert.deepEqual(rows[2].marks, []);
   assert.equal(timelineRows(undefined).length, 5);
 });

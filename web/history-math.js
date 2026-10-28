@@ -153,7 +153,8 @@ export function markLabel(x, text, right, fontPx = 11) {
 }
 
 // The timeline's labels for a row's marks ([{ at, text, value }], value in °C): marks closer than minPx to the one before
-// make a run, labelled once at its start: one mark its text, two "20 → 16 °C", more "16–20 °C, switching" (a setpoint that
+// make a run, labelled once at its start: one mark its text, two "20 → 16 °C", more "16–20 °C, switching"; a run with a mark
+// that has no number its first and last mark's words ("Filter → 18 °C") (a setpoint that
 // alternates faster than labels fit must not print a tidy pattern that did not happen). A single mark that says the setpoint
 // the last label ended at, or a label that would run over the last one, is left out. → [{ at, x, anchor, text }] (markLabel's placement, `right` the edge).
 export function markRuns(marks, xOf, right, { minPx = 52, fontPx = 12 } = {}) {
@@ -171,9 +172,11 @@ export function markRuns(marks, xOf, right, { minPx = 52, fontPx = 12 } = {}) {
   for (const run of runs) {
     const values = run.map((m) => m.value);
     const differ = new Set(run.map((m) => m.text)).size > 1;
+    const numbers = values.every((v) => typeof v === 'number' && Number.isFinite(v)); // the °C words only from numbers
     const text = !differ ? run[0].text
-      : run.length === 2 ? `${values[0]} → ${values[1]} °C`
-        : `${Math.min(...values)}–${Math.max(...values)} °C, switching`;
+      : !numbers ? `${run[0].text} → ${run.at(-1).text}`
+        : run.length === 2 ? `${values[0]} → ${values[1]} °C`
+          : `${Math.min(...values)}–${Math.max(...values)} °C, switching`;
     if (!differ && run[0].text === lastText) continue;
     const at = run[0].at;
     const place = markLabel(xOf(at), text, right, fontPx);

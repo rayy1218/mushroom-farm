@@ -185,7 +185,7 @@ export function timelineRows(machines, minGap = 0, input = null, filterChanges =
     if (r.key === 'ac') {
       let prev = null;
       for (const s of raw) {
-        if (!prev || prev.to !== s.from || prev.setpoint !== s.setpoint) marks.push({ at: s.from, text: `${s.setpoint} °C` });
+        if (!prev || prev.to !== s.from || prev.setpoint !== s.setpoint) marks.push({ at: s.from, text: `${s.setpoint} °C`, value: s.setpoint });
         prev = s;
       }
     }

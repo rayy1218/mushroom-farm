@@ -167,3 +167,19 @@ test('the timeline writes its row names and setpoint labels at 12 px, the setpoi
   assert.match(src, /svg\.append\(el\('text', \{ x: 4, y: y \+ 11, style: 'fill:var\(--muted\)', 'font-size': 12 \}, row\.label\)\);/, 'above its bar: wider than the margin at 12 px');
   assert.match(src, /for \(const label of markRuns\(row\.marks, xAt, width - 2\)\)/);
 });
+
+// Critique 2026-10-28: a simulation's aircon marks had no value, so a run of them read "NaN–NaN °C, switching".
+test('markRuns without numbers: a run falls back to its first and last mark\'s words, never NaN', () => {
+  const noValue = [{ at: 0, text: '20 °C' }, { at: 10, text: '16 °C' }, { at: 20, text: '20 °C' }, { at: 30, text: '16 °C' }];
+  assert.deepEqual(markRuns(noValue, (at) => at, 1000).map((l) => l.text), ['20 °C → 16 °C']);
+  assert.deepEqual(markRuns(noValue.slice(0, 2), (at) => at, 1000).map((l) => l.text), ['20 °C → 16 °C']);
+  assert.deepEqual(markRuns([{ at: 0, text: 'Filter' }, { at: 10, text: '18 °C', value: 18 }], (at) => at, 1000).map((l) => l.text), ['Filter → 18 °C']);
+});
+
+test('a simulation\'s aircon marks carry their setpoint, so a fast run reads "16–20 °C, switching"', async () => {
+  const { timelineRows } = await import('../web/simulation-math.js');
+  const ac = [{ from: 0, to: 60, setpoint: 20 }, { from: 60, to: 120, setpoint: 16 }, { from: 120, to: 180, setpoint: 20 }, { from: 180, to: 240, setpoint: 16 }];
+  const row = timelineRows({ ac }, 0).find((r) => r.key === 'ac');
+  assert.deepEqual(row.marks.map((m) => m.value), [20, 16, 20, 16]);
+  assert.deepEqual(markRuns(row.marks, (at) => at / 10, 1000).map((l) => l.text), ['16–20 °C, switching']);
+});
