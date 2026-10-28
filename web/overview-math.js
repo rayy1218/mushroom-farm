@@ -66,16 +66,39 @@ export function tiles(rooms) {
 const wired = (r) => r.trh?.status !== 'not-wired' || r.co2?.status !== 'not-wired';
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
+// A room's readings out of band now (critique 2026-10-28: "OK" beside a humidity under its band), from online sensors only:
+// [{ key, text }]. Temperature and humidity outside their band; CO₂ when its exchange words are amber or red (over the start
+// point with the exchange off, near or at the safety level).
+export function outOfBand(room) {
+  const b = room?.bands;
+  if (!b) return [];
+  const on = (s, field) => (s?.status === 'online' && finite(s[field]) ? s[field] : null);
+  const out = [];
+  for (const [key, name, low, high] of [['t', 'Temperature', b.tLow, b.tHigh], ['rh', 'Humidity', b.rhLow, b.rhHigh]]) {
+    const v = on(room.trh, key);
+    if (v === null || !finite(low) || !finite(high)) continue;
+    if (v > high) out.push({ key, text: `${name} high` });
+    else if (v < low) out.push({ key, text: `${name} low` });
+  }
+  const co2 = on(room.co2, 'co2');
+  const st = co2 === null ? null : co2Status(co2, { stop: b.co2Low, start: b.co2High, safety: b.co2Safety ?? null, exchange: Boolean(room.exchange) });
+  if (st && (st.tone === 'amber' || st.tone === 'critical')) out.push({ key: 'co2', text: 'CO₂ high' });
+  return out;
+}
+
 // The line at the top of the Overview (redesign 2026-10-28, in place of three number tiles): { text, tone, facts } or null
-// without rooms. A room needs attention with an alarm or in Manual (with something wired); the tone is the worst alarm's level,
-// amber for Manual alone.
+// without rooms. A room needs attention with an alarm, a reading out of band or in Manual (with something wired); the tone
+// is the worst alarm's level, amber without alarms. One reading out of band is named ("Humidity low in Container Alpha").
 export function farmStatus(rooms) {
   if (!rooms?.length) return null;
   const t = tiles(rooms);
   const manual = rooms.filter((r) => !r.auto && wired(r)).length;
-  const attention = rooms.filter((r) => r.alarms.count > 0 || (!r.auto && wired(r))).length;
+  const out = rooms.flatMap((r) => outOfBand(r).map((x) => ({ ...x, room: r.name })));
+  const attention = rooms.filter((r) => r.alarms.count > 0 || outOfBand(r).length > 0 || (!r.auto && wired(r))).length;
   const bare = rooms.filter((r) => !wired(r) && r.alarms.count === 0).length; // nothing wired: not set up, never OK
   const facts = [t.alarms === 0 ? 'No alarms' : plural(t.alarms, 'alarm', 'alarms')];
+  if (out.length === 1) facts.push(`${out[0].text} in ${out[0].room}`);
+  else if (out.length > 1) facts.push(`${out.length} readings out of band`);
   if (manual > 0) facts.push(`${plural(manual, 'room', 'rooms')} in Manual`);
   facts.push(t.exchanges === 0 ? 'No air exchange running' : `${plural(t.exchanges, 'air exchange', 'air exchanges')} running`);
   if (attention === 0) {
@@ -102,10 +125,10 @@ export function phoneAlarms(settings) {
   return null;
 }
 
-// The room cards' order: rooms that need someone first (alarms by level, then Manual), then OK, then the ones not set up;
-// the server's order (by name) inside each group.
+// The room cards' order: rooms that need someone first (alarms by level, then a reading out of band, then Manual), then OK,
+// then the ones not set up; the server's order (by name) inside each group.
 export function sortRooms(rooms) {
-  const rank = (r) => (r.alarms.count > 0 ? 3 - alarmLevelRank(r.alarms.level) / 10 : !wired(r) ? 7 : !r.auto ? 4 : 5);
+  const rank = (r) => (r.alarms.count > 0 ? 3 - alarmLevelRank(r.alarms.level) / 10 : !wired(r) ? 7 : outOfBand(r).length ? 3.5 : !r.auto ? 4 : 5);
   return rooms.map((r, i) => [r, i]).sort((a, b) => rank(a[0]) - rank(b[0]) || a[1] - b[1]).map(([r]) => r);
 }
 
@@ -193,10 +216,10 @@ export function roomCard(room, now = Date.now()) {
     };
   });
   const n = room.alarms.count;
-  // The room's state in one pill: its alarms first, then Manual, OK, or nothing wired.
+  // The room's state in one pill: its alarms first, then a reading out of band, Manual, OK, or nothing wired.
   const state = n > 0 ? { text: `${n} ${n === 1 ? 'alarm' : 'alarms'}`, tone: room.alarms.level }
     : !wired(room) ? { text: 'Not set up', tone: 'none' }
-      : !room.auto ? { text: 'Manual', tone: 'amber' } : { text: 'OK', tone: 'good' };
+      : outOfBand(room).length ? { text: 'Out of band', tone: 'amber' } : !room.auto ? { text: 'Manual', tone: 'amber' } : { text: 'OK', tone: 'good' };
   return {
     href: `#/rooms/${room.id}`,
     name: room.name,

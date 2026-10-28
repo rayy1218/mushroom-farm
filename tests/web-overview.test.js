@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import {
   farmStatus, sortRooms, phoneAlarms,
   roomCard, sparkPath, tiles, badgeCount, withTitlePrefix, sensorText, exchangeText, alarmLevelRank, sortAlarms, alarmTimeText, SPARKS,
-  roomReadings,
+  roomReadings, outOfBand,
 } from '../web/overview-math.js';
 import { parseRoute, isCanonical } from '../web/route.js';
 
@@ -216,4 +216,36 @@ test('One Format: the Simulations list head in sentence case like the other tabl
   const rule = /\.sim-list-head \{([^}]*)\}/.exec(css)[1];
   assert.doesNotMatch(rule, /text-transform|letter-spacing/);
   assert.doesNotMatch(css, /text-transform: uppercase/, 'no capitals anywhere');
+});
+
+test('a reading out of band is not OK: the pill says Out of band, the status counts it and names it (critique 2026-10-28)', () => {
+  const bands = { tLow: 19, tHigh: 21, rhLow: 87, rhHigh: 93, co2Low: 700, co2High: 900, co2Safety: 1500 };
+  const r = (name, over) => ({
+    id: 1, name, alarms: { count: 0, level: null }, exchange: false, auto: true, bands,
+    trh: { status: 'online', t: 20, rh: 90 }, co2: { status: 'online', co2: 800 }, spark: { t: [], rh: [], co2: [] }, ...over,
+  });
+  const dry = r('Container Alpha', { trh: { status: 'online', t: 20, rh: 84.2 } });
+  assert.deepEqual(outOfBand(dry), [{ key: 'rh', text: 'Humidity low' }]);
+  assert.deepEqual(outOfBand(r('A', { trh: { status: 'online', t: 22, rh: 95 } })).map((x) => x.text), ['Temperature high', 'Humidity high']);
+  assert.deepEqual(outOfBand(r('A', { trh: { status: 'offline', t: 30, rh: 50 } })), [], 'an offline sensor\'s last value is not now');
+  assert.deepEqual(outOfBand(r('A', { co2: { status: 'online', co2: 950 } })), [{ key: 'co2', text: 'CO₂ high' }], 'over the start point, the exchange off');
+  assert.deepEqual(outOfBand(r('A', { exchange: true, co2: { status: 'online', co2: 950 } })), [], 'over the start point with the exchange running');
+  assert.deepEqual(outOfBand(r('A', { exchange: true, co2: { status: 'online', co2: 1600 } })), [{ key: 'co2', text: 'CO₂ high' }], 'at the safety level');
+  assert.deepEqual(roomCard(dry, at(28, 12)).state, { text: 'Out of band', tone: 'amber' });
+  assert.deepEqual(roomCard({ ...dry, alarms: { count: 1, level: 'warning' } }, at(28, 12)).state, { text: '1 alarm', tone: 'warning' }, 'alarms first');
+  assert.deepEqual(roomCard({ ...dry, auto: false }, at(28, 12)).state, { text: 'Out of band', tone: 'amber' }, 'before Manual');
+  assert.deepEqual(farmStatus([dry, r('Container Beta')]),
+    { text: '1 of 2 rooms needs attention', tone: 'amber', facts: ['No alarms', 'Humidity low in Container Alpha', 'No air exchange running'] });
+  const hot = r('Container Beta', { trh: { status: 'online', t: 22, rh: 90 } });
+  assert.deepEqual(farmStatus([dry, hot]).facts, ['No alarms', '2 readings out of band', 'No air exchange running']);
+  assert.deepEqual(farmStatus([r('A'), r('B')]).text, 'All 2 rooms OK');
+});
+
+test('sortRooms: alarms, then out of band, then Manual, then OK, then not set up', () => {
+  const r = (name, over) => ({ name, alarms: { count: 0, level: null }, auto: true, bands: { tLow: 19, tHigh: 21, rhLow: 87, rhHigh: 93 },
+    trh: { status: 'online', t: 20, rh: 90 }, co2: { status: 'online' }, ...over });
+  const order = sortRooms([
+    r('ok'), r('manual', { auto: false }), r('out', { trh: { status: 'online', t: 23, rh: 90 } }), r('alarm', { alarms: { count: 1, level: 'warning' } }),
+  ]).map((x) => x.name);
+  assert.deepEqual(order, ['alarm', 'out', 'manual', 'ok']);
 });
