@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { roomBandNote, stageTargets, stageLine, nextLine, rampLine, doneLine, cropWarnings, formFromData, checkCropForm, saveBody, newBlocksBody, startBody, hasCrops, FORM_FIELD_ORDER } from '../web/crop-math.js';
+import { roomBandNote, runningTargets, stageTargets, stageLine, nextLine, rampLine, doneLine, cropWarnings, formFromData, checkCropForm, saveBody, newBlocksBody, startBody, hasCrops, FORM_FIELD_ORDER } from '../web/crop-math.js';
 
 const DAY = 86_400_000;
 const at = (d, h, m) => new Date(2026, 9, d, h, m).getTime();
@@ -125,4 +125,24 @@ test("roomBandNote: on the current stage, the bands the room really runs when th
   assert.equal(roomBandNote(crops, 'fruiting', null), '', 'before the control settings loaded');
   assert.equal(roomBandNote([], 'fruiting', targets), '');
   assert.equal(roomBandNote(crops, 'fruiting', { ...targets, tLow: 18.5 }, { ramp: { endAt: Date.now() + 3_600_000 } }), '', 'while the stage ramps the bands differ by design');
+});
+
+test("runningTargets: the current stage's rows show the bands the room runs first, the stage's own value second when they differ", () => {
+  const crops = [{ crop: 'lionsmane', blocks: 950 }];
+  const rows = stageTargets(crops, 'fruiting');
+  const byKey = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+  const co2 = /([0-9,]+)–([0-9,]+)/.exec(byKey.co2).slice(1).map((x) => Number(x.replace(',', '')));
+  const t = /([0-9.]+)–([0-9.]+)/.exec(byKey.t).slice(1).map(Number);
+  const rh = /([0-9.]+)–([0-9.]+)/.exec(byKey.rh).slice(1).map(Number);
+  const safety = Number(byKey.safety.replace(/[^0-9]/g, ''));
+  const same = { tLow: t[0], tHigh: t[1], rhLow: rh[0], rhHigh: rh[1], co2Low: co2[0], co2High: co2[1], co2Safety: safety };
+  assert.deepEqual(runningTargets(rows, same).map((r) => [r.value, r.stageValue]), rows.map((r) => [r.value, null]), 'the same: as before');
+  const out = runningTargets(rows, { ...same, co2High: co2[1] - 100, co2Safety: 1000 });
+  const c = out.find((r) => r.key === 'co2');
+  assert.equal(c.value, `${co2[0]}–${(co2[1] - 100).toLocaleString('en-US')} ppm`);
+  assert.equal(c.stageValue, byKey.co2);
+  const s = out.find((r) => r.key === 'safety');
+  assert.deepEqual([s.value, s.stageValue], ['1,000 ppm', byKey.safety]);
+  assert.equal(out.find((r) => r.key === 't').stageValue, null);
+  assert.deepEqual(runningTargets(rows, null), rows.map((r) => ({ ...r, stageValue: null })), 'before the control settings loaded');
 });

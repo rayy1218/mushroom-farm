@@ -244,6 +244,24 @@ export function roomBandNote(crops, stage, control, c = null, now = Date.now()) 
   return `The room runs ${list}: changed by hand on the Setup tab, until the next stage sets the targets again.`;
 }
 
+// The current stage's Targets rows with the bands the room really runs (control: GET /api/rooms/:id/control): each row's value
+// is what runs, and stageValue the stage's own value when a band was changed by hand (else null). Before the control settings
+// loaded every row stays the stage's.
+export function runningTargets(rows, control) {
+  if (!control) return rows.map((r) => ({ ...r, stageValue: null }));
+  const n = (x) => grouped(Math.round(x * 10) / 10);
+  const running = {
+    t: `${n(control.tLow)}–${n(control.tHigh)} °C`,
+    rh: `${n(control.rhLow)}–${n(control.rhHigh)} %`,
+    co2: `${n(control.co2Low)}–${n(control.co2High)} ppm`,
+    safety: Number.isFinite(control.co2Safety) ? `${n(control.co2Safety)} ppm` : null,
+  };
+  return rows.map((r) => {
+    const v = running[r.key];
+    return v && v !== r.value ? { ...r, value: v, stageValue: r.value } : { ...r, stageValue: null };
+  });
+}
+
 // The light schedule of a stage from a reply: { hours, start }, or null from an older server without it.
 export const lightOf = (c, stage) => (c?.lightHours && Number.isFinite(c.lightHours[stage]) ? { hours: c.lightHours[stage], start: c.lightStart } : null);
 

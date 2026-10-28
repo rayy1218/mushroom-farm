@@ -734,7 +734,11 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
 .cp-targets td { text-align: right; font-weight: 600; white-space: nowrap; padding-left: 12px; }
 .cp-targets .cp-ico { color: var(--muted); } /* colour means problems: a target is not one */
 .crop-card .cp-ramp-line { margin-top: 8px; }
-.cp-room-note { margin: 10px 0 0; padding: 8px 12px; border-radius: var(--radius); background: var(--warning-soft); color: var(--warning-text); font-size: var(--fs-sm); }
+.cp-room-note { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin: 10px 0 0; padding-top: 10px;
+  border-top: 1px solid var(--border); color: var(--warning-text); font-size: var(--fs-sm); }
+.cp-room-note button { min-height: 32px; padding: 4px 12px; }
+.cp-stage-val { display: block; font-weight: 400; font-size: var(--fs-xs); color: var(--muted); }
+.cp-targets tr[data-hand="true"] td { color: var(--warning-text); }
 
 /* the Stages list: a line of dots, the current entry with a bar */
 .cp-list { grid-area: list; position: sticky; top: calc(var(--topbar-h) + 16px); padding: 18px 20px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); }

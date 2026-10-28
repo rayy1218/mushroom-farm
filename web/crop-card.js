@@ -14,8 +14,9 @@ import { CROPS, CROP_KEYS, STAGES, FARM_TYPES, MAX_CROPS } from './crops.js';
 import { removeLabel } from './simulate-math.js';
 import {
   hasCrops, rampLine, doneLine, formFromData, checkCropForm, saveBody, newBlocksBody, startBody,
-  stagePlan, stageTargets, stageWarnings, cropHeadline, stageLength, stageMark, lightOf, roomBandNote,
+  stagePlan, stageTargets, stageWarnings, cropHeadline, stageLength, stageMark, lightOf, roomBandNote, runningTargets,
 } from './crop-math.js';
+import { mixBands } from './crops.js';
 
 const REFRESH_MS = 30_000; // the marks count days: asked now and then
 const COMMAND_TIMEOUT = 30000;
@@ -492,12 +493,38 @@ export function createCropCard(host, { roomId, onChange, onData, onOffline, onGo
     const body = el('tbody');
     table.append(body);
     const ramp = el('p', 'meta cp-ramp-line');
-    const roomNote = el('p', 'cp-room-note'); // the bands the room really runs when changed by hand (current stage only)
+    const roomNote = el('div', 'cp-room-note'); // the bands were changed by hand (current stage only): say so, offer the stage's
     roomNote.hidden = true;
+    const roomNoteText = el('span', '', 'Changed by hand on the Setup tab: the room runs these until the next stage.');
+    const backBtn = button('Back to stage values');
+    const backErr = el('p', 'm-error');
+    backErr.setAttribute('role', 'status');
+    backErr.hidden = true;
+    roomNote.append(roomNoteText, backBtn);
 
-    root.append(top, mark, warnings, startErr, edit, targetsTitle, table, roomNote, ramp);
+    root.append(top, mark, warnings, startErr, edit, targetsTitle, table, roomNote, backErr, ramp);
 
     const sec = { stage, root, name, length, pencil, start, mark, warnings, startErr, edit, inputs, fields, body, ramp, roomNote, open: false, rows: '' };
+    // The stage's own bands back on the room (the same as starting the stage would set, without its ramp).
+    backBtn.addEventListener('click', async () => {
+      if (backBtn.disabled || !last) return;
+      const b = mixBands(last.crops, stage).bands;
+      backBtn.disabled = true;
+      setText(backErr, '');
+      try {
+        await request('PUT', `/api/rooms/${roomId}/control`, {
+          tLow: b.tLow, tHigh: b.tHigh, rhLow: b.rhLow, rhHigh: b.rhHigh, co2Low: b.co2Low, co2High: b.co2High, co2Safety: b.co2Safety,
+        }, COMMAND_TIMEOUT);
+        if (alive) onChange?.();
+      } catch (err) {
+        if (!alive) return;
+        if (err.status === 404) { onGone?.(); return; }
+        setText(backErr, err.status === 0 ? `${OFFLINE}. Try again.` : err.message);
+        if (err.status === 0) onOffline?.();
+      } finally {
+        backBtn.disabled = false;
+      }
+    });
 
     const close = () => { sec.open = false; edit.hidden = true; pencil.setAttribute('aria-expanded', 'false'); };
     pencil.addEventListener('click', () => {
@@ -561,7 +588,9 @@ export function createCropCard(host, { roomId, onChange, onData, onOffline, onGo
     sec.start.hidden = mark.kind === 'current';
     const warnings = stageWarnings(c.crops, sec.stage);
     sec.warnings.replaceChildren(...warnings.map((w) => el('p', 'sim-warn', w)));
-    const rows = stageTargets(c.crops, sec.stage, lit() ? lightOf(c, sec.stage) : null);
+    const byHand = mark.kind === 'current' ? roomBandNote(c.crops, sec.stage, getBands(), c, now) !== '' : false;
+    const stageRows = stageTargets(c.crops, sec.stage, lit() ? lightOf(c, sec.stage) : null);
+    const rows = byHand ? runningTargets(stageRows, getBands()) : stageRows; // the current stage: what the room runs first
     const key = JSON.stringify(rows);
     if (key !== sec.rows) {
       sec.rows = key;
@@ -571,14 +600,17 @@ export function createCropCard(host, { roomId, onChange, onData, onOffline, onGo
         const th = el('th', '');
         th.scope = 'row';
         th.append(icon(r.key), el('span', '', r.name));
-        tr.append(th, el('td', '', r.value));
+        const td = el('td', '', r.value);
+        if (r.stageValue) { // changed by hand: the stage's own value under it
+          tr.dataset.hand = 'true';
+          td.append(el('span', 'cp-stage-val', `stage ${r.stageValue}`));
+        }
+        tr.append(th, td);
         return tr;
       }));
     }
     setText(sec.ramp, mark.kind === 'current' ? rampLine(c, now) : '');
-    const note = mark.kind === 'current' ? roomBandNote(c.crops, sec.stage, getBands(), c, now) : '';
-    setText(sec.roomNote, note);
-    sec.roomNote.hidden = !note;
+    sec.roomNote.hidden = !byHand;
   }
 
   // ---- the Stages list ----
