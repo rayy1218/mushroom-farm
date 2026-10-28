@@ -36,7 +36,7 @@ after(async () => {
 beforeEach(() => {
   for (const room of db.listRooms()) db.deleteRoom(room.id);
   writes.length = 0;
-  id = db.createRoom({ name: 'Room 1', length: 6, width: 4, height: 2.5, relayAddress: 3, acAddress: 4 }).id;
+  id = db.createRoom({ name: 'Room 1', length: 6, width: 4, height: 2.5, relayAddress: 3, acAddress: 4 }, 1000).id; // in Manual since 1000
 });
 
 async function call(method, path, body) {
@@ -52,7 +52,7 @@ async function call(method, path, body) {
 const DEFAULT_VIEW = {
   auto: false, co2Low: 600, co2High: 750, tLow: 21, tHigh: 23, rhLow: 85, rhHigh: 95,
   exchange: false, exchangeSince: null, humidifierBand: false, dehumidifierBand: false, humidifierDuringExchange: false, acFan: 'auto', acDrop: 0,
-  co2Safety: 1250, exchangeMaxMin: 10, exchangeEndedAt: null, exchangeEndsAt: null, cappedInRow: 0, exchangeEveryMin: 15, exchangeForced: false, freshFrom: null, outdoorAir: true, exchangeKind: null, outdoorSet: false, checks: { trh: null, co2: null },
+  co2Safety: 1250, exchangeMaxMin: 10, exchangeEndedAt: null, exchangeEndsAt: null, cappedInRow: 0, exchangeEveryMin: 15, exchangeForced: false, freshFrom: null, outdoorAir: true, exchangeKind: null, autoChangedAt: 1000, outdoorSet: false, checks: { trh: null, co2: null },
   reasons: { exchange: '', humidifier: '', dehumidifier: '', lights: '', ac: '', circulation: '', held: { humidifier: '', dehumidifier: '', ac: '' } },
 };
 

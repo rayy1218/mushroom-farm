@@ -19,6 +19,14 @@ const DEFAULT_CONTROL = {
 // during an exchange.
 const UPGRADED_CONTROL = { ...DEFAULT_CONTROL, humidifierDuringExchange: true, acDrop: 5 };
 
+// The control without autoChangedAt, after checking it: null (not known), or a time from `from` to now.
+function timed(c, from) {
+  const { autoChangedAt, ...rest } = c;
+  if (from === null) assert.equal(autoChangedAt, null);
+  else assert.ok(autoChangedAt >= from && autoChangedAt <= Date.now(), `autoChangedAt ${autoChangedAt}`);
+  return rest;
+}
+
 // The schema of iteration 3 (user_version 2), copied from the db.js of that time.
 const ITERATION_3_SCHEMA = `
 CREATE TABLE rooms (
@@ -86,18 +94,20 @@ test('upgrade 2 to 3 keeps rooms, readings and commands and adds a control row p
   old.exec(`INSERT INTO machine_commands (room_id) VALUES (5)`);
   old.close();
 
+  const from = Date.now();
   const db = openDb(path);
   assert.deepEqual(db.listRooms().map((r) => [r.id, r.name, r.relayAddress]), [[1, 'A', 5], [5, 'B', null]]);
   assert.deepEqual(db.getSensors(1)[0].readings, [{ at: 100, ok: true, t: 21.5, rh: 88 }]);
   assert.deepEqual(db.getCommands(1).relay, { intake: true, exhaust: true, circulation: false, humidifier: true, dehumidifier: false, lights: false, sentAt: 50 });
   assert.equal(db.getCommands(1).ac.setpoint, 17);
   // exchange and humidifier start from the commanded intake and humidifier
-  assert.deepEqual(db.getControl(1), { ...UPGRADED_CONTROL, exchange: true, humidifier: true });
-  assert.deepEqual(db.getControl(5), UPGRADED_CONTROL);
+  // in Manual: the reminder counts from the upgrade
+  assert.deepEqual(timed(db.getControl(1), from), { ...UPGRADED_CONTROL, exchange: true, humidifier: true });
+  assert.deepEqual(timed(db.getControl(5), from), UPGRADED_CONTROL);
   db.close();
 
   const raw = new DatabaseSync(path);
-  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 16);
+  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 17);
   raw.close();
   openDb(path).close(); // opening again changes nothing
   const again = new DatabaseSync(path);
@@ -119,23 +129,25 @@ test('a failed upgrade 2 to 3 rolls back and leaves the file at version 2', (t) 
 
 test('a new room gets the default control row; deleting the room deletes it', (t) => {
   const db = fresh(t);
-  const room = db.createRoom(fields);
-  assert.deepEqual(db.getControl(room.id), DEFAULT_CONTROL);
+  const room = db.createRoom(fields, 1000);
+  assert.deepEqual(db.getControl(room.id), { ...DEFAULT_CONTROL, autoChangedAt: 1000 });
   assert.equal(db.getControl(99), null);
   assert.equal(db.deleteRoom(room.id), true);
   assert.equal(db.getControl(room.id), null);
-  const raw = db.createRoom({ ...fields, name: 'Again' });
-  assert.deepEqual(db.getControl(raw.id), DEFAULT_CONTROL);
+  const raw = db.createRoom({ ...fields, name: 'Again' }, 2000);
+  assert.deepEqual(db.getControl(raw.id), { ...DEFAULT_CONTROL, autoChangedAt: 2000 });
 });
 
 test('setControl stores the settings and setControlState the band states', (t) => {
   const db = fresh(t);
-  const { id } = db.createRoom(fields);
+  const { id } = db.createRoom(fields, 500);
   const settings = { auto: true, co2Low: 500, co2High: 800, tLow: 20, tHigh: 24, rhLow: 80, rhHigh: 90, humidifierDuringExchange: false, acFan: 'high', co2Safety: 1100, exchangeMaxMin: 15, acDrop: 2, exchangeEveryMin: 30 };
   assert.equal(db.setControl(id, settings), true);
-  assert.deepEqual(db.getControl(id), { ...DEFAULT_CONTROL, ...settings });
+  assert.deepEqual(db.getControl(id), { ...DEFAULT_CONTROL, ...settings, autoChangedAt: 500 }); // setControl keeps it
   db.setControlState(id, { exchange: true, humidifier: true }, 1000);
-  assert.deepEqual(db.getControl(id), { ...DEFAULT_CONTROL, ...settings, exchange: true, exchangeSince: 1000, humidifier: true });
+  assert.deepEqual(db.getControl(id), { ...DEFAULT_CONTROL, ...settings, exchange: true, exchangeSince: 1000, humidifier: true, autoChangedAt: 500 });
+  db.setControlState(id, { exchange: true, humidifier: true, autoChangedAt: 1500 }, 1500);
+  assert.equal(db.getControl(id).autoChangedAt, 1500);
   // exchangeSince only moves when the exchange changes
   db.setControlState(id, { exchange: true, humidifier: false }, 2000);
   assert.equal(db.getControl(id).exchangeSince, 1000);
@@ -157,7 +169,8 @@ test('a room without a control row (made by older code) gets the default row', (
     raw.exec('DELETE FROM room_controls');
     raw.close();
     const db = openDb(path);
-    assert.deepEqual(db.getControl(room.id), DEFAULT_CONTROL);
+    const from = Date.now();
+    assert.deepEqual(timed(db.getControl(room.id), from), DEFAULT_CONTROL); // in Manual from when the row is made
     assert.equal(db.getControl(99), null);
     db.close();
   } finally {
@@ -194,18 +207,19 @@ test('upgrade 3 to 4 adds humidifier_during_exchange (on) and keeps rooms, readi
             VALUES (1, 1, 500, 800, 1, 77, 1), (5, 0, 600, 750, 0, NULL, 0)`);
   old.close();
 
+  const from = Date.now();
   const db = openDb(path);
   assert.deepEqual(db.listRooms().map((r) => [r.id, r.name]), [[1, 'A'], [5, 'B']]);
   assert.deepEqual(db.getSensors(1)[0].readings, [{ at: 100, ok: true, t: 21.5, rh: 88 }]);
   assert.equal(db.getCommands(1).ac.setpoint, 17);
-  assert.deepEqual(db.getControl(1), {
+  assert.deepEqual(timed(db.getControl(1), null), { // auto on: since when is not known
     ...UPGRADED_CONTROL, auto: true, co2Low: 500, co2High: 800, co2Safety: 1300, exchange: true, exchangeSince: 77, humidifier: true,
   });
-  assert.deepEqual(db.getControl(5), UPGRADED_CONTROL);
+  assert.deepEqual(timed(db.getControl(5), from), UPGRADED_CONTROL);
   db.close();
 
   const raw = new DatabaseSync(path);
-  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 16);
+  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 17);
   raw.close();
   openDb(path).close(); // opening again changes nothing
 });

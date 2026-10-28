@@ -678,10 +678,12 @@ export function createController({ db, machines, now = Date.now, log = console.e
         db.setControlState(roomId, {
           exchange: relay.intake, humidifier: relay.humidifier, dehumidifier: relay.dehumidifier, exchangeEndedAt: null, cappedInRow: 0, humidifierSince: null,
           exchangeForced: false, exchangeKind: null, freshFrom: null, // the fresh-air wait counts from the first cycle
+          autoChangedAt: now(),
         }, now());
       } else if (!merged.auto && current.auto) {
-        // Turning auto off: nothing is switched; the "too small" count and the timed humidifier start over.
-        db.setControlState(roomId, { exchange: current.exchange, humidifier: current.humidifier, dehumidifier: current.dehumidifier, cappedInRow: 0, humidifierSince: null }, now());
+        // Turning auto off: nothing is switched; the "too small" count and the timed humidifier start over. The Manual
+        // reminder (alarm 'manualLong') counts from now.
+        db.setControlState(roomId, { exchange: current.exchange, humidifier: current.humidifier, dehumidifier: current.dehumidifier, cappedInRow: 0, humidifierSince: null, autoChangedAt: now() }, now());
       }
       return get(roomId);
     },

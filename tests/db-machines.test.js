@@ -83,7 +83,7 @@ test('upgrade 1 to 2 keeps rooms and readings and gives every room default comma
   db.close();
 
   const raw = new DatabaseSync(path);
-  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 16);
+  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 17);
   raw.close();
   openDb(path).close(); // opening again changes nothing
   const again = new DatabaseSync(path);

@@ -7,6 +7,9 @@ import { FILTER_ALARM_DELAY_MS } from './filter.js';
 const MIN_MS = 60_000;
 const EPS = 1e-9; // for limits like tHigh + 0.8
 const HUMIDIFIER_DELAY = 30 * MIN_MS; // the humidifier too small: running this long with the humidity below the band
+const HOUR_MS = 60 * MIN_MS;
+// A room left in Manual by mistake (a worker taps Manual and walks away): the reminder after auto has been off this long.
+export const MANUAL_REMIND_MS = 2 * HOUR_MS;
 
 const num = (x) => String(Math.round(x * 10) / 10);
 
@@ -98,7 +101,7 @@ export function createAlarms({ db, now = Date.now }) {
   }
 
   return {
-    // room: { id }. input: { readings: { t, rh, co2 } (good values or null), bands (the room's control settings),
+    // room: { id, relayAddress, acAddress }. input: { readings: { t, rh, co2 } (good values or null), bands (the room's control settings, with auto and autoChangedAt),
     // faults: { trh, co2 } (the fault text or null),
     // blocksDone: { flush, flushes } while the room's program is done, else null.
     // filter: { sensor, pa, cleanPa, finalPa, changeDays, daysInUse } (filter.js filterInput), or missing: no filter alarms.
@@ -127,6 +130,17 @@ export function createAlarms({ db, now = Date.now }) {
         hit: cappedInRow >= 3,
         released: cappedInRow === 0,
         text: () => `Air exchange too small: ${cappedInRow} exchanges in a row stopped at the ${bands.exchangeMaxMin} min limit before CO₂ reached ${bands.co2Low} ppm`,
+      });
+
+      // Left in Manual: auto off for MANUAL_REMIND_MS (bands.autoChangedAt, null when not known) in a room with something to
+      // control (a relay module or an aircon gateway). Cleared once auto is on again or the room has nothing wired.
+      const wired = (room.relayAddress ?? null) !== null || (room.acAddress ?? null) !== null;
+      const since = bands.autoChangedAt ?? null;
+      const manualMs = wired && !bands.auto && since !== null ? now() - since : -1;
+      apply(room, active, 'manualLong', 'serious', 0, {
+        hit: manualMs >= MANUAL_REMIND_MS,
+        released: manualMs < MANUAL_REMIND_MS,
+        text: () => `Automatic control off for ${Math.max(2, Math.floor(manualMs / HOUR_MS))} h: the machines stay as set by hand`,
       });
 
       apply(room, active, 'blocksDone', 'warning', 0, {
