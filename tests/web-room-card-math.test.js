@@ -73,7 +73,7 @@ test('readingTiles: the band written out for the reading card ("Band 21–23 °C
   const [t, rh, co2] = readingTiles(draw(), control);
   assert.equal(t.band, 'Band 21–23 °C');
   assert.equal(rh.band, 'Band 90–95 % RH');
-  assert.equal(co2.band, 'Band 600–900 ppm');
+  assert.equal(co2.band, 'Air exchange starts at 900, stops at 600 ppm');
   assert.equal(readingTiles(draw(), null)[0].band, '');
 });
 

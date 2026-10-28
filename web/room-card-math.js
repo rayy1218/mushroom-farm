@@ -2,7 +2,7 @@
 // note and the fresh-air line, the machine tiles in air-path order and the line with the outdoor air and the filter.
 // No DOM, so Node tests cover it. Spec 2026-10-26-room-picture-design.md section 3.
 
-import { nearEdge, nearText } from './band-math.js';
+import { nearEdge, nearText, exchangePoints } from './band-math.js';
 import { view } from './mimic-math.js';
 import { exchangeLine } from './control-math.js';
 import { filterCard, intakeRunning, lastRunningOf } from './filter-math.js';
@@ -72,7 +72,9 @@ export function readingTiles(draw, control, trends = {}) {
     const near = edge ? ` · ${nearText(edge)}` : '';
     return {
       key: r.key, name: r.name, value: shown, unit: r.unit,
-      band: low !== null && high !== null ? `Band ${limit(low, r.key)}–${limit(high, r.key)} ${r.unit}` : '',
+      // CO₂'s two numbers are where the air exchange starts and stops (owner, 2026-10-28), the others a band to stay in
+      band: low === null || high === null ? '' : r.key === 'CO2' ? `Air exchange ${exchangePoints(low, high, (x) => limit(x, r.key))}`
+        : `Band ${limit(low, r.key)}–${limit(high, r.key)} ${r.unit}`,
       chip: { lvl: near ? 'near' : st.lvl || 'none', text: `${st.icon ? `${st.icon} ` : ''}${st.text || ''}${near}` }, // near an edge: amber
       edge: EDGE[st.lvl] ?? 'none',
       bar: bandBar(r.key, value, low, high, r.safety ? num(control?.[r.safety]) : null),

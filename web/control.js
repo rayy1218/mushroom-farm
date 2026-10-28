@@ -81,9 +81,9 @@ export function createControl(host, { roomId, onOffline, onGone, onChange, getRo
   for (const band of BANDS) {
     const row = el('div', 'c-band');
     row.dataset.key = band.key;
-    row.append(el('span', 'm-name', `Band (${band.unit})`)); // under the group's own title (CO₂, Temperature, Humidity)
+    row.append(el('span', 'm-name', `${band.title ?? 'Band'} (${band.unit})`)); // under the group's own title (CO₂, Temperature, Humidity)
     const inputs = {};
-    for (const side of ['low', 'high']) {
+    for (const side of band.order ?? ['low', 'high']) {
       const input = el('input', 'ctl');
       input.type = 'number';
       input.id = `ctl-${n}-${band.key}-${side}`;
@@ -93,7 +93,7 @@ export function createControl(host, { roomId, onOffline, onGone, onChange, getRo
       input.inputMode = 'decimal';
       input.setAttribute('aria-label', inputLabel(band, side));
       const field = el('div', 'ac-field');
-      const caption = el('label', 'ac-label', side === 'low' ? 'Low' : 'High');
+      const caption = el('label', 'ac-label', band.sides?.[side] ?? (side === 'low' ? 'Low' : 'High'));
       caption.htmlFor = input.id;
       field.append(caption, input);
       row.append(field);

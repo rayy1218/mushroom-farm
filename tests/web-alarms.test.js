@@ -145,7 +145,7 @@ test('the safety inputs: labels, and the same checks as the server', () => {
     ['exchangeEveryMin', 'Fresh air at least every (min)'], ['acDrop', 'Aircon lower during air exchange (°C)'],
   ]);
   assert.equal(checkSafety(750, 1250, 10), null);
-  assert.deepEqual(checkSafety(750, 750, 10), { field: 'co2Safety', message: 'CO₂ safety level must be above the CO₂ band upper limit' });
+  assert.deepEqual(checkSafety(750, 750, 10), { field: 'co2Safety', message: 'CO₂ safety level must be above the air exchange start point' });
   assert.equal(checkSafety(750, 10001, 10).field, 'co2Safety');
   assert.equal(checkSafety(750, NaN, 10).field, 'co2Safety');
   assert.equal(checkSafety(750, 10000, 10), null);

@@ -2,6 +2,7 @@
 // Spec 2026-10-20-crops-and-simulation-design.md section 4.1. Every input is kept as the text typed; checks speak like the server.
 
 import { acSize, kwOfBtu } from './simulation-math.js';
+import { exchangePoints } from './band-math.js';
 import { CROPS, STAGES, FARM_TYPES, mixBands, rangeWarnings, validateCrops } from './crops.js';
 
 // The physics inputs of step 1. min, max and whole are those of the device app's PARAMS (device/sim-store.js; a test compares
@@ -201,7 +202,7 @@ export function buildBody(state, cropData = null) {
 
 // ---- words ----
 
-export const bandLines = (b) => [`Temperature ${b.tLow}–${b.tHigh} °C`, `Humidity ${b.rhLow}–${b.rhHigh} %`, `CO₂ ${b.co2Low}–${b.co2High} ppm`];
+export const bandLines = (b) => [`Temperature ${b.tLow}–${b.tHigh} °C`, `Humidity ${b.rhLow}–${b.rhHigh} %`, `Air exchange ${exchangePoints(b.co2Low, b.co2High)}`];
 
 // The bands of the crops of step 2 in its start stage: { lines, warnings } (the mix's own warnings and those of the crops' ranges),
 // or null while the crops are not valid.

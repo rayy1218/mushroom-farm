@@ -148,7 +148,7 @@ test('aircon drop: none for a new room (acDrop 0 or missing), any 0 to 10 °C as
   }
   assert.equal(DEFAULTS.acDrop, 0);
   // a CO2 lower limit below 450 ppm cannot be reached with outdoor air
-  assert.deepEqual(validateControl({ ...DEFAULTS, co2Low: 449 }), { error: 'CO₂ band lower limit must be a number from 450 to 5000 ppm', field: 'co2Low' });
+  assert.deepEqual(validateControl({ ...DEFAULTS, co2Low: 449 }), { error: 'Air exchange stop point must be a number from 450 to 5000 ppm', field: 'co2Low' });
 });
 
 test('reasons name the rule and the numbers', () => {
@@ -184,7 +184,7 @@ test('validateControl: defaults are valid; each field and the low < high check',
   assert.equal(bad({ rhHigh: 101 }).field, 'rhHigh');
   assert.equal(bad({ rhHigh: '95' }).field, 'rhHigh');
   assert.equal(bad({ tLow: NaN }).field, 'tLow');
-  assert.deepEqual(bad({ co2Low: 800 }), { error: 'CO₂ band lower limit must be below the upper limit', field: 'co2Low' });
+  assert.deepEqual(bad({ co2Low: 800 }), { error: 'Air exchange stop point must be below the start point', field: 'co2Low' });
   assert.equal(bad({ tLow: 23 }).field, 'tLow');
   assert.equal(bad({ rhLow: 95 }).field, 'rhLow');
   assert.equal(bad({ co2Low: 450, co2High: 5000, tLow: 16, tHigh: 35, rhLow: 40, rhHigh: 100, co2Safety: 5001 }), null);

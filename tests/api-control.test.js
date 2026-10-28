@@ -109,10 +109,10 @@ test('PUT control accepts co2Safety and exchangeMaxMin and keeps them', async ()
 
 test('PUT control validation answers 400 with the field', async () => {
   const cases = [
-    [{ co2Low: 800 }, 'co2Low', 'CO₂ band lower limit must be below the upper limit'],
+    [{ co2Low: 800 }, 'co2Low', 'Air exchange stop point must be below the start point'],
     [{ tLow: 24 }, 'tLow', 'Temperature band lower limit must be below the upper limit'],
     [{ rhLow: 99, rhHigh: 99 }, 'rhLow', 'Humidity band lower limit must be below the upper limit'],
-    [{ co2Low: 100 }, 'co2Low', 'CO₂ band lower limit must be a number from 450 to 5000 ppm'],
+    [{ co2Low: 100 }, 'co2Low', 'Air exchange stop point must be a number from 450 to 5000 ppm'],
     [{ co2High: 6000 }, 'co2High', null],
     [{ tHigh: 40 }, 'tHigh', null],
     [{ rhHigh: 101 }, 'rhHigh', null],
@@ -124,7 +124,7 @@ test('PUT control validation answers 400 with the field', async () => {
     [{ acFan: 'LOW' }, 'acFan', null],
     [{ acFan: null }, 'acFan', null],
     [{ acFan: 1 }, 'acFan', null],
-    [{ co2Safety: 750 }, 'co2Safety', 'CO₂ safety level must be above the CO₂ band upper limit'],
+    [{ co2Safety: 750 }, 'co2Safety', 'CO₂ safety level must be above the air exchange start point'],
     [{ co2Safety: 10001 }, 'co2Safety', null],
     [{ co2Safety: '1250' }, 'co2Safety', null],
     [{ exchangeMaxMin: 0 }, 'exchangeMaxMin', 'Air exchange time limit must be a whole number from 1 to 120 min'],

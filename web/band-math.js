@@ -35,3 +35,8 @@ export function nearEdge(key, value, low, high, trend = null) {
 
 const NEAR_TEXT = { top: 'near the top', bottom: 'near the bottom', falling: 'near the bottom and falling' };
 export const nearText = (edge) => NEAR_TEXT[edge] ?? '';
+
+// The two CO₂ numbers are where the air exchange starts (co2High) and stops (co2Low), not a band to stay in (owner,
+// 2026-10-28): "starts at 900, stops at 700 ppm". fmt: how a number is written (grouped by default).
+export const exchangePoints = (low, high, fmt = (x) => Number(x).toLocaleString('en-US', { maximumFractionDigits: 1 })) =>
+  `starts at ${fmt(high)}, stops at ${fmt(low)} ppm`;

@@ -282,7 +282,9 @@ function controlRows(c) {
 const MISSES = [
   { key: 't', low: 'tLow', high: 'tHigh', below: 'Too cold', above: 'Too warm', unit: '°C', fmt: (v) => v.toFixed(1) },
   { key: 'rh', low: 'rhLow', high: 'rhHigh', below: 'Too dry', above: 'Too wet', unit: '% RH', fmt: (v) => v.toFixed(1) },
-  { key: 'co2', low: 'co2Low', high: 'co2High', below: 'CO₂ under the band', above: 'CO₂ too high', unit: 'ppm', fmt: (v) => grouped(Math.round(v)) },
+  // CO₂'s numbers are where the air exchange starts and stops (owner, 2026-10-28)
+  { key: 'co2', low: 'co2Low', high: 'co2High', below: 'CO₂ under the air exchange stop point', above: 'CO₂ above the air exchange start point', unit: 'ppm', fmt: (v) => grouped(Math.round(v)),
+    bandText: (b) => `the air exchange starts at ${grouped(b[1])} and stops at ${grouped(b[0])} ppm` },
 ];
 export function runVerdict(series, inBand) {
   if (!series?.length) return null;
@@ -298,9 +300,9 @@ export function runVerdict(series, inBand) {
       if (v > r[m.high]) { above++; if (v > max) { max = v; bandAbove = [r[m.low], r[m.high]]; } }
     }
     const n = series.length;
-    const band = (b) => `${m.fmt(b[0]).replace(/\.0$/, '')}–${m.fmt(b[1]).replace(/\.0$/, '')} ${m.unit}`;
-    if (below / n >= 0.05) lines.push(`${m.below} ${Math.round((below / n) * 100)} % of the time (down to ${m.fmt(min)} ${m.unit}; the band is ${band(bandBelow)})`);
-    if (above / n >= 0.05) lines.push(`${m.above} ${Math.round((above / n) * 100)} % of the time (up to ${m.fmt(max)} ${m.unit}; the band is ${band(bandAbove)})`);
+    const band = (b) => (m.bandText ? m.bandText(b) : `the band is ${m.fmt(b[0]).replace(/\.0$/, '')}–${m.fmt(b[1]).replace(/\.0$/, '')} ${m.unit}`);
+    if (below / n >= 0.05) lines.push(`${m.below} ${Math.round((below / n) * 100)} % of the time (down to ${m.fmt(min)} ${m.unit}; ${band(bandBelow)})`);
+    if (above / n >= 0.05) lines.push(`${m.above} ${Math.round((above / n) * 100)} % of the time (up to ${m.fmt(max)} ${m.unit}; ${band(bandAbove)})`);
   }
   const tone = inBandTone(all);
   const text = all === null ? '' : all >= 95 ? `The room stayed in band ${share} of the time.` : `The room was in band ${share} of the time.`;

@@ -4,8 +4,10 @@ import { lightSummary } from './light-math.js';
 
 // Rows of the card: server field names, label, unit, limits (spec section 2) and the typical band of the crops grown here.
 export const BANDS = [
-  { key: 'co2', label: 'CO₂', unit: 'ppm', name: 'CO₂ band', low: 'co2Low', high: 'co2High', min: 450, max: 5000, step: '1',
-    hint: 'Typical: oyster under about 1,000 ppm, lion’s mane under about 750–1,000 ppm. Outdoor air is about 420 ppm, so a lower limit near it takes a lot of air.' },
+  // CO₂: where the air exchange starts (high) and stops (low), the start first (owner, 2026-10-28)
+  { key: 'co2', label: 'CO₂', unit: 'ppm', name: 'Air exchange', low: 'co2Low', high: 'co2High', min: 450, max: 5000, step: '1',
+    title: 'Air exchange', sides: { high: 'Starts at', low: 'Stops at' }, points: { high: 'Air exchange start point', low: 'Air exchange stop point' }, order: ['high', 'low'],
+    hint: 'The fans start when CO₂ reaches the first number and stop when it falls to the second. Typical start: oyster about 1,000 ppm, lion’s mane about 750–1,000 ppm. Outdoor air is about 420 ppm, so a stop point near it takes a lot of air.' },
   { key: 't', label: 'Temperature', unit: '°C', name: 'Temperature band', low: 'tLow', high: 'tHigh', min: 16, max: 35, step: '0.5',
     hint: 'Typical fruiting: grey oyster about 24 to 28, lion’s mane about 18 to 22.' },
   { key: 'rh', label: 'Humidity', unit: '% RH', name: 'Humidity band', low: 'rhLow', high: 'rhHigh', min: 40, max: 100, step: '0.5',
@@ -106,8 +108,9 @@ export function stateLine(c, now = Date.now()) {
   return c.auto ? exchangeLine(c, now) : 'Automatic control off';
 }
 
-// The accessible name of a band input, e.g. "CO₂ band low limit, ppm".
+// The accessible name of a band input, e.g. "Temperature band low limit, °C" or "Air exchange starts at, ppm".
 export function inputLabel(band, side) {
+  if (band.sides) return `${band.name} ${band.sides[side].toLowerCase()}, ${band.unit}`;
   return `${band.name} ${side} limit, ${band.unit}`;
 }
 
@@ -120,9 +123,10 @@ export function reasonLine(label, text) {
 // Checks one band's two typed values (numbers, NaN when empty). → { field: 'low'|'high', message } or null.
 export function checkBand(band, low, high) {
   const range = `${band.min} to ${band.max} ${band.unit}`;
-  if (!Number.isFinite(low) || low < band.min || low > band.max) return { field: 'low', message: `${band.name} lower limit must be ${range}` };
-  if (!Number.isFinite(high) || high < band.min || high > band.max) return { field: 'high', message: `${band.name} upper limit must be ${range}` };
-  if (!(low < high)) return { field: 'low', message: `${band.name} lower limit must be below the upper limit` };
+  const sideName = (side) => (band.points ? band.points[side] : `${band.name} ${side === 'low' ? 'lower' : 'upper'} limit`);
+  if (!Number.isFinite(low) || low < band.min || low > band.max) return { field: 'low', message: `${sideName('low')} must be ${range}` };
+  if (!Number.isFinite(high) || high < band.min || high > band.max) return { field: 'high', message: `${sideName('high')} must be ${range}` };
+  if (!(low < high)) return { field: 'low', message: band.points ? 'Air exchange stop point must be below the start point' : `${band.name} lower limit must be below the upper limit` };
   return null;
 }
 
@@ -182,7 +186,7 @@ export function locateSafetyField(field) {
 // Checks the typed safety values like the server (acDrop and exchangeEveryMin only when given). → { field, message } or null.
 export function checkSafety(co2High, co2Safety, exchangeMaxMin, acDrop, exchangeEveryMin) {
   if (!Number.isFinite(co2Safety) || co2Safety > 10000) return { field: 'co2Safety', message: 'CO₂ safety level must be a number up to 10000 ppm' };
-  if (co2Safety <= co2High) return { field: 'co2Safety', message: 'CO₂ safety level must be above the CO₂ band upper limit' };
+  if (co2Safety <= co2High) return { field: 'co2Safety', message: 'CO₂ safety level must be above the air exchange start point' };
   if (!Number.isInteger(exchangeMaxMin) || exchangeMaxMin < 1 || exchangeMaxMin > 120) {
     return { field: 'exchangeMaxMin', message: 'Air exchange time limit must be a whole number from 1 to 120 min' };
   }

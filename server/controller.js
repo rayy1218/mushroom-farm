@@ -20,7 +20,8 @@ export const AC_FANS = ['auto', 'low', 'high'];
 // Pairs of band limits, in the order they are checked.
 const BANDS = [
   // A lower limit below about 450 ppm can never be reached with outdoor air at about 420.
-  { low: 'co2Low', high: 'co2High', label: 'CO₂ band', min: 450, max: 5000, unit: 'ppm' },
+  // CO₂: where the air exchange starts (high) and stops (low), so its words name those (owner, 2026-10-28)
+  { low: 'co2Low', high: 'co2High', label: 'CO₂ band', min: 450, max: 5000, unit: 'ppm', sides: { lower: 'Air exchange stop point', upper: 'Air exchange start point' }, order: 'Air exchange stop point must be below the start point' },
   { low: 'tLow', high: 'tHigh', label: 'Temperature band', min: 16, max: 35, unit: '°C' },
   { low: 'rhLow', high: 'rhHigh', label: 'Humidity band', min: 40, max: 100, unit: '%' },
 ];
@@ -416,19 +417,19 @@ export function validateControl(c, { compareSafety = true } = {}) {
     return { error: 'humidifierDuringExchange must be true or false', field: 'humidifierDuringExchange' };
   }
   if (!AC_FANS.includes(c.acFan)) return { error: 'Aircon fan must be auto, low or high', field: 'acFan' };
-  for (const { low, high, label, min, max, unit } of BANDS) {
+  for (const { low, high, label, min, max, unit, sides, order } of BANDS) {
     for (const [field, side] of [[low, 'lower'], [high, 'upper']]) {
       const v = c[field];
       if (typeof v !== 'number' || !Number.isFinite(v) || v < min || v > max) {
-        return { error: `${label} ${side} limit must be a number from ${min} to ${max} ${unit}`, field };
+        return { error: `${sides ? sides[side] : `${label} ${side} limit`} must be a number from ${min} to ${max} ${unit}`, field };
       }
     }
-    if (c[low] >= c[high]) return { error: `${label} lower limit must be below the upper limit`, field: low };
+    if (c[low] >= c[high]) return { error: order ?? `${label} lower limit must be below the upper limit`, field: low };
   }
   if (typeof c.co2Safety !== 'number' || !Number.isFinite(c.co2Safety) || c.co2Safety > 10_000) {
     return { error: 'CO₂ safety level must be a number up to 10000 ppm', field: 'co2Safety' };
   }
-  if (compareSafety && c.co2Safety <= c.co2High) return { error: 'CO₂ safety level must be above the CO₂ band upper limit', field: 'co2Safety' };
+  if (compareSafety && c.co2Safety <= c.co2High) return { error: 'CO₂ safety level must be above the air exchange start point', field: 'co2Safety' };
   if (!Number.isInteger(c.exchangeMaxMin) || c.exchangeMaxMin < 1 || c.exchangeMaxMin > 120) {
     return { error: 'Air exchange time limit must be a whole number from 1 to 120 min', field: 'exchangeMaxMin' };
   }

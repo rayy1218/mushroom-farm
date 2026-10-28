@@ -81,19 +81,19 @@ test('the targets of one crop: temperature, humidity, the CO₂ band and its saf
   assert.deepEqual(stageTargets([{ crop: 'lionsmane', blocks: 950 }], 'fruiting'), [
     { key: 't', name: 'Temperature', value: '19–21 °C' },
     { key: 'rh', name: 'Humidity', value: '87–93 % RH' },
-    { key: 'co2', name: 'CO₂ kept between', value: '700–900 ppm' },
+    { key: 'co2', name: 'Air exchange', value: 'starts at 900, stops at 700 ppm' },
     { key: 'safety', name: 'CO₂ safety level', value: '1,500 ppm' },
   ]);
 });
 
 test('the CO₂ values are grouped in thousands', () => {
   const rows = stageTargets([{ crop: 'oyster', blocks: 500 }], 'spawn');
-  assert.deepEqual(rows.map((r) => r.value), ['23–25 °C', '67–73 % RH', '4,700–4,900 ppm', '5,500 ppm']);
+  assert.deepEqual(rows.map((r) => r.value), ['23–25 °C', '67–73 % RH', 'starts at 4,900, stops at 4,700 ppm', '5,500 ppm']);
 });
 
 test('two crops: the overlap of their bands, the CO₂ band of the stricter one', () => {
   const rows = stageTargets(full.crops, 'fruiting');
-  assert.deepEqual(rows.map((r) => r.value), ['24–25 °C', '85–91 % RH', '600–700 ppm', '1,300 ppm']);
+  assert.deepEqual(rows.map((r) => r.value), ['24–25 °C', '85–91 % RH', 'starts at 700, stops at 600 ppm', '1,300 ppm']);
   assert.deepEqual(stageTargets([], 'fruiting'), []);
 });
 

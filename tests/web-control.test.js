@@ -49,7 +49,7 @@ test('state line says auto is off; input labels carry the band, side and unit', 
   assert.equal(stateLine({ auto: false, exchange: true, exchangeSince: 1 }), 'Automatic control off');
   assert.equal(stateLine({ auto: true, exchange: false }), 'Air exchange off');
   assert.equal(stateLine({ auto: true, exchange: true, exchangeSince: 0 }, 5 * 60000), 'Air exchange on since ' + formatHm(0) + ' (5 min)');
-  assert.equal(inputLabel(co2, 'low'), 'CO₂ band low limit, ppm');
+  assert.equal(inputLabel(co2, 'low'), 'Air exchange stops at, ppm');
   assert.equal(inputLabel(rh, 'high'), 'Humidity band high limit, % RH');
 });
 
@@ -177,4 +177,17 @@ test('the card in groups (owner, 2026-10-26): CO₂, Temperature, Humidity, Air 
   assert.match(card, /for \(const g of CONTROL_GROUPS\)/);
   assert.match(card, /el\('h3', 'c-group-title', g\.title\)/);
   assert.match(card, /for \(const list of reasonLists\) list\.hidden = !c\.auto;/);
+});
+
+// Owner, 2026-10-28: "make it from low and high to air exchange starting point and air exchange ending point".
+test('the CO₂ row: Air exchange (ppm), Starts at first, then Stops at; its checks name those points', async () => {
+  const { BANDS, inputLabel, checkBand } = await import('../web/control-math.js');
+  const co2 = BANDS.find((b) => b.key === 'co2');
+  assert.deepEqual(co2.order, ['high', 'low']);
+  assert.deepEqual(co2.sides, { high: 'Starts at', low: 'Stops at' });
+  assert.equal(inputLabel(co2, 'high'), 'Air exchange starts at, ppm');
+  assert.equal(checkBand(co2, 900, 800).message, 'Air exchange stop point must be below the start point');
+  assert.equal(checkBand(co2, 300, 800).message, 'Air exchange stop point must be 450 to 5000 ppm');
+  const t = BANDS.find((b) => b.key === 't');
+  assert.equal(inputLabel(t, 'low'), 'Temperature band low limit, °C', 'the other bands keep low and high');
 });

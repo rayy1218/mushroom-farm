@@ -187,7 +187,7 @@ test('protect keeps the circulation and the air exchange as decided and does not
 test('validateControl: the safety level and the time limit', () => {
   assert.equal(validateControl(DEFAULTS), null);
   const bad = (patch) => validateControl({ ...DEFAULTS, ...patch });
-  assert.deepEqual(bad({ co2Safety: 750 }), { error: 'CO₂ safety level must be above the CO₂ band upper limit', field: 'co2Safety' });
+  assert.deepEqual(bad({ co2Safety: 750 }), { error: 'CO₂ safety level must be above the air exchange start point', field: 'co2Safety' });
   assert.equal(bad({ co2Safety: 751 }), null);
   assert.equal(bad({ co2Safety: 10_000 }), null);
   assert.equal(bad({ co2Safety: 10_001 }).field, 'co2Safety');
