@@ -116,7 +116,7 @@ test('the Equipment grid: cards at least 260 px wide, 16 px apart, one column on
 test('Delete room: a danger button, the Rooms list\'s confirm, then the Rooms list', () => {
   const edit = src('room-edit.js');
   assert.match(edit, /deleteText\.textContent = `Delete \$\{room\.name\}\? This can't be undone\.`;/);
-  assert.match(edit, /button\('Delete room', 'danger'\)/);
+  assert.match(edit, /button\('Delete room', 'danger-text'\)/);
   assert.match(edit, /await request\('DELETE', `\/api\/rooms\/\$\{roomId\}`\);/);
   assert.match(edit, /location\.hash = '#\/overview';/);
   assert.match(page, /createDeleteCard\(els\.deleteHost, \{ roomId: id, getRoom: \(\) => room, onGone: /);

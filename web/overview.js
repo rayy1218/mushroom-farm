@@ -42,6 +42,7 @@ const TEMPLATE = `
     </div>
     <div class="ov-section-head">
       <h2>Rooms</h2>
+      <span class="card-note">Traces: the last 24 hours</span>
     </div>
     <div class="ov-rooms" data-rooms></div>
     <div class="ov-farm" data-farm></div>
@@ -81,7 +82,8 @@ function sparkline(value) {
   if (!value.spark) return node('span', 'ov-spark-none', 'no data');
   const s = value.spark;
   const el = svg('svg', { width: SPARK_W, height: SPARK_H, viewBox: `0 0 ${SPARK_W} ${SPARK_H}`, role: 'img', class: 'ov-spark' });
-  el.setAttribute('aria-label', `${value.label}, last 24 hours: ${s.min.toFixed(1)} to ${s.max.toFixed(1)}`);
+  const d = value.key === 'co2' ? 0 : 1; // ppm in whole numbers, as shown
+  el.setAttribute('aria-label', `${value.label}, last 24 hours: ${s.min.toFixed(d)} to ${s.max.toFixed(d)}`);
   if (s.band) el.append(svg('rect', { x: 0, y: s.band.y, width: SPARK_W, height: s.band.h, style: 'fill:var(--band)' }));
   el.append(svg('path', { d: s.d, fill: 'none', 'stroke-width': 1.5, 'stroke-linejoin': 'round', style: `stroke:${value.color}` }));
   el.append(svg('circle', { cx: s.last.x, cy: s.last.y, r: 2.5, style: `fill:${value.color}` }));

@@ -130,7 +130,7 @@ test('breakdown of estimated days: the aircon row, shares and cost', () => {
 test('breakdown of metered days: "rest" replaces the aircon; a mix shows both', () => {
   const metered = [day('2026-10-20', 10, true, { intake: 1, exhaust: 1, circulation: 1, humidifier: 1, rest: 6 })];
   assert.deepEqual(breakdown(metered, 0.5).rows.map((r) => r.key), ['intake', 'exhaust', 'circulation', 'humidifier', 'rest']);
-  assert.equal(breakdown(metered, 0.5).rows.at(-1).label, 'Rest (mostly the aircon)');
+  assert.equal(breakdown(metered, 0.5).rows.at(-1).label, 'Not split by machine (mostly the aircon)');
   const mix = [...metered, day('2026-10-19', 5, false, { ac: 2 })];
   assert.deepEqual(breakdown(mix, 0.5).rows.map((r) => r.key).slice(-2), ['ac', 'rest']);
 });

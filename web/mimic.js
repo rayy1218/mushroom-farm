@@ -306,6 +306,7 @@ export function createMimic(host, opts = {}) {
     h.fans.cond.g.classList.toggle('on', ac.known && v.comp);
 
     put(h.blocks, v.blocks);
+    svg.classList.toggle('no-blocks', !v.blocks); // no crop (or no blocks set): the shelves are drawn empty
     for (const [key, r] of Object.entries(h.readouts)) {
       const x = v.readouts[key];
       r.g.dataset.lvl = x.lvl;

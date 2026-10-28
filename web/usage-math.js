@@ -165,7 +165,7 @@ export const MACHINE_ROWS = [
   { key: 'dehumidifier', label: 'Dehumidifier' },
   { key: 'lights', label: 'Lights' },
   { key: 'ac', label: 'Aircon' },
-  { key: 'rest', label: 'Rest (mostly the aircon)' },
+  { key: 'rest', label: 'Not split by machine (mostly the aircon)' },
 ];
 
 // The per machine breakdown of the days: [{ key, label, kWh, share (0..1), cost }] and the total.

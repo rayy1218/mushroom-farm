@@ -37,6 +37,7 @@
 .mimic-svg .floor { fill: var(--m-floor); }
 .mimic-svg .rack { fill: var(--m-rack); }
 .mimic-svg .bag { fill: var(--m-bag); }
+.mimic-svg.no-blocks .bag, .mimic-svg.no-blocks .cap { display: none; }
 .mimic-svg .cap { fill: var(--m-cap); }
 
 /* white machine units: an edge in the light theme only, where the room is white too */

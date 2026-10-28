@@ -522,8 +522,9 @@ export function mount(container, { id, tab = 'now' }) {
     els.machinesHost.hidden = !switches.manual || !lastMachines; // the aircon's own panel, in Manual only
     roomCardUi.paint(roomCard({ draw, control: lastControl, filter, crop: cropData, now }), draw, traces, switches);
     // Manual on every tab, by the room's name, with the time it began when the server knows it (a link to the switch).
-    els.manualChip.hidden = !switches.manual;
-    if (switches.manual) {
+    const controllable = room.relayAddress != null || room.acAddress != null; // a room with nothing to switch is not "in Manual"
+    els.manualChip.hidden = !switches.manual || !controllable;
+    if (switches.manual && controllable) {
       const t = Number.isFinite(lastControl.autoChangedAt) ? new Date(lastControl.autoChangedAt) : null;
       const text = t ? `Manual since ${manualSince(t, now)}` : 'Manual';
       if (els.manualChip.textContent !== text) els.manualChip.textContent = text;

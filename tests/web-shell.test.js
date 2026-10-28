@@ -28,6 +28,6 @@ test('the top bar: the farm\'s name, then Overview and Settings as links, the al
 test('the Overview holds every room and Add room (the Rooms list is folded into it)', () => {
   const overview = readFileSync(new URL('../web/overview.js', import.meta.url), 'utf8');
   assert.match(overview, /<button type="button" data-add>Add room<\/button>/);
-  assert.match(overview, /<div class="ov-section-head">\n\s*<h2>Rooms<\/h2>\n\s*<\/div>\n\s*<div class="ov-rooms" data-rooms><\/div>/);
+  assert.match(overview, /<div class="ov-section-head">\n\s*<h2>Rooms<\/h2>\n\s*<span class="card-note">Traces: the last 24 hours<\/span>\n\s*<\/div>\n\s*<div class="ov-rooms" data-rooms><\/div>/);
   assert.match(overview, /openRoomDialog\(\{ onSaved: \(room\) => \{ location\.hash = roomHash\(room\.id, 'setup'\); \} \}\)/, 'a new room opens on its Setup');
 });
