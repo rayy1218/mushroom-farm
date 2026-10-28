@@ -14,9 +14,11 @@ const series = [
 
 test('the time in band tiles', () => {
   assert.deepEqual(tileList({ inBand: { t: 96.2, rh: 88, co2: 100, all: 85.6 } }), [
-    { key: 't', label: 'Temperature', value: '96.2 %' }, { key: 'rh', label: 'Humidity', value: '88.0 %' },
-    { key: 'co2', label: 'CO₂', value: '100.0 %' }, { key: 'all', label: 'All three', value: '85.6 %' },
+    { key: 't', label: 'Temperature', value: '96.2 %', tone: 'good' }, { key: 'rh', label: 'Humidity', value: '88.0 %', tone: 'amber' },
+    { key: 'co2', label: 'CO₂', value: '100.0 %', tone: 'good' }, { key: 'all', label: 'All three', value: '85.6 %', tone: 'amber' },
   ]);
+  assert.equal(tileList({ inBand: { t: 0.8 } })[0].tone, 'warn', 'under 50 % bad, as the Simulations list');
+  assert.equal(tileList({})[0].tone, 'none');
   assert.equal(tileList({}).every((t) => t.value === '—'), true);
 });
 

@@ -28,7 +28,9 @@ export const TILES = [
 ];
 
 // The four tiles of summary.inBand as texts.
-export const tileList = (summary) => TILES.map((t) => ({ ...t, value: pct(summary?.inBand?.[t.key]) }));
+// The time in band as a verdict, as the Simulations list's pill: 95 % and up good, under 50 % bad, a warning between.
+const inBandTone = (x) => (!finite(x) ? 'none' : x >= 95 ? 'good' : x >= 50 ? 'amber' : 'warn');
+export const tileList = (summary) => TILES.map((t) => ({ ...t, value: pct(summary?.inBand?.[t.key]), tone: inBandTone(summary?.inBand?.[t.key]) }));
 
 // "Fruiting, flush 2", "Rest after flush 2", "Spawn run".
 export function stageName(stage, flush) {
@@ -279,7 +281,7 @@ export function runRow(run, roomId) {
     date: formatDateTime(run.createdAt),
     days: finite(days) ? plural(days, 'day', 'days') : DASH,
     all: done ? pct(run.summary?.inBand?.all) : DASH,
-    tone: !done || !finite(run.summary?.inBand?.all) ? 'none' : run.summary.inBand.all >= 95 ? 'good' : run.summary.inBand.all >= 50 ? 'amber' : 'warn',
+    tone: done ? inBandTone(run.summary?.inBand?.all) : 'none',
     kWh: done ? formatKWh(run.summary?.energy?.kWh) : DASH,
     litres: done ? formatLitres(run.summary?.water?.litres) : DASH,
     status: run.status === 'running' ? `Running ${Math.round((finite(run.progress) ? run.progress : 0) * 100)} %` : STATUS_WORDS[run.status] ?? String(run.status),

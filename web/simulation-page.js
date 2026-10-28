@@ -82,9 +82,11 @@ function table(caption, headers, rows) {
   return wrap;
 }
 
-function tile(label, value, line) {
+function tile(label, value, line, tone) {
   const node = text('div', 'us-tile');
-  node.append(text('p', 'us-label', label), text('p', 'us-kwh', value));
+  const v = text('p', 'us-kwh', value);
+  if (tone) v.dataset.tone = tone; // the time in band: good, a warning or bad
+  node.append(text('p', 'us-label', label), v);
   if (line) node.append(text('p', 'us-line', line));
   return node;
 }
@@ -243,7 +245,7 @@ export function mount(container, { id, runId }) {
     const band = text('section', 'card sim-card');
     band.append(text('h2', '', 'Time in band'));
     const tiles = text('div', 'us-tiles');
-    tiles.append(...tileList(summary).map((t) => tile(t.label, t.value)));
+    tiles.append(...tileList(summary).map((t) => tile(t.label, t.value, '', t.tone)));
     band.append(tiles);
     const stages = stageRows(summary.perStage);
     if (stages.length) {

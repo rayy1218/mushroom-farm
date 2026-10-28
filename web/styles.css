@@ -483,8 +483,15 @@ button.toggle[data-on="true"]:hover { background: color-mix(in srgb, var(--accen
 }
 
 /* ---- Settings page ---- */
-.settings { max-width: 480px; }
+.settings { max-width: 640px; }
 .settings h2 { margin-bottom: 12px; }
+/* Farm settings beside the phone alarms on a wide screen; each part of the form under a hairline */
+.settings-grid { display: grid; gap: 16px; align-items: start; }
+.settings-grid .settings { max-width: none; }
+.settings-grid .telegram { margin-top: 0; }
+.settings > h2 + .field { margin-top: 0; }
+.settings > h2:not(:first-child) { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--border); }
+@media (min-width: 1100px) { .settings-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .settings .field input { max-width: 160px; }
 .s-hint { margin: 0 0 16px; font-size: var(--fs-sm); }
 .settings .ac-send { margin-bottom: 0; }
@@ -605,6 +612,9 @@ button.toggle[data-on="true"]:hover { background: color-mix(in srgb, var(--accen
 .us-tile p { margin: 0; font-variant-numeric: tabular-nums; }
 .us-label { color: var(--ink-2); font-size: var(--fs-sm); }
 .us-kwh { font-size: var(--fs-xl); font-weight: 700; line-height: 1.25; }
+.us-kwh[data-tone="good"] { color: var(--good-text); }
+.us-kwh[data-tone="amber"] { color: var(--warning-text); }
+.us-kwh[data-tone="warn"] { color: var(--critical-text); }
 .us-line { font-size: var(--fs-md); }
 .us-basis { color: var(--muted); font-size: var(--fs-xs); text-transform: lowercase; }
 .us-hint { margin: 0 0 12px; font-size: var(--fs-sm); }

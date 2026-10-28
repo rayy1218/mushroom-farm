@@ -19,6 +19,7 @@ const TEMPLATE = `
     <span data-banner-text></span>
     <button type="button" data-retry>Retry</button>
   </div>
+  <div class="settings-grid">
   <form class="card settings" data-form novalidate hidden>
     <h2>Readings</h2>
     <div class="field">
@@ -53,7 +54,8 @@ const TEMPLATE = `
     </div>
     <p class="s-saved" data-saved role="status" hidden></p>
   </form>
-  <div data-telegram></div>`;
+  <div data-telegram></div>
+  </div>`;
 
 let mountSeq = 0; // every mount gets a token; a reply that finds the token changed is dropped
 
