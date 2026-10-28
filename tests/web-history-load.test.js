@@ -70,3 +70,14 @@ test('Live has no data and loads nothing; destroy clears the refresh timer and d
   await flush();
   assert.equal(timers.size, 0, 'a reply after destroy must not start a new timer');
 });
+
+test('the page can open on another range than Live (the room page opens on 24 h): it loads at once', async (t) => {
+  const { pending } = setup(t);
+  const { createHistory } = await import('../web/history.js');
+  const host = fakeElement();
+  const h = createHistory(host, { roomId: 3, initial: '24h', onChange: () => {} });
+  assert.deepEqual(pending.map((p) => p.path), ['/api/rooms/3/history?hours=24']);
+  assert.equal(h.current().range.key, '24h');
+  assert.equal(host.children.find((b) => b.dataset.range === '24h').attrs['aria-pressed'], 'true');
+  h.destroy();
+});

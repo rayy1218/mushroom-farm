@@ -436,7 +436,7 @@ export function mount(container, { id, tab = 'now' }) {
       usageSection = createUsageSection(els.usageCharts, { onCursor: moveCursor });
       exchangeSection = createExchangeSection(els.exchange, { roomId: id });
       usageCard = createUsageCard(els.usageHost, { roomId: id, getRoom: () => room });
-      history = createHistory(els.rangeHost, { roomId: id, outdoor: true, onChange: () => { if (alive() && sensors) renderCharts(); } });
+      history = createHistory(els.rangeHost, { roomId: id, outdoor: true, initial: '24h', onChange: () => { if (alive() && sensors) renderCharts(); } });
       const saved = { // the head and the other tabs show the change; new ratings change the estimates
         queue: createSaveQueue(), // one save at a time on the page: each PUT sends the whole room
         onSaved: (r) => {

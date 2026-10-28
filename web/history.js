@@ -8,9 +8,10 @@ export const HISTORY_REFRESH_MS = 60_000;
 
 // host: the element for the buttons. onChange() is called when the range changes or new data arrived.
 // outdoor: also load the outdoor T/RH of the same range (GET /api/outdoor/history); a failed or missing route gives null.
+// initial: the range shown first ('live' by default; the room page opens on '24h': what happened while you were away).
 // Returns { current() → { range, data, outdoor, failed } | null (null while Live), destroy() }.
-export function createHistory(host, { roomId, onChange, outdoor = false }) {
-  let range = RANGES[0];
+export function createHistory(host, { roomId, onChange, outdoor = false, initial = 'live' }) {
+  let range = rangeOf(initial);
   let data = null;
   let outdoorData = null;
   let failed = false;
@@ -66,6 +67,8 @@ export function createHistory(host, { roomId, onChange, outdoor = false }) {
     onChange();
     load();
   }
+
+  load(); // a range other than Live loads at once (Live loads nothing)
 
   return {
     current: () => (range.hours === null ? null : { range, data, outdoor: outdoorData, failed }),
