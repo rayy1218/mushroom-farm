@@ -5,7 +5,7 @@ import { RELAY_KEYS } from './machine-codes.js';
 import { RATINGS, FILTER } from './rooms.js';
 import { PROGRAM_DEFAULTS } from './program.js';
 
-const VERSION = 16;
+const VERSION = 17;
 
 // Iteration 1 (version 0) had only the rooms table without the address columns.
 const ROOMS = `
@@ -85,7 +85,8 @@ CREATE TABLE room_controls (
   humidifier_last_on INTEGER,
   dehumidifier_off_at INTEGER,
   outdoor_air INTEGER NOT NULL DEFAULT 1 CHECK (outdoor_air IN (0, 1)),
-  exchange_kind TEXT
+  exchange_kind TEXT,
+  auto_changed_at INTEGER
 ) STRICT;`;
 
 // Safety and history (spec 2026-10-19-safety-and-history-design.md 3.2 and 4): the room_controls columns
@@ -481,6 +482,15 @@ function migrate(db) {
                  DROP TABLE machine_log_old;`);
       }
     }
+    // Since when automatic control is on or off (the Manual reminder, alarm 'manualLong'). Not known for the existing rows:
+    // a room in Manual counts from the upgrade (its reminder comes 2 h after it), a room in auto stays null (not known; only
+    // the time auto went off matters). A file that already has the column keeps its times.
+    if (version < 17) {
+      if (!db.prepare('PRAGMA table_info(room_controls)').all().some((c) => c.name === 'auto_changed_at')) {
+        db.exec('ALTER TABLE room_controls ADD COLUMN auto_changed_at INTEGER');
+      }
+      db.prepare('UPDATE room_controls SET auto_changed_at = ? WHERE auto = 0 AND auto_changed_at IS NULL').run(Date.now());
+    }
     db.exec(`PRAGMA user_version = ${VERSION}`);
     db.exec('COMMIT');
   } catch (err) {
@@ -611,8 +621,9 @@ export function openDb(path, { log = console.error } = {}) {
     commands: db.prepare('SELECT * FROM machine_commands WHERE room_id = ?'),
     // A new room: the humidifier is not forced on during an air exchange (fresh Malaysian air is wet already).
     // and the aircon is not lowered during an exchange (it already runs at full power then). The column defaults
-    // (humidifier 1, ac_drop 5) stay for the rooms that the upgrades gave the settings.
-    insertControl: db.prepare('INSERT OR REPLACE INTO room_controls (room_id, humidifier_during_exchange, ac_drop) VALUES (?, 0, 0)'),
+    // (humidifier 1, ac_drop 5) stay for the rooms that the upgrades gave the settings. Auto is off from when the row is made.
+    insertControl: db.prepare(`INSERT OR REPLACE INTO room_controls (room_id, humidifier_during_exchange, ac_drop, auto_changed_at)
+                               VALUES (?, 0, 0, ?)`),
     deleteControl: db.prepare('DELETE FROM room_controls WHERE room_id = ?'),
     clearDehumidifierBand: db.prepare('UPDATE room_controls SET dehumidifier = 0 WHERE room_id = ?'),
     deleteAlarms: db.prepare('DELETE FROM alarms WHERE room_id = ?'),
@@ -651,7 +662,7 @@ export function openDb(path, { log = console.error } = {}) {
     setControlState: db.prepare(`UPDATE room_controls SET exchange = ?, humidifier = ?, exchange_since = ?,
                                         exchange_ended_at = ?, capped_in_row = ?, humidifier_since = ?,
                                         exchange_forced = ?, fresh_from = ?, dehumidifier = ?, humidifier_last_on = ?, dehumidifier_off_at = ?,
-                                        exchange_kind = ? WHERE room_id = ?`),
+                                        exchange_kind = ?, auto_changed_at = ? WHERE room_id = ?`),
     setRelay: Object.fromEntries(RELAY_KEYS.map((key) => [key,
       db.prepare(`UPDATE machine_commands SET ${key} = ?, relay_sent_at = ? WHERE room_id = ?`)])),
     setAc: db.prepare(`UPDATE machine_commands SET ac_power = ?, ac_mode = ?, ac_setpoint = ?, ac_fan = ?, ac_sent_at = ?
@@ -869,7 +880,7 @@ export function openDb(path, { log = console.error } = {}) {
           relayAddress, acAddress, meterAddress, ...ratingValues(ratings), ratings.dehumidifier ? 1 : 0, ratings.lights ? 1 : 0,
           ...filterValues(ratings), now, dpAddress, now, now);
         q.insertCommands.run(lastInsertRowid);
-        q.insertControl.run(lastInsertRowid);
+        q.insertControl.run(lastInsertRowid, now);
         db.exec('COMMIT');
         return getRoom(Number(lastInsertRowid));
       } catch (err) {
@@ -921,12 +932,13 @@ export function openDb(path, { log = console.error } = {}) {
     // The automatic control settings and band states, or null when there is no such room:
     // { auto, co2Low, co2High, tLow, tHigh, rhLow, rhHigh, humidifierDuringExchange, acFan, co2Safety, exchangeMaxMin, acDrop,
     //   exchangeEveryMin, exchangeForced, freshFrom,
-    //   exchange, exchangeSince, exchangeEndedAt, cappedInRow, humidifier, humidifierSince }
+    //   exchange, exchangeSince, exchangeEndedAt, cappedInRow, humidifier, humidifierSince,
+    //   autoChangedAt (ms when auto was last switched on or off, or null when not known) }
     getControl(roomId) {
       let r = q.control.get(roomId);
       if (!r) {
         if (!q.get.get(roomId)) return null;
-        q.insertControl.run(roomId); // a room made by older code has no row yet
+        q.insertControl.run(roomId, Date.now()); // a room made by older code has no row yet
         r = q.control.get(roomId);
       }
       return {
@@ -937,7 +949,7 @@ export function openDb(path, { log = console.error } = {}) {
         cappedInRow: r.capped_in_row, humidifierSince: r.humidifier_since, dehumidifier: r.dehumidifier === 1,
         humidifierLastOn: r.humidifier_last_on, dehumidifierOffAt: r.dehumidifier_off_at,
         exchangeEveryMin: r.exchange_every_min, exchangeForced: r.exchange_forced === 1, freshFrom: r.fresh_from,
-        outdoorAir: r.outdoor_air === 1, exchangeKind: r.exchange_kind,
+        outdoorAir: r.outdoor_air === 1, exchangeKind: r.exchange_kind, autoChangedAt: r.auto_changed_at,
       };
     },
 
@@ -950,7 +962,8 @@ export function openDb(path, { log = console.error } = {}) {
     // Without exchangeSince it keeps the time the exchange began and is cleared when it ends. exchangeEndedAt, cappedInRow,
     // humidifierSince, exchangeForced and freshFrom are kept when not given (null is a value).
     // dehumidifier: its band state (spec 2026-10-21-dehumidifier-design.md 3), kept when not given.
-    setControlState(roomId, { exchange, humidifier, exchangeSince, exchangeEndedAt, cappedInRow, humidifierSince, exchangeForced, freshFrom, dehumidifier, humidifierLastOn, dehumidifierOffAt, exchangeKind }, at) {
+    // autoChangedAt: when auto was last switched on or off (the controller's update), kept when not given.
+    setControlState(roomId, { exchange, humidifier, exchangeSince, exchangeEndedAt, cappedInRow, humidifierSince, exchangeForced, freshFrom, dehumidifier, humidifierLastOn, dehumidifierOffAt, exchangeKind, autoChangedAt }, at) {
       const r = q.control.get(roomId);
       if (!r) return false;
       const since = exchangeSince !== undefined ? exchangeSince : exchange ? (r.exchange_since ?? at) : null;
@@ -963,7 +976,8 @@ export function openDb(path, { log = console.error } = {}) {
         dehumidifier !== undefined ? (dehumidifier ? 1 : 0) : r.dehumidifier,
         humidifierLastOn !== undefined ? humidifierLastOn : r.humidifier_last_on,
         dehumidifierOffAt !== undefined ? dehumidifierOffAt : r.dehumidifier_off_at,
-        exchangeKind !== undefined ? exchangeKind : r.exchange_kind, roomId).changes > 0;
+        exchangeKind !== undefined ? exchangeKind : r.exchange_kind,
+        autoChangedAt !== undefined ? autoChangedAt : r.auto_changed_at, roomId).changes > 0;
     },
 
     // ---- Alarms (spec 2026-10-19-safety-and-history-design.md section 3) ----
