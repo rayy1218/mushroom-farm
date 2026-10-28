@@ -101,7 +101,7 @@ test('the warnings of a stage: the mix and the crops\' good ranges', () => {
   assert.deepEqual(stageWarnings(full.crops, 'fruiting'), []);
   const mixed = stageWarnings([{ crop: 'oyster', blocks: 500 }, { crop: 'lionsmane', blocks: 500 }], 'fruiting');
   assert.equal(mixed[0], "Grey oyster and Lion's mane (draft) do not fit one temperature band");
-  assert.ok(mixed.some((w) => /outside the good range for Lion's mane \(draft\): 16–22 °C/.test(w)));
+  assert.ok(mixed.some((w) => /goes past the guide's 16–22 °C for Lion's mane \(draft\)/.test(w)));
   assert.deepEqual(stageWarnings([{ crop: 'oyster', blocks: 500 }, { crop: 'lionsmane', blocks: 500 }], 'spawn'),
     ["Grey oyster and Lion's mane (draft) do not fit one humidity band"], 'the ranges are of fruiting only');
   assert.deepEqual(stageWarnings([], 'fruiting'), []);

@@ -83,10 +83,10 @@ export function rangeWarnings(crops, bands, stage) {
   for (const { crop } of crops) {
     const { name, range } = CROPS[crop];
     if (bands.tLow < range.T[0] || bands.tHigh > range.T[1]) {
-      out.push(`Temperature band ${bands.tLow}–${bands.tHigh} °C is outside the good range for ${name}: ${range.T[0]}–${range.T[1]} °C`);
+      out.push(`Temperature band ${bands.tLow}–${bands.tHigh} °C goes past the guide's ${range.T[0]}–${range.T[1]} °C for ${name}`);
     }
     if (bands.rhLow < range.RH[0] || bands.rhHigh > range.RH[1]) {
-      out.push(`Humidity band ${bands.rhLow}–${bands.rhHigh} % RH is outside the good range for ${name}: ${range.RH[0]}–${range.RH[1]} % RH`);
+      out.push(`Humidity band ${bands.rhLow}–${bands.rhHigh} % RH goes past the guide's ${range.RH[0]}–${range.RH[1]} % RH for ${name}`);
     }
   }
   return out;

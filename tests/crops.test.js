@@ -48,7 +48,7 @@ test('a mix without a temperature overlap: the weighted average target ± 1, wit
 
 test('range warnings for a fruiting band outside a crop range', () => {
   const bands = { ...cropBands('oyster', 'fruiting'), tLow: 21, tHigh: 23 };
-  assert.deepEqual(rangeWarnings([{ crop: 'pink', blocks: 1 }], bands, 'fruiting'), ['Temperature band 21–23 °C is outside the good range for Pink oyster\: 24–29 °C']);
+  assert.deepEqual(rangeWarnings([{ crop: 'pink', blocks: 1 }], bands, 'fruiting'), ["Temperature band 21–23 °C goes past the guide's 24–29 °C for Pink oyster"]);
   assert.deepEqual(rangeWarnings([{ crop: 'oyster', blocks: 1 }], cropBands('oyster', 'fruiting'), 'fruiting'), []);
   assert.deepEqual(rangeWarnings([{ crop: 'pink', blocks: 1 }], bands, 'rest'), []);
 });
