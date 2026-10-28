@@ -20,7 +20,8 @@ test('the outdoor line is dotted, round-capped, in the chart\'s colour; the band
 // Critique 2026-10-28: "own scale 25.8–32.6" in the plot was struck through by the band's line and gone on a phone.
 test('its legend sits above the plot (Room, then Outdoor and its latest value); its scale is numbered on the right', () => {
   assert.match(part, /'Room'/);
-  assert.match(part, /`\$\{current\.second\.label \?\? 'Outdoor'\}\$\{lastSecond \? ` \$\{fmt\(lastSecond\.value\)\}` : ''\}\$\{width < 560 \? ' · right scale' : ' · its scale on the right'\}`/);
+  assert.match(part, /secondLegend\(current\.second\.label \?\? 'Outdoor', lastSecond \? fmt\(lastSecond\.value\) : '', x1 - \(lx \+ 26\) - 4\)/);
+  assert.match(part, /svg\.append\(el\('line', \{ x1: x1 \+ 7, x2: x1 \+ 27, y1: y1 - 10, y2: y1 - 10, \.\.\.dots \}\)\);/, 'the right scale under a dotted mark');
   assert.match(part, /for \(const \[v, y\] of \[\[s2\.max, y1\], \[s2\.min, y0\]\]\)/);
   assert.match(chart, /export const M = \{ left: 64, right: 48,/);
 });
@@ -37,4 +38,15 @@ test('a long range marks a gap in the readings (the app or the sensor was off) i
   assert.ok(gap.length > 0, 'a block for the gaps');
   assert.match(gap, /if \(current\.range\)/, 'long ranges only (Live shows failed polls as red ticks)');
   assert.match(gap, /'No readings'/);
+});
+
+// Critique 2026-10-28: "Outdoor 61.1 % RH · right scale" was cut by the SVG's edge at 390 px.
+test('the outdoor legend takes the longest words that fit; a phone keeps the name and value whole', async () => {
+  const { secondLegend } = await import('../web/chart-math.js');
+  assert.equal(secondLegend('Outdoor', '61.1 % RH', 400), 'Outdoor 61.1 % RH · its scale on the right');
+  assert.equal(secondLegend('Outdoor', '61.1 % RH', 220), 'Outdoor 61.1 % RH · right scale');
+  // a 390 px phone: the chart about 334 px wide, the text from x 160 to the scale's mark at 286
+  assert.equal(secondLegend('Outdoor', '61.1 % RH', 334 - 48 - 160 - 4), 'Outdoor 61.1 % RH');
+  assert.equal(secondLegend('Outdoor', '61.1 % RH', 60), 'Outdoor');
+  assert.equal(secondLegend('Outdoor', '', 400), 'Outdoor · its scale on the right', 'no value yet');
 });

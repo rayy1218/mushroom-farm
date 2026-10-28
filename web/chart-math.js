@@ -136,3 +136,11 @@ export function stepShapes(steps, window, xAt, yFor) {
 
 // Every value a list of band steps reaches, for the y range.
 export const stepValues = (steps) => (steps ?? []).flatMap((s) => [s.low, s.high]);
+
+// The outdoor line's legend, longest first, the first that fits `room` px of 12 px text (about 7 px a character, so a phone's
+// chart never clips it): "Outdoor 61.1 % RH · its scale on the right", "… · right scale", "Outdoor 61.1 % RH", "Outdoor".
+// Without the scale words the right scale's own dotted mark says whose numbers they are.
+export function secondLegend(label, value, room) {
+  const base = value ? `${label} ${value}` : label;
+  return [`${base} · its scale on the right`, `${base} · right scale`, base].find((t) => t.length * 7 <= room) ?? label;
+}
