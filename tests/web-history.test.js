@@ -183,3 +183,39 @@ test('a simulation\'s aircon marks carry their setpoint, so a fast run reads "16
   assert.deepEqual(row.marks.map((m) => m.value), [20, 16, 20, 16]);
   assert.deepEqual(markRuns(row.marks, (at) => at / 10, 1000).map((l) => l.text), ['16–20 °C, switching']);
 });
+
+// Critique 2026-10-28: pulses closer than a few pixels merged into one solid bar (a humidifier switching on a phone's 24 h,
+// a long simulation), and their overlapping edges made a ridge like the Manual hatch.
+test('packSpans: spans closer than minGap make one stretch that keeps its time on; manual and auto never join', async () => {
+  const { packSpans, onShare } = await import('../web/history-math.js');
+  const pulses = [0, 10, 20, 30].map((t) => ({ from: t, to: t + 4, source: 'auto' }));
+  const [s] = packSpans(pulses, 8);
+  assert.deepEqual(s, { from: 0, to: 34, source: 'auto', on: 16, count: 4 });
+  assert.equal(Math.round(onShare(s) * 100), 47);
+  assert.equal(onShare({ from: 0, to: 100, source: 'auto' }), 1, 'a span that ran without a break is solid');
+  assert.equal(packSpans(pulses, 5).length, 4, 'gaps wider than minGap stay apart');
+  assert.equal(packSpans([{ from: 0, to: 4, source: 'auto' }, { from: 5, to: 9, source: 'manual' }], 8).length, 2);
+  const again = packSpans([{ from: 0, to: 34, source: 'auto', on: 16, count: 4 }, { from: 36, to: 40, source: 'auto' }], 8);
+  assert.deepEqual(again, [{ from: 0, to: 40, source: 'auto', on: 20, count: 5 }], 'an already joined span keeps its time on');
+  assert.deepEqual(packSpans(undefined, 8), []);
+});
+
+test('switchingLabels: "switching · 45 % on" over a stretch that is mostly switching, only where it fits', async () => {
+  const { switchingLabels } = await import('../web/history-math.js');
+  const stretch = { from: 100, to: 400, source: 'auto', on: 135, count: 20 };
+  assert.deepEqual(switchingLabels([stretch], (at) => at), [{ x: 103, text: 'switching · 45 % on' }]);
+  assert.deepEqual(switchingLabels([{ ...stretch, to: 160, on: 27 }], (at) => at), [], 'too narrow for the words');
+  assert.deepEqual(switchingLabels([{ from: 100, to: 400, source: 'auto' }], (at) => at), [], 'a solid run says nothing');
+  assert.deepEqual(switchingLabels([{ ...stretch, on: 290 }], (at) => at), [], 'on nearly all the time: no words');
+  assert.deepEqual(switchingLabels([stretch], (at) => at, { left: 120 }), [{ x: 123, text: 'switching · 45 % on' }], 'starts after the row\'s name');
+  assert.deepEqual(switchingLabels([stretch], (at) => at, { taken: [{ start: 150, end: 200 }] }), [], 'not over a setpoint label');
+});
+
+test('timelineSummary: a row read out says how much a switching machine was on', async () => {
+  const { timelineSummary } = await import('../web/history-math.js');
+  const range = { from: 0, to: 1000 };
+  assert.equal(timelineSummary({ label: 'Humidifier', spans: [{ from: 0, to: 1000, on: 450, count: 40, source: 'auto' }] }, range), 'Humidifier on 45 % of the time, switching');
+  assert.equal(timelineSummary({ label: 'Intake', spans: [{ from: 0, to: 10, source: 'auto' }, { from: 50, to: 60, source: 'auto' }] }, range), 'Intake on 2 times');
+  assert.equal(timelineSummary({ label: 'Intake', spans: [{ from: 0, to: 10, source: 'auto' }] }, range), 'Intake on 1 time');
+  assert.equal(timelineSummary({ label: 'Lights', spans: [] }, range), 'Lights off');
+});
