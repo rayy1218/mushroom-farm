@@ -162,6 +162,9 @@ export const SPARK_BUCKET_MS = 30 * 60_000;
 export const SPARK_W = 140;
 export const SPARK_H = 36;
 
+const withLive = (points, sensor, key, now) => (sensor?.status === 'online' && finite(sensor[key]) && points?.length
+  ? [...points, { at: now, v: sensor[key] }] : points);
+
 // What one room card shows, from a room of GET /api/overview:
 // { href, name, values: [{ label, text, color, spark, ... }], auto, exchange, alarm: { text, level } | null }
 export function roomCard(room, now = Date.now()) {
@@ -173,7 +176,8 @@ export function roomCard(room, now = Date.now()) {
       color: def.color,
       text: sensorText(sensor, def.key, def.digits, def.unit),
       chip: bandChip(sensor, def.key, room.bands[def.low], room.bands[def.high], room.spark?.[def.key]),
-      spark: sparkPath(room.spark[def.key], SPARK_W, SPARK_H, { low: room.bands[def.low], high: room.bands[def.high] },
+      // the trace ends at the reading shown beside it (the buckets are 30 min averages, so the last one can lag it)
+      spark: sparkPath(withLive(room.spark[def.key], sensor, def.key, now), SPARK_W, SPARK_H, { low: room.bands[def.low], high: room.bands[def.high] },
         { from: now - SPARK_WINDOW_MS, to: now, gapMs: 3 * SPARK_BUCKET_MS }),
     };
   });

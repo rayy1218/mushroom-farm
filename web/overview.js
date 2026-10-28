@@ -24,7 +24,7 @@ const TEMPLATE = `
       <h1 class="page-title" tabindex="-1">Overview</h1>
       <p class="page-sub">Is the farm OK? All rooms at a glance.</p>
     </div>
-    <div class="page-actions"><button type="button" data-add>Add room</button></div>
+    <div class="page-actions ov-actions"><button type="button" data-add>Add room</button></div>
   </div>
   <div class="banner" role="alert" hidden>
     <span data-banner-text></span>
@@ -32,6 +32,7 @@ const TEMPLATE = `
   </div>
   <p class="muted" data-loading>Loading…</p>
   <div data-body hidden>
+    <p class="ov-stale" data-stale-note hidden></p>
     <section class="card ov-status" data-status aria-live="polite"></section>
     <section class="card ov-alarms" data-alarms hidden>
       <h2>Alarms</h2>
@@ -105,6 +106,7 @@ export function mount(container) {
     alarmList: q('[data-alarm-list]'),
     empty: q('[data-empty]'),
     rooms: q('[data-rooms]'),
+    staleNote: q('[data-stale-note]'),
     farm: q('[data-farm]'),
   };
   const alive = () => me === mountSeq;
@@ -117,6 +119,8 @@ export function mount(container) {
   let usageAt = 0; // when the farm usage was last read: it is asked at most once a minute
   let outdoor = null; // the last good GET /api/outdoor (null: none yet, or an older server)
   let usage = null; // the last good GET /api/usage
+  let okAt = null; // when the rooms last loaded
+  let roomOrder = []; // the room cards' ids in order, for the energy table
   let phone = null; // the phone-alarm line (phoneAlarms), null when alarms reach a phone
 
   function showBanner(text, retry = false) {
@@ -140,18 +144,24 @@ export function mount(container) {
     if (outdoorData) outdoor = outdoorData; // a failed read keeps the last card
     if (wantUsage) usageAt = Date.now(); // a failed read is tried again in a minute
     if (usageData) usage = usageData;
-    renderFarm();
     if (settings) phone = phoneAlarms(settings); // a failed read keeps the last line
     refresh = refreshMs(settings);
     const { overview, alarms, failed } = result;
     if (failed.overview || failed.alarms) showBanner(OFFLINE, true);
     else if (holdBanner) holdBanner = false;
     else els.banner.hidden = true;
+    // Offline: the last readings stay, greyed, with their time; their OK and In band are not claimed as now (critique 2026-10-28).
+    if (overview) okAt = Date.now();
+    const stale = Boolean(failed.overview) && shown;
+    for (const host of [els.status, els.rooms]) host.toggleAttribute('data-stale', stale);
+    els.staleNote.hidden = !stale;
+    if (stale) els.staleNote.textContent = `These are the readings from ${alarmTimeText(okAt)}; the farm server can't be reached.`;
     // A part that failed keeps what is on screen.
     if (overview) {
       renderRooms(overview.rooms);
       shown = true;
     }
+    renderFarm(); // after the rooms: its table follows their order
     if (overview || !failed.alarms) renderAlarms(alarms);
     els.loading.hidden = true;
     els.body.hidden = !shown && alarms.length === 0;
@@ -180,7 +190,9 @@ export function mount(container) {
     }
     els.empty.hidden = rooms.length > 0;
     const now = Date.now();
-    els.rooms.replaceChildren(...sortRooms(rooms).map((room) => {
+    const sorted = sortRooms(rooms);
+    roomOrder = sorted.map((r) => r.id);
+    els.rooms.replaceChildren(...sorted.map((room) => {
       const c = roomCard(room, now);
       const card = node('section', 'card ov-room');
       const head = node('div', 'ov-room-head');
@@ -257,7 +269,8 @@ export function mount(container) {
     const tilesRow = node('div', 'us-tiles');
     tilesRow.append(...usageTileNodes(u, false));
     card.append(tilesRow);
-    const lines = roomLines(u);
+    const rank = (id) => { const i = roomOrder.indexOf(id); return i < 0 ? Infinity : i; };
+    const lines = roomLines(u).map((l, i) => [l, i]).sort((a, b) => rank(a[0].id) - rank(b[0].id) || a[1] - b[1]).map(([l]) => l); // the cards' order
     if (lines.length) {
       const list = node('ul', 'us-rooms');
       const head = node('li', 'us-room us-room-head');

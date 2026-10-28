@@ -170,3 +170,13 @@ test('the Overview chip says what the room page says: near an edge that hurts is
   const falling = chips({ ...base, trh: { status: 'online', t: 20, rh: 87.4 }, spark: { ...base.spark, rh: [{ at: now - 60 * 60_000, v: 89 }, { at: now - 30 * 60_000, v: 88.2 }] } });
   assert.deepEqual(falling.rh, { text: 'In band · near the bottom and falling', tone: 'amber' });
 });
+
+test('the Overview offline: the last readings greyed with their time, not claimed as now', async () => {
+  const { readFileSync } = await import('node:fs');
+  const page = readFileSync(new URL('../web/overview.js', import.meta.url), 'utf8');
+  assert.match(page, /const stale = Boolean\(failed\.overview\) && shown;/);
+  assert.match(page, /These are the readings from \$\{alarmTimeText\(okAt\)\}; the farm server can't be reached\./);
+  const css = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
+  assert.match(css, /\[data-stale\] \.pill, \[data-stale\] \.ov-band, \[data-stale\] \.ov-status-dot \{ filter: grayscale\(1\)/);
+  assert.match(css, /\.ov-rooms \{ display: grid; grid-template-columns: repeat\(auto-fit, minmax\(320px, 1fr\)\);/);
+});
