@@ -52,8 +52,13 @@ export function createRoomCard(hosts, { idPrefix = 'room-', cropHref = '', onSwi
     t.trace.setAttribute('role', 'img');
     t.svg = svg('svg', { viewBox: '0 0 100 32', preserveAspectRatio: 'none', 'aria-hidden': 'true' });
     t.zone = svg('rect', { class: 'rd-zone', x: 0, width: 100, fill: SERIES[key] }, t.svg);
+    t.edges = [0, 1].map(() => svg('line', { class: 'rd-edge', x1: 0, x2: 100, 'vector-effect': 'non-scaling-stroke' }, t.svg));
     t.path = svg('path', { class: 'rd-line', fill: 'none', stroke: SERIES[key], 'vector-effect': 'non-scaling-stroke' }, t.svg);
-    t.trace.append(t.svg, t.span);
+    t.dot = el('span', 'rd-dot'); // the newest reading (a dot outside the stretched SVG keeps its round shape)
+    t.dot.style.background = SERIES[key];
+    const plot = el('div', 'rd-plot');
+    plot.append(t.svg, t.dot);
+    t.trace.append(plot, t.span);
     t.node.append(head, val, t.band, t.trace);
     hosts.readings.append(t.node);
     return t;
@@ -74,6 +79,12 @@ export function createRoomCard(hosts, { idPrefix = 'room-', cropHref = '', onSwi
     t.path.setAttribute('d', trace.line);
     t.zone.style.display = trace.band ? '' : 'none';
     if (trace.band) { t.zone.setAttribute('y', trace.band.y); t.zone.setAttribute('height', Math.max(0, trace.band.h)); }
+    t.edges.forEach((line, i) => {
+      line.style.display = trace.edges ? '' : 'none';
+      if (trace.edges) { const yy = i ? trace.edges.bottom : trace.edges.top; line.setAttribute('y1', yy); line.setAttribute('y2', yy); }
+    });
+    t.dot.hidden = !trace.last;
+    if (trace.last) { t.dot.style.left = `${trace.last.x}%`; t.dot.style.top = `${(trace.last.y / 32) * 100}%`; }
     put(t.span, trace.span);
   }
 

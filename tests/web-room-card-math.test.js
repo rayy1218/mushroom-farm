@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   scaleFor, bandBar, readingTiles, controlNote, freshAirLine, machineTiles, filterSummary, filterFrom, bottomLine, blocksLine, roomCard, cropFacts, stayed,
-  traceOf, cropSummary, hourPoints,
+  traceOf, cropSummary, hourPoints, traceScale,
 } from '../web/room-card-math.js';
 import { formatDateTime } from '../web/simulation-math.js';
 import { fromRoom } from '../web/mimic-math.js';
@@ -100,7 +100,7 @@ test('traceOf: a failed poll breaks the line; no band without one; nothing with 
   assert.equal(traceOf(undefined, 0, 2), null);
   const flat = traceOf([{ at: 0, value: 5 }, { at: 3_600_000, value: 5 }], null, null, { w: 10, h: 10 });
   assert.equal(flat.line, 'M0 5L10 5', 'a flat line sits in the middle');
-  assert.equal(flat.span, 'Last 1 h');
+  assert.equal(flat.span, 'Last hour');
 });
 
 test('readingTiles: red edge at the safety level, grey without data; thousands grouped', () => {
@@ -340,4 +340,33 @@ test('hourPoints: the reading cards trace the last hour: the history of the hour
     'older than an hour dropped; live polls only after the last history point');
   assert.deepEqual(hourPoints(null, live, now), live, 'no history yet: the live polls');
   assert.deepEqual(hourPoints(base, [], now), base.slice(1));
+});
+
+test('traceOf with a scale: a fixed range per reading (normal cycling stays calm), the band edges as lines, the newest point, "Last hour"', () => {
+  const pts = [{ at: 0, value: 88 }, { at: 1_800_000, value: 92 }, { at: 3_600_000, value: 90 }];
+  const tr = traceOf(pts, 87, 93, { w: 100, h: 30, scale: { min: 70, max: 100 } });
+  const y = (v) => Number((30 - ((v - 70) / 30) * 30).toFixed(2));
+  assert.equal(tr.line, `M0 ${y(88)}L50 ${y(92)}L100 ${y(90)}`);
+  assert.deepEqual(tr.edges, { top: y(93), bottom: y(87) });
+  assert.deepEqual(tr.last, { x: 100, y: y(90) });
+  assert.equal(tr.span, 'Last hour', 'an hour or near it reads "Last hour"');
+  const wide = traceOf([{ at: 0, value: 60 }, { at: 60_000, value: 65 }], 87, 93, { w: 10, h: 10, scale: { min: 70, max: 100 } });
+  assert.ok(wide.line.startsWith('M0 10'), 'a value below the scale widens it (the lowest point at the bottom)');
+});
+
+test('readingTiles: in band but within 15 % of the band\'s width of an edge says which ("near the top")', () => {
+  const near = readingTiles(draw({ sensors: { ...sensors, trh: { status: 'online', lastOk: { t: 22.8, rh: 94.5, at: 1 } } } }), control);
+  assert.equal(near[0].chip.text, '✓ In band · near the top', 'T 22.8 in 21–23: 0.2 of 2 from the top');
+  assert.equal(near[1].chip.text, '✓ In band · near the top', 'RH 94.5 in 90–95');
+  const mid = readingTiles(draw({ sensors: { ...sensors, trh: { status: 'online', lastOk: { t: 22, rh: 92.5, at: 1 } } } }), control);
+  assert.equal(mid[0].chip.text, '✓ In band');
+  const low = readingTiles(draw({ sensors: { ...sensors, co2: { status: 'online', lastOk: { co2: 620, at: 1 } } } }), control)[2];
+  assert.equal(low.chip.text, '✓ In band · near the bottom');
+});
+
+test('traceScale: the band and twice its width either side, so the band is always a fifth of the trace; humidity stays 0–100', () => {
+  assert.deepEqual(traceScale('T', 19, 21), { min: 15, max: 25 });
+  assert.deepEqual(traceScale('RH', 87, 93), { min: 75, max: 100 });
+  assert.deepEqual(traceScale('CO2', 700, 800), { min: 500, max: 1000 });
+  assert.equal(traceScale('T', null, 21), null, 'no band: the trace zooms to its readings');
 });

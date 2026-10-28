@@ -66,10 +66,17 @@ export function readingTiles(draw, control) {
     const low = num(control?.[r.low]);
     const high = num(control?.[r.high]);
     const shown = value === null ? DASH : r.text(value);
+    // In band but close to an edge (within 15 % of the band's width): say which, so a worker sees it coming.
+    let near = '';
+    if (st.lvl === 'good' && value !== null && low !== null && high !== null && high > low) {
+      const room = 0.15 * (high - low);
+      if (high - value <= room) near = ' · near the top';
+      else if (value - low <= room) near = ' · near the bottom';
+    }
     return {
       key: r.key, name: r.name, value: shown, unit: r.unit,
       band: low !== null && high !== null ? `Band ${limit(low, r.key)}–${limit(high, r.key)} ${r.unit}` : '',
-      chip: { lvl: st.lvl || 'none', text: `${st.icon ? `${st.icon} ` : ''}${st.text || ''}` },
+      chip: { lvl: st.lvl || 'none', text: `${st.icon ? `${st.icon} ` : ''}${st.text || ''}${near}` },
       edge: EDGE[st.lvl] ?? 'none',
       bar: bandBar(r.key, value, low, high, r.safety ? num(control?.[r.safety]) : null),
       label: value === null ? `${r.name} no data` : `${r.name} ${shown} ${r.unit}${low !== null && high !== null ? `, band ${limit(low, r.key)} to ${limit(high, r.key)}` : ''}`,
@@ -81,41 +88,65 @@ export function readingTiles(draw, control) {
 
 const r2 = (x) => Number(x.toFixed(2));
 
+// A reading card's trace scale: the band and twice its width above and below (humidity kept within 0–100), so normal
+// cycling inside the band stays calm and the band is always about a fifth of the height. null without a band.
+export function traceScale(key, low, high) {
+  if (num(low) === null || num(high) === null || high <= low) return null;
+  const w = high - low;
+  let min = low - 2 * w;
+  let max = high + 2 * w;
+  if (key === 'RH') { min = Math.max(0, min); max = Math.min(100, max); }
+  if (key === 'CO2') min = Math.max(0, min);
+  return { min, max };
+}
+
 // How long the recent readings span: "Last 15 s", "Last 4 min", "Last 2 h".
 function spanText(ms) {
   if (ms < 60_000) return `Last ${Math.round(ms / 1000)} s`;
+  if (ms >= 50 * 60_000 && ms <= 70 * 60_000) return 'Last hour'; // the reading cards' usual window: one stable word
   if (ms < 3_600_000) return `Last ${Math.round(ms / 60_000)} min`;
   return `Last ${Math.round(ms / 3_600_000)} h`;
 }
 
 // The small trace on a reading card: the recent readings ([{ at, value }], value null for a failed poll) as an SVG path in a
-// w × h box over the time they span, zoomed to the readings and the band (15 % air above and below), the band as a shaded
-// strip. → { line, band: { y, h } | null, span } or null with fewer than two readings.
-export function traceOf(points, low, high, { w = 100, h = 32 } = {}) {
+// w × h box over the time they span, the band as a shaded strip with its edges as lines, the newest point marked. scale: a
+// fixed range for the reading (scaleFor's), widened to hold the readings, so normal cycling inside the band stays calm;
+// without one the trace zooms to the readings and the band (15 % air above and below).
+// → { line, band: { y, h } | null, edges: { top, bottom } | null, last: { x, y } | null, span } or null with fewer than two.
+export function traceOf(points, low, high, { w = 100, h = 32, scale = null } = {}) {
   const list = (points ?? []).filter((p) => p && Number.isFinite(p.at));
   const values = list.map((p) => num(p.value)).filter((v) => v !== null);
   if (values.length < 2) return null;
   const hasBand = num(low) !== null && num(high) !== null;
   let lo = Math.min(...values, ...(hasBand ? [low] : []));
   let hi = Math.max(...values, ...(hasBand ? [high] : []));
-  const pad = hi > lo ? (hi - lo) * 0.15 : 0.5;
-  lo -= pad;
-  hi += pad;
+  if (scale) {
+    lo = Math.min(scale.min, ...values);
+    hi = Math.max(scale.max, ...values);
+  } else {
+    const pad = hi > lo ? (hi - lo) * 0.15 : 0.5;
+    lo -= pad;
+    hi += pad;
+  }
   const t0 = list[0].at;
   const t1 = list[list.length - 1].at;
   const x = (at) => r2(t1 > t0 ? ((at - t0) / (t1 - t0)) * w : 0);
   const y = (v) => r2(h - ((v - lo) / (hi - lo)) * h);
   let line = '';
   let pen = false;
+  let last = null;
   for (const p of list) {
     const v = num(p.value);
     if (v === null) { pen = false; continue; }
     line += `${pen ? 'L' : 'M'}${x(p.at)} ${y(v)}`;
     pen = true;
+    last = { x: x(p.at), y: y(v) };
   }
   return {
     line,
     band: hasBand ? { y: y(high), h: r2(y(low) - y(high)) } : null,
+    edges: hasBand ? { top: y(high), bottom: y(low) } : null,
+    last,
     span: spanText(t1 - t0),
   };
 }

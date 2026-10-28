@@ -22,7 +22,7 @@ import { closeSimulateDialog } from './simulate-dialog.js';
 import { startLoop } from './mimic.js';
 import { fromRoom } from './mimic-math.js';
 import { createRoomCard } from './room-card.js';
-import { roomCard, filterFrom, freshAirLine, blocksLine, cropFacts, traceOf, hourPoints } from './room-card-math.js';
+import { roomCard, filterFrom, freshAirLine, blocksLine, cropFacts, traceOf, hourPoints, traceScale } from './room-card-math.js';
 import { drawLineChart } from './chart.js';
 import { refreshMs } from './settings-math.js';
 import { live } from './live.js';
@@ -500,10 +500,12 @@ export function mount(container, { id, tab = 'now' }) {
     const c = lastControl;
     const h = hourBase; // the last hour of history (null until it loaded), then the newer live polls
     const pts = (kind, field) => hourPoints(h ? historyPoints(h[kind], field, h.bucketS, h.pollSeconds) : null, chartPoints(sensors[kind], field), now);
-    const traces = { // the reading cards' traces: the last hour against the band
-      T: traceOf(pts('trh', 't'), c?.tLow, c?.tHigh),
-      RH: traceOf(pts('trh', 'rh'), c?.rhLow, c?.rhHigh),
-      CO2: traceOf(pts('co2', 'co2'), c?.co2Low, c?.co2High),
+    // the reading cards' traces: the last hour against the band, on a scale set by the band (traceScale)
+    const trace = (key, p, low, high) => traceOf(p, low, high, { scale: traceScale(key, low, high) });
+    const traces = {
+      T: trace('T', pts('trh', 't'), c?.tLow, c?.tHigh),
+      RH: trace('RH', pts('trh', 'rh'), c?.rhLow, c?.rhHigh),
+      CO2: trace('CO2', pts('co2', 'co2'), c?.co2Low, c?.co2High),
     };
     const switches = { // Manual: a switch on each relay machine's row
       manual: Boolean(lastControl) && !lastControl.auto,
