@@ -406,6 +406,29 @@ export function inputLine(input, roomMin = null) {
   ].join(' · ');
 }
 
+// What a run was given beyond its machines, in short words for the Simulations list: { key: text or null (not kept) }.
+function givenParts(input) {
+  const c = input?.ctx?.control ?? input?.control ?? {};
+  const max = finite(c.exchangeMaxMin) ? `up to ${c.exchangeMaxMin} min` : null;
+  const started = input ? startedFrom(input) : null;
+  return {
+    exchange: max && (finite(c.exchangeEveryMin) ? (c.exchangeEveryMin > 0 ? `exchange every ${c.exchangeEveryMin} min, ${max}` : `exchange ${max}, fresh air off`) : `exchange ${max}`),
+    acDrop: finite(c.acDrop) ? (c.acDrop > 0 ? `aircon ${c.acDrop} °C lower during exchange` : 'aircon not lowered during exchange') : null,
+    humidifier: typeof c.humidifierDuringExchange === 'boolean' ? `humidifier ${c.humidifierDuringExchange ? 'on' : 'off'} during exchange` : null,
+    outdoor: typeof c.outdoorAir === 'boolean' ? (c.outdoorAir ? 'outdoor air used' : 'no outdoor air') : null,
+    start: !input ? null : started ? (input.start === 'outdoor' ? `from ${started}` : `started ${started}`) : 'started in band',
+  };
+}
+
+// The Simulations list's second line of each run: what it was given beyond its machines, only the parts that differ between
+// the runs shown ('' when nothing does). Critique 2026-10-28: two runs with the same machines scored 0.8 % and 98.3 % in
+// band, and the list did not say that their air exchange and aircon settings were not the same.
+export function differingLines(runs) {
+  const parts = (runs ?? []).map((r) => givenParts(r?.input));
+  const keys = Object.keys(parts[0] ?? {}).filter((k) => new Set(parts.map((p) => p[k]).filter((v) => v !== null)).size > 1);
+  return parts.map((p) => keys.map((k) => p[k]).filter((v) => v !== null).join(' · '));
+}
+
 const STATUS_WORDS = { queued: 'Waiting', done: 'Done', failed: 'Failed' };
 
 // One run of GET /api/rooms/:id/simulations as the texts of a row of the Simulations card.

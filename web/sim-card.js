@@ -6,7 +6,7 @@ import { live } from './live.js';
 import { fallbackMs, createThrottle } from './live-math.js';
 import { request } from './api.js';
 import { openSimulateDialog } from './simulate-dialog.js';
-import { runRow, isActive, compareRuns } from './simulation-math.js';
+import { runRow, isActive, compareRuns, differingLines } from './simulation-math.js';
 
 const SHOWN = 5;
 const ACTIVE_MS = 2000;
@@ -53,7 +53,8 @@ export function createSimulationsCard(host, { roomId, getRoom }) {
     const header = el('li', 'sim-item sim-list-head');
     header.setAttribute('aria-hidden', 'true'); // the columns' names for the eye; each cell says what it is to a screen reader
     header.append(el('span', '', 'Run and machines'), el('span', '', 'Length'), el('span', '', 'In band'), el('span', '', 'Energy · water'), el('span', ''), el('span', '', 'Compare'));
-    list.replaceChildren(...(shown.length ? [header] : []), ...shown.map((run) => {
+    const given = differingLines(shown); // what tells runs of the same machines apart
+    list.replaceChildren(...(shown.length ? [header] : []), ...shown.map((run, i) => {
       const r = runRow(run, roomId);
       const li = el('li', 'sim-item');
       const link = el('a', '', r.date);
@@ -61,11 +62,15 @@ export function createSimulationsCard(host, { roomId, getRoom }) {
       link.dataset.focusKey = `link-${run.id}`;
       const name = el('div', 'sim-name');
       name.append(link, el('span', 'sim-machines', r.machines));
+      if (given[i]) name.append(el('span', 'sim-given', given[i]));
       const inBand = el('span', 'sim-all pill', run.status === 'done' ? `${r.all} in band` : '');
       inBand.dataset.tone = r.tone;
       const pick = el('label', 'sim-pick');
       const box = el('input');
       box.type = 'checkbox';
+      box.name = 'compare';
+      box.value = String(run.id);
+      box.id = `sim-pick-${run.id}`;
       box.checked = picked.includes(run.id);
       box.disabled = run.status !== 'done';
       box.setAttribute('aria-label', `Compare the run of ${r.date}`);

@@ -367,3 +367,39 @@ test('the time of day of a run that started at 14:00: the clock moves, the days 
   assert.deepEqual(dayTicks(DAY_S, 6, 14).slice(0, 3), [{ at: 0, label: 'day 1' }, { at: 4 * 3600, label: '18:00' }, { at: 8 * 3600, label: '22:00' }]);
   assert.deepEqual(dayTicks(3 * DAY_S, 10, 14).map((x) => x.label), ['day 1', 'day 2', 'day 3']);
 });
+
+// ---- the Simulations list: what differs between the runs beyond their machines (critique 2026-10-28: two runs with the
+// same machine line scored 0.8 % and 98.3 % in band; the control settings made the difference) ----
+
+test('differingLines: each run\'s settings beyond its machines, only those that differ between the runs shown', async () => {
+  const { differingLines } = await import('../web/simulation-math.js');
+  const control = { exchangeEveryMin: 15, exchangeMaxMin: 10, acDrop: 5, humidifierDuringExchange: true, outdoorAir: true };
+  const run = (c, extra = {}) => ({ input: { physics: { acBTU: 12000 }, ctx: { control: { ...control, ...c } }, ...extra } });
+  assert.deepEqual(differingLines([run({}), run({})]), ['', ''], 'nothing differs: no line');
+  assert.deepEqual(differingLines([run({}), run({ exchangeMaxMin: 60, acDrop: 0 })]), [
+    'exchange every 15 min, up to 10 min · aircon 5 °C lower during exchange',
+    'exchange every 15 min, up to 60 min · aircon not lowered during exchange',
+  ]);
+  assert.deepEqual(differingLines([run({ humidifierDuringExchange: false, outdoorAir: false }), run({}), run({}, { start: 'outdoor', startHour: 14 })]), [
+    'humidifier off during exchange · no outdoor air · started in band',
+    'humidifier on during exchange · outdoor air used · started in band',
+    'humidifier on during exchange · outdoor air used · from outdoor air at 14:00',
+  ]);
+  assert.deepEqual(differingLines([run({ exchangeEveryMin: 0 }), run({})]), ['exchange up to 10 min, fresh air off', 'exchange every 15 min, up to 10 min']);
+  // a run's own settings without the room's (an older run): what it set still counts; a run that kept nothing says nothing of it
+  const own = { input: { physics: {}, control: { exchangeMaxMin: 60 } } };
+  const none = { input: { physics: {} } };
+  assert.deepEqual(differingLines([own, run({}), none]), ['exchange up to 60 min', 'exchange every 15 min, up to 10 min', '']);
+  assert.deepEqual(differingLines([]), []);
+});
+
+test('the Simulations list: the differing line under the machines; the Compare boxes have names; the run links are 44 px on a phone', async () => {
+  const { readFileSync } = await import('node:fs');
+  const card = readFileSync(new URL('../web/sim-card.js', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
+  assert.match(card, /const given = differingLines\(shown\);/);
+  assert.match(card, /if \(given\[i\]\) name\.append\(el\('span', 'sim-given', given\[i\]\)\);/);
+  assert.match(card, /box\.name = 'compare';/);
+  assert.match(card, /box\.id = `sim-pick-\$\{run\.id\}`;/);
+  assert.match(css, /@media \(max-width: 600px\) \{ \.sim-item \.sim-name a \{ display: inline-flex; align-items: center; min-height: 44px; \} \}/);
+});
