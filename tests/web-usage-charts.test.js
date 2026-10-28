@@ -70,7 +70,7 @@ test('Live: the meter\'s power over its last readings, a failed poll a gap', () 
   assert.deepEqual(livePowerPoints(meter), [{ at: 1, value: 300 }, { at: 2, value: null }, { at: 3, value: 320 }]);
   assert.deepEqual(livePowerPoints(null), []);
   assert.equal(LIVE_NO_METER, 'Live power needs an energy meter; pick a range for the estimate');
-  assert.equal(LIVE_WATER, 'Pick a range to see water');
+  assert.equal(LIVE_WATER, 'Water is counted per hour: choose 1 h or longer above to see it.');
 });
 
 test('the page: the section under the three charts and before the machine timeline, following the range', () => {

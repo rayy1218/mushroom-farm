@@ -14,7 +14,7 @@ import { CROPS, CROP_KEYS, STAGES, FARM_TYPES, MAX_CROPS } from './crops.js';
 import { removeLabel } from './simulate-math.js';
 import {
   hasCrops, rampLine, doneLine, formFromData, checkCropForm, saveBody, newBlocksBody, startBody,
-  stagePlan, stageTargets, stageWarnings, cropHeadline, stageLength, stageMark, lightOf,
+  stagePlan, stageTargets, stageWarnings, cropHeadline, stageLength, stageMark, lightOf, roomBandNote,
 } from './crop-math.js';
 
 const REFRESH_MS = 30_000; // the marks count days: asked now and then
@@ -72,7 +72,7 @@ function setText(node, text) {
 
 const errorText = (err) => (err.status === 0 ? `${OFFLINE}. Try again.` : err.message);
 
-export function createCropCard(host, { roomId, onChange, onData, onOffline, onGone, getRoom }) {
+export function createCropCard(host, { roomId, onChange, onData, onOffline, onGone, getRoom, getBands = () => null }) {
   const lit = () => getRoom?.()?.lights === true;
   let litShown = null; // whether the last paint showed the light schedule
   let alive = true;
@@ -490,10 +490,12 @@ export function createCropCard(host, { roomId, onChange, onData, onOffline, onGo
     const body = el('tbody');
     table.append(body);
     const ramp = el('p', 'meta cp-ramp-line');
+    const roomNote = el('p', 'cp-room-note'); // the bands the room really runs when changed by hand (current stage only)
+    roomNote.hidden = true;
 
-    root.append(top, mark, warnings, startErr, edit, targetsTitle, table, ramp);
+    root.append(top, mark, warnings, startErr, edit, targetsTitle, table, roomNote, ramp);
 
-    const sec = { stage, root, name, length, pencil, start, mark, warnings, startErr, edit, inputs, fields, body, ramp, open: false, rows: '' };
+    const sec = { stage, root, name, length, pencil, start, mark, warnings, startErr, edit, inputs, fields, body, ramp, roomNote, open: false, rows: '' };
 
     const close = () => { sec.open = false; edit.hidden = true; pencil.setAttribute('aria-expanded', 'false'); };
     pencil.addEventListener('click', () => {
@@ -573,6 +575,9 @@ export function createCropCard(host, { roomId, onChange, onData, onOffline, onGo
       }));
     }
     setText(sec.ramp, mark.kind === 'current' ? rampLine(c, now) : '');
+    const note = mark.kind === 'current' ? roomBandNote(c.crops, sec.stage, getBands(), c, now) : '';
+    setText(sec.roomNote, note);
+    sec.roomNote.hidden = !note;
   }
 
   // ---- the Stages list ----
@@ -732,6 +737,10 @@ export function createCropCard(host, { roomId, onChange, onData, onOffline, onGo
     refresh,
     setLights(fitted) {
       if (alive && last && fitted !== litShown) paint(last);
+    },
+    // The control settings changed (a refresh or a Save on the Setup tab): the current stage's note on the room's own bands.
+    bandsChanged() {
+      if (alive && last) paint(last);
     },
     destroy() { alive = false; seq++; clearTimeout(timer); if (confirm.open) confirm.close(); host.replaceChildren(); },
   };

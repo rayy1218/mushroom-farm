@@ -6,7 +6,7 @@ import { formatKWh, formatRM, formatLitres } from './usage-math.js';
 import { chartPoints } from './chart-math.js';
 
 export const LIVE_NO_METER = 'Live power needs an energy meter; pick a range for the estimate';
-export const LIVE_WATER = 'Pick a range to see water';
+export const LIVE_WATER = 'Water is counted per hour: choose 1 h or longer above to see it.';
 
 const finite = (x) => typeof x === 'number' && Number.isFinite(x);
 const okUsage = (u) => u !== null && typeof u === 'object' && Array.isArray(u.buckets) && u.totals && typeof u.totals === 'object';

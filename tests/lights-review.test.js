@@ -185,7 +185,7 @@ test('Crop tab: the Light rows, the pencil field and Lights from only with light
   assert.match(card, /lightField\.hidden = typeof c\.lightStart !== 'string' \|\| !lit\(\);/);
   assert.match(card, /setLights\(fitted\)/);
   const page = src('web/room-detail.js');
-  assert.match(page, /getRoom: \(\) => room,\n\s*onChange: \(\) => \{ if \(alive\(\)\) load\(\); \},/);
+  assert.match(page, /getRoom: \(\) => room,\n\s*getBands: \(\) => bands,[^\n]*\n\s*onChange: \(\) => \{ if \(alive\(\)\) load\(\); \},/);
   assert.match(page, /cropCard\?\.setLights\(room\?\.lights === true\)/);
 });
 

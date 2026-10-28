@@ -58,12 +58,12 @@ test('bandBar: the band as a zone and the reading as a mark, as shares of the sc
 
 // ---- reading tiles ----
 
-test('readingTiles: name, value and unit, chip, edge and bar per reading', () => {
+test('readingTiles: name, value and unit (humidity to one decimal, as the bands are set), chip, edge and bar per reading', () => {
   const [t, rh, co2] = readingTiles(draw(), control);
   assert.deepEqual([t.key, t.name, t.value, t.unit], ['T', 'Temperature', '21.5', '°C']);
   assert.deepEqual(t.chip, { lvl: 'good', text: '✓ In band' });
   assert.equal(t.edge, '');
-  assert.deepEqual([rh.name, rh.value, rh.unit, rh.chip.text, rh.edge], ['Humidity', '88', '% RH', '▼ Below band', 'warn']);
+  assert.deepEqual([rh.name, rh.value, rh.unit, rh.chip.text, rh.edge], ['Humidity', '88.0', '% RH', '▼ Below band', 'warn']);
   assert.deepEqual([co2.name, co2.value, co2.unit, co2.chip.text, co2.edge], ['CO₂', '960', 'ppm', '▲ Above band', 'warn']);
   assert.equal(t.label, 'Temperature 21.5 °C, band 21 to 23');
   assert.deepEqual(t.bar.zone, { from: 6 / 15, to: 8 / 15 });
@@ -156,7 +156,9 @@ test('machineTiles: six in air-path order with their effect and detail', () => {
     [1, 'Intake fan', 'Air in'], [2, 'Aircon', '− Temperature'], [3, 'Circulation', 'Mixes the air'],
     [4, 'Humidifier', '+ Humidity'], [5, 'Dehumidifier', '− Humidity'], [6, 'Exhaust fan', 'Air out'],
   ]);
-  assert.deepEqual(tiles.map((m) => m.detail), ['Filter 40 Pa', 'Cool 21.5 °C · fan auto', 'Always on', 'Below 90 %', 'Above 95 %', 'With the intake']);
+  assert.deepEqual(tiles.map((m) => m.detail), ['Filter 40 Pa', 'Cool 21.5 °C · fan auto', 'Always on', 'On at 90 %, off at 95 %', 'On at 95 %, off at 92.5 %', 'With the intake']);
+  // the role lines say the controller's real rule (server/controller.js): the humidifier on at the lower limit and off at the
+  // upper, the dehumidifier on at the upper and off at the middle of the band
   assert.deepEqual(tiles.map((m) => m.on), [false, true, true, false, false, false]);
   assert.deepEqual(tiles[1].pill, { text: 'On', tone: 'on' });
   assert.deepEqual(tiles[0].pill, { text: 'Off', tone: 'off' });
@@ -187,7 +189,7 @@ test('machineTiles: no data and fault words in the pill', () => {
   assert.deepEqual(nothing[0].pill, { text: 'No data', tone: 'none' });
   assert.deepEqual(nothing[1].pill, { text: 'No data', tone: 'none' });
   assert.equal(nothing[1].detail, '', 'the aircon\'s pill says it: no second "No data"');
-  assert.equal(nothing[3].detail, 'Below the band');
+  assert.equal(nothing[3].detail, 'On below the band');
   assert.equal(nothing.length, 5);
   const notFollowing = machineTiles(draw({ machines: { relay: relay(), ac: ac({ status: 'not-following' }) } }), control, null)[1];
   assert.deepEqual(notFollowing.pill, { text: 'Not following', tone: 'warn' });

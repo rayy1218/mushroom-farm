@@ -37,6 +37,7 @@ import { createExchangeSection } from './exchange-section.js';
 import { drawTimeline } from './timeline.js';
 import { timeTicks, tickCountFor, chartDrawKey, historyPoints, timelineSpans, acMarks, formatStamp, wiredTimelineRows } from './history-math.js';
 
+const BAND_KEYS = ['tLow', 'tHigh', 'rhLow', 'rhHigh', 'co2Low', 'co2High', 'co2Safety'];
 const metres = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
 const cubic = new Intl.NumberFormat(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
@@ -409,6 +410,7 @@ export function mount(container, { id, tab = 'now' }) {
 
   let built = false;
   let bands = null; // the latest control settings, for the band lines on the charts
+  let shownBandKey = ''; // the bands the Crop tab's note was painted with
   function render(machineData, token, controlData, controlToken, alarmData) {
     renderHead();
     els.body.hidden = false;
@@ -459,7 +461,9 @@ export function mount(container, { id, tab = 'now' }) {
       els.machinesHost.hidden = false;
     }
     if (controlData) {
+      const bandKey = BAND_KEYS.map((k) => controlData[k]).join();
       bands = controlData;
+      if (bandKey !== shownBandKey) { shownBandKey = bandKey; cropCard?.bandsChanged(); }
       const painted = control.update(controlData, controlToken ?? control.token());
       els.controlHost.hidden = false;
       els.modeHost.hidden = false;
@@ -553,6 +557,7 @@ export function mount(container, { id, tab = 'now' }) {
     cropCard = createCropCard(els.cropHost, {
       roomId: id,
       getRoom: () => room,
+      getBands: () => bands, // the current stage says when the room runs bands changed by hand
       onChange: () => { if (alive()) load(); },
       onData: (data) => { // the blocks and the stage on the Room card, the lights' hours on the Climate tab
         if (!alive()) return;
@@ -581,6 +586,7 @@ export function mount(container, { id, tab = 'now' }) {
         if (!alive()) return;
         cropCard?.refresh(); // a band changed by hand ends the ramp of the stage
         lastControl = data;
+        bands = data;
         paintDrawing();
       },
       onOffline: () => {

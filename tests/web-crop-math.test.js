@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { stageLine, nextLine, rampLine, doneLine, cropWarnings, formFromData, checkCropForm, saveBody, newBlocksBody, startBody, hasCrops, FORM_FIELD_ORDER } from '../web/crop-math.js';
+import { roomBandNote, stageTargets, stageLine, nextLine, rampLine, doneLine, cropWarnings, formFromData, checkCropForm, saveBody, newBlocksBody, startBody, hasCrops, FORM_FIELD_ORDER } from '../web/crop-math.js';
 
 const DAY = 86_400_000;
 const at = (d, h, m) => new Date(2026, 9, d, h, m).getTime();
@@ -104,4 +104,25 @@ test('the bodies of the two buttons', () => {
   const ok = checkCropForm(formFromData(base));
   assert.deepEqual(startBody('rest', false), { stage: 'rest' });
   assert.deepEqual(startBody('rest', true), { stage: 'rest', applyNow: true });
+});
+
+test("roomBandNote: on the current stage, the bands the room really runs when they differ from the stage's targets (changed by hand)", () => {
+  const crops = [{ crop: 'lionsmane', blocks: 950 }];
+  const t = Object.fromEntries(stageTargets(crops, 'fruiting').map((r) => [r.key, r.value]));
+  const same = { tLow: 0, tHigh: 0 };
+  // the room's bands from the stage's own targets: no note
+  const targets = { ...same };
+  for (const [k, v] of Object.entries({ t: ['tLow', 'tHigh'], rh: ['rhLow', 'rhHigh'], co2: ['co2Low', 'co2High'] })) {
+    const [lo, hi] = t[k].replace(/[^0-9–]/g, '').split('–').map(Number);
+    targets[v[0]] = lo; targets[v[1]] = hi;
+  }
+  targets.co2Safety = Number(t.safety.replace(/[^0-9]/g, ''));
+  assert.equal(roomBandNote(crops, 'fruiting', targets), '');
+  assert.equal(roomBandNote(crops, 'fruiting', { ...targets, co2High: targets.co2High - 100, co2Safety: 1000 }),
+    `The room runs CO₂ ${targets.co2Low}–${(targets.co2High - 100).toLocaleString('en-US')} ppm and a CO₂ safety level of 1,000 ppm: changed by hand on the Setup tab, until the next stage sets the targets again.`);
+  assert.equal(roomBandNote(crops, 'fruiting', { ...targets, tLow: 18.5 }),
+    `The room runs temperature 18.5–${targets.tHigh} °C: changed by hand on the Setup tab, until the next stage sets the targets again.`);
+  assert.equal(roomBandNote(crops, 'fruiting', null), '', 'before the control settings loaded');
+  assert.equal(roomBandNote([], 'fruiting', targets), '');
+  assert.equal(roomBandNote(crops, 'fruiting', { ...targets, tLow: 18.5 }, { ramp: { endAt: Date.now() + 3_600_000 } }), '', 'while the stage ramps the bands differ by design');
 });

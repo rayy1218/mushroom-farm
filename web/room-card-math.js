@@ -22,7 +22,7 @@ const limit = (x, key) => (key === 'CO2' ? Math.round(x).toLocaleString('en-US')
 // The three readings: the DrawState field, the control fields of the band, the scale and the step it widens by.
 const READINGS = [
   { key: 'T', name: 'Temperature', unit: '°C', low: 'tLow', high: 'tHigh', min: 15, max: 30, step: 1, text: (v) => v.toFixed(1) },
-  { key: 'RH', name: 'Humidity', unit: '% RH', low: 'rhLow', high: 'rhHigh', min: 70, max: 100, step: 5, text: (v) => String(Math.round(v)) },
+  { key: 'RH', name: 'Humidity', unit: '% RH', low: 'rhLow', high: 'rhHigh', min: 70, max: 100, step: 5, text: (v) => v.toFixed(1) },
   { key: 'CO2', name: 'CO₂', unit: 'ppm', low: 'co2Low', high: 'co2High', safety: 'co2Safety', min: 400, max: 1500, step: 100,
     text: (v) => Math.round(v).toLocaleString('en-US') },
 ];
@@ -151,6 +151,9 @@ export function freshAirLine(c, now = Date.now()) {
 
 const fanWord = (sub) => sub.replace(/^fan (\S+)/, (_, f) => `fan ${f.toLowerCase()}`);
 
+const hasRh = (c) => num(c?.rhLow) !== null && num(c?.rhHigh) !== null;
+const rhText = (x) => String(Math.round(x * 10) / 10);
+
 // In the order the air meets them, the lights after the circulation; the dehumidifier and the lights only when the room has them.
 const MACHINES = [
   { key: 'intake', name: 'Intake fan', effect: 'Air in',
@@ -158,8 +161,12 @@ const MACHINES = [
   { key: 'ac', name: 'Aircon', effect: '− Temperature', detail: (u) => (u.sub ? `${u.state} · ${fanWord(u.sub)}` : u.state) },
   { key: 'circ', name: 'Circulation', effect: 'Mixes the air', detail: (u, c) => (c?.auto ? 'Always on' : 'Set by hand') },
   { key: 'lights', name: 'Lights', effect: 'Light for the crop', detail: (u, c, f, crop) => (c?.auto ? lightShort(crop) : 'Set by hand') },
-  { key: 'hu', name: 'Humidifier', effect: '+ Humidity', detail: (u, c) => (num(c?.rhLow) !== null ? `Below ${c.rhLow} %` : 'Below the band') },
-  { key: 'dh', name: 'Dehumidifier', effect: '− Humidity', detail: (u, c) => (num(c?.rhHigh) !== null ? `Above ${c.rhHigh} %` : 'Above the band') },
+  // The controller's real rule (server/controller.js decide): the humidifier on at the lower limit, off at the upper; the
+  // dehumidifier on at the upper limit, off at the middle of the band.
+  { key: 'hu', name: 'Humidifier', effect: '+ Humidity',
+    detail: (u, c) => (hasRh(c) ? `On at ${rhText(c.rhLow)} %, off at ${rhText(c.rhHigh)} %` : 'On below the band') },
+  { key: 'dh', name: 'Dehumidifier', effect: '− Humidity',
+    detail: (u, c) => (hasRh(c) ? `On at ${rhText(c.rhHigh)} %, off at ${rhText((c.rhLow + c.rhHigh) / 2)} %` : 'On above the band') },
   { key: 'exhaust', name: 'Exhaust fan', effect: 'Air out', detail: () => 'With the intake' },
 ];
 

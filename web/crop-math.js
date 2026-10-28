@@ -226,6 +226,24 @@ export function stageTargets(crops, stage, light = null) {
   return rows;
 }
 
+// The bands the room really runs, when they differ from the current stage's targets (a band changed by hand on the Setup tab
+// stays until the next stage): one sentence, or '' when they agree, before the control settings loaded or while the stage's
+// ramp moves the bands. control: GET /api/rooms/:id/control; c: the crop reply (its ramp).
+export function roomBandNote(crops, stage, control, c = null, now = Date.now()) {
+  if (!control || !Array.isArray(crops) || crops.length === 0) return '';
+  if (Number.isFinite(c?.ramp?.endAt) && c.ramp.endAt > now) return '';
+  const b = mixBands(crops, stage).bands;
+  const n = (x) => grouped(Math.round(x * 10) / 10);
+  const parts = [];
+  if (control.tLow !== b.tLow || control.tHigh !== b.tHigh) parts.push(`temperature ${n(control.tLow)}–${n(control.tHigh)} °C`);
+  if (control.rhLow !== b.rhLow || control.rhHigh !== b.rhHigh) parts.push(`humidity ${n(control.rhLow)}–${n(control.rhHigh)} %`);
+  if (control.co2Low !== b.co2Low || control.co2High !== b.co2High) parts.push(`CO₂ ${n(control.co2Low)}–${n(control.co2High)} ppm`);
+  if (Number.isFinite(control.co2Safety) && control.co2Safety !== b.co2Safety) parts.push(`a CO₂ safety level of ${n(control.co2Safety)} ppm`);
+  if (!parts.length) return '';
+  const list = parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}`;
+  return `The room runs ${list}: changed by hand on the Setup tab, until the next stage sets the targets again.`;
+}
+
 // The light schedule of a stage from a reply: { hours, start }, or null from an older server without it.
 export const lightOf = (c, stage) => (c?.lightHours && Number.isFinite(c.lightHours[stage]) ? { hours: c.lightHours[stage], start: c.lightStart } : null);
 
