@@ -84,6 +84,39 @@ export function historyPoints(rows, field, bucketS, pollSeconds = 0) {
   return points;
 }
 
+// The stretches with no readings ([{ from, to }]): the same rule as historyPoints' line breaks (more than three buckets, or
+// three polls, between two rows). Every chart of the History tab leaves them empty, so a gap reads as one gap.
+export function readingGaps(rows, bucketS, pollSeconds = 0) {
+  const limit = Math.max(bucketS, pollSeconds) * 3000;
+  const gaps = [];
+  let prev = null;
+  for (const r of rows ?? []) {
+    if (prev !== null && r.at - prev > limit) gaps.push({ from: prev, to: r.at });
+    prev = r.at;
+  }
+  return gaps;
+}
+
+const inGap = (from, to, gaps) => gaps.some((g) => from >= g.from && to <= g.to);
+
+// The usage bars outside the gaps: a bar wholly inside a gap is dropped (the app was off: it is not a measured amount).
+export const barsOutsideGaps = (bars, gaps) => (gaps.length ? bars.filter((b) => !inGap(b.from, b.to, gaps)) : bars);
+
+// The timeline's spans cut where a gap is (a machine left "on" while the app was off is not known to have run).
+export function spansOutsideGaps(spans, gaps) {
+  if (!gaps.length) return spans;
+  const out = [];
+  for (const sp of spans) {
+    let pieces = [{ from: sp.from, to: sp.to }];
+    for (const g of gaps) {
+      pieces = pieces.flatMap((p) => (p.to <= g.from || p.from >= g.to ? [p]
+        : [...(p.from < g.from ? [{ from: p.from, to: g.from }] : []), ...(p.to > g.to ? [{ from: g.to, to: p.to }] : [])]));
+    }
+    out.push(...pieces.map((p) => ({ ...p, source: sp.source })));
+  }
+  return out;
+}
+
 // The bars of a timeline row from a machine's log lines (the first is at the window start): [{ from, to, source }]
 // for the times it was commanded on. The last state runs to `to`; a change of source while on starts a new bar.
 export function timelineSpans(rows, from, to) {
@@ -123,11 +156,13 @@ export function markLabel(x, text, right, fontPx = 11) {
 export function thinMarks(marks, xOf, minPx = 40) {
   const kept = [];
   let last = -Infinity;
+  let lastText = null;
   for (const m of marks ?? []) {
     const x = xOf(m.at);
-    if (x - last < minPx) continue;
+    if (x - last < minPx || m.text === lastText) continue; // too close, or the same words as the last label
     kept.push(m);
     last = x;
+    lastText = m.text;
   }
   return kept;
 }

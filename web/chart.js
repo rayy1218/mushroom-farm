@@ -160,7 +160,7 @@ export function drawLineChart(host, opts) {
         if (!(b > a)) return;
         svg.append(el('rect', { x: a.toFixed(1), y: y1, width: (b - a).toFixed(1), height: y0 - y1, style: 'fill:var(--band)' }));
         if (b - a > 90) {
-          svg.append(el('text', { x: ((a + b) / 2).toFixed(1), y: (y1 + y0) / 2 + 4, 'text-anchor': 'middle', style: 'fill:var(--muted)', 'font-size': 11 }, 'No readings'));
+          svg.append(el('text', { x: ((a + b) / 2).toFixed(1), y: y1 + 28, 'text-anchor': 'middle', style: 'fill:var(--muted)', 'font-size': 12 }, 'No readings'));
         }
       });
     }
@@ -179,7 +179,7 @@ export function drawLineChart(host, opts) {
       const lastSecond = [...second].reverse().find((p) => p.value !== null && Number.isFinite(p.value));
       svg.append(el('line', { x1: x0 + 8, x2: x0 + 28, y1: y1 + 8, y2: y1 + 8, ...dots }));
       svg.append(el('text', { x: x0 + 34, y: y1 + 12, style: 'fill:var(--ink-2)', 'font-size': 11 },
-        `${current.second.label ?? 'Outdoor'}${lastSecond ? ` ${fmt(lastSecond.value)}` : ''} · own scale ${s2.min.toFixed(dg)}–${s2.max.toFixed(dg)}`));
+        `${current.second.label ?? 'Outdoor'}${lastSecond ? ` ${fmt(lastSecond.value)}` : ''}${width < 560 ? '' : ` · own scale ${s2.min.toFixed(dg)}–${s2.max.toFixed(dg)}`}`)); // a phone: the value only, clear of the band labels
     }
 
     // The line, one path per run; a run of one point is a dot.

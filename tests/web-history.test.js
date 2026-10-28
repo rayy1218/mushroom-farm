@@ -105,6 +105,11 @@ test('marks closer than 40 px to the previous kept one are skipped', () => {
   assert.deepEqual(thinMarks(undefined, (at) => at), []);
 });
 
+test('a mark that says what the last kept one said is skipped (the aircon "20 °C" repeated along a run)', () => {
+  const marks = [{ at: 0, text: '20 °C' }, { at: 100, text: '20 °C' }, { at: 200, text: '16 °C' }, { at: 300, text: '20 °C' }];
+  assert.deepEqual(thinMarks(marks, (at) => at).map((m) => m.text), ['20 °C', '16 °C', '20 °C']);
+});
+
 test('one axis label per 90 px, at least 2', () => {
   assert.equal(tickCountFor(900), 10);
   assert.equal(tickCountFor(359), 3);
@@ -130,4 +135,23 @@ test('markLabel: a label right of its mark, or left of it when it would run past
   assert.deepEqual(markLabel(390, '22 °C', 400), { x: 387, anchor: 'end' });
   assert.deepEqual(markLabel(364, '22 °C', 400), { x: 367, anchor: 'start' }, 'fits exactly');
   assert.deepEqual(markLabel(398, '17.5 °C', 400, 12), { x: 395, anchor: 'end' });
+});
+
+// A gap in the readings (the app or the sensors were off) is the same gap on every chart of the History tab (critique
+// 2026-10-28: water bars and the machine timeline ran solidly through "No readings").
+test('readingGaps: the stretches with no readings, by the same rule as the chart lines', async () => {
+  const { readingGaps } = await import('../web/history-math.js');
+  const rows = [{ at: 0, t: 20 }, { at: 300_000, t: 20 }, { at: 3_900_000, t: 21 }, { at: 4_200_000, t: 21 }];
+  assert.deepEqual(readingGaps(rows, 300, 5), [{ from: 300_000, to: 3_900_000 }]);
+  assert.deepEqual(readingGaps([], 300, 5), []);
+  assert.deepEqual(readingGaps(undefined, 300, 5), []);
+});
+
+test('outsideGaps: a bar inside a gap is dropped; a timeline span is cut where the gap is', async () => {
+  const { barsOutsideGaps, spansOutsideGaps } = await import('../web/history-math.js');
+  const gaps = [{ from: 100, to: 200 }];
+  assert.deepEqual(barsOutsideGaps([{ from: 0, to: 100, v: 1 }, { from: 120, to: 180, v: 2 }, { from: 200, to: 300, v: 3 }], gaps).map((b) => b.v), [1, 3]);
+  assert.deepEqual(spansOutsideGaps([{ from: 50, to: 250, source: 'auto' }, { from: 130, to: 170, source: 'manual' }], gaps),
+    [{ from: 50, to: 100, source: 'auto' }, { from: 200, to: 250, source: 'auto' }]);
+  assert.deepEqual(spansOutsideGaps([{ from: 0, to: 10, source: 'auto' }], []), [{ from: 0, to: 10, source: 'auto' }]);
 });

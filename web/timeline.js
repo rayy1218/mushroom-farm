@@ -67,7 +67,7 @@ export function drawTimeline(host, opts) {
         rect.setAttribute('fill', s.source === 'manual' ? `url(#${pattern})` : 'var(--ink-2)');
         svg.append(rect);
       }
-      for (const m of thinMarks(row.marks, xAt, 40)) {
+      for (const m of thinMarks(row.marks, xAt, 52)) {
         const label = markLabel(xAt(m.at), m.text, width - 2);
         svg.append(el('text', { x: label.x, y: y + 11, 'text-anchor': label.anchor, style: 'fill:var(--ink)', 'font-size': 11 }, m.text));
       }

@@ -35,7 +35,7 @@ import { createHistory } from './history.js';
 import { createUsageSection } from './usage-section.js';
 import { createExchangeSection } from './exchange-section.js';
 import { drawTimeline } from './timeline.js';
-import { timeTicks, tickCountFor, chartDrawKey, historyPoints, timelineSpans, acMarks, formatStamp, wiredTimelineRows } from './history-math.js';
+import { timeTicks, tickCountFor, chartDrawKey, historyPoints, timelineSpans, acMarks, formatStamp, wiredTimelineRows, readingGaps, spansOutsideGaps } from './history-math.js';
 
 // The Now tab's Machines rows → the relay machines the switches command (the aircon has its own panel).
 const RELAY_KEY = { intake: 'intake', circ: 'circulation', lights: 'lights', hu: 'humidifier', dh: 'dehumidifier', exhaust: 'exhaust' };
@@ -387,8 +387,10 @@ export function mount(container, { id, tab = 'now' }) {
       if (!entry.chart) entry.chart = drawLineChart(entry.host, opts);
       else entry.chart.update(opts);
     }
-    usageSection.update({ hist, sensors, price });
-    renderTimeline(data);
+    // The stretches with no readings (the app or the sensors off): left empty on the usage bars and the timeline too.
+    const gaps = data ? readingGaps(data.trh?.length ? data.trh : data.co2, data.bucketS, data.pollSeconds) : [];
+    usageSection.update({ hist, sensors, price, gaps });
+    renderTimeline(data, gaps);
   }
 
   // The time line follows the pointer on every chart and the timeline.
@@ -399,7 +401,7 @@ export function mount(container, { id, tab = 'now' }) {
   }
 
   // The machine timeline, only for a long range and only the machines the room has wired.
-  function renderTimeline(data) {
+  function renderTimeline(data, gaps = []) {
     const wired = wiredTimelineRows(room);
     els.timeline.hidden = !data || wired.length === 0;
     if (els.timeline.hidden) {
@@ -412,7 +414,7 @@ export function mount(container, { id, tab = 'now' }) {
       range, ticksFor: (w) => timeTicks(range.from, range.to, tickCountFor(w)), formatAt: (ms) => formatStamp(ms), onCursor: moveCursor,
       rows: wired.map((r) => ({
         ...r,
-        spans: timelineSpans(data.machines[r.key], range.from, range.to),
+        spans: spansOutsideGaps(timelineSpans(data.machines[r.key], range.from, range.to), gaps),
         marks: r.key === 'ac' ? acMarks(data.machines.ac) : [],
       })),
     };

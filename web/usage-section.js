@@ -7,7 +7,7 @@ import { OFFLINE } from './api.js';
 import { drawLineChart } from './chart.js';
 import { drawTimeBars } from './bar-chart.js';
 import { meterCard } from './ratings-math.js';
-import { timeTicks, tickCountFor, formatStamp } from './history-math.js';
+import { timeTicks, tickCountFor, formatStamp, barsOutsideGaps } from './history-math.js';
 import {
   LIVE_NO_METER, LIVE_WATER, bucketWord, usageTotalsLine, usageBars, usageTip, usageSummary, livePowerPoints,
 } from './usage-chart-math.js';
@@ -62,7 +62,7 @@ export function createUsageSection(host, { onCursor }) {
     }
   }
 
-  function update({ hist, sensors, price }) {
+  function update({ hist, sensors, price, gaps = [] }) {
     const data = hist?.data ?? null;
     if (!hist) { // Live
       totals.hidden = true;
@@ -95,8 +95,9 @@ export function createUsageSection(host, { onCursor }) {
     const range = { from: data.from, to: data.to };
     const common = { range, ticksFor: (w) => timeTicks(range.from, range.to, tickCountFor(w)), onCursor };
     const formatAt = (ms) => formatStamp(ms);
-    const kwhBars = usageBars(usage, 'kWh', data.bucketS, range);
-    const waterBars = usageBars(usage, 'waterL', data.bucketS, range);
+    // No bars where there were no readings (the History tab's gaps): an amount the app did not see is not shown as measured.
+    const kwhBars = barsOutsideGaps(usageBars(usage, 'kWh', data.bucketS, range), gaps);
+    const waterBars = barsOutsideGaps(usageBars(usage, 'waterL', data.bucketS, range), gaps);
     show(energy, 'bars', {
       ...common, bars: kwhBars, color: ENERGY_COLOR, hatch: !usage.metered,
       label: usageSummary(kwhBars, { title: `Electricity per ${word}`, unit: 'kWh', metered: usage.metered, formatAt }),

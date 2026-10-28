@@ -17,8 +17,8 @@ test('the outdoor line is dotted, round-capped, in the chart\'s colour; the band
   assert.match(chart, /'stroke-dasharray': '4 4'/, 'the band limits keep their dashes');
 });
 
-test('its legend says the latest outdoor value and its own scale', () => {
-  assert.match(part, /`\$\{current\.second\.label \?\? 'Outdoor'\}\$\{lastSecond \? ` \$\{fmt\(lastSecond\.value\)\}` : ''\} · own scale \$\{s2\.min\.toFixed\(dg\)\}–\$\{s2\.max\.toFixed\(dg\)\}`/);
+test('its legend says the latest outdoor value and, wider than a phone, its own scale', () => {
+  assert.match(part, /`\$\{current\.second\.label \?\? 'Outdoor'\}\$\{lastSecond \? ` \$\{fmt\(lastSecond\.value\)\}` : ''\}\$\{width < 560 \? '' : ` · own scale \$\{s2\.min\.toFixed\(dg\)\}–\$\{s2\.max\.toFixed\(dg\)\}`\}`/);
 });
 
 test('the outdoor line has its own scale (owner, 2026-10-28): the room line keeps the full height', () => {
