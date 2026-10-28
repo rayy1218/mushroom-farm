@@ -37,7 +37,7 @@ export const EQUIPMENT_CARDS = [
     labels: { dehumidifier: 'Fitted', dehumidifierW: 'Power', dehumidifierLday: 'Capacity' }, output: 5, fitted: 'dehumidifier',
   },
   { key: 'lights', section: 'machines', title: 'Lights', fields: ['lights', 'lightsW'], labels: { lights: 'Fitted', lightsW: 'Power' }, output: 6, fitted: 'lights' },
-  { key: 'ac', section: 'machines', title: 'Aircon', fields: ['acAddress', 'acInputW'], labels: { acAddress: 'Gateway address', acInputW: 'Rated input' } },
+  { key: 'ac', section: 'machines', title: 'Aircon', fields: ['acAddress', 'acInputW'], labels: { acAddress: 'Aircon gateway address', acInputW: 'Rated input' } }, // not the room's Modbus gateway
 ];
 
 export const EQUIPMENT_SECTIONS = [{ key: 'gateway', title: 'Gateway' }, { key: 'sensors', title: 'Sensors' }, { key: 'machines', title: 'Machines' }];

@@ -34,7 +34,7 @@ const TEMPLATE = `
       <input id="f-outdoorAddress" name="outdoorAddress" type="number" min="1" max="247" step="1" inputmode="numeric" placeholder="none" aria-describedby="e-outdoorAddress s-outdoor">
       <p class="field-error" id="e-outdoorAddress" role="status"></p>
     </div>
-    <p class="muted s-hint" id="s-outdoor">A T/RH probe outside, 1 to 247, or empty for none. It cannot share an address with a room's sensor.</p>
+    <p class="muted s-hint" id="s-outdoor">A T/RH probe outside, 1 to 247, or empty for none. It cannot share an address with the sensor of a room on the farm's gateway.</p>
     <h2>Prices</h2>
     <div class="field">
       <label for="f-electricityPrice">Electricity price (RM per kWh)</label>
