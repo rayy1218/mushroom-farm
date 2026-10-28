@@ -28,9 +28,11 @@ test('the stage table: names, days and the four percentages', () => {
     { stage: 'rest', flush: 1, from: 7 * DAY_S, to: 17.5 * DAY_S, inBand: { t: 90, rh: 91, co2: 92, all: 93 } },
     { stage: 'spawn', flush: 1, from: 17.5 * DAY_S, to: 18 * DAY_S, inBand: { t: 1, rh: 2, co2: 3, all: 0 } },
   ]);
-  assert.deepEqual(rows[0], { name: 'Fruiting, flush 1', days: 'day 1 to day 7', t: '99.0 %', rh: '80.6 %', co2: '100.0 %', all: '79.0 %' });
+  assert.deepEqual(rows[0], { name: 'Fruiting, flush 1', days: 'day 1 to day 7', daysShort: '1–7', t: '99.0 %', rh: '80.6 %', co2: '100.0 %', all: '79.0 %' });
   assert.equal(rows[1].name, 'Rest after flush 1');
   assert.equal(rows[1].days, 'day 8 to day 18');
+  assert.equal(rows[1].daysShort, '8–18');
+  assert.equal(rows[2].daysShort, '18');
   assert.equal(rows[2].name, 'Spawn run');
   assert.equal(rows[2].days, 'day 18 to day 18');
   assert.equal(stageName('pinning', 1), 'Pinning');
@@ -402,4 +404,62 @@ test('the Simulations list: the differing line under the machines; the Compare b
   assert.match(card, /box\.name = 'compare';/);
   assert.match(card, /box\.id = `sim-pick-\$\{run\.id\}`;/);
   assert.match(css, /@media \(max-width: 600px\) \{ \.sim-item \.sim-name a \{ display: inline-flex; align-items: center; min-height: 44px; \} \}/);
+});
+
+// ---- the result page on a phone and the Why section's values to try (critique 2026-10-28) ----
+
+test('stageColumns: short names on a narrow screen (T, RH, CO₂, All), the long ones for the eye on a wide one', async () => {
+  const { STAGE_COLUMNS } = await import('../web/simulation-math.js');
+  assert.deepEqual(STAGE_COLUMNS, [
+    { long: 'Stage', short: 'Stage' }, { long: 'Days', short: 'Days' }, { long: 'Temperature', short: 'T' },
+    { long: 'Humidity', short: 'RH' }, { long: 'CO₂', short: 'CO₂' }, { long: 'All three', short: 'All' },
+  ]);
+});
+
+test('scrollEdges: which edges of a sideways scroller have more (a fade marks them)', async () => {
+  const { scrollEdges } = await import('../web/simulation-math.js');
+  assert.equal(scrollEdges(0, 330, 330), 'none');
+  assert.equal(scrollEdges(0, 330, 420), 'end');
+  assert.equal(scrollEdges(40, 330, 420), 'both');
+  assert.equal(scrollEdges(90, 330, 420), 'start');
+  assert.equal(scrollEdges(89.5, 330, 420), 'start', 'half a pixel short of the end is the end');
+});
+
+test('runTries: the value to try for each setting a cause names', async () => {
+  const { runTries } = await import('../web/simulation-math.js');
+  const H = 3600;
+  const wet = (n) => Array.from({ length: n }, (_, i) => ({ s: (i * 10 * H) / (n - 1), t: 18, tLow: 19, tHigh: 21, rh: 96, rhLow: 87, rhHigh: 93 }));
+  const result = {
+    series: wet(11),
+    machines: { intake: [{ from: 0, to: 8 * H }], ac: [{ from: 0, to: 10 * H, setpoint: 16 }] },
+  };
+  const control = { exchangeEveryMin: 15, exchangeMaxMin: 10, acDrop: 5, humidifierDuringExchange: true };
+  assert.deepEqual(runTries(result, { ctx: { control } }), [
+    'Try the aircon not lowered during air exchange (0 °C).',
+    'Try the humidifier off during air exchange: the room was too wet.',
+    'Try a 60 min air exchange time limit: the fans ran over half the time.',
+  ]);
+  // settings that are already so: nothing to try
+  assert.deepEqual(runTries(result, { ctx: { control: { ...control, acDrop: 0, humidifierDuringExchange: false, exchangeMaxMin: 60 } } }), []);
+  // a room too dry keeps its humidifier; a short exchange keeps its limit
+  const dry = { ...result, series: result.series.map((r) => ({ ...r, rh: 80 })), machines: { ...result.machines, intake: [{ from: 0, to: 4 * H }] } };
+  assert.deepEqual(runTries(dry, { ctx: { control } }), ['Try the aircon not lowered during air exchange (0 °C).']);
+  assert.deepEqual(runTries(null, { ctx: { control } }), []);
+});
+
+test('the result page on a phone: the back link, the one-line summary and the stage table', async () => {
+  const { readFileSync } = await import('node:fs');
+  const page = readFileSync(new URL('../web/simulation-page.js', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
+  assert.match(page, /<a class="back sim-back" href="#\/overview" data-back>Room<\/a>/);
+  assert.match(css, /@media \(max-width: 600px\) \{\n  \.sim-back \{ display: inline-flex; align-items: center; min-height: 44px; margin-bottom: 0; \}\n  \.sim-all-inputs summary \{ padding: 12px 0; \}/);
+  // the caption above the scroller, left, the table named by it; the scroller fades at the edge that has more
+  assert.match(page, /const cap = text\('p', 'sim-table-cap', caption\);/);
+  assert.match(page, /t\.setAttribute\('aria-labelledby', cap\.id\);/);
+  assert.match(page, /const more = scrollEdges\(wrap\.scrollLeft, wrap\.clientWidth, wrap\.scrollWidth\);\s+wrap\.dataset\.more = more;/);
+  assert.match(css, /\.sim-scroll\[data-more="end"\] \{ mask-image: linear-gradient\(90deg, #000 calc\(100% - 32px\), transparent\); \}/);
+  assert.match(page, /STAGE_COLUMNS/);
+  assert.match(css, /\.sim-short \{ display: none; \}/);
+  // the Why section names the values to try
+  assert.match(page, /const tries = runTries\(result, run\.input\);/);
 });

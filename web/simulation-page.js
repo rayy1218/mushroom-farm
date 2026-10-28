@@ -13,7 +13,7 @@ import { tickCountFor } from './history-math.js';
 import { progressLine } from './simulate-math.js';
 import {
   CHARTS, tileList, stageRows, dayTicks, runEnd, chartPoints, thinPoints, outdoorLine, bandSteps, timelineRows, energyView, perDayBars,
-  inputLine, inputRows, runVerdict, runCauses, headLine, formatDateTime, formatRunTime, isActive, filterView,
+  inputLine, inputRows, runVerdict, runCauses, runTries, headLine, formatDateTime, formatRunTime, isActive, filterView, STAGE_COLUMNS, scrollEdges,
 } from './simulation-math.js';
 
 const POLL_MS = 2000;
@@ -21,7 +21,7 @@ const RESULT_TIMEOUT = 120_000; // a run of 58 days has about 3 MB of results
 const MAX_POINTS = 700; // per chart line (a run of 90 days has 26 000 samples)
 
 const TEMPLATE = `
-  <a class="back" href="#/overview" data-back>Room</a>
+  <a class="back sim-back" href="#/overview" data-back>Room</a>
   <div class="page-head">
     <div class="page-titles">
       <h1 class="page-title" tabindex="-1" data-title>Simulation</h1>
@@ -52,6 +52,7 @@ const TEMPLATE = `
   <div class="page-foot" data-foot hidden><button type="button" class="danger-text" data-delete>Delete run</button></div>`;
 
 let mountSeq = 0; // every mount gets a token; a reply that finds the token changed is dropped
+let tableSeq = 0; // the ids of the tables' captions
 
 function text(tag, className, content) {
   const node = document.createElement(tag);
@@ -60,13 +61,45 @@ function text(tag, className, content) {
   return node;
 }
 
-function table(caption, headers, rows) {
-  const wrap = text('div', 'us-table-wrap');
+// A header or cell: a text, or { long, short } (the short one on a narrow screen, the long one still read out).
+function put(node, v) {
+  if (typeof v === 'string') { node.textContent = v; return; }
+  const short = text('span', 'sim-short', v.short);
+  short.setAttribute('aria-hidden', 'true');
+  node.append(text('span', 'sim-long', v.long), short);
+}
+
+// The edges of a sideways scroller that have more to show fade (critique 2026-10-28: a phone's stage table scrolled with no
+// cue); it takes the focus (arrow keys scroll it) only while it scrolls. → { destroy }
+function edgeFade(wrap, inner) {
+  const paint = () => {
+    const more = scrollEdges(wrap.scrollLeft, wrap.clientWidth, wrap.scrollWidth);
+    wrap.dataset.more = more;
+    if (more === 'none') wrap.removeAttribute('tabindex');
+    else wrap.tabIndex = 0;
+  };
+  wrap.addEventListener('scroll', paint, { passive: true });
+  const observer = new ResizeObserver(paint);
+  observer.observe(wrap);
+  observer.observe(inner);
+  return { destroy: () => observer.disconnect() };
+}
+
+// A table under its caption, which stays above the scroller (a caption inside it scrolled out of sight). keep: the page's
+// list of things to destroy (the fade's observer).
+function table(caption, headers, rows, keep) {
+  const box = text('div', 'sim-table');
+  const cap = text('p', 'sim-table-cap', caption);
+  cap.id = `sim-table-${++tableSeq}`;
+  const wrap = text('div', 'us-table-wrap sim-scroll');
+  wrap.setAttribute('role', 'region');
+  wrap.setAttribute('aria-labelledby', cap.id);
   const t = text('table', 'us-table');
-  t.append(text('caption', '', caption));
+  t.setAttribute('aria-labelledby', cap.id);
   const head = text('tr');
   headers.forEach((h, i) => {
-    const th = text('th', i === 0 ? '' : 'num', h);
+    const th = text('th', i === 0 ? '' : 'num');
+    put(th, h);
     th.scope = 'col';
     head.append(th);
   });
@@ -76,17 +109,18 @@ function table(caption, headers, rows) {
   for (const cells of rows) {
     const tr = text('tr');
     cells.forEach((c, i) => {
-      if (i === 0) {
-        const th = text('th', '', c);
-        th.scope = 'row';
-        tr.append(th);
-      } else tr.append(text('td', 'num', c));
+      const cell = i === 0 ? text('th') : text('td', 'num');
+      if (i === 0) cell.scope = 'row';
+      put(cell, c);
+      tr.append(cell);
     });
     tbody.append(tr);
   }
   t.append(thead, tbody);
   wrap.append(t);
-  return wrap;
+  box.append(cap, wrap);
+  keep.push(edgeFade(wrap, t));
+  return box;
 }
 
 function tile(label, value, line, tone) {
@@ -275,7 +309,14 @@ export function mount(container, { id, runId }) {
           v.append(text('h3', 'sim-verdict-why', 'Why'));
           const why = text('ul', 'sim-verdict-lines');
           why.append(...causes.map((l) => text('li', '', l)));
-          v.append(why, text('p', 'muted sim-verdict-next', 'These are the room\'s control settings (Setup tab, Automatic control). Change them there, or for one run in Simulate, and simulate again before buying other machines.'));
+          v.append(why);
+          const tries = runTries(result, run.input); // the value to try for a setting a cause names
+          if (tries.length) {
+            const list = text('ul', 'sim-verdict-lines sim-verdict-tries');
+            list.append(...tries.map((l) => text('li', '', l)));
+            v.append(list);
+          }
+          v.append(text('p', 'muted sim-verdict-next', 'These are the room\'s control settings (Setup tab, Automatic control). Change them there, or for one run in Simulate (step 3, Change for this run), and simulate again before buying other machines.'));
         } else v.append(text('p', 'muted sim-verdict-next', 'Simulate again with other machines, or let Suggest machines (the last step of Simulate) pick them.'));
       }
       els.results.append(v);
@@ -289,8 +330,8 @@ export function mount(container, { id, runId }) {
     band.append(tiles);
     const stages = stageRows(summary.perStage);
     if (stages.length) {
-      band.append(table('Time in band by stage', ['Stage', 'Days', 'Temperature', 'Humidity', 'CO₂', 'All three'],
-        stages.map((r) => [r.name, r.days, r.t, r.rh, r.co2, r.all])));
+      band.append(table('Time in band by stage', STAGE_COLUMNS,
+        stages.map((r) => [r.name, { long: r.days, short: r.daysShort }, r.t, r.rh, r.co2, r.all]), charts));
     }
     els.results.append(band);
 
@@ -341,7 +382,7 @@ export function mount(container, { id, runId }) {
     usage.append(tile('Energy', use.kWh, use.cost), tile('Water', use.litres, use.waterCost));
     if (use.removed) usage.append(tile('Water taken out', use.removed, 'by the dehumidifier'));
     card.append(usage);
-    if (use.rows.length) card.append(table('Energy by machine', ['Machine', 'kWh', 'Share'], use.rows.map((r) => [r.label, r.kWh, r.share])));
+    if (use.rows.length) card.append(table('Energy by machine', ['Machine', 'kWh', 'Share'], use.rows.map((r) => [r.label, r.kWh, r.share]), charts));
     const perDay = summary.perDay ?? [];
     if (perDay.length) {
       const bars = text('div', 'us-charts');

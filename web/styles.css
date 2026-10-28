@@ -722,6 +722,20 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
 .sim-verdict-lines { margin: 8px 0 0; padding-left: 18px; color: var(--ink-2); }
 .sim-verdict-next { margin: 8px 0 0; font-size: var(--fs-sm); }
 .sim-verdict-why { margin: 12px 0 0; font-size: var(--fs-sm); font-weight: 600; color: var(--ink); }
+.sim-verdict-tries { color: var(--ink); }
+/* the result page's tables: the caption above the scroller, the edge that has more fades; a phone shows short column names */
+.sim-table-cap { margin: 12px 0 6px; font-weight: 600; }
+.sim-scroll[data-more="end"] { mask-image: linear-gradient(90deg, #000 calc(100% - 32px), transparent); }
+.sim-scroll[data-more="start"] { mask-image: linear-gradient(270deg, #000 calc(100% - 32px), transparent); }
+.sim-scroll[data-more="both"] { mask-image: linear-gradient(90deg, transparent, #000 32px, #000 calc(100% - 32px), transparent); }
+.sim-scroll:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 6px; }
+.sim-short { display: none; }
+@media (max-width: 600px) {
+  .sim-back { display: inline-flex; align-items: center; min-height: 44px; margin-bottom: 0; }
+  .sim-all-inputs summary { padding: 12px 0; }
+  .sim-table .sim-long { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .sim-table .sim-short { display: inline; }
+}
 .sim-card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
 .sim-card-head h2 { margin: 0; }
 .sim-list { margin: 0 0 8px; padding: 0; list-style: none; }

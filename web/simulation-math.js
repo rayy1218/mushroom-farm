@@ -44,12 +44,27 @@ export function stageName(stage, flush) {
 export function stageRows(perStage) {
   return (Array.isArray(perStage) ? perStage : []).map((s) => {
     const from = Math.floor(s.from / DAY_S) + 1;
+    const to = Math.max(from, Math.ceil(s.to / DAY_S));
     return {
       name: stageName(s.stage, s.flush),
-      days: `day ${from} to day ${Math.max(from, Math.ceil(s.to / DAY_S))}`,
+      days: `day ${from} to day ${to}`,
+      daysShort: from === to ? String(from) : `${from}–${to}`, // under the Days column of a narrow screen
       t: pct(s.inBand?.t), rh: pct(s.inBand?.rh), co2: pct(s.inBand?.co2), all: pct(s.inBand?.all),
     };
   });
+}
+
+// The per-stage table's columns: the long names, and the short ones a phone shows so the table fits (critique 2026-10-28).
+export const STAGE_COLUMNS = [
+  { long: 'Stage', short: 'Stage' }, { long: 'Days', short: 'Days' }, { long: 'Temperature', short: 'T' },
+  { long: 'Humidity', short: 'RH' }, { long: 'CO₂', short: 'CO₂' }, { long: 'All three', short: 'All' },
+];
+
+// Which edges of a sideways scroller have more to show: 'none', 'end', 'start' or 'both' (a fade marks them).
+export function scrollEdges(left, width, full) {
+  const start = left > 1;
+  const end = left + width < full - 1;
+  return start && end ? 'both' : start ? 'start' : end ? 'end' : 'none';
 }
 
 // ---- charts ----
@@ -328,14 +343,23 @@ export function runVerdict(series, inBand, coolDownS) {
 // Why a run missed, from what the machines did (result.machines) and the control it ran with: lines for the verdict card.
 // Critique 2026-10-28: two runs of the same aircon scored 98 % and 1 %; the second had the aircon set below the band during
 // air exchanges, and air exchange ran most of the time, which nothing on the page said.
-export function runCauses(result, input) {
+export const runCauses = (result, input) => causesOf(result, input).lines;
+
+// The value to try for each setting a cause of runCauses names (critique 2026-10-28: the Why section said to change the
+// settings, not to what): the aircon not lowered, the humidifier off when the room was too wet, the longer time limit that
+// Suggest machines allows when the fans run over half the time (server/sizing.js LIMIT_MAX_MIN).
+export const runTries = (result, input) => causesOf(result, input).tries;
+const LIMIT_TRY_MIN = 60;
+
+function causesOf(result, input) {
   const series = result?.series ?? [];
   const end = series.length ? series[series.length - 1].s : 0;
-  if (!(end > 0)) return [];
+  if (!(end > 0)) return { lines: [], tries: [] };
   const on = (spans, keep = () => true) => (spans ?? []).filter(keep).reduce((t, x) => t + Math.max(0, Math.min(x.to, end) - x.from), 0);
   const share = (ms) => Math.round((ms / end) * 100);
   const control = input?.ctx?.control ?? input?.control ?? {};
   const lines = [];
+  const tries = [];
   const exchange = share(on(result.machines?.intake));
   if (exchange >= 30) lines.push(`Air exchange ran ${exchange} % of the time (every ${control.exchangeEveryMin ?? '?'} min, up to ${control.exchangeMaxMin ?? '?'} min each).`);
   const tLow = series.find((r) => finite(r.tLow))?.tLow;
@@ -346,10 +370,18 @@ export function runCauses(result, input) {
       const setpoint = Math.min(...low.map((x) => x.setpoint));
       const why = finite(control.acDrop) && control.acDrop > 0 ? `: it is set ${control.acDrop} °C lower during air exchange` : '';
       lines.push(`The aircon was set to ${setpoint} °C, below the ${tLow} °C band, ${lowShare} % of the time${why}.`);
+      if (why) tries.push('Try the aircon not lowered during air exchange (0 °C).');
     }
   }
-  if (control.humidifierDuringExchange === true && exchange >= 30) lines.push('The humidifier also ran during every air exchange.');
-  return lines;
+  if (control.humidifierDuringExchange === true && exchange >= 30) {
+    lines.push('The humidifier also ran during every air exchange.');
+    const wet = series.filter((r) => finite(r.rh) && finite(r.rhHigh) && r.rh > r.rhHigh).length / series.length;
+    if (wet >= 0.05) tries.push('Try the humidifier off during air exchange: the room was too wet.');
+  }
+  if (exchange >= 50 && finite(control.exchangeMaxMin) && control.exchangeMaxMin < LIMIT_TRY_MIN) {
+    tries.push(`Try a ${LIMIT_TRY_MIN} min air exchange time limit: the fans ran over half the time.`);
+  }
+  return { lines, tries };
 }
 
 // Two runs side by side: what they were asked and how they went; differ marks the rows that are not the same.
