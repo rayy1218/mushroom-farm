@@ -451,7 +451,7 @@ button.toggle[data-on="true"]:hover { background: var(--accent-hover); border-co
 .c-acfan .ctl { flex: 0 0 auto; width: auto; min-width: 120px; }
 .c-acfan { display: grid; grid-template-columns: minmax(0, 240px) minmax(0, 120px); gap: 4px 12px; }
 .c-reasons { color: var(--muted); font-size: var(--fs-sm); }
-.c-status { margin: 8px 0 16px; padding: 14px 16px; border-radius: var(--radius); background: var(--band); }
+.c-status { margin: 8px 0 16px; padding: 16px 0 0; border-top: 1px solid var(--border); } /* a quiet footer, not a box */
 .c-status .c-group-title { margin-bottom: 6px; }
 .c-status .c-reasons { margin: 0; }
 .c-status .c-reasons:empty { display: none; }
@@ -473,7 +473,6 @@ button.toggle[data-on="true"]:hover { background: var(--accent-hover); border-co
 .now .machines { margin: 0; }
 .now .machines > .m-section > .status, .now .machines .ac-roomt { display: none; }
 .now .machines .ac-form { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 0; }
-.now .machines button.toggle[data-on="true"] { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 55%, transparent); color: var(--accent-text); }
 .now .machines .ac-reported { color: var(--muted); } /* the switches are on the Machines rows; this card is the aircon's panel */
 .control .toggle:disabled, .machines .toggle:disabled { opacity: .6; cursor: default; }
 
@@ -908,8 +907,8 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
 .mc-row[data-tone="warn"] .mc-name, .mc-row[data-tone="warn"] .mc-sub { color: var(--critical-text); }
 .mc-row[data-manual="true"] { grid-template-columns: 22px minmax(0, 1fr) auto auto; }
 .mc-switch { min-width: 64px; min-height: 36px; padding: 4px 12px; font-weight: 600; }
-.mc-switch[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
-.mc-switch[aria-pressed="true"]:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+/* On: tinted, the same as the aircon panel's Power, so Send stays the one filled button on the Now tab */
+.mc-switch[aria-pressed="true"], .mc-switch[aria-pressed="true"]:hover, .now .machines button.toggle[data-on="true"]:hover { background: color-mix(in srgb, var(--accent) 24%, transparent); }
 .mc-err { grid-column: 2 / -1; margin: 0; color: var(--critical-text); font-size: var(--fs-sm); }
 
 /* The crop and the day of its stage */
