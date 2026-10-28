@@ -60,7 +60,7 @@ The farm app polls every wired sensor and machine every reading interval (5 s by
 |---|---|---|
 | `FARM_PORT` | `8080` | HTTP port (0 picks a free one) |
 | `FARM_DB` | `data/v2.db` | SQLite database file, or `:memory:` |
-| `FARM_GATEWAY` | `127.0.0.1:1502` | Modbus TCP gateway `host:port` (the device app, or a real gateway) |
+| `FARM_GATEWAY` | `127.0.0.1:1502` | the farm's Modbus TCP gateway `host:port` (the device app, or a real gateway); a room may have its own (below) |
 
 ### Device app settings
 
@@ -84,6 +84,10 @@ The farm app polls every wired sensor and machine every reading interval (5 s by
 | Aircon gateway | holding 0–3 (fn 03 read, fn 16 write), input 0–1 (fn 04) | power, mode (0 cool, 1 heat, 2 dry, 3 fan), setpoint × 10, fan (0 auto, 1 low, 2 high); room T × 10, error code |
 
 A real RS-485 farm uses the same requests through an Ethernet-to-RS-485 gateway: point `FARM_GATEWAY` at it.
+
+### A gateway per room
+
+A room behind its own gateway (a container with its own RS-485 bus and Ethernet-to-RS-485 gateway) takes that gateway's `host:port` in the Modbus gateway card at the top of its Equipment (Setup tab); empty means the farm's gateway, `FARM_GATEWAY`. The room's sensors, meter, filter sensor, relay module and aircon are then read and switched through it, and their addresses only need to differ from the others on that gateway (two containers may both have their T/RH probe at 1). The outdoor probe is always read through the farm's gateway. The gateways are polled at the same time, so a container whose gateway does not answer does not slow the other rooms.
 
 ## Run with Docker (Windows, macOS, Linux)
 
