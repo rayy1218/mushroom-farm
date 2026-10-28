@@ -4,7 +4,6 @@
 
 import { ROOM_GROUPS, EQUIPMENT_NAMES, fieldTexts, parseRoomFields } from './room-fields.js';
 import { STATUS_WORDS as MACHINE_WORDS } from './machines-math.js';
-import { intakeRunning } from './filter-math.js';
 
 const FILTER_HINT = ROOM_GROUPS.find((g) => g.key === 'filter').hint;
 
@@ -66,7 +65,7 @@ const fixed = (v, digits) => (typeof v === 'number' && Number.isFinite(v) ? v.to
 // A sensor's latest good value: "20.1 °C · 92 %", "638 ppm", "372 W", "40 Pa"; '' before the first.
 function sensorValue(kind, ok) {
   if (!ok) return '';
-  const parts = kind === 'trh' ? [[fixed(ok.t, 1), '°C'], [fixed(ok.rh, 0), '%']]
+  const parts = kind === 'trh' ? [[fixed(ok.t, 1), '°C'], [fixed(ok.rh, 1), '%']]
     : kind === 'co2' ? [[fixed(ok.co2, 0), 'ppm']]
       : kind === 'meter' ? [[fixed(ok.power, 0), 'W']]
         : [[fixed(ok.pa, 0), 'Pa']];
@@ -90,9 +89,10 @@ export function cardStatus(c, { sensors, machines }) {
     const word = SENSOR_WORDS[s.status] ?? s.status;
     const n = s.failuresInRow;
     const failing = (s.status === 'timeout' || s.status === 'offline') && Number.isInteger(n) && n > 0;
-    let value = sensorValue(c.sensor, s.lastOk);
-    // the filter's pressure means something only with the intake running: say so when it is off
-    if (c.sensor === 'dp' && value && intakeRunning(machines) === false) value += ' · intake off';
+    // The filter's pressure has one home, the Intake filter card under the equipment (with the last reading taken with the
+    // intake on): its equipment card keeps only the settings.
+    if (c.sensor === 'dp') return null;
+    const value = sensorValue(c.sensor, s.lastOk);
     return { status: s.status, word: failing ? `${word} · ${n} failed ${n === 1 ? 'poll' : 'polls'} in a row` : word, value };
   }
   if (c.key === 'relay') {

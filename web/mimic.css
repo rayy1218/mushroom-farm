@@ -73,7 +73,7 @@
 .mimic-svg .arrowhead { fill: var(--m-cool); }
 
 /* words */
-.mimic-svg .m-eyebrow { font-size: 11px; font-weight: 700; letter-spacing: 1.4px; fill: var(--m-sky-muted); }
+.mimic-svg .m-eyebrow { font-size: 13px; font-weight: 500; fill: var(--m-sky-muted); }
 .mimic-svg .m-big { font-size: 18px; font-weight: 700; fill: var(--m-sky-ink); font-variant-numeric: tabular-nums; }
 .mimic-svg .m-small { font-size: 12px; fill: var(--m-sky-muted); }
 .mimic-svg .m-name { font-size: 12.5px; font-weight: 650; }

@@ -22,16 +22,17 @@ test('the farm serves the room page, the Room card, the picture and its styleshe
 test('the room page uses the room cards: the readings, the picture, the machines and the crop, on the Now tab', () => {
   const room = source('../web/room-detail.js');
   assert.match(room, /import \{ createRoomCard \} from '\.\/room-card\.js';/);
-  assert.match(room, /import \{ roomCard, filterFrom, freshAirLine, blocksLine, cropFacts, traceOf \} from '\.\/room-card-math\.js';/);
+  assert.match(room, /import \{ roomCard, filterFrom, freshAirLine, blocksLine, cropFacts, traceOf, hourPoints \} from '\.\/room-card-math\.js';/);
   assert.match(room, /import \{ startLoop \} from '\.\/mimic\.js';/);
   assert.doesNotMatch(room, /createMimic/, 'the card makes the picture');
   assert.match(room, /<div class="now" data-panel="now">\n\s*<div class="now-main">\n\s*<div data-readings><\/div>\n\s*<section data-picture><\/section>/);
-  assert.match(room, /roomCardUi\.paint\(roomCard\(\{ draw, control: lastControl, filter, crop: cropData, now \}\), draw, traces\)/);
-  assert.match(room, /T: traceOf\(chartPoints\(sensors\.trh, 't'\), c\?\.tLow, c\?\.tHigh\)/, 'the traces: the recent polls against the band');
+  assert.match(room, /roomCardUi\.paint\(roomCard\(\{ draw, control: lastControl, filter, crop: cropData, now \}\), draw, traces, switches\)/);
+  assert.match(room, /T: traceOf\(pts\('trh', 't'\), c\?\.tLow, c\?\.tHigh\)/, 'the traces: the last hour against the band');
+  assert.match(room, /request\('GET', `\/api\/rooms\/\$\{id\}\/history\?hours=1`\)/, 'the hour from the room history');
   assert.match(room, /startLoop\(\(\) => \(roomCardUi \? \[roomCardUi\.mimic\] : \[\]\)\)/);
   assert.match(room, /roomCardUi\?\.destroy\(\);/);
   assert.match(room, /onData: \(data\) => \{[^}]*if \(!alive\(\)\) return;\s*cropData = data \?\? null;\s*control\?\.setCrop\(cropData\);\s*paintDrawing\(\);\s*\}/);
-  assert.match(room, /createRoomCard\(\{ readings: els\.readingsHost, picture: els\.pictureHost, machines: els\.machineListHost, crop: els\.cropSumHost \},\n\s*\{ idPrefix: 'room-', cropHref: roomHash\(id, 'crop'\) \}\)/);
+  assert.match(room, /createRoomCard\(\{ readings: els\.readingsHost, picture: els\.pictureHost, machines: els\.machineListHost, crop: els\.cropSumHost \},\n\s*\{ idPrefix: 'room-', cropHref: roomHash\(id, 'crop'\), onSwitch: \(key\) => machines\?\.command\(RELAY_KEY\[key\]\) \}\)/);
   const card = source('../web/room-card.js');
   assert.match(card, /import \{ createMimic \} from '\.\/mimic\.js';/);
   assert.match(card, /createMimic\(pic, \{ idPrefix \}\)/);

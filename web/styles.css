@@ -309,7 +309,7 @@ html { scroll-padding-top: var(--topbar-h); }
 /* ---- Room page: the Equipment tab, a card per sensor and machine with its settings (spec 2026-10-27-equipment-cards-design.md) ---- */
 .eq-section + .eq-section { margin-top: 24px; }
 .eq-section > h2 { margin: 0 0 12px; font-size: var(--fs-lg); }
-.eq-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+.eq-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; align-items: start; }
 .eq-card h3 { margin: 0 0 2px; font-size: var(--fs-md); font-weight: 600; }
 .eq-card h3:focus { outline: none; }
 .eq-card .addr { margin: 0 0 10px; }
@@ -321,7 +321,7 @@ html { scroll-padding-top: var(--topbar-h); }
 .eq-card .ac-send { margin: 4px 0 0; }
 .eq-card .s-saved { margin: 4px 0 0; }
 /* A machine not fitted: only its box and "Not fitted", the card dimmed */
-.eq-card.unfitted { background: transparent; border-style: dashed; }
+.eq-card.unfitted { background: transparent; border: 1px dashed var(--border-strong); }
 .eq-card.unfitted h3, .eq-card.unfitted .addr { color: var(--muted); }
 @media (max-width: 600px) { .eq-grid { grid-template-columns: 1fr; gap: 12px; } }
 /* The four sensors two by two (owner 2026-10-27); a phone keeps one column */
@@ -340,6 +340,7 @@ html { scroll-padding-top: var(--topbar-h); }
 .room-tabs a:hover { color: var(--ink); }
 .room-tabs a[aria-current="page"] { color: var(--ink); border-bottom-color: var(--accent); }
 .room-tabs a:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 6px; }
+@media (max-width: 600px) { .room-tabs { gap: 0; } .room-tabs a { padding: 10px 9px; font-size: var(--fs-sm); } }
 .room-tabs .tab-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
 .room-tabs .tab-dot[data-level="warning"] { background: var(--warning); }
 .room-tabs .tab-dot[data-level="serious"], .room-tabs .tab-dot[data-level="critical"] { background: var(--critical); }
@@ -353,6 +354,7 @@ html { scroll-padding-top: var(--topbar-h); }
 .status { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; }
 .status::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex: none; }
 .status[data-status="online"]::before { background: var(--good-text); }
+.status[data-status="on"]::before { background: var(--accent); } /* a machine running: blue, as on the Now tab */
 .status[data-status="timeout"]::before { background: var(--warning-text); }
 .status[data-status="offline"]::before { background: var(--critical-text); }
 .status[data-status="offline"] { color: var(--critical-text); }
@@ -447,6 +449,9 @@ button.toggle[data-on="true"]:hover { background: var(--accent-hover); border-co
 .c-band.c-outdoor { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 10px 0; }
 .c-band.c-outdoor .c-hint { flex-basis: 100%; margin: 0; }
 .c-acfan .ctl { flex: 0 0 auto; width: auto; min-width: 120px; }
+.c-acfan { display: grid; grid-template-columns: minmax(0, 240px) minmax(0, 120px); gap: 4px 12px; }
+.c-reasons { color: var(--muted); font-size: var(--fs-sm); }
+.control .c-state { margin: 12px 0 0; padding-top: 12px; border-top: 1px solid var(--border); font-weight: 500; color: var(--ink-2); }
 .c-band { display: grid; grid-template-columns: minmax(0, 240px) minmax(0, 120px) minmax(0, 120px); align-items: end; gap: 4px 12px; padding: 10px 0; border-bottom: 1px dashed var(--border); }
 .c-band .m-name, .c-humidifier .m-name, .c-acfan .m-name { font-weight: 500; color: var(--ink-2); }
 .c-band .m-name { align-self: center; }
@@ -457,8 +462,8 @@ button.toggle[data-on="true"]:hover { background: var(--accent-hover); border-co
 .c-state { margin: 4px 0 0; font-weight: 600; }
 .c-reasons { margin: 8px 0 0; padding: 0; list-style: none; display: grid; gap: 2px; }
 .machines .auto-note { margin: 0; display: block; color: var(--muted); font-weight: 400; }
-.machines.auto .m-section { display: none; }
-.machines.auto h2 { margin-bottom: 4px; }
+.machines .m-relay, .machines .auto-note, .machines .m-section > h3, .machines .m-section > .addr { display: none; }
+.machines .m-relay + .m-section { margin-top: 0; padding-top: 0; border-top: 0; } /* the switches are on the Machines rows; this card is the aircon's panel */
 .control .toggle:disabled, .machines .toggle:disabled { opacity: .6; cursor: default; }
 
 @media (max-width: 600px) {
@@ -716,10 +721,7 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
 .cp-targets th span { vertical-align: middle; }
 .cp-targets th .cp-ico { width: 16px; height: 16px; margin-right: 8px; vertical-align: middle; }
 .cp-targets td { text-align: right; font-weight: 600; white-space: nowrap; padding-left: 12px; }
-.cp-targets tr[data-key="t"] .cp-ico { color: var(--s-t); }
-.cp-targets tr[data-key="rh"] .cp-ico { color: var(--s-rh); }
-.cp-targets tr[data-key="co2"] .cp-ico { color: var(--s-co2); }
-.cp-targets tr[data-key="safety"] .cp-ico { color: var(--critical-text); }
+.cp-targets .cp-ico { color: var(--muted); } /* colour means problems: a target is not one */
 .crop-card .cp-ramp-line { margin-top: 8px; }
 .cp-room-note { margin: 10px 0 0; padding: 8px 12px; border-radius: var(--radius); background: var(--warning-soft); color: var(--warning-text); font-size: var(--fs-sm); }
 
@@ -893,6 +895,11 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
 .mc-sub { display: flex; flex-wrap: wrap; gap: 0 4px; color: var(--muted); font-size: var(--fs-sm); }
 .mc-sub .mc-d::before { content: "\00b7"; margin-right: 4px; }
 .mc-row[data-tone="warn"] .mc-name, .mc-row[data-tone="warn"] .mc-sub { color: var(--critical-text); }
+.mc-row[data-manual="true"] { grid-template-columns: 22px minmax(0, 1fr) auto auto; }
+.mc-switch { min-width: 64px; min-height: 36px; padding: 4px 12px; font-weight: 600; }
+.mc-switch[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.mc-switch[aria-pressed="true"]:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+.mc-err { grid-column: 2 / -1; margin: 0; color: var(--critical-text); font-size: var(--fs-sm); }
 
 /* The crop and the day of its stage */
 .crop-sum { display: block; color: var(--ink); text-decoration: none; }
@@ -925,5 +932,11 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
 .setup-part { scroll-margin-top: calc(var(--topbar-h) + 12px); outline: none; }
 .setup-part + .setup-part { margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--border); }
 .part-title { margin: 0 0 14px; font-size: var(--fs-xl); font-weight: 600; }
-.setup .control { max-width: 880px; }
+.setup .control { display: grid; grid-template-columns: minmax(0, 1fr); column-gap: 48px; }
+.setup .control > * { grid-column: 1 / -1; }
+@media (min-width: 1100px) {
+  .setup .control { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .setup .control > .c-group { grid-column: auto; }
+  .setup .control > .c-group:nth-of-type(2) { border-top: 0; padding-top: 4px; }
+}
 .setup .filter-card { max-width: 880px; }

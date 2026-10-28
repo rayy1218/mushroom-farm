@@ -77,19 +77,19 @@ function notWired(text, onEdit) {
   return wrap;
 }
 
-export function createMachines(host, { roomId, onEdit, onOffline, onGone, onCommand }) {
+export function createMachines(host, { roomId, onEdit, onOffline, onGone, onCommand, onBusy }) {
   let alive = true;
   let version = 0; // bumped by every command, so a refresh that began earlier is dropped
   let inflight = 0;
   let autoOn = false; // automatic control is on: the controls are disabled
 
   host.className = 'card machines';
-  host.append(el('h2', '', 'Switch by hand'));
+  host.append(el('h2', '', 'Aircon by hand'));
   const autoNote = el('p', 'meta auto-note', AUTO_NOTE);
   autoNote.setAttribute('role', 'status');
   autoNote.hidden = true;
   host.append(autoNote);
-  const relayHost = el('div', 'm-section');
+  const relayHost = el('div', 'm-section m-relay'); // kept for its commands; the Now tab's Machines rows hold the switches
   const acHost = el('div', 'm-section');
   host.append(relayHost, acHost);
 
@@ -182,6 +182,7 @@ export function createMachines(host, { roomId, onEdit, onOffline, onGone, onComm
     showError(row.err, '');
     version++;
     inflight++;
+    onBusy?.();
     try {
       const data = await request('PUT', `/api/rooms/${roomId}/machines/${key}`, { on: !row.commanded }, COMMAND_TIMEOUT);
       if (!alive) return;
@@ -199,6 +200,7 @@ export function createMachines(host, { roomId, onEdit, onOffline, onGone, onComm
         paintToggle(row);
         if (hadFocus && !document.activeElement?.closest?.('dialog')) row.toggle.focus();
       }
+      onBusy?.();
     }
   }
 
@@ -404,6 +406,15 @@ export function createMachines(host, { roomId, onEdit, onOffline, onGone, onComm
     },
     // The Automatic control card knows better than the machines reply (it is fresher after a switch).
     setAuto,
+    // The Now tab's Machines rows switch a relay machine with these: the same command, its version and its errors.
+    switchState(key) {
+      const row = relay?.wired ? relay.rows.get(key) : null;
+      return row ? { on: row.commanded, busy: row.busy, error: row.localError, disabled: row.busy || autoOn } : null;
+    },
+    command(key) {
+      const row = relay?.wired ? relay.rows.get(key) : null;
+      if (row && !autoOn) sendRelay(key, row);
+    },
     destroy() { alive = false; host.replaceChildren(); },
   };
 }

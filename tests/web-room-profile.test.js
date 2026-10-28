@@ -108,7 +108,7 @@ test('the Equipment tab: two sections of cards, one form per card with its own S
 
 test('the Equipment grid: cards at least 260 px wide, 16 px apart, one column on a phone; an unfitted card dimmed', () => {
   const css = src('styles.css');
-  assert.match(css, /\.eq-grid \{ display: grid; grid-template-columns: repeat\(auto-fill, minmax\(260px, 1fr\)\); gap: 16px; \}/);
+  assert.match(css, /\.eq-grid \{ display: grid; grid-template-columns: repeat\(auto-fill, minmax\(260px, 1fr\)\); gap: 16px; align-items: start; \}/, "cards keep their own height");
   assert.match(css, /@media \(max-width: 600px\) \{ \.eq-grid \{ grid-template-columns: 1fr;/);
   assert.match(css, /\.eq-card\.unfitted \{/);
   // The four sensors two by two (owner 2026-10-27); a phone keeps one column.

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   scaleFor, bandBar, readingTiles, controlNote, freshAirLine, machineTiles, filterSummary, filterFrom, bottomLine, blocksLine, roomCard, cropFacts, stayed,
-  traceOf, cropSummary,
+  traceOf, cropSummary, hourPoints,
 } from '../web/room-card-math.js';
 import { formatDateTime } from '../web/simulation-math.js';
 import { fromRoom } from '../web/mimic-math.js';
@@ -133,7 +133,7 @@ test('freshAirLine: exchange on, auto off, waits, next in N min, due, fresh air 
   const ends = new Date(2026, 9, 26, 10, 52).getTime();
   assert.equal(freshAirLine({ ...control, exchange: true, exchangeSince: since, exchangeEndsAt: ends, exchangeKind: 'co2' }, now),
     'Air exchange on since 10:42 (stops by 10:52) · CO₂');
-  assert.equal(freshAirLine({ ...control, auto: false, exchange: true }, now), 'Automatic control off');
+  assert.equal(freshAirLine({ ...control, auto: false, exchange: true }, now), '', 'auto off: the Control card says Manual, no line here');
   assert.equal(freshAirLine({ ...control, freshFrom: now - 20 * 60_000, reasons: { exchange: 'Fresh air waits: outdoor air is very wet (dew 26.0 °C), at the latest 11:10' } }, now),
     'Fresh air waits: outdoor air is very wet (dew 26.0 °C), at the latest 11:10');
   assert.equal(freshAirLine({ ...control, freshFrom: now - 7 * 60_000 - 10_000 }, now), 'Next fresh air in 8 min');
@@ -156,7 +156,7 @@ test('machineTiles: six in air-path order with their effect and detail', () => {
     [1, 'Intake fan', 'Air in'], [2, 'Aircon', '− Temperature'], [3, 'Circulation', 'Mixes the air'],
     [4, 'Humidifier', '+ Humidity'], [5, 'Dehumidifier', '− Humidity'], [6, 'Exhaust fan', 'Air out'],
   ]);
-  assert.deepEqual(tiles.map((m) => m.detail), ['Filter 40 Pa', 'Cool 21.5 °C · fan auto', 'Always on', 'On at 90 %, off at 95 %', 'On at 95 %, off at 92.5 %', 'With the intake']);
+  assert.deepEqual(tiles.map((m) => m.detail), ['Filter 40.4 Pa', 'Cool 21.5 °C · fan auto', 'Always on', 'On at 90 %, off at 95 %', 'On at 95 %, off at 92.5 %', 'With the intake']);
   // the role lines say the controller's real rule (server/controller.js): the humidifier on at the lower limit and off at the
   // upper, the dehumidifier on at the upper and off at the middle of the band
   assert.deepEqual(tiles.map((m) => m.on), [false, true, true, false, false, false]);
@@ -203,11 +203,11 @@ test('filterSummary: the filter card\'s reading and due date, or null without a 
   const sensor = { status: 'online', lastOk: { pa: 40.4, at: now } };
   const f = filterSummary({ room, sensor, intake: true, lastRunning: null, now });
   assert.equal(f.pa, 40.4);
-  assert.equal(lineText(f.line), 'Filter 40 Pa, change by 22 Nov');
-  assert.deepEqual(f.line, ['Filter ', '40 Pa', ', change by 22 Nov']);
+  assert.equal(lineText(f.line), 'Filter 40.4 Pa, change by 22 Nov', 'one decimal, as the Filter card');
+  assert.deepEqual(f.line, ['Filter ', '40.4 Pa', ', change by 22 Nov']);
   const late = filterSummary({ room: { ...room, filterChangedAt: new Date(2026, 8, 1).getTime() }, sensor, intake: true, now });
-  assert.equal(lineText(late.line), 'Filter 40 Pa, due since 1 Oct');
-  assert.equal(lineText(filterSummary({ room: { ...room, filterChangeDays: 0 }, sensor, now }).line), 'Filter 40 Pa');
+  assert.equal(lineText(late.line), 'Filter 40.4 Pa, due since 1 Oct');
+  assert.equal(lineText(filterSummary({ room: { ...room, filterChangeDays: 0 }, sensor, now }).line), 'Filter 40.4 Pa');
   const waiting = filterSummary({ room, sensor: { status: 'no-data', lastOk: null }, now });
   assert.equal(waiting.pa, null);
   assert.equal(lineText(waiting.line), 'Filter: no reading yet, change by 22 Nov');
@@ -330,4 +330,14 @@ test("cropSummary: the Now tab's Crop card (name, stage, blocks and flush, the d
   assert.equal(done.done, true);
   assert.equal(cropSummary({ ...crop, crops: [] }, now), null);
   assert.equal(cropSummary(null, now), null);
+});
+
+test('hourPoints: the reading cards trace the last hour: the history of the hour, then the newer live polls', () => {
+  const now = 10_000_000;
+  const base = [{ at: now - 4_000_000, value: 1 }, { at: now - 3_000_000, value: 2 }, { at: now - 60_000, value: 3 }];
+  const live = [{ at: now - 120_000, value: 9 }, { at: now - 30_000, value: 4 }, { at: now, value: null }];
+  assert.deepEqual(hourPoints(base, live, now), [{ at: now - 3_000_000, value: 2 }, { at: now - 60_000, value: 3 }, { at: now - 30_000, value: 4 }, { at: now, value: null }],
+    'older than an hour dropped; live polls only after the last history point');
+  assert.deepEqual(hourPoints(null, live, now), live, 'no history yet: the live polls');
+  assert.deepEqual(hourPoints(base, [], now), base.slice(1));
 });

@@ -99,14 +99,13 @@ const MACHINES = {
 
 test('the status line of a sensor: its status and latest value', () => {
   const status = (key, sensors = SENSORS) => cardStatus(card(key), { sensors, machines: MACHINES });
-  assert.deepEqual(status('trh'), { status: 'online', word: 'Online', value: '20.1 °C · 92 %' });
+  assert.deepEqual(status('trh'), { status: 'online', word: 'Online', value: '20.1 °C · 91.7 %' });
   assert.deepEqual(status('co2'), { status: 'timeout', word: 'Timeout', value: '638 ppm' });
   assert.equal(status('meter'), null, 'no address: the line under the title says so, no status line');
-  assert.deepEqual(status('filter'), { status: 'offline', word: 'Offline', value: '40 Pa' });
+  assert.equal(status('filter'), null, 'the filter pressure has one home: the Intake filter card');
   assert.deepEqual(status('meter', { ...SENSORS, meter: { address: 5, status: 'online', lastOk: { at: 1, power: 372.4, energy: 3 } } }),
     { status: 'online', word: 'Online', value: '372 W' });
   assert.deepEqual(status('trh', { ...SENSORS, trh: { address: 1, status: 'no-data', lastOk: null } }), { status: 'no-data', word: 'No data yet', value: '' });
-  assert.equal(status('filter', { ...SENSORS, dp: null }), null, 'an older server sends no pressure sensor: left out');
   assert.equal(cardStatus(card('trh'), { sensors: null, machines: null }), null);
 });
 
@@ -164,11 +163,4 @@ test('a fitted card: a bad rating does not matter while the box is unticked', ()
   assert.deepEqual(parseCard(card('lights'), texts, ROOM), { values: { lights: false } });
   assert.deepEqual(Object.keys(parseCard(card('lights'), { ...texts, lights: true }, ROOM).errors), ['lightsW']);
   assert.ok(ROOM_FIELDS.filter((f) => f.fitted).every((f) => cardOf(f.name).fitted === f.fitted));
-});
-
-test('the filter pressure says when the intake is off (it reads near 0 Pa then; the Intake filter card keeps the last with it on)', () => {
-  const dp = { address: 9, status: 'online', failuresInRow: 0, lastOk: { at: 1, pa: 0.2 } };
-  const machines = (status) => ({ ...MACHINES, relay: { ...MACHINES.relay, machines: MACHINES.relay.machines.map((m) => (m.key === 'intake' ? { ...m, status } : m)) } });
-  assert.equal(cardStatus(card('filter'), { sensors: { ...SENSORS, dp }, machines: machines('off') }).value, '0 Pa · intake off');
-  assert.equal(cardStatus(card('filter'), { sensors: { ...SENSORS, dp: { ...dp, lastOk: { at: 1, pa: 40.4 } } }, machines: machines('on') }).value, '40 Pa');
 });

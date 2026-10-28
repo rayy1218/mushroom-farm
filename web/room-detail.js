@@ -22,7 +22,7 @@ import { closeSimulateDialog } from './simulate-dialog.js';
 import { startLoop } from './mimic.js';
 import { fromRoom } from './mimic-math.js';
 import { createRoomCard } from './room-card.js';
-import { roomCard, filterFrom, freshAirLine, blocksLine, cropFacts, traceOf } from './room-card-math.js';
+import { roomCard, filterFrom, freshAirLine, blocksLine, cropFacts, traceOf, hourPoints } from './room-card-math.js';
 import { drawLineChart } from './chart.js';
 import { refreshMs } from './settings-math.js';
 import { live } from './live.js';
@@ -37,6 +37,8 @@ import { createExchangeSection } from './exchange-section.js';
 import { drawTimeline } from './timeline.js';
 import { timeTicks, tickCountFor, chartDrawKey, historyPoints, timelineSpans, acMarks, formatStamp, wiredTimelineRows } from './history-math.js';
 
+// The Now tab's Machines rows → the relay machines the switches command (the aircon has its own panel).
+const RELAY_KEY = { intake: 'intake', circ: 'circulation', lights: 'lights', hu: 'humidifier', dh: 'dehumidifier', exhaust: 'exhaust' };
 const BAND_KEYS = ['tLow', 'tHigh', 'rhLow', 'rhHigh', 'co2Low', 'co2High', 'co2Safety'];
 const metres = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
 const cubic = new Intl.NumberFormat(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -236,6 +238,9 @@ export function mount(container, { id, tab = 'now' }) {
   let outdoorTail = []; // the newest readings since, one per refresh
   let outdoorLiveAt = 0;
   let outdoorLiveSeq = 0;
+  let hourBase = null; // GET /api/rooms/:id/history?hours=1 for the reading cards' traces
+  let hourBaseAt = 0;
+  let hourBaseSeq = 0;
   let usageCard = null; // the Energy and water card, made on the first render
   let cropCard = null; // the Crop and stage card
   let simulationsCard = null; // the Simulations card
@@ -297,6 +302,7 @@ export function mount(container, { id, tab = 'now' }) {
     els.missing.hidden = true;
     render(machineData, token, controlData, controlToken, alarmData);
     refreshOutdoorLive();
+    refreshHourBase();
     schedule();
   }
 
@@ -419,7 +425,7 @@ export function mount(container, { id, tab = 'now' }) {
       makeMachines();
       makeControl();
       roomCardUi = createRoomCard({ readings: els.readingsHost, picture: els.pictureHost, machines: els.machineListHost, crop: els.cropSumHost },
-        { idPrefix: 'room-', cropHref: roomHash(id, 'crop') });
+        { idPrefix: 'room-', cropHref: roomHash(id, 'crop'), onSwitch: (key) => machines?.command(RELAY_KEY[key]) });
       buildCharts();
       usageSection = createUsageSection(els.usageCharts, { onCursor: moveCursor });
       exchangeSection = createExchangeSection(els.exchange, { roomId: id });
@@ -453,12 +459,10 @@ export function mount(container, { id, tab = 'now' }) {
     ({ last: filterLast, filter: filterNow } = filterFrom({ last: filterLast, room, sensor: sensors.dp, machines: machineData ?? lastMachines }));
     stopLoop ??= startLoop(() => (roomCardUi ? [roomCardUi.mimic] : [])); // (again after a missing room came back)
     alarmsCard.update(alarmData); // hides itself while there are no current alarms; a failed read keeps the last data
-    // The card shows only once a good reply came; later failures keep the last good data.
-    // It is updated before the sensor cards so focus handling there sees the final page.
-    // The drawing keeps only replies a card painted: a stale one (a command began since its fetch) must not show.
+    // The drawing keeps only replies a card painted: a stale one (a command began since its fetch) must not show. The aircon
+    // panel shows in Manual once a good reply came (paintDrawing); later failures keep the last good data.
     if (machineData) {
       if (machines.update(machineData, token ?? machines.token())) lastMachines = machineData;
-      els.machinesHost.hidden = false;
     }
     if (controlData) {
       const bandKey = BAND_KEYS.map((k) => controlData[k]).join();
@@ -488,12 +492,30 @@ export function mount(container, { id, tab = 'now' }) {
       blocks: blocksLine(cropData?.crops, cropFacts(cropData)?.short),
     };
     const c = lastControl;
-    const traces = { // the reading cards' traces: the recent polls against the band
-      T: traceOf(chartPoints(sensors.trh, 't'), c?.tLow, c?.tHigh),
-      RH: traceOf(chartPoints(sensors.trh, 'rh'), c?.rhLow, c?.rhHigh),
-      CO2: traceOf(chartPoints(sensors.co2, 'co2'), c?.co2Low, c?.co2High),
+    const h = hourBase; // the last hour of history (null until it loaded), then the newer live polls
+    const pts = (kind, field) => hourPoints(h ? historyPoints(h[kind], field, h.bucketS, h.pollSeconds) : null, chartPoints(sensors[kind], field), now);
+    const traces = { // the reading cards' traces: the last hour against the band
+      T: traceOf(pts('trh', 't'), c?.tLow, c?.tHigh),
+      RH: traceOf(pts('trh', 'rh'), c?.rhLow, c?.rhHigh),
+      CO2: traceOf(pts('co2', 'co2'), c?.co2Low, c?.co2High),
     };
-    roomCardUi.paint(roomCard({ draw, control: lastControl, filter, crop: cropData, now }), draw, traces);
+    const switches = { // Manual: a switch on each relay machine's row
+      manual: Boolean(lastControl) && !lastControl.auto,
+      state: (key) => (RELAY_KEY[key] ? machines?.switchState(RELAY_KEY[key]) ?? null : null),
+    };
+    els.machinesHost.hidden = !switches.manual || !lastMachines; // the aircon's own panel, in Manual only
+    roomCardUi.paint(roomCard({ draw, control: lastControl, filter, crop: cropData, now }), draw, traces, switches);
+  }
+
+  // The reading cards' last hour: the room history of 1 h, asked at most once a minute (the live polls fill in between).
+  async function refreshHourBase() {
+    if (Date.now() - hourBaseAt < 60_000) return;
+    hourBaseAt = Date.now();
+    const me = ++hourBaseSeq;
+    const data = await request('GET', `/api/rooms/${id}/history?hours=1`).catch(() => null);
+    if (!alive() || me !== hourBaseSeq || !data) return; // a failed read keeps the last good one
+    hourBase = data;
+    paintDrawing();
   }
 
   // The outdoor line of the Live charts: the history of the last hour, asked at most once a minute and only when a sensor
@@ -548,6 +570,7 @@ export function mount(container, { id, tab = 'now' }) {
       // Not-found on a command may be the room or just the machines route: the room GET decides.
       onGone: () => { if (alive()) load(); },
       onCommand: (data) => { if (!alive()) return; lastMachines = data; paintDrawing(); },
+      onBusy: () => { if (alive()) paintDrawing(); }, // a switch on a Machines row shows Sending…
     });
     els.machinesHost.hidden = true;
   }
@@ -670,6 +693,7 @@ export function mount(container, { id, tab = 'now' }) {
     equipmentTab?.destroy();
     deleteCard?.destroy();
     outdoorLiveSeq++;
+    hourBaseSeq++;
     timelineChart?.destroy();
     usageSection?.destroy();
     exchangeSection?.destroy();

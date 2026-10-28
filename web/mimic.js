@@ -104,7 +104,7 @@ export function createMimic(host, opts = {}) {
   S('circle', { class: 'moon', cx: 46, cy: 46, r: 13 }, h.moon);
   S('circle', { class: 'sky', cx: 52, cy: 41, r: 11 }, h.moon);
   const outdoor = S('g', { class: 'on-sky small' }, svg);
-  textNode(outdoor, 70, 40, 'm-eyebrow').textContent = 'OUTDOOR';
+  textNode(outdoor, 70, 40, 'm-eyebrow').textContent = 'Outdoor';
   h.outT = textNode(outdoor, 70, 59, 'm-big');
   h.outRH = textNode(outdoor, 70, 75, 'm-small');
 

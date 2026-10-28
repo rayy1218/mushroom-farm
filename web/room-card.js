@@ -2,9 +2,11 @@
 // reading cards (the value, the status, the band and a trace of the recent readings with the band shaded), the room picture
 // (mimic.js) with the fresh-air line and the outdoor and filter line, the machines in the order the air meets them, and the
 // crop with the day of its stage. The words come from room-card-math.js (pure, tested); this file only builds and fills nodes.
-//   createRoomCard({ readings, picture, machines, crop }, { idPrefix, cropHref })
-//     → { mimic, paint(card, drawState, traces), setFresh(text), destroy() }
+//   createRoomCard({ readings, picture, machines, crop }, { idPrefix, cropHref, onSwitch })
+//     → { mimic, paint(card, drawState, traces, switches), setFresh(text), destroy() }
 //   traces: { T, RH, CO2 } → traceOf() of each reading (or null).
+//   switches: { manual, state(key) → { on, busy, error, disabled } | null }: in Manual each relay machine's row has its switch
+//   (onSwitch(key) sends the command), in Auto the pill shows its state.
 
 import { createMimic } from './mimic.js';
 
@@ -26,13 +28,6 @@ function svg(tag, attrs = {}, parent) {
 
 const put = (node, text) => { if (node.textContent !== text) node.textContent = text; };
 
-// Parts of a line: the even ones plain, the odd ones bold.
-function lineNode(parts) {
-  const span = el('span');
-  parts.forEach((p, i) => { if (p) span.append(i % 2 ? el('b', '', p) : document.createTextNode(p)); });
-  return span;
-}
-
 // A card's head: its title at the left, a quiet note at the right.
 function cardHead(title, note) {
   const head = el('div', 'card-head');
@@ -42,7 +37,7 @@ function cardHead(title, note) {
 
 const SERIES = { T: 'var(--s-t)', RH: 'var(--s-rh)', CO2: 'var(--s-co2)' };
 
-export function createRoomCard(hosts, { idPrefix = 'room-', cropHref = '' } = {}) {
+export function createRoomCard(hosts, { idPrefix = 'room-', cropHref = '', onSwitch = () => {} } = {}) {
   // ---- the three reading cards ----
   hosts.readings.classList.add('rd-row');
   const tiles = ['T', 'RH', 'CO2'].map((key) => {
@@ -88,8 +83,9 @@ export function createRoomCard(hosts, { idPrefix = 'room-', cropHref = '' } = {}
   const pic = el('div', 'mimic-host rc-pic');
   pic.dataset.mimicHost = '';
   const fresh = el('p', 'rc-fresh');
-  const strip = el('p', 'rc-strip');
-  hosts.picture.replaceChildren(cardHead('Room', note), pic, fresh, strip);
+  // The control line is the Control card's and the outdoor air and the filter are in the picture and the Machines rows: the
+  // card says only when fresh air comes next.
+  hosts.picture.replaceChildren(cardHead('Room', note), pic, fresh);
   hosts.picture.style.containerType = 'inline-size';
   const mimic = createMimic(pic, { idPrefix });
 
@@ -99,18 +95,25 @@ export function createRoomCard(hosts, { idPrefix = 'room-', cropHref = '' } = {}
   hosts.machines.replaceChildren(cardHead('Machines', el('span', 'card-note', 'In the order the air meets them')), list);
   let shownKeys = '';
   let machineNodes = [];
-  function paintMachines(rows) {
+  function paintMachines(rows, switches) {
     const keys = rows.map((m) => m.key).join();
     if (keys !== shownKeys) { // made again only when the machines change (a dehumidifier or lights fitted or taken out)
       shownKeys = keys;
       machineNodes = rows.map((m) => {
-        const n = { node: el('li', 'mc-row'), pill: el('span', 'pill'), effect: el('span', 'mc-eff'), detail: el('span', 'mc-d') };
+        const n = { node: el('li', 'mc-row'), pill: el('span', 'pill'), effect: el('span', 'mc-eff'), detail: el('span', 'mc-d'),
+          sw: el('button', 'mc-switch'), err: el('p', 'mc-err') };
         n.node.dataset.key = m.key;
         const text = el('div', 'mc-text');
         const line = el('div', 'mc-sub');
         line.append(n.effect, n.detail);
         text.append(el('span', 'mc-name', m.name), line);
-        n.node.append(el('span', 'mc-step', String(m.step)), text, n.pill);
+        n.sw.type = 'button';
+        n.sw.hidden = true;
+        n.sw.setAttribute('aria-label', m.name); // pressed: on
+        n.sw.addEventListener('click', () => onSwitch(m.key));
+        n.err.setAttribute('role', 'status');
+        n.err.hidden = true;
+        n.node.append(el('span', 'mc-step', String(m.step)), text, n.pill, n.sw, n.err);
         return n;
       });
       list.replaceChildren(...machineNodes.map((n) => n.node));
@@ -123,6 +126,18 @@ export function createRoomCard(hosts, { idPrefix = 'room-', cropHref = '' } = {}
       put(n.effect, m.effect);
       put(n.detail, m.detail);
       n.detail.hidden = !m.detail;
+      // Manual: the switch in place of the pill (a fault still shows its pill beside it)
+      const sw = switches?.manual ? switches.state(m.key) : null;
+      n.sw.hidden = !sw;
+      n.pill.hidden = Boolean(sw) && m.pill.tone !== 'warn';
+      n.node.dataset.manual = String(Boolean(sw));
+      if (sw) {
+        put(n.sw, sw.busy ? 'Sending…' : sw.on ? 'On' : 'Off');
+        n.sw.setAttribute('aria-pressed', String(sw.on));
+        n.sw.disabled = sw.disabled;
+      }
+      put(n.err, sw?.error ?? '');
+      n.err.hidden = !sw?.error;
     });
   }
 
@@ -154,14 +169,13 @@ export function createRoomCard(hosts, { idPrefix = 'room-', cropHref = '' } = {}
   return {
     mimic,
     // card: roomCard() of room-card-math.js; draw: the DrawState of the picture; traces: traceOf() per reading.
-    paint(card, draw, traces = {}) {
+    paint(card, draw, traces = {}, switches = null) {
       mimic.paint(draw);
-      put(note, card.note);
+      put(note, 'Air path: in, treated, out');
       card.tiles.forEach((x, i) => paintTile(tiles[i], x, traces[x.key] ?? null));
       put(fresh, card.fresh);
       fresh.hidden = !card.fresh;
-      paintMachines(card.machines);
-      strip.replaceChildren(...card.bottom.map(lineNode));
+      paintMachines(card.machines, switches);
       paintCrop(card.summary);
     },
     // The fresh-air line between refreshes (its minutes count down).

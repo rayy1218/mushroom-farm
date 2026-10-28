@@ -120,6 +120,15 @@ export function traceOf(points, low, high, { w = 100, h = 32 } = {}) {
   };
 }
 
+// The points of a reading card's trace: the room history of the last hour ([{ at, value }]; null before it loaded), then the
+// live polls newer than its last point; nothing older than an hour.
+export function hourPoints(base, live, now = Date.now()) {
+  const from = now - 3_600_000;
+  const old = (base ?? []).filter((p) => p.at >= from);
+  const last = old.length ? old[old.length - 1].at : -Infinity;
+  return [...old, ...(live ?? []).filter((p) => p.at > last && p.at >= from)];
+}
+
 // ---------------- the header note and the fresh-air line ----------------
 
 const every = (c) => (num(c?.exchangeEveryMin) ?? 0);
@@ -131,10 +140,11 @@ export function controlNote(c) {
   return every(c) > 0 ? `Automatic control on · fresh air every ${every(c)} min` : 'Automatic control on';
 }
 
-// The line under the reading tiles: the running exchange, that auto is off, why fresh air waits, or when it comes next.
+// The line under the room picture: the running exchange, why fresh air waits, or when it comes next ('' with auto off: the
+// Control card says Manual).
 export function freshAirLine(c, now = Date.now()) {
   if (!c) return '';
-  if (!c.auto) return 'Automatic control off';
+  if (!c.auto) return '';
   if (c.exchange) return exchangeLine(c, now);
   if (every(c) <= 0) return '';
   const why = c.reasons?.exchange;
@@ -157,7 +167,7 @@ const rhText = (x) => String(Math.round(x * 10) / 10);
 // In the order the air meets them, the lights after the circulation; the dehumidifier and the lights only when the room has them.
 const MACHINES = [
   { key: 'intake', name: 'Intake fan', effect: 'Air in',
-    detail: (u, c, f) => (!f ? 'No filter sensor' : f.pa === null ? 'Filter: no reading yet' : `Filter ${Math.round(f.pa)} Pa`) },
+    detail: (u, c, f) => (!f ? 'No filter sensor' : f.pa === null ? 'Filter: no reading yet' : `Filter ${f.pa.toFixed(1)} Pa`) },
   { key: 'ac', name: 'Aircon', effect: '− Temperature', detail: (u) => (u.sub ? `${u.state} · ${fanWord(u.sub)}` : u.state) },
   { key: 'circ', name: 'Circulation', effect: 'Mixes the air', detail: (u, c) => (c?.auto ? 'Always on' : 'Set by hand') },
   { key: 'lights', name: 'Lights', effect: 'Light for the crop', detail: (u, c, f, crop) => (c?.auto ? lightShort(crop) : 'Set by hand') },
@@ -205,7 +215,7 @@ export function filterSummary({ room, sensor, intake = null, lastRunning = null,
   if (!c.pressure) return null;
   const pa = c.pressure.value;
   const due = c.due === 'No reminder' ? '' : `, ${c.due.replace(/ \(every [^)]*\)$/, '').replace(/^./, (x) => x.toLowerCase())}`;
-  return { pa, line: pa === null ? [`Filter: no reading yet${due}`] : ['Filter ', `${Math.round(pa)} Pa`, due] };
+  return { pa, line: pa === null ? [`Filter: no reading yet${due}`] : ['Filter ', `${pa.toFixed(1)} Pa`, due] }; // one decimal, as the Filter card
 }
 
 // The filter from replies that came in together (a page load: the room, its sensors and the machines): { last, filter }.

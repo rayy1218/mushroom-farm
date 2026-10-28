@@ -231,7 +231,7 @@ export function createControl(host, { roomId, onOffline, onGone, onChange, getRo
   form.dataset.group = 'outdoor';
   form.prepend(el('h3', 'c-group-title', 'Outdoor air'));
 
-  if (modeHost) host.append(...groups, form, sendRow, saveErr, stateNode, checkList);
+  if (modeHost) host.append(...groups, form, stateNode, checkList, sendRow, saveErr); // the state above Save, not alone under it
   else host.append(autoRow, modeLine, autoErr, ...groups, form, sendRow, saveErr, stateNode, checkList);
 
   // ---- drawing ----
