@@ -461,8 +461,10 @@ button.toggle[data-on="true"]:hover { background: color-mix(in srgb, var(--accen
 .c-light { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; padding: 8px 0 2px; }
 .c-light-today { margin: 0; font-weight: 600; }
 .c-light-link { font-size: var(--fs-sm); font-weight: 600; color: var(--ink-2); text-decoration: underline; text-decoration-color: var(--axis); text-underline-offset: 3px; }
-.c-band.c-outdoor { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 10px 0; }
-.c-band.c-outdoor .c-hint { flex-basis: 100%; margin: 0; }
+/* Use outdoor air: the box beside its words (never on a line of its own on a phone), the note under both */
+.c-band.c-outdoor { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 4px 10px; padding: 10px 0; }
+.c-band.c-outdoor .m-name { grid-column: 2; }
+.c-band.c-outdoor .c-hint { grid-column: 1 / -1; margin: 0; }
 .c-acfan .ctl { flex: 0 0 auto; width: auto; min-width: 120px; }
 .c-acfan { display: grid; grid-template-columns: minmax(0, 240px) minmax(0, 120px); gap: 4px 12px; }
 .c-reasons { color: var(--muted); font-size: var(--fs-sm); }
@@ -641,9 +643,12 @@ button.toggle[data-on="true"]:hover { background: color-mix(in srgb, var(--accen
 .ov-room-link::after { content: ""; position: absolute; inset: 0; border-radius: var(--radius-card); }
 .ov-room a:not(.ov-room-link), .ov-room button { position: relative; z-index: 1; }
 @media (max-width: 600px) {
+  /* the level and the room, then the text, then the times beside Acknowledge: the room's name never squeezed by the times */
   .ov-alarm { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .ov-alarm-room { grid-column: 2 / -1; justify-self: start; display: inline-flex; align-items: center; min-height: 44px; } /* a thumb's target */
   .ov-alarm-text { grid-column: 1 / -1; grid-row: 2; }
-  .ov-alarm-room { display: inline-flex; align-items: center; min-height: 44px; } /* a thumb's target */
+  .ov-alarm-time { grid-column: 1 / 3; grid-row: 3; white-space: normal; }
+  .ov-alarm button { grid-column: 3; grid-row: 3; min-height: 44px; }
 }
 
 /* Energy and water (room page card and Overview farm card), Outdoor card */
@@ -776,7 +781,7 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
 .cp-editor .field select { max-width: 420px; }
 .cp-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 270px); grid-template-areas: "stages list" "program list";
   gap: 16px 24px; align-items: start; margin-top: 20px; }
-.cp-stages { grid-area: stages; display: grid; gap: 14px; min-width: 0; }
+.cp-stages { grid-area: stages; display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; min-width: 0; } /* a long target wraps; the card never runs past its box */
 .cp-stage { padding: 18px 20px 20px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); scroll-margin-top: calc(var(--topbar-h) + 16px); }
 .cp-stage[data-kind="current"] { border-color: color-mix(in srgb, var(--accent) 60%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent); }
 .cp-stage-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px 12px; flex-wrap: wrap; }
@@ -859,6 +864,8 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
   .cp-more { display: inline-flex; }
   .crop-card .cp-title { font-size: var(--fs-lg); }
   .cp-stage { padding: 12px; }
+  .cp-targets th { white-space: nowrap; } /* "Air exchange" on one line; its value wraps instead */
+  .cp-targets td { white-space: normal; }
 }
 @media (max-width: 600px) { .crop-card.card { padding: 14px; } } /* a container query cannot size the card itself */
 @media (max-width: 600px) {
@@ -996,7 +1003,8 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
 .mc-text { display: grid; min-width: 0; }
 .mc-name { font-weight: 500; }
 .mc-sub { display: flex; flex-wrap: wrap; gap: 0 4px; color: var(--muted); font-size: var(--fs-sm); }
-.mc-sub .mc-d::before { content: "\00b7"; margin-right: 4px; }
+/* the dot ends the first part, so a wrapped detail never starts its line with "·" */
+.mc-sub .mc-eff:not(:has(+ .mc-d[hidden]))::after { content: "\00a0\00b7"; }
 .mc-row[data-tone="warn"] .mc-name, .mc-row[data-tone="warn"] .mc-sub { color: var(--critical-text); }
 .mc-row[data-manual="true"] { grid-template-columns: 22px minmax(0, 1fr) auto auto; }
 .mc-switch { min-width: 64px; min-height: 36px; padding: 4px 12px; font-weight: 600; }
@@ -1081,8 +1089,12 @@ details.setup-part:not([open]) > summary.part-title { margin-bottom: 0; }
 .history-head .range-bar { margin: 0; }
 .history-head .history-nav { margin: 0; }
 .hist-part { scroll-margin-top: calc(var(--topbar-h) + 120px); outline: none; }
+.history-room { display: none; }
 @media (max-width: 760px) {
-  .history-head { margin: 0 -14px 16px; padding: 8px 14px; }
+  .history-head { margin: 0 -14px 16px; padding: 4px 14px 6px; gap: 6px 16px; }
+  /* the head stays while the charts scroll past the room's name: it says whose history this is, in one short line */
+  .history-room { display: block; flex: 1 1 100%; margin: 0; overflow: hidden; color: var(--ink-2); font-size: var(--fs-sm); font-weight: 600;
+    white-space: nowrap; text-overflow: ellipsis; }
   .history-head .history-nav { position: static; margin: 0; padding: 0; border: 0; flex: 1 1 100%; }
 }
 @media (max-width: 600px) { .range-bar button { min-height: 44px; } }
@@ -1096,6 +1108,16 @@ details.setup-part:not([open]) > summary.part-title { margin-bottom: 0; }
   .setup-nav a { display: inline-flex; align-items: center; min-height: 44px; }
   .ctl, .field input, .field select, .sim-crop-row select, .sim-crop-row input, .brand-top { min-height: 44px; }
   .brand-top { display: inline-flex; align-items: center; }
+  /* the Crop tab, Setup, the Alarms card and the Simulations list (critique 2026-10-28: 28–36 px targets) */
+  .cp-stage-actions button, .cp-room-note button, .cp-more, .c-byhand button, .c-humidifier button.toggle { min-height: 44px; }
+  .cp-stage-actions .cp-pencil { width: 44px; }
+  .cp-auto .crop-check, .room-check .crop-check { min-height: 44px; }
+  a.back, .room-head .back { display: inline-flex; align-items: center; width: fit-content; min-height: 44px; padding: 0; }
+  .c-outdoor input, .room-check input { width: 20px; height: 20px; margin: 0; }
+  .al-history summary { display: flex; align-items: center; min-height: 44px; padding: 0; }
+  .sim-name a { display: inline-flex; align-items: center; justify-self: start; min-height: 44px; }
+  /* 16 px in a field, so a phone does not zoom in when it takes the focus */
+  input:not([type="checkbox"]):not([type="radio"]), select, textarea, .ctl { font-size: 16px; }
 }
 .tg-clear-row { margin: -4px 0 12px; }
 .tg-clear-row:has(> [hidden]) { display: none; }

@@ -84,13 +84,14 @@ export function formatHm(ms) {
 }
 
 // Why the running exchange started (exchangeKind), named at the end of its line; a fresh-air run's line says it already.
+// Joined with no-break spaces, so a narrow line never leaves "· CO₂" alone on the next one.
 const KIND_LABEL = { co2: 'CO₂', cooling: 'free cooling', drying: 'outdoor drying', timed: 'timed (CO₂ sensor fault)' };
 
 // "Air exchange on since 10:42 (stops by 10:52)" with the planned end the server sends (exchangeEndsAt); without one
 // (no limit at the safety level) "(12 min)" for how long it has run; or "Air exchange off". now is injectable.
 export function exchangeLine(c, now = Date.now()) {
   if (!c.exchange) return 'Air exchange off';
-  const kind = KIND_LABEL[c.exchangeKind] ? ` · ${KIND_LABEL[c.exchangeKind]}` : '';
+  const kind = KIND_LABEL[c.exchangeKind] ? `\u00a0·\u00a0${KIND_LABEL[c.exchangeKind]}` : '';
   if (c.exchangeSince == null) return `Air exchange on${kind}`;
   if (c.exchangeForced && Number.isFinite(c.exchangeEndsAt)) {
     return `Fresh air on since ${formatHm(c.exchangeSince)} (stops by ${formatHm(c.exchangeEndsAt)})`;

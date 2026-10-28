@@ -184,10 +184,11 @@ export function drawLineChart(host, opts) {
       svg.append(el('line', { x1: x1 + 7, x2: x1 + 27, y1: y1 - 10, y2: y1 - 10, ...dots }));
       // the legend above the plot, clear of the band's lines: the room's line, then the outdoor one and where its scale is
       const solid = { 'stroke-width': 2.5, 'stroke-linecap': 'round', style: `stroke:${current.color ?? 'var(--ink)'}` };
-      svg.append(el('line', { x1: x0, x2: x0 + 16, y1: 12, y2: 12, ...solid }));
-      const roomText = el('text', { x: x0 + 22, y: 16, style: 'fill:var(--ink-2)', 'font-size': 12 }, 'Room');
+      // from the card's left edge (over the axis numbers' margin), so a phone has room for the outdoor value
+      svg.append(el('line', { x1: 4, x2: 20, y1: 12, y2: 12, ...solid }));
+      const roomText = el('text', { x: 26, y: 16, style: 'fill:var(--ink-2)', 'font-size': 12 }, 'Room');
       svg.append(roomText);
-      const lx = x0 + 70;
+      const lx = 74;
       svg.append(el('line', { x1: lx, x2: lx + 20, y1: 12, y2: 12, ...dots }));
       // as long as fits left of the right scale's mark (a phone's chart clipped "· right scale")
       svg.append(el('text', { x: lx + 26, y: 16, style: 'fill:var(--ink-2)', 'font-size': 12 },

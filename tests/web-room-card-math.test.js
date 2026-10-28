@@ -132,7 +132,7 @@ test('freshAirLine: exchange on, auto off, waits, next in N min, due, fresh air 
   const since = new Date(2026, 9, 26, 10, 42).getTime();
   const ends = new Date(2026, 9, 26, 10, 52).getTime();
   assert.equal(freshAirLine({ ...control, exchange: true, exchangeSince: since, exchangeEndsAt: ends, exchangeKind: 'co2' }, now),
-    'Air exchange on since 10:42 (stops by 10:52) · CO₂');
+    'Air exchange on since 10:42 (stops by 10:52)\u00a0·\u00a0CO₂', 'no-break: "· CO₂" never alone on a line');
   assert.equal(freshAirLine({ ...control, auto: false, exchange: true }, now), '', 'auto off: the Control card says Manual, no line here');
   assert.equal(freshAirLine({ ...control, freshFrom: now - 20 * 60_000, reasons: { exchange: 'Fresh air waits: outdoor air is very wet (dew 26.0 °C), at the latest 11:10' } }, now),
     'Fresh air waits: outdoor air is very wet (dew 26.0 °C), at the latest 11:10');
@@ -156,7 +156,7 @@ test('machineTiles: six in air-path order with their effect and detail', () => {
     [1, 'Intake fan', 'Air in'], [2, 'Aircon', 'Cools'], [3, 'Circulation', 'Mixes the air'],
     [4, 'Humidifier', 'Adds moisture'], [5, 'Dehumidifier', 'Dries'], [6, 'Exhaust fan', 'Air out'],
   ]);
-  assert.deepEqual(tiles.map((m) => m.detail), ['Filter 40.4 Pa', 'Cool 21.5 °C · fan auto', 'Always on', 'On at 90 %, off at 95 %', 'On at 95 %, off at 92.5 %', 'With the intake']);
+  assert.deepEqual(tiles.map((m) => m.detail), ['Filter 40.4 Pa', 'Cool 21.5 °C · fan auto', 'Always on', 'On at 90 % RH, off at 95 % RH', 'On at 95 % RH, off at 92.5 % RH', 'With the intake']);
   // the role lines say the controller's real rule (server/controller.js): the humidifier on at the lower limit and off at the
   // upper, the dehumidifier on at the upper and off at the middle of the band
   assert.deepEqual(tiles.map((m) => m.on), [false, true, true, false, false, false]);

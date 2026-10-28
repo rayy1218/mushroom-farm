@@ -45,8 +45,8 @@ test('the outdoor legend takes the longest words that fit; a phone keeps the nam
   const { secondLegend } = await import('../web/chart-math.js');
   assert.equal(secondLegend('Outdoor', '61.1 % RH', 400), 'Outdoor 61.1 % RH · its scale on the right');
   assert.equal(secondLegend('Outdoor', '61.1 % RH', 220), 'Outdoor 61.1 % RH · right scale');
-  // a 390 px phone: the chart about 334 px wide, the text from x 160 to the scale's mark at 286
-  assert.equal(secondLegend('Outdoor', '61.1 % RH', 334 - 48 - 160 - 4), 'Outdoor 61.1 % RH');
+  // a 390 px phone: the chart about 310 px wide, the text from x 100 to the scale's mark at 262
+  assert.equal(secondLegend('Outdoor', '61.1 % RH', 310 - 48 - 100 - 4), 'Outdoor 61.1 % RH');
   assert.equal(secondLegend('Outdoor', '61.1 % RH', 60), 'Outdoor');
   assert.equal(secondLegend('Outdoor', '', 400), 'Outdoor · its scale on the right', 'no value yet');
 });

@@ -205,9 +205,9 @@ const MACHINES = [
   // The controller's real rule (server/controller.js decide): the humidifier on at the lower limit, off at the upper; the
   // dehumidifier on at the upper limit, off at the middle of the band.
   { key: 'hu', name: 'Humidifier', effect: 'Adds moisture',
-    detail: (u, c) => (hasRh(c) ? `On at ${rhText(c.rhLow)} %, off at ${rhText(c.rhHigh)} %` : 'On below the band') },
+    detail: (u, c) => (hasRh(c) ? `On at ${rhText(c.rhLow)} % RH, off at ${rhText(c.rhHigh)} % RH` : 'On below the band') },
   { key: 'dh', name: 'Dehumidifier', effect: 'Dries',
-    detail: (u, c) => (hasRh(c) ? `On at ${rhText(c.rhHigh)} %, off at ${rhText((c.rhLow + c.rhHigh) / 2)} %` : 'On above the band') },
+    detail: (u, c) => (hasRh(c) ? `On at ${rhText(c.rhHigh)} % RH, off at ${rhText((c.rhLow + c.rhHigh) / 2)} % RH` : 'On above the band') },
   { key: 'exhaust', name: 'Exhaust fan', effect: 'Air out', detail: () => 'With the intake' },
 ];
 

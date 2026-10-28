@@ -164,6 +164,6 @@ test('the timeline writes its row names and setpoint labels at 12 px, the setpoi
   const { readFileSync } = await import('node:fs');
   const src = readFileSync(new URL('../web/timeline.js', import.meta.url), 'utf8');
   assert.doesNotMatch(src, /'font-size': 11/);
-  assert.match(src, /svg\.append\(el\('text', \{ x: 4, y: y \+ 19, style: 'fill:var\(--muted\)', 'font-size': 12 \}, row\.label\)\);/);
+  assert.match(src, /svg\.append\(el\('text', \{ x: 4, y: y \+ 11, style: 'fill:var\(--muted\)', 'font-size': 12 \}, row\.label\)\);/, 'above its bar: wider than the margin at 12 px');
   assert.match(src, /for \(const label of markRuns\(row\.marks, xAt, width - 2\)\)/);
 });

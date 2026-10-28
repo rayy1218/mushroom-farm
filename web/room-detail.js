@@ -98,6 +98,7 @@ const TEMPLATE = `
       </div>
       <div data-panel="history" hidden>
         <div class="history-head">
+          <p class="history-room" data-history-room></p>
           <div data-range></div>
           <nav class="setup-nav history-nav" aria-label="History sections">
             <a href="#hist-climate" data-jump>Climate</a><a href="#hist-energy" data-jump>Energy and water</a><a href="#hist-exchange" data-jump>Air exchange</a><a href="#hist-timeline" data-jump>Machines</a>
@@ -197,6 +198,7 @@ export function mount(container, { id, tab = 'now' }) {
   const els = {
     title: q('[data-title]'),
     sub: q('[data-sub]'),
+    historyRoom: q('[data-history-room]'), // a phone: the sticky History head says whose history it is
     banner: q('.banner'),
     bannerText: q('[data-banner-text]'),
     retry: q('[data-retry]'),
@@ -362,6 +364,7 @@ export function mount(container, { id, tab = 'now' }) {
 
   function renderHead() {
     els.title.textContent = room.name;
+    els.historyRoom.textContent = room.name;
     els.sub.textContent = roomSubLine(room);
     document.title = `${room.name} · Mushroom farm`;
   }

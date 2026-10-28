@@ -205,7 +205,8 @@ test('the Overview on a phone: the whole card opens the room, the 30 days keep a
   assert.match(css, /\.ov-room-link::after \{ content: ""; position: absolute; inset: 0;/);
   assert.match(css, /\.ov-room a:not\(\.ov-room-link\), \.ov-room button \{ position: relative; z-index: 1; \}/);
   assert.match(css, /@media \(max-width: 480px\) \{[^}]*\}[^@]*\.us-short \{ display: inline; \}/);
-  assert.match(css, /\.ov-alarm-room \{ display: inline-flex; align-items: center; min-height: 44px; \}/);
+  assert.match(css, /\.ov-alarm-room \{ grid-column: 2 \/ -1; justify-self: start; display: inline-flex; align-items: center; min-height: 44px; \}/);
+  assert.match(css, /\.ov-alarm-time \{ grid-column: 1 \/ 3; grid-row: 3; white-space: normal; \}/, 'the times under the text: the room\'s name is never squeezed');
   assert.match(css, /\.ov-alarm \{ display: grid; grid-template-columns: auto minmax\(0, 20ch\)/, 'room for "Container / Gamma"');
 });
 

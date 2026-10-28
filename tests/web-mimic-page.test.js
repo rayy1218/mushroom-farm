@@ -107,11 +107,33 @@ test('a room with nothing wired: one empty state with the way to wire it; Auto |
 
 test('History: the range and links to its parts stay under the top bar; Setup parts fold (folded at first on a phone)', () => {
   const room = source('../web/room-detail.js');
-  assert.match(room, /<div class="history-head">\n\s*<div data-range><\/div>\n\s*<nav class="setup-nav history-nav" aria-label="History sections">/);
+  assert.match(room, /<div class="history-head">\n\s*<p class="history-room" data-history-room><\/p>\n\s*<div data-range><\/div>\n\s*<nav class="setup-nav history-nav" aria-label="History sections">/);
+  assert.match(room, /els\.historyRoom\.textContent = room\.name;/, 'a phone: the sticky head says whose history it is');
+  assert.match(source('../web/styles.css'), /\.history-room \{ display: block; flex: 1 1 100%;/);
   assert.match(room, /<details class="setup-part" id="setup-equipment" tabindex="-1" open>\n\s*<summary class="part-title"><h2>Equipment<\/h2><\/summary>/);
   assert.match(room, /if \(matchMedia\('\(max-width: 760px\)'\)\.matches\) for \(const d of container\.querySelectorAll\('details\.setup-part'\)\) d\.open = false;/);
   assert.match(room, /container\.querySelector\('#setup-equipment'\)\.open = true;/);
   const css = source('../web/styles.css');
   assert.match(css, /\.history-head \{ position: sticky; top: var\(--topbar-h\);/);
   assert.match(css, /\.top-link, \.top-alarm, \.topbar \.theme-btn, \.room-switch select, \.room-tabs a \{ min-height: 44px; \}/);
+});
+
+// Critique 2026-10-28 at 390 px: targets of 28–36 px, inputs that make a phone zoom, a stage card past its box, a checkbox on
+// a line of its own, the drawing's words under 12 px.
+test('a phone: 44 px targets, 16 px fields, the Crop stages in their box, Use outdoor air beside its box, the drawing\'s words', () => {
+  const css = source('../web/styles.css');
+  const phone = css.slice(css.lastIndexOf('/* A phone: every control at least 44 px'));
+  assert.match(phone, /\.cp-stage-actions button, \.cp-room-note button, \.cp-more, \.c-byhand button, \.c-humidifier button\.toggle \{ min-height: 44px; \}/);
+  assert.match(phone, /\.cp-stage-actions \.cp-pencil \{ width: 44px; \}/);
+  assert.match(phone, /\.cp-auto \.crop-check, \.room-check \.crop-check \{ min-height: 44px; \}/);
+  assert.match(phone, /a\.back, \.room-head \.back \{ display: inline-flex; align-items: center; width: fit-content; min-height: 44px;/);
+  assert.match(phone, /\.al-history summary \{ display: flex; align-items: center; min-height: 44px;/);
+  assert.match(phone, /\.sim-name a \{ display: inline-flex; align-items: center; justify-self: start; min-height: 44px; \}/);
+  assert.match(phone, /input:not\(\[type="checkbox"\]\):not\(\[type="radio"\]\), select, textarea, \.ctl \{ font-size: 16px; \}/);
+  assert.match(css, /\.cp-stages \{ grid-area: stages; display: grid; grid-template-columns: minmax\(0, 1fr\);/);
+  assert.match(css, /\.cp-targets th \{ white-space: nowrap; \}/);
+  assert.match(css, /\.c-band\.c-outdoor \{ display: grid; grid-template-columns: auto minmax\(0, 1fr\);/);
+  assert.match(css, /\.mc-sub \.mc-eff:not\(:has\(\+ \.mc-d\[hidden\]\)\)::after \{ content: "\\00a0\\00b7"; \}/);
+  const mimic = source('../web/mimic.css');
+  for (const cls of ['m-small', 'm-name', 'm-state', 'm-blocks']) assert.match(mimic, new RegExp(`\\.mimic-svg \\.${cls} \\{ font-size: 13px;`), cls);
 });
