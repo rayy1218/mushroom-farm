@@ -1032,7 +1032,7 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
   #setup-room .room-form > .card { margin-bottom: 0; }
 }
 
-.sim-ac { display: grid; grid-template-columns: minmax(0, 7rem) minmax(0, 1fr); gap: 8px; }
+.sim-ac { display: grid; grid-template-columns: minmax(0, 5rem) minmax(0, 1fr); gap: 8px; }
 .page-foot { display: flex; justify-content: flex-end; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); }
 .now-bare { grid-column: 1 / -1; max-width: 60ch; }
 .now-bare h2 { margin: 0 0 6px; font-size: var(--fs-lg); }
@@ -1070,8 +1070,13 @@ details.setup-part:not([open]) > summary.part-title { margin-bottom: 0; }
   .tg-check { display: flex; align-items: center; gap: 10px; min-height: 44px; }
   .tg-check input, .sim-pick input { width: 20px; height: 20px; }
   .sim-pick { min-height: 44px; }
+  .setup-nav a { display: inline-flex; align-items: center; min-height: 44px; }
+  .ctl, .field input, .field select, .sim-crop-row select, .sim-crop-row input, .brand-top { min-height: 44px; }
+  .brand-top { display: inline-flex; align-items: center; }
 }
 .tg-clear-row { margin: -4px 0 12px; }
 .tg-clear-row:has(> [hidden]) { display: none; }
 .sim-crop-head { color: var(--muted); font-size: var(--fs-xs); font-weight: 600; }
 .sim-crop-head > :nth-child(2) { grid-column: 2; }
+details.setup-part:not([open]) { padding-top: 8px; }
+.setup-part + details.setup-part:not([open]), details.setup-part:not([open]) + details.setup-part { margin-top: 8px; }

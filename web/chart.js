@@ -160,7 +160,7 @@ export function drawLineChart(host, opts) {
         if (!(b > a)) return;
         svg.append(el('rect', { x: a.toFixed(1), y: y1, width: (b - a).toFixed(1), height: y0 - y1, style: 'fill:var(--band)' }));
         if (b - a > 90) {
-          svg.append(el('text', { x: ((a + b) / 2).toFixed(1), y: y1 + 28, 'text-anchor': 'middle', style: 'fill:var(--muted)', 'font-size': 12 }, 'No readings'));
+          svg.append(el('text', { x: ((a + b) / 2).toFixed(1), y: ((y0 + y1) / 2 + 4).toFixed(1), 'text-anchor': 'middle', style: 'fill:var(--muted)', 'font-size': 12 }, 'No readings'));
         }
       });
     }

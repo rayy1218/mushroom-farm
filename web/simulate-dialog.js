@@ -108,7 +108,7 @@ export function openSimulateDialog(room, hooks = {}) {
     sold.setAttribute('aria-label', 'Aircon sold as');
     const none = el('option', '', 'Other size');
     none.value = '';
-    sold.append(none, ...AC_CLASSES.map((c) => { const o = el('option', '', `${c.toLocaleString('en-US')} BTU/h class (${kwOfBtu(c).toFixed(1)} kW)`); o.value = String(c); return o; }));
+    sold.append(none, ...AC_CLASSES.map((c) => { const o = el('option', '', `${c.toLocaleString('en-US')} BTU/h`); o.value = String(c); return o; }));
     sold.value = String(acClassOf(btu) ?? '');
     const input = numberInput(shown, (v) => {
       const kw = /^[0-9]{1,3}(\.[0-9]{1,2})?$/.test(v.trim()) ? Number(v) : NaN;

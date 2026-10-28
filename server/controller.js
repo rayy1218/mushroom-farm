@@ -342,7 +342,7 @@ export function decide({ bands, state, readings, faults, now, humidifierDuringEx
   const fanNote = acFan === 'auto' ? '' : `, fan ${acFan}`;
   reasons.ac = lowered
     ? `Aircon: ${setpoint.toFixed(1)} °C (${middle.toFixed(1)} − ${num(drop)} during air exchange)${fanNote}`
-    : `Aircon: ${setpoint.toFixed(1)} °C (middle of ${bands.tLow}–${bands.tHigh})${fanNote}`;
+    : `Aircon: ${setpoint.toFixed(1)} °C (middle of ${bands.tLow}–${bands.tHigh} °C)${fanNote}`;
   reasons.circulation = 'Circulation: always on';
 
   // Lights (spec 2026-10-26-lighting-design.md 4): the stage's daily window of the crop program; no hold.

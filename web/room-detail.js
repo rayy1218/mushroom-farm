@@ -549,7 +549,7 @@ export function mount(container, { id, tab = 'now' }) {
       manual: Boolean(lastControl) && !lastControl.auto,
       state: (key) => (RELAY_KEY[key] ? machines?.switchState(RELAY_KEY[key]) ?? null : null),
     };
-    els.machinesHost.hidden = !switches.manual || !lastMachines; // the aircon's own panel, in Manual only
+    els.machinesHost.hidden = !switches.manual || !lastMachines || room.acAddress == null; // the aircon's own panel, in Manual with an aircon only
     roomCardUi.paint(roomCard({ draw, control: lastControl, filter, crop: cropData, now, trends }), draw, traces, switches);
     // Manual on every tab, by the room's name, with the time it began when the server knows it (a link to the switch).
     const controllable = room.relayAddress != null || room.acAddress != null; // a room with nothing to switch is not "in Manual"

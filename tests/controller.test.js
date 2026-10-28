@@ -127,9 +127,9 @@ test('aircon fan follows the room setting, auto when none is given', () => {
   assert.equal(run().desired.ac.fan, 'auto');
   for (const fan of ['auto', 'low', 'high']) assert.equal(run({ fan }).desired.ac.fan, fan);
   assert.equal(run({ fan: 'low', co2: 800 }).desired.ac.fan, 'low'); // also during an air exchange
-  assert.equal(run({ fan: 'low' }).reasons.ac, 'Aircon: 22.0 °C (middle of 21–23), fan low');
-  assert.equal(run({ fan: 'high' }).reasons.ac, 'Aircon: 22.0 °C (middle of 21–23), fan high');
-  assert.equal(run({ fan: 'auto' }).reasons.ac, 'Aircon: 22.0 °C (middle of 21–23)');
+  assert.equal(run({ fan: 'low' }).reasons.ac, 'Aircon: 22.0 °C (middle of 21–23 °C), fan low');
+  assert.equal(run({ fan: 'high' }).reasons.ac, 'Aircon: 22.0 °C (middle of 21–23 °C), fan high');
+  assert.equal(run({ fan: 'auto' }).reasons.ac, 'Aircon: 22.0 °C (middle of 21–23 °C)');
   assert.equal(run({ fan: 'low', co2: 800 }).reasons.ac, 'Aircon: 17.0 °C (22.0 − 5 during air exchange), fan low');
 });
 
@@ -137,7 +137,7 @@ test('aircon drop: none for a new room (acDrop 0 or missing), any 0 to 10 °C as
   for (const acDrop of [0, undefined]) {
     const r = run({ co2: 800, b: { ...bands, acDrop } });
     assert.equal(r.desired.ac.setpoint, 22);
-    assert.equal(r.reasons.ac, 'Aircon: 22.0 °C (middle of 21–23)');
+    assert.equal(r.reasons.ac, 'Aircon: 22.0 °C (middle of 21–23 °C)');
   }
   const two = run({ co2: 800, b: { ...bands, acDrop: 2.5 } });
   assert.equal(two.desired.ac.setpoint, 19.5);
@@ -158,7 +158,7 @@ test('reasons name the rule and the numbers', () => {
   assert.equal(run({ rh: 80 }).reasons.humidifier, 'Humidifier: RH 80 % ≤ 85 %');
   assert.equal(run({ rh: 96 }).reasons.humidifier, 'Humidifier: RH 96 % ≥ 95 %');
   assert.equal(run({ rh: 90 }).reasons.humidifier, 'Humidifier kept off: RH 90 % between 85 and 95 %');
-  assert.equal(run().reasons.ac, 'Aircon: 22.0 °C (middle of 21–23)');
+  assert.equal(run().reasons.ac, 'Aircon: 22.0 °C (middle of 21–23 °C)');
 });
 
 test('decide does not change its input', () => {

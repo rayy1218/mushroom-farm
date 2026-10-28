@@ -356,7 +356,7 @@ test('aircon fan changed between cycles: the next cycle sends the new fan', asyn
   await s.cycle({ dt: 120_000 }); // the aircon changes at most every 2 min
   assert.equal(s.db.getCommands(s.id).ac.fan, 'low');
   assert.equal(s.controller.get(s.id).acFan, 'low');
-  assert.equal(s.controller.get(s.id).reasons.ac, 'Aircon: 22.0 °C (middle of 21–23), fan low');
+  assert.equal(s.controller.get(s.id).reasons.ac, 'Aircon: 22.0 °C (middle of 21–23 °C), fan low');
   const sent = s.writes.length;
   await s.cycle();
   assert.equal(s.writes.length, sent); // the same fan is not sent again
