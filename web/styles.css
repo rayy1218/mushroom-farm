@@ -149,6 +149,13 @@ dialog {
   overflow-y: auto;
 }
 dialog::backdrop { background: var(--backdrop); }
+dialog { margin-top: max(16px, 6vh); margin-bottom: auto; } /* anchored at the top: a step that changes its height does not make it jump */
+::placeholder { color: var(--muted); opacity: 1; }
+/* a phone: every control at least 44 px tall (a finger in a humid room) */
+@media (max-width: 600px) {
+  button, .ctl, .field input, .field select, select, .top-link, .topbar .theme-btn { min-height: 44px; }
+  .topbar .theme-btn { width: 44px; }
+}
 
 .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
 .field label { font-size: 0.9rem; font-weight: 600; }
@@ -486,7 +493,8 @@ button.toggle[data-on="true"]:hover { background: color-mix(in srgb, var(--accen
 .settings { max-width: 640px; }
 .settings h2 { margin-bottom: 12px; }
 /* Farm settings beside the phone alarms on a wide screen; each part of the form under a hairline */
-.settings-grid { display: grid; gap: 16px; align-items: start; }
+.settings-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
+.settings code { overflow-wrap: anywhere; } /* the Telegram link must not widen the page on a phone */
 .settings-grid .settings { max-width: none; }
 .settings-grid .telegram { margin-top: 0; }
 .settings > h2 + .field { margin-top: 0; }
