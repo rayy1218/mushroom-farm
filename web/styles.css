@@ -609,7 +609,7 @@ button.toggle[data-on="true"]:hover { background: color-mix(in srgb, var(--accen
 .ov-alarms { margin-bottom: 16px; }
 .ov-alarms h2 { margin-bottom: 8px; }
 .ov-alarm-list { margin: 0; padding: 0; list-style: none; }
-.ov-alarm { display: grid; grid-template-columns: auto minmax(0, 12ch) minmax(0, 1fr) auto auto; align-items: center; gap: 4px 12px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.ov-alarm { display: grid; grid-template-columns: auto minmax(0, 20ch) minmax(0, 1fr) auto auto; align-items: center; gap: 4px 12px; padding: 8px 0; border-bottom: 1px solid var(--border); }
 .ov-alarm:last-child { border-bottom: 0; }
 .ov-alarm.acked .ov-alarm-text, .ov-alarm.acked .ov-alarm-room { color: var(--ink-2); font-weight: 400; }
 .ov-alarm.acked .ov-chip { background: none; border-color: var(--border-strong); color: var(--ink-2); }
@@ -630,9 +630,14 @@ button.toggle[data-on="true"]:hover { background: color-mix(in srgb, var(--accen
 .ov-spark { flex: none; }
 .ov-spark-none { color: var(--muted); font-size: var(--fs-xs); }
 .ov-room-foot { margin: 8px 0 0; color: var(--ink-2); font-size: var(--fs-sm); }
+/* The whole room card opens the room: its title's link stretched over it, any other link or control above it */
+.ov-room { position: relative; }
+.ov-room-link::after { content: ""; position: absolute; inset: 0; border-radius: var(--radius-card); }
+.ov-room a:not(.ov-room-link), .ov-room button { position: relative; z-index: 1; }
 @media (max-width: 600px) {
   .ov-alarm { grid-template-columns: auto minmax(0, 1fr) auto; }
   .ov-alarm-text { grid-column: 1 / -1; grid-row: 2; }
+  .ov-alarm-room { display: inline-flex; align-items: center; min-height: 44px; } /* a thumb's target */
 }
 
 /* Energy and water (room page card and Overview farm card), Outdoor card */
@@ -673,10 +678,12 @@ button.toggle[data-on="true"]:hover { background: color-mix(in srgb, var(--accen
 .us-room > :not(:first-child) { text-align: right; }
 .us-room a { color: var(--ink); overflow-wrap: anywhere; }
 .us-room-head { color: var(--muted); font-size: var(--fs-xs); border-top: 0; }
+.us-short { display: none; color: var(--muted); }
 @media (max-width: 480px) {
   .us-room { grid-template-columns: minmax(0, 1fr) auto; }
   .us-room > :nth-child(3) { grid-column: 2; }
   .us-room-head > :nth-child(3) { display: none; }
+  .us-short { display: inline; } /* the 30 days under Today say what they are */
 }
 
 /* ---- Simulation: stepper, run, results, room cards ---- */

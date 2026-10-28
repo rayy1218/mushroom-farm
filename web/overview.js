@@ -201,7 +201,7 @@ export function mount(container) {
       const card = node('section', 'card ov-room');
       const head = node('div', 'ov-room-head');
       const name = node('h2');
-      const link = node('a', '', c.name);
+      const link = node('a', 'ov-room-link', c.name); // stretched over the card: the whole card opens the room
       link.href = c.href;
       name.append(link);
       head.append(name, pill(c.state.text, c.state.tone));
@@ -284,7 +284,10 @@ export function mount(container) {
         const li = node('li', 'us-room');
         const a = node('a', '', l.name);
         a.href = l.href;
-        li.append(a, node('span', '', l.today), node('span', '', l.last30));
+        // on a phone the 30 days wrap under Today, so they carry their own label there
+        const last30 = node('span', '');
+        last30.append(node('span', 'us-short', '30 d '), l.last30);
+        li.append(a, node('span', '', l.today), last30);
         list.append(li);
       }
       card.append(list);

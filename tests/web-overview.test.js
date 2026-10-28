@@ -195,3 +195,16 @@ test('the readings beside an Overview alarm: from online sensors only, the filte
   assert.deepEqual(roomReadings({ trh: { status: 'not-wired' }, co2: { status: 'online', co2: 1301 } }), { t: null, rh: null, co2: 1301, pa: null });
   assert.deepEqual(roomReadings(null), { t: null, rh: null, co2: null, pa: null });
 });
+
+test('the Overview on a phone: the whole card opens the room, the 30 days keep a label, the alarm\'s room link is a thumb\'s size', async () => {
+  const { readFileSync } = await import('node:fs');
+  const page = readFileSync(new URL('../web/overview.js', import.meta.url), 'utf8');
+  assert.match(page, /node\('a', 'ov-room-link', c\.name\)/);
+  assert.match(page, /last30\.append\(node\('span', 'us-short', '30 d '\), l\.last30\)/);
+  const css = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
+  assert.match(css, /\.ov-room-link::after \{ content: ""; position: absolute; inset: 0;/);
+  assert.match(css, /\.ov-room a:not\(\.ov-room-link\), \.ov-room button \{ position: relative; z-index: 1; \}/);
+  assert.match(css, /@media \(max-width: 480px\) \{[^}]*\}[^@]*\.us-short \{ display: inline; \}/);
+  assert.match(css, /\.ov-alarm-room \{ display: inline-flex; align-items: center; min-height: 44px; \}/);
+  assert.match(css, /\.ov-alarm \{ display: grid; grid-template-columns: auto minmax\(0, 20ch\)/, 'room for "Container / Gamma"');
+});
