@@ -191,3 +191,15 @@ test('the CO₂ row: Air exchange (ppm), Starts at first, then Stops at; its che
   const t = BANDS.find((b) => b.key === 't');
   assert.equal(inputLabel(t, 'low'), 'Temperature band low limit, °C', 'the other bands keep low and high');
 });
+
+test('Setup keeps the By-Hand Rule: a band set by hand in the accent text with the stage\'s value under it, and one way back', () => {
+  const src = readFileSync(new URL('../web/control.js', import.meta.url), 'utf8');
+  assert.match(src, /const diffs = byHandValues\(crop, last\);/);
+  assert.match(src, /input\.classList\.toggle\('by-hand', text !== ''\);/);
+  assert.match(src, /const backBtn = button\('Back to stage values'\);/);
+  assert.match(src, /request\('PUT', `\/api\/rooms\/\$\{roomId\}\/control`, stageBody\(crop\.crops, crop\.stage\), COMMAND_TIMEOUT\)/);
+  const crop = readFileSync(new URL('../web/crop-card.js', import.meta.url), 'utf8');
+  assert.match(crop, /stageBody\(last\.crops, stage\)/, 'the Crop tab\'s button sends the same body');
+  const css = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
+  assert.match(css, /\.c-band \.ctl\.by-hand \{ color: var\(--accent-text\); \}/);
+});

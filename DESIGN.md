@@ -278,7 +278,7 @@ On screens up to 600 px the three smallest steps grow by 1 px (13, 14, 15) for r
 
 **The Units Rule.** Every number on screen carries its unit, the controller's reasons included ("CO₂ 744 ppm between 700 and 800 ppm"); thousands are grouped (1,000 ppm); a range of dates takes an en dash. An aircon is entered and shown in kW; its BTU/h class (the size shops sell) is a picker and a note in brackets, never the input's unit.
 
-**The By-Hand Rule.** A value a person set that differs from the program (a band changed on Setup) is shown in the accent text colour with the program's own value under it and a way back ("Back to stage values"): a choice, not a warning.
+**The By-Hand Rule.** A value a person set that differs from the program (a band changed on Setup) is shown in the accent text colour with the program's own value under it ("stage: 900 ppm") and a way back ("Back to stage values"): a choice, not a warning. Both places say it: the Setup inputs and the Crop tab's current stage (web/crop-math.js `byHandValues`, `stageBody`); while they agree nothing shows.
 
 **The Navigation Rule.** The top bar holds the farm's name, Live, the theme, Overview and Settings, and a red alarm button only while there are alarms. The Overview holds every room (the Rooms list is folded into it) and Add room; a room is reached from its card or the room switch on its page.
 

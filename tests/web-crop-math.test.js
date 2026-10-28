@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { roomBandNote, runningTargets, stageTargets, stageLine, nextLine, rampLine, doneLine, cropWarnings, formFromData, checkCropForm, saveBody, newBlocksBody, startBody, hasCrops, FORM_FIELD_ORDER } from '../web/crop-math.js';
+import { roomBandNote, runningTargets, stageBody, byHandValues, stageTargets, stageLine, nextLine, rampLine, doneLine, cropWarnings, formFromData, checkCropForm, saveBody, newBlocksBody, startBody, hasCrops, FORM_FIELD_ORDER } from '../web/crop-math.js';
 
 const DAY = 86_400_000;
 const at = (d, h, m) => new Date(2026, 9, d, h, m).getTime();
@@ -147,4 +147,24 @@ test("runningTargets: the current stage's rows show the bands the room runs firs
   assert.deepEqual([s.value, s.stageValue], ['1,000 ppm', byKey.safety]);
   assert.equal(out.find((r) => r.key === 't').stageValue, null);
   assert.deepEqual(runningTargets(rows, null), rows.map((r) => ({ ...r, stageValue: null })), 'before the control settings loaded');
+});
+
+// The By-Hand Rule on Setup (critique 2026-10-28): a band input that differs from the current stage says the stage's value.
+test('byHandValues: the current stage\'s own value for each band setting that differs from what the room runs', () => {
+  const crops = [{ crop: 'lionsmane', blocks: 950 }];
+  const body = stageBody(crops, 'fruiting');
+  assert.deepEqual(Object.keys(body), ['tLow', 'tHigh', 'rhLow', 'rhHigh', 'co2Low', 'co2High', 'co2Safety']);
+  const c = { crops, stage: 'fruiting' };
+  assert.deepEqual(byHandValues(c, { ...body, auto: true }), {}, 'the same: quiet');
+  const out = byHandValues(c, { ...body, co2High: body.co2High - 100, tLow: body.tLow - 0.5, co2Safety: 1000 });
+  assert.deepEqual(out, {
+    tLow: `stage: ${body.tLow} °C`,
+    co2High: `stage: ${body.co2High.toLocaleString('en-US')} ppm`,
+    co2Safety: `stage: ${body.co2Safety.toLocaleString('en-US')} ppm`,
+  });
+  assert.deepEqual(byHandValues(c, { ...body, rhLow: 80 }), { rhLow: `stage: ${body.rhLow} % RH` });
+  assert.deepEqual(byHandValues(null, body), {}, 'no crop program yet');
+  assert.deepEqual(byHandValues({ crops: [], stage: 'fruiting' }, body), {}, 'no crops');
+  assert.deepEqual(byHandValues(c, null), {}, 'before the control settings loaded');
+  assert.deepEqual(byHandValues({ ...c, ramp: { endAt: 2000 } }, { ...body, tLow: 10 }, 1000), {}, 'while the stage ramps the bands differ by design');
 });

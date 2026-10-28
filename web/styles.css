@@ -475,6 +475,12 @@ button.toggle[data-on="true"]:hover { background: color-mix(in srgb, var(--accen
 .c-band .m-name, .c-humidifier .m-name, .c-acfan .m-name { font-weight: 500; color: var(--ink-2); }
 .c-band .m-name { align-self: center; }
 .c-hint { grid-column: 1 / -1; margin: 0; font-size: var(--fs-sm); color: var(--muted); max-width: 60ch; }
+/* By hand (the By-Hand Rule): the value in the accent text, the stage's own value under it, one way back */
+.c-band .ctl.by-hand { color: var(--accent-text); }
+.c-band .ac-field { align-self: start; }
+.c-stage-val { font-size: var(--fs-xs); color: var(--muted); font-variant-numeric: tabular-nums; }
+.c-byhand { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin: 12px 0 0; padding: 10px 0 0;
+  border-top: 1px solid var(--border); color: var(--ink-2); font-size: var(--fs-sm); }
 .c-band .ctl[aria-invalid="true"] { border-color: var(--critical-text); }
 .c-band .ctl[aria-invalid="true"]:focus-visible { outline-color: var(--critical-text); }
 .control .ac-send { margin: 12px 0; }
