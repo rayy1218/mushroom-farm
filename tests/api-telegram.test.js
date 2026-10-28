@@ -124,3 +124,12 @@ test('PUT tells the sender its settings changed, only after a successful write',
   await call('PUT', '/api/settings', { telegramRepeatMin: 5000 });
   assert.equal(n, 1);
 });
+
+test("a bot's name as the chat id is refused when saved (messages to a bot go nowhere)", () => {
+  for (const id of ['@MushroomClimateAlertBot', '@farm_bot', '@bot']) {
+    const r = validateSettings({ telegramChatId: id });
+    assert.equal(r.field, 'telegramChatId', id);
+    assert.match(r.error, /bot's name/);
+  }
+  assert.equal(validateSettings({ telegramChatId: '@farm_bots' }).field, undefined);
+});

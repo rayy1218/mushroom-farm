@@ -7,7 +7,7 @@ import { refreshMs } from './settings-math.js';
 import { live } from './live.js';
 import { fallbackMs, createThrottle } from './live-math.js';
 import { loadOverview } from './overview-data.js';
-import { farmStatus, sortRooms, roomCard, alarmTimeText, SPARK_W, SPARK_H } from './overview-math.js';
+import { farmStatus, phoneAlarms, sortRooms, roomCard, alarmTimeText, SPARK_W, SPARK_H } from './overview-math.js';
 import { outdoorCard } from './outdoor-math.js';
 import { roomLines, USAGE_DAYS, USAGE_REFRESH_MS } from './usage-math.js';
 import { usageTileNodes } from './usage.js';
@@ -117,6 +117,7 @@ export function mount(container) {
   let usageAt = 0; // when the farm usage was last read: it is asked at most once a minute
   let outdoor = null; // the last good GET /api/outdoor (null: none yet, or an older server)
   let usage = null; // the last good GET /api/usage
+  let phone = null; // the phone-alarm line (phoneAlarms), null when alarms reach a phone
 
   function showBanner(text, retry = false) {
     if (!els.banner.hidden && els.bannerText.textContent === text) return; // do not re-announce the same alert
@@ -140,6 +141,7 @@ export function mount(container) {
     if (wantUsage) usageAt = Date.now(); // a failed read is tried again in a minute
     if (usageData) usage = usageData;
     renderFarm();
+    if (settings) phone = phoneAlarms(settings); // a failed read keeps the last line
     refresh = refreshMs(settings);
     const { overview, alarms, failed } = result;
     if (failed.overview || failed.alarms) showBanner(OFFLINE, true);
@@ -167,6 +169,14 @@ export function mount(container) {
       const facts = node('ul', 'ov-facts');
       facts.append(...st.facts.map((f) => node('li', '', f)));
       els.status.replaceChildren(head, facts);
+      if (phone) { // alarms that reach nobody are a farm problem, so it is said where everyone looks first
+        const p = node('p', 'ov-phone');
+        p.dataset.tone = phone.tone;
+        const link = node('a', '', phone.link);
+        link.href = phone.href;
+        p.append(node('span', '', `${phone.text}. `), link);
+        els.status.append(p);
+      }
     }
     els.empty.hidden = rooms.length > 0;
     const now = Date.now();

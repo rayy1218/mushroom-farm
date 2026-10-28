@@ -579,6 +579,10 @@ button.toggle[data-on="true"]:hover { background: color-mix(in srgb, var(--accen
 .ov-status-dot[data-tone="amber"], .ov-status-dot[data-tone="warning"] { background: var(--warning); }
 .ov-status-dot[data-tone="serious"], .ov-status-dot[data-tone="critical"] { background: var(--critical); }
 .ov-facts { display: flex; flex-wrap: wrap; gap: 4px 20px; margin: 0; padding: 0; list-style: none; color: var(--ink-2); font-size: var(--fs-sm); }
+.ov-phone { flex-basis: 100%; margin: 0; padding-top: 10px; border-top: 1px solid var(--border); font-size: var(--fs-sm); font-weight: 600; }
+.ov-phone[data-tone="amber"] { color: var(--warning-text); }
+.ov-phone[data-tone="serious"] { color: var(--critical-text); }
+.ov-phone a { margin-left: 4px; }
 .ov-bare { margin: 0; color: var(--ink-2); }
 .ov-room-bare { align-self: start; }
 .ov-band { margin-left: 8px; font-size: var(--fs-xs); font-weight: 600; color: var(--muted); }

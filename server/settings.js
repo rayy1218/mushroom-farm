@@ -28,6 +28,7 @@ export const TELEGRAM_VIEW_DEFAULT = {
 
 const TOKEN_ERROR = 'Bot token must look like 123456:ABC-def, as BotFather gave it, or be empty to clear it';
 const CHAT_ERROR = 'Chat id must be a number (a group id starts with -) or @name, up to 64 characters, or empty';
+const BOT_NAME_ERROR = "Chat id is a bot's name (it ends in bot), not a chat: messages to it go nowhere. Enter the chat's number id, a group's negative id or a channel's @name";
 const LEVELS_ERROR = 'Levels must be any of critical, serious and warning';
 const CLEARED_ERROR = 'Cleared messages must be on or off';
 const REPEAT_ERROR = 'Repeat must be a whole number of minutes from 0 (off) to 1440';
@@ -82,6 +83,8 @@ export function validateSettings(body) {
     if (!ok(body[field])) return { error, field };
     settings[field] = body[field];
   }
+  // Refused when saved, still read back when stored before this check (Settings and the Overview then say it is wrong).
+  if (/^@\w*bot$/i.test(settings.telegramChatId ?? '')) return { error: BOT_NAME_ERROR, field: 'telegramChatId' };
   if (Object.keys(settings).length === 0) return { error: 'Body has no settings' };
   return { settings };
 }

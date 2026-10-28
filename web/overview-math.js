@@ -89,6 +89,18 @@ export function farmStatus(rooms) {
   };
 }
 
+// Whether alarms reach a phone (GET /api/settings): null when they do (or the settings did not load), otherwise one
+// line for the Overview's status card, with the way to fix it on Settings.
+export function phoneAlarms(settings) {
+  if (!settings) return null;
+  const line = (text, tone) => ({ text, tone, href: '#/settings', link: 'Fix on Settings' });
+  if (!settings.telegramTokenSet || !settings.telegramChatId) return { ...line('Phone alarms are not set up: an alarm only shows here', 'amber'), link: 'Set them up on Settings' };
+  if (/^@\w*bot$/i.test(settings.telegramChatId)) return line("Phone alarms can't be delivered: the chat id is the bot's own name", 'serious');
+  if (settings.telegramLastError) return line(`Phone alarms are failing: ${settings.telegramLastError}`, 'serious');
+  if (!settings.telegramLevels?.length) return line('Phone alarms are off for every level', 'amber');
+  return null;
+}
+
 // The room cards' order: rooms that need someone first (alarms by level, then Manual), then OK, then the ones not set up;
 // the server's order (by name) inside each group.
 export function sortRooms(rooms) {

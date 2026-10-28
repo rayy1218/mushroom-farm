@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  farmStatus, sortRooms,
+  farmStatus, sortRooms, phoneAlarms,
   sparkPath, tiles, badgeCount, withTitlePrefix, sensorText, exchangeText, alarmLevelRank, sortAlarms, alarmTimeText, SPARKS,
 } from '../web/overview-math.js';
 import { parseRoute, isCanonical } from '../web/route.js';
@@ -140,4 +140,16 @@ test('sortRooms: rooms that need someone first (alarms by level, then Manual), t
     r('warning', { alarms: { count: 1, level: 'warning' } }), r('critical', { alarms: { count: 1, level: 'critical' } }), r('ok B'),
   ]).map((x) => x.name);
   assert.deepEqual(order, ['critical', 'warning', 'manual', 'ok A', 'ok B', 'unwired']);
+});
+
+test('phoneAlarms: a line on the Overview when alarms cannot reach a phone, none when they can', () => {
+  const ok = { telegramTokenSet: true, telegramChatId: '-100123', telegramLevels: ['critical'], telegramLastError: null };
+  assert.equal(phoneAlarms(ok), null);
+  assert.equal(phoneAlarms(null), null);
+  assert.deepEqual(phoneAlarms({ ...ok, telegramChatId: '@MushroomClimateAlertBot' }),
+    { text: "Phone alarms can't be delivered: the chat id is the bot's own name", tone: 'serious', href: '#/settings', link: 'Fix on Settings' });
+  assert.equal(phoneAlarms({ ...ok, telegramTokenSet: false }).tone, 'amber');
+  assert.equal(phoneAlarms({ ...ok, telegramChatId: '' }).link, 'Set them up on Settings');
+  assert.equal(phoneAlarms({ ...ok, telegramLastError: 'Forbidden: bot was blocked by the user' }).text, 'Phone alarms are failing: Forbidden: bot was blocked by the user');
+  assert.equal(phoneAlarms({ ...ok, telegramLevels: [] }).text, 'Phone alarms are off for every level');
 });
