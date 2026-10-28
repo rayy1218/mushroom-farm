@@ -181,7 +181,7 @@ export function createRoomCard(hosts, { idPrefix = 'room-', cropHref = '', onSwi
     // card: roomCard() of room-card-math.js; draw: the DrawState of the picture; traces: traceOf() per reading.
     paint(card, draw, traces = {}, switches = null) {
       mimic.paint(draw);
-      put(note, 'Air path: in, treated, out');
+      put(note, '');
       card.tiles.forEach((x, i) => paintTile(tiles[i], x, traces[x.key] ?? null));
       put(fresh, card.fresh);
       fresh.hidden = !card.fresh;

@@ -218,7 +218,7 @@ export function stageTargets(crops, stage, light = null) {
   const b = mixBands(crops, stage).bands;
   const rows = [
     { key: 't', name: 'Temperature', value: `${b.tLow}–${b.tHigh} °C` },
-    { key: 'rh', name: 'Humidity', value: `${b.rhLow}–${b.rhHigh} %` },
+    { key: 'rh', name: 'Humidity', value: `${b.rhLow}–${b.rhHigh} % RH` },
     { key: 'co2', name: 'CO₂ kept between', value: `${grouped(b.co2Low)}–${grouped(b.co2High)} ppm` },
     { key: 'safety', name: 'CO₂ safety level', value: `${grouped(b.co2Safety)} ppm` },
   ];
@@ -236,7 +236,7 @@ export function roomBandNote(crops, stage, control, c = null, now = Date.now()) 
   const n = (x) => grouped(Math.round(x * 10) / 10);
   const parts = [];
   if (control.tLow !== b.tLow || control.tHigh !== b.tHigh) parts.push(`temperature ${n(control.tLow)}–${n(control.tHigh)} °C`);
-  if (control.rhLow !== b.rhLow || control.rhHigh !== b.rhHigh) parts.push(`humidity ${n(control.rhLow)}–${n(control.rhHigh)} %`);
+  if (control.rhLow !== b.rhLow || control.rhHigh !== b.rhHigh) parts.push(`humidity ${n(control.rhLow)}–${n(control.rhHigh)} % RH`);
   if (control.co2Low !== b.co2Low || control.co2High !== b.co2High) parts.push(`CO₂ ${n(control.co2Low)}–${n(control.co2High)} ppm`);
   if (Number.isFinite(control.co2Safety) && control.co2Safety !== b.co2Safety) parts.push(`a CO₂ safety level of ${n(control.co2Safety)} ppm`);
   if (!parts.length) return '';
@@ -252,7 +252,7 @@ export function runningTargets(rows, control) {
   const n = (x) => grouped(Math.round(x * 10) / 10);
   const running = {
     t: `${n(control.tLow)}–${n(control.tHigh)} °C`,
-    rh: `${n(control.rhLow)}–${n(control.rhHigh)} %`,
+    rh: `${n(control.rhLow)}–${n(control.rhHigh)} % RH`,
     co2: `${n(control.co2Low)}–${n(control.co2High)} ppm`,
     safety: Number.isFinite(control.co2Safety) ? `${n(control.co2Safety)} ppm` : null,
   };

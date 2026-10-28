@@ -153,8 +153,8 @@ test('machineTiles: six in air-path order with their effect and detail', () => {
   const filter = { pa: 40.4 };
   const tiles = machineTiles(draw({ machines: { relay: relay({ dehumidifier: { status: 'off' }, circulation: { status: 'on', running: true } }), ac: ac() } }), control, filter);
   assert.deepEqual(tiles.map((m) => [m.step, m.name, m.effect]), [
-    [1, 'Intake fan', 'Air in'], [2, 'Aircon', '− Temperature'], [3, 'Circulation', 'Mixes the air'],
-    [4, 'Humidifier', '+ Humidity'], [5, 'Dehumidifier', '− Humidity'], [6, 'Exhaust fan', 'Air out'],
+    [1, 'Intake fan', 'Air in'], [2, 'Aircon', 'Cools'], [3, 'Circulation', 'Mixes the air'],
+    [4, 'Humidifier', 'Adds moisture'], [5, 'Dehumidifier', 'Dries'], [6, 'Exhaust fan', 'Air out'],
   ]);
   assert.deepEqual(tiles.map((m) => m.detail), ['Filter 40.4 Pa', 'Cool 21.5 °C · fan auto', 'Always on', 'On at 90 %, off at 95 %', 'On at 95 %, off at 92.5 %', 'With the intake']);
   // the role lines say the controller's real rule (server/controller.js): the humidifier on at the lower limit and off at the

@@ -137,7 +137,7 @@ export function createUsageCard(host, { roomId, getRoom }) {
   let waterChart = null;
 
   host.className = 'card us-card';
-  host.append(text('h2', '', 'Energy and water'));
+  host.append(text('h2', '', 'Energy and water by day'));
   const tiles = text('div', 'us-tiles');
   const hint = text('p', 'muted us-hint', PRICE_HINT);
   hint.hidden = true;

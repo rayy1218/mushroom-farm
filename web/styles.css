@@ -397,7 +397,7 @@ html { scroll-padding-top: var(--topbar-h); }
 .status[data-status="switching"], .status[data-status="no-data"] { color: var(--muted); }
 
 .machines { margin-bottom: 16px; }
-.machines h2 { margin-bottom: 12px; }
+.machines h2 { margin-bottom: 12px; font-size: var(--fs-md); } /* a card title like Control and Machines */
 .machines h3 { margin: 0 0 4px; font-size: var(--fs-md); font-weight: 600; }
 .machines .m-section + .m-section { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
 .machines .addr { margin: 0 0 8px; }
@@ -605,7 +605,8 @@ button.toggle[data-on="true"]:hover { background: color-mix(in srgb, var(--accen
 .ov-rooms { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
 .ov-room-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
 .ov-room-head h2 { margin: 0; font-size: var(--fs-lg); overflow-wrap: anywhere; }
-.ov-room-head a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--axis); text-underline-offset: 3px; }
+.ov-room-head a, .sim-item a, .us-room a { color: var(--ink); text-decoration: none; } /* titles that open a page: plain, underlined on hover */
+.ov-room-head a:hover, .sim-item a:hover, .us-room a:hover { text-decoration: underline; text-underline-offset: 3px; }
 .ov-value { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; border-top: 1px solid var(--border); }
 .ov-value-text { display: grid; min-width: 0; }
 .ov-value-label { color: var(--muted); font-size: var(--fs-xs); }
@@ -844,7 +845,7 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
 /* ---- The room page (redesign 2026-10-28): head, Now tab, Setup tab ---- */
 .room-head { align-items: end; }
 .room-head .back { font-size: var(--fs-sm); color: var(--muted); }
-.room-head .back::before { content: "\2190\00a0"; }
+.back::before { content: "\2190\00a0"; } /* every back link: the same arrow */
 .room-switch { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: var(--fs-sm); }
 .room-switch select { font: inherit; color: var(--ink); min-height: 36px; padding: 6px 30px 6px 10px; border: 1px solid var(--border-strong); border-radius: var(--radius);
   background: var(--raised) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238a919b' stroke-width='2.5' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") no-repeat right 10px center;

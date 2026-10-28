@@ -80,7 +80,7 @@ test('no crops: no plan', () => {
 test('the targets of one crop: temperature, humidity, the CO₂ band and its safety level', () => {
   assert.deepEqual(stageTargets([{ crop: 'lionsmane', blocks: 950 }], 'fruiting'), [
     { key: 't', name: 'Temperature', value: '19–21 °C' },
-    { key: 'rh', name: 'Humidity', value: '87–93 %' },
+    { key: 'rh', name: 'Humidity', value: '87–93 % RH' },
     { key: 'co2', name: 'CO₂ kept between', value: '700–900 ppm' },
     { key: 'safety', name: 'CO₂ safety level', value: '1,500 ppm' },
   ]);
@@ -88,12 +88,12 @@ test('the targets of one crop: temperature, humidity, the CO₂ band and its saf
 
 test('the CO₂ values are grouped in thousands', () => {
   const rows = stageTargets([{ crop: 'oyster', blocks: 500 }], 'spawn');
-  assert.deepEqual(rows.map((r) => r.value), ['23–25 °C', '67–73 %', '4,700–4,900 ppm', '5,500 ppm']);
+  assert.deepEqual(rows.map((r) => r.value), ['23–25 °C', '67–73 % RH', '4,700–4,900 ppm', '5,500 ppm']);
 });
 
 test('two crops: the overlap of their bands, the CO₂ band of the stricter one', () => {
   const rows = stageTargets(full.crops, 'fruiting');
-  assert.deepEqual(rows.map((r) => r.value), ['24–25 °C', '85–91 %', '600–700 ppm', '1,300 ppm']);
+  assert.deepEqual(rows.map((r) => r.value), ['24–25 °C', '85–91 % RH', '600–700 ppm', '1,300 ppm']);
   assert.deepEqual(stageTargets([], 'fruiting'), []);
 });
 
@@ -101,7 +101,7 @@ test('the warnings of a stage: the mix and the crops\' good ranges', () => {
   assert.deepEqual(stageWarnings(full.crops, 'fruiting'), []);
   const mixed = stageWarnings([{ crop: 'oyster', blocks: 500 }, { crop: 'lionsmane', blocks: 500 }], 'fruiting');
   assert.equal(mixed[0], "Grey oyster and Lion's mane (draft) do not fit one temperature band");
-  assert.ok(mixed.some((w) => /outside Lion's mane \(draft\)'s range 16–22 °C/.test(w)));
+  assert.ok(mixed.some((w) => /outside the good range for Lion's mane \(draft\): 16–22 °C/.test(w)));
   assert.deepEqual(stageWarnings([{ crop: 'oyster', blocks: 500 }, { crop: 'lionsmane', blocks: 500 }], 'spawn'),
     ["Grey oyster and Lion's mane (draft) do not fit one humidity band"], 'the ranges are of fruiting only');
   assert.deepEqual(stageWarnings([], 'fruiting'), []);

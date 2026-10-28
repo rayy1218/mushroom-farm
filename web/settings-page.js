@@ -6,7 +6,7 @@ import { parsePoll, POLL_MESSAGE, POLL_MIN, POLL_MAX, EXTRA_FIELDS, parseExtraSe
 
 const COMMAND_TIMEOUT = 15000;
 const SAVED = 'Saved — applies from the next reading';
-const HINT = 'Graphs show the last 50 readings. A sensor or machine shows as offline after 3 failed readings in a row.';
+const HINT = 'Live charts show the last 50 readings. A sensor or machine shows as offline after 3 failed readings in a row.';
 
 const TEMPLATE = `
   <div class="page-head">

@@ -20,7 +20,7 @@ const RESULT_TIMEOUT = 120_000; // a run of 58 days has about 3 MB of results
 const MAX_POINTS = 700; // per chart line (a run of 90 days has 26 000 samples)
 
 const TEMPLATE = `
-  <a class="back" href="#/rooms" data-back>← Room</a>
+  <a class="back" href="#/overview" data-back>Room</a>
   <div class="page-head">
     <div class="page-titles">
       <h1 class="page-title" tabindex="-1" data-title>Simulation</h1>
@@ -205,7 +205,7 @@ export function mount(container, { id, runId }) {
   function render() {
     const name = roomName ?? 'the room';
     els.title.textContent = headLine(name);
-    if (roomName !== null) els.back.textContent = `← ${roomName}`; // back to which room
+    if (roomName !== null) els.back.textContent = roomName; // back to which room
     els.sub.textContent = [formatDateTime(run.createdAt), inputLine(run.input)].filter(Boolean).join(' · ');
     els.actions.hidden = false;
     document.title = `${headLine(name)} · Mushroom farm`;

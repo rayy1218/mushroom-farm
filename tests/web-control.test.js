@@ -29,7 +29,7 @@ test('band check enforces limits and low < high', () => {
   assert.equal(checkBand(temp, 15.5, 23).field, 'low');
   assert.equal(checkBand(rh, NaN, 95).field, 'low');
   assert.equal(checkBand(rh, 85, NaN).field, 'high');
-  assert.equal(checkBand(rh, 39, 95).message, 'Humidity band lower limit must be 40 to 100 %');
+  assert.equal(checkBand(rh, 39, 95).message, 'Humidity band lower limit must be 40 to 100 % RH');
 });
 
 test('server fields find their row', () => {
@@ -50,7 +50,7 @@ test('state line says auto is off; input labels carry the band, side and unit', 
   assert.equal(stateLine({ auto: true, exchange: false }), 'Air exchange off');
   assert.equal(stateLine({ auto: true, exchange: true, exchangeSince: 0 }, 5 * 60000), 'Air exchange on since ' + formatHm(0) + ' (5 min)');
   assert.equal(inputLabel(co2, 'low'), 'CO₂ band low limit, ppm');
-  assert.equal(inputLabel(rh, 'high'), 'Humidity band high limit, %');
+  assert.equal(inputLabel(rh, 'high'), 'Humidity band high limit, % RH');
 });
 
 test('low not below high is blamed on the low field, like the server', () => {

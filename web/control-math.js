@@ -8,7 +8,7 @@ export const BANDS = [
     hint: 'Typical: oyster under about 1000, lion’s mane under about 750 to 1000. Outdoor air is about 420, so a lower limit near it takes a lot of air.' },
   { key: 't', label: 'Temperature', unit: '°C', name: 'Temperature band', low: 'tLow', high: 'tHigh', min: 16, max: 35, step: '0.5',
     hint: 'Typical fruiting: grey oyster about 24 to 28, lion’s mane about 18 to 22.' },
-  { key: 'rh', label: 'Humidity', unit: '%', name: 'Humidity band', low: 'rhLow', high: 'rhHigh', min: 40, max: 100, step: '0.5',
+  { key: 'rh', label: 'Humidity', unit: '% RH', name: 'Humidity band', low: 'rhLow', high: 'rhHigh', min: 40, max: 100, step: '0.5',
     hint: 'Typical: 85 to 95 for oyster, about 90 for lion’s mane.' },
 ];
 

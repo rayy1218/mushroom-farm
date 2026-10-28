@@ -26,7 +26,7 @@ function text(tag, className, content) {
 // Returns { update({ hist, sensors, price }), setCursor(at|null), destroy() }; hist is the range's history (null: Live).
 export function createUsageSection(host, { onCursor }) {
   host.replaceChildren();
-  host.append(text('h2', '', 'Electricity and water'));
+  host.append(text('h2', '', 'Energy and water in this range'));
   const totals = text('p', 'usage-totals');
   const totalsText = text('span');
   const basis = text('span', 'us-basis');

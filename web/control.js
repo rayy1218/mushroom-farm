@@ -81,7 +81,7 @@ export function createControl(host, { roomId, onOffline, onGone, onChange, getRo
   for (const band of BANDS) {
     const row = el('div', 'c-band');
     row.dataset.key = band.key;
-    row.append(el('span', 'm-name', `${band.label} (${band.unit})`));
+    row.append(el('span', 'm-name', `Band (${band.unit})`)); // under the group's own title (CO₂, Temperature, Humidity)
     const inputs = {};
     for (const side of ['low', 'high']) {
       const input = el('input', 'ctl');

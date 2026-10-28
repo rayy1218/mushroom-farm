@@ -44,7 +44,7 @@ test('warnings: those of the mix and those of the crops\' ranges', () => {
   assert.deepEqual(cropWarnings(base), []);
   assert.deepEqual(cropWarnings({ ...base, targets: { ...base.targets, warnings: ['Grey oyster and Milky do not fit one temperature band'] } }), ['Grey oyster and Milky do not fit one temperature band']);
   // the server's targets.warnings already holds the range warnings: shown once, as they are
-  const range = "Temperature band 24–26 °C is outside Lion's mane (draft)'s range 16–22 °C";
+  const range = "Temperature band 24–26 °C is outside the good range for Lion's mane (draft): 16–22 °C";
   assert.deepEqual(cropWarnings({ ...base, crops: [{ crop: 'lionsmane', blocks: 5 }], targets: { ...base.targets, warnings: [range] } }), [range]);
   assert.deepEqual(cropWarnings({ ...base, targets: null }), []);
   assert.deepEqual(cropWarnings({ ...base, crops: [], targets: null }), []);

@@ -199,14 +199,14 @@ const rhText = (x) => String(Math.round(x * 10) / 10);
 const MACHINES = [
   { key: 'intake', name: 'Intake fan', effect: 'Air in',
     detail: (u, c, f) => (!f ? 'No filter sensor' : f.pa === null ? 'Filter: no reading yet' : `Filter ${f.pa.toFixed(1)} Pa`) },
-  { key: 'ac', name: 'Aircon', effect: '− Temperature', detail: (u) => (u.sub ? `${u.state} · ${fanWord(u.sub)}` : u.state) },
+  { key: 'ac', name: 'Aircon', effect: 'Cools', detail: (u) => (u.sub ? `${u.state} · ${fanWord(u.sub)}` : u.state) },
   { key: 'circ', name: 'Circulation', effect: 'Mixes the air', detail: (u, c) => (c?.auto ? 'Always on' : 'Set by hand') },
   { key: 'lights', name: 'Lights', effect: 'Light for the crop', detail: (u, c, f, crop) => (c?.auto ? lightShort(crop) : 'Set by hand') },
   // The controller's real rule (server/controller.js decide): the humidifier on at the lower limit, off at the upper; the
   // dehumidifier on at the upper limit, off at the middle of the band.
-  { key: 'hu', name: 'Humidifier', effect: '+ Humidity',
+  { key: 'hu', name: 'Humidifier', effect: 'Adds moisture',
     detail: (u, c) => (hasRh(c) ? `On at ${rhText(c.rhLow)} %, off at ${rhText(c.rhHigh)} %` : 'On below the band') },
-  { key: 'dh', name: 'Dehumidifier', effect: '− Humidity',
+  { key: 'dh', name: 'Dehumidifier', effect: 'Dries',
     detail: (u, c) => (hasRh(c) ? `On at ${rhText(c.rhHigh)} %, off at ${rhText((c.rhLow + c.rhHigh) / 2)} %` : 'On above the band') },
   { key: 'exhaust', name: 'Exhaust fan', effect: 'Air out', detail: () => 'With the intake' },
 ];

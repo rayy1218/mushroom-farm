@@ -83,7 +83,7 @@ test('the page: the section under the three charts and before the machine timeli
 });
 
 test('the section: the heading, the totals, Live with and without a meter, metered bars solid and estimated hatched', () => {
-  assert.match(section, /'Electricity and water'/);
+  assert.match(section, /'Energy and water in this range'/);
   assert.match(section, /usageTotalsLine\(/);
   assert.match(section, /meterCard\(sensors\.meter\)/, 'Live: a power line only for a room with a meter');
   assert.match(section, /LIVE_NO_METER/);
