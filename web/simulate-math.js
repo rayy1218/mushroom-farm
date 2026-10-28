@@ -120,6 +120,13 @@ export function initialState({ room, lastRun = null, cropData = null, now = Date
   };
 }
 
+// Whether the filter fields hold what the room gives them (step 1 folds them away then): its pressures and change days, the
+// default filter life and the days since its last change.
+export function filterFromRoom(state, room, now = Date.now()) {
+  const own = initialState({ room, now }).physics;
+  return FILTER_KEYS.every((k) => numberOf(state.physics[k]) === Number(own[k]));
+}
+
 // The crop rows with the blocks as numbers; a blocks text that is not a whole number stays NaN (the check reports it).
 const cropsOf = (state) => state.crops.map((c) => ({ crop: c.crop, blocks: /^[0-9]{1,9}$/.test(String(c.blocks).trim()) ? Number(c.blocks) : NaN }));
 
@@ -213,7 +220,7 @@ export function buildBody(state, cropData = null) {
 
 // ---- words ----
 
-export const bandLines = (b) => [`Temperature ${b.tLow}–${b.tHigh} °C`, `Humidity ${b.rhLow}–${b.rhHigh} %`, `Air exchange ${exchangePoints(b.co2Low, b.co2High)}`];
+export const bandLines = (b) => [`Temperature ${b.tLow}–${b.tHigh} °C`, `Humidity ${b.rhLow}–${b.rhHigh} % RH`, `Air exchange ${exchangePoints(b.co2Low, b.co2High)}`];
 
 // The bands of the crops of step 2 in its start stage: { lines, warnings } (the mix's own warnings and those of the crops' ranges),
 // or null while the crops are not valid.

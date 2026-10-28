@@ -739,6 +739,21 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
 .sim-item .sim-use { color: var(--ink-2); }
 .sim-item .sim-status { text-align: right; color: var(--ink-2); }
 .sim-item[data-status="failed"] .sim-status { color: var(--critical-text); }
+/* Simulate fits the screen (critique 2026-10-28): the step scrolls, Cancel, Back and Next stay in a footer at its foot */
+.sim-dialog { max-height: calc(100dvh - max(16px, 6vh) - 16px); }
+.sim-dialog .actions { position: sticky; bottom: 0; z-index: 1; margin: 16px -24px -24px; padding: 12px 24px 16px; background: var(--surface); border-top: 1px solid var(--border); }
+.sim-dialog #sim-title:focus { outline: none; } /* it takes the focus on each step; a field would pop up a phone's keyboard */
+@media (max-width: 600px) { .sim-dialog .sizes.two > .field:has(.sim-ac) { grid-column: 1 / -1; } }
+/* the intake filter of step 1, folded while it holds the room's own values */
+.sim-fold { margin: 0 0 20px; }
+.sim-fold > summary { display: flex; align-items: center; gap: 8px; min-height: 44px; cursor: pointer; list-style: none; font-size: 0.9rem; font-weight: 600; }
+.sim-fold > summary::-webkit-details-marker { display: none; }
+.sim-fold > summary::after { content: ""; width: 8px; height: 8px; margin-left: auto; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg); translate: 0 -2px; }
+.sim-fold[open] > summary { margin-bottom: 8px; }
+.sim-fold[open] > summary::after { transform: rotate(-135deg); translate: 0 2px; }
+.sim-fold > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+.sim-fold .field { margin-bottom: 0; }
+.sim-fold-note { color: var(--muted); font-weight: 400; }
 /* The Crop tab as a stage plan (spec 2026-10-26-crop-stage-plan-design.md): the head, one section per stage with its Targets
    table, the Stages list down the right (sticky), the Ramp and Automatic change row; one column on a card under 720 px. */
 .crop-card { container-type: inline-size; padding: 20px; }

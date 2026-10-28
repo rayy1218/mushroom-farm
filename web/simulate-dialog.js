@@ -9,7 +9,7 @@ import { CROPS, CROP_KEYS, STAGES, FARM_TYPES, MAX_CROPS } from './crops.js';
 import { AC_CLASSES, acClassOf, kwOfBtu, btuOfKw } from './simulation-math.js';
 import {
   PHYSICS_FIELDS, FILTER_KEYS, initialState, checkStep, firstField, stepOf, buildBody, mixSummary, wholeProgram, stagesOf, fixStage, roomLine,
-  summaryLines, progressLine, removeLabel,
+  summaryLines, progressLine, removeLabel, filterFromRoom,
   TARGET_DEFAULT, checkTarget, sizingBody, sizingProgress, sizingRows, estimateLines, useSetup, coolDownLine, startChoices,
 } from './simulate-math.js';
 
@@ -71,6 +71,7 @@ export function openSimulateDialog(room, hooks = {}) {
   form.noValidate = true;
   const title = el('h2', '', `Simulate ${room.name}`);
   title.id = 'sim-title';
+  title.tabIndex = -1; // the focus on opening and on each step: a field's focus would pop up a phone's keyboard
   const marks = el('ol', 'sim-steps');
   const formError = el('p', 'form-error');
   formError.setAttribute('role', 'alert');
@@ -106,6 +107,8 @@ export function openSimulateDialog(room, hooks = {}) {
     const shown = /^[0-9]+$/.test(String(state.physics[f.key]).trim()) ? kwOfBtu(btu).toFixed(1) : state.physics[f.key];
     const sold = el('select');
     sold.setAttribute('aria-label', 'Aircon sold as');
+    sold.name = 'acClass';
+    sold.id = `sim-physics-${f.key}-class`;
     const none = el('option', '', 'Other size');
     none.value = '';
     sold.append(none, ...AC_CLASSES.map((c) => { const o = el('option', '', `${c.toLocaleString('en-US')} BTU/h`); o.value = String(c); return o; }));
@@ -161,7 +164,11 @@ export function openSimulateDialog(room, hooks = {}) {
   function showErrors(errors) {
     for (const [name, text] of Object.entries(errors)) {
       for (const node of body.querySelectorAll(`[data-error="${name}"]`)) node.textContent = text;
-      for (const node of body.querySelectorAll(`[data-field="${name}"]`)) node.setAttribute('aria-invalid', 'true');
+      for (const node of body.querySelectorAll(`[data-field="${name}"]`)) {
+        node.setAttribute('aria-invalid', 'true');
+        const fold = node.closest('details');
+        if (fold) fold.open = true; // an error in the folded filter shows
+      }
     }
     const first = firstField(errors);
     (body.querySelector(`[data-field="${first}"]`) ?? body.querySelector('[data-focus]'))?.focus();
@@ -183,9 +190,13 @@ export function openSimulateDialog(room, hooks = {}) {
     const machines = el('fieldset', 'addresses');
     machines.append(el('legend', '', 'Machines'));
     // The intake filter (spec 2026-10-22-filter-design.md 8): the room's settings and its filter's age; with the room's
-    // pressure sensor the run changes the filter at the change pressure too.
-    const filter = el('fieldset', 'addresses');
-    filter.append(el('legend', '', 'Intake filter'));
+    // pressure sensor the run changes the filter at the change pressure too. Folded while it holds the room's own values, so
+    // the step shows fewer fields at once (critique 2026-10-28); an error in it opens it (showErrors).
+    const filter = el('details', 'sim-fold');
+    filter.open = !filterFromRoom(state, room);
+    const filterTitle = el('summary', '', 'Intake filter');
+    if (!filter.open) filterTitle.append(el('span', 'sim-fold-note', "the room's own settings"));
+    filter.append(filterTitle);
     const weatherGrid = el('div', 'sizes two');
     const machineGrid = el('div', 'sizes two');
     const filterGrid = el('div', 'sizes two');
@@ -220,10 +231,12 @@ export function openSimulateDialog(room, hooks = {}) {
         const wrap = el('div', 'sim-crop-row');
         const select = selectInput(CROP_KEYS.map((k) => [k, CROPS[k].name]), row.crop, (v) => { row.crop = v; wrap.querySelector('button').setAttribute('aria-label', removeLabel(v)); paintMix(); });
         select.setAttribute('aria-label', `Crop ${i + 1}`);
+        select.name = `crop-${i + 1}`;
         select.setAttribute('aria-describedby', 'sim-crops-error');
         select.dataset.field = i === 0 ? 'crops' : '';
         const blocks = numberInput(row.blocks, (v) => { row.blocks = v; paintMix(); }, true);
         blocks.setAttribute('aria-label', `Blocks of crop ${i + 1}`);
+        blocks.name = `blocks-${i + 1}`;
         blocks.setAttribute('aria-describedby', 'sim-crops-error');
         blocks.dataset.field = '';
         const remove = button('Remove', 'danger-text');
@@ -274,7 +287,7 @@ export function openSimulateDialog(room, hooks = {}) {
     stage.addEventListener('change', () => { state.stage = stage.value; clearError('stage'); paintMix(); });
     const stageField = field('stage', 'Start stage', stage);
 
-    const farmBox = el('div', 'sizes two');
+    const farmBox = el('div', 'sim-farm'); // one under the other: the farm types' names need the width
     farmBox.append(farm, stageField);
     rows();
     box.append(el('p', 'sim-legend', 'Crops in the room'), list, listError, add, farmBox, mix);
@@ -293,6 +306,7 @@ export function openSimulateDialog(room, hooks = {}) {
     };
     const daysInput = numberInput(state.days, (v) => { state.days = v; paintSummary(); }, true);
     daysInput.setAttribute('aria-label', 'Days');
+    daysInput.name = 'days';
     daysInput.dataset.field = 'days';
     daysInput.disabled = state.daysMode !== 'days';
     const choice = (mode, content) => {
@@ -522,7 +536,7 @@ export function openSimulateDialog(room, hooks = {}) {
     body.replaceChildren(STEP_VIEWS[step - 1]());
     const back = button('Back');
     back.hidden = step === 1;
-    back.addEventListener('click', () => { step--; render(); body.querySelector('input, select')?.focus(); });
+    back.addEventListener('click', () => { step--; render(); title.focus(); });
     const cancel = button('Cancel');
     cancel.addEventListener('click', () => d.close());
     const next = button(step === 3 ? 'Run simulation' : 'Next', 'primary', 'submit');
@@ -539,7 +553,7 @@ export function openSimulateDialog(room, hooks = {}) {
     if (step < 3) {
       step++;
       render();
-      body.querySelector('input, select')?.focus();
+      title.focus();
       return;
     }
     await start();
@@ -671,6 +685,6 @@ export function openSimulateDialog(room, hooks = {}) {
     state = initialState({ room, lastRun: hooks.from ?? (Array.isArray(runs) ? runs[0] ?? null : null), cropData });
     step = 1;
     render();
-    body.querySelector('input')?.focus();
+    title.focus();
   });
 }

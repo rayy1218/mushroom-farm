@@ -6,7 +6,7 @@ import {
   PHYSICS_FIELDS, DEFAULT_CROPS, DAYS_DEFAULT, initialState, checkStep, firstField, stepOf, buildBody, mixSummary, wholeProgram,
   programDays, programOf, stagesOf, fixStage, roomLine, summaryLines, progressLine, bandLines, removeLabel,
   TARGET_DEFAULT, checkTarget, sizingBody, sizingProgress, sizingRows, estimateLines, useSetup, limitLine,
-  COOL_START_HOUR, coolDownLine, startChoices,
+  COOL_START_HOUR, coolDownLine, startChoices, filterFromRoom,
 } from '../web/simulate-math.js';
 import { COOL_START_HOUR as SERVER_COOL_START_HOUR } from '../server/sizing.js';
 
@@ -166,7 +166,7 @@ test('farm type decides the stages', () => {
 test('the mix: bands and warnings in words', () => {
   const s = initialState({ room });
   const m = mixSummary(s);
-  assert.deepEqual(m.lines, ['Temperature 24–26 °C', 'Humidity 85–91 %', 'Air exchange starts at 900, stops at 700 ppm']);
+  assert.deepEqual(m.lines, ['Temperature 24–26 °C', 'Humidity 85–91 % RH', 'Air exchange starts at 900, stops at 700 ppm']);
   assert.deepEqual(m.warnings, []);
   s.crops = [{ crop: 'oyster', blocks: '500' }, { crop: 'milky', blocks: '10' }];
   assert.ok(mixSummary(s).warnings.some((w) => /do not fit one temperature band/.test(w)));
@@ -176,7 +176,7 @@ test('the mix: bands and warnings in words', () => {
   assert.ok(mixSummary(s).warnings.length >= 1);
   s.crops = [{ crop: 'oyster', blocks: 'x' }];
   assert.equal(mixSummary(s), null);
-  assert.deepEqual(bandLines({ tLow: 24, tHigh: 26, rhLow: 85, rhHigh: 91, co2Low: 700, co2High: 900, co2Safety: 1500 }), ['Temperature 24–26 °C', 'Humidity 85–91 %', 'Air exchange starts at 900, stops at 700 ppm']);
+  assert.deepEqual(bandLines({ tLow: 24, tHigh: 26, rhLow: 85, rhHigh: 91, co2Low: 700, co2High: 900, co2Safety: 1500 }), ['Temperature 24–26 °C', 'Humidity 85–91 % RH', 'Air exchange starts at 900, stops at 700 ppm']);
 });
 
 test('the summary and the room line', () => {
@@ -408,4 +408,24 @@ test('Start from: in band (a room that is running) by default, or outdoor air at
   assert.equal(stepOf('start'), 3);
   assert.equal(stepOf('startHour'), 3);
   assert.equal(stepOf('coolDownMaxH'), 3);
+});
+
+// ---- the dialog's fold of the intake filter (critique 2026-10-28) ----
+
+test("the intake filter folds while its values are the room's own", () => {
+  const filtered = { ...room, fanMaxPa: 250, filterCleanPa: 50, filterFinalPa: 120, filterChangeDays: 14, filterChangedAt: Date.UTC(2026, 9, 20) };
+  const now = Date.UTC(2026, 9, 28, 12);
+  const s = initialState({ room: filtered, now });
+  assert.equal(filterFromRoom(s, filtered, now), true);
+  s.physics.filterFinalPa = '100';
+  assert.equal(filterFromRoom(s, filtered, now), false);
+  // the last run's filter life (no room field: the default 30 days) is not the room's
+  const fromRun = initialState({ room: filtered, now, lastRun: { input: { physics: { filterLifeDays: 60 } } } });
+  assert.equal(filterFromRoom(fromRun, filtered, now), false);
+  // 80 and 80.0 are the same number
+  const same = initialState({ room: filtered, now });
+  same.physics.filterFinalPa = '120.0';
+  assert.equal(filterFromRoom(same, filtered, now), true);
+  same.physics.filterFinalPa = 'x';
+  assert.equal(filterFromRoom(same, filtered, now), false);
 });
