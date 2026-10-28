@@ -4,6 +4,7 @@
 import { acSize, kwOfBtu } from './simulation-math.js';
 import { exchangePoints } from './band-math.js';
 import { CROPS, STAGES, FARM_TYPES, mixBands, rangeWarnings, validateCrops } from './crops.js';
+import { HUMIDIFIER_LABEL, OUTDOOR_LABEL } from './control-math.js';
 
 // The physics inputs of step 1. min, max and whole are those of the device app's PARAMS (device/sim-store.js; a test compares
 // them); def is the default (the humidifier's is the room's rating, the dehumidifier's the room's capacity when it is fitted).
@@ -85,9 +86,11 @@ export const fixStage = (farmType, stage) => (stagesOf(farmType).includes(stage)
 
 // ---- the state of the stepper ----
 
-// The texts of the three steps. lastRun: the room's newest run (input as it was posted), cropData: GET /api/rooms/:id/crop.
+// The texts of the three steps. lastRun: the room's newest run (input as it was posted), cropData: GET /api/rooms/:id/crop,
+// roomControl: GET /api/rooms/:id/control (null when it could not be read); again: a run to simulate again, whose own
+// control settings (Change for this run) go with it.
 // The filter's days in use are the room's now (whole days since its last change), whatever the last run had.
-export function initialState({ room, lastRun = null, cropData = null, now = Date.now() }) {
+export function initialState({ room, lastRun = null, cropData = null, roomControl = null, again = null, now = Date.now() }) {
   const before = lastRun?.input?.physics;
   const physics = {};
   for (const f of PHYSICS_FIELDS) {
@@ -105,7 +108,7 @@ export function initialState({ room, lastRun = null, cropData = null, now = Date
   const crops = roomCrops ? cropData.crops : lastCrops ? lastCrops.crops : DEFAULT_CROPS;
   const from = lastCrops ?? cropData;
   const farmType = Object.hasOwn(FARM_TYPES, from?.farmType ?? '') ? from.farmType : 'ready';
-  return {
+  const state = {
     physics,
     crops: crops.map((c) => ({ crop: c.crop, blocks: String(c.blocks) })),
     farmType,
@@ -114,10 +117,19 @@ export function initialState({ room, lastRun = null, cropData = null, now = Date
     daysMode: 'days',
     days: String(DAYS_DEFAULT),
     start: 'band', // Start from: 'band' or 'outdoor' (at COOL_START_HOUR)
-    // The air exchange time limit of this run: null while it is the room's (a suggestion's Use this sets it).
+    // The room's control settings that a run uses (step 3's Control row), or null when unknown.
+    roomControl: pickControl(roomControl),
+    // This run's own: the air exchange time limit (null while it is the room's) and the other settings of RUN_CONTROL that
+    // differ from the room's (Change for this run, or a suggestion's Use this); the texts typed for the numbers.
     exchangeMaxMin: null,
-    roomExchangeMaxMin: null, // the room's own, from GET /api/rooms/:id/control, when known
+    runSettings: {},
+    controlTexts: {},
   };
+  for (const f of RUN_CONTROL) {
+    const v = again?.input?.control?.[f.key];
+    if (v !== undefined) setRunControl(state, f.key, f.switch ? v : String(v));
+  }
+  return state;
 }
 
 // Whether the filter fields hold what the room gives them (step 1 folds them away then): its pressures and change days, the
@@ -181,14 +193,18 @@ export function checkStep(step, state) {
     const bad = validateCrops(cropsOf(state));
     if (bad) errors.crops = bad.error;
     if (!stagesOf(state.farmType).includes(state.stage)) errors.stage = `Stage must be one of ${stagesOf(state.farmType).join(', ')}`;
-  } else if (step === 3 && state.daysMode !== 'whole') {
+  } else if (step === 3) {
     const n = daysOf(state);
-    if (!Number.isInteger(n) || n < 1 || n > DAYS_MAX) errors.days = `Days must be a whole number from 1 to ${DAYS_MAX}`;
+    if (state.daysMode !== 'whole' && (!Number.isInteger(n) || n < 1 || n > DAYS_MAX)) errors.days = `Days must be a whole number from 1 to ${DAYS_MAX}`;
+    for (const f of RUN_CONTROL) {
+      const text = state.controlTexts?.[f.key];
+      if (!f.switch && text !== undefined && controlNumber(f, text) === null) errors[`control.${f.key}`] = f.message;
+    }
   }
   return errors;
 }
 
-const FIELD_ORDER = [...PHYSICS_FIELDS.map((f) => `physics.${f.key}`), 'crops', 'farmType', 'stage', 'days'];
+const FIELD_ORDER = [...PHYSICS_FIELDS.map((f) => `physics.${f.key}`), 'crops', 'farmType', 'stage', 'days', 'control.exchangeMaxMin', 'control.acDrop'];
 
 // The first field of an errors object in the order of the stepper, or null.
 export function firstField(errors) {
@@ -213,8 +229,8 @@ export function buildBody(state, cropData = null) {
     days: daysOf(state, cropData),
     ...(state.start === 'outdoor' ? { start: 'outdoor', startHour: COOL_START_HOUR } : {}),
   };
-  const control = { ...(isNumber(state.exchangeMaxMin) ? { exchangeMaxMin: state.exchangeMaxMin } : {}), ...(state.runSettings ?? {}) };
-  if (Object.keys(control).length > 0) body.control = control;
+  const { own } = runControl(state);
+  if (Object.keys(own).length > 0) body.control = own;
   return body;
 }
 
@@ -256,8 +272,7 @@ export function summaryLines(state, room, cropData = null) {
     { label: 'Room', text: roomLine(room).replace('Room size ', 'Size ') },
     { label: 'Walls and weather', text: `Walls ${v.wallUA} W/K, sun on the roof ${v.sunW} W, outdoor ${v.outdoorLow}–${v.outdoorHigh} °C, dew point ${v.outdoorDew} °C` },
     { label: 'Machines', text: `Fan ${v.fanFlow} m³/h, aircon ${acSize(Number(v.acBTU))}, humidifier ${v.humidifierLH} L/h, ${Number(v.dehumidifierLday) > 0 ? `dehumidifier ${v.dehumidifierLday} L/day` : 'no dehumidifier'}${room?.lights === true ? `, lights ${room.lightsW} W on the room's schedule` : ''}` },
-    ...(isNumber(state.exchangeMaxMin) ? [{ label: 'Air exchange', text: limitLine(state.exchangeMaxMin, state.roomExchangeMaxMin) }] : []),
-    ...(state.runSettings && Object.keys(state.runSettings).length > 0 ? [{ label: 'Settings', text: settingsLine(state.runSettings, state.roomSettings) }] : []),
+    { label: 'Control', text: controlLine(state) },
     { label: 'Filter', text: filterLine(v, state.filterSensor === true) },
     { label: 'Crops', text: `${crops}; ${farmWords[state.farmType]}, starting at ${STAGES[state.stage].toLowerCase().replace(' between flushes', '')}` },
     ...(state.start === 'outdoor' ? [{ label: 'Start', text: `From outdoor air at ${clockHour(COOL_START_HOUR)} (just loaded)` }] : []),
@@ -359,41 +374,119 @@ export function estimateLines(est) {
   return rows.filter((r) => r[3] !== undefined && r[3] !== null).map(([name, value, reason]) => `${name} ${value}${reason ? `: ${reason}` : ''}`);
 }
 
-// "Air exchange time limit 60 min (the room: 10 min)"; roomMin unknown: "(set for this run)".
-export function limitLine(min, roomMin) {
-  return `Air exchange time limit ${min} min (${isNumber(roomMin) ? `the room: ${roomMin} min` : 'set for this run'})`;
-}
-
-const forcedWords = (on) => (on ? 'forced on' : 'not forced on');
-// "Aircon lower during air exchange 0 °C (the room: 5 °C); humidifier not forced on during air exchange (the room: forced on)".
-export function settingsLine(run, room = {}) {
-  const parts = [];
-  if (run.acDrop !== undefined) parts.push(`Aircon lower during air exchange ${run.acDrop} °C${isNumber(room.acDrop) ? ` (the room: ${room.acDrop} °C)` : ''}`);
-  if (run.humidifierDuringExchange !== undefined) {
-    const text = `humidifier ${forcedWords(run.humidifierDuringExchange)} during air exchange${typeof room.humidifierDuringExchange === 'boolean' ? ` (the room: ${forcedWords(room.humidifierDuringExchange)})` : ''}`;
-    parts.push(parts.length ? text : text.charAt(0).toUpperCase() + text.slice(1));
-  }
-  return parts.join('; ');
-}
-
 // Use this: the setup's machines into step 1's texts; the run's time limit, aircon drop and humidifier setting when they are
-// not the room's own. room: the room's control settings { exchangeMaxMin, acDrop, humidifierDuringExchange } (or just its
-// time limit as a number, or null when unknown).
-export function useSetup(state, candidate, roomControl) {
-  const roomC = typeof roomControl === 'number' ? { exchangeMaxMin: roomControl } : (roomControl ?? {});
-  const roomMin = roomC.exchangeMaxMin;
+// not the room's own (what was typed for this run goes). roomControl: the room's control settings { exchangeMaxMin, acDrop,
+// humidifierDuringExchange, ... } (or just its time limit as a number, or null when unknown); the state's when not given.
+export function useSetup(state, candidate, roomControl = state.roomControl) {
+  state.roomControl = typeof roomControl === 'number' ? { exchangeMaxMin: roomControl } : pickControl(roomControl);
+  const roomC = state.roomControl ?? {};
   const settings = {};
   for (const key of ['acDrop', 'humidifierDuringExchange']) {
     const v = candidate.control?.[key];
     if (v !== undefined && v !== roomC[key]) settings[key] = v;
   }
   state.runSettings = settings;
-  state.roomSettings = { acDrop: roomC.acDrop, humidifierDuringExchange: roomC.humidifierDuringExchange };
+  state.controlTexts = {};
   const m = candidate.machines;
   state.physics.fanFlow = String(m.fanFlow);
   state.physics.humidifierLH = String(m.humidifierLH);
   state.physics.dehumidifierLday = String(m.dehumidifierLday);
   state.physics.acBTU = String(m.acBTU);
-  state.roomExchangeMaxMin = isNumber(roomMin) ? roomMin : null;
-  state.exchangeMaxMin = isNumber(roomMin) && candidate.exchangeMaxMin === roomMin ? null : candidate.exchangeMaxMin;
+  state.exchangeMaxMin = isNumber(roomC.exchangeMaxMin) && candidate.exchangeMaxMin === roomC.exchangeMaxMin ? null : candidate.exchangeMaxMin;
+}
+
+// ---- the control settings of a run (step 3's Control row and Change for this run; critique 2026-10-28) ----
+
+// The room's control settings a run uses (server/simulate.js): the fresh air interval only as the room has it.
+const CONTROL_KEYS = ['exchangeEveryMin', 'exchangeMaxMin', 'acDrop', 'humidifierDuringExchange', 'outdoorAir'];
+function pickControl(c) {
+  if (!c || typeof c !== 'object') return null;
+  return Object.fromEntries(CONTROL_KEYS.filter((k) => c[k] !== undefined && c[k] !== null).map((k) => [k, c[k]]));
+}
+
+// What one run may set for itself (server/simulations.js validateSimulation control), labelled as on the Setup tab.
+export const RUN_CONTROL = [
+  { key: 'exchangeMaxMin', label: 'Air exchange time limit (min)', min: 1, max: 120, whole: true,
+    message: 'Air exchange time limit must be a whole number from 1 to 120 min' },
+  { key: 'acDrop', label: 'Aircon lower during air exchange (°C)', min: 0, max: 10, whole: false,
+    message: 'Aircon lower during air exchange must be a number from 0 to 10 °C' },
+  { key: 'humidifierDuringExchange', label: HUMIDIFIER_LABEL, switch: true },
+  { key: 'outdoorAir', label: OUTDOOR_LABEL, switch: true },
+];
+
+// The number of a typed text within the field's limits, or null.
+function controlNumber(f, text) {
+  const n = numberOf(text);
+  return Number.isFinite(n) && n >= f.min && n <= f.max && (!f.whole || Number.isInteger(n)) ? n : null;
+}
+
+// The settings the run uses: { values (the room's with the run's own on top), own (the run's own, the body's control) }.
+export function runControl(state) {
+  const own = { ...(isNumber(state.exchangeMaxMin) ? { exchangeMaxMin: state.exchangeMaxMin } : {}), ...(state.runSettings ?? {}) };
+  const room = state.roomControl ?? {};
+  return { values: { ...Object.fromEntries(CONTROL_KEYS.map((k) => [k, room[k]])), ...own }, own };
+}
+
+// A setting of Change for this run: a text for a number, true or false for a switch. The room's value (or a text that is
+// not a number in its limits) is no setting of the run's own; the text stays as typed for the check (checkStep 3).
+export function setRunControl(state, key, value) {
+  const f = RUN_CONTROL.find((x) => x.key === key);
+  let v = value;
+  if (!f.switch) {
+    state.controlTexts = { ...state.controlTexts, [key]: String(value) };
+    v = controlNumber(f, value);
+  }
+  const own = v !== null && v !== state.roomControl?.[key];
+  if (key === 'exchangeMaxMin') { state.exchangeMaxMin = own ? v : null; return; }
+  const { [key]: _, ...rest } = state.runSettings ?? {};
+  state.runSettings = own ? { ...rest, [key]: v } : rest;
+}
+
+// Back to the room's settings.
+export function resetRunControl(state) {
+  state.exchangeMaxMin = null;
+  state.runSettings = {};
+  state.controlTexts = {};
+}
+
+// The text of a number field of Change for this run: as typed, else the value the run uses ('' when unknown).
+export function controlText(state, key) {
+  const typed = state.controlTexts?.[key];
+  if (typed !== undefined) return typed;
+  const v = runControl(state).values[key];
+  return isNumber(v) ? String(v) : '';
+}
+
+const dropWords = (v) => (v > 0 ? `${v} °C lower` : 'not lowered');
+const onWords = (v) => (v ? 'on' : 'off');
+const usedWords = (v) => (v ? 'used' : 'not used');
+
+// Step 3's Control row: "Air exchange every 15 min, up to 10 min; aircon 5 °C lower during air exchange; humidifier on during
+// air exchange; outdoor air used", a setting of the run's own marked "(for this run; the room: 10 min)".
+export function controlLine(state) {
+  const { values: v, own } = runControl(state);
+  const room = state.roomControl;
+  if (!room && Object.keys(own).length === 0) return 'As on the Setup tab (they could not be read)';
+  const known = (k) => v[k] !== undefined;
+  const mark = (k, words) => (own[k] === undefined ? '' : ` (for this run${room && room[k] !== undefined ? `; the room: ${words(room[k])}` : ''})`);
+  const parts = [];
+  if (known('exchangeMaxMin')) {
+    const every = room?.exchangeEveryMin;
+    const limit = `${v.exchangeMaxMin} min${mark('exchangeMaxMin', (x) => `${x} min`)}`;
+    parts.push(isNumber(every) && every > 0 ? `air exchange every ${every} min, up to ${limit}`
+      : every === 0 ? `fresh air interval off; air exchange up to ${limit}` : `air exchange up to ${limit}`);
+  }
+  if (known('acDrop')) parts.push(`aircon ${dropWords(v.acDrop)} during air exchange${mark('acDrop', dropWords)}`);
+  if (known('humidifierDuringExchange')) parts.push(`humidifier ${onWords(v.humidifierDuringExchange)} during air exchange${mark('humidifierDuringExchange', onWords)}`);
+  if (known('outdoorAir')) parts.push(`outdoor air ${usedWords(v.outdoorAir)}${mark('outdoorAir', usedWords)}`);
+  if (!room) parts.push('the rest as on the Setup tab');
+  const text = parts.join('; ');
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+// The setting a run cannot change for itself (the server takes no fresh air interval per run), or null when unknown.
+export function fixedControlLine(state) {
+  const every = state.roomControl?.exchangeEveryMin;
+  if (!isNumber(every)) return null;
+  return `${every > 0 ? `Fresh air at least every ${every} min` : 'Fresh air interval off'}: set on the Setup tab`;
 }

@@ -5,8 +5,9 @@ import { PROGRAM_DEFAULTS, programDays as serverProgramDays } from '../server/pr
 import {
   PHYSICS_FIELDS, DEFAULT_CROPS, DAYS_DEFAULT, initialState, checkStep, firstField, stepOf, buildBody, mixSummary, wholeProgram,
   programDays, programOf, stagesOf, fixStage, roomLine, summaryLines, progressLine, bandLines, removeLabel,
-  TARGET_DEFAULT, checkTarget, sizingBody, sizingProgress, sizingRows, estimateLines, useSetup, limitLine,
+  TARGET_DEFAULT, checkTarget, sizingBody, sizingProgress, sizingRows, estimateLines, useSetup,
   COOL_START_HOUR, coolDownLine, startChoices, filterFromRoom,
+  RUN_CONTROL, runControl, setRunControl, resetRunControl, controlLine, controlText, fixedControlLine,
 } from '../web/simulate-math.js';
 import { COOL_START_HOUR as SERVER_COOL_START_HOUR } from '../server/sizing.js';
 
@@ -183,13 +184,14 @@ test('the summary and the room line', () => {
   assert.equal(roomLine(room), 'Room size 6 × 4 × 3 m, 72.0 m³');
   const s = initialState({ room });
   const lines = summaryLines(s, room);
-  assert.deepEqual(lines.map((l) => l.label), ['Room', 'Walls and weather', 'Machines', 'Filter', 'Crops', 'Run']);
-  assert.equal(lines[4].text, 'Grey oyster, 500 blocks; ready-to-fruit blocks, starting at fruiting');
-  assert.equal(lines[2].text, 'Fan 600 m³/h, aircon 3.5 kW (12,000 BTU/h class), humidifier 1.5 L/h, no dehumidifier');
-  assert.equal(lines[1].text, 'Walls 80 W/K, sun on the roof 300 W, outdoor 25–33 °C, dew point 24 °C');
-  assert.equal(lines[5].text, '7 days');
+  const line = (label, of = lines) => of.find((l) => l.label === label).text;
+  assert.deepEqual(lines.map((l) => l.label), ['Room', 'Walls and weather', 'Machines', 'Control', 'Filter', 'Crops', 'Run']);
+  assert.equal(line('Crops'), 'Grey oyster, 500 blocks; ready-to-fruit blocks, starting at fruiting');
+  assert.equal(line('Machines'), 'Fan 600 m³/h, aircon 3.5 kW (12,000 BTU/h class), humidifier 1.5 L/h, no dehumidifier');
+  assert.equal(line('Walls and weather'), 'Walls 80 W/K, sun on the roof 300 W, outdoor 25–33 °C, dew point 24 °C');
+  assert.equal(line('Run'), '7 days');
   s.daysMode = 'whole';
-  assert.equal(summaryLines(s, room)[5].text, 'Whole program, 68 days');
+  assert.equal(line('Run', summaryLines(s, room)), 'Whole program, 68 days');
 });
 
 test('the progress line', () => {
@@ -223,7 +225,7 @@ test('the dehumidifier input: 0 to 200 L/day, 0 is none; the room (when fitted) 
   assert.deepEqual(checkStep(1, s), {});
   assert.equal(buildBody(s).physics.dehumidifierLday, 20);
   assert.equal(stepOf('physics.dehumidifierLday'), 1);
-  assert.equal(summaryLines(s, room)[2].text, 'Fan 600 m³/h, aircon 3.5 kW (12,000 BTU/h class), humidifier 1.5 L/h, dehumidifier 20 L/day');
+  assert.equal(summaryLines(s, room).find((l) => l.label === 'Machines').text, 'Fan 600 m³/h, aircon 3.5 kW (12,000 BTU/h class), humidifier 1.5 L/h, dehumidifier 20 L/day');
 });
 
 // ---- suggest machines (spec 2026-10-22 section 7) ----
@@ -321,14 +323,14 @@ test('Use this fills step 1 and the run\'s time limit; the POST carries it only 
 });
 
 test('the summary shows the time limit of the run', () => {
-  const s = initialState({ room });
-  assert.equal(summaryLines(s, room).some((l) => l.label === 'Air exchange'), false);
-  useSetup(s, job.result.best[0], 10);
-  s.roomExchangeMaxMin = 10;
-  const line = summaryLines(s, room).find((l) => l.label === 'Air exchange');
-  assert.equal(line.text, 'Air exchange time limit 30 min (the room: 10 min)');
-  assert.equal(limitLine(60, null), 'Air exchange time limit 60 min (set for this run)');
-  assert.equal(limitLine(60, 10), 'Air exchange time limit 60 min (the room: 10 min)');
+  const s = initialState({ room, roomControl: { exchangeEveryMin: 15, exchangeMaxMin: 10, acDrop: 0, humidifierDuringExchange: false, outdoorAir: true } });
+  const control = () => summaryLines(s, room).find((l) => l.label === 'Control').text;
+  assert.match(control(), /^Air exchange every 15 min, up to 10 min;/);
+  useSetup(s, job.result.best[0], s.roomControl);
+  assert.match(control(), /^Air exchange every 15 min, up to 30 min \(for this run; the room: 10 min\);/);
+  // the room's limit unknown
+  useSetup(s, job.result.best[0], null);
+  assert.match(control(), /^Air exchange up to 30 min \(for this run\); the rest as on the Setup tab$/);
 });
 
 test('the fields of the sizing and the time limit belong to step 3', () => {
@@ -342,15 +344,14 @@ test('the fields of the sizing and the time limit belong to step 3', () => {
 test('Use this also carries the aircon drop and the humidifier setting when they differ from the room', () => {
   const s = initialState({ room });
   const cand = { machines: { fanFlow: 150, humidifierLH: 0.5, dehumidifierLday: 10, acBTU: 9000 }, exchangeMaxMin: 60, control: { exchangeMaxMin: 60, acDrop: 0, humidifierDuringExchange: false } };
-  useSetup(s, cand, { exchangeMaxMin: 10, acDrop: 5, humidifierDuringExchange: true });
+  useSetup(s, cand, { exchangeEveryMin: 15, exchangeMaxMin: 10, acDrop: 5, humidifierDuringExchange: true, outdoorAir: true });
   assert.deepEqual(buildBody(s).control, { exchangeMaxMin: 60, acDrop: 0, humidifierDuringExchange: false });
-  const lines = summaryLines(s, room);
-  assert.equal(lines.find((l) => l.label === 'Air exchange').text, 'Air exchange time limit 60 min (the room: 10 min)');
-  assert.equal(lines.find((l) => l.label === 'Settings').text, 'Aircon lower during air exchange 0 °C (the room: 5 °C); humidifier not forced on during air exchange (the room: forced on)');
+  assert.equal(summaryLines(s, room).find((l) => l.label === 'Control').text, 'Air exchange every 15 min, up to 60 min (for this run; the room: 10 min); '
+    + 'aircon not lowered during air exchange (for this run; the room: 5 °C lower); humidifier off during air exchange (for this run; the room: on); outdoor air used');
   // a room that already has them: only the time limit
   useSetup(s, cand, { exchangeMaxMin: 10, acDrop: 0, humidifierDuringExchange: false });
   assert.deepEqual(buildBody(s).control, { exchangeMaxMin: 60 });
-  assert.equal(summaryLines(s, room).some((l) => l.label === 'Settings'), false);
+  assert.doesNotMatch(summaryLines(s, room).find((l) => l.label === 'Control').text, /aircon[^;]*for this run/);
   // everything as the room: no control at all
   useSetup(s, cand, { exchangeMaxMin: 60, acDrop: 0, humidifierDuringExchange: false });
   assert.equal('control' in buildBody(s), false);
@@ -428,4 +429,93 @@ test("the intake filter folds while its values are the room's own", () => {
   assert.equal(filterFromRoom(same, filtered, now), true);
   same.physics.filterFinalPa = 'x';
   assert.equal(filterFromRoom(same, filtered, now), false);
+});
+
+// ---- step 3's Control row and Change for this run (critique 2026-10-28: two runs of the same machines scored 0.8 % and
+// 98.3 % in band, and nothing in Simulate showed the control settings that made the difference) ----
+
+const roomControl = { exchangeEveryMin: 15, exchangeMaxMin: 10, acDrop: 5, humidifierDuringExchange: true, outdoorAir: true, auto: true, tLow: 24 };
+
+test('the Control row: the room\'s air exchange, aircon and humidifier during it, and outdoor air', () => {
+  const s = initialState({ room, roomControl });
+  assert.deepEqual(s.roomControl, { exchangeEveryMin: 15, exchangeMaxMin: 10, acDrop: 5, humidifierDuringExchange: true, outdoorAir: true });
+  const lines = summaryLines(s, room);
+  assert.deepEqual(lines.map((l) => l.label), ['Room', 'Walls and weather', 'Machines', 'Control', 'Filter', 'Crops', 'Run']);
+  assert.equal(controlLine(s), 'Air exchange every 15 min, up to 10 min; aircon 5 °C lower during air exchange; humidifier on during air exchange; outdoor air used');
+  assert.equal(lines[3].text, controlLine(s));
+  const quiet = initialState({ room, roomControl: { ...roomControl, exchangeEveryMin: 0, acDrop: 0, humidifierDuringExchange: false, outdoorAir: false } });
+  assert.equal(controlLine(quiet), 'Fresh air interval off; air exchange up to 10 min; aircon not lowered during air exchange; humidifier off during air exchange; outdoor air not used');
+  // the room's settings could not be read
+  assert.equal(controlLine(initialState({ room })), 'As on the Setup tab (they could not be read)');
+});
+
+test('Change for this run: each setting the server takes for one run; the body carries only those that differ from the room', () => {
+  assert.deepEqual(RUN_CONTROL.map((f) => f.key), ['exchangeMaxMin', 'acDrop', 'humidifierDuringExchange', 'outdoorAir']);
+  assert.deepEqual(RUN_CONTROL.map((f) => f.label), ['Air exchange time limit (min)', 'Aircon lower during air exchange (°C)',
+    'Humidifier on during air exchange', 'Use outdoor air (free cooling, drying, wait out wet air)']);
+  const s = initialState({ room, roomControl });
+  assert.equal('control' in buildBody(s), false);
+  assert.deepEqual([controlText(s, 'exchangeMaxMin'), controlText(s, 'acDrop')], ['10', '5']);
+  setRunControl(s, 'exchangeMaxMin', '60');
+  setRunControl(s, 'acDrop', '0');
+  setRunControl(s, 'humidifierDuringExchange', false);
+  setRunControl(s, 'outdoorAir', false);
+  assert.deepEqual(buildBody(s).control, { exchangeMaxMin: 60, acDrop: 0, humidifierDuringExchange: false, outdoorAir: false });
+  assert.deepEqual(runControl(s).values, { exchangeEveryMin: 15, exchangeMaxMin: 60, acDrop: 0, humidifierDuringExchange: false, outdoorAir: false });
+  assert.equal(controlLine(s), 'Air exchange every 15 min, up to 60 min (for this run; the room: 10 min); aircon not lowered during air exchange (for this run; the room: 5 °C lower); '
+    + 'humidifier off during air exchange (for this run; the room: on); outdoor air not used (for this run; the room: used)');
+  assert.deepEqual(checkStep(3, s), {});
+  // back to the room's value: no longer the run's own
+  setRunControl(s, 'exchangeMaxMin', '10');
+  setRunControl(s, 'outdoorAir', true);
+  assert.deepEqual(buildBody(s).control, { acDrop: 0, humidifierDuringExchange: false });
+  // checked like the server, the text kept as typed
+  setRunControl(s, 'exchangeMaxMin', '2.5');
+  setRunControl(s, 'acDrop', '11');
+  assert.equal(controlText(s, 'exchangeMaxMin'), '2.5');
+  assert.deepEqual(checkStep(3, s), {
+    'control.exchangeMaxMin': 'Air exchange time limit must be a whole number from 1 to 120 min',
+    'control.acDrop': 'Aircon lower during air exchange must be a number from 0 to 10 °C',
+  });
+  assert.equal(firstField(checkStep(3, s)), 'control.exchangeMaxMin');
+  setRunControl(s, 'acDrop', '2.5');
+  assert.equal(buildBody({ ...s, controlTexts: {} }).control.acDrop, 2.5);
+  // the room's settings again
+  resetRunControl(s);
+  assert.equal('control' in buildBody(s), false);
+  assert.deepEqual(checkStep(3, s), {});
+  assert.equal(controlText(s, 'exchangeMaxMin'), '10');
+});
+
+test('the room\'s settings unknown: a run\'s own still go with it, the rest as on the Setup tab', () => {
+  const s = initialState({ room });
+  assert.equal(controlText(s, 'exchangeMaxMin'), '');
+  setRunControl(s, 'exchangeMaxMin', '30');
+  assert.deepEqual(buildBody(s).control, { exchangeMaxMin: 30 });
+  assert.equal(controlLine(s), 'Air exchange up to 30 min (for this run); the rest as on the Setup tab');
+});
+
+test('the fresh air interval is not the run\'s to change: it says so', () => {
+  assert.equal(fixedControlLine(initialState({ room, roomControl })), 'Fresh air at least every 15 min: set on the Setup tab');
+  assert.equal(fixedControlLine(initialState({ room, roomControl: { ...roomControl, exchangeEveryMin: 0 } })), 'Fresh air interval off: set on the Setup tab');
+  assert.equal(fixedControlLine(initialState({ room })), null);
+});
+
+test('Use this replaces what was typed for this run', () => {
+  const s = initialState({ room, roomControl });
+  setRunControl(s, 'exchangeMaxMin', 'x');
+  setRunControl(s, 'outdoorAir', false);
+  useSetup(s, { machines: { fanFlow: 150, humidifierLH: 0.5, dehumidifierLday: 10, acBTU: 9000 }, exchangeMaxMin: 60, control: { exchangeMaxMin: 60, acDrop: 0, humidifierDuringExchange: false } });
+  assert.deepEqual(checkStep(3, s), {});
+  assert.deepEqual(buildBody(s).control, { exchangeMaxMin: 60, acDrop: 0, humidifierDuringExchange: false });
+  assert.equal(controlText(s, 'exchangeMaxMin'), '60');
+});
+
+test('Simulate again with a run carries its own control settings', () => {
+  const run = { input: { physics: { fanFlow: 300 }, control: { exchangeMaxMin: 60, acDrop: 0, outdoorAir: false } } };
+  const s = initialState({ room, roomControl, lastRun: run, again: run });
+  assert.deepEqual(buildBody(s).control, { exchangeMaxMin: 60, acDrop: 0, outdoorAir: false });
+  assert.equal(controlText(s, 'exchangeMaxMin'), '60');
+  // the room's newest run is only a prefill of the machines: its settings stay its own
+  assert.equal('control' in buildBody(initialState({ room, roomControl, lastRun: run })), false);
 });

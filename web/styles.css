@@ -754,6 +754,13 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
 .sim-fold > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
 .sim-fold .field { margin-bottom: 0; }
 .sim-fold-note { color: var(--muted); font-weight: 400; }
+/* step 3's Change for this run: the time limit and the aircon drop as fields, the humidifier and outdoor air as checkboxes */
+.sim-run-control { margin-bottom: 12px; }
+.sim-switches { margin-top: 12px; }
+.sim-check { display: flex; align-items: center; gap: 10px; min-height: 36px; }
+.sim-check input { width: 18px; height: 18px; margin: 0; flex: none; }
+.sim-run-control .c-hint { margin: 8px 0; }
+@media (max-width: 600px) { .sim-check { min-height: 44px; } .sim-check input { width: 20px; height: 20px; } }
 /* The Crop tab as a stage plan (spec 2026-10-26-crop-stage-plan-design.md): the head, one section per stage with its Targets
    table, the Stages list down the right (sticky), the Ramp and Automatic change row; one column on a card under 720 px. */
 .crop-card { container-type: inline-size; padding: 20px; }

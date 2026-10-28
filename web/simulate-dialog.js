@@ -10,6 +10,7 @@ import { AC_CLASSES, acClassOf, kwOfBtu, btuOfKw } from './simulation-math.js';
 import {
   PHYSICS_FIELDS, FILTER_KEYS, initialState, checkStep, firstField, stepOf, buildBody, mixSummary, wholeProgram, stagesOf, fixStage, roomLine,
   summaryLines, progressLine, removeLabel, filterFromRoom,
+  RUN_CONTROL, runControl, setRunControl, resetRunControl, controlText, fixedControlLine,
   TARGET_DEFAULT, checkTarget, sizingBody, sizingProgress, sizingRows, estimateLines, useSetup, coolDownLine, startChoices,
 } from './simulate-math.js';
 
@@ -58,7 +59,6 @@ export function openSimulateDialog(room, hooks = {}) {
   let run = null;
   let timer = null;
   let sending = false;
-  let roomControl = null; // the room's own time limit, aircon drop and humidifier setting, GET /api/rooms/:id/control
   let sizing = null; // the suggestion job as last read (GET /api/sizing/:id)
   let sizingTimer = null;
   let sizingText = ''; // an error of the suggestion that belongs to no field (409, offline)
@@ -345,8 +345,70 @@ export function openSimulateDialog(room, hooks = {}) {
       starts.append(label);
     }
     paintSummary();
-    box.append(radios, starts, el('h3', 'sim-sub', 'Your choices'), list, suggestBox(paintSummary));
+    const control = controlBox(paintSummary);
+    const refresh = () => { paintSummary(); control.paint(); };
+    box.append(radios, starts, el('h3', 'sim-sub', 'Your choices'), list, control.node, suggestBox(refresh));
     return box;
+  }
+
+  // Change for this run (critique 2026-10-28): the control settings the server takes for one run, prefilled with the room's;
+  // the fresh air interval only as the room has it. Open while the run has settings of its own (or an error in them).
+  function controlBox(paintSummary) {
+    const fold = el('details', 'sim-fold sim-run-control');
+    const head = el('summary', '', 'Change for this run');
+    const note = el('span', 'sim-fold-note');
+    head.append(note);
+    const inner = el('div');
+    fold.append(head, inner);
+    const paintNote = () => {
+      const n = Object.keys(runControl(state).own).length;
+      note.textContent = n ? `${n} ${n === 1 ? 'setting' : 'settings'} for this run` : "the room's own settings";
+      reset.hidden = n === 0;
+    };
+    const reset = button("Use the room's settings");
+    reset.addEventListener('click', () => {
+      resetRunControl(state);
+      paintSummary();
+      paint();
+      head.focus(); // the button hides with nothing of the run's own left
+    });
+    function paint() {
+      const numbers = el('div', 'sizes two');
+      const switches = el('div', 'sim-switches');
+      for (const f of RUN_CONTROL) {
+        if (!f.switch) {
+          numbers.append(field(`control.${f.key}`, f.label, numberInput(controlText(state, f.key), (v) => {
+            setRunControl(state, f.key, v);
+            paintSummary();
+            paintNote();
+          }, f.whole)));
+          continue;
+        }
+        const id = `sim-control-${f.key}`;
+        const box = el('input');
+        box.type = 'checkbox';
+        box.id = id;
+        box.name = f.key;
+        box.dataset.field = `control.${f.key}`;
+        box.checked = runControl(state).values[f.key] !== false;
+        box.addEventListener('change', () => { setRunControl(state, f.key, box.checked); clearError(box.dataset.field); paintSummary(); paintNote(); });
+        const label = el('label', 'sim-check');
+        label.htmlFor = id;
+        label.append(box, el('span', '', f.label));
+        const err = el('p', 'field-error');
+        err.id = `${id}-error`;
+        err.dataset.error = `control.${f.key}`;
+        err.setAttribute('aria-live', 'polite');
+        box.setAttribute('aria-describedby', err.id);
+        switches.append(label, err);
+      }
+      const fixed = fixedControlLine(state);
+      inner.replaceChildren(numbers, switches, ...(fixed ? [el('p', 'c-hint', fixed)] : []), reset);
+      paintNote();
+    }
+    paint();
+    fold.open = Object.keys(runControl(state).own).length > 0;
+    return { node: fold, paint };
   }
 
   // ---- suggest machines ----
@@ -436,7 +498,7 @@ export function openSimulateDialog(room, hooks = {}) {
         const use = button('Use this');
         use.setAttribute('aria-label', `Use setup ${r.index + 1}`);
         use.addEventListener('click', () => {
-          useSetup(state, result.best[r.index], roomControl);
+          useSetup(state, result.best[r.index]);
           paintSummary();
           use.textContent = 'Used';
           formError.hidden = true;
@@ -676,13 +738,12 @@ export function openSimulateDialog(room, hooks = {}) {
   Promise.all([
     request('GET', `/api/rooms/${room.id}/simulations`).catch(() => null), // newest first; optional: the prefill
     request('GET', `/api/rooms/${room.id}/crop`).catch(() => null),
-    request('GET', `/api/rooms/${room.id}/control`).catch(() => null), // the room's air exchange time limit
+    request('GET', `/api/rooms/${room.id}/control`).catch(() => null), // the room's control settings: step 3's Control row
   ]).then(([runs, crop, control]) => {
     if (!alive()) return;
     cropData = crop;
-    roomControl = control ? { exchangeMaxMin: Number.isFinite(control.exchangeMaxMin) ? control.exchangeMaxMin : undefined, acDrop: control.acDrop, humidifierDuringExchange: control.humidifierDuringExchange } : null;
     // hooks.from: a run to start from (Simulate again on a result page), else the room's newest
-    state = initialState({ room, lastRun: hooks.from ?? (Array.isArray(runs) ? runs[0] ?? null : null), cropData });
+    state = initialState({ room, lastRun: hooks.from ?? (Array.isArray(runs) ? runs[0] ?? null : null), cropData, roomControl: control, again: hooks.from ?? null });
     step = 1;
     render();
     title.focus();

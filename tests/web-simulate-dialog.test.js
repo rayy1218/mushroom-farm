@@ -38,3 +38,13 @@ test('every field of the dialog has an id or a name', () => {
   assert.match(dialog, /blocks\.name = `blocks-\$\{i \+ 1\}`;/);
   assert.match(dialog, /daysInput\.name = 'days';/);
 });
+
+test('step 3: the Control row\'s settings can be changed for this run, the fresh air interval only on the Setup tab', () => {
+  assert.match(dialog, /box\.append\(radios, starts, el\('h3', 'sim-sub', 'Your choices'\), list, control\.node, suggestBox\(refresh\)\);/);
+  assert.match(dialog, /const head = el\('summary', '', 'Change for this run'\);/);
+  assert.match(dialog, /field\(`control\.\$\{f\.key\}`, f\.label, numberInput\(controlText\(state, f\.key\)/);
+  assert.match(dialog, /box\.dataset\.field = `control\.\$\{f\.key\}`;/);
+  assert.match(dialog, /const fixed = fixedControlLine\(state\);/);
+  assert.match(dialog, /fold\.open = Object\.keys\(runControl\(state\)\.own\)\.length > 0;/);
+  assert.match(dialog, /roomControl: control, again: hooks\.from \?\? null/);
+});
