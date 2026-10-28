@@ -1,6 +1,10 @@
 // Validation of room input. Pure: no database, no HTTP.
 
+import { parseGateway } from './gateways.js';
+
 export const NAME_MAX = 60;
+export const GATEWAY_MAX = 100;
+const GATEWAY_ERROR = "Gateway must look like host:port, such as 192.168.1.50:502, or be empty for the farm's gateway";
 
 const SIZES = [
   { field: 'length', label: 'Length', min: 0.5, max: 100 },
@@ -39,7 +43,7 @@ export const FILTER = [
   { field: 'filterChangeDays', label: 'Change the filter every', unit: 'days', default: 30, min: 0, max: 365 },
 ];
 
-// Returns { room: { name, length, width, height, the six addresses, the ratings, the filter settings given } } when the input is valid,
+// Returns { room: { name, length, width, height, the six addresses, the ratings, the filter settings and gateway given } } when the input is valid,
 // otherwise { error, field } for the first failing field (field is missing
 // when the body itself is wrong).
 export function validateRoom(body) {
@@ -85,6 +89,13 @@ export function validateRoom(body) {
     return { error: 'Lights fitted must be true or false', field: 'lights' };
   }
   if (body.lights !== undefined) room.lights = body.lights;
+  // The room's own Modbus gateway (a container behind one), kept the same way when left out; null, empty or blank: the farm's.
+  if (body.gateway !== undefined) {
+    const text = typeof body.gateway === 'string' ? body.gateway.trim() : body.gateway;
+    if (text === null || text === '') room.gateway = null;
+    else if (typeof text !== 'string' || text.length > GATEWAY_MAX || !parseGateway(text)) return { error: GATEWAY_ERROR, field: 'gateway' };
+    else room.gateway = text;
+  }
   for (const { field, label, unit, min, max } of FILTER) {
     const value = body[field] ?? null;
     if (value === null) continue;

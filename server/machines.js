@@ -44,28 +44,32 @@ function acBody(body) {
   return { power, mode, setpoint, fan };
 }
 
-// db: the farm database. client: the Modbus client (writeCoil, writeRegisters). poller: machineState(roomId).
+// db: the farm database. clients: the gateways (server/gateways.js, forRoom(gateway) → client with writeCoil and
+// writeRegisters; null: the farm's), or client: one Modbus client for every gateway. poller: machineState(roomId).
 // now is injectable for the 10 s switching window.
-export function createMachines({ db, client, poller, now = Date.now }) {
-  const lastWrites = new Map(); // `${roomId}/${kind}` → { address, at, ok, error }
+export function createMachines({ db, client = null, clients = { forRoom: () => client }, poller, now = Date.now }) {
+  const lastWrites = new Map(); // `${roomId}/${kind}` → { address, gateway, at, ok, error }
 
-  function lastWriteOf(roomId, kind, address) {
-    const w = lastWrites.get(`${roomId}/${kind}`);
-    if (!w || w.address !== address) return null;
+  // The last write to the device the room has now (the same address on the same gateway), or null.
+  function lastWriteOf(room, kind, address) {
+    const w = lastWrites.get(`${room.id}/${kind}`);
+    if (!w || w.address !== address || w.gateway !== room.gateway) return null;
     return { at: w.at, ok: w.ok, error: w.error };
   }
 
-  async function write(roomId, kind, address, send) {
+  // send(client): the write, through the room's gateway.
+  async function write(room, kind, address, send) {
     const at = now();
+    const { gateway } = room;
     let result;
     try {
-      await send();
-      result = { address, at, ok: true, error: null };
+      await send(clients.forRoom(gateway));
+      result = { address, gateway, at, ok: true, error: null };
     } catch (err) {
       if (!(err instanceof ModbusError)) console.error(err); // not a gateway failure: a bug
-      result = { address, at, ok: false, error: err instanceof ModbusError ? err.message : 'bad reply' };
+      result = { address, gateway, at, ok: false, error: err instanceof ModbusError ? err.message : 'bad reply' };
     }
-    lastWrites.set(`${roomId}/${kind}`, result);
+    lastWrites.set(`${room.id}/${kind}`, result);
   }
 
   // The polls of a device, only while the poller has them for the address the room has now.
@@ -95,7 +99,7 @@ export function createMachines({ db, client, poller, now = Date.now }) {
       else m.status = m.reported ? 'on' : 'off';
       return m;
     });
-    return { address, lastWrite: lastWriteOf(room.id, 'relay', address), machines };
+    return { address, lastWrite: lastWriteOf(room, 'relay', address), machines };
   }
 
   function acView(room, commands, state) {
@@ -103,7 +107,7 @@ export function createMachines({ db, client, poller, now = Date.now }) {
     const { sentAt, ...commanded } = commands;
     const view = {
       address,
-      lastWrite: lastWriteOf(room.id, 'ac', address),
+      lastWrite: lastWriteOf(room, 'ac', address),
       commanded,
       reported: null,
       roomT: null,
@@ -164,7 +168,7 @@ export function createMachines({ db, client, poller, now = Date.now }) {
         const address = room.relayAddress;
         db.setRelayCommand(roomId, key, on, now());
         db.logMachine(roomId, key, { on }, source, now());
-        await write(roomId, 'relay', address, () => client.writeCoil(address, index, on));
+        await write(room, 'relay', address, (link) => link.writeCoil(address, index, on));
       } else {
         const command = acBody(body);
         if (room.acAddress === null) throw new CommandError(400, 'No aircon gateway address set');
@@ -172,7 +176,7 @@ export function createMachines({ db, client, poller, now = Date.now }) {
         db.setAcCommand(roomId, command, now());
         db.logMachine(roomId, 'ac', { on: command.power, setpoint: command.setpoint, mode: command.mode, fan: command.fan }, source, now());
         const values = [command.power ? 1 : 0, MODES.indexOf(command.mode), Math.round(command.setpoint * 10), FANS.indexOf(command.fan)];
-        await write(roomId, 'ac', address, () => client.writeRegisters(address, 0, values));
+        await write(room, 'ac', address, (link) => link.writeRegisters(address, 0, values));
       }
       return get(roomId);
     },

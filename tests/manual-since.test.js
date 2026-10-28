@@ -46,7 +46,7 @@ test('upgrade 16 to 17: a room in Manual counts from the upgrade, a room in auto
   const after = Date.now();
   const check = new DatabaseSync(path, { readOnly: true });
   t.after(() => check.close());
-  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 17);
+  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 18);
   const m = db.getControl(manual);
   assert.equal(m.auto, false);
   assert.ok(m.autoChangedAt >= before && m.autoChangedAt <= after, `${m.autoChangedAt} in [${before}, ${after}]`);
@@ -67,7 +67,7 @@ test('upgrade 16 to 17: running it again keeps the stored times', (t) => {
   assert.equal(db.getControl(manual).autoChangedAt, 42);
 });
 
-test('a new database is at version 17; a new room counts from when it was made', (t) => {
+test('a new database is at version 18; a new room counts from when it was made', (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'manual-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const path = join(dir, 'farm.db');
@@ -75,7 +75,7 @@ test('a new database is at version 17; a new room counts from when it was made',
   t.after(() => db.close());
   const check = new DatabaseSync(path, { readOnly: true });
   t.after(() => check.close());
-  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 17);
+  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 18);
   const { id } = db.createRoom(ROOM, 5000);
   assert.equal(db.getControl(id).autoChangedAt, 5000);
 });

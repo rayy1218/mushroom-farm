@@ -378,7 +378,7 @@ test('upgrade 15 to 16: the light columns with their defaults, the machine log r
   t.after(() => db.close());
   const check = new DatabaseSync(path, { readOnly: true });
   t.after(() => check.close());
-  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 17);
+  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 18);
   assert.deepEqual(check.prepare('SELECT * FROM machine_log ORDER BY id').all().map((r) => ({ ...r })), rows);
   assert.ok(check.prepare("SELECT 1 FROM sqlite_master WHERE name = 'machine_log_by_room'").get(), 'index kept');
   const room = db.getRoom(id);
@@ -407,7 +407,7 @@ test('upgrade 15 to 16: running it on an already upgraded file (or again) is har
   db.logMachine(id, 'lights', { on: true }, 'auto', 300);
   const check = new DatabaseSync(path, { readOnly: true });
   t.after(() => check.close());
-  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 17);
+  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 18);
   assert.equal(check.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE name LIKE 'machine_log%'").get().n, 2);
 });
 

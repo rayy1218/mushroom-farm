@@ -107,7 +107,7 @@ test('upgrade 2 to 3 keeps rooms, readings and commands and adds a control row p
   db.close();
 
   const raw = new DatabaseSync(path);
-  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 17);
+  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 18);
   raw.close();
   openDb(path).close(); // opening again changes nothing
   const again = new DatabaseSync(path);
@@ -219,7 +219,7 @@ test('upgrade 3 to 4 adds humidifier_during_exchange (on) and keeps rooms, readi
   db.close();
 
   const raw = new DatabaseSync(path);
-  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 17);
+  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 18);
   raw.close();
   openDb(path).close(); // opening again changes nothing
 });

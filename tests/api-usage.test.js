@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { openDb } from '../server/db.js';
 import { createApp } from '../server/app.js';
 import { TELEGRAM_VIEW_DEFAULT } from '../server/settings.js';
+import { DEFAULT_GATEWAY } from '../server/gateways.js';
 
 let db;
 let server;
@@ -42,7 +43,7 @@ async function call(method, path, body) {
 }
 
 const fields = { name: 'A', length: 6, width: 4, height: 2.5 };
-const DEFAULTS = { pollSeconds: 5, outdoorAddress: null, electricityPrice: 0.55, waterPrice: null, ...TELEGRAM_VIEW_DEFAULT };
+const DEFAULTS = { pollSeconds: 5, outdoorAddress: null, electricityPrice: 0.55, waterPrice: null, ...TELEGRAM_VIEW_DEFAULT, farmGateway: DEFAULT_GATEWAY };
 
 test('GET /api/settings returns all four settings', async () => {
   assert.deepEqual((await call('GET', '/api/settings')).body, DEFAULTS);

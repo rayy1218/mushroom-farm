@@ -12,6 +12,7 @@ import { bucketUsage } from './usage-buckets.js';
 import { changeFilter, lastCounted } from './filter.js';
 import { createCropApi } from './crop-api.js';
 import { createSimulationRoutes } from './simulation-api.js';
+import { DEFAULT_GATEWAY, sameGateway } from './gateways.js';
 
 const MAX_BODY = 64 * 1024;
 
@@ -61,26 +62,32 @@ const noRoom = () => new HttpError(404, 'Room not found');
 // Returns a handler for every request whose path starts with /api.
 // machines (from createMachines) and controller (from createController) are optional:
 // without them the machine or control routes do not exist. poller (from createPoller), when given,
-// gets a new reading interval at once.
-export function createApi(db, machines = null, controller = null, poller = null, simulations = null, telegram = null, events = null) {
+// gets a new reading interval at once. farmGateway: the farm's gateway text (FARM_GATEWAY).
+export function createApi(db, machines = null, controller = null, poller = null, simulations = null, telegram = null, events = null,
+  farmGateway = DEFAULT_GATEWAY) {
   const publishRoom = (id, part) => events?.publish('room', { id, part }); // the live pages ask again (spec 2026-10-26 section 2)
   const simulationRoutes = simulations && createSimulationRoutes({ db, simulations });
-  // The room body; its addresses must differ from the outdoor sensor's. stored: the room as it is (an update): a filter
-  // setting left out is its stored value, so the checks compare what will be saved.
+  // The room body; on the farm's gateway its addresses must differ from the outdoor sensor's (read through that gateway).
+  // stored: the room as it is (an update): a filter setting or the gateway left out is its stored value, so the checks compare
+  // what will be saved. The farm's own gateway is stored as null, its one spelling, so the address checks see it as the farm's.
   async function readRoom(req, stored = null) {
     const body = await readJson(req);
     if (stored && body !== null && typeof body === 'object' && !Array.isArray(body)) {
       for (const { field } of FILTER) body[field] ??= stored[field];
+      if (body.gateway === undefined) body.gateway = stored.gateway;
     }
     const result = validateRoom(body);
     if (result.error) throw new HttpError(400, result.error, result.field);
-    const outdoor = db.outdoorAddress();
+    if (sameGateway(result.room.gateway, farmGateway)) result.room.gateway = null;
+    const outdoor = (result.room.gateway ?? null) === null ? db.outdoorAddress() : null;
     const clash = outdoor === null ? undefined : ADDRESS_FIELDS.find((f) => result.room[f] === outdoor);
     if (clash) throw new HttpError(400, `Address ${outdoor} is used by the outdoor sensor`, clash);
     return result.room;
   }
 
   const crop = createCropApi({ db });
+
+  const settingsReply = () => ({ ...settingsView(db, telegram?.status()), farmGateway }); // the farm's gateway: read only
 
   const prices = () => {
     const { electricityPrice, waterPrice } = readSettings(db);
@@ -90,18 +97,19 @@ export function createApi(db, machines = null, controller = null, poller = null,
   async function route(req, res, path, url) {
     if (simulationRoutes && await simulationRoutes(req, res, path, { send, readJson, HttpError })) return;
     if (path === '/api/settings') {
-      if (req.method === 'GET') return send(res, 200, settingsView(db, telegram?.status()));
+      if (req.method === 'GET') return send(res, 200, settingsReply());
       if (req.method !== 'PUT') throw notFound();
       const result = validateSettings(await readJson(req));
       if (result.error) throw new HttpError(400, result.error, result.field);
       const { outdoorAddress } = result.settings;
-      const user = outdoorAddress == null ? undefined : db.listRooms().find((r) => ADDRESS_FIELDS.some((f) => r[f] === outdoorAddress));
+      // The outdoor sensor is read through the farm's gateway: only the rooms on it can clash.
+      const user = outdoorAddress == null ? undefined
+        : db.listRooms().find((r) => r.gateway === null && ADDRESS_FIELDS.some((f) => r[f] === outdoorAddress));
       if (user) throw new HttpError(400, `Address ${outdoorAddress} is used by ${user.name}`, 'outdoorAddress');
       writeSettings(db, result.settings);
-      const settings = readSettings(db);
-      if (result.settings.pollSeconds !== undefined) poller?.setIntervalMs(settings.pollSeconds * 1000);
+      if (result.settings.pollSeconds !== undefined) poller?.setIntervalMs(readSettings(db).pollSeconds * 1000);
       telegram?.settingsChanged();
-      return send(res, 200, settingsView(db, telegram?.status()));
+      return send(res, 200, settingsReply());
     }
     if (path === '/api/settings/telegram/test' && telegram) {
       if (req.method !== 'POST') throw notFound();
@@ -253,8 +261,8 @@ export function createApi(db, machines = null, controller = null, poller = null,
       if (!before) throw noRoom();
       const room = await readRoom(req, before);
       // A running dehumidifier or lights taken out of the room: the room is saved first, so from then on nothing (the
-      // controller, a manual command) may switch them on; then they are switched off. With a new relay address in the same
-      // change the old module is switched off first (afterwards the room no longer reaches it).
+      // controller, a manual command) may switch them on; then they are switched off. With a new relay address or gateway in
+      // the same change the old module is switched off first (afterwards the room no longer reaches it).
       const running = ['dehumidifier', 'lights'].filter((key) => before[key] && room[key] === false && db.getCommands(id)?.relay[key]);
       const off = async (key, opts) => {
         try {
@@ -263,7 +271,7 @@ export function createApi(db, machines = null, controller = null, poller = null,
           // the command is saved even when the write fails; the room is updated anyway
         }
       };
-      const moved = room.relayAddress !== before.relayAddress;
+      const moved = room.relayAddress !== before.relayAddress || room.gateway !== before.gateway;
       if (machines && moved) for (const key of running) await off(key);
       const updated = db.updateRoom(id, room);
       if (machines && !moved) for (const key of running) await off(key, { unfitted: true });

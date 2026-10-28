@@ -5,7 +5,7 @@ import { RELAY_KEYS } from './machine-codes.js';
 import { RATINGS, FILTER } from './rooms.js';
 import { PROGRAM_DEFAULTS } from './program.js';
 
-const VERSION = 17;
+const VERSION = 18;
 
 // Iteration 1 (version 0) had only the rooms table without the address columns.
 const ROOMS = `
@@ -491,6 +491,11 @@ function migrate(db) {
       }
       db.prepare('UPDATE room_controls SET auto_changed_at = ? WHERE auto = 0 AND auto_changed_at IS NULL').run(Date.now());
     }
+    // A room behind its own Modbus gateway (a container): its host:port, null for the farm's (FARM_GATEWAY). A file that
+    // already has the column keeps it.
+    if (version < 18 && !db.prepare('PRAGMA table_info(rooms)').all().some((c) => c.name === 'gateway')) {
+      db.exec('ALTER TABLE rooms ADD COLUMN gateway TEXT');
+    }
     db.exec(`PRAGMA user_version = ${VERSION}`);
     db.exec('COMMIT');
   } catch (err) {
@@ -518,8 +523,8 @@ export class NameTakenError extends Error {
   }
 }
 
-// Thrown by createRoom and updateRoom when another room already uses an
-// address (any of the four: trh, co2, relay, ac). field says which address clashes.
+// Thrown by createRoom and updateRoom when another room on the same gateway already uses an address (any of the six: trh,
+// co2, relay, ac, meter, dp). field says which address clashes.
 export class AddressTakenError extends Error {
   constructor(address, roomName, field) {
     super(`Address ${address} is already used by ${roomName}`);
@@ -546,6 +551,7 @@ function toRoom(row) {
     relayAddress: row.relay_address,
     acAddress: row.ac_address,
     meterAddress: row.meter_address,
+    gateway: row.gateway ?? null,
     intakeW: row.intake_w,
     exhaustW: row.exhaust_w,
     circulationW: row.circulation_w,
@@ -598,21 +604,21 @@ export function openDb(path, { log = console.error } = {}) {
     list: db.prepare('SELECT * FROM rooms ORDER BY name, id'),
     get: db.prepare('SELECT * FROM rooms WHERE id = ?'),
     nameUsed: db.prepare('SELECT 1 FROM rooms WHERE name = ? AND id IS NOT ?'),
-    addressUsed: db.prepare(`SELECT name FROM rooms WHERE id IS NOT ?1
+    addressUsed: db.prepare(`SELECT name FROM rooms WHERE id IS NOT ?1 AND gateway IS ?3
                              AND (trh_address = ?2 OR co2_address = ?2 OR relay_address = ?2 OR ac_address = ?2 OR meter_address = ?2
                                   OR dp_address = ?2)`),
     insert: db.prepare(`INSERT INTO rooms (name, length_m, width_m, height_m, trh_address, co2_address,
                                            relay_address, ac_address, meter_address, intake_w, exhaust_w, circulation_w,
                                            humidifier_w, humidifier_lh, ac_input_w, dehumidifier_w, dehumidifier_lday, lights_w,
                                            dehumidifier, lights, fan_max_pa, filter_clean_pa, filter_final_pa, filter_change_days,
-                                           filter_changed_at, dp_address, created_at, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+                                           filter_changed_at, dp_address, gateway, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
     update: db.prepare(`UPDATE rooms SET name = ?, length_m = ?, width_m = ?, height_m = ?,
                                trh_address = ?, co2_address = ?, relay_address = ?, ac_address = ?, meter_address = ?,
                                intake_w = ?, exhaust_w = ?, circulation_w = ?, humidifier_w = ?, humidifier_lh = ?, ac_input_w = ?,
                                dehumidifier_w = ?, dehumidifier_lday = ?, lights_w = ?, dehumidifier = ?, lights = ?,
                                fan_max_pa = ?, filter_clean_pa = ?, filter_final_pa = ?, filter_change_days = ?, dp_address = ?,
-                               updated_at = ?
+                               gateway = ?, updated_at = ?
                         WHERE id = ?`),
     delete: db.prepare('DELETE FROM rooms WHERE id = ?'),
     deleteReadings: db.prepare('DELETE FROM readings WHERE room_id = ?'),
@@ -670,14 +676,14 @@ export function openDb(path, { log = console.error } = {}) {
     // outputs: how many coils and inputs the relay is read with: what the room has fitted (a relay module with 4 outputs
     // and no dehumidifier or lights must not be asked for 6)
     wiredMachines: db.prepare(`SELECT id AS roomId, 'relay' AS kind, relay_address AS address,
-                                      CASE WHEN lights = 1 THEN 6 WHEN dehumidifier = 1 THEN 5 ELSE 4 END AS outputs
+                                      CASE WHEN lights = 1 THEN 6 WHEN dehumidifier = 1 THEN 5 ELSE 4 END AS outputs, gateway
                                FROM rooms WHERE relay_address IS NOT NULL
                                UNION ALL
-                               SELECT id, 'ac', ac_address, NULL FROM rooms WHERE ac_address IS NOT NULL
+                               SELECT id, 'ac', ac_address, NULL, gateway FROM rooms WHERE ac_address IS NOT NULL
                                ORDER BY 1, 2 DESC`),
-    wired: db.prepare(`SELECT id AS roomId, 'trh' AS kind, trh_address AS address FROM rooms WHERE trh_address IS NOT NULL
+    wired: db.prepare(`SELECT id AS roomId, 'trh' AS kind, trh_address AS address, gateway FROM rooms WHERE trh_address IS NOT NULL
                        UNION ALL
-                       SELECT id, 'co2', co2_address FROM rooms WHERE co2_address IS NOT NULL
+                       SELECT id, 'co2', co2_address, gateway FROM rooms WHERE co2_address IS NOT NULL
                        ORDER BY 1, 2 DESC`),
     // Only while the room still has that address for that kind.
     addReading: db.prepare(`INSERT INTO readings (room_id, kind, address, at, ok, t, rh, co2, error)
@@ -710,7 +716,7 @@ export function openDb(path, { log = console.error } = {}) {
                                WHERE cleared_at IS NULL OR acked_at IS NULL
                                ORDER BY (level = 'critical') DESC, raised_at DESC, alarms.id DESC LIMIT 10`),
     // Energy meter, outdoor probe and usage queries (spec 2026-10-20-energy-water-outdoor-design.md).
-    wiredMeters: db.prepare('SELECT id AS roomId, meter_address AS address FROM rooms WHERE meter_address IS NOT NULL ORDER BY id'),
+    wiredMeters: db.prepare('SELECT id AS roomId, meter_address AS address, gateway FROM rooms WHERE meter_address IS NOT NULL ORDER BY id'),
     addMeterReading: db.prepare(`INSERT INTO meter_readings (room_id, address, at, ok, power_w, energy_kwh, error)
                                  SELECT ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM rooms WHERE id = ? AND meter_address = ?)`),
     meterLatest: db.prepare(METER_SQL.latest),
@@ -722,7 +728,7 @@ export function openDb(path, { log = console.error } = {}) {
     meterLast: db.prepare(METER_SQL.last),
     meterChunk: db.prepare(METER_SQL.chunk),
     // The filter pressure sensor and the filter changes (spec 2026-10-22-filter-design.md 4 and 5).
-    wiredFilters: db.prepare('SELECT id AS roomId, dp_address AS address FROM rooms WHERE dp_address IS NOT NULL ORDER BY id'),
+    wiredFilters: db.prepare('SELECT id AS roomId, dp_address AS address, gateway FROM rooms WHERE dp_address IS NOT NULL ORDER BY id'),
     addFilterReading: db.prepare(`INSERT INTO filter_readings (room_id, address, at, ok, pa, error)
                                   SELECT ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM rooms WHERE id = ? AND dp_address = ?)`),
     filterLatest: db.prepare(FILTER_SQL.latest),
@@ -750,12 +756,12 @@ export function openDb(path, { log = console.error } = {}) {
     if (q.nameUsed.get(name, id)) throw new NameTakenError(name);
   }
 
-  // Each address may be used by one device of one room only.
-  function checkAddresses(addresses, id) {
+  // Each address may be used by one device of one room only on a gateway (null: the farm's).
+  function checkAddresses(addresses, id, gateway) {
     for (const field of ['trhAddress', 'co2Address', 'relayAddress', 'acAddress', 'meterAddress', 'dpAddress']) {
       const address = addresses[field];
       if (address == null) continue;
-      const other = q.addressUsed.get(id, address);
+      const other = q.addressUsed.get(id, address, gateway);
       if (other) throw new AddressTakenError(address, other.name, field);
     }
   }
@@ -870,15 +876,15 @@ export function openDb(path, { log = console.error } = {}) {
     getRoom,
 
     createRoom({ name, length, width, height, trhAddress = null, co2Address = null, relayAddress = null, acAddress = null,
-      meterAddress = null, dpAddress = null, ...ratings }, now = Date.now()) {
+      meterAddress = null, dpAddress = null, gateway = null, ...ratings }, now = Date.now()) {
       checkName(name, null);
-      checkAddresses({ trhAddress, co2Address, relayAddress, acAddress, meterAddress, dpAddress }, null);
+      checkAddresses({ trhAddress, co2Address, relayAddress, acAddress, meterAddress, dpAddress }, null, gateway);
       db.exec('BEGIN');
       try {
         // A new room's filter counts as changed when it was made.
         const { lastInsertRowid } = q.insert.run(name, length, width, height, trhAddress, co2Address,
           relayAddress, acAddress, meterAddress, ...ratingValues(ratings), ratings.dehumidifier ? 1 : 0, ratings.lights ? 1 : 0,
-          ...filterValues(ratings), now, dpAddress, now, now);
+          ...filterValues(ratings), now, dpAddress, gateway, now, now);
         q.insertCommands.run(lastInsertRowid);
         q.insertControl.run(lastInsertRowid, now);
         db.exec('COMMIT');
@@ -889,17 +895,18 @@ export function openDb(path, { log = console.error } = {}) {
       }
     },
 
-    // Returns the updated room, or null when there is no room with that id.
+    // Returns the updated room, or null when there is no room with that id. A gateway left out (undefined) keeps the stored one.
     updateRoom(id, { name, length, width, height, trhAddress = null, co2Address = null, relayAddress = null, acAddress = null,
-      meterAddress = null, dpAddress = null, ...ratings }, now = Date.now()) {
+      meterAddress = null, dpAddress = null, gateway, ...ratings }, now = Date.now()) {
       const old = q.get.get(id);
       if (!old) return null;
+      const via = gateway === undefined ? old.gateway : gateway;
       checkName(name, id);
-      checkAddresses({ trhAddress, co2Address, relayAddress, acAddress, meterAddress, dpAddress }, id);
+      checkAddresses({ trhAddress, co2Address, relayAddress, acAddress, meterAddress, dpAddress }, id, via);
       const fitted = ratings.dehumidifier === undefined ? old.dehumidifier === 1 : ratings.dehumidifier;
       const lit = ratings.lights === undefined ? old.lights === 1 : ratings.lights;
       q.update.run(name, length, width, height, trhAddress, co2Address, relayAddress, acAddress, meterAddress,
-        ...ratingValues(ratings), fitted ? 1 : 0, lit ? 1 : 0, ...filterValues(ratings, old), dpAddress, now, id);
+        ...ratingValues(ratings), fitted ? 1 : 0, lit ? 1 : 0, ...filterValues(ratings, old), dpAddress, via, now, id);
       // Lights taken out: their log ends now (no usage charged for ever).
       if (old.lights === 1 && !lit) this.logOff(id, 'lights', now);
       // A dehumidifier taken out of the room: its log ends now (no usage charged for ever) and its band state starts again.
@@ -907,10 +914,11 @@ export function openDb(path, { log = console.error } = {}) {
         this.logOff(id, 'dehumidifier', now);
         q.clearDehumidifierBand.run(id);
       }
-      // A device that is gone or is another one no longer runs its machines: log the ones logged on as off now, else the
-      // usage estimate charges them for ever.
-      if (old.relay_address !== relayAddress) for (const key of RELAY_KEYS) this.logOff(id, key, now);
-      if (old.ac_address !== acAddress) this.logOff(id, 'ac', now);
+      // A device that is gone or is another one (another address or gateway) no longer runs its machines: log the ones logged
+      // on as off now, else the usage estimate charges them for ever.
+      const moved = old.gateway !== via;
+      if (moved || old.relay_address !== relayAddress) for (const key of RELAY_KEYS) this.logOff(id, key, now);
+      if (moved || old.ac_address !== acAddress) this.logOff(id, 'ac', now);
       usageCache.delete(id);
       return getRoom(id);
     },
@@ -1140,11 +1148,11 @@ export function openDb(path, { log = console.error } = {}) {
       return { rooms, alarms: q.overviewAlarms.all().map(alarmRow) };
     },
 
-    // Every wired relay module and aircon gateway: rooms by id, relay before ac.
+    // Every wired relay module and aircon gateway: rooms by id, relay before ac, with the room's gateway (null: the farm's).
     listWiredMachines() {
       return q.wiredMachines.all().map((r) => (r.kind === 'relay'
-        ? { roomId: r.roomId, kind: r.kind, address: r.address, outputs: r.outputs }
-        : { roomId: r.roomId, kind: r.kind, address: r.address }));
+        ? { roomId: r.roomId, kind: r.kind, address: r.address, outputs: r.outputs, gateway: r.gateway }
+        : { roomId: r.roomId, kind: r.kind, address: r.address, gateway: r.gateway }));
     },
 
     // Returns true when a room was deleted.
@@ -1173,9 +1181,9 @@ export function openDb(path, { log = console.error } = {}) {
       }
     },
 
-    // Every wired sensor: rooms by id, trh before co2.
+    // Every wired sensor: rooms by id, trh before co2, with the room's gateway (null: the farm's).
     listWiredSensors() {
-      return q.wired.all().map((r) => ({ roomId: r.roomId, kind: r.kind, address: r.address }));
+      return q.wired.all().map((r) => ({ roomId: r.roomId, kind: r.kind, address: r.address, gateway: r.gateway }));
     },
 
     // One poll result. Values not measured are null.
@@ -1192,9 +1200,9 @@ export function openDb(path, { log = console.error } = {}) {
 
     // ---- Energy meter (spec 2026-10-20-energy-water-outdoor-design.md section 3) ----
 
-    // Every room with an energy meter, by room id: [{ roomId, address }].
+    // Every room with an energy meter, by room id: [{ roomId, address, gateway }].
     listMeters() {
-      return q.wiredMeters.all().map((r) => ({ roomId: r.roomId, address: r.address }));
+      return q.wiredMeters.all().map((r) => ({ roomId: r.roomId, address: r.address, gateway: r.gateway }));
     },
 
     // One meter poll result (powerW in W, energyKwh the meter total); only while the room still has that meter address.
@@ -1275,9 +1283,9 @@ export function openDb(path, { log = console.error } = {}) {
 
     // ---- Filter pressure sensor and filter changes (spec 2026-10-22-filter-design.md 4 and 5) ----
 
-    // Every room with a filter pressure sensor, by room id: [{ roomId, address }].
+    // Every room with a filter pressure sensor, by room id: [{ roomId, address, gateway }].
     listFilterSensors() {
-      return q.wiredFilters.all().map((r) => ({ roomId: r.roomId, address: r.address }));
+      return q.wiredFilters.all().map((r) => ({ roomId: r.roomId, address: r.address, gateway: r.gateway }));
     },
 
     // One poll of the sensor (pa in Pa; kept on an out-of-range poll too); only while the room still has that address.

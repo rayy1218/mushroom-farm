@@ -1,6 +1,8 @@
 // The polling cycle: reads the outdoor probe, then every wired sensor, filter pressure sensor and energy meter through the
-// Modbus client and stores one reading per poll;
+// Modbus client of its room's gateway and stores one reading per poll;
 // also polls each wired machine (relay module, aircon gateway) and keeps its last polls in memory.
+// The rooms of one gateway are read one after the other; the gateways at the same time, so a gateway that does not answer
+// (timeouts) does not hold up the rooms behind another.
 
 import { ModbusError, registersToFloat } from './modbus.js';
 import { MODES, FANS, RELAY_KEYS } from './machine-codes.js';
@@ -41,20 +43,21 @@ const MACHINES = {
 const POLLS_KEPT = 2;
 const EMPTY = () => ({ address: null, polls: [] });
 
-// Polls sensors and machines. log is only for errors that are not sensor failures (a database error).
+// Polls sensors and machines. clients: the gateways (server/gateways.js, forRoom(gateway) → client; null: the farm's), or
+// client: one client for every gateway. log is only for errors that are not sensor failures (a database error).
 // afterCycle(cycleStart), when given, is awaited at the end of each complete cycle (automatic control).
 // clock (milliseconds, monotonic), setTimer and clearTimer are only replaced by tests.
 export function createPoller({
-  db, client, intervalMs = 5000, now = Date.now, log = console.error, afterCycle = null,
+  db, client = null, clients = { forRoom: () => client }, intervalMs = 5000, now = Date.now, log = console.error, afterCycle = null,
   clock = () => performance.now(), setTimer = setTimeout, clearTimer = clearTimeout,
 }) {
   let stopped = false;
   let timer = null;
   let cycleBegan = 0; // clock() when the latest scheduled cycle began
   let running = null; // promise of the cycle in progress
-  const machines = new Map(); // `${roomId}/${kind}` → { address, polls }, the last polls of each device
+  const machines = new Map(); // `${roomId}/${kind}` → { address, gateway, polls }, the last polls of each device
 
-  async function pollOne({ roomId, kind, address }, began) {
+  async function pollOne(client, { roomId, kind, address }, began) {
     const { fn, start, qty, values } = KINDS[kind];
     const at = now();
     began(at);
@@ -69,7 +72,7 @@ export function createPoller({
 
   // The outdoor probe is a T/RH probe whose readings go to their own table. The address is read from the settings each
   // cycle: it can change while the app runs.
-  async function pollOutdoor(address, began) {
+  async function pollOutdoor(client, address, began) {
     const { fn, start, qty, values } = KINDS.trh;
     const at = now();
     began(at);
@@ -82,7 +85,7 @@ export function createPoller({
     db.addOutdoorReading(reading);
   }
 
-  async function pollFilter({ roomId, address }, began) {
+  async function pollFilter(client, { roomId, address }, began) {
     const at = now();
     began(at);
     const reading = { roomId, address, at };
@@ -97,7 +100,7 @@ export function createPoller({
   }
 
   // Two reads (power, then energy); a failed read, or a value that is not a number, makes the poll a failed one.
-  async function pollMeter({ roomId, address }, began) {
+  async function pollMeter(client, { roomId, address }, began) {
     const at = now();
     began(at);
     const reading = { roomId, address, at };
@@ -112,7 +115,7 @@ export function createPoller({
     db.addMeterReading(reading);
   }
 
-  async function pollMachine({ roomId, kind, address, outputs }, began) {
+  async function pollMachine(client, { roomId, kind, address, outputs, gateway = null }, began) {
     const at = now();
     began(at);
     let poll;
@@ -123,7 +126,7 @@ export function createPoller({
     }
     const key = `${roomId}/${kind}`;
     let entry = machines.get(key);
-    if (entry?.address !== address) machines.set(key, entry = { address, polls: [] });
+    if (entry?.address !== address || entry.gateway !== gateway) machines.set(key, entry = { address, gateway, polls: [] });
     entry.polls.push(poll);
     if (entry.polls.length > POLLS_KEPT) entry.polls.shift();
   }
@@ -137,28 +140,43 @@ export function createPoller({
       const meters = db.listMeters();
       const filters = db.listFilterSensors();
       const outdoor = db.outdoorAddress();
-      if (outdoor !== null && !stopped) await pollOutdoor(outdoor, began);
       const wiredKeys = new Set(wired.map((m) => `${m.roomId}/${m.kind}`));
       for (const key of machines.keys()) if (!wiredKeys.has(key)) machines.delete(key);
-      const roomIds = [...new Set([...sensors, ...filters, ...meters, ...wired].map((d) => d.roomId))].sort((a, b) => a - b);
+      const devices = [...sensors, ...filters, ...meters, ...wired];
+      const roomIds = [...new Set(devices.map((d) => d.roomId))].sort((a, b) => a - b);
+      // The rooms of each gateway (null: the farm's, first when the outdoor probe is read through it).
+      const groups = new Map(outdoor === null ? [] : [[null, []]]);
       for (const roomId of roomIds) {
-        for (const sensor of sensors.filter((s) => s.roomId === roomId)) {
-          if (stopped) return;
-          await pollOne(sensor, began);
-        }
-        for (const filter of filters.filter((f) => f.roomId === roomId)) {
-          if (stopped) return;
-          await pollFilter(filter, began);
-        }
-        for (const meter of meters.filter((m) => m.roomId === roomId)) {
-          if (stopped) return;
-          await pollMeter(meter, began);
-        }
-        for (const machine of wired.filter((m) => m.roomId === roomId)) {
-          if (stopped) return;
-          await pollMachine(machine, began);
+        const gateway = devices.find((d) => d.roomId === roomId).gateway ?? null;
+        if (!groups.has(gateway)) groups.set(gateway, []);
+        groups.get(gateway).push(roomId);
+      }
+      async function pollGateway(gateway, ids) {
+        const link = clients.forRoom(gateway);
+        if (gateway === null && outdoor !== null && !stopped) await pollOutdoor(link, outdoor, began);
+        for (const roomId of ids) {
+          for (const sensor of sensors.filter((s) => s.roomId === roomId)) {
+            if (stopped) return;
+            await pollOne(link, sensor, began);
+          }
+          for (const filter of filters.filter((f) => f.roomId === roomId)) {
+            if (stopped) return;
+            await pollFilter(link, filter, began);
+          }
+          for (const meter of meters.filter((m) => m.roomId === roomId)) {
+            if (stopped) return;
+            await pollMeter(link, meter, began);
+          }
+          for (const machine of wired.filter((m) => m.roomId === roomId)) {
+            if (stopped) return;
+            await pollMachine(link, machine, began);
+          }
         }
       }
+      // Every gateway's polls end before the cycle does (a failed one too), so nothing is written after it.
+      const results = await Promise.allSettled([...groups].map(([gateway, ids]) => pollGateway(gateway, ids)));
+      const failed = results.find((r) => r.status === 'rejected');
+      if (failed) throw failed.reason;
       if (afterCycle && !stopped) await afterCycle(cycleStart ?? now());
     } catch (err) {
       log(err);

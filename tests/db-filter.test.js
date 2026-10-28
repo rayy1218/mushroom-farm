@@ -50,7 +50,7 @@ test('readings are stored only while the room has that sensor address; listFilte
   const db = fresh(t);
   const a = db.createRoom({ ...ROOM, dpAddress: 7 }).id;
   db.createRoom({ ...ROOM, name: 'Room 2' });
-  assert.deepEqual(db.listFilterSensors(), [{ roomId: a, address: 7 }]);
+  assert.deepEqual(db.listFilterSensors(), [{ roomId: a, address: 7, gateway: null }]);
   db.addFilterReading({ roomId: a, address: 7, at: 100, ok: true, pa: 55.5 });
   db.addFilterReading({ roomId: a, address: 8, at: 101, ok: true, pa: 60 }); // not its address
   assert.deepEqual(db.getFilterSensor(a).readings, [{ at: 100, ok: true, pa: 55.5 }]);
@@ -139,5 +139,5 @@ test('upgrade 13 to 14: the filter columns with their defaults, the change time 
   assert.equal(db.filterChanges(id).length, 1);
   const check = new DatabaseSync(path, { readOnly: true });
   t.after(() => check.close());
-  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 17);
+  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 18);
 });

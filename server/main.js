@@ -1,12 +1,12 @@
 // Starts the farm app: reads FARM_DB, FARM_PORT and FARM_GATEWAY, opens the database,
-// serves HTTP and polls the gateway (sensors, relay modules, aircon gateways).
+// serves HTTP and polls the gateways (sensors, relay modules, aircon gateways): the farm's, and a room's own when it has one.
 
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openDb } from './db.js';
 import { createApp } from './app.js';
-import { createModbusClient } from './modbus.js';
+import { createGateways, parseGateway, DEFAULT_GATEWAY } from './gateways.js';
 import { createPoller } from './poller.js';
 import { createMachines } from './machines.js';
 import { createController } from './controller.js';
@@ -30,15 +30,13 @@ if (!/^[0-9]{1,5}$/.test(portText) || Number(portText) > 65535) {
   fail(`FARM_PORT must be a whole number from 0 to 65535, got "${portText}"`);
 }
 
-const gatewayText = process.env.FARM_GATEWAY || '127.0.0.1:1502';
-const gatewayMatch = /^(.+):([0-9]{1,5})$/.exec(gatewayText);
-if (!gatewayMatch || Number(gatewayMatch[2]) < 1 || Number(gatewayMatch[2]) > 65535) {
-  fail(`FARM_GATEWAY must look like host:port, got "${gatewayText}"`);
-}
+const gatewayText = process.env.FARM_GATEWAY || DEFAULT_GATEWAY;
+const farmGateway = parseGateway(gatewayText);
+if (!farmGateway) fail(`FARM_GATEWAY must look like host:port, got "${gatewayText}"`);
 
 if (dbPath !== ':memory:') mkdirSync(dirname(dbPath), { recursive: true });
 const db = openDb(dbPath);
-const client = createModbusClient({ host: gatewayMatch[1].replace(/^\[(.*)\]$/, '$1'), port: Number(gatewayMatch[2]) });
+const gateways = createGateways({ farm: farmGateway });
 // The poller calls the controller after each cycle; the controller needs the machines, which need the poller.
 let controller = null;
 let live = null;
@@ -52,13 +50,13 @@ const afterCycle = async (cycleStart) => {
     live.afterCycle(); // the pages hear of the readings even when the controller failed
   }
 };
-const poller = createPoller({ db, client, intervalMs: pollSeconds * 1000, afterCycle });
-const machines = createMachines({ db, client, poller });
+const poller = createPoller({ db, clients: gateways, intervalMs: pollSeconds * 1000, afterCycle });
+const machines = createMachines({ db, clients: gateways, poller });
 controller = createController({ db, machines });
 live = createLive({ db, events, machines, controller });
 const simulations = createSimulations({ db, onChange: (type, data) => events.publish(type, data) });
 const telegram = createTelegram({ db });
-const server = createApp(db, { machines, controller, poller, simulations, telegram, events });
+const server = createApp(db, { machines, controller, poller, simulations, telegram, events, gateway: gatewayText });
 
 server.on('error', (err) => fail(`Could not start the server: ${err.message}`));
 server.listen(Number(portText), () => {
@@ -74,7 +72,7 @@ async function stop() {
   await poller.stop();
   simulations.close();
   telegram.close();
-  client.close();
+  gateways.close();
   server.close();
   db.close();
   process.exit(0);

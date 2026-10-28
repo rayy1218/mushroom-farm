@@ -79,7 +79,7 @@ test('the startup line shows the stored reading interval, and a changed one is k
   const line = await first.firstLine;
   assert.ok(line.endsWith(', reading every 17 s)'), line);
   const base = `http://localhost:${/localhost:(\d+)/.exec(line)[1]}`;
-  assert.deepEqual(await (await fetch(`${base}/api/settings`)).json(), { pollSeconds: 17, outdoorAddress: null, electricityPrice: 0.55, waterPrice: null, ...TELEGRAM_VIEW_DEFAULT });
+  assert.deepEqual(await (await fetch(`${base}/api/settings`)).json(), { pollSeconds: 17, outdoorAddress: null, electricityPrice: 0.55, waterPrice: null, ...TELEGRAM_VIEW_DEFAULT, farmGateway: gateway });
   const res = await fetch(`${base}/api/settings`, {
     method: 'PUT', headers: { 'content-type': 'application/json' }, body: '{"pollSeconds":30}',
   });

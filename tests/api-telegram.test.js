@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { openDb } from '../server/db.js';
 import { createApp } from '../server/app.js';
 import { validateSettings, readTelegram, TELEGRAM_VIEW_DEFAULT } from '../server/settings.js';
+import { DEFAULT_GATEWAY } from '../server/gateways.js';
 
 const TOKEN = '123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11';
 
@@ -41,7 +42,7 @@ test('validation: each field, with its field name', () => {
 
 test('GET shows the defaults and never the token; PUT stores, keeps and clears', async (t) => {
   const { db, call } = await setup(t);
-  assert.deepEqual((await call('GET', '/api/settings')).body, { pollSeconds: 5, outdoorAddress: null, electricityPrice: 0.55, waterPrice: null, ...TELEGRAM_VIEW_DEFAULT });
+  assert.deepEqual((await call('GET', '/api/settings')).body, { pollSeconds: 5, outdoorAddress: null, electricityPrice: 0.55, waterPrice: null, ...TELEGRAM_VIEW_DEFAULT, farmGateway: DEFAULT_GATEWAY });
   const put = await call('PUT', '/api/settings', { telegramToken: TOKEN, telegramChatId: '-100', telegramLevels: ['critical'], telegramCleared: false, telegramRepeatMin: 10 });
   assert.equal(put.status, 200);
   assert.equal(put.body.telegramTokenSet, true);
