@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { tokenHint, parseToken, parseChatId, parseRepeat, buildTelegramBody, testBody, statusLines, cardValues, whenText } from '../web/telegram-math.js';
+import { tokenHint, parseToken, parseChatId, parseRepeat, buildTelegramBody, testBody, statusLines, cardValues, whenText, testState } from '../web/telegram-math.js';
 
 const TOKEN = '123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11';
 
@@ -49,4 +49,13 @@ test('status lines and the values shown', () => {
     { sent: 'Last message sent 26 Oct 16:20.', error: 'Last error: Telegram said: chat not found' });
   assert.deepEqual(cardValues({}), { chatId: '', levels: ['critical', 'serious'], cleared: true, repeat: '30' });
   assert.deepEqual(cardValues({ telegramChatId: '-1', telegramLevels: [], telegramCleared: false, telegramRepeatMin: 0 }), { chatId: '-1', levels: [], cleared: false, repeat: '0' });
+});
+
+// Critique 2026-10-28: Send test message was enabled with no bot token anywhere.
+test('testState: Send test message needs a bot token, saved or typed', () => {
+  assert.deepEqual(testState({ telegramTokenSet: false }, ''), { disabled: true, hint: 'Save a bot token first' });
+  assert.deepEqual(testState({ telegramTokenSet: false }, '  '), { disabled: true, hint: 'Save a bot token first' });
+  assert.deepEqual(testState({ telegramTokenSet: false }, '123:abc'), { disabled: false, hint: '' }, 'a typed token is tried');
+  assert.deepEqual(testState({ telegramTokenSet: true }, ''), { disabled: false, hint: '' });
+  assert.deepEqual(testState(null, ''), { disabled: true, hint: 'Save a bot token first' });
 });

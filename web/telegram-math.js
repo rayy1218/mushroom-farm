@@ -71,6 +71,13 @@ export function testBody({ token, chatId }) {
   return { body };
 }
 
+// Whether Send test message can be pressed: it needs a bot token, saved (settings.telegramTokenSet) or typed (a typed one is
+// tried before it is saved). → { disabled, hint }, the hint said beside the button while it is disabled.
+export function testState(settings, typedToken) {
+  const has = Boolean(settings?.telegramTokenSet) || String(typedToken ?? '').trim() !== '';
+  return has ? { disabled: false, hint: '' } : { disabled: true, hint: 'Save a bot token first' };
+}
+
 // "26 Oct 16:20" in the browser's local time.
 export function whenText(ms) {
   const d = new Date(ms);

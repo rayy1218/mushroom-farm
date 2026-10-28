@@ -1,7 +1,7 @@
 // The "Phone alarms (Telegram)" card of the Settings page: its own form and Save, and a Send test message button.
 
 import { request, OFFLINE } from './api.js';
-import { LEVELS, tokenHint, buildTelegramBody, testBody, statusLines, cardValues, parseChatId } from './telegram-math.js';
+import { LEVELS, tokenHint, buildTelegramBody, testBody, statusLines, cardValues, parseChatId, testState } from './telegram-math.js';
 
 const COMMAND_TIMEOUT = 15000;
 const TEST_TIMEOUT = 20000; // the server gives up on Telegram after 15 s and says so first
@@ -43,7 +43,8 @@ const TEMPLATE = `
     <p class="muted s-hint" id="s-tg-repeat">While a critical alarm is on and not acknowledged. 0 for no repeat.</p>
     <div class="ac-send">
       <button type="submit" class="primary" data-tg-save>Save</button>
-      <button type="button" data-tg-test>Send test message</button>
+      <button type="button" data-tg-test aria-describedby="s-tg-test">Send test message</button>
+      <span class="muted s-hint" id="s-tg-test" data-tg-test-hint hidden></span>
     </div>
     <p class="s-saved" data-tg-saved role="status" hidden></p>
     <p class="tg-test" data-tg-result role="status" hidden></p>
@@ -69,7 +70,17 @@ export function mountTelegram(container) {
   const banner = q('[data-tg-banner]');
   const bannerText = q('[data-tg-banner-text]');
   q('[data-tg-retry]').addEventListener('click', () => load());
+  const testHint = q('[data-tg-test-hint]');
   let last = null;
+  let busy = false; // a command or a test is on its way: its buttons stay disabled
+
+  // Send test message only with a bot token, saved or typed (critique 2026-10-28), and the reason beside it.
+  function paintTest() {
+    const st = testState(last, inputs.telegramToken.value);
+    if (!busy) test.disabled = st.disabled;
+    testHint.textContent = st.hint;
+    testHint.hidden = !st.hint;
+  }
 
   function setError(name, text) {
     errs[name].textContent = text;
@@ -101,6 +112,7 @@ export function mountTelegram(container) {
     q('[data-tg-token-hint]').textContent = tokenHint(settings);
     clear.hidden = !settings.telegramTokenSet;
     paintStatus(settings);
+    paintTest();
   }
   function paintStatus(settings) {
     const s = statusLines(settings);
@@ -126,6 +138,7 @@ export function mountTelegram(container) {
     clearErrors();
     saved.hidden = true;
     for (const b of buttons) b.disabled = true;
+    busy = true;
     try {
       const data = await request('PUT', '/api/settings', body, COMMAND_TIMEOUT);
       if (!alive) return;
@@ -141,7 +154,9 @@ export function mountTelegram(container) {
         setError('telegramChatId', err.status === 0 ? `${OFFLINE}. Try again.` : err.message);
       }
     } finally {
+      busy = false;
       for (const b of buttons) b.disabled = false;
+      paintTest();
     }
   }
 
@@ -171,6 +186,7 @@ export function mountTelegram(container) {
       return;
     }
     test.disabled = true;
+    busy = true;
     result.className = 'tg-test';
     result.textContent = 'Sending…';
     result.hidden = false;
@@ -190,7 +206,8 @@ export function mountTelegram(container) {
         result.className = 'tg-test field-error';
       }
     } finally {
-      test.disabled = false;
+      busy = false;
+      paintTest();
     }
     try {
       const data = await request('GET', '/api/settings');
@@ -201,6 +218,7 @@ export function mountTelegram(container) {
   for (const el of [...Object.values(inputs), ...levelBoxes, cleared]) {
     el.addEventListener('input', () => { saved.hidden = true; });
   }
+  inputs.telegramToken.addEventListener('input', paintTest);
 
   load();
   return function unmount() {
