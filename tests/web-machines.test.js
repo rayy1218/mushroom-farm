@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { MACHINE_NAMES, shownMachines, statusWord, onOff, validSetpoint, describeAc, acBody, acMatches, lastWriteText, STATUS_WORDS } from '../web/machines-math.js';
+import { relayLine, MACHINE_NAMES, shownMachines, statusWord, onOff, validSetpoint, describeAc, acBody, acMatches, lastWriteText, STATUS_WORDS } from '../web/machines-math.js';
 
 test('every status of the spec has a word', () => {
   for (const s of ['not-wired', 'no-data', 'no-answer', 'switching', 'not-following', 'not-running', 'running-while-off', 'fault', 'on', 'off', 'not-fitted']) {
@@ -51,4 +51,17 @@ test('a relay machine that is not fitted is not shown; the others keep their ord
   assert.deepEqual(shownMachines(list).map((m) => m.key), ['intake', 'humidifier']);
   assert.deepEqual(shownMachines([...list.slice(0, 2), { key: 'dehumidifier', status: 'off' }]).map((m) => m.key), ['intake', 'humidifier', 'dehumidifier']);
   assert.deepEqual(shownMachines(undefined), []);
+});
+
+test('relayLine: one state per machine, and a loud line only when it does not do what it was told (redesign 2026-10-28)', () => {
+  const m = (over) => ({ key: 'exhaust', commanded: true, reported: true, running: true, status: 'on', ...over });
+  assert.deepEqual(relayLine(m({})), { state: 'Running', problem: '' });
+  assert.deepEqual(relayLine(m({ commanded: false, reported: false, running: false, status: 'off' })), { state: 'Stopped', problem: '' });
+  assert.deepEqual(relayLine(m({ running: null })), { state: 'On', problem: '' }, 'no current switch: the reported state');
+  assert.deepEqual(relayLine(m({ running: false, status: 'not-running' })), { state: 'Stopped', problem: 'Commanded on, not running' });
+  assert.deepEqual(relayLine(m({ reported: false, running: false, status: 'not-following' })), { state: 'Stopped', problem: 'Commanded on, the relay reports off' });
+  assert.deepEqual(relayLine(m({ commanded: false, reported: false, running: true, status: 'running-while-off' })), { state: 'Running', problem: 'Commanded off, still running' });
+  assert.deepEqual(relayLine(m({ reported: null, running: null, status: 'no-answer' })), { state: '—', problem: 'The relay module does not answer' });
+  assert.deepEqual(relayLine(m({ reported: null, running: null, status: 'no-data' })), { state: 'No data yet', problem: '' });
+  assert.deepEqual(relayLine(m({ status: 'switching' })), { state: 'Switching…', problem: '' });
 });

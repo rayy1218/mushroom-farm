@@ -9,7 +9,7 @@ import { formatAgo } from './chart-math.js';
 import { AUTO_NOTE } from './control-math.js';
 import {
   MACHINE_NAMES, MODES, FANS, SETPOINT_MIN, SETPOINT_MAX,
-  shownMachines, statusWord, onOff, validSetpoint, describeAc, acBody, acMatches, lastWriteText as lastWriteMessage,
+  shownMachines, statusWord, onOff, relayLine, validSetpoint, describeAc, acBody, acMatches, lastWriteText as lastWriteMessage,
 } from './machines-math.js';
 
 function el(tag, className, content) {
@@ -125,15 +125,15 @@ export function createMachines(host, { roomId, onEdit, onOffline, onGone, onComm
       const state = el('span', 'toggle-state');
       state.setAttribute('aria-hidden', 'true');
       toggle.append(el('span', 'sr-only', name.textContent), state);
-      const reported = el('span', 'm-info');
       const run = el('span', 'run');
       const runText = el('span');
       run.append(el('span', 'run-dot'), runText);
-      const status = el('span', 'status');
+      const problem = el('span', 'm-problem'); // only when the machine does not do what it was told
+      problem.setAttribute('role', 'status');
       const err = errorNode();
-      row.append(name, toggle, reported, run, status, err);
+      row.append(name, run, problem, toggle, err);
       list.append(row);
-      const entry = { toggle, state, reported, run, runText, status, err, busy: false, localError: '', commanded: false };
+      const entry = { toggle, state, run, runText, problem, err, busy: false, localError: '', commanded: false };
       toggle.addEventListener('click', () => sendRelay(m.key, entry));
       relay.rows.set(m.key, entry);
     }
@@ -155,10 +155,10 @@ export function createMachines(host, { roomId, onEdit, onOffline, onGone, onComm
       const row = relay.rows.get(m.key);
       row.commanded = m.commanded;
       paintToggle(row);
-      row.reported.textContent = `Reported ${onOff(m.reported)}`;
-      row.run.dataset.run = String(m.running);
-      row.runText.textContent = m.running == null ? 'Running —' : m.running ? 'Running' : 'Stopped';
-      setStatus(row.status, m.status);
+      const line = relayLine(m);
+      row.run.dataset.run = String(m.running === true || (m.running == null && m.reported === true));
+      if (row.runText.textContent !== line.state) row.runText.textContent = line.state;
+      showError(row.problem, line.problem);
       showError(row.err, row.localError);
     }
     // The failure no longer matters once every output reports what was commanded.
@@ -322,6 +322,7 @@ export function createMachines(host, { roomId, onEdit, onOffline, onGone, onComm
     if (on === autoOn) return;
     autoOn = on;
     autoNote.hidden = !on;
+    host.classList.toggle('auto', on); // the switches fold away while Auto runs the machines (the Machines list shows them)
     if (relay?.wired) for (const row of relay.rows.values()) paintToggle(row);
     if (ac?.wired) setAcDisabled(ac.sending);
   }

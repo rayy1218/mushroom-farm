@@ -34,6 +34,21 @@ export function shownMachines(machines) {
   return (machines ?? []).filter((m) => m.status !== 'not-fitted');
 }
 
+// A relay machine's row on the Switch by hand card: { state, problem }. The state is one word (Running or Stopped from its
+// current switch, else the reported On or Off); problem says, only when it happens, that it does not do what it was told.
+const PROBLEMS = {
+  'not-running': (m) => `Commanded ${onOff(m.commanded)}, not running`,
+  'not-following': (m) => `Commanded ${onOff(m.commanded)}, the relay reports ${onOff(m.reported)}`,
+  'running-while-off': () => 'Commanded off, still running',
+  'no-answer': () => 'The relay module does not answer',
+  fault: () => 'Fault',
+};
+export function relayLine(m) {
+  if (m.status === 'no-data' || m.status === 'switching') return { state: statusWord(m.status), problem: '' };
+  const state = m.running === true ? 'Running' : m.running === false ? 'Stopped' : m.reported == null ? '—' : m.reported ? 'On' : 'Off';
+  return { state, problem: PROBLEMS[m.status]?.(m) ?? '' };
+}
+
 export function statusWord(status) {
   return STATUS_WORDS[status] ?? String(status);
 }

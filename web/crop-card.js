@@ -234,8 +234,10 @@ export function createCropCard(host, { roomId, onChange, onData, onOffline, onGo
   const atOnce = el('input');
   atOnce.type = 'checkbox';
   atOnce.id = id('atonce');
-  const atOnceLabel = el('label', 'crop-check', 'Bands at once');
-  atOnceLabel.htmlFor = atOnce.id;
+  // The box inside its label (no for=: the label wraps it), so the label never points at a box that is not there yet.
+  const atOnceText = el('span', '', 'Bands at once');
+  const atOnceLabel = el('label', 'crop-check');
+  atOnceLabel.append(atOnce, atOnceText);
   const confirmActions = el('div', 'actions');
   const confirmCancel = el('button', '', 'Cancel');
   confirmCancel.value = 'cancel';
@@ -532,8 +534,7 @@ export function createCropCard(host, { roomId, onChange, onData, onOffline, onGo
       const ramped = last.rampH > 0;
       confirmText.textContent = (ramped ? `The bands move to the targets of ${name.toLowerCase()} over ${last.rampH} h.` : `The bands change to the targets of ${name.toLowerCase()} at once.`)
         + (last.done ? ' The blocks start again at flush 1.' : '');
-      atOnceLabel.textContent = `Bands at once (skip the ${last.rampH} h ramp)`;
-      atOnceLabel.prepend(atOnce);
+      atOnceText.textContent = `Bands at once (skip the ${last.rampH} h ramp)`;
       atOnce.checked = false;
       atOnceLabel.hidden = !ramped;
       confirm.returnValue = '';

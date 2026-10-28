@@ -391,8 +391,10 @@ html { scroll-padding-top: var(--topbar-h); }
 .machines .not-wired .addr { margin: 0; }
 
 .m-rows { display: grid; }
-.m-row { display: grid; grid-template-columns: minmax(0, 1.2fr) 80px minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.2fr); align-items: center; gap: 4px 16px;
+.m-row { display: grid; grid-template-columns: minmax(0, 220px) 120px minmax(0, 1fr) 76px; align-items: center; gap: 4px 16px;
   padding: 8px 0; border-bottom: 1px solid var(--border); }
+.m-problem { color: var(--critical-text); font-weight: 600; font-size: var(--fs-sm); }
+.m-problem:not([hidden])::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 8px; border-radius: 50%; background: var(--critical); vertical-align: 1px; }
 .m-row:last-child { border-bottom: 0; }
 .m-name, .m-info, .run, .m-row .status { min-width: 0; overflow-wrap: anywhere; }
 .m-name { font-weight: 500; }
@@ -403,7 +405,7 @@ html { scroll-padding-top: var(--topbar-h); }
 .m-error { grid-column: 1 / -1; margin: 0; font-size: var(--fs-sm); color: var(--critical-text); }
 .m-section > .m-error { margin-top: 8px; }
 
-button.toggle { width: 80px; min-height: 40px; padding: 8px 0; font-weight: 600; }
+button.toggle { width: 76px; min-height: 40px; padding: 8px 0; font-weight: 600; }
 button.toggle[data-on="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 button.toggle[data-on="true"]:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
 
@@ -420,8 +422,9 @@ button.toggle[data-on="true"]:hover { background: var(--accent-hover); border-co
 @media (max-width: 600px) {
   .m-row { grid-template-columns: 1fr auto; }
   .m-name { grid-column: 1; }
-  .m-row button.toggle { grid-column: 2; grid-row: 1; }
-  .m-info, .run, .m-row .status { grid-column: 1 / -1; }
+  .m-row button.toggle { grid-column: 2; grid-row: 1 / span 2; }
+  .m-row .run { grid-column: 1; grid-row: 2; }
+  .m-problem { grid-column: 1 / -1; }
   .ac-form { grid-template-columns: 1fr 1fr; }
 }
 
@@ -452,7 +455,9 @@ button.toggle[data-on="true"]:hover { background: var(--accent-hover); border-co
 .control .ac-send { margin: 12px 0; }
 .c-state { margin: 4px 0 0; font-weight: 600; }
 .c-reasons { margin: 8px 0 0; padding: 0; list-style: none; display: grid; gap: 2px; }
-.machines .auto-note { margin: 8px 0 16px; display: block; font-weight: 600; color: var(--warning-text); }
+.machines .auto-note { margin: 0; display: block; color: var(--muted); font-weight: 400; }
+.machines.auto .m-section { display: none; }
+.machines.auto h2 { margin-bottom: 4px; }
 .control .toggle:disabled, .machines .toggle:disabled { opacity: .6; cursor: default; }
 
 @media (max-width: 600px) {
