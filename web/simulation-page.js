@@ -368,7 +368,6 @@ export function mount(container, { id, runId }) {
   return function unmount() {
     mountSeq++;
     resultSeq++;
-    reload.cancel();
     for (const off of offLive) off();
     abort.abort();
     clearTimeout(timer);
