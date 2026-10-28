@@ -258,7 +258,14 @@ html { scroll-padding-top: var(--topbar-h); }
 @media (max-width: 600px) {
   .brand-text small { display: none; }
   .top-link span { display: none; } /* the gear alone; its name stays for screen readers through aria-label below */
+  /* the name fits at 375 px (critique 2026-10-28: "Mushroom fa…"): tighter gaps, and it may take two lines */
+  .topbar { gap: 4px; padding-left: 10px; padding-right: 10px; }
+  .brand { gap: 8px; }
+  .brand-text strong { white-space: normal; overflow: visible; line-height: 1.1; }
 }
+/* with the alarm button too there may be no room for the name: the mark alone (the link keeps its name for screen readers) */
+.topbar .brand-top { container-type: inline-size; }
+@container (max-width: 100px) { .brand-top .brand-text { display: none; } }
 
 .theme-btn { border-color: transparent; background: transparent; color: var(--ink-2); font-weight: 500; }
 .theme-btn:hover { background: var(--band); }
@@ -679,7 +686,7 @@ button.toggle[data-on="true"]:hover { background: color-mix(in srgb, var(--accen
 .us-table .total th, .us-table .total td { font-weight: 700; border-top: 1px solid var(--border-strong); }
 @media (max-width: 600px) { .us-table th, .us-table td { padding: 6px 3px; font-size: var(--fs-xs); } .us-table th:first-child, .us-table td:first-child { padding-left: 0; } .us-table th:last-child, .us-table td:last-child { padding-right: 0; } }
 .us-note { margin: 8px 0 0; font-size: var(--fs-sm); }
-.ov-farm { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin: 16px 0; } /* after the rooms: the rooms come first */
+.ov-farm { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); align-items: start; gap: 16px; margin: 16px 0; } /* after the rooms: the rooms come first; each card its own height (the Outdoor card is not stretched to the Energy card's) */
 .ov-farm:empty { display: none; }
 .ov-outdoor > .ov-chip { margin-bottom: 8px; }
 .ov-outdoor a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--axis); text-underline-offset: 3px; }
@@ -1155,6 +1162,8 @@ details.setup-part:not([open]) > summary.part-title { margin-bottom: 0; }
   .c-outdoor input, .room-check input { width: 20px; height: 20px; margin: 0; }
   .al-history summary { display: flex; align-items: center; min-height: 44px; padding: 0; }
   .sim-name a { display: inline-flex; align-items: center; justify-self: start; min-height: 44px; }
+  .us-room { align-items: center; padding: 0; }
+  .us-room a { display: inline-flex; align-items: center; justify-self: start; min-height: 44px; } /* the energy table's rooms */
   /* 16 px in a field, so a phone does not zoom in when it takes the focus */
   input:not([type="checkbox"]):not([type="radio"]), select, textarea, .ctl { font-size: 16px; }
 }

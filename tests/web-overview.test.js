@@ -271,3 +271,12 @@ test('roomCard: traces of less than 2 hours are scaled to the data and say since
   assert.equal(day.traces, 'last 24 hours');
   assert.doesNotMatch(day.values[0].spark.d, /^M3 /);
 });
+
+test('critique 2026-10-28 layout: the farm cards keep their own height, the energy table\'s rooms a thumb\'s size, the name fits a phone', async () => {
+  const { readFileSync } = await import('node:fs');
+  const css = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
+  assert.match(css, /\.ov-farm \{ display: grid; grid-template-columns: repeat\(auto-fit, minmax\(300px, 1fr\)\); align-items: start;/);
+  assert.match(css, /\.us-room a \{ display: inline-flex; align-items: center; justify-self: start; min-height: 44px; \}/);
+  assert.match(css, /\.brand-text strong \{ white-space: normal; overflow: visible; line-height: 1\.1; \}/);
+  assert.match(css, /@container \(max-width: 100px\) \{ \.brand-top \.brand-text \{ display: none; \} \}/);
+});
