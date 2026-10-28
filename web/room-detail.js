@@ -57,7 +57,7 @@ const TEMPLATE = `
       <h1 class="page-title" tabindex="-1" data-title>Room</h1>
       <p class="page-sub" data-sub>Loading…</p>
     </div>
-    <label class="room-switch" data-switch-box hidden><span>Room</span><select data-switch></select></label>
+    <label class="room-switch" data-switch-box hidden><span>Room</span><select name="room" data-switch></select></label>
   </div>
   <div class="banner" role="alert" hidden>
     <span data-banner-text></span>
