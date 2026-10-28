@@ -25,9 +25,12 @@ export function parseToken(text) {
 }
 
 // Empty is allowed (not set yet).
+export const BOT_NAME_MESSAGE = "That is a bot's name (it ends in bot), not a chat: enter your chat's number id, a group's negative id or a channel's @name";
+
 export function parseChatId(text) {
   const s = String(text ?? '').trim();
   if (s === '') return { value: '' };
+  if (/^@\w*bot$/i.test(s)) return { error: BOT_NAME_MESSAGE }; // Telegram bot usernames end in "bot": messages to it go nowhere
   return s.length <= 64 && /^(-?[0-9]{1,20}|@[A-Za-z0-9_]{1,63})$/.test(s) ? { value: s } : { error: CHAT_MESSAGE };
 }
 

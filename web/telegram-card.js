@@ -1,7 +1,7 @@
 // The "Phone alarms (Telegram)" card of the Settings page: its own form and Save, and a Send test message button.
 
 import { request, OFFLINE } from './api.js';
-import { LEVELS, tokenHint, buildTelegramBody, testBody, statusLines, cardValues } from './telegram-math.js';
+import { LEVELS, tokenHint, buildTelegramBody, testBody, statusLines, cardValues, parseChatId } from './telegram-math.js';
 
 const COMMAND_TIMEOUT = 15000;
 const TEST_TIMEOUT = 20000; // the server gives up on Telegram after 15 s and says so first
@@ -86,6 +86,12 @@ export function mountTelegram(container) {
     const v = cardValues(settings);
     if (!keepTyped) {
       inputs.telegramChatId.value = v.chatId;
+      // A saved chat id that cannot reach anyone (a bot's own name) is said at once, not only on the next Save.
+      const bad = parseChatId(v.chatId).error ?? '';
+      const err = q('#e-telegramChatId');
+      if (err.textContent !== bad) err.textContent = bad;
+      if (bad) inputs.telegramChatId.setAttribute('aria-invalid', 'true');
+      else inputs.telegramChatId.removeAttribute('aria-invalid');
       inputs.telegramRepeatMin.value = v.repeat;
       for (const b of levelBoxes) b.checked = v.levels.includes(b.value);
       cleared.checked = v.cleared;

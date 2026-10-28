@@ -39,6 +39,8 @@ import { timeTicks, tickCountFor, chartDrawKey, historyPoints, timelineSpans, ac
 
 // The Now tab's Machines rows → the relay machines the switches command (the aircon has its own panel).
 const RELAY_KEY = { intake: 'intake', circ: 'circulation', lights: 'lights', hu: 'humidifier', dh: 'dehumidifier', exhaust: 'exhaust' };
+const clockOf = (ms) => { const d = new Date(ms); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+
 // "10:12" today, "27 Oct 10:12" before.
 function manualSince(d, now) {
   const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
@@ -244,6 +246,7 @@ export function mount(container, { id, tab = 'now' }) {
   let outdoorTail = []; // the newest readings since, one per refresh
   let outdoorLiveAt = 0;
   let outdoorLiveSeq = 0;
+  let lastLoadAt = 0; // the last good load: an offline page says how old its readings are
   let hourBase = null; // GET /api/rooms/:id/history?hours=1 for the reading cards' traces
   let hourBaseAt = 0;
   let hourBaseSeq = 0;
@@ -286,10 +289,11 @@ export function mount(container, { id, tab = 'now' }) {
       }
       // Fill the alert only when it is hidden, so a screen reader does not re-announce it every refresh.
       if (els.banner.hidden) {
-        els.bannerText.textContent = OFFLINE;
+        els.bannerText.textContent = lastLoadAt ? `${OFFLINE}. The readings below are from ${clockOf(lastLoadAt)}.` : OFFLINE;
         els.retry.hidden = false;
         els.banner.hidden = false; // the page keeps the last data
       }
+      els.readingsHost.dataset.stale = 'true'; // greyed: old readings must not look live
       if (!room) els.sub.textContent = '';
       schedule();
       return;
@@ -306,6 +310,8 @@ export function mount(container, { id, tab = 'now' }) {
     outdoor = outdoorData;
     els.banner.hidden = true;
     els.missing.hidden = true;
+    lastLoadAt = Date.now();
+    delete els.readingsHost.dataset.stale;
     render(machineData, token, controlData, controlToken, alarmData);
     refreshOutdoorLive();
     refreshHourBase();

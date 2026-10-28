@@ -15,6 +15,9 @@ test('token, chat id and repeat are read like the server checks them', () => {
   assert.ok(parseToken('abc').error);
   for (const t of ['123', '-100123', '@farm_1', ' 42 ', '']) assert.ok(!('error' in parseChatId(t)), t);
   for (const t of ['abc', '1-2', '@', '@a b']) assert.ok(parseChatId(t).error, t);
+  // a bot's own name (Telegram bot usernames end in "bot") is not a chat: the messages would never arrive
+  assert.equal(parseChatId('@MushroomClimateAlertBot').error, "That is a bot's name (it ends in bot), not a chat: enter your chat's number id, a group's negative id or a channel's @name");
+  assert.ok(!('error' in parseChatId('@robotics_farm_channel')), 'bot only at the end');
   assert.deepEqual(parseRepeat('0'), { value: 0 });
   assert.deepEqual(parseRepeat('1440'), { value: 1440 });
   for (const t of ['', '1441', '-1', '2.5', 'x']) assert.ok(parseRepeat(t).error, t);
