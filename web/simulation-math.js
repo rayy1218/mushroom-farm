@@ -233,6 +233,79 @@ export const headLine = (roomName) => `Simulation of ${roomName}`;
 const grouped = (n) => n.toLocaleString('en-US', { maximumFractionDigits: 1 });
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
+// An aircon's size: kW first, the BTU/h class it is sold by in brackets (PRODUCT.md: metric first; the class is its trade size).
+export function acSize(btu) {
+  if (!finite(btu)) return '—';
+  if (btu === 0) return 'none';
+  return `${(btu * 0.00029307107).toFixed(1)} kW (${grouped(btu)} BTU/h class)`;
+}
+const acKW = (btu) => (finite(btu) && btu > 0 ? `${(btu * 0.00029307107).toFixed(1)} kW` : 'none');
+
+// What a run was asked, as label and value rows (the head of its page and the comparison of two runs).
+export function inputRows(input) {
+  const p = input?.physics;
+  if (!p) return [];
+  const crops = (input.crops ?? []).map((c) => `${CROPS[c.crop]?.name ?? c.crop} ${c.blocks}`).join(' and ');
+  return [
+    { label: 'Crops', value: `${crops} blocks` },
+    { label: 'Run', value: `from ${STAGES[input.stage]?.toLowerCase() ?? input.stage}, ${plural(input.days, 'day', 'days')}` },
+    { label: 'Room', value: `walls ${p.wallUA} W/K, sun ${p.sunW} W` },
+    { label: 'Outdoor', value: `${p.outdoorLow}–${p.outdoorHigh} °C, dew point ${p.outdoorDew} °C` },
+    { label: 'Aircon', value: acSize(p.acBTU) },
+    { label: 'Fan', value: `${p.fanFlow} m³/h` },
+    { label: 'Humidifier', value: `${p.humidifierLH} L/h` },
+    { label: 'Dehumidifier', value: p.dehumidifierLday > 0 ? `${p.dehumidifierLday} L/day` : 'none' },
+  ];
+}
+
+// How a run went, from its series: { tone, text, lines: [which way each reading missed] } or null without a series. A reading
+// out of its band for 5 % of the time or more gets a line: the side, the share and how far it went.
+const MISSES = [
+  { key: 't', low: 'tLow', high: 'tHigh', below: 'Too cold', above: 'Too warm', unit: '°C', fmt: (v) => v.toFixed(1) },
+  { key: 'rh', low: 'rhLow', high: 'rhHigh', below: 'Too dry', above: 'Too wet', unit: '% RH', fmt: (v) => v.toFixed(1) },
+  { key: 'co2', low: 'co2Low', high: 'co2High', below: 'CO₂ under the band', above: 'CO₂ too high', unit: 'ppm', fmt: (v) => grouped(Math.round(v)) },
+];
+export function runVerdict(series, inBand) {
+  if (!series?.length) return null;
+  const all = finite(inBand?.all) ? inBand.all : null;
+  const share = all === null ? '' : `${Number(all.toFixed(1))} %`;
+  const lines = [];
+  for (const m of MISSES) {
+    let below = 0, above = 0, min = Infinity, max = -Infinity, bandBelow = null, bandAbove = null;
+    for (const r of series) {
+      const v = r[m.key];
+      if (!finite(v) || !finite(r[m.low]) || !finite(r[m.high])) continue;
+      if (v < r[m.low]) { below++; if (v < min) { min = v; bandBelow = [r[m.low], r[m.high]]; } }
+      if (v > r[m.high]) { above++; if (v > max) { max = v; bandAbove = [r[m.low], r[m.high]]; } }
+    }
+    const n = series.length;
+    const band = (b) => `${m.fmt(b[0]).replace(/\.0$/, '')}–${m.fmt(b[1]).replace(/\.0$/, '')} ${m.unit}`;
+    if (below / n >= 0.05) lines.push(`${m.below} ${Math.round((below / n) * 100)} % of the time (down to ${m.fmt(min)} ${m.unit}; the band is ${band(bandBelow)})`);
+    if (above / n >= 0.05) lines.push(`${m.above} ${Math.round((above / n) * 100)} % of the time (up to ${m.fmt(max)} ${m.unit}; the band is ${band(bandAbove)})`);
+  }
+  const tone = inBandTone(all);
+  const text = all === null ? '' : all >= 95 ? `The room stayed in band ${share} of the time.` : `The room was in band ${share} of the time.`;
+  return { tone, text, lines };
+}
+
+// Two runs side by side: what they were asked and how they went; differ marks the rows that are not the same.
+export function compareRuns(a, b) {
+  const ia = inputRows(a?.input), ib = inputRows(b?.input);
+  const res = (run) => {
+    const s = run?.summary;
+    return [
+      { label: 'Temperature in band', value: pct(s?.inBand?.t) }, { label: 'Humidity in band', value: pct(s?.inBand?.rh) },
+      { label: 'CO₂ in band', value: pct(s?.inBand?.co2) }, { label: 'All three in band', value: pct(s?.inBand?.all) },
+      { label: 'Energy', value: formatKWh(s?.energy?.kWh) }, { label: 'Water', value: formatLitres(s?.water?.litres) },
+    ];
+  };
+  const left = [...ia, ...res(a)], right = [...ib, ...res(b)];
+  return left.map((r) => {
+    const other = right.find((x) => x.label === r.label)?.value ?? '—';
+    return { label: r.label, a: r.value, b: other, differ: r.value !== other };
+  });
+}
+
 // What was asked, in one line (the input as it was posted).
 // roomMin: the room's own air exchange time limit when known (a run does not keep it).
 export function inputLine(input, roomMin = null) {
@@ -262,7 +335,7 @@ export function inputLine(input, roomMin = null) {
   return [
     `${crops} blocks, starting at ${stage}, ${plural(input.days, 'day', 'days')}`,
     `walls ${p.wallUA} W/K, sun ${p.sunW} W, outdoor ${p.outdoorLow}–${p.outdoorHigh} °C, dew point ${p.outdoorDew} °C`,
-    `fan ${p.fanFlow} m³/h, aircon ${grouped(p.acBTU)} BTU/h, humidifier ${p.humidifierLH} L/h${p.dehumidifierLday > 0 ? `, dehumidifier ${p.dehumidifierLday} L/day` : ''}`,
+    `fan ${p.fanFlow} m³/h, aircon ${acSize(p.acBTU)}, humidifier ${p.humidifierLH} L/h${p.dehumidifierLday > 0 ? `, dehumidifier ${p.dehumidifierLday} L/day` : ''}`,
     ...limit,
     ...(settings.length ? [settings.join(', ')] : []),
     ...filter,
@@ -284,6 +357,9 @@ export function runRow(run, roomId) {
     tone: done ? inBandTone(run.summary?.inBand?.all) : 'none',
     kWh: done ? formatKWh(run.summary?.energy?.kWh) : DASH,
     litres: done ? formatLitres(run.summary?.water?.litres) : DASH,
+    // the machines it ran with, so runs can be told apart in the list
+    machines: run.input?.physics ? [`aircon ${acKW(run.input.physics.acBTU)}`, `fan ${run.input.physics.fanFlow} m³/h`, `humidifier ${run.input.physics.humidifierLH} L/h`,
+      ...(run.input.physics.dehumidifierLday > 0 ? [`dehumidifier ${run.input.physics.dehumidifierLday} L/day`] : [])].join(' · ') : '',
     status: run.status === 'running' ? `Running ${Math.round((finite(run.progress) ? run.progress : 0) * 100)} %` : STATUS_WORDS[run.status] ?? String(run.status),
   };
 }

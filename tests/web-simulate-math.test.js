@@ -79,7 +79,7 @@ test('step 1 checks the numbers like the device app and the outdoor order', () =
   s.physics.outdoorHigh = '61';
   const e = checkStep(1, s);
   assert.equal(e['physics.wallUA'], 'Wall heat transfer must be a number from 0 to 100000 W/K');
-  assert.equal(e['physics.acBTU'], 'Aircon capacity must be a whole number from 0 to 200000 BTU/h');
+  assert.equal(e['physics.acBTU'], 'Aircon size must be a whole number from 0 to 200000 BTU/h');
   assert.ok(e['physics.fanFlow']);
   assert.equal(e['physics.outdoorHigh'], 'Outdoor day high must be a number from -40 to 60 °C');
   assert.equal(firstField(e), 'physics.wallUA');
@@ -183,7 +183,7 @@ test('the summary and the room line', () => {
   const lines = summaryLines(s, room);
   assert.deepEqual(lines.map((l) => l.label), ['Room', 'Walls and weather', 'Machines', 'Filter', 'Crops', 'Run']);
   assert.equal(lines[4].text, 'Grey oyster, 500 blocks; ready-to-fruit blocks, starting at fruiting');
-  assert.equal(lines[2].text, 'Fan 600 m³/h, aircon 12,000 BTU/h, humidifier 1.5 L/h, no dehumidifier');
+  assert.equal(lines[2].text, 'Fan 600 m³/h, aircon 3.5 kW (12,000 BTU/h class), humidifier 1.5 L/h, no dehumidifier');
   assert.equal(lines[1].text, 'Walls 80 W/K, sun on the roof 300 W, outdoor 25–33 °C, dew point 24 °C');
   assert.equal(lines[5].text, '7 days');
   s.daysMode = 'whole';
@@ -221,7 +221,7 @@ test('the dehumidifier input: 0 to 200 L/day, 0 is none; the room (when fitted) 
   assert.deepEqual(checkStep(1, s), {});
   assert.equal(buildBody(s).physics.dehumidifierLday, 20);
   assert.equal(stepOf('physics.dehumidifierLday'), 1);
-  assert.equal(summaryLines(s, room)[2].text, 'Fan 600 m³/h, aircon 12,000 BTU/h, humidifier 1.5 L/h, dehumidifier 20 L/day');
+  assert.equal(summaryLines(s, room)[2].text, 'Fan 600 m³/h, aircon 3.5 kW (12,000 BTU/h class), humidifier 1.5 L/h, dehumidifier 20 L/day');
 });
 
 // ---- suggest machines (spec 2026-10-22 section 7) ----
@@ -270,7 +270,7 @@ test('the table rows: texts, Best on the first, reached marks by words', () => {
   assert.equal(rows.length, 2);
   assert.deepEqual(rows[0], {
     index: 0, best: true, reached: true, mark: 'Best, reaches 95 %',
-    fan: '150', humidifier: '0.5', dehumidifier: '10', aircon: '9,000', limit: '30', t: '99.1', rh: '97.0', co2: '98.0', all: '96.0', kWh: '41.3',
+    fan: '150', humidifier: '0.5', dehumidifier: '10', aircon: '2.6 kW (9,000 BTU/h class)', limit: '30', t: '99.1', rh: '97.0', co2: '98.0', all: '96.0', kWh: '41.3',
   });
   assert.deepEqual([rows[1].best, rows[1].reached, rows[1].mark, rows[1].dehumidifier], [false, false, 'Below 95 %', '0']);
   // the second reaches the target when it is lower
@@ -288,7 +288,7 @@ test('the estimates with their reasons', () => {
     'Fan 150 m³/h: Fresh air for the CO₂ of 500 blocks',
     'Humidifier 0.5 L/h: Moisture the fan takes out',
     'Dehumidifier up to 20 L/day: Water the crops give off',
-    'Aircon 9,000 BTU/h: Heat the walls let in',
+    'Aircon 2.6 kW (9,000 BTU/h class): Heat the walls let in',
     'Air exchange time limit 30 min: A longer limit saves energy',
   ]);
   assert.deepEqual(estimateLines(null), []);

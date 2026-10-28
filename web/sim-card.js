@@ -6,7 +6,7 @@ import { live } from './live.js';
 import { fallbackMs, createThrottle } from './live-math.js';
 import { request } from './api.js';
 import { openSimulateDialog } from './simulate-dialog.js';
-import { runRow, isActive } from './simulation-math.js';
+import { runRow, isActive, compareRuns } from './simulation-math.js';
 
 const SHOWN = 5;
 const ACTIVE_MS = 2000;
@@ -24,6 +24,7 @@ export function createSimulationsCard(host, { roomId, getRoom }) {
   let runs = null;
   let all = false;
   let timer = null;
+  let picked = []; // up to two run ids to compare (the oldest pick drops out for a third)
 
   host.className = 'card sim-card';
   const head = el('div', 'sim-card-head');
@@ -35,7 +36,9 @@ export function createSimulationsCard(host, { roomId, getRoom }) {
   const more = el('button', '', '');
   more.type = 'button';
   more.hidden = true;
-  host.append(head, msg, list, more);
+  const compare = el('div', 'sim-compare');
+  compare.hidden = true;
+  host.append(head, msg, list, more, compare);
 
   function paint() {
     const shown = all ? runs : runs.slice(0, SHOWN);
@@ -46,15 +49,57 @@ export function createSimulationsCard(host, { roomId, getRoom }) {
       const li = el('li', 'sim-item');
       const link = el('a', '', r.date);
       link.href = r.href;
+      const name = el('div', 'sim-name');
+      name.append(link, el('span', 'sim-machines', r.machines));
       const inBand = el('span', 'sim-all pill', run.status === 'done' ? `${r.all} in band` : '');
       inBand.dataset.tone = r.tone;
-      li.append(link, el('span', 'sim-days', r.days), inBand,
-        el('span', 'sim-use', run.status === 'done' ? `${r.kWh} · ${r.litres}` : ''), el('span', 'sim-status', r.status));
+      const pick = el('label', 'sim-pick');
+      const box = el('input');
+      box.type = 'checkbox';
+      box.checked = picked.includes(run.id);
+      box.disabled = run.status !== 'done';
+      box.addEventListener('change', () => {
+        picked = box.checked ? [...picked.filter((x) => x !== run.id), run.id].slice(-2) : picked.filter((x) => x !== run.id);
+        paint();
+      });
+      pick.append(box, el('span', '', 'Compare'));
+      li.append(name, el('span', 'sim-days', r.days), inBand,
+        el('span', 'sim-use', run.status === 'done' ? `${r.kWh} · ${r.litres}` : ''), el('span', 'sim-status', r.status), pick);
       li.dataset.status = run.status;
       return li;
     }));
+    paintCompare();
     more.hidden = runs.length <= SHOWN;
     more.textContent = all ? 'Show fewer' : `Show all ${runs.length}`;
+  }
+
+  // Two runs picked: their inputs and results side by side, the rows that differ in bold.
+  function paintCompare() {
+    const [a, b] = picked.map((id) => runs.find((x) => x.id === id)).filter(Boolean);
+    compare.hidden = !(a && b);
+    if (compare.hidden) { compare.replaceChildren(); return; }
+    const table = el('table', 'us-table sim-compare-table');
+    table.append(el('caption', '', 'Two runs side by side'));
+    const head = el('tr');
+    head.append(el('th', '', ''), el('th', '', runRow(a, roomId).date), el('th', '', runRow(b, roomId).date));
+    const thead = el('thead');
+    thead.append(head);
+    const body = el('tbody');
+    for (const row of compareRuns(a, b)) {
+      const tr = el('tr');
+      if (row.differ) tr.dataset.differ = 'true';
+      const th = el('th', '', row.label);
+      th.scope = 'row';
+      tr.append(th, el('td', '', row.a), el('td', '', row.b));
+      body.append(tr);
+    }
+    table.append(thead, body);
+    const wrap = el('div', 'us-table-wrap');
+    wrap.append(table);
+    const clear = el('button', '', 'Clear the comparison');
+    clear.type = 'button';
+    clear.addEventListener('click', () => { picked = []; paint(); });
+    compare.replaceChildren(wrap, clear);
   }
 
   async function refresh() {

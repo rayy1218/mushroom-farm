@@ -115,12 +115,12 @@ test('per day bars: "day 1, day 2", one value each', () => {
 test('the inputs in one line and the head', () => {
   const input = { physics: { wallUA: 80, outdoorHigh: 33, outdoorLow: 25, outdoorDew: 24, sunW: 300, fanFlow: 600, acBTU: 12000, humidifierLH: 2 },
     crops: [{ crop: 'oyster', blocks: 500 }, { crop: 'pink', blocks: 20 }], farmType: 'ready', stage: 'fruiting', days: 7 };
-  assert.equal(inputLine(input), 'Grey oyster 500 and Pink oyster 20 blocks, starting at fruiting, 7 days · walls 80 W/K, sun 300 W, outdoor 25–33 °C, dew point 24 °C · fan 600 m³/h, aircon 12,000 BTU/h, humidifier 2 L/h');
+  assert.equal(inputLine(input), 'Grey oyster 500 and Pink oyster 20 blocks, starting at fruiting, 7 days · walls 80 W/K, sun 300 W, outdoor 25–33 °C, dew point 24 °C · fan 600 m³/h, aircon 3.5 kW (12,000 BTU/h class), humidifier 2 L/h');
   assert.equal(inputLine(undefined), '');
   const at = new Date(2026, 9, 20, 10, 42).getTime();
   assert.equal(headLine('Room 1'), 'Simulation of Room 1');
   assert.deepEqual(runRow({ id: 5, roomId: 3, createdAt: at, status: 'done', input: { days: 7 }, summary: { days: 7, inBand: { all: 81.26 }, energy: { kWh: 43.2 }, water: { litres: 120.4 } } }, 3),
-    { id: 5, href: '#/rooms/3/simulations/5', date: '20 Oct 10:42', days: '7 days', all: '81.3 %', tone: 'amber', kWh: '43.2 kWh', litres: '120 L', status: 'Done' });
+    { id: 5, href: '#/rooms/3/simulations/5', date: '20 Oct 10:42', days: '7 days', all: '81.3 %', tone: 'amber', kWh: '43.2 kWh', litres: '120 L', status: 'Done', machines: '' });
   // the time in band as a verdict (redesign 2026-10-28: a bad run must not look like a good one): 95 % and up good (the
   // Suggest machines target), under 50 % bad, between them a warning; nothing before the run is done
   const tone = (all) => runRow({ id: 5, createdAt: at, status: 'done', summary: { days: 7, inBand: { all } } }, 3).tone;
@@ -207,4 +207,57 @@ test('inputLine says what the room had when the run stored it', () => {
   const line = inputLine({ ...base, control: { exchangeMaxMin: 60, acDrop: 0 }, ctx: { control: { exchangeMaxMin: 60, acDrop: 0 }, roomControl: { exchangeMaxMin: 10, acDrop: 5 } } });
   assert.ok(line.includes('air exchange time limit 60 min (the room: 10 min)'), line);
   assert.ok(line.endsWith('aircon lower during air exchange 0 °C (the room: 5 °C)'), line);
+});
+
+test('acSize: an aircon in kW, with the BTU/h class it is sold by in brackets (PRODUCT.md: metric first)', async () => {
+  const { acSize } = await import('../web/simulation-math.js');
+  assert.equal(acSize(12000), '3.5 kW (12,000 BTU/h class)');
+  assert.equal(acSize(9000), '2.6 kW (9,000 BTU/h class)');
+  assert.equal(acSize(0), 'none');
+  assert.equal(acSize(undefined), '—');
+});
+
+test('runRow: the machines of a run, so runs can be told apart in the list', () => {
+  const input = { physics: { fanFlow: 150, acBTU: 9000, humidifierLH: 1.5, dehumidifierLday: 25 } };
+  const r = runRow({ id: 5, createdAt: 0, status: 'done', input, summary: { days: 7, inBand: { all: 98 } } }, 3);
+  assert.equal(r.machines, 'aircon 2.6 kW · fan 150 m³/h · humidifier 1.5 L/h · dehumidifier 25 L/day');
+});
+
+test('inputRows: what a run was asked, as label and value rows instead of one long sentence', async () => {
+  const { inputRows } = await import('../web/simulation-math.js');
+  const input = { physics: { wallUA: 80, outdoorHigh: 33, outdoorLow: 25, outdoorDew: 24, sunW: 300, fanFlow: 600, acBTU: 12000, humidifierLH: 2, dehumidifierLday: 0 },
+    crops: [{ crop: 'oyster', blocks: 500 }], farmType: 'ready', stage: 'fruiting', days: 7 };
+  assert.deepEqual(inputRows(input), [
+    { label: 'Crops', value: 'Grey oyster 500 blocks' },
+    { label: 'Run', value: 'from fruiting, 7 days' },
+    { label: 'Room', value: 'walls 80 W/K, sun 300 W' },
+    { label: 'Outdoor', value: '25–33 °C, dew point 24 °C' },
+    { label: 'Aircon', value: '3.5 kW (12,000 BTU/h class)' },
+    { label: 'Fan', value: '600 m³/h' },
+    { label: 'Humidifier', value: '2 L/h' },
+    { label: 'Dehumidifier', value: 'none' },
+  ]);
+  assert.deepEqual(inputRows(undefined), []);
+});
+
+test('runVerdict: one sentence on how the run went and which way it missed, from its series', async () => {
+  const { runVerdict } = await import('../web/simulation-math.js');
+  const row = (t, rh, co2) => ({ t, rh, co2, tLow: 19, tHigh: 21, rhLow: 87, rhHigh: 93, co2Low: 700, co2High: 800 });
+  const good = runVerdict([row(20, 90, 750), row(20.5, 91, 760)], { all: 100 });
+  assert.deepEqual(good, { tone: 'good', text: 'The room stayed in band 100 % of the time.', lines: [] });
+  const cold = runVerdict([row(16, 99, 750), row(16, 99, 750), row(16, 99, 750), row(20, 99, 750)], { t: 25, rh: 0, co2: 100, all: 0 });
+  assert.equal(cold.tone, 'warn');
+  assert.equal(cold.text, 'The room was in band 0 % of the time.');
+  assert.deepEqual(cold.lines, ['Too cold 75 % of the time (down to 16.0 °C; the band is 19–21 °C)', 'Too wet 100 % of the time (up to 99.0 % RH; the band is 87–93 % RH)']);
+  assert.equal(runVerdict([], {}), null);
+});
+
+test('compareRuns: two runs side by side, their inputs and results, the rows that differ marked', async () => {
+  const { compareRuns } = await import('../web/simulation-math.js');
+  const run = (id, acBTU, all) => ({ id, createdAt: 0, status: 'done', input: { physics: { fanFlow: 150, acBTU, humidifierLH: 1.5, dehumidifierLday: 0, wallUA: 30, sunW: 300, outdoorLow: 25, outdoorHigh: 33, outdoorDew: 24 }, crops: [{ crop: 'lionsmane', blocks: 950 }], stage: 'fruiting', days: 7 }, summary: { days: 7, inBand: { t: all, rh: all, co2: all, all }, energy: { kWh: 100 }, water: { litres: 50 } } });
+  const rows = compareRuns(run(1, 12000, 0.8), run(2, 9000, 98.2));
+  const aircon = rows.find((r) => r.label === 'Aircon');
+  assert.deepEqual(aircon, { label: 'Aircon', a: '3.5 kW (12,000 BTU/h class)', b: '2.6 kW (9,000 BTU/h class)', differ: true });
+  assert.equal(rows.find((r) => r.label === 'Fan').differ, false);
+  assert.deepEqual(rows.find((r) => r.label === 'All three in band'), { label: 'All three in band', a: '0.8 %', b: '98.2 %', differ: true });
 });

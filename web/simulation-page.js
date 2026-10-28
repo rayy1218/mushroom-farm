@@ -12,7 +12,7 @@ import { tickCountFor } from './history-math.js';
 import { progressLine } from './simulate-math.js';
 import {
   CHARTS, tileList, stageRows, dayTicks, runEnd, chartPoints, thinPoints, outdoorLine, bandSteps, timelineRows, energyView, perDayBars,
-  inputLine, headLine, formatDateTime, formatRunTime, isActive, filterView,
+  inputLine, inputRows, runVerdict, headLine, formatDateTime, formatRunTime, isActive, filterView,
 } from './simulation-math.js';
 
 const POLL_MS = 2000;
@@ -36,6 +36,11 @@ const TEMPLATE = `
     <p>That simulation no longer exists</p>
     <a data-missing-back href="#/overview">Back to the Overview</a>
   </div>
+  <section class="card sim-inputs" data-inputs hidden>
+    <h2>What this run was given</h2>
+    <dl class="sim-dl" data-input-rows></dl>
+    <details class="sim-all-inputs"><summary>Everything, in one line</summary><p data-input-line></p></details>
+  </section>
   <section class="card sim-run" data-run hidden>
     <h2>Simulation</h2>
     <progress max="1" value="0" aria-label="Progress of the simulation"></progress>
@@ -96,6 +101,7 @@ export function mount(container, { id, runId }) {
   container.innerHTML = TEMPLATE;
   const q = (sel) => container.querySelector(sel);
   const els = {
+    inputs: q('[data-inputs]'), inputRowsHost: q('[data-input-rows]'), inputLineHost: q('[data-input-line]'),
     back: q('[data-back]'), title: q('[data-title]'), sub: q('[data-sub]'), actions: q('[data-actions]'), del: q('[data-delete]'),
     banner: q('.banner'), bannerText: q('[data-banner-text]'), retry: q('[data-retry]'), missing: q('[data-missing]'), missingBack: q('[data-missing-back]'),
     run: q('[data-run]'), bar: q('progress'), progress: q('[data-progress]'), failed: q('[data-failed]'), results: q('[data-results]'),
@@ -206,7 +212,12 @@ export function mount(container, { id, runId }) {
     const name = roomName ?? 'the room';
     els.title.textContent = headLine(name);
     if (roomName !== null) els.back.textContent = roomName; // back to which room
-    els.sub.textContent = [formatDateTime(run.createdAt), inputLine(run.input)].filter(Boolean).join(' · ');
+    // the head: when and how long; what the run was given as label and value rows under it (the full line folded away)
+    els.sub.textContent = [formatDateTime(run.createdAt), run.input?.days ? `${run.input.days} ${run.input.days === 1 ? 'day' : 'days'}` : ''].filter(Boolean).join(' · ');
+    const rows = inputRows(run.input);
+    els.inputs.hidden = rows.length === 0;
+    els.inputRowsHost.replaceChildren(...rows.map((r) => { const d = text('div'); d.append(text('dt', '', r.label), text('dd', '', r.value)); return d; }));
+    els.inputLineHost.textContent = inputLine(run.input);
     els.actions.hidden = false;
     document.title = `${headLine(name)} · Mushroom farm`;
     const active = isActive(run);
@@ -241,6 +252,20 @@ export function mount(container, { id, runId }) {
     const end = runEnd(result);
     const range = { from: 0, to: end };
     const common = { range, ticksFor: (w) => dayTicks(end, tickCountFor(w)), formatAt: formatRunTime, onCursor: moveCursor };
+
+    // the verdict: how the run went, and which way each reading missed
+    const verdict = runVerdict(result.series, summary.inBand);
+    if (verdict) {
+      const v = text('section', 'card sim-verdict');
+      v.dataset.tone = verdict.tone;
+      v.append(text('p', 'sim-verdict-text', verdict.text));
+      if (verdict.lines.length) {
+        const ul = text('ul', 'sim-verdict-lines');
+        ul.append(...verdict.lines.map((l) => text('li', '', l)));
+        v.append(ul, text('p', 'muted sim-verdict-next', 'Simulate again with other machines, or let Suggest machines (the last step of Simulate) pick them.'));
+      }
+      els.results.append(v);
+    }
 
     // time in band
     const band = text('section', 'card sim-card');

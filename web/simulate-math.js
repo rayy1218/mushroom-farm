@@ -1,6 +1,7 @@
 // Pure helpers for the simulation stepper (no DOM, so they can be tested in Node).
 // Spec 2026-10-20-crops-and-simulation-design.md section 4.1. Every input is kept as the text typed; checks speak like the server.
 
+import { acSize } from './simulation-math.js';
 import { CROPS, STAGES, FARM_TYPES, mixBands, rangeWarnings, validateCrops } from './crops.js';
 
 // The physics inputs of step 1. min, max and whole are those of the device app's PARAMS (device/sim-store.js; a test compares
@@ -12,7 +13,7 @@ export const PHYSICS_FIELDS = [
   { key: 'outdoorDew', label: 'Outdoor dew point', unit: '°C', min: -40, max: 60, whole: false, def: 24 },
   { key: 'sunW', label: 'Sun on the roof', unit: 'W', min: 0, max: 100000, whole: false, def: 300 },
   { key: 'fanFlow', label: 'Fan flow', unit: 'm³/h', min: 0, max: 100000, whole: false, def: 600 },
-  { key: 'acBTU', label: 'Aircon capacity', unit: 'BTU/h', min: 0, max: 200000, whole: true, def: 12000 },
+  { key: 'acBTU', label: 'Aircon size', unit: 'BTU/h', min: 0, max: 200000, whole: true, def: 12000 }, // entered as sold (its BTU/h class), shown back in kW (acSize)
   { key: 'humidifierLH', label: 'Humidifier output', unit: 'L/h', min: 0, max: 100, whole: false, def: 2 },
   // Not a device parameter by this name (the server maps it to the dehumidifier's rating); the limit is the spec's.
   { key: 'dehumidifierLday', label: 'Dehumidifier', unit: 'L/day', min: 0, max: 200, whole: false, def: 0, device: false },
@@ -233,7 +234,7 @@ export function summaryLines(state, room, cropData = null) {
   return [
     { label: 'Room', text: roomLine(room).replace('Room size ', 'Size ') },
     { label: 'Walls and weather', text: `Walls ${v.wallUA} W/K, sun on the roof ${v.sunW} W, outdoor ${v.outdoorLow}–${v.outdoorHigh} °C, dew point ${v.outdoorDew} °C` },
-    { label: 'Machines', text: `Fan ${v.fanFlow} m³/h, aircon ${grouped(Number(v.acBTU))} BTU/h, humidifier ${v.humidifierLH} L/h, ${Number(v.dehumidifierLday) > 0 ? `dehumidifier ${v.dehumidifierLday} L/day` : 'no dehumidifier'}${room?.lights === true ? `, lights ${room.lightsW} W on the room's schedule` : ''}` },
+    { label: 'Machines', text: `Fan ${v.fanFlow} m³/h, aircon ${acSize(Number(v.acBTU))}, humidifier ${v.humidifierLH} L/h, ${Number(v.dehumidifierLday) > 0 ? `dehumidifier ${v.dehumidifierLday} L/day` : 'no dehumidifier'}${room?.lights === true ? `, lights ${room.lightsW} W on the room's schedule` : ''}` },
     ...(isNumber(state.exchangeMaxMin) ? [{ label: 'Air exchange', text: limitLine(state.exchangeMaxMin, state.roomExchangeMaxMin) }] : []),
     ...(state.runSettings && Object.keys(state.runSettings).length > 0 ? [{ label: 'Settings', text: settingsLine(state.runSettings, state.roomSettings) }] : []),
     { label: 'Filter', text: filterLine(v, state.filterSensor === true) },
@@ -303,7 +304,7 @@ export function sizingRows(result) {
       index: i, best, reached,
       mark: text,
       fan: String(c.machines?.fanFlow), humidifier: String(c.machines?.humidifierLH), dehumidifier: String(c.machines?.dehumidifierLday ?? 0),
-      aircon: grouped(Number(c.machines?.acBTU)), limit: String(c.exchangeMaxMin),
+      aircon: acSize(Number(c.machines?.acBTU)), limit: String(c.exchangeMaxMin),
       t: one(c.inBand?.t), rh: one(c.inBand?.rh), co2: one(c.inBand?.co2), all: one(c.inBand?.all), kWh: one(c.kWh),
     };
   });
@@ -317,7 +318,7 @@ export function estimateLines(est) {
     ['Fan', `${est.fanFlow} m³/h`, why.fanFlow, est.fanFlow],
     ['Humidifier', `${est.humidifierLH} L/h`, why.humidifierLH, est.humidifierLH],
     ['Dehumidifier', `up to ${est.dehumidifierMaxLday} L/day`, why.dehumidifierLday, est.dehumidifierMaxLday],
-    ['Aircon', `${isNumber(est.acBTU) ? grouped(est.acBTU) : est.acBTU} BTU/h`, why.acBTU, est.acBTU],
+    ['Aircon', isNumber(est.acBTU) ? acSize(est.acBTU) : est.acBTU, why.acBTU, est.acBTU],
     ['Air exchange time limit', `${est.exchangeMaxMin} min`, why.exchangeMaxMin, est.exchangeMaxMin],
   ];
   return rows.filter((r) => r[3] !== undefined && r[3] !== null).map(([name, value, reason]) => `${name} ${value}${reason ? `: ${reason}` : ''}`);

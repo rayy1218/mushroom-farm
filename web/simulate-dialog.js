@@ -362,7 +362,7 @@ export function openSimulateDialog(room, hooks = {}) {
       const table = el('table', 'us-table sim-setups');
       table.append(el('caption', '', `Best setups over ${result.days} days, in order`));
       const head = el('tr');
-      const columns = ['Setup', 'Fan m³/h', 'Humidifier L/h', 'Dehumidifier L/day (0 = none)', 'Aircon BTU/h', 'Time limit min', 'Temperature %', 'Humidity %', 'CO₂ %', 'All three %', `kWh in ${result.days} days`, ''];
+      const columns = ['Setup', 'Fan m³/h', 'Humidifier L/h', 'Dehumidifier L/day (0 = none)', 'Aircon', 'Time limit min', 'Temperature %', 'Humidity %', 'CO₂ %', 'All three %', `kWh in ${result.days} days`, ''];
       columns.forEach((c, i) => { const th = el('th', i > 0 && i < columns.length - 1 ? 'num' : '', c); th.scope = 'col'; head.append(th); });
       const thead = el('thead');
       thead.append(head);
