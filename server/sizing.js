@@ -1,13 +1,19 @@
 // Suggest machines (spec 2026-10-22-suggest-machines-design.md 3 and 4): starting estimates from formulas, the candidates
-// around them, and the ranking of what the simulation says about each. Pure: no clock, no I/O.
+// around them, and the ranking of what the simulation says about each. Every setup is tried twice: held in band over the
+// days of two stages, and cooled down from outdoor air (2026-10-28, after three containers that started at 32 °C: the setups
+// suggested to hold them could not pull them down). Pure: no clock, no I/O.
 
-import { satW, wOf } from '../device/sim-model.js';
+import { satW, wOf, outdoorAt } from '../device/sim-model.js';
 import { BTU_PER_KW } from '../device/sim-store.js';
 import { CO2_PER_BLOCK, blocksOf, mixBands } from '../web/crops.js';
 import { DEFAULTS } from './controller.js';
 import { PROGRAM_DEFAULTS, nextStage } from './program.js';
 
 export const TARGET_DEFAULT = 95;
+export const COOL_DOWN_MAX_H = 3; // the longest cool-down a setup may take (the request's coolDownMaxH)
+// The cool-down starts in the heat of the day: the sun just past its peak, the outdoor air near its 15:00 high.
+export const COOL_START_HOUR = 14;
+const COOL_DAYS = 1;
 const MAX_DAYS = 30;
 const OUTDOOR_CO2 = 420; // ppm
 const CO2_MARGIN = 100; // ppm under the upper limit the fan is sized to hold
@@ -24,9 +30,15 @@ const DEHUM_COIL = 5; // °C, the model's coil dew point
 const DEHUM_MAX_SHARE = 1.2;
 const DEHUM_RUN_S = 180; // its minimum run
 const DEHUM_RH_SHARE = 0.8; // of the narrowest band a minimum run may move RH
+// The model's heat capacities (device/sim-model.js): racks, floor and walls per m³ of room, a block.
+const MASS_KJ_PER_M3K = 10;
+const BLOCK_KJ_PER_K = 4;
+const COIL_ADP = 11; // °C, the model's aircon coil (its auto fan)
+const LATENT_KJ_PER_G = 2.45;
 
 const round = (v, digits) => Math.round(v * 10 ** digits) / 10 ** digits;
 const nextUp = (sizes, v) => sizes.find((s) => s >= v) ?? sizes.at(-1);
+const grouped = (v) => Math.round(v).toLocaleString('en-US');
 const nearest = (sizes, v) => sizes.reduce((a, b) => (Math.abs(b - v) < Math.abs(a - v) ? b : a));
 
 // The stages searched: the start stage and the one after it. → [stage, …] (one when nothing follows).
@@ -43,7 +55,9 @@ export function sizingDays(input, ctx) {
   return Math.min(MAX_DAYS, stagesOf(input, ctx).reduce((sum, s) => sum + days[s], 0));
 }
 
-// → { fanFlow, humidifierLH, dehumidifierMaxLday, acBTU, exchangeMaxMin, why: { fanFlow, humidifierLH, dehumidifierLday, acBTU, exchangeMaxMin } }
+// → { fanFlow, humidifierLH, dehumidifierMaxLday, acBTU, acCoolBTU, humidifierCoolLH, exchangeMaxMin,
+// why: { fanFlow, humidifierLH, dehumidifierLday, acBTU, coolDown, exchangeMaxMin } }. acBTU: the larger of the aircons for the
+// day high and for the cool-down (acCoolBTU); humidifierCoolLH: the one that makes up the water that aircon takes out.
 export function estimate(input, ctx) {
   const { physics, crops } = input;
   const { volume } = ctx;
@@ -80,7 +94,26 @@ export function estimate(input, ctx) {
   const lightsW = ctx.ratings?.lights === true ? (ctx.ratings.lightsW ?? 0) : 0; // fitted lights: their power is heat in the room
   const acW = AC_MARGIN * (physics.wallUA * dHigh + physics.sunW + blocksW + fanW + FANS_W + lightsW);
   const acNeed = acW * BTU_PER_KW / 1000;
-  const acBTU = nextUp(AC_SIZES, acNeed);
+  const acHighBTU = nextUp(AC_SIZES, acNeed);
+
+  // Cool-down: from outdoor air at COOL_START_HOUR to the band's middle within the longest cool-down, the heat of that hour
+  // and the heat of the blocks and the room's mass (with the air) taken down by as much over that time.
+  const maxH = input.coolDownMaxH ?? COOL_DOWN_MAX_H;
+  const at = outdoorAt(physics, COOL_START_HOUR * 3600);
+  const dCool = Math.max(0, at.outdoorT - tMid);
+  const massKJ = volume * MASS_KJ_PER_M3K + blocks * BLOCK_KJ_PER_K + volume * AIR_KJ_PER_M3K;
+  const massW = (massKJ * dCool * 1000) / (maxH * 3600);
+  const hourW = physics.wallUA * dCool + physics.sunW * at.sun + blocksW + (fanFlow * AIR_KJ_PER_M3K * dCool) / 3.6 + FANS_W + lightsW;
+  const acCoolBTU = nextUp(AC_SIZES, ((massW + hourW) * BTU_PER_KW) / 1000);
+  const acBTU = Math.max(acHighBTU, acCoolBTU);
+
+  // Humidifier for the cool-down: the water the aircon takes out at full load from air as wet as outdoors at the band's
+  // middle (its coil splits the load into cooling and drying), at least the one for the band.
+  const latent = Math.max(0, satW(physics.outdoorDew) - satW(COIL_ADP)) * LATENT_KJ_PER_G; // kJ a m³ of air gives the coil
+  const sensible = AIR_KJ_PER_M3K * Math.max(0, tMid - COIL_ADP);
+  const dryShare = latent + sensible > 0 ? latent / (latent + sensible) : 0;
+  const condensedLH = ((acBTU / BTU_PER_KW) * dryShare * 3600) / LATENT_KJ_PER_G / 1000;
+  const humidifierCoolLH = Math.max(humidifierLH, nearest(HUMIDIFIER_SIZES, condensedLH));
 
   // Air exchange time limit: longer when the fan runs more than half the time in the strictest stage.
   const duty = fanNeed / fanFlow;
@@ -88,12 +121,13 @@ export function estimate(input, ctx) {
   const exchangeMaxMin = duty > 0.5 ? LIMIT_MAX_MIN : roomLimit;
 
   return {
-    fanFlow, humidifierLH, dehumidifierMaxLday, acBTU, exchangeMaxMin,
+    fanFlow, humidifierLH, dehumidifierMaxLday, acBTU, acCoolBTU, humidifierCoolLH, exchangeMaxMin,
     why: {
       fanFlow: `${blocks} blocks give off ${round(co2LH, 1)} L of CO₂ an hour; ${fanFlow} m³/h holds it at ${holds} ppm`,
       humidifierLH: `One minute of ${humidifierLH} L/h moves humidity about ${round(((humidifierLH * 1000 / 60) * 100) / (volume * satW(tMid)), 1)} % in a room of ${round(volume, 1)} m³ (the narrowest band is ${rhBand} %)`,
       dehumidifierLday: `a 3 min run of a larger one would move humidity more than 80 % of the ${restBand} % band`,
-      acBTU: `About ${Math.round(acW)} W of heat at an outdoor ${physics.outdoorHigh} °C with the room at ${round(tMid, 1)} °C (walls, sun, blocks, fan air${lightsW > 0 ? ', lights' : ''}), with 30 % to spare; the search also tries larger ones, since drying a wet room takes part of an aircon's power`,
+      acBTU: `About ${Math.round(acW)} W of heat at an outdoor ${physics.outdoorHigh} °C with the room at ${round(tMid, 1)} °C (walls, sun, blocks, fan air${lightsW > 0 ? ', lights' : ''}), with 30 % to spare; the search also tries larger ones, since drying a wet room takes part of an aircon's power${acCoolBTU > acHighBTU ? '; the cool-down needs more' : ''}`,
+      coolDown: `From outdoor air at ${COOL_START_HOUR}:00 (${round(at.outdoorT, 1)} °C) to ${round(tMid, 1)} °C within ${maxH} h takes about ${grouped(massW + hourW)} W: ${grouped(massW)} W to cool the blocks and the room's mass, ${grouped(hourW)} W of heat at that hour (walls, sun, blocks, fan air${lightsW > 0 ? ', lights' : ''}); the aircon then takes about ${round(condensedLH, 1)} L of water an hour out of air as wet as outdoors, which a humidifier of ${humidifierCoolLH} L/h makes up`,
       exchangeMaxMin: duty > 0.5
         ? `The fan runs about ${Math.round(duty * 100)} % of the time, so a long air exchange (${LIMIT_MAX_MIN} min) is allowed`
         : `The fan runs about ${Math.round(duty * 100)} % of the time, so the room's own limit of ${roomLimit} min stays`,
@@ -126,28 +160,42 @@ export function candidates(est) {
 }
 
 const lowest = (r) => Math.min(r.inBand.t, r.inBand.rh, r.inBand.co2);
+// Whether a setup cooled down within maxH (coolDownH null or missing: it did not).
+const cools = (r, maxH) => typeof r.coolDownH === 'number' && r.coolDownH <= maxH;
 
-// Orders the evaluated setups: the ones reaching the target (each of t, rh, co2 at least `target`) first by kWh, then the rest
-// by their lowest of the three, highest first. → a new array.
-export function rank(results, target) {
-  const reaches = (r) => lowest(r) >= target;
-  return [...results].sort((a, b) => {
-    if (reaches(a) !== reaches(b)) return reaches(a) ? -1 : 1;
-    if (reaches(a)) return a.kWh - b.kWh;
-    return lowest(b) - lowest(a) || a.kWh - b.kWh;
-  });
+// The order of evaluated setups by lowestOf (their share in band that counts): those reaching the target and cooling down
+// within maxH first, by kWh; then those reaching only the target, the quickest cool-down first; then the rest by lowestOf,
+// highest first (equal ones by kWh).
+function order(lowestOf, target, maxH) {
+  const tier = (r) => (lowestOf(r) < target ? 2 : cools(r, maxH) ? 0 : 1);
+  const coolH = (r) => (typeof r.coolDownH === 'number' ? r.coolDownH : Infinity);
+  return (a, b) => {
+    if (tier(a) !== tier(b)) return tier(a) - tier(b);
+    if (tier(a) === 0) return a.kWh - b.kWh;
+    if (tier(a) === 1) return (coolH(a) === coolH(b) ? 0 : coolH(a) - coolH(b)) || a.kWh - b.kWh;
+    return lowestOf(b) - lowestOf(a) || a.kWh - b.kWh;
+  };
+}
+
+// Orders the evaluated setups: the ones reaching the target (each of t, rh, co2 at least `target`) and cooling down within
+// coolDownMaxH first by kWh, then the ones reaching only the target by their cool-down, then the rest by their lowest of the
+// three, highest first. → a new array.
+export function rank(results, target, coolDownMaxH = COOL_DOWN_MAX_H) {
+  return [...results].sort(order(lowest, target, coolDownMaxH));
 }
 
 const HINTS = {
   rh: 'Humidity stays out of its band (in this climate usually too wet): fewer blocks, a wider humidity band or a different dehumidifier size would help',
   co2: 'CO₂ stays above the band: a bigger fan or fewer blocks',
   t: 'Temperature stays above the band: a bigger aircon or better insulation',
+  coolDown: (maxH) => `It does not cool down within ${maxH} h from outdoor air at ${COOL_START_HOUR}:00: a bigger humidifier (the aircon dries the air as it cools it), a bigger aircon or fewer blocks`,
 };
 
 // The two-phase search (2026-10-22, after Room 1: a sensible-heat estimate of 9000 BTU/h for a wet 120 m³ room whose 1 °C
 // band needs about 24 000). Phase 1: the fan and the aircon over a wide range (one size below the estimates, the aircon up to
-// three above), with the humidifier at its estimate and a middle dehumidifier, judged on temperature and CO₂. Phase 2: around
-// the KEEP best of phase 1, the humidifier, the dehumidifier and the time limit. → { phase1, phase2(of) } and the total count.
+// three above), with the cool-down's humidifier and a middle dehumidifier, judged on temperature and CO₂ and the cool-down.
+// Phase 2: around the KEEP best of phase 1, the humidifier (around its estimate, and up to the cool-down's), the dehumidifier
+// and the time limit. → { phase1, phase2(of) } and the total count of setups.
 const KEEP = 2;
 export function searchPlan(est) {
   const around = (sizes, v, below, above) => {
@@ -160,13 +208,19 @@ export function searchPlan(est) {
   // The search runs with the settings that suit a fan that runs most of the time: no aircon drop during an exchange (it
   // pulls a room below a narrow band) and no forced humidifier (Malaysian outdoor air is wet already); the reply names them.
   const settings = { acDrop: 0, humidifierDuringExchange: false };
+  const coolLH = est.humidifierCoolLH ?? est.humidifierLH;
   const phase1 = [];
   for (const fanFlow of around(FAN_SIZES, est.fanFlow, 1, 1)) for (const acBTU of around(AC_SIZES, est.acBTU, 1, 3)) {
-    phase1.push({ machines: { fanFlow, humidifierLH: est.humidifierLH, dehumidifierLday: middle, acBTU }, exchangeMaxMin: est.exchangeMaxMin, ...settings });
+    phase1.push({ machines: { fanFlow, humidifierLH: coolLH, dehumidifierLday: middle, acBTU }, exchangeMaxMin: est.exchangeMaxMin, ...settings });
   }
+  // One size either side of the estimate; when the cool-down's is further up, the estimate, the size above it, and the
+  // cool-down's with the size below it (the one to hold the band, the other to recover from outdoor air).
+  const h = HUMIDIFIER_SIZES.indexOf(est.humidifierLH), c = HUMIDIFIER_SIZES.indexOf(coolLH);
+  const humidifiers = c <= h + 1 ? around(HUMIDIFIER_SIZES, est.humidifierLH, 1, 1)
+    : [...new Set([h, h + 1, c - 1, c].map((k) => HUMIDIFIER_SIZES[k]))];
   const phase2 = (core) => {
     const list = [];
-    for (const humidifierLH of around(HUMIDIFIER_SIZES, est.humidifierLH, 1, 1)) for (const dehumidifierLday of [0, ...spread(allowed, 3)]) {
+    for (const humidifierLH of humidifiers) for (const dehumidifierLday of [0, ...spread(allowed, 3)]) {
       for (const exchangeMaxMin of limits) list.push({ machines: { ...core.machines, humidifierLH, dehumidifierLday }, exchangeMaxMin, ...settings });
     }
     return list;
@@ -175,11 +229,14 @@ export function searchPlan(est) {
   return { phase1, phase2, total: phase1.length + kept * phase2(phase1[0]).length };
 }
 
-// Tries the setups (each over the days of both stages) and answers the best five: the two-phase search, or `list` (tests).
-// input: { physics, crops, farmType, stage, target }; ctx: as for simulate. simulate: injectable; list and days: test overrides.
-// → { target, days, estimate, best, reached, notes }.
+// Tries the setups (each over the days of both stages, and a day's cool-down from outdoor air at COOL_START_HOUR) and answers
+// the best five: the two-phase search, or `list` (tests). input: { physics, crops, farmType, stage, target, coolDownMaxH };
+// ctx: as for simulate. simulate: injectable; list and days: test overrides. onProgress: the share of the setups tried.
+// → { target, coolDownMaxH, coolDownStartHour, days, estimate, best, reached, notes }; a row of best has coolDownH (hours,
+// one decimal, null: not within the day).
 export function runSizing(input, ctx, { onProgress, simulate, list, days } = {}) {
   const target = input.target ?? TARGET_DEFAULT;
+  const maxH = input.coolDownMaxH ?? COOL_DOWN_MAX_H;
   const est = estimate(input, ctx);
   const runDays = days ?? sizingDays(input, ctx);
   const plan = list ? null : searchPlan(est);
@@ -190,12 +247,13 @@ export function runSizing(input, ctx, { onProgress, simulate, list, days } = {})
     // control: the settings the setup was tried with (the time limit, and from the search the aircon drop and the humidifier)
     const control = { exchangeMaxMin, ...(c.acDrop === undefined ? {} : { acDrop: c.acDrop }),
       ...(c.humidifierDuringExchange === undefined ? {} : { humidifierDuringExchange: c.humidifierDuringExchange }) };
-    const out = simulate(
-      { physics: { ...input.physics, ...machines }, crops: input.crops, farmType: input.farmType, stage: input.stage, days: runDays },
-      { ...ctx, control: { ...ctx.control, ...control } },
-    );
+    const run = { physics: { ...input.physics, ...machines }, crops: input.crops, farmType: input.farmType, stage: input.stage };
+    const runCtx = { ...ctx, control: { ...ctx.control, ...control } };
+    const out = simulate({ ...run, days: runDays }, runCtx);
+    const cool = simulate({ ...run, days: COOL_DAYS, start: 'outdoor', startHour: COOL_START_HOUR }, runCtx).summary.coolDownS;
     const { inBand, energy, water } = out.summary;
-    const r = { machines, exchangeMaxMin, control, inBand, kWh: energy.kWh, litres: water.litres, removedLitres: water.removedLitres };
+    const r = { machines, exchangeMaxMin, control, inBand, kWh: energy.kWh, litres: water.litres, removedLitres: water.removedLitres,
+      coolDownH: typeof cool === 'number' ? round(cool / 3600, 1) : null };
     results.push(r);
     onProgress?.(results.length / total);
     return r;
@@ -203,15 +261,14 @@ export function runSizing(input, ctx, { onProgress, simulate, list, days } = {})
   if (list) {
     list.forEach(tryOne);
   } else {
-    // phase 1: judged on temperature and CO₂ only (the humidity machines come next)
+    // phase 1: judged on temperature and CO₂ held, and the cool-down (the humidity machines come next)
     const core = plan.phase1.map(tryOne);
-    const coreLowest = (r) => Math.min(r.inBand.t, r.inBand.co2);
-    const ok = (r) => coreLowest(r) >= target;
-    core.sort((a, b) => (ok(a) !== ok(b) ? (ok(a) ? -1 : 1) : ok(a) ? a.kWh - b.kWh : coreLowest(b) - coreLowest(a) || a.kWh - b.kWh));
+    core.sort(order((r) => Math.min(r.inBand.t, r.inBand.co2), target, maxH));
     for (const c of core.slice(0, KEEP)) plan.phase2(c).forEach(tryOne);
   }
-  const best = rank(results, target).slice(0, 5);
-  const reached = best.length > 0 && lowest(best[0]) >= target;
-  const notes = reached || best.length === 0 ? [] : ['rh', 'co2', 't'].filter((k) => best[0].inBand[k] < target).map((k) => HINTS[k]);
-  return { target, days: runDays, estimate: est, best, reached, notes };
+  const best = rank(results, target, maxH).slice(0, 5);
+  const reached = best.length > 0 && lowest(best[0]) >= target && cools(best[0], maxH);
+  const notes = reached || best.length === 0 ? []
+    : [...['rh', 'co2', 't'].filter((k) => best[0].inBand[k] < target).map((k) => HINTS[k]), ...(cools(best[0], maxH) ? [] : [HINTS.coolDown(maxH)])];
+  return { target, coolDownMaxH: maxH, coolDownStartHour: COOL_START_HOUR, days: runDays, estimate: est, best, reached, notes };
 }

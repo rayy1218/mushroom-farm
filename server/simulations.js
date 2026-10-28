@@ -4,7 +4,7 @@
 import { Worker } from 'node:worker_threads';
 import { PARAMS, outdoorProblem, filterProblem } from '../device/sim-store.js';
 import { FARM_TYPES, validateCrops } from '../web/crops.js';
-import { searchPlan, estimate, TARGET_DEFAULT } from './sizing.js';
+import { searchPlan, estimate, TARGET_DEFAULT, COOL_DOWN_MAX_H } from './sizing.js';
 import { readSettings } from './settings.js';
 
 const PHYSICS = ['wallUA', 'outdoorHigh', 'outdoorLow', 'outdoorDew', 'sunW', 'fanFlow', 'acBTU', 'humidifierLH'];
@@ -112,7 +112,8 @@ function checkFilter(physics, clean) {
   return clash ? { error: clash.message, field: `physics.${clash.field}` } : null;
 }
 
-// Checks a sizing request { physics (walls, weather, sun), crops, farmType, stage, target }. → { input } or { error, field }.
+// Checks a sizing request { physics (walls, weather, sun), crops, farmType, stage, target, coolDownMaxH }. → { input } or
+// { error, field }.
 export function validateSizing(body) {
   if (body === null || typeof body !== 'object' || Array.isArray(body)) return { error: 'Body must be a JSON object' };
   // The machines are what it looks for: checked as a simulation's with any machines, then dropped.
@@ -121,9 +122,13 @@ export function validateSizing(body) {
   if (checked.error) return checked;
   const { target = TARGET_DEFAULT } = body;
   if (!Number.isInteger(target) || target < 50 || target > 99) return { error: 'Target must be a whole number from 50 to 99 %', field: 'target' };
+  const { coolDownMaxH = COOL_DOWN_MAX_H } = body;
+  if (!isNumber(coolDownMaxH) || coolDownMaxH < 0.5 || coolDownMaxH > 24) {
+    return { error: 'Longest cool-down must be a number from 0.5 to 24 h', field: 'coolDownMaxH' };
+  }
   const { physics, crops, farmType, stage } = checked.input;
   const { wallUA, outdoorHigh, outdoorLow, outdoorDew, sunW } = physics;
-  return { input: { physics: { wallUA, outdoorHigh, outdoorLow, outdoorDew, sunW }, crops, farmType, stage, target } };
+  return { input: { physics: { wallUA, outdoorHigh, outdoorLow, outdoorDew, sunW }, crops, farmType, stage, target, coolDownMaxH } };
 }
 
 // The default way to run a job: a worker thread. job: { input, ctx }; handlers: { onProgress(share), onDone(result),

@@ -95,8 +95,8 @@ test('suggest machines runs with no filter: its physics carry no filter field, e
     return { summary: { inBand: { t: 99, rh: 99, co2: 99, all: 99 }, energy: { kWh: 1 }, water: { litres: 1, removedLitres: 0 } } };
   };
   runSizing(checked.input, ctx, { simulate: fake, list: [{ machines: { fanFlow: 150, humidifierLH: 1, dehumidifierLday: 0, acBTU: 9000 }, exchangeMaxMin: 10 }], days: 1 });
-  assert.equal(seen.length, 1);
-  for (const key of Object.keys(filter)) assert.equal(seen[0][key], undefined, key);
+  assert.equal(seen.length, 2, 'held in band and cooled down');
+  for (const physics of seen) for (const key of Object.keys(filter)) assert.equal(physics[key], undefined, key);
 });
 
 test('a run without filter settings gives the numbers it gave before the filter existed (v2 ee4d30a)', () => {
