@@ -30,6 +30,8 @@ colors:
   series-temperature: "#f39a5b"
   series-humidity: "#3cb4f0"
   series-co2: "#a98bfa"
+  series-energy: "#c9b26a"
+  series-water: "#4fc1b0"
   page-light: "#f4f5f7"
   surface-light: "#ffffff"
   raised-light: "#f7f8fa"
@@ -45,6 +47,8 @@ colors:
   series-temperature-light: "#dd6b20"
   series-humidity-light: "#0284c7"
   series-co2-light: "#7c3aed"
+  series-energy-light: "#8a7425"
+  series-water-light: "#0f8f80"
 typography:
   display:
     fontFamily: "Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif"
@@ -228,6 +232,7 @@ A neutral grey ladder with one blue and three state colours; three series hues a
 
 ### Tertiary (series)
 - **Temperature Ember** (`series-temperature`), **Humidity Sky** (`series-humidity`), **CO₂ Violet** (`series-co2`): each quantity's trace on its Now reading card (with its band shaded at 13 % of the same hue) and its line on the History charts.
+- **Energy Brass** (`series-energy`, `--s-energy`) and **Water Teal** (`series-water`, `--s-water`): the electricity and water bars and lines (History, the energy cards, a simulation's per-day bars). They are their own quantities, so they never borrow the climate hues.
 
 ### Neutral
 - **Night Page** (`page`): the page behind the cards; the sticky Setup links bar on a phone.
@@ -241,7 +246,7 @@ A neutral grey ladder with one blue and three state colours; three series hues a
 ### Named Rules
 **The State-Only Colour Rule.** Everywhere outside the measured series, colour means state: blue is selection, primary action and running; green is in band; amber is warning; red is fault. Icons, headings, links in prose and target labels stay neutral (the Crop tab's target icons are `muted`).
 
-**The Series Identity Rule.** Temperature, humidity and CO₂ keep their own hues (`--s-t`, `--s-rh`, `--s-co2`) on the reading-card traces and the History charts. This deliberately adapts the category standard's "nothing else coloured": the hue carries a metric's identity from the Now tab to the History tab, which is a data job, not decoration. A series hue never marks state, never fills a button and never colours text other than a chart's own legend.
+**The Series Identity Rule.** (2026-10-28: energy and water have their own hues too.) Temperature, humidity and CO₂ keep their own hues (`--s-t`, `--s-rh`, `--s-co2`) on the reading-card traces and the History charts. This deliberately adapts the category standard's "nothing else coloured": the hue carries a metric's identity from the Now tab to the History tab, which is a data job, not decoration. A series hue never marks state, never fills a button and never colours text other than a chart's own legend.
 
 **The Mirror Rule.** Dark is the default (`data-theme="dark"`, stored per browser); the light theme redefines every token under the same name and adds nothing else except a 1 px card shadow. A new colour means a new token in both theme blocks.
 
@@ -266,6 +271,12 @@ On screens up to 600 px the three smallest steps grow by 1 px (13, 14, 15) for r
 
 ### Named Rules
 **The Tabular Figures Rule.** Every number that can change or line up (readings, bands, kWh, RM, timestamps, table cells) sets `font-variant-numeric: tabular-nums`.
+
+**The Near-Edge Rule.** A reading in band but within 15 % of the band's width of an edge says so ("In band · near the top") in amber: it is coming, not here. Out of band is amber, a fault or the safety level red.
+
+**The By-Hand Rule.** A value a person set that differs from the program (a band changed on Setup) is shown in the accent text colour with the program's own value under it and a way back ("Back to stage values"): a choice, not a warning.
+
+**The Navigation Rule.** The top bar holds the farm's name, Live, the theme, Overview and Settings, and a red alarm button only while there are alarms. The Overview holds every room (the Rooms list is folded into it) and Add room; a room is reached from its card or the room switch on its page.
 
 **The One Format Rule.** A quantity has one formatter and every tab uses it: humidity and filter pressure to one decimal (91.2 % RH, 40.2 Pa), metric units with a space before them, ranges with an en dash (19–21 °C). If two tabs could disagree about a number, they share the formatter.
 
