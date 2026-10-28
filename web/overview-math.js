@@ -73,14 +73,27 @@ export function farmStatus(rooms) {
   const t = tiles(rooms);
   const manual = rooms.filter((r) => !r.auto && wired(r)).length;
   const attention = rooms.filter((r) => r.alarms.count > 0 || (!r.auto && wired(r))).length;
+  const bare = rooms.filter((r) => !wired(r) && r.alarms.count === 0).length; // nothing wired: not set up, never OK
   const facts = [t.alarms === 0 ? 'No alarms' : plural(t.alarms, 'alarm', 'alarms')];
   if (manual > 0) facts.push(`${plural(manual, 'room', 'rooms')} in Manual`);
   facts.push(t.exchanges === 0 ? 'No air exchange running' : `${plural(t.exchanges, 'air exchange', 'air exchanges')} running`);
-  if (attention === 0) return { text: `All ${plural(rooms.length, 'room', 'rooms')} OK`, tone: 'good', facts };
+  if (attention === 0) {
+    const ok = rooms.length - bare;
+    if (bare === 0) return { text: `All ${plural(rooms.length, 'room', 'rooms')} OK`, tone: 'good', facts };
+    if (ok === 0) return { text: `${plural(bare, 'room', 'rooms')} not set up`, tone: 'none', facts };
+    return { text: `${plural(ok, 'room', 'rooms')} OK · ${bare} not set up`, tone: 'good', facts };
+  }
   return {
     text: `${attention} of ${plural(rooms.length, 'room', 'rooms')} ${attention === 1 ? 'needs' : 'need'} attention`,
     tone: t.level ?? 'amber', facts,
   };
+}
+
+// The room cards' order: rooms that need someone first (alarms by level, then Manual), then OK, then the ones not set up;
+// the server's order (by name) inside each group.
+export function sortRooms(rooms) {
+  const rank = (r) => (r.alarms.count > 0 ? 3 - alarmLevelRank(r.alarms.level) / 10 : !wired(r) ? 7 : !r.auto ? 4 : 5);
+  return rooms.map((r, i) => [r, i]).sort((a, b) => rank(a[0]) - rank(b[0]) || a[1] - b[1]).map(([r]) => r);
 }
 
 // Critical first, then newest (the order of GET /api/alarms).
@@ -150,13 +163,15 @@ export function roomCard(room, now = Date.now()) {
   const n = room.alarms.count;
   // The room's state in one pill: its alarms first, then Manual, OK, or nothing wired.
   const state = n > 0 ? { text: `${n} ${n === 1 ? 'alarm' : 'alarms'}`, tone: room.alarms.level }
-    : !wired(room) ? { text: 'Not wired', tone: 'none' }
+    : !wired(room) ? { text: 'Not set up', tone: 'none' }
       : !room.auto ? { text: 'Manual', tone: 'amber' } : { text: 'OK', tone: 'good' };
   return {
     href: `#/rooms/${room.id}`,
     name: room.name,
     values,
     state,
+    unwired: !wired(room), // nothing wired: the card is one line and a Set up link
+    setupHref: `#/rooms/${room.id}/setup`,
     auto: room.auto ? 'Auto' : 'Manual',
     exchange: exchangeText(room, now),
     alarm: n > 0 ? { text: `${n} ${n === 1 ? 'alarm' : 'alarms'}`, level: room.alarms.level } : null,

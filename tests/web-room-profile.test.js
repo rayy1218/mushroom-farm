@@ -14,12 +14,16 @@ test('the Add room dialog: every field built from the shared definitions, checke
   const dialog = html.slice(html.indexOf('<dialog id="room-dialog"'), html.indexOf('</dialog>', html.indexOf('<dialog id="room-dialog"')));
   assert.match(dialog, /<form id="room-form" novalidate>/);
   assert.match(dialog, /<h2 id="room-title">Add room<\/h2>/);
+  assert.match(dialog, /<button type="submit" class="primary" id="save">Add room<\/button>/);
   assert.match(dialog, /<div id="room-fields"><\/div>/);
   assert.doesNotMatch(dialog, /<input/, 'no inputs written by hand');
   const js = src('room-dialog.js');
   assert.match(js, /import \{ ROOM_GROUPS, fieldTexts, parseRoomFields, roomBody \} from '\.\/room-fields\.js';/);
   assert.match(js, /import \{ createRoomForm \} from '\.\/room-form\.js';/);
   assert.match(js, /createRoomForm\(ROOM_GROUPS, \{ idPrefix: 'f-' \}\)/);
+  // Only the name and size are asked (critique 2026-10-28): the equipment keeps its defaults and is set on the room's Setup.
+  assert.match(js, /\$\('room-fields'\)\.append\(\.\.\.fields\.parts\.profile\);/);
+  assert.doesNotMatch(js, /createElement\('fieldset'\)/);
   assert.match(js, /request\('POST', '\/api\/rooms', roomBody\(null, checked\.values\)\)/);
   assert.doesNotMatch(js, /'PUT'/, 'the dialog only adds');
 });
@@ -40,13 +44,6 @@ test('the room page has no Edit button and no Edit dialog: the two tabs replace 
   assert.doesNotMatch(template, /data-edit|>Edit</);
   assert.doesNotMatch(page, /room-dialog\.js|openRoomDialog/);
   assert.doesNotMatch(page, /'Edit room'/);
-});
-
-test('the Rooms list: Edit opens the room\'s Room profile tab, Add room the dialog', () => {
-  const list = src('rooms-list.js');
-  assert.match(list, /if \(b\.dataset\.action === 'edit'\) location\.hash = roomHash\(room\.id, 'profile'\);/);
-  assert.match(list, /openRoomDialog\(\{ onSaved: /);
-  assert.match(list, /els\.add\.addEventListener\('click', openAdd\);/);
 });
 
 test('the Room profile tab: the profile fields in one card, its own form with one Save and Reset', () => {
@@ -121,7 +118,7 @@ test('Delete room: a danger button, the Rooms list\'s confirm, then the Rooms li
   assert.match(edit, /deleteText\.textContent = `Delete \$\{room\.name\}\? This can't be undone\.`;/);
   assert.match(edit, /button\('Delete room', 'danger'\)/);
   assert.match(edit, /await request\('DELETE', `\/api\/rooms\/\$\{roomId\}`\);/);
-  assert.match(edit, /location\.hash = '#\/rooms';/);
+  assert.match(edit, /location\.hash = '#\/overview';/);
   assert.match(page, /createDeleteCard\(els\.deleteHost, \{ roomId: id, getRoom: \(\) => room, onGone: /);
 });
 

@@ -58,7 +58,7 @@ const CHARTS = [
 const TEMPLATE = `
   <div class="page-head room-head">
     <div class="page-titles">
-      <a class="back" href="#/rooms">Rooms</a>
+      <a class="back" href="#/overview">Overview</a>
       <div class="room-title-row"><h1 class="page-title" tabindex="-1" data-title>Room</h1><a class="pill manual-chip" data-tone="amber" data-manual-chip hidden></a></div>
       <p class="page-sub" data-sub>Loading…</p>
     </div>
@@ -70,7 +70,7 @@ const TEMPLATE = `
   </div>
   <div class="missing" data-missing hidden>
     <p>That room no longer exists</p>
-    <a href="#/rooms">Back to the rooms</a>
+    <a href="#/overview">Back to the Overview</a>
   </div>
   <div data-body hidden>
     <nav class="room-tabs" data-tabs aria-label="Room sections"></nav>

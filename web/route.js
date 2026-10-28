@@ -27,13 +27,13 @@ export function parseRoute(hash) {
   const m = new RegExp(`^#/rooms/${ID}(?:/([a-z]+))?/?$`).exec(hash ?? '');
   const tab = m && m[2] !== undefined ? tabOf(m[2]) : 'now';
   if (m && (tab === 'now' || NAMED_TABS.includes(tab)) && m[2] !== 'now') return { name: 'detail', id: Number(m[1]), tab };
-  if (/^#\/rooms\/?$/.test(hash ?? '')) return { name: 'list' };
+  // #/rooms (the Rooms list until 2026-10-28) is the Overview now: it holds every room and Add room.
   if (/^#\/settings\/?$/.test(hash ?? '')) return { name: 'settings' };
   return { name: 'overview' };
 }
 
 export function isCanonical(hash) {
-  if (hash === '#/overview' || hash === '#/rooms' || hash === '#/settings') return true;
+  if (hash === '#/overview' || hash === '#/settings') return true;
   if (/^#\/rooms\/[1-9][0-9]{0,14}\/simulations\/[1-9][0-9]{0,14}$/.test(hash ?? '')) return true;
   const route = parseRoute(hash);
   return route.name === 'detail' && hash === roomHash(route.id, route.tab);

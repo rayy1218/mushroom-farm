@@ -34,7 +34,7 @@ const TEMPLATE = `
   </div>
   <div class="missing" data-missing hidden>
     <p>That simulation no longer exists</p>
-    <a data-missing-back href="#/rooms">Back to the room</a>
+    <a data-missing-back href="#/overview">Back to the Overview</a>
   </div>
   <section class="card sim-run" data-run hidden>
     <h2>Simulation</h2>

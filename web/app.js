@@ -2,7 +2,6 @@
 // A page is { mount(container, params) → unmount() }.
 
 import { parseRoute, isCanonical, roomHash } from './route.js';
-import * as list from './rooms-list.js';
 import * as detail from './room-detail.js';
 import * as simulation from './simulation-page.js';
 import * as settings from './settings-page.js';
@@ -15,7 +14,6 @@ import { fallbackMs, liveMark } from './live-math.js';
 const view = document.getElementById('view');
 const menuLinks = {
   overview: document.querySelectorAll('[data-nav="overview"]'),
-  list: document.querySelectorAll('[data-nav="rooms"]'),
   settings: document.querySelectorAll('[data-nav="settings"]'),
 };
 
@@ -29,7 +27,7 @@ function show() {
     // Tidy an empty or unknown hash without adding a history entry.
     history.replaceState(null, '', route.name === 'simulation' ? `#/rooms/${route.id}/simulations/${route.runId}`
       : route.name === 'detail' ? roomHash(route.id, route.tab) : route.name === 'settings' ? '#/settings'
-      : route.name === 'list' ? '#/rooms' : '#/overview');
+      : '#/overview');
   }
   const route = parseRoute(location.hash);
   // Another tab of the same room: the page stays (its data, scroll and focus); only the panel changes.
@@ -49,10 +47,9 @@ function show() {
   unmount = route.name === 'simulation' ? simulation.mount(view, { id: route.id, runId: route.runId })
     : route.name === 'detail' ? detail.mount(view, { id: route.id, tab: route.tab })
     : route.name === 'settings' ? settings.mount(view, {})
-    : route.name === 'list' ? list.mount(view, {})
     : overview.mount(view, {});
   // The Rooms entry stays current on a room's page.
-  const section = route.name === 'settings' ? 'settings' : route.name === 'overview' ? 'overview' : 'list';
+  const section = route.name === 'settings' ? 'settings' : route.name === 'overview' ? 'overview' : null;
   for (const [name, links] of Object.entries(menuLinks)) {
     for (const a of links) {
       if (name === section) a.setAttribute('aria-current', 'page');
@@ -113,9 +110,10 @@ const titleNode = document.querySelector('title');
 let badge = 0;
 
 function showBadge() {
-  for (const el of document.querySelectorAll('[data-badge]')) {
-    el.textContent = String(badge);
-    el.hidden = badge === 0;
+  for (const el of document.querySelectorAll('[data-badge]')) el.textContent = String(badge);
+  for (const el of document.querySelectorAll('[data-alarm-button]')) {
+    el.hidden = badge === 0; // only while there are alarms to see
+    el.setAttribute('aria-label', `${badge} ${badge === 1 ? 'alarm' : 'alarms'}: open the Overview`);
   }
   const next = withTitlePrefix(document.title, badge);
   if (next !== document.title) document.title = next; // pages set their own title: the observer below puts the prefix back

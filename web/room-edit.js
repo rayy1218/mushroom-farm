@@ -244,7 +244,7 @@ export function createDeleteCard(host, { roomId, getRoom, onGone }) {
     del.disabled = true;
     try {
       await request('DELETE', `/api/rooms/${roomId}`);
-      if (alive) location.hash = '#/rooms';
+      if (alive) location.hash = '#/overview';
     } catch (e) {
       if (!alive) return;
       del.disabled = false;

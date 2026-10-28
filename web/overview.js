@@ -7,10 +7,12 @@ import { refreshMs } from './settings-math.js';
 import { live } from './live.js';
 import { fallbackMs, createThrottle } from './live-math.js';
 import { loadOverview } from './overview-data.js';
-import { farmStatus, roomCard, alarmTimeText, SPARK_W, SPARK_H } from './overview-math.js';
+import { farmStatus, sortRooms, roomCard, alarmTimeText, SPARK_W, SPARK_H } from './overview-math.js';
 import { outdoorCard } from './outdoor-math.js';
 import { roomLines, USAGE_DAYS, USAGE_REFRESH_MS } from './usage-math.js';
 import { usageTileNodes } from './usage.js';
+import { openRoomDialog, closeRoomDialog } from './room-dialog.js';
+import { roomHash } from './route.js';
 
 export const ALARMS_CHANGED = 'farm:alarms-changed';
 const NS = 'http://www.w3.org/2000/svg';
@@ -22,6 +24,7 @@ const TEMPLATE = `
       <h1 class="page-title" tabindex="-1">Overview</h1>
       <p class="page-sub">Is the farm OK? All rooms at a glance.</p>
     </div>
+    <div class="page-actions"><button type="button" data-add>Add room</button></div>
   </div>
   <div class="banner" role="alert" hidden>
     <span data-banner-text></span>
@@ -35,12 +38,10 @@ const TEMPLATE = `
       <ul class="ov-alarm-list" data-alarm-list></ul>
     </section>
     <div class="empty" data-empty hidden>
-      <p>No rooms yet</p>
-      <a href="#/rooms">Go to Rooms to add one</a>
+      <p>No rooms yet. Add room above to make the first one.</p>
     </div>
     <div class="ov-section-head">
       <h2>Rooms</h2>
-      <a href="#/rooms">Show all rooms</a>
     </div>
     <div class="ov-rooms" data-rooms></div>
     <div class="ov-farm" data-farm></div>
@@ -167,7 +168,7 @@ export function mount(container) {
     }
     els.empty.hidden = rooms.length > 0;
     const now = Date.now();
-    els.rooms.replaceChildren(...rooms.map((room) => {
+    els.rooms.replaceChildren(...sortRooms(rooms).map((room) => {
       const c = roomCard(room, now);
       const card = node('section', 'card ov-room');
       const head = node('div', 'ov-room-head');
@@ -177,6 +178,15 @@ export function mount(container) {
       name.append(link);
       head.append(name, pill(c.state.text, c.state.tone));
       card.append(head);
+      if (c.unwired) { // nothing wired yet: one line and the way to wire it
+        card.classList.add('ov-room-bare');
+        const line = node('p', 'ov-bare', 'No sensors or machines wired yet. ');
+        const setup = node('a', '', 'Set up the room');
+        setup.href = c.setupHref;
+        line.append(setup);
+        card.append(line);
+        return card;
+      }
       for (const v of c.values) {
         const row = node('div', 'ov-value');
         const text = node('div', 'ov-value-text');
@@ -289,6 +299,10 @@ export function mount(container) {
     if (alive()) load();
   });
   els.retry.addEventListener('click', load);
+  // Add room: its name and size, then the new room opens on its Setup tab to wire its sensors and machines.
+  q('[data-add]').addEventListener('click', () => {
+    openRoomDialog({ onSaved: (room) => { location.hash = roomHash(room.id, 'setup'); } });
+  });
 
   // Live updates: a room, an alarm or the outdoor probe changing asks again (a minute's timer is the fallback while the stream is up).
   const reload = createThrottle(() => { if (alive()) load(); }); // at most one load in 2 s
@@ -305,6 +319,7 @@ export function mount(container) {
     reload.cancel();
     for (const off of offLive) off();
     clearTimeout(timer);
+    closeRoomDialog();
     container.replaceChildren();
   };
 }

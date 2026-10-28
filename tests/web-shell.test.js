@@ -1,5 +1,5 @@
-// The app's frame (owner, 2026-10-26): no side bar and no bottom tab bar; one bar on top with the farm's name (to the
-// Overview, with the alarm count) and Settings at the right; the Overview has a Rooms title with "Show all rooms".
+// The app's frame (owner, 2026-10-26: no side bar, no bottom tab bar; 2026-10-28: Overview and Settings in the top bar, the
+// alarm count its own button, the Rooms list folded into the Overview).
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -15,15 +15,19 @@ test('one bar on top: no side bar, no bottom tab bar', () => {
   assert.equal((html.match(/<header class="topbar">/g) ?? []).length, 1);
 });
 
-test('the farm\'s name goes to the Overview and carries the alarm count; Settings sits at the right end', () => {
+test('the top bar: the farm\'s name, then Overview and Settings as links, the alarm count as its own button', () => {
   const bar = html.slice(html.indexOf('<header class="topbar">'), html.indexOf('</header>'));
-  assert.match(bar, /<a class="brand brand-top" href="#\/overview" data-nav="overview"[^>]*>.*<span class="nav-badge" data-badge hidden><\/span><\/a>/);
+  assert.match(bar, /<a class="brand brand-top" href="#\/overview"/);
+  assert.match(bar, /<a class="top-link" href="#\/overview" data-nav="overview">/);
   assert.match(bar, /<a class="top-link" href="#\/settings" data-nav="settings" aria-label="Settings">/);
-  assert.ok(bar.indexOf('data-live') < bar.indexOf('theme-btn') && bar.indexOf('theme-btn') < bar.indexOf('top-link'), 'Live, theme, then Settings last');
+  assert.match(bar, /<a class="top-alarm" href="#\/overview" data-alarm-button hidden><svg[^]*<span data-badge><\/span><\/a>/);
+  assert.ok(bar.indexOf('data-nav="overview"') < bar.indexOf('data-nav="settings"'), 'Overview before Settings');
   assert.equal((html.match(/data-badge/g) ?? []).length, 1);
 });
 
-test('the Overview: a Rooms title over the room cards, with Show all rooms to the room list', () => {
+test('the Overview holds every room and Add room (the Rooms list is folded into it)', () => {
   const overview = readFileSync(new URL('../web/overview.js', import.meta.url), 'utf8');
-  assert.match(overview, /<div class="ov-section-head">\n\s*<h2>Rooms<\/h2>\n\s*<a href="#\/rooms">Show all rooms<\/a>\n\s*<\/div>\n\s*<div class="ov-rooms" data-rooms><\/div>/);
+  assert.match(overview, /<button type="button" data-add>Add room<\/button>/);
+  assert.match(overview, /<div class="ov-section-head">\n\s*<h2>Rooms<\/h2>\n\s*<\/div>\n\s*<div class="ov-rooms" data-rooms><\/div>/);
+  assert.match(overview, /openRoomDialog\(\{ onSaved: \(room\) => \{ location\.hash = roomHash\(room\.id, 'setup'\); \} \}\)/, 'a new room opens on its Setup');
 });

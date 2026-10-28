@@ -245,6 +245,10 @@ html { scroll-padding-top: var(--topbar-h); }
   color: var(--ink-2); text-decoration: none; font-weight: 600; }
 .top-link:hover { background: var(--band); color: var(--ink); }
 .top-link[aria-current="page"] { background: var(--band); color: var(--ink); }
+.top-alarm { display: inline-flex; align-items: center; gap: 6px; flex: none; min-height: 36px; padding: 4px 10px; border-radius: 8px;
+  background: var(--critical); color: var(--on-critical); text-decoration: none; font-weight: 700; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.top-alarm:hover { opacity: .9; }
+@media (max-width: 600px) { .top-alarm { min-height: 44px; } .top-link span { display: none; } }
 .live-mark { display: inline-flex; align-items: center; gap: 6px; flex: none; font-size: 0.8125rem; font-weight: 600; color: var(--ink-2); }
 .live-dot { width: 8px; height: 8px; border-radius: 50%; border: 2px solid currentColor; box-sizing: border-box; }
 .live-mark[data-live="on"] { color: var(--ink); }
@@ -574,6 +578,8 @@ button.toggle[data-on="true"]:hover { background: color-mix(in srgb, var(--accen
 .ov-status-dot[data-tone="amber"], .ov-status-dot[data-tone="warning"] { background: var(--warning); }
 .ov-status-dot[data-tone="serious"], .ov-status-dot[data-tone="critical"] { background: var(--critical); }
 .ov-facts { display: flex; flex-wrap: wrap; gap: 4px 20px; margin: 0; padding: 0; list-style: none; color: var(--ink-2); font-size: var(--fs-sm); }
+.ov-bare { margin: 0; color: var(--ink-2); }
+.ov-room-bare { align-self: start; }
 .ov-band { margin-left: 8px; font-size: var(--fs-xs); font-weight: 600; color: var(--muted); }
 .ov-band[data-tone="good"] { color: var(--good-text); }
 .ov-band[data-tone="amber"] { color: var(--warning-text); }

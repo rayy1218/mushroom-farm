@@ -8,8 +8,9 @@ test('empty and unknown hashes mean the Overview', () => {
   }
 });
 
-test('#/rooms is the Rooms list', () => {
-  assert.deepEqual(parseRoute('#/rooms'), { name: 'list' });
+test('#/rooms is the Overview now (the Rooms list is folded into it); the old address is tidied', () => {
+  assert.deepEqual(parseRoute('#/rooms'), { name: 'overview' });
+  assert.equal(isCanonical('#/rooms'), false);
 });
 
 test('a room id means the detail page, on its Now tab', () => {
@@ -44,7 +45,6 @@ test("the old nine tabs' addresses (bookmarks, links) open the tab that holds th
 });
 
 test('canonical hashes are left alone, others are tidied', () => {
-  assert.equal(isCanonical('#/rooms'), true);
   assert.equal(isCanonical('#/overview'), true);
   assert.equal(isCanonical('#/rooms/7'), true);
   assert.equal(isCanonical(''), false);

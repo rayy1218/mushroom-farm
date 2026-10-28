@@ -1,5 +1,4 @@
-// The Add room dialog of the Rooms list: every field of a room (a new room needs its name and size; its equipment can be set
-// here or later on the room page's Equipment tab). The fields are built from web/room-fields.js, like the room page's Room
+// The Add room dialog of the Overview: a new room's name and size (its equipment is set next, on the room's Setup tab). The fields are built from web/room-fields.js, like the room page's Room
 // profile and Equipment tabs; the dialog's frame lives in index.html.
 
 import { request, ApiError, OFFLINE } from './api.js';
@@ -14,19 +13,13 @@ const formError = $('form-error');
 const save = $('save');
 
 const fields = createRoomForm(ROOM_GROUPS, { idPrefix: 'f-' });
-// The name and sizes first, then a section per group of equipment.
-for (const group of ROOM_GROUPS) {
-  if (group.key === 'profile') {
-    $('room-fields').append(...fields.parts.profile);
-    continue;
-  }
-  const set = document.createElement('fieldset');
-  set.className = 'addresses';
-  const legend = document.createElement('legend');
-  legend.textContent = group.title;
-  set.append(legend, ...fields.parts[group.key]);
-  $('room-fields').append(set);
-}
+// Only the name and size (critique 2026-10-28: the equipment waits until the room exists): the other fields keep their
+// defaults, and the new room opens on its Setup tab to wire its sensors and machines.
+$('room-fields').append(...fields.parts.profile);
+const next = document.createElement('p');
+next.className = 'muted s-hint';
+next.textContent = 'Sensors and machines come next, on the room\'s Setup tab.';
+$('room-fields').append(next);
 
 let opened = 0; // counts openings, so a late save can tell it is stale
 let callbacks = {};
@@ -36,7 +29,7 @@ function clearErrors() {
   fields.clearErrors();
 }
 
-// onSaved(): the room was added.
+// onSaved(room): the room was added (the server's reply).
 export function openRoomDialog({ onSaved } = {}) {
   opened++;
   callbacks = { onSaved };
@@ -76,10 +69,10 @@ form.addEventListener('submit', async (event) => {
   const mine = opened;
   save.disabled = true;
   try {
-    await request('POST', '/api/rooms', roomBody(null, checked.values));
+    const room = await request('POST', '/api/rooms', roomBody(null, checked.values));
     // The room is saved either way; only close the dialog if it is still the one that was saved.
     if (mine === opened) dialog.close();
-    callbacks.onSaved?.();
+    callbacks.onSaved?.(room);
   } catch (err) {
     if (mine !== opened) return;
     if (err.status === 400 || err.status === 409) showFormError(err);
