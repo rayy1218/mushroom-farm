@@ -216,7 +216,7 @@ const MACHINES = [
   { key: 'intake', name: 'Intake fan', effect: 'Air in',
     detail: (u, c, f) => (!f ? 'No filter sensor' : f.pa === null ? 'Filter: no reading yet' : `Filter ${f.pa.toFixed(1)}\u00a0Pa`) },
   { key: 'ac', name: 'Aircon', effect: 'Cools', detail: (u) => (u.sub ? `${u.state}${DOT}${fanWord(u.sub)}` : u.state) },
-  { key: 'circ', name: 'Circulation', effect: 'Mixes the air', detail: (u, c) => (c?.auto ? 'Always on' : 'Set by hand') },
+  { key: 'circ', name: 'Circulation fan', effect: 'Mixes the air', detail: (u, c) => (c?.auto ? 'Always on' : 'Set by hand') },
   { key: 'lights', name: 'Lights', effect: 'Light for the crop', detail: (u, c, f, crop) => (c?.auto ? lightShort(crop) : 'Set by hand') },
   // The controller's real rule (server/controller.js decide): the humidifier on and off at its points inside the band
   // (band-math.js humidifierPoints); the dehumidifier on at the upper limit, off at the middle of the band.

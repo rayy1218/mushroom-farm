@@ -153,7 +153,7 @@ test('machineTiles: six in air-path order with their effect and detail', () => {
   const filter = { pa: 40.4 };
   const tiles = machineTiles(draw({ machines: { relay: relay({ dehumidifier: { status: 'off' }, circulation: { status: 'on', running: true } }), ac: ac() } }), control, filter);
   assert.deepEqual(tiles.map((m) => [m.step, m.name, m.effect]), [
-    [1, 'Intake fan', 'Air in'], [2, 'Aircon', 'Cools'], [3, 'Circulation', 'Mixes the air'],
+    [1, 'Intake fan', 'Air in'], [2, 'Aircon', 'Cools'], [3, 'Circulation fan', 'Mixes the air'],
     [4, 'Humidifier', 'Adds moisture'], [5, 'Dehumidifier', 'Dries'], [6, 'Exhaust fan', 'Air out'],
   ]);
   assert.deepEqual(tiles.map((m) => m.detail), ['Filter 40.4\u00a0Pa', 'Cool 21.5 °C ·\u00a0fan auto', 'Always on', 'On at 91.3\u00a0%\u00a0RH, off at 93.8\u00a0%\u00a0RH',

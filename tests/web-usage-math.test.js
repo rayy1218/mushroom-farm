@@ -193,3 +193,10 @@ test('the breakdown note says the dehumidifier is estimated too when metered and
   assert.match(breakdownNote(metered), /fans and the humidifier are estimated/);
   assert.match(breakdownNote(metered, { dehumidifier: true }), /fans, the humidifier and the dehumidifier are estimated/);
 });
+
+// Critique 2026-10-29: the energy tables said "Intake", "Exhaust", "Circulation" while the Machines list said the fans' names.
+test('the energy tables name the machines as the Machines list does', async () => {
+  const { MACHINE_ROWS } = await import('../web/usage-math.js');
+  const { MACHINE_NAMES } = await import('../web/machines-math.js');
+  for (const row of MACHINE_ROWS.filter((r) => MACHINE_NAMES[r.key])) assert.equal(row.label, MACHINE_NAMES[row.key], row.key);
+});

@@ -157,10 +157,11 @@ export function barTip(bar, kind) {
 
 // ---------------- the breakdown table ----------------
 
+// The machines' names as the Machines list says them (critique 2026-10-29: "Intake" here, "Intake fan" there).
 export const MACHINE_ROWS = [
-  { key: 'intake', label: 'Intake' },
-  { key: 'exhaust', label: 'Exhaust' },
-  { key: 'circulation', label: 'Circulation' },
+  { key: 'intake', label: 'Intake fan' },
+  { key: 'exhaust', label: 'Exhaust fan' },
+  { key: 'circulation', label: 'Circulation fan' },
   { key: 'humidifier', label: 'Humidifier' },
   { key: 'dehumidifier', label: 'Dehumidifier' },
   { key: 'lights', label: 'Lights' },
