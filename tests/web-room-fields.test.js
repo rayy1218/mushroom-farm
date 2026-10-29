@@ -152,8 +152,10 @@ test('labels: the unit in brackets, the hint of the reminder; boxes and addresse
 
 test('the volume, worked out live from the three sizes', () => {
   assert.match(volumeText({ length: '4', width: '3', height: '2.5' }), /^Volume: 30[.,]0 m³$/);
-  assert.equal(volumeText({ length: '4', width: '', height: '2.5' }), 'Volume: — m³');
-  assert.equal(volumeText({ length: 'x', width: '3', height: '2.5' }), 'Volume: — m³');
+  // nothing until the three sizes are given (critique 2026-10-29c: Add room opened on "Volume: — m³")
+  assert.equal(volumeText({ length: '4', width: '', height: '2.5' }), '');
+  assert.equal(volumeText({ length: 'x', width: '3', height: '2.5' }), '');
+  assert.equal(volumeText({}), '');
 });
 
 // The browser checks step before the form's own check runs, so a rating of 62.5 W must not be blocked by the markup.
