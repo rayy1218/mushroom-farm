@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import {
   farmStatus, sortRooms, phoneAlarms,
   roomCard, sparkPath, tiles, badgeCount, withTitlePrefix, sensorText, exchangeText, alarmLevelRank, sortAlarms, alarmTimeText, SPARKS,
-  roomReadings, outOfBand,
+  roomReadings, outOfBand, nearEdges,
 } from '../web/overview-math.js';
 import { parseRoute, isCanonical } from '../web/route.js';
 
@@ -279,4 +279,45 @@ test('critique 2026-10-28 layout: the farm cards keep their own height, the ener
   assert.match(css, /\.us-room a \{ display: inline-flex; align-items: center; justify-self: start; min-height: 44px; \}/);
   assert.match(css, /\.brand-text strong \{ white-space: normal; overflow: visible; line-height: 1\.1; \}/);
   assert.match(css, /@container \(max-width: 100px\) \{ \.brand-top \.brand-text \{ display: none; \} \}/);
+});
+
+// Critique 2026-10-29 (owner): a room in band with an amber near-edge reading is not "OK" beside that amber, and not a room
+// that needs attention either: its pill says Watch, the status line names it.
+test('a room in band with a reading near an edge, its machine not acting: Watch, named in the status, sorted after Manual', () => {
+  const now = at(29, 12);
+  const bands = { tLow: 19, tHigh: 21, rhLow: 87, rhHigh: 93, co2Low: 700, co2High: 900 };
+  const r = (name, over) => ({
+    id: 1, name, alarms: { count: 0, level: null }, exchange: false, auto: true, bands,
+    trh: { status: 'online', t: 20, rh: 90 }, co2: { status: 'online', co2: 800 }, spark: { t: [], rh: [], co2: [] },
+    machines: { humidifier: true, dehumidifier: false, cooling: true }, ...over,
+  });
+  const wet = r('Room 1', { trh: { status: 'online', t: 20, rh: 92.5 } }); // near high, the dehumidifier off
+  const ok = r('Room 2');
+  assert.deepEqual(nearEdges(wet), [{ key: 'rh', text: 'Humidity near high' }]);
+  assert.deepEqual(nearEdges(ok), []);
+  assert.deepEqual(nearEdges(r('A', { trh: { status: 'online', t: 20, rh: 92.5 }, machines: { humidifier: true, dehumidifier: true, cooling: true } })), [],
+    'the dehumidifier on it: calm');
+  assert.deepEqual(nearEdges(r('A', { trh: { status: 'online', t: 19.1, rh: 87.2 }, machines: { humidifier: false, dehumidifier: null, cooling: true } })),
+    [{ key: 't', text: 'Temperature near low' }, { key: 'rh', text: 'Humidity near low' }]);
+  assert.deepEqual(nearEdges(r('A', { trh: { status: 'offline', t: 20, rh: 92.5 } })), [], 'an offline sensor\'s last value is not now');
+  assert.deepEqual(roomCard(wet, now).state, { text: 'Watch', tone: 'amber' });
+  assert.deepEqual(roomCard({ ...wet, auto: false }, now).state, { text: 'Manual', tone: 'amber' }, 'Manual before Watch');
+  assert.deepEqual(roomCard({ ...wet, alarms: { count: 1, level: 'warning' } }, now).state, { text: '1 alarm', tone: 'warning' });
+  assert.deepEqual(roomCard(ok, now).state, { text: 'OK', tone: 'good' });
+  assert.deepEqual(farmStatus([wet, ok, r('Room 3'), r('Room 4')]),
+    { text: '3 rooms OK · Room 1 humidity near high', tone: 'amber', facts: ['No alarms', 'No air exchange running'] });
+  assert.equal(farmStatus([wet]).text, 'Room 1 humidity near high');
+  const hot = r('Room 3', { trh: { status: 'online', t: 20.9, rh: 90 }, machines: { humidifier: true, dehumidifier: null, cooling: false } });
+  assert.equal(farmStatus([wet, ok, hot]).text, '1 room OK · 2 rooms to watch');
+  assert.equal(farmStatus([wet, hot]).text, '2 rooms to watch');
+  const both = r('Room 5', { trh: { status: 'online', t: 20.9, rh: 92.5 }, machines: { humidifier: true, dehumidifier: false, cooling: false } });
+  assert.equal(farmStatus([both, ok]).text, '1 room OK · Room 5 temperature near high, humidity near high');
+  const unwired = r('Room 9', { auto: false, trh: { status: 'not-wired' }, co2: { status: 'not-wired' } });
+  assert.equal(farmStatus([wet, ok, unwired]).text, '1 room OK · Room 1 humidity near high · 1 not set up');
+  // with a room that needs attention, the room to watch is one of the facts
+  assert.deepEqual(farmStatus([wet, r('Room 2', { auto: false })]),
+    { text: '1 of 2 rooms needs attention', tone: 'amber', facts: ['No alarms', '1 room in Manual', 'Room 1 humidity near high', 'No air exchange running'] });
+  assert.deepEqual(farmStatus([wet, hot, r('Room 2', { auto: false })]).facts, ['No alarms', '1 room in Manual', '2 rooms to watch', 'No air exchange running']);
+  const order = sortRooms([ok, wet, r('manual', { auto: false })]).map((x) => x.name);
+  assert.deepEqual(order, ['manual', 'Room 1', 'Room 2']);
 });

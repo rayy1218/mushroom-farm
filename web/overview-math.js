@@ -89,23 +89,31 @@ export function outOfBand(room) {
 // The line at the top of the Overview (redesign 2026-10-28, in place of three number tiles): { text, tone, facts } or null
 // without rooms. A room needs attention with an alarm, a reading out of band or in Manual (with something wired); the tone
 // is the worst alarm's level, amber without alarms. One reading out of band is named ("Humidity low in Container Alpha").
+// A room otherwise OK with a reading near an edge (nearEdges) is one to watch, not one that needs attention: named when it
+// is the only one ("3 rooms OK · Room 1 humidity near high"), counted when there are more ("2 rooms to watch"), amber.
 export function farmStatus(rooms) {
   if (!rooms?.length) return null;
   const t = tiles(rooms);
   const manual = rooms.filter((r) => !r.auto && wired(r)).length;
   const out = rooms.flatMap((r) => outOfBand(r).map((x) => ({ ...x, room: r.name })));
-  const attention = rooms.filter((r) => r.alarms.count > 0 || outOfBand(r).length > 0 || (!r.auto && wired(r))).length;
+  const needs = (r) => r.alarms.count > 0 || outOfBand(r).length > 0 || (!r.auto && wired(r));
+  const attention = rooms.filter(needs).length;
+  const watch = rooms.filter((r) => !needs(r) && wired(r) && nearEdges(r).length > 0);
+  const watchText = watch.length === 1
+    ? `${watch[0].name} ${nearEdges(watch[0]).map((x) => x.text.toLowerCase()).join(', ')}`
+    : watch.length > 1 ? `${watch.length} rooms to watch` : null;
   const bare = rooms.filter((r) => !wired(r) && r.alarms.count === 0).length; // nothing wired: not set up, never OK
   const facts = [t.alarms === 0 ? 'No alarms' : plural(t.alarms, 'alarm', 'alarms')];
   if (out.length === 1) facts.push(`${out[0].text} in ${out[0].room}`);
   else if (out.length > 1) facts.push(`${out.length} readings out of band`);
   if (manual > 0) facts.push(`${plural(manual, 'room', 'rooms')} in Manual`);
+  if (attention > 0 && watchText) facts.push(watchText);
   facts.push(t.exchanges === 0 ? 'No air exchange running' : `${plural(t.exchanges, 'air exchange', 'air exchanges')} running`);
   if (attention === 0) {
-    const ok = rooms.length - bare;
-    if (bare === 0) return { text: `All ${plural(rooms.length, 'room', 'rooms')} OK`, tone: 'good', facts };
-    if (ok === 0) return { text: `${plural(bare, 'room', 'rooms')} not set up`, tone: 'none', facts };
-    return { text: `${plural(ok, 'room', 'rooms')} OK · ${bare} not set up`, tone: 'good', facts };
+    const ok = rooms.length - bare - watch.length;
+    const parts = [ok > 0 ? (bare === 0 && !watchText ? `All ${plural(ok, 'room', 'rooms')} OK` : `${plural(ok, 'room', 'rooms')} OK`) : null,
+      watchText, bare > 0 ? (ok > 0 || watchText ? `${bare} not set up` : `${plural(bare, 'room', 'rooms')} not set up`) : null].filter(Boolean);
+    return { text: parts.join(' · '), tone: watchText ? 'amber' : ok > 0 ? 'good' : 'none', facts };
   }
   return {
     text: `${attention} of ${plural(rooms.length, 'room', 'rooms')} ${attention === 1 ? 'needs' : 'need'} attention`,
@@ -125,10 +133,11 @@ export function phoneAlarms(settings) {
   return null;
 }
 
-// The room cards' order: rooms that need someone first (alarms by level, then a reading out of band, then Manual), then OK,
-// then the ones not set up; the server's order (by name) inside each group.
+// The room cards' order: rooms that need someone first (alarms by level, then a reading out of band, then Manual), then the
+// ones to watch, then OK, then the ones not set up; the server's order (by name) inside each group.
 export function sortRooms(rooms) {
-  const rank = (r) => (r.alarms.count > 0 ? 3 - alarmLevelRank(r.alarms.level) / 10 : !wired(r) ? 7 : outOfBand(r).length ? 3.5 : !r.auto ? 4 : 5);
+  const rank = (r) => (r.alarms.count > 0 ? 3 - alarmLevelRank(r.alarms.level) / 10 : !wired(r) ? 7 : outOfBand(r).length ? 3.5 : !r.auto ? 4
+    : nearEdges(r).length ? 4.5 : 5);
   return rooms.map((r, i) => [r, i]).sort((a, b) => rank(a[0]) - rank(b[0]) || a[1] - b[1]).map(([r]) => r);
 }
 
@@ -174,10 +183,30 @@ function bandChip(sensor, field, low, high, spark, room) {
   }
   if (v > high) return { text: 'Above band', tone: 'amber' };
   if (v < low) return { text: 'Below band', tone: 'amber' };
+  const near = nearOf(v, field, low, high, spark, room);
+  return near ? { text: near.text, tone: 'amber' } : { text: 'In band', tone: 'good' };
+}
+
+// The amber near-edge words of an in-band value (band-math.js nearChip) or null; the trend is the last hour of the sparkline.
+function nearOf(v, field, low, high, spark, room) {
   const points = (spark ?? []).map((p) => ({ at: p.at, value: p.v }));
   if (points.length) points.push({ at: Math.max(...points.map((p) => p.at)) + 1, value: v }); // the live value ends it
-  const near = nearChip(field, v, low, high, { trend: trendOf(points, 60 * 60_000), points, machines: room.machines ?? null });
-  return near ? { text: near.text, tone: 'amber' } : { text: 'In band', tone: 'good' };
+  return nearChip(field, v, low, high, { trend: trendOf(points, 60 * 60_000), points, machines: room.machines ?? null });
+}
+
+// A room's temperature and humidity in band but near an edge with amber words, from online sensors only (critique
+// 2026-10-29, owner: "OK" beside an amber "Near high" read as a contradiction): [{ key, text }], "Humidity near high".
+export function nearEdges(room) {
+  const b = room?.bands;
+  if (!b) return [];
+  const out = [];
+  for (const [key, name, low, high] of [['t', 'Temperature', b.tLow, b.tHigh], ['rh', 'Humidity', b.rhLow, b.rhHigh]]) {
+    const v = room.trh?.status === 'online' && finite(room.trh[key]) ? room.trh[key] : null;
+    if (v === null || !finite(low) || !finite(high) || v > high || v < low) continue;
+    const near = nearOf(v, key, low, high, room.spark?.[key], room);
+    if (near) out.push({ key, text: `${name} near ${near.edge === 'top' ? 'high' : 'low'}` });
+  }
+  return out;
 }
 
 // A room's values now for the "now" beside its alarms (alarms-math.js nowText): online sensors only, and the filter's
@@ -233,10 +262,12 @@ export function roomCard(room, now = Date.now()) {
     };
   });
   const n = room.alarms.count;
-  // The room's state in one pill: its alarms first, then a reading out of band, Manual, OK, or nothing wired.
+  // The room's state in one pill: its alarms first, then a reading out of band, Manual, a reading near an edge (Watch), OK,
+  // or nothing wired.
   const state = n > 0 ? { text: `${n} ${n === 1 ? 'alarm' : 'alarms'}`, tone: room.alarms.level }
     : !wired(room) ? { text: 'Not set up', tone: 'none' }
-      : outOfBand(room).length ? { text: 'Out of band', tone: 'amber' } : !room.auto ? { text: 'Manual', tone: 'amber' } : { text: 'OK', tone: 'good' };
+      : outOfBand(room).length ? { text: 'Out of band', tone: 'amber' } : !room.auto ? { text: 'Manual', tone: 'amber' }
+        : nearEdges(room).length ? { text: 'Watch', tone: 'amber' } : { text: 'OK', tone: 'good' };
   return {
     href: `#/rooms/${room.id}`,
     name: room.name,
