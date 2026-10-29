@@ -209,7 +209,10 @@ test('Setup keeps the By-Hand Rule: a band set by hand in the accent text with t
 test('Setup: Save sits right under the inputs it saves, the "What the farm is doing now" readout after it (critique 2026-10-28)', async () => {
   const { readFileSync } = await import('node:fs');
   const src = readFileSync(new URL('../web/control.js', import.meta.url), 'utf8');
-  assert.match(src, /host\.append\(cols, byHandRow, backErr, sendRow, saveErr, statusBox\);/);
+  assert.match(src, /host\.append\(cols, sendRow, saveErr, byHandRow, backErr, statusBox\);/, 'Save first, then the way back to the stage (critique 2026-10-29)');
+  assert.match(src, /form, sendRow, saveErr, byHandRow, backErr, stateNode, checkList\);/);
+  const css = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
+  assert.match(css, /@media \(max-width: 600px\) \{ \.c-band\.c-outdoor \.m-name \{ display: flex; align-items: center; min-height: 44px; \} \}/, 'Use outdoor air a 44 px target (it was 43.5)');
 });
 
 // Critique 2026-10-29: the readout's last line ("Air exchange off") was larger and darker than the reasons above it.

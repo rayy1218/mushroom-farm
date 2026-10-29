@@ -267,9 +267,11 @@ export function createControl(host, { roomId, onOffline, onGone, onChange, getRo
     }
     left.append(form);
     cols.append(left, right);
-    host.append(cols, byHandRow, backErr, sendRow, saveErr, statusBox); // Save right under its inputs, the readout after it (critique 2026-10-28)
+    // Save right under its inputs, the readout after it (critique 2026-10-28); the way back to the stage's values after Save
+    // (critique 2026-10-29: on a phone the two stacked with Save below)
+    host.append(cols, sendRow, saveErr, byHandRow, backErr, statusBox);
   }
-  else host.append(autoRow, modeLine, autoErr, ...groups, form, byHandRow, backErr, sendRow, saveErr, stateNode, checkList);
+  else host.append(autoRow, modeLine, autoErr, ...groups, form, sendRow, saveErr, byHandRow, backErr, stateNode, checkList);
 
   // ---- drawing ----
 
