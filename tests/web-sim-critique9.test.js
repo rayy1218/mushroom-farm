@@ -123,3 +123,15 @@ test('the back links of a result and of Suggest machines say where they go: the 
 test('Suggest on a desk: every row\'s last column has one width, so the head, the baseline and the suggestions line up', () => {
   assert.match(block, /@media \(min-width: 761px\) \{ \.sg-row \{ grid-template-columns: minmax\(0, 1fr\) 112px 120px 112px 96px; \} \}/);
 });
+
+test('step 3: the Run for days input is 44 px tall on a phone, like the other fields', () => {
+  assert.match(block, /@media \(max-width: 600px\) \{ \.sim-choice input\[type="text"\] \{ min-height: 44px; \} \}/);
+});
+
+test('the comparison marks a differing row by its tint and a "differs" word, not a stripe down its side', () => {
+  assert.doesNotMatch(css, /\.sim-compare-table[^{]*\{[^}]*box-shadow/);
+  const card = src('sim-card.js');
+  assert.match(card, /if \(row\.differ\) th\.append\(el\('span', 'sr-only', ' \(differs\)'\), differs\(\)\);/);
+  assert.match(card, /const word = el\('span', 'sim-differs', 'differs'\);\s*word\.setAttribute\('aria-hidden', 'true'\);/);
+  assert.match(block, /\.sim-differs \{[^}]*color: var\(--accent-text\);/);
+});

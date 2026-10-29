@@ -786,7 +786,6 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
 .sim-pick { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); font-size: var(--fs-sm); justify-self: end; }
 .sim-compare { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
 .sim-compare-table tr[data-differ="true"] td, .sim-compare-table tr[data-differ="true"] th { font-weight: 600; color: var(--ink); background: color-mix(in srgb, var(--accent) 10%, transparent); }
-.sim-compare-table tr[data-differ="true"] th { box-shadow: inset 3px 0 0 var(--accent); }
 .sim-compare-table td { color: var(--ink-2); }
 .sim-compare button { margin-top: 10px; }
 .sim-item .sim-all { justify-self: start; }
@@ -1278,3 +1277,7 @@ details.setup-part:not([open]) { padding-top: 8px; }
 /* the last column as wide as Use this in every row, so the head, the baseline and the suggestions keep their columns in line
    (each row is a grid of its own: an auto column was as wide as its own button, or nothing in the head) */
 @media (min-width: 761px) { .sg-row { grid-template-columns: minmax(0, 1fr) 112px 120px 112px 96px; } }
+/* step 3's Run for days input as tall as the other fields on a phone */
+@media (max-width: 600px) { .sim-choice input[type="text"] { min-height: 44px; } }
+/* the comparison: a differing row is tinted and says "differs" beside its name (no stripe down its side) */
+.sim-differs { margin-left: 8px; color: var(--accent-text); font-size: var(--fs-xs); font-weight: 600; }
