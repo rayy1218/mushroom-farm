@@ -61,6 +61,7 @@ export function openSimulateDialog(room, hooks = {}) {
   let sending = false;
 
   d.replaceChildren();
+  d.dataset.stepper = ''; // one height while the steps show (critique 2026-10-29: Back and Next moved under the pointer)
   const form = el('form');
   form.noValidate = true;
   const title = el('h2', '', `Simulate ${room.name}`);
@@ -493,6 +494,7 @@ export function openSimulateDialog(room, hooks = {}) {
   // ---- the run ----
 
   function paintRun() {
+    delete d.dataset.stepper;
     marks.hidden = true;
     const progress = el('progress');
     progress.max = 1;

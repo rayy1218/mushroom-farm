@@ -72,3 +72,12 @@ test('the Simulations list on a phone: date and In band on the first line, then 
     assert.ok(block.includes(`.sim-item ${sel} { grid-area: ${area};`), `${sel} in ${area}`);
   }
 });
+
+test('Simulate keeps one height on a desk while its steps show, so Back and Next stay under the pointer', () => {
+  const dialog = src('simulate-dialog.js');
+  assert.match(dialog, /d\.dataset\.stepper = '';/);
+  assert.match(dialog, /function paintRun\(\) \{\s*delete d\.dataset\.stepper;/);
+  assert.match(block, /@media \(min-width: 601px\) \{\s*\.sim-dialog\[data-stepper\] \{ height: min\(760px, calc\(100dvh - max\(16px, 6vh\) - 16px\)\); \}/);
+  assert.match(block, /\.sim-dialog\[data-stepper\] > form \{ display: flex; flex-direction: column; min-height: 100%; \}/);
+  assert.match(block, /\.sim-dialog\[data-stepper\] \.sim-body \{ flex: 1 0 auto; \}/);
+});

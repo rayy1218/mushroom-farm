@@ -1269,3 +1269,9 @@ details.setup-part:not([open]) { padding-top: 8px; }
   .sim-item > .sim-length { grid-area: length; }
   .sim-item > .sim-pick { grid-area: pick; }
 }
+/* Simulate on a desk: one height through its steps (the step scrolls inside), so Back and Next do not move under the pointer */
+@media (min-width: 601px) {
+  .sim-dialog[data-stepper] { height: min(760px, calc(100dvh - max(16px, 6vh) - 16px)); }
+  .sim-dialog[data-stepper] > form { display: flex; flex-direction: column; min-height: 100%; }
+  .sim-dialog[data-stepper] .sim-body { flex: 1 0 auto; }
+}
