@@ -6,10 +6,10 @@ import assert from 'node:assert/strict';
 import { initialState, checkStep, buildBody, summaryLines, firstField } from '../web/simulate-math.js';
 
 const DAY = 86_400_000;
-const now = Date.UTC(2026, 9, 22, 12);
+const now = new Date(2026, 9, 22, 12).getTime(); // local noon: the days in use are local calendar days, as on Setup
 const room = {
   id: 3, name: 'Room 1', length: 6, width: 4, height: 3, volume: 72, humidifierLH: 2,
-  fanMaxPa: 250, filterCleanPa: 30, filterFinalPa: 120, filterChangeDays: 21, filterChangedAt: now - 9.6 * DAY, dpAddress: 9,
+  fanMaxPa: 250, filterCleanPa: 30, filterFinalPa: 120, filterChangeDays: 21, filterChangedAt: now - 9.4 * DAY, dpAddress: 9,
 };
 
 test('the filter fields come from the room: its settings, the whole days since its last change, its pressure sensor', () => {
@@ -83,4 +83,14 @@ test('review fixes: the days in use at most 365; one day is "1 day" in the summa
   t.filterSensor = false;
   assert.equal(summaryLines(t, room).find((l) => l.label === 'Filter').text,
     'Clean 30\u00a0Pa, change at 120\u00a0Pa, fan maximum 250\u00a0Pa, life 30 days; 1 day in use; changed every 1 day (no pressure sensor)');
+});
+
+test('the days in use are counted as on Setup: local calendar days since the change (critique 2026-10-29: Setup said 6, Simulate 5)', async () => {
+  const { filterCard } = await import('../web/filter-math.js');
+  const at = (d, h) => new Date(2026, 9, d, h).getTime();
+  for (const [changed, today, days] of [[at(21, 23), at(22, 1), '1'], [at(22, 1), at(22, 23), '0'], [at(16, 22), at(22, 8), '6']]) {
+    const r = { ...room, filterChangedAt: changed };
+    assert.equal(initialState({ room: r, now: today }).physics.filterUsedDays, days);
+    assert.equal(filterCard({ room: r, sensor: null, changes: [], now: today }).age, days === '0' ? 'Changed today' : `${days} ${days === '1' ? 'day' : 'days'} in use`);
+  }
 });

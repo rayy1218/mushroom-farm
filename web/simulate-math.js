@@ -5,6 +5,7 @@ import { acSize, kwOfBtu, keepUnits } from './simulation-math.js';
 import { exchangePoints } from './band-math.js';
 import { CROPS, STAGES, FARM_TYPES, mixBands, rangeWarnings, validateCrops } from './crops.js';
 import { HUMIDIFIER_LABEL, OUTDOOR_LABEL } from './control-math.js';
+import { calendarDays } from './filter-math.js';
 
 // The physics inputs of step 1. min, max and whole are those of the device app's PARAMS (device/sim-store.js; a test compares
 // them); def is the default (the humidifier's is the room's rating, the dehumidifier's the room's capacity when it is fitted).
@@ -41,7 +42,6 @@ export const PHYSICS_GROUPS = [{ key: 'walls', legend: 'Walls and sun' }, { key:
 // A field's label with its unit, as the form shows it.
 export const fieldLabel = (f) => `${f.short ?? f.label} (${f.unit})`;
 export const FILTER_KEYS = ['fanMaxPa', 'filterCleanPa', 'filterFinalPa', 'filterLifeDays', 'filterChangeDays', 'filterUsedDays'];
-const DAY_MS = 86_400_000;
 
 export const DEFAULT_CROPS = [{ crop: 'oyster', blocks: 500 }];
 // The hour a run from outdoor air starts at, the cool-down's of Suggest machines (server/sizing.js COOL_START_HOUR; a test
@@ -100,7 +100,8 @@ export const fixStage = (farmType, stage) => (stagesOf(farmType).includes(stage)
 // The texts of the three steps. lastRun: the room's newest run (input as it was posted), cropData: GET /api/rooms/:id/crop,
 // roomControl: GET /api/rooms/:id/control (null when it could not be read); again: a run to simulate again, whose own
 // control settings (Change for this run) go with it.
-// The filter's days in use are the room's now (whole days since its last change), whatever the last run had.
+// The filter's days in use are the room's now (local calendar days since its last change, as Setup counts them), whatever the
+// last run had.
 export function initialState({ room, lastRun = null, cropData = null, roomControl = null, again = null, now = Date.now() }) {
   const before = lastRun?.input?.physics;
   const physics = {};
@@ -112,7 +113,7 @@ export function initialState({ room, lastRun = null, cropData = null, roomContro
     physics[f.key] = String(isNumber(before?.[f.key]) ? before[f.key] : fallback);
   }
   // at most 365, the field's limit: a filter not changed for over a year is a year old for the run
-  physics.filterUsedDays = String(isNumber(room?.filterChangedAt) ? Math.min(365, Math.max(0, Math.floor((now - room.filterChangedAt) / DAY_MS))) : 0);
+  physics.filterUsedDays = String(isNumber(room?.filterChangedAt) ? Math.min(365, Math.max(0, calendarDays(room.filterChangedAt, now))) : 0);
   // The crops: the room's, else those of its last run (a room only simulated so far), else Grey oyster 500.
   const roomCrops = Array.isArray(cropData?.crops) && cropData.crops.length > 0;
   const lastCrops = !roomCrops && Array.isArray(lastRun?.input?.crops) && lastRun.input.crops.length > 0 ? lastRun.input : null;

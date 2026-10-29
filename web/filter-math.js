@@ -10,8 +10,8 @@ const dayMonth = (ms) => `${new Date(ms).getDate()} ${MONTHS[new Date(ms).getMon
 const dateTime = (ms) => `${dayMonth(ms)} ${pad2(new Date(ms).getHours())}:${pad2(new Date(ms).getMinutes())}`;
 
 const days = (n) => `${n} ${n === 1 ? 'day' : 'days'}`;
-// Whole local calendar days from `from` to `to` (0: the same day).
-const calendarDays = (from, to) => {
+// Whole local calendar days from `from` to `to` (0: the same day). Simulate counts a filter's days in use with it too.
+export const calendarDays = (from, to) => {
   const a = new Date(from), b = new Date(to);
   return Math.round((new Date(b.getFullYear(), b.getMonth(), b.getDate()) - new Date(a.getFullYear(), a.getMonth(), a.getDate())) / DAY_MS);
 };
