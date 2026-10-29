@@ -202,7 +202,6 @@ export function createMimic(host, opts = {}) {
   const put = (node, text) => { if (node && node.textContent !== text) node.textContent = text; };
   // "● On", the state word ("Off", "! Not following"), or "No data".
   const stateOf = (u) => (!u.known ? 'No data' : u.warn ? `! ${u.state}` : u.on ? '● On' : u.state);
-  const lower = (s) => s.charAt(0).toLowerCase() + s.slice(1);
 
   function frame(dt) {
     const move = dt > 0, u = v.units;
@@ -273,8 +272,7 @@ export function createMimic(host, opts = {}) {
     if (v.lights) show(h.tags.lights, v.lights);
 
     const ac = u.ac;
-    const acWord = !ac.known ? 'no data' : ac.warn && ac.state.startsWith('Fault') ? '! fault' : `${ac.warn ? '! ' : ''}${lower(ac.state)}`;
-    put(h.acText, `Aircon · ${acWord}`);
+    put(h.acText, v.acLabel);
     h.acLamp.classList.toggle('on', ac.on);
     const warm = ac.mode === 'heat';
     for (const p of h.plumes) {

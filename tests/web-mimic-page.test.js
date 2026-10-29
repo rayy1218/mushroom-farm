@@ -133,7 +133,10 @@ test('a phone: 44 px targets, 16 px fields, the Crop stages in their box, Use ou
   assert.match(css, /\.cp-stages \{ grid-area: stages; display: grid; grid-template-columns: minmax\(0, 1fr\);/);
   assert.match(css, /\.cp-targets th \{ white-space: nowrap; \}/);
   assert.match(css, /\.c-band\.c-outdoor \{ display: grid; grid-template-columns: auto minmax\(0, 1fr\);/);
-  assert.match(css, /\.mc-sub \.mc-eff:not\(:has\(\+ \.mc-d\[hidden\]\)\)::after \{ content: "\\00a0\\00b7"; \}/);
+  // critique 2026-10-29: a wrapped sub-line ended "Adds moisture ·"; one run of text, the "·" held by no-break spaces to the
+  // words either side, so it never ends or starts a line
+  assert.match(css, /\.mc-sub \{ color: var\(--muted\); font-size: var\(--fs-sm\); \}/);
+  assert.match(css, /\.mc-sub \.mc-eff:not\(:empty\) \+ \.mc-d::before \{ content: "\\00a0\\00b7\\00a0"; \}/);
   const mimic = source('../web/mimic.css');
   for (const cls of ['m-small', 'm-name', 'm-state', 'm-blocks']) assert.match(mimic, new RegExp(`\\.mimic-svg \\.${cls} \\{ font-size: 13px;`), cls);
 });

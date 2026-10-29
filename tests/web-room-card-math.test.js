@@ -156,7 +156,8 @@ test('machineTiles: six in air-path order with their effect and detail', () => {
     [1, 'Intake fan', 'Air in'], [2, 'Aircon', 'Cools'], [3, 'Circulation', 'Mixes the air'],
     [4, 'Humidifier', 'Adds moisture'], [5, 'Dehumidifier', 'Dries'], [6, 'Exhaust fan', 'Air out'],
   ]);
-  assert.deepEqual(tiles.map((m) => m.detail), ['Filter 40.4 Pa', 'Cool 21.5 °C · fan auto', 'Always on', 'On at 90 % RH, off at 95 % RH', 'On at 95 % RH, off at 92.5 % RH', 'With the intake']);
+  assert.deepEqual(tiles.map((m) => m.detail), ['Filter 40.4\u00a0Pa', 'Cool 21.5 °C · fan auto', 'Always on', 'On at 90\u00a0%\u00a0RH, off at 95\u00a0%\u00a0RH',
+    'On at 95\u00a0%\u00a0RH, off at 92.5\u00a0%\u00a0RH', 'With the intake'], 'a number and its unit never part at a wrap');
   // the role lines say the controller's real rule (server/controller.js): the humidifier on at the lower limit and off at the
   // upper, the dehumidifier on at the upper and off at the middle of the band
   assert.deepEqual(tiles.map((m) => m.on), [false, true, true, false, false, false]);

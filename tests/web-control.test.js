@@ -209,3 +209,11 @@ test('Setup: Save sits right under the inputs it saves, the "What the farm is do
   const src = readFileSync(new URL('../web/control.js', import.meta.url), 'utf8');
   assert.match(src, /host\.append\(cols, byHandRow, backErr, sendRow, saveErr, statusBox\);/);
 });
+
+// Critique 2026-10-29: the readout's last line ("Air exchange off") was larger and darker than the reasons above it.
+test('Setup\'s What the farm is doing now: the state line set like the reasons above it', async () => {
+  const { readFileSync } = await import('node:fs');
+  const css = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
+  assert.match(css, /\.control \.c-status \.c-state \{ margin: 2px 0 0; color: var\(--muted\); font-size: var\(--fs-sm\); font-weight: 400; \}/);
+  assert.match(css, /\.c-reasons \{ color: var\(--muted\); font-size: var\(--fs-sm\); \}/);
+});

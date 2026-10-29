@@ -480,7 +480,7 @@ button.toggle[data-on="true"]:hover { background: color-mix(in srgb, var(--accen
 .c-status .c-group-title { margin-bottom: 6px; }
 .c-status .c-reasons { margin: 0; }
 .c-status .c-reasons:empty { display: none; }
-.control .c-status .c-state { margin: 6px 0 0; font-weight: 500; color: var(--ink-2); }
+.control .c-status .c-state { margin: 2px 0 0; color: var(--muted); font-size: var(--fs-sm); font-weight: 400; } /* one more line of the readout, set like the reasons */
 .c-band { display: grid; grid-template-columns: minmax(0, 240px) minmax(0, 120px) minmax(0, 120px); align-items: end; gap: 4px 12px; padding: 10px 0; border-bottom: 1px dashed var(--border); }
 .c-band .m-name, .c-humidifier .m-name, .c-acfan .m-name { font-weight: 500; color: var(--ink-2); }
 .c-band .m-name { align-self: center; }
@@ -1086,9 +1086,9 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
 .mc-step { font-size: var(--fs-xs); color: var(--muted); font-variant-numeric: tabular-nums; text-align: center; }
 .mc-text { display: grid; min-width: 0; }
 .mc-name { font-weight: 500; }
-.mc-sub { display: flex; flex-wrap: wrap; gap: 0 4px; color: var(--muted); font-size: var(--fs-sm); }
-/* the dot ends the first part, so a wrapped detail never starts its line with "·" */
-.mc-sub .mc-eff:not(:has(+ .mc-d[hidden]))::after { content: "\00a0\00b7"; }
+.mc-sub { color: var(--muted); font-size: var(--fs-sm); }
+/* one run of text, the dot held to the words either side by no-break spaces: it never ends or starts a wrapped line */
+.mc-sub .mc-eff:not(:empty) + .mc-d::before { content: "\00a0\00b7\00a0"; }
 .mc-row[data-tone="warn"] .mc-name, .mc-row[data-tone="warn"] .mc-sub { color: var(--critical-text); }
 .mc-row[data-manual="true"] { grid-template-columns: 22px minmax(0, 1fr) auto auto; }
 .mc-switch { min-width: 64px; min-height: 36px; padding: 4px 12px; font-weight: 600; }
@@ -1115,7 +1115,7 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
 .rc-swipe { display: none; margin: 8px 0 0; color: var(--muted); font-size: var(--fs-xs); }
 @media (max-width: 600px) {
   .rc-scroll { overflow-x: auto; overscroll-behavior-x: contain; border-radius: 10px; }
-  .rc-scroll .rc-pic { min-width: 800px; } /* the labels near 12 px: the drawing at about its own size */
+  .rc-scroll .rc-pic { min-width: 840px; } /* the drawing at its own size: its 13 px labels are 13 px */
   .rc-swipe { display: block; }
   .rc-blocks:not([hidden]) { display: block; } /* the blocks in words; the drawing's own label hides */
   .rc-scroll .m-blocks { display: none; }
