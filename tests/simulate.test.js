@@ -32,7 +32,7 @@ test('the result has the four parts of the spec', () => {
   assert.ok(day.machines.ac.every((sp) => typeof sp.setpoint === 'number'));
   assert.deepEqual(day.stages, [{ stage: 'fruiting', flush: 1, from: 0, to: 86400 }]);
   const s = day.summary;
-  assert.deepEqual(Object.keys(s).sort(), ['days', 'energy', 'extremes', 'filter', 'inBand', 'perDay', 'perStage', 'water']);
+  assert.deepEqual(Object.keys(s).sort(), ['days', 'energy', 'exchanges', 'extremes', 'filter', 'inBand', 'perDay', 'perStage', 'water']);
   assert.equal(s.filter, null); // no filter settings
   assert.equal(s.days, 1);
   assert.deepEqual(Object.keys(s.inBand).sort(), ['all', 'co2', 'rh', 't']);

@@ -423,14 +423,9 @@ export function protect({ desired, commands, changedAt = {}, now }) {
   return { desired: out, held };
 }
 
-// Validates a whole settings object. Returns { error, field } for the first problem, or null.
-// compareSafety false skips only the check that the safety level is above co2High (the range is still checked).
-export function validateControl(c, { compareSafety = true } = {}) {
-  if (typeof c.auto !== 'boolean') return { error: 'auto must be true or false', field: 'auto' };
-  if (typeof c.humidifierDuringExchange !== 'boolean') {
-    return { error: 'humidifierDuringExchange must be true or false', field: 'humidifierDuringExchange' };
-  }
-  if (!AC_FANS.includes(c.acFan)) return { error: 'Aircon fan must be auto, low or high', field: 'acFan' };
+// Checks the bands of c: the three pairs of limits and the CO₂ safety level (validateControl, and a simulation's own bands).
+// Returns { error, field } for the first problem, or null. compareSafety: as validateControl's.
+export function bandProblem(c, { compareSafety = true } = {}) {
   for (const { low, high, label, min, max, unit, sides, order } of BANDS) {
     for (const [field, side] of [[low, 'lower'], [high, 'upper']]) {
       const v = c[field];
@@ -444,6 +439,19 @@ export function validateControl(c, { compareSafety = true } = {}) {
     return { error: 'CO₂ safety level must be a number up to 10000 ppm', field: 'co2Safety' };
   }
   if (compareSafety && c.co2Safety <= c.co2High) return { error: 'CO₂ safety level must be above the air exchange start point', field: 'co2Safety' };
+  return null;
+}
+
+// Validates a whole settings object. Returns { error, field } for the first problem, or null.
+// compareSafety false skips only the check that the safety level is above co2High (the range is still checked).
+export function validateControl(c, { compareSafety = true } = {}) {
+  if (typeof c.auto !== 'boolean') return { error: 'auto must be true or false', field: 'auto' };
+  if (typeof c.humidifierDuringExchange !== 'boolean') {
+    return { error: 'humidifierDuringExchange must be true or false', field: 'humidifierDuringExchange' };
+  }
+  if (!AC_FANS.includes(c.acFan)) return { error: 'Aircon fan must be auto, low or high', field: 'acFan' };
+  const bands = bandProblem(c, { compareSafety });
+  if (bands) return bands;
   if (!Number.isInteger(c.exchangeMaxMin) || c.exchangeMaxMin < 1 || c.exchangeMaxMin > 120) {
     return { error: 'Air exchange time limit must be a whole number from 1 to 120 min', field: 'exchangeMaxMin' };
   }
