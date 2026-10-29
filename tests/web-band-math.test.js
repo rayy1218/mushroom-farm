@@ -50,17 +50,29 @@ test('nearEdge: where an in-band temperature or humidity sits, both edges', () =
   assert.equal(nearEdge('rh', 86, 87, 93), null, 'out of band is not near');
 });
 
-test('nearChip: humidity near low is amber with the humidifier off, calm with it on', () => {
+test('nearChip: humidity near low is amber with the humidifier off at or under its on-point, calm with it on', () => {
+  // band 87–93: the humidifier's on-point is 88 % RH, so all of the near-low stretch (87–87.9) is at or under it
   assert.deepEqual(nearChip('rh', 87.4, 87, 93, { machines: { humidifier: false } }), { edge: 'bottom', text: 'Near low' });
   assert.deepEqual(nearChip('rh', 87.4, 87, 93, { machines: { humidifier: false }, trend: -0.5 }), { edge: 'bottom', text: 'Near low · falling' });
   assert.equal(nearChip('rh', 87.4, 87, 93, { machines: { humidifier: true }, trend: -0.5 }), null, 'the humidifier is on it');
   assert.equal(nearChip('rh', 87.4, 87, 93), null, 'machines not known: only after 15 min');
 });
 
-test('nearChip: humidity near high is amber with a fitted dehumidifier off; without one only after 15 min', () => {
-  assert.deepEqual(nearChip('rh', 92.6, 87, 93, { machines: { dehumidifier: false } }), { edge: 'top', text: 'Near high' });
-  assert.deepEqual(nearChip('rh', 92.6, 87, 93, { machines: { dehumidifier: false }, trend: 0.5 }), { edge: 'top', text: 'Near high · rising' });
-  assert.equal(nearChip('rh', 92.6, 87, 93, { machines: { dehumidifier: true } }), null);
+// Critique 2026-10-29: a machine that has not reached its own on-point is acting as told.
+test('nearChip: humidity near low but above the humidifier\'s on-point with the humidifier off is calm', () => {
+  // band 80–95: near low is up to 82.25 % RH, the on-point 81 % RH
+  assert.equal(nearChip('rh', 82, 80, 95, { machines: { humidifier: false } }), null, 'the humidifier waits for 81 %');
+  assert.deepEqual(nearChip('rh', 81, 80, 95, { machines: { humidifier: false } }), { edge: 'bottom', text: 'Near low' }, 'at its on-point and still off');
+  const stayed = [{ at: 0, value: 82 }, { at: NEAR_DWELL_MS, value: 82 }];
+  assert.deepEqual(nearChip('rh', 82, 80, 95, { machines: { humidifier: false }, points: stayed }), { edge: 'bottom', text: 'Near low' }, '15 min near the bottom');
+});
+
+test('nearChip: humidity near high is amber with the dehumidifier off at its on-point (the top) or the humidifier on past its off-point', () => {
+  // band 87–93: near high from 92.1 % RH; the dehumidifier starts at 93, the humidifier stops at 92
+  assert.equal(nearChip('rh', 92.6, 87, 93, { machines: { dehumidifier: false } }), null, 'the dehumidifier waits for 93 %');
+  assert.deepEqual(nearChip('rh', 93, 87, 93, { machines: { dehumidifier: false } }), { edge: 'top', text: 'Near high' });
+  assert.deepEqual(nearChip('rh', 92.6, 87, 93, { machines: { humidifier: true }, trend: 0.5 }), { edge: 'top', text: 'Near high · rising' }, 'past its off-point and still on');
+  assert.equal(nearChip('rh', 92.6, 87, 93, { machines: { humidifier: false, dehumidifier: true } }), null);
   assert.equal(nearChip('rh', 92.6, 87, 93, { machines: { dehumidifier: null } }), null, 'none fitted');
   const stayed = [{ at: 0, value: 92.5 }, { at: NEAR_DWELL_MS / 2, value: 92.7 }, { at: NEAR_DWELL_MS, value: 92.6 }];
   assert.deepEqual(nearChip('rh', 92.6, 87, 93, { machines: { dehumidifier: null }, points: stayed }), { edge: 'top', text: 'Near high' }, '15 min near the top');

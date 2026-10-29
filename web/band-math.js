@@ -51,13 +51,19 @@ export function nearFor(points, low, high, edge) {
   return first ? list[list.length - 1].at - first.at : 0;
 }
 
-// Whether the machine that should act at this edge is known not to: humidity low and the humidifier off; humidity high and
-// a fitted dehumidifier off; temperature high and the aircon not cooling; temperature low and the aircon cooling.
+// Whether the machine that should act at this edge is known not to: humidity low, at or under the humidifier's on-point and
+// the humidifier off; humidity high, at the dehumidifier's on-point (the band's top) and a fitted dehumidifier off, or at or
+// over the humidifier's off-point and the humidifier still on; temperature high and the aircon not cooling; temperature low
+// and the aircon cooling. A machine that has not reached its own on-point is acting as told (critique 2026-10-29).
 // machines: { humidifier, dehumidifier, cooling }, each true (running), false (fitted and not running) or null (none, or
 // not known): null is never "not acting", so such a reading turns amber only after 15 min near the edge.
-function notActing(key, edge, machines) {
+function notActing(key, edge, machines, value, low, high) {
   const m = machines ?? {};
-  if (key === 'RH') return edge === 'bottom' ? m.humidifier === false : m.dehumidifier === false;
+  if (key === 'RH') {
+    const points = humidifierPoints(low, high);
+    if (edge === 'bottom') return m.humidifier === false && value <= points.on;
+    return (m.dehumidifier === false && value >= high) || (m.humidifier === true && value >= points.off);
+  }
   return edge === 'top' ? m.cooling === false : m.cooling === true;
 }
 
@@ -69,7 +75,7 @@ export function nearChip(key, value, low, high, { trend = null, points = null, m
   const k = KEY[key];
   const edge = nearEdge(k, value, low, high);
   if (!edge) return null;
-  if (!notActing(k, edge, machines) && nearFor(points, low, high, edge) < NEAR_DWELL_MS) return null;
+  if (!notActing(k, edge, machines, value, low, high) && nearFor(points, low, high, edge) < NEAR_DWELL_MS) return null;
   const toward = num(trend) !== null && (edge === 'top' ? trend > TREND_WORD[k] : trend < -TREND_WORD[k]);
   return { edge, text: `Near ${edge === 'top' ? 'high' : 'low'}${toward ? ` · ${edge === 'top' ? 'rising' : 'falling'}` : ''}` };
 }

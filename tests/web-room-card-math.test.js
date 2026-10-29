@@ -358,10 +358,12 @@ test('traceOf with a scale: a fixed range per reading (normal cycling stays calm
 // Critique 2026-10-28 (owner): near an edge is amber only when the machine that should act is not acting, or after 15 min
 // there; the words fit one line.
 test('readingTiles: near an edge with the machine that should act not acting says which ("Near high"), in amber', () => {
-  const hot = { sensors: { ...sensors, trh: { status: 'online', lastOk: { t: 22.8, rh: 94.5, at: 1 } } } };
+  const hot = { sensors: { ...sensors, trh: { status: 'online', lastOk: { t: 22.8, rh: 95, at: 1 } } } };
   const cooling = readingTiles(draw(hot), control);
   assert.equal(cooling[0].chip.text, '✓ In band', 'T 22.8 in 21–23 with the aircon cooling: calm');
-  assert.deepEqual(cooling[1].chip, { lvl: 'near', text: 'Near high' }, 'RH 94.5 in 90–95 with the dehumidifier off');
+  assert.deepEqual(cooling[1].chip, { lvl: 'near', text: 'Near high' }, 'RH 95 in 90–95 with the dehumidifier off at its on-point');
+  const waiting = readingTiles(draw({ sensors: { ...sensors, trh: { status: 'online', lastOk: { t: 22, rh: 94.5, at: 1 } } } }), control);
+  assert.equal(waiting[1].chip.text, '✓ In band', 'RH 94.5: the dehumidifier waits for 95 % RH, acting as told (critique 2026-10-29)');
   const off = readingTiles(draw({ ...hot, machines: { relay: relay(), ac: ac({ reported: { power: false, mode: 'cool', setpoint: 21.5, fan: 'auto' }, status: 'off' }) } }), control);
   assert.deepEqual(off[0].chip, { lvl: 'near', text: 'Near high' }, 'the aircon off');
   const mid = readingTiles(draw({ sensors: { ...sensors, trh: { status: 'online', lastOk: { t: 22, rh: 92.5, at: 1 } } } }), control);

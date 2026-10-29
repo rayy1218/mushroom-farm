@@ -291,12 +291,14 @@ test('a room in band with a reading near an edge, its machine not acting: Watch,
     trh: { status: 'online', t: 20, rh: 90 }, co2: { status: 'online', co2: 800 }, spark: { t: [], rh: [], co2: [] },
     machines: { humidifier: true, dehumidifier: false, cooling: true }, ...over,
   });
-  const wet = r('Room 1', { trh: { status: 'online', t: 20, rh: 92.5 } }); // near high, the dehumidifier off
+  const wet = r('Room 1', { trh: { status: 'online', t: 20, rh: 92.5 } }); // near high, the humidifier on past its off-point (92 % RH)
   const ok = r('Room 2');
   assert.deepEqual(nearEdges(wet), [{ key: 'rh', text: 'Humidity near high' }]);
   assert.deepEqual(nearEdges(ok), []);
-  assert.deepEqual(nearEdges(r('A', { trh: { status: 'online', t: 20, rh: 92.5 }, machines: { humidifier: true, dehumidifier: true, cooling: true } })), [],
+  assert.deepEqual(nearEdges(r('A', { trh: { status: 'online', t: 20, rh: 92.5 }, machines: { humidifier: false, dehumidifier: true, cooling: true } })), [],
     'the dehumidifier on it: calm');
+  assert.deepEqual(nearEdges(r('A', { trh: { status: 'online', t: 20, rh: 92.5 }, machines: { humidifier: false, dehumidifier: false, cooling: true } })), [],
+    'under the dehumidifier\'s on-point (93 % RH) with the humidifier off: acting as told (critique 2026-10-29)');
   assert.deepEqual(nearEdges(r('A', { trh: { status: 'online', t: 19.1, rh: 87.2 }, machines: { humidifier: false, dehumidifier: null, cooling: true } })),
     [{ key: 't', text: 'Temperature near low' }, { key: 'rh', text: 'Humidity near low' }]);
   assert.deepEqual(nearEdges(r('A', { trh: { status: 'offline', t: 20, rh: 92.5 } })), [], 'an offline sensor\'s last value is not now');
