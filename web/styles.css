@@ -1111,14 +1111,10 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
 
 /* The room picture */
 .pic-card .rc-pic { border-radius: 10px; overflow: hidden; }
-/* a phone: the drawing at a readable size, swiped sideways inside its card (its labels show from 640 px of picture) */
-.rc-swipe { display: none; margin: 8px 0 0; color: var(--muted); font-size: var(--fs-xs); }
+/* a phone: the whole drawing in the card's width (critique 2026-10-29: it was mostly sky until swiped); under 640 px of
+   picture its small labels hide (mimic.js), the Machines list says every state in words and the blocks are said under it */
 @media (max-width: 600px) {
-  .rc-scroll { overflow-x: auto; overscroll-behavior-x: contain; border-radius: 10px; }
-  .rc-scroll .rc-pic { min-width: 840px; } /* the drawing at its own size: its 13 px labels are 13 px */
-  .rc-swipe { display: block; }
-  .rc-blocks:not([hidden]) { display: block; } /* the blocks in words; the drawing's own label hides */
-  .rc-scroll .m-blocks { display: none; }
+  .rc-blocks:not([hidden]) { display: block; }
 }
 .rc-blocks { display: none; margin: 8px 0 0; color: var(--ink-2); font-size: var(--fs-sm); }
 .rc-fresh { margin: 12px 0 0; font-size: var(--fs-sm); color: var(--ink-2); }

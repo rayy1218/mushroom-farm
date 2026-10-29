@@ -96,11 +96,9 @@ export function createRoomCard(hosts, { idPrefix = 'room-', cropHref = '', onSwi
   const fresh = el('p', 'rc-fresh');
   // The control line is the Control card's and the outdoor air and the filter are in the picture and the Machines rows: the
   // card says only when fresh air comes next.
-  const scroll = el('div', 'rc-scroll'); // a phone swipes the drawing sideways at a readable size
-  scroll.append(pic);
   // a phone: the blocks under the drawing in words (in the drawing they sit past the screen's edge; critique 2026-10-28)
   const blocks = el('p', 'rc-blocks');
-  hosts.picture.replaceChildren(cardHead('Room', note), scroll, blocks, el('p', 'rc-swipe', 'Swipe the drawing sideways to see the whole room.'), fresh);
+  hosts.picture.replaceChildren(cardHead('Room', note), pic, blocks, fresh);
   hosts.picture.style.containerType = 'inline-size';
   const mimic = createMimic(pic, { idPrefix });
 
