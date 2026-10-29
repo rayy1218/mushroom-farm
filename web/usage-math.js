@@ -211,7 +211,7 @@ export function roomLines(usage) {
     id: r.id,
     href: roomHash(r.id, 'history'),
     name: r.name,
-    today: `${formatKWh(r.today?.kWh)} ·\u00a0${formatRM(r.today?.cost)}`, // a '·' keeps to the words after it (text-math.js DOT)
-    last30: `${formatKWh(r.last30?.kWh)} ·\u00a0${formatRM(r.last30?.cost)}`,
+    today: `${formatKWh(r.today?.kWh)}\u00a0· ${formatRM(r.today?.cost)}`, // a '·' keeps to the words before it (text-math.js DOT)
+    last30: `${formatKWh(r.last30?.kWh)}\u00a0· ${formatRM(r.last30?.cost)}`,
   }));
 }

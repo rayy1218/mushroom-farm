@@ -153,7 +153,7 @@ test('the note under the table says how the days were worked out', () => {
 
 test('farm room lines: one per room with today and 30 days; a missing list is empty', () => {
   const lines = roomLines({ rooms: [{ id: 3, name: 'A', today: { kWh: 2, cost: 1.1 }, last30: { kWh: 60 } }] });
-  assert.deepEqual(lines, [{ id: 3, href: '#/rooms/3/history', name: 'A', today: '2.0 kWh ·\u00a0RM 1.10', last30: '60.0 kWh ·\u00a0—' }]);
+  assert.deepEqual(lines, [{ id: 3, href: '#/rooms/3/history', name: 'A', today: '2.0 kWh\u00a0· RM 1.10', last30: '60.0 kWh\u00a0· —' }]);
   assert.deepEqual(roomLines(null), []);
 });
 

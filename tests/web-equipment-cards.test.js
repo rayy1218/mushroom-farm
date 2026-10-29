@@ -100,7 +100,7 @@ const MACHINES = {
 
 test('the status line of a sensor: its status and latest value', () => {
   const status = (key, sensors = SENSORS) => cardStatus(card(key), { sensors, machines: MACHINES });
-  assert.deepEqual(status('trh'), { status: 'online', word: 'Online', value: '20.1\u00a0°C ·\u00a091.7\u00a0%\u00a0RH' });
+  assert.deepEqual(status('trh'), { status: 'online', word: 'Online', value: '20.1\u00a0°C\u00a0· 91.7\u00a0%\u00a0RH' });
   assert.deepEqual(status('co2'), { status: 'timeout', word: 'Timeout', value: '638\u00a0ppm' });
   assert.equal(status('meter'), null, 'no address: the line under the title says so, no status line');
   assert.equal(status('filter'), null, 'the filter pressure has one home: the Intake filter card');
@@ -115,8 +115,8 @@ test('the status line of a sensor: its status and latest value', () => {
 
 test('a sensor not answering says how many polls failed in a row (the Setup tab has no separate sensor cards since the redesign)', () => {
   const status = (s) => cardStatus(card('co2'), { sensors: { ...SENSORS, co2: s }, machines: MACHINES });
-  assert.equal(status({ address: 2, status: 'timeout', failuresInRow: 2, lastOk: { at: 1, co2: 638 } }).word, 'Timeout ·\u00a02 failed polls in a row');
-  assert.equal(status({ address: 2, status: 'offline', failuresInRow: 1, lastOk: null }).word, 'Offline ·\u00a01 failed poll in a row');
+  assert.equal(status({ address: 2, status: 'timeout', failuresInRow: 2, lastOk: { at: 1, co2: 638 } }).word, 'Timeout\u00a0· 2 failed polls in a row');
+  assert.equal(status({ address: 2, status: 'offline', failuresInRow: 1, lastOk: null }).word, 'Offline\u00a0· 1 failed poll in a row');
   assert.equal(status({ address: 2, status: 'online', failuresInRow: 0, lastOk: { at: 1, co2: 638 } }).word, 'Online');
 });
 

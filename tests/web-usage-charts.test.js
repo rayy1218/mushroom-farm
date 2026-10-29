@@ -103,6 +103,6 @@ test('the totals line adds up the bars the charts show when they are given', () 
 
 test('History: the range line says how many hours without readings it leaves out; the by-day card sits right after it', () => {
   assert.match(section, /basis\.textContent = gapH >= 0\.1 \? keepLines\(`\$\{line\.basis\} · \$\{gapH\.toFixed\(1\)\} h without readings not counted`\) : line\.basis;/);
-  assert.match(section, /totalsText\.textContent = keepLines\(line\.text\);/, 'its numbers keep their units, its \'·\' the words after it (critique 2026-10-29: "metered · / 15.2 h")');
+  assert.match(section, /totalsText\.textContent = keepLines\(line\.text\);/, 'its numbers keep their units, its \'·\' the words before it (critique 2026-10-29: "metered · / 15.2 h")');
   assert.match(page, /data-usage-charts><\/section>\n\s*<section data-usage><\/section>/);
 });
