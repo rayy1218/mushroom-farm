@@ -176,3 +176,14 @@ test('Suggest on a desk: the explanation, the room\'s machines and the search\'s
   assert.match(block, /@media \(max-width: 1199px\) \{ \.sg-aside \{ display: none; \} \}/);
   assert.match(block, /\.sg-sub, \.sg-out \.sg-start \{ display: none; \}/);
 });
+
+test("a result's charts are read out as the run's days of readings, not a count of the points drawn (thinning kept 1342 of one and 1300 of another)", async () => {
+  const { readingsAmount, DAY_S } = await import('../web/simulation-math.js');
+  assert.equal(readingsAmount(7 * DAY_S), '7 days of readings');
+  assert.equal(readingsAmount(DAY_S), '1 day of readings');
+  assert.equal(readingsAmount(6 * 3600), '6 h of readings', 'a run shorter than a day');
+  const page = src('simulation-page.js');
+  assert.match(page, /amount: readingsAmount\(end\)/);
+  assert.doesNotMatch(page, /noun: 'samples'/);
+  assert.match(src('chart.js'), /\$\{label\}: \$\{current\.amount \?\? `\$\{points\.length\} \$\{current\.noun \?\? 'readings'\}`\}/);
+});

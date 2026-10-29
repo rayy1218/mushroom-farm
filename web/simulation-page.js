@@ -12,7 +12,7 @@ import { fallbackMs, withProgress, isStale } from './live-math.js';
 import { tickCountFor } from './history-math.js';
 import { progressLine } from './simulate-math.js';
 import {
-  CHARTS, tileList, stageRows, dayTicks, runEnd, chartPoints, thinPoints, outdoorLine, bandSteps, timelineRows, timelineAria, energyView, perDayBars,
+  CHARTS, tileList, stageRows, dayTicks, runEnd, chartPoints, thinPoints, outdoorLine, bandSteps, timelineRows, timelineAria, readingsAmount, energyView, perDayBars,
   inputLine, inputRows, backLabel, runVerdict, runCauses, runTries, runFacts, headLine, formatDateTime, formatRunTime, isActive, filterView, STAGE_COLUMNS, scrollEdges,
 } from './simulation-math.js';
 
@@ -375,7 +375,7 @@ export function mount(container, { id, runId }) {
       const second = def.outdoor ? outdoorLine(result.series, def.outdoor) : null;
       charts.push(drawLineChart(host, {
         ...common, points: thinPoints(chartPoints(result.series, def.field), MAX_POINTS), unit: def.unit, label: def.label, color: def.color,
-        digits: def.digits, minSpan: def.minSpan, bounds: def.bounds, noun: 'samples', failTicks: false,
+        digits: def.digits, minSpan: def.minSpan, bounds: def.bounds, amount: readingsAmount(end), failTicks: false,
         bandSteps: bandSteps(result.series, def.low, def.high, end),
         second: second ? { ...second, points: thinPoints(second.points, MAX_POINTS) } : null,
       }));

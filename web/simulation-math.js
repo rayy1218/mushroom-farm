@@ -136,6 +136,13 @@ export function thinPoints(points, max) {
   return out;
 }
 
+// What a result's chart holds, for its read-out: the run's length (a count of the points drawn says how they were thinned, not
+// the run). endS: runEnd's.
+export function readingsAmount(endS) {
+  const days = Math.round(endS / DAY_S);
+  return days >= 1 ? `${plural(days, 'day', 'days')} of readings` : `${Math.max(1, Math.round(endS / 3600))} h of readings`;
+}
+
 // The dashed second line of a chart (the outdoor values), or null when the series has none.
 export function outdoorLine(series, field) {
   const points = chartPoints(series, field);
