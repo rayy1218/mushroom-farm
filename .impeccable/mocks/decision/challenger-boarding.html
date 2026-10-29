@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Room 1 · Now · Mushroom farm</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#0d0d0d;--grey:#e9e9e6;--paper:#fff;--amber:#ffb000;--mute:#5f5f5b;--line:#d4d4cf}
+*{box-sizing:border-box}
+html,body{width:1440px;height:900px;overflow:hidden;margin:0}
+body{background:var(--grey);color:var(--ink);font:400 14px/1.35 Archivo,system-ui,sans-serif;font-variant-numeric:tabular-nums}
+.lbl{font:600 10px/1 Archivo,sans-serif;letter-spacing:.12em;text-transform:uppercase;color:var(--mute)}
+.mono{font-family:"IBM Plex Mono",ui-monospace,monospace}
+button{font:inherit;color:inherit;cursor:pointer}
+/* top bar */
+.top{height:56px;background:var(--paper);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:20px;padding:0 32px}
+.brand{display:flex;align-items:baseline;gap:10px}.brand b{font-size:16px;font-weight:700}.brand span{color:var(--mute);font-size:13px}
+.switch{height:34px;padding:0 12px;border:1px solid var(--line);background:var(--paper);border-radius:6px;font-weight:600;display:flex;align-items:center;gap:8px}
+.sp{flex:1}
+.live{display:flex;align-items:center;gap:8px;font-size:13px}.live i{width:8px;height:8px;border-radius:50%;background:var(--ink)}
+.icon{width:34px;height:34px;border:1px solid var(--line);border-radius:6px;background:var(--paper);display:grid;place-items:center}
+.btn{height:34px;padding:0 14px;border:1px solid var(--line);border-radius:6px;background:var(--paper);font-weight:600}
+main{padding:20px 32px 0}
+/* boarding pass header */
+.pass{background:var(--paper);display:grid;grid-template-columns:268px 1fr;height:88px;border-radius:8px}
+.stub{padding:16px 22px;border-right:2px dashed var(--grey)}
+.stub h1{margin:6px 0 4px;font-size:30px;line-height:1;font-weight:700;letter-spacing:-.01em}
+.stub p{margin:0;color:var(--mute);font-size:13px}
+.segs{display:grid;grid-template-columns:1.2fr .65fr .8fr .65fr .65fr .9fr 2.5fr}
+.seg{padding:18px 18px 0;border-left:1px solid var(--grey)}.seg:first-child{border-left:0}
+.seg .v{margin-top:9px;font-size:19px;font-weight:600;white-space:nowrap}.seg .s{font-size:12px;color:var(--mute);margin-top:3px}
+.seg.ctl{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.seg.ctl .s{margin-top:8px;font-size:13px;color:var(--ink)}
+.segc{display:inline-flex;border:1px solid var(--ink);border-radius:6px;overflow:hidden;margin-top:-2px}
+.segc button{border:0;height:32px;padding:0 16px;background:var(--paper);font-weight:600}.segc button[aria-pressed=true]{background:var(--ink);color:var(--paper)}
+/* tabs */
+.tabs{display:flex;gap:4px;margin:12px 0 14px;border-bottom:1px solid var(--line)}
+.tabs a{padding:10px 16px 11px;text-decoration:none;color:var(--mute);font-weight:600;border-bottom:3px solid transparent;margin-bottom:-1px}
+.tabs a[aria-current]{color:var(--ink);border-color:var(--ink)}
+/* readings */
+.reads{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.rd{background:var(--paper);border-radius:8px;padding:18px 22px 18px;height:178px}
+.rd .row{display:flex;justify-content:space-between;align-items:baseline}
+.rd .num{font-size:68px;font-weight:600;line-height:1;letter-spacing:-.02em;margin-top:12px}.rd .num small{font-size:20px;font-weight:500;margin-left:6px;color:var(--mute);letter-spacing:0}
+.band{position:relative;height:6px;background:var(--grey);margin-top:24px;border-radius:3px}
+.band b{position:absolute;top:-5px;width:3px;height:16px;background:var(--ink);border-radius:1px}
+.ends{display:flex;justify-content:space-between;margin-top:6px;font-size:12px;color:var(--mute)}
+.ok{font-size:13px;font-weight:600}
+/* lower */
+.lower{display:grid;grid-template-columns:520px 1fr;gap:12px;margin-top:12px}
+.panel{background:var(--paper);border-radius:8px;height:440px}
+.ph{display:flex;justify-content:space-between;align-items:center;padding:16px 20px 0;height:44px}
+/* gate board */
+.board{background:var(--ink);color:var(--paper);border-radius:8px;height:440px;overflow:hidden}
+.board .ph .lbl{color:#a9a9a4}
+.pend{font:600 12px "IBM Plex Mono",monospace;background:var(--amber);color:var(--ink);padding:4px 8px;border-radius:4px}
+.g{display:grid;grid-template-columns:30px 124px 1fr 92px 112px 52px 118px;align-items:center;padding:0 20px;column-gap:10px}
+.gh{height:36px;margin-top:6px;border-bottom:1px solid #2c2c2a}.gh span{font:600 10px Archivo;letter-spacing:.12em;text-transform:uppercase;color:#8d8d88}
+.gr{height:54px;border-bottom:1px solid #222220;font:500 13px "IBM Plex Mono",monospace}
+.gr .m{font-family:Archivo;font-weight:600;font-size:14px}.gr .r{font-family:Archivo;color:#b9b9b4;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.on{color:var(--paper)}.off{color:#7d7d78}
+.gr.alert{background:var(--amber);color:var(--ink);height:80px;border:0}
+.gr.alert .r{color:var(--ink)}
+.gr.alert .note{display:block;font:500 12px Archivo;margin-top:3px}
+.ack{height:30px;border:1.5px solid var(--ink);background:var(--ink);color:var(--amber);border-radius:5px;font:600 12px Archivo;padding:0 10px}
+</style></head><body>
+<header class="top">
+  <div class="brand"><b>Mushroom farm</b><span>Climate and harvest</span></div>
+  <button class="switch">Room 1 <span aria-hidden="true">▾</span></button>
+  <div class="sp"></div>
+  <div class="live"><i></i><span class="mono">Live · 18:05</span></div>
+  <button class="icon" aria-label="Switch theme"><svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="#0d0d0d" stroke-width="1.5"/><path d="M8 1.5a6.5 6.5 0 0 1 0 13z" fill="#0d0d0d"/></svg></button>
+  <button class="btn">Settings</button>
+</header>
+<main>
+  <section class="pass" aria-label="Room 1">
+    <div class="stub"><div class="lbl">Room</div><h1>Room 1</h1><p class="mono">12 × 5 × 2 m · 120 m³</p></div>
+    <div class="segs">
+      <div class="seg"><div class="lbl">Crop</div><div class="v">Lion's mane</div></div>
+      <div class="seg"><div class="lbl">Blocks</div><div class="v">950</div></div>
+      <div class="seg"><div class="lbl">Stage</div><div class="v">Fruiting</div></div>
+      <div class="seg"><div class="lbl">Flush</div><div class="v">1 of 4</div></div>
+      <div class="seg"><div class="lbl">Day</div><div class="v">2 of 7</div></div>
+      <div class="seg"><div class="lbl">Next</div><div class="v">Rest</div><div class="s">about 2 Nov</div></div>
+      <div class="seg ctl"><div><div class="lbl">Control</div><div class="s">Automatic control<br>fresh air every 12 min</div></div>
+        <div class="segc" role="group" aria-label="Control mode"><button aria-pressed="true">Auto</button><button aria-pressed="false">Manual</button></div></div>
+    </div>
+  </section>
+  <nav class="tabs"><a href="#" aria-current="page">Now</a><a href="#">History</a><a href="#">Crop</a><a href="#">Simulations</a><a href="#">Setup</a></nav>
+  <section class="reads">
+    <div class="rd"><div class="row"><span class="lbl">Temperature</span><span class="ok">In band</span></div>
+      <div class="num">20.1<small>°C</small></div><div class="band"><b style="left:55%"></b></div><div class="ends mono"><span>19</span><span>band 19–21 °C</span><span>21</span></div></div>
+    <div class="rd"><div class="row"><span class="lbl">Humidity</span><span class="ok">In band · 0.4 below top</span></div>
+      <div class="num">92.6<small>% RH</small></div><div class="band"><b style="left:93%"></b></div><div class="ends mono"><span>87</span><span>band 87–93 %</span><span>93</span></div></div>
+    <div class="rd"><div class="row"><span class="lbl">CO₂</span><span class="ok">In band</span></div>
+      <div class="num">786<small>ppm</small></div><div class="band"><b style="left:86%"></b></div><div class="ends mono"><span>700</span><span>band 700–800 ppm</span><span>800</span></div></div>
+  </section>
+  <section class="lower">
+    <div class="panel"><div class="ph"><span class="lbl">Room 1 · air path</span><span class="mono" style="font-size:12px">Outdoor 28.4 °C · 78 % RH</span></div>
+      <svg width="520" height="390" viewBox="0 0 520 390" font-family="Archivo" font-size="12" aria-label="Room drawing">
+        <text x="8" y="52" fill="#5f5f5b">Outside</text>
+        <rect x="60" y="66" width="400" height="290" fill="none" stroke="#0d0d0d" stroke-width="2"/>
+        <g fill="#e9e9e6" stroke="#0d0d0d"><rect x="96" y="240" width="58" height="16"/><rect x="96" y="270" width="58" height="16"/><rect x="96" y="300" width="58" height="16"/><rect x="166" y="240" width="58" height="16"/><rect x="166" y="270" width="58" height="16"/><rect x="166" y="300" width="58" height="16"/><rect x="236" y="240" width="58" height="16"/><rect x="236" y="270" width="58" height="16"/><rect x="236" y="300" width="58" height="16"/></g>
+        <text x="195" y="338" text-anchor="middle" fill="#5f5f5b">Shelves · 950 blocks</text>
+        <path d="M14 190 H48 M72 190 C140 150 320 140 380 172 S430 190 448 190 M472 190 H504" fill="none" stroke="#0d0d0d" stroke-width="1.5" stroke-dasharray="5 5"/>
+        <path d="M498 185 l7 5 -7 5" fill="none" stroke="#0d0d0d" stroke-width="1.5"/>
+        <path d="M330 77 H426 V44" fill="none" stroke="#0d0d0d" stroke-dasharray="2 3"/>
+        <g stroke="#0d0d0d" stroke-width="1.5" fill="#fff"><rect x="48" y="172" width="24" height="36"/><rect x="190" y="66" width="140" height="22"/><rect x="392" y="14" width="68" height="30"/><circle cx="100" cy="136" r="14"/><rect x="404" y="258" width="40" height="28"/><rect x="404" y="300" width="40" height="28"/></g>
+        <rect x="448" y="172" width="24" height="36" fill="#ffb000" stroke="#0d0d0d" stroke-width="1.5"/>
+        <path d="M91 127 l18 18 M109 127 l-18 18" stroke="#0d0d0d"/>
+        <g font-family="IBM Plex Mono" font-weight="600" text-anchor="middle"><text x="60" y="194">1</text><text x="460" y="194">6</text><text x="424" y="276">4</text><text x="424" y="318">5</text></g>
+        <g font-weight="600"><text x="80" y="234">Intake fan</text><text x="440" y="234" text-anchor="end">Exhaust fan</text><text x="260" y="106" text-anchor="middle">2 Aircon · cool 20.0 °C</text><text x="122" y="140">3 Circulation</text><text x="396" y="276" text-anchor="end">Humidifier</text><text x="396" y="318" text-anchor="end">Dehumidifier</text></g>
+        <text x="426" y="33" text-anchor="middle" fill="#5f5f5b">Condenser</text>
+      </svg></div>
+    <div class="board" aria-label="Machines and alarms">
+      <div class="ph"><span class="lbl">Machines and alarms · in air order</span><span class="pend">1 NOT SEEN</span></div>
+      <div class="g gh"><span>#</span><span>Machine</span><span>Role</span><span>Commanded</span><span>Running</span><span>Since</span><span></span></div>
+      <div class="g gr"><span>01</span><span class="m">Intake fan</span><span class="r">Fresh air in · every 12 min</span><span class="off">OFF</span><span class="off">OFF</span><span>17:58</span><span></span></div>
+      <div class="g gr"><span>02</span><span class="m">Aircon</span><span class="r">Cool 20.0 °C</span><span class="on">ON</span><span class="on">ON</span><span>06:10</span><span></span></div>
+      <div class="g gr"><span>03</span><span class="m">Circulation</span><span class="r">Mixes room air</span><span class="on">ON</span><span class="on">ON</span><span>06:10</span><span></span></div>
+      <div class="g gr"><span>04</span><span class="m">Humidifier</span><span class="r">On below 87 %, off at 90 %</span><span class="off">OFF</span><span class="off">OFF</span><span>17:31</span><span></span></div>
+      <div class="g gr"><span>05</span><span class="m">Dehumidifier</span><span class="r">On above 93 %, off at 90 %</span><span class="off">OFF</span><span class="off">OFF</span><span>16:50</span><span></span></div>
+      <div class="g gr alert"><span>06</span><span class="m">Exhaust fan<span class="note">FAULT · not seen</span></span><span class="r">Stale air out<span class="note">Commanded on, not running</span></span><span>ON</span><span>NOT RUNNING</span><span>17:42</span><button class="ack">Acknowledge</button></div>
+    </div>
+  </section>
+</main>
+</body></html>
