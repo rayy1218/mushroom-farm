@@ -1372,6 +1372,8 @@ details.setup-part:not([open]) { padding-top: 8px; }
 /* the room drawing: folded under 480 px, its fold not seen above */
 .rc-fold-sum { display: none; }
 @media (max-width: 479px) {
-  .rc-fold-sum { display: flex; align-items: center; min-height: 44px; color: var(--ink-2); font-size: var(--fs-sm); cursor: pointer; }
+  .rc-fold-sum { display: flex; align-items: center; gap: 10px; min-height: 44px; color: var(--ink-2); font-size: var(--fs-sm); cursor: pointer; }
+  .rc-fold-sum::before { content: ""; width: 6px; height: 6px; border: solid currentColor; border-width: 0 1.5px 1.5px 0; rotate: -45deg; }
+  .rc-fold[open] .rc-fold-sum::before { rotate: 45deg; }
   .rc-fold[open] .rc-fold-sum { margin-bottom: 8px; }
 }

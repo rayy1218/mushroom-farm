@@ -9,11 +9,13 @@ import { yTicks, tickCount, groupNumber, bandLabels } from '../web/chart-math.js
 
 const chart = readFileSync(new URL('../web/chart.js', import.meta.url), 'utf8');
 
-test('yTicks: round values inside the range, as many as fit (1, 2 or 5 times a power of ten)', () => {
+test('yTicks: round values inside the range, as many as fit (1, 2, 2.5 or 5 times a power of ten)', () => {
   assert.deepEqual(yTicks(15, 22, 5), [16, 18, 20, 22], 'a simulation\'s 15–22 °C: 16.3 °C now reads between 16 and 18');
   assert.deepEqual(yTicks(18.5, 21.5, 6), [19, 20, 21]);
   assert.deepEqual(yTicks(80, 100, 6), [80, 85, 90, 95, 100]);
-  assert.deepEqual(yTicks(400, 1600, 6, 0), [500, 1000, 1500]);
+  assert.deepEqual(yTicks(400, 1600, 6, 0), [500, 750, 1000, 1250, 1500]);
+  assert.deepEqual(yTicks(22, 34, 5), [22.5, 25, 27.5, 30, 32.5], 'Container Gamma at 390 px: not 25 and 30 alone');
+  assert.deepEqual(yTicks(18.5, 21.5, 6), [19, 20, 21], 'no 0.25 steps: one decimal cannot show them');
   assert.deepEqual(yTicks(19.6, 20.4, 5), [19.6, 19.8, 20, 20.2, 20.4]);
   assert.deepEqual(yTicks(0, 1, 6, 0), [0, 1], 'never finer than the digits shown');
   assert.deepEqual(yTicks(20, 20, 5), [20], 'no range: the one value');

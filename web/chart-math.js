@@ -147,15 +147,16 @@ export function secondLegend(label, value, room, scale = true) {
 }
 
 // Round values for the y axis inside [min, max] (critique 2026-10-29c: a simulation's axis said only 22.0 and 15.0, so
-// 16.3 °C could not be read): the multiples of the finest step of 1, 2 or 5 times a power of ten, never finer than `digits`
-// shows, that puts at most `most` of them in the range. The range itself stays as niceRange made it.
+// 16.3 °C could not be read): the multiples of the finest step of 1, 2, 2.5 or 5 times a power of ten that `digits` can
+// show, that puts at most `most` of them in the range (2.5: from 2 to 5 a 22–34 °C range went from 7 numbers to 2). The range
+// itself stays as niceRange made it.
 export function yTicks(min, max, most, digits = 1) {
   if (!(max > min)) return Number.isFinite(min) ? [min] : [];
   const r = (x) => Number(x.toFixed(10));
-  const finest = 10 ** -digits;
+  const shown = (step) => Number.isInteger(r(step * 10 ** digits));
   for (let p = 10 ** Math.floor(Math.log10((max - min) / most)); ; p *= 10) {
-    for (const step of [1, 2, 5].map((k) => r(k * p))) {
-      if (step < finest) continue;
+    for (const step of [1, 2, 2.5, 5].map((k) => r(k * p))) {
+      if (!shown(step)) continue;
       const a = Math.ceil(r(min / step));
       const b = Math.floor(r(max / step));
       if (b - a + 1 <= most) return Array.from({ length: b - a + 1 }, (_, i) => r((a + i) * step));
