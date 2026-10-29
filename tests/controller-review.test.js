@@ -99,7 +99,7 @@ test('runner: a T-only fault leaves the humidifier on its RH band; a dead probe 
   assert.equal(s.db.getCommands(s.id).relay.humidifier, true);
   for (let i = 0; i < 3; i++) await s.cycle({ t: 99, rh: 97 });
   assert.equal(s.controller.get(s.id).checks.trh.fault, true);
-  assert.equal(s.controller.get(s.id).reasons.humidifier, 'Humidifier: RH 97 % ≥ 95 %');
+  assert.equal(s.controller.get(s.id).reasons.humidifier, 'Humidifier: RH 97 %, at or over 95 %');
   assert.equal(s.db.getCommands(s.id).relay.humidifier, false);
   for (let i = 0; i < 3; i++) await s.cycle({ trhOk: false });
   assert.equal(s.controller.get(s.id).reasons.humidifier, 'Humidity sensor fault: timed humidifier, 10 min of every 20');

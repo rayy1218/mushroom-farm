@@ -342,7 +342,7 @@ test('humidifier during exchange off: changed between cycles, the next cycle sen
   await s.cycle({ co2: 800, rh: 96, dt: 60_000 }); // the humidifier command changes at most once a minute
   assert.equal(s.db.getCommands(s.id).relay.humidifier, false);
   assert.equal(s.db.getCommands(s.id).relay.intake, true);
-  assert.equal(s.controller.get(s.id).reasons.humidifier, 'Humidifier: off (RH 96 % ≥ 95 %; not forced during air exchange)');
+  assert.equal(s.controller.get(s.id).reasons.humidifier, 'Humidifier: off (RH 96 %, at or over 95 %; not forced during air exchange)');
   assert.equal(s.controller.get(s.id).humidifierDuringExchange, false);
 });
 

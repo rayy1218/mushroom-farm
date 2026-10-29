@@ -79,7 +79,7 @@ test('a fresh-air run whose CO₂ reaches the upper limit becomes a normal excha
   assert.equal(r.state.exchange, true);
   assert.equal(r.state.exchangeForced, false);
   assert.equal(r.state.exchangeSince, NOW - 40 * S, 'its start time is kept');
-  assert.equal(r.reasons.exchange, 'Air exchange: CO₂ 760 ppm ≥ 750 ppm');
+  assert.equal(r.reasons.exchange, 'Air exchange: CO₂ 760 ppm, at or over 750 ppm');
   const safety = go(forcedFor(2 * MIN), 1300);
   assert.equal(safety.state.exchange, true);
   assert.equal(safety.state.exchangeForced, false);

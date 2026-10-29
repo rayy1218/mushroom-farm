@@ -61,10 +61,10 @@ test('humidifier during exchange off: it follows its band alone while the exchan
   assert.equal(wet.desired.intake, true);
   assert.equal(wet.desired.humidifier, false);
   assert.equal(wet.state.humidifier, false);
-  assert.equal(wet.reasons.humidifier, 'Humidifier: off (RH 96 % ≥ 95 %; not forced during air exchange)');
+  assert.equal(wet.reasons.humidifier, 'Humidifier: off (RH 96 %, at or over 95 %; not forced during air exchange)');
   const dry = run({ state: { exchange: true, humidifier: false }, co2: 800, rh: 84, during: false });
   assert.equal(dry.desired.humidifier, true);
-  assert.equal(dry.reasons.humidifier, 'Humidifier: on (RH 84 % ≤ 85 %)');
+  assert.equal(dry.reasons.humidifier, 'Humidifier: on (RH 84 %, at or under 85 %)');
   const between = run({ state: { exchange: true, humidifier: true }, co2: 800, rh: 90, during: false });
   assert.equal(between.desired.humidifier, true);
   assert.equal(between.reasons.humidifier, 'Humidifier kept on: RH 90 % between 85 and 95 %');
@@ -72,7 +72,7 @@ test('humidifier during exchange off: it follows its band alone while the exchan
   assert.equal(gone.desired.humidifier, false);
   assert.equal(gone.reasons.humidifier, 'Humidity sensor not answering: humidifier kept off');
   // without an exchange nothing differs; true forces it on; the default is off (fresh Malaysian air is wet enough)
-  assert.equal(run({ state: { exchange: false, humidifier: false }, rh: 96, during: false }).reasons.humidifier, 'Humidifier: RH 96 % ≥ 95 %');
+  assert.equal(run({ state: { exchange: false, humidifier: false }, rh: 96, during: false }).reasons.humidifier, 'Humidifier: RH 96 %, at or over 95 %');
   assert.equal(run({ co2: 800, rh: 96, during: true }).desired.humidifier, true);
   assert.equal(run({ co2: 800, rh: 96 }).desired.humidifier, false);
   assert.equal(DEFAULTS.humidifierDuringExchange, false);
@@ -152,11 +152,11 @@ test('aircon drop: none for a new room (acDrop 0 or missing), any 0 to 10 °C as
 });
 
 test('reasons name the rule and the numbers', () => {
-  assert.equal(run({ co2: 762 }).reasons.exchange, 'Air exchange: CO₂ 762 ppm ≥ 750 ppm');
-  assert.equal(run({ state: { exchange: true, humidifier: false }, co2: 590 }).reasons.exchange, 'Air exchange: CO₂ 590 ppm ≤ 600 ppm');
+  assert.equal(run({ co2: 762 }).reasons.exchange, 'Air exchange: CO₂ 762 ppm, at or over 750 ppm');
+  assert.equal(run({ state: { exchange: true, humidifier: false }, co2: 590 }).reasons.exchange, 'Air exchange: CO₂ 590 ppm, at or under 600 ppm');
   assert.equal(run({ co2: 700 }).reasons.exchange, 'Air exchange kept off: CO₂ 700 ppm between 600 and 750 ppm');
-  assert.equal(run({ rh: 80 }).reasons.humidifier, 'Humidifier: RH 80 % ≤ 85 %');
-  assert.equal(run({ rh: 96 }).reasons.humidifier, 'Humidifier: RH 96 % ≥ 95 %');
+  assert.equal(run({ rh: 80 }).reasons.humidifier, 'Humidifier: RH 80 %, at or under 85 %');
+  assert.equal(run({ rh: 96 }).reasons.humidifier, 'Humidifier: RH 96 %, at or over 95 %');
   assert.equal(run({ rh: 90 }).reasons.humidifier, 'Humidifier kept off: RH 90 % between 85 and 95 %');
   assert.equal(run().reasons.ac, 'Aircon: 22.0 °C (middle of 21–23 °C)');
 });
@@ -188,4 +188,15 @@ test('validateControl: defaults are valid; each field and the low < high check',
   assert.equal(bad({ tLow: 23 }).field, 'tLow');
   assert.equal(bad({ rhLow: 95 }).field, 'rhLow');
   assert.equal(bad({ co2Low: 450, co2High: 5000, tLow: 16, tHigh: 35, rhLow: 40, rhHigh: 100, co2Safety: 5001 }), null);
+});
+
+// Critique 2026-10-29: "RH 88.7 % ≤ 90 %" was the only maths among reasons in words; CO₂ thousands grouped like everywhere.
+test('reasons say at or over / at or under in words, never a maths sign, and group a CO₂ in thousands', async () => {
+  const { readFileSync } = await import('node:fs');
+  assert.doesNotMatch(readFileSync(new URL('../server/controller.js', import.meta.url), 'utf8').replace(/^\s*\/\/.*$/gm, ''), /[≤≥]/);
+  const big = { ...bands, co2Low: 1000, co2High: 1400, co2Safety: 3000 };
+  assert.equal(run({ co2: 1200, b: big }).reasons.exchange, 'Air exchange kept off: CO₂ 1,200 ppm between 1,000 and 1,400 ppm');
+  assert.equal(run({ co2: 1450.4, b: big }).reasons.exchange, 'Air exchange: CO₂ 1,450.4 ppm, at or over 1,400 ppm');
+  assert.equal(run({ state: { exchange: true, humidifier: false }, co2: 1500, b: { ...big, exchangeMaxMin: 60 } }).reasons.exchange,
+    'Air exchange: CO₂ 1,500 ppm, at or over 1,400 ppm');
 });
