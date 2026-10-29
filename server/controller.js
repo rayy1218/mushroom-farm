@@ -60,7 +60,12 @@ const WET_WAIT = 3; // a fresh-air run waits while the outside holds this much m
 const HOT_WAIT = 8; // … or is this much hotter, for at most one more interval
 
 const num = (x) => String(Math.round(x * 10) / 10);
-const ppm = (x) => (Math.round(x * 10) / 10).toLocaleString('en-US', { maximumFractionDigits: 1 }); // a CO₂, thousands grouped
+// A CO₂, thousands grouped ('1,300'); by hand, not toLocaleString: decide() runs for every step of a simulation, and Intl
+// formatting there (about 40 µs a call) made a simulation many times slower.
+const ppm = (x) => {
+  const [whole, frac] = num(x).split('.');
+  return `${whole.replace(/\B(?=(\d{3})+$)/g, ',')}${frac ? `.${frac}` : ''}`;
+};
 const word = (on) => (on ? 'on' : 'off');
 
 // "40 s", "1 min 20 s", "2 min": a wait for a reason text, rounded up to whole seconds.

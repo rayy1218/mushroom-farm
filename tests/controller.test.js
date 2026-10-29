@@ -193,7 +193,9 @@ test('validateControl: defaults are valid; each field and the low < high check',
 // Critique 2026-10-29: "RH 88.7 % ≤ 90 %" was the only maths among reasons in words; CO₂ thousands grouped like everywhere.
 test('reasons say at or over / at or under in words, never a maths sign, and group a CO₂ in thousands', async () => {
   const { readFileSync } = await import('node:fs');
-  assert.doesNotMatch(readFileSync(new URL('../server/controller.js', import.meta.url), 'utf8').replace(/^\s*\/\/.*$/gm, ''), /[≤≥]/);
+  const code = readFileSync(new URL('../server/controller.js', import.meta.url), 'utf8').replace(/^\s*\/\/.*$/gm, '');
+  assert.doesNotMatch(code, /[≤≥]/);
+  assert.doesNotMatch(code, /toLocaleString/, 'decide() runs every step of a simulation: Intl formatting there made the simulations time out');
   const big = { ...bands, co2Low: 1000, co2High: 1400, co2Safety: 3000 };
   assert.equal(run({ co2: 1200, b: big }).reasons.exchange, 'Air exchange kept off: CO₂ 1,200 ppm between 1,000 and 1,400 ppm');
   assert.equal(run({ co2: 1450.4, b: big }).reasons.exchange, 'Air exchange: CO₂ 1,450.4 ppm, at or over 1,400 ppm');
