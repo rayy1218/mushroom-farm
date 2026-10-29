@@ -486,8 +486,17 @@ export function openSimulateDialog(room, hooks = {}) {
   const STEP_VIEWS = [stepOne, stepTwo, stepThree];
 
   function render() {
+    // A done step is a button back to it (critique 2026-10-29c: the labels were plain text); forward only through Next, so each
+    // step's check still runs.
     marks.replaceChildren(...STEPS.map((name, i) => {
-      const li = el('li', '', name);
+      const li = el('li');
+      if (i + 1 < step) {
+        const back = button(name, 'sim-step-back');
+        back.addEventListener('click', () => { step = i + 1; render(); title.focus(); });
+        li.append(back);
+      } else {
+        li.textContent = name;
+      }
       if (i + 1 === step) li.setAttribute('aria-current', 'step');
       return li;
     }));

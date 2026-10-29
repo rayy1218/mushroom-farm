@@ -88,8 +88,8 @@ function edgeFade(wrap, inner) {
 }
 
 // A table under its caption, which stays above the scroller (a caption inside it scrolled out of sight). keep: the page's
-// list of things to destroy (the fade's observer).
-function table(caption, headers, rows, keep) {
+// list of things to destroy (the fade's observer); total: the cells of a total row at its foot (optional).
+function table(caption, headers, rows, keep, total = null) {
   const box = text('div', 'sim-table');
   const cap = text('p', 'sim-table-cap', caption);
   cap.id = `sim-table-${++tableSeq}`;
@@ -114,6 +114,15 @@ function table(caption, headers, rows, keep) {
       const cell = i === 0 ? text('th') : text('td', 'num');
       if (i === 0) cell.scope = 'row';
       put(cell, c);
+      tr.append(cell);
+    });
+    tbody.append(tr);
+  }
+  if (total) {
+    const tr = text('tr', 'total');
+    total.forEach((c, i) => {
+      const cell = i === 0 ? text('th', '', c) : text('td', 'num', c);
+      if (i === 0) cell.scope = 'row';
       tr.append(cell);
     });
     tbody.append(tr);
@@ -414,7 +423,11 @@ export function mount(container, { id, runId }) {
     usage.append(tile('Energy', use.kWh, use.cost), tile('Water', use.litres, use.waterCost));
     if (use.removed) usage.append(tile('Water taken out', use.removed, 'by the dehumidifier'));
     card.append(usage);
-    if (use.rows.length) card.append(table('Energy by machine', ['Machine', 'kWh', 'Share'], use.rows.map((r) => [r.label, r.kWh, r.share]), charts));
+    if (use.rows.length) { // with its cost at the run's electricity price and a total row, as History's (critique 2026-10-29c)
+      const cost = (r) => (use.priced ? [r.cost] : []);
+      card.append(table('Energy by machine', ['Machine', 'kWh', 'Share', ...(use.priced ? ['Cost'] : [])], use.rows.map((r) => [r.label, r.kWh, r.share, ...cost(r)]),
+        charts, ['Total', use.total.kWh, '', ...cost(use.total)]));
+    }
     const perDay = summary.perDay ?? [];
     if (perDay.length) {
       const bars = text('div', 'us-charts');

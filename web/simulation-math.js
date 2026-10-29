@@ -251,23 +251,32 @@ export function filterView(summary, startHour = 0) {
 
 const MACHINES = [['intake', 'Intake fan'], ['exhaust', 'Exhaust fan'], ['circulation', 'Circulation fan'], ['humidifier', 'Humidifier'], ['dehumidifier', 'Dehumidifier'], ['lights', 'Lights'], ['ac', 'Aircon']];
 
-// summary → the texts of the energy and water part: totals, cost (null without a price) and a row per machine.
+// summary → the texts of the energy and water part: totals, cost (null without a price), a row per machine and the total row.
 // The dehumidifier's and the lights' rows are there when the run had them (input) or they used energy; removed is the "Water taken out" text, or null.
+// Each row and the total have their cost in RM at the run's electricity price (input.ctx.prices; critique 2026-10-29c: History's
+// table had it and a total, this one neither), null without a price (priced: whether the table has its Cost column).
 export function energyView(summary, input = null) {
   const e = summary?.energy;
   const w = summary?.water;
   const by = e?.byMachine;
-  const total = MACHINES.reduce((a, [k]) => a + (finite(by?.[k]) ? by[k] : 0), 0);
+  const price = input?.ctx?.prices?.electricity;
+  const priced = finite(price) && finite(e?.cost);
+  const rows = by ? MACHINES.filter(([key]) => (key === 'dehumidifier' ? hasDehumidifier(input) || by.dehumidifier > 0
+    : key === 'lights' ? hasLights(input) || by.lights > 0 : true)) : [];
+  const total = rows.reduce((a, [k]) => a + (finite(by?.[k]) ? by[k] : 0), 0);
   return {
     kWh: formatKWh(e?.kWh),
     cost: finite(e?.cost) ? formatRM(e.cost) : null,
     litres: formatLitres(w?.litres),
     waterCost: finite(w?.cost) ? formatRM(w.cost) : null,
     removed: finite(w?.removedLitres) && w.removedLitres > 0 ? formatLitres(w.removedLitres) : null,
-    rows: by ? MACHINES.filter(([key]) => (key === 'dehumidifier' ? hasDehumidifier(input) || by.dehumidifier > 0
-      : key === 'lights' ? hasLights(input) || by.lights > 0 : true)).map(([key, label]) => ({
+    priced,
+    rows: rows.map(([key, label]) => ({
       key, label, kWh: formatKWh(by[key]), share: total > 0 && finite(by[key]) ? `${Math.round((by[key] / total) * 100)} %` : DASH,
-    })) : [],
+      cost: priced && finite(by[key]) ? formatRM(by[key] * price) : null,
+    })),
+    // the run's own total and cost (the rows' sum differs from it by their rounding at most)
+    total: rows.length ? { kWh: formatKWh(finite(e?.kWh) ? e.kWh : total), cost: priced ? formatRM(e.cost) : null } : null,
   };
 }
 

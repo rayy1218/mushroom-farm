@@ -193,3 +193,35 @@ test('step 2 offers the bands, the room\'s by hand in accent; step 3 lists them 
   assert.doesNotMatch(dialog, /not changes made by hand on the Setup tab/);
   assert.match(block, /\.sim-hand \{ color: var\(--accent-text\); font-weight: 600; \}/);
 });
+
+// ---- the dialog and the result page ----
+
+test('the stepper\'s done steps jump back; the steps ahead stay text (Next checks each step)', () => {
+  const dialog = src('simulate-dialog.js');
+  assert.match(dialog, /if \(i \+ 1 < step\) \{\s+const back = button\(name, 'sim-step-back'\);\s+back\.addEventListener\('click', \(\) => \{ step = i \+ 1; render\(\); title\.focus\(\); \}\);/);
+  assert.match(block, /\.sim-steps \.sim-step-back \{ min-height: 0; padding: 0; border: 0; background: none; color: var\(--accent-text\);/);
+  assert.match(block, /@media \(max-width: 600px\) \{ \.sim-steps \.sim-step-back \{ min-height: 44px; \} \}/);
+});
+
+test('the Crop and Blocks heads look like the field labels (14 px 600, ink), in Simulate and on Suggest', () => {
+  assert.match(block, /\.sim-crop-head \{ color: var\(--ink\); font-size: 0\.9rem; font-weight: 600; \}/);
+  assert.match(css, /\.field label \{ font-size: 0\.9rem; font-weight: 600; \}/);
+  assert.match(src('suggest-page.js'), /el\('div', 'sim-crop-row sim-crop-head'\)/);
+});
+
+test('energy by machine: the cost of each machine at the run\'s price and a total row, as History\'s', () => {
+  const summary = { energy: { byMachine: { intake: 1.2, exhaust: 1, circulation: 8, humidifier: 3, ac: 30 }, kWh: 43.2, cost: 23.76 }, water: { litres: 1 } };
+  const v = energyView(summary, { physics: {}, ctx: { prices: { electricity: 0.55 } } });
+  assert.equal(v.priced, true);
+  assert.deepEqual(v.rows.map((r) => [r.label, r.cost]), [['Intake fan', 'RM 0.66'], ['Exhaust fan', 'RM 0.55'], ['Circulation fan', 'RM 4.40'], ['Humidifier', 'RM 1.65'], ['Aircon', 'RM 16.50']]);
+  assert.deepEqual(v.total, { kWh: '43.2 kWh', cost: 'RM 23.76' });
+  // no price: no Cost column, the total still
+  const free = energyView({ ...summary, energy: { ...summary.energy, cost: null } }, { physics: {}, ctx: { prices: { electricity: null } } });
+  assert.equal(free.priced, false);
+  assert.equal(free.rows[0].cost, null);
+  assert.deepEqual(free.total, { kWh: '43.2 kWh', cost: null });
+  const page = src('simulation-page.js');
+  assert.match(page, /\['Machine', 'kWh', 'Share', \.\.\.\(use\.priced \? \['Cost'\] : \[\]\)\]/);
+  assert.match(page, /charts, \['Total', use\.total\.kWh, '', \.\.\.cost\(use\.total\)\]\)/);
+  assert.match(page, /const tr = text\('tr', 'total'\);/);
+});
