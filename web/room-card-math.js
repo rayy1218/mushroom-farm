@@ -2,7 +2,7 @@
 // note and the fresh-air line, the machine tiles in air-path order and the line with the outdoor air and the filter.
 // No DOM, so Node tests cover it. Spec 2026-10-26-room-picture-design.md section 3.
 
-import { nearChip, exchangePoints } from './band-math.js';
+import { nearChip, exchangePoints, humidifierPoints } from './band-math.js';
 import { view } from './mimic-math.js';
 import { exchangeLine } from './control-math.js';
 import { filterCard, intakeRunning, lastRunningOf } from './filter-math.js';
@@ -208,6 +208,7 @@ const fanWord = (sub) => sub.replace(/^fan (\S+)/, (_, f) => `fan ${f.toLowerCas
 const hasRh = (c) => num(c?.rhLow) !== null && num(c?.rhHigh) !== null;
 const rhText = (x) => String(Math.round(x * 10) / 10);
 const rhAt = (x) => `${rhText(x)}\u00a0%\u00a0RH`; // a number and its unit never part at a wrap
+const huPoints = (p) => `On at ${rhAt(p.on)}, off at ${rhAt(p.off)}`;
 
 // In the order the air meets them, the lights after the circulation; the dehumidifier and the lights only when the room has them.
 const MACHINES = [
@@ -216,10 +217,10 @@ const MACHINES = [
   { key: 'ac', name: 'Aircon', effect: 'Cools', detail: (u) => (u.sub ? `${u.state} · ${fanWord(u.sub)}` : u.state) },
   { key: 'circ', name: 'Circulation', effect: 'Mixes the air', detail: (u, c) => (c?.auto ? 'Always on' : 'Set by hand') },
   { key: 'lights', name: 'Lights', effect: 'Light for the crop', detail: (u, c, f, crop) => (c?.auto ? lightShort(crop) : 'Set by hand') },
-  // The controller's real rule (server/controller.js decide): the humidifier on at the lower limit, off at the upper; the
-  // dehumidifier on at the upper limit, off at the middle of the band.
+  // The controller's real rule (server/controller.js decide): the humidifier on and off at its points inside the band
+  // (band-math.js humidifierPoints); the dehumidifier on at the upper limit, off at the middle of the band.
   { key: 'hu', name: 'Humidifier', effect: 'Adds moisture',
-    detail: (u, c) => (hasRh(c) ? `On at ${rhAt(c.rhLow)}, off at ${rhAt(c.rhHigh)}` : 'On below the band') },
+    detail: (u, c) => (hasRh(c) ? huPoints(humidifierPoints(c.rhLow, c.rhHigh)) : 'On near the bottom of the band') },
   { key: 'dh', name: 'Dehumidifier', effect: 'Dries',
     detail: (u, c) => (hasRh(c) ? `On at ${rhAt(c.rhHigh)}, off at ${rhAt((c.rhLow + c.rhHigh) / 2)}` : 'On above the band') },
   { key: 'exhaust', name: 'Exhaust fan', effect: 'Air out', detail: () => 'With the intake' },

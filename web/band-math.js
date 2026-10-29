@@ -9,6 +9,16 @@ const TREND_WORD = { T: 0.1, RH: 0.3 };
 
 const num = (x) => (typeof x === 'number' && Number.isFinite(x) ? x : null);
 
+// The humidifier's switch points sit inside the humidity band (owner, 2026-10-29: on at the lower limit and off at the upper
+// held the room at its edges): on at the lower limit plus a margin, off at the upper limit less it. The margin is 1 % RH for a
+// band 6 % RH or wider and a quarter of a narrower band, so the two points never meet. Rounded to 0.1. The controller
+// (server/controller.js decide) and every page that states the points use this. → { on, off } in % RH.
+export const HUMIDIFIER_MARGIN = 1;
+export function humidifierPoints(low, high) {
+  const m = high - low >= 6 ? HUMIDIFIER_MARGIN : (high - low) / 4;
+  return { on: Math.round((low + m) * 10) / 10, off: Math.round((high - m) * 10) / 10 };
+}
+
 // The change over the last spanMs of [{ at, value }] (last value minus the first one inside the span), or null.
 export function trendOf(points, spanMs) {
   const list = (points ?? []).filter((p) => p && num(p.at) !== null && num(p.value) !== null);

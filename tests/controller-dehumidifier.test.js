@@ -24,9 +24,9 @@ test('dehumidifier rule: off at or above the upper limit turns on, on at or belo
     [false, 94.9, false, 'Dehumidifier kept off: RH 94.9 % between 90 and 95 %'],
     [false, 91.5, false, 'Dehumidifier kept off: RH 91.5 % between 90 and 95 %'],
     [false, 90, false, 'Dehumidifier kept off: RH 90 %, at or under 90 %'],
-    [false, 86, false, 'Dehumidifier kept off: RH 86 %, at or under 90 %'],
+    [false, 87, false, 'Dehumidifier kept off: RH 87 %, at or under 90 %'], // at 86 % the humidifier starts (its on-point)
     [true, 90, false, 'Dehumidifier: RH 90 %, at or under 90 %'],
-    [true, 86, false, 'Dehumidifier: RH 86 %, at or under 90 %'],
+    [true, 87, false, 'Dehumidifier: RH 87 %, at or under 90 %'],
     [true, 90.1, true, 'Dehumidifier kept on: RH 90.1 % between 90 and 95 %'],
     [true, 94, true, 'Dehumidifier kept on: RH 94 % between 90 and 95 %'],
     [true, 96, true, 'Dehumidifier kept on: RH 96 %, at or over 95 %'],
@@ -239,6 +239,27 @@ test('the humidifier waits 10 min after the dehumidifier stopped, unless the roo
   // not fitted: the wait does not apply
   const plain = decide({ bands, state: { exchange: false, humidifier: false, dehumidifierOffAt: NOW - 60_000 }, readings: { co2: 650, rh: 84 }, now: NOW });
   assert.equal(plain.desired.humidifier, true);
+});
+
+test('the after-dry wait starts at the humidifier\'s on-point inside the band (2026-10-29), its escape stays 3 % below the band', () => {
+  // band 85–95: the on-point is 86 %, the escape 82 %
+  const r = after({ offAgo: 5 * 60_000, rh: 85.8 });
+  assert.equal(r.desired.humidifier, false);
+  assert.equal(r.reasons.humidifier, 'Humidifier waits: RH 85.8 % after the dehumidifier dried the room (on below 82 % or in 5 min)');
+  assert.equal(after({ offAgo: 5 * 60_000, rh: 86.1 }).reasons.humidifier, 'Humidifier kept off: RH 86.1 % between its on-point 86 % and off-point 94 %');
+  assert.equal(after({ offAgo: 11 * 60_000, rh: 85.8 }).desired.humidifier, true, 'the wait is over: on at its on-point');
+});
+
+test('the humidifier stops below the point where the dehumidifier starts, for any band', () => {
+  for (const [low, high] of [[85, 95], [87, 93], [88, 92], [89, 91], [90, 90.5]]) {
+    const b = { ...bands, rhLow: low, rhHigh: high };
+    const at = (rh, state) => decide({ bands: b, state: { exchange: false, humidifier: false, dehumidifier: false, ...state }, readings: { co2: 650, rh }, now: NOW, dehumidifierFitted: true });
+    // just under the dehumidifier's on-point a running humidifier has already stopped, and the dehumidifier is not on
+    const below = at(high - 0.01, { humidifier: true });
+    assert.equal(below.desired.humidifier, false, `${low}–${high}`);
+    assert.equal(below.desired.dehumidifier, false, `${low}–${high}`);
+    assert.equal(at(high, {}).desired.dehumidifier, true, `${low}–${high}`);
+  }
 });
 
 test('the dehumidifier remembers when it stopped', () => {

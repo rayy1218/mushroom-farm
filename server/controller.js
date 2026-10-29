@@ -10,6 +10,7 @@ import { advance, BAND_KEYS } from './program.js';
 import { outdoorReading } from './outdoor.js';
 import { wOf, dewOf } from '../device/sim-model.js';
 import { lightsNow, localAt } from '../web/light-math.js';
+import { humidifierPoints } from '../web/band-math.js';
 
 export const DEFAULTS = {
   auto: false, co2Low: 600, co2High: 750, tLow: 21, tHigh: 23, rhLow: 85, rhHigh: 95, humidifierDuringExchange: false, acFan: 'auto',
@@ -42,7 +43,7 @@ const HUMIDIFIER_HOLD_MS = 60_000; // the command changes at most once a minute
 const AC_HOLD_MS = 120_000; // at most one changed aircon command every 2 min
 const DEHUMIDIFIER_QUIET_MS = 30 * 60_000; // the dehumidifier starts only when the humidifier has been off this long
 const AFTER_DRY_WAIT_MS = 10 * 60_000; // the humidifier waits this long after the dehumidifier stopped …
-const AFTER_DRY_MARGIN = 3; // … unless RH is this many % below the band
+const AFTER_DRY_MARGIN = 3; // … unless RH is this many % below the band (the wait starts at the humidifier's on-point)
 const AFTER_DRY_IGNORE_MS = 15 * 60_000; // a humidifier run this soon after the dehumidifier stopped does not hold the next start
 const DEHUMIDIFIER_HOLD_MS = 180_000; // a compressor: 3 min on, 3 min off
 // Outdoor air (spec 2026-10-26-live-alarms-outdoor-design.md 4): temperatures in °C, moisture as absolute humidity in g/m³.
@@ -272,8 +273,9 @@ export function decide({ bands, state, readings, faults, now, humidifierDuringEx
     reasons.exchange = `Air exchange kept on: CO₂ ${ppm(co2)} ppm between ${ppm(co2Low)} and ${ppm(co2High)} ppm`;
   }
 
-  // Humidifier band: on at or below the lower RH limit, off at or above the upper, kept between; with a dehumidifier it waits
-  // 10 min after the dehumidifier stopped unless the room is 3 % below the band.
+  // Humidifier band: on at or below its on-point, off at or above its off-point, kept between; the points sit inside the band
+  // (web/band-math.js humidifierPoints, owner 2026-10-29: 1 % RH inside each limit for a band 6 % RH or wider). With a
+  // dehumidifier it waits 10 min after the dehumidifier stopped unless the room is 3 % below the band.
   // A faulty T/RH probe: on for 10 min, off for 10 min, repeating.
   // The humidifier is forced on only in exchanges of the CO₂ rule, fresh air and the timed fallback; free cooling and outdoor
   // drying leave it on its own rule (and do not count as a humidifier run for the dehumidifier's wait).
@@ -282,6 +284,7 @@ export function decide({ bands, state, readings, faults, now, humidifierDuringEx
   const offAt = dehumidifierFitted ? (state.dehumidifierOffAt ?? null) : null;
   const dryingLeft = offAt === null ? 0 : AFTER_DRY_WAIT_MS - (now - offAt);
   const note = exchange && !humidifierDuringExchange ? '; not forced during air exchange' : '';
+  const points = humidifierPoints(bands.rhLow, bands.rhHigh);
   let why;
   if (faults?.trh) {
     humidifierSince = state.humidifierSince ?? now;
@@ -290,19 +293,20 @@ export function decide({ bands, state, readings, faults, now, humidifierDuringEx
   } else if (rh === null) {
     humidifierSince = state.humidifierSince ?? null; // kept: a probe that is not yet called faulty (or a restart) must not restart the timer
     why = `Humidity sensor not answering: humidifier kept ${word(band)}`;
-  } else if (rh <= bands.rhLow && !band && dryingLeft > 0 && rh > bands.rhLow - AFTER_DRY_MARGIN) {
-    // Just below the band right after the dehumidifier stopped: its own overshoot (its 3 min minimum run), which the room
-    // makes up by itself; a humidifier now would wet it again and wake the dehumidifier.
+  } else if (rh <= points.on && !band && dryingLeft > 0 && rh > bands.rhLow - AFTER_DRY_MARGIN) {
+    // At the on-point or just below the band right after the dehumidifier stopped: its own overshoot (its 3 min minimum run),
+    // which the room makes up by itself; a humidifier now would wet it again and wake the dehumidifier.
     why = `Humidifier waits: RH ${num(rh)} % after the dehumidifier dried the room (on below ${num(bands.rhLow - AFTER_DRY_MARGIN)} % or in ${Math.ceil(dryingLeft / 60_000)} min)`;
-  } else if (rh <= bands.rhLow) {
+  } else if (rh <= points.on) {
     band = true;
-    why = exchange && !humidifierDuringExchange ? `Humidifier: on (RH ${num(rh)} %, at or under ${bands.rhLow} %)` : `Humidifier: RH ${num(rh)} %, at or under ${bands.rhLow} %`;
-  } else if (rh >= bands.rhHigh) {
+    why = exchange && !humidifierDuringExchange ? `Humidifier: on (RH ${num(rh)} %, at or under its on-point ${num(points.on)} %)`
+      : `Humidifier: RH ${num(rh)} %, at or under its on-point ${num(points.on)} %`;
+  } else if (rh >= points.off) {
     band = false;
     why = exchange && !humidifierDuringExchange
-      ? `Humidifier: off (RH ${num(rh)} %, at or over ${bands.rhHigh} %${note})` : `Humidifier: RH ${num(rh)} %, at or over ${bands.rhHigh} %`;
+      ? `Humidifier: off (RH ${num(rh)} %, at or over its off-point ${num(points.off)} %${note})` : `Humidifier: RH ${num(rh)} %, at or over its off-point ${num(points.off)} %`;
   } else {
-    why = `Humidifier kept ${word(band)}: RH ${num(rh)} % between ${bands.rhLow} and ${bands.rhHigh} %`;
+    why = `Humidifier kept ${word(band)}: RH ${num(rh)} % between its on-point ${num(points.on)} % and off-point ${num(points.off)} %`;
   }
   reasons.humidifier = forced ? 'Humidifier: on during air exchange' : why;
   // When the humidifier was last decided on for a dry room (a run just after the dehumidifier stopped is its overshoot).

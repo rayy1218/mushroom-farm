@@ -2,7 +2,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { co2Status, exchangePoints, nearEdge, nearChip, nearFor, NEAR_DWELL_MS } from '../web/band-math.js';
+import { co2Status, exchangePoints, nearEdge, nearChip, nearFor, NEAR_DWELL_MS, humidifierPoints, HUMIDIFIER_MARGIN } from '../web/band-math.js';
 
 const points = { stop: 700, start: 900, safety: 1500 };
 
@@ -83,4 +83,14 @@ test('nearFor: how long a reading has stayed near that edge, the latest stretch 
   assert.equal(nearFor(pts, 19, 21, 'top'), 20, 'from 20 to 40 (over the edge counts; a failed poll does not break it)');
   assert.equal(nearFor(pts, 19, 21, 'bottom'), 0);
   assert.equal(nearFor([], 19, 21, 'top'), 0);
+});
+
+// Owner 2026-10-29: the humidifier switches inside the band (band 87–93 % RH: on at 88 %, off at 92 %).
+test('humidifierPoints: 1 % RH inside each limit for a band 6 % RH or wider, a quarter of a narrower band', () => {
+  assert.deepEqual(humidifierPoints(87, 93), { on: 88, off: 92 });
+  assert.deepEqual(humidifierPoints(85, 95), { on: 86, off: 94 });
+  assert.deepEqual(humidifierPoints(88, 92), { on: 89, off: 91 }, '4 % RH wide: a quarter is 1 % RH');
+  assert.deepEqual(humidifierPoints(89, 91), { on: 89.5, off: 90.5 });
+  assert.deepEqual(humidifierPoints(90, 91.5), { on: 90.4, off: 91.1 }, 'rounded to 0.1');
+  assert.equal(HUMIDIFIER_MARGIN, 1);
 });

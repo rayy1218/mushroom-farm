@@ -156,10 +156,10 @@ test('machineTiles: six in air-path order with their effect and detail', () => {
     [1, 'Intake fan', 'Air in'], [2, 'Aircon', 'Cools'], [3, 'Circulation', 'Mixes the air'],
     [4, 'Humidifier', 'Adds moisture'], [5, 'Dehumidifier', 'Dries'], [6, 'Exhaust fan', 'Air out'],
   ]);
-  assert.deepEqual(tiles.map((m) => m.detail), ['Filter 40.4\u00a0Pa', 'Cool 21.5 °C · fan auto', 'Always on', 'On at 90\u00a0%\u00a0RH, off at 95\u00a0%\u00a0RH',
+  assert.deepEqual(tiles.map((m) => m.detail), ['Filter 40.4\u00a0Pa', 'Cool 21.5 °C · fan auto', 'Always on', 'On at 91.3\u00a0%\u00a0RH, off at 93.8\u00a0%\u00a0RH',
     'On at 95\u00a0%\u00a0RH, off at 92.5\u00a0%\u00a0RH', 'With the intake'], 'a number and its unit never part at a wrap');
-  // the role lines say the controller's real rule (server/controller.js): the humidifier on at the lower limit and off at the
-  // upper, the dehumidifier on at the upper and off at the middle of the band
+  // the role lines say the controller's real rule (server/controller.js): the humidifier's points inside the band (90–95 % RH
+  // is 5 % RH wide: a quarter of it, 1.25 % RH, inside each limit), the dehumidifier on at the upper limit and off at the middle
   assert.deepEqual(tiles.map((m) => m.on), [false, true, true, false, false, false]);
   assert.deepEqual(tiles[1].pill, { text: 'On', tone: 'on' });
   assert.deepEqual(tiles[0].pill, { text: 'Off', tone: 'off' });
@@ -190,7 +190,7 @@ test('machineTiles: no data and fault words in the pill', () => {
   assert.deepEqual(nothing[0].pill, { text: 'No data', tone: 'none' });
   assert.deepEqual(nothing[1].pill, { text: 'No data', tone: 'none' });
   assert.equal(nothing[1].detail, '', 'the aircon\'s pill says it: no second "No data"');
-  assert.equal(nothing[3].detail, 'On below the band');
+  assert.equal(nothing[3].detail, 'On near the bottom of the band');
   assert.equal(nothing.length, 5);
   const notFollowing = machineTiles(draw({ machines: { relay: relay(), ac: ac({ status: 'not-following' }) } }), control, null)[1];
   assert.deepEqual(notFollowing.pill, { text: 'Not following', tone: 'warn' });

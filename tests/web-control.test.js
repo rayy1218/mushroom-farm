@@ -217,3 +217,9 @@ test('Setup\'s What the farm is doing now: the state line set like the reasons a
   assert.match(css, /\.control \.c-status \.c-state \{ margin: 2px 0 0; color: var\(--muted\); font-size: var\(--fs-sm\); font-weight: 400; \}/);
   assert.match(css, /\.c-reasons \{ color: var\(--muted\); font-size: var\(--fs-sm\); \}/);
 });
+
+test('the humidity band hint says where the humidifier switches, inside the band (owner, 2026-10-29)', () => {
+  const rh = BANDS.find((b) => b.key === 'rh');
+  assert.match(rh.hint, /starts 1 % RH above the first number and stops 1 % RH under the second/);
+  assert.doesNotMatch(rh.hint, /\d %/, 'a number keeps its unit on its line');
+});

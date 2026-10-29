@@ -11,7 +11,8 @@ export const BANDS = [
   { key: 't', label: 'Temperature', unit: '°C', name: 'Temperature band', low: 'tLow', high: 'tHigh', min: 16, max: 35, step: '0.5',
     hint: 'Typical fruiting: grey oyster about 24 to 28, lion’s mane about 18 to 22.' },
   { key: 'rh', label: 'Humidity', unit: '% RH', name: 'Humidity band', low: 'rhLow', high: 'rhHigh', min: 40, max: 100, step: '0.5',
-    hint: 'Typical: 85 to 95 for oyster, about 90 for lion’s mane.' },
+    // the humidifier's points inside the band: server/controller.js decide, band-math.js humidifierPoints (owner, 2026-10-29)
+    hint: 'Typical: 85–95\u00a0% RH for oyster, about 90\u00a0% RH for lion’s mane. The humidifier starts 1\u00a0% RH above the first number and stops 1\u00a0% RH under the second (a quarter of the band in from each when it is under 6\u00a0% RH wide).' },
 ];
 
 // The card's groups (owner, 2026-10-26: "group by co2, temp, humid", "add group for air circulation"): each holds its band
