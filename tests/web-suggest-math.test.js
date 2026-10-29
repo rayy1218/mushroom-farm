@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  pricesOf, monthly, suggestRows, verdictOf, moneyHead, priceLine, noneReachedLine, COLUMNS,
+  pricesOf, monthly, suggestRows, verdictOf, moneyHead, priceLine, noneReachedLine, COLUMNS, roomMachines, baselineRow, captionOf,
 } from '../web/suggest-math.js';
 
 const machines = (fanFlow, acBTU, humidifierLH, dehumidifierLday) => ({ fanFlow, acBTU, humidifierLH, dehumidifierLday });
@@ -118,4 +118,47 @@ test('none reaches the goal: said in words', () => {
   const old = { ...missed, coolDownMaxH: undefined };
   assert.equal(noneReachedLine(old, suggestRows(old, prices)), 'No setup reached 95 %.');
   assert.equal(noneReachedLine({ ...result, best: [] }, []), null, 'no setup at all says so elsewhere');
+});
+
+// ---- the baseline: what the room has now (owner 2026-10-29) ----
+
+test('the room\'s machines: its newest run\'s, else its ratings (the aircon from its input power, the fan Simulate\'s default)', () => {
+  const at = new Date(2026, 9, 26, 10, 42).getTime();
+  const lastRun = { createdAt: at, input: { physics: { wallUA: 30, fanFlow: 300, acBTU: 18000, humidifierLH: 1.5, dehumidifierLday: 12 } } };
+  assert.deepEqual(roomMachines({ room: {}, lastRun }), {
+    machines: { fanFlow: 300, acBTU: 18000, humidifierLH: 1.5, dehumidifierLday: 12 }, from: 'From your last simulation, 26 Oct',
+  });
+  const older = { ...lastRun, input: { physics: { fanFlow: 300, acBTU: 18000, humidifierLH: 1.5 } } }; // before the dehumidifier
+  assert.equal(roomMachines({ room: {}, lastRun: older }).machines.dehumidifierLday, 0);
+  const room = { humidifierLH: 0.5, acInputW: 1000, dehumidifier: true, dehumidifierLday: 20 };
+  // 1,000 W × about 11.25 BTU/h per W is 11,250 BTU/h: the 12,000 class
+  assert.deepEqual(roomMachines({ room, lastRun: null }), {
+    machines: { fanFlow: 600, acBTU: 12000, humidifierLH: 0.5, dehumidifierLday: 20 }, from: "From the room's ratings on Setup",
+  });
+  assert.equal(roomMachines({ room: { ...room, dehumidifier: false } }).machines.dehumidifierLday, 0, 'not fitted');
+  assert.equal(roomMachines({ room: { ...room, acInputW: 800 } }).machines.acBTU, 9000);
+  assert.equal(roomMachines({ room: { ...room, acInputW: 1600 } }).machines.acBTU, 18000);
+  assert.equal(roomMachines({ room: { ...room, acInputW: 900 } }).machines.acBTU, 9000, '10,125: nearer 9,000 than 12,000');
+  assert.equal(roomMachines({ room: {} }).machines.acBTU, 12000, 'no rating: Simulate\'s default');
+  assert.equal(roomMachines({ room: { ...room }, lastRun: { input: {} } }).from, "From the room's ratings on Setup", 'a run without machines');
+});
+
+test('the baseline row: the same texts as a suggestion\'s, no rank, null without one', () => {
+  const baseline = { machines: machines(600, 12000, 2, 0), exchangeMaxMin: 10, control: { exchangeMaxMin: 10 },
+    inBand: { t: 80, rh: 90, co2: 99, all: 70.5 }, kWh: 30, litres: 10, removedLitres: 0, coolDownH: null };
+  const row = baselineRow({ ...result, baseline }, prices);
+  assert.deepEqual(row.setupParts, ['Fan 600 m³/h', 'aircon 3.5 kW (12,000 BTU/h class)', 'humidifier 2 L/h', 'no dehumidifier']);
+  assert.equal(row.inBand, '70.5 %');
+  assert.equal(row.coolDown, 'not in a day');
+  assert.equal(row.verdict.reached, false);
+  assert.equal(row.rank, undefined);
+  assert.ok(row.details.some((d) => d.label === 'Air exchange time limit'));
+  assert.equal(baselineRow(result, prices), null);
+  assert.deepEqual(Object.keys(row).sort(), Object.keys(suggestRows(result, prices)[0]).filter((k) => k !== 'rank').sort());
+});
+
+test('the caption names the baseline when there is one', () => {
+  assert.equal(captionOf(result, 2), 'The best 2 setups over 7 days, in order');
+  assert.equal(captionOf(result, 1), 'The best setup over 7 days');
+  assert.equal(captionOf({ ...result, baseline: {} }, 2), 'What the room has now, then the best 2 setups over 7 days, in order');
 });

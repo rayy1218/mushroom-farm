@@ -1248,3 +1248,10 @@ details.setup-part:not([open]) { padding-top: 8px; }
 .sg-mix { padding: 0; border: 0; }
 .sg-mix .sim-mix-title { margin: 0; font-size: var(--fs-md); }
 .sg-sub { max-width: 60ch; }
+/* Suggest machines: what the room has now, a row like the suggestions' under the same column names, marked as the baseline */
+.sg-table .sg-list { margin-top: 0; }
+.sg-base { padding: 12px; margin: 0 -12px; border-top: 1px solid var(--border); border-radius: var(--radius); background: var(--band); }
+.sg-base-title { font-weight: 600; }
+.sg-setup .sg-base-from { color: var(--muted); font-size: var(--fs-sm); margin-bottom: 2px; }
+.sg-base-tag { color: var(--ink-2); font-size: var(--fs-sm); font-weight: 600; }
+@media (max-width: 760px) { .sg-base { margin: 0; } }

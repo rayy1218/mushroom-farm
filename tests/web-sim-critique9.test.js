@@ -40,3 +40,23 @@ test('the Suggest form: the crops\' bands are a plain block with a heading, not 
   assert.match(page, /<p class="page-sub sg-sub">/);
   assert.match(block, /\.sg-sub \{ max-width: 60ch; \}/);
 });
+
+test('Suggest: the room\'s machines go with the search as its baseline and show first, labelled, without Use this', () => {
+  const page = src('suggest-page.js');
+  assert.match(page, /now = roomMachines\(\{ room, lastRun: Array\.isArray\(runs\) \? runs\[0\] \?\? null : null \}\);/);
+  assert.match(page, /const asked = \{ \.\.\.sizingBody\(state, targetText, coolText\), baseline: now\.machines \};/);
+  assert.match(page, /writeStored\(id, \{ id: created\.id, body: asked, target: targetText, coolDown: coolText, from: now\.from \}\);/);
+  assert.match(page, /baseFrom = stored\.from \?\? '';/);
+  // a baseline field the form does not have: the error is said over the result, not lost
+  assert.match(page, /if \(err\.status === 400 && err\.field && !err\.field\.startsWith\('baseline'\)\) showErrors/);
+  const view = page.slice(page.indexOf('function resultView('));
+  assert.match(view, /const base = baselineRow\(result, prices\);/);
+  assert.ok(view.indexOf('baseView(base') < view.indexOf("el('ol', 'sg-list')"), 'the baseline row comes before the suggestions');
+  assert.match(view, /el\('p', 'sg-caption', captionOf\(result, rows\.length\)\)/);
+  const baseView = page.slice(page.indexOf('function baseView('), page.indexOf('function resultView('));
+  assert.match(baseView, /el\('div', 'sg-row sg-base'\)/);
+  assert.match(baseView, /el\('p', 'sg-base-title', 'What the room has now'\)/);
+  assert.match(baseView, /el\('span', 'sg-base-tag', 'Baseline'\)/);
+  assert.doesNotMatch(baseView, /Use this/);
+  assert.match(block, /\.sg-base \{[^}]*background:/);
+});

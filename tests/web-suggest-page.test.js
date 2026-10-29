@@ -52,7 +52,7 @@ test('Use this opens Simulate with the setup, not the room\'s machines (machines
 });
 
 test('the search goes on when the page is left, and shows again on coming back', () => {
-  assert.match(page, /writeStored\(id, \{ id: created\.id, body: asked, target: targetText, coolDown: coolText \}\);/);
+  assert.match(page, /writeStored\(id, \{ id: created\.id, body: asked, target: targetText, coolDown: coolText, from: now\.from \}\);/);
   assert.match(page, /const stored = readStored\(id\);/);
   const unmount = page.slice(page.indexOf('return function unmount()'));
   assert.doesNotMatch(unmount, /DELETE/);
