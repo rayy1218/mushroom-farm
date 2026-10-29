@@ -54,6 +54,9 @@ const PROCESS = [
     text: (v, b) => `CO₂ ${ppm(v)} ppm: at or above the safety level (${ppm(b.co2Safety)} ppm)` },
 ];
 
+// How long each process alarm's condition must hold (the Overview holds a reading out of band as long before it says so).
+export const PROCESS_DELAYS = Object.fromEntries(PROCESS.map((p) => [p.key, p.delay]));
+
 // db: the farm database (alarm queries). now is injectable.
 export function createAlarms({ db, now = Date.now }) {
   const pending = new Map(); // `${roomId}/${key}` → when the raising condition began to hold

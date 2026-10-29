@@ -276,14 +276,16 @@ test('runSizing (two phases): an aircon that holds the band but cannot cool down
 });
 
 test('runSizing with the real simulation: in a 40 ft container of 1,200 wood ear blocks 9000 BTU/h holds the band for less energy but cools down too slowly; 12000 is chosen', () => {
-  const box = { physics: { wallUA: 50, outdoorHigh: 33, outdoorLow: 25, outdoorDew: 24, sunW: 500 }, crops: [{ crop: 'woodear', blocks: 1200 }], farmType: 'ready', stage: 'fruiting', target: 90, coolDownMaxH: 2 };
-  const list = [9000, 12000].map((acBTU) => ({ machines: { fanFlow: 200, acBTU, humidifierLH: 4, dehumidifierLday: 10 }, exchangeMaxMin: 60, acDrop: 0, humidifierDuringExchange: false }));
+  // A 3 L/h humidifier (2026-10-29: 4 L/h, whose 1 min minimum run lifts this room about 6 % RH, overshot the band once the
+  // humidifier switched 1 % RH inside it, 88 % RH in band; the cool-downs are then 2.2 h and 2.7 h, so the limit is 2.5 h).
+  const box = { physics: { wallUA: 50, outdoorHigh: 33, outdoorLow: 25, outdoorDew: 24, sunW: 500 }, crops: [{ crop: 'woodear', blocks: 1200 }], farmType: 'ready', stage: 'fruiting', target: 90, coolDownMaxH: 2.5 };
+  const list = [9000, 12000].map((acBTU) => ({ machines: { fanFlow: 200, acBTU, humidifierLH: 3, dehumidifierLday: 10 }, exchangeMaxMin: 60, acDrop: 0, humidifierDuringExchange: false }));
   const r = runSizing(box, { ...ctx, volume: 64.03 }, { simulate, list, days: 2 });
   const [first, second] = r.best;
   assert.equal(r.reached, true, JSON.stringify(r.best));
   assert.equal(first.machines.acBTU, 12000);
-  assert.ok(first.coolDownH <= 2, String(first.coolDownH));
+  assert.ok(first.coolDownH <= 2.5, String(first.coolDownH));
   assert.equal(second.machines.acBTU, 9000);
-  assert.ok(second.coolDownH === null || second.coolDownH > 2, String(second.coolDownH));
+  assert.ok(second.coolDownH === null || second.coolDownH > 2.5, String(second.coolDownH));
   assert.ok(second.kWh < first.kWh && Math.min(second.inBand.t, second.inBand.rh, second.inBand.co2) >= 90, 'it would have won on the band alone');
 });

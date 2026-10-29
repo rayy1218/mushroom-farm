@@ -2,7 +2,7 @@
 // note and the fresh-air line, the machine tiles in air-path order and the line with the outdoor air and the filter.
 // No DOM, so Node tests cover it. Spec 2026-10-26-room-picture-design.md section 3.
 
-import { nearChip, exchangePoints } from './band-math.js';
+import { nearChip, exchangePoints, humidifierPoints } from './band-math.js';
 import { view } from './mimic-math.js';
 import { exchangeLine } from './control-math.js';
 import { filterCard, intakeRunning, lastRunningOf } from './filter-math.js';
@@ -10,6 +10,7 @@ import { CROPS, STAGES } from './crops.js';
 import { hasCrops, stageDay } from './crop-math.js';
 import { formatDateTime } from './simulation-math.js';
 import { lightShort } from './light-math.js';
+import { DOT } from './text-math.js';
 
 const num = (x) => (typeof x === 'number' && Number.isFinite(x) ? x : null);
 const clamp01 = (x) => Math.min(1, Math.max(0, x));
@@ -181,7 +182,7 @@ const every = (c) => (num(c?.exchangeEveryMin) ?? 0);
 export function controlNote(c) {
   if (!c) return '';
   if (!c.auto) return 'Automatic control off';
-  return every(c) > 0 ? `Automatic control on · fresh air every ${every(c)} min` : 'Automatic control on';
+  return every(c) > 0 ? `Automatic control on${DOT}fresh air every ${every(c)}\u00a0min` : 'Automatic control on';
 }
 
 // The line under the room picture: the running exchange, why fresh air waits, or when it comes next ('' with auto off: the
@@ -196,9 +197,9 @@ export function freshAirLine(c, now = Date.now()) {
   // the wait counts from freshFrom, else the end of the last exchange (as server/controller.js decide); with neither, from
   // the next cycle
   const from = num(c.freshFrom) ?? num(c.exchangeEndedAt);
-  if (from === null) return `Fresh air every ${every(c)} min`;
+  if (from === null) return `Fresh air every ${every(c)}\u00a0min`;
   const left = from + every(c) * 60_000 - now;
-  return left > 0 ? `Next fresh air in ${Math.ceil(left / 60_000)} min` : 'Fresh air due';
+  return left > 0 ? `Next fresh air in ${Math.ceil(left / 60_000)}\u00a0min` : 'Fresh air due';
 }
 
 // ---------------- machine tiles ----------------
@@ -208,18 +209,19 @@ const fanWord = (sub) => sub.replace(/^fan (\S+)/, (_, f) => `fan ${f.toLowerCas
 const hasRh = (c) => num(c?.rhLow) !== null && num(c?.rhHigh) !== null;
 const rhText = (x) => String(Math.round(x * 10) / 10);
 const rhAt = (x) => `${rhText(x)}\u00a0%\u00a0RH`; // a number and its unit never part at a wrap
+const huPoints = (p) => `On at ${rhAt(p.on)}, off at ${rhAt(p.off)}`;
 
 // In the order the air meets them, the lights after the circulation; the dehumidifier and the lights only when the room has them.
 const MACHINES = [
   { key: 'intake', name: 'Intake fan', effect: 'Air in',
     detail: (u, c, f) => (!f ? 'No filter sensor' : f.pa === null ? 'Filter: no reading yet' : `Filter ${f.pa.toFixed(1)}\u00a0Pa`) },
-  { key: 'ac', name: 'Aircon', effect: 'Cools', detail: (u) => (u.sub ? `${u.state} · ${fanWord(u.sub)}` : u.state) },
-  { key: 'circ', name: 'Circulation', effect: 'Mixes the air', detail: (u, c) => (c?.auto ? 'Always on' : 'Set by hand') },
+  { key: 'ac', name: 'Aircon', effect: 'Cools', detail: (u) => (u.sub ? `${u.state}${DOT}${fanWord(u.sub)}` : u.state) },
+  { key: 'circ', name: 'Circulation fan', effect: 'Mixes the air', detail: (u, c) => (c?.auto ? 'Always on' : 'Set by hand') },
   { key: 'lights', name: 'Lights', effect: 'Light for the crop', detail: (u, c, f, crop) => (c?.auto ? lightShort(crop) : 'Set by hand') },
-  // The controller's real rule (server/controller.js decide): the humidifier on at the lower limit, off at the upper; the
-  // dehumidifier on at the upper limit, off at the middle of the band.
+  // The controller's real rule (server/controller.js decide): the humidifier on and off at its points inside the band
+  // (band-math.js humidifierPoints); the dehumidifier on at the upper limit, off at the middle of the band.
   { key: 'hu', name: 'Humidifier', effect: 'Adds moisture',
-    detail: (u, c) => (hasRh(c) ? `On at ${rhAt(c.rhLow)}, off at ${rhAt(c.rhHigh)}` : 'On below the band') },
+    detail: (u, c) => (hasRh(c) ? huPoints(humidifierPoints(c.rhLow, c.rhHigh)) : 'On near the bottom of the band') },
   { key: 'dh', name: 'Dehumidifier', effect: 'Dries',
     detail: (u, c) => (hasRh(c) ? `On at ${rhAt(c.rhHigh)}, off at ${rhAt((c.rhLow + c.rhHigh) / 2)}` : 'On above the band') },
   { key: 'exhaust', name: 'Exhaust fan', effect: 'Air out', detail: () => 'With the intake' },
@@ -277,7 +279,7 @@ export function filterFrom({ last = null, room, sensor, machines, now = Date.now
 export function bottomLine(draw, filter) {
   const v = view(draw);
   const dash = (x) => (x.startsWith('--') ? DASH : x);
-  const outdoor = v.hasOut ? ['Outdoor ', dash(v.outT), ` · ${dash(v.outRH)}`] : [v.outLine];
+  const outdoor = v.hasOut ? ['Outdoor ', dash(v.outT), `${DOT}${dash(v.outRH)}`] : [v.outLine];
   return filter ? [outdoor, filter.line] : [outdoor];
 }
 
@@ -289,7 +291,7 @@ export function blocksLine(crops, stage = '') {
   const rows = (Array.isArray(crops) ? crops : []).filter((c) => num(c?.blocks) !== null && c.blocks > 0);
   if (!rows.length) return '';
   const n = (x) => x.toLocaleString('en-US');
-  const tail = stage ? ` · ${stage}` : ''; // the stage after the blocks under the picture
+  const tail = stage ? `${DOT}${stage}` : ''; // the stage after the blocks under the picture
   if (rows.length === 1) return `${n(rows[0].blocks)}${cropWord(rows[0].crop) ? ` ${cropWord(rows[0].crop)}` : ''} blocks${tail}`;
   return `${n(rows.reduce((s, c) => s + c.blocks, 0))} blocks: ${rows.map((c) => `${n(c.blocks)} ${cropWord(c.crop) || 'blocks'}`).join(', ')}${tail}`;
 }
@@ -342,9 +344,9 @@ export function cropSummary(crop, now = Date.now()) {
   const nextStage = crop.nextStage;
   let next = '';
   if (crop.done) next = `Replace the blocks: flush ${crop.flushes} of ${crop.flushes} done`;
-  else if (nextStage) next = `Next: ${STAGES[nextStage.stage] ?? nextStage.stage} · ${num(nextStage.at) === null ? 'when you start it' : `about ${formatDateTime(nextStage.at)}`}`;
+  else if (nextStage) next = `Next: ${STAGES[nextStage.stage] ?? nextStage.stage}${DOT}${num(nextStage.at) === null ? 'when you start it' : `about ${formatDateTime(nextStage.at)}`}`;
   return {
-    name: growing.value, stage: stage.value, sub: [growing.sub, stage.sub].filter(Boolean).join(' · '),
+    name: growing.value, stage: stage.value, sub: [growing.sub, stage.sub].filter(Boolean).join(DOT),
     day: d ? (d.length ? `Day ${d.day} of ${d.length}` : `Day ${d.day}`) : '',
     share: d?.length ? d.day / d.length : null,
     next, done: Boolean(crop.done),

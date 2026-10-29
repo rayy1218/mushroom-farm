@@ -91,10 +91,12 @@ test('the card shows typical crop bands, the CO₂ minimum of 450 and the aircon
   const { BANDS, SAFETY_FIELDS, checkSafety } = await import('../web/control-math.js');
   assert.equal(BANDS.find((b) => b.key === 'co2').min, 450);
   for (const b of BANDS) assert.ok(b.hint && b.hint.length > 10, `${b.key} has a hint`);
-  assert.match(BANDS.find((b) => b.key === 't').hint, /grey oyster about 24 to 28, lion’s mane about 18 to 22/);
+  assert.match(BANDS.find((b) => b.key === 't').hint, /grey oyster about 24\u2060–\u206028\u00a0°C, lion’s mane about 18\u2060–\u206022\u00a0°C/, 'with their unit (critique 2026-10-29)');
+  for (const hint of [...BANDS, ...SAFETY_FIELDS].map((f) => f.hint).filter(Boolean)) assert.doesNotMatch(hint, /\d (ppm|°C|%|min|h)\b/, 'a number keeps its unit on its line');
+  assert.match(BANDS.find((b) => b.key === 'co2').hint, /about 420\u00a0ppm/, '"about 420 / ppm" at 390 px');
   const safety = SAFETY_FIELDS.find((f) => f.key === 'co2Safety');
   assert.match(safety.label, /for the crop/);
-  assert.match(safety.hint, /5,000 ppm over 8 h/);
+  assert.match(safety.hint, /5,000\u00a0ppm over 8\u00a0h/);
   const drop = SAFETY_FIELDS.find((f) => f.key === 'acDrop');
   assert.deepEqual([drop.min, drop.max, drop.step], [0, 10, '0.5']);
   assert.equal(checkSafety(750, 1250, 10, 0), null);
@@ -207,7 +209,10 @@ test('Setup keeps the By-Hand Rule: a band set by hand in the accent text with t
 test('Setup: Save sits right under the inputs it saves, the "What the farm is doing now" readout after it (critique 2026-10-28)', async () => {
   const { readFileSync } = await import('node:fs');
   const src = readFileSync(new URL('../web/control.js', import.meta.url), 'utf8');
-  assert.match(src, /host\.append\(cols, byHandRow, backErr, sendRow, saveErr, statusBox\);/);
+  assert.match(src, /host\.append\(cols, sendRow, saveErr, byHandRow, backErr, statusBox\);/, 'Save first, then the way back to the stage (critique 2026-10-29)');
+  assert.match(src, /form, sendRow, saveErr, byHandRow, backErr, stateNode, checkList\);/);
+  const css = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
+  assert.match(css, /@media \(max-width: 600px\) \{ \.c-band\.c-outdoor \.m-name \{ display: flex; align-items: center; min-height: 44px; \} \}/, 'Use outdoor air a 44 px target (it was 43.5)');
 });
 
 // Critique 2026-10-29: the readout's last line ("Air exchange off") was larger and darker than the reasons above it.
@@ -216,4 +221,10 @@ test('Setup\'s What the farm is doing now: the state line set like the reasons a
   const css = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
   assert.match(css, /\.control \.c-status \.c-state \{ margin: 2px 0 0; color: var\(--muted\); font-size: var\(--fs-sm\); font-weight: 400; \}/);
   assert.match(css, /\.c-reasons \{ color: var\(--muted\); font-size: var\(--fs-sm\); \}/);
+});
+
+test('the humidity band hint says where the humidifier switches, inside the band (owner, 2026-10-29)', () => {
+  const rh = BANDS.find((b) => b.key === 'rh');
+  assert.match(rh.hint, /starts 1\u00a0%\u00a0RH above the first number and stops 1\u00a0%\u00a0RH under the second/);
+  assert.doesNotMatch(rh.hint, /\d %/, 'a number keeps its unit on its line');
 });

@@ -420,10 +420,13 @@ const input = { physics, crops: [{ crop: 'oyster', blocks: 500 }], farmType: 're
 
 test('simulate passes the outdoor air: outdoorAir changes the exchanges, a run override works', () => {
   const ctx = (outdoorAir) => ({ volume: 60, ratings: { intakeW: 60, exhaustW: 60, circulationW: 60, humidifierW: 80, humidifierLH: 2, acInputW: 1050 }, control: { exchangeMaxMin: 10, exchangeEveryMin: 0, acDrop: 0, outdoorAir }, program: null });
-  const on = simulate(input, ctx(true));
-  const offRun = simulate(input, ctx(false));
+  // A 6 L/h humidifier overshoots to the top of the band, which outdoor drying takes down (with 2 L/h the room no longer reaches
+  // the top since the humidifier stops 1 % RH inside the band, 2026-10-29, so outdoor air changed nothing that day).
+  const wet = { ...input, physics: { ...physics, humidifierLH: 6 } };
+  const on = simulate(wet, ctx(true));
+  const offRun = simulate(wet, ctx(false));
   assert.notDeepEqual(on.summary.energy, offRun.summary.energy);
-  assert.deepEqual(simulate(input, ctx(true)).summary, on.summary);
+  assert.deepEqual(simulate(wet, ctx(true)).summary, on.summary);
 });
 
 test('a run may set control.outdoorAir (boolean)', () => {

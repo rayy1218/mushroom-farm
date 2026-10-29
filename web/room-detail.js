@@ -103,7 +103,8 @@ const TEMPLATE = `
           <p class="history-room" data-history-room></p>
           <div data-range></div>
           <nav class="setup-nav history-nav" aria-label="History sections">
-            <a href="#hist-climate" data-jump>Climate</a><a href="#hist-energy" data-jump>Energy and water</a><a href="#hist-exchange" data-jump>Air exchange</a><a href="#hist-timeline" data-jump>Machines</a>
+            <!-- a phone: the short words, so all four fit at 360 px (critique 2026-10-29: Machines was off the screen) -->
+            <a href="#hist-climate" data-jump><span class="nav-long">Climate</span><span class="nav-short">Climate</span></a><a href="#hist-energy" data-jump><span class="nav-long">Energy and water</span><span class="nav-short">Energy</span></a><a href="#hist-exchange" data-jump><span class="nav-long">Air exchange</span><span class="nav-short">Exchange</span></a><a href="#hist-timeline" data-jump><span class="nav-long">Machines</span><span class="nav-short">Machines</span></a>
           </nav>
         </div>
         <div class="charts hist-part" id="hist-climate" tabindex="-1" data-charts></div>
@@ -124,7 +125,8 @@ const TEMPLATE = `
       </div>
       <div class="setup" data-panel="setup" hidden>
         <nav class="setup-nav" aria-label="Setup sections">
-          <a href="#setup-control" data-jump>Bands and control</a><a href="#setup-equipment" data-jump>Equipment</a><a href="#setup-filter" data-jump>Intake filter</a><a href="#setup-room" data-jump>Room</a>
+          <!-- a phone: the short words, so all four fit at 360 px (critique 2026-10-29: Room was past the edge with no cue) -->
+          <a href="#setup-control" data-jump><span class="nav-long">Bands and control</span><span class="nav-short">Bands</span></a><a href="#setup-equipment" data-jump><span class="nav-long">Equipment</span><span class="nav-short">Equipment</span></a><a href="#setup-filter" data-jump><span class="nav-long">Intake filter</span><span class="nav-short">Filter</span></a><a href="#setup-room" data-jump><span class="nav-long">Room</span><span class="nav-short">Room</span></a>
         </nav>
         <div class="setup-part" id="setup-control" tabindex="-1">
           <section data-control hidden></section>
@@ -197,13 +199,13 @@ export function mount(container, { id, tab = 'now' }) {
   // A phone: the Setup tab's long parts start folded under their titles (critique 2026-10-28: about 6,700 px of scroll).
   if (matchMedia('(max-width: 760px)').matches) for (const d of container.querySelectorAll('details.setup-part')) d.open = false;
   setTab(tab);
-  // A phone: the History jump links scroll sideways; the edge that has more fades (critique 2026-10-29: the last one showed as
-  // a sliver with no cue).
-  const historyNav = q('.history-nav');
-  const paintNavEdges = () => { historyNav.dataset.more = scrollEdges(historyNav.scrollLeft, historyNav.clientWidth, historyNav.scrollWidth); };
-  historyNav.addEventListener('scroll', paintNavEdges, { passive: true });
+  // A phone: the History and Setup jump links scroll sideways when they do not fit; the edge that has more fades, and only
+  // while something is hidden there (critique 2026-10-29: the last one showed as a sliver, or not at all, with no cue).
+  const navs = [...container.querySelectorAll('.setup-nav')];
+  const paintNavEdges = () => { for (const nav of navs) nav.dataset.more = scrollEdges(nav.scrollLeft, nav.clientWidth, nav.scrollWidth); };
+  for (const nav of navs) nav.addEventListener('scroll', paintNavEdges, { passive: true });
   const navObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(paintNavEdges) : null;
-  navObserver?.observe(historyNav);
+  for (const nav of navs) navObserver?.observe(nav);
   const els = {
     title: q('[data-title]'),
     sub: q('[data-sub]'),

@@ -153,7 +153,7 @@ test('the note under the table says how the days were worked out', () => {
 
 test('farm room lines: one per room with today and 30 days; a missing list is empty', () => {
   const lines = roomLines({ rooms: [{ id: 3, name: 'A', today: { kWh: 2, cost: 1.1 }, last30: { kWh: 60 } }] });
-  assert.deepEqual(lines, [{ id: 3, href: '#/rooms/3/history', name: 'A', today: '2.0 kWh · RM 1.10', last30: '60.0 kWh · —' }]);
+  assert.deepEqual(lines, [{ id: 3, href: '#/rooms/3/history', name: 'A', today: '2.0 kWh ·\u00a0RM 1.10', last30: '60.0 kWh ·\u00a0—' }]);
   assert.deepEqual(roomLines(null), []);
 });
 
@@ -192,4 +192,11 @@ test('the breakdown note says the dehumidifier is estimated too when metered and
   const metered = [day('2026-10-20', 10, true, {})];
   assert.match(breakdownNote(metered), /fans and the humidifier are estimated/);
   assert.match(breakdownNote(metered, { dehumidifier: true }), /fans, the humidifier and the dehumidifier are estimated/);
+});
+
+// Critique 2026-10-29: the energy tables said "Intake", "Exhaust", "Circulation" while the Machines list said the fans' names.
+test('the energy tables name the machines as the Machines list does', async () => {
+  const { MACHINE_ROWS } = await import('../web/usage-math.js');
+  const { MACHINE_NAMES } = await import('../web/machines-math.js');
+  for (const row of MACHINE_ROWS.filter((r) => MACHINE_NAMES[r.key])) assert.equal(row.label, MACHINE_NAMES[row.key], row.key);
 });

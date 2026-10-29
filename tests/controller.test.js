@@ -30,10 +30,12 @@ test('air exchange: on at or above the upper limit, off at or below the lower, k
   }
 });
 
-test('humidifier: on at or below the lower RH, off at or above the upper, kept between', () => {
+// Owner 2026-10-29: the switch points sit inside the band (web/band-math.js humidifierPoints): band 85–95 % RH, on at 86 %,
+// off at 94 %.
+test('humidifier: on at or below its on-point inside the band, off at or above its off-point, kept between', () => {
   const cases = [
-    [false, 86, false], [false, 85, true], [false, 70, true],
-    [true, 94, true], [true, 95, false], [true, 99, false],
+    [false, 86.1, false], [false, 86, true], [false, 85.5, true], [false, 70, true],
+    [true, 93.9, true], [true, 94, false], [true, 95, false], [true, 99, false],
     [false, 90, false], [true, 90, true],
   ];
   for (const [before, rh, after] of cases) {
@@ -61,18 +63,18 @@ test('humidifier during exchange off: it follows its band alone while the exchan
   assert.equal(wet.desired.intake, true);
   assert.equal(wet.desired.humidifier, false);
   assert.equal(wet.state.humidifier, false);
-  assert.equal(wet.reasons.humidifier, 'Humidifier: off (RH 96 %, at or over 95 %; not forced during air exchange)');
+  assert.equal(wet.reasons.humidifier, 'Humidifier: off (RH 96 %, at or over its off-point 94 %; not forced during air exchange)');
   const dry = run({ state: { exchange: true, humidifier: false }, co2: 800, rh: 84, during: false });
   assert.equal(dry.desired.humidifier, true);
-  assert.equal(dry.reasons.humidifier, 'Humidifier: on (RH 84 %, at or under 85 %)');
+  assert.equal(dry.reasons.humidifier, 'Humidifier: on (RH 84 %, at or under its on-point 86 %)');
   const between = run({ state: { exchange: true, humidifier: true }, co2: 800, rh: 90, during: false });
   assert.equal(between.desired.humidifier, true);
-  assert.equal(between.reasons.humidifier, 'Humidifier kept on: RH 90 % between 85 and 95 %');
+  assert.equal(between.reasons.humidifier, 'Humidifier kept on: RH 90 % between its on-point 86 % and off-point 94 %');
   const gone = run({ state: { exchange: true, humidifier: false }, co2: 800, rh: null, during: false });
   assert.equal(gone.desired.humidifier, false);
   assert.equal(gone.reasons.humidifier, 'Humidity sensor not answering: humidifier kept off');
   // without an exchange nothing differs; true forces it on; the default is off (fresh Malaysian air is wet enough)
-  assert.equal(run({ state: { exchange: false, humidifier: false }, rh: 96, during: false }).reasons.humidifier, 'Humidifier: RH 96 %, at or over 95 %');
+  assert.equal(run({ state: { exchange: false, humidifier: false }, rh: 96, during: false }).reasons.humidifier, 'Humidifier: RH 96 %, at or over its off-point 94 %');
   assert.equal(run({ co2: 800, rh: 96, during: true }).desired.humidifier, true);
   assert.equal(run({ co2: 800, rh: 96 }).desired.humidifier, false);
   assert.equal(DEFAULTS.humidifierDuringExchange, false);
@@ -155,9 +157,9 @@ test('reasons name the rule and the numbers', () => {
   assert.equal(run({ co2: 762 }).reasons.exchange, 'Air exchange: CO₂ 762 ppm, at or over 750 ppm');
   assert.equal(run({ state: { exchange: true, humidifier: false }, co2: 590 }).reasons.exchange, 'Air exchange: CO₂ 590 ppm, at or under 600 ppm');
   assert.equal(run({ co2: 700 }).reasons.exchange, 'Air exchange kept off: CO₂ 700 ppm between 600 and 750 ppm');
-  assert.equal(run({ rh: 80 }).reasons.humidifier, 'Humidifier: RH 80 %, at or under 85 %');
-  assert.equal(run({ rh: 96 }).reasons.humidifier, 'Humidifier: RH 96 %, at or over 95 %');
-  assert.equal(run({ rh: 90 }).reasons.humidifier, 'Humidifier kept off: RH 90 % between 85 and 95 %');
+  assert.equal(run({ rh: 80 }).reasons.humidifier, 'Humidifier: RH 80 %, at or under its on-point 86 %');
+  assert.equal(run({ rh: 96 }).reasons.humidifier, 'Humidifier: RH 96 %, at or over its off-point 94 %');
+  assert.equal(run({ rh: 90 }).reasons.humidifier, 'Humidifier kept off: RH 90 % between its on-point 86 % and off-point 94 %');
   assert.equal(run().reasons.ac, 'Aircon: 22.0 °C (middle of 21–23 °C)');
 });
 

@@ -7,6 +7,11 @@ const OUTDOOR_DOTS = '0.1 5'; // round dots 5 px apart (with a round cap a zero-
 
 const NS = 'http://www.w3.org/2000/svg';
 export const M = { left: 64, right: 48, top: 10, bottom: 24 }; // the timeline lines up with these; right: the outdoor scale's numbers
+export const NARROW_CHART = 420; // px: a phone's chart
+// The right margin at a chart's width: room for the outdoor scale's numbers, except on a phone, where they go (the outdoor
+// value is in the legend) so the plot gets the width (critique 2026-10-29). The bar charts and the timeline use it too, so
+// their times line up.
+export const rightMargin = (width) => (width < NARROW_CHART ? 18 : M.right);
 
 function el(name, attrs = {}, text) {
   const node = document.createElementNS(NS, name);
@@ -59,9 +64,10 @@ export function drawLineChart(host, opts) {
     layout = null;
     if (width < 40) return; // not laid out (hidden), nothing to draw yet
     const { points, label } = current;
-    const height = width < 420 ? 170 : 200;
+    const narrow = width < NARROW_CHART;
+    const height = narrow ? 170 : 200;
     const x0 = M.left;
-    const x1 = width - M.right;
+    const x1 = width - rightMargin(width);
     const y0 = height - M.bottom; // bottom
     const y1 = current.second?.points?.some((p) => p.value !== null && Number.isFinite(p.value)) ? 30 : M.top; // a chart with an outdoor line: its legend above the plot
 
@@ -178,11 +184,14 @@ export function drawLineChart(host, opts) {
         svg.append(el('path', { d, ...dots }));
       }
       const lastSecond = [...second].reverse().find((p) => p.value !== null && Number.isFinite(p.value));
-      // its scale: the numbers at the right edge, under a dotted mark like its line (the legend may be too narrow to say it)
-      for (const [v, y] of [[s2.max, y1], [s2.min, y0]]) {
-        svg.append(el('text', { x: x1 + 6, y: y + 4, 'text-anchor': 'start', style: 'fill:var(--muted)', 'font-size': 12 }, v.toFixed(dg)));
+      // its scale: the numbers at the right edge, under a dotted mark like its line (the legend may be too narrow to say it);
+      // none on a phone, where the legend's latest value says it
+      if (!narrow) {
+        for (const [v, y] of [[s2.max, y1], [s2.min, y0]]) {
+          svg.append(el('text', { x: x1 + 6, y: y + 4, 'text-anchor': 'start', style: 'fill:var(--muted)', 'font-size': 12 }, v.toFixed(dg)));
+        }
+        svg.append(el('line', { x1: x1 + 7, x2: x1 + 27, y1: y1 - 10, y2: y1 - 10, ...dots }));
       }
-      svg.append(el('line', { x1: x1 + 7, x2: x1 + 27, y1: y1 - 10, y2: y1 - 10, ...dots }));
       // the legend above the plot, clear of the band's lines: the room's line, then the outdoor one and where its scale is
       const solid = { 'stroke-width': 2.5, 'stroke-linecap': 'round', style: `stroke:${current.color ?? 'var(--ink)'}` };
       // from the card's left edge (over the axis numbers' margin), so a phone has room for the outdoor value
@@ -193,7 +202,7 @@ export function drawLineChart(host, opts) {
       svg.append(el('line', { x1: lx, x2: lx + 20, y1: 12, y2: 12, ...dots }));
       // as long as fits left of the right scale's mark (a phone's chart clipped "· right scale")
       svg.append(el('text', { x: lx + 26, y: 16, style: 'fill:var(--ink-2)', 'font-size': 12 },
-        secondLegend(current.second.label ?? 'Outdoor', lastSecond ? fmt(lastSecond.value) : '', x1 - (lx + 26) - 4)));
+        secondLegend(current.second.label ?? 'Outdoor', lastSecond ? fmt(lastSecond.value) : '', (narrow ? width : x1) - (lx + 26) - 4, !narrow)));
     }
 
     // The line, one path per run; a run of one point is a dot.

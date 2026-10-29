@@ -173,11 +173,7 @@ export function createCropCard(host, { roomId, onChange, onData, onOffline, onGo
   const rampHint = el('p', 'cp-hint', 'The bands move over this many hours when a stage starts (0 = at once)');
   rampHint.id = id('ramp-hint');
   rampInput.setAttribute('aria-describedby', `${rampHint.id} ${rampErr.id}`);
-  const rampSave = button('Save');
-  const rampRow = el('div', 'cp-inline');
-  rampRow.append(rampInput, rampSave);
-  rampField.append(rampLabel, rampRow, rampHint, rampErr);
-  actionButtons.add(rampSave);
+  rampField.append(rampLabel, rampInput, rampHint, rampErr);
   let rampDirty = false;
   const lightField = el('div', 'field cp-light-start');
   const lightInput = textInput(false); // a 24 h "07:00" like the rest of the page (a time input follows the browser's locale)
@@ -192,11 +188,7 @@ export function createCropCard(host, { roomId, onChange, onData, onOffline, onGo
   const lightHint = el('p', 'cp-hint', 'The lights come on at this time (24 h, like 07:00) for the hours of the stage');
   lightHint.id = id('light-start-hint');
   lightInput.setAttribute('aria-describedby', `${lightHint.id} ${lightErr.id}`);
-  const lightSave = button('Save');
-  const lightRowBox = el('div', 'cp-inline');
-  lightRowBox.append(lightInput, lightSave);
-  lightField.append(lightLabel, lightRowBox, lightHint, lightErr);
-  actionButtons.add(lightSave);
+  lightField.append(lightLabel, lightInput, lightHint, lightErr);
   let lightDirty = false;
   const autoField = el('div', 'cp-auto');
   const auto = el('input');
@@ -211,10 +203,16 @@ export function createCropCard(host, { roomId, onChange, onData, onOffline, onGo
   autoErr.setAttribute('aria-live', 'polite');
   auto.setAttribute('aria-describedby', autoErr.id);
   autoField.append(autoLabel, autoHint, autoErr);
+  let autoDirty = false;
+  // One Save for the row (critique 2026-10-29: Automatic change saved on its tick while Ramp and Lights from beside it
+  // needed Save), shown while something in it is changed.
+  const programSave = button('Save', 'cp-program-save');
+  programSave.hidden = true;
+  actionButtons.add(programSave);
   const programErr = el('p', 'm-error');
   programErr.setAttribute('role', 'status');
   programErr.hidden = true;
-  program.append(rampField, lightField, autoField, programErr);
+  program.append(rampField, lightField, autoField, programSave, programErr);
   const programFields = {
     errors: new Map([['rampH', rampErr], ['lightStart', lightErr], ['autoAdvance', autoErr]]),
     inputs: new Map([['rampH', rampInput], ['lightStart', lightInput], ['autoAdvance', auto]]), fallback: programErr,
@@ -647,43 +645,29 @@ export function createCropCard(host, { roomId, onChange, onData, onOffline, onGo
 
   // ---- the program row ----
 
-  rampInput.addEventListener('input', () => { rampDirty = true; rampErr.textContent = ''; rampInput.removeAttribute('aria-invalid'); setText(programErr, ''); rampSave.hidden = false; });
-  rampInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') rampSave.click(); });
-  rampSave.addEventListener('click', async () => {
+  const paintProgramSave = () => { programSave.hidden = !(rampDirty || lightDirty || autoDirty); };
+  rampInput.addEventListener('input', () => { rampDirty = true; rampErr.textContent = ''; rampInput.removeAttribute('aria-invalid'); setText(programErr, ''); paintProgramSave(); });
+  lightInput.addEventListener('input', () => { lightDirty = true; lightErr.textContent = ''; lightInput.removeAttribute('aria-invalid'); setText(programErr, ''); paintProgramSave(); });
+  for (const input of [rampInput, lightInput]) input.addEventListener('keydown', (e) => { if (e.key === 'Enter') programSave.click(); });
+  auto.addEventListener('change', () => { autoDirty = auto.checked !== (last.autoAdvance !== false); autoErr.textContent = ''; setText(programErr, ''); paintProgramSave(); });
+  programSave.addEventListener('click', async () => {
     clearFields(programFields);
     const f = formFromData(last);
-    f.rampH = rampInput.value;
-    const checked = checkCropForm(f);
-    if (showChecks(checked.errors, programFields, ['rampH'])) return;
-    const body = saveBody(checked.values, last);
-    if (Object.keys(body).length === 0 || await send(body, programFields)) { // saved (or nothing to save): the room's value again
-      rampDirty = false;
-      rampInput.value = String(last.rampH);
-      rampSave.hidden = true;
-    }
-  });
-  lightInput.addEventListener('input', () => { lightDirty = true; lightErr.textContent = ''; lightInput.removeAttribute('aria-invalid'); setText(programErr, ''); lightSave.hidden = false; });
-  lightInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') lightSave.click(); });
-  lightSave.addEventListener('click', async () => {
-    clearFields(programFields);
-    const f = formFromData(last);
-    f.lightStart = lightInput.value;
-    const checked = checkCropForm(f);
-    if (showChecks(checked.errors, programFields, ['lightStart'])) return;
-    const body = saveBody(checked.values, last);
-    if (Object.keys(body).length === 0 || await send(body, programFields)) {
-      lightDirty = false;
-      lightInput.value = last.lightStart ?? '';
-      lightSave.hidden = true;
-    }
-  });
-  auto.addEventListener('change', async () => {
-    clearFields(programFields);
-    const f = formFromData(last);
+    if (rampDirty) f.rampH = rampInput.value;
+    if (lightDirty) f.lightStart = lightInput.value;
     f.autoAdvance = auto.checked;
-    const body = saveBody(checkCropForm(f).values, last);
-    if (Object.keys(body).length === 0) return;
-    if (!(await send(body, programFields))) auto.checked = last.autoAdvance;
+    const checked = checkCropForm(f);
+    if (showChecks(checked.errors, programFields, ['rampH', 'lightStart', 'autoAdvance'])) return;
+    const body = saveBody(checked.values, last);
+    if (Object.keys(body).length === 0 || await send(body, programFields)) { // saved (or nothing to save): the room's values again
+      rampDirty = false;
+      lightDirty = false;
+      autoDirty = false;
+      rampInput.value = String(last.rampH);
+      lightInput.value = last.lightStart ?? '';
+      auto.checked = last.autoAdvance !== false;
+      paintProgramSave();
+    }
   });
 
   // ---- drawing ----
@@ -723,16 +707,11 @@ export function createCropCard(host, { roomId, onChange, onData, onOffline, onGo
     paintList(c, now);
 
     // the program row: a ramp being typed and a command out are left alone
-    if (!rampDirty && document.activeElement !== rampInput) {
-      rampInput.value = String(c.rampH);
-      rampSave.hidden = true;
-    }
+    if (!rampDirty && document.activeElement !== rampInput) rampInput.value = String(c.rampH);
     lightField.hidden = typeof c.lightStart !== 'string' || !lit(); // an older server has no light schedule; a room without lights
-    if (!lightDirty && document.activeElement !== lightInput) {
-      lightInput.value = c.lightStart ?? '';
-      lightSave.hidden = true;
-    }
-    if (!busy) auto.checked = c.autoAdvance !== false;
+    if (!lightDirty && document.activeElement !== lightInput) lightInput.value = c.lightStart ?? '';
+    if (!busy && !autoDirty) auto.checked = c.autoAdvance !== false;
+    paintProgramSave();
   }
 
   // ---- loading ----

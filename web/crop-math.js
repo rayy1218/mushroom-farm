@@ -5,6 +5,7 @@ import { CROPS, STAGES, FARM_TYPES, validateCrops, mixBands, rangeWarnings } fro
 import { exchangePoints } from './band-math.js';
 import { formatDateTime } from './simulation-math.js';
 import { lightRow, isClock, isLightHours, normaliseClock } from './light-math.js';
+import { DOT } from './text-math.js';
 
 const DAY_MS = 86_400_000;
 const pad2 = (n) => String(n).padStart(2, '0');
@@ -27,7 +28,7 @@ export function stageLine(c, now = Date.now()) {
   if (!d) return '';
   const parts = [`since ${formatDateTime(c.stageSince)}`, dayText(d)];
   if (c.stage === 'fruiting' || c.stage === 'rest') parts.push(`flush ${c.flush} of ${c.flushes}`);
-  return parts.join(' · ');
+  return parts.join(DOT);
 }
 
 // "Next: Rest between flushes, about 27 Oct 10:42", or '' when nothing follows.
@@ -145,7 +146,7 @@ const hasFlush = (stage) => stage === 'fruiting' || stage === 'rest';
 export function cropHeadline(c) {
   if (!hasCrops(c)) return { title: 'No crop set: the bands are set by hand', farm: '' };
   const title = c.crops.length === 1
-    ? `${shortName(c.crops[0].crop)} · ${grouped(c.crops[0].blocks)} blocks`
+    ? `${shortName(c.crops[0].crop)}${DOT}${grouped(c.crops[0].blocks)} blocks`
     : `${c.crops.map((r) => `${shortName(r.crop)} ${grouped(r.blocks)}`).join(' + ')} blocks`;
   return { title, farm: FARM_TYPES[c.farmType]?.name ?? '' };
 }
@@ -163,16 +164,16 @@ export function stageLength(c, stage) {
 export function stageMark(c, stage, now = Date.now()) {
   if (!hasCrops(c)) return { kind: '', text: '' };
   if (stage === c.stage) {
-    if (c.done) return { kind: 'current', text: `Current · flush ${c.flushes} of ${c.flushes} done` };
+    if (c.done) return { kind: 'current', text: `Current${DOT}flush ${c.flushes} of ${c.flushes} done` };
     const parts = ['Current'];
     const d = stageDay(c, now);
     if (d) parts.push(dayText(d));
     if (hasFlush(stage)) parts.push(`flush ${c.flush} of ${c.flushes}`);
-    return { kind: 'current', text: parts.join(' · ') };
+    return { kind: 'current', text: parts.join(DOT) };
   }
   const next = c.done ? null : c.nextStage ?? followingStage(c); // the server sends no next stage while automatic change is off
   if (next?.stage === stage) {
-    return { kind: 'next', text: Number.isFinite(next.at) ? `Next · about ${formatDateTime(next.at)}` : 'Next · when you start it' };
+    return { kind: 'next', text: Number.isFinite(next.at) ? `Next${DOT}about ${formatDateTime(next.at)}` : `Next${DOT}when you start it` };
   }
   return { kind: '', text: '' };
 }

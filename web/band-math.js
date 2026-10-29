@@ -9,6 +9,16 @@ const TREND_WORD = { T: 0.1, RH: 0.3 };
 
 const num = (x) => (typeof x === 'number' && Number.isFinite(x) ? x : null);
 
+// The humidifier's switch points sit inside the humidity band (owner, 2026-10-29: on at the lower limit and off at the upper
+// held the room at its edges): on at the lower limit plus a margin, off at the upper limit less it. The margin is 1 % RH for a
+// band 6 % RH or wider and a quarter of a narrower band, so the two points never meet. Rounded to 0.1. The controller
+// (server/controller.js decide) and every page that states the points use this. → { on, off } in % RH.
+export const HUMIDIFIER_MARGIN = 1;
+export function humidifierPoints(low, high) {
+  const m = high - low >= 6 ? HUMIDIFIER_MARGIN : (high - low) / 4;
+  return { on: Math.round((low + m) * 10) / 10, off: Math.round((high - m) * 10) / 10 };
+}
+
 // The change over the last spanMs of [{ at, value }] (last value minus the first one inside the span), or null.
 export function trendOf(points, spanMs) {
   const list = (points ?? []).filter((p) => p && num(p.at) !== null && num(p.value) !== null);
@@ -41,13 +51,19 @@ export function nearFor(points, low, high, edge) {
   return first ? list[list.length - 1].at - first.at : 0;
 }
 
-// Whether the machine that should act at this edge is known not to: humidity low and the humidifier off; humidity high and
-// a fitted dehumidifier off; temperature high and the aircon not cooling; temperature low and the aircon cooling.
+// Whether the machine that should act at this edge is known not to: humidity low, at or under the humidifier's on-point and
+// the humidifier off; humidity high, at the dehumidifier's on-point (the band's top) and a fitted dehumidifier off, or at or
+// over the humidifier's off-point and the humidifier still on; temperature high and the aircon not cooling; temperature low
+// and the aircon cooling. A machine that has not reached its own on-point is acting as told (critique 2026-10-29).
 // machines: { humidifier, dehumidifier, cooling }, each true (running), false (fitted and not running) or null (none, or
 // not known): null is never "not acting", so such a reading turns amber only after 15 min near the edge.
-function notActing(key, edge, machines) {
+function notActing(key, edge, machines, value, low, high) {
   const m = machines ?? {};
-  if (key === 'RH') return edge === 'bottom' ? m.humidifier === false : m.dehumidifier === false;
+  if (key === 'RH') {
+    const points = humidifierPoints(low, high);
+    if (edge === 'bottom') return m.humidifier === false && value <= points.on;
+    return (m.dehumidifier === false && value >= high) || (m.humidifier === true && value >= points.off);
+  }
   return edge === 'top' ? m.cooling === false : m.cooling === true;
 }
 
@@ -59,7 +75,7 @@ export function nearChip(key, value, low, high, { trend = null, points = null, m
   const k = KEY[key];
   const edge = nearEdge(k, value, low, high);
   if (!edge) return null;
-  if (!notActing(k, edge, machines) && nearFor(points, low, high, edge) < NEAR_DWELL_MS) return null;
+  if (!notActing(k, edge, machines, value, low, high) && nearFor(points, low, high, edge) < NEAR_DWELL_MS) return null;
   const toward = num(trend) !== null && (edge === 'top' ? trend > TREND_WORD[k] : trend < -TREND_WORD[k]);
   return { edge, text: `Near ${edge === 'top' ? 'high' : 'low'}${toward ? ` · ${edge === 'top' ? 'rising' : 'falling'}` : ''}` };
 }

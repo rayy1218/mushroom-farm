@@ -157,10 +157,11 @@ export function barTip(bar, kind) {
 
 // ---------------- the breakdown table ----------------
 
+// The machines' names as the Machines list says them (critique 2026-10-29: "Intake" here, "Intake fan" there).
 export const MACHINE_ROWS = [
-  { key: 'intake', label: 'Intake' },
-  { key: 'exhaust', label: 'Exhaust' },
-  { key: 'circulation', label: 'Circulation' },
+  { key: 'intake', label: 'Intake fan' },
+  { key: 'exhaust', label: 'Exhaust fan' },
+  { key: 'circulation', label: 'Circulation fan' },
   { key: 'humidifier', label: 'Humidifier' },
   { key: 'dehumidifier', label: 'Dehumidifier' },
   { key: 'lights', label: 'Lights' },
@@ -210,7 +211,7 @@ export function roomLines(usage) {
     id: r.id,
     href: roomHash(r.id, 'history'),
     name: r.name,
-    today: `${formatKWh(r.today?.kWh)} · ${formatRM(r.today?.cost)}`,
-    last30: `${formatKWh(r.last30?.kWh)} · ${formatRM(r.last30?.cost)}`,
+    today: `${formatKWh(r.today?.kWh)} ·\u00a0${formatRM(r.today?.cost)}`, // a '·' keeps to the words after it (text-math.js DOT)
+    last30: `${formatKWh(r.last30?.kWh)} ·\u00a0${formatRM(r.last30?.cost)}`,
   }));
 }

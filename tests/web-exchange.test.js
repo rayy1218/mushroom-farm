@@ -65,9 +65,9 @@ test('the totals: exchanges started in the range, the minutes in all and the lon
   const rows = [on(from - 5 * MIN), off(at(20, 0, 2)), on(at(20, 1)), off(at(20, 1, 10)), on(at(20, 5)), off(at(20, 6, 35))];
   const t = activityTotals(rows, from, at(20, 12));
   assert.deepEqual(t, { exchanges: 2, minutes: 2 + 10 + 95, longest: 95 });
-  assert.equal(activityTotalsText(t, 'hourly'), '24 h: 2 exchanges, 1 h 47 min in all · longest 1 h 35 min');
-  assert.equal(activityTotalsText({ exchanges: 41, minutes: 155, longest: 10 }, 'hourly'), '24 h: 41 exchanges, 2 h 35 min in all · longest 10 min');
-  assert.equal(activityTotalsText({ exchanges: 1, minutes: 4, longest: 4 }, 'daily'), '30 days: 1 exchange, 4 min in all · longest 4 min');
+  assert.equal(activityTotalsText(t, 'hourly'), '24 h: 2 exchanges, 1 h 47 min in all ·\u00a0longest 1 h 35 min');
+  assert.equal(activityTotalsText({ exchanges: 41, minutes: 155, longest: 10 }, 'hourly'), '24 h: 41 exchanges, 2 h 35 min in all ·\u00a0longest 10 min');
+  assert.equal(activityTotalsText({ exchanges: 1, minutes: 4, longest: 4 }, 'daily'), '30 days: 1 exchange, 4 min in all ·\u00a0longest 4 min');
   assert.equal(activityTotalsText({ exchanges: 0, minutes: 0, longest: 0 }, 'daily'), '30 days: no exchanges');
 });
 

@@ -16,7 +16,8 @@ const TEMPLATE = `
     <ol class="s-hint tg-steps">
       <li>In Telegram, talk to <strong>@BotFather</strong>, send <code>/newbot</code> and copy the bot's token.</li>
       <li>Open your new bot and send it any message (for a group, add the bot to the group and write there).</li>
-      <li>Find the chat id: message <strong>@userinfobot</strong>, or open <code>https://api.telegram.org/bot&lt;token&gt;/getUpdates</code> and look for <code>"chat":{"id":…}</code>.</li>
+      <li>Message <strong>@userinfobot</strong>; it replies with your number id, the chat id below.
+        <span class="tg-fallback">If @userinfobot doesn't work: open <code>https://api.telegram.org/bot&lt;token&gt;/getUpdates</code> and look for <code>"chat":{"id":…}</code>.</span></li>
     </ol>
     <div class="field">
       <label for="f-telegramToken">Bot token</label>

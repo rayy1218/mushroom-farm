@@ -329,7 +329,19 @@ test('the aircon\'s label fits its box at 13 px: the usual cooling is its setpoi
   const css = readFileSync(new URL('../web/mimic.css', import.meta.url), 'utf8');
   assert.match(css, /\.mimic-svg \.m-ac \{ font-size: 13px;/);
   const page = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
-  assert.match(page, /\.rc-scroll \.rc-pic \{ min-width: 840px; \}/, 'on a phone the drawing at its own size: 13 px labels are 13 px');
+});
+
+// Critique 2026-10-29: on a phone the drawing at its own size was mostly sky until swiped; it now fits the card's width, its
+// small labels hidden (the Machines list says every state), with no swipe hint.
+test('on a phone the whole drawing fits the card: no sideways scroll, no swipe hint, the small labels hidden under 640 px', () => {
+  const page = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
+  assert.doesNotMatch(page, /min-width: 840px/);
+  assert.doesNotMatch(page, /rc-swipe|rc-scroll/);
+  const card = readFileSync(new URL('../web/room-card.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(card, /Swipe the drawing/);
+  assert.match(card, /hosts\.picture\.replaceChildren\(cardHead\('Room', note\), pic, blocks, fresh\);/);
+  const css = readFileSync(new URL('../web/mimic.css', import.meta.url), 'utf8');
+  assert.match(css, /\.mimic-narrow \.mimic-svg \.tag, \.mimic-narrow \.mimic-svg \.small \{ display: none; \}/);
 });
 
 test('the light theme gives the drawing a 1 px edge inside its corners (its pale sky on a white card had none)', () => {

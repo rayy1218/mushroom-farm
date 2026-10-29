@@ -100,7 +100,9 @@ test('suggest machines runs with no filter: its physics carry no filter field, e
 });
 
 test('a run without filter settings gives the numbers it gave before the filter existed (v2 ee4d30a)', () => {
-  // Container Alpha's size and blocks, 3 days; the expected numbers were taken from the code before this iteration.
+  // Container Alpha's size and blocks, 3 days; the expected numbers were taken from the code before this iteration, then once
+  // more when the humidifier's switch points moved 1 % RH inside the band (2026-10-29): humidity in band 99.2 → 100 %, its
+  // range 84.8–91.2 → 85.7–90.2 % RH, the aircon 17.24 → 17.21 kWh, the water 16.5 → 16.6 L.
   const alpha = { wallUA: 30, outdoorHigh: 33, outdoorLow: 25, outdoorDew: 24, sunW: 100, fanFlow: 150, acBTU: 12000, humidifierLH: 0.5, dehumidifierLday: 20 };
   const r = simulate({ physics: alpha, crops: [{ crop: 'oyster', blocks: 950 }], farmType: 'ready', stage: 'fruiting', days: 3 }, {
     volume: 32.6, ratings: { intakeW: 60, exhaustW: 60, circulationW: 60, humidifierW: 80, humidifierLH: 0.5, acInputW: 1050 },
@@ -108,10 +110,10 @@ test('a run without filter settings gives the numbers it gave before the filter 
   });
   const { inBand, energy, water, extremes } = r.summary;
   assert.deepEqual({ inBand, energy, water, extremes, series: r.series.length, last: r.series.at(-1) }, {
-    inBand: { t: 100, rh: 99.2, co2: 97.3, all: 96.5 },
-    energy: { byMachine: { intake: 1.19, exhaust: 1.19, circulation: 4.32, humidifier: 0.66, dehumidifier: 0, lights: 0, ac: 17.24 }, kWh: 24.6, cost: 13.53 },
-    water: { litres: 16.5, removedLitres: 0, cost: 0 },
-    extremes: { tMin: 25, tMax: 25.2, rhMin: 84.8, rhMax: 91.2, co2Max: 903 },
+    inBand: { t: 100, rh: 100, co2: 97.3, all: 97.3 },
+    energy: { byMachine: { intake: 1.19, exhaust: 1.19, circulation: 4.32, humidifier: 0.66, dehumidifier: 0, lights: 0, ac: 17.21 }, kWh: 24.57, cost: 13.51 },
+    water: { litres: 16.6, removedLitres: 0, cost: 0 },
+    extremes: { tMin: 25, tMax: 25.2, rhMin: 85.7, rhMax: 90.2, co2Max: 903 },
     series: 864,
     last: { s: 258900, t: 25.07, rh: 87.2, co2: 859, outT: 26.2, outRH: 88.2, tLow: 24, tHigh: 26, rhLow: 85, rhHigh: 91, co2Low: 700, co2High: 900, stage: 'fruiting' },
   });

@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  farmStatus, sortRooms, phoneAlarms,
+  farmStatus, phoneAlarms, readingStates, settle, settleRooms, HOLD_MS, WATCH_HOLD_MS,
   roomCard, sparkPath, tiles, badgeCount, withTitlePrefix, sensorText, exchangeText, alarmLevelRank, sortAlarms, alarmTimeText, SPARKS,
   roomReadings, outOfBand, nearEdges,
 } from '../web/overview-math.js';
@@ -92,8 +92,8 @@ test('the page title gets "(2) " in front when there are alarms, and never twice
 test('sensor text: the value, and the status word when the sensor is not online', () => {
   assert.equal(sensorText({ status: 'online', t: 23.46, rh: 88 }, 't', 1, '°C'), '23.5 °C');
   assert.equal(sensorText({ status: 'online', t: 23.4 }, 'rh', 0, '%'), '—');
-  assert.equal(sensorText({ status: 'offline', co2: 650 }, 'co2', 0, 'ppm'), '650 ppm · Offline');
-  assert.equal(sensorText({ status: 'timeout', co2: null }, 'co2', 0, 'ppm'), '— · Timeout');
+  assert.equal(sensorText({ status: 'offline', co2: 650 }, 'co2', 0, 'ppm'), '650 ppm ·\u00a0Offline');
+  assert.equal(sensorText({ status: 'timeout', co2: null }, 'co2', 0, 'ppm'), '— ·\u00a0Timeout');
   assert.equal(sensorText({ status: 'not-wired' }, 'co2', 0, 'ppm'), 'Not wired');
   assert.equal(sensorText({ status: 'no-data' }, 'co2', 0, 'ppm'), 'No data yet');
   assert.equal(sensorText({ status: 'online', co2: 1301.2 }, 'co2', 0, 'ppm'), '1,301 ppm', 'grouped, as on the room page');
@@ -130,18 +130,9 @@ test('farmStatus: one line at the top of the Overview; a room with nothing wired
   assert.deepEqual(farmStatus([r({ alarms: { count: 2, level: 'serious' } }), r({ auto: false })]),
     { text: '2 of 2 rooms need attention', tone: 'serious', facts: ['2 alarms', '1 room in Manual', 'No air exchange running'] });
   assert.deepEqual(farmStatus([r({ auto: false })]), { text: '1 of 1 room needs attention', tone: 'amber', facts: ['No alarms', '1 room in Manual', 'No air exchange running'] });
-  assert.deepEqual(farmStatus([r({}), r(unwired)]), { text: '1 room OK · 1 not set up', tone: 'good', facts: ['No alarms', 'No air exchange running'] });
+  assert.deepEqual(farmStatus([r({}), r(unwired)]), { text: '1 room OK ·\u00a01 not set up', tone: 'good', facts: ['No alarms', 'No air exchange running'] });
   assert.deepEqual(farmStatus([r(unwired)]), { text: '1 room not set up', tone: 'none', facts: ['No alarms', 'No air exchange running'] });
   assert.equal(farmStatus([]), null);
-});
-
-test('sortRooms: rooms that need someone first (alarms by level, then Manual), then OK, then the ones not set up', () => {
-  const r = (name, over) => ({ name, alarms: { count: 0, level: null }, auto: true, trh: { status: 'online' }, co2: { status: 'online' }, ...over });
-  const order = sortRooms([
-    r('unwired', { trh: { status: 'not-wired' }, co2: { status: 'not-wired' }, auto: false }), r('ok A'), r('manual', { auto: false }),
-    r('warning', { alarms: { count: 1, level: 'warning' } }), r('critical', { alarms: { count: 1, level: 'critical' } }), r('ok B'),
-  ]).map((x) => x.name);
-  assert.deepEqual(order, ['critical', 'warning', 'manual', 'ok A', 'ok B', 'unwired']);
 });
 
 test('phoneAlarms: a line on the Overview when alarms cannot reach a phone, none when they can', () => {
@@ -246,15 +237,6 @@ test('a reading out of band is not OK: the pill says Out of band, the status cou
   assert.deepEqual(farmStatus([r('A'), r('B')]).text, 'All 2 rooms OK');
 });
 
-test('sortRooms: alarms, then out of band, then Manual, then OK, then not set up', () => {
-  const r = (name, over) => ({ name, alarms: { count: 0, level: null }, auto: true, bands: { tLow: 19, tHigh: 21, rhLow: 87, rhHigh: 93 },
-    trh: { status: 'online', t: 20, rh: 90 }, co2: { status: 'online' }, ...over });
-  const order = sortRooms([
-    r('ok'), r('manual', { auto: false }), r('out', { trh: { status: 'online', t: 23, rh: 90 } }), r('alarm', { alarms: { count: 1, level: 'warning' } }),
-  ]).map((x) => x.name);
-  assert.deepEqual(order, ['alarm', 'out', 'manual', 'ok']);
-});
-
 // Critique 2026-10-28: a room with minutes of data drew a hook at the right edge of a flat 24 h band.
 test('roomCard: traces of less than 2 hours are scaled to the data and say since when', () => {
   const now = at(28, 17, 30);
@@ -283,7 +265,7 @@ test('critique 2026-10-28 layout (the farm cards side by side, 2026-10-29 as tal
 
 // Critique 2026-10-29 (owner): a room in band with an amber near-edge reading is not "OK" beside that amber, and not a room
 // that needs attention either: its pill says Watch, the status line names it.
-test('a room in band with a reading near an edge, its machine not acting: Watch, named in the status, sorted after Manual', () => {
+test('a room in band with a reading near an edge, its machine not acting: Watch, named in the status', () => {
   const now = at(29, 12);
   const bands = { tLow: 19, tHigh: 21, rhLow: 87, rhHigh: 93, co2Low: 700, co2High: 900 };
   const r = (name, over) => ({
@@ -291,12 +273,14 @@ test('a room in band with a reading near an edge, its machine not acting: Watch,
     trh: { status: 'online', t: 20, rh: 90 }, co2: { status: 'online', co2: 800 }, spark: { t: [], rh: [], co2: [] },
     machines: { humidifier: true, dehumidifier: false, cooling: true }, ...over,
   });
-  const wet = r('Room 1', { trh: { status: 'online', t: 20, rh: 92.5 } }); // near high, the dehumidifier off
+  const wet = r('Room 1', { trh: { status: 'online', t: 20, rh: 92.5 } }); // near high, the humidifier on past its off-point (92 % RH)
   const ok = r('Room 2');
   assert.deepEqual(nearEdges(wet), [{ key: 'rh', text: 'Humidity near high' }]);
   assert.deepEqual(nearEdges(ok), []);
-  assert.deepEqual(nearEdges(r('A', { trh: { status: 'online', t: 20, rh: 92.5 }, machines: { humidifier: true, dehumidifier: true, cooling: true } })), [],
+  assert.deepEqual(nearEdges(r('A', { trh: { status: 'online', t: 20, rh: 92.5 }, machines: { humidifier: false, dehumidifier: true, cooling: true } })), [],
     'the dehumidifier on it: calm');
+  assert.deepEqual(nearEdges(r('A', { trh: { status: 'online', t: 20, rh: 92.5 }, machines: { humidifier: false, dehumidifier: false, cooling: true } })), [],
+    'under the dehumidifier\'s on-point (93 % RH) with the humidifier off: acting as told (critique 2026-10-29)');
   assert.deepEqual(nearEdges(r('A', { trh: { status: 'online', t: 19.1, rh: 87.2 }, machines: { humidifier: false, dehumidifier: null, cooling: true } })),
     [{ key: 't', text: 'Temperature near low' }, { key: 'rh', text: 'Humidity near low' }]);
   assert.deepEqual(nearEdges(r('A', { trh: { status: 'offline', t: 20, rh: 92.5 } })), [], 'an offline sensor\'s last value is not now');
@@ -305,21 +289,19 @@ test('a room in band with a reading near an edge, its machine not acting: Watch,
   assert.deepEqual(roomCard({ ...wet, alarms: { count: 1, level: 'warning' } }, now).state, { text: '1 alarm', tone: 'warning' });
   assert.deepEqual(roomCard(ok, now).state, { text: 'OK', tone: 'good' });
   assert.deepEqual(farmStatus([wet, ok, r('Room 3'), r('Room 4')]),
-    { text: '3 rooms OK · Room 1 humidity near high', tone: 'amber', facts: ['No alarms', 'No air exchange running'] });
+    { text: '3 rooms OK ·\u00a0Room 1 humidity near high', tone: 'amber', facts: ['No alarms', 'No air exchange running'] });
   assert.equal(farmStatus([wet]).text, 'Room 1 humidity near high');
   const hot = r('Room 3', { trh: { status: 'online', t: 20.9, rh: 90 }, machines: { humidifier: true, dehumidifier: null, cooling: false } });
-  assert.equal(farmStatus([wet, ok, hot]).text, '1 room OK · 2 rooms to watch');
+  assert.equal(farmStatus([wet, ok, hot]).text, '1 room OK ·\u00a02 rooms to watch');
   assert.equal(farmStatus([wet, hot]).text, '2 rooms to watch');
   const both = r('Room 5', { trh: { status: 'online', t: 20.9, rh: 92.5 }, machines: { humidifier: true, dehumidifier: false, cooling: false } });
-  assert.equal(farmStatus([both, ok]).text, '1 room OK · Room 5 temperature near high, humidity near high');
+  assert.equal(farmStatus([both, ok]).text, '1 room OK ·\u00a0Room 5 temperature near high, humidity near high');
   const unwired = r('Room 9', { auto: false, trh: { status: 'not-wired' }, co2: { status: 'not-wired' } });
-  assert.equal(farmStatus([wet, ok, unwired]).text, '1 room OK · Room 1 humidity near high · 1 not set up');
+  assert.equal(farmStatus([wet, ok, unwired]).text, '1 room OK ·\u00a0Room 1 humidity near high ·\u00a01 not set up');
   // with a room that needs attention, the room to watch is one of the facts
   assert.deepEqual(farmStatus([wet, r('Room 2', { auto: false })]),
     { text: '1 of 2 rooms needs attention', tone: 'amber', facts: ['No alarms', '1 room in Manual', 'Room 1 humidity near high', 'No air exchange running'] });
   assert.deepEqual(farmStatus([wet, hot, r('Room 2', { auto: false })]).facts, ['No alarms', '1 room in Manual', '2 rooms to watch', 'No air exchange running']);
-  const order = sortRooms([ok, wet, r('manual', { auto: false })]).map((x) => x.name);
-  assert.deepEqual(order, ['manual', 'Room 1', 'Room 2']);
 });
 
 // Critique 2026-10-29: a trace drew a line, then nothing, then a lone dot at the right edge; the gap is now a quiet dashed
@@ -348,4 +330,119 @@ test('critique 2026-10-29 layout: a reading\'s status on the label line across t
   assert.match(block, /\.ov-value > \.ov-spark, \.ov-value > \.ov-spark-none \{ grid-column: 2; grid-row: 2; \}/);
   assert.match(block, /\.ov-spark-gap \{[^}]*stroke-dasharray: 2 3;/);
   assert.match(block, /\.ov-outdoor \.ov-spark \{[^}]*width: 100%;/);
+});
+
+// Critique 2026-10-29 (owner): the Overview flapped and reordered as the machines cycled. The cards keep the server's order (by
+// name); a reading's Watch or Out of band counts only once it has held: out of band for the alarm's own hold for that reading
+// (server/alarms.js), near an edge for 2 min; until then the room stays as it was.
+test('the out-of-band holds are the alarms\' own delays', async () => {
+  const { PROCESS_DELAYS } = await import('../server/alarms.js');
+  for (const key of ['tHigh', 'tLow', 'rhHigh', 'rhLow', 'co2High', 'co2Safety']) assert.equal(HOLD_MS[key], PROCESS_DELAYS[key], key);
+  assert.equal(WATCH_HOLD_MS, 2 * 60_000);
+  assert.equal(HOLD_MS.rhNearHigh, WATCH_HOLD_MS);
+  assert.equal(HOLD_MS.calm, WATCH_HOLD_MS);
+});
+
+test('readingStates: each reading\'s state now, by the same rules as the pill', () => {
+  const bands = { tLow: 19, tHigh: 21, rhLow: 87, rhHigh: 93, co2Low: 700, co2High: 900, co2Safety: 1500 };
+  const r = (over) => ({ bands, exchange: false, trh: { status: 'online', t: 20, rh: 90 }, co2: { status: 'online', co2: 800 }, spark: {},
+    machines: { humidifier: false, dehumidifier: false, cooling: true }, ...over });
+  assert.deepEqual(readingStates(r()), { t: 'calm', rh: 'calm', co2: 'calm' });
+  assert.deepEqual(readingStates(r({ trh: { status: 'online', t: 21.5, rh: 86 } })), { t: 'tHigh', rh: 'rhLow', co2: 'calm' });
+  assert.deepEqual(readingStates(r({ trh: { status: 'online', t: 20, rh: 87.5 } })).rh, 'rhNearLow', 'under the on-point (88 % RH), the humidifier off');
+  assert.deepEqual(readingStates(r({ co2: { status: 'online', co2: 950 } })).co2, 'co2High');
+  assert.deepEqual(readingStates(r({ co2: { status: 'online', co2: 1500 } })).co2, 'co2Safety');
+  assert.deepEqual(readingStates(r({ trh: { status: 'offline', t: 30, rh: 50 } })), { t: 'calm', rh: 'calm', co2: 'calm' }, 'no reading now: nothing to hold');
+});
+
+test('settle: the first state is shown at once; a new one once it has held for its time, the old one until then', () => {
+  const t0 = 1_000_000;
+  const first = settle(null, 'rhNearHigh', t0);
+  assert.deepEqual(first, { state: 'rhNearHigh', since: t0, shown: 'rhNearHigh' }, 'nothing known before: what it is now');
+  const calm = settle(first, 'calm', t0 + 10_000);
+  assert.deepEqual(calm, { state: 'calm', since: t0 + 10_000, shown: 'rhNearHigh' }, 'back in band 10 s: still Watch');
+  const near = settle(settle(calm, 'calm', t0 + 60_000), 'rhNearHigh', t0 + 70_000);
+  assert.deepEqual(near, { state: 'rhNearHigh', since: t0 + 70_000, shown: 'rhNearHigh' }, 'flapping keeps what was shown');
+  const quiet = settle(settle({ state: 'calm', since: 0, shown: 'calm' }, 'rhNearHigh', t0), 'rhNearHigh', t0 + WATCH_HOLD_MS - 1);
+  assert.equal(quiet.shown, 'calm', 'near the edge for less than 2 min');
+  assert.equal(settle(quiet, 'rhNearHigh', t0 + WATCH_HOLD_MS).shown, 'rhNearHigh', '2 min: Watch');
+  const wet = settle({ state: 'calm', since: 0, shown: 'calm' }, 'rhHigh', t0);
+  assert.equal(settle(wet, 'rhHigh', t0 + 14 * 60_000).shown, 'calm', 'humidity over the band 14 min: the alarm waits 15');
+  assert.equal(settle(wet, 'rhHigh', t0 + 15 * 60_000).shown, 'rhHigh');
+  assert.deepEqual(settle(null, 'rhHigh', t0, false), { state: 'rhHigh', since: t0, shown: 'calm' }, 'seen first, not known to have held: from now');
+});
+
+test('settleRooms on opening the page: a reading out of band shows at once only when its last 30 min bucket was out too', () => {
+  const t0 = at(29, 12);
+  const bands = { tLow: 24, tHigh: 26, rhLow: 85, rhHigh: 91, co2Low: 700, co2High: 900, co2Safety: 1500 };
+  const room = (rh, last) => ({ id: 2, name: 'Container Alpha', alarms: { count: 0, level: null }, auto: true, exchange: true, bands,
+    trh: { status: 'online', t: 25, rh }, co2: { status: 'online', co2: 760 }, spark: { t: [], rh: [{ at: t0 - 900_000, v: last }], co2: [] },
+    machines: { humidifier: false, dehumidifier: null, cooling: true } });
+  const wetting = settleRooms(new Map(), [room(91.8, 89.5)], t0).rooms[0];
+  assert.deepEqual(roomCard(wetting, t0).state, { text: 'OK', tone: 'good' }, 'an air exchange wetting the room for a few minutes');
+  assert.deepEqual(roomCard(wetting, t0).values[1].chip, { text: 'Above band', tone: 'neutral' });
+  const wet = settleRooms(new Map(), [room(91.8, 92.4)], t0).rooms[0];
+  assert.deepEqual(roomCard(wet, t0).state, { text: 'Out of band', tone: 'amber' }, 'over the band the last half hour too');
+});
+
+test('settleRooms: the pill and the status line follow the held states; a short spell over the band changes nothing', () => {
+  const t0 = at(29, 12);
+  const bands = { tLow: 19, tHigh: 21, rhLow: 87, rhHigh: 93, co2Low: 700, co2High: 900, co2Safety: 1500 };
+  const room = (rh, over = {}) => ({ id: 1, name: 'Room 1', alarms: { count: 0, level: null }, auto: true, exchange: false, bands,
+    trh: { status: 'online', t: 20, rh }, co2: { status: 'online', co2: 800 }, spark: { t: [], rh: [], co2: [] },
+    machines: { humidifier: false, dehumidifier: false, cooling: true }, ...over });
+  let memory = new Map();
+  const step = (r, now) => { const out = settleRooms(memory, [r], now); memory = out.memory; return out.rooms[0]; };
+  assert.deepEqual(roomCard(step(room(90), t0), t0).state, { text: 'OK', tone: 'good' });
+  const over = step(room(93.4), t0 + 60_000);
+  assert.deepEqual(roomCard(over, t0 + 60_000).state, { text: 'OK', tone: 'good' }, '1 min over the band: still OK');
+  assert.deepEqual(roomCard(over, t0 + 60_000).values[1].chip, { text: 'Above band', tone: 'neutral' }, 'the words say it, without amber yet');
+  assert.equal(farmStatus([over]).text, 'All 1 room OK');
+  const near = step(room(87.5), t0 + 2 * 60_000);
+  assert.deepEqual(roomCard(near, t0).state, { text: 'OK', tone: 'good' }, 'near low just now');
+  assert.deepEqual(roomCard(near, t0).values[1].chip, { text: 'In band', tone: 'good' });
+  const held = step(room(87.5), t0 + 4 * 60_000);
+  assert.deepEqual(roomCard(held, t0).state, { text: 'Watch', tone: 'amber' }, 'near low 2 min with the humidifier off');
+  assert.deepEqual(roomCard(held, t0).values[1].chip, { text: 'Near low', tone: 'amber' });
+  assert.equal(farmStatus([held]).text, 'Room 1 humidity near low');
+  const dry = step(room(86), t0 + 5 * 60_000);
+  assert.deepEqual(roomCard(dry, t0).state, { text: 'Watch', tone: 'amber' }, 'under the band now, for less than the alarm\'s 5 min: still Watch');
+  assert.deepEqual(nearEdges(dry), [{ key: 'rh', text: 'Humidity near low' }]);
+  assert.deepEqual(outOfBand(dry), []);
+  const out = step(room(86), t0 + 10 * 60_000);
+  assert.deepEqual(roomCard(out, t0).state, { text: 'Out of band', tone: 'amber' });
+  assert.equal(farmStatus([out]).facts[1], 'Humidity low in Room 1');
+  assert.equal(memory.size, 1);
+  assert.equal(settleRooms(memory, [], t0).memory.size, 0, 'a room gone is forgotten');
+});
+
+test('the Overview keeps the server\'s order (by name), remembers the held states per room and announces only a changed status', async () => {
+  const { readFileSync } = await import('node:fs');
+  const page = readFileSync(new URL('../web/overview.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(page, /sortRooms/);
+  assert.match(page, /settleRooms\(held, list, now\)/);
+  assert.match(page, /<p class="ov-status-text" data-status-text aria-live="polite"><span class="ov-status-dot"><\/span><span data-status-words><\/span><\/p>/);
+  assert.doesNotMatch(page, /data-status aria-live/, 'not the whole card, rebuilt on every refresh');
+  assert.match(page, /held\.clear\(\);/, 'forgotten on leaving the page');
+  assert.match(page, /if \(said !== st\.text\)/, 'the live line is written only when its words change');
+});
+
+// Critique 2026-10-29: each card said the exchange was off three ways (its CO₂ line, the footer, the status's facts); the
+// footer now says what comes next. A '·' keeps to the words after it.
+test('roomCard: the footer says Auto and the next fresh air, the running exchange, or Manual', () => {
+  const now = at(29, 12);
+  const room = (over) => ({ id: 1, name: 'A', auto: true, exchange: false, alarms: { count: 0, level: null },
+    bands: { tLow: 19, tHigh: 21, rhLow: 87, rhHigh: 93, co2Low: 700, co2High: 900 },
+    trh: { status: 'online', t: 20, rh: 90 }, co2: { status: 'online', co2: 800 }, spark: { t: [], rh: [], co2: [] },
+    exchangeEveryMin: 12, freshFrom: now - 6 * 60_000 - 10_000, ...over });
+  const dot = ' ·\u00a0';
+  assert.equal(roomCard(room(), now).foot, `Auto${dot}next fresh air in 6\u00a0min`);
+  assert.equal(roomCard(room({ freshFrom: now - 13 * 60_000 }), now).foot, `Auto${dot}fresh air due`);
+  assert.equal(roomCard(room({ freshFrom: null }), now).foot, `Auto${dot}fresh air every 12\u00a0min`);
+  assert.equal(roomCard(room({ exchangeEveryMin: 0 }), now).foot, 'Auto');
+  assert.equal(roomCard(room({ exchange: true, exchangeSince: at(29, 11, 52) }), now).foot, `Auto${dot}air exchange on since 11:52`);
+  assert.equal(roomCard(room({ auto: false, freshFrom: null }), now).foot, `Manual${dot}machines set by hand`);
+  assert.equal(roomCard(room({ auto: false, exchange: true }), now).foot, `Manual${dot}air exchange on`);
+  const young = room({ spark: { t: [{ at: at(29, 11, 30), v: 20 }], rh: [], co2: [] } });
+  assert.equal(roomCard(young, now).foot, `Auto${dot}next fresh air in 6\u00a0min${dot}traces since 11:30`);
 });

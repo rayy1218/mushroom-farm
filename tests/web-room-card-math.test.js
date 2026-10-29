@@ -121,7 +121,7 @@ test('readingTiles: red edge at the safety level, grey without data; thousands g
 // ---- the header note and the fresh-air line ----
 
 test('controlNote: auto on with the fresh-air interval, auto off, nothing loaded', () => {
-  assert.equal(controlNote(control), 'Automatic control on · fresh air every 15 min');
+  assert.equal(controlNote(control), 'Automatic control on ·\u00a0fresh air every 15\u00a0min');
   assert.equal(controlNote({ ...control, exchangeEveryMin: 0 }), 'Automatic control on');
   assert.equal(controlNote({ auto: false }), 'Automatic control off');
   assert.equal(controlNote(null), '');
@@ -136,13 +136,13 @@ test('freshAirLine: exchange on, auto off, waits, next in N min, due, fresh air 
   assert.equal(freshAirLine({ ...control, auto: false, exchange: true }, now), '', 'auto off: the Control card says Manual, no line here');
   assert.equal(freshAirLine({ ...control, freshFrom: now - 20 * 60_000, reasons: { exchange: 'Fresh air waits: outdoor air is very wet (dew 26.0 °C), at the latest 11:10' } }, now),
     'Fresh air waits: outdoor air is very wet (dew 26.0 °C), at the latest 11:10');
-  assert.equal(freshAirLine({ ...control, freshFrom: now - 7 * 60_000 - 10_000 }, now), 'Next fresh air in 8 min');
-  assert.equal(freshAirLine({ ...control, freshFrom: now - 14 * 60_000 - 50_000 }, now), 'Next fresh air in 1 min');
+  assert.equal(freshAirLine({ ...control, freshFrom: now - 7 * 60_000 - 10_000 }, now), 'Next fresh air in 8\u00a0min');
+  assert.equal(freshAirLine({ ...control, freshFrom: now - 14 * 60_000 - 50_000 }, now), 'Next fresh air in 1\u00a0min');
   assert.equal(freshAirLine({ ...control, freshFrom: now - 15 * 60_000 }, now), 'Fresh air due');
-  assert.equal(freshAirLine({ ...control, freshFrom: null, exchangeEndedAt: now - 5 * 60_000 }, now), 'Next fresh air in 10 min',
+  assert.equal(freshAirLine({ ...control, freshFrom: null, exchangeEndedAt: now - 5 * 60_000 }, now), 'Next fresh air in 10\u00a0min',
     'no fresh-air start yet: it counts from the end of the last exchange, as the controller does');
-  assert.equal(freshAirLine({ ...control, freshFrom: null, exchangeEndedAt: null }, now), 'Fresh air every 15 min');
-  assert.equal(freshAirLine({ ...control, freshFrom: null }, now), 'Fresh air every 15 min');
+  assert.equal(freshAirLine({ ...control, freshFrom: null, exchangeEndedAt: null }, now), 'Fresh air every 15\u00a0min');
+  assert.equal(freshAirLine({ ...control, freshFrom: null }, now), 'Fresh air every 15\u00a0min');
   assert.equal(freshAirLine({ ...control, exchangeEveryMin: 0, freshFrom: now }, now), '');
   assert.equal(freshAirLine(null, now), '');
 });
@@ -153,13 +153,13 @@ test('machineTiles: six in air-path order with their effect and detail', () => {
   const filter = { pa: 40.4 };
   const tiles = machineTiles(draw({ machines: { relay: relay({ dehumidifier: { status: 'off' }, circulation: { status: 'on', running: true } }), ac: ac() } }), control, filter);
   assert.deepEqual(tiles.map((m) => [m.step, m.name, m.effect]), [
-    [1, 'Intake fan', 'Air in'], [2, 'Aircon', 'Cools'], [3, 'Circulation', 'Mixes the air'],
+    [1, 'Intake fan', 'Air in'], [2, 'Aircon', 'Cools'], [3, 'Circulation fan', 'Mixes the air'],
     [4, 'Humidifier', 'Adds moisture'], [5, 'Dehumidifier', 'Dries'], [6, 'Exhaust fan', 'Air out'],
   ]);
-  assert.deepEqual(tiles.map((m) => m.detail), ['Filter 40.4\u00a0Pa', 'Cool 21.5 °C · fan auto', 'Always on', 'On at 90\u00a0%\u00a0RH, off at 95\u00a0%\u00a0RH',
+  assert.deepEqual(tiles.map((m) => m.detail), ['Filter 40.4\u00a0Pa', 'Cool 21.5 °C ·\u00a0fan auto', 'Always on', 'On at 91.3\u00a0%\u00a0RH, off at 93.8\u00a0%\u00a0RH',
     'On at 95\u00a0%\u00a0RH, off at 92.5\u00a0%\u00a0RH', 'With the intake'], 'a number and its unit never part at a wrap');
-  // the role lines say the controller's real rule (server/controller.js): the humidifier on at the lower limit and off at the
-  // upper, the dehumidifier on at the upper and off at the middle of the band
+  // the role lines say the controller's real rule (server/controller.js): the humidifier's points inside the band (90–95 % RH
+  // is 5 % RH wide: a quarter of it, 1.25 % RH, inside each limit), the dehumidifier on at the upper limit and off at the middle
   assert.deepEqual(tiles.map((m) => m.on), [false, true, true, false, false, false]);
   assert.deepEqual(tiles[1].pill, { text: 'On', tone: 'on' });
   assert.deepEqual(tiles[0].pill, { text: 'Off', tone: 'off' });
@@ -184,13 +184,13 @@ test('machineTiles: no data and fault words in the pill', () => {
   const by = Object.fromEntries(tiles.map((m) => [m.key, m]));
   assert.deepEqual(by.intake.pill, { text: 'Not following', tone: 'warn' });
   assert.deepEqual(by.ac.pill, { text: 'Fault', tone: 'warn' });
-  assert.equal(by.ac.detail, 'Fault (code 5) · fan auto');
+  assert.equal(by.ac.detail, 'Fault (code 5) ·\u00a0fan auto');
   assert.deepEqual(by.hu.pill, { text: 'No answer', tone: 'none' });
   const nothing = machineTiles(fromRoom({}), null, null);
   assert.deepEqual(nothing[0].pill, { text: 'No data', tone: 'none' });
   assert.deepEqual(nothing[1].pill, { text: 'No data', tone: 'none' });
   assert.equal(nothing[1].detail, '', 'the aircon\'s pill says it: no second "No data"');
-  assert.equal(nothing[3].detail, 'On below the band');
+  assert.equal(nothing[3].detail, 'On near the bottom of the band');
   assert.equal(nothing.length, 5);
   const notFollowing = machineTiles(draw({ machines: { relay: relay(), ac: ac({ status: 'not-following' }) } }), control, null)[1];
   assert.deepEqual(notFollowing.pill, { text: 'Not following', tone: 'warn' });
@@ -222,13 +222,13 @@ test('filterSummary: the filter card\'s reading and due date, or null without a 
 test('bottomLine: outdoor air and the filter', () => {
   const out = fromRoom({ outdoor: { address: 7, status: 'online', last: { t: 32.94, rh: 61.6, at: 1000 } }, now: 2000 });
   const lines = bottomLine(out, { pa: 40, line: ['Filter ', '40 Pa', ', change by 22 Nov'] });
-  assert.deepEqual(lines.map(lineText), ['Outdoor 32.9 °C · 62 % RH', 'Filter 40 Pa, change by 22 Nov']);
-  assert.deepEqual(lines[0], ['Outdoor ', '32.9 °C', ' · 62 % RH']);
+  assert.deepEqual(lines.map(lineText), ['Outdoor 32.9 °C ·\u00a062 % RH', 'Filter 40 Pa, change by 22 Nov']);
+  assert.deepEqual(lines[0], ['Outdoor ', '32.9 °C', ' ·\u00a062 % RH']);
   assert.deepEqual(bottomLine(fromRoom({}), null).map(lineText), ['No outdoor sensor']);
   const half = fromRoom({ outdoor: { address: 7, status: 'offline', last: { t: null, rh: 61.6, at: 1000 } }, now: 2000 });
-  assert.deepEqual(bottomLine(half, null).map(lineText), ['Outdoor — · 62 % RH'], 'a missing value: a dash, like the tiles');
+  assert.deepEqual(bottomLine(half, null).map(lineText), ['Outdoor — ·\u00a062 % RH'], 'a missing value: a dash, like the tiles');
   const none = fromRoom({ outdoor: { address: 7, status: 'no-data', last: null }, now: 2000 });
-  assert.deepEqual(bottomLine(none, null).map(lineText), ['Outdoor — · —']);
+  assert.deepEqual(bottomLine(none, null).map(lineText), ['Outdoor — ·\u00a0—']);
 });
 
 test('filterFrom: the filter from replies that came in together; the last reading with the intake on is kept', () => {
@@ -257,9 +257,9 @@ test('blocksLine: the crops\' blocks under the container', () => {
 test('roomCard puts it together and never throws', () => {
   const now = Date.now();
   const card = roomCard({ draw: draw(), control: { ...control, freshFrom: now - 7 * 60_000 }, filter: null, now });
-  assert.equal(card.note, 'Automatic control on · fresh air every 15 min');
+  assert.equal(card.note, 'Automatic control on ·\u00a0fresh air every 15\u00a0min');
   assert.equal(card.tiles.length, 3);
-  assert.equal(card.fresh, 'Next fresh air in 8 min');
+  assert.equal(card.fresh, 'Next fresh air in 8\u00a0min');
   assert.equal(card.machines.length, 6);
   assert.deepEqual(card.bottom.map(lineText), ['No outdoor sensor']);
   const empty = roomCard({});
@@ -305,7 +305,7 @@ test('how long: minutes, hours, days', () => {
 });
 
 test('the blocks under the picture carry the stage', () => {
-  assert.equal(blocksLine([{ crop: 'lionsmane', blocks: 950 }], 'Fruiting'), "950 lion's mane blocks · Fruiting");
+  assert.equal(blocksLine([{ crop: 'lionsmane', blocks: 950 }], 'Fruiting'), "950 lion's mane blocks ·\u00a0Fruiting");
   assert.equal(blocksLine([{ crop: 'lionsmane', blocks: 950 }]), "950 lion's mane blocks");
   assert.equal(blocksLine([], 'Fruiting'), '');
 });
@@ -316,13 +316,13 @@ test("cropSummary: the Now tab's Crop card (name, stage, blocks and flush, the d
   const crop = { crops: [{ crop: 'lionsmane', blocks: 950 }], stage: 'fruiting', stageSince: since, flush: 1, flushes: 4,
     days: { fruiting: 7, rest: 10 }, autoAdvance: true, done: false, ramp: null, nextStage: { stage: 'rest', flush: 1, at: next } };
   assert.deepEqual(cropSummary(crop, now), {
-    name: "Lion's mane", stage: 'Fruiting', sub: '950 blocks · flush 1 of 4', day: 'Day 2 of 7', share: 2 / 7,
-    next: `Next: Rest between flushes · about ${formatDateTime(next)}`, done: false,
+    name: "Lion's mane", stage: 'Fruiting', sub: '950 blocks ·\u00a0flush 1 of 4', day: 'Day 2 of 7', share: 2 / 7,
+    next: `Next: Rest between flushes ·\u00a0about ${formatDateTime(next)}`, done: false,
   });
   const manual = cropSummary({ ...crop, autoAdvance: false, nextStage: { stage: 'rest', flush: 1, at: null } }, now);
   assert.equal(manual.day, 'Day 2', 'no length without automatic change, as the Crop tab');
   assert.equal(manual.share, null);
-  assert.equal(manual.next, 'Next: Rest between flushes · when you start it');
+  assert.equal(manual.next, 'Next: Rest between flushes ·\u00a0when you start it');
   const late = cropSummary({ ...crop, stageSince: now - 9 * 86_400_000 }, now);
   assert.equal(late.day, 'Day 7 of 7', 'stops at the length once the change is due');
   assert.equal(late.share, 1);
@@ -358,10 +358,12 @@ test('traceOf with a scale: a fixed range per reading (normal cycling stays calm
 // Critique 2026-10-28 (owner): near an edge is amber only when the machine that should act is not acting, or after 15 min
 // there; the words fit one line.
 test('readingTiles: near an edge with the machine that should act not acting says which ("Near high"), in amber', () => {
-  const hot = { sensors: { ...sensors, trh: { status: 'online', lastOk: { t: 22.8, rh: 94.5, at: 1 } } } };
+  const hot = { sensors: { ...sensors, trh: { status: 'online', lastOk: { t: 22.8, rh: 95, at: 1 } } } };
   const cooling = readingTiles(draw(hot), control);
   assert.equal(cooling[0].chip.text, '✓ In band', 'T 22.8 in 21–23 with the aircon cooling: calm');
-  assert.deepEqual(cooling[1].chip, { lvl: 'near', text: 'Near high' }, 'RH 94.5 in 90–95 with the dehumidifier off');
+  assert.deepEqual(cooling[1].chip, { lvl: 'near', text: 'Near high' }, 'RH 95 in 90–95 with the dehumidifier off at its on-point');
+  const waiting = readingTiles(draw({ sensors: { ...sensors, trh: { status: 'online', lastOk: { t: 22, rh: 94.5, at: 1 } } } }), control);
+  assert.equal(waiting[1].chip.text, '✓ In band', 'RH 94.5: the dehumidifier waits for 95 % RH, acting as told (critique 2026-10-29)');
   const off = readingTiles(draw({ ...hot, machines: { relay: relay(), ac: ac({ reported: { power: false, mode: 'cool', setpoint: 21.5, fan: 'auto' }, status: 'off' }) } }), control);
   assert.deepEqual(off[0].chip, { lvl: 'near', text: 'Near high' }, 'the aircon off');
   const mid = readingTiles(draw({ sensors: { ...sensors, trh: { status: 'online', lastOk: { t: 22, rh: 92.5, at: 1 } } } }), control);
