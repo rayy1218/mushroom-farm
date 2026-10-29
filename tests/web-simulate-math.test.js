@@ -520,10 +520,10 @@ test('the walls and weather in two groups (critique 2026-10-29: one grid read wa
 test('the two room numbers nobody knows by heart have hints with typical values (device/sim-store.js, spec 2026-10-19)', () => {
   const hint = (key) => PHYSICS_FIELDS.find((f) => f.key === key).hint;
   assert.match(hint('wallUA'), /per °C/);
-  assert.match(hint('wallUA'), /about 30 W\/K/);
-  assert.match(hint('wallUA'), /about 280 W\/K/);
+  assert.match(hint('wallUA'), /about 30\u00a0W\/K/); // a number keeps its unit (critique 2026-10-29c)
+  assert.match(hint('wallUA'), /about 280\u00a0W\/K/);
   assert.match(hint('sunW'), /13:00/);
-  assert.match(hint('sunW'), /about 300 W for an insulated roof/);
+  assert.match(hint('sunW'), /about 300\u00a0W for an insulated roof/);
   assert.match(hint('sunW'), /several kW for bare zinc/);
 });
 

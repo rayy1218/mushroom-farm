@@ -116,7 +116,7 @@ test('the Simulations list: the machines (what differs between runs) at ink-2, t
   assert.match(css, /\.sim-machines \{ color: var\(--ink-2\); font-size: var\(--fs-sm\); \}/);
   assert.match(css, /\.sim-given \{ color: var\(--muted\); font-size: var\(--fs-sm\); \}/);
   const card = src('sim-card.js');
-  assert.ok(card.indexOf("el('span', 'sim-machines', r.machines)") < card.indexOf("el('span', 'sim-given', given[i])"), 'machines first');
+  assert.ok(card.indexOf("el('span', 'sim-machines', keepLines(r.machines))") < card.indexOf("el('span', 'sim-given', keepLines(given[i]))"), 'machines first');
 });
 
 test("step 3's radio buttons: the native ones in the accent colour at a normal size, the rows 44 px", () => {

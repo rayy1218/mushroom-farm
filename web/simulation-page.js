@@ -270,7 +270,7 @@ export function mount(container, { id, runId }) {
     const rows = inputRows(run.input);
     els.inputs.hidden = rows.length === 0;
     els.inputRowsHost.replaceChildren(...rows.map((r) => { const d = text('div'); d.append(text('dt', '', r.label), text('dd', '', r.value)); return d; }));
-    els.inputLineHost.textContent = inputLine(run.input);
+    els.inputLineHost.textContent = keepLines(inputLine(run.input)); // a '·' keeps to its word at a wrap ('25 L/day ·' ended a line)
     els.actions.hidden = false;
     els.foot.hidden = false; // Delete run at the foot, away from the thumb (critique 2026-10-28)
     els.again.hidden = roomData === null || !run?.input?.physics;

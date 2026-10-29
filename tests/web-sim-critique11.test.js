@@ -234,3 +234,16 @@ test('step 2: the room\'s value with the stage\'s numbers beside it, and the sta
   assert.match(dialog, /el\('span', 'muted', keepUnits\(` \(stage: \$\{p\.stageValue\}\)`\)\)/);
   assert.match(dialog, /if \(safety\) lines\.append\(el\('li', '', keepUnits\(safety\.stage\)\)\);/);
 });
+
+// ---- wraps (the detector, 2026-10-29c) ----
+
+test('the "·" joins of the Simulations list and the run\'s one line use text-math.js keepLines; hints keep a number with its unit', () => {
+  const card = src('sim-card.js');
+  assert.match(card, /import \{ keepLines \} from '\.\/text-math\.js';/);
+  assert.match(card, /el\('span', 'sim-machines', keepLines\(r\.machines\)\)/);
+  assert.match(card, /el\('span', 'sim-given', keepLines\(given\[i\]\)\)/);
+  assert.match(src('simulation-page.js'), /els\.inputLineHost\.textContent = keepLines\(inputLine\(run\.input\)\);/);
+  const hint = sim.PHYSICS_FIELDS.find((f) => f.key === 'wallUA').hint;
+  assert.ok(hint.includes('about 30\u00a0W/K') && hint.includes('50\u00a0mm PU') && hint.includes('280\u00a0W/K'), hint);
+  assert.ok(sim.PHYSICS_FIELDS.find((f) => f.key === 'sunW').hint.includes('20\u00a0m²'));
+});

@@ -403,7 +403,7 @@ test('the Simulations list: the differing line under the machines; the Compare b
   const card = readFileSync(new URL('../web/sim-card.js', import.meta.url), 'utf8');
   const css = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
   assert.match(card, /const given = differingLines\(shown\);/);
-  assert.match(card, /if \(given\[i\]\) name\.append\(el\('span', 'sim-given', given\[i\]\)\);/);
+  assert.match(card, /if \(given\[i\]\) name\.append\(el\('span', 'sim-given', keepLines\(given\[i\]\)\)\);/);
   assert.match(card, /box\.name = 'compare';/);
   assert.match(card, /box\.id = `sim-pick-\$\{run\.id\}`;/);
   assert.match(css, /@media \(max-width: 600px\) \{ \.sim-item \.sim-name a \{ display: inline-flex; align-items: center; min-height: 44px; \} \}/);

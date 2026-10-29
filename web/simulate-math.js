@@ -33,7 +33,7 @@ export const PHYSICS_FIELDS = [
   { key: 'filterLifeDays', label: 'Filter life', unit: 'days', min: 1, max: 365, whole: true, def: 30 },
   { key: 'filterChangeDays', label: 'Filter change every', unit: 'days', min: 0, max: 365, whole: true, def: 30, device: false, room: 'filterChangeDays' },
   { key: 'filterUsedDays', label: 'Filter in use', unit: 'days', min: 0, max: 365, whole: true, def: 0, device: false },
-];
+].map((f) => (f.hint ? { ...f, hint: keepUnits(f.hint) } : f)); // a hint's number keeps its unit (critique 2026-10-29c: '30 / W/K')
 // The walls and weather: what Suggest machines asks (the machines are what it looks for).
 export const SIZING_FIELDS = PHYSICS_FIELDS.filter((f) => f.group);
 // Their two fieldsets, in Simulate's step 1 and on the Suggest machines page (critique 2026-10-29: one grid of the five read
