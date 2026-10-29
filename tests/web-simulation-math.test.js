@@ -99,7 +99,7 @@ test('energy and water in words', () => {
   const v = energyView({ energy: { byMachine: { intake: 1.2, exhaust: 1, circulation: 8, humidifier: 3, ac: 30 }, kWh: 43.2, cost: 18.9 }, water: { litres: 120.4, cost: null } });
   assert.deepEqual([v.kWh, v.cost, v.litres, v.waterCost], ['43.2 kWh', 'RM 18.90', '120 L', null]);
   assert.deepEqual(v.rows.map((r) => [r.label, r.kWh, r.share]), [
-    ['Intake', '1.2 kWh', '3 %'], ['Exhaust', '1.0 kWh', '2 %'], ['Circulation', '8.0 kWh', '19 %'], ['Humidifier', '3.0 kWh', '7 %'], ['Aircon', '30.0 kWh', '69 %'],
+    ['Intake fan', '1.2 kWh', '3 %'], ['Exhaust fan', '1.0 kWh', '2 %'], ['Circulation fan', '8.0 kWh', '19 %'], ['Humidifier', '3.0 kWh', '7 %'], ['Aircon', '30.0 kWh', '69 %'],
   ]);
   const none = energyView({});
   assert.equal(none.kWh, '—');

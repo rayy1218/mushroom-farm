@@ -248,7 +248,7 @@ export function filterView(summary, startHour = 0) {
 
 // ---- energy and water ----
 
-const MACHINES = [['intake', 'Intake'], ['exhaust', 'Exhaust'], ['circulation', 'Circulation'], ['humidifier', 'Humidifier'], ['dehumidifier', 'Dehumidifier'], ['lights', 'Lights'], ['ac', 'Aircon']];
+const MACHINES = [['intake', 'Intake fan'], ['exhaust', 'Exhaust fan'], ['circulation', 'Circulation fan'], ['humidifier', 'Humidifier'], ['dehumidifier', 'Dehumidifier'], ['lights', 'Lights'], ['ac', 'Aircon']];
 
 // summary → the texts of the energy and water part: totals, cost (null without a price) and a row per machine.
 // The dehumidifier's and the lights' rows are there when the run had them (input) or they used energy; removed is the "Water taken out" text, or null.
