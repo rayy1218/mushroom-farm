@@ -352,7 +352,7 @@ Auto | Manual and the History range choice: a `band` track with a hairline, unse
 ### Navigation
 - **Top bar:** sticky, translucent `surface` with blur and a hairline bottom; brand mark and name at the left, Live (green dot when live), the theme button (a sun or moon SVG showing the theme it switches to) and Settings at the right. On a phone the subtitle and the Settings word hide.
 - **Underline tabs:** 500 weight, `muted`; hover and current turn `ink`; current carries a 2 px `accent` underline on the row's hairline. A tab with a live problem shows a 7 px amber or red dot.
-- **Setup links:** round outlined chips; on a phone they stick under the top bar while Setup scrolls.
+- **Setup links:** round outlined chips; on a phone they stick under the top bar while Setup scrolls. On a phone Setup's and History's links say short words (Bands, Equipment, Filter, Room; Climate, Energy, Exchange, Machines) so all four fit at 360 px, and a strip fades only at an edge that still hides a link.
 
 ### Machines list
 The machines in the order the air meets them, numbered, one row each: name (500), a `muted` sub-line saying what it does and why ("Adds moisture · On at 88 % RH, off at 92 % RH" for a band of 87–93 % RH: the humidifier switches inside the band, web/band-math.js `humidifierPoints`), and a state pill or, in Manual, the On/Off switch. A machine not doing what it was told turns its row text `critical-text` and keeps its fault pill beside the switch.

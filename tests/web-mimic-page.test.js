@@ -145,7 +145,7 @@ test('a phone: 44 px targets, 16 px fields, the Crop stages in their box, Use ou
 // sideways with the last one a sliver and no cue.
 test('History on a phone: a shorter sticky head; the jump links fade at the edge that has more', () => {
   const room = source('../web/room-detail.js');
-  assert.match(room, /historyNav\.dataset\.more = scrollEdges\(historyNav\.scrollLeft, historyNav\.clientWidth, historyNav\.scrollWidth\);/);
+  assert.match(room, /nav\.dataset\.more = scrollEdges\(nav\.scrollLeft, nav\.clientWidth, nav\.scrollWidth\);/, 'History\'s and Setup\'s');
   assert.match(room, /navObserver\?\.disconnect\(\);/, 'its observer stops with the page');
   const css = source('../web/styles.css');
   const block = css.slice(css.indexOf('/* critique 2026-10-29: status and Overview */'));
@@ -165,4 +165,20 @@ test('the top bar\'s height is what it is on a phone, and a dialog opens below i
   assert.match(css, /dialog \{ margin-top: var\(--dialog-top\); margin-bottom: auto; \}/);
   assert.match(css, /  max-height: calc\(100dvh - var\(--dialog-top\) - 16px\);/);
   assert.doesNotMatch(css, /max\(16px, 6vh\) - 16px/, 'the Simulate dialog\'s height follows the same top');
+});
+
+// Critique 2026-10-29: on a phone Setup's "Room" link sat past the right edge with no cue and History's "Machines" was off the
+// screen; their short words now fit at 360 px, and a strip fades only at an edge that still hides a link.
+test('the History and Setup jump links say short words on a phone, all four fitting at 360 px; both fade only where one is hidden', () => {
+  const room = readFileSync(new URL('../web/room-detail.js', import.meta.url), 'utf8');
+  const short = (href, long, word) => `<a href="${href}" data-jump><span class="nav-long">${long}</span><span class="nav-short">${word}</span></a>`;
+  for (const [href, long, word] of [['#hist-climate', 'Climate', 'Climate'], ['#hist-energy', 'Energy and water', 'Energy'], ['#hist-exchange', 'Air exchange', 'Exchange'],
+    ['#hist-timeline', 'Machines', 'Machines'], ['#setup-control', 'Bands and control', 'Bands'], ['#setup-equipment', 'Equipment', 'Equipment'],
+    ['#setup-filter', 'Intake filter', 'Filter'], ['#setup-room', 'Room', 'Room']]) assert.ok(room.includes(short(href, long, word)), href);
+  assert.match(room, /const navs = \[\.\.\.container\.querySelectorAll\('\.setup-nav'\)\];/);
+  const css = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
+  const block = css.slice(css.indexOf('/* critique 2026-10-29b: status, controller and phone */'));
+  assert.match(block, /\.nav-short \{ display: none; \}/);
+  assert.match(block, /@media \(max-width: 600px\) \{\n  \.setup-nav \.nav-long \{ display: none; \}\n  \.setup-nav \.nav-short \{ display: inline; \}/);
+  assert.match(block, /\.setup-nav\[data-more="end"\] \{ mask-image:/);
 });
