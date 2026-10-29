@@ -13,7 +13,7 @@ import { tickCountFor } from './history-math.js';
 import { progressLine } from './simulate-math.js';
 import {
   CHARTS, tileList, stageRows, dayTicks, runEnd, chartPoints, thinPoints, outdoorLine, bandSteps, timelineRows, energyView, perDayBars,
-  inputLine, inputRows, runVerdict, runCauses, runTries, runFacts, headLine, formatDateTime, formatRunTime, isActive, filterView, STAGE_COLUMNS, scrollEdges,
+  inputLine, inputRows, backLabel, runVerdict, runCauses, runTries, runFacts, headLine, formatDateTime, formatRunTime, isActive, filterView, STAGE_COLUMNS, scrollEdges,
 } from './simulation-math.js';
 
 const POLL_MS = 2000;
@@ -21,7 +21,7 @@ const RESULT_TIMEOUT = 120_000; // a run of 58 days has about 3 MB of results
 const MAX_POINTS = 700; // per chart line (a run of 90 days has 26 000 samples)
 
 const TEMPLATE = `
-  <a class="back sim-back" href="#/overview" data-back>Room</a>
+  <a class="back sim-back" href="#/overview" data-back>Simulations</a>
   <div class="page-head">
     <div class="page-titles">
       <h1 class="page-title" tabindex="-1" data-title>Simulation</h1>
@@ -254,7 +254,7 @@ export function mount(container, { id, runId }) {
   function render() {
     const name = roomName ?? 'the room';
     els.title.textContent = headLine(name);
-    if (roomName !== null) els.back.textContent = roomName; // back to which room
+    if (roomName !== null) els.back.textContent = backLabel(roomName); // back to which room's Simulations
     // the head: when and how long; what the run was given as label and value rows under it (the full line folded away)
     els.sub.textContent = [formatDateTime(run.createdAt), run.input?.days ? `${run.input.days} ${run.input.days === 1 ? 'day' : 'days'}` : ''].filter(Boolean).join(' · ');
     const rows = inputRows(run.input);

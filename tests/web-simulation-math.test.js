@@ -451,7 +451,7 @@ test('the result page on a phone: the back link, the one-line summary and the st
   const { readFileSync } = await import('node:fs');
   const page = readFileSync(new URL('../web/simulation-page.js', import.meta.url), 'utf8');
   const css = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
-  assert.match(page, /<a class="back sim-back" href="#\/overview" data-back>Room<\/a>/);
+  assert.match(page, /<a class="back sim-back" href="#\/overview" data-back>Simulations<\/a>/);
   assert.match(css, /@media \(max-width: 600px\) \{\n  \.sim-back \{ display: inline-flex; align-items: center; min-height: 44px; margin-bottom: 0; \}\n  \.sim-all-inputs summary \{ padding: 12px 0; \}/);
   // the caption above the scroller, left, the table named by it; the scroller fades at the edge that has more
   assert.match(page, /const cap = text\('p', 'sim-table-cap', caption\);/);

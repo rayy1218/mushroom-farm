@@ -102,3 +102,19 @@ test('a number keeps its unit on its line (no-break space) in the run texts: the
   assert.match(summaryLines(state, room).find((l) => l.label === 'Walls and weather').text, new RegExp(`outdoor 25–33${nb}°C`));
   assert.match(controlLine(state), new RegExp(`aircon 5${nb}°C lower`));
 });
+
+test('the only crop has no Remove (disabled, it wrapped to a row of its own on a phone), on Suggest and in Simulate', () => {
+  for (const name of ['suggest-page.js', 'simulate-dialog.js']) {
+    const page = src(name);
+    assert.match(page, /remove\.hidden = state\.crops\.length === 1;/, name);
+    assert.doesNotMatch(page, /remove\.disabled = state\.crops\.length === 1;/, name);
+  }
+});
+
+test('the back links of a result and of Suggest machines say where they go: the room\'s Simulations', async () => {
+  const { backLabel } = await import('../web/simulation-math.js');
+  assert.equal(backLabel('Room 1'), 'Room 1 · Simulations');
+  assert.match(src('simulation-page.js'), /if \(roomName !== null\) els\.back\.textContent = backLabel\(roomName\);/);
+  assert.match(src('suggest-page.js'), /els\.back\.textContent = backLabel\(room\.name\);/);
+  for (const name of ['simulation-page.js', 'suggest-page.js']) assert.match(src(name), /data-back>Simulations<\/a>/, name);
+});

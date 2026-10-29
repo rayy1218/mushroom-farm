@@ -247,7 +247,7 @@ export function openSimulateDialog(room, hooks = {}) {
         blocks.dataset.field = '';
         const remove = button('Remove', 'danger-text');
         remove.setAttribute('aria-label', removeLabel(row.crop));
-        remove.disabled = state.crops.length === 1;
+        remove.hidden = state.crops.length === 1; // the only crop stays (a disabled Remove wrapped to a row of its own on a phone)
         remove.addEventListener('click', () => { state.crops.splice(i, 1); clearError('crops'); rows(); paintMix(); add.focus(); });
         wrap.append(select, blocks, el('span', 'sim-unit', 'blocks'), remove);
         return wrap;

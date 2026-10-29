@@ -15,6 +15,7 @@ import {
   SIZING_FIELDS, PHYSICS_GROUPS, fieldLabel, initialState, stagesOf, fixStage, removeLabel, mixSummary, roomLine, firstField, applySizingInput,
   TARGET_DEFAULT, COOL_DOWN_DEFAULT, checkSuggest, sizingBody, sizingProgress, estimateLines, coolDownLine,
 } from './simulate-math.js';
+import { backLabel } from './simulation-math.js';
 import { pricesOf, suggestRows, baselineRow, captionOf, roomMachines, moneyHead, priceLine, noneReachedLine, COLUMNS } from './suggest-math.js';
 
 const POLL_MS = 1000;
@@ -22,7 +23,7 @@ const FIELD_ORDER = [...SIZING_FIELDS.map((f) => `physics.${f.key}`), 'crops', '
 const storeKey = (id) => `farm.suggest.${id}`;
 
 const TEMPLATE = `
-  <a class="back sim-back" href="#/overview" data-back>Room</a>
+  <a class="back sim-back" href="#/overview" data-back>Simulations</a>
   <div class="page-head">
     <div class="page-titles">
       <h1 class="page-title" tabindex="-1" data-title>Suggest machines</h1>
@@ -204,7 +205,7 @@ export function mount(container, { id }) {
         blocks.setAttribute('aria-describedby', listError.id);
         blocks.dataset.field = '';
         remove.setAttribute('aria-label', removeLabel(row.crop));
-        remove.disabled = state.crops.length === 1;
+        remove.hidden = state.crops.length === 1; // the only crop stays (a disabled Remove wrapped to a row of its own on a phone)
         remove.addEventListener('click', () => { state.crops.splice(i, 1); clearError('crops'); rows(); paintMix(); add.focus(); });
         wrap.append(select, blocks, el('span', 'sim-unit', 'blocks'), remove);
         return wrap;
@@ -484,7 +485,7 @@ export function mount(container, { id }) {
         baseFrom = stored.from ?? '';
       }
       els.title.textContent = `Suggest machines for ${room.name}`;
-      els.back.textContent = room.name;
+      els.back.textContent = backLabel(room.name);
       document.title = `Suggest machines for ${room.name} · Mushroom farm`;
       els.loading.hidden = true;
       els.form.hidden = false;

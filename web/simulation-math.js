@@ -252,6 +252,8 @@ export const perDayBars = (perDay, key) =>
 // ---- words ----
 
 export const headLine = (roomName) => `Simulation of ${roomName}`;
+// The back link of a result and of Suggest machines: both go to the room's Simulations tab.
+export const backLabel = (roomName) => `${roomName} · Simulations`;
 
 const grouped = (n) => n.toLocaleString('en-US', { maximumFractionDigits: 1 });
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
