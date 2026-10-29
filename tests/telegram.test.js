@@ -306,3 +306,12 @@ test('the farm app gives each address 2 s to connect (Telegram took longer than 
   const main = readFileSync(new URL('../server/main.js', import.meta.url), 'utf8');
   assert.match(main, /setDefaultAutoSelectFamilyAttemptTimeout\(2000\);/);
 });
+
+// Critique 2026-10-29: step 3 showed a raw getUpdates URL and its JSON key as the way to the chat id.
+test('Settings › Telegram step 3 is a plain step, the getUpdates way a smaller fallback after it', async () => {
+  const { readFileSync } = await import('node:fs');
+  const card = readFileSync(new URL('../web/telegram-card.js', import.meta.url), 'utf8');
+  assert.match(card, /<li>Message <strong>@userinfobot<\/strong>; it replies with your number id, the chat id below\.\n\s*<span class="tg-fallback">If @userinfobot doesn't work: open <code>https:\/\/api\.telegram\.org\/bot&lt;token&gt;\/getUpdates<\/code>/);
+  const css = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
+  assert.match(css, /\.tg-fallback \{ display: block; margin-top: 2px; font-size: var\(--fs-xs\); color: var\(--muted\);/);
+});

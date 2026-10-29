@@ -1321,3 +1321,5 @@ details.setup-part:not([open]) { padding-top: 8px; }
 @media (max-width: 600px) { .c-band.c-outdoor .m-name { display: flex; align-items: center; min-height: 44px; } }
 /* the Crop tab's program row: one Save for Ramp, Lights from and Automatic change, beside them while one is changed */
 .cp-program-save { align-self: center; margin-bottom: 12px; }
+/* Settings › Telegram step 3: the getUpdates way is a fallback in smaller text after the plain step */
+.tg-fallback { display: block; margin-top: 2px; font-size: var(--fs-xs); color: var(--muted); overflow-wrap: anywhere; }
