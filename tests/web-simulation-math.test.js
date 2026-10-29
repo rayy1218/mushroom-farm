@@ -238,6 +238,7 @@ test('inputRows: what a run was asked, as label and value rows instead of one lo
     { label: 'Fan', value: '600\u00a0m³/h' },
     { label: 'Humidifier', value: '2\u00a0L/h' },
     { label: 'Dehumidifier', value: 'none' },
+    { label: 'Bands', value: "the start stage's, then each stage's own" },
   ]);
   assert.deepEqual(inputRows(undefined), []);
 });
@@ -246,11 +247,12 @@ test('runVerdict: one sentence on how the run went and which way it missed, from
   const { runVerdict } = await import('../web/simulation-math.js');
   const row = (t, rh, co2) => ({ t, rh, co2, tLow: 19, tHigh: 21, rhLow: 87, rhHigh: 93, co2Low: 700, co2High: 800 });
   const good = runVerdict([row(20, 90, 750), row(20.5, 91, 760)], { all: 100 });
-  assert.deepEqual(good, { tone: 'good', text: 'The room stayed in band 100 % of the time.', lines: [] });
+  const { keepUnits } = await import('../web/simulation-math.js'); // a number keeps its unit (critique 2026-10-29c)
+  assert.deepEqual(good, { tone: 'good', text: keepUnits('The room stayed in band 100 % of the time.'), lines: [] });
   const cold = runVerdict([row(16, 99, 750), row(16, 99, 750), row(16, 99, 750), row(20, 99, 750)], { t: 25, rh: 0, co2: 100, all: 0 });
   assert.equal(cold.tone, 'warn');
-  assert.equal(cold.text, 'The room was in band 0 % of the time.');
-  assert.deepEqual(cold.lines, ['Too cold 75 % of the time (down to 16.0 °C; the band is 19–21 °C)', 'Too wet 100 % of the time (up to 99.0 % RH; the band is 87–93 % RH)']);
+  assert.equal(cold.text, keepUnits('The room was in band 0 % of the time.'));
+  assert.deepEqual(cold.lines, ['Too cold 75 % of the time (down to 16.0 °C; the band is 19–21 °C)', 'Too wet 100 % of the time (up to 99.0 % RH; the band is 87–93 % RH)'].map(keepUnits));
   assert.equal(runVerdict([], {}), null);
 });
 
@@ -267,7 +269,7 @@ test('compareRuns: two runs side by side, their inputs and results, the rows tha
 // Critique 2026-10-28: the same aircon scored 98 % and 1 %, and nothing said the second run had the aircon set below the
 // band during air exchanges that ran most of the time.
 test('runCauses: air exchange share, the aircon below the band and why, the humidifier during exchange', async () => {
-  const { runCauses } = await import('../web/simulation-math.js');
+  const { runCauses, keepUnits } = await import('../web/simulation-math.js');
   const H = 3_600_000;
   const series = [{ s: 0, tLow: 19 }, { s: 10 * H, tLow: 19 }];
   const result = {
@@ -278,11 +280,12 @@ test('runCauses: air exchange share, the aircon below the band and why, the humi
     },
   };
   const input = { ctx: { control: { exchangeEveryMin: 15, exchangeMaxMin: 10, acDrop: 5, humidifierDuringExchange: true } } };
+  // what starts an air exchange, not a sum that cannot add up (critique 2026-10-29c; the run's counts: web-sim-critique11)
   assert.deepEqual(runCauses(result, input), [
-    'Air exchange ran 80 % of the time (every 15 min, up to 10 min each).',
+    'Air exchange ran 80 % of the time: started by CO₂ at its start point as well as for fresh air every 15 min, up to 10 min each.',
     'The aircon was set to 16 °C, below the 19 °C band, 80 % of the time: it is set 5 °C lower during air exchange.',
     'The humidifier also ran during every air exchange.',
-  ]);
+  ].map(keepUnits));
   assert.deepEqual(runCauses({ series, machines: { intake: [{ from: 0, to: H }], ac: [{ from: 0, to: 10 * H, setpoint: 20 }] } }, input), []);
   assert.deepEqual(runCauses(null, input), []);
 });
@@ -296,7 +299,7 @@ test('inputRows: how the room was run (air exchange, the aircon and the humidifi
     { label: 'Aircon during air exchange', value: '5\u00a0°C lower' },
     { label: 'Humidifier during air exchange', value: 'on' },
   ]);
-  assert.equal(inputRows({ physics, crops: [], stage: 'fruiting', days: 7 }).at(-1).label, 'Dehumidifier');
+  assert.equal(inputRows({ physics, crops: [], stage: 'fruiting', days: 7 }).at(-1).label, 'Bands');
 });
 
 test('the aircon in kW: the class it is sold as only when it is one, kW and BTU/h both ways', async () => {
@@ -343,12 +346,12 @@ test('the Simulations list: a refresh with nothing new leaves it alone; each Com
 // ---- a run that started from outdoor air (2026-10-28) ----
 
 test('runVerdict: a run from outdoor air says how long it took to cool down', async () => {
-  const { runVerdict } = await import('../web/simulation-math.js');
+  const { runVerdict, keepUnits } = await import('../web/simulation-math.js');
   const row = (t, rh, co2) => ({ t, rh, co2, tLow: 19, tHigh: 21, rhLow: 87, rhHigh: 93, co2Low: 700, co2High: 800 });
   const series = [row(20, 90, 750), row(20.5, 91, 760)];
-  assert.equal(runVerdict(series, { all: 100 }, 5400).text, 'The room stayed in band 100 % of the time. Cooled down in 1.5 h.');
-  assert.equal(runVerdict(series, { all: 90 }, null).text, 'The room was in band 90 % of the time. Did not cool down within the run.');
-  assert.equal(runVerdict(series, { all: 100 }).text, 'The room stayed in band 100 % of the time.', 'a run from the band says nothing of it');
+  assert.equal(runVerdict(series, { all: 100 }, 5400).text, keepUnits('The room stayed in band 100 % of the time. Cooled down in 1.5 h.'));
+  assert.equal(runVerdict(series, { all: 90 }, null).text, keepUnits('The room was in band 90 % of the time. Did not cool down within the run.'));
+  assert.equal(runVerdict(series, { all: 100 }).text, keepUnits('The room stayed in band 100 % of the time.'), 'a run from the band says nothing of it');
 });
 
 test('inputRows: where a run started', async () => {
@@ -400,7 +403,7 @@ test('the Simulations list: the differing line under the machines; the Compare b
   const card = readFileSync(new URL('../web/sim-card.js', import.meta.url), 'utf8');
   const css = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
   assert.match(card, /const given = differingLines\(shown\);/);
-  assert.match(card, /if \(given\[i\]\) name\.append\(el\('span', 'sim-given', given\[i\]\)\);/);
+  assert.match(card, /if \(given\[i\]\) name\.append\(el\('span', 'sim-given', keepLines\(given\[i\]\)\)\);/);
   assert.match(card, /box\.name = 'compare';/);
   assert.match(card, /box\.id = `sim-pick-\$\{run\.id\}`;/);
   assert.match(css, /@media \(max-width: 600px\) \{ \.sim-item \.sim-name a \{ display: inline-flex; align-items: center; min-height: 44px; \} \}/);
@@ -426,7 +429,7 @@ test('scrollEdges: which edges of a sideways scroller have more (a fade marks th
 });
 
 test('runTries: the value to try for each setting a cause names', async () => {
-  const { runTries } = await import('../web/simulation-math.js');
+  const { runTries, keepUnits } = await import('../web/simulation-math.js');
   const H = 3600;
   const wet = (n) => Array.from({ length: n }, (_, i) => ({ s: (i * 10 * H) / (n - 1), t: 18, tLow: 19, tHigh: 21, rh: 96, rhLow: 87, rhHigh: 93 }));
   const result = {
@@ -436,15 +439,17 @@ test('runTries: the value to try for each setting a cause names', async () => {
   const control = { exchangeEveryMin: 15, exchangeMaxMin: 10, acDrop: 5, humidifierDuringExchange: true };
   // each with the change for one run that Simulate with this change fills in (critique 2026-10-29b)
   assert.deepEqual(runTries(result, { ctx: { control } }), [
-    { text: 'Try the aircon not lowered during air exchange (0 °C).', name: 'the aircon not lowered during air exchange (0 °C)', control: { acDrop: 0 } },
+    { text: keepUnits('Try the aircon not lowered during air exchange (0 °C).'), name: 'the aircon not lowered during air exchange (0 °C)', control: { acDrop: 0 } },
     { text: 'Try the humidifier off during air exchange: the room was too wet.', name: 'the humidifier off during air exchange', control: { humidifierDuringExchange: false } },
-    { text: 'Try a 60 min air exchange time limit: the fans ran over half the time.', name: 'a 60 min air exchange time limit', control: { exchangeMaxMin: 60 } },
   ]);
+  // a longer time limit only when the exchanges stopped at theirs (critique 2026-10-29c; web-sim-critique11): one 8 h exchange did not
+  const capped = Array.from({ length: 40 }, (_, k) => ({ from: k * 660, to: k * 660 + 600 }));
+  assert.deepEqual(runTries({ ...result, machines: { ...result.machines, intake: capped } }, { ctx: { control } }).at(-1).control, { exchangeMaxMin: 60 });
   // settings that are already so: nothing to try
   assert.deepEqual(runTries(result, { ctx: { control: { ...control, acDrop: 0, humidifierDuringExchange: false, exchangeMaxMin: 60 } } }), []);
   // a room too dry keeps its humidifier; a short exchange keeps its limit
   const dry = { ...result, series: result.series.map((r) => ({ ...r, rh: 80 })), machines: { ...result.machines, intake: [{ from: 0, to: 4 * H }] } };
-  assert.deepEqual(runTries(dry, { ctx: { control } }).map((t) => t.text), ['Try the aircon not lowered during air exchange (0 °C).']);
+  assert.deepEqual(runTries(dry, { ctx: { control } }).map((t) => t.text), [keepUnits('Try the aircon not lowered during air exchange (0 °C).')]);
   assert.deepEqual(runTries(null, { ctx: { control } }), []);
 });
 

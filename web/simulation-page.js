@@ -11,6 +11,7 @@ import { live } from './live.js';
 import { fallbackMs, withProgress, isStale } from './live-math.js';
 import { tickCountFor } from './history-math.js';
 import { progressLine } from './simulate-math.js';
+import { keepLines } from './text-math.js';
 import {
   CHARTS, tileList, stageRows, dayTicks, runEnd, chartPoints, thinPoints, outdoorLine, bandSteps, timelineRows, timelineAria, readingsAmount, energyView, perDayBars,
   inputLine, inputRows, backLabel, runVerdict, runCauses, runTries, runFacts, headLine, formatDateTime, formatRunTime, isActive, filterView, STAGE_COLUMNS, scrollEdges,
@@ -87,8 +88,8 @@ function edgeFade(wrap, inner) {
 }
 
 // A table under its caption, which stays above the scroller (a caption inside it scrolled out of sight). keep: the page's
-// list of things to destroy (the fade's observer).
-function table(caption, headers, rows, keep) {
+// list of things to destroy (the fade's observer); total: the cells of a total row at its foot (optional).
+function table(caption, headers, rows, keep, total = null) {
   const box = text('div', 'sim-table');
   const cap = text('p', 'sim-table-cap', caption);
   cap.id = `sim-table-${++tableSeq}`;
@@ -113,6 +114,15 @@ function table(caption, headers, rows, keep) {
       const cell = i === 0 ? text('th') : text('td', 'num');
       if (i === 0) cell.scope = 'row';
       put(cell, c);
+      tr.append(cell);
+    });
+    tbody.append(tr);
+  }
+  if (total) {
+    const tr = text('tr', 'total');
+    total.forEach((c, i) => {
+      const cell = i === 0 ? text('th', '', c) : text('td', 'num', c);
+      if (i === 0) cell.scope = 'row';
       tr.append(cell);
     });
     tbody.append(tr);
@@ -260,7 +270,7 @@ export function mount(container, { id, runId }) {
     const rows = inputRows(run.input);
     els.inputs.hidden = rows.length === 0;
     els.inputRowsHost.replaceChildren(...rows.map((r) => { const d = text('div'); d.append(text('dt', '', r.label), text('dd', '', r.value)); return d; }));
-    els.inputLineHost.textContent = inputLine(run.input);
+    els.inputLineHost.textContent = keepLines(inputLine(run.input)); // a '·' keeps to its word at a wrap ('25 L/day ·' ended a line)
     els.actions.hidden = false;
     els.foot.hidden = false; // Delete run at the foot, away from the thumb (critique 2026-10-28)
     els.again.hidden = roomData === null || !run?.input?.physics;
@@ -307,7 +317,7 @@ export function mount(container, { id, runId }) {
       v.dataset.tone = verdict.tone;
       v.append(text('p', 'sim-verdict-text', verdict.text));
       const facts = runFacts(result); // how hard the machines worked for it, not only the time in band
-      if (facts) v.append(text('p', 'sim-verdict-facts', facts));
+      if (facts) v.append(text('p', 'sim-verdict-facts', keepLines(facts))); // '76 %' and its '·' keep together at a wrap
       if (verdict.lines.length) {
         const ul = text('ul', 'sim-verdict-lines');
         ul.append(...verdict.lines.map((l) => text('li', '', l)));
@@ -413,7 +423,11 @@ export function mount(container, { id, runId }) {
     usage.append(tile('Energy', use.kWh, use.cost), tile('Water', use.litres, use.waterCost));
     if (use.removed) usage.append(tile('Water taken out', use.removed, 'by the dehumidifier'));
     card.append(usage);
-    if (use.rows.length) card.append(table('Energy by machine', ['Machine', 'kWh', 'Share'], use.rows.map((r) => [r.label, r.kWh, r.share]), charts));
+    if (use.rows.length) { // with its cost at the run's electricity price and a total row, as History's (critique 2026-10-29c)
+      const cost = (r) => (use.priced ? [r.cost] : []);
+      card.append(table('Energy by machine', ['Machine', 'kWh', 'Share', ...(use.priced ? ['Cost'] : [])], use.rows.map((r) => [r.label, r.kWh, r.share, ...cost(r)]),
+        charts, ['Total', use.total.kWh, '', ...cost(use.total)]));
+    }
     const perDay = summary.perDay ?? [];
     if (perDay.length) {
       const bars = text('div', 'us-charts');

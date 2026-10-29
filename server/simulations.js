@@ -6,6 +6,8 @@ import { PARAMS, outdoorProblem, filterProblem } from '../device/sim-store.js';
 import { FARM_TYPES, validateCrops } from '../web/crops.js';
 import { searchPlan, estimate, TARGET_DEFAULT, COOL_DOWN_MAX_H } from './sizing.js';
 import { readSettings } from './settings.js';
+import { bandProblem } from './controller.js';
+import { BAND_KEYS } from './program.js';
 
 const PHYSICS = ['wallUA', 'outdoorHigh', 'outdoorLow', 'outdoorDew', 'sunW', 'fanFlow', 'acBTU', 'humidifierLH'];
 // The intake filter of a run (spec 2026-10-22-filter-design.md 8): the four settings of the device app's PARAMS, then the
@@ -23,11 +25,13 @@ export const RESTART_TEXT = 'Stopped by a restart of the farm app';
 
 const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
 
-// Checks a request body { physics, crops, farmType, stage, days, start, startHour }. → { input } (only the known fields; start
-// and startHour only when given) or { error, field }.
+// Checks a request body { physics, crops, farmType, stage, days, start, startHour, control, bands }. → { input } (only the
+// known fields; start, startHour, control and bands only when given) or { error, field }. bands: { tLow, tHigh, rhLow, rhHigh,
+// co2Low, co2High, co2Safety }, the bands the run starts with instead of its start stage's (the room's as it runs them,
+// critique 2026-10-29c), checked like the controller's.
 export function validateSimulation(body) {
   if (body === null || typeof body !== 'object' || Array.isArray(body)) return { error: 'Body must be a JSON object' };
-  const { physics, crops, farmType, stage, days, control, start, startHour } = body;
+  const { physics, crops, farmType, stage, days, control, start, startHour, bands } = body;
   if (physics === null || typeof physics !== 'object' || Array.isArray(physics)) return { error: 'Physics must be an object', field: 'physics' };
   const clean = {};
   for (const field of PHYSICS) {
@@ -87,6 +91,12 @@ export function validateSimulation(body) {
     }
     if (Object.keys(own).length === 0) return { error: 'Control must set exchangeMaxMin, acDrop, humidifierDuringExchange or outdoorAir', field: 'control' };
     input.control = own;
+  }
+  if (bands !== undefined) {
+    if (bands === null || typeof bands !== 'object' || Array.isArray(bands)) return { error: 'Bands must be an object', field: 'bands' };
+    const bad = bandProblem(bands);
+    if (bad) return { error: bad.error, field: `bands.${bad.field}` };
+    input.bands = Object.fromEntries(BAND_KEYS.map((k) => [k, bands[k]]));
   }
   return { input };
 }

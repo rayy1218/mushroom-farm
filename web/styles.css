@@ -1377,3 +1377,16 @@ details.setup-part:not([open]) { padding-top: 8px; }
   .rc-fold[open] .rc-fold-sum::before { rotate: 45deg; }
   .rc-fold[open] .rc-fold-sum { margin-bottom: 8px; }
 }
+
+/* critique 2026-10-29c: simulation */
+/* the stepper's done steps are buttons back to them, in the steps' own small text */
+.sim-steps .sim-step-back { min-height: 0; padding: 0; border: 0; background: none; color: var(--accent-text); font: inherit; text-decoration: underline; text-underline-offset: 3px; }
+.sim-steps .sim-step-back:hover { background: none; color: var(--ink); }
+@media (max-width: 600px) { .sim-steps .sim-step-back { min-height: 44px; } }
+/* step 2's and Suggest's Crop and Blocks heads as the field labels elsewhere (they were 12 px muted beside 14 px 600 labels) */
+.sim-crop-head { color: var(--ink); font-size: 0.9rem; font-weight: 600; }
+/* step 2's Bands: the room's values changed by hand in accent (a choice, not a warning, as on the Crop tab), each under its radio */
+.sim-bands-detail { margin: -6px 0 8px 24px; color: var(--ink-2); font-size: var(--fs-sm); }
+.sim-bands-detail.sim-mix-lines { padding-left: 16px; }
+.sim-hand { color: var(--accent-text); font-weight: 600; }
+.sim-bands .c-hint { margin: 4px 0 0; }

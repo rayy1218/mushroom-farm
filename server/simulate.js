@@ -42,7 +42,9 @@ const percent = (n, total) => round((n / total) * 100, 1);
 // missing: no dehumidifier), the intake filter (spec 2026-10-22-filter-design.md 8; missing: no filter): fanMaxPa, filterCleanPa,
 // filterFinalPa, filterLifeDays, filterChangeDays (0: no reminder), filterUsedDays, filterSensor }, crops, farmType, stage,
 // days, start ('band', the default: the room starts in the middle of its bands; 'outdoor': as the outdoor air at the run's
-// first second, its mass and surfaces with it: just loaded, or after the door was open), startHour (0 to 23, default 0) }.
+// first second, its mass and surfaces with it: just loaded, or after the door was open), startHour (0 to 23, default 0),
+// bands (optional: the bands to start with instead of the start stage's, { tLow, tHigh, rhLow, rhHigh, co2Low, co2High,
+// co2Safety }) }. summary.exchanges: how many air exchanges each rule started ({ co2, fresh, cooling, drying, timed }).
 // ctx: { volume, ratings (the room's machine ratings, and whether it has lights: lights, lightsW), control (the room's
 // control settings), program (its stored numbers: flushes, days, rampH, lightHours, lightStart; null: the defaults),
 // prices: { electricity, water } | null }. The run's clock: its second 0 is startHour o'clock; the weather and the lights
@@ -80,6 +82,12 @@ export function simulate(input, ctx, { onProgress } = {}) {
   let bands = mixBands(crops, startName).bands;
   program = startStage(program, startName, 0, bands, { ramp: false });
   bands = { ...program.ramp.to };
+  // Bands of the run's own (the room's as it runs them, critique 2026-10-29c): held until the program moves to another stage,
+  // which then ramps from them to its own as the room would.
+  if (input.bands) {
+    bands = { ...input.bands };
+    program = { ...program, ramp: null };
+  }
 
   const modelParams = {
     volume, blocks: blocksOf(crops), co2PerBlock: CO2_PER_BLOCK, wallUA: physics.wallUA, sunW: physics.sunW, fanFlow: physics.fanFlow,
@@ -135,6 +143,7 @@ export function simulate(input, ctx, { onProgress } = {}) {
   let litres = 0;
   let removed = 0; // grams of water the dehumidifier took out
   let lastShare = -1;
+  const exchanges = { co2: 0, fresh: 0, cooling: 0, drying: 0, timed: 0 }; // what started each air exchange (decide's exchangeKind)
 
   const closeSpan = (name, at) => {
     const sp = open[name];
@@ -212,6 +221,7 @@ export function simulate(input, ctx, { onProgress } = {}) {
       bands: { ...extra, ...bands }, state: memory, readings: { co2: CO2, rh, t: T, outdoor: { t: out.outdoorT, rh: out.outdoorRH } }, faults: null, now: ms, humidifierDuringExchange, acFan,
       dehumidifierFitted: dehumidifierLday > 0, lightsFitted, program, clockAt,
     });
+    if (decided.state.exchange && !memory.exchange) exchanges[decided.state.exchangeKind]++;
     memory = decided.state;
     const { desired } = protect({ desired: decided.desired, commands, changedAt, now: ms });
     for (const name of ['humidifier', 'dehumidifier']) if (desired[name] !== commands.relay[name]) changedAt[name] = ms;
@@ -304,6 +314,7 @@ export function simulate(input, ctx, { onProgress } = {}) {
         meanFilterPa: sums.paS > 0 ? round(sums.pa / sums.paS, 1) : null,
         unfilteredPct: sums.exchangeIntake > 0 ? round((sums.unfiltered / sums.exchangeIntake) * 100, 1) : 0,
       } : null,
+      exchanges,
       ...(outdoor ? { coolDownS } : {}),
     },
   };

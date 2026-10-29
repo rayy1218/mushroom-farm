@@ -7,6 +7,7 @@ import { fallbackMs, createThrottle } from './live-math.js';
 import { request } from './api.js';
 import { openSimulateDialog } from './simulate-dialog.js';
 import { runRow, isActive, compareRuns, differingLines } from './simulation-math.js';
+import { keepLines } from './text-math.js';
 import { suggestHash } from './route.js';
 
 const SHOWN = 5;
@@ -66,8 +67,9 @@ export function createSimulationsCard(host, { roomId, getRoom }) {
       link.href = r.href;
       link.dataset.focusKey = `link-${run.id}`;
       const name = el('div', 'sim-name');
-      name.append(link, el('span', 'sim-machines', r.machines));
-      if (given[i]) name.append(el('span', 'sim-given', given[i]));
+      // a '·' keeps to its word at a wrap, the same way in every card (critique 2026-10-29c: at a line's start in one, its end in the next)
+      name.append(link, el('span', 'sim-machines', keepLines(r.machines)));
+      if (given[i]) name.append(el('span', 'sim-given', keepLines(given[i])));
       const inBand = el('span', 'sim-all pill', run.status === 'done' ? `${r.all} in band` : '');
       inBand.dataset.tone = r.tone;
       const pick = el('label', 'sim-pick');
