@@ -130,9 +130,12 @@ test('breakdown of estimated days: the aircon row, shares and cost', () => {
 test('breakdown of metered days: "rest" replaces the aircon; a mix shows both', () => {
   const metered = [day('2026-10-20', 10, true, { intake: 1, exhaust: 1, circulation: 1, humidifier: 1, rest: 6 })];
   assert.deepEqual(breakdown(metered, 0.5).rows.map((r) => r.key), ['intake', 'exhaust', 'circulation', 'humidifier', 'rest']);
-  assert.equal(breakdown(metered, 0.5).rows.at(-1).label, 'Not split by machine (mostly the aircon)');
+  // critique 2026-10-29c: "Not split by machine (mostly the aircon)" at 71 % with no Aircon row
+  assert.equal(breakdown(metered, 0.5).rows.at(-1).label, 'Aircon and the rest (not split by machine)');
   const mix = [...metered, day('2026-10-19', 5, false, { ac: 2 })];
   assert.deepEqual(breakdown(mix, 0.5).rows.map((r) => r.key).slice(-2), ['ac', 'rest']);
+  assert.deepEqual(breakdown(mix, 0.5).rows.slice(-2).map((r) => r.label), ['Aircon', 'Aircon and the rest on metered days (not split by machine)'],
+    'beside the estimated days\' Aircon row');
 });
 
 test('breakdown of nothing: fan rows of zero, no shares, no cost without a price', () => {
@@ -149,6 +152,9 @@ test('the note under the table says how the days were worked out', () => {
   assert.match(breakdownNote([m, m]), /^Metered/);
   assert.match(breakdownNote([e]), /upper bound/);
   assert.match(breakdownNote([m, e]), /^1 of 2 days metered/);
+  // the meter measures the whole room; the machines it does not split are estimated from their run time (critique 2026-10-29c)
+  assert.equal(breakdownNote([m, m]), 'Metered: the meter measures the whole room. The fans and the humidifier are estimated from their run time and rating; the aircon and the rest is what is left of the meter.');
+  assert.match(breakdownNote([m, e]), /On a metered day the meter measures the whole room and the aircon and the rest is what is left of it\.$/);
 });
 
 test('farm room lines: one per room with today and 30 days; a missing list is empty', () => {
