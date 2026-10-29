@@ -91,7 +91,12 @@ test('the card shows typical crop bands, the CO₂ minimum of 450 and the aircon
   const { BANDS, SAFETY_FIELDS, checkSafety } = await import('../web/control-math.js');
   assert.equal(BANDS.find((b) => b.key === 'co2').min, 450);
   for (const b of BANDS) assert.ok(b.hint && b.hint.length > 10, `${b.key} has a hint`);
-  assert.match(BANDS.find((b) => b.key === 't').hint, /grey oyster about 24\u2060–\u206028\u00a0°C, lion’s mane about 18\u2060–\u206022\u00a0°C/, 'with their unit (critique 2026-10-29)');
+  assert.match(BANDS.find((b) => b.key === 't').hint, /grey oyster 23\u2060–\u206027\u00a0°C, lion’s mane 16\u2060–\u206022\u00a0°C/, 'with their unit (critique 2026-10-29)');
+  // the crop guide's ranges (crops.js), not others of their own (critique 2026-10-29c: "about 90 % RH" for lion's mane, its guide 85–92)
+  const { CROPS } = await import('../web/crops.js');
+  assert.deepEqual([CROPS.oyster.range.RH, CROPS.lionsmane.range.RH], [[85, 92], [85, 92]]);
+  assert.match(BANDS.find((b) => b.key === 'rh').hint, /^Typical: 85\u2060–\u206092\u00a0%\u00a0RH for oyster and lion’s mane\. /);
+  assert.doesNotMatch(BANDS.find((b) => b.key === 'rh').hint, /about 90/);
   for (const hint of [...BANDS, ...SAFETY_FIELDS].map((f) => f.hint).filter(Boolean)) assert.doesNotMatch(hint, /\d (ppm|°C|%|min|h)\b/, 'a number keeps its unit on its line');
   assert.match(BANDS.find((b) => b.key === 'co2').hint, /about 420\u00a0ppm/, '"about 420 / ppm" at 390 px');
   const safety = SAFETY_FIELDS.find((f) => f.key === 'co2Safety');
