@@ -128,7 +128,25 @@ export function validateSizing(body) {
   }
   const { physics, crops, farmType, stage } = checked.input;
   const { wallUA, outdoorHigh, outdoorLow, outdoorDew, sunW } = physics;
-  return { input: { physics: { wallUA, outdoorHigh, outdoorLow, outdoorDew, sunW }, crops, farmType, stage, target, coolDownMaxH } };
+  const input = { physics: { wallUA, outdoorHigh, outdoorLow, outdoorDew, sunW }, crops, farmType, stage, target, coolDownMaxH };
+  if (body.baseline !== undefined) {
+    const baseline = checkBaseline(body.baseline);
+    if (baseline.error) return baseline;
+    input.baseline = baseline.machines;
+  }
+  return { input };
+}
+
+// The machines the room has now, for the suggestion's baseline (owner 2026-10-29): { fanFlow, acBTU, humidifierLH,
+// dehumidifierLday (0 when not given) }, checked as a simulation's. → { machines } or { error, field }.
+function checkBaseline(b) {
+  if (b === null || typeof b !== 'object' || Array.isArray(b)) return { error: 'Baseline must be an object', field: 'baseline' };
+  const { fanFlow, acBTU, humidifierLH, dehumidifierLday } = b; // only the machines: the walls and weather are the request's
+  const checked = validateSimulation({ physics: { wallUA: 0, outdoorHigh: 30, outdoorLow: 25, outdoorDew: 20, sunW: 0, fanFlow, acBTU, humidifierLH, dehumidifierLday },
+    crops: [{ crop: 'oyster', blocks: 1 }], farmType: 'ready', stage: 'fruiting', days: 1 });
+  if (checked.error) return { error: checked.error, field: checked.field.replace(/^physics\./, 'baseline.') };
+  const p = checked.input.physics;
+  return { machines: { fanFlow: p.fanFlow, acBTU: p.acBTU, humidifierLH: p.humidifierLH, dehumidifierLday: p.dehumidifierLday ?? 0 } };
 }
 
 // The default way to run a job: a worker thread. job: { input, ctx }; handlers: { onProgress(share), onDone(result),
@@ -317,7 +335,7 @@ export function createSimulations({ db, now = Date.now, spawn = spawnWorker, onC
       }
       const ctx = contextOf(roomId);
       const id = ++sizingId;
-      const total = searchPlan(estimate(checked.input, ctx)).total;
+      const total = searchPlan(estimate(checked.input, ctx)).total + (checked.input.baseline ? 1 : 0);
       const job = { id, roomId, status: 'queued', progress: 0, tried: 0, total, createdAt: now(), finishedAt: null, result: null, error: null };
       sizings.set(id, job);
       const queued = { ...job };

@@ -50,6 +50,27 @@ test('validation: the longest cool-down (default 3 h, a number from 0.5 to 24 h)
   }
 });
 
+// Owner 2026-10-29: the page shows the room's machines as they are, tried with the same walls, weather, crops and target.
+test('validation: the baseline, the machines the room has now (optional; the dehumidifier 0 when not given)', () => {
+  const machines = { fanFlow: 600, acBTU: 12000, humidifierLH: 2, dehumidifierLday: 10 };
+  assert.equal('baseline' in validateSizing(sizing()).input, false);
+  assert.deepEqual(validateSizing(sizing({ baseline: { ...machines, extra: 1 } })).input.baseline, machines);
+  assert.deepEqual(validateSizing(sizing({ baseline: { fanFlow: 600, acBTU: 12000, humidifierLH: 2 } })).input.baseline, { ...machines, dehumidifierLday: 0 });
+  const bad = (baseline, field, error) => assert.deepEqual(validateSizing(sizing({ baseline })), { error, field });
+  for (const v of [null, 5, [], 'x']) bad(v, 'baseline', 'Baseline must be an object');
+  bad({ ...machines, fanFlow: -1 }, 'baseline.fanFlow', 'Fan flow must be a number from 0 to 100000 m³/h');
+  bad({ ...machines, acBTU: 9000.5 }, 'baseline.acBTU', 'Aircon capacity must be a whole number from 0 to 200000 BTU/h');
+  bad({ ...machines, humidifierLH: 'x' }, 'baseline.humidifierLH', 'Humidifier output must be a number from 0 to 100 L/h');
+  bad({ ...machines, dehumidifierLday: 201 }, 'baseline.dehumidifierLday', 'Dehumidifier must be a number from 0 to 200 L/day');
+});
+
+test('start with a baseline: one setup more to try', (t) => {
+  const { a, sims, jobs } = setup(t);
+  const { job } = sims.startSizing(a, sizing({ baseline: { fanFlow: 600, acBTU: 12000, humidifierLH: 2, dehumidifierLday: 0 } }));
+  assert.equal(job.total, 46);
+  assert.deepEqual(jobs[0].job.input.baseline, { fanFlow: 600, acBTU: 12000, humidifierLH: 2, dehumidifierLday: 0 });
+});
+
 test('start queues a job with the total candidates and starts it at once, with the room\'s context', (t) => {
   const { a, sims, jobs } = setup(t);
   const { job } = sims.startSizing(a, sizing());

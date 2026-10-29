@@ -235,17 +235,20 @@ export function searchPlan(est) {
 }
 
 // Tries the setups (each over the days of both stages, and a day's cool-down from outdoor air at COOL_START_HOUR) and answers
-// the best five: the two-phase search, or `list` (tests). input: { physics, crops, farmType, stage, target, coolDownMaxH };
-// ctx: as for simulate. simulate: injectable; list and days: test overrides. onProgress: the share of the setups tried.
-// → { target, coolDownMaxH, coolDownStartHour, days, estimate, best, reached, notes }; a row of best has coolDownH (hours,
-// one decimal, null: not within the day).
+// the best five: the two-phase search, or `list` (tests). input: { physics, crops, farmType, stage, target, coolDownMaxH,
+// baseline }; ctx: as for simulate. simulate: injectable; list and days: test overrides. onProgress: the share of the setups
+// tried. → { target, coolDownMaxH, coolDownStartHour, days, estimate, best, reached, notes, baseline }; a row of best has
+// coolDownH (hours, one decimal, null: not within the day). baseline (owner 2026-10-29, only when asked): the room's machines
+// as they are ({ fanFlow, acBTU, humidifierLH, dehumidifierLday }), tried first like a setup with the room's own settings and
+// answered as a row of its own; it is never in best (best is what to buy).
 export function runSizing(input, ctx, { onProgress, simulate, list, days } = {}) {
   const target = input.target ?? TARGET_DEFAULT;
   const maxH = input.coolDownMaxH ?? COOL_DOWN_MAX_H;
   const est = estimate(input, ctx);
   const runDays = days ?? sizingDays(input, ctx);
   const plan = list ? null : searchPlan(est);
-  const total = list ? list.length : plan.total;
+  const total = (list ? list.length : plan.total) + (input.baseline ? 1 : 0);
+  let tried = 0;
   const results = [];
   const tryOne = (c) => {
     const { machines, exchangeMaxMin } = c;
@@ -259,21 +262,28 @@ export function runSizing(input, ctx, { onProgress, simulate, list, days } = {})
     const { inBand, energy, water } = out.summary;
     const r = { machines, exchangeMaxMin, control, inBand, kWh: energy.kWh, litres: water.litres, removedLitres: water.removedLitres,
       coolDownH: typeof cool === 'number' ? round(cool / 3600, 1) : null };
+    onProgress?.(++tried / total);
+    return r;
+  };
+  const baseline = input.baseline
+    ? tryOne({ machines: input.baseline, exchangeMaxMin: ctx.control?.exchangeMaxMin ?? DEFAULTS.exchangeMaxMin }) : null;
+  const tryOther = (c) => {
+    const r = tryOne(c);
     results.push(r);
-    onProgress?.(results.length / total);
     return r;
   };
   if (list) {
-    list.forEach(tryOne);
+    list.forEach(tryOther);
   } else {
     // phase 1: judged on temperature and CO₂ held, and the cool-down (the humidity machines come next)
-    const core = plan.phase1.map(tryOne);
+    const core = plan.phase1.map(tryOther);
     core.sort(order((r) => Math.min(r.inBand.t, r.inBand.co2), target, maxH));
-    for (const c of core.slice(0, KEEP)) plan.phase2(c).forEach(tryOne);
+    for (const c of core.slice(0, KEEP)) plan.phase2(c).forEach(tryOther);
   }
   const best = rank(results, target, maxH).slice(0, 5);
   const reached = best.length > 0 && lowest(best[0]) >= target && cools(best[0], maxH);
   const notes = reached || best.length === 0 ? []
     : [...['rh', 'co2', 't'].filter((k) => best[0].inBand[k] < target).map((k) => HINTS[k]), ...(cools(best[0], maxH) ? [] : [HINTS.coolDown(maxH)])];
-  return { target, coolDownMaxH: maxH, coolDownStartHour: COOL_START_HOUR, days: runDays, estimate: est, best, reached, notes };
+  return { target, coolDownMaxH: maxH, coolDownStartHour: COOL_START_HOUR, days: runDays, estimate: est, best, reached, notes,
+    ...(baseline ? { baseline } : {}) };
 }
