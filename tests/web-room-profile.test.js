@@ -87,7 +87,7 @@ test('while saving the Save and Reset only look disabled, so the cursor stays on
 test('the Equipment tab: two sections of cards, one form per card with its own Save, its values over the newest room', () => {
   assert.match(template, /<div class="equipment" data-equipment><\/div>/);
   assert.match(page, /import \{ createEquipment \} from '\.\/equipment\.js';/);
-  assert.match(page, /equipmentTab = createEquipment\(els\.equipmentHost, \{ roomId: id, idPrefix: 're-', \.\.\.saved \}\);/);
+  assert.match(page, /equipmentTab = createEquipment\(els\.equipmentHost, \{ roomId: id, idPrefix: 're-', \.\.\.saved, elsewhere: \{ filter: \{ host: els\.filterPart, title: 'Settings' \} \} \}\);/);
   const eq = src('equipment.js');
   assert.match(eq, /import \{ createEditForm \} from '\.\/room-edit\.js';/);
   assert.match(eq, /for \(const s of EQUIPMENT_SECTIONS\)/);
@@ -135,4 +135,14 @@ test('two-column fields share their label, input and error rows: a two-line labe
   const css = src('styles.css');
   assert.match(css, /\.room-form \.sizes\.two \.field, #room-fields \.sizes\.two \.field \{ display: grid; grid-row: span 3; grid-template-rows: subgrid; row-gap: 4px; \}/);
   assert.match(css, /\.room-form \.sizes\.two \.field label, #room-fields \.sizes\.two \.field label \{ align-self: end; \}/);
+});
+
+// Critique 2026-10-28: Setup had "Intake filter" twice (a settings card under Equipment and the pressure part); one part now.
+test('the intake filter: its settings card sits in the Intake filter part beside its pressure and changes', async () => {
+  const { readFileSync } = await import('node:fs');
+  const room = readFileSync(new URL('../web/room-detail.js', import.meta.url), 'utf8');
+  const eq = readFileSync(new URL('../web/equipment.js', import.meta.url), 'utf8');
+  assert.match(room, /<div class="filter-part" data-filter-part><section data-filter hidden><\/section><\/div>/);
+  assert.match(eq, /EQUIPMENT_CARDS\.filter\(\(c\) => c\.section === s\.key && !elsewhere\[c\.key\]\)/);
+  assert.match(eq, /elsewhere\[c\.key\]\.host\.append\(form\)/);
 });

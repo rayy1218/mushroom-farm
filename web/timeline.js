@@ -1,12 +1,17 @@
 // The machine timeline: one row per machine under the charts, a bar where it was commanded on.
-// Auto bars are solid, manual bars hatched. Lines up with the line charts (same left and right margin and time axis).
+// Auto bars are solid, manual bars hatched. Pulses closer than 3 px make one stretch drawn at the share of the time it was on
+// ("switching · 45 % on" over it where the words fit), so a machine that switched never reads as one that ran without a break.
+// Lines up with the line charts (same left and right margin and time axis).
 
 import { M } from './chart.js';
 import { xFor } from './chart-math.js';
-import { markRuns } from './history-math.js';
+import { markRuns, packSpans, onShare, switchingLabels, timelineSummary } from './history-math.js';
 
 const NS = 'http://www.w3.org/2000/svg';
 const ROW_H = 30;
+const FONT_PX = 12;
+const PACK_PX = 3; // pulses closer than this many pixels make one stretch
+const textWidth = (text) => String(text).length * FONT_PX * 0.6; // as markLabel estimates it
 let patternSeq = 0;
 
 function el(name, attrs = {}, text) {
@@ -40,15 +45,17 @@ export function drawTimeline(host, opts) {
     geometry = null;
     if (width < 40) return;
     const { range } = current;
-    const rows = current.rowsFor ? current.rowsFor(width) : current.rows; // rowsFor: recomputed at every redraw (spans joined to a pixel)
-    const ticks = (current.ticksFor ? current.ticksFor(width) : current.ticks) ?? [];
     const x0 = M.left;
     const x1 = width - M.right;
+    const minGap = (PACK_PX * (range.to - range.from)) / Math.max(1, x1 - x0); // 3 px in the range's time
+    const given = current.rowsFor ? current.rowsFor(width) : current.rows; // rowsFor: recomputed at every redraw (spans joined to a pixel)
+    const rows = given.map((r) => ({ ...r, spans: packSpans(r.spans, minGap) }));
+    const ticks = (current.ticksFor ? current.ticksFor(width) : current.ticks) ?? [];
     const height = rows.length * ROW_H + 24;
     const xAt = (t) => xFor(t, range.from, range.to, x0, x1);
     svg = el('svg', {
       width, height, viewBox: `0 0 ${width} ${height}`, role: 'img',
-      'aria-label': `Machine timeline: ${rows.map((r) => `${r.label} ${r.spans.length === 0 ? 'off' : `on ${r.spans.length} time${r.spans.length === 1 ? '' : 's'}`}`).join(', ')}`,
+      'aria-label': `Machine timeline: ${rows.map((r) => timelineSummary(r, range)).join(', ')}`,
     });
     const defs = el('defs');
     const hatch = el('pattern', { id: pattern, width: 6, height: 6, patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(45)' });
@@ -64,13 +71,21 @@ export function drawTimeline(host, opts) {
       for (const s of row.spans) {
         const xa = xAt(s.from);
         const w = Math.max(2, xAt(s.to) - xa);
+        const share = onShare(s); // a stretch of pulses at the share it was on; the edge says where it starts and ends
         const rect = el('rect', { x: xa, y: y + 14, width: w, height: 10, rx: 2, style: 'stroke:var(--ink-2)', 'stroke-width': 1 });
         rect.setAttribute('fill', s.source === 'manual' ? `url(#${pattern})` : 'var(--ink-2)');
+        if (share < 1) rect.setAttribute('fill-opacity', Math.max(0.15, share).toFixed(2));
         svg.append(rect);
       }
       // a run of setpoints too close to label each is named once ("16–20 °C, switching"), not as a tidy pattern
+      const taken = [];
       for (const label of markRuns(row.marks, xAt, width - 2)) {
-        svg.append(el('text', { x: label.x, y: y + 11, 'text-anchor': label.anchor, style: 'fill:var(--ink)', 'font-size': 12 }, label.text));
+        svg.append(el('text', { x: label.x, y: y + 11, 'text-anchor': label.anchor, style: 'fill:var(--ink)', 'font-size': FONT_PX }, label.text));
+        const start = label.anchor === 'start' ? label.x : label.x - textWidth(label.text);
+        taken.push({ start, end: start + textWidth(label.text) });
+      }
+      for (const label of switchingLabels(row.spans, xAt, { left: 4 + textWidth(row.label) + 6, taken, fontPx: FONT_PX })) {
+        svg.append(el('text', { x: label.x, y: y + 11, style: 'fill:var(--muted)', 'font-size': FONT_PX }, label.text));
       }
     });
     const yAxis = rows.length * ROW_H;

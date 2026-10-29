@@ -98,7 +98,9 @@ export function createRoomCard(hosts, { idPrefix = 'room-', cropHref = '', onSwi
   // card says only when fresh air comes next.
   const scroll = el('div', 'rc-scroll'); // a phone swipes the drawing sideways at a readable size
   scroll.append(pic);
-  hosts.picture.replaceChildren(cardHead('Room', note), scroll, el('p', 'rc-swipe', 'Swipe the drawing sideways to see the whole room.'), fresh);
+  // a phone: the blocks under the drawing in words (in the drawing they sit past the screen's edge; critique 2026-10-28)
+  const blocks = el('p', 'rc-blocks');
+  hosts.picture.replaceChildren(cardHead('Room', note), scroll, blocks, el('p', 'rc-swipe', 'Swipe the drawing sideways to see the whole room.'), fresh);
   hosts.picture.style.containerType = 'inline-size';
   const mimic = createMimic(pic, { idPrefix });
 
@@ -183,6 +185,8 @@ export function createRoomCard(hosts, { idPrefix = 'room-', cropHref = '', onSwi
     // card: roomCard() of room-card-math.js; draw: the DrawState of the picture; traces: traceOf() per reading.
     paint(card, draw, traces = {}, switches = null) {
       mimic.paint(draw);
+      put(blocks, draw?.blocks ?? '');
+      blocks.hidden = !draw?.blocks;
       put(note, '');
       card.tiles.forEach((x, i) => paintTile(tiles[i], x, traces[x.key] ?? null));
       put(fresh, card.fresh);

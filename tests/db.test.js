@@ -349,3 +349,8 @@ test('deleteRoom removes its readings and only its own', (t) => {
   db.createRoom({ ...fields, trhAddress: 1 }); // new room reuses no old readings (id 3)
   assert.equal(db.getSensors(3)[0].status, 'no-data');
 });
+
+test('a write waits for another connection instead of failing at once with "database is locked"', async () => {
+  const { readFileSync } = await import('node:fs');
+  assert.match(readFileSync(new URL('../server/db.js', import.meta.url), 'utf8'), /new DatabaseSync\(path, \{ timeout: 2000 \}\)/);
+});

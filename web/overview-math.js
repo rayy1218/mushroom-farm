@@ -1,7 +1,7 @@
 // Pure helpers for the Overview page and the nav badge (no DOM, so they can be tested in Node).
 // Spec 2026-10-19-safety-and-history-design.md section 6 (Overview, Nav).
 
-import { nearEdge, nearText, trendOf, co2Status } from './band-math.js';
+import { nearChip, trendOf, co2Status } from './band-math.js';
 import { formatStamp } from './history-math.js';
 
 const finite = (x) => typeof x === 'number' && Number.isFinite(x);
@@ -66,16 +66,39 @@ export function tiles(rooms) {
 const wired = (r) => r.trh?.status !== 'not-wired' || r.co2?.status !== 'not-wired';
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
+// A room's readings out of band now (critique 2026-10-28: "OK" beside a humidity under its band), from online sensors only:
+// [{ key, text }]. Temperature and humidity outside their band; CO₂ when its exchange words are amber or red (over the start
+// point with the exchange off, near or at the safety level).
+export function outOfBand(room) {
+  const b = room?.bands;
+  if (!b) return [];
+  const on = (s, field) => (s?.status === 'online' && finite(s[field]) ? s[field] : null);
+  const out = [];
+  for (const [key, name, low, high] of [['t', 'Temperature', b.tLow, b.tHigh], ['rh', 'Humidity', b.rhLow, b.rhHigh]]) {
+    const v = on(room.trh, key);
+    if (v === null || !finite(low) || !finite(high)) continue;
+    if (v > high) out.push({ key, text: `${name} high` });
+    else if (v < low) out.push({ key, text: `${name} low` });
+  }
+  const co2 = on(room.co2, 'co2');
+  const st = co2 === null ? null : co2Status(co2, { stop: b.co2Low, start: b.co2High, safety: b.co2Safety ?? null, exchange: Boolean(room.exchange) });
+  if (st && (st.tone === 'amber' || st.tone === 'critical')) out.push({ key: 'co2', text: 'CO₂ high' });
+  return out;
+}
+
 // The line at the top of the Overview (redesign 2026-10-28, in place of three number tiles): { text, tone, facts } or null
-// without rooms. A room needs attention with an alarm or in Manual (with something wired); the tone is the worst alarm's level,
-// amber for Manual alone.
+// without rooms. A room needs attention with an alarm, a reading out of band or in Manual (with something wired); the tone
+// is the worst alarm's level, amber without alarms. One reading out of band is named ("Humidity low in Container Alpha").
 export function farmStatus(rooms) {
   if (!rooms?.length) return null;
   const t = tiles(rooms);
   const manual = rooms.filter((r) => !r.auto && wired(r)).length;
-  const attention = rooms.filter((r) => r.alarms.count > 0 || (!r.auto && wired(r))).length;
+  const out = rooms.flatMap((r) => outOfBand(r).map((x) => ({ ...x, room: r.name })));
+  const attention = rooms.filter((r) => r.alarms.count > 0 || outOfBand(r).length > 0 || (!r.auto && wired(r))).length;
   const bare = rooms.filter((r) => !wired(r) && r.alarms.count === 0).length; // nothing wired: not set up, never OK
   const facts = [t.alarms === 0 ? 'No alarms' : plural(t.alarms, 'alarm', 'alarms')];
+  if (out.length === 1) facts.push(`${out[0].text} in ${out[0].room}`);
+  else if (out.length > 1) facts.push(`${out.length} readings out of band`);
   if (manual > 0) facts.push(`${plural(manual, 'room', 'rooms')} in Manual`);
   facts.push(t.exchanges === 0 ? 'No air exchange running' : `${plural(t.exchanges, 'air exchange', 'air exchanges')} running`);
   if (attention === 0) {
@@ -102,10 +125,10 @@ export function phoneAlarms(settings) {
   return null;
 }
 
-// The room cards' order: rooms that need someone first (alarms by level, then Manual), then OK, then the ones not set up;
-// the server's order (by name) inside each group.
+// The room cards' order: rooms that need someone first (alarms by level, then a reading out of band, then Manual), then OK,
+// then the ones not set up; the server's order (by name) inside each group.
 export function sortRooms(rooms) {
-  const rank = (r) => (r.alarms.count > 0 ? 3 - alarmLevelRank(r.alarms.level) / 10 : !wired(r) ? 7 : !r.auto ? 4 : 5);
+  const rank = (r) => (r.alarms.count > 0 ? 3 - alarmLevelRank(r.alarms.level) / 10 : !wired(r) ? 7 : outOfBand(r).length ? 3.5 : !r.auto ? 4 : 5);
   return rooms.map((r, i) => [r, i]).sort((a, b) => rank(a[0]) - rank(b[0]) || a[1] - b[1]).map(([r]) => r);
 }
 
@@ -138,18 +161,23 @@ export function sensorText(sensor, field, digits, unit) {
   return STATUS_WORDS[sensor.status] ? `${value} · ${STATUS_WORDS[sensor.status]}` : value;
 }
 
-// A reading against its band, from an online sensor only: { text, tone } or null. Near an edge that hurts by the room
-// page's rule (band-math.js); the trend is the last hour of the sparkline. CO₂ in the air exchange's words (co2Status).
+// A reading against its band, from an online sensor only: { text, tone } or null. Near an edge by the room page's rule
+// (band-math.js nearChip): amber only while the machine that should act is not (room.machines) or after 15 min there; the
+// trend is the last hour of the sparkline. CO₂ in the air exchange's words (co2Status), "Exchange off" with its start point
+// (critique 2026-10-28: 1,241 ppm and the exchange off read as a contradiction without it).
 function bandChip(sensor, field, low, high, spark, room) {
   const v = sensor?.status === 'online' ? sensor[field] : null;
   if (!finite(v) || !finite(low) || !finite(high)) return null;
-  if (field === 'co2') return co2Status(v, { stop: low, start: high, safety: room.bands.co2Safety ?? null, exchange: Boolean(room.exchange) });
+  if (field === 'co2') {
+    const st = co2Status(v, { stop: low, start: high, safety: room.bands.co2Safety ?? null, exchange: Boolean(room.exchange) });
+    return st?.text === 'Exchange off' ? { ...st, text: `Exchange off · starts at ${grouped(high, 0)} ppm` } : st;
+  }
   if (v > high) return { text: 'Above band', tone: 'amber' };
   if (v < low) return { text: 'Below band', tone: 'amber' };
   const points = (spark ?? []).map((p) => ({ at: p.at, value: p.v }));
   if (points.length) points.push({ at: Math.max(...points.map((p) => p.at)) + 1, value: v }); // the live value ends it
-  const edge = nearEdge(field, v, low, high, trendOf(points, 60 * 60_000));
-  return edge ? { text: `In band · ${nearText(edge)}`, tone: 'amber' } : { text: 'In band', tone: 'good' };
+  const near = nearChip(field, v, low, high, { trend: trendOf(points, 60 * 60_000), points, machines: room.machines ?? null });
+  return near ? { text: near.text, tone: 'amber' } : { text: 'In band', tone: 'good' };
 }
 
 // A room's values now for the "now" beside its alarms (alarms-math.js nowText): online sensors only, and the filter's
@@ -172,13 +200,25 @@ export const SPARK_WINDOW_MS = 24 * 3_600_000; // the sparklines show the last 2
 export const SPARK_BUCKET_MS = 30 * 60_000;
 export const SPARK_W = 140;
 export const SPARK_H = 36;
+const SHORT_MS = 2 * 3_600_000; // traces of less than this are scaled to the data (a hook at the right edge otherwise)
+const MIN_SPAN_MS = 10 * 60_000;
+
+// The window of a room card's traces (critique 2026-10-28): the last 24 h, or from the room's first point when its data
+// covers less than 2 h of it (at least 10 min wide). → { from, text }: text 'last 24 hours' or 'since 17:08'.
+export function traceWindow(spark, now) {
+  const ats = ['t', 'rh', 'co2'].flatMap((k) => (spark?.[k] ?? []).map((p) => p.at)).filter(finite);
+  const first = ats.length ? Math.min(...ats) : null;
+  if (first === null || now - first >= SHORT_MS) return { from: now - SPARK_WINDOW_MS, text: 'last 24 hours' };
+  return { from: Math.min(first, now - MIN_SPAN_MS), text: `since ${formatStamp(first, now)}` };
+}
 
 const withLive = (points, sensor, key, now) => (sensor?.status === 'online' && finite(sensor[key]) && points?.length
   ? [...points, { at: now, v: sensor[key] }] : points);
 
 // What one room card shows, from a room of GET /api/overview:
-// { href, name, values: [{ label, text, color, spark, ... }], auto, exchange, alarm: { text, level } | null }
+// { href, name, values: [{ label, text, color, spark, ... }], auto, exchange, traces, alarm: { text, level } | null }
 export function roomCard(room, now = Date.now()) {
+  const span = traceWindow(room.spark, now);
   const values = SPARKS.map((def) => {
     const sensor = def.key === 'co2' ? room.co2 : room.trh;
     return {
@@ -189,14 +229,14 @@ export function roomCard(room, now = Date.now()) {
       chip: bandChip(sensor, def.key, room.bands[def.low], room.bands[def.high], room.spark?.[def.key], room),
       // the trace ends at the reading shown beside it (the buckets are 30 min averages, so the last one can lag it)
       spark: sparkPath(withLive(room.spark[def.key], sensor, def.key, now), SPARK_W, SPARK_H, { low: room.bands[def.low], high: room.bands[def.high] },
-        { from: now - SPARK_WINDOW_MS, to: now, gapMs: 3 * SPARK_BUCKET_MS }),
+        { from: span.from, to: now, gapMs: 3 * SPARK_BUCKET_MS }),
     };
   });
   const n = room.alarms.count;
-  // The room's state in one pill: its alarms first, then Manual, OK, or nothing wired.
+  // The room's state in one pill: its alarms first, then a reading out of band, Manual, OK, or nothing wired.
   const state = n > 0 ? { text: `${n} ${n === 1 ? 'alarm' : 'alarms'}`, tone: room.alarms.level }
     : !wired(room) ? { text: 'Not set up', tone: 'none' }
-      : !room.auto ? { text: 'Manual', tone: 'amber' } : { text: 'OK', tone: 'good' };
+      : outOfBand(room).length ? { text: 'Out of band', tone: 'amber' } : !room.auto ? { text: 'Manual', tone: 'amber' } : { text: 'OK', tone: 'good' };
   return {
     href: `#/rooms/${room.id}`,
     name: room.name,
@@ -206,6 +246,7 @@ export function roomCard(room, now = Date.now()) {
     setupHref: `#/rooms/${room.id}/setup`,
     auto: room.auto ? 'Auto' : 'Manual',
     exchange: exchangeText(room, now),
+    traces: span.text, // the traces' window, said on the card when it is not the section's 24 h
     alarm: n > 0 ? { text: `${n} ${n === 1 ? 'alarm' : 'alarms'}`, level: room.alarms.level } : null,
   };
 }

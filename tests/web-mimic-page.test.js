@@ -26,7 +26,7 @@ test('the room page uses the room cards: the readings, the picture, the machines
   assert.match(room, /import \{ startLoop \} from '\.\/mimic\.js';/);
   assert.doesNotMatch(room, /createMimic/, 'the card makes the picture');
   assert.match(room, /<div class="now" data-panel="now">\n[\s\S]*?<div class="now-main">\n\s*<div data-readings><\/div>\n\s*<section data-picture><\/section>/);
-  assert.match(room, /roomCardUi\.paint\(roomCard\(\{ draw, control: lastControl, filter, crop: cropData, now, trends \}\), draw, traces, switches\)/);
+  assert.match(room, /roomCardUi\.paint\(roomCard\(\{ draw, control: lastControl, filter, crop: cropData, now, trends, points: p \}\), draw, traces, switches\)/);
   assert.match(room, /const p = \{ T: pts\('trh', 't'\)[\s\S]*T: trace\('T', p\.T, c\?\.tLow, c\?\.tHigh\)/, 'the traces: the last hour against the band');
   assert.match(room, /traceOf\(p, low, high, \{ scale: traceScale\(key, low, high\) \}\)/, 'on each reading\'s fixed scale');
   assert.match(room, /request\('GET', `\/api\/rooms\/\$\{id\}\/history\?hours=1`\)/, 'the hour from the room history');
@@ -112,7 +112,7 @@ test('History: the range and links to its parts stay under the top bar; Setup pa
   assert.match(source('../web/styles.css'), /\.history-room \{ display: block; flex: 1 1 100%;/);
   assert.match(room, /<details class="setup-part" id="setup-equipment" tabindex="-1" open>\n\s*<summary class="part-title"><h2>Equipment<\/h2><\/summary>/);
   assert.match(room, /if \(matchMedia\('\(max-width: 760px\)'\)\.matches\) for \(const d of container\.querySelectorAll\('details\.setup-part'\)\) d\.open = false;/);
-  assert.match(room, /container\.querySelector\('#setup-equipment'\)\.open = true;/);
+  assert.match(room, /container\.querySelector\(cardOf\(pendingField\)\?\.key === 'filter' \? '#setup-filter' : '#setup-equipment'\)\.open = true;/, 'the part that holds the field opens');
   const css = source('../web/styles.css');
   assert.match(css, /\.history-head \{ position: sticky; top: var\(--topbar-h\);/);
   assert.match(css, /\.top-link, \.top-alarm, \.topbar \.theme-btn, \.room-switch select, \.room-tabs a \{ min-height: 44px; \}/);

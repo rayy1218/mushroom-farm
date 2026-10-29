@@ -258,7 +258,14 @@ html { scroll-padding-top: var(--topbar-h); }
 @media (max-width: 600px) {
   .brand-text small { display: none; }
   .top-link span { display: none; } /* the gear alone; its name stays for screen readers through aria-label below */
+  /* the name fits at 375 px (critique 2026-10-28: "Mushroom fa…"): tighter gaps, and it may take two lines */
+  .topbar { gap: 4px; padding-left: 10px; padding-right: 10px; }
+  .brand { gap: 8px; }
+  .brand-text strong { white-space: normal; overflow: visible; line-height: 1.1; }
 }
+/* with the alarm button too there may be no room for the name: the mark alone (the link keeps its name for screen readers) */
+.topbar .brand-top { container-type: inline-size; }
+@container (max-width: 100px) { .brand-top .brand-text { display: none; } }
 
 .theme-btn { border-color: transparent; background: transparent; color: var(--ink-2); font-weight: 500; }
 .theme-btn:hover { background: var(--band); }
@@ -324,6 +331,7 @@ html { scroll-padding-top: var(--topbar-h); }
 .eq-section + .eq-section { margin-top: 24px; }
 .eq-section > h2 { margin: 0 0 12px; font-size: var(--fs-lg); }
 .eq-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; align-items: start; }
+.filter-part { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; align-items: start; } /* the filter's pressure and changes, then its settings */
 .eq-card h3 { margin: 0 0 2px; font-size: var(--fs-md); font-weight: 600; }
 .eq-card h3:focus { outline: none; }
 .eq-card .addr { margin: 0 0 10px; }
@@ -679,7 +687,7 @@ button.toggle[data-on="true"]:hover { background: color-mix(in srgb, var(--accen
 .us-table .total th, .us-table .total td { font-weight: 700; border-top: 1px solid var(--border-strong); }
 @media (max-width: 600px) { .us-table th, .us-table td { padding: 6px 3px; font-size: var(--fs-xs); } .us-table th:first-child, .us-table td:first-child { padding-left: 0; } .us-table th:last-child, .us-table td:last-child { padding-right: 0; } }
 .us-note { margin: 8px 0 0; font-size: var(--fs-sm); }
-.ov-farm { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin: 16px 0; } /* after the rooms: the rooms come first */
+.ov-farm { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); align-items: start; gap: 16px; margin: 16px 0; } /* after the rooms: the rooms come first; each card its own height (the Outdoor card is not stretched to the Energy card's) */
 .ov-farm:empty { display: none; }
 .ov-outdoor > .ov-chip { margin-bottom: 8px; }
 .ov-outdoor a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--axis); text-underline-offset: 3px; }
@@ -765,6 +773,7 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
 }
 .sim-card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
 .sim-card-head h2 { margin: 0; }
+.filter-card .sim-card-head h3 { margin: 0; font-size: var(--fs-md); font-weight: 600; }
 .sim-list { margin: 0 0 8px; padding: 0; list-style: none; }
 .sim-item { display: grid; grid-template-columns: minmax(0, 1fr) 72px 150px minmax(0, 200px) 96px 96px; align-items: center; gap: 4px 16px; padding: 12px 0; border-top: 1px solid var(--border); font-variant-numeric: tabular-nums; }
 .sim-item a { color: var(--ink); font-weight: 500; }
@@ -1072,7 +1081,10 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
   .rc-scroll { overflow-x: auto; overscroll-behavior-x: contain; border-radius: 10px; }
   .rc-scroll .rc-pic { min-width: 800px; } /* the labels near 12 px: the drawing at about its own size */
   .rc-swipe { display: block; }
+  .rc-blocks:not([hidden]) { display: block; } /* the blocks in words; the drawing's own label hides */
+  .rc-scroll .m-blocks { display: none; }
 }
+.rc-blocks { display: none; margin: 8px 0 0; color: var(--ink-2); font-size: var(--fs-sm); }
 .rc-fresh { margin: 12px 0 0; font-size: var(--fs-sm); color: var(--ink-2); }
 .rc-strip { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 6px 0 0; font-size: var(--fs-sm); color: var(--muted); }
 .rc-strip b { color: var(--ink-2); font-weight: 600; }
@@ -1155,6 +1167,8 @@ details.setup-part:not([open]) > summary.part-title { margin-bottom: 0; }
   .c-outdoor input, .room-check input { width: 20px; height: 20px; margin: 0; }
   .al-history summary { display: flex; align-items: center; min-height: 44px; padding: 0; }
   .sim-name a { display: inline-flex; align-items: center; justify-self: start; min-height: 44px; }
+  .us-room { align-items: center; padding: 0; }
+  .us-room a { display: inline-flex; align-items: center; justify-self: start; min-height: 44px; } /* the energy table's rooms */
   /* 16 px in a field, so a phone does not zoom in when it takes the focus */
   input:not([type="checkbox"]):not([type="radio"]), select, textarea, .ctl { font-size: 16px; }
 }
@@ -1164,3 +1178,7 @@ details.setup-part:not([open]) > summary.part-title { margin-bottom: 0; }
 .sim-crop-head > :nth-child(2) { grid-column: 2; }
 details.setup-part:not([open]) { padding-top: 8px; }
 .setup-part + details.setup-part:not([open]), details.setup-part:not([open]) + details.setup-part { margin-top: 8px; }
+.chart-host text.band-label { paint-order: stroke; stroke: var(--surface); stroke-width: 4px; stroke-linejoin: round; } /* clear of the outdoor line */
+.load-fail { position: fixed; inset: auto 16px 16px; z-index: 50; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; background: var(--surface); border: 1px solid var(--critical); border-radius: var(--radius-card); }
+.load-fail p { margin: 0; }
+.load-fail[hidden] { display: none; }

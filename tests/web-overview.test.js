@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import {
   farmStatus, sortRooms, phoneAlarms,
   roomCard, sparkPath, tiles, badgeCount, withTitlePrefix, sensorText, exchangeText, alarmLevelRank, sortAlarms, alarmTimeText, SPARKS,
-  roomReadings,
+  roomReadings, outOfBand,
 } from '../web/overview-math.js';
 import { parseRoute, isCanonical } from '../web/route.js';
 
@@ -156,27 +156,32 @@ test('phoneAlarms: a line on the Overview when alarms cannot reach a phone, none
   assert.equal(phoneAlarms({ ...ok, telegramLevels: [] }).text, 'Phone alarms are off for every level');
 });
 
-test('the Overview chip says what the room page says: near an edge that hurts is amber; CO₂ in the exchange\'s words', () => {
+test('the Overview chip says what the room page says: near an edge with its machine not acting is amber; CO₂ in the exchange\'s words', () => {
   const now = at(28, 12);
   const base = {
     id: 1, name: 'Room 1', auto: true, exchange: false, alarms: { count: 0, level: null },
     bands: { tLow: 19, tHigh: 21, rhLow: 87, rhHigh: 93, co2Low: 700, co2High: 800 },
     trh: { status: 'online', t: 20.95, rh: 90 }, co2: { status: 'online', co2: 705 },
-    spark: { t: [], rh: [], co2: [] },
+    spark: { t: [], rh: [], co2: [] }, machines: { humidifier: true, dehumidifier: null, cooling: false },
   };
   const chips = (room) => Object.fromEntries(roomCard(room, now).values.map((v) => [v.key, v.chip]));
   const c = chips(base);
-  assert.deepEqual(c.t, { text: 'In band · near the top', tone: 'amber' });
+  assert.deepEqual(c.t, { text: 'Near high', tone: 'amber' }, 'the aircon not cooling');
+  assert.deepEqual(chips({ ...base, machines: { ...base.machines, cooling: true } }).t, { text: 'In band', tone: 'good' }, 'the aircon on it: calm');
+  assert.deepEqual(chips({ ...base, machines: undefined }).t, { text: 'In band', tone: 'good' }, 'an older server: only after 15 min');
   assert.deepEqual(c.rh, { text: 'In band', tone: 'good' });
-  assert.deepEqual(c.co2, { text: 'Exchange off', tone: 'good' });
+  assert.deepEqual(c.co2, { text: 'Exchange off · starts at 800 ppm', tone: 'good' });
   assert.deepEqual(chips({ ...base, co2: { status: 'online', co2: 650 } }).co2, { text: 'Below the stop point', tone: 'good' }, 'low CO₂ is good');
   assert.deepEqual(chips({ ...base, exchange: true, co2: { status: 'online', co2: 850 } }).co2, { text: 'Exchange running', tone: 'neutral' });
   assert.deepEqual(chips({ ...base, co2: { status: 'online', co2: 850 } }).co2, { text: 'Over the start point', tone: 'amber' });
   const safe = { ...base, bands: { ...base.bands, co2Safety: 1500 } };
   assert.deepEqual(chips({ ...safe, exchange: true, co2: { status: 'online', co2: 1420 } }).co2, { text: 'Near the safety level', tone: 'amber' });
   assert.deepEqual(chips({ ...safe, exchange: true, co2: { status: 'online', co2: 1600 } }).co2, { text: 'At the safety level', tone: 'critical' });
-  const falling = chips({ ...base, trh: { status: 'online', t: 20, rh: 87.4 }, spark: { ...base.spark, rh: [{ at: now - 60 * 60_000, v: 89 }, { at: now - 30 * 60_000, v: 88.2 }] } });
-  assert.deepEqual(falling.rh, { text: 'In band · near the bottom and falling', tone: 'amber' });
+  const low = { ...base, trh: { status: 'online', t: 20, rh: 87.4 }, spark: { ...base.spark, rh: [{ at: now - 60 * 60_000, v: 89 }, { at: now - 30 * 60_000, v: 88.2 }] } };
+  assert.deepEqual(chips(low).rh, { text: 'In band', tone: 'good' }, 'falling, but the humidifier is on');
+  assert.deepEqual(chips({ ...low, machines: { ...base.machines, humidifier: false } }).rh, { text: 'Near low · falling', tone: 'amber' });
+  const stayed = { ...low, spark: { ...base.spark, rh: [{ at: now - 45 * 60_000, v: 87.5 }, { at: now - 15 * 60_000, v: 87.6 }] } };
+  assert.deepEqual(chips(stayed).rh, { text: 'Near low', tone: 'amber' }, 'near the bottom for over 15 min, the humidifier on');
 });
 
 test('the Overview offline: the last readings greyed with their time, not claimed as now', async () => {
@@ -216,4 +221,62 @@ test('One Format: the Simulations list head in sentence case like the other tabl
   const rule = /\.sim-list-head \{([^}]*)\}/.exec(css)[1];
   assert.doesNotMatch(rule, /text-transform|letter-spacing/);
   assert.doesNotMatch(css, /text-transform: uppercase/, 'no capitals anywhere');
+});
+
+test('a reading out of band is not OK: the pill says Out of band, the status counts it and names it (critique 2026-10-28)', () => {
+  const bands = { tLow: 19, tHigh: 21, rhLow: 87, rhHigh: 93, co2Low: 700, co2High: 900, co2Safety: 1500 };
+  const r = (name, over) => ({
+    id: 1, name, alarms: { count: 0, level: null }, exchange: false, auto: true, bands,
+    trh: { status: 'online', t: 20, rh: 90 }, co2: { status: 'online', co2: 800 }, spark: { t: [], rh: [], co2: [] }, ...over,
+  });
+  const dry = r('Container Alpha', { trh: { status: 'online', t: 20, rh: 84.2 } });
+  assert.deepEqual(outOfBand(dry), [{ key: 'rh', text: 'Humidity low' }]);
+  assert.deepEqual(outOfBand(r('A', { trh: { status: 'online', t: 22, rh: 95 } })).map((x) => x.text), ['Temperature high', 'Humidity high']);
+  assert.deepEqual(outOfBand(r('A', { trh: { status: 'offline', t: 30, rh: 50 } })), [], 'an offline sensor\'s last value is not now');
+  assert.deepEqual(outOfBand(r('A', { co2: { status: 'online', co2: 950 } })), [{ key: 'co2', text: 'CO₂ high' }], 'over the start point, the exchange off');
+  assert.deepEqual(outOfBand(r('A', { exchange: true, co2: { status: 'online', co2: 950 } })), [], 'over the start point with the exchange running');
+  assert.deepEqual(outOfBand(r('A', { exchange: true, co2: { status: 'online', co2: 1600 } })), [{ key: 'co2', text: 'CO₂ high' }], 'at the safety level');
+  assert.deepEqual(roomCard(dry, at(28, 12)).state, { text: 'Out of band', tone: 'amber' });
+  assert.deepEqual(roomCard({ ...dry, alarms: { count: 1, level: 'warning' } }, at(28, 12)).state, { text: '1 alarm', tone: 'warning' }, 'alarms first');
+  assert.deepEqual(roomCard({ ...dry, auto: false }, at(28, 12)).state, { text: 'Out of band', tone: 'amber' }, 'before Manual');
+  assert.deepEqual(farmStatus([dry, r('Container Beta')]),
+    { text: '1 of 2 rooms needs attention', tone: 'amber', facts: ['No alarms', 'Humidity low in Container Alpha', 'No air exchange running'] });
+  const hot = r('Container Beta', { trh: { status: 'online', t: 22, rh: 90 } });
+  assert.deepEqual(farmStatus([dry, hot]).facts, ['No alarms', '2 readings out of band', 'No air exchange running']);
+  assert.deepEqual(farmStatus([r('A'), r('B')]).text, 'All 2 rooms OK');
+});
+
+test('sortRooms: alarms, then out of band, then Manual, then OK, then not set up', () => {
+  const r = (name, over) => ({ name, alarms: { count: 0, level: null }, auto: true, bands: { tLow: 19, tHigh: 21, rhLow: 87, rhHigh: 93 },
+    trh: { status: 'online', t: 20, rh: 90 }, co2: { status: 'online' }, ...over });
+  const order = sortRooms([
+    r('ok'), r('manual', { auto: false }), r('out', { trh: { status: 'online', t: 23, rh: 90 } }), r('alarm', { alarms: { count: 1, level: 'warning' } }),
+  ]).map((x) => x.name);
+  assert.deepEqual(order, ['alarm', 'out', 'manual', 'ok']);
+});
+
+// Critique 2026-10-28: a room with minutes of data drew a hook at the right edge of a flat 24 h band.
+test('roomCard: traces of less than 2 hours are scaled to the data and say since when', () => {
+  const now = at(28, 17, 30);
+  const room = {
+    id: 1, name: 'A', auto: true, exchange: false, alarms: { count: 0, level: null },
+    bands: { tLow: 19, tHigh: 21, rhLow: 87, rhHigh: 93, co2Low: 700, co2High: 900 },
+    trh: { status: 'online', t: 20, rh: 90 }, co2: { status: 'online', co2: 800 },
+    spark: { t: [{ at: at(28, 17, 8), v: 20.2 }], rh: [{ at: at(28, 17, 8), v: 89 }], co2: [{ at: at(28, 17, 10), v: 790 }] },
+  };
+  const c = roomCard(room, now);
+  assert.equal(c.traces, 'since 17:08');
+  assert.match(c.values[0].spark.d, /^M3 /, 'the first point at the left edge, not at the right of a 24 h window');
+  const day = roomCard({ ...room, spark: { ...room.spark, t: [{ at: at(28, 9), v: 20 }, ...room.spark.t] } }, now);
+  assert.equal(day.traces, 'last 24 hours');
+  assert.doesNotMatch(day.values[0].spark.d, /^M3 /);
+});
+
+test('critique 2026-10-28 layout: the farm cards keep their own height, the energy table\'s rooms a thumb\'s size, the name fits a phone', async () => {
+  const { readFileSync } = await import('node:fs');
+  const css = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
+  assert.match(css, /\.ov-farm \{ display: grid; grid-template-columns: repeat\(auto-fit, minmax\(300px, 1fr\)\); align-items: start;/);
+  assert.match(css, /\.us-room a \{ display: inline-flex; align-items: center; justify-self: start; min-height: 44px; \}/);
+  assert.match(css, /\.brand-text strong \{ white-space: normal; overflow: visible; line-height: 1\.1; \}/);
+  assert.match(css, /@container \(max-width: 100px\) \{ \.brand-top \.brand-text \{ display: none; \} \}/);
 });

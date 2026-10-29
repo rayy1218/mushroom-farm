@@ -11,6 +11,7 @@ import { request, OFFLINE } from './api.js';
 import { ROOM_TABS, roomHash } from './route.js';
 import { createRoomEdit, createDeleteCard, createSaveQueue } from './room-edit.js';
 import { createEquipment } from './equipment.js';
+import { cardOf } from './equipment-cards.js';
 import { roomSubLine } from './room-fields.js';
 import { createMachines } from './machines.js';
 import { createControl } from './control.js';
@@ -42,7 +43,7 @@ import { timeTicks, tickCountFor, chartDrawKey, historyPoints, timelineSpans, ac
 // The Now tab's Machines rows → the relay machines the switches command (the aircon has its own panel).
 const RELAY_KEY = { intake: 'intake', circ: 'circulation', lights: 'lights', hu: 'humidifier', dh: 'dehumidifier', exhaust: 'exhaust' };
 const clockOf = (ms) => { const d = new Date(ms); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
-const TREND_MS = 10 * 60_000; // a reading near the bottom of its band: falling over the last 10 min
+const TREND_MS = 10 * 60_000; // a reading near an edge of its band: rising or falling over the last 10 min
 
 // "10:12" today, "27 Oct 10:12" before.
 function manualSince(d, now) {
@@ -106,13 +107,13 @@ const TEMPLATE = `
         </div>
         <div class="charts hist-part" id="hist-climate" tabindex="-1" data-charts></div>
         <section class="card chart-card usage-charts hist-part" id="hist-energy" tabindex="-1" data-usage-charts></section>
+        <section data-usage></section>
         <section class="card chart-card usage-charts hist-part" id="hist-exchange" tabindex="-1" data-exchange hidden></section>
         <section class="card timeline-card hist-part" id="hist-timeline" tabindex="-1" data-timeline hidden>
           <h2>Machine timeline</h2>
           <div class="chart-host" data-timeline-host></div>
           <p class="legend"><span class="swatch swatch-auto" aria-hidden="true"></span>Automatic <span class="swatch swatch-manual" aria-hidden="true"></span>Manual</p>
         </section>
-        <section data-usage></section>
       </div>
       <div data-panel="crop" hidden>
         <section data-crop></section>
@@ -133,7 +134,7 @@ const TEMPLATE = `
         </details>
         <details class="setup-part" id="setup-filter" tabindex="-1" open>
           <summary class="part-title"><h2>Intake filter</h2></summary>
-          <section data-filter hidden></section>
+          <div class="filter-part" data-filter-part><section data-filter hidden></section></div>
         </details>
         <details class="setup-part" id="setup-room" tabindex="-1" open>
           <summary class="part-title"><h2>Room</h2></summary>
@@ -187,7 +188,7 @@ export function mount(container, { id, tab = 'now' }) {
     if (tab === 'now') { if (alarmsNode.parentNode !== nowSide) nowSide.prepend(alarmsNode); }
     else if (alarmsNode.parentNode !== main) main.prepend(alarmsNode);
     if (tab === 'setup' && pendingField) {
-      container.querySelector('#setup-equipment').open = true; // folded on a phone
+      container.querySelector(cardOf(pendingField)?.key === 'filter' ? '#setup-filter' : '#setup-equipment').open = true; // folded on a phone
       equipmentTab?.focus(pendingField);
       pendingField = null;
     }
@@ -205,6 +206,7 @@ export function mount(container, { id, tab = 'now' }) {
     missing: q('[data-missing]'),
     body: q('[data-body]'),
     filterHost: q('[data-filter]'),
+    filterPart: q('[data-filter-part]'),
     alarmsHost: q('[data-alarms]'),
     readingsHost: q('[data-readings]'),
     pictureHost: q('[data-picture]'),
@@ -491,7 +493,8 @@ export function mount(container, { id, tab = 'now' }) {
         onGone: () => { if (alive()) showMissing(); },
       };
       profileTab = createRoomEdit(els.profileHost, { roomId: id, groups: ['profile'], idPrefix: 'rp-', ...saved });
-      equipmentTab = createEquipment(els.equipmentHost, { roomId: id, idPrefix: 're-', ...saved });
+      // the filter's settings beside its pressure and changes: one Intake filter part (critique 2026-10-28)
+      equipmentTab = createEquipment(els.equipmentHost, { roomId: id, idPrefix: 're-', ...saved, elsewhere: { filter: { host: els.filterPart, title: 'Settings' } } });
       deleteCard = createDeleteCard(els.deleteHost, { roomId: id, getRoom: () => room, onGone: () => { if (alive()) showMissing(); } });
       built = true;
     }
@@ -559,7 +562,7 @@ export function mount(container, { id, tab = 'now' }) {
       state: (key) => (RELAY_KEY[key] ? machines?.switchState(RELAY_KEY[key]) ?? null : null),
     };
     els.machinesHost.hidden = !switches.manual || !lastMachines || room.acAddress == null; // the aircon's own panel, in Manual with an aircon only
-    roomCardUi.paint(roomCard({ draw, control: lastControl, filter, crop: cropData, now, trends }), draw, traces, switches);
+    roomCardUi.paint(roomCard({ draw, control: lastControl, filter, crop: cropData, now, trends, points: p }), draw, traces, switches);
     // Manual on every tab, by the room's name, with the time it began when the server knows it (a link to the switch).
     const controllable = room.relayAddress != null || room.acAddress != null; // a room with nothing to switch is not "in Manual"
     els.manualChip.hidden = !switches.manual || !controllable;

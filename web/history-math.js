@@ -153,7 +153,8 @@ export function markLabel(x, text, right, fontPx = 11) {
 }
 
 // The timeline's labels for a row's marks ([{ at, text, value }], value in °C): marks closer than minPx to the one before
-// make a run, labelled once at its start: one mark its text, two "20 → 16 °C", more "16–20 °C, switching" (a setpoint that
+// make a run, labelled once at its start: one mark its text, two "20 → 16 °C", more "16–20 °C, switching"; a run with a mark
+// that has no number its first and last mark's words ("Filter → 18 °C") (a setpoint that
 // alternates faster than labels fit must not print a tidy pattern that did not happen). A single mark that says the setpoint
 // the last label ended at, or a label that would run over the last one, is left out. → [{ at, x, anchor, text }] (markLabel's placement, `right` the edge).
 export function markRuns(marks, xOf, right, { minPx = 52, fontPx = 12 } = {}) {
@@ -171,9 +172,11 @@ export function markRuns(marks, xOf, right, { minPx = 52, fontPx = 12 } = {}) {
   for (const run of runs) {
     const values = run.map((m) => m.value);
     const differ = new Set(run.map((m) => m.text)).size > 1;
+    const numbers = values.every((v) => typeof v === 'number' && Number.isFinite(v)); // the °C words only from numbers
     const text = !differ ? run[0].text
-      : run.length === 2 ? `${values[0]} → ${values[1]} °C`
-        : `${Math.min(...values)}–${Math.max(...values)} °C, switching`;
+      : !numbers ? `${run[0].text} → ${run.at(-1).text}`
+        : run.length === 2 ? `${values[0]} → ${values[1]} °C`
+          : `${Math.min(...values)}–${Math.max(...values)} °C, switching`;
     if (!differ && run[0].text === lastText) continue;
     const at = run[0].at;
     const place = markLabel(xOf(at), text, right, fontPx);
@@ -185,4 +188,59 @@ export function markRuns(marks, xOf, right, { minPx = 52, fontPx = 12 } = {}) {
     lastText = run.at(-1).text;
   }
   return out;
+}
+
+// Spans closer than minGap (about 3 px of the chart) joined into stretches (critique 2026-10-28: pulses packed into a solid bar
+// read as a machine that never stopped): [{ from, to, source, on, count }], on the time it was on inside the stretch and count
+// the spans it holds (a span already joined keeps its own). Manual and auto never join, so the hatch stays manual's only;
+// `same` (optional) says whether two neighbours may be joined.
+export function packSpans(spans, minGap, same = () => true) {
+  const out = [];
+  for (const s of spans ?? []) {
+    const on = s.on ?? s.to - s.from;
+    const count = s.count ?? 1;
+    const last = out.at(-1);
+    if (last && minGap > 0 && s.from - last.to < minGap && last.source === s.source && same(last, s)) {
+      last.to = Math.max(last.to, s.to);
+      last.on += on;
+      last.count += count;
+    } else out.push({ ...s, on, count });
+  }
+  return out;
+}
+
+// The share of a stretch the machine was on (0–1); 1 for a span that ran without a break.
+export const onShare = (s) => (s.count > 1 && s.to > s.from ? Math.min(1, s.on / (s.to - s.from)) : 1);
+
+const SWITCHING_SPANS = 3; // a stretch of at least this many spans, on less than 90 % of it, is mostly switching
+const SWITCHING_SHARE = 0.9;
+const switching = (s) => (s.count ?? 1) >= SWITCHING_SPANS && onShare(s) < SWITCHING_SHARE;
+
+// The words over a stretch that is mostly switching, "switching · 45 % on", where they fit inside it: after `left` (the
+// row's name) and clear of the `taken` labels ([{ start, end }] in px). → [{ x, text }] (start-anchored).
+export function switchingLabels(spans, xOf, { left = -Infinity, taken = [], fontPx = 12 } = {}) {
+  const out = [];
+  for (const s of spans ?? []) {
+    if (!switching(s)) continue;
+    const text = `switching · ${Math.round(onShare(s) * 100)} % on`;
+    const width = text.length * fontPx * 0.6;
+    const x = Math.max(xOf(s.from), left) + 3;
+    if (x + width > xOf(s.to)) continue;
+    if (taken.some((t) => x < t.end + 6 && x + width > t.start - 6)) continue;
+    out.push({ x, text });
+  }
+  return out;
+}
+
+// A timeline row read out: "Humidifier on 45 % of the time, switching" when it was mostly switching, otherwise how many
+// times it came on ("Intake on 2 times", "Lights off").
+export function timelineSummary(row, range) {
+  const spans = row.spans ?? [];
+  if (!spans.length) return `${row.label} off`;
+  if (spans.some(switching) && range.to > range.from) {
+    const on = spans.reduce((sum, s) => sum + (s.on ?? s.to - s.from), 0);
+    return `${row.label} on ${Math.round((on / (range.to - range.from)) * 100)} % of the time, switching`;
+  }
+  const times = spans.reduce((n, s) => n + (s.count ?? 1), 0);
+  return `${row.label} on ${times} time${times === 1 ? '' : 's'}`;
 }

@@ -30,7 +30,7 @@ export function createFilterCard(host, { roomId, onChanged }) {
   const head = el('div', 'sim-card-head');
   const changed = el('button', '', 'Filter changed');
   changed.type = 'button';
-  head.append(el('h2', '', 'Intake filter'), changed);
+  head.append(el('h3', '', 'Pressure and changes'), changed); // in the Intake filter part, beside its settings
   const body = el('div', 'filter-body');
   const error = el('p', 'meta warn');
   error.setAttribute('role', 'alert');

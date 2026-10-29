@@ -100,3 +100,8 @@ test('the totals line adds up the bars the charts show when they are given', () 
   assert.equal(usageTotalsLine(usage([], true), null, { kWh: [{ v: null }], waterL: [] }).text, 'No meter readings in this range · 0.0 L water');
   assert.match(section, /usageTotalsLine\(usage, price, data \? \{ kWh: kwhBars, waterL: waterBars \} : null\)/);
 });
+
+test('History: the range line says how many hours without readings it leaves out; the by-day card sits right after it', () => {
+  assert.match(section, /basis\.textContent = gapH >= 0\.1 \? `\$\{line\.basis\} · \$\{gapH\.toFixed\(1\)\} h without readings not counted` : line\.basis;/);
+  assert.match(page, /data-usage-charts><\/section>\n\s*<section data-usage><\/section>/);
+});

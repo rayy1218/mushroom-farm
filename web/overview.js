@@ -79,13 +79,13 @@ function pill(text, tone) {
   return p;
 }
 
-// A 24 h sparkline with the band shaded; null when there is too little data.
-function sparkline(value) {
+// A sparkline with the band shaded over `span` ('last 24 hours', 'since 17:08'); a note when there is too little data.
+function sparkline(value, span = 'last 24 hours') {
   if (!value.spark) return node('span', 'ov-spark-none', 'no data');
   const s = value.spark;
   const el = svg('svg', { width: SPARK_W, height: SPARK_H, viewBox: `0 0 ${SPARK_W} ${SPARK_H}`, role: 'img', class: 'ov-spark' });
   const d = value.key === 'co2' ? 0 : 1; // ppm in whole numbers, as shown
-  el.setAttribute('aria-label', `${value.label}, last 24 hours: ${grouped(s.min, d)} to ${grouped(s.max, d)}`);
+  el.setAttribute('aria-label', `${value.label}, ${span}: ${grouped(s.min, d)} to ${grouped(s.max, d)}`);
   if (s.band) el.append(svg('rect', { x: 0, y: s.band.y, width: SPARK_W, height: s.band.h, style: 'fill:var(--band)' }));
   el.append(svg('path', { d: s.d, fill: 'none', 'stroke-width': 1.5, 'stroke-linejoin': 'round', style: `stroke:${value.color}` }));
   el.append(svg('circle', { cx: s.last.x, cy: s.last.y, r: 2.5, style: `fill:${value.color}` }));
@@ -221,10 +221,11 @@ export function mount(container) {
         const label = node('span', 'ov-value-label', v.label);
         if (v.chip) { const chip = node('span', 'ov-band', v.chip.text); chip.dataset.tone = v.chip.tone; label.append(chip); }
         text.append(label, node('span', 'ov-value-now', v.text));
-        row.append(text, sparkline(v));
+        row.append(text, sparkline(v, c.traces));
         card.append(row);
       }
-      card.append(node('p', 'ov-room-foot', `${c.auto} · ${c.exchange}`));
+      // traces shorter than the section's 24 h say since when
+      card.append(node('p', 'ov-room-foot', `${c.auto} · ${c.exchange}${c.traces === 'last 24 hours' ? '' : ` · Traces ${c.traces}`}`));
       return card;
     }));
   }

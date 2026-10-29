@@ -106,7 +106,7 @@ export function drawLineChart(host, opts) {
           x1: x0, x2: x1, y1: y, y2: y, style: 'stroke:var(--muted)', 'stroke-width': 1, 'stroke-dasharray': '4 4',
         }));
         svg.append(el('text', {
-          x: x1 - 4, y: y + dy, 'text-anchor': 'end', style: 'fill:var(--muted)', 'font-size': 12,
+          x: x1 - 4, y: y + dy, 'text-anchor': 'end', style: 'fill:var(--muted)', 'font-size': 12, class: 'band-label',
         }, v.toFixed(current.digits ?? 1)));
       }
     }
@@ -120,7 +120,7 @@ export function drawLineChart(host, opts) {
       }
       const end = steps[steps.length - 1];
       for (const [v, dy] of [[end.high, -4], [end.low, 13]]) {
-        svg.append(el('text', { x: x1 - 4, y: yFor(v) + dy, 'text-anchor': 'end', style: 'fill:var(--muted)', 'font-size': 12 }, v.toFixed(current.digits ?? 1)));
+        svg.append(el('text', { x: x1 - 4, y: yFor(v) + dy, 'text-anchor': 'end', style: 'fill:var(--muted)', 'font-size': 12, class: 'band-label' }, v.toFixed(current.digits ?? 1)));
       }
     }
 
@@ -209,6 +209,9 @@ export function drawLineChart(host, opts) {
         style: `stroke:${current.color ?? 'var(--ink)'}`,
       }));
     }
+
+    // The band's numbers over the lines, on a halo of the card's colour, so the outdoor line never runs through them.
+    for (const t of svg.querySelectorAll('.band-label')) svg.append(t);
 
     // Pointer marker (hidden until used).
     marker = {

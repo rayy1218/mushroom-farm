@@ -597,7 +597,9 @@ export function openDb(path, { log = console.error } = {}) {
     const alarm = alarmOf();
     for (const fn of [...alarmListeners]) safe(() => fn({ change, alarm }));
   };
-  const db = new DatabaseSync(path);
+  // timeout: a write waits up to 2 s for another reader (a copy made with VACUUM INTO, a backup) instead of failing at once
+  // with "database is locked" (seen 2026-10-28: polls lost while copies of the farm database were made)
+  const db = new DatabaseSync(path, { timeout: 2000 });
   migrate(db);
 
   const q = {
@@ -1127,7 +1129,7 @@ export function openDb(path, { log = console.error } = {}) {
         const [trh, co2] = this.getSensors(room.id, 1);
         const c = this.getControl(room.id);
         // With auto off the machines are driven by hand: an exchange is the intake and the exhaust both commanded on.
-        const relay = this.getCommands(room.id).relay;
+        const { relay, ac } = this.getCommands(room.id);
         const exchange = c.auto ? c.exchange : relay.intake && relay.exhaust;
         const day = (kind) => buckets(room.id, kind, SPARK_BUCKET_MS, now - 24 * 3_600_000, now);
         const line = (rows, field) => rows.map((p) => ({ at: p.at, v: p[field] }));
@@ -1143,6 +1145,13 @@ export function openDb(path, { log = console.error } = {}) {
           bands: { tLow: c.tLow, tHigh: c.tHigh, rhLow: c.rhLow, rhHigh: c.rhHigh, co2Low: c.co2Low, co2High: c.co2High, co2Safety: c.co2Safety },
           alarms: perRoom.get(room.id) ?? { count: 0, level: null },
           spark: { t: line(trhDay, 't'), rh: line(trhDay, 'rh'), co2: line(day('co2'), 'co2') },
+          // What the machines that act on a band edge are commanded to do (near an edge is amber only when the one that
+          // should act is not acting); null for a machine the room has not wired or fitted.
+          machines: {
+            humidifier: room.relayAddress !== null ? relay.humidifier : null,
+            dehumidifier: room.relayAddress !== null && room.dehumidifier ? relay.dehumidifier : null,
+            cooling: room.acAddress !== null ? ac.power && ac.mode === 'cool' : null,
+          },
         };
       });
       return { rooms, alarms: q.overviewAlarms.all().map(alarmRow) };

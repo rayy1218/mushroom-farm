@@ -2,7 +2,7 @@
 // note and the fresh-air line, the machine tiles in air-path order and the line with the outdoor air and the filter.
 // No DOM, so Node tests cover it. Spec 2026-10-26-room-picture-design.md section 3.
 
-import { nearEdge, nearText, exchangePoints } from './band-math.js';
+import { nearChip, exchangePoints } from './band-math.js';
 import { view } from './mimic-math.js';
 import { exchangeLine } from './control-math.js';
 import { filterCard, intakeRunning, lastRunningOf } from './filter-math.js';
@@ -59,24 +59,37 @@ export function bandBar(key, value, low, high, safety) {
 // safety level, grey without a current reading.
 const EDGE = { good: '', neutral: '', warning: 'warn', critical: 'bad', serious: 'none', none: 'none' };
 
+// What the machines that act on a band edge are doing, from the drawing's units: true running, false not, null when the
+// room has none or it is not known (band-math.js nearChip). The aircon cools only running in its cool mode.
+function edgeMachines(units) {
+  const u = units ?? {};
+  const known = (unit) => (unit?.known ? unit.on === true : null);
+  return {
+    humidifier: known(u.hu),
+    dehumidifier: known(u.dh),
+    cooling: u.ac?.known ? u.ac.running === true && u.ac.mode === 'cool' : null,
+  };
+}
+
 // DrawState (fromRoom) and the control view → three tiles { key, name, value, unit, chip: { lvl, text }, edge, bar, label }.
-export function readingTiles(draw, control, trends = {}) {
+// trends: each reading's change over the trend span; points: its recent readings [{ at, value }] (how long it stayed near an edge).
+export function readingTiles(draw, control, trends = {}, points = {}) {
   const d = draw || {};
+  const machines = edgeMachines(d.units);
   return READINGS.map((r) => {
     const value = num(d[r.key]);
     const st = d.status?.[r.key] || {};
     const low = num(control?.[r.low]);
     const high = num(control?.[r.high]);
     const shown = value === null ? DASH : r.text(value);
-    // In band but close to an edge that hurts (band-math.js): say which, so a worker sees it coming.
-    const edge = st.lvl === 'good' ? nearEdge(r.key, value, low, high, trends[r.key] ?? null) : null;
-    const near = edge ? ` · ${nearText(edge)}` : '';
+    // In band but near an edge with the machine that should act not acting, or there 15 min (band-math.js): say which.
+    const near = st.lvl === 'good' ? nearChip(r.key, value, low, high, { trend: trends[r.key] ?? null, points: points[r.key] ?? null, machines }) : null;
     return {
       key: r.key, name: r.name, value: shown, unit: r.unit,
       // CO₂'s two numbers are where the air exchange starts and stops (owner, 2026-10-28), the others a band to stay in
       band: low === null || high === null ? '' : r.key === 'CO2' ? `Air exchange ${exchangePoints(low, high, (x) => limit(x, r.key))}`
         : `Band ${limit(low, r.key)}–${limit(high, r.key)} ${r.unit}`,
-      chip: { lvl: near ? 'near' : st.lvl || 'none', text: `${st.icon ? `${st.icon} ` : ''}${st.text || ''}${near}` }, // near an edge: amber
+      chip: near ? { lvl: 'near', text: near.text } : { lvl: st.lvl || 'none', text: `${st.icon ? `${st.icon} ` : ''}${st.text || ''}` }, // near: amber
       edge: EDGE[st.lvl] ?? 'none',
       bar: bandBar(r.key, value, low, high, r.safety ? num(control?.[r.safety]) : null),
       label: value === null ? `${r.name} no data` : `${r.name} ${shown} ${r.unit}${low !== null && high !== null ? `, band ${limit(low, r.key)} to ${limit(high, r.key)}` : ''}`,
@@ -337,12 +350,12 @@ export function cropSummary(crop, now = Date.now()) {
   };
 }
 
-export function roomCard({ draw = null, control = null, filter = null, crop = null, now = Date.now(), trends = {} } = {}) {
+export function roomCard({ draw = null, control = null, filter = null, crop = null, now = Date.now(), trends = {}, points = {} } = {}) {
   return {
     note: controlNote(control),
     crop: cropFacts(crop, now),
     summary: cropSummary(crop, now),
-    tiles: readingTiles(draw, control, trends),
+    tiles: readingTiles(draw, control, trends, points),
     fresh: freshAirLine(control, now),
     machines: machineTiles(draw, control, filter, crop),
     bottom: bottomLine(draw, filter),
