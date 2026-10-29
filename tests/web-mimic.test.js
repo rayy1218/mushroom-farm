@@ -339,7 +339,8 @@ test('on a phone the whole drawing fits the card: no sideways scroll, no swipe h
   assert.doesNotMatch(page, /rc-swipe|rc-scroll/);
   const card = readFileSync(new URL('../web/room-card.js', import.meta.url), 'utf8');
   assert.doesNotMatch(card, /Swipe the drawing/);
-  assert.match(card, /hosts\.picture\.replaceChildren\(cardHead\('Room', note\), pic, blocks, fresh\);/);
+  assert.match(card, /hosts\.picture\.replaceChildren\(cardHead\('Room', note\), fold, blocks, fresh\);/, 'the drawing in its fold (critique 2026-10-29c)');
+  assert.match(card, /fold\.append\(foldSummary, pic\);/);
   const css = readFileSync(new URL('../web/mimic.css', import.meta.url), 'utf8');
   assert.match(css, /\.mimic-narrow \.mimic-svg \.tag, \.mimic-narrow \.mimic-svg \.small \{ display: none; \}/);
 });

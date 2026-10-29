@@ -19,3 +19,30 @@ test('Now: the Control card says when bands were changed by hand, with Setup and
   const css = src('styles.css');
   assert.match(css, /\.mode-byhand \{[^}]*color: var\(--accent-text\)/);
 });
+
+// Critique 2026-10-29c: on a phone the room head took about 300 px before the first reading (back link, name, size line, the
+// room switch on its own row, the tabs).
+test('a phone\'s room head: the room switch beside "← Overview" on one row; no size line on the Now tab', () => {
+  const css = src('styles.css');
+  const block = css.slice(css.indexOf('/* critique 2026-10-29c: UI */'));
+  assert.match(block, /@media \(max-width: 600px\) \{[^]*?\.room-head \{ display: grid; grid-template-columns: minmax\(0, 1fr\) auto;/);
+  assert.match(block, /\.room-head \.page-titles \{ display: contents; \}/);
+  assert.match(block, /\.room-head \.room-switch \{ grid-row: 1; grid-column: 2;/);
+  assert.match(block, /\.room-head\[data-tab="now"\] \.page-sub \{ display: none; \}/);
+  const detail = src('room-detail.js');
+  assert.match(detail, /roomHead\.dataset\.tab = tab;/, 'the head knows the tab');
+  assert.match(detail, /const roomHead = q\('\.room-head'\);/);
+});
+
+// Critique 2026-10-29c: at about 350 × 150 px with its labels hidden the drawing said nothing the Machines list does not.
+test('a phone under 480 px: the room drawing folds under "Show the room drawing", closed; open on wider screens', () => {
+  const card = src('room-card.js');
+  assert.match(card, /const fold = el\('details', 'rc-fold'\);/);
+  assert.match(card, /matchMedia\('\(max-width: 479px\)'\)/);
+  assert.match(card, /fold\.open = !small\?\.matches;/);
+  assert.match(card, /put\(foldSummary, fold\.open \? 'Hide the room drawing' : 'Show the room drawing'\)/);
+  assert.match(card, /hosts\.picture\.replaceChildren\(cardHead\('Room', note\), fold, blocks, fresh\);/);
+  const css = src('styles.css');
+  assert.match(css, /\.rc-fold-sum \{ display: none; \}/);
+  assert.match(css, /@media \(max-width: 479px\) \{[^]*?\.rc-fold-sum \{ display: flex;/);
+});

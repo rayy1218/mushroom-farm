@@ -1357,3 +1357,22 @@ details.setup-part:not([open]) { padding-top: 8px; }
 .mode-byhand[hidden] { display: none; }
 .mode-byhand p { margin: 0; }
 @media (max-width: 600px) { .mode-byhand button { min-height: 44px; } }
+/* a phone: the room switch beside "← Overview" on one row, the name under them, no size line on the Now tab (the head took
+   about 300 px before the first reading) */
+@media (max-width: 600px) {
+  .room-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0 12px; }
+  .room-head .page-titles { display: contents; }
+  .room-head .back { grid-row: 1; grid-column: 1; margin: 0; }
+  .room-head .room-switch { grid-row: 1; grid-column: 2; justify-self: end; min-width: 0; }
+  .room-head .room-switch > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .room-head .room-switch select { max-width: 52vw; }
+  .room-head .room-title-row, .room-head .page-sub { grid-column: 1 / -1; }
+  .room-head .page-sub { margin-top: 4px; }
+  .room-head[data-tab="now"] .page-sub { display: none; }
+}
+/* the room drawing: folded under 480 px, its fold not seen above */
+.rc-fold-sum { display: none; }
+@media (max-width: 479px) {
+  .rc-fold-sum { display: flex; align-items: center; min-height: 44px; color: var(--ink-2); font-size: var(--fs-sm); cursor: pointer; }
+  .rc-fold[open] .rc-fold-sum { margin-bottom: 8px; }
+}
