@@ -46,3 +46,13 @@ test('a phone under 480 px: the room drawing folds under "Show the room drawing"
   assert.match(css, /\.rc-fold-sum \{ display: none; \}/);
   assert.match(css, /@media \(max-width: 479px\) \{[^]*?\.rc-fold-sum \{ display: flex;/);
 });
+
+// Critique 2026-10-29c: the Crop tab's Automatic change box was in ink, every other box in the accent; on a phone the tab sat
+// 14 px further in than the room head and the other tabs (the padding of the card it was before it became a plain wrapper).
+test('Crop tab: Automatic change in the accent like every box; on a phone its edge lines up with the other tabs', () => {
+  const css = src('styles.css');
+  assert.match(css, /\.cp-auto input \{ width: 18px; height: 18px; margin: 0; accent-color: var\(--accent\); \}/);
+  assert.doesNotMatch(css, /accent-color: var\(--ink\)/);
+  assert.doesNotMatch(css, /\.crop-card\.card \{ padding: 14px; \}/);
+  assert.match(css, /\.crop-card\.card \{ background: none; border: 0; padding: 0; box-shadow: none; \}/);
+});

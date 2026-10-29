@@ -902,7 +902,7 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
 .cp-hint { margin: 0; color: var(--muted); font-size: var(--fs-xs); max-width: 280px; }
 .cp-auto { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
 .cp-auto .crop-check { font-size: 0.9rem; font-weight: 600; min-height: 0; }
-.cp-auto input { width: 18px; height: 18px; margin: 0; accent-color: var(--ink); }
+.cp-auto input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
 .cp-auto .crop-check + .cp-hint { margin-top: 6px; }
 .cp-program > .m-error { flex-basis: 100%; margin-bottom: 12px; }
 
@@ -917,7 +917,6 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
   .cp-targets th { white-space: nowrap; } /* "Air exchange" on one line; its value wraps instead */
   .cp-targets td { white-space: normal; }
 }
-@media (max-width: 600px) { .crop-card.card { padding: 14px; } } /* a container query cannot size the card itself */
 @media (max-width: 600px) {
   .sim-crops { grid-template-columns: minmax(0, 1fr) 80px; }
   .sim-crop-row .sim-unit { display: none; }
