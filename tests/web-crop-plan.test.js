@@ -151,3 +151,14 @@ test('the card sends what the pure parts build: start, save and new blocks', () 
   assert.match(src, /Start this stage/);
   assert.match(src, /Bands at once \(skip the/);
 });
+
+// Critique 2026-10-29: Automatic change saved on its tick while Ramp and Lights from beside it needed Save.
+test('the Crop tab\'s program row has one Save for Ramp, Lights from and Automatic change', async () => {
+  const { readFileSync } = await import('node:fs');
+  const card = readFileSync(new URL('../web/crop-card.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(card, /rampSave|lightSave/);
+  assert.match(card, /program\.append\(rampField, lightField, autoField, programSave, programErr\);/);
+  assert.match(card, /auto\.addEventListener\('change', \(\) => \{ autoDirty = auto\.checked !== \(last\.autoAdvance !== false\);/, 'a tick only marks it changed');
+  assert.match(card, /const paintProgramSave = \(\) => \{ programSave\.hidden = !\(rampDirty \|\| lightDirty \|\| autoDirty\); \};/);
+  assert.match(card, /f\.autoAdvance = auto\.checked;\n    const checked = checkCropForm\(f\);/);
+});

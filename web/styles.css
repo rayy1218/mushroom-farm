@@ -1319,3 +1319,5 @@ details.setup-part:not([open]) { padding-top: 8px; }
 .setup-nav[data-more="both"] { mask-image: linear-gradient(90deg, transparent, #000 32px, #000 calc(100% - 32px), transparent); }
 /* Setup's "Use outdoor air" label a 44 px target on a phone (its two lines made 43.5 px) */
 @media (max-width: 600px) { .c-band.c-outdoor .m-name { display: flex; align-items: center; min-height: 44px; } }
+/* the Crop tab's program row: one Save for Ramp, Lights from and Automatic change, beside them while one is changed */
+.cp-program-save { align-self: center; margin-bottom: 12px; }
