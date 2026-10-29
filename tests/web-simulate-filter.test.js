@@ -67,12 +67,12 @@ test("the body sends the filter with the room's sensor", () => {
 test('the summary says the filter in one line', () => {
   const line = (s) => summaryLines(s, room).find((l) => l.label === 'Filter').text;
   const s = initialState({ room, now });
-  assert.equal(line(s), 'Clean 30 Pa, change at 120 Pa, fan maximum 250 Pa, life 30 days; 9 days in use; changed every 21 days or at the change pressure (pressure sensor)');
+  assert.equal(line(s), 'Clean 30\u00a0Pa, change at 120\u00a0Pa, fan maximum 250\u00a0Pa, life 30 days; 9 days in use; changed every 21 days or at the change pressure (pressure sensor)');
   s.physics.filterChangeDays = '0';
   s.filterSensor = false;
-  assert.equal(line(s), 'Clean 30 Pa, change at 120 Pa, fan maximum 250 Pa, life 30 days; 9 days in use; never changed (no reminder, no pressure sensor)');
+  assert.equal(line(s), 'Clean 30\u00a0Pa, change at 120\u00a0Pa, fan maximum 250\u00a0Pa, life 30 days; 9 days in use; never changed (no reminder, no pressure sensor)');
   s.filterSensor = true;
-  assert.equal(line(s), 'Clean 30 Pa, change at 120 Pa, fan maximum 250 Pa, life 30 days; 9 days in use; changed at the change pressure (pressure sensor)');
+  assert.equal(line(s), 'Clean 30\u00a0Pa, change at 120\u00a0Pa, fan maximum 250\u00a0Pa, life 30 days; 9 days in use; changed at the change pressure (pressure sensor)');
 });
 
 test('review fixes: the days in use at most 365; one day is "1 day" in the summary', () => {
@@ -82,5 +82,5 @@ test('review fixes: the days in use at most 365; one day is "1 day" in the summa
   const t = initialState({ room: { ...room, filterChangedAt: now - 1.5 * DAY, filterChangeDays: 1 }, now });
   t.filterSensor = false;
   assert.equal(summaryLines(t, room).find((l) => l.label === 'Filter').text,
-    'Clean 30 Pa, change at 120 Pa, fan maximum 250 Pa, life 30 days; 1 day in use; changed every 1 day (no pressure sensor)');
+    'Clean 30\u00a0Pa, change at 120\u00a0Pa, fan maximum 250\u00a0Pa, life 30 days; 1 day in use; changed every 1 day (no pressure sensor)');
 });

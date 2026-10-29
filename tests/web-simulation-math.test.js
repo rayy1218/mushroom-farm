@@ -117,7 +117,7 @@ test('per day bars: "day 1, day 2", one value each', () => {
 test('the inputs in one line and the head', () => {
   const input = { physics: { wallUA: 80, outdoorHigh: 33, outdoorLow: 25, outdoorDew: 24, sunW: 300, fanFlow: 600, acBTU: 12000, humidifierLH: 2 },
     crops: [{ crop: 'oyster', blocks: 500 }, { crop: 'pink', blocks: 20 }], farmType: 'ready', stage: 'fruiting', days: 7 };
-  assert.equal(inputLine(input), 'Grey oyster 500 and Pink oyster 20 blocks, starting at fruiting, 7 days · walls 80 W/K, sun 300 W, outdoor 25–33 °C, dew point 24 °C · fan 600 m³/h, aircon 3.5 kW (12,000 BTU/h class), humidifier 2 L/h');
+  assert.equal(inputLine(input), 'Grey oyster 500 and Pink oyster 20 blocks, starting at fruiting, 7 days · walls 80\u00a0W/K, sun 300\u00a0W, outdoor 25–33\u00a0°C, dew point 24\u00a0°C · fan 600\u00a0m³/h, aircon 3.5\u00a0kW (12,000\u00a0BTU/h class), humidifier 2\u00a0L/h');
   assert.equal(inputLine(undefined), '');
   const at = new Date(2026, 9, 20, 10, 42).getTime();
   assert.equal(headLine('Room 1'), 'Simulation of Room 1');
@@ -182,7 +182,7 @@ test('the inputs line mentions the dehumidifier only above 0', () => {
     physics: { wallUA: 80, sunW: 300, outdoorLow: 25, outdoorHigh: 33, outdoorDew: 24, fanFlow: 600, acBTU: 12000, humidifierLH: 2 } };
   assert.ok(!/dehumidifier/.test(inputLine(base)));
   assert.ok(!/dehumidifier/.test(inputLine({ ...base, physics: { ...base.physics, dehumidifierLday: 0 } })));
-  assert.ok(inputLine({ ...base, physics: { ...base.physics, dehumidifierLday: 20 } }).endsWith('humidifier 2 L/h, dehumidifier 20 L/day'));
+  assert.ok(inputLine({ ...base, physics: { ...base.physics, dehumidifierLday: 20 } }).endsWith('humidifier 2\u00a0L/h, dehumidifier 20\u00a0L/day'));
 });
 
 test('the inputs line names the air exchange time limit of the run', () => {
@@ -191,24 +191,24 @@ test('the inputs line names the air exchange time limit of the run', () => {
   assert.ok(!/time limit/.test(inputLine(base)));
   assert.ok(!/time limit/.test(inputLine({ ...base, ctx: { control: { exchangeMaxMin: 10 } } })));
   const given = { ...base, control: { exchangeMaxMin: 60 }, ctx: { control: { exchangeMaxMin: 60 } } };
-  assert.ok(inputLine(given).endsWith(' · air exchange time limit 60 min (set for this run)'));
-  assert.ok(inputLine(given, 10).endsWith(' · air exchange time limit 60 min (the room: 10 min)'));
+  assert.ok(inputLine(given).endsWith(' · air exchange time limit 60\u00a0min (set for this run)'));
+  assert.ok(inputLine(given, 10).endsWith(' · air exchange time limit 60\u00a0min (the room: 10\u00a0min)'));
   assert.ok(!/time limit/.test(inputLine(given, 60)));
   // the one used is ctx's
-  assert.ok(inputLine({ ...base, control: { exchangeMaxMin: 60 }, ctx: { control: { exchangeMaxMin: 45 } } }).includes('time limit 45 min'));
+  assert.ok(inputLine({ ...base, control: { exchangeMaxMin: 60 }, ctx: { control: { exchangeMaxMin: 45 } } }).includes('time limit 45\u00a0min'));
 });
 
 test('inputLine names the aircon drop and the humidifier setting of a run that set them', () => {
   const base = { physics: { wallUA: 30, sunW: 100, outdoorLow: 25, outdoorHigh: 33, outdoorDew: 24, fanFlow: 150, acBTU: 9000, humidifierLH: 0.5, dehumidifierLday: 10 }, crops: [{ crop: 'lionsmane', blocks: 950 }], stage: 'fruiting', days: 7 };
   const line = inputLine({ ...base, control: { acDrop: 0, humidifierDuringExchange: false }, ctx: { control: { exchangeMaxMin: 10, acDrop: 0, humidifierDuringExchange: false } } });
-  assert.ok(line.endsWith(' · aircon lower during air exchange 0 °C, humidifier not forced on during air exchange (set for this run)'), line);
+  assert.ok(line.endsWith(' · aircon lower during air exchange 0\u00a0°C, humidifier not forced on during air exchange (set for this run)'), line);
 });
 
 test('inputLine says what the room had when the run stored it', () => {
   const base = { physics: { wallUA: 30, sunW: 100, outdoorLow: 25, outdoorHigh: 33, outdoorDew: 24, fanFlow: 150, acBTU: 9000, humidifierLH: 0.5, dehumidifierLday: 10 }, crops: [{ crop: 'lionsmane', blocks: 950 }], stage: 'fruiting', days: 7 };
   const line = inputLine({ ...base, control: { exchangeMaxMin: 60, acDrop: 0 }, ctx: { control: { exchangeMaxMin: 60, acDrop: 0 }, roomControl: { exchangeMaxMin: 10, acDrop: 5 } } });
-  assert.ok(line.includes('air exchange time limit 60 min (the room: 10 min)'), line);
-  assert.ok(line.endsWith('aircon lower during air exchange 0 °C (the room: 5 °C)'), line);
+  assert.ok(line.includes('air exchange time limit 60\u00a0min (the room: 10\u00a0min)'), line);
+  assert.ok(line.endsWith('aircon lower during air exchange 0\u00a0°C (the room: 5\u00a0°C)'), line);
 });
 
 test('acSize: an aircon in kW, with the BTU/h class it is sold by in brackets (PRODUCT.md: metric first)', async () => {
@@ -222,7 +222,7 @@ test('acSize: an aircon in kW, with the BTU/h class it is sold by in brackets (P
 test('runRow: the machines of a run, so runs can be told apart in the list', () => {
   const input = { physics: { fanFlow: 150, acBTU: 9000, humidifierLH: 1.5, dehumidifierLday: 25 } };
   const r = runRow({ id: 5, createdAt: 0, status: 'done', input, summary: { days: 7, inBand: { all: 98 } } }, 3);
-  assert.equal(r.machines, 'Aircon 2.6 kW · fan 150 m³/h · humidifier 1.5 L/h · dehumidifier 25 L/day');
+  assert.equal(r.machines, 'Aircon 2.6\u00a0kW · fan 150\u00a0m³/h · humidifier 1.5\u00a0L/h · dehumidifier 25\u00a0L/day'); // a number keeps its unit
 });
 
 test('inputRows: what a run was asked, as label and value rows instead of one long sentence', async () => {
@@ -232,11 +232,11 @@ test('inputRows: what a run was asked, as label and value rows instead of one lo
   assert.deepEqual(inputRows(input), [
     { label: 'Crops', value: 'Grey oyster 500 blocks' },
     { label: 'Run', value: 'from fruiting, 7 days' },
-    { label: 'Room', value: 'walls 80 W/K, sun 300 W' },
-    { label: 'Outdoor', value: '25–33 °C, dew point 24 °C' },
-    { label: 'Aircon', value: '3.5 kW (12,000 BTU/h class)' },
-    { label: 'Fan', value: '600 m³/h' },
-    { label: 'Humidifier', value: '2 L/h' },
+    { label: 'Room', value: 'walls 80\u00a0W/K, sun 300\u00a0W' },
+    { label: 'Outdoor', value: '25–33\u00a0°C, dew point 24\u00a0°C' },
+    { label: 'Aircon', value: '3.5\u00a0kW (12,000\u00a0BTU/h class)' },
+    { label: 'Fan', value: '600\u00a0m³/h' },
+    { label: 'Humidifier', value: '2\u00a0L/h' },
     { label: 'Dehumidifier', value: 'none' },
   ]);
   assert.deepEqual(inputRows(undefined), []);
@@ -259,7 +259,7 @@ test('compareRuns: two runs side by side, their inputs and results, the rows tha
   const run = (id, acBTU, all) => ({ id, createdAt: 0, status: 'done', input: { physics: { fanFlow: 150, acBTU, humidifierLH: 1.5, dehumidifierLday: 0, wallUA: 30, sunW: 300, outdoorLow: 25, outdoorHigh: 33, outdoorDew: 24 }, crops: [{ crop: 'lionsmane', blocks: 950 }], stage: 'fruiting', days: 7 }, summary: { days: 7, inBand: { t: all, rh: all, co2: all, all }, energy: { kWh: 100 }, water: { litres: 50 } } });
   const rows = compareRuns(run(1, 12000, 0.8), run(2, 9000, 98.2));
   const aircon = rows.find((r) => r.label === 'Aircon');
-  assert.deepEqual(aircon, { label: 'Aircon', a: '3.5 kW (12,000 BTU/h class)', b: '2.6 kW (9,000 BTU/h class)', differ: true });
+  assert.deepEqual(aircon, { label: 'Aircon', a: '3.5\u00a0kW (12,000\u00a0BTU/h class)', b: '2.6\u00a0kW (9,000\u00a0BTU/h class)', differ: true });
   assert.equal(rows.find((r) => r.label === 'Fan').differ, false);
   assert.deepEqual(rows.find((r) => r.label === 'All three in band'), { label: 'All three in band', a: '0.8 %', b: '98.2 %', differ: true });
 });
@@ -292,8 +292,8 @@ test('inputRows: how the room was run (air exchange, the aircon and the humidifi
   const physics = { wallUA: 30, sunW: 300, outdoorLow: 25, outdoorHigh: 33, outdoorDew: 24, acBTU: 12000, fanFlow: 150, humidifierLH: 1.5, dehumidifierLday: 0 };
   const rows = inputRows({ physics, crops: [], stage: 'fruiting', days: 7, ctx: { control: { exchangeEveryMin: 15, exchangeMaxMin: 10, acDrop: 5, humidifierDuringExchange: true } } });
   assert.deepEqual(rows.slice(-3), [
-    { label: 'Air exchange', value: 'every 15 min, up to 10 min' },
-    { label: 'Aircon during air exchange', value: '5 °C lower' },
+    { label: 'Air exchange', value: 'every 15\u00a0min, up to 10\u00a0min' },
+    { label: 'Aircon during air exchange', value: '5\u00a0°C lower' },
     { label: 'Humidifier during air exchange', value: 'on' },
   ]);
   assert.equal(inputRows({ physics, crops: [], stage: 'fruiting', days: 7 }).at(-1).label, 'Dehumidifier');
@@ -379,19 +379,19 @@ test('differingLines: each run\'s settings beyond its machines, only those that 
   const run = (c, extra = {}) => ({ input: { physics: { acBTU: 12000 }, ctx: { control: { ...control, ...c } }, ...extra } });
   assert.deepEqual(differingLines([run({}), run({})]), ['', ''], 'nothing differs: no line');
   assert.deepEqual(differingLines([run({}), run({ exchangeMaxMin: 60, acDrop: 0 })]), [
-    'exchange every 15 min, up to 10 min · aircon 5 °C lower during exchange',
-    'exchange every 15 min, up to 60 min · aircon not lowered during exchange',
+    'exchange every 15\u00a0min, up to 10\u00a0min · aircon 5\u00a0°C lower during exchange',
+    'exchange every 15\u00a0min, up to 60\u00a0min · aircon not lowered during exchange',
   ]);
   assert.deepEqual(differingLines([run({ humidifierDuringExchange: false, outdoorAir: false }), run({}), run({}, { start: 'outdoor', startHour: 14 })]), [
     'humidifier off during exchange · no outdoor air · started in band',
     'humidifier on during exchange · outdoor air used · started in band',
     'humidifier on during exchange · outdoor air used · from outdoor air at 14:00',
   ]);
-  assert.deepEqual(differingLines([run({ exchangeEveryMin: 0 }), run({})]), ['exchange up to 10 min, fresh air off', 'exchange every 15 min, up to 10 min']);
+  assert.deepEqual(differingLines([run({ exchangeEveryMin: 0 }), run({})]), ['exchange up to 10\u00a0min, fresh air off', 'exchange every 15\u00a0min, up to 10\u00a0min']);
   // a run's own settings without the room's (an older run): what it set still counts; a run that kept nothing says nothing of it
   const own = { input: { physics: {}, control: { exchangeMaxMin: 60 } } };
   const none = { input: { physics: {} } };
-  assert.deepEqual(differingLines([own, run({}), none]), ['exchange up to 60 min', 'exchange every 15 min, up to 10 min', '']);
+  assert.deepEqual(differingLines([own, run({}), none]), ['exchange up to 60\u00a0min', 'exchange every 15\u00a0min, up to 10\u00a0min', '']);
   assert.deepEqual(differingLines([]), []);
 });
 

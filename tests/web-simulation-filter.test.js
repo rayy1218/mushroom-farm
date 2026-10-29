@@ -11,9 +11,9 @@ const input = (over = {}) => ({ physics: { ...physics, ...over }, crops: [{ crop
 
 test('the input line names the filter when the run had one', () => {
   assert.ok(!/filter/.test(inputLine(input())));
-  assert.match(inputLine(input(filter)), / · filter 40 Pa clean, change at 150 Pa, 12 days in use, changed every 30 days or at the change pressure$/);
-  assert.match(inputLine(input({ ...filter, filterChangeDays: 0, filterSensor: false })), / · filter 40 Pa clean, change at 150 Pa, 12 days in use, never changed$/);
-  assert.match(inputLine(input({ ...filter, filterSensor: false })), / · filter 40 Pa clean, change at 150 Pa, 12 days in use, changed every 30 days$/);
+  assert.match(inputLine(input(filter)), / · filter 40\u00a0Pa clean, change at 150\u00a0Pa, 12 days in use, changed every 30 days or at the change pressure$/);
+  assert.match(inputLine(input({ ...filter, filterChangeDays: 0, filterSensor: false })), / · filter 40\u00a0Pa clean, change at 150\u00a0Pa, 12 days in use, never changed$/);
+  assert.match(inputLine(input({ ...filter, filterSensor: false })), / · filter 40\u00a0Pa clean, change at 150\u00a0Pa, 12 days in use, changed every 30 days$/);
 });
 
 test('the filter tiles; none for a run without a filter', () => {
@@ -42,7 +42,7 @@ test('the intake row of the timeline marks the filter changes', () => {
 });
 
 test('one day is "1 day" in the input line', () => {
-  assert.match(inputLine(input({ ...filter, filterChangeDays: 1, filterUsedDays: 1, filterSensor: false })), / · filter 40 Pa clean, change at 150 Pa, 1 day in use, changed every 1 day$/);
+  assert.match(inputLine(input({ ...filter, filterChangeDays: 1, filterUsedDays: 1, filterSensor: false })), / · filter 40\u00a0Pa clean, change at 150\u00a0Pa, 1 day in use, changed every 1 day$/);
 });
 
 test('filter changes of a run that started at 14:00 are told on its clock', () => {
