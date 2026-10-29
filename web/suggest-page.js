@@ -83,7 +83,7 @@ export function mount(container, { id }) {
   let job = null; // the suggestion as last read
   let body = null; // what it was asked (for Use this)
   let now = null; // the room's machines as they are, the search's baseline: { machines, from }
-  let baseFrom = ''; // where the asked search's baseline came from ('From your last simulation, 26 Oct')
+  let baseFrom = ''; // where the asked search's baseline came from ("Your room's machines (Setup); fan flow from the run of 26 Oct 14:02 (not on Setup)")
   let jobText = ''; // an error of the suggestion that belongs to no field (409, offline)
   let sending = false;
   let timer = null;

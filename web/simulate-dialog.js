@@ -11,7 +11,7 @@ import { CROPS, CROP_KEYS, STAGES, FARM_TYPES, MAX_CROPS } from './crops.js';
 import { AC_CLASSES, acClassOf, kwOfBtu, btuOfKw } from './simulation-math.js';
 import {
   PHYSICS_FIELDS, PHYSICS_GROUPS, fieldLabel, FILTER_KEYS, initialState, checkStep, firstField, stepOf, buildBody, mixSummary, wholeProgram, stagesOf, fixStage, roomLine,
-  summaryLines, progressLine, removeLabel, filterFromRoom,
+  summaryLines, progressLine, removeLabel, filterFromRoom, MACHINE_KEYS, machinesLine, useMachines,
   RUN_CONTROL, runControl, setRunControl, resetRunControl, controlText, fixedControlLine, applySuggestion, startChoices,
 } from './simulate-math.js';
 
@@ -103,7 +103,8 @@ export function openSimulateDialog(room, hooks = {}) {
   }
 
   // The aircon: typed in kW (kept in BTU/h, the device app's unit), with the BTU/h class shops sell it by as a picker.
-  function acField(f) {
+  // onChange: after a change of either.
+  function acField(f, onChange) {
     const btu = Number(state.physics[f.key]);
     const shown = /^[0-9]+$/.test(String(state.physics[f.key]).trim()) ? kwOfBtu(btu).toFixed(1) : state.physics[f.key];
     const sold = el('select');
@@ -118,12 +119,14 @@ export function openSimulateDialog(room, hooks = {}) {
       const kw = /^[0-9]{1,3}(\.[0-9]{1,2})?$/.test(v.trim()) ? Number(v) : NaN;
       state.physics[f.key] = Number.isFinite(kw) ? String(btuOfKw(kw)) : v; // a text that is not a size stays as typed: the check says so
       sold.value = String(Number.isFinite(kw) ? acClassOf(btuOfKw(kw)) ?? '' : '');
+      onChange();
     }, false);
     sold.addEventListener('change', () => {
       if (!sold.value) return;
       state.physics[f.key] = sold.value;
       input.value = kwOfBtu(Number(sold.value)).toFixed(1);
       clearError(`physics.${f.key}`);
+      onChange();
     });
     const wrap = field(`physics.${f.key}`, `${f.label} (kW)`, input);
     const row = el('div', 'sim-ac');
@@ -197,6 +200,24 @@ export function openSimulateDialog(room, hooks = {}) {
     }
     const machines = el('fieldset', 'addresses');
     machines.append(el('legend', '', 'Machines'));
+    // Where the machines come from (critique 2026-10-29b, owner: the room as it is, the last run's one tap away)
+    const from = el('div', 'sim-machines-from');
+    const paintFrom = () => {
+      const line = machinesLine(state);
+      from.replaceChildren(el('p', 'sim-machines-from-text', line.text));
+      if (line.action) {
+        const use = button(line.action.label);
+        use.dataset.machines = line.action.which;
+        use.addEventListener('click', () => {
+          useMachines(state, line.action.which);
+          render();
+          body.querySelector('.sim-machines-from button')?.focus(); // the other set's button, where this one was
+        });
+        from.append(use);
+      }
+      if (line.note) from.append(el('p', 'c-hint', line.note));
+    };
+    paintFrom();
     // The intake filter (spec 2026-10-22-filter-design.md 8): the room's settings and its filter's age; with the room's
     // pressure sensor the run changes the filter at the change pressure too. Folded while it holds the room's own values, so
     // the step shows fewer fields at once (critique 2026-10-28); an error in it opens it (showErrors).
@@ -208,12 +229,14 @@ export function openSimulateDialog(room, hooks = {}) {
     const machineGrid = el('div', 'sizes two');
     const filterGrid = el('div', 'sizes two');
     for (const f of PHYSICS_FIELDS) {
-      const wrap = f.kw ? acField(f) : field(`physics.${f.key}`, fieldLabel(f),
-        numberInput(state.physics[f.key], (v) => { state.physics[f.key] = v; }, f.whole), f.hint);
+      const wrap = f.kw ? acField(f, paintFrom) : field(`physics.${f.key}`, fieldLabel(f), numberInput(state.physics[f.key], (v) => {
+        state.physics[f.key] = v;
+        if (MACHINE_KEYS.includes(f.key)) paintFrom();
+      }, f.whole), f.hint);
       if (FILTER_KEYS.includes(f.key)) filterGrid.append(wrap);
       else (groups[f.group] ?? machineGrid).append(wrap);
     }
-    machines.append(machineGrid);
+    machines.append(from, machineGrid);
     filter.append(filterGrid, el('p', 'c-hint', "Filter change pressure: the pressure sensor's reading at which to change the filter (with the intake running)."),
       el('p', 'c-hint', state.filterSensor
         ? 'The room has a filter pressure sensor: the run also changes the filter at the change pressure.'

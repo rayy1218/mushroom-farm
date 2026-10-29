@@ -2,8 +2,7 @@
 // the buying decision ("numbers decide the business"), so its page ranks the setups by the money they cost a month, shows five
 // columns (the rest in each row's details) and says in words whether each reaches the goal.
 
-import { acSize, AC_CLASSES, formatDateTime } from './simulation-math.js';
-import { PHYSICS_FIELDS } from './simulate-math.js';
+import { acSize } from './simulation-math.js';
 import { formatKWh, formatRM, formatLitres } from './usage-math.js';
 
 const DASH = '—';
@@ -104,31 +103,8 @@ export function captionOf(result, count) {
   return result?.baseline ? `What the room has now, then ${best}` : best.charAt(0).toUpperCase() + best.slice(1);
 }
 
-// The machines the room has now, for the baseline: its newest run's (as Simulate prefills them), else its ratings on Setup
-// (the aircon from its input power at about 11.25 BTU/h per W, as the nearest class sold; the fan at Simulate's default, a
-// room keeps no fan flow). lastRun: GET /api/rooms/:id/simulations[0] or null. → { machines, from (a line that says which) }.
-const BTU_PER_W = 11.25;
-const defOf = (key) => PHYSICS_FIELDS.find((f) => f.key === key).def;
-export function roomMachines({ room, lastRun = null }) {
-  const p = lastRun?.input?.physics;
-  if (finite(p?.fanFlow) && finite(p?.acBTU) && finite(p?.humidifierLH)) {
-    return {
-      machines: { fanFlow: p.fanFlow, acBTU: p.acBTU, humidifierLH: p.humidifierLH, dehumidifierLday: finite(p.dehumidifierLday) ? p.dehumidifierLday : 0 },
-      from: `From your last simulation, ${formatDateTime(lastRun.createdAt).replace(/ \d\d:\d\d$/, '')}`,
-    };
-  }
-  const btu = finite(room?.acInputW) && room.acInputW > 0
-    ? AC_CLASSES.reduce((a, b) => (Math.abs(b - room.acInputW * BTU_PER_W) < Math.abs(a - room.acInputW * BTU_PER_W) ? b : a)) : defOf('acBTU');
-  return {
-    machines: {
-      fanFlow: defOf('fanFlow'),
-      acBTU: btu,
-      humidifierLH: finite(room?.humidifierLH) ? room.humidifierLH : defOf('humidifierLH'),
-      dehumidifierLday: room?.dehumidifier === true && finite(room.dehumidifierLday) ? room.dehumidifierLday : 0,
-    },
-    from: "From the room's ratings on Setup",
-  };
-}
+// The machines the room has now, for the baseline: as Simulate's step 1 starts from them (simulate-math.js).
+export { roomMachines } from './simulate-math.js';
 
 // What the money column is made of, under the table.
 export function priceLine(prices, runDays) {

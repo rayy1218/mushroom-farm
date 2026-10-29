@@ -1308,3 +1308,10 @@ details.setup-part:not([open]) { padding-top: 8px; }
 @media (max-width: 600px) { .sim-choice input[type="text"] { min-height: 44px; } }
 /* the comparison: a differing row is tinted and says "differs" beside its name (no stripe down its side) */
 .sim-differs { margin-left: 8px; color: var(--accent-text); font-size: var(--fs-xs); font-weight: 600; }
+
+/* critique 2026-10-29b: simulation */
+/* step 1: where the machines come from, the other set one tap away */
+.sim-machines-from { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-bottom: 12px; }
+.sim-machines-from-text { margin: 0; color: var(--ink-2); }
+.sim-machines-from .c-hint { flex-basis: 100%; }
+@media (max-width: 600px) { .sim-machines-from button { min-height: 44px; } }

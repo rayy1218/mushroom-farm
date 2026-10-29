@@ -1,7 +1,7 @@
 // Pure helpers for the simulation stepper (no DOM, so they can be tested in Node).
 // Spec 2026-10-20-crops-and-simulation-design.md section 4.1. Every input is kept as the text typed; checks speak like the server.
 
-import { acSize, kwOfBtu, keepUnits } from './simulation-math.js';
+import { acSize, kwOfBtu, keepUnits, AC_CLASSES, formatDateTime } from './simulation-math.js';
 import { exchangePoints } from './band-math.js';
 import { CROPS, STAGES, FARM_TYPES, mixBands, rangeWarnings, validateCrops } from './crops.js';
 import { HUMIDIFIER_LABEL, OUTDOOR_LABEL } from './control-math.js';
@@ -97,23 +97,93 @@ export const fixStage = (farmType, stage) => (stagesOf(farmType).includes(stage)
 
 // ---- the state of the stepper ----
 
+// ---- the machines a run starts from (critique 2026-10-29b, owner: Simulate starts from the room as it is) ----
+
+// The machines of step 1 (the rest of PHYSICS_FIELDS describe the building, the weather and the filter).
+export const MACHINE_KEYS = ['fanFlow', 'acBTU', 'humidifierLH', 'dehumidifierLday'];
+const MACHINE_NAMES = { fanFlow: 'fan flow', acBTU: 'aircon', humidifierLH: 'humidifier' };
+const BTU_PER_W = 11.25;
+const defOf = (key) => PHYSICS_FIELDS.find((f) => f.key === key).def;
+const listed = (parts) => (parts.length < 2 ? parts.join('') : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`);
+const capital = (text) => text.charAt(0).toUpperCase() + text.slice(1);
+const runWhen = (run) => (isNumber(run?.createdAt) ? formatDateTime(run.createdAt) : 'the last run');
+
+// The machines a run had (input as it was posted): { machines, when ('26 Oct 14:02') }, or null for a run without them.
+export function runMachines(run) {
+  const p = run?.input?.physics;
+  if (!isNumber(p?.fanFlow) || !isNumber(p?.acBTU) || !isNumber(p?.humidifierLH)) return null;
+  return { machines: { fanFlow: p.fanFlow, acBTU: p.acBTU, humidifierLH: p.humidifierLH, dehumidifierLday: isNumber(p.dehumidifierLday) ? p.dehumidifierLday : 0 }, when: runWhen(run) };
+}
+
+// The machines the room has now, from its ratings on Setup: the humidifier's output, the dehumidifier's capacity when one is
+// fitted, the aircon's class nearest its input power at about 11.25 BTU/h per W. Setup keeps no fan flow (nor, in a room
+// not rated yet, the others): those come from the newest run (lastRun), else Simulate's default, and a note says which.
+// Simulate's step 1 and the Suggest machines page's baseline. → { machines, from (the whole line), note (or null) }
+export function roomMachines({ room, lastRun = null }) {
+  const p = lastRun?.input?.physics ?? {};
+  const own = {
+    acBTU: isNumber(room?.acInputW) && room.acInputW > 0
+      ? AC_CLASSES.reduce((a, b) => (Math.abs(b - room.acInputW * BTU_PER_W) < Math.abs(a - room.acInputW * BTU_PER_W) ? b : a)) : null,
+    humidifierLH: isNumber(room?.humidifierLH) ? room.humidifierLH : null,
+  };
+  const fromRun = [];
+  const fromDef = [];
+  const machines = {};
+  for (const k of ['fanFlow', 'acBTU', 'humidifierLH']) {
+    if (isNumber(own[k])) machines[k] = own[k];
+    else if (isNumber(p[k])) { machines[k] = p[k]; fromRun.push(MACHINE_NAMES[k]); }
+    else { machines[k] = defOf(k); fromDef.push(MACHINE_NAMES[k]); }
+  }
+  machines.dehumidifierLday = room?.dehumidifier === true ? (isNumber(room.dehumidifierLday) ? room.dehumidifierLday : isNumber(p.dehumidifierLday) ? p.dehumidifierLday : 0) : 0;
+  const notes = [
+    ...(fromRun.length ? [`${listed(fromRun)} from the run of ${runWhen(lastRun)}`] : []),
+    ...(fromDef.length ? [`${listed(fromDef)} at Simulate's default${fromDef.length > 1 ? 's' : ''}`] : []),
+  ];
+  const note = notes.length ? `${capital(notes.join('; '))} (not on Setup)` : null;
+  return { machines, from: `Your room's machines (Setup)${note ? `; ${notes.join('; ')} (not on Setup)` : ''}`, note };
+}
+
+const sameMachines = (state, m) => MACHINE_KEYS.every((k) => numberOf(state.physics[k]) === m[k]);
+
+// Step 1's machines from the room ('room') or the run (state.machines.run: the newest, or the one simulated again).
+export function useMachines(state, which) {
+  const m = state.machines?.[which]?.machines;
+  if (!m) return;
+  for (const k of MACHINE_KEYS) state.physics[k] = String(m[k]);
+}
+
+// The line at step 1's Machines group: where its numbers come from and the other set one tap away.
+// → { text, note (what Setup has no number for, while they are the room's), action: { label, which } or null }
+export function machinesLine(state) {
+  const { room, run, again } = state.machines ?? {};
+  const toRoom = { label: "Use the room's machines", which: 'room' };
+  if (room && sameMachines(state, room.machines)) {
+    if (run && sameMachines(state, run.machines)) return { text: `Your room's machines (Setup), the same as ${again ? "this run's" : "the last run's"}`, note: room.note, action: null };
+    return { text: "Your room's machines (Setup)", note: room.note, action: run ? { label: `Use ${again ? "this run's" : "the last run's"} machines (${run.when})`, which: 'run' } : null };
+  }
+  if (run && sameMachines(state, run.machines)) return { text: `From the run of ${run.when}${again ? ' (Simulate again)' : ''}`, note: null, action: toRoom };
+  return { text: "Changed from the room's machines", note: null, action: toRoom };
+}
+
+// ---- the state of the stepper ----
+
 // The texts of the three steps. lastRun: the room's newest run (input as it was posted), cropData: GET /api/rooms/:id/crop,
-// roomControl: GET /api/rooms/:id/control (null when it could not be read); again: a run to simulate again, whose own
-// control settings (Change for this run) go with it.
-// The filter's days in use are the room's now (local calendar days since its last change, as Setup counts them), whatever the
-// last run had.
+// roomControl: GET /api/rooms/:id/control (null when it could not be read); again: a run to simulate again, whose machines
+// and own control settings (Change for this run) go with it.
+// The walls, weather and filter come from the last run (they describe the building and the weather); the machines are the
+// room's (roomMachines), the last run's one tap away (useMachines). The filter's days in use are the room's now (local
+// calendar days since its last change, as Setup counts them), whatever the last run had.
 export function initialState({ room, lastRun = null, cropData = null, roomControl = null, again = null, now = Date.now() }) {
   const before = lastRun?.input?.physics;
   const physics = {};
   for (const f of PHYSICS_FIELDS) {
-    let fallback = f.def;
-    if (f.key === 'humidifierLH' && isNumber(room?.humidifierLH)) fallback = room.humidifierLH;
-    if (f.key === 'dehumidifierLday' && room?.dehumidifier === true && isNumber(room.dehumidifierLday)) fallback = room.dehumidifierLday;
-    if (f.room && isNumber(room?.[f.room])) fallback = room[f.room];
+    if (MACHINE_KEYS.includes(f.key)) continue;
+    const fallback = f.room && isNumber(room?.[f.room]) ? room[f.room] : f.def;
     physics[f.key] = String(isNumber(before?.[f.key]) ? before[f.key] : fallback);
   }
   // at most 365, the field's limit: a filter not changed for over a year is a year old for the run
   physics.filterUsedDays = String(isNumber(room?.filterChangedAt) ? Math.min(365, Math.max(0, calendarDays(room.filterChangedAt, now))) : 0);
+  const machines = { room: roomMachines({ room, lastRun }), run: runMachines(again ?? lastRun), again: again !== null };
   // The crops: the room's, else those of its last run (a room only simulated so far), else Grey oyster 500.
   const roomCrops = Array.isArray(cropData?.crops) && cropData.crops.length > 0;
   const lastCrops = !roomCrops && Array.isArray(lastRun?.input?.crops) && lastRun.input.crops.length > 0 ? lastRun.input : null;
@@ -122,6 +192,7 @@ export function initialState({ room, lastRun = null, cropData = null, roomContro
   const farmType = Object.hasOwn(FARM_TYPES, from?.farmType ?? '') ? from.farmType : 'ready';
   const state = {
     physics,
+    machines, // { room, run, again }: the two sets of machines step 1 switches between
     crops: crops.map((c) => ({ crop: c.crop, blocks: String(c.blocks) })),
     farmType,
     stage: fixStage(farmType, from?.stage ?? 'fruiting'),
@@ -137,6 +208,8 @@ export function initialState({ room, lastRun = null, cropData = null, roomContro
     runSettings: {},
     controlTexts: {},
   };
+  useMachines(state, again && machines.run ? 'run' : 'room');
+  state.physics = Object.fromEntries(PHYSICS_FIELDS.map((f) => [f.key, state.physics[f.key]])); // in the fields' order
   for (const f of RUN_CONTROL) {
     const v = again?.input?.control?.[f.key];
     if (v !== undefined) setRunControl(state, f.key, f.switch ? v : String(v));
