@@ -53,8 +53,8 @@ export const chartDrawKey = (bands, sensors, room) =>
 
 // How many axis labels fit a chart of this pixel width: about one per 90 px.
 // How many time ticks fit a chart `width` px wide, about one per 90 px with a step more on a phone's (critique 2026-10-29: a
-// phone's 24 h had two ticks; 330 px now takes four, 6 h apart).
-export const tickCountFor = (width) => Math.max(2, Math.floor((width + 60) / 90));
+// phone's 24 h had two ticks; from 280 px it takes four, 6 h apart).
+export const tickCountFor = (width) => Math.max(2, Math.floor((width + 80) / 90));
 
 // Axis ticks across [from, to] on round local times: the smallest step that gives at most maxTicks.
 // Steps of a day or more are labelled with the date ("13 Oct"), the others with the time of day ("09:30").
