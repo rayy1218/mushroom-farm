@@ -356,8 +356,10 @@ export const runCauses = (result, input) => causesOf(result, input).lines;
 // The value to try for each setting a cause of runCauses names (critique 2026-10-28: the Why section said to change the
 // settings, not to what): the aircon not lowered, the humidifier off when the room was too wet, the longer time limit that
 // Suggest machines allows when the fans run over half the time (server/sizing.js LIMIT_MAX_MIN).
+// → [{ text, name (the change in words), control (the change for one run, as Simulate's Change for this run takes it) }]
 export const runTries = (result, input) => causesOf(result, input).tries;
 const LIMIT_TRY_MIN = 60;
+const tryOf = (name, why, control) => ({ text: `Try ${name}${why ? `: ${why}` : ''}.`, name, control });
 
 function causesOf(result, input) {
   const series = result?.series ?? [];
@@ -378,16 +380,16 @@ function causesOf(result, input) {
       const setpoint = Math.min(...low.map((x) => x.setpoint));
       const why = finite(control.acDrop) && control.acDrop > 0 ? `: it is set ${control.acDrop} °C lower during air exchange` : '';
       lines.push(`The aircon was set to ${setpoint} °C, below the ${tLow} °C band, ${lowShare} % of the time${why}.`);
-      if (why) tries.push('Try the aircon not lowered during air exchange (0 °C).');
+      if (why) tries.push(tryOf('the aircon not lowered during air exchange (0 °C)', '', { acDrop: 0 }));
     }
   }
   if (control.humidifierDuringExchange === true && exchange >= 30) {
     lines.push('The humidifier also ran during every air exchange.');
     const wet = series.filter((r) => finite(r.rh) && finite(r.rhHigh) && r.rh > r.rhHigh).length / series.length;
-    if (wet >= 0.05) tries.push('Try the humidifier off during air exchange: the room was too wet.');
+    if (wet >= 0.05) tries.push(tryOf('the humidifier off during air exchange', 'the room was too wet', { humidifierDuringExchange: false }));
   }
   if (exchange >= 50 && finite(control.exchangeMaxMin) && control.exchangeMaxMin < LIMIT_TRY_MIN) {
-    tries.push(`Try a ${LIMIT_TRY_MIN} min air exchange time limit: the fans ran over half the time.`);
+    tries.push(tryOf(`a ${LIMIT_TRY_MIN} min air exchange time limit`, 'the fans ran over half the time', { exchangeMaxMin: LIMIT_TRY_MIN }));
   }
   return { lines, tries };
 }

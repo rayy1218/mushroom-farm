@@ -322,10 +322,24 @@ export function mount(container, { id, runId }) {
           if (tries.length) { // under their own heading, so they don't read as more causes (critique 2026-10-28)
             v.append(text('h3', 'sim-verdict-why', 'Try'));
             const list = text('ul', 'sim-verdict-lines sim-verdict-tries');
-            list.append(...tries.map((l) => text('li', '', l)));
+            // each opens Simulate from this run with the change for one run (critique 2026-10-29b: they were text only)
+            list.append(...tries.map((t) => {
+              const li = text('li', 'sim-try');
+              li.append(text('span', '', t.text));
+              if (roomData && run.input?.physics) {
+                const use = text('button', '', 'Simulate with this change');
+                use.type = 'button';
+                use.setAttribute('aria-label', `Simulate with this change: ${t.name}`);
+                use.addEventListener('click', () => openSimulateDialog(roomData, { from: run, change: t.control }));
+                li.append(use);
+              }
+              return li;
+            }));
             v.append(list);
           }
-          v.append(text('p', 'muted sim-verdict-next', 'These are the room\'s control settings (Setup tab, Automatic control). Change them there, or for one run in Simulate (step 3, Change for this run), and simulate again before buying other machines.'));
+          v.append(text('p', 'muted sim-verdict-next', tries.length && roomData
+            ? 'Setup keeps its settings; this is one run. To keep a change, set it on the Setup tab (Automatic control), and simulate again before buying other machines.'
+            : 'These are the room\'s control settings (Setup tab, Automatic control). Change them there, or for one run in Simulate (step 3, Change for this run), and simulate again before buying other machines.'));
         } else {
           const next = text('p', 'muted sim-verdict-next', 'Simulate again with other machines, or let ');
           const link = text('a', '', 'Suggest machines');

@@ -536,6 +536,11 @@ export function setRunControl(state, key, value) {
   state.runSettings = own ? { ...rest, [key]: v } : rest;
 }
 
+// A change to try from a run's result (runTries' control: { acDrop: 0 }) into Change for this run.
+export function applyChange(state, change) {
+  for (const f of RUN_CONTROL) if (change?.[f.key] !== undefined) setRunControl(state, f.key, f.switch ? change[f.key] : String(change[f.key]));
+}
+
 // Back to the room's settings.
 export function resetRunControl(state) {
   state.exchangeMaxMin = null;

@@ -1315,3 +1315,8 @@ details.setup-part:not([open]) { padding-top: 8px; }
 .sim-machines-from-text { margin: 0; color: var(--ink-2); }
 .sim-machines-from .c-hint { flex-basis: 100%; }
 @media (max-width: 600px) { .sim-machines-from button { min-height: 44px; } }
+/* a run's Try lines: the change in words, its Simulate with this change beside it (under it on a phone) */
+.sim-try { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-top: 6px; }
+.sim-try > span { flex: 1 1 32ch; }
+.sim-verdict-tries:has(.sim-try button) { list-style: none; padding-left: 0; }
+@media (max-width: 600px) { .sim-try button { min-height: 44px; } }

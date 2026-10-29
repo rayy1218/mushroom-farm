@@ -75,3 +75,37 @@ test('step 1 shows the line at the Machines group, with its button, repainted as
   assert.match(one, /if \(MACHINE_KEYS\.includes\(f\.key\)\) paintFrom\(\);/);
   assert.match(block, /\.sim-machines-from \{/);
 });
+
+// ---- a run's Try lines are actions ----
+
+test('a change to try goes into Change for this run, on top of the run simulated again', async () => {
+  const { applyChange, runControl, controlLine } = await import('../web/simulate-math.js');
+  const roomControl = { exchangeEveryMin: 15, exchangeMaxMin: 10, acDrop: 5, humidifierDuringExchange: true, outdoorAir: true };
+  const run = { ...lastRun, input: { ...lastRun.input, control: { exchangeMaxMin: 20 } } };
+  const s = initialState({ room, lastRun: run, roomControl, again: run });
+  applyChange(s, { acDrop: 0 });
+  assert.deepEqual(runControl(s).own, { exchangeMaxMin: 20, acDrop: 0 });
+  assert.deepEqual(buildBody(s).control, { exchangeMaxMin: 20, acDrop: 0 });
+  assert.match(controlLine(s), /aircon not lowered during air exchange \(for this run; the room: 5\u00a0°C lower\)/);
+  applyChange(s, { humidifierDuringExchange: false });
+  assert.equal(buildBody(s).control.humidifierDuringExchange, false);
+  applyChange(s, { exchangeMaxMin: 60 });
+  assert.equal(buildBody(s).control.exchangeMaxMin, 60);
+  assert.equal(s.controlTexts.exchangeMaxMin, '60', 'the field shows it');
+  // the room's own value already: nothing of the run's own
+  const t = initialState({ room, roomControl: { ...roomControl, acDrop: 0 } });
+  applyChange(t, { acDrop: 0 });
+  assert.equal('control' in buildBody(t), false);
+});
+
+test('the result page: each Try has Simulate with this change, which opens Simulate from this run on step 3 with the change', () => {
+  const page = src('simulation-page.js');
+  assert.match(page, /const use = text\('button', '', 'Simulate with this change'\);/);
+  assert.match(page, /use\.setAttribute\('aria-label', `Simulate with this change: \$\{t\.name\}`\);/);
+  assert.match(page, /openSimulateDialog\(roomData, \{ from: run, change: t\.control \}\)/);
+  assert.match(page, /Setup keeps its settings; this is one run\./);
+  const dialog = src('simulate-dialog.js');
+  assert.match(dialog, /if \(hooks\.change\) \{[^}]*applyChange\(state, hooks\.change\);\s*step = 3;/);
+  assert.match(dialog, /fold\.open = Object\.keys\(runControl\(state\)\.own\)\.length > 0 \|\| hooks\.change !== undefined;/);
+  assert.match(block, /\.sim-try \{/);
+});

@@ -45,7 +45,7 @@ test('step 3: the Control row\'s settings can be changed for this run, the fresh
   assert.match(dialog, /field\(`control\.\$\{f\.key\}`, f\.label, numberInput\(controlText\(state, f\.key\)/);
   assert.match(dialog, /box\.dataset\.field = `control\.\$\{f\.key\}`;/);
   assert.match(dialog, /const fixed = fixedControlLine\(state\);/);
-  assert.match(dialog, /fold\.open = Object\.keys\(runControl\(state\)\.own\)\.length > 0;/);
+  assert.match(dialog, /fold\.open = Object\.keys\(runControl\(state\)\.own\)\.length > 0( \|\| hooks\.change !== undefined)?;/);
   assert.match(dialog, /roomControl: control, again: hooks\.from \?\? null/);
 });
 

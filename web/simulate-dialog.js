@@ -1,7 +1,8 @@
 // The Simulate stepper (spec 2026-10-20-crops-and-simulation-design.md section 4.1): step 1 room and machines, step 2 crops,
 // step 3 run; then the progress of the run. Shared by the Rooms list and the room page; the dialog is made on first use.
-// openSimulateDialog(room, { onStarted(run), onFinished(), from (a run to simulate again), suggestion ({ input, candidate }:
-// Use this on the Suggest machines page) }); closeSimulateDialog() for a page that goes away.
+// openSimulateDialog(room, { onStarted(run), onFinished(), from (a run to simulate again), change (with from: a change to try
+// for one run, runTries' control), suggestion ({ input, candidate }: Use this on the Suggest machines page) });
+// closeSimulateDialog() for a page that goes away.
 
 import { request, OFFLINE, GONE, OUTDATED, routeMissing } from './api.js';
 import { live } from './live.js';
@@ -12,7 +13,7 @@ import { AC_CLASSES, acClassOf, kwOfBtu, btuOfKw } from './simulation-math.js';
 import {
   PHYSICS_FIELDS, PHYSICS_GROUPS, fieldLabel, FILTER_KEYS, initialState, checkStep, firstField, stepOf, buildBody, mixSummary, wholeProgram, stagesOf, fixStage, roomLine,
   summaryLines, progressLine, removeLabel, filterFromRoom, MACHINE_KEYS, machinesLine, useMachines,
-  RUN_CONTROL, runControl, setRunControl, resetRunControl, controlText, fixedControlLine, applySuggestion, startChoices,
+  RUN_CONTROL, runControl, setRunControl, resetRunControl, controlText, fixedControlLine, applySuggestion, applyChange, startChoices,
 } from './simulate-math.js';
 
 const STEPS = ['Room and machines', 'Crops', 'Run'];
@@ -445,7 +446,7 @@ export function openSimulateDialog(room, hooks = {}) {
       paintNote();
     }
     paint();
-    fold.open = Object.keys(runControl(state).own).length > 0;
+    fold.open = Object.keys(runControl(state).own).length > 0 || hooks.change !== undefined;
     return { node: fold, paint };
   }
 
@@ -596,6 +597,10 @@ export function openSimulateDialog(room, hooks = {}) {
     // hooks.from: a run to start from (Simulate again on a result page), else the room's newest
     state = initialState({ room, lastRun: hooks.from ?? (Array.isArray(runs) ? runs[0] ?? null : null), cropData, roomControl: control, again: hooks.from ?? null });
     step = 1;
+    if (hooks.change) { // Simulate with this change on a result page: the change is filled in, the run is next
+      applyChange(state, hooks.change);
+      step = 3;
+    }
     if (hooks.suggestion) { // Use this on the Suggest machines page: the setup is chosen, the run is next
       applySuggestion(state, hooks.suggestion.input, hooks.suggestion.candidate);
       step = 3;
