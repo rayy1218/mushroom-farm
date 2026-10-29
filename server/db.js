@@ -597,7 +597,9 @@ export function openDb(path, { log = console.error } = {}) {
     const alarm = alarmOf();
     for (const fn of [...alarmListeners]) safe(() => fn({ change, alarm }));
   };
-  const db = new DatabaseSync(path);
+  // timeout: a write waits up to 2 s for another reader (a copy made with VACUUM INTO, a backup) instead of failing at once
+  // with "database is locked" (seen 2026-10-28: polls lost while copies of the farm database were made)
+  const db = new DatabaseSync(path, { timeout: 2000 });
   migrate(db);
 
   const q = {
