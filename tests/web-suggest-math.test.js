@@ -129,8 +129,8 @@ test('the room\'s machines: its ratings on Setup (the aircon from its input powe
   // 1,000 W × about 11.25 BTU/h per W is 11,250 BTU/h: the 12,000 class; a room keeps no fan flow: the run's
   assert.deepEqual(roomMachines({ room, lastRun }), {
     machines: { fanFlow: 300, acBTU: 12000, humidifierLH: 0.5, dehumidifierLday: 20 },
-    from: "Your room's machines (Setup); fan flow from the run of 26 Oct 10:42 (not on Setup)",
-    note: 'Fan flow from the run of 26 Oct 10:42 (not on Setup)',
+    from: "Your room's machines (Setup); fan flow from the run of 26\u00a0Oct\u00a010:42 (not on Setup)",
+    note: 'Fan flow from the run of 26\u00a0Oct\u00a010:42 (not on Setup)',
   });
   assert.deepEqual(roomMachines({ room, lastRun: null }), {
     machines: { fanFlow: 600, acBTU: 12000, humidifierLH: 0.5, dehumidifierLday: 20 },
@@ -145,7 +145,7 @@ test('the room\'s machines: its ratings on Setup (the aircon from its input powe
   // no ratings at all: the run's, and the line says which
   const bare = roomMachines({ room: {}, lastRun });
   assert.deepEqual(bare.machines, { fanFlow: 300, acBTU: 18000, humidifierLH: 1.5, dehumidifierLday: 0 });
-  assert.equal(bare.note, 'Fan flow, aircon and humidifier from the run of 26 Oct 10:42 (not on Setup)');
+  assert.equal(bare.note, 'Fan flow, aircon and humidifier from the run of 26\u00a0Oct\u00a010:42 (not on Setup)');
   assert.equal(roomMachines({ room: {} }).machines.acBTU, 12000, "no rating, no run: Simulate's default");
   assert.equal(roomMachines({ room: {}, lastRun: { input: {} } }).note, "Fan flow, aircon and humidifier at Simulate's defaults (not on Setup)", 'a run without machines');
 });

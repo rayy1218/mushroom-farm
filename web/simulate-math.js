@@ -106,7 +106,8 @@ const BTU_PER_W = 11.25;
 const defOf = (key) => PHYSICS_FIELDS.find((f) => f.key === key).def;
 const listed = (parts) => (parts.length < 2 ? parts.join('') : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`);
 const capital = (text) => text.charAt(0).toUpperCase() + text.slice(1);
-const runWhen = (run) => (isNumber(run?.createdAt) ? formatDateTime(run.createdAt) : 'the last run');
+// a run's date and time keep together on a line (a phone's button broke '26 Oct' from '14:02')
+const runWhen = (run) => (isNumber(run?.createdAt) ? formatDateTime(run.createdAt).replaceAll(' ', '\u00a0') : 'the last run');
 
 // The machines a run had (input as it was posted): { machines, when ('26 Oct 14:02') }, or null for a run without them.
 export function runMachines(run) {
