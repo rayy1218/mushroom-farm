@@ -1200,3 +1200,9 @@ details.setup-part:not([open]) > summary.part-title { margin-bottom: 0; }
 .sim-crop-head > :nth-child(2) { grid-column: 2; }
 details.setup-part:not([open]) { padding-top: 8px; }
 .setup-part + details.setup-part:not([open]), details.setup-part:not([open]) + details.setup-part { margin-top: 8px; }
+/* Simulations list (critique 2026-10-28): the head names the columns, so a row's box needs no word on a desk; on a phone the
+   head hides and the words come back */
+.sim-given { font-size: var(--fs-sm); }
+.sim-verdict-facts { margin: 6px 0 0; color: var(--ink-2); font-size: var(--fs-sm); }
+@media (min-width: 601px) { .sim-pick-word { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; } }
+@media (max-width: 600px) { .sim-length::before { content: "Length "; color: var(--muted); } }

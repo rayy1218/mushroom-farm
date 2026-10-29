@@ -463,3 +463,21 @@ test('the result page on a phone: the back link, the one-line summary and the st
   // the Why section names the values to try
   assert.match(page, /const tries = runTries\(result, run\.input\);/);
 });
+
+test('runFacts: how long the fans ran and the RM, beside the time in band', async () => {
+  const { runFacts } = await import('../web/simulation-math.js');
+  const H = 3_600_000 / 1000; // seconds
+  const result = { series: [{ s: 0 }, { s: 100 * H }], machines: { intake: [{ from: 0, to: 76 * H }] }, summary: { days: 7, energy: { cost: 58.21 } } };
+  assert.equal(runFacts(result), 'Fans ran 76 % of the time · RM 58.21 for 7 days');
+  assert.equal(runFacts({ ...result, summary: { days: 7, energy: { cost: null } } }), 'Fans ran 76 % of the time');
+  assert.equal(runFacts(null), '');
+});
+
+test('the Simulations list: the length cell has its own class (not the dialog fieldset .sim-days), a Try heading on results', async () => {
+  const { readFileSync } = await import('node:fs');
+  const card = readFileSync(new URL('../web/sim-card.js', import.meta.url), 'utf8');
+  const page = readFileSync(new URL('../web/simulation-page.js', import.meta.url), 'utf8');
+  assert.match(card, /el\('span', 'sim-length', r\.days\)/);
+  assert.match(page, /v\.append\(text\('h3', 'sim-verdict-why', 'Try'\)\);/);
+  assert.match(page, /const facts = runFacts\(result\);/);
+});

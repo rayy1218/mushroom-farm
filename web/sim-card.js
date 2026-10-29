@@ -85,7 +85,7 @@ export function createSimulationsCard(host, { roomId, getRoom }) {
         paint();
       });
       pick.append(box, el('span', 'sim-pick-word', 'Compare'));
-      li.append(name, el('span', 'sim-days', r.days), inBand,
+      li.append(name, el('span', 'sim-length', r.days), inBand,
         el('span', 'sim-use', run.status === 'done' ? `${r.kWh} · ${r.litres}` : ''), el('span', 'sim-status', run.status === 'done' ? '' : r.status), pick);
       li.dataset.status = run.status;
       return li;
