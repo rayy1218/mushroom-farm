@@ -1255,3 +1255,17 @@ details.setup-part:not([open]) { padding-top: 8px; }
 .sg-setup .sg-base-from { color: var(--muted); font-size: var(--fs-sm); margin-bottom: 2px; }
 .sg-base-tag { color: var(--ink-2); font-size: var(--fs-sm); font-weight: 600; }
 @media (max-width: 760px) { .sg-base { margin: 0; } }
+/* the Simulations list on a phone: the date and its time in band first, then the machines, what differs, energy and water */
+@media (max-width: 600px) {
+  a.button { min-height: 44px; } /* Suggest machines: as tall as the buttons (after a.button's 40 px) */
+  .sim-item { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "date band status" "machines machines machines" "given given given" "use use use" "length length pick"; }
+  .sim-item .sim-name { display: contents; }
+  .sim-item .sim-name > a { grid-area: date; }
+  .sim-item > .sim-all { grid-area: band; align-self: center; }
+  .sim-item > .sim-status { grid-area: status; }
+  .sim-item .sim-machines { grid-area: machines; }
+  .sim-item .sim-given { grid-area: given; color: var(--muted); }
+  .sim-item > .sim-use { grid-area: use; }
+  .sim-item > .sim-length { grid-area: length; }
+  .sim-item > .sim-pick { grid-area: pick; }
+}

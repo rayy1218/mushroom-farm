@@ -60,3 +60,15 @@ test('Suggest: the room\'s machines go with the search as its baseline and show 
   assert.doesNotMatch(baseView, /Use this/);
   assert.match(block, /\.sg-base \{[^}]*background:/);
 });
+
+test('a link styled as a button (Suggest machines) is 44 px tall on a phone, like a button', () => {
+  assert.match(block, /@media \(max-width: 600px\) \{\s*a\.button \{ min-height: 44px; \}/);
+});
+
+test('the Simulations list on a phone: date and In band on the first line, then the machines, the differing settings, energy and water', () => {
+  assert.match(block, /\.sim-item \{ grid-template-columns: auto minmax\(0, 1fr\) auto; grid-template-areas: "date band status" "machines machines machines" "given given given" "use use use" "length length pick"; \}/);
+  assert.match(block, /\.sim-item \.sim-name \{ display: contents; \}/);
+  for (const [sel, area] of [['.sim-name > a', 'date'], ['> .sim-all', 'band'], ['> .sim-status', 'status'], ['.sim-machines', 'machines'], ['.sim-given', 'given'], ['> .sim-use', 'use'], ['> .sim-length', 'length'], ['> .sim-pick', 'pick']]) {
+    assert.ok(block.includes(`.sim-item ${sel} { grid-area: ${area};`), `${sel} in ${area}`);
+  }
+});
