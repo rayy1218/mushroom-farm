@@ -196,9 +196,9 @@ export function freshAirLine(c, now = Date.now()) {
   // the wait counts from freshFrom, else the end of the last exchange (as server/controller.js decide); with neither, from
   // the next cycle
   const from = num(c.freshFrom) ?? num(c.exchangeEndedAt);
-  if (from === null) return `Fresh air every ${every(c)} min`;
+  if (from === null) return `Fresh air every ${every(c)}\u00a0min`;
   const left = from + every(c) * 60_000 - now;
-  return left > 0 ? `Next fresh air in ${Math.ceil(left / 60_000)} min` : 'Fresh air due';
+  return left > 0 ? `Next fresh air in ${Math.ceil(left / 60_000)}\u00a0min` : 'Fresh air due';
 }
 
 // ---------------- machine tiles ----------------

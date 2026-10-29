@@ -69,6 +69,8 @@ test('a room with no sensors wired and nothing read', async () => {
     auto: false,
     exchange: false,
     exchangeSince: null,
+    exchangeEveryMin: 15,
+    freshFrom: null,
     bands: { tLow: 21, tHigh: 23, rhLow: 85, rhHigh: 95, co2Low: 600, co2High: 750, co2Safety: 1250 },
     alarms: { count: 0, level: null },
     spark: { t: [], rh: [], co2: [] },
@@ -124,6 +126,24 @@ test('latest good values with the sensor status, control state and the 24 h spar
   assert.deepEqual(r.spark.rh[0], { at: start + slot / 2, v: 85 });
   assert.equal(r.spark.t.length, 2);
   assert.equal(r.spark.co2.length, 1);
+});
+
+// Critique 2026-10-29: the card's footer says when the next fresh air comes, not "Air exchange off" a third time.
+test('the fresh-air wait: its interval and when it counts from (fresh air, else the last exchange\'s end); null in Manual', async () => {
+  reset();
+  const room = db.createRoom({ ...fields, trhAddress: 1 });
+  const now = Date.now();
+  db.setControl(room.id, { ...db.getControl(room.id), auto: true, exchangeEveryMin: 12 });
+  db.setControlState(room.id, { exchange: false, humidifier: false, exchangeEndedAt: now - 5 * 60_000, freshFrom: now - 9 * 60_000 }, now);
+  let [r] = (await overview()).rooms;
+  assert.equal(r.exchangeEveryMin, 12);
+  assert.equal(r.freshFrom, now - 9 * 60_000);
+  db.setControlState(room.id, { exchange: false, humidifier: false, freshFrom: null }, now);
+  [r] = (await overview()).rooms;
+  assert.equal(r.freshFrom, now - 5 * 60_000, 'no fresh-air start: from the end of the last exchange, as the controller counts');
+  db.setControl(room.id, { ...db.getControl(room.id), auto: false });
+  [r] = (await overview()).rooms;
+  assert.equal(r.freshFrom, null);
 });
 
 test('a failing sensor shows its status word and the last good value', async () => {

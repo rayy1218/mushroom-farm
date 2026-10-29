@@ -237,8 +237,7 @@ export function mount(container) {
         row.append(text, sparkline(v, c.traces));
         card.append(row);
       }
-      // traces shorter than the section's 24 h say since when
-      card.append(node('p', 'ov-room-foot', `${c.auto} · ${c.exchange}${c.traces === 'last 24 hours' ? '' : ` · Traces ${c.traces}`}`));
+      card.append(node('p', 'ov-room-foot', c.foot));
       return card;
     }));
   }

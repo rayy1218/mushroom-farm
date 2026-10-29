@@ -136,13 +136,13 @@ test('freshAirLine: exchange on, auto off, waits, next in N min, due, fresh air 
   assert.equal(freshAirLine({ ...control, auto: false, exchange: true }, now), '', 'auto off: the Control card says Manual, no line here');
   assert.equal(freshAirLine({ ...control, freshFrom: now - 20 * 60_000, reasons: { exchange: 'Fresh air waits: outdoor air is very wet (dew 26.0 °C), at the latest 11:10' } }, now),
     'Fresh air waits: outdoor air is very wet (dew 26.0 °C), at the latest 11:10');
-  assert.equal(freshAirLine({ ...control, freshFrom: now - 7 * 60_000 - 10_000 }, now), 'Next fresh air in 8 min');
-  assert.equal(freshAirLine({ ...control, freshFrom: now - 14 * 60_000 - 50_000 }, now), 'Next fresh air in 1 min');
+  assert.equal(freshAirLine({ ...control, freshFrom: now - 7 * 60_000 - 10_000 }, now), 'Next fresh air in 8\u00a0min');
+  assert.equal(freshAirLine({ ...control, freshFrom: now - 14 * 60_000 - 50_000 }, now), 'Next fresh air in 1\u00a0min');
   assert.equal(freshAirLine({ ...control, freshFrom: now - 15 * 60_000 }, now), 'Fresh air due');
-  assert.equal(freshAirLine({ ...control, freshFrom: null, exchangeEndedAt: now - 5 * 60_000 }, now), 'Next fresh air in 10 min',
+  assert.equal(freshAirLine({ ...control, freshFrom: null, exchangeEndedAt: now - 5 * 60_000 }, now), 'Next fresh air in 10\u00a0min',
     'no fresh-air start yet: it counts from the end of the last exchange, as the controller does');
-  assert.equal(freshAirLine({ ...control, freshFrom: null, exchangeEndedAt: null }, now), 'Fresh air every 15 min');
-  assert.equal(freshAirLine({ ...control, freshFrom: null }, now), 'Fresh air every 15 min');
+  assert.equal(freshAirLine({ ...control, freshFrom: null, exchangeEndedAt: null }, now), 'Fresh air every 15\u00a0min');
+  assert.equal(freshAirLine({ ...control, freshFrom: null }, now), 'Fresh air every 15\u00a0min');
   assert.equal(freshAirLine({ ...control, exchangeEveryMin: 0, freshFrom: now }, now), '');
   assert.equal(freshAirLine(null, now), '');
 });
@@ -259,7 +259,7 @@ test('roomCard puts it together and never throws', () => {
   const card = roomCard({ draw: draw(), control: { ...control, freshFrom: now - 7 * 60_000 }, filter: null, now });
   assert.equal(card.note, 'Automatic control on · fresh air every 15 min');
   assert.equal(card.tiles.length, 3);
-  assert.equal(card.fresh, 'Next fresh air in 8 min');
+  assert.equal(card.fresh, 'Next fresh air in 8\u00a0min');
   assert.equal(card.machines.length, 6);
   assert.deepEqual(card.bottom.map(lineText), ['No outdoor sensor']);
   const empty = roomCard({});

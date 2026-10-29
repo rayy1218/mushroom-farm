@@ -3,6 +3,7 @@
 
 import { nearChip, trendOf, co2Status } from './band-math.js';
 import { formatStamp } from './history-math.js';
+import { freshAirLine } from './room-card-math.js';
 
 const finite = (x) => typeof x === 'number' && Number.isFinite(x);
 const round1 = (n) => Math.round(n * 10) / 10;
@@ -262,6 +263,24 @@ export function roomReadings(room) {
   return { t: on(room?.trh, 't'), rh: on(room?.trh, 'rh'), co2: on(room?.co2, 'co2'), pa: finite(room?.filterPa) ? room.filterPa : null };
 }
 
+const DOT = ' ·\u00a0'; // a '·' keeps to the words after it at a wrap
+const lower = (text) => text.charAt(0).toLowerCase() + text.slice(1);
+
+// A room card's last line (critique 2026-10-29: its CO₂ line, this line and the status's facts all said the exchange was
+// off): Auto with when the next fresh air comes (room-card-math.js freshAirLine, as on the room page) or the running exchange
+// since when, Manual with the fans on or "machines set by hand"; then the traces' window when it is not the section's 24 h.
+function footText(room, span, now) {
+  const parts = [room.auto ? 'Auto' : 'Manual'];
+  if (room.exchange) parts.push(lower(exchangeText(room, now)));
+  else if (!room.auto) parts.push('machines set by hand');
+  else {
+    const fresh = freshAirLine({ auto: true, exchange: false, exchangeEveryMin: room.exchangeEveryMin, freshFrom: room.freshFrom ?? null }, now);
+    if (fresh) parts.push(lower(fresh));
+  }
+  if (span !== 'last 24 hours') parts.push(`traces ${span}`);
+  return parts.join(DOT);
+}
+
 export function exchangeText(room, now = Date.now()) {
   if (!room.exchange) return 'Air exchange off';
   if (!finite(room.exchangeSince)) return 'Air exchange on';
@@ -324,6 +343,7 @@ export function roomCard(room, now = Date.now()) {
     auto: room.auto ? 'Auto' : 'Manual',
     exchange: exchangeText(room, now),
     traces: span.text, // the traces' window, said on the card when it is not the section's 24 h
+    foot: footText(room, span.text, now),
     alarm: n > 0 ? { text: `${n} ${n === 1 ? 'alarm' : 'alarms'}`, level: room.alarms.level } : null,
   };
 }

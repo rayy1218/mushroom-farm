@@ -1142,6 +1142,10 @@ export function openDb(path, { log = console.error } = {}) {
           auto: c.auto,
           exchange,
           exchangeSince: c.auto ? c.exchangeSince : null,
+          // the fresh-air wait (the card says when the next one comes): its interval, and from when it counts in Auto (the
+          // last fresh-air start, else the last exchange's end, as server/controller.js decide), null in Manual or never
+          exchangeEveryMin: c.exchangeEveryMin,
+          freshFrom: c.auto ? (c.freshFrom ?? c.exchangeEndedAt ?? null) : null,
           bands: { tLow: c.tLow, tHigh: c.tHigh, rhLow: c.rhLow, rhHigh: c.rhHigh, co2Low: c.co2Low, co2High: c.co2High, co2Safety: c.co2Safety },
           alarms: perRoom.get(room.id) ?? { count: 0, level: null },
           spark: { t: line(trhDay, 't'), rh: line(trhDay, 'rh'), co2: line(day('co2'), 'co2') },

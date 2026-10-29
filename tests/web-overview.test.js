@@ -412,3 +412,23 @@ test('the Overview keeps the server\'s order (by name), remembers the held state
   assert.match(page, /held\.clear\(\);/, 'forgotten on leaving the page');
   assert.match(page, /if \(said !== st\.text\)/, 'the live line is written only when its words change');
 });
+
+// Critique 2026-10-29: each card said the exchange was off three ways (its CO₂ line, the footer, the status's facts); the
+// footer now says what comes next. A '·' keeps to the words after it.
+test('roomCard: the footer says Auto and the next fresh air, the running exchange, or Manual', () => {
+  const now = at(29, 12);
+  const room = (over) => ({ id: 1, name: 'A', auto: true, exchange: false, alarms: { count: 0, level: null },
+    bands: { tLow: 19, tHigh: 21, rhLow: 87, rhHigh: 93, co2Low: 700, co2High: 900 },
+    trh: { status: 'online', t: 20, rh: 90 }, co2: { status: 'online', co2: 800 }, spark: { t: [], rh: [], co2: [] },
+    exchangeEveryMin: 12, freshFrom: now - 6 * 60_000 - 10_000, ...over });
+  const dot = ' ·\u00a0';
+  assert.equal(roomCard(room(), now).foot, `Auto${dot}next fresh air in 6\u00a0min`);
+  assert.equal(roomCard(room({ freshFrom: now - 13 * 60_000 }), now).foot, `Auto${dot}fresh air due`);
+  assert.equal(roomCard(room({ freshFrom: null }), now).foot, `Auto${dot}fresh air every 12\u00a0min`);
+  assert.equal(roomCard(room({ exchangeEveryMin: 0 }), now).foot, 'Auto');
+  assert.equal(roomCard(room({ exchange: true, exchangeSince: at(29, 11, 52) }), now).foot, `Auto${dot}air exchange on since 11:52`);
+  assert.equal(roomCard(room({ auto: false, freshFrom: null }), now).foot, `Manual${dot}machines set by hand`);
+  assert.equal(roomCard(room({ auto: false, exchange: true }), now).foot, `Manual${dot}air exchange on`);
+  const young = room({ spark: { t: [{ at: at(29, 11, 30), v: 20 }], rh: [], co2: [] } });
+  assert.equal(roomCard(young, now).foot, `Auto${dot}next fresh air in 6\u00a0min${dot}traces since 11:30`);
+});
