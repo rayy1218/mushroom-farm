@@ -12,7 +12,7 @@ import { fallbackMs, withProgress, isStale } from './live-math.js';
 import { tickCountFor } from './history-math.js';
 import { progressLine } from './simulate-math.js';
 import {
-  CHARTS, tileList, stageRows, dayTicks, runEnd, chartPoints, thinPoints, outdoorLine, bandSteps, timelineRows, energyView, perDayBars,
+  CHARTS, tileList, stageRows, dayTicks, runEnd, chartPoints, thinPoints, outdoorLine, bandSteps, timelineRows, timelineAria, energyView, perDayBars,
   inputLine, inputRows, backLabel, runVerdict, runCauses, runTries, runFacts, headLine, formatDateTime, formatRunTime, isActive, filterView, STAGE_COLUMNS, scrollEdges,
 } from './simulation-math.js';
 
@@ -391,7 +391,9 @@ export function mount(container, { id, runId }) {
     tl.append(tlHost, text('p', 'legend', `A bar is a time the machine was on. The aircon row shows its setpoint${changes.length ? ', the intake row the filter changes' : ''}.`));
     els.results.append(tl);
     // spans closer than one pixel of time are drawn as one: a long run has tens of thousands
-    charts.push(drawTimeline(tlHost, { ...common, rowsFor: (w) => timelineRows(result.machines, end / Math.max(1, w - M.left - M.right), run.input, changes) }));
+    // read out from the spans as they were (joined to a pixel, pulses read as on all the time): shares of the time, setpoints
+    const aria = timelineAria(timelineRows(result.machines, 0, run.input, changes), range);
+    charts.push(drawTimeline(tlHost, { ...common, rowsFor: (w) => timelineRows(result.machines, end / Math.max(1, w - M.left - M.right), run.input, changes), describe: () => aria }));
 
     // the intake filter (a run without one shows nothing)
     if (filter) {

@@ -109,3 +109,36 @@ test('the result page: each Try has Simulate with this change, which opens Simul
   assert.match(dialog, /fold\.open = Object\.keys\(runControl\(state\)\.own\)\.length > 0 \|\| hooks\.change !== undefined;/);
   assert.match(block, /\.sim-try \{/);
 });
+
+// ---- the Simulations list, step 3's radio buttons, the result page's timeline and charts ----
+
+test('the Simulations list: the machines (what differs between runs) at ink-2, the settings line muted', () => {
+  assert.match(css, /\.sim-machines \{ color: var\(--ink-2\); font-size: var\(--fs-sm\); \}/);
+  assert.match(css, /\.sim-given \{ color: var\(--muted\); font-size: var\(--fs-sm\); \}/);
+  const card = src('sim-card.js');
+  assert.ok(card.indexOf("el('span', 'sim-machines', r.machines)") < card.indexOf("el('span', 'sim-given', given[i])"), 'machines first');
+});
+
+test("step 3's radio buttons: the native ones in the accent colour at a normal size, the rows 44 px", () => {
+  assert.match(css, /\.sim-choice input\[type="radio"\] \{ width: 16px; height: 16px; margin: 0; flex: none; accent-color: var\(--accent\); \}/);
+  assert.match(css, /\.sim-choice \{[^}]*min-height: 44px;/);
+});
+
+test("the result page's timeline is read out as shares of the time and the aircon's setpoints, not a count of spans", async () => {
+  const { timelineAria, timelineRows } = await import('../web/simulation-math.js');
+  const H = 3600;
+  const range = { from: 0, to: 100 * H };
+  // the aircon on the whole run, its setpoint 16 °C during the air exchanges and 20 °C between: hundreds of spans
+  const ac = [];
+  for (let i = 0; i < 100; i++) ac.push({ from: i * H, to: i * H + 0.3 * H, setpoint: 16 }, { from: i * H + 0.3 * H, to: (i + 1) * H, setpoint: 20 });
+  const intake = Array.from({ length: 100 }, (_, i) => ({ from: i * H, to: i * H + 0.3 * H }));
+  const rows = timelineRows({ ac, intake, humidifier: [] }, 0, null, [50 * H, 80 * H]);
+  assert.equal(timelineAria(rows, range), 'Intake on 30 % of the time, the filter changed 2 times; Exhaust off; Circulation off; Humidifier off; '
+    + 'Aircon on all the time, its setpoint switching between 16 and 20 °C');
+  const one = timelineRows({ ac: [{ from: 0, to: 50 * H, setpoint: 18 }], intake: [{ from: 0, to: 0.1 * H }] }, 0, null, [10 * H]);
+  assert.equal(timelineAria(one, range), 'Intake on under 1 % of the time, the filter changed once; Exhaust off; Circulation off; Humidifier off; Aircon on 50 % of the time, set to 18 °C');
+  const page = src('simulation-page.js');
+  assert.match(page, /const aria = timelineAria\(timelineRows\(result\.machines, 0, run\.input, changes\), range\);/);
+  assert.match(page, /describe: \(\) => aria/);
+  assert.match(src('timeline.js'), /current\.describe \? current\.describe\(given, range\)/);
+});

@@ -63,7 +63,7 @@ test("the page's Use this opens Simulate on step 3 with the search's walls, weat
 
 test('step 3: the How long and Start from rows are 44 px tall', () => {
   assert.match(css, /\.sim-choice \{[^}]*min-height: 44px;/);
-  assert.match(css, /\.sim-choice input\[type="radio"\] \{[^}]*width: 20px; height: 20px;/);
+  assert.match(css, /\.sim-choice input\[type="radio"\] \{[^}]*width: 16px; height: 16px;/);
 });
 
 test('the step marks: the current one carries aria-current and an accent underline, not weight alone', () => {

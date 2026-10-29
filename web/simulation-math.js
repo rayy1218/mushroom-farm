@@ -200,6 +200,23 @@ export function timelineRows(machines, minGap = 0, input = null, filterChanges =
   });
 }
 
+// The timeline read out (critique 2026-10-29b: "Aircon on 1538 times" counted the spans of its setpoints): each machine's
+// share of the time on, the aircon's setpoints and the filter changes. rows: timelineRows', range: { from, to } in seconds.
+export function timelineAria(rows, range) {
+  const span = range.to - range.from;
+  return rows.map((r) => {
+    const on = (r.spans ?? []).reduce((t, x) => t + Math.max(0, Math.min(x.to, range.to) - Math.max(x.from, range.from)), 0);
+    const share = span > 0 ? (on / span) * 100 : 0;
+    const parts = [`${r.label} ${on <= 0 ? 'off' : share >= 99.5 ? 'on all the time' : share < 0.5 ? 'on under 1 % of the time' : `on ${Math.round(share)} % of the time`}`];
+    const setpoints = [...new Set((r.marks ?? []).filter((m) => finite(m.value)).map((m) => m.value))];
+    if (setpoints.length > 1) parts.push(`its setpoint switching between ${Math.min(...setpoints)} and ${Math.max(...setpoints)} °C`);
+    else if (setpoints.length === 1) parts.push(`set to ${setpoints[0]} °C`);
+    const changes = (r.marks ?? []).filter((m) => m.text === 'Filter').length;
+    if (changes) parts.push(`the filter changed ${changes === 1 ? 'once' : `${changes} times`}`);
+    return parts.join(', ');
+  }).join('; ');
+}
+
 // ---- the intake filter (spec 2026-10-22-filter-design.md 8) ----
 
 // summary.filter → the tiles of the filter part, or null for a run without a filter.

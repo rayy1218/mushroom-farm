@@ -22,7 +22,7 @@ function el(name, attrs = {}, text) {
 }
 
 // opts: { rows (or rowsFor(width) → rows): [{ key, label, spans: [{ from, to, source }], marks: [{ at, text }] }], range: { from, to },
-//         ticks: [{ at, label }], formatAt(ms), onCursor(at|null) }
+//         ticks: [{ at, label }], formatAt(ms), onCursor(at|null), describe(rows, range) (optional: the read-out of the rows) }
 // Returns { update(opts), setCursor(at|null), destroy() }.
 export function drawTimeline(host, opts) {
   let current = opts;
@@ -55,7 +55,7 @@ export function drawTimeline(host, opts) {
     const xAt = (t) => xFor(t, range.from, range.to, x0, x1);
     svg = el('svg', {
       width, height, viewBox: `0 0 ${width} ${height}`, role: 'img',
-      'aria-label': `Machine timeline: ${rows.map((r) => timelineSummary(r, range)).join(', ')}`,
+      'aria-label': `Machine timeline: ${current.describe ? current.describe(given, range) : rows.map((r) => timelineSummary(r, range)).join(', ')}`,
     });
     const defs = el('defs');
     const hatch = el('pattern', { id: pattern, width: 6, height: 6, patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(45)' });
