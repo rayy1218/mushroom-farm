@@ -681,6 +681,7 @@ export function mount(container, { id, tab = 'now' }) {
       modeHost: els.modeHost,
       getRoom: () => room,
       cropHref: roomHash(id, 'crop'),
+      setupHref: roomHash(id, 'setup'),
       onChange: (data) => {
         machines?.setAuto(data.auto);
         if (!alive()) return;

@@ -1349,3 +1349,11 @@ details.setup-part:not([open]) { padding-top: 8px; }
 .sg-aside p + p { margin-top: 6px; }
 .sg-aside-line { color: var(--muted); font-size: var(--fs-sm); }
 .sg-aside .sg-estimates { margin: 0; }
+
+/* critique 2026-10-29c: UI */
+/* Now › Control: the bands changed by hand (the By-Hand Rule's accent text), Setup and the way back beside it */
+.mode-byhand { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin: 10px 0 0; padding: 10px 0 0;
+  border-top: 1px solid var(--border); color: var(--accent-text); font-size: var(--fs-sm); }
+.mode-byhand[hidden] { display: none; }
+.mode-byhand p { margin: 0; }
+@media (max-width: 600px) { .mode-byhand button { min-height: 44px; } }
