@@ -6,13 +6,13 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 const chart = readFileSync(new URL('../web/chart.js', import.meta.url), 'utf8');
-const part = chart.slice(chart.indexOf('// The second line (outdoor)'), chart.indexOf('// The line, one path per run'));
+const part = chart.slice(chart.indexOf('// The second line (outdoor)'), chart.indexOf('// The control band:'));
 
 test('the outdoor line is dotted, round-capped, in the chart\'s colour; the band limits stay grey dashes', () => {
   assert.match(part, /'stroke-dasharray': OUTDOOR_DOTS/);
   assert.match(chart, /const OUTDOOR_DOTS = '0\.1 5';/);
   assert.match(part, /'stroke-linecap': 'round'/);
-  assert.match(part, /style: `stroke:\$\{current\.color \?\? 'var\(--ink\)'\};opacity:\.8`/);
+  assert.match(part, /style: `stroke:\$\{current\.color \?\? 'var\(--ink\)'\};opacity:\.55`/, 'fainter than the room\'s line (critique 2026-10-29c)');
   assert.doesNotMatch(part, /'stroke-dasharray': '5 4'/);
   assert.match(chart, /'stroke-dasharray': '4 4'/, 'the band limits keep their dashes');
 });
@@ -35,7 +35,7 @@ test('the outdoor line has its own scale (owner, 2026-10-28): the room line keep
 });
 
 test('a long range marks a gap in the readings (the app or the sensor was off) instead of only breaking the line', () => {
-  const gap = chart.slice(chart.indexOf('// A gap in the readings'), chart.indexOf('// The second line (outdoor)'));
+  const gap = chart.slice(chart.indexOf('// A gap in the readings'), chart.indexOf('// The line, one path per run'));
   assert.ok(gap.length > 0, 'a block for the gaps');
   assert.match(gap, /if \(current\.range\)/, 'long ranges only (Live shows failed polls as red ticks)');
   assert.match(gap, /'No readings'/);
@@ -54,10 +54,13 @@ test('the outdoor legend takes the longest words that fit; a phone keeps the nam
 
 // Critique 2026-10-29: the band's numbers at the right end sat beside the outdoor scale's: two columns of numbers at the
 // right of every chart. The room's band is labelled at the left inside the plot, by the room's own scale.
-test('the band\'s numbers sit at the left inside the plot, by the room\'s scale, apart from the outdoor scale at the right', () => {
-  const band = chart.slice(chart.indexOf('// The control band:'), chart.indexOf('// A band that moved:'));
-  assert.match(band, /x: x0 \+ 4, y: y \+ dy, 'text-anchor': 'start', style: 'fill:var\(--muted\)', 'font-size': 12, class: 'band-label'/);
+test('the band\'s numbers sit at the left inside the plot, by the room\'s scale, apart from the outdoor scale at the right', async () => {
+  const { M } = await import('../web/chart.js');
+  const band = chart.slice(chart.indexOf('// The control band:'), chart.indexOf('// Time labels'));
   assert.doesNotMatch(band, /x1 - 4/);
+  assert.match(chart, /svg\.append\(el\('text', \{ x: l\.x, y: l\.y, 'text-anchor': 'start', style: 'fill:var\(--muted\)', 'font-size': 12, class: 'band-label' \}, l\.text\)\);/);
+  const { bandLabels } = await import('../web/chart-math.js');
+  assert.equal(bandLabels([{ text: '21.0', y: 80 }, { text: '19.0', y: 130 }], { x0: M.left, y0: 176, y1: 30 }, []).labels[0].x, M.left + 4);
 });
 
 // Critique 2026-10-29: on a phone the outdoor scale's numbers took 48 px of a 330 px chart; they go (the legend says the
