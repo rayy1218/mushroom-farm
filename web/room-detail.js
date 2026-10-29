@@ -11,6 +11,7 @@ import { request, OFFLINE } from './api.js';
 import { ROOM_TABS, roomHash } from './route.js';
 import { createRoomEdit, createDeleteCard, createSaveQueue } from './room-edit.js';
 import { createEquipment } from './equipment.js';
+import { cardOf } from './equipment-cards.js';
 import { roomSubLine } from './room-fields.js';
 import { createMachines } from './machines.js';
 import { createControl } from './control.js';
@@ -133,7 +134,7 @@ const TEMPLATE = `
         </details>
         <details class="setup-part" id="setup-filter" tabindex="-1" open>
           <summary class="part-title"><h2>Intake filter</h2></summary>
-          <section data-filter hidden></section>
+          <div class="filter-part" data-filter-part><section data-filter hidden></section></div>
         </details>
         <details class="setup-part" id="setup-room" tabindex="-1" open>
           <summary class="part-title"><h2>Room</h2></summary>
@@ -187,7 +188,7 @@ export function mount(container, { id, tab = 'now' }) {
     if (tab === 'now') { if (alarmsNode.parentNode !== nowSide) nowSide.prepend(alarmsNode); }
     else if (alarmsNode.parentNode !== main) main.prepend(alarmsNode);
     if (tab === 'setup' && pendingField) {
-      container.querySelector('#setup-equipment').open = true; // folded on a phone
+      container.querySelector(cardOf(pendingField)?.key === 'filter' ? '#setup-filter' : '#setup-equipment').open = true; // folded on a phone
       equipmentTab?.focus(pendingField);
       pendingField = null;
     }
@@ -205,6 +206,7 @@ export function mount(container, { id, tab = 'now' }) {
     missing: q('[data-missing]'),
     body: q('[data-body]'),
     filterHost: q('[data-filter]'),
+    filterPart: q('[data-filter-part]'),
     alarmsHost: q('[data-alarms]'),
     readingsHost: q('[data-readings]'),
     pictureHost: q('[data-picture]'),
@@ -491,7 +493,8 @@ export function mount(container, { id, tab = 'now' }) {
         onGone: () => { if (alive()) showMissing(); },
       };
       profileTab = createRoomEdit(els.profileHost, { roomId: id, groups: ['profile'], idPrefix: 'rp-', ...saved });
-      equipmentTab = createEquipment(els.equipmentHost, { roomId: id, idPrefix: 're-', ...saved });
+      // the filter's settings beside its pressure and changes: one Intake filter part (critique 2026-10-28)
+      equipmentTab = createEquipment(els.equipmentHost, { roomId: id, idPrefix: 're-', ...saved, elsewhere: { filter: { host: els.filterPart, title: 'Settings' } } });
       deleteCard = createDeleteCard(els.deleteHost, { roomId: id, getRoom: () => room, onGone: () => { if (alive()) showMissing(); } });
       built = true;
     }

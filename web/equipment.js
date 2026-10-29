@@ -1,6 +1,8 @@
 // The room page's Equipment tab (spec 2026-10-27-equipment-cards-design.md): three sections, Gateway, Sensors and Machines, each
 // a grid of cards, one per device (web/equipment-cards.js), with that device's settings in it and its own Save and Reset.
-// createEquipment(host, { roomId, idPrefix, queue, onSaved, onGone }) → { update(room, data), focus(name), destroy() }.
+// createEquipment(host, { roomId, idPrefix, queue, onSaved, onGone, elsewhere }) → { update(room, data), focus(name), destroy() }.
+// elsewhere: { [card key]: { host, title } } for a card that lives in another part of the page under its own title (the intake
+// filter's settings sit with its pressure and changes: one Intake filter part, critique 2026-10-28).
 // update(room, { sensors, machines, farmGateway }): the room and the replies the page loaded; a card with unsaved edits, saving or
 // with the cursor in it is not refilled (the status lines and hints always are). A card's Save sends its values over the newest room, so it never
 // sends another card's unsent edits; the other cards then show the saved room. queue: the page's save queue (web/room-edit.js),
@@ -17,14 +19,15 @@ function el(tag, className, content) {
   return node;
 }
 
-export function createEquipment(host, { roomId, idPrefix, queue, onSaved, onGone }) {
+export function createEquipment(host, { roomId, idPrefix, queue, onSaved, onGone, elsewhere = {} }) {
   const cards = new Map(); // card key → { edit, setStatus }
+  const away = []; // the forms in another part of the page
 
   function card(c) {
     const form = el('form', 'card eq-card');
     form.noValidate = true;
     form.dataset.card = c.key;
-    const title = el('h3', '', c.title);
+    const title = el('h3', '', elsewhere[c.key]?.title ?? c.title);
     title.tabIndex = -1; // the cursor's place when the Save row hides
     const line = el('p', 'addr');
     const statusLine = el('p', 'eq-status');
@@ -82,9 +85,14 @@ export function createEquipment(host, { roomId, idPrefix, queue, onSaved, onGone
     const section = el('section', 'eq-section');
     section.dataset.section = s.key;
     const grid = el('div', 'eq-grid');
-    grid.append(...EQUIPMENT_CARDS.filter((c) => c.section === s.key).map(card));
+    grid.append(...EQUIPMENT_CARDS.filter((c) => c.section === s.key && !elsewhere[c.key]).map(card));
     section.append(el('h2', '', s.title), grid);
     host.append(section);
+  }
+  for (const c of EQUIPMENT_CARDS.filter((x) => elsewhere[x.key])) {
+    const form = card(c);
+    elsewhere[c.key].host.append(form);
+    away.push(form);
   }
 
   return {
@@ -102,6 +110,7 @@ export function createEquipment(host, { roomId, idPrefix, queue, onSaved, onGone
     destroy() {
       for (const { edit } of cards.values()) edit.destroy();
       host.replaceChildren();
+      for (const form of away) form.remove();
     },
   };
 }

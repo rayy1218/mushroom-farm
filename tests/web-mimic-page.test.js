@@ -112,7 +112,7 @@ test('History: the range and links to its parts stay under the top bar; Setup pa
   assert.match(source('../web/styles.css'), /\.history-room \{ display: block; flex: 1 1 100%;/);
   assert.match(room, /<details class="setup-part" id="setup-equipment" tabindex="-1" open>\n\s*<summary class="part-title"><h2>Equipment<\/h2><\/summary>/);
   assert.match(room, /if \(matchMedia\('\(max-width: 760px\)'\)\.matches\) for \(const d of container\.querySelectorAll\('details\.setup-part'\)\) d\.open = false;/);
-  assert.match(room, /container\.querySelector\('#setup-equipment'\)\.open = true;/);
+  assert.match(room, /container\.querySelector\(cardOf\(pendingField\)\?\.key === 'filter' \? '#setup-filter' : '#setup-equipment'\)\.open = true;/, 'the part that holds the field opens');
   const css = source('../web/styles.css');
   assert.match(css, /\.history-head \{ position: sticky; top: var\(--topbar-h\);/);
   assert.match(css, /\.top-link, \.top-alarm, \.topbar \.theme-btn, \.room-switch select, \.room-tabs a \{ min-height: 44px; \}/);
