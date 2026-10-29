@@ -46,7 +46,7 @@ const TEMPLATE = `
       <input id="f-waterPrice" name="waterPrice" type="number" min="0" max="100" step="0.01" inputmode="decimal" placeholder="not set" aria-describedby="e-waterPrice s-water">
       <p class="field-error" id="e-waterPrice" role="status"></p>
     </div>
-    <p class="muted s-hint" id="s-water">Leave the water price empty and water costs are not shown. Enter the rate on your water bill.</p>
+    <p class="muted s-hint" id="s-water">Enter the rate on your water bill, per m³ (1&nbsp;m³&nbsp;=&nbsp;1,000&nbsp;L; the app shows water in litres). Leave it empty and water costs are not shown.</p>
     <div class="ac-send">
       <button type="submit" class="primary" data-save>Save</button>
       <button type="button" data-reset hidden>Reset</button>

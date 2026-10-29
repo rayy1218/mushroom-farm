@@ -286,7 +286,7 @@ On screens up to 600 px the three smallest steps grow by 1 px (13, 14, 15) for r
 
 ## Layout
 
-One sticky top bar (56 px: brand, Live, theme, Settings) over a single column at most 1400 px wide, padded 24 × 28 px from 900 px up and 14 px below. The room page opens with a head (back link, room name, size line, room switcher at the right) and underline tabs; a phone scrolls the tab row sideways with a fade at the edge that has more.
+One sticky top bar (56 px, 61 px on a phone with its 44 px buttons: brand, Live, theme, Settings; `--topbar-h`, which the sticky heads under it and a dialog's top follow) over a single column at most 1400 px wide, padded 24 × 28 px from 900 px up and 14 px below. The room page opens with a head (back link, room name, size line, room switcher at the right) and underline tabs; a phone scrolls the tab row sideways with a fade at the edge that has more.
 
 The Now tab is a two-column grid from 1100 px: a fluid main column (three reading cards in a row, then the room drawing) and a 320 to 400 px side column (alarms, Control with Auto | Manual, Machines in air order, the aircon panel in Manual, Crop). Below 1100 px the columns dissolve into one ordered stack. Setup puts its control form in two columns from 1100 px (48 px gutter) and its Room part on a 2 : 1 grid. Equipment cards auto-fill at 260 px minimum; sensor cards sit two by two above 600 px. The Crop tab switches to one column below a 720 px container width.
 
