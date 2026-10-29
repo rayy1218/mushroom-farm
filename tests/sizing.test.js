@@ -151,6 +151,28 @@ test('runSizing: every candidate over the days of both stages and a cool-down da
   assert.ok(r.estimate.why.fanFlow);
 });
 
+test('runSizing with a baseline: the room\'s machines tried like a setup with the room\'s own settings, answered apart, never in best', () => {
+  const calls = [], progress = [];
+  const baseline = { fanFlow: 600, acBTU: 9000, humidifierLH: 2, dehumidifierLday: 0 };
+  // the baseline does best of all: it still stays out of best (the room has it; best is what to buy)
+  const sim = (inp, cx) => {
+    calls.push({ inp, cx });
+    const own = inp.physics.fanFlow === 600 && inp.physics.acBTU === 9000;
+    return { summary: { inBand: { t: 100, rh: 100, co2: 100, all: own ? 100 : 96 }, energy: { kWh: own ? 1 : 15 }, water: { litres: 1, removedLitres: 0 }, ...(inp.start ? { coolDownS: 3600 } : {}) } };
+  };
+  const r = runSizing({ ...input, baseline }, ctx, { simulate: sim, onProgress: (s) => progress.push(s) });
+  const total = searchPlan(estimate(input, ctx)).total + 1;
+  assert.equal(calls.length, 2 * total);
+  assert.equal(progress.length, total);
+  assert.equal(progress.at(-1), 1);
+  assert.deepEqual(calls[0].inp.physics, { ...input.physics, ...baseline }, 'tried first');
+  assert.equal(calls[0].cx.control.exchangeMaxMin, 10, 'the room\'s own time limit');
+  assert.equal(calls[0].cx.control.acDrop, 0);
+  assert.deepEqual(r.baseline, { machines: baseline, exchangeMaxMin: 10, control: { exchangeMaxMin: 10 }, inBand: { t: 100, rh: 100, co2: 100, all: 100 }, kWh: 1, litres: 1, removedLitres: 0, coolDownH: 1 });
+  assert.ok(r.best.every((b) => !(b.machines.fanFlow === 600 && b.machines.acBTU === 9000)));
+  assert.equal('baseline' in runSizing(input, ctx, { simulate: sim }), false);
+});
+
 test('runSizing: when nothing reaches the target the notes say which value falls short', () => {
   const sim = (inp) => ({ summary: { inBand: { t: 80, rh: 99, co2: 90, all: 70 }, energy: { kWh: 1 }, water: { litres: 1, removedLitres: 0 }, ...(inp.start ? { coolDownS: 3600 } : {}) } });
   const r = runSizing(input, ctx, { simulate: sim });

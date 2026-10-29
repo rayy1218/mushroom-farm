@@ -70,6 +70,14 @@ test('POST: 404 for no room, 400 with the field, 409 for a second one, 415 and 4
   assert.equal((await call('GET', `/api/rooms/${id}/sizing`)).status, 404);
 });
 
+test('POST with the room\'s machines as a baseline: one setup more; 400 names the baseline\'s field', async () => {
+  const id = newRoom();
+  const bad = await call('POST', `/api/rooms/${id}/sizing`, body({ baseline: { fanFlow: 600, acBTU: 12000, humidifierLH: -1 } }));
+  assert.deepEqual([bad.status, bad.body], [400, { error: 'Humidifier output must be a number from 0 to 100 L/h', field: 'baseline.humidifierLH' }]);
+  const res = await call('POST', `/api/rooms/${id}/sizing`, body({ baseline: { fanFlow: 600, acBTU: 12000, humidifierLH: 2, dehumidifierLday: 0 } }));
+  assert.deepEqual([res.status, res.body.total], [202, 46]);
+});
+
 test('GET: the job with progress, and the result when done; 404', async () => {
   const id = newRoom();
   const { body: job } = await call('POST', `/api/rooms/${id}/sizing`, body());

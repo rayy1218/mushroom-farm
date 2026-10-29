@@ -13,7 +13,7 @@ import { tickCountFor } from './history-math.js';
 import { progressLine } from './simulate-math.js';
 import {
   CHARTS, tileList, stageRows, dayTicks, runEnd, chartPoints, thinPoints, outdoorLine, bandSteps, timelineRows, energyView, perDayBars,
-  inputLine, inputRows, runVerdict, runCauses, runTries, runFacts, headLine, formatDateTime, formatRunTime, isActive, filterView, STAGE_COLUMNS, scrollEdges,
+  inputLine, inputRows, backLabel, runVerdict, runCauses, runTries, runFacts, headLine, formatDateTime, formatRunTime, isActive, filterView, STAGE_COLUMNS, scrollEdges,
 } from './simulation-math.js';
 
 const POLL_MS = 2000;
@@ -21,7 +21,7 @@ const RESULT_TIMEOUT = 120_000; // a run of 58 days has about 3 MB of results
 const MAX_POINTS = 700; // per chart line (a run of 90 days has 26 000 samples)
 
 const TEMPLATE = `
-  <a class="back sim-back" href="#/overview" data-back>Room</a>
+  <a class="back sim-back" href="#/overview" data-back>Simulations</a>
   <div class="page-head">
     <div class="page-titles">
       <h1 class="page-title" tabindex="-1" data-title>Simulation</h1>
@@ -37,17 +37,18 @@ const TEMPLATE = `
     <p>That simulation no longer exists</p>
     <a data-missing-back href="#/overview">Back to the Overview</a>
   </div>
-  <section class="card sim-inputs" data-inputs hidden>
-    <h2>What this run was given</h2>
-    <dl class="sim-dl" data-input-rows></dl>
-    <details class="sim-all-inputs"><summary>Everything, in one line</summary><p data-input-line></p></details>
-  </section>
   <section class="card sim-run" data-run hidden>
     <h2>Simulation</h2>
     <progress max="1" value="0" aria-label="Progress of the simulation"></progress>
     <p class="sim-progress" role="status" data-progress></p>
     <p class="sim-warn" data-failed hidden></p>
   </section>
+  <div class="sim-verdict-host" data-verdict></div>
+  <details class="card sim-inputs" data-inputs hidden>
+    <summary class="sim-inputs-head"><h2>What this run was given</h2></summary>
+    <dl class="sim-dl" data-input-rows></dl>
+    <details class="sim-all-inputs"><summary>Everything, in one line</summary><p data-input-line></p></details>
+  </details>
   <div data-results hidden></div>
   <div class="page-foot" data-foot hidden><button type="button" class="danger-text" data-delete>Delete run</button></div>`;
 
@@ -141,7 +142,11 @@ export function mount(container, { id, runId }) {
     back: q('[data-back]'), title: q('[data-title]'), sub: q('[data-sub]'), actions: q('[data-actions]'), del: q('[data-delete]'), foot: q('[data-foot]'), again: q('[data-again]'),
     banner: q('.banner'), bannerText: q('[data-banner-text]'), retry: q('[data-retry]'), missing: q('[data-missing]'), missingBack: q('[data-missing-back]'),
     run: q('[data-run]'), bar: q('progress'), progress: q('[data-progress]'), failed: q('[data-failed]'), results: q('[data-results]'),
+    verdict: q('[data-verdict]'),
   };
+  // The verdict first, what the run was given under it (critique 2026-10-29: on a phone the verdict sat under 11 rows of it),
+  // folded on a phone and open on a desk.
+  els.inputs.open = !matchMedia('(max-width: 600px)').matches;
   const deleteDialog = document.getElementById('delete-dialog');
   const deleteTitle = document.getElementById('delete-title');
   const deleteText = document.getElementById('delete-text');
@@ -249,7 +254,7 @@ export function mount(container, { id, runId }) {
   function render() {
     const name = roomName ?? 'the room';
     els.title.textContent = headLine(name);
-    if (roomName !== null) els.back.textContent = roomName; // back to which room
+    if (roomName !== null) els.back.textContent = backLabel(roomName); // back to which room's Simulations
     // the head: when and how long; what the run was given as label and value rows under it (the full line folded away)
     els.sub.textContent = [formatDateTime(run.createdAt), run.input?.days ? `${run.input.days} ${run.input.days === 1 ? 'day' : 'days'}` : ''].filter(Boolean).join(' · ');
     const rows = inputRows(run.input);
@@ -279,6 +284,7 @@ export function mount(container, { id, runId }) {
   function clearCharts() {
     for (const c of charts.splice(0)) c.destroy();
     els.results.replaceChildren();
+    els.verdict.replaceChildren();
   }
 
   function drawResults() {
@@ -328,7 +334,7 @@ export function mount(container, { id, runId }) {
           v.append(next);
         }
       }
-      els.results.append(v);
+      els.verdict.append(v);
     }
 
     // time in band

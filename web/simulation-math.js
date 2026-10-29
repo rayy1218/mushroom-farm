@@ -13,6 +13,12 @@ const pad2 = (n) => String(n).padStart(2, '0');
 const finite = (v) => typeof v === 'number' && Number.isFinite(v);
 const pct = (v) => (finite(v) ? `${v.toFixed(1)} %` : DASH);
 
+// A number keeps its unit on its line (critique 2026-10-28 and 2026-10-29: 'L/day', '°C' and 'min' were left alone on a
+// line): a no-break space between a number and the unit after it ('% RH' as one), and a range of numbers ('25–33') does not
+// break at its dash (word joiners around it).
+const UNIT = /(?<=\d) (?=(?:°C|% RH|%|W\/K|m³\/h|m³|kWh|kW|BTU\/h|L\/h|L\/day|L|W|Pa|ppm|min|h|m)(?![\w/³]))/g;
+export const keepUnits = (text) => text.replace(UNIT, '\u00a0').replace(/(?<=\d\u00a0%) RH/g, '\u00a0RH').replace(/(?<=\d)–(?=\d)/g, '\u2060–\u2060');
+
 // "20 Oct 10:42" in local time.
 export function formatDateTime(ms) {
   const d = new Date(ms);
@@ -247,6 +253,8 @@ export const perDayBars = (perDay, key) =>
 // ---- words ----
 
 export const headLine = (roomName) => `Simulation of ${roomName}`;
+// The back link of a result and of Suggest machines: both go to the room's Simulations tab.
+export const backLabel = (roomName) => `${roomName} · Simulations`;
 
 const grouped = (n) => n.toLocaleString('en-US', { maximumFractionDigits: 1 });
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
@@ -284,7 +292,7 @@ export function inputRows(input) {
     { label: 'Humidifier', value: `${p.humidifierLH} L/h` },
     { label: 'Dehumidifier', value: p.dehumidifierLday > 0 ? `${p.dehumidifierLday} L/day` : 'none' },
     ...controlRows(input.ctx?.control ?? input.control),
-  ];
+  ].map((r) => ({ ...r, value: keepUnits(r.value) }));
 }
 
 // Where a run started, when not in band at midnight: "outdoor air at 14:00", "in band at 07:00"; else null.
@@ -449,7 +457,7 @@ export function inputLine(input, roomMin = null) {
     ...limit,
     ...(settings.length ? [settings.join(', ')] : []),
     ...filter,
-  ].join(' · ');
+  ].map(keepUnits).join(' · ');
 }
 
 // What a run was given beyond its machines, in short words for the Simulations list: { key: text or null (not kept) }.
@@ -472,7 +480,7 @@ function givenParts(input) {
 export function differingLines(runs) {
   const parts = (runs ?? []).map((r) => givenParts(r?.input));
   const keys = Object.keys(parts[0] ?? {}).filter((k) => new Set(parts.map((p) => p[k]).filter((v) => v !== null)).size > 1);
-  return parts.map((p) => keys.map((k) => p[k]).filter((v) => v !== null).join(' · '));
+  return parts.map((p) => keys.map((k) => p[k]).filter((v) => v !== null).map(keepUnits).join(' · '));
 }
 
 const STATUS_WORDS = { queued: 'Waiting', done: 'Done', failed: 'Failed' };
@@ -492,7 +500,7 @@ export function runRow(run, roomId) {
     litres: done ? formatLitres(run.summary?.water?.litres) : DASH,
     // the machines it ran with, so runs can be told apart in the list
     machines: run.input?.physics ? [`Aircon ${acKW(run.input.physics.acBTU)}`, `fan ${run.input.physics.fanFlow} m³/h`, `humidifier ${run.input.physics.humidifierLH} L/h`,
-      ...(run.input.physics.dehumidifierLday > 0 ? [`dehumidifier ${run.input.physics.dehumidifierLday} L/day`] : [])].join(' · ') : '',
+      ...(run.input.physics.dehumidifierLday > 0 ? [`dehumidifier ${run.input.physics.dehumidifierLday} L/day`] : [])].map(keepUnits).join(' · ') : '',
     status: run.status === 'running' ? `Running ${Math.round((finite(run.progress) ? run.progress : 0) * 100)} %` : STATUS_WORDS[run.status] ?? String(run.status),
   };
 }

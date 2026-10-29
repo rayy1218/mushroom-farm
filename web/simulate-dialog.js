@@ -10,7 +10,7 @@ import { suggestHash } from './route.js';
 import { CROPS, CROP_KEYS, STAGES, FARM_TYPES, MAX_CROPS } from './crops.js';
 import { AC_CLASSES, acClassOf, kwOfBtu, btuOfKw } from './simulation-math.js';
 import {
-  PHYSICS_FIELDS, FILTER_KEYS, initialState, checkStep, firstField, stepOf, buildBody, mixSummary, wholeProgram, stagesOf, fixStage, roomLine,
+  PHYSICS_FIELDS, PHYSICS_GROUPS, fieldLabel, FILTER_KEYS, initialState, checkStep, firstField, stepOf, buildBody, mixSummary, wholeProgram, stagesOf, fixStage, roomLine,
   summaryLines, progressLine, removeLabel, filterFromRoom,
   RUN_CONTROL, runControl, setRunControl, resetRunControl, controlText, fixedControlLine, applySuggestion, startChoices,
 } from './simulate-math.js';
@@ -61,6 +61,7 @@ export function openSimulateDialog(room, hooks = {}) {
   let sending = false;
 
   d.replaceChildren();
+  d.dataset.stepper = ''; // one height while the steps show (critique 2026-10-29: Back and Next moved under the pointer)
   const form = el('form');
   form.noValidate = true;
   const title = el('h2', '', `Simulate ${room.name}`);
@@ -185,8 +186,15 @@ export function openSimulateDialog(room, hooks = {}) {
   function stepOne() {
     const box = el('div');
     box.append(el('p', 'sim-room', roomLine(room)));
-    const weather = el('fieldset', 'addresses');
-    weather.append(el('legend', '', 'Walls and weather'));
+    // Walls and sun, then Weather (critique 2026-10-29: one grid of the five zigzagged), then the machines
+    const groups = {};
+    for (const g of PHYSICS_GROUPS) {
+      const set = el('fieldset', 'addresses');
+      set.append(el('legend', '', g.legend));
+      groups[g.key] = el('div', g.key === 'weather' ? 'sizes sim-physics' : 'sizes two sim-physics');
+      set.append(groups[g.key]);
+      box.append(set);
+    }
     const machines = el('fieldset', 'addresses');
     machines.append(el('legend', '', 'Machines'));
     // The intake filter (spec 2026-10-22-filter-design.md 8): the room's settings and its filter's age; with the room's
@@ -197,22 +205,20 @@ export function openSimulateDialog(room, hooks = {}) {
     const filterTitle = el('summary', '', 'Intake filter');
     if (!filter.open) filterTitle.append(el('span', 'sim-fold-note', "the room's own settings"));
     filter.append(filterTitle);
-    const weatherGrid = el('div', 'sizes two');
     const machineGrid = el('div', 'sizes two');
     const filterGrid = el('div', 'sizes two');
     for (const f of PHYSICS_FIELDS) {
-      const wrap = f.kw ? acField(f) : field(`physics.${f.key}`, `${f.label} (${f.unit})`,
+      const wrap = f.kw ? acField(f) : field(`physics.${f.key}`, fieldLabel(f),
         numberInput(state.physics[f.key], (v) => { state.physics[f.key] = v; }, f.whole), f.hint);
       if (FILTER_KEYS.includes(f.key)) filterGrid.append(wrap);
-      else (['fanFlow', 'acBTU', 'humidifierLH', 'dehumidifierLday'].includes(f.key) ? machineGrid : weatherGrid).append(wrap);
+      else (groups[f.group] ?? machineGrid).append(wrap);
     }
-    weather.append(weatherGrid);
     machines.append(machineGrid);
     filter.append(filterGrid, el('p', 'c-hint', "Filter change pressure: the pressure sensor's reading at which to change the filter (with the intake running)."),
       el('p', 'c-hint', state.filterSensor
         ? 'The room has a filter pressure sensor: the run also changes the filter at the change pressure.'
         : 'The room has no filter pressure sensor: the run changes the filter only every so many days (0: never).'));
-    box.append(weather, machines, filter);
+    box.append(machines, filter);
     return box;
   }
 
@@ -241,7 +247,7 @@ export function openSimulateDialog(room, hooks = {}) {
         blocks.dataset.field = '';
         const remove = button('Remove', 'danger-text');
         remove.setAttribute('aria-label', removeLabel(row.crop));
-        remove.disabled = state.crops.length === 1;
+        remove.hidden = state.crops.length === 1; // the only crop stays (a disabled Remove wrapped to a row of its own on a phone)
         remove.addEventListener('click', () => { state.crops.splice(i, 1); clearError('crops'); rows(); paintMix(); add.focus(); });
         wrap.append(select, blocks, el('span', 'sim-unit', 'blocks'), remove);
         return wrap;
@@ -488,6 +494,7 @@ export function openSimulateDialog(room, hooks = {}) {
   // ---- the run ----
 
   function paintRun() {
+    delete d.dataset.stepper;
     marks.hidden = true;
     const progress = el('progress');
     progress.max = 1;

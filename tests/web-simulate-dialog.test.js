@@ -73,7 +73,7 @@ test('the step marks: the current one carries aria-current and an accent underli
 
 test("step 1: the wall heat transfer and the sun on the roof have hints with typical values", () => {
   assert.match(dialog, /function field\(name, label, input, hint\) \{/);
-  assert.match(dialog, /field\(`physics\.\$\{f\.key\}`, `\$\{f\.label\} \(\$\{f\.unit\}\)`,\s*numberInput\(state\.physics\[f\.key\], \(v\) => \{ state\.physics\[f\.key\] = v; \}, f\.whole\), f\.hint\)/);
+  assert.match(dialog, /field\(`physics\.\$\{f\.key\}`, fieldLabel\(f\),\s*numberInput\(state\.physics\[f\.key\], \(v\) => \{ state\.physics\[f\.key\] = v; \}, f\.whole\), f\.hint\)/);
 });
 
 test('step 2: the crop rows share one grid, so Blocks sits over its input', () => {

@@ -12,21 +12,22 @@ import { fallbackMs, isStale, withProgress } from './live-math.js';
 import { CROPS, CROP_KEYS, STAGES, FARM_TYPES, MAX_CROPS } from './crops.js';
 import { openSimulateDialog, closeSimulateDialog } from './simulate-dialog.js';
 import {
-  SIZING_FIELDS, initialState, stagesOf, fixStage, removeLabel, mixSummary, roomLine, firstField, applySizingInput,
+  SIZING_FIELDS, PHYSICS_GROUPS, fieldLabel, initialState, stagesOf, fixStage, removeLabel, mixSummary, roomLine, firstField, applySizingInput,
   TARGET_DEFAULT, COOL_DOWN_DEFAULT, checkSuggest, sizingBody, sizingProgress, estimateLines, coolDownLine,
 } from './simulate-math.js';
-import { pricesOf, suggestRows, moneyHead, priceLine, noneReachedLine, COLUMNS } from './suggest-math.js';
+import { backLabel } from './simulation-math.js';
+import { pricesOf, suggestRows, baselineRow, captionOf, roomMachines, moneyHead, priceLine, noneReachedLine, COLUMNS } from './suggest-math.js';
 
 const POLL_MS = 1000;
 const FIELD_ORDER = [...SIZING_FIELDS.map((f) => `physics.${f.key}`), 'crops', 'farmType', 'stage', 'target', 'coolDownMaxH'];
 const storeKey = (id) => `farm.suggest.${id}`;
 
 const TEMPLATE = `
-  <a class="back sim-back" href="#/overview" data-back>Room</a>
+  <a class="back sim-back" href="#/overview" data-back>Simulations</a>
   <div class="page-head">
     <div class="page-titles">
       <h1 class="page-title" tabindex="-1" data-title>Suggest machines</h1>
-      <p class="page-sub">The search tries fan, aircon, humidifier and dehumidifier sizes for these crops, walls and weather, and lists the five best setups: those that reach the goal first, the cheapest a month first.</p>
+      <p class="page-sub sg-sub">The search tries fan, aircon, humidifier and dehumidifier sizes for these crops, walls and weather, and lists the five best setups: those that reach the goal first, the cheapest a month first.</p>
     </div>
   </div>
   <div class="banner" role="alert" hidden><span data-banner-text></span><button type="button" data-retry hidden>Retry</button></div>
@@ -81,6 +82,8 @@ export function mount(container, { id }) {
   let prices = pricesOf(null);
   let job = null; // the suggestion as last read
   let body = null; // what it was asked (for Use this)
+  let now = null; // the room's machines as they are, the search's baseline: { machines, from }
+  let baseFrom = ''; // where the asked search's baseline came from ('From your last simulation, 26 Oct')
   let jobText = ''; // an error of the suggestion that belongs to no field (409, offline)
   let sending = false;
   let timer = null;
@@ -153,13 +156,18 @@ export function mount(container, { id }) {
   }
 
   function paintForm() {
-    const weather = el('fieldset', 'addresses');
-    weather.append(el('legend', '', 'Walls and weather'));
-    const grid = el('div', 'sizes two sg-weather');
-    for (const f of SIZING_FIELDS) {
-      grid.append(field(`physics.${f.key}`, `${f.label} (${f.unit})`, textInput(state.physics[f.key], (v) => { state.physics[f.key] = v; }, f.whole), f.hint));
+    // Walls and sun, then Weather (critique 2026-10-29: one grid of the five zigzagged), as in Simulate's step 1
+    const physics = [];
+    for (const g of PHYSICS_GROUPS) {
+      const set = el('fieldset', 'addresses');
+      set.append(el('legend', '', g.legend));
+      const grid = el('div', g.key === 'weather' ? 'sizes sim-physics' : 'sizes two sim-physics');
+      for (const f of SIZING_FIELDS.filter((x) => x.group === g.key)) {
+        grid.append(field(`physics.${f.key}`, fieldLabel(f), textInput(state.physics[f.key], (v) => { state.physics[f.key] = v; }, f.whole), f.hint));
+      }
+      set.append(grid);
+      physics.push(set);
     }
-    weather.append(grid);
 
     const crops = el('fieldset', 'addresses');
     crops.append(el('legend', '', 'Crops in the room'));
@@ -169,12 +177,12 @@ export function mount(container, { id }) {
     listError.id = 'sg-crops-error';
     listError.setAttribute('aria-live', 'polite');
     const add = button('Add crop');
-    const mix = el('div', 'sim-mix');
+    const mix = el('div', 'sim-mix sg-mix'); // a block under its heading, not a box in the form's card
     const paintMix = () => {
       const m = mixSummary(state);
       mix.replaceChildren();
       if (!m) return;
-      mix.append(el('p', 'sim-mix-title', "The search holds the room in the crops' bands for each stage"));
+      mix.append(el('h3', 'sim-mix-title', "The search holds the room in the crops' bands for each stage"));
       const ul = el('ul', 'sim-mix-lines');
       ul.append(...m.lines.map((t) => el('li', '', t)));
       mix.append(ul, ...m.warnings.map((w) => el('p', 'sim-warn', w)));
@@ -197,7 +205,7 @@ export function mount(container, { id }) {
         blocks.setAttribute('aria-describedby', listError.id);
         blocks.dataset.field = '';
         remove.setAttribute('aria-label', removeLabel(row.crop));
-        remove.disabled = state.crops.length === 1;
+        remove.hidden = state.crops.length === 1; // the only crop stays (a disabled Remove wrapped to a row of its own on a phone)
         remove.addEventListener('click', () => { state.crops.splice(i, 1); clearError('crops'); rows(); paintMix(); add.focus(); });
         wrap.append(select, blocks, el('span', 'sim-unit', 'blocks'), remove);
         return wrap;
@@ -243,7 +251,7 @@ export function mount(container, { id }) {
     go.dataset.go = '';
     const foot = el('div', 'sg-go');
     foot.append(go);
-    els.form.replaceChildren(el('h2', '', 'What to size for'), el('p', 'sim-room', roomLine(room)), weather, crops, goal, foot);
+    els.form.replaceChildren(el('h2', '', 'What to size for'), el('p', 'sim-room', roomLine(room)), ...physics, crops, goal, foot);
     paintGo();
   }
 
@@ -269,17 +277,19 @@ export function mount(container, { id }) {
     job = null;
     paintGo();
     paintOut();
-    const asked = sizingBody(state, targetText, coolText);
+    // the room's machines as they are go with it, tried with the same walls, weather and crops (owner 2026-10-29)
+    const asked = { ...sizingBody(state, targetText, coolText), baseline: now.machines };
     try {
       const created = await request('POST', `/api/rooms/${id}/sizing`, asked);
       if (!alive()) return;
       job = created;
       body = asked;
-      writeStored(id, { id: created.id, body: asked, target: targetText, coolDown: coolText });
+      baseFrom = now.from;
+      writeStored(id, { id: created.id, body: asked, target: targetText, coolDown: coolText, from: now.from });
       poll();
     } catch (err) {
       if (!alive()) return;
-      if (err.status === 400 && err.field) showErrors({ [err.field]: err.message });
+      if (err.status === 400 && err.field && !err.field.startsWith('baseline')) showErrors({ [err.field]: err.message });
       else if (routeMissing(err)) jobText = OUTDATED;
       else if (err.status === 404) jobText = GONE;
       else jobText = err.status === 0 ? `${OFFLINE}. Try again.` : err.message;
@@ -367,34 +377,64 @@ export function mount(container, { id }) {
     els.outBody.replaceChildren(...nodes);
   }
 
+  // The pieces of a row: the machines (after a lead: the rank, or the baseline's title), the verdict, the three cells and the
+  // details; the row's last cell is the caller's.
+  function rowParts(r, lead, detailsName) {
+    const setup = el('div', 'sg-setup');
+    const machines = el('p', 'sg-machines');
+    machines.append(...r.setupParts.flatMap((p, i) => [...(i ? [document.createTextNode(' · ')] : []), el('span', 'sg-part', p)]));
+    const verdict = el('p', 'sg-verdict', r.verdict.text);
+    verdict.dataset.tone = r.verdict.tone;
+    setup.append(...lead, machines, verdict);
+    const heads = COLUMNS.map((c, i) => (i === 2 ? moneyHead(prices) : c));
+    const cell = (label, value, cls) => {
+      const c = el('div', `sg-cell ${cls}`);
+      c.append(el('span', 'sg-label', label), el('span', 'sg-value', value));
+      return c;
+    };
+    const more = el('details', 'sg-more');
+    const summary = el('summary', '', 'Details');
+    summary.append(el('span', 'sr-only', ` of ${detailsName}`));
+    const dl = el('dl', 'sg-dl');
+    dl.append(...r.details.map((d) => { const div = el('div'); div.append(el('dt', '', d.label), el('dd', '', d.value)); return div; }));
+    more.append(summary, dl);
+    return { setup, cells: [cell(heads[1], r.inBand, 'sg-band'), cell(heads[2], r.money, 'sg-money'), cell(heads[3], r.coolDown, 'sg-cool')], more };
+  }
+
+  // What the room has now (owner 2026-10-29): a row like the suggestions', marked as the baseline, with nothing to use.
+  function baseView(base) {
+    const row = el('div', 'sg-row sg-base');
+    row.setAttribute('role', 'group');
+    row.setAttribute('aria-label', 'What the room has now');
+    const lead = [el('p', 'sg-base-title', 'What the room has now'), ...(baseFrom ? [el('p', 'sg-base-from', baseFrom)] : [])];
+    const { setup, cells, more } = rowParts(base, lead, 'what the room has now');
+    const tag = el('div', 'sg-use');
+    tag.append(el('span', 'sg-base-tag', 'Baseline'));
+    row.append(setup, ...cells, tag, more);
+    return row;
+  }
+
   function resultView(result) {
     const nodes = [];
     const rows = suggestRows(result, prices);
     if (rows.length === 0) return [el('p', 'sim-warn', 'No setup was found.')];
-    nodes.push(el('p', 'sg-caption', `The best ${rows.length === 1 ? 'setup' : `${rows.length} setups`} over ${result.days} ${result.days === 1 ? 'day' : 'days'}, in order`));
+    const base = baselineRow(result, prices);
+    nodes.push(el('p', 'sg-caption', captionOf(result, rows.length)));
     const none = noneReachedLine(result, rows);
     if (none) nodes.push(el('p', 'sim-warn', none));
-    const list = el('ol', 'sg-list');
-    const head = el('li', 'sg-row sg-head');
+    const table = el('div', 'sg-table');
+    const head = el('div', 'sg-row sg-head');
     head.setAttribute('aria-hidden', 'true'); // the columns' names for the eye; each cell says what it is to a screen reader
     const heads = COLUMNS.map((c, i) => (i === 2 ? moneyHead(prices) : c));
     head.append(...heads.map((c) => el('span', '', c)));
-    list.append(head);
+    table.append(head, ...(base ? [baseView(base)] : []));
+    const list = el('ol', 'sg-list');
     for (const r of rows) {
       const li = el('li', 'sg-row');
-      const setup = el('div', 'sg-setup');
-      const machines = el('p', 'sg-machines');
       const rank = el('span', 'sg-rank', `${r.rank}.`);
       rank.setAttribute('aria-hidden', 'true'); // the list numbers it for a screen reader
-      machines.append(rank, ...r.setupParts.flatMap((p, i) => [...(i ? [document.createTextNode(' · ')] : []), el('span', 'sg-part', p)]));
-      const verdict = el('p', 'sg-verdict', r.verdict.text);
-      verdict.dataset.tone = r.verdict.tone;
-      setup.append(machines, verdict);
-      const cell = (label, value, cls) => {
-        const c = el('div', `sg-cell ${cls}`);
-        c.append(el('span', 'sg-label', label), el('span', 'sg-value', value));
-        return c;
-      };
+      const { setup, cells, more } = rowParts(r, [], `setup ${r.rank}`);
+      setup.querySelector('.sg-machines').prepend(rank);
       const use = button('Use this');
       use.setAttribute('aria-label', `Use setup ${r.rank} in Simulate`);
       use.addEventListener('click', () => {
@@ -402,16 +442,11 @@ export function mount(container, { id }) {
       });
       const useBox = el('div', 'sg-use');
       useBox.append(use);
-      const more = el('details', 'sg-more');
-      const summary = el('summary', '', 'Details');
-      summary.append(el('span', 'sr-only', ` of setup ${r.rank}`));
-      const dl = el('dl', 'sg-dl');
-      dl.append(...r.details.map((d) => { const div = el('div'); div.append(el('dt', '', d.label), el('dd', '', d.value)); return div; }));
-      more.append(summary, dl);
-      li.append(setup, cell(heads[1], r.inBand, 'sg-band'), cell(heads[2], r.money, 'sg-money'), cell(heads[3], r.coolDown, 'sg-cool'), useBox, more);
+      li.append(setup, ...cells, useBox, more);
       list.append(li);
     }
-    nodes.push(list, el('p', 'muted sg-note', priceLine(prices, result.days)));
+    table.append(list);
+    nodes.push(table, el('p', 'muted sg-note', priceLine(prices, result.days)));
     const cool = coolDownLine(result);
     if (cool) nodes.push(el('p', 'muted sg-note', cool));
     nodes.push(el('p', 'muted sg-note', 'Use this opens Simulate with the setup, its air exchange time limit and its settings during air exchange, for a full run of the room.'));
@@ -441,14 +476,16 @@ export function mount(container, { id }) {
       room = r;
       prices = pricesOf(settings);
       state = initialState({ room, lastRun: Array.isArray(runs) ? runs[0] ?? null : null, cropData: crop });
+      now = roomMachines({ room, lastRun: Array.isArray(runs) ? runs[0] ?? null : null });
       const stored = readStored(id);
       if (stored?.body) { // the search of an earlier visit: the form shows what it was asked
         applySizingInput(state, stored.body);
         targetText = stored.target ?? targetText;
         coolText = stored.coolDown ?? coolText;
+        baseFrom = stored.from ?? '';
       }
       els.title.textContent = `Suggest machines for ${room.name}`;
-      els.back.textContent = room.name;
+      els.back.textContent = backLabel(room.name);
       document.title = `Suggest machines for ${room.name} · Mushroom farm`;
       els.loading.hidden = true;
       els.form.hidden = false;

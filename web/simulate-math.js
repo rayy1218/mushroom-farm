@@ -1,22 +1,24 @@
 // Pure helpers for the simulation stepper (no DOM, so they can be tested in Node).
 // Spec 2026-10-20-crops-and-simulation-design.md section 4.1. Every input is kept as the text typed; checks speak like the server.
 
-import { acSize, kwOfBtu } from './simulation-math.js';
+import { acSize, kwOfBtu, keepUnits } from './simulation-math.js';
 import { exchangePoints } from './band-math.js';
 import { CROPS, STAGES, FARM_TYPES, mixBands, rangeWarnings, validateCrops } from './crops.js';
 import { HUMIDIFIER_LABEL, OUTDOOR_LABEL } from './control-math.js';
+import { calendarDays } from './filter-math.js';
 
 // The physics inputs of step 1. min, max and whole are those of the device app's PARAMS (device/sim-store.js; a test compares
 // them); def is the default (the humidifier's is the room's rating, the dehumidifier's the room's capacity when it is fitted).
 export const PHYSICS_FIELDS = [
   // hint: typical values (spec 2026-10-19-simulation-design.md for a 60 m³ room; device/sim-store.js PARAMS for the sun)
-  { key: 'wallUA', label: 'Wall heat transfer', unit: 'W/K', min: 0, max: 100000, whole: false, def: 80,
+  { key: 'wallUA', label: 'Wall heat transfer', unit: 'W/K', min: 0, max: 100000, whole: false, def: 80, group: 'walls',
     hint: 'Heat through the walls, roof and floor per °C between outdoors and the room: about 30 W/K for an insulated 20 ft container or 50 mm PU panels, about 280 W/K for brick walls under a bare zinc roof.' },
-  { key: 'outdoorHigh', label: 'Outdoor day high', unit: '°C', min: -40, max: 60, whole: false, def: 33 },
-  { key: 'outdoorLow', label: 'Outdoor night low', unit: '°C', min: -40, max: 60, whole: false, def: 25 },
-  { key: 'outdoorDew', label: 'Outdoor dew point', unit: '°C', min: -40, max: 60, whole: false, def: 24 },
-  { key: 'sunW', label: 'Sun on the roof', unit: 'W', min: 0, max: 100000, whole: false, def: 300,
+  { key: 'sunW', label: 'Sun on the roof', unit: 'W', min: 0, max: 100000, whole: false, def: 300, group: 'walls',
     hint: 'Peak sun heat through the roof at 13:00: about 300 W for an insulated roof of 20 m², several kW for bare zinc.' },
+  // short: the label under the group's legend (Weather says Outdoor); the errors keep the whole label
+  { key: 'outdoorHigh', label: 'Outdoor day high', short: 'Day high', unit: '°C', min: -40, max: 60, whole: false, def: 33, group: 'weather' },
+  { key: 'outdoorLow', label: 'Outdoor night low', short: 'Night low', unit: '°C', min: -40, max: 60, whole: false, def: 25, group: 'weather' },
+  { key: 'outdoorDew', label: 'Outdoor dew point', short: 'Dew point', unit: '°C', min: -40, max: 60, whole: false, def: 24, group: 'weather' },
   { key: 'fanFlow', label: 'Fan flow', unit: 'm³/h', min: 0, max: 100000, whole: false, def: 600 },
   // kept in BTU/h (the device app's parameter); entered in kW, with the BTU/h class it is sold by as a picker (kw)
   { key: 'acBTU', label: 'Aircon size', unit: 'BTU/h', min: 0, max: 200000, whole: true, def: 12000, kw: true },
@@ -33,9 +35,13 @@ export const PHYSICS_FIELDS = [
   { key: 'filterUsedDays', label: 'Filter in use', unit: 'days', min: 0, max: 365, whole: true, def: 0, device: false },
 ];
 // The walls and weather: what Suggest machines asks (the machines are what it looks for).
-export const SIZING_FIELDS = PHYSICS_FIELDS.filter((f) => ['wallUA', 'outdoorHigh', 'outdoorLow', 'outdoorDew', 'sunW'].includes(f.key));
+export const SIZING_FIELDS = PHYSICS_FIELDS.filter((f) => f.group);
+// Their two fieldsets, in Simulate's step 1 and on the Suggest machines page (critique 2026-10-29: one grid of the five read
+// wall, day high, night low, dew point, sun).
+export const PHYSICS_GROUPS = [{ key: 'walls', legend: 'Walls and sun' }, { key: 'weather', legend: 'Weather' }];
+// A field's label with its unit, as the form shows it.
+export const fieldLabel = (f) => `${f.short ?? f.label} (${f.unit})`;
 export const FILTER_KEYS = ['fanMaxPa', 'filterCleanPa', 'filterFinalPa', 'filterLifeDays', 'filterChangeDays', 'filterUsedDays'];
-const DAY_MS = 86_400_000;
 
 export const DEFAULT_CROPS = [{ crop: 'oyster', blocks: 500 }];
 // The hour a run from outdoor air starts at, the cool-down's of Suggest machines (server/sizing.js COOL_START_HOUR; a test
@@ -94,7 +100,8 @@ export const fixStage = (farmType, stage) => (stagesOf(farmType).includes(stage)
 // The texts of the three steps. lastRun: the room's newest run (input as it was posted), cropData: GET /api/rooms/:id/crop,
 // roomControl: GET /api/rooms/:id/control (null when it could not be read); again: a run to simulate again, whose own
 // control settings (Change for this run) go with it.
-// The filter's days in use are the room's now (whole days since its last change), whatever the last run had.
+// The filter's days in use are the room's now (local calendar days since its last change, as Setup counts them), whatever the
+// last run had.
 export function initialState({ room, lastRun = null, cropData = null, roomControl = null, again = null, now = Date.now() }) {
   const before = lastRun?.input?.physics;
   const physics = {};
@@ -106,7 +113,7 @@ export function initialState({ room, lastRun = null, cropData = null, roomContro
     physics[f.key] = String(isNumber(before?.[f.key]) ? before[f.key] : fallback);
   }
   // at most 365, the field's limit: a filter not changed for over a year is a year old for the run
-  physics.filterUsedDays = String(isNumber(room?.filterChangedAt) ? Math.min(365, Math.max(0, Math.floor((now - room.filterChangedAt) / DAY_MS))) : 0);
+  physics.filterUsedDays = String(isNumber(room?.filterChangedAt) ? Math.min(365, Math.max(0, calendarDays(room.filterChangedAt, now))) : 0);
   // The crops: the room's, else those of its last run (a room only simulated so far), else Grey oyster 500.
   const roomCrops = Array.isArray(cropData?.crops) && cropData.crops.length > 0;
   const lastCrops = !roomCrops && Array.isArray(lastRun?.input?.crops) && lastRun.input.crops.length > 0 ? lastRun.input : null;
@@ -268,9 +275,6 @@ export function filterLine(v, sensor) {
   return `Clean ${v.filterCleanPa} Pa, change at ${v.filterFinalPa} Pa, fan maximum ${v.fanMaxPa} Pa, life ${days(v.filterLifeDays)}; ${days(v.filterUsedDays)} in use; ${when}`;
 }
 
-// A number keeps its unit on its line (critique 2026-10-28: step 3 left 'L/day' alone on a line): a no-break space before it.
-const keepUnits = (text) => text.replace(/ (?=(?:m³\/h|kW|BTU\/h|L\/h|L\/day|W)(?![\w/]))/g, '\u00a0');
-
 // The summary of step 3: [{ label, text }].
 export function summaryLines(state, room, cropData = null) {
   const v = Object.fromEntries(PHYSICS_FIELDS.map((f) => [f.key, state.physics[f.key]]));
@@ -279,13 +283,13 @@ export function summaryLines(state, room, cropData = null) {
   return [
     { label: 'Room', text: roomLine(room).replace('Room size ', 'Size ') },
     { label: 'Walls and weather', text: `Walls ${v.wallUA} W/K, sun on the roof ${v.sunW} W, outdoor ${v.outdoorLow}–${v.outdoorHigh} °C, dew point ${v.outdoorDew} °C` },
-    { label: 'Machines', text: keepUnits(`Fan ${v.fanFlow} m³/h, aircon ${acSize(Number(v.acBTU))}, humidifier ${v.humidifierLH} L/h, ${Number(v.dehumidifierLday) > 0 ? `dehumidifier ${v.dehumidifierLday} L/day` : 'no dehumidifier'}${room?.lights === true ? `, lights ${room.lightsW} W on the room's schedule` : ''}`) },
+    { label: 'Machines', text: `Fan ${v.fanFlow} m³/h, aircon ${acSize(Number(v.acBTU))}, humidifier ${v.humidifierLH} L/h, ${Number(v.dehumidifierLday) > 0 ? `dehumidifier ${v.dehumidifierLday} L/day` : 'no dehumidifier'}${room?.lights === true ? `, lights ${room.lightsW} W on the room's schedule` : ''}` },
     { label: 'Control', text: controlLine(state) },
     { label: 'Filter', text: filterLine(v, state.filterSensor === true) },
     { label: 'Crops', text: `${crops}; ${farmWords[state.farmType]}, starting at ${STAGES[state.stage].toLowerCase().replace(' between flushes', '')}` },
     ...(state.start === 'outdoor' ? [{ label: 'Start', text: `From outdoor air at ${clockHour(COOL_START_HOUR)} (just loaded)` }] : []),
     { label: 'Run', text: days },
-  ];
+  ].map((l) => ({ ...l, text: keepUnits(l.text) })); // a number keeps its unit on its line
 }
 
 // "Running… 35 %" while a run is going; its end otherwise.
@@ -497,7 +501,7 @@ export function controlLine(state) {
   if (known('humidifierDuringExchange')) parts.push(`humidifier ${onWords(v.humidifierDuringExchange)} during air exchange${mark('humidifierDuringExchange', onWords)}`);
   if (known('outdoorAir')) parts.push(`outdoor air ${usedWords(v.outdoorAir)}${mark('outdoorAir', usedWords)}`);
   if (!room) parts.push('the rest as on the Setup tab');
-  const text = parts.join('; ');
+  const text = keepUnits(parts.join('; '));
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 

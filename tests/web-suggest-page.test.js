@@ -17,7 +17,7 @@ test('the router mounts the page at #/rooms/:id/suggest', () => {
 });
 
 test('the page asks the walls and weather, the crops, the target and the longest cool-down, prefilled like Simulate', () => {
-  assert.match(page, /for \(const f of SIZING_FIELDS\)/);
+  assert.match(page, /for \(const f of SIZING_FIELDS\.filter\(\(x\) => x\.group === g\.key\)\)/);
   assert.match(page, /state = initialState\(\{ room, lastRun: Array\.isArray\(runs\) \? runs\[0\] \?\? null : null, cropData: crop \}\);/);
   assert.match(page, /field\('target', 'Target \(%\)'/);
   assert.match(page, /field\('coolDownMaxH', 'Longest cool-down \(h\)'/);
@@ -52,7 +52,7 @@ test('Use this opens Simulate with the setup, not the room\'s machines (machines
 });
 
 test('the search goes on when the page is left, and shows again on coming back', () => {
-  assert.match(page, /writeStored\(id, \{ id: created\.id, body: asked, target: targetText, coolDown: coolText \}\);/);
+  assert.match(page, /writeStored\(id, \{ id: created\.id, body: asked, target: targetText, coolDown: coolText, from: now\.from \}\);/);
   assert.match(page, /const stored = readStored\(id\);/);
   const unmount = page.slice(page.indexOf('return function unmount()'));
   assert.doesNotMatch(unmount, /DELETE/);

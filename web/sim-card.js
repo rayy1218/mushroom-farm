@@ -96,6 +96,14 @@ export function createSimulationsCard(host, { roomId, getRoom }) {
     more.textContent = all ? 'Show fewer' : `Show all ${runs.length}`;
   }
 
+  // The word beside a differing row's name, for the eye (critique 2026-10-29: not a stripe down its side); the screen reader
+  // hears '(differs)'.
+  function differs() {
+    const word = el('span', 'sim-differs', 'differs');
+    word.setAttribute('aria-hidden', 'true');
+    return word;
+  }
+
   // Two runs picked: their inputs and results side by side, the rows that differ in bold.
   function paintCompare() {
     const [a, b] = picked.map((id) => runs.find((x) => x.id === id)).filter(Boolean);
@@ -118,7 +126,7 @@ export function createSimulationsCard(host, { roomId, getRoom }) {
       if (row.differ) tr.dataset.differ = 'true';
       const th = el('th', '', row.label);
       th.scope = 'row';
-      if (row.differ) th.append(el('span', 'sr-only', ' (differs)'));
+      if (row.differ) th.append(el('span', 'sr-only', ' (differs)'), differs());
       tr.append(th, el('td', '', row.a), el('td', '', row.b));
       body.append(tr);
     }

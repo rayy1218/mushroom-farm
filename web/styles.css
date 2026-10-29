@@ -787,7 +787,6 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
 .sim-pick { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); font-size: var(--fs-sm); justify-self: end; }
 .sim-compare { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
 .sim-compare-table tr[data-differ="true"] td, .sim-compare-table tr[data-differ="true"] th { font-weight: 600; color: var(--ink); background: color-mix(in srgb, var(--accent) 10%, transparent); }
-.sim-compare-table tr[data-differ="true"] th { box-shadow: inset 3px 0 0 var(--accent); }
 .sim-compare-table td { color: var(--ink-2); }
 .sim-compare button { margin-top: 10px; }
 .sim-item .sim-all { justify-self: start; }
@@ -1250,3 +1249,62 @@ details.setup-part:not([open]) { padding-top: 8px; }
 /* The top bar on a phone is 61 px (its 44 px buttons): the sticky heads under it and a dialog's top follow (a dialog's top
    sat at 50 px, under the bar) */
 @media (max-width: 600px) { :root { --topbar-h: calc(61px + env(safe-area-inset-top)); } }
+
+/* critique 2026-10-29: simulation and Suggest */
+/* a result page: what the run was given folds under its title (closed on a phone, under the verdict) */
+.sim-inputs-head { display: flex; align-items: center; gap: 8px; min-height: 44px; cursor: pointer; list-style: none; }
+.sim-inputs-head::-webkit-details-marker { display: none; }
+.sim-inputs-head h2 { margin: 0; }
+.sim-inputs-head::after { content: ""; width: 8px; height: 8px; margin-left: auto; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg); translate: 0 -2px; }
+.sim-inputs[open] > .sim-inputs-head { margin-bottom: 8px; }
+.sim-inputs[open] > .sim-inputs-head::after { transform: rotate(-135deg); translate: 0 2px; }
+.sim-inputs-head:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+.sim-verdict-host > .sim-verdict { margin: 0 0 12px; }
+/* the sizing form (Simulate step 1 and Suggest machines): Walls and sun, then Weather; inputs as wide as their numbers; one
+   column on a phone, so a hint is not 9 lines in a 160 px column */
+.sim-physics { align-items: start; }
+.sim-physics .field input { width: 12ch; max-width: 100%; }
+@media (max-width: 600px) {
+  .sizes.sim-physics, .sizes.two.sim-physics, .sizes.two.sg-goal { grid-template-columns: 1fr; gap: 12px; }
+}
+.sg-form { max-width: 760px; }
+.sg-form .field input { width: 12ch; max-width: 100%; }
+.sg-form .field select { width: auto; max-width: 100%; align-self: flex-start; }
+.sg-form .sim-crops { max-width: 480px; }
+.sg-mix { padding: 0; border: 0; }
+.sg-mix .sim-mix-title { margin: 0; font-size: var(--fs-md); }
+.sg-sub { max-width: 60ch; }
+/* Suggest machines: what the room has now, a row like the suggestions' under the same column names, marked as the baseline */
+.sg-table .sg-list { margin-top: 0; }
+.sg-base { padding: 12px; margin: 0 -12px; border-top: 1px solid var(--border); border-radius: var(--radius); background: var(--band); }
+.sg-base-title { font-weight: 600; }
+.sg-setup .sg-base-from { color: var(--muted); font-size: var(--fs-sm); margin-bottom: 2px; }
+.sg-base-tag { color: var(--ink-2); font-size: var(--fs-sm); font-weight: 600; }
+@media (max-width: 760px) { .sg-base { margin: 0; } .sg-base .sg-use { display: none; } } /* its title says it on a phone */
+/* the Simulations list on a phone: the date and its time in band first, then the machines, what differs, energy and water */
+@media (max-width: 600px) {
+  a.button { min-height: 44px; } /* Suggest machines: as tall as the buttons (after a.button's 40 px) */
+  .sim-item { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "date band status" "machines machines machines" "given given given" "use use use" "length length pick"; }
+  .sim-item .sim-name { display: contents; }
+  .sim-item .sim-name > a { grid-area: date; }
+  .sim-item > .sim-all { grid-area: band; align-self: center; }
+  .sim-item > .sim-status { grid-area: status; }
+  .sim-item .sim-machines { grid-area: machines; }
+  .sim-item .sim-given { grid-area: given; color: var(--muted); }
+  .sim-item > .sim-use { grid-area: use; }
+  .sim-item > .sim-length { grid-area: length; }
+  .sim-item > .sim-pick { grid-area: pick; }
+}
+/* Simulate on a desk: one height through its steps (the step scrolls inside), so Back and Next do not move under the pointer */
+@media (min-width: 601px) {
+  .sim-dialog[data-stepper] { height: min(760px, calc(100dvh - max(16px, 6vh) - 16px)); }
+  .sim-dialog[data-stepper] > form { display: flex; flex-direction: column; min-height: 100%; }
+  .sim-dialog[data-stepper] .sim-body { flex: 1 0 auto; }
+}
+/* the last column as wide as Use this in every row, so the head, the baseline and the suggestions keep their columns in line
+   (each row is a grid of its own: an auto column was as wide as its own button, or nothing in the head) */
+@media (min-width: 761px) { .sg-row { grid-template-columns: minmax(0, 1fr) 112px 120px 112px 96px; } }
+/* step 3's Run for days input as tall as the other fields on a phone */
+@media (max-width: 600px) { .sim-choice input[type="text"] { min-height: 44px; } }
+/* the comparison: a differing row is tinted and says "differs" beside its name (no stripe down its side) */
+.sim-differs { margin-left: 8px; color: var(--accent-text); font-size: var(--fs-xs); font-weight: 600; }
