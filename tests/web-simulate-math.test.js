@@ -6,7 +6,7 @@ import {
   PHYSICS_FIELDS, DEFAULT_CROPS, DAYS_DEFAULT, initialState, checkStep, firstField, stepOf, buildBody, mixSummary, wholeProgram,
   programDays, programOf, stagesOf, fixStage, roomLine, summaryLines, progressLine, bandLines, removeLabel,
   TARGET_DEFAULT, checkTarget, sizingBody, sizingProgress, estimateLines, useSetup,
-  SIZING_FIELDS, COOL_DOWN_DEFAULT, checkCoolDown, checkSuggest, applySuggestion,
+  SIZING_FIELDS, PHYSICS_GROUPS, fieldLabel, COOL_DOWN_DEFAULT, checkCoolDown, checkSuggest, applySuggestion,
   COOL_START_HOUR, coolDownLine, startChoices, filterFromRoom,
   RUN_CONTROL, runControl, setRunControl, resetRunControl, controlLine, controlText, fixedControlLine,
 } from '../web/simulate-math.js';
@@ -24,7 +24,7 @@ test('the limits and defaults are those of the device app (device/sim-store.js P
     assert.equal(f.whole, m[3] === 'true', `${f.key} whole`);
     if (f.key !== 'humidifierLH') assert.equal(f.def, Number(m[4]), `${f.key} default`);
   }
-  assert.deepEqual(PHYSICS_FIELDS.map((f) => f.key), ['wallUA', 'outdoorHigh', 'outdoorLow', 'outdoorDew', 'sunW', 'fanFlow', 'acBTU', 'humidifierLH', 'dehumidifierLday',
+  assert.deepEqual(PHYSICS_FIELDS.map((f) => f.key), ['wallUA', 'sunW', 'outdoorHigh', 'outdoorLow', 'outdoorDew', 'fanFlow', 'acBTU', 'humidifierLH', 'dehumidifierLday',
     'fanMaxPa', 'filterCleanPa', 'filterFinalPa', 'filterLifeDays', 'filterChangeDays', 'filterUsedDays']);
 });
 
@@ -496,7 +496,22 @@ test('Simulate again with a run carries its own control settings', () => {
 // ---- Suggest machines as a page of its own (owner 2026-10-28) ----
 
 test('the page asks for the walls and weather only: the machines are what it looks for', () => {
-  assert.deepEqual(SIZING_FIELDS.map((f) => f.key), ['wallUA', 'outdoorHigh', 'outdoorLow', 'outdoorDew', 'sunW']);
+  assert.deepEqual(SIZING_FIELDS.map((f) => f.key), ['wallUA', 'sunW', 'outdoorHigh', 'outdoorLow', 'outdoorDew']);
+});
+
+test('the walls and weather in two groups (critique 2026-10-29: one grid read wall, day high, night low, dew point, sun)', () => {
+  assert.deepEqual(PHYSICS_GROUPS.map((g) => [g.legend, SIZING_FIELDS.filter((f) => f.group === g.key).map((f) => f.key)]), [
+    ['Walls and sun', ['wallUA', 'sunW']],
+    ['Weather', ['outdoorHigh', 'outdoorLow', 'outdoorDew']],
+  ]);
+  const label = (key) => fieldLabel(PHYSICS_FIELDS.find((f) => f.key === key));
+  assert.equal(label('outdoorHigh'), 'Day high (°C)', 'under Weather, the word Outdoor is said by the group');
+  assert.equal(label('outdoorDew'), 'Dew point (°C)');
+  assert.equal(label('wallUA'), 'Wall heat transfer (W/K)');
+  // the errors keep the whole name
+  const s = initialState({ room });
+  s.physics.outdoorHigh = 'x';
+  assert.match(checkStep(1, s)['physics.outdoorHigh'], /^Outdoor day high must be/);
 });
 
 test('the two room numbers nobody knows by heart have hints with typical values (device/sim-store.js, spec 2026-10-19)', () => {

@@ -10,13 +10,14 @@ import { HUMIDIFIER_LABEL, OUTDOOR_LABEL } from './control-math.js';
 // them); def is the default (the humidifier's is the room's rating, the dehumidifier's the room's capacity when it is fitted).
 export const PHYSICS_FIELDS = [
   // hint: typical values (spec 2026-10-19-simulation-design.md for a 60 m³ room; device/sim-store.js PARAMS for the sun)
-  { key: 'wallUA', label: 'Wall heat transfer', unit: 'W/K', min: 0, max: 100000, whole: false, def: 80,
+  { key: 'wallUA', label: 'Wall heat transfer', unit: 'W/K', min: 0, max: 100000, whole: false, def: 80, group: 'walls',
     hint: 'Heat through the walls, roof and floor per °C between outdoors and the room: about 30 W/K for an insulated 20 ft container or 50 mm PU panels, about 280 W/K for brick walls under a bare zinc roof.' },
-  { key: 'outdoorHigh', label: 'Outdoor day high', unit: '°C', min: -40, max: 60, whole: false, def: 33 },
-  { key: 'outdoorLow', label: 'Outdoor night low', unit: '°C', min: -40, max: 60, whole: false, def: 25 },
-  { key: 'outdoorDew', label: 'Outdoor dew point', unit: '°C', min: -40, max: 60, whole: false, def: 24 },
-  { key: 'sunW', label: 'Sun on the roof', unit: 'W', min: 0, max: 100000, whole: false, def: 300,
+  { key: 'sunW', label: 'Sun on the roof', unit: 'W', min: 0, max: 100000, whole: false, def: 300, group: 'walls',
     hint: 'Peak sun heat through the roof at 13:00: about 300 W for an insulated roof of 20 m², several kW for bare zinc.' },
+  // short: the label under the group's legend (Weather says Outdoor); the errors keep the whole label
+  { key: 'outdoorHigh', label: 'Outdoor day high', short: 'Day high', unit: '°C', min: -40, max: 60, whole: false, def: 33, group: 'weather' },
+  { key: 'outdoorLow', label: 'Outdoor night low', short: 'Night low', unit: '°C', min: -40, max: 60, whole: false, def: 25, group: 'weather' },
+  { key: 'outdoorDew', label: 'Outdoor dew point', short: 'Dew point', unit: '°C', min: -40, max: 60, whole: false, def: 24, group: 'weather' },
   { key: 'fanFlow', label: 'Fan flow', unit: 'm³/h', min: 0, max: 100000, whole: false, def: 600 },
   // kept in BTU/h (the device app's parameter); entered in kW, with the BTU/h class it is sold by as a picker (kw)
   { key: 'acBTU', label: 'Aircon size', unit: 'BTU/h', min: 0, max: 200000, whole: true, def: 12000, kw: true },
@@ -33,7 +34,12 @@ export const PHYSICS_FIELDS = [
   { key: 'filterUsedDays', label: 'Filter in use', unit: 'days', min: 0, max: 365, whole: true, def: 0, device: false },
 ];
 // The walls and weather: what Suggest machines asks (the machines are what it looks for).
-export const SIZING_FIELDS = PHYSICS_FIELDS.filter((f) => ['wallUA', 'outdoorHigh', 'outdoorLow', 'outdoorDew', 'sunW'].includes(f.key));
+export const SIZING_FIELDS = PHYSICS_FIELDS.filter((f) => f.group);
+// Their two fieldsets, in Simulate's step 1 and on the Suggest machines page (critique 2026-10-29: one grid of the five read
+// wall, day high, night low, dew point, sun).
+export const PHYSICS_GROUPS = [{ key: 'walls', legend: 'Walls and sun' }, { key: 'weather', legend: 'Weather' }];
+// A field's label with its unit, as the form shows it.
+export const fieldLabel = (f) => `${f.short ?? f.label} (${f.unit})`;
 export const FILTER_KEYS = ['fanMaxPa', 'filterCleanPa', 'filterFinalPa', 'filterLifeDays', 'filterChangeDays', 'filterUsedDays'];
 const DAY_MS = 86_400_000;
 

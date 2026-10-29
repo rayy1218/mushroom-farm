@@ -12,7 +12,7 @@ import { fallbackMs, isStale, withProgress } from './live-math.js';
 import { CROPS, CROP_KEYS, STAGES, FARM_TYPES, MAX_CROPS } from './crops.js';
 import { openSimulateDialog, closeSimulateDialog } from './simulate-dialog.js';
 import {
-  SIZING_FIELDS, initialState, stagesOf, fixStage, removeLabel, mixSummary, roomLine, firstField, applySizingInput,
+  SIZING_FIELDS, PHYSICS_GROUPS, fieldLabel, initialState, stagesOf, fixStage, removeLabel, mixSummary, roomLine, firstField, applySizingInput,
   TARGET_DEFAULT, COOL_DOWN_DEFAULT, checkSuggest, sizingBody, sizingProgress, estimateLines, coolDownLine,
 } from './simulate-math.js';
 import { pricesOf, suggestRows, moneyHead, priceLine, noneReachedLine, COLUMNS } from './suggest-math.js';
@@ -26,7 +26,7 @@ const TEMPLATE = `
   <div class="page-head">
     <div class="page-titles">
       <h1 class="page-title" tabindex="-1" data-title>Suggest machines</h1>
-      <p class="page-sub">The search tries fan, aircon, humidifier and dehumidifier sizes for these crops, walls and weather, and lists the five best setups: those that reach the goal first, the cheapest a month first.</p>
+      <p class="page-sub sg-sub">The search tries fan, aircon, humidifier and dehumidifier sizes for these crops, walls and weather, and lists the five best setups: those that reach the goal first, the cheapest a month first.</p>
     </div>
   </div>
   <div class="banner" role="alert" hidden><span data-banner-text></span><button type="button" data-retry hidden>Retry</button></div>
@@ -153,13 +153,18 @@ export function mount(container, { id }) {
   }
 
   function paintForm() {
-    const weather = el('fieldset', 'addresses');
-    weather.append(el('legend', '', 'Walls and weather'));
-    const grid = el('div', 'sizes two sg-weather');
-    for (const f of SIZING_FIELDS) {
-      grid.append(field(`physics.${f.key}`, `${f.label} (${f.unit})`, textInput(state.physics[f.key], (v) => { state.physics[f.key] = v; }, f.whole), f.hint));
+    // Walls and sun, then Weather (critique 2026-10-29: one grid of the five zigzagged), as in Simulate's step 1
+    const physics = [];
+    for (const g of PHYSICS_GROUPS) {
+      const set = el('fieldset', 'addresses');
+      set.append(el('legend', '', g.legend));
+      const grid = el('div', g.key === 'weather' ? 'sizes sim-physics' : 'sizes two sim-physics');
+      for (const f of SIZING_FIELDS.filter((x) => x.group === g.key)) {
+        grid.append(field(`physics.${f.key}`, fieldLabel(f), textInput(state.physics[f.key], (v) => { state.physics[f.key] = v; }, f.whole), f.hint));
+      }
+      set.append(grid);
+      physics.push(set);
     }
-    weather.append(grid);
 
     const crops = el('fieldset', 'addresses');
     crops.append(el('legend', '', 'Crops in the room'));
@@ -169,12 +174,12 @@ export function mount(container, { id }) {
     listError.id = 'sg-crops-error';
     listError.setAttribute('aria-live', 'polite');
     const add = button('Add crop');
-    const mix = el('div', 'sim-mix');
+    const mix = el('div', 'sim-mix sg-mix'); // a block under its heading, not a box in the form's card
     const paintMix = () => {
       const m = mixSummary(state);
       mix.replaceChildren();
       if (!m) return;
-      mix.append(el('p', 'sim-mix-title', "The search holds the room in the crops' bands for each stage"));
+      mix.append(el('h3', 'sim-mix-title', "The search holds the room in the crops' bands for each stage"));
       const ul = el('ul', 'sim-mix-lines');
       ul.append(...m.lines.map((t) => el('li', '', t)));
       mix.append(ul, ...m.warnings.map((w) => el('p', 'sim-warn', w)));
@@ -243,7 +248,7 @@ export function mount(container, { id }) {
     go.dataset.go = '';
     const foot = el('div', 'sg-go');
     foot.append(go);
-    els.form.replaceChildren(el('h2', '', 'What to size for'), el('p', 'sim-room', roomLine(room)), weather, crops, goal, foot);
+    els.form.replaceChildren(el('h2', '', 'What to size for'), el('p', 'sim-room', roomLine(room)), ...physics, crops, goal, foot);
     paintGo();
   }
 

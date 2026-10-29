@@ -1234,3 +1234,17 @@ details.setup-part:not([open]) { padding-top: 8px; }
 .sim-inputs[open] > .sim-inputs-head::after { transform: rotate(-135deg); translate: 0 2px; }
 .sim-inputs-head:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
 .sim-verdict-host > .sim-verdict { margin: 0 0 12px; }
+/* the sizing form (Simulate step 1 and Suggest machines): Walls and sun, then Weather; inputs as wide as their numbers; one
+   column on a phone, so a hint is not 9 lines in a 160 px column */
+.sim-physics { align-items: start; }
+.sim-physics .field input { width: 12ch; max-width: 100%; }
+@media (max-width: 600px) {
+  .sizes.sim-physics, .sizes.two.sim-physics, .sizes.two.sg-goal { grid-template-columns: 1fr; gap: 12px; }
+}
+.sg-form { max-width: 760px; }
+.sg-form .field input { width: 12ch; max-width: 100%; }
+.sg-form .field select { width: auto; max-width: 100%; }
+.sg-form .sim-crops { max-width: 480px; }
+.sg-mix { padding: 0; border: 0; }
+.sg-mix .sim-mix-title { margin: 0; font-size: var(--fs-md); }
+.sg-sub { max-width: 60ch; }
