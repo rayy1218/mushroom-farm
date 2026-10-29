@@ -3,6 +3,7 @@
 // (commanded on → off; the exchange switches the intake and the exhaust together). Hours and days are local.
 
 import { formatStamp } from './history-math.js';
+import { DOT } from './text-math.js';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const MIN = 60_000;
@@ -92,7 +93,7 @@ const exchangesWord = (n) => `${n} ${n === 1 ? 'exchange' : 'exchanges'}`;
 export function activityTotalsText(t, mode) {
   const head = mode === 'daily' ? '30 days' : '24 h';
   if (t.exchanges === 0 && t.minutes === 0) return `${head}: no exchanges`;
-  return `${head}: ${exchangesWord(t.exchanges)}, ${formatMinutes(t.minutes)} in all · longest ${formatMinutes(t.longest)}`;
+  return `${head}: ${exchangesWord(t.exchanges)}, ${formatMinutes(t.minutes)} in all${DOT}longest ${formatMinutes(t.longest)}`;
 }
 
 // The tooltip of a bar: "14:00  3 exchanges" (another day: "19 Oct 14:00 …"), "12 Oct  1 h 15 min". field: 'starts' | 'minutes'.

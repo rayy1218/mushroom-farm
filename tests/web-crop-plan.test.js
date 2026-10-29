@@ -108,9 +108,9 @@ test('the warnings of a stage: the mix and the crops\' good ranges', () => {
 });
 
 test('the head: what grows, how many blocks, the farm type', () => {
-  assert.deepEqual(cropHeadline(ready), { title: "Lion's mane · 950 blocks", farm: 'Ready-to-fruit blocks (bought in)' });
+  assert.deepEqual(cropHeadline(ready), { title: "Lion's mane ·\u00a0950 blocks", farm: 'Ready-to-fruit blocks (bought in)' });
   assert.deepEqual(cropHeadline(full), { title: 'Grey oyster 300 + Golden oyster 200 blocks', farm: 'Full cycle (own spawn run and pinning)' });
-  assert.equal(cropHeadline({ ...ready, crops: [{ crop: 'oyster', blocks: 1200 }] }).title, 'Grey oyster · 1,200 blocks');
+  assert.equal(cropHeadline({ ...ready, crops: [{ crop: 'oyster', blocks: 1200 }] }).title, 'Grey oyster ·\u00a01,200 blocks');
   assert.deepEqual(cropHeadline({ ...ready, crops: [] }), { title: 'No crop set: the bands are set by hand', farm: '' });
 });
 
@@ -123,21 +123,21 @@ test('the length of a stage: fruiting times the flushes', () => {
 
 test('the mark of a stage: current with its day and flush, next with when, or none', () => {
   const now = at(27, 12, 0);
-  assert.deepEqual(stageMark(ready, 'fruiting', now), { kind: 'current', text: 'Current · day 2 of 7 · flush 1 of 2' });
-  assert.deepEqual(stageMark(ready, 'rest', now), { kind: 'next', text: 'Next · about 2 Nov 09:55' });
-  assert.deepEqual(stageMark(full, 'spawn', now), { kind: 'current', text: 'Current · day 2 of 21' });
+  assert.deepEqual(stageMark(ready, 'fruiting', now), { kind: 'current', text: 'Current ·\u00a0day 2 of 7 ·\u00a0flush 1 of 2' });
+  assert.deepEqual(stageMark(ready, 'rest', now), { kind: 'next', text: 'Next ·\u00a0about 2 Nov 09:55' });
+  assert.deepEqual(stageMark(full, 'spawn', now), { kind: 'current', text: 'Current ·\u00a0day 2 of 21' });
   assert.deepEqual(stageMark(full, 'fruiting', now), { kind: '', text: '' });
   const off = { ...ready, autoAdvance: false, nextStage: { stage: 'rest', flush: 1, at: null } };
-  assert.deepEqual(stageMark(off, 'fruiting', at(30, 12, 0)), { kind: 'current', text: 'Current · day 5 · flush 1 of 2' });
-  assert.deepEqual(stageMark(off, 'rest', now), { kind: 'next', text: 'Next · when you start it' });
+  assert.deepEqual(stageMark(off, 'fruiting', at(30, 12, 0)), { kind: 'current', text: 'Current ·\u00a0day 5 ·\u00a0flush 1 of 2' });
+  assert.deepEqual(stageMark(off, 'rest', now), { kind: 'next', text: 'Next ·\u00a0when you start it' });
   // the server sends nextStage null while automatic change is off: the next stage by the program's rules, without a time
   const none = { ...off, nextStage: null };
-  assert.deepEqual(stageMark(none, 'rest', now), { kind: 'next', text: 'Next · when you start it' });
-  assert.deepEqual(stageMark({ ...none, stage: 'spawn', farmType: 'full' }, 'pinning', now), { kind: 'next', text: 'Next · when you start it' });
-  assert.deepEqual(stageMark({ ...none, stage: 'rest' }, 'fruiting', now), { kind: 'next', text: 'Next · when you start it' });
+  assert.deepEqual(stageMark(none, 'rest', now), { kind: 'next', text: 'Next ·\u00a0when you start it' });
+  assert.deepEqual(stageMark({ ...none, stage: 'spawn', farmType: 'full' }, 'pinning', now), { kind: 'next', text: 'Next ·\u00a0when you start it' });
+  assert.deepEqual(stageMark({ ...none, stage: 'rest' }, 'fruiting', now), { kind: 'next', text: 'Next ·\u00a0when you start it' });
   assert.deepEqual(stageMark({ ...none, stage: 'rest', flush: 2 }, 'fruiting', now), { kind: '', text: '' }, 'after the last rest nothing follows');
   const done = { ...ready, stage: 'rest', flush: 2, done: true, nextStage: null };
-  assert.deepEqual(stageMark(done, 'rest', now), { kind: 'current', text: 'Current · flush 2 of 2 done' });
+  assert.deepEqual(stageMark(done, 'rest', now), { kind: 'current', text: 'Current ·\u00a0flush 2 of 2 done' });
   assert.deepEqual(stageMark(done, 'fruiting', now), { kind: '', text: '' });
   assert.deepEqual(stageMark({ ...ready, crops: [] }, 'fruiting', now), { kind: '', text: '' });
 });

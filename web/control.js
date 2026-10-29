@@ -7,6 +7,7 @@
 // Controls are updated in place, so a refresh never replaces an input the person is using or has edited.
 
 import { request, OFFLINE } from './api.js';
+import { keepLines } from './text-math.js';
 import { byHandValues, stageBody } from './crop-math.js';
 import { BANDS, REASONS, reasonsShown, stateLine, inputLabel, reasonLine, checkBand, locateField, SAFETY_FIELDS, checkSafety, locateSafetyField, changedBody, checkLines, heldLine, HUMIDIFIER_LABEL, humidifierOn, OUTDOOR_LABEL, outdoorOn, outdoorNote, AC_FAN_LABEL, AC_FAN_OPTIONS, acFanOf, CONTROL_GROUPS, lightingLine, CROP_TAB_LINK } from './control-math.js';
 
@@ -362,7 +363,7 @@ export function createControl(host, { roomId, onOffline, onGone, onChange, getRo
     const nothing = Boolean(r) && r.relayAddress == null && r.acAddress == null; // no relay module, no aircon: nothing to switch
     modeLine.textContent = switching ? 'Sending…' : !last ? ''
       : nothing ? 'Nothing to control yet: set the relay module and the aircon on the Setup tab.'
-        : on ? `The farm runs the machines from the bands${every}.`
+        : on ? keepLines(`The farm runs the machines from the bands${every}.`)
           : 'Manual: the machines stay as you set them, even at the CO₂ safety level. Alarms still go out. Switch back to Auto when you are done.';
     if (modeHost) modeHost.dataset.manual = String(Boolean(last) && !on && !nothing); // the card says it is the risky mode
   }

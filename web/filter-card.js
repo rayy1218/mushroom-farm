@@ -6,6 +6,7 @@
 
 import { request, OFFLINE } from './api.js';
 import { filterCard, changesStale, lastRunningOf } from './filter-math.js';
+import { keepLines } from './text-math.js';
 
 function el(tag, className, content) {
   const node = document.createElement(tag);
@@ -85,7 +86,7 @@ export function createFilterCard(host, { roomId, onChanged }) {
         parts.push(barNode(p));
       }
       if (p.idle) parts.push(el('p', 'meta', p.idle));
-      parts.push(el('p', 'meta', `clean ${p.clean} Pa · change at ${p.final} Pa · ${p.status}`));
+      parts.push(el('p', 'meta', keepLines(`clean ${p.clean} Pa · change at ${p.final} Pa · ${p.status}`)));
       if (p.over) parts.push(el('p', 'meta warn', 'At or above the change pressure: change the filter'));
     } else {
       parts.push(el('p', 'addr', c.noSensor));

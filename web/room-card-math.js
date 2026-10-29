@@ -10,6 +10,7 @@ import { CROPS, STAGES } from './crops.js';
 import { hasCrops, stageDay } from './crop-math.js';
 import { formatDateTime } from './simulation-math.js';
 import { lightShort } from './light-math.js';
+import { DOT } from './text-math.js';
 
 const num = (x) => (typeof x === 'number' && Number.isFinite(x) ? x : null);
 const clamp01 = (x) => Math.min(1, Math.max(0, x));
@@ -181,7 +182,7 @@ const every = (c) => (num(c?.exchangeEveryMin) ?? 0);
 export function controlNote(c) {
   if (!c) return '';
   if (!c.auto) return 'Automatic control off';
-  return every(c) > 0 ? `Automatic control on · fresh air every ${every(c)} min` : 'Automatic control on';
+  return every(c) > 0 ? `Automatic control on${DOT}fresh air every ${every(c)}\u00a0min` : 'Automatic control on';
 }
 
 // The line under the room picture: the running exchange, why fresh air waits, or when it comes next ('' with auto off: the
@@ -214,7 +215,7 @@ const huPoints = (p) => `On at ${rhAt(p.on)}, off at ${rhAt(p.off)}`;
 const MACHINES = [
   { key: 'intake', name: 'Intake fan', effect: 'Air in',
     detail: (u, c, f) => (!f ? 'No filter sensor' : f.pa === null ? 'Filter: no reading yet' : `Filter ${f.pa.toFixed(1)}\u00a0Pa`) },
-  { key: 'ac', name: 'Aircon', effect: 'Cools', detail: (u) => (u.sub ? `${u.state} · ${fanWord(u.sub)}` : u.state) },
+  { key: 'ac', name: 'Aircon', effect: 'Cools', detail: (u) => (u.sub ? `${u.state}${DOT}${fanWord(u.sub)}` : u.state) },
   { key: 'circ', name: 'Circulation', effect: 'Mixes the air', detail: (u, c) => (c?.auto ? 'Always on' : 'Set by hand') },
   { key: 'lights', name: 'Lights', effect: 'Light for the crop', detail: (u, c, f, crop) => (c?.auto ? lightShort(crop) : 'Set by hand') },
   // The controller's real rule (server/controller.js decide): the humidifier on and off at its points inside the band
@@ -278,7 +279,7 @@ export function filterFrom({ last = null, room, sensor, machines, now = Date.now
 export function bottomLine(draw, filter) {
   const v = view(draw);
   const dash = (x) => (x.startsWith('--') ? DASH : x);
-  const outdoor = v.hasOut ? ['Outdoor ', dash(v.outT), ` · ${dash(v.outRH)}`] : [v.outLine];
+  const outdoor = v.hasOut ? ['Outdoor ', dash(v.outT), `${DOT}${dash(v.outRH)}`] : [v.outLine];
   return filter ? [outdoor, filter.line] : [outdoor];
 }
 
@@ -290,7 +291,7 @@ export function blocksLine(crops, stage = '') {
   const rows = (Array.isArray(crops) ? crops : []).filter((c) => num(c?.blocks) !== null && c.blocks > 0);
   if (!rows.length) return '';
   const n = (x) => x.toLocaleString('en-US');
-  const tail = stage ? ` · ${stage}` : ''; // the stage after the blocks under the picture
+  const tail = stage ? `${DOT}${stage}` : ''; // the stage after the blocks under the picture
   if (rows.length === 1) return `${n(rows[0].blocks)}${cropWord(rows[0].crop) ? ` ${cropWord(rows[0].crop)}` : ''} blocks${tail}`;
   return `${n(rows.reduce((s, c) => s + c.blocks, 0))} blocks: ${rows.map((c) => `${n(c.blocks)} ${cropWord(c.crop) || 'blocks'}`).join(', ')}${tail}`;
 }
@@ -343,9 +344,9 @@ export function cropSummary(crop, now = Date.now()) {
   const nextStage = crop.nextStage;
   let next = '';
   if (crop.done) next = `Replace the blocks: flush ${crop.flushes} of ${crop.flushes} done`;
-  else if (nextStage) next = `Next: ${STAGES[nextStage.stage] ?? nextStage.stage} · ${num(nextStage.at) === null ? 'when you start it' : `about ${formatDateTime(nextStage.at)}`}`;
+  else if (nextStage) next = `Next: ${STAGES[nextStage.stage] ?? nextStage.stage}${DOT}${num(nextStage.at) === null ? 'when you start it' : `about ${formatDateTime(nextStage.at)}`}`;
   return {
-    name: growing.value, stage: stage.value, sub: [growing.sub, stage.sub].filter(Boolean).join(' · '),
+    name: growing.value, stage: stage.value, sub: [growing.sub, stage.sub].filter(Boolean).join(DOT),
     day: d ? (d.length ? `Day ${d.day} of ${d.length}` : `Day ${d.day}`) : '',
     share: d?.length ? d.day / d.length : null,
     next, done: Boolean(crop.done),

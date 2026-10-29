@@ -4,6 +4,7 @@
 import { nearChip, trendOf, co2Status } from './band-math.js';
 import { formatStamp } from './history-math.js';
 import { freshAirLine } from './room-card-math.js';
+import { DOT } from './text-math.js';
 
 const finite = (x) => typeof x === 'number' && Number.isFinite(x);
 const round1 = (n) => Math.round(n * 10) / 10;
@@ -171,7 +172,7 @@ export function farmStatus(rooms) {
     const ok = rooms.length - bare - watch.length;
     const parts = [ok > 0 ? (bare === 0 && !watchText ? `All ${plural(ok, 'room', 'rooms')} OK` : `${plural(ok, 'room', 'rooms')} OK`) : null,
       watchText, bare > 0 ? (ok > 0 || watchText ? `${bare} not set up` : `${plural(bare, 'room', 'rooms')} not set up`) : null].filter(Boolean);
-    return { text: parts.join(' · '), tone: watchText ? 'amber' : ok > 0 ? 'good' : 'none', facts };
+    return { text: parts.join(DOT), tone: watchText ? 'amber' : ok > 0 ? 'good' : 'none', facts };
   }
   return {
     text: `${attention} of ${plural(rooms.length, 'room', 'rooms')} ${attention === 1 ? 'needs' : 'need'} attention`,
@@ -217,7 +218,7 @@ export function sensorText(sensor, field, digits, unit) {
   if (sensor.status === 'not-wired') return 'Not wired';
   if (sensor.status === 'no-data') return 'No data yet';
   const value = finite(sensor[field]) ? `${grouped(sensor[field], digits)} ${unit}` : '—';
-  return STATUS_WORDS[sensor.status] ? `${value} · ${STATUS_WORDS[sensor.status]}` : value;
+  return STATUS_WORDS[sensor.status] ? `${value}${DOT}${STATUS_WORDS[sensor.status]}` : value;
 }
 
 // A reading against its band, from an online sensor only: { text, tone } or null. Near an edge by the room page's rule
@@ -263,7 +264,6 @@ export function roomReadings(room) {
   return { t: on(room?.trh, 't'), rh: on(room?.trh, 'rh'), co2: on(room?.co2, 'co2'), pa: finite(room?.filterPa) ? room.filterPa : null };
 }
 
-const DOT = ' ·\u00a0'; // a '·' keeps to the words after it at a wrap
 const lower = (text) => text.charAt(0).toLowerCase() + text.slice(1);
 
 // A room card's last line (critique 2026-10-29: its CO₂ line, this line and the status's facts all said the exchange was

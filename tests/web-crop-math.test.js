@@ -11,11 +11,11 @@ const base = {
 };
 
 test('the stage line: since, day of days, flush of flushes', () => {
-  assert.equal(stageLine(base, at(22, 15, 0)), 'since 20 Oct 10:42 · day 3 of 7 · flush 1 of 4');
-  assert.equal(stageLine(base, at(20, 10, 42)), 'since 20 Oct 10:42 · day 1 of 7 · flush 1 of 4');
-  assert.equal(stageLine(base, at(30, 10, 42)), 'since 20 Oct 10:42 · day 7 of 7 · flush 1 of 4', 'the change is due: not day 11');
-  assert.equal(stageLine({ ...base, stage: 'spawn', flush: 1 }, at(21, 0, 0)), 'since 20 Oct 10:42 · day 1 of 21');
-  assert.equal(stageLine({ ...base, autoAdvance: false }, at(30, 10, 42)), 'since 20 Oct 10:42 · day 11 · flush 1 of 4');
+  assert.equal(stageLine(base, at(22, 15, 0)), 'since 20 Oct 10:42 ·\u00a0day 3 of 7 ·\u00a0flush 1 of 4');
+  assert.equal(stageLine(base, at(20, 10, 42)), 'since 20 Oct 10:42 ·\u00a0day 1 of 7 ·\u00a0flush 1 of 4');
+  assert.equal(stageLine(base, at(30, 10, 42)), 'since 20 Oct 10:42 ·\u00a0day 7 of 7 ·\u00a0flush 1 of 4', 'the change is due: not day 11');
+  assert.equal(stageLine({ ...base, stage: 'spawn', flush: 1 }, at(21, 0, 0)), 'since 20 Oct 10:42 ·\u00a0day 1 of 21');
+  assert.equal(stageLine({ ...base, autoAdvance: false }, at(30, 10, 42)), 'since 20 Oct 10:42 ·\u00a0day 11 ·\u00a0flush 1 of 4');
   assert.equal(stageLine({ ...base, stageSince: null }, at(30, 10, 42)), '');
   assert.equal(stageLine({ ...base, crops: [] }, at(30, 10, 42)), '');
 });

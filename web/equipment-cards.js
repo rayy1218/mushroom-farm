@@ -5,6 +5,7 @@
 
 import { ROOM_GROUPS, EQUIPMENT_NAMES, fieldTexts, parseRoomFields } from './room-fields.js';
 import { STATUS_WORDS as MACHINE_WORDS } from './machines-math.js';
+import { DOT } from './text-math.js';
 
 const FILTER_HINT = ROOM_GROUPS.find((g) => g.key === 'filter').hint;
 
@@ -80,7 +81,7 @@ function sensorValue(kind, ok) {
     : kind === 'co2' ? [[fixed(ok.co2, 0), 'ppm']]
       : kind === 'meter' ? [[fixed(ok.power, 0), 'W']]
         : [[fixed(ok.pa, 1), 'Pa']]; // one decimal, as everywhere (One Format)
-  return parts.filter(([v]) => v !== null).map(([v, unit]) => `${v} ${unit}`).join(' · ');
+  return parts.filter(([v]) => v !== null).map(([v, unit]) => `${v}\u00a0${unit.replace(' ', '\u00a0')}`).join(DOT);
 }
 
 // The relay module from its machines: no answer from the last poll, waiting for the first, or online.
@@ -105,7 +106,7 @@ export function cardStatus(c, { sensors, machines }) {
     // intake on): its equipment card keeps only the settings.
     if (c.sensor === 'dp') return null;
     const value = sensorValue(c.sensor, s.lastOk);
-    return { status: s.status, word: failing ? `${word} · ${n} failed ${n === 1 ? 'poll' : 'polls'} in a row` : word, value };
+    return { status: s.status, word: failing ? `${word}${DOT}${n} failed ${n === 1 ? 'poll' : 'polls'} in a row` : word, value };
   }
   if (c.key === 'relay') {
     if (machines?.relay?.address == null) return null;

@@ -1,18 +1,19 @@
 // Pure helpers for the Automatic control card (no DOM, so they can be tested in Node).
 
 import { lightSummary } from './light-math.js';
+import { keepLines } from './text-math.js';
 
 // Rows of the card: server field names, label, unit, limits (spec section 2) and the typical band of the crops grown here.
 export const BANDS = [
   // CO₂: where the air exchange starts (high) and stops (low), the start first (owner, 2026-10-28)
   { key: 'co2', label: 'CO₂', unit: 'ppm', name: 'Air exchange', low: 'co2Low', high: 'co2High', min: 450, max: 5000, step: '1',
     title: 'Air exchange', sides: { high: 'Starts at', low: 'Stops at' }, points: { high: 'Air exchange start point', low: 'Air exchange stop point' }, order: ['high', 'low'],
-    hint: 'The fans start when CO₂ reaches the first number and stop when it falls to the second. Typical start: oyster about 1,000 ppm, lion’s mane about 750–1,000 ppm. Outdoor air is about 420 ppm, so a stop point near it takes a lot of air.' },
+    hint: keepLines('The fans start when CO₂ reaches the first number and stop when it falls to the second. Typical start: oyster about 1,000 ppm, lion’s mane about 750–1,000 ppm. Outdoor air is about 420 ppm, so a stop point near it takes a lot of air.') },
   { key: 't', label: 'Temperature', unit: '°C', name: 'Temperature band', low: 'tLow', high: 'tHigh', min: 16, max: 35, step: '0.5',
-    hint: 'Typical fruiting: grey oyster about 24 to 28, lion’s mane about 18 to 22.' },
+    hint: keepLines('Typical fruiting: grey oyster about 24–28 °C, lion’s mane about 18–22 °C.') },
   { key: 'rh', label: 'Humidity', unit: '% RH', name: 'Humidity band', low: 'rhLow', high: 'rhHigh', min: 40, max: 100, step: '0.5',
     // the humidifier's points inside the band: server/controller.js decide, band-math.js humidifierPoints (owner, 2026-10-29)
-    hint: 'Typical: 85–95\u00a0% RH for oyster, about 90\u00a0% RH for lion’s mane. The humidifier starts 1\u00a0% RH above the first number and stops 1\u00a0% RH under the second (a quarter of the band in from each when it is under 6\u00a0% RH wide).' },
+    hint: keepLines('Typical: 85–95 % RH for oyster, about 90 % RH for lion’s mane. The humidifier starts 1 % RH above the first number and stops 1 % RH under the second (a quarter of the band in from each when it is under 6 % RH wide).') },
 ];
 
 // The card's groups (owner, 2026-10-26: "group by co2, temp, humid", "add group for air circulation"): each holds its band
@@ -172,10 +173,10 @@ export function changedBody(values, loaded) {
 // The two inputs next to the bands, saved with Save.
 export const SAFETY_FIELDS = [
   { key: 'co2Safety', label: 'CO₂ safety level for the crop (ppm)', min: 300, max: 10000, step: '1',
-    hint: 'At or above it the air exchange runs with no time limit and a critical alarm is raised. Not a limit for people: 5,000 ppm over 8 h.' },
+    hint: keepLines('At or above it the air exchange runs with no time limit and a critical alarm is raised. Not a limit for people: 5,000 ppm over 8 h.') },
   { key: 'exchangeMaxMin', label: 'Air exchange time limit (min)', min: 1, max: 120, step: '1' },
   { key: 'exchangeEveryMin', label: 'Fresh air at least every (min)', min: 0, max: 240, step: '1',
-    hint: 'With no air exchange for this long, the fans run for 1 min whatever the CO₂. 0 turns it off.' },
+    hint: keepLines('With no air exchange for this long, the fans run for 1 min whatever the CO₂. 0 turns it off.') },
   { key: 'acDrop', label: 'Aircon lower during air exchange (°C)', min: 0, max: 10, step: '0.5',
     hint: 'The aircon already runs at full power during an exchange, so this rarely helps; 0 keeps it at the middle of the band.' },
 ];
