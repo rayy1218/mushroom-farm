@@ -115,12 +115,26 @@ export function readingStates(room) {
 }
 
 // One reading's state as the Overview shows it. entry: { state, since, shown } from the last refresh, null when the reading
-// was not seen before (the state now is shown at once: there is nothing to hold it against); state: its state now. A new
-// state is shown once it has held for its time (HOLD_MS), the last shown one until then. → the new entry.
-export function settle(entry, state, now) {
-  if (!entry) return { state, since: now, shown: state };
+// was not seen before; state: its state now. A new state is shown once it has held for its time (HOLD_MS), the last shown
+// one until then. Seen first, the state is shown at once when `before` (it held already: the page has no memory of it yet),
+// otherwise it counts from now as if the room had been calm. → the new entry.
+export function settle(entry, state, now, before = true) {
+  if (!entry) return { state, since: now, shown: before ? state : 'calm' };
   const since = entry.state === state ? entry.since : now;
   return { state, since, shown: now - since >= (HOLD_MS[state] ?? 0) ? state : entry.shown };
+}
+
+// Whether a reading's state now had held before the page opened: a reading out of band when its last 30 min trace bucket
+// was out of band the same way (so opening the page during an air exchange that wets the room for a few minutes does not
+// say Out of band); any other state is taken as it is.
+function heldBefore(room, key, state) {
+  if (!OUT_STATES.has(state)) return true;
+  const last = room.spark?.[key]?.at?.(-1)?.v;
+  const b = room.bands ?? {};
+  if (!finite(last)) return false;
+  if (state === 'co2Safety') return last >= b.co2Safety;
+  if (state === 'co2High') return last >= b.co2High;
+  return state.endsWith('High') ? last > b[`${key}High`] : last < b[`${key}Low`];
 }
 
 // Every room's held states: memory, room id → { t, rh, co2 } entries (settle) from the last refresh. → { memory, rooms }: the
@@ -130,7 +144,7 @@ export function settleRooms(memory, rooms, now) {
   const out = rooms.map((r) => {
     const was = memory?.get(r.id) ?? {};
     const states = readingStates(r);
-    const entries = Object.fromEntries(READING_KEYS.map((k) => [k, settle(was[k] ?? null, states[k], now)]));
+    const entries = Object.fromEntries(READING_KEYS.map((k) => [k, settle(was[k] ?? null, states[k], now, heldBefore(r, k, states[k]))]));
     next.set(r.id, entries);
     return { ...r, held: Object.fromEntries(READING_KEYS.map((k) => [k, entries[k].shown])) };
   });

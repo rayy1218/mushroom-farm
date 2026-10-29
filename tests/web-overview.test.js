@@ -369,6 +369,20 @@ test('settle: the first state is shown at once; a new one once it has held for i
   const wet = settle({ state: 'calm', since: 0, shown: 'calm' }, 'rhHigh', t0);
   assert.equal(settle(wet, 'rhHigh', t0 + 14 * 60_000).shown, 'calm', 'humidity over the band 14 min: the alarm waits 15');
   assert.equal(settle(wet, 'rhHigh', t0 + 15 * 60_000).shown, 'rhHigh');
+  assert.deepEqual(settle(null, 'rhHigh', t0, false), { state: 'rhHigh', since: t0, shown: 'calm' }, 'seen first, not known to have held: from now');
+});
+
+test('settleRooms on opening the page: a reading out of band shows at once only when its last 30 min bucket was out too', () => {
+  const t0 = at(29, 12);
+  const bands = { tLow: 24, tHigh: 26, rhLow: 85, rhHigh: 91, co2Low: 700, co2High: 900, co2Safety: 1500 };
+  const room = (rh, last) => ({ id: 2, name: 'Container Alpha', alarms: { count: 0, level: null }, auto: true, exchange: true, bands,
+    trh: { status: 'online', t: 25, rh }, co2: { status: 'online', co2: 760 }, spark: { t: [], rh: [{ at: t0 - 900_000, v: last }], co2: [] },
+    machines: { humidifier: false, dehumidifier: null, cooling: true } });
+  const wetting = settleRooms(new Map(), [room(91.8, 89.5)], t0).rooms[0];
+  assert.deepEqual(roomCard(wetting, t0).state, { text: 'OK', tone: 'good' }, 'an air exchange wetting the room for a few minutes');
+  assert.deepEqual(roomCard(wetting, t0).values[1].chip, { text: 'Above band', tone: 'neutral' });
+  const wet = settleRooms(new Map(), [room(91.8, 92.4)], t0).rooms[0];
+  assert.deepEqual(roomCard(wet, t0).state, { text: 'Out of band', tone: 'amber' }, 'over the band the last half hour too');
 });
 
 test('settleRooms: the pill and the status line follow the held states; a short spell over the band changes nothing', () => {
