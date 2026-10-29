@@ -1319,3 +1319,18 @@ details.setup-part:not([open]) { padding-top: 8px; }
 .sim-try > span { flex: 1 1 32ch; }
 .sim-verdict-tries:has(.sim-try button) { list-style: none; padding-left: 0; }
 @media (max-width: 600px) { .sim-try button { min-height: 44px; } }
+/* Suggest machines on a desk: the form at the left, how the search works, what the room has now and where the search started
+   at the right (the right half of 1440 px was empty); below 1,200 px the head and the results say these */
+@media (min-width: 1200px) {
+  .sg-top { display: grid; grid-template-columns: minmax(0, 760px) minmax(0, 1fr); gap: 0 24px; align-items: start; }
+  .sg-aside { max-width: 560px; }
+  .sg-sub, .sg-out .sg-start { display: none; }
+}
+@media (max-width: 1199px) { .sg-aside { display: none; } }
+.sg-aside h2 { margin: 0 0 6px; font-size: var(--fs-md); }
+.sg-aside-part + .sg-aside-part { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+.sg-aside p { margin: 0; max-width: 60ch; }
+.sg-aside-lead { color: var(--ink); }
+.sg-aside p + p { margin-top: 6px; }
+.sg-aside-line { color: var(--muted); font-size: var(--fs-sm); }
+.sg-aside .sg-estimates { margin: 0; }

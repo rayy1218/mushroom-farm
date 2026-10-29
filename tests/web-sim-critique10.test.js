@@ -142,3 +142,37 @@ test("the result page's timeline is read out as shares of the time and the airco
   assert.match(page, /describe: \(\) => aria/);
   assert.match(src('timeline.js'), /current\.describe \? current\.describe\(given, range\)/);
 });
+
+// ---- Suggest machines on a desk ----
+
+test('Suggest on a desk: the explanation, the room\'s machines and the search\'s start in a column beside the form', async () => {
+  const { asideSections, SEARCH_LINE, machineParts } = await import('../web/suggest-math.js');
+  const { roomMachines } = await import('../web/simulate-math.js');
+  const { keepUnits } = await import('../web/simulation-math.js'); // a number keeps its unit on its line
+  const now = roomMachines({ room, lastRun });
+  assert.deepEqual(machineParts(now.machines), ['Fan 800 m³/h', 'aircon 3.5 kW (12,000 BTU/h class)', 'humidifier 2 L/h', 'dehumidifier 20 L/day']);
+  const before = asideSections({ now, result: null, prices: { electricity: 0.55, water: null } });
+  assert.deepEqual(before.map((s) => s.title), ['How the search works', 'What the room has now']);
+  assert.equal(before[0].lines[0], SEARCH_LINE);
+  assert.deepEqual(before[1].lines, ['Fan 800 m³/h · aircon 3.5 kW (12,000 BTU/h class) · humidifier 2 L/h · dehumidifier 20 L/day', now.from].map(keepUnits));
+  assert.equal(before[1].verdict, null);
+  const result = {
+    target: 95, days: 7, coolDownMaxH: 3,
+    best: [{ machines: now.machines, inBand: { t: 99, rh: 99, co2: 99, all: 97 }, kWh: 40, litres: 10, coolDownH: 1 }],
+    baseline: { machines: now.machines, inBand: { t: 80, rh: 99, co2: 99, all: 79 }, kWh: 35, litres: 10, coolDownH: 2 },
+    estimate: { fanFlow: 150, humidifierLH: 1, why: { fanFlow: 'the room\'s volume' } },
+  };
+  const after = asideSections({ now, result, prices: { electricity: 0.55, water: null } });
+  assert.deepEqual(after.map((s) => s.title), ['How the search works', 'What the room has now', 'Where the search started']);
+  assert.deepEqual(after[1].verdict, { tone: 'amber', text: keepUnits('Misses: temperature 80.0 % in band, under 95 %'), money: 'RM 82.50 a month' });
+  assert.deepEqual(after[2].lines, ["Fan 150 m³/h: the room's volume", 'Humidifier 1 L/h'].map(keepUnits));
+
+  const page = src('suggest-page.js');
+  assert.match(page, /<div class="sg-top">\s*<form class="card sg-form" data-form novalidate hidden><\/form>\s*<aside class="card sg-aside" data-aside hidden aria-label="About this search"><\/aside>\s*<\/div>/);
+  assert.match(page, /<p class="page-sub sg-sub">\$\{SEARCH_LINE\}<\/p>/);
+  assert.match(page, /el\('div', 'sg-start'\)/, 'the estimates in the results, for a narrow screen');
+  assert.match(page, /paintAside\(\);/);
+  assert.match(block, /@media \(min-width: 1200px\) \{[^@]*\.sg-top \{ display: grid; grid-template-columns: minmax\(0, 760px\) minmax\(0, 1fr\);/);
+  assert.match(block, /@media \(max-width: 1199px\) \{ \.sg-aside \{ display: none; \} \}/);
+  assert.match(block, /\.sg-sub, \.sg-out \.sg-start \{ display: none; \}/);
+});
