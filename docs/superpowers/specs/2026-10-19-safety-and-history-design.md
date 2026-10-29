@@ -68,7 +68,7 @@ The owner's rule: when the fans have not run in the last 15 minutes, run an air 
 | Machine | Rule | Reason while held |
 |---|---|---|
 | Air exchange (intake + exhaust) | at least 30 s on and 60 s off (2.1); the safety level skips the off wait | in 2.1 |
-| Humidifier | its command changes at most once a minute (1 min on, 1 min off) | "Humidifier waits: minimum on time, 40 s to go" / "minimum off time" |
+| Humidifier | its command changes at most once in 15 s (was once a minute until 2026-10-29: too long for a small room, it overshot the band) | "Humidifier waits: minimum on time, 10 s to go" / "minimum off time" |
 | Aircon | at most one changed command every 2 min (a re-send of the same command to a not-following AC is not a change) | "Aircon waits: next change in 1 min 20 s" |
 | Circulation | none (always on) | — |
 

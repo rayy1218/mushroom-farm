@@ -142,14 +142,14 @@ const want = (humidifier, setpoint = 22) => ({
   intake: false, exhaust: false, humidifier, circulation: true, ac: { power: true, mode: 'cool', setpoint, fan: 'auto' },
 });
 
-test('protect: the humidifier command changes at most once a minute', () => {
-  const held = protect({ desired: want(false), commands: commands(true), changedAt: { humidifier: NOW - 20 * S }, now: NOW });
+test('protect: the humidifier command changes at most once in 15 s (owner 2026-10-29: a minute overshot the band)', () => {
+  const held = protect({ desired: want(false), commands: commands(true), changedAt: { humidifier: NOW - 5 * S }, now: NOW });
   assert.equal(held.desired.humidifier, true);
-  assert.equal(held.held.humidifier, 'Humidifier waits: minimum on time, 40 s to go');
-  const heldOn = protect({ desired: want(true), commands: commands(false), changedAt: { humidifier: NOW - 50 * S }, now: NOW });
+  assert.equal(held.held.humidifier, 'Humidifier waits: minimum on time, 10 s to go');
+  const heldOn = protect({ desired: want(true), commands: commands(false), changedAt: { humidifier: NOW - 12 * S }, now: NOW });
   assert.equal(heldOn.desired.humidifier, false);
-  assert.equal(heldOn.held.humidifier, 'Humidifier waits: minimum off time, 10 s to go');
-  const free = protect({ desired: want(false), commands: commands(true), changedAt: { humidifier: NOW - 60 * S }, now: NOW });
+  assert.equal(heldOn.held.humidifier, 'Humidifier waits: minimum off time, 3 s to go');
+  const free = protect({ desired: want(false), commands: commands(true), changedAt: { humidifier: NOW - 15 * S }, now: NOW });
   assert.deepEqual([free.desired.humidifier, free.held.humidifier], [false, '']);
   assert.equal(protect({ desired: want(false), commands: commands(true), changedAt: {}, now: NOW }).desired.humidifier, false, 'never changed');
   const same = protect({ desired: want(true), commands: commands(true), changedAt: { humidifier: NOW - S }, now: NOW });
@@ -326,15 +326,15 @@ test('the safety level starts the exchange at once and raises the critical alarm
   assert.equal(s.db.currentAlarms(s.id).find((a) => a.key === 'co2Safety').level, 'critical');
 });
 
-test('the humidifier is held for a minute after a change and the reason says so', async (t) => {
+test('the humidifier is held for 15 s after a change and the reason says so', async (t) => {
   const s = setup(t);
   s.controller.update(s.id, { auto: true, rhLow: 90, rhHigh: 92 });
   await s.cycle({ rh: 89 }); // dry: humidifier on
   assert.equal(s.db.getCommands(s.id).relay.humidifier, true);
-  await s.cycle({ rh: 93, dt: 20_000 }); // wet after 20 s: wants off, held
+  await s.cycle({ rh: 93, dt: 5_000 }); // wet after 5 s: wants off, held
   assert.equal(s.db.getCommands(s.id).relay.humidifier, true);
-  assert.equal(s.controller.get(s.id).reasons.held.humidifier, 'Humidifier waits: minimum on time, 40 s to go');
-  await s.cycle({ rh: 93, dt: 40_000 });
+  assert.equal(s.controller.get(s.id).reasons.held.humidifier, 'Humidifier waits: minimum on time, 10 s to go');
+  await s.cycle({ rh: 93, dt: 10_000 });
   assert.equal(s.db.getCommands(s.id).relay.humidifier, false);
   assert.equal(s.controller.get(s.id).reasons.held.humidifier, '');
 });

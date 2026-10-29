@@ -39,7 +39,11 @@ const TIMED_EXCHANGE_OFF_MS = 20 * 60_000;
 const FRESH_AIR_RUN_MS = 60_000; // a fresh-air run (no air exchange for exchangeEveryMin): the fans run this long
 const EVERY_MAX = 240; // min, the longest fresh-air interval
 const TIMED_HUMIDIFIER_MS = 10 * 60_000; // T/RH probe fault: 10 min on, 10 min off
-const HUMIDIFIER_HOLD_MS = 60_000; // the command changes at most once a minute
+// The humidifier's command changes at most once in 15 s. Its switch points already sit 4 % RH or more apart (on above the
+// band's lower limit, off below its upper one), so it cannot chatter on a noisy reading; the hold only stops the relay
+// clicking on and off within seconds. A minute was too long (owner, 2026-10-29): a container's humidifier added 4–6 % RH in
+// its one minute and the room went over the band each time.
+const HUMIDIFIER_HOLD_MS = 15_000;
 const AC_HOLD_MS = 120_000; // at most one changed aircon command every 2 min
 const DEHUMIDIFIER_QUIET_MS = 30 * 60_000; // the dehumidifier starts only when the humidifier has been off this long
 const AFTER_DRY_WAIT_MS = 10 * 60_000; // the humidifier waits this long after the dehumidifier stopped …
