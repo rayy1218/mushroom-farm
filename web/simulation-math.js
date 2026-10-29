@@ -314,23 +314,23 @@ const acKW = (btu) => (finite(btu) && btu > 0 ? `${(btu * 0.00029307107).toFixed
 
 export const BAND_KEYS = ['tLow', 'tHigh', 'rhLow', 'rhHigh', 'co2Low', 'co2High', 'co2Safety'];
 const n1 = (x) => grouped(Math.round(x * 10) / 10);
-// Each band in words: long (a sentence's), short (the Simulations list's), and whether it is set by these keys.
+// Each band in words: long (a sentence's), short (the Simulations list's), value (the numbers alone), set by these keys.
 const BAND_WORDS = [
-  { key: 't', keys: ['tLow', 'tHigh'], long: (b) => `temperature ${n1(b.tLow)}–${n1(b.tHigh)} °C`, short: (b) => `${n1(b.tLow)}–${n1(b.tHigh)} °C` },
-  { key: 'rh', keys: ['rhLow', 'rhHigh'], long: (b) => `humidity ${n1(b.rhLow)}–${n1(b.rhHigh)} % RH`, short: (b) => `${n1(b.rhLow)}–${n1(b.rhHigh)} % RH` },
-  { key: 'co2', keys: ['co2Low', 'co2High'], long: (b) => `air exchange ${exchangePoints(b.co2Low, b.co2High, n1)}`, short: (b) => `exchange ${n1(b.co2High)}/${n1(b.co2Low)} ppm` },
-  { key: 'safety', keys: ['co2Safety'], long: (b) => `CO₂ safety level ${n1(b.co2Safety)} ppm`, short: (b) => `safety ${n1(b.co2Safety)} ppm` },
+  { key: 't', keys: ['tLow', 'tHigh'], long: (b) => `temperature ${n1(b.tLow)}–${n1(b.tHigh)} °C`, short: (b) => `${n1(b.tLow)}–${n1(b.tHigh)} °C`, value: (b) => `${n1(b.tLow)}–${n1(b.tHigh)} °C` },
+  { key: 'rh', keys: ['rhLow', 'rhHigh'], long: (b) => `humidity ${n1(b.rhLow)}–${n1(b.rhHigh)} % RH`, short: (b) => `${n1(b.rhLow)}–${n1(b.rhHigh)} % RH`, value: (b) => `${n1(b.rhLow)}–${n1(b.rhHigh)} % RH` },
+  { key: 'co2', keys: ['co2Low', 'co2High'], long: (b) => `air exchange ${exchangePoints(b.co2Low, b.co2High, n1)}`, short: (b) => `exchange ${n1(b.co2High)}/${n1(b.co2Low)} ppm`, value: (b) => `${n1(b.co2High)}/${n1(b.co2Low)} ppm` },
+  { key: 'safety', keys: ['co2Safety'], long: (b) => `CO₂ safety level ${n1(b.co2Safety)} ppm`, short: (b) => `safety ${n1(b.co2Safety)} ppm`, value: (b) => `${n1(b.co2Safety)} ppm` },
 ];
 
 // Whether b holds all seven band numbers.
 export const isBands = (b) => b !== null && typeof b === 'object' && BAND_KEYS.every((k) => finite(b[k]));
 
-// The bands of `bands` that differ from `stage`'s: [{ key, long, short, stage (the stage's long words) }]; [] when either is not
-// a whole set of bands.
+// The bands of `bands` that differ from `stage`'s: [{ key, long, short, stage (the stage's long words), stageValue (its numbers)
+// }]; [] when either is not a whole set of bands.
 export function bandDiff(bands, stage) {
   if (!isBands(bands) || !isBands(stage)) return [];
   return BAND_WORDS.filter((w) => w.keys.some((k) => bands[k] !== stage[k]))
-    .map((w) => ({ key: w.key, long: w.long(bands), short: w.short(bands), stage: w.long(stage), stageShort: w.short(stage) }));
+    .map((w) => ({ key: w.key, long: w.long(bands), short: w.short(bands), stage: w.long(stage), stageValue: w.value(stage) }));
 }
 
 // All four bands in words: "temperature 24–26 °C, humidity 85–91 % RH, air exchange starts at 800 ppm, stops at 700 ppm, CO₂
@@ -579,11 +579,13 @@ function limitTry(intake, series, control, exchange) {
   const capped = [];
   intake.forEach((x, i) => { if (Math.abs(x.to - x.from - max * 60) <= 10) capped.push(i); });
   if (!runs.length || capped.length / runs.length < 0.5) return null;
-  const soon = capped.filter((i) => i + 1 < intake.length && intake[i + 1].from - intake[i].to <= RESTART_S).length / capped.length;
+  const gaps = capped.filter((i) => i + 1 < intake.length).map((i) => intake[i + 1].from - intake[i].to).sort((a, b) => a - b);
+  const soon = gaps.filter((g) => g <= RESTART_S).length / capped.length;
+  const typical = gaps.length ? Math.max(1, Math.round(gaps[Math.floor(gaps.length / 2)] / 60)) : null; // the median, in min
   const stop = rangeOf(series, 'co2Low', 'ppm') ?? 'its stop point';
   const which = capped.length / runs.length >= MOST ? `each air exchange stopped at its ${max} min limit`
     : `${capped.length} of ${runs.length} air exchanges stopped at their ${max} min limit`;
-  const next = soon >= MOST ? ' and the next started within 2 min' : soon >= 0.5 ? ', most followed by another within 2 min' : '';
+  const next = soon >= MOST ? ' and the next started within 2 min' : typical !== null && typical <= 15 ? `, and the next started about ${typical} min later` : '';
   return tryOf(`a ${LIMIT_TRY_MIN} min air exchange time limit`,
     `${which}${next} (an exchange ends sooner only when CO₂ falls to ${stop}); a ${LIMIT_TRY_MIN} min limit lets one run until it does`,
     { exchangeMaxMin: LIMIT_TRY_MIN });

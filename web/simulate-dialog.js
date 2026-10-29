@@ -326,8 +326,11 @@ export function openSimulateDialog(room, hooks = {}) {
         room.append(`${choice.byHand ? 'Changed by hand on the Setup tab' : "The room's bands now"}: `);
         choice.parts.forEach((p, i) => {
           if (i) room.append(', ');
-          room.append(el('span', 'sim-hand', keepUnits(p.long)), el('span', 'muted', keepUnits(` (the stage: ${p.stageShort})`)));
+          room.append(el('span', 'sim-hand', keepUnits(p.long)), el('span', 'muted', keepUnits(` (stage: ${p.stageValue})`)));
         });
+        // the stage's safety level too when the room's differs (its lines name the three bands only)
+        const safety = choice.parts.find((p) => p.key === 'safety');
+        if (safety) lines.append(el('li', '', keepUnits(safety.stage)));
         option('room', 'As the room runs now', room);
         option('stage', "The stage's", lines);
         set.append(el('p', 'c-hint', "From the next stage on, the run takes each stage's own bands, as the room would."));

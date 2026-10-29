@@ -91,9 +91,10 @@ test('Try a longer limit: the exchanges stopped at theirs and started again at o
   const mixed = exchanges.map((x, k) => (k % 3 === 0 ? { from: x.from, to: x.from + 300 } : x));
   const t2 = runTries({ ...run10, machines: { ...run10.machines, intake: mixed } }, input).at(-1).text;
   assert.ok(t2.includes(nb(': 86 of 130 air exchanges stopped at their 10~min limit and the next started within 2~min (an exchange')), t2);
-  const late = exchanges.map((x, k) => (k % 4 === 1 ? { from: x.from + 100, to: x.to + 100 } : x));
+  // the next a few minutes later (CO₂ climbs back to the start point): said as the typical wait
+  const late = Array.from({ length: 100 }, (_, k) => ({ from: k * 780, to: k * 780 + 600 }));
   const t3 = runTries({ ...run10, machines: { ...run10.machines, intake: late } }, input).at(-1).text;
-  assert.ok(t3.includes(nb('each air exchange stopped at its 10~min limit, most followed by another within 2~min (')), t3);
+  assert.ok(t3.includes(nb('each air exchange stopped at its 10~min limit, and the next started about 3~min later (an exchange')), t3);
   // exchanges that ended by CO₂ (none at the limit): a longer limit would not help
   const short = exchanges.map((x) => ({ from: x.from, to: x.from + 400 }));
   assert.deepEqual(runTries({ ...run10, machines: { ...run10.machines, intake: short } }, input).map((t) => t.control), [{ humidifierDuringExchange: false }]);
@@ -224,4 +225,12 @@ test('energy by machine: the cost of each machine at the run\'s price and a tota
   assert.match(page, /\['Machine', 'kWh', 'Share', \.\.\.\(use\.priced \? \['Cost'\] : \[\]\)\]/);
   assert.match(page, /charts, \['Total', use\.total\.kWh, '', \.\.\.cost\(use\.total\)\]\)/);
   assert.match(page, /const tr = text\('tr', 'total'\);/);
+});
+
+test('step 2: the room\'s value with the stage\'s numbers beside it, and the stage\'s safety level among its lines', () => {
+  const s = sim.initialState({ room: room1, cropData: crop1, roomControl: control1 });
+  assert.deepEqual(sim.bandsChoice(s).parts.map((p) => p.stageValue), ['900/700 ppm', '1,500 ppm']);
+  const dialog = src('simulate-dialog.js');
+  assert.match(dialog, /el\('span', 'muted', keepUnits\(` \(stage: \$\{p\.stageValue\}\)`\)\)/);
+  assert.match(dialog, /if \(safety\) lines\.append\(el\('li', '', keepUnits\(safety\.stage\)\)\);/);
 });
