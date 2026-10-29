@@ -5,7 +5,8 @@ import { PROGRAM_DEFAULTS, programDays as serverProgramDays } from '../server/pr
 import {
   PHYSICS_FIELDS, DEFAULT_CROPS, DAYS_DEFAULT, initialState, checkStep, firstField, stepOf, buildBody, mixSummary, wholeProgram,
   programDays, programOf, stagesOf, fixStage, roomLine, summaryLines, progressLine, bandLines, removeLabel,
-  TARGET_DEFAULT, checkTarget, sizingBody, sizingProgress, sizingRows, estimateLines, useSetup,
+  TARGET_DEFAULT, checkTarget, sizingBody, sizingProgress, estimateLines, useSetup,
+  SIZING_FIELDS, COOL_DOWN_DEFAULT, checkCoolDown, checkSuggest, applySuggestion,
   COOL_START_HOUR, coolDownLine, startChoices, filterFromRoom,
   RUN_CONTROL, runControl, setRunControl, resetRunControl, controlLine, controlText, fixedControlLine,
 } from '../web/simulate-math.js';
@@ -187,7 +188,10 @@ test('the summary and the room line', () => {
   const line = (label, of = lines) => of.find((l) => l.label === label).text;
   assert.deepEqual(lines.map((l) => l.label), ['Room', 'Walls and weather', 'Machines', 'Control', 'Filter', 'Crops', 'Run']);
   assert.equal(line('Crops'), 'Grey oyster, 500 blocks; ready-to-fruit blocks, starting at fruiting');
-  assert.equal(line('Machines'), 'Fan 600 m³/h, aircon 3.5 kW (12,000 BTU/h class), humidifier 1.5 L/h, no dehumidifier');
+  // a number keeps its unit on its line (critique 2026-10-28: 'L/day' alone on a line)
+  assert.equal(line('Machines'), 'Fan 600\u00a0m³/h, aircon 3.5\u00a0kW (12,000\u00a0BTU/h class), humidifier 1.5\u00a0L/h, no dehumidifier');
+  const wet = initialState({ room: { ...room, dehumidifier: true, dehumidifierLday: 12, lights: true, lightsW: 40 } });
+  assert.match(line('Machines', summaryLines(wet, { ...room, lights: true, lightsW: 40 })), /, dehumidifier 12\u00a0L\/day, lights 40\u00a0W on the room's schedule$/);
   assert.equal(line('Walls and weather'), 'Walls 80 W/K, sun on the roof 300 W, outdoor 25–33 °C, dew point 24 °C');
   assert.equal(line('Run'), '7 days');
   s.daysMode = 'whole';
@@ -225,7 +229,7 @@ test('the dehumidifier input: 0 to 200 L/day, 0 is none; the room (when fitted) 
   assert.deepEqual(checkStep(1, s), {});
   assert.equal(buildBody(s).physics.dehumidifierLday, 20);
   assert.equal(stepOf('physics.dehumidifierLday'), 1);
-  assert.equal(summaryLines(s, room).find((l) => l.label === 'Machines').text, 'Fan 600 m³/h, aircon 3.5 kW (12,000 BTU/h class), humidifier 1.5 L/h, dehumidifier 20 L/day');
+  assert.equal(summaryLines(s, room).find((l) => l.label === 'Machines').text.replaceAll('\u00a0', ' '), 'Fan 600 m³/h, aircon 3.5 kW (12,000 BTU/h class), humidifier 1.5 L/h, dehumidifier 20 L/day');
 });
 
 // ---- suggest machines (spec 2026-10-22 section 7) ----
@@ -269,25 +273,6 @@ test('sizing progress words', () => {
   assert.equal(sizingProgress({ status: 'done' }), 'Done');
 });
 
-test('the table rows: texts, Best on the first, reached marks by words', () => {
-  const rows = sizingRows(job.result);
-  assert.equal(rows.length, 2);
-  assert.deepEqual(rows[0], {
-    index: 0, best: true, reached: true, mark: 'Best, reaches 95 %',
-    fan: '150', humidifier: '0.5', dehumidifier: '10', aircon: '2.6 kW (9,000 BTU/h class)', limit: '30', t: '99.1', rh: '97.0', co2: '98.0', all: '96.0', kWh: '41.3',
-    coolDown: '—', // a suggestion from before the cool-down check
-  });
-  assert.deepEqual([rows[1].best, rows[1].reached, rows[1].mark, rows[1].dehumidifier], [false, false, 'Below 95 %', '0']);
-  // the second reaches the target when it is lower
-  assert.equal(sizingRows({ ...job.result, target: 90 })[1].mark, 'Reaches 90 %'); // t, rh, co2 each 90 or more (all three is 88: information only)
-  assert.equal(sizingRows({ ...job.result, target: 91 })[1].mark, 'Below 91 %'); // humidity 90
-  assert.equal(sizingRows({ ...job.result, target: 98 })[0].reached, false); // rh 97
-  // a Best row that misses
-  assert.equal(sizingRows({ ...job.result, target: 99 })[0].mark, 'Best, below 99 %');
-  assert.deepEqual(sizingRows({ best: [] }), []);
-  assert.deepEqual(sizingRows(null), []);
-});
-
 test('the estimates with their reasons', () => {
   assert.deepEqual(estimateLines(job.result.estimate), [
     'Fan 150 m³/h: Fresh air for the CO₂ of 500 blocks',
@@ -302,14 +287,12 @@ test('the estimates with their reasons', () => {
 
 test('Use this fills step 1 and the run\'s time limit; the POST carries it only when it differs from the room', () => {
   const s = initialState({ room });
-  const rows = sizingRows(job.result);
   useSetup(s, job.result.best[0], 10);
   assert.deepEqual([s.physics.fanFlow, s.physics.humidifierLH, s.physics.dehumidifierLday, s.physics.acBTU], ['150', '0.5', '10', '9000']);
   assert.equal(s.physics.wallUA, '80'); // walls and weather stay
   assert.equal(s.exchangeMaxMin, 30);
   assert.deepEqual(buildBody(s).control, { exchangeMaxMin: 30 });
   assert.deepEqual(Object.keys(buildBody(s)), ['physics', 'crops', 'farmType', 'stage', 'days', 'control']);
-  assert.equal(rows[0].index, 0);
   // the same as the room's: no control in the body
   useSetup(s, job.result.best[1], 10);
   assert.equal(s.exchangeMaxMin, null);
@@ -369,16 +352,6 @@ const cooled = {
     { ...job.result.best[1], coolDownH: null },
   ],
 };
-
-test('the table rows: Cools down in, and a row that cools down too slowly says so like one below the target', () => {
-  const rows = sizingRows(cooled);
-  assert.deepEqual(rows.map((r) => r.coolDown), ['1.5 h', '4.2 h', 'not in a day', '3.0 h', 'not in a day']);
-  assert.deepEqual(rows.map((r) => r.reached), [true, false, false, false, false]);
-  assert.deepEqual(rows.map((r) => r.mark), [
-    'Best, reaches 95 %', 'Reaches 95 %, cools down in over 3 h', 'Reaches 95 %, cools down in over 3 h', 'Below 95 %', 'Below 95 %, cools down in over 3 h',
-  ]);
-  assert.equal(sizingRows({ ...cooled, coolDownMaxH: 5 })[1].reached, true);
-});
 
 test('the line that says what the cool-down is', () => {
   assert.equal(coolDownLine(cooled), 'Cool-down: from outdoor air at 14:00 (just loaded, or after the door was open) until temperature and humidity are in band and hold it for an hour (at most 0.5 °C too warm or 2 % RH too dry now and then); at most 3 h.');
@@ -518,4 +491,57 @@ test('Simulate again with a run carries its own control settings', () => {
   assert.equal(controlText(s, 'exchangeMaxMin'), '60');
   // the room's newest run is only a prefill of the machines: its settings stay its own
   assert.equal('control' in buildBody(initialState({ room, roomControl, lastRun: run })), false);
+});
+
+// ---- Suggest machines as a page of its own (owner 2026-10-28) ----
+
+test('the page asks for the walls and weather only: the machines are what it looks for', () => {
+  assert.deepEqual(SIZING_FIELDS.map((f) => f.key), ['wallUA', 'outdoorHigh', 'outdoorLow', 'outdoorDew', 'sunW']);
+});
+
+test('the two room numbers nobody knows by heart have hints with typical values (device/sim-store.js, spec 2026-10-19)', () => {
+  const hint = (key) => PHYSICS_FIELDS.find((f) => f.key === key).hint;
+  assert.match(hint('wallUA'), /per °C/);
+  assert.match(hint('wallUA'), /about 30 W\/K/);
+  assert.match(hint('wallUA'), /about 280 W\/K/);
+  assert.match(hint('sunW'), /13:00/);
+  assert.match(hint('sunW'), /about 300 W for an insulated roof/);
+  assert.match(hint('sunW'), /several kW for bare zinc/);
+});
+
+test('the longest cool-down: a number from 0.5 to 24 h like the server, 3 h by default', () => {
+  assert.equal(COOL_DOWN_DEFAULT, '3');
+  for (const ok of ['0.5', '3', '24', ' 1.5 ']) assert.equal(checkCoolDown(ok), null, ok);
+  for (const bad of ['0.4', '25', '', 'abc', '-1']) assert.equal(checkCoolDown(bad), 'Longest cool-down must be a number from 0.5 to 24 h', bad);
+});
+
+test('the sizing body carries the longest cool-down when given', () => {
+  const s = initialState({ room });
+  assert.equal(sizingBody(s, '95', '2.5').coolDownMaxH, 2.5);
+  assert.equal('coolDownMaxH' in sizingBody(s, '95'), false);
+});
+
+test("the page's check: the walls and weather, the crops, the target and the cool-down; not the machines", () => {
+  const s = initialState({ room });
+  assert.deepEqual(checkSuggest(s, '95', '3'), {});
+  s.physics.fanFlow = 'abc'; // not on the page
+  s.physics.wallUA = '-1';
+  s.crops = [];
+  const e = checkSuggest(s, '100', '0');
+  assert.deepEqual(Object.keys(e).sort(), ['coolDownMaxH', 'crops', 'physics.wallUA', 'target']);
+});
+
+test("Use this on the page: Simulate opens with the page's walls, weather and crops and the setup's machines and settings", () => {
+  const s = initialState({ room, roomControl: { exchangeEveryMin: 15, exchangeMaxMin: 10, acDrop: 0, humidifierDuringExchange: false, outdoorAir: true } });
+  const input = { physics: { wallUA: 30, outdoorHigh: 34, outdoorLow: 24, outdoorDew: 23, sunW: 100 }, crops: [{ crop: 'lionsmane', blocks: 950 }], farmType: 'full', stage: 'pinning' };
+  applySuggestion(s, input, job.result.best[0]);
+  assert.deepEqual([s.physics.wallUA, s.physics.outdoorHigh, s.physics.outdoorLow, s.physics.outdoorDew, s.physics.sunW], ['30', '34', '24', '23', '100']);
+  assert.deepEqual(s.crops, [{ crop: 'lionsmane', blocks: '950' }]);
+  assert.deepEqual([s.farmType, s.stage], ['full', 'pinning']);
+  assert.deepEqual([s.physics.fanFlow, s.physics.acBTU, s.physics.humidifierLH, s.physics.dehumidifierLday], ['150', '9000', '0.5', '10']);
+  assert.deepEqual(buildBody(s).control, { exchangeMaxMin: 30 });
+  // a stage the farm type does not have falls back to its first
+  const t = initialState({ room });
+  applySuggestion(t, { ...input, farmType: 'ready', stage: 'spawn' }, job.result.best[0]);
+  assert.equal(t.stage, 'fruiting');
 });

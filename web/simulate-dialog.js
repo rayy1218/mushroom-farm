@@ -1,22 +1,22 @@
 // The Simulate stepper (spec 2026-10-20-crops-and-simulation-design.md section 4.1): step 1 room and machines, step 2 crops,
 // step 3 run; then the progress of the run. Shared by the Rooms list and the room page; the dialog is made on first use.
-// openSimulateDialog(room, { onStarted(run), onFinished() }); closeSimulateDialog() for a page that goes away.
+// openSimulateDialog(room, { onStarted(run), onFinished(), from (a run to simulate again), suggestion ({ input, candidate }:
+// Use this on the Suggest machines page) }); closeSimulateDialog() for a page that goes away.
 
 import { request, OFFLINE, GONE, OUTDATED, routeMissing } from './api.js';
 import { live } from './live.js';
 import { fallbackMs, isStale, withProgress } from './live-math.js';
+import { suggestHash } from './route.js';
 import { CROPS, CROP_KEYS, STAGES, FARM_TYPES, MAX_CROPS } from './crops.js';
 import { AC_CLASSES, acClassOf, kwOfBtu, btuOfKw } from './simulation-math.js';
 import {
   PHYSICS_FIELDS, FILTER_KEYS, initialState, checkStep, firstField, stepOf, buildBody, mixSummary, wholeProgram, stagesOf, fixStage, roomLine,
   summaryLines, progressLine, removeLabel, filterFromRoom,
-  RUN_CONTROL, runControl, setRunControl, resetRunControl, controlText, fixedControlLine,
-  TARGET_DEFAULT, checkTarget, sizingBody, sizingProgress, sizingRows, estimateLines, useSetup, coolDownLine, startChoices,
+  RUN_CONTROL, runControl, setRunControl, resetRunControl, controlText, fixedControlLine, applySuggestion, startChoices,
 } from './simulate-math.js';
 
 const STEPS = ['Room and machines', 'Crops', 'Run'];
 const POLL_MS = 2000;
-const SIZING_POLL_MS = 1000;
 
 let dialog = null;
 let openSeq = 0; // every opening gets a token; a reply that finds it changed is dropped (it belongs to an earlier opening)
@@ -59,12 +59,6 @@ export function openSimulateDialog(room, hooks = {}) {
   let run = null;
   let timer = null;
   let sending = false;
-  let sizing = null; // the suggestion job as last read (GET /api/sizing/:id)
-  let sizingTimer = null;
-  let sizingText = ''; // an error of the suggestion that belongs to no field (409, offline)
-  let targetText = TARGET_DEFAULT;
-  let sizingSending = false;
-  let paintSizing = () => {}; // set by step 3
 
   d.replaceChildren();
   const form = el('form');
@@ -84,8 +78,8 @@ export function openSimulateDialog(room, hooks = {}) {
 
   // ---- fields ----
 
-  // A labelled input with its error line; the input is registered under the server's field name.
-  function field(name, label, input) {
+  // A labelled input with its error line and, when given, a hint; the input is registered under the server's field name.
+  function field(name, label, input, hint) {
     const wrap = el('div', 'field');
     const id = `sim-${name.replace('.', '-')}`;
     input.id = id;
@@ -94,10 +88,16 @@ export function openSimulateDialog(room, hooks = {}) {
     err.id = `${id}-error`;
     err.dataset.error = name;
     err.setAttribute('aria-live', 'polite');
-    input.setAttribute('aria-describedby', err.id);
     const lab = el('label', '', label);
     lab.htmlFor = id;
-    wrap.append(lab, input, err);
+    wrap.append(lab, input);
+    if (hint) {
+      const h = el('p', 'c-hint', hint);
+      h.id = `${id}-hint`;
+      wrap.append(h);
+    }
+    wrap.append(err);
+    input.setAttribute('aria-describedby', hint ? `${id}-hint ${err.id}` : err.id);
     return wrap;
   }
 
@@ -202,7 +202,7 @@ export function openSimulateDialog(room, hooks = {}) {
     const filterGrid = el('div', 'sizes two');
     for (const f of PHYSICS_FIELDS) {
       const wrap = f.kw ? acField(f) : field(`physics.${f.key}`, `${f.label} (${f.unit})`,
-        numberInput(state.physics[f.key], (v) => { state.physics[f.key] = v; }, f.whole));
+        numberInput(state.physics[f.key], (v) => { state.physics[f.key] = v; }, f.whole), f.hint);
       if (FILTER_KEYS.includes(f.key)) filterGrid.append(wrap);
       else (['fanFlow', 'acBTU', 'humidifierLH', 'dehumidifierLday'].includes(f.key) ? machineGrid : weatherGrid).append(wrap);
     }
@@ -346,9 +346,18 @@ export function openSimulateDialog(room, hooks = {}) {
     }
     paintSummary();
     const control = controlBox(paintSummary);
-    const refresh = () => { paintSummary(); control.paint(); };
-    box.append(radios, starts, el('h3', 'sim-sub', 'Your choices'), list, control.node, suggestBox(refresh));
+    box.append(radios, starts, el('h3', 'sim-sub', 'Your choices'), list, control.node, suggestLink());
     return box;
+  }
+
+  // Suggest machines has a page of its own (owner 2026-10-28): the search and its table did not fit this dialog.
+  function suggestLink() {
+    const p = el('p', 'sim-suggest');
+    const link = el('a', 'sim-suggest-link', 'Suggest machines instead →');
+    link.href = suggestHash(room.id);
+    link.addEventListener('click', () => d.close());
+    p.append(el('span', 'muted', 'Not sure which machines? '), link);
+    return p;
   }
 
   // Change for this run (critique 2026-10-28): the control settings the server takes for one run, prefilled with the room's;
@@ -411,181 +420,6 @@ export function openSimulateDialog(room, hooks = {}) {
     return { node: fold, paint };
   }
 
-  // ---- suggest machines ----
-
-  const sizingActive = () => sizing?.status === 'queued' || sizing?.status === 'running';
-
-  function suggestBox(paintSummary) {
-    const box = el('div', 'sim-suggest');
-    box.append(el('h3', 'sim-sub', 'Suggest machines'), el('p', 'muted', 'The program tries fan, humidifier, dehumidifier and aircon sizes for the crops of step 2 and the walls and weather of step 1, and lists the setups that keep the room in band for the least energy.'));
-    const input = numberInput(targetText, (v) => { targetText = v; }, true);
-    const row = el('div', 'sim-target');
-    const go = button('Suggest machines for these crops');
-    row.append(field('target', 'Target (%): time with temperature, humidity and CO₂ all in band', input), go);
-    // Enter in the target asks for a suggestion, not the form's Run simulation
-    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); go.click(); } });
-    const out = el('div', 'sim-suggest-out');
-    out.setAttribute('aria-live', 'polite');
-    box.append(row, out);
-
-    paintSizing = () => {
-      if (!box.isConnected) return;
-      const active = sizingActive();
-      go.disabled = active || sizingSending;
-      input.disabled = active;
-      const nodes = [];
-      if (sizingText) nodes.push(el('p', 'sim-warn', sizingText));
-      if (sizing && active) {
-        const progress = el('progress');
-        progress.max = 1;
-        progress.value = Number.isFinite(sizing.progress) ? sizing.progress : 0;
-        progress.setAttribute('aria-label', 'Progress of the suggestion');
-        const status = el('p', 'sim-progress', sizingProgress(sizing));
-        status.setAttribute('role', 'status');
-        const stop = button('Cancel suggestion');
-        stop.addEventListener('click', cancelSizing);
-        nodes.push(progress, status, stop);
-      } else if (sizing?.status === 'failed') {
-        nodes.push(el('p', 'sim-warn', sizingProgress(sizing)));
-      } else if (sizing?.status === 'done' && sizing.result) {
-        nodes.push(...resultView(sizing.result, paintSummary));
-      }
-      out.replaceChildren(...nodes);
-    };
-
-    go.addEventListener('click', async () => {
-      const bad = checkTarget(targetText);
-      if (bad) { showErrors({ target: bad }); return; }
-      const errors = { ...checkStep(1, state), ...checkStep(2, state) };
-      if (Object.keys(errors).length) { step = stepOf(firstField(errors)) ?? 1; render(); showErrors(errors); return; }
-      await startSizing();
-    });
-    paintSizing();
-    return box;
-  }
-
-  function resultView(result, paintSummary) {
-    const nodes = [];
-    const lines = estimateLines(result.estimate);
-    if (lines.length) {
-      nodes.push(el('p', 'sim-legend', 'Where the program started'));
-      const ul = el('ul', 'sim-mix-lines');
-      ul.append(...lines.map((t) => el('li', '', t)));
-      nodes.push(ul);
-    }
-    const rows = sizingRows(result);
-    if (rows.length === 0) {
-      nodes.push(el('p', 'sim-warn', 'No setup was found.'));
-    } else {
-      const wrap = el('div', 'us-table-wrap');
-      wrap.tabIndex = 0;
-      wrap.setAttribute('role', 'region');
-      wrap.setAttribute('aria-label', 'Best setups (scrolls sideways on a narrow screen)');
-      const table = el('table', 'us-table sim-setups');
-      table.append(el('caption', '', `Best setups over ${result.days} days, in order`));
-      const head = el('tr');
-      const columns = ['Setup', 'Fan m³/h', 'Humidifier L/h', 'Dehumidifier L/day (0 = none)', 'Aircon', 'Time limit min', 'Temperature %', 'Humidity %', 'CO₂ %', 'All three %', `kWh in ${result.days} days`, 'Cools down in', ''];
-      columns.forEach((c, i) => { const th = el('th', i > 0 && i < columns.length - 1 ? 'num' : '', c); th.scope = 'col'; head.append(th); });
-      const thead = el('thead');
-      thead.append(head);
-      const tbody = el('tbody');
-      for (const r of rows) {
-        const tr = el('tr');
-        const mark = el('th', '', `${r.reached ? '✓ ' : ''}${r.mark}`);
-        mark.scope = 'row';
-        tr.append(mark);
-        for (const v of [r.fan, r.humidifier, r.dehumidifier, r.aircon, r.limit, r.t, r.rh, r.co2, r.all, r.kWh, r.coolDown]) tr.append(el('td', 'num', v));
-        const use = button('Use this');
-        use.setAttribute('aria-label', `Use setup ${r.index + 1}`);
-        use.addEventListener('click', () => {
-          useSetup(state, result.best[r.index]);
-          paintSummary();
-          use.textContent = 'Used';
-          formError.hidden = true;
-        });
-        const cell = el('td');
-        cell.append(use);
-        tr.append(cell);
-        tbody.append(tr);
-      }
-      table.append(thead, tbody);
-      wrap.append(table);
-      const cool = coolDownLine(result);
-      nodes.push(wrap, ...(cool ? [el('p', 'muted', cool)] : []));
-      if (!rows.some((r) => r.reached)) {
-        nodes.push(el('p', 'sim-warn', `No setup reached ${result.target} %${cool ? ` and cooled down within ${result.coolDownMaxH} h` : ''}.`));
-      }
-    }
-    for (const n of result.notes ?? []) nodes.push(el('p', 'us-note', n));
-    return nodes;
-  }
-
-  async function startSizing() {
-    sizingSending = true;
-    sizingText = '';
-    sizing = null;
-    paintSizing();
-    try {
-      const created = await request('POST', `/api/rooms/${room.id}/sizing`, sizingBody(state, targetText));
-      if (!alive()) { request('DELETE', `/api/sizing/${created.id}`).catch(() => {}); return; }
-      sizing = created;
-      pollSizing();
-    } catch (err) {
-      if (!alive()) return;
-      if (err.status === 400 && err.field && err.field !== 'target' && stepOf(err.field) && stepOf(err.field) !== 3) {
-        step = stepOf(err.field);
-        render();
-        showErrors({ [err.field]: err.message });
-      } else if (err.status === 400 && err.field === 'target') {
-        showErrors({ target: err.message });
-      } else if (routeMissing(err)) {
-        sizingText = OUTDATED;
-      } else if (err.status === 404) {
-        sizingText = GONE;
-      } else {
-        sizingText = err.status === 0 ? `${OFFLINE}. Try again.` : err.message;
-      }
-    } finally {
-      sizingSending = false;
-      paintSizing();
-    }
-  }
-
-  function pollSizing() {
-    clearTimeout(sizingTimer);
-    const job = sizing;
-    paintSizing();
-    if (!sizingActive()) return;
-    sizingTimer = setTimeout(() => checkSizing(job), fallbackMs(SIZING_POLL_MS, live.connected()));
-  }
-
-  // One look at the suggestion: on the timer, or at once when the stream says it moved.
-  async function checkSizing(job) {
-    clearTimeout(sizingTimer);
-    if (!alive() || sizing !== job) return;
-    try {
-      const latest = await request('GET', `/api/sizing/${job.id}`);
-      if (!alive() || sizing !== job) return;
-      // ids start again after a restart of the farm app: another room's job with the same id is not this one
-      if (latest.roomId !== room.id) { sizing = null; sizingText = 'This suggestion is gone'; paintSizing(); return; }
-      if (isStale(sizing, latest)) return pollSizing(); // an event told more since it was asked
-      sizing = latest;
-    } catch (err) {
-      if (!alive() || sizing !== job) return;
-      if (err.status === 404) { sizing = null; sizingText = 'This suggestion is gone'; paintSizing(); return; }
-    }
-    pollSizing();
-  }
-
-  async function cancelSizing() {
-    const job = sizing;
-    clearTimeout(sizingTimer);
-    sizing = null;
-    sizingText = '';
-    paintSizing();
-    try { await request('DELETE', `/api/sizing/${job.id}`); } catch { /* it ended or is gone already */ }
-  }
-
   const STEP_VIEWS = [stepOne, stepTwo, stepThree];
 
   function render() {
@@ -622,8 +456,6 @@ export function openSimulateDialog(room, hooks = {}) {
   });
 
   async function start() {
-    // A run waits behind a suggestion on the farm's one queue: stop the suggestion first (its table goes with the step).
-    if (sizingActive()) await cancelSizing();
     sending = true;
     const submit = actions.querySelector('.primary');
     submit.disabled = true;
@@ -710,29 +542,18 @@ export function openSimulateDialog(room, hooks = {}) {
   actions.firstChild.addEventListener('click', () => d.close());
   // The stream says a job moved: look at once instead of waiting for the timer.
   const offLive = [
-    live.on('sizing', (data) => {
-      if (!alive() || !sizing || data.id !== sizing.id || data.roomId !== room.id || !sizingActive()) return;
-      if (data.status === 'done' || data.status === 'failed') return void checkSizing(sizing); // the result, once
-      const next = withProgress(sizing, data);
-      if (next) { sizing = next; pollSizing(); }
-    }),
     live.on('simulation', (data) => {
       if (!alive() || !run || data.id !== run.id || run.status === 'done' || run.status === 'failed') return;
       if (data.status === 'done' || data.status === 'failed') return void checkRun();
       const next = withProgress(run, data);
       if (next) { run = next; paintRun(); poll(); }
     }),
-    live.onStatus(() => { // up: look once, in case events were missed; down: the short timers again
+    live.onStatus(() => { // up: look once, in case events were missed; down: the short timer again
       if (!alive()) return;
-      if (sizing && sizingActive()) checkSizing(sizing);
       if (run && run.status !== 'done' && run.status !== 'failed') checkRun();
     }),
   ];
   d.addEventListener('close', () => offLive.forEach((off) => off()), { once: true });
-  d.addEventListener('close', () => { // a suggestion nobody waits for stops, so the room is free for the next one
-    clearTimeout(sizingTimer);
-    if (sizingActive()) request('DELETE', `/api/sizing/${sizing.id}`).catch(() => {});
-  }, { once: true });
   d.showModal();
 
   Promise.all([
@@ -745,6 +566,10 @@ export function openSimulateDialog(room, hooks = {}) {
     // hooks.from: a run to start from (Simulate again on a result page), else the room's newest
     state = initialState({ room, lastRun: hooks.from ?? (Array.isArray(runs) ? runs[0] ?? null : null), cropData, roomControl: control, again: hooks.from ?? null });
     step = 1;
+    if (hooks.suggestion) { // Use this on the Suggest machines page: the setup is chosen, the run is next
+      applySuggestion(state, hooks.suggestion.input, hooks.suggestion.candidate);
+      step = 3;
+    }
     render();
     title.focus();
   });

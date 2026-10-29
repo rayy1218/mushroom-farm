@@ -3,7 +3,7 @@
 
 import { openSimulateDialog, closeSimulateDialog } from './simulate-dialog.js';
 import { request, OFFLINE, OUTDATED, routeMissing } from './api.js';
-import { roomHash } from './route.js';
+import { roomHash, suggestHash } from './route.js';
 import { drawLineChart, M } from './chart.js';
 import { drawTimeline } from './timeline.js';
 import { drawBarChart } from './usage.js';
@@ -13,7 +13,7 @@ import { tickCountFor } from './history-math.js';
 import { progressLine } from './simulate-math.js';
 import {
   CHARTS, tileList, stageRows, dayTicks, runEnd, chartPoints, thinPoints, outdoorLine, bandSteps, timelineRows, energyView, perDayBars,
-  inputLine, inputRows, runVerdict, runCauses, runTries, headLine, formatDateTime, formatRunTime, isActive, filterView, STAGE_COLUMNS, scrollEdges,
+  inputLine, inputRows, runVerdict, runCauses, runTries, runFacts, headLine, formatDateTime, formatRunTime, isActive, filterView, STAGE_COLUMNS, scrollEdges,
 } from './simulation-math.js';
 
 const POLL_MS = 2000;
@@ -300,6 +300,8 @@ export function mount(container, { id, runId }) {
       const v = text('section', 'card sim-verdict');
       v.dataset.tone = verdict.tone;
       v.append(text('p', 'sim-verdict-text', verdict.text));
+      const facts = runFacts(result); // how hard the machines worked for it, not only the time in band
+      if (facts) v.append(text('p', 'sim-verdict-facts', facts));
       if (verdict.lines.length) {
         const ul = text('ul', 'sim-verdict-lines');
         ul.append(...verdict.lines.map((l) => text('li', '', l)));
@@ -311,13 +313,20 @@ export function mount(container, { id, runId }) {
           why.append(...causes.map((l) => text('li', '', l)));
           v.append(why);
           const tries = runTries(result, run.input); // the value to try for a setting a cause names
-          if (tries.length) {
+          if (tries.length) { // under their own heading, so they don't read as more causes (critique 2026-10-28)
+            v.append(text('h3', 'sim-verdict-why', 'Try'));
             const list = text('ul', 'sim-verdict-lines sim-verdict-tries');
             list.append(...tries.map((l) => text('li', '', l)));
             v.append(list);
           }
           v.append(text('p', 'muted sim-verdict-next', 'These are the room\'s control settings (Setup tab, Automatic control). Change them there, or for one run in Simulate (step 3, Change for this run), and simulate again before buying other machines.'));
-        } else v.append(text('p', 'muted sim-verdict-next', 'Simulate again with other machines, or let Suggest machines (the last step of Simulate) pick them.'));
+        } else {
+          const next = text('p', 'muted sim-verdict-next', 'Simulate again with other machines, or let ');
+          const link = text('a', '', 'Suggest machines');
+          link.href = suggestHash(id);
+          next.append(link, ' pick them.');
+          v.append(next);
+        }
       }
       els.results.append(v);
     }

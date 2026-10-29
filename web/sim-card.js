@@ -1,5 +1,5 @@
-// The Simulations card of the room page: the last runs of the room, each linking to its page, and a Simulate button that opens
-// the same stepper as the Rooms list. createSimulationsCard(host, { roomId, getRoom, onOffline }) → { refresh(), destroy() }.
+// The Simulations card of the room page: the last runs of the room, each linking to its page, a Simulate button that opens
+// the same stepper as the Rooms list, and Suggest machines beside it (its own page since 2026-10-28). createSimulationsCard(host, { roomId, getRoom, onOffline }) → { refresh(), destroy() }.
 // While a run is going the list is asked every 2 s, otherwise only when asked for (after a run was started).
 
 import { live } from './live.js';
@@ -7,6 +7,7 @@ import { fallbackMs, createThrottle } from './live-math.js';
 import { request } from './api.js';
 import { openSimulateDialog } from './simulate-dialog.js';
 import { runRow, isActive, compareRuns, differingLines } from './simulation-math.js';
+import { suggestHash } from './route.js';
 
 const SHOWN = 5;
 const ACTIVE_MS = 2000;
@@ -30,7 +31,11 @@ export function createSimulationsCard(host, { roomId, getRoom }) {
   const head = el('div', 'sim-card-head');
   const simulate = el('button', 'primary', 'Simulate');
   simulate.type = 'button';
-  head.append(el('h2', '', 'Simulations'), simulate);
+  const suggest = el('a', 'button', 'Suggest machines');
+  suggest.href = suggestHash(roomId);
+  const buttons = el('div', 'sim-card-actions');
+  buttons.append(suggest, simulate);
+  head.append(el('h2', '', 'Simulations'), buttons);
   const msg = el('p', 'none', 'Loading…');
   const list = el('ul', 'sim-list');
   const more = el('button', '', '');
@@ -80,7 +85,7 @@ export function createSimulationsCard(host, { roomId, getRoom }) {
         paint();
       });
       pick.append(box, el('span', 'sim-pick-word', 'Compare'));
-      li.append(name, el('span', 'sim-days', r.days), inBand,
+      li.append(name, el('span', 'sim-length', r.days), inBand,
         el('span', 'sim-use', run.status === 'done' ? `${r.kWh} · ${r.litres}` : ''), el('span', 'sim-status', run.status === 'done' ? '' : r.status), pick);
       li.dataset.status = run.status;
       return li;

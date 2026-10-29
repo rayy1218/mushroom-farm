@@ -1,9 +1,10 @@
 // The shell: theme, hash router, and mounting pages into <main id="view">.
 // A page is { mount(container, params) → unmount() }.
 
-import { parseRoute, isCanonical, roomHash } from './route.js';
+import { parseRoute, isCanonical, canonicalHash } from './route.js';
 import * as detail from './room-detail.js';
 import * as simulation from './simulation-page.js';
+import * as suggest from './suggest-page.js';
 import * as settings from './settings-page.js';
 import * as overview from './overview.js';
 import { loadBadge } from './overview-data.js';
@@ -25,9 +26,7 @@ function show() {
   if (!isCanonical(location.hash)) {
     const route = parseRoute(location.hash);
     // Tidy an empty or unknown hash without adding a history entry.
-    history.replaceState(null, '', route.name === 'simulation' ? `#/rooms/${route.id}/simulations/${route.runId}`
-      : route.name === 'detail' ? roomHash(route.id, route.tab) : route.name === 'settings' ? '#/settings'
-      : '#/overview');
+    history.replaceState(null, '', canonicalHash(route));
   }
   const route = parseRoute(location.hash);
   // Another tab of the same room: the page stays (its data, scroll and focus); only the panel changes.
@@ -45,6 +44,7 @@ function show() {
   }
   view.replaceChildren();
   unmount = route.name === 'simulation' ? simulation.mount(view, { id: route.id, runId: route.runId })
+    : route.name === 'suggest' ? suggest.mount(view, { id: route.id })
     : route.name === 'detail' ? detail.mount(view, { id: route.id, tab: route.tab })
     : route.name === 'settings' ? settings.mount(view, {})
     : overview.mount(view, {});

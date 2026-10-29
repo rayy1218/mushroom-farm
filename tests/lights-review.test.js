@@ -201,6 +201,6 @@ test('simulate dialog: the machines summary mentions the lights when the room ha
   const room = { id: 1, name: 'R', length: 6, width: 4, height: 2.5, volume: 60, humidifierLH: 2, lights: true, lightsW: 150 };
   const state = initialState({ room });
   const machinesLine = (r) => summaryLines(state, r).find((l) => l.label === 'Machines').text;
-  assert.match(machinesLine(room), /, lights 150 W on the room's schedule$/);
+  assert.match(machinesLine(room), /, lights 150\u00a0W on the room's schedule$/); // the number keeps its unit on its line
   assert.doesNotMatch(machinesLine({ ...room, lights: false }), /lights/);
 });

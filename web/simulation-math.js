@@ -384,6 +384,20 @@ function causesOf(result, input) {
   return { lines, tries };
 }
 
+// How hard the machines worked for a run, beside its time in band (critique 2026-10-28: a green 98.3 % run ran its fans
+// non-stop for 7 days): "Fans ran 76 % of the time · RM 58.21 for 7 days", the RM only with an electricity price.
+export function runFacts(result) {
+  const series = result?.series ?? [];
+  const end = series.length ? series[series.length - 1].s : 0;
+  if (!(end > 0)) return '';
+  const on = (result.machines?.intake ?? []).reduce((t, x) => t + Math.max(0, Math.min(x.to, end) - x.from), 0);
+  const parts = [`Fans ran ${Math.round((on / end) * 100)} % of the time`];
+  const cost = result.summary?.energy?.cost;
+  const days = result.summary?.days;
+  if (finite(cost)) parts.push(`RM ${cost.toFixed(2)}${finite(days) ? ` for ${plural(days, 'day', 'days')}` : ''}`);
+  return parts.join(' · ');
+}
+
 // Two runs side by side: what they were asked and how they went; differ marks the rows that are not the same.
 export function compareRuns(a, b) {
   const ia = inputRows(a?.input), ib = inputRows(b?.input);

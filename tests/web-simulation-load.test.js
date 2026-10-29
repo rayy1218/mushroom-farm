@@ -22,13 +22,13 @@ test('every module the page imports is served, from app.js to the end', async (t
     assert.match(res.headers.get('content-type'), /javascript/, path);
     for (const [, name] of (await res.text()).matchAll(/from\s+['"]\.\/([a-z0-9-]+\.js)['"]/g)) todo.push(`/${name}`);
   }
-  for (const name of ['simulate-dialog.js', 'simulate-math.js', 'simulation-page.js', 'simulation-math.js', 'crop-card.js', 'crop-math.js', 'sim-card.js', 'crops.js']) {
+  for (const name of ['simulate-dialog.js', 'simulate-math.js', 'simulation-page.js', 'simulation-math.js', 'crop-card.js', 'crop-math.js', 'sim-card.js', 'crops.js', 'suggest-page.js', 'suggest-math.js']) {
     assert.ok(seen.has(`/${name}`), `${name} is part of the page`);
   }
 });
 
 test('the new modules import in Node', async () => {
-  for (const name of ['simulate-dialog', 'simulation-page', 'crop-card', 'sim-card']) {
+  for (const name of ['simulate-dialog', 'simulation-page', 'crop-card', 'sim-card', 'suggest-page']) {
     const mod = await import(`../web/${name}.js`);
     assert.ok(Object.keys(mod).length > 0, name);
   }

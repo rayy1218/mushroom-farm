@@ -40,11 +40,43 @@ test('every field of the dialog has an id or a name', () => {
 });
 
 test('step 3: the Control row\'s settings can be changed for this run, the fresh air interval only on the Setup tab', () => {
-  assert.match(dialog, /box\.append\(radios, starts, el\('h3', 'sim-sub', 'Your choices'\), list, control\.node, suggestBox\(refresh\)\);/);
+  assert.match(dialog, /box\.append\(radios, starts, el\('h3', 'sim-sub', 'Your choices'\), list, control\.node, suggestLink\(\)\);/);
   assert.match(dialog, /const head = el\('summary', '', 'Change for this run'\);/);
   assert.match(dialog, /field\(`control\.\$\{f\.key\}`, f\.label, numberInput\(controlText\(state, f\.key\)/);
   assert.match(dialog, /box\.dataset\.field = `control\.\$\{f\.key\}`;/);
   assert.match(dialog, /const fixed = fixedControlLine\(state\);/);
   assert.match(dialog, /fold\.open = Object\.keys\(runControl\(state\)\.own\)\.length > 0;/);
   assert.match(dialog, /roomControl: control, again: hooks\.from \?\? null/);
+});
+
+test('Suggest machines is a page of its own (owner 2026-10-28): step 3 links to it instead of holding the search', () => {
+  assert.match(dialog, /const link = el\('a', 'sim-suggest-link', 'Suggest machines instead →'\);\s*link\.href = suggestHash\(room\.id\);/);
+  assert.match(dialog, /link\.addEventListener\('click', \(\) => d\.close\(\)\);/);
+  for (const gone of [/\/sizing/, /sizingRows/, /suggestBox/, /Cancel suggestion/, /✓/]) assert.doesNotMatch(dialog, gone);
+});
+
+test("the page's Use this opens Simulate on step 3 with the search's walls, weather and crops and the setup", () => {
+  assert.match(dialog, /if \(hooks\.suggestion\) \{[^\n]*\n\s*applySuggestion\(state, hooks\.suggestion\.input, hooks\.suggestion\.candidate\);\s*step = 3;\s*\}/);
+});
+
+// ---- critique 2026-10-28, the smaller Simulate items ----
+
+test('step 3: the How long and Start from rows are 44 px tall', () => {
+  assert.match(css, /\.sim-choice \{[^}]*min-height: 44px;/);
+  assert.match(css, /\.sim-choice input\[type="radio"\] \{[^}]*width: 20px; height: 20px;/);
+});
+
+test('the step marks: the current one carries aria-current and an accent underline, not weight alone', () => {
+  assert.match(dialog, /if \(i \+ 1 === step\) li\.setAttribute\('aria-current', 'step'\);/);
+  assert.match(css, /\.sim-steps \[aria-current="step"\] \{[^}]*text-decoration: underline 2px var\(--accent\);/);
+});
+
+test("step 1: the wall heat transfer and the sun on the roof have hints with typical values", () => {
+  assert.match(dialog, /function field\(name, label, input, hint\) \{/);
+  assert.match(dialog, /field\(`physics\.\$\{f\.key\}`, `\$\{f\.label\} \(\$\{f\.unit\}\)`,\s*numberInput\(state\.physics\[f\.key\], \(v\) => \{ state\.physics\[f\.key\] = v; \}, f\.whole\), f\.hint\)/);
+});
+
+test('step 2: the crop rows share one grid, so Blocks sits over its input', () => {
+  assert.match(css, /\.sim-crops \{ display: grid; grid-template-columns: minmax\(0, 1fr\) 92px auto auto;/);
+  assert.match(css, /\.sim-crop-row \{ grid-column: 1 \/ -1; display: grid; grid-template-columns: subgrid;/);
 });

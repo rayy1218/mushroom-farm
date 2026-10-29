@@ -21,9 +21,14 @@ export function roomHash(id, tab = 'now') {
   return NAMED_TABS.includes(t) ? `#/rooms/${id}/${t}` : `#/rooms/${id}`;
 }
 
+// The address of a room's Suggest machines page (owner 2026-10-28: a page of its own, out of the Simulate dialog).
+export const suggestHash = (id) => `#/rooms/${id}/suggest`;
+
 export function parseRoute(hash) {
   const run = new RegExp(`^#/rooms/${ID}/simulations/${ID}/?$`).exec(hash ?? '');
   if (run) return { name: 'simulation', id: Number(run[1]), runId: Number(run[2]) };
+  const suggest = new RegExp(`^#/rooms/${ID}/suggest/?$`).exec(hash ?? '');
+  if (suggest) return { name: 'suggest', id: Number(suggest[1]) };
   const m = new RegExp(`^#/rooms/${ID}(?:/([a-z]+))?/?$`).exec(hash ?? '');
   const tab = m && m[2] !== undefined ? tabOf(m[2]) : 'now';
   if (m && (tab === 'now' || NAMED_TABS.includes(tab)) && m[2] !== 'now') return { name: 'detail', id: Number(m[1]), tab };
@@ -32,9 +37,14 @@ export function parseRoute(hash) {
   return { name: 'overview' };
 }
 
+// The one address of a route (an address that is not it is tidied to it).
+export function canonicalHash(route) {
+  if (route.name === 'simulation') return `#/rooms/${route.id}/simulations/${route.runId}`;
+  if (route.name === 'suggest') return suggestHash(route.id);
+  if (route.name === 'detail') return roomHash(route.id, route.tab);
+  return route.name === 'settings' ? '#/settings' : '#/overview';
+}
+
 export function isCanonical(hash) {
-  if (hash === '#/overview' || hash === '#/settings') return true;
-  if (/^#\/rooms\/[1-9][0-9]{0,14}\/simulations\/[1-9][0-9]{0,14}$/.test(hash ?? '')) return true;
-  const route = parseRoute(hash);
-  return route.name === 'detail' && hash === roomHash(route.id, route.tab);
+  return hash === canonicalHash(parseRoute(hash));
 }
