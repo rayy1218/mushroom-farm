@@ -16,8 +16,9 @@ export const SPARKS = [
 
 // A sparkline: points [{ at, v }] in a w x h box with 3 px padding, band { low, high } or null.
 // window { from, to, gapMs } fixes the x scale to [from, to] and starts a new line where the points are more than gapMs apart.
-// Returns { d, last: { x, y }, band: { y, h } | null, min, max }, or null with fewer than 2 usable points.
-// Like v1's, with the band stretching the scale so it is always inside the box.
+// Returns { d, last: { x, y }, band: { y, h } | null, joins, min, max }, or null with fewer than 2 usable points; joins:
+// [{ x1, y1, x2, y2 }] from the point before each gap to the one after it, drawn dashed (critique 2026-10-29: a lone dot at
+// the right edge after a gap). Like v1's, with the band stretching the scale so it is always inside the box.
 export function sparkPath(points, w, h, band, window = null) {
   const pts = (points ?? []).filter((p) => p && finite(p.at) && finite(p.v)).sort((a, b) => a.at - b.at);
   if (pts.length < 2) return null;
@@ -34,10 +35,12 @@ export function sparkPath(points, w, h, band, window = null) {
   const x = (t) => pad + (t1 > t0 ? (t - t0) / (t1 - t0) : 0) * (w - 2 * pad);
   const y = (v) => pad + (1 - (v - lo) / (hi - lo)) * (h - 2 * pad);
   const last = pts[pts.length - 1];
+  const gap = (i) => i > 0 && Boolean(window?.gapMs) && pts[i].at - pts[i - 1].at > window.gapMs;
   return {
-    d: pts.map((p, i) => `${i && !(window?.gapMs && p.at - pts[i - 1].at > window.gapMs) ? 'L' : 'M'}${round1(x(p.at))} ${round1(y(p.v))}`).join(' '),
+    d: pts.map((p, i) => `${i && !gap(i) ? 'L' : 'M'}${round1(x(p.at))} ${round1(y(p.v))}`).join(' '),
     last: { x: round1(x(last.at)), y: round1(y(last.v)) },
     band: hasBand ? { y: round1(y(band.high)), h: round1(y(band.low) - y(band.high)) } : null,
+    joins: pts.flatMap((p, i) => (gap(i) ? [{ x1: round1(x(pts[i - 1].at)), y1: round1(y(pts[i - 1].v)), x2: round1(x(p.at)), y2: round1(y(p.v)) }] : [])),
     min,
     max,
   };

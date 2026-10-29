@@ -272,10 +272,10 @@ test('roomCard: traces of less than 2 hours are scaled to the data and say since
   assert.doesNotMatch(day.values[0].spark.d, /^M3 /);
 });
 
-test('critique 2026-10-28 layout: the farm cards keep their own height, the energy table\'s rooms a thumb\'s size, the name fits a phone', async () => {
+test('critique 2026-10-28 layout (the farm cards side by side, 2026-10-29 as tall as each other), the energy table\'s rooms a thumb\'s size, the name fits a phone', async () => {
   const { readFileSync } = await import('node:fs');
   const css = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
-  assert.match(css, /\.ov-farm \{ display: grid; grid-template-columns: repeat\(auto-fit, minmax\(300px, 1fr\)\); align-items: start;/);
+  assert.match(css, /\.ov-farm \{ display: grid; grid-template-columns: repeat\(auto-fit, minmax\(300px, 1fr\)\); gap: 16px;/);
   assert.match(css, /\.us-room a \{ display: inline-flex; align-items: center; justify-self: start; min-height: 44px; \}/);
   assert.match(css, /\.brand-text strong \{ white-space: normal; overflow: visible; line-height: 1\.1; \}/);
   assert.match(css, /@container \(max-width: 100px\) \{ \.brand-top \.brand-text \{ display: none; \} \}/);
@@ -320,4 +320,32 @@ test('a room in band with a reading near an edge, its machine not acting: Watch,
   assert.deepEqual(farmStatus([wet, hot, r('Room 2', { auto: false })]).facts, ['No alarms', '1 room in Manual', '2 rooms to watch', 'No air exchange running']);
   const order = sortRooms([ok, wet, r('manual', { auto: false })]).map((x) => x.name);
   assert.deepEqual(order, ['manual', 'Room 1', 'Room 2']);
+});
+
+// Critique 2026-10-29: a trace drew a line, then nothing, then a lone dot at the right edge; the gap is now a quiet dashed
+// join between the readings either side, so the latest point is never alone.
+test('a sparkline gap: a dashed join from the reading before it to the one after it, the latest point joined too', () => {
+  const win = { from: 0, to: 100, gapMs: 30 };
+  const s = sparkPath([{ at: 10, v: 10 }, { at: 20, v: 20 }, { at: 90, v: 10 }], 100, 30, null, win);
+  assert.equal(s.d.match(/M/g).length, 2, 'the line still breaks: no readings are drawn where there were none');
+  assert.deepEqual(s.joins, [{ x1: 21.8, y1: 3, x2: 87.6, y2: 27 }]);
+  assert.deepEqual(sparkPath([{ at: 10, v: 10 }, { at: 20, v: 20 }], 100, 30, null, win).joins, []);
+  assert.deepEqual(sparkPath([{ at: 0, v: 10 }, { at: 1, v: 20 }], 100, 30, null).joins, [], 'without a window, no gaps');
+});
+
+test('critique 2026-10-29 layout: a reading\'s status on the label line across the row, the gap joined dashed, the Outdoor traces fill the card', async () => {
+  const { readFileSync } = await import('node:fs');
+  const page = readFileSync(new URL('../web/overview.js', import.meta.url), 'utf8');
+  assert.match(page, /for \(const j of s\.joins\) el\.append\(svg\('line', \{ x1: j\.x1, y1: j\.y1, x2: j\.x2, y2: j\.y2, class: 'ov-spark-gap'/);
+  assert.match(page, /with gaps in the readings/);
+  const css = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
+  const block = css.slice(css.indexOf('/* critique 2026-10-29: status and Overview */'));
+  assert.ok(block.length > 50, 'the block at the end of the file');
+  assert.match(css, /\.ov-value \{ display: grid; grid-template-columns: minmax\(0, 1fr\) auto;/);
+  assert.match(css, /\.ov-value-text \{ display: contents; \}/);
+  assert.match(css, /\.ov-value-label \{ grid-column: 1 \/ -1; display: flex; flex-wrap: wrap;/, 'a status that does not fit goes whole under its name');
+  assert.match(css, /\.ov-band \{ white-space: nowrap;/);
+  assert.match(block, /\.ov-value > \.ov-spark, \.ov-value > \.ov-spark-none \{ grid-column: 2; grid-row: 2; \}/);
+  assert.match(block, /\.ov-spark-gap \{[^}]*stroke-dasharray: 2 3;/);
+  assert.match(block, /\.ov-outdoor \.ov-spark \{[^}]*width: 100%;/);
 });

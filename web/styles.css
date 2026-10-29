@@ -608,7 +608,7 @@ button.toggle[data-on="true"]:hover { background: color-mix(in srgb, var(--accen
 .ov-phone a { margin-left: 4px; }
 .ov-bare { margin: 0; color: var(--ink-2); }
 .ov-room-bare { align-self: start; }
-.ov-band { margin-left: 8px; font-size: var(--fs-xs); font-weight: 600; color: var(--muted); }
+.ov-band { white-space: nowrap; font-size: var(--fs-xs); font-weight: 600; color: var(--muted); }
 .ov-band[data-tone="good"] { color: var(--good-text); }
 .ov-band[data-tone="amber"] { color: var(--warning-text); }
 .ov-band[data-tone="critical"] { color: var(--critical-text); }
@@ -639,9 +639,9 @@ button.toggle[data-on="true"]:hover { background: color-mix(in srgb, var(--accen
 .ov-room-head h2 { margin: 0; font-size: var(--fs-lg); overflow-wrap: anywhere; }
 .ov-room-head a, .sim-item a, .us-room a { color: var(--ink); text-decoration: none; } /* titles that open a page: plain, underlined on hover */
 .ov-room-head a:hover, .sim-item a:hover, .us-room a:hover { text-decoration: underline; text-underline-offset: 3px; }
-.ov-value { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; border-top: 1px solid var(--border); }
-.ov-value-text { display: grid; min-width: 0; }
-.ov-value-label { color: var(--muted); font-size: var(--fs-xs); }
+.ov-value { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 8px; padding: 6px 0; border-top: 1px solid var(--border); }
+.ov-value-text { display: contents; } /* its label across the row, its value beside the trace */
+.ov-value-label { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 8px; color: var(--muted); font-size: var(--fs-xs); }
 .ov-value-now { font-size: var(--fs-lg); font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .ov-spark { flex: none; }
 .ov-spark-none { color: var(--muted); font-size: var(--fs-xs); }
@@ -687,7 +687,7 @@ button.toggle[data-on="true"]:hover { background: color-mix(in srgb, var(--accen
 .us-table .total th, .us-table .total td { font-weight: 700; border-top: 1px solid var(--border-strong); }
 @media (max-width: 600px) { .us-table th, .us-table td { padding: 6px 3px; font-size: var(--fs-xs); } .us-table th:first-child, .us-table td:first-child { padding-left: 0; } .us-table th:last-child, .us-table td:last-child { padding-right: 0; } }
 .us-note { margin: 8px 0 0; font-size: var(--fs-sm); }
-.ov-farm { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); align-items: start; gap: 16px; margin: 16px 0; } /* after the rooms: the rooms come first; each card its own height (the Outdoor card is not stretched to the Energy card's) */
+.ov-farm { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin: 16px 0; } /* after the rooms: the rooms come first; the Outdoor card as tall as Energy and water, its rows sharing the height */
 .ov-farm:empty { display: none; }
 .ov-outdoor > .ov-chip { margin-bottom: 8px; }
 .ov-outdoor a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--axis); text-underline-offset: 3px; }
@@ -1224,3 +1224,16 @@ details.setup-part:not([open]) { padding-top: 8px; }
 .sim-verdict-facts { margin: 6px 0 0; color: var(--ink-2); font-size: var(--fs-sm); }
 @media (min-width: 601px) { .sim-pick-word { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; } }
 @media (max-width: 600px) { .sim-length::before { content: "Length "; color: var(--muted); } }
+
+/* critique 2026-10-29: status and Overview */
+/* A reading's status on its label line across the row (four cards across wrapped "Exchange off · / starts at 1,400 ppm"),
+   the value and its trace under it, so the rows stay level from card to card. A gap in the readings: a quiet dashed join. */
+.ov-value-now { grid-column: 1; }
+.ov-value > .ov-spark, .ov-value > .ov-spark-none { grid-column: 2; grid-row: 2; }
+.ov-spark-gap { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 2 3; }
+/* The Outdoor card: its rows share the card's height beside Energy and water, the traces across the card (no blank block
+   under it and no traces squeezed into its right third). */
+.ov-outdoor { display: flex; flex-direction: column; }
+.ov-outdoor .ov-value { grid-template-columns: minmax(7rem, auto) minmax(0, 1fr); grid-template-rows: auto 1fr; column-gap: 24px; }
+.ov-outdoor .ov-value:has(.ov-spark) { flex: 1; }
+.ov-outdoor .ov-spark { width: 100%; height: 100%; min-height: 36px; contain: size; } /* the row's size, not the picture's own */
