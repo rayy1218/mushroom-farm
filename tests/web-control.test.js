@@ -203,3 +203,9 @@ test('Setup keeps the By-Hand Rule: a band set by hand in the accent text with t
   const css = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
   assert.match(css, /\.c-band \.ctl\.by-hand \{ color: var\(--accent-text\); \}/);
 });
+
+test('Setup: Save sits right under the inputs it saves, the "What the farm is doing now" readout after it (critique 2026-10-28)', async () => {
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('../web/control.js', import.meta.url), 'utf8');
+  assert.match(src, /host\.append\(cols, byHandRow, backErr, sendRow, saveErr, statusBox\);/);
+});

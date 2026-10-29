@@ -266,7 +266,7 @@ export function createControl(host, { roomId, onOffline, onGone, onChange, getRo
     }
     left.append(form);
     cols.append(left, right);
-    host.append(cols, byHandRow, backErr, statusBox, sendRow, saveErr);
+    host.append(cols, byHandRow, backErr, sendRow, saveErr, statusBox); // Save right under its inputs, the readout after it (critique 2026-10-28)
   }
   else host.append(autoRow, modeLine, autoErr, ...groups, form, byHandRow, backErr, sendRow, saveErr, stateNode, checkList);
 

@@ -107,13 +107,13 @@ const TEMPLATE = `
         </div>
         <div class="charts hist-part" id="hist-climate" tabindex="-1" data-charts></div>
         <section class="card chart-card usage-charts hist-part" id="hist-energy" tabindex="-1" data-usage-charts></section>
+        <section data-usage></section>
         <section class="card chart-card usage-charts hist-part" id="hist-exchange" tabindex="-1" data-exchange hidden></section>
         <section class="card timeline-card hist-part" id="hist-timeline" tabindex="-1" data-timeline hidden>
           <h2>Machine timeline</h2>
           <div class="chart-host" data-timeline-host></div>
           <p class="legend"><span class="swatch swatch-auto" aria-hidden="true"></span>Automatic <span class="swatch swatch-manual" aria-hidden="true"></span>Manual</p>
         </section>
-        <section data-usage></section>
       </div>
       <div data-panel="crop" hidden>
         <section data-crop></section>

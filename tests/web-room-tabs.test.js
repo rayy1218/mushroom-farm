@@ -13,7 +13,7 @@ const template = page.slice(page.indexOf('const TEMPLATE'), page.indexOf('`;', p
 // Each tab's panel holds these sections, in this order (redesign 2026-10-28: five tabs for the jobs check, act, set up).
 const PANELS = {
   now: ['data-readings', 'data-picture', 'data-now-side', 'data-mode', 'data-machine-list', 'data-machines', 'data-crop-sum'],
-  history: ['data-range', 'data-charts', 'data-usage-charts', 'data-timeline', 'data-usage>'],
+  history: ['data-range', 'data-charts', 'data-usage-charts', 'data-usage>', 'data-timeline'], // the by-day card with the range's energy and water (critique 2026-10-28)
   crop: ['data-crop'],
   simulations: ['data-simulations'],
   setup: ['data-control', 'data-equipment', 'data-filter', 'data-profile', 'data-delete'],
