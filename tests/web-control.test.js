@@ -15,7 +15,7 @@ test('exchange line shows the start time or off', () => {
 });
 
 test('reason lines carry the machine name once', () => {
-  assert.equal(reasonLine('Air exchange', 'Air exchange: CO₂ 762 ppm ≥ 750 ppm'), 'Air exchange: CO₂ 762 ppm ≥ 750 ppm');
+  assert.equal(reasonLine('Air exchange', 'Air exchange: CO₂ 762 ppm, at or over 750 ppm'), 'Air exchange: CO₂ 762 ppm, at or over 750 ppm');
   assert.equal(reasonLine('Circulation', 'always on'), 'Circulation: always on');
   assert.equal(reasonLine('Aircon', undefined), 'Aircon: —');
 });
@@ -127,8 +127,8 @@ test('the reasons: the dehumidifier line comes after the humidifier and shows on
 });
 
 test('the dehumidifier reason and its wait text read like the other machines', () => {
-  const c = { reasons: { dehumidifier: 'Dehumidifier: RH 94 % ≥ 93 %', held: { dehumidifier: 'Dehumidifier waits: minimum on time, 1 min 20 s to go' } } };
-  assert.equal(reasonLine('Dehumidifier', c.reasons.dehumidifier), 'Dehumidifier: RH 94 % ≥ 93 %');
+  const c = { reasons: { dehumidifier: 'Dehumidifier: RH 94 %, at or over 93 %', held: { dehumidifier: 'Dehumidifier waits: minimum on time, 1 min 20 s to go' } } };
+  assert.equal(reasonLine('Dehumidifier', c.reasons.dehumidifier), 'Dehumidifier: RH 94 %, at or over 93 %');
   assert.equal(heldLine(c, 'dehumidifier'), 'Dehumidifier waits: minimum on time, 1 min 20 s to go');
   assert.equal(reasonLine('Dehumidifier', ''), 'Dehumidifier: —');
 });
@@ -208,4 +208,12 @@ test('Setup: Save sits right under the inputs it saves, the "What the farm is do
   const { readFileSync } = await import('node:fs');
   const src = readFileSync(new URL('../web/control.js', import.meta.url), 'utf8');
   assert.match(src, /host\.append\(cols, byHandRow, backErr, sendRow, saveErr, statusBox\);/);
+});
+
+// Critique 2026-10-29: the readout's last line ("Air exchange off") was larger and darker than the reasons above it.
+test('Setup\'s What the farm is doing now: the state line set like the reasons above it', async () => {
+  const { readFileSync } = await import('node:fs');
+  const css = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
+  assert.match(css, /\.control \.c-status \.c-state \{ margin: 2px 0 0; color: var\(--muted\); font-size: var\(--fs-sm\); font-weight: 400; \}/);
+  assert.match(css, /\.c-reasons \{ color: var\(--muted\); font-size: var\(--fs-sm\); \}/);
 });

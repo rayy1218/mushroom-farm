@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { readoutStatus, fromRoom, fromSim, isNight, view, describe } from '../web/mimic-math.js';
 
 // ---- readout chips ----
@@ -313,4 +314,25 @@ test('the filter reading: from the room\'s pressure sensor or the one given, fro
   assert.equal(view(fromSim(simRoom({ filterProbe: 14, acting }), devices)).filter, 'filter 62.4 Pa');
   assert.equal(fromSim(simRoom({ filterProbe: null, acting }), devices).filterPa, null, 'no filter probe linked');
   assert.equal(fromSim(simRoom({ filterProbe: 14, acting: { ...acting, filterPa: 0 } }), devices).filterPa, null, 'the intake is off');
+});
+
+// Critique 2026-10-29: "Aircon · cool 25.0 °C" ran past the aircon's box at 12.5 px and drew under 12 px on a phone.
+test('the aircon\'s label fits its box at 13 px: the usual cooling is its setpoint alone, other modes and states say so', () => {
+  const label = (over) => view(fromRoom({ machines: { ac: ac(over) } })).acLabel;
+  assert.equal(label({}), 'Aircon · 23.5 °C');
+  assert.equal(label({ reported: { power: true, mode: 'heat', setpoint: 22, fan: 'auto' } }), 'Aircon · heat 22.0 °C');
+  assert.equal(label({ reported: { power: true, mode: 'fan', setpoint: 22, fan: 'auto' } }), 'Aircon · fan 22.0 °C');
+  assert.equal(label({ reported: { power: false, mode: 'cool', setpoint: 22, fan: 'auto' }, status: 'off' }), 'Aircon · off');
+  assert.equal(label({ status: 'fault', errorCode: 5 }), 'Aircon · ! fault');
+  assert.equal(label({ status: 'not-following' }), 'Aircon · ! 23.5 °C');
+  assert.equal(view(fromRoom({})).acLabel, 'Aircon · no data');
+  const css = readFileSync(new URL('../web/mimic.css', import.meta.url), 'utf8');
+  assert.match(css, /\.mimic-svg \.m-ac \{ font-size: 13px;/);
+  const page = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
+  assert.match(page, /\.rc-scroll \.rc-pic \{ min-width: 840px; \}/, 'on a phone the drawing at its own size: 13 px labels are 13 px');
+});
+
+test('the light theme gives the drawing a 1 px edge inside its corners (its pale sky on a white card had none)', () => {
+  const css = readFileSync(new URL('../web/mimic.css', import.meta.url), 'utf8');
+  assert.match(css, /:root\[data-theme="light"\] \.mimic-host \{ outline: 1px solid var\(--border-strong\); outline-offset: -1px; \}/);
 });

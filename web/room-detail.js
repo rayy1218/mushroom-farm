@@ -28,6 +28,7 @@ import { trendOf } from './band-math.js';
 import { roomCard, filterFrom, freshAirLine, blocksLine, cropFacts, traceOf, hourPoints, traceScale } from './room-card-math.js';
 import { drawLineChart } from './chart.js';
 import { refreshMs } from './settings-math.js';
+import { scrollEdges } from './simulation-math.js';
 import { live } from './live.js';
 import { fallbackMs, createThrottle } from './live-math.js';
 import { chartPoints } from './chart-math.js';
@@ -196,6 +197,13 @@ export function mount(container, { id, tab = 'now' }) {
   // A phone: the Setup tab's long parts start folded under their titles (critique 2026-10-28: about 6,700 px of scroll).
   if (matchMedia('(max-width: 760px)').matches) for (const d of container.querySelectorAll('details.setup-part')) d.open = false;
   setTab(tab);
+  // A phone: the History jump links scroll sideways; the edge that has more fades (critique 2026-10-29: the last one showed as
+  // a sliver with no cue).
+  const historyNav = q('.history-nav');
+  const paintNavEdges = () => { historyNav.dataset.more = scrollEdges(historyNav.scrollLeft, historyNav.clientWidth, historyNav.scrollWidth); };
+  historyNav.addEventListener('scroll', paintNavEdges, { passive: true });
+  const navObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(paintNavEdges) : null;
+  navObserver?.observe(historyNav);
   const els = {
     title: q('[data-title]'),
     sub: q('[data-sub]'),
@@ -386,6 +394,7 @@ export function mount(container, { id, tab = 'now' }) {
   // The History links: only to the parts that show (air exchange and the timeline need their machines).
   function syncHistoryNav() {
     for (const a of container.querySelectorAll('.history-nav a')) a.hidden = Boolean(container.querySelector(a.getAttribute('href'))?.hidden);
+    paintNavEdges();
   }
 
   function renderCharts() {
@@ -743,6 +752,7 @@ export function mount(container, { id, tab = 'now' }) {
   load();
 
   function unmount() {
+    navObserver?.disconnect();
     mountSeq++;
     reload.cancel();
     for (const off of offLive) off();

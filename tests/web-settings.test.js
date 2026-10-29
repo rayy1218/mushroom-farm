@@ -27,3 +27,10 @@ test('#/settings is the settings page', () => {
   assert.equal(isCanonical('#/settings/'), false);
   assert.deepEqual(parseRoute('#/settingsx'), { name: 'overview' });
 });
+
+// Critique 2026-10-29: water is priced per m³ while the app shows it in L; the hint beside the field says how they relate.
+test('the water price says 1 m³ = 1,000 L beside its field', async () => {
+  const { readFileSync } = await import('node:fs');
+  const page = readFileSync(new URL('../web/settings-page.js', import.meta.url), 'utf8');
+  assert.match(page, /<p class="muted s-hint" id="s-water">[^<]*1&nbsp;m³&nbsp;=&nbsp;1,000&nbsp;L[^<]*<\/p>/);
+});

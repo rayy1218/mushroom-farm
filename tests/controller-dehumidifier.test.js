@@ -19,17 +19,17 @@ const go = ({ dehumidifier = false, humidifier = false, rh = 90, fitted = true, 
 test('dehumidifier rule: off at or above the upper limit turns on, on at or below the middle turns off, kept between', () => {
   const cases = [
     // [on before, rh, on after, reason]
-    [false, 95, true, 'Dehumidifier: RH 95 % ≥ 95 %'],
-    [false, 97, true, 'Dehumidifier: RH 97 % ≥ 95 %'],
+    [false, 95, true, 'Dehumidifier: RH 95 %, at or over 95 %'],
+    [false, 97, true, 'Dehumidifier: RH 97 %, at or over 95 %'],
     [false, 94.9, false, 'Dehumidifier kept off: RH 94.9 % between 90 and 95 %'],
     [false, 91.5, false, 'Dehumidifier kept off: RH 91.5 % between 90 and 95 %'],
-    [false, 90, false, 'Dehumidifier kept off: RH 90 % ≤ 90 %'],
-    [false, 86, false, 'Dehumidifier kept off: RH 86 % ≤ 90 %'],
-    [true, 90, false, 'Dehumidifier: RH 90 % ≤ 90 %'],
-    [true, 86, false, 'Dehumidifier: RH 86 % ≤ 90 %'],
+    [false, 90, false, 'Dehumidifier kept off: RH 90 %, at or under 90 %'],
+    [false, 86, false, 'Dehumidifier kept off: RH 86 %, at or under 90 %'],
+    [true, 90, false, 'Dehumidifier: RH 90 %, at or under 90 %'],
+    [true, 86, false, 'Dehumidifier: RH 86 %, at or under 90 %'],
     [true, 90.1, true, 'Dehumidifier kept on: RH 90.1 % between 90 and 95 %'],
     [true, 94, true, 'Dehumidifier kept on: RH 94 % between 90 and 95 %'],
-    [true, 96, true, 'Dehumidifier kept on: RH 96 % ≥ 95 %'],
+    [true, 96, true, 'Dehumidifier kept on: RH 96 %, at or over 95 %'],
   ];
   for (const [before, rh, after, reason] of cases) {
     const r = go({ dehumidifier: before, rh });
@@ -128,7 +128,7 @@ test('runner: a fitted dehumidifier is commanded, its band state stored and its 
   assert.equal(s.db.getControl(s.id).dehumidifier, true);
   const v = s.controller.get(s.id);
   assert.equal(v.dehumidifierBand, true);
-  assert.equal(v.reasons.dehumidifier, 'Dehumidifier: RH 96 % ≥ 95 %');
+  assert.equal(v.reasons.dehumidifier, 'Dehumidifier: RH 96 %, at or over 95 %');
   assert.equal(v.reasons.held.dehumidifier, '');
 });
 

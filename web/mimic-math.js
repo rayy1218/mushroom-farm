@@ -199,7 +199,12 @@ export function view(draw) {
   const dh = un.dh ? unitView(un.dh, MACHINE_NAMES.dehumidifier) : null; // drawn only when the room has one
   const lights = un.lights ? unitView(un.lights, MACHINE_NAMES.lights) : null; // the same
   const comp = ac.on && ac.mode !== 'fan' && ac.running !== false; // a fault or an idle aircon: no compressor
+  // Written on the aircon (critique 2026-10-29: "Aircon · cool 25.0 °C" ran past its box): cooling, the usual mode, is its
+  // setpoint alone; the Machines list says the mode and the fan.
+  const acState = ac.on && ac.mode === 'cool' ? ac.state.replace(/^Cool /, '') : ac.state.charAt(0).toLowerCase() + ac.state.slice(1);
+  const acWord = !ac.known ? 'no data' : ac.warn && ac.state.startsWith('Fault') ? '! fault' : `${ac.warn ? '! ' : ''}${acState}`;
   return {
+    acLabel: `Aircon · ${acWord}`,
     night: Boolean(s.night),
     sky: s.night ? 'Night' : 'Day',
     hasOut: Boolean(out),

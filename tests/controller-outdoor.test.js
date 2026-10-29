@@ -78,17 +78,17 @@ test('free cooling stops at the middle, with the outdoor air less than 1 °C coo
 test('free cooling does not start at the CO₂ safety level, the CO₂ rule goes first', () => {
   const r = go(off(), { co2: 1300 });
   assert.equal(r.state.exchangeKind, 'co2');
-  assert.equal(r.reasons.exchange, 'Air exchange: CO₂ 1300 ppm ≥ safety level 1250 ppm');
+  assert.equal(r.reasons.exchange, 'Air exchange: CO₂ 1,300 ppm, at or over the safety level 1,250 ppm');
   const high = go(off(), { co2: 800 });
   assert.equal(high.state.exchangeKind, 'co2');
-  assert.equal(high.reasons.exchange, 'Air exchange: CO₂ 800 ppm ≥ 750 ppm');
+  assert.equal(high.reasons.exchange, 'Air exchange: CO₂ 800 ppm, at or over 750 ppm');
 });
 
 test('a running free cooling at the CO₂ upper limit is handed to the CO₂ rule and keeps its kind; its time limit is not a "too small" count', () => {
   const r = go(on('cooling', 2 * MIN), { co2: 800, t: 22 });
   assert.equal(r.state.exchange, true);
   assert.equal(r.state.exchangeKind, 'cooling');
-  assert.equal(r.reasons.exchange, 'Air exchange: CO₂ 800 ppm ≥ 750 ppm');
+  assert.equal(r.reasons.exchange, 'Air exchange: CO₂ 800 ppm, at or over 750 ppm');
   const limit = go(on('cooling', 10 * MIN), { co2: 800 });
   assert.equal(limit.state.exchange, false);
   assert.equal(limit.state.cappedInRow, 0);
@@ -168,7 +168,7 @@ test('outdoor drying stops at the middle of the RH band, or outdoor W within 0.5
   assert.equal(keep.state.exchangeKind, 'drying');
   const mid = go(run, { t: 22, rh: 90, outdoor: { t: 20, rh: 60 } });
   assert.equal(mid.state.exchange, false);
-  assert.equal(mid.reasons.exchange, 'Outdoor drying ends: RH 90 % ≤ 90 %');
+  assert.equal(mid.reasons.exchange, 'Outdoor drying ends: RH 90 %, at or under 90 %');
   assert.equal(go(run, { t: 22, rh: 91, outdoor: { t: 20, rh: 60 } }).state.exchange, true);
   const wIn = wOf(22, 91);
   const rhFor = (w) => (w / wOf(20, 100)) * 100;

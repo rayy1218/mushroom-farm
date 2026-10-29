@@ -21,6 +21,8 @@
   --m-run: #2563eb; --m-cool: #2f8fe0; --m-warm: #f07a32; --m-mist: #8ccff5; --m-sun: #f2b632; --m-moon: #f3f5f9;
   --m-warn: #a35a00; --m-good: #15803d; --m-serious: #9a4a00; --m-critical: #b91c1c;
 }
+/* the light theme: a pale sky on a white card had no edge (critique 2026-10-29); a 1 px line inside the drawing's corners */
+:root[data-theme="light"] .mimic-host { outline: 1px solid var(--border-strong); outline-offset: -1px; }
 /* the light theme's night sky is dark: the words on it turn light */
 :root[data-theme="light"] .mimic-svg.night { --m-sky-ink: #f1f3f4; --m-sky-muted: #c3c8cd; --m-sky-run: #7fb0ff; }
 
@@ -84,7 +86,7 @@
 .mimic-svg .on-sky .m-name { fill: var(--m-sky-ink); }
 .mimic-svg .on-sky .m-state, .mimic-svg .on-sky .m-sub { fill: var(--m-sky-muted); }
 .mimic-svg .on-sky .m-state.on { fill: var(--m-sky-run); }
-.mimic-svg .m-ac { font-size: 12.5px; font-weight: 700; fill: var(--m-unit-ink); }
+.mimic-svg .m-ac { font-size: 13px; font-weight: 700; fill: var(--m-unit-ink); }
 .mimic-svg .m-blocks { font-size: 13px; fill: var(--muted); }
 /* a narrow host (a phone): the small texts are too small to read; the page says them elsewhere (tiles, the device's line) */
 .mimic-narrow .mimic-svg .tag, .mimic-narrow .mimic-svg .small { display: none; }

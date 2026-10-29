@@ -102,6 +102,6 @@ test('the totals line adds up the bars the charts show when they are given', () 
 });
 
 test('History: the range line says how many hours without readings it leaves out; the by-day card sits right after it', () => {
-  assert.match(section, /basis\.textContent = gapH >= 0\.1 \? `\$\{line\.basis\} · \$\{gapH\.toFixed\(1\)\} h without readings not counted` : line\.basis;/);
+  assert.match(section, /basis\.textContent = gapH >= 0\.1 \? `\$\{line\.basis\} · \$\{gapH\.toFixed\(1\)\}\\u00a0h without readings not counted` : line\.basis;/);
   assert.match(page, /data-usage-charts><\/section>\n\s*<section data-usage><\/section>/);
 });

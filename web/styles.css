@@ -39,6 +39,7 @@
   --radius: 8px; --radius-card: 12px;
   --fs-xs: 12px; --fs-sm: 13px; --fs-md: 14px; --fs-lg: 16px; --fs-xl: 20px; --fs-2xl: 24px; --fs-3xl: 32px;
   --topbar-h: 56px;
+  --dialog-top: max(16px, 6vh, calc(var(--topbar-h) + 8px)); /* a dialog opens below the top bar */
   --font-body: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   font-family: var(--font-body);
   font-feature-settings: "cv11", "ss01"; /* Inter's single-storey a and open digits: calmer data */
@@ -146,11 +147,11 @@ dialog {
   color: var(--ink);
   border: 1px solid var(--border);
   box-shadow: 0 12px 40px var(--shadow);
-  max-height: calc(100dvh - 32px);
+  max-height: calc(100dvh - var(--dialog-top) - 16px);
   overflow-y: auto;
 }
 dialog::backdrop { background: var(--backdrop); }
-dialog { margin-top: max(16px, 6vh); margin-bottom: auto; } /* anchored at the top: a step that changes its height does not make it jump */
+dialog { margin-top: var(--dialog-top); margin-bottom: auto; } /* anchored at the top: a step that changes its height does not make it jump */
 ::placeholder { color: var(--muted); opacity: 1; }
 /* a phone: every control at least 44 px tall (a finger in a humid room) */
 @media (max-width: 600px) {
@@ -480,7 +481,7 @@ button.toggle[data-on="true"]:hover { background: color-mix(in srgb, var(--accen
 .c-status .c-group-title { margin-bottom: 6px; }
 .c-status .c-reasons { margin: 0; }
 .c-status .c-reasons:empty { display: none; }
-.control .c-status .c-state { margin: 6px 0 0; font-weight: 500; color: var(--ink-2); }
+.control .c-status .c-state { margin: 2px 0 0; color: var(--muted); font-size: var(--fs-sm); font-weight: 400; } /* one more line of the readout, set like the reasons */
 .c-band { display: grid; grid-template-columns: minmax(0, 240px) minmax(0, 120px) minmax(0, 120px); align-items: end; gap: 4px 12px; padding: 10px 0; border-bottom: 1px dashed var(--border); }
 .c-band .m-name, .c-humidifier .m-name, .c-acfan .m-name { font-weight: 500; color: var(--ink-2); }
 .c-band .m-name { align-self: center; }
@@ -608,7 +609,7 @@ button.toggle[data-on="true"]:hover { background: color-mix(in srgb, var(--accen
 .ov-phone a { margin-left: 4px; }
 .ov-bare { margin: 0; color: var(--ink-2); }
 .ov-room-bare { align-self: start; }
-.ov-band { margin-left: 8px; font-size: var(--fs-xs); font-weight: 600; color: var(--muted); }
+.ov-band { white-space: nowrap; font-size: var(--fs-xs); font-weight: 600; color: var(--muted); }
 .ov-band[data-tone="good"] { color: var(--good-text); }
 .ov-band[data-tone="amber"] { color: var(--warning-text); }
 .ov-band[data-tone="critical"] { color: var(--critical-text); }
@@ -639,9 +640,9 @@ button.toggle[data-on="true"]:hover { background: color-mix(in srgb, var(--accen
 .ov-room-head h2 { margin: 0; font-size: var(--fs-lg); overflow-wrap: anywhere; }
 .ov-room-head a, .sim-item a, .us-room a { color: var(--ink); text-decoration: none; } /* titles that open a page: plain, underlined on hover */
 .ov-room-head a:hover, .sim-item a:hover, .us-room a:hover { text-decoration: underline; text-underline-offset: 3px; }
-.ov-value { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; border-top: 1px solid var(--border); }
-.ov-value-text { display: grid; min-width: 0; }
-.ov-value-label { color: var(--muted); font-size: var(--fs-xs); }
+.ov-value { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 8px; padding: 6px 0; border-top: 1px solid var(--border); }
+.ov-value-text { display: contents; } /* its label across the row, its value beside the trace */
+.ov-value-label { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 8px; color: var(--muted); font-size: var(--fs-xs); }
 .ov-value-now { font-size: var(--fs-lg); font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .ov-spark { flex: none; }
 .ov-spark-none { color: var(--muted); font-size: var(--fs-xs); }
@@ -687,7 +688,7 @@ button.toggle[data-on="true"]:hover { background: color-mix(in srgb, var(--accen
 .us-table .total th, .us-table .total td { font-weight: 700; border-top: 1px solid var(--border-strong); }
 @media (max-width: 600px) { .us-table th, .us-table td { padding: 6px 3px; font-size: var(--fs-xs); } .us-table th:first-child, .us-table td:first-child { padding-left: 0; } .us-table th:last-child, .us-table td:last-child { padding-right: 0; } }
 .us-note { margin: 8px 0 0; font-size: var(--fs-sm); }
-.ov-farm { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); align-items: start; gap: 16px; margin: 16px 0; } /* after the rooms: the rooms come first; each card its own height (the Outdoor card is not stretched to the Energy card's) */
+.ov-farm { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin: 16px 0; } /* after the rooms: the rooms come first; the Outdoor card as tall as Energy and water, its rows sharing the height */
 .ov-farm:empty { display: none; }
 .ov-outdoor > .ov-chip { margin-bottom: 8px; }
 .ov-outdoor a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--axis); text-underline-offset: 3px; }
@@ -794,7 +795,7 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
 .sim-item .sim-status { text-align: right; color: var(--ink-2); }
 .sim-item[data-status="failed"] .sim-status { color: var(--critical-text); }
 /* Simulate fits the screen (critique 2026-10-28): the step scrolls, Cancel, Back and Next stay in a footer at its foot */
-.sim-dialog { max-height: calc(100dvh - max(16px, 6vh) - 16px); padding-bottom: 0; } /* the footer holds the bottom padding: a sticky one stops at the padding */
+.sim-dialog { max-height: calc(100dvh - var(--dialog-top) - 16px); padding-bottom: 0; } /* the footer holds the bottom padding: a sticky one stops at the padding */
 .sim-dialog .actions { position: sticky; bottom: 0; z-index: 1; margin: 16px -24px 0; padding: 12px 24px 20px; background: var(--surface); border-top: 1px solid var(--border); }
 .sim-dialog #sim-title:focus { outline: none; } /* it takes the focus on each step; a field would pop up a phone's keyboard */
 @media (max-width: 600px) { .sim-dialog .sizes.two > .field:has(.sim-ac) { grid-column: 1 / -1; } }
@@ -1086,9 +1087,9 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
 .mc-step { font-size: var(--fs-xs); color: var(--muted); font-variant-numeric: tabular-nums; text-align: center; }
 .mc-text { display: grid; min-width: 0; }
 .mc-name { font-weight: 500; }
-.mc-sub { display: flex; flex-wrap: wrap; gap: 0 4px; color: var(--muted); font-size: var(--fs-sm); }
-/* the dot ends the first part, so a wrapped detail never starts its line with "·" */
-.mc-sub .mc-eff:not(:has(+ .mc-d[hidden]))::after { content: "\00a0\00b7"; }
+.mc-sub { color: var(--muted); font-size: var(--fs-sm); }
+/* one run of text, the dot held to the words either side by no-break spaces: it never ends or starts a wrapped line */
+.mc-sub .mc-eff:not(:empty) + .mc-d::before { content: "\00a0\00b7\00a0"; }
 .mc-row[data-tone="warn"] .mc-name, .mc-row[data-tone="warn"] .mc-sub { color: var(--critical-text); }
 .mc-row[data-manual="true"] { grid-template-columns: 22px minmax(0, 1fr) auto auto; }
 .mc-switch { min-width: 64px; min-height: 36px; padding: 4px 12px; font-weight: 600; }
@@ -1115,7 +1116,7 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
 .rc-swipe { display: none; margin: 8px 0 0; color: var(--muted); font-size: var(--fs-xs); }
 @media (max-width: 600px) {
   .rc-scroll { overflow-x: auto; overscroll-behavior-x: contain; border-radius: 10px; }
-  .rc-scroll .rc-pic { min-width: 800px; } /* the labels near 12 px: the drawing at about its own size */
+  .rc-scroll .rc-pic { min-width: 840px; } /* the drawing at its own size: its 13 px labels are 13 px */
   .rc-swipe { display: block; }
   .rc-blocks:not([hidden]) { display: block; } /* the blocks in words; the drawing's own label hides */
   .rc-scroll .m-blocks { display: none; }
@@ -1224,3 +1225,28 @@ details.setup-part:not([open]) { padding-top: 8px; }
 .sim-verdict-facts { margin: 6px 0 0; color: var(--ink-2); font-size: var(--fs-sm); }
 @media (min-width: 601px) { .sim-pick-word { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; } }
 @media (max-width: 600px) { .sim-length::before { content: "Length "; color: var(--muted); } }
+
+/* critique 2026-10-29: status and Overview */
+/* A reading's status on its label line across the row (four cards across wrapped "Exchange off · / starts at 1,400 ppm"),
+   the value and its trace under it, so the rows stay level from card to card. A gap in the readings: a quiet dashed join. */
+.ov-value-now { grid-column: 1; }
+.ov-value > .ov-spark, .ov-value > .ov-spark-none { grid-column: 2; grid-row: 2; }
+.ov-spark-gap { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 2 3; }
+/* The Outdoor card: its rows share the card's height beside Energy and water, the traces across the card (no blank block
+   under it and no traces squeezed into its right third). */
+.ov-outdoor { display: flex; flex-direction: column; }
+.ov-outdoor .ov-value { grid-template-columns: minmax(7rem, auto) minmax(0, 1fr); grid-template-rows: auto 1fr; column-gap: 24px; }
+.ov-outdoor .ov-value:has(.ov-spark) { flex: 1; }
+.ov-outdoor .ov-spark { width: 100%; height: 100%; min-height: 36px; contain: size; } /* the row's size, not the picture's own */
+/* History on a phone: a shorter sticky head (it took 195 px of an 844 px screen); the jump links fade at the edge that has more */
+.history-nav[data-more="end"] { mask-image: linear-gradient(90deg, #000 calc(100% - 32px), transparent); }
+.history-nav[data-more="start"] { mask-image: linear-gradient(270deg, #000 calc(100% - 32px), transparent); }
+.history-nav[data-more="both"] { mask-image: linear-gradient(90deg, transparent, #000 32px, #000 calc(100% - 32px), transparent); }
+@media (max-width: 760px) {
+  .history-head { padding: 2px 14px 4px; row-gap: 4px; }
+  .history-room { line-height: 16px; }
+}
+@media (max-width: 600px) { .history-head .range-bar { padding: 2px; } }
+/* The top bar on a phone is 61 px (its 44 px buttons): the sticky heads under it and a dialog's top follow (a dialog's top
+   sat at 50 px, under the bar) */
+@media (max-width: 600px) { :root { --topbar-h: calc(61px + env(safe-area-inset-top)); } }

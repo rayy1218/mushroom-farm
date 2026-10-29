@@ -79,16 +79,19 @@ function pill(text, tone) {
   return p;
 }
 
-// A sparkline with the band shaded over `span` ('last 24 hours', 'since 17:08'); a note when there is too little data.
+// A sparkline with the band shaded over `span` ('last 24 hours', 'since 17:08'); a note when there is too little data. A gap
+// in the readings is a dashed join. Its strokes keep their width when the Outdoor card stretches it to the card's width, so the
+// last point is a round cap on a zero-length line, not a circle that would stretch.
 function sparkline(value, span = 'last 24 hours') {
   if (!value.spark) return node('span', 'ov-spark-none', 'no data');
   const s = value.spark;
-  const el = svg('svg', { width: SPARK_W, height: SPARK_H, viewBox: `0 0 ${SPARK_W} ${SPARK_H}`, role: 'img', class: 'ov-spark' });
+  const el = svg('svg', { width: SPARK_W, height: SPARK_H, viewBox: `0 0 ${SPARK_W} ${SPARK_H}`, preserveAspectRatio: 'none', role: 'img', class: 'ov-spark' });
   const d = value.key === 'co2' ? 0 : 1; // ppm in whole numbers, as shown
-  el.setAttribute('aria-label', `${value.label}, ${span}: ${grouped(s.min, d)} to ${grouped(s.max, d)}`);
+  el.setAttribute('aria-label', `${value.label}, ${span}: ${grouped(s.min, d)} to ${grouped(s.max, d)}${s.joins.length ? ', with gaps in the readings' : ''}`);
   if (s.band) el.append(svg('rect', { x: 0, y: s.band.y, width: SPARK_W, height: s.band.h, style: 'fill:var(--band)' }));
-  el.append(svg('path', { d: s.d, fill: 'none', 'stroke-width': 1.5, 'stroke-linejoin': 'round', style: `stroke:${value.color}` }));
-  el.append(svg('circle', { cx: s.last.x, cy: s.last.y, r: 2.5, style: `fill:${value.color}` }));
+  for (const j of s.joins) el.append(svg('line', { x1: j.x1, y1: j.y1, x2: j.x2, y2: j.y2, class: 'ov-spark-gap', 'vector-effect': 'non-scaling-stroke' }));
+  el.append(svg('path', { d: s.d, fill: 'none', 'stroke-width': 1.5, 'stroke-linejoin': 'round', 'vector-effect': 'non-scaling-stroke', style: `stroke:${value.color}` }));
+  el.append(svg('path', { d: `M${s.last.x} ${s.last.y} h0`, 'stroke-width': 5, 'stroke-linecap': 'round', 'vector-effect': 'non-scaling-stroke', style: `stroke:${value.color}` }));
   return el;
 }
 
