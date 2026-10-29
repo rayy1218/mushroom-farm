@@ -11,6 +11,7 @@ import { live } from './live.js';
 import { fallbackMs, withProgress, isStale } from './live-math.js';
 import { tickCountFor } from './history-math.js';
 import { progressLine } from './simulate-math.js';
+import { keepLines } from './text-math.js';
 import {
   CHARTS, tileList, stageRows, dayTicks, runEnd, chartPoints, thinPoints, outdoorLine, bandSteps, timelineRows, timelineAria, readingsAmount, energyView, perDayBars,
   inputLine, inputRows, backLabel, runVerdict, runCauses, runTries, runFacts, headLine, formatDateTime, formatRunTime, isActive, filterView, STAGE_COLUMNS, scrollEdges,
@@ -307,7 +308,7 @@ export function mount(container, { id, runId }) {
       v.dataset.tone = verdict.tone;
       v.append(text('p', 'sim-verdict-text', verdict.text));
       const facts = runFacts(result); // how hard the machines worked for it, not only the time in band
-      if (facts) v.append(text('p', 'sim-verdict-facts', facts));
+      if (facts) v.append(text('p', 'sim-verdict-facts', keepLines(facts))); // '76 %' and its '·' keep together at a wrap
       if (verdict.lines.length) {
         const ul = text('ul', 'sim-verdict-lines');
         ul.append(...verdict.lines.map((l) => text('li', '', l)));

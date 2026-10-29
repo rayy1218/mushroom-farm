@@ -282,6 +282,7 @@ export const backLabel = (roomName) => `${roomName} · Simulations`;
 
 const grouped = (n) => n.toLocaleString('en-US', { maximumFractionDigits: 1 });
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+const listed = (parts) => (parts.length < 2 ? parts.join('') : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`);
 
 // An aircon's size: kW first, the BTU/h class it is sold by in brackets when it is one (PRODUCT.md: metric first; the
 // class is its trade size).
@@ -369,36 +370,88 @@ export function runVerdict(series, inBand, coolDownS) {
   const sentences = [all === null ? '' : all >= 95 ? `The room stayed in band ${share} of the time.` : `The room was in band ${share} of the time.`];
   if (finite(coolDownS)) sentences.push(`Cooled down in ${(coolDownS / 3600).toFixed(1)} h.`);
   else if (coolDownS === null) sentences.push('Did not cool down within the run.');
-  return { tone, text: sentences.filter(Boolean).join(' '), lines };
+  // a number keeps its unit on its line (critique 2026-10-29c at 390 px: 'below the 19 / °C band')
+  return { tone, text: keepUnits(sentences.filter(Boolean).join(' ')), lines: lines.map(keepUnits) };
 }
 
 // Why a run missed, from what the machines did (result.machines) and the control it ran with: lines for the verdict card.
 // Critique 2026-10-28: two runs of the same aircon scored 98 % and 1 %; the second had the aircon set below the band during
-// air exchanges, and air exchange ran most of the time, which nothing on the page said.
+// air exchanges, and air exchange ran most of the time, which nothing on the page said. Critique 2026-10-29c: a fitted
+// dehumidifier that never ran while the room was too wet got no word on what held it, and the air exchange's share did not
+// add up with its "every 15 min, up to 10 min each".
 export const runCauses = (result, input) => causesOf(result, input).lines;
 
 // The value to try for each setting a cause of runCauses names (critique 2026-10-28: the Why section said to change the
-// settings, not to what): the aircon not lowered, the humidifier off when the room was too wet, the longer time limit that
-// Suggest machines allows when the fans run over half the time (server/sizing.js LIMIT_MAX_MIN).
+// settings, not to what): the aircon not lowered, the humidifier off when the room was too wet, a longer time limit when the
+// air exchanges stopped at theirs (server/sizing.js LIMIT_MAX_MIN).
 // → [{ text, name (the change in words), control (the change for one run, as Simulate's Change for this run takes it) }]
 export const runTries = (result, input) => causesOf(result, input).tries;
 const LIMIT_TRY_MIN = 60;
-const tryOf = (name, why, control) => ({ text: `Try ${name}${why ? `: ${why}` : ''}.`, name, control });
+const tryOf = (name, why, control) => ({ text: keepUnits(`Try ${name}${why ? `: ${why}` : ''}.`), name, control });
+
+// The controller's waits (server/controller.js): the dehumidifier starts only once the humidifier has been off 30 min; the
+// humidifier waits while the dehumidifier runs and for 10 min after it stopped (unless the room is 3 % RH under the band); a
+// fresh-air run is 1 min; the air exchange rests at least 1 min between runs.
+const DEHUMIDIFIER_QUIET_S = 30 * 60;
+const AFTER_DRY_WAIT_S = 10 * 60;
+const AFTER_DRY_MARGIN = 3;
+const FRESH_RUN_S = 60;
+const RESTART_S = 120; // an exchange this soon after the last one ended started again at once
+const BARELY = 0.05; // a fitted machine on less than this share of the run "barely ran"
+const MOST = 0.9;
+
+// How many of the times (seconds, in order) had a span of spans (in order) on at some moment of the `window` seconds up to it.
+function ranBefore(spans, times, window) {
+  let j = 0;
+  let n = 0;
+  for (const t of times) {
+    while (j < spans.length && spans[j].to < t - window) j++;
+    if (j < spans.length && spans[j].from <= t) n++;
+  }
+  return n;
+}
+
+// The seconds both lists of spans (each in order) were on together.
+function overlapS(a, b) {
+  let i = 0, j = 0, t = 0;
+  while (i < a.length && j < b.length) {
+    const lo = Math.max(a[i].from, b[j].from), hi = Math.min(a[i].to, b[j].to);
+    if (hi > lo) t += hi - lo;
+    if (a[i].to < b[j].to) i++;
+    else j++;
+  }
+  return t;
+}
+
+// "900 ppm", or "900–1,900 ppm" when the series' value of key moved.
+function rangeOf(series, key, unit) {
+  let lo = Infinity, hi = -Infinity;
+  for (const r of series) if (finite(r[key])) { lo = Math.min(lo, r[key]); hi = Math.max(hi, r[key]); }
+  if (lo === Infinity) return null;
+  return lo === hi ? `${grouped(lo)} ${unit}` : `${grouped(lo)}–${grouped(hi)} ${unit}`;
+}
+
+const ranWords = (onS, end) => (onS <= 0 ? 'never started' : onS / end < 0.005 ? 'ran under 1 % of the time' : `ran only ${Math.round((onS / end) * 100)} % of the time`);
 
 function causesOf(result, input) {
   const series = result?.series ?? [];
   const end = series.length ? series[series.length - 1].s : 0;
   if (!(end > 0)) return { lines: [], tries: [] };
+  const machines = result.machines ?? {};
   const on = (spans, keep = () => true) => (spans ?? []).filter(keep).reduce((t, x) => t + Math.max(0, Math.min(x.to, end) - x.from), 0);
   const share = (ms) => Math.round((ms / end) * 100);
   const control = input?.ctx?.control ?? input?.control ?? {};
+  const physics = input?.physics ?? {};
   const lines = [];
   const tries = [];
-  const exchange = share(on(result.machines?.intake));
-  if (exchange >= 30) lines.push(`Air exchange ran ${exchange} % of the time (every ${control.exchangeEveryMin ?? '?'} min, up to ${control.exchangeMaxMin ?? '?'} min each).`);
+  const intake = machines.intake ?? [];
+  const humidifier = machines.humidifier ?? [];
+  const exchangeS = on(intake);
+  const exchange = share(exchangeS);
+  if (exchange >= 30) lines.push(exchangeLine(exchange, series, control, result.summary?.exchanges));
   const tLow = series.find((r) => finite(r.tLow))?.tLow;
   if (finite(tLow)) {
-    const low = (result.machines?.ac ?? []).filter((x) => finite(x.setpoint) && x.setpoint < tLow);
+    const low = (machines.ac ?? []).filter((x) => finite(x.setpoint) && x.setpoint < tLow);
     const lowShare = share(on(low));
     if (lowShare >= 5) {
       const setpoint = Math.min(...low.map((x) => x.setpoint));
@@ -407,15 +460,83 @@ function causesOf(result, input) {
       if (why) tries.push(tryOf('the aircon not lowered during air exchange (0 °C)', '', { acDrop: 0 }));
     }
   }
+  // the humidifier on through (nearly) every air exchange: forced on by the setting
+  const forcedAll = control.humidifierDuringExchange === true && exchangeS > 0 && overlapS(intake, humidifier) / exchangeS >= 0.95;
+  const wetTimes = series.filter((r) => finite(r.rh) && finite(r.rhHigh) && r.rh > r.rhHigh).map((r) => r.s);
+  const dryTimes = series.filter((r) => finite(r.rh) && finite(r.rhLow) && r.rh < r.rhLow).map((r) => r.s);
+  const wet = wetTimes.length / series.length;
+  // A fitted dehumidifier that barely ran while the room was too wet: the humidifier ran in the 30 min before (its wait).
+  let dehumidifierHeld = false;
+  const dehumidifierS = on(machines.dehumidifier);
+  if (physics.dehumidifierLday > 0 && dehumidifierS / end < BARELY && wet >= 0.05) {
+    const held = ranBefore(humidifier, wetTimes, DEHUMIDIFIER_QUIET_S) / wetTimes.length;
+    if (held >= MOST) {
+      dehumidifierHeld = true;
+      const because = held >= 0.995 ? 'never off that long while the room was too wet'
+        : `on in the 30 min before ${Math.round(held * 100)} % of the times the room was too wet`;
+      lines.push(`The dehumidifier ${ranWords(dehumidifierS, end)}: it waits until the humidifier has been off 30 min, and ${forcedAll
+        ? `the humidifier ran during every air exchange, so it was ${because}` : `the humidifier was ${because}`}.`);
+    }
+  }
+  // A humidifier that barely ran while the room was too dry: the dehumidifier ran in the 10 min before (the humidifier's wait).
+  const humidifierS = on(humidifier);
+  if (physics.humidifierLH > 0 && humidifierS / end < BARELY && dryTimes.length / series.length >= 0.05) {
+    const held = ranBefore(machines.dehumidifier ?? [], dryTimes, AFTER_DRY_WAIT_S) / dryTimes.length;
+    if (held >= MOST) {
+      lines.push(`The humidifier ${ranWords(humidifierS, end)}: it waits while the dehumidifier runs and for 10 min after it stops (unless the room is ${AFTER_DRY_MARGIN} % RH under the band), and the dehumidifier was on in the 10 min before ${held >= 0.995 ? 'whenever' : `${Math.round(held * 100)} % of the times`} the room was too dry.`);
+    }
+  }
   if (control.humidifierDuringExchange === true && exchange >= 30) {
-    lines.push('The humidifier also ran during every air exchange.');
-    const wet = series.filter((r) => finite(r.rh) && finite(r.rhHigh) && r.rh > r.rhHigh).length / series.length;
-    if (wet >= 0.05) tries.push(tryOf('the humidifier off during air exchange', 'the room was too wet', { humidifierDuringExchange: false }));
+    if (!(dehumidifierHeld && forcedAll)) lines.push('The humidifier also ran during every air exchange.');
+    if (wet >= 0.05) tries.push(tryOf('the humidifier off during air exchange', `the room was too wet${dehumidifierHeld ? ', and the dehumidifier could then start' : ''}`, { humidifierDuringExchange: false }));
   }
-  if (exchange >= 50 && finite(control.exchangeMaxMin) && control.exchangeMaxMin < LIMIT_TRY_MIN) {
-    tries.push(tryOf(`a ${LIMIT_TRY_MIN} min air exchange time limit`, 'the fans ran over half the time', { exchangeMaxMin: LIMIT_TRY_MIN }));
+  const limit = limitTry(intake, series, control, exchange);
+  if (limit) tries.push(limit);
+  return { lines: lines.map(keepUnits), tries };
+}
+
+// "Air exchange ran 76 % of the time: …" with what started the exchanges: the run's counts (summary.exchanges, a run from
+// 29 Oct 2026 on), else the rules that start them (CO₂ at its start point, and fresh air when the room has an interval).
+function exchangeLine(exchange, series, control, counts) {
+  const start = rangeOf(series, 'co2High', 'ppm') ?? 'its start point';
+  const max = control.exchangeMaxMin ?? '?';
+  const every = control.exchangeEveryMin;
+  const head = `Air exchange ran ${exchange} % of the time`;
+  if (counts && typeof counts === 'object') {
+    const outdoor = (counts.cooling ?? 0) + (counts.drying ?? 0);
+    const parts = [
+      ...(counts.co2 > 0 ? [[counts.co2, `by CO₂ at ${start} (up to ${max} min each)`]] : []),
+      ...(counts.fresh > 0 ? [[counts.fresh, `for fresh air (${FRESH_RUN_S / 60} min after ${finite(every) ? every : '?'} min without one)`]] : []),
+      ...(outdoor > 0 ? [[outdoor, 'to cool or dry the room with outdoor air']] : []),
+      ...(counts.timed > 0 ? [[counts.timed, 'timed, for a CO₂ sensor fault']] : []),
+    ];
+    const total = parts.reduce((t, [n]) => t + n, 0);
+    if (total > 0) {
+      const words = parts.length === 1 ? `all ${parts[0][1]}` : listed(parts.map(([n, w]) => `${n} ${w}`));
+      return `${head}: it started ${plural(total, 'time', 'times')}, ${words}.`;
+    }
   }
-  return { lines, tries };
+  const fresh = finite(every) && every > 0 ? ` as well as for fresh air every ${every} min` : '';
+  return `${head}: started by CO₂ at ${start}${fresh}, up to ${max} min each.`;
+}
+
+// Try a longer air exchange time limit when the exchanges stopped at theirs (their spans last exactly the limit; a fresh-air
+// minute does not count) and the fans ran over half the time; null when not.
+function limitTry(intake, series, control, exchange) {
+  const max = control.exchangeMaxMin;
+  if (exchange < 50 || !finite(max) || max >= LIMIT_TRY_MIN) return null;
+  const runs = intake.filter((x) => x.to - x.from > FRESH_RUN_S + 10);
+  const capped = [];
+  intake.forEach((x, i) => { if (Math.abs(x.to - x.from - max * 60) <= 10) capped.push(i); });
+  if (!runs.length || capped.length / runs.length < 0.5) return null;
+  const soon = capped.filter((i) => i + 1 < intake.length && intake[i + 1].from - intake[i].to <= RESTART_S).length / capped.length;
+  const stop = rangeOf(series, 'co2Low', 'ppm') ?? 'its stop point';
+  const which = capped.length / runs.length >= MOST ? `each air exchange stopped at its ${max} min limit`
+    : `${capped.length} of ${runs.length} air exchanges stopped at their ${max} min limit`;
+  const next = soon >= MOST ? ' and the next started within 2 min' : soon >= 0.5 ? ', most followed by another within 2 min' : '';
+  return tryOf(`a ${LIMIT_TRY_MIN} min air exchange time limit`,
+    `${which}${next} (an exchange ends sooner only when CO₂ falls to ${stop}); a ${LIMIT_TRY_MIN} min limit lets one run until it does`,
+    { exchangeMaxMin: LIMIT_TRY_MIN });
 }
 
 // How hard the machines worked for a run, beside its time in band (critique 2026-10-28: a green 98.3 % run ran its fans
