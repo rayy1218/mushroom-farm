@@ -9,11 +9,11 @@ import { live } from './live.js';
 import { fallbackMs, isStale, withProgress } from './live-math.js';
 import { suggestHash } from './route.js';
 import { CROPS, CROP_KEYS, STAGES, FARM_TYPES, MAX_CROPS } from './crops.js';
-import { AC_CLASSES, acClassOf, kwOfBtu, btuOfKw } from './simulation-math.js';
+import { AC_CLASSES, acClassOf, kwOfBtu, btuOfKw, keepUnits } from './simulation-math.js';
 import {
   PHYSICS_FIELDS, PHYSICS_GROUPS, fieldLabel, FILTER_KEYS, initialState, checkStep, firstField, stepOf, buildBody, mixSummary, wholeProgram, stagesOf, fixStage, roomLine,
   summaryLines, progressLine, removeLabel, filterFromRoom, MACHINE_KEYS, machinesLine, useMachines,
-  RUN_CONTROL, runControl, setRunControl, resetRunControl, controlText, fixedControlLine, applySuggestion, applyChange, startChoices,
+  RUN_CONTROL, runControl, setRunControl, resetRunControl, controlText, fixedControlLine, applySuggestion, applyChange, startChoices, bandsChoice,
 } from './simulate-math.js';
 
 const STEPS = ['Room and machines', 'Crops', 'Run'];
@@ -292,14 +292,47 @@ export function openSimulateDialog(room, hooks = {}) {
       list.querySelector('.sim-crop-row:last-child input')?.focus();
     });
 
+    // The bands the run starts with (critique 2026-10-29c): the room's as it runs them when they differ from the stage's, by
+    // default, with the stage's one tap away; the stage's lines alone when there is no choice.
     function paintMix() {
       const m = mixSummary(state);
       mix.replaceChildren();
       if (!m) return;
-      mix.append(el('p', 'sim-mix-title', "The run holds the room in the crops' bands for each stage (not changes made by hand on the Setup tab)"));
-      const ul = el('ul', 'sim-mix-lines');
-      ul.append(...m.lines.map((t) => el('li', '', t)));
-      mix.append(ul);
+      const lines = el('ul', 'sim-mix-lines');
+      lines.append(...m.lines.map((t) => el('li', '', t)));
+      const choice = bandsChoice(state);
+      if (!choice.differs) {
+        mix.append(el('p', 'sim-mix-title', "The run holds the room in the crops' bands for each stage"), lines);
+      } else {
+        const set = el('fieldset', 'sim-days sim-bands');
+        set.append(el('legend', '', 'Bands'));
+        const option = (value, label, detail) => {
+          const wrap = el('label', 'sim-choice');
+          const radio = el('input');
+          radio.type = 'radio';
+          radio.name = 'sim-bands';
+          radio.value = value;
+          radio.checked = choice.use === value;
+          radio.id = `sim-bands-${value}`;
+          radio.setAttribute('aria-describedby', `${radio.id}-detail`);
+          radio.addEventListener('change', () => { state.bandsFrom = value; });
+          wrap.append(radio, el('span', '', label));
+          detail.id = `${radio.id}-detail`;
+          detail.classList.add('sim-bands-detail');
+          set.append(wrap, detail);
+        };
+        // the room's values that differ in accent, the stage's beside them (as on the Crop tab)
+        const room = el('p');
+        room.append(`${choice.byHand ? 'Changed by hand on the Setup tab' : "The room's bands now"}: `);
+        choice.parts.forEach((p, i) => {
+          if (i) room.append(', ');
+          room.append(el('span', 'sim-hand', keepUnits(p.long)), el('span', 'muted', keepUnits(` (the stage: ${p.stageShort})`)));
+        });
+        option('room', 'As the room runs now', room);
+        option('stage', "The stage's", lines);
+        set.append(el('p', 'c-hint', "From the next stage on, the run takes each stage's own bands, as the room would."));
+        mix.append(set);
+      }
       for (const w of m.warnings) mix.append(el('p', 'sim-warn', w));
     }
 
@@ -590,7 +623,7 @@ export function openSimulateDialog(room, hooks = {}) {
   Promise.all([
     request('GET', `/api/rooms/${room.id}/simulations`).catch(() => null), // newest first; optional: the prefill
     request('GET', `/api/rooms/${room.id}/crop`).catch(() => null),
-    request('GET', `/api/rooms/${room.id}/control`).catch(() => null), // the room's control settings: step 3's Control row
+    request('GET', `/api/rooms/${room.id}/control`).catch(() => null), // the room's control settings and bands: step 3's Control row, step 2's Bands
   ]).then(([runs, crop, control]) => {
     if (!alive()) return;
     cropData = crop;

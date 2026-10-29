@@ -238,6 +238,7 @@ test('inputRows: what a run was asked, as label and value rows instead of one lo
     { label: 'Fan', value: '600\u00a0m³/h' },
     { label: 'Humidifier', value: '2\u00a0L/h' },
     { label: 'Dehumidifier', value: 'none' },
+    { label: 'Bands', value: "the start stage's, then each stage's own" },
   ]);
   assert.deepEqual(inputRows(undefined), []);
 });
@@ -298,7 +299,7 @@ test('inputRows: how the room was run (air exchange, the aircon and the humidifi
     { label: 'Aircon during air exchange', value: '5\u00a0°C lower' },
     { label: 'Humidifier during air exchange', value: 'on' },
   ]);
-  assert.equal(inputRows({ physics, crops: [], stage: 'fruiting', days: 7 }).at(-1).label, 'Dehumidifier');
+  assert.equal(inputRows({ physics, crops: [], stage: 'fruiting', days: 7 }).at(-1).label, 'Bands');
 });
 
 test('the aircon in kW: the class it is sold as only when it is one, kW and BTU/h both ways', async () => {

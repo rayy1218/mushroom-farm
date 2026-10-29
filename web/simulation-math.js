@@ -2,7 +2,8 @@
 // Spec 2026-10-20-crops-and-simulation-design.md sections 4.3 and 4.5. Times of a run are seconds from its start (day 1, at
 // its start hour: 00:00 unless the run says startHour).
 
-import { CROPS, STAGES } from './crops.js';
+import { CROPS, STAGES, mixBands, validateCrops } from './crops.js';
+import { exchangePoints } from './band-math.js';
 import { formatKWh, formatRM, formatLitres } from './usage-math.js';
 import { TIMELINE_ROWS } from './history-math.js';
 
@@ -300,6 +301,39 @@ export function acSize(btu) {
 }
 const acKW = (btu) => (finite(btu) && btu > 0 ? `${(btu * 0.00029307107).toFixed(1)} kW` : 'none');
 
+// ---- the bands a run starts with (critique 2026-10-29c: Simulate runs the room's bands as it runs them, by default) ----
+
+export const BAND_KEYS = ['tLow', 'tHigh', 'rhLow', 'rhHigh', 'co2Low', 'co2High', 'co2Safety'];
+const n1 = (x) => grouped(Math.round(x * 10) / 10);
+// Each band in words: long (a sentence's), short (the Simulations list's), and whether it is set by these keys.
+const BAND_WORDS = [
+  { key: 't', keys: ['tLow', 'tHigh'], long: (b) => `temperature ${n1(b.tLow)}–${n1(b.tHigh)} °C`, short: (b) => `${n1(b.tLow)}–${n1(b.tHigh)} °C` },
+  { key: 'rh', keys: ['rhLow', 'rhHigh'], long: (b) => `humidity ${n1(b.rhLow)}–${n1(b.rhHigh)} % RH`, short: (b) => `${n1(b.rhLow)}–${n1(b.rhHigh)} % RH` },
+  { key: 'co2', keys: ['co2Low', 'co2High'], long: (b) => `air exchange ${exchangePoints(b.co2Low, b.co2High, n1)}`, short: (b) => `exchange ${n1(b.co2High)}/${n1(b.co2Low)} ppm` },
+  { key: 'safety', keys: ['co2Safety'], long: (b) => `CO₂ safety level ${n1(b.co2Safety)} ppm`, short: (b) => `safety ${n1(b.co2Safety)} ppm` },
+];
+
+// Whether b holds all seven band numbers.
+export const isBands = (b) => b !== null && typeof b === 'object' && BAND_KEYS.every((k) => finite(b[k]));
+
+// The bands of `bands` that differ from `stage`'s: [{ key, long, short, stage (the stage's long words) }]; [] when either is not
+// a whole set of bands.
+export function bandDiff(bands, stage) {
+  if (!isBands(bands) || !isBands(stage)) return [];
+  return BAND_WORDS.filter((w) => w.keys.some((k) => bands[k] !== stage[k]))
+    .map((w) => ({ key: w.key, long: w.long(bands), short: w.short(bands), stage: w.long(stage), stageShort: w.short(stage) }));
+}
+
+// All four bands in words: "temperature 24–26 °C, humidity 85–91 % RH, air exchange starts at 800 ppm, stops at 700 ppm, CO₂
+// safety level 1,000 ppm".
+export const bandWords = (b) => (isBands(b) ? BAND_WORDS.map((w) => w.long(b)).join(', ') : '');
+
+// The start stage's bands of a run's input, or null.
+function stageBandsOf(input) {
+  const crops = input?.crops;
+  return Array.isArray(crops) && !validateCrops(crops) && STAGES[input.stage] ? mixBands(crops, input.stage).bands : null;
+}
+
 // What a run was asked, as label and value rows (the head of its page and the comparison of two runs).
 export function inputRows(input) {
   const p = input?.physics;
@@ -316,8 +350,15 @@ export function inputRows(input) {
     { label: 'Fan', value: `${p.fanFlow} m³/h` },
     { label: 'Humidifier', value: `${p.humidifierLH} L/h` },
     { label: 'Dehumidifier', value: p.dehumidifierLday > 0 ? `${p.dehumidifierLday} L/day` : 'none' },
+    { label: 'Bands', value: bandsValue(input) },
     ...controlRows(input.ctx?.control ?? input.control),
   ].map((r) => ({ ...r, value: keepUnits(r.value) }));
+}
+
+// The bands a run started with: the ones it was given (the room's as it ran them), else its start stage's.
+function bandsValue(input) {
+  if (isBands(input.bands)) return `as the room ran them: ${bandWords(input.bands)}; then each stage's own`;
+  return "the start stage's, then each stage's own";
 }
 
 // Where a run started, when not in band at midnight: "outdoor air at 14:00", "in band at 07:00"; else null.
@@ -602,6 +643,7 @@ export function inputLine(input, roomMin = null) {
     `walls ${p.wallUA} W/K, sun ${p.sunW} W, outdoor ${p.outdoorLow}–${p.outdoorHigh} °C, dew point ${p.outdoorDew} °C`,
     `fan ${p.fanFlow} m³/h, aircon ${acSize(p.acBTU)}, humidifier ${p.humidifierLH} L/h${p.dehumidifierLday > 0 ? `, dehumidifier ${p.dehumidifierLday} L/day` : ''}`,
     ...limit,
+    ...(isBands(input.bands) ? [`bands as the room ran them: ${bandWords(input.bands)}`] : []),
     ...(settings.length ? [settings.join(', ')] : []),
     ...filter,
   ].map(keepUnits).join(' · ');
@@ -618,7 +660,16 @@ function givenParts(input) {
     humidifier: typeof c.humidifierDuringExchange === 'boolean' ? `humidifier ${c.humidifierDuringExchange ? 'on' : 'off'} during exchange` : null,
     outdoor: typeof c.outdoorAir === 'boolean' ? (c.outdoorAir ? 'outdoor air used' : 'no outdoor air') : null,
     start: !input ? null : started ? (input.start === 'outdoor' ? `from ${started}` : `started ${started}`) : 'started in band',
+    bands: !input?.physics ? null : isBands(input.bands) ? givenBands(input) : "the stage's bands",
   };
+}
+
+// A run's own bands in short words: those that differ from its start stage's ("room's bands: exchange 800/700 ppm, safety
+// 1,000 ppm"), or all of them when the stage's are not known.
+function givenBands(input) {
+  const diff = bandDiff(input.bands, stageBandsOf(input));
+  if (!diff.length) return isBands(stageBandsOf(input)) ? "the stage's bands" : `room's bands: ${BAND_WORDS.map((w) => w.short(input.bands)).join(', ')}`;
+  return `room's bands: ${diff.map((d) => d.short).join(', ')}`;
 }
 
 // The Simulations list's second line of each run: what it was given beyond its machines, only the parts that differ between

@@ -1349,3 +1349,10 @@ details.setup-part:not([open]) { padding-top: 8px; }
 .sg-aside p + p { margin-top: 6px; }
 .sg-aside-line { color: var(--muted); font-size: var(--fs-sm); }
 .sg-aside .sg-estimates { margin: 0; }
+
+/* critique 2026-10-29c: simulation */
+/* step 2's Bands: the room's values changed by hand in accent (a choice, not a warning, as on the Crop tab), each under its radio */
+.sim-bands-detail { margin: -6px 0 8px 24px; color: var(--ink-2); font-size: var(--fs-sm); }
+.sim-bands-detail.sim-mix-lines { padding-left: 16px; }
+.sim-hand { color: var(--accent-text); font-weight: 600; }
+.sim-bands .c-hint { margin: 4px 0 0; }

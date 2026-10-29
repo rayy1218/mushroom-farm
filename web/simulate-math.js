@@ -1,7 +1,7 @@
 // Pure helpers for the simulation stepper (no DOM, so they can be tested in Node).
 // Spec 2026-10-20-crops-and-simulation-design.md section 4.1. Every input is kept as the text typed; checks speak like the server.
 
-import { acSize, kwOfBtu, keepUnits, AC_CLASSES, formatDateTime } from './simulation-math.js';
+import { acSize, kwOfBtu, keepUnits, AC_CLASSES, formatDateTime, BAND_KEYS, isBands, bandDiff, bandWords } from './simulation-math.js';
 import { exchangePoints } from './band-math.js';
 import { CROPS, STAGES, FARM_TYPES, mixBands, rangeWarnings, validateCrops } from './crops.js';
 import { HUMIDIFIER_LABEL, OUTDOOR_LABEL } from './control-math.js';
@@ -203,6 +203,12 @@ export function initialState({ room, lastRun = null, cropData = null, roomContro
     start: 'band', // Start from: 'band' or 'outdoor' (at COOL_START_HOUR)
     // The room's control settings that a run uses (step 3's Control row), or null when unknown.
     roomControl: pickControl(roomControl),
+    // The bands the room runs now (null when unknown) and the crops and stage it runs them for (its crop), so step 2 can offer
+    // them instead of the stage's (critique 2026-10-29c); bandsFrom: 'room' or 'stage' once chosen (null: the room's when they
+    // differ). Simulate again keeps what the run had.
+    roomBands: isBands(roomControl) ? Object.fromEntries(BAND_KEYS.map((k) => [k, roomControl[k]])) : null,
+    roomCrop: Array.isArray(cropData?.crops) && cropData.crops.length > 0 ? { crops: cropData.crops, stage: cropData.stage } : null,
+    bandsFrom: again ? (isBands(again.input?.bands) ? 'room' : 'stage') : null,
     // This run's own: the air exchange time limit (null while it is the room's) and the other settings of RUN_CONTROL that
     // differ from the room's (Change for this run, or a suggestion's Use this); the texts typed for the numbers.
     exchangeMaxMin: null,
@@ -301,7 +307,7 @@ export function firstField(errors) {
 export function stepOf(field) {
   if (typeof field !== 'string') return null;
   if (field === 'physics' || field.startsWith('physics.')) return 1;
-  if (field === 'crops' || field === 'farmType' || field === 'stage') return 2;
+  if (field === 'crops' || field === 'farmType' || field === 'stage' || field === 'bands' || field.startsWith('bands.')) return 2;
   return ['days', 'target', 'control', 'start', 'startHour', 'coolDownMaxH'].includes(field) || String(field).startsWith('control.') ? 3 : null;
 }
 
@@ -317,7 +323,31 @@ export function buildBody(state, cropData = null) {
   };
   const { own } = runControl(state);
   if (Object.keys(own).length > 0) body.control = own;
+  const bands = bandsChoice(state);
+  if (bands.use === 'room') body.bands = { ...state.roomBands };
   return body;
+}
+
+// Step 2's Bands (critique 2026-10-29c, owner: Simulate runs the room's bands as it runs them, hand-changed values included,
+// with a choice for the stage's): { differs (the room's bands differ from the start stage's: there is a choice), use ('room' or
+// 'stage'), parts (bandDiff's: the room's bands that differ), byHand (the room runs these crops at this stage, so the
+// difference was set by hand on Setup) }.
+export function bandsChoice(state) {
+  const crops = cropsOf(state);
+  const stage = !validateCrops(crops) && stagesOf(state.farmType).includes(state.stage) ? mixBands(crops, state.stage).bands : null;
+  const parts = bandDiff(state.roomBands, stage);
+  const differs = parts.length > 0;
+  const rc = state.roomCrop;
+  const byHand = differs && rc !== null && rc.stage === state.stage && rc.crops.length === crops.length
+    && rc.crops.every((c, i) => c.crop === crops[i].crop && c.blocks === crops[i].blocks);
+  return { differs, use: differs && (state.bandsFrom ?? 'room') === 'room' ? 'room' : 'stage', parts, byHand };
+}
+
+// Step 3's Bands line.
+export function bandsLine(state) {
+  const c = bandsChoice(state);
+  if (c.use === 'room') return `As the room runs now (${bandWords(state.roomBands)}), until the next stage`;
+  return c.differs ? "The stage's (not the room's bands now), then each stage's own" : "The crops' bands for each stage";
 }
 
 // ---- words ----
@@ -361,6 +391,7 @@ export function summaryLines(state, room, cropData = null) {
     { label: 'Control', text: controlLine(state) },
     { label: 'Filter', text: filterLine(v, state.filterSensor === true) },
     { label: 'Crops', text: `${crops}; ${farmWords[state.farmType]}, starting at ${STAGES[state.stage].toLowerCase().replace(' between flushes', '')}` },
+    { label: 'Bands', text: bandsLine(state) },
     ...(state.start === 'outdoor' ? [{ label: 'Start', text: `From outdoor air at ${clockHour(COOL_START_HOUR)} (just loaded)` }] : []),
     { label: 'Run', text: days },
   ].map((l) => ({ ...l, text: keepUnits(l.text) })); // a number keeps its unit on its line

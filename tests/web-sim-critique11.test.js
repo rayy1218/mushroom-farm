@@ -115,3 +115,81 @@ test('the facts line under the verdict wraps with its numbers and its dot kept (
   assert.match(page, /import \{ keepLines \} from '\.\/text-math\.js';/);
   assert.match(page, /text\('p', 'sim-verdict-facts', keepLines\(facts\)\)/);
 });
+
+// ---- the bands a run starts with ----
+
+const sim = await import('../web/simulate-math.js');
+const simulation = await import('../web/simulation-math.js');
+const room1 = { id: 1, name: 'Room 1', length: 6, width: 4, height: 3, volume: 72, humidifierLH: 2 };
+const crop1 = { crops: [{ crop: 'oyster', blocks: 500 }], farmType: 'ready', stage: 'fruiting' };
+const stage1 = { tLow: 24, tHigh: 26, rhLow: 85, rhHigh: 91, co2Low: 700, co2High: 900, co2Safety: 1500 };
+const control1 = { auto: true, exchangeEveryMin: 15, exchangeMaxMin: 10, acDrop: 0, humidifierDuringExchange: true, outdoorAir: true, ...stage1, co2High: 800, co2Safety: 1000 };
+
+test('Simulate takes the room\'s bands by default when they differ from the stage\'s, said as changed by hand', () => {
+  const s = sim.initialState({ room: room1, cropData: crop1, roomControl: control1 });
+  const c = sim.bandsChoice(s);
+  assert.equal(c.differs, true);
+  assert.equal(c.use, 'room');
+  assert.equal(c.byHand, true);
+  assert.deepEqual(c.parts.map((p) => [p.long, p.stage]), [
+    ['air exchange starts at 800 ppm, stops at 700 ppm', 'air exchange starts at 900 ppm, stops at 700 ppm'],
+    ['CO₂ safety level 1,000 ppm', 'CO₂ safety level 1,500 ppm'],
+  ]);
+  assert.deepEqual(sim.buildBody(s).bands, { ...stage1, co2High: 800, co2Safety: 1000 });
+  assert.equal(sim.summaryLines(s, room1).find((l) => l.label === 'Bands').text,
+    nb('As the room runs now (temperature 24\u2060–\u206026~°C, humidity 85\u2060–\u206091~%~RH, air exchange starts at 800~ppm, stops at 700~ppm, CO₂ safety level 1,000~ppm), until the next stage'));
+  // the stage's: no bands in the body
+  s.bandsFrom = 'stage';
+  assert.equal(sim.bandsChoice(s).use, 'stage');
+  assert.equal(sim.buildBody(s).bands, undefined);
+  assert.equal(sim.summaryLines(s, room1).find((l) => l.label === 'Bands').text, "The stage's (not the room's bands now), then each stage's own");
+});
+
+test('no choice when the room runs the stage\'s bands, or they are not known; other crops are not "by hand"', () => {
+  const same = sim.initialState({ room: room1, cropData: crop1, roomControl: { ...control1, ...stage1 } });
+  assert.deepEqual(sim.bandsChoice(same), { differs: false, use: 'stage', parts: [], byHand: false });
+  assert.equal(sim.buildBody(same).bands, undefined);
+  assert.equal(sim.summaryLines(same, room1).find((l) => l.label === 'Bands').text, "The crops' bands for each stage");
+  const unknown = sim.initialState({ room: room1, cropData: crop1, roomControl: null });
+  assert.equal(sim.bandsChoice(unknown).differs, false);
+  const other = sim.initialState({ room: room1, cropData: crop1, roomControl: control1 });
+  other.crops[0].blocks = '300';
+  assert.equal(sim.bandsChoice(other).byHand, false);
+  assert.equal(sim.bandsChoice(other).use, 'room');
+});
+
+test('Simulate again keeps what the run had: its own bands, or the stage\'s', () => {
+  const with_ = sim.initialState({ room: room1, cropData: crop1, roomControl: control1, again: { input: { ...crop1, bands: control1 } } });
+  assert.equal(sim.bandsChoice(with_).use, 'room');
+  const without = sim.initialState({ room: room1, cropData: crop1, roomControl: control1, again: { input: { ...crop1 } } });
+  assert.equal(sim.bandsChoice(without).use, 'stage');
+});
+
+test('a server error in the bands goes to step 2', () => {
+  assert.equal(sim.stepOf('bands'), 2);
+  assert.equal(sim.stepOf('bands.co2Safety'), 2);
+});
+
+test('what this run was given, its one line and the Simulations list say the bands it ran', () => {
+  const physics = { wallUA: 80, outdoorHigh: 33, outdoorLow: 25, outdoorDew: 24, sunW: 300, fanFlow: 600, acBTU: 12000, humidifierLH: 2, dehumidifierLday: 0 };
+  const bands = { ...stage1, co2High: 800, co2Safety: 1000 };
+  const given = { physics, ...crop1, days: 7, bands };
+  assert.deepEqual(simulation.inputRows(given).find((r) => r.label === 'Bands'), { label: 'Bands',
+    value: nb("as the room ran them: temperature 24\u2060–\u206026~°C, humidity 85\u2060–\u206091~%~RH, air exchange starts at 800~ppm, stops at 700~ppm, CO₂ safety level 1,000~ppm; then each stage's own") });
+  assert.match(simulation.inputLine(given), /bands as the room ran them: temperature/);
+  const stageRun = { physics, ...crop1, days: 7 };
+  assert.deepEqual(simulation.differingLines([{ input: given }, { input: stageRun }]),
+    [nb("room's bands: exchange 800/700~ppm, safety 1,000~ppm"), "the stage's bands"]);
+  assert.deepEqual(simulation.differingLines([{ input: stageRun }, { input: stageRun }]), ['', '']);
+});
+
+test('step 2 offers the bands, the room\'s by hand in accent; step 3 lists them (Your choices)', () => {
+  const dialog = src('simulate-dialog.js');
+  assert.match(dialog, /const choice = bandsChoice\(state\);/);
+  assert.match(dialog, /set\.append\(el\('legend', '', 'Bands'\)\);/);
+  assert.match(dialog, /option\('room', 'As the room runs now', room\);\s+option\('stage', "The stage's", lines\);/);
+  assert.match(dialog, /radio\.addEventListener\('change', \(\) => \{ state\.bandsFrom = value; \}\);/);
+  assert.match(dialog, /el\('span', 'sim-hand', keepUnits\(p\.long\)\)/);
+  assert.doesNotMatch(dialog, /not changes made by hand on the Setup tab/);
+  assert.match(block, /\.sim-hand \{ color: var\(--accent-text\); font-weight: 600; \}/);
+});

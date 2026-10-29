@@ -187,7 +187,7 @@ test('the summary and the room line', () => {
   const s = initialState({ room });
   const lines = summaryLines(s, room);
   const line = (label, of = lines) => of.find((l) => l.label === label).text;
-  assert.deepEqual(lines.map((l) => l.label), ['Room', 'Walls and weather', 'Machines', 'Control', 'Filter', 'Crops', 'Run']);
+  assert.deepEqual(lines.map((l) => l.label), ['Room', 'Walls and weather', 'Machines', 'Control', 'Filter', 'Crops', 'Bands', 'Run']);
   assert.equal(line('Crops'), 'Grey oyster, 500 blocks; ready-to-fruit blocks, starting at fruiting');
   // a number keeps its unit on its line (critique 2026-10-28: 'L/day' alone on a line)
   assert.equal(line('Machines'), 'Fan 600\u00a0m³/h, aircon 3.5\u00a0kW (12,000\u00a0BTU/h class), humidifier 1.5\u00a0L/h, no dehumidifier');
@@ -416,7 +416,7 @@ test('the Control row: the room\'s air exchange, aircon and humidifier during it
   const s = initialState({ room, roomControl });
   assert.deepEqual(s.roomControl, { exchangeEveryMin: 15, exchangeMaxMin: 10, acDrop: 5, humidifierDuringExchange: true, outdoorAir: true });
   const lines = summaryLines(s, room);
-  assert.deepEqual(lines.map((l) => l.label), ['Room', 'Walls and weather', 'Machines', 'Control', 'Filter', 'Crops', 'Run']);
+  assert.deepEqual(lines.map((l) => l.label), ['Room', 'Walls and weather', 'Machines', 'Control', 'Filter', 'Crops', 'Bands', 'Run']);
   assert.equal(controlLine(s), 'Air exchange every 15\u00a0min, up to 10\u00a0min; aircon 5\u00a0°C lower during air exchange; humidifier on during air exchange; outdoor air used');
   assert.equal(lines[3].text, controlLine(s));
   const quiet = initialState({ room, roomControl: { ...roomControl, exchangeEveryMin: 0, acDrop: 0, humidifierDuringExchange: false, outdoorAir: false } });
