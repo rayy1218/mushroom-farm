@@ -136,6 +136,13 @@ export function thinPoints(points, max) {
   return out;
 }
 
+// What a result's chart holds, for its read-out: the run's length (a count of the points drawn says how they were thinned, not
+// the run). endS: runEnd's.
+export function readingsAmount(endS) {
+  const days = Math.round(endS / DAY_S);
+  return days >= 1 ? `${plural(days, 'day', 'days')} of readings` : `${Math.max(1, Math.round(endS / 3600))} h of readings`;
+}
+
 // The dashed second line of a chart (the outdoor values), or null when the series has none.
 export function outdoorLine(series, field) {
   const points = chartPoints(series, field);
@@ -198,6 +205,23 @@ export function timelineRows(machines, minGap = 0, input = null, filterChanges =
     const spans = mergeSpans(raw, minGap, (a, b) => a.setpoint === b.setpoint).map(({ setpoint, ...span }) => span);
     return { ...r, spans, marks };
   });
+}
+
+// The timeline read out (critique 2026-10-29b: "Aircon on 1538 times" counted the spans of its setpoints): each machine's
+// share of the time on, the aircon's setpoints and the filter changes. rows: timelineRows', range: { from, to } in seconds.
+export function timelineAria(rows, range) {
+  const span = range.to - range.from;
+  return rows.map((r) => {
+    const on = (r.spans ?? []).reduce((t, x) => t + Math.max(0, Math.min(x.to, range.to) - Math.max(x.from, range.from)), 0);
+    const share = span > 0 ? (on / span) * 100 : 0;
+    const parts = [`${r.label} ${on <= 0 ? 'off' : share >= 99.5 ? 'on all the time' : share < 0.5 ? 'on under 1 % of the time' : `on ${Math.round(share)} % of the time`}`];
+    const setpoints = [...new Set((r.marks ?? []).filter((m) => finite(m.value)).map((m) => m.value))];
+    if (setpoints.length > 1) parts.push(`its setpoint switching between ${Math.min(...setpoints)} and ${Math.max(...setpoints)} °C`);
+    else if (setpoints.length === 1) parts.push(`set to ${setpoints[0]} °C`);
+    const changes = (r.marks ?? []).filter((m) => m.text === 'Filter').length;
+    if (changes) parts.push(`the filter changed ${changes === 1 ? 'once' : `${changes} times`}`);
+    return parts.join(', ');
+  }).join('; ');
 }
 
 // ---- the intake filter (spec 2026-10-22-filter-design.md 8) ----
@@ -356,8 +380,10 @@ export const runCauses = (result, input) => causesOf(result, input).lines;
 // The value to try for each setting a cause of runCauses names (critique 2026-10-28: the Why section said to change the
 // settings, not to what): the aircon not lowered, the humidifier off when the room was too wet, the longer time limit that
 // Suggest machines allows when the fans run over half the time (server/sizing.js LIMIT_MAX_MIN).
+// → [{ text, name (the change in words), control (the change for one run, as Simulate's Change for this run takes it) }]
 export const runTries = (result, input) => causesOf(result, input).tries;
 const LIMIT_TRY_MIN = 60;
+const tryOf = (name, why, control) => ({ text: `Try ${name}${why ? `: ${why}` : ''}.`, name, control });
 
 function causesOf(result, input) {
   const series = result?.series ?? [];
@@ -378,16 +404,16 @@ function causesOf(result, input) {
       const setpoint = Math.min(...low.map((x) => x.setpoint));
       const why = finite(control.acDrop) && control.acDrop > 0 ? `: it is set ${control.acDrop} °C lower during air exchange` : '';
       lines.push(`The aircon was set to ${setpoint} °C, below the ${tLow} °C band, ${lowShare} % of the time${why}.`);
-      if (why) tries.push('Try the aircon not lowered during air exchange (0 °C).');
+      if (why) tries.push(tryOf('the aircon not lowered during air exchange (0 °C)', '', { acDrop: 0 }));
     }
   }
   if (control.humidifierDuringExchange === true && exchange >= 30) {
     lines.push('The humidifier also ran during every air exchange.');
     const wet = series.filter((r) => finite(r.rh) && finite(r.rhHigh) && r.rh > r.rhHigh).length / series.length;
-    if (wet >= 0.05) tries.push('Try the humidifier off during air exchange: the room was too wet.');
+    if (wet >= 0.05) tries.push(tryOf('the humidifier off during air exchange', 'the room was too wet', { humidifierDuringExchange: false }));
   }
   if (exchange >= 50 && finite(control.exchangeMaxMin) && control.exchangeMaxMin < LIMIT_TRY_MIN) {
-    tries.push(`Try a ${LIMIT_TRY_MIN} min air exchange time limit: the fans ran over half the time.`);
+    tries.push(tryOf(`a ${LIMIT_TRY_MIN} min air exchange time limit`, 'the fans ran over half the time', { exchangeMaxMin: LIMIT_TRY_MIN }));
   }
   return { lines, tries };
 }

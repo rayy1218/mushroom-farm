@@ -2,8 +2,8 @@
 // the buying decision ("numbers decide the business"), so its page ranks the setups by the money they cost a month, shows five
 // columns (the rest in each row's details) and says in words whether each reaches the goal.
 
-import { acSize, AC_CLASSES, formatDateTime } from './simulation-math.js';
-import { PHYSICS_FIELDS } from './simulate-math.js';
+import { acSize, keepUnits } from './simulation-math.js';
+import { estimateLines } from './simulate-math.js';
 import { formatKWh, formatRM, formatLitres } from './usage-math.js';
 
 const DASH = '—';
@@ -56,6 +56,10 @@ export function verdictOf(c, result) {
   return { reached: false, tone: 'amber', text: `Misses: ${misses.join('; ')}` };
 }
 
+// A setup's machines in words: ['Fan 150 m³/h', 'aircon 2.6 kW (9,000 BTU/h class)', 'humidifier 0.5 L/h', 'no dehumidifier'].
+export const machineParts = (m) => [`Fan ${m.fanFlow} m³/h`, `aircon ${acSize(Number(m.acBTU))}`, `humidifier ${m.humidifierLH} L/h`,
+  Number(m.dehumidifierLday) > 0 ? `dehumidifier ${m.dehumidifierLday} L/day` : 'no dehumidifier'];
+
 // One evaluated setup (a row of result.best, or result.baseline) as the texts of a row: { index, verdict, setupParts, inBand,
 // money, cost, coolDown, details }.
 function rowOf(c, index, result, prices) {
@@ -75,8 +79,7 @@ function rowOf(c, index, result, prices) {
   return {
     index,
     verdict: verdictOf(c, result),
-    setupParts: [`Fan ${ac.fanFlow} m³/h`, `aircon ${acSize(Number(ac.acBTU))}`, `humidifier ${ac.humidifierLH} L/h`,
-      Number(ac.dehumidifierLday) > 0 ? `dehumidifier ${ac.dehumidifierLday} L/day` : 'no dehumidifier'],
+    setupParts: machineParts(ac),
     inBand: pct(c.inBand?.all),
     money: m.rm === null ? formatKWh(m.kWh) : formatRM(m.rm),
     cost: m.rm ?? m.kWh,
@@ -104,30 +107,26 @@ export function captionOf(result, count) {
   return result?.baseline ? `What the room has now, then ${best}` : best.charAt(0).toUpperCase() + best.slice(1);
 }
 
-// The machines the room has now, for the baseline: its newest run's (as Simulate prefills them), else its ratings on Setup
-// (the aircon from its input power at about 11.25 BTU/h per W, as the nearest class sold; the fan at Simulate's default, a
-// room keeps no fan flow). lastRun: GET /api/rooms/:id/simulations[0] or null. → { machines, from (a line that says which) }.
-const BTU_PER_W = 11.25;
-const defOf = (key) => PHYSICS_FIELDS.find((f) => f.key === key).def;
-export function roomMachines({ room, lastRun = null }) {
-  const p = lastRun?.input?.physics;
-  if (finite(p?.fanFlow) && finite(p?.acBTU) && finite(p?.humidifierLH)) {
-    return {
-      machines: { fanFlow: p.fanFlow, acBTU: p.acBTU, humidifierLH: p.humidifierLH, dehumidifierLday: finite(p.dehumidifierLday) ? p.dehumidifierLday : 0 },
-      from: `From your last simulation, ${formatDateTime(lastRun.createdAt).replace(/ \d\d:\d\d$/, '')}`,
-    };
-  }
-  const btu = finite(room?.acInputW) && room.acInputW > 0
-    ? AC_CLASSES.reduce((a, b) => (Math.abs(b - room.acInputW * BTU_PER_W) < Math.abs(a - room.acInputW * BTU_PER_W) ? b : a)) : defOf('acBTU');
-  return {
-    machines: {
-      fanFlow: defOf('fanFlow'),
-      acBTU: btu,
-      humidifierLH: finite(room?.humidifierLH) ? room.humidifierLH : defOf('humidifierLH'),
-      dehumidifierLday: room?.dehumidifier === true && finite(room.dehumidifierLday) ? room.dehumidifierLday : 0,
-    },
-    from: "From the room's ratings on Setup",
-  };
+// The machines the room has now, for the baseline: as Simulate's step 1 starts from them (simulate-math.js).
+export { roomMachines } from './simulate-math.js';
+
+// What the page says the search does (its head; on a desk, the side column's first part).
+export const SEARCH_LINE = 'The search tries fan, aircon, humidifier and dehumidifier sizes for these crops, walls and weather, and lists the five best setups: those that reach the goal first, the cheapest a month first.';
+
+// The side column of the page on a desk (critique 2026-10-29b: the right half of 1440 px was empty beside the form): how the
+// search works, what the room has now (with how it did in the last search) and where that search started.
+// now: roomMachines'; result: the last search's, or null. → [{ title, lines, verdict ({ tone, text, money }) or null, list (the
+// lines are a list) }]
+export function asideSections({ now, result = null, prices = null }) {
+  const base = result ? baselineRow(result, prices) : null;
+  const sections = [
+    { title: 'How the search works', lines: [SEARCH_LINE, "It starts from sizes worked out for the room's volume, walls, weather and crops, and simulates those around them; the room's own machines are tried first, as the baseline."], verdict: null },
+    { title: 'What the room has now', lines: [machineParts(now.machines).join(' · '), now.from],
+      verdict: base ? { tone: base.verdict.tone, text: base.verdict.text, money: `${base.money} a month` } : null },
+  ];
+  const start = estimateLines(result?.estimate);
+  if (start.length) sections.push({ title: 'Where the search started', lines: start, verdict: null, list: true });
+  return sections.map((x) => ({ ...x, lines: x.lines.map(keepUnits), verdict: x.verdict && { ...x.verdict, text: keepUnits(x.verdict.text) } }));
 }
 
 // What the money column is made of, under the table.

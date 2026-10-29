@@ -434,16 +434,17 @@ test('runTries: the value to try for each setting a cause names', async () => {
     machines: { intake: [{ from: 0, to: 8 * H }], ac: [{ from: 0, to: 10 * H, setpoint: 16 }] },
   };
   const control = { exchangeEveryMin: 15, exchangeMaxMin: 10, acDrop: 5, humidifierDuringExchange: true };
+  // each with the change for one run that Simulate with this change fills in (critique 2026-10-29b)
   assert.deepEqual(runTries(result, { ctx: { control } }), [
-    'Try the aircon not lowered during air exchange (0 °C).',
-    'Try the humidifier off during air exchange: the room was too wet.',
-    'Try a 60 min air exchange time limit: the fans ran over half the time.',
+    { text: 'Try the aircon not lowered during air exchange (0 °C).', name: 'the aircon not lowered during air exchange (0 °C)', control: { acDrop: 0 } },
+    { text: 'Try the humidifier off during air exchange: the room was too wet.', name: 'the humidifier off during air exchange', control: { humidifierDuringExchange: false } },
+    { text: 'Try a 60 min air exchange time limit: the fans ran over half the time.', name: 'a 60 min air exchange time limit', control: { exchangeMaxMin: 60 } },
   ]);
   // settings that are already so: nothing to try
   assert.deepEqual(runTries(result, { ctx: { control: { ...control, acDrop: 0, humidifierDuringExchange: false, exchangeMaxMin: 60 } } }), []);
   // a room too dry keeps its humidifier; a short exchange keeps its limit
   const dry = { ...result, series: result.series.map((r) => ({ ...r, rh: 80 })), machines: { ...result.machines, intake: [{ from: 0, to: 4 * H }] } };
-  assert.deepEqual(runTries(dry, { ctx: { control } }), ['Try the aircon not lowered during air exchange (0 °C).']);
+  assert.deepEqual(runTries(dry, { ctx: { control } }).map((t) => t.text), ['Try the aircon not lowered during air exchange (0 °C).']);
   assert.deepEqual(runTries(null, { ctx: { control } }), []);
 });
 

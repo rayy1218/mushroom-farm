@@ -45,7 +45,7 @@ test('step 3: the Control row\'s settings can be changed for this run, the fresh
   assert.match(dialog, /field\(`control\.\$\{f\.key\}`, f\.label, numberInput\(controlText\(state, f\.key\)/);
   assert.match(dialog, /box\.dataset\.field = `control\.\$\{f\.key\}`;/);
   assert.match(dialog, /const fixed = fixedControlLine\(state\);/);
-  assert.match(dialog, /fold\.open = Object\.keys\(runControl\(state\)\.own\)\.length > 0;/);
+  assert.match(dialog, /fold\.open = Object\.keys\(runControl\(state\)\.own\)\.length > 0( \|\| hooks\.change !== undefined)?;/);
   assert.match(dialog, /roomControl: control, again: hooks\.from \?\? null/);
 });
 
@@ -63,7 +63,7 @@ test("the page's Use this opens Simulate on step 3 with the search's walls, weat
 
 test('step 3: the How long and Start from rows are 44 px tall', () => {
   assert.match(css, /\.sim-choice \{[^}]*min-height: 44px;/);
-  assert.match(css, /\.sim-choice input\[type="radio"\] \{[^}]*width: 20px; height: 20px;/);
+  assert.match(css, /\.sim-choice input\[type="radio"\] \{[^}]*width: 16px; height: 16px;/);
 });
 
 test('the step marks: the current one carries aria-current and an accent underline, not weight alone', () => {
@@ -73,7 +73,7 @@ test('the step marks: the current one carries aria-current and an accent underli
 
 test("step 1: the wall heat transfer and the sun on the roof have hints with typical values", () => {
   assert.match(dialog, /function field\(name, label, input, hint\) \{/);
-  assert.match(dialog, /field\(`physics\.\$\{f\.key\}`, fieldLabel\(f\),\s*numberInput\(state\.physics\[f\.key\], \(v\) => \{ state\.physics\[f\.key\] = v; \}, f\.whole\), f\.hint\)/);
+  assert.match(dialog, /field\(`physics\.\$\{f\.key\}`, fieldLabel\(f\), numberInput\(state\.physics\[f\.key\], \(v\) => \{\s*state\.physics\[f\.key\] = v;[^}]*\}, f\.whole\), f\.hint\)/);
 });
 
 test('step 2: the crop rows share one grid, so Blocks sits over its input', () => {

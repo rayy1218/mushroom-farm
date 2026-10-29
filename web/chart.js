@@ -90,7 +90,7 @@ export function drawLineChart(host, opts) {
     const latest = [...points].reverse().find((p) => p.value !== null);
     svg = el('svg', {
       width, height, viewBox: `0 0 ${width} ${height}`, role: 'img',
-      'aria-label': `${label}: ${points.length} ${current.noun ?? 'readings'}${latest ? `, latest ${fmt(latest.value)}, min ${fmt(lo)}, max ${fmt(hi)}` : ''}${band ? `, band ${fmt(band.low)} to ${fmt(band.high)}` : ''}${steps ? ', band as it moved' : ''}${secondText()}`,
+      'aria-label': `${label}: ${current.amount ?? `${points.length} ${current.noun ?? 'readings'}`}${latest ? `, latest ${fmt(latest.value)}, min ${fmt(lo)}, max ${fmt(hi)}` : ''}${band ? `, band ${fmt(band.low)} to ${fmt(band.high)}` : ''}${steps ? ', band as it moved' : ''}${secondText()}`,
     });
 
     // Grid lines and y labels at the padded min and max.

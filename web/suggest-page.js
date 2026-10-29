@@ -16,7 +16,9 @@ import {
   TARGET_DEFAULT, COOL_DOWN_DEFAULT, checkSuggest, sizingBody, sizingProgress, estimateLines, coolDownLine,
 } from './simulate-math.js';
 import { backLabel } from './simulation-math.js';
-import { pricesOf, suggestRows, baselineRow, captionOf, roomMachines, moneyHead, priceLine, noneReachedLine, COLUMNS } from './suggest-math.js';
+import {
+  pricesOf, suggestRows, baselineRow, captionOf, roomMachines, moneyHead, priceLine, noneReachedLine, COLUMNS, SEARCH_LINE, asideSections,
+} from './suggest-math.js';
 
 const POLL_MS = 1000;
 const FIELD_ORDER = [...SIZING_FIELDS.map((f) => `physics.${f.key}`), 'crops', 'farmType', 'stage', 'target', 'coolDownMaxH'];
@@ -27,13 +29,16 @@ const TEMPLATE = `
   <div class="page-head">
     <div class="page-titles">
       <h1 class="page-title" tabindex="-1" data-title>Suggest machines</h1>
-      <p class="page-sub sg-sub">The search tries fan, aircon, humidifier and dehumidifier sizes for these crops, walls and weather, and lists the five best setups: those that reach the goal first, the cheapest a month first.</p>
+      <p class="page-sub sg-sub">${SEARCH_LINE}</p>
     </div>
   </div>
   <div class="banner" role="alert" hidden><span data-banner-text></span><button type="button" data-retry hidden>Retry</button></div>
   <div class="missing" data-missing hidden><p>That room no longer exists</p><a href="#/overview">Back to the Overview</a></div>
   <p class="none" data-loading>Loading…</p>
-  <form class="card sg-form" data-form novalidate hidden></form>
+  <div class="sg-top">
+    <form class="card sg-form" data-form novalidate hidden></form>
+    <aside class="card sg-aside" data-aside hidden aria-label="About this search"></aside>
+  </div>
   <section class="card sg-out" data-out hidden>
     <h2>Suggestions</h2>
     <div data-out-body aria-live="polite"></div>
@@ -72,6 +77,7 @@ export function mount(container, { id }) {
   const els = {
     back: q('[data-back]'), title: q('[data-title]'), banner: q('.banner'), bannerText: q('[data-banner-text]'), retry: q('[data-retry]'),
     missing: q('[data-missing]'), loading: q('[data-loading]'), form: q('[data-form]'), out: q('[data-out]'), outBody: q('[data-out-body]'),
+    aside: q('[data-aside]'),
   };
   els.back.href = roomHash(id, 'simulations');
 
@@ -83,7 +89,7 @@ export function mount(container, { id }) {
   let job = null; // the suggestion as last read
   let body = null; // what it was asked (for Use this)
   let now = null; // the room's machines as they are, the search's baseline: { machines, from }
-  let baseFrom = ''; // where the asked search's baseline came from ('From your last simulation, 26 Oct')
+  let baseFrom = ''; // where the asked search's baseline came from ("Your room's machines (Setup); fan flow from the run of 26 Oct 14:02 (not on Setup)")
   let jobText = ''; // an error of the suggestion that belongs to no field (409, offline)
   let sending = false;
   let timer = null;
@@ -375,6 +381,32 @@ export function mount(container, { id }) {
     }
     els.out.hidden = nodes.length === 0;
     els.outBody.replaceChildren(...nodes);
+    paintAside();
+  }
+
+  // The side column on a desk (critique 2026-10-29b): how the search works, what the room has now and, after a search, how
+  // it did and where the search started. Hidden below 1,200 px, where the head and the results say these.
+  function paintAside() {
+    if (!now) return;
+    const result = job?.status === 'done' ? job.result ?? null : null;
+    els.aside.replaceChildren(...asideSections({ now, result, prices }).map((section) => {
+      const part = el('section', 'sg-aside-part');
+      part.append(el('h2', '', section.title));
+      if (section.list) {
+        const ul = el('ul', 'sim-mix-lines sg-estimates');
+        ul.append(...section.lines.map((t) => el('li', '', t)));
+        part.append(ul);
+      } else {
+        part.append(...section.lines.map((t, i) => el('p', i === 0 ? 'sg-aside-lead' : 'sg-aside-line', t)));
+      }
+      if (section.verdict) {
+        const v = el('p', 'sg-verdict', `In the last search: ${section.verdict.text} · ${section.verdict.money}`);
+        v.dataset.tone = section.verdict.tone;
+        part.append(v);
+      }
+      return part;
+    }));
+    els.aside.hidden = false;
   }
 
   // The pieces of a row: the machines (after a lead: the rank, or the baseline's title), the verdict, the three cells and the
@@ -451,11 +483,12 @@ export function mount(container, { id }) {
     if (cool) nodes.push(el('p', 'muted sg-note', cool));
     nodes.push(el('p', 'muted sg-note', 'Use this opens Simulate with the setup, its air exchange time limit and its settings during air exchange, for a full run of the room.'));
     const lines = estimateLines(result.estimate);
-    if (lines.length) {
-      nodes.push(el('h3', 'sim-sub', 'Where the search started'));
+    if (lines.length) { // on a desk, in the side column instead
+      const start = el('div', 'sg-start');
       const ul = el('ul', 'sim-mix-lines sg-estimates');
       ul.append(...lines.map((t) => el('li', '', t)));
-      nodes.push(ul);
+      start.append(el('h3', 'sim-sub', 'Where the search started'), ul);
+      nodes.push(start);
     }
     for (const n of result.notes ?? []) nodes.push(el('p', 'us-note', n));
     return nodes;
@@ -490,6 +523,7 @@ export function mount(container, { id }) {
       els.loading.hidden = true;
       els.form.hidden = false;
       paintForm();
+      paintAside();
       if (stored?.id) {
         job = { id: stored.id, status: 'queued', progress: 0 };
         body = stored.body;

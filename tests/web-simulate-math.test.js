@@ -54,12 +54,13 @@ test('first open: the defaults, the humidifier from the room rating, 7 days', ()
   assert.equal(initialState({ room: { ...room, humidifierLH: undefined } }).physics.humidifierLH, '2');
 });
 
-test('prefill: the physics from the last run, the crops from the room', () => {
+test('prefill: the walls and weather from the last run, the machines and crops from the room', () => {
   const lastRun = { input: { physics: { wallUA: 120, outdoorHigh: 35, outdoorLow: 26, outdoorDew: 25, sunW: 500, fanFlow: 800, acBTU: 18000, humidifierLH: 3 }, crops: [{ crop: 'pink', blocks: 40 }], farmType: 'full', stage: 'spawn', days: 30 } };
   const cropData = { crops: [{ crop: 'milky', blocks: 70 }, { crop: 'pink', blocks: 30 }], farmType: 'full', stage: 'pinning', flush: 1, flushes: 3, days: { spawn: 20, pinning: 3, fruiting: 6, rest: 9 } };
   const s = initialState({ room, lastRun, cropData });
   assert.equal(s.physics.wallUA, '120');
-  assert.equal(s.physics.humidifierLH, '3');
+  assert.equal(s.physics.humidifierLH, '1.5', "the room's humidifier, not the run's");
+  assert.equal(s.physics.fanFlow, '800', 'a room keeps no fan flow: the run\'s');
   assert.deepEqual(s.crops, [{ crop: 'milky', blocks: '70' }, { crop: 'pink', blocks: '30' }]);
   assert.deepEqual([s.farmType, s.stage, s.days], ['full', 'pinning', '7']);
   // a room without crops: Grey oyster 500 but its farm type and stage
@@ -212,14 +213,16 @@ test('the Remove button of a crop row is named after the crop it holds now', () 
   assert.equal(removeLabel('nope'), 'Remove crop');
 });
 
-test('the dehumidifier input: 0 to 200 L/day, 0 is none; the room (when fitted) or the last run prefill it', () => {
+test('the dehumidifier input: 0 to 200 L/day, 0 is none; the room prefills it (its capacity when fitted)', () => {
   const f = PHYSICS_FIELDS.find((x) => x.key === 'dehumidifierLday');
   assert.deepEqual([f.label, f.unit, f.min, f.max, f.def], ['Dehumidifier', 'L/day', 0, 200, 0]);
   assert.equal(initialState({ room }).physics.dehumidifierLday, '0');
   assert.equal(initialState({ room: { ...room, dehumidifier: false, dehumidifierLday: 20 } }).physics.dehumidifierLday, '0');
   assert.equal(initialState({ room: { ...room, dehumidifier: true, dehumidifierLday: 12.5 } }).physics.dehumidifierLday, '12.5');
   const lastRun = { input: { physics: { dehumidifierLday: 30 } } };
-  assert.equal(initialState({ room: { ...room, dehumidifier: true, dehumidifierLday: 12.5 }, lastRun }).physics.dehumidifierLday, '30');
+  assert.equal(initialState({ room: { ...room, dehumidifier: true, dehumidifierLday: 12.5 }, lastRun }).physics.dehumidifierLday, '12.5', "the room's, not the last run's");
+  const full = { input: { physics: { fanFlow: 600, acBTU: 12000, humidifierLH: 2, dehumidifierLday: 30 } } };
+  assert.equal(initialState({ room: { ...room, dehumidifier: true, dehumidifierLday: 12.5 }, lastRun: full, again: full }).physics.dehumidifierLday, '30', 'Simulate again: the run\'s');
   // a last run from before the dehumidifier has none: the room's
   assert.equal(initialState({ room: { ...room, dehumidifier: true, dehumidifierLday: 12.5 }, lastRun: { input: { physics: { wallUA: 90 } } } }).physics.dehumidifierLday, '12.5');
   const s = initialState({ room });

@@ -12,7 +12,7 @@ import { fallbackMs, withProgress, isStale } from './live-math.js';
 import { tickCountFor } from './history-math.js';
 import { progressLine } from './simulate-math.js';
 import {
-  CHARTS, tileList, stageRows, dayTicks, runEnd, chartPoints, thinPoints, outdoorLine, bandSteps, timelineRows, energyView, perDayBars,
+  CHARTS, tileList, stageRows, dayTicks, runEnd, chartPoints, thinPoints, outdoorLine, bandSteps, timelineRows, timelineAria, readingsAmount, energyView, perDayBars,
   inputLine, inputRows, backLabel, runVerdict, runCauses, runTries, runFacts, headLine, formatDateTime, formatRunTime, isActive, filterView, STAGE_COLUMNS, scrollEdges,
 } from './simulation-math.js';
 
@@ -322,10 +322,24 @@ export function mount(container, { id, runId }) {
           if (tries.length) { // under their own heading, so they don't read as more causes (critique 2026-10-28)
             v.append(text('h3', 'sim-verdict-why', 'Try'));
             const list = text('ul', 'sim-verdict-lines sim-verdict-tries');
-            list.append(...tries.map((l) => text('li', '', l)));
+            // each opens Simulate from this run with the change for one run (critique 2026-10-29b: they were text only)
+            list.append(...tries.map((t) => {
+              const li = text('li', 'sim-try');
+              li.append(text('span', '', t.text));
+              if (roomData && run.input?.physics) {
+                const use = text('button', '', 'Simulate with this change');
+                use.type = 'button';
+                use.setAttribute('aria-label', `Simulate with this change: ${t.name}`);
+                use.addEventListener('click', () => openSimulateDialog(roomData, { from: run, change: t.control }));
+                li.append(use);
+              }
+              return li;
+            }));
             v.append(list);
           }
-          v.append(text('p', 'muted sim-verdict-next', 'These are the room\'s control settings (Setup tab, Automatic control). Change them there, or for one run in Simulate (step 3, Change for this run), and simulate again before buying other machines.'));
+          v.append(text('p', 'muted sim-verdict-next', tries.length && roomData
+            ? 'Setup keeps its settings; this is one run. To keep a change, set it on the Setup tab (Automatic control), and simulate again before buying other machines.'
+            : 'These are the room\'s control settings (Setup tab, Automatic control). Change them there, or for one run in Simulate (step 3, Change for this run), and simulate again before buying other machines.'));
         } else {
           const next = text('p', 'muted sim-verdict-next', 'Simulate again with other machines, or let ');
           const link = text('a', '', 'Suggest machines');
@@ -361,7 +375,7 @@ export function mount(container, { id, runId }) {
       const second = def.outdoor ? outdoorLine(result.series, def.outdoor) : null;
       charts.push(drawLineChart(host, {
         ...common, points: thinPoints(chartPoints(result.series, def.field), MAX_POINTS), unit: def.unit, label: def.label, color: def.color,
-        digits: def.digits, minSpan: def.minSpan, bounds: def.bounds, noun: 'samples', failTicks: false,
+        digits: def.digits, minSpan: def.minSpan, bounds: def.bounds, amount: readingsAmount(end), failTicks: false,
         bandSteps: bandSteps(result.series, def.low, def.high, end),
         second: second ? { ...second, points: thinPoints(second.points, MAX_POINTS) } : null,
       }));
@@ -377,7 +391,9 @@ export function mount(container, { id, runId }) {
     tl.append(tlHost, text('p', 'legend', `A bar is a time the machine was on. The aircon row shows its setpoint${changes.length ? ', the intake row the filter changes' : ''}.`));
     els.results.append(tl);
     // spans closer than one pixel of time are drawn as one: a long run has tens of thousands
-    charts.push(drawTimeline(tlHost, { ...common, rowsFor: (w) => timelineRows(result.machines, end / Math.max(1, w - M.left - M.right), run.input, changes) }));
+    // read out from the spans as they were (joined to a pixel, pulses read as on all the time): shares of the time, setpoints
+    const aria = timelineAria(timelineRows(result.machines, 0, run.input, changes), range);
+    charts.push(drawTimeline(tlHost, { ...common, rowsFor: (w) => timelineRows(result.machines, end / Math.max(1, w - M.left - M.right), run.input, changes), describe: () => aria }));
 
     // the intake filter (a run without one shows nothing)
     if (filter) {
