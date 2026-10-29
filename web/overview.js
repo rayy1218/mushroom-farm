@@ -7,7 +7,7 @@ import { refreshMs } from './settings-math.js';
 import { live } from './live.js';
 import { fallbackMs, createThrottle } from './live-math.js';
 import { loadOverview } from './overview-data.js';
-import { farmStatus, phoneAlarms, sortRooms, roomCard, roomReadings, alarmTimeText, grouped, SPARK_W, SPARK_H } from './overview-math.js';
+import { farmStatus, phoneAlarms, settleRooms, roomCard, roomReadings, alarmTimeText, grouped, SPARK_W, SPARK_H } from './overview-math.js';
 import { nowText, isDimmed } from './alarms-math.js';
 import { outdoorCard } from './outdoor-math.js';
 import { roomLines, USAGE_DAYS, USAGE_REFRESH_MS } from './usage-math.js';
@@ -34,7 +34,11 @@ const TEMPLATE = `
   <p class="muted" data-loading>Loading…</p>
   <div data-body hidden>
     <p class="ov-stale" data-stale-note hidden></p>
-    <section class="card ov-status" data-status aria-live="polite"></section>
+    <section class="card ov-status" data-status>
+      <p class="ov-status-text" data-status-text aria-live="polite"><span class="ov-status-dot"></span><span data-status-words></span></p>
+      <ul class="ov-facts" data-facts></ul>
+      <p class="ov-phone" data-phone hidden></p>
+    </section>
     <section class="card ov-alarms" data-alarms hidden>
       <h2>Alarms</h2>
       <ul class="ov-alarm-list" data-alarm-list></ul>
@@ -106,6 +110,10 @@ export function mount(container) {
     loading: q('[data-loading]'),
     body: q('[data-body]'),
     status: q('[data-status]'),
+    statusDot: q('.ov-status-dot'),
+    statusWords: q('[data-status-words]'),
+    facts: q('[data-facts]'),
+    phone: q('[data-phone]'),
     alarms: q('[data-alarms]'),
     alarmList: q('[data-alarm-list]'),
     empty: q('[data-empty]'),
@@ -127,6 +135,8 @@ export function mount(container) {
   let roomOrder = []; // the room cards' ids in order, for the energy table
   let phone = null; // the phone-alarm line (phoneAlarms), null when alarms reach a phone
   let readings = new Map(); // room id → its values now (roomReadings), for the "now" beside an alarm
+  let held = new Map(); // room id → when each reading's state began and what is shown (settleRooms), so normal cycling does not flap
+  let said = null; // the status line last written to its polite live region
 
   function showBanner(text, retry = false) {
     if (!els.banner.hidden && els.bannerText.textContent === text) return; // do not re-announce the same alert
@@ -174,32 +184,32 @@ export function mount(container) {
     timer = setTimeout(load, fallbackMs(refresh, live.connected()));
   }
 
-  function renderRooms(rooms) {
+  function renderRooms(list) {
+    const now = Date.now();
+    const settled = settleRooms(held, list, now);
+    held = settled.memory;
+    const rooms = settled.rooms; // the server's order (by name): a card never moves when its state changes (critique 2026-10-29)
     const st = farmStatus(rooms);
     els.status.hidden = !st;
     if (st) {
-      const head = node('p', 'ov-status-text');
-      const dot = node('span', 'ov-status-dot');
-      dot.dataset.tone = st.tone;
-      head.append(dot, node('span', '', st.text));
-      const facts = node('ul', 'ov-facts');
-      facts.append(...st.facts.map((f) => node('li', '', f)));
-      els.status.replaceChildren(head, facts);
+      els.statusDot.dataset.tone = st.tone;
+      if (said !== st.text) { // the polite live region speaks only when the line's words change, not on every refresh
+        said = st.text;
+        els.statusWords.textContent = st.text;
+      }
+      els.facts.replaceChildren(...st.facts.map((f) => node('li', '', f)));
+      els.phone.hidden = !phone;
       if (phone) { // alarms that reach nobody are a farm problem, so it is said where everyone looks first
-        const p = node('p', 'ov-phone');
-        p.dataset.tone = phone.tone;
+        els.phone.dataset.tone = phone.tone;
         const link = node('a', '', phone.link);
         link.href = phone.href;
-        p.append(node('span', '', `${phone.text}. `), link);
-        els.status.append(p);
+        els.phone.replaceChildren(node('span', '', `${phone.text}. `), link);
       }
     }
     els.empty.hidden = rooms.length > 0;
-    const now = Date.now();
-    const sorted = sortRooms(rooms);
-    roomOrder = sorted.map((r) => r.id);
+    roomOrder = rooms.map((r) => r.id);
     readings = new Map(rooms.map((r) => [r.id, roomReadings(r)]));
-    els.rooms.replaceChildren(...sorted.map((room) => {
+    els.rooms.replaceChildren(...rooms.map((room) => {
       const c = roomCard(room, now);
       const card = node('section', 'card ov-room');
       const head = node('div', 'ov-room-head');
@@ -358,6 +368,7 @@ export function mount(container) {
 
   return function unmount() {
     mountSeq++;
+    held.clear();
     reload.cancel();
     for (const off of offLive) off();
     clearTimeout(timer);

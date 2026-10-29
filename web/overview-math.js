@@ -69,24 +69,78 @@ export function tiles(rooms) {
 const wired = (r) => r.trh?.status !== 'not-wired' || r.co2?.status !== 'not-wired';
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
-// A room's readings out of band now (critique 2026-10-28: "OK" beside a humidity under its band), from online sensors only:
-// [{ key, text }]. Temperature and humidity outside their band; CO₂ when its exchange words are amber or red (over the start
-// point with the exchange off, near or at the safety level).
-export function outOfBand(room) {
+const MIN_MS = 60_000;
+export const WATCH_HOLD_MS = 2 * MIN_MS;
+// How long a reading's state must hold before the pill, the status line and the amber words follow it (critique 2026-10-29:
+// the Overview flapped as the machines cycled): out of band as long as its alarm waits (server/alarms.js PROCESS_DELAYS),
+// near an edge and back in band 2 min.
+export const HOLD_MS = {
+  tHigh: 5 * MIN_MS, tLow: 5 * MIN_MS, rhHigh: 15 * MIN_MS, rhLow: 5 * MIN_MS, co2High: 5 * MIN_MS, co2Safety: MIN_MS,
+  tNearHigh: WATCH_HOLD_MS, tNearLow: WATCH_HOLD_MS, rhNearHigh: WATCH_HOLD_MS, rhNearLow: WATCH_HOLD_MS, calm: WATCH_HOLD_MS,
+};
+const OUT_STATES = new Set(['tHigh', 'tLow', 'rhHigh', 'rhLow', 'co2High', 'co2Safety']);
+const NEAR_STATES = new Set(['tNearHigh', 'tNearLow', 'rhNearHigh', 'rhNearLow']);
+const STATE_TEXT = {
+  tHigh: 'Temperature high', tLow: 'Temperature low', rhHigh: 'Humidity high', rhLow: 'Humidity low', co2High: 'CO₂ high', co2Safety: 'CO₂ high',
+  tNearHigh: 'Temperature near high', tNearLow: 'Temperature near low', rhNearHigh: 'Humidity near high', rhNearLow: 'Humidity near low',
+};
+const READING_KEYS = ['t', 'rh', 'co2'];
+
+// Each reading's state now, from online sensors only: { t, rh, co2 }, each 'calm' or one of HOLD_MS's keys. Temperature and
+// humidity outside their band (critique 2026-10-28: "OK" beside a humidity under its band) or near an edge with amber words
+// (nearEdges); CO₂ when its exchange words are amber ('co2High': over the start point with the exchange off, near the safety
+// level) or red ('co2Safety').
+export function readingStates(room) {
+  const states = { t: 'calm', rh: 'calm', co2: 'calm' };
   const b = room?.bands;
-  if (!b) return [];
+  if (!b) return states;
   const on = (s, field) => (s?.status === 'online' && finite(s[field]) ? s[field] : null);
-  const out = [];
-  for (const [key, name, low, high] of [['t', 'Temperature', b.tLow, b.tHigh], ['rh', 'Humidity', b.rhLow, b.rhHigh]]) {
+  for (const [key, low, high] of [['t', b.tLow, b.tHigh], ['rh', b.rhLow, b.rhHigh]]) {
     const v = on(room.trh, key);
     if (v === null || !finite(low) || !finite(high)) continue;
-    if (v > high) out.push({ key, text: `${name} high` });
-    else if (v < low) out.push({ key, text: `${name} low` });
+    if (v > high) states[key] = `${key}High`;
+    else if (v < low) states[key] = `${key}Low`;
+    else {
+      const near = nearOf(v, key, low, high, room.spark?.[key], room);
+      if (near) states[key] = `${key}Near${near.edge === 'top' ? 'High' : 'Low'}`;
+    }
   }
   const co2 = on(room.co2, 'co2');
   const st = co2 === null ? null : co2Status(co2, { stop: b.co2Low, start: b.co2High, safety: b.co2Safety ?? null, exchange: Boolean(room.exchange) });
-  if (st && (st.tone === 'amber' || st.tone === 'critical')) out.push({ key: 'co2', text: 'CO₂ high' });
-  return out;
+  if (st?.tone === 'critical') states.co2 = 'co2Safety';
+  else if (st?.tone === 'amber') states.co2 = 'co2High';
+  return states;
+}
+
+// One reading's state as the Overview shows it. entry: { state, since, shown } from the last refresh, null when the reading
+// was not seen before (the state now is shown at once: there is nothing to hold it against); state: its state now. A new
+// state is shown once it has held for its time (HOLD_MS), the last shown one until then. → the new entry.
+export function settle(entry, state, now) {
+  if (!entry) return { state, since: now, shown: state };
+  const since = entry.state === state ? entry.since : now;
+  return { state, since, shown: now - since >= (HOLD_MS[state] ?? 0) ? state : entry.shown };
+}
+
+// Every room's held states: memory, room id → { t, rh, co2 } entries (settle) from the last refresh. → { memory, rooms }: the
+// new memory (rooms gone are dropped) and the rooms with `held`, { t, rh, co2 } the states shown.
+export function settleRooms(memory, rooms, now) {
+  const next = new Map();
+  const out = rooms.map((r) => {
+    const was = memory?.get(r.id) ?? {};
+    const states = readingStates(r);
+    const entries = Object.fromEntries(READING_KEYS.map((k) => [k, settle(was[k] ?? null, states[k], now)]));
+    next.set(r.id, entries);
+    return { ...r, held: Object.fromEntries(READING_KEYS.map((k) => [k, entries[k].shown])) };
+  });
+  return { memory: next, rooms: out };
+}
+
+const shownStates = (room) => room?.held ?? readingStates(room);
+
+// A room's readings out of band, as held (settleRooms) or now: [{ key, text }], "Humidity low", "CO₂ high".
+export function outOfBand(room) {
+  const s = shownStates(room);
+  return READING_KEYS.filter((k) => OUT_STATES.has(s[k])).map((key) => ({ key, text: STATE_TEXT[s[key]] }));
 }
 
 // The line at the top of the Overview (redesign 2026-10-28, in place of three number tiles): { text, tone, facts } or null
@@ -136,14 +190,6 @@ export function phoneAlarms(settings) {
   return null;
 }
 
-// The room cards' order: rooms that need someone first (alarms by level, then a reading out of band, then Manual), then the
-// ones to watch, then OK, then the ones not set up; the server's order (by name) inside each group.
-export function sortRooms(rooms) {
-  const rank = (r) => (r.alarms.count > 0 ? 3 - alarmLevelRank(r.alarms.level) / 10 : !wired(r) ? 7 : outOfBand(r).length ? 3.5 : !r.auto ? 4
-    : nearEdges(r).length ? 4.5 : 5);
-  return rooms.map((r, i) => [r, i]).sort((a, b) => rank(a[0]) - rank(b[0]) || a[1] - b[1]).map(([r]) => r);
-}
-
 // Critical first, then newest (the order of GET /api/alarms).
 export function sortAlarms(alarms) {
   return [...alarms].sort((a, b) => (b.level === 'critical') - (a.level === 'critical') || b.raisedAt - a.raisedAt || b.id - a.id);
@@ -177,16 +223,21 @@ export function sensorText(sensor, field, digits, unit) {
 // (band-math.js nearChip): amber only while the machine that should act is not (room.machines) or after 15 min there; the
 // trend is the last hour of the sparkline. CO₂ in the air exchange's words (co2Status), "Exchange off" with its start point
 // (critique 2026-10-28: 1,241 ppm and the exchange off read as a contradiction without it).
+// With held states (settleRooms) a reading out of band that has not held yet keeps its words without the amber (neutral), and
+// near words while the room is held calm are the calm "In band".
 function bandChip(sensor, field, low, high, spark, room) {
   const v = sensor?.status === 'online' ? sensor[field] : null;
   if (!finite(v) || !finite(low) || !finite(high)) return null;
+  const held = room.held?.[field] ?? null;
+  const outHeld = held === null || OUT_STATES.has(held);
   if (field === 'co2') {
     const st = co2Status(v, { stop: low, start: high, safety: room.bands.co2Safety ?? null, exchange: Boolean(room.exchange) });
-    return st?.text === 'Exchange off' ? { ...st, text: `Exchange off · starts at ${grouped(high, 0)} ppm` } : st;
+    if (st?.text === 'Exchange off') return { ...st, text: `Exchange off · starts at ${grouped(high, 0)} ppm` };
+    return st && (st.tone === 'amber' || st.tone === 'critical') && !outHeld ? { ...st, tone: 'neutral' } : st;
   }
-  if (v > high) return { text: 'Above band', tone: 'amber' };
-  if (v < low) return { text: 'Below band', tone: 'amber' };
-  const near = nearOf(v, field, low, high, spark, room);
+  if (v > high) return { text: 'Above band', tone: outHeld ? 'amber' : 'neutral' };
+  if (v < low) return { text: 'Below band', tone: outHeld ? 'amber' : 'neutral' };
+  const near = held !== 'calm' ? nearOf(v, field, low, high, spark, room) : null;
   return near ? { text: near.text, tone: 'amber' } : { text: 'In band', tone: 'good' };
 }
 
@@ -197,19 +248,11 @@ function nearOf(v, field, low, high, spark, room) {
   return nearChip(field, v, low, high, { trend: trendOf(points, 60 * 60_000), points, machines: room.machines ?? null });
 }
 
-// A room's temperature and humidity in band but near an edge with amber words, from online sensors only (critique
+// A room's temperature and humidity in band but near an edge with amber words, as held (settleRooms) or now (critique
 // 2026-10-29, owner: "OK" beside an amber "Near high" read as a contradiction): [{ key, text }], "Humidity near high".
 export function nearEdges(room) {
-  const b = room?.bands;
-  if (!b) return [];
-  const out = [];
-  for (const [key, name, low, high] of [['t', 'Temperature', b.tLow, b.tHigh], ['rh', 'Humidity', b.rhLow, b.rhHigh]]) {
-    const v = room.trh?.status === 'online' && finite(room.trh[key]) ? room.trh[key] : null;
-    if (v === null || !finite(low) || !finite(high) || v > high || v < low) continue;
-    const near = nearOf(v, key, low, high, room.spark?.[key], room);
-    if (near) out.push({ key, text: `${name} near ${near.edge === 'top' ? 'high' : 'low'}` });
-  }
-  return out;
+  const s = shownStates(room);
+  return READING_KEYS.filter((k) => NEAR_STATES.has(s[k])).map((key) => ({ key, text: STATE_TEXT[s[key]] }));
 }
 
 // A room's values now for the "now" beside its alarms (alarms-math.js nowText): online sensors only, and the filter's

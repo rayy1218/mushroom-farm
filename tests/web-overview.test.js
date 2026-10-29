@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  farmStatus, sortRooms, phoneAlarms,
+  farmStatus, phoneAlarms, readingStates, settle, settleRooms, HOLD_MS, WATCH_HOLD_MS,
   roomCard, sparkPath, tiles, badgeCount, withTitlePrefix, sensorText, exchangeText, alarmLevelRank, sortAlarms, alarmTimeText, SPARKS,
   roomReadings, outOfBand, nearEdges,
 } from '../web/overview-math.js';
@@ -135,15 +135,6 @@ test('farmStatus: one line at the top of the Overview; a room with nothing wired
   assert.equal(farmStatus([]), null);
 });
 
-test('sortRooms: rooms that need someone first (alarms by level, then Manual), then OK, then the ones not set up', () => {
-  const r = (name, over) => ({ name, alarms: { count: 0, level: null }, auto: true, trh: { status: 'online' }, co2: { status: 'online' }, ...over });
-  const order = sortRooms([
-    r('unwired', { trh: { status: 'not-wired' }, co2: { status: 'not-wired' }, auto: false }), r('ok A'), r('manual', { auto: false }),
-    r('warning', { alarms: { count: 1, level: 'warning' } }), r('critical', { alarms: { count: 1, level: 'critical' } }), r('ok B'),
-  ]).map((x) => x.name);
-  assert.deepEqual(order, ['critical', 'warning', 'manual', 'ok A', 'ok B', 'unwired']);
-});
-
 test('phoneAlarms: a line on the Overview when alarms cannot reach a phone, none when they can', () => {
   const ok = { telegramTokenSet: true, telegramChatId: '-100123', telegramLevels: ['critical'], telegramLastError: null };
   assert.equal(phoneAlarms(ok), null);
@@ -246,15 +237,6 @@ test('a reading out of band is not OK: the pill says Out of band, the status cou
   assert.deepEqual(farmStatus([r('A'), r('B')]).text, 'All 2 rooms OK');
 });
 
-test('sortRooms: alarms, then out of band, then Manual, then OK, then not set up', () => {
-  const r = (name, over) => ({ name, alarms: { count: 0, level: null }, auto: true, bands: { tLow: 19, tHigh: 21, rhLow: 87, rhHigh: 93 },
-    trh: { status: 'online', t: 20, rh: 90 }, co2: { status: 'online' }, ...over });
-  const order = sortRooms([
-    r('ok'), r('manual', { auto: false }), r('out', { trh: { status: 'online', t: 23, rh: 90 } }), r('alarm', { alarms: { count: 1, level: 'warning' } }),
-  ]).map((x) => x.name);
-  assert.deepEqual(order, ['alarm', 'out', 'manual', 'ok']);
-});
-
 // Critique 2026-10-28: a room with minutes of data drew a hook at the right edge of a flat 24 h band.
 test('roomCard: traces of less than 2 hours are scaled to the data and say since when', () => {
   const now = at(28, 17, 30);
@@ -283,7 +265,7 @@ test('critique 2026-10-28 layout (the farm cards side by side, 2026-10-29 as tal
 
 // Critique 2026-10-29 (owner): a room in band with an amber near-edge reading is not "OK" beside that amber, and not a room
 // that needs attention either: its pill says Watch, the status line names it.
-test('a room in band with a reading near an edge, its machine not acting: Watch, named in the status, sorted after Manual', () => {
+test('a room in band with a reading near an edge, its machine not acting: Watch, named in the status', () => {
   const now = at(29, 12);
   const bands = { tLow: 19, tHigh: 21, rhLow: 87, rhHigh: 93, co2Low: 700, co2High: 900 };
   const r = (name, over) => ({
@@ -320,8 +302,6 @@ test('a room in band with a reading near an edge, its machine not acting: Watch,
   assert.deepEqual(farmStatus([wet, r('Room 2', { auto: false })]),
     { text: '1 of 2 rooms needs attention', tone: 'amber', facts: ['No alarms', '1 room in Manual', 'Room 1 humidity near high', 'No air exchange running'] });
   assert.deepEqual(farmStatus([wet, hot, r('Room 2', { auto: false })]).facts, ['No alarms', '1 room in Manual', '2 rooms to watch', 'No air exchange running']);
-  const order = sortRooms([ok, wet, r('manual', { auto: false })]).map((x) => x.name);
-  assert.deepEqual(order, ['manual', 'Room 1', 'Room 2']);
 });
 
 // Critique 2026-10-29: a trace drew a line, then nothing, then a lone dot at the right edge; the gap is now a quiet dashed
@@ -350,4 +330,85 @@ test('critique 2026-10-29 layout: a reading\'s status on the label line across t
   assert.match(block, /\.ov-value > \.ov-spark, \.ov-value > \.ov-spark-none \{ grid-column: 2; grid-row: 2; \}/);
   assert.match(block, /\.ov-spark-gap \{[^}]*stroke-dasharray: 2 3;/);
   assert.match(block, /\.ov-outdoor \.ov-spark \{[^}]*width: 100%;/);
+});
+
+// Critique 2026-10-29 (owner): the Overview flapped and reordered as the machines cycled. The cards keep the server's order (by
+// name); a reading's Watch or Out of band counts only once it has held: out of band for the alarm's own hold for that reading
+// (server/alarms.js), near an edge for 2 min; until then the room stays as it was.
+test('the out-of-band holds are the alarms\' own delays', async () => {
+  const { PROCESS_DELAYS } = await import('../server/alarms.js');
+  for (const key of ['tHigh', 'tLow', 'rhHigh', 'rhLow', 'co2High', 'co2Safety']) assert.equal(HOLD_MS[key], PROCESS_DELAYS[key], key);
+  assert.equal(WATCH_HOLD_MS, 2 * 60_000);
+  assert.equal(HOLD_MS.rhNearHigh, WATCH_HOLD_MS);
+  assert.equal(HOLD_MS.calm, WATCH_HOLD_MS);
+});
+
+test('readingStates: each reading\'s state now, by the same rules as the pill', () => {
+  const bands = { tLow: 19, tHigh: 21, rhLow: 87, rhHigh: 93, co2Low: 700, co2High: 900, co2Safety: 1500 };
+  const r = (over) => ({ bands, exchange: false, trh: { status: 'online', t: 20, rh: 90 }, co2: { status: 'online', co2: 800 }, spark: {},
+    machines: { humidifier: false, dehumidifier: false, cooling: true }, ...over });
+  assert.deepEqual(readingStates(r()), { t: 'calm', rh: 'calm', co2: 'calm' });
+  assert.deepEqual(readingStates(r({ trh: { status: 'online', t: 21.5, rh: 86 } })), { t: 'tHigh', rh: 'rhLow', co2: 'calm' });
+  assert.deepEqual(readingStates(r({ trh: { status: 'online', t: 20, rh: 87.5 } })).rh, 'rhNearLow', 'under the on-point (88 % RH), the humidifier off');
+  assert.deepEqual(readingStates(r({ co2: { status: 'online', co2: 950 } })).co2, 'co2High');
+  assert.deepEqual(readingStates(r({ co2: { status: 'online', co2: 1500 } })).co2, 'co2Safety');
+  assert.deepEqual(readingStates(r({ trh: { status: 'offline', t: 30, rh: 50 } })), { t: 'calm', rh: 'calm', co2: 'calm' }, 'no reading now: nothing to hold');
+});
+
+test('settle: the first state is shown at once; a new one once it has held for its time, the old one until then', () => {
+  const t0 = 1_000_000;
+  const first = settle(null, 'rhNearHigh', t0);
+  assert.deepEqual(first, { state: 'rhNearHigh', since: t0, shown: 'rhNearHigh' }, 'nothing known before: what it is now');
+  const calm = settle(first, 'calm', t0 + 10_000);
+  assert.deepEqual(calm, { state: 'calm', since: t0 + 10_000, shown: 'rhNearHigh' }, 'back in band 10 s: still Watch');
+  const near = settle(settle(calm, 'calm', t0 + 60_000), 'rhNearHigh', t0 + 70_000);
+  assert.deepEqual(near, { state: 'rhNearHigh', since: t0 + 70_000, shown: 'rhNearHigh' }, 'flapping keeps what was shown');
+  const quiet = settle(settle({ state: 'calm', since: 0, shown: 'calm' }, 'rhNearHigh', t0), 'rhNearHigh', t0 + WATCH_HOLD_MS - 1);
+  assert.equal(quiet.shown, 'calm', 'near the edge for less than 2 min');
+  assert.equal(settle(quiet, 'rhNearHigh', t0 + WATCH_HOLD_MS).shown, 'rhNearHigh', '2 min: Watch');
+  const wet = settle({ state: 'calm', since: 0, shown: 'calm' }, 'rhHigh', t0);
+  assert.equal(settle(wet, 'rhHigh', t0 + 14 * 60_000).shown, 'calm', 'humidity over the band 14 min: the alarm waits 15');
+  assert.equal(settle(wet, 'rhHigh', t0 + 15 * 60_000).shown, 'rhHigh');
+});
+
+test('settleRooms: the pill and the status line follow the held states; a short spell over the band changes nothing', () => {
+  const t0 = at(29, 12);
+  const bands = { tLow: 19, tHigh: 21, rhLow: 87, rhHigh: 93, co2Low: 700, co2High: 900, co2Safety: 1500 };
+  const room = (rh, over = {}) => ({ id: 1, name: 'Room 1', alarms: { count: 0, level: null }, auto: true, exchange: false, bands,
+    trh: { status: 'online', t: 20, rh }, co2: { status: 'online', co2: 800 }, spark: { t: [], rh: [], co2: [] },
+    machines: { humidifier: false, dehumidifier: false, cooling: true }, ...over });
+  let memory = new Map();
+  const step = (r, now) => { const out = settleRooms(memory, [r], now); memory = out.memory; return out.rooms[0]; };
+  assert.deepEqual(roomCard(step(room(90), t0), t0).state, { text: 'OK', tone: 'good' });
+  const over = step(room(93.4), t0 + 60_000);
+  assert.deepEqual(roomCard(over, t0 + 60_000).state, { text: 'OK', tone: 'good' }, '1 min over the band: still OK');
+  assert.deepEqual(roomCard(over, t0 + 60_000).values[1].chip, { text: 'Above band', tone: 'neutral' }, 'the words say it, without amber yet');
+  assert.equal(farmStatus([over]).text, 'All 1 room OK');
+  const near = step(room(87.5), t0 + 2 * 60_000);
+  assert.deepEqual(roomCard(near, t0).state, { text: 'OK', tone: 'good' }, 'near low just now');
+  assert.deepEqual(roomCard(near, t0).values[1].chip, { text: 'In band', tone: 'good' });
+  const held = step(room(87.5), t0 + 4 * 60_000);
+  assert.deepEqual(roomCard(held, t0).state, { text: 'Watch', tone: 'amber' }, 'near low 2 min with the humidifier off');
+  assert.deepEqual(roomCard(held, t0).values[1].chip, { text: 'Near low', tone: 'amber' });
+  assert.equal(farmStatus([held]).text, 'Room 1 humidity near low');
+  const dry = step(room(86), t0 + 5 * 60_000);
+  assert.deepEqual(roomCard(dry, t0).state, { text: 'Watch', tone: 'amber' }, 'under the band now, for less than the alarm\'s 5 min: still Watch');
+  assert.deepEqual(nearEdges(dry), [{ key: 'rh', text: 'Humidity near low' }]);
+  assert.deepEqual(outOfBand(dry), []);
+  const out = step(room(86), t0 + 10 * 60_000);
+  assert.deepEqual(roomCard(out, t0).state, { text: 'Out of band', tone: 'amber' });
+  assert.equal(farmStatus([out]).facts[1], 'Humidity low in Room 1');
+  assert.equal(memory.size, 1);
+  assert.equal(settleRooms(memory, [], t0).memory.size, 0, 'a room gone is forgotten');
+});
+
+test('the Overview keeps the server\'s order (by name), remembers the held states per room and announces only a changed status', async () => {
+  const { readFileSync } = await import('node:fs');
+  const page = readFileSync(new URL('../web/overview.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(page, /sortRooms/);
+  assert.match(page, /settleRooms\(held, list, now\)/);
+  assert.match(page, /<p class="ov-status-text" data-status-text aria-live="polite"><span class="ov-status-dot"><\/span><span data-status-words><\/span><\/p>/);
+  assert.doesNotMatch(page, /data-status aria-live/, 'not the whole card, rebuilt on every refresh');
+  assert.match(page, /held\.clear\(\);/, 'forgotten on leaving the page');
+  assert.match(page, /if \(said !== st\.text\)/, 'the live line is written only when its words change');
 });
