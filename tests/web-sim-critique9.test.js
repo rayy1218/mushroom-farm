@@ -118,3 +118,7 @@ test('the back links of a result and of Suggest machines say where they go: the 
   assert.match(src('suggest-page.js'), /els\.back\.textContent = backLabel\(room\.name\);/);
   for (const name of ['simulation-page.js', 'suggest-page.js']) assert.match(src(name), /data-back>Simulations<\/a>/, name);
 });
+
+test('Suggest on a desk: every row\'s last column has one width, so the head, the baseline and the suggestions line up', () => {
+  assert.match(block, /@media \(min-width: 761px\) \{ \.sg-row \{ grid-template-columns: minmax\(0, 1fr\) 112px 120px 112px 96px; \} \}/);
+});

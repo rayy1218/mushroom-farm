@@ -1243,7 +1243,7 @@ details.setup-part:not([open]) { padding-top: 8px; }
 }
 .sg-form { max-width: 760px; }
 .sg-form .field input { width: 12ch; max-width: 100%; }
-.sg-form .field select { width: auto; max-width: 100%; }
+.sg-form .field select { width: auto; max-width: 100%; align-self: flex-start; }
 .sg-form .sim-crops { max-width: 480px; }
 .sg-mix { padding: 0; border: 0; }
 .sg-mix .sim-mix-title { margin: 0; font-size: var(--fs-md); }
@@ -1254,7 +1254,7 @@ details.setup-part:not([open]) { padding-top: 8px; }
 .sg-base-title { font-weight: 600; }
 .sg-setup .sg-base-from { color: var(--muted); font-size: var(--fs-sm); margin-bottom: 2px; }
 .sg-base-tag { color: var(--ink-2); font-size: var(--fs-sm); font-weight: 600; }
-@media (max-width: 760px) { .sg-base { margin: 0; } }
+@media (max-width: 760px) { .sg-base { margin: 0; } .sg-base .sg-use { display: none; } } /* its title says it on a phone */
 /* the Simulations list on a phone: the date and its time in band first, then the machines, what differs, energy and water */
 @media (max-width: 600px) {
   a.button { min-height: 44px; } /* Suggest machines: as tall as the buttons (after a.button's 40 px) */
@@ -1275,3 +1275,6 @@ details.setup-part:not([open]) { padding-top: 8px; }
   .sim-dialog[data-stepper] > form { display: flex; flex-direction: column; min-height: 100%; }
   .sim-dialog[data-stepper] .sim-body { flex: 1 0 auto; }
 }
+/* the last column as wide as Use this in every row, so the head, the baseline and the suggestions keep their columns in line
+   (each row is a grid of its own: an auto column was as wide as its own button, or nothing in the head) */
+@media (min-width: 761px) { .sg-row { grid-template-columns: minmax(0, 1fr) 112px 120px 112px 96px; } }
