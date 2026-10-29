@@ -166,11 +166,13 @@ export const MACHINE_ROWS = [
   { key: 'dehumidifier', label: 'Dehumidifier' },
   { key: 'lights', label: 'Lights' },
   { key: 'ac', label: 'Aircon' },
-  { key: 'rest', label: 'Not split by machine (mostly the aircon)' },
+  { key: 'rest', label: 'Aircon and the rest (not split by machine)' }, // a metered day: the meter less the estimates
 ];
 
 // The per machine breakdown of the days: [{ key, label, kWh, share (0..1), cost }] and the total.
-// The aircon row is left out when the days are all metered (its share is in "rest"); "rest" only when there is some.
+// The aircon row is left out when the days are all metered (its share is in "rest"); "rest" only when there is some, and
+// beside an Aircon row (the estimated days') it says it is the metered days' (critique 2026-10-29c: "Not split by machine
+// (mostly the aircon)" at 71 % with no Aircon row).
 // The dehumidifier and lights rows show when the room has them (options.dehumidifier, options.lights) or when they used energy.
 export function breakdown(days, electricityPrice, { dehumidifier = false, lights = false } = {}) {
   const list = Array.isArray(days) ? days : [];
@@ -179,10 +181,11 @@ export function breakdown(days, electricityPrice, { dehumidifier = false, lights
   const rows = MACHINE_ROWS.filter((r) => (r.key === 'rest' ? sums.rest > 0 : r.key === 'ac' ? sums.ac > 0 || sums.rest <= 0
     : r.key === 'dehumidifier' ? dehumidifier || sums.dehumidifier > 0 : r.key === 'lights' ? lights || sums.lights > 0 : true));
   const total = rows.reduce((a, r) => a + sums[r.key], 0);
+  const both = rows.some((r) => r.key === 'ac') && rows.some((r) => r.key === 'rest');
   return {
     rows: rows.map((r) => ({
       key: r.key,
-      label: r.label,
+      label: both && r.key === 'rest' ? 'Aircon and the rest on metered days (not split by machine)' : r.label,
       kWh: sums[r.key],
       share: total > 0 ? sums[r.key] / total : null,
       cost: finite(electricityPrice) ? sums[r.key] * electricityPrice : null,
@@ -198,9 +201,9 @@ export function breakdownNote(days, { dehumidifier = false, lights = false } = {
   if (list.length === 0) return '';
   const parts = ['The fans', 'the humidifier', ...(dehumidifier ? ['the dehumidifier'] : []), ...(lights ? ['the lights'] : [])];
   const estimated = `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}`;
-  if (metered === list.length) return `Metered. ${estimated} are estimated from run time and rating; the rest is what is left of the meter.`;
+  if (metered === list.length) return `Metered: the meter measures the whole room. ${estimated} are estimated from their run time and rating; the aircon and the rest is what is left of the meter.`;
   if (metered === 0) return 'Estimated from run time and rated power. The aircon is counted at its rated input, so this is an upper bound.';
-  return `${metered} of ${list.length} days metered, the rest estimated from run time and rated power.`;
+  return `${metered} of ${list.length} days metered, the rest estimated from run time and rated power. On a metered day the meter measures the whole room and the aircon and the rest is what is left of it.`;
 }
 
 // ---------------- the farm card ----------------
@@ -211,7 +214,7 @@ export function roomLines(usage) {
     id: r.id,
     href: roomHash(r.id, 'history'),
     name: r.name,
-    today: `${formatKWh(r.today?.kWh)} ·\u00a0${formatRM(r.today?.cost)}`, // a '·' keeps to the words after it (text-math.js DOT)
-    last30: `${formatKWh(r.last30?.kWh)} ·\u00a0${formatRM(r.last30?.cost)}`,
+    today: `${formatKWh(r.today?.kWh)}\u00a0· ${formatRM(r.today?.cost)}`, // a '·' keeps to the words before it (text-math.js DOT)
+    last30: `${formatKWh(r.last30?.kWh)}\u00a0· ${formatRM(r.last30?.cost)}`,
   }));
 }

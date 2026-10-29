@@ -179,8 +179,10 @@ export function mount(container, { id, tab = 'now' }) {
   const alarmsNode = q('[data-alarms]');
   const nowSide = q('[data-now-side]');
   const main = q('.room-main');
+  const roomHead = q('.room-head'); // a phone hides the size line on the Now tab
   function setTab(next) {
     tab = next;
+    roomHead.dataset.tab = tab;
     for (const a of tabBar.children) {
       if (a.dataset.tab === tab) {
         a.setAttribute('aria-current', 'page');
@@ -681,6 +683,7 @@ export function mount(container, { id, tab = 'now' }) {
       modeHost: els.modeHost,
       getRoom: () => room,
       cropHref: roomHash(id, 'crop'),
+      setupHref: roomHash(id, 'setup'),
       onChange: (data) => {
         machines?.setAuto(data.auto);
         if (!alive()) return;

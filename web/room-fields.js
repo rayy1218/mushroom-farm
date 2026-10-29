@@ -158,9 +158,10 @@ export function roomSubLine(room) {
   return `${metres.format(room.length)} × ${metres.format(room.width)} × ${metres.format(room.height)} m · ${cubic.format(room.volume)} m³`;
 }
 
-// "Volume: 30.0 m³" from the three sizes as typed; a dash until all three are numbers.
+// "Volume: 30.0 m³" from the three sizes as typed; nothing until all three are numbers (critique 2026-10-29c: Add room opened
+// on "Volume: — m³").
 export function volumeText(texts) {
   const n = (name) => (String(texts?.[name] ?? '').trim() === '' ? NaN : Number(texts[name]));
   const v = n('length') * n('width') * n('height');
-  return Number.isFinite(v) ? `Volume: ${cubic.format(v)} m³` : 'Volume: — m³';
+  return Number.isFinite(v) ? `Volume: ${cubic.format(v)} m³` : '';
 }

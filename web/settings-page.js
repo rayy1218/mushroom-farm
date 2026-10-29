@@ -2,11 +2,10 @@
 
 import { request, OFFLINE } from './api.js';
 import { mountTelegram } from './telegram-card.js';
-import { parsePoll, POLL_MESSAGE, POLL_MIN, POLL_MAX, EXTRA_FIELDS, parseExtraSettings } from './settings-math.js';
+import { parsePoll, POLL_MESSAGE, POLL_MIN, POLL_MAX, EXTRA_FIELDS, parseExtraSettings, liveHint } from './settings-math.js';
 
 const COMMAND_TIMEOUT = 15000;
 const SAVED = 'Saved — applies from the next reading';
-const HINT = 'Live charts show the last 50 readings. A sensor or machine shows as offline after 3 failed readings in a row.';
 
 const TEMPLATE = `
   <div class="page-head">
@@ -27,7 +26,7 @@ const TEMPLATE = `
       <input id="f-pollSeconds" name="pollSeconds" type="number" min="${POLL_MIN}" max="${POLL_MAX}" step="1" inputmode="numeric" aria-describedby="e-pollSeconds s-hint">
       <p class="field-error" id="e-pollSeconds" role="status"></p>
     </div>
-    <p class="muted s-hint" id="s-hint">${HINT}</p>
+    <p class="muted s-hint" id="s-hint">${liveHint(null)}</p>
     <h2>Outdoor sensor</h2>
     <div class="field">
       <label for="f-outdoorAddress">Outdoor sensor address</label>
@@ -71,6 +70,7 @@ export function mount(container) {
     ...Object.fromEntries(EXTRA_FIELDS.map((f) => [f.name, { input: q(`#f-${f.name}`), err: q(`#e-${f.name}`), show: f.show }])),
   };
   const input = fields.pollSeconds.input;
+  const hint = q('#s-hint');
   const save = q('[data-save]');
   const reset = q('[data-reset]');
   const unsent = q('[data-unsent]');
@@ -99,7 +99,13 @@ export function mount(container) {
   }
   function setInput(s) {
     for (const [name, f] of Object.entries(fields)) f.input.value = f.show(s[name]);
+    paintHint();
   }
+  // the Live charts' span at the interval as typed (a text that is not one: the saved interval's)
+  function paintHint() {
+    hint.textContent = liveHint(parsePoll(input.value) ?? last?.pollSeconds ?? null);
+  }
+  input.addEventListener('input', paintHint);
 
   async function load() {
     banner.hidden = true;

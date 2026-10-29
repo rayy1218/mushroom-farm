@@ -98,7 +98,19 @@ export function createRoomCard(hosts, { idPrefix = 'room-', cropHref = '', onSwi
   // card says only when fresh air comes next.
   // a phone: the blocks under the drawing in words (in the drawing they sit past the screen's edge; critique 2026-10-28)
   const blocks = el('p', 'rc-blocks');
-  hosts.picture.replaceChildren(cardHead('Room', note), pic, blocks, fresh);
+  // a phone under 480 px: the drawing folded, closed (critique 2026-10-29c: at about 350 × 150 px with its labels hidden it said
+  // nothing the Machines list does not); open, with no fold to see, on wider screens
+  const fold = el('details', 'rc-fold');
+  const foldSummary = el('summary', 'rc-fold-sum');
+  fold.append(foldSummary, pic);
+  const small = typeof matchMedia === 'function' ? matchMedia('(max-width: 479px)') : null;
+  const setFold = () => { fold.open = !small?.matches; };
+  const sayFold = () => put(foldSummary, fold.open ? 'Hide the room drawing' : 'Show the room drawing');
+  fold.addEventListener('toggle', sayFold);
+  small?.addEventListener('change', setFold);
+  setFold();
+  sayFold();
+  hosts.picture.replaceChildren(cardHead('Room', note), fold, blocks, fresh);
   hosts.picture.style.containerType = 'inline-size';
   const mimic = createMimic(pic, { idPrefix });
 
@@ -198,6 +210,7 @@ export function createRoomCard(hosts, { idPrefix = 'room-', cropHref = '', onSwi
       fresh.hidden = !text;
     },
     destroy() {
+      small?.removeEventListener('change', setFold);
       mimic.destroy();
       for (const host of Object.values(hosts)) host.replaceChildren();
     },

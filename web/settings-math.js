@@ -20,6 +20,16 @@ export function refreshMs(settings) {
   return Math.min(30, Math.max(2, n)) * 1000;
 }
 
+// The Settings hint under the interval, with how long the Live charts' readings span at it (critique 2026-10-29c: "the last 50
+// readings" said nothing of the time): "…, about 4 min at 5 s." seconds null: not known, no span.
+export const LIVE_READINGS = 50; // the server's getSensors limit
+export function liveHint(seconds) {
+  const s = LIVE_READINGS * seconds;
+  const span = s < 90 ? `${s}\u00a0s` : s < 90 * 60 ? `${Math.round(s / 60)}\u00a0min` : `${Math.round(s / 3600)}\u00a0h`;
+  const head = Number.isFinite(seconds) && seconds > 0 ? `Live charts show the last ${LIVE_READINGS} readings, about ${span} at ${seconds}\u00a0s.` : `Live charts show the last ${LIVE_READINGS} readings.`;
+  return `${head} A sensor or machine shows as offline after 3 failed readings in a row.`;
+}
+
 // ---- iteration 7: the outdoor sensor address and the prices (spec 2026-10-20-energy-water-outdoor-design.md section 6) ----
 
 export const OUTDOOR_MESSAGE = 'Outdoor sensor address must be a whole number from 1 to 247, or empty for none';

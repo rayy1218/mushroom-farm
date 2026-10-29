@@ -902,7 +902,7 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
 .cp-hint { margin: 0; color: var(--muted); font-size: var(--fs-xs); max-width: 280px; }
 .cp-auto { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
 .cp-auto .crop-check { font-size: 0.9rem; font-weight: 600; min-height: 0; }
-.cp-auto input { width: 18px; height: 18px; margin: 0; accent-color: var(--ink); }
+.cp-auto input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
 .cp-auto .crop-check + .cp-hint { margin-top: 6px; }
 .cp-program > .m-error { flex-basis: 100%; margin-bottom: 12px; }
 
@@ -917,7 +917,6 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
   .cp-targets th { white-space: nowrap; } /* "Air exchange" on one line; its value wraps instead */
   .cp-targets td { white-space: normal; }
 }
-@media (max-width: 600px) { .crop-card.card { padding: 14px; } } /* a container query cannot size the card itself */
 @media (max-width: 600px) {
   .sim-crops { grid-template-columns: minmax(0, 1fr) 80px; }
   .sim-crop-row .sim-unit { display: none; }
@@ -1349,3 +1348,32 @@ details.setup-part:not([open]) { padding-top: 8px; }
 .sg-aside p + p { margin-top: 6px; }
 .sg-aside-line { color: var(--muted); font-size: var(--fs-sm); }
 .sg-aside .sg-estimates { margin: 0; }
+
+/* critique 2026-10-29c: UI */
+/* Now › Control: the bands changed by hand (the By-Hand Rule's accent text), Setup and the way back beside it */
+.mode-byhand { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin: 10px 0 0; padding: 10px 0 0;
+  border-top: 1px solid var(--border); color: var(--accent-text); font-size: var(--fs-sm); }
+.mode-byhand[hidden] { display: none; }
+.mode-byhand p { margin: 0; }
+@media (max-width: 600px) { .mode-byhand button { min-height: 44px; } }
+/* a phone: the room switch beside "← Overview" on one row, the name under them, no size line on the Now tab (the head took
+   about 300 px before the first reading) */
+@media (max-width: 600px) {
+  .room-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0 12px; }
+  .room-head .page-titles { display: contents; }
+  .room-head .back { grid-row: 1; grid-column: 1; margin: 0; }
+  .room-head .room-switch { grid-row: 1; grid-column: 2; justify-self: end; min-width: 0; }
+  .room-head .room-switch > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .room-head .room-switch select { max-width: 52vw; }
+  .room-head .room-title-row, .room-head .page-sub { grid-column: 1 / -1; }
+  .room-head .page-sub { margin-top: 4px; }
+  .room-head[data-tab="now"] .page-sub { display: none; }
+}
+/* the room drawing: folded under 480 px, its fold not seen above */
+.rc-fold-sum { display: none; }
+@media (max-width: 479px) {
+  .rc-fold-sum { display: flex; align-items: center; gap: 10px; min-height: 44px; color: var(--ink-2); font-size: var(--fs-sm); cursor: pointer; }
+  .rc-fold-sum::before { content: ""; width: 6px; height: 6px; border: solid currentColor; border-width: 0 1.5px 1.5px 0; rotate: -45deg; }
+  .rc-fold[open] .rc-fold-sum::before { rotate: 45deg; }
+  .rc-fold[open] .rc-fold-sum { margin-bottom: 8px; }
+}

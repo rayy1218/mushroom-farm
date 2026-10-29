@@ -8,6 +8,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
+  formatRun,
   ACTIVITY_MODES, activityRange, exchangeRuns, exchangeActivity, activityTotals, activityTotalsText, formatMinutes, activityTip,
 } from '../web/exchange-math.js';
 
@@ -65,10 +66,16 @@ test('the totals: exchanges started in the range, the minutes in all and the lon
   const rows = [on(from - 5 * MIN), off(at(20, 0, 2)), on(at(20, 1)), off(at(20, 1, 10)), on(at(20, 5)), off(at(20, 6, 35))];
   const t = activityTotals(rows, from, at(20, 12));
   assert.deepEqual(t, { exchanges: 2, minutes: 2 + 10 + 95, longest: 95 });
-  assert.equal(activityTotalsText(t, 'hourly'), '24 h: 2 exchanges, 1 h 47 min in all ·\u00a0longest 1 h 35 min');
-  assert.equal(activityTotalsText({ exchanges: 41, minutes: 155, longest: 10 }, 'hourly'), '24 h: 41 exchanges, 2 h 35 min in all ·\u00a0longest 10 min');
-  assert.equal(activityTotalsText({ exchanges: 1, minutes: 4, longest: 4 }, 'daily'), '30 days: 1 exchange, 4 min in all ·\u00a0longest 4 min');
+  assert.equal(activityTotalsText(t, 'hourly'), '24 h: 2 exchanges, 1 h 47 min in all\u00a0· longest 1 h 35 min');
+  assert.equal(activityTotalsText({ exchanges: 41, minutes: 155, longest: 10 }, 'hourly'), '24 h: 41 exchanges, 2 h 35 min in all\u00a0· longest 10 min');
+  assert.equal(activityTotalsText({ exchanges: 1, minutes: 4, longest: 4 }, 'daily'), '30 days: 1 exchange, 4 min in all\u00a0· longest 4 min');
   assert.equal(activityTotalsText({ exchanges: 0, minutes: 0, longest: 0 }, 'daily'), '30 days: no exchanges');
+  // a run under 10 min keeps its seconds (critique 2026-10-29c: "1 h 2 min in all · longest 2 min" beside an average of 2.1 min)
+  assert.equal(activityTotalsText({ exchanges: 29, minutes: 62, longest: 2 + 10 / 60 }, 'hourly'), '24 h: 29 exchanges, 1 h 2 min in all\u00a0· longest 2 min 10 s');
+});
+
+test('a run in words: seconds under 10 min', () => {
+  assert.deepEqual([0, 0.5, 2, 2 + 10 / 60, 9.99, 10, 10.4, 95].map(formatRun), ['0 s', '30 s', '2 min', '2 min 10 s', '9 min 59 s', '10 min', '10 min', '1 h 35 min']);
 });
 
 test('minutes in words', () => {

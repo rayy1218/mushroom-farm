@@ -92,8 +92,8 @@ test('the page title gets "(2) " in front when there are alarms, and never twice
 test('sensor text: the value, and the status word when the sensor is not online', () => {
   assert.equal(sensorText({ status: 'online', t: 23.46, rh: 88 }, 't', 1, '°C'), '23.5 °C');
   assert.equal(sensorText({ status: 'online', t: 23.4 }, 'rh', 0, '%'), '—');
-  assert.equal(sensorText({ status: 'offline', co2: 650 }, 'co2', 0, 'ppm'), '650 ppm ·\u00a0Offline');
-  assert.equal(sensorText({ status: 'timeout', co2: null }, 'co2', 0, 'ppm'), '— ·\u00a0Timeout');
+  assert.equal(sensorText({ status: 'offline', co2: 650 }, 'co2', 0, 'ppm'), '650 ppm\u00a0· Offline');
+  assert.equal(sensorText({ status: 'timeout', co2: null }, 'co2', 0, 'ppm'), '—\u00a0· Timeout');
   assert.equal(sensorText({ status: 'not-wired' }, 'co2', 0, 'ppm'), 'Not wired');
   assert.equal(sensorText({ status: 'no-data' }, 'co2', 0, 'ppm'), 'No data yet');
   assert.equal(sensorText({ status: 'online', co2: 1301.2 }, 'co2', 0, 'ppm'), '1,301 ppm', 'grouped, as on the room page');
@@ -130,7 +130,7 @@ test('farmStatus: one line at the top of the Overview; a room with nothing wired
   assert.deepEqual(farmStatus([r({ alarms: { count: 2, level: 'serious' } }), r({ auto: false })]),
     { text: '2 of 2 rooms need attention', tone: 'serious', facts: ['2 alarms', '1 room in Manual', 'No air exchange running'] });
   assert.deepEqual(farmStatus([r({ auto: false })]), { text: '1 of 1 room needs attention', tone: 'amber', facts: ['No alarms', '1 room in Manual', 'No air exchange running'] });
-  assert.deepEqual(farmStatus([r({}), r(unwired)]), { text: '1 room OK ·\u00a01 not set up', tone: 'good', facts: ['No alarms', 'No air exchange running'] });
+  assert.deepEqual(farmStatus([r({}), r(unwired)]), { text: '1 room OK\u00a0· 1 not set up', tone: 'good', facts: ['No alarms', 'No air exchange running'] });
   assert.deepEqual(farmStatus([r(unwired)]), { text: '1 room not set up', tone: 'none', facts: ['No alarms', 'No air exchange running'] });
   assert.equal(farmStatus([]), null);
 });
@@ -289,15 +289,15 @@ test('a room in band with a reading near an edge, its machine not acting: Watch,
   assert.deepEqual(roomCard({ ...wet, alarms: { count: 1, level: 'warning' } }, now).state, { text: '1 alarm', tone: 'warning' });
   assert.deepEqual(roomCard(ok, now).state, { text: 'OK', tone: 'good' });
   assert.deepEqual(farmStatus([wet, ok, r('Room 3'), r('Room 4')]),
-    { text: '3 rooms OK ·\u00a0Room 1 humidity near high', tone: 'amber', facts: ['No alarms', 'No air exchange running'] });
+    { text: '3 rooms OK\u00a0· Room 1 humidity near high', tone: 'amber', facts: ['No alarms', 'No air exchange running'] });
   assert.equal(farmStatus([wet]).text, 'Room 1 humidity near high');
   const hot = r('Room 3', { trh: { status: 'online', t: 20.9, rh: 90 }, machines: { humidifier: true, dehumidifier: null, cooling: false } });
-  assert.equal(farmStatus([wet, ok, hot]).text, '1 room OK ·\u00a02 rooms to watch');
+  assert.equal(farmStatus([wet, ok, hot]).text, '1 room OK\u00a0· 2 rooms to watch');
   assert.equal(farmStatus([wet, hot]).text, '2 rooms to watch');
   const both = r('Room 5', { trh: { status: 'online', t: 20.9, rh: 92.5 }, machines: { humidifier: true, dehumidifier: false, cooling: false } });
-  assert.equal(farmStatus([both, ok]).text, '1 room OK ·\u00a0Room 5 temperature near high, humidity near high');
+  assert.equal(farmStatus([both, ok]).text, '1 room OK\u00a0· Room 5 temperature near high, humidity near high');
   const unwired = r('Room 9', { auto: false, trh: { status: 'not-wired' }, co2: { status: 'not-wired' } });
-  assert.equal(farmStatus([wet, ok, unwired]).text, '1 room OK ·\u00a0Room 1 humidity near high ·\u00a01 not set up');
+  assert.equal(farmStatus([wet, ok, unwired]).text, '1 room OK\u00a0· Room 1 humidity near high\u00a0· 1 not set up');
   // with a room that needs attention, the room to watch is one of the facts
   assert.deepEqual(farmStatus([wet, r('Room 2', { auto: false })]),
     { text: '1 of 2 rooms needs attention', tone: 'amber', facts: ['No alarms', '1 room in Manual', 'Room 1 humidity near high', 'No air exchange running'] });
@@ -428,14 +428,14 @@ test('the Overview keeps the server\'s order (by name), remembers the held state
 });
 
 // Critique 2026-10-29: each card said the exchange was off three ways (its CO₂ line, the footer, the status's facts); the
-// footer now says what comes next. A '·' keeps to the words after it.
+// footer now says what comes next. A '·' keeps to the words before it.
 test('roomCard: the footer says Auto and the next fresh air, the running exchange, or Manual', () => {
   const now = at(29, 12);
   const room = (over) => ({ id: 1, name: 'A', auto: true, exchange: false, alarms: { count: 0, level: null },
     bands: { tLow: 19, tHigh: 21, rhLow: 87, rhHigh: 93, co2Low: 700, co2High: 900 },
     trh: { status: 'online', t: 20, rh: 90 }, co2: { status: 'online', co2: 800 }, spark: { t: [], rh: [], co2: [] },
     exchangeEveryMin: 12, freshFrom: now - 6 * 60_000 - 10_000, ...over });
-  const dot = ' ·\u00a0';
+  const dot = '\u00a0· ';
   assert.equal(roomCard(room(), now).foot, `Auto${dot}next fresh air in 6\u00a0min`);
   assert.equal(roomCard(room({ freshFrom: now - 13 * 60_000 }), now).foot, `Auto${dot}fresh air due`);
   assert.equal(roomCard(room({ freshFrom: null }), now).foot, `Auto${dot}fresh air every 12\u00a0min`);

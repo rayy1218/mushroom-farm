@@ -1,7 +1,9 @@
 // A small inline-SVG line chart. Drawn 1:1 at the host's pixel width (re-drawn by a ResizeObserver),
 // so text keeps its real size on a phone. Colours come from the theme tokens through CSS variables.
 
-import { niceRange, formatClock, yRange, xFor, segments, nearestIndex, clipSeries, stepShapes, stepValues, secondLegend } from './chart-math.js';
+import {
+  niceRange, formatClock, yRange, xFor, segments, nearestIndex, clipSeries, stepShapes, stepValues, secondLegend, yTicks, tickCount, groupNumber, bandLabels,
+} from './chart-math.js';
 
 const OUTDOOR_DOTS = '0.1 5'; // round dots 5 px apart (with a round cap a zero-length dash draws a dot)
 
@@ -46,7 +48,7 @@ export function drawLineChart(host, opts) {
   host.append(tip);
 
   function fmt(v) {
-    return `${v.toFixed(current.digits ?? 1)} ${current.unit}`;
+    return `${groupNumber(v, current.digits ?? 1)} ${current.unit}`;
   }
 
   // ", outdoor latest 29.1 °C" for the aria-label, when there is a second line.
@@ -93,48 +95,88 @@ export function drawLineChart(host, opts) {
       'aria-label': `${label}: ${current.amount ?? `${points.length} ${current.noun ?? 'readings'}`}${latest ? `, latest ${fmt(latest.value)}, min ${fmt(lo)}, max ${fmt(hi)}` : ''}${band ? `, band ${fmt(band.low)} to ${fmt(band.high)}` : ''}${steps ? ', band as it moved' : ''}${secondText()}`,
     });
 
-    // Grid lines and y labels at the padded min and max.
-    for (const [v, y] of [[max, y1], [min, y0]]) {
+    const dg = current.digits ?? 1;
+    // The band's numbers, at the left end inside the plot (chart-math.js bandLabels); a moved band's are its values at the left.
+    const first = steps?.find((s) => s.to > t0) ?? steps?.[0];
+    const limits = band ?? first;
+    const ticks = yTicks(min, max, tickCount(y0 - y1), dg);
+    const placed = limits
+      ? bandLabels([limits.high, limits.low].map((v) => ({ text: groupNumber(v, dg), y: yFor(v) })), { x0, y0, y1 }, ticks.map(yFor))
+      : { labels: [], skip: [] };
+
+    // Grid lines and y labels at round values (critique 2026-10-29c: the ends alone left 16.3 °C unreadable); a number whose row a
+    // band number takes is left out.
+    ticks.forEach((v, k) => {
+      const y = yFor(v);
       svg.append(el('line', { x1: x0, x2: x1, y1: y, y2: y, style: 'stroke:var(--grid)', 'stroke-width': 1 }));
+      if (placed.skip.includes(k)) return;
       svg.append(el('text', {
         x: x0 - 6, y: y + 4, 'text-anchor': 'end', style: 'fill:var(--muted)', 'font-size': 12,
-      }, v.toFixed(current.digits ?? 1)));
-    }
+      }, groupNumber(v, dg)));
+    });
     svg.append(el('line', { x1: x0, x2: x1, y1: y0, y2: y0, style: 'stroke:var(--axis)', 'stroke-width': 1 }));
 
-    // The control band: a shaded zone between the limits, dashed lines and their values at the left end, inside the plot by the
-    // room's scale (critique 2026-10-29: at the right end they made a second column of numbers beside the outdoor scale).
+    // The second line (outdoor): dotted in the chart's own colour (the grey dashes are the band limits), faint and under the band's
+    // shading and limits as well as the main line (critique 2026-10-29c: drawn over the band it looked related to it), with its
+    // name and latest value at the top left (the band limits are labelled at the left end, inside the plot).
+    if (secondValues.length) {
+      const yFor2 = (v) => y0 - ((v - s2.min) / (s2.max - s2.min)) * (y0 - y1);
+      const dots = { fill: 'none', 'stroke-width': 2.5, 'stroke-dasharray': OUTDOOR_DOTS, 'stroke-linecap': 'round', style: `stroke:${current.color ?? 'var(--ink)'};opacity:.55` };
+      for (const run of segments(second)) {
+        if (run.length < 2) continue;
+        const d = run.map((p, k) => `${k ? 'L' : 'M'}${xFor(p.at, t0, t1, x0, x1).toFixed(1)} ${yFor2(p.value).toFixed(1)}`).join(' ');
+        svg.append(el('path', { d, ...dots }));
+      }
+      const lastSecond = [...second].reverse().find((p) => p.value !== null && Number.isFinite(p.value));
+      // its scale: the numbers at the right edge, under a dotted mark like its line (the legend may be too narrow to say it);
+      // none on a phone, where the legend's latest value says it
+      if (!narrow) {
+        for (const [v, y] of [[s2.max, y1], [s2.min, y0]]) {
+          svg.append(el('text', { x: x1 + 6, y: y + 4, 'text-anchor': 'start', style: 'fill:var(--muted)', 'font-size': 12 }, groupNumber(v, dg)));
+        }
+        svg.append(el('line', { x1: x1 + 7, x2: x1 + 27, y1: y1 - 10, y2: y1 - 10, ...dots }));
+      }
+      // the legend above the plot, clear of the band's lines: the room's line, then the outdoor one and where its scale is
+      const solid = { 'stroke-width': 2.5, 'stroke-linecap': 'round', style: `stroke:${current.color ?? 'var(--ink)'}` };
+      // from the card's left edge (over the axis numbers' margin), so a phone has room for the outdoor value
+      svg.append(el('line', { x1: 4, x2: 20, y1: 12, y2: 12, ...solid }));
+      const roomText = el('text', { x: 26, y: 16, style: 'fill:var(--ink-2)', 'font-size': 12 }, 'Room');
+      svg.append(roomText);
+      const lx = 74;
+      svg.append(el('line', { x1: lx, x2: lx + 20, y1: 12, y2: 12, ...dots }));
+      // as long as fits left of the right scale's mark (a phone's chart clipped "· right scale")
+      svg.append(el('text', { x: lx + 26, y: 16, style: 'fill:var(--ink-2)', 'font-size': 12 },
+        secondLegend(current.second.label ?? 'Outdoor', lastSecond ? fmt(lastSecond.value) : '', (narrow ? width : x1) - (lx + 26) - 4, !narrow)));
+    }
+
+    // The control band: a shaded zone between the limits and dashed lines; their values at the left end, inside the plot by the
+    // room's scale (critique 2026-10-29: at the right end they made a second column of numbers beside the outdoor scale), go on
+    // after the lines.
     if (band) {
       const yHigh = yFor(band.high);
       const yLow = yFor(band.low);
       svg.append(el('rect', { x: x0, y: yHigh, width: x1 - x0, height: Math.max(0, yLow - yHigh), style: 'fill:var(--band)' }));
-      for (const [v, y, dy] of [[band.high, yHigh, -4], [band.low, yLow, 13]]) {
+      for (const y of [yHigh, yLow]) {
         svg.append(el('line', {
           x1: x0, x2: x1, y1: y, y2: y, style: 'stroke:var(--muted)', 'stroke-width': 1, 'stroke-dasharray': '4 4',
         }));
-        svg.append(el('text', {
-          x: x0 + 4, y: y + dy, 'text-anchor': 'start', style: 'fill:var(--muted)', 'font-size': 12, class: 'band-label',
-        }, v.toFixed(current.digits ?? 1)));
       }
     }
 
-    // A band that moved: a rect for each step, the two limits as stepped dashed lines, the last values at the right end.
+    // A band that moved: a rect for each step, the two limits as stepped dashed lines; its values at the left end, like a fixed
+    // band's (critique 2026-10-29c: at the right end they stood among the outdoor scale's numbers, 34.0, 21.0, 19.0, 24.0).
     if (steps) {
       const shapes = stepShapes(steps, { from: t0, to: t1 }, (t) => xFor(t, t0, t1, x0, x1), yFor);
       for (const r of shapes.rects) svg.append(el('rect', { x: r.x.toFixed(1), y: r.y.toFixed(1), width: r.width.toFixed(1), height: r.height.toFixed(1), style: 'fill:var(--band)' }));
       for (const d of [shapes.high, shapes.low]) {
         if (d) svg.append(el('path', { d, fill: 'none', style: 'stroke:var(--muted)', 'stroke-width': 1, 'stroke-dasharray': '4 4' }));
       }
-      const end = steps[steps.length - 1];
-      for (const [v, dy] of [[end.high, -4], [end.low, 13]]) {
-        svg.append(el('text', { x: x1 - 4, y: yFor(v) + dy, 'text-anchor': 'end', style: 'fill:var(--muted)', 'font-size': 12, class: 'band-label' }, v.toFixed(current.digits ?? 1)));
-      }
     }
 
     // Time labels: the given ticks, or start, middle and end.
-    const ticks = current.ticksFor ? current.ticksFor(width) : current.ticks; // ticksFor: recomputed at every redraw
-    if (ticks) {
-      for (const tick of ticks) {
+    const timeTicks = current.ticksFor ? current.ticksFor(width) : current.ticks; // ticksFor: recomputed at every redraw
+    if (timeTicks) {
+      for (const tick of timeTicks) {
         const x = xFor(tick.at, t0, t1, x0, x1);
         svg.append(el('line', { x1: x, x2: x, y1: y0, y2: y0 + 4, style: 'stroke:var(--axis)', 'stroke-width': 1 }));
         svg.append(el('text', {
@@ -172,39 +214,6 @@ export function drawLineChart(host, opts) {
       });
     }
 
-    // The second line (outdoor): dotted in the chart's own colour (the grey dashes are the band limits), under the main one, with
-    // its name and latest value at the top left (the band limits are labelled at the left end, inside the plot).
-    if (secondValues.length) {
-      const yFor2 = (v) => y0 - ((v - s2.min) / (s2.max - s2.min)) * (y0 - y1);
-      const dg = current.digits ?? 1;
-      const dots = { fill: 'none', 'stroke-width': 2.5, 'stroke-dasharray': OUTDOOR_DOTS, 'stroke-linecap': 'round', style: `stroke:${current.color ?? 'var(--ink)'};opacity:.8` };
-      for (const run of segments(second)) {
-        if (run.length < 2) continue;
-        const d = run.map((p, k) => `${k ? 'L' : 'M'}${xFor(p.at, t0, t1, x0, x1).toFixed(1)} ${yFor2(p.value).toFixed(1)}`).join(' ');
-        svg.append(el('path', { d, ...dots }));
-      }
-      const lastSecond = [...second].reverse().find((p) => p.value !== null && Number.isFinite(p.value));
-      // its scale: the numbers at the right edge, under a dotted mark like its line (the legend may be too narrow to say it);
-      // none on a phone, where the legend's latest value says it
-      if (!narrow) {
-        for (const [v, y] of [[s2.max, y1], [s2.min, y0]]) {
-          svg.append(el('text', { x: x1 + 6, y: y + 4, 'text-anchor': 'start', style: 'fill:var(--muted)', 'font-size': 12 }, v.toFixed(dg)));
-        }
-        svg.append(el('line', { x1: x1 + 7, x2: x1 + 27, y1: y1 - 10, y2: y1 - 10, ...dots }));
-      }
-      // the legend above the plot, clear of the band's lines: the room's line, then the outdoor one and where its scale is
-      const solid = { 'stroke-width': 2.5, 'stroke-linecap': 'round', style: `stroke:${current.color ?? 'var(--ink)'}` };
-      // from the card's left edge (over the axis numbers' margin), so a phone has room for the outdoor value
-      svg.append(el('line', { x1: 4, x2: 20, y1: 12, y2: 12, ...solid }));
-      const roomText = el('text', { x: 26, y: 16, style: 'fill:var(--ink-2)', 'font-size': 12 }, 'Room');
-      svg.append(roomText);
-      const lx = 74;
-      svg.append(el('line', { x1: lx, x2: lx + 20, y1: 12, y2: 12, ...dots }));
-      // as long as fits left of the right scale's mark (a phone's chart clipped "· right scale")
-      svg.append(el('text', { x: lx + 26, y: 16, style: 'fill:var(--ink-2)', 'font-size': 12 },
-        secondLegend(current.second.label ?? 'Outdoor', lastSecond ? fmt(lastSecond.value) : '', (narrow ? width : x1) - (lx + 26) - 4, !narrow)));
-    }
-
     // The line, one path per run; a run of one point is a dot.
     const idx = new Map(points.map((p, i) => [p, i]));
     for (const run of segments(points)) {
@@ -220,8 +229,11 @@ export function drawLineChart(host, opts) {
       }));
     }
 
-    // The band's numbers over the lines, on a halo of the card's colour, so the outdoor line never runs through them.
-    for (const t of svg.querySelectorAll('.band-label')) svg.append(t);
+    // The band's numbers over the lines, on a backing of the card's colour, so no line runs through them.
+    for (const l of placed.labels) {
+      svg.append(el('rect', { x: l.x - 2, y: l.y - 11, width: l.width + 4, height: 14, rx: 3, class: 'band-label-bg', style: 'fill:var(--surface)' }));
+      svg.append(el('text', { x: l.x, y: l.y, 'text-anchor': 'start', style: 'fill:var(--muted)', 'font-size': 12, class: 'band-label' }, l.text));
+    }
 
     // Pointer marker (hidden until used).
     marker = {

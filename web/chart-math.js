@@ -145,3 +145,56 @@ export function secondLegend(label, value, room, scale = true) {
   const base = value ? `${label} ${value}` : label;
   return [...(scale ? [`${base} · its scale on the right`, `${base} · right scale`] : []), base].find((t) => t.length * 7 <= room) ?? label;
 }
+
+// Round values for the y axis inside [min, max] (critique 2026-10-29c: a simulation's axis said only 22.0 and 15.0, so
+// 16.3 °C could not be read): the multiples of the finest step of 1, 2, 2.5 or 5 times a power of ten that `digits` can
+// show, that puts at most `most` of them in the range (2.5: from 2 to 5 a 22–34 °C range went from 7 numbers to 2). The range
+// itself stays as niceRange made it.
+export function yTicks(min, max, most, digits = 1) {
+  if (!(max > min)) return Number.isFinite(min) ? [min] : [];
+  const r = (x) => Number(x.toFixed(10));
+  const shown = (step) => Number.isInteger(r(step * 10 ** digits));
+  for (let p = 10 ** Math.floor(Math.log10((max - min) / most)); ; p *= 10) {
+    for (const step of [1, 2, 2.5, 5].map((k) => r(k * p))) {
+      if (!shown(step)) continue;
+      const a = Math.ceil(r(min / step));
+      const b = Math.floor(r(max / step));
+      if (b - a + 1 <= most) return Array.from({ length: b - a + 1 }, (_, i) => r((a + i) * step));
+    }
+  }
+}
+
+// How many axis numbers a plot of this height takes: one every 28 px or more, 2 to 6.
+export const tickCount = (plotHeight) => Math.max(2, Math.min(6, Math.floor(plotHeight / 28) + 1));
+
+// A number with its thousands grouped ("1,000"), for the axes, the band and the tooltip; cheaper than the locale formatter, which a
+// redraw would call hundreds of times.
+export function groupNumber(v, digits) {
+  const [whole, part] = v.toFixed(digits).split('.');
+  return `${whole.replace(/\B(?=(\d{3})+$)/g, ',')}${part === undefined ? '' : `.${part}`}`;
+}
+
+// Where the band's numbers go (critique 2026-10-29c): at the left end inside the plot, the top one over its line and the bottom
+// one under it; one that would leave the plot (under the time axis it sat beside the axis's own number, "25.0" by "24.0") turns
+// to its line's other side, and when the two would overlap the bottom one stands right of the top one. An axis number whose row
+// a band number takes is left out (its grid line stays), so the two never read as one.
+// limits: [{ text, y }] (y of the line; the top limit first); tickYs: y of each axis number's value.
+// → { labels: [{ text, x, y, width }] (y the baseline), skip: [indices into tickYs] }
+const DIGIT_H = 9; // a 12 px figure's height over its baseline
+const CHAR_W = 7; // and its width, about
+export function bandLabels(limits, { x0, y0, y1 }, tickYs) {
+  const labels = [];
+  limits.forEach(({ text, y }, i) => {
+    const over = y - 4;
+    const under = y + 13;
+    const top = i === 0;
+    const b = top ? (over - DIGIT_H >= y1 ? over : under) : (under + 2 <= y0 ? under : over);
+    let x = x0 + 4;
+    const prev = labels[labels.length - 1];
+    if (prev && Math.abs(prev.y - b) < DIGIT_H + 3) x = prev.x + prev.width + 8;
+    labels.push({ text, x, y: b, width: text.length * CHAR_W });
+  });
+  const hits = (b, ty) => b - DIGIT_H < ty + 5 + 1 && ty - 5 < b + 1 + 1; // a band number's row against an axis number's
+  const skip = tickYs.map((ty, k) => (labels.some((l) => hits(l.y, ty)) ? k : -1)).filter((k) => k >= 0);
+  return { labels, skip };
+}

@@ -2,6 +2,13 @@
 
 import { lightSummary } from './light-math.js';
 import { keepLines } from './text-math.js';
+import { CROPS } from './crops.js';
+
+// The hints' typical ranges are the crop guide's good fruiting ranges (crops.js range; critique 2026-10-29c: the humidity hint
+// said "about 90 % RH" for lion's mane, its guide 85–92).
+const guide = (crop, key) => CROPS[crop].range[key].join('–');
+const typicalRH = guide('oyster', 'RH') === guide('lionsmane', 'RH')
+  ? `${guide('oyster', 'RH')} % RH for oyster and lion’s mane` : `${guide('oyster', 'RH')} % RH for oyster, ${guide('lionsmane', 'RH')} % RH for lion’s mane`;
 
 // Rows of the card: server field names, label, unit, limits (spec section 2) and the typical band of the crops grown here.
 export const BANDS = [
@@ -10,10 +17,10 @@ export const BANDS = [
     title: 'Air exchange', sides: { high: 'Starts at', low: 'Stops at' }, points: { high: 'Air exchange start point', low: 'Air exchange stop point' }, order: ['high', 'low'],
     hint: keepLines('The fans start when CO₂ reaches the first number and stop when it falls to the second. Typical start: oyster about 1,000 ppm, lion’s mane about 750–1,000 ppm. Outdoor air is about 420 ppm, so a stop point near it takes a lot of air.') },
   { key: 't', label: 'Temperature', unit: '°C', name: 'Temperature band', low: 'tLow', high: 'tHigh', min: 16, max: 35, step: '0.5',
-    hint: keepLines('Typical fruiting: grey oyster about 24–28 °C, lion’s mane about 18–22 °C.') },
+    hint: keepLines(`Typical fruiting: grey oyster ${guide('oyster', 'T')} °C, lion’s mane ${guide('lionsmane', 'T')} °C.`) },
   { key: 'rh', label: 'Humidity', unit: '% RH', name: 'Humidity band', low: 'rhLow', high: 'rhHigh', min: 40, max: 100, step: '0.5',
     // the humidifier's points inside the band: server/controller.js decide, band-math.js humidifierPoints (owner, 2026-10-29)
-    hint: keepLines('Typical: 85–95 % RH for oyster, about 90 % RH for lion’s mane. The humidifier starts 1 % RH above the first number and stops 1 % RH under the second (a quarter of the band in from each when it is under 6 % RH wide).') },
+    hint: keepLines(`Typical: ${typicalRH}. The humidifier starts 1 % RH above the first number and stops 1 % RH under the second (a quarter of the band in from each when it is under 6 % RH wide).`) },
 ];
 
 // The card's groups (owner, 2026-10-26: "group by co2, temp, humid", "add group for air circulation"): each holds its band

@@ -1,9 +1,9 @@
 // The Automatic control card on the room page: the Auto | Manual switch, the three bands, the air exchange state and the reasons.
-// createControl(host, { roomId, onOffline, onGone, onChange, getRoom, cropHref, modeHost }) → { update(data, token) → painted,
+// createControl(host, { roomId, onOffline, onGone, onChange, getRoom, cropHref, setupHref, modeHost }) → { update(data, token) → painted,
 // token(), setCrop(crop), destroy() }. modeHost: the Now tab's Control card, which then holds the Auto | Manual switch (redesign
 // 2026-10-28: the switch where the machines are, the bands on the Setup tab). setCrop: the crop program (GET /api/rooms/:id/crop) for the Lighting group's line of today
 // and the By-Hand Rule: a band setting that differs from the current stage's is shown in the accent text with the stage's value
-// under it, and one Back to stage values puts the stage's bands back (as on the Crop tab).
+// under it, and one Back to stage values puts the stage's bands back (as on the Crop tab); the Now tab's Control card says so too.
 // Controls are updated in place, so a refresh never replaces an input the person is using or has edited.
 
 import { request, OFFLINE } from './api.js';
@@ -46,7 +46,7 @@ function errorText(err) {
   return err.status === 0 ? `${OFFLINE}. Try again.` : err.message;
 }
 
-export function createControl(host, { roomId, onOffline, onGone, onChange, getRoom, cropHref, modeHost = null }) {
+export function createControl(host, { roomId, onOffline, onGone, onChange, getRoom, cropHref, setupHref = '', modeHost = null }) {
   let alive = true;
   let version = 0; // bumped by every command, so a refresh that began earlier is dropped
   let inflight = 0;
@@ -74,11 +74,21 @@ export function createControl(host, { roomId, onOffline, onGone, onChange, getRo
   const modeLine = el('p', 'mode-line');
   modeLine.setAttribute('aria-live', 'polite');
   const autoErr = errorNode();
+  // The bands changed by hand, on the Now tab too (critique 2026-10-29c: only Crop and Setup said so), with the way back.
+  const nowByHand = el('div', 'mode-byhand');
+  nowByHand.hidden = true;
+  const nowWords = el('p', '');
+  const setupLink = el('a', '', 'Setup');
+  setupLink.href = setupHref;
+  nowWords.append(el('span', '', 'Bands changed by hand on '), setupLink);
+  const nowBack = button('Back to stage values');
+  nowByHand.append(nowWords, nowBack);
+  const nowBackErr = errorNode();
   if (modeHost) {
     modeHost.className = 'card mode-card';
     const head = el('div', 'card-head');
     head.append(el('h2', '', 'Control'), autoRow);
-    modeHost.append(head, modeLine, autoErr);
+    modeHost.append(head, modeLine, autoErr, nowByHand, nowBackErr);
   }
 
   // ---- bands ----
@@ -400,7 +410,9 @@ export function createControl(host, { roomId, onOffline, onGone, onChange, getRo
       note.hidden = text === '';
     }
     byHandRow.hidden = Object.keys(diffs).length === 0;
+    nowByHand.hidden = Object.keys(diffs).length === 0;
     backBtn.disabled = backing;
+    nowBack.disabled = backing;
   }
 
   function paint(c) {
@@ -601,13 +613,14 @@ export function createControl(host, { roomId, onOffline, onGone, onChange, getRo
     }
   }
 
-  // Back to stage values: the current stage's bands on the room again (the Crop tab's button does the same).
-  async function backToStage() {
+  // Back to stage values: the current stage's bands on the room again (the Crop tab's button does the same). from: Setup's
+  // button or the Now tab's, each with its own error line.
+  async function backToStage(from = backBtn, errNode = backErr) {
     if (backing || !last || !crop?.crops?.length) return;
-    const hadFocus = document.activeElement === backBtn;
+    const hadFocus = document.activeElement === from;
     backing = true;
     paintByHand();
-    showError(backErr, '');
+    showError(errNode, '');
     version++;
     inflight++;
     try {
@@ -621,20 +634,24 @@ export function createControl(host, { roomId, onOffline, onGone, onChange, getRo
       onChange?.(data);
     } catch (err) {
       if (!alive) return;
-      failed(err, (e) => showError(backErr, errorText(e)));
+      failed(err, (e) => showError(errNode, errorText(e)));
     } finally {
       inflight--;
       backing = false;
       if (alive) {
         paintByHand();
         // the button goes with the difference: keep the focus in the card
-        if (hadFocus && !document.activeElement?.closest?.('dialog')) (byHandRow.hidden ? save : backBtn).focus();
+        if (hadFocus && !document.activeElement?.closest?.('dialog')) {
+          if (from === nowBack) (nowByHand.hidden ? autoBtn : nowBack).focus();
+          else (byHandRow.hidden ? save : backBtn).focus();
+        }
       }
     }
   }
 
   autoBtn.addEventListener('click', () => { if (last && !last.auto) toggleAuto(); });
-  backBtn.addEventListener('click', backToStage);
+  backBtn.addEventListener('click', () => backToStage());
+  nowBack.addEventListener('click', () => backToStage(nowBack, nowBackErr));
   manualBtn.addEventListener('click', () => { if (last?.auto) toggleAuto(); });
   humBtn.addEventListener('click', toggleHumidifier);
   fanSelect.addEventListener('change', changeFan);

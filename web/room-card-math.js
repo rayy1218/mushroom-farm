@@ -90,7 +90,8 @@ export function readingTiles(draw, control, trends = {}, points = {}) {
       // CO₂'s two numbers are where the air exchange starts and stops (owner, 2026-10-28), the others a band to stay in
       band: low === null || high === null ? '' : r.key === 'CO2' ? `Air exchange ${exchangePoints(low, high, (x) => limit(x, r.key))}`
         : `Band ${limit(low, r.key)}–${limit(high, r.key)} ${r.unit}`,
-      chip: near ? { lvl: 'near', text: near.text } : { lvl: st.lvl || 'none', text: `${st.icon ? `${st.icon} ` : ''}${st.text || ''}` }, // near: amber
+      // near: amber; words alone, coloured by their level, as on the Overview (critique 2026-10-29c: "✓ In band" was a glyph)
+      chip: near ? { lvl: 'near', text: near.text } : { lvl: st.lvl || 'none', text: st.text || '' },
       edge: EDGE[st.lvl] ?? 'none',
       bar: bandBar(r.key, value, low, high, r.safety ? num(control?.[r.safety]) : null),
       label: value === null ? `${r.name} no data` : `${r.name} ${shown} ${r.unit}${low !== null && high !== null ? `, band ${limit(low, r.key)} to ${limit(high, r.key)}` : ''}`,

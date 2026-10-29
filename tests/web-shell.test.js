@@ -18,7 +18,7 @@ test('one bar on top: no side bar, no bottom tab bar', () => {
 test('the top bar: the farm\'s name, then Overview and Settings as links, the alarm count as its own button', () => {
   const bar = html.slice(html.indexOf('<header class="topbar">'), html.indexOf('</header>'));
   assert.match(bar, /<a class="brand brand-top" href="#\/overview"/);
-  assert.match(bar, /<a class="top-link" href="#\/overview" data-nav="overview">/);
+  assert.match(bar, /<a class="top-link" href="#\/overview" data-nav="overview" aria-label="Overview">/, "its word hides on a phone, so the link keeps its name (critique 2026-10-29c)");
   assert.match(bar, /<a class="top-link" href="#\/settings" data-nav="settings" aria-label="Settings">/);
   assert.match(bar, /<a class="top-alarm" href="#\/overview" data-alarm-button hidden><svg[^]*<span data-badge><\/span><\/a>/);
   assert.ok(bar.indexOf('data-nav="overview"') < bar.indexOf('data-nav="settings"'), 'Overview before Settings');

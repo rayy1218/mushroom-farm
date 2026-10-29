@@ -80,7 +80,7 @@ test('a room card: values with status words, exchange, auto, alarm chip and thre
   }, at(19, 12));
   assert.equal(card.href, '#/rooms/3');
   assert.equal(card.name, 'Fruiting');
-  assert.deepEqual(card.values.map((v) => v.text), ['22.0 °C', '91.2 % RH', '650 ppm ·\u00a0Offline'], 'humidity to one decimal, as on the room page');
+  assert.deepEqual(card.values.map((v) => v.text), ['22.0 °C', '91.2 % RH', '650 ppm\u00a0· Offline'], 'humidity to one decimal, as on the room page');
   assert.deepEqual(card.values.map((v) => v.chip), [{ text: 'In band', tone: 'good' }, { text: 'In band', tone: 'good' }, null], 'no chip from an offline sensor');
   assert.deepEqual(card.state, { text: '2 alarms', tone: 'serious' });
   assert.equal(card.auto, 'Auto');

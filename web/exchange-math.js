@@ -87,13 +87,22 @@ export function formatMinutes(min) {
   return m % 60 === 0 ? `${m / 60} h` : `${Math.floor(m / 60)} h ${m % 60} min`;
 }
 
+// One run: "2 min 10 s", "45 s" under 10 min (critique 2026-10-29c: "longest 2 min" beside an average of 2.1 min), else as
+// formatMinutes.
+export function formatRun(min) {
+  const s = Math.round(min * 60);
+  if (s >= 600) return formatMinutes(min);
+  if (s < 60) return `${s} s`;
+  return s % 60 === 0 ? `${s / 60} min` : `${Math.floor(s / 60)} min ${s % 60} s`;
+}
+
 const exchangesWord = (n) => `${n} ${n === 1 ? 'exchange' : 'exchanges'}`;
 
 // "24 h: 41 exchanges, 2 h 35 min in all · longest 10 min" (Daily: "30 days: …").
 export function activityTotalsText(t, mode) {
   const head = mode === 'daily' ? '30 days' : '24 h';
   if (t.exchanges === 0 && t.minutes === 0) return `${head}: no exchanges`;
-  return `${head}: ${exchangesWord(t.exchanges)}, ${formatMinutes(t.minutes)} in all${DOT}longest ${formatMinutes(t.longest)}`;
+  return `${head}: ${exchangesWord(t.exchanges)}, ${formatMinutes(t.minutes)} in all${DOT}longest ${formatRun(t.longest)}`;
 }
 
 // The tooltip of a bar: "14:00  3 exchanges" (another day: "19 Oct 14:00 …"), "12 Oct  1 h 15 min". field: 'starts' | 'minutes'.
