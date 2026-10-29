@@ -14,9 +14,10 @@ const finite = (v) => typeof v === 'number' && Number.isFinite(v);
 const pct = (v) => (finite(v) ? `${v.toFixed(1)} %` : DASH);
 
 // A number keeps its unit on its line (critique 2026-10-28 and 2026-10-29: 'L/day', '°C' and 'min' were left alone on a
-// line): a no-break space between a number and the unit after it ('% RH' as one).
+// line): a no-break space between a number and the unit after it ('% RH' as one), and a range of numbers ('25–33') does not
+// break at its dash (word joiners around it).
 const UNIT = /(?<=\d) (?=(?:°C|% RH|%|W\/K|m³\/h|m³|kWh|kW|BTU\/h|L\/h|L\/day|L|W|Pa|ppm|min|h|m)(?![\w/³]))/g;
-export const keepUnits = (text) => text.replace(UNIT, '\u00a0').replace(/(?<=\d\u00a0%) RH/g, '\u00a0RH');
+export const keepUnits = (text) => text.replace(UNIT, '\u00a0').replace(/(?<=\d\u00a0%) RH/g, '\u00a0RH').replace(/(?<=\d)–(?=\d)/g, '\u2060–\u2060');
 
 // "20 Oct 10:42" in local time.
 export function formatDateTime(ms) {

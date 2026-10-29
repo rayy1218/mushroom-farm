@@ -117,7 +117,7 @@ test('per day bars: "day 1, day 2", one value each', () => {
 test('the inputs in one line and the head', () => {
   const input = { physics: { wallUA: 80, outdoorHigh: 33, outdoorLow: 25, outdoorDew: 24, sunW: 300, fanFlow: 600, acBTU: 12000, humidifierLH: 2 },
     crops: [{ crop: 'oyster', blocks: 500 }, { crop: 'pink', blocks: 20 }], farmType: 'ready', stage: 'fruiting', days: 7 };
-  assert.equal(inputLine(input), 'Grey oyster 500 and Pink oyster 20 blocks, starting at fruiting, 7 days · walls 80\u00a0W/K, sun 300\u00a0W, outdoor 25–33\u00a0°C, dew point 24\u00a0°C · fan 600\u00a0m³/h, aircon 3.5\u00a0kW (12,000\u00a0BTU/h class), humidifier 2\u00a0L/h');
+  assert.equal(inputLine(input), 'Grey oyster 500 and Pink oyster 20 blocks, starting at fruiting, 7 days · walls 80\u00a0W/K, sun 300\u00a0W, outdoor 25\u2060–\u206033\u00a0°C, dew point 24\u00a0°C · fan 600\u00a0m³/h, aircon 3.5\u00a0kW (12,000\u00a0BTU/h class), humidifier 2\u00a0L/h');
   assert.equal(inputLine(undefined), '');
   const at = new Date(2026, 9, 20, 10, 42).getTime();
   assert.equal(headLine('Room 1'), 'Simulation of Room 1');
@@ -233,7 +233,7 @@ test('inputRows: what a run was asked, as label and value rows instead of one lo
     { label: 'Crops', value: 'Grey oyster 500 blocks' },
     { label: 'Run', value: 'from fruiting, 7 days' },
     { label: 'Room', value: 'walls 80\u00a0W/K, sun 300\u00a0W' },
-    { label: 'Outdoor', value: '25–33\u00a0°C, dew point 24\u00a0°C' },
+    { label: 'Outdoor', value: '25\u2060–\u206033\u00a0°C, dew point 24\u00a0°C' },
     { label: 'Aircon', value: '3.5\u00a0kW (12,000\u00a0BTU/h class)' },
     { label: 'Fan', value: '600\u00a0m³/h' },
     { label: 'Humidifier', value: '2\u00a0L/h' },

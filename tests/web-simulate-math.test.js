@@ -192,7 +192,7 @@ test('the summary and the room line', () => {
   assert.equal(line('Machines'), 'Fan 600\u00a0m³/h, aircon 3.5\u00a0kW (12,000\u00a0BTU/h class), humidifier 1.5\u00a0L/h, no dehumidifier');
   const wet = initialState({ room: { ...room, dehumidifier: true, dehumidifierLday: 12, lights: true, lightsW: 40 } });
   assert.match(line('Machines', summaryLines(wet, { ...room, lights: true, lightsW: 40 })), /, dehumidifier 12\u00a0L\/day, lights 40\u00a0W on the room's schedule$/);
-  assert.equal(line('Walls and weather'), 'Walls 80\u00a0W/K, sun on the roof 300\u00a0W, outdoor 25–33\u00a0°C, dew point 24\u00a0°C');
+  assert.equal(line('Walls and weather'), 'Walls 80\u00a0W/K, sun on the roof 300\u00a0W, outdoor 25\u2060–\u206033\u00a0°C, dew point 24\u00a0°C');
   assert.equal(line('Run'), '7 days');
   s.daysMode = 'whole';
   assert.equal(line('Run', summaryLines(s, room)), 'Whole program, 68 days');

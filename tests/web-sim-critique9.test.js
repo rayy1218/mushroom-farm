@@ -86,7 +86,8 @@ test('a number keeps its unit on its line (no-break space) in the run texts: the
   const { keepUnits, differingLines, inputRows, inputLine } = await import('../web/simulation-math.js');
   const { summaryLines, controlLine, initialState } = await import('../web/simulate-math.js');
   const nb = '\u00a0';
-  assert.equal(keepUnits('outdoor 25–33 °C, dew point 24 °C'), `outdoor 25–33${nb}°C, dew point 24${nb}°C`);
+  const wj = '\u2060'; // a word joiner: the range does not break at its dash
+  assert.equal(keepUnits('outdoor 25–33 °C, dew point 24 °C'), `outdoor 25${wj}–${wj}33${nb}°C, dew point 24${nb}°C`);
   assert.equal(keepUnits('aircon 5 °C lower, every 15 min, up to 10 min, fan 600 m³/h, 2.6 kW (9,000 BTU/h class)'),
     `aircon 5${nb}°C lower, every 15${nb}min, up to 10${nb}min, fan 600${nb}m³/h, 2.6${nb}kW (9,000${nb}BTU/h class)`);
   assert.equal(keepUnits('walls 30 W/K, sun 300 W, 2 L/h, 10 L/day, 40 Pa, 72.0 m³, 3 m, 80 % RH, 1,400 ppm'),
@@ -95,11 +96,11 @@ test('a number keeps its unit on its line (no-break space) in the run texts: the
   const run = (acDrop) => ({ input: { physics: { fanFlow: 600, acBTU: 12000, humidifierLH: 2 }, ctx: { control: { exchangeMaxMin: 10, exchangeEveryMin: 15, acDrop } } } });
   assert.deepEqual(differingLines([run(5), run(0)]), [`aircon 5${nb}°C lower during exchange`, 'aircon not lowered during exchange']);
   const input = { physics: { wallUA: 30, sunW: 300, outdoorLow: 25, outdoorHigh: 33, outdoorDew: 24, fanFlow: 600, acBTU: 12000, humidifierLH: 2, dehumidifierLday: 0 }, crops: [{ crop: 'oyster', blocks: 500 }], stage: 'fruiting', days: 7 };
-  assert.equal(inputRows(input).find((r) => r.label === 'Outdoor').value, `25–33${nb}°C, dew point 24${nb}°C`);
-  assert.match(inputLine(input), new RegExp(`outdoor 25–33${nb}°C`));
+  assert.equal(inputRows(input).find((r) => r.label === 'Outdoor').value, `25${wj}–${wj}33${nb}°C, dew point 24${nb}°C`);
+  assert.match(inputLine(input), new RegExp(`outdoor 25${wj}–${wj}33${nb}°C`));
   const room = { id: 1, name: 'Room 1', length: 6, width: 4, height: 3, volume: 72 };
   const state = initialState({ room, roomControl: { exchangeEveryMin: 15, exchangeMaxMin: 10, acDrop: 5, humidifierDuringExchange: true, outdoorAir: true } });
-  assert.match(summaryLines(state, room).find((l) => l.label === 'Walls and weather').text, new RegExp(`outdoor 25–33${nb}°C`));
+  assert.match(summaryLines(state, room).find((l) => l.label === 'Walls and weather').text, new RegExp(`outdoor 25${wj}–${wj}33${nb}°C`));
   assert.match(controlLine(state), new RegExp(`aircon 5${nb}°C lower`));
 });
 
