@@ -165,3 +165,4 @@ window.addEventListener('farm:alarms-changed', refreshBadge); // after an Acknow
 window.addEventListener('hashchange', () => { show(); refreshBadge(); });
 show();
 refreshBadge();
+window.farmReady = true; // the page loaded: index.html's "Couldn't load" never shows

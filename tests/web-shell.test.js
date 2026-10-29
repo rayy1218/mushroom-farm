@@ -31,3 +31,12 @@ test('the Overview holds every room and Add room (the Rooms list is folded into 
   assert.match(overview, /<div class="ov-section-head">\n\s*<h2>Rooms<\/h2>\n\s*<span class="card-note">Traces: the last 24 hours<\/span>\n\s*<\/div>\n\s*<div class="ov-rooms" data-rooms><\/div>/);
   assert.match(overview, /openRoomDialog\(\{ onSaved: \(room\) => \{ location\.hash = roomHash\(room\.id, 'setup'\); \} \}\)/, 'a new room opens on its Setup');
 });
+
+test("the page says it couldn't load when its modules never ran (a blank page under 'Not live' before; critique 2026-10-28)", async () => {
+  const { readFileSync } = await import('node:fs');
+  const html = readFileSync(new URL('../web/index.html', import.meta.url), 'utf8');
+  const app = readFileSync(new URL('../web/app.js', import.meta.url), 'utf8');
+  assert.match(html, /<div class="load-fail" id="load-fail" role="alert" hidden>/);
+  assert.match(html, /setTimeout\(function\(\)\{if\(window\.farmReady\)return;/);
+  assert.match(app, /window\.farmReady = true;/);
+});
