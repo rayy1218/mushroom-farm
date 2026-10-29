@@ -96,7 +96,8 @@ export function drawLineChart(host, opts) {
     }
     svg.append(el('line', { x1: x0, x2: x1, y1: y0, y2: y0, style: 'stroke:var(--axis)', 'stroke-width': 1 }));
 
-    // The control band: a shaded zone between the limits, dashed lines and their values at the right end.
+    // The control band: a shaded zone between the limits, dashed lines and their values at the left end, inside the plot by the
+    // room's scale (critique 2026-10-29: at the right end they made a second column of numbers beside the outdoor scale).
     if (band) {
       const yHigh = yFor(band.high);
       const yLow = yFor(band.low);
@@ -106,7 +107,7 @@ export function drawLineChart(host, opts) {
           x1: x0, x2: x1, y1: y, y2: y, style: 'stroke:var(--muted)', 'stroke-width': 1, 'stroke-dasharray': '4 4',
         }));
         svg.append(el('text', {
-          x: x1 - 4, y: y + dy, 'text-anchor': 'end', style: 'fill:var(--muted)', 'font-size': 12, class: 'band-label',
+          x: x0 + 4, y: y + dy, 'text-anchor': 'start', style: 'fill:var(--muted)', 'font-size': 12, class: 'band-label',
         }, v.toFixed(current.digits ?? 1)));
       }
     }
@@ -166,7 +167,7 @@ export function drawLineChart(host, opts) {
     }
 
     // The second line (outdoor): dotted in the chart's own colour (the grey dashes are the band limits), under the main one, with
-    // its name and latest value at the top left (the band limits are labelled at the right edge).
+    // its name and latest value at the top left (the band limits are labelled at the left end, inside the plot).
     if (secondValues.length) {
       const yFor2 = (v) => y0 - ((v - s2.min) / (s2.max - s2.min)) * (y0 - y1);
       const dg = current.digits ?? 1;

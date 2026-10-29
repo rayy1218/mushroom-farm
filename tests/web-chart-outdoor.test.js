@@ -50,3 +50,11 @@ test('the outdoor legend takes the longest words that fit; a phone keeps the nam
   assert.equal(secondLegend('Outdoor', '61.1 % RH', 60), 'Outdoor');
   assert.equal(secondLegend('Outdoor', '', 400), 'Outdoor · its scale on the right', 'no value yet');
 });
+
+// Critique 2026-10-29: the band's numbers at the right end sat beside the outdoor scale's: two columns of numbers at the
+// right of every chart. The room's band is labelled at the left inside the plot, by the room's own scale.
+test('the band\'s numbers sit at the left inside the plot, by the room\'s scale, apart from the outdoor scale at the right', () => {
+  const band = chart.slice(chart.indexOf('// The control band:'), chart.indexOf('// A band that moved:'));
+  assert.match(band, /x: x0 \+ 4, y: y \+ dy, 'text-anchor': 'start', style: 'fill:var\(--muted\)', 'font-size': 12, class: 'band-label'/);
+  assert.doesNotMatch(band, /x1 - 4/);
+});

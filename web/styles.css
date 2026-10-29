@@ -39,6 +39,7 @@
   --radius: 8px; --radius-card: 12px;
   --fs-xs: 12px; --fs-sm: 13px; --fs-md: 14px; --fs-lg: 16px; --fs-xl: 20px; --fs-2xl: 24px; --fs-3xl: 32px;
   --topbar-h: 56px;
+  --dialog-top: max(16px, 6vh, calc(var(--topbar-h) + 8px)); /* a dialog opens below the top bar */
   --font-body: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   font-family: var(--font-body);
   font-feature-settings: "cv11", "ss01"; /* Inter's single-storey a and open digits: calmer data */
@@ -146,11 +147,11 @@ dialog {
   color: var(--ink);
   border: 1px solid var(--border);
   box-shadow: 0 12px 40px var(--shadow);
-  max-height: calc(100dvh - 32px);
+  max-height: calc(100dvh - var(--dialog-top) - 16px);
   overflow-y: auto;
 }
 dialog::backdrop { background: var(--backdrop); }
-dialog { margin-top: max(16px, 6vh); margin-bottom: auto; } /* anchored at the top: a step that changes its height does not make it jump */
+dialog { margin-top: var(--dialog-top); margin-bottom: auto; } /* anchored at the top: a step that changes its height does not make it jump */
 ::placeholder { color: var(--muted); opacity: 1; }
 /* a phone: every control at least 44 px tall (a finger in a humid room) */
 @media (max-width: 600px) {
@@ -794,7 +795,7 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
 .sim-item .sim-status { text-align: right; color: var(--ink-2); }
 .sim-item[data-status="failed"] .sim-status { color: var(--critical-text); }
 /* Simulate fits the screen (critique 2026-10-28): the step scrolls, Cancel, Back and Next stay in a footer at its foot */
-.sim-dialog { max-height: calc(100dvh - max(16px, 6vh) - 16px); padding-bottom: 0; } /* the footer holds the bottom padding: a sticky one stops at the padding */
+.sim-dialog { max-height: calc(100dvh - var(--dialog-top) - 16px); padding-bottom: 0; } /* the footer holds the bottom padding: a sticky one stops at the padding */
 .sim-dialog .actions { position: sticky; bottom: 0; z-index: 1; margin: 16px -24px 0; padding: 12px 24px 20px; background: var(--surface); border-top: 1px solid var(--border); }
 .sim-dialog #sim-title:focus { outline: none; } /* it takes the focus on each step; a field would pop up a phone's keyboard */
 @media (max-width: 600px) { .sim-dialog .sizes.two > .field:has(.sim-ac) { grid-column: 1 / -1; } }
@@ -1237,3 +1238,15 @@ details.setup-part:not([open]) { padding-top: 8px; }
 .ov-outdoor .ov-value { grid-template-columns: minmax(7rem, auto) minmax(0, 1fr); grid-template-rows: auto 1fr; column-gap: 24px; }
 .ov-outdoor .ov-value:has(.ov-spark) { flex: 1; }
 .ov-outdoor .ov-spark { width: 100%; height: 100%; min-height: 36px; contain: size; } /* the row's size, not the picture's own */
+/* History on a phone: a shorter sticky head (it took 195 px of an 844 px screen); the jump links fade at the edge that has more */
+.history-nav[data-more="end"] { mask-image: linear-gradient(90deg, #000 calc(100% - 32px), transparent); }
+.history-nav[data-more="start"] { mask-image: linear-gradient(270deg, #000 calc(100% - 32px), transparent); }
+.history-nav[data-more="both"] { mask-image: linear-gradient(90deg, transparent, #000 32px, #000 calc(100% - 32px), transparent); }
+@media (max-width: 760px) {
+  .history-head { padding: 2px 14px 4px; row-gap: 4px; }
+  .history-room { line-height: 16px; }
+}
+@media (max-width: 600px) { .history-head .range-bar { padding: 2px; } }
+/* The top bar on a phone is 61 px (its 44 px buttons): the sticky heads under it and a dialog's top follow (a dialog's top
+   sat at 50 px, under the bar) */
+@media (max-width: 600px) { :root { --topbar-h: calc(61px + env(safe-area-inset-top)); } }

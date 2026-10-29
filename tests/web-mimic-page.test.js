@@ -140,3 +140,29 @@ test('a phone: 44 px targets, 16 px fields, the Crop stages in their box, Use ou
   const mimic = source('../web/mimic.css');
   for (const cls of ['m-small', 'm-name', 'm-state', 'm-blocks']) assert.match(mimic, new RegExp(`\\.mimic-svg \\.${cls} \\{ font-size: 13px;`), cls);
 });
+
+// Critique 2026-10-29 at 390 × 844: the sticky History head took 195 px (23 % of the screen) and its jump links scrolled
+// sideways with the last one a sliver and no cue.
+test('History on a phone: a shorter sticky head; the jump links fade at the edge that has more', () => {
+  const room = source('../web/room-detail.js');
+  assert.match(room, /historyNav\.dataset\.more = scrollEdges\(historyNav\.scrollLeft, historyNav\.clientWidth, historyNav\.scrollWidth\);/);
+  assert.match(room, /navObserver\?\.disconnect\(\);/, 'its observer stops with the page');
+  const css = source('../web/styles.css');
+  const block = css.slice(css.indexOf('/* critique 2026-10-29: status and Overview */'));
+  assert.match(block, /\.history-nav\[data-more="end"\] \{ mask-image: linear-gradient\(90deg, #000 calc\(100% - 32px\), transparent\); \}/);
+  assert.match(block, /\.history-nav\[data-more="start"\] \{ mask-image: linear-gradient\(270deg,/);
+  assert.match(block, /\.history-nav\[data-more="both"\] \{ mask-image: linear-gradient\(90deg, transparent, #000 32px,/);
+  assert.match(block, /@media \(max-width: 760px\) \{\n  \.history-head \{ padding: 2px 14px 4px; row-gap: 4px; \}/);
+});
+
+// Critique 2026-10-29: the Add room and Simulate dialogs' tops sat at about 50 px, under the 61 px top bar of a phone; the
+// sticky heads under the bar took 56 px for it and slid under it there too.
+test('the top bar\'s height is what it is on a phone, and a dialog opens below it', () => {
+  const css = source('../web/styles.css');
+  const block = css.slice(css.indexOf('/* critique 2026-10-29: status and Overview */'));
+  assert.match(block, /@media \(max-width: 600px\) \{ :root \{ --topbar-h: calc\(61px \+ env\(safe-area-inset-top\)\); \} \}/, '44 px buttons, 8 px above and below, a hairline');
+  assert.match(css, /--dialog-top: max\(16px, 6vh, calc\(var\(--topbar-h\) \+ 8px\)\);/);
+  assert.match(css, /dialog \{ margin-top: var\(--dialog-top\); margin-bottom: auto; \}/);
+  assert.match(css, /  max-height: calc\(100dvh - var\(--dialog-top\) - 16px\);/);
+  assert.doesNotMatch(css, /max\(16px, 6vh\) - 16px/, 'the Simulate dialog\'s height follows the same top');
+});

@@ -91,7 +91,7 @@ export function createUsageSection(host, { onCursor }) {
       totalsText.textContent = line.text;
       // how much of the range is left out, so the line is not read against the day totals below (critique 2026-10-28)
       const gapH = gaps.reduce((t, g) => t + Math.max(0, Math.min(g.to, range.to) - Math.max(g.from, range.from)), 0) / 3_600_000;
-      basis.textContent = gapH >= 0.1 ? `${line.basis} · ${gapH.toFixed(1)} h without readings not counted` : line.basis;
+      basis.textContent = gapH >= 0.1 ? `${line.basis} · ${gapH.toFixed(1)}\u00a0h without readings not counted` : line.basis;
     }
     if (!data || !line) {
       const message = !data ? (hist.failed ? OFFLINE : 'Loading…') : 'Usage is not available on this server';
