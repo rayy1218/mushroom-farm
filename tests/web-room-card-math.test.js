@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import {
   scaleFor, bandBar, readingTiles, controlNote, freshAirLine, machineTiles, filterSummary, filterFrom, bottomLine, blocksLine, roomCard, cropFacts, stayed,
@@ -61,10 +62,10 @@ test('bandBar: the band as a zone and the reading as a mark, as shares of the sc
 test('readingTiles: name, value and unit (humidity to one decimal, as the bands are set), chip, edge and bar per reading', () => {
   const [t, rh, co2] = readingTiles(draw(), control);
   assert.deepEqual([t.key, t.name, t.value, t.unit], ['T', 'Temperature', '21.5', '°C']);
-  assert.deepEqual(t.chip, { lvl: 'good', text: '✓ In band' });
+  assert.deepEqual(t.chip, { lvl: 'good', text: 'In band' });
   assert.equal(t.edge, '');
-  assert.deepEqual([rh.name, rh.value, rh.unit, rh.chip.text, rh.edge], ['Humidity', '88.0', '% RH', '▼ Below band', 'warn']);
-  assert.deepEqual([co2.name, co2.value, co2.unit, co2.chip.text, co2.edge], ['CO₂', '960', 'ppm', '▲ Over the start point', 'warn'], 'over the start point and the exchange off');
+  assert.deepEqual([rh.name, rh.value, rh.unit, rh.chip.text, rh.edge], ['Humidity', '88.0', '% RH', 'Below band', 'warn']);
+  assert.deepEqual([co2.name, co2.value, co2.unit, co2.chip.text, co2.edge], ['CO₂', '960', 'ppm', 'Over the start point', 'warn'], 'over the start point and the exchange off');
   assert.equal(t.label, 'Temperature 21.5 °C, band 21 to 23');
   assert.deepEqual(t.bar.zone, { from: 6 / 15, to: 8 / 15 });
 });
@@ -105,7 +106,7 @@ test('traceOf: a failed poll breaks the line; no band without one; nothing with 
 
 test('readingTiles: red edge at the safety level, grey without data; thousands grouped', () => {
   const high = readingTiles(draw({ sensors: { ...sensors, co2: { status: 'online', lastOk: { co2: 1400 } } } }), control)[2];
-  assert.deepEqual([high.value, high.chip.text, high.chip.lvl, high.edge], ['1,400', '▲ At the safety level', 'critical', 'bad']);
+  assert.deepEqual([high.value, high.chip.text, high.chip.lvl, high.edge], ['1,400', 'At the safety level', 'critical', 'bad']);
   const none = readingTiles(fromRoom({}), null);
   for (const tile of none) {
     assert.equal(tile.value, '—');
@@ -115,7 +116,7 @@ test('readingTiles: red edge at the safety level, grey without data; thousands g
   assert.equal(none[0].chip.text, 'Not wired');
   assert.equal(none[0].label, 'Temperature no data');
   const off = readingTiles(draw({ sensors: { ...sensors, trh: { status: 'offline', lastOk: { t: 20, rh: 91 } } } }), control)[0];
-  assert.deepEqual([off.value, off.chip.text, off.edge], ['20.0', '! Offline', 'none'], 'the last value, marked offline');
+  assert.deepEqual([off.value, off.chip.text, off.edge], ['20.0', 'Offline', 'none'], 'the last value, marked offline');
 });
 
 // ---- the header note and the fresh-air line ----
@@ -360,14 +361,14 @@ test('traceOf with a scale: a fixed range per reading (normal cycling stays calm
 test('readingTiles: near an edge with the machine that should act not acting says which ("Near high"), in amber', () => {
   const hot = { sensors: { ...sensors, trh: { status: 'online', lastOk: { t: 22.8, rh: 95, at: 1 } } } };
   const cooling = readingTiles(draw(hot), control);
-  assert.equal(cooling[0].chip.text, '✓ In band', 'T 22.8 in 21–23 with the aircon cooling: calm');
+  assert.equal(cooling[0].chip.text, 'In band', 'T 22.8 in 21–23 with the aircon cooling: calm');
   assert.deepEqual(cooling[1].chip, { lvl: 'near', text: 'Near high' }, 'RH 95 in 90–95 with the dehumidifier off at its on-point');
   const waiting = readingTiles(draw({ sensors: { ...sensors, trh: { status: 'online', lastOk: { t: 22, rh: 94.5, at: 1 } } } }), control);
-  assert.equal(waiting[1].chip.text, '✓ In band', 'RH 94.5: the dehumidifier waits for 95 % RH, acting as told (critique 2026-10-29)');
+  assert.equal(waiting[1].chip.text, 'In band', 'RH 94.5: the dehumidifier waits for 95 % RH, acting as told (critique 2026-10-29)');
   const off = readingTiles(draw({ ...hot, machines: { relay: relay(), ac: ac({ reported: { power: false, mode: 'cool', setpoint: 21.5, fan: 'auto' }, status: 'off' }) } }), control);
   assert.deepEqual(off[0].chip, { lvl: 'near', text: 'Near high' }, 'the aircon off');
   const mid = readingTiles(draw({ sensors: { ...sensors, trh: { status: 'online', lastOk: { t: 22, rh: 92.5, at: 1 } } } }), control);
-  assert.equal(mid[0].chip.text, '✓ In band');
+  assert.equal(mid[0].chip.text, 'In band');
   const lowT = readingTiles(draw({ sensors: { ...sensors, trh: { status: 'online', lastOk: { t: 21.2, rh: 92.5, at: 1 } } } }), control)[0];
   assert.deepEqual(lowT.chip, { lvl: 'near', text: 'Near low' }, 'the aircon cooling a room near its bottom');
 });
@@ -378,28 +379,28 @@ test('readingTiles: near an edge with the machine that should act not acting say
 test('readingTiles: CO₂ in the exchange\'s words: below the stop point, running (neutral), near and at the safety level', () => {
   const at = (co2, over = {}) => readingTiles(draw({ sensors: { ...sensors, co2: { status: 'online', lastOk: { co2, at: 1 } } }, ...over }), control)[2];
   const below = at(550);
-  assert.deepEqual([below.chip.text, below.chip.lvl, below.edge], ['✓ Below the stop point', 'good', '']);
+  assert.deepEqual([below.chip.text, below.chip.lvl, below.edge], ['Below the stop point', 'good', '']);
   const running = readingTiles(draw({ control: { ...control, exchange: true } }), { ...control, exchange: true })[2];
   assert.deepEqual([running.chip.text, running.chip.lvl, running.edge], ['Exchange running', 'neutral', ''], 'not amber while it runs');
   const manual = { ...control, auto: false };
   const fans = { relay: relay({ intake: { running: true, reported: true, status: 'on' }, exhaust: { running: true, reported: true, status: 'on' } }), ac: ac() };
   assert.equal(readingTiles(draw({ control: manual, machines: fans }), manual)[2].chip.text, 'Exchange running', 'Manual: both fans running');
   const near = at(1200);
-  assert.deepEqual([near.chip.text, near.chip.lvl, near.edge], ['▲ Near the safety level', 'warning', 'warn']);
+  assert.deepEqual([near.chip.text, near.chip.lvl, near.edge], ['Near the safety level', 'warning', 'warn']);
   const safety = at(1300);
-  assert.deepEqual([safety.chip.text, safety.chip.lvl, safety.edge], ['▲ At the safety level', 'critical', 'bad']);
+  assert.deepEqual([safety.chip.text, safety.chip.lvl, safety.edge], ['At the safety level', 'critical', 'bad']);
 });
 
 test('readingTiles: CO₂ near the stop point is calm; humidity near low is amber with the humidifier off or after 15 min there', () => {
   const low = readingTiles(draw({ sensors: { ...sensors, co2: { status: 'online', lastOk: { co2: 620, at: 1 } } } }), control)[2];
-  assert.equal(low.chip.text, '✓ Exchange off');
+  assert.equal(low.chip.text, 'Exchange off');
   assert.equal(low.chip.lvl, 'good');
   const rhLow = draw({ sensors: { ...sensors, trh: { status: 'online', lastOk: { t: 22, rh: 90.4, at: 1 } } } });
   assert.deepEqual(readingTiles(rhLow, control)[1].chip, { lvl: 'near', text: 'Near low' }, 'the humidifier off');
   assert.deepEqual(readingTiles(rhLow, control, { RH: -0.8 })[1].chip, { lvl: 'near', text: 'Near low · falling' });
   const humid = { relay: relay({ humidifier: { commanded: true, reported: true, running: true, status: 'on' } }), ac: ac() };
   const on = draw({ sensors: { ...sensors, trh: { status: 'online', lastOk: { t: 22, rh: 90.4, at: 1 } } }, machines: humid });
-  assert.equal(readingTiles(on, control, { RH: -0.8 })[1].chip.text, '✓ In band', 'the humidifier is on it');
+  assert.equal(readingTiles(on, control, { RH: -0.8 })[1].chip.text, 'In band', 'the humidifier is on it');
   const stayed = [{ at: 0, value: 90.5 }, { at: 16 * 60_000, value: 90.4 }];
   assert.deepEqual(readingTiles(on, control, {}, { RH: stayed })[1].chip, { lvl: 'near', text: 'Near low' }, '16 min near the bottom');
 });
@@ -409,4 +410,12 @@ test('traceScale: the band and twice its width either side, so the band is alway
   assert.deepEqual(traceScale('RH', 87, 93), { min: 75, max: 100 });
   assert.deepEqual(traceScale('CO2', 700, 800), { min: 500, max: 1000 });
   assert.equal(traceScale('T', null, 21), null, 'no band: the trace zooms to its readings');
+});
+
+// Critique 2026-10-29c: the reading cards said "✓ In band", "▼ Below band" while status is a dot or a word, never a glyph
+// (DESIGN.md Shapes); the words keep their colour, as on the Overview.
+test('readingTiles: a chip is its words alone, no glyph', () => {
+  const src = readFileSync(new URL('../web/room-card-math.js', import.meta.url), 'utf8');
+  assert.match(src, /: \{ lvl: st\.lvl \|\| 'none', text: st\.text \|\| '' \}/);
+  assert.doesNotMatch(src, /st\.icon/);
 });
