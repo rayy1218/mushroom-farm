@@ -3,7 +3,7 @@
 // ("switching · 45 % on" over it where the words fit), so a machine that switched never reads as one that ran without a break.
 // Lines up with the line charts (same left and right margin and time axis).
 
-import { M } from './chart.js';
+import { M, rightMargin } from './chart.js';
 import { xFor } from './chart-math.js';
 import { markRuns, packSpans, onShare, switchingLabels, timelineSummary } from './history-math.js';
 
@@ -46,7 +46,7 @@ export function drawTimeline(host, opts) {
     if (width < 40) return;
     const { range } = current;
     const x0 = M.left;
-    const x1 = width - M.right;
+    const x1 = width - rightMargin(width);
     const minGap = (PACK_PX * (range.to - range.from)) / Math.max(1, x1 - x0); // 3 px in the range's time
     const given = current.rowsFor ? current.rowsFor(width) : current.rows; // rowsFor: recomputed at every redraw (spans joined to a pixel)
     const rows = given.map((r) => ({ ...r, spans: packSpans(r.spans, minGap) }));

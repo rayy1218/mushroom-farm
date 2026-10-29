@@ -116,7 +116,9 @@ test('markRuns: a run of setpoints switching faster than labels fit is labelled 
 
 test('one axis label per 90 px, at least 2', () => {
   assert.equal(tickCountFor(900), 10);
-  assert.equal(tickCountFor(359), 3);
+  assert.equal(tickCountFor(359), 4);
+  assert.equal(tickCountFor(300), 4, 'a 360 px phone\'s chart: 24 h in four ticks 6 h apart (critique 2026-10-29)');
+  assert.equal(timeTicks(at(28, 12, 7), at(29, 12, 7), tickCountFor(330)).length, 4);
   assert.equal(tickCountFor(50), 2);
 });
 

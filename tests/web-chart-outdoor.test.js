@@ -20,8 +20,9 @@ test('the outdoor line is dotted, round-capped, in the chart\'s colour; the band
 // Critique 2026-10-28: "own scale 25.8–32.6" in the plot was struck through by the band's line and gone on a phone.
 test('its legend sits above the plot (Room, then Outdoor and its latest value); its scale is numbered on the right', () => {
   assert.match(part, /'Room'/);
-  assert.match(part, /secondLegend\(current\.second\.label \?\? 'Outdoor', lastSecond \? fmt\(lastSecond\.value\) : '', x1 - \(lx \+ 26\) - 4\)/);
+  assert.match(part, /secondLegend\(current\.second\.label \?\? 'Outdoor', lastSecond \? fmt\(lastSecond\.value\) : '', \(narrow \? width : x1\) - \(lx \+ 26\) - 4, !narrow\)/);
   assert.match(part, /svg\.append\(el\('line', \{ x1: x1 \+ 7, x2: x1 \+ 27, y1: y1 - 10, y2: y1 - 10, \.\.\.dots \}\)\);/, 'the right scale under a dotted mark');
+  assert.match(part, /if \(!narrow\) \{\n        for \(const \[v, y\] of \[\[s2\.max, y1\], \[s2\.min, y0\]\]\)/, 'not on a phone (critique 2026-10-29)');
   assert.match(part, /for \(const \[v, y\] of \[\[s2\.max, y1\], \[s2\.min, y0\]\]\)/);
   assert.match(chart, /export const M = \{ left: 64, right: 48,/);
 });
@@ -57,4 +58,20 @@ test('the band\'s numbers sit at the left inside the plot, by the room\'s scale,
   const band = chart.slice(chart.indexOf('// The control band:'), chart.indexOf('// A band that moved:'));
   assert.match(band, /x: x0 \+ 4, y: y \+ dy, 'text-anchor': 'start', style: 'fill:var\(--muted\)', 'font-size': 12, class: 'band-label'/);
   assert.doesNotMatch(band, /x1 - 4/);
+});
+
+// Critique 2026-10-29: on a phone the outdoor scale's numbers took 48 px of a 330 px chart; they go (the legend says the
+// outdoor value), and the plot, the bar charts and the timeline all get the width.
+test('a phone\'s chart has no outdoor scale numbers: an 18 px right margin, the same for the bar charts and the timeline', async () => {
+  const { rightMargin, NARROW_CHART, M } = await import('../web/chart.js');
+  assert.equal(rightMargin(330), 18);
+  assert.equal(rightMargin(NARROW_CHART), M.right);
+  assert.match(chart, /export const rightMargin = \(width\) => \(width < NARROW_CHART \? 18 : M\.right\);/);
+  assert.match(chart, /const x1 = width - rightMargin\(width\);/);
+  for (const file of ['timeline.js', 'bar-chart.js']) {
+    const src = readFileSync(new URL(`../web/${file}`, import.meta.url), 'utf8');
+    assert.match(src, /const x1 = width - rightMargin\(width\);/, file);
+  }
+  const { secondLegend } = await import('../web/chart-math.js');
+  assert.equal(secondLegend('Outdoor', '61.1 % RH', 400, false), 'Outdoor 61.1 % RH', 'no scale to name');
 });

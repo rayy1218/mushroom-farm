@@ -1,7 +1,7 @@
 // A bar chart on a time axis, inline SVG drawn 1:1 at the host's width (a ResizeObserver redraws it), lined up with the line
 // charts above it (the same margins, the same ticks): the "Electricity and water" and "Air exchange" sections of the Charts tab.
 
-import { M } from './chart.js';
+import { M, rightMargin } from './chart.js';
 import { xFor, nearestIndex } from './chart-math.js';
 import { niceMax, axisLabel } from './usage-math.js';
 
@@ -44,7 +44,7 @@ export function drawTimeBars(host, opts) {
     if (width < 40) return; // not laid out (hidden)
     const height = width < 420 ? 170 : 200;
     const x0 = M.left;
-    const x1 = width - M.right;
+    const x1 = width - rightMargin(width);
     const y0 = height - M.bottom;
     const y1 = M.top;
     const { bars, range, color } = current;
