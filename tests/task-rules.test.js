@@ -47,6 +47,25 @@ test('the built-in rules are the spec tables', () => {
     ['co2Check', 30, 'co2'], ['rhCheck', 90, 'trh'], ['acService', 120, 'ac'], ['acChemWash', 180, 'ac']]);
   assert.deepEqual(Object.keys(FAMILY_OF).sort(), [...CROP_KEYS].sort(), 'every crop has a family');
   assert.deepEqual(Object.keys(CROP_NOTES).sort(), ['abalone', 'black', 'golden', 'lionsmane', 'pink', 'woodear']);
+  const O = ['oyster'], OWLR = ['oyster', 'woodear', 'lionsmane', 'reishi'], OL = ['oyster', 'lionsmane'];
+  const LAST7 = { every: 2, lastDays: 7 }, WHOLE = { every: 2, lastDays: null };
+  assert.deepEqual([...DAILY_RULES, CLEAR_OUT].map((r) => [r.key, r.families, r.stages, r.when, r.slot]), [
+    ['contamWalk', null, null, 'daily', 'morning'],
+    ['colonisedCheck', null, ['spawn'], LAST7, 'any'],
+    ['openBags', OWLR, ['pinning'], 'first', 'morning'],
+    ['casingApply', ['milky'], ['pinning'], 'first', 'morning'],
+    ['reishiForm', ['reishi'], ['pinning'], 'first', 'any'],
+    ['humidifierCheck', null, ['pinning', 'fruiting'], 'daily', 'morning'],
+    ['harvestAm', OL, ['fruiting'], 'daily', 'morning'],
+    ['harvestPm', OL, ['fruiting'], 'daily', 'afternoon'],
+    ['harvestDaily', ['woodear', 'milky'], ['fruiting'], 'daily', 'morning'],
+    ['reishiRim', ['reishi'], ['fruiting'], WHOLE, 'any'],
+    ['scrapeRecap', O, ['rest'], 'first', 'morning'],
+    ['reopen', ['oyster', 'woodear', 'lionsmane'], ['rest'], 'last', 'morning'],
+    ['footbath', null, null, 'daily', 'morning'],
+    ['floorClean', null, null, 'daily', 'afternoon'],
+    ['clearOut', null, null, 'daily', 'morning'],
+  ]);
 });
 
 test('an oyster room through its stages', () => {
@@ -69,6 +88,9 @@ test('the colonisation check comes every 2 days within the last 7 days of the sp
   const days = [];
   for (let d = 1; d <= 22; d++) if (keysOn(addDays('2026-10-30', d - 1), spawn).includes('colonisedCheck')) days.push(d);
   assert.deepEqual(days, [15, 17, 19, 21]);
+  // a held stage (autoAdvance off) runs past its planned length: the checks go on
+  assert.ok(keysOn(addDays('2026-10-30', 22), spawn).includes('colonisedCheck'), 'day 23');
+  assert.ok(!keysOn(addDays('2026-10-30', 23), spawn).includes('colonisedCheck'), 'day 24');
   assert.ok(!keysOn('2026-11-13', prog({ stage: 'spawn', stageSince: null })).includes('colonisedCheck'), 'no start: no stage day');
 });
 
@@ -109,6 +131,16 @@ test('mixed crops: each rule once, with the notes of each crop that has one', ()
     'Abalone oyster: Black droplets on the mycelium are normal, not contamination');
 });
 
+test('crop notes come only from the crops a rule is for', () => {
+  const noteOn = (crops, ruleKey) => {
+    const p = prog({ stage: 'fruiting', crops: crops.map((crop) => ({ crop, blocks: 10 })) });
+    return wantedDaily({ program: p, crops: p.crops, date: '2026-10-30', rules: ALL }).find((w) => w.ruleKey === ruleKey).note;
+  };
+  assert.equal(noteOn(['pink', 'woodear'], 'harvestDaily'), 'Wood ear: Ears 3–5 cm, before the edges thin; leave the small ones');
+  assert.equal(noteOn(['pink', 'woodear'], 'harvestAm'), 'Pink oyster: Keeps 1–3 days after picking: pick on sale days');
+  assert.equal(noteOn(['lionsmane', 'reishi'], 'reishiRim'), null);
+});
+
 test('a done program gives clearOut with the room rules; no crops gives the room rules only', () => {
   assert.deepEqual(keysOn('2026-10-30', prog({ stage: 'rest', done: true })), ['clearOut', 'footbath', 'floorClean']);
   assert.deepEqual(keysOn('2026-10-30', prog({ crops: [] })), ['footbath', 'floorClean']);
@@ -136,6 +168,10 @@ test('effectiveRules: rules off, upkeep intervals and the owner\'s rules per roo
   // a custom daily rule is made with or without crops
   assert.deepEqual(keysOn('2026-10-30', prog({ crops: [] }), r1.daily), ['footbath', 'floorClean', 'custom:1']);
   assert.ok(!keysOn('2026-10-30', prog({ stage: 'fruiting' }), r1.daily).includes('harvestPm'));
+  // rooms and everyDays left out count as null; a room id given as text still matches
+  const loose = effectiveRules({ custom: [{ id: 4, text: 'Check the door seal', slot: 'any', enabled: true },
+    { id: 5, text: 'Wipe the shelves', rooms: [2], slot: 'any', enabled: true }], roomId: '2' });
+  assert.deepEqual(loose.daily.slice(-2).map((r) => r.key), ['custom:4', 'custom:5']);
   const off = effectiveRules({ settings: [{ key: 'clearOut', enabled: false, everyDays: null }], roomId: 1 });
   assert.deepEqual(keysOn('2026-10-30', prog({ done: true }), off.daily), ['footbath', 'floorClean']);
 });

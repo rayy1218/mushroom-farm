@@ -3,7 +3,8 @@
 //
 // A daily rule is { key, kind: 'daily', text, families: string[] | null, stages: string[] | null, when, slot, amount: { unit, label } | null };
 // when is 'daily', 'first' (day 1 of the stage), 'last' (the stage's last day by days[stage]) or { every: N, lastDays: M | null }
-// (every N days within the stage's last M days, counted from day 1 of that window; lastDays null: the whole stage).
+// (every N days within the stage's last M days, counted from day 1 of that window; lastDays null: the whole stage). A stage
+// held past its planned length (autoAdvance off) keeps the every-N rhythm: a held spawn run still needs its colonisation checks.
 // An upkeep rule is { key, kind: 'upkeep', text, everyDays, needs } (needs: what the room must have, 'ac' | 'humidifier' |
 // 'dehumidifier' | 'co2' | 'trh', null for nothing; see upkeepApplies). The owner's own rules (key `custom:<id>`) take the same
 // shapes; an own upkeep rule also carries its slot (the built-in upkeep rules have none: any time of day).
@@ -104,9 +105,9 @@ export function effectiveRules({ settings = [], custom = [], roomId }) {
   const daily = [CLEAR_OUT, ...DAILY_RULES].filter(on);
   const upkeep = UPKEEP_RULES.filter(on).map((r) => ({ ...r, everyDays: byKey.get(r.key)?.everyDays ?? r.everyDays }));
   for (const c of custom) {
-    if (!c.enabled || (c.rooms !== null && !c.rooms.includes(roomId))) continue;
+    if (!c.enabled || (c.rooms != null && !c.rooms.includes(Number(roomId)))) continue;
     const key = `custom:${c.id}`;
-    if (c.everyDays === null) daily.push({ key, kind: 'daily', text: c.text, families: null, stages: null, when: 'daily', slot: c.slot, amount: null });
+    if (c.everyDays == null) daily.push({ key, kind: 'daily', text: c.text, families: null, stages: null, when: 'daily', slot: c.slot, amount: null });
     else upkeep.push({ key, kind: 'upkeep', text: c.text, everyDays: c.everyDays, needs: null, slot: c.slot });
   }
   return { daily, upkeep };
@@ -125,12 +126,13 @@ function whenApplies(when, sd) {
   return sd.day >= start && (sd.day - start) % when.every === 0;
 }
 
-// The note of a rule for the room's crops: one crop's note as it is; several crops' notes each after the crop's name, joined
-// with ' · '. Null without a note.
-function noteOf(ruleKey, cropKeys) {
+// The note of a rule for the room's crops, from the crops the rule is for (by their family): in a room of one crop the note as
+// it is; of several crops each note after the crop's name, joined with ' · '. Null without a note.
+function noteOf(rule, cropKeys) {
   const notes = [];
   for (const crop of cropKeys) {
-    const n = CROP_NOTES[crop]?.[ruleKey] ?? (HARVEST_KEYS.has(ruleKey) ? CROP_NOTES[crop]?.harvest : undefined);
+    if (rule.families !== null && !rule.families.includes(FAMILY_OF[crop])) continue;
+    const n = CROP_NOTES[crop]?.[rule.key] ?? (HARVEST_KEYS.has(rule.key) ? CROP_NOTES[crop]?.harvest : undefined);
     if (n) notes.push({ crop, n });
   }
   if (notes.length === 0) return null;
@@ -154,7 +156,7 @@ export function wantedDaily({ program, crops = program?.crops ?? [], date, rules
       && (r.families === null || r.families.some((f) => families.has(f)))
       && whenApplies(r.when, sd)));
   }
-  return picked.map((r) => ({ ruleKey: r.key, text: r.text, note: noteOf(r.key, cropKeys), slot: r.slot, unit: r.amount?.unit ?? null }));
+  return picked.map((r) => ({ ruleKey: r.key, text: r.text, note: noteOf(r, cropKeys), slot: r.slot, unit: r.amount?.unit ?? null }));
 }
 
 // Whether an upkeep rule applies to a room (a db room: dehumidifier, co2Address, trhAddress). The aircon and the humidifier
