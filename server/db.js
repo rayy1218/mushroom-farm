@@ -203,7 +203,8 @@ const LIGHT_STAGES = ['spawn', 'pinning', 'fruiting', 'rest']; // the order of t
 
 // Tasks (spec 2026-10-30-tasks-design.md 5): the rooms' daily, upkeep and long-term tasks, the worker names, the owner's
 // changes of the built-in rules and the owner's own rules. A daily row has a date and a rule key and is unique per room,
-// rule, date and slot; an upkeep rule has at most one open row per room.
+// rule, date and slot; an upkeep row has a rule key and a due time, and a rule has at most one open row per room; a row
+// has a closed time exactly when it is not open.
 const TASKS = `
 CREATE TABLE IF NOT EXISTS tasks (
   id         INTEGER PRIMARY KEY,
@@ -223,7 +224,9 @@ CREATE TABLE IF NOT EXISTS tasks (
   unit       TEXT,
   reason     TEXT,
   source     TEXT,
-  CHECK (kind <> 'daily' OR (date IS NOT NULL AND rule_key IS NOT NULL))
+  CHECK (kind <> 'daily' OR (date IS NOT NULL AND rule_key IS NOT NULL)),
+  CHECK (kind <> 'upkeep' OR (rule_key IS NOT NULL AND due_at IS NOT NULL)),
+  CHECK ((status = 'open') = (closed_at IS NULL))
 ) STRICT;
 CREATE UNIQUE INDEX IF NOT EXISTS tasks_daily ON tasks (room_id, rule_key, date, slot) WHERE kind = 'daily';
 CREATE UNIQUE INDEX IF NOT EXISTS tasks_upkeep_open ON tasks (room_id, rule_key) WHERE kind = 'upkeep' AND status = 'open';
@@ -819,11 +822,12 @@ export function openDb(path, { log = console.error } = {}) {
     latest: db.prepare(STATUS_SQL.latest),
     lastOk: db.prepare(STATUS_SQL.lastOk),
     failuresSince: db.prepare(STATUS_SQL.failuresSince),
-    // Tasks (spec 2026-10-30-tasks-design.md 4 and 5).
-    insertDailyTask: db.prepare(`INSERT OR IGNORE INTO tasks (room_id, kind, rule_key, date, slot, text, note, unit, created_at)
-                                 VALUES (?, 'daily', ?, ?, ?, ?, ?, ?, ?)`),
-    insertUpkeepTask: db.prepare(`INSERT OR IGNORE INTO tasks (room_id, kind, rule_key, slot, text, due_at, created_at)
-                                  VALUES (?, 'upkeep', ?, ?, ?, ?, ?)`),
+    // Tasks (spec 2026-10-30-tasks-design.md 4 and 5). ON CONFLICT DO NOTHING skips only a row the unique indexes already
+    // have; a bad row (a CHECK or NOT NULL failure) still throws, where INSERT OR IGNORE would skip it too.
+    insertDailyTask: db.prepare(`INSERT INTO tasks (room_id, kind, rule_key, date, slot, text, note, unit, created_at)
+                                 VALUES (?, 'daily', ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`),
+    insertUpkeepTask: db.prepare(`INSERT INTO tasks (room_id, kind, rule_key, slot, text, due_at, created_at)
+                                  VALUES (?, 'upkeep', ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`),
     insertLongtermTask: db.prepare(`INSERT INTO tasks (room_id, kind, slot, text, note, source, created_at)
                                     VALUES (?, 'longterm', 'any', ?, ?, ?, ?)`),
     task: db.prepare('SELECT * FROM tasks WHERE id = ?'),
@@ -1637,12 +1641,13 @@ export function openDb(path, { log = console.error } = {}) {
     },
 
     // Closes an open row: { status, at, worker, amount, reason }; next: an upkeep row to make in the same transaction
-    // (insertUpkeepTask's fields). → false when the row is not open (nothing changes then).
+    // (insertUpkeepTask's fields). → false when the row is not open (nothing changes then). Throws, closing nothing, when
+    // the next row is not made (its rule already has an open row).
     closeTask(id, { status, at, worker = null, amount = null, reason = null }, next = null) {
       db.exec('BEGIN');
       try {
         const closed = q.closeTask.run(status, at, worker, amount, reason, id).changes > 0;
-        if (closed && next) this.insertUpkeepTask(next);
+        if (closed && next && !this.insertUpkeepTask(next)) throw new Error('The next upkeep row was not made');
         db.exec('COMMIT');
         return closed;
       } catch (err) {

@@ -142,3 +142,47 @@ test('the log queries read the closed rows index, without a sort', (t) => {
     assert.ok(!plan.some((d) => /TEMP B-TREE/.test(d)), `${name}: ${plan.join(' | ')}`);
   }
 });
+
+test('the insert methods return false only for a row that is already there; a bad row throws', (t) => {
+  const { db, id } = fresh(t);
+  assert.equal(db.insertDailyTask(daily(id)), true);
+  assert.equal(db.insertDailyTask(daily(id)), false);
+  assert.throws(() => db.insertDailyTask(daily(id, { date: null })), /CHECK constraint failed/);
+  const up = { roomId: id, ruleKey: 'acFilter', text: 'Wash the aircon filter and clear the drain tray', dueAt: 100, at: 50 };
+  assert.equal(db.insertUpkeepTask(up), true);
+  assert.equal(db.insertUpkeepTask(up), false);
+  assert.throws(() => db.insertUpkeepTask({ ...up, ruleKey: 'trhClean', slot: 'evening' }), /CHECK constraint failed/);
+});
+
+test('closeTask rolls the close back when the next upkeep row cannot be made', (t) => {
+  const { db, id } = fresh(t);
+  const up = { roomId: id, ruleKey: 'acFilter', text: 'Wash the aircon filter and clear the drain tray', dueAt: 100, at: 50 };
+  const other = { ...up, ruleKey: 'trhClean', text: 'Wipe the T/RH sensor' };
+  db.insertUpkeepTask(up);
+  db.insertUpkeepTask(other);
+  const open = db.openUpkeep(id, 'acFilter');
+  // trhClean already has an open row, so a next row of trhClean is not made
+  assert.throws(() => db.closeTask(open.id, { status: 'done', at: 300, worker: 'Ali' }, { ...other, dueAt: 900, at: 300 }),
+    /The next upkeep row was not made/);
+  assert.deepEqual([db.getTask(open.id).status, db.getTask(open.id).closedAt], ['open', null]);
+  assert.equal(db.openTasks(id, 'upkeep').length, 2);
+});
+
+test('the tasks table refuses an upkeep row without a due time and a closed row without a closed time', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'farm-db-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const path = join(dir, 'check.db');
+  const first = openDb(path);
+  const id = first.createRoom(ROOM, 1000).id;
+  first.close();
+  const raw = new DatabaseSync(path);
+  t.after(() => raw.close());
+  const insert = raw.prepare(`INSERT INTO tasks (room_id, kind, rule_key, slot, text, status, due_at, closed_at, created_at)
+                              VALUES (?, 'upkeep', 'acFilter', 'any', 'x', ?, ?, ?, 1)`);
+  assert.throws(() => insert.run(id, 'open', null, null), /CHECK constraint failed/);
+  assert.throws(() => insert.run(id, 'done', 100, null), /CHECK constraint failed/);
+  assert.throws(() => insert.run(id, 'open', 100, 200), /CHECK constraint failed/);
+  insert.run(id, 'done', 100, 200);
+  insert.run(id, 'open', 100, null);
+  assert.equal(raw.prepare('SELECT COUNT(*) AS n FROM tasks').get().n, 2);
+});
