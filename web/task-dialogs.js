@@ -57,6 +57,8 @@ export async function loadWorkers() {
 export function createWorkerPicker() {
   let alive = true;
   let names = [];
+  let loaded = false;
+  let failed = false; // the names could not be read: say so, not "No names yet"
   const node = el('label', 'tk-as');
   const select = el('select');
   select.name = 'worker';
@@ -64,7 +66,8 @@ export function createWorkerPicker() {
   function paint() {
     const now = getWorker();
     const chosen = names.includes(now) ? now : '';
-    select.replaceChildren(...[['', names.length ? 'Pick a name' : 'No names yet (Settings)'], ...names.map((n) => [n, n])].map(([value, label]) => {
+    const first = failed ? OFFLINE : names.length || !loaded ? 'Pick a name' : 'No names yet (Settings)';
+    select.replaceChildren(...[['', first], ...names.map((n) => [n, n])].map(([value, label]) => {
       const o = el('option', '', label);
       o.value = value;
       o.selected = value === chosen;
@@ -74,7 +77,7 @@ export function createWorkerPicker() {
   select.addEventListener('change', () => setWorker(select.value || null));
   const onStore = () => { if (alive) paint(); };
   window.addEventListener('farm:worker', onStore);
-  loadWorkers().then((list) => { if (alive) { names = list; paint(); } }).catch(() => { /* the dialogs ask again */ });
+  loadWorkers().then((list) => { names = list; loaded = true; }, () => { failed = true; }).then(() => { if (alive) paint(); });
   paint();
   return {
     node,
@@ -103,7 +106,7 @@ export function closeTaskDialog() {
 // Opens the dialog on a form. lead: lines (text or nodes) under the title; fields: [{ name, label, kind: 'text' | 'number'
 // | 'area' | 'select' | 'check', value, options ([value, label]), hint }]; buttons: [{ value, label, primary }] after the
 // close button (closeLabel; Close when there are no buttons). submit(values, which) → true (closes), or { field, message }
-// or { message } to show while it stays open.
+// or { message } to show while it stays open. → { input(name), button(value), alive() } (alive: this opening still shows).
 function openForm({ title, lead = [], fields = [], buttons = [], closeLabel = buttons.length ? 'Cancel' : 'Close', submit }) {
   const d = ensureDialog();
   if (d.open) d.close();
@@ -222,8 +225,10 @@ function openForm({ title, lead = [], fields = [], buttons = [], closeLabel = bu
     if (main) run(main.value);
   });
   close.addEventListener('click', () => d.close());
+  d.oncancel = (event) => { if (busy) event.preventDefault(); }; // Esc while sending: the answer would have nowhere to show
   d.showModal();
   (fields.length ? inputs.get(fields[0].name) : heading).focus();
+  return { input: (name) => inputs.get(name), button: (value) => sends.find((b) => b.value === value), alive: () => alive() && d.open };
 }
 
 // ---- Done, Skip, Cancel, Add ----
@@ -231,12 +236,32 @@ function openForm({ title, lead = [], fields = [], buttons = [], closeLabel = bu
 export function createTaskActions({ onChanged, onError }) {
   let alive = true;
   let names = null; // the workers' names, read on the first need
+  const pending = new Set(); // the rows being sent or asked about: a second tap meanwhile does nothing
 
+  // The names, or null after saying why they could not be read (no dialog then: it would say "No names yet"). A failed read
+  // is not kept: the next tap reads them again.
   async function workers() {
     if (names) return names;
-    try { names = await loadWorkers(); } catch { return []; } // not kept: the next dialog asks again
+    try {
+      names = await loadWorkers();
+    } catch (err) {
+      if (alive) onError?.(errorText(err));
+      return null;
+    }
     return names;
   }
+
+  // done and skip once at a time per row: a double tap of one-tap Done would otherwise send twice, and the second's 409
+  // would show the worker their own tap as someone else's.
+  const once = (action) => async (row) => {
+    if (pending.has(row.id)) return;
+    pending.add(row.id);
+    try {
+      await action(row);
+    } finally {
+      pending.delete(row.id);
+    }
+  };
   const workerField = (list) => ({
     name: 'worker', label: 'Who did it', kind: 'select', value: list.includes(getWorker()) ? getWorker() : '',
     options: [['', 'Pick a name'], ...list.map((n) => [n, n])],
@@ -272,7 +297,7 @@ export function createTaskActions({ onChanged, onError }) {
   async function done(row) {
     if (row.kind === 'longterm' && row.source) return machineDone(row);
     const list = await workers();
-    if (!alive) return;
+    if (!list || !alive) return;
     const worker = getWorker();
     // One tap: a stage or upkeep task with no amount, by the worker this browser does the rounds as.
     if (row.kind !== 'longterm' && !recordsAmount(row) && worker && list.includes(worker)) {
@@ -302,7 +327,7 @@ export function createTaskActions({ onChanged, onError }) {
 
   async function skip(row) {
     const list = await workers();
-    if (!alive) return;
+    if (!list || !alive) return;
     openForm({
       title: 'Skip this task',
       lead: leadOf(row, list),
@@ -360,6 +385,7 @@ export function createTaskActions({ onChanged, onError }) {
   // first (the room's PUT) and marks the task done only when that worked; Just mark done leaves Setup as it is.
   async function machineDone(row) {
     const list = await workers();
+    if (!list) return;
     let room;
     try {
       room = await request('GET', `/api/rooms/${row.roomId}`);
@@ -382,7 +408,7 @@ export function createTaskActions({ onChanged, onError }) {
       return;
     }
     let saved = false; // Setup was saved in this dialog: a second try only marks the task done
-    openForm({
+    const form = openForm({
       title: 'Mark done and update Setup',
       lead: leadOf(row, list, [`Setup now: ${update.map(nowText).join(' · ')}`]),
       fields: [workerField(list), ...update.map((f) => (f.kind === 'check'
@@ -400,6 +426,10 @@ export function createTaskActions({ onChanged, onError }) {
           try {
             room = await request('PUT', `/api/rooms/${row.roomId}`, built.body, COMMAND_TIMEOUT);
             saved = true;
+            // Saved: the boxes lock (a change now would not be saved) and the one button left marks the task done.
+            for (const f of update) form.input(f.name).disabled = true;
+            form.button('save').textContent = 'Mark done';
+            form.button('just').hidden = true;
           } catch (err) {
             return { field: err.status === 400 ? err.field : undefined, message: `Setup not saved: ${errorText(err)}` };
           }
@@ -411,7 +441,7 @@ export function createTaskActions({ onChanged, onError }) {
   }
 
   return {
-    done, skip, cancel, add,
+    done: once(done), skip: once(skip), cancel, add,
     destroy() {
       alive = false;
       closeTaskDialog();
@@ -430,14 +460,14 @@ export function openPlanDialog({ roomId, roomName, rank, plan, onPlanned }) {
     ? [`Against what ${roomName} has now${plan.rmText ? ` · ${plan.rmText}` : ''}:`, changes,
       "Each change becomes a long-term task on the room's Tasks tab; Done on one offers to update Setup."]
     : ['Nothing changes from what the room has now.'];
-  openForm({
+  const form = openForm({
     title: `Plan setup ${rank}`,
     lead,
     buttons: plan.changes.length ? [{ value: 'plan', label: 'Plan', primary: true }] : [],
     submit: async () => {
       try {
         const data = await request('POST', `/api/rooms/${roomId}/tasks`, plan.body, COMMAND_TIMEOUT);
-        onPlanned?.(Array.isArray(data?.rows) ? data.rows : []);
+        if (form.alive()) onPlanned?.(Array.isArray(data?.rows) ? data.rows : []);
         return true;
       } catch (err) {
         return { message: errorText(err) };
