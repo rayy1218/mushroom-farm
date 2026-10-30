@@ -267,3 +267,41 @@ test('upkeep: an interval change, a rule turned off and on again', (t) => {
   s.db.setTaskRuleSettings([{ key: 'flyTraps', enabled: true, everyDays: 7 }]);
   assert.equal(s.tasks.roomView(s.id).upkeep.find((r) => r.ruleKey === 'flyTraps').dueDate, '2026-11-06');
 });
+
+test('who did it: at most 40 characters and no control characters; a missing body is an empty one', (t) => {
+  const s = setup(t);
+  const walk = s.row('contamWalk');
+  refused(() => s.tasks.done(walk.id, { worker: 'A'.repeat(41) }), 400, 'The name must be at most 40 characters', 'worker');
+  refused(() => s.tasks.done(walk.id, { worker: '\u00011' }), 400, 'Pick who did it', 'worker'); // a parked worker name
+  refused(() => s.tasks.skip(walk.id, { worker: 'Al\ni', reason: 'x' }), 400, 'Pick who did it', 'worker');
+  refused(() => s.tasks.done(walk.id, { worker: 'Ali\u007f' }), 400, 'Pick who did it', 'worker');
+  refused(() => s.tasks.done(walk.id, null), 400, 'Pick who did it', 'worker');
+  refused(() => s.tasks.skip(walk.id, null), 400, 'Pick who did it', 'worker');
+  const own = s.db.insertLongtermTask({ roomId: s.id, text: 'Seal the door gap', at: at('2026-10-30T08:00:00+08:00') });
+  refused(() => s.tasks.cancel(own.id, null), 400, 'Say why', 'reason');
+  assert.equal(s.tasks.done(walk.id, { worker: 'A'.repeat(40) }).worker, 'A'.repeat(40));
+});
+
+test('done on an upkeep row after the room lost its machine makes no next row', (t) => {
+  const s = setup(t, { room: { dehumidifier: true } });
+  const filter = s.tasks.roomView(s.id).upkeep.find((r) => r.ruleKey === 'dehumidifierFilter');
+  s.db.updateRoom(s.id, { ...s.db.getRoom(s.id), dehumidifier: false });
+  assert.equal(s.tasks.done(filter.id, { worker: 'Ali' }).status, 'done');
+  assert.equal(s.db.openUpkeep(s.id, 'dehumidifierFilter'), null);
+});
+
+test('a row closed by someone else between the read and the close: 409 and one open row for the rule', (t) => {
+  const s = setup(t);
+  const first = s.tasks.roomView(s.id).upkeep.find((r) => r.ruleKey === 'acFilter');
+  const getTask = s.db.getTask;
+  s.db.getTask = (id) => {
+    s.db.getTask = getTask; // once
+    const row = getTask(id);
+    const next = { roomId: s.id, ruleKey: 'acFilter', slot: 'any', text: row.text, dueAt: at('2026-11-06T00:00:00+08:00'), at: row.createdAt };
+    s.db.closeTask(id, { status: 'done', at: at('2026-10-30T08:00:00+08:00'), worker: 'Siti' }, next);
+    return row; // the stale read: still open
+  };
+  refused(() => s.tasks.done(first.id, { worker: 'Ali' }), 409, 'Already done by Siti at 08:00', undefined);
+  assert.equal(s.db.openTasks(s.id, 'upkeep').filter((r) => r.ruleKey === 'acFilter').length, 1);
+  assert.equal(s.db.getTask(first.id).worker, 'Siti');
+});

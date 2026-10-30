@@ -20,6 +20,7 @@ const AMOUNT_LABEL = Object.fromEntries(DAILY_RULES.filter((r) => r.amount).map(
 
 const MAX_AMOUNT = 10_000;
 const MAX_REASON = 200;
+const MAX_NAME = 40;
 const STATUS_WORD = { done: 'done', skipped: 'skipped', missed: 'missed', cancelled: 'cancelled' };
 
 // '12,000', '0.5': thousands grouped with a comma.
@@ -143,9 +144,11 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
     return row;
   }
 
+  // Who did it: 1 to 40 characters, no control characters (a parked worker name starts with U+0001).
   function workerOf(worker) {
     const name = trimmed(worker);
-    if (!name) throw new TaskError(400, 'Pick who did it', 'worker');
+    if (!name || /[\u0000-\u001f\u007f]/.test(name)) throw new TaskError(400, 'Pick who did it', 'worker');
+    if (name.length > MAX_NAME) throw new TaskError(400, `The name must be at most ${MAX_NAME} characters`, 'worker');
     return name;
   }
 
@@ -182,8 +185,9 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
       return viewOf(roomId, date);
     },
 
-    // { worker, amount }: amount only on a row that records one (empty: none), from 0 to 10,000.
-    done(id, { worker, amount } = {}) {
+    // { worker, amount }: amount only on a row that records one (empty: none), from 0 to 10,000. A null body is an empty one.
+    done(id, body) {
+      const { worker, amount } = body ?? {};
       const row = openRow(id);
       const name = workerOf(worker);
       let value = null;
@@ -197,14 +201,16 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
     },
 
     // { worker, reason }; not for a long-term row (that is done or cancelled).
-    skip(id, { worker, reason } = {}) {
+    skip(id, body) {
+      const { worker, reason } = body ?? {};
       const row = openRow(id);
       if (row.kind === 'longterm') throw new TaskError(400, 'A long-term task is done or cancelled, not skipped');
       return close(row, { status: 'skipped', worker: workerOf(worker), reason: reasonOf(reason) });
     },
 
     // { reason }; long-term rows only.
-    cancel(id, { reason } = {}) {
+    cancel(id, body) {
+      const { reason } = body ?? {};
       const row = openRow(id);
       if (row.kind !== 'longterm') throw new TaskError(400, 'Only a long-term task can be cancelled');
       return close(row, { status: 'cancelled', reason: reasonOf(reason) });
