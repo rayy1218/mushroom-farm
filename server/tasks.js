@@ -99,7 +99,7 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
   // turned off keeps its row), and such a cancelled row opened again when it is wanted again the same day (a stage changed
   // and changed back). Upkeep: an open row of a rule that no longer applies (its machine taken out) cancelled; each applying
   // rule's open row made when it has none, due everyDays after its last done or skip but not before `date` (a rule off for
-  // months, or a machine fitted again, starts due today, not long overdue).
+  // months, or a machine fitted again, starts due today, not long overdue). → whether anything changed (the caller tells).
   function makeDay(room, date, sources) {
     const roomId = room.id;
     const at = now();
@@ -137,7 +137,7 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
       const dueAt = upkeepDue(roomId, rule.key, rule.everyDays, date);
       changed = db.insertUpkeepTask({ roomId, ruleKey: rule.key, slot: rule.slot ?? 'any', text: rule.text, dueAt, at }) || changed;
     }
-    if (changed) tell(roomId);
+    return changed;
   }
 
   // When an upkeep rule's open row is due: everyDays after the farm day of its last done or skip, but not before `date`
@@ -159,7 +159,13 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
   // makeDay for one room (nothing for a missing room).
   function ensureDay(roomId, date = today()) {
     const room = db.getRoom(roomId);
-    if (room) makeDay(room, date, ruleSources());
+    if (room && makeDay(room, date, ruleSources())) tell(roomId);
+  }
+
+  // makeDay for every room. → the ids of the rooms that changed (the caller tells).
+  function makeAll(date) {
+    const sources = ruleSources();
+    return db.listRooms().filter((room) => makeDay(room, date, sources)).map((room) => room.id);
   }
 
   // The views of one room on `date` (made already).
@@ -222,18 +228,19 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
 
     // ensureDay for every room.
     ensureAll(date = today()) {
-      const sources = ruleSources();
-      for (const room of db.listRooms()) makeDay(room, date, sources);
+      for (const id of makeAll(date)) tell(id);
     },
 
     // After the owner's rules are saved (before: { settings, custom } as they were): a rule whose interval changed has its
     // open upkeep rows due again by upkeepDue; an own rule changed from daily to every N days has today's open daily rows
     // cancelled 'Rule changed', and one changed back its open upkeep row; an own rule removed has its open upkeep row and
-    // today's open daily rows cancelled 'Rule removed' (never opened again); then ensureAll makes what the rules now want.
+    // today's open daily rows cancelled 'Rule removed' (never opened again); then makeAll makes what the rules now want.
+    // Each room that changed is told once.
     rulesSaved(before, date = today()) {
       const was = intervals(before);
       const is = intervals(ruleSources());
       const at = now();
+      const changedRooms = new Set();
       for (const room of db.listRooms()) {
         let changed = false;
         const cancel = (row, reason) => db.closeTask(row.id, { status: 'cancelled', at, reason });
@@ -249,9 +256,10 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
           if (!is.has(row.ruleKey)) changed = cancel(row, 'Rule removed') || changed;
           else if (is.get(row.ruleKey) !== null) changed = cancel(row, 'Rule changed') || changed;
         }
-        if (changed) tell(room.id);
+        if (changed) changedRooms.add(room.id);
       }
-      this.ensureAll(date);
+      for (const id of makeAll(date)) changedRooms.add(id);
+      for (const id of changedRooms) tell(id);
     },
 
     // The Tasks tab: { date, today, upkeep, longterm, counts: { due, overdue, longterm } }, or null when there is no such room.
@@ -338,7 +346,7 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
       const date = today();
       const sources = ruleSources();
       const rooms = db.listRooms().map((room) => {
-        makeDay(room, date, sources);
+        if (makeDay(room, date, sources)) tell(room.id);
         const v = viewOf(room.id, date);
         return { id: room.id, name: room.name, today: v.today, upkeepDue: v.upkeep.filter((r) => r.dueDate <= date), longterm: v.counts.longterm, counts: v.counts };
       });

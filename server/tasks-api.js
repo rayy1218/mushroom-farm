@@ -222,8 +222,9 @@ export function createTaskRoutes({ db, tasks }) {
         return true;
       }
       if (req.method !== 'PUT') throw notFound();
+      const body = await readJson(req); // first: the rules as they are once the body has come, not before a slow upload
       const before = { settings: db.taskRuleSettings(), custom: db.customTaskRules() };
-      const { settings, custom } = readRules(await readJson(req), {
+      const { settings, custom } = readRules(body, {
         stored: before.settings,
         customIds: new Set(before.custom.map((c) => c.id)),
         roomIds: new Set(db.listRooms().map((r) => r.id)),

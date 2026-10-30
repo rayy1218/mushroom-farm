@@ -534,7 +534,9 @@ test('rulesSaved: an own rule changed from daily to every N days, or back, cance
   assert.equal(daily.status, 'open');
   let before = sources();
   s.db.setCustomTaskRules([{ ...tank, everyDays: 7 }]);
+  s.changes.length = 0;
   s.tasks.rulesSaved(before);
+  assert.deepEqual(s.changes, [s.id], 'one save tells the room once (the daily row cancelled, the upkeep row made)');
   assert.deepEqual([s.db.getTask(daily.id).status, s.db.getTask(daily.id).reason], ['cancelled', 'Rule changed']);
   const upkeep = s.tasks.roomView(s.id).upkeep.find((r) => r.ruleKey === key);
   assert.equal(upkeep.dueDate, '2026-10-30');
