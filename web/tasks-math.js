@@ -16,7 +16,8 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const DAY_MS = 86_400_000;
 const finite = (v) => typeof v === 'number' && Number.isFinite(v);
-const grouped = (v) => v.toLocaleString('en-US', { maximumFractionDigits: 2 });
+// '12,000', '0.125': thousands grouped with a comma, at most 3 decimals (as the server writes its numbers).
+const grouped = (v) => v.toLocaleString('en-US', { maximumFractionDigits: 3 });
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 // ---- days and times ----
@@ -87,10 +88,12 @@ export function closedLine(row) {
 
 // A rule that records an amount (the harvest's kg, the bags taken out) gives its open rows a unit or a label.
 export const recordsAmount = (row) => Boolean(row?.unit || row?.amountLabel);
+// The box's label names the unit once: "kg picked" as it is, "Weight (kg)" (the unit as a whole word, so 'g' is not in "Eggs").
+const hasWord = (text, word) => new RegExp(`(?<![\\p{L}\\p{N}])${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}])`, 'iu').test(text);
 export function amountField(row) {
   const label = row.amountLabel || 'Amount';
   const unit = row.unit || null;
-  return { label: unit && !label.toLowerCase().includes(unit.toLowerCase()) ? `${label} (${unit})` : label, unit };
+  return { label: unit && !hasWord(label, unit) ? `${label} (${unit})` : label, unit };
 }
 
 // An upkeep row's due words (spec 7.1): "overdue 3 days" (amber), "due today", "due 2 Nov"; group: overdue, soon (within

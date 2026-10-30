@@ -58,6 +58,8 @@ test('a closed row says who, when, how much and why', () => {
   assert.equal(closedLine({ status: 'cancelled', closedAt: at(8, 0), reason: 'Stage changed' }), 'Cancelled at 08:00 · Stage changed');
   assert.equal(amountText({ amount: 1250, unit: 'kg' }), '1,250 kg');
   assert.equal(amountText({ amount: null, unit: 'kg' }), '');
+  assert.equal(amountText({ amount: 0.125, unit: 'kg' }), '0.125 kg', 'up to 3 decimals, like the server');
+  assert.equal(amountText({ amount: 0.1 + 0.2, unit: 'kg' }), '0.3 kg');
 });
 
 test('the amount box of a rule that records one', () => {
@@ -67,6 +69,10 @@ test('the amount box of a rule that records one', () => {
   assert.deepEqual(amountField({ unit: 'bags', amountLabel: 'Bags removed' }), { label: 'Bags removed', unit: 'bags' });
   assert.deepEqual(amountField({ unit: 'kg', amountLabel: 'Weight' }), { label: 'Weight (kg)', unit: 'kg' });
   assert.deepEqual(amountField({ unit: 'kg', amountLabel: null }), { label: 'Amount (kg)', unit: 'kg' });
+  assert.deepEqual(amountField({ unit: 'g', amountLabel: 'Eggs gathered' }), { label: 'Eggs gathered (g)', unit: 'g' }, 'the unit as a whole word, not inside one');
+  assert.deepEqual(amountField({ unit: 'kg', amountLabel: 'Picked, KG' }), { label: 'Picked, KG', unit: 'kg' });
+  assert.deepEqual(amountField({ unit: 'm³', amountLabel: 'Water in m³' }), { label: 'Water in m³', unit: 'm³' });
+  assert.deepEqual(amountField({ unit: 'm³', amountLabel: 'Water in m³s' }), { label: 'Water in m³s (m³)', unit: 'm³' });
 });
 
 test('upkeep: overdue first in words, then due within 7 days, then the rest by date', () => {
