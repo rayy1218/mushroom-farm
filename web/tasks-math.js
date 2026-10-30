@@ -271,10 +271,13 @@ export function whenWords(when) {
 }
 
 // A built-in rule's line under its text: "All crops · spawn run · every 2 days in the last 7 days of the stage · any time";
-// an upkeep rule's "Every 7 days".
+// one for any crop and stage "Every room · every day · morning"; an upkeep rule's "Every 7 days".
 export function ruleLine(rule) {
   if (rule.kind === 'upkeep') return capital(everyWords(rule.everyDays));
   const out = rule.key === 'clearOut';
+  if (!out && !rule.families?.length && !rule.stages?.length) {
+    return capital(['every room', whenWords(rule.when), SLOT_LABELS[rule.slot]?.toLowerCase()].filter(Boolean).join(' · '));
+  }
   const crops = out ? 'after the last flush' : rule.families?.length ? rule.families.map((f) => FAMILY_WORDS[f] ?? f).join(', ') : 'all crops';
   const stages = out ? null : rule.stages?.length ? rule.stages.map((s) => (STAGES[s] ?? s).toLowerCase()).join(', ') : 'all stages';
   return capital([crops, stages, whenWords(rule.when), SLOT_LABELS[rule.slot]?.toLowerCase()].filter(Boolean).join(' · '));

@@ -50,7 +50,8 @@ test('the interval hint says how long the Live charts\' 50 readings span at the 
 
 import { parseWorkerName, workersAfter, parseEveryDays, parseCustomRule, WORKER_MAX } from '../web/settings-math.js';
 
-// The texts are the server's (PUT /api/workers, PUT /api/task-rules), so a refusal reads the same from either.
+// Most texts are the server's (PUT /api/workers, PUT /api/task-rules), so a refusal reads the same from either; 'That name
+// is taken', 'Pick at least one room' and 'Pick a time of day' are the form's own (the server's refusals differ).
 test('Workers: a name is 1 to 40 characters and not taken; the whole list the PUT sends', () => {
   const list = [{ id: 1, name: 'Siti', active: true }, { id: 2, name: 'Ali', active: false }];
   assert.deepEqual(parseWorkerName('  Ah Kow ', list), { value: 'Ah Kow' });
@@ -71,7 +72,7 @@ test('Workers: a name is 1 to 40 characters and not taken; the whole list the PU
 
 test("Task rules: an upkeep interval of 1 to 365 days; the owner's own rule", () => {
   assert.deepEqual(parseEveryDays(' 7 '), { value: 7 });
-  for (const t of ['', '0', '366', '2.5', 'x']) assert.deepEqual(parseEveryDays(t), { error: 'A whole number from 1 to 365 days' }, t);
+  for (const t of ['', '0', '366', '2.5', 'x']) assert.deepEqual(parseEveryDays(t), { error: 'Interval must be a whole number from 1 to 365 days' }, t);
   assert.deepEqual(parseCustomRule({ text: ' Check the drain ', allRooms: true, rooms: [], often: 'daily', everyDays: '', slot: 'morning' }),
     { value: { text: 'Check the drain', rooms: null, everyDays: null, slot: 'morning', enabled: true } });
   assert.deepEqual(parseCustomRule({ text: 'Check the drain', allRooms: false, rooms: [2, 3], often: 'every', everyDays: '14', slot: 'any' }),
@@ -79,7 +80,7 @@ test("Task rules: an upkeep interval of 1 to 365 days; the owner's own rule", ()
   assert.deepEqual(parseCustomRule({ text: 'Check the drain', allRooms: false, rooms: [2, 2, 3], often: 'daily', everyDays: '', slot: 'any' }).value.rooms,
     [2, 3], 'a room once (the server refuses a list with a room twice)');
   assert.deepEqual(parseCustomRule({ text: '', allRooms: false, rooms: [], often: 'every', everyDays: '0', slot: 'any' }),
-    { errors: { text: 'Say what to do (1 to 120 characters)', rooms: 'Pick at least one room', everyDays: 'A whole number from 1 to 365 days' } });
+    { errors: { text: 'Say what to do (1 to 120 characters)', rooms: 'Pick at least one room', everyDays: 'Interval must be a whole number from 1 to 365 days' } });
   assert.deepEqual(parseCustomRule({ text: 'x'.repeat(121), allRooms: true, rooms: [], often: 'daily', everyDays: '', slot: 'night' }).errors,
     { text: 'Say what to do (1 to 120 characters)', slot: 'Pick a time of day' });
   assert.deepEqual(parseCustomRule({ text: 'Check the drain', allRooms: false, rooms: null, often: 'daily', everyDays: '', slot: 'any' }).errors,

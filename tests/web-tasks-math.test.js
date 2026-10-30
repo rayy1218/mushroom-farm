@@ -233,7 +233,10 @@ test('a rule in words for the Task rules card', () => {
   assert.equal(whenWords('last'), 'last day of the stage');
   assert.equal(whenWords({ every: 2, lastDays: 7 }), 'every 2 days in the last 7 days of the stage');
   assert.equal(whenWords({ every: 2, lastDays: null }), 'every 2 days');
-  assert.equal(ruleLine({ key: 'contamWalk', kind: 'daily', families: null, stages: null, when: 'daily', slot: 'morning' }), 'All crops · all stages · every day · morning');
+  assert.equal(ruleLine({ key: 'contamWalk', kind: 'daily', families: null, stages: null, when: 'daily', slot: 'morning' }), 'Every room · every day · morning');
+  assert.equal(ruleLine({ key: 'footbath', kind: 'daily', families: null, stages: null, when: 'daily', slot: 'morning' }), 'Every room · every day · morning');
+  assert.equal(ruleLine({ key: 'floorClean', kind: 'daily', families: null, stages: null, when: 'daily', slot: 'afternoon' }), 'Every room · every day · afternoon');
+  assert.equal(ruleLine({ key: 'x', kind: 'daily', families: ['oyster'], stages: null, when: 'daily', slot: 'any' }), 'Oyster · all stages · every day · any time');
   assert.equal(ruleLine({ key: 'colonisedCheck', kind: 'daily', families: null, stages: ['spawn'], when: { every: 2, lastDays: 7 }, slot: 'any' }),
     'All crops · spawn run · every 2 days in the last 7 days of the stage · any time');
   assert.equal(ruleLine({ key: 'openBags', kind: 'daily', families: ['oyster', 'woodear', 'lionsmane', 'reishi'], stages: ['pinning'], when: 'first', slot: 'morning' }),
