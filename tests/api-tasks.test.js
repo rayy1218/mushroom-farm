@@ -135,3 +135,93 @@ test('Plan this: a suggestion that is not one is 400 with the field', async (t) 
   assert.equal(noMoney.status, 201);
   assert.deepEqual([noMoney.body.rows[0].source.rmMonth, noMoney.body.rows[0].source.suggestedAt], [null, null]);
 });
+
+test('Done: who did it and the amount kept; done twice is 409 with who and when, and so is a Skip after it', async (t) => {
+  const { call } = await app(t);
+  const id = await fruitingRoom(call);
+  const harvest = byRule((await tasksOf(call, id)).today, 'harvestAm');
+  assert.equal(harvest.unit, 'kg');
+  const done = await call('POST', `/api/tasks/${harvest.id}/done`, { worker: '  Ali ', amount: 3.5 });
+  assert.equal(done.status, 200);
+  assert.deepEqual([done.body.id, done.body.status, done.body.worker, done.body.amount, done.body.unit], [harvest.id, 'done', 'Ali', 3.5, 'kg']);
+  assert.equal(typeof done.body.closedAt, 'number');
+  const already = { status: 409, body: { error: `Already done by Ali at ${hhmm(done.body.closedAt)}` } };
+  assert.deepEqual(await call('POST', `/api/tasks/${harvest.id}/done`, { worker: 'Siti' }), already);
+  assert.deepEqual(await call('POST', `/api/tasks/${harvest.id}/skip`, { worker: 'Siti', reason: 'Rain' }), already);
+  const pm = byRule((await tasksOf(call, id)).today, 'harvestPm');
+  const empty = await call('POST', `/api/tasks/${pm.id}/done`, { worker: 'Siti', amount: '' }); // the amount may be left empty
+  assert.deepEqual([empty.status, empty.body.amount], [200, null]);
+});
+
+test('Done and Skip need a worker name of up to 40 characters; the amount is a number from 0 to 10,000; no such task is 404', async (t) => {
+  const { call } = await app(t);
+  const id = await fruitingRoom(call);
+  const view = await tasksOf(call, id);
+  const am = byRule(view.today, 'harvestAm');
+  const pm = byRule(view.today, 'harvestPm');
+  for (const body of [{}, { worker: '' }, { worker: '   ' }, { worker: 7 }, { worker: 'A\u0001li' }]) {
+    assert.deepEqual(await call('POST', `/api/tasks/${am.id}/done`, body), { status: 400, body: { error: 'Pick who did it', field: 'worker' } });
+  }
+  assert.deepEqual(await call('POST', `/api/tasks/${am.id}/skip`, { reason: 'Rain' }), { status: 400, body: { error: 'Pick who did it', field: 'worker' } });
+  assert.deepEqual(await call('POST', `/api/tasks/${am.id}/done`, { worker: 'A'.repeat(41) }), {
+    status: 400, body: { error: 'The name must be at most 40 characters', field: 'worker' },
+  });
+  for (const amount of [-0.1, 10_000.5, '3', true]) {
+    assert.deepEqual(await call('POST', `/api/tasks/${am.id}/done`, { worker: 'Ali', amount }), {
+      status: 400, body: { error: 'The amount must be a number from 0 to 10,000', field: 'amount' },
+    });
+  }
+  assert.deepEqual(await call('POST', `/api/tasks/${am.id}/done`, []), { status: 400, body: { error: 'Body must be a JSON object' } });
+  assert.equal((await call('POST', `/api/tasks/${am.id}/done`, { worker: 'Ali', amount: 0 })).body.amount, 0);
+  assert.equal((await call('POST', `/api/tasks/${pm.id}/done`, { worker: 'A'.repeat(40), amount: 10_000 })).body.amount, 10_000);
+  assert.deepEqual(await call('POST', '/api/tasks/99999/done', { worker: 'Ali' }), { status: 404, body: { error: 'Task not found' } });
+  assert.deepEqual(await call('GET', `/api/tasks/${am.id}/done`), { status: 404, body: { error: 'Not found' } });
+});
+
+test('Skip needs a reason; a skipped upkeep row brings the next, due its interval later; a long-term row is not skipped', async (t) => {
+  const { call } = await app(t);
+  const id = await fruitingRoom(call);
+  const view = await tasksOf(call, id);
+  const traps = byRule(view.upkeep, 'flyTraps');
+  for (const reason of [undefined, '', '  ', 3]) {
+    assert.deepEqual(await call('POST', `/api/tasks/${traps.id}/skip`, { worker: 'Ali', reason }), { status: 400, body: { error: 'Say why', field: 'reason' } });
+  }
+  assert.deepEqual(await call('POST', `/api/tasks/${traps.id}/skip`, { worker: 'Ali', reason: 'x'.repeat(201) }), {
+    status: 400, body: { error: 'The reason must be at most 200 characters', field: 'reason' },
+  });
+  const skipped = await call('POST', `/api/tasks/${traps.id}/skip`, { worker: 'Ali', reason: ' No traps in stock ' });
+  assert.equal(skipped.status, 200);
+  assert.deepEqual([skipped.body.status, skipped.body.worker, skipped.body.reason], ['skipped', 'Ali', 'No traps in stock']);
+  const next = byRule((await tasksOf(call, id)).upkeep, 'flyTraps');
+  assert.notEqual(next.id, traps.id);
+  assert.equal(next.status, 'open');
+  assert.equal(next.dueDate, addDays(view.date, 7));
+  const own = (await call('POST', `/api/rooms/${id}/tasks`, { text: 'Fix the door seal' })).body.rows[0];
+  assert.deepEqual(await call('POST', `/api/tasks/${own.id}/skip`, { worker: 'Ali', reason: 'Later' }), {
+    status: 400, body: { error: 'A long-term task is done or cancelled, not skipped' },
+  });
+});
+
+test('Cancel: long-term only, with a reason; Done also closes a long-term row', async (t) => {
+  const { call } = await app(t);
+  const id = await fruitingRoom(call);
+  const add = async (text) => (await call('POST', `/api/rooms/${id}/tasks`, { text })).body.rows[0];
+  const seal = await add('Fix the door seal');
+  for (const body of [{}, { reason: '' }, { reason: '   ' }]) {
+    assert.deepEqual(await call('POST', `/api/tasks/${seal.id}/cancel`, body), { status: 400, body: { error: 'Say why', field: 'reason' } });
+  }
+  const cancelled = await call('POST', `/api/tasks/${seal.id}/cancel`, { reason: 'The landlord fixed it' });
+  assert.equal(cancelled.status, 200);
+  assert.deepEqual([cancelled.body.status, cancelled.body.reason], ['cancelled', 'The landlord fixed it']);
+  assert.deepEqual(await call('POST', `/api/tasks/${seal.id}/cancel`, { reason: 'Twice' }), {
+    status: 409, body: { error: `Already cancelled at ${hhmm(cancelled.body.closedAt)}` },
+  });
+  const walk = byRule((await tasksOf(call, id)).today, 'contamWalk');
+  assert.deepEqual(await call('POST', `/api/tasks/${walk.id}/cancel`, { reason: 'No time' }), {
+    status: 400, body: { error: 'Only a long-term task can be cancelled' },
+  });
+  const paint = await add('Paint the walls');
+  const done = await call('POST', `/api/tasks/${paint.id}/done`, { worker: 'Siti' });
+  assert.deepEqual([done.status, done.body.status, done.body.worker], [200, 'done', 'Siti']);
+  assert.deepEqual((await tasksOf(call, id)).longterm, []);
+});

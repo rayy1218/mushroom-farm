@@ -3,6 +3,7 @@
 // /api/workers and /api/task-rules. server/tasks.js makes and closes the rows; this checks what the pages send.
 
 const ROOM_TASKS = /^\/api\/rooms\/([1-9][0-9]{0,14})\/tasks$/;
+const TASK_ACTION = /^\/api\/tasks\/([1-9][0-9]{0,14})\/(done|skip|cancel)$/;
 
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
@@ -36,6 +37,16 @@ export function createTaskRoutes({ db, tasks }) {
       const body = await readBody();
       const rows = 'suggestion' in body ? tasks.addFromSuggestion(id, body.suggestion) : [tasks.addLongterm(id, body)];
       send(res, 201, { rows });
+      return true;
+    }
+    const action = TASK_ACTION.exec(path);
+    if (action) {
+      if (req.method !== 'POST') throw notFound();
+      // Done { worker, amount? }, Skip { worker, reason }, Cancel { reason }: server/tasks.js checks them, the row (404),
+      // that it is still open (409 with who and when) and that the action fits its kind.
+      const id = Number(action[1]);
+      const body = await readBody();
+      send(res, 200, tasks[action[2]](id, body));
       return true;
     }
     return false;
