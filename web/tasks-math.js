@@ -5,6 +5,7 @@
 
 import { STAGES } from './crops.js';
 import { monthly } from './suggest-math.js';
+import { BTU_PER_W } from './simulate-math.js';
 import { fieldTexts, parseRoomFields, roomBody } from './room-fields.js';
 
 export const FARM_TZ = 'Asia/Kuala_Lumpur';
@@ -143,9 +144,10 @@ export function changeText({ key, from, to }) {
   return none(to) ? `${name} ${value(from)} ${unit} → none` : `${name} ${value(from)} → ${value(to)} ${unit}`;
 }
 
-// The machines of a setup that differ from the room's now, in the order fan, aircon, humidifier, dehumidifier (0 = none).
+// The machines of a setup that differ from the room's now, in the order fan, aircon, humidifier, dehumidifier (0 = none). A
+// machine either side does not know (not a number) is no change; only the dehumidifier's missing value means none.
 export function machineChanges(now, next) {
-  const v = (m, k) => (k === 'dehumidifierLday' ? (Number(m?.[k]) > 0 ? Number(m[k]) : 0) : Number(m?.[k]));
+  const v = (m, k) => (k === 'dehumidifierLday' ? (finite(m?.[k]) && m[k] > 0 ? m[k] : 0) : finite(m?.[k]) ? m[k] : NaN);
   return MACHINE_ORDER.filter((k) => Number.isFinite(v(now, k)) && Number.isFinite(v(next, k)) && v(now, k) !== v(next, k)).map((k) => {
     const change = { key: k, from: v(now, k), to: v(next, k) };
     return { ...change, text: changeText(change) };
@@ -172,7 +174,7 @@ export function planOf(result, index, prices, suggestedAt) {
 
 // ---- Done on a long-term machine task (spec 7.5) ----
 
-export const BTU_PER_W = 11.25; // the class rule Simulate uses between Setup's rated input and the aircon's BTU/h
+// Setup's aircon rated input for a BTU/h, by the class rule Simulate uses (BTU_PER_W), to 10 W.
 export const acInputOf = (btu) => Math.round(btu / BTU_PER_W / 10) * 10;
 
 const field = (name, label, unit, kind, before, after) => ({ name, label, unit, kind, before, after });
@@ -236,10 +238,11 @@ export function checkLongterm({ text, note }) {
 
 // ---- the Log ----
 
-// A closed row as the Log shows it: { id, date, time, task, status, tone, worker, amount, reason }.
+// A closed row as the Log shows it: { id, date, time, task, status, tone, worker, amount, reason }. A missed row shows its own
+// day and no time (its closedAt is when the server noticed, maybe days later).
 export function logLine(row) {
   const when = finite(row.closedAt) ? row.closedAt : row.createdAt;
-  const at = finite(when) ? farmParts(when) : null;
+  const at = row.status === 'missed' && row.date ? { date: row.date, time: '' } : finite(when) ? farmParts(when) : null;
   return {
     id: row.id, date: at ? dayMonth(at.date) : '', time: at ? at.time : '', task: row.text, status: STATUS_WORDS[row.status] ?? row.status,
     tone: row.status === 'done' ? 'good' : row.status === 'missed' ? 'amber' : 'none', worker: row.worker ?? '', amount: amountText(row), reason: row.reason ?? '',

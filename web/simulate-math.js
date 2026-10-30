@@ -102,7 +102,7 @@ export const fixStage = (farmType, stage) => (stagesOf(farmType).includes(stage)
 // The machines of step 1 (the rest of PHYSICS_FIELDS describe the building, the weather and the filter).
 export const MACHINE_KEYS = ['fanFlow', 'acBTU', 'humidifierLH', 'dehumidifierLday'];
 const MACHINE_NAMES = { fanFlow: 'fan flow', acBTU: 'aircon', humidifierLH: 'humidifier' };
-const BTU_PER_W = 11.25;
+export const BTU_PER_W = 11.25; // the class rule between Setup's aircon rated input (W) and its BTU/h
 const defOf = (key) => PHYSICS_FIELDS.find((f) => f.key === key).def;
 const listed = (parts) => (parts.length < 2 ? parts.join('') : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`);
 const capital = (text) => text.charAt(0).toUpperCase() + text.slice(1);

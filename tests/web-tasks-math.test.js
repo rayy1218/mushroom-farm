@@ -203,4 +203,24 @@ test('the Log: the last 14 days, each line with its time, status, who, amount an
   assert.deepEqual(logRows(rows, now, true).map((l) => l.id), [9, 8]);
   assert.deepEqual(logLine(rows[0]), { id: 9, date: '30 Oct', time: '11:00', task: 'Harvest check', status: 'Done', tone: 'good', worker: 'Ali', amount: '3.5 kg', reason: '' });
   assert.equal(logLine(rows[1]).tone, 'amber');
+  const missed = { id: 7, text: 'Footbath', status: 'missed', date: '2026-10-29', closedAt: at(0, 30, 31), worker: null, amount: null, unit: null, reason: null };
+  assert.deepEqual([logLine(missed).date, logLine(missed).time], ['29 Oct', ''], "a missed row is its own day's, not the day the server noticed it");
+});
+
+test('a machine the baseline does not know is no change (only the dehumidifier has 0 = none)', () => {
+  const next = { fanFlow: 200, acBTU: 12000, humidifierLH: 1, dehumidifierLday: 10 };
+  assert.deepEqual(machineChanges({ fanFlow: null, acBTU: undefined, humidifierLH: 1, dehumidifierLday: null }, next).map((c) => [c.key, c.from, c.to]), [['dehumidifierLday', 0, 10]]);
+});
+
+test('the aircon class rule is the one Simulate uses, up to the 60,000 BTU/h class', async () => {
+  const sim = await import('../web/simulate-math.js');
+  const { AC_CLASSES, acClassOf } = await import('../web/simulation-math.js');
+  const { readFileSync } = await import('node:fs');
+  assert.equal(sim.BTU_PER_W, 11.25);
+  assert.match(readFileSync(new URL('../web/tasks-math.js', import.meta.url), 'utf8'), /import \{ BTU_PER_W \} from '\.\/simulate-math\.js';/);
+  assert.equal(AC_CLASSES.at(-1), 60000, "as server/sizing.js's AC_SIZES");
+  assert.equal(acClassOf(60000), 60000);
+  for (const btu of [9000, 12000, 48000, 60000]) {
+    assert.equal(sim.roomMachines({ room: { acInputW: acInputOf(btu), humidifierLH: 2 } }).machines.acBTU, btu, `${btu} BTU/h → ${acInputOf(btu)} W → back`);
+  }
 });
