@@ -228,22 +228,26 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
 
     // After the owner's rules are saved (before: { settings, custom } as they were): a rule whose interval changed has its
     // open upkeep rows due again by upkeepDue; an own rule changed from daily to every N days has today's open daily rows
-    // cancelled 'Rule changed', and one changed back its open upkeep row; then ensureAll makes what the rules now want.
+    // cancelled 'Rule changed', and one changed back its open upkeep row; an own rule removed has its open upkeep row and
+    // today's open daily rows cancelled 'Rule removed' (never opened again); then ensureAll makes what the rules now want.
     rulesSaved(before, date = today()) {
       const was = intervals(before);
       const is = intervals(ruleSources());
       const at = now();
       for (const room of db.listRooms()) {
         let changed = false;
+        const cancel = (row, reason) => db.closeTask(row.id, { status: 'cancelled', at, reason });
         for (const row of db.openTasks(room.id, 'upkeep')) {
-          if (!was.has(row.ruleKey) || !is.has(row.ruleKey)) continue; // a removed own rule's row stays
+          if (!was.has(row.ruleKey)) continue;
           const [from, to] = [was.get(row.ruleKey), is.get(row.ruleKey)];
-          if (to === null) changed = db.closeTask(row.id, { status: 'cancelled', at, reason: 'Rule changed' }) || changed;
+          if (to === undefined) changed = cancel(row, 'Rule removed') || changed;
+          else if (to === null) changed = cancel(row, 'Rule changed') || changed;
           else if (to !== from) changed = db.setTaskDue(row.id, upkeepDue(room.id, row.ruleKey, to, date)) || changed;
         }
         for (const row of db.dailyTasks(room.id, date)) {
-          if (row.status !== 'open' || was.get(row.ruleKey) !== null || !(is.get(row.ruleKey) > 0)) continue; // own, daily → every N
-          changed = db.closeTask(row.id, { status: 'cancelled', at, reason: 'Rule changed' }) || changed;
+          if (row.status !== 'open' || was.get(row.ruleKey) !== null) continue; // an own daily rule's open row
+          if (!is.has(row.ruleKey)) changed = cancel(row, 'Rule removed') || changed;
+          else if (is.get(row.ruleKey) !== null) changed = cancel(row, 'Rule changed') || changed;
         }
         if (changed) tell(room.id);
       }

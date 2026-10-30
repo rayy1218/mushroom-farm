@@ -544,3 +544,18 @@ test('rulesSaved: an own rule changed from daily to every N days, or back, cance
   assert.deepEqual([s.db.getTask(upkeep.id).status, s.db.getTask(upkeep.id).reason], ['cancelled', 'Rule changed']);
   assert.equal(s.row(key).status, 'open'); // daily again: today's row opens again
 });
+
+test('rulesSaved: an own rule removed cancels its open upkeep row and today\'s open daily row "Rule removed"', (t) => {
+  const s = setup(t);
+  const [tank, shelves] = s.db.setCustomTaskRules([
+    { text: 'Check the water tank', rooms: null, everyDays: null, slot: 'morning', enabled: true },
+    { text: 'Wipe the shelves', rooms: null, everyDays: 14, slot: 'any', enabled: true },
+  ]);
+  const daily = s.row(`custom:${tank.id}`);
+  const upkeep = s.tasks.roomView(s.id).upkeep.find((r) => r.ruleKey === `custom:${shelves.id}`);
+  const before = { settings: s.db.taskRuleSettings(), custom: s.db.customTaskRules() };
+  s.db.setCustomTaskRules([]);
+  s.tasks.rulesSaved(before);
+  for (const id of [daily.id, upkeep.id]) assert.deepEqual([s.db.getTask(id).status, s.db.getTask(id).reason], ['cancelled', 'Rule removed']);
+  assert.deepEqual(s.tasks.roomView(s.id).upkeep.filter((r) => r.ruleKey.startsWith('custom:')), []);
+});
