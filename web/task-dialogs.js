@@ -3,6 +3,7 @@
 // long-term task, Done on a long-term machine task with the Setup update, and Plan this. One dialog, made on first use and
 // shared, like the Simulate stepper.
 //   createTaskActions({ onChanged(row | null), onError(text) }) → { done(row), skip(row), cancel(row), add(roomId), destroy() }
+//   (done, skip and cancel end, after their dialog closes, with true when something changed: the list will be asked again)
 //   createWorkerPicker() → { node, destroy() } · openPlanDialog({ roomId, roomName, rank, plan, onPlanned(rows) })
 //   getWorker() · setWorker(name) · loadWorkers() → names · closeTaskDialog()
 
@@ -117,7 +118,8 @@ export function closeTaskDialog() {
 // | 'area' | 'select' | 'check', value, options ([value, label]), hint }]; buttons: [{ value, label, primary }] after the
 // close button (closeLabel; Close when there are no buttons). submit(values, which) → true (closes), or { field, message }
 // or { message } to show while it stays open; onLost(message): a failure that came back after the dialog was closed or
-// replaced. → { input(name), button(value), alive() } (alive: this opening still shows).
+// replaced. → { input(name), button(value), alive(), closed } (alive: this opening still shows; closed: a promise kept when
+// it is closed or replaced).
 function openForm({ title, lead = [], fields = [], buttons = [], closeLabel = buttons.length ? 'Cancel' : 'Close', submit, onLost }) {
   const d = ensureDialog();
   if (d.open) d.close();
@@ -240,9 +242,18 @@ function openForm({ title, lead = [], fields = [], buttons = [], closeLabel = bu
   });
   close.addEventListener('click', () => d.close());
   d.oncancel = (event) => { if (busy) event.preventDefault(); }; // Esc while sending: the answer would have nowhere to show
+  // The close event comes a moment later: the one of the opening this replaced finds this one open, and is not ours.
+  const closed = new Promise((resolve) => {
+    const onClose = () => {
+      if (d.open && alive()) return;
+      d.removeEventListener('close', onClose);
+      resolve();
+    };
+    d.addEventListener('close', onClose);
+  });
   d.showModal();
   (fields.length ? inputs.get(fields[0].name) : heading).focus();
-  return { input: (name) => inputs.get(name), button: (value) => sends.find((b) => b.value === value), alive: () => alive() && d.open };
+  return { input: (name) => inputs.get(name), button: (value) => sends.find((b) => b.value === value), alive: () => alive() && d.open, closed };
 }
 
 // ---- Done, Skip, Cancel, Add ----
@@ -251,6 +262,8 @@ export function createTaskActions({ onChanged, onError }) {
   let alive = true;
   let names = null; // the workers' names, read on the first need
   const pending = new Set(); // the rows being sent or asked about: a second tap meanwhile does nothing
+  let changes = 0; // onChanged calls so far: an action that saw one ends with true
+  const changed = (row) => { changes++; onChanged?.(row); };
   // Its dialogs: a failure that comes back after one was closed is said where the page says the others.
   const ask = (options) => openForm({ ...options, onLost: (text) => { if (alive) onError?.(text); } });
 
@@ -267,16 +280,19 @@ export function createTaskActions({ onChanged, onError }) {
     return names;
   }
 
-  // done and skip once at a time per row: a double tap of one-tap Done would otherwise send twice, and the second's 409
-  // would show the worker their own tap as someone else's.
+  // done, skip and cancel once at a time per row: a double tap of one-tap Done would otherwise send twice, and the second's
+  // 409 would show the worker their own tap as someone else's. → true when something changed meanwhile (the row's buttons
+  // stay held until the list repaints), false when nothing did (they let go).
   const once = (action) => async (row) => {
-    if (pending.has(row.id)) return;
+    if (pending.has(row.id)) return false;
     pending.add(row.id);
+    const before = changes;
     try {
       await action(row);
     } finally {
       pending.delete(row.id);
     }
+    return changes !== before;
   };
   const workerField = (list) => ({
     name: 'worker', label: 'Who did it', kind: 'select', value: list.includes(getWorker()) ? getWorker() : '',
@@ -302,10 +318,10 @@ export function createTaskActions({ onChanged, onError }) {
   async function send(path, body) {
     try {
       const row = await request('POST', path, body, COMMAND_TIMEOUT);
-      if (alive) onChanged?.(row);
+      if (alive) changed(row);
       return true;
     } catch (err) {
-      if (alive && (err.status === 409 || err.status === 404)) onChanged?.(null);
+      if (alive && (err.status === 409 || err.status === 404)) changed(null);
       return err.status === 400 && err.field ? { field: err.field, message: err.message } : { message: errorText(err) };
     }
   }
@@ -322,7 +338,7 @@ export function createTaskActions({ onChanged, onError }) {
       return;
     }
     const amount = recordsAmount(row) ? amountField(row) : null;
-    ask({
+    const form = ask({
       title: 'Mark done',
       lead: leadOf(row, list),
       fields: [workerField(list), ...(amount ? [{ name: 'amount', label: amount.label, kind: 'number', value: '', hint: 'Leave it empty if it was not weighed or counted.' }] : [])],
@@ -339,12 +355,13 @@ export function createTaskActions({ onChanged, onError }) {
         return send(`/api/tasks/${row.id}/done`, { worker: w, ...(a === null ? {} : { amount: a }) });
       },
     });
+    await form.closed;
   }
 
   async function skip(row) {
     const list = await workers();
     if (!list || !alive) return;
-    ask({
+    await ask({
       title: 'Skip this task',
       lead: leadOf(row, list),
       fields: [workerField(list), { name: 'reason', label: 'Why', kind: 'text', value: '' }],
@@ -356,11 +373,11 @@ export function createTaskActions({ onChanged, onError }) {
         if (r.error) return { field: 'reason', message: r.error };
         return send(`/api/tasks/${row.id}/skip`, { worker: w, reason: r.value });
       },
-    });
+    }).closed;
   }
 
-  function cancel(row) {
-    ask({
+  async function cancel(row) {
+    await ask({
       title: 'Cancel this task',
       lead: [row.text, 'It stays in the log as cancelled, with the reason.'],
       fields: [{ name: 'reason', label: 'Why', kind: 'text', value: '' }],
@@ -371,7 +388,7 @@ export function createTaskActions({ onChanged, onError }) {
         if (r.error) return { field: 'reason', message: r.error };
         return send(`/api/tasks/${row.id}/cancel`, { reason: r.value });
       },
-    });
+    }).closed;
   }
 
   function add(roomId) {
@@ -388,7 +405,7 @@ export function createTaskActions({ onChanged, onError }) {
         }
         try {
           const data = await request('POST', `/api/rooms/${roomId}/tasks`, { text: c.values.text, ...(c.values.note ? { note: c.values.note } : {}) }, COMMAND_TIMEOUT);
-          if (alive) onChanged?.(data?.rows?.[0] ?? null);
+          if (alive) changed(data?.rows?.[0] ?? null);
           return true;
         } catch (err) {
           return err.status === 400 && err.field ? { field: err.field, message: err.message } : { message: errorText(err) };
@@ -417,10 +434,10 @@ export function createTaskActions({ onChanged, onError }) {
       return send(`/api/tasks/${row.id}/done`, { worker: w });
     };
     if (!update) {
-      ask({
+      await ask({
         title: 'Mark done', lead: leadOf(row, list, ['Setup keeps no fan flow, so Done only records the change.']),
         fields: [workerField(list)], buttons: [{ value: 'done', label: 'Done', primary: true }], submit: mark,
-      });
+      }).closed;
       return;
     }
     let saved = false; // Setup was saved in this dialog: a second try only marks the task done
@@ -454,10 +471,11 @@ export function createTaskActions({ onChanged, onError }) {
         return r !== true && saved ? { message: `Setup saved. Marking the task done failed: ${r.message}` } : r;
       },
     });
+    await form.closed;
   }
 
   return {
-    done: once(done), skip: once(skip), cancel, add,
+    done: once(done), skip: once(skip), cancel: once(cancel), add,
     destroy() {
       alive = false;
       closeTaskDialog();

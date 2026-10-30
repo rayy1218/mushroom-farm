@@ -32,7 +32,7 @@ test('Skip asks who and why; Cancel (long-term) asks why; Add posts a text and a
 });
 
 test('a 409 or 404 asks for the list again (someone else closed it); the message stays in the dialog', () => {
-  has('if (alive && (err.status === 409 || err.status === 404)) onChanged?.(null);');
+  has('if (alive && (err.status === 409 || err.status === 404)) changed(null);');
 });
 
 test('a long-term machine task: Save and mark done saves Setup first and marks it done only when that worked', () => {
@@ -135,4 +135,21 @@ test('the picker that could not read the names reads them again when the live st
   has("import { live } from './live.js';");
   has('const offStatus = live.onStatus((up) => { if (up && failed && alive && !loading) load(); });');
   has('offStatus();');
+});
+
+test("Done, Skip and Cancel end with whether anything changed, so the row's held buttons let go when nothing did", async (t) => {
+  let fail = false;
+  stubs(t, async (path) => {
+    if (path === '/api/workers') return json({ workers: [{ id: 1, name: 'Ali', active: true }] });
+    if (fail) throw new TypeError('fetch failed');
+    return json({ ...ROW, status: 'done', worker: 'Ali' });
+  });
+  const { createTaskActions } = await import('../web/task-dialogs.js');
+  const actions = createTaskActions({ onChanged: () => {}, onError: () => {} });
+  assert.equal(await actions.done(ROW), true, 'sent: the list repaints');
+  fail = true;
+  assert.equal(await actions.done(ROW), false, 'not sent: the buttons let go');
+  has('return changes !== before;');
+  has("const form = ask({\n      title: 'Mark done',");
+  has('await form.closed;');
 });
