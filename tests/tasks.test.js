@@ -195,3 +195,75 @@ test('an upkeep rule without an open row is due everyDays after its last done, b
   const late = s.tasks.roomView(s.id).upkeep.find((r) => r.ruleKey === 'flyTraps');
   assert.deepEqual([late.dueDate, late.overdueDays], ['2027-08-20', 0]);
 });
+
+test('done: who did it, the amount, and a second close refused with who and when', (t) => {
+  const s = setup(t);
+  const harvest = s.tasks.roomView(s.id).today.find((r) => r.ruleKey === 'harvestAm');
+  refused(() => s.tasks.done(harvest.id, { worker: '  ' }), 400, 'Pick who did it', 'worker');
+  refused(() => s.tasks.done(harvest.id, { worker: 'Ali', amount: -1 }), 400, 'The amount must be a number from 0 to 10,000', 'amount');
+  refused(() => s.tasks.done(harvest.id, { worker: 'Ali', amount: 10_001 }), 400, 'The amount must be a number from 0 to 10,000', 'amount');
+  refused(() => s.tasks.done(harvest.id, { worker: 'Ali', amount: '3' }), 400, 'The amount must be a number from 0 to 10,000', 'amount');
+  s.set('2026-10-30T09:12:40+08:00');
+  const row = s.tasks.done(harvest.id, { worker: ' Ali ', amount: 12.5 });
+  assert.deepEqual([row.status, row.worker, row.amount, row.unit, row.closedAt, row.amountLabel],
+    ['done', 'Ali', 12.5, 'kg', at('2026-10-30T09:12:40+08:00'), null]);
+  refused(() => s.tasks.done(harvest.id, { worker: 'Siti' }), 409, 'Already done by Ali at 09:12', undefined);
+  refused(() => s.tasks.skip(harvest.id, { worker: 'Siti', reason: 'x' }), 409, 'Already done by Ali at 09:12', undefined);
+  refused(() => s.tasks.done(99_999, { worker: 'Ali' }), 404, 'Task not found', undefined);
+  assert.equal(s.changes.at(-1), s.id, 'a close is a change');
+  // an amount on a row that records none is not kept; an empty amount is none
+  assert.equal(s.tasks.done(s.row('footbath').id, { worker: 'Ali', amount: 3 }).amount, null);
+  assert.equal(s.tasks.done(s.row('harvestPm').id, { worker: 'Ali', amount: '' }).amount, null);
+});
+
+test('skip needs who and why; long-term rows are cancelled, not skipped; only they are cancelled', (t) => {
+  const s = setup(t);
+  const walk = s.row('contamWalk');
+  refused(() => s.tasks.skip(walk.id, { worker: 'Ali', reason: ' ' }), 400, 'Say why', 'reason');
+  refused(() => s.tasks.skip(walk.id, { reason: 'No bags' }), 400, 'Pick who did it', 'worker');
+  refused(() => s.tasks.cancel(walk.id, { reason: 'x' }), 400, 'Only a long-term task can be cancelled', undefined);
+  const skipped = s.tasks.skip(walk.id, { worker: 'Siti', reason: 'Room sealed for fogging' });
+  assert.deepEqual([skipped.status, skipped.worker, skipped.reason], ['skipped', 'Siti', 'Room sealed for fogging']);
+  const own = s.db.insertLongtermTask({ roomId: s.id, text: 'Seal the door gap', at: at('2026-10-30T08:00:00+08:00') });
+  refused(() => s.tasks.skip(own.id, { worker: 'Ali', reason: 'x' }), 400, 'A long-term task is done or cancelled, not skipped', undefined);
+  refused(() => s.tasks.cancel(own.id, {}), 400, 'Say why', 'reason');
+  s.set('2026-10-30T10:05:00+08:00');
+  assert.equal(s.tasks.cancel(own.id, { reason: 'Done by the landlord' }).status, 'cancelled');
+  refused(() => s.tasks.cancel(own.id, { reason: 'again' }), 409, 'Already cancelled at 10:05', undefined);
+});
+
+test('upkeep: the next row comes everyDays after a done or a skip; overdue counts in days', (t) => {
+  const s = setup(t);
+  const first = s.tasks.roomView(s.id).upkeep.find((r) => r.ruleKey === 'acFilter');
+  s.set('2026-11-02T15:00:00+08:00'); // 3 days late
+  let v = s.tasks.roomView(s.id);
+  assert.equal(v.upkeep.find((r) => r.ruleKey === 'acFilter').overdueDays, 3);
+  assert.equal(v.counts.overdue, 6);
+  s.tasks.done(first.id, { worker: 'Ali' });
+  v = s.tasks.roomView(s.id);
+  const next = v.upkeep.find((r) => r.ruleKey === 'acFilter');
+  assert.deepEqual([next.dueDate, next.overdueDays, next.status], ['2026-11-09', 0, 'open']);
+  assert.equal(v.upkeep.at(-1).ruleKey, 'acFilter', 'sorted by due time: the later one last');
+  assert.equal(v.counts.due, 6 + 5, 'the daily rows and the 5 overdue upkeep rows, not the one due later');
+  s.set('2026-11-09T08:00:00+08:00');
+  const skipped = s.tasks.skip(next.id, { worker: 'Siti', reason: 'No spare filter' });
+  assert.equal(skipped.status, 'skipped');
+  assert.equal(s.tasks.roomView(s.id).upkeep.find((r) => r.ruleKey === 'acFilter').dueDate, '2026-11-16');
+});
+
+test('upkeep: an interval change, a rule turned off and on again', (t) => {
+  const s = setup(t);
+  s.db.setTaskRuleSettings([{ key: 'flyTraps', enabled: true, everyDays: 3 }]);
+  const traps = s.tasks.roomView(s.id).upkeep.find((r) => r.ruleKey === 'flyTraps');
+  s.tasks.done(traps.id, { worker: 'Ali' });
+  assert.equal(s.tasks.roomView(s.id).upkeep.find((r) => r.ruleKey === 'flyTraps').dueDate, '2026-11-02');
+  // off: the open row stays; done makes no next row
+  s.db.setTaskRuleSettings([{ key: 'flyTraps', enabled: false, everyDays: 3 }]);
+  const open = s.tasks.roomView(s.id).upkeep.find((r) => r.ruleKey === 'flyTraps');
+  assert.ok(open);
+  s.tasks.done(open.id, { worker: 'Ali' });
+  assert.equal(s.tasks.roomView(s.id).upkeep.find((r) => r.ruleKey === 'flyTraps'), undefined);
+  // on again: due everyDays after the last done
+  s.db.setTaskRuleSettings([{ key: 'flyTraps', enabled: true, everyDays: 7 }]);
+  assert.equal(s.tasks.roomView(s.id).upkeep.find((r) => r.ruleKey === 'flyTraps').dueDate, '2026-11-06');
+});

@@ -18,6 +18,25 @@ export class TaskError extends Error {
 
 const AMOUNT_LABEL = Object.fromEntries(DAILY_RULES.filter((r) => r.amount).map((r) => [r.key, r.amount.label]));
 
+const MAX_AMOUNT = 10_000;
+const MAX_REASON = 200;
+const STATUS_WORD = { done: 'done', skipped: 'skipped', missed: 'missed', cancelled: 'cancelled' };
+
+// '12,000', '0.5': thousands grouped with a comma.
+const grouped = (n) => {
+  const [whole, frac] = String(n).split('.');
+  return `${whole.replace(/\B(?=(\d{3})+$)/g, ',')}${frac ? `.${frac}` : ''}`;
+};
+
+// The text of a refused close: 'Already done by Ali at 09:12' (the farm's clock).
+function closedText(row) {
+  if (row.status === 'missed') return 'Already missed: its day has ended';
+  const by = row.worker ? ` by ${row.worker}` : '';
+  return `Already ${STATUS_WORD[row.status]}${by} at ${localTime(row.closedAt)}`;
+}
+
+const trimmed = (v) => (typeof v === 'string' ? v.trim() : '');
+
 export function createTasks({ db, now = Date.now, log = console.error }) {
   const listeners = new Set();
   const today = () => localDate(now());
@@ -107,6 +126,45 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
     return { date, today: todayRows, upkeep, longterm, counts: { due, overdue: upkeep.filter((r) => r.overdueDays > 0).length, longterm: longterm.length } };
   }
 
+  // The next row of an upkeep rule after one is closed on `date`, or null when the rule no longer applies (turned off,
+  // removed, or the room no longer has the machine).
+  function nextUpkeep(row, date, at) {
+    const rule = effectiveRules({ ...ruleSources(), roomId: row.roomId }).upkeep.find((r) => r.key === row.ruleKey);
+    const room = db.getRoom(row.roomId);
+    if (!rule || !room || !upkeepApplies(rule, room)) return null;
+    return { roomId: row.roomId, ruleKey: rule.key, slot: rule.slot ?? 'any', text: rule.text, dueAt: dayStart(addDays(date, rule.everyDays)), at };
+  }
+
+  // The open row `id` or a TaskError (404, 409).
+  function openRow(id) {
+    const row = db.getTask(id);
+    if (!row) throw new TaskError(404, 'Task not found');
+    if (row.status !== 'open') throw new TaskError(409, closedText(row));
+    return row;
+  }
+
+  function workerOf(worker) {
+    const name = trimmed(worker);
+    if (!name) throw new TaskError(400, 'Pick who did it', 'worker');
+    return name;
+  }
+
+  function reasonOf(reason) {
+    const text = trimmed(reason);
+    if (!text) throw new TaskError(400, 'Say why', 'reason');
+    if (text.length > MAX_REASON) throw new TaskError(400, `The reason must be at most ${MAX_REASON} characters`, 'reason');
+    return text;
+  }
+
+  // Closes the open row; a row closed by someone else meanwhile is a 409 too. An upkeep row makes its next row with it.
+  function close(row, fields) {
+    const at = now();
+    const next = row.kind === 'upkeep' ? nextUpkeep(row, localDate(at), at) : null;
+    if (!db.closeTask(row.id, { ...fields, at }, next)) throw new TaskError(409, closedText(db.getTask(row.id)));
+    tell(row.roomId);
+    return view(db.getTask(row.id));
+  }
+
   return {
     ensureDay,
 
@@ -122,6 +180,34 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
       const date = today();
       ensureDay(roomId, date);
       return viewOf(roomId, date);
+    },
+
+    // { worker, amount }: amount only on a row that records one (empty: none), from 0 to 10,000.
+    done(id, { worker, amount } = {}) {
+      const row = openRow(id);
+      const name = workerOf(worker);
+      let value = null;
+      if (row.unit !== null && amount !== undefined && amount !== null && amount !== '') {
+        if (typeof amount !== 'number' || !Number.isFinite(amount) || amount < 0 || amount > MAX_AMOUNT) {
+          throw new TaskError(400, `The amount must be a number from 0 to ${grouped(MAX_AMOUNT)}`, 'amount');
+        }
+        value = amount;
+      }
+      return close(row, { status: 'done', worker: name, amount: value });
+    },
+
+    // { worker, reason }; not for a long-term row (that is done or cancelled).
+    skip(id, { worker, reason } = {}) {
+      const row = openRow(id);
+      if (row.kind === 'longterm') throw new TaskError(400, 'A long-term task is done or cancelled, not skipped');
+      return close(row, { status: 'skipped', worker: workerOf(worker), reason: reasonOf(reason) });
+    },
+
+    // { reason }; long-term rows only.
+    cancel(id, { reason } = {}) {
+      const row = openRow(id);
+      if (row.kind !== 'longterm') throw new TaskError(400, 'Only a long-term task can be cancelled');
+      return close(row, { status: 'cancelled', reason: reasonOf(reason) });
     },
 
     // fn(roomId) after any change of a room's rows; → a function that stops it.
