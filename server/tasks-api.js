@@ -8,7 +8,11 @@ const ROOM_LOG = /^\/api\/rooms\/([1-9][0-9]{0,14})\/tasks\/log(\.csv)?$/;
 // Before the CSV, so Excel on Windows reads it as UTF-8 (the → and m³ of Plan this rows).
 const BOM = '\uFEFF';
 
+// A worker's name: 1 to 40 characters, as in server/tasks.js.
+const WORKER_MAX = 40;
+
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+const trimmed = (v) => (typeof v === 'string' ? v.trim() : '');
 
 // The Content-Disposition of a download. A header holds Latin-1 only: a name with anything outside printable ASCII (or a
 // quote, backslash or %, which a browser may decode) gets an ASCII stand-in plus the exact name as UTF-8 (RFC 6266 / 5987;
@@ -18,6 +22,36 @@ export function attachment(filename) {
   if (ascii === filename) return `attachment; filename="${filename}"`;
   const utf8 = encodeURIComponent(filename.toWellFormed()).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
   return `attachment; filename="${ascii}"; filename*=UTF-8''${utf8}`;
+}
+
+// PUT /api/workers: { workers: [{ id?, name, active? }] } or the bare list → [{ id|null, name, active }]. existing: the stored
+// workers (an id must be one of theirs, once). Names are kept trimmed, must differ, case aside, and hold no control characters
+// (db.setWorkers parks a kept name as U+0001 and the id during a swap). Removed workers are left out or sent as active false.
+function readWorkers(body, existing, HttpError) {
+  const bad = (message, field) => new HttpError(400, message, field);
+  const list = Array.isArray(body) ? body : isObject(body) ? body.workers : undefined;
+  if (!Array.isArray(list)) throw bad('Workers must be a list', 'workers');
+  const ids = new Set(existing.map((w) => w.id));
+  const usedIds = new Set();
+  const names = new Set();
+  return list.map((w, i) => {
+    if (!isObject(w)) throw bad('Each worker must be an object with a name', `workers.${i}`);
+    let id = null;
+    if (w.id !== undefined && w.id !== null) {
+      if (!ids.has(w.id) || usedIds.has(w.id)) throw bad('Unknown worker', `workers.${i}.id`);
+      usedIds.add(w.id);
+      id = w.id;
+    }
+    const name = trimmed(w.name);
+    if (name === '') throw bad('Name is required', `workers.${i}.name`);
+    if (name.length > WORKER_MAX) throw bad(`Name must be ${WORKER_MAX} characters or fewer`, `workers.${i}.name`);
+    if (/[\u0000-\u001f\u007f]/.test(name)) throw bad('A name cannot hold control characters', `workers.${i}.name`);
+    if (names.has(name.toLowerCase())) throw bad(`A worker called "${name}" already exists`, `workers.${i}.name`);
+    names.add(name.toLowerCase());
+    const active = w.active ?? true;
+    if (typeof active !== 'boolean') throw bad('Active must be true or false', `workers.${i}.active`);
+    return { id, name, active };
+  });
 }
 
 // db: the farm database; tasks: from createTasks (server/tasks.js), whose views make the day's rows first.
@@ -76,6 +110,17 @@ export function createTaskRoutes({ db, tasks }) {
       const before = url.searchParams.get('before') || null;
       if (before !== null && !/^[1-9][0-9]{0,14}$/.test(before)) throw new HttpError(400, 'before must be a task id', 'before');
       send(res, 200, { rows: tasks.log(room.id, { before: before && Number(before) }) });
+      return true;
+    }
+    if (path === '/api/workers') {
+      if (req.method === 'GET') {
+        send(res, 200, { workers: db.listWorkers() });
+        return true;
+      }
+      if (req.method !== 'PUT') throw notFound();
+      // The whole list: done rows keep the name they were done by (text), so a rename or removal leaves the log as it was.
+      db.setWorkers(readWorkers(await readJson(req), db.listWorkers(), HttpError));
+      send(res, 200, { workers: db.listWorkers() });
       return true;
     }
     return false;
