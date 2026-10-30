@@ -38,7 +38,8 @@ function readWorkers(body, existing, HttpError) {
     if (!isObject(w)) throw bad('Each worker must be an object with a name', `workers.${i}`);
     let id = null;
     if (w.id !== undefined && w.id !== null) {
-      if (!ids.has(w.id) || usedIds.has(w.id)) throw bad('Unknown worker', `workers.${i}.id`);
+      if (!ids.has(w.id)) throw bad('Unknown worker', `workers.${i}.id`);
+      if (usedIds.has(w.id)) throw bad('A worker is on the list twice', `workers.${i}.id`);
       usedIds.add(w.id);
       id = w.id;
     }

@@ -45,6 +45,8 @@ test('workers: none at first; add, rename and remove by putting the whole list; 
 test('workers: a name is required, of up to 40 characters, without control characters and not on the list twice; a refused list saves nothing', async (t) => {
   const { call } = await app(t);
   const put = (workers) => call('PUT', '/api/workers', { workers });
+  const seeded = await put([{ name: 'Ali' }, { name: 'Siti' }]);
+  const [ali, siti] = seeded.body.workers;
   for (const name of [undefined, '', '   ', 3]) {
     assert.deepEqual(await put([{ name: 'Ali' }, { name }]), { status: 400, body: { error: 'Name is required', field: 'workers.1.name' } });
   }
@@ -56,9 +58,16 @@ test('workers: a name is required, of up to 40 characters, without control chara
   assert.deepEqual(await put([{ name: 'Ali' }, { name: 'ali ' }]), { status: 400, body: { error: 'A worker called "ali" already exists', field: 'workers.1.name' } });
   assert.deepEqual(await put([{ name: 'Ali', active: 'yes' }]), { status: 400, body: { error: 'Active must be true or false', field: 'workers.0.active' } });
   assert.deepEqual(await put([{ id: 999, name: 'Ali' }]), { status: 400, body: { error: 'Unknown worker', field: 'workers.0.id' } });
+  assert.deepEqual(await put([{ id: ali.id, name: 'Ali' }, { id: ali.id, name: 'Ah Kow' }]), {
+    status: 400, body: { error: 'A worker is on the list twice', field: 'workers.1.id' },
+  });
   assert.deepEqual(await put(['Ali']), { status: 400, body: { error: 'Each worker must be an object with a name', field: 'workers.0' } });
   assert.deepEqual(await call('PUT', '/api/workers', { workers: 'Ali' }), { status: 400, body: { error: 'Workers must be a list', field: 'workers' } });
-  assert.deepEqual(await call('GET', '/api/workers'), { status: 200, body: { workers: [] } });
+  // A rename, a removal and a new worker, with one bad item: none of it is saved.
+  assert.deepEqual(await put([{ id: ali.id, name: 'Ali bin Abu', active: true }, { name: 'Ah Kow' }, { name: 'Mei', active: 'yes' }]), {
+    status: 400, body: { error: 'Active must be true or false', field: 'workers.2.active' },
+  });
+  assert.deepEqual(await call('GET', '/api/workers'), { status: 200, body: { workers: [ali, siti] } });
   assert.equal((await put([{ name: 'x'.repeat(40) }])).status, 200);
 });
 
