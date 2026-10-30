@@ -56,6 +56,17 @@ export function machineChangeText(key, from, to) {
   return word(to) === m.zero ? `${m.name} ${word(from)} ${m.unit} → ${m.zero}` : `${m.name} ${word(from)} → ${word(to)} ${m.unit}`;
 }
 
+const LOG_PAGE = 50;
+const CSV_HEADER = 'date,time,room,task,status,worker,amount,unit,reason';
+
+// One CSV cell: quoted when it holds a comma, quote or line break; a text starting like a formula gets a ' first.
+function cell(v) {
+  if (v === null || v === undefined) return '';
+  let s = String(v);
+  if (typeof v === 'string' && /^[=+\-@]/.test(s)) s = `'${s}`;
+  return /[",\r\n]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s;
+}
+
 export function createTasks({ db, now = Date.now, log = console.error }) {
   const listeners = new Set();
   const today = () => localDate(now());
@@ -271,6 +282,43 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
       })));
       tell(roomId);
       return rows.map(view);
+    },
+
+    // The Today page: every room in the Overview's order with its daily rows, its upkeep due today or overdue, how many
+    // long-term rows are open, and its counts.
+    todayView() {
+      const date = today();
+      const sources = ruleSources();
+      const rooms = db.listRooms().map((room) => {
+        makeDay(room, date, sources);
+        const v = viewOf(room.id, date);
+        return { id: room.id, name: room.name, today: v.today, upkeepDue: v.upkeep.filter((r) => r.dueDate <= date), longterm: v.counts.longterm, counts: v.counts };
+      });
+      return { date, rooms };
+    },
+
+    // The closed rows, newest first, LOG_PAGE at most, older than the row `before` when given.
+    log(roomId, { before = null, limit = LOG_PAGE } = {}) {
+      return db.taskLog(roomId, { before, limit }).map(view);
+    },
+
+    // Every closed row as CSV (oldest first): date, time (the farm's clock; none for a missed row), room, task, status, worker,
+    // amount, unit, reason. Null when there is no such room.
+    logCsv(roomId) {
+      const room = db.getRoom(roomId);
+      if (!room) return null;
+      const lines = db.taskLogAll(roomId).map((r) => [
+        r.date ?? localDate(r.closedAt), r.status === 'missed' ? '' : localTime(r.closedAt), room.name, r.text, r.status, r.worker,
+        r.amount, r.amount === null ? null : r.unit, r.reason,
+      ].map(cell).join(','));
+      return `${[CSV_HEADER, ...lines].join('\r\n')}\r\n`;
+    },
+
+    // The sum of every room's counts.due today (the top bar's count), from the rows made so far: no ensureDay here, since it
+    // runs inside onChange listeners and making rows would call them again.
+    dueCount() {
+      const date = today();
+      return db.listRooms().reduce((sum, room) => sum + viewOf(room.id, date).counts.due, 0);
     },
 
     // fn(roomId) after any change of a room's rows; → a function that stops it.

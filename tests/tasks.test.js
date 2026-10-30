@@ -362,3 +362,58 @@ test('addLongterm: a note that is not text is refused', (t) => {
   refused(() => s.tasks.addLongterm(s.id, { text: 'Seal the door gap', note: { a: 1 } }), 400, 'The note must be text', 'note');
   assert.equal(s.tasks.addLongterm(s.id, { text: 'Seal the door gap', note: null }).note, null);
 });
+
+test('the log pages newest first; the CSV has every closed row with the farm\'s times', (t) => {
+  const s = setup(t);
+  s.tasks.ensureDay(s.id);
+  s.set('2026-10-30T09:05:00+08:00');
+  s.tasks.done(s.row('harvestAm').id, { worker: 'Ali', amount: 4.2 });
+  s.set('2026-10-30T09:30:00+08:00');
+  s.tasks.skip(s.row('contamWalk').id, { worker: 'Siti, Ah Kow', reason: 'Said "later"' });
+  s.set('2026-10-31T08:00:00+08:00');
+  s.tasks.ensureDay(s.id); // the rest of 30 Oct is missed
+  const page = s.tasks.log(s.id, { limit: 2 });
+  assert.deepEqual(page.map((r) => r.status), ['missed', 'missed']);
+  const all = s.tasks.log(s.id);
+  assert.deepEqual(all.slice(-2).map((r) => r.ruleKey), ['contamWalk', 'harvestAm']);
+  assert.deepEqual(s.tasks.log(s.id, { before: all.at(-2).id }).map((r) => r.ruleKey), ['harvestAm']);
+  const csv = s.tasks.logCsv(s.id).split('\r\n');
+  assert.equal(csv[0], 'date,time,room,task,status,worker,amount,unit,reason');
+  assert.equal(csv[1], '2026-10-30,09:05,Room 1,Harvest check: pick before the cap edge waves or splits; pick before any misting,done,Ali,4.2,kg,');
+  assert.equal(csv[2], '2026-10-30,09:30,Room 1,"Contamination walk: take out and bag any green, orange, black or slimy bags, away from the room",skipped,"Siti, Ah Kow",,,"Said ""later"""');
+  assert.equal(csv[3], '2026-10-30,,Room 1,"Humidifier: water in, mist coming out",missed,,,,');
+  assert.equal(csv.at(-1), '', 'ends with a line break');
+  assert.equal(s.tasks.logCsv(999), null);
+});
+
+test('todayView in the Overview\'s order, and dueCount', (t) => {
+  const s = setup(t);
+  const b = s.db.createRoom({ ...ROOM, name: 'A room', trhAddress: null }).id; // sorts first
+  const view = s.tasks.todayView();
+  assert.equal(view.date, '2026-10-30');
+  assert.deepEqual(view.rooms.map((r) => r.name), ['A room', 'Room 1']);
+  const [first, second] = view.rooms;
+  assert.deepEqual([first.id, s.keys(first.today), first.upkeepDue.length, first.longterm], [b, ['footbath', 'floorClean'], 5, 0]);
+  assert.equal(second.counts.due, 12);
+  assert.equal(s.tasks.dueCount(), 2 + 5 + 12);
+  s.tasks.done(second.today[0].id, { worker: 'Ali' });
+  assert.equal(s.tasks.dueCount(), 18);
+});
+
+test('dueCount makes no rows, so a change listener can call it', (t) => {
+  const s = setup(t);
+  assert.equal(s.tasks.dueCount(), 0, 'no rows made yet');
+  assert.deepEqual([s.changes, s.db.dailyTasks(s.id, '2026-10-30')], [[], []]);
+  const counts = [];
+  s.tasks.onChange(() => counts.push(s.tasks.dueCount()));
+  s.tasks.ensureDay(s.id);
+  assert.deepEqual([s.changes, counts], [[s.id], [12]], 'told once, the count read inside the listener');
+});
+
+test('the CSV defuses a cell that starts like a formula; a long-term row has the date it was closed', (t) => {
+  const s = setup(t);
+  const row = s.tasks.addLongterm(s.id, { text: '=HYPERLINK("x")' });
+  s.set('2026-11-02T10:15:00+08:00');
+  s.tasks.cancel(row.id, { reason: '+1 later' });
+  assert.equal(s.tasks.logCsv(s.id).split('\r\n')[1], `2026-11-02,10:15,Room 1,"'=HYPERLINK(""x"")",cancelled,,,,'+1 later`);
+});
