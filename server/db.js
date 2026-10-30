@@ -842,10 +842,46 @@ export function openDb(path, { log = console.error } = {}) {
     taskLog: db.prepare(TASK_LOG_SQL.taskLog),
     taskLogAll: db.prepare(TASK_LOG_SQL.taskLogAll),
     deleteTasks: db.prepare('DELETE FROM tasks WHERE room_id = ?'),
+    workers: db.prepare('SELECT * FROM workers ORDER BY name, id'),
+    insertWorker: db.prepare('INSERT INTO workers (name, active) VALUES (?, ?)'),
+    updateWorker: db.prepare('UPDATE workers SET name = ?, active = ? WHERE id = ?'),
+    deleteWorker: db.prepare('DELETE FROM workers WHERE id = ?'),
+    parkWorker: db.prepare('UPDATE workers SET name = ? WHERE id = ?'),
+    ruleSettings: db.prepare('SELECT * FROM task_rule_settings ORDER BY key'),
+    clearRuleSettings: db.prepare('DELETE FROM task_rule_settings'),
+    insertRuleSetting: db.prepare('INSERT INTO task_rule_settings (key, enabled, every_days) VALUES (?, ?, ?)'),
+    customRules: db.prepare('SELECT * FROM custom_task_rules ORDER BY id'),
+    insertCustomRule: db.prepare('INSERT INTO custom_task_rules (text, rooms, every_days, slot, enabled) VALUES (?, ?, ?, ?, ?)'),
+    updateCustomRule: db.prepare('UPDATE custom_task_rules SET text = ?, rooms = ?, every_days = ?, slot = ?, enabled = ? WHERE id = ?'),
+    deleteCustomRule: db.prepare('DELETE FROM custom_task_rules WHERE id = ?'),
+    customRuleRooms: db.prepare('UPDATE custom_task_rules SET rooms = ?, enabled = ? WHERE id = ?'),
   };
 
   function checkName(name, id) {
     if (q.nameUsed.get(name, id)) throw new NameTakenError(name);
+  }
+
+  // Replaces the rows of a list table in one transaction: rows whose id is not in the list are deleted, list items with a
+  // stored id updated, the others inserted. → read() after it.
+  // before(kept): runs after the deletes, before the updates (workers park their names there, so a swap of two names never
+  // trips UNIQUE(name) halfway).
+  function replaceList(all, remove, list, update, insert, read, before = null) {
+    db.exec('BEGIN');
+    try {
+      const stored = new Set(all.all().map((r) => r.id));
+      const kept = new Set(list.filter((x) => stored.has(x.id)).map((x) => x.id));
+      for (const id of stored) if (!kept.has(id)) remove.run(id);
+      before?.(kept);
+      for (const x of list) {
+        if (kept.has(x.id)) update(x);
+        else insert(x);
+      }
+      db.exec('COMMIT');
+    } catch (err) {
+      db.exec('ROLLBACK');
+      throw err;
+    }
+    return read();
   }
 
   // Each address may be used by one device of one room only on a gateway (null: the farm's).
@@ -1274,6 +1310,14 @@ export function openDb(path, { log = console.error } = {}) {
         q.deleteProgram.run(id);
         q.deleteRuns.run(id);
         q.deleteTasks.run(id);
+        // The owner's rules lose the room (its id is given to the next room made after the top one); a rule left with no
+        // room is turned off, never read as one for every room.
+        for (const r of q.customRules.all()) {
+          const rooms = r.rooms === null ? null : JSON.parse(r.rooms);
+          if (!rooms?.includes(id)) continue;
+          const left = rooms.filter((x) => x !== id);
+          q.customRuleRooms.run(JSON.stringify(left), left.length ? r.enabled : 0, r.id);
+        }
         bucketCache.delete(id);
         usageCache.delete(id);
         const deleted = q.delete.run(id).changes > 0;
@@ -1664,6 +1708,56 @@ export function openDb(path, { log = console.error } = {}) {
     // Every closed row of the room, oldest closedAt first (the CSV).
     taskLogAll(roomId) {
       return q.taskLogAll.all(roomId).map(taskRow);
+    },
+
+    // ---- Workers and task rules (spec 2026-10-30-tasks-design.md 3.4 and 7.3). The lists must be valid (tasks-api.js). ----
+
+    // [{ id, name, active }] by name.
+    listWorkers() {
+      return q.workers.all().map((r) => ({ id: r.id, name: r.name, active: r.active === 1 }));
+    },
+
+    // Replaces the list: a worker with a known id is updated (a rename), one without is added, one left out is removed (the
+    // tasks keep the name as text). → the new list.
+    setWorkers(list) {
+      return replaceList(q.workers, q.deleteWorker, list, (w) => q.updateWorker.run(w.name, w.active ? 1 : 0, w.id),
+        (w) => q.insertWorker.run(w.name, w.active ? 1 : 0), () => this.listWorkers(),
+        // Parked names start with \u0001, not \u0000: NOCASE stops comparing at a NUL, so every \u0000 name would be the same.
+        (kept) => { for (const id of kept) q.parkWorker.run(`\u0001${id}`, id); });
+    },
+
+    // The owner's changes of the built-in rules: [{ key, enabled, everyDays }] (everyDays null: the rule's own).
+    taskRuleSettings() {
+      return q.ruleSettings.all().map((r) => ({ key: r.key, enabled: r.enabled === 1, everyDays: r.every_days }));
+    },
+
+    // Replaces every change of the built-in rules. → the new list.
+    setTaskRuleSettings(list) {
+      db.exec('BEGIN');
+      try {
+        q.clearRuleSettings.run();
+        for (const s of list) q.insertRuleSetting.run(s.key, s.enabled ? 1 : 0, s.everyDays ?? null);
+        db.exec('COMMIT');
+      } catch (err) {
+        db.exec('ROLLBACK');
+        throw err;
+      }
+      return this.taskRuleSettings();
+    },
+
+    // The owner's own rules: [{ id, text, rooms: number[] | null, everyDays: number | null, slot, enabled }] by id.
+    // rooms null: every room; [] (its rooms deleted): no room.
+    customTaskRules() {
+      return q.customRules.all().map((r) => ({
+        id: r.id, text: r.text, rooms: r.rooms === null ? null : JSON.parse(r.rooms), everyDays: r.every_days, slot: r.slot, enabled: r.enabled === 1,
+      }));
+    },
+
+    // Replaces the owner's rules like setWorkers (a rule left out is removed; its rows stay). → the new list.
+    setCustomTaskRules(list) {
+      const values = (c) => [c.text, c.rooms == null ? null : JSON.stringify(c.rooms), c.everyDays ?? null, c.slot, c.enabled ? 1 : 0];
+      return replaceList(q.customRules, q.deleteCustomRule, list, (c) => q.updateCustomRule.run(...values(c), c.id),
+        (c) => q.insertCustomRule.run(...values(c)), () => this.customTaskRules());
     },
 
     close() {
