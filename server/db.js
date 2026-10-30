@@ -839,6 +839,8 @@ export function openDb(path, { log = console.error } = {}) {
                                   ORDER BY closed_at DESC, id DESC LIMIT 1`),
     closeTask: db.prepare(`UPDATE tasks SET status = ?, closed_at = ?, worker = ?, amount = ?, reason = ?
                            WHERE id = ? AND status = 'open'`),
+    reopenTask: db.prepare(`UPDATE tasks SET status = 'open', closed_at = NULL, worker = NULL, amount = NULL, reason = NULL
+                            WHERE id = ? AND kind = 'daily' AND status = 'cancelled' AND reason IN ('Stage changed', 'Rule changed')`),
     taskLog: db.prepare(TASK_LOG_SQL.taskLog),
     taskLogAll: db.prepare(TASK_LOG_SQL.taskLogAll),
     deleteTasks: db.prepare('DELETE FROM tasks WHERE room_id = ?'),
@@ -1700,6 +1702,12 @@ export function openDb(path, { log = console.error } = {}) {
         db.exec('ROLLBACK');
         throw err;
       }
+    },
+
+    // Opens again a daily row the server cancelled because its stage or rule changed (wanted again the same day). → false
+    // for any other row (nothing changes then).
+    reopenTask(id) {
+      return q.reopenTask.run(id).changes > 0;
     },
 
     // The room's closed rows, newest closedAt first, `limit` of them, older than the row `before` (an id) when given.

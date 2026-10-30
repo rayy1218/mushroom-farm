@@ -136,3 +136,62 @@ test('ensureDay that makes nothing tells no one', (t) => {
   s.tasks.roomView(s.id);
   assert.deepEqual(s.changes, [s.id], 'a new day changes rows');
 });
+
+test('a stage changed and changed back the same day opens its cancelled rows again', (t) => {
+  const s = setup(t);
+  const due = s.tasks.roomView(s.id).counts.due;
+  const to = (stage, iso) => s.db.setProgram(s.id, startStage(s.db.getProgram(s.id), stage, at(iso), s.db.getControl(s.id)));
+  s.set('2026-10-30T10:00:00+08:00');
+  to('rest', '2026-10-30T10:00:00+08:00');
+  s.tasks.roomView(s.id);
+  s.set('2026-10-30T10:05:00+08:00');
+  to('fruiting', '2026-10-30T10:05:00+08:00');
+  const v = s.tasks.roomView(s.id);
+  const status = Object.fromEntries(v.today.map((r) => [r.ruleKey, r.status]));
+  assert.deepEqual(status, { contamWalk: 'open', humidifierCheck: 'open', harvestAm: 'open', harvestPm: 'open',
+    footbath: 'open', floorClean: 'open', scrapeRecap: 'cancelled' });
+  assert.deepEqual([s.row('harvestAm').reason, s.row('harvestAm').closedAt, s.row('harvestAm').amountLabel], [null, null, 'kg picked']);
+  assert.equal(s.row('scrapeRecap').reason, 'Stage changed');
+  assert.equal(v.counts.due, due);
+});
+
+test('an own rule moved to another time of day: the old row is cancelled "Rule changed", and opens again when moved back', (t) => {
+  const s = setup(t, { crops: [] });
+  const rule = (slot) => ({ text: 'Top up the RO water tank', rooms: null, everyDays: null, slot, enabled: true });
+  s.db.setCustomTaskRules([rule('morning')]);
+  const { id } = s.db.customTaskRules()[0];
+  const key = `custom:${id}`;
+  const own = () => s.tasks.roomView(s.id).today.filter((r) => r.ruleKey === key).map((r) => [r.slot, r.status, r.reason]);
+  assert.deepEqual(own(), [['morning', 'open', null]]);
+  s.db.setCustomTaskRules([{ id, ...rule('afternoon') }]);
+  assert.deepEqual(own(), [['morning', 'cancelled', 'Rule changed'], ['afternoon', 'open', null]]);
+  s.db.setCustomTaskRules([{ id, ...rule('morning') }]);
+  assert.deepEqual(own(), [['morning', 'open', null], ['afternoon', 'cancelled', 'Rule changed']]);
+});
+
+test('a machine taken out of the room cancels its open upkeep row; a rule turned off keeps its row', (t) => {
+  const s = setup(t, { room: { co2Address: 2, dehumidifier: true } });
+  s.tasks.ensureDay(s.id);
+  s.db.setTaskRuleSettings([{ key: 'co2Check', enabled: false }]);
+  s.db.updateRoom(s.id, { ...s.db.getRoom(s.id), dehumidifier: false, co2Address: null, trhAddress: null });
+  s.later(DAY);
+  const v = s.tasks.roomView(s.id);
+  assert.deepEqual(s.keys(v.upkeep), ['acFilter', 'humidifierDescale', 'flyTraps', 'co2Check', 'acService', 'acChemWash']);
+  const gone = s.db.taskLog(s.id).filter((r) => r.kind === 'upkeep').map((r) => [r.ruleKey, r.status, r.reason]);
+  assert.deepEqual(gone.sort(), [['dehumidifierFilter', 'cancelled', 'The room no longer has this machine'],
+    ['rhCheck', 'cancelled', 'The room no longer has this machine']]);
+});
+
+test('an upkeep rule without an open row is due everyDays after its last done, but never before today', (t) => {
+  const s = setup(t);
+  s.tasks.ensureDay(s.id);
+  const traps = s.tasks.roomView(s.id).upkeep.find((r) => r.ruleKey === 'flyTraps');
+  s.db.closeTask(traps.id, { status: 'done', at: at('2026-10-30T09:00:00+08:00'), worker: 'Ali' }); // no next row: as a rule turned off
+  s.set('2026-10-31T08:00:00+08:00');
+  assert.equal(s.tasks.roomView(s.id).upkeep.find((r) => r.ruleKey === 'flyTraps').dueDate, '2026-11-06');
+  const next = s.tasks.roomView(s.id).upkeep.find((r) => r.ruleKey === 'flyTraps');
+  s.db.closeTask(next.id, { status: 'done', at: at('2026-10-31T09:00:00+08:00'), worker: 'Ali' });
+  s.set('2027-08-20T08:00:00+08:00'); // months later
+  const late = s.tasks.roomView(s.id).upkeep.find((r) => r.ruleKey === 'flyTraps');
+  assert.deepEqual([late.dueDate, late.overdueDays], ['2027-08-20', 0]);
+});

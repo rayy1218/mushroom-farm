@@ -272,3 +272,26 @@ test('setWorkers renames a worker by case only', (t) => {
   const [ali] = db.setWorkers([{ name: 'ali', active: true }]);
   assert.deepEqual(db.setWorkers([{ id: ali.id, name: 'Ali', active: true }]), [{ id: ali.id, name: 'Ali', active: true }]);
 });
+
+test('reopenTask opens again only a daily row the server cancelled for a stage or rule change', (t) => {
+  const { db, id } = fresh(t);
+  const make = (slot) => {
+    db.insertDailyTask(daily(id, { slot }));
+    return db.dailyTasks(id, '2026-10-30').find((r) => r.slot === slot).id;
+  };
+  const stage = make('morning');
+  const rule = make('afternoon');
+  const done = make('any');
+  db.closeTask(stage, { status: 'cancelled', at: 6000, reason: 'Stage changed' });
+  db.closeTask(rule, { status: 'cancelled', at: 6000, reason: 'Rule changed' });
+  db.closeTask(done, { status: 'done', at: 6000, worker: 'Ali' });
+  const own = db.insertLongtermTask({ roomId: id, text: 'Fit a second fan', at: 5000 }).id;
+  db.closeTask(own, { status: 'cancelled', at: 6000, reason: 'Stage changed' });
+  assert.equal(db.reopenTask(stage), true);
+  assert.equal(db.reopenTask(rule), true);
+  assert.deepEqual(db.getTask(stage), { ...db.getTask(stage), status: 'open', closedAt: null, reason: null, worker: null, amount: null });
+  assert.equal(db.reopenTask(stage), false, 'open already');
+  assert.equal(db.reopenTask(done), false, 'a done row stays done');
+  assert.equal(db.reopenTask(own), false, 'only daily rows');
+  assert.equal(db.getTask(own).status, 'cancelled');
+});

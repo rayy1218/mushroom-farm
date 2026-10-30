@@ -32,7 +32,8 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
     }
   }
 
-  const rulesFor = (roomId) => effectiveRules({ settings: db.taskRuleSettings(), custom: db.customTaskRules(), roomId });
+  // The rule settings and the owner's rules, read once for a pass over several rooms.
+  const ruleSources = () => ({ settings: db.taskRuleSettings(), custom: db.customTaskRules() });
 
   // A row as the API shows it: amountLabel for an open row whose rule records an amount.
   const view = (row) => ({ ...row, amountLabel: row.status === 'open' ? AMOUNT_LABEL[row.ruleKey] ?? null : null });
@@ -44,33 +45,57 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
   };
 
   // Spec section 4: the day's wanted daily rows made, open daily rows of earlier days missed, today's open rows whose rule
-  // is no longer wanted cancelled ('Stage changed'; a rule turned off keeps its row), and each applying upkeep rule's open row
-  // made when it has none (due everyDays after its last done or skip, or today without one).
-  function ensureDay(roomId, date = today()) {
-    const room = db.getRoom(roomId);
-    if (!room) return;
+  // is no longer wanted cancelled ('Stage changed', or 'Rule changed' when the rule now wants another time of day; a rule
+  // turned off keeps its row), and such a cancelled row opened again when it is wanted again the same day (a stage changed
+  // and changed back). Upkeep: an open row of a rule that no longer applies (its machine taken out) cancelled; each applying
+  // rule's open row made when it has none, due everyDays after its last done or skip but not before `date` (a rule off for
+  // months, or a machine fitted again, starts due today, not long overdue).
+  function makeDay(room, date, sources) {
+    const roomId = room.id;
     const at = now();
-    const rules = rulesFor(roomId);
+    const rules = effectiveRules({ ...sources, roomId });
     const program = db.getProgram(roomId);
     const wanted = wantedDaily({ program, crops: program.crops, date, rules: rules.daily });
     let changed = false;
     for (const row of db.openDailyBefore(roomId, date)) {
       changed = db.closeTask(row.id, { status: 'missed', at: Math.min(at, dayStart(addDays(row.date, 1))) }) || changed;
     }
-    const want = new Set(wanted.map((w) => `${w.ruleKey}/${w.slot}`));
+    const slotKey = (r) => `${r.ruleKey}/${r.slot}`;
+    const want = new Set(wanted.map(slotKey));
+    const wantedKeys = new Set(wanted.map((w) => w.ruleKey));
     const on = new Set(rules.daily.map((r) => r.key));
+    const have = new Set();
     for (const row of db.dailyTasks(roomId, date)) {
-      if (row.status !== 'open' || want.has(`${row.ruleKey}/${row.slot}`) || !on.has(row.ruleKey)) continue;
-      changed = db.closeTask(row.id, { status: 'cancelled', at, reason: 'Stage changed' }) || changed;
+      have.add(slotKey(row));
+      if (want.has(slotKey(row))) {
+        if (row.status === 'cancelled') changed = db.reopenTask(row.id) || changed; // only the server's 'Stage changed' or 'Rule changed'
+        continue;
+      }
+      if (row.status !== 'open' || !on.has(row.ruleKey)) continue;
+      const reason = wantedKeys.has(row.ruleKey) ? 'Rule changed' : 'Stage changed';
+      changed = db.closeTask(row.id, { status: 'cancelled', at, reason }) || changed;
     }
-    for (const w of wanted) changed = db.insertDailyTask({ roomId, date, ...w, at }) || changed;
+    for (const w of wanted) if (!have.has(slotKey(w))) changed = db.insertDailyTask({ roomId, date, ...w, at }) || changed;
+    const open = new Map(db.openTasks(roomId, 'upkeep').map((r) => [r.ruleKey, r]));
     for (const rule of rules.upkeep) {
-      if (!upkeepApplies(rule, room) || db.openUpkeep(roomId, rule.key)) continue;
+      const row = open.get(rule.key);
+      if (!upkeepApplies(rule, room)) {
+        if (row) changed = db.closeTask(row.id, { status: 'cancelled', at, reason: 'The room no longer has this machine' }) || changed;
+        continue;
+      }
+      if (row) continue;
       const last = db.lastClosedUpkeep(roomId, rule.key);
-      const due = last ? addDays(localDate(last.closedAt), rule.everyDays) : date;
+      const after = last ? addDays(localDate(last.closedAt), rule.everyDays) : date;
+      const due = after > date ? after : date;
       changed = db.insertUpkeepTask({ roomId, ruleKey: rule.key, slot: rule.slot ?? 'any', text: rule.text, dueAt: dayStart(due), at }) || changed;
     }
     if (changed) tell(roomId);
+  }
+
+  // makeDay for one room (nothing for a missing room).
+  function ensureDay(roomId, date = today()) {
+    const room = db.getRoom(roomId);
+    if (room) makeDay(room, date, ruleSources());
   }
 
   // The views of one room on `date` (made already).
@@ -87,7 +112,8 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
 
     // ensureDay for every room.
     ensureAll(date = today()) {
-      for (const room of db.listRooms()) ensureDay(room.id, date);
+      const sources = ruleSources();
+      for (const room of db.listRooms()) makeDay(room, date, sources);
     },
 
     // The Tasks tab: { date, today, upkeep, longterm, counts: { due, overdue, longterm } }, or null when there is no such room.

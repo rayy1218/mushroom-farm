@@ -25,8 +25,8 @@ chose every row marked *owner*; the lead chose the rest.
 
 | Kind | Made | Ends |
 |---|---|---|
-| Daily | per room per local day (Asia/Kuala_Lumpur), from the rules that apply that day | done, skipped, or **missed** when the day ends open; **cancelled** "Stage changed" when the stage changes and the rule no longer applies |
-| Upkeep | one open row per room per rule; the next row is made when one is done or skipped, due *interval* days later | done or skipped; never missed: an open one past its due date says "overdue N days" |
+| Daily | per room per local day (Asia/Kuala_Lumpur), from the rules that apply that day | done, skipped, or **missed** when the day ends open; **cancelled** "Stage changed" when the stage changes and the rule no longer applies ("Rule changed" when the rule now wants another time of day), and open again if it applies again the same day (a stage changed and changed back) |
+| Upkeep | one open row per room per rule; the next row is made when one is done or skipped, due *interval* days later | done or skipped; never missed: an open one past its due date says "overdue N days"; **cancelled** "The room no longer has this machine" when the machine its rule needs is taken out of the room (a rule turned off keeps its open row) |
 | Long-term | by **Plan this** or by the owner's **Add** | done or **cancelled** (a reason is required) |
 
 | Status | Set by | Needs |
@@ -35,7 +35,7 @@ chose every row marked *owner*; the lead chose the rest.
 | done | Done | a worker name; the amount when the rule records one (may be left empty) |
 | skipped | Skip | a worker name and a reason |
 | missed | the server, at the first making after the day ends | — |
-| cancelled | Cancel (long-term), or the server on a stage change (daily) | a reason ("Stage changed" from the server) |
+| cancelled | Cancel (long-term), or the server on a stage or rule change (daily) or a machine taken out (upkeep) | a reason ("Stage changed", "Rule changed" or "The room no longer has this machine" from the server) |
 
 Nothing is deleted, except with its room (as readings are today).
 
@@ -111,7 +111,7 @@ The intake filter stays on its pressure and days reminder (`filterDue`, `filterD
 | Step | Rule |
 |---|---|
 | `wantedTasks({ program, crops, room, rules, settings, date })` | pure: the day's daily rows of one room — rule key, text, notes, slot, amount — from the stage and `stageDay` (web/crop-math.js) on that date |
-| `ensureDay(roomId, date)` | inserts the wanted daily rows (`INSERT OR IGNORE`, unique room, rule, date, slot), marks open daily rows of earlier dates missed, cancels today's open daily rows whose rule is no longer wanted ("Stage changed"), and makes each applying upkeep rule's open row when it has none |
+| `ensureDay(roomId, date)` | inserts the wanted daily rows (`INSERT OR IGNORE`, unique room, rule, date, slot), marks open daily rows of earlier dates missed, cancels today's open daily rows whose rule is no longer wanted ("Stage changed", or "Rule changed" for another slot) and opens such rows again when wanted again that day, cancels the open upkeep row of a rule that no longer applies to the room, and makes each applying upkeep rule's open row when it has none (due *interval* days after its last done or skip, but not before that day) |
 | When | on `GET` of a room's tasks or of Today, and once per room per local day from the controller's cycle (an in-memory last-date memo), so a day is made after the app was down |
 | Done or skip of an upkeep row | in one transaction: the row closed, the next open row due `at + everyDays` |
 | A rule turned off | its open rows stay until done or the day ends; no new rows |
