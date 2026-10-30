@@ -20,7 +20,7 @@ const AMOUNT_LABEL = Object.fromEntries(DAILY_RULES.filter((r) => r.amount).map(
 
 const MAX_AMOUNT = 10_000;
 const MAX_REASON = 200;
-const MAX_NAME = 40;
+export const MAX_NAME = 40;
 
 // '12,000', '0.5': thousands grouped with a comma, at most 3 decimals (0.1 + 0.2 is '0.3').
 const grouped = (n) => {
@@ -344,9 +344,8 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
     // long-term rows are open, and its counts.
     todayView() {
       const date = today();
-      const sources = ruleSources();
+      for (const id of makeAll(date)) tell(id); // every room made before anyone is told, so a listener counts the whole farm
       const rooms = db.listRooms().map((room) => {
-        if (makeDay(room, date, sources)) tell(room.id);
         const v = viewOf(room.id, date);
         return { id: room.id, name: room.name, today: v.today, upkeepDue: v.upkeep.filter((r) => r.dueDate <= date), longterm: v.counts.longterm, counts: v.counts };
       });

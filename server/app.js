@@ -30,5 +30,6 @@ export function createApp(db, {
       res.end('Something went wrong');
     }
   });
+  server.on('close', () => api.close());
   return server;
 }

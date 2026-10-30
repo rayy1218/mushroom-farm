@@ -58,8 +58,8 @@ const afterCycle = async (cycleStart) => {
 };
 const poller = createPoller({ db, clients: gateways, intervalMs: pollSeconds * 1000, afterCycle });
 const machines = createMachines({ db, clients: gateways, poller });
-// The rooms' tasks: made by the controller's cycle (once per farm day) and by the task routes. createApp publishes every
-// change to the pages (B7 subscribes to tasks.onChange in api.js).
+// The rooms' tasks: made by the controller's cycle (once per farm day) and by the task routes; every change goes to the
+// pages: api.js publishes them.
 const tasks = createTasks({ db });
 controller = createController({ db, machines, tasks });
 live = createLive({ db, events, machines, controller });

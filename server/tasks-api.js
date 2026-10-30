@@ -3,16 +3,13 @@
 // /api/workers and /api/task-rules. server/tasks.js makes and closes the rows; this checks what the pages send.
 
 import { DAILY_RULES, CLEAR_OUT, UPKEEP_RULES, SLOTS } from './task-rules.js';
-import { MAX_TEXT } from './tasks.js';
+import { MAX_TEXT, MAX_NAME } from './tasks.js';
 
 const ROOM_TASKS = /^\/api\/rooms\/([1-9][0-9]{0,14})\/tasks$/;
 const TASK_ACTION = /^\/api\/tasks\/([1-9][0-9]{0,14})\/(done|skip|cancel)$/;
 const ROOM_LOG = /^\/api\/rooms\/([1-9][0-9]{0,14})\/tasks\/log(\.csv)?$/;
 // Before the CSV, so Excel on Windows reads it as UTF-8 (the → and m³ of Plan this rows).
 const BOM = '\uFEFF';
-
-// A worker's name: 1 to 40 characters, as in server/tasks.js.
-const WORKER_MAX = 40;
 
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const trimmed = (v) => (typeof v === 'string' ? v.trim() : '');
@@ -47,8 +44,8 @@ function readWorkers(body, existing, HttpError) {
       id = w.id;
     }
     const name = trimmed(w.name);
-    if (name === '') throw bad('Name is required', `workers.${i}.name`);
-    if (name.length > WORKER_MAX) throw bad(`Name must be ${WORKER_MAX} characters or fewer`, `workers.${i}.name`);
+    if (name === '') throw bad('Type a name', `workers.${i}.name`);
+    if (name.length > MAX_NAME) throw bad(`The name must be at most ${MAX_NAME} characters`, `workers.${i}.name`);
     if (/[\u0000-\u001f\u007f]/.test(name)) throw bad('A name cannot hold control characters', `workers.${i}.name`);
     if (names.has(name.toLowerCase())) throw bad(`A worker called "${name}" already exists`, `workers.${i}.name`);
     names.add(name.toLowerCase());
@@ -130,7 +127,7 @@ function readRules(body, { stored, customIds, roomIds }, HttpError) {
         id = c.id;
       }
       const text = trimmed(c.text);
-      if (text === '' || text.length > MAX_TEXT) throw bad(`Task text must be 1 to ${MAX_TEXT} characters`, at('text'));
+      if (text === '' || text.length > MAX_TEXT) throw bad(`Say what to do (1 to ${MAX_TEXT} characters)`, at('text'));
       const rooms = c.rooms ?? null;
       if (rooms !== null && !(Array.isArray(rooms) && rooms.length > 0 && rooms.every((r) => roomIds.has(r)) && new Set(rooms).size === rooms.length)) {
         throw bad(ROOMS_ERROR, at('rooms'));
@@ -231,7 +228,8 @@ export function createTaskRoutes({ db, tasks }) {
       }, HttpError);
       const saved = db.setTaskRules({ settings, custom }); // both lists or neither
       // Today's rows follow at once (on the tasks module's clock): a new interval re-dates the open upkeep rows, a rule
-      // turned on or added makes its rows; the rows of a rule turned off or removed stay.
+      // turned on or added makes its rows; a built-in rule turned off keeps its rows; an own rule removed has its open rows
+      // cancelled.
       tasks.rulesSaved(before);
       send(res, 200, rulesView(saved.settings, saved.custom));
       return true;

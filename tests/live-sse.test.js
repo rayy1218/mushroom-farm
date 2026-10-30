@@ -212,14 +212,16 @@ test('simulation and sizing jobs publish queued, running, progress and the end',
   assert.equal(got[3][1].tried, job.total);
 });
 
-test('a room made, edited or deleted publishes room part room', async (t) => {
+test('a room made, edited or deleted publishes room part room; a delete also the tasks due', async (t) => {
   const { events, base } = await start(t);
   const got = collect(events);
   const body = { name: 'Room 1', length: 6, width: 4, height: 2.5 };
   const made = await (await fetch(`${base}/api/rooms`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })).json();
   assert.equal(await put(base, `/api/rooms/${made.id}`, { ...body, length: 7 }), 200);
   assert.equal((await fetch(`${base}/api/rooms/${made.id}`, { method: 'DELETE' })).status, 204);
-  assert.deepEqual(got, [['room', { id: made.id, part: 'room' }], ['room', { id: made.id, part: 'room' }], ['room', { id: made.id, part: 'room' }]]);
+  assert.deepEqual(got, [
+    ['room', { id: made.id, part: 'room' }], ['room', { id: made.id, part: 'room' }], ['room', { id: made.id, part: 'room' }], ['tasks', { due: 0 }],
+  ], 'a delete also gives the farm due count without the room');
 });
 
 test('a client that does not read is dropped once too much waits for it; a failing room does not hide the others', (t) => {

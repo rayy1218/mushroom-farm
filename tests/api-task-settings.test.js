@@ -49,9 +49,9 @@ test('workers: a name is required, of up to 40 characters, without control chara
   const seeded = await put([{ name: 'Ali' }, { name: 'Siti' }]);
   const [ali, siti] = seeded.body.workers;
   for (const name of [undefined, '', '   ', 3]) {
-    assert.deepEqual(await put([{ name: 'Ali' }, { name }]), { status: 400, body: { error: 'Name is required', field: 'workers.1.name' } });
+    assert.deepEqual(await put([{ name: 'Ali' }, { name }]), { status: 400, body: { error: 'Type a name', field: 'workers.1.name' } });
   }
-  assert.deepEqual(await put([{ name: 'x'.repeat(41) }]), { status: 400, body: { error: 'Name must be 40 characters or fewer', field: 'workers.0.name' } });
+  assert.deepEqual(await put([{ name: 'x'.repeat(41) }]), { status: 400, body: { error: 'The name must be at most 40 characters', field: 'workers.0.name' } });
   // A parked name (during a swap) is U+0001 and the id: no real name may look like one.
   for (const name of ['\u00011', 'Ali\tbin Abu', 'Ali\u007f']) {
     assert.deepEqual(await put([{ name }]), { status: 400, body: { error: 'A name cannot hold control characters', field: 'workers.0.name' } });
@@ -152,7 +152,7 @@ test("task rules: your own, text 1 to 120, every room or some of this farm's, da
 
   const put = (change) => call('PUT', '/api/task-rules', { custom: [{ ...shelves, ...change }] });
   const fails = (error, field) => ({ status: 400, body: { error, field } });
-  for (const text of ['', '  ', 'x'.repeat(121), 4]) assert.deepEqual(await put({ text }), fails('Task text must be 1 to 120 characters', 'custom.0.text'));
+  for (const text of ['', '  ', 'x'.repeat(121), 4]) assert.deepEqual(await put({ text }), fails('Say what to do (1 to 120 characters)', 'custom.0.text'));
   for (const rooms of [[], [999], [r1, r1], 'all', [String(r1)]]) assert.deepEqual(await put({ rooms }), fails("Rooms must be every room, or one or more of this farm's rooms", 'custom.0.rooms'));
   for (const everyDays of [0, 366, 1.5, 'weekly']) assert.deepEqual(await put({ everyDays }), fails('Interval must be daily or a whole number from 1 to 365 days', 'custom.0.everyDays'));
   assert.deepEqual(await put({ slot: 'evening' }), fails('Time of day must be morning, afternoon or any', 'custom.0.slot'));

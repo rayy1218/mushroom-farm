@@ -456,6 +456,15 @@ test('dueCount makes no rows, so a change listener can call it', (t) => {
   assert.deepEqual([s.changes, counts], [[s.id], [12]], 'told once, the count read inside the listener');
 });
 
+test('todayView makes every room first and tells after, so a listener counts the whole farm', (t) => {
+  const s = setup(t);
+  s.db.createRoom({ ...ROOM, name: 'A room', trhAddress: null });
+  const counts = [];
+  s.tasks.onChange(() => counts.push(s.tasks.dueCount()));
+  s.tasks.todayView();
+  assert.deepEqual(counts, [2 + 5 + 12, 2 + 5 + 12]);
+});
+
 test('the CSV defuses a cell that starts like a formula; a long-term row has the date it was closed', (t) => {
   const s = setup(t);
   const row = s.tasks.addLongterm(s.id, { text: '=HYPERLINK("x")' });
