@@ -3,7 +3,7 @@
 // machines), and reads the views of the Tasks tab, the Today page and the log.
 
 import {
-  DAILY_RULES, localDate, localTime, dayStart, addDays, daysBetween, effectiveRules, wantedDaily, upkeepApplies,
+  DAILY_RULES, UPKEEP_RULES, localDate, localTime, dayStart, addDays, daysBetween, effectiveRules, wantedDaily, upkeepApplies,
 } from './task-rules.js';
 
 // A refused request: status 400, 404 or 409, field the input it is about (tasks-api.js replies { error, field }).
@@ -37,7 +37,8 @@ function closedText(row) {
 
 const trimmed = (v) => (typeof v === 'string' ? v.trim() : '');
 
-const MAX_TEXT = 120;
+// An own task's text, and an own rule's (tasks-api.js).
+export const MAX_TEXT = 120;
 const MAX_NOTE = 500;
 const MAX_MACHINE = 1_000_000;
 const MAX_TIME = 8.64e15; // the latest time a Date can hold, in ms
@@ -133,12 +134,26 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
         continue;
       }
       if (row) continue;
-      const last = db.lastClosedUpkeep(roomId, rule.key);
-      const after = last ? addDays(localDate(last.closedAt), rule.everyDays) : date;
-      const due = after > date ? after : date;
-      changed = db.insertUpkeepTask({ roomId, ruleKey: rule.key, slot: rule.slot ?? 'any', text: rule.text, dueAt: dayStart(due), at }) || changed;
+      const dueAt = upkeepDue(roomId, rule.key, rule.everyDays, date);
+      changed = db.insertUpkeepTask({ roomId, ruleKey: rule.key, slot: rule.slot ?? 'any', text: rule.text, dueAt, at }) || changed;
     }
     if (changed) tell(roomId);
+  }
+
+  // When an upkeep rule's open row is due: everyDays after the farm day of its last done or skip, but not before `date`
+  // (no done or skip yet: `date`). → ms of that day's start.
+  function upkeepDue(roomId, ruleKey, everyDays, date) {
+    const last = db.lastClosedUpkeep(roomId, ruleKey);
+    const after = last ? addDays(localDate(last.closedAt), everyDays) : date;
+    return dayStart(after > date ? after : date);
+  }
+
+  // Each rule's interval by key: a built-in upkeep rule's (the owner's or its own), an own rule's (null: a daily rule).
+  function intervals({ settings, custom }) {
+    const byKey = new Map(settings.map((s) => [s.key, s]));
+    const every = new Map(UPKEEP_RULES.map((r) => [r.key, byKey.get(r.key)?.everyDays ?? r.everyDays]));
+    for (const c of custom) every.set(`custom:${c.id}`, c.everyDays ?? null);
+    return every;
   }
 
   // makeDay for one room (nothing for a missing room).
@@ -209,6 +224,30 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
     ensureAll(date = today()) {
       const sources = ruleSources();
       for (const room of db.listRooms()) makeDay(room, date, sources);
+    },
+
+    // After the owner's rules are saved (before: { settings, custom } as they were): a rule whose interval changed has its
+    // open upkeep rows due again by upkeepDue; an own rule changed from daily to every N days has today's open daily rows
+    // cancelled 'Rule changed', and one changed back its open upkeep row; then ensureAll makes what the rules now want.
+    rulesSaved(before, date = today()) {
+      const was = intervals(before);
+      const is = intervals(ruleSources());
+      const at = now();
+      for (const room of db.listRooms()) {
+        let changed = false;
+        for (const row of db.openTasks(room.id, 'upkeep')) {
+          if (!was.has(row.ruleKey) || !is.has(row.ruleKey)) continue; // a removed own rule's row stays
+          const [from, to] = [was.get(row.ruleKey), is.get(row.ruleKey)];
+          if (to === null) changed = db.closeTask(row.id, { status: 'cancelled', at, reason: 'Rule changed' }) || changed;
+          else if (to !== from) changed = db.setTaskDue(row.id, upkeepDue(room.id, row.ruleKey, to, date)) || changed;
+        }
+        for (const row of db.dailyTasks(room.id, date)) {
+          if (row.status !== 'open' || was.get(row.ruleKey) !== null || !(is.get(row.ruleKey) > 0)) continue; // own, daily → every N
+          changed = db.closeTask(row.id, { status: 'cancelled', at, reason: 'Rule changed' }) || changed;
+        }
+        if (changed) tell(room.id);
+      }
+      this.ensureAll(date);
     },
 
     // The Tasks tab: { date, today, upkeep, longterm, counts: { due, overdue, longterm } }, or null when there is no such room.

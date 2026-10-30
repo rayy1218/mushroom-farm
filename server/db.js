@@ -840,6 +840,7 @@ export function openDb(path, { log = console.error } = {}) {
                            WHERE id = ? AND status = 'open'`),
     reopenTask: db.prepare(`UPDATE tasks SET status = 'open', closed_at = NULL, worker = NULL, amount = NULL, reason = NULL
                             WHERE id = ? AND kind = 'daily' AND status = 'cancelled' AND reason IN ('Stage changed', 'Rule changed')`),
+    setTaskDue: db.prepare("UPDATE tasks SET due_at = ? WHERE id = ? AND kind = 'upkeep' AND status = 'open'"),
     taskLog: db.prepare(TASK_LOG_SQL.taskLog),
     taskLogAll: db.prepare(TASK_LOG_SQL.taskLogAll),
     deleteTasks: db.prepare('DELETE FROM tasks WHERE room_id = ?'),
@@ -867,22 +868,43 @@ export function openDb(path, { log = console.error } = {}) {
   // before(kept): runs after the deletes, before the updates (workers park their names there, so a swap of two names never
   // trips UNIQUE(name) halfway).
   function replaceList(all, remove, list, update, insert, read, before = null) {
+    inTransaction(() => replaceRows(all, remove, list, update, insert, before));
+    return read();
+  }
+
+  // replaceList's writes, inside a transaction of the caller's.
+  function replaceRows(all, remove, list, update, insert, before = null) {
+    const stored = new Set(all.all().map((r) => r.id));
+    const kept = new Set(list.filter((x) => stored.has(x.id)).map((x) => x.id));
+    for (const id of stored) if (!kept.has(id)) remove.run(id);
+    before?.(kept);
+    for (const x of list) {
+      if (kept.has(x.id)) update(x);
+      else insert(x);
+    }
+  }
+
+  // Runs fn in one transaction: all of its writes or none.
+  function inTransaction(fn) {
     db.exec('BEGIN');
     try {
-      const stored = new Set(all.all().map((r) => r.id));
-      const kept = new Set(list.filter((x) => stored.has(x.id)).map((x) => x.id));
-      for (const id of stored) if (!kept.has(id)) remove.run(id);
-      before?.(kept);
-      for (const x of list) {
-        if (kept.has(x.id)) update(x);
-        else insert(x);
-      }
+      fn();
       db.exec('COMMIT');
     } catch (err) {
       db.exec('ROLLBACK');
       throw err;
     }
-    return read();
+  }
+
+  // The writes of setTaskRuleSettings and setCustomTaskRules, inside a transaction of the caller's.
+  function writeRuleSettings(list) {
+    q.clearRuleSettings.run();
+    for (const s of list) q.insertRuleSetting.run(s.key, s.enabled ? 1 : 0, s.everyDays ?? null);
+  }
+  const customRuleValues = (c) => [c.text, c.rooms == null ? null : JSON.stringify(c.rooms), c.everyDays ?? null, c.slot, c.enabled ? 1 : 0];
+  function writeCustomRules(list) {
+    replaceRows(q.customRules, q.deleteCustomRule, list, (c) => q.updateCustomRule.run(...customRuleValues(c), c.id),
+      (c) => q.insertCustomRule.run(...customRuleValues(c)));
   }
 
   // Each address may be used by one device of one room only on a gateway (null: the farm's).
@@ -1716,6 +1738,11 @@ export function openDb(path, { log = console.error } = {}) {
       return q.reopenTask.run(id).changes > 0;
     },
 
+    // A new due time for an open upkeep row (its rule's interval changed). → false for any other row.
+    setTaskDue(id, dueAt) {
+      return q.setTaskDue.run(dueAt, id).changes > 0;
+    },
+
     // The room's closed rows, newest closedAt first, `limit` of them, older than the row `before` (an id) when given.
     taskLog(roomId, { before = null, limit = 50 } = {}) {
       return q.taskLog.all(roomId, before, limit).map(taskRow);
@@ -1749,15 +1776,7 @@ export function openDb(path, { log = console.error } = {}) {
 
     // Replaces every change of the built-in rules. → the new list.
     setTaskRuleSettings(list) {
-      db.exec('BEGIN');
-      try {
-        q.clearRuleSettings.run();
-        for (const s of list) q.insertRuleSetting.run(s.key, s.enabled ? 1 : 0, s.everyDays ?? null);
-        db.exec('COMMIT');
-      } catch (err) {
-        db.exec('ROLLBACK');
-        throw err;
-      }
+      inTransaction(() => writeRuleSettings(list));
       return this.taskRuleSettings();
     },
 
@@ -1770,9 +1789,18 @@ export function openDb(path, { log = console.error } = {}) {
 
     // Replaces the owner's rules like setWorkers (a rule left out is removed; its rows stay). → the new list.
     setCustomTaskRules(list) {
-      const values = (c) => [c.text, c.rooms == null ? null : JSON.stringify(c.rooms), c.everyDays ?? null, c.slot, c.enabled ? 1 : 0];
-      return replaceList(q.customRules, q.deleteCustomRule, list, (c) => q.updateCustomRule.run(...values(c), c.id),
-        (c) => q.insertCustomRule.run(...values(c)), () => this.customTaskRules());
+      inTransaction(() => writeCustomRules(list));
+      return this.customTaskRules();
+    },
+
+    // Both of the above in one step (a list null: kept as it is), so a refused write changes neither.
+    // → { settings, custom }: the new lists.
+    setTaskRules({ settings = null, custom = null }) {
+      inTransaction(() => {
+        if (settings) writeRuleSettings(settings);
+        if (custom) writeCustomRules(custom);
+      });
+      return { settings: this.taskRuleSettings(), custom: this.customTaskRules() };
     },
 
     close() {

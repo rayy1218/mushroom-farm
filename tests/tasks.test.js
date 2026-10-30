@@ -507,3 +507,40 @@ test('the log pages with before through rows closed at the same time', (t) => {
   assert.deepEqual(paged.map((r) => r.id), all.map((r) => r.id), 'every row once, in order');
   assert.deepEqual(all.map((r) => r.id), [...all.map((r) => r.id)].sort((a, b) => b - a), 'newest id first');
 });
+
+test('rulesSaved: a new interval re-dates the open upkeep rows from the last done or skip, or to today without one', (t) => {
+  const s = setup(t);
+  const upkeep = (key) => s.tasks.roomView(s.id).upkeep.find((r) => r.ruleKey === key);
+  s.tasks.done(upkeep('acService').id, { worker: 'Ali' }); // 2026-10-30
+  assert.equal(upkeep('acService').dueDate, '2027-02-27'); // 120 days on
+  s.set('2026-11-02T08:00:00+08:00'); // flyTraps and acFilter (no history) were due on 10-30
+  s.tasks.ensureDay(s.id);
+  const before = { settings: s.db.taskRuleSettings(), custom: s.db.customTaskRules() };
+  s.db.setTaskRuleSettings([{ key: 'acService', enabled: true, everyDays: 90 }, { key: 'flyTraps', enabled: true, everyDays: 14 }]);
+  s.changes.length = 0;
+  s.tasks.rulesSaved(before);
+  assert.equal(upkeep('acService').dueDate, '2027-01-28'); // 90 days after the done
+  assert.equal(upkeep('flyTraps').dueDate, '2026-11-02'); // no done or skip yet: today
+  assert.equal(upkeep('acFilter').dueDate, '2026-10-30'); // its interval is the same: still overdue
+  assert.deepEqual(s.changes, [s.id]); // told once
+});
+
+test('rulesSaved: an own rule changed from daily to every N days, or back, cancels its open row "Rule changed"', (t) => {
+  const s = setup(t);
+  const sources = () => ({ settings: s.db.taskRuleSettings(), custom: s.db.customTaskRules() });
+  const [tank] = s.db.setCustomTaskRules([{ text: 'Check the water tank', rooms: null, everyDays: null, slot: 'morning', enabled: true }]);
+  const key = `custom:${tank.id}`;
+  const daily = s.row(key);
+  assert.equal(daily.status, 'open');
+  let before = sources();
+  s.db.setCustomTaskRules([{ ...tank, everyDays: 7 }]);
+  s.tasks.rulesSaved(before);
+  assert.deepEqual([s.db.getTask(daily.id).status, s.db.getTask(daily.id).reason], ['cancelled', 'Rule changed']);
+  const upkeep = s.tasks.roomView(s.id).upkeep.find((r) => r.ruleKey === key);
+  assert.equal(upkeep.dueDate, '2026-10-30');
+  before = sources();
+  s.db.setCustomTaskRules([{ ...tank, everyDays: null }]);
+  s.tasks.rulesSaved(before);
+  assert.deepEqual([s.db.getTask(upkeep.id).status, s.db.getTask(upkeep.id).reason], ['cancelled', 'Rule changed']);
+  assert.equal(s.row(key).status, 'open'); // daily again: today's row opens again
+});

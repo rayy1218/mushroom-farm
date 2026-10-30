@@ -224,6 +224,21 @@ test('rule settings and the owner\'s rules are stored; a removed rule\'s id is n
   assert.ok(after[1].id > b.id, 'the removed rule\'s id stays unused');
 });
 
+test('setTaskRules writes the built-in changes and the own rules in one step: a refused own rule keeps both as they were', (t) => {
+  const { db } = fresh(t);
+  const settings = [{ key: 'acFilter', enabled: true, everyDays: 10 }];
+  const saved = db.setTaskRules({ settings, custom: [{ text: 'Top up the RO tank', rooms: null, everyDays: null, slot: 'any', enabled: true }] });
+  assert.deepEqual(saved.settings, settings);
+  assert.deepEqual(saved.custom.map((c) => c.text), ['Top up the RO tank']);
+  // the slot breaks the table's CHECK after the settings are written
+  assert.throws(() => db.setTaskRules({ settings: [{ key: 'acFilter', enabled: false, everyDays: 14 }], custom: [{ ...saved.custom[0], slot: 'evening' }] }));
+  assert.deepEqual(db.taskRuleSettings(), settings);
+  assert.deepEqual(db.customTaskRules(), saved.custom);
+  // a list left out (null) is kept
+  assert.deepEqual(db.setTaskRules({ settings: null, custom: [] }), { settings, custom: [] });
+  assert.deepEqual(db.setTaskRules({ settings: [], custom: null }), { settings: [], custom: [] });
+});
+
 test('a deleted room leaves the owner\'s rules; a rule left with no room is removed, not given to a new room with its id', (t) => {
   const { db, id: first } = fresh(t);
   const top = db.createRoom({ ...ROOM, name: 'Room 2' }, 1000).id;
