@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDb } from '../server/db.js';
-import { createTasks, TaskError } from '../server/tasks.js';
+import { createTasks, TaskError, machineChangeText } from '../server/tasks.js';
 import { startStage } from '../server/program.js';
 
 const at = (iso) => Date.parse(iso);
@@ -304,4 +304,33 @@ test('a row closed by someone else between the read and the close: 409 and one o
   refused(() => s.tasks.done(first.id, { worker: 'Ali' }), 409, 'Already done by Siti at 08:00', undefined);
   assert.equal(s.db.openTasks(s.id, 'upkeep').filter((r) => r.ruleKey === 'acFilter').length, 1);
   assert.equal(s.db.getTask(first.id).worker, 'Siti');
+});
+
+test('long-term rows: the owner\'s, and Plan this from a suggestion', (t) => {
+  const s = setup(t);
+  refused(() => s.tasks.addLongterm(s.id, { text: ' ' }), 400, 'Say what to do (1 to 120 characters)', 'text');
+  refused(() => s.tasks.addLongterm(s.id, { text: 'x'.repeat(121) }), 400, 'Say what to do (1 to 120 characters)', 'text');
+  refused(() => s.tasks.addLongterm(s.id, { text: 'x', note: 'n'.repeat(501) }), 400, 'The note must be at most 500 characters', 'note');
+  refused(() => s.tasks.addLongterm(s.id, null), 400, 'Say what to do (1 to 120 characters)', 'text');
+  refused(() => s.tasks.addLongterm(999, { text: 'x' }), 404, 'Room not found', undefined);
+  const own = s.tasks.addLongterm(s.id, { text: ' Seal the door gap ', note: 'Left side' });
+  assert.deepEqual([own.kind, own.text, own.note, own.source], ['longterm', 'Seal the door gap', 'Left side', null]);
+  const suggestion = {
+    machines: [{ key: 'acBTU', from: 9000, to: 12000 }, { key: 'fanFlow', from: 150, to: 150 }, { key: 'dehumidifierLday', from: 0, to: 10 },
+      { key: 'humidifierLH', from: 0.5, to: 1 }],
+    rmMonth: -42, suggestedAt: at('2026-10-29T15:00:00+08:00'),
+  };
+  const rows = s.tasks.addFromSuggestion(s.id, suggestion);
+  assert.deepEqual(rows.map((r) => r.text), ['Aircon 9,000 → 12,000 BTU/h', 'Dehumidifier none → 10 L/day', 'Humidifier 0.5 → 1 L/h']);
+  assert.deepEqual(rows[0].source, { machine: 'acBTU', from: 9000, to: 12000, rmMonth: -42, suggestedAt: suggestion.suggestedAt });
+  refused(() => s.tasks.addFromSuggestion(s.id, { machines: [{ key: 'acBTU', from: 9000, to: 9000 }], rmMonth: 0, suggestedAt: 1 }),
+    400, 'Nothing changes from what the room has now', 'suggestion');
+  refused(() => s.tasks.addFromSuggestion(s.id, { machines: [{ key: 'heater', from: 1, to: 2 }] }), 400,
+    'machines must be a list of { key, from, to } of the sized machines', 'suggestion');
+  refused(() => s.tasks.addFromSuggestion(s.id, null), 400, 'machines must be a list of { key, from, to } of the sized machines', 'suggestion');
+  const v = s.tasks.roomView(s.id);
+  assert.equal(v.longterm.length, 4);
+  assert.equal(v.counts.longterm, 4);
+  assert.equal(machineChangeText('fanFlow', 150, 200), 'Fan 150 → 200 m³/h');
+  assert.equal(machineChangeText('dehumidifierLday', 10, 0), 'Dehumidifier 10 L/day → none');
 });
