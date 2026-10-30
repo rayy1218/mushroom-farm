@@ -119,7 +119,7 @@ test('Plan this: a suggestion makes one long-term row per machine that changes, 
 test('Plan this: a suggestion that is not one is 400 with the field', async (t) => {
   const { call } = await app(t);
   const id = (await call('POST', '/api/rooms', ROOM)).body.id;
-  const machinesError = { error: 'machines must be a list of { key, from, to } of the sized machines', field: 'suggestion' };
+  const machinesError = { error: 'The plan must list the fan, aircon, humidifier or dehumidifier, each from and to a number from 0 to 1,000,000', field: 'suggestion' };
   const good = { machines: [{ key: 'acBTU', from: 9000, to: 12000 }], rmMonth: 10, suggestedAt: 1 };
   const post = (suggestion) => call('POST', `/api/rooms/${id}/tasks`, { suggestion });
   assert.deepEqual(await post('cheaper'), { status: 400, body: machinesError });
@@ -128,7 +128,7 @@ test('Plan this: a suggestion that is not one is 400 with the field', async (t) 
     assert.deepEqual(await post({ ...good, machines }), { status: 400, body: machinesError });
   }
   assert.deepEqual(await post({ ...good, machines: [] }), { status: 400, body: { error: 'Nothing changes from what the room has now', field: 'suggestion' } });
-  const numbers = { status: 400, body: { error: 'rmMonth and suggestedAt must be numbers', field: 'suggestion' } };
+  const numbers = { status: 400, body: { error: "The plan's RM a month and its time must be numbers", field: 'suggestion' } };
   assert.deepEqual(await post({ ...good, rmMonth: 'less' }), numbers);
   assert.deepEqual(await post({ ...good, suggestedAt: 'yesterday' }), numbers);
   const noMoney = await post({ machines: good.machines }); // rmMonth and suggestedAt left out: kept as none

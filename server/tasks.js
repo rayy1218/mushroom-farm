@@ -40,6 +40,7 @@ const trimmed = (v) => (typeof v === 'string' ? v.trim() : '');
 const MAX_TEXT = 120;
 const MAX_NOTE = 500;
 const MAX_MACHINE = 1_000_000;
+const MAX_TIME = 8.64e15; // the latest time a Date can hold, in ms
 // The machines of a suggestion (the sizing keys): the name and unit of the long-term text; zero: the word for 0.
 const MACHINES = {
   fanFlow: { name: 'Fan', unit: 'm³/h' },
@@ -264,18 +265,20 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
     },
 
     // Plan this on Suggest machines: { machines: [{ key, from, to }], rmMonth, suggestedAt } → one long-term row per machine
-    // that changes, made together. Each machine at most once, from and to 0 to 1,000,000.
+    // that changes, made together. Each machine at most once, from and to 0 to 1,000,000; suggestedAt null or ms 0 to 8.64e15.
     addFromSuggestion(roomId, suggestion) {
       if (!db.getRoom(roomId)) throw new TaskError(404, 'Room not found');
       const { machines, rmMonth = null, suggestedAt = null } = suggestion ?? {};
       const number = (v) => typeof v === 'number' && Number.isFinite(v);
       const size = (v) => number(v) && v >= 0 && v <= MAX_MACHINE;
+      // suggestedAt: a time in ms within the Date range.
+      const time = (v) => Number.isInteger(v) && v >= 0 && v <= MAX_TIME;
       if (!Array.isArray(machines) || new Set(machines.map((m) => m?.key)).size !== machines.length
         || machines.some((m) => !Object.hasOwn(MACHINES, m?.key) || !size(m.from) || !size(m.to))) {
-        throw new TaskError(400, 'machines must be a list of { key, from, to } of the sized machines', 'suggestion');
+        throw new TaskError(400, `The plan must list the fan, aircon, humidifier or dehumidifier, each from and to a number from 0 to ${grouped(MAX_MACHINE)}`, 'suggestion');
       }
-      if ((rmMonth !== null && !number(rmMonth)) || (suggestedAt !== null && !number(suggestedAt))) {
-        throw new TaskError(400, 'rmMonth and suggestedAt must be numbers', 'suggestion');
+      if ((rmMonth !== null && !number(rmMonth)) || (suggestedAt !== null && !time(suggestedAt))) {
+        throw new TaskError(400, "The plan's RM a month and its time must be numbers", 'suggestion');
       }
       const changes = machines.filter((m) => m.from !== m.to);
       if (changes.length === 0) throw new TaskError(400, 'Nothing changes from what the room has now', 'suggestion');
