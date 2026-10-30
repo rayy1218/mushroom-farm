@@ -122,3 +122,17 @@ test('Setup saved but the mark failed: the Setup boxes lock and the one button l
 test('Plan this: a dialog closed or a page gone before the answer tells no one', () => {
   has('if (form.alive()) onPlanned?.(Array.isArray(data?.rows) ? data.rows : []);');
 });
+
+// ---- C5 re-review ----
+
+test('a dialog closed while sending (Chrome lets a second Esc close it): a failure goes to the page, not to the closed form', () => {
+  has("if (!alive() || !d.open) { // closed meanwhile (Chrome lets a second Esc close it): a failure is said on the page");
+  has('if (outcome !== true) onLost?.(outcome.message);');
+  has('openForm({ ...options, onLost: (text) => { if (alive) onError?.(text); } })');
+});
+
+test('the picker that could not read the names reads them again when the live stream comes back', () => {
+  has("import { live } from './live.js';");
+  has('const offStatus = live.onStatus((up) => { if (up && failed && alive && !loading) load(); });');
+  has('offStatus();');
+});

@@ -7,6 +7,7 @@
 //   getWorker() · setWorker(name) · loadWorkers() → names · closeTaskDialog()
 
 import { request, OFFLINE } from './api.js';
+import { live } from './live.js';
 import { keepLines } from './text-math.js';
 import { recordsAmount, amountField, parseAmount, checkReason, checkLongterm, setupUpdate, beforeText, setupBody } from './tasks-math.js';
 
@@ -77,13 +78,22 @@ export function createWorkerPicker() {
   select.addEventListener('change', () => setWorker(select.value || null));
   const onStore = () => { if (alive) paint(); };
   window.addEventListener('farm:worker', onStore);
-  loadWorkers().then((list) => { names = list; loaded = true; }, () => { failed = true; }).then(() => { if (alive) paint(); });
+  let loading = false;
+  function load() {
+    loading = true;
+    loadWorkers().then((list) => { names = list; loaded = true; failed = false; }, () => { failed = true; })
+      .then(() => { loading = false; if (alive) paint(); });
+  }
+  // The names could not be read: the stream coming back means the server is there again, so ask once more.
+  const offStatus = live.onStatus((up) => { if (up && failed && alive && !loading) load(); });
+  load();
   paint();
   return {
     node,
     destroy() {
       alive = false;
       window.removeEventListener('farm:worker', onStore);
+      offStatus();
     },
   };
 }
@@ -106,8 +116,9 @@ export function closeTaskDialog() {
 // Opens the dialog on a form. lead: lines (text or nodes) under the title; fields: [{ name, label, kind: 'text' | 'number'
 // | 'area' | 'select' | 'check', value, options ([value, label]), hint }]; buttons: [{ value, label, primary }] after the
 // close button (closeLabel; Close when there are no buttons). submit(values, which) → true (closes), or { field, message }
-// or { message } to show while it stays open. → { input(name), button(value), alive() } (alive: this opening still shows).
-function openForm({ title, lead = [], fields = [], buttons = [], closeLabel = buttons.length ? 'Cancel' : 'Close', submit }) {
+// or { message } to show while it stays open; onLost(message): a failure that came back after the dialog was closed or
+// replaced. → { input(name), button(value), alive() } (alive: this opening still shows).
+function openForm({ title, lead = [], fields = [], buttons = [], closeLabel = buttons.length ? 'Cancel' : 'Close', submit, onLost }) {
   const d = ensureDialog();
   if (d.open) d.close();
   const me = ++openSeq;
@@ -212,7 +223,10 @@ function openForm({ title, lead = [], fields = [], buttons = [], closeLabel = bu
     } catch (err) {
       outcome = { message: errorText(err) };
     }
-    if (!alive()) return;
+    if (!alive() || !d.open) { // closed meanwhile (Chrome lets a second Esc close it): a failure is said on the page
+      if (outcome !== true) onLost?.(outcome.message);
+      return;
+    }
     busy = false;
     for (const b of [close, ...sends]) b.disabled = false;
     if (outcome === true) d.close();
@@ -237,6 +251,8 @@ export function createTaskActions({ onChanged, onError }) {
   let alive = true;
   let names = null; // the workers' names, read on the first need
   const pending = new Set(); // the rows being sent or asked about: a second tap meanwhile does nothing
+  // Its dialogs: a failure that comes back after one was closed is said where the page says the others.
+  const ask = (options) => openForm({ ...options, onLost: (text) => { if (alive) onError?.(text); } });
 
   // The names, or null after saying why they could not be read (no dialog then: it would say "No names yet"). A failed read
   // is not kept: the next tap reads them again.
@@ -306,7 +322,7 @@ export function createTaskActions({ onChanged, onError }) {
       return;
     }
     const amount = recordsAmount(row) ? amountField(row) : null;
-    openForm({
+    ask({
       title: 'Mark done',
       lead: leadOf(row, list),
       fields: [workerField(list), ...(amount ? [{ name: 'amount', label: amount.label, kind: 'number', value: '', hint: 'Leave it empty if it was not weighed or counted.' }] : [])],
@@ -328,7 +344,7 @@ export function createTaskActions({ onChanged, onError }) {
   async function skip(row) {
     const list = await workers();
     if (!list || !alive) return;
-    openForm({
+    ask({
       title: 'Skip this task',
       lead: leadOf(row, list),
       fields: [workerField(list), { name: 'reason', label: 'Why', kind: 'text', value: '' }],
@@ -344,7 +360,7 @@ export function createTaskActions({ onChanged, onError }) {
   }
 
   function cancel(row) {
-    openForm({
+    ask({
       title: 'Cancel this task',
       lead: [row.text, 'It stays in the log as cancelled, with the reason.'],
       fields: [{ name: 'reason', label: 'Why', kind: 'text', value: '' }],
@@ -359,7 +375,7 @@ export function createTaskActions({ onChanged, onError }) {
   }
 
   function add(roomId) {
-    openForm({
+    ask({
       title: 'Add a long-term task',
       lead: ['A job of weeks rather than of the day, such as fixing the door seal.'],
       fields: [{ name: 'text', label: 'Task', kind: 'text', value: '' }, { name: 'note', label: 'Note (optional)', kind: 'area', value: '' }],
@@ -401,14 +417,14 @@ export function createTaskActions({ onChanged, onError }) {
       return send(`/api/tasks/${row.id}/done`, { worker: w });
     };
     if (!update) {
-      openForm({
+      ask({
         title: 'Mark done', lead: leadOf(row, list, ['Setup keeps no fan flow, so Done only records the change.']),
         fields: [workerField(list)], buttons: [{ value: 'done', label: 'Done', primary: true }], submit: mark,
       });
       return;
     }
     let saved = false; // Setup was saved in this dialog: a second try only marks the task done
-    const form = openForm({
+    const form = ask({
       title: 'Mark done and update Setup',
       lead: leadOf(row, list, [`Setup now: ${update.map(nowText).join(' · ')}`]),
       fields: [workerField(list), ...update.map((f) => (f.kind === 'check'
