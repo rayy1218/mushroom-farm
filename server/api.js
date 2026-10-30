@@ -70,8 +70,16 @@ export function createApi(db, machines = null, controller = null, poller = null,
   const publishRoom = (id, part) => events?.publish('room', { id, part }); // the live pages ask again (spec 2026-10-26 section 2)
   const simulationRoutes = simulations && createSimulationRoutes({ db, simulations });
   // The tasks (spec 2026-10-30-tasks-design.md): main.js passes the one the controller also uses; tests may leave it out.
+  // Any change, made by a route here or by the controller's daily ensureDay, tells the pages: the room's Tasks tab and the
+  // top bar's count (section 6). server/tasks.js calls back only when something changed.
   const taskStore = tasks ?? createTasks({ db });
   const taskRoutes = createTaskRoutes({ db, tasks: taskStore });
+  if (events) {
+    taskStore.onChange((roomId) => {
+      publishRoom(roomId, 'tasks');
+      events.publish('tasks', { due: taskStore.dueCount() });
+    });
+  }
   // The room body; on the farm's gateway its addresses must differ from the outdoor sensor's (read through that gateway).
   // stored: the room as it is (an update): a filter setting or the gateway left out is its stored value, so the checks compare
   // what will be saved. The farm's own gateway is stored as null, its one spelling, so the address checks see it as the farm's.
