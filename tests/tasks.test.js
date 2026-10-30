@@ -334,3 +334,31 @@ test('long-term rows: the owner\'s, and Plan this from a suggestion', (t) => {
   assert.equal(machineChangeText('fanFlow', 150, 200), 'Fan 150 → 200 m³/h');
   assert.equal(machineChangeText('dehumidifierLday', 10, 0), 'Dehumidifier 10 L/day → none');
 });
+
+test('Plan this checks: a machine once, numbers from 0 to 1,000,000, rmMonth and suggestedAt numbers; one change told; at most 3 decimals', (t) => {
+  const s = setup(t);
+  const shape = 'machines must be a list of { key, from, to } of the sized machines';
+  const plan = (machines, extra = {}) => s.tasks.addFromSuggestion(s.id, { machines, rmMonth: -42, suggestedAt: 1, ...extra });
+  refused(() => plan([{ key: 'acBTU', from: 9000, to: 12000 }, { key: 'acBTU', from: 9000, to: 18000 }]), 400, shape, 'suggestion');
+  refused(() => plan([{ key: 'fanFlow', from: -1, to: 200 }]), 400, shape, 'suggestion');
+  refused(() => plan([{ key: 'fanFlow', from: 150, to: -5 }]), 400, shape, 'suggestion');
+  refused(() => plan([{ key: 'fanFlow', from: '150', to: 200 }]), 400, shape, 'suggestion');
+  refused(() => plan([{ key: 'fanFlow', from: 150, to: Number.NaN }]), 400, shape, 'suggestion');
+  refused(() => plan([{ key: 'fanFlow', from: 150, to: 1_000_001 }]), 400, shape, 'suggestion');
+  refused(() => plan([{ key: 'fanFlow', from: 150, to: 200 }], { rmMonth: '-42' }), 400, 'rmMonth and suggestedAt must be numbers', 'suggestion');
+  refused(() => plan([{ key: 'fanFlow', from: 150, to: 200 }], { suggestedAt: Infinity }), 400, 'rmMonth and suggestedAt must be numbers', 'suggestion');
+  refused(() => s.tasks.addFromSuggestion(999, { machines: [{ key: 'fanFlow', from: 150, to: 200 }] }), 404, 'Room not found', undefined);
+  assert.deepEqual(s.changes, [], 'nothing made, no one told');
+  const rows = plan([{ key: 'fanFlow', from: 150, to: 1_000_000 }, { key: 'humidifierLH', from: 0.1 + 0.2, to: 1.23456 }]);
+  assert.deepEqual(s.changes, [s.id], 'told once for both rows');
+  assert.deepEqual(rows.map((r) => r.text), ['Fan 150 → 1,000,000 m³/h', 'Humidifier 0.3 → 1.235 L/h']);
+  assert.equal(rows[1].source.from, 0.1 + 0.2, 'the source keeps the numbers sent');
+  assert.equal(s.db.openTasks(s.id, 'longterm').length, 2);
+});
+
+test('addLongterm: a note that is not text is refused', (t) => {
+  const s = setup(t);
+  refused(() => s.tasks.addLongterm(s.id, { text: 'Seal the door gap', note: 5 }), 400, 'The note must be text', 'note');
+  refused(() => s.tasks.addLongterm(s.id, { text: 'Seal the door gap', note: { a: 1 } }), 400, 'The note must be text', 'note');
+  assert.equal(s.tasks.addLongterm(s.id, { text: 'Seal the door gap', note: null }).note, null);
+});

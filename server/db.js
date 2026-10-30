@@ -1656,6 +1656,19 @@ export function openDb(path, { log = console.error } = {}) {
       return taskRow(q.task.get(Number(lastInsertRowid)));
     },
 
+    // Several long-term rows (insertLongtermTask's fields) in one transaction: every row or none. → the rows.
+    insertLongtermTasks(list) {
+      db.exec('BEGIN');
+      try {
+        const rows = list.map((t) => this.insertLongtermTask(t));
+        db.exec('COMMIT');
+        return rows;
+      } catch (err) {
+        db.exec('ROLLBACK');
+        throw err;
+      }
+    },
+
     getTask(id) {
       const r = q.task.get(id);
       return r ? taskRow(r) : null;

@@ -295,3 +295,15 @@ test('reopenTask opens again only a daily row the server cancelled for a stage o
   assert.equal(db.reopenTask(own), false, 'only daily rows');
   assert.equal(db.getTask(own).status, 'cancelled');
 });
+
+test('insertLongtermTasks makes every row or none', (t) => {
+  const { db, id } = fresh(t);
+  const rows = db.insertLongtermTasks([
+    { roomId: id, text: 'Fan 150 → 200 m³/h', source: { machine: 'fanFlow', from: 150, to: 200, rmMonth: 3, suggestedAt: 1 }, at: 800 },
+    { roomId: id, text: 'Seal the door gap', at: 800 },
+  ]);
+  assert.deepEqual(rows.map((r) => [r.text, r.source?.machine ?? null]), [['Fan 150 → 200 m³/h', 'fanFlow'], ['Seal the door gap', null]]);
+  assert.throws(() => db.insertLongtermTasks([{ roomId: id, text: 'Fit a second fan', at: 900 }, { roomId: id, text: null, at: 900 }]),
+    /NOT NULL constraint failed/);
+  assert.deepEqual(db.openTasks(id, 'longterm').map((r) => r.text), ['Fan 150 → 200 m³/h', 'Seal the door gap']);
+});

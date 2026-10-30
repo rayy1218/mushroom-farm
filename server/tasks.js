@@ -23,9 +23,9 @@ const MAX_REASON = 200;
 const MAX_NAME = 40;
 const STATUS_WORD = { done: 'done', skipped: 'skipped', missed: 'missed', cancelled: 'cancelled' };
 
-// '12,000', '0.5': thousands grouped with a comma.
+// '12,000', '0.5': thousands grouped with a comma, at most 3 decimals (0.1 + 0.2 is '0.3').
 const grouped = (n) => {
-  const [whole, frac] = String(n).split('.');
+  const [whole, frac] = String(Number(n.toFixed(3))).split('.');
   return `${whole.replace(/\B(?=(\d{3})+$)/g, ',')}${frac ? `.${frac}` : ''}`;
 };
 
@@ -40,6 +40,7 @@ const trimmed = (v) => (typeof v === 'string' ? v.trim() : '');
 
 const MAX_TEXT = 120;
 const MAX_NOTE = 500;
+const MAX_MACHINE = 1_000_000;
 // The machines of a suggestion (the sizing keys): the name and unit of the long-term text; zero: the word for 0.
 const MACHINES = {
   fanFlow: { name: 'Fan', unit: 'm³/h' },
@@ -239,6 +240,7 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
       if (!db.getRoom(roomId)) throw new TaskError(404, 'Room not found');
       const t = trimmed(text);
       if (!t || t.length > MAX_TEXT) throw new TaskError(400, `Say what to do (1 to ${MAX_TEXT} characters)`, 'text');
+      if (note !== undefined && note !== null && typeof note !== 'string') throw new TaskError(400, 'The note must be text', 'note');
       const n = trimmed(note);
       if (n.length > MAX_NOTE) throw new TaskError(400, `The note must be at most ${MAX_NOTE} characters`, 'note');
       const row = db.insertLongtermTask({ roomId, text: t, note: n || null, at: now() });
@@ -247,12 +249,14 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
     },
 
     // Plan this on Suggest machines: { machines: [{ key, from, to }], rmMonth, suggestedAt } → one long-term row per machine
-    // that changes.
+    // that changes, made together. Each machine at most once, from and to 0 to 1,000,000.
     addFromSuggestion(roomId, suggestion) {
       if (!db.getRoom(roomId)) throw new TaskError(404, 'Room not found');
       const { machines, rmMonth = null, suggestedAt = null } = suggestion ?? {};
       const number = (v) => typeof v === 'number' && Number.isFinite(v);
-      if (!Array.isArray(machines) || machines.some((m) => !Object.hasOwn(MACHINES, m?.key) || !number(m.from) || !number(m.to) || m.from < 0 || m.to < 0)) {
+      const size = (v) => number(v) && v >= 0 && v <= MAX_MACHINE;
+      if (!Array.isArray(machines) || new Set(machines.map((m) => m?.key)).size !== machines.length
+        || machines.some((m) => !Object.hasOwn(MACHINES, m?.key) || !size(m.from) || !size(m.to))) {
         throw new TaskError(400, 'machines must be a list of { key, from, to } of the sized machines', 'suggestion');
       }
       if ((rmMonth !== null && !number(rmMonth)) || (suggestedAt !== null && !number(suggestedAt))) {
@@ -261,12 +265,12 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
       const changes = machines.filter((m) => m.from !== m.to);
       if (changes.length === 0) throw new TaskError(400, 'Nothing changes from what the room has now', 'suggestion');
       const at = now();
-      const rows = changes.map((m) => view(db.insertLongtermTask({
+      const rows = db.insertLongtermTasks(changes.map((m) => ({
         roomId, text: machineChangeText(m.key, m.from, m.to),
         source: { machine: m.key, from: m.from, to: m.to, rmMonth, suggestedAt }, at,
       })));
       tell(roomId);
-      return rows;
+      return rows.map(view);
     },
 
     // fn(roomId) after any change of a room's rows; → a function that stops it.
