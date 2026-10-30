@@ -482,13 +482,13 @@ export function createController({ db, machines, now = Date.now, log = console.e
   const changed = new Map(); // `${roomId}/humidifier|dehumidifier|ac` → when the controller last changed that command (machine protection)
   const lastCo2 = new Map(); // roomId → the last good CO₂ reading (for the planned end of an exchange)
   let lastStart = null; // the start time of the previous cycle
-  const taskDays = new Map(); // roomId → the farm date its tasks were last made by a cycle (tasks.ensureDay)
+  const taskKeys = new Map(); // roomId → what its tasks were last made for by a cycle (tasks.ensureDay): the farm date, stage, machines
 
   // Drops what is kept in memory for a deleted room.
   function forget(roomId) {
     reasons.delete(roomId);
     lastCo2.delete(roomId);
-    taskDays.delete(roomId);
+    taskKeys.delete(roomId);
     for (const key of [...RELAY_KEYS, 'ac']) tries.delete(`${roomId}/${key}`);
     for (const key of ['humidifier', 'dehumidifier', 'ac']) changed.delete(`${roomId}/${key}`);
     checks.forget(roomId);
@@ -539,10 +539,8 @@ export function createController({ db, machines, now = Date.now, log = console.e
     // The stage program (auto on or off): a due stage change, and the ramped bands written to the settings when they differ.
     let program = db.getProgram(room.id);
     let blocksDone = null;
-    let stageChanged = false;
     if (program.crops.length > 0) {
       const next = advance(program, at, c);
-      stageChanged = next.changed.length > 0;
       if (next.program !== program) db.setProgram(room.id, next.program);
       program = next.program; // the lights follow the stage of now
       if (next.bands && BAND_KEYS.some((k) => next.bands[k] !== c[k])) {
@@ -552,15 +550,20 @@ export function createController({ db, machines, now = Date.now, log = console.e
       if (next.program.done) blocksDone = { flush: next.program.flush, flushes: next.program.flushes };
     }
 
-    // The room's tasks (spec 2026-10-30-tasks-design.md 4): made once per farm day, and again after a stage change, so a day
-    // is made after the app was down. An error is logged once for that day and never stops the room's control.
-    const taskDate = localDate(at);
-    if (tasks && (taskDays.get(room.id) !== taskDate || stageChanged)) {
-      taskDays.set(room.id, taskDate);
-      try {
-        tasks.ensureDay(room.id, taskDate);
-      } catch (err) {
-        log(err);
+    // The room's tasks (spec 2026-10-30-tasks-design.md 4): made once per farm day, and again when what decides them changes
+    // (a stage started here or by the crop PUT, crops added or cleared, a machine fitted or taken out), so a day is made after
+    // the app was down. An error is logged once for that state and never stops the room's control.
+    if (tasks) {
+      const date = localDate(at);
+      const key = [date, program.crops.length, program.stage, program.flush, program.done, program.stageSince,
+        room.dehumidifier, room.co2Address, room.trhAddress].join('|');
+      if (taskKeys.get(room.id) !== key) {
+        taskKeys.set(room.id, key);
+        try {
+          tasks.ensureDay(room.id, date);
+        } catch (err) {
+          log(err);
+        }
       }
     }
     const commands = db.getCommands(room.id);
