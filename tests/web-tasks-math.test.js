@@ -90,3 +90,117 @@ test('upkeep: overdue first in words, then due within 7 days, then the rest by d
   ];
   assert.deepEqual(upkeepRows(rows, today).map((x) => x.row.id), [4, 2, 3, 1]);
 });
+
+import {
+  rmWords, longtermLine, changeText, machineChanges, planOf, acInputOf, setupUpdate, beforeText, setupBody,
+  parseAmount, checkReason, checkLongterm, logRows, logLine,
+} from '../web/tasks-math.js';
+
+test('a long-term row from Suggest machines in one line', () => {
+  const row = { text: 'Aircon 9,000 → 12,000 BTU/h', source: { machine: 'acBTU', from: 9000, to: 12000, rmMonth: -42.4, suggestedAt: at(14, 0, 29) } };
+  assert.equal(longtermLine(row), 'Aircon 9,000 → 12,000 BTU/h · RM 42 a month less · from Suggest machines, 29 Oct');
+  assert.equal(longtermLine({ ...row, source: { ...row.source, rmMonth: 15.6 } }), 'Aircon 9,000 → 12,000 BTU/h · RM 16 a month more · from Suggest machines, 29 Oct');
+  assert.equal(longtermLine({ ...row, source: { ...row.source, rmMonth: null } }), 'Aircon 9,000 → 12,000 BTU/h · from Suggest machines, 29 Oct', 'no electricity price: no money');
+  assert.equal(longtermLine({ ...row, source: { ...row.source, suggestedAt: null } }), 'Aircon 9,000 → 12,000 BTU/h · RM 42 a month less · from Suggest machines', 'no time: no day');
+  assert.equal(longtermLine({ text: 'Fix the door seal', source: null }), 'Fix the door seal');
+  assert.equal(rmWords(0.3), 'about the same money a month');
+  assert.equal(rmWords(null), '');
+});
+
+test('a machine change in words, as the server names the task', () => {
+  assert.equal(changeText({ key: 'fanFlow', from: 150, to: 200 }), 'Fan 150 → 200 m³/h');
+  assert.equal(changeText({ key: 'acBTU', from: 9000, to: 12000 }), 'Aircon 9,000 → 12,000 BTU/h');
+  assert.equal(changeText({ key: 'humidifierLH', from: 0.5, to: 1 }), 'Humidifier 0.5 → 1 L/h');
+  assert.equal(changeText({ key: 'dehumidifierLday', from: 0, to: 10 }), 'Dehumidifier none → 10 L/day');
+  assert.equal(changeText({ key: 'dehumidifierLday', from: 10, to: 0 }), 'Dehumidifier 10 L/day → none');
+  const now = { fanFlow: 150, acBTU: 9000, humidifierLH: 0.5, dehumidifierLday: 0 };
+  assert.deepEqual(machineChanges(now, { ...now, acBTU: 12000, dehumidifierLday: 10 }).map((c) => [c.key, c.from, c.to]), [['acBTU', 9000, 12000], ['dehumidifierLday', 0, 10]]);
+  assert.deepEqual(machineChanges(now, { ...now }), []);
+});
+
+test('Plan this: the changes against the baseline and the RM a month against it', () => {
+  const result = {
+    days: 2,
+    baseline: { machines: { fanFlow: 150, acBTU: 9000, humidifierLH: 0.5, dehumidifierLday: 0 }, kWh: 20, litres: 0 },
+    best: [{ machines: { fanFlow: 150, acBTU: 12000, humidifierLH: 1, dehumidifierLday: 0 }, kWh: 15, litres: 0 }],
+  };
+  const plan = planOf(result, 0, { electricity: 0.55, water: null }, 123);
+  assert.deepEqual(plan.changes.map((c) => c.text), ['Aircon 9,000 → 12,000 BTU/h', 'Humidifier 0.5 → 1 L/h']);
+  assert.equal(plan.rmMonth, -41.25, 'RM 123.75 a month against RM 165');
+  assert.equal(plan.rmText, 'RM 41 a month less');
+  assert.deepEqual(plan.body, { suggestion: { machines: [{ key: 'acBTU', from: 9000, to: 12000 }, { key: 'humidifierLH', from: 0.5, to: 1 }], rmMonth: -41.25, suggestedAt: 123 } });
+  assert.equal(planOf(result, 0, { electricity: null, water: null }, 123).rmMonth, null, 'no price: no money');
+  assert.equal(planOf({ ...result, baseline: undefined }, 0, { electricity: 0.55 }, 123), null, 'no baseline: the "from" is unknown');
+  assert.deepEqual(planOf({ ...result, best: [result.baseline] }, 0, { electricity: 0.55 }, 123).changes, [], 'the room has it already: nothing to plan (the server refuses an empty plan)');
+});
+
+const ROOM = {
+  name: 'Room 2', length: 3, width: 2, height: 2.5, trhAddress: 1, co2Address: 2, meterAddress: null, dpAddress: null, relayAddress: 3,
+  acAddress: null, dehumidifier: false, lights: false, intakeW: 60, exhaustW: 60, circulationW: 60, humidifierW: 80, humidifierLH: 2, acInputW: 800,
+  dehumidifierW: 380, dehumidifierLday: 20, lightsW: 60, fanMaxPa: 200, filterCleanPa: 40, filterFinalPa: 80, filterChangeDays: 30, gateway: null,
+};
+
+test('Done on a long-term machine task offers these Setup values (spec 7.5)', () => {
+  assert.equal(acInputOf(12000), 1070, '12,000 ÷ 11.25 = 1,066.7 W, to 10 W');
+  assert.equal(acInputOf(9000), 800);
+  assert.equal(acInputOf(18000), 1600);
+  assert.deepEqual(setupUpdate({ machine: 'acBTU', from: 9000, to: 12000 }, ROOM), [
+    { name: 'acInputW', label: 'Aircon rated input', unit: 'W', kind: 'number', before: 800, after: 1070 },
+  ]);
+  assert.deepEqual(setupUpdate({ machine: 'humidifierLH', from: 2, to: 3 }, ROOM), [
+    { name: 'humidifierLH', label: 'Humidifier output', unit: 'L/h', kind: 'number', before: 2, after: 3 },
+  ]);
+  assert.deepEqual(setupUpdate({ machine: 'dehumidifierLday', from: 0, to: 25 }, ROOM), [
+    { name: 'dehumidifier', label: 'Dehumidifier fitted', unit: null, kind: 'check', before: false, after: true },
+    { name: 'dehumidifierLday', label: 'Dehumidifier capacity', unit: 'L/day', kind: 'number', before: null, after: 25 },
+  ]);
+  assert.deepEqual(setupUpdate({ machine: 'dehumidifierLday', from: 20, to: 0 }, { ...ROOM, dehumidifier: true }), [
+    { name: 'dehumidifier', label: 'Dehumidifier fitted', unit: null, kind: 'check', before: true, after: false },
+  ]);
+  assert.equal(setupUpdate({ machine: 'fanFlow', from: 150, to: 200 }, ROOM), null, 'Setup keeps no fan flow');
+  assert.equal(setupUpdate(null, ROOM), null);
+  assert.equal(beforeText({ kind: 'number', unit: 'W', before: 1050 }), '1,050 W');
+  assert.equal(beforeText({ kind: 'number', unit: 'L/day', before: null }), 'not set');
+  assert.equal(beforeText({ kind: 'check', before: false }), 'not fitted');
+});
+
+test("Save and mark done: the room's PUT body with the edited values, checked as Setup checks them", () => {
+  const { body } = setupBody(ROOM, { acInputW: '1070' });
+  assert.equal(body.acInputW, 1070);
+  assert.equal(body.name, 'Room 2');
+  assert.equal(body.humidifierLH, 2, 'the rest as the room has it');
+  const fitted = setupBody(ROOM, { dehumidifier: true, dehumidifierLday: '25' }).body;
+  assert.equal(fitted.dehumidifier, true);
+  assert.equal(fitted.dehumidifierLday, 25);
+  assert.deepEqual(setupBody(ROOM, { acInputW: 'abc' }), { errors: { acInputW: 'Aircon rated input must be a number from 0 to 20000 W' } });
+});
+
+test("the boxes of the dialogs: an amount, a reason, a long-term task, in the server's words", () => {
+  assert.deepEqual(parseAmount('', 'kg'), { value: null });
+  assert.deepEqual(parseAmount(' 2.45 ', 'kg'), { value: 2.45 });
+  assert.deepEqual(parseAmount('0.125', 'kg'), { value: 0.125 }, 'up to 3 decimals, as the amount shows');
+  assert.deepEqual(parseAmount('10000', 'kg'), { value: 10000 });
+  for (const t of ['10000.5', '-1', 'abc', '1e3', '2.4567']) {
+    assert.deepEqual(parseAmount(t, 'kg'), { error: 'The amount must be a number from 0 to 10,000' }, t);
+  }
+  assert.deepEqual(checkReason('  '), { error: 'Say why' });
+  assert.deepEqual(checkReason(' Bags not ready '), { value: 'Bags not ready' });
+  assert.deepEqual(checkReason('x'.repeat(200)), { value: 'x'.repeat(200) });
+  assert.deepEqual(checkReason('x'.repeat(201)), { error: 'The reason must be at most 200 characters' });
+  assert.deepEqual(checkLongterm({ text: ' ', note: '' }), { errors: { text: 'Say what to do (1 to 120 characters)' } });
+  assert.deepEqual(checkLongterm({ text: 'x'.repeat(121), note: '' }), { errors: { text: 'Say what to do (1 to 120 characters)' } });
+  assert.deepEqual(checkLongterm({ text: ' Seal the door ', note: ' ' }), { values: { text: 'Seal the door', note: null } });
+  assert.deepEqual(checkLongterm({ text: 'Seal the door', note: 'x'.repeat(501) }), { errors: { note: 'The note must be at most 500 characters' } });
+});
+
+test('the Log: the last 14 days, each line with its time, status, who, amount and why', () => {
+  const now = at(12, 0);
+  const rows = [
+    { id: 9, text: 'Harvest check', status: 'done', closedAt: at(11, 0), worker: 'Ali', amount: 3.5, unit: 'kg', reason: null },
+    { id: 8, text: 'Footbath', status: 'missed', closedAt: at(0, 0, 14), worker: null, amount: null, unit: null, reason: null },
+  ];
+  assert.deepEqual(logRows(rows, now).map((l) => l.id), [9]);
+  assert.deepEqual(logRows(rows, now, true).map((l) => l.id), [9, 8]);
+  assert.deepEqual(logLine(rows[0]), { id: 9, date: '30 Oct', time: '11:00', task: 'Harvest check', status: 'Done', tone: 'good', worker: 'Ali', amount: '3.5 kg', reason: '' });
+  assert.equal(logLine(rows[1]).tone, 'amber');
+});
