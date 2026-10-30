@@ -302,13 +302,13 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
       return db.taskLog(roomId, { before, limit }).map(view);
     },
 
-    // Every closed row as CSV (oldest first): date, time (the farm's clock; none for a missed row), room, task, status, worker,
-    // amount, unit, reason. Null when there is no such room.
+    // Every closed row as CSV (oldest first): date and time it was closed on the farm's clock (a missed row: its own day and
+    // no time), room, task, status, worker, amount, unit, reason. Null when there is no such room.
     logCsv(roomId) {
       const room = db.getRoom(roomId);
       if (!room) return null;
       const lines = db.taskLogAll(roomId).map((r) => [
-        r.date ?? localDate(r.closedAt), r.status === 'missed' ? '' : localTime(r.closedAt), room.name, r.text, r.status, r.worker,
+        r.status === 'missed' ? r.date : localDate(r.closedAt), r.status === 'missed' ? '' : localTime(r.closedAt), room.name, r.text, r.status, r.worker,
         r.amount, r.amount === null ? null : r.unit, r.reason,
       ].map(cell).join(','));
       return `${[CSV_HEADER, ...lines].join('\r\n')}\r\n`;

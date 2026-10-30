@@ -3,6 +3,10 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { DatabaseSync } from 'node:sqlite';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { openDb } from '../server/db.js';
 import { createTasks, TaskError, machineChangeText } from '../server/tasks.js';
 import { startStage } from '../server/program.js';
@@ -12,9 +16,19 @@ const DAY = 86_400_000;
 const ROOM = { name: 'Room 1', length: 6, width: 4, height: 2.5, trhAddress: 1 };
 const OYSTER = [{ crop: 'oyster', blocks: 100 }];
 
-function setup(t, { crops = OYSTER, stage = 'fruiting', room = {} } = {}) {
-  const db = openDb(':memory:');
-  t.after(() => db.close());
+// file: the database in a temporary file, with raw a second connection to it (to move rows by hand).
+function setup(t, { crops = OYSTER, stage = 'fruiting', room = {}, file = false } = {}) {
+  let db;
+  let raw = null;
+  if (file) {
+    const dir = mkdtempSync(join(tmpdir(), 'farm-tasks-'));
+    db = openDb(join(dir, 'farm.db'));
+    raw = new DatabaseSync(join(dir, 'farm.db'));
+    t.after(() => { raw.close(); db.close(); rmSync(dir, { recursive: true, force: true }); });
+  } else {
+    db = openDb(':memory:');
+    t.after(() => db.close());
+  }
   let clock = at('2026-10-30T08:00:00+08:00');
   const tasks = createTasks({ db, now: () => clock, log: (e) => { throw e; } });
   const id = db.createRoom({ ...ROOM, ...room }, clock).id;
@@ -22,7 +36,7 @@ function setup(t, { crops = OYSTER, stage = 'fruiting', room = {} } = {}) {
   const changes = [];
   tasks.onChange((roomId) => changes.push(roomId));
   return {
-    db, tasks, id, changes,
+    db, raw, tasks, id, changes,
     set: (iso) => { clock = at(iso); },
     later: (ms) => { clock += ms; },
     keys: (rows) => rows.map((r) => r.ruleKey),
@@ -416,4 +430,48 @@ test('the CSV defuses a cell that starts like a formula; a long-term row has the
   s.set('2026-11-02T10:15:00+08:00');
   s.tasks.cancel(row.id, { reason: '+1 later' });
   assert.equal(s.tasks.logCsv(s.id).split('\r\n')[1], `2026-11-02,10:15,Room 1,"'=HYPERLINK(""x"")",cancelled,,,,'+1 later`);
+});
+
+test('the CSV dates a closed row by when it was closed; a missed row keeps its own date', (t) => {
+  const s = setup(t);
+  s.tasks.ensureDay(s.id);
+  const harvest = s.row('harvestAm');
+  s.set('2026-10-31T00:05:00+08:00'); // done after midnight, before the new day is made
+  s.tasks.done(harvest.id, { worker: 'Ali', amount: 3 });
+  s.tasks.ensureDay(s.id); // the rest of 30 Oct is missed
+  const csv = s.tasks.logCsv(s.id).split('\r\n');
+  assert.ok(csv.includes('2026-10-31,00:05,Room 1,Harvest check: pick before the cap edge waves or splits; pick before any misting,done,Ali,3,kg,'));
+  assert.ok(csv.includes('2026-10-30,,Room 1,"Humidifier: water in, mist coming out",missed,,,,'));
+});
+
+test('todayView\'s upkeep: the overdue and the due today, not the not yet due', (t) => {
+  const s = setup(t, { file: true });
+  s.tasks.ensureDay(s.id);
+  const move = (key, iso) => s.raw.prepare("UPDATE tasks SET due_at = ? WHERE rule_key = ? AND status = 'open'").run(at(iso), key);
+  move('acFilter', '2026-10-28T00:00:00+08:00'); // 2 days overdue
+  move('flyTraps', '2026-10-31T00:00:00+08:00'); // due tomorrow
+  const [room] = s.tasks.todayView().rooms;
+  assert.deepEqual(s.keys(room.upkeepDue), ['acFilter', 'humidifierDescale', 'rhCheck', 'acService', 'acChemWash']);
+  assert.deepEqual(room.upkeepDue.map((r) => r.overdueDays), [2, 0, 0, 0, 0]);
+  assert.equal(room.counts.due, 6 + 5);
+});
+
+test('the log pages with before through rows closed at the same time', (t) => {
+  const s = setup(t);
+  s.tasks.ensureDay(s.id);
+  s.set('2026-10-31T08:00:00+08:00');
+  s.tasks.ensureDay(s.id); // the 6 rows of 30 Oct missed, all closed at 31 Oct 00:00
+  const all = s.tasks.log(s.id);
+  assert.equal(all.length, 6);
+  assert.equal(new Set(all.map((r) => r.closedAt)).size, 1);
+  const paged = [];
+  let before = null;
+  for (;;) {
+    const page = s.tasks.log(s.id, { before, limit: 4 });
+    if (page.length === 0) break;
+    paged.push(...page);
+    before = page.at(-1).id;
+  }
+  assert.deepEqual(paged.map((r) => r.id), all.map((r) => r.id), 'every row once, in order');
+  assert.deepEqual(all.map((r) => r.id), [...all.map((r) => r.id)].sort((a, b) => b - a), 'newest id first');
 });
