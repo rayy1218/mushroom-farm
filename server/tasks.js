@@ -314,7 +314,7 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
     },
 
     // Plan this on Suggest machines: { machines: [{ key, from, to }], rmMonth, suggestedAt } → one long-term row per machine
-    // that changes, made together. Each machine at most once, from and to 0 to 1,000,000; suggestedAt null or ms 0 to 8.64e15.
+    // that changes and is not planned already (an open row to the same size; none left: 409), made together. Each machine at most once, from and to 0 to 1,000,000; suggestedAt null or ms 0 to 8.64e15.
     addFromSuggestion(roomId, suggestion) {
       if (!db.getRoom(roomId)) throw new TaskError(404, 'Room not found');
       const { machines, rmMonth = null, suggestedAt = null } = suggestion ?? {};
@@ -331,8 +331,12 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
       }
       const changes = machines.filter((m) => m.from !== m.to);
       if (changes.length === 0) throw new TaskError(400, 'Nothing changes from what the room has now', 'suggestion');
+      // Plan this twice: a machine whose open long-term task already goes to the same size is left out.
+      const planned = new Set(db.openTasks(roomId, 'longterm').filter((r) => r.source).map((r) => `${r.source.machine}/${r.source.to}`));
+      const fresh = changes.filter((m) => !planned.has(`${m.key}/${m.to}`));
+      if (fresh.length === 0) throw new TaskError(409, 'Already planned: see the Tasks tab', 'suggestion');
       const at = now();
-      const rows = db.insertLongtermTasks(changes.map((m) => ({
+      const rows = db.insertLongtermTasks(fresh.map((m) => ({
         roomId, text: machineChangeText(m.key, m.from, m.to),
         source: { machine: m.key, from: m.from, to: m.to, rmMonth, suggestedAt }, at,
       })));

@@ -151,6 +151,7 @@ A change publishes `room { id, part: 'tasks' }` and a `tasks { due }` event (the
 | Skip or cancel without a reason | 400 field `reason` "Say why" |
 | Amount below 0 or above 10 000 | 400 field `amount` |
 | A suggestion where nothing changes | 400 "Nothing changes from what the room has now" |
+| A suggestion whose every change already has an open long-term task to the same size (Plan this twice) | 409 "Already planned: see the Tasks tab" (a machine planned already is left out of a plan that has others) |
 | A rule's interval outside 1–365, a worker name empty or taken | 400 with the field |
 
 ## 7. Pages

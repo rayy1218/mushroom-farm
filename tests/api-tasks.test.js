@@ -113,6 +113,8 @@ test('Plan this: a suggestion makes one long-term row per machine that changes, 
   assert.deepEqual(made.body.rows.find((r) => r.source.machine === 'acBTU').source, { machine: 'acBTU', from: 9000, to: 12000, rmMonth: -42, suggestedAt: at });
   const same = await call('POST', `/api/rooms/${id}/tasks`, { suggestion: { machines: [{ key: 'fanFlow', from: 150, to: 150 }], rmMonth: 0, suggestedAt: at } });
   assert.deepEqual(same, { status: 400, body: { error: 'Nothing changes from what the room has now', field: 'suggestion' } });
+  const twice = await call('POST', `/api/rooms/${id}/tasks`, { suggestion: { machines, rmMonth: -42, suggestedAt: at } });
+  assert.deepEqual(twice, { status: 409, body: { error: 'Already planned: see the Tasks tab', field: 'suggestion' } });
   assert.deepEqual(await call('POST', '/api/rooms/999/tasks', { suggestion: { machines } }), { status: 404, body: { error: 'Room not found' } });
 });
 

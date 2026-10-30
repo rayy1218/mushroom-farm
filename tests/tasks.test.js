@@ -402,6 +402,26 @@ test('Plan this checks: a machine once, numbers from 0 to 1,000,000, rmMonth and
   assert.equal(s.db.openTasks(s.id, 'longterm').length, 4);
 });
 
+test('Plan this twice: a machine with an open long-term task to the same size is left out; all left out is 409', (t) => {
+  const s = setup(t);
+  const plan = (machines) => s.tasks.addFromSuggestion(s.id, { machines, rmMonth: -42, suggestedAt: 1 });
+  plan([{ key: 'acBTU', from: 9000, to: 12000 }, { key: 'fanFlow', from: 150, to: 200 }]);
+  s.changes.length = 0;
+  refused(() => plan([{ key: 'acBTU', from: 9000, to: 12000 }, { key: 'fanFlow', from: 150, to: 200 }]), 409, 'Already planned: see the Tasks tab', 'suggestion');
+  assert.deepEqual(s.changes, [], 'nothing made, no one told');
+  // Another size of the same machine, or a machine not planned yet, is a new task; the one already planned is left out.
+  const again = plan([{ key: 'acBTU', from: 9000, to: 18000 }, { key: 'fanFlow', from: 150, to: 200 }, { key: 'humidifierLH', from: 0.5, to: 1 }]);
+  assert.deepEqual(again.map((r) => r.text), ['Aircon 9,000 → 18,000 BTU/h', 'Humidifier 0.5 → 1 L/h']);
+  // A done or cancelled one no longer counts: planned again, it is a new task.
+  const fan = s.db.openTasks(s.id, 'longterm').find((r) => r.source?.machine === 'fanFlow');
+  s.tasks.cancel(fan.id, { reason: 'Not this year' });
+  assert.deepEqual(plan([{ key: 'fanFlow', from: 150, to: 200 }]).map((r) => r.text), ['Fan 150 → 200 m³/h']);
+  // An own task with the same words is not a plan.
+  s.tasks.addLongterm(s.id, { text: 'Dehumidifier none → 10 L/day' });
+  assert.equal(plan([{ key: 'dehumidifierLday', from: 0, to: 10 }]).length, 1);
+  assert.equal(s.db.openTasks(s.id, 'longterm').length, 6);
+});
+
 test('addLongterm: a note that is not text is refused', (t) => {
   const s = setup(t);
   refused(() => s.tasks.addLongterm(s.id, { text: 'Seal the door gap', note: 5 }), 400, 'The note must be text', 'note');
