@@ -5,7 +5,7 @@ import { RELAY_KEYS } from './machine-codes.js';
 import { RATINGS, FILTER } from './rooms.js';
 import { PROGRAM_DEFAULTS } from './program.js';
 
-const VERSION = 18;
+const VERSION = 19;
 
 // Iteration 1 (version 0) had only the rooms table without the address columns.
 const ROOMS = `
@@ -200,6 +200,53 @@ CREATE INDEX IF NOT EXISTS filter_changes_by_room ON filter_changes (room_id, at
 const FILTER_COLUMNS = { fanMaxPa: 'fan_max_pa', filterCleanPa: 'filter_clean_pa', filterFinalPa: 'filter_final_pa', filterChangeDays: 'filter_change_days' };
 
 const LIGHT_STAGES = ['spawn', 'pinning', 'fruiting', 'rest']; // the order of the light_ columns
+
+// Tasks (spec 2026-10-30-tasks-design.md 5): the rooms' daily, upkeep and long-term tasks, the worker names, the owner's
+// changes of the built-in rules and the owner's own rules. A daily row is unique per room, rule, date and slot; an upkeep
+// rule has at most one open row per room.
+const TASKS = `
+CREATE TABLE IF NOT EXISTS tasks (
+  id         INTEGER PRIMARY KEY,
+  room_id    INTEGER NOT NULL,
+  kind       TEXT    NOT NULL CHECK (kind IN ('daily', 'upkeep', 'longterm')),
+  rule_key   TEXT,
+  date       TEXT,
+  slot       TEXT    NOT NULL DEFAULT 'any' CHECK (slot IN ('morning', 'afternoon', 'any')),
+  text       TEXT    NOT NULL,
+  note       TEXT,
+  status     TEXT    NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'done', 'skipped', 'missed', 'cancelled')),
+  due_at     INTEGER,
+  created_at INTEGER NOT NULL,
+  closed_at  INTEGER,
+  worker     TEXT,
+  amount     REAL,
+  unit       TEXT,
+  reason     TEXT,
+  source     TEXT
+) STRICT;
+CREATE UNIQUE INDEX IF NOT EXISTS tasks_daily ON tasks (room_id, rule_key, date, slot) WHERE kind = 'daily';
+CREATE UNIQUE INDEX IF NOT EXISTS tasks_upkeep_open ON tasks (room_id, rule_key) WHERE kind = 'upkeep' AND status = 'open';
+CREATE INDEX IF NOT EXISTS tasks_by_status ON tasks (room_id, status);
+CREATE INDEX IF NOT EXISTS tasks_closed ON tasks (room_id, closed_at, id) WHERE status <> 'open';
+CREATE TABLE IF NOT EXISTS workers (
+  id     INTEGER PRIMARY KEY,
+  name   TEXT    NOT NULL UNIQUE COLLATE NOCASE,
+  active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1))
+) STRICT;
+CREATE TABLE IF NOT EXISTS task_rule_settings (
+  key        TEXT    PRIMARY KEY,
+  enabled    INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+  every_days INTEGER CHECK (every_days BETWEEN 1 AND 365)
+) STRICT;
+-- AUTOINCREMENT: a removed rule's id (its rows' rule key custom:<id>) is never given to a new rule
+CREATE TABLE IF NOT EXISTS custom_task_rules (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  text       TEXT    NOT NULL,
+  rooms      TEXT,
+  every_days INTEGER CHECK (every_days BETWEEN 1 AND 365),
+  slot       TEXT    NOT NULL DEFAULT 'any' CHECK (slot IN ('morning', 'afternoon', 'any')),
+  enabled    INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1))
+) STRICT;`;
 
 const RUNS_KEPT = 20; // finished simulation runs kept per room
 
@@ -496,6 +543,7 @@ function migrate(db) {
     if (version < 18 && !db.prepare('PRAGMA table_info(rooms)').all().some((c) => c.name === 'gateway')) {
       db.exec('ALTER TABLE rooms ADD COLUMN gateway TEXT');
     }
+    if (version < 19) db.exec(TASKS);
     db.exec(`PRAGMA user_version = ${VERSION}`);
     db.exec('COMMIT');
   } catch (err) {
