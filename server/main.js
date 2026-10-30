@@ -17,6 +17,7 @@ import { createSimulations } from './simulations.js';
 import { createTelegram } from './telegram.js';
 import { createEvents } from './events.js';
 import { createLive, watchAlarms } from './live.js';
+import { createTasks } from './tasks.js';
 
 // Telegram (phone alarms) answers on IPv4 in 170–300 ms from the farm, and Node gives each address only 250 ms before trying
 // the next: alarms then failed with "fetch failed" now and then (2026-10-28). 2 s per address.
@@ -57,11 +58,14 @@ const afterCycle = async (cycleStart) => {
 };
 const poller = createPoller({ db, clients: gateways, intervalMs: pollSeconds * 1000, afterCycle });
 const machines = createMachines({ db, clients: gateways, poller });
-controller = createController({ db, machines });
+// The rooms' tasks: made by the controller's cycle (once per farm day) and by the task routes. createApp publishes every
+// change to the pages (B7 subscribes to tasks.onChange in api.js).
+const tasks = createTasks({ db });
+controller = createController({ db, machines, tasks });
 live = createLive({ db, events, machines, controller });
 const simulations = createSimulations({ db, onChange: (type, data) => events.publish(type, data) });
 const telegram = createTelegram({ db });
-const server = createApp(db, { machines, controller, poller, simulations, telegram, events, gateway: gatewayText });
+const server = createApp(db, { machines, controller, poller, simulations, telegram, events, tasks, gateway: gatewayText });
 
 server.on('error', (err) => fail(`Could not start the server: ${err.message}`));
 server.listen(Number(portText), () => {
