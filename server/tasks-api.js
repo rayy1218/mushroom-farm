@@ -4,15 +4,17 @@
 
 const ROOM_TASKS = /^\/api\/rooms\/([1-9][0-9]{0,14})\/tasks$/;
 
+const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+
 // db: the farm database; tasks: from createTasks (server/tasks.js), whose views make the day's rows first.
 // → async (req, res, path, { send, readJson, HttpError, url }) that answers true when the path is one of its routes.
 export function createTaskRoutes({ db, tasks }) {
-  async function route(req, res, path, { send, HttpError }) {
+  async function route(req, res, path, { send, readJson, HttpError }) {
     const notFound = () => new HttpError(404, 'Not found');
-    const roomOf = (text) => {
-      const room = db.getRoom(Number(text));
-      if (!room) throw new HttpError(404, 'Room not found');
-      return room;
+    const readBody = async () => {
+      const body = await readJson(req);
+      if (!isObject(body)) throw new HttpError(400, 'Body must be a JSON object');
+      return body;
     };
 
     if (path === '/api/tasks/today') {
@@ -22,8 +24,18 @@ export function createTaskRoutes({ db, tasks }) {
     }
     const roomTasks = ROOM_TASKS.exec(path);
     if (roomTasks) {
-      if (req.method !== 'GET') throw notFound();
-      send(res, 200, tasks.roomView(roomOf(roomTasks[1]).id));
+      const id = Number(roomTasks[1]);
+      if (req.method === 'GET') {
+        const view = tasks.roomView(id);
+        if (!view) throw new HttpError(404, 'Room not found');
+        send(res, 200, view);
+        return true;
+      }
+      if (req.method !== 'POST') throw notFound();
+      // An own task { text, note? } or Plan this { suggestion }: server/tasks.js checks both and the room (404).
+      const body = await readBody();
+      const rows = 'suggestion' in body ? tasks.addFromSuggestion(id, body.suggestion) : [tasks.addLongterm(id, body)];
+      send(res, 201, { rows });
       return true;
     }
     return false;

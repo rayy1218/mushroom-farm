@@ -72,3 +72,66 @@ test("Today: every room in the Overview's order with its rows; a room with no cr
   assert.equal(r.body.rooms.find((x) => x.name === 'Room B').today.length, 6);
   assert.deepEqual(await call('POST', '/api/tasks/today', {}), { status: 404, body: { error: 'Not found' } });
 });
+
+test('Add a long-term task of your own: text 1 to 120 characters, an optional note up to 500', async (t) => {
+  const { call } = await app(t);
+  const id = (await call('POST', '/api/rooms', ROOM)).body.id;
+  const made = await call('POST', `/api/rooms/${id}/tasks`, { text: '  Fix the door seal ', note: ' The bottom corner ' });
+  assert.equal(made.status, 201);
+  assert.equal(made.body.rows.length, 1);
+  const row = made.body.rows[0];
+  assert.deepEqual([row.roomId, row.kind, row.text, row.note, row.status, row.source], [id, 'longterm', 'Fix the door seal', 'The bottom corner', 'open', null]);
+  assert.equal((await call('POST', `/api/rooms/${id}/tasks`, { text: 'Paint the walls', note: '' })).body.rows[0].note, null);
+  assert.equal((await call('POST', `/api/rooms/${id}/tasks`, { text: 'x'.repeat(120) })).status, 201);
+  for (const text of [undefined, '', '   ', 'x'.repeat(121), 5]) {
+    assert.deepEqual(await call('POST', `/api/rooms/${id}/tasks`, { text, note: 'n' }), {
+      status: 400, body: { error: 'Say what to do (1 to 120 characters)', field: 'text' },
+    });
+  }
+  assert.deepEqual(await call('POST', `/api/rooms/${id}/tasks`, { text: 'Paint', note: 'x'.repeat(501) }), {
+    status: 400, body: { error: 'The note must be at most 500 characters', field: 'note' },
+  });
+  assert.deepEqual(await call('POST', `/api/rooms/${id}/tasks`, { text: 'Paint', note: 7 }), {
+    status: 400, body: { error: 'The note must be text', field: 'note' },
+  });
+  assert.deepEqual(await call('POST', `/api/rooms/${id}/tasks`, []), { status: 400, body: { error: 'Body must be a JSON object' } });
+  assert.deepEqual(await call('POST', '/api/rooms/999/tasks', { text: 'Paint' }), { status: 404, body: { error: 'Room not found' } });
+  const view = await tasksOf(call, id);
+  assert.equal(view.longterm.length, 3);
+  assert.equal(view.counts.longterm, 3);
+});
+
+test('Plan this: a suggestion makes one long-term row per machine that changes, with where it came from', async (t) => {
+  const { call } = await app(t);
+  const id = (await call('POST', '/api/rooms', ROOM)).body.id;
+  const at = Date.UTC(2026, 9, 29, 3, 0);
+  const machines = [{ key: 'acBTU', from: 9000, to: 12000 }, { key: 'fanFlow', from: 150, to: 150 }, { key: 'dehumidifierLday', from: 0, to: 10 }];
+  const made = await call('POST', `/api/rooms/${id}/tasks`, { suggestion: { machines, rmMonth: -42, suggestedAt: at } });
+  assert.equal(made.status, 201);
+  assert.deepEqual(made.body.rows.map((r) => r.text).sort(), ['Aircon 9,000 → 12,000 BTU/h', 'Dehumidifier none → 10 L/day']);
+  assert.ok(made.body.rows.every((r) => r.kind === 'longterm' && r.status === 'open' && r.roomId === id));
+  assert.deepEqual(made.body.rows.find((r) => r.source.machine === 'acBTU').source, { machine: 'acBTU', from: 9000, to: 12000, rmMonth: -42, suggestedAt: at });
+  const same = await call('POST', `/api/rooms/${id}/tasks`, { suggestion: { machines: [{ key: 'fanFlow', from: 150, to: 150 }], rmMonth: 0, suggestedAt: at } });
+  assert.deepEqual(same, { status: 400, body: { error: 'Nothing changes from what the room has now', field: 'suggestion' } });
+  assert.deepEqual(await call('POST', '/api/rooms/999/tasks', { suggestion: { machines } }), { status: 404, body: { error: 'Room not found' } });
+});
+
+test('Plan this: a suggestion that is not one is 400 with the field', async (t) => {
+  const { call } = await app(t);
+  const id = (await call('POST', '/api/rooms', ROOM)).body.id;
+  const machinesError = { error: 'machines must be a list of { key, from, to } of the sized machines', field: 'suggestion' };
+  const good = { machines: [{ key: 'acBTU', from: 9000, to: 12000 }], rmMonth: 10, suggestedAt: 1 };
+  const post = (suggestion) => call('POST', `/api/rooms/${id}/tasks`, { suggestion });
+  assert.deepEqual(await post('cheaper'), { status: 400, body: machinesError });
+  for (const machines of [undefined, [{ key: 'pump', from: 1, to: 2 }], [{ key: 'acBTU', from: -1, to: 2 }], [{ key: 'acBTU', from: 1, to: '2' }],
+    [{ key: 'acBTU', from: 1, to: 2_000_000 }], [{ key: 'acBTU', from: 1, to: 2 }, { key: 'acBTU', from: 2, to: 3 }], ['acBTU']]) {
+    assert.deepEqual(await post({ ...good, machines }), { status: 400, body: machinesError });
+  }
+  assert.deepEqual(await post({ ...good, machines: [] }), { status: 400, body: { error: 'Nothing changes from what the room has now', field: 'suggestion' } });
+  const numbers = { status: 400, body: { error: 'rmMonth and suggestedAt must be numbers', field: 'suggestion' } };
+  assert.deepEqual(await post({ ...good, rmMonth: 'less' }), numbers);
+  assert.deepEqual(await post({ ...good, suggestedAt: 'yesterday' }), numbers);
+  const noMoney = await post({ machines: good.machines }); // rmMonth and suggestedAt left out: kept as none
+  assert.equal(noMoney.status, 201);
+  assert.deepEqual([noMoney.body.rows[0].source.rmMonth, noMoney.body.rows[0].source.suggestedAt], [null, null]);
+});

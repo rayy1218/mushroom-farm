@@ -187,11 +187,16 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
     return text;
   }
 
-  // Closes the open row; a row closed by someone else meanwhile is a 409 too. An upkeep row makes its next row with it.
+  // Closes the open row; a row closed by someone else meanwhile is a 409 too, one deleted with its room a 404. An upkeep
+  // row makes its next row with it.
   function close(row, fields) {
     const at = now();
     const next = row.kind === 'upkeep' ? nextUpkeep(row, localDate(at), at) : null;
-    if (!db.closeTask(row.id, { ...fields, at }, next)) throw new TaskError(409, closedText(db.getTask(row.id)));
+    if (!db.closeTask(row.id, { ...fields, at }, next)) {
+      const after = db.getTask(row.id);
+      if (!after) throw new TaskError(404, 'Task not found');
+      throw new TaskError(409, closedText(after));
+    }
     tell(row.roomId);
     return view(db.getTask(row.id));
   }

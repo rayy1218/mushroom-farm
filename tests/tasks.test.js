@@ -320,6 +320,19 @@ test('a row closed by someone else between the read and the close: 409 and one o
   assert.equal(s.db.getTask(first.id).worker, 'Siti');
 });
 
+test('a row deleted with its room between the read and the close: 404, not a crash', (t) => {
+  const s = setup(t);
+  const footbath = s.row('footbath');
+  const getTask = s.db.getTask;
+  s.db.getTask = (id) => {
+    s.db.getTask = getTask; // once
+    const row = getTask(id);
+    s.db.deleteRoom(s.id);
+    return row; // the stale read: still there and open
+  };
+  refused(() => s.tasks.done(footbath.id, { worker: 'Ali' }), 404, 'Task not found', undefined);
+});
+
 test('long-term rows: the owner\'s, and Plan this from a suggestion', (t) => {
   const s = setup(t);
   refused(() => s.tasks.addLongterm(s.id, { text: ' ' }), 400, 'Say what to do (1 to 120 characters)', 'text');
