@@ -202,8 +202,8 @@ const FILTER_COLUMNS = { fanMaxPa: 'fan_max_pa', filterCleanPa: 'filter_clean_pa
 const LIGHT_STAGES = ['spawn', 'pinning', 'fruiting', 'rest']; // the order of the light_ columns
 
 // Tasks (spec 2026-10-30-tasks-design.md 5): the rooms' daily, upkeep and long-term tasks, the worker names, the owner's
-// changes of the built-in rules and the owner's own rules. A daily row is unique per room, rule, date and slot; an upkeep
-// rule has at most one open row per room.
+// changes of the built-in rules and the owner's own rules. A daily row has a date and a rule key and is unique per room,
+// rule, date and slot; an upkeep rule has at most one open row per room.
 const TASKS = `
 CREATE TABLE IF NOT EXISTS tasks (
   id         INTEGER PRIMARY KEY,
@@ -222,7 +222,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   amount     REAL,
   unit       TEXT,
   reason     TEXT,
-  source     TEXT
+  source     TEXT,
+  CHECK (kind <> 'daily' OR (date IS NOT NULL AND rule_key IS NOT NULL))
 ) STRICT;
 CREATE UNIQUE INDEX IF NOT EXISTS tasks_daily ON tasks (room_id, rule_key, date, slot) WHERE kind = 'daily';
 CREATE UNIQUE INDEX IF NOT EXISTS tasks_upkeep_open ON tasks (room_id, rule_key) WHERE kind = 'upkeep' AND status = 'open';
@@ -395,6 +396,17 @@ export const MACHINE_LOG_SQL = {
   last: 'SELECT * FROM machine_log WHERE room_id = ? AND machine = ? ORDER BY at DESC, id DESC LIMIT 1',
 };
 
+// The task log queries (spec 2026-10-30-tasks-design.md 5), exported so a test can check that they read the partial index
+// tasks_closed (their status <> 'open' is that index's WHERE). taskLog: the closed rows newest first; ?2 (before): the id
+// of the last row of the page before (older rows only), or null; ?3 the page size. taskLogAll: oldest first, for the CSV.
+export const TASK_LOG_SQL = {
+  taskLog: `SELECT * FROM tasks WHERE room_id = ?1 AND status <> 'open'
+              AND (?2 IS NULL OR closed_at < (SELECT closed_at FROM tasks WHERE id = ?2)
+                   OR (closed_at = (SELECT closed_at FROM tasks WHERE id = ?2) AND id < ?2))
+            ORDER BY closed_at DESC, id DESC LIMIT ?3`,
+  taskLogAll: "SELECT * FROM tasks WHERE room_id = ? AND status <> 'open' ORDER BY closed_at, id",
+};
+
 // Completed buckets kept per room, sensor kind and bucket size; at most this many buckets back from the newest.
 const CACHE_BUCKETS = 400;
 
@@ -556,6 +568,13 @@ function migrate(db) {
 const runRow = (r) => ({
   id: r.id, roomId: r.room_id, createdAt: r.created_at, status: r.status, progress: r.progress, input: JSON.parse(r.input),
   summary: r.summary === null ? null : JSON.parse(r.summary), error: r.error, finishedAt: r.finished_at,
+});
+
+// A tasks row as the tasks module and the API show it (amountLabel is the tasks module's).
+const taskRow = (r) => ({
+  id: r.id, roomId: r.room_id, kind: r.kind, ruleKey: r.rule_key, date: r.date, slot: r.slot, text: r.text, note: r.note,
+  status: r.status, dueAt: r.due_at, createdAt: r.created_at, closedAt: r.closed_at, worker: r.worker, amount: r.amount,
+  unit: r.unit, reason: r.reason, source: r.source === null ? null : JSON.parse(r.source),
 });
 
 // A machine_log row as the API shows it.
@@ -800,6 +819,25 @@ export function openDb(path, { log = console.error } = {}) {
     latest: db.prepare(STATUS_SQL.latest),
     lastOk: db.prepare(STATUS_SQL.lastOk),
     failuresSince: db.prepare(STATUS_SQL.failuresSince),
+    // Tasks (spec 2026-10-30-tasks-design.md 4 and 5).
+    insertDailyTask: db.prepare(`INSERT OR IGNORE INTO tasks (room_id, kind, rule_key, date, slot, text, note, unit, created_at)
+                                 VALUES (?, 'daily', ?, ?, ?, ?, ?, ?, ?)`),
+    insertUpkeepTask: db.prepare(`INSERT OR IGNORE INTO tasks (room_id, kind, rule_key, slot, text, due_at, created_at)
+                                  VALUES (?, 'upkeep', ?, ?, ?, ?, ?)`),
+    insertLongtermTask: db.prepare(`INSERT INTO tasks (room_id, kind, slot, text, note, source, created_at)
+                                    VALUES (?, 'longterm', 'any', ?, ?, ?, ?)`),
+    task: db.prepare('SELECT * FROM tasks WHERE id = ?'),
+    dailyTasks: db.prepare("SELECT * FROM tasks WHERE room_id = ? AND kind = 'daily' AND date = ? ORDER BY id"),
+    openTasks: db.prepare("SELECT * FROM tasks WHERE room_id = ? AND kind = ? AND status = 'open' ORDER BY due_at, id"),
+    openDailyBefore: db.prepare("SELECT * FROM tasks WHERE room_id = ? AND kind = 'daily' AND status = 'open' AND date < ? ORDER BY id"),
+    openUpkeep: db.prepare("SELECT * FROM tasks WHERE room_id = ? AND kind = 'upkeep' AND rule_key = ? AND status = 'open'"),
+    lastClosedUpkeep: db.prepare(`SELECT * FROM tasks WHERE room_id = ? AND kind = 'upkeep' AND rule_key = ? AND status IN ('done', 'skipped')
+                                  ORDER BY closed_at DESC, id DESC LIMIT 1`),
+    closeTask: db.prepare(`UPDATE tasks SET status = ?, closed_at = ?, worker = ?, amount = ?, reason = ?
+                           WHERE id = ? AND status = 'open'`),
+    taskLog: db.prepare(TASK_LOG_SQL.taskLog),
+    taskLogAll: db.prepare(TASK_LOG_SQL.taskLogAll),
+    deleteTasks: db.prepare('DELETE FROM tasks WHERE room_id = ?'),
   };
 
   function checkName(name, id) {
@@ -1231,6 +1269,7 @@ export function openDb(path, { log = console.error } = {}) {
         q.deleteCrops.run(id);
         q.deleteProgram.run(id);
         q.deleteRuns.run(id);
+        q.deleteTasks.run(id);
         bucketCache.delete(id);
         usageCache.delete(id);
         const deleted = q.delete.run(id).changes > 0;
@@ -1545,6 +1584,81 @@ export function openDb(path, { log = console.error } = {}) {
     setSetting(key, value) {
       q.setSetting.run(key, value);
       if (key === 'outdoorAddress') bucketCache.delete(OUTDOOR);
+    },
+
+    // ---- Tasks (spec 2026-10-30-tasks-design.md 4 and 5). A task is taskRow's shape. ----
+
+    // A daily row, unless the room already has one of that rule, date and slot (any status). → true when it was made.
+    insertDailyTask({ roomId, ruleKey, date, slot, text, note = null, unit = null, at }) {
+      return q.insertDailyTask.run(roomId, ruleKey, date, slot, text, note, unit, at).changes > 0;
+    },
+
+    // An open upkeep row due at dueAt, unless the rule already has an open row in the room. → true when it was made.
+    insertUpkeepTask({ roomId, ruleKey, slot = 'any', text, dueAt, at }) {
+      return q.insertUpkeepTask.run(roomId, ruleKey, slot, text, dueAt, at).changes > 0;
+    },
+
+    // A long-term row (source: a suggestion's { machine, from, to, rmMonth, suggestedAt } or null). → the row.
+    insertLongtermTask({ roomId, text, note = null, source = null, at }) {
+      const { lastInsertRowid } = q.insertLongtermTask.run(roomId, text, note, source === null ? null : JSON.stringify(source), at);
+      return taskRow(q.task.get(Number(lastInsertRowid)));
+    },
+
+    getTask(id) {
+      const r = q.task.get(id);
+      return r ? taskRow(r) : null;
+    },
+
+    // The room's daily rows of a date (every status), oldest first.
+    dailyTasks(roomId, date) {
+      return q.dailyTasks.all(roomId, date).map(taskRow);
+    },
+
+    // The room's open rows of a kind: upkeep by due time, the others oldest first.
+    openTasks(roomId, kind) {
+      return q.openTasks.all(roomId, kind).map(taskRow);
+    },
+
+    // The room's open daily rows of dates before `date`.
+    openDailyBefore(roomId, date) {
+      return q.openDailyBefore.all(roomId, date).map(taskRow);
+    },
+
+    // The open row of an upkeep rule in the room, or null.
+    openUpkeep(roomId, ruleKey) {
+      const r = q.openUpkeep.get(roomId, ruleKey);
+      return r ? taskRow(r) : null;
+    },
+
+    // The last done or skipped row of an upkeep rule in the room, or null.
+    lastClosedUpkeep(roomId, ruleKey) {
+      const r = q.lastClosedUpkeep.get(roomId, ruleKey);
+      return r ? taskRow(r) : null;
+    },
+
+    // Closes an open row: { status, at, worker, amount, reason }; next: an upkeep row to make in the same transaction
+    // (insertUpkeepTask's fields). → false when the row is not open (nothing changes then).
+    closeTask(id, { status, at, worker = null, amount = null, reason = null }, next = null) {
+      db.exec('BEGIN');
+      try {
+        const closed = q.closeTask.run(status, at, worker, amount, reason, id).changes > 0;
+        if (closed && next) this.insertUpkeepTask(next);
+        db.exec('COMMIT');
+        return closed;
+      } catch (err) {
+        db.exec('ROLLBACK');
+        throw err;
+      }
+    },
+
+    // The room's closed rows, newest closedAt first, `limit` of them, older than the row `before` (an id) when given.
+    taskLog(roomId, { before = null, limit = 50 } = {}) {
+      return q.taskLog.all(roomId, before, limit).map(taskRow);
+    },
+
+    // Every closed row of the room, oldest closedAt first (the CSV).
+    taskLogAll(roomId) {
+      return q.taskLogAll.all(roomId).map(taskRow);
     },
 
     close() {
