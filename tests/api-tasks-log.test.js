@@ -82,4 +82,8 @@ test('the download name: plain ASCII as it is; anything else as an ASCII stand-i
     `attachment; filename="Bilik _Tiram_ tasks.csv"; filename*=UTF-8''Bilik%20%22Tiram%22%20tasks.csv`);
   assert.equal(attachment("Bilik 1 – Ah Kow's tasks.csv"),
     `attachment; filename="Bilik 1 _ Ah Kow's tasks.csv"; filename*=UTF-8''Bilik%201%20%E2%80%93%20Ah%20Kow%27s%20tasks.csv`);
+  // A line break or a % (which a browser might read as an escape) gets the stand-in too; a lone surrogate is sent as U+FFFD.
+  assert.equal(attachment('A\r\nB tasks.csv'), `attachment; filename="A__B tasks.csv"; filename*=UTF-8''A%0D%0AB%20tasks.csv`);
+  assert.equal(attachment('100%41'), `attachment; filename="100_41"; filename*=UTF-8''100%2541`);
+  assert.equal(attachment('A\ud800 tasks.csv'), `attachment; filename="A_ tasks.csv"; filename*=UTF-8''A%EF%BF%BD%20tasks.csv`);
 });

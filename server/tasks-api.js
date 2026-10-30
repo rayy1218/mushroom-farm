@@ -11,11 +11,12 @@ const BOM = '\uFEFF';
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
 // The Content-Disposition of a download. A header holds Latin-1 only: a name with anything outside printable ASCII (or a
-// quote or backslash) gets an ASCII stand-in plus the exact name as UTF-8 (RFC 6266 / 5987).
+// quote, backslash or %, which a browser may decode) gets an ASCII stand-in plus the exact name as UTF-8 (RFC 6266 / 5987;
+// a lone surrogate goes as U+FFFD, which encodeURIComponent would refuse).
 export function attachment(filename) {
-  const ascii = filename.replace(/[^\x20-\x7e]|["\\]/g, '_');
+  const ascii = filename.replace(/[^\x20-\x7e]|["\\%]/g, '_');
   if (ascii === filename) return `attachment; filename="${filename}"`;
-  const utf8 = encodeURIComponent(filename).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+  const utf8 = encodeURIComponent(filename.toWellFormed()).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
   return `attachment; filename="${ascii}"; filename*=UTF-8''${utf8}`;
 }
 
