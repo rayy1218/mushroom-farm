@@ -219,19 +219,17 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
       return viewOf(roomId, date);
     },
 
-    // { worker, amount }: amount only on a row that records one (empty: none), from 0 to 10,000. A null body is an empty one.
+    // { worker, amount }: an amount given (empty: none) is a number from 0 to 10,000, kept only on a row that records one.
+    // A null body is an empty one.
     done(id, body) {
       const { worker, amount } = body ?? {};
       const row = openRow(id);
       const name = workerOf(worker);
-      let value = null;
-      if (row.unit !== null && amount !== undefined && amount !== null && amount !== '') {
-        if (typeof amount !== 'number' || !Number.isFinite(amount) || amount < 0 || amount > MAX_AMOUNT) {
-          throw new TaskError(400, `The amount must be a number from 0 to ${grouped(MAX_AMOUNT)}`, 'amount');
-        }
-        value = amount;
+      const given = amount !== undefined && amount !== null && amount !== '';
+      if (given && (typeof amount !== 'number' || !Number.isFinite(amount) || amount < 0 || amount > MAX_AMOUNT)) {
+        throw new TaskError(400, `The amount must be a number from 0 to ${grouped(MAX_AMOUNT)}`, 'amount');
       }
-      return close(row, { status: 'done', worker: name, amount: value });
+      return close(row, { status: 'done', worker: name, amount: given && row.unit !== null ? amount : null });
     },
 
     // { worker, reason }; not for a long-term row (that is done or cancelled).
@@ -278,7 +276,7 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
         throw new TaskError(400, `The plan must list the fan, aircon, humidifier or dehumidifier, each from and to a number from 0 to ${grouped(MAX_MACHINE)}`, 'suggestion');
       }
       if ((rmMonth !== null && !number(rmMonth)) || (suggestedAt !== null && !time(suggestedAt))) {
-        throw new TaskError(400, "The plan's RM a month and its time must be numbers", 'suggestion');
+        throw new TaskError(400, "The plan's RM a month must be a number and its time a time in ms", 'suggestion');
       }
       const changes = machines.filter((m) => m.from !== m.to);
       if (changes.length === 0) throw new TaskError(400, 'Nothing changes from what the room has now', 'suggestion');

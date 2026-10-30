@@ -225,9 +225,21 @@ test('done: who did it, the amount, and a second close refused with who and when
   refused(() => s.tasks.skip(harvest.id, { worker: 'Siti', reason: 'x' }), 409, 'Already done by Ali at 09:12', undefined);
   refused(() => s.tasks.done(99_999, { worker: 'Ali' }), 404, 'Task not found', undefined);
   assert.equal(s.changes.at(-1), s.id, 'a close is a change');
-  // an amount on a row that records none is not kept; an empty amount is none
+  // an amount on a row that records none is still checked but not kept; an empty amount is none
+  refused(() => s.tasks.done(s.row('footbath').id, { worker: 'Ali', amount: -1 }), 400, 'The amount must be a number from 0 to 10,000', 'amount');
+  refused(() => s.tasks.done(s.row('footbath').id, { worker: 'Ali', amount: '3' }), 400, 'The amount must be a number from 0 to 10,000', 'amount');
   assert.equal(s.tasks.done(s.row('footbath').id, { worker: 'Ali', amount: 3 }).amount, null);
   assert.equal(s.tasks.done(s.row('harvestPm').id, { worker: 'Ali', amount: '' }).amount, null);
+});
+
+test('a daily row missed when its day ended is not done or skipped after it: 409', (t) => {
+  const s = setup(t);
+  const harvest = s.row('harvestAm');
+  s.later(86_400_000);
+  s.tasks.ensureDay(s.id); // 30 Oct has ended: its open rows are missed
+  refused(() => s.tasks.done(harvest.id, { worker: 'Ali', amount: 2 }), 409, 'Already missed: its day has ended', undefined);
+  refused(() => s.tasks.skip(harvest.id, { worker: 'Ali', reason: 'Late' }), 409, 'Already missed: its day has ended', undefined);
+  assert.equal(s.db.getTask(harvest.id).status, 'missed');
 });
 
 test('skip needs who and why; long-term rows are cancelled, not skipped; only they are cancelled', (t) => {
@@ -372,7 +384,7 @@ test('Plan this checks: a machine once, numbers from 0 to 1,000,000, rmMonth and
   refused(() => plan([{ key: 'fanFlow', from: '150', to: 200 }]), 400, shape, 'suggestion');
   refused(() => plan([{ key: 'fanFlow', from: 150, to: Number.NaN }]), 400, shape, 'suggestion');
   refused(() => plan([{ key: 'fanFlow', from: 150, to: 1_000_001 }]), 400, shape, 'suggestion');
-  const numbers = "The plan's RM a month and its time must be numbers";
+  const numbers = "The plan's RM a month must be a number and its time a time in ms";
   refused(() => plan([{ key: 'fanFlow', from: 150, to: 200 }], { rmMonth: '-42' }), 400, numbers, 'suggestion');
   // suggestedAt: a time in ms (an integer from 0 to 8.64e15, the Date range), or none
   for (const suggestedAt of [Infinity, -1, 1.5, 8.64e15 + 1, '1']) {

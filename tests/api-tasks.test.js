@@ -128,7 +128,7 @@ test('Plan this: a suggestion that is not one is 400 with the field', async (t) 
     assert.deepEqual(await post({ ...good, machines }), { status: 400, body: machinesError });
   }
   assert.deepEqual(await post({ ...good, machines: [] }), { status: 400, body: { error: 'Nothing changes from what the room has now', field: 'suggestion' } });
-  const numbers = { status: 400, body: { error: "The plan's RM a month and its time must be numbers", field: 'suggestion' } };
+  const numbers = { status: 400, body: { error: "The plan's RM a month must be a number and its time a time in ms", field: 'suggestion' } };
   assert.deepEqual(await post({ ...good, rmMonth: 'less' }), numbers);
   assert.deepEqual(await post({ ...good, suggestedAt: 'yesterday' }), numbers);
   const noMoney = await post({ machines: good.machines }); // rmMonth and suggestedAt left out: kept as none
