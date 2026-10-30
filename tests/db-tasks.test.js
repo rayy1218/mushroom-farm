@@ -224,26 +224,51 @@ test('rule settings and the owner\'s rules are stored; a removed rule\'s id is n
   assert.ok(after[1].id > b.id, 'the removed rule\'s id stays unused');
 });
 
-test('a deleted room leaves the owner\'s rules; a rule left with no room is turned off and not given to a new room with its id', (t) => {
+test('a deleted room leaves the owner\'s rules; a rule left with no room is removed, not given to a new room with its id', (t) => {
   const { db, id: first } = fresh(t);
   const top = db.createRoom({ ...ROOM, name: 'Room 2' }, 1000).id;
   const [onlyTop, both, all] = db.setCustomTaskRules([
     { text: 'Clean the top room', rooms: [top], everyDays: null, slot: 'any', enabled: true },
-    { text: 'Clean both rooms', rooms: [first, top], everyDays: 7, slot: 'any', enabled: true },
+    { text: 'Clean both rooms', rooms: [first, top], everyDays: 7, slot: 'any', enabled: false },
     { text: 'Top up the RO tank', rooms: null, everyDays: null, slot: 'any', enabled: true },
   ]);
   assert.equal(db.deleteRoom(top), true);
-  assert.deepEqual(db.customTaskRules().map((c) => [c.id, c.rooms, c.enabled]),
-    [[onlyTop.id, [], false], [both.id, [first], true], [all.id, null, true]]);
+  assert.deepEqual(db.customTaskRules().map((c) => [c.id, c.rooms, c.enabled]), [[both.id, [first], false], [all.id, null, true]]);
   const again = db.createRoom({ ...ROOM, name: 'Room 3' }, 2000).id;
   assert.equal(again, top, 'the top room\'s id is used again');
-  const customKeys = (roomId, custom = db.customTaskRules()) => {
+  const customKeys = (roomId) => {
+    const custom = db.customTaskRules().map((c) => ({ ...c, enabled: true }));
     const { daily, upkeep } = effectiveRules({ settings: [], custom, roomId });
     return [...daily, ...upkeep].map((r) => r.key).filter((k) => k.startsWith('custom:')).sort();
   };
   assert.deepEqual(customKeys(again), [`custom:${all.id}`]);
   assert.deepEqual(customKeys(first), [`custom:${all.id}`, `custom:${both.id}`].sort());
-  // Turned back on with no room, the rule is still for no room (not every room).
-  const on = db.customTaskRules().map((c) => ({ ...c, enabled: true }));
-  assert.deepEqual(customKeys(again, on), [`custom:${all.id}`]);
+  const [next] = db.setCustomTaskRules([{ text: 'New rule', rooms: null, everyDays: null, slot: 'any', enabled: true }]);
+  assert.ok(next.id > onlyTop.id && next.id > all.id, 'the removed rule\'s id stays unused');
+});
+
+test('a rule whose rooms are not a list does not stop a room being deleted', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'farm-db-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const path = join(dir, 'rooms.db');
+  const first = openDb(path);
+  const id = first.createRoom(ROOM, 1000).id;
+  first.setCustomTaskRules([
+    { text: 'Not a list', rooms: [id], everyDays: null, slot: 'any', enabled: true },
+    { text: 'Not JSON', rooms: [id], everyDays: null, slot: 'any', enabled: true },
+  ]);
+  first.close();
+  const raw = new DatabaseSync(path);
+  raw.exec(`UPDATE custom_task_rules SET rooms = '5' WHERE text = 'Not a list'; UPDATE custom_task_rules SET rooms = '[5' WHERE text = 'Not JSON';`);
+  raw.close();
+  const db = openDb(path);
+  t.after(() => db.close());
+  assert.equal(db.deleteRoom(id), true);
+  assert.equal(db.getRoom(id), null);
+});
+
+test('setWorkers renames a worker by case only', (t) => {
+  const { db } = fresh(t);
+  const [ali] = db.setWorkers([{ name: 'ali', active: true }]);
+  assert.deepEqual(db.setWorkers([{ id: ali.id, name: 'Ali', active: true }]), [{ id: ali.id, name: 'Ali', active: true }]);
 });

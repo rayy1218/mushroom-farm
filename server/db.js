@@ -854,7 +854,7 @@ export function openDb(path, { log = console.error } = {}) {
     insertCustomRule: db.prepare('INSERT INTO custom_task_rules (text, rooms, every_days, slot, enabled) VALUES (?, ?, ?, ?, ?)'),
     updateCustomRule: db.prepare('UPDATE custom_task_rules SET text = ?, rooms = ?, every_days = ?, slot = ?, enabled = ? WHERE id = ?'),
     deleteCustomRule: db.prepare('DELETE FROM custom_task_rules WHERE id = ?'),
-    customRuleRooms: db.prepare('UPDATE custom_task_rules SET rooms = ?, enabled = ? WHERE id = ?'),
+    customRuleRooms: db.prepare('UPDATE custom_task_rules SET rooms = ? WHERE id = ?'),
   };
 
   function checkName(name, id) {
@@ -1311,12 +1311,14 @@ export function openDb(path, { log = console.error } = {}) {
         q.deleteRuns.run(id);
         q.deleteTasks.run(id);
         // The owner's rules lose the room (its id is given to the next room made after the top one); a rule left with no
-        // room is turned off, never read as one for every room.
+        // room is removed (its rows went with the room's tasks). A rooms value that is not a list is left alone.
         for (const r of q.customRules.all()) {
-          const rooms = r.rooms === null ? null : JSON.parse(r.rooms);
-          if (!rooms?.includes(id)) continue;
+          let rooms = null;
+          try { rooms = JSON.parse(r.rooms); } catch { continue; }
+          if (!Array.isArray(rooms) || !rooms.includes(id)) continue;
           const left = rooms.filter((x) => x !== id);
-          q.customRuleRooms.run(JSON.stringify(left), left.length ? r.enabled : 0, r.id);
+          if (left.length) q.customRuleRooms.run(JSON.stringify(left), r.id);
+          else q.deleteCustomRule.run(r.id);
         }
         bucketCache.delete(id);
         usageCache.delete(id);
@@ -1746,7 +1748,6 @@ export function openDb(path, { log = console.error } = {}) {
     },
 
     // The owner's own rules: [{ id, text, rooms: number[] | null, everyDays: number | null, slot, enabled }] by id.
-    // rooms null: every room; [] (its rooms deleted): no room.
     customTaskRules() {
       return q.customRules.all().map((r) => ({
         id: r.id, text: r.text, rooms: r.rooms === null ? null : JSON.parse(r.rooms), everyDays: r.every_days, slot: r.slot, enabled: r.enabled === 1,
