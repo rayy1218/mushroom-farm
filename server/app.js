@@ -9,12 +9,13 @@ import { DEFAULT_GATEWAY } from './gateways.js';
 
 const WEB_DIR = fileURLToPath(new URL('../web/', import.meta.url));
 
-// gateway: the farm's gateway text (FARM_GATEWAY), shown by GET /api/settings.
+// gateway: the farm's gateway text (FARM_GATEWAY), shown by GET /api/settings. tasks: from createTasks (one is made when
+// left out).
 export function createApp(db, {
   webDir = WEB_DIR, machines = null, controller = null, poller = null, simulations = null, telegram = null, events = null, ssePingMs,
-  gateway = DEFAULT_GATEWAY,
+  gateway = DEFAULT_GATEWAY, tasks = null,
 } = {}) {
-  const api = createApi(db, machines, controller, poller, simulations, telegram, events, gateway);
+  const api = createApi(db, machines, controller, poller, simulations, telegram, events, gateway, tasks);
   const sse = events && createSse({ events, pingMs: ssePingMs });
   const files = createStatic(webDir);
   const server = http.createServer(async (req, res) => {
