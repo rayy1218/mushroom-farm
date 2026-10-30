@@ -24,6 +24,9 @@ export function roomHash(id, tab = 'now') {
 // The address of a room's Suggest machines page (owner 2026-10-28: a page of its own, out of the Simulate dialog).
 export const suggestHash = (id) => `#/rooms/${id}/suggest`;
 
+// The farm's Today page (spec 2026-10-30-tasks-design.md 7.2): every room's tasks of the day.
+export const TODAY_HASH = '#/today';
+
 export function parseRoute(hash) {
   const run = new RegExp(`^#/rooms/${ID}/simulations/${ID}/?$`).exec(hash ?? '');
   if (run) return { name: 'simulation', id: Number(run[1]), runId: Number(run[2]) };
@@ -32,6 +35,7 @@ export function parseRoute(hash) {
   const m = new RegExp(`^#/rooms/${ID}(?:/([a-z]+))?/?$`).exec(hash ?? '');
   const tab = m && m[2] !== undefined ? tabOf(m[2]) : 'now';
   if (m && (tab === 'now' || NAMED_TABS.includes(tab)) && m[2] !== 'now') return { name: 'detail', id: Number(m[1]), tab };
+  if (/^#\/today\/?$/.test(hash ?? '')) return { name: 'today' };
   // #/rooms (the Rooms list until 2026-10-28) is the Overview now: it holds every room and Add room.
   if (/^#\/settings\/?$/.test(hash ?? '')) return { name: 'settings' };
   return { name: 'overview' };
@@ -42,6 +46,7 @@ export function canonicalHash(route) {
   if (route.name === 'simulation') return `#/rooms/${route.id}/simulations/${route.runId}`;
   if (route.name === 'suggest') return suggestHash(route.id);
   if (route.name === 'detail') return roomHash(route.id, route.tab);
+  if (route.name === 'today') return TODAY_HASH;
   return route.name === 'settings' ? '#/settings' : '#/overview';
 }
 
