@@ -834,7 +834,6 @@ export function openDb(path, { log = console.error } = {}) {
     dailyTasks: db.prepare("SELECT * FROM tasks WHERE room_id = ? AND kind = 'daily' AND date = ? ORDER BY id"),
     openTasks: db.prepare("SELECT * FROM tasks WHERE room_id = ? AND kind = ? AND status = 'open' ORDER BY due_at, id"),
     openDailyBefore: db.prepare("SELECT * FROM tasks WHERE room_id = ? AND kind = 'daily' AND status = 'open' AND date < ? ORDER BY id"),
-    openUpkeep: db.prepare("SELECT * FROM tasks WHERE room_id = ? AND kind = 'upkeep' AND rule_key = ? AND status = 'open'"),
     lastClosedUpkeep: db.prepare(`SELECT * FROM tasks WHERE room_id = ? AND kind = 'upkeep' AND rule_key = ? AND status IN ('done', 'skipped')
                                   ORDER BY closed_at DESC, id DESC LIMIT 1`),
     closeTask: db.prepare(`UPDATE tasks SET status = ?, closed_at = ?, worker = ?, amount = ?, reason = ?
@@ -1687,12 +1686,6 @@ export function openDb(path, { log = console.error } = {}) {
     // The room's open daily rows of dates before `date`.
     openDailyBefore(roomId, date) {
       return q.openDailyBefore.all(roomId, date).map(taskRow);
-    },
-
-    // The open row of an upkeep rule in the room, or null.
-    openUpkeep(roomId, ruleKey) {
-      const r = q.openUpkeep.get(roomId, ruleKey);
-      return r ? taskRow(r) : null;
     },
 
     // The last done or skipped row of an upkeep rule in the room, or null.

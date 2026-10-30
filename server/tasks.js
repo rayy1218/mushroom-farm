@@ -21,7 +21,6 @@ const AMOUNT_LABEL = Object.fromEntries(DAILY_RULES.filter((r) => r.amount).map(
 const MAX_AMOUNT = 10_000;
 const MAX_REASON = 200;
 const MAX_NAME = 40;
-const STATUS_WORD = { done: 'done', skipped: 'skipped', missed: 'missed', cancelled: 'cancelled' };
 
 // '12,000', '0.5': thousands grouped with a comma, at most 3 decimals (0.1 + 0.2 is '0.3').
 const grouped = (n) => {
@@ -33,7 +32,7 @@ const grouped = (n) => {
 function closedText(row) {
   if (row.status === 'missed') return 'Already missed: its day has ended';
   const by = row.worker ? ` by ${row.worker}` : '';
-  return `Already ${STATUS_WORD[row.status]}${by} at ${localTime(row.closedAt)}`;
+  return `Already ${row.status}${by} at ${localTime(row.closedAt)}`;
 }
 
 const trimmed = (v) => (typeof v === 'string' ? v.trim() : '');

@@ -301,7 +301,7 @@ test('done on an upkeep row after the room lost its machine makes no next row', 
   const filter = s.tasks.roomView(s.id).upkeep.find((r) => r.ruleKey === 'dehumidifierFilter');
   s.db.updateRoom(s.id, { ...s.db.getRoom(s.id), dehumidifier: false });
   assert.equal(s.tasks.done(filter.id, { worker: 'Ali' }).status, 'done');
-  assert.equal(s.db.openUpkeep(s.id, 'dehumidifierFilter'), null);
+  assert.equal(s.db.openTasks(s.id, 'upkeep').find((r) => r.ruleKey === 'dehumidifierFilter'), undefined);
 });
 
 test('a row closed by someone else between the read and the close: 409 and one open row for the rule', (t) => {

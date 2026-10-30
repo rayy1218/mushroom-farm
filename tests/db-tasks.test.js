@@ -65,13 +65,13 @@ test('closeTask closes an open row once; an upkeep close makes the next row in t
   const up = { roomId: id, ruleKey: 'acFilter', text: 'Wash the aircon filter and clear the drain tray', dueAt: 100, at: 50 };
   assert.equal(db.insertUpkeepTask(up), true);
   assert.equal(db.insertUpkeepTask({ ...up, dueAt: 200 }), false, 'one open row per rule');
-  const open = db.openUpkeep(id, 'acFilter');
+  const open = db.openTasks(id, 'upkeep').find((r) => r.ruleKey === 'acFilter');
   assert.equal(open.slot, 'any');
   assert.equal(db.lastClosedUpkeep(id, 'acFilter'), null);
   assert.equal(db.closeTask(open.id, { status: 'skipped', at: 300, worker: 'Siti', reason: 'No spare filter' }, { ...up, dueAt: 900, at: 300 }), true);
   const closed = db.getTask(open.id);
   assert.deepEqual([closed.status, closed.closedAt, closed.worker, closed.reason], ['skipped', 300, 'Siti', 'No spare filter']);
-  assert.equal(db.openUpkeep(id, 'acFilter').dueAt, 900);
+  assert.equal(db.openTasks(id, 'upkeep').find((r) => r.ruleKey === 'acFilter').dueAt, 900);
   assert.equal(db.lastClosedUpkeep(id, 'acFilter').id, open.id);
   assert.equal(db.closeTask(open.id, { status: 'done', at: 400, worker: 'Ali' }, { ...up, dueAt: 999, at: 400 }), false, 'not open');
   assert.equal(db.getTask(open.id).status, 'skipped');
@@ -161,7 +161,7 @@ test('closeTask rolls the close back when the next upkeep row cannot be made', (
   const other = { ...up, ruleKey: 'trhClean', text: 'Wipe the T/RH sensor' };
   db.insertUpkeepTask(up);
   db.insertUpkeepTask(other);
-  const open = db.openUpkeep(id, 'acFilter');
+  const open = db.openTasks(id, 'upkeep').find((r) => r.ruleKey === 'acFilter');
   // trhClean already has an open row, so a next row of trhClean is not made
   assert.throws(() => db.closeTask(open.id, { status: 'done', at: 300, worker: 'Ali' }, { ...other, dueAt: 900, at: 300 }),
     /The next upkeep row was not made/);

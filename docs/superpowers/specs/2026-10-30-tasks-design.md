@@ -110,9 +110,9 @@ The intake filter stays on its pressure and days reminder (`filterDue`, `filterD
 
 | Step | Rule |
 |---|---|
-| `wantedTasks({ program, crops, room, rules, settings, date })` | pure: the day's daily rows of one room — rule key, text, notes, slot, amount — from the stage and `stageDay` (web/crop-math.js) on that date |
-| `ensureDay(roomId, date)` | inserts the wanted daily rows (`INSERT OR IGNORE`, unique room, rule, date, slot), marks open daily rows of earlier dates missed, cancels today's open daily rows whose rule is no longer wanted ("Stage changed", or "Rule changed" for another slot) and opens such rows again when wanted again that day, cancels the open upkeep row of a rule that no longer applies to the room, and makes each applying upkeep rule's open row when it has none (due *interval* days after its last done or skip, but not before that day) |
-| When | on `GET` of a room's tasks or of Today, and once per room per local day from the controller's cycle (an in-memory last-date memo), so a day is made after the app was down |
+| `wantedDaily({ program, crops, date, rules })` | pure: the day's daily rows of one room — rule key, text, notes, slot, amount — from the stage and `stageDayOn(program, date)` (the stage's day in farm calendar days) on that date |
+| `ensureDay(roomId, date)` | inserts the wanted daily rows (`ON CONFLICT DO NOTHING`, unique room, rule, date, slot), marks open daily rows of earlier dates missed, cancels today's open daily rows whose rule is no longer wanted ("Stage changed", or "Rule changed" for another slot) and opens such rows again when wanted again that day, cancels the open upkeep row of a rule that no longer applies to the room, and makes each applying upkeep rule's open row when it has none (due *interval* days after its last done or skip, but not before that day) |
+| When | on `GET` of a room's tasks or of Today, and once per room per local day from the controller's cycle (an in-memory key of the date, crops, stage, stage days, flush, done, stageSince and the room's dehumidifier and sensor addresses, so it runs again when one of them changes), so a day is made after the app was down |
 | Done or skip of an upkeep row | in one transaction: the row closed, the next open row due `at + everyDays` |
 | A rule turned off | its open rows stay until done or the day ends; no new rows |
 
@@ -202,7 +202,7 @@ The dialog shows the Setup values before and after, editable; **Save and mark do
 
 | Area | Tests |
 |---|---|
-| `wantedTasks` | each stage and family; first and last day; every 2 days in the last 7; mixed crops give a rule once with both notes; done program gives clearOut; no crops; rules off; custom rules for some rooms |
+| `wantedDaily` | each stage and family; first and last day; every 2 days in the last 7; mixed crops give a rule once with both notes; done program gives clearOut; no crops; rules off; custom rules for some rooms |
 | Upkeep | machine conditions; next due after done and skip; overdue days; interval change |
 | Database | 18 → 19 on a copy; `ensureDay` twice makes no duplicates; missed at the day's end; cancelled on a stage change; worker text kept after rename |
 | API | each route and error above; done twice (409); CSV columns; Plan this from a suggestion |
