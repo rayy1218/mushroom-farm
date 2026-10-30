@@ -128,3 +128,28 @@ test('with the tasks module the cycle makes the rows', async (t) => {
   assert.deepEqual(s.db.dailyTasks(s.id, '2026-10-30').map((r) => r.ruleKey), ['footbath', 'floorClean']);
   assert.deepEqual(s.errors, []);
 });
+
+test('swapping the crop for another while fruiting (same count) makes the day again', async (t) => {
+  const s = setup(t);
+  s.db.setProgram(s.id, { ...s.db.getProgram(s.id), crops: [{ crop: 'oyster', blocks: 100 }], stage: 'fruiting', stageSince: s.at() });
+  await s.cycle();
+  assert.equal(s.calls.length, 1);
+  s.db.setProgram(s.id, { ...s.db.getProgram(s.id), crops: [{ crop: 'reishi', blocks: 100 }] });
+  await s.cycle();
+  assert.equal(s.calls.length, 2);
+  await s.cycle();
+  assert.equal(s.calls.length, 2);
+});
+
+test('changing the days of the present stage between cycles makes the day again', async (t) => {
+  const s = setup(t);
+  s.db.setProgram(s.id, { ...s.db.getProgram(s.id), crops: [{ crop: 'oyster', blocks: 100 }], stage: 'fruiting', stageSince: s.at() });
+  await s.cycle();
+  assert.equal(s.calls.length, 1);
+  const p = s.db.getProgram(s.id);
+  s.db.setProgram(s.id, { ...p, days: { ...p.days, fruiting: 10 } });
+  await s.cycle();
+  assert.equal(s.calls.length, 2);
+  await s.cycle();
+  assert.equal(s.calls.length, 2);
+});

@@ -551,12 +551,12 @@ export function createController({ db, machines, now = Date.now, log = console.e
     }
 
     // The room's tasks (spec 2026-10-30-tasks-design.md 4): made once per farm day, and again when what decides them changes
-    // (a stage started here or by the crop PUT, crops added or cleared, a machine fitted or taken out), so a day is made after
-    // the app was down. An error is logged once for that state and never stops the room's control.
+    // (a stage started here or by the crop PUT, crops added, swapped or cleared, the present stage's days, a machine fitted or
+    // taken out), so a day is made after the app was down. An error is logged once for that state and never stops the room's control.
     if (tasks) {
       const date = localDate(at);
-      const key = [date, program.crops.length, program.stage, program.flush, program.done, program.stageSince,
-        room.dehumidifier, room.co2Address, room.trhAddress].join('|');
+      const key = [date, program.crops.map((c) => c.crop).join(','), program.stage, program.days?.[program.stage], program.flush,
+        program.done, program.stageSince, room.dehumidifier, room.co2Address, room.trhAddress].join('|');
       if (taskKeys.get(room.id) !== key) {
         taskKeys.set(room.id, key);
         try {
