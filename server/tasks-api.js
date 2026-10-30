@@ -2,6 +2,8 @@
 // GET /api/rooms/:id/tasks/log and /log.csv, GET /api/tasks/today, POST /api/tasks/:id/done|skip|cancel, GET and PUT
 // /api/workers and /api/task-rules. server/tasks.js makes and closes the rows; this checks what the pages send.
 
+import { DAILY_RULES, CLEAR_OUT, UPKEEP_RULES, SLOTS } from './task-rules.js';
+
 const ROOM_TASKS = /^\/api\/rooms\/([1-9][0-9]{0,14})\/tasks$/;
 const TASK_ACTION = /^\/api\/tasks\/([1-9][0-9]{0,14})\/(done|skip|cancel)$/;
 const ROOM_LOG = /^\/api\/rooms\/([1-9][0-9]{0,14})\/tasks\/log(\.csv)?$/;
@@ -53,6 +55,93 @@ function readWorkers(body, existing, HttpError) {
     if (typeof active !== 'boolean') throw bad('Active must be true or false', `workers.${i}.active`);
     return { id, name, active };
   });
+}
+
+// The built-in rules in the Settings card's order (daily, the done program's, upkeep), each once.
+const BUILTIN = [...new Map([...DAILY_RULES, CLEAR_OUT, ...UPKEEP_RULES].map((r) => [r.key, r])).values()];
+const BUILTIN_BY_KEY = new Map(BUILTIN.map((r) => [r.key, r]));
+// An own rule's text: 1 to 120 characters, as an own long-term task's in server/tasks.js.
+const RULE_TEXT_MAX = 120;
+const INTERVAL_MAX = 365;
+const INTERVAL_ERROR = `Interval must be a whole number from 1 to ${INTERVAL_MAX} days`;
+const CUSTOM_INTERVAL_ERROR = `Interval must be daily or a whole number from 1 to ${INTERVAL_MAX} days`;
+const ROOMS_ERROR = "Rooms must be every room, or one or more of this farm's rooms";
+const SLOT_ERROR = `Time of day must be ${SLOTS.slice(0, -1).join(', ')} or ${SLOTS.at(-1)}`;
+const isInterval = (v) => Number.isInteger(v) && v >= 1 && v <= INTERVAL_MAX;
+
+// GET /api/task-rules: every built-in rule with the owner's on/off and interval, and the owner's own rules.
+// stored: db.taskRuleSettings(); custom: db.customTaskRules().
+function rulesView(stored, custom) {
+  const byKey = new Map(stored.map((s) => [s.key, s]));
+  const builtin = BUILTIN.map((rule) => {
+    const s = byKey.get(rule.key);
+    return {
+      key: rule.key, kind: rule.kind, text: rule.text,
+      families: rule.families ?? null, stages: rule.stages ?? null, when: rule.when ?? null, slot: rule.slot ?? 'any',
+      everyDays: rule.kind === 'upkeep' ? s?.everyDays ?? rule.everyDays : null,
+      enabled: s?.enabled ?? true,
+    };
+  });
+  return { builtin, custom };
+}
+
+// PUT /api/task-rules: { builtin?: [{ key, enabled?, everyDays? }], custom?: [{ id?, text, rooms, everyDays, slot, enabled }] }
+// → { settings: one entry per built-in key (the stored ones kept where the body says nothing) | null, custom: the new list | null }.
+// stored: db.taskRuleSettings(); customIds: the stored own rules' ids; roomIds: the farm's room ids (an own rule's rooms are
+// null for every room or a non-empty list of them: deleteRoom removes a rule whose last room goes).
+function readRules(body, { stored, customIds, roomIds }, HttpError) {
+  const bad = (message, field) => new HttpError(400, message, field);
+  if (!isObject(body)) throw bad('Body must be a JSON object');
+  let settings = null;
+  if (body.builtin !== undefined) {
+    if (!Array.isArray(body.builtin)) throw bad('Built-in rules must be a list', 'builtin');
+    const byKey = new Map(stored.map((s) => [s.key, s]));
+    const next = new Map(BUILTIN.map((r) => [r.key, { key: r.key, enabled: byKey.get(r.key)?.enabled ?? true, everyDays: byKey.get(r.key)?.everyDays ?? null }]));
+    for (const entry of body.builtin) {
+      const key = isObject(entry) ? entry.key : entry;
+      const rule = isObject(entry) && typeof key === 'string' ? BUILTIN_BY_KEY.get(key) : undefined;
+      if (!rule) throw bad(`Unknown rule ${JSON.stringify(key ?? null)}`, 'builtin');
+      const s = next.get(rule.key);
+      if (entry.enabled !== undefined) {
+        if (typeof entry.enabled !== 'boolean') throw bad('On must be true or false', `builtin.${rule.key}.enabled`);
+        s.enabled = entry.enabled;
+      }
+      if (rule.kind === 'upkeep' && entry.everyDays !== undefined) { // a daily rule's interval is ignored
+        if (entry.everyDays !== null && !isInterval(entry.everyDays)) throw bad(INTERVAL_ERROR, `builtin.${rule.key}.everyDays`);
+        s.everyDays = entry.everyDays;
+      }
+    }
+    settings = [...next.values()];
+  }
+  let custom = null;
+  if (body.custom !== undefined) {
+    if (!Array.isArray(body.custom)) throw bad('Your own rules must be a list', 'custom');
+    const usedIds = new Set();
+    custom = body.custom.map((c, i) => {
+      const at = (field) => `custom.${i}.${field}`;
+      if (!isObject(c)) throw bad('Each rule must be an object', `custom.${i}`);
+      let id = null;
+      if (c.id !== undefined && c.id !== null) {
+        if (!customIds.has(c.id) || usedIds.has(c.id)) throw bad('Unknown rule', at('id'));
+        usedIds.add(c.id);
+        id = c.id;
+      }
+      const text = trimmed(c.text);
+      if (text === '' || text.length > RULE_TEXT_MAX) throw bad(`Task text must be 1 to ${RULE_TEXT_MAX} characters`, at('text'));
+      const rooms = c.rooms ?? null;
+      if (rooms !== null && !(Array.isArray(rooms) && rooms.length > 0 && rooms.every((r) => roomIds.has(r)) && new Set(rooms).size === rooms.length)) {
+        throw bad(ROOMS_ERROR, at('rooms'));
+      }
+      const everyDays = c.everyDays ?? null;
+      if (everyDays !== null && !isInterval(everyDays)) throw bad(CUSTOM_INTERVAL_ERROR, at('everyDays'));
+      const slot = c.slot ?? 'any';
+      if (!SLOTS.includes(slot)) throw bad(SLOT_ERROR, at('slot'));
+      const enabled = c.enabled ?? true;
+      if (typeof enabled !== 'boolean') throw bad('On must be true or false', at('enabled'));
+      return { id, text, rooms, everyDays, slot, enabled };
+    });
+  }
+  return { settings, custom };
 }
 
 // db: the farm database; tasks: from createTasks (server/tasks.js), whose views make the day's rows first.
@@ -122,6 +211,25 @@ export function createTaskRoutes({ db, tasks }) {
       // The whole list: done rows keep the name they were done by (text), so a rename or removal leaves the log as it was.
       db.setWorkers(readWorkers(await readJson(req), db.listWorkers(), HttpError));
       send(res, 200, { workers: db.listWorkers() });
+      return true;
+    }
+    if (path === '/api/task-rules') {
+      if (req.method === 'GET') {
+        send(res, 200, rulesView(db.taskRuleSettings(), db.customTaskRules()));
+        return true;
+      }
+      if (req.method !== 'PUT') throw notFound();
+      const { settings, custom } = readRules(await readJson(req), {
+        stored: db.taskRuleSettings(),
+        customIds: new Set(db.customTaskRules().map((c) => c.id)),
+        roomIds: new Set(db.listRooms().map((r) => r.id)),
+      }, HttpError);
+      if (settings) db.setTaskRuleSettings(settings);
+      if (custom) db.setCustomTaskRules(custom);
+      // A rule turned on or added makes today's rows now (on the tasks module's clock); the rows of a rule turned off or
+      // removed are left to server/tasks.js.
+      tasks.ensureAll();
+      send(res, 200, rulesView(db.taskRuleSettings(), db.customTaskRules()));
       return true;
     }
     return false;

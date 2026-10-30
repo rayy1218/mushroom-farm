@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDb } from '../server/db.js';
 import { createApp } from '../server/app.js';
+import { DAILY_RULES, CLEAR_OUT, UPKEEP_RULES, localDate } from '../server/task-rules.js';
 
 const ROOM = { name: 'Room 1', length: 6, width: 4, height: 2.5 };
 
@@ -80,4 +81,88 @@ test('a renamed worker leaves the done rows as they were', async (t) => {
   await call('PUT', '/api/workers', { workers: [{ id: ali.id, name: 'Ali bin Abu', active: true }] });
   const [row] = (await call('GET', `/api/rooms/${id}/tasks/log`)).body.rows;
   assert.equal(row.worker, 'Ali');
+});
+
+const BUILTIN_KEYS = [...new Set([...DAILY_RULES, CLEAR_OUT, ...UPKEEP_RULES].map((r) => r.key))];
+
+test('task rules: every built-in rule with its families, stages and time, or its interval, all on; none of your own', async (t) => {
+  const { call } = await app(t);
+  const r = await call('GET', '/api/task-rules');
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.builtin.map((x) => x.key), BUILTIN_KEYS);
+  const walk = DAILY_RULES.find((x) => x.key === 'contamWalk');
+  assert.deepEqual(r.body.builtin.find((x) => x.key === 'contamWalk'), {
+    key: 'contamWalk', kind: 'daily', text: walk.text, families: walk.families ?? null, stages: walk.stages ?? null, when: walk.when, slot: walk.slot,
+    everyDays: null, enabled: true,
+  });
+  const filter = UPKEEP_RULES.find((x) => x.key === 'acFilter');
+  assert.deepEqual(r.body.builtin.find((x) => x.key === 'acFilter'), {
+    key: 'acFilter', kind: 'upkeep', text: filter.text, families: filter.families ?? null, stages: filter.stages ?? null, when: filter.when ?? null,
+    slot: filter.slot ?? 'any', everyDays: 7, enabled: true,
+  });
+  assert.deepEqual(r.body.custom, []);
+  assert.deepEqual(await call('POST', '/api/task-rules', {}), { status: 404, body: { error: 'Not found' } });
+});
+
+test('task rules: a built-in rule turned off, an upkeep interval of 1 to 365 days; the others kept; bad ones 400 with the field', async (t) => {
+  const { call } = await app(t);
+  const put = (body) => call('PUT', '/api/task-rules', body);
+  const rule = (body, key) => body.builtin.find((x) => x.key === key);
+  const first = await put({ builtin: [{ key: 'footbath', enabled: false }, { key: 'acFilter', everyDays: 14 }] });
+  assert.equal(first.status, 200);
+  assert.deepEqual([rule(first.body, 'footbath').enabled, rule(first.body, 'acFilter').everyDays, rule(first.body, 'acFilter').enabled], [false, 14, true]);
+  assert.deepEqual([rule(first.body, 'flyTraps').everyDays, rule(first.body, 'flyTraps').enabled], [7, true]);
+  const second = await put({ builtin: [{ key: 'flyTraps', enabled: false }, { key: 'footbath', everyDays: 3 }] }); // a daily rule has no interval
+  assert.deepEqual([rule(second.body, 'footbath').enabled, rule(second.body, 'footbath').everyDays, rule(second.body, 'acFilter').everyDays, rule(second.body, 'flyTraps').enabled],
+    [false, null, 14, false]);
+  for (const everyDays of [0, 366, 2.5, '7']) {
+    assert.deepEqual(await put({ builtin: [{ key: 'acFilter', everyDays }] }), {
+      status: 400, body: { error: 'Interval must be a whole number from 1 to 365 days', field: 'builtin.acFilter.everyDays' },
+    });
+  }
+  assert.equal(rule((await put({ builtin: [{ key: 'acFilter', everyDays: 1 }] })).body, 'acFilter').everyDays, 1);
+  assert.equal(rule((await put({ builtin: [{ key: 'acFilter', everyDays: 365 }] })).body, 'acFilter').everyDays, 365);
+  assert.equal(rule((await put({ builtin: [{ key: 'acFilter', everyDays: null }] })).body, 'acFilter').everyDays, 7); // back to the default
+  assert.deepEqual(await put({ builtin: [{ key: 'nope', enabled: false }] }), { status: 400, body: { error: 'Unknown rule "nope"', field: 'builtin' } });
+  assert.deepEqual(await put({ builtin: [{ key: 'footbath', enabled: 'no' }] }), { status: 400, body: { error: 'On must be true or false', field: 'builtin.footbath.enabled' } });
+  assert.deepEqual(await put({ builtin: 'all' }), { status: 400, body: { error: 'Built-in rules must be a list', field: 'builtin' } });
+  assert.deepEqual(await put([]), { status: 400, body: { error: 'Body must be a JSON object' } });
+  assert.deepEqual(rule((await call('GET', '/api/task-rules')).body, 'footbath').enabled, false);
+});
+
+test("task rules: your own, text 1 to 120, every room or some of this farm's, daily or every 1 to 365 days, a time of day; they make rows at once", async (t) => {
+  const { db, call } = await app(t);
+  const r1 = (await call('POST', '/api/rooms', { ...ROOM, name: 'Room 1' })).body.id;
+  const r2 = (await call('POST', '/api/rooms', { ...ROOM, name: 'Room 2' })).body.id;
+  const tank = { text: ' Check the water tank ', rooms: null, everyDays: null, slot: 'morning', enabled: true };
+  const shelves = { text: 'Wipe the shelves', rooms: [r2], everyDays: 14, slot: 'any', enabled: true };
+  const saved = await call('PUT', '/api/task-rules', { custom: [tank, shelves] });
+  assert.equal(saved.status, 200);
+  assert.deepEqual(saved.body.custom.map(({ id, ...rest }) => rest), [{ ...tank, text: 'Check the water tank' }, shelves]);
+  const [tankRule, shelvesRule] = saved.body.custom;
+  // Made by the PUT itself, before any page asks for the room's tasks.
+  assert.equal(byRule(db.dailyTasks(r1, localDate(Date.now())), `custom:${tankRule.id}`)?.text, 'Check the water tank');
+  assert.equal(byRule(db.openTasks(r2, 'upkeep'), `custom:${shelvesRule.id}`)?.text, 'Wipe the shelves');
+  const one = await tasksOf(call, r1);
+  const two = await tasksOf(call, r2);
+  assert.equal(byRule(one.today, `custom:${tankRule.id}`).text, 'Check the water tank');
+  assert.equal(byRule(one.today, `custom:${tankRule.id}`).slot, 'morning');
+  assert.equal(byRule(one.upkeep, `custom:${shelvesRule.id}`), undefined);
+  assert.equal(byRule(two.upkeep, `custom:${shelvesRule.id}`).text, 'Wipe the shelves');
+
+  const put = (change) => call('PUT', '/api/task-rules', { custom: [{ ...shelves, ...change }] });
+  const fails = (error, field) => ({ status: 400, body: { error, field } });
+  for (const text of ['', '  ', 'x'.repeat(121), 4]) assert.deepEqual(await put({ text }), fails('Task text must be 1 to 120 characters', 'custom.0.text'));
+  for (const rooms of [[], [999], [r1, r1], 'all', [String(r1)]]) assert.deepEqual(await put({ rooms }), fails("Rooms must be every room, or one or more of this farm's rooms", 'custom.0.rooms'));
+  for (const everyDays of [0, 366, 1.5, 'weekly']) assert.deepEqual(await put({ everyDays }), fails('Interval must be daily or a whole number from 1 to 365 days', 'custom.0.everyDays'));
+  assert.deepEqual(await put({ slot: 'evening' }), fails('Time of day must be morning, afternoon or any', 'custom.0.slot'));
+  assert.deepEqual(await put({ enabled: 'yes' }), fails('On must be true or false', 'custom.0.enabled'));
+  assert.deepEqual(await put({ id: 999 }), fails('Unknown rule', 'custom.0.id'));
+  assert.deepEqual(await call('PUT', '/api/task-rules', { custom: ['Sweep'] }), fails('Each rule must be an object', 'custom.0'));
+  assert.deepEqual(await call('PUT', '/api/task-rules', { custom: {} }), fails('Your own rules must be a list', 'custom'));
+  const longest = { ...shelves, id: shelvesRule.id, text: 'x'.repeat(120), everyDays: 365, rooms: [r1, r2] };
+  assert.equal((await call('PUT', '/api/task-rules', { custom: [{ ...tank, id: tankRule.id }, longest] })).status, 200);
+
+  const kept = await call('PUT', '/api/task-rules', { custom: [{ id: tankRule.id, text: 'Check the tank', rooms: null, everyDays: null, slot: 'afternoon', enabled: false }] });
+  assert.deepEqual(kept.body.custom, [{ id: tankRule.id, text: 'Check the tank', rooms: null, everyDays: null, slot: 'afternoon', enabled: false }]);
 });
