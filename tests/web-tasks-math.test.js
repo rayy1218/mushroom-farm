@@ -224,3 +224,24 @@ test('the aircon class rule is the one Simulate uses, up to the 60,000 BTU/h cla
     assert.equal(sim.roomMachines({ room: { acInputW: acInputOf(btu), humidifierLH: 2 } }).machines.acBTU, btu, `${btu} BTU/h → ${acInputOf(btu)} W → back`);
   }
 });
+
+import { whenWords, ruleLine, customLine } from '../web/tasks-math.js';
+
+test('a rule in words for the Task rules card', () => {
+  assert.equal(whenWords('daily'), 'every day');
+  assert.equal(whenWords('first'), 'first day of the stage');
+  assert.equal(whenWords('last'), 'last day of the stage');
+  assert.equal(whenWords({ every: 2, lastDays: 7 }), 'every 2 days in the last 7 days of the stage');
+  assert.equal(whenWords({ every: 2, lastDays: null }), 'every 2 days');
+  assert.equal(ruleLine({ key: 'contamWalk', kind: 'daily', families: null, stages: null, when: 'daily', slot: 'morning' }), 'All crops · all stages · every day · morning');
+  assert.equal(ruleLine({ key: 'colonisedCheck', kind: 'daily', families: null, stages: ['spawn'], when: { every: 2, lastDays: 7 }, slot: 'any' }),
+    'All crops · spawn run · every 2 days in the last 7 days of the stage · any time');
+  assert.equal(ruleLine({ key: 'openBags', kind: 'daily', families: ['oyster', 'woodear', 'lionsmane', 'reishi'], stages: ['pinning'], when: 'first', slot: 'morning' }),
+    "Oyster, wood ear, lion's mane, reishi · pinning · first day of the stage · morning");
+  assert.equal(ruleLine({ key: 'humidifierCheck', kind: 'daily', families: null, stages: ['pinning', 'fruiting'], when: 'daily', slot: 'morning' }), 'All crops · pinning, fruiting · every day · morning');
+  assert.equal(ruleLine({ key: 'clearOut', kind: 'daily', families: null, stages: null, when: 'daily', slot: 'morning' }), 'After the last flush · every day · morning');
+  assert.equal(ruleLine({ key: 'acFilter', kind: 'upkeep', everyDays: 7 }), 'Every 7 days');
+  assert.equal(customLine({ rooms: null, everyDays: null, slot: 'morning' }, []), 'All rooms · every day · morning');
+  assert.equal(customLine({ rooms: [1, 2], everyDays: 14, slot: 'any' }, [{ id: 1, name: 'Room 1' }, { id: 2, name: 'Room 2' }]), 'Room 1, Room 2 · every 14 days · any time');
+  assert.equal(customLine({ rooms: [9], everyDays: 1, slot: 'afternoon' }, []), 'Room 9 · every day · afternoon');
+});

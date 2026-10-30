@@ -47,3 +47,41 @@ test('the interval hint says how long the Live charts\' 50 readings span at the 
   const page = readFileSync(new URL('../web/settings-page.js', import.meta.url), 'utf8');
   assert.match(page, /hint\.textContent = liveHint\(parsePoll\(input\.value\) \?\? last\?\.pollSeconds \?\? null\);/, 'it follows the input as typed');
 });
+
+import { parseWorkerName, workersAfter, parseEveryDays, parseCustomRule, WORKER_MAX } from '../web/settings-math.js';
+
+// The texts are the server's (PUT /api/workers, PUT /api/task-rules), so a refusal reads the same from either.
+test('Workers: a name is 1 to 40 characters and not taken; the whole list the PUT sends', () => {
+  const list = [{ id: 1, name: 'Siti', active: true }, { id: 2, name: 'Ali', active: false }];
+  assert.deepEqual(parseWorkerName('  Ah Kow ', list), { value: 'Ah Kow' });
+  assert.deepEqual(parseWorkerName('', list), { error: 'Type a name' });
+  assert.deepEqual(parseWorkerName('x'.repeat(WORKER_MAX + 1), list), { error: 'The name must be at most 40 characters' });
+  assert.deepEqual(parseWorkerName('Ah\tKow', list), { error: 'A name cannot hold control characters' });
+  assert.deepEqual(parseWorkerName('siti', list), { error: 'That name is taken' });
+  assert.deepEqual(parseWorkerName('Siti ', list, 1), { value: 'Siti' }, 'its own name');
+  assert.deepEqual(parseWorkerName('ali', list), { value: 'ali' }, 'a removed name may come back');
+  assert.deepEqual(parseWorkerName('ALI', list, 1), { value: 'ALI' }, "a rename may take a removed worker's name");
+  assert.deepEqual(workersAfter(list, { add: 'Ah Kow' }), [...list, { name: 'Ah Kow', active: true }]);
+  assert.deepEqual(workersAfter(list, { add: 'ali' }), [list[0], { id: 2, name: 'ali', active: true }]);
+  assert.deepEqual(workersAfter(list, { rename: { id: 1, name: 'Siti Aminah' } }), [{ id: 1, name: 'Siti Aminah', active: true }, list[1]]);
+  assert.deepEqual(workersAfter(list, { rename: { id: 1, name: 'ALI' } }), [{ id: 1, name: 'ALI', active: true }],
+    'the removed namesake is left out (the server would refuse two of a name; the log keeps names as text)');
+  assert.deepEqual(workersAfter(list, { remove: 1 }), [{ id: 1, name: 'Siti', active: false }, list[1]], 'kept, inactive: old records keep the name');
+});
+
+test("Task rules: an upkeep interval of 1 to 365 days; the owner's own rule", () => {
+  assert.deepEqual(parseEveryDays(' 7 '), { value: 7 });
+  for (const t of ['', '0', '366', '2.5', 'x']) assert.deepEqual(parseEveryDays(t), { error: 'A whole number from 1 to 365 days' }, t);
+  assert.deepEqual(parseCustomRule({ text: ' Check the drain ', allRooms: true, rooms: [], often: 'daily', everyDays: '', slot: 'morning' }),
+    { value: { text: 'Check the drain', rooms: null, everyDays: null, slot: 'morning', enabled: true } });
+  assert.deepEqual(parseCustomRule({ text: 'Check the drain', allRooms: false, rooms: [2, 3], often: 'every', everyDays: '14', slot: 'any' }),
+    { value: { text: 'Check the drain', rooms: [2, 3], everyDays: 14, slot: 'any', enabled: true } });
+  assert.deepEqual(parseCustomRule({ text: 'Check the drain', allRooms: false, rooms: [2, 2, 3], often: 'daily', everyDays: '', slot: 'any' }).value.rooms,
+    [2, 3], 'a room once (the server refuses a list with a room twice)');
+  assert.deepEqual(parseCustomRule({ text: '', allRooms: false, rooms: [], often: 'every', everyDays: '0', slot: 'any' }),
+    { errors: { text: 'Say what to do (1 to 120 characters)', rooms: 'Pick at least one room', everyDays: 'A whole number from 1 to 365 days' } });
+  assert.deepEqual(parseCustomRule({ text: 'x'.repeat(121), allRooms: true, rooms: [], often: 'daily', everyDays: '', slot: 'night' }).errors,
+    { text: 'Say what to do (1 to 120 characters)', slot: 'Pick a time of day' });
+  assert.deepEqual(parseCustomRule({ text: 'Check the drain', allRooms: false, rooms: null, often: 'daily', everyDays: '', slot: 'any' }).errors,
+    { rooms: 'Pick at least one room' }, 'rooms is null only for every room');
+});

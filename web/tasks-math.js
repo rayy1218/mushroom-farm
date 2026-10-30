@@ -254,3 +254,34 @@ export function logRows(rows, now, all = false) {
   const since = now - LOG_DAYS * DAY_MS;
   return (rows ?? []).filter((r) => all || (r.closedAt ?? r.createdAt ?? 0) >= since).map(logLine);
 }
+
+// ---- the Settings task rules (spec 7.3) ----
+
+const FAMILY_WORDS = { oyster: 'oyster', woodear: 'wood ear', reishi: 'reishi', milky: 'milky', lionsmane: "lion's mane" };
+const capital = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+const everyWords = (n) => (n === 1 ? 'every day' : `every ${n} days`);
+
+// A daily rule's `when` in words.
+export function whenWords(when) {
+  if (when === 'daily') return 'every day';
+  if (when === 'first') return 'first day of the stage';
+  if (when === 'last') return 'last day of the stage';
+  if (when && finite(when.every)) return `${everyWords(when.every)}${finite(when.lastDays) ? ` in the last ${when.lastDays} days of the stage` : ''}`;
+  return '';
+}
+
+// A built-in rule's line under its text: "All crops · spawn run · every 2 days in the last 7 days of the stage · any time";
+// an upkeep rule's "Every 7 days".
+export function ruleLine(rule) {
+  if (rule.kind === 'upkeep') return capital(everyWords(rule.everyDays));
+  const out = rule.key === 'clearOut';
+  const crops = out ? 'after the last flush' : rule.families?.length ? rule.families.map((f) => FAMILY_WORDS[f] ?? f).join(', ') : 'all crops';
+  const stages = out ? null : rule.stages?.length ? rule.stages.map((s) => (STAGES[s] ?? s).toLowerCase()).join(', ') : 'all stages';
+  return capital([crops, stages, whenWords(rule.when), SLOT_LABELS[rule.slot]?.toLowerCase()].filter(Boolean).join(' · '));
+}
+
+// An own rule's line: "Room 1, Room 2 · every 14 days · any time". rooms: GET /api/rooms, for the names.
+export function customLine(rule, rooms = []) {
+  const where = rule.rooms == null ? 'All rooms' : rule.rooms.map((id) => rooms.find((r) => r.id === id)?.name ?? `Room ${id}`).join(', ');
+  return [where, rule.everyDays == null ? 'every day' : everyWords(rule.everyDays), SLOT_LABELS[rule.slot]?.toLowerCase()].filter(Boolean).join(' · ');
+}

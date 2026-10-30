@@ -82,3 +82,62 @@ export function parseExtraSettings(texts) {
   }
   return Object.keys(errors).length ? { errors } : { body };
 }
+
+// ---- iteration 19: the Workers and Task rules cards (spec 2026-10-30-tasks-design.md 7.3; the texts are the server's) ----
+
+export const WORKER_MAX = 40;
+export const EVERY_MESSAGE = 'A whole number from 1 to 365 days';
+const RULE_TEXT_MAX = 120;
+const RULE_SLOTS = ['morning', 'afternoon', 'any'];
+const sameName = (a, b) => a.toLowerCase() === b.toLowerCase();
+
+// A worker's name as typed → { value } or { error }. Taken: another active worker has it (in any case); a removed one's name
+// may come back, by an add or a rename (workersAfter). selfId: the worker being renamed.
+export function parseWorkerName(text, workers, selfId = null) {
+  const s = String(text ?? '').trim();
+  if (s === '') return { error: 'Type a name' };
+  if (s.length > WORKER_MAX) return { error: `The name must be at most ${WORKER_MAX} characters` };
+  if (/[\u0000-\u001f\u007f]/.test(s)) return { error: 'A name cannot hold control characters' };
+  const taken = (workers ?? []).some((w) => w.active && w.id !== selfId && sameName(w.name, s));
+  return taken ? { error: 'That name is taken' } : { value: s };
+}
+
+// The whole list for PUT /api/workers after one change: { add: name } (a removed worker of that name comes back),
+// { rename: { id, name } } (a removed worker of the new name is left out: the server allows a name once, and the tasks it
+// closed keep its name as text), { remove: id } (kept, inactive).
+export function workersAfter(workers, change) {
+  const list = workers ?? [];
+  if (change.add !== undefined) {
+    const old = list.find((w) => !w.active && sameName(w.name, change.add));
+    return old ? list.map((w) => (w === old ? { ...w, name: change.add, active: true } : w)) : [...list, { name: change.add, active: true }];
+  }
+  if (change.rename) {
+    const { id, name } = change.rename;
+    return list.filter((w) => w.id === id || w.active || !sameName(w.name, name)).map((w) => (w.id === id ? { ...w, name } : w));
+  }
+  if (change.remove !== undefined) return list.map((w) => (w.id === change.remove ? { ...w, active: false } : w));
+  return list;
+}
+
+// An upkeep rule's interval → { value } (whole days, 1 to 365) or { error }.
+export function parseEveryDays(text) {
+  const s = String(text ?? '').trim();
+  if (!/^[0-9]{1,3}$/.test(s)) return { error: EVERY_MESSAGE };
+  const n = Number(s);
+  return n >= 1 && n <= 365 ? { value: n } : { error: EVERY_MESSAGE };
+}
+
+// The Add your own form → { value } for the custom list of PUT /api/task-rules, or { errors: { field: message } }. often:
+// 'daily' (every day) or 'every' (every so many days from the last time done: an upkeep rule). rooms: null for every room,
+// else a non-empty list, each room once.
+export function parseCustomRule({ text, allRooms, rooms, often, everyDays, slot }) {
+  const errors = {};
+  const s = String(text ?? '').trim();
+  if (s === '' || s.length > RULE_TEXT_MAX) errors.text = `Say what to do (1 to ${RULE_TEXT_MAX} characters)`;
+  if (!allRooms && !(rooms?.length > 0)) errors.rooms = 'Pick at least one room';
+  const every = often === 'every' ? parseEveryDays(everyDays) : { value: null };
+  if (every.error) errors.everyDays = every.error;
+  if (!RULE_SLOTS.includes(slot)) errors.slot = 'Pick a time of day';
+  if (Object.keys(errors).length) return { errors };
+  return { value: { text: s, rooms: allRooms ? null : [...new Set(rooms)], everyDays: every.value, slot, enabled: true } };
+}
