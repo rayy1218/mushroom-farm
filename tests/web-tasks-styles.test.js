@@ -62,10 +62,20 @@ test('the Tasks tab from 1,100 px: Today, Upkeep and Long-term on the left, the 
 test('review minor: the dialog wraps its primary button on top; the Today room link is 44 px by its own margin; Live keeps its dot', () => {
   assert.ok(block.includes('.tk-dialog .actions { flex-wrap: wrap-reverse; }'));
   assert.ok(phone.includes('.td-long-list a { display: inline-flex; align-items: center; min-height: 44px; }'));
-  assert.ok(phone.includes('.td-room h2 a { display: inline-block; padding-block: 11px; margin-block: -11px; }'), 'an inline block: a long name wraps inside it');
+  assert.ok(phone.includes('.td-room h2 a { display: inline-block; padding: 11px 4px; margin: -11px -4px; }'), 'an inline block: a long name wraps inside it');
   assert.ok(!phone.includes('.td-room h2 a, .td-long-list a'), 'the room name is not a flex box on a phone');
   assert.ok(!phone.includes('.td-room h2 { margin-top'));
   assert.ok(phone.includes('.topbar:has(> .top-alarm:not([hidden])) .live-mark [data-live-text] {'), 'the word hides, the dot stays');
   assert.ok(!phone.includes('.live-dot { display: none; }'));
   assert.equal(block.split('.tk-add > button { margin-top').length, 2, 'one rule, not repeated on a phone');
+});
+
+test('C13 live check: the farm name hides whenever it does not fit beside the alarm; the Today room link\'s ring stays off "Morning"; no bullets on the Long-term list', () => {
+  // the mark (28 px), its gap (8 px) and "Mushroom" in Inter 700 at 15 px (about 78 px) need 114 px of the brand box
+  assert.ok(css.includes('@container (max-width: 116px) { .brand-top .brand-text { display: none; } }'));
+  assert.ok(!css.includes('@container (max-width: 100px)'));
+  assert.ok(block.includes('.td-long-list { list-style: none; margin: 0; padding: 0; }'));
+  // a phone: the ring hugs the 44 px link and the heading leaves room under it
+  assert.ok(phone.includes('.td-room h2 a:focus-visible { outline-offset: -2px; }'));
+  assert.ok(phone.includes('.td-room h2 { margin-bottom: 14px; }'));
 });

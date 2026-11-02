@@ -170,3 +170,11 @@ test('a row stays held until its request is answered, even when a second Esc clo
   has('sending = answer.catch(() => {});');
   has('}).then(() => sending);');
 });
+
+// ---- C13 live check ----
+
+test('the Skip dialog asks "Who is skipping it"; Done keeps "Who did it"', () => {
+  has("const workerField = (list, label = 'Who did it') => ({");
+  has("fields: [workerField(list, 'Who is skipping it'), { name: 'reason', label: 'Why', kind: 'text', value: '' }],");
+  assert.equal(dialogs.split("workerField(list, 'Who is skipping it')").length, 2, 'Skip alone');
+});

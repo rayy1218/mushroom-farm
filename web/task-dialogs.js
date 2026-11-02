@@ -302,8 +302,8 @@ export function createTaskActions({ onChanged, onError }) {
     }
     return changes !== before;
   };
-  const workerField = (list) => ({
-    name: 'worker', label: 'Who did it', kind: 'select', value: list.includes(getWorker()) ? getWorker() : '',
+  const workerField = (list, label = 'Who did it') => ({
+    name: 'worker', label, kind: 'select', value: list.includes(getWorker()) ? getWorker() : '',
     options: [['', 'Pick a name'], ...list.map((n) => [n, n])],
   });
   function settingsLine() {
@@ -372,7 +372,7 @@ export function createTaskActions({ onChanged, onError }) {
     await ask({
       title: 'Skip this task',
       lead: leadOf(row, list),
-      fields: [workerField(list), { name: 'reason', label: 'Why', kind: 'text', value: '' }],
+      fields: [workerField(list, 'Who is skipping it'), { name: 'reason', label: 'Why', kind: 'text', value: '' }],
       buttons: [{ value: 'skip', label: 'Skip', primary: true }],
       submit: async (v) => {
         const w = picked(v);

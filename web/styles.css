@@ -264,9 +264,11 @@ html { scroll-padding-top: var(--topbar-h); }
   .brand { gap: 8px; }
   .brand-text strong { white-space: normal; overflow: visible; line-height: 1.1; }
 }
-/* with the alarm button too there may be no room for the name: the mark alone (the link keeps its name for screen readers) */
+/* with the alarm button too there may be no room for the name: the mark alone (the link keeps its name for screen readers).
+   The name needs the mark (28 px), its gap (8 px) and "Mushroom" (Inter 700 at 15 px, about 78 px): 114 px, so below
+   116 px it goes, whatever the alarm and Today counts leave (C13: at 390 px with "12" and "55" it ran under the alarm) */
 .topbar .brand-top { container-type: inline-size; }
-@container (max-width: 100px) { .brand-top .brand-text { display: none; } }
+@container (max-width: 116px) { .brand-top .brand-text { display: none; } }
 
 .theme-btn { border-color: transparent; background: transparent; color: var(--ink-2); font-weight: 500; }
 .theme-btn:hover { background: var(--band); }
@@ -1456,7 +1458,7 @@ details.setup-part:not([open]) { padding-top: 8px; }
 .td-room h2 a:hover { text-decoration: underline; }
 .td-room h2 a::after { content: ' \203A'; color: var(--muted); } /* to the room's Tasks tab, as the Rooms list's names */
 .td-long { margin-top: 16px; }
-.td-long-list { margin: 0; padding-left: 18px; }
+.td-long-list { list-style: none; margin: 0; padding: 0; }
 .td-long-list li { padding: 4px 0; }
 
 /* the task dialog */
@@ -1519,7 +1521,9 @@ details.setup-part:not([open]) { padding-top: 8px; }
   .tk-as select { flex: 1 1 auto; min-height: 44px; }
   .td-picker { width: 100%; }
   .td-long-list a { display: inline-flex; align-items: center; min-height: 44px; }
-  .td-room h2 a { display: inline-block; padding-block: 11px; margin-block: -11px; } /* 44 px to tap; the margin keeps the card's spacing, and a long name still wraps */
+  .td-room h2 a { display: inline-block; padding: 11px 4px; margin: -11px -4px; } /* 44 px to tap; the margin keeps the card's spacing, and a long name still wraps */
+  .td-room h2 a:focus-visible { outline-offset: -2px; } /* the ring hugs the 44 px link, 4 px off the name's sides ... */
+  .td-room h2 { margin-bottom: 14px; } /* ... and clears "Morning" under it */
   .td-long-list li { padding: 0; }
   .tk-every input { min-height: 44px; }
   .tk-dialog .tk-check label { display: inline-flex; align-items: center; min-height: 44px; } /* the words take the tap too */
