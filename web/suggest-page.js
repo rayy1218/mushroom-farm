@@ -2,7 +2,8 @@
 // the owner's 2026-10-28 critique: it is the buying decision, and a 13-column table did not fit the Simulate dialog). It asks
 // the walls and weather, the crops, the target and the longest cool-down (prefilled like Simulate), runs the search (POST
 // /api/rooms/:id/sizing, GET and DELETE /api/sizing/:id) and lists the setups ranked by the money they cost a month. Use this
-// opens Simulate with the setup, for a full run. The job's id is kept in this browser tab, so leaving the page and coming
+// opens Simulate with the setup, for a full run; Plan this (with a baseline) makes its machine changes the room's long-term
+// tasks (spec 2026-10-30-tasks-design.md 7.4). The job's id is kept in this browser tab, so leaving the page and coming
 // back shows it again (the search goes on meanwhile).
 
 import { request, OFFLINE, GONE, OUTDATED, routeMissing } from './api.js';
@@ -19,6 +20,8 @@ import { backLabel } from './simulation-math.js';
 import {
   pricesOf, suggestRows, baselineRow, captionOf, roomMachines, moneyHead, priceLine, noneReachedLine, COLUMNS, SEARCH_LINE, asideSections,
 } from './suggest-math.js';
+import { planOf, longtermWords } from './tasks-math.js';
+import { openPlanDialog, closeTaskDialog } from './task-dialogs.js';
 
 const POLL_MS = 1000;
 const FIELD_ORDER = [...SIZING_FIELDS.map((f) => `physics.${f.key}`), 'crops', 'farmType', 'stage', 'target', 'coolDownMaxH'];
@@ -474,6 +477,28 @@ export function mount(container, { id }) {
       });
       const useBox = el('div', 'sg-use');
       useBox.append(use);
+      if (base) {
+        // Plan this (spec 2026-10-30-tasks-design.md 7.4): the machines that differ from the room's now become its long-term
+        // tasks. Without a baseline the "from" is unknown: no button.
+        const plan = button('Plan this');
+        plan.setAttribute('aria-label', `Plan setup ${r.rank} as long-term tasks`);
+        plan.addEventListener('click', () => {
+          const p = planOf(result, r.index, prices, job?.finishedAt ?? Date.now());
+          if (!p || !room) return;
+          openPlanDialog({ roomId: id, roomName: room.name, rank: r.rank, plan: p, onPlanned: (rows) => {
+            if (!alive() || !setup.isConnected) return;
+            const done = el('p', 'sg-planned');
+            const link = el('a', '', 'Open the Tasks tab');
+            link.href = roomHash(id, 'tasks');
+            done.append(`${longtermWords(rows.length)} planned · `, link);
+            setup.querySelector('.sg-planned')?.remove();
+            setup.append(done);
+            // the dialog closes after this and gives the focus back to Plan this: the link takes it a moment later
+            setTimeout(() => { if (alive() && link.isConnected) link.focus(); });
+          } });
+        });
+        useBox.append(plan);
+      }
       li.append(setup, ...cells, useBox, more);
       list.append(li);
     }
@@ -482,6 +507,7 @@ export function mount(container, { id }) {
     const cool = coolDownLine(result);
     if (cool) nodes.push(el('p', 'muted sg-note', cool));
     nodes.push(el('p', 'muted sg-note', 'Use this opens Simulate with the setup, its air exchange time limit and its settings during air exchange, for a full run of the room.'));
+    if (base) nodes.push(el('p', 'muted sg-note', "Plan this makes a long-term task on the room's Tasks tab for each machine that differs from what the room has now; Done on one offers to update Setup."));
     const lines = estimateLines(result.estimate);
     if (lines.length) { // on a desk, in the side column instead
       const start = el('div', 'sg-start');
@@ -562,6 +588,7 @@ export function mount(container, { id }) {
     clearTimeout(timer);
     for (const off of offLive) off();
     closeSimulateDialog();
+    closeTaskDialog();
     document.title = 'Rooms · Mushroom farm';
     container.replaceChildren();
   };
