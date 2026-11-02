@@ -129,11 +129,12 @@ export function roomMachines({ room, lastRun = null }) {
   };
   const fromRun = [];
   const fromDef = [];
+  const fromDefKeys = [];
   const machines = {};
   for (const k of ['fanFlow', 'acBTU', 'humidifierLH']) {
     if (isNumber(own[k])) machines[k] = own[k];
     else if (isNumber(p[k])) { machines[k] = p[k]; fromRun.push(MACHINE_NAMES[k]); }
-    else { machines[k] = defOf(k); fromDef.push(MACHINE_NAMES[k]); }
+    else { machines[k] = defOf(k); fromDef.push(MACHINE_NAMES[k]); fromDefKeys.push(k); }
   }
   machines.dehumidifierLday = room?.dehumidifier === true ? (isNumber(room.dehumidifierLday) ? room.dehumidifierLday : isNumber(p.dehumidifierLday) ? p.dehumidifierLday : 0) : 0;
   const notes = [
@@ -141,7 +142,8 @@ export function roomMachines({ room, lastRun = null }) {
     ...(fromDef.length ? [`${listed(fromDef)} at Simulate's default${fromDef.length > 1 ? 's' : ''}`] : []),
   ];
   const note = notes.length ? `${capital(notes.join('; '))} (not on Setup)` : null;
-  return { machines, from: `Your room's machines (Setup)${note ? `; ${notes.join('; ')} (not on Setup)` : ''}`, note };
+  // defaults: the machines at Simulate's default (no number on Setup or the run), for Plan this's fan line
+  return { machines, from: `Your room's machines (Setup)${note ? `; ${notes.join('; ')} (not on Setup)` : ''}`, note, defaults: fromDefKeys };
 }
 
 const sameMachines = (state, m) => MACHINE_KEYS.every((k) => numberOf(state.physics[k]) === m[k]);

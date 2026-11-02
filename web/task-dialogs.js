@@ -9,6 +9,7 @@
 
 import { request, OFFLINE } from './api.js';
 import { live } from './live.js';
+import { roomHash } from './route.js';
 import { keepLines } from './text-math.js';
 import { recordsAmount, amountField, parseAmount, checkReason, checkLongterm, setupUpdate, beforeText, setupBody } from './tasks-math.js';
 
@@ -117,7 +118,8 @@ export function closeTaskDialog() {
 // Opens the dialog on a form. lead: lines (text or nodes) under the title; fields: [{ name, label, kind: 'text' | 'number'
 // | 'area' | 'select' | 'check', value, options ([value, label]), hint }]; buttons: [{ value, label, primary }] after the
 // close button (closeLabel; Close when there are no buttons). submit(values, which) → true (closes), or { field, message }
-// or { message } to show while it stays open; onLost(message): a failure that came back after the dialog was closed or
+// or { message, content?, final? } to show while it stays open (content: nodes for the line in place of the message's text;
+// final: nothing more to send, the buttons stay disabled and only the close button is left); onLost(message): a failure that came back after the dialog was closed or
 // replaced. → { input(name), button(value), alive(), closed } (alive: this opening still shows; closed: a promise kept when
 // it is closed or replaced and nothing it sent is still waiting for an answer).
 function openForm({ title, lead = [], fields = [], buttons = [], closeLabel = buttons.length ? 'Cancel' : 'Close', submit, onLost }) {
@@ -210,7 +212,8 @@ function openForm({ title, lead = [], fields = [], buttons = [], closeLabel = bu
       input.focus();
       return;
     }
-    formError.textContent = problem.message;
+    if (problem.content) formError.replaceChildren(...problem.content);
+    else formError.textContent = problem.message;
     formError.hidden = false;
     formError.focus();
   }
@@ -234,6 +237,7 @@ function openForm({ title, lead = [], fields = [], buttons = [], closeLabel = bu
     }
     busy = false;
     for (const b of [close, ...sends]) b.disabled = false;
+    if (outcome !== true && outcome.final) for (const b of sends) b.disabled = true;
     if (outcome === true) d.close();
     else show(outcome);
   }
@@ -489,26 +493,40 @@ export function createTaskActions({ onChanged, onError }) {
 
 // ---- Plan this (spec 7.4) ----
 
+const TASKS_TAB = 'Tasks tab';
+
 // Each machine that differs from what the room has now (from → to) and the RM a month against it; Plan posts them as the
-// room's long-term tasks. plan: tasks-math planOf's. onPlanned(rows) after it worked.
+// room's long-term tasks. plan: tasks-math planOf's (stale: the search's baseline is no longer the room's machines: no Plan,
+// its "from" would be wrong). onPlanned(rows) after it worked. A 409 (every change planned already): only Cancel is left,
+// and the message's "Tasks tab" is a link to it.
 export function openPlanDialog({ roomId, roomName, rank, plan, onPlanned }) {
   const changes = el('ul', 'tk-changes');
   changes.append(...plan.changes.map((c) => el('li', '', keepLines(c.text))));
-  const lead = plan.changes.length
-    ? [`Against what ${roomName} has now${plan.rmText ? ` · ${plan.rmText}` : ''}:`, changes,
-      "Each change becomes a long-term task on the room's Tasks tab; Done on one offers to update Setup."]
-    : ['Nothing changes from what the room has now.'];
+  const lead = plan.stale ? [`${roomName}'s machines changed since this search. Suggest again to plan from them.`]
+    : plan.changes.length
+      ? [`Against what ${roomName} has now${plan.rmText ? ` · ${plan.rmText}` : ''}:`, changes,
+        "Each change becomes a long-term task on the room's Tasks tab; Done on one offers to update Setup."]
+      : ['Nothing changes from what the room has now.'];
   const form = openForm({
     title: `Plan setup ${rank}`,
     lead,
-    buttons: plan.changes.length ? [{ value: 'plan', label: 'Plan', primary: true }] : [],
+    buttons: plan.changes.length && !plan.stale ? [{ value: 'plan', label: 'Plan', primary: true }] : [],
     submit: async () => {
       try {
         const data = await request('POST', `/api/rooms/${roomId}/tasks`, plan.body, COMMAND_TIMEOUT);
         if (form.alive()) onPlanned?.(Array.isArray(data?.rows) ? data.rows : []);
         return true;
       } catch (err) {
-        return { message: errorText(err) };
+        const text = errorText(err);
+        if (err.status === 409) {
+          const at = text.lastIndexOf(TASKS_TAB);
+          if (at < 0) return { message: text, final: true };
+          const link = el('a', '', TASKS_TAB);
+          link.href = roomHash(roomId, 'tasks');
+          link.addEventListener('click', () => closeTaskDialog());
+          return { message: text, content: [text.slice(0, at), link, text.slice(at + TASKS_TAB.length)], final: true };
+        }
+        return { message: text };
       }
     },
   });

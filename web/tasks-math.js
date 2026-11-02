@@ -41,6 +41,8 @@ export const daysFrom = (a, b) => Math.round((utcOf(b) - utcOf(a)) / DAY_MS);
 
 export const tasksDueWords = (n) => (n > 0 ? `${plural(n, 'task')} due` : 'Nothing due');
 export const longtermWords = (n) => plural(n, 'long-term task');
+// After Plan this: "2 long-term tasks planned (1 already planned)" (a machine with an open task to the same size is left out).
+export const plannedWords = (planned, asked) => `${longtermWords(planned)} planned${asked > planned ? ` (${asked - planned} already planned)` : ''}`;
 export const todayLinkLabel = (n) => (n > 0 ? `Today: ${tasksDueWords(n)}` : 'Today');
 // A count on a small badge (the tab dot, the top bar's Today link): at most '99+'.
 export const countText = (n) => (n > 99 ? '99+' : String(n));
@@ -157,9 +159,12 @@ export function machineChanges(now, next) {
 }
 
 // Plan this: setup `index` of a suggestion against its baseline (the room's now). → { changes, rmMonth (null without an
-// electricity price), rmText, body (for POST /api/rooms/:id/tasks) }, or null without a baseline (the "from" is unknown).
-// No changes: the room has this setup already, and the server refuses an empty plan, so the dialog offers no Plan.
-export function planOf(result, index, prices, suggestedAt) {
+// electricity price), rmText, stale, body (for POST /api/rooms/:id/tasks) }, or null without a baseline (the "from" is
+// unknown). No changes: the room has this setup already, and the server refuses an empty plan, so the dialog offers no Plan.
+// now: the room's machines as they are (simulate-math roomMachines: { machines, defaults }): stale when the search's
+// baseline is no longer them (Setup changed since a stored search), and the fan's line says when its "from" is Simulate's
+// default (a room keeps no fan flow).
+export function planOf(result, index, prices, suggestedAt, now = null) {
   const base = result?.baseline;
   const next = result?.best?.[index];
   if (!base?.machines || !next?.machines) return null;
@@ -167,9 +172,11 @@ export function planOf(result, index, prices, suggestedAt) {
   const a = monthly(base, runDays, prices).rm;
   const b = monthly(next, runDays, prices).rm;
   const rmMonth = a === null || b === null ? null : Math.round((b - a) * 100) / 100;
-  const changes = machineChanges(base.machines, next.machines);
+  const fanDefault = now?.defaults?.includes('fanFlow') === true;
+  const changes = machineChanges(base.machines, next.machines)
+    .map((c) => (c.key === 'fanFlow' && fanDefault ? { ...c, text: `${c.text} (fan now: Simulate's default)` } : c));
   return {
-    changes, rmMonth, rmText: rmWords(rmMonth),
+    changes, rmMonth, rmText: rmWords(rmMonth), stale: Boolean(now?.machines) && machineChanges(now.machines, base.machines).length > 0,
     body: { suggestion: { machines: changes.map(({ key, from, to }) => ({ key, from, to })), rmMonth, suggestedAt } },
   };
 }

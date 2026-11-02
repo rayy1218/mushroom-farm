@@ -53,6 +53,18 @@ test('Plan this posts the suggestion and says when nothing changes', () => {
   has("'Nothing changes from what the room has now.'");
 });
 
+test("C10 review: Plan this from a search older than the room's machines offers no Plan; a 409 leaves only Cancel and links the Tasks tab", () => {
+  has("const lead = plan.stale ? [`${roomName}'s machines changed since this search. Suggest again to plan from them.`]");
+  has('buttons: plan.changes.length && !plan.stale ?');
+  has("if (err.status === 409) {");
+  has("link.href = roomHash(roomId, 'tasks');");
+  has('return { message: text, content: [text.slice(0, at), link, text.slice(at + TASKS_TAB.length)], final: true };');
+  // the form: content instead of the message's text (nodes, no innerHTML); final keeps the dialog's own buttons disabled
+  has('if (problem.content) formError.replaceChildren(...problem.content);');
+  has('if (outcome !== true && outcome.final) for (const b of sends) b.disabled = true;');
+  assert.ok(!/innerHTML/.test(dialogs.slice(dialogs.indexOf('export function openPlanDialog'))));
+});
+
 test('one dialog, made on first use; a page that goes away closes it', () => {
   has("dialog = el('dialog', 'tk-dialog');");
   has('export function closeTaskDialog() {');

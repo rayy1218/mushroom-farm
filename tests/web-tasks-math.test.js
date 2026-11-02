@@ -96,7 +96,7 @@ test('upkeep: overdue first in words, then due within 7 days, then the rest by d
 });
 
 import {
-  rmWords, longtermLine, changeText, machineChanges, planOf, acInputOf, setupUpdate, beforeText, setupBody,
+  rmWords, longtermLine, changeText, machineChanges, planOf, plannedWords, acInputOf, setupUpdate, beforeText, setupBody,
   parseAmount, checkReason, checkLongterm, logRows, logLine,
 } from '../web/tasks-math.js';
 
@@ -136,6 +136,26 @@ test('Plan this: the changes against the baseline and the RM a month against it'
   assert.equal(planOf(result, 0, { electricity: null, water: null }, 123).rmMonth, null, 'no price: no money');
   assert.equal(planOf({ ...result, baseline: undefined }, 0, { electricity: 0.55 }, 123), null, 'no baseline: the "from" is unknown');
   assert.deepEqual(planOf({ ...result, best: [result.baseline] }, 0, { electricity: 0.55 }, 123).changes, [], 'the room has it already: nothing to plan (the server refuses an empty plan)');
+});
+
+test('C10 review: Plan this from a search whose baseline is no longer the room\'s now; the fan at Simulate\'s default; the planned line', () => {
+  const machines = { fanFlow: 600, acBTU: 9000, humidifierLH: 0.5, dehumidifierLday: 0 };
+  const result = {
+    days: 2,
+    baseline: { machines, kWh: 20, litres: 0 },
+    best: [{ machines: { ...machines, fanFlow: 150, acBTU: 12000 }, kWh: 15, litres: 0 }],
+  };
+  const prices = { electricity: 0.55, water: null };
+  assert.equal(planOf(result, 0, prices, 123).stale, false, 'no now given: as before');
+  assert.equal(planOf(result, 0, prices, 123, { machines, defaults: [] }).stale, false, 'the room has the baseline still');
+  // Setup changed since the search (a stored search, come back to): its "from" is not the room's now
+  assert.equal(planOf(result, 0, prices, 123, { machines: { ...machines, acBTU: 12000 }, defaults: [] }).stale, true);
+  const fan = planOf(result, 0, prices, 123, { machines, defaults: ['fanFlow'] });
+  assert.deepEqual(fan.changes.map((c) => c.text), ["Fan 600 → 150 m³/h (fan now: Simulate's default)", 'Aircon 9,000 → 12,000 BTU/h']);
+  assert.deepEqual(fan.body.suggestion.machines[0], { key: 'fanFlow', from: 600, to: 150 }, 'the body is the same');
+  assert.deepEqual(planOf(result, 0, prices, 123, { machines, defaults: [] }).changes.map((c) => c.text), ['Fan 600 → 150 m³/h', 'Aircon 9,000 → 12,000 BTU/h']);
+  assert.equal(plannedWords(3, 3), '3 long-term tasks planned');
+  assert.equal(plannedWords(1, 3), '1 long-term task planned (2 already planned)');
 });
 
 const ROOM = {
