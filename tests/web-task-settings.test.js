@@ -97,3 +97,10 @@ test('C9 re-review: "Still saving" goes once the save in flight ends; a rule rem
   const submit = cards.slice(cards.indexOf("r.form.addEventListener('submit'"));
   assert.ok(submit.indexOf(gone) >= 0 && submit.indexOf(gone) < submit.indexOf('await putRules('), 'before a save that would change nothing');
 });
+
+test('C9 re-review minor: an own rule whose id the server no longer knows (removed elsewhere) reloads the rules and says so', () => {
+  assert.ok(cards.includes("const RULES_CHANGED = 'The rules were changed elsewhere: loaded again. Check them and try again.';"));
+  assert.ok(cards.includes("} else if (err.status === 400 && /^custom\\.\\d+\\.id$/.test(err.field ?? '')) {"));
+  const branch = cards.slice(cards.indexOf('/^custom\\.\\d+\\.id$/'));
+  assert.ok(branch.slice(0, branch.indexOf('} else {')).includes('r.error.textContent = RULES_CHANGED;\n        await reloadRules();'));
+});

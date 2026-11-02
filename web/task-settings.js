@@ -14,6 +14,8 @@ import { el, keepFocus } from './task-list.js';
 const COMMAND_TIMEOUT = 15000;
 // The server refused an own rule's rooms: a room was removed since the page asked (deleteRoom takes it off the rules).
 const ROOMS_CHANGED = 'A room was removed since this page loaded: the rules and rooms are loaded again. Check them and try again.';
+// The server doesn't know an own rule's id: it was removed in another window since the page asked.
+const RULES_CHANGED = 'The rules were changed elsewhere: loaded again. Check them and try again.';
 // A click while the card's last change is still on its way: one change at a time, and none dropped without a word.
 const STILL_SAVING = 'Still saving the last change. Try again in a moment.';
 // The own rule being edited is gone (removed in another window, or with its last room).
@@ -360,6 +362,9 @@ export function mountTaskSettings(container) {
       if (!alive) return false;
       if (err.status === 400 && /^custom\.\d+\.rooms$/.test(err.field ?? '')) {
         r.error.textContent = ROOMS_CHANGED;
+        await reloadRules();
+      } else if (err.status === 400 && /^custom\.\d+\.id$/.test(err.field ?? '')) {
+        r.error.textContent = RULES_CHANGED;
         await reloadRules();
       } else {
         r.error.textContent = errorText(err);
