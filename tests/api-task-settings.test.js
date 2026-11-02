@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { openDb } from '../server/db.js';
 import { createApp } from '../server/app.js';
 import { createTasks } from '../server/tasks.js';
+import { workersAfter } from '../web/settings-math.js';
 import { DAILY_RULES, CLEAR_OUT, UPKEEP_RULES, localDate, addDays, dayStart } from '../server/task-rules.js';
 
 const ROOM = { name: 'Room 1', length: 6, width: 4, height: 2.5 };
@@ -221,4 +222,18 @@ test('task rules: a new interval re-dates the open upkeep row at once; an own ru
   await call('PUT', '/api/task-rules', { custom: [{ ...tank, everyDays: 7 }] });
   assert.deepEqual([db.getTask(daily.id).status, db.getTask(daily.id).reason], ['cancelled', 'Rule changed']);
   assert.equal(open(`custom:${tank.id}`).dueAt, dayStart(today));
+});
+
+// ---- final review ----
+
+test("the Workers card's list after a rename onto a removed worker's name (workersAfter) is taken by PUT /api/workers", async (t) => {
+  const { call } = await app(t);
+  const saved = (await call('PUT', '/api/workers', { workers: [{ name: 'Siti' }, { name: 'Ali', active: false }] })).body.workers;
+  const siti = saved.find((w) => w.name === 'Siti');
+  const body = workersAfter(saved, { rename: { id: siti.id, name: 'ali' } });
+  const r = await call('PUT', '/api/workers', body);
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.workers, [{ id: siti.id, name: 'ali', active: true }], 'the removed namesake left out; the tasks it closed keep its name');
+  const back = await call('PUT', '/api/workers', workersAfter(r.body.workers, { add: 'Ah Kow' }));
+  assert.deepEqual(back.body.workers.map((w) => w.name), ['Ah Kow', 'ali']);
 });
