@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   farmDate, farmTime, dayMonth, dayTitle, daysFrom, tasksDueWords, longtermWords, tabDot, todayCount, todayLinkLabel,
+  countText,
   slotGroups, foldLine, closedLine, amountText, recordsAmount, amountField, dueWords, upkeepRows,
 } from '../web/tasks-math.js';
 
@@ -26,6 +27,9 @@ test('the counts in words: the tab dot, the Today link, the long-term lines', ()
   assert.deepEqual(tabDot({ due: 1, overdue: 0, longterm: 0 }), { text: '1', level: 'due', label: '1 task due' });
   assert.deepEqual(tabDot({ due: 3, overdue: 1, longterm: 0 }), { text: '3', level: 'warning', label: '3 tasks due, 1 overdue' });
   assert.equal(tabDot({ due: 120, overdue: 0 }).text, '99+');
+  assert.equal(countText(7), '7');
+  assert.equal(countText(99), '99');
+  assert.equal(countText(100), '99+', 'the top bar and the tab dot stop at 99+');
   assert.equal(todayCount({ date: '2026-10-30', rooms: [{ counts: { due: 2 } }, { counts: { due: 5 } }] }), 7);
   assert.equal(todayCount({ rooms: [{ today: [{ status: 'open' }, { status: 'done' }], upkeepDue: [{ status: 'open' }] }] }), 2, 'without counts: the open rows');
   assert.equal(todayCount(null), null);

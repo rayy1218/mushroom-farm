@@ -42,6 +42,8 @@ export const daysFrom = (a, b) => Math.round((utcOf(b) - utcOf(a)) / DAY_MS);
 export const tasksDueWords = (n) => (n > 0 ? `${plural(n, 'task')} due` : 'Nothing due');
 export const longtermWords = (n) => plural(n, 'long-term task');
 export const todayLinkLabel = (n) => (n > 0 ? `Today: ${tasksDueWords(n)}` : 'Today');
+// A count on a small badge (the tab dot, the top bar's Today link): at most '99+'.
+export const countText = (n) => (n > 99 ? '99+' : String(n));
 
 // The Tasks tab's dot (spec 7.1): counts.due (the stage tasks open today and the upkeep due or overdue), amber with an
 // overdue one; null: no dot. Long-term tasks never make a dot.
@@ -49,7 +51,7 @@ export function tabDot(counts) {
   const due = finite(counts?.due) ? counts.due : 0;
   if (due <= 0) return null;
   const overdue = finite(counts.overdue) ? counts.overdue : 0;
-  return { text: due > 99 ? '99+' : String(due), level: overdue > 0 ? 'warning' : 'due', label: `${tasksDueWords(due)}${overdue > 0 ? `, ${overdue} overdue` : ''}` };
+  return { text: countText(due), level: overdue > 0 ? 'warning' : 'due', label: `${tasksDueWords(due)}${overdue > 0 ? `, ${overdue} overdue` : ''}` };
 }
 
 // The Today link's number: every room's counts.due (the open rows when a room has no counts). null: not a Today reply.

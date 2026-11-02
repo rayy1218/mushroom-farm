@@ -13,7 +13,7 @@ import { withTitlePrefix } from './overview-math.js';
 import { live } from './live.js';
 import { fallbackMs, liveMark } from './live-math.js';
 import { request } from './api.js';
-import { todayCount, todayLinkLabel } from './tasks-math.js';
+import { todayCount, todayLinkLabel, countText } from './tasks-math.js';
 
 const view = document.getElementById('view');
 const menuLinks = {
@@ -158,7 +158,7 @@ let todaySeq = 0;
 
 function showToday() {
   for (const el of document.querySelectorAll('[data-today-count]')) {
-    el.textContent = String(todayDue);
+    el.textContent = countText(todayDue);
     el.hidden = todayDue === 0;
   }
   for (const a of menuLinks.today) a.setAttribute('aria-label', todayLinkLabel(todayDue));
@@ -200,7 +200,8 @@ live.onStatus((up) => {
 });
 window.addEventListener('farm:alarms-changed', refreshBadge); // after an Acknowledge
 
-window.addEventListener('hashchange', () => { show(); refreshBadge(); refreshToday(); });
+// On the Today page the page asks for its own data; the tasks event keeps the count current.
+window.addEventListener('hashchange', () => { show(); refreshBadge(); if (mounted?.name !== 'today') refreshToday(); });
 show();
 refreshBadge();
 refreshToday();

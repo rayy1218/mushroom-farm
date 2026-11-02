@@ -52,6 +52,7 @@ export function mount(container) {
   let view = null; // GET /api/tasks/today
   let seq = 0;
   let timer = null;
+  let outdated = false; // a farm app from before the tasks: no timer
   let painted = ''; // what the rooms show: a refresh with nothing new leaves them (and their focus and clicks) alone
   const openFolds = new Set();
 
@@ -119,7 +120,7 @@ export function mount(container) {
       els.bannerText.textContent = routeMissing(err) ? OUTDATED : err.status === 0 ? OFFLINE : err.message;
       els.banner.hidden = false;
       if (!view) els.sub.textContent = '';
-      if (routeMissing(err)) { picker.node.hidden = true; return; } // a farm app from before the tasks: no timer
+      if (routeMissing(err)) { outdated = true; picker.node.hidden = true; return; }
     }
     if (!alive()) return;
     clearTimeout(timer);
@@ -134,7 +135,7 @@ export function mount(container) {
     live.on('tasks', () => reload.call()),
     live.onStatus((up) => {
       if (up) reload.call();
-      else if (view) { clearTimeout(timer); timer = setTimeout(load, REFRESH_MS); }
+      else if (!outdated) { clearTimeout(timer); timer = setTimeout(load, REFRESH_MS); }
     }),
   ];
   load();

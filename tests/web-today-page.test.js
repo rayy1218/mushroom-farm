@@ -23,7 +23,16 @@ test("the top bar's Today link, before Overview, with the count of tasks due (hi
   assert.ok(app.includes("count = todayCount(await request('GET', '/api/tasks/today'));"));
   assert.ok(app.includes("live.on('tasks', (data) => {"));
   assert.ok(app.includes('for (const a of menuLinks.today) a.setAttribute(\'aria-label\', todayLinkLabel(todayDue));'));
-  assert.ok(app.includes("window.addEventListener('hashchange', () => { show(); refreshBadge(); refreshToday(); });"));
+  assert.ok(app.includes('el.textContent = countText(todayDue);'), 'the count stops at 99+');
+});
+
+test("on its way to #/today the top bar leaves the count to the page's own load and the tasks event", () => {
+  assert.ok(app.includes("window.addEventListener('hashchange', () => { show(); refreshBadge(); if (mounted?.name !== 'today') refreshToday(); });"));
+});
+
+test('the stream gone before the first answer: the page still switches to the 30 s timer (not on a farm app without tasks)', () => {
+  assert.ok(page.includes('else if (!outdated) { clearTimeout(timer); timer = setTimeout(load, REFRESH_MS); }'));
+  assert.ok(page.includes('if (routeMissing(err)) { outdated = true; picker.node.hidden = true; return; }'));
 });
 
 test("the page: who is doing the rounds, each room's open rows by slot and its overdue upkeep, then the long-term lines", () => {
