@@ -25,8 +25,8 @@ chose every row marked *owner*; the lead chose the rest.
 
 | Kind | Made | Ends |
 |---|---|---|
-| Daily | per room per local day (Asia/Kuala_Lumpur), from the rules that apply that day | done, skipped, or **missed** when the day ends open; **cancelled** "Stage changed" when the stage changes and the rule no longer applies ("Rule changed" when the rule now wants another time of day), and open again if it applies again the same day (a stage changed and changed back) |
-| Upkeep | one open row per room per rule; the next row is made when one is done or skipped, due *interval* days later | done or skipped; never missed: an open one past its due date says "overdue N days"; **cancelled** "The room no longer has this machine" when the machine its rule needs is taken out of the room (a rule turned off keeps its open row) |
+| Daily | per room per local day (Asia/Kuala_Lumpur), from the rules that apply that day | done, skipped, or **missed** when the day ends open; **cancelled** "Stage changed" when the stage changes and the rule no longer applies ("Rule changed" when the rule now wants another time of day), and open again if it applies again the same day (a stage changed and changed back); an own rule's open row of today **cancelled** "Rule removed" when the rule is removed, and "Rule changed" when the rule becomes every N days or the room is taken off it |
+| Upkeep | one open row per room per rule; the next row is made when one is done or skipped, due *interval* days later | done or skipped; never missed: an open one past its due date says "overdue N days"; **cancelled** "The room no longer has this machine" when the machine its rule needs is taken out of the room (a rule turned off keeps its open row); an own rule's open row **cancelled** "Rule removed" when the rule is removed, and "Rule changed" when the rule becomes daily or the room is taken off it |
 | Long-term | by **Plan this** or by the owner's **Add** | done or **cancelled** (a reason is required); **cancelled** "Replaced by a newer plan" when Plan this plans its machine to another size (one open plan per machine) |
 
 | Status | Set by | Needs |
@@ -35,7 +35,7 @@ chose every row marked *owner*; the lead chose the rest.
 | done | Done | a worker name; the amount when the rule records one (may be left empty) |
 | skipped | Skip | a worker name and a reason |
 | missed | the server, at the first making after the day ends | — |
-| cancelled | Cancel (long-term), or the server on a stage or rule change (daily), a machine taken out (upkeep) or a newer plan of the machine (long-term) | a reason ("Stage changed", "Rule changed", "The room no longer has this machine" or "Replaced by a newer plan" from the server) |
+| cancelled | Cancel (long-term), or the server on a stage or rule change (daily), an own rule removed or changed (daily and upkeep), a machine taken out (upkeep) or a newer plan of the machine (long-term) | a reason ("Stage changed", "Rule changed", "Rule removed", "The room no longer has this machine" or "Replaced by a newer plan" from the server) |
 
 Nothing is deleted, except with its room (as readings are today).
 
@@ -129,21 +129,21 @@ oyster family's cap wording is its harvest note. Rows made before this change ke
 | `task_rule_settings` | `key PK, enabled, every_days NULL` |
 | `custom_task_rules` | `id, text, rooms TEXT NULL (JSON ids; null = all), every_days NULL (null = daily), slot, enabled` |
 
-The worker is stored as text on the task, so a renamed or removed worker never changes a record. `deleteRoom` deletes the room's tasks. About ten tests that pin version 18 move to 19. Backup `data/v2-before-tasks.db` before the owner's farm app first starts on 19.
+The worker is stored as text on the task, so a renamed or removed worker never changes a record. `deleteRoom` deletes the room's tasks. About 25 lines in 14 test files pin version 18; they move to 19. Backup `data/v2-before-tasks.db` before the owner's farm app first starts on 19.
 
 ## 6. API
 
 | Route | Body → reply |
 |---|---|
 | `GET /api/rooms/:id/tasks` | → `{ date, today: [row], upkeep: [row], longterm: [row], counts: { due, overdue, longterm } }` |
-| `GET /api/tasks/today` | → `{ date, rooms: [{ id, name, today, upkeepDue, longterm: count }] }` in the Overview's room order |
+| `GET /api/tasks/today` | → `{ date, rooms: [{ id, name, today, upkeepDue, longterm: count, counts: { due, overdue, longterm } }] }` in the Overview's room order |
 | `POST /api/tasks/:id/done` | `{ worker, amount? }` → the row |
 | `POST /api/tasks/:id/skip` | `{ worker, reason }` → the row (not for long-term) |
 | `POST /api/tasks/:id/cancel` | `{ reason }` → the row (long-term only) |
 | `POST /api/rooms/:id/tasks` | `{ text, note? }` (own) or `{ suggestion: { machines: [{ key, from, to, assumed? }], rmMonth, suggestedAt } }` → `{ rows, replaced }`: the new rows; an open plan of a machine to another size is cancelled "Replaced by a newer plan" in the same transaction and comes back in `replaced` (an own task: none), so Suggest machines can say "(replaces Humidifier 0.5 → 2 L/h)" |
-| `GET /api/rooms/:id/tasks/log?before=<id>` | → the closed rows newest first, 50 a page |
+| `GET /api/rooms/:id/tasks/log?before=<id>` | → `{ rows: [row] }`: the closed rows newest first, 50 a page |
 | `GET /api/rooms/:id/tasks/log.csv` | → every closed row: date, time, room, task, status, worker, amount, unit, reason |
-| `GET/PUT /api/workers` | `[{ id?, name, active }]` |
+| `GET/PUT /api/workers` | PUT `{ workers: [{ id?, name, active? }] }` (or the bare list) → `{ workers: [{ id, name, active }] }`; GET → the same reply |
 | `GET/PUT /api/task-rules` | `{ builtin: [{ key, enabled, everyDays? }], custom: [...] }` |
 
 A change publishes `room { id, part: 'tasks' }` and a `tasks { due }` event (the top bar's count).
@@ -178,7 +178,7 @@ A **Today** link in the top bar with the sum of every room's `counts.due`.
 | Part | Shows |
 |---|---|
 | Worker | "Doing the rounds as: Ali ▾" from Settings' workers, kept per browser; the first Done or Skip asks when none is chosen |
-| Rooms | each room in the Overview's order: its open daily rows by slot and its overdue upkeep, with Done and Skip in place; "6 done" folded |
+| Rooms | each room in the Overview's order: its open daily rows by slot and its upkeep due today or overdue, with Done and Skip in place; "6 done" folded |
 | Long-term | a line per room with open long-term rows: "2 long-term tasks" → the room's Tasks tab |
 
 ### 7.3 Settings
