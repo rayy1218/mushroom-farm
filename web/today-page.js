@@ -112,6 +112,8 @@ export function mount(container) {
       const data = await request('GET', '/api/tasks/today');
       if (!alive() || mine !== seq) return;
       view = data;
+      // The top bar's Today count: it leaves the asking to this page while it is shown.
+      window.dispatchEvent(new CustomEvent('farm:today-count', { detail: todayCount(view) }));
       els.banner.hidden = true;
       picker.node.hidden = false;
       paint();

@@ -182,6 +182,12 @@ live.on('tasks', (data) => {
   if (Number.isInteger(data.due)) todayDue = data.due;
   showToday();
 });
+// The Today page's own load (the top bar does not ask while it is shown).
+window.addEventListener('farm:today-count', (event) => {
+  todaySeq++;
+  if (Number.isInteger(event.detail)) todayDue = event.detail;
+  showToday();
+});
 
 // The Live mark in the top bar: words, with a dot that is only a help.
 const liveMarks = document.querySelectorAll('[data-live]');

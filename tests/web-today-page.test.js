@@ -26,8 +26,13 @@ test("the top bar's Today link, before Overview, with the count of tasks due (hi
   assert.ok(app.includes('el.textContent = countText(todayDue);'), 'the count stops at 99+');
 });
 
-test("on its way to #/today the top bar leaves the count to the page's own load and the tasks event", () => {
+test("on its way to #/today the top bar leaves the count to the page's own load, which hands its total to the top bar", () => {
   assert.ok(app.includes("window.addEventListener('hashchange', () => { show(); refreshBadge(); if (mounted?.name !== 'today') refreshToday(); });"));
+  assert.ok(page.includes("window.dispatchEvent(new CustomEvent('farm:today-count', { detail: todayCount(view) }));"));
+  assert.ok(page.indexOf("new CustomEvent('farm:today-count'") > page.indexOf('view = data;'), 'after each load');
+  assert.ok(app.includes("window.addEventListener('farm:today-count', (event) => {"));
+  const listener = app.slice(app.indexOf("window.addEventListener('farm:today-count'"));
+  assert.match(listener, /^[^]*?todaySeq\+\+;[^]*?if \(Number\.isInteger\(event\.detail\)\) todayDue = event\.detail;[^]*?showToday\(\);/);
 });
 
 test('the stream gone before the first answer: the page still switches to the 30 s timer (not on a farm app without tasks)', () => {
