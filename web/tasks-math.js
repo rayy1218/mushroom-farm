@@ -41,10 +41,12 @@ export const daysFrom = (a, b) => Math.round((utcOf(b) - utcOf(a)) / DAY_MS);
 
 export const tasksDueWords = (n) => (n > 0 ? `${plural(n, 'task')} due` : 'Nothing due');
 export const longtermWords = (n) => plural(n, 'long-term task');
-// After Plan this: "2 long-term tasks planned (1 already planned) (replaces Humidifier 0.5 → 1 L/h)": a machine with an open
+// After Plan this: "2 long-term tasks planned (1 already planned; replaces Humidifier 0.5 → 1 L/h)": a machine with an open
 // task to the same size is left out; one to another size is replaced (replaced: the server's cancelled rows, by their text).
-export const plannedWords = (planned, asked, replaced = []) => `${longtermWords(planned)} planned`
-  + `${asked > planned ? ` (${asked - planned} already planned)` : ''}${replaced.length ? ` (replaces ${replaced.map((r) => r.text).join(' · ')})` : ''}`;
+export function plannedWords(planned, asked, replaced = []) {
+  const notes = [asked > planned ? `${asked - planned} already planned` : '', replaced.length ? `replaces ${replaced.map((r) => r.text).join(' · ')}` : ''].filter(Boolean);
+  return `${longtermWords(planned)} planned${notes.length ? ` (${notes.join('; ')})` : ''}`;
+}
 export const todayLinkLabel = (n) => (n > 0 ? `Today: ${tasksDueWords(n)}` : 'Today');
 // A count on a small badge (the tab dot, the top bar's Today link): at most '99+'.
 export const countText = (n) => (n > 99 ? '99+' : String(n));

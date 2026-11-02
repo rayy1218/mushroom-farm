@@ -190,7 +190,7 @@ A **Today** link in the top bar with the sum of every room's `counts.due`.
 
 A search whose baseline is no longer the room's machines (Setup changed since a stored search) is not planned: the dialog says "<room>'s machines changed since this search. Suggest again to plan from them." and offers only **Close**. When the room's fan flow is Simulate's default (Setup keeps none), the fan's line in the dialog says "(fan now: Simulate's default)".
 
-After **Plan**, the row says how many long-term tasks it planned, those left out as already planned to the same size, and the open plans it replaced, then links to the Tasks tab: "1 long-term task planned (replaces Humidifier 0.5 → 1 L/h) · Open the Tasks tab" (several replaced joined with " · ").
+After **Plan**, the row says how many long-term tasks it planned, those left out as already planned to the same size, and the open plans it replaced, then links to the Tasks tab: "1 long-term task planned (replaces Humidifier 0.5 → 1 L/h) · Open the Tasks tab" (several replaced joined with " · "; with some already planned, one bracket: "(1 already planned; replaces …)").
 
 ### 7.5 Done on a long-term machine task
 
