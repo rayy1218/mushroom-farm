@@ -30,11 +30,17 @@ const grouped = (n) => {
   return `${whole.replace(/\B(?=(\d{3})+$)/g, ',')}${frac ? `.${frac}` : ''}`;
 };
 
-// The text of a refused close: 'Already done by Ali at 09:12' (the farm's clock).
-function closedText(row) {
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+// The text of a refused close: 'Already done by Ali at 09:12' (the farm's clock), with the day when it was closed before
+// `date` (today): 'Already done by Ali on 30 Oct at 09:12'.
+function closedText(row, date) {
   if (row.status === 'missed') return 'Already missed: its day has ended';
   const by = row.worker ? ` by ${row.worker}` : '';
-  return `Already ${row.status}${by} at ${localTime(row.closedAt)}`;
+  const closed = localDate(row.closedAt);
+  const [, m, d] = closed.split('-').map(Number);
+  const on = closed === date ? '' : ` on ${d} ${MONTHS[m - 1]}`;
+  return `Already ${row.status}${by}${on} at ${localTime(row.closedAt)}`;
 }
 
 const trimmed = (v) => (typeof v === 'string' ? v.trim() : '');
@@ -196,7 +202,7 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
   function openRow(id) {
     const row = db.getTask(id);
     if (!row) throw new TaskError(404, 'Task not found');
-    if (row.status !== 'open') throw new TaskError(409, closedText(row));
+    if (row.status !== 'open') throw new TaskError(409, closedText(row, today()));
     return row;
   }
 
@@ -229,7 +235,7 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
     if (!db.closeTask(row.id, { ...fields, at }, next)) {
       const after = db.getTask(row.id);
       if (!after) throw new TaskError(404, 'Task not found');
-      throw new TaskError(409, closedText(after));
+      throw new TaskError(409, closedText(after, localDate(at)));
     }
     tell(row.roomId);
     return view(db.getTask(row.id));

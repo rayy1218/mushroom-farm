@@ -150,7 +150,7 @@ A change publishes `room { id, part: 'tasks' }` and a `tasks { due }` event (the
 
 | Error | Reply |
 |---|---|
-| Done, skip or cancel on a row that is not open | 409 "Already done by Ali at 09:12" (or skipped, missed, cancelled) |
+| Done, skip or cancel on a row that is not open | 409 "Already done by Ali at 09:12" (or skipped, missed, cancelled), on the farm's clock; closed on an earlier farm day, with the day: "Already done by Ali on 30 Oct at 09:12" |
 | No worker name on done or skip | 400 field `worker` "Pick who did it" |
 | Done or skip with a name not on the workers list, when the farm has active workers (a name on it in any case is stored as the list spells it; with no workers yet, any name) | 400 field `worker` "That name is not on the workers list": the page reads the list again (as it does when the worker changes and when the live stream comes back) |
 | Skip or cancel without a reason | 400 field `reason` "Say why" |

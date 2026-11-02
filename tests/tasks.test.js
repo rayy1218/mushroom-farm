@@ -721,3 +721,13 @@ test('who did it: with workers on the list, the name must be an active one (any 
   s.db.setWorkers([]); // no workers yet: any name, as before the list
   assert.equal(s.tasks.done(s.row('floorClean').id, { worker: 'Ah Kow' }).worker, 'Ah Kow');
 });
+
+test('a close refused because it was closed on an earlier day says the day too (the farm clock); the same day only the time', (t) => {
+  const s = setup(t);
+  const own = s.db.insertLongtermTask({ roomId: s.id, text: 'Seal the door gap', at: at('2026-10-30T08:00:00+08:00') });
+  s.set('2026-10-30T23:50:00+08:00');
+  s.tasks.done(own.id, { worker: 'Ali' });
+  refused(() => s.tasks.cancel(own.id, { reason: 'x' }), 409, 'Already done by Ali at 23:50', undefined);
+  s.set('2026-10-31T00:10:00+08:00');
+  refused(() => s.tasks.cancel(own.id, { reason: 'x' }), 409, 'Already done by Ali on 30 Oct at 23:50', undefined);
+});
