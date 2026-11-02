@@ -1,8 +1,8 @@
-// The task rows shared by the room's Tasks tab and the Today page (spec 2026-10-30-tasks-design.md 7.1 and 7.2): a row's
-// text with the crop notes muted under it and its due words, Done and Skip (or Cancel) in place; a slot's closed rows
-// folded under "6 done". actions: createTaskActions' { done, skip, cancel }.
+// The task rows shared by the room's Tasks tab and the Today page (spec 2026-10-30-tasks-design.md 7.1 and 7.2): a round
+// tick for Done, the task's name with what to do and the crop notes muted under it and its due words, a quiet Skip (or
+// Cancel); a slot's closed rows folded under "6 done". actions: createTaskActions' { done, skip, cancel }.
 
-import { closedLine } from './tasks-math.js';
+import { closedLine, taskParts } from './tasks-math.js';
 import { keepLines } from './text-math.js';
 
 export function el(tag, className, content) {
@@ -18,23 +18,30 @@ export function button(label, className) {
   return b;
 }
 
-// One task as a list item. due: dueWords' { text, tone } (upkeep); line: the first line (a long-term row's longtermLine);
-// skip, cancel: the second button of an open row.
+// One task as a list item (owner 2026-11-02, "so ugly": a wall of Done and Skip boxes): a round tick at the start is Done,
+// the task's name with what to do muted under it, the crop notes and the due words, and a quiet Skip (or Cancel) at the end.
+// A closed row keeps its tick, filled for done and drawn for skipped, missed or cancelled, and says who and when.
+// due: dueWords' { text, tone } (upkeep); line: the text (a long-term row's longtermLine); skip, cancel: the quiet action.
 export function taskRow(row, actions, { due = null, line = row.text, skip = true, cancel = false } = {}) {
   const li = el('li', 'tk-row');
   li.dataset.status = row.status;
   li.dataset.kind = row.kind;
+  const { name, detail } = taskParts(line);
   const text = el('div', 'tk-text');
-  text.append(el('p', 'tk-title', keepLines(line)));
+  text.append(el('p', 'tk-title', keepLines(name)));
+  if (detail) text.append(el('p', 'tk-detail', keepLines(detail)));
   if (row.note) text.append(el('p', 'tk-note', keepLines(row.note)));
   if (due?.text) {
     const words = el('p', 'tk-due', due.text);
     if (due.tone) words.dataset.tone = due.tone;
     text.append(words);
   }
-  li.append(text);
   if (row.status !== 'open') {
+    const mark = el('span', 'tk-tick');
+    mark.append(tickIcon(row.status));
+    mark.setAttribute('aria-hidden', 'true');
     text.append(el('p', 'tk-closed-line', keepLines(closedLine(row))));
+    li.append(mark, text);
     return li;
   }
   const box = el('div', 'tk-actions');
@@ -46,7 +53,7 @@ export function taskRow(row, actions, { due = null, line = row.text, skip = true
     if (busy) return;
     busy = true;
     const plan = focusPlan(b); // where the cursor goes if this row is gone when the dialog closes
-    const held = [...box.querySelectorAll('button')];
+    const held = [...li.querySelectorAll('button')];
     for (const x of held) x.setAttribute('aria-disabled', 'true');
     const release = () => {
       busy = false;
@@ -63,27 +70,51 @@ export function taskRow(row, actions, { due = null, line = row.text, skip = true
       if (lost) refocus(document, plan);
     }, release);
   });
-  const done = button('Done');
+  const done = button('', 'tk-tick');
+  done.append(tickIcon('open'));
   done.setAttribute('aria-label', `Done: ${row.text}`);
+  done.title = 'Done';
   done.dataset.focusKey = `done-${row.id}`;
   tap(done, () => actions.done(row));
-  box.append(done);
   if (skip) {
-    const b = button('Skip');
+    const b = button('Skip', 'tk-quiet');
     b.setAttribute('aria-label', `Skip: ${row.text}`);
     b.dataset.focusKey = `skip-${row.id}`;
     tap(b, () => actions.skip(row));
     box.append(b);
   }
   if (cancel) {
-    const b = button('Cancel');
+    const b = button('Cancel', 'tk-quiet');
     b.setAttribute('aria-label', `Cancel the task: ${row.text}`);
     b.dataset.focusKey = `cancel-${row.id}`;
     tap(b, () => actions.cancel(row));
     box.append(b);
   }
-  li.append(box);
+  li.append(done, text, box);
   return li;
+}
+
+// The tick, drawn (one 20 px stroke set, as the top bar's icons): a ring to tap (its check shows on hover), filled with a
+// check when done, a dash for skipped, a cross for cancelled, a dotted ring for missed.
+const SVG = 'http://www.w3.org/2000/svg';
+const MARKS = { open: 'M6.5 10.4l2.4 2.4 4.6-5', done: 'M6.5 10.4l2.4 2.4 4.6-5', skipped: 'M6.5 10h7', cancelled: 'M7.4 7.4l5.2 5.2M12.6 7.4l-5.2 5.2', missed: '' };
+function tickIcon(status) {
+  const svg = document.createElementNS(SVG, 'svg');
+  svg.setAttribute('viewBox', '0 0 20 20');
+  svg.setAttribute('width', '20');
+  svg.setAttribute('height', '20');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.dataset.status = status;
+  const ring = document.createElementNS(SVG, 'circle');
+  for (const [k, v] of [['cx', '10'], ['cy', '10'], ['r', '8.5'], ['class', 'tk-ring']]) ring.setAttribute(k, v);
+  svg.append(ring);
+  if (MARKS[status]) {
+    const mark = document.createElementNS(SVG, 'path');
+    mark.setAttribute('d', MARKS[status]);
+    mark.setAttribute('class', 'tk-mark');
+    svg.append(mark);
+  }
+  return svg;
 }
 
 // One slot of the day (slotGroups' group): its title, its open rows, and its closed rows folded under "6 done". openFolds:
@@ -91,7 +122,9 @@ export function taskRow(row, actions, { due = null, line = row.text, skip = true
 export function slotPart(group, actions, { level = 'h3', openFolds = new Set(), foldKey = group.slot } = {}) {
   const part = el('div', 'tk-slot');
   part.dataset.foldKey = foldKey;
-  part.append(el(level, 'tk-slot-title', group.label));
+  const title = el(level, 'tk-slot-title', group.label);
+  if (group.open.length) title.append(el('span', 'tk-count', String(group.open.length)));
+  part.append(title);
   if (group.open.length) {
     const list = el('ul', 'tk-list');
     list.append(...group.open.map((row) => taskRow(row, actions)));

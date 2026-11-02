@@ -5,7 +5,7 @@
 // where it changed and the whole own list). mountTaskSettings(container) → unmount().
 
 import { request, OFFLINE, OUTDATED, routeMissing } from './api.js';
-import { ruleLine, customLine, SLOT_LABELS } from './tasks-math.js';
+import { ruleLine, customLine, taskParts, SLOT_LABELS } from './tasks-math.js';
 import {
   parseWorkerName, workersAfter, parseEveryDays, parseCustomRule, rulesBody, customAfter, ruleForm, idAfter, WORKER_MAX,
 } from './settings-math.js';
@@ -276,7 +276,9 @@ export function mountTaskSettings(container) {
   function ruleItem(rule, line, key, onToggle, extra = []) {
     const li = el('li');
     const text = el('div', 'tk-rule-text');
-    text.append(el('p', '', rule.text));
+    const { name, detail } = taskParts(rule.text);
+    text.append(el('p', 'tk-rule-name', name));
+    if (detail) text.append(el('p', 'tk-rule-detail', detail));
     if (line) text.append(el('p', 'tk-rule-line', line));
     li.append(text, ...extra, toggle(rule.enabled, rule.text, key, onToggle));
     return li;

@@ -11,7 +11,7 @@ import { request, OFFLINE } from './api.js';
 import { live } from './live.js';
 import { roomHash } from './route.js';
 import { keepLines } from './text-math.js';
-import { recordsAmount, amountField, parseAmount, checkReason, checkLongterm, setupUpdate, beforeText, setupBody } from './tasks-math.js';
+import { recordsAmount, amountField, parseAmount, checkReason, checkLongterm, setupUpdate, beforeText, setupBody, taskParts } from './tasks-math.js';
 
 const WORKER_KEY = 'farm.worker';
 const COMMAND_TIMEOUT = 15000;
@@ -118,6 +118,15 @@ function ensureDialog() {
 export function closeTaskDialog() {
   openSeq++;
   if (dialog?.open) dialog.close();
+}
+
+// The task a dialog is about: its name, with what to do under it (as on its row).
+function taskLead(row) {
+  const { name, detail } = taskParts(row.text);
+  const box = el('div', 'tk-lead tk-lead-task');
+  box.append(el('p', 'tk-lead-name', keepLines(name)));
+  if (detail) box.append(el('p', 'tk-lead-detail', keepLines(detail)));
+  return box;
 }
 
 // Opens the dialog on a form. lead: lines (text or nodes) under the title; fields: [{ name, label, kind: 'text' | 'number'
@@ -330,7 +339,7 @@ export function createTaskActions({ onChanged, onError }) {
     p.append("No names yet: add the workers' names in ", a, ' first.');
     return p;
   }
-  const leadOf = (row, list, more = []) => [row.text, ...more, ...(list.length ? [] : [settingsLine()])];
+  const leadOf = (row, list, more = []) => [taskLead(row), ...more, ...(list.length ? [] : [settingsLine()])];
 
   // The worker picked in a dialog is kept for the next Done (spec 7.2).
   function picked(values) {
@@ -406,7 +415,7 @@ export function createTaskActions({ onChanged, onError }) {
   async function cancel(row) {
     await ask({
       title: 'Cancel this task',
-      lead: [row.text, 'It stays in the log as cancelled, with the reason.'],
+      lead: [taskLead(row), 'It stays in the log as cancelled, with the reason.'],
       fields: [{ name: 'reason', label: 'Why', kind: 'text', value: '' }],
       buttons: [{ value: 'cancel', label: 'Cancel the task', primary: true }],
       closeLabel: 'Keep the task',

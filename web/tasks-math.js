@@ -95,6 +95,23 @@ export function closedLine(row) {
   return [head, amountText(row), row.reason ?? ''].filter(Boolean).join(' · ');
 }
 
+// A task's text as its name and what to do (owner 2026-11-02: one long sentence read as a wall): the words before the first
+// ' · ' (a long-term line) or ': ', else before a closing bracket of several words, else the first sentence. → { name, detail }
+const DOT_SEP = ' · ';
+const capital = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+export function taskParts(text) {
+  const t = String(text ?? '').trim();
+  const dot = t.indexOf(DOT_SEP);
+  if (dot > 0) return { name: t.slice(0, dot), detail: t.slice(dot + DOT_SEP.length) };
+  const colon = t.indexOf(': ');
+  if (colon > 0) return { name: t.slice(0, colon), detail: capital(t.slice(colon + 2)) };
+  const bracket = /^(.+?)\s+\(([^()]*\s[^()]*)\)$/.exec(t);
+  if (bracket) return { name: bracket[1], detail: capital(bracket[2]) };
+  const stop = t.indexOf('. ');
+  if (stop > 0) return { name: t.slice(0, stop), detail: capital(t.slice(stop + 2)) };
+  return { name: t, detail: '' };
+}
+
 // A rule that records an amount (the harvest's kg, the bags taken out) gives its open rows a unit or a label.
 export const recordsAmount = (row) => Boolean(row?.unit || row?.amountLabel);
 // The box's label names the unit once: "kg picked" as it is, "Weight (kg)" (the unit as a whole word, so 'g' is not in "Eggs").
@@ -117,11 +134,21 @@ export function dueWords(row, today) {
   return { text: `due ${dayMonth(due)}`, tone: null, group: late >= -7 ? 'soon' : 'later', late };
 }
 
+// In a list of what is due now, "due today" says nothing: only overdue words stay (amber).
+export const nowDue = (due) => (due?.group === 'overdue' ? due : null);
+
 // The Upkeep part's open rows: overdue first, then due within 7 days, then the rest, each by date. → [{ row, due }]
 export function upkeepRows(rows, today) {
   const order = { overdue: 0, soon: 1, later: 2 };
   return (rows ?? []).filter((r) => r.status === 'open').map((row) => ({ row, due: dueWords(row, today) }))
     .sort((a, b) => order[a.due.group] - order[b.due.group] || (b.due.late ?? -1e9) - (a.due.late ?? -1e9) || a.row.id - b.row.id);
+}
+
+// The upkeep not due yet, folded on the Tasks tab (upkeepRows' later rows, nearest first): "Coming up · 4 · next 2 Dec".
+export function comingUpWords(later) {
+  if (!later?.length) return '';
+  const next = dueDateOf(later[0].row);
+  return ['Coming up', String(later.length), next ? `next ${dayMonth(next)}` : ''].filter(Boolean).join(DOT_SEP);
 }
 
 // ---- long-term tasks and Plan this (spec 7.1 and 7.4) ----
@@ -278,7 +305,6 @@ export function logRows(rows, now, all = false) {
 // ---- the Settings task rules (spec 7.3) ----
 
 const FAMILY_WORDS = { oyster: 'oyster', woodear: 'wood ear', reishi: 'reishi', milky: 'milky', lionsmane: "lion's mane" };
-const capital = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 const everyWords = (n) => (n === 1 ? 'every day' : `every ${n} days`);
 
 // A daily rule's `when` in words.

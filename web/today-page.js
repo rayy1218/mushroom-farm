@@ -8,7 +8,7 @@ import { request, OFFLINE, OUTDATED, routeMissing } from './api.js';
 import { roomHash } from './route.js';
 import { live } from './live.js';
 import { fallbackMs, createThrottle } from './live-math.js';
-import { slotGroups, upkeepRows, dayTitle, tasksDueWords, longtermWords, todayCount } from './tasks-math.js';
+import { slotGroups, upkeepRows, nowDue, dayTitle, tasksDueWords, longtermWords, todayCount } from './tasks-math.js';
 import { createTaskActions, createWorkerPicker } from './task-dialogs.js';
 import { el, taskRow, slotPart, keepFocus } from './task-list.js';
 import { DOT } from './text-math.js';
@@ -66,18 +66,21 @@ export function mount(container) {
   // A room: its name (to its Tasks tab), its open stage tasks by slot (the closed ones folded) and its upkeep due.
   function roomPart(r) {
     const card = el('section', 'card td-room');
+    const head = el('div', 'td-room-head');
     const title = el('h2');
     const link = el('a', '', r.name);
     link.href = roomHash(r.id, 'tasks');
     title.append(link);
-    card.append(title);
+    const due = r.counts?.due ?? 0;
+    head.append(title, el('p', 'td-room-count', due > 0 ? `${due} to do` : 'All done'));
+    card.append(head);
     const groups = slotGroups(r.today);
     for (const g of groups) card.append(slotPart(g, actions, { openFolds, foldKey: `${r.id}:${g.slot}` }));
     const up = upkeepRows(r.upkeepDue, view.date);
     if (up.length) {
       const part = el('div', 'tk-slot');
       const list = el('ul', 'tk-list');
-      list.append(...up.map(({ row, due }) => taskRow(row, actions, { due })));
+      list.append(...up.map(({ row, due }) => taskRow(row, actions, { due: nowDue(due) })));
       part.append(el('h3', 'tk-slot-title', 'Upkeep'), list);
       card.append(part);
     }

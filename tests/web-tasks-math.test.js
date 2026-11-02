@@ -306,3 +306,34 @@ test("Plan this flags every machine whose \"from\" is Simulate's default (a room
   const rated = planOf(result, 0, { electricity: 0.55, water: null }, 123, { machines, defaults: ['fanFlow'] });
   assert.deepEqual(rated.body.suggestion.machines.filter((m) => m.assumed).map((m) => m.key), ['fanFlow'], 'Setup has the aircon and humidifier');
 });
+
+test('taskParts: a task\'s name, then what to do (owner 2026-11-02: one long sentence read as a wall)', async () => {
+  const { taskParts } = await import('../web/tasks-math.js');
+  assert.deepEqual(taskParts('Contamination walk: take out and bag any green, orange, black or slimy bags, away from the room'),
+    { name: 'Contamination walk', detail: 'Take out and bag any green, orange, black or slimy bags, away from the room' });
+  assert.deepEqual(taskParts('Harvest check: pick the ready ones; pick before any misting'), { name: 'Harvest check', detail: 'Pick the ready ones; pick before any misting' });
+  assert.deepEqual(taskParts('Descale and sanitise the humidifier (RO water; no bleach on the disc)'),
+    { name: 'Descale and sanitise the humidifier', detail: 'RO water; no bleach on the disc' });
+  assert.deepEqual(taskParts('Check the CO₂ sensor against outdoor air (about 420 ppm)'), { name: 'Check the CO₂ sensor against outdoor air', detail: 'About 420 ppm' });
+  assert.deepEqual(taskParts('Open the bags (cut or remove the cap). Don\'t spray the opened bags for 2 days'),
+    { name: 'Open the bags (cut or remove the cap)', detail: 'Don\'t spray the opened bags for 2 days' });
+  assert.deepEqual(taskParts('Change the footbath at the door'), { name: 'Change the footbath at the door', detail: '' });
+  assert.deepEqual(taskParts('Harvest check (afternoon)'), { name: 'Harvest check (afternoon)', detail: '' }, 'a short bracket is part of the name');
+  assert.deepEqual(taskParts('Aircon 9,000 → 12,000 BTU/h · plan: RM 42 a month less · from Suggest machines, 29 Oct'),
+    { name: 'Aircon 9,000 → 12,000 BTU/h', detail: 'plan: RM 42 a month less · from Suggest machines, 29 Oct' });
+  assert.deepEqual(taskParts('Paint the walls'), { name: 'Paint the walls', detail: '' });
+  assert.deepEqual(taskParts(''), { name: '', detail: '' });
+});
+
+test('comingUpWords: the upkeep folded under Coming up, how many and the nearest date', async () => {
+  const { comingUpWords, upkeepRows } = await import('../web/tasks-math.js');
+  const rows = [{ id: 1, status: 'open', dueDate: '2027-01-31' }, { id: 2, status: 'open', dueDate: '2026-12-02' }];
+  assert.equal(comingUpWords(upkeepRows(rows, '2026-11-02')), 'Coming up · 2 · next 2 Dec');
+  assert.equal(comingUpWords([]), '');
+});
+
+test('nowDue: in the due-now list only overdue words stay', async () => {
+  const { nowDue, dueWords } = await import('../web/tasks-math.js');
+  assert.equal(nowDue(dueWords({ dueDate: '2026-11-02' }, '2026-11-02')), null);
+  assert.deepEqual(nowDue(dueWords({ dueDate: '2026-10-30' }, '2026-11-02')).text, 'overdue 3 days');
+});
