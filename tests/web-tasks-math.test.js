@@ -280,3 +280,29 @@ test('a rule in words for the Task rules card', () => {
   assert.equal(customLine({ rooms: [1, 2], everyDays: 14, slot: 'any' }, [{ id: 1, name: 'Room 1' }, { id: 2, name: 'Room 2' }]), 'Room 1, Room 2 · every 14 days · any time');
   assert.equal(customLine({ rooms: [9], everyDays: 1, slot: 'afternoon' }, []), 'Room 9 · every day · afternoon');
 });
+
+// ---- final review ----
+
+test("Plan this flags every machine whose \"from\" is Simulate's default (a room not rated yet), not only the fan", () => {
+  const machines = { fanFlow: 600, acBTU: 12000, humidifierLH: 1, dehumidifierLday: 0 };
+  const result = {
+    days: 2,
+    baseline: { machines, kWh: 20, litres: 0 },
+    best: [{ machines: { fanFlow: 150, acBTU: 9000, humidifierLH: 2, dehumidifierLday: 10 }, kWh: 15, litres: 0 }],
+  };
+  const plan = planOf(result, 0, { electricity: 0.55, water: null }, 123, { machines, defaults: ['fanFlow', 'acBTU', 'humidifierLH'] });
+  assert.deepEqual(plan.changes.map((c) => c.text), [
+    "Fan 600 → 150 m³/h (fan now: Simulate's default)",
+    "Aircon 12,000 → 9,000 BTU/h (aircon now: Simulate's default)",
+    "Humidifier 1 → 2 L/h (humidifier now: Simulate's default)",
+    'Dehumidifier none → 10 L/day',
+  ]);
+  assert.deepEqual(plan.body.suggestion.machines, [
+    { key: 'fanFlow', from: 600, to: 150, assumed: true },
+    { key: 'acBTU', from: 12000, to: 9000, assumed: true },
+    { key: 'humidifierLH', from: 1, to: 2, assumed: true },
+    { key: 'dehumidifierLday', from: 0, to: 10 },
+  ]);
+  const rated = planOf(result, 0, { electricity: 0.55, water: null }, 123, { machines, defaults: ['fanFlow'] });
+  assert.deepEqual(rated.body.suggestion.machines.filter((m) => m.assumed).map((m) => m.key), ['fanFlow'], 'Setup has the aircon and humidifier');
+});

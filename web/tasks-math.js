@@ -168,8 +168,9 @@ export function machineChanges(now, next) {
 // electricity price), rmText, stale, body (for POST /api/rooms/:id/tasks) }, or null without a baseline (the "from" is
 // unknown). No changes: the room has this setup already, and the server refuses an empty plan, so the dialog offers no Plan.
 // now: the room's machines as they are (simulate-math roomMachines: { machines, defaults }): stale when the search's
-// baseline is no longer them (Setup changed since a stored search), and the fan's line says when its "from" is Simulate's
-// default (a room keeps no fan flow); the body then flags it (assumed: true) and the server notes it on the row.
+// baseline is no longer them (Setup changed since a stored search), and the line of each machine whose "from" is Simulate's
+// default says so (the fan always, as Setup keeps no fan flow; the aircon and humidifier of a room not rated yet); the body
+// then flags it (assumed: true) and the server notes it on the row.
 export function planOf(result, index, prices, suggestedAt, now = null) {
   const base = result?.baseline;
   const next = result?.best?.[index];
@@ -178,14 +179,14 @@ export function planOf(result, index, prices, suggestedAt, now = null) {
   const a = monthly(base, runDays, prices).rm;
   const b = monthly(next, runDays, prices).rm;
   const rmMonth = a === null || b === null ? null : Math.round((b - a) * 100) / 100;
-  const fanDefault = now?.defaults?.includes('fanFlow') === true;
+  const assumed = new Set(Array.isArray(now?.defaults) ? now.defaults : []);
   const changes = machineChanges(base.machines, next.machines)
-    .map((c) => (c.key === 'fanFlow' && fanDefault ? { ...c, text: `${c.text} (fan now: Simulate's default)` } : c));
+    .map((c) => (assumed.has(c.key) ? { ...c, text: `${c.text} (${MACHINE_WORDS[c.key][0].toLowerCase()} now: Simulate's default)` } : c));
   return {
     changes, rmMonth, rmText: rmWords(rmMonth), stale: Boolean(now?.machines) && machineChanges(now.machines, base.machines).length > 0,
     body: {
       suggestion: {
-        machines: changes.map(({ key, from, to }) => ({ key, from, to, ...(key === 'fanFlow' && fanDefault ? { assumed: true } : {}) })), rmMonth, suggestedAt,
+        machines: changes.map(({ key, from, to }) => ({ key, from, to, ...(assumed.has(key) ? { assumed: true } : {}) })), rmMonth, suggestedAt,
       },
     },
   };

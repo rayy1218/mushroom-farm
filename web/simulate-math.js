@@ -142,7 +142,7 @@ export function roomMachines({ room, lastRun = null }) {
     ...(fromDef.length ? [`${listed(fromDef)} at Simulate's default${fromDef.length > 1 ? 's' : ''}`] : []),
   ];
   const note = notes.length ? `${capital(notes.join('; '))} (not on Setup)` : null;
-  // defaults: the machines at Simulate's default (no number on Setup or the run), for Plan this's fan line
+  // defaults: the machines at Simulate's default (no number on Setup or the run), for Plan this's lines
   return { machines, from: `Your room's machines (Setup)${note ? `; ${notes.join('; ')} (not on Setup)` : ''}`, note, defaults: fromDefKeys };
 }
 
