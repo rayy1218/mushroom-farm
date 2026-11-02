@@ -107,7 +107,7 @@ function readRules(body, { stored, customIds, roomIds }, HttpError) {
       }
       if (rule.kind === 'upkeep' && entry.everyDays !== undefined) { // a daily rule's interval is ignored
         if (entry.everyDays !== null && !isInterval(entry.everyDays)) throw bad(INTERVAL_ERROR, `builtin.${rule.key}.everyDays`);
-        s.everyDays = entry.everyDays;
+        s.everyDays = entry.everyDays === rule.everyDays ? null : entry.everyDays; // the default: none stored, so it follows the default
       }
     });
     settings = [...next.values()];

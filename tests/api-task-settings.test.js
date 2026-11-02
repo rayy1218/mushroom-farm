@@ -130,6 +130,22 @@ test('task rules: a built-in rule turned off, an upkeep interval of 1 to 365 day
   assert.deepEqual(rule((await call('GET', '/api/task-rules')).body, 'footbath').enabled, false);
 });
 
+// C9 review: the Settings card sends the interval the owner typed; typing the default back in returns the rule to its default
+// (stored null), so it follows the default if a later version changes it.
+test('task rules: an upkeep interval equal to the rule\'s default is stored as none (the default)', async (t) => {
+  const { db, call } = await app(t);
+  const put = (body) => call('PUT', '/api/task-rules', body);
+  const stored = () => db.taskRuleSettings().find((s) => s.key === 'acFilter').everyDays;
+  assert.equal(UPKEEP_RULES.find((r) => r.key === 'acFilter').everyDays, 7);
+  await put({ builtin: [{ key: 'acFilter', everyDays: 14 }] });
+  assert.equal(stored(), 14);
+  const back = await put({ builtin: [{ key: 'acFilter', everyDays: 7 }] });
+  assert.equal(back.status, 200);
+  assert.equal(back.body.builtin.find((x) => x.key === 'acFilter').everyDays, 7);
+  assert.equal((await call('GET', '/api/task-rules')).body.builtin.find((x) => x.key === 'acFilter').everyDays, 7);
+  assert.equal(stored(), null, 'task_rule_settings.every_days is null');
+});
+
 test("task rules: your own, text 1 to 120, every room or some of this farm's, daily or every 1 to 365 days, a time of day; they make rows at once", async (t) => {
   const { db, call } = await app(t);
   const r1 = (await call('POST', '/api/rooms', { ...ROOM, name: 'Room 1' })).body.id;
