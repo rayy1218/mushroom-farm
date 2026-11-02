@@ -132,7 +132,7 @@ test('Setup saved but the mark failed: the Setup boxes lock and the one button l
 });
 
 test('Plan this: a dialog closed or a page gone before the answer tells no one', () => {
-  has('if (form.alive()) onPlanned?.(Array.isArray(data?.rows) ? data.rows : []);');
+  has('if (form.alive()) onPlanned?.(rowsOf(data?.rows), rowsOf(data?.replaced));');
 });
 
 // ---- C5 re-review ----

@@ -116,6 +116,19 @@ test('Plan this: a suggestion makes one long-term row per machine that changes, 
   const twice = await call('POST', `/api/rooms/${id}/tasks`, { suggestion: { machines, rmMonth: -42, suggestedAt: at } });
   assert.deepEqual(twice, { status: 409, body: { error: 'Already planned: see the Tasks tab', field: 'suggestion' } });
   assert.deepEqual(await call('POST', '/api/rooms/999/tasks', { suggestion: { machines } }), { status: 404, body: { error: 'Room not found' } });
+  assert.deepEqual(made.body.replaced, [], 'nothing open to replace the first time');
+});
+
+test('Plan this to another size: the reply lists the open plan it replaced (cancelled) besides the new rows; an own task replaces none', async (t) => {
+  const { call } = await app(t);
+  const id = (await call('POST', '/api/rooms', ROOM)).body.id;
+  const plan = (to) => call('POST', `/api/rooms/${id}/tasks`, { suggestion: { machines: [{ key: 'humidifierLH', from: 0.5, to }], rmMonth: 5, suggestedAt: 1 } });
+  const first = (await plan(1)).body.rows[0];
+  const again = await plan(2);
+  assert.equal(again.status, 201);
+  assert.deepEqual(again.body.rows.map((r) => r.text), ['Humidifier 0.5 → 2 L/h']);
+  assert.deepEqual(again.body.replaced.map((r) => [r.id, r.text, r.status, r.reason]), [[first.id, 'Humidifier 0.5 → 1 L/h', 'cancelled', 'Replaced by a newer plan']]);
+  assert.deepEqual((await call('POST', `/api/rooms/${id}/tasks`, { text: 'Seal the door' })).body.replaced, []);
 });
 
 test('Plan this: a suggestion that is not one is 400 with the field', async (t) => {

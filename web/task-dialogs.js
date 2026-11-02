@@ -4,7 +4,7 @@
 // shared, like the Simulate stepper.
 //   createTaskActions({ onChanged(row | null), onError(text) }) → { done(row), skip(row), cancel(row), add(roomId), destroy() }
 //   (done, skip and cancel end, after their dialog closes, with true when something changed: the list will be asked again)
-//   createWorkerPicker() → { node, destroy() } · openPlanDialog({ roomId, roomName, rank, plan, onPlanned(rows) })
+//   createWorkerPicker() → { node, destroy() } · openPlanDialog({ roomId, roomName, rank, plan, onPlanned(rows, replaced) })
 //   getWorker() · setWorker(name) · loadWorkers() → names · closeTaskDialog()
 
 import { request, OFFLINE } from './api.js';
@@ -494,10 +494,11 @@ export function createTaskActions({ onChanged, onError }) {
 // ---- Plan this (spec 7.4) ----
 
 const TASKS_TAB = 'Tasks tab';
+const rowsOf = (v) => (Array.isArray(v) ? v : []);
 
 // Each machine that differs from what the room has now (from → to) and the RM a month against it; Plan posts them as the
 // room's long-term tasks. plan: tasks-math planOf's (stale: the search's baseline is no longer the room's machines: no Plan,
-// its "from" would be wrong). onPlanned(rows) after it worked. A 409 (every change planned already): only Cancel is left,
+// its "from" would be wrong). onPlanned(rows, replaced) after it worked (replaced: the open plans it cancelled). A 409 (every change planned already): only Cancel is left,
 // and the message's "Tasks tab" is a link to it.
 export function openPlanDialog({ roomId, roomName, rank, plan, onPlanned }) {
   const changes = el('ul', 'tk-changes');
@@ -514,7 +515,7 @@ export function openPlanDialog({ roomId, roomName, rank, plan, onPlanned }) {
     submit: async () => {
       try {
         const data = await request('POST', `/api/rooms/${roomId}/tasks`, plan.body, COMMAND_TIMEOUT);
-        if (form.alive()) onPlanned?.(Array.isArray(data?.rows) ? data.rows : []);
+        if (form.alive()) onPlanned?.(rowsOf(data?.rows), rowsOf(data?.replaced));
         return true;
       } catch (err) {
         const text = errorText(err);

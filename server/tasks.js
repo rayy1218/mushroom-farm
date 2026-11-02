@@ -325,9 +325,9 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
       return view(row);
     },
 
-    // Plan this on Suggest machines: { machines: [{ key, from, to }], rmMonth, suggestedAt } → one long-term row per machine
-    // that changes and is not planned already (an open row to the same size; none left: 409), made together; an open row of
-    // the machine to another size is cancelled 'Replaced by a newer plan' with them. Each machine at most once, from and to 0 to 1,000,000; suggestedAt null or ms 0 to 8.64e15.
+    // Plan this on Suggest machines: { machines: [{ key, from, to }], rmMonth, suggestedAt } → { rows, replaced }: one long-term
+    // row per machine that changes and is not planned already (an open row to the same size; none left: 409), made together; an
+    // open row of the machine to another size is cancelled 'Replaced by a newer plan' with them (replaced: those, as they are now). Each machine at most once, from and to 0 to 1,000,000; suggestedAt null or ms 0 to 8.64e15.
     addFromSuggestion(roomId, suggestion) {
       if (!db.getRoom(roomId)) throw new TaskError(404, 'Room not found');
       const { machines, rmMonth = null, suggestedAt = null } = suggestion ?? {};
@@ -358,7 +358,7 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
         source: { machine: m.key, from: m.from, to: m.to, rmMonth, suggestedAt }, at,
       })), replaced);
       tell(roomId);
-      return rows.map(view);
+      return { rows: rows.map(view), replaced: replaced.map((r) => view(db.getTask(r.id))) };
     },
 
     // The Today page: every room in the Overview's order with its daily rows, its upkeep due today or overdue, how many

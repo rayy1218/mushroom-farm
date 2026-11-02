@@ -156,6 +156,11 @@ test('C10 review: Plan this from a search whose baseline is no longer the room\'
   assert.deepEqual(planOf(result, 0, prices, 123, { machines, defaults: [] }).changes.map((c) => c.text), ['Fan 600 → 150 m³/h', 'Aircon 9,000 → 12,000 BTU/h']);
   assert.equal(plannedWords(3, 3), '3 long-term tasks planned');
   assert.equal(plannedWords(1, 3), '1 long-term task planned (2 already planned)');
+  // a plan to another size replaces the machine's open one: say which (the replaced rows' texts)
+  assert.equal(plannedWords(1, 1, [{ text: 'Humidifier 0.5 → 2 L/h' }]), '1 long-term task planned (replaces Humidifier 0.5 → 2 L/h)');
+  assert.equal(plannedWords(2, 3, [{ text: 'Humidifier 0.5 → 2 L/h' }, { text: 'Fan 150 → 200 m³/h' }]),
+    '2 long-term tasks planned (1 already planned) (replaces Humidifier 0.5 → 2 L/h · Fan 150 → 200 m³/h)');
+  assert.equal(plannedWords(1, 1, []), '1 long-term task planned');
 });
 
 const ROOM = {

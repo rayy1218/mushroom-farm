@@ -85,8 +85,8 @@ test('Plan this beside Use this, only with a baseline (spec 2026-10-30-tasks-des
   assert.ok(use > 0 && plan > use, 'Use this first, Plan this beside it');
   assert.ok(page.slice(use, plan).includes('if (base) {'), 'no baseline: no Plan this (the "from" is unknown)');
   assert.ok(page.includes('const p = planOf(result, r.index, prices, job?.finishedAt ?? Date.now(), now);'), "against the room's now (Setup may have changed since the search)");
-  assert.ok(page.includes("done.append(`${plannedWords(rows.length, p.changes.length)} · `, link);"));
-  assert.ok(page.includes('openPlanDialog({ roomId: id, roomName: room.name, rank: r.rank, plan: p, onPlanned: (rows) => {'));
+  assert.ok(page.includes("done.append(keepLines(`${plannedWords(rows.length, p.changes.length, replaced)} · `), link);"), 'says what it replaced; units kept on their numbers');
+  assert.ok(page.includes('openPlanDialog({ roomId: id, roomName: room.name, rank: r.rank, plan: p, onPlanned: (rows, replaced) => {'));
   assert.ok(page.includes("link.href = roomHash(id, 'tasks');"));
   assert.ok(page.slice(page.indexOf('return function unmount()')).includes('closeTaskDialog();'));
 });

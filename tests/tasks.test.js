@@ -359,7 +359,8 @@ test('long-term rows: the owner\'s, and Plan this from a suggestion', (t) => {
       { key: 'humidifierLH', from: 0.5, to: 1 }],
     rmMonth: -42, suggestedAt: at('2026-10-29T15:00:00+08:00'),
   };
-  const rows = s.tasks.addFromSuggestion(s.id, suggestion);
+  const { rows, replaced: none } = s.tasks.addFromSuggestion(s.id, suggestion);
+  assert.deepEqual(none, [], 'nothing open to replace');
   assert.deepEqual(rows.map((r) => r.text), ['Aircon 9,000 → 12,000 BTU/h', 'Dehumidifier none → 10 L/day', 'Humidifier 0.5 → 1 L/h']);
   assert.deepEqual(rows[0].source, { machine: 'acBTU', from: 9000, to: 12000, rmMonth: -42, suggestedAt: suggestion.suggestedAt });
   refused(() => s.tasks.addFromSuggestion(s.id, { machines: [{ key: 'acBTU', from: 9000, to: 9000 }], rmMonth: 0, suggestedAt: 1 }),
@@ -377,7 +378,7 @@ test('long-term rows: the owner\'s, and Plan this from a suggestion', (t) => {
 test('Plan this checks: a machine once, numbers from 0 to 1,000,000, rmMonth and suggestedAt numbers; one change told; at most 3 decimals', (t) => {
   const s = setup(t);
   const shape = 'The plan must list the fan, aircon, humidifier or dehumidifier, each from and to a number from 0 to 1,000,000';
-  const plan = (machines, extra = {}) => s.tasks.addFromSuggestion(s.id, { machines, rmMonth: -42, suggestedAt: 1, ...extra });
+  const plan = (machines, extra = {}) => s.tasks.addFromSuggestion(s.id, { machines, rmMonth: -42, suggestedAt: 1, ...extra }).rows;
   refused(() => plan([{ key: 'acBTU', from: 9000, to: 12000 }, { key: 'acBTU', from: 9000, to: 18000 }]), 400, shape, 'suggestion');
   refused(() => plan([{ key: 'fanFlow', from: -1, to: 200 }]), 400, shape, 'suggestion');
   refused(() => plan([{ key: 'fanFlow', from: 150, to: -5 }]), 400, shape, 'suggestion');
@@ -404,7 +405,8 @@ test('Plan this checks: a machine once, numbers from 0 to 1,000,000, rmMonth and
 
 test('Plan this twice: a machine with an open long-term task to the same size is left out; all left out is 409', (t) => {
   const s = setup(t);
-  const plan = (machines) => s.tasks.addFromSuggestion(s.id, { machines, rmMonth: -42, suggestedAt: 1 });
+  const planned = (machines) => s.tasks.addFromSuggestion(s.id, { machines, rmMonth: -42, suggestedAt: 1 });
+  const plan = (machines) => planned(machines).rows;
   plan([{ key: 'acBTU', from: 9000, to: 12000 }, { key: 'fanFlow', from: 150, to: 200 }]);
   s.changes.length = 0;
   refused(() => plan([{ key: 'acBTU', from: 9000, to: 12000 }, { key: 'fanFlow', from: 150, to: 200 }]), 409, 'Already planned: see the Tasks tab', 'suggestion');
@@ -412,10 +414,11 @@ test('Plan this twice: a machine with an open long-term task to the same size is
   // Another size of the same machine replaces its open task (cancelled 'Replaced by a newer plan'); a machine not planned yet
   // is a new task; the one already planned to the same size is left out.
   const aircon = s.db.openTasks(s.id, 'longterm').find((r) => r.source?.machine === 'acBTU');
-  const again = plan([{ key: 'acBTU', from: 9000, to: 18000 }, { key: 'fanFlow', from: 150, to: 200 }, { key: 'humidifierLH', from: 0.5, to: 1 }]);
+  const { rows: again, replaced: gone } = planned([{ key: 'acBTU', from: 9000, to: 18000 }, { key: 'fanFlow', from: 150, to: 200 }, { key: 'humidifierLH', from: 0.5, to: 1 }]);
   assert.deepEqual(again.map((r) => r.text), ['Aircon 9,000 → 18,000 BTU/h', 'Humidifier 0.5 → 1 L/h']);
   const replaced = s.db.getTask(aircon.id);
   assert.deepEqual([replaced.status, replaced.reason, replaced.closedAt], ['cancelled', 'Replaced by a newer plan', again[0].createdAt]);
+  assert.deepEqual(gone, [{ ...replaced, amountLabel: null }], 'the replaced rows come back as they are now (cancelled)');
   assert.equal(s.db.openTasks(s.id, 'longterm').filter((r) => r.source?.machine === 'acBTU').length, 1, 'one open aircon task');
   // A done or cancelled one no longer counts: planned again, it is a new task.
   const fan = s.db.openTasks(s.id, 'longterm').find((r) => r.source?.machine === 'fanFlow');
@@ -429,7 +432,7 @@ test('Plan this twice: a machine with an open long-term task to the same size is
 
 test('Plan this replaces in one go: a replaced task is cancelled only when the new rows are made', (t) => {
   const s = setup(t);
-  const plan = (machines) => s.tasks.addFromSuggestion(s.id, { machines, rmMonth: -42, suggestedAt: 1 });
+  const plan = (machines) => s.tasks.addFromSuggestion(s.id, { machines, rmMonth: -42, suggestedAt: 1 }).rows;
   const [fan] = plan([{ key: 'fanFlow', from: 150, to: 200 }]);
   const insert = s.db.insertLongtermTask;
   s.db.insertLongtermTask = () => { throw new Error('disk full'); };

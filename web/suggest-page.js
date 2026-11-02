@@ -21,6 +21,7 @@ import {
   pricesOf, suggestRows, baselineRow, captionOf, roomMachines, moneyHead, priceLine, noneReachedLine, COLUMNS, SEARCH_LINE, asideSections,
 } from './suggest-math.js';
 import { planOf, plannedWords } from './tasks-math.js';
+import { keepLines } from './text-math.js';
 import { openPlanDialog, closeTaskDialog } from './task-dialogs.js';
 
 const POLL_MS = 1000;
@@ -485,12 +486,12 @@ export function mount(container, { id }) {
         plan.addEventListener('click', () => {
           const p = planOf(result, r.index, prices, job?.finishedAt ?? Date.now(), now);
           if (!p || !room) return;
-          openPlanDialog({ roomId: id, roomName: room.name, rank: r.rank, plan: p, onPlanned: (rows) => {
+          openPlanDialog({ roomId: id, roomName: room.name, rank: r.rank, plan: p, onPlanned: (rows, replaced) => {
             if (!alive() || !setup.isConnected) return;
             const done = el('p', 'sg-planned');
             const link = el('a', '', 'Open the Tasks tab');
             link.href = roomHash(id, 'tasks');
-            done.append(`${plannedWords(rows.length, p.changes.length)} · `, link);
+            done.append(keepLines(`${plannedWords(rows.length, p.changes.length, replaced)} · `), link);
             setup.querySelector('.sg-planned')?.remove();
             setup.append(done);
             // the dialog closes after this and gives the focus back to Plan this: the link takes it a moment later

@@ -136,7 +136,7 @@ The worker is stored as text on the task, so a renamed or removed worker never c
 | `POST /api/tasks/:id/done` | `{ worker, amount? }` → the row |
 | `POST /api/tasks/:id/skip` | `{ worker, reason }` → the row (not for long-term) |
 | `POST /api/tasks/:id/cancel` | `{ reason }` → the row (long-term only) |
-| `POST /api/rooms/:id/tasks` | `{ text, note? }` (own) or `{ suggestion: { machines: [{ key, from, to }], rmMonth, suggestedAt } }` → the new rows; an open plan of a machine to another size is cancelled "Replaced by a newer plan" in the same transaction |
+| `POST /api/rooms/:id/tasks` | `{ text, note? }` (own) or `{ suggestion: { machines: [{ key, from, to }], rmMonth, suggestedAt } }` → `{ rows, replaced }`: the new rows; an open plan of a machine to another size is cancelled "Replaced by a newer plan" in the same transaction and comes back in `replaced` (an own task: none), so Suggest machines can say "(replaces Humidifier 0.5 → 2 L/h)" |
 | `GET /api/rooms/:id/tasks/log?before=<id>` | → the closed rows newest first, 50 a page |
 | `GET /api/rooms/:id/tasks/log.csv` | → every closed row: date, time, room, task, status, worker, amount, unit, reason |
 | `GET/PUT /api/workers` | `[{ id?, name, active }]` |
@@ -189,6 +189,8 @@ A **Today** link in the top bar with the sum of every room's `counts.due`.
 **Plan this** beside **Use this** on each suggestion row. It opens a dialog listing each machine that differs from the baseline (from → to) and the RM a month against the baseline; **Plan** posts it and links to the room's Tasks tab. With no baseline the button is not shown (the "from" is unknown).
 
 A search whose baseline is no longer the room's machines (Setup changed since a stored search) is not planned: the dialog says "<room>'s machines changed since this search. Suggest again to plan from them." and offers only **Close**. When the room's fan flow is Simulate's default (Setup keeps none), the fan's line in the dialog says "(fan now: Simulate's default)".
+
+After **Plan**, the row says how many long-term tasks it planned, those left out as already planned to the same size, and the open plans it replaced, then links to the Tasks tab: "1 long-term task planned (replaces Humidifier 0.5 → 1 L/h) · Open the Tasks tab" (several replaced joined with " · ").
 
 ### 7.5 Done on a long-term machine task
 

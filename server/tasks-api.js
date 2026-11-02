@@ -172,8 +172,8 @@ export function createTaskRoutes({ db, tasks }) {
       if (req.method !== 'POST') throw notFound();
       // An own task { text, note? } or Plan this { suggestion }: server/tasks.js checks both and the room (404).
       const body = await readBody();
-      const rows = 'suggestion' in body ? tasks.addFromSuggestion(id, body.suggestion) : [tasks.addLongterm(id, body)];
-      send(res, 201, { rows });
+      // replaced: the open plans of the same machines to another size, cancelled by this one (an own task replaces none).
+      send(res, 201, 'suggestion' in body ? tasks.addFromSuggestion(id, body.suggestion) : { rows: [tasks.addLongterm(id, body)], replaced: [] });
       return true;
     }
     const action = TASK_ACTION.exec(path);
