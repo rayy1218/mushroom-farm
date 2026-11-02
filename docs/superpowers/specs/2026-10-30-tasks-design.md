@@ -188,6 +188,8 @@ A **Today** link in the top bar with the sum of every room's `counts.due`.
 
 **Plan this** beside **Use this** on each suggestion row. It opens a dialog listing each machine that differs from the baseline (from → to) and the RM a month against the baseline; **Plan** posts it and links to the room's Tasks tab. With no baseline the button is not shown (the "from" is unknown).
 
+A search whose baseline is no longer the room's machines (Setup changed since a stored search) is not planned: the dialog says "<room>'s machines changed since this search. Suggest again to plan from them." and offers only **Close**. When the room's fan flow is Simulate's default (Setup keeps none), the fan's line in the dialog says "(fan now: Simulate's default)".
+
 ### 7.5 Done on a long-term machine task
 
 | Machine | Setup update offered |
