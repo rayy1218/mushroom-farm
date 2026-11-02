@@ -87,4 +87,6 @@ test("#/today is the farm's Today page (spec 2026-10-30-tasks-design.md 7.2)", (
   assert.equal(canonicalHash({ name: 'today' }), '#/today');
   assert.equal(TODAY_HASH, '#/today');
   assert.deepEqual(parseRoute('#/todayx'), { name: 'overview' });
+  assert.deepEqual(parseRoute('#/today?x'), { name: 'overview' });
+  assert.equal(isCanonical('#/today?x'), false);
 });
