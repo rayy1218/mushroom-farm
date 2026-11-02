@@ -1518,8 +1518,8 @@ details.setup-part:not([open]) { padding-top: 8px; }
   .tk-as { width: 100%; }
   .tk-as select { flex: 1 1 auto; min-height: 44px; }
   .td-picker { width: 100%; }
-  .td-room h2 a, .td-long-list a { display: inline-flex; align-items: center; min-height: 44px; }
-  .td-room h2 a { margin-block: -10px; } /* the taller target keeps the card's spacing */
+  .td-long-list a { display: inline-flex; align-items: center; min-height: 44px; }
+  .td-room h2 a { display: inline-block; padding-block: 11px; margin-block: -11px; } /* 44 px to tap; the margin keeps the card's spacing, and a long name still wraps */
   .td-long-list li { padding: 0; }
   .tk-every input { min-height: 44px; }
   .tk-dialog .tk-check label { display: inline-flex; align-items: center; min-height: 44px; } /* the words take the tap too */

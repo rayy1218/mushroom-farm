@@ -61,8 +61,9 @@ test('the Tasks tab from 1,100 px: Today, Upkeep and Long-term on the left, the 
 
 test('review minor: the dialog wraps its primary button on top; the Today room link is 44 px by its own margin; Live keeps its dot', () => {
   assert.ok(block.includes('.tk-dialog .actions { flex-wrap: wrap-reverse; }'));
-  assert.ok(phone.includes('.td-room h2 a, .td-long-list a { display: inline-flex; align-items: center; min-height: 44px; }'));
-  assert.ok(phone.includes('.td-room h2 a { margin-block: -10px; }'));
+  assert.ok(phone.includes('.td-long-list a { display: inline-flex; align-items: center; min-height: 44px; }'));
+  assert.ok(phone.includes('.td-room h2 a { display: inline-block; padding-block: 11px; margin-block: -11px; }'), 'an inline block: a long name wraps inside it');
+  assert.ok(!phone.includes('.td-room h2 a, .td-long-list a'), 'the room name is not a flex box on a phone');
   assert.ok(!phone.includes('.td-room h2 { margin-top'));
   assert.ok(phone.includes('.topbar:has(> .top-alarm:not([hidden])) .live-mark [data-live-text] {'), 'the word hides, the dot stays');
   assert.ok(!phone.includes('.live-dot { display: none; }'));
