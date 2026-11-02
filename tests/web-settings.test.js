@@ -48,7 +48,7 @@ test('the interval hint says how long the Live charts\' 50 readings span at the 
   assert.match(page, /hint\.textContent = liveHint\(parsePoll\(input\.value\) \?\? last\?\.pollSeconds \?\? null\);/, 'it follows the input as typed');
 });
 
-import { parseWorkerName, workersAfter, parseEveryDays, parseCustomRule, rulesBody, WORKER_MAX } from '../web/settings-math.js';
+import { parseWorkerName, workersAfter, parseEveryDays, parseCustomRule, rulesBody, customAfter, ruleForm, idAfter, WORKER_MAX } from '../web/settings-math.js';
 
 // Most texts are the server's (PUT /api/workers, PUT /api/task-rules), so a refusal reads the same from either; 'That name
 // is taken', 'Pick at least one room' and 'Pick a time of day' are the form's own (the server's refusals differ).
@@ -106,4 +106,27 @@ test("Task rules: the PUT body has every built-in rule's on/off, an interval onl
   assert.deepEqual(rulesBody(every, shown).builtin, [{ key: 'footbath', enabled: true }, { key: 'acFilter', enabled: true, everyDays: 14 }, { key: 'flyTraps', enabled: true }]);
   const added = { ...shown, custom: [...shown.custom, { text: 'Sweep', rooms: [2], everyDays: 7, slot: 'morning', enabled: true }] };
   assert.deepEqual(rulesBody(added, shown).custom, added.custom, 'a new own rule without an id; none left out');
+});
+
+// C9 review (lead): an own rule can be edited (the Add your own form, filled in) and removed.
+test('Task rules: your own rules after an add, an edit (same id, its On/Off kept) or a removal; the form filled in for an edit', () => {
+  const list = [
+    { id: 3, text: 'Check the drain', rooms: null, everyDays: null, slot: 'morning', enabled: false },
+    { id: 5, text: 'Sweep', rooms: [2, 4], everyDays: 14, slot: 'any', enabled: true },
+  ];
+  const typed = { text: 'Check the drains', rooms: [2], everyDays: 7, slot: 'afternoon', enabled: true };
+  assert.deepEqual(customAfter(list, { add: typed }), [...list, typed]);
+  assert.deepEqual(customAfter(list, { edit: { id: 3, rule: typed } }), [{ ...typed, id: 3, enabled: false }, list[1]]);
+  assert.deepEqual(customAfter(list, { remove: 3 }), [list[1]]);
+  assert.deepEqual(ruleForm(list[0]), { text: 'Check the drain', allRooms: true, rooms: [], often: 'daily', everyDays: '', slot: 'morning' });
+  assert.deepEqual(ruleForm(list[1]), { text: 'Sweep', allRooms: false, rooms: [2, 4], often: 'every', everyDays: '14', slot: 'any' });
+  assert.deepEqual(ruleForm(null), { text: '', allRooms: true, rooms: [], often: 'daily', everyDays: '', slot: 'morning' }, 'a new one');
+  const back = ruleForm(list[1]);
+  assert.deepEqual(parseCustomRule(back).value, { text: 'Sweep', rooms: [2, 4], everyDays: 14, slot: 'any', enabled: true }, 'reads back the same');
+});
+
+test('after a row goes, the cursor goes to the next one (null: none after it)', () => {
+  assert.equal(idAfter([1, 2, 3], 2), 3);
+  assert.equal(idAfter([1, 2, 3], 3), null);
+  assert.equal(idAfter([1], 9), null);
 });

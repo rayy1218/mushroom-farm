@@ -154,3 +154,29 @@ export function rulesBody(next, shown) {
     custom: next.custom,
   };
 }
+
+// The own rules' list after one change: { add: rule } (no id yet), { edit: { id, rule } } (the same id; its On/Off kept),
+// { remove: id } (the server cancels its open tasks).
+export function customAfter(custom, change) {
+  const list = custom ?? [];
+  if (change.add) return [...list, change.add];
+  if (change.edit) return list.map((c) => (c.id === change.edit.id ? { ...change.edit.rule, id: c.id, enabled: c.enabled } : c));
+  if (change.remove !== undefined) return list.filter((c) => c.id !== change.remove);
+  return list;
+}
+
+// The Add your own form's boxes for an own rule (Edit), or empty for a new one (null), as parseCustomRule reads them.
+export function ruleForm(rule) {
+  const rooms = Array.isArray(rule?.rooms) ? rule.rooms : null;
+  const every = rule?.everyDays ?? null;
+  return {
+    text: rule?.text ?? '', allRooms: rooms === null, rooms: rooms ?? [], often: every === null ? 'daily' : 'every',
+    everyDays: every === null ? '' : String(every), slot: rule?.slot ?? 'morning',
+  };
+}
+
+// The id of the row after id in ids (where the cursor goes when that row goes), else null.
+export function idAfter(ids, id) {
+  const i = ids.indexOf(id);
+  return i >= 0 && i + 1 < ids.length ? ids[i + 1] : null;
+}
