@@ -141,3 +141,16 @@ export function parseCustomRule({ text, allRooms, rooms, often, everyDays, slot 
   if (Object.keys(errors).length) return { errors };
   return { value: { text: s, rooms: allRooms ? null : [...new Set(rooms)], everyDays: every.value, slot, enabled: true } };
 }
+
+// The body of PUT /api/task-rules for the rules after one change (next) from the ones shown (shown): every built-in rule's
+// on/off, an upkeep rule's interval only when this change set it (a rule left alone keeps what is stored, so one never
+// changed follows its default), and the whole own list (a new rule without an id; none left out).
+export function rulesBody(next, shown) {
+  const was = new Map((shown?.builtin ?? []).map((b) => [b.key, b.everyDays]));
+  return {
+    builtin: next.builtin.map((b) => ({
+      key: b.key, enabled: b.enabled, ...(b.kind === 'upkeep' && b.everyDays !== was.get(b.key) ? { everyDays: b.everyDays } : {}),
+    })),
+    custom: next.custom,
+  };
+}

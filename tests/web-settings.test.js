@@ -48,7 +48,7 @@ test('the interval hint says how long the Live charts\' 50 readings span at the 
   assert.match(page, /hint\.textContent = liveHint\(parsePoll\(input\.value\) \?\? last\?\.pollSeconds \?\? null\);/, 'it follows the input as typed');
 });
 
-import { parseWorkerName, workersAfter, parseEveryDays, parseCustomRule, WORKER_MAX } from '../web/settings-math.js';
+import { parseWorkerName, workersAfter, parseEveryDays, parseCustomRule, rulesBody, WORKER_MAX } from '../web/settings-math.js';
 
 // Most texts are the server's (PUT /api/workers, PUT /api/task-rules), so a refusal reads the same from either; 'That name
 // is taken', 'Pick at least one room' and 'Pick a time of day' are the form's own (the server's refusals differ).
@@ -85,4 +85,25 @@ test("Task rules: an upkeep interval of 1 to 365 days; the owner's own rule", ()
     { text: 'Say what to do (1 to 120 characters)', slot: 'Pick a time of day' });
   assert.deepEqual(parseCustomRule({ text: 'Check the drain', allRooms: false, rooms: null, often: 'daily', everyDays: '', slot: 'any' }).errors,
     { rooms: 'Pick at least one room' }, 'rooms is null only for every room');
+});
+
+// B6 review: an upkeep interval sent on every save would be stored, and the rule would no longer follow its default.
+test("Task rules: the PUT body has every built-in rule's on/off, an interval only where it changed, the whole own list", () => {
+  const shown = {
+    builtin: [
+      { key: 'footbath', kind: 'daily', everyDays: null, enabled: true },
+      { key: 'acFilter', kind: 'upkeep', everyDays: 7, enabled: true },
+      { key: 'flyTraps', kind: 'upkeep', everyDays: 7, enabled: true },
+    ],
+    custom: [{ id: 3, text: 'Check the drain', rooms: null, everyDays: null, slot: 'any', enabled: true }],
+  };
+  const off = { ...shown, builtin: shown.builtin.map((b) => (b.key === 'flyTraps' ? { ...b, enabled: false } : b)) };
+  assert.deepEqual(rulesBody(off, shown), {
+    builtin: [{ key: 'footbath', enabled: true }, { key: 'acFilter', enabled: true }, { key: 'flyTraps', enabled: false }],
+    custom: shown.custom,
+  }, 'a switch: no interval goes');
+  const every = { ...shown, builtin: shown.builtin.map((b) => (b.key === 'acFilter' ? { ...b, everyDays: 14 } : b)) };
+  assert.deepEqual(rulesBody(every, shown).builtin, [{ key: 'footbath', enabled: true }, { key: 'acFilter', enabled: true, everyDays: 14 }, { key: 'flyTraps', enabled: true }]);
+  const added = { ...shown, custom: [...shown.custom, { text: 'Sweep', rooms: [2], everyDays: 7, slot: 'morning', enabled: true }] };
+  assert.deepEqual(rulesBody(added, shown).custom, added.custom, 'a new own rule without an id; none left out');
 });
