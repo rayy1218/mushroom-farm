@@ -555,7 +555,7 @@ export function createController({ db, machines, now = Date.now, log = console.e
     // taken out), so a day is made after the app was down. An error is logged once for that state and never stops the room's control.
     if (tasks) {
       const date = localDate(at);
-      const key = [date, program.crops.map((c) => c.crop).join(','), program.stage, program.days?.[program.stage], program.flush,
+      const key = [date, program.crops.map((entry) => entry.crop).join(','), program.stage, program.days?.[program.stage], program.flush,
         program.done, program.stageSince, room.dehumidifier, room.co2Address, room.trhAddress].join('|');
       if (taskKeys.get(room.id) !== key) {
         taskKeys.set(room.id, key);

@@ -1,6 +1,6 @@
 // The room's Tasks tab (spec 2026-10-30-tasks-design.md 7.1): Today (the day's stage tasks by Morning, Afternoon and Any
 // time, the closed ones folded), Upkeep (overdue first), Long-term (Plan this on Suggest machines, or Add) and the Log of the
-// last 14 days with Older… and Export CSV. createTasksCard(host, { roomId, onCounts, onGone }) → { refresh(), destroy() };
+// last 14 days with Older… and Export CSV. createTasksCard(host, { roomId, onCounts, onGone }) → { destroy() };
 // onCounts(counts | null) gives the tab its dot. The card asks for its own data: on the room's tasks events, when the stream
 // comes back, and on a timer (30 s; 60 s while the stream is up: the day turns over at midnight without an event).
 
@@ -204,7 +204,6 @@ export function createTasksCard(host, { roomId, onCounts, onGone }) {
   loadLog();
 
   return {
-    refresh,
     destroy() {
       alive = false;
       seq++;

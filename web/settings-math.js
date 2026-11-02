@@ -86,7 +86,7 @@ export function parseExtraSettings(texts) {
 // ---- iteration 19: the Workers and Task rules cards (spec 2026-10-30-tasks-design.md 7.3; the texts are the server's) ----
 
 export const WORKER_MAX = 40;
-export const EVERY_MESSAGE = 'Interval must be a whole number from 1 to 365 days';
+const EVERY_MESSAGE = 'Interval must be a whole number from 1 to 365 days';
 const RULE_TEXT_MAX = 120;
 const RULE_SLOTS = ['morning', 'afternoon', 'any']; // must match SLOTS in tasks-math.js and server/task-rules.js
 const sameName = (a, b) => a.toLowerCase() === b.toLowerCase();

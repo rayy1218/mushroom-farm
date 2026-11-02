@@ -5,7 +5,7 @@
 //   createTaskActions({ onChanged(row | null), onError(text) }) → { done(row), skip(row), cancel(row), add(roomId), destroy() }
 //   (done, skip and cancel end, after their dialog closes, with true when something changed: the list will be asked again)
 //   createWorkerPicker() → { node, destroy() } · openPlanDialog({ roomId, roomName, rank, plan, onPlanned(rows, replaced) })
-//   getWorker() · setWorker(name) · loadWorkers() → names · closeTaskDialog()
+//   closeTaskDialog()
 
 import { request, OFFLINE } from './api.js';
 import { live } from './live.js';
@@ -48,11 +48,11 @@ const nowText = (f) => `${(f.kind === 'check' ? f.label.replace(/ fitted$/, '') 
 
 // ---- who is doing the rounds ----
 
-export function getWorker() {
+function getWorker() {
   try { return localStorage.getItem(WORKER_KEY) || null; } catch { return null; }
 }
 
-export function setWorker(name) {
+function setWorker(name) {
   try {
     if (name) localStorage.setItem(WORKER_KEY, name);
     else localStorage.removeItem(WORKER_KEY);
@@ -61,7 +61,7 @@ export function setWorker(name) {
 }
 
 // The active workers' names (GET /api/workers).
-export async function loadWorkers() {
+async function loadWorkers() {
   const data = await request('GET', '/api/workers');
   return (Array.isArray(data?.workers) ? data.workers : []).filter((w) => w.active).map((w) => w.name);
 }

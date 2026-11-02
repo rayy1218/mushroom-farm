@@ -119,7 +119,8 @@ export function runMachines(run) {
 // The machines the room has now, from its ratings on Setup: the humidifier's output, the dehumidifier's capacity when one is
 // fitted, the aircon's class nearest its input power at about 11.25 BTU/h per W. Setup keeps no fan flow (nor, in a room
 // not rated yet, the others): those come from the newest run (lastRun), else Simulate's default, and a note says which.
-// Simulate's step 1 and the Suggest machines page's baseline. → { machines, from (the whole line), note (or null) }
+// Simulate's step 1 and the Suggest machines page's baseline. → { machines, from (the whole line), note (or null), defaults
+// (the keys of the machines at Simulate's default) }
 export function roomMachines({ room, lastRun = null }) {
   const p = lastRun?.input?.physics ?? {};
   const own = {

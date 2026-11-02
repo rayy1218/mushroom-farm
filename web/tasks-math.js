@@ -8,7 +8,7 @@ import { monthly } from './suggest-math.js';
 import { BTU_PER_W } from './simulate-math.js';
 import { fieldTexts, parseRoomFields, roomBody } from './room-fields.js';
 
-export const FARM_TZ = 'Asia/Kuala_Lumpur';
+const FARM_TZ = 'Asia/Kuala_Lumpur';
 export const SLOTS = ['morning', 'afternoon', 'any'];
 export const SLOT_LABELS = { morning: 'Morning', afternoon: 'Afternoon', any: 'Any time' };
 export const LOG_DAYS = 14; // the Log shows the closed tasks of the last 14 days, then Older…
@@ -126,7 +126,7 @@ export function upkeepRows(rows, today) {
 
 // ---- long-term tasks and Plan this (spec 7.1 and 7.4) ----
 
-export const MACHINE_ORDER = ['fanFlow', 'acBTU', 'humidifierLH', 'dehumidifierLday'];
+const MACHINE_ORDER = ['fanFlow', 'acBTU', 'humidifierLH', 'dehumidifierLday'];
 const MACHINE_WORDS = { fanFlow: ['Fan', 'm³/h'], acBTU: ['Aircon', 'BTU/h'], humidifierLH: ['Humidifier', 'L/h'], dehumidifierLday: ['Dehumidifier', 'L/day'] };
 
 // A suggestion's RM a month against the room's now, in words: "RM 42 a month less", "RM 16 a month more"; '' when unknown.
@@ -226,10 +226,10 @@ export function setupBody(room, texts) {
 
 // ---- the dialogs' boxes (checked as the server checks them, in its words) ----
 
-export const AMOUNT_MAX = 10_000;
-export const REASON_MAX = 200;
-export const TEXT_MAX = 120;
-export const NOTE_MAX = 500;
+const AMOUNT_MAX = 10_000;
+const REASON_MAX = 200;
+const TEXT_MAX = 120;
+const NOTE_MAX = 500;
 
 // The amount box (empty: not weighed or counted) → { value } or { error }. Up to 3 decimals, as amounts show.
 export function parseAmount(text) {

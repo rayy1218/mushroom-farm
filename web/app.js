@@ -182,7 +182,8 @@ live.on('tasks', (data) => {
   if (Number.isInteger(data.due)) todayDue = data.due;
   showToday();
 });
-// The Today page's own load (the top bar does not ask while it is shown).
+// The Today page's own read tells its count (the top bar skips its own read when the route changes to Today; its timer
+// and the stream coming back still ask).
 window.addEventListener('farm:today-count', (event) => {
   todaySeq++;
   if (Number.isInteger(event.detail)) todayDue = event.detail;
