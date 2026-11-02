@@ -102,7 +102,7 @@ export const fixStage = (farmType, stage) => (stagesOf(farmType).includes(stage)
 // The machines of step 1 (the rest of PHYSICS_FIELDS describe the building, the weather and the filter).
 export const MACHINE_KEYS = ['fanFlow', 'acBTU', 'humidifierLH', 'dehumidifierLday'];
 const MACHINE_NAMES = { fanFlow: 'fan flow', acBTU: 'aircon', humidifierLH: 'humidifier' };
-const BTU_PER_W = 11.25;
+export const BTU_PER_W = 11.25; // the class rule between Setup's aircon rated input (W) and its BTU/h
 const defOf = (key) => PHYSICS_FIELDS.find((f) => f.key === key).def;
 const listed = (parts) => (parts.length < 2 ? parts.join('') : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`);
 const capital = (text) => text.charAt(0).toUpperCase() + text.slice(1);
@@ -119,7 +119,8 @@ export function runMachines(run) {
 // The machines the room has now, from its ratings on Setup: the humidifier's output, the dehumidifier's capacity when one is
 // fitted, the aircon's class nearest its input power at about 11.25 BTU/h per W. Setup keeps no fan flow (nor, in a room
 // not rated yet, the others): those come from the newest run (lastRun), else Simulate's default, and a note says which.
-// Simulate's step 1 and the Suggest machines page's baseline. → { machines, from (the whole line), note (or null) }
+// Simulate's step 1 and the Suggest machines page's baseline. → { machines, from (the whole line), note (or null), defaults
+// (the keys of the machines at Simulate's default) }
 export function roomMachines({ room, lastRun = null }) {
   const p = lastRun?.input?.physics ?? {};
   const own = {
@@ -129,11 +130,12 @@ export function roomMachines({ room, lastRun = null }) {
   };
   const fromRun = [];
   const fromDef = [];
+  const fromDefKeys = [];
   const machines = {};
   for (const k of ['fanFlow', 'acBTU', 'humidifierLH']) {
     if (isNumber(own[k])) machines[k] = own[k];
     else if (isNumber(p[k])) { machines[k] = p[k]; fromRun.push(MACHINE_NAMES[k]); }
-    else { machines[k] = defOf(k); fromDef.push(MACHINE_NAMES[k]); }
+    else { machines[k] = defOf(k); fromDef.push(MACHINE_NAMES[k]); fromDefKeys.push(k); }
   }
   machines.dehumidifierLday = room?.dehumidifier === true ? (isNumber(room.dehumidifierLday) ? room.dehumidifierLday : isNumber(p.dehumidifierLday) ? p.dehumidifierLday : 0) : 0;
   const notes = [
@@ -141,7 +143,8 @@ export function roomMachines({ room, lastRun = null }) {
     ...(fromDef.length ? [`${listed(fromDef)} at Simulate's default${fromDef.length > 1 ? 's' : ''}`] : []),
   ];
   const note = notes.length ? `${capital(notes.join('; '))} (not on Setup)` : null;
-  return { machines, from: `Your room's machines (Setup)${note ? `; ${notes.join('; ')} (not on Setup)` : ''}`, note };
+  // defaults: the machines at Simulate's default (no number on Setup or the run), for Plan this's lines
+  return { machines, from: `Your room's machines (Setup)${note ? `; ${notes.join('; ')} (not on Setup)` : ''}`, note, defaults: fromDefKeys };
 }
 
 const sameMachines = (state, m) => MACHINE_KEYS.every((k) => numberOf(state.physics[k]) === m[k]);

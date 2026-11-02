@@ -11,6 +11,7 @@ import { outdoorReading } from './outdoor.js';
 import { wOf, dewOf } from '../device/sim-model.js';
 import { lightsNow, localAt } from '../web/light-math.js';
 import { humidifierPoints } from '../web/band-math.js';
+import { localDate } from './task-rules.js';
 
 export const DEFAULTS = {
   auto: false, co2Low: 600, co2High: 750, tLow: 21, tHigh: 23, rhLow: 85, rhHigh: 95, humidifierDuringExchange: false, acFan: 'auto',
@@ -473,18 +474,21 @@ const REASON_OF = { intake: 'exchange', exhaust: 'exchange', circulation: 'circu
 
 // db: the farm database. machines: from createMachines. now is injectable. checks (createSensorChecks) and alarms
 // (createAlarms) are made here unless a test passes its own.
-// log is only for errors that are not command failures (a database error).
-export function createController({ db, machines, now = Date.now, log = console.error, checks = createSensorChecks({ now }), alarms = createAlarms({ db, now }) }) {
+// log is only for errors that are not command failures (a database error). tasks (createTasks): the rooms' tasks, made once
+// per farm day by the cycle; null: none.
+export function createController({ db, machines, now = Date.now, log = console.error, checks = createSensorChecks({ now }), alarms = createAlarms({ db, now }), tasks = null }) {
   const reasons = new Map(); // roomId → { exchange, humidifier, ac, circulation, held }, in memory only
   const tries = new Map(); // `${roomId}/${machine}` → { want, n }: re-sends in the current not-following episode
   const changed = new Map(); // `${roomId}/humidifier|dehumidifier|ac` → when the controller last changed that command (machine protection)
   const lastCo2 = new Map(); // roomId → the last good CO₂ reading (for the planned end of an exchange)
   let lastStart = null; // the start time of the previous cycle
+  const taskKeys = new Map(); // roomId → what its tasks were last made for by a cycle (tasks.ensureDay): the farm date, stage, machines
 
   // Drops what is kept in memory for a deleted room.
   function forget(roomId) {
     reasons.delete(roomId);
     lastCo2.delete(roomId);
+    taskKeys.delete(roomId);
     for (const key of [...RELAY_KEYS, 'ac']) tries.delete(`${roomId}/${key}`);
     for (const key of ['humidifier', 'dehumidifier', 'ac']) changed.delete(`${roomId}/${key}`);
     checks.forget(roomId);
@@ -544,6 +548,23 @@ export function createController({ db, machines, now = Date.now, log = console.e
         c = db.getControl(room.id);
       }
       if (next.program.done) blocksDone = { flush: next.program.flush, flushes: next.program.flushes };
+    }
+
+    // The room's tasks (spec 2026-10-30-tasks-design.md 4): made once per farm day, and again when what decides them changes
+    // (a stage started here or by the crop PUT, crops added, swapped or cleared, the present stage's days, a machine fitted or
+    // taken out), so a day is made after the app was down. An error is logged once for that state and never stops the room's control.
+    if (tasks) {
+      const date = localDate(at);
+      const key = [date, program.crops.map((entry) => entry.crop).join(','), program.stage, program.days?.[program.stage], program.flush,
+        program.done, program.stageSince, room.dehumidifier, room.co2Address, room.trhAddress].join('|');
+      if (taskKeys.get(room.id) !== key) {
+        taskKeys.set(room.id, key);
+        try {
+          tasks.ensureDay(room.id, date);
+        } catch (err) {
+          log(err);
+        }
+      }
     }
     const commands = db.getCommands(room.id);
 

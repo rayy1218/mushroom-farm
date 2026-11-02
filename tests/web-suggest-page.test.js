@@ -76,3 +76,17 @@ test('on a phone the rows stack into blocks with their labels, no sideways scrol
   assert.match(css, /\.sg-label \{ position: static;/);
   assert.match(css, /\.sg-more > summary \{[^}]*min-height: 44px;/);
 });
+
+test('Plan this beside Use this, only with a baseline (spec 2026-10-30-tasks-design.md 7.4): the dialog, then a link to the Tasks tab', () => {
+  assert.ok(page.includes("import { planOf, plannedWords } from './tasks-math.js';"));
+  assert.ok(page.includes("import { openPlanDialog, closeTaskDialog } from './task-dialogs.js';"));
+  const use = page.indexOf('useBox.append(use);');
+  const plan = page.indexOf("const plan = button('Plan this');");
+  assert.ok(use > 0 && plan > use, 'Use this first, Plan this beside it');
+  assert.ok(page.slice(use, plan).includes('if (base) {'), 'no baseline: no Plan this (the "from" is unknown)');
+  assert.ok(page.includes('const p = planOf(result, r.index, prices, job?.finishedAt ?? Date.now(), now);'), "against the room's now (Setup may have changed since the search)");
+  assert.ok(page.includes("done.append(keepLines(`${plannedWords(rows.length, p.changes.length, replaced)} · `), link);"), 'says what it replaced; units kept on their numbers');
+  assert.ok(page.includes('openPlanDialog({ roomId: id, roomName: room.name, rank: r.rank, plan: p, onPlanned: (rows, replaced) => {'));
+  assert.ok(page.includes("link.href = roomHash(id, 'tasks');"));
+  assert.ok(page.slice(page.indexOf('return function unmount()')).includes('closeTaskDialog();'));
+});

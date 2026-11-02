@@ -131,11 +131,13 @@ test('the room\'s machines: its ratings on Setup (the aircon from its input powe
     machines: { fanFlow: 300, acBTU: 12000, humidifierLH: 0.5, dehumidifierLday: 20 },
     from: "Your room's machines (Setup); fan flow from the run of 26\u00a0Oct\u00a010:42 (not on Setup)",
     note: 'Fan flow from the run of 26\u00a0Oct\u00a010:42 (not on Setup)',
+    defaults: [],
   });
   assert.deepEqual(roomMachines({ room, lastRun: null }), {
     machines: { fanFlow: 600, acBTU: 12000, humidifierLH: 0.5, dehumidifierLday: 20 },
     from: "Your room's machines (Setup); fan flow at Simulate's default (not on Setup)",
     note: "Fan flow at Simulate's default (not on Setup)",
+    defaults: ['fanFlow'],
   });
   assert.equal(roomMachines({ room: { ...room, dehumidifier: false } }).machines.dehumidifierLday, 0, 'not fitted');
   assert.equal(roomMachines({ room: { ...room, dehumidifier: false }, lastRun }).machines.dehumidifierLday, 0, "not fitted, whatever the run's");

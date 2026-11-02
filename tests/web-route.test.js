@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseRoute, isCanonical, ROOM_TABS, roomHash, suggestHash, canonicalHash } from '../web/route.js';
+import { parseRoute, isCanonical, ROOM_TABS, roomHash, suggestHash, canonicalHash, TODAY_HASH } from '../web/route.js';
 
 test('empty and unknown hashes mean the Overview', () => {
   for (const h of ['', '#', '#/', '#/other', '#/rooms/abc', '#/rooms/0', '#/rooms/01', '#/rooms/1/x', '#/rooms/-1', undefined]) {
@@ -18,10 +18,10 @@ test('a room id means the detail page, on its Now tab', () => {
   assert.deepEqual(parseRoute('#/rooms/123/'), { name: 'detail', id: 123, tab: 'now' });
 });
 
-test('five room tabs (redesign 2026-10-28: Now, History, Crop, Simulations, Setup); a tab is part of the address', () => {
-  assert.deepEqual(ROOM_TABS.map((t) => t.key), ['now', 'history', 'crop', 'simulations', 'setup']);
-  assert.deepEqual(ROOM_TABS.map((t) => t.label), ['Now', 'History', 'Crop', 'Simulations', 'Setup']);
-  for (const tab of ['history', 'crop', 'simulations', 'setup']) {
+test('six room tabs (redesign 2026-10-28; Tasks between Crop and Simulations, 2026-10-30); a tab is part of the address', () => {
+  assert.deepEqual(ROOM_TABS.map((t) => t.key), ['now', 'history', 'crop', 'tasks', 'simulations', 'setup']);
+  assert.deepEqual(ROOM_TABS.map((t) => t.label), ['Now', 'History', 'Crop', 'Tasks', 'Simulations', 'Setup']);
+  for (const tab of ['history', 'crop', 'tasks', 'simulations', 'setup']) {
     assert.deepEqual(parseRoute(`#/rooms/7/${tab}`), { name: 'detail', id: 7, tab });
     assert.deepEqual(parseRoute(`#/rooms/7/${tab}/`), { name: 'detail', id: 7, tab });
     assert.equal(isCanonical(`#/rooms/7/${tab}`), true);
@@ -31,6 +31,7 @@ test('five room tabs (redesign 2026-10-28: Now, History, Crop, Simulations, Setu
   assert.equal(roomHash(7), '#/rooms/7');
   assert.equal(roomHash(7, 'now'), '#/rooms/7');
   assert.equal(roomHash(7, 'history'), '#/rooms/7/history');
+  assert.equal(roomHash(7, 'tasks'), '#/rooms/7/tasks');
   assert.equal(roomHash(7, 'nonsense'), '#/rooms/7');
   assert.equal(roomHash(7, 'setup'), '#/rooms/7/setup');
 });
@@ -76,4 +77,16 @@ test('Suggest machines is a page of its room (owner 2026-10-28: out of the Simul
   assert.equal(canonicalHash({ name: 'detail', id: 3, tab: 'history' }), '#/rooms/3/history');
   assert.equal(canonicalHash({ name: 'settings' }), '#/settings');
   assert.equal(canonicalHash({ name: 'overview' }), '#/overview');
+});
+
+test("#/today is the farm's Today page (spec 2026-10-30-tasks-design.md 7.2)", () => {
+  assert.deepEqual(parseRoute('#/today'), { name: 'today' });
+  assert.deepEqual(parseRoute('#/today/'), { name: 'today' });
+  assert.equal(isCanonical('#/today'), true);
+  assert.equal(isCanonical('#/today/'), false);
+  assert.equal(canonicalHash({ name: 'today' }), '#/today');
+  assert.equal(TODAY_HASH, '#/today');
+  assert.deepEqual(parseRoute('#/todayx'), { name: 'overview' });
+  assert.deepEqual(parseRoute('#/today?x'), { name: 'overview' });
+  assert.equal(isCanonical('#/today?x'), false);
 });

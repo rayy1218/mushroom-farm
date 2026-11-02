@@ -5,7 +5,7 @@ import { RELAY_KEYS } from './machine-codes.js';
 import { RATINGS, FILTER } from './rooms.js';
 import { PROGRAM_DEFAULTS } from './program.js';
 
-const VERSION = 18;
+const VERSION = 19;
 
 // Iteration 1 (version 0) had only the rooms table without the address columns.
 const ROOMS = `
@@ -201,6 +201,57 @@ const FILTER_COLUMNS = { fanMaxPa: 'fan_max_pa', filterCleanPa: 'filter_clean_pa
 
 const LIGHT_STAGES = ['spawn', 'pinning', 'fruiting', 'rest']; // the order of the light_ columns
 
+// Tasks (spec 2026-10-30-tasks-design.md 5): the rooms' daily, upkeep and long-term tasks, the worker names, the owner's
+// changes of the built-in rules and the owner's own rules. A daily row has a date and a rule key and is unique per room,
+// rule, date and slot; an upkeep row has a rule key and a due time, and a rule has at most one open row per room; a row
+// has a closed time exactly when it is not open.
+const TASKS = `
+CREATE TABLE IF NOT EXISTS tasks (
+  id         INTEGER PRIMARY KEY,
+  room_id    INTEGER NOT NULL,
+  kind       TEXT    NOT NULL CHECK (kind IN ('daily', 'upkeep', 'longterm')),
+  rule_key   TEXT,
+  date       TEXT,
+  slot       TEXT    NOT NULL DEFAULT 'any' CHECK (slot IN ('morning', 'afternoon', 'any')),
+  text       TEXT    NOT NULL,
+  note       TEXT,
+  status     TEXT    NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'done', 'skipped', 'missed', 'cancelled')),
+  due_at     INTEGER,
+  created_at INTEGER NOT NULL,
+  closed_at  INTEGER,
+  worker     TEXT,
+  amount     REAL,
+  unit       TEXT,
+  reason     TEXT,
+  source     TEXT,
+  CHECK (kind <> 'daily' OR (date IS NOT NULL AND rule_key IS NOT NULL)),
+  CHECK (kind <> 'upkeep' OR (rule_key IS NOT NULL AND due_at IS NOT NULL)),
+  CHECK ((status = 'open') = (closed_at IS NULL))
+) STRICT;
+CREATE UNIQUE INDEX IF NOT EXISTS tasks_daily ON tasks (room_id, rule_key, date, slot) WHERE kind = 'daily';
+CREATE UNIQUE INDEX IF NOT EXISTS tasks_upkeep_open ON tasks (room_id, rule_key) WHERE kind = 'upkeep' AND status = 'open';
+CREATE INDEX IF NOT EXISTS tasks_by_status ON tasks (room_id, status);
+CREATE INDEX IF NOT EXISTS tasks_closed ON tasks (room_id, closed_at, id) WHERE status <> 'open';
+CREATE TABLE IF NOT EXISTS workers (
+  id     INTEGER PRIMARY KEY,
+  name   TEXT    NOT NULL UNIQUE COLLATE NOCASE,
+  active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1))
+) STRICT;
+CREATE TABLE IF NOT EXISTS task_rule_settings (
+  key        TEXT    PRIMARY KEY,
+  enabled    INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+  every_days INTEGER CHECK (every_days BETWEEN 1 AND 365)
+) STRICT;
+-- AUTOINCREMENT: a removed rule's id (its rows' rule key custom:<id>) is never given to a new rule
+CREATE TABLE IF NOT EXISTS custom_task_rules (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  text       TEXT    NOT NULL,
+  rooms      TEXT,
+  every_days INTEGER CHECK (every_days BETWEEN 1 AND 365),
+  slot       TEXT    NOT NULL DEFAULT 'any' CHECK (slot IN ('morning', 'afternoon', 'any')),
+  enabled    INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1))
+) STRICT;`;
+
 const RUNS_KEPT = 20; // finished simulation runs kept per room
 
 const ALARMS = `
@@ -346,6 +397,17 @@ export const HISTORY_SQL = {
 // The machine log queries a test checks the plans of.
 export const MACHINE_LOG_SQL = {
   last: 'SELECT * FROM machine_log WHERE room_id = ? AND machine = ? ORDER BY at DESC, id DESC LIMIT 1',
+};
+
+// The task log queries (spec 2026-10-30-tasks-design.md 5), exported so a test can check that they read the partial index
+// tasks_closed (their status <> 'open' is that index's WHERE). taskLog: the closed rows newest first; ?2 (before): the id
+// of the last row of the page before (older rows only), or null; ?3 the page size. taskLogAll: oldest first, for the CSV.
+export const TASK_LOG_SQL = {
+  taskLog: `SELECT * FROM tasks WHERE room_id = ?1 AND status <> 'open'
+              AND (?2 IS NULL OR closed_at < (SELECT closed_at FROM tasks WHERE id = ?2)
+                   OR (closed_at = (SELECT closed_at FROM tasks WHERE id = ?2) AND id < ?2))
+            ORDER BY closed_at DESC, id DESC LIMIT ?3`,
+  taskLogAll: "SELECT * FROM tasks WHERE room_id = ? AND status <> 'open' ORDER BY closed_at, id",
 };
 
 // Completed buckets kept per room, sensor kind and bucket size; at most this many buckets back from the newest.
@@ -496,6 +558,7 @@ function migrate(db) {
     if (version < 18 && !db.prepare('PRAGMA table_info(rooms)').all().some((c) => c.name === 'gateway')) {
       db.exec('ALTER TABLE rooms ADD COLUMN gateway TEXT');
     }
+    if (version < 19) db.exec(TASKS);
     db.exec(`PRAGMA user_version = ${VERSION}`);
     db.exec('COMMIT');
   } catch (err) {
@@ -508,6 +571,13 @@ function migrate(db) {
 const runRow = (r) => ({
   id: r.id, roomId: r.room_id, createdAt: r.created_at, status: r.status, progress: r.progress, input: JSON.parse(r.input),
   summary: r.summary === null ? null : JSON.parse(r.summary), error: r.error, finishedAt: r.finished_at,
+});
+
+// A tasks row as the tasks module and the API show it (amountLabel is the tasks module's).
+const taskRow = (r) => ({
+  id: r.id, roomId: r.room_id, kind: r.kind, ruleKey: r.rule_key, date: r.date, slot: r.slot, text: r.text, note: r.note,
+  status: r.status, dueAt: r.due_at, createdAt: r.created_at, closedAt: r.closed_at, worker: r.worker, amount: r.amount,
+  unit: r.unit, reason: r.reason, source: r.source === null ? null : JSON.parse(r.source),
 });
 
 // A machine_log row as the API shows it.
@@ -752,10 +822,89 @@ export function openDb(path, { log = console.error } = {}) {
     latest: db.prepare(STATUS_SQL.latest),
     lastOk: db.prepare(STATUS_SQL.lastOk),
     failuresSince: db.prepare(STATUS_SQL.failuresSince),
+    // Tasks (spec 2026-10-30-tasks-design.md 4 and 5). ON CONFLICT DO NOTHING skips only a row the unique indexes already
+    // have; a bad row (a CHECK or NOT NULL failure) still throws, where INSERT OR IGNORE would skip it too.
+    insertDailyTask: db.prepare(`INSERT INTO tasks (room_id, kind, rule_key, date, slot, text, note, unit, created_at)
+                                 VALUES (?, 'daily', ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`),
+    insertUpkeepTask: db.prepare(`INSERT INTO tasks (room_id, kind, rule_key, slot, text, due_at, created_at)
+                                  VALUES (?, 'upkeep', ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`),
+    insertLongtermTask: db.prepare(`INSERT INTO tasks (room_id, kind, slot, text, note, source, created_at)
+                                    VALUES (?, 'longterm', 'any', ?, ?, ?, ?)`),
+    task: db.prepare('SELECT * FROM tasks WHERE id = ?'),
+    dailyTasks: db.prepare("SELECT * FROM tasks WHERE room_id = ? AND kind = 'daily' AND date = ? ORDER BY id"),
+    openTasks: db.prepare("SELECT * FROM tasks WHERE room_id = ? AND kind = ? AND status = 'open' ORDER BY due_at, id"),
+    openDailyBefore: db.prepare("SELECT * FROM tasks WHERE room_id = ? AND kind = 'daily' AND status = 'open' AND date < ? ORDER BY id"),
+    lastClosedUpkeep: db.prepare(`SELECT * FROM tasks WHERE room_id = ? AND kind = 'upkeep' AND rule_key = ? AND status IN ('done', 'skipped')
+                                  ORDER BY closed_at DESC, id DESC LIMIT 1`),
+    closeTask: db.prepare(`UPDATE tasks SET status = ?, closed_at = ?, worker = ?, amount = ?, reason = ?
+                           WHERE id = ? AND status = 'open'`),
+    reopenTask: db.prepare(`UPDATE tasks SET status = 'open', closed_at = NULL, worker = NULL, amount = NULL, reason = NULL
+                            WHERE id = ? AND kind = 'daily' AND status = 'cancelled' AND reason IN ('Stage changed', 'Rule changed')`),
+    setTaskDue: db.prepare("UPDATE tasks SET due_at = ? WHERE id = ? AND kind = 'upkeep' AND status = 'open'"),
+    taskLog: db.prepare(TASK_LOG_SQL.taskLog),
+    taskLogAll: db.prepare(TASK_LOG_SQL.taskLogAll),
+    deleteTasks: db.prepare('DELETE FROM tasks WHERE room_id = ?'),
+    workers: db.prepare('SELECT * FROM workers ORDER BY name, id'),
+    insertWorker: db.prepare('INSERT INTO workers (name, active) VALUES (?, ?)'),
+    updateWorker: db.prepare('UPDATE workers SET name = ?, active = ? WHERE id = ?'),
+    deleteWorker: db.prepare('DELETE FROM workers WHERE id = ?'),
+    parkWorker: db.prepare('UPDATE workers SET name = ? WHERE id = ?'),
+    ruleSettings: db.prepare('SELECT * FROM task_rule_settings ORDER BY key'),
+    clearRuleSettings: db.prepare('DELETE FROM task_rule_settings'),
+    insertRuleSetting: db.prepare('INSERT INTO task_rule_settings (key, enabled, every_days) VALUES (?, ?, ?)'),
+    customRules: db.prepare('SELECT * FROM custom_task_rules ORDER BY id'),
+    insertCustomRule: db.prepare('INSERT INTO custom_task_rules (text, rooms, every_days, slot, enabled) VALUES (?, ?, ?, ?, ?)'),
+    updateCustomRule: db.prepare('UPDATE custom_task_rules SET text = ?, rooms = ?, every_days = ?, slot = ?, enabled = ? WHERE id = ?'),
+    deleteCustomRule: db.prepare('DELETE FROM custom_task_rules WHERE id = ?'),
+    customRuleRooms: db.prepare('UPDATE custom_task_rules SET rooms = ? WHERE id = ?'),
   };
 
   function checkName(name, id) {
     if (q.nameUsed.get(name, id)) throw new NameTakenError(name);
+  }
+
+  // Replaces the rows of a list table in one transaction: rows whose id is not in the list are deleted, list items with a
+  // stored id updated, the others inserted. → read() after it.
+  // before(kept): runs after the deletes, before the updates (workers park their names there, so a swap of two names never
+  // trips UNIQUE(name) halfway).
+  function replaceList(all, remove, list, update, insert, read, before = null) {
+    inTransaction(() => replaceRows(all, remove, list, update, insert, before));
+    return read();
+  }
+
+  // replaceList's writes, inside a transaction of the caller's.
+  function replaceRows(all, remove, list, update, insert, before = null) {
+    const stored = new Set(all.all().map((r) => r.id));
+    const kept = new Set(list.filter((x) => stored.has(x.id)).map((x) => x.id));
+    for (const id of stored) if (!kept.has(id)) remove.run(id);
+    before?.(kept);
+    for (const x of list) {
+      if (kept.has(x.id)) update(x);
+      else insert(x);
+    }
+  }
+
+  // Runs fn in one transaction: all of its writes or none.
+  function inTransaction(fn) {
+    db.exec('BEGIN');
+    try {
+      fn();
+      db.exec('COMMIT');
+    } catch (err) {
+      db.exec('ROLLBACK');
+      throw err;
+    }
+  }
+
+  // The writes of setTaskRuleSettings and setCustomTaskRules, inside a transaction of the caller's.
+  function writeRuleSettings(list) {
+    q.clearRuleSettings.run();
+    for (const s of list) q.insertRuleSetting.run(s.key, s.enabled ? 1 : 0, s.everyDays ?? null);
+  }
+  const customRuleValues = (c) => [c.text, c.rooms == null ? null : JSON.stringify(c.rooms), c.everyDays ?? null, c.slot, c.enabled ? 1 : 0];
+  function writeCustomRules(list) {
+    replaceRows(q.customRules, q.deleteCustomRule, list, (c) => q.updateCustomRule.run(...customRuleValues(c), c.id),
+      (c) => q.insertCustomRule.run(...customRuleValues(c)));
   }
 
   // Each address may be used by one device of one room only on a gateway (null: the farm's).
@@ -1183,6 +1332,17 @@ export function openDb(path, { log = console.error } = {}) {
         q.deleteCrops.run(id);
         q.deleteProgram.run(id);
         q.deleteRuns.run(id);
+        q.deleteTasks.run(id);
+        // The owner's rules lose the room (its id is given to the next room made after the top one); a rule left with no
+        // room is removed (its rows went with the room's tasks). A rooms value that is not a list is left alone.
+        for (const r of q.customRules.all()) {
+          let rooms = null;
+          try { rooms = JSON.parse(r.rooms); } catch { continue; }
+          if (!Array.isArray(rooms) || !rooms.includes(id)) continue;
+          const left = rooms.filter((x) => x !== id);
+          if (left.length) q.customRuleRooms.run(JSON.stringify(left), r.id);
+          else q.deleteCustomRule.run(r.id);
+        }
         bucketCache.delete(id);
         usageCache.delete(id);
         const deleted = q.delete.run(id).changes > 0;
@@ -1497,6 +1657,152 @@ export function openDb(path, { log = console.error } = {}) {
     setSetting(key, value) {
       q.setSetting.run(key, value);
       if (key === 'outdoorAddress') bucketCache.delete(OUTDOOR);
+    },
+
+    // ---- Tasks (spec 2026-10-30-tasks-design.md 4 and 5). A task is taskRow's shape. ----
+
+    // A daily row, unless the room already has one of that rule, date and slot (any status). → true when it was made.
+    insertDailyTask({ roomId, ruleKey, date, slot, text, note = null, unit = null, at }) {
+      return q.insertDailyTask.run(roomId, ruleKey, date, slot, text, note, unit, at).changes > 0;
+    },
+
+    // An open upkeep row due at dueAt, unless the rule already has an open row in the room. → true when it was made.
+    insertUpkeepTask({ roomId, ruleKey, slot = 'any', text, dueAt, at }) {
+      return q.insertUpkeepTask.run(roomId, ruleKey, slot, text, dueAt, at).changes > 0;
+    },
+
+    // A long-term row (source: a suggestion's { machine, from, to, rmMonth, suggestedAt } or null). → the row.
+    insertLongtermTask({ roomId, text, note = null, source = null, at }) {
+      const { lastInsertRowid } = q.insertLongtermTask.run(roomId, text, note, source === null ? null : JSON.stringify(source), at);
+      return taskRow(q.task.get(Number(lastInsertRowid)));
+    },
+
+    // Several long-term rows (insertLongtermTask's fields) in one transaction: every row or none. → the rows. replaced: the
+    // open rows they take the place of ({ id, at, reason }), cancelled in the same transaction (Plan this to another size).
+    insertLongtermTasks(list, replaced = []) {
+      db.exec('BEGIN');
+      try {
+        for (const r of replaced) q.closeTask.run('cancelled', r.at, null, null, r.reason, r.id);
+        const rows = list.map((t) => this.insertLongtermTask(t));
+        db.exec('COMMIT');
+        return rows;
+      } catch (err) {
+        db.exec('ROLLBACK');
+        throw err;
+      }
+    },
+
+    getTask(id) {
+      const r = q.task.get(id);
+      return r ? taskRow(r) : null;
+    },
+
+    // The room's daily rows of a date (every status), oldest first.
+    dailyTasks(roomId, date) {
+      return q.dailyTasks.all(roomId, date).map(taskRow);
+    },
+
+    // The room's open rows of a kind: upkeep by due time, the others oldest first.
+    openTasks(roomId, kind) {
+      return q.openTasks.all(roomId, kind).map(taskRow);
+    },
+
+    // The room's open daily rows of dates before `date`.
+    openDailyBefore(roomId, date) {
+      return q.openDailyBefore.all(roomId, date).map(taskRow);
+    },
+
+    // The last done or skipped row of an upkeep rule in the room, or null.
+    lastClosedUpkeep(roomId, ruleKey) {
+      const r = q.lastClosedUpkeep.get(roomId, ruleKey);
+      return r ? taskRow(r) : null;
+    },
+
+    // Closes an open row: { status, at, worker, amount, reason }; next: an upkeep row to make in the same transaction
+    // (insertUpkeepTask's fields). → false when the row is not open (nothing changes then). Throws, closing nothing, when
+    // the next row is not made (its rule already has an open row).
+    closeTask(id, { status, at, worker = null, amount = null, reason = null }, next = null) {
+      db.exec('BEGIN');
+      try {
+        const closed = q.closeTask.run(status, at, worker, amount, reason, id).changes > 0;
+        if (closed && next && !this.insertUpkeepTask(next)) throw new Error('The next upkeep row was not made');
+        db.exec('COMMIT');
+        return closed;
+      } catch (err) {
+        db.exec('ROLLBACK');
+        throw err;
+      }
+    },
+
+    // Opens again a daily row the server cancelled because its stage or rule changed (wanted again the same day). → false
+    // for any other row (nothing changes then).
+    reopenTask(id) {
+      return q.reopenTask.run(id).changes > 0;
+    },
+
+    // A new due time for an open upkeep row (its rule's interval changed). → false for any other row.
+    setTaskDue(id, dueAt) {
+      return q.setTaskDue.run(dueAt, id).changes > 0;
+    },
+
+    // The room's closed rows, newest closedAt first, `limit` of them, older than the row `before` (an id) when given.
+    taskLog(roomId, { before = null, limit = 50 } = {}) {
+      return q.taskLog.all(roomId, before, limit).map(taskRow);
+    },
+
+    // Every closed row of the room, oldest closedAt first (the CSV).
+    taskLogAll(roomId) {
+      return q.taskLogAll.all(roomId).map(taskRow);
+    },
+
+    // ---- Workers and task rules (spec 2026-10-30-tasks-design.md 3.4 and 7.3). The lists must be valid (tasks-api.js). ----
+
+    // [{ id, name, active }] by name.
+    listWorkers() {
+      return q.workers.all().map((r) => ({ id: r.id, name: r.name, active: r.active === 1 }));
+    },
+
+    // Replaces the list: a worker with a known id is updated (a rename), one without is added, one left out is removed (the
+    // tasks keep the name as text). → the new list.
+    setWorkers(list) {
+      return replaceList(q.workers, q.deleteWorker, list, (w) => q.updateWorker.run(w.name, w.active ? 1 : 0, w.id),
+        (w) => q.insertWorker.run(w.name, w.active ? 1 : 0), () => this.listWorkers(),
+        // Parked names start with \u0001, not \u0000: NOCASE stops comparing at a NUL, so every \u0000 name would be the same.
+        (kept) => { for (const id of kept) q.parkWorker.run(`\u0001${id}`, id); });
+    },
+
+    // The owner's changes of the built-in rules: [{ key, enabled, everyDays }] (everyDays null: the rule's own).
+    taskRuleSettings() {
+      return q.ruleSettings.all().map((r) => ({ key: r.key, enabled: r.enabled === 1, everyDays: r.every_days }));
+    },
+
+    // Replaces every change of the built-in rules. → the new list.
+    setTaskRuleSettings(list) {
+      inTransaction(() => writeRuleSettings(list));
+      return this.taskRuleSettings();
+    },
+
+    // The owner's own rules: [{ id, text, rooms: number[] | null, everyDays: number | null, slot, enabled }] by id.
+    customTaskRules() {
+      return q.customRules.all().map((r) => ({
+        id: r.id, text: r.text, rooms: r.rooms === null ? null : JSON.parse(r.rooms), everyDays: r.every_days, slot: r.slot, enabled: r.enabled === 1,
+      }));
+    },
+
+    // Replaces the owner's rules like setWorkers (a rule left out is removed; its rows stay). → the new list.
+    setCustomTaskRules(list) {
+      inTransaction(() => writeCustomRules(list));
+      return this.customTaskRules();
+    },
+
+    // Both of the above in one step (a list null: kept as it is), so a refused write changes neither.
+    // → { settings, custom }: the new lists.
+    setTaskRules({ settings = null, custom = null }) {
+      inTransaction(() => {
+        if (settings) writeRuleSettings(settings);
+        if (custom) writeCustomRules(custom);
+      });
+      return { settings: this.taskRuleSettings(), custom: this.customTaskRules() };
     },
 
     close() {

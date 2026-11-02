@@ -1,5 +1,5 @@
 // JSON API: /api/settings, /api/alarms, /api/outdoor, /api/usage, /api/rooms, /api/rooms/:id, /api/rooms/:id/sensors, /alarms,
-// /control, /machines, /usage and /filter/changed, /filter/changes.
+// /control, /machines, /usage and /filter/changed, /filter/changes; the task routes are in tasks-api.js.
 
 import { validateRoom, FILTER } from './rooms.js';
 import { NameTakenError, AddressTakenError, HISTORY_BUCKET_S } from './db.js';
@@ -12,6 +12,8 @@ import { bucketUsage } from './usage-buckets.js';
 import { changeFilter, lastCounted } from './filter.js';
 import { createCropApi } from './crop-api.js';
 import { createSimulationRoutes } from './simulation-api.js';
+import { createTaskRoutes } from './tasks-api.js';
+import { createTasks } from './tasks.js';
 import { DEFAULT_GATEWAY, sameGateway } from './gateways.js';
 
 const MAX_BODY = 64 * 1024;
@@ -62,11 +64,22 @@ const noRoom = () => new HttpError(404, 'Room not found');
 // Returns a handler for every request whose path starts with /api.
 // machines (from createMachines) and controller (from createController) are optional:
 // without them the machine or control routes do not exist. poller (from createPoller), when given,
-// gets a new reading interval at once. farmGateway: the farm's gateway text (FARM_GATEWAY).
+// gets a new reading interval at once. farmGateway: the farm's gateway text (FARM_GATEWAY). tasks: from createTasks.
 export function createApi(db, machines = null, controller = null, poller = null, simulations = null, telegram = null, events = null,
-  farmGateway = DEFAULT_GATEWAY) {
+  farmGateway = DEFAULT_GATEWAY, tasks = null) {
   const publishRoom = (id, part) => events?.publish('room', { id, part }); // the live pages ask again (spec 2026-10-26 section 2)
   const simulationRoutes = simulations && createSimulationRoutes({ db, simulations });
+  // The tasks (spec 2026-10-30-tasks-design.md): main.js passes the one the controller also uses; tests may leave it out.
+  // Any change, made by a route here or by the controller's daily ensureDay, tells the pages: the room's Tasks tab and the
+  // top bar's count (section 6). server/tasks.js calls back only when something changed.
+  const taskStore = tasks ?? createTasks({ db });
+  const taskRoutes = createTaskRoutes({ db, tasks: taskStore });
+  const publishDue = () => events?.publish('tasks', { due: taskStore.dueCount() });
+  // Stopped by close() (app.js, when the http server closes), so a tasks module that outlives the server tells no one.
+  const stopTelling = events ? taskStore.onChange((roomId) => {
+    publishRoom(roomId, 'tasks');
+    publishDue();
+  }) : () => {};
   // The room body; on the farm's gateway its addresses must differ from the outdoor sensor's (read through that gateway).
   // stored: the room as it is (an update): a filter setting or the gateway left out is its stored value, so the checks compare
   // what will be saved. The farm's own gateway is stored as null, its one spelling, so the address checks see it as the farm's.
@@ -96,6 +109,7 @@ export function createApi(db, machines = null, controller = null, poller = null,
 
   async function route(req, res, path, url) {
     if (simulationRoutes && await simulationRoutes(req, res, path, { send, readJson, HttpError })) return;
+    if (await taskRoutes(req, res, path, { send, readJson, HttpError, url })) return;
     if (path === '/api/settings') {
       if (req.method === 'GET') return send(res, 200, settingsReply());
       if (req.method !== 'PUT') throw notFound();
@@ -288,13 +302,14 @@ export function createApi(db, machines = null, controller = null, poller = null,
       controller?.forget(id);
       simulations?.forgetRoom(id);
       publishRoom(id, 'room');
+      publishDue(); // the room's rows went with it
       res.writeHead(204);
       return res.end();
     }
     throw notFound();
   }
 
-  return async function api(req, res, url) {
+  async function api(req, res, url) {
     try {
       await route(req, res, url.pathname, url);
     } catch (err) {
@@ -311,5 +326,7 @@ export function createApi(db, machines = null, controller = null, poller = null,
         send(res, 500, { error: 'Something went wrong' });
       }
     }
-  };
+  }
+  api.close = stopTelling;
+  return api;
 }

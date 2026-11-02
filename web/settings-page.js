@@ -1,7 +1,9 @@
-// Settings page: the farm-wide reading interval, the outdoor sensor address and the electricity and water prices.
+// Settings page: the farm-wide reading interval, the outdoor sensor address, the electricity and water prices, phone alarms,
+// and the tasks' workers and rules (task-settings.js).
 
 import { request, OFFLINE } from './api.js';
 import { mountTelegram } from './telegram-card.js';
+import { mountTaskSettings } from './task-settings.js';
 import { parsePoll, POLL_MESSAGE, POLL_MIN, POLL_MAX, EXTRA_FIELDS, parseExtraSettings, liveHint } from './settings-math.js';
 
 const COMMAND_TIMEOUT = 15000;
@@ -11,7 +13,7 @@ const TEMPLATE = `
   <div class="page-head">
     <div class="page-titles">
       <h1 class="page-title" tabindex="-1">Settings</h1>
-      <p class="page-sub">How often rooms are read, prices, the outdoor sensor and phone alarms: one set for the whole farm.</p>
+      <p class="page-sub">How often rooms are read, prices, the outdoor sensor, phone alarms, the workers and the task rules: one set for the whole farm.</p>
     </div>
   </div>
   <div class="banner" role="alert" hidden>
@@ -54,6 +56,7 @@ const TEMPLATE = `
     <p class="s-saved" data-saved role="status" hidden></p>
   </form>
   <div data-telegram></div>
+  <div class="tk-settings" data-task-settings></div>
   </div>`;
 
 let mountSeq = 0; // every mount gets a token; a reply that finds the token changed is dropped
@@ -186,10 +189,12 @@ export function mount(container) {
   retry.addEventListener('click', load);
   load();
   const unmountTelegram = mountTelegram(q('[data-telegram]'));
+  const unmountTaskSettings = mountTaskSettings(q('[data-task-settings]'));
 
   return function unmount() {
     mountSeq++;
     unmountTelegram();
+    unmountTaskSettings();
     document.title = 'Rooms · Mushroom farm';
     container.replaceChildren();
   };

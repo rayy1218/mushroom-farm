@@ -260,7 +260,7 @@ test('critique 2026-10-28 layout (the farm cards side by side, 2026-10-29 as tal
   assert.match(css, /\.ov-farm \{ display: grid; grid-template-columns: repeat\(auto-fit, minmax\(300px, 1fr\)\); gap: 16px;/);
   assert.match(css, /\.us-room a \{ display: inline-flex; align-items: center; justify-self: start; min-height: 44px; \}/);
   assert.match(css, /\.brand-text strong \{ white-space: normal; overflow: visible; line-height: 1\.1; \}/);
-  assert.match(css, /@container \(max-width: 100px\) \{ \.brand-top \.brand-text \{ display: none; \} \}/);
+  assert.match(css, /@container \(max-width: 116px\) \{ \.brand-top \.brand-text \{ display: none; \} \}/);
 });
 
 // Critique 2026-10-29 (owner): a room in band with an amber near-edge reading is not "OK" beside that amber, and not a room

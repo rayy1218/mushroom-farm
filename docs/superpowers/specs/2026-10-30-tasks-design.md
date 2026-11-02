@@ -25,9 +25,9 @@ chose every row marked *owner*; the lead chose the rest.
 
 | Kind | Made | Ends |
 |---|---|---|
-| Daily | per room per local day (Asia/Kuala_Lumpur), from the rules that apply that day | done, skipped, or **missed** when the day ends open; **cancelled** "Stage changed" when the stage changes and the rule no longer applies |
-| Upkeep | one open row per room per rule; the next row is made when one is done or skipped, due *interval* days later | done or skipped; never missed: an open one past its due date says "overdue N days" |
-| Long-term | by **Plan this** or by the owner's **Add** | done or **cancelled** (a reason is required) |
+| Daily | per room per local day (Asia/Kuala_Lumpur), from the rules that apply that day | done, skipped, or **missed** when the day ends open; **cancelled** "Stage changed" when the stage changes and the rule no longer applies ("Rule changed" when the rule now wants another time of day), and open again if it applies again the same day (a stage changed and changed back); an own rule's open row of today **cancelled** "Rule removed" when the rule is removed, and "Rule changed" when the rule becomes every N days or the room is taken off it |
+| Upkeep | one open row per room per rule; the next row is made when one is done or skipped, due *interval* days later | done or skipped; never missed: an open one past its due date says "overdue N days"; **cancelled** "The room no longer has this machine" when the machine its rule needs is taken out of the room (a rule turned off keeps its open row); an own rule's open row **cancelled** "Rule removed" when the rule is removed, and "Rule changed" when the rule becomes daily or the room is taken off it |
+| Long-term | by **Plan this** or by the owner's **Add** | done or **cancelled** (a reason is required); **cancelled** "Replaced by a newer plan" when Plan this plans its machine to another size (one open plan per machine) |
 
 | Status | Set by | Needs |
 |---|---|---|
@@ -35,7 +35,7 @@ chose every row marked *owner*; the lead chose the rest.
 | done | Done | a worker name; the amount when the rule records one (may be left empty) |
 | skipped | Skip | a worker name and a reason |
 | missed | the server, at the first making after the day ends | — |
-| cancelled | Cancel (long-term), or the server on a stage change (daily) | a reason ("Stage changed" from the server) |
+| cancelled | Cancel (long-term), or the server on a stage or rule change (daily), an own rule removed or changed (daily and upkeep), a machine taken out (upkeep) or a newer plan of the machine (long-term) | a reason ("Stage changed", "Rule changed", "Rule removed", "The room no longer has this machine" or "Replaced by a newer plan" from the server) |
 
 Nothing is deleted, except with its room (as readings are today).
 
@@ -55,7 +55,7 @@ Crop families (from `web/crops.js` keys): **oyster** = oyster, black, pink, abal
 | casingApply | Apply the sterilised casing soil (1–2 cm) and keep it moist with light sprays | milky | pinning | first | morning | — |
 | reishiForm | Choose the form: bag closed for antlers, or open for caps (CO₂ under about 800 ppm) | reishi | pinning | first | any | — |
 | humidifierCheck | Humidifier: water in, mist coming out | all | pinning, fruiting | daily | morning | — |
-| harvestAm | Harvest check: pick before the cap edge waves or splits; pick before any misting | oyster, lionsmane | fruiting | daily | morning | kg picked |
+| harvestAm | Harvest check: pick the ready ones; pick before any misting | oyster, lionsmane | fruiting | daily | morning | kg picked |
 | harvestPm | Harvest check (afternoon) | oyster, lionsmane | fruiting | daily | afternoon | kg picked |
 | harvestDaily | Harvest check | woodear, milky | fruiting | daily | morning | kg picked |
 | reishiRim | Check the caps' growing rim; harvest by cutting the stem, keeping about 2 cm | reishi | fruiting | every 2 days, whole stage | any | kg picked |
@@ -85,16 +85,20 @@ A room with no crops gets only footbath and floorClean.
 | acService | Aircon service | 120 | an aircon |
 | acChemWash | Aircon chemical wash | 180 | an aircon |
 
-The intake filter stays on its pressure and days reminder (`filterDue`, `filterDirty`); it has no upkeep rule. The first row of an upkeep rule in a room is due the day it is made (the rule has no history yet).
+The intake filter stays on its pressure and days reminder (`filterDue`, `filterDirty`); it has no upkeep rule. The first row of an upkeep rule in a room (no done or skip yet) is due the day it is made when the rule's interval is 14 days or less; a longer one is due one interval after that day (a new room would otherwise get its 120- and 180-day aircon jobs, and every 30- and 90-day check, on day one). The Upkeep part lists it with its date; **Done** early is always allowed, and the next row counts from it. A new interval on a first row re-dates it the same way from the day it was made.
 
 ### 3.3 Crop notes
 
+The harvest rules' texts fit every crop they are for (harvestAm and harvestPm are lion's mane's too, which has no cap); the
+oyster family's cap wording is its harvest note. Rows made before this change keep the text they were made with.
+
 | Crop | Note on harvest rows | Note on other rows |
 |---|---|---|
-| Pink oyster | Keeps 1–3 days after picking: pick on sale days | — |
-| Golden oyster | Fragile when mature: pick early, handle gently | — |
-| Black oyster | Heavy spores: wear a mask | — |
-| Abalone oyster | — | contamWalk: black droplets on the mycelium are normal, not contamination |
+| Grey oyster | Pick before the cap edge waves or splits | — |
+| Pink oyster | Pick before the cap edge waves or splits; keeps 1–3 days after picking: pick on sale days | — |
+| Golden oyster | Pick before the cap edge waves or splits; fragile when mature: pick early, handle gently | — |
+| Black oyster | Pick before the cap edge waves or splits; heavy spores: wear a mask | — |
+| Abalone oyster | Pick before the cap edge waves or splits | contamWalk: black droplets on the mycelium are normal, not contamination |
 | Lion's mane | Spines 6–13 mm and still white; brown or yellow means now | humidifierCheck: mist the air, never the mushroom |
 | Wood ear | Ears 3–5 cm, before the edges thin; leave the small ones | — |
 
@@ -110,9 +114,9 @@ The intake filter stays on its pressure and days reminder (`filterDue`, `filterD
 
 | Step | Rule |
 |---|---|
-| `wantedTasks({ program, crops, room, rules, settings, date })` | pure: the day's daily rows of one room — rule key, text, notes, slot, amount — from the stage and `stageDay` (web/crop-math.js) on that date |
-| `ensureDay(roomId, date)` | inserts the wanted daily rows (`INSERT OR IGNORE`, unique room, rule, date, slot), marks open daily rows of earlier dates missed, cancels today's open daily rows whose rule is no longer wanted ("Stage changed"), and makes each applying upkeep rule's open row when it has none |
-| When | on `GET` of a room's tasks or of Today, and once per room per local day from the controller's cycle (an in-memory last-date memo), so a day is made after the app was down |
+| `wantedDaily({ program, crops, date, rules })` | pure: the day's daily rows of one room — rule key, text, notes, slot, amount — from the stage and `stageDayOn(program, date)` (the stage's day in farm calendar days) on that date |
+| `ensureDay(roomId, date)` | inserts the wanted daily rows (`ON CONFLICT DO NOTHING`, unique room, rule, date, slot), marks open daily rows of earlier dates missed, cancels today's open daily rows whose rule is no longer wanted ("Stage changed", or "Rule changed" for another slot) and opens such rows again when wanted again that day, cancels the open upkeep row of a rule that no longer applies to the room, and makes each applying upkeep rule's open row when it has none (due *interval* days after its last done or skip, but not before that day; with none yet, by the first-row rule of section 3.2) |
+| When | on `GET` of a room's tasks or of Today, and once per room per local day from the controller's cycle (an in-memory key of the date, crops, stage, stage days, flush, done, stageSince and the room's dehumidifier and sensor addresses, so it runs again when one of them changes), so a day is made after the app was down |
 | Done or skip of an upkeep row | in one transaction: the row closed, the next open row due `at + everyDays` |
 | A rule turned off | its open rows stay until done or the day ends; no new rows |
 
@@ -120,37 +124,39 @@ The intake filter stays on its pressure and days reminder (`filterDue`, `filterD
 
 | Table | Columns |
 |---|---|
-| `tasks` | `id, room_id, kind CHECK(daily|upkeep|longterm), rule_key NULL, date TEXT NULL ('YYYY-MM-DD', daily), slot, text, note, status CHECK(open|done|skipped|missed|cancelled), due_at NULL, created_at, closed_at NULL, worker TEXT NULL, amount REAL NULL, unit TEXT NULL, reason TEXT NULL, source TEXT NULL (JSON: a suggestion's machine, from, to, rmMonth, suggestedAt)`; unique index `(room_id, rule_key, date, slot) WHERE kind = 'daily'`; index `(room_id, status)` |
+| `tasks` | `id, room_id, kind CHECK(daily|upkeep|longterm), rule_key NULL, date TEXT NULL ('YYYY-MM-DD', daily), slot, text, note, status CHECK(open|done|skipped|missed|cancelled), due_at NULL, created_at, closed_at NULL, worker TEXT NULL, amount REAL NULL, unit TEXT NULL, reason TEXT NULL, source TEXT NULL (JSON: a suggestion's machine, from, to, rmMonth, suggestedAt, and assumed: true when the "from" was Simulate's default)`; unique index `(room_id, rule_key, date, slot) WHERE kind = 'daily'`; index `(room_id, status)` |
 | `workers` | `id, name UNIQUE, active` |
 | `task_rule_settings` | `key PK, enabled, every_days NULL` |
 | `custom_task_rules` | `id, text, rooms TEXT NULL (JSON ids; null = all), every_days NULL (null = daily), slot, enabled` |
 
-The worker is stored as text on the task, so a renamed or removed worker never changes a record. `deleteRoom` deletes the room's tasks. About ten tests that pin version 18 move to 19. Backup `data/v2-before-tasks.db` before the owner's farm app first starts on 19.
+The worker is stored as text on the task, so a renamed or removed worker never changes a record. `deleteRoom` deletes the room's tasks. About 25 lines in 14 test files pin version 18; they move to 19. Backup `data/v2-before-tasks.db` before the owner's farm app first starts on 19.
 
 ## 6. API
 
 | Route | Body → reply |
 |---|---|
 | `GET /api/rooms/:id/tasks` | → `{ date, today: [row], upkeep: [row], longterm: [row], counts: { due, overdue, longterm } }` |
-| `GET /api/tasks/today` | → `{ date, rooms: [{ id, name, today, upkeepDue, longterm: count }] }` in the Overview's room order |
+| `GET /api/tasks/today` | → `{ date, rooms: [{ id, name, today, upkeepDue, longterm: count, counts: { due, overdue, longterm } }] }` in the Overview's room order |
 | `POST /api/tasks/:id/done` | `{ worker, amount? }` → the row |
 | `POST /api/tasks/:id/skip` | `{ worker, reason }` → the row (not for long-term) |
 | `POST /api/tasks/:id/cancel` | `{ reason }` → the row (long-term only) |
-| `POST /api/rooms/:id/tasks` | `{ text, note? }` (own) or `{ suggestion: { machines: [{ key, from, to }], rmMonth, suggestedAt } }` → the new rows |
-| `GET /api/rooms/:id/tasks/log?before=<id>` | → the closed rows newest first, 50 a page |
+| `POST /api/rooms/:id/tasks` | `{ text, note? }` (own) or `{ suggestion: { machines: [{ key, from, to, assumed? }], rmMonth, suggestedAt } }` → `{ rows, replaced }`: the new rows; an open plan of a machine to another size is cancelled "Replaced by a newer plan" in the same transaction and comes back in `replaced` (an own task: none), so Suggest machines can say "(replaces Humidifier 0.5 → 2 L/h)" |
+| `GET /api/rooms/:id/tasks/log?before=<id>` | → `{ rows: [row] }`: the closed rows newest first, 50 a page |
 | `GET /api/rooms/:id/tasks/log.csv` | → every closed row: date, time, room, task, status, worker, amount, unit, reason |
-| `GET/PUT /api/workers` | `[{ id?, name, active }]` |
+| `GET/PUT /api/workers` | PUT `{ workers: [{ id?, name, active? }] }` (or the bare list) → `{ workers: [{ id, name, active }] }`; GET → the same reply |
 | `GET/PUT /api/task-rules` | `{ builtin: [{ key, enabled, everyDays? }], custom: [...] }` |
 
 A change publishes `room { id, part: 'tasks' }` and a `tasks { due }` event (the top bar's count).
 
 | Error | Reply |
 |---|---|
-| Done, skip or cancel on a row that is not open | 409 "Already done by Ali at 09:12" (or skipped, missed, cancelled) |
+| Done, skip or cancel on a row that is not open | 409 "Already done by Ali at 09:12" (or skipped, missed, cancelled), on the farm's clock; closed on an earlier farm day, with the day: "Already done by Ali on 30 Oct at 09:12" |
 | No worker name on done or skip | 400 field `worker` "Pick who did it" |
+| Done or skip with a name not on the workers list, when the farm has active workers (a name on it in any case is stored as the list spells it; with no workers yet, any name) | 400 field `worker` "That name is not on the workers list": the page reads the list again (as it does when the worker changes and when the live stream comes back) |
 | Skip or cancel without a reason | 400 field `reason` "Say why" |
 | Amount below 0 or above 10 000 | 400 field `amount` |
 | A suggestion where nothing changes | 400 "Nothing changes from what the room has now" |
+| A suggestion whose every change already has an open long-term task to the same size (Plan this twice) | 409 "Already planned: see the Tasks tab" (a machine planned already to the same size is left out of a plan that has others; to another size it replaces the open one) |
 | A rule's interval outside 1–365, a worker name empty or taken | 400 with the field |
 
 ## 7. Pages
@@ -163,7 +169,7 @@ Tabs: Now · History · Crop · **Tasks** · Simulations · Setup. The tab carri
 |---|---|---|
 | Today | today's daily rows by Morning / Afternoon / Any time; each row its text, the crop notes muted under it; closed rows folded into "6 done" | **Done** (an amount box when the rule records one), **Skip** (asks the reason) |
 | Upkeep | overdue first ("overdue 3 days"), then due within 7 days, then the rest with their next date | **Done**, **Skip** |
-| Long-term | open rows: "Aircon 9,000 → 12,000 BTU/h · RM 42 a month less · from Suggest machines, 29 Oct" | **Done**, **Cancel** (asks the reason), **Add** (text, optional note) |
+| Long-term | open rows: "Aircon 9,000 → 12,000 BTU/h · plan: RM 42 a month less · from Suggest machines, 29 Oct" (the RM a month is the whole plan's, every machine of it together, so each row of one plan shows the same) | **Done**, **Cancel** (asks the reason), **Add** (text, optional note) |
 | Log | the last 14 days closed: time, task, status, worker, amount, reason; **Older…** | **Export CSV** |
 
 ### 7.2 Today (`#/today`)
@@ -173,7 +179,7 @@ A **Today** link in the top bar with the sum of every room's `counts.due`.
 | Part | Shows |
 |---|---|
 | Worker | "Doing the rounds as: Ali ▾" from Settings' workers, kept per browser; the first Done or Skip asks when none is chosen |
-| Rooms | each room in the Overview's order: its open daily rows by slot and its overdue upkeep, with Done and Skip in place; "6 done" folded |
+| Rooms | each room in the Overview's order: its open daily rows by slot and its upkeep due today or overdue, with Done and Skip in place; "6 done" folded |
 | Long-term | a line per room with open long-term rows: "2 long-term tasks" → the room's Tasks tab |
 
 ### 7.3 Settings
@@ -186,6 +192,10 @@ A **Today** link in the top bar with the sum of every room's `counts.due`.
 ### 7.4 Suggest machines
 
 **Plan this** beside **Use this** on each suggestion row. It opens a dialog listing each machine that differs from the baseline (from → to) and the RM a month against the baseline; **Plan** posts it and links to the room's Tasks tab. With no baseline the button is not shown (the "from" is unknown).
+
+A search whose baseline is no longer the room's machines (Setup changed since a stored search) is not planned: the dialog says "<room>'s machines changed since this search. Suggest again to plan from them." and offers only **Close**. Every machine whose "from" is Simulate's default (no number on Setup or in the newest run: the fan's flow, which Setup keeps none of, and the aircon or humidifier of a room not rated yet) has its line in the dialog say so: "(fan now: Simulate's default)", "(aircon now: Simulate's default)", "(humidifier now: Simulate's default)", and **Plan** sends it with `assumed: true`: the server keeps `assumed: true` in the row's `source` and gives the row the note "The fan's flow now was Simulate's default, not from Setup" (the others the same words with their own size: "The aircon's size", "The humidifier's output", "The dehumidifier's capacity").
+
+After **Plan**, the row says how many long-term tasks it planned, those left out as already planned to the same size, and the open plans it replaced, then links to the Tasks tab: "1 long-term task planned (replaces Humidifier 0.5 → 1 L/h) · Open the Tasks tab" (several replaced joined with " · "; with some already planned, one bracket: "(1 already planned; replaces …)").
 
 ### 7.5 Done on a long-term machine task
 
@@ -202,7 +212,7 @@ The dialog shows the Setup values before and after, editable; **Save and mark do
 
 | Area | Tests |
 |---|---|
-| `wantedTasks` | each stage and family; first and last day; every 2 days in the last 7; mixed crops give a rule once with both notes; done program gives clearOut; no crops; rules off; custom rules for some rooms |
+| `wantedDaily` | each stage and family; first and last day; every 2 days in the last 7; mixed crops give a rule once with both notes; done program gives clearOut; no crops; rules off; custom rules for some rooms |
 | Upkeep | machine conditions; next due after done and skip; overdue days; interval change |
 | Database | 18 → 19 on a copy; `ensureDay` twice makes no duplicates; missed at the day's end; cancelled on a stage change; worker text kept after rename |
 | API | each route and error above; done twice (409); CSV columns; Plan this from a suggestion |

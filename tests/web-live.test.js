@@ -192,3 +192,11 @@ test('progress only goes forward: an older answer is stale, a finished one never
   assert.equal(withProgress(running, { status: 'running', progress: 0.1 }), null);
   assert.deepEqual(withProgress({ tried: 1, total: 9, status: 'running', progress: 0.1 }, { status: 'running', progress: 0.2, tried: 2 }), { tried: 2, total: 9, status: 'running', progress: 0.2 });
 });
+
+test('the tasks event (the Today count, iteration 19) reaches its listeners', () => {
+  const { live, source } = setup();
+  const seen = [];
+  live.on('tasks', (d) => seen.push(d));
+  source.emit('tasks', { due: 4 });
+  assert.deepEqual(seen, [{ due: 4 }]);
+});

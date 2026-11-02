@@ -7,13 +7,17 @@ import * as simulation from './simulation-page.js';
 import * as suggest from './suggest-page.js';
 import * as settings from './settings-page.js';
 import * as overview from './overview.js';
+import * as today from './today-page.js';
 import { loadBadge } from './overview-data.js';
 import { withTitlePrefix } from './overview-math.js';
 import { live } from './live.js';
 import { fallbackMs, liveMark } from './live-math.js';
+import { request } from './api.js';
+import { todayCount, todayLinkLabel, countText } from './tasks-math.js';
 
 const view = document.getElementById('view');
 const menuLinks = {
+  today: document.querySelectorAll('[data-nav="today"]'),
   overview: document.querySelectorAll('[data-nav="overview"]'),
   settings: document.querySelectorAll('[data-nav="settings"]'),
 };
@@ -47,9 +51,10 @@ function show() {
     : route.name === 'suggest' ? suggest.mount(view, { id: route.id })
     : route.name === 'detail' ? detail.mount(view, { id: route.id, tab: route.tab })
     : route.name === 'settings' ? settings.mount(view, {})
+    : route.name === 'today' ? today.mount(view, {})
     : overview.mount(view, {});
   // The Rooms entry stays current on a room's page.
-  const section = route.name === 'settings' ? 'settings' : route.name === 'overview' ? 'overview' : null;
+  const section = ['settings', 'overview', 'today'].includes(route.name) ? route.name : null;
   for (const [name, links] of Object.entries(menuLinks)) {
     for (const a of links) {
       if (name === section) a.setAttribute('aria-current', 'page');
@@ -135,6 +140,7 @@ new MutationObserver(showBadge).observe(titleNode, { childList: true });
 function scheduleBadge() {
   setTimeout(() => {
     refreshBadge();
+    refreshToday();
     scheduleBadge();
   }, fallbackMs(BADGE_MS, live.connected()));
 }
@@ -143,6 +149,45 @@ live.on('alarms', (data) => {
   badgeSeq++; // a read still on its way is older than this
   badge = Number.isInteger(data.count) ? data.count : badge;
   showBadge();
+});
+
+// The Today link's count (spec 2026-10-30-tasks-design.md 7.2): the stage and upkeep tasks due today in every room, asked
+// with the alarm badge and pushed by the live stream's tasks event; hidden at 0, and on a farm app without tasks (404).
+let todayDue = 0;
+let todaySeq = 0;
+
+function showToday() {
+  for (const el of document.querySelectorAll('[data-today-count]')) {
+    el.textContent = countText(todayDue);
+    el.hidden = todayDue === 0;
+  }
+  for (const a of menuLinks.today) a.setAttribute('aria-label', todayLinkLabel(todayDue));
+}
+
+async function refreshToday() {
+  const mine = ++todaySeq;
+  let count;
+  try {
+    count = todayCount(await request('GET', '/api/tasks/today'));
+  } catch (err) {
+    count = err.status === 404 ? 0 : null;
+  }
+  if (mine !== todaySeq || count === null) return; // a newer answer wins; no answer keeps the last number
+  todayDue = count;
+  showToday();
+}
+
+live.on('tasks', (data) => {
+  todaySeq++; // a read still on its way is older than this
+  if (Number.isInteger(data.due)) todayDue = data.due;
+  showToday();
+});
+// The Today page's own read tells its count (the top bar skips its own read when the route changes to Today; its timer
+// and the stream coming back still ask).
+window.addEventListener('farm:today-count', (event) => {
+  todaySeq++;
+  if (Number.isInteger(event.detail)) todayDue = event.detail;
+  showToday();
 });
 
 // The Live mark in the top bar: words, with a dot that is only a help.
@@ -158,11 +203,13 @@ function showLive(connected) {
 showLive(live.connected());
 live.onStatus((up) => {
   showLive(up);
-  if (up) refreshBadge(); // events were missed while it was down
+  if (up) { refreshBadge(); refreshToday(); } // events were missed while it was down
 });
 window.addEventListener('farm:alarms-changed', refreshBadge); // after an Acknowledge
 
-window.addEventListener('hashchange', () => { show(); refreshBadge(); });
+// On the Today page the page asks for its own data; the tasks event keeps the count current.
+window.addEventListener('hashchange', () => { show(); refreshBadge(); if (mounted?.name !== 'today') refreshToday(); });
 show();
 refreshBadge();
+refreshToday();
 window.farmReady = true; // the page loaded: index.html's "Couldn't load" never shows
