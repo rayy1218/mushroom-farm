@@ -16,6 +16,8 @@ const COMMAND_TIMEOUT = 15000;
 const ROOMS_CHANGED = 'A room was removed since this page loaded: the rules and rooms are loaded again. Check them and try again.';
 // A click while the card's last change is still on its way: one change at a time, and none dropped without a word.
 const STILL_SAVING = 'Still saving the last change. Try again in a moment.';
+// The own rule being edited is gone (removed in another window, or with its last room).
+const RULE_GONE = 'That rule was removed';
 const SLOT_OPTIONS = Object.entries(SLOT_LABELS).map(([value, label]) => `<option value="${value}">${label}</option>`).join('');
 
 const TEMPLATE = `
@@ -157,6 +159,7 @@ export function mountTaskSettings(container) {
       return false;
     } finally {
       workersBusy = false;
+      if (w.error.textContent === STILL_SAVING) w.error.textContent = '';
     }
   }
 
@@ -364,6 +367,7 @@ export function mountTaskSettings(container) {
       return false;
     } finally {
       rulesBusy = false;
+      if (r.error.textContent === STILL_SAVING) r.error.textContent = '';
       if (alive && rules) paintRules(); // the saved rules, or (after a failure) the ones before
     }
   }
@@ -378,6 +382,7 @@ export function mountTaskSettings(container) {
       rooms = rm.value;
       paintBoxes(new Set(checkedRooms()));
     }
+    if (editing !== null && !rules.custom.some((c) => c.id === editing)) { closeForm(null); r.error.textContent = RULE_GONE; }
   }
 
   const roomBoxes = () => [...r.boxes.querySelectorAll('input[name="rooms"]')];
@@ -459,6 +464,7 @@ export function mountTaskSettings(container) {
       boxesOf(names[0])[0]?.focus();
       return;
     }
+    if (editing !== null && !rules.custom.some((c) => c.id === editing)) { closeForm(null); r.error.textContent = RULE_GONE; return; }
     const id = editing;
     if (await putRules({ ...rules, custom: customAfter(rules.custom, editing === null ? { add: p.value } : { edit: { id: editing, rule: p.value } }) })) {
       closeForm(id === null ? null : `edit-${id}`);

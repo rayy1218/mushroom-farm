@@ -86,3 +86,14 @@ test('a farm app from before the tasks: the cards stay hidden', () => {
   assert.ok(cards.includes('} else if (!routeMissing(wk.reason)) {'));
   assert.ok(cards.includes("} else if (rl.status === 'rejected' && !routeMissing(rl.reason)) {"));
 });
+
+test('C9 re-review: "Still saving" goes once the save in flight ends; a rule removed while being edited closes the form and says so', () => {
+  assert.ok(cards.includes('if (w.error.textContent === STILL_SAVING) w.error.textContent = \'\';'));
+  assert.ok(cards.includes('if (r.error.textContent === STILL_SAVING) r.error.textContent = \'\';'));
+  assert.ok(cards.includes("const RULE_GONE = 'That rule was removed';"));
+  const gone = 'if (editing !== null && !rules.custom.some((c) => c.id === editing)) { closeForm(null); r.error.textContent = RULE_GONE;';
+  const reload = cards.slice(cards.indexOf('async function reloadRules()'));
+  assert.ok(reload.slice(0, reload.indexOf('\n  }\n')).includes(gone), 'after the reload');
+  const submit = cards.slice(cards.indexOf("r.form.addEventListener('submit'"));
+  assert.ok(submit.indexOf(gone) >= 0 && submit.indexOf(gone) < submit.indexOf('await putRules('), 'before a save that would change nothing');
+});

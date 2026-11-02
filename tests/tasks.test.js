@@ -590,3 +590,45 @@ test('rulesSaved: an own rule removed cancels its open upkeep row and today\'s o
   for (const id of [daily.id, upkeep.id]) assert.deepEqual([s.db.getTask(id).status, s.db.getTask(id).reason], ['cancelled', 'Rule removed']);
   assert.deepEqual(s.tasks.roomView(s.id).upkeep.filter((r) => r.ruleKey.startsWith('custom:')), []);
 });
+
+// C9 re-review: an own rule's rooms narrowed in Settings (Edit) leaves no open row in a room taken off it.
+test('rulesSaved: an own rule narrowed to fewer rooms cancels its open rows in the rooms taken off it "Rule changed"', (t) => {
+  const s = setup(t);
+  const more = ['Room 2', 'Room 3'].map((name) => {
+    const id = s.db.createRoom({ ...ROOM, name, trhAddress: null }, at('2026-10-30T08:00:00+08:00')).id;
+    s.db.setProgram(id, { ...s.db.getProgram(id), crops: OYSTER, stage: 'fruiting', stageSince: at('2026-10-30T08:00:00+08:00') });
+    return id;
+  });
+  const [r1, r2, r3] = [s.id, ...more];
+  const sources = () => ({ settings: s.db.taskRuleSettings(), custom: s.db.customTaskRules() });
+  const upkeepOf = (room, key) => s.tasks.roomView(room).upkeep.find((r) => r.ruleKey === key);
+  const dailyOf = (room, key) => s.tasks.roomView(room).today.find((r) => r.ruleKey === key);
+
+  // every N days: rooms [1, 2, 3] → [1]
+  const [shelves] = s.db.setCustomTaskRules([{ text: 'Wipe the shelves', rooms: [r1, r2, r3], everyDays: 14, slot: 'any', enabled: true }]);
+  const sk = `custom:${shelves.id}`;
+  const open = [r1, r2, r3].map((room) => upkeepOf(room, sk));
+  assert.ok(open.every(Boolean));
+  let before = sources();
+  s.db.setCustomTaskRules([{ ...shelves, rooms: [r1] }]);
+  s.changes.length = 0;
+  s.tasks.rulesSaved(before);
+  assert.equal(s.db.getTask(open[0].id).status, 'open', 'room 1 keeps its row');
+  for (const row of open.slice(1)) assert.deepEqual([s.db.getTask(row.id).status, s.db.getTask(row.id).reason], ['cancelled', 'Rule changed']);
+  assert.equal(upkeepOf(r2, sk), undefined);
+  assert.equal(s.tasks.roomView(r2).upkeep.filter((r) => r.ruleKey === sk).length, 0, 'nothing of it counts as due there');
+  assert.deepEqual([...s.changes].sort(), [r2, r3].sort(), 'each room taken off told once');
+
+  // daily: all rooms → [1, 2]
+  const [, tank] = s.db.setCustomTaskRules([{ ...shelves, rooms: [r1] }, { text: 'Check the water tank', rooms: null, everyDays: null, slot: 'morning', enabled: true }]);
+  const tk = `custom:${tank.id}`;
+  const daily = [r1, r2, r3].map((room) => dailyOf(room, tk));
+  assert.ok(daily.every((r) => r?.status === 'open'));
+  before = sources();
+  s.db.setCustomTaskRules([{ ...shelves, rooms: [r1] }, { ...tank, rooms: [r1, r2] }]);
+  s.changes.length = 0;
+  s.tasks.rulesSaved(before);
+  assert.deepEqual([daily[0], daily[1]].map((r) => s.db.getTask(r.id).status), ['open', 'open']);
+  assert.deepEqual([s.db.getTask(daily[2].id).status, s.db.getTask(daily[2].id).reason], ['cancelled', 'Rule changed']);
+  assert.deepEqual(s.changes, [r3], 'only the room taken off is told');
+});
