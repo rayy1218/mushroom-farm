@@ -21,25 +21,40 @@ function fresh(t) {
 
 const daily = (roomId, extra = {}) => ({ roomId, ruleKey: 'footbath', date: '2026-10-30', slot: 'morning', text: 'Change the footbath at the door', at: 5000, ...extra });
 
-test('a version 18 file is upgraded to 19 with the task tables, keeping its rooms', (t) => {
+test('a version 18 file is upgraded to 19 with the task tables, keeping its rooms, readings and settings; opened again it stays as it is', (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'farm-db-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const path = join(dir, 'v18.db');
   const first = openDb(path);
-  const id = first.createRoom(ROOM, 1000).id;
+  const id = first.createRoom({ ...ROOM, trhAddress: 1 }, 1000).id; // a reading is kept for a sensor the room has
+  first.addReading({ roomId: id, kind: 'trh', address: 1, at: 2000, ok: true, t: 18.5, rh: 88 });
+  first.setSetting('electricityPrice', '0.55');
   first.close();
   const raw = new DatabaseSync(path);
   raw.exec(`DROP TABLE tasks; DROP TABLE workers; DROP TABLE task_rule_settings; DROP TABLE custom_task_rules;
             PRAGMA user_version = 18;`);
   raw.close();
   const db = openDb(path);
-  t.after(() => db.close());
   assert.equal(db.getRoom(id).name, 'Room 1');
+  assert.equal(db.getSetting('electricityPrice'), '0.55');
   const check = new DatabaseSync(path, { readOnly: true });
   t.after(() => check.close());
+  assert.deepEqual({ ...check.prepare('SELECT room_id, kind, address, at, t, rh FROM readings').get() },
+    { room_id: id, kind: 'trh', address: 1, at: 2000, t: 18.5, rh: 88 });
   assert.equal(check.prepare('PRAGMA user_version').get().user_version, 19);
   const names = check.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((r) => r.name);
   for (const table of TABLES) assert.ok(names.includes(table), table);
+  // Opened again (the next start): still 19, and the rows made on 19 are left as they are.
+  db.insertDailyTask(daily(id));
+  db.insertLongtermTask({ roomId: id, text: 'Seal the door gap', at: 6000 });
+  const rows = check.prepare('SELECT * FROM tasks ORDER BY id').all().map((r) => ({ ...r }));
+  assert.equal(rows.length, 2);
+  db.close();
+  const again = openDb(path);
+  t.after(() => again.close());
+  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 19);
+  assert.deepEqual(check.prepare('SELECT * FROM tasks ORDER BY id').all().map((r) => ({ ...r })), rows);
+  assert.equal(again.getTask(rows[1].id).text, 'Seal the door gap');
 });
 
 test('a daily row is made once per room, rule, date and slot', (t) => {
