@@ -89,3 +89,12 @@ test('the stream coming back does not fold the older Log pages back (the timer\'
   assert.ok(card.includes('if (up) catchUp.call();'));
   assert.ok(card.slice(card.indexOf('destroy() {')).includes('catchUp.cancel();'));
 });
+
+test('owner 2026-11-02 ("so ugly"): a row is a round tick (Done), the name with what to do under it, a quiet Skip; later upkeep folds under Coming up', () => {
+  assert.ok(list.includes("const done = button('', 'tk-tick');"), 'the tick is the Done button');
+  assert.ok(list.includes("const b = button('Skip', 'tk-quiet');"));
+  assert.ok(list.includes('const { name, detail } = taskParts(line);'));
+  const card = src('tasks-card.js');
+  assert.ok(card.includes("const upkeepLater = el('details', 'tk-fold tk-later');"));
+  assert.ok(card.includes('comingUpWords(later)'));
+});

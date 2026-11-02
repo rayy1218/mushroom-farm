@@ -32,10 +32,10 @@ test('long words in a task wrap, and a note keeps its line breaks', () => {
   assert.match(block, /\.tk-note \{[^}]*white-space: pre-line;/);
 });
 
-test('a phone: Done and Skip beside the text at 44 px (a long-term row stacks them under it), the fold at 44 px, the top bar links narrower, six tabs fit', () => {
-  for (const rule of ['.tk-row { gap: 8px; }', '.tk-actions { gap: 6px; }', '.tk-actions button { min-height: 44px; padding: 7px 10px; }',
-    '.tk-row[data-kind="longterm"] { flex-direction: column; align-items: stretch; }', '.tk-row[data-kind="longterm"] .tk-actions { gap: 8px; }',
-    '.tk-row[data-kind="longterm"] .tk-actions button { flex: 1 1 0; padding: 7px 14px; }', '.tk-fold > summary { min-height: 44px; padding: 12px 0; }', '.tk-as select { flex: 1 1 auto; min-height: 44px; }',
+test('a phone: the tick and Skip at 44 px, the fold at 44 px, the top bar links narrower, six tabs fit', () => {
+  // owner 2026-11-02 ("so ugly"): a round tick for Done and a quiet Skip, both 44 px to tap on a phone
+  for (const rule of ['.tk-tick { width: 44px; height: 44px; margin: -12px -4px -12px -12px; }', '.tk-quiet { min-height: 44px; padding: 0 10px; }',
+    '.tk-fold > summary { min-height: 44px; padding: 12px 0; }', '.tk-as select { flex: 1 1 auto; min-height: 44px; }',
     '.top-link { min-width: 44px; padding: 4px 6px; justify-content: center; gap: 4px; }', '.room-tabs a { padding: 10px 5px; gap: 4px; }',
     '.sg-planned a { display: inline-block; min-height: 44px; line-height: 44px; white-space: nowrap; }']) {
     assert.ok(phone.includes(rule), rule);
@@ -77,5 +77,5 @@ test('C13 live check: the farm name hides whenever it does not fit beside the al
   assert.ok(block.includes('.td-long-list { list-style: none; margin: 0; padding: 0; }'));
   // a phone: the ring hugs the 44 px link and the heading leaves room under it
   assert.ok(phone.includes('.td-room h2 a:focus-visible { outline-offset: -2px; }'));
-  assert.ok(phone.includes('.td-room h2 { margin-bottom: 14px; }'));
+  assert.ok(phone.includes('.td-room-head { margin-bottom: 14px; }'));
 });

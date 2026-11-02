@@ -7,7 +7,7 @@
 import { request, OUTDATED, routeMissing } from './api.js';
 import { live } from './live.js';
 import { fallbackMs, createThrottle } from './live-math.js';
-import { slotGroups, upkeepRows, longtermLine, logRows, dayTitle, tasksDueWords, LOG_DAYS, LOG_PAGE } from './tasks-math.js';
+import { slotGroups, upkeepRows, nowDue, taskParts, comingUpWords, longtermLine, logRows, dayTitle, tasksDueWords, LOG_DAYS, LOG_PAGE } from './tasks-math.js';
 import { createTaskActions, createWorkerPicker } from './task-dialogs.js';
 import { el, button, taskRow, slotPart, keepFocus } from './task-list.js';
 import { keepLines, DOT } from './text-math.js';
@@ -35,7 +35,7 @@ export function createTasksCard(host, { roomId, onCounts, onGone }) {
   const todayHead = el('div', 'sim-card-head');
   const picker = createWorkerPicker();
   todayHead.append(el('h2', '', 'Today'), picker.node);
-  const todaySub = el('p', 'muted tk-sub', 'Loading…');
+  const todaySub = el('p', 'muted tk-sub tk-day', 'Loading…');
   const error = el('p', 'meta warn tk-error');
   error.setAttribute('role', 'alert');
   error.hidden = true;
@@ -47,7 +47,15 @@ export function createTasksCard(host, { roomId, onCounts, onGone }) {
   const upkeepList = el('ul', 'tk-list');
   const upkeepNone = el('p', 'none', 'No upkeep for this room.');
   upkeepNone.hidden = true;
-  upkeepCard.append(el('h2', '', 'Upkeep'), el('p', 'muted tk-sub', 'Each counted from the last time it was done.'), upkeepList, upkeepNone);
+  const upkeepLater = el('details', 'tk-fold tk-later');
+  upkeepLater.hidden = true;
+  upkeepLater.open = openFolds.has('upkeep-later');
+  upkeepLater.addEventListener('toggle', () => { if (upkeepLater.open) openFolds.add('upkeep-later'); else openFolds.delete('upkeep-later'); });
+  const upkeepLaterSummary = el('summary');
+  upkeepLaterSummary.dataset.focusKey = 'fold-upkeep-later';
+  const upkeepLaterList = el('ul', 'tk-list');
+  upkeepLater.append(upkeepLaterSummary, upkeepLaterList);
+  upkeepCard.append(el('h2', '', 'Upkeep'), el('p', 'muted tk-sub', 'Each counted from the last time it was done.'), upkeepList, upkeepNone, upkeepLater);
 
   // Long-term
   const longCard = el('section', 'card tk-part');
@@ -93,10 +101,16 @@ export function createTasksCard(host, { roomId, onCounts, onGone }) {
       todaySub.textContent = `${dayTitle(view.date)}${DOT}${tasksDueWords(view.counts?.due ?? 0)}`;
       const groups = slotGroups(view.today);
       todayBody.replaceChildren(...(groups.length ? groups.map((g) => slotPart(g, actions, { openFolds })) : [el('p', 'none', 'No stage tasks today.')]));
+      // Due now (overdue or today) in the list; the rest folded under "Coming up", the nearest date first.
       const up = upkeepRows(view.upkeep, view.date);
-      upkeepList.replaceChildren(...up.map(({ row, due }) => taskRow(row, actions, { due })));
-      upkeepNone.textContent = 'No upkeep for this room.';
-      upkeepNone.hidden = up.length > 0;
+      const now = up.filter(({ due }) => (due.late ?? -1) >= 0);
+      const later = up.filter(({ due }) => (due.late ?? -1) < 0);
+      upkeepList.replaceChildren(...now.map(({ row, due }) => taskRow(row, actions, { due: nowDue(due) })));
+      upkeepLater.hidden = later.length === 0;
+      upkeepLaterSummary.textContent = later.length ? keepLines(comingUpWords(later)) : '';
+      upkeepLaterList.replaceChildren(...later.map(({ row, due }) => taskRow(row, actions, { due })));
+      upkeepNone.textContent = up.length ? 'Nothing due now.' : 'No upkeep for this room.';
+      upkeepNone.hidden = now.length > 0;
       const open = (view.longterm ?? []).filter((r) => r.status === 'open');
       longList.replaceChildren(...open.map((row) => taskRow(row, actions, { line: longtermLine(row), skip: false, cancel: true })));
       longNone.textContent = 'None open. Plan this on Suggest machines, or Add your own.';
@@ -166,7 +180,7 @@ export function createTasksCard(host, { roomId, onCounts, onGone }) {
       const status = el('span', 'tk-log-status', l.status);
       status.dataset.tone = l.tone;
       head.append(`${l.date} ${l.time}${DOT}`, status, ...[l.worker, l.amount].filter(Boolean).map((t) => `${DOT}${t}`));
-      li.append(head, el('p', 'tk-log-task', keepLines(l.task)));
+      li.append(head, el('p', 'tk-log-task', keepLines(taskParts(l.task).name)));
       if (l.reason) li.append(el('p', 'tk-log-reason', keepLines(l.reason)));
       return li;
     }));
