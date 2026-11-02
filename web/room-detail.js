@@ -1,10 +1,11 @@
 // Room detail page (redesign 2026-10-28, brief .impeccable/surfaces/web-room-detail-js.md): the room's name with a switch to
-// the other rooms, five tabs under it (the address names the tab: #/rooms/7, #/rooms/7/history, ...) and the tab's panel:
+// the other rooms, six tabs under it (the address names the tab: #/rooms/7, #/rooms/7/history, ...) and the tab's panel:
 // Now (the readings first, the alarms, Auto | Manual, the crop, the room picture, the machines in air-path order and the
-// switches), History (the charts, electricity and water, the machine timeline, the energy and water card), Crop,
-// Simulations and Setup (the bands and automatic control, the sensors and the intake filter, the equipment cards, the room's
-// name and size and Delete room). The alarms sit in the Now tab's side column, above the panel on the other tabs. Every tab
-// is loaded and kept up to date; a tab change only shows and hides panels.
+// switches), History (the charts, electricity and water, the machine timeline, the energy and water card), Crop, Tasks (the
+// day's stage tasks, upkeep, long-term tasks and the log), Simulations and Setup (the bands and automatic control, the
+// sensors and the intake filter, the equipment cards, the room's name and size and Delete room). The alarms sit in the Now
+// tab's side column, above the panel on the other tabs. Every tab is loaded and kept up to date; a tab change only shows
+// and hides panels.
 // Refreshes every reading interval (2–30 s; 5 s when the settings cannot be read) while shown.
 
 import { request, OFFLINE } from './api.js';
@@ -18,6 +19,8 @@ import { createControl } from './control.js';
 import { createAlarmsCard } from './alarms.js';
 import { createCropCard } from './crop-card.js';
 import { createSimulationsCard } from './sim-card.js';
+import { createTasksCard } from './tasks-card.js';
+import { tabDot } from './tasks-math.js';
 import { createFilterCard } from './filter-card.js';
 import { intakeRunning } from './filter-math.js';
 import { closeSimulateDialog } from './simulate-dialog.js';
@@ -120,6 +123,9 @@ const TEMPLATE = `
       <div data-panel="crop" hidden>
         <section data-crop></section>
       </div>
+      <div data-panel="tasks" hidden>
+        <section data-tasks></section>
+      </div>
       <div data-panel="simulations" hidden>
         <section data-simulations></section>
       </div>
@@ -166,14 +172,36 @@ export function mount(container, { id, tab = 'now' }) {
   let pendingField = null; // a "Set address" button's field, to put the cursor in once the Equipment tab shows
   let equipmentTab = null; // the Equipment tab's cards, made on the first render
 
-  // The tab bar: a link per tab (the router calls setTab when the address changes); the current one marked.
+  // The tab bar: a link per tab (the router calls setTab when the address changes); the current one marked. The Tasks tab
+  // carries the number of tasks due (spec 2026-10-30-tasks-design.md 7.1).
   const tabBar = q('[data-tabs]');
+  let tasksLink = null;
+  let tasksDot = null;
   for (const t of ROOM_TABS) {
     const a = document.createElement('a');
     a.href = roomHash(id, t.key);
     a.dataset.tab = t.key;
     a.append(text('span', '', t.label));
+    if (t.key === 'tasks') {
+      tasksDot = text('span', 'tab-dot tab-count');
+      tasksDot.hidden = true;
+      tasksDot.setAttribute('aria-hidden', 'true'); // the link's name says it
+      a.append(tasksDot);
+      tasksLink = a;
+    }
     tabBar.append(a);
+  }
+  // The Tasks tab's dot: the stage tasks open today and the upkeep due or overdue (amber with an overdue one).
+  function paintTasksDot(counts) {
+    const dot = tabDot(counts);
+    tasksDot.hidden = !dot;
+    if (!dot) {
+      tasksLink.removeAttribute('aria-label');
+      return;
+    }
+    tasksDot.textContent = dot.text;
+    tasksDot.dataset.level = dot.level;
+    tasksLink.setAttribute('aria-label', `Tasks: ${dot.label}`);
   }
   // The alarms: in the Now tab's side column, above the panel on the other tabs.
   const alarmsNode = q('[data-alarms]');
@@ -239,6 +267,7 @@ export function mount(container, { id, tab = 'now' }) {
     exchange: q('[data-exchange]'),
     usageHost: q('[data-usage]'),
     simulationsHost: q('[data-simulations]'),
+    tasksHost: q('[data-tasks]'),
     profileHost: q('[data-profile]'),
     deleteHost: q('[data-delete]'),
     equipmentHost: q('[data-equipment]'),
@@ -286,6 +315,7 @@ export function mount(container, { id, tab = 'now' }) {
   let usageCard = null; // the Energy and water card, made on the first render
   let cropCard = null; // the Crop and stage card
   let simulationsCard = null; // the Simulations card
+  let tasksCard = null; // the Tasks card
   let filterCard = null; // the Intake filter card
   let profileTab = null; // the Room profile tab's form
   let deleteCard = null; // the Delete room card under it
@@ -362,6 +392,9 @@ export function mount(container, { id, tab = 'now' }) {
     cropCard = null;
     simulationsCard?.destroy();
     simulationsCard = null;
+    tasksCard?.destroy();
+    tasksCard = null;
+    paintTasksDot(null);
     filterCard?.destroy();
     filterCard = null;
     room = null;
@@ -516,6 +549,7 @@ export function mount(container, { id, tab = 'now' }) {
     if (!cropCard) makeCrop(); // (again after a missing room came back)
     cropCard?.setLights(room?.lights === true); // lights fitted or taken out: the schedule shows or goes
     simulationsCard ??= createSimulationsCard(els.simulationsHost, { roomId: id, getRoom: () => room });
+    tasksCard ??= createTasksCard(els.tasksHost, { roomId: id, onCounts: (c) => { if (alive()) paintTasksDot(c); }, onGone: () => { if (alive()) load(); } });
     filterCard ??= createFilterCard(els.filterHost, { roomId: id, onChanged: () => { if (alive()) load(); } }); // the alarms clear
     filterCard.update(room, sensors.dp, intakeRunning(machineData ?? lastMachines));
     // The Room card's filter from the replies of this load: a command later does not make the old pressure reading new.
@@ -748,6 +782,7 @@ export function mount(container, { id, tab = 'now' }) {
   const offLive = [
     live.on('room', (data) => {
       if (data.id !== id) return;
+      if (data.part === 'tasks') return; // the Tasks card asks for its own
       if (data.part === 'crop') cropCard?.refresh();
       reload.call();
     }),
@@ -772,6 +807,7 @@ export function mount(container, { id, tab = 'now' }) {
     usageCard?.destroy();
     cropCard?.destroy();
     simulationsCard?.destroy();
+    tasksCard?.destroy();
     filterCard?.destroy();
     profileTab?.destroy();
     equipmentTab?.destroy();

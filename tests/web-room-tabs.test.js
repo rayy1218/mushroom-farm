@@ -10,11 +10,13 @@ const page = readFileSync(new URL('../web/room-detail.js', import.meta.url), 'ut
 const app = readFileSync(new URL('../web/app.js', import.meta.url), 'utf8');
 const template = page.slice(page.indexOf('const TEMPLATE'), page.indexOf('`;', page.indexOf('const TEMPLATE')));
 
-// Each tab's panel holds these sections, in this order (redesign 2026-10-28: five tabs for the jobs check, act, set up).
+// Each tab's panel holds these sections, in this order (redesign 2026-10-28: tabs for the jobs check, act, set up; Tasks
+// 2026-10-30).
 const PANELS = {
   now: ['data-readings', 'data-picture', 'data-now-side', 'data-mode', 'data-machine-list', 'data-machines', 'data-crop-sum'],
   history: ['data-range', 'data-charts', 'data-usage-charts', 'data-usage>', 'data-timeline'], // the by-day card with the range's energy and water (critique 2026-10-28)
   crop: ['data-crop'],
+  tasks: ['data-tasks'],
   simulations: ['data-simulations'],
   setup: ['data-control', 'data-equipment', 'data-filter', 'data-profile', 'data-delete'],
 };
@@ -73,4 +75,18 @@ test('links back into a room open the right tab', () => {
   assert.match(run, /els\.back\.href = roomHash\(id, 'simulations'\)/);
   const usage = readFileSync(new URL('../web/usage-math.js', import.meta.url), 'utf8');
   assert.match(usage, /href: roomHash\(r\.id, 'history'\)/);
+});
+
+test('the Tasks tab: its card, made once, gone with a missing room and on leaving; its tab carries the due count', () => {
+  assert.match(page, /import \{ createTasksCard \} from '\.\/tasks-card\.js';/);
+  assert.match(page, /import \{ tabDot \} from '\.\/tasks-math\.js';/);
+  assert.ok(page.includes('tasksCard ??= createTasksCard(els.tasksHost, { roomId: id, onCounts: (c) => { if (alive()) paintTasksDot(c); }, onGone: () => { if (alive()) load(); } });'));
+  const missing = page.slice(page.indexOf('function showMissing()'), page.indexOf('function renderHead()'));
+  assert.ok(missing.includes('tasksCard?.destroy();') && missing.includes('paintTasksDot(null);'));
+  const unmount = page.slice(page.indexOf('function unmount()'));
+  assert.ok(unmount.includes('tasksCard?.destroy();'));
+  assert.ok(page.includes("if (t.key === 'tasks') {"));
+  assert.ok(page.includes("tasksDot = text('span', 'tab-dot tab-count');"));
+  assert.ok(page.includes("tasksLink.setAttribute('aria-label', `Tasks: ${dot.label}`);"));
+  assert.ok(page.includes("if (data.part === 'tasks') return; // the Tasks card asks for its own"));
 });

@@ -18,10 +18,10 @@ test('a room id means the detail page, on its Now tab', () => {
   assert.deepEqual(parseRoute('#/rooms/123/'), { name: 'detail', id: 123, tab: 'now' });
 });
 
-test('five room tabs (redesign 2026-10-28: Now, History, Crop, Simulations, Setup); a tab is part of the address', () => {
-  assert.deepEqual(ROOM_TABS.map((t) => t.key), ['now', 'history', 'crop', 'simulations', 'setup']);
-  assert.deepEqual(ROOM_TABS.map((t) => t.label), ['Now', 'History', 'Crop', 'Simulations', 'Setup']);
-  for (const tab of ['history', 'crop', 'simulations', 'setup']) {
+test('six room tabs (redesign 2026-10-28; Tasks between Crop and Simulations, 2026-10-30); a tab is part of the address', () => {
+  assert.deepEqual(ROOM_TABS.map((t) => t.key), ['now', 'history', 'crop', 'tasks', 'simulations', 'setup']);
+  assert.deepEqual(ROOM_TABS.map((t) => t.label), ['Now', 'History', 'Crop', 'Tasks', 'Simulations', 'Setup']);
+  for (const tab of ['history', 'crop', 'tasks', 'simulations', 'setup']) {
     assert.deepEqual(parseRoute(`#/rooms/7/${tab}`), { name: 'detail', id: 7, tab });
     assert.deepEqual(parseRoute(`#/rooms/7/${tab}/`), { name: 'detail', id: 7, tab });
     assert.equal(isCanonical(`#/rooms/7/${tab}`), true);
@@ -31,6 +31,7 @@ test('five room tabs (redesign 2026-10-28: Now, History, Crop, Simulations, Setu
   assert.equal(roomHash(7), '#/rooms/7');
   assert.equal(roomHash(7, 'now'), '#/rooms/7');
   assert.equal(roomHash(7, 'history'), '#/rooms/7/history');
+  assert.equal(roomHash(7, 'tasks'), '#/rooms/7/tasks');
   assert.equal(roomHash(7, 'nonsense'), '#/rooms/7');
   assert.equal(roomHash(7, 'setup'), '#/rooms/7/setup');
 });

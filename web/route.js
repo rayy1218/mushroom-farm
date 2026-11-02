@@ -1,11 +1,12 @@
 // Hash router: which page does a location hash mean? Anything unknown means the Overview.
 
-// The room page's tabs (redesign 2026-10-28: five, for the three jobs check, act and set up); the first has no name in the
-// address (#/rooms/7), the others do (#/rooms/7/history).
+// The room page's tabs (redesign 2026-10-28: for the three jobs check, act and set up; Tasks 2026-10-30, spec
+// 2026-10-30-tasks-design.md 7.1); the first has no name in the address (#/rooms/7), the others do (#/rooms/7/history).
 export const ROOM_TABS = [
   { key: 'now', label: 'Now' },
   { key: 'history', label: 'History' },
   { key: 'crop', label: 'Crop' },
+  { key: 'tasks', label: 'Tasks' },
   { key: 'simulations', label: 'Simulations' },
   { key: 'setup', label: 'Setup' },
 ];
