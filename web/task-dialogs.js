@@ -119,7 +119,7 @@ export function closeTaskDialog() {
 // close button (closeLabel; Close when there are no buttons). submit(values, which) → true (closes), or { field, message }
 // or { message } to show while it stays open; onLost(message): a failure that came back after the dialog was closed or
 // replaced. → { input(name), button(value), alive(), closed } (alive: this opening still shows; closed: a promise kept when
-// it is closed or replaced).
+// it is closed or replaced and nothing it sent is still waiting for an answer).
 function openForm({ title, lead = [], fields = [], buttons = [], closeLabel = buttons.length ? 'Cancel' : 'Close', submit, onLost }) {
   const d = ensureDialog();
   if (d.open) d.close();
@@ -200,6 +200,7 @@ function openForm({ title, lead = [], fields = [], buttons = [], closeLabel = bu
   d.append(form);
 
   let busy = false;
+  let sending = null; // the answer being waited for: closed waits for it too
   const values = () => Object.fromEntries([...inputs].map(([name, input]) => [name, input.type === 'checkbox' ? input.checked : input.value]));
   function show(problem) {
     const input = problem.field ? inputs.get(problem.field) : null;
@@ -220,8 +221,10 @@ function openForm({ title, lead = [], fields = [], buttons = [], closeLabel = bu
     for (const [name, err] of errors) { err.textContent = ''; inputs.get(name).removeAttribute('aria-invalid'); }
     for (const b of [close, ...sends]) b.disabled = true;
     let outcome;
+    const answer = (async () => submit(values(), which))();
+    sending = answer.catch(() => {});
     try {
-      outcome = await submit(values(), which);
+      outcome = await answer;
     } catch (err) {
       outcome = { message: errorText(err) };
     }
@@ -242,7 +245,8 @@ function openForm({ title, lead = [], fields = [], buttons = [], closeLabel = bu
   });
   close.addEventListener('click', () => d.close());
   d.oncancel = (event) => { if (busy) event.preventDefault(); }; // Esc while sending: the answer would have nowhere to show
-  // The close event comes a moment later: the one of the opening this replaced finds this one open, and is not ours.
+  // The close event comes a moment later: the one of the opening this replaced finds this one open, and is not ours. A
+  // dialog closed while sending (a second Esc) is over only once the answer came: its row stays held until then.
   const closed = new Promise((resolve) => {
     const onClose = () => {
       if (d.open && alive()) return;
@@ -250,7 +254,7 @@ function openForm({ title, lead = [], fields = [], buttons = [], closeLabel = bu
       resolve();
     };
     d.addEventListener('close', onClose);
-  });
+  }).then(() => sending);
   d.showModal();
   (fields.length ? inputs.get(fields[0].name) : heading).focus();
   return { input: (name) => inputs.get(name), button: (value) => sends.find((b) => b.value === value), alive: () => alive() && d.open, closed };

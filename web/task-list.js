@@ -45,13 +45,18 @@ export function taskRow(row, actions, { due = null, line = row.text, skip = true
   const tap = (b, action) => b.addEventListener('click', () => {
     if (busy) return;
     busy = true;
+    const plan = focusPlan(b); // where the cursor goes if this row is gone when the dialog closes
     const held = [...box.querySelectorAll('button')];
     for (const x of held) x.setAttribute('aria-disabled', 'true');
     const release = () => {
       busy = false;
       for (const x of held) x.removeAttribute('aria-disabled');
     };
-    Promise.resolve(action()).then((changed) => { if (!changed) release(); }, release);
+    Promise.resolve(action()).then((changed) => {
+      if (!changed) release();
+      // A dialog that closed after the repaint gives the focus back to a button that is gone: the plan made at the tap is used.
+      if (changed && !b.isConnected && document.activeElement === document.body) refocus(document, plan);
+    }, release);
   });
   const done = button('Done');
   done.setAttribute('aria-label', `Done: ${row.text}`);
@@ -80,6 +85,7 @@ export function taskRow(row, actions, { due = null, line = row.text, skip = true
 // the folds a repaint keeps open (by foldKey).
 export function slotPart(group, actions, { level = 'h3', openFolds = new Set(), foldKey = group.slot } = {}) {
   const part = el('div', 'tk-slot');
+  part.dataset.foldKey = foldKey;
   part.append(el(level, 'tk-slot-title', group.label));
   if (group.open.length) {
     const list = el('ul', 'tk-list');
@@ -92,15 +98,44 @@ export function slotPart(group, actions, { level = 'h3', openFolds = new Set(), 
     fold.addEventListener('toggle', () => { if (fold.open) openFolds.add(foldKey); else openFolds.delete(foldKey); });
     const list = el('ul', 'tk-list');
     list.append(...group.closed.map((row) => taskRow(row, actions)));
-    fold.append(el('summary', '', keepLines(group.fold)), list);
+    const summary = el('summary', '', keepLines(group.fold));
+    summary.dataset.focusKey = `fold-${foldKey}`;
+    fold.append(summary, list);
     part.append(fold);
   }
   return part;
 }
 
-// Keeps the focus on the same button across a repaint (a refresh must not throw it to the top of the page).
+// Where the cursor goes when a repaint takes its button away (the row was closed): the same button, else the next row's,
+// the previous row's, the slot's fold, the part's title. → { keys, heading }
+const keyOf = (li) => li?.querySelector('[data-focus-key]')?.dataset.focusKey;
+export function focusPlan(node) {
+  const row = node.closest?.('.tk-row');
+  let next = row?.nextElementSibling;
+  while (next && !keyOf(next)) next = next.nextElementSibling; // a closed row has no button
+  let prev = row?.previousElementSibling;
+  while (prev && !keyOf(prev)) prev = prev.previousElementSibling;
+  const slot = node.closest?.('.tk-slot');
+  const fold = slot ? `fold-${slot.dataset.foldKey}` : null;
+  const keys = [node.dataset?.focusKey, keyOf(next), keyOf(prev), fold].filter(Boolean);
+  const part = node.closest?.('.tk-part, .card');
+  return { keys, heading: part?.querySelector('h2') ?? null };
+}
+
+export function refocus(root, { keys, heading }) {
+  for (const key of keys) {
+    const node = root.querySelector(`[data-focus-key="${key}"]`);
+    if (node) { node.focus(); return; }
+  }
+  if (heading?.isConnected) {
+    heading.tabIndex = -1;
+    heading.focus();
+  }
+}
+
+// Keeps the focus across a repaint (a refresh must not throw it to the top of the page), on the same button or the nearest.
 export function keepFocus(host, paint) {
-  const key = host.contains(document.activeElement) ? document.activeElement.dataset?.focusKey : null;
+  const plan = host.contains(document.activeElement) ? focusPlan(document.activeElement) : null;
   paint();
-  if (key) host.querySelector(`[data-focus-key="${key}"]`)?.focus();
+  if (plan && !host.contains(document.activeElement)) refocus(host, plan);
 }

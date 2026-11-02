@@ -27,6 +27,7 @@ export function createTasksCard(host, { roomId, onCounts, onGone }) {
   let logFailed = false;
   const openFolds = new Set();
 
+  const hostClass = host.className;
   host.className = 'tk-grid';
 
   // Today
@@ -65,7 +66,8 @@ export function createTasksCard(host, { roomId, onCounts, onGone }) {
   const csv = el('a', 'button', 'Export CSV');
   csv.href = `/api/rooms/${roomId}/tasks/log.csv`;
   csv.setAttribute('download', '');
-  logHead.append(el('h2', '', 'Log'), csv);
+  const logTitle = el('h2', '', 'Log');
+  logHead.append(logTitle, csv);
   const logList = el('ul', 'tk-log');
   const logNone = el('p', 'none');
   logNone.hidden = true;
@@ -76,9 +78,10 @@ export function createTasksCard(host, { roomId, onCounts, onGone }) {
 
   host.replaceChildren(todayCard, upkeepCard, longCard, logCard);
 
-  // A change repaints the parts even when the next answer reads the same: the row tapped holds its buttons until then.
+  // A change repaints the parts even when the next answer reads the same: the row tapped holds its buttons until then. It
+  // asks through the same throttle as the room's tasks events, which the server sends for the same change.
   const actions = createTaskActions({
-    onChanged: () => { if (alive) { error.hidden = true; painted = ''; refresh(); loadLog(); } },
+    onChanged: () => { if (alive) { error.hidden = true; painted = ''; reload.call(); } },
     onError: (text) => { if (alive) { error.textContent = text; error.hidden = false; } },
   });
 
@@ -92,15 +95,18 @@ export function createTasksCard(host, { roomId, onCounts, onGone }) {
       todayBody.replaceChildren(...(groups.length ? groups.map((g) => slotPart(g, actions, { openFolds })) : [el('p', 'none', 'No stage tasks today.')]));
       const up = upkeepRows(view.upkeep, view.date);
       upkeepList.replaceChildren(...up.map(({ row, due }) => taskRow(row, actions, { due })));
+      upkeepNone.textContent = 'No upkeep for this room.';
       upkeepNone.hidden = up.length > 0;
       const open = (view.longterm ?? []).filter((r) => r.status === 'open');
       longList.replaceChildren(...open.map((row) => taskRow(row, actions, { line: longtermLine(row), skip: false, cancel: true })));
+      longNone.textContent = 'None open. Plan this on Suggest machines, or Add your own.';
       longNone.hidden = open.length > 0;
     });
     onCounts?.(view.counts ?? null);
   }
 
   async function refresh() {
+    if (!alive) return;
     clearTimeout(timer);
     const me = ++seq;
     try {
@@ -117,9 +123,20 @@ export function createTasksCard(host, { roomId, onCounts, onGone }) {
         return;
       }
       if (err.status === 404) { onGone?.(); return; }
-      if (!view) todaySub.textContent = "Couldn't load the tasks";
+      if (!view) {
+        todaySub.textContent = "Couldn't load the tasks";
+        for (const none of [upkeepNone, longNone]) { none.textContent = "Couldn't load the tasks"; none.hidden = false; }
+      }
     }
-    if (alive) timer = setTimeout(refresh, fallbackMs(REFRESH_MS, live.connected()));
+    if (!alive) return;
+    clearTimeout(timer);
+    timer = setTimeout(poll, fallbackMs(REFRESH_MS, live.connected()));
+  }
+
+  // The timer: the parts and the Log (not while Older… shows the older pages: they would fold back under the reader).
+  function poll() {
+    refresh();
+    if (!logAll) loadLog();
   }
 
   // The Log: the first page again (after a change), or the next older page (Older…).
@@ -131,6 +148,7 @@ export function createTasksCard(host, { roomId, onCounts, onGone }) {
       if (!alive || me !== logSeq) return;
       const rows = Array.isArray(data?.rows) ? data.rows : [];
       log = before === null ? rows : [...log, ...rows];
+      if (before === null) logAll = false; // a change or a new first page: back to the last 14 days
       logMore = rows.length >= LOG_PAGE;
       logFailed = false;
     } catch {
@@ -157,10 +175,17 @@ export function createTasksCard(host, { roomId, onCounts, onGone }) {
     older.hidden = !(logMore || (!logAll && lines.length < log.length));
   }
 
-  older.addEventListener('click', () => {
+  // Older… hides itself when there is nothing older: the cursor goes to the first line it added.
+  older.addEventListener('click', async () => {
+    const shown = logList.children.length;
     logAll = true;
-    if (logMore) loadLog(true);
+    if (logMore) await loadLog(true);
     else paintLog();
+    if (!alive) return;
+    if (!older.hidden) return;
+    const first = logList.children[shown] ?? logTitle; // nothing older after all: the Log's title
+    first.tabIndex = -1;
+    first.focus();
   });
   add.addEventListener('click', () => actions.add(roomId));
 
@@ -171,7 +196,7 @@ export function createTasksCard(host, { roomId, onCounts, onGone }) {
     live.on('room', (d) => { if (d.id === roomId && d.part === 'tasks') reload.call(); }),
     live.onStatus((up) => {
       if (up) reload.call();
-      else if (view) { clearTimeout(timer); timer = setTimeout(refresh, REFRESH_MS); }
+      else if (view) { clearTimeout(timer); timer = setTimeout(poll, REFRESH_MS); }
     }),
   ];
   refresh();
@@ -189,6 +214,7 @@ export function createTasksCard(host, { roomId, onCounts, onGone }) {
       actions.destroy();
       picker.destroy();
       host.replaceChildren();
+      host.className = hostClass;
     },
   };
 }

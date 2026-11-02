@@ -40,13 +40,38 @@ test('a row: its text, the crop notes muted under it, Done and Skip; the closed 
   assert.ok(list.includes('tap(b, () => actions.skip(row));'));
   assert.ok(list.includes("text.append(el('p', 'tk-closed-line', keepLines(closedLine(row))));"));
   assert.ok(list.includes("const fold = el('details', 'tk-fold');"));
-  assert.ok(list.includes("fold.append(el('summary', '', keepLines(group.fold)), list);"));
+  assert.ok(list.includes("const summary = el('summary', '', keepLines(group.fold));"));
+  assert.ok(list.includes('fold.append(summary, list);'));
 });
 
 test("a tap holds the row's buttons until the list repaints (a tap between the answer and the repaint would send again)", () => {
   // They only look disabled (aria-disabled, like Setup's Save): a disabled button would lose the cursor to the page.
   assert.ok(list.includes("for (const x of held) x.setAttribute('aria-disabled', 'true');"));
-  assert.ok(list.includes('Promise.resolve(action()).then((changed) => { if (!changed) release(); }, release);'));
+  const settle = list.slice(list.indexOf('Promise.resolve(action()).then((changed) => {'));
+  assert.ok(settle.includes('if (!changed) release();') && settle.includes('}, release);'), 'nothing changed or it failed: let go');
   // A change repaints the list even when the next view reads the same, so a held row always comes back.
-  assert.ok(card.includes("onChanged: () => { if (alive) { error.hidden = true; painted = ''; refresh(); loadLog(); } },"));
+  assert.ok(card.includes("onChanged: () => { if (alive) { error.hidden = true; painted = ''; reload.call(); } },"));
+});
+
+// ---- C6 review ----
+
+test('a closed row hands the focus on: the same button, else the next row, the previous row, the fold, the part\'s title', () => {
+  assert.ok(list.includes('summary.dataset.focusKey = `fold-${foldKey}`;'));
+  assert.ok(list.includes('part.dataset.foldKey = foldKey;'));
+  assert.ok(list.includes('const keys = [node.dataset?.focusKey, keyOf(next), keyOf(prev), fold].filter(Boolean);'));
+  assert.ok(list.includes('const plan = host.contains(document.activeElement) ? focusPlan(document.activeElement) : null;'));
+  assert.ok(list.includes('heading.tabIndex = -1;'));
+  // A dialog that closed after the repaint gives the focus back to a button that is gone: the plan made at the tap is used.
+  assert.ok(list.includes('if (changed && !b.isConnected && document.activeElement === document.body) refocus(document, plan);'));
+});
+
+test('the card: no stray timer, its own changes through the throttle, the Log back to its first page on a change', () => {
+  assert.ok(card.includes('async function refresh() {\n    if (!alive) return;'));
+  assert.ok(card.includes('clearTimeout(timer);\n    timer = setTimeout(poll, fallbackMs(REFRESH_MS, live.connected()));'));
+  assert.ok(card.includes("onChanged: () => { if (alive) { error.hidden = true; painted = ''; reload.call(); } },"));
+  assert.ok(card.includes('if (before === null) logAll = false; // a change or a new first page: back to the last 14 days'));
+  assert.ok(card.includes('function poll() {\n    refresh();\n    if (!logAll) loadLog();'));
+  assert.ok(card.includes('first.tabIndex = -1;'), 'Older… hides itself: the cursor goes to the first older line');
+  assert.ok(card.includes("for (const none of [upkeepNone, longNone]) { none.textContent = \"Couldn't load the tasks\"; none.hidden = false; }"));
+  assert.ok(card.slice(card.indexOf('destroy() {')).includes('host.className = hostClass;'));
 });

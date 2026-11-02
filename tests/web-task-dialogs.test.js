@@ -153,3 +153,8 @@ test("Done, Skip and Cancel end with whether anything changed, so the row's held
   has("const form = ask({\n      title: 'Mark done',");
   has('await form.closed;');
 });
+
+test('a row stays held until its request is answered, even when a second Esc closed the dialog first', () => {
+  has('sending = answer.catch(() => {});');
+  has('}).then(() => sending);');
+});
