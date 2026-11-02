@@ -1677,10 +1677,12 @@ export function openDb(path, { log = console.error } = {}) {
       return taskRow(q.task.get(Number(lastInsertRowid)));
     },
 
-    // Several long-term rows (insertLongtermTask's fields) in one transaction: every row or none. → the rows.
-    insertLongtermTasks(list) {
+    // Several long-term rows (insertLongtermTask's fields) in one transaction: every row or none. → the rows. replaced: the
+    // open rows they take the place of ({ id, at, reason }), cancelled in the same transaction (Plan this to another size).
+    insertLongtermTasks(list, replaced = []) {
       db.exec('BEGIN');
       try {
+        for (const r of replaced) q.closeTask.run('cancelled', r.at, null, null, r.reason, r.id);
         const rows = list.map((t) => this.insertLongtermTask(t));
         db.exec('COMMIT');
         return rows;

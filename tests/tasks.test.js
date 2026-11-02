@@ -409,9 +409,14 @@ test('Plan this twice: a machine with an open long-term task to the same size is
   s.changes.length = 0;
   refused(() => plan([{ key: 'acBTU', from: 9000, to: 12000 }, { key: 'fanFlow', from: 150, to: 200 }]), 409, 'Already planned: see the Tasks tab', 'suggestion');
   assert.deepEqual(s.changes, [], 'nothing made, no one told');
-  // Another size of the same machine, or a machine not planned yet, is a new task; the one already planned is left out.
+  // Another size of the same machine replaces its open task (cancelled 'Replaced by a newer plan'); a machine not planned yet
+  // is a new task; the one already planned to the same size is left out.
+  const aircon = s.db.openTasks(s.id, 'longterm').find((r) => r.source?.machine === 'acBTU');
   const again = plan([{ key: 'acBTU', from: 9000, to: 18000 }, { key: 'fanFlow', from: 150, to: 200 }, { key: 'humidifierLH', from: 0.5, to: 1 }]);
   assert.deepEqual(again.map((r) => r.text), ['Aircon 9,000 → 18,000 BTU/h', 'Humidifier 0.5 → 1 L/h']);
+  const replaced = s.db.getTask(aircon.id);
+  assert.deepEqual([replaced.status, replaced.reason, replaced.closedAt], ['cancelled', 'Replaced by a newer plan', again[0].createdAt]);
+  assert.equal(s.db.openTasks(s.id, 'longterm').filter((r) => r.source?.machine === 'acBTU').length, 1, 'one open aircon task');
   // A done or cancelled one no longer counts: planned again, it is a new task.
   const fan = s.db.openTasks(s.id, 'longterm').find((r) => r.source?.machine === 'fanFlow');
   s.tasks.cancel(fan.id, { reason: 'Not this year' });
@@ -419,7 +424,23 @@ test('Plan this twice: a machine with an open long-term task to the same size is
   // An own task with the same words is not a plan.
   s.tasks.addLongterm(s.id, { text: 'Dehumidifier none → 10 L/day' });
   assert.equal(plan([{ key: 'dehumidifierLday', from: 0, to: 10 }]).length, 1);
-  assert.equal(s.db.openTasks(s.id, 'longterm').length, 6);
+  assert.equal(s.db.openTasks(s.id, 'longterm').length, 5);
+});
+
+test('Plan this replaces in one go: a replaced task is cancelled only when the new rows are made', (t) => {
+  const s = setup(t);
+  const plan = (machines) => s.tasks.addFromSuggestion(s.id, { machines, rmMonth: -42, suggestedAt: 1 });
+  const [fan] = plan([{ key: 'fanFlow', from: 150, to: 200 }]);
+  const insert = s.db.insertLongtermTask;
+  s.db.insertLongtermTask = () => { throw new Error('disk full'); };
+  assert.throws(() => plan([{ key: 'fanFlow', from: 150, to: 300 }]), /disk full/);
+  s.db.insertLongtermTask = insert;
+  assert.equal(s.db.getTask(fan.id).status, 'open', 'rolled back with the rows');
+  // Done or cancelled tasks are not replaced (nothing open to replace).
+  s.tasks.done(fan.id, { worker: 'Ali' });
+  const [next] = plan([{ key: 'fanFlow', from: 200, to: 300 }]);
+  assert.equal(s.db.getTask(fan.id).status, 'done');
+  assert.equal(next.status, 'open');
 });
 
 test('addLongterm: a note that is not text is refused', (t) => {

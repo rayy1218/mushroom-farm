@@ -326,7 +326,8 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
     },
 
     // Plan this on Suggest machines: { machines: [{ key, from, to }], rmMonth, suggestedAt } → one long-term row per machine
-    // that changes and is not planned already (an open row to the same size; none left: 409), made together. Each machine at most once, from and to 0 to 1,000,000; suggestedAt null or ms 0 to 8.64e15.
+    // that changes and is not planned already (an open row to the same size; none left: 409), made together; an open row of
+    // the machine to another size is cancelled 'Replaced by a newer plan' with them. Each machine at most once, from and to 0 to 1,000,000; suggestedAt null or ms 0 to 8.64e15.
     addFromSuggestion(roomId, suggestion) {
       if (!db.getRoom(roomId)) throw new TaskError(404, 'Room not found');
       const { machines, rmMonth = null, suggestedAt = null } = suggestion ?? {};
@@ -343,15 +344,19 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
       }
       const changes = machines.filter((m) => m.from !== m.to);
       if (changes.length === 0) throw new TaskError(400, 'Nothing changes from what the room has now', 'suggestion');
-      // Plan this twice: a machine whose open long-term task already goes to the same size is left out.
-      const planned = new Set(db.openTasks(roomId, 'longterm').filter((r) => r.source).map((r) => `${r.source.machine}/${r.source.to}`));
+      // Plan this twice: a machine whose open long-term task already goes to the same size is left out; one to another
+      // size is replaced (cancelled 'Replaced by a newer plan', with the new rows: one open plan per machine).
+      const open = db.openTasks(roomId, 'longterm').filter((r) => r.source);
+      const planned = new Set(open.map((r) => `${r.source.machine}/${r.source.to}`));
       const fresh = changes.filter((m) => !planned.has(`${m.key}/${m.to}`));
       if (fresh.length === 0) throw new TaskError(409, 'Already planned: see the Tasks tab', 'suggestion');
       const at = now();
+      const keys = new Set(fresh.map((m) => m.key));
+      const replaced = open.filter((r) => keys.has(r.source.machine)).map((r) => ({ id: r.id, at, reason: 'Replaced by a newer plan' }));
       const rows = db.insertLongtermTasks(fresh.map((m) => ({
         roomId, text: machineChangeText(m.key, m.from, m.to),
         source: { machine: m.key, from: m.from, to: m.to, rmMonth, suggestedAt }, at,
-      })));
+      })), replaced);
       tell(roomId);
       return rows.map(view);
     },

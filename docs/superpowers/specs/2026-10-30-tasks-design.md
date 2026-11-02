@@ -27,7 +27,7 @@ chose every row marked *owner*; the lead chose the rest.
 |---|---|---|
 | Daily | per room per local day (Asia/Kuala_Lumpur), from the rules that apply that day | done, skipped, or **missed** when the day ends open; **cancelled** "Stage changed" when the stage changes and the rule no longer applies ("Rule changed" when the rule now wants another time of day), and open again if it applies again the same day (a stage changed and changed back) |
 | Upkeep | one open row per room per rule; the next row is made when one is done or skipped, due *interval* days later | done or skipped; never missed: an open one past its due date says "overdue N days"; **cancelled** "The room no longer has this machine" when the machine its rule needs is taken out of the room (a rule turned off keeps its open row) |
-| Long-term | by **Plan this** or by the owner's **Add** | done or **cancelled** (a reason is required) |
+| Long-term | by **Plan this** or by the owner's **Add** | done or **cancelled** (a reason is required); **cancelled** "Replaced by a newer plan" when Plan this plans its machine to another size (one open plan per machine) |
 
 | Status | Set by | Needs |
 |---|---|---|
@@ -35,7 +35,7 @@ chose every row marked *owner*; the lead chose the rest.
 | done | Done | a worker name; the amount when the rule records one (may be left empty) |
 | skipped | Skip | a worker name and a reason |
 | missed | the server, at the first making after the day ends | — |
-| cancelled | Cancel (long-term), or the server on a stage or rule change (daily) or a machine taken out (upkeep) | a reason ("Stage changed", "Rule changed" or "The room no longer has this machine" from the server) |
+| cancelled | Cancel (long-term), or the server on a stage or rule change (daily), a machine taken out (upkeep) or a newer plan of the machine (long-term) | a reason ("Stage changed", "Rule changed", "The room no longer has this machine" or "Replaced by a newer plan" from the server) |
 
 Nothing is deleted, except with its room (as readings are today).
 
@@ -136,7 +136,7 @@ The worker is stored as text on the task, so a renamed or removed worker never c
 | `POST /api/tasks/:id/done` | `{ worker, amount? }` → the row |
 | `POST /api/tasks/:id/skip` | `{ worker, reason }` → the row (not for long-term) |
 | `POST /api/tasks/:id/cancel` | `{ reason }` → the row (long-term only) |
-| `POST /api/rooms/:id/tasks` | `{ text, note? }` (own) or `{ suggestion: { machines: [{ key, from, to }], rmMonth, suggestedAt } }` → the new rows |
+| `POST /api/rooms/:id/tasks` | `{ text, note? }` (own) or `{ suggestion: { machines: [{ key, from, to }], rmMonth, suggestedAt } }` → the new rows; an open plan of a machine to another size is cancelled "Replaced by a newer plan" in the same transaction |
 | `GET /api/rooms/:id/tasks/log?before=<id>` | → the closed rows newest first, 50 a page |
 | `GET /api/rooms/:id/tasks/log.csv` | → every closed row: date, time, room, task, status, worker, amount, unit, reason |
 | `GET/PUT /api/workers` | `[{ id?, name, active }]` |
@@ -151,7 +151,7 @@ A change publishes `room { id, part: 'tasks' }` and a `tasks { due }` event (the
 | Skip or cancel without a reason | 400 field `reason` "Say why" |
 | Amount below 0 or above 10 000 | 400 field `amount` |
 | A suggestion where nothing changes | 400 "Nothing changes from what the room has now" |
-| A suggestion whose every change already has an open long-term task to the same size (Plan this twice) | 409 "Already planned: see the Tasks tab" (a machine planned already is left out of a plan that has others) |
+| A suggestion whose every change already has an open long-term task to the same size (Plan this twice) | 409 "Already planned: see the Tasks tab" (a machine planned already to the same size is left out of a plan that has others; to another size it replaces the open one) |
 | A rule's interval outside 1–365, a worker name empty or taken | 400 with the field |
 
 ## 7. Pages
