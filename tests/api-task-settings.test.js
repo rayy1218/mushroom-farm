@@ -4,13 +4,17 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDb } from '../server/db.js';
 import { createApp } from '../server/app.js';
+import { createTasks } from '../server/tasks.js';
 import { DAILY_RULES, CLEAR_OUT, UPKEEP_RULES, localDate, addDays, dayStart } from '../server/task-rules.js';
 
 const ROOM = { name: 'Room 1', length: 6, width: 4, height: 2.5 };
 
+// The tasks module on a clock that stands still at the test's start, so a test that crosses midnight keeps its farm day.
 async function app(t, { controller = null } = {}) {
   const db = openDb(':memory:');
-  const server = createApp(db, { controller });
+  const now = Date.now();
+  const tasks = createTasks({ db, now: () => now });
+  const server = createApp(db, { controller, tasks });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   t.after(async () => { await new Promise((r) => server.close(r)); db.close(); });
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -19,7 +23,7 @@ async function app(t, { controller = null } = {}) {
     const text = await res.text();
     return { status: res.status, body: text ? JSON.parse(text) : null };
   };
-  return { db, call };
+  return { db, call, today: localDate(now) };
 }
 
 const tasksOf = async (call, id) => (await call('GET', `/api/rooms/${id}/tasks`)).body;
@@ -147,7 +151,7 @@ test('task rules: an upkeep interval equal to the rule\'s default is stored as n
 });
 
 test("task rules: your own, text 1 to 120, every room or some of this farm's, daily or every 1 to 365 days, a time of day; they make rows at once", async (t) => {
-  const { db, call } = await app(t);
+  const { db, call, today } = await app(t);
   const r1 = (await call('POST', '/api/rooms', { ...ROOM, name: 'Room 1' })).body.id;
   const r2 = (await call('POST', '/api/rooms', { ...ROOM, name: 'Room 2' })).body.id;
   const tank = { text: ' Check the water tank ', rooms: null, everyDays: null, slot: 'morning', enabled: true };
@@ -157,7 +161,7 @@ test("task rules: your own, text 1 to 120, every room or some of this farm's, da
   assert.deepEqual(saved.body.custom.map(({ id, ...rest }) => rest), [{ ...tank, text: 'Check the water tank' }, shelves]);
   const [tankRule, shelvesRule] = saved.body.custom;
   // Made by the PUT itself, before any page asks for the room's tasks.
-  assert.equal(byRule(db.dailyTasks(r1, localDate(Date.now())), `custom:${tankRule.id}`)?.text, 'Check the water tank');
+  assert.equal(byRule(db.dailyTasks(r1, today), `custom:${tankRule.id}`)?.text, 'Check the water tank');
   assert.equal(byRule(db.openTasks(r2, 'upkeep'), `custom:${shelvesRule.id}`)?.text, 'Wipe the shelves');
   const one = await tasksOf(call, r1);
   const two = await tasksOf(call, r2);
@@ -202,9 +206,8 @@ test('task rules: a rule twice or not an object is refused; a refused PUT saves 
 });
 
 test('task rules: a new interval re-dates the open upkeep row at once; an own rule made every N days cancels its daily row', async (t) => {
-  const { db, call } = await app(t);
+  const { db, call, today } = await app(t);
   const id = (await call('POST', '/api/rooms', ROOM)).body.id;
-  const today = localDate(Date.now());
   const open = (key) => byRule(db.openTasks(id, 'upkeep'), key);
   const service = byRule((await tasksOf(call, id)).upkeep, 'acService');
   await call('POST', `/api/tasks/${service.id}/done`, { worker: 'Ali' });

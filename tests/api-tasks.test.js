@@ -5,13 +5,17 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDb } from '../server/db.js';
 import { createApp } from '../server/app.js';
+import { createTasks } from '../server/tasks.js';
 import { localDate, addDays } from '../server/task-rules.js';
 
 const ROOM = { name: 'Room 1', length: 6, width: 4, height: 2.5 };
 
+// The tasks module on a clock that stands still at the test's start, so a test that crosses midnight keeps its farm day.
 async function app(t, { controller = null } = {}) {
   const db = openDb(':memory:');
-  const server = createApp(db, { controller });
+  const now = Date.now();
+  const tasks = createTasks({ db, now: () => now });
+  const server = createApp(db, { controller, tasks });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   t.after(async () => { await new Promise((r) => server.close(r)); db.close(); });
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -20,14 +24,15 @@ async function app(t, { controller = null } = {}) {
     const text = await res.text();
     return { status: res.status, body: text ? JSON.parse(text) : null };
   };
-  return { db, call };
-}
-
-// A room with grey oyster blocks, fruiting from now (the crop PUT starts the stage). → its id
-async function fruitingRoom(call, name = 'Room 1') {
-  const made = await call('POST', '/api/rooms', { ...ROOM, name });
-  assert.equal((await call('PUT', `/api/rooms/${made.body.id}/crop`, { crops: [{ crop: 'oyster', blocks: 100 }] })).status, 200);
-  return made.body.id;
+  // A room with grey oyster blocks, fruiting from now (the crop PUT starts the stage on the real clock; its start is then
+  // moved to the tasks' clock, the same day but for a PUT a moment past midnight). → its id
+  async function fruitingRoom(name = 'Room 1') {
+    const made = await call('POST', '/api/rooms', { ...ROOM, name });
+    assert.equal((await call('PUT', `/api/rooms/${made.body.id}/crop`, { crops: [{ crop: 'oyster', blocks: 100 }] })).status, 200);
+    db.setProgram(made.body.id, { ...db.getProgram(made.body.id), stageSince: now });
+    return made.body.id;
+  }
+  return { db, call, fruitingRoom, today: localDate(now) };
 }
 
 const tasksOf = async (call, id) => (await call('GET', `/api/rooms/${id}/tasks`)).body;
@@ -35,11 +40,11 @@ const byRule = (rows, key) => rows.find((r) => r.ruleKey === key);
 const hhmm = (ms) => new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kuala_Lumpur', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(ms);
 
 test("GET a room's tasks makes today's rows: the fruiting oyster day, the upkeep due today, no long-term yet; twice makes no more", async (t) => {
-  const { call } = await app(t);
-  const id = await fruitingRoom(call);
+  const { call, fruitingRoom, today } = await app(t);
+  const id = await fruitingRoom();
   const r = await call('GET', `/api/rooms/${id}/tasks`);
   assert.equal(r.status, 200);
-  assert.equal(r.body.date, localDate(Date.now()));
+  assert.equal(r.body.date, today);
   assert.deepEqual(r.body.today.map((x) => x.ruleKey).sort(), ['contamWalk', 'floorClean', 'footbath', 'harvestAm', 'harvestPm', 'humidifierCheck']);
   assert.ok(r.body.today.every((x) => x.kind === 'daily' && x.status === 'open' && x.roomId === id && x.date === r.body.date));
   assert.deepEqual(r.body.upkeep.map((x) => x.ruleKey).sort(), ['acChemWash', 'acFilter', 'acService', 'flyTraps', 'humidifierDescale']);
@@ -58,12 +63,12 @@ test("a room's tasks: 404 for no such room; only GET and POST", async (t) => {
 });
 
 test("Today: every room in the Overview's order with its rows; a room with no crops gets the footbath and the floor", async (t) => {
-  const { db, call } = await app(t);
-  await fruitingRoom(call, 'Room B');
+  const { db, call, fruitingRoom, today } = await app(t);
+  await fruitingRoom('Room B');
   await call('POST', '/api/rooms', { ...ROOM, name: 'Room A' });
   const r = await call('GET', '/api/tasks/today');
   assert.equal(r.status, 200);
-  assert.equal(r.body.date, localDate(Date.now()));
+  assert.equal(r.body.date, today);
   assert.deepEqual(r.body.rooms.map((x) => [x.id, x.name]), db.listRooms().map((x) => [x.id, x.name]));
   const a = r.body.rooms.find((x) => x.name === 'Room A');
   assert.deepEqual(a.today.map((x) => x.ruleKey).sort(), ['floorClean', 'footbath']);
@@ -162,8 +167,8 @@ test('Plan this: a suggestion that is not one is 400 with the field', async (t) 
 });
 
 test('Done: who did it and the amount kept; done twice is 409 with who and when, and so is a Skip after it', async (t) => {
-  const { call } = await app(t);
-  const id = await fruitingRoom(call);
+  const { call, fruitingRoom } = await app(t);
+  const id = await fruitingRoom();
   const harvest = byRule((await tasksOf(call, id)).today, 'harvestAm');
   assert.equal(harvest.unit, 'kg');
   const done = await call('POST', `/api/tasks/${harvest.id}/done`, { worker: '  Ali ', amount: 3.5 });
@@ -179,8 +184,8 @@ test('Done: who did it and the amount kept; done twice is 409 with who and when,
 });
 
 test('Done and Skip need a worker name of up to 40 characters; the amount is a number from 0 to 10,000; no such task is 404', async (t) => {
-  const { call } = await app(t);
-  const id = await fruitingRoom(call);
+  const { call, fruitingRoom } = await app(t);
+  const id = await fruitingRoom();
   const view = await tasksOf(call, id);
   const am = byRule(view.today, 'harvestAm');
   const pm = byRule(view.today, 'harvestPm');
@@ -204,8 +209,8 @@ test('Done and Skip need a worker name of up to 40 characters; the amount is a n
 });
 
 test('Skip needs a reason; a skipped upkeep row brings the next, due its interval later; a long-term row is not skipped', async (t) => {
-  const { call } = await app(t);
-  const id = await fruitingRoom(call);
+  const { call, fruitingRoom } = await app(t);
+  const id = await fruitingRoom();
   const view = await tasksOf(call, id);
   const traps = byRule(view.upkeep, 'flyTraps');
   for (const reason of [undefined, '', '  ', 3]) {
@@ -228,8 +233,8 @@ test('Skip needs a reason; a skipped upkeep row brings the next, due its interva
 });
 
 test('Cancel: long-term only, with a reason; Done also closes a long-term row', async (t) => {
-  const { call } = await app(t);
-  const id = await fruitingRoom(call);
+  const { call, fruitingRoom } = await app(t);
+  const id = await fruitingRoom();
   const add = async (text) => (await call('POST', `/api/rooms/${id}/tasks`, { text })).body.rows[0];
   const seal = await add('Fix the door seal');
   for (const body of [{}, { reason: '' }, { reason: '   ' }]) {
@@ -254,8 +259,8 @@ test('Cancel: long-term only, with a reason; Done also closes a long-term row', 
 // ---- final review ----
 
 test('Done with a name not on the workers list: 400 field worker; a listed name in any case is stored as the list spells it', async (t) => {
-  const { call } = await app(t);
-  const id = await fruitingRoom(call);
+  const { call, fruitingRoom } = await app(t);
+  const id = await fruitingRoom();
   assert.equal((await call('PUT', '/api/workers', { workers: [{ name: 'Ali' }] })).status, 200);
   const walk = byRule((await tasksOf(call, id)).today, 'contamWalk');
   assert.deepEqual(await call('POST', `/api/tasks/${walk.id}/done`, { worker: 'Siti' }),

@@ -10,10 +10,13 @@ import { createTasks } from '../server/tasks.js';
 
 const ROOM = { name: 'Room 1', length: 6, width: 4, height: 2.5 };
 
+// The tasks module on a clock that stands still at the test's start, so the counts compared across requests stay those of
+// one farm day even when a test crosses midnight.
 async function app(t) {
   const db = openDb(':memory:');
   const events = createEvents();
-  const tasks = createTasks({ db });
+  const now = Date.now();
+  const tasks = createTasks({ db, now: () => now });
   const server = createApp(db, { events, tasks });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   t.after(async () => { await new Promise((r) => server.close(r)); db.close(); });
@@ -25,16 +28,17 @@ async function app(t) {
   };
   const got = [];
   events.subscribe((type, data) => got.push([type, data]));
-  return { db, tasks, call, got };
+  return { db, tasks, call, got, now };
 }
 
 const byRule = (rows, key) => rows.find((r) => r.ruleKey === key);
 const onlyTasks = (got, id) => got.every(([type, data]) => type === 'tasks' || (type === 'room' && data.id === id && data.part === 'tasks'));
 
 test('Done, Skip and Add publish the room part tasks and the farm due count; a GET that makes nothing publishes nothing', async (t) => {
-  const { call, got } = await app(t);
+  const { db, call, got, now } = await app(t);
   const id = (await call('POST', '/api/rooms', ROOM)).body.id;
   await call('PUT', `/api/rooms/${id}/crop`, { crops: [{ crop: 'oyster', blocks: 100 }] });
+  db.setProgram(id, { ...db.getProgram(id), stageSince: now }); // the stage from the tasks' clock (the PUT's is the real one)
   const view = (await call('GET', `/api/rooms/${id}/tasks`)).body; // the first look makes the day's rows
   assert.deepEqual(got.slice(-2), [['room', { id, part: 'tasks' }], ['tasks', { due: view.counts.due }]]);
   got.length = 0;
@@ -87,8 +91,9 @@ test('a room deleted publishes the farm due count without its rows', async (t) =
   assert.deepEqual(got, [['room', { id: b, part: 'room' }], ['tasks', { due: 5 }]]);
 });
 
-test('a closed server no longer publishes the changes of the tasks it was given', async () => {
+test('a closed server no longer publishes the changes of the tasks it was given', async (t) => {
   const db = openDb(':memory:');
+  t.after(() => db.close()); // closed even when an assertion fails
   const events = createEvents();
   const tasks = createTasks({ db });
   const server = createApp(db, { events, tasks });
@@ -98,5 +103,4 @@ test('a closed server no longer publishes the changes of the tasks it was given'
   events.subscribe((type, data) => got.push([type, data]));
   tasks.ensureDay(db.createRoom(ROOM).id);
   assert.deepEqual(got, []);
-  db.close();
 });
