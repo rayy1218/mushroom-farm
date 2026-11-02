@@ -90,6 +90,7 @@ test('open daily rows are missed after their day; closed ones stay as they are',
   assert.deepEqual(old.map((r) => [r.ruleKey, r.status]), [['contamWalk', 'missed'], ['humidifierCheck', 'missed'], ['harvestAm', 'missed'],
     ['harvestPm', 'missed'], ['footbath', 'done'], ['floorClean', 'missed']]);
   assert.equal(old[0].closedAt, at('2026-10-31T00:00:00+08:00'), 'missed when the day ended');
+  assert.deepEqual(v.today.map((r) => r.ruleKey), ['contamWalk', 'humidifierCheck', 'harvestAm', 'harvestPm', 'footbath', 'floorClean'], 'the new day made');
   assert.ok(v.today.every((r) => r.status === 'open'));
   assert.equal(v.upkeep.length, 6, 'upkeep rows are never missed');
   assert.equal(v.upkeep[0].overdueDays, 1);

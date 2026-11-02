@@ -14,7 +14,8 @@ const at = (iso) => Date.parse(iso);
 const DAY = 86_400_000;
 const ROOM = { name: 'Room 1', length: 6, width: 4, height: 2.5 };
 
-function setup(t, { tasks = null, failFor = null, room = {} } = {}) {
+// fail: the fake ensureDay throws for the room made here.
+function setup(t, { tasks = null, fail = false, room = {} } = {}) {
   const db = openDb(':memory:');
   t.after(() => db.close());
   const client = { async writeCoil() {}, async writeRegisters() {} };
@@ -25,7 +26,7 @@ function setup(t, { tasks = null, failFor = null, room = {} } = {}) {
   const fake = {
     ensureDay(roomId, date) {
       calls.push([roomId, date]);
-      if (roomId === failFor) throw new Error('tasks broke');
+      if (fail && roomId === id) throw new Error('tasks broke');
     },
   };
   const errors = [];
@@ -94,7 +95,7 @@ test('a machine fitted or taken out between cycles makes the day again', async (
 });
 
 test('an error is logged once that day; the room is still controlled and the other rooms go on', async (t) => {
-  const s = setup(t, { failFor: 1, room: { trhAddress: 1, co2Address: 2, relayAddress: 3 } });
+  const s = setup(t, { fail: true, room: { trhAddress: 1, co2Address: 2, relayAddress: 3 } });
   const other = s.db.createRoom({ ...ROOM, name: 'Room 2' }).id;
   s.controller.update(s.id, { auto: true });
   const read = (co2) => {
