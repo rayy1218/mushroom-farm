@@ -44,12 +44,13 @@ export const MAX_TEXT = 120;
 const MAX_NOTE = 500;
 const MAX_MACHINE = 1_000_000;
 const MAX_TIME = 8.64e15; // the latest time a Date can hold, in ms
-// The machines of a suggestion (the sizing keys): the name and unit of the long-term text; zero: the word for 0.
+// The machines of a suggestion (the sizing keys): the name and unit of the long-term text; zero: the word for 0; size: its
+// size in words, for the note of a machine whose "from" was Simulate's default (assumed).
 const MACHINES = {
-  fanFlow: { name: 'Fan', unit: 'm³/h' },
-  acBTU: { name: 'Aircon', unit: 'BTU/h' },
-  humidifierLH: { name: 'Humidifier', unit: 'L/h' },
-  dehumidifierLday: { name: 'Dehumidifier', unit: 'L/day', zero: 'none' },
+  fanFlow: { name: 'Fan', unit: 'm³/h', size: "The fan's flow" },
+  acBTU: { name: 'Aircon', unit: 'BTU/h', size: "The aircon's size" },
+  humidifierLH: { name: 'Humidifier', unit: 'L/h', size: "The humidifier's output" },
+  dehumidifierLday: { name: 'Dehumidifier', unit: 'L/day', zero: 'none', size: "The dehumidifier's capacity" },
 };
 
 // 'Aircon 9,000 → 12,000 BTU/h', 'Dehumidifier none → 10 L/day', 'Dehumidifier 10 L/day → none'.
@@ -330,9 +331,11 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
       return view(row);
     },
 
-    // Plan this on Suggest machines: { machines: [{ key, from, to }], rmMonth, suggestedAt } → { rows, replaced }: one long-term
+    // Plan this on Suggest machines: { machines: [{ key, from, to, assumed? }], rmMonth, suggestedAt } → { rows, replaced }: one long-term
     // row per machine that changes and is not planned already (an open row to the same size; none left: 409), made together; an
     // open row of the machine to another size is cancelled 'Replaced by a newer plan' with them (replaced: those, as they are now). Each machine at most once, from and to 0 to 1,000,000; suggestedAt null or ms 0 to 8.64e15.
+    // assumed (true, false or left out): the "from" was Simulate's default, not the room's Setup; the row says so in its note
+    // and keeps assumed: true in its source.
     addFromSuggestion(roomId, suggestion) {
       if (!db.getRoom(roomId)) throw new TaskError(404, 'Room not found');
       const { machines, rmMonth = null, suggestedAt = null } = suggestion ?? {};
@@ -341,7 +344,8 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
       // suggestedAt: a time in ms within the Date range.
       const time = (v) => Number.isInteger(v) && v >= 0 && v <= MAX_TIME;
       if (!Array.isArray(machines) || new Set(machines.map((m) => m?.key)).size !== machines.length
-        || machines.some((m) => !Object.hasOwn(MACHINES, m?.key) || !size(m.from) || !size(m.to))) {
+        || machines.some((m) => !Object.hasOwn(MACHINES, m?.key) || !size(m.from) || !size(m.to)
+          || (m.assumed !== undefined && typeof m.assumed !== 'boolean'))) {
         throw new TaskError(400, `The plan must list the fan, aircon, humidifier or dehumidifier, each from and to a number from 0 to ${grouped(MAX_MACHINE)}`, 'suggestion');
       }
       if ((rmMonth !== null && !number(rmMonth)) || (suggestedAt !== null && !time(suggestedAt))) {
@@ -360,7 +364,8 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
       const replaced = open.filter((r) => keys.has(r.source.machine)).map((r) => ({ id: r.id, at, reason: 'Replaced by a newer plan' }));
       const rows = db.insertLongtermTasks(fresh.map((m) => ({
         roomId, text: machineChangeText(m.key, m.from, m.to),
-        source: { machine: m.key, from: m.from, to: m.to, rmMonth, suggestedAt }, at,
+        note: m.assumed ? `${MACHINES[m.key].size} now was Simulate's default, not from Setup` : null,
+        source: { machine: m.key, from: m.from, to: m.to, rmMonth, suggestedAt, ...(m.assumed ? { assumed: true } : {}) }, at,
       })), replaced);
       tell(roomId);
       return { rows: rows.map(view), replaced: replaced.map((r) => view(db.getTask(r.id))) };

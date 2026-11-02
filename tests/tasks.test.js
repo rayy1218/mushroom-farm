@@ -411,6 +411,22 @@ test('long-term rows: the owner\'s, and Plan this from a suggestion', (t) => {
   assert.equal(machineChangeText('dehumidifierLday', 10, 0), 'Dehumidifier 10 L/day → none');
 });
 
+test('Plan this: a machine whose "from" was Simulate\'s default (assumed) says so in the row\'s note and keeps it in source', (t) => {
+  const s = setup(t);
+  const { rows } = s.tasks.addFromSuggestion(s.id, {
+    machines: [{ key: 'fanFlow', from: 600, to: 150, assumed: true }, { key: 'acBTU', from: 9000, to: 12000, assumed: false }],
+    rmMonth: -3, suggestedAt: 1,
+  });
+  assert.deepEqual(rows.map((r) => [r.text, r.note]), [
+    ['Fan 600 → 150 m³/h', "The fan's flow now was Simulate's default, not from Setup"],
+    ['Aircon 9,000 → 12,000 BTU/h', null],
+  ]);
+  assert.deepEqual(rows[0].source, { machine: 'fanFlow', from: 600, to: 150, rmMonth: -3, suggestedAt: 1, assumed: true });
+  assert.deepEqual(rows[1].source, { machine: 'acBTU', from: 9000, to: 12000, rmMonth: -3, suggestedAt: 1 }, 'not assumed: as before');
+  refused(() => s.tasks.addFromSuggestion(s.id, { machines: [{ key: 'humidifierLH', from: 0.5, to: 1, assumed: 'yes' }] }), 400,
+    'The plan must list the fan, aircon, humidifier or dehumidifier, each from and to a number from 0 to 1,000,000', 'suggestion');
+});
+
 test('Plan this checks: a machine once, numbers from 0 to 1,000,000, rmMonth and suggestedAt numbers; one change told; at most 3 decimals', (t) => {
   const s = setup(t);
   const shape = 'The plan must list the fan, aircon, humidifier or dehumidifier, each from and to a number from 0 to 1,000,000';

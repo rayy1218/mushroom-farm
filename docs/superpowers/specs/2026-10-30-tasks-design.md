@@ -124,7 +124,7 @@ oyster family's cap wording is its harvest note. Rows made before this change ke
 
 | Table | Columns |
 |---|---|
-| `tasks` | `id, room_id, kind CHECK(daily|upkeep|longterm), rule_key NULL, date TEXT NULL ('YYYY-MM-DD', daily), slot, text, note, status CHECK(open|done|skipped|missed|cancelled), due_at NULL, created_at, closed_at NULL, worker TEXT NULL, amount REAL NULL, unit TEXT NULL, reason TEXT NULL, source TEXT NULL (JSON: a suggestion's machine, from, to, rmMonth, suggestedAt)`; unique index `(room_id, rule_key, date, slot) WHERE kind = 'daily'`; index `(room_id, status)` |
+| `tasks` | `id, room_id, kind CHECK(daily|upkeep|longterm), rule_key NULL, date TEXT NULL ('YYYY-MM-DD', daily), slot, text, note, status CHECK(open|done|skipped|missed|cancelled), due_at NULL, created_at, closed_at NULL, worker TEXT NULL, amount REAL NULL, unit TEXT NULL, reason TEXT NULL, source TEXT NULL (JSON: a suggestion's machine, from, to, rmMonth, suggestedAt, and assumed: true when the "from" was Simulate's default)`; unique index `(room_id, rule_key, date, slot) WHERE kind = 'daily'`; index `(room_id, status)` |
 | `workers` | `id, name UNIQUE, active` |
 | `task_rule_settings` | `key PK, enabled, every_days NULL` |
 | `custom_task_rules` | `id, text, rooms TEXT NULL (JSON ids; null = all), every_days NULL (null = daily), slot, enabled` |
@@ -140,7 +140,7 @@ The worker is stored as text on the task, so a renamed or removed worker never c
 | `POST /api/tasks/:id/done` | `{ worker, amount? }` → the row |
 | `POST /api/tasks/:id/skip` | `{ worker, reason }` → the row (not for long-term) |
 | `POST /api/tasks/:id/cancel` | `{ reason }` → the row (long-term only) |
-| `POST /api/rooms/:id/tasks` | `{ text, note? }` (own) or `{ suggestion: { machines: [{ key, from, to }], rmMonth, suggestedAt } }` → `{ rows, replaced }`: the new rows; an open plan of a machine to another size is cancelled "Replaced by a newer plan" in the same transaction and comes back in `replaced` (an own task: none), so Suggest machines can say "(replaces Humidifier 0.5 → 2 L/h)" |
+| `POST /api/rooms/:id/tasks` | `{ text, note? }` (own) or `{ suggestion: { machines: [{ key, from, to, assumed? }], rmMonth, suggestedAt } }` → `{ rows, replaced }`: the new rows; an open plan of a machine to another size is cancelled "Replaced by a newer plan" in the same transaction and comes back in `replaced` (an own task: none), so Suggest machines can say "(replaces Humidifier 0.5 → 2 L/h)" |
 | `GET /api/rooms/:id/tasks/log?before=<id>` | → the closed rows newest first, 50 a page |
 | `GET /api/rooms/:id/tasks/log.csv` | → every closed row: date, time, room, task, status, worker, amount, unit, reason |
 | `GET/PUT /api/workers` | `[{ id?, name, active }]` |
@@ -168,7 +168,7 @@ Tabs: Now · History · Crop · **Tasks** · Simulations · Setup. The tab carri
 |---|---|---|
 | Today | today's daily rows by Morning / Afternoon / Any time; each row its text, the crop notes muted under it; closed rows folded into "6 done" | **Done** (an amount box when the rule records one), **Skip** (asks the reason) |
 | Upkeep | overdue first ("overdue 3 days"), then due within 7 days, then the rest with their next date | **Done**, **Skip** |
-| Long-term | open rows: "Aircon 9,000 → 12,000 BTU/h · RM 42 a month less · from Suggest machines, 29 Oct" | **Done**, **Cancel** (asks the reason), **Add** (text, optional note) |
+| Long-term | open rows: "Aircon 9,000 → 12,000 BTU/h · plan: RM 42 a month less · from Suggest machines, 29 Oct" (the RM a month is the whole plan's, every machine of it together, so each row of one plan shows the same) | **Done**, **Cancel** (asks the reason), **Add** (text, optional note) |
 | Log | the last 14 days closed: time, task, status, worker, amount, reason; **Older…** | **Export CSV** |
 
 ### 7.2 Today (`#/today`)
@@ -192,7 +192,7 @@ A **Today** link in the top bar with the sum of every room's `counts.due`.
 
 **Plan this** beside **Use this** on each suggestion row. It opens a dialog listing each machine that differs from the baseline (from → to) and the RM a month against the baseline; **Plan** posts it and links to the room's Tasks tab. With no baseline the button is not shown (the "from" is unknown).
 
-A search whose baseline is no longer the room's machines (Setup changed since a stored search) is not planned: the dialog says "<room>'s machines changed since this search. Suggest again to plan from them." and offers only **Close**. When the room's fan flow is Simulate's default (Setup keeps none), the fan's line in the dialog says "(fan now: Simulate's default)".
+A search whose baseline is no longer the room's machines (Setup changed since a stored search) is not planned: the dialog says "<room>'s machines changed since this search. Suggest again to plan from them." and offers only **Close**. When the room's fan flow is Simulate's default (Setup keeps none), the fan's line in the dialog says "(fan now: Simulate's default)", and **Plan** sends the fan with `assumed: true`: the server keeps `assumed: true` in the row's `source` and gives the row the note "The fan's flow now was Simulate's default, not from Setup" (another machine sent assumed gets the same words with its own size: "The aircon's size", "The humidifier's output", "The dehumidifier's capacity").
 
 After **Plan**, the row says how many long-term tasks it planned, those left out as already planned to the same size, and the open plans it replaced, then links to the Tasks tab: "1 long-term task planned (replaces Humidifier 0.5 → 1 L/h) · Open the Tasks tab" (several replaced joined with " · "; with some already planned, one bracket: "(1 already planned; replaces …)").
 

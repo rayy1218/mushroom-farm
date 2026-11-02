@@ -131,6 +131,16 @@ test('Plan this to another size: the reply lists the open plan it replaced (canc
   assert.deepEqual((await call('POST', `/api/rooms/${id}/tasks`, { text: 'Seal the door' })).body.replaced, []);
 });
 
+test("Plan this: the fan's \"from\" at Simulate's default (assumed) comes back as the row's note and in its source", async (t) => {
+  const { call } = await app(t);
+  const id = (await call('POST', '/api/rooms', ROOM)).body.id;
+  const made = await call('POST', `/api/rooms/${id}/tasks`, { suggestion: { machines: [{ key: 'fanFlow', from: 600, to: 150, assumed: true }], rmMonth: -3, suggestedAt: 1 } });
+  assert.equal(made.status, 201);
+  assert.deepEqual([made.body.rows[0].note, made.body.rows[0].source.assumed], ["The fan's flow now was Simulate's default, not from Setup", true]);
+  const row = (await call('GET', `/api/rooms/${id}/tasks`)).body.longterm[0];
+  assert.deepEqual([row.note, row.source.assumed], ["The fan's flow now was Simulate's default, not from Setup", true]);
+});
+
 test('Plan this: a suggestion that is not one is 400 with the field', async (t) => {
   const { call } = await app(t);
   const id = (await call('POST', '/api/rooms', ROOM)).body.id;

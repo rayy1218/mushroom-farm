@@ -102,10 +102,11 @@ import {
 
 test('a long-term row from Suggest machines in one line', () => {
   const row = { text: 'Aircon 9,000 → 12,000 BTU/h', source: { machine: 'acBTU', from: 9000, to: 12000, rmMonth: -42.4, suggestedAt: at(14, 0, 29) } };
-  assert.equal(longtermLine(row), 'Aircon 9,000 → 12,000 BTU/h · RM 42 a month less · from Suggest machines, 29 Oct');
-  assert.equal(longtermLine({ ...row, source: { ...row.source, rmMonth: 15.6 } }), 'Aircon 9,000 → 12,000 BTU/h · RM 16 a month more · from Suggest machines, 29 Oct');
+  // the RM a month is the whole plan's (every machine of it together), not this machine's
+  assert.equal(longtermLine(row), 'Aircon 9,000 → 12,000 BTU/h · plan: RM 42 a month less · from Suggest machines, 29 Oct');
+  assert.equal(longtermLine({ ...row, source: { ...row.source, rmMonth: 15.6 } }), 'Aircon 9,000 → 12,000 BTU/h · plan: RM 16 a month more · from Suggest machines, 29 Oct');
   assert.equal(longtermLine({ ...row, source: { ...row.source, rmMonth: null } }), 'Aircon 9,000 → 12,000 BTU/h · from Suggest machines, 29 Oct', 'no electricity price: no money');
-  assert.equal(longtermLine({ ...row, source: { ...row.source, suggestedAt: null } }), 'Aircon 9,000 → 12,000 BTU/h · RM 42 a month less · from Suggest machines', 'no time: no day');
+  assert.equal(longtermLine({ ...row, source: { ...row.source, suggestedAt: null } }), 'Aircon 9,000 → 12,000 BTU/h · plan: RM 42 a month less · from Suggest machines', 'no time: no day');
   assert.equal(longtermLine({ text: 'Fix the door seal', source: null }), 'Fix the door seal');
   assert.equal(rmWords(0.3), 'about the same money a month');
   assert.equal(rmWords(null), '');
@@ -152,7 +153,9 @@ test('C10 review: Plan this from a search whose baseline is no longer the room\'
   assert.equal(planOf(result, 0, prices, 123, { machines: { ...machines, acBTU: 12000 }, defaults: [] }).stale, true);
   const fan = planOf(result, 0, prices, 123, { machines, defaults: ['fanFlow'] });
   assert.deepEqual(fan.changes.map((c) => c.text), ["Fan 600 → 150 m³/h (fan now: Simulate's default)", 'Aircon 9,000 → 12,000 BTU/h']);
-  assert.deepEqual(fan.body.suggestion.machines[0], { key: 'fanFlow', from: 600, to: 150 }, 'the body is the same');
+  assert.deepEqual(fan.body.suggestion.machines, [{ key: 'fanFlow', from: 600, to: 150, assumed: true }, { key: 'acBTU', from: 9000, to: 12000 }],
+    'the fan is flagged for the row\'s note');
+  assert.deepEqual(planOf(result, 0, prices, 123, { machines, defaults: [] }).body.suggestion.machines[0], { key: 'fanFlow', from: 600, to: 150 });
   assert.deepEqual(planOf(result, 0, prices, 123, { machines, defaults: [] }).changes.map((c) => c.text), ['Fan 600 → 150 m³/h', 'Aircon 9,000 → 12,000 BTU/h']);
   assert.equal(plannedWords(3, 3), '3 long-term tasks planned');
   assert.equal(plannedWords(1, 3), '1 long-term task planned (2 already planned)');

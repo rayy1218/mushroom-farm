@@ -136,12 +136,14 @@ export function rmWords(rm) {
   return whole === 0 ? 'about the same money a month' : `RM ${grouped(whole)} a month ${rm < 0 ? 'less' : 'more'}`;
 }
 
-// A long-term row in one line: "Aircon 9,000 → 12,000 BTU/h · RM 42 a month less · from Suggest machines, 29 Oct" (no money
-// without an electricity price, no day without the suggestion's time).
+// A long-term row in one line: "Aircon 9,000 → 12,000 BTU/h · plan: RM 42 a month less · from Suggest machines, 29 Oct" (the
+// RM a month is the whole plan's, every machine of it together, not this machine's; no money without an electricity price,
+// no day without the suggestion's time).
 export function longtermLine(row) {
   const s = row.source;
   if (!s) return row.text;
-  return [row.text, rmWords(s.rmMonth), `from Suggest machines${finite(s.suggestedAt) ? `, ${dayMonth(farmDate(s.suggestedAt))}` : ''}`].filter(Boolean).join(' · ');
+  const rm = rmWords(s.rmMonth);
+  return [row.text, rm && `plan: ${rm}`, `from Suggest machines${finite(s.suggestedAt) ? `, ${dayMonth(farmDate(s.suggestedAt))}` : ''}`].filter(Boolean).join(' · ');
 }
 
 // A machine change in words, as the server names its task: "Fan 150 → 200 m³/h", "Dehumidifier none → 10 L/day".
@@ -167,7 +169,7 @@ export function machineChanges(now, next) {
 // unknown). No changes: the room has this setup already, and the server refuses an empty plan, so the dialog offers no Plan.
 // now: the room's machines as they are (simulate-math roomMachines: { machines, defaults }): stale when the search's
 // baseline is no longer them (Setup changed since a stored search), and the fan's line says when its "from" is Simulate's
-// default (a room keeps no fan flow).
+// default (a room keeps no fan flow); the body then flags it (assumed: true) and the server notes it on the row.
 export function planOf(result, index, prices, suggestedAt, now = null) {
   const base = result?.baseline;
   const next = result?.best?.[index];
@@ -181,7 +183,11 @@ export function planOf(result, index, prices, suggestedAt, now = null) {
     .map((c) => (c.key === 'fanFlow' && fanDefault ? { ...c, text: `${c.text} (fan now: Simulate's default)` } : c));
   return {
     changes, rmMonth, rmText: rmWords(rmMonth), stale: Boolean(now?.machines) && machineChanges(now.machines, base.machines).length > 0,
-    body: { suggestion: { machines: changes.map(({ key, from, to }) => ({ key, from, to })), rmMonth, suggestedAt } },
+    body: {
+      suggestion: {
+        machines: changes.map(({ key, from, to }) => ({ key, from, to, ...(key === 'fanFlow' && fanDefault ? { assumed: true } : {}) })), rmMonth, suggestedAt,
+      },
+    },
   };
 }
 
