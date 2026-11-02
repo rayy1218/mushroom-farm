@@ -229,13 +229,14 @@ export function mount(container, { id, tab = 'now' }) {
   // A phone: the Setup tab's long parts start folded under their titles (critique 2026-10-28: about 6,700 px of scroll).
   if (matchMedia('(max-width: 760px)').matches) for (const d of container.querySelectorAll('details.setup-part')) d.open = false;
   setTab(tab);
-  // A phone: the History and Setup jump links scroll sideways when they do not fit; the edge that has more fades, and only
+  // A phone: the History and Setup jump links and the tab row scroll sideways when they do not fit; the edge that has more fades, and only
   // while something is hidden there (critique 2026-10-29: the last one showed as a sliver, or not at all, with no cue).
-  const navs = [...container.querySelectorAll('.setup-nav')];
+  const navs = [...container.querySelectorAll('.setup-nav, .room-tabs')];
   const paintNavEdges = () => { for (const nav of navs) nav.dataset.more = scrollEdges(nav.scrollLeft, nav.clientWidth, nav.scrollWidth); };
   for (const nav of navs) nav.addEventListener('scroll', paintNavEdges, { passive: true });
   const navObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(paintNavEdges) : null;
   for (const nav of navs) navObserver?.observe(nav);
+  for (const nav of navs) for (const link of nav.children) navObserver?.observe(link); // the Tasks tab's count coming or going
   const els = {
     title: q('[data-title]'),
     sub: q('[data-sub]'),

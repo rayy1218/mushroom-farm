@@ -32,11 +32,39 @@ test('long words in a task wrap, and a note keeps its line breaks', () => {
   assert.match(block, /\.tk-note \{[^}]*white-space: pre-line;/);
 });
 
-test('a phone: the buttons and the fold at 44 px, a row stacks its buttons under its text, the top bar links narrower, six tabs fit', () => {
-  for (const rule of ['.tk-row { flex-direction: column; align-items: stretch; gap: 8px; }', '.tk-actions button { flex: 1 1 0; min-height: 44px; }',
-    '.tk-fold > summary { min-height: 44px; padding: 12px 0; }', '.tk-as select { flex: 1 1 auto; min-height: 44px; }',
+test('a phone: Done and Skip beside the text at 44 px (a long-term row stacks them under it), the fold at 44 px, the top bar links narrower, six tabs fit', () => {
+  for (const rule of ['.tk-row { gap: 8px; }', '.tk-actions { gap: 6px; }', '.tk-actions button { min-height: 44px; padding: 7px 10px; }',
+    '.tk-row[data-kind="longterm"] { flex-direction: column; align-items: stretch; }', '.tk-row[data-kind="longterm"] .tk-actions { gap: 8px; }',
+    '.tk-row[data-kind="longterm"] .tk-actions button { flex: 1 1 0; padding: 7px 14px; }', '.tk-fold > summary { min-height: 44px; padding: 12px 0; }', '.tk-as select { flex: 1 1 auto; min-height: 44px; }',
     '.top-link { min-width: 44px; padding: 4px 6px; justify-content: center; gap: 4px; }', '.room-tabs a { padding: 10px 5px; gap: 4px; }',
     '.sg-planned a { display: inline-block; min-height: 44px; line-height: 44px; white-space: nowrap; }']) {
     assert.ok(phone.includes(rule), rule);
   }
+});
+
+test('the room tabs fade only at an edge that hides a tab (data-more, as the Setup and History links), never always', () => {
+  const tabs = css.slice(css.indexOf("/* The room page's six tabs"), css.indexOf('.sensors {'));
+  assert.doesNotMatch(tabs.slice(0, tabs.indexOf('.room-tabs::-webkit-scrollbar')), /mask-image/, 'no always-on fade');
+  for (const edge of ['end', 'start', 'both']) assert.ok(tabs.includes(`.room-tabs[data-more="${edge}"] { mask-image:`), edge);
+  const room = readFileSync(new URL('../web/room-detail.js', import.meta.url), 'utf8');
+  assert.ok(room.includes("container.querySelectorAll('.setup-nav, .room-tabs')"), 'the tab row gets its data-more too');
+});
+
+test('the Tasks tab from 1,100 px: Today, Upkeep and Long-term on the left, the Log alone on the right', () => {
+  const desk = block.slice(block.indexOf('.tk-grid {'), block.indexOf('.tk-part .sim-card-head'));
+  assert.ok(desk.includes('.tk-grid { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); grid-template-rows: auto auto auto 1fr; }'));
+  assert.ok(desk.includes('.tk-grid > :not(.tk-log-card) { grid-column: 1; }'));
+  assert.ok(desk.includes('.tk-grid > .tk-log-card { grid-column: 2; grid-row: 1 / -1; }'));
+  const card = readFileSync(new URL('../web/tasks-card.js', import.meta.url), 'utf8');
+  assert.ok(card.includes("const logCard = el('section', 'card tk-part tk-log-card');"));
+});
+
+test('review minor: the dialog wraps its primary button on top; the Today room link is 44 px by its own margin; Live keeps its dot', () => {
+  assert.ok(block.includes('.tk-dialog .actions { flex-wrap: wrap-reverse; }'));
+  assert.ok(phone.includes('.td-room h2 a, .td-long-list a { display: inline-flex; align-items: center; min-height: 44px; }'));
+  assert.ok(phone.includes('.td-room h2 a { margin-block: -10px; }'));
+  assert.ok(!phone.includes('.td-room h2 { margin-top'));
+  assert.ok(phone.includes('.topbar:has(> .top-alarm:not([hidden])) .live-mark [data-live-text] {'), 'the word hides, the dot stays');
+  assert.ok(!phone.includes('.live-dot { display: none; }'));
+  assert.equal(block.split('.tk-add > button { margin-top').length, 2, 'one rule, not repeated on a phone');
 });

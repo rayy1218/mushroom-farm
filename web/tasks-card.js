@@ -61,7 +61,7 @@ export function createTasksCard(host, { roomId, onCounts, onGone }) {
   longCard.append(longHead, longList, longNone);
 
   // Log
-  const logCard = el('section', 'card tk-part');
+  const logCard = el('section', 'card tk-part tk-log-card');
   const logHead = el('div', 'sim-card-head');
   const csv = el('a', 'button', 'Export CSV');
   csv.href = `/api/rooms/${roomId}/tasks/log.csv`;

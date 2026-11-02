@@ -175,7 +175,7 @@ test('the History and Setup jump links say short words on a phone, all four fitt
   for (const [href, long, word] of [['#hist-climate', 'Climate', 'Climate'], ['#hist-energy', 'Energy and water', 'Energy'], ['#hist-exchange', 'Air exchange', 'Exchange'],
     ['#hist-timeline', 'Machines', 'Machines'], ['#setup-control', 'Bands and control', 'Bands'], ['#setup-equipment', 'Equipment', 'Equipment'],
     ['#setup-filter', 'Intake filter', 'Filter'], ['#setup-room', 'Room', 'Room']]) assert.ok(room.includes(short(href, long, word)), href);
-  assert.match(room, /const navs = \[\.\.\.container\.querySelectorAll\('\.setup-nav'\)\];/);
+  assert.match(room, /const navs = \[\.\.\.container\.querySelectorAll\('\.setup-nav, \.room-tabs'\)\];/); // the tab row too (Tasks, C11 review)
   const css = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
   const block = css.slice(css.indexOf('/* critique 2026-10-29b: status, controller and phone */'));
   assert.match(block, /\.nav-short \{ display: none; \}/);

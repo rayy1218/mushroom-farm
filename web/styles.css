@@ -355,8 +355,7 @@ html { scroll-padding-top: var(--topbar-h); }
 
 /* The room page's six tabs (redesign 2026-10-28; Tasks, iteration 19): underline tabs under the title at every width; a phone scrolls the row
    sideways with a fade at the edge that has more. */
-.room-tabs { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; border-bottom: 1px solid var(--border); margin: 0 0 20px;
-  mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent); }
+.room-tabs { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; border-bottom: 1px solid var(--border); margin: 0 0 20px; }
 .room-tabs::-webkit-scrollbar { display: none; }
 .room-tabs a { flex: none; display: flex; align-items: center; gap: 8px; padding: 10px 12px; color: var(--muted); text-decoration: none; font-weight: 500;
   white-space: nowrap; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: color .15s, border-color .15s; }
@@ -367,7 +366,10 @@ html { scroll-padding-top: var(--topbar-h); }
 .room-tabs .tab-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
 .room-tabs .tab-dot[data-level="warning"] { background: var(--warning); }
 .room-tabs .tab-dot[data-level="serious"], .room-tabs .tab-dot[data-level="critical"] { background: var(--critical); }
-@media (min-width: 601px) { .room-tabs { mask-image: none; } }
+/* the edge that hides a tab fades, and only while one is hidden there (room-detail.js sets data-more, as on the Setup links) */
+.room-tabs[data-more="end"] { mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent); }
+.room-tabs[data-more="start"] { mask-image: linear-gradient(270deg, #000 calc(100% - 24px), transparent); }
+.room-tabs[data-more="both"] { mask-image: linear-gradient(90deg, transparent, #000 24px, #000 calc(100% - 24px), transparent); }
 .sensors { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-bottom: 16px; }
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); padding: 20px; min-width: 0; }
 :root[data-theme="light"] .card { box-shadow: 0 1px 2px var(--shadow); }
@@ -1403,11 +1405,12 @@ details.setup-part:not([open]) { padding-top: 8px; }
 .top-link .top-count { display: inline-block; min-width: 18px; padding: 0 4px; border-radius: 999px; background: var(--border-strong); color: var(--ink);
   font: 700 12px/18px var(--font-body); text-align: center; font-variant-numeric: tabular-nums; }
 
-/* the Tasks tab: Today beside Upkeep, Long-term and the Log from 1,100 px */
+/* the Tasks tab from 1,100 px: Today, Upkeep and Long-term on the left, the Log alone on the right */
 .tk-grid { display: grid; gap: 16px; align-items: start; }
 @media (min-width: 1100px) {
-  .tk-grid { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
-  .tk-grid > .tk-today { grid-row: 1 / span 3; }
+  .tk-grid { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); grid-template-rows: auto auto auto 1fr; }
+  .tk-grid > :not(.tk-log-card) { grid-column: 1; }
+  .tk-grid > .tk-log-card { grid-column: 2; grid-row: 1 / -1; }
 }
 .tk-part .sim-card-head { flex-wrap: wrap; }
 .tk-sub { margin: 0 0 8px; font-size: var(--fs-sm); }
@@ -1465,7 +1468,7 @@ details.setup-part:not([open]) { padding-top: 8px; }
 .tk-dialog .tk-check { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
 .tk-dialog .tk-check input { width: 20px; height: 20px; margin: 0; }
 .tk-dialog .tk-check :is(.c-hint, .field-error) { flex: 1 0 100%; }
-.tk-dialog .actions { flex-wrap: wrap; }
+.tk-dialog .actions { flex-wrap: wrap-reverse; } /* wrapped on a phone, the primary button on top */
 
 /* Settings: Workers and Task rules, two more cards of the settings grid */
 .tk-settings { display: contents; }
@@ -1478,7 +1481,7 @@ details.setup-part:not([open]) { padding-top: 8px; }
 .tk-rename .field { flex: 1 1 200px; margin: 0; }
 .tk-add { display: flex; flex-wrap: wrap; align-items: start; gap: 8px; }
 .tk-add .field { margin: 0; }
-.tk-add > button { margin-top: calc(0.9rem * 1.45 + 4px); } /* level with the box, under its label */
+.tk-add > button { margin-top: calc(0.9rem * 1.45 + 4px); } /* level with the box: .field label's 0.9rem × 1.45 line and the field's 4 px gap */
 .tk-rules h3, .tk-form-title { margin: 16px 0 4px; font-size: var(--fs-md); font-weight: 600; }
 .tk-rule-text { flex: 1 1 240px; min-width: 0; overflow-wrap: anywhere; }
 .tk-rule-text p { margin: 0; }
@@ -1504,29 +1507,34 @@ details.setup-part:not([open]) { padding-top: 8px; }
 @media (max-width: 600px) {
   .tk-grid, .td-rooms { gap: 12px; }
   .td-long { margin-top: 12px; }
-  .tk-row { flex-direction: column; align-items: stretch; gap: 8px; }
-  .tk-actions button { flex: 1 1 0; min-height: 44px; }
+  /* Done and Skip beside the text, compact at 44 px; a long-term row (longer words) puts them under it */
+  .tk-row { gap: 8px; }
+  .tk-actions { gap: 6px; }
+  .tk-actions button { min-height: 44px; padding: 7px 10px; }
+  .tk-row[data-kind="longterm"] { flex-direction: column; align-items: stretch; }
+  .tk-row[data-kind="longterm"] .tk-actions { gap: 8px; }
+  .tk-row[data-kind="longterm"] .tk-actions button { flex: 1 1 0; padding: 7px 14px; }
   .tk-fold > summary { min-height: 44px; padding: 12px 0; }
   .tk-as { width: 100%; }
   .tk-as select { flex: 1 1 auto; min-height: 44px; }
   .td-picker { width: 100%; }
   .td-room h2 a, .td-long-list a { display: inline-flex; align-items: center; min-height: 44px; }
-  .td-room h2 { margin-top: -10px; } /* the taller link keeps the card's top padding */
+  .td-room h2 a { margin-block: -10px; } /* the taller target keeps the card's spacing */
   .td-long-list li { padding: 0; }
   .tk-every input { min-height: 44px; }
   .tk-dialog .tk-check label { display: inline-flex; align-items: center; min-height: 44px; } /* the words take the tap too */
   .tk-rule-list button.toggle { min-height: 44px; } /* after button.toggle's 40 px */
   .tk-rule-list li:has(> button:not(.toggle)) .tk-rule-text { flex-basis: 100%; } /* an own rule: Edit, Remove and On in a row under it */
-  .tk-add > button { margin-top: calc(0.9rem * 1.45 + 4px); }
   .top-link { min-width: 44px; padding: 4px 6px; justify-content: center; gap: 4px; } /* room for the Today link and its count */
   .room-tabs a { padding: 10px 5px; gap: 4px; } /* six tabs and a count up to 99+ fit 390 px; 360 px scrolls with the fade */
   .sg-planned a { display: inline-block; min-height: 44px; line-height: 44px; white-space: nowrap; }
 }
 /* a small phone with the alarm button and the Today count (C8 review: the mark was squeezed at 360 px): tighter gaps, and
-   while the alarm button shows the Live mark keeps its words without the dot (only a help), so "Not live" fits too */
+   while the alarm button shows the Live mark is its dot alone, green when live (DESIGN.md); its words stay for a screen
+   reader and its title says them, so "Not live" fits too */
 @media (max-width: 400px) {
   .topbar { gap: 2px; }
   .top-alarm { padding: 4px 6px; gap: 4px; }
   .top-link { padding: 4px; }
-  .topbar:has(> .top-alarm:not([hidden])) .live-dot { display: none; }
+  .topbar:has(> .top-alarm:not([hidden])) .live-mark [data-live-text] { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 }
