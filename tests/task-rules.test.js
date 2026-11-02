@@ -46,7 +46,7 @@ test('the built-in rules are the spec tables', () => {
     ['acFilter', 7, 'ac'], ['humidifierDescale', 7, 'humidifier'], ['flyTraps', 7, null], ['dehumidifierFilter', 14, 'dehumidifier'],
     ['co2Check', 30, 'co2'], ['rhCheck', 90, 'trh'], ['acService', 120, 'ac'], ['acChemWash', 180, 'ac']]);
   assert.deepEqual(Object.keys(FAMILY_OF).sort(), [...CROP_KEYS].sort(), 'every crop has a family');
-  assert.deepEqual(Object.keys(CROP_NOTES).sort(), ['abalone', 'black', 'golden', 'lionsmane', 'pink', 'woodear']);
+  assert.deepEqual(Object.keys(CROP_NOTES).sort(), ['abalone', 'black', 'golden', 'lionsmane', 'oyster', 'pink', 'woodear']);
   const O = ['oyster'], OWLR = ['oyster', 'woodear', 'lionsmane', 'reishi'], OL = ['oyster', 'lionsmane'];
   const LAST7 = { every: 2, lastDays: 7 }, WHOLE = { every: 2, lastDays: null };
   assert.deepEqual([...DAILY_RULES, CLEAR_OUT].map((r) => [r.key, r.families, r.stages, r.when, r.slot]), [
@@ -116,8 +116,10 @@ test('mixed crops: each rule once, with the notes of each crop that has one', ()
   assert.equal(wanted.filter((w) => w.ruleKey === 'harvestAm').length, 1);
   const am = wanted.find((w) => w.ruleKey === 'harvestAm');
   assert.deepEqual(am, {
-    ruleKey: 'harvestAm', text: 'Harvest check: pick before the cap edge waves or splits; pick before any misting',
-    note: 'Pink oyster: Keeps 1–3 days after picking: pick on sale days · Golden oyster: Fragile when mature: pick early, handle gently',
+    ruleKey: 'harvestAm', text: 'Harvest check: pick the ready ones; pick before any misting',
+    note: 'Pink oyster: Pick before the cap edge waves or splits; keeps 1–3 days after picking: pick on sale days'
+      + ' · Golden oyster: Pick before the cap edge waves or splits; fragile when mature: pick early, handle gently'
+      + ' · Grey oyster: Pick before the cap edge waves or splits',
     slot: 'morning', unit: 'kg',
   });
   assert.equal(wanted.find((w) => w.ruleKey === 'contamWalk').unit, 'bags');
@@ -137,8 +139,26 @@ test('crop notes come only from the crops a rule is for', () => {
     return wantedDaily({ program: p, crops: p.crops, date: '2026-10-30', rules: ALL }).find((w) => w.ruleKey === ruleKey).note;
   };
   assert.equal(noteOn(['pink', 'woodear'], 'harvestDaily'), 'Wood ear: Ears 3–5 cm, before the edges thin; leave the small ones');
-  assert.equal(noteOn(['pink', 'woodear'], 'harvestAm'), 'Pink oyster: Keeps 1–3 days after picking: pick on sale days');
+  assert.equal(noteOn(['pink', 'woodear'], 'harvestAm'), 'Pink oyster: Pick before the cap edge waves or splits; keeps 1–3 days after picking: pick on sale days');
   assert.equal(noteOn(['lionsmane', 'reishi'], 'reishiRim'), null);
+});
+
+test('harvest texts are crop-neutral; the cap wording is the oyster family\'s harvest note', () => {
+  const harvest = (crop) => {
+    const p = prog({ stage: 'fruiting', crops: [{ crop, blocks: 10 }] });
+    const w = wantedDaily({ program: p, crops: p.crops, date: '2026-10-30', rules: ALL });
+    return [w.find((x) => x.ruleKey === 'harvestAm'), w.find((x) => x.ruleKey === 'harvestPm')];
+  };
+  const [am, pm] = harvest('lionsmane');
+  assert.equal(am.text, 'Harvest check: pick the ready ones; pick before any misting');
+  assert.equal(pm.text, 'Harvest check (afternoon)');
+  assert.ok(!/cap/.test(am.note), "lion's mane has no caps");
+  const cap = 'Pick before the cap edge waves or splits';
+  assert.equal(harvest('oyster')[0].note, cap);
+  assert.equal(harvest('abalone')[1].note, cap);
+  assert.equal(harvest('black')[0].note, `${cap}; heavy spores: wear a mask`);
+  assert.equal(harvest('golden')[0].note, `${cap}; fragile when mature: pick early, handle gently`);
+  assert.equal(harvest('pink')[0].note, `${cap}; keeps 1–3 days after picking: pick on sale days`);
 });
 
 test('a done program gives clearOut with the room rules; no crops gives the room rules only', () => {

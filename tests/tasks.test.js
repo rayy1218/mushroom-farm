@@ -469,7 +469,7 @@ test('the log pages newest first; the CSV has every closed row with the farm\'s 
   assert.deepEqual(s.tasks.log(s.id, { before: all.at(-2).id }).map((r) => r.ruleKey), ['harvestAm']);
   const csv = s.tasks.logCsv(s.id).split('\r\n');
   assert.equal(csv[0], 'date,time,room,task,status,worker,amount,unit,reason');
-  assert.equal(csv[1], '2026-10-30,09:05,Room 1,Harvest check: pick before the cap edge waves or splits; pick before any misting,done,Ali,4.2,kg,');
+  assert.equal(csv[1], '2026-10-30,09:05,Room 1,Harvest check: pick the ready ones; pick before any misting,done,Ali,4.2,kg,');
   assert.equal(csv[2], '2026-10-30,09:30,Room 1,"Contamination walk: take out and bag any green, orange, black or slimy bags, away from the room",skipped,"Siti, Ah Kow",,,"Said ""later"""');
   assert.equal(csv[3], '2026-10-30,,Room 1,"Humidifier: water in, mist coming out",missed,,,,');
   assert.equal(csv.at(-1), '', 'ends with a line break');
@@ -525,7 +525,7 @@ test('the CSV dates a closed row by when it was closed; a missed row keeps its o
   s.tasks.done(harvest.id, { worker: 'Ali', amount: 3 });
   s.tasks.ensureDay(s.id); // the rest of 30 Oct is missed
   const csv = s.tasks.logCsv(s.id).split('\r\n');
-  assert.ok(csv.includes('2026-10-31,00:05,Room 1,Harvest check: pick before the cap edge waves or splits; pick before any misting,done,Ali,3,kg,'));
+  assert.ok(csv.includes('2026-10-31,00:05,Room 1,Harvest check: pick the ready ones; pick before any misting,done,Ali,3,kg,'));
   assert.ok(csv.includes('2026-10-30,,Room 1,"Humidifier: water in, mist coming out",missed,,,,'));
 });
 

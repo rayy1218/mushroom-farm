@@ -30,7 +30,7 @@ export const DAILY_RULES = [
   { key: 'casingApply', kind: 'daily', text: 'Apply the sterilised casing soil (1–2 cm) and keep it moist with light sprays', families: ['milky'], stages: ['pinning'], when: 'first', slot: 'morning', amount: null },
   { key: 'reishiForm', kind: 'daily', text: 'Choose the form: bag closed for antlers, or open for caps (CO₂ under about 800 ppm)', families: ['reishi'], stages: ['pinning'], when: 'first', slot: 'any', amount: null },
   { key: 'humidifierCheck', kind: 'daily', text: 'Humidifier: water in, mist coming out', families: null, stages: ['pinning', 'fruiting'], when: 'daily', slot: 'morning', amount: null },
-  { key: 'harvestAm', kind: 'daily', text: 'Harvest check: pick before the cap edge waves or splits; pick before any misting', families: ['oyster', 'lionsmane'], stages: ['fruiting'], when: 'daily', slot: 'morning', amount: KG },
+  { key: 'harvestAm', kind: 'daily', text: 'Harvest check: pick the ready ones; pick before any misting', families: ['oyster', 'lionsmane'], stages: ['fruiting'], when: 'daily', slot: 'morning', amount: KG },
   { key: 'harvestPm', kind: 'daily', text: 'Harvest check (afternoon)', families: ['oyster', 'lionsmane'], stages: ['fruiting'], when: 'daily', slot: 'afternoon', amount: KG },
   { key: 'harvestDaily', kind: 'daily', text: 'Harvest check', families: ['woodear', 'milky'], stages: ['fruiting'], when: 'daily', slot: 'morning', amount: KG },
   { key: 'reishiRim', kind: 'daily', text: "Check the caps' growing rim; harvest by cutting the stem, keeping about 2 cm", families: ['reishi'], stages: ['fruiting'], when: { every: 2, lastDays: null }, slot: 'any', amount: KG },
@@ -57,18 +57,21 @@ export const UPKEEP_RULES = [
   { key: 'acChemWash', kind: 'upkeep', text: 'Aircon chemical wash', everyDays: 180, needs: 'ac' },
 ];
 
-// harvest: the note of every harvest rule; a rule key: the note of that rule.
+// harvest: the note of every harvest rule; a rule key: the note of that rule. The harvest rules' texts fit every crop they are
+// for (lion's mane has no cap): the oyster family's cap wording is its harvest note.
+const CAP = 'Pick before the cap edge waves or splits';
 export const CROP_NOTES = {
-  pink: { harvest: 'Keeps 1–3 days after picking: pick on sale days' },
-  golden: { harvest: 'Fragile when mature: pick early, handle gently' },
-  black: { harvest: 'Heavy spores: wear a mask' },
-  abalone: { contamWalk: 'Black droplets on the mycelium are normal, not contamination' },
+  oyster: { harvest: CAP },
+  pink: { harvest: `${CAP}; keeps 1–3 days after picking: pick on sale days` },
+  golden: { harvest: `${CAP}; fragile when mature: pick early, handle gently` },
+  black: { harvest: `${CAP}; heavy spores: wear a mask` },
+  abalone: { harvest: CAP, contamWalk: 'Black droplets on the mycelium are normal, not contamination' },
   lionsmane: { harvest: 'Spines 6–13 mm and still white; brown or yellow means now', humidifierCheck: 'Mist the air, never the mushroom' },
   woodear: { harvest: 'Ears 3–5 cm, before the edges thin; leave the small ones' },
 };
 const HARVEST_KEYS = new Set(['harvestAm', 'harvestPm', 'harvestDaily', 'reishiRim']);
 // The crop's name before its note in a room of several crops.
-const NOTE_NAMES = { pink: 'Pink oyster', golden: 'Golden oyster', black: 'Black oyster', abalone: 'Abalone oyster', lionsmane: "Lion's mane", woodear: 'Wood ear' };
+const NOTE_NAMES = { oyster: 'Grey oyster', pink: 'Pink oyster', golden: 'Golden oyster', black: 'Black oyster', abalone: 'Abalone oyster', lionsmane: "Lion's mane", woodear: 'Wood ear' };
 
 // The rules of the room itself (made with or without crops, and while the program is done).
 const isRoomRule = (r) => r.key === 'footbath' || r.key === 'floorClean' || r.key.startsWith('custom:');

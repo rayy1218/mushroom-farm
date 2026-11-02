@@ -55,7 +55,7 @@ Crop families (from `web/crops.js` keys): **oyster** = oyster, black, pink, abal
 | casingApply | Apply the sterilised casing soil (1–2 cm) and keep it moist with light sprays | milky | pinning | first | morning | — |
 | reishiForm | Choose the form: bag closed for antlers, or open for caps (CO₂ under about 800 ppm) | reishi | pinning | first | any | — |
 | humidifierCheck | Humidifier: water in, mist coming out | all | pinning, fruiting | daily | morning | — |
-| harvestAm | Harvest check: pick before the cap edge waves or splits; pick before any misting | oyster, lionsmane | fruiting | daily | morning | kg picked |
+| harvestAm | Harvest check: pick the ready ones; pick before any misting | oyster, lionsmane | fruiting | daily | morning | kg picked |
 | harvestPm | Harvest check (afternoon) | oyster, lionsmane | fruiting | daily | afternoon | kg picked |
 | harvestDaily | Harvest check | woodear, milky | fruiting | daily | morning | kg picked |
 | reishiRim | Check the caps' growing rim; harvest by cutting the stem, keeping about 2 cm | reishi | fruiting | every 2 days, whole stage | any | kg picked |
@@ -89,12 +89,16 @@ The intake filter stays on its pressure and days reminder (`filterDue`, `filterD
 
 ### 3.3 Crop notes
 
+The harvest rules' texts fit every crop they are for (harvestAm and harvestPm are lion's mane's too, which has no cap); the
+oyster family's cap wording is its harvest note. Rows made before this change keep the text they were made with.
+
 | Crop | Note on harvest rows | Note on other rows |
 |---|---|---|
-| Pink oyster | Keeps 1–3 days after picking: pick on sale days | — |
-| Golden oyster | Fragile when mature: pick early, handle gently | — |
-| Black oyster | Heavy spores: wear a mask | — |
-| Abalone oyster | — | contamWalk: black droplets on the mycelium are normal, not contamination |
+| Grey oyster | Pick before the cap edge waves or splits | — |
+| Pink oyster | Pick before the cap edge waves or splits; keeps 1–3 days after picking: pick on sale days | — |
+| Golden oyster | Pick before the cap edge waves or splits; fragile when mature: pick early, handle gently | — |
+| Black oyster | Pick before the cap edge waves or splits; heavy spores: wear a mask | — |
+| Abalone oyster | Pick before the cap edge waves or splits | contamWalk: black droplets on the mycelium are normal, not contamination |
 | Lion's mane | Spines 6–13 mm and still white; brown or yellow means now | humidifierCheck: mist the air, never the mushroom |
 | Wood ear | Ears 3–5 cm, before the edges thin; leave the small ones | — |
 
