@@ -44,7 +44,7 @@ test("GET a room's tasks makes today's rows: the fruiting oyster day, the upkeep
   assert.ok(r.body.today.every((x) => x.kind === 'daily' && x.status === 'open' && x.roomId === id && x.date === r.body.date));
   assert.deepEqual(r.body.upkeep.map((x) => x.ruleKey).sort(), ['acChemWash', 'acFilter', 'acService', 'flyTraps', 'humidifierDescale']);
   assert.deepEqual(r.body.longterm, []);
-  assert.deepEqual(r.body.counts, { due: 11, overdue: 0, longterm: 0 });
+  assert.deepEqual(r.body.counts, { due: 9, overdue: 0, longterm: 0 }, 'the 6 daily rows and the 3 upkeep rows of 7 days; the aircon service and wash come later');
   const again = await call('GET', `/api/rooms/${id}/tasks`);
   assert.deepEqual(again.body.today.map((x) => x.id), r.body.today.map((x) => x.id));
   assert.deepEqual(again.body.upkeep.map((x) => x.id), r.body.upkeep.map((x) => x.id));
@@ -67,7 +67,7 @@ test("Today: every room in the Overview's order with its rows; a room with no cr
   assert.deepEqual(r.body.rooms.map((x) => [x.id, x.name]), db.listRooms().map((x) => [x.id, x.name]));
   const a = r.body.rooms.find((x) => x.name === 'Room A');
   assert.deepEqual(a.today.map((x) => x.ruleKey).sort(), ['floorClean', 'footbath']);
-  assert.equal(a.upkeepDue.length, 5);
+  assert.equal(a.upkeepDue.length, 3, 'the 7-day rules; the aircon service and wash come later');
   assert.equal(a.longterm, 0);
   assert.equal(r.body.rooms.find((x) => x.name === 'Room B').today.length, 6);
   assert.deepEqual(await call('POST', '/api/tasks/today', {}), { status: 404, body: { error: 'Not found' } });

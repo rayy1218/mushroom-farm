@@ -64,8 +64,10 @@ test('ensureDay makes the day\'s daily rows and the upkeep rows once', (t) => {
   assert.deepEqual(v.today.map((r) => r.slot), ['morning', 'morning', 'morning', 'afternoon', 'morning', 'afternoon']);
   // no dehumidifier and no CO₂ sensor: their rules are left out
   assert.deepEqual(s.keys(v.upkeep), ['acFilter', 'humidifierDescale', 'flyTraps', 'rhCheck', 'acService', 'acChemWash']);
-  assert.deepEqual(v.upkeep.map((r) => [r.dueDate, r.overdueDays]), Array(6).fill(['2026-10-30', 0]));
-  assert.deepEqual(v.counts, { due: 12, overdue: 0, longterm: 0 });
+  // first rows: due today up to 14 days, else one interval on
+  assert.deepEqual(v.upkeep.map((r) => [r.dueDate, r.overdueDays]),
+    [...Array(3).fill(['2026-10-30', 0]), ['2027-01-28', 0], ['2027-02-27', 0], ['2027-04-28', 0]]);
+  assert.deepEqual(v.counts, { due: 9, overdue: 0, longterm: 0 });
   const harvest = v.today.find((r) => r.ruleKey === 'harvestAm');
   assert.deepEqual([harvest.unit, harvest.amountLabel, harvest.status, harvest.kind], ['kg', 'kg picked', 'open', 'daily']);
   assert.equal(v.today.find((r) => r.ruleKey === 'footbath').amountLabel, null);
@@ -117,7 +119,7 @@ test('the owner\'s rules: a daily rule for some rooms, an upkeep rule for all', 
   const mine = s.tasks.roomView(s.id);
   assert.deepEqual(s.keys(mine.today), ['footbath', 'floorClean', `custom:${daily.id}`], 'no crops: the room rules and the own daily rule');
   assert.deepEqual(mine.today.at(-1).text, 'Top up the RO water tank');
-  assert.equal(mine.upkeep.at(-1).ruleKey, `custom:${upkeep.id}`);
+  assert.equal(mine.upkeep.find((r) => r.ruleKey === `custom:${upkeep.id}`).dueDate, '2026-10-30', 'every 14 days: due today');
   const theirs = s.tasks.roomView(other);
   assert.deepEqual(s.keys(theirs.today), ['footbath', 'floorClean']);
   assert.ok(theirs.upkeep.some((r) => r.ruleKey === `custom:${upkeep.id}`));
@@ -196,6 +198,40 @@ test('a machine taken out of the room cancels its open upkeep row; a rule turned
     ['rhCheck', 'cancelled', 'The room no longer has this machine']]);
 });
 
+test('an upkeep rule\'s first row (no done or skip yet): due today up to 14 days, else one interval after it first appears', (t) => {
+  const s = setup(t, { room: { co2Address: 2, dehumidifier: true } });
+  s.tasks.ensureDay(s.id, '2026-10-30');
+  const due = () => Object.fromEntries(s.tasks.roomView(s.id).upkeep.map((r) => [r.ruleKey, r.dueDate]));
+  assert.deepEqual(due(), {
+    acFilter: '2026-10-30', humidifierDescale: '2026-10-30', flyTraps: '2026-10-30', dehumidifierFilter: '2026-10-30',
+    co2Check: '2026-11-29', rhCheck: '2027-01-28', acService: '2027-02-27', acChemWash: '2027-04-28',
+  });
+  assert.equal(s.tasks.roomView(s.id).counts.due, 6 + 4, 'the daily rows and the four short ones');
+  // Done early is allowed, and the next row counts from it
+  s.set('2026-11-01T10:00:00+08:00');
+  s.tasks.done(s.tasks.roomView(s.id).upkeep.find((r) => r.ruleKey === 'co2Check').id, { worker: 'Ali' });
+  assert.equal(due().co2Check, '2026-12-01');
+  // an own rule of every 30 days, added later, first appears on the day it is made
+  s.db.setCustomTaskRules([{ text: 'Clean the shelves', rooms: null, everyDays: 30, slot: 'any', enabled: true }]);
+  const shelves = s.tasks.roomView(s.id).upkeep.find((r) => r.ruleKey.startsWith('custom:'));
+  assert.equal(shelves.dueDate, '2026-12-01');
+});
+
+test('rulesSaved: an upkeep rule without history re-dated from the day its row first appeared', (t) => {
+  const s = setup(t);
+  const upkeep = (key) => s.tasks.roomView(s.id).upkeep.find((r) => r.ruleKey === key);
+  s.tasks.ensureDay(s.id); // 2026-10-30: acService due 2027-02-27
+  s.set('2026-11-02T08:00:00+08:00');
+  let before = { settings: s.db.taskRuleSettings(), custom: s.db.customTaskRules() };
+  s.db.setTaskRuleSettings([{ key: 'acService', enabled: true, everyDays: 90 }]);
+  s.tasks.rulesSaved(before);
+  assert.equal(upkeep('acService').dueDate, '2027-01-28'); // 90 days after 10-30
+  before = { settings: s.db.taskRuleSettings(), custom: s.db.customTaskRules() };
+  s.db.setTaskRuleSettings([{ key: 'acService', enabled: true, everyDays: 10 }]);
+  s.tasks.rulesSaved(before);
+  assert.equal(upkeep('acService').dueDate, '2026-11-02'); // 14 days or less: today
+});
+
 test('an upkeep rule without an open row is due everyDays after its last done, but never before today', (t) => {
   const s = setup(t);
   s.tasks.ensureDay(s.id);
@@ -264,13 +300,13 @@ test('upkeep: the next row comes everyDays after a done or a skip; overdue count
   s.set('2026-11-02T15:00:00+08:00'); // 3 days late
   let v = s.tasks.roomView(s.id);
   assert.equal(v.upkeep.find((r) => r.ruleKey === 'acFilter').overdueDays, 3);
-  assert.equal(v.counts.overdue, 6);
+  assert.equal(v.counts.overdue, 3, 'the three 7-day rules; the longer ones are not due yet');
   s.tasks.done(first.id, { worker: 'Ali' });
   v = s.tasks.roomView(s.id);
   const next = v.upkeep.find((r) => r.ruleKey === 'acFilter');
   assert.deepEqual([next.dueDate, next.overdueDays, next.status], ['2026-11-09', 0, 'open']);
-  assert.equal(v.upkeep.at(-1).ruleKey, 'acFilter', 'sorted by due time: the later one last');
-  assert.equal(v.counts.due, 6 + 5, 'the daily rows and the 5 overdue upkeep rows, not the one due later');
+  assert.deepEqual(s.keys(v.upkeep), ['humidifierDescale', 'flyTraps', 'acFilter', 'rhCheck', 'acService', 'acChemWash'], 'sorted by due time');
+  assert.equal(v.counts.due, 6 + 2, 'the daily rows and the 2 overdue upkeep rows, not those due later');
   s.set('2026-11-09T08:00:00+08:00');
   const skipped = s.tasks.skip(next.id, { worker: 'Siti', reason: 'No spare filter' });
   assert.equal(skipped.status, 'skipped');
@@ -483,11 +519,11 @@ test('todayView in the Overview\'s order, and dueCount', (t) => {
   assert.equal(view.date, '2026-10-30');
   assert.deepEqual(view.rooms.map((r) => r.name), ['A room', 'Room 1']);
   const [first, second] = view.rooms;
-  assert.deepEqual([first.id, s.keys(first.today), first.upkeepDue.length, first.longterm], [b, ['footbath', 'floorClean'], 5, 0]);
-  assert.equal(second.counts.due, 12);
-  assert.equal(s.tasks.dueCount(), 2 + 5 + 12);
+  assert.deepEqual([first.id, s.keys(first.today), first.upkeepDue.length, first.longterm], [b, ['footbath', 'floorClean'], 3, 0]);
+  assert.equal(second.counts.due, 9);
+  assert.equal(s.tasks.dueCount(), 2 + 3 + 9);
   s.tasks.done(second.today[0].id, { worker: 'Ali' });
-  assert.equal(s.tasks.dueCount(), 18);
+  assert.equal(s.tasks.dueCount(), 13);
 });
 
 test('dueCount makes no rows, so a change listener can call it', (t) => {
@@ -497,7 +533,7 @@ test('dueCount makes no rows, so a change listener can call it', (t) => {
   const counts = [];
   s.tasks.onChange(() => counts.push(s.tasks.dueCount()));
   s.tasks.ensureDay(s.id);
-  assert.deepEqual([s.changes, counts], [[s.id], [12]], 'told once, the count read inside the listener');
+  assert.deepEqual([s.changes, counts], [[s.id], [9]], 'told once, the count read inside the listener');
 });
 
 test('todayView makes every room first and tells after, so a listener counts the whole farm', (t) => {
@@ -506,7 +542,7 @@ test('todayView makes every room first and tells after, so a listener counts the
   const counts = [];
   s.tasks.onChange(() => counts.push(s.tasks.dueCount()));
   s.tasks.todayView();
-  assert.deepEqual(counts, [2 + 5 + 12, 2 + 5 + 12]);
+  assert.deepEqual(counts, [2 + 3 + 9, 2 + 3 + 9]);
 });
 
 test('the CSV defuses a cell that starts like a formula; a long-term row has the date it was closed', (t) => {
@@ -536,9 +572,9 @@ test('todayView\'s upkeep: the overdue and the due today, not the not yet due', 
   move('acFilter', '2026-10-28T00:00:00+08:00'); // 2 days overdue
   move('flyTraps', '2026-10-31T00:00:00+08:00'); // due tomorrow
   const [room] = s.tasks.todayView().rooms;
-  assert.deepEqual(s.keys(room.upkeepDue), ['acFilter', 'humidifierDescale', 'rhCheck', 'acService', 'acChemWash']);
-  assert.deepEqual(room.upkeepDue.map((r) => r.overdueDays), [2, 0, 0, 0, 0]);
-  assert.equal(room.counts.due, 6 + 5);
+  assert.deepEqual(s.keys(room.upkeepDue), ['acFilter', 'humidifierDescale'], 'not flyTraps (tomorrow) nor the long ones (months on)');
+  assert.deepEqual(room.upkeepDue.map((r) => r.overdueDays), [2, 0]);
+  assert.equal(room.counts.due, 6 + 2);
 });
 
 test('the log pages with before through rows closed at the same time', (t) => {
@@ -561,7 +597,7 @@ test('the log pages with before through rows closed at the same time', (t) => {
   assert.deepEqual(all.map((r) => r.id), [...all.map((r) => r.id)].sort((a, b) => b - a), 'newest id first');
 });
 
-test('rulesSaved: a new interval re-dates the open upkeep rows from the last done or skip, or to today without one', (t) => {
+test('rulesSaved: a new interval re-dates the open upkeep rows from the last done or skip, or (14 days or less) to today without one', (t) => {
   const s = setup(t);
   const upkeep = (key) => s.tasks.roomView(s.id).upkeep.find((r) => r.ruleKey === key);
   s.tasks.done(upkeep('acService').id, { worker: 'Ali' }); // 2026-10-30

@@ -85,7 +85,7 @@ A room with no crops gets only footbath and floorClean.
 | acService | Aircon service | 120 | an aircon |
 | acChemWash | Aircon chemical wash | 180 | an aircon |
 
-The intake filter stays on its pressure and days reminder (`filterDue`, `filterDirty`); it has no upkeep rule. The first row of an upkeep rule in a room is due the day it is made (the rule has no history yet).
+The intake filter stays on its pressure and days reminder (`filterDue`, `filterDirty`); it has no upkeep rule. The first row of an upkeep rule in a room (no done or skip yet) is due the day it is made when the rule's interval is 14 days or less; a longer one is due one interval after that day (a new room would otherwise get its 120- and 180-day aircon jobs, and every 30- and 90-day check, on day one). The Upkeep part lists it with its date; **Done** early is always allowed, and the next row counts from it. A new interval on a first row re-dates it the same way from the day it was made.
 
 ### 3.3 Crop notes
 
@@ -115,7 +115,7 @@ oyster family's cap wording is its harvest note. Rows made before this change ke
 | Step | Rule |
 |---|---|
 | `wantedDaily({ program, crops, date, rules })` | pure: the day's daily rows of one room — rule key, text, notes, slot, amount — from the stage and `stageDayOn(program, date)` (the stage's day in farm calendar days) on that date |
-| `ensureDay(roomId, date)` | inserts the wanted daily rows (`ON CONFLICT DO NOTHING`, unique room, rule, date, slot), marks open daily rows of earlier dates missed, cancels today's open daily rows whose rule is no longer wanted ("Stage changed", or "Rule changed" for another slot) and opens such rows again when wanted again that day, cancels the open upkeep row of a rule that no longer applies to the room, and makes each applying upkeep rule's open row when it has none (due *interval* days after its last done or skip, but not before that day) |
+| `ensureDay(roomId, date)` | inserts the wanted daily rows (`ON CONFLICT DO NOTHING`, unique room, rule, date, slot), marks open daily rows of earlier dates missed, cancels today's open daily rows whose rule is no longer wanted ("Stage changed", or "Rule changed" for another slot) and opens such rows again when wanted again that day, cancels the open upkeep row of a rule that no longer applies to the room, and makes each applying upkeep rule's open row when it has none (due *interval* days after its last done or skip, but not before that day; with none yet, by the first-row rule of section 3.2) |
 | When | on `GET` of a room's tasks or of Today, and once per room per local day from the controller's cycle (an in-memory key of the date, crops, stage, stage days, flush, done, stageSince and the room's dehumidifier and sensor addresses, so it runs again when one of them changes), so a day is made after the app was down |
 | Done or skip of an upkeep row | in one transaction: the row closed, the next open row due `at + everyDays` |
 | A rule turned off | its open rows stay until done or the day ends; no new rows |

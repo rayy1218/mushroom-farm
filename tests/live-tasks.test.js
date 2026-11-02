@@ -57,10 +57,10 @@ test('Done, Skip and Add publish the room part tasks and the farm due count; a G
 
 test("the controller's daily making (ensureDay outside a route) publishes too", async (t) => {
   const { db, tasks, got } = await app(t);
-  const id = db.createRoom(ROOM).id; // no crops: footbath, floor and the five upkeep rows
+  const id = db.createRoom(ROOM).id; // no crops: footbath, floor and the three upkeep rows due today (of five)
   tasks.ensureDay(id);
   assert.ok(onlyTasks(got, id));
-  assert.deepEqual(got.slice(-2), [['room', { id, part: 'tasks' }], ['tasks', { due: 7 }]]);
+  assert.deepEqual(got.slice(-2), [['room', { id, part: 'tasks' }], ['tasks', { due: 5 }]]);
   got.length = 0;
   tasks.ensureDay(id);
   assert.deepEqual(got, []);
@@ -74,17 +74,17 @@ test('an own rule added in Settings makes its row in every room at once and publ
   got.length = 0;
   await call('PUT', '/api/task-rules', { custom: [{ text: 'Check the water tank', rooms: null, everyDays: null, slot: 'morning', enabled: true }] });
   for (const id of [a, b]) assert.ok(got.some(([type, data]) => type === 'room' && data.id === id && data.part === 'tasks'));
-  assert.deepEqual(got.at(-1), ['tasks', { due: 16 }]);
+  assert.deepEqual(got.at(-1), ['tasks', { due: 12 }]);
 });
 
 test('a room deleted publishes the farm due count without its rows', async (t) => {
   const { db, call, got } = await app(t);
   db.createRoom({ ...ROOM, name: 'Room A' });
   const b = db.createRoom({ ...ROOM, name: 'Room B' }).id;
-  await call('GET', '/api/tasks/today'); // makes both rooms' rows: 7 each
+  await call('GET', '/api/tasks/today'); // makes both rooms' rows: 5 due each
   got.length = 0;
   assert.equal((await call('DELETE', `/api/rooms/${b}`)).status, 204);
-  assert.deepEqual(got, [['room', { id: b, part: 'room' }], ['tasks', { due: 7 }]]);
+  assert.deepEqual(got, [['room', { id: b, part: 'room' }], ['tasks', { due: 5 }]]);
 });
 
 test('a closed server no longer publishes the changes of the tasks it was given', async () => {

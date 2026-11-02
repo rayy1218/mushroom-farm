@@ -20,6 +20,8 @@ const AMOUNT_LABEL = Object.fromEntries(DAILY_RULES.filter((r) => r.amount).map(
 
 const MAX_AMOUNT = 10_000;
 const MAX_REASON = 200;
+// An upkeep rule's first row is due the day it appears up to this interval (days), one interval later above it.
+const FIRST_DUE_DAYS = 14;
 export const MAX_NAME = 40;
 
 // '12,000', '0.5': thousands grouped with a comma, at most 3 decimals (0.1 + 0.2 is '0.3').
@@ -99,7 +101,8 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
   // turned off keeps its row), and such a cancelled row opened again when it is wanted again the same day (a stage changed
   // and changed back). Upkeep: an open row of a rule that no longer applies (its machine taken out) cancelled; each applying
   // rule's open row made when it has none, due everyDays after its last done or skip but not before `date` (a rule off for
-  // months, or a machine fitted again, starts due today, not long overdue). → whether anything changed (the caller tells).
+  // months, or a machine fitted again, starts due today, not long overdue); a rule's first row (no done or skip yet) due by
+  // upkeepDue's first-row rule. → whether anything changed (the caller tells).
   function makeDay(room, date, sources) {
     const roomId = room.id;
     const at = now();
@@ -140,11 +143,13 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
     return changed;
   }
 
-  // When an upkeep rule's open row is due: everyDays after the farm day of its last done or skip, but not before `date`
-  // (no done or skip yet: `date`). → ms of that day's start.
-  function upkeepDue(roomId, ruleKey, everyDays, date) {
+  // When an upkeep rule's open row is due: everyDays after the farm day of its last done or skip, but not before `date`.
+  // No done or skip yet (its first row): `date` for a rule of 14 days or less; a longer one is due everyDays after `since`,
+  // the farm day its row first appears (a new room is not handed its 120- and 180-day aircon jobs on day one; Done early is
+  // always allowed). → ms of that day's start.
+  function upkeepDue(roomId, ruleKey, everyDays, date, since = date) {
     const last = db.lastClosedUpkeep(roomId, ruleKey);
-    const after = last ? addDays(localDate(last.closedAt), everyDays) : date;
+    const after = last ? addDays(localDate(last.closedAt), everyDays) : everyDays <= FIRST_DUE_DAYS ? date : addDays(since, everyDays);
     return dayStart(after > date ? after : date);
   }
 
@@ -260,7 +265,7 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
           const [from, to] = [was.get(row.ruleKey), is.get(row.ruleKey)];
           if (to === undefined) changed = cancel(row, 'Rule removed') || changed;
           else if (to === null) changed = cancel(row, 'Rule changed') || changed;
-          else if (to !== from) changed = db.setTaskDue(row.id, upkeepDue(room.id, row.ruleKey, to, date)) || changed;
+          else if (to !== from) changed = db.setTaskDue(row.id, upkeepDue(room.id, row.ruleKey, to, date, localDate(row.createdAt))) || changed;
         }
         for (const row of db.dailyTasks(room.id, date)) {
           if (row.status === 'open' && takenOff(room.id, row.ruleKey)) { changed = cancel(row, 'Rule changed') || changed; continue; }
