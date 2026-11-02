@@ -250,3 +250,16 @@ test('Cancel: long-term only, with a reason; Done also closes a long-term row', 
   assert.deepEqual([done.status, done.body.status, done.body.worker], [200, 'done', 'Siti']);
   assert.deepEqual((await tasksOf(call, id)).longterm, []);
 });
+
+// ---- final review ----
+
+test('Done with a name not on the workers list: 400 field worker; a listed name in any case is stored as the list spells it', async (t) => {
+  const { call } = await app(t);
+  const id = await fruitingRoom(call);
+  assert.equal((await call('PUT', '/api/workers', { workers: [{ name: 'Ali' }] })).status, 200);
+  const walk = byRule((await tasksOf(call, id)).today, 'contamWalk');
+  assert.deepEqual(await call('POST', `/api/tasks/${walk.id}/done`, { worker: 'Siti' }),
+    { status: 400, body: { error: 'That name is not on the workers list', field: 'worker' } });
+  const done = await call('POST', `/api/tasks/${walk.id}/done`, { worker: 'ali' });
+  assert.deepEqual([done.status, done.body.worker], [200, 'Ali']);
+});

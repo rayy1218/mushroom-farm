@@ -26,6 +26,16 @@ function el(tag, className, content) {
   return node;
 }
 
+// A select's options ([value, label]), value picked.
+function fillOptions(select, options, value) {
+  select.replaceChildren(...options.map(([v, label]) => {
+    const o = el('option', '', label);
+    o.value = v;
+    o.selected = v === value;
+    return o;
+  }));
+}
+
 function button(label, className) {
   const b = el('button', className ?? '', label);
   b.type = 'button';
@@ -68,26 +78,21 @@ export function createWorkerPicker() {
   node.append(el('span', '', 'Doing the rounds as'), select);
   function paint() {
     const now = getWorker();
-    const chosen = names.includes(now) ? now : '';
     const first = failed ? OFFLINE : names.length || !loaded ? 'Pick a name' : 'No names yet (Settings)';
-    select.replaceChildren(...[['', first], ...names.map((n) => [n, n])].map(([value, label]) => {
-      const o = el('option', '', label);
-      o.value = value;
-      o.selected = value === chosen;
-      return o;
-    }));
+    fillOptions(select, [['', first], ...names.map((n) => [n, n])], names.includes(now) ? now : '');
   }
   select.addEventListener('change', () => setWorker(select.value || null));
-  const onStore = () => { if (alive) paint(); };
-  window.addEventListener('farm:worker', onStore);
-  let loading = false;
+  let seq = 0; // every read gets a token: an older answer that comes last is dropped
   function load() {
-    loading = true;
-    loadWorkers().then((list) => { names = list; loaded = true; failed = false; }, () => { failed = true; })
-      .then(() => { loading = false; if (alive) paint(); });
+    const mine = ++seq;
+    loadWorkers().then((list) => { if (mine === seq) { names = list; loaded = true; failed = false; } }, () => { if (mine === seq) failed = true; })
+      .then(() => { if (alive && mine === seq) paint(); });
   }
-  // The names could not be read: the stream coming back means the server is there again, so ask once more.
-  const offStatus = live.onStatus((up) => { if (up && failed && alive && !loading) load(); });
+  // The names are read again when the worker changes (here, in another picker, or a name the server refused) and when the
+  // stream comes back (the server is there again, and Settings may have renamed or removed someone meanwhile).
+  const onStore = () => { if (alive) { paint(); load(); } };
+  window.addEventListener('farm:worker', onStore);
+  const offStatus = live.onStatus((up) => { if (up && alive) load(); });
   load();
   paint();
   return {
@@ -117,7 +122,7 @@ export function closeTaskDialog() {
 
 // Opens the dialog on a form. lead: lines (text or nodes) under the title; fields: [{ name, label, kind: 'text' | 'number'
 // | 'area' | 'select' | 'check', value, options ([value, label]), hint }]; buttons: [{ value, label, primary }] after the
-// close button (closeLabel; Close when there are no buttons). submit(values, which) → true (closes), or { field, message }
+// close button (closeLabel; Close when there are no buttons). submit(values, which, form) → true (closes), or { field, message }
 // or { message, content?, final? } to show while it stays open (content: nodes for the line in place of the message's text;
 // final: nothing more to send, the buttons stay disabled and only the close button is left); onLost(message): a failure that came back after the dialog was closed or
 // replaced. → { input(name), button(value), alive(), closed } (alive: this opening still shows; closed: a promise kept when
@@ -146,12 +151,7 @@ function openForm({ title, lead = [], fields = [], buttons = [], closeLabel = bu
     let input;
     if (f.kind === 'select') {
       input = el('select');
-      for (const [value, label] of f.options) {
-        const o = el('option', '', label);
-        o.value = value;
-        o.selected = value === f.value;
-        input.append(o);
-      }
+      fillOptions(input, f.options, f.value);
     } else if (f.kind === 'area') {
       input = el('textarea');
       input.rows = 3;
@@ -224,7 +224,7 @@ function openForm({ title, lead = [], fields = [], buttons = [], closeLabel = bu
     for (const [name, err] of errors) { err.textContent = ''; inputs.get(name).removeAttribute('aria-invalid'); }
     for (const b of [close, ...sends]) b.disabled = true;
     let outcome;
-    const answer = (async () => submit(values(), which))();
+    const answer = (async () => submit(values(), which, handle))();
     sending = answer.catch(() => {});
     try {
       outcome = await answer;
@@ -261,7 +261,8 @@ function openForm({ title, lead = [], fields = [], buttons = [], closeLabel = bu
   }).then(() => sending);
   d.showModal();
   (fields.length ? inputs.get(fields[0].name) : heading).focus();
-  return { input: (name) => inputs.get(name), button: (value) => sends.find((b) => b.value === value), alive: () => alive() && d.open, closed };
+  const handle = { input: (name) => inputs.get(name), button: (value) => sends.find((b) => b.value === value), alive: () => alive() && d.open, closed };
+  return handle;
 }
 
 // ---- Done, Skip, Cancel, Add ----
@@ -269,6 +270,11 @@ function openForm({ title, lead = [], fields = [], buttons = [], closeLabel = bu
 export function createTaskActions({ onChanged, onError }) {
   let alive = true;
   let names = null; // the workers' names, read on the first need
+  // ...and again after the worker changes (a picker, or a name the server refused) and when the stream comes back (Settings
+  // may have renamed or removed someone meanwhile).
+  const forget = () => { names = null; };
+  window.addEventListener('farm:worker', forget);
+  const offStatus = live.onStatus((up) => { if (up) forget(); });
   const pending = new Set(); // the rows being sent or asked about: a second tap meanwhile does nothing
   let changes = 0; // onChanged calls so far: an action that saw one ends with true
   const changed = (row) => { changes++; onChanged?.(row); };
@@ -276,16 +282,27 @@ export function createTaskActions({ onChanged, onError }) {
   const ask = (options) => openForm({ ...options, onLost: (text) => { if (alive) onError?.(text); } });
 
   // The names, or null after saying why they could not be read (no dialog then: it would say "No names yet"). A failed read
-  // is not kept: the next tap reads them again.
+  // is not kept, nor an empty list (the first names added in Settings are seen): the next tap reads them again.
   async function workers() {
     if (names) return names;
+    let list;
     try {
-      names = await loadWorkers();
+      list = await loadWorkers();
     } catch (err) {
       if (alive) onError?.(errorText(err));
       return null;
     }
-    return names;
+    names = list.length ? list : null;
+    return list;
+  }
+
+  // A name the server refused as not on the workers list (renamed or removed in Settings meanwhile): the names are read
+  // again here and in the pickers, and the open dialog's box gets the list as it is now.
+  async function refusedName(form) {
+    window.dispatchEvent(new CustomEvent('farm:worker'));
+    if (!form) return;
+    const list = await workers();
+    if (list && form.alive()) fillOptions(form.input('worker'), workerField(list).options, '');
   }
 
   // done, skip and cancel once at a time per row: a double tap of one-tap Done would otherwise send twice, and the second's
@@ -322,14 +339,16 @@ export function createTaskActions({ onChanged, onError }) {
     return w || null;
   }
 
-  // A command. After it the list is asked again, and after a 409 or 404 too (someone else closed it, or it is gone).
-  async function send(path, body) {
+  // A command (form: its dialog, if any). After it the list is asked again, and after a 409 or 404 too (someone else closed
+  // it, or it is gone).
+  async function send(path, body, form = null) {
     try {
       const row = await request('POST', path, body, COMMAND_TIMEOUT);
       if (alive) changed(row);
       return true;
     } catch (err) {
       if (alive && (err.status === 409 || err.status === 404)) changed(null);
+      if (alive && err.status === 400 && err.field === 'worker') await refusedName(form);
       return err.status === 400 && err.field ? { field: err.field, message: err.message } : { message: errorText(err) };
     }
   }
@@ -351,7 +370,7 @@ export function createTaskActions({ onChanged, onError }) {
       lead: leadOf(row, list),
       fields: [workerField(list), ...(amount ? [{ name: 'amount', label: amount.label, kind: 'number', value: '', hint: 'Leave it empty if it was not weighed or counted.' }] : [])],
       buttons: [{ value: 'done', label: 'Done', primary: true }],
-      submit: async (v) => {
+      submit: async (v, _which, form) => {
         const w = picked(v);
         if (!w) return { field: 'worker', message: 'Pick who did it' };
         let a = null;
@@ -360,7 +379,7 @@ export function createTaskActions({ onChanged, onError }) {
           if (p.error) return { field: 'amount', message: p.error };
           a = p.value;
         }
-        return send(`/api/tasks/${row.id}/done`, { worker: w, ...(a === null ? {} : { amount: a }) });
+        return send(`/api/tasks/${row.id}/done`, { worker: w, ...(a === null ? {} : { amount: a }) }, form);
       },
     });
     await form.closed;
@@ -374,12 +393,12 @@ export function createTaskActions({ onChanged, onError }) {
       lead: leadOf(row, list),
       fields: [workerField(list, 'Who is skipping it'), { name: 'reason', label: 'Why', kind: 'text', value: '' }],
       buttons: [{ value: 'skip', label: 'Skip', primary: true }],
-      submit: async (v) => {
+      submit: async (v, _which, form) => {
         const w = picked(v);
         if (!w) return { field: 'worker', message: 'Pick who did it' };
         const r = checkReason(v.reason);
         if (r.error) return { field: 'reason', message: r.error };
-        return send(`/api/tasks/${row.id}/skip`, { worker: w, reason: r.value });
+        return send(`/api/tasks/${row.id}/skip`, { worker: w, reason: r.value }, form);
       },
     }).closed;
   }
@@ -436,15 +455,15 @@ export function createTaskActions({ onChanged, onError }) {
     }
     if (!alive) return;
     const update = setupUpdate(row.source, room);
-    const mark = async (v) => {
+    const mark = async (v, form) => {
       const w = picked(v);
       if (!w) return { field: 'worker', message: 'Pick who did it' };
-      return send(`/api/tasks/${row.id}/done`, { worker: w });
+      return send(`/api/tasks/${row.id}/done`, { worker: w }, form);
     };
     if (!update) {
       await ask({
         title: 'Mark done', lead: leadOf(row, list, ['Setup keeps no fan flow, so Done only records the change.']),
-        fields: [workerField(list)], buttons: [{ value: 'done', label: 'Done', primary: true }], submit: mark,
+        fields: [workerField(list)], buttons: [{ value: 'done', label: 'Done', primary: true }], submit: (v, _which, form) => mark(v, form),
       }).closed;
       return;
     }
@@ -475,7 +494,7 @@ export function createTaskActions({ onChanged, onError }) {
             return { field: err.status === 400 ? err.field : undefined, message: `Setup not saved: ${errorText(err)}` };
           }
         }
-        const r = await mark(v);
+        const r = await mark(v, form);
         return r !== true && saved ? { message: `Setup saved. Marking the task done failed: ${r.message}` } : r;
       },
     });
@@ -486,6 +505,8 @@ export function createTaskActions({ onChanged, onError }) {
     done: once(done), skip: once(skip), cancel: once(cancel), add,
     destroy() {
       alive = false;
+      window.removeEventListener('farm:worker', forget);
+      offStatus();
       closeTaskDialog();
     },
   };

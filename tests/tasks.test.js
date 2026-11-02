@@ -708,3 +708,16 @@ test('rulesSaved: an own rule narrowed to fewer rooms cancels its open rows in t
   assert.deepEqual([s.db.getTask(daily[2].id).status, s.db.getTask(daily[2].id).reason], ['cancelled', 'Rule changed']);
   assert.deepEqual(s.changes, [r3], 'only the room taken off is told');
 });
+
+// ---- final review ----
+
+test('who did it: with workers on the list, the name must be an active one (any case, kept as the list spells it); with none, any name', (t) => {
+  const s = setup(t);
+  s.db.setWorkers([{ name: 'Ali', active: true }, { name: 'Siti', active: false }]);
+  refused(() => s.tasks.done(s.row('contamWalk').id, { worker: 'Ah Kow' }), 400, 'That name is not on the workers list', 'worker');
+  refused(() => s.tasks.skip(s.row('contamWalk').id, { worker: 'Siti', reason: 'x' }), 400, 'That name is not on the workers list', 'worker');
+  assert.equal(s.tasks.done(s.row('contamWalk').id, { worker: ' ali ' }).worker, 'Ali');
+  assert.equal(s.tasks.skip(s.row('footbath').id, { worker: 'ALI', reason: 'Dry' }).worker, 'Ali');
+  s.db.setWorkers([]); // no workers yet: any name, as before the list
+  assert.equal(s.tasks.done(s.row('floorClean').id, { worker: 'Ah Kow' }).worker, 'Ah Kow');
+});

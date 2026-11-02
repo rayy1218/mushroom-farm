@@ -19,14 +19,14 @@ test('the worker is kept per browser under farm.worker; the pickers hear a chang
 
 test('Done is one tap with a kept worker and no amount; otherwise it asks', () => {
   has("if (row.kind !== 'longterm' && !recordsAmount(row) && worker && list.includes(worker)) {");
-  has('return send(`/api/tasks/${row.id}/done`, { worker: w, ...(a === null ? {} : { amount: a }) });');
+  has('return send(`/api/tasks/${row.id}/done`, { worker: w, ...(a === null ? {} : { amount: a }) }, form);');
   has("if (!w) return { field: 'worker', message: 'Pick who did it' };");
   has("No names yet: add the workers' names in ");
   has("a.href = '#/settings';");
 });
 
 test('Skip asks who and why; Cancel (long-term) asks why; Add posts a text and a note', () => {
-  has('return send(`/api/tasks/${row.id}/skip`, { worker: w, reason: r.value });');
+  has('return send(`/api/tasks/${row.id}/skip`, { worker: w, reason: r.value }, form);');
   has('return send(`/api/tasks/${row.id}/cancel`, { reason: r.value });');
   has("request('POST', `/api/rooms/${roomId}/tasks`, { text: c.values.text, ...(c.values.note ? { note: c.values.note } : {}) }, COMMAND_TIMEOUT)");
 });
@@ -38,7 +38,7 @@ test('a 409 or 404 asks for the list again (someone else closed it); the message
 test('a long-term machine task: Save and mark done saves Setup first and marks it done only when that worked', () => {
   const save = dialogs.indexOf("if (which === 'save' && !saved) {");
   const put = dialogs.indexOf("request('PUT', `/api/rooms/${row.roomId}`, built.body, COMMAND_TIMEOUT)", save);
-  const mark = dialogs.indexOf('const r = await mark(v);', put);
+  const mark = dialogs.indexOf('const r = await mark(v, form);', put);
   assert.ok(save > 0 && put > save && mark > put, 'Setup first, then Done');
   has("buttons: [{ value: 'just', label: 'Just mark done' }, { value: 'save', label: 'Save and mark done', primary: true }],");
   has('message: `Setup not saved: ${errorText(err)}`');
@@ -68,7 +68,7 @@ test("C10 review: Plan this from a search older than the room's machines offers 
 test('one dialog, made on first use; a page that goes away closes it', () => {
   has("dialog = el('dialog', 'tk-dialog');");
   has('export function closeTaskDialog() {');
-  has('destroy() {\n      alive = false;\n      closeTaskDialog();');
+  has('destroy() {\n      alive = false;\n      window.removeEventListener(\'farm:worker\', forget);\n      offStatus();\n      closeTaskDialog();');
 });
 
 // ---- C5 review: run with a stand-in fetch, localStorage and window (no DOM: these paths open no dialog) ----
@@ -145,7 +145,7 @@ test('a dialog closed while sending (Chrome lets a second Esc close it): a failu
 
 test('the picker that could not read the names reads them again when the live stream comes back', () => {
   has("import { live } from './live.js';");
-  has('const offStatus = live.onStatus((up) => { if (up && failed && alive && !loading) load(); });');
+  has('const offStatus = live.onStatus((up) => { if (up && alive) load(); });');
   has('offStatus();');
 });
 
@@ -177,4 +177,78 @@ test('the Skip dialog asks "Who is skipping it"; Done keeps "Who did it"', () =>
   has("const workerField = (list, label = 'Who did it') => ({");
   has("fields: [workerField(list, 'Who is skipping it'), { name: 'reason', label: 'Why', kind: 'text', value: '' }],");
   assert.equal(dialogs.split("workerField(list, 'Who is skipping it')").length, 2, 'Skip alone');
+});
+
+// ---- final review ----
+
+// live.onStatus stood in for: → the listeners it was given (the module's own stream never connects under node).
+async function liveStub(t) {
+  const { live } = await import('../web/live.js');
+  const fns = new Set();
+  const saved = live.onStatus;
+  live.onStatus = (fn) => { fns.add(fn); return () => fns.delete(fn); };
+  t.after(() => { live.onStatus = saved; });
+  return (up) => { for (const fn of [...fns]) fn(up); };
+}
+
+test('the kept workers are read again after the worker changes and when the live stream comes back, not when it goes', async (t) => {
+  const status = await liveStub(t);
+  const calls = stubs(t, async (path) => (path === '/api/workers'
+    ? json({ workers: [{ id: 1, name: 'Ali', active: true }] })
+    : json({ ...ROW, status: 'done', worker: 'Ali' })));
+  const { createTaskActions } = await import('../web/task-dialogs.js');
+  const actions = createTaskActions({ onChanged: () => {}, onError: () => {} });
+  const reads = () => calls.filter((c) => c === 'GET /api/workers').length;
+  await actions.done(ROW);
+  await actions.done(ROW);
+  assert.equal(reads(), 1, 'kept between taps');
+  window.dispatchEvent(new CustomEvent('farm:worker'));
+  await actions.done(ROW);
+  assert.equal(reads(), 2, 'read again after a farm:worker change');
+  status(false);
+  await actions.done(ROW);
+  assert.equal(reads(), 2, 'the stream going down keeps them');
+  status(true);
+  await actions.done(ROW);
+  assert.equal(reads(), 3, 'read again when the stream is back (Settings may have changed them meanwhile)');
+  actions.destroy();
+  window.dispatchEvent(new CustomEvent('farm:worker'));
+  status(true);
+  assert.equal(reads(), 3);
+});
+
+test('a name the server refuses as not on the workers list: the page says so and the list is read again, here and in the pickers', async (t) => {
+  await liveStub(t);
+  const calls = stubs(t, async (path) => (path === '/api/workers'
+    ? json({ workers: [{ id: 1, name: 'Ali', active: true }] })
+    : json({ error: 'That name is not on the workers list', field: 'worker' }, 400)));
+  const { createTaskActions } = await import('../web/task-dialogs.js');
+  let heard = 0;
+  window.addEventListener('farm:worker', () => { heard++; });
+  const errors = [];
+  const changed = [];
+  const actions = createTaskActions({ onChanged: (row) => changed.push(row), onError: (text) => errors.push(text) });
+  await actions.done(ROW);
+  assert.deepEqual([errors, changed, heard], [['That name is not on the workers list'], [], 1]);
+  await actions.done(ROW);
+  assert.deepEqual(calls.filter((c) => c === 'GET /api/workers').length, 2, 'the next tap reads the list again');
+});
+
+test('a 409 (someone else closed it): the list is asked again and the server\'s words are shown', async (t) => {
+  await liveStub(t);
+  stubs(t, async (path) => (path === '/api/workers'
+    ? json({ workers: [{ id: 1, name: 'Ali', active: true }] })
+    : json({ error: 'Already done by Siti at 09:12' }, 409)));
+  const { createTaskActions } = await import('../web/task-dialogs.js');
+  const errors = [];
+  const changed = [];
+  const actions = createTaskActions({ onChanged: (row) => changed.push(row), onError: (text) => errors.push(text) });
+  assert.equal(await actions.done(ROW), true, 'something changed: the row stays held until the list repaints');
+  assert.deepEqual([changed, errors], [[null], ['Already done by Siti at 09:12']]);
+});
+
+test('an empty workers list is not kept (the first name added in Settings is seen); the picker reads the list again on a change and when the stream is back', () => {
+  has('names = list.length ? list : null;');
+  has("const onStore = () => { if (alive) { paint(); load(); } };");
+  has('const offStatus = live.onStatus((up) => { if (up && alive) load(); });');
 });

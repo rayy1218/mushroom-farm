@@ -200,12 +200,18 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
     return row;
   }
 
-  // Who did it: 1 to 40 characters, no control characters (a parked worker name starts with U+0001).
+  // Who did it: 1 to 40 characters, no control characters (a parked worker name starts with U+0001). When the farm has
+  // active workers (Settings), one of them, case aside, kept as the list spells it (a name renamed or removed meanwhile is
+  // refused, so the page reads the list again); with none yet, any name.
   function workerOf(worker) {
     const name = trimmed(worker);
     if (!name || /[\u0000-\u001f\u007f]/.test(name)) throw new TaskError(400, 'Pick who did it', 'worker');
     if (name.length > MAX_NAME) throw new TaskError(400, `The name must be at most ${MAX_NAME} characters`, 'worker');
-    return name;
+    const active = db.listWorkers().filter((w) => w.active).map((w) => w.name);
+    if (active.length === 0) return name;
+    const listed = active.find((n) => n.toLowerCase() === name.toLowerCase());
+    if (!listed) throw new TaskError(400, 'That name is not on the workers list', 'worker');
+    return listed;
   }
 
   function reasonOf(reason) {

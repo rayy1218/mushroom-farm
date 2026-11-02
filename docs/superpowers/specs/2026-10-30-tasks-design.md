@@ -152,6 +152,7 @@ A change publishes `room { id, part: 'tasks' }` and a `tasks { due }` event (the
 |---|---|
 | Done, skip or cancel on a row that is not open | 409 "Already done by Ali at 09:12" (or skipped, missed, cancelled) |
 | No worker name on done or skip | 400 field `worker` "Pick who did it" |
+| Done or skip with a name not on the workers list, when the farm has active workers (a name on it in any case is stored as the list spells it; with no workers yet, any name) | 400 field `worker` "That name is not on the workers list": the page reads the list again (as it does when the worker changes and when the live stream comes back) |
 | Skip or cancel without a reason | 400 field `reason` "Say why" |
 | Amount below 0 or above 10 000 | 400 field `amount` |
 | A suggestion where nothing changes | 400 "Nothing changes from what the room has now" |
