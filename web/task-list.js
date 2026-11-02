@@ -52,10 +52,15 @@ export function taskRow(row, actions, { due = null, line = row.text, skip = true
       busy = false;
       for (const x of held) x.removeAttribute('aria-disabled');
     };
-    Promise.resolve(action()).then((changed) => {
-      if (!changed) release();
-      // A dialog that closed after the repaint gives the focus back to a button that is gone: the plan made at the tap is used.
-      if (changed && !b.isConnected && document.activeElement === document.body) refocus(document, plan);
+    Promise.resolve(action()).then(async (changed) => {
+      if (!changed) { release(); return; }
+      // A dialog that closed after the repaint gives the focus back to a button that is gone: the plan made at the tap is
+      // used. Chrome leaves it a moment on the closed dialog's own element rather than on <body>: that is lost too.
+      if (b.isConnected) return;
+      if (typeof requestAnimationFrame === 'function') await new Promise(requestAnimationFrame);
+      const a = document.activeElement;
+      const lost = !a || a === document.body || !a.isConnected || Boolean(a.closest?.('dialog:not([open])'));
+      if (lost) refocus(document, plan);
     }, release);
   });
   const done = button('Done');

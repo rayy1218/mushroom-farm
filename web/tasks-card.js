@@ -189,13 +189,14 @@ export function createTasksCard(host, { roomId, onCounts, onGone }) {
   });
   add.addEventListener('click', () => actions.add(roomId));
 
-  // The room's tasks moved (a Done elsewhere, a new day made, a stage change): ask again, at most once in 2 s. The stream
-  // gone: the short timer again.
+  // The room's tasks moved (a Done elsewhere, a new day made, a stage change): ask again, at most once in 2 s, the Log from
+  // its first page. The stream back: ask once, as the timer does (older Log pages stay). The stream gone: the short timer.
   const reload = createThrottle(() => { if (alive) { refresh(); loadLog(); } });
+  const catchUp = createThrottle(() => { if (alive) poll(); });
   const offLive = [
     live.on('room', (d) => { if (d.id === roomId && d.part === 'tasks') reload.call(); }),
     live.onStatus((up) => {
-      if (up) reload.call();
+      if (up) catchUp.call();
       else if (view) { clearTimeout(timer); timer = setTimeout(poll, REFRESH_MS); }
     }),
   ];
@@ -210,6 +211,7 @@ export function createTasksCard(host, { roomId, onCounts, onGone }) {
       logSeq++;
       clearTimeout(timer);
       reload.cancel();
+      catchUp.cancel();
       for (const off of offLive) off();
       actions.destroy();
       picker.destroy();
