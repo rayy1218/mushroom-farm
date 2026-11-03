@@ -84,22 +84,22 @@ export const CROPS = {
     ${funnel(17, 12, 12, [23, 45])}
     ${funnel(31, 10, 12, [24, 45])}
     ${funnel(24, 27, 15, [24, 45])}`,
-  // Abalone oyster: one thick, broad cap on a short stem set off its centre, black droplets on the stem.
+  // Abalone oyster: one thick, broad, flattish cap on a short stem set off its centre (seen a little from below, its gills a
+  // narrow band), and the black droplets it grows on its stem.
   abalone: `
-    <path d="M17 46 C17 40 18 33 20 28 L30 28 C30 34 30 40 32 46 Z" fill="var(--c2)"/>
-    <path d="M30 28 C30 34 30 40 32 46 L29 46 C28 40 28 34 28 28 Z" fill="var(--c)" opacity=".35"/>
-    <path d="M4 22 C4 13 15 7 26 7 C37 7 45 12 45 20 C45 23 43 25 40 25 L8 26 C5.5 26 4 24.5 4 22 Z" fill="var(--c)"/>
-    <path d="M7 26 C12 30 18 31.5 25 31.5 C32 31.5 38 29.5 42 25 Z" fill="var(--c2)"/>
-    <path d="M12 27.5 L25 31.4 M18 29.8 L25 31.4 M32 30.2 L25 31.4 M38 27.8 L25 31.4" stroke="var(--c)" stroke-width="1.1" stroke-linecap="round" opacity=".5"/>
-    <path d="M13 12 C17 9.5 22 8.6 27 8.8" stroke="var(--p-shine)" stroke-width="2" stroke-linecap="round" fill="none"/>
-    <path d="M22 37 c1.4 1.8 1.4 3.4 0 3.4 s-1.4 -1.6 0 -3.4 Z M27 33.5 c1.2 1.5 1.2 2.9 0 2.9 s-1.2 -1.4 0 -2.9 Z M26.5 41.5 c1 1.3 1 2.5 0 2.5 s-1 -1.2 0 -2.5 Z" fill="var(--p-drop)"/>`,
-  // Wood ear (black jelly): rubbery ear-shaped lobes, a paler rim round a deep cup and its veins.
+    <path d="M12.5 46 C13 41 14 36.5 16.5 32 L22.5 32.6 C20.6 37 20 41.5 20.4 46 Z" fill="var(--c2)"/>
+    <path d="M3 24 C3 14.5 14 8 26 8 C37.5 8 46 14 46 22.5 C46 27.5 41 31 33 32.6 C26 34 18 34 11.6 32.6 C6 31.4 3 28.6 3 24 Z" fill="var(--c)"/>
+    <path d="M6 29.6 C10 33 17.5 34.6 25.5 34.2 C33.5 33.8 41.6 31.6 45 26.6 C42 31.6 34 35.6 25.5 36.4 C17 37 9.6 34.4 6 29.6 Z" fill="var(--c2)"/>
+    <path d="M18 34.6 L12 32.6 M18 34.6 L22.5 35.4 M18 34.6 L28 35.3 M18 34.6 L34 34.2 M18 34.6 L39.6 32.4" stroke="var(--c)" stroke-width="1" stroke-linecap="round" opacity=".5"/>
+    <path d="M10 17 C14.5 12.6 21 10.6 28 10.8" stroke="var(--p-shine)" stroke-width="2.2" stroke-linecap="round" fill="none"/>
+    <path d="M17.2 38 c1.5 1.9 1.5 3.6 0 3.6 s-1.5 -1.7 0 -3.6 Z M20.6 42 c1.2 1.5 1.2 2.9 0 2.9 s-1.2 -1.4 0 -2.9 Z M14.6 43 c1 1.3 1 2.5 0 2.5 s-1 -1.2 0 -2.5 Z" fill="var(--p-drop)"/>`,
+  // Wood ear (black jelly): rubbery, cupped ear-shaped lobes from one foot, their wavy rims paler, the cup's folds inside.
   woodear: `
-    <path d="M23 44 C12 45 3 37 4 26 C5 16 13 11 19 15 C23 18 21 24 17 26 C14 28 15 33 19 35 C22 37 25 40 23 44 Z" fill="var(--c2)"/>
-    <path d="M21 41 C13 41 7 35 7.5 27 C8 20 13 16.5 17 18.5 C19.5 20 18.5 23.5 15.5 25.5 C11.5 28.5 12.5 34 17 36.5 C19.5 38 21.5 39.5 21 41 Z" fill="var(--c)"/>
-    <path d="M24 42 C30 46 43 42 44 30 C45 18 37 6 26 7 C19 7.6 16 13 20 17 C23 20 28 18 31 21 C35 25 33 31 28 33 C24 34.6 22 38.5 24 42 Z" fill="var(--c2)"/>
-    <path d="M25.5 39.5 C31 42 40 38.5 41 29.5 C42 20 36 10.5 27 10.5 C22.5 10.6 20.5 13.6 22.5 15.6 C25 18 30 16.5 33.6 20 C38 24.5 36 32 30.5 34.6 C27 36.3 24.6 37.5 25.5 39.5 Z" fill="var(--c)"/>
-    <path d="M33 14 C37 19 38.6 25 37.5 31 M28.6 12 C33 15 35.5 19.5 35.4 24 M11 24 C10 29 11.5 34 15.5 37.5" stroke="var(--c2)" stroke-width="1.2" stroke-linecap="round" fill="none" opacity=".7"/>`,
+    <path d="M22 44 C14 45 6 39 5.6 30.6 C5.2 23.6 9.4 19.4 13.6 21 C15.2 18.6 18.6 18.4 20 21 C22.6 20.4 24.4 23 23.4 26 C22.2 30 21 35 22 44 Z" fill="var(--c2)"/>
+    <path d="M21 41 C15 41 9.6 36.4 9.4 30.6 C9.2 26 11.6 23.6 14.4 24.6 C15.6 23 17.8 23 18.8 24.8 C20.4 24.6 21 26.6 20.4 28.6 C19.4 32.4 19.6 36.6 21 41 Z" fill="var(--c)"/>
+    <path d="M23 45 C24.5 38 22 31 22.6 23 C23.2 14 29 7 36 6.6 C39.6 6.4 41 9 39.8 11.4 C42.8 11.2 44.6 13.8 43.2 16.6 C45.8 18 45.8 21.4 43.4 23 C45 25.6 43.6 29 40.6 29.4 C39.4 36 32 43.6 23 45 Z" fill="var(--c2)"/>
+    <path d="M25.4 41.6 C26.4 36 25.4 30.4 26 24 C26.6 16.6 31.2 11 36.4 10.4 C37.6 10.4 38 11.4 37.4 12.6 L36.8 13.8 C38.6 13.2 40.6 13.6 40.8 15 C40.9 15.8 40.4 16.6 39.6 17.2 C41.6 17.6 42.4 19.6 41 21 L40 22 C41.2 23.6 40.6 25.8 38.8 26.4 C37.6 32.6 33 38.6 25.4 41.6 Z" fill="var(--c)"/>
+    <path d="M28.6 37 C30 31 30.6 25.6 31.4 20.6 C32 17.4 33.6 15 35.4 14 M32.6 33.4 C34.6 29.6 35.8 25.6 36.2 21.6 M12.4 36 C12.6 32 13.6 28.6 15.6 26.6" stroke="var(--c2)" stroke-width="1.2" stroke-linecap="round" fill="none" opacity=".7"/>`,
   // Reishi (lingzhi): a lacquered kidney-shaped shelf with its pale growing rim and growth bands, on a side stem.
   reishi: `
     <path d="M14 29 C16 34 17 40 15 46 L21 46 C22 40 21 33 19 28 Z" fill="var(--c)"/>
