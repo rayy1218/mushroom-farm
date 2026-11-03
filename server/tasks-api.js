@@ -146,7 +146,7 @@ function readRules(body, { stored, customIds, roomIds }, HttpError) {
 
 // db: the farm database; tasks: from createTasks (server/tasks.js), whose views make the day's rows first.
 // → async (req, res, path, { send, readJson, HttpError, url }) that answers true when the path is one of its routes.
-export function createTaskRoutes({ db, tasks }) {
+export function createTaskRoutes({ db, tasks, cropOf = () => null }) {
   async function route(req, res, path, { send, readJson, HttpError, url }) {
     const notFound = () => new HttpError(404, 'Not found');
     const readBody = async () => {
@@ -157,7 +157,9 @@ export function createTaskRoutes({ db, tasks }) {
 
     if (path === '/api/tasks/today') {
       if (req.method !== 'GET') throw notFound();
-      send(res, 200, tasks.todayView());
+      const view = tasks.todayView();
+      for (const room of view.rooms) room.crop = cropOf(room.id); // its picture and crop line (spec 2026-11-03-pictures-design.md 4)
+      send(res, 200, view);
       return true;
     }
     const roomTasks = ROOM_TASKS.exec(path);

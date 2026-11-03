@@ -31,6 +31,14 @@ export function createCropApi({ db, now = Date.now }) {
       return db.getRoom(roomId) ? view(roomId) : null;
     },
 
+    // The reply without its targets (spec 2026-11-03-pictures-design.md 4): what the Overview and Today show of a room's crop.
+    summary(roomId) {
+      const reply = this.get(roomId);
+      if (!reply) return null;
+      const { targets, ...rest } = reply;
+      return rest;
+    },
+
     // Applies any of crops, farmType, stage, flushes, days (per stage), rampH, autoAdvance, lightHours (per stage), lightStart,
     // applyNow and newBlocks; returns the reply.
     // Throws CommandError (400, with field) for a bad value. Returns null when there is no such room.

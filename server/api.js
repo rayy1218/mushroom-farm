@@ -73,7 +73,7 @@ export function createApi(db, machines = null, controller = null, poller = null,
   // Any change, made by a route here or by the controller's daily ensureDay, tells the pages: the room's Tasks tab and the
   // top bar's count (section 6). server/tasks.js calls back only when something changed.
   const taskStore = tasks ?? createTasks({ db });
-  const taskRoutes = createTaskRoutes({ db, tasks: taskStore });
+  const taskRoutes = createTaskRoutes({ db, tasks: taskStore, cropOf: (id) => crop.summary(id) });
   const publishDue = () => events?.publish('tasks', { due: taskStore.dueCount() });
   // Stopped by close() (app.js, when the http server closes), so a tasks module that outlives the server tells no one.
   const stopTelling = events ? taskStore.onChange((roomId) => {
@@ -190,7 +190,10 @@ export function createApi(db, machines = null, controller = null, poller = null,
       if (req.method !== 'GET') throw notFound();
       const now = Date.now();
       const reply = db.overview(now);
-      for (const room of reply.rooms) room.filterPa = lastCounted(db, db.getRoom(room.id), now)?.pa ?? null;
+      for (const room of reply.rooms) {
+        room.filterPa = lastCounted(db, db.getRoom(room.id), now)?.pa ?? null;
+        room.crop = crop.summary(room.id); // the crop and stage on the room's card (spec 2026-11-03-pictures-design.md 4)
+      }
       return send(res, 200, reply);
     }
     // ---- The intake filter (spec 2026-10-22-filter-design.md 5) ----

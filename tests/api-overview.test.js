@@ -60,8 +60,9 @@ test('no rooms: empty lists', async () => {
 test('a room with no sensors wired and nothing read', async () => {
   reset();
   const room = db.createRoom(fields);
-  const { rooms } = await overview();
-  assert.deepEqual(rooms, [{
+  const { rooms: [{ crop, ...rest }] } = await overview();
+  assert.equal(crop.crops.length, 0);
+  assert.deepEqual([rest], [{
     id: room.id,
     name: 'A',
     trh: { status: 'not-wired', t: null, rh: null, at: null },
@@ -183,4 +184,19 @@ test('the alarm list has at most 10 entries', async () => {
   assert.equal(alarms.length, 10);
   assert.equal(alarms[0].raisedAt, 1011);
   assert.equal(rooms[0].alarms.count, 12);
+});
+
+// The crop and stage on each room card (spec 2026-11-03-pictures-design.md 4): the crop reply without its targets, so the page
+// counts the stage's day with the Now tab's rule.
+test('each room carries its crop: the crop reply without targets', async () => {
+  reset();
+  const room = db.createRoom(fields);
+  const put = await fetch(`${base}/api/rooms/${room.id}/crop`, { method: 'PUT', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ crops: [{ crop: 'pink', blocks: 300 }, { crop: 'oyster', blocks: 500 }], stage: 'fruiting' }) });
+  assert.equal(put.status, 200);
+  const { targets, ...expected } = await put.json();
+  assert.ok(targets);
+  const { rooms } = await overview();
+  assert.deepEqual(rooms[0].crop, expected);
+  assert.equal('targets' in rooms[0].crop, false);
 });
