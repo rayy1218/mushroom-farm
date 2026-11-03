@@ -45,9 +45,11 @@ export function monthRange(month) {
   return { from: g[0].date, to: g.at(-1).date };
 }
 
-// A day's marks in the grid: { marks: up to 3 of { kind: 'bag', key: crop, stage } (a stage starting, 'done' for the last
-// rest) and { kind: 'task', key, crop } (a harvest's basket, then upkeep and stage tasks, each once), more: the marks left
-// out, count: the items but the routine, missed: a task missed that day }. cropOf(roomId): the room's main crop.
+// A day's marks in the grid (finish review 2026-11-03: a basket per room made every fruiting day look alike): { marks: up to 3
+// of { kind: 'bag', key: crop, stage } (a stage starting, 'done' for the last rest), then { kind: 'task', key } (upkeep and
+// stage tasks, each once), then one harvest basket { kind: 'task', key: 'harvestAm', crop } (the crop when every harvesting
+// room grows the same, else null); more: the marks left out; count: the tasks (not the routine, not a stage start); missed:
+// a task missed that day; overdue: upkeep overdue (today) }. cropOf(roomId): the room's main crop.
 export function dayMarks(items, cropOf) {
   const all = [];
   const seen = new Set();
@@ -56,19 +58,22 @@ export function dayMarks(items, cropOf) {
     if (!seen.has(id)) { seen.add(id); all.push(mark); }
   };
   for (const i of items) if (i.kind === 'stage') add({ kind: 'bag', key: cropOf(i.roomId), stage: i.stage.done ? 'done' : i.stage.stage });
-  for (const i of items) if (HARVEST.has(i.ruleKey)) add({ kind: 'task', key: 'harvestAm', crop: cropOf(i.roomId) });
   for (const i of items) {
     if (i.kind === 'stage' || i.routine || HARVEST.has(i.ruleKey)) continue;
     add({ kind: 'task', key: taskPicture(i) });
   }
+  const harvestCrops = [...new Set(items.filter((i) => HARVEST.has(i.ruleKey)).map((i) => cropOf(i.roomId)))];
+  if (harvestCrops.length) add({ kind: 'task', key: 'harvestAm', crop: harvestCrops.length === 1 ? harvestCrops[0] : null });
   return {
     marks: all.slice(0, MAX_MARKS), more: Math.max(0, all.length - MAX_MARKS),
-    count: items.filter((i) => !i.routine).length, missed: items.some((i) => i.status === 'missed'),
+    count: items.filter((i) => !i.routine && i.kind !== 'stage').length,
+    missed: items.some((i) => i.status === 'missed'),
+    overdue: items.some((i) => i.status === 'open' && i.overdueDays > 0),
   };
 }
 
 // The day list of `date`: each room with items that day, in the reply's order: { room, stages, slots: [{ slot, label, rows }],
-// upkeep (upkeep and long-term rows), routine }.
+// upkeep (upkeep and long-term rows), routine, about: its dates are estimated from the stage plan }.
 export function dayGroups(view, date) {
   const items = view.days.find((d) => d.date === date)?.items ?? [];
   return view.rooms.map((room) => {
@@ -82,15 +87,16 @@ export function dayGroups(view, date) {
         .filter((s) => s.rows.length > 0),
       upkeep: mine.filter((i) => i.kind === 'upkeep' || i.kind === 'longterm'),
       routine: mine.filter((i) => i.kind === 'daily' && i.routine),
+      about: mine.some((i) => i.status === 'planned' && i.about), // said once under the room (finish review 2026-11-03)
     };
   }).filter((g) => g.count > 0);
 }
 
-// The line under an item: a closed row as the Log says it, an open upkeep's overdue days, an estimate's words, or ''.
+// The line under an item: a closed row as the Log says it, an open upkeep's overdue days, or '' (an estimate is said once per
+// room: dayGroups' about).
 export function itemLine(i) {
   if (i.status === 'missed' || ['done', 'skipped', 'cancelled'].includes(i.status)) return closedLine(i);
   if (i.status === 'open' && i.overdueDays > 0) return `overdue ${i.overdueDays} ${i.overdueDays === 1 ? 'day' : 'days'}`;
-  if (i.status === 'planned' && i.about) return 'Estimated from the stage plan';
   return '';
 }
 
@@ -106,8 +112,9 @@ export function dayTitle(date, today) {
   return date === today ? `Today, ${words}` : words;
 }
 
-// A day button's name: "Wednesday 4 November: 3 tasks", "…: 1 task, a task missed", "…: nothing".
-export function dayLabel(date, today, { count, missed }) {
-  const n = count === 0 ? 'nothing' : `${count} ${count === 1 ? 'task' : 'tasks'}`;
-  return `${dayTitle(date, today)}: ${n}${missed ? ', a task missed' : ''}`;
+// A day button's name: "Wednesday 4 November: 3 tasks, Container Alpha: Rest between flushes starts · flush 1", "…: 1 task, a
+// task missed", "…: nothing". starts: the day's stage starts in words, room first.
+export function dayLabel(date, today, { count, missed, overdue = false }, starts = []) {
+  const n = count === 0 && starts.length === 0 ? 'nothing' : count === 0 ? '' : `${count} ${count === 1 ? 'task' : 'tasks'}`;
+  return `${dayTitle(date, today)}: ${[n, ...starts, missed ? 'a task missed' : '', overdue ? 'a task overdue' : ''].filter(Boolean).join(', ')}`;
 }

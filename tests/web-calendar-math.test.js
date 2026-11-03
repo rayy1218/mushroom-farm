@@ -40,12 +40,15 @@ test("dayMarks: a stage start's bag first, then the harvest, then upkeep and sta
   const m = dayMarks(items, cropOf);
   assert.deepEqual(m.marks, [
     { kind: 'bag', key: 'oyster', stage: 'rest' },
-    { kind: 'task', key: 'harvestAm', crop: 'oyster' },
-    { kind: 'task', key: 'harvestAm', crop: 'pink' },
-  ]);
-  assert.equal(m.more, 2, 'the fly traps and the scraping (harvestPm is the same basket as harvestAm)');
-  assert.equal(m.count, 6, 'every item but the routine');
+    { kind: 'task', key: 'flyTraps' },
+    { kind: 'task', key: 'scrapeRecap' },
+  ], 'what changes first; the harvest last');
+  assert.equal(m.more, 1, 'one basket for every room harvesting');
+  assert.equal(m.count, 5, 'the tasks: not the routine, not the stage start');
   assert.equal(m.missed, false);
+  assert.deepEqual(dayMarks([item({}), item({ roomId: 2 })], cropOf).marks, [{ kind: 'task', key: 'harvestAm', crop: null }], 'two crops: a plain basket');
+  assert.deepEqual(dayMarks([item({}), item({ ruleKey: 'harvestPm' })], cropOf).marks, [{ kind: 'task', key: 'harvestAm', crop: 'oyster' }]);
+  assert.equal(dayMarks([item({ kind: 'upkeep', status: 'open', overdueDays: 2 })], cropOf).overdue, true);
   assert.equal(dayMarks([item({ status: 'missed', routine: true, ruleKey: 'footbath' })], cropOf).missed, true);
   assert.deepEqual(dayMarks([item({ kind: 'stage', ruleKey: null, stage: { stage: 'rest', flush: 4, done: true } })], cropOf).marks,
     [{ kind: 'bag', key: 'oyster', stage: 'done' }]);
@@ -68,6 +71,7 @@ test('dayGroups: rooms in their order, stage starts, the rows by slot, upkeep, t
   assert.deepEqual(a.slots.map((s) => [s.label, s.rows.map((r) => r.ruleKey)]), [['Morning', ['harvestAm']], ['Afternoon', ['harvestPm']]]);
   assert.deepEqual(a.upkeep.map((r) => r.ruleKey), ['flyTraps']);
   assert.deepEqual(a.routine.map((r) => r.ruleKey), ['footbath']);
+  assert.equal(a.about, false);
   assert.deepEqual(dayGroups(view, '2026-11-05'), []);
 });
 
@@ -77,7 +81,7 @@ test('itemLine and stageText: closed rows as the Log, overdue upkeep, estimates;
   assert.equal(itemLine(item({ kind: 'upkeep', status: 'open', overdueDays: 2 })), 'overdue 2 days');
   assert.equal(itemLine(item({ kind: 'upkeep', status: 'open', overdueDays: 1 })), 'overdue 1 day');
   assert.equal(itemLine(item({ kind: 'upkeep', status: 'open', overdueDays: 0 })), '');
-  assert.equal(itemLine(item({ about: true })), 'Estimated from the stage plan');
+  assert.equal(itemLine(item({ about: true })), '', 'said once under the room');
   assert.equal(itemLine(item({})), '');
   assert.equal(stageText({ stage: 'rest', flush: 1, done: false }), 'Rest between flushes starts · flush 1');
   assert.equal(stageText({ stage: 'rest', flush: 4, done: true }), 'Rest between flushes starts · flush 4, the last');
@@ -98,4 +102,7 @@ test('dayTitle and dayLabel', () => {
   assert.equal(dayLabel('2026-11-04', '2026-11-03', { count: 3, missed: false }), 'Wednesday 4 November: 3 tasks');
   assert.equal(dayLabel('2026-11-02', '2026-11-03', { count: 1, missed: true }), 'Monday 2 November: 1 task, a task missed');
   assert.equal(dayLabel('2026-11-05', '2026-11-03', { count: 0, missed: false }), 'Thursday 5 November: nothing');
+  assert.equal(dayLabel('2026-11-04', '2026-11-03', { count: 2, missed: false }, ['A: Rest between flushes starts']),
+    'Wednesday 4 November: 2 tasks, A: Rest between flushes starts');
+  assert.equal(dayLabel('2026-11-03', '2026-11-03', { count: 1, missed: false, overdue: true }), 'Today, Tuesday 3 November: 1 task, a task overdue');
 });

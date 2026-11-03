@@ -37,17 +37,17 @@ export function createTasksCard(host, { roomId, onCounts, onGone }) {
   const todayHead = el('div', 'sim-card-head');
   const picker = createWorkerPicker();
   todayHead.append(el('h2', '', 'Today'), picker.node);
-  const todaySub = el('p', 'muted tk-sub tk-day', 'Loading…');
+  const todaySub = el('p', 'muted tk-sub tk-day');
+  const subText = el('span', '', 'Loading…');
   const error = el('p', 'meta warn tk-error');
   error.setAttribute('role', 'alert');
   error.hidden = true;
   const todayBody = el('div', 'tk-body');
-  // the room's days ahead and behind on the Calendar (spec 2026-11-03-calendar-design.md 5)
-  const calLine = el('p', 'tk-cal');
-  const calLink = el('a', '', 'Open in the calendar');
+  // the room's days ahead and behind on the Calendar, at the end of the day's line (spec 2026-11-03-calendar-design.md 5)
+  const calLink = el('a', 'tk-cal', 'Open in the calendar');
   calLink.href = calendarHash({ room: roomId });
-  calLine.append(calLink);
-  todayCard.append(todayHead, todaySub, calLine, error, todayBody);
+  todaySub.append(subText, DOT, calLink);
+  todayCard.append(todayHead, todaySub, error, todayBody);
 
   // Upkeep
   const upkeepCard = el('section', 'card tk-part');
@@ -105,7 +105,7 @@ export function createTasksCard(host, { roomId, onCounts, onGone }) {
     if (key === painted) return;
     painted = key;
     keepFocus(host, () => {
-      todaySub.textContent = `${dayTitle(view.date)}${DOT}${tasksDueWords(view.counts?.due ?? 0)}`;
+      subText.textContent = `${dayTitle(view.date)}${DOT}${tasksDueWords(view.counts?.due ?? 0)}`;
       const groups = slotGroups(view.today);
       const crop = mainCrop(view.crop?.crops); // the room's main crop, which a harvest's picture holds
       todayBody.replaceChildren(...(groups.length ? groups.map((g) => slotPart(g, actions, { openFolds, crop })) : [el('p', 'none', 'No stage tasks today.')]));
@@ -139,14 +139,14 @@ export function createTasksCard(host, { roomId, onCounts, onGone }) {
     } catch (err) {
       if (!alive || me !== seq) return;
       if (routeMissing(err)) { // a farm app from before the tasks: say so, no dot, no empty parts, no timer
-        todaySub.textContent = OUTDATED;
+        subText.textContent = OUTDATED;
         for (const node of [picker.node, upkeepCard, longCard, logCard]) node.hidden = true;
         onCounts?.(null);
         return;
       }
       if (err.status === 404) { onGone?.(); return; }
       if (!view) {
-        todaySub.textContent = "Couldn't load the tasks";
+        subText.textContent = "Couldn't load the tasks";
         for (const none of [upkeepNone, longNone]) { none.textContent = "Couldn't load the tasks"; none.hidden = false; }
       }
     }

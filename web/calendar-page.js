@@ -83,6 +83,7 @@ export function mount(container, { room = null, day = null } = {}) {
   let timer = null;
   let outdated = false;
   let painted = '';
+  const openFolds = new Set(); // the routine folds opened, by day and room: a refresh keeps them open
 
   const keepAddress = () => history.replaceState(null, '', calendarHash({ room: roomId, day: picked && picked !== today ? picked : null }));
 
@@ -115,10 +116,12 @@ export function mount(container, { room = null, day = null } = {}) {
     if (date === today) b.setAttribute('aria-current', 'date');
     b.setAttribute('aria-pressed', String(date === picked));
     b.tabIndex = date === picked ? 0 : -1;
-    b.setAttribute('aria-label', dayLabel(date, today, marks));
+    const roomName = (id) => view?.rooms.find((r) => r.id === id)?.name ?? '';
+    const starts = items.filter((i) => i.kind === 'stage').map((i) => `${roomName(i.roomId)}: ${stageText(i.stage)}`);
+    b.setAttribute('aria-label', dayLabel(date, today, marks, starts));
     const top = el('span', 'cal-top');
     top.append(el('span', 'cal-num', String(Number(date.slice(8)))));
-    if (marks.missed) { // a task missed that day: amber beside the date on a desk (a phone shows it with the dots)
+    if (marks.missed || marks.overdue) { // a task missed that day or overdue today: amber beside the date (a phone: with the dots)
       const miss = el('span', 'cal-dot cal-miss');
       miss.dataset.tone = 'warn';
       top.append(miss);
@@ -129,7 +132,7 @@ export function mount(container, { room = null, day = null } = {}) {
     if (marks.more) pics.append(el('span', 'cal-more', `+${marks.more}`));
     const dots = el('span', 'cal-dots');
     for (let i = 0; i < Math.min(3, marks.marks.length + marks.more); i++) dots.append(el('span', 'cal-dot'));
-    if (marks.missed) {
+    if (marks.missed || marks.overdue) {
       const missed = el('span', 'cal-dot');
       missed.dataset.tone = 'warn';
       dots.append(missed);
@@ -142,10 +145,19 @@ export function mount(container, { room = null, day = null } = {}) {
 
   // Arrow keys move the picked day (a week up or down); one day button is in the tab order.
   els.grid.addEventListener('keydown', (e) => {
-    const step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 }[e.key];
-    if (!step || !picked) return;
+    if (!picked) return;
+    const at = Date.parse(`${picked}T00:00:00Z`);
+    const weekday = (new Date(at).getUTCDay() + 6) % 7; // Monday 0
+    const days = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7, Home: -weekday, End: 6 - weekday }[e.key];
+    let d = null;
+    if (days !== undefined) d = new Date(at + days * 86_400_000).toISOString().slice(0, 10);
+    else if (e.key === 'PageUp' || e.key === 'PageDown') { // the month before or after, the same day of the month where it has one
+      const m = shiftMonth(monthOf(picked), e.key === 'PageUp' ? -1 : 1);
+      const last = new Date(Date.UTC(Number(m.slice(0, 4)), Number(m.slice(5)), 0)).getUTCDate();
+      d = `${m}-${String(Math.min(Number(picked.slice(8)), last)).padStart(2, '0')}`;
+    }
+    if (!d) return;
     e.preventDefault();
-    const d = new Date(Date.parse(`${picked}T00:00:00Z`) + step * 86_400_000).toISOString().slice(0, 10);
     pick(d, { focus: true });
   });
 
@@ -187,8 +199,10 @@ export function mount(container, { room = null, day = null } = {}) {
     const crop = mainCrop(g.room.crop?.crops);
     const link = el('a', '', g.room.name);
     link.href = roomHash(g.room.id, 'tasks');
+    link.dataset.focus = `room-${g.room.id}`;
     head.append(crop ? picture('crop', crop, { size: 28 }) : emptyPicture(28), link);
     part.append(head);
+    if (g.about) part.append(el('p', 'cal-about', 'Dates estimated from the stage plan'));
     for (const s of g.stages) {
       const p = el('p', 'cal-stage');
       const words = el('span', '', keepLines(stageText(s.stage)));
@@ -209,7 +223,12 @@ export function mount(container, { room = null, day = null } = {}) {
     }
     if (g.routine.length) {
       const fold = el('details', 'cal-routine');
-      fold.append(el('summary', '', `+ ${g.routine.length} daily ${g.routine.length === 1 ? 'task' : 'tasks'}`));
+      const foldKey = `${picked}:${g.room.id}`;
+      fold.open = openFolds.has(foldKey);
+      fold.addEventListener('toggle', () => { if (fold.open) openFolds.add(foldKey); else openFolds.delete(foldKey); });
+      const summary = el('summary', '', `+ ${g.routine.length} daily ${g.routine.length === 1 ? 'task' : 'tasks'}`);
+      summary.dataset.focus = `fold-${g.room.id}`;
+      fold.append(summary);
       const list = el('ul', 'cal-list');
       list.append(...g.routine.map(row));
       fold.append(list);
@@ -233,7 +252,9 @@ export function mount(container, { room = null, day = null } = {}) {
       }
       body.push(...(groups.length ? groups.map(roomPart) : [el('p', 'none', view ? 'Nothing on this day.' : 'Loading…')]));
     }
+    const focus = els.dayBody.contains(document.activeElement) ? document.activeElement.dataset?.focus : null;
     els.dayBody.replaceChildren(...body);
+    if (focus) (els.dayBody.querySelector(`[data-focus="${focus}"]`) ?? els.dayTitle).focus(); // a refresh keeps the cursor's place
   }
 
   function paint(force = false) {
@@ -265,7 +286,7 @@ export function mount(container, { room = null, day = null } = {}) {
       if (!picked) picked = today;
       view = data;
       els.banner.hidden = true;
-      paint(true);
+      paint(); // a refresh with nothing new leaves the page (its folds and focus) alone
       if (focus) els.grid.querySelector(`[data-date="${picked}"]`)?.focus();
     } catch (err) {
       if (!alive() || mine !== seq) return;

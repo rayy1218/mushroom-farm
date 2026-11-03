@@ -1641,7 +1641,7 @@ h2.r-named { display: flex; }
 .ov-value-label > .r-ico { align-self: center; margin-right: -2px; }
 
 /* ---- the Calendar page (spec 2026-11-03-calendar-design.md 5): a month grid and the picked day's list ---- */
-.tk-cal { margin: 2px 0 10px; font-size: var(--fs-sm); }
+.tk-sub .tk-cal { white-space: nowrap; }
 .cal-room { margin: 0; min-width: 200px; }
 .cal-room select { width: 100%; }
 .cal-layout { display: grid; gap: 16px; align-items: start; }
@@ -1674,6 +1674,7 @@ h2.r-named { display: flex; }
 .cal-room-head { display: flex; align-items: center; gap: 10px; margin: 0 0 6px; font-size: var(--fs-md); }
 .cal-room-head a { color: var(--ink); text-decoration: none; }
 .cal-room-head a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.cal-about { margin: -2px 0 6px 38px; color: var(--muted); font-size: var(--fs-sm); }
 .cal-stage { display: flex; align-items: center; gap: 10px; margin: 6px 0; font-weight: 500; }
 .cal-slot { margin: 10px 0 2px; color: var(--muted); font-size: var(--fs-xs); font-weight: 600; }
 .cal-list { list-style: none; margin: 0; padding: 0; }
