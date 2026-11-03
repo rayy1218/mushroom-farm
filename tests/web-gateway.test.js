@@ -103,6 +103,7 @@ function fakeElement(tag) {
   const listeners = {};
   const node = {
     tag, children: [], dataset: {}, attrs: {}, hidden: false, disabled: false, className: '', value: '', checked: false,
+    style: { setProperty() {} }, // a card's picture (web/pictures.js) sets its crop hues
     classList: { toggle(name, on) { node.attrs[`class:${name}`] = on; } },
     setAttribute(k, v) { this.attrs[k] = v; },
     removeAttribute(k) { delete this.attrs[k]; },
@@ -124,7 +125,7 @@ const flush = async () => { for (let i = 0; i < 10; i++) await new Promise((r) =
 test('the card renders a text field with its label and hint; the hint follows the farm\'s gateway; Save sends it', async (t) => {
   const real = { document: globalThis.document, fetch: globalThis.fetch };
   const body = fakeElement('body');
-  globalThis.document = { createElement: fakeElement, activeElement: body, body };
+  globalThis.document = { createElement: fakeElement, createElementNS: (ns, tag) => fakeElement(tag), activeElement: body, body };
   const calls = [];
   globalThis.fetch = (path, init) => new Promise((resolve) => calls.push({ path, body: JSON.parse(init.body), resolve }));
   t.after(() => Object.assign(globalThis, real));
