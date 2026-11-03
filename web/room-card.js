@@ -10,6 +10,7 @@
 
 import { createMimic } from './mimic.js';
 import { picture } from './pictures.js';
+import { readingIcon } from './icons.js';
 import { machinePicture } from './pictures-data.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
@@ -47,7 +48,9 @@ export function createRoomCard(hosts, { idPrefix = 'room-', cropHref = '', onSwi
       unit: el('span', 'rd-unit'), band: el('p', 'rd-band'), span: el('span', 'rd-span') };
     t.node.dataset.key = key;
     const head = el('div', 'rd-head');
-    head.append(t.name, t.chip);
+    const named = el('span', 'r-named');
+    named.append(readingIcon(key), t.name);
+    head.append(named, t.chip);
     const val = el('p', 'rd-val');
     val.append(t.num, t.unit);
     t.trace = el('div', 'rd-trace');

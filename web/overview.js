@@ -16,6 +16,7 @@ import { openRoomDialog, closeRoomDialog } from './room-dialog.js';
 import { roomHash } from './route.js';
 import { cropLine } from './room-card-math.js';
 import { picture, emptyPicture } from './pictures.js';
+import { readingIcon } from './icons.js';
 
 export const ALARMS_CHANGED = 'farm:alarms-changed';
 const NS = 'http://www.w3.org/2000/svg';
@@ -240,7 +241,8 @@ export function mount(container) {
       for (const v of c.values) {
         const row = node('div', 'ov-value');
         const text = node('div', 'ov-value-text');
-        const label = node('span', 'ov-value-label', v.label);
+        const label = node('span', 'ov-value-label');
+        label.append(readingIcon(v.key, 16), v.label);
         if (v.chip) { const chip = node('span', 'ov-band', v.chip.text); chip.dataset.tone = v.chip.tone; label.append(chip); }
         text.append(label, node('span', 'ov-value-now', v.text));
         row.append(text, sparkline(v, c.traces));
@@ -281,7 +283,9 @@ export function mount(container) {
     for (const v of o.values) {
       const row = node('div', 'ov-value');
       const text = node('div', 'ov-value-text');
-      text.append(node('span', 'ov-value-label', v.label), node('span', 'ov-value-now', v.text));
+      const label = node('span', 'ov-value-label');
+      label.append(readingIcon(v.key, 16), v.label);
+      text.append(label, node('span', 'ov-value-now', v.text));
       row.append(text);
       if (v.key !== 'dew') row.append(sparkline({ ...v, label: `Outdoor ${v.label.toLowerCase()}` }));
       card.append(row);

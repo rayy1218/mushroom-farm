@@ -1629,3 +1629,13 @@ button.tk-tick:is(:hover, :focus-visible) .tk-mark { opacity: 1; }
 /* ---- the pictures (spec 2026-11-03-pictures-design.md): web/pictures.js ---- */
 .pic { display: block; flex: none; }
 .pic-empty { display: inline-block; border: 1px dashed var(--border-strong); border-radius: 10px; }
+
+/* ---- the readings' line icons (web/icons.js): each in its series hue, beside the reading's name ---- */
+.r-ico { flex: none; display: inline-block; vertical-align: -3px; }
+.r-ico[data-reading="t"] { color: var(--s-t); }
+.r-ico[data-reading="rh"] { color: var(--s-rh); }
+.r-ico[data-reading="co2"] { color: var(--s-co2); }
+.r-ico[data-reading="dew"] { color: var(--ink-2); }
+.r-named { display: inline-flex; align-items: center; gap: 6px; }
+h2.r-named { display: flex; }
+.ov-value-label > .r-ico { align-self: center; margin-right: -2px; }
