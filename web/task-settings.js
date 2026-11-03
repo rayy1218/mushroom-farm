@@ -10,6 +10,8 @@ import {
   parseWorkerName, workersAfter, parseEveryDays, parseCustomRule, rulesBody, customAfter, ruleForm, idAfter, WORKER_MAX,
 } from './settings-math.js';
 import { el, keepFocus } from './task-list.js';
+import { picture } from './pictures.js';
+import { taskPicture } from './pictures-data.js';
 
 const COMMAND_TIMEOUT = 15000;
 // The server refused an own rule's rooms: a room was removed since the page asked (deleteRoom takes it off the rules).
@@ -280,7 +282,9 @@ export function mountTaskSettings(container) {
     text.append(el('p', 'tk-rule-name', name));
     if (detail) text.append(el('p', 'tk-rule-detail', detail));
     if (line) text.append(el('p', 'tk-rule-line', line));
-    li.append(text, ...extra, toggle(rule.enabled, rule.text, key, onToggle));
+    // a crop's rule shows its first crop family (crop keys share the families' names), not the default oyster
+    const pic = picture('task', rule.key ? taskPicture({ ruleKey: rule.key }) : 'own', { size: 24, crop: rule.families?.[0] ?? null }); // an own rule has an id, no key
+    li.append(pic, text, ...extra, toggle(rule.enabled, rule.text, key, onToggle));
     return li;
   }
 

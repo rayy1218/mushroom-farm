@@ -43,7 +43,8 @@ test('the stream gone before the first answer: the page still switches to the 30
 test("the page: who is doing the rounds, each room's open rows by slot and its overdue upkeep, then the long-term lines", () => {
   assert.ok(page.includes("request('GET', '/api/tasks/today')"));
   assert.ok(page.includes("q('[data-picker]').append(picker.node);"));
-  assert.ok(page.includes('slotPart(g, actions, { openFolds, foldKey: `${r.id}:${g.slot}` })'));
+  assert.ok(page.includes('slotPart(g, actions, { openFolds, foldKey: `${r.id}:${g.slot}`, crop: crop.crop })'));
+  assert.ok(page.includes('const crop = cropLine(r.crop);'), 'the crop line and picture under the room name (spec 2026-11-03-pictures-design.md 3)');
   assert.ok(page.includes('upkeepRows(r.upkeepDue, view.date)'));
   assert.ok(page.includes("link.href = roomHash(r.id, 'tasks');"));
   assert.ok(page.includes('const a = el(\'a\', \'\', `${r.name}: ${longtermWords(r.longterm)}`);'));

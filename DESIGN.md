@@ -244,7 +244,7 @@ A neutral grey ladder with one blue and three state colours; three series hues a
 - **Grid / Axis** (`grid`, `axis`): chart gridlines and axes; quiet link underlines.
 
 ### Named Rules
-**The State-Only Colour Rule.** Everywhere outside the measured series, colour means state: blue is selection, primary action and running; green is in band; amber is warning; red is fault. Icons, headings, links in prose and target labels stay neutral (the Crop tab's target icons are `muted`).
+**The State-Only Colour Rule.** Everywhere outside the measured series, colour means state: blue is selection, primary action and running; green is in band; amber is warning; red is fault. Icons, headings, links in prose and target labels stay neutral (the Crop tab's target icons are `muted`). The pictures (below) are the one other exception: they draw things in the room drawing's own colours, never a state colour.
 
 **The Series Identity Rule.** (2026-10-28: energy and water have their own hues too.) Temperature, humidity and CO₂ keep their own hues (`--s-t`, `--s-rh`, `--s-co2`) on the reading-card traces and the History charts. This deliberately adapts the category standard's "nothing else coloured": the hue carries a metric's identity from the Now tab to the History tab, which is a data job, not decoration. A series hue never marks state, never fills a button and never colours text other than a chart's own legend.
 
@@ -363,6 +363,20 @@ History's and a simulation's charts are one component (web/chart.js), drawn at t
 ### Room drawing (mimic)
 The room's picture keeps its representation: the air path, the condenser outside, the machines in air order and the shelves of blocks, drawn as flat shapes with one colour per thing (no gradients, shadows or hatching). Its palette is neutral slate (`--m-*` tokens in `mimic.css`, set per theme on the host) with blue (`--m-run`) for running fans and "On" labels; the drawing's own representational colours (cool and warm air, mist, light, the blocks) stay as they are. It sits in a card with 10 px clipped corners and no frame of its own, except in the light theme, where a 1 px `border-strong` line inside its edge keeps the pale sky from melting into the white card; on a phone the whole drawing fits the card's width (2026-10-29: at its own size it was mostly sky until swiped), and under 640 px of picture its labels hide because the Machines list and the readings say them in words. Under 480 px of screen (2026-10-29c) it folds, closed, under "Show the room drawing": that small, it says nothing the Machines list does not; wider screens show it with no fold.
 
+### Pictures
+(2026-11-03, owner: "the app is lacking a lot of visual image"; spec `docs/superpowers/specs/2026-11-03-pictures-design.md`.) Flat drawings in the room drawing's world name the things the farm works with: each crop (9), the grow bag in each stage, each machine and sensor, each task rule (`web/pictures.js`, markup in `web/pictures-data.js` and its three parts). A 48 × 48 grid, flat fills, thin detail lines only where a shape needs them (gills, pleats); white units (`--p-unit`, a 1 px `--p-edge` in the light theme), the blocks' tan (`--p-bag`), each crop in its two hues (`--p-<crop>`, `--p-<crop>-2`, set on the picture as `--c`, `--c2`). The `--p-*` tokens sit in both theme blocks of `web/styles.css`.
+
+| Place | Picture | Size (desk / phone) |
+|---|---|---|
+| Overview room card, Today's room heading | the main crop (most blocks), with "Grey oyster · Fruiting · day 7 of 7" under the name; a dashed tile and "No crop" without | 40 / 40, 32 / 32 |
+| Now tab Crop card; Crop tab head | the main crop; every crop, overlapping by a quarter | 48 / 48; 64 / 48 |
+| Crop tab stage cards | the main crop's bag as it looks in that stage | 48 / 40 |
+| Machines list | the machine, between its air-order number and its name | 32 / 32 |
+| Equipment cards | the machine or sensor beside the card's title | 40 / 40 |
+| Task rows (Tasks tab, Today); Task rules | the rule's picture after the tick (a harvest holds the room's crop); beside the rule | 32 / 28; 24 / 24 |
+
+**The Picture Rule.** A picture says what a thing is, never how it is: no green, amber, red or accent blue in it, nothing in it changes with a reading or a machine's state (the pills and words keep the state), and it always sits beside words that say the same, so it is `aria-hidden`. A closed task's or an unfitted machine's picture fades with its words. A test checks that every crop, rule, machine and sensor has one and that no picture holds a fixed colour or a state token.
+
 ## Do's and Don'ts
 
 ### Do:
@@ -381,4 +395,5 @@ The room's picture keeps its representation: the air path, the condenser outside
 - **Don't** fill an On switch with solid accent beside a Send or Save.
 - **Don't** add shadows to dark-theme cards or depth effects beyond the vocabulary above.
 - **Don't** add gradients, shadows or hatching to the room drawing, or change what it represents.
+- **Don't** colour a picture by state, or let a picture say something its words do not.
 - **Don't** show a quantity in two formats on two tabs, or any US unit.

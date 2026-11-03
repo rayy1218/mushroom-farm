@@ -335,8 +335,15 @@ export function cropFacts(crop, now = Date.now()) {
   };
 }
 
+// The room's main crop: the one with the most blocks, the first on a tie (its picture stands for the room's crops). null without.
+export function mainCrop(crops) {
+  const rows = (Array.isArray(crops) ? crops : []).filter((c) => num(c?.blocks) !== null);
+  return (rows.reduce((best, c) => (!best || c.blocks > best.blocks ? c : best), null) ?? crops?.[0] ?? null)?.crop ?? null;
+}
+
 // The Now tab's Crop card: { name, stage, sub: '950 blocks · flush 1 of 4', day: 'Day 2 of 7', share (of the stage's length,
-// null without one), next, done } or null without crops or a stage. The day is stageDay's, as on the Crop tab.
+// null without one), next, done, crop: the main crop for its picture } or null without crops or a stage. The day is
+// stageDay's, as on the Crop tab.
 export function cropSummary(crop, now = Date.now()) {
   const facts = cropFacts(crop, now);
   if (!facts) return null;
@@ -350,8 +357,19 @@ export function cropSummary(crop, now = Date.now()) {
     name: growing.value, stage: stage.value, sub: [growing.sub, stage.sub].filter(Boolean).join(DOT),
     day: d ? (d.length ? `Day ${d.day} of ${d.length}` : `Day ${d.day}`) : '',
     share: d?.length ? d.day / d.length : null,
-    next, done: Boolean(crop.done),
+    next, done: Boolean(crop.done), crop: mainCrop(crop.crops),
   };
+}
+
+// The crop line under a room's name on the Overview and Today (spec 2026-11-03-pictures-design.md 3), from the crop reply:
+// { crop: the main crop (the most blocks, the first on a tie) for the picture, text: "Grey oyster · Fruiting · day 7 of 7" }
+// — the day as cropSummary counts it; "No crop" (crop null) without.
+export function cropLine(crop, now = Date.now()) {
+  const summary = cropSummary(crop, now);
+  if (!summary) return { crop: null, text: 'No crop' };
+  const parts = crop.done ? [summary.name, `flush ${crop.flushes} of ${crop.flushes} done`]
+    : [summary.name, summary.stage, summary.day.toLowerCase()].filter(Boolean);
+  return { crop: summary.crop, text: parts.join(DOT) };
 }
 
 export function roomCard({ draw = null, control = null, filter = null, crop = null, now = Date.now(), trends = {}, points = {} } = {}) {

@@ -9,6 +9,8 @@
 //   (onSwitch(key) sends the command), in Auto the pill shows its state.
 
 import { createMimic } from './mimic.js';
+import { picture } from './pictures.js';
+import { machinePicture } from './pictures-data.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
 
@@ -138,7 +140,7 @@ export function createRoomCard(hosts, { idPrefix = 'room-', cropHref = '', onSwi
         n.sw.addEventListener('click', () => onSwitch(m.key));
         n.err.setAttribute('role', 'status');
         n.err.hidden = true;
-        n.node.append(el('span', 'mc-step', String(m.step)), text, n.pill, n.sw, n.err);
+        n.node.append(el('span', 'mc-step', String(m.step)), picture('machine', machinePicture(m.key)), text, n.pill, n.sw, n.err);
         return n;
       });
       list.replaceChildren(...machineNodes.map((n) => n.node));
@@ -175,12 +177,25 @@ export function createRoomCard(hosts, { idPrefix = 'room-', cropHref = '', onSwi
   foot.append(crop.day, crop.next);
   const link = el('a', 'cs-link', 'Open the Crop tab');
   if (cropHref) link.href = cropHref;
-  hosts.crop.replaceChildren(cardHead('Crop', crop.stage), crop.name, crop.sub, crop.bar, foot, crop.empty, link);
+  // the crop's picture beside its name (spec 2026-11-03-pictures-design.md 3), made again when the main crop changes
+  const named = el('div', 'cs-named');
+  const words = el('div', 'cs-words');
+  words.append(crop.name, crop.sub);
+  named.append(words);
+  let pictured; // the crop the picture shows
+  let cropPic = null;
+  hosts.crop.replaceChildren(cardHead('Crop', crop.stage), named, crop.bar, foot, crop.empty, link);
 
   function paintCrop(s) {
-    for (const node of [crop.stage, crop.name, crop.sub, crop.bar, foot]) node.hidden = !s;
+    for (const node of [crop.stage, named, crop.bar, foot]) node.hidden = !s;
     crop.empty.hidden = Boolean(s);
     if (!s) return;
+    if (s.crop !== pictured) {
+      pictured = s.crop;
+      cropPic?.remove();
+      cropPic = picture('crop', s.crop, { size: 48 });
+      named.prepend(cropPic);
+    }
     put(crop.stage, s.stage);
     put(crop.name, s.name);
     put(crop.sub, s.sub);

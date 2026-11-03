@@ -11,6 +11,7 @@ function fakeElement(tag) {
   const listeners = {};
   const node = {
     tag, children: [], dataset: {}, attrs: {}, hidden: false, disabled: false, className: '', value: '', checked: false,
+    style: { setProperty() {} }, // a card's picture (web/pictures.js) sets its crop hues
     classList: { toggle(name, on) { node.attrs[`class:${name}`] = on; } },
     setAttribute(k, v) { this.attrs[k] = v; },
     removeAttribute(k) { delete this.attrs[k]; },
@@ -32,7 +33,7 @@ const all = (node) => [node, ...node.children.filter((c) => typeof c === 'object
 function setup(t) {
   const real = { document: globalThis.document, fetch: globalThis.fetch };
   const body = fakeElement('body');
-  globalThis.document = { createElement: fakeElement, activeElement: body, body };
+  globalThis.document = { createElement: fakeElement, createElementNS: (ns, tag) => fakeElement(tag), activeElement: body, body };
   const calls = []; // PUTs waiting for an answer: { path, body, resolve }
   globalThis.fetch = (path, init) => new Promise((resolve) => calls.push({ path, body: JSON.parse(init.body), resolve }));
   t.after(() => Object.assign(globalThis, real));
