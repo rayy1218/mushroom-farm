@@ -11,6 +11,8 @@
 
 import { EQUIPMENT_CARDS, EQUIPMENT_SECTIONS, cardOf, cardGroup, cardLine, cardStatus, cardHint, parseCard } from './equipment-cards.js';
 import { createEditForm } from './room-edit.js';
+import { picture } from './pictures.js';
+import { equipmentPicture } from './pictures-data.js';
 
 function el(tag, className, content) {
   const node = document.createElement(tag);
@@ -67,7 +69,14 @@ export function createEquipment(host, { roomId, idPrefix, queue, onSaved, onGone
       },
       onGone,
     });
-    form.append(title, line, statusLine, ...edit.fields.parts[c.key], ...edit.end);
+    // the device's picture beside its name (spec 2026-11-03-pictures-design.md 3)
+    const head = el('div', 'eq-head');
+    const words = el('div', 'eq-words');
+    words.append(title, line);
+    const [kind, key] = equipmentPicture(c.key);
+    if (!elsewhere[c.key]) head.append(picture(kind, key, { size: 40 })); // a card under another part's title: its words only
+    head.append(words);
+    form.append(head, statusLine, ...edit.fields.parts[c.key], ...edit.end);
     const hint = c.hint ? edit.fields.parts[c.key].find((node) => node.className === 'c-hint') : null;
     cards.set(c.key, {
       edit,

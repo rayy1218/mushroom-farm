@@ -361,6 +361,9 @@ html { scroll-padding-top: var(--topbar-h); }
 .eq-section > h2 { margin: 0 0 12px; font-size: var(--fs-lg); }
 .eq-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; align-items: start; }
 .filter-part { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; align-items: start; } /* the filter's pressure and changes, then its settings */
+.eq-head { display: flex; align-items: center; gap: 12px; margin: 0 0 10px; }
+.eq-words { min-width: 0; }
+.eq-card .eq-head .addr { margin: 0; }
 .eq-card h3 { margin: 0 0 2px; font-size: var(--fs-md); font-weight: 600; }
 .eq-card h3:focus { outline: none; }
 .eq-card .addr { margin: 0 0 10px; }
@@ -374,6 +377,7 @@ html { scroll-padding-top: var(--topbar-h); }
 /* A machine not fitted: only its box and "Not fitted", the card dimmed */
 .eq-card.unfitted { background: transparent; border: 1px dashed var(--border-strong); }
 .eq-card.unfitted h3, .eq-card.unfitted .addr { color: var(--muted); }
+.eq-card.unfitted .eq-head > .pic { opacity: .5; } /* not fitted: quiet, as its words */
 @media (max-width: 600px) { .eq-grid { grid-template-columns: 1fr; gap: 12px; } }
 /* The four sensors two by two (owner 2026-10-27), the gateway card as wide as one of them; a phone keeps one column */
 @media (min-width: 601px) { .eq-section:is([data-section="gateway"], [data-section="sensors"]) .eq-grid { grid-template-columns: repeat(2, 1fr); } }
@@ -858,6 +862,11 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
 .crop-check { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; }
 .cp-head { display: flex; justify-content: space-between; align-items: center; gap: 8px 16px; flex-wrap: wrap; }
 .cp-head-text { min-width: 0; }
+.cp-head-main { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.cp-pics { display: flex; flex: none; }
+.cp-pics > .pic + .pic { margin-left: -16px; } /* a mixed room: each crop's picture, overlapping by a quarter */
+.cp-stage-named { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.cp-bag { flex: none; }
 .crop-card .cp-title { margin: 0; font-size: var(--fs-xl); font-weight: 700; overflow-wrap: anywhere; }
 .crop-card .cp-title.muted { font-size: var(--fs-md); font-weight: 500; }
 .cp-farm { margin: 2px 0 0; color: var(--muted); font-size: var(--fs-sm); }
@@ -948,6 +957,9 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
   .cp-more { display: inline-flex; }
   .crop-card .cp-title { font-size: var(--fs-lg); }
   .cp-stage { padding: 12px; }
+  .cp-pics > .pic { width: 48px; height: 48px; }
+  .cp-pics > .pic + .pic { margin-left: -12px; }
+  .cp-bag > .pic { width: 40px; height: 40px; }
   .cp-targets th { white-space: nowrap; } /* "Air exchange" on one line; its value wraps instead */
   .cp-targets td { white-space: normal; }
 }
@@ -1555,6 +1567,8 @@ button.tk-tick:is(:hover, :focus-visible) .tk-mark { opacity: 1; }
 .tk-rule-text p { margin: 0; }
 .tk-rule-name { font-weight: 500; }
 .tk-rule-detail { color: var(--ink-2); font-size: var(--fs-sm); }
+.tk-rule-list li > .pic { align-self: flex-start; margin-top: 1px; }
+.tk-rule-list li:not(:has(.tk-rule-detail, .tk-rule-line)) > .pic { align-self: center; margin-top: 0; } /* one line: beside it */
 .tk-rule-list li > button.toggle { margin-left: auto; } /* on its own line too, at the right as the others */
 .tk-rule-line { color: var(--muted); font-size: var(--fs-sm); }
 .tk-every-field { display: grid; gap: 4px; }
@@ -1595,7 +1609,7 @@ button.tk-tick:is(:hover, :focus-visible) .tk-mark { opacity: 1; }
   .tk-every input { min-height: 44px; }
   .tk-dialog .tk-check label { display: inline-flex; align-items: center; min-height: 44px; } /* the words take the tap too */
   .tk-rule-list button.toggle { min-height: 44px; } /* after button.toggle's 40 px */
-  .tk-rule-list li:has(> button:not(.toggle)) .tk-rule-text { flex-basis: 100%; } /* an own rule: Edit, Remove and On in a row under it */
+  .tk-rule-list li:has(> button:not(.toggle)) .tk-rule-text { flex-basis: calc(100% - 36px); } /* an own rule: Edit, Remove and On in a row under it (its 24 px picture and the 12 px gap beside) */
   .top-link { min-width: 44px; padding: 4px 6px; justify-content: center; gap: 4px; } /* room for the Today link and its count */
   .room-tabs a { padding: 10px 5px; gap: 4px; } /* six tabs and a count up to 99+ fit 390 px; 360 px scrolls with the fade */
   .sg-planned a { display: inline-block; min-height: 44px; line-height: 44px; white-space: nowrap; }

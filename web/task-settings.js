@@ -10,6 +10,8 @@ import {
   parseWorkerName, workersAfter, parseEveryDays, parseCustomRule, rulesBody, customAfter, ruleForm, idAfter, WORKER_MAX,
 } from './settings-math.js';
 import { el, keepFocus } from './task-list.js';
+import { picture } from './pictures.js';
+import { taskPicture } from './pictures-data.js';
 
 const COMMAND_TIMEOUT = 15000;
 // The server refused an own rule's rooms: a room was removed since the page asked (deleteRoom takes it off the rules).
@@ -280,7 +282,8 @@ export function mountTaskSettings(container) {
     text.append(el('p', 'tk-rule-name', name));
     if (detail) text.append(el('p', 'tk-rule-detail', detail));
     if (line) text.append(el('p', 'tk-rule-line', line));
-    li.append(text, ...extra, toggle(rule.enabled, rule.text, key, onToggle));
+    const pic = picture('task', key.startsWith('custom-') ? 'own' : taskPicture({ ruleKey: rule.key }), { size: 24 });
+    li.append(pic, text, ...extra, toggle(rule.enabled, rule.text, key, onToggle));
     return li;
   }
 

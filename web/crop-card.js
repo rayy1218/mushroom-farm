@@ -9,6 +9,8 @@
 // stage were saved (the bands may have changed); onData(crop): every reply shown (the Room card writes the blocks from it). An
 // open editor or pencil is never replaced by a refresh.
 
+import { picture } from './pictures.js';
+import { mainCrop } from './room-card-math.js';
 import { request, OFFLINE } from './api.js';
 import { CROPS, CROP_KEYS, STAGES, FARM_TYPES, MAX_CROPS } from './crops.js';
 import { removeLabel } from './simulate-math.js';
@@ -100,7 +102,13 @@ export function createCropCard(host, { roomId, onChange, onData, onOffline, onGo
   const editBtn = button('Edit crops');
   editBtn.setAttribute('aria-expanded', 'false');
   editBtn.setAttribute('aria-controls', id('editor'));
-  head.append(headText, editBtn);
+  // the crops' pictures before their names (spec 2026-11-03-pictures-design.md 3), overlapping by a quarter in a mixed room
+  const headPics = el('div', 'cp-pics');
+  headPics.setAttribute('aria-hidden', 'true');
+  let headPicKeys = null;
+  const headMain = el('div', 'cp-head-main');
+  headMain.append(headPics, headText);
+  head.append(headMain, editBtn);
 
   // ---- the crop editor (Edit crops / Add crop) ----
   const editor = el('div', 'cp-editor');
@@ -439,7 +447,10 @@ export function createCropCard(host, { roomId, onChange, onData, onOffline, onGo
     pencil.setAttribute('aria-expanded', 'false');
     const start = button('Start this stage');
     actions.append(pencil, start);
-    top.append(names, actions);
+    const bagHost = el('span', 'cp-bag'); // the main crop's bag as it looks in this stage, painted with the crops
+    const named = el('div', 'cp-stage-named');
+    named.append(bagHost, names);
+    top.append(named, actions);
     const mark = el('p', 'cp-mark');
     const warnings = el('div', 'cp-warnings');
     const startErr = el('p', 'm-error');
@@ -501,7 +512,7 @@ export function createCropCard(host, { roomId, onChange, onData, onOffline, onGo
 
     root.append(top, mark, warnings, startErr, edit, targetsTitle, table, roomNote, backErr, ramp);
 
-    const sec = { stage, root, name, length, pencil, start, mark, warnings, startErr, edit, inputs, fields, body, ramp, roomNote, open: false, rows: '' };
+    const sec = { stage, root, name, length, bagHost, bagKey: null, pencil, start, mark, warnings, startErr, edit, inputs, fields, body, ramp, roomNote, open: false, rows: '' };
     // The stage's own bands back on the room (the same as starting the stage would set, without its ramp).
     backBtn.addEventListener('click', async () => {
       if (backBtn.disabled || !last) return;
@@ -574,6 +585,11 @@ export function createCropCard(host, { roomId, onChange, onData, onOffline, onGo
   });
 
   function paintSection(sec, c, now) {
+    const crop = mainCrop(c.crops);
+    if (crop !== sec.bagKey) {
+      sec.bagKey = crop;
+      sec.bagHost.replaceChildren(picture('bag', crop, { stage: sec.stage, size: 48 }));
+    }
     sec.length.textContent = stageLength(c, sec.stage);
     const mark = stageMark(c, sec.stage, now);
     setText(sec.mark, mark.text);
@@ -681,6 +697,12 @@ export function createCropCard(host, { roomId, onChange, onData, onOffline, onGo
     const now = Date.now();
     const has = hasCrops(c);
     const line = cropHeadline(c);
+    const picKeys = has ? c.crops.map((x) => x.crop).join() : '';
+    if (picKeys !== headPicKeys) {
+      headPicKeys = picKeys;
+      headPics.replaceChildren(...(has ? c.crops.map((x) => picture('crop', x.crop, { size: 64 })) : []));
+    }
+    headPics.hidden = !has;
     title.textContent = line.title;
     title.classList.toggle('muted', !has);
     setText(farm, line.farm);
