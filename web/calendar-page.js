@@ -83,6 +83,7 @@ export function mount(container, { room = null, day = null } = {}) {
   let timer = null;
   let outdated = false;
   let painted = '';
+  let pickerFromView = false;
   const openFolds = new Set(); // the routine folds opened, by day and room: a refresh keeps them open
 
   const keepAddress = () => history.replaceState(null, '', calendarHash({ room: roomId, day: picked && picked !== today ? picked : null }));
@@ -96,7 +97,7 @@ export function mount(container, { room = null, day = null } = {}) {
       els.room.append(o);
     }
     els.room.value = roomId ? String(roomId) : '';
-  }).catch(() => {});
+  }).catch(() => { pickerFromView = true; }); // no list: the first answer for every room fills it
   els.room.addEventListener('change', () => {
     roomId = els.room.value ? Number(els.room.value) : null;
     keepAddress();
@@ -164,9 +165,10 @@ export function mount(container, { room = null, day = null } = {}) {
   function pick(date, { focus = false } = {}) {
     picked = date;
     keepAddress();
-    if (monthOf(date) !== month && !monthGrid(month).some((c) => c.date === date)) {
+    if (monthOf(date) !== month) { // another month (a muted day, the keys, Today): its heading and grid at once, then its days
       month = monthOf(date);
       view = null;
+      paint(true);
       load(focus);
       return;
     }
@@ -285,6 +287,14 @@ export function mount(container, { room = null, day = null } = {}) {
       }
       if (!picked) picked = today;
       view = data;
+      if (pickerFromView && roomId === null) {
+        pickerFromView = false;
+        for (const r of data.rooms) {
+          const o = el('option', '', r.name);
+          o.value = String(r.id);
+          els.room.append(o);
+        }
+      }
       els.banner.hidden = true;
       paint(); // a refresh with nothing new leaves the page (its folds and focus) alone
       if (focus) els.grid.querySelector(`[data-date="${picked}"]`)?.focus();
@@ -293,7 +303,14 @@ export function mount(container, { room = null, day = null } = {}) {
       els.bannerText.textContent = routeMissing(err) ? OUTDATED : err.status === 0 ? OFFLINE : err.message;
       els.banner.hidden = false;
       if (routeMissing(err)) { outdated = true; return; }
-      if (err.status === 404) { roomId = null; els.room.value = ''; keepAddress(); } // the room is gone: every room
+      if (err.status === 404 && roomId !== null) { // the room is gone: every room, at once
+        els.room.querySelector(`option[value="${roomId}"]`)?.remove();
+        roomId = null;
+        els.room.value = '';
+        keepAddress();
+        load();
+        return;
+      }
     }
     if (!alive()) return;
     clearTimeout(timer);
