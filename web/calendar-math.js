@@ -97,6 +97,8 @@ export function dayGroups(view, date) {
 export function itemLine(i) {
   if (i.status === 'missed' || ['done', 'skipped', 'cancelled'].includes(i.status)) return closedLine(i);
   if (i.status === 'open' && i.overdueDays > 0) return `overdue ${i.overdueDays} ${i.overdueDays === 1 ? 'day' : 'days'}`;
+  if (i.status === 'planned' && i.until) return `Until the stage changes, about ${i.until}`; // the change day's old stage
+  if (i.status === 'planned' && i.from) return `From the stage change, about ${i.from}`;
   return '';
 }
 

@@ -40,8 +40,8 @@ contamWalk, humidifierCheck, footbath, floorClean and an own daily rule.
 |---|---|
 | The stage on a day | From the program: while automatic change is on, step it with `nextStage` at `stageEndsAt` (the Crop tab's stage plan, the same dates); with it off, the current stage carries on and no change is shown. Past the last flush's rest: the program is done ("Replace the blocks" on that day, then the done rules). |
 | A stage start | An item of kind 'stage' on the day a stage starts by itself: "Rest between flushes starts · flush 1". |
-| The daily tasks | `wantedDaily({ program: the program as on that day, date, rules })` with the room's `effectiveRules` (the owner's switches and own rules), so first-day, last-day and every-N-days rules fall where the farm will make them. |
-| Upkeep | For each upkeep rule the room has (`upkeepApplies`): its open row's due date, then every interval after it, as if each is done on its day. A rule with no open row (turned off, or a new room before its first making) shows none. |
+| The daily tasks | `wantedDaily({ program: the program as on that day, date, rules })` with the room's `effectiveRules` (the owner's switches and own rules), so first-day, last-day and every-N-days rules fall where the farm will make them. On a day a stage starts (code review 2026-11-03: the farm makes the day's rows at midnight under the old stage, then the new stage's at the change, cancelling the old): the old stage's tasks the new one does not want say "Until the stage changes, about 15:09", the new stage's own "From the stage change, about 15:09"; today, only what a change later today adds. |
+| Upkeep | Each open upkeep row on its due date, then its rule's next rows every interval after it (in the rule's words now), as if each is done on its day; an overdue one repeats from today. A rule turned off keeps its open row: it shows once, with no repeats. A rule with no open row (a new room before its first making) shows none. |
 | A room without crops | Its own rules (footbath, floor, own rules) and its upkeep. |
 
 ## 4. API

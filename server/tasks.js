@@ -411,7 +411,7 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
       const put = (d, item) => { if (d >= from && d <= to) (byDay.get(d) ?? byDay.set(d, []).get(d)).push(item); };
       const item = (row, status) => ({ roomId: row.roomId, kind: row.kind, status, ruleKey: row.ruleKey, text: row.text, note: row.note,
         slot: row.slot, worker: row.worker, amount: row.amount, unit: row.unit, reason: row.reason, closedAt: row.closedAt,
-        overdueDays: 0, routine: isRoutine(row.kind, row.ruleKey), about: false, stage: null });
+        overdueDays: 0, routine: isRoutine(row.kind, row.ruleKey), about: false, stage: null, until: null, from: null });
       for (const room of rooms) {
         for (const row of db.calendarTasks(room.id, from, to, dayStart(from), dayStart(addDays(to, 1)))) {
           if (row.kind === 'daily') put(row.date, item(row, row.status === 'open' && row.date < date ? 'missed' : row.status));

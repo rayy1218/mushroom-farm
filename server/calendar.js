@@ -3,7 +3,7 @@
 // Crop tab's dates) and the upkeep intervals. Pure: the stored rows are merged in tasks.js calendarView.
 
 import { nextStage, stageEndsAt } from './program.js';
-import { wantedDaily, localDate, addDays, daysBetween, dayStart } from './task-rules.js';
+import { wantedDaily, localDate, localTime, addDays, daysBetween, dayStart } from './task-rules.js';
 
 export const HORIZON_DAYS = 92;
 export const MAX_SPAN_DAYS = 42;
@@ -57,25 +57,50 @@ export function projectRoom({ program, rules, openUpkeep = [], today, now, from,
   const base = { worker: null, amount: null, reason: null, closedAt: null, note: null, unit: null, overdueDays: 0 };
   for (const s of steps.slice(1)) {
     if (s.at <= now) continue;
-    push(localDate(s.at), { ...base, kind: 'stage', status: 'planned', ruleKey: null, text: '', slot: 'any', routine: false, about: true, stage: s.started });
+    push(localDate(s.at), { ...base, kind: 'stage', status: 'planned', ruleKey: null, text: '', slot: 'any', routine: false, about: true, stage: s.started, until: null, from: null });
   }
-  const start = [from, addDays(today, 1)].sort().at(-1);
-  for (let date = start; date <= last; date = addDays(date, 1)) {
-    const step = stepOn(steps, date);
-    const about = step.at !== null;
-    for (const t of wantedDaily({ program: step.program, crops: step.program.crops, date, rules: rules.daily })) {
-      push(date, { ...base, kind: 'daily', status: 'planned', ruleKey: t.ruleKey, text: t.text, note: t.note, slot: t.slot, unit: t.unit,
-        routine: isRoutine('daily', t.ruleKey), about, stage: null });
+  // The daily rows (code review 2026-11-03): the farm makes a day's rows at midnight under the stage then in force and, when
+  // a stage starts that day, the new stage's rows at the change, cancelling the old ones no longer wanted. So a change day
+  // lists the old stage's tasks "until" the change and the new stage's "from" it (the time on the farm's clock); today, only
+  // what a change later today adds (the rest are stored rows).
+  const wanted = (step, date) => wantedDaily({ program: step.program, crops: step.program.crops, date, rules: rules.daily });
+  const keyOf = (t) => `${t.ruleKey}|${t.slot}`;
+  const daily = (date, t, about, mark = {}) => push(date, { ...base, kind: 'daily', status: 'planned', ruleKey: t.ruleKey, text: t.text,
+    note: t.note, slot: t.slot, unit: t.unit, routine: isRoutine('daily', t.ruleKey), about, stage: null, until: null, from: null, ...mark });
+  for (let date = [from, today].sort().at(-1); date <= last; date = addDays(date, 1)) {
+    const dayAt = dayStart(date);
+    const before = steps.filter((x) => x.at === null || x.at < dayAt).at(-1);
+    const after = stepOn(steps, date);
+    const change = after !== before ? after.at : null;
+    if (date === today) {
+      if (change === null || change <= now) continue;
+      const had = new Set(wanted(before, date).map(keyOf));
+      for (const t of wanted(after, date)) if (!had.has(keyOf(t))) daily(date, t, true, { from: localTime(change) });
+      continue;
     }
+    if (change === null) {
+      for (const t of wanted(after, date)) daily(date, t, after.at !== null);
+      continue;
+    }
+    const time = localTime(change);
+    const old = wanted(before, date);
+    const now2 = new Set(wanted(after, date).map(keyOf));
+    const was = new Set(old.map(keyOf));
+    for (const t of old) daily(date, t, before.at !== null, now2.has(keyOf(t)) ? {} : { until: time });
+    for (const t of wanted(after, date)) if (!was.has(keyOf(t))) daily(date, t, true, { from: time });
   }
-  const every = new Map(rules.upkeep.map((r) => [r.key, r.everyDays]));
+  // Upkeep: the open row on its due date (a rule turned off keeps its open row, so it shows once, with no repeats), then
+  // the rule's next rows at its interval, in the rule's words now (as tasks.js makes them).
+  const ruleOf = new Map(rules.upkeep.map((r) => [r.key, r]));
+  const upkeep = (date, ruleKey, text, slot) => push(date, { ...base, kind: 'upkeep', status: 'planned', ruleKey, text, slot: slot ?? 'any',
+    routine: false, about: false, stage: null, until: null, from: null });
   for (const row of openUpkeep) {
-    const n = every.get(row.ruleKey);
-    if (!n) continue;
+    const rule = ruleOf.get(row.ruleKey);
     const due = localDate(row.dueAt);
-    for (let date = due > today ? due : addDays(today, n); date <= last; date = addDays(date, n)) {
-      push(date, { ...base, kind: 'upkeep', status: 'planned', ruleKey: row.ruleKey, text: row.text, slot: row.slot ?? 'any', routine: false, about: false, stage: null });
-    }
+    if (due > today) upkeep(due, row.ruleKey, row.text, row.slot);
+    if (!rule?.everyDays) continue;
+    const n = rule.everyDays;
+    for (let date = addDays(due > today ? due : today, n); date <= last; date = addDays(date, n)) upkeep(date, row.ruleKey, rule.text, rule.slot ?? row.slot);
   }
   return out;
 }

@@ -83,6 +83,8 @@ test('itemLine and stageText: closed rows as the Log, overdue upkeep, estimates;
   assert.equal(itemLine(item({ kind: 'upkeep', status: 'open', overdueDays: 0 })), '');
   assert.equal(itemLine(item({ about: true })), '', 'said once under the room');
   assert.equal(itemLine(item({})), '');
+  assert.equal(itemLine(item({ until: '15:09' })), 'Until the stage changes, about 15:09');
+  assert.equal(itemLine(item({ from: '15:09' })), 'From the stage change, about 15:09');
   assert.equal(stageText({ stage: 'rest', flush: 1, done: false }), 'Rest between flushes starts · flush 1');
   assert.equal(stageText({ stage: 'rest', flush: 4, done: true }), 'Rest between flushes starts · flush 4, the last');
   assert.equal(stageText({ stage: 'pinning', flush: 1, done: false }), 'Pinning starts');

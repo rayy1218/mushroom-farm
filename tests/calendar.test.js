@@ -35,14 +35,20 @@ test('future days: harvest checks while fruiting, a stage item on its start day,
   assert.deepEqual(m.get(rest)[0].stage, { stage: 'rest', flush: 1, done: false });
   assert.equal(m.get(rest)[0].kind, 'stage');
   assert.ok(keys(m, rest).includes('scrapeRecap'), 'first day of the rest');
-  assert.ok(!keys(m, rest).includes('harvestAm'));
+  // code review 2026-11-03: the farm makes the day's rows at midnight under the old stage and cancels them at the change
+  const harvest = m.get(rest).find((i) => i.ruleKey === 'harvestAm');
+  assert.equal(harvest.until, '01:00', 'the old stage until it changes');
+  assert.equal(m.get(rest).find((i) => i.ruleKey === 'scrapeRecap').from, '01:00', 'the new stage from the change');
+  assert.equal(m.get(rest).find((i) => i.ruleKey === 'footbath').until, null, 'wanted by both: neither');
+  assert.ok(!keys(m, addDays(TODAY, 6)).includes('harvestAm'), 'the next day: the rest only');
   assert.ok(keys(m, addDays(TODAY, 14)).includes('reopen'), 'last day of the rest (10 days)');
   const lastRest = addDays(TODAY, 5 + 10 + 7);
   assert.equal(m.get(lastRest)[0].stage.done, true);
   assert.ok(keys(m, lastRest).includes('clearOut'), 'the done program clears out');
   for (const items of m.values()) for (const i of items) assert.equal(i.status, 'planned');
   assert.ok(m.get(addDays(TODAY, 1)).every((i) => i.about === false), 'before any automatic change: not "about"');
-  assert.ok(m.get(rest).every((i) => i.about === true));
+  assert.ok(m.get(rest).filter((i) => i.kind === 'stage' || i.from).every((i) => i.about === true), 'the change and what it brings: estimated');
+  assert.ok(m.get(addDays(TODAY, 6)).every((i) => i.about === true));
 });
 
 test('automatic change off: the stage carries on, no stage items', () => {
@@ -80,4 +86,23 @@ test('checkRange: dates, order and span', () => {
   assert.equal(checkRange('2026-11-05', '2026-11-01').field, 'to');
   assert.equal(checkRange('2026-02-30', '2026-03-01').field, 'from');
   assert.equal(checkRange(null, '2026-03-01').field, 'from');
+});
+
+test('a stage changing later today: the new stage\'s tasks from the change, marked', () => {
+  const p = oyster({ stageSince: NOW - 7 * DAY + 5 * 3_600_000 }); // fruiting ends today at 15:00
+  const m = project(p);
+  const today = m.get(TODAY) ?? [];
+  assert.equal(today[0].kind, 'stage');
+  assert.deepEqual(today.filter((i) => i.kind === 'daily').map((i) => [i.ruleKey, i.from]), [['scrapeRecap', '15:00']], 'only what the change adds');
+});
+
+test('a turned-off upkeep rule keeps its open row: shown once on its due date; a repeat uses the rule\'s words now', () => {
+  const off = effectiveRules({ roomId: 1, settings: [{ key: 'flyTraps', enabled: false, everyDays: null }] });
+  const openUpkeep = [{ ruleKey: 'flyTraps', dueAt: dayStart(addDays(TODAY, 3)), text: 'Old words', slot: 'any' }];
+  const m = project(oyster(), { rules: off, openUpkeep });
+  const on = [...m.entries()].filter(([, items]) => items.some((i) => i.ruleKey === 'flyTraps')).map(([d]) => d);
+  assert.deepEqual(on, [addDays(TODAY, 3)]);
+  const m2 = project(oyster(), { openUpkeep });
+  assert.equal(m2.get(addDays(TODAY, 10)).find((i) => i.ruleKey === 'flyTraps').text, 'Check the yellow fly traps; replace the full ones');
+  assert.equal(m2.get(addDays(TODAY, 3)).find((i) => i.ruleKey === 'flyTraps').text, 'Old words', 'the open row itself keeps its words');
 });
