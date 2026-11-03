@@ -43,6 +43,7 @@ import { createUsageSection } from './usage-section.js';
 import { createExchangeSection } from './exchange-section.js';
 import { drawTimeline } from './timeline.js';
 import { timeTicks, tickCountFor, chartDrawKey, historyPoints, timelineSpans, acMarks, formatStamp, wiredTimelineRows, readingGaps, spansOutsideGaps } from './history-math.js';
+import { readingIcon } from './icons.js';
 
 // The Now tab's Machines rows → the relay machines the switches command (the aircon has its own panel).
 const RELAY_KEY = { intake: 'intake', circ: 'circulation', lights: 'lights', hu: 'humidifier', dh: 'dehumidifier', exhaust: 'exhaust' };
@@ -420,7 +421,9 @@ export function mount(container, { id, tab = 'now' }) {
   function buildCharts() {
     for (const def of CHARTS) {
       const card = text('section', 'card chart-card');
-      card.append(text('h2', '', `${def.label} (${def.unit})`));
+      const title = text('h2', 'r-named', `${def.label} (${def.unit})`);
+      title.prepend(readingIcon(def.field));
+      card.append(title);
       const none = text('p', 'none', 'No readings yet');
       const host = text('div', 'chart-host');
       card.append(none, host);
