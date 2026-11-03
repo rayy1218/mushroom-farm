@@ -832,6 +832,8 @@ export function openDb(path, { log = console.error } = {}) {
                                     VALUES (?, 'longterm', 'any', ?, ?, ?, ?)`),
     task: db.prepare('SELECT * FROM tasks WHERE id = ?'),
     dailyTasks: db.prepare("SELECT * FROM tasks WHERE room_id = ? AND kind = 'daily' AND date = ? ORDER BY id"),
+    calendarTasks: db.prepare(`SELECT * FROM tasks WHERE room_id = ?1 AND ((kind = 'daily' AND date BETWEEN ?2 AND ?3)
+      OR (kind <> 'daily' AND status <> 'open' AND closed_at >= ?4 AND closed_at < ?5)) ORDER BY id`),
     openTasks: db.prepare("SELECT * FROM tasks WHERE room_id = ? AND kind = ? AND status = 'open' ORDER BY due_at, id"),
     openDailyBefore: db.prepare("SELECT * FROM tasks WHERE room_id = ? AND kind = 'daily' AND status = 'open' AND date < ? ORDER BY id"),
     lastClosedUpkeep: db.prepare(`SELECT * FROM tasks WHERE room_id = ? AND kind = 'upkeep' AND rule_key = ? AND status IN ('done', 'skipped')
@@ -1700,6 +1702,12 @@ export function openDb(path, { log = console.error } = {}) {
     // The room's daily rows of a date (every status), oldest first.
     dailyTasks(roomId, date) {
       return q.dailyTasks.all(roomId, date).map(taskRow);
+    },
+
+    // The calendar's stored rows of a room (spec 2026-11-03-calendar-design.md 2): its daily rows of the dates from–to (every
+    // status) and its upkeep and long-term rows closed from startAt up to endAt (ms).
+    calendarTasks(roomId, from, to, startAt, endAt) {
+      return q.calendarTasks.all(roomId, from, to, startAt, endAt).map(taskRow);
     },
 
     // The room's open rows of a kind: upkeep by due time, the others oldest first.
