@@ -12,6 +12,7 @@ import { createTaskActions, createWorkerPicker } from './task-dialogs.js';
 import { el, button, taskRow, slotPart, keepFocus } from './task-list.js';
 import { keepLines, DOT } from './text-math.js';
 import { mainCrop } from './room-card-math.js';
+import { calendarHash } from './calendar-math.js';
 
 const REFRESH_MS = 30_000;
 
@@ -41,7 +42,12 @@ export function createTasksCard(host, { roomId, onCounts, onGone }) {
   error.setAttribute('role', 'alert');
   error.hidden = true;
   const todayBody = el('div', 'tk-body');
-  todayCard.append(todayHead, todaySub, error, todayBody);
+  // the room's days ahead and behind on the Calendar (spec 2026-11-03-calendar-design.md 5)
+  const calLine = el('p', 'tk-cal');
+  const calLink = el('a', '', 'Open in the calendar');
+  calLink.href = calendarHash({ room: roomId });
+  calLine.append(calLink);
+  todayCard.append(todayHead, todaySub, calLine, error, todayBody);
 
   // Upkeep
   const upkeepCard = el('section', 'card tk-part');

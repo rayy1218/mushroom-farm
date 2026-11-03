@@ -8,6 +8,7 @@ import * as suggest from './suggest-page.js';
 import * as settings from './settings-page.js';
 import * as overview from './overview.js';
 import * as today from './today-page.js';
+import * as calendar from './calendar-page.js';
 import { loadBadge } from './overview-data.js';
 import { withTitlePrefix } from './overview-math.js';
 import { live } from './live.js';
@@ -18,6 +19,7 @@ import { todayCount, todayLinkLabel, countText } from './tasks-math.js';
 const view = document.getElementById('view');
 const menuLinks = {
   today: document.querySelectorAll('[data-nav="today"]'),
+  calendar: document.querySelectorAll('[data-nav="calendar"]'),
   overview: document.querySelectorAll('[data-nav="overview"]'),
   settings: document.querySelectorAll('[data-nav="settings"]'),
 };
@@ -52,9 +54,10 @@ function show() {
     : route.name === 'detail' ? detail.mount(view, { id: route.id, tab: route.tab })
     : route.name === 'settings' ? settings.mount(view, {})
     : route.name === 'today' ? today.mount(view, {})
+    : route.name === 'calendar' ? calendar.mount(view, { room: route.room, day: route.day })
     : overview.mount(view, {});
   // The Rooms entry stays current on a room's page.
-  const section = ['settings', 'overview', 'today'].includes(route.name) ? route.name : null;
+  const section = ['settings', 'overview', 'today', 'calendar'].includes(route.name) ? route.name : null;
   for (const [name, links] of Object.entries(menuLinks)) {
     for (const a of links) {
       if (name === section) a.setAttribute('aria-current', 'page');

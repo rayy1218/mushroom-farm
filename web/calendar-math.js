@@ -6,6 +6,8 @@ import { SLOT_LABELS, closedLine } from './tasks-math.js';
 import { taskPicture } from './pictures-data.js';
 import { DOT } from './text-math.js';
 
+export { calendarHash, parseCalendarQuery } from './route.js';
+
 const DAY_MS = 86_400_000;
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -17,7 +19,6 @@ const MAX_MARKS = 3;
 
 const utc = (date) => Date.parse(`${date}T00:00:00Z`);
 const iso = (ms) => new Date(ms).toISOString().slice(0, 10);
-const isDate = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s ?? '') && iso(utc(s)) === s;
 
 export const monthOf = (date) => date.slice(0, 7);
 export function shiftMonth(month, n) {
@@ -97,17 +98,6 @@ export function itemLine(i) {
 export function stageText(s) {
   const flush = s.stage === 'fruiting' || s.stage === 'rest' ? `${DOT}flush ${s.flush}${s.done ? ', the last' : ''}` : '';
   return `${STAGES[s.stage] ?? s.stage} starts${flush}`;
-}
-
-export function calendarHash({ room = null, day = null } = {}) {
-  const q = [room ? `room=${room}` : '', day ? `day=${day}` : ''].filter(Boolean).join('&');
-  return q ? `#/calendar?${q}` : '#/calendar';
-}
-export function parseCalendarQuery(query) {
-  const p = new URLSearchParams(query ?? '');
-  const room = /^[1-9][0-9]{0,14}$/.test(p.get('room') ?? '') ? Number(p.get('room')) : null;
-  const day = isDate(p.get('day')) ? p.get('day') : null;
-  return { room, day };
 }
 
 export function dayTitle(date, today) {
