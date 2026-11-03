@@ -12,6 +12,8 @@ import { slotGroups, upkeepRows, nowDue, dayTitle, tasksDueWords, longtermWords,
 import { createTaskActions, createWorkerPicker } from './task-dialogs.js';
 import { el, taskRow, slotPart, keepFocus } from './task-list.js';
 import { DOT } from './text-math.js';
+import { cropLine } from './room-card-math.js';
+import { picture, emptyPicture } from './pictures.js';
 
 const REFRESH_MS = 30_000;
 
@@ -72,15 +74,21 @@ export function mount(container) {
     link.href = roomHash(r.id, 'tasks');
     title.append(link);
     const due = r.counts?.due ?? 0;
-    head.append(title, el('p', 'td-room-count', due > 0 ? `${due} to do` : 'All done'));
+    // the room's crop and stage under its name, with the crop's picture (spec 2026-11-03-pictures-design.md 3)
+    const crop = cropLine(r.crop);
+    const named = el('div', 'td-room-title');
+    const words = el('div', 'td-room-words');
+    words.append(title, el('p', 'td-room-crop', crop.text));
+    named.append(crop.crop ? picture('crop', crop.crop, { size: 32 }) : emptyPicture(32), words);
+    head.append(named, el('p', 'td-room-count', due > 0 ? `${due} to do` : 'All done'));
     card.append(head);
     const groups = slotGroups(r.today);
-    for (const g of groups) card.append(slotPart(g, actions, { openFolds, foldKey: `${r.id}:${g.slot}` }));
+    for (const g of groups) card.append(slotPart(g, actions, { openFolds, foldKey: `${r.id}:${g.slot}`, crop: crop.crop }));
     const up = upkeepRows(r.upkeepDue, view.date);
     if (up.length) {
       const part = el('div', 'tk-slot');
       const list = el('ul', 'tk-list');
-      list.append(...up.map(({ row, due }) => taskRow(row, actions, { due: nowDue(due) })));
+      list.append(...up.map(({ row, due }) => taskRow(row, actions, { due: nowDue(due), crop: crop.crop })));
       part.append(el('h3', 'tk-slot-title', 'Upkeep'), list);
       card.append(part);
     }

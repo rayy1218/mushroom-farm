@@ -668,6 +668,10 @@ button.toggle[data-on="true"]:hover { background: color-mix(in srgb, var(--accen
 .ov-rooms { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; } /* the rooms take the width: they come first */
 .ov-room-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
 .ov-room-head h2 { margin: 0; font-size: var(--fs-lg); overflow-wrap: anywhere; }
+.ov-room-head-pic { justify-content: flex-start; gap: 12px; }
+.ov-room-words { flex: 1 1 auto; min-width: 0; }
+.ov-room-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ov-room-crop { margin: 1px 0 0; color: var(--ink-2); font-size: var(--fs-sm); }
 .ov-room-head a, .sim-item a, .us-room a { color: var(--ink); text-decoration: none; } /* titles that open a page: plain, underlined on hover */
 .ov-room-head a:hover, .sim-item a:hover, .us-room a:hover { text-decoration: underline; text-underline-offset: 3px; }
 .ov-value { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 8px; padding: 6px 0; border-top: 1px solid var(--border); }
@@ -1451,6 +1455,8 @@ details.setup-part:not([open]) { padding-top: 8px; }
 .tk-row { display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; border-top: 1px solid var(--border); }
 .tk-list > .tk-row:first-child { border-top: 0; }
 .tk-text { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.tk-row > .pic { margin-top: -6px; } /* the picture centred on the title's first line */
+.tk-row:not([data-status="open"]) > .pic { opacity: .6; } /* closed: quiet, as its words */
 .tk-title { margin: 0; font-weight: 500; }
 .tk-detail { margin: 2px 0 0; color: var(--ink-2); font-size: var(--fs-sm); }
 .tk-note, .tk-closed-line { margin: 2px 0 0; color: var(--muted); font-size: var(--fs-sm); }
@@ -1498,8 +1504,11 @@ button.tk-tick:is(:hover, :focus-visible) .tk-mark { opacity: 1; }
 .td-picker { flex: none; }
 .td-rooms { display: grid; gap: 16px; align-items: start; }
 @media (min-width: 1100px) { .td-rooms { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-.td-room-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.td-room-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
 .td-room-head h2 { margin: 0; }
+.td-room-title { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.td-room-words { min-width: 0; }
+.td-room-crop { margin: 1px 0 0; color: var(--ink-2); font-size: var(--fs-sm); }
 .td-room-count { flex: none; margin: 0; color: var(--muted); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
 .td-room h2 { overflow-wrap: anywhere; }
 .td-room h2 a { color: var(--ink); text-decoration: none; }
@@ -1568,6 +1577,7 @@ button.tk-tick:is(:hover, :focus-visible) .tk-mark { opacity: 1; }
   .td-long { margin-top: 12px; }
   /* Done and Skip beside the text, compact at 44 px; a long-term row (longer words) puts them under it */
   .tk-row { gap: 6px; padding: 12px 0; }
+  .tk-row > .pic { width: 28px; height: 28px; margin-top: -4px; }
   .tk-tick { width: 44px; height: 44px; margin: -12px -4px -12px -12px; } /* 44 px to tap; the ring stays 20 px */
   .tk-actions { margin: -12px -10px -12px 0; }
   .tk-quiet { min-height: 44px; padding: 0 10px; }

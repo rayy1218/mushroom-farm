@@ -4,6 +4,8 @@
 
 import { closedLine, taskParts } from './tasks-math.js';
 import { keepLines } from './text-math.js';
+import { picture } from './pictures.js';
+import { taskPicture } from './pictures-data.js';
 
 export function el(tag, className, content) {
   const node = document.createElement(tag);
@@ -22,11 +24,13 @@ export function button(label, className) {
 // the task's name with what to do muted under it, the crop notes and the due words, and a quiet Skip (or Cancel) at the end.
 // A closed row keeps its tick, filled for done and drawn for skipped, missed or cancelled, and says who and when.
 // due: dueWords' { text, tone } (upkeep); line: the text (a long-term row's longtermLine); skip, cancel: the quiet action.
-export function taskRow(row, actions, { due = null, line = row.text, skip = true, cancel = false } = {}) {
+// After the tick, the task's picture (spec 2026-11-03-pictures-design.md 3); crop: the room's main crop, which a harvest holds.
+export function taskRow(row, actions, { due = null, line = row.text, skip = true, cancel = false, crop = null } = {}) {
   const li = el('li', 'tk-row');
   li.dataset.status = row.status;
   li.dataset.kind = row.kind;
   const { name, detail } = taskParts(line);
+  const pic = picture('task', taskPicture(row), { crop });
   const text = el('div', 'tk-text');
   text.append(el('p', 'tk-title', keepLines(name)));
   if (detail) text.append(el('p', 'tk-detail', keepLines(detail)));
@@ -41,7 +45,7 @@ export function taskRow(row, actions, { due = null, line = row.text, skip = true
     mark.append(tickIcon(row.status));
     mark.setAttribute('aria-hidden', 'true');
     text.append(el('p', 'tk-closed-line', keepLines(closedLine(row))));
-    li.append(mark, text);
+    li.append(mark, pic, text);
     return li;
   }
   const box = el('div', 'tk-actions');
@@ -90,7 +94,7 @@ export function taskRow(row, actions, { due = null, line = row.text, skip = true
     tap(b, () => actions.cancel(row));
     box.append(b);
   }
-  li.append(done, text, box);
+  li.append(done, pic, text, box);
   return li;
 }
 
@@ -118,8 +122,8 @@ function tickIcon(status) {
 }
 
 // One slot of the day (slotGroups' group): its title, its open rows, and its closed rows folded under "6 done". openFolds:
-// the folds a repaint keeps open (by foldKey).
-export function slotPart(group, actions, { level = 'h3', openFolds = new Set(), foldKey = group.slot } = {}) {
+// the folds a repaint keeps open (by foldKey). crop: the room's main crop, for the harvest pictures.
+export function slotPart(group, actions, { level = 'h3', openFolds = new Set(), foldKey = group.slot, crop = null } = {}) {
   const part = el('div', 'tk-slot');
   part.dataset.foldKey = foldKey;
   const title = el(level, 'tk-slot-title', group.label);
@@ -127,7 +131,7 @@ export function slotPart(group, actions, { level = 'h3', openFolds = new Set(), 
   part.append(title);
   if (group.open.length) {
     const list = el('ul', 'tk-list');
-    list.append(...group.open.map((row) => taskRow(row, actions)));
+    list.append(...group.open.map((row) => taskRow(row, actions, { crop })));
     part.append(list);
   }
   if (group.closed.length) {
@@ -135,7 +139,7 @@ export function slotPart(group, actions, { level = 'h3', openFolds = new Set(), 
     fold.open = openFolds.has(foldKey);
     fold.addEventListener('toggle', () => { if (fold.open) openFolds.add(foldKey); else openFolds.delete(foldKey); });
     const list = el('ul', 'tk-list');
-    list.append(...group.closed.map((row) => taskRow(row, actions)));
+    list.append(...group.closed.map((row) => taskRow(row, actions, { crop })));
     const summary = el('summary', '', keepLines(group.fold));
     summary.dataset.focusKey = `fold-${foldKey}`;
     fold.append(summary, list);

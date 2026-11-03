@@ -89,6 +89,13 @@ test('Today: each room carries its crop, the crop reply without targets', async 
   assert.deepEqual(rooms.find((x) => x.name === 'Room A').crop.crops, []);
 });
 
+test("a room's tasks carry its crop too, for the harvest pictures", async (t) => {
+  const { call, fruitingRoom } = await app(t);
+  const id = await fruitingRoom();
+  const { targets, ...expected } = (await call('GET', `/api/rooms/${id}/crop`)).body;
+  assert.deepEqual((await call('GET', `/api/rooms/${id}/tasks`)).body.crop, expected);
+});
+
 test('Add a long-term task of your own: text 1 to 120 characters, an optional note up to 500', async (t) => {
   const { call } = await app(t);
   const id = (await call('POST', '/api/rooms', ROOM)).body.id;

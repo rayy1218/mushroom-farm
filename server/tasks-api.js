@@ -168,6 +168,7 @@ export function createTaskRoutes({ db, tasks, cropOf = () => null }) {
       if (req.method === 'GET') {
         const view = tasks.roomView(id);
         if (!view) throw new HttpError(404, 'Room not found');
+        view.crop = cropOf(id); // for the harvest pictures (spec 2026-11-03-pictures-design.md 4)
         send(res, 200, view);
         return true;
       }

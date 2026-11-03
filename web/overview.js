@@ -14,6 +14,8 @@ import { roomLines, USAGE_DAYS, USAGE_REFRESH_MS } from './usage-math.js';
 import { usageTileNodes } from './usage.js';
 import { openRoomDialog, closeRoomDialog } from './room-dialog.js';
 import { roomHash } from './route.js';
+import { cropLine } from './room-card-math.js';
+import { picture, emptyPicture } from './pictures.js';
 
 export const ALARMS_CHANGED = 'farm:alarms-changed';
 const NS = 'http://www.w3.org/2000/svg';
@@ -217,7 +219,14 @@ export function mount(container) {
       const link = node('a', 'ov-room-link', c.name); // stretched over the card: the whole card opens the room
       link.href = c.href;
       name.append(link);
-      head.append(name, pill(c.state.text, c.state.tone));
+      // the crop and its stage under the name, with the crop's picture (spec 2026-11-03-pictures-design.md 3)
+      const crop = cropLine(room.crop, now);
+      const top = node('div', 'ov-room-top');
+      top.append(name, pill(c.state.text, c.state.tone));
+      const words = node('div', 'ov-room-words');
+      words.append(top, node('p', 'ov-room-crop', crop.text));
+      head.classList.add('ov-room-head-pic');
+      head.append(crop.crop ? picture('crop', crop.crop, { size: 40 }) : emptyPicture(40), words);
       card.append(head);
       if (c.unwired) { // nothing wired yet: one line and the way to wire it
         card.classList.add('ov-room-bare');
