@@ -33,18 +33,18 @@ owner chose every row marked *owner*; the lead chose the rest. Drafts and screen
 
 | Place | Picture | Size (desk / phone) | Beside |
 |---|---|---|---|
-| Overview room card | the main crop's bag in its stage | 40 / 40 | under the room name: "Grey oyster · Fruiting · day 7 of 7" (*owner*); no crop: a dashed 40 px tile and "No crop" |
-| Today page, each room's heading | the same | 32 / 32 | the room name, the crop line under it |
-| Now tab, Crop card | the same | 48 / 48 | the crop name and stage |
+| Overview room card | the main crop's picture (built: the bag drawn small lost the crop's form, so the stage is said in words) | 40 / 40 | under the room name: "Grey oyster · Fruiting · day 7 of 7" (*owner*); no crop: a dashed 40 px tile and "No crop" |
+| Today page, each room's heading | the main crop's picture | 32 / 32 | the room name, the crop line under it |
+| Now tab, Crop card | the main crop's picture | 48 / 48 | the crop name and stage |
 | Crop tab, the head | each crop's picture | 64 / 48 | "Grey oyster · 600 blocks"; a mixed room shows each crop's picture, overlapped by a quarter |
 | Crop tab, each stage card | the main crop's bag in that stage | 48 / 40 | the stage's name and length |
-| Crop editor (Edit crops, Add crop) | the chosen crop's picture | 32 / 32 | each crop row's select, changing with it |
 | Now tab, Machines list | the machine | 32 / 28 | between the air-order number and the name |
-| Setup, Equipment cards | the machine or sensor | 40 / 40 | the card's title |
+| Setup, Equipment cards | the machine or sensor | 40 / 40 | the card's title; not on a card shown under another part's title (the Intake filter's Settings) |
 | Task rows (Tasks tab, Today) | the task's rule picture; harvest tasks hold the room's main crop | 32 / 28 | after the round tick, before the name |
 | Settings, Task rules | the rule's picture | 24 / 24 | the rule's name |
 
-The main crop: the room's crop with the most blocks (the first on a tie). A rule without a picture (an older or unknown key)
+The crop editor (Edit crops) has no pictures: its rows share their grid with Simulate's crop rows, and the Crop tab's head
+shows each crop's picture once saved. The main crop: the room's crop with the most blocks (the first on a tie). A rule without a picture (an older or unknown key)
 takes `generic`; an own rule takes `own`; a long-term task takes `longTerm`.
 
 ## 4. The server
@@ -53,6 +53,7 @@ takes `generic`; an own rule takes `own`; a long-term task takes `longTerm`.
 |---|---|---|
 | `GET /api/overview`, each room | `crop` | the crop reply of `GET /api/rooms/:id/crop` without `targets` (the page uses `cropSummary` and `stageDay`, as the Now tab does: one rule for the day) |
 | `GET /api/tasks/today`, each room | `crop` | the same |
+| `GET /api/rooms/:id/tasks` | `crop` | the same (the harvest pictures on the Tasks tab) |
 
 No database change.
 
@@ -60,7 +61,8 @@ No database change.
 
 | Part | Detail |
 |---|---|
-| `web/pictures-data.js` | Pure: the picture markup per kind and key (`CROPS`, `CROP_HUES`, `MACHINES`, `SENSORS`, `TASKS`) and `bag(cropKey, stage)`; `mainCrop(crops)`. Tested in Node. |
+| `web/pictures-data.js` | Pure: `markup(kind, key, { crop, stage })`, `hues`, `taskPicture`, `equipmentPicture`, `machinePicture`, over `web/pictures-crops.js` (`CROPS`, `CROP_HUES`, `bag(cropKey, stage)`), `web/pictures-machines.js` (`MACHINES`, `SENSORS`) and `web/pictures-tasks.js` (`TASKS`). Tested in Node. |
+| `web/room-card-math.js` | `mainCrop(crops)`, `cropLine(crop)` ("Grey oyster · Fruiting · day 7 of 7", "No crop"); `cropSummary` carries `crop`. |
 | `web/pictures.js` | `picture(kind, key, { size, crop })` → an `<svg class="pic">` (viewBox 0 0 48 48, `aria-hidden`, the crop's `--c`/`--c2` set on it). |
 | `web/styles.css` | The `--p-*` tokens in both theme blocks; `.pic` (block, no shrink). |
 | Tests | Every crop in `web/crops.js`, every rule in `server/task-rules.js`, every machine and sensor the Equipment tab lists has a picture; no picture markup holds a hex colour or a state token (`--good`, `--warning`, `--critical`, `--accent`); every `--p-` token a picture uses is defined in both theme blocks; the server replies carry `crop`. |
