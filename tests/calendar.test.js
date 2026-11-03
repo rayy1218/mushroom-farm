@@ -1,0 +1,83 @@
+// The calendar's future days (spec 2026-11-03-calendar-design.md 3): stage steps, the daily rules on their days, upkeep
+// repeats, routine, the range check.
+
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { projectRoom, programSteps, programOn, isRoutine, checkRange } from '../server/calendar.js';
+import { effectiveRules, localDate, dayStart, addDays } from '../server/task-rules.js';
+import { PROGRAM_DEFAULTS } from '../server/program.js';
+
+const DAY = 86_400_000;
+const TODAY = '2026-11-03';
+const NOW = dayStart(TODAY) + 10 * 3_600_000; // 10:00 farm time
+const rules = effectiveRules({ roomId: 1 });
+const oyster = (over = {}) => ({ ...PROGRAM_DEFAULTS, crops: [{ crop: 'oyster', blocks: 600 }], stage: 'fruiting',
+  stageSince: dayStart(TODAY) - 2 * DAY + 3_600_000, flush: 1, flushes: 2, ...over }); // fruiting day 3 of 7 today
+const project = (program, o = {}) => projectRoom({ program, rules, openUpkeep: [], today: TODAY, now: NOW,
+  from: TODAY, to: addDays(TODAY, 40), ...o });
+const keys = (m, date) => (m.get(date) ?? []).map((i) => i.ruleKey ?? `stage:${i.stage.stage}`);
+
+test('stage steps follow stageEndsAt while automatic change is on; done after the last fruiting', () => {
+  const steps = programSteps(oyster(), NOW + 60 * DAY);
+  assert.deepEqual(steps.map((s) => [s.program.stage, s.program.flush, s.program.done]),
+    [['fruiting', 1, false], ['rest', 1, false], ['fruiting', 2, false], ['rest', 2, true]]);
+  assert.equal(localDate(steps[1].at), addDays(TODAY, 5), 'fruiting day 3 of 7 today: rest starts in 5 days');
+  assert.equal(programOn(steps, addDays(TODAY, 4)).stage, 'fruiting');
+  assert.equal(programOn(steps, addDays(TODAY, 5)).stage, 'rest', 'the new stage counts from its start day');
+  assert.equal(programSteps(oyster({ autoAdvance: false }), NOW + 60 * DAY).length, 1, 'automatic change off: no steps');
+});
+
+test('future days: harvest checks while fruiting, a stage item on its start day, first- and last-day rules, done rules', () => {
+  const m = project(oyster());
+  assert.equal(m.has(TODAY), false, 'nothing worked out for today but a stage starting');
+  assert.ok(keys(m, addDays(TODAY, 1)).includes('harvestAm'));
+  const rest = addDays(TODAY, 5);
+  assert.deepEqual(m.get(rest)[0].stage, { stage: 'rest', flush: 1, done: false });
+  assert.equal(m.get(rest)[0].kind, 'stage');
+  assert.ok(keys(m, rest).includes('scrapeRecap'), 'first day of the rest');
+  assert.ok(!keys(m, rest).includes('harvestAm'));
+  assert.ok(keys(m, addDays(TODAY, 14)).includes('reopen'), 'last day of the rest (10 days)');
+  const lastRest = addDays(TODAY, 5 + 10 + 7);
+  assert.equal(m.get(lastRest)[0].stage.done, true);
+  assert.ok(keys(m, lastRest).includes('clearOut'), 'the done program clears out');
+  for (const items of m.values()) for (const i of items) assert.equal(i.status, 'planned');
+  assert.ok(m.get(addDays(TODAY, 1)).every((i) => i.about === false), 'before any automatic change: not "about"');
+  assert.ok(m.get(rest).every((i) => i.about === true));
+});
+
+test('automatic change off: the stage carries on, no stage items', () => {
+  const m = project(oyster({ autoAdvance: false }));
+  assert.ok(keys(m, addDays(TODAY, 30)).includes('harvestAm'));
+  assert.ok([...m.values()].flat().every((i) => i.kind !== 'stage'));
+});
+
+test('upkeep repeats from the open row due date; an overdue one from today; nothing past the range', () => {
+  const openUpkeep = [{ ruleKey: 'flyTraps', dueAt: dayStart(addDays(TODAY, 2)), text: 'Check the yellow fly traps', slot: 'any' },
+    { ruleKey: 'acFilter', dueAt: dayStart(addDays(TODAY, -3)), text: 'Wash the aircon filter', slot: 'any' }];
+  const m = project(oyster(), { openUpkeep });
+  const on = (key) => [...m.entries()].filter(([, items]) => items.some((i) => i.ruleKey === key)).map(([d]) => d);
+  assert.deepEqual(on('flyTraps').slice(0, 3), [addDays(TODAY, 2), addDays(TODAY, 9), addDays(TODAY, 16)]);
+  assert.deepEqual(on('acFilter').slice(0, 2), [addDays(TODAY, 7), addDays(TODAY, 14)], 'overdue: as if done today');
+  assert.equal(m.get(addDays(TODAY, 2)).find((i) => i.ruleKey === 'flyTraps').kind, 'upkeep');
+});
+
+test('a room without crops: its own rules only; the horizon caps the range', () => {
+  const m = project({ ...PROGRAM_DEFAULTS }, { to: addDays(TODAY, 200) });
+  assert.deepEqual(keys(m, addDays(TODAY, 1)).sort(), ['floorClean', 'footbath']);
+  assert.equal(m.has(addDays(TODAY, 93)), false);
+  assert.ok(m.has(addDays(TODAY, 92)));
+});
+
+test('routine: the walk, the humidifier, the footbath, the floor and own daily rules', () => {
+  for (const k of ['contamWalk', 'humidifierCheck', 'footbath', 'floorClean', 'custom:3']) assert.equal(isRoutine('daily', k), true, k);
+  for (const k of ['harvestAm', 'openBags']) assert.equal(isRoutine('daily', k), false, k);
+  assert.equal(isRoutine('upkeep', 'custom:3'), false);
+});
+
+test('checkRange: dates, order and span', () => {
+  assert.deepEqual(checkRange('2026-11-01', '2026-12-12'), null);
+  assert.equal(checkRange('2026-11-01', '2026-12-13').error, 'Ask for 42 days or fewer');
+  assert.equal(checkRange('2026-11-05', '2026-11-01').field, 'to');
+  assert.equal(checkRange('2026-02-30', '2026-03-01').field, 'from');
+  assert.equal(checkRange(null, '2026-03-01').field, 'from');
+});
