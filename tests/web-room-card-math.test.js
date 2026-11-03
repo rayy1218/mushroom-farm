@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import {
   scaleFor, bandBar, readingTiles, controlNote, freshAirLine, machineTiles, filterSummary, filterFrom, bottomLine, blocksLine, roomCard, cropFacts, stayed,
-  traceOf, cropSummary, hourPoints, traceScale, cropLine,
+  traceOf, cropSummary, hourPoints, traceScale, cropLine, mainCrop,
 } from '../web/room-card-math.js';
 import { formatDateTime } from '../web/simulation-math.js';
 import { fromRoom } from '../web/mimic-math.js';
@@ -349,6 +349,14 @@ test("cropLine: the main crop and its stage for the picture, the crops, the stag
   assert.equal(cropLine({ ...crop, stageSince: null }, now).text, 'Grey oyster\u00a0· Fruiting', 'no start: no day');
   assert.deepEqual(cropLine({ ...crop, crops: [] }, now), { crop: null, stage: null, text: 'No crop' });
   assert.deepEqual(cropLine(null, now), { crop: null, stage: null, text: 'No crop' });
+});
+
+test('mainCrop: the most blocks, the first on a tie, the first without counts; null without crops', () => {
+  assert.equal(mainCrop([{ crop: 'pink', blocks: 300 }, { crop: 'reishi', blocks: 500 }]), 'reishi');
+  assert.equal(mainCrop([{ crop: 'pink', blocks: 400 }, { crop: 'golden', blocks: 400 }]), 'pink');
+  assert.equal(mainCrop([{ crop: 'milky' }, { crop: 'pink' }]), 'milky');
+  assert.equal(mainCrop([]), null);
+  assert.equal(mainCrop(undefined), null);
 });
 
 test('hourPoints: the reading cards trace the last hour: the history of the hour, then the newer live polls', () => {

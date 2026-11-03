@@ -700,7 +700,8 @@ export function createCropCard(host, { roomId, onChange, onData, onOffline, onGo
     const picKeys = has ? c.crops.map((x) => x.crop).join() : '';
     if (picKeys !== headPicKeys) {
       headPicKeys = picKeys;
-      headPics.replaceChildren(...(has ? c.crops.map((x) => picture('crop', x.crop, { size: 64 })) : []));
+      // at most 3 (a phone has room for no more; the title names every crop)
+      headPics.replaceChildren(...(has ? c.crops.slice(0, 3).map((x) => picture('crop', x.crop, { size: 64 })) : []));
     }
     headPics.hidden = !has;
     title.textContent = line.title;

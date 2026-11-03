@@ -7,12 +7,13 @@ import { validateProgram, nextStage, stageEndsAt, startStage, FIRST_STAGE } from
 // db: the farm database. now is injectable.
 export function createCropApi({ db, now = Date.now }) {
   // The program as the routes show it.
-  function view(roomId) {
+  // withTargets false: no bands mixed (the Overview's and Today's crop summary has no use for them).
+  function view(roomId, { withTargets = true } = {}) {
     const p = db.getProgram(roomId);
     const next = nextStage(p);
     const at = stageEndsAt(p);
     let targets = null;
-    if (p.crops.length > 0) {
+    if (withTargets && p.crops.length > 0) {
       const mixed = mixBands(p.crops, p.stage);
       targets = { bands: mixed.bands, warnings: [...mixed.warnings, ...rangeWarnings(p.crops, mixed.bands, p.stage)] };
     }
@@ -33,9 +34,8 @@ export function createCropApi({ db, now = Date.now }) {
 
     // The reply without its targets (spec 2026-11-03-pictures-design.md 4): what the Overview and Today show of a room's crop.
     summary(roomId) {
-      const reply = this.get(roomId);
-      if (!reply) return null;
-      const { targets, ...rest } = reply;
+      if (!db.getRoom(roomId)) return null;
+      const { targets, ...rest } = view(roomId, { withTargets: false });
       return rest;
     },
 

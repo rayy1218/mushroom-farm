@@ -51,6 +51,10 @@ test('every task rule has a picture; own rules, long-term tasks and unknown keys
   assert.equal(taskPicture({ kind: 'longterm', ruleKey: null }), 'longTerm');
   assert.equal(taskPicture({ kind: 'daily', ruleKey: 'someday' }), 'generic', 'a rule this page does not know yet');
   assert.equal(markup('task', 'someday'), markup('task', 'generic'));
+  assert.equal(taskPicture({ kind: 'daily', ruleKey: '__proto__' }), 'generic', 'only the table\'s own keys');
+  assert.equal(markup('task', 'toString'), markup('task', 'generic'));
+  assert.equal(markup('machine', 'constructor'), '');
+  assert.deepEqual(hues('__proto__'), hues('oyster'));
 });
 
 test('a harvest task holds the room crop; without one, the grey oyster', () => {

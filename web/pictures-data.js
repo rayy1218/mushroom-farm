@@ -10,7 +10,8 @@ import { TASKS } from './pictures-tasks.js';
 export { CROPS, MACHINES, SENSORS, TASKS, STAGE_KEYS };
 
 const DEFAULT_CROP = 'oyster';
-const cropKey = (key) => (CROPS[key] ? key : DEFAULT_CROP);
+const has = (table, key) => typeof key === 'string' && Object.hasOwn(table, key);
+const cropKey = (key) => (has(CROPS, key) ? key : DEFAULT_CROP);
 
 // A crop's two hues as token names: [cap, gills and stems]; the grey oyster's for no crop or one this page does not know.
 export const hues = (key) => CROP_HUES[cropKey(key)];
@@ -20,9 +21,9 @@ export const hues = (key) => CROP_HUES[cropKey(key)];
 export function markup(kind, key, { crop = null, stage = 'fruiting' } = {}) {
   if (kind === 'crop') return CROPS[cropKey(key)];
   if (kind === 'bag') return bag(cropKey(key), STAGE_KEYS.includes(stage) ? stage : 'fruiting');
-  if (kind === 'machine') return MACHINES[key] ?? '';
-  if (kind === 'sensor') return SENSORS[key] ?? '';
-  if (kind === 'task') return (TASKS[key] ?? TASKS.generic).replace('CROP', CROPS[cropKey(crop)]);
+  if (kind === 'machine') return has(MACHINES, key) ? MACHINES[key] : '';
+  if (kind === 'sensor') return has(SENSORS, key) ? SENSORS[key] : '';
+  if (kind === 'task') return (has(TASKS, key) ? TASKS[key] : TASKS.generic).replace('CROP', CROPS[cropKey(crop)]);
   return '';
 }
 
@@ -32,7 +33,7 @@ export function taskPicture(task) {
   if (task?.kind === 'longterm') return 'longTerm';
   const key = task?.ruleKey ?? '';
   if (key.startsWith('custom:')) return 'own';
-  return TASKS[key] && key !== 'generic' ? key : 'generic';
+  return has(TASKS, key) ? key : 'generic';
 }
 
 // An Equipment card's picture (the card keys of web/equipment-cards.js): [kind, key].

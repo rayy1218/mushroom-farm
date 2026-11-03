@@ -283,7 +283,7 @@ export function mountTaskSettings(container) {
     if (detail) text.append(el('p', 'tk-rule-detail', detail));
     if (line) text.append(el('p', 'tk-rule-line', line));
     // a crop's rule shows its first crop family (crop keys share the families' names), not the default oyster
-    const pic = picture('task', key.startsWith('custom-') ? 'own' : taskPicture({ ruleKey: rule.key }), { size: 24, crop: rule.families?.[0] ?? null });
+    const pic = picture('task', rule.key ? taskPicture({ ruleKey: rule.key }) : 'own', { size: 24, crop: rule.families?.[0] ?? null }); // an own rule has an id, no key
     li.append(pic, text, ...extra, toggle(rule.enabled, rule.text, key, onToggle));
     return li;
   }

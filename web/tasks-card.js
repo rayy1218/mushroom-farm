@@ -11,7 +11,7 @@ import { slotGroups, upkeepRows, nowDue, taskParts, comingUpWords, longtermLine,
 import { createTaskActions, createWorkerPicker } from './task-dialogs.js';
 import { el, button, taskRow, slotPart, keepFocus } from './task-list.js';
 import { keepLines, DOT } from './text-math.js';
-import { cropLine } from './room-card-math.js';
+import { mainCrop } from './room-card-math.js';
 
 const REFRESH_MS = 30_000;
 
@@ -101,7 +101,7 @@ export function createTasksCard(host, { roomId, onCounts, onGone }) {
     keepFocus(host, () => {
       todaySub.textContent = `${dayTitle(view.date)}${DOT}${tasksDueWords(view.counts?.due ?? 0)}`;
       const groups = slotGroups(view.today);
-      const crop = cropLine(view.crop).crop; // the room's main crop, which a harvest's picture holds
+      const crop = mainCrop(view.crop?.crops); // the room's main crop, which a harvest's picture holds
       todayBody.replaceChildren(...(groups.length ? groups.map((g) => slotPart(g, actions, { openFolds, crop })) : [el('p', 'none', 'No stage tasks today.')]));
       // Due now (overdue or today) in the list; the rest folded under "Coming up", the nearest date first.
       const up = upkeepRows(view.upkeep, view.date);
