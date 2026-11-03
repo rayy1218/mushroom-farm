@@ -223,6 +223,12 @@ export function mount(container, { room = null, day = null } = {}) {
       list.append(...g.upkeep.map(row));
       part.append(list);
     }
+    if (g.longterm.length) {
+      part.append(el('h4', 'cal-slot', 'Long-term'));
+      const list = el('ul', 'cal-list');
+      list.append(...g.longterm.map(row));
+      part.append(list);
+    }
     if (g.routine.length) {
       const fold = el('details', 'cal-routine');
       const foldKey = `${picked}:${g.room.id}`;
@@ -242,13 +248,14 @@ export function mount(container, { room = null, day = null } = {}) {
   function paintDay() {
     els.dayTitle.textContent = dayTitle(picked, today);
     const body = [];
-    if (view && picked > view.horizon) body.push(el('p', 'none', `The calendar looks 92 days ahead, to ${dayTitle(view.horizon, today)}.`));
+    if (view && picked > view.horizon) body.push(el('p', 'none', `The calendar looks ahead to ${dayTitle(view.horizon, today)}.`));
     else {
       const groups = view ? dayGroups(view, picked) : [];
       if (picked === today && groups.some((g) => [...g.slots.flatMap((s) => s.rows), ...g.upkeep, ...g.routine].some((i) => i.status === 'open'))) {
         const p = el('p', 'cal-today');
         const a = el('a', '', 'Tick them on Today');
         a.href = TODAY_HASH;
+        a.dataset.focus = 'today';
         p.append(a);
         body.push(p);
       }

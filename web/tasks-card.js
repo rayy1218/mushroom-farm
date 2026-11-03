@@ -12,7 +12,7 @@ import { createTaskActions, createWorkerPicker } from './task-dialogs.js';
 import { el, button, taskRow, slotPart, keepFocus } from './task-list.js';
 import { keepLines, DOT } from './text-math.js';
 import { mainCrop } from './room-card-math.js';
-import { calendarHash } from './calendar-math.js';
+import { calendarHash } from './route.js';
 
 const REFRESH_MS = 30_000;
 

@@ -63,6 +63,7 @@ test('dayGroups: rooms in their order, stage starts, the rows by slot, upkeep, t
       item({ ruleKey: 'harvestAm' }),
       item({ kind: 'stage', ruleKey: null, stage: { stage: 'rest', flush: 1, done: false } }),
       item({ roomId: 2, ruleKey: 'openBags' }),
+      item({ kind: 'longterm', ruleKey: null, status: 'done', text: 'Aircon 9,000 → 12,000 BTU/h' }),
     ] }] };
   const g = dayGroups(view, '2026-11-04');
   assert.deepEqual(g.map((x) => x.room.name), ['B', 'A'], 'a room with nothing that day left out');
@@ -70,6 +71,7 @@ test('dayGroups: rooms in their order, stage starts, the rows by slot, upkeep, t
   assert.equal(a.stages.length, 1);
   assert.deepEqual(a.slots.map((s) => [s.label, s.rows.map((r) => r.ruleKey)]), [['Morning', ['harvestAm']], ['Afternoon', ['harvestPm']]]);
   assert.deepEqual(a.upkeep.map((r) => r.ruleKey), ['flyTraps']);
+  assert.deepEqual(a.longterm.map((r) => r.text), ['Aircon 9,000 → 12,000 BTU/h'], 'long-term rows under their own heading');
   assert.deepEqual(a.routine.map((r) => r.ruleKey), ['footbath']);
   assert.equal(a.about, false);
   assert.deepEqual(dayGroups(view, '2026-11-05'), []);

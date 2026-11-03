@@ -106,3 +106,19 @@ test('a turned-off upkeep rule keeps its open row: shown once on its due date; a
   assert.equal(m2.get(addDays(TODAY, 10)).find((i) => i.ruleKey === 'flyTraps').text, 'Check the yellow fly traps; replace the full ones');
   assert.equal(m2.get(addDays(TODAY, 3)).find((i) => i.ruleKey === 'flyTraps').text, 'Old words', 'the open row itself keeps its words');
 });
+
+test('full cycle: open the bags on the first day of pinning; reishi rim every 2 days; an own daily rule; a mixed room\'s notes', () => {
+  const full = oyster({ farmType: 'full', stage: 'spawn', stageSince: dayStart(TODAY) + 3_600_000, flush: 1, days: { spawn: 3, pinning: 4, fruiting: 7, rest: 10 } });
+  const m = project(full);
+  assert.ok(keys(m, addDays(TODAY, 3)).includes('openBags'), 'pinning starts in 3 days: open the bags that day');
+  assert.ok(!keys(m, addDays(TODAY, 4)).includes('openBags'));
+  const reishi = project(oyster({ crops: [{ crop: 'reishi', blocks: 100 }], stageSince: dayStart(TODAY) + 3_600_000, days: { spawn: 21, pinning: 4, fruiting: 30, rest: 10 } }));
+  const rim = [1, 2, 3, 4].map((n) => keys(reishi, addDays(TODAY, n)).includes('reishiRim'));
+  assert.deepEqual(rim, [false, true, false, true], 'fruiting day 1 is today: the rim on days 3 and 5');
+  const own = effectiveRules({ roomId: 1, custom: [{ id: 3, text: 'Check the door seal', rooms: null, everyDays: null, slot: 'morning', enabled: true }] });
+  const o = project(oyster(), { rules: own }).get(addDays(TODAY, 1)).find((i) => i.ruleKey === 'custom:3');
+  assert.equal(o.text, 'Check the door seal');
+  assert.equal(o.routine, true);
+  const mixed = project(oyster({ crops: [{ crop: 'pink', blocks: 300 }, { crop: 'golden', blocks: 300 }] }));
+  assert.match(mixed.get(addDays(TODAY, 1)).find((i) => i.ruleKey === 'harvestAm').note, /^Pink oyster: .* · Golden oyster: /);
+});

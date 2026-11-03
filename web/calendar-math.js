@@ -73,7 +73,7 @@ export function dayMarks(items, cropOf) {
 }
 
 // The day list of `date`: each room with items that day, in the reply's order: { room, stages, slots: [{ slot, label, rows }],
-// upkeep (upkeep and long-term rows), routine, about: its dates are estimated from the stage plan }.
+// upkeep, longterm (closed that day), routine, about: its dates are estimated from the stage plan }.
 export function dayGroups(view, date) {
   const items = view.days.find((d) => d.date === date)?.items ?? [];
   return view.rooms.map((room) => {
@@ -85,7 +85,8 @@ export function dayGroups(view, date) {
       stages: mine.filter((i) => i.kind === 'stage'),
       slots: SLOTS.map((slot) => ({ slot, label: SLOT_LABELS[slot], rows: daily.filter((i) => (SLOTS.includes(i.slot) ? i.slot : 'any') === slot) }))
         .filter((s) => s.rows.length > 0),
-      upkeep: mine.filter((i) => i.kind === 'upkeep' || i.kind === 'longterm'),
+      upkeep: mine.filter((i) => i.kind === 'upkeep'),
+      longterm: mine.filter((i) => i.kind === 'longterm'),
       routine: mine.filter((i) => i.kind === 'daily' && i.routine),
       about: mine.some((i) => i.status === 'planned' && i.about), // said once under the room (finish review 2026-11-03)
     };

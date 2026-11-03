@@ -28,7 +28,6 @@ export const suggestHash = (id) => `#/rooms/${id}/suggest`;
 // The farm's Today page (spec 2026-10-30-tasks-design.md 7.2): every room's tasks of the day.
 export const TODAY_HASH = '#/today';
 
-
 // The Calendar page's address: its room and day in the query, in one order.
 const isDate = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s ?? '') && new Date(`${s}T00:00:00Z`).toISOString().slice(0, 10) === s;
 export function calendarHash({ room = null, day = null } = {}) {
