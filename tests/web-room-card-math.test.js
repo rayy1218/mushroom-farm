@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import {
   scaleFor, bandBar, readingTiles, controlNote, freshAirLine, machineTiles, filterSummary, filterFrom, bottomLine, blocksLine, roomCard, cropFacts, stayed,
-  traceOf, cropSummary, hourPoints, traceScale,
+  traceOf, cropSummary, hourPoints, traceScale, cropLine,
 } from '../web/room-card-math.js';
 import { formatDateTime } from '../web/simulation-math.js';
 import { fromRoom } from '../web/mimic-math.js';
@@ -332,6 +332,23 @@ test("cropSummary: the Now tab's Crop card (name, stage, blocks and flush, the d
   assert.equal(done.done, true);
   assert.equal(cropSummary({ ...crop, crops: [] }, now), null);
   assert.equal(cropSummary(null, now), null);
+});
+
+// The crop line under a room's name on the Overview and Today, with its picture (spec 2026-11-03-pictures-design.md 3).
+test("cropLine: the main crop and its stage for the picture, the crops, the stage and its day in words", () => {
+  const now = Date.UTC(2026, 9, 27, 4);
+  const crop = { crops: [{ crop: 'oyster', blocks: 600 }], stage: 'fruiting', stageSince: now - 6.5 * 86_400_000, flush: 1, flushes: 4,
+    days: { fruiting: 7, rest: 10 }, autoAdvance: true, done: false, ramp: null, nextStage: { stage: 'rest', flush: 1, at: now + 3_600_000 } };
+  assert.deepEqual(cropLine(crop, now), { crop: 'oyster', stage: 'fruiting', text: 'Grey oyster\u00a0· Fruiting\u00a0· day 7 of 7' });
+  const mixed = cropLine({ ...crop, crops: [{ crop: 'pink', blocks: 300 }, { crop: 'reishi', blocks: 500 }] }, now);
+  assert.equal(mixed.crop, 'reishi', 'the crop with the most blocks');
+  assert.equal(mixed.text, 'Pink oyster + Reishi\u00a0· Fruiting\u00a0· day 7 of 7');
+  assert.equal(cropLine({ ...crop, crops: [{ crop: 'pink', blocks: 400 }, { crop: 'golden', blocks: 400 }] }, now).crop, 'pink', 'the first on a tie');
+  assert.deepEqual(cropLine({ ...crop, stage: 'rest', flush: 4, done: true, nextStage: null }, now),
+    { crop: 'oyster', stage: 'done', text: 'Grey oyster\u00a0· flush 4 of 4 done' });
+  assert.equal(cropLine({ ...crop, stageSince: null }, now).text, 'Grey oyster\u00a0· Fruiting', 'no start: no day');
+  assert.deepEqual(cropLine({ ...crop, crops: [] }, now), { crop: null, stage: null, text: 'No crop' });
+  assert.deepEqual(cropLine(null, now), { crop: null, stage: null, text: 'No crop' });
 });
 
 test('hourPoints: the reading cards trace the last hour: the history of the hour, then the newer live polls', () => {
