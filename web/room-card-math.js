@@ -362,14 +362,14 @@ export function cropSummary(crop, now = Date.now()) {
 }
 
 // The crop line under a room's name on the Overview and Today (spec 2026-11-03-pictures-design.md 3), from the crop reply:
-// { crop: the main crop (the most blocks, the first on a tie) for the picture, stage ('done' once the last flush is over),
-// text: "Grey oyster · Fruiting · day 7 of 7" } — the day as cropSummary counts it; "No crop" (crop and stage null) without.
+// { crop: the main crop (the most blocks, the first on a tie) for the picture, text: "Grey oyster · Fruiting · day 7 of 7" }
+// — the day as cropSummary counts it; "No crop" (crop null) without.
 export function cropLine(crop, now = Date.now()) {
   const summary = cropSummary(crop, now);
-  if (!summary) return { crop: null, stage: null, text: 'No crop' };
+  if (!summary) return { crop: null, text: 'No crop' };
   const parts = crop.done ? [summary.name, `flush ${crop.flushes} of ${crop.flushes} done`]
     : [summary.name, summary.stage, summary.day.toLowerCase()].filter(Boolean);
-  return { crop: summary.crop, stage: crop.done ? 'done' : crop.stage, text: parts.join(DOT) };
+  return { crop: summary.crop, text: parts.join(DOT) };
 }
 
 export function roomCard({ draw = null, control = null, filter = null, crop = null, now = Date.now(), trends = {}, points = {} } = {}) {

@@ -339,16 +339,16 @@ test("cropLine: the main crop and its stage for the picture, the crops, the stag
   const now = Date.UTC(2026, 9, 27, 4);
   const crop = { crops: [{ crop: 'oyster', blocks: 600 }], stage: 'fruiting', stageSince: now - 6.5 * 86_400_000, flush: 1, flushes: 4,
     days: { fruiting: 7, rest: 10 }, autoAdvance: true, done: false, ramp: null, nextStage: { stage: 'rest', flush: 1, at: now + 3_600_000 } };
-  assert.deepEqual(cropLine(crop, now), { crop: 'oyster', stage: 'fruiting', text: 'Grey oyster\u00a0· Fruiting\u00a0· day 7 of 7' });
+  assert.deepEqual(cropLine(crop, now), { crop: 'oyster', text: 'Grey oyster\u00a0· Fruiting\u00a0· day 7 of 7' });
   const mixed = cropLine({ ...crop, crops: [{ crop: 'pink', blocks: 300 }, { crop: 'reishi', blocks: 500 }] }, now);
   assert.equal(mixed.crop, 'reishi', 'the crop with the most blocks');
   assert.equal(mixed.text, 'Pink oyster + Reishi\u00a0· Fruiting\u00a0· day 7 of 7');
   assert.equal(cropLine({ ...crop, crops: [{ crop: 'pink', blocks: 400 }, { crop: 'golden', blocks: 400 }] }, now).crop, 'pink', 'the first on a tie');
   assert.deepEqual(cropLine({ ...crop, stage: 'rest', flush: 4, done: true, nextStage: null }, now),
-    { crop: 'oyster', stage: 'done', text: 'Grey oyster\u00a0· flush 4 of 4 done' });
+    { crop: 'oyster', text: 'Grey oyster\u00a0· flush 4 of 4 done' });
   assert.equal(cropLine({ ...crop, stageSince: null }, now).text, 'Grey oyster\u00a0· Fruiting', 'no start: no day');
-  assert.deepEqual(cropLine({ ...crop, crops: [] }, now), { crop: null, stage: null, text: 'No crop' });
-  assert.deepEqual(cropLine(null, now), { crop: null, stage: null, text: 'No crop' });
+  assert.deepEqual(cropLine({ ...crop, crops: [] }, now), { crop: null, text: 'No crop' });
+  assert.deepEqual(cropLine(null, now), { crop: null, text: 'No crop' });
 });
 
 test('mainCrop: the most blocks, the first on a tie, the first without counts; null without crops', () => {

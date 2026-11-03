@@ -14,7 +14,7 @@ owner chose every row marked *owner*; the lead chose the rest. Drafts and screen
 |---|---|
 | A picture per crop (9), per crop and stage (the grow bag as it looks now), per machine (8), per sensor and module (8), per task rule (25 + own, long-term, generic) *owner* | Photographs; a worker's photo on a task |
 | Flat drawings in the room drawing's world: white units, the blocks' tan, each crop in its own hue, no outlines *owner* (style examples approved 2026-11-03) | Moving pictures (the room drawing stays the one animated picture) |
-| The Overview room card shows the room's crop and stage with its bag picture *owner* | A mini room drawing on the Overview (the owner chose crop and stage) |
+| The Overview room card shows the room's crop and stage *owner*; its picture is the crop's, the stage said in words (owner chose it over the bag by stage, 2026-11-03, after seeing both) | A mini room drawing on the Overview (the owner chose crop and stage) |
 | The Today page, the Now tab's Crop card, the Crop tab, the crop editor, the Machines list, the Equipment cards, the task rows and the Task rules | Alarms, the Log table, History, Simulations and Suggest machines (words and charts only) |
 | The crop summary in `GET /api/overview` and `GET /api/tasks/today` (the Overview and Today show the crop) | |
 
@@ -33,7 +33,7 @@ owner chose every row marked *owner*; the lead chose the rest. Drafts and screen
 
 | Place | Picture | Size (desk / phone) | Beside |
 |---|---|---|---|
-| Overview room card | the main crop's picture (built: the bag drawn small lost the crop's form, so the stage is said in words) | 40 / 40 | under the room name: "Grey oyster · Fruiting · day 7 of 7" (*owner*); no crop: a dashed 40 px tile and "No crop" |
+| Overview room card | the main crop's picture (*owner*, 2026-11-03: the bag drawn small lost the crop's form; the stage is said in words) | 40 / 40 | under the room name: "Grey oyster · Fruiting · day 7 of 7" (*owner*); no crop: a dashed 40 px tile and "No crop" |
 | Today page, each room's heading | the main crop's picture | 32 / 32 | the room name, the crop line under it |
 | Now tab, Crop card | the main crop's picture | 48 / 48 | the crop name and stage |
 | Crop tab, the head | each crop's picture | 64 / 48 | "Grey oyster · 600 blocks"; a mixed room shows each crop's picture, overlapped by a quarter |
