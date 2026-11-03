@@ -377,6 +377,9 @@ The room's picture keeps its representation: the air path, the condenser outside
 
 **The Picture Rule.** A picture says what a thing is, never how it is: no green, amber, red or accent blue in it, nothing in it changes with a reading or a machine's state (the pills and words keep the state), and it always sits beside words that say the same, so it is `aria-hidden`. A closed task's or an unfitted machine's picture fades with its words. A test checks that every crop, rule, machine and sensor has one and that no picture holds a fixed colour or a state token.
 
+### Calendar
+(2026-11-03, owner: "task in calendar"; spec `docs/superpowers/specs/2026-11-03-calendar-design.md`.) `#/calendar`, in the top bar between Today and Overview: a month card (Monday first, six weeks, ‹ Today › at the right of the month's name) and the picked day's card beside it from 1100 px, under it below. A day is a hairline button: its date (today ringed in the accent, the picked day on `accent-soft`), up to three 20 px pictures (a stage starting as its bag, the harvest basket in the room's crop, then upkeep and stage tasks) and "+N"; on a phone three neutral dots instead. A missed task that day is one amber dot, the grid's only colour. The day's card lists each room (its crop picture), a stage start, the rows by Morning, Afternoon and Any time with their pictures, upkeep, and the routine folded under "+ 4 daily tasks"; closed rows say who and when as the Log, worked-out rows "Estimated from the stage plan". Read only: today's card links to Today.
+
 ## Do's and Don'ts
 
 ### Do:

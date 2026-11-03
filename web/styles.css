@@ -1641,7 +1641,7 @@ h2.r-named { display: flex; }
 .ov-value-label > .r-ico { align-self: center; margin-right: -2px; }
 
 /* ---- the Calendar page (spec 2026-11-03-calendar-design.md 5): a month grid and the picked day's list ---- */
-.tk-cal { margin: 2px 0 0; font-size: var(--fs-sm); }
+.tk-cal { margin: 2px 0 10px; font-size: var(--fs-sm); }
 .cal-room { margin: 0; min-width: 200px; }
 .cal-room select { width: 100%; }
 .cal-layout { display: grid; gap: 16px; align-items: start; }
