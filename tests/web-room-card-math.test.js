@@ -318,7 +318,7 @@ test("cropSummary: the Now tab's Crop card (name, stage, blocks and flush, the d
     days: { fruiting: 7, rest: 10 }, autoAdvance: true, done: false, ramp: null, nextStage: { stage: 'rest', flush: 1, at: next } };
   assert.deepEqual(cropSummary(crop, now), {
     name: "Lion's mane", stage: 'Fruiting', sub: '950 blocks\u00a0· flush 1 of 4', day: 'Day 2 of 7', share: 2 / 7,
-    next: `Next: Rest between flushes\u00a0· about ${formatDateTime(next)}`, done: false,
+    next: `Next: Rest between flushes\u00a0· about ${formatDateTime(next)}`, done: false, crop: 'lionsmane',
   });
   const manual = cropSummary({ ...crop, autoAdvance: false, nextStage: { stage: 'rest', flush: 1, at: null } }, now);
   assert.equal(manual.day, 'Day 2', 'no length without automatic change, as the Crop tab');
