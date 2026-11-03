@@ -23,7 +23,7 @@
   --p-unit: #eef1f4; --p-unit-2: #c9d0d7; --p-unit-ink: #3a4148; --p-edge: transparent; --p-metal: #8a939c;
   --p-metal-2: #5d6670; --p-wood: #b98b52; --p-wood-2: #8d6538; --p-bag: #d9c8a5; --p-bag-2: #bfa97f;
   --p-plastic: rgba(255,255,255,.22); --p-myc: #fffaf0; --p-soil: #6b4a33; --p-water: #8fd3f5; --p-water-2: #4fb3e3;
-  --p-light: #ffd27a; --p-mould: #7d9b4f; --p-mould-2: #c77b3a; --p-paper: #f6f1e4; --p-trap: #f2d83b; --p-air: #9aa6b3;
+  --p-light: #fde9a8; --p-mould: #7d9b4f; --p-mould-2: #c77b3a; --p-paper: #f6f1e4; --p-trap: #f2d83b; --p-air: #9aa6b3;
   --p-grey: #a9b2bc; --p-grey-2: #dfe3e7; --p-black: #5e646d; --p-black-2: #9aa0a8; --p-pink: #ee8fa6; --p-pink-2: #f8c7d3;
   --p-golden: #efc54a; --p-golden-2: #f8e3a1; --p-abalone: #a99277; --p-abalone-2: #d9cbb8; --p-woodear: #7a4636;
   --p-woodear-2: #a8695a; --p-reishi: #9c3a22; --p-reishi-2: #efd08a; --p-milky: #f2eee3; --p-milky-2: #d3cbb8;
@@ -31,7 +31,7 @@
   --p-band: rgba(0,0,0,.24); --p-collar: #c9d0d7; --p-collar-2: #8a939c; --p-myc-2: #cfc4aa; --p-bag-shade: #c4b089;
   --p-spent: #8c7f68; --p-spent-2: #6d624f; --p-bag-white: #ebe3d1; --p-cool: #8fd8f2; --p-hu: #2ba7cf; --p-dh: #8b6fe0;
   --p-lcd: #cfdde4; --p-lcd-ink: #3a4148; --p-port: #5d6670; --p-tube: #9aa6b3; --p-rail: #6b7480; --p-boot: #6b7480;
-  --p-straw: #d9b45a; --p-sponge: #e7b85a; --p-sponge-2: #b98b52; --p-binbag: #5d6670; --p-sun: #f7c95c;
+  --p-straw: #e6d08f; --p-sponge: #f3e3a1; --p-sponge-2: #b98b52; --p-binbag: #5d6670;
 }
 :root[data-theme="light"] {
   color-scheme: light;
@@ -49,16 +49,16 @@
   /* the pictures: as the dark theme, a 1 px edge on the white units */
   --p-unit: #ffffff; --p-unit-2: #dfe4e9; --p-unit-ink: #3a4148; --p-edge: #b9c1c9; --p-metal: #6f7983; --p-metal-2: #4c545d;
   --p-wood: #b07f45; --p-wood-2: #7f5a2f; --p-bag: #e3d3b0; --p-bag-2: #c7b087; --p-plastic: rgba(255,255,255,.55);
-  --p-myc: #ffffff; --p-soil: #6b4a33; --p-water: #8ccff5; --p-water-2: #2f9bd6; --p-light: #f2a91c; --p-mould: #6a8a3c;
+  --p-myc: #ffffff; --p-soil: #6b4a33; --p-water: #8ccff5; --p-water-2: #2f9bd6; --p-light: #e9cc4f; --p-mould: #6a8a3c;
   --p-mould-2: #b9662a; --p-paper: #fffaf0; --p-trap: #e9c919; --p-air: #8592a3; --p-grey: #9aa4af; --p-grey-2: #e4e8ec;
   --p-black: #4e545d; --p-black-2: #8d939b; --p-pink: #e77d97; --p-pink-2: #f6c0cd; --p-golden: #e6b72c; --p-golden-2: #f5dc8e;
   --p-abalone: #9c8468; --p-abalone-2: #d6c7b2; --p-woodear: #6e3c2d; --p-woodear-2: #9c5c4c; --p-reishi: #93341d;
-  --p-reishi-2: #e9c76e; --p-milky: #f7f4ec; --p-milky-2: #c2b69a; --p-lion: #f6f0e3; --p-lion-2: #c6b798;
+  --p-reishi-2: #e9c76e; --p-milky: #ece6d6; --p-milky-2: #b3a688; --p-lion: #ebe0c6; --p-lion-2: #b9a684;
   --p-golden-3: #c99419; --p-shine: rgba(255,255,255,.45); --p-drop: #23262b; --p-band: rgba(0,0,0,.2); --p-collar: #c3cbd3;
   --p-collar-2: #7d8791; --p-myc-2: #e6dcc5; --p-bag-shade: #cdb68c; --p-spent: #a39579; --p-spent-2: #7f7259;
   --p-bag-white: #f4eedf; --p-cool: #5fc0e6; --p-hu: #1f97c0; --p-dh: #6b4fc0; --p-lcd: #d9e6ec; --p-lcd-ink: #3a4148;
-  --p-port: #4c545d; --p-tube: #8592a3; --p-rail: #8592a3; --p-boot: #4c545d; --p-straw: #d0a640; --p-sponge: #e2ac45;
-  --p-sponge-2: #a87a3e; --p-binbag: #4c545d; --p-sun: #f2b632;
+  --p-port: #4c545d; --p-tube: #8592a3; --p-rail: #8592a3; --p-boot: #4c545d; --p-straw: #d9c070; --p-sponge: #e8d175;
+  --p-sponge-2: #a87a3e; --p-binbag: #4c545d;
 }
 
 :root {
@@ -676,6 +676,8 @@ button.toggle[data-on="true"]:hover { background: color-mix(in srgb, var(--accen
 .ov-room-words { flex: 1 1 auto; min-width: 0; }
 .ov-room-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .ov-room-crop { margin: 1px 0 0; color: var(--ink-2); font-size: var(--fs-sm); }
+/* side by side, every card keeps two lines for it, so one long stage name does not push its readings out of line with the others */
+@media (min-width: 700px) { .ov-room-crop { min-height: calc(2em * 1.45); } }
 .ov-room-head a, .sim-item a, .us-room a { color: var(--ink); text-decoration: none; } /* titles that open a page: plain, underlined on hover */
 .ov-room-head a:hover, .sim-item a:hover, .us-room a:hover { text-decoration: underline; text-underline-offset: 3px; }
 .ov-value { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 8px; padding: 6px 0; border-top: 1px solid var(--border); }

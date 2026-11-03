@@ -38,7 +38,7 @@ owner chose every row marked *owner*; the lead chose the rest. Drafts and screen
 | Now tab, Crop card | the main crop's picture | 48 / 48 | the crop name and stage |
 | Crop tab, the head | each crop's picture | 64 / 48 | "Grey oyster · 600 blocks"; a mixed room shows each crop's picture, overlapped by a quarter |
 | Crop tab, each stage card | the main crop's bag in that stage | 48 / 40 | the stage's name and length |
-| Now tab, Machines list | the machine | 32 / 28 | between the air-order number and the name |
+| Now tab, Machines list | the machine | 32 / 32 | between the air-order number and the name |
 | Setup, Equipment cards | the machine or sensor | 40 / 40 | the card's title; not on a card shown under another part's title (the Intake filter's Settings) |
 | Task rows (Tasks tab, Today) | the task's rule picture; harvest tasks hold the room's main crop | 32 / 28 | after the round tick, before the name |
 | Settings, Task rules | the rule's picture | 24 / 24 | the rule's name |

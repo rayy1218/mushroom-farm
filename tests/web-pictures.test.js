@@ -84,3 +84,21 @@ test('the Picture Rule: no fixed colour and no state colour; every picture token
     assert.ok(defined(light, name), `${name} in the light theme`);
   }
 });
+
+// A token's name is not enough (finish review 2026-11-03: the harvest sun was the warning's amber under another name): every
+// picture colour keeps its distance from the state and accent colours of its theme. The crops' own hues (golden oyster is
+// yellow, pink oyster pink), the fly trap's yellow and water's pale blue are what they draw, and their words say so.
+test('the Picture Rule by colour: no picture token near a state or accent colour', () => {
+  const hex = (b) => Object.fromEntries([...b.matchAll(/(--[a-z0-9-]+):\s*(#[0-9a-f]{6})\b/g)].map((m) => [m[1], m[2]]));
+  const rgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+  const far = (a, b) => Math.hypot(...rgb(a).map((v, i) => v - rgb(b)[i]));
+  const drawn = /^--p-(golden|pink|reishi|trap|water|cool)/;
+  for (const b of [dark, light]) {
+    const t = hex(b);
+    const state = Object.entries(t).filter(([k]) => /^--(good|warning|critical|accent)(-text)?$/.test(k));
+    for (const [k, v] of Object.entries(t)) {
+      if (!k.startsWith('--p-') || drawn.test(k)) continue;
+      for (const [sk, sv] of state) assert.ok(far(v, sv) >= 48, `${k} ${v} is near ${sk} ${sv}`);
+    }
+  }
+});

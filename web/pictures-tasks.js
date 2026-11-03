@@ -48,18 +48,14 @@ const BASKET = `
     <path d="M5 23 H43 L39 41 C38.6 43 37 44 35 44 H13 C11 44 9.4 43 9 41 Z" fill="var(--p-wood)"/>
     <path d="M7.5 29 H40.5 M8.8 35 H39.2 M10 40.5 H38" stroke="var(--p-wood-2)" stroke-width="1.6"/>
     <path d="M5 23 H43 V26 H5 Z" fill="var(--p-wood-2)"/>`;
-const sunRays = (cx, cy, r) => [0, 45, 90, 135, 180, 225, 270, 315]
-  .map((a) => { const t = (a * Math.PI) / 180; const c = Math.cos(t); const n = Math.sin(t);
-    return `M${(cx + c * (r + 1.6)).toFixed(1)} ${(cy + n * (r + 1.6)).toFixed(1)} L${(cx + c * (r + 3.6)).toFixed(1)} ${(cy + n * (r + 3.6)).toFixed(1)}`; })
-  .join(' ');
 
 export const TASKS = {
-  // Contamination walk: a bag with mould on it goes into a bin bag.
+  // Contamination walk: one bag with mould on it, carried out of the room (finish review 2026-11-03: a bag and a bin bag side
+  // by side read as two bottles at 32 px).
   contamWalk: `
-    ${bag(3, 8, 1, { extra: `<circle cx="8" cy="18" r="4.2" fill="var(--p-mould)"/><circle cx="13.5" cy="26" r="3.2" fill="var(--p-mould-2)"/><circle cx="6.5" cy="28.5" r="2" fill="var(--p-mould)"/>` })}
-    <path d="M30 20 C28 26 28 40 31 44 H43 C46 40 46 26 44 20 Z" fill="var(--p-binbag)"/>
-    <path d="M32 20 L35 15 L37 18 L39 15 L42 20 Z" fill="var(--p-binbag)"/>
-    <path d="M24 10 C29 6 34 8 36 13" ${AIR}/><path d="M33 12.5 L36 13.5 L37 10.5" ${AIR}/>`,
+    ${bag(6, 6, 1.12, { extra: `<circle cx="7" cy="17" r="4.2" fill="var(--p-mould)"/><circle cx="13" cy="25" r="3.4" fill="var(--p-mould-2)"/><circle cx="6" cy="28" r="2.2" fill="var(--p-mould)"/>` })}
+    <path d="M31 25 H45 m-5 -5.2 l5.2 5.2 -5.2 5.2" ${AIR}/>
+    <path d="M36 12 H41 V38 H36" fill="none" stroke="var(--p-metal)" stroke-width="2.2" stroke-linejoin="round"/>`,
   // Colonisation check: a bag gone white all through, under a magnifying glass.
   colonisedCheck: `
     ${bag(5, 8, 1, { body: 'var(--p-myc)', extra: `<path d="M3 30 Q10 28 18.6 30.5 L18.8 32 Q19 34 17 34 H3 Q1 34 1 32 Z" fill="var(--p-bag)"/>` })}
@@ -87,16 +83,10 @@ export const TASKS = {
     ${humidifier(14, 16, 1.1)}
     <circle cx="20" cy="10" r="3.4" fill="var(--p-water)"/><circle cx="25" cy="7" r="4.2" fill="var(--p-water)"/><circle cx="30.5" cy="10" r="3.2" fill="var(--p-water)"/>
     <circle cx="25" cy="2.8" r="2.2" fill="var(--p-water)" opacity=".7"/>`,
-  // Morning harvest: the basket with the crop, the morning sun up at its left.
-  harvestAm: `
-    <circle cx="7" cy="8" r="3.6" fill="var(--p-sun)"/>
-    <path d="${sunRays(7, 8, 3.6)}" stroke="var(--p-sun)" stroke-width="1.6" stroke-linecap="round"/>
-    <g transform="translate(13 -2) scale(.66)">CROP</g>${BASKET}`,
-  // Afternoon harvest: the same basket, the sun going down at its right.
-  harvestPm: `
-    <path d="M36 14 A6 6 0 0 1 48 14 Z" fill="var(--p-sun)"/>
-    <path d="M34 16 H48" stroke="var(--p-sun)" stroke-width="1.6" stroke-linecap="round"/>
-    <g transform="translate(3 -2) scale(.66)">CROP</g>${BASKET}`,
+  // Morning and afternoon harvests: the basket with the crop, as the daily check (the slot's heading says the time; a sun
+  // drawn in the warning's amber broke the Picture Rule).
+  harvestAm: `<g transform="translate(8 -2) scale(.66)">CROP</g>${BASKET}`,
+  harvestPm: `<g transform="translate(8 -2) scale(.66)">CROP</g>${BASKET}`,
   // Harvest check: the basket with the crop.
   harvestDaily: `<g transform="translate(8 -2) scale(.66)">CROP</g>${BASKET}`,
   // Reishi's rim: the crop and a knife at its stem, no basket.
@@ -176,10 +166,9 @@ export const TASKS = {
       <path d="M4 0 V16 M8 0 V16 M12 0 V16 M16 0 V16 M0 5.3 H22 M0 10.7 H22" stroke="var(--p-unit)" stroke-width="1"/>
     </g>
     <path d="M17 44 C17 44 14 47.2 14 48 A3 3 0 0 0 20 48 C20 47.2 17 44 17 44 Z" fill="var(--p-water-2)" transform="translate(0 -3)"/>`,
-  // CO₂ sensor check: the sensor out in the open air, under the sun (outdoor air is about 420 ppm).
+  // CO₂ sensor check: the sensor out in the open air, under a cloud (outdoor air is about 420 ppm).
   co2Check: `
-    <circle cx="36" cy="11" r="5.4" fill="var(--p-sun)"/>
-    <path d="${sunRays(36, 11, 5.4)}" stroke="var(--p-sun)" stroke-width="1.8" stroke-linecap="round"/>
+    <path d="M29 16 C26.2 16 25 14 25.6 12.2 C26.2 10.2 28.4 9.6 30 10.4 C30.8 7.4 33.4 6 36 6.4 C39 6.8 40.6 9.2 40.4 11.2 C42.6 11 44.4 12.6 44 14.4 C43.7 15.4 42.8 16 41.6 16 Z" fill="var(--p-unit-2)"/>
     <rect x="5" y="16" width="22" height="28" rx="4" fill="var(--p-unit)" stroke="var(--p-edge)"/>
     <rect x="9" y="20" width="14" height="9" rx="1.5" fill="var(--p-unit-ink)"/>
     <path d="M11.5 26.5 V24.5 M14.5 26.5 V22.5 M17.5 26.5 V23.5 M20.5 26.5 V25" stroke="var(--p-unit-2)" stroke-width="1.6" stroke-linecap="round"/>
