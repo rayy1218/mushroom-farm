@@ -80,7 +80,7 @@ export function summaryLine({ kg, perBlock, be } = {}, flush) {
 export function flushColumns(crops) {
   const keys = [...new Set((Array.isArray(crops) ? crops : []).map((c) => c.crop))];
   const perCrop = keys.length > 1 ? keys.map((k) => `${cropName(k)} kg`) : [];
-  return ['Flush', 'Days', ...perCrop, 'kg', 'kg per block', 'BE'];
+  return ['Flush', 'Dates', ...perCrop, 'kg', 'kg per block', 'BE'];
 }
 
 // "2026-11-03" → "3 Nov 2026".
@@ -132,13 +132,16 @@ export function harvestLine(h, { mixed = false } = {}) {
   return { when: whenText(h.pickedAt), what, kg: kgText(h.kg, { exact: true }), who: h.worker ?? '', from: h.taskId ? 'from the harvest check' : 'recorded' };
 }
 
+// The Past runs table: a row per run, its dates first (the row's name, opening the run), then PAST_COLUMNS' figures.
+export const PAST_COLUMNS = ['Dates', 'Crops', 'kg', 'kg per block', 'BE', 'RM value', 'Cost per kg'];
+
 // A past run: { title: its dates, cells: the crops and blocks, kg, kg per block, BE, RM, cost per kg (a dash when unknown) }.
 export function pastRow(run) {
   const dates = dayRange(run.startedAt, run.endedAt ?? run.startedAt);
   return {
     title: run.partial ? `Recorded ${dates}` : dates,
-    cells: [cropBlocks(run.crops).join(', '), kgText(run.kg), perBlockText(run.perBlock), beText(run.be), rmText(run.value),
-      finite(run.cost?.costPerKg) ? `${rmText(run.cost.costPerKg)} per${NB}kg` : DASH],
+    cells: [cropBlocks(run.crops).join(', '), kgText(run.kg), perBlockText(run.perBlock, { cell: true }), beText(run.be, { cell: true }),
+      rmText(run.value), rmText(run.cost?.costPerKg)],
   };
 }
 
@@ -321,11 +324,18 @@ export const emptyText = (days) => `No harvests in the last ${periodWords(days)}
 
 // By room: the rooms that picked in the range or have a run under way; kg and RM over the range, kg per block and BE the run's.
 export const ROOM_COLUMNS = ['Room', 'kg', 'RM value', 'kg per block', 'BE'];
-// without: under a room's RM value that leaves out a crop with no price ("without Lion's mane"), else null.
+// without: under a room's RM value that leaves out a crop with no price ("without Lion's mane"), else null. run: the run's
+// figures in words for a phone, where the two run columns give way to a line under the room's name, or null without a run.
+function runWords(current) {
+  if (!current) return null;
+  const parts = [perBlockText(current.perBlock), ...(finite(current.be) ? [beText(current.be)] : [])];
+  return `This run ${parts.join(DOT)}`;
+}
 export const roomRows = (farm) => (farm.rooms ?? []).filter((r) => r.kg > 0 || r.current).map((r) => ({
   id: r.id, name: r.name, crops: r.crops,
   cells: [kgText(r.kg), rmText(r.value), perBlockText(r.current?.perBlock, { cell: true }), beText(r.current?.be, { cell: true })],
   without: finite(r.value) && r.unpriced?.length ? `without ${names(r.unpriced)}` : null,
+  run: runWords(r.current),
 }));
 
 // By crop, most picked first (the server's order).

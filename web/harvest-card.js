@@ -9,16 +9,18 @@ import { live } from './live.js';
 import { fallbackMs, createThrottle } from './live-math.js';
 import { cropShortName } from './crops.js';
 import { picture } from './pictures.js';
+import { roomHash } from './route.js';
 import { DOT } from './text-math.js';
 import { openForm, closeTaskDialog, loadWorkers, setWorker, workerField, errorText } from './task-dialogs.js';
 import {
-  runHead, harvestLine, pastRow, missingNote, flushColumns, flushRows, BY_CROP_COLUMNS, byCropRows, runTiles, pricesNote,
+  runHead, harvestLine, pastRow, PAST_COLUMNS, missingNote, flushColumns, flushRows, BY_CROP_COLUMNS, byCropRows, runTiles, pricesNote,
   deleteTitle, deleteLead, whenBoxes, recordBody, editBody,
 } from './harvest-math.js';
 
 const REFRESH_MS = 60_000;
 const COMMAND_TIMEOUT = 15000;
 const SHOWN = 20; // the run's latest harvests; Show all for the rest
+const SHOWN_PAST = 8; // an opened past run's latest harvests
 const YIELD = 'Settings → Yield';
 
 function el(tag, className, content) {
@@ -39,14 +41,7 @@ function table(caption, columns, rows, numFrom) {
   const wrap = el('div', 'us-table-wrap');
   const t = el('table', 'us-table hv-table');
   t.append(el('caption', '', caption));
-  const head = el('tr');
-  columns.forEach((c, i) => {
-    const th = el('th', i >= numFrom ? 'num' : '', c);
-    th.scope = 'col';
-    head.append(th);
-  });
-  const thead = el('thead');
-  thead.append(head);
+  t.append(headRow(columns, numFrom));
   const body = el('tbody');
   for (const r of rows) {
     const tr = el('tr');
@@ -57,9 +52,23 @@ function table(caption, columns, rows, numFrom) {
     });
     body.append(tr);
   }
-  t.append(thead, body);
+  t.append(body);
   wrap.append(t);
   return wrap;
+}
+
+// A table's head: the column names (BE spelt out for a pointer and a screen reader), the figures' right-aligned.
+function headRow(columns, numFrom) {
+  const head = el('tr');
+  columns.forEach((c, i) => {
+    const th = el('th', i >= numFrom ? 'num' : '');
+    th.append(figureName(c, c === 'BE' ? 'Biological efficiency' : null));
+    th.scope = 'col';
+    head.append(th);
+  });
+  const thead = el('thead');
+  thead.append(head);
+  return thead;
 }
 
 const flushTable = (run) => table('Flushes', flushColumns(run.crops), flushRows(run), 2);
@@ -104,16 +113,20 @@ export function createHarvestCard(host, { roomId, onGone }) {
   let painted = ''; // what the parts show: a refresh with nothing new leaves them (and their focus and folds) alone
   let showAll = false;
   const openRuns = new Set(); // the past runs opened, kept over a repaint
+  const allOf = new Set(); // the past runs showing all their harvests
   let pendingFocus = null; // after a Delete: where the cursor goes once the row is gone (focus keys, the first found)
 
   const hostClass = host.className;
   host.className = 'hv-grid';
 
-  // the head: Record a harvest, off with a note while the room has no crops
+  // the head: Record a harvest, off with a note while the room has no crops (gone while it never had any: the empty card says it)
   const head = el('div', 'hv-head');
   const record = button('Record a harvest', 'primary');
   record.disabled = true; // until the first answer says whether the room has a run
-  const recordNote = el('p', 'muted hv-note', 'Give the room its crops on the Crop tab first');
+  const recordNote = el('p', 'muted hv-note');
+  const toCrop = el('a', '', 'Crop tab');
+  toCrop.href = roomHash(roomId, 'crop');
+  recordNote.append('Give the room its crops on the ', toCrop, ' first');
   recordNote.id = `hv-${roomId}-record-note`;
   recordNote.hidden = true;
   const error = el('p', 'meta warn tk-error');
@@ -138,20 +151,27 @@ export function createHarvestCard(host, { roomId, onGone }) {
   listTitle.dataset.focusKey = 'harvests-title';
   listCard.append(listTitle, el('p', 'muted tk-sub', "This run's harvests, newest first."), list, listNone, more);
 
-  // Past runs
+  // Past runs: a table, a row per run opening below it to the run's flushes and harvests
   const pastCard = el('section', 'card hv-part hv-past-card');
-  const pastList = el('div', 'hv-runs');
+  const pastList = el('div', 'us-table-wrap hv-runs');
   pastCard.append(el('h2', '', 'Past runs'), el('p', 'muted tk-sub', 'Each New blocks starts a run; a run keeps its figures.'), pastList);
 
-  // No run ever
+  // No run ever: the room has never had crops (an empty state: dashed, the basket faded, the way to the Crop tab)
   const emptyCard = el('section', 'card hv-part hv-empty');
-  emptyCard.append(el('p', 'none', 'No harvests yet. They are recorded from the harvest checks on the Tasks tab, or with Record a harvest.'));
+  const giveCrops = el('a', 'button', 'Give it crops on the Crop tab');
+  giveCrops.href = roomHash(roomId, 'crop');
+  emptyCard.append(picture('task', 'harvestDaily', { size: 40 }), el('p', 'none', 'No crops in this room yet.'), giveCrops);
 
   for (const node of [runCard, listCard, pastCard, emptyCard]) node.hidden = true;
   runCard.hidden = false; // its line says Loading…
   host.replaceChildren(head, runCard, listCard, pastCard, emptyCard);
 
-  const showError = (text) => { if (alive) { error.textContent = text; error.hidden = !text; } };
+  const showError = (text) => {
+    if (!alive) return;
+    error.textContent = text;
+    error.hidden = !text;
+    if (text) head.hidden = false;
+  };
 
   // ---- painting ----
 
@@ -181,12 +201,11 @@ export function createHarvestCard(host, { roomId, onGone }) {
   function paintRun(run) {
     runLine.textContent = runHead(run);
     tiles.replaceChildren(...tileNodes(runTiles(run)));
+    // under the tiles, what they leave out: the prices the cost is at, a figure missing in Settings → Yield
     const prices = pricesNote(run.cost);
-    const parts = prices ? [el('p', 'muted hv-missing', prices)] : [];
+    const parts = [prices && el('p', 'muted hv-missing', prices), missingLine(run.missing)].filter(Boolean);
     if ((run.flushes ?? []).length) parts.push(flushTable(run));
     if ((run.crops ?? []).length > 1) parts.push(table('By crop', BY_CROP_COLUMNS, byCropRows(run), 1));
-    const note = missingLine(run.missing);
-    if (note) parts.push(note);
     runBody.replaceChildren(...parts);
     const harvests = run.harvests ?? [];
     const shown = showAll ? harvests : harvests.slice(0, SHOWN);
@@ -196,30 +215,73 @@ export function createHarvestCard(host, { roomId, onGone }) {
     more.textContent = `Show all ${harvests.length}`;
   }
 
+  // A past run: its row (the dates a button that opens it) and the row under it with its flushes and latest harvests.
   function pastRun(run) {
     const row = pastRow(run);
-    const d = el('details', 'hv-run');
-    d.open = openRuns.has(run.id);
-    d.addEventListener('toggle', () => { if (d.open) openRuns.add(run.id); else openRuns.delete(run.id); });
-    const summary = el('summary');
-    summary.dataset.focusKey = `run-${run.id}`;
-    summary.append(el('span', 'hv-run-title', row.title), el('span', 'hv-run-line', row.cells.filter((c) => c !== '—').join(DOT)));
+    const tr = el('tr', 'hv-run-row');
+    const name = el('th');
+    name.scope = 'row';
+    const toggle = button(row.title, 'hv-run-toggle');
+    toggle.dataset.focusKey = `run-${run.id}`;
+    toggle.setAttribute('aria-controls', `hv-run-${run.id}`);
+    name.append(toggle);
+    tr.append(name, ...row.cells.map((c, i) => {
+      const td = el('td', i >= 1 ? 'num' : 'hv-run-crops', c);
+      td.dataset.label = PAST_COLUMNS[i + 1];
+      return td;
+    }));
+    const detail = el('tr', 'hv-run-detail');
+    detail.id = `hv-run-${run.id}`;
+    const cell = el('td');
+    cell.colSpan = PAST_COLUMNS.length;
     const body = el('div', 'hv-run-body');
     const harvests = run.harvests ?? [];
-    if ((run.flushes ?? []).length) body.append(flushTable(run));
     const note = missingLine(run.missing);
     if (note) body.append(note);
+    if ((run.flushes ?? []).length) body.append(flushTable(run));
     if (harvests.length) {
+      const all = allOf.has(run.id);
       const ul = el('ul', 'hv-list');
-      ul.append(...harvests.map((h) => harvestRow(h, run, `run-${run.id}`)));
+      ul.append(...(all ? harvests : harvests.slice(0, SHOWN_PAST)).map((h) => harvestRow(h, run, `run-${run.id}`)));
       body.append(ul);
+      if (!all && harvests.length > SHOWN_PAST) {
+        const rest = button(`Show all ${harvests.length}`);
+        rest.addEventListener('click', () => {
+          allOf.add(run.id);
+          paint();
+          const first = host.querySelector(`#hv-run-${run.id} .hv-list`)?.children[SHOWN_PAST];
+          if (first) { first.tabIndex = -1; first.focus(); }
+        });
+        body.append(rest);
+      }
     } else body.append(el('p', 'none', 'No harvests in this run.'));
-    d.append(summary, body);
-    return d;
+    cell.append(body);
+    detail.append(cell);
+    const show = (open) => {
+      toggle.setAttribute('aria-expanded', String(open));
+      detail.hidden = !open;
+      tr.classList.toggle('open', open);
+    };
+    show(openRuns.has(run.id));
+    toggle.addEventListener('click', () => {
+      const open = !openRuns.has(run.id);
+      if (open) openRuns.add(run.id); else openRuns.delete(run.id);
+      show(open);
+    });
+    return [tr, detail];
+  }
+
+  function pastTable(past) {
+    const t = el('table', 'us-table hv-table hv-runs-table');
+    t.append(el('caption', 'sr-only', 'Past runs'), headRow(PAST_COLUMNS, 2));
+    const body = el('tbody');
+    for (const run of past) body.append(...pastRun(run));
+    t.append(body);
+    return t;
   }
 
   function paint() {
-    const key = JSON.stringify([view, showAll]);
+    const key = JSON.stringify([view, showAll, [...allOf]]);
     if (key === painted) return;
     painted = key;
     // the cursor on a row's button or a run's fold comes back to the same one after the repaint
@@ -228,16 +290,19 @@ export function createHarvestCard(host, { roomId, onGone }) {
     pendingFocus = null;
     const run = view.current;
     const past = Array.isArray(view.past) ? view.past : [];
+    const never = !run && past.length === 0; // never had crops: no button, the empty card shows the way
     record.disabled = !run;
-    recordNote.hidden = Boolean(run);
-    if (run) record.removeAttribute('aria-describedby');
+    record.hidden = never;
+    recordNote.hidden = Boolean(run) || never;
+    if (run || never) record.removeAttribute('aria-describedby');
     else record.setAttribute('aria-describedby', recordNote.id);
     runCard.hidden = !run;
     listCard.hidden = !run;
     if (run) paintRun(run);
     pastCard.hidden = past.length === 0;
-    pastList.replaceChildren(...past.map(pastRun));
-    emptyCard.hidden = Boolean(run) || past.length > 0;
+    pastList.replaceChildren(...(past.length ? [pastTable(past)] : []));
+    emptyCard.hidden = !never;
+    head.hidden = never && error.hidden; // nothing in it: no gap above the empty card
     for (const key of keys) {
       const node = host.querySelector(`[data-focus-key="${key}"]`);
       if (node && !node.closest('[hidden]')) { node.focus(); break; }

@@ -10,6 +10,7 @@ const src = (name) => readFileSync(new URL(`../web/${name}`, import.meta.url), '
 const card = src('harvest-card.js');
 const crop = src('crop-card.js');
 const dialogs = src('task-dialogs.js');
+const css = src('styles.css');
 
 test("the card reads the room's harvests and asks again on its harvest events, a crop change and the stream coming back", () => {
   assert.ok(card.includes("request('GET', `/api/rooms/${roomId}/harvests`)"));
@@ -24,11 +25,38 @@ test('the parts in order: Record a harvest, This run, Harvests, Past runs, the e
   assert.ok(card.includes('host.replaceChildren(head, runCard, listCard, pastCard, emptyCard);'));
   const at = ['This run', 'Harvests', 'Past runs'].map((t) => card.indexOf(`el('h2', '', '${t}')`));
   assert.ok(at.every((x, i) => x > 0 && (i === 0 || x > at[i - 1])));
-  assert.ok(card.includes("'Give the room its crops on the Crop tab first'"));
+  assert.ok(card.includes("recordNote.append('Give the room its crops on the ', toCrop, ' first');"), 'the Crop tab a link');
   assert.ok(card.includes('record.disabled = !run;'));
-  assert.ok(card.includes("'No harvests yet. They are recorded from the harvest checks on the Tasks tab, or with Record a harvest.'"));
-  assert.ok(card.includes("const d = el('details', 'hv-run');"));
   assert.ok(card.includes("a.href = '#/settings';"), 'the missing note links to Settings');
+});
+
+test('a room that never had crops: no Record button, an empty state with the way to the Crop tab (audit #11)', () => {
+  assert.ok(card.includes('const never = !run && past.length === 0;'));
+  assert.ok(card.includes('record.hidden = never;'));
+  assert.ok(card.includes("el('p', 'none', 'No crops in this room yet.')"));
+  assert.ok(card.includes("const giveCrops = el('a', 'button', 'Give it crops on the Crop tab');"));
+  assert.ok(card.includes("giveCrops.href = roomHash(roomId, 'crop');"));
+  assert.match(css, /\.hv-empty \{[^}]*border-style: dashed; border-color: var\(--border-strong\);/);
+});
+
+test('This run: the notes right under the tiles; Past runs a table whose rows open below them (audit #16, #19)', () => {
+  assert.ok(card.includes("const parts = [prices && el('p', 'muted hv-missing', prices), missingLine(run.missing)].filter(Boolean);"));
+  assert.ok(card.indexOf('missingLine(run.missing)].filter(Boolean)') < card.indexOf('parts.push(flushTable(run))'));
+  assert.ok(card.includes("const toggle = button(row.title, 'hv-run-toggle');"));
+  assert.ok(card.includes("toggle.setAttribute('aria-expanded', String(open));"));
+  assert.ok(card.includes('cell.colSpan = PAST_COLUMNS.length;'));
+  assert.ok(card.includes('const SHOWN_PAST = 8;'));
+  assert.match(css, /\.hv-run-body \{ padding-left: 12px; border-left: 2px solid var\(--border\); \}/);
+});
+
+test('Settings → Yield: the inputs styled as the app\'s, 44 px on a phone, the short labels there (audit #1, #2)', () => {
+  assert.ok(css.includes('.field input, .yd-table input {\n  font: inherit;'));
+  assert.ok(css.includes('.field input[aria-invalid="true"], .yd-table input[aria-invalid="true"]'));
+  assert.ok(css.includes('button, .ctl, .field input, .field select, .yd-table input, select,'));
+  assert.ok(css.includes('.yd-table { width: 100%; max-width: 640px;'));
+  const yd = src('yield-card.js');
+  assert.ok(yd.includes("short: 'Dry kg per block'") && yd.includes("short: 'RM per kg'"));
+  assert.ok(yd.includes('td.dataset.label = c.short;'));
 });
 
 test('Record, Edit and Delete: the task dialog form, the worker box, the time box, the bodies from harvest-math', () => {

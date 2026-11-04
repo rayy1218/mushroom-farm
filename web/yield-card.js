@@ -7,8 +7,8 @@ import { yieldBody, YIELD_NOTE, YIELD_DRY, YIELD_PRICE } from './settings-math.j
 
 const COMMAND_TIMEOUT = 15000;
 const COLUMNS = [
-  { key: 'dryKg', label: 'Dry substrate per block (kg)', range: YIELD_DRY },
-  { key: 'priceKg', label: 'Price (RM per kg)', range: YIELD_PRICE },
+  { key: 'dryKg', label: 'Dry substrate per block (kg)', short: 'Dry kg per block', range: YIELD_DRY },
+  { key: 'priceKg', label: 'Price (RM per kg)', short: 'RM per kg', range: YIELD_PRICE },
 ];
 
 const el = (tag, cls, text) => {
@@ -52,12 +52,14 @@ export function mountYield(container) {
     const tr = el('tr');
     const name = el('th', 'yd-crop');
     name.scope = 'row';
-    name.append(picture('crop', crop, { size: 24 }), el('span', null, CROPS[crop].name));
+    const named = el('span', 'yd-crop-name'); // the picture beside the name (a table cell cannot be a flex box itself)
+    named.append(picture('crop', crop, { size: 24 }), el('span', null, CROPS[crop].name));
+    name.append(named);
     tr.append(name);
     for (const c of COLUMNS) {
       const id = `${c.key}-${crop}`;
       const td = el('td', 'yd-cell');
-      td.dataset.label = c.label;
+      td.dataset.label = c.short; // a phone's label over the box: short, so both boxes of a row sit level
       const input = el('input');
       Object.assign(input, { id: `f-yd-${id}`, name: id, type: 'number', min: String(c.range[0]), max: String(c.range[1]), step: '0.01', inputmode: 'decimal', placeholder: 'not set' });
       input.setAttribute('aria-label', `${CROPS[crop].name}: ${c.label}`);

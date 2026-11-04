@@ -88,3 +88,17 @@ test('the sheet: a blank line for the farm\'s name (the app has none), the kg to
 test("the Overview's Harvest card names the crops its RM value leaves out", () => {
   assert.ok(overview.includes("if (t.note) tile.append(node('p', 'us-note', t.note));"));
 });
+
+test('By room: the names on one line, the period over kg and RM and This run over the run\'s columns; a phone puts the run under the name (audit #7)', () => {
+  assert.ok(page.includes("{ label: `Last ${periodWords(farm.days)}`, span: 2 }, { label: 'This run', span: 2, className: 'hv-run-col' }"));
+  assert.ok(page.includes("if (r.run) th.append(el('span', 'hv-run-words', r.run));"));
+  assert.match(css, /\.hv-farm-table \.hv-name \{[^}]*white-space: nowrap;/);
+  assert.match(css, /@media \(max-width: 600px\) \{\n  \.hv-farm-table \.hv-run-col \{ display: none; \}/);
+});
+
+test('the totals card: the tiles held to a width, the kg in Display type; the Overview\'s three tiles at 360 px (audit #17, #20)', () => {
+  assert.ok(css.includes('.hv-page .hv-tiles { grid-template-columns: repeat(3, minmax(160px, 260px)); }'));
+  assert.ok(css.includes('.hv-page .hv-tiles > :first-child .us-kwh { font-size: var(--fs-3xl);'));
+  assert.ok(css.includes('.ov-harvest .us-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }'));
+  assert.ok(css.includes('.hv-tiles > :last-child:nth-child(odd) { grid-column: 1 / -1; }'));
+});

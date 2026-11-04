@@ -31,8 +31,8 @@ test('the Crop tab summary line', () => {
 });
 
 test('flush columns: one kg column per crop in a mixed room', () => {
-  assert.deepEqual(flushColumns([{ crop: 'oyster' }]), ['Flush', 'Days', 'kg', 'kg per block', 'BE']);
-  assert.deepEqual(flushColumns([{ crop: 'oyster' }, { crop: 'lionsmane' }]), ['Flush', 'Days', 'Grey oyster kg', "Lion's mane kg", 'kg', 'kg per block', 'BE']);
+  assert.deepEqual(flushColumns([{ crop: 'oyster' }]), ['Flush', 'Dates', 'kg', 'kg per block', 'BE'], 'Dates: they are dates, not a count');
+  assert.deepEqual(flushColumns([{ crop: 'oyster' }, { crop: 'lionsmane' }]), ['Flush', 'Dates', 'Grey oyster kg', "Lion's mane kg", 'kg', 'kg per block', 'BE']);
 });
 
 test('sheet rows: the myGAP columns, the sales cells blank', () => {
@@ -46,7 +46,7 @@ test('sheet rows: the myGAP columns, the sales cells blank', () => {
 
 // ---- Task 9: the Harvest room tab ----
 
-import { runHead, harvestLine, pastRow, missingNote, flushRows, byCropRows, runTiles, deleteTitle, deleteLead, pricesNote, whenBoxes, whenMs, recordBody, editBody } from '../web/harvest-math.js';
+import { runHead, harvestLine, pastRow, PAST_COLUMNS, missingNote, flushRows, byCropRows, runTiles, deleteTitle, deleteLead, pricesNote, whenBoxes, whenMs, recordBody, editBody } from '../web/harvest-math.js';
 
 const at = (y, mo, d, h = 0, mi = 0) => Date.UTC(y, mo - 1, d, h - 8, mi); // a farm time (UTC+8) in ms
 
@@ -84,12 +84,14 @@ test('a harvest line: when, what (the crop only in a mixed room), kg exact, who,
   assert.equal(harvestLine({ ...h, worker: null }, { mixed: false }).who, '');
 });
 
-test('a past run: its dates and the figures that are known', () => {
+test('a past run: a row of the Past runs table, its dates and the figures that are known', () => {
   const run = { ...oneCrop, endedAt: at(2026, 11, 2, 10) };
+  assert.deepEqual(PAST_COLUMNS, ['Dates', 'Crops', 'kg', 'kg per block', 'BE', 'RM value', 'Cost per kg']);
   assert.deepEqual(pastRow(run), {
     title: '3 Oct – 2 Nov',
-    cells: [`Grey oyster 500${nb}blocks`, `18.4${nb}kg`, `0.04${nb}kg per block`, `BE 34${nb}%`, `RM${nb}221.28`, `RM${nb}3.10 per${nb}kg`],
+    cells: [`Grey oyster 500${nb}blocks`, `18.4${nb}kg`, `0.04${nb}kg`, `34${nb}%`, `RM${nb}221.28`, `RM${nb}3.10`],
   });
+  assert.equal(pastRow(run).cells.length + 1, PAST_COLUMNS.length);
   const missingFigures = { ...run, partial: true, be: null, value: null, cost: null };
   assert.deepEqual(pastRow(missingFigures).cells.slice(3), ['—', '—', '—']);
   assert.equal(pastRow(missingFigures).title, 'Recorded 3 Oct – 2 Nov');
@@ -314,11 +316,15 @@ test('the range in words: one month, two months, two years', () => {
 test('By room: the rooms that picked or have a run, with the run’s kg per block and BE; By crop', () => {
   assert.deepEqual(ROOM_COLUMNS, ['Room', 'kg', 'RM value', 'kg per block', 'BE']);
   assert.deepEqual(roomRows(farm), [
-    { id: 1, name: 'Room 1', crops: [{ crop: 'oyster', blocks: 500 }], cells: [`60.0${nb}kg`, `RM${nb}720.00`, `0.31${nb}kg`, `34${nb}%`], without: null },
-    { id: 3, name: 'Room 3', crops: [], cells: [`4.5${nb}kg`, '—', '—', '—'], without: null },
+    {
+      id: 1, name: 'Room 1', crops: [{ crop: 'oyster', blocks: 500 }], cells: [`60.0${nb}kg`, `RM${nb}720.00`, `0.31${nb}kg`, `34${nb}%`], without: null,
+      run: `This run 0.31${nb}kg per block${dot}BE 34${nb}%`,
+    },
+    { id: 3, name: 'Room 3', crops: [], cells: [`4.5${nb}kg`, '—', '—', '—'], without: null, run: null },
   ]);
   const partial = roomRows({ ...farm, rooms: [{ ...farm.rooms[0], value: 600, unpriced: ['lionsmane'] }] })[0];
   assert.equal(partial.without, "without Lion's mane", 'a room value without a crop says so under it');
+  assert.equal(roomRows({ ...farm, rooms: [{ ...farm.rooms[0], current: { kg: 1, perBlock: 0.45, be: null } }] })[0].run, `This run 0.45${nb}kg per block`, 'a phone: the run under the name');
   assert.deepEqual(CROP_COLUMNS, ['Crop', 'kg', 'RM value']);
   assert.deepEqual(cropRows(farm), [
     { crop: 'oyster', name: 'Grey oyster', cells: [`60.0${nb}kg`, `RM${nb}720.00`] },

@@ -231,7 +231,7 @@ export function createCropCard(host, { roomId, onChange, onData, onOffline, onGo
   const yieldText = el('span');
   const yieldLink = el('a', '', 'Harvests');
   yieldLink.href = roomHash(roomId, 'harvest');
-  yieldLine.append(yieldText, DOT, yieldLink);
+  yieldLine.append(el('span', 'cp-yield-label', 'Harvest'), yieldText, DOT, yieldLink); // its own row, named as the fields are
   yieldLine.hidden = true;
   program.append(yieldLine, rampField, lightField, autoField, programSave, programErr);
   const programFields = {

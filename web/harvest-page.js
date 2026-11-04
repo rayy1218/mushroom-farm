@@ -56,19 +56,30 @@ function el(tag, className, content) {
 }
 
 // A card's table (its h2 names it; the caption says it again to a screen reader): the first column names the row (a picture
-// and words, built by `head`), the others are figures.
-function table(caption, columns, rows, head) {
+// and words, built by `head`), the others are figures. groups: a head row over the column heads ([{ label, span, className }]);
+// runFrom: the columns from it are the run's (hidden on a phone, where row.run says them under the name).
+function table(caption, columns, rows, head, { groups = null, runFrom = Infinity } = {}) {
   const wrap = el('div', 'us-table-wrap');
   const t = el('table', 'us-table hv-farm-table');
   t.append(el('caption', 'sr-only', caption));
+  const thead = el('thead');
+  if (groups) {
+    const over = el('tr', 'hv-groups');
+    for (const g of groups) {
+      const th = el(g.label ? 'th' : 'td', g.className ?? '', g.label);
+      th.colSpan = g.span;
+      if (g.label) th.scope = 'colgroup';
+      over.append(th);
+    }
+    thead.append(over);
+  }
   const tr = el('tr');
   columns.forEach((c, i) => {
-    const th = el('th', i ? 'num' : '');
+    const th = el('th', `${i ? 'num' : ''}${i >= runFrom ? ' hv-run-col' : ''}`.trim());
     th.append(figureName(c, c === 'BE' ? 'Biological efficiency' : null));
     th.scope = 'col';
     tr.append(th);
   });
-  const thead = el('thead');
   thead.append(tr);
   const body = el('tbody');
   for (const r of rows) {
@@ -78,8 +89,9 @@ function table(caption, columns, rows, head) {
     const name = el('span', 'hv-name');
     name.append(...head(r));
     th.append(name);
+    if (r.run) th.append(el('span', 'hv-run-words', r.run)); // a phone: the run's columns as a line under the name
     row.append(th, ...r.cells.map((c, i) => {
-      const td = el('td', 'num', c);
+      const td = el('td', i + 1 >= runFrom ? 'num hv-run-col' : 'num', c);
       if (i === 1 && r.without) td.append(el('span', 'hv-without', r.without)); // the RM value leaves a crop out
       return td;
     }));
@@ -186,8 +198,8 @@ export function mount(container, { days = 30 } = {}) {
     if (chart) chart.update(opts);
     else chart = drawTimeBars(els.chart, opts);
     const rooms = roomRows(farm);
-    els.rooms.replaceChildren(el('h2', '', 'By room'), el('p', 'muted hv-card-note', 'kg and RM over the period; kg per block and BE of the run under way.'),
-      table('By room', ROOM_COLUMNS, rooms, roomHead));
+    const groups = [{ label: '', span: 1 }, { label: `Last ${periodWords(farm.days)}`, span: 2 }, { label: 'This run', span: 2, className: 'hv-run-col' }];
+    els.rooms.replaceChildren(el('h2', '', 'By room'), table('By room', ROOM_COLUMNS, rooms, roomHead, { groups, runFrom: 3 }));
     els.crops.replaceChildren(el('h2', '', 'By crop'),
       table('By crop', CROP_COLUMNS, cropRows(farm), (c) => [picture('crop', c.crop, { size: 24 }), el('span', '', c.name)]));
   }

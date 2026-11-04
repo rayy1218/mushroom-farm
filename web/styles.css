@@ -183,13 +183,13 @@ dialog { margin-top: var(--dialog-top); margin-bottom: auto; } /* anchored at th
 ::placeholder { color: var(--muted); opacity: 1; }
 /* a phone: every control at least 44 px tall (a finger in a humid room) */
 @media (max-width: 600px) {
-  button, .ctl, .field input, .field select, select, .top-link, .topbar .theme-btn { min-height: 44px; }
+  button, .ctl, .field input, .field select, .yd-table input, select, .top-link, .topbar .theme-btn { min-height: 44px; }
   .topbar .theme-btn { width: 44px; }
 }
 
 .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
 .field label { font-size: 0.9rem; font-weight: 600; }
-.field input {
+.field input, .yd-table input {
   font: inherit;
   min-height: 40px;
   padding: 8px 10px;
@@ -201,7 +201,7 @@ dialog { margin-top: var(--dialog-top); margin-bottom: auto; } /* anchored at th
 }
 .field select { font: inherit; min-height: 40px; padding: 8px 10px; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--surface); color: var(--ink); width: 100%; min-width: 0; }
 .field select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.field select[aria-invalid="true"], .field input[aria-invalid="true"] { border-color: var(--critical-text); }
+.field select[aria-invalid="true"], .field input[aria-invalid="true"], .yd-table input[aria-invalid="true"] { border-color: var(--critical-text); }
 .field input[aria-invalid="true"] { border-color: var(--critical-text); }
 .field input[aria-invalid="true"]:focus-visible { outline-color: var(--critical-text); }
 .field-error { margin: 0; font-size: 0.85rem; color: var(--critical-text); }
@@ -974,6 +974,8 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
 .cp-program > .m-error { flex-basis: 100%; margin-bottom: 12px; }
 /* the run's harvests in one line (spec 2026-11-04-harvest-design.md 7), above the fields, a hairline under it */
 .cp-yield { flex-basis: 100%; margin: 0 0 8px; padding-bottom: 12px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.cp-yield-label { display: block; margin-bottom: 2px; color: var(--muted); font-size: var(--fs-sm); font-weight: 600; } /* named as the fields beside it */
+@media (max-width: 600px) { .cp-yield a { display: inline-block; padding: 12px 0; margin: -12px 0; } } /* 44 px to tap */
 
 @container (max-width: 719px) {
   .crop-card .cp-layout { grid-template-columns: minmax(0, 1fr); grid-template-areas: "stages" "list" "program"; } /* a phone: the current stage first */
@@ -1262,7 +1264,7 @@ details.setup-part:not([open]) > summary.part-title { margin-bottom: 0; }
   .tg-check input, .sim-pick input { width: 20px; height: 20px; }
   .sim-pick { min-height: 44px; }
   .setup-nav a { display: inline-flex; align-items: center; min-height: 44px; }
-  .ctl, .field input, .field select, .sim-crop-row select, .sim-crop-row input, .brand-top { min-height: 44px; }
+  .ctl, .field input, .field select, .yd-table input, .sim-crop-row select, .sim-crop-row input, .brand-top { min-height: 44px; }
   .brand-top { display: inline-flex; align-items: center; }
   /* the Crop tab, Setup, the Alarms card and the Simulations list (critique 2026-10-28: 28–36 px targets) */
   .cp-stage-actions button, .cp-room-note button, .cp-more, .c-byhand button, .c-humidifier button.toggle { min-height: 44px; }
@@ -1742,13 +1744,23 @@ h2.r-named { display: flex; }
   .hv-grid > .hv-list-card { grid-column: 2; grid-row: 2 / -1; }
 }
 .hv-part .none { margin: 8px 0 0; color: var(--muted); }
+/* a room that never had crops: an empty state (dashed), the basket faded, the way to the Crop tab */
+.hv-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; background: transparent; border-style: dashed; border-color: var(--border-strong); }
+.hv-empty > .pic { opacity: .4; }
+:root[data-theme="light"] .hv-empty.card { box-shadow: none; }
 .hv-empty .none { margin: 0; }
 .hv-tiles { margin-top: 4px; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); } /* the five side by side in the left column */
+@media (max-width: 600px) {
+  .hv-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hv-tiles > :last-child:nth-child(odd) { grid-column: 1 / -1; } /* an odd tile out takes the row, not half of it */
+  .hv-table :is(th, td) { padding-inline: 6px; }
+  .hv-table thead :is(th, th.num) { white-space: normal; } /* "kg per block" on two lines: the table fits the phone */
+}
 .hv-basis { text-transform: none; }
 .hv-body > * + * { margin-top: 16px; }
 .hv-table th, .hv-table .hv-days { white-space: nowrap; } /* a phone: the table scrolls rather than break "Flush 1" */
 .hv-missing { margin: 0; font-size: var(--fs-sm); }
-:is(.hv-body, .hv-run-body) > .hv-missing:not(:first-child) { margin-top: 12px; }
+:is(.hv-body, .hv-run-body) > .hv-missing + .hv-missing { margin-top: 4px; }
 /* a harvest: the basket with its crop, the kg and what it was, when, who and from under it, Edit and Delete quiet at the end */
 .hv-list { list-style: none; margin: 0; padding: 0; }
 .hv-row { display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; border-top: 1px solid var(--border); }
@@ -1759,32 +1771,46 @@ h2.r-named { display: flex; }
 .hv-kg { display: inline-block; min-width: 8ch; font-weight: 600; text-align: right; } /* the rows' kg line up (2 decimals each) */
 .hv-meta { margin: 2px 0 0; color: var(--muted); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
 .hv-list-card > button { margin-top: 8px; }
-/* a past run: its dates and figures in the summary, opening to its flushes and harvests */
-.hv-run { border-top: 1px solid var(--border); }
-.hv-run:first-child { border-top: 0; }
-.hv-run > summary { cursor: pointer; padding: 10px 0; font-variant-numeric: tabular-nums; }
-.hv-run-title { font-weight: 600; margin-right: 12px; }
-.hv-run-line { color: var(--ink-2); font-size: var(--fs-sm); overflow-wrap: anywhere; }
-.hv-run > summary:hover .hv-run-line { color: var(--ink); }
-.hv-run-body { padding: 0 0 12px; }
+/* Past runs: a table, a run's dates a button that opens the row under it (its flushes and latest harvests, indented) */
+.hv-run-toggle { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0; border: 0; background: none; color: var(--ink); font: inherit; font-weight: 600; text-align: left; cursor: pointer; }
+.hv-run-toggle::before { content: ''; flex: none; width: 6px; height: 6px; border: solid var(--muted); border-width: 0 1.5px 1.5px 0; transform: rotate(-45deg); transition: transform .15s; }
+.hv-run-toggle[aria-expanded="true"]::before { transform: rotate(45deg); }
+.hv-run-toggle:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
+.hv-runs-table .hv-run-crops { color: var(--ink-2); }
+.hv-run-row th { white-space: nowrap; }
+.hv-run-detail > td { border-top: 0; padding: 0 0 12px; }
+.hv-run-body { padding-left: 12px; border-left: 2px solid var(--border); }
 .hv-run-body > * + * { margin-top: 12px; }
+@media (max-width: 600px) {
+  /* a phone: each run a block of labelled figures rather than a table wider than the screen */
+  .hv-runs-table > thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .hv-runs-table, .hv-runs-table > tbody, .hv-run-detail, .hv-run-detail > td { display: block; }
+  .hv-run-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 12px; padding: 10px 0; border-top: 1px solid var(--border); }
+  .hv-runs-table > tbody > .hv-run-row:first-child { border-top: 0; }
+  .hv-runs-table .hv-run-row > :is(th, td, td.num) { display: block; padding: 0; border: 0; text-align: left; }
+  .hv-run-row > :is(th, .hv-run-crops) { grid-column: 1 / -1; }
+  .hv-run-row > td.num { white-space: normal; font-size: var(--fs-sm); }
+  .hv-run-row > td.num::before { content: attr(data-label); display: block; color: var(--muted); font-size: var(--fs-xs); }
+  .hv-run-toggle { min-height: 44px; margin: -6px 0; } /* 44 px to tap; the row keeps its spacing */
+}
 
 /* ---- Settings: the Yield card ---- */
 .settings-grid > [data-yield] { grid-column: 1 / -1; }
-.yd-table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
+.yd-table { width: 100%; max-width: 640px; border-collapse: collapse; margin-bottom: 12px; }
 .yd-table th, .yd-table td { padding: 6px 8px 6px 0; text-align: left; vertical-align: top; border-bottom: 1px solid var(--border); }
 .yd-table thead th { font-size: var(--fs-sm); font-weight: 600; color: var(--muted); vertical-align: bottom; }
+.yd-table tbody :is(th, td) { vertical-align: middle; } /* the name level with its boxes */
 .yd-crop { font-weight: 500; }
-.yd-crop > * { vertical-align: middle; }
-.yd-crop .pic { margin-right: 8px; }
+.yd-crop-name { display: flex; align-items: center; gap: 8px; } /* the picture beside the name */
+.yield .s-hint { max-width: 60ch; }
 .yd-table input { width: 100%; max-width: 140px; font-variant-numeric: tabular-nums; }
 .settings .yd-table .field-error:empty { display: none; }
 @media (max-width: 640px) {
   .yd-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
   .yd-table, .yd-table tbody { display: block; }
-  .yd-table tr { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .yd-table tr { display: grid; grid-template-columns: 1fr 1fr; align-items: end; gap: 4px 12px; padding: 10px 0; border-bottom: 1px solid var(--border); }
   .yd-table th, .yd-table td { display: block; padding: 0; border: 0; }
-  .yd-table .yd-crop { grid-column: 1 / -1; display: flex; align-items: center; }
+  .yd-table .yd-crop { grid-column: 1 / -1; }
   .yd-cell::before { content: attr(data-label); display: block; margin-bottom: 2px; font-size: var(--fs-xs); color: var(--muted); }
 }
 
@@ -1797,9 +1823,23 @@ h2.r-named { display: flex; }
   .hv-page > .hv-totals { grid-column: 1 / -1; }
 }
 .hv-totals .hv-missing { margin: 0 0 8px; }
+.hv-page .hv-tiles { grid-template-columns: repeat(3, minmax(160px, 260px)); }
+.hv-page .hv-tiles > :first-child .us-kwh { font-size: var(--fs-3xl); line-height: 1.1; letter-spacing: -.02em; } /* the page's main number, in Display */
+@media (max-width: 600px) {
+  .hv-page .hv-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hv-page .hv-tiles > :first-child .us-kwh { font-size: 28px; }
+}
 .hv-chart-title { margin: 12px 0 6px; font-size: var(--fs-sm); font-weight: 600; color: var(--ink-2); }
-.hv-card-note { margin: 2px 0 8px; font-size: var(--fs-sm); }
-.hv-farm-table .hv-name { display: flex; align-items: center; gap: 8px; }
+.hv-farm-table .hv-name { display: flex; align-items: center; gap: 8px; white-space: nowrap; } /* "Room 1" never on two lines */
+.hv-farm-table .hv-groups :is(th, td) { padding-bottom: 2px; border-top: 0; font-size: var(--fs-xs); font-weight: 600; color: var(--muted); text-align: right; }
+/* a rule under each group's name over its own columns, a gap between the groups */
+.hv-farm-table .hv-groups th { background: linear-gradient(var(--border), var(--border)) right bottom / calc(100% - 16px) 1px no-repeat; }
+.hv-run-words { display: none; }
+@media (max-width: 600px) {
+  .hv-farm-table .hv-run-col { display: none; } /* the run's figures go under the room's name */
+  .hv-run-words { display: block; margin-top: 2px; color: var(--muted); font-size: var(--fs-xs); font-weight: 400; white-space: normal; }
+  .hv-farm-table .hv-groups { display: none; }
+}
 .hv-farm-table thead th, .hv-farm-table thead th.num { white-space: normal; } /* a phone: "kg per block" on two lines, the figures on one */
 .hv-farm-table .hv-name a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--axis); text-underline-offset: 3px; }
 .hv-farm-table .hv-name a:hover { text-decoration-color: currentColor; }
@@ -1810,11 +1850,11 @@ h2.r-named { display: flex; }
 .ov-harvest h2 a:hover { text-decoration-color: currentColor; }
 .ov-harvest .muted { margin: 0; }
 .ov-harvest .us-note { color: var(--muted); font-size: var(--fs-xs); }
-.ov-harvest .us-tiles { grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); } /* the three side by side */
+.ov-harvest .us-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); } /* the three side by side, at 360 px too */
 @media (max-width: 600px) {
   .hv-tools { flex: 1 1 100%; }
   .hv-tools .range-bar { flex: 1 1 100%; }
-  .hv-tools .range-bar button { flex: 1 1 0; padding: 4px 6px; }
+  .hv-tools .range-bar button { flex: 1 1 0; padding: 4px 6px; white-space: nowrap; } /* "12 months" on one line */
   .hv-tools a.button { flex: 1 1 0; justify-content: center; min-height: 44px; }
   .hv-farm-table .hv-name a { display: inline-block; padding: 10px 0; } /* 44 px to tap */
 }
