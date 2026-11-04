@@ -121,4 +121,4 @@ card's note: "Biological efficiency is fresh kg over the dry substrate's kg. A 2
 | `tests/crop-api.test.js` (added) | Crops given, New blocks, a block count change, crops cleared: the run |
 | `tests/settings.test.js` (added) | `cropYield` checks and read-back |
 | `tests/web-harvest-math.test.js` | The formatter, the summary line, the sheet rows, the flushes table's columns |
-| Look | 1440 and 390 px, both themes: the Harvest tab, the Harvest page, the sheet in print, the Overview card, the Done dialog in a mixed room, the top bar at 360 px; the detector on the changed files |
+| Look | 1440 and 390 px, both themes: the Harvest tab, the Harvest page, the sheet in print, the Overview card, the Done dialog in a mixed room, the top bar at 360 px; the detector on the changed files and five pages (the UI/UX audit, 2026-11-04). The sheet's print rules were read from the CSS: print media could not be emulated |
