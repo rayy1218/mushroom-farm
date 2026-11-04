@@ -5,7 +5,8 @@
 //   createTaskActions({ onChanged(row | null), onError(text) }) → { done(row), skip(row), cancel(row), add(roomId), destroy() }
 //   (done, skip and cancel end, after their dialog closes, with true when something changed: the list will be asked again)
 //   createWorkerPicker() → { node, destroy() } · openPlanDialog({ roomId, roomName, rank, plan, onPlanned(rows, replaced) })
-//   closeTaskDialog()
+//   closeTaskDialog() · openForm(options) (below; the Harvest tab's Record and Edit use it too) · loadWorkers() · getWorker()
+//   · setWorker(name) · workerField(names, label) · errorText(err)
 
 import { request, OFFLINE } from './api.js';
 import { live } from './live.js';
@@ -42,17 +43,17 @@ function button(label, className) {
   return b;
 }
 
-const errorText = (err) => (err.status === 0 ? `${OFFLINE}. Try again.` : err.message);
+export const errorText = (err) => (err.status === 0 ? `${OFFLINE}. Try again.` : err.message);
 // A Setup field as it is now: "aircon rated input 1,070 W", "dehumidifier not fitted" (a box's label says fitted itself).
 const nowText = (f) => `${(f.kind === 'check' ? f.label.replace(/ fitted$/, '') : f.label).toLowerCase()} ${beforeText(f)}`;
 
 // ---- who is doing the rounds ----
 
-function getWorker() {
+export function getWorker() {
   try { return localStorage.getItem(WORKER_KEY) || null; } catch { return null; }
 }
 
-function setWorker(name) {
+export function setWorker(name) {
   try {
     if (name) localStorage.setItem(WORKER_KEY, name);
     else localStorage.removeItem(WORKER_KEY);
@@ -61,7 +62,7 @@ function setWorker(name) {
 }
 
 // The active workers' names (GET /api/workers).
-async function loadWorkers() {
+export async function loadWorkers() {
   const data = await request('GET', '/api/workers');
   return (Array.isArray(data?.workers) ? data.workers : []).filter((w) => w.active).map((w) => w.name);
 }
@@ -105,6 +106,12 @@ export function createWorkerPicker() {
   };
 }
 
+// The dialog's "Who did it" box: the active workers, the one this browser does the rounds as picked.
+export const workerField = (list, label = 'Who did it') => ({
+  name: 'worker', label, kind: 'select', value: list.includes(getWorker()) ? getWorker() : '',
+  options: [['', 'Pick a name'], ...list.map((n) => [n, n])],
+});
+
 // ---- the dialog ----
 
 function ensureDialog() {
@@ -130,13 +137,13 @@ function taskLead(row) {
 }
 
 // Opens the dialog on a form. lead: lines (text or nodes) under the title; fields: [{ name, label, kind: 'text' | 'number'
-// | 'area' | 'select' | 'check', value, options ([value, label]), hint }]; buttons: [{ value, label, primary }] after the
+// | 'area' | 'select' | 'check' | 'datetime', value, options ([value, label]), hint, min, max (a datetime's) }]; buttons: [{ value, label, primary, danger (filled red) }] after the
 // close button (closeLabel; Close when there are no buttons). submit(values, which, form) → true (closes), or { field, message }
 // or { message, content?, final? } to show while it stays open (content: nodes for the line in place of the message's text;
 // final: nothing more to send, the buttons stay disabled and only the close button is left); onLost(message): a failure that came back after the dialog was closed or
 // replaced. → { input(name), button(value), alive(), closed } (alive: this opening still shows; closed: a promise kept when
 // it is closed or replaced and nothing it sent is still waiting for an answer).
-function openForm({ title, lead = [], fields = [], buttons = [], closeLabel = buttons.length ? 'Cancel' : 'Close', submit, onLost }) {
+export function openForm({ title, lead = [], fields = [], buttons = [], closeLabel = buttons.length ? 'Cancel' : 'Close', submit, onLost }) {
   const d = ensureDialog();
   if (d.open) d.close();
   const me = ++openSeq;
@@ -169,6 +176,12 @@ function openForm({ title, lead = [], fields = [], buttons = [], closeLabel = bu
       input = el('input');
       input.type = 'checkbox';
       input.checked = f.value === true;
+    } else if (f.kind === 'datetime') {
+      input = el('input');
+      input.type = 'datetime-local';
+      if (f.min) input.min = f.min;
+      if (f.max) input.max = f.max;
+      input.value = f.value ?? '';
     } else {
       input = el('input');
       input.type = 'text';
@@ -201,7 +214,7 @@ function openForm({ title, lead = [], fields = [], buttons = [], closeLabel = bu
   const actions = el('div', 'actions');
   const close = button(closeLabel);
   const sends = buttons.map((b) => {
-    const x = button(b.label, b.primary ? 'primary' : '');
+    const x = button(b.label, b.danger ? 'danger' : b.primary ? 'primary' : '');
     if (b.primary) x.type = 'submit';
     x.value = b.value;
     return x;
@@ -328,10 +341,6 @@ export function createTaskActions({ onChanged, onError }) {
     }
     return changes !== before;
   };
-  const workerField = (list, label = 'Who did it') => ({
-    name: 'worker', label, kind: 'select', value: list.includes(getWorker()) ? getWorker() : '',
-    options: [['', 'Pick a name'], ...list.map((n) => [n, n])],
-  });
   function settingsLine() {
     const p = el('p', 'tk-lead');
     const a = el('a', '', 'Settings');

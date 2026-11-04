@@ -217,7 +217,7 @@ export function createDeleteCard(host, { roomId, getRoom, onGone }) {
   const deleteText = document.getElementById('delete-text');
   const abort = new AbortController();
 
-  host.append(el('h2', '', 'Delete room'), el('p', 'muted', 'The room goes with its readings, history, crop and simulations.'));
+  host.append(el('h2', '', 'Delete room'), el('p', 'muted', 'The room goes with its readings, history, crop, harvests and simulations.'));
   const del = button('Delete room', 'danger-text'); // quiet until its confirm, which has the filled red button
   const err = el('p', 'm-error');
   err.setAttribute('role', 'status');

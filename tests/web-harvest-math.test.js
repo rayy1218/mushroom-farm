@@ -96,6 +96,7 @@ test('the missing note names the crops and what to set', () => {
   assert.equal(missingNote({ dryKg: ['oyster'], price: [] }), 'Set the dry substrate per block of Grey oyster in Settings → Yield.');
   assert.equal(missingNote({ dryKg: [], price: ['oyster', 'lionsmane'] }), "Set the price of Grey oyster and Lion's mane (draft) in Settings → Yield.");
   assert.equal(missingNote({ dryKg: ['oyster'], price: ['lionsmane'] }), "Set the dry substrate per block of Grey oyster and the price of Lion's mane (draft) in Settings → Yield.");
+  assert.equal(missingNote({ dryKg: ['lionsmane'], price: ['lionsmane'] }), "Set the dry substrate per block and the price of Lion's mane (draft) in Settings → Yield.");
   assert.equal(missingNote({ dryKg: [], price: [] }), null);
   assert.equal(missingNote(undefined), null);
 });

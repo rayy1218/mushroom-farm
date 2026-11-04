@@ -115,6 +115,7 @@ export function pastRow(run) {
 export function missingNote(missing) {
   const dry = (missing?.dryKg ?? []).map(cropName);
   const price = (missing?.price ?? []).map(cropName);
+  if (dry.length && dry.join() === price.join()) return `Set the dry substrate per block and the price of ${andList(dry)} in Settings → Yield.`;
   const parts = [dry.length && `the dry substrate per block of ${andList(dry)}`, price.length && `the price of ${andList(price)}`].filter(Boolean);
   return parts.length ? `Set ${parts.join(' and ')} in Settings → Yield.` : null;
 }

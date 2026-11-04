@@ -1,11 +1,11 @@
 // Room detail page (redesign 2026-10-28, brief .impeccable/surfaces/web-room-detail-js.md): the room's name with a switch to
-// the other rooms, six tabs under it (the address names the tab: #/rooms/7, #/rooms/7/history, ...) and the tab's panel:
+// the other rooms, seven tabs under it (the address names the tab: #/rooms/7, #/rooms/7/history, ...) and the tab's panel:
 // Now (the readings first, the alarms, Auto | Manual, the crop, the room picture, the machines in air-path order and the
 // switches), History (the charts, electricity and water, the machine timeline, the energy and water card), Crop, Tasks (the
-// day's stage tasks, upkeep, long-term tasks and the log), Simulations and Setup (the bands and automatic control, the
-// sensors and the intake filter, the equipment cards, the room's name and size and Delete room). The alarms sit in the Now
-// tab's side column, above the panel on the other tabs. Every tab is loaded and kept up to date; a tab change only shows
-// and hides panels.
+// day's stage tasks, upkeep, long-term tasks and the log), Harvest (this run's figures and harvests, the past runs),
+// Simulations and Setup (the bands and automatic control, the sensors and the intake filter, the equipment cards, the
+// room's name and size and Delete room). The alarms sit in the Now tab's side column, above the panel on the other tabs.
+// Every tab is loaded and kept up to date; a tab change only shows and hides panels.
 // Refreshes every reading interval (2–30 s; 5 s when the settings cannot be read) while shown.
 
 import { request, OFFLINE } from './api.js';
@@ -20,6 +20,7 @@ import { createAlarmsCard } from './alarms.js';
 import { createCropCard } from './crop-card.js';
 import { createSimulationsCard } from './sim-card.js';
 import { createTasksCard } from './tasks-card.js';
+import { createHarvestCard } from './harvest-card.js';
 import { tabDot } from './tasks-math.js';
 import { createFilterCard } from './filter-card.js';
 import { intakeRunning } from './filter-math.js';
@@ -126,6 +127,9 @@ const TEMPLATE = `
       </div>
       <div data-panel="tasks" hidden>
         <section data-tasks></section>
+      </div>
+      <div data-panel="harvest" hidden>
+        <section data-harvest></section>
       </div>
       <div data-panel="simulations" hidden>
         <section data-simulations></section>
@@ -270,6 +274,7 @@ export function mount(container, { id, tab = 'now' }) {
     usageHost: q('[data-usage]'),
     simulationsHost: q('[data-simulations]'),
     tasksHost: q('[data-tasks]'),
+    harvestHost: q('[data-harvest]'),
     profileHost: q('[data-profile]'),
     deleteHost: q('[data-delete]'),
     equipmentHost: q('[data-equipment]'),
@@ -318,6 +323,7 @@ export function mount(container, { id, tab = 'now' }) {
   let cropCard = null; // the Crop and stage card
   let simulationsCard = null; // the Simulations card
   let tasksCard = null; // the Tasks card
+  let harvestCard = null; // the Harvest card
   let filterCard = null; // the Intake filter card
   let profileTab = null; // the Room profile tab's form
   let deleteCard = null; // the Delete room card under it
@@ -396,6 +402,8 @@ export function mount(container, { id, tab = 'now' }) {
     simulationsCard = null;
     tasksCard?.destroy();
     tasksCard = null;
+    harvestCard?.destroy();
+    harvestCard = null;
     paintTasksDot(null);
     filterCard?.destroy();
     filterCard = null;
@@ -554,6 +562,7 @@ export function mount(container, { id, tab = 'now' }) {
     cropCard?.setLights(room?.lights === true); // lights fitted or taken out: the schedule shows or goes
     simulationsCard ??= createSimulationsCard(els.simulationsHost, { roomId: id, getRoom: () => room });
     tasksCard ??= createTasksCard(els.tasksHost, { roomId: id, onCounts: (c) => { if (alive()) paintTasksDot(c); }, onGone: () => { if (alive()) load(); } });
+    harvestCard ??= createHarvestCard(els.harvestHost, { roomId: id, onGone: () => { if (alive()) load(); } });
     filterCard ??= createFilterCard(els.filterHost, { roomId: id, onChanged: () => { if (alive()) load(); } }); // the alarms clear
     filterCard.update(room, sensors.dp, intakeRunning(machineData ?? lastMachines));
     // The Room card's filter from the replies of this load: a command later does not make the old pressure reading new.
@@ -812,6 +821,7 @@ export function mount(container, { id, tab = 'now' }) {
     cropCard?.destroy();
     simulationsCard?.destroy();
     tasksCard?.destroy();
+    harvestCard?.destroy();
     filterCard?.destroy();
     profileTab?.destroy();
     equipmentTab?.destroy();
