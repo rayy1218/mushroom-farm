@@ -1,9 +1,10 @@
-// Settings page: the farm-wide reading interval, the outdoor sensor address, the electricity and water prices, phone alarms,
+// Settings page: the farm-wide reading interval, the outdoor sensor address, the electricity and water prices, phone alarms, the crops' yield,
 // and the tasks' workers and rules (task-settings.js).
 
 import { request, OFFLINE } from './api.js';
 import { mountTelegram } from './telegram-card.js';
 import { mountTaskSettings } from './task-settings.js';
+import { mountYield } from './yield-card.js';
 import { parsePoll, POLL_MESSAGE, POLL_MIN, POLL_MAX, EXTRA_FIELDS, parseExtraSettings, liveHint } from './settings-math.js';
 
 const COMMAND_TIMEOUT = 15000;
@@ -56,6 +57,7 @@ const TEMPLATE = `
     <p class="s-saved" data-saved role="status" hidden></p>
   </form>
   <div data-telegram></div>
+  <div data-yield></div>
   <div class="tk-settings" data-task-settings></div>
   </div>`;
 
@@ -189,11 +191,13 @@ export function mount(container) {
   retry.addEventListener('click', load);
   load();
   const unmountTelegram = mountTelegram(q('[data-telegram]'));
+  const unmountYield = mountYield(q('[data-yield]'));
   const unmountTaskSettings = mountTaskSettings(q('[data-task-settings]'));
 
   return function unmount() {
     mountSeq++;
     unmountTelegram();
+    unmountYield();
     unmountTaskSettings();
     document.title = 'Rooms · Mushroom farm';
     container.replaceChildren();

@@ -1741,3 +1741,22 @@ h2.r-named { display: flex; }
 .hv-run > summary:hover .hv-run-line { color: var(--ink); }
 .hv-run-body { padding: 0 0 12px; }
 .hv-run-body > * + * { margin-top: 12px; }
+
+/* ---- Settings: the Yield card ---- */
+.settings-grid > [data-yield] { grid-column: 1 / -1; }
+.yd-table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
+.yd-table th, .yd-table td { padding: 6px 8px 6px 0; text-align: left; vertical-align: top; border-bottom: 1px solid var(--border); }
+.yd-table thead th { font-size: var(--fs-sm); font-weight: 600; color: var(--muted); vertical-align: bottom; }
+.yd-crop { font-weight: 500; }
+.yd-crop > * { vertical-align: middle; }
+.yd-crop .pic { margin-right: 8px; }
+.yd-table input { width: 100%; max-width: 140px; font-variant-numeric: tabular-nums; }
+.settings .yd-table .field-error:empty { display: none; }
+@media (max-width: 640px) {
+  .yd-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .yd-table, .yd-table tbody { display: block; }
+  .yd-table tr { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .yd-table th, .yd-table td { display: block; padding: 0; border: 0; }
+  .yd-table .yd-crop { grid-column: 1 / -1; display: flex; align-items: center; }
+  .yd-cell::before { content: attr(data-label); display: block; margin-bottom: 2px; font-size: var(--fs-xs); color: var(--muted); }
+}

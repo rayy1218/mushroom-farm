@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parsePoll, refreshMs, LIVE_READINGS, liveHint } from '../web/settings-math.js';
+import { parsePoll, refreshMs, LIVE_READINGS, liveHint, yieldBody } from '../web/settings-math.js';
 import { readFileSync } from 'node:fs';
 import { parseRoute, isCanonical } from '../web/route.js';
 
@@ -129,4 +129,23 @@ test('after a row goes, the cursor goes to the next one (null: none after it)', 
   assert.equal(idAfter([1, 2, 3], 2), 3);
   assert.equal(idAfter([1, 2, 3], 3), null);
   assert.equal(idAfter([1], 9), null);
+});
+
+test('yieldBody: empty text is not set, a crop with both empty is left out', () => {
+  assert.deepEqual(yieldBody([{ crop: 'oyster', dryKg: '', priceKg: '' }, { crop: 'pink', dryKg: ' 0.9 ', priceKg: '' }, { crop: 'black', dryKg: '', priceKg: '12.50' }]),
+    { cropYield: { pink: { dryKg: 0.9, priceKg: null }, black: { dryKg: null, priceKg: 12.5 } } });
+  assert.deepEqual(yieldBody([{ crop: 'oyster', dryKg: '', priceKg: '' }]), { cropYield: {} });
+  assert.deepEqual(yieldBody([{ crop: 'oyster', dryKg: '0.05', priceKg: '0' }, { crop: 'pink', dryKg: '20', priceKg: '1000' }]),
+    { cropYield: { oyster: { dryKg: 0.05, priceKg: 0 }, pink: { dryKg: 20, priceKg: 1000 } } });
+});
+
+test('yieldBody: a bad input is named by field and crop, with the range', () => {
+  for (const [dryKg, priceKg, field] of [['0.04', '', 'dryKg:oyster'], ['20.5', '', 'dryKg:oyster'], ['abc', '', 'dryKg:oyster'], ['-1', '', 'dryKg:oyster'],
+    ['', '1000.5', 'priceKg:oyster'], ['', '-2', 'priceKg:oyster'], ['', '1e2', 'priceKg:oyster']]) {
+    const r = yieldBody([{ crop: 'oyster', dryKg, priceKg }]);
+    assert.equal(r.field, field, `${dryKg}/${priceKg}`);
+    assert.match(r.error, /Grey oyster/);
+    assert.match(r.error, field.startsWith('dry') ? /0\.05.*20 kg/ : /0.*1,000 RM/);
+  }
+  assert.equal(yieldBody([{ crop: 'oyster', dryKg: '1', priceKg: '' }, { crop: 'pink', dryKg: '99', priceKg: 'x' }]).field, 'dryKg:pink');
 });
