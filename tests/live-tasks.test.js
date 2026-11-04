@@ -46,7 +46,8 @@ test('Done, Skip and Add publish the room part tasks and the farm due count; a G
   await call('GET', '/api/tasks/today');
   assert.deepEqual(got, []);
   await call('POST', `/api/tasks/${byRule(view.today, 'harvestAm').id}/done`, { worker: 'Ali', amount: 1 });
-  assert.deepEqual(got.slice(-2), [['room', { id, part: 'tasks' }], ['tasks', { due: view.counts.due - 1 }]]);
+  // A Done with kg makes a harvest, which tells the pages after the task change.
+  assert.deepEqual(got.slice(-3), [['room', { id, part: 'tasks' }], ['tasks', { due: view.counts.due - 1 }], ['harvest', { roomId: id }]]);
   got.length = 0;
   await call('POST', `/api/tasks/${byRule(view.upkeep, 'flyTraps').id}/skip`, { worker: 'Ali', reason: 'None in stock' });
   assert.deepEqual(got.slice(-2), [['room', { id, part: 'tasks' }], ['tasks', { due: view.counts.due - 2 }]]);

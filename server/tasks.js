@@ -99,9 +99,11 @@ function stampHarvests(db, { roomId, amounts, at, worker, taskId }) {
   }));
 }
 
-// onHarvest(roomId): after a Done on a harvest check made harvests (the harvest module's event).
-export function createTasks({ db, now = Date.now, log = console.error, onHarvest = () => {} }) {
+// onHarvest(roomId): after a Done on a harvest check made harvests (the harvest module's event); more can listen through
+// tasks.onHarvest(fn).
+export function createTasks({ db, now = Date.now, log = console.error, onHarvest = null }) {
   const listeners = new Set();
+  const harvestListeners = new Set(onHarvest ? [onHarvest] : []);
   const today = () => localDate(now());
 
   function tell(roomId) {
@@ -257,10 +259,12 @@ export function createTasks({ db, now = Date.now, log = console.error, onHarvest
     }
     tell(row.roomId);
     if (harvests.length > 0) {
-      try {
-        onHarvest(row.roomId);
-      } catch (err) {
-        log(err);
+      for (const fn of [...harvestListeners]) {
+        try {
+          fn(row.roomId);
+        } catch (err) {
+          log(err);
+        }
       }
     }
     return view(db.getTask(row.id));
@@ -508,6 +512,12 @@ export function createTasks({ db, now = Date.now, log = console.error, onHarvest
     onChange(fn) {
       listeners.add(fn);
       return () => listeners.delete(fn);
+    },
+
+    // fn(roomId) after a Done made harvests; → a function that stops it.
+    onHarvest(fn) {
+      harvestListeners.add(fn);
+      return () => harvestListeners.delete(fn);
     },
   };
 }
