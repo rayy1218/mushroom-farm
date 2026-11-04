@@ -108,3 +108,10 @@ test('records split by run; csv: empty flush, harvest check, one crop unpriced',
   const csv = csvRows([H('oyster', 2, null, 1000, { roomId: 7, runId: 1, taskId: 5 })], rooms, runs);
   assert.match(csv[1], /^1970-01-01,08:00,A,Grey oyster,1970-01-01,Fruiting,,500,2,Ali,harvest check$/);
 });
+
+test('records on one day sort by run start last, whatever the input order', () => {
+  const rooms = new Map([[7, { name: 'A' }]]);
+  const runs = new Map([[1, { startedAt: 0 }], [2, { startedAt: 86_400_000 }]]);
+  const hs = [H('oyster', 1, 1, 2000, { roomId: 7, runId: 2 }), H('oyster', 2, 1, 1000, { roomId: 7, runId: 1 })];
+  assert.deepEqual(recordRows(hs, rooms, runs).map((r) => r.runStartedAt), [0, 86_400_000]);
+});

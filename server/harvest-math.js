@@ -133,7 +133,7 @@ export function recordRows(harvests, rooms, runs) {
     g.kg = round(g.kg + h.kg, 3);
   }
   const cmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
-  return [...groups.values()].sort((a, b) => cmp(a.date, b.date) || cmp(a.roomName, b.roomName) || cmp(a.crop, b.crop));
+  return [...groups.values()].sort((a, b) => cmp(a.date, b.date) || cmp(a.roomName, b.roomName) || cmp(a.crop, b.crop) || a.runStartedAt - b.runStartedAt);
 }
 
 export const CSV_HEADER = 'date,time,room,crop,run started,stage,flush,blocks,kg,worker,from';
