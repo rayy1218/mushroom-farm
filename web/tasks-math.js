@@ -123,11 +123,13 @@ export function amountField(row) {
 }
 
 // The Done form's amount boxes: one kg box per crop when the harvest check is for 2+ crops (named by the crop: the dialog
-// groups them under "kg picked" and puts the unit in the box), else the single amount box.
+// groups them under "kg picked" and puts the unit in the box), else the single amount box (suffix: 'kg' for a kg box).
 export function amountFields(row) {
   const crops = row?.harvestCrops;
   if (Array.isArray(crops) && crops.length >= 2) return crops.map((c) => ({ name: `kg:${c.crop}`, label: c.name, crop: c.crop }));
-  return recordsAmount(row) ? [{ name: 'amount', label: amountField(row).label }] : [];
+  if (!recordsAmount(row)) return [];
+  const { label, unit } = amountField(row);
+  return [{ name: 'amount', label, ...(unit === 'kg' ? { suffix: 'kg' } : {}) }]; // "kg" inside a kg box, as Record a harvest's
 }
 
 // An upkeep row's due words (spec 7.1): "overdue 3 days" (amber), "due today", "due 2 Nov"; group: overdue, soon (within

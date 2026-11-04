@@ -166,6 +166,14 @@ export function openForm({ title, lead = [], fields = [], buttons = [], closeLab
   form.append(heading, ...lead.map((x) => (typeof x === 'string' ? el('p', 'tk-lead', keepLines(x)) : x)), formError);
   const inputs = new Map();
   const errors = new Map();
+  // a box's words under it gone: an error (red, the box invalid) or a check (warn: amber, a question, not a fault)
+  function clear(name) {
+    const input = inputs.get(name);
+    errors.get(name).textContent = '';
+    errors.get(name).classList.remove('field-warn');
+    input.removeAttribute('aria-invalid');
+    delete input.dataset.warn;
+  }
   // A field (or a group of them) into `parent`.
   function addField(f, parent) {
     if (f.kind === 'group') {
@@ -235,7 +243,7 @@ export function openForm({ title, lead = [], fields = [], buttons = [], closeLab
     }
     wrap.append(err);
     input.setAttribute('aria-describedby', described.join(' '));
-    input.addEventListener('input', () => { err.textContent = ''; input.removeAttribute('aria-invalid'); });
+    input.addEventListener('input', () => clear(f.name));
     inputs.set(f.name, input);
     errors.set(f.name, err);
     parent.append(wrap);
@@ -265,8 +273,11 @@ export function openForm({ title, lead = [], fields = [], buttons = [], closeLab
   function show(problem) {
     const input = problem.field ? inputs.get(problem.field) : null;
     if (input) {
-      errors.get(problem.field).textContent = problem.message;
-      input.setAttribute('aria-invalid', 'true');
+      const err = errors.get(problem.field);
+      err.textContent = problem.message; // read out: the box's aria-describedby, aria-live
+      err.classList.toggle('field-warn', Boolean(problem.warn));
+      if (problem.warn) input.dataset.warn = '';
+      else input.setAttribute('aria-invalid', 'true');
       input.focus();
       return;
     }
@@ -279,7 +290,7 @@ export function openForm({ title, lead = [], fields = [], buttons = [], closeLab
     if (busy) return;
     busy = true;
     formError.hidden = true;
-    for (const [name, err] of errors) { err.textContent = ''; inputs.get(name).removeAttribute('aria-invalid'); }
+    for (const name of errors.keys()) clear(name);
     for (const b of [close, ...sends]) b.disabled = true;
     let outcome;
     const answer = (async () => submit(values(), which, handle))();
@@ -340,7 +351,7 @@ export function pickGuard({ value, label, fields }) {
       watching = true;
       for (const name of fields) form.input(name)?.addEventListener('input', () => { asked = null; b.textContent = label; });
     }
-    return warning;
+    return { ...warning, warn: true };
   };
 }
 
@@ -350,7 +361,7 @@ export function pickGuard({ value, label, fields }) {
 // one legend and one hint; else the single box with its hint.
 function amountBoxes(amounts) {
   if (!amounts.some((f) => f.crop)) {
-    return amounts.map((f) => ({ name: f.name, label: f.label, kind: 'number', value: '', hint: 'Leave it empty if it was not weighed or counted.' }));
+    return amounts.map((f) => ({ name: f.name, label: f.label, kind: 'number', value: '', hint: 'Leave it empty if it was not weighed or counted.', ...(f.suffix ? { suffix: f.suffix } : {}) }));
   }
   return [{
     kind: 'group', legend: 'kg picked', hint: 'Leave a box empty if that crop was not weighed.', className: 'tk-kg-group',

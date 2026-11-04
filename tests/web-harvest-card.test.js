@@ -148,3 +148,13 @@ test('an implausible pick asks once in Record, Edit and Done: the warning on its
   assert.ok(dialogs.includes("const implausible = pickGuard({ value: 'done', label: 'Done', fields: amounts.map((f) => f.name) });"));
   assert.ok(dialogs.includes('const asked = implausible(form, donePicks(row, body));'));
 });
+
+test('the pick question is a check, not a fault: amber under the kg box, the box not marked invalid, still read out', () => {
+  assert.ok(dialogs.includes('return { ...warning, warn: true };'));
+  assert.ok(dialogs.includes("err.classList.toggle('field-warn', Boolean(problem.warn));"));
+  assert.ok(dialogs.includes("if (problem.warn) input.dataset.warn = '';\n      else input.setAttribute('aria-invalid', 'true');"));
+  assert.ok(dialogs.includes("err.setAttribute('aria-live', 'polite');"), 'the words under the box are announced');
+  assert.ok(css.includes('.field-error.field-warn { color: var(--warning-text); }'));
+  assert.ok(css.includes('.field input[data-warn] { border-color: var(--warning-text); }'));
+  assert.ok(dialogs.includes("value: '', hint: 'Leave it empty if it was not weighed or counted.', ...(f.suffix ? { suffix: f.suffix } : {}) }));"), 'the single kg box has "kg" inside');
+});

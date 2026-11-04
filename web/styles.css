@@ -205,6 +205,10 @@ dialog { margin-top: var(--dialog-top); margin-bottom: auto; } /* anchored at th
 .field input[aria-invalid="true"] { border-color: var(--critical-text); }
 .field input[aria-invalid="true"]:focus-visible { outline-color: var(--critical-text); }
 .field-error { margin: 0; font-size: 0.85rem; color: var(--critical-text); }
+/* a check, not a fault (an implausible pick: "Is 526.32 kg right?"): amber, the box not marked invalid */
+.field-error.field-warn { color: var(--warning-text); }
+.field input[data-warn] { border-color: var(--warning-text); }
+.field input[data-warn]:focus-visible { outline-color: var(--warning-text); }
 
 .sizes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 
