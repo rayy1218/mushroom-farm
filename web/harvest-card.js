@@ -107,13 +107,17 @@ export function figureName(text, title) {
   return abbr;
 }
 
-// The tiles of runTiles or pageTiles: [{ label, title?, value, line? }].
+// The tiles of runTiles or pageTiles: [{ label, title?, value, line? }]. A figure over LONG_FIGURE characters ("RM 18,421.20")
+// is long: at 20 px it may not fit half a phone's row (half of 360 px).
+const LONG_FIGURE = 11;
 export function tileNodes(list) {
   return list.map((t) => {
     const tile = el('div', 'us-tile');
     const label = el('p', 'us-label');
     label.append(figureName(t.label, t.title));
-    tile.append(label, el('p', 'us-kwh', t.value));
+    const value = el('p', 'us-kwh', t.value);
+    if (t.value.length > LONG_FIGURE) value.dataset.long = ''; // a phone sets it a size down, so it keeps its half of the row
+    tile.append(label, value);
     if (t.line) tile.append(el('p', 'us-basis hv-basis', t.line));
     return tile;
   });
