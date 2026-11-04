@@ -11,8 +11,6 @@ import { fieldTexts, parseRoomFields, roomBody } from './room-fields.js';
 const FARM_TZ = 'Asia/Kuala_Lumpur';
 export const SLOTS = ['morning', 'afternoon', 'any'];
 export const SLOT_LABELS = { morning: 'Morning', afternoon: 'Afternoon', any: 'Any time' };
-export const LOG_DAYS = 14; // the Log shows the closed tasks of the last 14 days, then Older…
-export const LOG_PAGE = 50; // GET /api/rooms/:id/tasks/log answers 50 a page
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const DAY_MS = 86_400_000;
@@ -306,25 +304,6 @@ export function checkLongterm({ text, note }) {
   if (t === '' || t.length > TEXT_MAX) errors.text = `Say what to do (1 to ${TEXT_MAX} characters)`;
   if (n.length > NOTE_MAX) errors.note = `The note must be at most ${NOTE_MAX} characters`;
   return Object.keys(errors).length ? { errors } : { values: { text: t, note: n || null } };
-}
-
-// ---- the Log ----
-
-// A closed row as the Log shows it: { id, date, time, task, status, tone, worker, amount, reason }. A missed row shows its own
-// day and no time (its closedAt is when the server noticed, maybe days later).
-export function logLine(row) {
-  const when = finite(row.closedAt) ? row.closedAt : row.createdAt;
-  const at = row.status === 'missed' && row.date ? { date: row.date, time: '' } : finite(when) ? farmParts(when) : null;
-  return {
-    id: row.id, date: at ? dayMonth(at.date) : '', time: at ? at.time : '', task: row.text, status: STATUS_WORDS[row.status] ?? row.status,
-    tone: row.status === 'done' ? 'good' : row.status === 'missed' ? 'amber' : 'none', worker: row.worker ?? '', amount: amountText(row), reason: row.reason ?? '',
-  };
-}
-
-// The Log's lines: the closed rows of the last 14 days (every row read so far, after Older…).
-export function logRows(rows, now, all = false) {
-  const since = now - LOG_DAYS * DAY_MS;
-  return (rows ?? []).filter((r) => all || (r.closedAt ?? r.createdAt ?? 0) >= since).map(logLine);
 }
 
 // ---- the Settings task rules (spec 7.3) ----

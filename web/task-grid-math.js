@@ -181,6 +181,13 @@ export function canUndo(cell, now) {
   return (cell?.kind === 'done' || cell?.kind === 'skipped') && cell.taskId != null && finite(cell.row?.closedAt) && now - cell.row.closedAt <= UNDO_MS;
 }
 
+// A box's long-press menu (spec 3): Skip… on today's open row, Undo on a Done or Skip it can still undo, Details on any box
+// that holds a row; none on a box not due or planned. → ['skip' | 'undo' | 'details']
+export function menuItems(cell, now) {
+  if (!cell || cell.kind === 'none' || cell.kind === 'planned') return [];
+  return [cell.kind === 'open' && cell.taskId != null ? 'skip' : '', canUndo(cell, now) ? 'undo' : '', 'details'].filter(Boolean);
+}
+
 // The boxes (spec 2), a row per day (the desk's layout; the phone turns it): [{ date, today, cells: [a box per column] }].
 // A box: { kind: 'done' | 'missed' | 'skipped' | 'cancelled' | 'open' | 'planned' | 'none' (not due), row (the item or the
 // row it shows, for Details and the dialogs; null for none), taskId (today's rows only: the room tasks reply's id), initials,

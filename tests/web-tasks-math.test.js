@@ -97,7 +97,7 @@ test('upkeep: overdue first in words, then due within 7 days, then the rest by d
 
 import {
   rmWords, longtermLine, changeText, machineChanges, planOf, plannedWords, acInputOf, setupUpdate, beforeText, setupBody,
-  parseAmount, checkReason, checkLongterm, logRows, logLine,
+  parseAmount, checkReason, checkLongterm,
 } from '../web/tasks-math.js';
 
 test('a long-term row from Suggest machines in one line', () => {
@@ -223,20 +223,6 @@ test("the boxes of the dialogs: an amount, a reason, a long-term task, in the se
   assert.deepEqual(checkLongterm({ text: 'x'.repeat(121), note: '' }), { errors: { text: 'Say what to do (1 to 120 characters)' } });
   assert.deepEqual(checkLongterm({ text: ' Seal the door ', note: ' ' }), { values: { text: 'Seal the door', note: null } });
   assert.deepEqual(checkLongterm({ text: 'Seal the door', note: 'x'.repeat(501) }), { errors: { note: 'The note must be at most 500 characters' } });
-});
-
-test('the Log: the last 14 days, each line with its time, status, who, amount and why', () => {
-  const now = at(12, 0);
-  const rows = [
-    { id: 9, text: 'Harvest check', status: 'done', closedAt: at(11, 0), worker: 'Ali', amount: 3.5, unit: 'kg', reason: null },
-    { id: 8, text: 'Footbath', status: 'missed', closedAt: at(0, 0, 14), worker: null, amount: null, unit: null, reason: null },
-  ];
-  assert.deepEqual(logRows(rows, now).map((l) => l.id), [9]);
-  assert.deepEqual(logRows(rows, now, true).map((l) => l.id), [9, 8]);
-  assert.deepEqual(logLine(rows[0]), { id: 9, date: '30 Oct', time: '11:00', task: 'Harvest check', status: 'Done', tone: 'good', worker: 'Ali', amount: '3.5 kg', reason: '' });
-  assert.equal(logLine(rows[1]).tone, 'amber');
-  const missed = { id: 7, text: 'Footbath', status: 'missed', date: '2026-10-29', closedAt: at(0, 30, 31), worker: null, amount: null, unit: null, reason: null };
-  assert.deepEqual([logLine(missed).date, logLine(missed).time], ['29 Oct', ''], "a missed row is its own day's, not the day the server noticed it");
 });
 
 test('a machine the baseline does not know is no change (only the dehumidifier has 0 = none)', () => {
