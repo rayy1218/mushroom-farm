@@ -383,11 +383,11 @@ test('cost: the room\'s electricity and water over each run\'s days at today\'s 
   s.harvests.farmView({ days: 30 });
   await s.harvests.warmed();
   const f = s.harvests.farmView({ days: 30 });
-  assert.deepEqual(f.totals.cost, { costPerKg: 0.16, cost: 15, days: 30, water: true }, 'RM 15 over 94 kg');
+  assert.deepEqual(f.totals.cost, { costPerKg: 0.159574, cost: 15, days: 30, water: true }, 'RM 15 over 94 kg');
   assert.equal(s.harvests.farmView({ days: 7 }).totals.cost.cost, 11, 'the last 7 days: 1 Nov only');
 
   s.db.setSetting('waterPrice', '');
-  assert.deepEqual(s.harvests.roomView(s.id).current.cost, { costPerKg: 0.14, cost: 6, days: 9, water: false }, 'no water price: electricity only');
+  assert.deepEqual(s.harvests.roomView(s.id).current.cost, { costPerKg: 0.136364, cost: 6, days: 9, water: false }, 'no water price: electricity only');
 });
 
 test('a cold room\'s view does not work its usage days out: the cost is pending, a warm works them out and tells the room', async (t) => {

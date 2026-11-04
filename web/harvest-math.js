@@ -31,6 +31,14 @@ export const perBlockText = (v, { cell = false } = {}) => (finite(v) ? `${groupe
 export const beText = (v, { cell = false } = {}) => (finite(v) ? `${cell ? '' : 'BE '}${grouped(v, 0)}${NB}%` : DASH);
 export const rmText = (v) => (finite(v) ? `RM${NB}${grouped(v, 2)}` : DASH);
 
+// Cost per kg: 2 decimals from RM 0.10 ("RM 3.10"); below, its first two significant digits up to 4 decimals ("RM 0.04",
+// "RM 0.004", "RM 0.0035"), so a big pick on a cheap day never shows a false "RM 0.00" (a true 0 does).
+export function costKgText(v) {
+  if (!finite(v) || v <= 0 || v >= 0.1) return rmText(v);
+  if (v < 0.0001) return `under${NB}RM${NB}0.0001`;
+  return `RM${NB}${grouped(v, 2, Math.min(4, 1 - Math.floor(Math.log10(v))))}`;
+}
+
 const daysText = (days) => `${days}${NB}${days === 1 ? 'day' : 'days'}`;
 
 // What a cost per kg counts, short enough for a tile: "electricity and water · 46 days" (at today's prices: pricesNote).
@@ -42,7 +50,7 @@ function costBasis({ days, water }) {
 export function costText({ costPerKg, days, water } = {}) {
   if (!finite(costPerKg)) return DASH;
   const over = finite(days) ? ` over ${daysText(days)}` : '';
-  return `${rmText(costPerKg)} per${NB}kg${DOT}${water ? 'electricity and water' : 'electricity'}${over} at today’s prices`;
+  return `${costKgText(costPerKg)} per${NB}kg${DOT}${water ? 'electricity and water' : 'electricity'}${over} at today’s prices`;
 }
 
 // The cost per kg tile: its figure and what it counts; a dash that says why when no energy was recorded (never RM 0.00) or
@@ -51,7 +59,7 @@ const NONE_LINES = { 'no-energy': 'No energy recorded yet', pending: 'Working ou
 function costTile(cost) {
   const label = 'Cost per kg';
   if (NONE_LINES[cost?.none]) return { label, value: DASH, line: NONE_LINES[cost.none] };
-  return finite(cost?.costPerKg) ? { label, value: rmText(cost.costPerKg), line: costBasis(cost) } : { label, value: DASH };
+  return finite(cost?.costPerKg) ? { label, value: costKgText(cost.costPerKg), line: costBasis(cost) } : { label, value: DASH };
 }
 
 // The note under the tiles when a cost per kg shows: its prices are today's.
@@ -145,7 +153,7 @@ export function pastRow(run) {
   return {
     title: run.partial ? `Recorded ${dates}` : dates,
     cells: [cropBlocks(run.crops).join(', '), kgText(run.kg), perBlockText(run.perBlock, { cell: true }), beText(run.be, { cell: true }),
-      rmText(run.value), rmText(run.cost?.costPerKg)],
+      rmText(run.value), costKgText(run.cost?.costPerKg)],
   };
 }
 

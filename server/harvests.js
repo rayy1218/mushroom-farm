@@ -5,7 +5,7 @@ import { localDate, dayStart, addDays, daysBetween } from './task-rules.js';
 import { CROP_KEYS } from '../web/crops.js';
 import { readSettings, readCropYield } from './settings.js';
 import { roomDays, warmRoom, totals, localZone, USAGE_DAYS_KEPT } from './usage.js';
-import { runFigures, buckets, recordRows, csvRows, valueOf, unpricedOf, round } from './harvest-math.js';
+import { runFigures, buckets, recordRows, csvRows, valueOf, unpricedOf, round, costPerKgOf } from './harvest-math.js';
 import { checkWorker, TaskError } from './tasks.js';
 
 export const MAX_KG = 10_000;
@@ -261,7 +261,7 @@ export function createHarvests({ db, now = Date.now, zone = localZone, log = con
 
       return {
         from: range.from, to: range.to, days, bucket: range.bucket, buckets: range.buckets,
-        totals: { ...sum(harvests), cost: { costPerKg: kg > 0 && !none ? round(cost.cost / kg, 2) : null, ...spent, ...(none ? { none } : {}) } },
+        totals: { ...sum(harvests), cost: { costPerKg: kg > 0 && !none ? costPerKgOf(cost.cost, kg) : null, ...spent, ...(none ? { none } : {}) } },
         rooms: roomRows,
         crops,
         today: sum(since(today)),
