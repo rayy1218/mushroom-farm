@@ -3,9 +3,11 @@
 // machines), and reads the views of the Tasks tab, the Today page and the log.
 
 import {
-  DAILY_RULES, UPKEEP_RULES, localDate, localTime, dayStart, addDays, daysBetween, effectiveRules, wantedDaily, upkeepApplies,
+  DAILY_RULES, UPKEEP_RULES, HARVEST_RULES, localDate, localTime, dayStart, addDays, daysBetween, effectiveRules, wantedDaily,
+  upkeepApplies,
 } from './task-rules.js';
 import { projectRoom, isRoutine, HORIZON_DAYS } from './calendar.js';
+import { harvestCropsOf, stampHarvests } from './harvests.js';
 
 // A refused request: status 400, 404 or 409, field the input it is about (tasks-api.js replies { error, field }).
 export class TaskError extends Error {
@@ -46,6 +48,20 @@ function closedText(row, date) {
 
 const trimmed = (v) => (typeof v === 'string' ? v.trim() : '');
 
+// Who did it: 1 to 40 characters, no control characters (a parked worker name starts with U+0001). When the farm has
+// active workers (Settings), one of them, case aside, kept as the list spells it (a name renamed or removed meanwhile is
+// refused, so the page reads the list again); with none yet, any name. The tasks' and the harvests' rule.
+export function checkWorker(db, worker) {
+  const name = trimmed(worker);
+  if (!name || /[\u0000-\u001f\u007f]/.test(name)) throw new TaskError(400, 'Pick who did it', 'worker');
+  if (name.length > MAX_NAME) throw new TaskError(400, `The name must be at most ${MAX_NAME} characters`, 'worker');
+  const active = db.listWorkers().filter((w) => w.active).map((w) => w.name);
+  if (active.length === 0) return name;
+  const listed = active.find((n) => n.toLowerCase() === name.toLowerCase());
+  if (!listed) throw new TaskError(400, 'That name is not on the workers list', 'worker');
+  return listed;
+}
+
 // An own task's text, and an own rule's (tasks-api.js).
 export const MAX_TEXT = 120;
 const MAX_NOTE = 500;
@@ -78,7 +94,8 @@ export function cell(v) {
   return /[",\r\n]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s;
 }
 
-export function createTasks({ db, now = Date.now, log = console.error }) {
+// onHarvest(roomId): after a Done on a harvest check made harvests (the harvest module's event).
+export function createTasks({ db, now = Date.now, log = console.error, onHarvest = () => {} }) {
   const listeners = new Set();
   const today = () => localDate(now());
 
@@ -95,8 +112,14 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
   // The rule settings and the owner's rules, read once for a pass over several rooms.
   const ruleSources = () => ({ settings: db.taskRuleSettings(), custom: db.customTaskRules() });
 
-  // A row as the API shows it: amountLabel for an open row whose rule records an amount.
-  const view = (row) => ({ ...row, amountLabel: row.status === 'open' ? AMOUNT_LABEL[row.ruleKey] ?? null : null });
+  // The room's crops an open harvest check is for (harvests.js harvestCropsOf); null for any other row.
+  const harvestCrops = (row) => (row.status === 'open' && HARVEST_RULES.includes(row.ruleKey)
+    ? harvestCropsOf(row.ruleKey, db.getProgram(row.roomId)?.crops ?? [])
+    : null);
+
+  // A row as the API shows it: amountLabel for an open row whose rule records an amount; harvestCrops for an open harvest
+  // check (spec 2026-11-04-harvest-design.md 3).
+  const view = (row) => ({ ...row, amountLabel: row.status === 'open' ? AMOUNT_LABEL[row.ruleKey] ?? null : null, harvestCrops: harvestCrops(row) });
 
   // An open upkeep row with its due date and how many days it is overdue on `date` (0: due today or not yet due).
   const upkeepView = (row, date) => {
@@ -207,19 +230,7 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
     return row;
   }
 
-  // Who did it: 1 to 40 characters, no control characters (a parked worker name starts with U+0001). When the farm has
-  // active workers (Settings), one of them, case aside, kept as the list spells it (a name renamed or removed meanwhile is
-  // refused, so the page reads the list again); with none yet, any name.
-  function workerOf(worker) {
-    const name = trimmed(worker);
-    if (!name || /[\u0000-\u001f\u007f]/.test(name)) throw new TaskError(400, 'Pick who did it', 'worker');
-    if (name.length > MAX_NAME) throw new TaskError(400, `The name must be at most ${MAX_NAME} characters`, 'worker');
-    const active = db.listWorkers().filter((w) => w.active).map((w) => w.name);
-    if (active.length === 0) return name;
-    const listed = active.find((n) => n.toLowerCase() === name.toLowerCase());
-    if (!listed) throw new TaskError(400, 'That name is not on the workers list', 'worker');
-    return listed;
-  }
+  const workerOf = (worker) => checkWorker(db, worker);
 
   function reasonOf(reason) {
     const text = trimmed(reason);
@@ -229,16 +240,24 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
   }
 
   // Closes the open row; a row closed by someone else meanwhile is a 409 too, one deleted with its room a 404. An upkeep
-  // row makes its next row with it.
-  function close(row, fields) {
+  // row makes its next row with it; a harvest check's kg (amounts: { crop: kg }) make harvests with it.
+  function close(row, fields, amounts = null) {
     const at = now();
     const next = row.kind === 'upkeep' ? nextUpkeep(row, localDate(at), at) : null;
-    if (!db.closeTask(row.id, { ...fields, at }, next)) {
+    const harvests = amounts ? stampHarvests(db, { roomId: row.roomId, amounts, at, worker: fields.worker, taskId: row.id }) : [];
+    if (!db.closeTask(row.id, { ...fields, at }, next, harvests)) {
       const after = db.getTask(row.id);
       if (!after) throw new TaskError(404, 'Task not found');
       throw new TaskError(409, closedText(after, localDate(at)));
     }
     tell(row.roomId);
+    if (harvests.length > 0) {
+      try {
+        onHarvest(row.roomId);
+      } catch (err) {
+        log(err);
+      }
+    }
     return view(db.getTask(row.id));
   }
 
@@ -301,17 +320,39 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
       return viewOf(roomId, date);
     },
 
-    // { worker, amount }: an amount given (empty: none) is a number from 0 to 10,000, kept only on a row that records one.
-    // A null body is an empty one.
+    // { worker, amount } or, on a harvest check, { worker, amounts: { <crop>: kg } } (spec 2026-11-04-harvest-design.md 3):
+    // an amount given (empty: none) is a number from 0 to 10,000, kept only on a row that records one. A check for two or
+    // more of the room's crops takes amounts only (the task's amount their sum, null when all are empty); one for one crop
+    // either. Each kg over 0 makes a harvest of its crop. A null body is an empty one.
     done(id, body) {
-      const { worker, amount } = body ?? {};
+      const { worker, amount, amounts } = body ?? {};
       const row = openRow(id);
       const name = workerOf(worker);
-      const given = amount !== undefined && amount !== null && amount !== '';
-      if (given && (typeof amount !== 'number' || !Number.isFinite(amount) || amount < 0 || amount > MAX_AMOUNT)) {
+      const given = (v) => v !== undefined && v !== null && v !== '';
+      const valid = (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= MAX_AMOUNT;
+      if (given(amount) && !valid(amount)) {
         throw new TaskError(400, `The amount must be a number from 0 to ${grouped(MAX_AMOUNT)}`, 'amount');
       }
-      return close(row, { status: 'done', worker: name, amount: given && row.unit !== null ? amount : null });
+      const crops = row.unit === null ? null : harvestCrops(row);
+      if (crops && crops.length >= 2 && given(amount)) throw new TaskError(400, 'Give the kg of each crop', 'amount');
+      if (amounts === undefined || amounts === null) {
+        const kg = crops?.length === 1 && given(amount) ? { [crops[0].crop]: amount } : null;
+        return close(row, { status: 'done', worker: name, amount: given(amount) && row.unit !== null ? amount : null }, kg);
+      }
+      if (!crops?.length) throw new TaskError(400, 'Only a harvest check takes the kg of each crop', 'amounts');
+      if (typeof amounts !== 'object' || Array.isArray(amounts) || Object.keys(amounts).some((k) => !crops.some((c) => c.crop === k))) {
+        throw new TaskError(400, `Give the kg of ${crops.map((c) => c.name).join(', ')} only`, 'amounts');
+      }
+      if (given(amount)) throw new TaskError(400, 'Give the kg of each crop or one amount, not both', 'amount');
+      const kg = {};
+      for (const { crop } of crops) {
+        if (!given(amounts[crop])) continue;
+        if (!valid(amounts[crop])) throw new TaskError(400, `Each kg must be a number from 0 to ${grouped(MAX_AMOUNT)}`, 'amounts');
+        kg[crop] = amounts[crop];
+      }
+      const values = Object.values(kg);
+      const total = values.length ? Number(values.reduce((s, v) => s + v, 0).toFixed(3)) : null;
+      return close(row, { status: 'done', worker: name, amount: total }, kg);
     },
 
     // { worker, reason }; not for a long-term row (that is done or cancelled).

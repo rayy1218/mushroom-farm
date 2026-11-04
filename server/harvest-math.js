@@ -34,7 +34,8 @@ function groupFigures(crops, harvests, cropYield) {
   return { kg: round(kg, 2), perBlock: blocks > 0 ? round(kg / blocks, 2) : null, be: Number.isFinite(be) ? be : null };
 }
 
-function valueOf(harvests, cropYield) {
+// The RM value of harvests: Σ kg × the crop's price; null when a crop with kg has no price.
+export function valueOf(harvests, cropYield) {
   let total = 0;
   for (const h of harvests) {
     if (h.kg <= 0) continue;

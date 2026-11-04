@@ -471,7 +471,7 @@ test('Plan this twice: a machine with an open long-term task to the same size is
   assert.deepEqual(again.map((r) => r.text), ['Aircon 9,000 → 18,000 BTU/h', 'Humidifier 0.5 → 1 L/h']);
   const replaced = s.db.getTask(aircon.id);
   assert.deepEqual([replaced.status, replaced.reason, replaced.closedAt], ['cancelled', 'Replaced by a newer plan', again[0].createdAt]);
-  assert.deepEqual(gone, [{ ...replaced, amountLabel: null }], 'the replaced rows come back as they are now (cancelled)');
+  assert.deepEqual(gone, [{ ...replaced, amountLabel: null, harvestCrops: null }], 'the replaced rows come back as they are now (cancelled)');
   assert.equal(s.db.openTasks(s.id, 'longterm').filter((r) => r.source?.machine === 'acBTU').length, 1, 'one open aircon task');
   // A done or cancelled one no longer counts: planned again, it is a new task.
   const fan = s.db.openTasks(s.id, 'longterm').find((r) => r.source?.machine === 'fanFlow');
