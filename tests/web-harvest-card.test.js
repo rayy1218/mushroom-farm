@@ -1,4 +1,4 @@
-// The room's Harvest tab (spec 2026-11-04-harvest-design.md 3 and 7). Source checks, like
+// The room's Harvest tab and the Crop tab's harvest line (spec 2026-11-04-harvest-design.md 3 and 7). Source checks, like
 // the Tasks card's; the figures and texts are tested in web-harvest-math.test.js.
 
 import { test } from 'node:test';
@@ -8,6 +8,7 @@ import { EVENT_TYPES } from '../web/live.js';
 
 const src = (name) => readFileSync(new URL(`../web/${name}`, import.meta.url), 'utf8');
 const card = src('harvest-card.js');
+const crop = src('crop-card.js');
 const dialogs = src('task-dialogs.js');
 
 test("the card reads the room's harvests and asks again on its harvest events, a crop change and the stream coming back", () => {
@@ -39,6 +40,13 @@ test('Record, Edit and Delete: the task dialog form, the worker box, the time bo
   assert.ok(card.includes("return send('PUT', `/api/harvests/${h.id}`, body);"));
   assert.ok(card.includes("submit: () => send('DELETE', `/api/harvests/${h.id}`),"));
   assert.ok(card.includes('lead: [deleteQuestion(h)'));
+});
+
+test('the Crop tab: the run in one line with a link to the Harvest tab, read on the harvest events', () => {
+  assert.ok(crop.includes("yieldLink.href = roomHash(roomId, 'harvest');"));
+  assert.ok(crop.includes('yieldText.textContent = summaryLine(harvestRun ?? {}, last.flush);'));
+  assert.ok(crop.includes("live.on('harvest', (d) => { if (alive && d.roomId === roomId) loadHarvests(); }),"));
+  assert.ok(crop.includes('const show = Boolean(last) && hasCrops(last) && harvestRun !== undefined;'));
 });
 
 test('Delete room names the harvests', () => {

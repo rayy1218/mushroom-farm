@@ -7,11 +7,17 @@
 // createCropCard(host, { roomId, onChange, onData, onOffline, onGone, getRoom }) → { refresh(), setLights(fitted), destroy() }.
 // The light schedule shows only while the room has lights fitted (getRoom().lights); setLights: the room changed, paint again. onChange(): the crops or the
 // stage were saved (the bands may have changed); onData(crop): every reply shown (the Room card writes the blocks from it). An
-// open editor or pencil is never replaced by a refresh.
+// open editor or pencil is never replaced by a refresh. The program row starts with the run's harvests in one line (spec
+// 2026-11-04-harvest-design.md 7) and a link to the Harvest tab, read from /api/rooms/:id/harvests on the room's harvest
+// events and when the crops, the stage or the flush change.
 
 import { picture } from './pictures.js';
 import { mainCrop } from './room-card-math.js';
 import { request, OFFLINE } from './api.js';
+import { live } from './live.js';
+import { roomHash } from './route.js';
+import { DOT } from './text-math.js';
+import { summaryLine } from './harvest-math.js';
 import { CROPS, CROP_KEYS, STAGES, FARM_TYPES, MAX_CROPS } from './crops.js';
 import { removeLabel } from './simulate-math.js';
 import {
@@ -220,7 +226,14 @@ export function createCropCard(host, { roomId, onChange, onData, onOffline, onGo
   const programErr = el('p', 'm-error');
   programErr.setAttribute('role', 'status');
   programErr.hidden = true;
-  program.append(rampField, lightField, autoField, programSave, programErr);
+  // the run's harvests: "Flush 2 · 18.4 kg this run · 0.31 kg per block · BE 34 % · Harvests"
+  const yieldLine = el('p', 'cp-yield');
+  const yieldText = el('span');
+  const yieldLink = el('a', '', 'Harvests');
+  yieldLink.href = roomHash(roomId, 'harvest');
+  yieldLine.append(yieldText, DOT, yieldLink);
+  yieldLine.hidden = true;
+  program.append(yieldLine, rampField, lightField, autoField, programSave, programErr);
   const programFields = {
     errors: new Map([['rampH', rampErr], ['lightStart', lightErr], ['autoAdvance', autoErr]]),
     inputs: new Map([['rampH', rampInput], ['lightStart', lightInput], ['autoAdvance', auto]]), fallback: programErr,
@@ -735,7 +748,34 @@ export function createCropCard(host, { roomId, onChange, onData, onOffline, onGo
     if (!lightDirty && document.activeElement !== lightInput) lightInput.value = c.lightStart ?? '';
     if (!busy && !autoDirty) auto.checked = c.autoAdvance !== false;
     paintProgramSave();
+    paintYield();
   }
+
+  // ---- the run's harvests ----
+
+  let harvestRun; // the open run's view (null: none); undefined until read
+  let harvestSeq = 0;
+  let harvestKey = ''; // the crops, stage and flush the run was read for: New blocks starts a run
+  async function loadHarvests() {
+    const me = ++harvestSeq;
+    try {
+      const data = await request('GET', `/api/rooms/${roomId}/harvests`);
+      if (!alive || me !== harvestSeq) return;
+      harvestRun = data?.current ?? null;
+    } catch {
+      return; // an older farm app or offline: the line keeps what it showed (none before a first answer)
+    }
+    paintYield();
+  }
+  function paintYield() {
+    const show = Boolean(last) && hasCrops(last) && harvestRun !== undefined;
+    yieldLine.hidden = !show;
+    if (show) yieldText.textContent = summaryLine(harvestRun ?? {}, last.flush);
+  }
+  const offLive = [
+    live.on('harvest', (d) => { if (alive && d.roomId === roomId) loadHarvests(); }),
+    live.onStatus((up) => { if (alive && up && harvestKey) loadHarvests(); }), // events may have been missed meanwhile
+  ];
 
   // ---- loading ----
 
@@ -751,6 +791,8 @@ export function createCropCard(host, { roomId, onChange, onData, onOffline, onGo
       const data = await request('GET', `/api/rooms/${roomId}/crop`);
       if (!alive || me !== seq) return;
       paint(data);
+      const key = hasCrops(data) ? JSON.stringify([data.crops, data.stage, data.flush, data.done]) : '';
+      if (key && key !== harvestKey) { harvestKey = key; loadHarvests(); }
     } catch (err) {
       if (!alive || me !== seq) return;
       if (err.status === 404 && !last) { // an older server without crops: the card stays out of the way
@@ -773,6 +815,6 @@ export function createCropCard(host, { roomId, onChange, onData, onOffline, onGo
     bandsChanged() {
       if (alive && last) paint(last);
     },
-    destroy() { alive = false; seq++; clearTimeout(timer); if (confirm.open) confirm.close(); host.replaceChildren(); },
+    destroy() { alive = false; seq++; harvestSeq++; for (const off of offLive) off(); clearTimeout(timer); if (confirm.open) confirm.close(); host.replaceChildren(); },
   };
 }
