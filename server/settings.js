@@ -1,5 +1,7 @@
 // Farm-wide settings: validation and the stored values. No HTTP.
 
+import { CROP_KEYS } from '../web/crops.js';
+
 export const DEFAULT_SETTINGS = { pollSeconds: 5, outdoorAddress: null, electricityPrice: 0.55, waterPrice: null };
 
 const POLL_ERROR = 'Reading interval must be a whole number from 1 to 300 seconds';
@@ -63,7 +65,33 @@ export function settingsView(db, status = {}) {
   return {
     ...readSettings(db), telegramTokenSet: telegramToken !== '', telegramTokenEnd: telegramToken === '' ? null : telegramToken.slice(-4),
     ...rest, telegramLastSentAt: status.lastSentAt ?? null, telegramLastError: status.lastError ?? null,
+    cropYield: readCropYield(db),
   };
+}
+
+// ---- Harvest and yield (spec 2026-11-04-harvest-design.md section 5) ----
+const YIELD_ERROR = 'Dry substrate must be 0.05–20 kg and price 0–1,000 RM per kg, or empty';
+const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+const inRange = (v, min, max) => v === null || (isNumber(v) && v >= min && v <= max);
+
+// One crop's entry: exactly dryKg and priceKg (a missing one is not set), each empty or in range.
+const yieldEntryOk = (e) => isPlainObject(e) && Object.keys(e).every((k) => k === 'dryKg' || k === 'priceKg')
+  && inRange(e.dryKg ?? null, 0.05, 20) && inRange(e.priceKg ?? null, 0, 1000);
+
+const YIELD_FIELDS = {
+  cropYield: { ok: (v) => isPlainObject(v) && Object.entries(v).every(([crop, e]) => CROP_KEYS.includes(crop) && yieldEntryOk(e)), error: YIELD_ERROR },
+};
+
+// The stored per-crop yield settings; {} when never set or not JSON, an entry that fails the check is left out.
+export function readCropYield(db) {
+  let parsed;
+  try { parsed = JSON.parse(db.getSetting('cropYield')); } catch { return {}; }
+  if (!isPlainObject(parsed)) return {};
+  const out = {};
+  for (const [crop, e] of Object.entries(parsed)) {
+    if (CROP_KEYS.includes(crop) && yieldEntryOk(e)) out[crop] = { dryKg: e.dryKg ?? null, priceKg: e.priceKg ?? null };
+  }
+  return out;
 }
 
 // Any subset of the settings may be given; unknown fields are ignored. Returns { settings } with the given ones when
@@ -79,6 +107,11 @@ export function validateSettings(body) {
     settings[field] = body[field];
   }
   for (const [field, { ok, error }] of Object.entries(TELEGRAM_FIELDS)) {
+    if (!Object.hasOwn(body, field)) continue;
+    if (!ok(body[field])) return { error, field };
+    settings[field] = body[field];
+  }
+  for (const [field, { ok, error }] of Object.entries(YIELD_FIELDS)) {
     if (!Object.hasOwn(body, field)) continue;
     if (!ok(body[field])) return { error, field };
     settings[field] = body[field];
@@ -111,4 +144,5 @@ export function writeSettings(db, settings) {
     const v = settings[field];
     db.setSetting(field, field === 'telegramLevels' ? JSON.stringify(v) : field === 'telegramCleared' ? (v ? '1' : '0') : String(v));
   }
+  if (Object.hasOwn(settings, 'cropYield')) db.setSetting('cropYield', JSON.stringify(settings.cropYield));
 }
