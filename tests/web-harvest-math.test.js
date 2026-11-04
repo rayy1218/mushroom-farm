@@ -41,7 +41,7 @@ test('sheet rows: the myGAP columns, the sales cells blank', () => {
 
 // ---- Task 9: the Harvest room tab ----
 
-import { runHead, harvestLine, pastRow, missingNote, flushRows, byCropRows, runTiles, deleteQuestion, whenValue, whenMs, recordBody, editBody } from '../web/harvest-math.js';
+import { runHead, harvestLine, pastRow, missingNote, flushRows, byCropRows, runTiles, deleteQuestion, whenBoxes, whenMs, recordBody, editBody } from '../web/harvest-math.js';
 
 const at = (y, mo, d, h = 0, mi = 0) => Date.UTC(y, mo - 1, d, h - 8, mi); // a farm time (UTC+8) in ms
 
@@ -137,39 +137,47 @@ test('the delete question', () => {
   assert.equal(deleteQuestion({ crop: 'oyster', kg: 2.4, pickedAt: at(2026, 11, 4, 8, 12) }), `Delete 2.4${nb}kg of Grey oyster picked 4 Nov 08:12?`);
 });
 
-test('the time box in the farm time: shown, read back', () => {
-  assert.equal(whenValue(at(2026, 11, 4, 8, 12) + 37_000), '2026-11-04T08:12');
-  assert.equal(whenMs('2026-11-04T08:12'), at(2026, 11, 4, 8, 12));
-  assert.ok(Number.isNaN(whenMs('')));
-  assert.ok(Number.isNaN(whenMs('4 Nov')));
+test('the date and time boxes in the farm time: shown, read back (a 24 h time, typed loosely)', () => {
+  assert.deepEqual(whenBoxes(at(2026, 11, 4, 8, 12) + 37_000), { date: '2026-11-04', time: '08:12' });
+  assert.equal(whenMs('2026-11-04', '08:12'), at(2026, 11, 4, 8, 12));
+  assert.equal(whenMs('2026-11-04', '8:12'), at(2026, 11, 4, 8, 12));
+  assert.equal(whenMs('2026-11-04', '0812'), at(2026, 11, 4, 8, 12));
+  for (const [d, t] of [['', '08:12'], ['2026-11-04', ''], ['2026-11-04', '24:00'], ['2026-11-04', '8.12'], ['4 Nov', '08:12']]) assert.ok(Number.isNaN(whenMs(d, t)), `${d} ${t}`);
 });
 
-test('Record a harvest: the body, the checks, the time left out when it is still the one shown', () => {
+test('Record a harvest: the body, the checks, the time left out when both boxes still show what they opened with', () => {
   const now = at(2026, 11, 4, 9, 0) + 20_000;
   const run = { ...mixed, startedAt: at(2026, 10, 3, 9, 30) + 45_000 };
-  const shown = whenValue(now);
-  assert.deepEqual(recordBody({ crop: 'lionsmane', kg: ' 2.35 ', worker: 'Ali', pickedAt: shown }, { run, now, shown }), { crop: 'lionsmane', kg: 2.35, worker: 'Ali' });
-  assert.deepEqual(recordBody({ kg: '1', worker: 'Ali', pickedAt: '2026-11-03T17:05' }, { run: oneCrop, now, shown }), { crop: 'oyster', kg: 1, worker: 'Ali', pickedAt: at(2026, 11, 3, 17, 5) });
+  const shown = whenBoxes(now);
+  const v = (more) => ({ crop: 'oyster', kg: '1', worker: 'Ali', pickedDate: shown.date, pickedTime: shown.time, ...more });
+  assert.deepEqual(recordBody(v({ crop: 'lionsmane', kg: ' 2.35 ' }), { run, now, shown }), { crop: 'lionsmane', kg: 2.35, worker: 'Ali' });
+  assert.deepEqual(recordBody({ kg: '1', worker: 'Ali', pickedDate: '2026-11-03', pickedTime: '17:05' }, { run: oneCrop, now, shown }), { crop: 'oyster', kg: 1, worker: 'Ali', pickedAt: at(2026, 11, 3, 17, 5) });
   // the run's first minute: the run's start (the box has no seconds)
-  assert.equal(recordBody({ crop: 'oyster', kg: '1', worker: 'Ali', pickedAt: '2026-10-03T09:30' }, { run, now, shown }).pickedAt, run.startedAt);
-  assert.deepEqual(recordBody({ crop: 'oyster', kg: '', worker: 'Ali', pickedAt: shown }, { run, now, shown }), { error: 'Give the kg picked', field: 'kg' });
+  assert.equal(recordBody(v({ pickedDate: '2026-10-03', pickedTime: '09:30' }), { run, now, shown }).pickedAt, run.startedAt);
+  assert.deepEqual(recordBody(v({ kg: '' }), { run, now, shown }), { error: 'Give the kg picked', field: 'kg' });
   for (const kg of ['0', '-1', 'abc', '10001', '1.2345']) {
-    assert.deepEqual(recordBody({ crop: 'oyster', kg, worker: 'Ali', pickedAt: shown }, { run, now, shown }), { error: 'kg must be a number over 0 up to 10,000', field: 'kg' }, kg);
+    assert.deepEqual(recordBody(v({ kg }), { run, now, shown }), { error: 'kg must be a number over 0 up to 10,000', field: 'kg' }, kg);
   }
-  assert.deepEqual(recordBody({ crop: 'oyster', kg: '1', worker: 'Ali', pickedAt: '' }, { run, now, shown }), { error: 'Pick a date and time', field: 'pickedAt' });
-  assert.deepEqual(recordBody({ crop: 'oyster', kg: '1', worker: 'Ali', pickedAt: '2026-10-03T09:29' }, { run, now, shown }), { error: "Pick a time from the run's start to now", field: 'pickedAt' });
-  assert.deepEqual(recordBody({ crop: 'oyster', kg: '1', worker: 'Ali', pickedAt: '2026-11-04T09:01' }, { run, now, shown }), { error: "Pick a time from the run's start to now", field: 'pickedAt' });
-  assert.deepEqual(recordBody({ crop: 'oyster', kg: '1', worker: '', pickedAt: shown }, { run, now, shown }), { error: 'Pick who picked it', field: 'worker' });
+  assert.deepEqual(recordBody(v({ pickedDate: '' }), { run, now, shown }), { error: 'Pick a date', field: 'pickedDate' });
+  assert.deepEqual(recordBody(v({ pickedTime: '25:00' }), { run, now, shown }), { error: 'Give the time as 24 h, like 08:12', field: 'pickedTime' });
+  // a day outside the run is the date's fault; a time outside it on a day in it, the time's
+  assert.deepEqual(recordBody(v({ pickedDate: '2026-10-02', pickedTime: '12:00' }), { run, now, shown }), { error: "Pick a time from the run's start to now", field: 'pickedDate' });
+  assert.deepEqual(recordBody(v({ pickedDate: '2026-10-03', pickedTime: '09:29' }), { run, now, shown }), { error: "Pick a time from the run's start to now", field: 'pickedTime' });
+  assert.deepEqual(recordBody(v({ pickedTime: '09:01' }), { run, now, shown }), { error: "Pick a time from the run's start to now", field: 'pickedTime' });
+  assert.deepEqual(recordBody(v({ pickedDate: '2026-11-05', pickedTime: '08:00' }), { run, now, shown }), { error: "Pick a time from the run's start to now", field: 'pickedDate' });
+  assert.deepEqual(recordBody(v({ worker: '' }), { run, now, shown }), { error: 'Pick who picked it', field: 'worker' });
 });
 
 test('Edit a harvest: only what changed; nothing changed is an empty body', () => {
   const now = at(2026, 11, 4, 9, 0);
   const h = { id: 9, crop: 'oyster', kg: 2.35, pickedAt: at(2026, 11, 4, 8, 12) + 37_000 };
-  const shown = whenValue(h.pickedAt);
-  assert.deepEqual(editBody({ kg: '2.35', pickedAt: shown }, h, { run: oneCrop, now, shown }), {});
-  assert.deepEqual(editBody({ kg: '2.4', pickedAt: shown }, h, { run: oneCrop, now, shown }), { kg: 2.4 });
-  assert.deepEqual(editBody({ kg: '2.35', pickedAt: '2026-11-04T07:00' }, h, { run: oneCrop, now, shown }), { pickedAt: at(2026, 11, 4, 7) });
+  const shown = whenBoxes(h.pickedAt);
+  const v = (more) => ({ kg: '2.35', pickedDate: shown.date, pickedTime: shown.time, ...more });
+  assert.deepEqual(editBody(v(), h, { run: oneCrop, now, shown }), {});
+  assert.deepEqual(editBody(v({ pickedTime: '8:12' }), h, { run: oneCrop, now, shown }), {}, 'the same time typed loosely is no change');
+  assert.deepEqual(editBody(v({ kg: '2.4' }), h, { run: oneCrop, now, shown }), { kg: 2.4 });
+  assert.deepEqual(editBody(v({ pickedTime: '07:00' }), h, { run: oneCrop, now, shown }), { pickedAt: at(2026, 11, 4, 7) });
   const ended = { ...oneCrop, endedAt: at(2026, 11, 2, 10) };
-  assert.deepEqual(editBody({ kg: '2.35', pickedAt: '2026-11-03T07:00' }, h, { run: ended, now, shown }), { error: "Pick a time from the run's start to its end", field: 'pickedAt' });
-  assert.deepEqual(editBody({ kg: '0', pickedAt: shown }, h, { run: oneCrop, now, shown }), { error: 'kg must be a number over 0 up to 10,000', field: 'kg' });
+  assert.deepEqual(editBody(v({ pickedDate: '2026-11-03', pickedTime: '07:00' }), h, { run: ended, now, shown }), { error: "Pick a time from the run's start to its end", field: 'pickedDate' });
+  assert.deepEqual(editBody(v({ kg: '0' }), h, { run: oneCrop, now, shown }), { error: 'kg must be a number over 0 up to 10,000', field: 'kg' });
 });

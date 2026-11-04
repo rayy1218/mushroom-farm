@@ -13,7 +13,7 @@ import { DOT } from './text-math.js';
 import { openForm, closeTaskDialog, loadWorkers, setWorker, workerField, errorText } from './task-dialogs.js';
 import {
   runHead, harvestLine, pastRow, missingNote, flushColumns, flushRows, BY_CROP_COLUMNS, byCropRows, runTiles,
-  deleteQuestion, whenValue, recordBody, editBody,
+  deleteQuestion, whenBoxes, recordBody, editBody,
 } from './harvest-math.js';
 
 const REFRESH_MS = 60_000;
@@ -84,6 +84,7 @@ export function createHarvestCard(host, { roomId, onGone }) {
   let painted = ''; // what the parts show: a refresh with nothing new leaves them (and their focus and folds) alone
   let showAll = false;
   const openRuns = new Set(); // the past runs opened, kept over a repaint
+  let pendingFocus = null; // after a Delete: where the cursor goes once the row is gone (focus keys, the first found)
 
   const hostClass = host.className;
   host.className = 'hv-grid';
@@ -91,6 +92,7 @@ export function createHarvestCard(host, { roomId, onGone }) {
   // the head: Record a harvest, off with a note while the room has no crops
   const head = el('div', 'hv-head');
   const record = button('Record a harvest', 'primary');
+  record.disabled = true; // until the first answer says whether the room has a run
   const recordNote = el('p', 'muted hv-note', 'Give the room its crops on the Crop tab first');
   recordNote.id = `hv-${roomId}-record-note`;
   recordNote.hidden = true;
@@ -111,7 +113,10 @@ export function createHarvestCard(host, { roomId, onGone }) {
   const list = el('ul', 'hv-list');
   const listNone = el('p', 'none', 'No harvests recorded in this run yet.');
   const more = button('');
-  listCard.append(el('h2', '', 'Harvests'), el('p', 'muted tk-sub', "This run's harvests, newest first."), list, listNone, more);
+  const listTitle = el('h2', '', 'Harvests');
+  listTitle.tabIndex = -1;
+  listTitle.dataset.focusKey = 'harvests-title';
+  listCard.append(listTitle, el('p', 'muted tk-sub', "This run's harvests, newest first."), list, listNone, more);
 
   // Past runs
   const pastCard = el('section', 'card hv-part hv-past-card');
@@ -130,7 +135,7 @@ export function createHarvestCard(host, { roomId, onGone }) {
 
   // ---- painting ----
 
-  function harvestRow(h, run) {
+  function harvestRow(h, run, fallback) {
     const mixed = (run.crops ?? []).length > 1;
     const l = harvestLine(h, { mixed });
     const li = el('li', 'hv-row');
@@ -147,7 +152,7 @@ export function createHarvestCard(host, { roomId, onGone }) {
     const del = button('Delete', 'tk-quiet');
     del.dataset.focusKey = `delete-${h.id}`;
     del.setAttribute('aria-label', `Delete ${l.kg} picked ${l.when}`);
-    del.addEventListener('click', () => deleteHarvest(h));
+    del.addEventListener('click', () => deleteHarvest(h, li, fallback));
     actions.append(edit, del);
     li.append(picture('task', 'harvestDaily', { crop: h.crop, size: 32 }), text, actions);
     return li;
@@ -169,7 +174,7 @@ export function createHarvestCard(host, { roomId, onGone }) {
     runBody.replaceChildren(...parts);
     const harvests = run.harvests ?? [];
     const shown = showAll ? harvests : harvests.slice(0, SHOWN);
-    list.replaceChildren(...shown.map((h) => harvestRow(h, run)));
+    list.replaceChildren(...shown.map((h) => harvestRow(h, run, 'harvests-title')));
     listNone.hidden = harvests.length > 0;
     more.hidden = shown.length === harvests.length;
     more.textContent = `Show all ${harvests.length}`;
@@ -190,7 +195,7 @@ export function createHarvestCard(host, { roomId, onGone }) {
     if (note) body.append(note);
     if (harvests.length) {
       const ul = el('ul', 'hv-list');
-      ul.append(...harvests.map((h) => harvestRow(h, run)));
+      ul.append(...harvests.map((h) => harvestRow(h, run, `run-${run.id}`)));
       body.append(ul);
     } else body.append(el('p', 'none', 'No harvests in this run.'));
     d.append(summary, body);
@@ -203,6 +208,8 @@ export function createHarvestCard(host, { roomId, onGone }) {
     painted = key;
     // the cursor on a row's button or a run's fold comes back to the same one after the repaint
     const focusKey = host.contains(document.activeElement) ? document.activeElement.dataset?.focusKey : null;
+    const keys = pendingFocus ?? (focusKey ? [focusKey] : []);
+    pendingFocus = null;
     const run = view.current;
     const past = Array.isArray(view.past) ? view.past : [];
     record.disabled = !run;
@@ -215,7 +222,10 @@ export function createHarvestCard(host, { roomId, onGone }) {
     pastCard.hidden = past.length === 0;
     pastList.replaceChildren(...past.map(pastRun));
     emptyCard.hidden = Boolean(run) || past.length > 0;
-    if (focusKey) host.querySelector(`[data-focus-key="${focusKey}"]`)?.focus();
+    for (const key of keys) {
+      const node = host.querySelector(`[data-focus-key="${key}"]`);
+      if (node && !node.closest('[hidden]')) { node.focus(); break; }
+    }
   }
 
   // ---- loading ----
@@ -265,9 +275,13 @@ export function createHarvestCard(host, { roomId, onGone }) {
 
   const ask = (options) => openForm({ ...options, onLost: (text) => showError(text) });
   const kgField = (value) => ({ name: 'kg', label: 'kg picked', kind: 'number', value });
-  const whenField = (value, run, now) => ({
-    name: 'pickedAt', label: 'When', kind: 'datetime', value, min: whenValue(run.startedAt), max: whenValue(Math.min(run.endedAt ?? now, now)),
-  });
+  // the day (the browser's date box, from the run's start to its end or today) and a 24 h time typed in a text box
+  const whenFields = (shown, run, now) => [
+    { name: 'pickedDate', label: 'Date', kind: 'date', value: shown.date, min: whenBoxes(run.startedAt).date, max: whenBoxes(Math.min(run.endedAt ?? now, now)).date },
+    { name: 'pickedTime', label: 'Time', kind: 'text', value: shown.time, placeholder: '08:12', inputMode: 'numeric', maxLength: 5, hint: '24 h, like 08:12' },
+  ];
+  // the server's word on the time is about the day or the time: shown under the date box
+  const onTime = (r) => (r !== true && r.field === 'pickedAt' ? { ...r, field: 'pickedDate' } : r);
 
   async function recordHarvest() {
     const run = view?.current;
@@ -281,7 +295,7 @@ export function createHarvestCard(host, { roomId, onGone }) {
     }
     if (!alive) return;
     const now = Date.now();
-    const shown = whenValue(now);
+    const shown = whenBoxes(now);
     const crops = run.crops ?? [];
     const lead = [runHead(run)];
     if (!names.length) {
@@ -296,43 +310,51 @@ export function createHarvestCard(host, { roomId, onGone }) {
       lead,
       fields: [
         ...(crops.length > 1 ? [{ name: 'crop', label: 'Crop', kind: 'select', value: crops[0].crop, options: crops.map((c) => [c.crop, CROPS[c.crop]?.name ?? c.crop]) }] : []),
-        kgField(''), workerField(names, 'Who picked it'), whenField(shown, run, now),
+        kgField(''), workerField(names, 'Who picked it'), ...whenFields(shown, run, now),
       ],
       buttons: [{ value: 'record', label: 'Record', primary: true }],
       submit: async (v) => {
         const body = recordBody(v, { run, now: Date.now(), shown });
         if (body.error) return { field: body.field, message: body.error };
         setWorker(body.worker); // kept for the next Done, as the Done dialog does
-        return send('POST', `/api/rooms/${roomId}/harvests`, body);
+        return onTime(await send('POST', `/api/rooms/${roomId}/harvests`, body));
       },
     });
   }
 
   function editHarvest(h, run) {
     const now = Date.now();
-    const shown = whenValue(h.pickedAt);
+    const shown = whenBoxes(h.pickedAt);
     const l = harvestLine(h, { mixed: true }); // the crop named, whatever the room
     ask({
       title: 'Edit a harvest',
       lead: [[l.what, l.who, l.from].filter(Boolean).join(DOT)],
-      fields: [kgField(String(h.kg)), whenField(shown, run, now)],
+      fields: [kgField(String(h.kg)), ...whenFields(shown, run, now)],
       buttons: [{ value: 'save', label: 'Save', primary: true }],
       submit: async (v) => {
         const body = editBody(v, h, { run, now: Date.now(), shown });
         if (body.error) return { field: body.field, message: body.error };
         if (Object.keys(body).length === 0) return true; // nothing changed
-        return send('PUT', `/api/harvests/${h.id}`, body);
+        return onTime(await send('PUT', `/api/harvests/${h.id}`, body));
       },
     });
   }
 
-  function deleteHarvest(h) {
+  // After it the cursor goes to the next row's Edit (the previous row's when it was the last), else the list's title (the
+  // Harvests card's, or a past run's fold).
+  function deleteHarvest(h, li, fallback) {
+    const near = li.nextElementSibling ?? li.previousElementSibling;
     ask({
       title: 'Delete this harvest?',
       lead: [deleteQuestion(h), ...(h.taskId ? ["Its harvest check's kg becomes the total of what is left."] : [])],
       buttons: [{ value: 'delete', label: 'Delete', primary: true, danger: true }],
       closeLabel: 'Keep it',
-      submit: () => send('DELETE', `/api/harvests/${h.id}`),
+      submit: async () => {
+        pendingFocus = [near && `edit-${near.dataset.id}`, fallback].filter(Boolean);
+        const r = await send('DELETE', `/api/harvests/${h.id}`);
+        if (r !== true) pendingFocus = null;
+        return r;
+      },
     });
   }
 

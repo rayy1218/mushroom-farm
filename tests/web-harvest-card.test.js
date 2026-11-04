@@ -33,13 +33,34 @@ test('the parts in order: Record a harvest, This run, Harvests, Past runs, the e
 
 test('Record, Edit and Delete: the task dialog form, the worker box, the time box, the bodies from harvest-math', () => {
   assert.match(dialogs, /export function openForm\(/);
-  assert.match(dialogs, /input\.type = 'datetime-local';/);
-  assert.ok(card.includes("kind: 'datetime', value, min: whenValue(run.startedAt), max: whenValue(Math.min(run.endedAt ?? now, now))"));
+  // a date box and a 24 h text box, not the browser's time input (it follows the browser's locale: 02:03 PM)
+  assert.doesNotMatch(dialogs, /datetime-local/);
+  assert.doesNotMatch(card, /datetime/);
+  assert.match(dialogs, /input\.type = 'date';/);
+  assert.ok(card.includes("{ name: 'pickedDate', label: 'Date', kind: 'date', value: shown.date, min: whenBoxes(run.startedAt).date, max: whenBoxes(Math.min(run.endedAt ?? now, now)).date },"));
+  assert.ok(card.includes("{ name: 'pickedTime', label: 'Time', kind: 'text', value: shown.time, placeholder: '08:12', inputMode: 'numeric', maxLength: 5, hint: '24 h, like 08:12' },"));
+  assert.ok(card.includes("r.field === 'pickedAt' ? { ...r, field: 'pickedDate' } : r"), "the server's pickedAt error under the date box");
   assert.ok(card.includes("workerField(names, 'Who picked it')"));
-  assert.ok(card.includes("return send('POST', `/api/rooms/${roomId}/harvests`, body);"));
-  assert.ok(card.includes("return send('PUT', `/api/harvests/${h.id}`, body);"));
-  assert.ok(card.includes("submit: () => send('DELETE', `/api/harvests/${h.id}`),"));
-  assert.ok(card.includes('lead: [deleteQuestion(h)'));
+  assert.ok(card.includes("return onTime(await send('POST', `/api/rooms/${roomId}/harvests`, body));"));
+  assert.ok(card.includes("return onTime(await send('PUT', `/api/harvests/${h.id}`, body));"));
+  assert.ok(card.includes("const r = await send('DELETE', `/api/harvests/${h.id}`);"));
+  assert.ok(card.includes('lead: [deleteQuestion(h), ...(h.taskId ? ["Its harvest check\'s kg becomes the total of what is left."] : [])],'), "a check's row says what happens to the check's kg");
+});
+
+test('Record a harvest is off until the first answer; a farm app without the harvests says so, with no timer', () => {
+  const made = card.indexOf("const record = button('Record a harvest', 'primary');");
+  assert.ok(card.slice(made, made + 150).includes('record.disabled = true;'));
+  const missing = card.slice(card.indexOf('if (routeMissing(err)) {'));
+  assert.ok(missing.startsWith("if (routeMissing(err)) { // a farm app from before the harvests: say so, nothing else\n        runLine.textContent = OUTDATED;\n        record.hidden = true;\n        return;"),
+    'OUTDATED, Record hidden, and back before the timer is set');
+});
+
+test("after a Delete the cursor goes to the next row's Edit, else the list's title", () => {
+  assert.ok(card.includes('const near = li.nextElementSibling ?? li.previousElementSibling;'));
+  assert.ok(card.includes('pendingFocus = [near && `edit-${near.dataset.id}`, fallback].filter(Boolean);'));
+  assert.ok(card.includes("listTitle.tabIndex = -1;\n  listTitle.dataset.focusKey = 'harvests-title';"));
+  assert.ok(card.includes("harvestRow(h, run, 'harvests-title')") && card.includes('harvestRow(h, run, `run-${run.id}`)'));
+  assert.ok(card.includes('const keys = pendingFocus ?? (focusKey ? [focusKey] : []);'));
 });
 
 test('the Crop tab: the run in one line with a link to the Harvest tab, read on the harvest events', () => {

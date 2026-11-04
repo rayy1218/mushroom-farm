@@ -137,7 +137,8 @@ function taskLead(row) {
 }
 
 // Opens the dialog on a form. lead: lines (text or nodes) under the title; fields: [{ name, label, kind: 'text' | 'number'
-// | 'area' | 'select' | 'check' | 'datetime', value, options ([value, label]), hint, min, max (a datetime's) }]; buttons: [{ value, label, primary, danger (filled red) }] after the
+// | 'area' | 'select' | 'check' | 'date', value, options ([value, label]), hint, min, max (a date's), placeholder,
+// inputMode, maxLength (a text's) }]; buttons: [{ value, label, primary, danger (filled red) }] after the
 // close button (closeLabel; Close when there are no buttons). submit(values, which, form) → true (closes), or { field, message }
 // or { message, content?, final? } to show while it stays open (content: nodes for the line in place of the message's text;
 // final: nothing more to send, the buttons stay disabled and only the close button is left); onLost(message): a failure that came back after the dialog was closed or
@@ -176,9 +177,9 @@ export function openForm({ title, lead = [], fields = [], buttons = [], closeLab
       input = el('input');
       input.type = 'checkbox';
       input.checked = f.value === true;
-    } else if (f.kind === 'datetime') {
+    } else if (f.kind === 'date') {
       input = el('input');
-      input.type = 'datetime-local';
+      input.type = 'date';
       if (f.min) input.min = f.min;
       if (f.max) input.max = f.max;
       input.value = f.value ?? '';
@@ -187,6 +188,9 @@ export function openForm({ title, lead = [], fields = [], buttons = [], closeLab
       input.type = 'text';
       input.autocomplete = 'off';
       if (f.kind === 'number') input.inputMode = 'decimal';
+      if (f.inputMode) input.inputMode = f.inputMode;
+      if (f.placeholder) input.placeholder = f.placeholder;
+      if (f.maxLength) input.maxLength = f.maxLength;
       input.value = f.value ?? '';
     }
     input.id = id;

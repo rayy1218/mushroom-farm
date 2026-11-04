@@ -7,6 +7,7 @@
 import { CROPS } from './crops.js';
 import { DOT } from './text-math.js';
 import { farmDate, farmTime, dayMonth } from './tasks-math.js';
+import { isClock, normaliseClock } from './light-math.js';
 
 const NB = ' ';
 const DASH = '—';
@@ -151,13 +152,16 @@ export function runTiles(run) {
 
 export const deleteQuestion = (h) => `Delete ${kgText(h.kg, { exact: true })} of ${cropName(h.crop)} picked ${whenText(h.pickedAt)}?`;
 
-// The date and time box (datetime-local) in the farm's time, whatever the browser's: "2026-11-04T08:12" and back to ms.
-export function whenValue(ms) {
-  return `${farmDate(ms)}T${farmTime(ms)}`;
+// The date box and the 24 h time box (a text box: a browser's own time input follows its locale) in the farm's time,
+// whatever the browser's: { date: '2026-11-04', time: '08:12' }, and back to ms ("8:12" and "0812" are 08:12 too).
+export function whenBoxes(ms) {
+  return { date: farmDate(ms), time: farmTime(ms) };
 }
-export function whenMs(text) {
-  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(String(text ?? ''));
-  return m ? Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5])) - FARM_OFFSET_MS : NaN;
+export function whenMs(date, time) {
+  const d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(date ?? ''));
+  const t = normaliseClock(time);
+  if (!d || !isClock(t)) return NaN;
+  return Date.UTC(Number(d[1]), Number(d[2]) - 1, Number(d[3]), Number(t.slice(0, 2)), Number(t.slice(3))) - FARM_OFFSET_MS;
 }
 
 // kg over 0 up to 10,000, at most 3 decimals (as the Done dialog's amount).
@@ -168,16 +172,21 @@ function kgOf(text) {
   return n > 0 && n <= MAX_KG ? { value: n } : { error: 'kg must be a number over 0 up to 10,000' };
 }
 
-// The time picked: null when the box still shows what it showed (the server keeps the time, or takes now), else ms from the
-// run's start (its first minute counts: the box has no seconds) to its end or now.
-function pickedOf(text, { run, now, shown }) {
-  if (text === shown) return { value: null };
-  let ms = whenMs(text);
-  if (Number.isNaN(ms)) return { error: 'Pick a date and time' };
+// The time picked: null when both boxes still show what they showed (the server keeps the time, or takes now), else ms from
+// the run's start (its first minute counts: the box has no seconds) to its end or now. A day outside the run is the date
+// box's fault; a time outside it on a day of the run, the time box's.
+function pickedOf(values, { run, now, shown }) {
+  const date = String(values.pickedDate ?? '');
+  const time = normaliseClock(values.pickedTime);
+  if (date === shown.date && time === shown.time) return { value: null };
+  if (Number.isNaN(whenMs(date, '00:00'))) return { error: 'Pick a date', field: 'pickedDate' };
+  let ms = whenMs(date, time);
+  if (Number.isNaN(ms)) return { error: 'Give the time as 24 h, like 08:12', field: 'pickedTime' };
   if (ms < run.startedAt && ms + 60_000 > run.startedAt) ms = run.startedAt;
   const to = Math.min(run.endedAt ?? Infinity, now);
-  if (ms < run.startedAt || ms > to) return { error: run.endedAt === null || run.endedAt === undefined ? "Pick a time from the run's start to now" : "Pick a time from the run's start to its end" };
-  return { value: ms };
+  if (ms >= run.startedAt && ms <= to) return { value: ms };
+  const error = run.endedAt === null || run.endedAt === undefined ? "Pick a time from the run's start to now" : "Pick a time from the run's start to its end";
+  return { error, field: date < farmDate(run.startedAt) || date > farmDate(to) ? 'pickedDate' : 'pickedTime' };
 }
 
 // Record a harvest's body { crop, kg, worker, pickedAt? } (crop: the run's only crop when there is no picker), or { error, field }.
@@ -186,8 +195,8 @@ export function recordBody(values, { run, now, shown }) {
   if (!worker) return { error: 'Pick who picked it', field: 'worker' };
   const kg = kgOf(values.kg);
   if (kg.error) return { error: kg.error, field: 'kg' };
-  const when = pickedOf(values.pickedAt, { run, now, shown });
-  if (when.error) return { error: when.error, field: 'pickedAt' };
+  const when = pickedOf(values, { run, now, shown });
+  if (when.error) return { error: when.error, field: when.field };
   const crop = values.crop ?? run.crops?.[0]?.crop;
   return { crop, kg: kg.value, worker, ...(when.value === null ? {} : { pickedAt: when.value }) };
 }
@@ -196,7 +205,7 @@ export function recordBody(values, { run, now, shown }) {
 export function editBody(values, h, { run, now, shown }) {
   const kg = kgOf(values.kg);
   if (kg.error) return { error: kg.error, field: 'kg' };
-  const when = pickedOf(values.pickedAt, { run, now, shown });
-  if (when.error) return { error: when.error, field: 'pickedAt' };
+  const when = pickedOf(values, { run, now, shown });
+  if (when.error) return { error: when.error, field: when.field };
   return { ...(kg.value === h.kg ? {} : { kg: kg.value }), ...(when.value === null ? {} : { pickedAt: when.value }) };
 }
