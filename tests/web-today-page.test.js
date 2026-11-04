@@ -12,7 +12,7 @@ const html = src('index.html');
 test('the router mounts the page at #/today and marks its link', () => {
   assert.ok(app.includes("import * as today from './today-page.js';"));
   assert.ok(app.includes(": route.name === 'today' ? today.mount(view, {})"));
-  assert.ok(app.includes("const section = ['settings', 'overview', 'today'].includes(route.name) ? route.name : null;"));
+  assert.ok(app.includes("const section = ['settings', 'overview', 'today', 'calendar'].includes(route.name) ? route.name : null;"));
   assert.ok(app.includes("today: document.querySelectorAll('[data-nav=\"today\"]'),"));
 });
 
@@ -20,6 +20,8 @@ test("the top bar's Today link, before Overview, with the count of tasks due (hi
   const bar = html.slice(html.indexOf('<header class="topbar">'), html.indexOf('</header>'));
   assert.match(bar, /<a class="top-link" href="#\/today" data-nav="today" aria-label="Today"><svg[^]*?<span>Today<\/span><span class="top-count" data-today-count hidden><\/span><\/a>/);
   assert.ok(bar.indexOf('data-nav="today"') < bar.indexOf('data-nav="overview"'), 'Today before Overview');
+  assert.ok(bar.indexOf('data-nav="today"') < bar.indexOf('data-nav="calendar"') && bar.indexOf('data-nav="calendar"') < bar.indexOf('data-nav="overview"'),
+    'the Calendar between Today and Overview (spec 2026-11-03-calendar-design.md 5)');
   assert.ok(app.includes("count = todayCount(await request('GET', '/api/tasks/today'));"));
   assert.ok(app.includes("live.on('tasks', (data) => {"));
   assert.ok(app.includes('for (const a of menuLinks.today) a.setAttribute(\'aria-label\', todayLinkLabel(todayDue));'));

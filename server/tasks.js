@@ -5,6 +5,7 @@
 import {
   DAILY_RULES, UPKEEP_RULES, localDate, localTime, dayStart, addDays, daysBetween, effectiveRules, wantedDaily, upkeepApplies,
 } from './task-rules.js';
+import { projectRoom, isRoutine, HORIZON_DAYS } from './calendar.js';
 
 // A refused request: status 400, 404 or 409, field the input it is about (tasks-api.js replies { error, field }).
 export class TaskError extends Error {
@@ -393,6 +394,41 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
         return { id: room.id, name: room.name, today: v.today, upkeepDue: v.upkeep.filter((r) => r.dueDate <= date), longterm: v.counts.longterm, counts: v.counts };
       });
       return { date, rooms };
+    },
+
+    // The calendar (spec 2026-11-03-calendar-design.md 2): { today, from, to, horizon, rooms: [{ id, name }], days: [{ date,
+    // items }] } for every room or one (roomId); null when there is no such room. Today's rows are made first, as Today does.
+    // Past days: the stored rows (a daily row left open on an earlier day counts as missed); today: its rows and the upkeep due
+    // or overdue; later days: calendar.js projectRoom.
+    calendarView({ from, to, roomId = null }) {
+      const date = today();
+      const rooms = roomId === null ? db.listRooms() : [db.getRoom(roomId)].filter(Boolean);
+      if (roomId !== null && rooms.length === 0) return null;
+      if (from <= date && date <= to) for (const id of makeAll(date)) tell(id);
+      const sources = ruleSources();
+      const at = now();
+      const byDay = new Map();
+      const put = (d, item) => { if (d >= from && d <= to) (byDay.get(d) ?? byDay.set(d, []).get(d)).push(item); };
+      const item = (row, status) => ({ roomId: row.roomId, kind: row.kind, status, ruleKey: row.ruleKey, text: row.text, note: row.note,
+        slot: row.slot, worker: row.worker, amount: row.amount, unit: row.unit, reason: row.reason, closedAt: row.closedAt,
+        overdueDays: 0, routine: isRoutine(row.kind, row.ruleKey), about: false, stage: null, until: null, from: null });
+      for (const room of rooms) {
+        for (const row of db.calendarTasks(room.id, from, to, dayStart(from), dayStart(addDays(to, 1)))) {
+          if (row.kind === 'daily') put(row.date, item(row, row.status === 'open' && row.date < date ? 'missed' : row.status));
+          else put(localDate(row.closedAt), item(row, row.status));
+        }
+        const open = db.openTasks(room.id, 'upkeep');
+        for (const row of open) {
+          const due = localDate(row.dueAt);
+          if (due <= date) put(date, { ...item(row, 'open'), overdueDays: daysBetween(due, date) });
+        }
+        const rules = effectiveRules({ ...sources, roomId: room.id });
+        const future = projectRoom({ program: db.getProgram(room.id), rules, openUpkeep: open, today: date, now: at, from, to });
+        for (const [d, items] of future) for (const i of items) put(d, { ...i, roomId: room.id });
+      }
+      const days = [];
+      for (let d = from; d <= to; d = addDays(d, 1)) days.push({ date: d, items: byDay.get(d) ?? [] });
+      return { today: date, from, to, horizon: addDays(date, HORIZON_DAYS), rooms: rooms.map((r) => ({ id: r.id, name: r.name })), days };
     },
 
     // The closed rows, newest first, LOG_PAGE at most, older than the row `before` when given.

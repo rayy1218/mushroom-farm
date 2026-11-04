@@ -90,3 +90,12 @@ test("#/today is the farm's Today page (spec 2026-10-30-tasks-design.md 7.2)", (
   assert.deepEqual(parseRoute('#/today?x'), { name: 'overview' });
   assert.equal(isCanonical('#/today?x'), false);
 });
+
+test('#/calendar is the Calendar page, its room and day in the query (spec 2026-11-03-calendar-design.md 5)', () => {
+  assert.deepEqual(parseRoute('#/calendar'), { name: 'calendar', room: null, day: null });
+  assert.deepEqual(parseRoute('#/calendar?room=2&day=2026-11-04'), { name: 'calendar', room: 2, day: '2026-11-04' });
+  assert.deepEqual(parseRoute('#/calendar?room=zz'), { name: 'calendar', room: null, day: null });
+  assert.equal(isCanonical('#/calendar?room=2&day=2026-11-04'), true);
+  assert.equal(isCanonical('#/calendar?day=2026-11-04&room=2'), false, 'one order');
+  assert.equal(canonicalHash({ name: 'calendar', room: null, day: '2026-11-04' }), '#/calendar?day=2026-11-04');
+});

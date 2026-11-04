@@ -4,6 +4,7 @@
 
 import { DAILY_RULES, CLEAR_OUT, UPKEEP_RULES, SLOTS } from './task-rules.js';
 import { MAX_TEXT, MAX_NAME } from './tasks.js';
+import { checkRange } from './calendar.js';
 
 const ROOM_TASKS = /^\/api\/rooms\/([1-9][0-9]{0,14})\/tasks$/;
 const TASK_ACTION = /^\/api\/tasks\/([1-9][0-9]{0,14})\/(done|skip|cancel)$/;
@@ -154,6 +155,21 @@ export function createTaskRoutes({ db, tasks, cropOf = () => null }) {
       if (!isObject(body)) throw new HttpError(400, 'Body must be a JSON object');
       return body;
     };
+
+    // The calendar (spec 2026-11-03-calendar-design.md 4): the days from–to, every room or one, each room with its crop.
+    if (path === '/api/calendar') {
+      if (req.method !== 'GET') throw notFound();
+      const q = url.searchParams;
+      const bad = checkRange(q.get('from'), q.get('to'));
+      if (bad) throw new HttpError(400, bad.error, bad.field);
+      const room = q.get('room');
+      if (room !== null && !/^[1-9][0-9]{0,14}$/.test(room)) throw new HttpError(400, 'room must be a room id', 'room');
+      const view = tasks.calendarView({ from: q.get('from'), to: q.get('to'), roomId: room === null ? null : Number(room) });
+      if (!view) throw new HttpError(404, 'Room not found');
+      for (const r of view.rooms) r.crop = cropOf(r.id);
+      send(res, 200, view);
+      return true;
+    }
 
     if (path === '/api/tasks/today') {
       if (req.method !== 'GET') throw notFound();
