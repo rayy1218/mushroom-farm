@@ -278,7 +278,7 @@ export function createHarvestCard(host, { roomId, onGone }) {
   // the day (the browser's date box, from the run's start to its end or today) and a 24 h time typed in a text box
   const whenFields = (shown, run, now) => [
     { name: 'pickedDate', label: 'Date', kind: 'date', value: shown.date, min: whenBoxes(run.startedAt).date, max: whenBoxes(Math.min(run.endedAt ?? now, now)).date },
-    { name: 'pickedTime', label: 'Time', kind: 'text', value: shown.time, placeholder: '08:12', inputMode: 'numeric', maxLength: 5, hint: '24 h, like 08:12' },
+    { name: 'pickedTime', label: 'Time', kind: 'text', value: shown.time, placeholder: '08:12', inputMode: 'decimal', maxLength: 5, hint: '24 h, like 08:12' },
   ];
   // the server's word on the time is about the day or the time: shown under the date box
   const onTime = (r) => (r !== true && r.field === 'pickedAt' ? { ...r, field: 'pickedDate' } : r);
