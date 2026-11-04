@@ -1,5 +1,7 @@
 // Pure helpers for the Settings page and the room page refresh (no DOM, so they can be tested in Node).
 
+import { CROPS } from './crops.js';
+
 export const POLL_MIN = 1;
 export const POLL_MAX = 300;
 export const DEFAULT_POLL = 5;
@@ -179,4 +181,33 @@ export function ruleForm(rule) {
 export function idAfter(ids, id) {
   const i = ids.indexOf(id);
   return i >= 0 && i + 1 < ids.length ? ids[i + 1] : null;
+}
+
+// ---- Harvest: the Yield card (spec 2026-11-04-harvest-design.md section 5) ----
+
+export const YIELD_DRY = [0.05, 20];
+export const YIELD_PRICE = [0, 1000];
+export const YIELD_NOTE = "Biological efficiency is fresh kg over the dry substrate's kg. A 2.27 kg block at 60 % water holds about 0.9 kg dry. A change here changes the figures of past runs too.";
+
+const YIELD_NUMBER = /^[0-9]+(\.[0-9]+)?$/;
+
+// The rows of the card ([{ crop, dryKg: text, priceKg: text }]) → { cropYield } (empty text is null, a crop with both empty is left
+// out), or { error, field } for the first bad input; field is 'dryKg:<crop>' or 'priceKg:<crop>'.
+export function yieldBody(rows) {
+  const cropYield = {};
+  for (const { crop, dryKg, priceKg } of rows) {
+    const one = (text, [min, max], field, what, unit) => {
+      const s = String(text ?? '').trim();
+      if (s === '') return { value: null };
+      const n = YIELD_NUMBER.test(s) ? Number(s) : NaN;
+      if (n >= min && n <= max) return { value: n };
+      return { field: `${field}:${crop}`, error: `${CROPS[crop]?.name ?? crop}: ${what} must be ${min.toLocaleString('en-US')} to ${max.toLocaleString('en-US')} ${unit}, or empty` };
+    };
+    const dry = one(dryKg, YIELD_DRY, 'dryKg', 'dry substrate', 'kg');
+    if (dry.error) return dry;
+    const price = one(priceKg, YIELD_PRICE, 'priceKg', 'price', 'RM per kg');
+    if (price.error) return price;
+    if (dry.value !== null || price.value !== null) cropYield[crop] = { dryKg: dry.value, priceKg: price.value };
+  }
+  return { cropYield };
 }

@@ -50,6 +50,7 @@ Built for this farm only, not for sale. It is shaped by the farm's strategy: few
 | Crops | Grey, black, pink, abalone and golden oyster, wood ear, reishi, milky; lion's mane as a draft |
 | History | Live, 1 h, 6 h, 24 h, 7 d, 30 d; machine timeline; outdoor values on the charts |
 | Energy and water | Metered or estimated per machine; kWh, RM and litres |
+| Harvest | Runs of blocks; harvests from the checks or by hand; kg, kg per block, BE, RM value and cost per kg; Settings → Yield; CSV and the myGAP 4-6 sheet |
 | Simulation | Background runs of a room's program; Suggest machines lists the best five setups |
 | Stack | Node 22.13+, `node:http`, built-in `node:sqlite`, plain HTML, CSS and JS modules, no build step, no npm dependencies, `node --test` |
 | Units | Metric only: °C, %, ppm, m, m³, L, kWh, Pa, W |
@@ -72,7 +73,7 @@ Built for this farm only, not for sale. It is shaped by the farm's strategy: few
 | Room drawing screenshots | `docs/screenshots/2026-10-20-room-drawing/` |
 | Crop, equipment and economics research pages (not committed) | `research/` |
 
-There are no customers, testimonials, yield records or sales figures. Do not invent any. The lion's mane block price is still unknown (it needs a supplier quote).
+There are no customers, testimonials or sales figures, and no yield figures beyond what the farm records in the app itself (the app has no sales records). Do not invent any. The lion's mane block price is still unknown (it needs a supplier quote).
 
 ## Product Principles
 

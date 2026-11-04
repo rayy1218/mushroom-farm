@@ -14,6 +14,8 @@ import { createCropApi } from './crop-api.js';
 import { createSimulationRoutes } from './simulation-api.js';
 import { createTaskRoutes } from './tasks-api.js';
 import { createTasks } from './tasks.js';
+import { createHarvests } from './harvests.js';
+import { createHarvestRoutes } from './harvest-api.js';
 import { DEFAULT_GATEWAY, sameGateway } from './gateways.js';
 
 const MAX_BODY = 64 * 1024;
@@ -76,10 +78,18 @@ export function createApi(db, machines = null, controller = null, poller = null,
   const taskRoutes = createTaskRoutes({ db, tasks: taskStore, cropOf: (id) => crop.summary(id) });
   const publishDue = () => events?.publish('tasks', { due: taskStore.dueCount() });
   // Stopped by close() (app.js, when the http server closes), so a tasks module that outlives the server tells no one.
-  const stopTelling = events ? taskStore.onChange((roomId) => {
+  const stopTellingTasks = events ? taskStore.onChange((roomId) => {
     publishRoom(roomId, 'tasks');
     publishDue();
   }) : () => {};
+  // The harvests (spec 2026-11-04-harvest-design.md 6): a record, edit or delete here, or a Done that made harvests (the
+  // tasks module's onHarvest), tells the pages. An edit or delete of a check's harvest changes its row's amount too (the room's
+  // Tasks tab, and Today and Calendar, which hear 'tasks').
+  const harvests = createHarvests({ db });
+  const publishHarvest = (roomId) => events?.publish('harvest', { roomId });
+  const harvestRoutes = createHarvestRoutes({ harvests, onTaskChange: (roomId) => { publishRoom(roomId, 'tasks'); publishDue(); } });
+  const stopTellingHarvests = [harvests.onChange(publishHarvest), taskStore.onHarvest(publishHarvest)];
+  const stopTelling = () => { stopTellingTasks(); stopTellingHarvests.forEach((stop) => stop()); harvests.stop(); };
   // The room body; on the farm's gateway its addresses must differ from the outdoor sensor's (read through that gateway).
   // stored: the room as it is (an update): a filter setting or the gateway left out is its stored value, so the checks compare
   // what will be saved. The farm's own gateway is stored as null, its one spelling, so the address checks see it as the farm's.
@@ -110,6 +120,7 @@ export function createApi(db, machines = null, controller = null, poller = null,
   async function route(req, res, path, url) {
     if (simulationRoutes && await simulationRoutes(req, res, path, { send, readJson, HttpError })) return;
     if (await taskRoutes(req, res, path, { send, readJson, HttpError, url })) return;
+    if (await harvestRoutes(req, res, path, { send, readJson, HttpError, url })) return;
     if (path === '/api/settings') {
       if (req.method === 'GET') return send(res, 200, settingsReply());
       if (req.method !== 'PUT') throw notFound();
@@ -123,6 +134,8 @@ export function createApi(db, machines = null, controller = null, poller = null,
       writeSettings(db, result.settings);
       if (result.settings.pollSeconds !== undefined) poller?.setIntervalMs(readSettings(db).pollSeconds * 1000);
       telegram?.settingsChanged();
+      // The yield figures and the prices are every room's harvest figures (RM value, BE, cost per kg): all rooms (null).
+      if (['cropYield', 'electricityPrice', 'waterPrice'].some((key) => Object.hasOwn(result.settings, key))) publishHarvest(null);
       return send(res, 200, settingsReply());
     }
     if (path === '/api/settings/telegram/test' && telegram) {

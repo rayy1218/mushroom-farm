@@ -8,7 +8,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDb } from '../server/db.js';
-import { fixedZone, dayWindows, meteredDays, roomUsage, farmUsage, warmUsage } from '../server/usage.js';
+import { fixedZone, dayWindows, meteredDays, roomDays, roomUsage, farmUsage, warmUsage, USAGE_DAYS_KEPT } from '../server/usage.js';
 
 const zone = fixedZone(480);
 const at = (day, hour, minute = 0, second = 0) => Date.UTC(2026, 9, day, hour - 8, minute, second);
@@ -138,13 +138,46 @@ test('with 3 days of one-second readings the second request is fast, a new readi
   assert.ok(farm < 200, `farm ${farm} ms`);
 });
 
-test('warming works the last 30 days out of every room, a day at a time, and the answer is the same', async (t) => {
+test('warming works the kept 400 days out of every room, a day at a time, and the answer is the same', async (t) => {
   const db = openDb(':memory:');
   t.after(() => db.close());
   const room = db.createRoom({ ...fields, intakeW: 1000 }, at(1, 0));
   db.logMachine(room.id, 'intake', { on: true }, 'auto', at(19, 0));
   db.logMachine(room.id, 'intake', { on: false }, 'auto', at(19, 2));
   await warmUsage(db, { now: NOW, zone });
-  assert.equal(db.usageDays(room.id).size, 30);
+  assert.equal(db.usageDays(room.id).size, USAGE_DAYS_KEPT);
   assert.equal(roomUsage(db, room.id, { days: 30, prices: PRICES, now: NOW, zone }).days.at(-2).kWh, 2);
+});
+
+test('a short read after a long one keeps the long one\'s days; only days older than the kept ones go', (t) => {
+  const db = openDb(':memory:');
+  t.after(() => db.close());
+  const room = db.createRoom(fields, at(1, 0));
+  const read = (count, now = NOW) => roomDays(db, db.getRoom(room.id), { now, zone, count });
+  read(USAGE_DAYS_KEPT);
+  read(30);
+  assert.equal(db.usageDays(room.id).size, USAGE_DAYS_KEPT, 'the 400-day read is still cached');
+  read(30, NOW + 86_400_000 * 2);
+  read(30, NOW + 86_400_000 * 2); // the pruning runs before a read adds its new days
+  assert.equal(db.usageDays(room.id).size, USAGE_DAYS_KEPT, 'two days on: the two days older than the kept ones went');
+});
+
+test('a Setup save keeps the room\'s worked-out days unless the meter, the filter sensor or the gateway changes', (t) => {
+  const db = openDb(':memory:');
+  t.after(() => db.close());
+  const room = db.createRoom({ ...fields, meterAddress: 30, intakeW: 1000 }, at(1, 0));
+  const settled = () => [...db.usageDays(room.id).values()].filter((e) => e.ms).length;
+  roomDays(db, db.getRoom(room.id), { now: NOW, zone, count: 10 });
+  assert.equal(settled(), 9, 'the nine days before today');
+  const save = (change) => db.updateRoom(room.id, { ...db.getRoom(room.id), ...change }, NOW);
+  save({ name: 'B', intakeW: 2000, length: 8 });
+  assert.equal(settled(), 9, 'a rename, a rating and the size are read at read time: the days stay');
+  save({ meterAddress: 31 });
+  assert.equal(settled(), 0, 'another meter: the days go');
+  roomDays(db, db.getRoom(room.id), { now: NOW, zone, count: 10 });
+  save({ dpAddress: 40 });
+  assert.equal(settled(), 0, 'a filter sensor: the days go');
+  roomDays(db, db.getRoom(room.id), { now: NOW, zone, count: 10 });
+  save({ gateway: '10.0.0.9:502' });
+  assert.equal(settled(), 0, 'another gateway: the days go');
 });

@@ -7,6 +7,10 @@ import { openDb } from '../server/db.js';
 import { createApp } from '../server/app.js';
 import { createEvents } from '../server/events.js';
 import { createTasks } from '../server/tasks.js';
+import { createCropApi } from '../server/crop-api.js';
+
+// A check's harvests, oldest pick first (the db has no lookup by task: the app reads harvests by run or by time).
+const taskHarvests = (db, taskId) => db.harvestsBetween(-8.64e15, 8.64e15).filter((h) => h.taskId === taskId);
 
 const ROOM = { name: 'Room 1', length: 6, width: 4, height: 2.5 };
 
@@ -46,7 +50,8 @@ test('Done, Skip and Add publish the room part tasks and the farm due count; a G
   await call('GET', '/api/tasks/today');
   assert.deepEqual(got, []);
   await call('POST', `/api/tasks/${byRule(view.today, 'harvestAm').id}/done`, { worker: 'Ali', amount: 1 });
-  assert.deepEqual(got.slice(-2), [['room', { id, part: 'tasks' }], ['tasks', { due: view.counts.due - 1 }]]);
+  // A Done with kg makes a harvest, which tells the pages after the task change.
+  assert.deepEqual(got.slice(-3), [['room', { id, part: 'tasks' }], ['tasks', { due: view.counts.due - 1 }], ['harvest', { roomId: id }]]);
   got.length = 0;
   await call('POST', `/api/tasks/${byRule(view.upkeep, 'flyTraps').id}/skip`, { worker: 'Ali', reason: 'None in stock' });
   assert.deepEqual(got.slice(-2), [['room', { id, part: 'tasks' }], ['tasks', { due: view.counts.due - 2 }]]);
@@ -103,4 +108,24 @@ test('a closed server no longer publishes the changes of the tasks it was given'
   events.subscribe((type, data) => got.push([type, data]));
   tasks.ensureDay(db.createRoom(ROOM).id);
   assert.deepEqual(got, []);
+});
+
+test('a closed server no longer publishes a Done that made harvests', async (t) => {
+  const db = openDb(':memory:');
+  t.after(() => db.close());
+  const events = createEvents();
+  const now = Date.now();
+  const tasks = createTasks({ db, now: () => now });
+  const server = createApp(db, { events, tasks });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const id = db.createRoom(ROOM).id;
+  createCropApi({ db, now: () => now }).put(id, { crops: [{ crop: 'oyster', blocks: 100 }] });
+  db.setProgram(id, { ...db.getProgram(id), stage: 'fruiting', stageSince: now });
+  const row = tasks.roomView(id).today.find((r) => r.ruleKey === 'harvestAm');
+  await new Promise((r) => server.close(r));
+  const got = [];
+  events.subscribe((type, data) => got.push([type, data]));
+  tasks.done(row.id, { worker: 'Ali', amount: 2 });
+  assert.deepEqual(got, []);
+  assert.equal(taskHarvests(db, row.id).length, 1, 'the harvest was made all the same');
 });

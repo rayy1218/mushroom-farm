@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  formatKWh, formatRM, formatLitres, dateLabel, periodTile, usageTiles, barSeries, niceMax, barLayout, barAt, barsSummary, barTip,
+  formatKWh, formatRM, formatLitres, dateLabel, periodTile, usageTiles, barSeries, niceMax, niceScale, barLayout, barAt, barsSummary, barTip,
   breakdown, breakdownNote, roomLines, axisLabel,
 } from '../web/usage-math.js';
 
@@ -45,15 +45,51 @@ test('tiles of a missing reply are dashes and do not throw', () => {
   assert.deepEqual(usageTiles({ today: {}, last30: {} }, false).map((t) => t.label), ['Today', '30 days']);
 });
 
-test('niceMax rounds up to 1, 2 or 5 times a power of ten', () => {
+test('niceMax: the first multiple at or over the peak of the finest 1, 2, 2.5 or 5 × 10ⁿ step that numbers the axis at 3 to 6 values', () => {
   assert.equal(niceMax(0), 1);
   assert.equal(niceMax(NaN), 1);
-  assert.equal(niceMax(0.7), 1);
-  assert.equal(niceMax(1.2), 2);
-  assert.equal(niceMax(3.4), 5);
-  assert.equal(niceMax(5.1), 10);
-  assert.equal(niceMax(14.2), 20);
+  assert.equal(niceMax(25.3), 30, 'the 30-day harvest peak: not 50, half the plot empty (audit #21)');
+  assert.deepEqual(niceScale(25.3).ticks, [0, 10, 20, 30]);
+  assert.equal(niceMax(290), 300);
   assert.equal(niceMax(480), 500);
+  assert.equal(niceMax(14.2), 15);
+  assert.deepEqual(niceScale(14.2).ticks, [0, 5, 10, 15]);
+  assert.equal(niceMax(10), 10);
+  assert.deepEqual(niceScale(10).ticks, [0, 2, 4, 6, 8, 10]);
+  assert.deepEqual(niceScale(10, 4).ticks, [0, 5, 10], 'fewer values on a shorter plot');
+  assert.equal(niceMax(0.7), 0.8);
+  assert.deepEqual(niceScale(0.07).ticks, [0, 0.02, 0.04, 0.06, 0.08]);
+  for (const v of [0.013, 0.7, 1.2, 3.4, 5.1, 14.2, 25.3, 99, 101, 290, 1234, 98765]) {
+    for (const most of [3, 4, 5, 6]) {
+      const { max, ticks } = niceScale(v, most);
+      assert.ok(max >= v && ticks.length >= 3 && ticks.length <= most, `${v} ${most}: ${ticks}`);
+      assert.equal(ticks.at(-1), max);
+    }
+  }
+});
+
+test('the y axis labels every value with its step\'s places, trailing zeros trimmed: none rounds its own value', () => {
+  const labels = (v, opts) => {
+    const { ticks, places } = niceScale(v, 6, opts);
+    return ticks.map((t) => axisLabel(t, places));
+  };
+  assert.deepEqual(labels(1.2), ['0', '0.25', '0.5', '0.75', '1', '1.25'], 'not 1.3');
+  assert.deepEqual(labels(0.12), ['0', '0.025', '0.05', '0.075', '0.1', '0.125'], 'not 0.13');
+  assert.deepEqual(labels(25.3), ['0', '10', '20', '30']);
+  assert.deepEqual(labels(0.0024), ['0', '0.0005', '0.001', '0.0015', '0.002', '0.0025'], 'a 15 s bucket');
+  assert.deepEqual(labels(12_000), ['0', '2,500', '5,000', '7,500', '10,000', '12,500']);
+  assert.deepEqual(labels(3, { whole: true }), ['0', '1', '2', '3']);
+  assert.deepEqual(labels(0), ['0', '0.5', '1']);
+  const { yTicks } = barLayout(barSeries([day('2026-10-18', 1.2, true)], 'kWh'), 600, 200);
+  assert.deepEqual(yTicks.map((t) => t.label), ['0', '0.25', '0.5', '0.75', '1', '1.25'], 'the Usage tab\'s bars');
+});
+
+test('niceScale for a count: whole steps, at least 0, 1, 2', () => {
+  assert.deepEqual(niceScale(1, 6, { whole: true }).ticks, [0, 1, 2]);
+  assert.deepEqual(niceScale(3, 6, { whole: true }).ticks, [0, 1, 2, 3]);
+  assert.deepEqual(niceScale(0, 6, { whole: true }).ticks, [0, 1, 2]);
+  assert.deepEqual(niceScale(7, 5, { whole: true }).ticks, [0, 2, 4, 6, 8]);
+  assert.deepEqual(niceScale(0).ticks, [0, 0.5, 1]);
 });
 
 test('bar layout: bars sit in their slots, the tallest reaches the nice top, the last bar is labelled', () => {
@@ -68,7 +104,7 @@ test('bar layout: bars sit in their slots, the tallest reaches the nice top, the
   assert.ok(L.bars.every((b) => b.x >= L.plot.x0 && b.x + b.w <= L.plot.x1));
   assert.ok(L.bars[0].x < L.bars[1].x && L.bars[1].x < L.bars[2].x);
   assert.equal(L.xTicks[L.xTicks.length - 1].label, '20 Oct');
-  assert.deepEqual(L.yTicks.map((t) => t.v), [0, 5, 10]);
+  assert.deepEqual(L.yTicks.map((t) => t.v), [0, 2, 4, 6, 8, 10], 'a 166 px plot takes 6 values');
 });
 
 test('bar layout with 30 days at 390 px thins the date labels and keeps them inside', () => {
@@ -165,7 +201,7 @@ test('farm room lines: one per room with today and 30 days; a missing list is em
 
 test('axis labels keep the decimals small values need; the last date label ends at the plot edge', async () => {
   const { axisLabel, barLayout, barSeries } = await import('../web/usage-math.js');
-  assert.deepEqual([0, 0.05, 0.1, 0.25, 2.5, 5, 1250].map(axisLabel), ['0', '0.05', '0.1', '0.25', '2.5', '5', '1,250']);
+  assert.deepEqual([0, 0.05, 0.1, 0.25, 2.5, 5, 1250].map((v) => axisLabel(v)), ['0', '0.05', '0.1', '0.25', '2.5', '5', '1,250']);
   const days = Array.from({ length: 30 }, (_, i) => ({ date: `2026-10-${String(i + 1).padStart(2, '0')}`, kWh: 1, metered: false }));
   const layout = barLayout(barSeries(days, 'kWh'), 600, 200);
   const last = layout.xTicks.at(-1);

@@ -157,7 +157,7 @@ test('the Crop tab\'s program row has one Save for Ramp, Lights from and Automat
   const { readFileSync } = await import('node:fs');
   const card = readFileSync(new URL('../web/crop-card.js', import.meta.url), 'utf8');
   assert.doesNotMatch(card, /rampSave|lightSave/);
-  assert.match(card, /program\.append\(rampField, lightField, autoField, programSave, programErr\);/);
+  assert.match(card, /program\.append\(yieldLine, rampField, lightField, autoField, programSave, programErr\);/); // the run's harvests first (harvest spec 7)
   assert.match(card, /auto\.addEventListener\('change', \(\) => \{ autoDirty = auto\.checked !== \(last\.autoAdvance !== false\);/, 'a tick only marks it changed');
   assert.match(card, /const paintProgramSave = \(\) => \{ programSave\.hidden = !\(rampDirty \|\| lightDirty \|\| autoDirty\); \};/);
   assert.match(card, /f\.autoAdvance = auto\.checked;\n    const checked = checkCropForm\(f\);/);

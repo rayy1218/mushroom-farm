@@ -15,6 +15,7 @@
   --good: #2eb872; --good-text: #3fcf85; --good-soft: rgba(46,184,114,.14);
   --warning: #e3a008; --warning-text: #f2bd4b; --warning-soft: rgba(227,160,8,.14);
   --s-t: #f39a5b; --s-rh: #3cb4f0; --s-co2: #a98bfa; --s-energy: #c9b26a; --s-water: #4fc1b0;
+  --s-harvest: #b8844e; /* toasted ochre: the kg picked (5.5:1 on the card; clear of brass energy, the temperature orange and amber) */
   --critical: #d63c42; --critical-text: #ff8085;
   --on-critical: #fff;
   --critical-bg: rgba(229,72,77,.13); /* red tint over surface */
@@ -42,6 +43,7 @@
   --good: #16a34a; --good-text: #15803d; --good-soft: rgba(22,163,74,.1);
   --warning: #d97706; --warning-text: #a35a00; --warning-soft: rgba(217,119,6,.1);
   --s-t: #dd6b20; --s-rh: #0284c7; --s-co2: #7c3aed; --s-energy: #8a7425; --s-water: #0f8f80;
+  --s-harvest: #a87a4c; /* 3.8:1 on the card */
   --critical: #dc2626; --critical-text: #b91c1c;
   --on-critical: #fff;
   --critical-bg: #fdecec; /* red tint over surface */
@@ -181,13 +183,13 @@ dialog { margin-top: var(--dialog-top); margin-bottom: auto; } /* anchored at th
 ::placeholder { color: var(--muted); opacity: 1; }
 /* a phone: every control at least 44 px tall (a finger in a humid room) */
 @media (max-width: 600px) {
-  button, .ctl, .field input, .field select, select, .top-link, .topbar .theme-btn { min-height: 44px; }
+  button, .ctl, .field input, .field select, .yd-table input, select, .top-link, .topbar .theme-btn { min-height: 44px; }
   .topbar .theme-btn { width: 44px; }
 }
 
 .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
 .field label { font-size: 0.9rem; font-weight: 600; }
-.field input {
+.field input, .yd-table input {
   font: inherit;
   min-height: 40px;
   padding: 8px 10px;
@@ -199,7 +201,7 @@ dialog { margin-top: var(--dialog-top); margin-bottom: auto; } /* anchored at th
 }
 .field select { font: inherit; min-height: 40px; padding: 8px 10px; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--surface); color: var(--ink); width: 100%; min-width: 0; }
 .field select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.field select[aria-invalid="true"], .field input[aria-invalid="true"] { border-color: var(--critical-text); }
+.field select[aria-invalid="true"], .field input[aria-invalid="true"], .yd-table input[aria-invalid="true"] { border-color: var(--critical-text); }
 .field input[aria-invalid="true"] { border-color: var(--critical-text); }
 .field input[aria-invalid="true"]:focus-visible { outline-color: var(--critical-text); }
 .field-error { margin: 0; font-size: 0.85rem; color: var(--critical-text); }
@@ -318,6 +320,26 @@ html { scroll-padding-top: var(--topbar-h); }
   .page-sub { font-size: var(--fs-md); }
 }
 @media print { .topbar { display: none !important; } }
+/* Printing the Harvest page's myGAP sheet (web/harvest-page.js mountSheet): the sheet alone on light paper whatever the
+   theme, landscape, the head row on every page */
+.hv-sheet { page: hv-sheet; }
+@page hv-sheet { size: A4 landscape; margin: 12mm; }
+@media print {
+  body.printing-sheet {
+    color-scheme: light; --page: #fff; --surface: #fff; --ink: #000; --ink-2: #222; --muted: #444; --band: #eee;
+    --border: #999; --border-strong: #555; background: #fff; color: #000;
+  }
+  body.printing-sheet .skip, body.printing-sheet .hv-sheet-tools, body.printing-sheet .banner, body.printing-sheet .load-fail { display: none !important; }
+  body.printing-sheet .app > main { padding: 0; }
+  body.printing-sheet .hv-sheet-title { font-size: 14pt; max-width: none; }
+  body.printing-sheet .hv-sheet-table { font-size: 9pt; min-width: 0; }
+  body.printing-sheet .hv-sheet-table thead { display: table-header-group; }
+  body.printing-sheet .hv-sheet-table tfoot { display: table-row-group; } /* the Total once, at the end, not on every page */
+  body.printing-sheet .hv-sheet-table thead th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body.printing-sheet .hv-sheet-table tr { break-inside: avoid; }
+  body.printing-sheet .hv-sheet-table td { height: 9mm; }
+  body.printing-sheet .hv-sheet-wrap { overflow: visible; }
+}
 
 /* ---- Rooms list ---- */
 .rooms .name a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--axis); text-decoration-thickness: 1px; text-underline-offset: 3px; }
@@ -837,6 +859,7 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
 .sim-dialog { max-height: calc(100dvh - var(--dialog-top) - 16px); padding-bottom: 0; } /* the footer holds the bottom padding: a sticky one stops at the padding */
 .sim-dialog .actions { position: sticky; bottom: 0; z-index: 1; margin: 16px -24px 0; padding: 12px 24px 20px; background: var(--surface); border-top: 1px solid var(--border); }
 .sim-dialog #sim-title:focus { outline: none; } /* it takes the focus on each step; a field would pop up a phone's keyboard */
+#tk-dialog-title:focus { outline: none; } /* a confirm with no field (Delete a harvest, Skip) focuses its title: no box round it */
 @media (max-width: 600px) { .sim-dialog .sizes.two > .field:has(.sim-ac) { grid-column: 1 / -1; } }
 /* the intake filter of step 1, folded while it holds the room's own values */
 .sim-fold { margin: 0 0 20px; }
@@ -950,6 +973,10 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
 .cp-auto input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
 .cp-auto .crop-check + .cp-hint { margin-top: 6px; }
 .cp-program > .m-error { flex-basis: 100%; margin-bottom: 12px; }
+/* the run's harvests in one line (spec 2026-11-04-harvest-design.md 7), above the fields, a hairline under it */
+.cp-yield { flex-basis: 100%; margin: 0 0 8px; padding-bottom: 12px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.cp-yield-label { display: block; margin-bottom: 2px; color: var(--muted); font-size: var(--fs-sm); font-weight: 600; } /* named as the fields beside it */
+@media (max-width: 600px) { .cp-yield a { display: inline-block; padding: 12px 0; margin: -12px 0; } } /* 44 px to tap */
 
 @container (max-width: 719px) {
   .crop-card .cp-layout { grid-template-columns: minmax(0, 1fr); grid-template-areas: "stages" "list" "program"; } /* a phone: the current stage first */
@@ -1238,7 +1265,7 @@ details.setup-part:not([open]) > summary.part-title { margin-bottom: 0; }
   .tg-check input, .sim-pick input { width: 20px; height: 20px; }
   .sim-pick { min-height: 44px; }
   .setup-nav a { display: inline-flex; align-items: center; min-height: 44px; }
-  .ctl, .field input, .field select, .sim-crop-row select, .sim-crop-row input, .brand-top { min-height: 44px; }
+  .ctl, .field input, .field select, .yd-table input, .sim-crop-row select, .sim-crop-row input, .brand-top { min-height: 44px; }
   .brand-top { display: inline-flex; align-items: center; }
   /* the Crop tab, Setup, the Alarms card and the Simulations list (critique 2026-10-28: 28–36 px targets) */
   .cp-stage-actions button, .cp-room-note button, .cp-more, .c-byhand button, .c-humidifier button.toggle { min-height: 44px; }
@@ -1551,6 +1578,26 @@ button.tk-tick:is(:hover, :focus-visible) .tk-mark { opacity: 1; }
 .tk-dialog .tk-check input { width: 20px; height: 20px; margin: 0; }
 .tk-dialog .tk-check :is(.c-hint, .field-error) { flex: 1 0 100%; }
 .tk-dialog .actions { flex-wrap: wrap-reverse; } /* wrapped on a phone, the primary button on top */
+/* a quiet red button at the footer's start (Delete in an Edit dialog), away from Save */
+.tk-dialog .actions .tk-aside { margin-right: auto; border-color: transparent; background: none; padding-inline: 8px; }
+.tk-dialog .actions .tk-aside:hover { background: var(--band); }
+/* fields side by side (a date and its time) or a fieldset of them (a mixed room's kg) */
+.tk-dialog .tk-group { min-width: 0; margin: 0 0 12px; padding: 0; border: 0; }
+.tk-dialog .tk-group legend { padding: 0; font-size: 0.9rem; font-weight: 600; }
+.tk-dialog .tk-group-hint { margin: 2px 0 8px; }
+.tk-dialog .tk-group-fields { display: grid; gap: 0 12px; }
+.tk-dialog .tk-group-fields > .field { min-width: 0; }
+@media (min-width: 360px) {
+  .tk-dialog .tk-when .tk-group-fields { grid-template-columns: 1.4fr 1fr; }
+  .tk-dialog .tk-kg-group .tk-group-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.tk-dialog .tk-when { margin-bottom: 0; }
+.tk-dialog .tk-kg-group .tk-suffix-box { width: 14ch; } /* a box for 1 to 5 digits, not the dialog's width */
+.tk-dialog .tk-pic-label { display: flex; align-items: center; gap: 6px; font-weight: 500; }
+/* the unit inside the box, at its right end */
+.tk-suffix-box { position: relative; display: block; max-width: 100%; }
+.field .tk-suffix-box input { padding-right: 36px; }
+.tk-suffix { position: absolute; top: 50%; right: 10px; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
 
 /* Settings: Workers and Task rules, two more cards of the settings grid */
 .tk-settings { display: contents; }
@@ -1624,7 +1671,12 @@ button.tk-tick:is(:hover, :focus-visible) .tk-mark { opacity: 1; }
   .top-alarm { padding: 4px 6px; gap: 4px; }
   .top-link { padding: 4px; }
   .topbar:has(> .top-alarm:not([hidden])) .live-mark [data-live-text] { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  /* six icons since Harvest (2026-11-04): 40 px wide (44 px tall) so the mark keeps its 28 px at 360 px */
+  .top-link { min-width: 40px; }
+  .topbar .theme-btn { width: 40px; min-width: 40px; }
 }
+/* the smallest phones with the alarm button too: no room for the mark; the alarm button and Overview lead where it does */
+@media (max-width: 379px) { .topbar:has(> .top-alarm:not([hidden])) .brand-top { display: none; } }
 
 /* ---- the pictures (spec 2026-11-03-pictures-design.md): web/pictures.js ---- */
 .pic { display: block; flex: none; }
@@ -1699,3 +1751,166 @@ h2.r-named { display: flex; }
   .cal-nav button { min-height: 44px; }
   .cal-step { min-width: 44px; }
 }
+
+/* The Harvest tab (spec 2026-11-04-harvest-design.md 7): Record a harvest above the cards; from 1,100 px This run and Past
+   runs on the left, the run's Harvests on the right (as the Tasks tab's Log). The tiles and tables are the Usage card's. */
+.hv-grid { display: grid; gap: 16px; align-items: start; }
+.hv-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.hv-head .tk-error { flex-basis: 100%; margin: 0; }
+.hv-note { margin: 0; font-size: var(--fs-sm); }
+@media (min-width: 1100px) {
+  .hv-grid { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); grid-template-rows: auto auto auto 1fr; }
+  .hv-grid > .hv-head { grid-column: 1 / -1; }
+  .hv-grid > :is(.hv-run-card, .hv-past-card, .hv-empty) { grid-column: 1; }
+  .hv-grid > .hv-list-card { grid-column: 2; grid-row: 2 / -1; }
+}
+.hv-part .none { margin: 8px 0 0; color: var(--muted); }
+/* a room that never had crops: an empty state (dashed), the basket faded, the way to the Crop tab */
+.hv-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; background: transparent; border-style: dashed; border-color: var(--border-strong); }
+.hv-empty > .pic { opacity: .4; }
+:root[data-theme="light"] .hv-empty.card { box-shadow: none; }
+.hv-empty .none { margin: 0; }
+.hv-tiles { margin-top: 4px; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); } /* the five side by side in the left column */
+@media (max-width: 600px) {
+  .hv-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hv-tiles > :last-child:nth-child(odd) { grid-column: 1 / -1; } /* an odd tile out takes the row, not half of it */
+  .hv-table :is(th, td) { padding-inline: 6px; }
+  .hv-table thead :is(th, th.num) { white-space: normal; } /* "kg per block" on two lines: the table fits the phone */
+}
+.hv-basis { text-transform: none; }
+.hv-body > * + * { margin-top: 16px; }
+.hv-table th, .hv-table .hv-days { white-space: nowrap; } /* a phone: the table scrolls rather than break "Flush 1" */
+.hv-split-row { display: none; }
+@media (max-width: 600px) {
+  .hv-table .hv-crop-col { display: none; } /* a mixed room's flushes: each crop's kg goes in a line under "Flush N", as By room's run */
+  .hv-split-row { display: table-row; }
+  .hv-table .hv-flush-split { padding-top: 0; border-top: 0; color: var(--muted); white-space: normal; }
+}
+.hv-missing { margin: 0; font-size: var(--fs-sm); }
+:is(.hv-body, .hv-run-body) > .hv-missing + .hv-missing { margin-top: 4px; }
+/* a harvest: the basket with its crop, the kg and what it was, when, who and from under it, Edit and Delete quiet at the end */
+.hv-list { list-style: none; margin: 0; padding: 0; }
+.hv-row { display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; border-top: 1px solid var(--border); }
+.hv-list > .hv-row:first-child { border-top: 0; }
+.hv-row > .pic { flex: none; margin-top: -4px; }
+.hv-text { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.hv-title { margin: 0; font-variant-numeric: tabular-nums; }
+.hv-kg { display: inline-block; min-width: 8ch; font-weight: 600; text-align: right; } /* the rows' kg line up (2 decimals each) */
+.hv-meta { margin: 2px 0 0; overflow: hidden; color: var(--muted); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; white-space: nowrap; text-overflow: ellipsis; } /* one line */
+.hv-list-card > button { margin-top: 8px; }
+/* Past runs: a table, a run's dates a button that opens the row under it (its flushes and latest harvests, indented) */
+.hv-run-toggle { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0; border: 0; background: none; color: var(--ink); font: inherit; font-weight: 600; text-align: left; cursor: pointer; }
+.hv-run-toggle::before { content: ''; flex: none; width: 6px; height: 6px; border: solid var(--muted); border-width: 0 1.5px 1.5px 0; transform: rotate(-45deg); transition: transform .15s; }
+.hv-run-toggle[aria-expanded="true"]::before { transform: rotate(45deg); }
+.hv-run-toggle:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
+.hv-runs-table .hv-run-crops { color: var(--ink-2); }
+.hv-run-row th { white-space: nowrap; }
+.hv-run-detail > td { border-top: 0; padding: 0 0 12px; }
+.hv-run-body { padding-left: 12px; border-left: 2px solid var(--border); }
+.hv-run-body > * + * { margin-top: 12px; }
+@media (max-width: 600px) {
+  /* a phone: each run a block of labelled figures rather than a table wider than the screen */
+  .hv-runs-table > thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .hv-runs-table, .hv-runs-table > tbody, .hv-run-detail, .hv-run-detail > td { display: block; }
+  .hv-run-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 12px; padding: 10px 0; border-top: 1px solid var(--border); }
+  .hv-runs-table > tbody > .hv-run-row:first-child { border-top: 0; }
+  .hv-runs-table .hv-run-row > :is(th, td, td.num) { display: block; padding: 0; border: 0; text-align: left; }
+  .hv-run-row > :is(th, .hv-run-crops) { grid-column: 1 / -1; }
+  .hv-run-row > td.num { white-space: normal; font-size: var(--fs-sm); }
+  .hv-run-row > td.num::before { content: attr(data-label); display: block; color: var(--muted); font-size: var(--fs-xs); }
+  .hv-run-toggle { min-height: 44px; margin: -6px 0; } /* 44 px to tap; the row keeps its spacing */
+}
+
+/* ---- Settings: the Yield card ---- */
+.settings-grid > [data-yield] { grid-column: 1 / -1; }
+.yd-table { width: 100%; max-width: 640px; border-collapse: collapse; margin-bottom: 12px; }
+.yd-table th, .yd-table td { padding: 6px 8px 6px 0; text-align: left; vertical-align: top; border-bottom: 1px solid var(--border); }
+.yd-table thead th { font-size: var(--fs-sm); font-weight: 600; color: var(--muted); vertical-align: bottom; }
+.yd-table tbody :is(th, td) { vertical-align: middle; } /* the name level with its boxes */
+.yd-crop { font-weight: 500; }
+.yd-crop-name { display: flex; align-items: center; gap: 8px; } /* the picture beside the name */
+.yield .s-hint { max-width: 60ch; }
+.yd-table input { width: 100%; max-width: 140px; font-variant-numeric: tabular-nums; }
+.settings .yd-table .field-error:empty { display: none; }
+@media (max-width: 640px) {
+  .yd-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .yd-table, .yd-table tbody { display: block; }
+  .yd-table tr { display: grid; grid-template-columns: 1fr 1fr; align-items: end; gap: 4px 12px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .yd-table th, .yd-table td { display: block; padding: 0; border: 0; }
+  .yd-table .yd-crop { grid-column: 1 / -1; }
+  .yd-cell::before { content: attr(data-label); display: block; margin-bottom: 2px; font-size: var(--fs-xs); color: var(--muted); }
+}
+
+/* ---- the Harvest page, #/harvest, and its myGAP sheet (spec 2026-11-04-harvest-design.md 7): web/harvest-page.js ---- */
+.hv-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.hv-tools .range-bar { margin: 0; }
+.hv-page { display: grid; gap: 16px; align-items: start; }
+@media (min-width: 1100px) {
+  .hv-page { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
+  .hv-page > .hv-totals { grid-column: 1 / -1; }
+}
+.hv-totals .hv-missing { margin: 0 0 8px; }
+.hv-page .hv-tiles { grid-template-columns: repeat(3, minmax(160px, 260px)); }
+.hv-page .hv-tiles > :first-child .us-kwh { font-size: var(--fs-3xl); line-height: 1.1; letter-spacing: -.02em; } /* the page's main number, in Display */
+@media (max-width: 600px) {
+  .hv-page .hv-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hv-page .hv-tiles > :first-child .us-kwh { font-size: 28px; }
+}
+.hv-chart-title { margin: 12px 0 6px; font-size: var(--fs-sm); font-weight: 600; color: var(--ink-2); }
+.hv-farm-table .hv-name { display: flex; align-items: center; gap: 8px; white-space: nowrap; } /* "Room 1" never on two lines */
+.hv-farm-table .hv-groups :is(th, td) { padding-bottom: 2px; border-top: 0; font-size: var(--fs-xs); font-weight: 600; color: var(--muted); text-align: right; }
+/* a rule under each group's name over its own columns, a gap between the groups */
+.hv-farm-table .hv-groups th { background: linear-gradient(var(--border), var(--border)) right bottom / calc(100% - 16px) 1px no-repeat; }
+.hv-run-words { display: none; }
+@media (max-width: 600px) {
+  .hv-farm-table .hv-run-col { display: none; } /* the run's figures go under the room's name */
+  .hv-run-words { display: block; margin-top: 2px; color: var(--muted); font-size: var(--fs-xs); font-weight: 400; white-space: normal; }
+  .hv-farm-table .hv-groups { display: none; }
+}
+.hv-farm-table thead th, .hv-farm-table thead th.num { white-space: normal; } /* a phone: "kg per block" on two lines, the figures on one */
+.hv-farm-table .hv-name a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--axis); text-underline-offset: 3px; }
+.hv-farm-table .hv-name a:hover { text-decoration-color: currentColor; }
+.hv-without { display: block; color: var(--muted); font-size: var(--fs-xs); white-space: normal; } /* under a room's RM value */
+.hv-page-empty .none { margin: 0; color: var(--muted); }
+.ov-harvest h2 { margin-bottom: 8px; }
+.ov-harvest h2 a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--axis); text-underline-offset: 3px; }
+.ov-harvest h2 a:hover { text-decoration-color: currentColor; }
+.ov-harvest .muted { margin: 0; }
+.ov-harvest .us-note { color: var(--muted); font-size: var(--fs-xs); }
+.ov-strip { display: block; width: 100%; height: 48px; margin: 4px 0 12px; fill: var(--s-harvest); }
+.ov-harvest-rooms { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 24px; }
+.ov-harvest-rooms .us-room { grid-template-columns: minmax(0, 1fr) auto; }
+.ov-harvest-rooms .us-room > :nth-child(2) { grid-column: 2; }
+@media (max-width: 600px) {
+  .ov-harvest h2 a { display: inline-block; padding: 11px 4px; margin: -11px -4px; } /* 44 px to tap, as a Today room's name */
+  .ov-harvest h2 a:focus-visible { outline-offset: -2px; }
+}
+.ov-harvest .us-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); } /* the three side by side, at 360 px too */
+@media (max-width: 600px) {
+  .hv-tools { flex: 1 1 100%; }
+  .hv-tools .range-bar { flex: 1 1 100%; }
+  .hv-tools .range-bar button { flex: 1 1 0; padding: 4px 6px; white-space: nowrap; } /* "12 months" on one line */
+  .hv-tools a.button { flex: 1 1 0; justify-content: center; min-height: 44px; }
+  .hv-farm-table .hv-name a { display: inline-block; padding: 10px 0; } /* 44 px to tap */
+}
+
+.hv-sheet-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+.hv-sheet-tools .back { margin: 0; }
+.hv-sheet-title { font-size: var(--fs-xl); max-width: 60ch; }
+.hv-sheet-facts { display: flex; flex-wrap: wrap; gap: 4px 32px; margin: 12px 0 16px; }
+.hv-sheet-facts div { display: flex; gap: 8px; }
+.hv-sheet-facts dt { color: var(--ink-2); }
+.hv-sheet-facts dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+.hv-sheet-facts .hv-write-line { min-width: 40ch; border-bottom: 1px solid var(--border-strong); } /* the farm's name, written in */
+.hv-sheet-table tfoot th { text-align: right; font-weight: 600; }
+.hv-sheet-table tfoot td { font-weight: 600; }
+.hv-sheet > .none { color: var(--muted); }
+.hv-sheet-wrap { overflow-x: auto; } /* a phone: the sheet scrolls sideways rather than squeeze its columns */
+.hv-sheet-table { width: 100%; min-width: 760px; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: var(--fs-sm); }
+.hv-sheet-table th, .hv-sheet-table td { padding: 6px 8px; border: 1px solid var(--border-strong); text-align: left; vertical-align: top; }
+.hv-sheet-table thead th { color: var(--ink-2); font-weight: 600; background: var(--band); }
+.hv-sheet-table .num { text-align: right; }
+.hv-sheet-table td { height: 2.5rem; } /* a sale written by hand fits */
+.hv-sheet-table td.hv-write { min-width: 5rem; }
+.hv-sheet-table td:first-child { white-space: nowrap; }
+@media (max-width: 600px) { .hv-sheet-tools .back { padding: 10px 0; } }

@@ -2,7 +2,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CROPS, CROP_KEYS, STAGES, FARM_TYPES, cropBands, mixBands, rangeWarnings, validateCrops, blocksOf } from '../web/crops.js';
+import { CROPS, CROP_KEYS, STAGES, FARM_TYPES, cropBands, mixBands, rangeWarnings, validateCrops, blocksOf, cropShortName } from '../web/crops.js';
 import { validateControl, DEFAULTS } from '../server/controller.js';
 
 test('nine crops with targets for every stage and a fruiting range', () => {
@@ -67,4 +67,14 @@ test('validateCrops', () => {
   assert.equal(validateCrops([{ crop: 'oyster', blocks: 1 }])?.field, undefined);
   assert.equal(validateCrops([])?.field, 'crops');
   assert.equal(blocksOf([{ crop: 'oyster', blocks: 300 }, { crop: 'golden', blocks: 200 }]), 500);
+});
+
+test("a crop's short name: the crop list's name without a trailing (draft); the real aliases stay", () => {
+  assert.equal(cropShortName('lionsmane'), "Lion's mane");
+  assert.equal(cropShortName('oyster'), 'Grey oyster');
+  assert.equal(cropShortName('reishi'), 'Reishi (lingzhi)');
+  assert.equal(cropShortName('woodear'), 'Black jelly (wood ear)');
+  assert.equal(cropShortName('milky'), 'Milky (Calocybe indica)');
+  assert.equal(cropShortName('nosuch'), 'nosuch', 'an unknown key as it is');
+  assert.equal(cropShortName(undefined), '');
 });

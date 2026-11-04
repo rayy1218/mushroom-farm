@@ -43,7 +43,7 @@ async function call(method, path, body) {
 }
 
 const fields = { name: 'A', length: 6, width: 4, height: 2.5 };
-const DEFAULTS = { pollSeconds: 5, outdoorAddress: null, electricityPrice: 0.55, waterPrice: null, ...TELEGRAM_VIEW_DEFAULT, farmGateway: DEFAULT_GATEWAY };
+const DEFAULTS = { pollSeconds: 5, outdoorAddress: null, electricityPrice: 0.55, waterPrice: null, cropYield: {}, ...TELEGRAM_VIEW_DEFAULT, farmGateway: DEFAULT_GATEWAY };
 
 test('GET /api/settings returns all four settings', async () => {
   assert.deepEqual((await call('GET', '/api/settings')).body, DEFAULTS);

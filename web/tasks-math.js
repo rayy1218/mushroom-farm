@@ -122,6 +122,14 @@ export function amountField(row) {
   return { label: unit && !hasWord(label, unit) ? `${label} (${unit})` : label, unit };
 }
 
+// The Done form's amount boxes: one kg box per crop when the harvest check is for 2+ crops (named by the crop: the dialog
+// groups them under "kg picked" and puts the unit in the box), else the single amount box.
+export function amountFields(row) {
+  const crops = row?.harvestCrops;
+  if (Array.isArray(crops) && crops.length >= 2) return crops.map((c) => ({ name: `kg:${c.crop}`, label: c.name, crop: c.crop }));
+  return recordsAmount(row) ? [{ name: 'amount', label: amountField(row).label }] : [];
+}
+
 // An upkeep row's due words (spec 7.1): "overdue 3 days" (amber), "due today", "due 2 Nov"; group: overdue, soon (within
 // 7 days) or later; late: days past the due date (negative before it).
 const dueDateOf = (row) => row.dueDate ?? (finite(row.dueAt) ? farmDate(row.dueAt) : null);
@@ -264,6 +272,21 @@ export function parseAmount(text) {
   if (s === '') return { value: null };
   const n = /^[0-9]{1,5}(\.[0-9]{1,3})?$/.test(s) ? Number(s) : NaN;
   return n >= 0 && n <= AMOUNT_MAX ? { value: n } : { error: `The amount must be a number from 0 to ${grouped(AMOUNT_MAX)}` };
+}
+
+// The Done request's body from the form's values: { worker, amount } or { worker, amounts: { crop: kg } } (empty boxes
+// left out), or { error, field } with the form field's name.
+export function doneBody(row, worker, values) {
+  const fields = amountFields(row);
+  const parsed = [];
+  for (const f of fields) {
+    const p = parseAmount(values[f.name]);
+    if (p.error) return { error: p.error, field: f.name };
+    if (p.value !== null) parsed.push([f, p.value]);
+  }
+  if (!parsed.length) return { worker };
+  if (fields[0].crop) return { worker, amounts: Object.fromEntries(parsed.map(([f, v]) => [f.crop, v])) };
+  return { worker, amount: parsed[0][1] };
 }
 
 // The reason of a skip or a cancel → { value } or { error }.

@@ -17,6 +17,7 @@ const PANELS = {
   history: ['data-range', 'data-charts', 'data-usage-charts', 'data-usage>', 'data-timeline'], // the by-day card with the range's energy and water (critique 2026-10-28)
   crop: ['data-crop'],
   tasks: ['data-tasks'],
+  harvest: ['data-harvest'],
   simulations: ['data-simulations'],
   setup: ['data-control', 'data-equipment', 'data-filter', 'data-profile', 'data-delete'],
 };
@@ -89,4 +90,12 @@ test('the Tasks tab: its card, made once, gone with a missing room and on leavin
   assert.ok(page.includes("tasksDot = text('span', 'tab-dot tab-count');"));
   assert.ok(page.includes("tasksLink.setAttribute('aria-label', `Tasks: ${dot.label}`);"));
   assert.ok(page.includes("if (data.part === 'tasks') return; // the Tasks card asks for its own"));
+});
+
+test('the Harvest tab: its card, made once, gone with a missing room and on leaving', () => {
+  assert.match(page, /import \{ createHarvestCard \} from '\.\/harvest-card\.js';/);
+  assert.ok(page.includes('harvestCard ??= createHarvestCard(els.harvestHost, { roomId: id, getRoom: () => room, onGone: () => { if (alive()) load(); } });'));
+  const missing = page.slice(page.indexOf('function showMissing()'), page.indexOf('function renderHead()'));
+  assert.ok(missing.includes('harvestCard?.destroy();'));
+  assert.ok(page.slice(page.indexOf('function unmount()')).includes('harvestCard?.destroy();'));
 });

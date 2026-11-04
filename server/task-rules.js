@@ -9,6 +9,8 @@
 // 'dehumidifier' | 'co2' | 'trh', null for nothing; see upkeepApplies). The owner's own rules (key `custom:<id>`) take the same
 // shapes; an own upkeep rule also carries its slot (the built-in upkeep rules have none: any time of day).
 
+import { cropShortName } from '../web/crops.js';
+
 const DAY_MS = 86_400_000;
 // The farm's day is Asia/Kuala_Lumpur's: UTC+8 all year (Malaysia has had no daylight saving since 1982), so a fixed offset
 // gives the same dates as the time zone, without depending on the host's TZ or its ICU data.
@@ -69,7 +71,17 @@ export const CROP_NOTES = {
   lionsmane: { harvest: 'Spines 6–13 mm and still white; brown or yellow means now', humidifierCheck: 'Mist the air, never the mushroom' },
   woodear: { harvest: 'Ears 3–5 cm, before the edges thin; leave the small ones' },
 };
-const HARVEST_KEYS = new Set(['harvestAm', 'harvestPm', 'harvestDaily', 'reishiRim']);
+// The harvest checks: the daily rules that record kg picked.
+export const HARVEST_RULES = ['harvestAm', 'harvestPm', 'harvestDaily', 'reishiRim'];
+const HARVEST_FAMILIES = Object.fromEntries(DAILY_RULES.filter((r) => HARVEST_RULES.includes(r.key)).map((r) => [r.key, r.families]));
+
+// The room's crops a harvest check is for (spec 2026-11-04-harvest-design.md 3), in the room's order: [{ crop, name }]; null
+// for a row of another rule.
+export function harvestCropsOf(ruleKey, crops) {
+  if (!HARVEST_RULES.includes(ruleKey)) return null;
+  const families = HARVEST_FAMILIES[ruleKey];
+  return crops.filter((c) => families === null || families.includes(FAMILY_OF[c.crop])).map((c) => ({ crop: c.crop, name: cropShortName(c.crop) }));
+}
 // The crop's name before its note in a room of several crops.
 const NOTE_NAMES = { oyster: 'Grey oyster', pink: 'Pink oyster', golden: 'Golden oyster', black: 'Black oyster', abalone: 'Abalone oyster', lionsmane: "Lion's mane", woodear: 'Wood ear' };
 
@@ -135,7 +147,7 @@ function noteOf(rule, cropKeys) {
   const notes = [];
   for (const crop of cropKeys) {
     if (rule.families !== null && !rule.families.includes(FAMILY_OF[crop])) continue;
-    const n = CROP_NOTES[crop]?.[rule.key] ?? (HARVEST_KEYS.has(rule.key) ? CROP_NOTES[crop]?.harvest : undefined);
+    const n = CROP_NOTES[crop]?.[rule.key] ?? (HARVEST_RULES.includes(rule.key) ? CROP_NOTES[crop]?.harvest : undefined);
     if (n) notes.push({ crop, n });
   }
   if (notes.length === 0) return null;

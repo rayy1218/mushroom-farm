@@ -12,7 +12,7 @@ const html = src('index.html');
 test('the router mounts the page at #/today and marks its link', () => {
   assert.ok(app.includes("import * as today from './today-page.js';"));
   assert.ok(app.includes(": route.name === 'today' ? today.mount(view, {})"));
-  assert.ok(app.includes("const section = ['settings', 'overview', 'today', 'calendar'].includes(route.name) ? route.name : null;"));
+  assert.ok(app.includes("const section = route.name === 'sheet' ? 'harvest' : ['settings', 'overview', 'today', 'calendar', 'harvest'].includes(route.name) ? route.name : null;"));
   assert.ok(app.includes("today: document.querySelectorAll('[data-nav=\"today\"]'),"));
 });
 

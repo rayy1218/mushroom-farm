@@ -17,6 +17,10 @@ export const CROPS = {
 };
 export const CROP_KEYS = Object.keys(CROPS);
 
+// A crop's name on a record (a harvest, the myGAP sheet): the list's name without " (draft)", a setup label; the real aliases
+// ("(lingzhi)", "(wood ear)") stay. An unknown key as it is.
+export const cropShortName = (key) => (CROPS[key]?.name ?? String(key ?? '')).replace(/ \(draft\)$/, '');
+
 export const STAGES = { spawn: 'Spawn run', pinning: 'Pinning', fruiting: 'Fruiting', rest: 'Rest between flushes' };
 export const STAGE_KEYS = Object.keys(STAGES);
 
