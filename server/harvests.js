@@ -1,16 +1,14 @@
 // Harvests (spec 2026-11-04-harvest-design.md 3, 4 and 6): recorded from a harvest check's Done or by hand, edited and
 // deleted with their task's total kept, and the room and farm views with their figures. No HTTP.
 
-import { DAILY_RULES, FAMILY_OF, HARVEST_RULES, localDate, dayStart, addDays, daysBetween } from './task-rules.js';
-import { CROPS, CROP_KEYS } from '../web/crops.js';
+import { localDate, dayStart, addDays, daysBetween } from './task-rules.js';
+import { CROP_KEYS } from '../web/crops.js';
 import { readSettings, readCropYield } from './settings.js';
-import { roomDays, totals, localZone } from './usage.js';
+import { roomDays, totals, localZone, USAGE_DAYS_KEPT } from './usage.js';
 import { runFigures, buckets, recordRows, csvRows, valueOf, round } from './harvest-math.js';
 import { checkWorker, TaskError } from './tasks.js';
 
-const FAMILIES = Object.fromEntries(DAILY_RULES.filter((r) => HARVEST_RULES.includes(r.key)).map((r) => [r.key, r.families]));
 export const MAX_KG = 10_000;
-const USAGE_DAYS_KEPT = 400; // the usage days a room keeps (server/usage.js roomDays' cache)
 export const RANGES = [7, 30, 90, 365];
 
 // A refused request: status 400, 404 or 409, field the input it is about (the routes reply { error, field }).
@@ -21,25 +19,6 @@ export class HarvestError extends Error {
     this.status = status;
     this.field = field;
   }
-}
-
-// The room's crops a harvest rule is for, in the room's order: [{ crop, name }]; null for a row of another rule.
-export function harvestCropsOf(ruleKey, crops) {
-  if (!HARVEST_RULES.includes(ruleKey)) return null;
-  const families = FAMILIES[ruleKey];
-  return crops.filter((c) => families === null || families.includes(FAMILY_OF[c.crop])).map((c) => ({ crop: c.crop, name: CROPS[c.crop].name }));
-}
-
-// The harvest rows a Done makes (db.closeTask's harvests): amounts { crop: kg } (each over 0) stamped with the open run, the
-// program's stage and flush and the run's blocks of the crop. → [] with no open run.
-export function stampHarvests(db, { roomId, amounts, at, worker, taskId }) {
-  const run = db.openRun(roomId);
-  if (!run) return [];
-  const program = db.getProgram(roomId);
-  const blocksOf = (crop) => (run.crops.find((c) => c.crop === crop) ?? program.crops.find((c) => c.crop === crop))?.blocks ?? 0;
-  return Object.entries(amounts).filter(([, kg]) => kg > 0).map(([crop, kg]) => ({
-    roomId, runId: run.id, crop, stage: program.stage, flush: program.flush, blocks: blocksOf(crop), kg, pickedAt: at, worker, taskId, at,
-  }));
 }
 
 // The days query of the farm view and the CSV: one of RANGES.
@@ -67,7 +46,8 @@ const costOf = (days, prices) => {
 
 const ordered = (crops) => CROP_KEYS.filter((k) => crops.has(k));
 
-// db: the farm database; now and zone (usage.js's day labels) are injectable.
+// db: the farm database; now and zone are injectable. zone: the usage days are in the host's zone like the Usage tab; the
+// containers run on the farm's time (TZ in compose.yaml), so they are the farm's days.
 export function createHarvests({ db, now = Date.now, zone = localZone, log = console.error }) {
   const listeners = new Set();
 
@@ -121,7 +101,7 @@ export function createHarvests({ db, now = Date.now, zone = localZone, log = con
     return {
       id: run.id, startedAt: run.startedAt, endedAt: run.endedAt, partial: run.partial, crops: run.crops,
       ...runFigures(run, harvests, cropYield, usage),
-      harvests: harvests.reverse(),
+      harvests: harvests.toReversed(),
     };
   }
 
@@ -151,6 +131,7 @@ export function createHarvests({ db, now = Date.now, zone = localZone, log = con
       const own = run.crops.find((c) => c.crop === crop);
       if (!own) throw new HarvestError(400, "Pick one of the room's crops", 'crop');
       const fields = { kg: kgOf(kg), worker: workerOf(worker), pickedAt: pickedAt === undefined || pickedAt === null ? now() : timeOf(pickedAt, run) };
+      // A back-dated pick takes the stage and flush as they are now: no stage history is kept.
       const h = db.insertHarvest({
         roomId, runId: run.id, crop, stage: program.stage, flush: program.flush, blocks: own.blocks, ...fields, taskId: null, at: now(),
       });
@@ -189,7 +170,8 @@ export function createHarvests({ db, now = Date.now, zone = localZone, log = con
       const cropYield = readCropYield(db);
       const p = prices();
       const today = zone.label(now());
-      const count = Math.min(USAGE_DAYS_KEPT, Math.max(0, ...runs.map((r) => daysBetween(zone.label(r.startedAt), today) + 1)));
+      // The days back to the oldest run within the kept days (an older run has no cost: its days are not all kept).
+      const count = Math.max(0, ...runs.map((r) => daysBetween(zone.label(r.startedAt), today) + 1).filter((n) => n <= USAGE_DAYS_KEPT));
       const usageDays = count > 0 ? roomDays(db, room, { now: now(), zone, count }) : [];
       const views = runs.map((run) => runView(run, cropYield, usageDays, p));
       return { current: views.find((v) => v.endedAt === null) ?? null, past: views.filter((v) => v.endedAt !== null) };

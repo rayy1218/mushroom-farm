@@ -8,6 +8,8 @@ const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
 const FAN_SHARE = 0.05; // the aircon in fan mode draws this share of its rated input
 const MIN_DAYS = 30; // the 7 and 30 day totals need that many days whatever `days` is
+// The days a room's cache keeps (the harvest costs read a run's days up to this far back; spec 2026-11-04-harvest-design.md 4).
+export const USAGE_DAYS_KEPT = 400;
 export const MACHINES = ['intake', 'exhaust', 'circulation', 'humidifier', 'dehumidifier', 'lights', 'ac'];
 const RATING = { intake: 'intakeW', exhaust: 'exhaustW', circulation: 'circulationW', humidifier: 'humidifierW', dehumidifier: 'dehumidifierW', lights: 'lightsW' };
 
@@ -215,7 +217,11 @@ export function dayWork(db, room, day, { now, zone }) {
 export function roomDays(db, room, { now, zone, count }) {
   const days = dayWindows(now, count, zone);
   const cache = db.usageDays(room.id);
-  if (cache.size > 400) for (const [key, e] of cache) if (e.end < days[0].start) cache.delete(key);
+  // Only the days older than the kept ones go: a short read after a long one leaves the long one's days for the next.
+  if (cache.size > USAGE_DAYS_KEPT) {
+    const oldest = zone.addDays(zone.startOfDay(now), -(USAGE_DAYS_KEPT - 1));
+    for (const [key, e] of cache) if (e.end <= oldest) cache.delete(key);
+  }
   return days.map((day) => {
     const work = dayWork(db, room, day, { now, zone });
     const est = estimateDay(work.ms, room, work.pa === null ? 1 : fanWattFactor(work.pa, room.filterCleanPa, room.fanMaxPa));
@@ -247,15 +253,19 @@ export function roomDays(db, room, { now, zone, count }) {
   });
 }
 
-// Works out the last MIN_DAYS days of every room one day at a time, with the event loop free between days (the first
-// usage request after a start would otherwise stall the poller for seconds with a month of one-second readings).
+// Works out the kept days (USAGE_DAYS_KEPT) of every room one day at a time, with the event loop free between days (the
+// first usage request after a start would otherwise stall the poller for seconds with a month of one-second readings): the
+// last MIN_DAYS of every room first (the Usage tab's), then the older ones newest first (the harvest costs').
 export async function warmUsage(db, { now = Date.now(), zone = localZone } = {}) {
-  for (const { id } of db.listRooms()) {
-    for (const day of dayWindows(now, MIN_DAYS, zone)) {
-      const room = db.getRoom(id); // it may have changed or gone meanwhile
-      if (!room) break;
-      dayWork(db, room, day, { now, zone });
-      await new Promise((resolve) => setImmediate(resolve));
+  const days = dayWindows(now, USAGE_DAYS_KEPT, zone);
+  for (const part of [days.slice(-MIN_DAYS), days.slice(0, -MIN_DAYS).reverse()]) {
+    for (const { id } of db.listRooms()) {
+      for (const day of part) {
+        const room = db.getRoom(id); // it may have changed or gone meanwhile
+        if (!room) break;
+        dayWork(db, room, day, { now, zone });
+        await new Promise((resolve) => setImmediate(resolve));
+      }
     }
   }
 }

@@ -1,6 +1,6 @@
 // The harvest figures (spec 2026-11-04-harvest-design.md section 4). Pure: no database, no clock. Farm time is UTC+8.
 import { localDate, localTime, addDays } from './task-rules.js';
-import { cell } from './tasks.js';
+import { cell } from './csv.js';
 import { CROPS, STAGES } from '../web/crops.js';
 
 export const round = (n, places = 0) => Math.round(n * 10 ** places) / 10 ** places;

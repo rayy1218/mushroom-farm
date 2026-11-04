@@ -4,10 +4,10 @@
 
 import {
   DAILY_RULES, UPKEEP_RULES, HARVEST_RULES, localDate, localTime, dayStart, addDays, daysBetween, effectiveRules, wantedDaily,
-  upkeepApplies,
+  upkeepApplies, harvestCropsOf,
 } from './task-rules.js';
 import { projectRoom, isRoutine, HORIZON_DAYS } from './calendar.js';
-import { harvestCropsOf, stampHarvests } from './harvests.js';
+import { cell } from './csv.js';
 
 // A refused request: status 400, 404 or 409, field the input it is about (tasks-api.js replies { error, field }).
 export class TaskError extends Error {
@@ -47,6 +47,7 @@ function closedText(row, date) {
 }
 
 const trimmed = (v) => (typeof v === 'string' ? v.trim() : '');
+const kg3 = (v) => Math.round(v * 1000) / 1000;
 
 // Who did it: 1 to 40 characters, no control characters (a parked worker name starts with U+0001). When the farm has
 // active workers (Settings), one of them, case aside, kept as the list spells it (a name renamed or removed meanwhile is
@@ -86,12 +87,16 @@ export function machineChangeText(key, from, to) {
 const LOG_PAGE = 50;
 const CSV_HEADER = 'date,time,room,task,status,worker,amount,unit,reason';
 
-// One CSV cell: quoted when it holds a comma, quote or line break; a text starting like a formula gets a ' first.
-export function cell(v) {
-  if (v === null || v === undefined) return '';
-  let s = String(v);
-  if (typeof v === 'string' && /^[=+\-@]/.test(s)) s = `'${s}`;
-  return /[",\r\n]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s;
+// The harvest rows a Done makes (db.closeTask's harvests; spec 2026-11-04-harvest-design.md 3): amounts { crop: kg } (each
+// over 0) stamped with the open run, the program's stage and flush and the run's blocks of the crop. → [] with no open run.
+function stampHarvests(db, { roomId, amounts, at, worker, taskId }) {
+  const run = db.openRun(roomId);
+  if (!run) return [];
+  const program = db.getProgram(roomId);
+  const blocksOf = (crop) => (run.crops.find((c) => c.crop === crop) ?? program.crops.find((c) => c.crop === crop))?.blocks ?? 0;
+  return Object.entries(amounts).filter(([, kg]) => kg > 0).map(([crop, kg]) => ({
+    roomId, runId: run.id, crop, stage: program.stage, flush: program.flush, blocks: blocksOf(crop), kg, pickedAt: at, worker, taskId, at,
+  }));
 }
 
 // onHarvest(roomId): after a Done on a harvest check made harvests (the harvest module's event).
@@ -336,8 +341,11 @@ export function createTasks({ db, now = Date.now, log = console.error, onHarvest
       const crops = row.unit === null ? null : harvestCrops(row);
       if (crops && crops.length >= 2 && given(amount)) throw new TaskError(400, 'Give the kg of each crop', 'amount');
       if (amounts === undefined || amounts === null) {
-        const kg = crops?.length === 1 && given(amount) ? { [crops[0].crop]: amount } : null;
-        return close(row, { status: 'done', worker: name, amount: given(amount) && row.unit !== null ? amount : null }, kg);
+        if (crops?.length === 1 && given(amount)) {
+          const one = kg3(amount); // a harvest's kg, to 3 places as Record a harvest keeps them
+          return close(row, { status: 'done', worker: name, amount: one }, { [crops[0].crop]: one });
+        }
+        return close(row, { status: 'done', worker: name, amount: given(amount) && row.unit !== null ? amount : null });
       }
       if (!crops?.length) throw new TaskError(400, 'Only a harvest check takes the kg of each crop', 'amounts');
       if (typeof amounts !== 'object' || Array.isArray(amounts) || Object.keys(amounts).some((k) => !crops.some((c) => c.crop === k))) {
@@ -348,10 +356,10 @@ export function createTasks({ db, now = Date.now, log = console.error, onHarvest
       for (const { crop } of crops) {
         if (!given(amounts[crop])) continue;
         if (!valid(amounts[crop])) throw new TaskError(400, `Each kg must be a number from 0 to ${grouped(MAX_AMOUNT)}`, 'amounts');
-        kg[crop] = amounts[crop];
+        kg[crop] = kg3(amounts[crop]);
       }
       const values = Object.values(kg);
-      const total = values.length ? Number(values.reduce((s, v) => s + v, 0).toFixed(3)) : null;
+      const total = values.length ? kg3(values.reduce((s, v) => s + v, 0)) : null;
       return close(row, { status: 'done', worker: name, amount: total }, kg);
     },
 
