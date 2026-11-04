@@ -69,7 +69,7 @@ export function drawBarChart(host, opts) {
     svg.append(defs);
     for (const t of layout.yTicks) {
       svg.append(el('line', { x1: plot.x0, x2: plot.x1, y1: t.y, y2: t.y, style: 'stroke:var(--grid)', 'stroke-width': 1 }));
-      svg.append(el('text', { x: plot.x0 - 6, y: t.y + 4, 'text-anchor': 'end', style: 'fill:var(--muted)', 'font-size': 12 }, axisLabel(t.v)));
+      svg.append(el('text', { x: plot.x0 - 6, y: t.y + 4, 'text-anchor': 'end', style: 'fill:var(--muted)', 'font-size': 12 }, t.label));
     }
     svg.append(el('line', { x1: plot.x0, x2: plot.x1, y1: plot.y0, y2: plot.y0, style: 'stroke:var(--axis)', 'stroke-width': 1 }));
     for (const b of bars) {

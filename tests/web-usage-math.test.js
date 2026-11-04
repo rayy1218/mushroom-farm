@@ -68,6 +68,22 @@ test('niceMax: the first multiple at or over the peak of the finest 1, 2, 2.5 or
   }
 });
 
+test('the y axis labels every value with its step\'s places, trailing zeros trimmed: none rounds its own value', () => {
+  const labels = (v, opts) => {
+    const { ticks, places } = niceScale(v, 6, opts);
+    return ticks.map((t) => axisLabel(t, places));
+  };
+  assert.deepEqual(labels(1.2), ['0', '0.25', '0.5', '0.75', '1', '1.25'], 'not 1.3');
+  assert.deepEqual(labels(0.12), ['0', '0.025', '0.05', '0.075', '0.1', '0.125'], 'not 0.13');
+  assert.deepEqual(labels(25.3), ['0', '10', '20', '30']);
+  assert.deepEqual(labels(0.0024), ['0', '0.0005', '0.001', '0.0015', '0.002', '0.0025'], 'a 15 s bucket');
+  assert.deepEqual(labels(12_000), ['0', '2,500', '5,000', '7,500', '10,000', '12,500']);
+  assert.deepEqual(labels(3, { whole: true }), ['0', '1', '2', '3']);
+  assert.deepEqual(labels(0), ['0', '0.5', '1']);
+  const { yTicks } = barLayout(barSeries([day('2026-10-18', 1.2, true)], 'kWh'), 600, 200);
+  assert.deepEqual(yTicks.map((t) => t.label), ['0', '0.25', '0.5', '0.75', '1', '1.25'], 'the Usage tab\'s bars');
+});
+
 test('niceScale for a count: whole steps, at least 0, 1, 2', () => {
   assert.deepEqual(niceScale(1, 6, { whole: true }).ticks, [0, 1, 2]);
   assert.deepEqual(niceScale(3, 6, { whole: true }).ticks, [0, 1, 2, 3]);
@@ -185,7 +201,7 @@ test('farm room lines: one per room with today and 30 days; a missing list is em
 
 test('axis labels keep the decimals small values need; the last date label ends at the plot edge', async () => {
   const { axisLabel, barLayout, barSeries } = await import('../web/usage-math.js');
-  assert.deepEqual([0, 0.05, 0.1, 0.25, 2.5, 5, 1250].map(axisLabel), ['0', '0.05', '0.1', '0.25', '2.5', '5', '1,250']);
+  assert.deepEqual([0, 0.05, 0.1, 0.25, 2.5, 5, 1250].map((v) => axisLabel(v)), ['0', '0.05', '0.1', '0.25', '2.5', '5', '1,250']);
   const days = Array.from({ length: 30 }, (_, i) => ({ date: `2026-10-${String(i + 1).padStart(2, '0')}`, kWh: 1, metered: false }));
   const layout = barLayout(barSeries(days, 'kWh'), 600, 200);
   const last = layout.xTicks.at(-1);

@@ -6,8 +6,6 @@ import { xFor, nearestIndex, tickCount } from './chart-math.js';
 import { niceScale, axisLabel } from './usage-math.js';
 
 const NS = 'http://www.w3.org/2000/svg';
-// An axis value: axisLabel's, with the places a tiny one needs (a 15 s bucket's 0.0025 kWh is not 0.003).
-const tickLabel = (v) => (v !== 0 && Math.abs(v) < 0.01 ? String(Number(v.toPrecision(2))) : axisLabel(v));
 let patternSeq = 0; // each chart's hatch pattern needs an id of its own
 
 function el(name, attrs = {}, text) {
@@ -49,7 +47,7 @@ export function drawTimeBars(host, opts) {
     const y1 = M.top;
     const { bars, range, color } = current;
     // round values from 0, one every 28 px or more (counts: whole ones)
-    const { max: top, ticks } = niceScale(Math.max(0, ...bars.map((b) => (b.v === null ? 0 : b.v))), tickCount(y0 - y1), { whole: current.whole });
+    const { max: top, ticks, places } = niceScale(Math.max(0, ...bars.map((b) => (b.v === null ? 0 : b.v))), tickCount(y0 - y1), { whole: current.whole });
     const yFor = (v) => y0 - (v / top) * (y0 - y1);
     const xAt = (t) => xFor(t, range.from, range.to, x0, x1);
     svg = el('svg', { width, height, viewBox: `0 0 ${width} ${height}`, role: 'img', 'aria-label': current.label ?? '' });
@@ -63,7 +61,7 @@ export function drawTimeBars(host, opts) {
     for (const v of ticks) {
       const y = yFor(v);
       svg.append(el('line', { x1: x0, x2: x1, y1: y, y2: y, style: 'stroke:var(--grid)', 'stroke-width': 1 }));
-      svg.append(el('text', { x: x0 - 6, y: y + 4, 'text-anchor': 'end', style: 'fill:var(--muted)', 'font-size': 12 }, tickLabel(v)));
+      svg.append(el('text', { x: x0 - 6, y: y + 4, 'text-anchor': 'end', style: 'fill:var(--muted)', 'font-size': 12 }, axisLabel(v, places)));
     }
     const xs = [];
     for (const b of bars) {

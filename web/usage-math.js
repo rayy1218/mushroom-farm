@@ -75,16 +75,22 @@ export function barSeries(days, key) {
 // A bar chart's y axis from 0 (DESIGN.md: 3 to 6 round values): the finest step of 1, 2, 2.5 or 5 times a power of ten that
 // numbers the axis at `most` values or fewer (at least 3), its top the first multiple at or over the peak v (audit 2026-11-04
 // #21: 25.3 kg gives 30 with 0, 10, 20, 30, not 50 with half the plot empty). whole: a count, whole steps only.
-// → { max, ticks }.
+// → { max, ticks, places }: places, the step's decimals, which every value's label gets (axisLabel), so 1.25 is not "1.3".
+
 export function niceScale(v, most = 6, { whole = false } = {}) {
   most = Math.max(3, most);
-  if (!finite(v) || v <= 0) return whole ? { max: 2, ticks: [0, 1, 2] } : { max: 1, ticks: [0, 0.5, 1] };
+  if (!finite(v) || v <= 0) return whole ? { max: 2, ticks: [0, 1, 2], places: 0 } : { max: 1, ticks: [0, 0.5, 1], places: 1 };
   const r = (x) => Number(x.toFixed(10));
+  const placesOf = (step) => {
+    let d = 0;
+    while (d < 10 && !Number.isInteger(r(step * 10 ** d))) d++;
+    return d;
+  };
   for (let p = 10 ** (Math.floor(Math.log10(v / most)) - 1); ; p *= 10) {
     for (const step of [1, 2, 2.5, 5].map((k) => r(k * p))) {
       if (whole && !Number.isInteger(step)) continue;
       const n = Math.max(2, Math.ceil(r(v / step)));
-      if (n + 1 <= most) return { max: r(n * step), ticks: Array.from({ length: n + 1 }, (_, i) => r(i * step)) };
+      if (n + 1 <= most) return { max: r(n * step), ticks: Array.from({ length: n + 1 }, (_, i) => r(i * step)), places: placesOf(step) };
     }
   }
 }
@@ -93,14 +99,14 @@ export const niceMax = (v, most = 6) => niceScale(v, most).max;
 export const BAR_M = { left: 44, right: 8, top: 10, bottom: 24 };
 
 // Where everything goes in a chart of `width` x `height` pixels, drawn 1:1.
-// { plot: { x0, x1, y0, y1 }, max, bars: [{ x, y, w, h, date, v, metered }], yTicks: [{ v, y }], xTicks: [{ x, label }] }
+// { plot: { x0, x1, y0, y1 }, max, bars: [{ x, y, w, h, date, v, metered }], yTicks: [{ v, y, label }], xTicks: [{ x, label }] }
 export function barLayout(series, width, height, m = BAR_M) {
   const x0 = m.left;
   const x1 = width - m.right;
   const y0 = height - m.bottom;
   const y1 = m.top;
   const n = series.length;
-  const { max: top, ticks } = niceScale(Math.max(0, ...series.map((s) => (finite(s.v) ? s.v : 0))), tickCount(y0 - y1));
+  const { max: top, ticks, places } = niceScale(Math.max(0, ...series.map((s) => (finite(s.v) ? s.v : 0))), tickCount(y0 - y1));
   const slot = n > 0 ? (x1 - x0) / n : 0;
   const bw = Math.max(1, Math.min(slot - 2, slot * 0.72));
   const yFor = (v) => y0 - (v / top) * (y0 - y1);
@@ -116,14 +122,17 @@ export function barLayout(series, width, height, m = BAR_M) {
   // the last label ends at the plot's right edge, so it is not cut off
   const last = xTicks.at(-1);
   if (last) Object.assign(last, { anchor: 'end', x: Math.min(last.x + slot / 2, x1) });
-  const yTicks = ticks.map((v) => ({ v, y: yFor(v) }));
+  const yTicks = ticks.map((v) => ({ v, y: yFor(v), label: axisLabel(v, places) }));
   return { plot: { x0, x1, y0, y1 }, max: top, bars, yTicks, xTicks };
 }
 
 // The text of an axis value: whole numbers stay whole, others get the decimals they need (0.05 stays 0.05, not 0.1).
-export function axisLabel(v) {
-  if (Number.isInteger(v)) return grouped(v, 0);
-  const places = Math.min(3, Math.max(1, -Math.floor(Math.log10(Math.abs(v))) + 1));
+// places: the axis's step's (niceScale), trailing zeros trimmed: 0.25, 0.5, 0.75, 1, 1.25.
+export function axisLabel(v, places) {
+  if (!Number.isInteger(places)) {
+    if (Number.isInteger(v)) return grouped(v, 0);
+    places = Math.min(3, Math.max(1, -Math.floor(Math.log10(Math.abs(v))) + 1));
+  }
   return grouped(Number(v.toFixed(places)), places).replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
 }
 
