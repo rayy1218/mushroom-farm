@@ -15,6 +15,7 @@
   --good: #2eb872; --good-text: #3fcf85; --good-soft: rgba(46,184,114,.14);
   --warning: #e3a008; --warning-text: #f2bd4b; --warning-soft: rgba(227,160,8,.14);
   --s-t: #f39a5b; --s-rh: #3cb4f0; --s-co2: #a98bfa; --s-energy: #c9b26a; --s-water: #4fc1b0;
+  --s-harvest: #b8844e; /* toasted ochre: the kg picked (5.5:1 on the card; clear of brass energy, the temperature orange and amber) */
   --critical: #d63c42; --critical-text: #ff8085;
   --on-critical: #fff;
   --critical-bg: rgba(229,72,77,.13); /* red tint over surface */
@@ -42,6 +43,7 @@
   --good: #16a34a; --good-text: #15803d; --good-soft: rgba(22,163,74,.1);
   --warning: #d97706; --warning-text: #a35a00; --warning-soft: rgba(217,119,6,.1);
   --s-t: #dd6b20; --s-rh: #0284c7; --s-co2: #7c3aed; --s-energy: #8a7425; --s-water: #0f8f80;
+  --s-harvest: #a87a4c; /* 3.8:1 on the card */
   --critical: #dc2626; --critical-text: #b91c1c;
   --on-critical: #fff;
   --critical-bg: #fdecec; /* red tint over surface */
@@ -318,6 +320,25 @@ html { scroll-padding-top: var(--topbar-h); }
   .page-sub { font-size: var(--fs-md); }
 }
 @media print { .topbar { display: none !important; } }
+/* Printing the Harvest page's myGAP sheet (web/harvest-page.js mountSheet): the sheet alone on light paper whatever the
+   theme, landscape, the head row on every page */
+.hv-sheet { page: hv-sheet; }
+@page hv-sheet { size: A4 landscape; margin: 12mm; }
+@media print {
+  body.printing-sheet {
+    color-scheme: light; --page: #fff; --surface: #fff; --ink: #000; --ink-2: #222; --muted: #444; --band: #eee;
+    --border: #999; --border-strong: #555; background: #fff; color: #000;
+  }
+  body.printing-sheet .skip, body.printing-sheet .hv-sheet-tools, body.printing-sheet .banner, body.printing-sheet .load-fail { display: none !important; }
+  body.printing-sheet .app > main { padding: 0; }
+  body.printing-sheet .hv-sheet-title { font-size: 14pt; max-width: none; }
+  body.printing-sheet .hv-sheet-table { font-size: 9pt; min-width: 0; }
+  body.printing-sheet .hv-sheet-table thead { display: table-header-group; }
+  body.printing-sheet .hv-sheet-table thead th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body.printing-sheet .hv-sheet-table tr { break-inside: avoid; }
+  body.printing-sheet .hv-sheet-table td { height: 9mm; }
+  body.printing-sheet .hv-sheet-wrap { overflow: visible; }
+}
 
 /* ---- Rooms list ---- */
 .rooms .name a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--axis); text-decoration-thickness: 1px; text-underline-offset: 3px; }
@@ -1626,7 +1647,12 @@ button.tk-tick:is(:hover, :focus-visible) .tk-mark { opacity: 1; }
   .top-alarm { padding: 4px 6px; gap: 4px; }
   .top-link { padding: 4px; }
   .topbar:has(> .top-alarm:not([hidden])) .live-mark [data-live-text] { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  /* six icons since Harvest (2026-11-04): 40 px wide (44 px tall) so the mark keeps its 28 px at 360 px */
+  .top-link { min-width: 40px; }
+  .topbar .theme-btn { width: 40px; min-width: 40px; }
 }
+/* the smallest phones with the alarm button too: no room for the mark; the alarm button and Overview lead where it does */
+@media (max-width: 379px) { .topbar:has(> .top-alarm:not([hidden])) .brand-top { display: none; } }
 
 /* ---- the pictures (spec 2026-11-03-pictures-design.md): web/pictures.js ---- */
 .pic { display: block; flex: none; }
@@ -1760,3 +1786,50 @@ h2.r-named { display: flex; }
   .yd-table .yd-crop { grid-column: 1 / -1; display: flex; align-items: center; }
   .yd-cell::before { content: attr(data-label); display: block; margin-bottom: 2px; font-size: var(--fs-xs); color: var(--muted); }
 }
+
+/* ---- the Harvest page, #/harvest, and its myGAP sheet (spec 2026-11-04-harvest-design.md 7): web/harvest-page.js ---- */
+.hv-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.hv-tools .range-bar { margin: 0; }
+.hv-page { display: grid; gap: 16px; align-items: start; }
+@media (min-width: 1100px) {
+  .hv-page { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
+  .hv-page > .hv-totals { grid-column: 1 / -1; }
+}
+.hv-totals .hv-missing { margin: 0 0 8px; }
+.hv-chart-title { margin: 12px 0 6px; font-size: var(--fs-sm); font-weight: 600; color: var(--ink-2); }
+.hv-card-note { margin: 2px 0 8px; font-size: var(--fs-sm); }
+.hv-farm-table .hv-name { display: flex; align-items: center; gap: 8px; }
+.hv-farm-table thead th, .hv-farm-table thead th.num { white-space: normal; } /* a phone: "kg per block" on two lines, the figures on one */
+.hv-farm-table .hv-name a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--axis); text-underline-offset: 3px; }
+.hv-farm-table .hv-name a:hover { text-decoration-color: currentColor; }
+.hv-page-empty .none { margin: 0; color: var(--muted); }
+.ov-harvest h2 { margin-bottom: 8px; }
+.ov-harvest h2 a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--axis); text-underline-offset: 3px; }
+.ov-harvest h2 a:hover { text-decoration-color: currentColor; }
+.ov-harvest .muted { margin: 0; }
+.ov-harvest .us-tiles { grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); } /* the three side by side */
+@media (max-width: 600px) {
+  .hv-tools { flex: 1 1 100%; }
+  .hv-tools .range-bar { flex: 1 1 100%; }
+  .hv-tools .range-bar button { flex: 1 1 0; padding: 4px 6px; }
+  .hv-tools a.button { flex: 1 1 0; justify-content: center; min-height: 44px; }
+  .hv-farm-table .hv-name a { display: inline-block; padding: 10px 0; } /* 44 px to tap */
+}
+
+.hv-sheet-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+.hv-sheet-tools .back { margin: 0; }
+.hv-sheet-title { font-size: var(--fs-xl); max-width: 60ch; }
+.hv-sheet-facts { display: flex; flex-wrap: wrap; gap: 4px 32px; margin: 12px 0 16px; }
+.hv-sheet-facts div { display: flex; gap: 8px; }
+.hv-sheet-facts dt { color: var(--ink-2); }
+.hv-sheet-facts dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+.hv-sheet > .none { color: var(--muted); }
+.hv-sheet-wrap { overflow-x: auto; } /* a phone: the sheet scrolls sideways rather than squeeze its columns */
+.hv-sheet-table { width: 100%; min-width: 760px; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: var(--fs-sm); }
+.hv-sheet-table th, .hv-sheet-table td { padding: 6px 8px; border: 1px solid var(--border-strong); text-align: left; vertical-align: top; }
+.hv-sheet-table thead th { color: var(--ink-2); font-weight: 600; background: var(--band); }
+.hv-sheet-table .num { text-align: right; }
+.hv-sheet-table td { height: 2.5rem; } /* a sale written by hand fits */
+.hv-sheet-table td.hv-write { min-width: 5rem; }
+.hv-sheet-table td:first-child { white-space: nowrap; }
+@media (max-width: 600px) { .hv-sheet-tools .back { padding: 10px 0; } }

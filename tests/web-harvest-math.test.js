@@ -293,3 +293,12 @@ test('the myGAP sheet: its title and columns, the last five for the farmer to fi
   assert.equal(SHEET_TITLE, `myGAP 4-6${dot}Production and sales record (Rekod pengeluaran dan penjualan hasil)`);
   assert.deepEqual(SHEET_COLUMNS, ['Date', 'Crop', 'Block / location', 'Harvested (kg)', 'Sold (kg)', 'Price / kg (RM)', 'Total (RM)', 'Invoice No.', 'Buyer']);
 });
+
+import { chartTitle, chartLabel } from '../web/harvest-math.js';
+
+test("the chart's title and what it says to a screen reader", () => {
+  assert.equal(chartTitle(farm), 'kg picked per day');
+  assert.equal(chartTitle({ ...farm, bucket: 'week' }), 'kg picked per week');
+  assert.equal(chartLabel(farm), `kg picked per day, 6 Oct – 4 Nov 2026: 64.5${nb}kg in all; the most 2.4${nb}kg, 3 Nov`);
+  assert.equal(chartLabel({ ...farm, bucket: 'month', buckets: [{ from: '2026-11-01', to: '2026-11-04', kg: 0 }] }), `kg picked per month, 6 Oct – 4 Nov 2026: 64.5${nb}kg in all`);
+});

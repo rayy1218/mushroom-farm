@@ -297,3 +297,11 @@ export const cropRows = (farm) => (farm.crops ?? []).map((c) => ({ crop: c.crop,
 // The myGAP sheet (form 4-6): its title and columns; sheetRows above fills them.
 export const SHEET_TITLE = `myGAP 4-6${DOT}Production and sales record (Rekod pengeluaran dan penjualan hasil)`;
 export const SHEET_COLUMNS = ['Date', 'Crop', 'Block / location', 'Harvested (kg)', 'Sold (kg)', 'Price / kg (RM)', 'Total (RM)', 'Invoice No.', 'Buyer'];
+
+// The chart: its title and its words for a screen reader ("…: 64.5 kg in all; the most 2.4 kg, 3 Nov").
+export const chartTitle = (farm) => `kg picked per ${farm.bucket}`;
+export function chartLabel(farm) {
+  const top = (farm.buckets ?? []).reduce((best, b) => (b.kg > (best?.kg ?? 0) ? b : best), null);
+  const most = top ? `; the most ${kgText(top.kg)}, ${bucketName(farm.bucket, top.from)}` : '';
+  return `${chartTitle(farm)}, ${rangeText(farm)}: ${kgText(farm.totals?.kg)} in all${most}`;
+}

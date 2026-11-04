@@ -65,7 +65,7 @@ function table(caption, columns, rows, numFrom) {
 const flushTable = (run) => table('Flushes', flushColumns(run.crops), flushRows(run), 2);
 
 // "Set the price of Grey oyster in Settings → Yield." with Settings → Yield a link to Settings.
-function missingLine(missing) {
+export function missingLine(missing) {
   const note = missingNote(missing);
   if (!note) return null;
   const p = el('p', 'muted hv-missing');
