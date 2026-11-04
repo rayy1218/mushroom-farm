@@ -71,7 +71,7 @@ const LOG_PAGE = 50;
 const CSV_HEADER = 'date,time,room,task,status,worker,amount,unit,reason';
 
 // One CSV cell: quoted when it holds a comma, quote or line break; a text starting like a formula gets a ' first.
-function cell(v) {
+export function cell(v) {
   if (v === null || v === undefined) return '';
   let s = String(v);
   if (typeof v === 'string' && /^[=+\-@]/.test(s)) s = `'${s}`;

@@ -1,0 +1,59 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { runFigures, buckets, recordRows, csvRows, round } from '../server/harvest-math.js';
+
+const H = (crop, kg, flush, pickedAt, extra = {}) => ({ id: pickedAt, crop, kg, flush, pickedAt, blocks: 500, stage: 'fruiting', worker: 'Ali', taskId: null, ...extra });
+const RUN = { id: 1, startedAt: 0, endedAt: null, partial: false, crops: [{ crop: 'oyster', blocks: 500 }] };
+const YIELD = { oyster: { dryKg: 0.9, priceKg: 12 } };
+
+test('one crop: kg, kg per block, BE, value, cost per kg, flushes', () => {
+  const f = runFigures(RUN, [H('oyster', 100, 1, 10), H('oyster', 60, 2, 20), H('oyster', 40, 2, 30)], YIELD, { cost: 500, days: 40, water: true });
+  assert.equal(f.kg, 200);
+  assert.equal(f.perBlock, 0.4);
+  assert.equal(f.be, 44, '200 / (500 × 0.9) = 44.4 %');
+  assert.equal(f.value, 2400);
+  assert.deepEqual(f.cost, { costPerKg: 2.5, cost: 500, days: 40, water: true });
+  assert.deepEqual(f.flushes.map((x) => [x.flush, x.kg, x.from, x.to]), [[1, 100, 10, 10], [2, 100, 20, 30]]);
+  assert.deepEqual(f.missing, { dryKg: [], price: [] });
+});
+
+test('missing figures: BE and value null, the crops named; no kg: no cost per kg', () => {
+  const f = runFigures(RUN, [H('oyster', 10, 1, 1)], {}, { cost: 100, days: 3, water: false });
+  assert.equal(f.be, null);
+  assert.equal(f.value, null);
+  assert.deepEqual(f.missing, { dryKg: ['oyster'], price: ['oyster'] });
+  assert.equal(runFigures(RUN, [], YIELD, { cost: 100, days: 3, water: false }).cost.costPerKg, null);
+  assert.equal(runFigures(RUN, [H('oyster', 10, 1, 1)], YIELD, null).cost, null, 'no usage known');
+});
+
+test('a mixed room: per crop and totals; a copied harvest without a flush comes first as "before records"', () => {
+  const run = { ...RUN, crops: [{ crop: 'oyster', blocks: 500 }, { crop: 'lionsmane', blocks: 100 }] };
+  const y = { ...YIELD, lionsmane: { dryKg: 1, priceKg: 40 } };
+  const f = runFigures(run, [H('oyster', 50, null, 1), H('oyster', 100, 1, 10), H('lionsmane', 30, 1, 11, { blocks: 100 })], y, null);
+  assert.equal(f.kg, 180);
+  assert.equal(f.perBlock, 0.3);
+  assert.equal(f.be, 33, '180 / (500 × 0.9 + 100 × 1) = 32.7 %');
+  assert.deepEqual(f.byCrop.map((c) => [c.crop, c.kg, c.perBlock, c.value]), [['oyster', 150, 0.3, 1800], ['lionsmane', 30, 0.3, 1200]]);
+  assert.deepEqual(f.flushes.map((x) => x.flush), [null, 1]);
+  assert.deepEqual(f.flushes[1].byCrop, { oyster: 100, lionsmane: 30 });
+});
+
+test('buckets: days for 7 and 30, Monday weeks for 90, months for 365 (farm time)', () => {
+  const day = (d) => Date.UTC(2026, 10, d) - 8 * 3_600_000; // midnight in Kuala Lumpur
+  const b = buckets([H('oyster', 2, 1, day(3) + 1000), H('oyster', 3, 1, day(4) + 1000)], { days: 7, to: day(5) + 1000 });
+  assert.equal(b.bucket, 'day');
+  assert.equal(b.buckets.length, 7);
+  assert.deepEqual(b.buckets.slice(-3).map((x) => x.kg), [2, 3, 0]);
+  assert.equal(buckets([], { days: 90, to: day(5) }).bucket, 'week');
+  assert.equal(buckets([], { days: 365, to: day(5) }).bucket, 'month');
+});
+
+test('records: one per day, room and crop; csv rows oldest first with the formula guard', () => {
+  const rooms = new Map([[7, { name: '=Room' }]]);
+  const runs = new Map([[1, { startedAt: 0 }]]);
+  const hs = [H('oyster', 2, 1, 1000, { roomId: 7, runId: 1 }), H('oyster', 1.5, 1, 2000, { roomId: 7, runId: 1 })];
+  assert.deepEqual(recordRows(hs, rooms, runs).map((r) => [r.roomName, r.crop, r.kg]), [['=Room', 'oyster', 3.5]]);
+  const csv = csvRows(hs, rooms, runs);
+  assert.equal(csv[0], 'date,time,room,crop,run started,stage,flush,blocks,kg,worker,from');
+  assert.match(csv[1], /^1970-01-01,08:00,'=Room,Grey oyster,1970-01-01,fruiting,1,500,2,Ali,recorded$/);
+});
