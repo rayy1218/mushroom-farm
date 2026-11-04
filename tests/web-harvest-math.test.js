@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { kgText, perBlockText, beText, rmText, costText, summaryLine, flushColumns, sheetRows } from '../web/harvest-math.js';
+import { kgText, perBlockText, beText, rmText, costText, summaryLine, flushColumns, sheetRows, sheetTotal } from '../web/harvest-math.js';
 
 const nb = ' ';
 const dot = `${nb}· `;
@@ -8,7 +8,8 @@ const dot = `${nb}· `;
 test('formats: kg, per block, BE, RM, cost', () => {
   assert.equal(kgText(18.44), `18.4${nb}kg`);
   assert.equal(kgText(2.35, { exact: true }), `2.35${nb}kg`);
-  assert.equal(kgText(2, { exact: true }), `2${nb}kg`);
+  assert.equal(kgText(2, { exact: true }), `2.00${nb}kg`, 'one harvest always to 2 decimals, so the rows line up');
+  assert.equal(kgText(5.7, { exact: true }), `5.70${nb}kg`);
   assert.equal(kgText(1240), `1,240.0${nb}kg`);
   assert.equal(perBlockText(0.314), `0.31${nb}kg per block`);
   assert.equal(beText(34), `BE 34${nb}%`);
@@ -31,17 +32,21 @@ test('the Crop tab summary line', () => {
 
 test('flush columns: one kg column per crop in a mixed room', () => {
   assert.deepEqual(flushColumns([{ crop: 'oyster' }]), ['Flush', 'Days', 'kg', 'kg per block', 'BE']);
-  assert.deepEqual(flushColumns([{ crop: 'oyster' }, { crop: 'lionsmane' }]), ['Flush', 'Days', 'Grey oyster kg', "Lion's mane (draft) kg", 'kg', 'kg per block', 'BE']);
+  assert.deepEqual(flushColumns([{ crop: 'oyster' }, { crop: 'lionsmane' }]), ['Flush', 'Days', 'Grey oyster kg', "Lion's mane kg", 'kg', 'kg per block', 'BE']);
 });
 
 test('sheet rows: the myGAP columns, the sales cells blank', () => {
   const rows = sheetRows([{ date: '2026-11-03', roomName: 'Room 1', crop: 'oyster', runStartedAt: Date.UTC(2026, 9, 2, 16), kg: 3.5 }]);
-  assert.deepEqual(rows[0], ['3 Nov 2026', 'Grey oyster', `Room 1${dot}run of 3 Oct`, '3.5', '', '', '', '', '']);
+  assert.deepEqual(rows[0], ['3 Nov 2026', 'Grey oyster', `Room 1${dot}run of 3 Oct`, '3.50', '', '', '', '', '']);
+  const [big] = sheetRows([{ date: '2026-11-03', roomName: 'Room 3', crop: 'lionsmane', runStartedAt: null, kg: 1234.5 }]);
+  assert.deepEqual(big.slice(1, 4), ["Lion's mane", `Room 3${dot}run of —`, '1,234.50'], 'no (draft) on the form; the kg to 2 decimals, grouped');
+  assert.equal(sheetTotal({ totals: { kg: 1240.456 } }), '1,240.46');
+  assert.equal(sheetTotal({ totals: {} }), '');
 });
 
 // ---- Task 9: the Harvest room tab ----
 
-import { runHead, harvestLine, pastRow, missingNote, flushRows, byCropRows, runTiles, deleteQuestion, whenBoxes, whenMs, recordBody, editBody } from '../web/harvest-math.js';
+import { runHead, harvestLine, pastRow, missingNote, flushRows, byCropRows, runTiles, deleteTitle, deleteLead, pricesNote, whenBoxes, whenMs, recordBody, editBody } from '../web/harvest-math.js';
 
 const at = (y, mo, d, h = 0, mi = 0) => Date.UTC(y, mo - 1, d, h - 8, mi); // a farm time (UTC+8) in ms
 
@@ -66,14 +71,14 @@ const mixed = {
 test('the run head: when the blocks went in (or the records began) and the crops with their blocks', () => {
   assert.equal(runHead(oneCrop), `Blocks in 3 Oct${dot}Grey oyster 500${nb}blocks`);
   assert.equal(runHead({ ...oneCrop, partial: true, startedAt: at(2026, 11, 4, 0, 30) }), `Recorded from 4 Nov${dot}Grey oyster 500${nb}blocks`);
-  assert.equal(runHead(mixed), `Blocks in 3 Oct${dot}Grey oyster 300${nb}blocks${dot}Lion's mane (draft) 1,200${nb}blocks`);
+  assert.equal(runHead(mixed), `Blocks in 3 Oct${dot}Grey oyster 300${nb}blocks${dot}Lion's mane 1,200${nb}blocks`);
   assert.equal(runHead({ ...oneCrop, crops: [{ crop: 'oyster', blocks: 1 }] }), `Blocks in 3 Oct${dot}Grey oyster 1${nb}block`);
 });
 
 test('a harvest line: when, what (the crop only in a mixed room), kg exact, who, from', () => {
   const h = { id: 9, crop: 'oyster', flush: 2, kg: 2.35, pickedAt: at(2026, 11, 4, 8, 12), worker: 'Ali', taskId: 41 };
-  assert.deepEqual(harvestLine(h, { mixed: false }), { when: '4 Nov 08:12', what: 'Flush 2', kg: `2.35${nb}kg`, who: 'Ali', from: 'from the harvest check' });
-  assert.deepEqual(harvestLine({ ...h, taskId: null }, { mixed: true }), { when: '4 Nov 08:12', what: `Grey oyster${dot}flush 2`, kg: `2.35${nb}kg`, who: 'Ali', from: 'recorded' });
+  assert.deepEqual(harvestLine(h, { mixed: false }), { when: `4${nb}Nov 08:12`, what: 'Flush 2', kg: `2.35${nb}kg`, who: 'Ali', from: 'from the harvest check' });
+  assert.deepEqual(harvestLine({ ...h, taskId: null }, { mixed: true }), { when: `4${nb}Nov 08:12`, what: `Grey oyster${dot}flush 2`, kg: `2.35${nb}kg`, who: 'Ali', from: 'recorded' });
   assert.equal(harvestLine({ ...h, flush: null }, { mixed: false }).what, 'Before records');
   assert.equal(harvestLine({ ...h, flush: null }, { mixed: true }).what, `Grey oyster${dot}before records`);
   assert.equal(harvestLine({ ...h, worker: null }, { mixed: false }).who, '');
@@ -94,9 +99,9 @@ test('a past run: its dates and the figures that are known', () => {
 
 test('the missing note names the crops and what to set', () => {
   assert.equal(missingNote({ dryKg: ['oyster'], price: [] }), 'Set the dry substrate per block of Grey oyster in Settings → Yield.');
-  assert.equal(missingNote({ dryKg: [], price: ['oyster', 'lionsmane'] }), "Set the price of Grey oyster and Lion's mane (draft) in Settings → Yield.");
-  assert.equal(missingNote({ dryKg: ['oyster'], price: ['lionsmane'] }), "Set the dry substrate per block of Grey oyster and the price of Lion's mane (draft) in Settings → Yield.");
-  assert.equal(missingNote({ dryKg: ['lionsmane'], price: ['lionsmane'] }), "Set the dry substrate per block and the price of Lion's mane (draft) in Settings → Yield.");
+  assert.equal(missingNote({ dryKg: [], price: ['oyster', 'lionsmane'] }), "Set the price of Grey oyster and Lion's mane in Settings → Yield.");
+  assert.equal(missingNote({ dryKg: ['oyster'], price: ['lionsmane'] }), "Set the dry substrate per block of Grey oyster and the price of Lion's mane in Settings → Yield.");
+  assert.equal(missingNote({ dryKg: ['lionsmane'], price: ['lionsmane'] }), "Set the dry substrate per block and the price of Lion's mane in Settings → Yield.");
   assert.equal(missingNote({ dryKg: [], price: [] }), null);
   assert.equal(missingNote(undefined), null);
 });
@@ -115,26 +120,50 @@ test('the flushes table: Before records first, the days, a kg column per crop in
 test('the By crop table of a mixed room', () => {
   assert.deepEqual(byCropRows(mixed), [
     ['Grey oyster', `300${nb}blocks`, `10.0${nb}kg`, `0.03${nb}kg`, `30${nb}%`, `RM${nb}120.00`],
-    ["Lion's mane (draft)", `1,200${nb}blocks`, `8.4${nb}kg`, `0.01${nb}kg`, '—', '—'],
+    ["Lion's mane", `1,200${nb}blocks`, `8.4${nb}kg`, `0.01${nb}kg`, '—', '—'],
   ]);
 });
 
-test('the tiles: kg, kg per block, BE, RM value, cost per kg with what it counts', () => {
+test('the tiles: kg, kg per block, BE, RM value, cost per kg with what it counts (the tables\' words)', () => {
   assert.deepEqual(runTiles(oneCrop), [
-    { label: 'Picked', value: `18.4${nb}kg` },
-    { label: 'Per block', value: `0.04${nb}kg` },
-    { label: 'Biological efficiency', value: `34${nb}%` },
-    { label: 'Value', value: `RM${nb}221.28` },
-    { label: 'Cost per kg', value: `RM${nb}3.10`, line: `electricity and water over 46${nb}days at today’s prices` },
+    { label: 'kg', value: `18.4${nb}kg` },
+    { label: 'kg per block', value: `0.04${nb}kg` },
+    { label: 'BE', title: 'Biological efficiency', value: `34${nb}%` },
+    { label: 'RM value', value: `RM${nb}221.28` },
+    { label: 'Cost per kg', value: `RM${nb}3.10`, line: `electricity and water${dot}46${nb}days` },
   ]);
+  assert.equal(runTiles({ ...oneCrop, cost: { ...oneCrop.cost, days: 1, water: false } })[4].line, `electricity${dot}1${nb}day`);
   const none = runTiles({ ...oneCrop, kg: 0, perBlock: 0, be: null, value: null, cost: { costPerKg: null, cost: 4, days: 2, water: false } });
   assert.deepEqual(none.map((t) => t.value), [`0.0${nb}kg`, `0.00${nb}kg`, '—', '—', '—']);
   assert.equal(none[4].line, undefined);
   assert.equal(runTiles({ ...oneCrop, cost: null })[4].value, '—');
 });
 
-test('the delete question', () => {
-  assert.equal(deleteQuestion({ crop: 'oyster', kg: 2.4, pickedAt: at(2026, 11, 4, 8, 12) }), `Delete 2.4${nb}kg of Grey oyster picked 4 Nov 08:12?`);
+test('no energy recorded: the cost per kg is a dash that says so, never RM 0.00', () => {
+  const t = runTiles({ ...oneCrop, cost: { costPerKg: null, cost: 0, days: 41, water: false, none: 'no-energy' } })[4];
+  assert.deepEqual(t, { label: 'Cost per kg', value: '—', line: 'No energy recorded yet' });
+  assert.deepEqual(pageTiles({ ...farm, totals: { ...farm.totals, cost: { costPerKg: null, cost: 0, days: 30, water: false, none: 'no-energy' } } })[2],
+    { label: 'Cost per kg', value: '—', line: 'No energy recorded yet' });
+  assert.equal(pricesNote(oneCrop.cost), 'The cost per kg is at today’s prices.');
+  assert.equal(pricesNote({ costPerKg: null, none: 'no-energy' }), null);
+  assert.equal(pricesNote(null), null);
+});
+
+test('the RM value of the priced crops, the crops left out named with their kg', () => {
+  const part = { ...mixed, value: 120, unpriced: ['lionsmane'] };
+  assert.deepEqual(runTiles(part)[3], { label: 'RM value', value: `RM${nb}120.00`, line: `without Lion's mane (8.4${nb}kg, no price)` });
+  const two = { ...part, byCrop: [...part.byCrop, { crop: 'pink', kg: 2, value: null }], unpriced: ['lionsmane', 'pink'] };
+  assert.equal(runTiles(two)[3].line, `without Lion's mane, Pink oyster (10.4${nb}kg, no price)`);
+  assert.deepEqual(runTiles({ ...part, value: null })[3], { label: 'RM value', value: '—', line: "Lion's mane has no price" });
+  assert.equal(runTiles({ ...two, value: null })[3].line, "Lion's mane, Pink oyster have no price");
+  assert.equal(runTiles({ ...oneCrop, unpriced: [] })[3].line, undefined);
+});
+
+test('the delete question: the harvest in the title, when and who in the lead (the day and month kept together)', () => {
+  const h = { crop: 'lionsmane', kg: 6.35, pickedAt: at(2026, 11, 4, 14, 36), worker: 'Kumar' };
+  assert.equal(deleteTitle(h), `Delete 6.35${nb}kg of Lion's mane?`);
+  assert.equal(deleteLead(h), `Picked 4${nb}Nov 14:36 by Kumar.`);
+  assert.equal(deleteLead({ ...h, worker: null }), `Picked 4${nb}Nov 14:36.`);
 });
 
 test('the date and time boxes in the farm time: shown, read back (a 24 h time, typed loosely)', () => {
@@ -185,7 +214,7 @@ test('Edit a harvest: only what changed; nothing changed is an empty body', () =
 // ---- Task 11: the Harvest page, the myGAP sheet and the Overview card ----
 
 import {
-  overviewTiles, pageTiles, harvestBars, barTip, harvestTicks, rangeText, emptyText, roomRows, ROOM_COLUMNS, cropRows, CROP_COLUMNS,
+  overviewTiles, pageTiles, harvestBars, barTip, harvestTicks, rangeText, emptyText, periodWords, roomRows, ROOM_COLUMNS, cropRows, CROP_COLUMNS,
   SHEET_TITLE, SHEET_COLUMNS,
 } from '../web/harvest-math.js';
 
@@ -206,23 +235,26 @@ const farm = {
 test('the Overview card: today, 7 and 30 days, the 30-day value when known; nothing in 30 days says so', () => {
   assert.deepEqual(overviewTiles(farm), {
     tiles: [
-      { label: 'Today', value: `2.4${nb}kg`, line: null },
-      { label: '7 days', value: `18.0${nb}kg`, line: null },
-      { label: '30 days', value: `64.5${nb}kg`, line: `RM${nb}774.00` },
+      { label: 'Today', value: `2.4${nb}kg`, line: null, note: null },
+      { label: '7 days', value: `18.0${nb}kg`, line: null, note: null },
+      { label: '30 days', value: `64.5${nb}kg`, line: `RM${nb}774.00`, note: null },
     ],
     empty: null,
   });
-  assert.equal(overviewTiles({ ...farm, last30: { kg: 64.5, value: null } }).tiles[2].line, null);
+  assert.deepEqual(overviewTiles({ ...farm, last30: { kg: 64.5, value: null, unpriced: ['pink'] } }).tiles[2], { label: '30 days', value: `64.5${nb}kg`, line: null, note: 'Pink oyster not priced' });
+  assert.deepEqual(overviewTiles({ ...farm, last30: { kg: 64.5, value: 720, unpriced: ['pink', 'lionsmane'] } }).tiles[2],
+    { label: '30 days', value: `64.5${nb}kg`, line: `RM${nb}720.00`, note: "Pink oyster, Lion's mane not priced" });
   assert.deepEqual(overviewTiles({ ...farm, today: { kg: 0, value: 0 }, last7: { kg: 0, value: 0 }, last30: { kg: 0, value: 0 } }),
     { tiles: [], empty: 'No harvests in the last 30 days.' });
 });
 
 test("the page's tiles: kg, RM value, cost per kg with what it counts", () => {
   assert.deepEqual(pageTiles(farm), [
-    { label: 'Picked', value: `64.5${nb}kg` },
-    { label: 'Value', value: `RM${nb}774.00` },
-    { label: 'Cost per kg', value: `RM${nb}3.10`, line: `electricity and water over 30${nb}days at today’s prices` },
+    { label: 'kg', value: `64.5${nb}kg` },
+    { label: 'RM value', value: `RM${nb}774.00` },
+    { label: 'Cost per kg', value: `RM${nb}3.10`, line: `electricity and water${dot}30${nb}days` },
   ]);
+  assert.equal(pageTiles({ ...farm, totals: { ...farm.totals, value: 720, unpriced: ['pink'] } })[1].line, `without Pink oyster (4.5${nb}kg, no price)`, 'the kg from By crop');
   const none = pageTiles({ ...farm, totals: { kg: 0, value: null, cost: { costPerKg: null, cost: 0, days: 30, water: false } } });
   assert.deepEqual(none.map((t) => t.value), [`0.0${nb}kg`, '—', '—']);
 });
@@ -274,14 +306,19 @@ test('the range in words: one month, two months, two years', () => {
   assert.equal(rangeText({ from: '2025-12-01', to: '2026-11-04' }), `1 Dec 2025 – 4 Nov 2026`);
   assert.equal(rangeText({ from: '2026-11-04', to: '2026-11-04' }), `4 Nov 2026`);
   assert.equal(emptyText(7), 'No harvests in the last 7 days.');
+  assert.equal(emptyText(90), 'No harvests in the last 13 weeks.');
+  assert.equal(emptyText(365), 'No harvests in the last 12 months.');
+  assert.deepEqual([7, 30, 90, 365].map(periodWords), ['7 days', '30 days', '13 weeks', '12 months'], 'the segments: what the buckets cover');
 });
 
 test('By room: the rooms that picked or have a run, with the run’s kg per block and BE; By crop', () => {
   assert.deepEqual(ROOM_COLUMNS, ['Room', 'kg', 'RM value', 'kg per block', 'BE']);
   assert.deepEqual(roomRows(farm), [
-    { id: 1, name: 'Room 1', crops: [{ crop: 'oyster', blocks: 500 }], cells: [`60.0${nb}kg`, `RM${nb}720.00`, `0.31${nb}kg`, `34${nb}%`] },
-    { id: 3, name: 'Room 3', crops: [], cells: [`4.5${nb}kg`, '—', '—', '—'] },
+    { id: 1, name: 'Room 1', crops: [{ crop: 'oyster', blocks: 500 }], cells: [`60.0${nb}kg`, `RM${nb}720.00`, `0.31${nb}kg`, `34${nb}%`], without: null },
+    { id: 3, name: 'Room 3', crops: [], cells: [`4.5${nb}kg`, '—', '—', '—'], without: null },
   ]);
+  const partial = roomRows({ ...farm, rooms: [{ ...farm.rooms[0], value: 600, unpriced: ['lionsmane'] }] })[0];
+  assert.equal(partial.without, "without Lion's mane", 'a room value without a crop says so under it');
   assert.deepEqual(CROP_COLUMNS, ['Crop', 'kg', 'RM value']);
   assert.deepEqual(cropRows(farm), [
     { crop: 'oyster', name: 'Grey oyster', cells: [`60.0${nb}kg`, `RM${nb}720.00`] },

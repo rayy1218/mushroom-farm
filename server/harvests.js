@@ -5,7 +5,7 @@ import { localDate, dayStart, addDays, daysBetween } from './task-rules.js';
 import { CROP_KEYS } from '../web/crops.js';
 import { readSettings, readCropYield } from './settings.js';
 import { roomDays, totals, localZone, USAGE_DAYS_KEPT } from './usage.js';
-import { runFigures, buckets, recordRows, csvRows, valueOf, round } from './harvest-math.js';
+import { runFigures, buckets, recordRows, csvRows, valueOf, unpricedOf, round } from './harvest-math.js';
 import { checkWorker, TaskError } from './tasks.js';
 
 export const MAX_KG = 10_000;
@@ -38,10 +38,12 @@ function kgOf(v, field = 'kg') {
   return round(v, 3);
 }
 
-// A harvest's cost from the usage days: { cost (electricity and water when a water price is set), days, water }.
+// A harvest's cost from the usage days: { cost (electricity and water when a water price is set), days, water, none? }; none:
+// 'no-energy' when the days used no kWh and no water (nothing recorded), so there is no cost per kg to show.
 const costOf = (days, prices) => {
   const t = totals(days, prices);
-  return { cost: round(t.cost + (t.waterCost ?? 0), 2), days: days.length, water: prices.water !== null };
+  const none = t.kWh === 0 && t.waterL === 0 ? { none: 'no-energy' } : {};
+  return { cost: round(t.cost + (t.waterCost ?? 0), 2), days: days.length, water: prices.water !== null, ...none };
 };
 
 const ordered = (crops) => CROP_KEYS.filter((k) => crops.has(k));
@@ -184,7 +186,7 @@ export function createHarvests({ db, now = Date.now, zone = localZone, log = con
       const { range, today, harvests, recent, rooms, runs } = period(daysOf(days));
       const cropYield = readCropYield(db);
       const kgSum = (list) => round(list.reduce((s, h) => s + h.kg, 0), 2);
-      const sum = (list) => ({ kg: kgSum(list), value: valueOf(list, cropYield) });
+      const sum = (list) => ({ kg: kgSum(list), value: valueOf(list, cropYield), unpriced: unpricedOf(list, cropYield) });
 
       const p = prices();
       const count = daysBetween(range.from, zone.label(now())) + 1;
@@ -193,6 +195,7 @@ export function createHarvests({ db, now = Date.now, zone = localZone, log = con
         usageDays.push(...roomDays(db, room, { now: now(), zone, count }).filter((d) => d.date >= range.from && d.date <= range.to));
       }
       const cost = { ...costOf(usageDays, p), days: daysBetween(range.from, range.to) + 1 };
+      const { none, ...spent } = cost;
       const kg = kgSum(harvests);
 
       const dryMissing = new Set();
@@ -207,14 +210,17 @@ export function createHarvests({ db, now = Date.now, zone = localZone, log = con
         }
         return { id: room.id, name: room.name, crops: db.getProgram(room.id).crops, ...sum(own), current };
       });
-      const crops = [...new Set(harvests.map((h) => h.crop))].map((crop) => ({ crop, ...sum(harvests.filter((h) => h.crop === crop)) }))
+      const crops = [...new Set(harvests.map((h) => h.crop))].map((crop) => {
+        const own = harvests.filter((h) => h.crop === crop);
+        return { crop, kg: kgSum(own), value: valueOf(own, cropYield) };
+      })
         .sort((a, b) => b.kg - a.kg || CROP_KEYS.indexOf(a.crop) - CROP_KEYS.indexOf(b.crop));
       const priceMissing = new Set([...harvests, ...recent].filter((h) => h.kg > 0 && typeof cropYield[h.crop]?.priceKg !== 'number').map((h) => h.crop));
       const since = (date) => recent.filter((h) => localDate(h.pickedAt) >= date);
 
       return {
         from: range.from, to: range.to, days, bucket: range.bucket, buckets: range.buckets,
-        totals: { kg, value: valueOf(harvests, cropYield), cost: { costPerKg: kg > 0 ? round(cost.cost / kg, 2) : null, ...cost } },
+        totals: { ...sum(harvests), cost: { costPerKg: kg > 0 && !none ? round(cost.cost / kg, 2) : null, ...spent, ...(none ? { none } : {}) } },
         rooms: roomRows,
         crops,
         today: sum(since(today)),

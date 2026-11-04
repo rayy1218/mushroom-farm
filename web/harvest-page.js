@@ -8,12 +8,12 @@ import { roomHash, sheetHash, canonicalHash } from './route.js';
 import { live } from './live.js';
 import { fallbackMs, createThrottle } from './live-math.js';
 import { drawTimeBars } from './bar-chart.js';
-import { missingLine } from './harvest-card.js';
+import { missingLine, tileNodes, figureName } from './harvest-card.js';
 import { mainCrop } from './room-card-math.js';
 import { picture, emptyPicture } from './pictures.js';
 import {
-  pageTiles, harvestBars, barTip, harvestTicks, rangeText, emptyText, roomRows, ROOM_COLUMNS, cropRows, CROP_COLUMNS, chartTitle,
-  chartLabel, sheetRows, SHEET_TITLE, SHEET_COLUMNS,
+  pageTiles, pricesNote, harvestBars, barTip, harvestTicks, rangeText, emptyText, periodWords, roomRows, ROOM_COLUMNS, cropRows,
+  CROP_COLUMNS, chartTitle, chartLabel, sheetRows, sheetTotal, SHEET_TITLE, SHEET_COLUMNS,
 } from './harvest-math.js';
 
 const REFRESH_MS = 60_000;
@@ -23,7 +23,7 @@ const TEMPLATE = `
   <div class="page-head">
     <div class="page-titles">
       <h1 class="page-title" tabindex="-1">Harvest</h1>
-      <p class="page-sub" data-sub>Loading…</p>
+      <p class="page-sub">What the rooms picked, its value and its cost per kg.</p>
     </div>
     <div class="hv-tools">
       <div class="range-bar" role="group" aria-label="Period" data-range></div>
@@ -37,7 +37,7 @@ const TEMPLATE = `
   </div>
   <div class="hv-page" data-body hidden>
     <section class="card hv-totals" aria-labelledby="hv-totals-title">
-      <h2 id="hv-totals-title" data-totals-title></h2>
+      <h2 id="hv-totals-title" data-totals-title>Loading…</h2>
       <div class="us-tiles hv-tiles" data-tiles></div>
       <div data-missing></div>
       <h3 class="hv-chart-title" data-chart-title></h3>
@@ -63,7 +63,8 @@ function table(caption, columns, rows, head) {
   t.append(el('caption', 'sr-only', caption));
   const tr = el('tr');
   columns.forEach((c, i) => {
-    const th = el('th', i ? 'num' : '', c);
+    const th = el('th', i ? 'num' : '');
+    th.append(figureName(c, c === 'BE' ? 'Biological efficiency' : null));
     th.scope = 'col';
     tr.append(th);
   });
@@ -77,7 +78,11 @@ function table(caption, columns, rows, head) {
     const name = el('span', 'hv-name');
     name.append(...head(r));
     th.append(name);
-    row.append(th, ...r.cells.map((c) => el('td', 'num', c)));
+    row.append(th, ...r.cells.map((c, i) => {
+      const td = el('td', 'num', c);
+      if (i === 1 && r.without) td.append(el('span', 'hv-without', r.without)); // the RM value leaves a crop out
+      return td;
+    }));
     body.append(row);
   }
   t.append(thead, body);
@@ -108,7 +113,7 @@ export function mount(container, { days = 30 } = {}) {
   container.innerHTML = TEMPLATE;
   const q = (sel) => container.querySelector(sel);
   const els = {
-    sub: q('[data-sub]'), range: q('[data-range]'), csv: q('[data-csv]'), sheet: q('[data-sheet]'), banner: q('.banner'),
+    range: q('[data-range]'), csv: q('[data-csv]'), sheet: q('[data-sheet]'), banner: q('.banner'),
     bannerText: q('[data-banner-text]'), body: q('[data-body]'), totalsTitle: q('[data-totals-title]'), tiles: q('[data-tiles]'),
     missing: q('[data-missing]'), chartTitle: q('[data-chart-title]'), chart: q('[data-chart]'), rooms: q('[data-rooms]'),
     crops: q('[data-crops]'), empty: q('[data-empty]'), emptyText: q('[data-empty-text]'),
@@ -124,7 +129,7 @@ export function mount(container, { days = 30 } = {}) {
   let painted = '';
 
   const buttons = DAYS.map((n) => {
-    const b = el('button', '', `${n} days`);
+    const b = el('button', '', periodWords(n));
     b.type = 'button';
     b.addEventListener('click', () => pick(n));
     els.range.append(b);
@@ -137,7 +142,6 @@ export function mount(container, { days = 30 } = {}) {
     els.csv.href = `/api/harvest.csv?days=${period}`;
     els.sheet.href = sheetHash(period);
     els.emptyText.textContent = emptyText(period);
-    els.totalsTitle.textContent = `The last ${period} days`;
   }
 
   function pick(n) {
@@ -149,7 +153,6 @@ export function mount(container, { days = 30 } = {}) {
     els.body.hidden = true;
     els.empty.hidden = true;
     showPeriod();
-    els.sub.textContent = 'Loading…';
     load();
   }
 
@@ -164,19 +167,15 @@ export function mount(container, { days = 30 } = {}) {
     const key = JSON.stringify(farm);
     if (key === painted) return; // a refresh with nothing new leaves the page (and the chart's tip) alone
     painted = key;
-    els.sub.textContent = rangeText(farm);
+    els.totalsTitle.textContent = rangeText(farm); // the reply's own dates: 13 weeks and 12 months are not 90 and 365 days
     const none = !(farm.totals?.kg > 0);
     els.body.hidden = none;
     els.empty.hidden = !none;
     if (none) return;
-    els.tiles.replaceChildren(...pageTiles(farm).map((t) => {
-      const tile = el('div', 'us-tile');
-      tile.append(el('p', 'us-label', t.label), el('p', 'us-kwh', t.value));
-      if (t.line) tile.append(el('p', 'us-basis hv-basis', t.line));
-      return tile;
-    }));
+    els.tiles.replaceChildren(...tileNodes(pageTiles(farm)));
+    const prices = pricesNote(farm.totals?.cost);
     const note = missingLine(farm.missing);
-    els.missing.replaceChildren(...(note ? [note] : []));
+    els.missing.replaceChildren(...[prices && el('p', 'muted hv-missing', prices), note].filter(Boolean));
     els.chartTitle.textContent = chartTitle(farm);
     const { bars, range } = harvestBars(farm);
     const shown = farm;
@@ -207,7 +206,6 @@ export function mount(container, { days = 30 } = {}) {
       if (!alive() || mine !== seq) return;
       els.bannerText.textContent = routeMissing(err) ? OUTDATED : err.status === 0 ? OFFLINE : err.message;
       els.banner.hidden = false;
-      if (!farm) els.sub.textContent = '';
       if (routeMissing(err)) { outdated = true; return; }
     }
     if (!alive()) return;
@@ -242,7 +240,7 @@ const SHEET_TEMPLATE = `
     </div>
     <h1 class="page-title hv-sheet-title" tabindex="-1"></h1>
     <dl class="hv-sheet-facts">
-      <div><dt>Farm</dt><dd data-farm></dd></div>
+      <div><dt>Farm</dt><dd class="hv-write-line"></dd></div>
       <div><dt>Period</dt><dd data-period>Loading…</dd></div>
     </dl>
     <div class="banner" role="alert" hidden>
@@ -254,12 +252,10 @@ const SHEET_TEMPLATE = `
       <table class="hv-sheet-table">
         <thead><tr data-head></tr></thead>
         <tbody data-rows></tbody>
+        <tfoot><tr><th scope="row" colspan="3">Total</th><td class="num" data-total></td><td class="hv-write" colspan="5"></td></tr></tfoot>
       </table>
     </div>
   </div>`;
-
-// The farm's name as the top bar shows it.
-const farmName = () => document.querySelector('.brand-text strong')?.textContent.trim() || 'Mushroom farm';
 
 export function mountSheet(container, { days = 30 } = {}) {
   const me = ++mountSeq;
@@ -268,13 +264,12 @@ export function mountSheet(container, { days = 30 } = {}) {
   const q = (sel) => container.querySelector(sel);
   const els = {
     period: q('[data-period]'), banner: q('.banner'), bannerText: q('[data-banner-text]'), empty: q('[data-empty]'), wrap: q('[data-wrap]'),
-    rows: q('[data-rows]'),
+    rows: q('[data-rows]'), total: q('[data-total]'),
   };
   document.title = 'myGAP sheet · Mushroom farm';
   document.body.classList.add('printing-sheet'); // print: no top bar, no buttons, light colours (styles.css)
   q('[data-back]').href = canonicalHash({ name: 'harvest', days });
   q('.hv-sheet-title').textContent = SHEET_TITLE;
-  q('[data-farm]').textContent = farmName();
   q('[data-head]').append(...SHEET_COLUMNS.map((c, i) => {
     const th = el('th', i >= 3 && i <= 6 ? 'num' : '', c);
     th.scope = 'col';
@@ -288,13 +283,14 @@ export function mountSheet(container, { days = 30 } = {}) {
   let painted = '';
 
   function paint(farm) {
-    const key = JSON.stringify([farm.from, farm.to, farm.records]);
+    const key = JSON.stringify([farm.from, farm.to, farm.records, farm.totals?.kg]);
     if (key === painted) return;
     painted = key;
     els.period.textContent = rangeText(farm);
     const rows = sheetRows(farm.records);
     els.empty.hidden = rows.length > 0;
     els.wrap.hidden = rows.length === 0;
+    els.total.textContent = sheetTotal(farm);
     els.rows.replaceChildren(...rows.map((cells) => {
       const tr = el('tr');
       tr.append(...cells.map((c, i) => el('td', `${i >= 3 && i <= 6 ? 'num' : ''}${i >= 4 ? ' hv-write' : ''}`.trim(), c)));

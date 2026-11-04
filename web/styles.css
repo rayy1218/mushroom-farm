@@ -334,6 +334,7 @@ html { scroll-padding-top: var(--topbar-h); }
   body.printing-sheet .hv-sheet-title { font-size: 14pt; max-width: none; }
   body.printing-sheet .hv-sheet-table { font-size: 9pt; min-width: 0; }
   body.printing-sheet .hv-sheet-table thead { display: table-header-group; }
+  body.printing-sheet .hv-sheet-table tfoot { display: table-row-group; } /* the Total once, at the end, not on every page */
   body.printing-sheet .hv-sheet-table thead th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   body.printing-sheet .hv-sheet-table tr { break-inside: avoid; }
   body.printing-sheet .hv-sheet-table td { height: 9mm; }
@@ -1755,7 +1756,7 @@ h2.r-named { display: flex; }
 .hv-row > .pic { flex: none; margin-top: -4px; }
 .hv-text { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 .hv-title { margin: 0; font-variant-numeric: tabular-nums; }
-.hv-kg { font-weight: 600; }
+.hv-kg { display: inline-block; min-width: 8ch; font-weight: 600; text-align: right; } /* the rows' kg line up (2 decimals each) */
 .hv-meta { margin: 2px 0 0; color: var(--muted); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
 .hv-list-card > button { margin-top: 8px; }
 /* a past run: its dates and figures in the summary, opening to its flushes and harvests */
@@ -1802,11 +1803,13 @@ h2.r-named { display: flex; }
 .hv-farm-table thead th, .hv-farm-table thead th.num { white-space: normal; } /* a phone: "kg per block" on two lines, the figures on one */
 .hv-farm-table .hv-name a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--axis); text-underline-offset: 3px; }
 .hv-farm-table .hv-name a:hover { text-decoration-color: currentColor; }
+.hv-without { display: block; color: var(--muted); font-size: var(--fs-xs); white-space: normal; } /* under a room's RM value */
 .hv-page-empty .none { margin: 0; color: var(--muted); }
 .ov-harvest h2 { margin-bottom: 8px; }
 .ov-harvest h2 a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--axis); text-underline-offset: 3px; }
 .ov-harvest h2 a:hover { text-decoration-color: currentColor; }
 .ov-harvest .muted { margin: 0; }
+.ov-harvest .us-note { color: var(--muted); font-size: var(--fs-xs); }
 .ov-harvest .us-tiles { grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); } /* the three side by side */
 @media (max-width: 600px) {
   .hv-tools { flex: 1 1 100%; }
@@ -1823,6 +1826,9 @@ h2.r-named { display: flex; }
 .hv-sheet-facts div { display: flex; gap: 8px; }
 .hv-sheet-facts dt { color: var(--ink-2); }
 .hv-sheet-facts dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+.hv-sheet-facts .hv-write-line { min-width: 40ch; border-bottom: 1px solid var(--border-strong); } /* the farm's name, written in */
+.hv-sheet-table tfoot th { text-align: right; font-weight: 600; }
+.hv-sheet-table tfoot td { font-weight: 600; }
 .hv-sheet > .none { color: var(--muted); }
 .hv-sheet-wrap { overflow-x: auto; } /* a phone: the sheet scrolls sideways rather than squeeze its columns */
 .hv-sheet-table { width: 100%; min-width: 760px; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: var(--fs-sm); }

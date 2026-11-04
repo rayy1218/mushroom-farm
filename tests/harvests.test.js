@@ -92,7 +92,7 @@ test('Done on a harvest check with kg: a harvest stamped with the run, crop, sta
 test('a mixed room: amounts per crop; amount alone refused; a crop the rule is not for refused', (t) => {
   const s = setup(t, { crops: MIXED });
   const row = s.row('harvestAm');
-  assert.deepEqual(row.harvestCrops, [{ crop: 'oyster', name: 'Grey oyster' }, { crop: 'lionsmane', name: "Lion's mane (draft)" }]);
+  assert.deepEqual(row.harvestCrops, [{ crop: 'oyster', name: 'Grey oyster' }, { crop: 'lionsmane', name: "Lion's mane" }], 'no (draft) on the Done dialog');
   refused(() => s.tasks.done(row.id, { worker: 'Ali', amount: 3 }), TaskError, 400, 'Give the kg of each crop', 'amount');
   refused(() => s.tasks.done(row.id, { worker: 'Ali', amounts: { oyster: -1 } }), TaskError, 400, null, 'amounts');
   refused(() => s.tasks.done(row.id, { worker: 'Ali', amounts: [2] }), TaskError, 400, null, 'amounts');
@@ -224,7 +224,8 @@ test('roomView: the current run with figures and harvests newest first; past run
   assert.equal(cur.byCrop.length, 1);
   assert.deepEqual(cur.flushes.map((f) => [f.flush, f.kg]), [[1, 40]]);
   assert.deepEqual(cur.missing, { dryKg: [], price: [] });
-  assert.deepEqual(cur.cost, { costPerKg: 0, cost: 0, days: 9, water: false }, 'a room with no machine log costs nothing');
+  assert.deepEqual(cur.cost, { costPerKg: null, cost: 0, days: 9, water: false, none: 'no-energy' }, 'a room with no machine log: no cost per kg, and why');
+  assert.deepEqual(cur.unpriced, []);
 
   s.db.setSetting('waterPrice', '2');
   assert.equal(s.harvests.roomView(s.id).current.cost.water, true);
@@ -263,16 +264,17 @@ test('farmView: buckets, totals, rooms, crops, today/last7/last30, records; csv'
   assert.equal(v.buckets.at(-1).kg, 4.5);
   assert.equal(v.totals.kg, 12.5);
   assert.equal(v.buckets.reduce((sum, b) => sum + b.kg, 0), v.totals.kg, 'the bars add up to the kg tile');
-  assert.equal(v.totals.value, null, "lion's mane has no price");
-  assert.deepEqual(v.totals.cost, { costPerKg: 0, cost: 0, days: 30, water: false });
-  assert.deepEqual(v.rooms.map((r) => [r.id, r.name, r.kg, r.value]), [[s.id, 'Room 1', 8.5, 85], [other, 'Room 2', 4, null]]);
+  assert.equal(v.totals.value, 85, "the priced crops: lion's mane has no price");
+  assert.deepEqual(v.totals.unpriced, ['lionsmane']);
+  assert.deepEqual(v.totals.cost, { costPerKg: null, cost: 0, days: 30, water: false, none: 'no-energy' });
+  assert.deepEqual(v.rooms.map((r) => [r.id, r.name, r.kg, r.value, r.unpriced]), [[s.id, 'Room 1', 8.5, 85, []], [other, 'Room 2', 4, null, ['lionsmane']]]);
   assert.deepEqual(v.rooms[0].crops, OYSTER);
   assert.deepEqual(v.rooms[0].current, { kg: 108.5, perBlock: 0.22, be: 22 }, 'the current run, beyond the range');
   assert.deepEqual(v.rooms[1].current, { kg: 4, perBlock: 0.02, be: null });
   assert.deepEqual(v.crops, [{ crop: 'oyster', kg: 8.5, value: 85 }, { crop: 'lionsmane', kg: 4, value: null }]);
-  assert.deepEqual(v.today, { kg: 4.5, value: 45 }, 'only oyster today, which has a price');
-  assert.deepEqual(v.last7, { kg: 8.5, value: null });
-  assert.deepEqual(v.last30, { kg: 12.5, value: null });
+  assert.deepEqual(v.today, { kg: 4.5, value: 45, unpriced: [] }, 'only oyster today, which has a price');
+  assert.deepEqual(v.last7, { kg: 8.5, value: 45, unpriced: ['lionsmane'] });
+  assert.deepEqual(v.last30, { kg: 12.5, value: 85, unpriced: ['lionsmane'] });
   assert.deepEqual(v.missing, { dryKg: ['lionsmane'], price: ['lionsmane'] });
   const run = s.db.openRun(s.id);
   assert.deepEqual(v.records.map((r) => [r.date, r.roomName, r.crop, r.kg]), [
@@ -306,7 +308,7 @@ test('farmView: the day buckets, records and today follow the farm\'s clock', (t
   s.harvests.record(s.id, { crop: 'oyster', kg: 1, worker: 'Ali' });
   s.set(NOW);
   const v = s.harvests.farmView({ days: 7 });
-  assert.deepEqual(v.today, { kg: 1, value: null });
+  assert.deepEqual(v.today, { kg: 1, value: null, unpriced: ['oyster'] });
   assert.equal(v.records[0].date, '2026-11-04');
 });
 

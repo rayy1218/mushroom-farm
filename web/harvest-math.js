@@ -4,7 +4,7 @@
 // missing figure (null, undefined, not a number) rather than throwing. A number keeps its unit at a wrap (a no-break
 // space, as web/text-math.js and the Units Rule have it) and a '·' joins with DOT.
 
-import { CROPS } from './crops.js';
+import { cropShortName } from './crops.js';
 import { DOT } from './text-math.js';
 import { farmDate, farmTime, dayMonth } from './tasks-math.js';
 import { isClock, normaliseClock } from './light-math.js';
@@ -16,13 +16,13 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 const FARM_OFFSET_MS = 8 * 3_600_000; // the farm's time is UTC+8 all year (Asia/Kuala_Lumpur keeps no summer time)
 const MAX_KG = 10_000;
 const finite = (x) => typeof x === 'number' && Number.isFinite(x);
-const cropName = (key) => CROPS[key]?.name ?? String(key ?? '');
+const cropName = cropShortName; // a record's crop: no "(draft)"
 const grouped = (n, min, max = min) => n.toLocaleString('en-US', { minimumFractionDigits: min, maximumFractionDigits: max });
 
-// Totals to 1 decimal ("18.4 kg"); one harvest (exact) up to 2 ("2.35 kg", "2 kg").
+// Totals to 1 decimal ("18.4 kg"); one harvest (exact) to 2 ("2.35 kg", "2.00 kg"), so a list's figures line up.
 export function kgText(v, { exact = false } = {}) {
   if (!finite(v)) return DASH;
-  return `${exact ? grouped(v, 0, 2) : grouped(v, 1)}${NB}kg`;
+  return `${grouped(v, exact ? 2 : 1)}${NB}kg`;
 }
 
 // cell: in a table or tile whose head names the figure ("0.31 kg" under "kg per block", "34 %" under "BE").
@@ -30,17 +30,43 @@ export const perBlockText = (v, { cell = false } = {}) => (finite(v) ? `${groupe
 export const beText = (v, { cell = false } = {}) => (finite(v) ? `${cell ? '' : 'BE '}${grouped(v, 0)}${NB}%` : DASH);
 export const rmText = (v) => (finite(v) ? `RM${NB}${grouped(v, 2)}` : DASH);
 
-// What a cost per kg counts: "electricity and water over 46 days at today’s prices".
+const daysText = (days) => `${days}${NB}${days === 1 ? 'day' : 'days'}`;
+
+// What a cost per kg counts, short enough for a tile: "electricity and water · 46 days" (at today's prices: pricesNote).
 function costBasis({ days, water }) {
-  const over = finite(days) ? ` over ${days}${NB}${days === 1 ? 'day' : 'days'}` : '';
-  return `${water ? 'electricity and water' : 'electricity'}${over} at today’s prices`;
+  return `${water ? 'electricity and water' : 'electricity'}${finite(days) ? `${DOT}${daysText(days)}` : ''}`;
 }
 
 // "RM 3.10 per kg · electricity and water over 46 days at today’s prices".
 export function costText({ costPerKg, days, water } = {}) {
   if (!finite(costPerKg)) return DASH;
-  return `${rmText(costPerKg)} per${NB}kg${DOT}${costBasis({ days, water })}`;
+  const over = finite(days) ? ` over ${daysText(days)}` : '';
+  return `${rmText(costPerKg)} per${NB}kg${DOT}${water ? 'electricity and water' : 'electricity'}${over} at today’s prices`;
 }
+
+// The cost per kg tile: its figure and what it counts; a dash that says why when no energy was recorded (never RM 0.00).
+function costTile(cost) {
+  const label = 'Cost per kg';
+  if (cost?.none === 'no-energy') return { label, value: DASH, line: 'No energy recorded yet' };
+  return finite(cost?.costPerKg) ? { label, value: rmText(cost.costPerKg), line: costBasis(cost) } : { label, value: DASH };
+}
+
+// The note under the tiles when a cost per kg shows: its prices are today's.
+export const pricesNote = (cost) => (finite(cost?.costPerKg) ? 'The cost per kg is at today’s prices.' : null);
+
+const names = (crops) => crops.map(cropName).join(', ');
+
+// The RM value tile: the priced crops' value, and the crops left out with their kg ("without Lion's mane (34.4 kg, no
+// price)"), or why there is none ("Lion's mane has no price"). kgOf(crop): the crop's kg in the same group.
+function valueTile(value, unpriced, kgOf) {
+  const label = 'RM value';
+  const out = Array.isArray(unpriced) ? unpriced : [];
+  if (!out.length) return { label, value: rmText(value) };
+  if (!finite(value)) return { label, value: DASH, line: `${names(out)} ${out.length === 1 ? 'has' : 'have'} no price` };
+  const kg = out.reduce((s, c) => s + (finite(kgOf(c)) ? kgOf(c) : 0), 0);
+  return { label, value: rmText(value), line: `without ${names(out)} (${kgText(kg)}, no price)` };
+}
+const kgIn = (list) => (crop) => (Array.isArray(list) ? list : []).find((c) => c.crop === crop)?.kg;
 
 // The Crop tab's line for the run: { kg, perBlock, be } of the run so far and the number of the flush it is in.
 export function summaryLine({ kg, perBlock, be } = {}, flush) {
@@ -68,15 +94,18 @@ function longDate(date) {
 export function sheetRows(records) {
   return (Array.isArray(records) ? records : []).map((h) => {
     const run = finite(h.runStartedAt) ? dayMonth(farmDate(h.runStartedAt)) : DASH;
-    return [longDate(h.date), cropName(h.crop), `${h.roomName}${DOT}run of ${run}`, finite(h.kg) ? String(h.kg) : '', '', '', '', '', ''];
+    return [longDate(h.date), cropName(h.crop), `${h.roomName}${DOT}run of ${run}`, finite(h.kg) ? grouped(h.kg, 2) : '', '', '', '', '', ''];
   });
 }
+
+// The sheet's Total row: the period's kg to 2 decimals (the column's head has the unit), '' when unknown.
+export const sheetTotal = (farm) => (finite(farm?.totals?.kg) ? grouped(farm.totals.kg, 2) : '');
 
 // ---- the room's Harvest tab ----
 
 const blocksText = (n) => `${grouped(n, 0)}${NB}${n === 1 ? 'block' : 'blocks'}`;
 const dayOf = (ms) => dayMonth(farmDate(ms));
-const whenText = (ms) => `${dayOf(ms)} ${farmTime(ms)}`;
+const whenText = (ms) => `${dayOf(ms).replace(' ', NB)} ${farmTime(ms)}`; // "4 Nov" never parts at a wrap
 const andList = (words) => (words.length < 2 ? words.join('') : `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`);
 
 // The days from one farm time to another: "20 Oct", "21–27 Oct", "30 Oct – 4 Nov", "28 Dec 2025 – 30 Jan 2026".
@@ -139,19 +168,20 @@ export const byCropRows = (run) => (run.byCrop ?? []).map((c) => [
   cropName(c.crop), blocksText(c.blocks), kgText(c.kg), perBlockText(c.perBlock, { cell: true }), beText(c.be, { cell: true }), rmText(c.value),
 ]);
 
-// This run's tiles: [{ label, value, line? }] (line: what the cost per kg counts).
+// This run's tiles: [{ label, title? (the label in full: BE), value, line? }], named as the tables' heads name them.
 export function runTiles(run) {
-  const cost = finite(run.cost?.costPerKg) ? run.cost : null;
   return [
-    { label: 'Picked', value: kgText(run.kg) },
-    { label: 'Per block', value: perBlockText(run.perBlock, { cell: true }) },
-    { label: 'Biological efficiency', value: beText(run.be, { cell: true }) },
-    { label: 'Value', value: rmText(run.value) },
-    cost ? { label: 'Cost per kg', value: rmText(cost.costPerKg), line: costBasis(cost) } : { label: 'Cost per kg', value: DASH },
+    { label: 'kg', value: kgText(run.kg) },
+    { label: 'kg per block', value: perBlockText(run.perBlock, { cell: true }) },
+    { label: 'BE', title: 'Biological efficiency', value: beText(run.be, { cell: true }) },
+    valueTile(run.value, run.unpriced, kgIn(run.byCrop)),
+    costTile(run.cost),
   ];
 }
 
-export const deleteQuestion = (h) => `Delete ${kgText(h.kg, { exact: true })} of ${cropName(h.crop)} picked ${whenText(h.pickedAt)}?`;
+// Delete's title names the harvest; its lead when and who ("Picked 4 Nov 14:36 by Kumar.").
+export const deleteTitle = (h) => `Delete ${kgText(h.kg, { exact: true })} of ${cropName(h.crop)}?`;
+export const deleteLead = (h) => `Picked ${whenText(h.pickedAt)}${h.worker ? ` by ${h.worker}` : ''}.`;
 
 // The date box and the 24 h time box (a text box: a browser's own time input follows its locale) in the farm's time,
 // whatever the browser's: { date: '2026-11-04', time: '08:12' }, and back to ms ("8:12" and "0812" are 08:12 too).
@@ -213,27 +243,30 @@ export function editBody(values, h, { run, now, shown }) {
 
 // ---- the farm: the Harvest page, the myGAP sheet and the Overview card (GET /api/harvest) ----
 
-// The Overview card beside Energy and water: { tiles: [{ label, value, line }], empty } (empty: the words when nothing was
-// picked in 30 days).
+// The Overview card beside Energy and water: { tiles: [{ label, value, line, note }], empty } (line: the 30 days' RM value;
+// note: the crops it leaves out; empty: the words when nothing was picked in 30 days).
 export function overviewTiles(farm) {
   if (!(farm?.last30?.kg > 0)) return { tiles: [], empty: 'No harvests in the last 30 days.' };
+  const out = Array.isArray(farm.last30.unpriced) ? farm.last30.unpriced : [];
   return {
     tiles: [
-      { label: 'Today', value: kgText(farm.today?.kg), line: null },
-      { label: '7 days', value: kgText(farm.last7?.kg), line: null },
-      { label: '30 days', value: kgText(farm.last30.kg), line: finite(farm.last30.value) ? rmText(farm.last30.value) : null },
+      { label: 'Today', value: kgText(farm.today?.kg), line: null, note: null },
+      { label: '7 days', value: kgText(farm.last7?.kg), line: null, note: null },
+      {
+        label: '30 days', value: kgText(farm.last30.kg), line: finite(farm.last30.value) ? rmText(farm.last30.value) : null,
+        note: out.length ? `${names(out)} not priced` : null,
+      },
     ],
     empty: null,
   };
 }
 
-// The page's tiles over its range: [{ label, value, line? }] (line: what the cost per kg counts), as the room tab's.
+// The page's tiles over its range, as the room tab's: kg, RM value, cost per kg.
 export function pageTiles(farm) {
-  const cost = finite(farm.totals?.cost?.costPerKg) ? farm.totals.cost : null;
   return [
-    { label: 'Picked', value: kgText(farm.totals?.kg) },
-    { label: 'Value', value: rmText(farm.totals?.value) },
-    cost ? { label: 'Cost per kg', value: rmText(cost.costPerKg), line: costBasis(cost) } : { label: 'Cost per kg', value: DASH },
+    { label: 'kg', value: kgText(farm.totals?.kg) },
+    valueTile(farm.totals?.value, farm.totals?.unpriced, kgIn(farm.crops)),
+    costTile(farm.totals?.cost),
   ];
 }
 
@@ -281,13 +314,18 @@ export function rangeText({ from, to }) {
   return `${dayMonth(from)} – ${longDate(to)}`;
 }
 
-export const emptyText = (days) => `No harvests in the last ${days} days.`;
+// A period by what its buckets cover: 90 days are 13 weeks of bars, 365 days 12 months.
+const PERIOD_WORDS = { 90: '13 weeks', 365: '12 months' };
+export const periodWords = (days) => PERIOD_WORDS[days] ?? `${days} days`;
+export const emptyText = (days) => `No harvests in the last ${periodWords(days)}.`;
 
 // By room: the rooms that picked in the range or have a run under way; kg and RM over the range, kg per block and BE the run's.
 export const ROOM_COLUMNS = ['Room', 'kg', 'RM value', 'kg per block', 'BE'];
+// without: under a room's RM value that leaves out a crop with no price ("without Lion's mane"), else null.
 export const roomRows = (farm) => (farm.rooms ?? []).filter((r) => r.kg > 0 || r.current).map((r) => ({
   id: r.id, name: r.name, crops: r.crops,
   cells: [kgText(r.kg), rmText(r.value), perBlockText(r.current?.perBlock, { cell: true }), beText(r.current?.be, { cell: true })],
+  without: finite(r.value) && r.unpriced?.length ? `without ${names(r.unpriced)}` : null,
 }));
 
 // By crop, most picked first (the server's order).

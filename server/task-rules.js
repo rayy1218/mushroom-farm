@@ -9,7 +9,7 @@
 // 'dehumidifier' | 'co2' | 'trh', null for nothing; see upkeepApplies). The owner's own rules (key `custom:<id>`) take the same
 // shapes; an own upkeep rule also carries its slot (the built-in upkeep rules have none: any time of day).
 
-import { CROPS } from '../web/crops.js';
+import { cropShortName } from '../web/crops.js';
 
 const DAY_MS = 86_400_000;
 // The farm's day is Asia/Kuala_Lumpur's: UTC+8 all year (Malaysia has had no daylight saving since 1982), so a fixed offset
@@ -80,7 +80,7 @@ const HARVEST_FAMILIES = Object.fromEntries(DAILY_RULES.filter((r) => HARVEST_RU
 export function harvestCropsOf(ruleKey, crops) {
   if (!HARVEST_RULES.includes(ruleKey)) return null;
   const families = HARVEST_FAMILIES[ruleKey];
-  return crops.filter((c) => families === null || families.includes(FAMILY_OF[c.crop])).map((c) => ({ crop: c.crop, name: CROPS[c.crop].name }));
+  return crops.filter((c) => families === null || families.includes(FAMILY_OF[c.crop])).map((c) => ({ crop: c.crop, name: cropShortName(c.crop) }));
 }
 // The crop's name before its note in a room of several crops.
 const NOTE_NAMES = { oyster: 'Grey oyster', pink: 'Pink oyster', golden: 'Golden oyster', black: 'Black oyster', abalone: 'Abalone oyster', lionsmane: "Lion's mane", woodear: 'Wood ear' };

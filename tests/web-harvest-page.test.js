@@ -67,3 +67,24 @@ test("the Overview's Harvest card: read with the usage at most once a minute and
   assert.ok(overview.includes("link.href = '#/harvest';"));
   assert.ok(overview.indexOf('if (usage) cards.push(energyNode(usage));') < overview.indexOf('if (harvest) cards.push(harvestNode(harvest));'), 'beside Energy and water');
 });
+
+test('the page: the segments by what the bars cover, the totals card titled with the reply\'s dates, the notes under the tiles', () => {
+  assert.ok(page.includes("const b = el('button', '', periodWords(n));"));
+  assert.ok(page.includes('els.totalsTitle.textContent = rangeText(farm);'));
+  assert.ok(!page.includes('The last ${period} days'));
+  assert.ok(page.includes('els.tiles.replaceChildren(...tileNodes(pageTiles(farm)));'));
+  assert.ok(page.includes("prices && el('p', 'muted hv-missing', prices)"), "the cost's prices are today's: said once under the tiles");
+  assert.ok(page.includes("td.append(el('span', 'hv-without', r.without))"), 'a room value without a crop says so');
+});
+
+test('the sheet: a blank line for the farm\'s name (the app has none), the kg total in the foot', () => {
+  assert.ok(page.includes('<div><dt>Farm</dt><dd class="hv-write-line"></dd></div>'));
+  assert.ok(!page.includes('brand-text'), "not the app's name");
+  assert.ok(page.includes('<tfoot><tr><th scope="row" colspan="3">Total</th><td class="num" data-total></td>'));
+  assert.ok(page.includes('els.total.textContent = sheetTotal(farm);'));
+  assert.match(css, /body\.printing-sheet \.hv-sheet-table tfoot \{ display: table-row-group; \}/, 'printed once, at the end');
+});
+
+test("the Overview's Harvest card names the crops its RM value leaves out", () => {
+  assert.ok(overview.includes("if (t.note) tile.append(node('p', 'us-note', t.note));"));
+});

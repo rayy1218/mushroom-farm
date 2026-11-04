@@ -7,13 +7,13 @@
 import { request, OUTDATED, routeMissing } from './api.js';
 import { live } from './live.js';
 import { fallbackMs, createThrottle } from './live-math.js';
-import { CROPS } from './crops.js';
+import { cropShortName } from './crops.js';
 import { picture } from './pictures.js';
 import { DOT } from './text-math.js';
 import { openForm, closeTaskDialog, loadWorkers, setWorker, workerField, errorText } from './task-dialogs.js';
 import {
-  runHead, harvestLine, pastRow, missingNote, flushColumns, flushRows, BY_CROP_COLUMNS, byCropRows, runTiles,
-  deleteQuestion, whenBoxes, recordBody, editBody,
+  runHead, harvestLine, pastRow, missingNote, flushColumns, flushRows, BY_CROP_COLUMNS, byCropRows, runTiles, pricesNote,
+  deleteTitle, deleteLead, whenBoxes, recordBody, editBody,
 } from './harvest-math.js';
 
 const REFRESH_MS = 60_000;
@@ -74,6 +74,26 @@ export function missingLine(missing) {
   a.href = '#/settings';
   p.append(note.slice(0, at), a, note.slice(at + YIELD.length));
   return p;
+}
+
+// A figure's name: BE spelt out for a pointer and a screen reader (<abbr title>), the others as they are.
+export function figureName(text, title) {
+  if (!title) return text;
+  const abbr = el('abbr', '', text);
+  abbr.title = title;
+  return abbr;
+}
+
+// The tiles of runTiles or pageTiles: [{ label, title?, value, line? }].
+export function tileNodes(list) {
+  return list.map((t) => {
+    const tile = el('div', 'us-tile');
+    const label = el('p', 'us-label');
+    label.append(figureName(t.label, t.title));
+    tile.append(label, el('p', 'us-kwh', t.value));
+    if (t.line) tile.append(el('p', 'us-basis hv-basis', t.line));
+    return tile;
+  });
 }
 
 export function createHarvestCard(host, { roomId, onGone }) {
@@ -160,13 +180,9 @@ export function createHarvestCard(host, { roomId, onGone }) {
 
   function paintRun(run) {
     runLine.textContent = runHead(run);
-    tiles.replaceChildren(...runTiles(run).map((t) => {
-      const tile = el('div', 'us-tile');
-      tile.append(el('p', 'us-label', t.label), el('p', 'us-kwh', t.value));
-      if (t.line) tile.append(el('p', 'us-basis hv-basis', t.line));
-      return tile;
-    }));
-    const parts = [];
+    tiles.replaceChildren(...tileNodes(runTiles(run)));
+    const prices = pricesNote(run.cost);
+    const parts = prices ? [el('p', 'muted hv-missing', prices)] : [];
     if ((run.flushes ?? []).length) parts.push(flushTable(run));
     if ((run.crops ?? []).length > 1) parts.push(table('By crop', BY_CROP_COLUMNS, byCropRows(run), 1));
     const note = missingLine(run.missing);
@@ -309,7 +325,7 @@ export function createHarvestCard(host, { roomId, onGone }) {
       title: 'Record a harvest',
       lead,
       fields: [
-        ...(crops.length > 1 ? [{ name: 'crop', label: 'Crop', kind: 'select', value: crops[0].crop, options: crops.map((c) => [c.crop, CROPS[c.crop]?.name ?? c.crop]) }] : []),
+        ...(crops.length > 1 ? [{ name: 'crop', label: 'Crop', kind: 'select', value: crops[0].crop, options: crops.map((c) => [c.crop, cropShortName(c.crop)]) }] : []),
         kgField(''), workerField(names, 'Who picked it'), ...whenFields(shown, run, now),
       ],
       buttons: [{ value: 'record', label: 'Record', primary: true }],
@@ -345,8 +361,8 @@ export function createHarvestCard(host, { roomId, onGone }) {
   function deleteHarvest(h, li, fallback) {
     const near = li.nextElementSibling ?? li.previousElementSibling;
     ask({
-      title: 'Delete this harvest?',
-      lead: [deleteQuestion(h), ...(h.taskId ? ["Its harvest check's kg becomes the total of what is left."] : [])],
+      title: deleteTitle(h),
+      lead: [deleteLead(h), ...(h.taskId ? ["Its harvest check's kg becomes the total of what is left."] : [])],
       buttons: [{ value: 'delete', label: 'Delete', primary: true, danger: true }],
       closeLabel: 'Keep it',
       submit: async () => {

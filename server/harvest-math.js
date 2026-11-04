@@ -1,7 +1,7 @@
 // The harvest figures (spec 2026-11-04-harvest-design.md section 4). Pure: no database, no clock. Farm time is UTC+8.
 import { localDate, localTime, addDays } from './task-rules.js';
 import { cell } from './csv.js';
-import { CROPS, STAGES } from '../web/crops.js';
+import { STAGES, cropShortName } from '../web/crops.js';
 
 export const round = (n, places = 0) => Math.round(n * 10 ** places) / 10 ** places;
 
@@ -34,23 +34,29 @@ function groupFigures(crops, harvests, cropYield) {
   return { kg: round(kg, 2), perBlock: blocks > 0 ? round(kg / blocks, 2) : null, be: Number.isFinite(be) ? be : null };
 }
 
-// The RM value of harvests: Σ kg × the crop's price; null when a crop with kg has no price.
+const priced = (crop, cropYield) => num(cropYield?.[crop]?.priceKg);
+
+// The RM value of harvests: Σ kg × the crop's price over the priced crops; null when no crop with kg has a price (0 when
+// nothing was picked). unpricedOf names the crops left out.
 export function valueOf(harvests, cropYield) {
-  let total = 0;
-  for (const h of harvests) {
-    if (h.kg <= 0) continue;
-    const price = cropYield?.[h.crop]?.priceKg;
-    if (!num(price)) return null;
-    total += h.kg * price;
-  }
-  return round(total, 2);
+  const withKg = harvests.filter((h) => h.kg > 0);
+  const known = withKg.filter((h) => priced(h.crop, cropYield));
+  if (withKg.length && !known.length) return null;
+  return round(known.reduce((s, h) => s + h.kg * cropYield[h.crop].priceKg, 0), 2);
 }
+
+// The crops with kg and no price, in first-harvest order.
+export const unpricedOf = (harvests, cropYield) => [...new Set(harvests.filter((h) => h.kg > 0 && !priced(h.crop, cropYield)).map((h) => h.crop))];
 
 export function runFigures(run, harvests, cropYield, usage) {
   const crops = cropsOf(run, harvests);
   const total = groupFigures(crops, harvests, cropYield);
+  // none: 'no-energy' when the run's days used no electricity or water (no readings): no cost per kg, rather than RM 0.00
   const cost = usage
-    ? { costPerKg: total.kg > 0 ? round(usage.cost / total.kg, 2) : null, cost: usage.cost, days: usage.days, water: usage.water }
+    ? {
+      costPerKg: total.kg > 0 && !usage.none ? round(usage.cost / total.kg, 2) : null, cost: usage.cost, days: usage.days, water: usage.water,
+      ...(usage.none ? { none: usage.none } : {}),
+    }
     : null;
   const byCrop = crops.map((c) => {
     const own = harvests.filter((h) => h.crop === c.crop);
@@ -71,6 +77,7 @@ export function runFigures(run, harvests, cropYield, usage) {
   return {
     ...total,
     value: valueOf(harvests, cropYield),
+    unpriced: unpricedOf(harvests, cropYield),
     cost,
     byCrop,
     flushes,
@@ -143,7 +150,7 @@ export function csvRows(harvests, rooms, runs) {
   const rows = [...harvests].sort((a, b) => a.pickedAt - b.pickedAt).map((h) => {
     const started = runs.get(h.runId)?.startedAt;
     return [
-      localDate(h.pickedAt), localTime(h.pickedAt), rooms.get(h.roomId)?.name ?? '', CROPS[h.crop]?.name ?? h.crop,
+      localDate(h.pickedAt), localTime(h.pickedAt), rooms.get(h.roomId)?.name ?? '', cropShortName(h.crop),
       started === undefined || started === null ? '' : localDate(started), STAGES[h.stage] ?? h.stage, h.flush, h.blocks, h.kg, h.worker,
       h.taskId ? 'harvest check' : 'recorded',
     ].map(cell).join(',');

@@ -44,7 +44,9 @@ test('Record, Edit and Delete: the task dialog form, the worker box, the time bo
   assert.ok(card.includes("return onTime(await send('POST', `/api/rooms/${roomId}/harvests`, body));"));
   assert.ok(card.includes("return onTime(await send('PUT', `/api/harvests/${h.id}`, body));"));
   assert.ok(card.includes("const r = await send('DELETE', `/api/harvests/${h.id}`);"));
-  assert.ok(card.includes('lead: [deleteQuestion(h), ...(h.taskId ? ["Its harvest check\'s kg becomes the total of what is left."] : [])],'), "a check's row says what happens to the check's kg");
+  assert.ok(card.includes('title: deleteTitle(h),'), 'the harvest named once, in the title');
+  assert.ok(card.includes('lead: [deleteLead(h), ...(h.taskId ? ["Its harvest check\'s kg becomes the total of what is left."] : [])],'), "a check's row says what happens to the check's kg");
+  assert.ok(card.includes("options: crops.map((c) => [c.crop, cropShortName(c.crop)])"), 'no (draft) in the crop picker');
 });
 
 test('Record a harvest is off until the first answer; a farm app without the harvests says so, with no timer', () => {
