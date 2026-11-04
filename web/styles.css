@@ -859,6 +859,7 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
 .sim-dialog { max-height: calc(100dvh - var(--dialog-top) - 16px); padding-bottom: 0; } /* the footer holds the bottom padding: a sticky one stops at the padding */
 .sim-dialog .actions { position: sticky; bottom: 0; z-index: 1; margin: 16px -24px 0; padding: 12px 24px 20px; background: var(--surface); border-top: 1px solid var(--border); }
 .sim-dialog #sim-title:focus { outline: none; } /* it takes the focus on each step; a field would pop up a phone's keyboard */
+#tk-dialog-title:focus { outline: none; } /* a confirm with no field (Delete a harvest, Skip) focuses its title: no box round it */
 @media (max-width: 600px) { .sim-dialog .sizes.two > .field:has(.sim-ac) { grid-column: 1 / -1; } }
 /* the intake filter of step 1, folded while it holds the room's own values */
 .sim-fold { margin: 0 0 20px; }
@@ -1779,6 +1780,12 @@ h2.r-named { display: flex; }
 .hv-basis { text-transform: none; }
 .hv-body > * + * { margin-top: 16px; }
 .hv-table th, .hv-table .hv-days { white-space: nowrap; } /* a phone: the table scrolls rather than break "Flush 1" */
+.hv-split-row { display: none; }
+@media (max-width: 600px) {
+  .hv-table .hv-crop-col { display: none; } /* a mixed room's flushes: each crop's kg goes in a line under "Flush N", as By room's run */
+  .hv-split-row { display: table-row; }
+  .hv-table .hv-flush-split { padding-top: 0; border-top: 0; color: var(--muted); white-space: normal; }
+}
 .hv-missing { margin: 0; font-size: var(--fs-sm); }
 :is(.hv-body, .hv-run-body) > .hv-missing + .hv-missing { margin-top: 4px; }
 /* a harvest: the basket with its crop, the kg and what it was, when, who and from under it, Edit and Delete quiet at the end */

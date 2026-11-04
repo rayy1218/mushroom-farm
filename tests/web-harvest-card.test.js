@@ -126,3 +126,13 @@ test('the Crop tab: the run in one line with a link to the Harvest tab, read on 
 test('Delete room names the harvests', () => {
   assert.ok(src('room-edit.js').includes("'The room goes with its readings, history, crop, harvests and simulations.'"));
 });
+
+test('a mixed room\'s flushes on a phone: the per-crop columns give way to the split under "Flush N"; a field-less confirm\'s title has no box', () => {
+  assert.ok(card.includes("table('Flushes', flushColumns(run.crops), flushRows(run), 2, { perCrop: flushPerCrop(run.crops), subs: flushSplits(run) })"));
+  assert.ok(card.includes("if (i >= perCrop[0] && i < perCrop[1]) td.classList.add('hv-crop-col');"));
+  assert.ok(card.includes("if (i >= perCrop[0] && i < perCrop[1]) th.classList.add('hv-crop-col');"), 'the head too');
+  assert.ok(card.includes("const td = el('td', 'hv-flush-split', subs[row]);") && card.includes('td.colSpan = columns.length;'), 'a row of its own, the table wide');
+  assert.ok(css.includes('.hv-split-row { display: none; }\n@media (max-width: 600px) {\n  .hv-table .hv-crop-col { display: none; }'));
+  assert.ok(css.includes('  .hv-split-row { display: table-row; }'));
+  assert.ok(css.includes('#tk-dialog-title:focus { outline: none; }'));
+});

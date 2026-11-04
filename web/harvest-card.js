@@ -13,7 +13,7 @@ import { roomHash } from './route.js';
 import { DOT } from './text-math.js';
 import { openForm, closeTaskDialog, loadWorkers, setWorker, workerField, errorText } from './task-dialogs.js';
 import {
-  runHead, recordLead, recordTitle, dateHint, harvestLine, pastRow, PAST_COLUMNS, missingNote, flushColumns, flushRows,
+  runHead, recordLead, recordTitle, dateHint, harvestLine, pastRow, PAST_COLUMNS, missingNote, flushColumns, flushRows, flushPerCrop, flushSplits,
   BY_CROP_COLUMNS, byCropRows, runTiles, pricesNote,
   deleteTitle, deleteLead, whenBoxes, recordBody, editBody,
 } from './harvest-math.js';
@@ -40,31 +40,42 @@ function button(label, className) {
 }
 
 // A table of figures: the first column names the row, the columns from `numFrom` are numbers (right, tabular).
-function table(caption, columns, rows, numFrom) {
+// perCrop: [from, to) the per-crop columns (a mixed room's flushes), hidden on a phone, where subs[row] says them in a muted
+// row of its own under the row (the whole table's width: in the name's narrow column it would wrap word by word).
+function table(caption, columns, rows, numFrom, { perCrop = [0, 0], subs = [] } = {}) {
   const wrap = el('div', 'us-table-wrap');
   const t = el('table', 'us-table hv-table');
   t.append(el('caption', '', caption));
-  t.append(headRow(columns, numFrom));
+  t.append(headRow(columns, numFrom, perCrop));
   const body = el('tbody');
-  for (const r of rows) {
+  rows.forEach((r, row) => {
     const tr = el('tr');
     r.forEach((cell, i) => {
       const td = el(i === 0 ? 'th' : 'td', i >= numFrom ? 'num' : i === 0 ? '' : 'hv-days', cell);
+      if (i >= perCrop[0] && i < perCrop[1]) td.classList.add('hv-crop-col');
       if (i === 0) td.scope = 'row';
       tr.append(td);
     });
     body.append(tr);
-  }
+    if (subs[row]) {
+      const split = el('tr', 'hv-split-row');
+      const td = el('td', 'hv-flush-split', subs[row]);
+      td.colSpan = columns.length;
+      split.append(td);
+      body.append(split);
+    }
+  });
   t.append(body);
   wrap.append(t);
   return wrap;
 }
 
 // A table's head: the column names (BE spelt out for a pointer and a screen reader), the figures' right-aligned.
-function headRow(columns, numFrom) {
+function headRow(columns, numFrom, perCrop = [0, 0]) {
   const head = el('tr');
   columns.forEach((c, i) => {
     const th = el('th', i >= numFrom ? 'num' : '');
+    if (i >= perCrop[0] && i < perCrop[1]) th.classList.add('hv-crop-col');
     th.append(figureName(c, c === 'BE' ? 'Biological efficiency' : null));
     th.scope = 'col';
     head.append(th);
@@ -74,7 +85,7 @@ function headRow(columns, numFrom) {
   return thead;
 }
 
-const flushTable = (run) => table('Flushes', flushColumns(run.crops), flushRows(run), 2);
+const flushTable = (run) => table('Flushes', flushColumns(run.crops), flushRows(run), 2, { perCrop: flushPerCrop(run.crops), subs: flushSplits(run) });
 
 // "Set the price of Grey oyster in Settings → Yield." with Settings → Yield a link to Settings.
 export function missingLine(missing) {

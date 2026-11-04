@@ -158,6 +158,21 @@ export function missingNote(missing) {
   return parts.length ? `Set ${parts.join(' and ')} in Settings → Yield.` : null;
 }
 
+// The per-crop kg columns of the flushes table: [from, to) in flushColumns' order (none, [2, 2], with one crop).
+export function flushPerCrop(crops) {
+  const n = new Set((Array.isArray(crops) ? crops : []).map((c) => c.crop)).size;
+  return [2, n > 1 ? 2 + n : 2];
+}
+
+// A mixed room's split of each flush in flushRows' order, the line under "Flush N" on a phone where the per-crop columns
+// give way: "Grey oyster 55.6 · Lion's mane 25.2" (the crops picked that flush); null with one crop.
+export function flushSplits(run) {
+  const keys = [...new Set((run.crops ?? []).map((c) => c.crop))];
+  return (run.flushes ?? []).map((f) => (keys.length > 1
+    ? keys.filter((k) => finite(f.byCrop?.[k])).map((k) => `${cropName(k)} ${grouped(f.byCrop[k], 1)}`).join(DOT)
+    : null));
+}
+
 // The flushes table's rows, in flushColumns' order: "Before records" (copied without a flush) first, then each flush.
 export function flushRows(run) {
   const keys = [...new Set((run.crops ?? []).map((c) => c.crop))];

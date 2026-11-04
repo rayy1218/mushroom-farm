@@ -46,6 +46,7 @@ test('sheet rows: the myGAP columns, the sales cells blank', () => {
 
 // ---- Task 9: the Harvest room tab ----
 
+import { flushSplits, flushPerCrop } from '../web/harvest-math.js';
 import { recordLead, recordTitle, dateHint, runHead, harvestLine, pastRow, PAST_COLUMNS, missingNote, flushRows, byCropRows, runTiles, deleteTitle, deleteLead, pricesNote, whenBoxes, whenMs, recordBody, editBody } from '../web/harvest-math.js';
 
 const at = (y, mo, d, h = 0, mi = 0) => Date.UTC(y, mo - 1, d, h - 8, mi); // a farm time (UTC+8) in ms
@@ -117,6 +118,15 @@ test('the flushes table: Before records first, the days, a kg column per crop in
   assert.deepEqual(flushRows(mixed), [['Flush 1', '21 Oct', `10.0${nb}kg`, `8.4${nb}kg`, `18.4${nb}kg`, `0.01${nb}kg`, '—']]);
   assert.equal(flushRows(mixed)[0].length, flushColumns(mixed.crops).length);
   assert.deepEqual(flushRows({ ...mixed, flushes: [{ ...mixed.flushes[0], byCrop: { oyster: 10 } }] })[0].slice(2, 4), [`10.0${nb}kg`, '—']);
+});
+
+test('a mixed room\'s flush split, the line under "Flush N" on a phone where the per-crop columns give way', () => {
+  assert.deepEqual(flushSplits(mixed), [`Grey oyster 10.0${dot}Lion's mane 8.4`]);
+  assert.deepEqual(flushSplits({ ...mixed, flushes: [{ ...mixed.flushes[0], byCrop: { oyster: 55.64, lionsmane: 25.24 } }] }), [`Grey oyster 55.6${dot}Lion's mane 25.2`]);
+  assert.deepEqual(flushSplits({ ...mixed, flushes: [{ ...mixed.flushes[0], byCrop: { lionsmane: 3 } }] }), ["Lion's mane 3.0"], 'a crop not picked that flush is left out');
+  assert.deepEqual(flushSplits(oneCrop), [null, null, null], 'one crop: no split');
+  assert.deepEqual(flushPerCrop(mixed.crops), [2, 4], 'the per-crop columns: from 2, before 4');
+  assert.deepEqual(flushPerCrop(oneCrop.crops), [2, 2]);
 });
 
 test('the By crop table of a mixed room', () => {
