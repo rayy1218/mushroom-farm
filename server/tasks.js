@@ -93,11 +93,13 @@ function stampHarvests(db, { roomId, amounts, at, worker, taskId }) {
   const run = db.openRun(roomId);
   if (!run) return [];
   const program = db.getProgram(roomId);
-  const blocksOf = (crop) => (run.crops.find((c) => c.crop === crop) ?? program.crops.find((c) => c.crop === crop))?.blocks ?? 0;
   return Object.entries(amounts).filter(([, kg]) => kg > 0).map(([crop, kg]) => ({
-    roomId, runId: run.id, crop, stage: program.stage, flush: program.flush, blocks: blocksOf(crop), kg, pickedAt: at, worker, taskId, at,
+    roomId, runId: run.id, crop, stage: program.stage, flush: program.flush, blocks: blocksOf(run, program, crop), kg, pickedAt: at, worker, taskId, at,
   }));
 }
+
+// The blocks of a crop a harvest is stamped with: the open run's (the program's for a crop not in it).
+const blocksOf = (run, program, crop) => (run?.crops.find((c) => c.crop === crop) ?? program?.crops.find((c) => c.crop === crop))?.blocks ?? 0;
 
 export function createTasks({ db, now = Date.now, log = console.error }) {
   const listeners = new Set();
@@ -117,10 +119,14 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
   // The rule settings and the owner's rules, read once for a pass over several rooms.
   const ruleSources = () => ({ settings: db.taskRuleSettings(), custom: db.customTaskRules() });
 
-  // The room's crops an open harvest check is for (harvests.js harvestCropsOf); null for any other row.
-  const harvestCrops = (row) => (row.status === 'open' && HARVEST_RULES.includes(row.ruleKey)
-    ? harvestCropsOf(row.ruleKey, db.getProgram(row.roomId)?.crops ?? [])
-    : null);
+  // The room's crops an open harvest check is for (harvests.js harvestCropsOf) with the blocks a harvest of each would be
+  // stamped with (the Done dialog asks again about a pick over 0.3 kg a block); null for any other row.
+  const harvestCrops = (row) => {
+    if (row.status !== 'open' || !HARVEST_RULES.includes(row.ruleKey)) return null;
+    const program = db.getProgram(row.roomId);
+    const run = db.openRun(row.roomId);
+    return harvestCropsOf(row.ruleKey, program?.crops ?? []).map((c) => ({ ...c, blocks: blocksOf(run, program, c.crop) }));
+  };
 
   // A row as the API shows it: amountLabel for an open row whose rule records an amount; harvestCrops for an open harvest
   // check (spec 2026-11-04-harvest-design.md 3).

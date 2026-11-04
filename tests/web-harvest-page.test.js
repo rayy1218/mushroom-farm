@@ -98,10 +98,18 @@ test('By room: the names on one line, the period over kg and RM and This run ove
 });
 
 test('the totals card: the tiles held to a width, the kg in Display type; the Overview\'s three tiles at 360 px (audit #17, #20)', () => {
-  assert.ok(css.includes('.hv-page .hv-tiles { grid-template-columns: repeat(3, minmax(160px, 260px)); }'));
+  assert.ok(css.includes('.hv-page .hv-tiles > .us-tile { flex: 0 1 260px; }'));
   assert.ok(css.includes('.hv-page .hv-tiles > :first-child .us-kwh { font-size: var(--fs-3xl);'));
   assert.ok(css.includes('.ov-harvest .us-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }'));
-  assert.ok(css.includes('.hv-tiles > :last-child:nth-child(odd) { grid-column: 1 / -1; }'));
+});
+
+test('a long figure never runs into the next tile: the tiles grow to their figures and wrap; a phone sets a long one a size down', () => {
+  assert.ok(css.includes('.hv-tiles { display: flex; flex-wrap: wrap; margin-top: 4px; }'));
+  assert.ok(css.includes('.hv-tiles > .us-tile { flex: 1 0 128px; min-width: min-content; }'));
+  assert.match(css, /@media \(max-width: 600px\) \{\n  \.hv-tiles > \.us-tile \{ flex-basis: calc\(50% - 6px\); \}[^\n]*\n  \.hv-tiles \.us-kwh\[data-long\] \{ font-size: var\(--fs-lg\); \}/);
+  const card = src('harvest-card.js');
+  assert.ok(card.includes('const LONG_FIGURE = 11;'));
+  assert.ok(card.includes("if (t.value.length > LONG_FIGURE) value.dataset.long = '';"));
 });
 
 test("the Overview's Harvest card: a 30-day strip in the harvest hue and the rooms' kg two a line; the title 44 px on a phone (audit #23)", () => {

@@ -34,6 +34,10 @@ function groupFigures(crops, harvests, cropYield) {
   return { kg: round(kg, 2), perBlock: blocks > 0 ? round(kg / blocks, 2) : null, be: Number.isFinite(be) ? be : null };
 }
 
+// Cost per kg to 6 places: a big pick on a cheap day is a fraction of a sen a kg (RM 2.12 over 526.32 kg is RM 0.004), which
+// 2 places would make a false 0; the web rounds it for show (web/harvest-math.js costKgText).
+export const costPerKgOf = (cost, kg) => round(cost / kg, 6);
+
 const priced = (crop, cropYield) => num(cropYield?.[crop]?.priceKg);
 
 // The RM value of harvests: Σ kg × the crop's price over the priced crops; null when no crop with kg has a price (0 when
@@ -54,7 +58,7 @@ export function runFigures(run, harvests, cropYield, usage) {
   // none: 'no-energy' when the run's days used no electricity or water (no readings): no cost per kg, rather than RM 0.00
   const cost = usage
     ? {
-      costPerKg: total.kg > 0 && !usage.none ? round(usage.cost / total.kg, 2) : null, cost: usage.cost, days: usage.days, water: usage.water,
+      costPerKg: total.kg > 0 && !usage.none ? costPerKgOf(usage.cost, total.kg) : null, cost: usage.cost, days: usage.days, water: usage.water,
       ...(usage.none ? { none: usage.none } : {}),
     }
     : null;

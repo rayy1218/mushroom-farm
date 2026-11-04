@@ -31,6 +31,14 @@ export const perBlockText = (v, { cell = false } = {}) => (finite(v) ? `${groupe
 export const beText = (v, { cell = false } = {}) => (finite(v) ? `${cell ? '' : 'BE '}${grouped(v, 0)}${NB}%` : DASH);
 export const rmText = (v) => (finite(v) ? `RM${NB}${grouped(v, 2)}` : DASH);
 
+// Cost per kg: 2 decimals from RM 0.10 ("RM 3.10"); below, its first two significant digits up to 4 decimals ("RM 0.04",
+// "RM 0.004", "RM 0.0035"), so a big pick on a cheap day never shows a false "RM 0.00" (a true 0 does).
+export function costKgText(v) {
+  if (!finite(v) || v <= 0 || v >= 0.1) return rmText(v);
+  if (v < 0.0001) return `under${NB}RM${NB}0.0001`;
+  return `RM${NB}${grouped(v, 2, Math.min(4, 1 - Math.floor(Math.log10(v))))}`;
+}
+
 const daysText = (days) => `${days}${NB}${days === 1 ? 'day' : 'days'}`;
 
 // What a cost per kg counts, short enough for a tile: "electricity and water · 46 days" (at today's prices: pricesNote).
@@ -42,7 +50,7 @@ function costBasis({ days, water }) {
 export function costText({ costPerKg, days, water } = {}) {
   if (!finite(costPerKg)) return DASH;
   const over = finite(days) ? ` over ${daysText(days)}` : '';
-  return `${rmText(costPerKg)} per${NB}kg${DOT}${water ? 'electricity and water' : 'electricity'}${over} at today’s prices`;
+  return `${costKgText(costPerKg)} per${NB}kg${DOT}${water ? 'electricity and water' : 'electricity'}${over} at today’s prices`;
 }
 
 // The cost per kg tile: its figure and what it counts; a dash that says why when no energy was recorded (never RM 0.00) or
@@ -51,7 +59,7 @@ const NONE_LINES = { 'no-energy': 'No energy recorded yet', pending: 'Working ou
 function costTile(cost) {
   const label = 'Cost per kg';
   if (NONE_LINES[cost?.none]) return { label, value: DASH, line: NONE_LINES[cost.none] };
-  return finite(cost?.costPerKg) ? { label, value: rmText(cost.costPerKg), line: costBasis(cost) } : { label, value: DASH };
+  return finite(cost?.costPerKg) ? { label, value: costKgText(cost.costPerKg), line: costBasis(cost) } : { label, value: DASH };
 }
 
 // The note under the tiles when a cost per kg shows: its prices are today's.
@@ -145,7 +153,7 @@ export function pastRow(run) {
   return {
     title: run.partial ? `Recorded ${dates}` : dates,
     cells: [cropBlocks(run.crops).join(', '), kgText(run.kg), perBlockText(run.perBlock, { cell: true }), beText(run.be, { cell: true }),
-      rmText(run.value), rmText(run.cost?.costPerKg)],
+      rmText(run.value), costKgText(run.cost?.costPerKg)],
   };
 }
 
@@ -248,6 +256,38 @@ function pickedOf(values, { run, now, shown }) {
   if (ms >= run.startedAt && ms <= to) return { value: ms };
   const error = run.endedAt === null || run.endedAt === undefined ? "Pick a time from the run's start to now" : "Pick a time from the run's start to its end";
   return { error, field: date < farmDate(run.startedAt) || date > farmDate(to) ? 'pickedDate' : 'pickedTime' };
+}
+
+// One pick over this many kg a block asks again before it is kept (Record, Edit, the harvest check's Done): a whole good
+// flush is about 0.2 to 0.3 kg a block, so more in one pick is likelier a slipped decimal point or the wrong blocks than a
+// real pick. Asked, not refused: the farmer may know better.
+export const PICK_MAX_PER_BLOCK = 0.3;
+
+// A pick of kg from the crop's blocks in the run: null when plausible (or the blocks unknown), else { perBlock, message }.
+export function pickCheck(kg, blocks) {
+  if (!finite(kg) || !finite(blocks) || blocks <= 0 || kg / blocks <= PICK_MAX_PER_BLOCK) return null;
+  const perBlock = kg / blocks;
+  return { perBlock, message: `That's ${perBlockText(perBlock)} in one pick. Is ${kgText(kg, { exact: true })} right?` };
+}
+
+// A dialog's picks [{ field, kg, blocks }] → each implausible one, [{ field, message }] for its box ([] when none).
+export const pickWarnings = (picks) => picks.flatMap((p) => {
+  const c = pickCheck(p.kg, p.blocks);
+  return c ? [{ field: p.field, message: c.message }] : [];
+});
+
+// Record's pick (recordBody's body): the kg over the run's blocks of the crop picked.
+export const recordPicks = (body, run) => [{ field: 'kg', kg: body.kg, blocks: (run?.crops ?? []).find((c) => c.crop === body.crop)?.blocks }];
+
+// Edit's pick (editBody's body): a changed kg over the harvest's own blocks; a kg left as it was is not asked about.
+export const editPicks = (body, h) => ('kg' in body ? [{ field: 'kg', kg: body.kg, blocks: h.blocks }] : []);
+
+// The picks of a Done body (tasks-math.js doneBody) on a harvest check: its kg boxes with the run's blocks of each crop
+// (the row's harvestCrops); [] for another row or nothing weighed.
+export function donePicks(row, body) {
+  const crops = Array.isArray(row?.harvestCrops) ? row.harvestCrops : [];
+  if (body?.amounts) return crops.filter((c) => finite(body.amounts[c.crop])).map((c) => ({ field: `kg:${c.crop}`, kg: body.amounts[c.crop], blocks: c.blocks }));
+  return crops.length === 1 && finite(body?.amount) ? [{ field: 'amount', kg: body.amount, blocks: crops[0].blocks }] : [];
 }
 
 // Record a harvest's body { crop, kg, worker, pickedAt? } (crop: the run's only crop when there is no picker), or { error, field }.

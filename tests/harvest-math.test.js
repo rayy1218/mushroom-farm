@@ -28,6 +28,12 @@ test('missing figures: BE and value null, the crops named; no kg: no cost per kg
   assert.deepEqual(runFigures(RUN, [], YIELD, null).unpriced, []);
 });
 
+test('cost per kg to 6 places: a big pick on a cheap day is a fraction of a sen a kg, never a false 0', () => {
+  const f = runFigures(RUN, [H('oyster', 526.32, 1, 1)], YIELD, { cost: 2.12, days: 1, water: false });
+  assert.equal(f.cost.costPerKg, 0.004028, 'RM 2.12 / 526.32 kg');
+  assert.equal(runFigures(RUN, [H('oyster', 94, 1, 1)], YIELD, { cost: 15, days: 30, water: true }).cost.costPerKg, 0.159574);
+});
+
 test('no energy recorded over the run: no cost per kg, with the reason', () => {
   const f = runFigures(RUN, [H('oyster', 10, 1, 1)], YIELD, { cost: 0, days: 41, water: false, none: 'no-energy' });
   assert.deepEqual(f.cost, { costPerKg: null, cost: 0, days: 41, water: false, none: 'no-energy' });

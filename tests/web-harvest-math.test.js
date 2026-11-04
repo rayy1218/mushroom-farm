@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { kgText, perBlockText, beText, rmText, costText, summaryLine, flushColumns, sheetRows, sheetTotal } from '../web/harvest-math.js';
+import { kgText, perBlockText, beText, rmText, costKgText, costText, summaryLine, flushColumns, sheetRows, sheetTotal } from '../web/harvest-math.js';
 
 const nb = ' ';
 const dot = `${nb}· `;
@@ -16,6 +16,21 @@ test('formats: kg, per block, BE, RM, cost', () => {
   assert.equal(rmText(1240.5), `RM${nb}1,240.50`);
   assert.equal(costText({ costPerKg: 3.1, days: 46, water: true }), `RM${nb}3.10 per${nb}kg${dot}electricity and water over 46${nb}days at today’s prices`);
   assert.equal(costText({ costPerKg: 3.1, days: 1, water: false }), `RM${nb}3.10 per${nb}kg${dot}electricity over 1${nb}day at today’s prices`);
+});
+
+test('cost per kg: 2 decimals from RM 0.10, below its first two significant digits up to 4 decimals, never a false RM 0.00', () => {
+  assert.equal(costKgText(3.1), `RM${nb}3.10`);
+  assert.equal(costKgText(1234.5), `RM${nb}1,234.50`);
+  assert.equal(costKgText(0.1), `RM${nb}0.10`);
+  assert.equal(costKgText(0.04), `RM${nb}0.04`);
+  assert.equal(costKgText(0.035), `RM${nb}0.035`);
+  assert.equal(costKgText(0.004028), `RM${nb}0.004`, 'RM 2.12 over 526.32 kg');
+  assert.equal(costKgText(0.0035), `RM${nb}0.0035`);
+  assert.equal(costKgText(0.00035), `RM${nb}0.0004`, 'at most 4 decimals');
+  assert.equal(costKgText(0.00004), `under${nb}RM${nb}0.0001`);
+  assert.equal(costKgText(0), `RM${nb}0.00`, 'a true 0');
+  assert.equal(costKgText(null), '—');
+  assert.equal(costText({ costPerKg: 0.004028, days: 1, water: false }), `RM${nb}0.004 per${nb}kg${dot}electricity over 1${nb}day at today’s prices`);
 });
 
 test('a missing figure is a dash', () => {
@@ -93,6 +108,7 @@ test('a past run: a row of the Past runs table, its dates and the figures that a
     cells: [`Grey oyster 500${nb}blocks`, `18.4${nb}kg`, `0.04${nb}kg`, `34${nb}%`, `RM${nb}221.28`, `RM${nb}3.10`],
   });
   assert.equal(pastRow(run).cells.length + 1, PAST_COLUMNS.length);
+  assert.equal(pastRow({ ...run, cost: { ...run.cost, costPerKg: 0.0035 } }).cells.at(-1), `RM${nb}0.0035`);
   const missingFigures = { ...run, partial: true, be: null, value: null, cost: null };
   assert.deepEqual(pastRow(missingFigures).cells.slice(3), ['—', '—', '—']);
   assert.equal(pastRow(missingFigures).title, 'Recorded 3 Oct – 2 Nov');
@@ -149,6 +165,7 @@ test('the tiles: kg, kg per block, BE, RM value, cost per kg with what it counts
   assert.deepEqual(none.map((t) => t.value), [`0.0${nb}kg`, `0.00${nb}kg`, '—', '—', '—']);
   assert.equal(none[4].line, undefined);
   assert.equal(runTiles({ ...oneCrop, cost: null })[4].value, '—');
+  assert.equal(runTiles({ ...oneCrop, cost: { ...oneCrop.cost, costPerKg: 0.004028 } })[4].value, `RM${nb}0.004`, 'never a false RM 0.00');
 });
 
 test('no energy recorded: the cost per kg is a dash that says so, never RM 0.00', () => {
@@ -289,6 +306,7 @@ test("the page's tiles: kg, RM value, cost per kg with what it counts", () => {
   assert.equal(pageTiles({ ...farm, totals: { ...farm.totals, value: 720, unpriced: ['pink'] } })[1].line, `without Pink oyster (4.5${nb}kg, no price)`, 'the kg from By crop');
   const none = pageTiles({ ...farm, totals: { kg: 0, value: null, cost: { costPerKg: null, cost: 0, days: 30, water: false } } });
   assert.deepEqual(none.map((t) => t.value), [`0.0${nb}kg`, '—', '—']);
+  assert.equal(pageTiles({ ...farm, totals: { ...farm.totals, cost: { ...farm.totals.cost, costPerKg: 0.012 } } })[2].value, `RM${nb}0.012`);
 });
 
 test('the bars: one per bucket in the farm time, a whole slot each (the last one too), the range over them', () => {
@@ -392,4 +410,49 @@ test("the Overview card's rooms: those that picked in 30 days, their kg, a link 
     { id: 1, name: 'Room 1', href: '#/rooms/1/harvest', kg: `60.0${nb}kg` },
     { id: 3, name: 'Room 3', href: '#/rooms/3/harvest', kg: `4.5${nb}kg` },
   ]);
+});
+
+import { PICK_MAX_PER_BLOCK, pickCheck, pickWarnings, donePicks, recordPicks, editPicks } from '../web/harvest-math.js';
+
+test('an implausible pick: over 0.3 kg a block in one pick, its kg per block and kg named', () => {
+  assert.equal(PICK_MAX_PER_BLOCK, 0.3);
+  const c = pickCheck(526.32, 950);
+  assert.ok(Math.abs(c.perBlock - 526.32 / 950) < 1e-12);
+  assert.equal(c.message, `That's 0.55${nb}kg per block in one pick. Is 526.32${nb}kg right?`);
+  assert.equal(pickCheck(285, 950), null, '0.30 kg a block, a whole good flush at most: not asked');
+  assert.ok(pickCheck(286, 950), '0.301 kg a block');
+  assert.equal(pickCheck(1240.5, 1000).message, `That's 1.24${nb}kg per block in one pick. Is 1,240.50${nb}kg right?`);
+  for (const [kg, blocks] of [[5, 0], [5, null], [5, undefined], [null, 950], [NaN, 950], [0, 950]]) assert.equal(pickCheck(kg, blocks), null, `${kg} from ${blocks}`);
+});
+
+test('a dialog\'s picks: each implausible one, on its own box', () => {
+  assert.deepEqual(pickWarnings([]), []);
+  assert.deepEqual(pickWarnings([{ field: 'kg', kg: 20, blocks: 950 }]), []);
+  assert.deepEqual(pickWarnings([{ field: 'kg:oyster', kg: 200, blocks: 500 }, { field: 'kg:pink', kg: 2, blocks: 500 }, { field: 'kg:lionsmane', kg: 40, blocks: 100 }]), [
+    { field: 'kg:oyster', message: `That's 0.40${nb}kg per block in one pick. Is 200.00${nb}kg right?` },
+    { field: 'kg:lionsmane', message: `That's 0.40${nb}kg per block in one pick. Is 40.00${nb}kg right?` },
+  ]);
+});
+
+test('the picks of Record (the chosen crop\'s run blocks) and of Edit (a changed kg only, the harvest\'s blocks)', () => {
+  const run = { crops: [{ crop: 'oyster', blocks: 500 }, { crop: 'lionsmane', blocks: 100 }] };
+  assert.deepEqual(recordPicks({ crop: 'lionsmane', kg: 40, worker: 'Ali' }, run), [{ field: 'kg', kg: 40, blocks: 100 }]);
+  assert.deepEqual(recordPicks({ crop: 'oyster', kg: 40, worker: 'Ali' }, run), [{ field: 'kg', kg: 40, blocks: 500 }]);
+  const h = { kg: 2.35, blocks: 950 };
+  assert.deepEqual(editPicks({ kg: 600 }, h), [{ field: 'kg', kg: 600, blocks: 950 }]);
+  assert.deepEqual(editPicks({ pickedAt: 5 }, h), [], 'the kg as it was: not asked about');
+  assert.deepEqual(editPicks({}, h), []);
+});
+
+test('the picks of a Done body: a harvest check\'s kg with the run\'s blocks of each crop', () => {
+  const one = { harvestCrops: [{ crop: 'lionsmane', name: "Lion's mane", blocks: 950 }] };
+  assert.deepEqual(donePicks(one, { worker: 'Ali', amount: 526.32 }), [{ field: 'amount', kg: 526.32, blocks: 950 }]);
+  assert.deepEqual(donePicks(one, { worker: 'Ali', amounts: { lionsmane: 2 } }), [{ field: 'kg:lionsmane', kg: 2, blocks: 950 }]);
+  const mixed = { harvestCrops: [{ crop: 'oyster', name: 'Grey oyster', blocks: 500 }, { crop: 'lionsmane', name: "Lion's mane", blocks: 100 }] };
+  assert.deepEqual(donePicks(mixed, { worker: 'Ali', amounts: { oyster: 20, lionsmane: 40 } }),
+    [{ field: 'kg:oyster', kg: 20, blocks: 500 }, { field: 'kg:lionsmane', kg: 40, blocks: 100 }]);
+  assert.deepEqual(donePicks(one, { worker: 'Ali' }), [], 'nothing weighed');
+  assert.deepEqual(donePicks({ harvestCrops: null, unit: 'bags' }, { worker: 'Ali', amount: 40 }), [], 'not a harvest check');
+  assert.deepEqual(donePicks({ harvestCrops: [{ crop: 'oyster', name: 'Grey oyster' }] }, { worker: 'Ali', amount: 4 }), [{ field: 'amount', kg: 4, blocks: undefined }],
+    'a server without the blocks: no check (pickCheck takes no blocks as unknown)');
 });

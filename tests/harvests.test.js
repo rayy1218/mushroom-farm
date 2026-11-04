@@ -70,7 +70,7 @@ function refused(fn, Kind, status, message, field) {
 test('Done on a harvest check with kg: a harvest stamped with the run, crop, stage, flush and blocks; the task keeps the total', (t) => {
   const s = setup(t);
   const row = s.row('harvestAm');
-  assert.deepEqual(row.harvestCrops, [{ crop: 'oyster', name: 'Grey oyster' }]);
+  assert.deepEqual(row.harvestCrops, [{ crop: 'oyster', name: 'Grey oyster', blocks: 500 }], 'with the run\'s blocks, for the Done dialog\'s pick check');
   assert.equal(s.row('footbath').harvestCrops, null, 'another rule: null');
   const closed = s.tasks.done(row.id, { worker: 'Ali', amount: 2.4 });
   assert.equal(closed.amount, 2.4);
@@ -98,7 +98,7 @@ test('Done on a harvest check with kg: a harvest stamped with the run, crop, sta
 test('a mixed room: amounts per crop; amount alone refused; a crop the rule is not for refused', (t) => {
   const s = setup(t, { crops: MIXED });
   const row = s.row('harvestAm');
-  assert.deepEqual(row.harvestCrops, [{ crop: 'oyster', name: 'Grey oyster' }, { crop: 'lionsmane', name: "Lion's mane" }], 'no (draft) on the Done dialog');
+  assert.deepEqual(row.harvestCrops, [{ crop: 'oyster', name: 'Grey oyster', blocks: 500 }, { crop: 'lionsmane', name: "Lion's mane", blocks: 100 }], 'no (draft) on the Done dialog');
   refused(() => s.tasks.done(row.id, { worker: 'Ali', amount: 3 }), TaskError, 400, 'Give the kg of each crop', 'amount');
   refused(() => s.tasks.done(row.id, { worker: 'Ali', amounts: { oyster: -1 } }), TaskError, 400, null, 'amounts');
   refused(() => s.tasks.done(row.id, { worker: 'Ali', amounts: [2] }), TaskError, 400, null, 'amounts');
@@ -111,9 +111,9 @@ test('a mixed room: amounts per crop; amount alone refused; a crop the rule is n
 
   const other = s.room('Room 2', [{ crop: 'oyster', blocks: 300 }, { crop: 'woodear', blocks: 200 }]);
   const am = s.row('harvestAm', other);
-  assert.deepEqual(am.harvestCrops, [{ crop: 'oyster', name: 'Grey oyster' }], 'only the crops the rule is for');
+  assert.deepEqual(am.harvestCrops, [{ crop: 'oyster', name: 'Grey oyster', blocks: 300 }], 'only the crops the rule is for');
   refused(() => s.tasks.done(am.id, { worker: 'Ali', amounts: { woodear: 1 } }), TaskError, 400, null, 'amounts');
-  assert.deepEqual(s.row('harvestDaily', other).harvestCrops, [{ crop: 'woodear', name: 'Black jelly (wood ear)' }]);
+  assert.deepEqual(s.row('harvestDaily', other).harvestCrops, [{ crop: 'woodear', name: 'Black jelly (wood ear)', blocks: 200 }]);
   refused(() => s.tasks.done(s.row('footbath', other).id, { worker: 'Ali', amounts: { oyster: 1 } }), TaskError, 400, null, 'amounts');
   assert.equal(s.tasks.done(am.id, { worker: 'Ali', amount: 1.2 }).amount, 1.2, 'one crop of the rule: amount as now');
   assert.deepEqual(taskHarvests(s.db, am.id).map((h) => [h.crop, h.blocks]), [['oyster', 300]]);
@@ -383,11 +383,11 @@ test('cost: the room\'s electricity and water over each run\'s days at today\'s 
   s.harvests.farmView({ days: 30 });
   await s.harvests.warmed();
   const f = s.harvests.farmView({ days: 30 });
-  assert.deepEqual(f.totals.cost, { costPerKg: 0.16, cost: 15, days: 30, water: true }, 'RM 15 over 94 kg');
+  assert.deepEqual(f.totals.cost, { costPerKg: 0.159574, cost: 15, days: 30, water: true }, 'RM 15 over 94 kg');
   assert.equal(s.harvests.farmView({ days: 7 }).totals.cost.cost, 11, 'the last 7 days: 1 Nov only');
 
   s.db.setSetting('waterPrice', '');
-  assert.deepEqual(s.harvests.roomView(s.id).current.cost, { costPerKg: 0.14, cost: 6, days: 9, water: false }, 'no water price: electricity only');
+  assert.deepEqual(s.harvests.roomView(s.id).current.cost, { costPerKg: 0.136364, cost: 6, days: 9, water: false }, 'no water price: electricity only');
 });
 
 test('a cold room\'s view does not work its usage days out: the cost is pending, a warm works them out and tells the room', async (t) => {

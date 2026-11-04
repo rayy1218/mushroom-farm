@@ -205,6 +205,10 @@ dialog { margin-top: var(--dialog-top); margin-bottom: auto; } /* anchored at th
 .field input[aria-invalid="true"] { border-color: var(--critical-text); }
 .field input[aria-invalid="true"]:focus-visible { outline-color: var(--critical-text); }
 .field-error { margin: 0; font-size: 0.85rem; color: var(--critical-text); }
+/* a check, not a fault (an implausible pick: "Is 526.32 kg right?"): amber, the box not marked invalid */
+.field-error.field-warn { color: var(--warning-text); }
+.field input[data-warn] { border-color: var(--warning-text); }
+.field input[data-warn]:focus-visible { outline-color: var(--warning-text); }
 
 .sizes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 
@@ -1770,10 +1774,13 @@ h2.r-named { display: flex; }
 .hv-empty > .pic { opacity: .4; }
 :root[data-theme="light"] .hv-empty.card { box-shadow: none; }
 .hv-empty .none { margin: 0; }
-.hv-tiles { margin-top: 4px; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); } /* the five side by side in the left column */
+/* The tiles grow to their figures and wrap rather than run into the next tile's rule (RM 1,234,567.89, 12,345.6 kg): each at
+   least its figure wide (a figure never breaks: min-content), the five side by side in the left column while they fit. */
+.hv-tiles { display: flex; flex-wrap: wrap; margin-top: 4px; }
+.hv-tiles > .us-tile { flex: 1 0 128px; min-width: min-content; }
 @media (max-width: 600px) {
-  .hv-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .hv-tiles > :last-child:nth-child(odd) { grid-column: 1 / -1; } /* an odd tile out takes the row, not half of it */
+  .hv-tiles > .us-tile { flex-basis: calc(50% - 6px); } /* two a row; an odd tile out, or one too wide for half, takes the row */
+  .hv-tiles .us-kwh[data-long] { font-size: var(--fs-lg); } /* RM 1,234,567.89 still two a row */
   .hv-table :is(th, td) { padding-inline: 6px; }
   .hv-table thead :is(th, th.num) { white-space: normal; } /* "kg per block" on two lines: the table fits the phone */
 }
@@ -1850,10 +1857,10 @@ h2.r-named { display: flex; }
   .hv-page > .hv-totals { grid-column: 1 / -1; }
 }
 .hv-totals .hv-missing { margin: 0 0 8px; }
-.hv-page .hv-tiles { grid-template-columns: repeat(3, minmax(160px, 260px)); }
+.hv-page .hv-tiles > .us-tile { flex: 0 1 260px; } /* the three held to a width, wider for a long figure */
 .hv-page .hv-tiles > :first-child .us-kwh { font-size: var(--fs-3xl); line-height: 1.1; letter-spacing: -.02em; } /* the page's main number, in Display */
 @media (max-width: 600px) {
-  .hv-page .hv-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hv-page .hv-tiles > .us-tile { flex: 1 0 calc(50% - 6px); }
   .hv-page .hv-tiles > :first-child .us-kwh { font-size: 28px; }
 }
 .hv-chart-title { margin: 12px 0 6px; font-size: var(--fs-sm); font-weight: 600; color: var(--ink-2); }

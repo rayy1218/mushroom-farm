@@ -14,6 +14,7 @@ import { roomHash } from './route.js';
 import { keepLines } from './text-math.js';
 import { picture } from './pictures.js';
 import { recordsAmount, amountFields, doneBody, checkReason, checkLongterm, setupUpdate, beforeText, setupBody, taskParts } from './tasks-math.js';
+import { pickWarnings, donePicks } from './harvest-math.js';
 
 const WORKER_KEY = 'farm.worker';
 const COMMAND_TIMEOUT = 15000;
@@ -165,6 +166,14 @@ export function openForm({ title, lead = [], fields = [], buttons = [], closeLab
   form.append(heading, ...lead.map((x) => (typeof x === 'string' ? el('p', 'tk-lead', keepLines(x)) : x)), formError);
   const inputs = new Map();
   const errors = new Map();
+  // a box's words under it gone: an error (red, the box invalid) or a check (warn: amber, a question, not a fault)
+  function clear(name) {
+    const input = inputs.get(name);
+    errors.get(name).textContent = '';
+    errors.get(name).classList.remove('field-warn');
+    input.removeAttribute('aria-invalid');
+    delete input.dataset.warn;
+  }
   // A field (or a group of them) into `parent`.
   function addField(f, parent) {
     if (f.kind === 'group') {
@@ -234,7 +243,7 @@ export function openForm({ title, lead = [], fields = [], buttons = [], closeLab
     }
     wrap.append(err);
     input.setAttribute('aria-describedby', described.join(' '));
-    input.addEventListener('input', () => { err.textContent = ''; input.removeAttribute('aria-invalid'); });
+    input.addEventListener('input', () => clear(f.name));
     inputs.set(f.name, input);
     errors.set(f.name, err);
     parent.append(wrap);
@@ -261,16 +270,25 @@ export function openForm({ title, lead = [], fields = [], buttons = [], closeLab
   let busy = false;
   let sending = null; // the answer being waited for: closed waits for it too
   const values = () => Object.fromEntries([...inputs].map(([name, input]) => [name, input.type === 'checkbox' ? input.checked : input.value]));
+  // a problem, or a list of them on their boxes (a mixed Done's checks), the cursor to the first
   function show(problem) {
-    const input = problem.field ? inputs.get(problem.field) : null;
-    if (input) {
-      errors.get(problem.field).textContent = problem.message;
-      input.setAttribute('aria-invalid', 'true');
-      input.focus();
+    const list = Array.isArray(problem) ? problem : [problem];
+    const boxed = list.filter((p) => p.field && inputs.has(p.field));
+    if (boxed.length) {
+      for (const p of boxed) {
+        const input = inputs.get(p.field);
+        const err = errors.get(p.field);
+        err.textContent = p.message; // read out: the box's aria-describedby, aria-live
+        err.classList.toggle('field-warn', Boolean(p.warn));
+        if (p.warn) input.dataset.warn = '';
+        else input.setAttribute('aria-invalid', 'true');
+      }
+      inputs.get(boxed[0].field).focus();
       return;
     }
-    if (problem.content) formError.replaceChildren(...problem.content);
-    else formError.textContent = problem.message;
+    const [one] = list;
+    if (one.content) formError.replaceChildren(...one.content);
+    else formError.textContent = one.message;
     formError.hidden = false;
     formError.focus();
   }
@@ -278,7 +296,7 @@ export function openForm({ title, lead = [], fields = [], buttons = [], closeLab
     if (busy) return;
     busy = true;
     formError.hidden = true;
-    for (const [name, err] of errors) { err.textContent = ''; inputs.get(name).removeAttribute('aria-invalid'); }
+    for (const name of errors.keys()) clear(name);
     for (const b of [close, ...sends]) b.disabled = true;
     let outcome;
     const answer = (async () => submit(values(), which, handle))();
@@ -289,7 +307,7 @@ export function openForm({ title, lead = [], fields = [], buttons = [], closeLab
       outcome = { message: errorText(err) };
     }
     if (!alive() || !d.open) { // closed meanwhile (Chrome lets a second Esc close it): a failure is said on the page
-      if (outcome !== true) onLost?.(outcome.message);
+      if (outcome !== true) onLost?.((Array.isArray(outcome) ? outcome[0] : outcome).message);
       return;
     }
     busy = false;
@@ -322,13 +340,39 @@ export function openForm({ title, lead = [], fields = [], buttons = [], closeLab
   return handle;
 }
 
+// A pick over PICK_MAX_PER_BLOCK kg a block (harvest-math.js) asks once rather than being refused: the first submit says so
+// under each such kg box and the primary button (value, label) reads "Record anyway"; a submit with the same kg over the same
+// blocks then sends it (the label plain again, so a failed send does not still say "anyway"), and a change to one of the
+// fields (the kg boxes, Record's crop) asks again. → check(form, picks [{ field, kg, blocks }]): the checks to show, or null
+// to send.
+export function pickGuard({ value, label, fields }) {
+  let asked = null; // the kg and blocks the question was asked for
+  let watching = false;
+  return (form, picks) => {
+    const warnings = pickWarnings(picks);
+    const key = picks.map((p) => `${p.field}=${p.kg}/${p.blocks}`).join();
+    const b = form.button(value);
+    if (!warnings.length || key === asked) {
+      b.textContent = label;
+      return null;
+    }
+    asked = key;
+    b.textContent = `${label} anyway`;
+    if (!watching) {
+      watching = true;
+      for (const name of fields) form.input(name)?.addEventListener('input', () => { asked = null; b.textContent = label; });
+    }
+    return warnings.map((w) => ({ ...w, warn: true }));
+  };
+}
+
 // ---- Done, Skip, Cancel, Add ----
 
 // The Done form's amount boxes: a mixed room's kg one per crop (its picture and name, "kg" in a narrow box, two a row) under
 // one legend and one hint; else the single box with its hint.
 function amountBoxes(amounts) {
   if (!amounts.some((f) => f.crop)) {
-    return amounts.map((f) => ({ name: f.name, label: f.label, kind: 'number', value: '', hint: 'Leave it empty if it was not weighed or counted.' }));
+    return amounts.map((f) => ({ name: f.name, label: f.label, kind: 'number', value: '', hint: 'Leave it empty if it was not weighed or counted.', ...(f.suffix ? { suffix: f.suffix } : {}) }));
   }
   return [{
     kind: 'group', legend: 'kg picked', hint: 'Leave a box empty if that crop was not weighed.', className: 'tk-kg-group',
@@ -430,6 +474,7 @@ export function createTaskActions({ onChanged, onError }) {
       return;
     }
     const amounts = amountFields(row);
+    const implausible = pickGuard({ value: 'done', label: 'Done', fields: amounts.map((f) => f.name) });
     const form = ask({
       title: 'Mark done',
       lead: leadOf(row, list),
@@ -440,6 +485,8 @@ export function createTaskActions({ onChanged, onError }) {
         if (!w) return { field: 'worker', message: 'Pick who did it' };
         const body = doneBody(row, w, v);
         if (body.error) return { field: body.field, message: body.error };
+        const asked = implausible(form, donePicks(row, body));
+        if (asked) return asked;
         const r = await send(`/api/tasks/${row.id}/done`, body, form);
         return r !== true && r.field === 'amounts' && amounts[0] ? { ...r, field: amounts[0].name } : r;
       },
