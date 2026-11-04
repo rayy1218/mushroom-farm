@@ -47,6 +47,9 @@ test('the Crop tab: the run in one line with a link to the Harvest tab, read on 
   assert.ok(crop.includes('yieldText.textContent = summaryLine(harvestRun ?? {}, last.flush);'));
   assert.ok(crop.includes("live.on('harvest', (d) => { if (alive && d.roomId === roomId) loadHarvests(); }),"));
   assert.ok(crop.includes('const show = Boolean(last) && hasCrops(last) && harvestRun !== undefined;'));
+  // cleared crops forget the key, so the same crops given again (a new run) are read again
+  assert.ok(crop.includes("const key = hasCrops(data) ? JSON.stringify([data.crops, data.stage, data.flush, data.done]) : '';"));
+  assert.ok(crop.includes('if (key !== harvestKey) { harvestKey = key; if (key) loadHarvests(); }'));
 });
 
 test('Delete room names the harvests', () => {

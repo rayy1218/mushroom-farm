@@ -792,7 +792,8 @@ export function createCropCard(host, { roomId, onChange, onData, onOffline, onGo
       if (!alive || me !== seq) return;
       paint(data);
       const key = hasCrops(data) ? JSON.stringify([data.crops, data.stage, data.flush, data.done]) : '';
-      if (key && key !== harvestKey) { harvestKey = key; loadHarvests(); }
+      // crops cleared forget the key: the same crops given again are a new run, read again
+      if (key !== harvestKey) { harvestKey = key; if (key) loadHarvests(); }
     } catch (err) {
       if (!alive || me !== seq) return;
       if (err.status === 404 && !last) { // an older server without crops: the card stays out of the way
