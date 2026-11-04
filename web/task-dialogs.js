@@ -11,7 +11,7 @@ import { request, OFFLINE } from './api.js';
 import { live } from './live.js';
 import { roomHash } from './route.js';
 import { keepLines } from './text-math.js';
-import { recordsAmount, amountField, parseAmount, checkReason, checkLongterm, setupUpdate, beforeText, setupBody, taskParts } from './tasks-math.js';
+import { recordsAmount, amountFields, doneBody, checkReason, checkLongterm, setupUpdate, beforeText, setupBody, taskParts } from './tasks-math.js';
 
 const WORKER_KEY = 'farm.worker';
 const COMMAND_TIMEOUT = 15000;
@@ -373,22 +373,19 @@ export function createTaskActions({ onChanged, onError }) {
       if (r !== true && alive) onError?.(r.message);
       return;
     }
-    const amount = recordsAmount(row) ? amountField(row) : null;
+    const amounts = amountFields(row);
     const form = ask({
       title: 'Mark done',
       lead: leadOf(row, list),
-      fields: [workerField(list), ...(amount ? [{ name: 'amount', label: amount.label, kind: 'number', value: '', hint: 'Leave it empty if it was not weighed or counted.' }] : [])],
+      fields: [workerField(list), ...amounts.map((f) => ({ name: f.name, label: f.label, kind: 'number', value: '', hint: f.crop ? 'Leave it empty if it was not weighed.' : 'Leave it empty if it was not weighed or counted.' }))],
       buttons: [{ value: 'done', label: 'Done', primary: true }],
       submit: async (v, _which, form) => {
         const w = picked(v);
         if (!w) return { field: 'worker', message: 'Pick who did it' };
-        let a = null;
-        if (amount) {
-          const p = parseAmount(v.amount);
-          if (p.error) return { field: 'amount', message: p.error };
-          a = p.value;
-        }
-        return send(`/api/tasks/${row.id}/done`, { worker: w, ...(a === null ? {} : { amount: a }) }, form);
+        const body = doneBody(row, w, v);
+        if (body.error) return { field: body.field, message: body.error };
+        const r = await send(`/api/tasks/${row.id}/done`, body, form);
+        return r !== true && r.field === 'amounts' && amounts[0] ? { ...r, field: amounts[0].name } : r;
       },
     });
     await form.closed;

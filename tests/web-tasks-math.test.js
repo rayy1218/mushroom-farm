@@ -337,3 +337,29 @@ test('nowDue: in the due-now list only overdue words stay', async () => {
   assert.equal(nowDue(dueWords({ dueDate: '2026-11-02' }, '2026-11-02')), null);
   assert.deepEqual(nowDue(dueWords({ dueDate: '2026-10-30' }, '2026-11-02')).text, 'overdue 3 days');
 });
+
+test('amountFields: one box per crop of a mixed harvest check, else the single amount box, else none', async () => {
+  const { amountFields } = await import('../web/tasks-math.js');
+  const crops = [{ crop: 'oyster', name: 'Grey oyster' }, { crop: 'lionsmane', name: "Lion's mane (draft)" }];
+  assert.deepEqual(amountFields({ unit: 'kg', amountLabel: 'kg picked', harvestCrops: crops }), [
+    { name: 'kg:oyster', label: 'Grey oyster kg', crop: 'oyster' },
+    { name: 'kg:lionsmane', label: "Lion's mane (draft) kg", crop: 'lionsmane' },
+  ]);
+  assert.deepEqual(amountFields({ unit: 'kg', amountLabel: 'kg picked', harvestCrops: [crops[0]] }), [{ name: 'amount', label: 'kg picked' }]);
+  assert.deepEqual(amountFields({ unit: 'kg', amountLabel: 'Weight', harvestCrops: null }), [{ name: 'amount', label: 'Weight (kg)' }]);
+  assert.deepEqual(amountFields({ unit: null, amountLabel: null }), []);
+});
+
+test('doneBody: amount for one box, amounts per crop for several, an error names the field', async () => {
+  const { doneBody } = await import('../web/tasks-math.js');
+  const crops = [{ crop: 'oyster', name: 'Grey oyster' }, { crop: 'lionsmane', name: 'Lion' }];
+  const mixed = { unit: 'kg', harvestCrops: crops };
+  assert.deepEqual(doneBody({ unit: 'kg' }, 'Ali', { amount: ' 2.5 ' }), { worker: 'Ali', amount: 2.5 });
+  assert.deepEqual(doneBody({ unit: 'kg' }, 'Ali', { amount: '' }), { worker: 'Ali' });
+  assert.deepEqual(doneBody({ unit: null }, 'Ali', {}), { worker: 'Ali' });
+  assert.deepEqual(doneBody(mixed, 'Ali', { 'kg:oyster': '2', 'kg:lionsmane': '0.5' }), { worker: 'Ali', amounts: { oyster: 2, lionsmane: 0.5 } });
+  assert.deepEqual(doneBody(mixed, 'Ali', { 'kg:oyster': '', 'kg:lionsmane': '0' }), { worker: 'Ali', amounts: { lionsmane: 0 } });
+  assert.deepEqual(doneBody(mixed, 'Ali', { 'kg:oyster': '', 'kg:lionsmane': ' ' }), { worker: 'Ali' });
+  assert.deepEqual(doneBody(mixed, 'Ali', { 'kg:oyster': '1', 'kg:lionsmane': 'x' }), { error: 'The amount must be a number from 0 to 10,000', field: 'kg:lionsmane' });
+  assert.deepEqual(doneBody({ unit: 'kg' }, 'Ali', { amount: '-1' }), { error: 'The amount must be a number from 0 to 10,000', field: 'amount' });
+});

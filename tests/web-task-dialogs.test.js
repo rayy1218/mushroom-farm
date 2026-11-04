@@ -19,7 +19,10 @@ test('the worker is kept per browser under farm.worker; the pickers hear a chang
 
 test('Done is one tap with a kept worker and no amount; otherwise it asks', () => {
   has("if (row.kind !== 'longterm' && !recordsAmount(row) && worker && list.includes(worker)) {");
-  has('return send(`/api/tasks/${row.id}/done`, { worker: w, ...(a === null ? {} : { amount: a }) }, form);');
+  has('const body = doneBody(row, w, v);');
+  has('const r = await send(`/api/tasks/${row.id}/done`, body, form);');
+  has("f.crop ? 'Leave it empty if it was not weighed.' : 'Leave it empty if it was not weighed or counted.'");
+  has("r.field === 'amounts'");
   has("if (!w) return { field: 'worker', message: 'Pick who did it' };");
   has("No names yet: add the workers' names in ");
   has("a.href = '#/settings';");
