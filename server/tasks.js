@@ -99,11 +99,9 @@ function stampHarvests(db, { roomId, amounts, at, worker, taskId }) {
   }));
 }
 
-// onHarvest(roomId): after a Done on a harvest check made harvests (the harvest module's event); more can listen through
-// tasks.onHarvest(fn).
-export function createTasks({ db, now = Date.now, log = console.error, onHarvest = null }) {
+export function createTasks({ db, now = Date.now, log = console.error }) {
   const listeners = new Set();
-  const harvestListeners = new Set(onHarvest ? [onHarvest] : []);
+  const harvestListeners = new Set();
   const today = () => localDate(now());
 
   function tell(roomId) {
@@ -514,7 +512,7 @@ export function createTasks({ db, now = Date.now, log = console.error, onHarvest
       return () => listeners.delete(fn);
     },
 
-    // fn(roomId) after a Done made harvests; → a function that stops it.
+    // fn(roomId) after a Done on a harvest check made harvests (the harvest module's event); → a function that stops it.
     onHarvest(fn) {
       harvestListeners.add(fn);
       return () => harvestListeners.delete(fn);

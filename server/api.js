@@ -86,7 +86,7 @@ export function createApi(db, machines = null, controller = null, poller = null,
   // tasks module's onHarvest), tells the pages. An edit or delete of a check's harvest changes its row's amount too.
   const harvests = createHarvests({ db });
   const publishHarvest = (roomId) => events?.publish('harvest', { roomId });
-  const harvestRoutes = createHarvestRoutes({ db, harvests, onTaskChange: (roomId) => publishRoom(roomId, 'tasks') });
+  const harvestRoutes = createHarvestRoutes({ harvests, onTaskChange: (roomId) => publishRoom(roomId, 'tasks') });
   const stopTellingHarvests = [harvests.onChange(publishHarvest), taskStore.onHarvest(publishHarvest)];
   const stopTelling = () => { stopTellingTasks(); stopTellingHarvests.forEach((stop) => stop()); };
   // The room body; on the farm's gateway its addresses must differ from the outdoor sensor's (read through that gateway).

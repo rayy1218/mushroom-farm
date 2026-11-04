@@ -26,7 +26,8 @@ function setup(t, { crops = OYSTER, start = NOW, fields = {} } = {}) {
   const now = () => clock;
   const cropApi = createCropApi({ db, now });
   const harvested = [];
-  const tasks = createTasks({ db, now, log: (e) => { throw e; }, onHarvest: (roomId) => harvested.push(roomId) });
+  const tasks = createTasks({ db, now, log: (e) => { throw e; } });
+  tasks.onHarvest((roomId) => harvested.push(roomId));
   const harvests = createHarvests({ db, now, zone: fixedZone(480) });
   const changes = [];
   harvests.onChange((roomId) => changes.push(roomId));

@@ -9,10 +9,10 @@ const ONE_HARVEST = /^\/api\/harvests\/([1-9][0-9]{0,14})$/;
 // Before the CSV, so Excel on Windows reads it as UTF-8.
 const BOM = '\uFEFF';
 
-// db: the farm database. harvests: from createHarvests. onTaskChange(roomId): after an edit or delete of a harvest that came
+// harvests: from createHarvests. onTaskChange(roomId): after an edit or delete of a harvest that came
 // from a check's Done, whose row's amount changed with it. → async (req, res, path, { send, readJson, HttpError, url }) that
 // answers true when the path is one of its routes.
-export function createHarvestRoutes({ db, harvests, onTaskChange = () => {} }) {
+export function createHarvestRoutes({ harvests, onTaskChange = () => {} }) {
   async function route(req, res, path, { send, readJson, HttpError, url }) {
     const notFound = () => new HttpError(404, 'Not found');
 
@@ -35,15 +35,12 @@ export function createHarvestRoutes({ db, harvests, onTaskChange = () => {} }) {
     if (one) {
       const id = Number(one[1]);
       if (req.method === 'PUT') {
-        const body = await readJson(req);
-        const taskId = db.getHarvest(id)?.taskId ?? null;
-        const row = harvests.edit(id, body);
-        if (taskId !== null) onTaskChange(row.roomId);
+        const row = harvests.edit(id, await readJson(req));
+        if (row.taskId != null) onTaskChange(row.roomId);
         send(res, 200, row);
       } else if (req.method === 'DELETE') {
-        const before = db.getHarvest(id);
-        harvests.remove(id);
-        if (before?.taskId != null) onTaskChange(before.roomId);
+        const gone = harvests.remove(id);
+        if (gone.taskId != null) onTaskChange(gone.roomId);
         res.writeHead(204);
         res.end();
       } else {

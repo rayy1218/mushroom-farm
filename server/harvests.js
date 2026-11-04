@@ -154,11 +154,12 @@ export function createHarvests({ db, now = Date.now, zone = localZone, log = con
       return changed;
     },
 
-    // Deletes a harvest; one from a check sets its task's amount to the total left (null when none is).
+    // Deletes a harvest; one from a check sets its task's amount to the total left (null when none is). → the harvest deleted.
     remove(id) {
       const h = harvestOf(id);
       if (!db.deleteHarvest(id)) throw new HarvestError(404, 'Harvest not found');
       tell(h.roomId);
+      return h;
     },
 
     // The Harvest tab: { current: the open run's view or null, past: the ended runs newest first }; null for no such room.

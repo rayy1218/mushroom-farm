@@ -99,7 +99,7 @@ test('GET /api/harvest and its CSV; days must be 7, 30, 90 or 365', async (t) =>
   assert.match(csv.headers.get('content-disposition'), /^attachment; filename="harvests /);
   const bytes = new Uint8Array(await csv.arrayBuffer()); // text() would drop the BOM
   assert.deepEqual([...bytes.slice(0, 3)], [0xef, 0xbb, 0xbf]);
-  assert.match(new TextDecoder('utf-8', { ignoreBOM: true }).decode(bytes), /^\uFEFF.*\r\n.*2/s);
+  assert.match(new TextDecoder('utf-8', { ignoreBOM: true }).decode(bytes), /^\uFEFFdate,time,room,crop,run started,stage,flush,blocks,kg,worker,from\r\n.*,2,Ali,/s);
   const dflt = await raw('GET', '/api/harvest.csv');
   assert.equal(dflt.status, 200);
   assert.equal((await raw('POST', '/api/harvest.csv')).status, 404);
