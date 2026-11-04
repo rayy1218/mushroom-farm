@@ -4,7 +4,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { RELAY_KEYS } from './machine-codes.js';
 import { RATINGS, FILTER } from './rooms.js';
 import { PROGRAM_DEFAULTS } from './program.js';
-import { FAMILY_OF, DAILY_RULES } from './task-rules.js';
+import { FAMILY_OF, DAILY_RULES, HARVEST_RULES } from './task-rules.js';
 
 const VERSION = 20;
 
@@ -286,9 +286,6 @@ CREATE INDEX IF NOT EXISTS harvests_by_room ON harvests (room_id, picked_at);
 CREATE INDEX IF NOT EXISTS harvests_by_run ON harvests (run_id, picked_at);
 CREATE INDEX IF NOT EXISTS harvests_by_time ON harvests (picked_at);
 CREATE INDEX IF NOT EXISTS harvests_by_task ON harvests (task_id) WHERE task_id IS NOT NULL;`;
-
-// The harvest checks: the daily rules that record kg picked (spec 2026-11-04-harvest-design.md 2.2).
-const HARVEST_RULES = ['harvestAm', 'harvestPm', 'harvestDaily', 'reishiRim'];
 
 const ALARMS = `
 CREATE TABLE alarms (
@@ -936,7 +933,8 @@ export function openDb(path, { log = console.error } = {}) {
     updateCustomRule: db.prepare('UPDATE custom_task_rules SET text = ?, rooms = ?, every_days = ?, slot = ?, enabled = ? WHERE id = ?'),
     deleteCustomRule: db.prepare('DELETE FROM custom_task_rules WHERE id = ?'),
     customRuleRooms: db.prepare('UPDATE custom_task_rules SET rooms = ? WHERE id = ?'),
-    setTaskAmount: db.prepare('UPDATE tasks SET amount = ? WHERE id = ?'),
+    // A check's amount: the total of its harvests (rounded as the kg are), null when none are left.
+    sumTaskAmount: db.prepare('UPDATE tasks SET amount = (SELECT ROUND(SUM(kg), 3) FROM harvests WHERE task_id = ?1) WHERE id = ?1'),
     // Runs of blocks and harvests (spec 2026-11-04-harvest-design.md 2).
     openRun: db.prepare('SELECT * FROM runs WHERE room_id = ? AND ended_at IS NULL'),
     cropRun: db.prepare('SELECT * FROM runs WHERE id = ?'),
@@ -1982,23 +1980,26 @@ export function openDb(path, { log = console.error } = {}) {
       return q.harvestsBetween.all(from, to).map(harvestOf);
     },
 
-    // A new kg and pick time; taskAmount ({ taskId, amount }): the new amount of the task the harvest came from, set in the
-    // same transaction. → the harvest, or null when there is no such harvest (nothing changes then).
-    updateHarvest(id, { kg, pickedAt }, taskAmount = null) {
+    // A new kg and pick time; a harvest from a check sets the check's amount to the new total in the same transaction.
+    // → the harvest, or null when there is no such harvest (nothing changes then).
+    updateHarvest(id, { kg, pickedAt }) {
       let changed = false;
       inTransaction(() => {
         changed = q.updateHarvest.run(kg, pickedAt, id).changes > 0;
-        if (changed && taskAmount) q.setTaskAmount.run(taskAmount.amount, taskAmount.taskId);
+        const taskId = changed ? q.harvest.get(id).task_id : null;
+        if (taskId !== null) q.sumTaskAmount.run(taskId);
       });
       return changed ? this.getHarvest(id) : null;
     },
 
-    // Deletes a harvest; taskAmount as updateHarvest's. → true when a harvest went.
-    deleteHarvest(id, taskAmount = null) {
+    // Deletes a harvest; one from a check sets the check's amount to the total left (null when none is). → true when a
+    // harvest went.
+    deleteHarvest(id) {
       let deleted = false;
       inTransaction(() => {
+        const taskId = q.harvest.get(id)?.task_id ?? null;
         deleted = q.deleteHarvest.run(id).changes > 0;
-        if (deleted && taskAmount) q.setTaskAmount.run(taskAmount.amount, taskAmount.taskId);
+        if (deleted && taskId !== null) q.sumTaskAmount.run(taskId);
       });
       return deleted;
     },

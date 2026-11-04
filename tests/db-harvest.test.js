@@ -59,6 +59,15 @@ test('the upgrade copies to the first crop the rule is for, with the stage as no
   const [harvest, footbath] = first.dailyTasks(a, '2026-11-01');
   first.closeTask(harvest.id, { status: 'done', at: 7000, worker: null, amount: 4 });
   first.closeTask(footbath.id, { status: 'done', at: 7000, worker: null, amount: 1 });
+  // A harvestAm row (oyster and lion's mane) in a room of reishi then oyster goes to the oyster; in a reishi room, nowhere.
+  const b = first.createRoom({ ...ROOM, name: 'Room 2' }, 1000).id;
+  const c = first.createRoom({ ...ROOM, name: 'Room 3' }, 1000).id;
+  first.setProgram(b, withCrops(first, b, [{ crop: 'reishi', blocks: 100 }, { crop: 'oyster', blocks: 400 }]));
+  first.setProgram(c, withCrops(first, c, [{ crop: 'reishi', blocks: 100 }]));
+  for (const roomId of [b, c]) {
+    first.insertDailyTask({ roomId, ruleKey: 'harvestAm', date: '2026-11-01', slot: 'morning', text: 'Harvest check', unit: 'kg', at: 5000 });
+    first.closeTask(first.dailyTasks(roomId, '2026-11-01')[0].id, { status: 'done', at: 7000, worker: null, amount: 2 });
+  }
   first.close();
   const raw = new DatabaseSync(path);
   raw.exec('DROP TABLE harvests; DROP TABLE runs; PRAGMA user_version = 19;');
@@ -67,6 +76,11 @@ test('the upgrade copies to the first crop the rule is for, with the stage as no
   const run = db.openRun(a);
   assert.deepEqual(db.runHarvests(run.id).map((h) => ({ crop: h.crop, stage: h.stage, blocks: h.blocks, kg: h.kg })),
     [{ crop: 'milky', stage: 'rest', blocks: 200, kg: 4 }], 'not the footbath row');
+  assert.deepEqual(db.runHarvests(db.openRun(b).id).map((h) => ({ crop: h.crop, blocks: h.blocks, kg: h.kg })), [{ crop: 'oyster', blocks: 400, kg: 2 }]);
+  const reishi = db.openRun(c);
+  assert.deepEqual(db.runHarvests(reishi.id), [], 'a reishi room has no crop the harvestAm row is for');
+  assert.ok(reishi.startedAt > 7000, 'nothing copied: the run starts at the upgrade');
+  assert.equal(db.getTask(db.dailyTasks(c, '2026-11-01')[0].id).amount, 2, 'it stays a task row');
   db.close();
   const again = new DatabaseSync(path);
   again.exec('PRAGMA user_version = 19;');
@@ -84,6 +98,9 @@ test('setProgram with a run: start, update, end, restart; one open run per room'
   assert.deepEqual({ startedAt: first.startedAt, endedAt: first.endedAt, partial: first.partial }, { startedAt: 10_000, endedAt: null, partial: false });
   db.setProgram(id, withCrops(db, id, [{ crop: 'oyster', blocks: 480 }]), { change: 'update', at: 11_000 });
   assert.deepEqual(db.openRun(id).crops, [{ crop: 'oyster', blocks: 480 }]);
+  assert.throws(() => db.setProgram(id, withCrops(db, id, [{ crop: 'pink', blocks: 300 }]), { change: 'start', at: 11_500 }));
+  assert.deepEqual(db.getProgram(id).crops, [{ crop: 'oyster', blocks: 480 }], 'a start while a run is open writes nothing');
+  assert.equal(db.openRun(id).id, first.id);
   db.setProgram(id, withCrops(db, id, [{ crop: 'pink', blocks: 300 }]), { change: 'restart', at: 12_000 });
   const second = db.openRun(id);
   assert.notEqual(second.id, first.id);
@@ -125,7 +142,7 @@ test('harvest rows: insert, list by run and by time, edit, delete; closeTask wri
   assert.equal(db.cropRuns(id).length, 0);
 });
 
-test('a bad harvest rolls back the close; edit and delete set the task amount in the same step', (t) => {
+test('a bad harvest rolls back the close; edit and delete set the task amount to the total of its harvests', (t) => {
   const { db, id } = fresh(t);
   db.setProgram(id, withCrops(db, id, [{ crop: 'oyster', blocks: 500 }]), { change: 'start', at: 10_000 });
   const run = db.openRun(id);
@@ -136,12 +153,14 @@ test('a bad harvest rolls back the close; edit and delete set the task amount in
   assert.equal(db.getTask(task.id).status, 'open', 'the close rolled back');
   assert.equal(db.closeTask(task.id, { status: 'done', at: 22_000, worker: 'Ali', amount: 3 }, null, [row(1), row(2)]), true);
   const [one, two] = db.taskHarvests(task.id);
-  assert.equal(db.updateHarvest(one.id, { kg: 1.5, pickedAt: 22_000 }, { taskId: task.id, amount: 3.5 }).kg, 1.5);
-  assert.equal(db.getTask(task.id).amount, 3.5);
-  assert.equal(db.deleteHarvest(two.id, { taskId: task.id, amount: 1.5 }), true);
-  assert.equal(db.getTask(task.id).amount, 1.5);
-  assert.equal(db.deleteHarvest(one.id, { taskId: task.id, amount: null }), true);
-  assert.equal(db.getTask(task.id).amount, null);
+  // The db works the total out from the task's harvests, rounded as the kg are (1.1 + 2.2 is 3.3000000000000003 in floats).
+  assert.equal(db.updateHarvest(one.id, { kg: 1.1, pickedAt: 22_000 }).kg, 1.1);
+  db.updateHarvest(two.id, { kg: 2.2, pickedAt: 22_000 });
+  assert.equal(db.getTask(task.id).amount, 3.3);
+  assert.equal(db.deleteHarvest(two.id), true);
+  assert.equal(db.getTask(task.id).amount, 1.1);
+  assert.equal(db.deleteHarvest(one.id), true);
+  assert.equal(db.getTask(task.id).amount, null, 'none left');
   assert.equal(db.updateHarvest(one.id, { kg: 1, pickedAt: 1 }), null, 'gone');
   assert.equal(db.deleteHarvest(one.id), false);
 });

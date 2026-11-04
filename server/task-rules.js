@@ -69,7 +69,8 @@ export const CROP_NOTES = {
   lionsmane: { harvest: 'Spines 6–13 mm and still white; brown or yellow means now', humidifierCheck: 'Mist the air, never the mushroom' },
   woodear: { harvest: 'Ears 3–5 cm, before the edges thin; leave the small ones' },
 };
-const HARVEST_KEYS = new Set(['harvestAm', 'harvestPm', 'harvestDaily', 'reishiRim']);
+// The harvest checks: the daily rules that record kg picked.
+export const HARVEST_RULES = ['harvestAm', 'harvestPm', 'harvestDaily', 'reishiRim'];
 // The crop's name before its note in a room of several crops.
 const NOTE_NAMES = { oyster: 'Grey oyster', pink: 'Pink oyster', golden: 'Golden oyster', black: 'Black oyster', abalone: 'Abalone oyster', lionsmane: "Lion's mane", woodear: 'Wood ear' };
 
@@ -135,7 +136,7 @@ function noteOf(rule, cropKeys) {
   const notes = [];
   for (const crop of cropKeys) {
     if (rule.families !== null && !rule.families.includes(FAMILY_OF[crop])) continue;
-    const n = CROP_NOTES[crop]?.[rule.key] ?? (HARVEST_KEYS.has(rule.key) ? CROP_NOTES[crop]?.harvest : undefined);
+    const n = CROP_NOTES[crop]?.[rule.key] ?? (HARVEST_RULES.includes(rule.key) ? CROP_NOTES[crop]?.harvest : undefined);
     if (n) notes.push({ crop, n });
   }
   if (notes.length === 0) return null;
