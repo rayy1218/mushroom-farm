@@ -37,7 +37,8 @@ test('the page: the period in the address, Export CSV and the myGAP sheet follow
 
 test('the page and the sheet ask again on a harvest, a crop change and the stream coming back', () => {
   assert.ok(page.includes("live.on('harvest', () => reload.call()),"));
-  assert.ok(page.includes("live.on('room', (d) => { if (d.part === 'crop') reload.call(); }),"));
+  assert.ok(page.includes("live.on('room', (d) => { if (d.part === 'crop' || d.part === 'room') reload.call(); }),"), 'a room added, renamed or deleted too (review R2)');
+  assert.ok(overview.includes("live.on('room', (d) => { if (d.part === 'room') harvestAt = 0; reload.call(); }),"));
   assert.ok(page.includes('live.onStatus((up) => { if (up) reload.call(); else timerOf(REFRESH_MS); }),'));
   assert.equal(page.match(/const stop = keepCurrent\(/g).length, 2);
   assert.ok(!page.includes('farm:harvest'));

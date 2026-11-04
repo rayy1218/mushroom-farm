@@ -437,7 +437,8 @@ export function mount(container) {
   // Live updates: a room, an alarm or the outdoor probe changing asks again (a minute's timer is the fallback while the stream is up).
   const reload = createThrottle(() => { if (alive()) load(); }); // at most one load in 2 s
   const offLive = [
-    ...['room', 'alarms', 'outdoor'].map((type) => live.on(type, () => reload.call())),
+    ...['alarms', 'outdoor'].map((type) => live.on(type, () => reload.call())),
+    live.on('room', (d) => { if (d.part === 'room') harvestAt = 0; reload.call(); }), // a room renamed or gone: the Harvest card's names too
     live.on('harvest', () => { harvestAt = 0; reload.call(); }), // asked again at once, not after the minute
     live.onStatus((up) => { if (up) reload.call(); else { clearTimeout(timer); timer = setTimeout(load, refresh); } }),
   ];

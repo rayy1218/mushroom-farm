@@ -102,13 +102,13 @@ function table(caption, columns, rows, head, { groups = null, runFrom = Infinity
   return wrap;
 }
 
-// How the page and the sheet stay current: the harvest events and a room's crops (a run starts or ends), the stream back,
-// and the timer. load() is the page's; returns stop().
+// How the page and the sheet stay current: the harvest events, a room's crops (a run starts or ends), a room added, renamed
+// or deleted (By room and the sheet name it), the stream back, and the timer. load() is the page's; returns stop().
 function keepCurrent(load, timerOf) {
   const reload = createThrottle(load);
   const offLive = [
     live.on('harvest', () => reload.call()),
-    live.on('room', (d) => { if (d.part === 'crop') reload.call(); }),
+    live.on('room', (d) => { if (d.part === 'crop' || d.part === 'room') reload.call(); }), // room: added, renamed or deleted
     live.onStatus((up) => { if (up) reload.call(); else timerOf(REFRESH_MS); }),
   ];
   return () => {
