@@ -7,6 +7,7 @@ export const ROOM_TABS = [
   { key: 'history', label: 'History' },
   { key: 'crop', label: 'Crop' },
   { key: 'tasks', label: 'Tasks' },
+  { key: 'harvest', label: 'Harvest' },
   { key: 'simulations', label: 'Simulations' },
   { key: 'setup', label: 'Setup' },
 ];
@@ -42,6 +43,16 @@ export function parseCalendarQuery(query) {
   return { room, day };
 }
 
+// The Harvest page (spec 2026-11-04-harvest-design.md 7): its period in days in the query, 30 without one; the myGAP sheet
+// under it keeps the period in its address always.
+export const HARVEST_HASH = '#/harvest';
+const HARVEST_DAYS = [7, 30, 90, 365];
+const daysOf = (query) => {
+  const n = Number(new URLSearchParams(query ?? '').get('days'));
+  return HARVEST_DAYS.includes(n) ? n : 30;
+};
+export const sheetHash = (days) => `#/harvest/sheet?days=${days}`;
+
 export function parseRoute(hash) {
   const run = new RegExp(`^#/rooms/${ID}/simulations/${ID}/?$`).exec(hash ?? '');
   if (run) return { name: 'simulation', id: Number(run[1]), runId: Number(run[2]) };
@@ -54,6 +65,10 @@ export function parseRoute(hash) {
   // The Calendar (spec 2026-11-03-calendar-design.md 5): its room and day in the query.
   const calendar = /^#\/calendar\/?(?:\?(.*))?$/.exec(hash ?? '');
   if (calendar) return { name: 'calendar', ...parseCalendarQuery(calendar[1]) };
+  const sheet = /^#\/harvest\/sheet\/?(?:\?(.*))?$/.exec(hash ?? '');
+  if (sheet) return { name: 'sheet', days: daysOf(sheet[1]) };
+  const harvest = /^#\/harvest\/?(?:\?(.*))?$/.exec(hash ?? '');
+  if (harvest) return { name: 'harvest', days: daysOf(harvest[1]) };
   // #/rooms (the Rooms list until 2026-10-28) is the Overview now: it holds every room and Add room.
   if (/^#\/settings\/?$/.test(hash ?? '')) return { name: 'settings' };
   return { name: 'overview' };
@@ -66,6 +81,8 @@ export function canonicalHash(route) {
   if (route.name === 'detail') return roomHash(route.id, route.tab);
   if (route.name === 'today') return TODAY_HASH;
   if (route.name === 'calendar') return calendarHash(route);
+  if (route.name === 'harvest') return route.days === 30 ? HARVEST_HASH : `${HARVEST_HASH}?days=${route.days}`;
+  if (route.name === 'sheet') return sheetHash(route.days);
   return route.name === 'settings' ? '#/settings' : '#/overview';
 }
 

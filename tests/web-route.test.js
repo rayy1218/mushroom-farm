@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseRoute, isCanonical, ROOM_TABS, roomHash, suggestHash, canonicalHash, TODAY_HASH } from '../web/route.js';
+import { parseRoute, isCanonical, ROOM_TABS, roomHash, suggestHash, canonicalHash, TODAY_HASH, HARVEST_HASH, sheetHash } from '../web/route.js';
 
 test('empty and unknown hashes mean the Overview', () => {
   for (const h of ['', '#', '#/', '#/other', '#/rooms/abc', '#/rooms/0', '#/rooms/01', '#/rooms/1/x', '#/rooms/-1', undefined]) {
@@ -18,10 +18,10 @@ test('a room id means the detail page, on its Now tab', () => {
   assert.deepEqual(parseRoute('#/rooms/123/'), { name: 'detail', id: 123, tab: 'now' });
 });
 
-test('six room tabs (redesign 2026-10-28; Tasks between Crop and Simulations, 2026-10-30); a tab is part of the address', () => {
-  assert.deepEqual(ROOM_TABS.map((t) => t.key), ['now', 'history', 'crop', 'tasks', 'simulations', 'setup']);
-  assert.deepEqual(ROOM_TABS.map((t) => t.label), ['Now', 'History', 'Crop', 'Tasks', 'Simulations', 'Setup']);
-  for (const tab of ['history', 'crop', 'tasks', 'simulations', 'setup']) {
+test('seven room tabs (redesign 2026-10-28; Tasks between Crop and Simulations, 2026-10-30; Harvest after Tasks, 2026-11-04); a tab is part of the address', () => {
+  assert.deepEqual(ROOM_TABS.map((t) => t.key), ['now', 'history', 'crop', 'tasks', 'harvest', 'simulations', 'setup']);
+  assert.deepEqual(ROOM_TABS.map((t) => t.label), ['Now', 'History', 'Crop', 'Tasks', 'Harvest', 'Simulations', 'Setup']);
+  for (const tab of ['history', 'crop', 'tasks', 'harvest', 'simulations', 'setup']) {
     assert.deepEqual(parseRoute(`#/rooms/7/${tab}`), { name: 'detail', id: 7, tab });
     assert.deepEqual(parseRoute(`#/rooms/7/${tab}/`), { name: 'detail', id: 7, tab });
     assert.equal(isCanonical(`#/rooms/7/${tab}`), true);
@@ -98,4 +98,21 @@ test('#/calendar is the Calendar page, its room and day in the query (spec 2026-
   assert.equal(isCanonical('#/calendar?room=2&day=2026-11-04'), true);
   assert.equal(isCanonical('#/calendar?day=2026-11-04&room=2'), false, 'one order');
   assert.equal(canonicalHash({ name: 'calendar', room: null, day: '2026-11-04' }), '#/calendar?day=2026-11-04');
+});
+
+test('routes: the Harvest tab, the Harvest page and the sheet', () => {
+  assert.ok(ROOM_TABS.some((t) => t.key === 'harvest' && t.label === 'Harvest'));
+  assert.deepEqual(ROOM_TABS.map((t) => t.key).slice(3, 5), ['tasks', 'harvest']);
+  assert.deepEqual(parseRoute('#/rooms/7/harvest'), { name: 'detail', id: 7, tab: 'harvest' });
+  assert.deepEqual(parseRoute('#/harvest'), { name: 'harvest', days: 30 });
+  assert.deepEqual(parseRoute('#/harvest?days=90'), { name: 'harvest', days: 90 });
+  assert.deepEqual(parseRoute('#/harvest?days=45'), { name: 'harvest', days: 30 });
+  assert.deepEqual(parseRoute('#/harvest/sheet?days=7'), { name: 'sheet', days: 7 });
+  assert.deepEqual(parseRoute('#/harvest/sheet'), { name: 'sheet', days: 30 });
+  assert.equal(canonicalHash({ name: 'harvest', days: 30 }), HARVEST_HASH);
+  assert.equal(canonicalHash({ name: 'harvest', days: 90 }), '#/harvest?days=90');
+  assert.equal(sheetHash(7), '#/harvest/sheet?days=7');
+  assert.equal(canonicalHash({ name: 'sheet', days: 30 }), '#/harvest/sheet?days=30');
+  assert.equal(isCanonical('#/harvest?days=30'), false);
+  assert.equal(isCanonical('#/harvest?days=365'), true);
 });
