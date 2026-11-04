@@ -184,7 +184,7 @@ test('an iteration 1 database file is upgraded and keeps its rooms', (t) => {
   db.updateRoom(1, { name: 'Old room', length: 5, width: 4, height: 3, trhAddress: 4 });
   db.addReading({ roomId: 1, kind: 'trh', address: 4, at: 1, ok: true, t: 20, rh: 80 });
   db.close();
-  assert.equal(version(path), 19);
+  assert.equal(version(path), 20);
 
   const again = openDb(path); // already at version 19: opens without upgrading again
   t.after(() => again.close());
@@ -197,7 +197,7 @@ test('a new database is created at version 19', (t) => {
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const path = join(dir, 'new.db');
   openDb(path).close();
-  assert.equal(version(path), 19);
+  assert.equal(version(path), 20);
 });
 
 test('rooms store and return their addresses', (t) => {

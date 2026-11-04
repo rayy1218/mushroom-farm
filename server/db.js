@@ -4,8 +4,9 @@ import { DatabaseSync } from 'node:sqlite';
 import { RELAY_KEYS } from './machine-codes.js';
 import { RATINGS, FILTER } from './rooms.js';
 import { PROGRAM_DEFAULTS } from './program.js';
+import { FAMILY_OF, DAILY_RULES } from './task-rules.js';
 
-const VERSION = 19;
+const VERSION = 20;
 
 // Iteration 1 (version 0) had only the rooms table without the address columns.
 const ROOMS = `
@@ -254,6 +255,41 @@ CREATE TABLE IF NOT EXISTS custom_task_rules (
 
 const RUNS_KEPT = 20; // finished simulation runs kept per room
 
+// Runs of blocks and their harvests (spec 2026-11-04-harvest-design.md 2): a run opens when a room gets its crops or new
+// blocks and ends at the next new blocks or when the crops are cleared; a harvest belongs to the run it was picked in.
+const RUNS_HARVESTS = `
+CREATE TABLE IF NOT EXISTS runs (
+  id         INTEGER PRIMARY KEY,
+  room_id    INTEGER NOT NULL,
+  started_at INTEGER NOT NULL,
+  ended_at   INTEGER,
+  crops      TEXT    NOT NULL,
+  partial    INTEGER NOT NULL DEFAULT 0 CHECK (partial IN (0, 1))
+) STRICT;
+CREATE UNIQUE INDEX IF NOT EXISTS runs_open ON runs (room_id) WHERE ended_at IS NULL;
+CREATE INDEX IF NOT EXISTS runs_by_room ON runs (room_id, started_at);
+CREATE TABLE IF NOT EXISTS harvests (
+  id         INTEGER PRIMARY KEY,
+  room_id    INTEGER NOT NULL,
+  run_id     INTEGER NOT NULL,
+  crop       TEXT    NOT NULL,
+  stage      TEXT    NOT NULL,
+  flush      INTEGER,
+  blocks     INTEGER NOT NULL,
+  kg         REAL    NOT NULL CHECK (kg > 0 AND kg <= 10000),
+  picked_at  INTEGER NOT NULL,
+  worker     TEXT,
+  task_id    INTEGER,
+  created_at INTEGER NOT NULL
+) STRICT;
+CREATE INDEX IF NOT EXISTS harvests_by_room ON harvests (room_id, picked_at);
+CREATE INDEX IF NOT EXISTS harvests_by_run ON harvests (run_id, picked_at);
+CREATE INDEX IF NOT EXISTS harvests_by_time ON harvests (picked_at);
+CREATE INDEX IF NOT EXISTS harvests_by_task ON harvests (task_id) WHERE task_id IS NOT NULL;`;
+
+// The harvest checks: the daily rules that record kg picked (spec 2026-11-04-harvest-design.md 2.2).
+const HARVEST_RULES = ['harvestAm', 'harvestPm', 'harvestDaily', 'reishiRim'];
+
 const ALARMS = `
 CREATE TABLE alarms (
   id         INTEGER PRIMARY KEY,
@@ -424,6 +460,34 @@ const alarmRow = (r) => ({
   raisedAt: r.raised_at, clearedAt: r.cleared_at, ackedAt: r.acked_at,
 });
 
+// The upgrade to version 20 (spec 2026-11-04-harvest-design.md 2.2): each room with crops gets an open partial run, and its
+// done harvest checks with kg become harvests of that run, of the first of its crops the rule is for (a row with none of
+// them stays a task row only). The run starts at the upgrade or at its first copied harvest, whichever is earlier.
+function upgradeHarvests(db, now) {
+  const rooms = db.prepare('SELECT DISTINCT room_id FROM room_crops ORDER BY room_id').all().map((r) => r.room_id);
+  const crops = db.prepare('SELECT crop, blocks FROM room_crops WHERE room_id = ? ORDER BY position');
+  const stage = db.prepare('SELECT stage FROM room_programs WHERE room_id = ?');
+  const done = db.prepare(`SELECT * FROM tasks WHERE room_id = ? AND rule_key IN (${HARVEST_RULES.map(() => '?').join(', ')})
+                           AND status = 'done' AND amount > 0 ORDER BY closed_at, id`);
+  const insertRun = db.prepare('INSERT INTO runs (room_id, started_at, crops, partial) VALUES (?, ?, ?, 1)');
+  const insertHarvest = db.prepare(`INSERT INTO harvests (room_id, run_id, crop, stage, flush, blocks, kg, picked_at, worker, task_id, created_at)
+                                    VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)`);
+  const families = Object.fromEntries(DAILY_RULES.filter((r) => HARVEST_RULES.includes(r.key)).map((r) => [r.key, r.families]));
+  for (const roomId of rooms) {
+    const list = crops.all(roomId).map((c) => ({ crop: c.crop, blocks: c.blocks }));
+    const roomStage = stage.get(roomId)?.stage ?? 'fruiting';
+    const copies = done.all(roomId, ...HARVEST_RULES).flatMap((row) => {
+      const c = list.find((x) => families[row.rule_key].includes(FAMILY_OF[x.crop]));
+      return c ? [{ row, c }] : [];
+    });
+    const startedAt = Math.min(now, copies[0]?.row.closed_at ?? now);
+    const runId = Number(insertRun.run(roomId, startedAt, JSON.stringify(list)).lastInsertRowid);
+    for (const { row, c } of copies) {
+      insertHarvest.run(roomId, runId, c.crop, roomStage, c.blocks, row.amount, row.closed_at, row.worker, row.id, row.closed_at);
+    }
+  }
+}
+
 // Brings a new or older database up to VERSION in one transaction.
 function migrate(db) {
   const { user_version: version } = db.prepare('PRAGMA user_version').get();
@@ -559,6 +623,12 @@ function migrate(db) {
       db.exec('ALTER TABLE rooms ADD COLUMN gateway TEXT');
     }
     if (version < 19) db.exec(TASKS);
+    // Runs and harvests. A file that already has the tables keeps them (its runs and harvests are not made twice).
+    if (version < 20) {
+      const had = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'runs'").get();
+      db.exec(RUNS_HARVESTS);
+      if (!had) upgradeHarvests(db, Date.now());
+    }
     db.exec(`PRAGMA user_version = ${VERSION}`);
     db.exec('COMMIT');
   } catch (err) {
@@ -578,6 +648,13 @@ const taskRow = (r) => ({
   id: r.id, roomId: r.room_id, kind: r.kind, ruleKey: r.rule_key, date: r.date, slot: r.slot, text: r.text, note: r.note,
   status: r.status, dueAt: r.due_at, createdAt: r.created_at, closedAt: r.closed_at, worker: r.worker, amount: r.amount,
   unit: r.unit, reason: r.reason, source: r.source === null ? null : JSON.parse(r.source),
+});
+
+// A runs row (a run of blocks, not a simulation run) and a harvests row as the harvest module shows them.
+const runOf = (r) => ({ id: r.id, roomId: r.room_id, startedAt: r.started_at, endedAt: r.ended_at, crops: JSON.parse(r.crops), partial: r.partial === 1 });
+const harvestOf = (r) => ({
+  id: r.id, roomId: r.room_id, runId: r.run_id, crop: r.crop, stage: r.stage, flush: r.flush, blocks: r.blocks, kg: r.kg,
+  pickedAt: r.picked_at, worker: r.worker, taskId: r.task_id, createdAt: r.created_at,
 });
 
 // A machine_log row as the API shows it.
@@ -859,6 +936,25 @@ export function openDb(path, { log = console.error } = {}) {
     updateCustomRule: db.prepare('UPDATE custom_task_rules SET text = ?, rooms = ?, every_days = ?, slot = ?, enabled = ? WHERE id = ?'),
     deleteCustomRule: db.prepare('DELETE FROM custom_task_rules WHERE id = ?'),
     customRuleRooms: db.prepare('UPDATE custom_task_rules SET rooms = ? WHERE id = ?'),
+    setTaskAmount: db.prepare('UPDATE tasks SET amount = ? WHERE id = ?'),
+    // Runs of blocks and harvests (spec 2026-11-04-harvest-design.md 2).
+    openRun: db.prepare('SELECT * FROM runs WHERE room_id = ? AND ended_at IS NULL'),
+    cropRun: db.prepare('SELECT * FROM runs WHERE id = ?'),
+    cropRuns: db.prepare('SELECT * FROM runs WHERE room_id = ? ORDER BY started_at DESC, id DESC'),
+    runsBetween: db.prepare('SELECT * FROM runs WHERE started_at <= ?2 AND (ended_at IS NULL OR ended_at >= ?1) ORDER BY started_at, id'),
+    startRun: db.prepare('INSERT INTO runs (room_id, started_at, crops) VALUES (?, ?, ?)'),
+    setRunCrops: db.prepare('UPDATE runs SET crops = ? WHERE room_id = ? AND ended_at IS NULL'),
+    endRun: db.prepare('UPDATE runs SET ended_at = ? WHERE room_id = ? AND ended_at IS NULL'),
+    deleteCropRuns: db.prepare('DELETE FROM runs WHERE room_id = ?'),
+    insertHarvest: db.prepare(`INSERT INTO harvests (room_id, run_id, crop, stage, flush, blocks, kg, picked_at, worker, task_id, created_at)
+                               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+    harvest: db.prepare('SELECT * FROM harvests WHERE id = ?'),
+    runHarvests: db.prepare('SELECT * FROM harvests WHERE run_id = ? ORDER BY picked_at, id'),
+    taskHarvests: db.prepare('SELECT * FROM harvests WHERE task_id = ? ORDER BY picked_at, id'),
+    harvestsBetween: db.prepare('SELECT * FROM harvests WHERE picked_at BETWEEN ? AND ? ORDER BY picked_at, id'),
+    updateHarvest: db.prepare('UPDATE harvests SET kg = ?, picked_at = ? WHERE id = ?'),
+    deleteHarvest: db.prepare('DELETE FROM harvests WHERE id = ?'),
+    deleteHarvests: db.prepare('DELETE FROM harvests WHERE room_id = ?'),
   };
 
   function checkName(name, id) {
@@ -896,6 +992,18 @@ export function openDb(path, { log = console.error } = {}) {
       db.exec('ROLLBACK');
       throw err;
     }
+  }
+
+  // setProgram's run change, inside its transaction.
+  function writeRun(roomId, crops, { change, at }) {
+    if (change === 'end' || change === 'restart') q.endRun.run(at, roomId);
+    if (change === 'start' || change === 'restart') q.startRun.run(roomId, at, JSON.stringify(crops));
+    if (change === 'update' && q.setRunCrops.run(JSON.stringify(crops), roomId).changes === 0) throw new Error('No open run');
+  }
+
+  // A new harvests row, inside a transaction of the caller's or on its own. → its id.
+  function writeHarvest({ roomId, runId, crop, stage, flush, blocks, kg, pickedAt, worker = null, taskId = null, at }) {
+    return Number(q.insertHarvest.run(roomId, runId, crop, stage, flush, blocks, kg, pickedAt, worker, taskId, at).lastInsertRowid);
   }
 
   // The writes of setTaskRuleSettings and setCustomTaskRules, inside a transaction of the caller's.
@@ -1334,6 +1442,8 @@ export function openDb(path, { log = console.error } = {}) {
         q.deleteCrops.run(id);
         q.deleteProgram.run(id);
         q.deleteRuns.run(id);
+        q.deleteHarvests.run(id);
+        q.deleteCropRuns.run(id);
         q.deleteTasks.run(id);
         // The owner's rules lose the room (its id is given to the next room made after the top one); a rule left with no
         // room is removed (its rows went with the room's tasks). A rooms value that is not a list is left alone.
@@ -1586,10 +1696,14 @@ export function openDb(path, { log = console.error } = {}) {
     },
 
     // Stores a whole program (valid: validateProgram) with its crops. Returns false when there is no such room.
-    setProgram(roomId, p) {
+    // run: the change of the room's run of blocks written with it (spec 2026-11-04-harvest-design.md 2.1), { change, at }:
+    // 'start' opens a run with p.crops, 'update' gives the open run p.crops, 'end' ends the open run, 'restart' ends the
+    // open run (if any) and opens a new one. Throws, writing nothing, on an 'update' with no open run.
+    setProgram(roomId, p, run = null) {
       if (!q.get.get(roomId)) return false;
       db.exec('BEGIN');
       try {
+        if (run) writeRun(roomId, p.crops, run);
         q.deleteCrops.run(roomId);
         p.crops.forEach((c, i) => q.insertCrop.run(roomId, i, c.crop, c.blocks));
         q.setProgram.run(roomId, p.farmType, p.stage, p.stageSince, p.flush, p.flushes, p.days.spawn, p.days.pinning,
@@ -1727,13 +1841,15 @@ export function openDb(path, { log = console.error } = {}) {
     },
 
     // Closes an open row: { status, at, worker, amount, reason }; next: an upkeep row to make in the same transaction
-    // (insertUpkeepTask's fields). → false when the row is not open (nothing changes then). Throws, closing nothing, when
-    // the next row is not made (its rule already has an open row).
-    closeTask(id, { status, at, worker = null, amount = null, reason = null }, next = null) {
+    // (insertUpkeepTask's fields); harvests: the harvests the close records (insertHarvest's fields), made in it too.
+    // → false when the row is not open (nothing changes then). Throws, closing nothing, when the next row is not made (its
+    // rule already has an open row) or a harvest is refused (its kg out of range).
+    closeTask(id, { status, at, worker = null, amount = null, reason = null }, next = null, harvests = []) {
       db.exec('BEGIN');
       try {
         const closed = q.closeTask.run(status, at, worker, amount, reason, id).changes > 0;
         if (closed && next && !this.insertUpkeepTask(next)) throw new Error('The next upkeep row was not made');
+        if (closed) for (const h of harvests) writeHarvest(h);
         db.exec('COMMIT');
         return closed;
       } catch (err) {
@@ -1811,6 +1927,80 @@ export function openDb(path, { log = console.error } = {}) {
         if (custom) writeCustomRules(custom);
       });
       return { settings: this.taskRuleSettings(), custom: this.customTaskRules() };
+    },
+
+    // ---- Runs of blocks and harvests (spec 2026-11-04-harvest-design.md 2). A run is { id, roomId, startedAt, endedAt,
+    //      crops, partial }; a harvest { id, roomId, runId, crop, stage, flush, blocks, kg, pickedAt, worker, taskId,
+    //      createdAt }. setProgram opens and ends the runs. ----
+
+    // The room's open run, or null.
+    openRun(roomId) {
+      const r = q.openRun.get(roomId);
+      return r ? runOf(r) : null;
+    },
+
+    // A run, or null.
+    getRunById(id) {
+      const r = q.cropRun.get(id);
+      return r ? runOf(r) : null;
+    },
+
+    // Every run of the room, newest first. (listRuns is the simulation runs'.)
+    cropRuns(roomId) {
+      return q.cropRuns.all(roomId).map(runOf);
+    },
+
+    // The runs of every room that were open at some time in [from, to] (ms), oldest first.
+    runsBetween(from, to) {
+      return q.runsBetween.all(from, to).map(runOf);
+    },
+
+    // A new harvest: { roomId, runId, crop, stage, flush, blocks, kg, pickedAt, worker, taskId, at }. → the harvest.
+    // Throws when kg is not over 0 up to 10,000.
+    insertHarvest(fields) {
+      return this.getHarvest(writeHarvest(fields));
+    },
+
+    // A harvest, or null.
+    getHarvest(id) {
+      const r = q.harvest.get(id);
+      return r ? harvestOf(r) : null;
+    },
+
+    // The run's harvests, oldest pick first.
+    runHarvests(runId) {
+      return q.runHarvests.all(runId).map(harvestOf);
+    },
+
+    // The harvests a task's close recorded, oldest pick first.
+    taskHarvests(taskId) {
+      return q.taskHarvests.all(taskId).map(harvestOf);
+    },
+
+    // The harvests of every room picked in [from, to] (ms), oldest first.
+    harvestsBetween(from, to) {
+      return q.harvestsBetween.all(from, to).map(harvestOf);
+    },
+
+    // A new kg and pick time; taskAmount ({ taskId, amount }): the new amount of the task the harvest came from, set in the
+    // same transaction. → the harvest, or null when there is no such harvest (nothing changes then).
+    updateHarvest(id, { kg, pickedAt }, taskAmount = null) {
+      let changed = false;
+      inTransaction(() => {
+        changed = q.updateHarvest.run(kg, pickedAt, id).changes > 0;
+        if (changed && taskAmount) q.setTaskAmount.run(taskAmount.amount, taskAmount.taskId);
+      });
+      return changed ? this.getHarvest(id) : null;
+    },
+
+    // Deletes a harvest; taskAmount as updateHarvest's. → true when a harvest went.
+    deleteHarvest(id, taskAmount = null) {
+      let deleted = false;
+      inTransaction(() => {
+        deleted = q.deleteHarvest.run(id).changes > 0;
+        if (deleted && taskAmount) q.setTaskAmount.run(taskAmount.amount, taskAmount.taskId);
+      });
+      return deleted;
     },
 
     close() {
