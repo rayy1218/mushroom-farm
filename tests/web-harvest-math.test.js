@@ -151,6 +151,15 @@ test('no energy recorded: the cost per kg is a dash that says so, never RM 0.00'
   assert.equal(pricesNote(null), null);
 });
 
+test('a cost still being worked out: a dash that says so, the room tab, the page and a past run alike', () => {
+  const pending = { costPerKg: null, cost: null, days: 41, water: false, none: 'pending' };
+  const tile = { label: 'Cost per kg', value: '—', line: 'Working out the energy cost…' };
+  assert.deepEqual(runTiles({ ...oneCrop, cost: pending })[4], tile);
+  assert.deepEqual(pageTiles({ ...farm, totals: { ...farm.totals, cost: { ...pending, days: 30 } } })[2], tile);
+  assert.equal(pastRow({ ...oneCrop, endedAt: oneCrop.startedAt, cost: pending }).cells.at(-1), '—');
+  assert.equal(pricesNote(pending), null);
+});
+
 test('the RM value of the priced crops, the crops left out named with their kg', () => {
   const part = { ...mixed, value: 120, unpriced: ['lionsmane'] };
   assert.deepEqual(runTiles(part)[3], { label: 'RM value', value: `RM${nb}120.00`, line: `without Lion's mane (8.4${nb}kg, no price)` });

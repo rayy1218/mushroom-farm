@@ -182,7 +182,7 @@ export function advanceMeter(db, roomId, m, hi, final) {
 // The work of one day of a room, cached while the day is complete: its machine run times, its metered energy and the mean
 // counted pressure of its filter sensor (pa, null without a sensor or a counted reading).
 // Today is read on from the last reading each time; a day that ended is final SETTLE_MS later and then costs nothing.
-// db.usageDays drops an entry when the room changes or a row is written inside its days.
+// db.usageDays drops an entry when the room's meter, filter sensor or gateway changes or a row is written inside its days.
 export function dayWork(db, room, day, { now, zone }) {
   const cache = db.usageDays(room.id);
   const end = zone.addDays(day.start, 1);
@@ -214,7 +214,10 @@ export function dayWork(db, room, day, { now, zone }) {
 // The days of a room: [{ date, kWh, metered, byMachine, waterL }], oldest first, with the unrounded numbers rounded to 3
 // places. When a day is metered, the aircon estimate is replaced by `rest` (metered minus the other machines, at least 0);
 // estimates of the other machines above the metered kWh are scaled down so that byMachine adds up to kWh.
-export function roomDays(db, room, { now, zone, count }) {
+// cachedOnly: a day that ended and is not in the cache yet is not worked out but given as { date, pending: true } (a cold
+// year of one-second readings takes seconds: warmRoom works it out in the background); today and a day not yet settled are
+// read as always (one day, from the last reading on).
+export function roomDays(db, room, { now, zone, count, cachedOnly = false }) {
   const days = dayWindows(now, count, zone);
   const cache = db.usageDays(room.id);
   // Only the days older than the kept ones go: a short read after a long one leaves the long one's days for the next.
@@ -223,6 +226,8 @@ export function roomDays(db, room, { now, zone, count }) {
     for (const [key, e] of cache) if (e.end <= oldest) cache.delete(key);
   }
   return days.map((day) => {
+    const end = zone.addDays(day.start, 1);
+    if (cachedOnly && now >= end + SETTLE_MS && !cache.get(`${day.start}/${end}`)?.ms) return { date: day.date, pending: true };
     const work = dayWork(db, room, day, { now, zone });
     const est = estimateDay(work.ms, room, work.pa === null ? 1 : fanWattFactor(work.pa, room.filterCleanPa, room.fanMaxPa));
     const isMetered = room.meterAddress !== null && work.meter.readings >= 2;
@@ -267,6 +272,19 @@ export async function warmUsage(db, { now = Date.now(), zone = localZone } = {})
         await new Promise((resolve) => setImmediate(resolve));
       }
     }
+  }
+}
+
+// Works out the last `count` days of one room (up to the kept ones), newest first, a day at a time with the event loop free
+// between days, as warmUsage does: what roomDays' cachedOnly leaves pending. signal: an AbortSignal that stops it (the
+// server closing).
+export async function warmRoom(db, roomId, { now = Date.now(), zone = localZone, count = USAGE_DAYS_KEPT, signal } = {}) {
+  for (const day of dayWindows(now, Math.min(count, USAGE_DAYS_KEPT), zone).reverse()) {
+    if (signal?.aborted) return;
+    const room = db.getRoom(roomId); // it may have changed or gone meanwhile
+    if (!room) return;
+    dayWork(db, room, day, { now, zone });
+    await new Promise((resolve) => setImmediate(resolve));
   }
 }
 

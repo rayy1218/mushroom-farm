@@ -41,7 +41,7 @@ function intakeFactors(db, room, starts, to, zone) {
 }
 
 // The meter's kWh of each bucket starting at `starts` (b wide, the last one up to `to`), null for one without a reading.
-// The settled buckets are kept in the room's usage cache (db.usageDays: a reading written before `meter.upto` or a change of
+// The settled buckets are kept in the room's usage cache (db.usageDays: a reading written before `meter.upto` or a new meter of
 // the room drops the entry), so a refresh reads only the buckets since; the open ones are read on a copy of the state.
 function meterBuckets(db, room, starts, b, to) {
   const cache = db.usageDays(room.id);

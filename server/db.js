@@ -1178,7 +1178,9 @@ export function openDb(path, { log = console.error } = {}) {
       const moved = old.gateway !== via;
       if (moved || old.relay_address !== relayAddress) for (const key of RELAY_KEYS) this.logOff(id, key, now);
       if (moved || old.ac_address !== acAddress) this.logOff(id, 'ac', now);
-      usageCache.delete(id);
+      // The worked-out days keep the meter's steps and the filter sensor's pressure (another device or gateway reads others);
+      // the run times change only with a log row (logMachine drops those days), the ratings and size are read at read time.
+      if (moved || old.meter_address !== meterAddress || old.dp_address !== dpAddress) usageCache.delete(id);
       return getRoom(id);
     },
 

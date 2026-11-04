@@ -4,7 +4,7 @@
 import { localDate, dayStart, addDays, daysBetween } from './task-rules.js';
 import { CROP_KEYS } from '../web/crops.js';
 import { readSettings, readCropYield } from './settings.js';
-import { roomDays, totals, localZone, USAGE_DAYS_KEPT } from './usage.js';
+import { roomDays, warmRoom, totals, localZone, USAGE_DAYS_KEPT } from './usage.js';
 import { runFigures, buckets, recordRows, csvRows, valueOf, unpricedOf, round } from './harvest-math.js';
 import { checkWorker, TaskError } from './tasks.js';
 
@@ -39,8 +39,10 @@ function kgOf(v, field = 'kg') {
 }
 
 // A harvest's cost from the usage days: { cost (electricity and water when a water price is set), days, water, none? }; none:
-// 'no-energy' when the days used no kWh and no water (nothing recorded), so there is no cost per kg to show.
+// 'no-energy' when the days used no kWh and no water (nothing recorded), so there is no cost per kg to show; 'pending' (cost
+// null) while a day is still being worked out in the background (roomDays' cachedOnly).
 const costOf = (days, prices) => {
+  if (days.some((d) => d.pending)) return { cost: null, days: days.length, water: prices.water !== null, none: 'pending' };
   const t = totals(days, prices);
   const none = t.kWh === 0 && t.waterL === 0 ? { none: 'no-energy' } : {};
   return { cost: round(t.cost + (t.waterCost ?? 0), 2), days: days.length, water: prices.water !== null, ...none };
@@ -61,6 +63,41 @@ export function createHarvests({ db, now = Date.now, zone = localZone, log = con
         log(err);
       }
     }
+  }
+
+  // The rooms whose usage days are being worked out (roomId → { count, more, done }): the views never work out a cold day in
+  // the request (a year of one-second readings takes seconds); they start a warm, one at a time a room, that tells the room
+  // when done. A view that wants more days than the warm under way works them out next (`more`), before the room is told.
+  const warming = new Map();
+  const stopping = new AbortController();
+  function warm(roomId, count) {
+    if (stopping.signal.aborted) return;
+    const running = warming.get(roomId);
+    if (running) {
+      running.more = Math.max(running.more, count);
+      return;
+    }
+    const job = { count, more: 0 };
+    warming.set(roomId, job);
+    job.done = (async () => {
+      try {
+        while (job.count > 0) {
+          await warmRoom(db, roomId, { now: now(), zone, count: job.count, signal: stopping.signal });
+          job.count = job.more > job.count ? job.more : 0;
+        }
+        warming.delete(roomId);
+        if (!stopping.signal.aborted) tell(roomId);
+      } catch (err) {
+        warming.delete(roomId);
+        log(err);
+      }
+    })();
+  }
+  // The room's usage days back `count` days, the ones not worked out yet pending (and a warm started for them).
+  function usageDaysOf(room, count) {
+    const days = roomDays(db, room, { now: now(), zone, count, cachedOnly: true });
+    if (days.some((d) => d.pending)) warm(room.id, count);
+    return days;
   }
 
   const prices = () => {
@@ -175,7 +212,7 @@ export function createHarvests({ db, now = Date.now, zone = localZone, log = con
       const today = zone.label(now());
       // The days back to the oldest run within the kept days (an older run has no cost: its days are not all kept).
       const count = Math.max(0, ...runs.map((r) => daysBetween(zone.label(r.startedAt), today) + 1).filter((n) => n <= USAGE_DAYS_KEPT));
-      const usageDays = count > 0 ? roomDays(db, room, { now: now(), zone, count }) : [];
+      const usageDays = count > 0 ? usageDaysOf(room, count) : [];
       const views = runs.map((run) => runView(run, cropYield, usageDays, p));
       const current = views.find((v) => v.endedAt === null) ?? null;
       // stamp: the stage and flush a harvest recorded now takes (Record a harvest says it), null without a run
@@ -195,7 +232,7 @@ export function createHarvests({ db, now = Date.now, zone = localZone, log = con
       const count = daysBetween(range.from, zone.label(now())) + 1;
       const usageDays = [];
       for (const room of rooms.values()) {
-        usageDays.push(...roomDays(db, room, { now: now(), zone, count }).filter((d) => d.date >= range.from && d.date <= range.to));
+        usageDays.push(...usageDaysOf(room, count).filter((d) => d.date >= range.from && d.date <= range.to));
       }
       const cost = { ...costOf(usageDays, p), days: daysBetween(range.from, range.to) + 1 };
       const { none, ...spent } = cost;
@@ -240,7 +277,16 @@ export function createHarvests({ db, now = Date.now, zone = localZone, log = con
       return { name: `harvests ${range.from}–${range.to}.csv`, text: `${csvRows(harvests, rooms, runs).join('\r\n')}\r\n` };
     },
 
-    // fn(roomId) after any harvest of a room is recorded, edited or deleted here; → a function that stops it.
+    // A promise for the usage warms under way (tests).
+    warmed: () => Promise.all([...warming.values()].map((job) => job.done)),
+
+    // Stops the usage warms at their next day and starts no more (the server closing: the database goes next).
+    stop() {
+      stopping.abort();
+    },
+
+    // fn(roomId) after any harvest of a room is recorded, edited or deleted here, or its usage days are worked out (its costs
+    // are known now); → a function that stops it.
     onChange(fn) {
       listeners.add(fn);
       return () => listeners.delete(fn);

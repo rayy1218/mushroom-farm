@@ -45,10 +45,12 @@ export function costText({ costPerKg, days, water } = {}) {
   return `${rmText(costPerKg)} per${NB}kg${DOT}${water ? 'electricity and water' : 'electricity'}${over} at today’s prices`;
 }
 
-// The cost per kg tile: its figure and what it counts; a dash that says why when no energy was recorded (never RM 0.00).
+// The cost per kg tile: its figure and what it counts; a dash that says why when no energy was recorded (never RM 0.00) or
+// while the server still works the room's energy out (its harvest event then reloads the page).
+const NONE_LINES = { 'no-energy': 'No energy recorded yet', pending: 'Working out the energy cost…' };
 function costTile(cost) {
   const label = 'Cost per kg';
-  if (cost?.none === 'no-energy') return { label, value: DASH, line: 'No energy recorded yet' };
+  if (NONE_LINES[cost?.none]) return { label, value: DASH, line: NONE_LINES[cost.none] };
   return finite(cost?.costPerKg) ? { label, value: rmText(cost.costPerKg), line: costBasis(cost) } : { label, value: DASH };
 }
 

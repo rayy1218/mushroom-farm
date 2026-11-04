@@ -161,3 +161,23 @@ test('a short read after a long one keeps the long one\'s days; only days older 
   read(30, NOW + 86_400_000 * 2); // the pruning runs before a read adds its new days
   assert.equal(db.usageDays(room.id).size, USAGE_DAYS_KEPT, 'two days on: the two days older than the kept ones went');
 });
+
+test('a Setup save keeps the room\'s worked-out days unless the meter, the filter sensor or the gateway changes', (t) => {
+  const db = openDb(':memory:');
+  t.after(() => db.close());
+  const room = db.createRoom({ ...fields, meterAddress: 30, intakeW: 1000 }, at(1, 0));
+  const settled = () => [...db.usageDays(room.id).values()].filter((e) => e.ms).length;
+  roomDays(db, db.getRoom(room.id), { now: NOW, zone, count: 10 });
+  assert.equal(settled(), 9, 'the nine days before today');
+  const save = (change) => db.updateRoom(room.id, { ...db.getRoom(room.id), ...change }, NOW);
+  save({ name: 'B', intakeW: 2000, length: 8 });
+  assert.equal(settled(), 9, 'a rename, a rating and the size are read at read time: the days stay');
+  save({ meterAddress: 31 });
+  assert.equal(settled(), 0, 'another meter: the days go');
+  roomDays(db, db.getRoom(room.id), { now: NOW, zone, count: 10 });
+  save({ dpAddress: 40 });
+  assert.equal(settled(), 0, 'a filter sensor: the days go');
+  roomDays(db, db.getRoom(room.id), { now: NOW, zone, count: 10 });
+  save({ gateway: '10.0.0.9:502' });
+  assert.equal(settled(), 0, 'another gateway: the days go');
+});

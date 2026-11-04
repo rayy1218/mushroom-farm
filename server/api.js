@@ -88,7 +88,7 @@ export function createApi(db, machines = null, controller = null, poller = null,
   const publishHarvest = (roomId) => events?.publish('harvest', { roomId });
   const harvestRoutes = createHarvestRoutes({ harvests, onTaskChange: (roomId) => publishRoom(roomId, 'tasks') });
   const stopTellingHarvests = [harvests.onChange(publishHarvest), taskStore.onHarvest(publishHarvest)];
-  const stopTelling = () => { stopTellingTasks(); stopTellingHarvests.forEach((stop) => stop()); };
+  const stopTelling = () => { stopTellingTasks(); stopTellingHarvests.forEach((stop) => stop()); harvests.stop(); };
   // The room body; on the farm's gateway its addresses must differ from the outdoor sensor's (read through that gateway).
   // stored: the room as it is (an update): a filter setting or the gateway left out is its stored value, so the checks compare
   // what will be saved. The farm's own gateway is stored as null, its one spelling, so the address checks see it as the farm's.

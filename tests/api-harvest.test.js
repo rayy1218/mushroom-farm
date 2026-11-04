@@ -146,3 +146,16 @@ test('the Done body amounts on a mixed room through POST /api/tasks/:id/done', a
   assert.equal(done.body.amount, 2.5);
   assert.deepEqual(harvestEvents(), [{ roomId: id }]);
 });
+
+test('a cold farm view says the cost is pending, works the days out in the background and then sends the room\'s harvest event', async (t) => {
+  const { call, room, harvestEvents } = await app(t);
+  const id = await room();
+  assert.equal((await call('POST', `/api/rooms/${id}/harvests`, { kg: 2, crop: 'oyster', worker: 'Ali' })).status, 201);
+  const before = harvestEvents().length;
+  const cold = await call('GET', '/api/harvest?days=30');
+  assert.equal(cold.body.totals.cost.none, 'pending');
+  assert.equal(cold.body.totals.cost.costPerKg, null);
+  for (let i = 0; i < 200 && harvestEvents().length === before; i++) await new Promise((r) => setTimeout(r, 10));
+  assert.deepEqual(harvestEvents().slice(before), [{ roomId: id }], 'the room is told once its days are worked out');
+  assert.equal((await call('GET', '/api/harvest?days=30')).body.totals.cost.none, 'no-energy', 'worked out: nothing recorded');
+});
