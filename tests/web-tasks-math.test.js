@@ -340,10 +340,11 @@ test('nowDue: in the due-now list only overdue words stay', async () => {
 
 test('amountFields: one box per crop of a mixed harvest check, else the single amount box, else none', async () => {
   const { amountFields } = await import('../web/tasks-math.js');
-  const crops = [{ crop: 'oyster', name: 'Grey oyster' }, { crop: 'lionsmane', name: "Lion's mane (draft)" }];
+  const crops = [{ crop: 'oyster', name: 'Grey oyster' }, { crop: 'lionsmane', name: "Lion's mane" }];
+  // a mixed room: each box named by its crop, the unit in the box and the group's legend ("kg picked")
   assert.deepEqual(amountFields({ unit: 'kg', amountLabel: 'kg picked', harvestCrops: crops }), [
-    { name: 'kg:oyster', label: 'Grey oyster kg', crop: 'oyster' },
-    { name: 'kg:lionsmane', label: "Lion's mane (draft) kg", crop: 'lionsmane' },
+    { name: 'kg:oyster', label: 'Grey oyster', crop: 'oyster' },
+    { name: 'kg:lionsmane', label: "Lion's mane", crop: 'lionsmane' },
   ]);
   assert.deepEqual(amountFields({ unit: 'kg', amountLabel: 'kg picked', harvestCrops: [crops[0]] }), [{ name: 'amount', label: 'kg picked' }]);
   assert.deepEqual(amountFields({ unit: 'kg', amountLabel: 'Weight', harvestCrops: null }), [{ name: 'amount', label: 'Weight (kg)' }]);

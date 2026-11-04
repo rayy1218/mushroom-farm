@@ -164,7 +164,7 @@ export function createHarvests({ db, now = Date.now, zone = localZone, log = con
       return h;
     },
 
-    // The Harvest tab: { current: the open run's view or null, past: the ended runs newest first }; null for no such room.
+    // The Harvest tab: { current: the open run's view or null, past: the ended runs newest first, stamp }; null for no such room.
     // A run's view: { id, startedAt, endedAt, partial, crops, ...runFigures, harvests (newest pick first) }.
     roomView(roomId) {
       const room = db.getRoom(roomId);
@@ -177,7 +177,10 @@ export function createHarvests({ db, now = Date.now, zone = localZone, log = con
       const count = Math.max(0, ...runs.map((r) => daysBetween(zone.label(r.startedAt), today) + 1).filter((n) => n <= USAGE_DAYS_KEPT));
       const usageDays = count > 0 ? roomDays(db, room, { now: now(), zone, count }) : [];
       const views = runs.map((run) => runView(run, cropYield, usageDays, p));
-      return { current: views.find((v) => v.endedAt === null) ?? null, past: views.filter((v) => v.endedAt !== null) };
+      const current = views.find((v) => v.endedAt === null) ?? null;
+      // stamp: the stage and flush a harvest recorded now takes (Record a harvest says it), null without a run
+      const program = current ? db.getProgram(roomId) : null;
+      return { current, past: views.filter((v) => v.endedAt !== null), stamp: program ? { stage: program.stage, flush: program.flush } : null };
     },
 
     // The Harvest page (spec 6): { from, to, days, bucket, buckets, totals: { kg, value, cost }, rooms, crops, today, last7,

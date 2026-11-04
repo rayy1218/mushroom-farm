@@ -239,7 +239,8 @@ test('roomView: a run that started over 400 days ago has no cost; a room with no
   const v = s.harvests.roomView(s.id);
   assert.equal(v.current.cost, null);
   assert.equal(v.current.kg, 5);
-  assert.deepEqual(s.harvests.roomView(s.room('Bare', [])), { current: null, past: [] });
+  assert.deepEqual(s.harvests.roomView(s.room('Bare', [])), { current: null, past: [], stamp: null });
+  assert.deepEqual(v.stamp, { stage: s.db.getProgram(s.id).stage, flush: s.db.getProgram(s.id).flush }, 'what Record a harvest stamps now');
 });
 
 test('farmView: buckets, totals, rooms, crops, today/last7/last30, records; csv', (t) => {

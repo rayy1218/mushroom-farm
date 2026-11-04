@@ -1577,6 +1577,26 @@ button.tk-tick:is(:hover, :focus-visible) .tk-mark { opacity: 1; }
 .tk-dialog .tk-check input { width: 20px; height: 20px; margin: 0; }
 .tk-dialog .tk-check :is(.c-hint, .field-error) { flex: 1 0 100%; }
 .tk-dialog .actions { flex-wrap: wrap-reverse; } /* wrapped on a phone, the primary button on top */
+/* a quiet red button at the footer's start (Delete in an Edit dialog), away from Save */
+.tk-dialog .actions .tk-aside { margin-right: auto; border-color: transparent; background: none; padding-inline: 8px; }
+.tk-dialog .actions .tk-aside:hover { background: var(--band); }
+/* fields side by side (a date and its time) or a fieldset of them (a mixed room's kg) */
+.tk-dialog .tk-group { min-width: 0; margin: 0 0 12px; padding: 0; border: 0; }
+.tk-dialog .tk-group legend { padding: 0; font-size: 0.9rem; font-weight: 600; }
+.tk-dialog .tk-group-hint { margin: 2px 0 8px; }
+.tk-dialog .tk-group-fields { display: grid; gap: 0 12px; }
+.tk-dialog .tk-group-fields > .field { min-width: 0; }
+@media (min-width: 360px) {
+  .tk-dialog .tk-when .tk-group-fields { grid-template-columns: 1.4fr 1fr; }
+  .tk-dialog .tk-kg-group .tk-group-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.tk-dialog .tk-when { margin-bottom: 0; }
+.tk-dialog .tk-kg-group .tk-suffix-box { width: 14ch; } /* a box for 1 to 5 digits, not the dialog's width */
+.tk-dialog .tk-pic-label { display: flex; align-items: center; gap: 6px; font-weight: 500; }
+/* the unit inside the box, at its right end */
+.tk-suffix-box { position: relative; display: block; max-width: 100%; }
+.field .tk-suffix-box input { padding-right: 36px; }
+.tk-suffix { position: absolute; top: 50%; right: 10px; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
 
 /* Settings: Workers and Task rules, two more cards of the settings grid */
 .tk-settings { display: contents; }
@@ -1769,7 +1789,7 @@ h2.r-named { display: flex; }
 .hv-text { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 .hv-title { margin: 0; font-variant-numeric: tabular-nums; }
 .hv-kg { display: inline-block; min-width: 8ch; font-weight: 600; text-align: right; } /* the rows' kg line up (2 decimals each) */
-.hv-meta { margin: 2px 0 0; color: var(--muted); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.hv-meta { margin: 2px 0 0; overflow: hidden; color: var(--muted); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; white-space: nowrap; text-overflow: ellipsis; } /* one line */
 .hv-list-card > button { margin-top: 8px; }
 /* Past runs: a table, a run's dates a button that opens the row under it (its flushes and latest harvests, indented) */
 .hv-run-toggle { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0; border: 0; background: none; color: var(--ink); font: inherit; font-weight: 600; text-align: left; cursor: pointer; }

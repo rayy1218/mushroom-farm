@@ -4,9 +4,9 @@
 // missing figure (null, undefined, not a number) rather than throwing. A number keeps its unit at a wrap (a no-break
 // space, as web/text-math.js and the Units Rule have it) and a '·' joins with DOT.
 
-import { cropShortName } from './crops.js';
+import { cropShortName, STAGES } from './crops.js';
 import { DOT } from './text-math.js';
-import { farmDate, farmTime, dayMonth } from './tasks-math.js';
+import { farmDate, farmTime, dayMonth, dayTitle } from './tasks-math.js';
 import { isClock, normaliseClock } from './light-math.js';
 import { tickCountFor } from './history-math.js';
 
@@ -125,11 +125,12 @@ export function runHead(run) {
   return [`${run.partial ? 'Recorded from' : 'Blocks in'} ${dayOf(run.startedAt)}`, ...cropBlocks(run.crops)].join(DOT);
 }
 
-// A harvest's row: { when: '4 Nov 08:12', what: 'Flush 2' (a mixed room: 'Grey oyster · flush 2'), kg, who, from }.
+// A harvest's row: { when: '4 Nov 08:12', what: 'Flush 2' (a mixed room: 'Grey oyster · flush 2'), kg, who, from ('' for one
+// recorded by hand, the usual case)}.
 export function harvestLine(h, { mixed = false } = {}) {
   const flush = h.flush === null || h.flush === undefined ? 'before records' : `flush ${h.flush}`;
   const what = mixed ? `${cropName(h.crop)}${DOT}${flush}` : flush[0].toUpperCase() + flush.slice(1);
-  return { when: whenText(h.pickedAt), what, kg: kgText(h.kg, { exact: true }), who: h.worker ?? '', from: h.taskId ? 'from the harvest check' : 'recorded' };
+  return { when: whenText(h.pickedAt), what, kg: kgText(h.kg, { exact: true }), who: h.worker ?? '', from: h.taskId ? 'from the harvest check' : '' };
 }
 
 // The Past runs table: a row per run, its dates first (the row's name, opening the run), then PAST_COLUMNS' figures.
@@ -185,6 +186,14 @@ export function runTiles(run) {
 // Delete's title names the harvest; its lead when and who ("Picked 4 Nov 14:36 by Kumar.").
 export const deleteTitle = (h) => `Delete ${kgText(h.kg, { exact: true })} of ${cropName(h.crop)}?`;
 export const deleteLead = (h) => `Picked ${whenText(h.pickedAt)}${h.worker ? ` by ${h.worker}` : ''}.`;
+
+// Record a harvest's title with the room ("Record a harvest · Room 1") and its lead, the stamp the harvest will take
+// ("Flush 3 · Fruiting"; null when unknown).
+export const recordTitle = (roomName) => (roomName ? `Record a harvest${DOT}${roomName}` : 'Record a harvest');
+export const recordLead = (stamp) => (stamp && finite(stamp.flush) ? `Flush ${stamp.flush}${DOT}${STAGES[stamp.stage] ?? stamp.stage}` : null);
+
+// The date box's day in the farm's words under it ("Wednesday 4 Nov", the Calendar's words): a browser shows the date in its own locale (11/04/2026).
+export const dateHint = (date) => (/^\d{4}-\d{2}-\d{2}$/.test(String(date ?? '')) ? dayTitle(date) : '');
 
 // The date box and the 24 h time box (a text box: a browser's own time input follows its locale) in the farm's time,
 // whatever the browser's: { date: '2026-11-04', time: '08:12' }, and back to ms ("8:12" and "0812" are 08:12 too).

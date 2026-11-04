@@ -13,13 +13,16 @@ import { roomHash } from './route.js';
 import { DOT } from './text-math.js';
 import { openForm, closeTaskDialog, loadWorkers, setWorker, workerField, errorText } from './task-dialogs.js';
 import {
-  runHead, harvestLine, pastRow, PAST_COLUMNS, missingNote, flushColumns, flushRows, BY_CROP_COLUMNS, byCropRows, runTiles, pricesNote,
+  runHead, recordLead, recordTitle, dateHint, harvestLine, pastRow, PAST_COLUMNS, missingNote, flushColumns, flushRows,
+  BY_CROP_COLUMNS, byCropRows, runTiles, pricesNote,
   deleteTitle, deleteLead, whenBoxes, recordBody, editBody,
 } from './harvest-math.js';
 
 const REFRESH_MS = 60_000;
 const COMMAND_TIMEOUT = 15000;
-const SHOWN = 20; // the run's latest harvests; Show all for the rest
+const SHOWN = 8; // the run's latest harvests (5 on a phone); Show all for the rest
+const SHOWN_PHONE = 5;
+const PHONE = '(max-width: 600px)';
 const SHOWN_PAST = 8; // an opened past run's latest harvests
 const YIELD = 'Settings → Yield';
 
@@ -105,7 +108,7 @@ export function tileNodes(list) {
   });
 }
 
-export function createHarvestCard(host, { roomId, onGone }) {
+export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }) {
   let alive = true;
   let seq = 0; // every load takes a token; an answer that finds it changed is dropped
   let timer = null;
@@ -185,15 +188,12 @@ export function createHarvestCard(host, { roomId, onGone }) {
     title.append(el('span', 'hv-kg', l.kg), `${DOT}${l.what}`);
     text.append(title, el('p', 'hv-meta', [l.when, l.who, l.from].filter(Boolean).join(DOT)));
     const actions = el('div', 'tk-actions');
+    // one quiet Edit a row; Delete is in its dialog
     const edit = button('Edit', 'tk-quiet');
     edit.dataset.focusKey = `edit-${h.id}`;
     edit.setAttribute('aria-label', `Edit ${l.kg} picked ${l.when}`);
-    edit.addEventListener('click', () => editHarvest(h, run));
-    const del = button('Delete', 'tk-quiet');
-    del.dataset.focusKey = `delete-${h.id}`;
-    del.setAttribute('aria-label', `Delete ${l.kg} picked ${l.when}`);
-    del.addEventListener('click', () => deleteHarvest(h, li, fallback));
-    actions.append(edit, del);
+    edit.addEventListener('click', () => editHarvest(h, run, li, fallback));
+    actions.append(edit);
     li.append(picture('task', 'harvestDaily', { crop: h.crop, size: 32 }), text, actions);
     return li;
   }
@@ -208,7 +208,7 @@ export function createHarvestCard(host, { roomId, onGone }) {
     if ((run.crops ?? []).length > 1) parts.push(table('By crop', BY_CROP_COLUMNS, byCropRows(run), 1));
     runBody.replaceChildren(...parts);
     const harvests = run.harvests ?? [];
-    const shown = showAll ? harvests : harvests.slice(0, SHOWN);
+    const shown = showAll ? harvests : harvests.slice(0, window.matchMedia?.(PHONE).matches ? SHOWN_PHONE : SHOWN);
     list.replaceChildren(...shown.map((h) => harvestRow(h, run, 'harvests-title')));
     listNone.hidden = harvests.length > 0;
     more.hidden = shown.length === harvests.length;
@@ -355,12 +355,19 @@ export function createHarvestCard(host, { roomId, onGone }) {
   }
 
   const ask = (options) => openForm({ ...options, onLost: (text) => showError(text) });
-  const kgField = (value) => ({ name: 'kg', label: 'kg picked', kind: 'number', value });
-  // the day (the browser's date box, from the run's start to its end or today) and a 24 h time typed in a text box
-  const whenFields = (shown, run, now) => [
-    { name: 'pickedDate', label: 'Date', kind: 'date', value: shown.date, min: whenBoxes(run.startedAt).date, max: whenBoxes(Math.min(run.endedAt ?? now, now)).date },
-    { name: 'pickedTime', label: 'Time', kind: 'text', value: shown.time, placeholder: '08:12', inputMode: 'decimal', maxLength: 5, hint: '24 h, like 08:12' },
-  ];
+  const kgField = (value) => ({ name: 'kg', label: 'kg picked', kind: 'number', value, suffix: 'kg' });
+  // the day (the browser's date box, from the run's start to its end or today; the farm's words for it under it) and a 24 h
+  // time typed in a text box, side by side
+  const whenFields = (shown, run, now) => [{
+    kind: 'group', className: 'tk-when',
+    fields: [
+      {
+        name: 'pickedDate', label: 'Date', kind: 'date', value: shown.date, min: whenBoxes(run.startedAt).date, max: whenBoxes(Math.min(run.endedAt ?? now, now)).date,
+        hintOf: dateHint,
+      },
+      { name: 'pickedTime', label: 'Time', kind: 'text', value: shown.time, placeholder: '08:12', inputMode: 'decimal', maxLength: 5, hint: '24 h, like 08:12' },
+    ],
+  }];
   // the server's word on the time is about the day or the time: shown under the date box
   const onTime = (r) => (r !== true && r.field === 'pickedAt' ? { ...r, field: 'pickedDate' } : r);
 
@@ -378,7 +385,7 @@ export function createHarvestCard(host, { roomId, onGone }) {
     const now = Date.now();
     const shown = whenBoxes(now);
     const crops = run.crops ?? [];
-    const lead = [runHead(run)];
+    const lead = [recordLead(view.stamp)].filter(Boolean); // the flush and stage it will be stamped with
     if (!names.length) {
       const p = el('p', 'tk-lead');
       const a = el('a', '', 'Settings');
@@ -387,7 +394,7 @@ export function createHarvestCard(host, { roomId, onGone }) {
       lead.push(p);
     }
     ask({
-      title: 'Record a harvest',
+      title: recordTitle(getRoom()?.name),
       lead,
       fields: [
         ...(crops.length > 1 ? [{ name: 'crop', label: 'Crop', kind: 'select', value: crops[0].crop, options: crops.map((c) => [c.crop, cropShortName(c.crop)]) }] : []),
@@ -403,7 +410,7 @@ export function createHarvestCard(host, { roomId, onGone }) {
     });
   }
 
-  function editHarvest(h, run) {
+  function editHarvest(h, run, li, fallback) {
     const now = Date.now();
     const shown = whenBoxes(h.pickedAt);
     const l = harvestLine(h, { mixed: true }); // the crop named, whatever the room
@@ -411,7 +418,7 @@ export function createHarvestCard(host, { roomId, onGone }) {
       title: 'Edit a harvest',
       lead: [[l.what, l.who, l.from].filter(Boolean).join(DOT)],
       fields: [kgField(String(h.kg)), ...whenFields(shown, run, now)],
-      buttons: [{ value: 'save', label: 'Save', primary: true }],
+      buttons: [{ label: 'Delete this harvest', action: () => deleteHarvest(h, li, fallback) }, { value: 'save', label: 'Save', primary: true }],
       submit: async (v) => {
         const body = editBody(v, h, { run, now: Date.now(), shown });
         if (body.error) return { field: body.field, message: body.error };
@@ -421,11 +428,12 @@ export function createHarvestCard(host, { roomId, onGone }) {
     });
   }
 
-  // After it the cursor goes to the next row's Edit (the previous row's when it was the last), else the list's title (the
-  // Harvests card's, or a past run's fold).
+  // From the Edit dialog. After it the cursor goes to the next row's Edit (the previous row's when it was the last), else the
+  // list's title (the Harvests card's, or a past run's fold); Keep it goes back to the row's Edit.
   function deleteHarvest(h, li, fallback) {
     const near = li.nextElementSibling ?? li.previousElementSibling;
-    ask({
+    let gone = false;
+    const form = ask({
       title: deleteTitle(h),
       lead: [deleteLead(h), ...(h.taskId ? ["Its harvest check's kg becomes the total of what is left."] : [])],
       buttons: [{ value: 'delete', label: 'Delete', primary: true, danger: true }],
@@ -434,8 +442,14 @@ export function createHarvestCard(host, { roomId, onGone }) {
         pendingFocus = [near && `edit-${near.dataset.id}`, fallback].filter(Boolean);
         const r = await send('DELETE', `/api/harvests/${h.id}`);
         if (r !== true) pendingFocus = null;
+        gone = r === true;
         return r;
       },
+    });
+    form.closed.then(() => {
+      if (gone || !alive) return;
+      const edit = li.querySelector('[data-focus-key^="edit-"]');
+      if (edit?.isConnected && !document.querySelector('dialog[open]')) edit.focus();
     });
   }
 

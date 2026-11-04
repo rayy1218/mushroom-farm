@@ -12,6 +12,7 @@ import { request, OFFLINE } from './api.js';
 import { live } from './live.js';
 import { roomHash } from './route.js';
 import { keepLines } from './text-math.js';
+import { picture } from './pictures.js';
 import { recordsAmount, amountFields, doneBody, checkReason, checkLongterm, setupUpdate, beforeText, setupBody, taskParts } from './tasks-math.js';
 
 const WORKER_KEY = 'farm.worker';
@@ -137,9 +138,11 @@ function taskLead(row) {
 }
 
 // Opens the dialog on a form. lead: lines (text or nodes) under the title; fields: [{ name, label, kind: 'text' | 'number'
-// | 'area' | 'select' | 'check' | 'date', value, options ([value, label]), hint, min, max (a date's), placeholder,
-// inputMode, maxLength (a text's) }]; buttons: [{ value, label, primary, danger (filled red) }] after the
-// close button (closeLabel; Close when there are no buttons). submit(values, which, form) → true (closes), or { field, message }
+// | 'area' | 'select' | 'check' | 'date', value, options ([value, label]), hint, hintOf(value) (a hint that follows the box),
+// suffix (a unit inside the box), pic (a node before the label's words), min, max (a date's), placeholder, inputMode,
+// maxLength (a text's) }], or a group { kind: 'group', legend? (a fieldset), hint?, className?, fields }; buttons: [{ value,
+// label, primary, danger (filled red) }] after the close button (closeLabel; Close when there are no buttons), or { label,
+// action } (a quiet red button at the footer's start that calls action()). submit(values, which, form) → true (closes), or { field, message }
 // or { message, content?, final? } to show while it stays open (content: nodes for the line in place of the message's text;
 // final: nothing more to send, the buttons stay disabled and only the close button is left); onLost(message): a failure that came back after the dialog was closed or
 // replaced. → { input(name), button(value), alive(), closed } (alive: this opening still shows; closed: a promise kept when
@@ -162,7 +165,18 @@ export function openForm({ title, lead = [], fields = [], buttons = [], closeLab
   form.append(heading, ...lead.map((x) => (typeof x === 'string' ? el('p', 'tk-lead', keepLines(x)) : x)), formError);
   const inputs = new Map();
   const errors = new Map();
-  for (const f of fields) {
+  // A field (or a group of them) into `parent`.
+  function addField(f, parent) {
+    if (f.kind === 'group') {
+      const box = el(f.legend ? 'fieldset' : 'div', `tk-group${f.className ? ` ${f.className}` : ''}`);
+      if (f.legend) box.append(el('legend', '', f.legend));
+      if (f.hint) box.append(el('p', 'c-hint tk-group-hint', keepLines(f.hint)));
+      const row = el('div', 'tk-group-fields');
+      for (const g of f.fields) addField(g, row);
+      box.append(row);
+      parent.append(box);
+      return;
+    }
     const id = `tk-f-${f.name}`;
     const wrap = el('div', f.kind === 'check' ? 'field tk-check' : 'field');
     let input;
@@ -195,35 +209,52 @@ export function openForm({ title, lead = [], fields = [], buttons = [], closeLab
     }
     input.id = id;
     input.name = f.name;
-    const label = el('label', '', f.label);
+    const label = el('label', f.pic ? 'tk-pic-label' : '');
+    if (f.pic) label.append(f.pic);
+    label.append(f.label);
     label.htmlFor = id;
     const err = el('p', 'field-error');
     err.id = `${id}-error`;
     err.setAttribute('aria-live', 'polite');
     const described = [err.id];
-    wrap.append(...(f.kind === 'check' ? [input, label] : [label, input]));
-    if (f.hint) {
-      const hint = el('p', 'c-hint', keepLines(f.hint));
+    let box = input;
+    if (f.suffix) { // the unit inside the box, at its right end
+      box = el('span', 'tk-suffix-box');
+      box.append(input, el('span', 'tk-suffix', f.suffix));
+      box.lastChild.setAttribute('aria-hidden', 'true');
+    }
+    wrap.append(...(f.kind === 'check' ? [input, label] : [label, box]));
+    const hintText = f.hintOf ? f.hintOf(input.value) : f.hint;
+    if (hintText || f.hintOf) {
+      const hint = el('p', 'c-hint', keepLines(hintText ?? ''));
       hint.id = `${id}-hint`;
       described.unshift(hint.id);
       wrap.append(hint);
+      if (f.hintOf) input.addEventListener('input', () => { hint.textContent = keepLines(f.hintOf(input.value)); });
     }
     wrap.append(err);
     input.setAttribute('aria-describedby', described.join(' '));
     input.addEventListener('input', () => { err.textContent = ''; input.removeAttribute('aria-invalid'); });
     inputs.set(f.name, input);
     errors.set(f.name, err);
-    form.append(wrap);
+    parent.append(wrap);
   }
+  for (const f of fields) addField(f, form);
   const actions = el('div', 'actions');
   const close = button(closeLabel);
-  const sends = buttons.map((b) => {
+  const sends = buttons.filter((b) => !b.action).map((b) => {
     const x = button(b.label, b.danger ? 'danger' : b.primary ? 'primary' : '');
     if (b.primary) x.type = 'submit';
     x.value = b.value;
     return x;
   });
-  actions.append(close, ...sends);
+  // a quiet destructive button at the footer's start (Delete in an Edit dialog): it opens its own confirm
+  const asides = buttons.filter((b) => b.action).map((b) => {
+    const x = button(b.label, 'danger-text tk-aside');
+    x.addEventListener('click', () => { if (!busy) b.action(); });
+    return x;
+  });
+  actions.append(...asides, close, ...sends);
   form.append(actions);
   d.append(form);
 
@@ -286,12 +317,24 @@ export function openForm({ title, lead = [], fields = [], buttons = [], closeLab
     d.addEventListener('close', onClose);
   }).then(() => sending);
   d.showModal();
-  (fields.length ? inputs.get(fields[0].name) : heading).focus();
+  (inputs.size ? inputs.values().next().value : heading).focus();
   const handle = { input: (name) => inputs.get(name), button: (value) => sends.find((b) => b.value === value), alive: () => alive() && d.open, closed };
   return handle;
 }
 
 // ---- Done, Skip, Cancel, Add ----
+
+// The Done form's amount boxes: a mixed room's kg one per crop (its picture and name, "kg" in a narrow box, two a row) under
+// one legend and one hint; else the single box with its hint.
+function amountBoxes(amounts) {
+  if (!amounts.some((f) => f.crop)) {
+    return amounts.map((f) => ({ name: f.name, label: f.label, kind: 'number', value: '', hint: 'Leave it empty if it was not weighed or counted.' }));
+  }
+  return [{
+    kind: 'group', legend: 'kg picked', hint: 'Leave a box empty if that crop was not weighed.', className: 'tk-kg-group',
+    fields: amounts.map((f) => ({ name: f.name, label: f.label, kind: 'number', value: '', suffix: 'kg', pic: picture('crop', f.crop, { size: 24 }) })),
+  }];
+}
 
 export function createTaskActions({ onChanged, onError }) {
   let alive = true;
@@ -390,7 +433,7 @@ export function createTaskActions({ onChanged, onError }) {
     const form = ask({
       title: 'Mark done',
       lead: leadOf(row, list),
-      fields: [workerField(list), ...amounts.map((f) => ({ name: f.name, label: f.label, kind: 'number', value: '', hint: f.crop ? 'Leave it empty if it was not weighed.' : 'Leave it empty if it was not weighed or counted.' }))],
+      fields: [workerField(list), ...amountBoxes(amounts)],
       buttons: [{ value: 'done', label: 'Done', primary: true }],
       submit: async (v, _which, form) => {
         const w = picked(v);

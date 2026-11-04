@@ -46,7 +46,7 @@ test('sheet rows: the myGAP columns, the sales cells blank', () => {
 
 // ---- Task 9: the Harvest room tab ----
 
-import { runHead, harvestLine, pastRow, PAST_COLUMNS, missingNote, flushRows, byCropRows, runTiles, deleteTitle, deleteLead, pricesNote, whenBoxes, whenMs, recordBody, editBody } from '../web/harvest-math.js';
+import { recordLead, recordTitle, dateHint, runHead, harvestLine, pastRow, PAST_COLUMNS, missingNote, flushRows, byCropRows, runTiles, deleteTitle, deleteLead, pricesNote, whenBoxes, whenMs, recordBody, editBody } from '../web/harvest-math.js';
 
 const at = (y, mo, d, h = 0, mi = 0) => Date.UTC(y, mo - 1, d, h - 8, mi); // a farm time (UTC+8) in ms
 
@@ -78,7 +78,7 @@ test('the run head: when the blocks went in (or the records began) and the crops
 test('a harvest line: when, what (the crop only in a mixed room), kg exact, who, from', () => {
   const h = { id: 9, crop: 'oyster', flush: 2, kg: 2.35, pickedAt: at(2026, 11, 4, 8, 12), worker: 'Ali', taskId: 41 };
   assert.deepEqual(harvestLine(h, { mixed: false }), { when: `4${nb}Nov 08:12`, what: 'Flush 2', kg: `2.35${nb}kg`, who: 'Ali', from: 'from the harvest check' });
-  assert.deepEqual(harvestLine({ ...h, taskId: null }, { mixed: true }), { when: `4${nb}Nov 08:12`, what: `Grey oyster${dot}flush 2`, kg: `2.35${nb}kg`, who: 'Ali', from: 'recorded' });
+  assert.deepEqual(harvestLine({ ...h, taskId: null }, { mixed: true }), { when: `4${nb}Nov 08:12`, what: `Grey oyster${dot}flush 2`, kg: `2.35${nb}kg`, who: 'Ali', from: '' }, 'recorded by hand: the usual case, not said');
   assert.equal(harvestLine({ ...h, flush: null }, { mixed: false }).what, 'Before records');
   assert.equal(harvestLine({ ...h, flush: null }, { mixed: true }).what, `Grey oyster${dot}before records`);
   assert.equal(harvestLine({ ...h, worker: null }, { mixed: false }).who, '');
@@ -166,6 +166,17 @@ test('the delete question: the harvest in the title, when and who in the lead (t
   assert.equal(deleteTitle(h), `Delete 6.35${nb}kg of Lion's mane?`);
   assert.equal(deleteLead(h), `Picked 4${nb}Nov 14:36 by Kumar.`);
   assert.equal(deleteLead({ ...h, worker: null }), `Picked 4${nb}Nov 14:36.`);
+});
+
+test('Record a harvest: the stamp it will take, the date in the farm\'s words under the box', () => {
+  assert.equal(recordLead({ stage: 'fruiting', flush: 3 }), `Flush 3${dot}Fruiting`);
+  assert.equal(recordLead({ stage: 'rest', flush: 1 }), `Flush 1${dot}Rest between flushes`);
+  assert.equal(recordLead(null), null);
+  assert.equal(recordTitle('Room 1'), `Record a harvest${dot}Room 1`);
+  assert.equal(recordTitle(''), 'Record a harvest');
+  assert.equal(dateHint('2026-11-04'), 'Wednesday 4 Nov', 'as the Calendar names a day');
+  assert.equal(dateHint(''), '');
+  assert.equal(dateHint('4 Nov'), '');
 });
 
 test('the date and time boxes in the farm time: shown, read back (a 24 h time, typed loosely)', () => {

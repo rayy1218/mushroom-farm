@@ -562,7 +562,7 @@ export function mount(container, { id, tab = 'now' }) {
     cropCard?.setLights(room?.lights === true); // lights fitted or taken out: the schedule shows or goes
     simulationsCard ??= createSimulationsCard(els.simulationsHost, { roomId: id, getRoom: () => room });
     tasksCard ??= createTasksCard(els.tasksHost, { roomId: id, onCounts: (c) => { if (alive()) paintTasksDot(c); }, onGone: () => { if (alive()) load(); } });
-    harvestCard ??= createHarvestCard(els.harvestHost, { roomId: id, onGone: () => { if (alive()) load(); } });
+    harvestCard ??= createHarvestCard(els.harvestHost, { roomId: id, getRoom: () => room, onGone: () => { if (alive()) load(); } });
     filterCard ??= createFilterCard(els.filterHost, { roomId: id, onChanged: () => { if (alive()) load(); } }); // the alarms clear
     filterCard.update(room, sensors.dp, intakeRunning(machineData ?? lastMachines));
     // The Room card's filter from the replies of this load: a command later does not make the old pressure reading new.

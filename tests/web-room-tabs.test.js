@@ -94,7 +94,7 @@ test('the Tasks tab: its card, made once, gone with a missing room and on leavin
 
 test('the Harvest tab: its card, made once, gone with a missing room and on leaving', () => {
   assert.match(page, /import \{ createHarvestCard \} from '\.\/harvest-card\.js';/);
-  assert.ok(page.includes('harvestCard ??= createHarvestCard(els.harvestHost, { roomId: id, onGone: () => { if (alive()) load(); } });'));
+  assert.ok(page.includes('harvestCard ??= createHarvestCard(els.harvestHost, { roomId: id, getRoom: () => room, onGone: () => { if (alive()) load(); } });'));
   const missing = page.slice(page.indexOf('function showMissing()'), page.indexOf('function renderHead()'));
   assert.ok(missing.includes('harvestCard?.destroy();'));
   assert.ok(page.slice(page.indexOf('function unmount()')).includes('harvestCard?.destroy();'));

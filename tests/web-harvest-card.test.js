@@ -65,8 +65,13 @@ test('Record, Edit and Delete: the task dialog form, the worker box, the time bo
   assert.doesNotMatch(dialogs, /datetime-local/);
   assert.doesNotMatch(card, /datetime/);
   assert.match(dialogs, /input\.type = 'date';/);
-  assert.ok(card.includes("{ name: 'pickedDate', label: 'Date', kind: 'date', value: shown.date, min: whenBoxes(run.startedAt).date, max: whenBoxes(Math.min(run.endedAt ?? now, now)).date },"));
+  assert.ok(card.includes("name: 'pickedDate', label: 'Date', kind: 'date', value: shown.date, min: whenBoxes(run.startedAt).date, max: whenBoxes(Math.min(run.endedAt ?? now, now)).date,"));
+  assert.ok(card.includes('hintOf: dateHint,'), "the date in the farm's words under the box (audit #13)");
+  assert.ok(card.includes("kind: 'group', className: 'tk-when',"), 'Date and Time side by side');
   assert.ok(card.includes("{ name: 'pickedTime', label: 'Time', kind: 'text', value: shown.time, placeholder: '08:12', inputMode: 'decimal', maxLength: 5, hint: '24 h, like 08:12' },"));
+  assert.ok(card.includes("const kgField = (value) => ({ name: 'kg', label: 'kg picked', kind: 'number', value, suffix: 'kg' });"));
+  assert.ok(card.includes('title: recordTitle(getRoom()?.name),'), 'Record names the room (audit #12)');
+  assert.ok(card.includes('const lead = [recordLead(view.stamp)].filter(Boolean);'), 'and the flush and stage it takes');
   assert.ok(card.includes("r.field === 'pickedAt' ? { ...r, field: 'pickedDate' } : r"), "the server's pickedAt error under the date box");
   assert.ok(card.includes("workerField(names, 'Who picked it')"));
   assert.ok(card.includes("return onTime(await send('POST', `/api/rooms/${roomId}/harvests`, body));"));
@@ -83,6 +88,14 @@ test('Record a harvest is off until the first answer; a farm app without the har
   const missing = card.slice(card.indexOf('if (routeMissing(err)) {'));
   assert.ok(missing.startsWith("if (routeMissing(err)) { // a farm app from before the harvests: say so, nothing else\n        runLine.textContent = OUTDATED;\n        record.hidden = true;\n        return;"),
     'OUTDATED, Record hidden, and back before the timer is set');
+});
+
+test("one Edit a row, Delete in the Edit dialog's footer; 8 rows (5 on a phone), the meta on one line (audit #8)", () => {
+  assert.ok(!card.includes("button('Delete', 'tk-quiet')"));
+  assert.ok(card.includes("buttons: [{ label: 'Delete this harvest', action: () => deleteHarvest(h, li, fallback) }, { value: 'save', label: 'Save', primary: true }],"));
+  assert.ok(card.includes('const SHOWN = 8;') && card.includes('const SHOWN_PHONE = 5;'));
+  assert.match(css, /\.hv-meta \{[^}]*white-space: nowrap; text-overflow: ellipsis;/);
+  assert.ok(card.includes("if (edit?.isConnected && !document.querySelector('dialog[open]')) edit.focus();"), 'Keep it: back to the row');
 });
 
 test("after a Delete the cursor goes to the next row's Edit, else the list's title", () => {

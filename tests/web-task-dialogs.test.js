@@ -21,7 +21,12 @@ test('Done is one tap with a kept worker and no amount; otherwise it asks', () =
   has("if (row.kind !== 'longterm' && !recordsAmount(row) && worker && list.includes(worker)) {");
   has('const body = doneBody(row, w, v);');
   has('const r = await send(`/api/tasks/${row.id}/done`, body, form);');
-  has("f.crop ? 'Leave it empty if it was not weighed.' : 'Leave it empty if it was not weighed or counted.'");
+  has("hint: 'Leave it empty if it was not weighed or counted.'");
+  // a mixed room: the crops' boxes under one legend and one hint, each with its picture and "kg" in a narrow box (audit #15)
+  has("kind: 'group', legend: 'kg picked', hint: 'Leave a box empty if that crop was not weighed.', className: 'tk-kg-group',");
+  has("suffix: 'kg', pic: picture('crop', f.crop, { size: 24 })");
+  has("const box = el(f.legend ? 'fieldset' : 'div',");
+  has("x.addEventListener('click', () => { if (!busy) b.action(); });");
   has("r.field === 'amounts'");
   has("if (!w) return { field: 'worker', message: 'Pick who did it' };");
   has("No names yet: add the workers' names in ");
