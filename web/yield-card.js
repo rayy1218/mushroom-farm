@@ -60,9 +60,11 @@ export function mountYield(container) {
       const id = `${c.key}-${crop}`;
       const td = el('td', 'yd-cell');
       td.dataset.label = c.short; // a phone's label over the box: short, so both boxes of a row sit level
+      // A text box with the decimal keypad, as the task dialogs' kg: a number box drops text it cannot read ("1,5" reads as
+      // empty, saved as not set), where yieldBody names the box and the range.
       const input = el('input');
-      Object.assign(input, { id: `f-yd-${id}`, name: id, type: 'number', min: String(c.range[0]), max: String(c.range[1]), step: '0.01', inputmode: 'decimal', placeholder: 'not set' });
-      input.setAttribute('aria-label', `${CROPS[crop].name}: ${c.label}`);
+      Object.assign(input, { id: `f-yd-${id}`, name: id, type: 'text', inputMode: 'decimal', autocomplete: 'off', placeholder: 'not set' });
+      input.setAttribute('aria-label', `${CROPS[crop].name}: ${c.label}, ${c.range[0].toLocaleString('en-US')} to ${c.range[1].toLocaleString('en-US')}`);
       input.setAttribute('aria-describedby', `e-yd-${id}`);
       const err = el('p', 'field-error');
       err.id = `e-yd-${id}`;

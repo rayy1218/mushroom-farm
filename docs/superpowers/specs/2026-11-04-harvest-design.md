@@ -117,7 +117,8 @@ card's note: "Biological efficiency is fresh kg over the dry substrate's kg. A 2
 |---|---|
 | `tests/harvest-math.test.js` (pure) | kg per block, BE, RM and cost per kg for one crop and a mixed room; missing figures; flushes with the "Before records" row; buckets by day, week and month |
 | `tests/db-harvest.test.js` | The upgrade from 19 (runs for rooms with crops, copied rows, partial), the run's life with `setProgram`, the unique open run, delete room |
-| `tests/harvest-api.test.js` | Done with amount and amounts (mixed room), the 400s, the task total after edit and delete, Record a harvest (time limits, no crops 409), the room and farm views, the CSV, the `harvest` events, `harvestCrops` on views |
+| `tests/harvests.test.js` | Done with amount and amounts (mixed room), the 400s, the task total after edit and delete, Record a harvest (time limits, no crops 409), the room and farm views, their cost (pending while a cold room's days are worked out), the CSV, `harvestCrops` on views |
+| `tests/api-harvest.test.js` | The routes, the days check, the `harvest` events (a write, a warm done, a Settings save with `roomId: null`) and the tasks events of a check's harvest edit or delete |
 | `tests/crop-api.test.js` (added) | Crops given, New blocks, a block count change, crops cleared: the run |
 | `tests/settings.test.js` (added) | `cropYield` checks and read-back |
 | `tests/web-harvest-math.test.js` | The formatter, the summary line, the sheet rows, the flushes table's columns |

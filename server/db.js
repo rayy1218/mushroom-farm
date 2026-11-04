@@ -939,7 +939,6 @@ export function openDb(path, { log = console.error } = {}) {
     openRun: db.prepare('SELECT * FROM runs WHERE room_id = ? AND ended_at IS NULL'),
     cropRun: db.prepare('SELECT * FROM runs WHERE id = ?'),
     cropRuns: db.prepare('SELECT * FROM runs WHERE room_id = ? ORDER BY started_at DESC, id DESC'),
-    runsBetween: db.prepare('SELECT * FROM runs WHERE started_at <= ?2 AND (ended_at IS NULL OR ended_at >= ?1) ORDER BY started_at, id'),
     startRun: db.prepare('INSERT INTO runs (room_id, started_at, crops) VALUES (?, ?, ?)'),
     setRunCrops: db.prepare('UPDATE runs SET crops = ? WHERE room_id = ? AND ended_at IS NULL'),
     endRun: db.prepare('UPDATE runs SET ended_at = ? WHERE room_id = ? AND ended_at IS NULL'),
@@ -948,7 +947,6 @@ export function openDb(path, { log = console.error } = {}) {
                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
     harvest: db.prepare('SELECT * FROM harvests WHERE id = ?'),
     runHarvests: db.prepare('SELECT * FROM harvests WHERE run_id = ? ORDER BY picked_at, id'),
-    taskHarvests: db.prepare('SELECT * FROM harvests WHERE task_id = ? ORDER BY picked_at, id'),
     harvestsBetween: db.prepare('SELECT * FROM harvests WHERE picked_at BETWEEN ? AND ? ORDER BY picked_at, id'),
     updateHarvest: db.prepare('UPDATE harvests SET kg = ?, picked_at = ? WHERE id = ?'),
     deleteHarvest: db.prepare('DELETE FROM harvests WHERE id = ?'),
@@ -1950,11 +1948,6 @@ export function openDb(path, { log = console.error } = {}) {
       return q.cropRuns.all(roomId).map(runOf);
     },
 
-    // The runs of every room that were open at some time in [from, to] (ms), oldest first.
-    runsBetween(from, to) {
-      return q.runsBetween.all(from, to).map(runOf);
-    },
-
     // A new harvest: { roomId, runId, crop, stage, flush, blocks, kg, pickedAt, worker, taskId, at }. → the harvest.
     // Throws when kg is not over 0 up to 10,000.
     insertHarvest(fields) {
@@ -1970,11 +1963,6 @@ export function openDb(path, { log = console.error } = {}) {
     // The run's harvests, oldest pick first.
     runHarvests(runId) {
       return q.runHarvests.all(runId).map(harvestOf);
-    },
-
-    // The harvests a task's close recorded, oldest pick first.
-    taskHarvests(taskId) {
-      return q.taskHarvests.all(taskId).map(harvestOf);
     },
 
     // The harvests of every room picked in [from, to] (ms), oldest first.

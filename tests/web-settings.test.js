@@ -141,7 +141,7 @@ test('yieldBody: empty text is not set, a crop with both empty is left out', () 
 
 test('yieldBody: a bad input is named by field and crop, with the range', () => {
   for (const [dryKg, priceKg, field] of [['0.04', '', 'dryKg:oyster'], ['20.5', '', 'dryKg:oyster'], ['abc', '', 'dryKg:oyster'], ['-1', '', 'dryKg:oyster'],
-    ['', '1000.5', 'priceKg:oyster'], ['', '-2', 'priceKg:oyster'], ['', '1e2', 'priceKg:oyster']]) {
+    ['1,5', '', 'dryKg:oyster'], ['', '1,5', 'priceKg:oyster'], ['', '1000.5', 'priceKg:oyster'], ['', '-2', 'priceKg:oyster'], ['', '1e2', 'priceKg:oyster']]) {
     const r = yieldBody([{ crop: 'oyster', dryKg, priceKg }]);
     assert.equal(r.field, field, `${dryKg}/${priceKg}`);
     assert.match(r.error, /Grey oyster/);

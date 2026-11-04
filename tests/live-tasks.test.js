@@ -9,6 +9,9 @@ import { createEvents } from '../server/events.js';
 import { createTasks } from '../server/tasks.js';
 import { createCropApi } from '../server/crop-api.js';
 
+// A check's harvests, oldest pick first (the db has no lookup by task: the app reads harvests by run or by time).
+const taskHarvests = (db, taskId) => db.harvestsBetween(-8.64e15, 8.64e15).filter((h) => h.taskId === taskId);
+
 const ROOM = { name: 'Room 1', length: 6, width: 4, height: 2.5 };
 
 // The tasks module on a clock that stands still at the test's start, so the counts compared across requests stay those of
@@ -124,5 +127,5 @@ test('a closed server no longer publishes a Done that made harvests', async (t) 
   events.subscribe((type, data) => got.push([type, data]));
   tasks.done(row.id, { worker: 'Ali', amount: 2 });
   assert.deepEqual(got, []);
-  assert.equal(db.taskHarvests(row.id).length, 1, 'the harvest was made all the same');
+  assert.equal(taskHarvests(db, row.id).length, 1, 'the harvest was made all the same');
 });

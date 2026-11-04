@@ -57,6 +57,10 @@ test('Settings → Yield: the inputs styled as the app\'s, 44 px on a phone, the
   const yd = src('yield-card.js');
   assert.ok(yd.includes("short: 'Dry kg per block'") && yd.includes("short: 'RM per kg'"));
   assert.ok(yd.includes('td.dataset.label = c.short;'));
+  // a text box, so "1,5" is an error yieldBody names rather than a number box's silent empty
+  assert.ok(yd.includes("type: 'text', inputMode: 'decimal', autocomplete: 'off', placeholder: 'not set'"));
+  assert.doesNotMatch(yd, /type: 'number'/);
+  assert.ok(yd.includes("`${CROPS[crop].name}: ${c.label}, ${c.range[0].toLocaleString('en-US')} to ${c.range[1].toLocaleString('en-US')}`"), 'the range in its name');
 });
 
 test('Record, Edit and Delete: the task dialog form, the worker box, the time box, the bodies from harvest-math', () => {

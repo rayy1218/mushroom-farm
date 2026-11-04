@@ -12,6 +12,9 @@ import { harvestCropsOf } from '../server/task-rules.js';
 import { fixedZone } from '../server/usage.js';
 import { CSV_HEADER, round } from '../server/harvest-math.js';
 
+// A check's harvests, oldest pick first (the db has no lookup by task: the app reads harvests by run or by time).
+const taskHarvests = (db, taskId) => db.harvestsBetween(-8.64e15, 8.64e15).filter((h) => h.taskId === taskId);
+
 const DAY = 86_400_000;
 const NOW = Date.UTC(2026, 10, 4, 1); // 4 Nov 2026 09:00 on the farm's clock
 const ROOM = { name: 'Room 1', length: 6, width: 4, height: 2.5, trhAddress: 1 };
@@ -73,7 +76,7 @@ test('Done on a harvest check with kg: a harvest stamped with the run, crop, sta
   assert.equal(closed.amount, 2.4);
   assert.equal(closed.harvestCrops, null, 'a closed row: null');
   const run = s.db.openRun(s.id);
-  const [h, ...rest] = s.db.taskHarvests(row.id);
+  const [h, ...rest] = taskHarvests(s.db, row.id);
   assert.equal(rest.length, 0);
   assert.deepEqual(
     { crop: h.crop, kg: h.kg, flush: h.flush, stage: h.stage, blocks: h.blocks, runId: h.runId, roomId: h.roomId, pickedAt: h.pickedAt, worker: h.worker },
@@ -82,14 +85,14 @@ test('Done on a harvest check with kg: a harvest stamped with the run, crop, sta
 
   const pm = s.row('harvestPm');
   assert.equal(s.tasks.done(pm.id, { worker: 'Ali', amount: 0 }).amount, 0, '0 stays on the task');
-  assert.deepEqual(s.db.taskHarvests(pm.id), [], 'and makes no harvest');
+  assert.deepEqual(taskHarvests(s.db, pm.id), [], 'and makes no harvest');
   s.later(DAY);
   const next = s.row('harvestAm');
   assert.equal(s.tasks.done(next.id, { worker: 'Ali', amount: '' }).amount, null, 'empty: no amount');
-  assert.deepEqual(s.db.taskHarvests(next.id), []);
+  assert.deepEqual(taskHarvests(s.db, next.id), []);
   const one = s.row('harvestPm');
   assert.equal(s.tasks.done(one.id, { worker: 'Ali', amounts: { oyster: 1.5 } }).amount, 1.5, 'amounts with the one crop is taken too');
-  assert.equal(s.db.taskHarvests(one.id)[0].kg, 1.5);
+  assert.equal(taskHarvests(s.db, one.id)[0].kg, 1.5);
 });
 
 test('a mixed room: amounts per crop; amount alone refused; a crop the rule is not for refused', (t) => {
@@ -100,11 +103,11 @@ test('a mixed room: amounts per crop; amount alone refused; a crop the rule is n
   refused(() => s.tasks.done(row.id, { worker: 'Ali', amounts: { oyster: -1 } }), TaskError, 400, null, 'amounts');
   refused(() => s.tasks.done(row.id, { worker: 'Ali', amounts: [2] }), TaskError, 400, null, 'amounts');
   assert.equal(s.tasks.done(row.id, { worker: 'Ali', amounts: { oyster: 2, lionsmane: 0.5 } }).amount, 2.5);
-  assert.deepEqual(s.db.taskHarvests(row.id).map((h) => [h.crop, h.kg, h.blocks]), [['oyster', 2, 500], ['lionsmane', 0.5, 100]]);
+  assert.deepEqual(taskHarvests(s.db, row.id).map((h) => [h.crop, h.kg, h.blocks]), [['oyster', 2, 500], ['lionsmane', 0.5, 100]]);
 
   const pm = s.row('harvestPm');
   assert.equal(s.tasks.done(pm.id, { worker: 'Ali', amounts: { oyster: '', lionsmane: null } }).amount, null, 'all empty: no amount');
-  assert.deepEqual(s.db.taskHarvests(pm.id), []);
+  assert.deepEqual(taskHarvests(s.db, pm.id), []);
 
   const other = s.room('Room 2', [{ crop: 'oyster', blocks: 300 }, { crop: 'woodear', blocks: 200 }]);
   const am = s.row('harvestAm', other);
@@ -113,7 +116,7 @@ test('a mixed room: amounts per crop; amount alone refused; a crop the rule is n
   assert.deepEqual(s.row('harvestDaily', other).harvestCrops, [{ crop: 'woodear', name: 'Black jelly (wood ear)' }]);
   refused(() => s.tasks.done(s.row('footbath', other).id, { worker: 'Ali', amounts: { oyster: 1 } }), TaskError, 400, null, 'amounts');
   assert.equal(s.tasks.done(am.id, { worker: 'Ali', amount: 1.2 }).amount, 1.2, 'one crop of the rule: amount as now');
-  assert.deepEqual(s.db.taskHarvests(am.id).map((h) => [h.crop, h.blocks]), [['oyster', 300]]);
+  assert.deepEqual(taskHarvests(s.db, am.id).map((h) => [h.crop, h.blocks]), [['oyster', 300]]);
 });
 
 test('harvestCropsOf: the room\'s crops a harvest rule is for, in the room\'s order; null for another rule', () => {
@@ -128,7 +131,7 @@ test('a Done with kg in a room with no open run makes no harvest; the amount sta
   s.db.setProgram(s.id, s.db.getProgram(s.id), { change: 'end', at: NOW });
   const row = s.row('harvestAm');
   assert.equal(s.tasks.done(row.id, { worker: 'Ali', amount: 2 }).amount, 2);
-  assert.deepEqual(s.db.taskHarvests(row.id), []);
+  assert.deepEqual(taskHarvests(s.db, row.id), []);
   assert.deepEqual(s.harvested, []);
 });
 
@@ -171,7 +174,7 @@ test('edit and delete keep the task total: the sum left, null when nothing is le
   s.set(NOW);
   const row = s.row('harvestAm');
   s.tasks.done(row.id, { worker: 'Ali', amounts: { oyster: 2, lionsmane: 0.5 } });
-  const [oyster, mane] = s.db.taskHarvests(row.id);
+  const [oyster, mane] = taskHarvests(s.db, row.id);
   const edited = s.harvests.edit(oyster.id, { kg: 3 });
   assert.equal(edited.kg, 3);
   assert.equal(edited.pickedAt, NOW, 'the time kept');

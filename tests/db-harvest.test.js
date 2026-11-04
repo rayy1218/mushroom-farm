@@ -8,6 +8,9 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { openDb } from '../server/db.js';
 
+// A check's harvests, oldest pick first (the db has no lookup by task: the app reads harvests by run or by time).
+const taskHarvests = (db, taskId) => db.harvestsBetween(-8.64e15, 8.64e15).filter((h) => h.taskId === taskId);
+
 const ROOM = { name: 'Room 1', length: 6, width: 4, height: 2.5 };
 
 function fresh(t) {
@@ -108,8 +111,6 @@ test('setProgram with a run: start, update, end, restart; one open run per room'
   db.setProgram(id, withCrops(db, id, []), { change: 'end', at: 13_000 });
   assert.equal(db.openRun(id), null);
   assert.deepEqual(db.cropRuns(id).map((r) => r.id), [second.id, first.id], 'newest first');
-  assert.deepEqual(db.runsBetween(11_500, 12_500).map((r) => r.id).sort(), [first.id, second.id].sort());
-  assert.deepEqual(db.runsBetween(12_500, 20_000).map((r) => r.id), [second.id]);
   assert.throws(() => db.setProgram(id, withCrops(db, id, [{ crop: 'oyster', blocks: 1 }]), { change: 'update', at: 14_000 }), /no open run/i);
   assert.deepEqual(db.getProgram(id).crops, [], 'the program is not written when its run change fails');
   db.setProgram(id, withCrops(db, id, [{ crop: 'oyster', blocks: 1 }]), { change: 'restart', at: 15_000 });
@@ -128,10 +129,10 @@ test('harvest rows: insert, list by run and by time, edit, delete; closeTask wri
   const task = db.dailyTasks(id, '2026-11-01')[0];
   db.closeTask(task.id, { status: 'done', at: 22_000, worker: 'Ali', amount: 1.5 }, null,
     [{ roomId: id, runId: run.id, crop: 'oyster', stage: 'fruiting', flush: 1, blocks: 500, kg: 1.5, pickedAt: 22_000, worker: 'Ali', taskId: task.id, at: 22_000 }]);
-  assert.deepEqual(db.taskHarvests(task.id).map((r) => r.kg), [1.5]);
+  assert.deepEqual(taskHarvests(db, task.id).map((r) => r.kg), [1.5]);
   // A row already closed records nothing (a second Done); a bad harvest on an open row throws.
   assert.equal(db.closeTask(task.id, { status: 'done', at: 23_000 }, null, [{ roomId: id, runId: run.id, crop: 'oyster', stage: 'fruiting', flush: 1, blocks: 500, kg: 9, pickedAt: 23_000, worker: 'A', taskId: task.id, at: 23_000 }]), false);
-  assert.deepEqual(db.taskHarvests(task.id).map((r) => r.kg), [1.5]);
+  assert.deepEqual(taskHarvests(db, task.id).map((r) => r.kg), [1.5]);
   db.insertDailyTask({ roomId: id, ruleKey: 'harvestPm', date: '2026-11-01', slot: 'afternoon', text: 'Harvest check', unit: 'kg', at: 5000 });
   const pm = db.dailyTasks(id, '2026-11-01')[1];
   assert.throws(() => db.closeTask(pm.id, { status: 'done', at: 23_000 }, null, [{ roomId: id, runId: run.id, crop: 'oyster', stage: 'fruiting', flush: 1, blocks: 500, kg: -1, pickedAt: 1, worker: 'A', taskId: pm.id, at: 1 }]));
@@ -152,7 +153,7 @@ test('a bad harvest rolls back the close; edit and delete set the task amount to
   assert.throws(() => db.closeTask(task.id, { status: 'done', at: 22_000, worker: 'Ali', amount: 20_001 }, null, [row(20_001)]));
   assert.equal(db.getTask(task.id).status, 'open', 'the close rolled back');
   assert.equal(db.closeTask(task.id, { status: 'done', at: 22_000, worker: 'Ali', amount: 3 }, null, [row(1), row(2)]), true);
-  const [one, two] = db.taskHarvests(task.id);
+  const [one, two] = taskHarvests(db, task.id);
   // The db works the total out from the task's harvests, rounded as the kg are (1.1 + 2.2 is 3.3000000000000003 in floats).
   assert.equal(db.updateHarvest(one.id, { kg: 1.1, pickedAt: 22_000 }).kg, 1.1);
   db.updateHarvest(two.id, { kg: 2.2, pickedAt: 22_000 });
