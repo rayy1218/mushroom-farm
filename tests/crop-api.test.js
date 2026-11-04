@@ -265,3 +265,32 @@ test('a done room: the same crops with more flushes resume it; newBlocks true re
   doneProgram();
   assert.equal((await put({ crops: view.crops, rampH: 2 })).body.done, true, 'the same crops with another change: still done');
 });
+
+test('runs: crops given open one, a block change updates it, new blocks restart it, clearing ends it', async () => {
+  await put({ crops: [{ crop: 'oyster', blocks: 500 }] });
+  const first = db.openRun(id);
+  assert.deepEqual(first.crops, [{ crop: 'oyster', blocks: 500 }]);
+  await put({ crops: [{ crop: 'oyster', blocks: 450 }] });
+  assert.equal(db.openRun(id).id, first.id);
+  assert.deepEqual(db.openRun(id).crops, [{ crop: 'oyster', blocks: 450 }]);
+  await put({ flushes: 3 });
+  assert.equal(db.openRun(id).id, first.id, 'a program change without crops leaves the run');
+  await put({ crops: [{ crop: 'oyster', blocks: 450 }], rampH: 2 });
+  assert.equal(db.openRun(id).id, first.id, 'the same crops leave the run');
+  db.setProgram(id, { ...db.getProgram(id), done: true });
+  await put({ crops: [{ crop: 'oyster', blocks: 450 }], newBlocks: true });
+  const second = db.openRun(id);
+  assert.notEqual(second.id, first.id);
+  assert.notEqual(db.getRunById(first.id).endedAt, null);
+  await put({ crops: [] });
+  assert.equal(db.openRun(id), null);
+  assert.notEqual(db.getRunById(second.id).endedAt, null);
+});
+
+test('runs: a running room with no open run starts one when its crops change', async () => {
+  await put({ crops: OYSTER });
+  db.setProgram(id, db.getProgram(id), { change: 'end', at: 1 });
+  assert.equal(db.openRun(id), null);
+  await put({ crops: [{ crop: 'oyster', blocks: 90 }] });
+  assert.deepEqual(db.openRun(id).crops, [{ crop: 'oyster', blocks: 90 }]);
+});

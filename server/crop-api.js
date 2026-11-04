@@ -78,7 +78,15 @@ export function createCropApi({ db, now = Date.now }) {
         // At once: the controller writes a ramp each cycle, but a stage without one is written now.
         if (program.ramp.endAt === program.stageSince) db.setControl(roomId, { ...control, ...program.ramp.to });
       }
-      db.setProgram(roomId, program);
+      // The run of blocks (spec 2026-11-04-harvest-design.md 2.1): crops given to an empty room open one, new blocks end it
+      // and open the next, a change of crops or blocks in a running room updates it, crops cleared end it.
+      let run = null;
+      const at = now();
+      if (newBlocks) run = { change: 'restart', at };
+      else if (was.crops.length === 0 && next.crops.length > 0) run = { change: 'start', at };
+      else if (was.crops.length > 0 && next.crops.length === 0) run = { change: 'end', at };
+      else if ('crops' in body && !sameCrops && next.crops.length > 0) run = { change: db.openRun(roomId) ? 'update' : 'start', at };
+      db.setProgram(roomId, program, run);
       return view(roomId);
     },
   };
