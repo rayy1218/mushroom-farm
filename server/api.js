@@ -83,10 +83,11 @@ export function createApi(db, machines = null, controller = null, poller = null,
     publishDue();
   }) : () => {};
   // The harvests (spec 2026-11-04-harvest-design.md 6): a record, edit or delete here, or a Done that made harvests (the
-  // tasks module's onHarvest), tells the pages. An edit or delete of a check's harvest changes its row's amount too.
+  // tasks module's onHarvest), tells the pages. An edit or delete of a check's harvest changes its row's amount too (the room's
+  // Tasks tab, and Today and Calendar, which hear 'tasks').
   const harvests = createHarvests({ db });
   const publishHarvest = (roomId) => events?.publish('harvest', { roomId });
-  const harvestRoutes = createHarvestRoutes({ harvests, onTaskChange: (roomId) => publishRoom(roomId, 'tasks') });
+  const harvestRoutes = createHarvestRoutes({ harvests, onTaskChange: (roomId) => { publishRoom(roomId, 'tasks'); publishDue(); } });
   const stopTellingHarvests = [harvests.onChange(publishHarvest), taskStore.onHarvest(publishHarvest)];
   const stopTelling = () => { stopTellingTasks(); stopTellingHarvests.forEach((stop) => stop()); harvests.stop(); };
   // The room body; on the farm's gateway its addresses must differ from the outdoor sensor's (read through that gateway).
@@ -133,6 +134,8 @@ export function createApi(db, machines = null, controller = null, poller = null,
       writeSettings(db, result.settings);
       if (result.settings.pollSeconds !== undefined) poller?.setIntervalMs(readSettings(db).pollSeconds * 1000);
       telegram?.settingsChanged();
+      // The yield figures and the prices are every room's harvest figures (RM value, BE, cost per kg): all rooms (null).
+      if (['cropYield', 'electricityPrice', 'waterPrice'].some((key) => Object.hasOwn(result.settings, key))) publishHarvest(null);
       return send(res, 200, settingsReply());
     }
     if (path === '/api/settings/telegram/test' && telegram) {

@@ -32,10 +32,11 @@ const bodyOf = (body) => {
   return body;
 };
 
-// kg: a number over 0 up to MAX_KG, to 3 places.
+// kg: a number over 0 up to MAX_KG once rounded to 3 places (0.0004 is 0, refused).
 function kgOf(v, field = 'kg') {
-  if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0 || v > MAX_KG) throw new HarvestError(400, 'kg must be a number over 0 up to 10,000', field);
-  return round(v, 3);
+  const kg = typeof v === 'number' && Number.isFinite(v) ? round(v, 3) : NaN;
+  if (!(kg > 0 && kg <= MAX_KG)) throw new HarvestError(400, 'kg must be a number over 0 up to 10,000', field);
+  return kg;
 }
 
 // A harvest's cost from the usage days: { cost (electricity and water when a water price is set), days, water, none? }; none:

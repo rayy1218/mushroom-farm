@@ -105,7 +105,7 @@ test('GET /api/harvest and its CSV; days must be 7, 30, 90 or 365', async (t) =>
   assert.equal((await raw('POST', '/api/harvest.csv')).status, 404);
 });
 
-test('a harvest event with the room id on each write; a check\'s harvest edit or delete also tells the Tasks tab', async (t) => {
+test('a harvest event with the room id on each write; a check\'s harvest edit or delete also tells the Tasks tab, Today and Calendar', async (t) => {
   const { call, room, harvestEvents, seen } = await app(t);
   const id = await room();
   const made = await call('POST', `/api/rooms/${id}/harvests`, { kg: 1, crop: 'oyster', worker: 'Ali' });
@@ -122,15 +122,18 @@ test('a harvest event with the room id on each write; a check\'s harvest edit or
   assert.equal(done.status, 200, JSON.stringify(done.body));
   assert.equal(harvestEvents().length, 4, 'the Done of a harvest check publishes one');
   const tasksBefore = seen.filter(([type, d]) => type === 'room' && d.part === 'tasks').length;
+  const dueBefore = seen.filter(([type]) => type === 'tasks').length;
   const picked = (await call('GET', `/api/rooms/${id}/harvests`)).body;
   const fromTask = picked.current.harvests.find((h) => h.taskId === row.id);
   assert.ok(fromTask, JSON.stringify(picked));
   await call('PUT', `/api/harvests/${fromTask.id}`, { kg: 2.5 });
   assert.equal(harvestEvents().length, 5);
   assert.equal(seen.filter(([type, d]) => type === 'room' && d.part === 'tasks' && d.id === id).length, tasksBefore + 1);
+  assert.equal(seen.filter(([type]) => type === 'tasks').length, dueBefore + 1, 'Today and Calendar listen to tasks');
   await call('DELETE', `/api/harvests/${fromTask.id}`);
   assert.equal(harvestEvents().length, 6);
   assert.equal(seen.filter(([type, d]) => type === 'room' && d.part === 'tasks' && d.id === id).length, tasksBefore + 2);
+  assert.equal(seen.filter(([type]) => type === 'tasks').length, dueBefore + 2);
 });
 
 test('the Done body amounts on a mixed room through POST /api/tasks/:id/done', async (t) => {
@@ -158,4 +161,17 @@ test('a cold farm view says the cost is pending, works the days out in the backg
   for (let i = 0; i < 200 && harvestEvents().length === before; i++) await new Promise((r) => setTimeout(r, 10));
   assert.deepEqual(harvestEvents().slice(before), [{ roomId: id }], 'the room is told once its days are worked out');
   assert.equal((await call('GET', '/api/harvest?days=30')).body.totals.cost.none, 'no-energy', 'worked out: nothing recorded');
+});
+
+test('a Settings save of the yield figures or the prices tells every room\'s harvest pages (roomId null); others do not', async (t) => {
+  const { call, harvestEvents } = await app(t);
+  const yieldPut = await call('PUT', '/api/settings', { cropYield: { oyster: { dryKg: 1, priceKg: 10 } } });
+  assert.equal(yieldPut.status, 200, JSON.stringify(yieldPut.body));
+  assert.deepEqual(harvestEvents(), [{ roomId: null }]);
+  assert.equal((await call('PUT', '/api/settings', { electricityPrice: 0.6 })).status, 200);
+  assert.deepEqual(harvestEvents(), [{ roomId: null }, { roomId: null }], 'the cost per kg is at today\'s prices');
+  assert.equal((await call('PUT', '/api/settings', { pollSeconds: 5 })).status, 200);
+  assert.equal(harvestEvents().length, 2, 'the reading interval: no harvest figure changes');
+  assert.equal((await call('PUT', '/api/settings', { cropYield: 'x' })).status, 400);
+  assert.equal(harvestEvents().length, 2, 'a refused save tells no one');
 });

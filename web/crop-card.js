@@ -15,6 +15,7 @@ import { picture } from './pictures.js';
 import { mainCrop } from './room-card-math.js';
 import { request, OFFLINE } from './api.js';
 import { live } from './live.js';
+import { createThrottle } from './live-math.js';
 import { roomHash } from './route.js';
 import { DOT } from './text-math.js';
 import { summaryLine } from './harvest-math.js';
@@ -772,9 +773,11 @@ export function createCropCard(host, { roomId, onChange, onData, onOffline, onGo
     yieldLine.hidden = !show;
     if (show) yieldText.textContent = summaryLine(harvestRun ?? {}, last.flush);
   }
+  // A harvest of this room, or of every room (roomId null: Settings → Yield), asks again at most once in 2 s.
+  const reloadHarvests = createThrottle(() => { if (alive) loadHarvests(); });
   const offLive = [
-    live.on('harvest', (d) => { if (alive && d.roomId === roomId) loadHarvests(); }),
-    live.onStatus((up) => { if (alive && up && harvestKey) loadHarvests(); }), // events may have been missed meanwhile
+    live.on('harvest', (d) => { if (alive && (d.roomId === null || d.roomId === roomId)) reloadHarvests.call(); }),
+    live.onStatus((up) => { if (alive && up && harvestKey) reloadHarvests.call(); }), // events may have been missed meanwhile
   ];
 
   // ---- loading ----
@@ -816,6 +819,6 @@ export function createCropCard(host, { roomId, onChange, onData, onOffline, onGo
     bandsChanged() {
       if (alive && last) paint(last);
     },
-    destroy() { alive = false; seq++; harvestSeq++; for (const off of offLive) off(); clearTimeout(timer); if (confirm.open) confirm.close(); host.replaceChildren(); },
+    destroy() { alive = false; seq++; harvestSeq++; for (const off of offLive) off(); reloadHarvests.cancel(); clearTimeout(timer); if (confirm.open) confirm.close(); host.replaceChildren(); },
   };
 }

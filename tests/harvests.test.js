@@ -150,6 +150,9 @@ test('record: a crop of the open run, kg 0 < kg ≤ 10,000, a worker, a time fro
   const KG = 'kg must be a number over 0 up to 10,000';
   refused(() => s.harvests.record(s.id, { crop: 'oyster', kg: 0, worker: 'Ali' }), HarvestError, 400, KG, 'kg');
   refused(() => s.harvests.record(s.id, { crop: 'oyster', kg: 10_000.5, worker: 'Ali' }), HarvestError, 400, KG, 'kg');
+  refused(() => s.harvests.record(s.id, { crop: 'oyster', kg: 0.0004, worker: 'Ali' }), HarvestError, 400, KG, 'kg');
+  refused(() => s.harvests.edit(h.id, { kg: 0.0004 }), HarvestError, 400, KG, 'kg');
+  assert.equal(s.harvests.record(s.id, { crop: 'oyster', kg: 0.0006, worker: 'Ali' }).kg, 0.001, '0.0006 is 0.001 to 3 places');
   refused(() => s.harvests.record(s.id, { crop: 'oyster', kg: '2', worker: 'Ali' }), HarvestError, 400, KG, 'kg');
   refused(() => s.harvests.record(s.id, { crop: 'pink', kg: 1, worker: 'Ali' }), HarvestError, 400, null, 'crop');
   refused(() => s.harvests.record(s.id, { crop: 'oyster', kg: 1, worker: ' ' }), HarvestError, 400, 'Pick who did it', 'worker');

@@ -61,7 +61,7 @@ owner then told the lead to go on without them (2026-11-04): the lead chose the 
 | Edit | kg and when; the dialog's footer has a quiet red "Delete this harvest" at its start, which opens Delete's confirm (audit #8). A harvest from a check changes its task's `amount` to the new total of the task's harvests, in one transaction. |
 | Delete | With a confirm: the title "Delete 2.40 kg of Grey oyster?", the lead "Picked 4 Nov 08:12 by Ali." (audit #14). A harvest from a check: the task's `amount` becomes the total of what is left, null when nothing is left. |
 | Who | The tasks' worker check (`workerOf`): an active worker when the farm has a list. |
-| Events | Every write publishes `harvest` `{ roomId }`; the Harvest tab, the Crop summary, the Harvest page and the Overview card read again. A Done on a harvest check also publishes the tasks events as now. |
+| Events | Every write publishes `harvest` `{ roomId }`; the Harvest tab, the Crop summary, the Harvest page and the Overview card read again. A Settings save of the yield figures or the prices publishes `harvest` `{ roomId: null }`: every room's (the room-scoped listeners take null as all rooms). A Done on a harvest check also publishes the tasks events as now; an edit or delete of a check's harvest publishes the room's `tasks` part and `tasks` `{ due }` (Today and Calendar). |
 
 ## 4. The figures (`server/harvest-math.js`, pure)
 

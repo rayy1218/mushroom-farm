@@ -15,7 +15,7 @@ const css = src('styles.css');
 test("the card reads the room's harvests and asks again on its harvest events, a crop change and the stream coming back", () => {
   assert.ok(card.includes("request('GET', `/api/rooms/${roomId}/harvests`)"));
   assert.ok(EVENT_TYPES.includes('harvest'));
-  assert.ok(card.includes("live.on('harvest', (d) => { if (d.roomId === roomId) reload.call(); })"));
+  assert.ok(card.includes("live.on('harvest', (d) => { if (d.roomId === null || d.roomId === roomId) reload.call(); })"), 'null: every room');
   assert.ok(card.includes("live.on('room', (d) => { if (d.id === roomId && d.part === 'crop') reload.call(); })"));
   const destroy = card.slice(card.indexOf('destroy() {'));
   for (const x of ['reload.cancel();', 'clearTimeout(timer);', 'for (const off of offLive) off();', 'host.className = hostClass;']) assert.ok(destroy.includes(x), x);
@@ -106,10 +106,13 @@ test("after a Delete the cursor goes to the next row's Edit, else the list's tit
   assert.ok(card.includes('const keys = pendingFocus ?? (focusKey ? [focusKey] : []);'));
 });
 
-test('the Crop tab: the run in one line with a link to the Harvest tab, read on the harvest events', () => {
+test('the Crop tab: the run in one line with a link to the Harvest tab, read on the harvest events (throttled; null: every room)', () => {
   assert.ok(crop.includes("yieldLink.href = roomHash(roomId, 'harvest');"));
   assert.ok(crop.includes('yieldText.textContent = summaryLine(harvestRun ?? {}, last.flush);'));
-  assert.ok(crop.includes("live.on('harvest', (d) => { if (alive && d.roomId === roomId) loadHarvests(); }),"));
+  assert.ok(crop.includes("const reloadHarvests = createThrottle(() => { if (alive) loadHarvests(); });"));
+  assert.ok(crop.includes("live.on('harvest', (d) => { if (alive && (d.roomId === null || d.roomId === roomId)) reloadHarvests.call(); }),"));
+  assert.ok(crop.includes('live.onStatus((up) => { if (alive && up && harvestKey) reloadHarvests.call(); })'));
+  assert.ok(crop.includes('reloadHarvests.cancel();'), 'a reload waiting is dropped on destroy');
   assert.ok(crop.includes('const show = Boolean(last) && hasCrops(last) && harvestRun !== undefined;'));
   // cleared crops forget the key, so the same crops given again (a new run) are read again
   assert.ok(crop.includes("const key = hasCrops(data) ? JSON.stringify([data.crops, data.stage, data.flush, data.done]) : '';"));

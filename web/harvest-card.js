@@ -465,7 +465,7 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
   // The room's harvests changed (a Record, an Edit, a Done on a harvest check) or its crops (New blocks starts a run): ask
   // again. The stream back: ask once. The stream gone: the short timer.
   const offLive = [
-    live.on('harvest', (d) => { if (d.roomId === roomId) reload.call(); }),
+    live.on('harvest', (d) => { if (d.roomId === null || d.roomId === roomId) reload.call(); }), // null: every room (Settings → Yield)
     live.on('room', (d) => { if (d.id === roomId && d.part === 'crop') reload.call(); }),
     live.onStatus((up) => {
       if (up) reload.call();
