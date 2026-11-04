@@ -286,3 +286,20 @@ test('Done with a name not on the workers list: 400 field worker; a listed name 
   const done = await call('POST', `/api/tasks/${walk.id}/done`, { worker: 'ali' });
   assert.deepEqual([done.status, done.body.worker], [200, 'Ali']);
 });
+
+test('POST /api/tasks/:id/undo: 200 with the open row (no body needed); 409 for an open, upkeep or too late row; 404 for no task', async (t) => {
+  const { call, fruitingRoom } = await app(t);
+  const id = await fruitingRoom();
+  const view = await tasksOf(call, id);
+  const foot = byRule(view.today, 'footbath');
+  assert.equal((await call('POST', `/api/tasks/${foot.id}/undo`)).status, 409, 'an open row');
+  await call('POST', `/api/tasks/${foot.id}/done`, { worker: 'Ali' });
+  const r = await call('POST', `/api/tasks/${foot.id}/undo`);
+  assert.equal(r.status, 200);
+  assert.deepEqual([r.body.id, r.body.status, r.body.closedAt, r.body.worker], [foot.id, 'open', null, null]);
+  const upkeep = view.upkeep[0];
+  await call('POST', `/api/tasks/${upkeep.id}/done`, { worker: 'Ali' });
+  assert.deepEqual((await call('POST', `/api/tasks/${upkeep.id}/undo`)).body, { error: 'Only a daily task can be undone' });
+  assert.deepEqual(await call('POST', '/api/tasks/99999/undo'), { status: 404, body: { error: 'Task not found' } });
+  assert.equal((await call('GET', `/api/tasks/${foot.id}/undo`)).status, 404);
+});

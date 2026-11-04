@@ -22,6 +22,8 @@ export class TaskError extends Error {
 const AMOUNT_LABEL = Object.fromEntries(DAILY_RULES.filter((r) => r.amount).map((r) => [r.key, r.amount.label]));
 
 const MAX_AMOUNT = 10_000;
+// A daily row done or skipped by mistake can be opened again for this long (ms, by the server's clock).
+const UNDO_WINDOW_MS = 60_000;
 const MAX_REASON = 200;
 // An upkeep rule's first row is due the day it appears up to this interval (days), one interval later above it.
 const FIRST_DUE_DAYS = 14;
@@ -252,6 +254,17 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
 
   // Closes the open row; a row closed by someone else meanwhile is a 409 too, one deleted with its room a 404. An upkeep
   // row makes its next row with it; a harvest check's kg (amounts: { crop: kg }) make harvests with it.
+  // Tells the room's listeners, and the harvest listeners too when harvests changed.
+  function tellHarvests(roomId) {
+    for (const fn of [...harvestListeners]) {
+      try {
+        fn(roomId);
+      } catch (err) {
+        log(err);
+      }
+    }
+  }
+
   function close(row, fields, amounts = null) {
     const at = now();
     const next = row.kind === 'upkeep' ? nextUpkeep(row, localDate(at), at) : null;
@@ -262,15 +275,7 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
       throw new TaskError(409, closedText(after, localDate(at)));
     }
     tell(row.roomId);
-    if (harvests.length > 0) {
-      for (const fn of [...harvestListeners]) {
-        try {
-          fn(row.roomId);
-        } catch (err) {
-          log(err);
-        }
-      }
-    }
+    if (harvests.length > 0) tellHarvests(row.roomId);
     return view(db.getTask(row.id));
   }
 
@@ -377,6 +382,22 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
       const row = openRow(id);
       if (row.kind === 'longterm') throw new TaskError(400, 'A long-term task is done or cancelled, not skipped');
       return close(row, { status: 'skipped', worker: workerOf(worker), reason: reasonOf(reason) });
+    },
+
+    // A daily row done or skipped at most UNDO_WINDOW_MS ago opens again, its harvests deleted (spec 2026-11-04-task-grid-design.md 3).
+    undo(id) {
+      const row = db.getTask(id);
+      if (!row) throw new TaskError(404, 'Task not found');
+      if (row.kind !== 'daily') throw new TaskError(409, 'Only a daily task can be undone');
+      if (row.status !== 'done' && row.status !== 'skipped') throw new TaskError(409, `It is not done or skipped (it is ${row.status})`);
+      const late = () => new TaskError(409, `Too late to undo: it was ${row.status} at ${localTime(row.closedAt)}`);
+      const since = now() - UNDO_WINDOW_MS;
+      if (row.closedAt < since) throw late();
+      const went = db.undoTask(id, since);
+      if (went === null) throw late();
+      tell(row.roomId);
+      if (went > 0) tellHarvests(row.roomId);
+      return view(db.getTask(id));
     },
 
     // { reason }; long-term rows only.

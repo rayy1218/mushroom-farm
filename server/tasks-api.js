@@ -1,5 +1,5 @@
 // The task routes (spec 2026-10-30-tasks-design.md section 6), called from api.js: GET and POST /api/rooms/:id/tasks,
-// GET /api/rooms/:id/tasks/log and /log.csv, GET /api/tasks/today, POST /api/tasks/:id/done|skip|cancel, GET and PUT
+// GET /api/rooms/:id/tasks/log and /log.csv, GET /api/tasks/today, POST /api/tasks/:id/done|skip|cancel|undo, GET and PUT
 // /api/workers and /api/task-rules. server/tasks.js makes and closes the rows; this checks what the pages send.
 
 import { DAILY_RULES, CLEAR_OUT, UPKEEP_RULES, SLOTS } from './task-rules.js';
@@ -7,7 +7,7 @@ import { MAX_TEXT, MAX_NAME } from './tasks.js';
 import { checkRange } from './calendar.js';
 
 const ROOM_TASKS = /^\/api\/rooms\/([1-9][0-9]{0,14})\/tasks$/;
-const TASK_ACTION = /^\/api\/tasks\/([1-9][0-9]{0,14})\/(done|skip|cancel)$/;
+const TASK_ACTION = /^\/api\/tasks\/([1-9][0-9]{0,14})\/(done|skip|cancel|undo)$/;
 const ROOM_LOG = /^\/api\/rooms\/([1-9][0-9]{0,14})\/tasks\/log(\.csv)?$/;
 // Before the CSV, so Excel on Windows reads it as UTF-8 (the → and m³ of Plan this rows).
 const BOM = '\uFEFF';
@@ -199,10 +199,9 @@ export function createTaskRoutes({ db, tasks, cropOf = () => null }) {
     if (action) {
       if (req.method !== 'POST') throw notFound();
       // Done { worker, amount? }, Skip { worker, reason }, Cancel { reason }: server/tasks.js checks them, the row (404),
-      // that it is still open (409 with who and when) and that the action fits its kind.
+      // that it is still open (409 with who and when) and that the action fits its kind. Undo takes no body.
       const id = Number(action[1]);
-      const body = await readBody();
-      send(res, 200, tasks[action[2]](id, body));
+      send(res, 200, action[2] === 'undo' ? tasks.undo(id) : tasks[action[2]](id, await readBody()));
       return true;
     }
     const log = ROOM_LOG.exec(path);

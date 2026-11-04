@@ -916,6 +916,9 @@ export function openDb(path, { log = console.error } = {}) {
                            WHERE id = ? AND status = 'open'`),
     reopenTask: db.prepare(`UPDATE tasks SET status = 'open', closed_at = NULL, worker = NULL, amount = NULL, reason = NULL
                             WHERE id = ? AND kind = 'daily' AND status = 'cancelled' AND reason IN ('Stage changed', 'Rule changed')`),
+    undoTask: db.prepare(`UPDATE tasks SET status = 'open', closed_at = NULL, worker = NULL, amount = NULL, reason = NULL
+                          WHERE id = ? AND kind = 'daily' AND status IN ('done', 'skipped') AND closed_at >= ?`),
+    deleteTaskHarvests: db.prepare('DELETE FROM harvests WHERE task_id = ?'),
     setTaskDue: db.prepare("UPDATE tasks SET due_at = ? WHERE id = ? AND kind = 'upkeep' AND status = 'open'"),
     taskLog: db.prepare(TASK_LOG_SQL.taskLog),
     taskLogAll: db.prepare(TASK_LOG_SQL.taskLogAll),
@@ -1860,6 +1863,17 @@ export function openDb(path, { log = console.error } = {}) {
     // for any other row (nothing changes then).
     reopenTask(id) {
       return q.reopenTask.run(id).changes > 0;
+    },
+
+    // Opens again a daily row done or skipped at or after `since` (ms), and deletes the harvests its Done made, in one
+    // transaction. → how many harvests went, or null when the row is not such a row (nothing changes then).
+    undoTask(id, since) {
+      let went = null;
+      inTransaction(() => {
+        if (q.undoTask.run(id, since).changes === 0) return;
+        went = Number(q.deleteTaskHarvests.run(id).changes);
+      });
+      return went;
     },
 
     // A new due time for an open upkeep row (its rule's interval changed). → false for any other row.
