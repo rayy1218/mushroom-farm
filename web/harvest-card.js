@@ -15,7 +15,7 @@ import { openForm, closeTaskDialog, loadWorkers, setWorker, workerField, errorTe
 import {
   runHead, recordLead, recordTitle, dateHint, harvestLine, pastRow, PAST_COLUMNS, missingNote, flushColumns, flushRows, flushPerCrop, flushSplits,
   BY_CROP_COLUMNS, byCropRows, runTiles, pricesNote,
-  deleteTitle, deleteLead, whenBoxes, recordBody, editBody,
+  deleteTitle, deleteLead, whenBoxes, recordBody, editBody, recordPicks, editPicks,
 } from './harvest-math.js';
 
 const REFRESH_MS = 60_000;
@@ -408,7 +408,7 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
       p.append("No names yet: add the workers' names in ", a, ' first.');
       lead.push(p);
     }
-    const implausible = pickGuard({ value: 'record', label: 'Record', fields: ['kg'] });
+    const implausible = pickGuard({ value: 'record', label: 'Record', fields: ['crop', 'kg'] });
     ask({
       title: recordTitle(getRoom()?.name),
       lead,
@@ -420,7 +420,7 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
       submit: async (v, _which, form) => {
         const body = recordBody(v, { run, now: Date.now(), shown });
         if (body.error) return { field: body.field, message: body.error };
-        const asked = implausible(form, [{ field: 'kg', kg: body.kg, blocks: crops.find((c) => c.crop === body.crop)?.blocks }]);
+        const asked = implausible(form, recordPicks(body, run));
         if (asked) return asked;
         setWorker(body.worker); // kept for the next Done, as the Done dialog does
         return onTime(await send('POST', `/api/rooms/${roomId}/harvests`, body));
@@ -442,7 +442,7 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
         const body = editBody(v, h, { run, now: Date.now(), shown });
         if (body.error) return { field: body.field, message: body.error };
         if (Object.keys(body).length === 0) return true; // nothing changed
-        const asked = 'kg' in body ? implausible(form, [{ field: 'kg', kg: body.kg, blocks: h.blocks }]) : null; // a kg left as it was is not asked about
+        const asked = implausible(form, editPicks(body, h));
         if (asked) return asked;
         return onTime(await send('PUT', `/api/harvests/${h.id}`, body));
       },

@@ -412,7 +412,7 @@ test("the Overview card's rooms: those that picked in 30 days, their kg, a link 
   ]);
 });
 
-import { PICK_MAX_PER_BLOCK, pickCheck, pickWarning, donePicks } from '../web/harvest-math.js';
+import { PICK_MAX_PER_BLOCK, pickCheck, pickWarnings, donePicks, recordPicks, editPicks } from '../web/harvest-math.js';
 
 test('an implausible pick: over 0.3 kg a block in one pick, its kg per block and kg named', () => {
   assert.equal(PICK_MAX_PER_BLOCK, 0.3);
@@ -425,11 +425,23 @@ test('an implausible pick: over 0.3 kg a block in one pick, its kg per block and
   for (const [kg, blocks] of [[5, 0], [5, null], [5, undefined], [null, 950], [NaN, 950], [0, 950]]) assert.equal(pickCheck(kg, blocks), null, `${kg} from ${blocks}`);
 });
 
-test('a dialog\'s picks: the first implausible one, on its own box', () => {
-  assert.equal(pickWarning([]), null);
-  assert.equal(pickWarning([{ field: 'kg', kg: 20, blocks: 950 }]), null);
-  assert.deepEqual(pickWarning([{ field: 'kg:oyster', kg: 20, blocks: 500 }, { field: 'kg:lionsmane', kg: 40, blocks: 100 }]),
-    { field: 'kg:lionsmane', message: `That's 0.40${nb}kg per block in one pick. Is 40.00${nb}kg right?` });
+test('a dialog\'s picks: each implausible one, on its own box', () => {
+  assert.deepEqual(pickWarnings([]), []);
+  assert.deepEqual(pickWarnings([{ field: 'kg', kg: 20, blocks: 950 }]), []);
+  assert.deepEqual(pickWarnings([{ field: 'kg:oyster', kg: 200, blocks: 500 }, { field: 'kg:pink', kg: 2, blocks: 500 }, { field: 'kg:lionsmane', kg: 40, blocks: 100 }]), [
+    { field: 'kg:oyster', message: `That's 0.40${nb}kg per block in one pick. Is 200.00${nb}kg right?` },
+    { field: 'kg:lionsmane', message: `That's 0.40${nb}kg per block in one pick. Is 40.00${nb}kg right?` },
+  ]);
+});
+
+test('the picks of Record (the chosen crop\'s run blocks) and of Edit (a changed kg only, the harvest\'s blocks)', () => {
+  const run = { crops: [{ crop: 'oyster', blocks: 500 }, { crop: 'lionsmane', blocks: 100 }] };
+  assert.deepEqual(recordPicks({ crop: 'lionsmane', kg: 40, worker: 'Ali' }, run), [{ field: 'kg', kg: 40, blocks: 100 }]);
+  assert.deepEqual(recordPicks({ crop: 'oyster', kg: 40, worker: 'Ali' }, run), [{ field: 'kg', kg: 40, blocks: 500 }]);
+  const h = { kg: 2.35, blocks: 950 };
+  assert.deepEqual(editPicks({ kg: 600 }, h), [{ field: 'kg', kg: 600, blocks: 950 }]);
+  assert.deepEqual(editPicks({ pickedAt: 5 }, h), [], 'the kg as it was: not asked about');
+  assert.deepEqual(editPicks({}, h), []);
 });
 
 test('the picks of a Done body: a harvest check\'s kg with the run\'s blocks of each crop', () => {

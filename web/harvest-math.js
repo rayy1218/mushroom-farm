@@ -270,14 +270,17 @@ export function pickCheck(kg, blocks) {
   return { perBlock, message: `That's ${perBlockText(perBlock)} in one pick. Is ${kgText(kg, { exact: true })} right?` };
 }
 
-// A dialog's picks [{ field, kg, blocks }] → the first implausible one, { field, message } for its box, or null.
-export function pickWarning(picks) {
-  for (const p of picks) {
-    const c = pickCheck(p.kg, p.blocks);
-    if (c) return { field: p.field, message: c.message };
-  }
-  return null;
-}
+// A dialog's picks [{ field, kg, blocks }] → each implausible one, [{ field, message }] for its box ([] when none).
+export const pickWarnings = (picks) => picks.flatMap((p) => {
+  const c = pickCheck(p.kg, p.blocks);
+  return c ? [{ field: p.field, message: c.message }] : [];
+});
+
+// Record's pick (recordBody's body): the kg over the run's blocks of the crop picked.
+export const recordPicks = (body, run) => [{ field: 'kg', kg: body.kg, blocks: (run?.crops ?? []).find((c) => c.crop === body.crop)?.blocks }];
+
+// Edit's pick (editBody's body): a changed kg over the harvest's own blocks; a kg left as it was is not asked about.
+export const editPicks = (body, h) => ('kg' in body ? [{ field: 'kg', kg: body.kg, blocks: h.blocks }] : []);
 
 // The picks of a Done body (tasks-math.js doneBody) on a harvest check: its kg boxes with the run's blocks of each crop
 // (the row's harvestCrops); [] for another row or nothing weighed.

@@ -14,7 +14,7 @@ import { roomHash } from './route.js';
 import { keepLines } from './text-math.js';
 import { picture } from './pictures.js';
 import { recordsAmount, amountFields, doneBody, checkReason, checkLongterm, setupUpdate, beforeText, setupBody, taskParts } from './tasks-math.js';
-import { pickWarning, donePicks } from './harvest-math.js';
+import { pickWarnings, donePicks } from './harvest-math.js';
 
 const WORKER_KEY = 'farm.worker';
 const COMMAND_TIMEOUT = 15000;
@@ -270,19 +270,25 @@ export function openForm({ title, lead = [], fields = [], buttons = [], closeLab
   let busy = false;
   let sending = null; // the answer being waited for: closed waits for it too
   const values = () => Object.fromEntries([...inputs].map(([name, input]) => [name, input.type === 'checkbox' ? input.checked : input.value]));
+  // a problem, or a list of them on their boxes (a mixed Done's checks), the cursor to the first
   function show(problem) {
-    const input = problem.field ? inputs.get(problem.field) : null;
-    if (input) {
-      const err = errors.get(problem.field);
-      err.textContent = problem.message; // read out: the box's aria-describedby, aria-live
-      err.classList.toggle('field-warn', Boolean(problem.warn));
-      if (problem.warn) input.dataset.warn = '';
-      else input.setAttribute('aria-invalid', 'true');
-      input.focus();
+    const list = Array.isArray(problem) ? problem : [problem];
+    const boxed = list.filter((p) => p.field && inputs.has(p.field));
+    if (boxed.length) {
+      for (const p of boxed) {
+        const input = inputs.get(p.field);
+        const err = errors.get(p.field);
+        err.textContent = p.message; // read out: the box's aria-describedby, aria-live
+        err.classList.toggle('field-warn', Boolean(p.warn));
+        if (p.warn) input.dataset.warn = '';
+        else input.setAttribute('aria-invalid', 'true');
+      }
+      inputs.get(boxed[0].field).focus();
       return;
     }
-    if (problem.content) formError.replaceChildren(...problem.content);
-    else formError.textContent = problem.message;
+    const [one] = list;
+    if (one.content) formError.replaceChildren(...one.content);
+    else formError.textContent = one.message;
     formError.hidden = false;
     formError.focus();
   }
@@ -301,7 +307,7 @@ export function openForm({ title, lead = [], fields = [], buttons = [], closeLab
       outcome = { message: errorText(err) };
     }
     if (!alive() || !d.open) { // closed meanwhile (Chrome lets a second Esc close it): a failure is said on the page
-      if (outcome !== true) onLost?.(outcome.message);
+      if (outcome !== true) onLost?.((Array.isArray(outcome) ? outcome[0] : outcome).message);
       return;
     }
     busy = false;
@@ -335,23 +341,28 @@ export function openForm({ title, lead = [], fields = [], buttons = [], closeLab
 }
 
 // A pick over PICK_MAX_PER_BLOCK kg a block (harvest-math.js) asks once rather than being refused: the first submit says so
-// under its kg box and the primary button (value, label) reads "Record anyway"; a submit with the same kg then sends it, and
-// a kg box changed is checked again. → check(form, picks [{ field, kg, blocks }]): the problem to show, or null to send.
+// under each such kg box and the primary button (value, label) reads "Record anyway"; a submit with the same kg over the same
+// blocks then sends it (the label plain again, so a failed send does not still say "anyway"), and a change to one of the
+// fields (the kg boxes, Record's crop) asks again. → check(form, picks [{ field, kg, blocks }]): the checks to show, or null
+// to send.
 export function pickGuard({ value, label, fields }) {
-  let asked = null; // the kg the question was asked for
+  let asked = null; // the kg and blocks the question was asked for
   let watching = false;
   return (form, picks) => {
-    const warning = pickWarning(picks);
-    const kg = picks.map((p) => `${p.field}=${p.kg}`).join();
-    if (!warning || kg === asked) return null;
-    asked = kg;
+    const warnings = pickWarnings(picks);
+    const key = picks.map((p) => `${p.field}=${p.kg}/${p.blocks}`).join();
     const b = form.button(value);
+    if (!warnings.length || key === asked) {
+      b.textContent = label;
+      return null;
+    }
+    asked = key;
     b.textContent = `${label} anyway`;
     if (!watching) {
       watching = true;
       for (const name of fields) form.input(name)?.addEventListener('input', () => { asked = null; b.textContent = label; });
     }
-    return { ...warning, warn: true };
+    return warnings.map((w) => ({ ...w, warn: true }));
   };
 }
 

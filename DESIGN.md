@@ -345,6 +345,7 @@ The Now tab's three cards: the quantity name (13 px `ink-2`) with its status wor
 - **Style:** 40 px tall, 8 × 10 px padding, `surface` fill, `border-strong` edge, 8 px radius; labels 600 above the field.
 - **Focus:** 2 px `accent` outline.
 - **Error:** border and message in `critical-text`; the field stays in place (sibling fields share label, input and error rows).
+- **Check:** a value that is allowed but unlikely (a harvest pick over 0.3 kg a block): border and message in `warning-text`, not `aria-invalid` (a question, not a fault), the message still announced (the box's description, `aria-live`); the primary button reads "… anyway" ("Record anyway") and the same value sent again is kept, a changed one checked again.
 
 ### Segmented control
 Auto | Manual and the History range choice: a `band` track with a hairline, unselected options `muted` text on nothing, the selected option on `surface` with `ink` text and the selected-segment shadow. A line under it says in plain words what the choice means.

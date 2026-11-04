@@ -346,9 +346,9 @@ test('amountFields: one box per crop of a mixed harvest check, else the single a
     { name: 'kg:oyster', label: 'Grey oyster', crop: 'oyster' },
     { name: 'kg:lionsmane', label: "Lion's mane", crop: 'lionsmane' },
   ]);
-  // one box: a kg box has "kg" inside it, as Record a harvest's; the bags box none (its label says bags)
+  // one box: a harvest check's has "kg" inside it, as Record a harvest's; another rule's box none (its label names the unit)
   assert.deepEqual(amountFields({ unit: 'kg', amountLabel: 'kg picked', harvestCrops: [crops[0]] }), [{ name: 'amount', label: 'kg picked', suffix: 'kg' }]);
-  assert.deepEqual(amountFields({ unit: 'kg', amountLabel: 'Weight', harvestCrops: null }), [{ name: 'amount', label: 'Weight (kg)', suffix: 'kg' }]);
+  assert.deepEqual(amountFields({ unit: 'kg', amountLabel: 'Weight', harvestCrops: null }), [{ name: 'amount', label: 'Weight (kg)' }], 'an owner\'s kg rule');
   assert.deepEqual(amountFields({ unit: 'bags', amountLabel: 'Bags removed' }), [{ name: 'amount', label: 'Bags removed' }]);
   assert.deepEqual(amountFields({ unit: null, amountLabel: null }), []);
 });

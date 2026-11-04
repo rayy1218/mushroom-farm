@@ -68,7 +68,7 @@ test("C10 review: Plan this from a search older than the room's machines offers 
   has("link.href = roomHash(roomId, 'tasks');");
   has('return { message: text, content: [text.slice(0, at), link, text.slice(at + TASKS_TAB.length)], final: true };');
   // the form: content instead of the message's text (nodes, no innerHTML); final keeps the dialog's own buttons disabled
-  has('if (problem.content) formError.replaceChildren(...problem.content);');
+  has('if (one.content) formError.replaceChildren(...one.content);');
   has('if (outcome !== true && outcome.final) for (const b of sends) b.disabled = true;');
   assert.ok(!/innerHTML/.test(dialogs.slice(dialogs.indexOf('export function openPlanDialog'))));
 });
@@ -147,7 +147,7 @@ test('Plan this: a dialog closed or a page gone before the answer tells no one',
 
 test('a dialog closed while sending (Chrome lets a second Esc close it): a failure goes to the page, not to the closed form', () => {
   has("if (!alive() || !d.open) { // closed meanwhile (Chrome lets a second Esc close it): a failure is said on the page");
-  has('if (outcome !== true) onLost?.(outcome.message);');
+  has('if (outcome !== true) onLost?.((Array.isArray(outcome) ? outcome[0] : outcome).message);');
   has('openForm({ ...options, onLost: (text) => { if (alive) onError?.(text); } })');
 });
 
