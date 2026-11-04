@@ -3,6 +3,7 @@
 // (an older server) and shows dashes instead of throwing.
 
 import { roomHash } from './route.js';
+import { tickCount } from './chart-math.js';
 
 const finite = (x) => typeof x === 'number' && Number.isFinite(x);
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -71,13 +72,23 @@ export function barSeries(days, key) {
   }));
 }
 
-// A round top for an axis: 1, 2 or 5 times a power of ten, not below v.
-export function niceMax(v) {
-  if (!finite(v) || v <= 0) return 1;
-  const p = 10 ** Math.floor(Math.log10(v));
-  const f = v / p;
-  return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * p;
+// A bar chart's y axis from 0 (DESIGN.md: 3 to 6 round values): the finest step of 1, 2, 2.5 or 5 times a power of ten that
+// numbers the axis at `most` values or fewer (at least 3), its top the first multiple at or over the peak v (audit 2026-11-04
+// #21: 25.3 kg gives 30 with 0, 10, 20, 30, not 50 with half the plot empty). whole: a count, whole steps only.
+// → { max, ticks }.
+export function niceScale(v, most = 6, { whole = false } = {}) {
+  most = Math.max(3, most);
+  if (!finite(v) || v <= 0) return whole ? { max: 2, ticks: [0, 1, 2] } : { max: 1, ticks: [0, 0.5, 1] };
+  const r = (x) => Number(x.toFixed(10));
+  for (let p = 10 ** (Math.floor(Math.log10(v / most)) - 1); ; p *= 10) {
+    for (const step of [1, 2, 2.5, 5].map((k) => r(k * p))) {
+      if (whole && !Number.isInteger(step)) continue;
+      const n = Math.max(2, Math.ceil(r(v / step)));
+      if (n + 1 <= most) return { max: r(n * step), ticks: Array.from({ length: n + 1 }, (_, i) => r(i * step)) };
+    }
+  }
 }
+export const niceMax = (v, most = 6) => niceScale(v, most).max;
 
 export const BAR_M = { left: 44, right: 8, top: 10, bottom: 24 };
 
@@ -89,7 +100,7 @@ export function barLayout(series, width, height, m = BAR_M) {
   const y0 = height - m.bottom;
   const y1 = m.top;
   const n = series.length;
-  const top = niceMax(Math.max(0, ...series.map((s) => (finite(s.v) ? s.v : 0))));
+  const { max: top, ticks } = niceScale(Math.max(0, ...series.map((s) => (finite(s.v) ? s.v : 0))), tickCount(y0 - y1));
   const slot = n > 0 ? (x1 - x0) / n : 0;
   const bw = Math.max(1, Math.min(slot - 2, slot * 0.72));
   const yFor = (v) => y0 - (v / top) * (y0 - y1);
@@ -105,7 +116,7 @@ export function barLayout(series, width, height, m = BAR_M) {
   // the last label ends at the plot's right edge, so it is not cut off
   const last = xTicks.at(-1);
   if (last) Object.assign(last, { anchor: 'end', x: Math.min(last.x + slot / 2, x1) });
-  const yTicks = [0, top / 2, top].map((v) => ({ v, y: yFor(v) }));
+  const yTicks = ticks.map((v) => ({ v, y: yFor(v) }));
   return { plot: { x0, x1, y0, y1 }, max: top, bars, yTicks, xTicks };
 }
 

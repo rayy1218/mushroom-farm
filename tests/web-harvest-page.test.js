@@ -102,3 +102,12 @@ test('the totals card: the tiles held to a width, the kg in Display type; the Ov
   assert.ok(css.includes('.ov-harvest .us-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }'));
   assert.ok(css.includes('.hv-tiles > :last-child:nth-child(odd) { grid-column: 1 / -1; }'));
 });
+
+test("the Overview's Harvest card: a 30-day strip in the harvest hue and the rooms' kg two a line; the title 44 px on a phone (audit #23)", () => {
+  assert.ok(overview.includes('for (const b of stripBars(farm, 300, 48)) {'));
+  assert.ok(overview.includes("strip.setAttribute('aria-label', chartLabel(farm));"));
+  assert.ok(overview.includes("const list = node('ul', 'us-rooms ov-harvest-rooms');"));
+  assert.match(css, /\.ov-strip \{[^}]*height: 48px;[^}]*fill: var\(--s-harvest\);/);
+  assert.ok(css.includes('.ov-harvest-rooms { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));'));
+  assert.ok(css.includes('.ov-harvest h2 a { display: inline-block; padding: 11px 4px; margin: -11px -4px; }'));
+});

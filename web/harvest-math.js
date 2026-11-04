@@ -9,6 +9,7 @@ import { DOT } from './text-math.js';
 import { farmDate, farmTime, dayMonth, dayTitle } from './tasks-math.js';
 import { isClock, normaliseClock } from './light-math.js';
 import { tickCountFor } from './history-math.js';
+import { roomHash } from './route.js';
 
 const NB = ' ';
 const DASH = '—';
@@ -362,3 +363,21 @@ export function chartLabel(farm) {
   const most = top ? `; the most ${kgText(top.kg)}, ${bucketName(farm.bucket, top.from)}` : '';
   return `${chartTitle(farm)}, ${rangeText(farm)}: ${kgText(farm.totals?.kg)} in all${most}`;
 }
+
+// The Overview card's strip of the 30 days: a bar per day with kg in a width × height box (no axis; the tallest the box's
+// height, a hair between bars), each with its tip ("3 Nov · 2.4 kg").
+export function stripBars(farm, width, height) {
+  const buckets = Array.isArray(farm?.buckets) ? farm.buckets : [];
+  const top = Math.max(0, ...buckets.map((b) => (finite(b.kg) ? b.kg : 0)));
+  if (!buckets.length || top <= 0) return [];
+  const slot = width / buckets.length;
+  return buckets.flatMap((b, i) => {
+    if (!(b.kg > 0)) return [];
+    const h = (b.kg / top) * height;
+    return [{ x: i * slot, y: height - h, w: Math.max(1, slot - 1), h, title: barTip(farm.bucket ?? 'day', b) }];
+  });
+}
+
+// The Overview card's rooms: those that picked in the reply's range, with their kg and a link to their Harvest tab.
+export const overviewRooms = (farm) => (farm?.rooms ?? []).filter((r) => r.kg > 0)
+  .map((r) => ({ id: r.id, name: r.name, href: roomHash(r.id, 'harvest'), kg: kgText(r.kg) }));

@@ -356,3 +356,21 @@ test("the chart's title and what it says to a screen reader", () => {
   assert.equal(chartLabel(farm), `kg picked per day, 6 Oct – 4 Nov 2026: 64.5${nb}kg in all; the most 2.4${nb}kg, 3 Nov`);
   assert.equal(chartLabel({ ...farm, bucket: 'month', buckets: [{ from: '2026-11-01', to: '2026-11-04', kg: 0 }] }), `kg picked per month, 6 Oct – 4 Nov 2026: 64.5${nb}kg in all`);
 });
+
+import { stripBars, overviewRooms } from '../web/harvest-math.js';
+
+test("the Overview card's 30-day strip: a bar per day in a box, the tallest the box's height, none for an empty day", () => {
+  const f = { ...farm, buckets: [{ from: '2026-11-02', kg: 5 }, { from: '2026-11-03', kg: 0 }, { from: '2026-11-04', kg: 2.5 }] };
+  const bars = stripBars(f, 300, 48);
+  assert.equal(bars.length, 2);
+  assert.deepEqual(bars[0], { x: 0, y: 0, w: 99, h: 48, title: `2 Nov${dot}5.0${nb}kg` });
+  assert.deepEqual(bars[1], { x: 200, y: 24, w: 99, h: 24, title: `4 Nov${dot}2.5${nb}kg` });
+  assert.deepEqual(stripBars({ ...farm, buckets: [] }, 300, 48), []);
+});
+
+test("the Overview card's rooms: those that picked in 30 days, their kg, a link to their Harvest tab", () => {
+  assert.deepEqual(overviewRooms(farm), [
+    { id: 1, name: 'Room 1', href: '#/rooms/1/harvest', kg: `60.0${nb}kg` },
+    { id: 3, name: 'Room 3', href: '#/rooms/3/harvest', kg: `4.5${nb}kg` },
+  ]);
+});

@@ -2,8 +2,8 @@
 // charts above it (the same margins, the same ticks): the "Electricity and water" and "Air exchange" sections of the Charts tab.
 
 import { M, rightMargin } from './chart.js';
-import { xFor, nearestIndex } from './chart-math.js';
-import { niceMax, axisLabel } from './usage-math.js';
+import { xFor, nearestIndex, tickCount } from './chart-math.js';
+import { niceScale, axisLabel } from './usage-math.js';
 
 const NS = 'http://www.w3.org/2000/svg';
 // An axis value: axisLabel's, with the places a tiny one needs (a 15 s bucket's 0.0025 kWh is not 0.003).
@@ -48,8 +48,8 @@ export function drawTimeBars(host, opts) {
     const y0 = height - M.bottom;
     const y1 = M.top;
     const { bars, range, color } = current;
-    let top = niceMax(Math.max(0, ...bars.map((b) => (b.v === null ? 0 : b.v))));
-    if (current.whole && top % 2 !== 0) top += 1; // counts: whole numbers at the middle line too
+    // round values from 0, one every 28 px or more (counts: whole ones)
+    const { max: top, ticks } = niceScale(Math.max(0, ...bars.map((b) => (b.v === null ? 0 : b.v))), tickCount(y0 - y1), { whole: current.whole });
     const yFor = (v) => y0 - (v / top) * (y0 - y1);
     const xAt = (t) => xFor(t, range.from, range.to, x0, x1);
     svg = el('svg', { width, height, viewBox: `0 0 ${width} ${height}`, role: 'img', 'aria-label': current.label ?? '' });
@@ -60,7 +60,7 @@ export function drawTimeBars(host, opts) {
       defs.append(pattern);
       svg.append(defs);
     }
-    for (const v of [0, top / 2, top]) {
+    for (const v of ticks) {
       const y = yFor(v);
       svg.append(el('line', { x1: x0, x2: x1, y1: y, y2: y, style: 'stroke:var(--grid)', 'stroke-width': 1 }));
       svg.append(el('text', { x: x0 - 6, y: y + 4, 'text-anchor': 'end', style: 'fill:var(--muted)', 'font-size': 12 }, tickLabel(v)));
