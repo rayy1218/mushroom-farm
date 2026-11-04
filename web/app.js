@@ -40,6 +40,7 @@ function show() {
   // Another tab of the same room: the page stays (its data, scroll and focus); only the panel changes.
   if (mounted?.name === 'detail' && route.name === 'detail' && mounted.id === route.id) {
     unmount.setTab?.(route.tab);
+    if (route.tab === 'tasks') unmount.setWeek?.(route.week ?? null);
     mounted = route;
     return;
   }
@@ -53,7 +54,7 @@ function show() {
   view.replaceChildren();
   unmount = route.name === 'simulation' ? simulation.mount(view, { id: route.id, runId: route.runId })
     : route.name === 'suggest' ? suggest.mount(view, { id: route.id })
-    : route.name === 'detail' ? detail.mount(view, { id: route.id, tab: route.tab })
+    : route.name === 'detail' ? detail.mount(view, { id: route.id, tab: route.tab, week: route.week ?? null })
     : route.name === 'settings' ? settings.mount(view, {})
     : route.name === 'today' ? today.mount(view, {})
     : route.name === 'calendar' ? calendar.mount(view, { room: route.room, day: route.day })

@@ -43,6 +43,17 @@ export function parseCalendarQuery(query) {
   return { room, day };
 }
 
+// The Tasks tab on a week (spec 2026-11-04-task-grid-design.md 2): its Monday in the query; this week (null) has none.
+export const tasksHash = (id, week = null) => (week ? `#/rooms/${id}/tasks?week=${week}` : roomHash(id, 'tasks'));
+// The month sheet of a room's daily tasks, for the pen ('YYYY-MM').
+export const taskSheetHash = (id, month) => `#/rooms/${id}/tasks/sheet?month=${month}`;
+// A week's Monday from any day of it ('YYYY-MM-DD'), or null for a date that is not one.
+function mondayOf(s) {
+  if (!isDate(s)) return null;
+  const ms = Date.parse(`${s}T00:00:00Z`);
+  return new Date(ms - ((new Date(ms).getUTCDay() + 6) % 7) * 86_400_000).toISOString().slice(0, 10);
+}
+
 // The Harvest page (spec 2026-11-04-harvest-design.md 7): its period in days in the query, 30 without one; the myGAP sheet
 // under it keeps the period in its address always.
 export const HARVEST_HASH = '#/harvest';
@@ -58,9 +69,13 @@ export function parseRoute(hash) {
   if (run) return { name: 'simulation', id: Number(run[1]), runId: Number(run[2]) };
   const suggest = new RegExp(`^#/rooms/${ID}/suggest/?$`).exec(hash ?? '');
   if (suggest) return { name: 'suggest', id: Number(suggest[1]) };
-  const m = new RegExp(`^#/rooms/${ID}(?:/([a-z]+))?/?$`).exec(hash ?? '');
+  const m = new RegExp(`^#/rooms/${ID}(?:/([a-z]+))?/?(?:\\?(.*))?$`).exec(hash ?? '');
   const tab = m && m[2] !== undefined ? tabOf(m[2]) : 'now';
-  if (m && (tab === 'now' || NAMED_TABS.includes(tab)) && m[2] !== 'now') return { name: 'detail', id: Number(m[1]), tab };
+  if (m && (tab === 'now' || NAMED_TABS.includes(tab)) && m[2] !== 'now') {
+    // the Tasks tab's week (any day of it: its Monday); another tab's query is dropped
+    const week = tab === 'tasks' ? mondayOf(new URLSearchParams(m[3] ?? '').get('week')) : null;
+    return week ? { name: 'detail', id: Number(m[1]), tab, week } : { name: 'detail', id: Number(m[1]), tab };
+  }
   if (/^#\/today\/?$/.test(hash ?? '')) return { name: 'today' };
   // The Calendar (spec 2026-11-03-calendar-design.md 5): its room and day in the query.
   const calendar = /^#\/calendar\/?(?:\?(.*))?$/.exec(hash ?? '');
@@ -78,7 +93,7 @@ export function parseRoute(hash) {
 export function canonicalHash(route) {
   if (route.name === 'simulation') return `#/rooms/${route.id}/simulations/${route.runId}`;
   if (route.name === 'suggest') return suggestHash(route.id);
-  if (route.name === 'detail') return roomHash(route.id, route.tab);
+  if (route.name === 'detail') return route.tab === 'tasks' ? tasksHash(route.id, route.week) : roomHash(route.id, route.tab);
   if (route.name === 'today') return TODAY_HASH;
   if (route.name === 'calendar') return calendarHash(route);
   if (route.name === 'harvest') return route.days === 30 ? HARVEST_HASH : `${HARVEST_HASH}?days=${route.days}`;

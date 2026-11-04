@@ -57,18 +57,22 @@ test('the Now tab: the readings first; on a narrow screen one column in the orde
 });
 
 test('the tab bar links each tab by its address and marks the current one', () => {
-  assert.match(page, /import \{ ROOM_TABS, roomHash \} from '\.\/route\.js';/);
+  assert.match(page, /import \{ ROOM_TABS, roomHash, tasksHash \} from '\.\/route\.js';/);
   assert.match(page, /a\.href = roomHash\(id, t\.key\)/);
   assert.match(page, /setAttribute\('aria-current', 'page'\)/);
   assert.match(page, /panel\.hidden = panel\.dataset\.panel !== tab/);
 });
 
 test('mount takes the tab, and the page can change tab without mounting again', () => {
-  assert.match(page, /export function mount\(container, \{ id, tab = 'now' \}\)/);
+  assert.match(page, /export function mount\(container, \{ id, tab = 'now', week = null \}\)/);
   assert.match(page, /unmount\.setTab = setTab;/);
-  assert.match(app, /detail\.mount\(view, \{ id: route\.id, tab: route\.tab \}\)/);
+  assert.match(app, /detail\.mount\(view, \{ id: route\.id, tab: route\.tab, week: route\.week \?\? null \}\)/);
   assert.match(app, /mounted\?\.name === 'detail' && route\.name === 'detail' && mounted\.id === route\.id/);
   assert.match(app, /unmount\.setTab\?\.\(route\.tab\)/);
+  // the Tasks tab's week (spec 2026-11-04-task-grid-design.md 2): from the address, and back into it in place
+  assert.ok(app.includes("if (route.tab === 'tasks') unmount.setWeek?.(route.week ?? null);"));
+  assert.ok(page.includes('unmount.setWeek = (w) => { week = w ?? null; tasksCard?.setWeek(week); };'));
+  assert.ok(page.includes("window.history.replaceState(null, '', tasksHash(id, w));"), 'history is the History tab\'s state in this page');
 });
 
 test('links back into a room open the right tab', () => {
@@ -81,7 +85,8 @@ test('links back into a room open the right tab', () => {
 test('the Tasks tab: its card, made once, gone with a missing room and on leaving; its tab carries the due count', () => {
   assert.match(page, /import \{ createTasksCard \} from '\.\/tasks-card\.js';/);
   assert.match(page, /import \{ tabDot \} from '\.\/tasks-math\.js';/);
-  assert.ok(page.includes('tasksCard ??= createTasksCard(els.tasksHost, { roomId: id, onCounts: (c) => { if (alive()) paintTasksDot(c); }, onGone: () => { if (alive()) load(); } });'));
+  assert.ok(page.includes('tasksCard ??= createTasksCard(els.tasksHost, {'));
+  assert.ok(page.includes('onCounts: (c) => { if (alive()) paintTasksDot(c); }, onGone: () => { if (alive()) load(); },'));
   const missing = page.slice(page.indexOf('function showMissing()'), page.indexOf('function renderHead()'));
   assert.ok(missing.includes('tasksCard?.destroy();') && missing.includes('paintTasksDot(null);'));
   const unmount = page.slice(page.indexOf('function unmount()'));

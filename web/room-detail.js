@@ -9,7 +9,7 @@
 // Refreshes every reading interval (2–30 s; 5 s when the settings cannot be read) while shown.
 
 import { request, OFFLINE } from './api.js';
-import { ROOM_TABS, roomHash } from './route.js';
+import { ROOM_TABS, roomHash, tasksHash } from './route.js';
 import { createRoomEdit, createDeleteCard, createSaveQueue } from './room-edit.js';
 import { createEquipment } from './equipment.js';
 import { cardOf } from './equipment-cards.js';
@@ -169,7 +169,7 @@ function text(tag, className, content) {
 }
 
 
-export function mount(container, { id, tab = 'now' }) {
+export function mount(container, { id, tab = 'now', week = null }) {
   const me = ++mountSeq;
   container.innerHTML = TEMPLATE;
   const q = (sel) => container.querySelector(sel);
@@ -561,7 +561,12 @@ export function mount(container, { id, tab = 'now' }) {
     if (!cropCard) makeCrop(); // (again after a missing room came back)
     cropCard?.setLights(room?.lights === true); // lights fitted or taken out: the schedule shows or goes
     simulationsCard ??= createSimulationsCard(els.simulationsHost, { roomId: id, getRoom: () => room });
-    tasksCard ??= createTasksCard(els.tasksHost, { roomId: id, onCounts: (c) => { if (alive()) paintTasksDot(c); }, onGone: () => { if (alive()) load(); } });
+    // the grid's week in the address, in place (as the Calendar keeps its day): ‹ › add no history entry each (window's:
+    // history here is the History tab's)
+    tasksCard ??= createTasksCard(els.tasksHost, {
+      roomId: id, week, onWeek: (w) => { week = w; if (alive() && tab === 'tasks') window.history.replaceState(null, '', tasksHash(id, w)); },
+      onCounts: (c) => { if (alive()) paintTasksDot(c); }, onGone: () => { if (alive()) load(); },
+    });
     harvestCard ??= createHarvestCard(els.harvestHost, { roomId: id, getRoom: () => room, onGone: () => { if (alive()) load(); } });
     filterCard ??= createFilterCard(els.filterHost, { roomId: id, onChanged: () => { if (alive()) load(); } }); // the alarms clear
     filterCard.update(room, sensors.dp, intakeRunning(machineData ?? lastMachines));
@@ -837,5 +842,6 @@ export function mount(container, { id, tab = 'now' }) {
     container.replaceChildren();
   }
   unmount.setTab = setTab; // a tab change: the router shows another panel instead of mounting the page again
+  unmount.setWeek = (w) => { week = w ?? null; tasksCard?.setWeek(week); }; // the Tasks tab's week from the address
   return unmount;
 }
