@@ -181,3 +181,115 @@ test('Edit a harvest: only what changed; nothing changed is an empty body', () =
   assert.deepEqual(editBody(v({ pickedDate: '2026-11-03', pickedTime: '07:00' }), h, { run: ended, now, shown }), { error: "Pick a time from the run's start to its end", field: 'pickedDate' });
   assert.deepEqual(editBody(v({ kg: '0' }), h, { run: oneCrop, now, shown }), { error: 'kg must be a number over 0 up to 10,000', field: 'kg' });
 });
+
+// ---- Task 11: the Harvest page, the myGAP sheet and the Overview card ----
+
+import {
+  overviewTiles, pageTiles, harvestBars, barTip, harvestTicks, rangeText, emptyText, roomRows, ROOM_COLUMNS, cropRows, CROP_COLUMNS,
+  SHEET_TITLE, SHEET_COLUMNS,
+} from '../web/harvest-math.js';
+
+const farm = {
+  from: '2026-10-06', to: '2026-11-04', days: 30, bucket: 'day',
+  buckets: [{ from: '2026-11-03', to: '2026-11-03', kg: 2.4 }, { from: '2026-11-04', to: '2026-11-04', kg: 0 }],
+  totals: { kg: 64.5, value: 774, cost: { costPerKg: 3.1, cost: 199.95, days: 30, water: true } },
+  rooms: [
+    { id: 1, name: 'Room 1', crops: [{ crop: 'oyster', blocks: 500 }], kg: 60, value: 720, current: { kg: 18.44, perBlock: 0.31, be: 34 } },
+    { id: 2, name: 'Room 2', crops: [], kg: 0, value: 0, current: null },
+    { id: 3, name: 'Room 3', crops: [], kg: 4.5, value: null, current: null },
+  ],
+  crops: [{ crop: 'oyster', kg: 60, value: 720 }, { crop: 'pink', kg: 4.5, value: null }],
+  today: { kg: 2.4, value: 28.8 }, last7: { kg: 18, value: 216 }, last30: { kg: 64.5, value: 774 },
+  missing: { dryKg: [], price: [] }, records: [],
+};
+
+test('the Overview card: today, 7 and 30 days, the 30-day value when known; nothing in 30 days says so', () => {
+  assert.deepEqual(overviewTiles(farm), {
+    tiles: [
+      { label: 'Today', value: `2.4${nb}kg`, line: null },
+      { label: '7 days', value: `18.0${nb}kg`, line: null },
+      { label: '30 days', value: `64.5${nb}kg`, line: `RM${nb}774.00` },
+    ],
+    empty: null,
+  });
+  assert.equal(overviewTiles({ ...farm, last30: { kg: 64.5, value: null } }).tiles[2].line, null);
+  assert.deepEqual(overviewTiles({ ...farm, today: { kg: 0, value: 0 }, last7: { kg: 0, value: 0 }, last30: { kg: 0, value: 0 } }),
+    { tiles: [], empty: 'No harvests in the last 30 days.' });
+});
+
+test("the page's tiles: kg, RM value, cost per kg with what it counts", () => {
+  assert.deepEqual(pageTiles(farm), [
+    { label: 'Picked', value: `64.5${nb}kg` },
+    { label: 'Value', value: `RM${nb}774.00` },
+    { label: 'Cost per kg', value: `RM${nb}3.10`, line: `electricity and water over 30${nb}days at today’s prices` },
+  ]);
+  const none = pageTiles({ ...farm, totals: { kg: 0, value: null, cost: { costPerKg: null, cost: 0, days: 30, water: false } } });
+  assert.deepEqual(none.map((t) => t.value), [`0.0${nb}kg`, '—', '—']);
+});
+
+test('the bars: one per bucket in the farm time, a whole slot each (the last one too), the range over them', () => {
+  const day = (y, m, d) => Date.UTC(y, m - 1, d) - 8 * 3_600_000; // the farm's midnight
+  const { bars, range } = harvestBars(farm);
+  assert.deepEqual(bars.map(({ from, to, v }) => ({ from, to, v })), [
+    { from: day(2026, 11, 3), to: day(2026, 11, 4), v: 2.4 },
+    { from: day(2026, 11, 4), to: day(2026, 11, 5), v: 0 },
+  ]);
+  assert.deepEqual(range, { from: day(2026, 11, 3), to: day(2026, 11, 5) });
+  const weeks = harvestBars({ ...farm, bucket: 'week', buckets: [{ from: '2026-11-02', to: '2026-11-04', kg: 12 }] });
+  assert.deepEqual([weeks.bars[0].from, weeks.bars[0].to], [day(2026, 11, 2), day(2026, 11, 9)], 'the week under way: its whole week');
+  const months = harvestBars({ ...farm, bucket: 'month', buckets: [{ from: '2026-12-01', to: '2026-12-31', kg: 1 }, { from: '2027-01-01', to: '2027-01-04', kg: 2 }] });
+  assert.deepEqual(months.bars.map((b) => [b.from, b.to]), [[day(2026, 12, 1), day(2027, 1, 1)], [day(2027, 1, 1), day(2027, 2, 1)]]);
+  assert.deepEqual(harvestBars({ ...farm, buckets: [] }), { bars: [], range: null });
+});
+
+test("a bar's tip: the day, the week or the month, and its kg", () => {
+  assert.equal(barTip('day', { from: '2026-11-03', kg: 2.4 }), `3 Nov${dot}2.4${nb}kg`);
+  assert.equal(barTip('week', { from: '2026-11-02', kg: 12 }), `Week of 2 Nov${dot}12.0${nb}kg`);
+  assert.equal(barTip('month', { from: '2026-11-01', kg: 64.5 }), `Nov 2026${dot}64.5${nb}kg`);
+});
+
+test('the ticks: under the bars, the last bar always, as many as the width takes', () => {
+  const days = Array.from({ length: 30 }, (_, i) => {
+    const d = new Date(Date.UTC(2026, 9, 6 + i)).toISOString().slice(0, 10);
+    return { from: d, to: d, kg: 1 };
+  });
+  const f = { ...farm, buckets: days };
+  const { bars } = harvestBars(f);
+  const wide = harvestTicks(f, 1200);
+  const narrow = harvestTicks(f, 360);
+  assert.ok(narrow.length < wide.length && narrow.length >= 2);
+  for (const ticks of [wide, narrow]) {
+    const last = ticks[ticks.length - 1];
+    assert.deepEqual(last, { at: (bars[29].from + bars[29].to) / 2, label: '4 Nov' });
+  }
+  assert.deepEqual(harvestTicks({ ...farm, bucket: 'week', buckets: [{ from: '2026-11-02', to: '2026-11-04', kg: 1 }] }, 800).map((t) => t.label), ['2 Nov']);
+  assert.deepEqual(harvestTicks({ ...farm, bucket: 'month', buckets: [{ from: '2026-12-01', to: '2026-12-31', kg: 1 }, { from: '2027-01-01', to: '2027-01-04', kg: 2 }] }, 800)
+    .map((t) => t.label), ['Dec', 'Jan 2027'], 'January carries its year');
+  assert.deepEqual(harvestTicks({ ...farm, buckets: [] }, 800), []);
+});
+
+test('the range in words: one month, two months, two years', () => {
+  assert.equal(rangeText({ from: '2026-11-01', to: '2026-11-04' }), `1–4 Nov 2026`);
+  assert.equal(rangeText({ from: '2026-10-06', to: '2026-11-04' }), `6 Oct – 4 Nov 2026`);
+  assert.equal(rangeText({ from: '2025-12-01', to: '2026-11-04' }), `1 Dec 2025 – 4 Nov 2026`);
+  assert.equal(rangeText({ from: '2026-11-04', to: '2026-11-04' }), `4 Nov 2026`);
+  assert.equal(emptyText(7), 'No harvests in the last 7 days.');
+});
+
+test('By room: the rooms that picked or have a run, with the run’s kg per block and BE; By crop', () => {
+  assert.deepEqual(ROOM_COLUMNS, ['Room', 'kg', 'RM value', 'kg per block', 'BE']);
+  assert.deepEqual(roomRows(farm), [
+    { id: 1, name: 'Room 1', crops: [{ crop: 'oyster', blocks: 500 }], cells: [`60.0${nb}kg`, `RM${nb}720.00`, `0.31${nb}kg`, `34${nb}%`] },
+    { id: 3, name: 'Room 3', crops: [], cells: [`4.5${nb}kg`, '—', '—', '—'] },
+  ]);
+  assert.deepEqual(CROP_COLUMNS, ['Crop', 'kg', 'RM value']);
+  assert.deepEqual(cropRows(farm), [
+    { crop: 'oyster', name: 'Grey oyster', cells: [`60.0${nb}kg`, `RM${nb}720.00`] },
+    { crop: 'pink', name: 'Pink oyster', cells: [`4.5${nb}kg`, '—'] },
+  ]);
+});
+
+test('the myGAP sheet: its title and columns, the last five for the farmer to fill', () => {
+  assert.equal(SHEET_TITLE, `myGAP 4-6${dot}Production and sales record (Rekod pengeluaran dan penjualan hasil)`);
+  assert.deepEqual(SHEET_COLUMNS, ['Date', 'Crop', 'Block / location', 'Harvested (kg)', 'Sold (kg)', 'Price / kg (RM)', 'Total (RM)', 'Invoice No.', 'Buyer']);
+});

@@ -1,6 +1,6 @@
 // The Harvest page's pure parts (spec 2026-11-04-harvest-design.md 7): the one formatter for kg, kg per block, BE and RM,
-// the Crop tab's summary line, the flush table's columns, the myGAP sheet's rows and the room's Harvest tab (its run head,
-// tiles, tables, harvest lines and the bodies of Record and Edit). Every formatter shows a dash for a
+// the Crop tab's summary line, the flush table's columns, the myGAP sheet's rows, the room's Harvest tab (its run head,
+// tiles, tables, harvest lines and the bodies of Record and Edit), and the farm's Harvest page and Overview card. Every formatter shows a dash for a
 // missing figure (null, undefined, not a number) rather than throwing. A number keeps its unit at a wrap (a no-break
 // space, as web/text-math.js and the Units Rule have it) and a '·' joins with DOT.
 
@@ -8,6 +8,7 @@ import { CROPS } from './crops.js';
 import { DOT } from './text-math.js';
 import { farmDate, farmTime, dayMonth } from './tasks-math.js';
 import { isClock, normaliseClock } from './light-math.js';
+import { tickCountFor } from './history-math.js';
 
 const NB = ' ';
 const DASH = '—';
@@ -209,3 +210,90 @@ export function editBody(values, h, { run, now, shown }) {
   if (when.error) return { error: when.error, field: when.field };
   return { ...(kg.value === h.kg ? {} : { kg: kg.value }), ...(when.value === null ? {} : { pickedAt: when.value }) };
 }
+
+// ---- the farm: the Harvest page, the myGAP sheet and the Overview card (GET /api/harvest) ----
+
+// The Overview card beside Energy and water: { tiles: [{ label, value, line }], empty } (empty: the words when nothing was
+// picked in 30 days).
+export function overviewTiles(farm) {
+  if (!(farm?.last30?.kg > 0)) return { tiles: [], empty: 'No harvests in the last 30 days.' };
+  return {
+    tiles: [
+      { label: 'Today', value: kgText(farm.today?.kg), line: null },
+      { label: '7 days', value: kgText(farm.last7?.kg), line: null },
+      { label: '30 days', value: kgText(farm.last30.kg), line: finite(farm.last30.value) ? rmText(farm.last30.value) : null },
+    ],
+    empty: null,
+  };
+}
+
+// The page's tiles over its range: [{ label, value, line? }] (line: what the cost per kg counts), as the room tab's.
+export function pageTiles(farm) {
+  const cost = finite(farm.totals?.cost?.costPerKg) ? farm.totals.cost : null;
+  return [
+    { label: 'Picked', value: kgText(farm.totals?.kg) },
+    { label: 'Value', value: rmText(farm.totals?.value) },
+    cost ? { label: 'Cost per kg', value: rmText(cost.costPerKg), line: costBasis(cost) } : { label: 'Cost per kg', value: DASH },
+  ];
+}
+
+const farmMidnight = (date) => whenMs(date, '00:00');
+// A bucket's whole slot (the week or month under way too, so every bar is as wide as its kind): its first day to the next's
+// (the farm's time keeps no summer time: a day is always 24 h).
+function slotEnd(bucket, from) {
+  if (bucket === 'month') {
+    const [y, m] = from.split('-').map(Number);
+    return farmMidnight(new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 10));
+  }
+  return farmMidnight(from) + (bucket === 'week' ? 7 : 1) * 86_400_000;
+}
+
+// drawTimeBars' bars ({ from, to (ms, the farm's midnights), v: kg, b: the reply's bucket }) and range (null without buckets).
+export function harvestBars(farm) {
+  const bars = (farm.buckets ?? []).map((b) => ({ from: farmMidnight(b.from), to: slotEnd(farm.bucket, b.from), v: b.kg, b }));
+  return { bars, range: bars.length ? { from: bars[0].from, to: bars[bars.length - 1].to } : null };
+}
+
+// The bucket's name: "3 Nov", "Week of 2 Nov", "Nov 2026"; on the axis a month is "Nov", January with its year.
+const monthOf = (date) => `${MONTHS[Number(date.slice(5, 7)) - 1]} ${date.slice(0, 4)}`;
+const bucketName = (bucket, date) => (bucket === 'week' ? `Week of ${dayMonth(date)}` : bucket === 'month' ? monthOf(date) : dayMonth(date));
+const tickName = (bucket, date) => (bucket !== 'month' ? dayMonth(date) : date.slice(5, 7) === '01' ? monthOf(date) : MONTHS[Number(date.slice(5, 7)) - 1]);
+
+// A bar's tip: "3 Nov · 2.4 kg", "Week of 2 Nov · 12.0 kg", "Nov 2026 · 64.5 kg".
+export const barTip = (bucket, b) => `${bucketName(bucket, b.from)}${DOT}${kgText(b.kg)}`;
+
+// The axis under the bars at a chart's width: [{ at (a bar's middle), label }], every k-th bar counted back from the last (today's)
+// so the ticks fit as many as the line charts' do.
+export function harvestTicks(farm, width) {
+  const { bars } = harvestBars(farm);
+  if (!bars.length) return [];
+  const step = Math.ceil(bars.length / tickCountFor(width));
+  const ticks = [];
+  for (let i = bars.length - 1; i >= 0; i -= step) ticks.unshift({ at: (bars[i].from + bars[i].to) / 2, label: tickName(farm.bucket, bars[i].b.from) });
+  return ticks;
+}
+
+// The page's dates: "1–4 Nov 2026", "6 Oct – 4 Nov 2026", "1 Dec 2025 – 4 Nov 2026" (an en dash, the Units Rule).
+export function rangeText({ from, to }) {
+  if (from === to) return longDate(to);
+  if (from.slice(0, 4) !== to.slice(0, 4)) return `${longDate(from)} – ${longDate(to)}`;
+  if (from.slice(0, 7) === to.slice(0, 7)) return `${Number(from.slice(8))}–${longDate(to)}`;
+  return `${dayMonth(from)} – ${longDate(to)}`;
+}
+
+export const emptyText = (days) => `No harvests in the last ${days} days.`;
+
+// By room: the rooms that picked in the range or have a run under way; kg and RM over the range, kg per block and BE the run's.
+export const ROOM_COLUMNS = ['Room', 'kg', 'RM value', 'kg per block', 'BE'];
+export const roomRows = (farm) => (farm.rooms ?? []).filter((r) => r.kg > 0 || r.current).map((r) => ({
+  id: r.id, name: r.name, crops: r.crops,
+  cells: [kgText(r.kg), rmText(r.value), perBlockText(r.current?.perBlock, { cell: true }), beText(r.current?.be, { cell: true })],
+}));
+
+// By crop, most picked first (the server's order).
+export const CROP_COLUMNS = ['Crop', 'kg', 'RM value'];
+export const cropRows = (farm) => (farm.crops ?? []).map((c) => ({ crop: c.crop, name: cropName(c.crop), cells: [kgText(c.kg), rmText(c.value)] }));
+
+// The myGAP sheet (form 4-6): its title and columns; sheetRows above fills them.
+export const SHEET_TITLE = `myGAP 4-6${DOT}Production and sales record (Rekod pengeluaran dan penjualan hasil)`;
+export const SHEET_COLUMNS = ['Date', 'Crop', 'Block / location', 'Harvested (kg)', 'Sold (kg)', 'Price / kg (RM)', 'Total (RM)', 'Invoice No.', 'Buyer'];
