@@ -258,6 +258,35 @@ function pickedOf(values, { run, now, shown }) {
   return { error, field: date < farmDate(run.startedAt) || date > farmDate(to) ? 'pickedDate' : 'pickedTime' };
 }
 
+// One pick over this many kg a block asks again before it is kept (Record, Edit, the harvest check's Done): a whole good
+// flush is about 0.2 to 0.3 kg a block, so more in one pick is likelier a slipped decimal point or the wrong blocks than a
+// real pick. Asked, not refused: the farmer may know better.
+export const PICK_MAX_PER_BLOCK = 0.3;
+
+// A pick of kg from the crop's blocks in the run: null when plausible (or the blocks unknown), else { perBlock, message }.
+export function pickCheck(kg, blocks) {
+  if (!finite(kg) || !finite(blocks) || blocks <= 0 || kg / blocks <= PICK_MAX_PER_BLOCK) return null;
+  const perBlock = kg / blocks;
+  return { perBlock, message: `That's ${perBlockText(perBlock)} in one pick. Is ${kgText(kg, { exact: true })} right?` };
+}
+
+// A dialog's picks [{ field, kg, blocks }] → the first implausible one, { field, message } for its box, or null.
+export function pickWarning(picks) {
+  for (const p of picks) {
+    const c = pickCheck(p.kg, p.blocks);
+    if (c) return { field: p.field, message: c.message };
+  }
+  return null;
+}
+
+// The picks of a Done body (tasks-math.js doneBody) on a harvest check: its kg boxes with the run's blocks of each crop
+// (the row's harvestCrops); [] for another row or nothing weighed.
+export function donePicks(row, body) {
+  const crops = Array.isArray(row?.harvestCrops) ? row.harvestCrops : [];
+  if (body?.amounts) return crops.filter((c) => finite(body.amounts[c.crop])).map((c) => ({ field: `kg:${c.crop}`, kg: body.amounts[c.crop], blocks: c.blocks }));
+  return crops.length === 1 && finite(body?.amount) ? [{ field: 'amount', kg: body.amount, blocks: crops[0].blocks }] : [];
+}
+
 // Record a harvest's body { crop, kg, worker, pickedAt? } (crop: the run's only crop when there is no picker), or { error, field }.
 export function recordBody(values, { run, now, shown }) {
   const worker = String(values.worker ?? '').trim();

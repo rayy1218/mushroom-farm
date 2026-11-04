@@ -11,7 +11,7 @@ import { cropShortName } from './crops.js';
 import { picture } from './pictures.js';
 import { roomHash } from './route.js';
 import { DOT } from './text-math.js';
-import { openForm, closeTaskDialog, loadWorkers, setWorker, workerField, errorText } from './task-dialogs.js';
+import { openForm, closeTaskDialog, loadWorkers, setWorker, workerField, errorText, pickGuard } from './task-dialogs.js';
 import {
   runHead, recordLead, recordTitle, dateHint, harvestLine, pastRow, PAST_COLUMNS, missingNote, flushColumns, flushRows, flushPerCrop, flushSplits,
   BY_CROP_COLUMNS, byCropRows, runTiles, pricesNote,
@@ -408,6 +408,7 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
       p.append("No names yet: add the workers' names in ", a, ' first.');
       lead.push(p);
     }
+    const implausible = pickGuard({ value: 'record', label: 'Record', fields: ['kg'] });
     ask({
       title: recordTitle(getRoom()?.name),
       lead,
@@ -416,9 +417,11 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
         kgField(''), workerField(names, 'Who picked it'), ...whenFields(shown, run, now),
       ],
       buttons: [{ value: 'record', label: 'Record', primary: true }],
-      submit: async (v) => {
+      submit: async (v, _which, form) => {
         const body = recordBody(v, { run, now: Date.now(), shown });
         if (body.error) return { field: body.field, message: body.error };
+        const asked = implausible(form, [{ field: 'kg', kg: body.kg, blocks: crops.find((c) => c.crop === body.crop)?.blocks }]);
+        if (asked) return asked;
         setWorker(body.worker); // kept for the next Done, as the Done dialog does
         return onTime(await send('POST', `/api/rooms/${roomId}/harvests`, body));
       },
@@ -429,15 +432,18 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
     const now = Date.now();
     const shown = whenBoxes(h.pickedAt);
     const l = harvestLine(h, { mixed: true }); // the crop named, whatever the room
+    const implausible = pickGuard({ value: 'save', label: 'Save', fields: ['kg'] });
     ask({
       title: 'Edit a harvest',
       lead: [[l.what, l.who, l.from].filter(Boolean).join(DOT)],
       fields: [kgField(String(h.kg)), ...whenFields(shown, run, now)],
       buttons: [{ label: 'Delete this harvest', action: () => deleteHarvest(h, li, fallback) }, { value: 'save', label: 'Save', primary: true }],
-      submit: async (v) => {
+      submit: async (v, _which, form) => {
         const body = editBody(v, h, { run, now: Date.now(), shown });
         if (body.error) return { field: body.field, message: body.error };
         if (Object.keys(body).length === 0) return true; // nothing changed
+        const asked = 'kg' in body ? implausible(form, [{ field: 'kg', kg: body.kg, blocks: h.blocks }]) : null; // a kg left as it was is not asked about
+        if (asked) return asked;
         return onTime(await send('PUT', `/api/harvests/${h.id}`, body));
       },
     });

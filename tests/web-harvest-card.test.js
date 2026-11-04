@@ -136,3 +136,15 @@ test('a mixed room\'s flushes on a phone: the per-crop columns give way to the s
   assert.ok(css.includes('  .hv-split-row { display: table-row; }'));
   assert.ok(css.includes('#tk-dialog-title:focus { outline: none; }'));
 });
+
+test('an implausible pick asks once in Record, Edit and Done: the warning on its kg box, the primary button "… anyway", a changed kg checked again', () => {
+  assert.ok(dialogs.includes("b.textContent = `${label} anyway`;"));
+  assert.ok(dialogs.includes("for (const name of fields) form.input(name)?.addEventListener('input', () => { asked = null; b.textContent = label; });"));
+  assert.ok(dialogs.includes("if (!warning || kg === asked) return null;"), 'the same kg again: sent');
+  assert.ok(card.includes("const implausible = pickGuard({ value: 'record', label: 'Record', fields: ['kg'] });"));
+  assert.ok(card.includes("implausible(form, [{ field: 'kg', kg: body.kg, blocks: crops.find((c) => c.crop === body.crop)?.blocks }]);"));
+  assert.ok(card.includes("const implausible = pickGuard({ value: 'save', label: 'Save', fields: ['kg'] });"));
+  assert.ok(card.includes("'kg' in body ? implausible(form, [{ field: 'kg', kg: body.kg, blocks: h.blocks }]) : null;"), 'Edit: only a changed kg');
+  assert.ok(dialogs.includes("const implausible = pickGuard({ value: 'done', label: 'Done', fields: amounts.map((f) => f.name) });"));
+  assert.ok(dialogs.includes('const asked = implausible(form, donePicks(row, body));'));
+});

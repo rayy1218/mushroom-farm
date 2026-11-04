@@ -14,6 +14,7 @@ import { roomHash } from './route.js';
 import { keepLines } from './text-math.js';
 import { picture } from './pictures.js';
 import { recordsAmount, amountFields, doneBody, checkReason, checkLongterm, setupUpdate, beforeText, setupBody, taskParts } from './tasks-math.js';
+import { pickWarning, donePicks } from './harvest-math.js';
 
 const WORKER_KEY = 'farm.worker';
 const COMMAND_TIMEOUT = 15000;
@@ -322,6 +323,27 @@ export function openForm({ title, lead = [], fields = [], buttons = [], closeLab
   return handle;
 }
 
+// A pick over PICK_MAX_PER_BLOCK kg a block (harvest-math.js) asks once rather than being refused: the first submit says so
+// under its kg box and the primary button (value, label) reads "Record anyway"; a submit with the same kg then sends it, and
+// a kg box changed is checked again. → check(form, picks [{ field, kg, blocks }]): the problem to show, or null to send.
+export function pickGuard({ value, label, fields }) {
+  let asked = null; // the kg the question was asked for
+  let watching = false;
+  return (form, picks) => {
+    const warning = pickWarning(picks);
+    const kg = picks.map((p) => `${p.field}=${p.kg}`).join();
+    if (!warning || kg === asked) return null;
+    asked = kg;
+    const b = form.button(value);
+    b.textContent = `${label} anyway`;
+    if (!watching) {
+      watching = true;
+      for (const name of fields) form.input(name)?.addEventListener('input', () => { asked = null; b.textContent = label; });
+    }
+    return warning;
+  };
+}
+
 // ---- Done, Skip, Cancel, Add ----
 
 // The Done form's amount boxes: a mixed room's kg one per crop (its picture and name, "kg" in a narrow box, two a row) under
@@ -430,6 +452,7 @@ export function createTaskActions({ onChanged, onError }) {
       return;
     }
     const amounts = amountFields(row);
+    const implausible = pickGuard({ value: 'done', label: 'Done', fields: amounts.map((f) => f.name) });
     const form = ask({
       title: 'Mark done',
       lead: leadOf(row, list),
@@ -440,6 +463,8 @@ export function createTaskActions({ onChanged, onError }) {
         if (!w) return { field: 'worker', message: 'Pick who did it' };
         const body = doneBody(row, w, v);
         if (body.error) return { field: body.field, message: body.error };
+        const asked = implausible(form, donePicks(row, body));
+        if (asked) return asked;
         const r = await send(`/api/tasks/${row.id}/done`, body, form);
         return r !== true && r.field === 'amounts' && amounts[0] ? { ...r, field: amounts[0].name } : r;
       },
