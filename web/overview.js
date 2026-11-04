@@ -1,5 +1,5 @@
-// The Overview page, #/overview: "is the farm OK?" at a glance. One status line, the newest alarms, the outdoor air and the
-// farm's energy, and a card per room with its state, its readings against their bands and their last 24 hours.
+// The Overview page, #/overview: "is the farm OK?" at a glance. One status line, the newest alarms, the outdoor air, the
+// farm's energy and its harvest, and a card per room with its state, its readings against their bands and their last 24 hours.
 // Refreshes every reading interval while shown (like the room page).
 
 import { request, OFFLINE } from './api.js';
@@ -15,6 +15,7 @@ import { usageTileNodes } from './usage.js';
 import { openRoomDialog, closeRoomDialog } from './room-dialog.js';
 import { roomHash } from './route.js';
 import { cropLine } from './room-card-math.js';
+import { overviewTiles } from './harvest-math.js';
 import { picture, emptyPicture } from './pictures.js';
 import { readingIcon } from './icons.js';
 
@@ -134,6 +135,8 @@ export function mount(container) {
   let usageAt = 0; // when the farm usage was last read: it is asked at most once a minute
   let outdoor = null; // the last good GET /api/outdoor (null: none yet, or an older server)
   let usage = null; // the last good GET /api/usage
+  let harvestAt = 0; // when the farm's harvest was last read: at most once a minute too, and on a harvest event
+  let harvest = null; // the last good GET /api/harvest?days=30
   let okAt = null; // when the rooms last loaded
   let roomOrder = []; // the room cards' ids in order, for the energy table
   let phone = null; // the phone-alarm line (phoneAlarms), null when alarms reach a phone
@@ -152,16 +155,20 @@ export function mount(container) {
     clearTimeout(timer);
     const seq = ++loadSeq;
     const wantUsage = Date.now() - usageAt >= USAGE_REFRESH_MS;
-    const [result, settings, outdoorData, usageData] = await Promise.all([
+    const wantHarvest = Date.now() - harvestAt >= USAGE_REFRESH_MS;
+    const [result, settings, outdoorData, usageData, harvestData] = await Promise.all([
       loadOverview(),
       request('GET', '/api/settings').catch(() => null),
       request('GET', '/api/outdoor').catch(() => null), // optional: an older server has no outdoor sensor
       wantUsage ? request('GET', `/api/usage?days=${USAGE_DAYS}`).catch(() => null) : null,
+      wantHarvest ? request('GET', '/api/harvest?days=30').catch(() => null) : null, // optional: an older server has no harvests
     ]);
     if (!alive() || seq !== loadSeq) return;
     if (outdoorData) outdoor = outdoorData; // a failed read keeps the last card
     if (wantUsage) usageAt = Date.now(); // a failed read is tried again in a minute
     if (usageData) usage = usageData;
+    if (wantHarvest) harvestAt = Date.now();
+    if (harvestData) harvest = harvestData;
     if (settings) phone = phoneAlarms(settings); // a failed read keeps the last line
     refresh = refreshMs(settings);
     const { overview, alarms, failed } = result;
@@ -253,12 +260,13 @@ export function mount(container) {
     }));
   }
 
-  // The farm cards: Outdoor first, then Energy and water. A card shows once its data has come.
+  // The farm cards: Outdoor first, then Energy and water, then Harvest. A card shows once its data has come.
   function renderFarm() {
     const cards = [];
     const o = outdoorCard(outdoor);
     if (o) cards.push(outdoorNode(o));
     if (usage) cards.push(energyNode(usage));
+    if (harvest) cards.push(harvestNode(harvest));
     els.farm.replaceChildren(...cards);
     els.farm.hidden = cards.length === 0;
   }
@@ -321,6 +329,31 @@ export function mount(container) {
     return card;
   }
 
+  // Harvest (spec 2026-11-04-harvest-design.md 7): kg today, in 7 and in 30 days with the 30 days' value; the title opens the
+  // Harvest page.
+  function harvestNode(farm) {
+    const card = node('section', 'card ov-harvest');
+    const title = node('h2');
+    const link = node('a', '', 'Harvest');
+    link.href = '#/harvest';
+    title.append(link);
+    card.append(title);
+    const { tiles, empty } = overviewTiles(farm);
+    if (empty) {
+      card.append(node('p', 'muted', empty));
+      return card;
+    }
+    const row = node('div', 'us-tiles');
+    row.append(...tiles.map((t) => {
+      const tile = node('div', 'us-tile');
+      tile.append(node('p', 'us-label', t.label), node('p', 'us-kwh', t.value));
+      if (t.line) tile.append(node('p', 'us-line', t.line));
+      return tile;
+    }));
+    card.append(row);
+    return card;
+  }
+
   function renderAlarms(alarms) {
     els.alarms.hidden = alarms.length === 0;
     const now = Date.now();
@@ -372,6 +405,7 @@ export function mount(container) {
   const reload = createThrottle(() => { if (alive()) load(); }); // at most one load in 2 s
   const offLive = [
     ...['room', 'alarms', 'outdoor'].map((type) => live.on(type, () => reload.call())),
+    live.on('harvest', () => { harvestAt = 0; reload.call(); }), // asked again at once, not after the minute
     live.onStatus((up) => { if (up) reload.call(); else { clearTimeout(timer); timer = setTimeout(load, refresh); } }),
   ];
 
