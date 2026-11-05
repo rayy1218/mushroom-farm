@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import {
   priceText, ageText, linesShort, lineParts, paidMark, pageTiles, deliveryRow, cropRows, buyerRows, CROP_COLUMNS, BUYER_COLUMNS,
   lineTotal, footText, prefill, unlikely, saleBody, sheetWithSales, sheetTotals, emptyText, deleteTitle, deleteLead, num,
-  round2, money,
+  round2, money, roomsOf,
 } from '../web/sales-math.js';
 import { rmText } from '../web/harvest-math.js';
 import { deliveryBody } from '../server/sales-math.js';
@@ -193,3 +193,15 @@ test('money rounding: the dialog\'s total is the total recorded (kg and RM per k
   assert.equal(round2(0.1 + 0.2), 0.3);
   assert.equal(money(1.01, 3.34), 3.37);
 });
+
+test("a delivery's rooms (joint audit B3): one room, or each room with its crops; Mixed; a deleted room no link", () => {
+  const line = (crop, roomId, roomName) => ({ crop, kg: 1, priceKg: 1, total: 1, roomId, roomName });
+  assert.deepEqual(roomsOf([line('oyster', 2, 'Container 1'), line('pink', 2, 'Container 1')]), [{ text: 'Container 1', roomId: 2, crops: null }]);
+  assert.deepEqual(roomsOf([line('oyster', null, null)]), [{ text: 'Mixed', roomId: null, crops: null }]);
+  assert.deepEqual(roomsOf([line('oyster', 7, null)]), [{ text: 'a deleted room', roomId: null, crops: null }]);
+  assert.deepEqual(roomsOf([line('oyster', 2, 'Container 1'), line('pink', null, null), line('lionsmane', 2, 'Container 1')]), [
+    { text: 'Container 1', roomId: 2, crops: "Grey oyster, Lion's mane" }, { text: 'Mixed', roomId: null, crops: 'Pink oyster' },
+  ]);
+  assert.deepEqual(roomsOf([]), []);
+});
+

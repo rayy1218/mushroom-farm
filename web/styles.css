@@ -2463,6 +2463,10 @@ p.bt-making-note.bt-over { margin-top: 12px; }
 .sl-buyer { grid-column: 2; grid-row: 1; min-width: 0; overflow-wrap: anywhere; font-weight: 600; }
 .sl-lines { grid-column: 1 / 3; grid-row: 2; min-width: 0; }
 .sl-line-part { white-space: nowrap; }
+/* the delivery's rooms under its lines (joint audit B3): muted, a room a link in the line's tone (as the Harvest tab's blocks line) */
+.sl-rooms { display: block; margin-top: 2px; color: var(--muted); font-size: var(--fs-sm); }
+.sl-room { color: inherit; white-space: nowrap; text-decoration: underline; text-decoration-color: var(--axis); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+.sl-room:hover { color: var(--ink); text-decoration-color: currentColor; }
 .sl-total { grid-column: 1; grid-row: 3; white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 600; }
 .sl-mark { grid-column: 2; grid-row: 3; font-size: var(--fs-md); }
 .sl-ref { grid-column: 1 / 3; grid-row: 4; min-width: 0; overflow-wrap: anywhere; }
@@ -2493,8 +2497,10 @@ p.bt-making-note.bt-over { margin-top: 12px; }
 .sl-nowrap { white-space: nowrap; }
 @media (max-width: 600px) {
   .sl-tools { width: 100%; }
-  .sl-tools > .range-bar { flex: 1 1 100%; }
-  .sl-tools > button, .sl-tools > a.button { flex: 1 1 0; justify-content: center; padding-left: 8px; padding-right: 8px; white-space: nowrap; }
+  .sl-tools > .range-bar { flex: 1 1 100%; flex-wrap: nowrap; } /* one row at 360 px (joint audit B4), as Harvest's */
+  .sl-tools > .range-bar button { flex: 1 1 auto; padding: 4px 6px; white-space: nowrap; }
+  /* two a row: Record a sale and Buyers, then Export CSV and the 4-6 sheet (as Inventory's tools) */
+  .sl-tools > button, .sl-tools > a.button { flex: 1 1 calc(50% - 4px); justify-content: center; padding-left: 8px; padding-right: 8px; white-space: nowrap; }
   /* a phone's tables: by crop Crop (the sold kg under it), Income, Average; by buyer Buyer (the kg under it), Income, Owed */
   .sl-crop-table th:nth-child(2), .sl-crop-table td:nth-child(2), .sl-crop-table th:nth-child(3), .sl-crop-table td:nth-child(3),
   .sl-crop-table th:nth-child(6), .sl-crop-table td:nth-child(6), .sl-buyer-table th:nth-child(2), .sl-buyer-table td:nth-child(2) { display: none; }
@@ -2511,7 +2517,6 @@ p.bt-making-note.bt-over { margin-top: 12px; }
 }
 @media (min-width: 601px) {
   .sl-diff { display: none; }
-  .sl-tools > a.button { min-height: 36px; padding: 7px 14px; } /* as tall as the buttons beside it */
 }
 @media (min-width: 900px) {
   /* a delivery one row of the list's columns: day, buyer, lines, total (right), mark, reference, Edit */

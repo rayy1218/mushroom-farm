@@ -64,7 +64,7 @@ test('buttons: names for a screen reader, the Owed toggle, focus keys, quiet Edi
   assert.ok(page.includes('`Mark the sale of ${r.day} to ${r.buyer} paid`'));
   assert.ok(page.includes("toggle.setAttribute('aria-expanded', String(on));"));
   for (const k of ['`edit-${d.id}`', '`paid-${d.id}`', '`owed-${b.buyerId}`']) assert.ok(page.includes(k), k);
-  assert.ok(page.includes("'tk-quiet sl-edit'"));
+  assert.ok(page.includes("'tk-quiet bz-quiet sl-edit'"), 'the Business quiet row action (joint audit B6)');
   assert.ok(page.includes('const changed = () => reload.call();'));
 });
 
@@ -86,7 +86,9 @@ test('Record / Edit sale: its own dialog, lines added and removed, the buyer pic
 });
 
 test('Mark paid, Delete and Buyers use openForm', () => {
-  assert.ok(dialogs.includes("import { openForm, errorText } from './task-dialogs.js';"));
+  assert.ok(dialogs.includes("import { openForm as openTaskForm, errorText } from './task-dialogs.js';"));
+  assert.ok(dialogs.includes("document.querySelector('dialog.tk-dialog[open] > form')?.classList.add('bz-form');"), 'bz-form on every openForm dialog (joint audit B6)');
+  assert.ok(dialogs.includes("el('form', 'sl-form bz-form')"), 'and on Record a sale');
   assert.ok(dialogs.includes("title: 'Mark paid'"));
   assert.ok(dialogs.includes("label: 'Paid on'"));
   assert.ok(dialogs.includes("label: 'Delete sale'"));
@@ -184,4 +186,12 @@ test('finish review: "RM per kg" kept whole in a head; "expected" inside the RM 
   assert.ok(sales.includes('.sl-new-buyer { column-gap: 16px; }'));
   assert.ok(sales.includes('.sl-item > .sl-day { padding-right: 10px; }'));
   assert.ok(!sales.includes('.sl-expected { grid-row'));
+});
+
+test('joint audit: the head links the myGAP 4-6 sheet (B4); the period one row on a phone; a delivery says its rooms (B3)', () => {
+  assert.ok(page.includes('<a class="button" data-sheet>myGAP 4-6 sheet</a>'));
+  assert.ok(page.includes('els.sheet.href = sheetHash(period);'));
+  assert.ok(css.includes('.sl-tools > .range-bar button { flex: 1 1 auto; padding: 4px 6px; white-space: nowrap; }'));
+  assert.ok(page.includes('lines.append(roomsNode(d.lines));'));
+  assert.ok(page.includes("a.href = roomHash(r.roomId, 'harvest');"));
 });
