@@ -5,8 +5,9 @@ import { RELAY_KEYS } from './machine-codes.js';
 import { RATINGS, FILTER } from './rooms.js';
 import { PROGRAM_DEFAULTS } from './program.js';
 import { FAMILY_OF, DAILY_RULES, HARVEST_RULES } from './task-rules.js';
+import { BATCHES_SCHEMA, createBatchStore } from './batches-db.js'; // ---- Batches ---- (spec 2026-11-05-batches-design.md 2)
 
-const VERSION = 20;
+const VERSION = 21;
 
 // Iteration 1 (version 0) had only the rooms table without the address columns.
 const ROOMS = `
@@ -626,6 +627,8 @@ function migrate(db) {
       db.exec(RUNS_HARVESTS);
       if (!had) upgradeHarvests(db, Date.now());
     }
+    // ---- Batches ---- (spec 2026-11-05-batches-design.md 2): every table of both parts in one step.
+    if (version < 21) db.exec(BATCHES_SCHEMA);
     db.exec(`PRAGMA user_version = ${VERSION}`);
     db.exec('COMMIT');
   } catch (err) {
@@ -955,6 +958,7 @@ export function openDb(path, { log = console.error } = {}) {
     deleteHarvest: db.prepare('DELETE FROM harvests WHERE id = ?'),
     deleteHarvests: db.prepare('DELETE FROM harvests WHERE room_id = ?'),
   };
+  const batchStore = createBatchStore(db); // ---- Batches ---- (spec 2026-11-05-batches-design.md 2)
 
   function checkName(name, id) {
     if (q.nameUsed.get(name, id)) throw new NameTakenError(name);
@@ -1446,6 +1450,7 @@ export function openDb(path, { log = console.error } = {}) {
         q.deleteHarvests.run(id);
         q.deleteCropRuns.run(id);
         q.deleteTasks.run(id);
+        batchStore.forgetRoom(id); // Batches: the room's batches are kept without it (room and run ids are reused)
         // The owner's rules lose the room (its id is given to the next room made after the top one); a rule left with no
         // room is removed (its rows went with the room's tasks). A rooms value that is not a list is left alone.
         for (const r of q.customRules.all()) {
@@ -2007,6 +2012,9 @@ export function openDb(path, { log = console.error } = {}) {
       });
       return deleted;
     },
+
+    // ---- Batches ---- (spec 2026-11-05-batches-design.md): the store of server/batches-db.js.
+    batches: batchStore,
 
     close() {
       db.close();
