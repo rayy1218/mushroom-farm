@@ -17,6 +17,7 @@ import {
   BY_CROP_COLUMNS, byCropRows, runTiles, pricesNote,
   deleteTitle, deleteLead, whenBoxes, recordBody, editBody, recordPicks, editPicks,
 } from './harvest-math.js';
+import { batchLineFor } from './batches-math.js'; // ---- Batches ----
 
 const REFRESH_MS = 60_000;
 const COMMAND_TIMEOUT = 15000;
@@ -157,7 +158,12 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
   const runLine = el('p', 'muted tk-sub', 'Loading…');
   const tiles = el('div', 'us-tiles hv-tiles');
   const runBody = el('div', 'hv-body');
-  runCard.append(el('h2', '', 'This run'), runLine, tiles, runBody);
+  // ---- Batches ---- the run's blocks under its head (contract 2026-11-05 section 4): a muted line to its batch or batches
+  const blocksLine = el('p', 'muted bz-blocks');
+  blocksLine.hidden = true;
+  let blocks = null; // { runId, reply }: GET /api/batches?run= for the current run, read with the harvests
+  // ---- end Batches ----
+  runCard.append(el('h2', '', 'This run'), runLine, blocksLine, tiles, runBody);
 
   // Harvests
   const listCard = el('section', 'card hv-part hv-list-card');
@@ -215,6 +221,15 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
 
   function paintRun(run) {
     runLine.textContent = runHead(run);
+    // ---- Batches ----
+    const line = batchLineFor(run, blocks?.runId === run.id ? blocks.reply : null);
+    blocksLine.hidden = !line;
+    if (line) {
+      const a = el('a', '', line.text);
+      a.href = line.href;
+      blocksLine.replaceChildren(a);
+    }
+    // ---- end Batches ----
     tiles.replaceChildren(...tileNodes(runTiles(run)));
     // under the tiles, what they leave out: the prices the cost is at, a figure missing in Settings → Yield
     const prices = pricesNote(run.cost);
@@ -296,7 +311,7 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
   }
 
   function paint() {
-    const key = JSON.stringify([view, showAll, [...allOf]]);
+    const key = JSON.stringify([view, showAll, [...allOf], blocks]);
     if (key === painted) return;
     painted = key;
     // the cursor on a row's button or a run's fold comes back to the same one after the repaint
@@ -333,7 +348,10 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
     try {
       const data = await request('GET', `/api/rooms/${roomId}/harvests`);
       if (!alive || me !== seq) return;
+      const runBlocks = await readBlocks(data.current); // ---- Batches ----
+      if (!alive || me !== seq) return;
       view = data;
+      blocks = runBlocks;
       paint();
     } catch (err) {
       if (!alive || me !== seq) return;
@@ -349,6 +367,18 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
     clearTimeout(timer);
     timer = setTimeout(refresh, fallbackMs(REFRESH_MS, live.connected()));
   }
+
+  // ---- Batches ---- the current run's batches, read after its harvests under the same token. No run: none. Not read (a farm
+  // app without Batches, a dropped answer): the last answer for the same run stays, so a blip does not hide the line.
+  async function readBlocks(run) {
+    if (!run) return null;
+    try {
+      return { runId: run.id, reply: await request('GET', `/api/batches?run=${run.id}`) };
+    } catch {
+      return blocks?.runId === run.id ? blocks : null;
+    }
+  }
+  // ---- end Batches ----
 
   // A change (here or elsewhere) asks again at most once in 2 s.
   const reload = createThrottle(() => { if (alive) refresh(); });
@@ -488,6 +518,8 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
   const offLive = [
     live.on('harvest', (d) => { if (d.roomId === null || d.roomId === roomId) reload.call(); }), // null: every room (Settings → Yield)
     live.on('room', (d) => { if (d.id === roomId && d.part === 'crop') reload.call(); }),
+    live.on('batches', () => reload.call()), // ---- Batches ---- a batch put in, taken out or edited: its line
+
     live.onStatus((up) => {
       if (up) reload.call();
       else if (view) { clearTimeout(timer); timer = setTimeout(refresh, REFRESH_MS); }

@@ -156,3 +156,22 @@ test('the pick question is a check, not a fault: amber under the kg box, the box
   assert.ok(css.includes('.field input[data-warn] { border-color: var(--warning-text); }'));
   assert.ok(dialogs.includes("value: '', hint: 'Leave it empty if it was not weighed or counted.', ...(f.suffix ? { suffix: f.suffix } : {}) }));"), 'the single kg box has "kg" inside');
 });
+
+// ---- Batches ---- (the integration, 2026-11-05; contract section 4): the run's blocks line, batchLineFor's text and link
+// (its words: web-batches-math.test.js)
+test("This run: the run's batches read with its harvests under the same token, a muted line to the batch, again on 'batches'", () => {
+  assert.ok(card.includes("import { batchLineFor } from './batches-math.js';"));
+  assert.ok(card.includes("return { runId: run.id, reply: await request('GET', `/api/batches?run=${run.id}`) };"));
+  const load = card.slice(card.indexOf('async function refresh() {'), card.indexOf('// ---- Batches ---- the current run'));
+  assert.match(load, /const runBlocks = await readBlocks\(data\.current\);[^\n]*\n\s*if \(!alive \|\| me !== seq\) return;\n\s*view = data;\n\s*blocks = runBlocks;\n\s*paint\(\);/,
+    'a stale answer is dropped before anything changes');
+  assert.ok(card.includes('return blocks?.runId === run.id ? blocks : null;'), 'a failed read keeps the same run\'s line');
+  assert.ok(card.includes('const key = JSON.stringify([view, showAll, [...allOf], blocks]);'), 'a new answer repaints');
+  assert.ok(card.includes("runCard.append(el('h2', '', 'This run'), runLine, blocksLine, tiles, runBody);"), 'under the run\'s head');
+  assert.ok(card.includes("const blocksLine = el('p', 'muted bz-blocks');"));
+  assert.ok(card.includes('const line = batchLineFor(run, blocks?.runId === run.id ? blocks.reply : null);'));
+  assert.ok(card.includes('blocksLine.hidden = !line;'));
+  assert.ok(card.includes("live.on('batches', () => reload.call()),"));
+  assert.ok(EVENT_TYPES.includes('batches'));
+  assert.equal((card.match(/batchLineFor/g) ?? []).length, 2, 'only in This run');
+});

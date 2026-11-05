@@ -2734,4 +2734,8 @@ td.co-loss { color: var(--critical-text); }
 /* ---- Business (the integration, 2026-11-05; DESIGN.md "Business") ---- */
 /* the strip over the four pages is the room page's tabs (.room-tabs, web/business-tabs.js); the page mounts in .bz-page under it */
 .bz-page { min-width: 0; }
+/* the Harvest tab's This run: the run's blocks (web/batches-math.js batchLineFor) right under its head, the link in the line's tone */
+.bz-blocks { margin: -4px 0 8px; font-size: var(--fs-sm); }
+.bz-blocks a { color: inherit; text-decoration-color: var(--axis); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+.bz-blocks a:hover { color: var(--ink); text-decoration-color: currentColor; }
 /* ---- end Business ---- */
