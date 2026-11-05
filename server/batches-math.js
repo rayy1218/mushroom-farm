@@ -35,9 +35,25 @@ export function blockCost(rows) {
   return round(rows.reduce((s, b) => s + b.blocks * b.pricePerBlock, 0), 2);
 }
 
-// 'waiting' (not yet in a room), 'placed' (in a room's open run) or 'past' (its run ended, or its room was deleted: a placed
-// time with no room).
-export const statusOf = (b) => (b.runId == null ? (b.placedAt == null ? 'waiting' : 'past') : b.runEndedAt == null ? 'placed' : 'past');
+// 'making' (a made batch not yet ready: not in a room, and not an area's blocks marked ready to fruit), 'waiting' (not yet in
+// a room), 'placed' (in a room's open run) or 'past' (its run ended, or its room was deleted: a placed time with no room).
+export function statusOf(b) {
+  if (b.kind === 'made' && b.placedAt == null && !(b.incubation === 'area' && b.incubatedTo != null)) return 'making';
+  return b.runId == null ? (b.placedAt == null ? 'waiting' : 'past') : b.runEndedAt == null ? 'placed' : 'past';
+}
+
+// A made block's price (spec 4): Σ material qty × its item's latest purchase price ÷ the blocks made, to 4 places; null with no
+// lines, a line with no Inventory item, or an item with no purchase price. priceOf(stockItemId) → RM per unit, or null.
+export function madePrice(materials, priceOf, blocks) {
+  if (!materials.length || !(blocks > 0)) return null;
+  let total = 0;
+  for (const m of materials) {
+    const cost = m.stockItemId == null ? null : priceOf(m.stockItemId);
+    if (cost == null) return null;
+    total += m.qty * cost;
+  }
+  return round(total / blocks, 4);
+}
 
 // The run's blocks of the batch's crop (the Crop tab's count; 0 when the run's crops no longer have it); null without a run
 // (waiting, or its room deleted).
@@ -49,8 +65,10 @@ export function runBlocksOf(b) {
 // The stock moves a delivery should have (spec 3.1), from its rows (the first row and its parts) and checksOf(id) (a row's
 // checks, oldest first): + the delivery's blocks on the first row at its receipt; a waiting row's losses out; a placed row's
 // losses before it went in out, then the rest of its blocks out when it went in (a loss after that is in a room, not stock).
-// A row whose room was deleted keeps its placed time, so its move out stays. family: not empty.
-export function movesOf(family, checksOf) {
+// A row whose room was deleted keeps its placed time, so its move out stays. A made batch's materials (its first row's lines)
+// with an Inventory item go out on their own items (itemId): the mix's at the mix, the spawn at the inoculation (none before
+// it). family: not empty.
+export function movesOf(family, checksOf, materials = []) {
   const first = family.find((b) => b.parentId == null) ?? family[0]; // a first row is always there (it is never deleted with parts)
   const total = family.reduce((s, b) => s + b.blocks, 0);
   const moves = [{ refId: first.id, at: first.receivedAt, qty: total, unitCost: first.pricePerBlock ?? null, note: null }];
@@ -61,6 +79,11 @@ export function movesOf(family, checksOf) {
     if (b.placedAt == null) continue;
     const out = b.blocks - before.reduce((s, c) => s + c.lost, 0);
     if (out > 0) moves.push({ refId: b.id, at: b.placedAt, qty: -out, unitCost: null, note: 'into a room' });
+  }
+  for (const m of materials) {
+    const at = m.item === 'spawn' ? first.inoculatedAt : first.mixedAt ?? first.receivedAt;
+    if (m.stockItemId == null || at == null) continue;
+    moves.push({ itemId: m.stockItemId, refId: first.id, at, qty: -m.qty, unitCost: null, note: m.item === 'spawn' ? 'spawn' : 'mixed' });
   }
   return moves;
 }

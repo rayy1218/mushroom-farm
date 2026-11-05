@@ -2,7 +2,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { goodOf, dryKgOf, runDryKg, blockCost, statusOf, runBlocksOf, movesOf } from '../server/batches-math.js';
+import { goodOf, dryKgOf, runDryKg, blockCost, madePrice, statusOf, runBlocksOf, movesOf } from '../server/batches-math.js';
 
 const b = (o) => ({ id: 1, parentId: null, crop: 'oyster', blocks: 100, lost: 0, pricePerBlock: 2, blockKg: null, waterPct: null,
   runId: null, runEndedAt: null, runCrops: null, placedAt: null, receivedAt: 1000, ...o });
@@ -57,4 +57,39 @@ test('the stock moves: a deleted room\'s row keeps its move out; a row all lost 
   assert.deepEqual(movesOf([gone], () => []).map((m) => m.qty), [100, -100]);
   const lost = b({ id: 1, blocks: 10, placedAt: 3000, runId: 9, receivedAt: 1000 });
   assert.deepEqual(movesOf([lost], () => [{ at: 2000, lost: 10 }]).map((m) => [m.qty, m.note]), [[10, null], [-10, 'contaminated']]);
+});
+
+test('a made batch is making until it is ready: in an area with its ready day, or put into a room', () => {
+  const made = (o) => b({ kind: 'made', incubation: null, incubatedFrom: null, incubatedTo: null, ...o });
+  assert.equal(statusOf(made({})), 'making');
+  assert.equal(statusOf(made({ incubation: 'area', incubatedFrom: 2000 })), 'making');
+  assert.equal(statusOf(made({ incubation: 'area', incubatedFrom: 2000, incubatedTo: 3000 })), 'waiting', 'ready to fruit');
+  assert.equal(statusOf(made({ incubation: 'room', runId: 3, placedAt: 4000 })), 'placed');
+  assert.equal(statusOf(made({ incubation: 'room', runId: 3, placedAt: 4000, runEndedAt: 5000 })), 'past');
+  assert.equal(statusOf(made({ incubation: 'room' })), 'making', 'taken out of its grow room: it still incubates');
+});
+
+test('the made price per block: the materials at their purchase prices over the blocks made; null when one is unknown', () => {
+  const prices = { 1: 0.35, 2: 1.2, 3: 0.08 };
+  const priceOf = (id) => prices[id] ?? null;
+  const lines = [{ qty: 287, stockItemId: 1 }, { qty: 73.6, stockItemId: 2 }, { qty: 400, stockItemId: 3 }];
+  assert.equal(madePrice(lines, priceOf, 400), 0.5519, '(100.45 + 88.32 + 32) ÷ 400, to 4 places');
+  assert.equal(madePrice([...lines, { qty: 5, stockItemId: null }], priceOf, 400), null, 'a line with no item');
+  assert.equal(madePrice([{ qty: 5, stockItemId: 9 }], priceOf, 400), null, 'an item with no purchase price');
+  assert.equal(madePrice([], priceOf, 400), null, 'no materials');
+});
+
+test("the stock moves of a made batch: its blocks at the mix, each material with an item out at the mix, the spawn at the inoculation", () => {
+  const first = b({ id: 1, kind: 'made', blocks: 400, pricePerBlock: 0.55, receivedAt: 1000, mixedAt: 1000, inoculatedAt: 3000 });
+  const materials = [
+    { item: 'sawdust', qty: 287, stockItemId: 11 },
+    { item: 'bran', qty: 73.6, stockItemId: null },
+    { item: 'spawn', qty: 12, stockItemId: 12 },
+  ];
+  assert.deepEqual(movesOf([first], () => [], materials), [
+    { refId: 1, at: 1000, qty: 400, unitCost: 0.55, note: null },
+    { itemId: 11, refId: 1, at: 1000, qty: -287, unitCost: null, note: 'mixed' },
+    { itemId: 12, refId: 1, at: 3000, qty: -12, unitCost: null, note: 'spawn' },
+  ]);
+  assert.deepEqual(movesOf([{ ...first, inoculatedAt: null }], () => [], materials).map((m) => m.qty), [400, -287], 'no spawn move before the inoculation');
 });
