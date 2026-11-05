@@ -66,6 +66,7 @@ export function settingsView(db, status = {}) {
     ...readSettings(db), telegramTokenSet: telegramToken !== '', telegramTokenEnd: telegramToken === '' ? null : telegramToken.slice(-4),
     ...rest, telegramLastSentAt: status.lastSentAt ?? null, telegramLastError: status.lastError ?? null,
     cropYield: readCropYield(db),
+    inventoryTelegram: readInventoryTelegram(db),
   };
 }
 
@@ -94,6 +95,16 @@ export function readCropYield(db) {
   return out;
 }
 
+// ---- Inventory (spec 2026-11-05-inventory-design.md 5 and 6) ----
+const INVENTORY_FIELDS = {
+  inventoryTelegram: { ok: (v) => typeof v === 'boolean', error: 'Stock messages must be on or off' },
+};
+
+// Whether the low-stock and use-by messages go to the Telegram chat: on unless turned off.
+export function readInventoryTelegram(db) {
+  return db.getSetting('inventoryTelegram') !== '0';
+}
+
 // Any subset of the settings may be given; unknown fields are ignored. Returns { settings } with the given ones when
 // they are all valid, otherwise { error, field } (field is missing when the body itself is wrong or has no setting).
 export function validateSettings(body) {
@@ -112,6 +123,11 @@ export function validateSettings(body) {
     settings[field] = body[field];
   }
   for (const [field, { ok, error }] of Object.entries(YIELD_FIELDS)) {
+    if (!Object.hasOwn(body, field)) continue;
+    if (!ok(body[field])) return { error, field };
+    settings[field] = body[field];
+  }
+  for (const [field, { ok, error }] of Object.entries(INVENTORY_FIELDS)) {
     if (!Object.hasOwn(body, field)) continue;
     if (!ok(body[field])) return { error, field };
     settings[field] = body[field];
@@ -145,4 +161,5 @@ export function writeSettings(db, settings) {
     db.setSetting(field, field === 'telegramLevels' ? JSON.stringify(v) : field === 'telegramCleared' ? (v ? '1' : '0') : String(v));
   }
   if (Object.hasOwn(settings, 'cropYield')) db.setSetting('cropYield', JSON.stringify(settings.cropYield));
+  if (Object.hasOwn(settings, 'inventoryTelegram')) db.setSetting('inventoryTelegram', settings.inventoryTelegram ? '1' : '0');
 }

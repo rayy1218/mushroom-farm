@@ -7,7 +7,7 @@ import { createApp } from '../server/app.js';
 import { DEFAULT_SETTINGS as BASE_SETTINGS, TELEGRAM_VIEW_DEFAULT } from '../server/settings.js';
 import { DEFAULT_GATEWAY } from '../server/gateways.js';
 
-const DEFAULT_SETTINGS = { ...BASE_SETTINGS, cropYield: {}, ...TELEGRAM_VIEW_DEFAULT, farmGateway: DEFAULT_GATEWAY }; // the farm's gateway: read only
+const DEFAULT_SETTINGS = { ...BASE_SETTINGS, cropYield: {}, inventoryTelegram: true, ...TELEGRAM_VIEW_DEFAULT, farmGateway: DEFAULT_GATEWAY }; // the farm's gateway: read only
 
 let db;
 let server;
