@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { openDb } from '../server/db.js';
-import { STOCK } from './batches-fixture.js';
+import { openWithStock } from './batches-fixture.js';
 
 const ROOM = { name: 'Room 1', length: 6, width: 4, height: 2.5 };
 const BATCH = { kind: 'bought', crop: 'oyster', supplier: 'Agro Supplies', receivedAt: 1000, blocks: 1200, pricePerBlock: 2.3, createdAt: 1000 };
@@ -99,7 +99,7 @@ test('a placed batch shows its room and run; run, room and placed are set togeth
   assert.throws(() => db.batches.update(id, { runId: null }), /CHECK/);
 });
 
-test('deleting a room keeps its batches without the room, run or placed time (ids are reused)', (t) => {
+test('deleting a room keeps its batches and their placed time, without the room or run (ids are reused)', (t) => {
   const db = fresh(t);
   const roomId = db.createRoom(ROOM, 1000).id;
   db.setProgram(roomId, { ...db.getProgram(roomId), crops: [{ crop: 'oyster', blocks: 950 }] }, { change: 'start', at: 1500 });
@@ -107,14 +107,14 @@ test('deleting a room keeps its batches without the room, run or placed time (id
   db.batches.update(id, { runId: db.openRun(roomId).id, roomId, placedAt: 1600 });
   assert.equal(db.deleteRoom(roomId), true);
   const b = db.batches.get(id);
-  assert.deepEqual([b.roomId, b.runId, b.placedAt], [null, null, null]);
+  assert.deepEqual([b.roomId, b.runId], [null, null]);
+  assert.equal(b.placedAt, 1600);
 });
 
 test('the stock tables: none until Inventory makes them; then items and moves', (t) => {
-  const db = fresh(t);
+  assert.equal(fresh(t).batches.hasStock(), false);
+  const db = openWithStock(t);
   const s = db.batches;
-  assert.equal(s.hasStock(), false);
-  s.tx(() => s.exec(STOCK));
   assert.equal(s.hasStock(), true);
   const item = s.blocksItem('Grey oyster blocks');
   assert.equal(s.blocksItem('Grey oyster blocks'), item, 'found, not made twice');
@@ -123,4 +123,17 @@ test('the stock tables: none until Inventory makes them; then items and moves', 
   assert.deepEqual(s.moves([7, 8]).map((m) => m.qty), [1200, -1200]);
   s.deleteMoves([7]);
   assert.deepEqual(s.moves([7, 8]).map((m) => m.refId), [8]);
+  assert.deepEqual(s.moves([]), []);
+  s.deleteMoves([]);
+});
+
+test('update: an undefined value or an unknown field throws; tx commits, rolls back, and does not nest', (t) => {
+  const s = fresh(t).batches;
+  const id = s.insert(BATCH);
+  assert.throws(() => s.update(id, { note: undefined }), /No value for note/);
+  assert.throws(() => s.update(id, { bogus: 1 }), /No column for bogus/);
+  assert.equal(s.tx(() => 7), 7);
+  assert.throws(() => s.tx(() => { s.insert(BATCH); throw new Error('boom'); }), /boom/);
+  assert.equal(s.all().length, 1);
+  assert.throws(() => s.tx(() => s.tx(() => 1)));
 });

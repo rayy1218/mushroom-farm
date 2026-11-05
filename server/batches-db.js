@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS batches (
   incubated_to    INTEGER,
   note            TEXT,
   created_at      INTEGER NOT NULL,
-  CHECK ((run_id IS NULL) = (room_id IS NULL) AND (run_id IS NULL) = (placed_at IS NULL)),
+  CHECK ((run_id IS NULL) = (room_id IS NULL) AND (run_id IS NULL OR placed_at IS NOT NULL)),
   CHECK ((block_kg IS NULL) = (water_pct IS NULL))
 ) STRICT;
 CREATE INDEX IF NOT EXISTS batches_by_run ON batches (run_id);
@@ -116,6 +116,7 @@ const checkOf = (r) => ({ id: r.id, batchId: r.batch_id, at: r.at, lost: r.lost,
 function columnsOf(fields, map) {
   return Object.entries(fields).map(([key, value]) => {
     if (!Object.hasOwn(map, key)) throw new Error(`No column for ${key}`);
+    if (value === undefined) throw new Error(`No value for ${key}`);
     return [map[key], value];
   });
 }
@@ -135,8 +136,8 @@ export function createBatchStore(db) {
     check: db.prepare('SELECT * FROM batch_checks WHERE id = ?'),
     removeCheck: db.prepare('DELETE FROM batch_checks WHERE id = ?'),
     moveChecks: db.prepare('UPDATE batch_checks SET batch_id = ? WHERE batch_id = ?'),
-    forgetRoom: db.prepare('UPDATE batches SET room_id = NULL, run_id = NULL, placed_at = NULL WHERE room_id = ?'),
-    hasStock: db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'stock_moves'"),
+    forgetRoom: db.prepare('UPDATE batches SET room_id = NULL, run_id = NULL WHERE room_id = ?'),
+    hasStock: db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table' AND name IN ('stock_items', 'stock_moves')"),
   };
 
   function insertRow(table, fields, map) {
@@ -163,8 +164,6 @@ export function createBatchStore(db) {
         throw err;
       }
     },
-    // Raw SQL (tests make Inventory's tables with it).
-    exec: (sql) => db.exec(sql),
 
     // Every batch, newest received first.
     all: () => q.all.all().map(batchOf),
@@ -188,7 +187,7 @@ export function createBatchStore(db) {
       q.removeLoads.run(id);
       q.remove.run(id);
     },
-    // A deleted room's batches keep their records without the room, its run and the time they went in (db.js deleteRoom).
+    // A deleted room's batches keep their records and the time they went in, without the room and its run (db.js deleteRoom; room and run ids are reused).
     forgetRoom: (roomId) => q.forgetRoom.run(roomId),
 
     // A batch's checks, oldest first.
@@ -204,7 +203,7 @@ export function createBatchStore(db) {
     moveChecks: (fromId, toId) => q.moveChecks.run(toId, fromId),
 
     // ---- Inventory's tables (contract section 7): only when they exist ----
-    hasStock: () => Boolean(q.hasStock.get()),
+    hasStock: () => q.hasStock.get().n === 2,
     // The stock item of kind 'blocks' with this name, made when missing. → its id.
     blocksItem(name) {
       const found = db.prepare("SELECT id FROM stock_items WHERE kind = 'blocks' AND name = ? ORDER BY id LIMIT 1").get(name);

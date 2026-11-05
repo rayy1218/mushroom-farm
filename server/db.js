@@ -1450,7 +1450,7 @@ export function openDb(path, { log = console.error } = {}) {
         q.deleteHarvests.run(id);
         q.deleteCropRuns.run(id);
         q.deleteTasks.run(id);
-        batchStore.forgetRoom(id); // Batches: the room's batches are kept without it (room and run ids are reused)
+        batchStore.forgetRoom(id); // ---- Batches ---- the room's batches are kept without it (room and run ids are reused)
         // The owner's rules lose the room (its id is given to the next room made after the top one); a rule left with no
         // room is removed (its rows went with the room's tasks). A rooms value that is not a list is left alone.
         for (const r of q.customRules.all()) {
