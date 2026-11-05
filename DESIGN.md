@@ -280,7 +280,7 @@ On screens up to 600 px the three smallest steps grow by 1 px (13, 14, 15) for r
 
 **The By-Hand Rule.** A value a person set that differs from the program (a band changed on Setup) is shown in the accent text colour with the program's own value under it ("stage: 900 ppm") and a way back ("Back to stage values"): a choice, not a warning. Three places say it: the Setup inputs, the Crop tab's current stage and, in a line under the Now tab's Control head, "Bands changed by hand on Setup" with its own Back to stage values (2026-10-29c) (web/crop-math.js `byHandValues`, `stageBody`); while they agree nothing shows.
 
-**The Navigation Rule.** The top bar holds the farm's name, Live, the theme, Today (with its count), Calendar, Harvest, Overview and Settings, and a red alarm button only while there are alarms; on a phone the links are their icons and, with too little room for it (about 400 px wide since Calendar, 2026-11-03), the farm's name shows as its mark alone. (2026-11-04, Harvest: under 400 px the top links and the theme button are 40 px wide and 44 px tall, so six icons fit at 360 px with the mark; under 380 px, while the alarm button shows, the farm's mark is hidden, as there is no room for it.) (2026-11-05, the task grid audit: from 601 to 899 px the five worded links left the mark 22 px under "Live" and the page scrolling sideways at 700 px, so up to 899 px the links are their icons, 44 px wide, the Today count kept, as on a phone; from 900 px they carry their words. With the alarm button showing, 900 to about 1000 px keeps the 28 px mark without the farm's name.) The Overview holds every room (the Rooms list is folded into it) and Add room; a room is reached from its card or the room switch on its page.
+**The Navigation Rule.** The top bar holds the farm's name, Live, the theme, Today (with its count), Calendar, Harvest, Business, Overview and Settings, and a red alarm button only while there are alarms; on a phone the links are their icons and, with too little room for it (about 400 px wide since Calendar, 2026-11-03), the farm's name shows as its mark alone. (2026-11-04, Harvest: under 400 px the top links and the theme button are 40 px wide and 44 px tall, so six icons fit at 360 px with the mark; under 380 px, while the alarm button shows, the farm's mark is hidden, as there is no room for it.) (2026-11-05, the task grid audit: from 601 to 899 px the five worded links left the mark 22 px under "Live" and the page scrolling sideways at 700 px, so up to 899 px the links are their icons, 44 px wide, the Today count kept, as on a phone; from 900 px they carry their words. With the alarm button showing, 900 to about 1000 px keeps the 28 px mark without the farm's name.) (2026-11-05, Business: a seventh icon. Up to 1099 px the links are their icons and from 1100 px they carry their words, as six worded links, the alarm button, Live and the theme take 868 px (at 900 px they ran the bar 8 px past its edge). Up to 600 px the Live mark is its dot alone, green when live, whether or not the alarm button shows (its words for a screen reader and in its title), and while the alarm button shows it stands in for the Overview link, as both open the Overview; under 430 px the top links and the theme button are 38 px wide and 44 px tall, so the seven icons fit at 360 px with the mark, and two-figure alarm and Today counts fit from 360 to 430 px; the mark shows whole or not at all.) The Overview holds every room (the Rooms list is folded into it) and Add room; a room is reached from its card or the room switch on its page.
 
 **The One Format Rule.** A quantity has one formatter and every tab uses it: humidity and filter pressure to one decimal (91.2 % RH, 40.2 Pa), metric units with a space before them, ranges with an en dash (19–21 °C). If two tabs could disagree about a number, they share the formatter.
 
@@ -408,6 +408,18 @@ The room's picture keeps its representation: the air path, the condenser outside
 | Keyboard | One Tab stop; arrow keys move, Home and End to the row's ends (with Ctrl, the grid's); the focus returns to the box after a dialog or the menu. Every box has a name for a screen reader: "Footbath, Wednesday 4 November: done by Sara at 08:12" |
 | Month sheet | `#/rooms/7/tasks/sheet?month=2026-11`, a print page in light colours with no top bar: A4 portrait for 12 columns or fewer, landscape above over two pages (1st to 15th, then the rest); every row 6.6 mm to write in, so a 31-day month keeps its foot on one portrait page. A "Farm:" line left blank and "Sheet reviewed by: ____ (Management) on ____" at the foot, the month's days down ("1 Su", each Sunday ruled off) and the tasks across with the unit in brackets ("Harvest AM (kg)") and their heads sideways when narrow, an Initials column for the pen (none in a month gone by). Days gone are filled from the app: "✓ AL"; "✓ 19.59" over the initials; ✗ the heaviest mark (1.3 em, 800; amber on screen, black on paper); —; shaded not due. Days ahead are blank with the planned boxes outlined (dashed on screen, square solid cells on paper). On a phone the day column stays while the rest scrolls sideways |
 
+### Business
+(2026-11-05, the integration of Batches, Inventory, Sales and Costs; contract `~/.claude/task-logs/business/CONTRACT.md` 6.) One top-bar entry for the four business pages. Where each part lives:
+
+| Part | Design |
+|---|---|
+| Entry | **Business** in the top bar after Harvest and before Overview, a briefcase line icon (24 px grid, 1.8 px stroke in `currentColor`, no colour of its own: the Picture Rule); `#/business`; current (`aria-current`) on every `#/business/…` page, sheets too. Its sizes are the Navigation Rule's |
+| Landing | `#/business` opens the tab last used in this browser (`farm.business`, kept on every business page), Batches the first time; its address is replaced, so Back skips it (`web/route.js` `businessLanding`) |
+| Tab strip | Batches · Inventory · Sales · Costs, in that order, above the page's head: the room page's underline tabs as they are (`.room-tabs`; `web/business-tabs.js`, a `nav` named "Business"), the current one in `ink` on the 2 px `accent` line. On the four pages only: a batch, an item and Count stock keep their back link, and a sheet for print (4-2, 4-5) has none |
+| Pages | Each module's page mounts as before, into a `.bz-page` box under the strip (`web/app.js`); the modules do not know the strip is there |
+| Harvest tab | This run: under the run's head, a `muted` `fs-sm` line from Batches' `batchLineFor` ("Blocks · Agro Supplies · spawn batch 0912 · 950 blocks · RM 2,185.00"; "Blocks · 2 batches · 1,200 blocks" for several), the whole line a link to the batch (or the run's batches) in the line's tone with an `axis` underline, `ink` on hover. Read with the harvests and again on the `batches` event; no batches, no line |
+| Styles | The `.bz-` block at the end of `styles.css`, tokens only |
+
 ### Batches
 (2026-11-05; spec `docs/superpowers/specs/2026-11-05-batches-design.md`; revised the same day after the UI/UX audit, `.impeccable/critique/2026-11-05T05-00-34Z__web-batches-page-js.md`, and after part 2's reviews: the next step, sticky footers, the floor's defaults.) `#/business/batches`. Where each part lives:
 
@@ -433,7 +445,7 @@ The room's picture keeps its representation: the air path, the condenser outside
 | Styles | The `.bt-` block |
 
 ### Inventory
-(2026-11-05, business module, reached by its address until the Business entry is added at the merge; spec `docs/superpowers/specs/2026-11-05-inventory-design.md`; four pages under `#/business/inventory`, styles in one `.iv-` block at the end of `styles.css`, tokens only.) Where each part lives:
+(2026-11-05, business module, under Business since the merge; spec `docs/superpowers/specs/2026-11-05-inventory-design.md`; four pages under `#/business/inventory`, styles in one `.iv-` block at the end of `styles.css`, tokens only.) Where each part lives:
 
 | Part | Design |
 |---|---|
@@ -449,7 +461,7 @@ The room's picture keeps its representation: the air path, the condenser outside
 | Figures | One formatter (`web/inventory-math.js`): kg and L to 2 decimals, pcs, g, mL and blocks whole, "−" for under 0, RM to 2 places, "RM 8.33 per L"; a number keeps its unit at a wrap |
 
 ### Sales
-(2026-11-05, owner: what the farm sells, to whom, and what is owed; spec `docs/superpowers/specs/2026-11-05-sales-design.md`.) `#/business/sales` (`?days=7|30|90|365`, 30 without one), a page of the Business group: no top-bar entry of its own until the integrator adds "Business". Where each part lives:
+(2026-11-05, owner: what the farm sells, to whom, and what is owed; spec `docs/superpowers/specs/2026-11-05-sales-design.md`.) `#/business/sales` (`?days=7|30|90|365`, 30 without one), a page of the Business group, under Business since the merge. Where each part lives:
 
 | Part | Design |
 |---|---|
@@ -484,7 +496,7 @@ The room's picture keeps its representation: the air path, the condenser outside
 | Words | RM "RM 1,240.50", kg to 1 decimal in totals and 2 in a line, a price "RM 12.00", days "12 days", "1 day", "today". Harvest's figure is **Expected value** (not "RM value"); Sales' is **Income**: one name for each figure |
 
 ### Costs
-(2026-11-05; spec `docs/superpowers/specs/2026-11-05-costs-design.md`.) `#/business/costs`, reached through the Business entry the integrator adds. Where each part lives:
+(2026-11-05; spec `docs/superpowers/specs/2026-11-05-costs-design.md`.) `#/business/costs`, under Business. Where each part lives:
 
 | Part | Design |
 |---|---|
