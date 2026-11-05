@@ -23,7 +23,7 @@ function file(t, name) {
   return join(dir, name);
 }
 
-test('a version 20 file is brought to 22 with the two inventory tables, empty', (t) => {
+test('a version 20 file is brought to 22 (or later) with the two inventory tables, empty', (t) => {
   const path = file(t, 'v20.db');
   openDb(path).close();
   const raw = new DatabaseSync(path);
@@ -34,7 +34,7 @@ test('a version 20 file is brought to 22 with the two inventory tables, empty', 
   assert.deepEqual(db.stockMoves(), []);
   db.close();
   const check = new DatabaseSync(path);
-  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 22);
+  assert.ok(check.prepare('PRAGMA user_version').get().user_version >= 22); // 22 or a later module's version once merged
   check.close();
 });
 
