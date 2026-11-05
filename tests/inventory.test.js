@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDb } from '../server/db.js';
 import { createInventory } from '../server/inventory.js';
+import { dayStart, addDays } from '../server/task-rules.js';
 
 const NOW = Date.parse('2026-11-05T09:00:00+08:00');
 const ROOM = { name: 'Container 1', length: 6, width: 4, height: 2.5 };
@@ -315,4 +316,39 @@ test('the 4-5 sheet of the last 30, 90 or 365 days', (t) => {
   assert.deepEqual(sheet.rows.map((r) => [r.kind, r.location, r.lrmpNo]), [['use', 'Container 1', 'LRMP 9']]);
   assert.equal(inv.sheet(90).rows.length, 2);
   assert.throws(() => inv.sheet(7), refused(400, 'days'));
+});
+
+test('review fixes: day null is not a change; an old use keeps its own at; no throw-out on an archived item', (t) => {
+  const { inv, setNow } = setup(t);
+  const spawn = inv.addItem({ name: 'Spawn', kind: 'spawn', unit: 'kg' });
+  const buy = inv.purchase({ itemId: spawn.id, qty: 3, total: 30, day: '2026-11-01', useBy: '2026-11-08' });
+  assert.equal(inv.editMove(buy.id, { day: null, total: 31 }).at, buy.at, 'day null leaves the day');
+  const used = inv.use({ itemId: spawn.id, qty: 1, worker: 'Ali', at: NOW - 10_000 });
+  setNow(NOW + 401 * 86_400_000);
+  assert.equal(inv.editMove(used.id, { at: used.at, qty: 2 }).qty, -2, 'an old use sent back with its own at');
+  assert.throws(() => inv.editMove(used.id, { at: used.at + 1 }), refused(400, 'at'));
+  setNow(NOW);
+  inv.editItem(spawn.id, { archived: true });
+  assert.throws(() => inv.throwOut(buy.id, { worker: 'Ali' }), (e) => e.status === 409 && e.message === 'Bring the item back first: it is archived');
+});
+
+test('review fixes: count limits and messages', (t) => {
+  const { inv } = setup(t);
+  const bleach = inv.addItem({ name: 'Bleach', kind: 'chemical', unit: 'L' });
+  const old = inv.addItem({ name: 'Old', kind: 'other', unit: 'pcs' });
+  inv.editItem(old.id, { archived: true });
+  const many = Array.from({ length: 501 }, () => ({ itemId: bleach.id, qty: 1 }));
+  assert.throws(() => inv.count({ worker: 'Ali', counts: many }), (e) => e.status === 400 && e.field === 'counts' && e.message === 'Count at most 500 items at once');
+  assert.throws(() => inv.count({ worker: 'Ali', counts: [{ itemId: old.id, qty: 1 }] }), (e) => e.status === 400 && e.field === 'counts.0' && e.message === 'That item is archived');
+  assert.throws(() => inv.count({ worker: 'Ali', counts: [{ itemId: 999, qty: 1 }] }), (e) => e.field === 'counts.0' && e.message === 'No such item');
+});
+
+test('the purchases read keeps the edges of the farm days', (t) => {
+  const { db, inv } = setup(t);
+  const spawn = inv.addItem({ name: 'Spawn', kind: 'spawn', unit: 'kg' });
+  const from = '2026-11-02';
+  const to = '2026-11-04';
+  const edges = [dayStart(from) - 1, dayStart(from), dayStart(addDays(to, 1)) - 1, dayStart(addDays(to, 1))];
+  const moves = db.insertStockMoves(edges.map((at) => ({ itemId: spawn.id, at, qty: 1, refKind: 'purchase', total: 1, unitCost: 1 })));
+  assert.deepEqual(inv.purchases(from, to).purchases.map((p) => p.id), [moves[1].id, moves[2].id]);
 });

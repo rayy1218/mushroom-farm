@@ -311,7 +311,7 @@ export function createInventory({ db, now = Date.now, log = console.error }) {
     if (m.refKind === 'purchase') {
       const qty = given(b.qty) ? qtyOf(b.qty, it.unit) : m.qty;
       const total = given(b.total) ? totalOf(b.total) : m.total;
-      const at = given(b.day) && b.day !== localDate(m.at) ? dayAt(b.day) : m.at;
+      const at = given(b.day) && b.day !== null && b.day !== localDate(m.at) ? dayAt(b.day) : m.at;
       const useBy = useByOf(given(b.useBy) ? b.useBy : m.useBy, at);
       next = {
         ...m, qty, total, unitCost: total === null ? m.unitCost : unitCost(total, qty), at,
@@ -321,7 +321,7 @@ export function createInventory({ db, now = Date.now, log = console.error }) {
       next = {
         ...m, qty: given(b.qty) ? -qtyOf(b.qty, it.unit) : m.qty, roomId: given(b.roomId) ? roomOf(b.roomId) : m.roomId,
         reason: given(b.reason) ? reasonOf(b.reason) : m.reason, worker: given(b.worker) ? workerOf(b.worker) : m.worker,
-        at: given(b.at) ? atOf(b.at) : m.at,
+        at: given(b.at) && b.at !== m.at ? atOf(b.at) : m.at,
       };
     }
     const saved = db.updateStockMove(m.id, next);
@@ -342,7 +342,7 @@ export function createInventory({ db, now = Date.now, log = console.error }) {
   function throwOut(moveId, body) {
     const b = bodyOf(body);
     const m = moveOf(moveId);
-    const it = db.stockItem(m.itemId);
+    const it = openItem(m.itemId);
     const lot = itemView(it, db.itemStockMoves(it.id), now()).lots.find((l) => l.moveId === m.id);
     if (!lot) throw new InventoryError(409, 'Nothing is left of it');
     if (!lot.state) throw new InventoryError(409, 'It is not near its use-by');
@@ -360,16 +360,16 @@ export function createInventory({ db, now = Date.now, log = console.error }) {
   // matches; counted: the figure), all in one transaction; one bad entry (field counts.<index>) saves none. → { moves }.
   function count(body) {
     const b = bodyOf(body);
-    if (!Array.isArray(b.counts) || b.counts.length === 0 || b.counts.length > MAX_COUNTS) {
-      throw new InventoryError(400, 'Give at least one count', 'counts');
-    }
+    if (!Array.isArray(b.counts) || b.counts.length === 0) throw new InventoryError(400, 'Give at least one count', 'counts');
+    if (b.counts.length > MAX_COUNTS) throw new InventoryError(400, `Count at most ${MAX_COUNTS} items at once`, 'counts');
     const worker = workerOf(b.worker);
     const at = now();
     const seen = new Set();
     const list = b.counts.map((c, i) => {
       const field = `counts.${i}`;
       const it = c !== null && typeof c === 'object' && Number.isInteger(c.itemId) ? db.stockItem(c.itemId) : null;
-      if (!it || it.archived) throw new InventoryError(400, 'No such item', field);
+      if (!it) throw new InventoryError(400, 'No such item', field);
+      if (it.archived) throw new InventoryError(400, 'That item is archived', field);
       if (seen.has(it.id)) throw new InventoryError(400, 'That item is counted twice', field);
       seen.add(it.id);
       const counted = qtyOf(c.qty, it.unit, field, { zero: true });
