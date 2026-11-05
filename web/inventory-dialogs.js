@@ -9,7 +9,7 @@ import { openForm, loadWorkers, setWorker, workerField, errorText } from './task
 import { whenBoxes, dateHint } from './harvest-math.js';
 import { farmDate } from './tasks-math.js';
 import {
-  doneText, KIND_OPTIONS, UNIT_OPTIONS, UNIT_BY_KIND, UNIT_WORDS, WHOLE_UNITS, itemGroups, stockHint, qtyText, perUnitText, daysBefore, itemBody, purchaseBody, useBody, purchaseEditBody, useEditBody,
+  doneText, KIND_OPTIONS, UNIT_OPTIONS, UNIT_BY_KIND, UNIT_WORDS, WHOLE_UNITS, itemGroups, decimalComma, stockHint, qtyText, perUnitText, daysBefore, itemBody, purchaseBody, useBody, purchaseEditBody, useEditBody,
   overStock, deleteTitle, deleteLead, throwOutTitle, throwOutLead,
 } from './inventory-math.js';
 
@@ -275,7 +275,7 @@ export function openPurchaseDialog({ items, itemId = null, suppliers = [], onDon
   const today = farmDate(Date.now());
   let item = startItem(list, itemId, 'purchase');
   let form = null;
-  const priceHint = () => (form && item ? perUnitText(Number(form.input('total').value), Number(form.input('qty').value), item.unit) : '');
+  const priceHint = () => (form && item ? perUnitText(Number(decimalComma(form.input('total').value)), Number(decimalComma(form.input('qty').value)), item.unit) : '');
   form = openForm({
     title: 'Purchase',
     fields: [

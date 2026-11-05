@@ -63,8 +63,6 @@ test('item names are unique ignoring case; items and moves are written, changed 
   const bleach = db.insertStockItem({ name: 'Bleach', kind: 'chemical', unit: 'L', reorderAt: 2, ingredient: 'Sodium hypochlorite', lrmpNo: null });
   assert.equal(bleach.name, 'Bleach');
   assert.equal(bleach.ingredient, 'Sodium hypochlorite');
-  assert.equal(db.stockNameUsed('bleach'), true);
-  assert.equal(db.stockNameUsed('BLEACH', bleach.id), false);
   assert.equal(db.stockNameTaken('bLEACH'), 'Bleach');
   assert.equal(db.stockNameTaken('bleach', bleach.id), null);
   assert.throws(() => db.insertStockItem({ name: 'BLEACH', kind: 'chemical', unit: 'L' }));
@@ -83,7 +81,7 @@ test('item names are unique ignoring case; items and moves are written, changed 
   const edited = db.updateStockMove(buy.id, { ...buy, qty: 6, total: 30, unitCost: 5, useBySentAt: 7000 });
   assert.equal(edited.qty, 6);
   assert.equal(edited.useBySentAt, 7000);
-  db.setStockUseBySent(buy.id, null);
+  db.setStockUseBySent(buy.id, null, buy.useBy);
   assert.equal(db.stockMove(buy.id).useBySentAt, null);
   assert.equal(db.deleteStockMove(buy.id), 2, 'a purchase takes its throw-outs with it');
   assert.deepEqual(db.itemStockMoves(bleach.id), []);
@@ -127,4 +125,29 @@ test("a batch's room is read from the batches table when it is there; without th
   raw.close();
   assert.deepEqual([...db.batchRooms([4, 5, 6])], [[4, 2], [5, null]]);
   assert.deepEqual([...db.batchRooms([])], []);
+});
+
+test('an Undo never gives a deleted move\'s id to the next one (AUTOINCREMENT)', (t) => {
+  const db = fresh(t);
+  const item = db.insertStockItem({ name: 'Bleach', kind: 'chemical', unit: 'L' });
+  const add = () => db.insertStockMoves([{ itemId: item.id, at: 1, qty: 1, refKind: 'purchase', total: 1 }]);
+  add();
+  const first = db.stockMoves()[0].id;
+  db.deleteStockMove(first);
+  add();
+  assert.ok(db.stockMoves()[0].id > first);
+});
+
+test('deleting a room sets its uses to room id 0, a deleted room, in the same step', (t) => {
+  const db = fresh(t);
+  const room = db.createRoom({ name: 'Container 1', length: 6, width: 4, height: 2.5 }, 1000);
+  const other = db.createRoom({ name: 'Container 2', length: 6, width: 4, height: 2.5 }, 1000);
+  const item = db.insertStockItem({ name: 'Bleach', kind: 'chemical', unit: 'L' });
+  db.insertStockMoves([
+    { itemId: item.id, at: 1, qty: -1, refKind: 'use', roomId: room.id },
+    { itemId: item.id, at: 2, qty: -1, refKind: 'use', roomId: other.id },
+    { itemId: item.id, at: 3, qty: -1, refKind: 'use', roomId: null },
+  ]);
+  assert.equal(db.deleteRoom(room.id), true);
+  assert.deepEqual(db.stockMoves().map((m) => m.roomId), [0, other.id, null]);
 });

@@ -72,6 +72,28 @@ test('use-by: once per lot, soon or already expired; a changed use-by is told ag
   assert.equal(sent.length, 3);
 });
 
+test('use-by marked sent only if it is still the one told: an edit during the send is told again', async (t) => {
+  const db = openDb(':memory:');
+  t.after(() => db.close());
+  const inv = createInventory({ db, now: () => NOW });
+  const sent = [];
+  let edit = null;
+  const transport = async ({ text }) => { sent.push(plain(text)); if (edit) { const e = edit; edit = null; e(); } return { ok: true }; };
+  const alerts = createInventoryAlerts({
+    db, now: () => NOW, transport, telegram: () => ({ telegramToken: TOKEN, telegramChatId: '42' }), enabled: () => true,
+    log: () => {}, setTimer: () => 1, clearTimer: () => {},
+  });
+  const spawn = inv.addItem({ name: 'Spawn', kind: 'spawn', unit: 'kg' });
+  const buy = inv.purchase({ itemId: spawn.id, qty: 3, total: 30, useBy: '2026-11-12', day: '2026-11-01' });
+  edit = () => inv.editMove(buy.id, { useBy: '2026-11-11' });
+  await alerts.check();
+  assert.equal(sent.length, 1);
+  assert.equal(db.stockMove(buy.id).useBySentAt, null, 'the new use-by was not told yet');
+  await alerts.check();
+  assert.equal(sent.length, 2);
+  assert.match(sent[1], /Use by 11 Nov/);
+});
+
 test('off, or no token: nothing sent and nothing marked, so turning it on sends what is due', async (t) => {
   const { db, inv, alerts, sent, state } = setup(t);
   const bleach = inv.addItem({ name: 'Bleach', kind: 'chemical', unit: 'L', reorderAt: 2 });

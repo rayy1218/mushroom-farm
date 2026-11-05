@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   SHEET_WIDTHS_MM, SHEET_BLANK_ROWS, countDiff, UNIT_BY_KIND, dayNear, metaLine, needsLook, keptCounts, leaveText, doneText, undoLeft, UNDO_MS, itemGroups, stockHint, useByLine, qtyText, rmText, perUnitText, dayText, longDayText, daysBefore, pillOf, lotPill, countedText, attentionParts, groupItems, lotLabel,
-  moveLine, deleteTitle, deleteLead, throwOutTitle, throwOutLead, numberIn, itemBody, purchaseBody, useBody, purchaseEditBody,
+  moveLine, decimalComma, deleteTitle, deleteLead, throwOutTitle, throwOutLead, numberIn, itemBody, purchaseBody, useBody, purchaseEditBody,
   useEditBody, overStock, countBody, sheetCells, sheetRange, sheetEmpty, SHEET_COLUMNS, SHEET_WRITE, KIND_OPTIONS, UNIT_OPTIONS,
 } from '../web/inventory-math.js';
 
@@ -138,6 +138,30 @@ test("a lot's name and a move's line", () => {
   assert.equal(batch.edit, null);
   assert.equal(moveLine({ refKind: 'batch', refId: 14, at: 0, qty: -500, roomName: 'Container 2' }, item({ kind: 'blocks', unit: 'blocks' })).what.replace(/\u00a0/g, ' '), 'Batch 14 · into Container 2');
   assert.equal(moveLine({ refKind: 'batch', refId: 16, at: 0, qty: -2, roomName: null }, item({ kind: 'spawn', unit: 'kg' })).what.replace(/\u00a0/g, ' '), 'Batch 16 · made');
+});
+
+test("a batch move's words come from Batches' note: lost, into a room, made; a positive one received", () => {
+  const w = (m, it) => moveLine({ refKind: 'batch', refId: 14, at: 0, roomName: null, ...m }, it).what.replace(/\u00a0/g, ' ');
+  const blocks = item({ kind: 'blocks', unit: 'blocks' });
+  assert.equal(w({ qty: -20, note: 'contaminated' }, blocks), 'Batch 14 · lost (contaminated)');
+  assert.equal(w({ qty: -480, note: 'into a room', roomName: 'Container 2' }, blocks), 'Batch 14 · into Container 2');
+  assert.equal(w({ qty: -480, note: 'into a room' }, blocks), 'Batch 14 · into a room');
+  assert.equal(w({ qty: -2, note: 'spawn' }, item({ kind: 'spawn', unit: 'kg' })), 'Batch 14 · made');
+  assert.equal(w({ qty: -2, note: 'mixed' }, item({ kind: 'chemical', unit: 'kg' })), 'Batch 14 · made');
+  assert.equal(w({ qty: 500, note: null }, blocks), 'Batch 14 · received');
+  assert.equal(w({ qty: -3, note: 'odd', roomName: 'Container 1' }, blocks), 'Batch 14 · into Container 1');
+  assert.equal(w({ qty: -3, note: null }, item({ kind: 'spawn', unit: 'kg' })), 'Batch 14 · made');
+});
+
+test('a use in a deleted room (room id 0) reads "Used in a deleted room", not "Used"', () => {
+  assert.equal(moveLine({ refKind: 'use', at: 0, qty: -1, roomId: 0, roomName: null, lotId: null }, item()).what, 'Used in a deleted room');
+});
+
+test('Total paid takes one decimal comma, as the qty boxes do; the body and the per-unit rule agree', () => {
+  assert.equal(purchaseBody({ qty: '3', total: '25,5', day: '2026-11-05' }, item(), '2026-11-05').total, 25.5);
+  assert.equal(purchaseBody({ qty: '3', total: '1,234', day: '2026-11-05' }, item(), '2026-11-05').field, 'total');
+  assert.equal(decimalComma(' 25,5 '), '25.5');
+  assert.equal(decimalComma('1,234'), '1,234');
 });
 
 test('the confirms: delete and throw out', () => {

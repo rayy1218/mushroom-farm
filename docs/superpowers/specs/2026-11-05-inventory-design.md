@@ -89,7 +89,7 @@ A unit cannot change once the item has moves (the figures would change meaning);
 | Throw out | On a soon or expired lot of the item page: a confirm "Throw out 3.00 kg of Grey oyster spawn bought 1 Nov?", who; a use of the lot's left with `reason` "Expired" (or "Thrown out" for a soon lot) and `lot_id`. |
 | Edit a move | A purchase: qty, total, supplier, use by, day (a changed use-by clears `use_by_sent_at`). A use: qty, room, reason, who, when. A count: not edited: delete it and count again. A batch move: no Edit; its row says "Change it in Batches" (409 on the API). |
 | Delete a move | With a confirm naming it ("Delete the purchase of 5.00 L of Bleach on 3 Nov?"). Deleting a purchase whose lot has Throw outs deletes them too (they would point at nothing), the confirm says so. |
-| After a record | (Audit 2026-11-05 #2.) The page that opened the dialog (the list or the item's page) says what was saved in a polite status line under the attention line or the head (`web/inventory-done.js`): "Used 1.00 L of Bleach in Container 1 by Sara", "Bought 10.00 L of Bleach 5%", "Threw out 4.50 kg of Hydrated lime by Ali", "Saved 3 counts by Sara" (Count stock hands it to the list through `sessionStorage` `farm.inventory.flash`). A new purchase, use, throw-out or count adds **Undo** for 60 s from the save: it deletes the new move(s) (`DELETE /api/inventory/moves/:id`; a count, each of its moves; one already gone is skipped) and the line says "Undone". An edit, a delete, Add item, Archive and Bring back say "Saved", "Deleted", "Added Bleach", "Archived", "Brought back" with no Undo, for 10 s. |
+| After a record | (Audit 2026-11-05 #2.) The page that opened the dialog (the list or the item's page) says what was saved in a polite status line under the attention line or the head (`web/inventory-done.js`): "Used 1.00 L of Bleach in Container 1 by Sara", "Bought 10.00 L of Bleach 5%", "Threw out 4.50 kg of Hydrated lime by Ali", "Saved 3 counts by Sara" (Count stock hands it to the list through `sessionStorage` `farm.inventory.flash`). A new purchase, use, throw-out or count adds **Undo** for 60 s from the save: it deletes the new move(s) (`DELETE /api/inventory/moves/:id`; Undo of a purchase also removes the throw-outs taken from it within that minute; a count, each of its moves; one already gone is skipped) and the line says "Undone". An edit, a delete, Add item, Archive and Bring back say "Saved", "Deleted", "Added Bleach", "Archived", "Brought back" with no Undo, for 10 s. |
 | Events | Every write publishes `inventory` `{ itemId }`. The server also subscribes to `batches` (Batches publishes it): it runs the message check (section 6) and publishes `inventory` `{ itemId: null }`, so the pages reload without listening for `batches` themselves. |
 
 ## 5. The pages
@@ -113,6 +113,8 @@ A unit cannot change once the item has moves (the figures would change meaning);
 | Date | The day | The day |
 | Crop | blank | The crops of the room's run at that moment (`runs`), short names joined with ", "; blank when not in a room or no run |
 | Location & area | blank | The room's name ("Not in a room" when none; "A deleted room" when gone) |
+
+Deleted-room rule (contract section 7): `deleteRoom` in `server/db.js` sets `stock_moves.room_id = 0` for that room inside its transaction. Room id 0 reads "A deleted room" in the history, the 4-5 sheet and the Edit-a-use picker; only null reads "Not in a room". `stock_moves.id` is AUTOINCREMENT so an Undo never gives a deleted id to a later move.
 | Trade name & active ingredient | The item's name, then its ingredient in brackets when set | as a purchase |
 | LRMP No. | The item's | The item's |
 | Price | "RM 25.00" (the total) | blank |
@@ -128,7 +130,7 @@ A unit cannot change once the item has moves (the figures would change meaning);
 | When it checks | After every Inventory write, on a `batches` event, at start and once an hour (a use-by window opens as days pass). |
 | Low | An item not archived, low, `low_sent_at` null: send "📦 Low stock · Bleach · 1.50 L left (reorder at 2.00 L)", then set `low_sent_at`. Back over the level (or the level cleared): `low_sent_at` back to null, so the next fall sends again. |
 | Use-by | A lot with some left, soon or expired, `use_by_sent_at` null: "📦 Use by 12 Nov · Grey oyster spawn · 3.00 kg left from the purchase of 1 Nov" (expired already when first seen: "📦 Expired 12 Nov · …"), then set `use_by_sent_at` on the purchase. |
-| Off | The setting `inventoryTelegram` false, or no token or chat (`readTelegram`): nothing is sent and nothing is marked, so turning it on sends what is due. |
+| Off | The setting `inventoryTelegram` false, or no token or chat (`readTelegram`): nothing is sent and nothing is marked, so turning it on sends what is due. Turning the switch on, or setting Telegram up, sends what is due at the next write or within the hour (the check runs at each write and hourly). |
 | Sending | `fetchTransport` from `server/telegram.js` (imported, the file not changed); one message at a time; a failure is logged (never the token) and the mark not set, so the next check tries again. Never breaks a write. |
 
 ## 7. API (`server/inventory-api.js`, one line in `server/api.js`)

@@ -304,7 +304,7 @@ CREATE TABLE IF NOT EXISTS stock_items (
 ) STRICT;
 CREATE UNIQUE INDEX IF NOT EXISTS stock_items_name ON stock_items (name COLLATE NOCASE);
 CREATE TABLE IF NOT EXISTS stock_moves (
-  id             INTEGER PRIMARY KEY,
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
   item_id        INTEGER NOT NULL REFERENCES stock_items (id),
   at             INTEGER NOT NULL,
   qty            REAL    NOT NULL,
@@ -1022,7 +1022,7 @@ export function openDb(path, { log = console.error } = {}) {
     updateStockMove: db.prepare(`UPDATE stock_moves SET at = ?, qty = ?, unit_cost = ?, total = ?, supplier = ?, use_by = ?, room_id = ?,
                                                         reason = ?, worker = ?, use_by_sent_at = ? WHERE id = ?`),
     deleteStockMove: db.prepare('DELETE FROM stock_moves WHERE id = ?1 OR lot_id = ?1'),
-    setStockUseBySent: db.prepare('UPDATE stock_moves SET use_by_sent_at = ? WHERE id = ?'),
+    setStockUseBySent: db.prepare('UPDATE stock_moves SET use_by_sent_at = ? WHERE id = ? AND use_by IS ?'),
     stockPurchasesBetween: db.prepare(`SELECT m.*, i.name AS item_name, i.kind AS item_kind FROM stock_moves m
                                        JOIN stock_items i ON i.id = m.item_id
                                        WHERE m.ref_kind = 'purchase' AND m.at BETWEEN ? AND ? ORDER BY m.at, m.id`),
@@ -1519,6 +1519,7 @@ export function openDb(path, { log = console.error } = {}) {
         q.deleteHarvests.run(id);
         q.deleteCropRuns.run(id);
         q.deleteTasks.run(id);
+        db.prepare('UPDATE stock_moves SET room_id = 0 WHERE room_id = ?').run(id); // Inventory: its uses read "A deleted room"
         // The owner's rules lose the room (its id is given to the next room made after the top one); a rule left with no
         // room is removed (its rows went with the room's tasks). A rooms value that is not a list is left alone.
         for (const r of q.customRules.all()) {
@@ -2096,10 +2097,6 @@ export function openDb(path, { log = console.error } = {}) {
       return r ? stockItemOf(r) : null;
     },
 
-    // Whether another item (not `id`) has the name, case aside.
-    stockNameUsed(name, id = null) {
-      return Boolean(q.stockNameUsed.get(name, id));
-    },
     // The stored name of another item called `name` (case aside), or null.
     stockNameTaken(name, id = null) {
       return q.stockNameUsed.get(name, id)?.name ?? null;
@@ -2170,8 +2167,9 @@ export function openDb(path, { log = console.error } = {}) {
     },
 
     // When the purchase's use-by message went (ms), or null.
-    setStockUseBySent(id, at) {
-      q.setStockUseBySent.run(at, id);
+    // Only while the purchase's use-by is still `useBy` (the one told); a clear (at null) passes the use-by it has.
+    setStockUseBySent(id, at, useBy) {
+      q.setStockUseBySent.run(at, id, useBy ?? null);
     },
 
     // The purchases made in [from, to] (ms), oldest first, each with its item's name and kind.

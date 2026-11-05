@@ -209,7 +209,7 @@ test('edit a purchase or a use; a changed use-by may be told again; a count and 
   const { db, inv, setNow } = setup(t);
   const bleach = inv.addItem({ name: 'Bleach', kind: 'chemical', unit: 'L' });
   const buy = inv.purchase({ itemId: bleach.id, qty: 3, total: 25, useBy: '2026-11-10' });
-  db.setStockUseBySent(buy.id, NOW);
+  db.setStockUseBySent(buy.id, NOW, '2026-11-10');
   const same = inv.editMove(buy.id, { total: 30, supplier: 'Kedai Ali' });
   assert.equal(same.unitCost, 10);
   assert.equal(same.supplier, 'Kedai Ali');

@@ -67,7 +67,7 @@ export function createInventoryAlerts({
         if (moves.find((m) => m.id === lot.moveId)?.useBySentAt !== null) continue;
         if (await send(useByText(v, lot), s)) {
           if (stopped) return;
-          db.setStockUseBySent(lot.moveId, now());
+          db.setStockUseBySent(lot.moveId, now(), lot.useBy);
         }
       }
     }

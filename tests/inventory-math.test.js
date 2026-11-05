@@ -119,6 +119,7 @@ test('the 4-5 rows: chemical purchases and uses, oldest first, with the crops of
     mv({ itemId: 1, at: at('2026-11-01'), qty: 5, refKind: 'purchase', total: 25 }),
     mv({ itemId: 1, at: at('2026-11-04'), qty: -0.5, refKind: 'use', roomId: null, worker: 'Siti' }),
     mv({ itemId: 1, at: at('2026-11-04'), qty: -0.5, refKind: 'use', roomId: 99, worker: 'Siti' }),
+    mv({ itemId: 1, at: at('2026-11-04'), qty: -0.5, refKind: 'use', roomId: 0, worker: 'Siti' }),
     mv({ itemId: 2, at: at('2026-11-02'), qty: 1, refKind: 'purchase', total: 9 }),
     mv({ itemId: 1, at: at('2026-11-02'), qty: 2, refKind: 'adjust', counted: 6 }),
   ];
@@ -128,6 +129,7 @@ test('the 4-5 rows: chemical purchases and uses, oldest first, with the crops of
     ['2026-11-01', 'purchase', '', '', 5, 25, '', ''],
     ['2026-11-03', 'use', "Grey oyster, Lion's mane", 'Container 1', 1, null, 'Footbath', 'Ali'],
     ['2026-11-04', 'use', '', 'Not in a room', 0.5, null, '', 'Siti'],
+    ['2026-11-04', 'use', '', 'A deleted room', 0.5, null, '', 'Siti'],
     ['2026-11-04', 'use', '', 'A deleted room', 0.5, null, '', 'Siti'],
   ]);
   assert.equal(rows[0].product, 'Bleach (Sodium hypochlorite)');

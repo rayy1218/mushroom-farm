@@ -191,7 +191,13 @@ export function moveLine(m, item, today = null) {
   let what;
   if (m.refKind === 'purchase') what = joined(m.supplier ? `Bought from ${m.supplier}` : 'Bought', rmText(m.total), m.useBy && `use by ${dayNear(m.useBy, today)}`);
   else if (m.refKind === 'adjust') what = joined(`Counted ${qtyText(m.counted, item.unit)}`, m.worker);
-  else if (m.refKind === 'batch') what = joined(`Batch ${m.refId}`, m.qty > 0 ? 'received' : item.kind === 'blocks' ? `into ${m.roomName ?? 'a room'}` : 'made');
+  else if (m.refKind === 'batch') {
+    // Batches' note: 'contaminated' (blocks lost before placement), 'into a room' (the placement), 'spawn'/'mixed' (a material used on a making day).
+    const into = `into ${m.roomName ?? 'a room'}`;
+    const how = m.qty > 0 ? 'received' : m.note === 'contaminated' ? 'lost (contaminated)' : m.note === 'into a room' ? into
+      : m.note === 'spawn' || m.note === 'mixed' ? 'made' : item.kind === 'blocks' ? into : 'made';
+    what = joined(`Batch ${m.refId}`, how);
+  }
   else if (m.lotId !== null && m.lotId !== undefined) what = joined('Thrown out', m.reason === 'Expired' ? 'expired' : null, m.worker);
   else what = joined(m.roomId === null || m.roomId === undefined ? 'Used' : `Used in ${m.roomName ?? 'a deleted room'}`, m.reason, m.worker);
   const edit = m.refKind === 'batch' ? null : m.refKind === 'adjust' ? 'delete' : 'edit';
@@ -219,8 +225,9 @@ export const throwOutLead = (lot) => `Its use-by ${lot.state === 'expired' ? 'wa
 // A number typed for the unit: whole for pcs, g, mL and blocks; up to 2 decimals for kg and L. One comma before 1 or 2
 // digits is a decimal point (some phone keypads offer only a comma, audit #7); a comma of thousands is refused. The error
 // names the unit in words and says what to type.
+export const decimalComma = (text) => String(text ?? '').trim().replace(/^([0-9]+),([0-9]{1,2})$/, '$1.$2');
 export function numberIn(text, unit, { zero = false, label = 'qty' } = {}) {
-  const s = String(text ?? '').trim().replace(/^([0-9]+),([0-9]{1,2})$/, '$1.$2');
+  const s = decimalComma(text);
   if (s === '') return { error: `Give the ${label}` };
   const whole = WHOLE_UNITS.includes(unit);
   const n = (whole ? /^[0-9]{1,6}$/ : /^[0-9]{1,6}(\.[0-9]{1,2})?$/).test(s) ? Number(s) : NaN;
@@ -270,7 +277,7 @@ export function purchaseBody(values, item, today, { limitBack = true } = {}) {
   if (!item) return { error: 'Pick an item', field: 'itemId' };
   const qty = numberIn(values.qty, item.unit);
   if (qty.error) return { error: qty.error, field: 'qty' };
-  const t = String(values.total ?? '').trim();
+  const t = decimalComma(values.total);
   const total = /^[0-9]{1,7}(\.[0-9]{1,2})?$/.test(t) ? Number(t) : NaN;
   if (!(total >= 0 && total <= MAX_TOTAL)) return { error: 'Give the total paid in RM, from 0 to 1,000,000', field: 'total' };
   const supplier = textIn(values.supplier);

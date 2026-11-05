@@ -93,3 +93,11 @@ The audit fixes above were made in Inventory's own files (`web/inventory*.js`, `
 | — | The top bar | The Business entry, as planned |
 
 Not done, by choice: the audit's #1 also suggested remembering the last Room. Record use opens on "Not in a room" every time: a remembered room would put a use in the wrong room as silently as the old first item did, while "Not in a room" is only missing information.
+
+Also for the integrator (final review):
+
+| Where | What |
+|---|---|
+| `web/styles.css`, print | The rule `html:root:has(.iv-sheet) { ... background: Canvas }` sits outside the `.iv-` prefix by necessity (it must reach `html`) |
+| `server/main.js` | The db is closed before `api.close`; an in-flight inventory check logs a harmless error |
+| `server/db.js` `deleteRoom` | Batches' and Inventory's deleteRoom lines both go in `deleteRoom` (Inventory's: `UPDATE stock_moves SET room_id = 0 WHERE room_id = ?`) |
