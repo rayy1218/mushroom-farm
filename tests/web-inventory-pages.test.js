@@ -62,3 +62,14 @@ test("the item page: mounted; its tiles, lots and history; batch moves not edite
   }
   assert.ok(page.includes('HISTORY_SHOWN = 20'));
 });
+
+test('Count stock: mounted; one form of every item; sends the typed ones; a refresh keeps the typed boxes', () => {
+  const app = src('app.js');
+  assert.ok(app.includes("import * as inventoryCount from './inventory-count.js';"));
+  assert.ok(app.includes(": route.name === 'inventoryCount' ? inventoryCount.mount(view, {})"));
+  const page = src('inventory-count.js');
+  assert.ok(page.includes("send('POST', '/api/inventory/counts'") || page.includes("request('POST', '/api/inventory/counts'"));
+  assert.ok(page.includes('countBody('));
+  assert.ok(page.includes('By the records'));
+  assert.ok(page.includes('location.hash = INVENTORY_HASH'));
+});
