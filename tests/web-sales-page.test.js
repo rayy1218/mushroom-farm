@@ -99,3 +99,26 @@ test('the dialogs give the cursor back to the button that opened them (or the pa
   assert.ok(dialogs.includes('.closed.then(() => giveBack(opener))'));
   assert.ok(dialogs.includes("document.querySelector('h1.page-title')"));
 });
+
+test('review: a late answer goes to the page, not a later dialog; the buttons held while sending; boxes clear as typed', () => {
+  assert.ok(dialogs.includes('let saleSeq = 0;'));
+  assert.ok(dialogs.includes('const me = ++saleSeq;'));
+  assert.ok(dialogs.includes('const gone = () => me !== saleSeq || !d.open;'));
+  assert.ok(dialogs.includes('if (gone()) { lost('), 'every await checks the opening is still there');
+  assert.ok(dialogs.includes('for (const b of held) b.disabled = on;'), 'Cancel, Delete this sale, the paid toggle and the primary held');
+  assert.ok(dialogs.includes("input.addEventListener('input', () => clearBox({ input, error }));"));
+  assert.ok(dialogs.includes('primary.textContent = label; // plain while sending'), 'a failed send does not still say "anyway"');
+  assert.ok(dialogs.includes("import { lineTotal, footText, prefill, unlikely, saleBody, deleteTitle, deleteLead, priceText, paidMark, num } from './sales-math.js';"));
+  assert.ok(!dialogs.includes('function priceNumber'), 'the one number reader');
+  assert.ok(dialogs.includes('date.input.max = farmDate(now);'), 'today as at the submit');
+});
+
+test('review: a new buyer in A–Z, Delete buyer confirms, Restore and Archive held, "expected" described, lines named', () => {
+  assert.ok(dialogs.includes('localeCompare(made.name'));
+  assert.ok(dialogs.includes('title: `Delete ${b.name}?`'));
+  assert.ok(dialogs.includes("'They have no sales. Their phone and usual prices go too.'"));
+  assert.ok(dialogs.includes('aside.disabled = true;') && dialogs.includes('edit.disabled = true;'));
+  assert.ok(dialogs.includes('`${price.input.id}-expected`'));
+  assert.ok(dialogs.includes("row.setAttribute('role', 'group');"));
+  assert.ok(dialogs.includes('`Line ${i + 1}, ${cropShortName(l.crop.input.value)}`'));
+});

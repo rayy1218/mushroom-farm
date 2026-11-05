@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   priceText, ageText, linesShort, paidMark, pageTiles, deliveryRow, cropRows, buyerRows, CROP_COLUMNS, BUYER_COLUMNS,
-  lineTotal, footText, prefill, unlikely, saleBody, sheetWithSales, sheetTotals, emptyText, deleteTitle, deleteLead,
+  lineTotal, footText, prefill, unlikely, saleBody, sheetWithSales, sheetTotals, emptyText, deleteTitle, deleteLead, num,
 } from '../web/sales-math.js';
 
 const nb = '\u00a0';
@@ -135,4 +135,22 @@ test('review pins: numbers, the edit keeps its time, the sheet order, the wordin
   const rows = sheetWithSales([], [mk(20, 2), mk(10, 1), mk(10, 3, 'Container 1')]);
   assert.deepEqual(rows.map((r) => r[4]), ['1.00', '3.00', '2.00'], 'by time, then given order');
   assert.equal(rows[1][2], 'Container 1', 'a room without a run: just the room');
+});
+
+test('num: a box as a number (a decimal comma read, a grouped number refused)', () => {
+  assert.equal(num('12'), 12);
+  assert.equal(num(' 4,5 '), 4.5);
+  assert.equal(num('12.'), 12);
+  assert.equal(num('.5'), 0.5);
+  for (const t of ['1,234', '1,000', '1,000.50', '', 'x', '1e3', '-1', '0x10', null, undefined]) assert.ok(Number.isNaN(num(t)), String(t));
+});
+
+test('saleBody refuses what the server refuses: kg over 0 up to 10,000, RM per kg 0 to 1,000', () => {
+  const body = (kg, priceKg) => saleBody({ date: '2026-11-05', buyerId: '3', lines: [{ crop: 'oyster', kg: '1', priceKg: '1', roomId: '' }, { crop: 'pink', kg, priceKg, roomId: '' }] }, { now: NOW });
+  assert.deepEqual(body('10000.01', '1'), { error: 'kg must be over 0 up to 10,000', field: 'lines.1.kg' });
+  assert.deepEqual(body('0', '1'), { error: 'kg must be over 0 up to 10,000', field: 'lines.1.kg' });
+  assert.equal(body('10000', '1').lines[1].kg, 10000);
+  assert.deepEqual(body('1', '1000.5'), { error: 'RM per kg must be 0 to 1,000', field: 'lines.1.priceKg' });
+  assert.equal(body('1', '1000').lines[1].priceKg, 1000);
+  assert.equal(body('1', '0').lines[1].priceKg, 0, 'a free sample');
 });

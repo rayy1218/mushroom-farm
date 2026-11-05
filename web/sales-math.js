@@ -13,6 +13,9 @@ const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 export const UNLIKELY_TIMES = 3;
 // A line over this many kg is asked about once (a slipped decimal point).
 export const UNLIKELY_KG = 500;
+// The server's bounds (server/sales-math.js): a line's kg over 0 up to this, RM per kg 0 up to MAX_PRICE.
+const MAX_KG = 10_000;
+const MAX_PRICE = 1_000;
 // A real number, not NaN or a string.
 const finite = (x) => typeof x === 'number' && Number.isFinite(x);
 // A box's value: 2 places, no thousands comma.
@@ -20,7 +23,7 @@ const two = (n) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximum
 // The sheet's figure: 2 places, grouped.
 const sheet2 = (n) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); // the sheet's figures, grouped as Harvest's
 // A box's text as a number: a decimal comma is read ('4,5'), a grouped '1,234' is refused as ambiguous, NaN when it is no number.
-const num = (text) => {
+export const num = (text) => {
   const s = String(text ?? '').trim();
   if (/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(s)) return NaN;
   const t = s.replace(',', '.');
@@ -132,7 +135,8 @@ export function unlikely(lines, cropYield) {
 }
 
 // The POST/PUT body from the dialog's boxes (an edit passes the sale's soldAt: its time stays while its date does): { date, buyerId, invoiceNo, note, lines: [{ crop, kg, priceKg, roomId }] } (all
-// text). Today's date is now; another day is 12:00 at the farm. → the body, or { error, field }.
+// text). Today's date is now; another day is 12:00 at the farm. The server's bounds are checked here too (kg, RM per kg) so
+// the unlikely-value question is never asked about a value that would be refused. → the body, or { error, field }.
 export function saleBody(v, { now, soldAt: was = null }) {
   const noon = whenMs(v.date, '12:00');
   if (Number.isNaN(noon) || farmDate(noon) !== v.date) return { error: 'Give the date', field: 'date' };
@@ -142,8 +146,10 @@ export function saleBody(v, { now, soldAt: was = null }) {
   for (const [i, l] of (v.lines ?? []).entries()) {
     const kg = num(l.kg);
     if (Number.isNaN(kg)) return { error: 'Give the kg as a number', field: `lines.${i}.kg` };
+    if (!(kg > 0 && kg <= MAX_KG)) return { error: 'kg must be over 0 up to 10,000', field: `lines.${i}.kg` };
     const priceKg = num(l.priceKg);
     if (Number.isNaN(priceKg)) return { error: 'Give RM per kg as a number', field: `lines.${i}.priceKg` };
+    if (priceKg > MAX_PRICE) return { error: 'RM per kg must be 0 to 1,000', field: `lines.${i}.priceKg` };
     lines.push({ crop: l.crop, kg, priceKg, roomId: l.roomId ? Number(l.roomId) : null });
   }
   const text = (s) => (String(s ?? '').trim() || null);

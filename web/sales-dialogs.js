@@ -8,7 +8,7 @@ import { openForm, errorText } from './task-dialogs.js';
 import { CROP_KEYS, cropShortName } from './crops.js';
 import { farmDate, dayTitle } from './tasks-math.js';
 import { rmText } from './harvest-math.js';
-import { lineTotal, footText, prefill, unlikely, saleBody, deleteTitle, deleteLead, priceText, paidMark } from './sales-math.js';
+import { lineTotal, footText, prefill, unlikely, saleBody, deleteTitle, deleteLead, priceText, paidMark, num } from './sales-math.js';
 
 const TIMEOUT = 15000;
 const MAX_LINES = 9;
@@ -44,7 +44,7 @@ function focusKeyed(keys) {
 function giveBack(opener, also = []) {
   if (document.querySelector('dialog[open]')) return;
   const keys = [opener?.dataset?.focusKey, ...also];
-  if (!opener?.isConnected) { focusKeyed(keys); return; }
+  if (!opener?.isConnected || opener === document.body) { focusKeyed(keys); return; } // body: a browser that does not focus a tapped button
   opener.focus();
   // until the person moves on (a tap, a key) or 10 s
   const stop = () => {
@@ -64,7 +64,15 @@ function giveBack(opener, also = []) {
   document.addEventListener('keydown', stop, true);
 }
 
-// A labelled box with its error line: { wrap, input, error }. kind: 'text' | 'date' | 'select'; suffix/prefix: a unit.
+// A box's words under it gone (an error or an amber question), and its marks.
+function clearBox({ input, error }) {
+  error.textContent = '';
+  error.classList.remove('field-warn');
+  input.removeAttribute('aria-invalid');
+  delete input.dataset.warn;
+}
+
+// A labelled box with its error line, cleared as the box is changed: { wrap, input, error }. kind: 'text' | 'date' | 'select'; suffix/prefix: a unit.
 function field({ id, label, kind = 'text', value = '', hint = null, suffix = null, prefix = null, options = null, maxLength = null }) {
   const wrap = el('div', 'field');
   const lab = el('label', '', label);
@@ -108,11 +116,13 @@ function field({ id, label, kind = 'text', value = '', hint = null, suffix = nul
   }
   wrap.append(error);
   input.setAttribute('aria-describedby', described.join(' '));
+  input.addEventListener('input', () => clearBox({ input, error }));
   return { wrap, input, error };
 }
 
 let saleDialog = null;
 let lineSeq = 0; // a line's boxes' ids
+let saleSeq = 0; // every opening of the sale dialog gets a token: an answer that finds it changed goes to the page
 function ensureSaleDialog() {
   if (saleDialog) return saleDialog;
   saleDialog = el('dialog', 'tk-dialog sl-dialog');
@@ -123,19 +133,31 @@ function ensureSaleDialog() {
 
 // Record a sale (delivery null) or Edit one: the buyers, the rooms and the expected prices are read first.
 export async function openSale({ delivery, onChanged, onError, opener = document.activeElement }) {
+  const me = ++saleSeq;
   let buyers;
   let rooms;
   let cropYield;
   try {
     [{ buyers }, rooms, { cropYield }] = await Promise.all([request('GET', '/api/buyers'), request('GET', '/api/rooms'), request('GET', '/api/settings')]);
   } catch (err) {
-    onError(errorText(err));
+    if (me === saleSeq) onError(errorText(err));
     return;
   }
+  if (me !== saleSeq) return; // opened again meanwhile
   const roomList = (Array.isArray(rooms) ? rooms : rooms.rooms ?? []).toSorted((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
   const d = ensureSaleDialog();
   if (d.open) d.close();
   d.replaceChildren();
+  // Closed (a second Esc while sending) or opened again since a send began: its end is said on the page instead.
+  const gone = () => me !== saleSeq || !d.open;
+  const lost = (ok, text) => { if (ok) onChanged(); else onError(text); };
+  let busy = false;
+  let asked = null; // the values the unlikely question was asked for
+  const held = []; // the buttons off while sending: the paid toggle, Delete this sale, Cancel, the primary
+  const hold = (on) => {
+    busy = on;
+    for (const b of held) b.disabled = on;
+  };
   const form = el('form');
   form.noValidate = true;
   const title = el('h2', '', delivery ? 'Edit sale' : 'Record a sale');
@@ -151,6 +173,7 @@ export async function openSale({ delivery, onChanged, onError, opener = document
     const mark = paidMark(delivery);
     const line = el('p', 'sl-paid-line');
     const toggle = button(mark.unpaid ? 'Mark paid' : 'Mark unpaid', mark.unpaid ? '' : 'tk-quiet');
+    held.push(toggle);
     toggle.addEventListener('click', async () => {
       if (busy) return;
       if (mark.unpaid) {
@@ -158,16 +181,21 @@ export async function openSale({ delivery, onChanged, onError, opener = document
         openPaid({ delivery, onChanged, onError, opener });
         return;
       }
-      busy = true;
+      hold(true);
+      let ok = false;
+      let text = '';
       try {
         await request('PUT', `/api/sales/deliveries/${delivery.id}/paid`, { paidAt: null }, TIMEOUT);
+        ok = true;
+      } catch (err) {
+        text = errorText(err);
+      }
+      if (gone()) { lost(ok, text); return; }
+      hold(false);
+      if (ok) {
         d.close();
         onChanged();
-      } catch (err) {
-        show({ message: errorText(err) });
-      } finally {
-        busy = false;
-      }
+      } else show({ message: text });
     });
     line.append(el('span', mark.unpaid ? 'sl-unpaid' : '', mark.text), toggle);
     form.append(line);
@@ -217,10 +245,14 @@ export async function openSale({ delivery, onChanged, onError, opener = document
   const used = (except) => new Set(lines.filter((l) => l !== except).map((l) => l.crop.input.value));
   const roomOptions = [...roomList.map((r) => [String(r.id), r.name]), ['', 'Mixed']];
 
-  // The lines' totals, Remove (two lines or more), the crops other lines have, Add a crop, the foot; the boxes by line number.
+  // The lines' names (for a screen reader), totals, Remove (two lines or more), the crops other lines have, Add a crop, the
+  // foot; the boxes by line number.
   function refresh() {
     for (const name of [...boxes.keys()]) if (name.startsWith('lines.')) boxes.delete(name);
     lines.forEach((l, i) => {
+      const crop = cropShortName(l.crop.input.value);
+      l.row.setAttribute('aria-label', `Line ${i + 1}, ${cropShortName(l.crop.input.value)}`);
+      l.remove.setAttribute('aria-label', `Remove ${crop}`);
       l.total.textContent = lineTotal(l.kg.input.value, l.price.input.value);
       l.remove.hidden = lines.length < 2;
       for (const [suffix, f] of [['crop', l.crop], ['kg', l.kg], ['priceKg', l.price], ['roomId', l.room]]) boxes.set(`lines.${i}.${suffix}`, f);
@@ -231,12 +263,24 @@ export async function openSale({ delivery, onChanged, onError, opener = document
     foot.textContent = footText(lines.map((l) => ({ kg: l.kg.input.value, priceKg: l.price.input.value })));
   }
 
+  // The muted "expected" beside a pre-filled expected price, read with the box while it shows.
+  function showExpected(l, on) {
+    l.expected.hidden = !on;
+    l.price.input.setAttribute('aria-describedby', [on ? l.expected.id : null, l.price.error.id].filter(Boolean).join(' '));
+  }
+
   // The price from the buyer or Settings, unless one was typed.
   function fillPrice(l) {
     if (l.typed) return;
     const p = prefill(l.crop.input.value, chosenBuyer(), cropYield);
     l.price.input.value = p.value;
-    l.expected.hidden = !p.expected;
+    showExpected(l, p.expected);
+  }
+
+  // A line added, removed or changed: the unlikely question is asked again, the primary plain.
+  function linesChanged() {
+    asked = null;
+    primary.textContent = label;
   }
 
   function addLine(value = null) {
@@ -247,19 +291,22 @@ export async function openSale({ delivery, onChanged, onError, opener = document
     const price = field({ id: `sl-price-${n}`, label: 'RM per kg', value: value ? value.priceKg.toFixed(2) : '', prefix: 'RM' });
     const room = field({ id: `sl-room-${n}`, label: 'Room', kind: 'select', options: roomOptions, value: value?.roomId ? String(value.roomId) : '' });
     const expected = el('span', 'muted sl-expected', 'expected');
+    expected.id = `${price.input.id}-expected`;
     expected.hidden = true;
     price.error.before(expected);
     const total = el('span', 'num sl-line-total');
     const remove = button('Remove', 'tk-quiet sl-remove');
     const row = el('div', 'sl-line');
+    row.setAttribute('role', 'group');
     row.append(crop.wrap, kg.wrap, price.wrap, room.wrap, total, remove);
     const l = { crop, kg, price, room, total, expected, row, remove, typed: Boolean(value) };
     crop.input.addEventListener('change', () => { fillPrice(l); refresh(); });
-    price.input.addEventListener('input', () => { l.typed = true; l.expected.hidden = true; refresh(); });
+    price.input.addEventListener('input', () => { l.typed = true; showExpected(l, false); refresh(); });
     kg.input.addEventListener('input', refresh);
     remove.addEventListener('click', () => {
       lines.splice(lines.indexOf(l), 1);
       row.remove();
+      linesChanged();
       refresh();
       (lines[0]?.kg.input ?? add).focus();
     });
@@ -267,16 +314,12 @@ export async function openSale({ delivery, onChanged, onError, opener = document
     lineList.append(row);
     if (!value) fillPrice(l);
     refresh();
-    // its crop's name in Remove's (a screen reader hears which line goes)
-    const name = () => remove.setAttribute('aria-label', `Remove ${cropShortName(crop.input.value)}`);
-    name();
-    crop.input.addEventListener('change', name);
     return l;
   }
 
   for (const line of delivery?.lines ?? []) addLine(line);
   if (!lines.length) addLine();
-  add.addEventListener('click', () => addLine().crop.input.focus());
+  add.addEventListener('click', () => { linesChanged(); addLine().crop.input.focus(); });
   buyer.input.addEventListener('change', () => {
     showNew();
     for (const l of lines) fillPrice(l);
@@ -290,24 +333,19 @@ export async function openSale({ delivery, onChanged, onError, opener = document
   const primary = button(label, 'primary', 'submit');
   if (delivery) {
     const del = button('Delete this sale', 'danger-text tk-aside');
+    held.push(del);
     del.addEventListener('click', () => { if (busy) return; d.close(); confirmDelete({ delivery, onChanged, onError, opener }); });
     actions.append(del);
   }
   actions.append(cancel, primary);
+  held.push(cancel, primary);
   form.append(actions);
   d.append(form);
   cancel.addEventListener('click', () => d.close());
 
-  let asked = null; // the values the unlikely question was asked for
-  let busy = false;
   function clearErrors() {
     formError.hidden = true;
-    for (const { input, error } of boxes.values()) {
-      error.textContent = '';
-      error.classList.remove('field-warn');
-      input.removeAttribute('aria-invalid');
-      delete input.dataset.warn;
-    }
+    for (const box of boxes.values()) clearBox(box);
   }
   // A problem, or a list of them on their boxes (the unlikely questions: amber, warn), the cursor to the first.
   function show(problems) {
@@ -333,11 +371,14 @@ export async function openSale({ delivery, onChanged, onError, opener = document
     event.preventDefault();
     if (busy) return;
     clearErrors();
+    const now = Date.now(); // today as at this submit (a dialog left open over midnight)
+    date.input.max = farmDate(now);
     const values = {
+      // "New buyer…" has no id until it is added (after these checks pass): a stand-in id gets it past saleBody's buyer check
       date: date.input.value, buyerId: buyer.input.value === NEW ? '1' : buyer.input.value, invoiceNo: ref.input.value, note: note.input.value,
       lines: lines.map((l) => ({ crop: l.crop.input.value, kg: l.kg.input.value, priceKg: l.price.input.value, roomId: l.room.input.value })),
     };
-    const body = saleBody(values, { now: Date.now(), soldAt: delivery?.soldAt ?? null }); // an edit keeps its time unless its date changes
+    const body = saleBody(values, { now, soldAt: delivery?.soldAt ?? null }); // an edit keeps its time unless its date changes
     if (body.error) { show({ field: body.field, message: body.error }); return; }
     const key = JSON.stringify(body.lines);
     const warnings = unlikely(body.lines, cropYield);
@@ -347,36 +388,39 @@ export async function openSale({ delivery, onChanged, onError, opener = document
       show(warnings.map((w) => ({ ...w, warn: true })));
       return;
     }
-    busy = true;
-    primary.disabled = true;
+    hold(true);
+    primary.textContent = label; // plain while sending: a failed send does not still say "anyway" (the same values still go)
     try {
       if (buyer.input.value === NEW) {
         const made = await request('POST', '/api/buyers', { name: newName.input.value, phone: newPhone.input.value }, TIMEOUT);
+        if (gone()) { lost(true); return; } // the buyer is added; the sale, closed before it went, is not sent
         buyers.push(made);
         const o = el('option', '', made.name);
         o.value = String(made.id);
-        buyer.input.insertBefore(o, buyer.input.lastElementChild);
+        // in A–Z order among the others, before "New buyer…"
+        const next = [...buyer.input.options].find((x) => x.value !== NEW && x.textContent.localeCompare(made.name, undefined, { sensitivity: 'base' }) > 0);
+        buyer.input.insertBefore(o, next ?? buyer.input.lastElementChild);
         buyer.input.value = String(made.id);
         showNew();
         body.buyerId = made.id;
       }
       if (delivery) await request('PUT', `/api/sales/deliveries/${delivery.id}`, body, TIMEOUT);
       else await request('POST', '/api/sales', body, TIMEOUT);
+      if (gone()) { lost(true); return; }
       d.close();
       onChanged();
     } catch (err) {
+      if (gone()) { lost(false, errorText(err)); return; }
       // the server's field names onto the boxes: a new buyer's name and phone, the sale's time on its date
       const where = buyer.input.value === NEW ? { name: 'newName', phone: 'newPhone' } : { soldAt: 'date' };
       const fieldName = err.status === 400 || err.status === 409 ? where[err.field] ?? err.field : null;
       show(fieldName ? { field: fieldName, message: err.message } : { message: errorText(err) });
     } finally {
-      busy = false;
-      primary.disabled = false;
-      primary.textContent = asked === key ? `${label} anyway` : label;
+      if (!gone()) hold(false);
     }
   });
   // a changed line is asked about again
-  lineList.addEventListener('input', () => { asked = null; primary.textContent = label; });
+  lineList.addEventListener('input', linesChanged);
   d.oncancel = (event) => { if (busy) event.preventDefault(); };
   d.onclose = () => giveBack(opener);
   d.showModal();
@@ -411,9 +455,11 @@ export function openPaid({ delivery, onChanged, onError, opener = document.activ
     lead: [`${delivery.buyer} · ${rmText(delivery.total)}`],
     fields: [{ name: 'paidOn', label: 'Paid on', kind: 'date', value: today, min: farmDate(delivery.soldAt), max: today, hintOf: (v) => (DAY.test(v) ? dayTitle(v) : '') }],
     buttons: [{ value: 'paid', label: 'Mark paid', primary: true }],
-    submit: async (v) => {
+    submit: async (v, _which, form) => {
+      const now = Date.now(); // today as at this submit (a dialog left open over midnight)
+      form.input('paidOn').max = farmDate(now);
       if (!DAY.test(v.paidOn)) return { field: 'paidOn', message: 'Give the day it was paid' };
-      const paidAt = v.paidOn === today ? Date.now() : Date.parse(`${v.paidOn}T12:00:00Z`) - 8 * 3_600_000; // 12:00 at the farm
+      const paidAt = v.paidOn === farmDate(now) ? now : Date.parse(`${v.paidOn}T12:00:00Z`) - 8 * 3_600_000; // 12:00 at the farm
       try {
         await request('PUT', `/api/sales/deliveries/${delivery.id}/paid`, { paidAt }, TIMEOUT);
         onChanged();
@@ -424,14 +470,6 @@ export function openPaid({ delivery, onChanged, onError, opener = document.activ
     },
     onLost: onError,
   }).closed.then(() => giveBack(opener, [`owed-${delivery.buyerId}`]));
-}
-
-// A usual price's box as a number: a decimal comma read ('4,5'), a grouped '1,234' refused; NaN when it is no number.
-function priceNumber(text) {
-  const s = String(text ?? '').trim();
-  if (/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(s)) return NaN;
-  const t = s.replace(',', '.');
-  return /^(\d+\.?\d*|\.\d+)$/.test(t) ? Number(t) : NaN;
 }
 
 // Buyers: the list (active, then Archived), each with Edit (Restore when archived); Add a buyer.
@@ -453,7 +491,11 @@ export async function openBuyers({ onChanged, onError, opener = document.activeE
     if (more) text.append(el('span', 'sl-buyer-more', more));
     const edit = button(b.archived ? 'Restore' : 'Edit', 'tk-quiet sl-buyer-edit');
     edit.setAttribute('aria-label', `${b.archived ? 'Restore' : 'Edit'} ${b.name}`);
-    edit.addEventListener('click', () => (b.archived ? save(b, { archived: false }).then(said) : editBuyer(b)));
+    edit.addEventListener('click', () => {
+      if (!b.archived) { editBuyer(b); return; }
+      edit.disabled = true; // one Restore at a time
+      save(b, { archived: false }).then((r) => { if (r !== true) { edit.disabled = false; said(r); } });
+    });
     li.append(text, edit);
     return li;
   };
@@ -494,18 +536,26 @@ export async function openBuyers({ onChanged, onError, opener = document.activeE
     for (const c of CROP_KEYS) {
       const t = String(v[`prices-${c}`] ?? '').trim();
       if (t === '') continue;
-      prices[c] = priceNumber(t);
+      prices[c] = num(t); // a decimal comma read, a grouped '1,000' refused
       if (Number.isNaN(prices[c])) return { field: `prices-${c}`, message: 'Give RM per kg as a number' };
     }
     return { body: { name: v.name, phone: v.phone, note: v.note, prices } };
   };
 
+  // Edit a buyer; at its foot Archive (it has sales) or Delete buyer (its confirm).
   function editBuyer(b) {
-    openForm({
+    let form = null;
+    const archive = () => {
+      const aside = form.input('name').form.querySelector('.tk-aside');
+      if (aside.disabled) return;
+      aside.disabled = true; // one Archive at a time
+      save(b, { archived: true }).then((r) => { if (r !== true) { aside.disabled = false; said(r); } });
+    };
+    form = openForm({
       title: `Edit ${b.name}`,
       fields: fieldsOf(b),
       buttons: [
-        b.sales > 0 ? { label: 'Archive', action: () => save(b, { archived: true }).then(said) } : { label: 'Delete buyer', action: () => removeBuyer(b) },
+        b.sales > 0 ? { label: 'Archive', action: archive } : { label: 'Delete buyer', action: () => confirmRemove(b) },
         { value: 'save', label: 'Save', primary: true },
       ],
       submit: async (v) => {
@@ -513,16 +563,27 @@ export async function openBuyers({ onChanged, onError, opener = document.activeE
         return r.body ? save(b, r.body) : r;
       },
       onLost: onError,
-    }).closed.then(() => giveBack(opener));
+    });
+    form.closed.then(() => giveBack(opener));
   }
 
-  async function removeBuyer(b) {
-    try {
-      await request('DELETE', `/api/buyers/${b.id}`, undefined, TIMEOUT);
-      again();
-    } catch (err) {
-      onError(errorText(err));
-    }
+  // Delete a buyer with no sales, asked first.
+  function confirmRemove(b) {
+    openForm({
+      title: `Delete ${b.name}?`,
+      lead: ['They have no sales. Their phone and usual prices go too.'],
+      buttons: [{ value: 'delete', label: 'Delete buyer', primary: true, danger: true }],
+      submit: async () => {
+        try {
+          await request('DELETE', `/api/buyers/${b.id}`, undefined, TIMEOUT);
+          again();
+          return true;
+        } catch (err) {
+          return { message: errorText(err) };
+        }
+      },
+      onLost: onError,
+    }).closed.then(() => giveBack(opener));
   }
 
   openForm({
