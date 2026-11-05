@@ -408,6 +408,19 @@ The room's picture keeps its representation: the air path, the condenser outside
 | Keyboard | One Tab stop; arrow keys move, Home and End to the row's ends (with Ctrl, the grid's); the focus returns to the box after a dialog or the menu. Every box has a name for a screen reader: "Footbath, Wednesday 4 November: done by Sara at 08:12" |
 | Month sheet | `#/rooms/7/tasks/sheet?month=2026-11`, a print page in light colours with no top bar: A4 portrait for 12 columns or fewer, landscape above over two pages (1st to 15th, then the rest); every row 6.6 mm to write in, so a 31-day month keeps its foot on one portrait page. A "Farm:" line left blank and "Sheet reviewed by: ____ (Management) on ____" at the foot, the month's days down ("1 Su", each Sunday ruled off) and the tasks across with the unit in brackets ("Harvest AM (kg)") and their heads sideways when narrow, an Initials column for the pen (none in a month gone by). Days gone are filled from the app: "✓ AL"; "✓ 19.59" over the initials; ✗ the heaviest mark (1.3 em, 800; amber on screen, black on paper); —; shaded not due. Days ahead are blank with the planned boxes outlined (dashed on screen, square solid cells on paper). On a phone the day column stays while the rest scrolls sideways |
 
+### Batches
+(2026-11-05; spec `docs/superpowers/specs/2026-11-05-batches-design.md`.) `#/business/batches`. Where each part lives:
+
+| Part | Design |
+|---|---|
+| Page | Waiting, In rooms (a group per room's current run, the room a link to its Harvest tab) and Past (a range control 90 days · 12 months · All; on a phone each batch a block of labelled figures) |
+| Batch row | The crop picture, "Grey oyster blocks" as a link, a muted line (supplier · received · days ago), the good blocks at the right ("1,180 of 1,200 good" after a loss), and Put into a room |
+| Over-count | More batch blocks than the run's is said in amber on `--warning-soft` (a check, not a fault) |
+| Batch page | Details as a definition list (empty facts left out), Delivery (when split), Contamination (checks newest first, a quiet Edit each) |
+| Numbers | Money as Harvest's (RM 2 decimals, grouped), blocks grouped |
+| Sheet | The myGAP 4-2 sheet reuses the 4-6 sheet's print rules |
+| Styles | The `.bt-` block |
+
 ## Do's and Don'ts
 
 ### Do:
