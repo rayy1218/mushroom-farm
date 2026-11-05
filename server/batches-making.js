@@ -16,16 +16,17 @@ export function checkRecipe(body, { was = null, taken = () => false } = {}) {
   const v = { ...(was ?? {}), ...Object.fromEntries(RECIPE_KEYS.filter((k) => Object.hasOwn(body, k)).map((k) => [k, body[k]])) };
   const name = textOf(v.name, 'name', 'Name');
   if (!name) throw bad('Give the recipe a name', 'name');
-  const crop = v.crop || null;
+  const crop = v.crop === undefined || v.crop === '' ? null : v.crop;
   if (crop !== null && !CROP_KEYS.includes(crop)) throw bad('Pick a crop, or Any crop', 'crop');
   const parts = {};
   for (const k of PARTS) {
     const x = k === 'otherPct' ? v[k] ?? 0 : v[k];
     if (!numIn(x, 0, 100)) throw bad('Each part must be 0–100 %', k);
+    if (Math.abs(x * 10 - Math.round(x * 10)) > 1e-6) throw bad('Give each part to one decimal place, like 19.5', k);
     parts[k] = Math.round(x * 10) / 10;
   }
-  const sum = Math.round(PARTS.reduce((s, k) => s + parts[k], 0) * 10);
-  if (sum !== 1000) throw bad(`The parts must add up to 100 % (now ${sum / 10} %)`, 'sawdustPct');
+  const sum = PARTS.reduce((s, k) => s + parts[k], 0);
+  if (Math.abs(sum - 100) >= 0.05) throw bad(`The parts must add up to 100 % (now ${Math.round(sum * 100) / 100} %)`, 'sawdustPct');
   const otherName = parts.otherPct > 0 ? textOf(v.otherName, 'otherName', 'The other ingredient') : null;
   if (parts.otherPct > 0 && !otherName) throw bad('Name the other ingredient', 'otherName');
   if (!numIn(v.waterPct, 30, 80)) throw bad('Water must be 30–80 %', 'waterPct');
@@ -64,7 +65,9 @@ export function checkMaterials(lines, items, itemOf, field = 'materials') {
     if (stock && (m.unit === 'kg' ? 'kg' : 'pcs') !== stock.unit) {
       throw bad(`${name ?? label} is in ${m.unit}; Inventory keeps ${stock.name} in ${stock.unit}`, field);
     }
-    return { item: m.item, name, qty: Math.round(m.qty * 1000) / 1000, unit: m.unit, stockItemId: itemOf ? id : null };
+    const qty = Math.round(m.qty * 1000) / 1000;
+    if (qty === 0) throw bad('Give an amount of at least 0.001', field);
+    return { item: m.item, name, qty, unit: m.unit, stockItemId: itemOf ? id : null };
   });
 }
 
@@ -133,10 +136,11 @@ export function checkMade(body, { was = null, now, recipeOf }) {
   }
   if (after.incubation === 'area') {
     if (after.incubatedFrom == null) out.incubatedFrom = after.incubatedFrom = after.inoculatedAt; // from the inoculation by default
-    if (day(after.incubatedFrom) < day(after.inoculatedAt)) {
-      throw bad('The incubation begins on or after the day inoculated', has('incubatedFrom') ? 'incubatedFrom' : 'inoculatedAt');
+    else if (was && has('inoculatedAt') && !has('incubatedFrom') && was.incubatedFrom === was.inoculatedAt) {
+      out.incubatedFrom = after.incubatedFrom = after.inoculatedAt; // it began with the inoculation: it moves with it
     }
-    if (after.incubatedTo != null && day(after.incubatedTo) < day(after.incubatedFrom)) throw bad('Ready must be on or after the incubation began', 'incubatedTo');
+    if (day(after.incubatedFrom) < day(after.inoculatedAt)) throw bad('The incubation begins on or after the day inoculated', 'incubatedFrom');
+    if (after.incubatedTo != null && day(after.incubatedTo) < day(after.incubatedFrom)) throw bad('Ready must be on or after the incubation began', has('incubatedFrom') && !has('incubatedTo') ? 'incubatedFrom' : 'incubatedTo');
   } else {
     // in a grow room, or not yet: no area dates (an area's are cleared when it changes)
     if ((has('incubatedFrom') && body.incubatedFrom != null) || (has('incubatedTo') && body.incubatedTo != null)) {

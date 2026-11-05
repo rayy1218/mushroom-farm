@@ -29,7 +29,7 @@ function setup(t, { stock = false } = {}) {
     db.setProgram(id, { ...db.getProgram(id), crops }, { change: 'start', at: NOW - 5 * DAY });
     return id;
   }
-  return { db, batches, told, room, tick: (ms) => { clock += ms; }, item: inventory?.item, buy: inventory?.buy, archive: inventory?.archive };
+  return { db, batches, told, room, tick: (ms) => { clock += ms; }, item: inventory?.item, buy: inventory?.buy, archive: inventory?.archive, drop: inventory?.drop };
 }
 
 const status = (fn) => {
@@ -339,4 +339,132 @@ test('list ?status=making offers the making batches', (t) => {
   const m = made(batches);
   batches.receive({ crop: 'oyster', supplier: 'Agro Supplies', blocks: 10 });
   assert.deepEqual(batches.list({ status: 'making' }).batches.map((x) => x.id), [m.id]);
+});
+
+// ---- review fixes 4-6 ----
+
+test('a day moved past a placement is refused: the inoculation or the mix after the day blocks went into a room', (t) => {
+  // a placement is today, so place on an earlier clock and then let the days pass
+  const early = setup(t);
+  const e = made(early.batches, { mixedAt: NOW - 3 * DAY });
+  early.batches.edit(e.id, { inoculatedAt: NOW - 3 * DAY });
+  early.tick(-2 * DAY); // 3 Nov: place
+  const roomId = early.room();
+  early.batches.place(e.id, { roomId, blocks: 100 });
+  early.tick(2 * DAY);
+  assert.deepEqual(status(() => early.batches.edit(e.id, { inoculatedAt: NOW - DAY })), [400, 'inoculatedAt', 'Some blocks went into a room before that day']);
+  assert.deepEqual(status(() => early.batches.edit(e.id, { mixedAt: NOW - DAY, inoculatedAt: NOW - DAY })), [400, 'mixedAt', 'Some blocks went into a room before that day']);
+  assert.equal(early.batches.edit(e.id, { inoculatedAt: NOW - 3 * DAY, note: 'same day is fine' }).note, 'same day is fine');
+  assert.equal(early.batches.edit(e.id, { inoculatedAt: NOW - 2 * DAY }).inoculatedAt, NOW - 2 * DAY, 'the placement day itself is fine');
+});
+
+test('clearing the inoculation with a spawn line is refused unless the spawn goes with it', (t) => {
+  const { batches } = setup(t);
+  const b = made(batches);
+  batches.edit(b.id, { inoculatedAt: NOW - DAY, spawn: { qty: 12, unit: 'kg' } });
+  assert.deepEqual(status(() => batches.edit(b.id, { inoculatedAt: null })), [400, 'inoculatedAt', 'Remove the spawn first, or keep the day inoculated']);
+  assert.deepEqual(status(() => batches.edit(b.id, { inoculatedAt: null, spawn: { qty: 5, unit: 'kg' } }))?.slice(0, 2), [400, 'inoculatedAt']);
+  assert.equal(batches.detail(b.id).spawn.qty, 12, 'nothing changed');
+  const c = batches.edit(b.id, { inoculatedAt: null, spawn: null });
+  assert.deepEqual([c.inoculatedAt, c.spawn], [null, null], 'both cleared');
+});
+
+test('a material amount that rounds to 0 is refused, the rounded value checked', (t) => {
+  const { batches } = setup(t);
+  const msg = 'Give an amount of at least 0.001';
+  assert.deepEqual(status(() => made(batches, { materials: [{ item: 'sawdust', qty: 0.0001, unit: 'kg' }] })), [400, 'materials', msg]);
+  const b = made(batches);
+  assert.deepEqual(status(() => batches.edit(b.id, { inoculatedAt: NOW - DAY, spawn: { qty: 0.0004, unit: 'kg' } })), [400, 'spawn', msg]);
+  assert.equal(batches.edit(b.id, { inoculatedAt: NOW - DAY, spawn: { qty: 0.0006, unit: 'kg' } }).spawn.qty, 0.001, 'rounds up to the least');
+});
+
+test('recipe parts: one decimal place each, the sum on the raw sum', (t) => {
+  const { batches } = setup(t);
+  const base = { ...RECIPE, name: 'D' };
+  const ok = batches.addRecipe({ ...base, sawdustPct: 33.3, branPct: 33.3, limePct: 33.4, gypsumPct: 0 });
+  assert.deepEqual([ok.sawdustPct, ok.branPct, ok.limePct], [33.3, 33.3, 33.4]);
+  const dec = batches.addRecipe({ ...base, name: 'E', sawdustPct: 99.9, branPct: 0.1, limePct: 0, gypsumPct: 0 });
+  assert.deepEqual([dec.sawdustPct, dec.branPct], [99.9, 0.1]);
+  assert.deepEqual(status(() => batches.addRecipe({ ...base, name: 'F', sawdustPct: 78.25, branPct: 20, limePct: 1.75, gypsumPct: 0 })),
+    [400, 'sawdustPct', 'Give each part to one decimal place, like 19.5']);
+  assert.deepEqual(status(() => batches.addRecipe({ ...base, name: 'G', sawdustPct: 78, branPct: 19.55, limePct: 1, gypsumPct: 1.45 }))?.slice(0, 2), [400, 'branPct']);
+  assert.equal(batches.addRecipe({ ...base, name: 'H', sawdustPct: 78, branPct: 19.5, limePct: 1.5, gypsumPct: 1 }).branPct, 19.5);
+});
+
+test('incubation from the inoculation moves with it; area date errors name their field; a recipe crop must be a crop', (t) => {
+  const { batches } = setup(t);
+  const b = made(batches, { mixedAt: NOW - 4 * DAY });
+  batches.edit(b.id, { inoculatedAt: NOW - 3 * DAY, incubation: 'area' });
+  const m = batches.edit(b.id, { inoculatedAt: NOW - 2 * DAY });
+  assert.deepEqual([m.inoculatedAt, m.incubatedFrom], [NOW - 2 * DAY, NOW - 2 * DAY], 'the incubation follows the inoculation');
+  batches.edit(b.id, { incubatedFrom: NOW - DAY });
+  assert.equal(batches.edit(b.id, { inoculatedAt: NOW - 3 * DAY }).incubatedFrom, NOW - DAY, 'a later start of its own stays');
+  assert.deepEqual(status(() => batches.edit(b.id, { incubatedFrom: NOW - 4 * DAY }))?.slice(0, 2), [400, 'incubatedFrom']);
+  batches.edit(b.id, { incubatedTo: NOW });
+  assert.deepEqual(status(() => batches.edit(b.id, { incubatedFrom: NOW + 1 }))?.slice(0, 2), [400, 'incubatedFrom']);
+  assert.deepEqual(status(() => batches.edit(b.id, { incubatedTo: NOW - 2 * DAY }))?.slice(0, 2), [400, 'incubatedTo']);
+  assert.deepEqual(status(() => batches.edit(b.id, { inoculatedAt: NOW }))?.slice(0, 2), [400, 'incubatedFrom'], 'moved past the start: the start is named');
+  for (const crop of [false, 0, 'tomato']) {
+    assert.deepEqual(status(() => batches.addRecipe({ ...RECIPE, name: `C${crop}`, crop }))?.slice(0, 2), [400, 'crop'], String(crop));
+  }
+  for (const crop of [null, undefined, '']) assert.equal(batches.addRecipe({ ...RECIPE, name: `N${crop}`, crop }).crop, null);
+});
+
+test('making fields are written to every row of the delivery: place a part, the rest, unplace', (t) => {
+  const { batches, room } = setup(t);
+  const roomId = room();
+  const b = made(batches);
+  batches.edit(b.id, { inoculatedAt: NOW - DAY });
+  const p = batches.place(b.id, { roomId, blocks: 100 });
+  const fam = () => batches.detail(b.id).delivery.map((r) => [r.incubation, r.incubatedFrom, r.mixedAt, r.recipeId]);
+  assert.deepEqual(fam(), [['room', null, NOW - 2 * DAY, null], ['room', null, NOW - 2 * DAY, null]], 'placing a part: both rows room');
+  const r = batches.addRecipe(RECIPE);
+  batches.edit(p.id, { recipeId: r.id, mixedAt: NOW - 2 * DAY });
+  assert.deepEqual(batches.detail(b.id).delivery.map((x) => x.recipeId), [r.id, r.id], 'a recipe edit on the part reaches the first row');
+  batches.unplace(p.id); // the first row waits: the part folds back
+  assert.equal(batches.detail(b.id).delivery.length, 1);
+  assert.equal(batches.detail(b.id).incubation, 'room', 'folded: the waits keep the room incubation');
+  const q = batches.place(b.id, { roomId, blocks: 50 });
+  batches.place(b.id, { roomId }); // the rest: the first row itself goes in
+  assert.deepEqual(batches.detail(b.id).delivery.map((x) => [x.incubation, x.status]), [['room', 'placed'], ['room', 'placed']]);
+  const w = batches.unplace(q.id);
+  assert.deepEqual([w.id, w.parentId, w.status], [q.id, b.id, 'making'], 'the first row is in a room: the part waits unfolded');
+  assert.equal(batches.detail(b.id).delivery.length, 2, 'the part stays a part');
+  batches.unplace(b.id);
+  assert.ok(batches.detail(b.id).delivery.every((x) => x.incubation === 'room' && x.status === 'making'));
+});
+
+test('an incubation edit on a fully waiting delivery reaches its parts', (t) => {
+  const { batches, room } = setup(t);
+  const roomId = room();
+  const b = made(batches);
+  batches.edit(b.id, { inoculatedAt: NOW - DAY, incubation: 'area' });
+  batches.edit(b.id, { incubatedTo: NOW });
+  const part = batches.place(b.id, { roomId, blocks: 100 });
+  batches.place(b.id, { roomId }); // the rest, the first row itself
+  batches.unplace(part.id); // waits as a part of its own
+  batches.unplace(b.id);
+  assert.deepEqual(batches.detail(b.id).delivery.map((x) => x.status), ['waiting', 'waiting']);
+  assert.deepEqual(batches.detail(b.id).delivery.map((x) => [x.incubation, x.incubatedTo]), [['area', NOW], ['area', NOW]]);
+  batches.edit(b.id, { incubation: 'room' });
+  assert.ok(batches.detail(b.id).delivery.every((x) => x.incubation === 'room' && x.incubatedFrom === null && x.incubatedTo === null), 'the part too');
+  assert.equal(batches.edit(part.id, { incubation: 'area' }).incubatedFrom, NOW - DAY, 'an edit on the part reaches the first row');
+  assert.equal(batches.detail(b.id).incubatedFrom, NOW - DAY);
+});
+
+test('the archived recipe keeps its name for the check; blocks below the lost; parts and amounts stored to their places; no item without Inventory', (t) => {
+  const { batches } = setup(t);
+  const r = batches.addRecipe({ ...RECIPE, name: 'Twin' });
+  batches.editRecipe(r.id, { archived: true });
+  assert.equal(batches.addRecipe({ ...RECIPE, name: 'twin' }).archived, false, 'an archived name does not count');
+  assert.equal(batches.editRecipe(r.id, { archived: true, name: 'TWIN' }).archived, true, 'archived stays archived under a taken name');
+  const b = made(batches);
+  batches.addCheck(b.id, { lost: 30, cause: 'green', worker: 'Ali', at: NOW - DAY });
+  assert.deepEqual(status(() => batches.edit(b.id, { blocks: 20 }))?.slice(0, 2), [400, 'blocks']);
+  assert.equal(status(() => batches.edit(b.id, { blocks: 20 }))[2], "Bags can't be fewer than the 30 lost");
+  assert.equal(batches.edit(b.id, { blocks: 30 }).blocks, 30);
+  const m = batches.edit(b.id, { materials: [{ item: 'sawdust', qty: 1.23456, unit: 'kg', stockItemId: 77 }] });
+  assert.ok(m);
+  assert.deepEqual(batches.detail(b.id).materials.map((x) => [x.qty, x.stockItemId]), [[1.235, null]], 'to 0.001; the item dropped without Inventory');
+  assert.equal(batches.addRecipe({ ...RECIPE, name: 'P', sawdustPct: 77.7, branPct: 20.3 }).sawdustPct, 77.7);
 });

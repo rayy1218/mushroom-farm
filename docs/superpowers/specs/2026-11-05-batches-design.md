@@ -120,7 +120,7 @@ with the steps in order, each with its own Record or Edit.
 | Recipes | Rule |
 |---|---|
 | Where | A **Recipes** button in the Batches page head opens a dialog: the list, Add, Edit, Archive |
-| Fields | Name, crop (or Any), sawdust, bran, lime, gypsum and other % of dry weight (other with its name), water %, wet kg per bag; the sum shown live ("Sum 100 %") |
+| Fields | Name, crop (or Any), sawdust, bran, lime, gypsum and other % of dry weight, each to one decimal place (other with its name), water %, wet kg per bag; the sum shown live ("Sum 100 %") |
 | Archive | Never delete: past batches name their recipe. An archived recipe is not offered for a new mix. |
 
 ## 6. API

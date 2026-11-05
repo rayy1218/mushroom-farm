@@ -175,6 +175,14 @@ export function createBatches({ db, now = Date.now, log = console.error }) {
     if (placed && ['incubation', 'incubatedFrom', 'incubatedTo'].some((k) => k in fields && fields[k] !== first[k])) {
       throw conflict('Take the blocks out of the rooms to change their incubation', 'incubation');
     }
+    for (const key of ['mixedAt', 'inoculatedAt']) {
+      if (fields[key] != null && fields[key] !== first[key] && family.some((x) => x.placedAt != null && localDate(x.placedAt) < localDate(fields[key]))) {
+        throw bad('Some blocks went into a room before that day', key);
+      }
+    }
+    if (fields.inoculatedAt === null && first.inoculatedAt != null && store.materials(firstId).some((m) => m.item === 'spawn') && lines.spawn?.length !== 0) {
+      throw bad('Remove the spawn first, or keep the day inoculated', 'inoculatedAt');
+    }
     if ('mixedAt' in fields && fields.mixedAt !== first.mixedAt) {
       const day = localDate(fields.mixedAt);
       if (store.loads(firstId).some((l) => localDate(l.hotAt) < day)) throw bad('Some sterilising loads are before that day', 'mixedAt');
