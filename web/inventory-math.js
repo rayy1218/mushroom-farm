@@ -69,13 +69,27 @@ const MAX_QTY = 100_000;
 const MAX_TOTAL = 1_000_000;
 const MAX_TEXT = 60;
 
-// An item's one pill, the worst: Archived (grey), Expired (red), Low, Use by 12 Nov (amber); null when nothing to say.
+// Part of the stock in expired lots (useBy.qty, under the item's qty): the pill and the tile name that part, not the whole.
+const partExpired = (item) => item.useBy?.state === 'expired' && finite(item.useBy.qty) && finite(item.qty) && item.useBy.qty < item.qty - 1e-9;
+
+// An item's one pill, the worst: Archived (grey), Expired or "4.50 kg expired" (red: only part of the stock), Low, Use by
+// 12 Nov (amber); null when nothing to say.
 export function pillOf(item) {
   if (item.archived) return { text: 'Archived', tone: 'none' };
-  if (item.useBy?.state === 'expired') return { text: 'Expired', tone: 'warn' };
+  if (item.useBy?.state === 'expired') return { text: partExpired(item) ? `${qtyText(item.useBy.qty, item.unit)} expired` : 'Expired', tone: 'warn' };
   if (item.low) return { text: 'Low', tone: 'amber' };
   if (item.useBy?.state === 'soon') return { text: `Use by ${dayText(item.useBy.date)}`, tone: 'amber' };
   return null;
+}
+// The In stock tile's use-by line: "4.50 kg expired 1 Nov" (red), "3.00 kg use by 12 Nov" (amber); without a qty the day
+// alone. The figure itself is toned only for Low (it is about the whole figure). null with no use-by near.
+export function useByLine(item) {
+  const u = item.useBy;
+  if (!u?.state) return null;
+  const expired = u.state === 'expired';
+  const day = dayText(u.date);
+  if (!finite(u.qty)) return { text: `${expired ? 'Expired' : 'Use by'} ${day}`, tone: expired ? 'warn' : 'amber' };
+  return { text: `${qtyText(u.qty, item.unit)} ${expired ? 'expired' : 'use by'} ${day}`, tone: expired ? 'warn' : 'amber' };
 }
 export function lotPill(lot) {
   if (lot.state === 'expired') return { text: 'Expired', tone: 'warn' };

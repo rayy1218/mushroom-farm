@@ -104,7 +104,10 @@ test('review fixes: the item page paint key has the farm day; the row click igno
   assert.ok(item.includes("document.title = 'Inventory · Mushroom farm';\n        return;") || /els\.banner\.hidden = true;\s*document\.title = 'Inventory/.test(item));
   assert.ok(item.includes('els.archive.disabled = true'));
   assert.ok(item.includes('tabindex="-1" data-history-title') || item.includes('id="iv-history-title" tabindex="-1"'));
-  assert.ok(item.includes("dataset.tone = 'warn'") && item.includes("dataset.tone = 'amber'"));
+  assert.ok(item.includes("dataset.tone = 'amber'"));
+  // audit #4: the figure is toned for Low only; the use-by line names its part in its own tone
+  assert.ok(!item.includes("dataset.tone = 'warn'"));
+  assert.ok(item.includes('useByLine(it)') && item.includes("'us-basis iv-useby-line'"));
   const page = src('inventory-page.js');
   assert.ok(page.includes('e.button !== 0 || e.defaultPrevented || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey || window.getSelection()?.toString()'));
   const css = src('styles.css');

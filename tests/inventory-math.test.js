@@ -70,7 +70,7 @@ test("an item's view: in stock, Low at or under its level, last counted, its wor
   assert.equal(v.qty, 5);
   assert.equal(v.low, true);
   assert.equal(v.lastCountedAt, count.at);
-  assert.deepEqual(v.useBy, { date: '2026-11-04', state: 'expired' });
+  assert.deepEqual(v.useBy, { date: '2026-11-04', state: 'expired', qty: 2 });
   assert.deepEqual(v.lots.map((l) => [l.moveId, l.left, l.state]), [[old.id, 2, 'expired'], [later.id, 3, 'soon']]);
   assert.equal(v.name, 'Spawn');
   assert.equal(v.archived, false);
@@ -78,6 +78,19 @@ test("an item's view: in stock, Low at or under its level, last counted, its wor
   assert.equal(itemView(ITEM, [], now).low, false, 'no level: never Low');
   assert.equal(itemView(ITEM, [], now).lastCountedAt, null);
   assert.equal(itemView(ITEM, [], now).useBy, null);
+});
+
+test("the worst use-by's qty: what is left in every lot of that state (audit #4: part of the stock expired)", () => {
+  const now = at('2026-11-05', 9);
+  const a = mv({ at: at('2026-09-01'), qty: 3, refKind: 'purchase', useBy: '2026-11-01' });
+  const b = mv({ at: at('2026-09-10'), qty: 1.5, refKind: 'purchase', useBy: '2026-11-03' });
+  const c = mv({ at: at('2026-10-01'), qty: 25, refKind: 'purchase', useBy: '2027-04-10' });
+  const used = mv({ at: at('2026-10-02'), qty: -1, refKind: 'use' });
+  const v = itemView(ITEM, [a, b, c, used], now);
+  assert.equal(v.qty, 28.5);
+  assert.deepEqual(v.useBy, { date: '2026-11-01', state: 'expired', qty: 3.5 }, 'the use came off the oldest lot');
+  const soon = mv({ at: at('2026-10-20'), qty: 3, refKind: 'purchase', useBy: '2026-11-09' });
+  assert.deepEqual(itemView(ITEM, [soon, c], now).useBy, { date: '2026-11-09', state: 'soon', qty: 3 });
 });
 
 test("the use-by day is the farm's (UTC+8): 23:30 on 4 Nov in Malaysia is still 4 Nov", () => {

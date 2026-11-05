@@ -12,7 +12,7 @@ import {
 } from './inventory-dialogs.js';
 import { farmDate } from './tasks-math.js';
 import { pillNode } from './inventory-page.js';
-import { qtyText, countedText, lotLabel, lotPill, moveLine, dayText, KIND_ONE } from './inventory-math.js';
+import { qtyText, countedText, lotLabel, lotPill, moveLine, dayText, useByLine, KIND_ONE } from './inventory-math.js';
 
 const REFRESH_MS = 60_000;
 const HISTORY_SHOWN = 20;
@@ -120,11 +120,16 @@ export function mount(container, { id }) {
     els.body.hidden = false;
 
     const counted = countedText(it.lastCountedAt, Date.now());
-    const pill = it.useBy ? `${it.useBy.state === 'expired' ? 'Expired' : 'Use by'} ${dayText(it.useBy.date)}` : null;
-    const stockTile = tile('In stock', qtyText(it.qty, it.unit), [it.low ? 'Low' : null, pill].filter(Boolean).join(DOT) || null);
-    const expired = it.useBy?.state === 'expired' || it.lots.some((l) => l.state === 'expired');
-    if (expired) stockTile.querySelector('.us-kwh').dataset.tone = 'warn';
-    else if (it.low) stockTile.querySelector('.us-kwh').dataset.tone = 'amber';
+    // The figure keeps its ink unless the item is Low (about the whole figure); a use-by names only its own part, in its
+    // tone: "4.50 kg expired 1 Nov" of 29.50 kg is not "all of it expired" (audit #4).
+    const stockTile = tile('In stock', qtyText(it.qty, it.unit), it.low ? 'Low' : null);
+    if (it.low) stockTile.querySelector('.us-kwh').dataset.tone = 'amber';
+    const near = useByLine(it);
+    if (near) {
+      const line = el('p', 'us-basis iv-useby-line', near.text);
+      line.dataset.tone = near.tone;
+      stockTile.append(line);
+    }
     els.tiles.replaceChildren(
       stockTile,
       tile('Reorder at', it.reorderAt === null ? '—' : qtyText(it.reorderAt, it.unit), it.reorderAt === null ? 'No level set' : null),

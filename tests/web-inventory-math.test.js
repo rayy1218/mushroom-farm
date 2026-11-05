@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  qtyText, rmText, perUnitText, dayText, longDayText, daysBefore, pillOf, lotPill, countedText, attentionParts, groupItems, lotLabel,
+  useByLine, qtyText, rmText, perUnitText, dayText, longDayText, daysBefore, pillOf, lotPill, countedText, attentionParts, groupItems, lotLabel,
   moveLine, deleteTitle, deleteLead, throwOutTitle, throwOutLead, numberIn, itemBody, purchaseBody, useBody, purchaseEditBody,
   useEditBody, overStock, countBody, sheetCells, sheetRange, sheetEmpty, SHEET_COLUMNS, KIND_OPTIONS, UNIT_OPTIONS,
 } from '../web/inventory-math.js';
@@ -65,6 +65,23 @@ test('the pills: archived, then expired (red), Low, a use-by (amber); none for a
   assert.deepEqual(lotPill({ state: 'soon', useBy: '2026-11-12' }), { text: 'Use by 12 Nov', tone: 'amber' });
   assert.deepEqual(lotPill({ state: 'expired', useBy: '2026-11-04' }), { text: 'Expired', tone: 'warn' });
   assert.equal(lotPill({ state: null, useBy: '2027-01-01' }), null);
+});
+
+test('part of the stock expired (audit #4): the pill says how much; Expired alone only when all of it is', () => {
+  const part = item({ unit: 'kg', qty: 29.5, useBy: { date: '2026-11-01', state: 'expired', qty: 4.5 } });
+  assert.deepEqual({ ...pillOf(part), text: plain(pillOf(part).text) }, { text: '4.50 kg expired', tone: 'warn' });
+  assert.deepEqual(pillOf({ ...part, qty: 4.5 }), { text: 'Expired', tone: 'warn' });
+  assert.deepEqual(pillOf({ ...part, qty: 4 }), { text: 'Expired', tone: 'warn' }, 'more expired than in stock (a use beyond the records)');
+  assert.deepEqual(pillOf(item({ qty: 2, useBy: { date: '2026-11-01', state: 'expired' } })), { text: 'Expired', tone: 'warn' }, 'no qty sent: as before');
+});
+
+test("the In stock tile's use-by line: the qty, the state and the day, toned", () => {
+  const part = item({ unit: 'kg', qty: 29.5, useBy: { date: '2026-11-01', state: 'expired', qty: 4.5 } });
+  assert.deepEqual({ ...useByLine(part), text: plain(useByLine(part).text) }, { text: '4.50 kg expired 1 Nov', tone: 'warn' });
+  const soon = item({ unit: 'kg', qty: 29.5, useBy: { date: '2026-11-12', state: 'soon', qty: 3 } });
+  assert.deepEqual({ ...useByLine(soon), text: plain(useByLine(soon).text) }, { text: '3.00 kg use by 12 Nov', tone: 'amber' });
+  assert.deepEqual(useByLine(item({ useBy: { date: '2026-11-12', state: 'soon' } })), { text: 'Use by 12 Nov', tone: 'amber' });
+  assert.equal(useByLine(item()), null);
 });
 
 test("last counted in words; over 7 days or never is muted", () => {

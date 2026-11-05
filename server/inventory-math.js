@@ -58,8 +58,9 @@ export function useByState(useBy, today) {
 const WORST = { expired: 0, soon: 1 };
 
 // An item with its figures at `now` (ms): { id, name, kind, unit, reorderAt, ingredient, lrmpNo, archived, qty, low,
-// lastCountedAt, useBy: { date, state } | null (the worst of its lots: expired before soon, then the earliest), lots: the
-// lots with some left, each with its state }.
+// lastCountedAt, useBy: { date, state, qty } | null (the worst of its lots: expired before soon, then the earliest; qty: what
+// is left in all its lots of that state, so a page can say "4.50 kg expired" of 29.50 kg), lots: the lots with some left,
+// each with its state }.
 export function itemView(item, moves, now) {
   const today = localDate(now);
   const qty = stockOf(moves);
@@ -70,7 +71,9 @@ export function itemView(item, moves, now) {
     id: item.id, name: item.name, kind: item.kind, unit: item.unit, reorderAt: item.reorderAt, ingredient: item.ingredient,
     lrmpNo: item.lrmpNo, archived: item.archived, qty, low: item.reorderAt !== null && qty <= item.reorderAt,
     lastCountedAt: counted.length ? Math.max(...counted) : null,
-    useBy: dated.length ? { date: dated[0].useBy, state: dated[0].state } : null,
+    useBy: dated.length ? {
+      date: dated[0].useBy, state: dated[0].state, qty: round3(dated.filter((l) => l.state === dated[0].state).reduce((sum, l) => sum + l.left, 0)),
+    } : null,
     lots,
   };
 }

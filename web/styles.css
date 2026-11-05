@@ -2163,6 +2163,8 @@ td.tg-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: -2p
 .iv-item { display: grid; gap: 16px; }
 .iv-tiles { margin: 0; }
 .iv-tiles .us-basis { text-transform: none; font-size: var(--fs-sm); }
+.iv-useby-line[data-tone="warn"] { color: var(--critical-text); font-weight: 600; }
+.iv-useby-line[data-tone="amber"] { color: var(--warning-text); font-weight: 600; }
 .iv-lots h2, .iv-history h2 { margin: 0 0 8px; font-size: var(--fs-md); font-weight: 600; }
 .iv-lot-action { text-align: right; }
 .iv-moves { list-style: none; margin: 0; padding: 0; }
