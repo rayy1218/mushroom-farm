@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-28T12:00:00+08:00",
+  "generatedAt": "2026-11-05T15:00:00+08:00",
   "title": "Design System: Mushroom farm",
   "extensions": {
     "colorMeta": {
@@ -111,21 +111,24 @@
         "displayName": "Hairline",
         "canonical": "rgba(255,255,255,.075)",
         "cssVar": "--border",
-        "theme": "dark (default)"
+        "theme": "dark (default)",
+        "tonalRamp": []
       },
       "border-strong": {
         "role": "neutral",
         "displayName": "Strong Hairline",
         "canonical": "rgba(255,255,255,.13)",
         "cssVar": "--border-strong",
-        "theme": "dark (default)"
+        "theme": "dark (default)",
+        "tonalRamp": []
       },
       "band": {
         "role": "neutral",
         "displayName": "Band",
         "canonical": "rgba(255,255,255,.05)",
         "cssVar": "--band",
-        "theme": "dark (default)"
+        "theme": "dark (default)",
+        "tonalRamp": []
       },
       "grid": {
         "role": "neutral",
@@ -200,7 +203,8 @@
         "displayName": "Signal Blue Tint",
         "canonical": "rgba(77,141,255,.14)",
         "cssVar": "--accent-soft",
-        "theme": "dark (default)"
+        "theme": "dark (default)",
+        "tonalRamp": []
       },
       "accent-text": {
         "role": "primary",
@@ -224,6 +228,23 @@
         "displayName": "On Accent White",
         "canonical": "#ffffff",
         "cssVar": "--on-accent",
+        "theme": "dark (default)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      },
+      "on-critical": {
+        "role": "secondary",
+        "displayName": "On Critical",
+        "canonical": "#ffffff",
+        "cssVar": "--on-critical",
         "theme": "dark (default)",
         "tonalRamp": [
           "#0b0b0b",
@@ -275,7 +296,8 @@
         "displayName": "In-Band Green Tint",
         "canonical": "rgba(46,184,114,.14)",
         "cssVar": "--good-soft",
-        "theme": "dark (default)"
+        "theme": "dark (default)",
+        "tonalRamp": []
       },
       "warning": {
         "role": "secondary",
@@ -316,7 +338,8 @@
         "displayName": "Warning Amber Tint",
         "canonical": "rgba(227,160,8,.14)",
         "cssVar": "--warning-soft",
-        "theme": "dark (default)"
+        "theme": "dark (default)",
+        "tonalRamp": []
       },
       "critical": {
         "role": "secondary",
@@ -357,7 +380,8 @@
         "displayName": "Fault Red Tint",
         "canonical": "rgba(229,72,77,.13)",
         "cssVar": "--critical-bg",
-        "theme": "dark (default)"
+        "theme": "dark (default)",
+        "tonalRamp": []
       },
       "series-temperature": {
         "role": "tertiary",
@@ -408,6 +432,57 @@
           "#ab93f0",
           "#cdbbff",
           "#f1e4ff"
+        ]
+      },
+      "series-energy": {
+        "role": "tertiary",
+        "displayName": "Energy Brass",
+        "canonical": "#c9b26a",
+        "cssVar": "--s-energy",
+        "theme": "dark (default)",
+        "tonalRamp": [
+          "#120a00",
+          "#312300",
+          "#533f00",
+          "#755f0e",
+          "#96813e",
+          "#b5a46f",
+          "#d4c9a7",
+          "#f2eee3"
+        ]
+      },
+      "series-water": {
+        "role": "tertiary",
+        "displayName": "Water Teal",
+        "canonical": "#4fc1b0",
+        "cssVar": "--s-water",
+        "theme": "dark (default)",
+        "tonalRamp": [
+          "#00110d",
+          "#003028",
+          "#005246",
+          "#007466",
+          "#239687",
+          "#66b6a9",
+          "#a4d5cb",
+          "#e3f2ef"
+        ]
+      },
+      "series-harvest": {
+        "role": "tertiary",
+        "displayName": "Harvest Ochre",
+        "canonical": "#b8844e",
+        "cssVar": "--s-harvest",
+        "theme": "dark (default)",
+        "tonalRamp": [
+          "#170700",
+          "#3b1c00",
+          "#613600",
+          "#85551c",
+          "#a77745",
+          "#c59c74",
+          "#dfc4aa",
+          "#f6ede4"
         ]
       },
       "page-light": {
@@ -664,6 +739,57 @@
           "#ceb2ff",
           "#f2deff"
         ]
+      },
+      "series-energy-light": {
+        "role": "tertiary",
+        "displayName": "Energy Brass (light)",
+        "canonical": "#8a7425",
+        "cssVar": "--s-energy",
+        "theme": "light",
+        "tonalRamp": [
+          "#120a00",
+          "#312300",
+          "#534000",
+          "#755f03",
+          "#96813a",
+          "#b5a46d",
+          "#d4c9a5",
+          "#f2eee3"
+        ]
+      },
+      "series-water-light": {
+        "role": "tertiary",
+        "displayName": "Water Teal (light)",
+        "canonical": "#0f8f80",
+        "cssVar": "--s-water",
+        "theme": "light",
+        "tonalRamp": [
+          "#00110d",
+          "#003028",
+          "#005146",
+          "#007365",
+          "#2b9586",
+          "#69b5a9",
+          "#a6d4cb",
+          "#e4f2ef"
+        ]
+      },
+      "series-harvest-light": {
+        "role": "tertiary",
+        "displayName": "Harvest Ochre (light)",
+        "canonical": "#a87a4c",
+        "cssVar": "--s-harvest",
+        "theme": "light",
+        "tonalRamp": [
+          "#160700",
+          "#391d00",
+          "#5e3809",
+          "#825628",
+          "#a4784d",
+          "#c29d7a",
+          "#ddc4ad",
+          "#f5ede5"
+        ]
       }
     },
     "typographyMeta": {
@@ -681,7 +807,7 @@
       },
       "card-title": {
         "displayName": "Card title",
-        "purpose": "A card head such as Control or Machines."
+        "purpose": "What a card holds (Control, Machines, Upkeep, This run, Phone alarms); chart and group titles."
       },
       "body": {
         "displayName": "Body",
@@ -694,6 +820,18 @@
       "label": {
         "displayName": "Label",
         "purpose": "Pills, status chips, legends, step numbers; 13 px on a phone."
+      },
+      "figure": {
+        "displayName": "Figure",
+        "purpose": "A tile's number (kWh, kg, RM, BE): 20 px 700, tabular."
+      },
+      "name": {
+        "displayName": "Name",
+        "purpose": "The name of a thing whose card it is (a room, a stage, a day); a page's section heading over cards; dialog titles."
+      },
+      "field-label": {
+        "displayName": "Field label",
+        "purpose": "A field's label above its box, a fieldset's legend."
       }
     },
     "fontSource": {
@@ -726,6 +864,11 @@
         "purpose": "Modal dialogs over the backdrop."
       },
       {
+        "name": "menu",
+        "value": "0 8px 24px var(--shadow)",
+        "purpose": "A menu over the page (the task grid long press menu)."
+      },
+      {
         "name": "current-stage-ring",
         "value": "0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent)",
         "purpose": "The current stage card on the Crop tab."
@@ -744,6 +887,16 @@
       }
     ],
     "breakpoints": [
+      {
+        "name": "small-phone",
+        "value": "400px",
+        "note": "max-width; top links 40 px wide; under 380 px the brand mark hides beside the alarm button"
+      },
+      {
+        "name": "drawing-fold",
+        "value": "480px",
+        "note": "max-width; the room drawing folds"
+      },
       {
         "name": "phone",
         "value": "600px",
@@ -768,6 +921,11 @@
         "name": "crop-container",
         "value": "720px",
         "note": "container query on the Crop tab"
+      },
+      {
+        "name": "aside",
+        "value": "1200px",
+        "note": "min-width; Suggest machines' aside beside the form"
       }
     ],
     "layout": {
@@ -794,12 +952,44 @@
         "run": "#2563eb"
       }
     },
-    "scope": "Only the room page is rebuilt in this world; Overview, Rooms list, Settings and simulation run pages share the tokens but not yet the layouts.",
+    "scope": "Every page uses the tokens; the room page and every page since 2026-10-28 are built in this world. Parts built earlier that still differ in small ways are listed in docs/superpowers/plans/2026-11-05-design-system-css-pass.md.",
     "benchmarks": [
       "Grafana",
       "Home Assistant",
       "Vercel/Linear",
       "Ubiquiti UniFi"
+    ],
+    "radiusSteps": [
+      {
+        "name": "card",
+        "value": "12px",
+        "where": "cards, dialogs, empty states, the toast"
+      },
+      {
+        "name": "track",
+        "value": "10px",
+        "where": "a segmented control's track; the room drawing's clipped corners; a picture's empty tile"
+      },
+      {
+        "name": "control",
+        "value": "8px",
+        "where": "buttons, inputs, selects, a menu, a calendar day, a banner"
+      },
+      {
+        "name": "segment",
+        "value": "7px",
+        "where": "a segment inside its track"
+      },
+      {
+        "name": "small",
+        "value": "6px",
+        "where": "a box inside a card, a tooltip, a focus ring inside a tab or scroller"
+      },
+      {
+        "name": "pill",
+        "value": "999px",
+        "where": "pills, chips, counts, link chips, dots, the ends of bars"
+      }
     ]
   },
   "components": [
@@ -825,7 +1015,7 @@
       "refersTo": "switch-on",
       "description": "A machine switch in Manual: Off neutral, On tinted accent (never filled) so Send stays the one filled button.",
       "html": "<div class=\"ds-sw-row\"><button class=\"ds-sw\" aria-pressed=\"true\">On</button><button class=\"ds-sw\" aria-pressed=\"false\">Off</button></div>",
-      "css": ".ds-sw-row { display: flex; gap: 8px; } .ds-sw { font: 600 14px/1.45 var(--font-body, Inter, system-ui, sans-serif); min-width: 64px; min-height: 36px; padding: 4px 12px; border: 1px solid var(--border-strong, rgba(255,255,255,.13)); border-radius: 8px; background: var(--raised, #1c2026); color: var(--ink, #e9ebee); cursor: pointer; } .ds-sw:hover { background: color-mix(in srgb, var(--ink, #e9ebee) 7%, var(--raised, #1c2026)); } .ds-sw[aria-pressed=\"true\"], .ds-sw[aria-pressed=\"true\"]:hover { background: color-mix(in srgb, var(--accent, #336fe6) 24%, transparent); } .ds-sw:focus-visible { outline: 2px solid var(--accent, #336fe6); outline-offset: 2px; }"
+      "css": ".ds-sw-row { display: flex; gap: 8px; } .ds-sw { font: 600 14px/1.45 var(--font-body, Inter, system-ui, sans-serif); min-width: 64px; min-height: 36px; padding: 4px 12px; border: 1px solid var(--border-strong, rgba(255,255,255,.13)); border-radius: 8px; background: var(--raised, #1c2026); color: var(--ink, #e9ebee); cursor: pointer; } .ds-sw:hover { background: color-mix(in srgb, var(--ink, #e9ebee) 7%, var(--raised, #1c2026)); } .ds-sw[aria-pressed=\"true\"] { background: var(--accent-soft, rgba(77,141,255,.14)); border-color: color-mix(in srgb, var(--accent, #336fe6) 55%, transparent); color: var(--accent-text, #7fb0ff); } .ds-sw[aria-pressed=\"true\"]:hover { background: color-mix(in srgb, var(--accent, #336fe6) 24%, transparent); } .ds-sw:focus-visible { outline: 2px solid var(--accent, #336fe6); outline-offset: 2px; }"
     },
     {
       "name": "Status pills",
@@ -874,11 +1064,59 @@
       "description": "One card level: a head with a quiet note, rows separated by hairlines, never a card inside.",
       "html": "<section class=\"ds-card\"><div class=\"ds-card-head\"><h2>Machines</h2><span>In the order the air meets them</span></div><ul class=\"ds-rows\"><li><span class=\"ds-n\">1</span><span>Intake fan</span><span class=\"ds-off\">Off</span></li><li><span class=\"ds-n\">2</span><span>Aircon</span><span class=\"ds-on\">On</span></li></ul></section>",
       "css": ".ds-card { max-width: 400px; padding: 20px; background: var(--surface, #15181c); border: 1px solid var(--border, rgba(255,255,255,.075)); border-radius: 12px; font: 400 14px/1.45 var(--font-body, Inter, system-ui, sans-serif); color: var(--ink, #e9ebee); } .ds-card-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 14px; } .ds-card-head h2 { margin: 0; font-size: 14px; font-weight: 600; } .ds-card-head span { color: var(--muted, #8a919b); font-size: 13px; } .ds-rows { list-style: none; margin: 0; padding: 0; } .ds-rows li { display: grid; grid-template-columns: 22px 1fr auto; gap: 10px; align-items: center; padding: 9px 0; border-top: 1px solid var(--border, rgba(255,255,255,.075)); } .ds-rows li:first-child { border-top: 0; padding-top: 0; } .ds-n { font-size: 12px; color: var(--muted, #8a919b); text-align: center; } .ds-off, .ds-on { padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; } .ds-off { background: var(--band, rgba(255,255,255,.05)); color: var(--ink-2, #b6bcc5); } .ds-on { background: var(--accent-soft, rgba(77,141,255,.14)); color: var(--accent-text, #7fb0ff); }"
+    },
+    {
+      "name": "Compact and quiet buttons",
+      "kind": "button",
+      "refersTo": "button-compact",
+      "description": "A row action that is not the card's main one (compact, 32 px); Skip and Edit on a row (quiet, no fill until hover).",
+      "html": "<div class=\"ds-row-btns\"><button class=\"ds-btn-compact\">Acknowledge</button><button class=\"ds-btn-quiet\">Skip</button></div>",
+      "css": ".ds-row-btns { display: flex; gap: 8px; align-items: center; } .ds-btn-compact { font: 500 13px/1.45 var(--font-body, Inter, system-ui, sans-serif); min-height: 32px; padding: 4px 12px; border: 1px solid var(--border-strong, rgba(255,255,255,.13)); border-radius: 8px; background: var(--raised, #1c2026); color: var(--ink, #e9ebee); cursor: pointer; } .ds-btn-compact:hover { background: color-mix(in srgb, var(--ink, #e9ebee) 7%, var(--raised, #1c2026)); } .ds-btn-quiet { font: 500 13px/1.45 var(--font-body, Inter, system-ui, sans-serif); min-height: 28px; padding: 4px 8px; border: 0; border-radius: 8px; background: none; color: var(--muted, #8a919b); cursor: pointer; } .ds-btn-quiet:hover { background: var(--band, rgba(255,255,255,.05)); color: var(--ink, #e9ebee); } .ds-btn-compact:focus-visible, .ds-btn-quiet:focus-visible { outline: 2px solid var(--accent, #336fe6); outline-offset: 2px; }"
+    },
+    {
+      "name": "Level chips and counts",
+      "kind": "chip",
+      "refersTo": "chip-level-warning",
+      "description": "An alarm's level, outlined in its colour (critical solid); a count, neutral or amber when overdue.",
+      "html": "<div class=\"ds-chips\"><span class=\"ds-chip\" data-level=\"warning\">Warning</span><span class=\"ds-chip\" data-level=\"serious\">Serious</span><span class=\"ds-chip\" data-level=\"critical\">Critical</span><span class=\"ds-count\">3</span><span class=\"ds-count\" data-level=\"warning\">12</span></div>",
+      "css": ".ds-chips { display: flex; gap: 8px; align-items: center; } .ds-chip { display: inline-block; padding: 2px 8px; border: 1px solid currentColor; border-radius: 999px; font: 600 12px/18px var(--font-body, Inter, system-ui, sans-serif); white-space: nowrap; } .ds-chip[data-level=\"warning\"] { color: var(--warning-text, #f2bd4b); } .ds-chip[data-level=\"serious\"] { color: var(--critical-text, #ff8085); } .ds-chip[data-level=\"critical\"] { background: var(--critical, #d63c42); border-color: var(--critical, #d63c42); color: var(--on-critical, #fff); } .ds-count { min-width: 18px; padding: 0 4px; border-radius: 999px; background: var(--border-strong, rgba(255,255,255,.13)); color: var(--ink, #e9ebee); font: 700 12px/18px var(--font-body, Inter, system-ui, sans-serif); text-align: center; font-variant-numeric: tabular-nums; } .ds-count[data-level=\"warning\"] { background: var(--warning, #e3a008); color: var(--page, #0d0f12); }"
+    },
+    {
+      "name": "Tiles",
+      "kind": "custom",
+      "refersTo": "tile",
+      "description": "A card's headline figures side by side: a hairline at the left, the label over the figure, a basis line.",
+      "html": "<div class=\"ds-tiles\"><div class=\"ds-tile\"><p class=\"ds-tile-label\">Electricity</p><p class=\"ds-tile-fig\">41.2 kWh</p><p class=\"ds-tile-basis\">metered</p></div><div class=\"ds-tile\"><p class=\"ds-tile-label\">Cost</p><p class=\"ds-tile-fig\">RM 22.66</p><p class=\"ds-tile-basis\">at RM 0.55/kWh</p></div><div class=\"ds-tile\"><p class=\"ds-tile-label\">Water</p><p class=\"ds-tile-fig\">96 L</p><p class=\"ds-tile-basis\">estimated</p></div></div>",
+      "css": ".ds-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; font-family: var(--font-body, Inter, system-ui, sans-serif); } .ds-tile { padding: 2px 0 2px 14px; border-left: 1px solid var(--border-strong, rgba(255,255,255,.13)); } .ds-tile p { margin: 0; font-variant-numeric: tabular-nums; } .ds-tile-label { color: var(--ink-2, #b6bcc5); font-size: 13px; } .ds-tile-fig { color: var(--ink, #e9ebee); font-size: 20px; font-weight: 700; line-height: 1.25; } .ds-tile-basis { color: var(--muted, #8a919b); font-size: 12px; }"
+    },
+    {
+      "name": "Data table",
+      "kind": "custom",
+      "refersTo": "table-head",
+      "description": "One table for figures: ink-2 head, a hairline above each row, figures right-aligned and tabular, a 700 total.",
+      "html": "<table class=\"ds-table\"><thead><tr><th>Room</th><th class=\"num\">kg</th><th class=\"num\">kg per block</th></tr></thead><tbody><tr><th>Container 1</th><td class=\"num\">48.20</td><td class=\"num\">0.24</td></tr><tr><th>Container 2</th><td class=\"num\">31.75</td><td class=\"num\">0.21</td></tr><tr class=\"total\"><th>Total</th><td class=\"num\">79.95</td><td class=\"num\">0.23</td></tr></tbody></table>",
+      "css": ".ds-table { width: 100%; border-collapse: collapse; font: 400 14px/1.45 var(--font-body, Inter, system-ui, sans-serif); font-variant-numeric: tabular-nums; color: var(--ink, #e9ebee); } .ds-table th, .ds-table td { padding: 6px 8px; border-top: 1px solid var(--border, rgba(255,255,255,.075)); text-align: left; font-weight: 400; } .ds-table thead th { border-top: 0; color: var(--ink-2, #b6bcc5); font-size: 13px; font-weight: 600; } .ds-table tbody th { font-weight: 600; } .ds-table .num { text-align: right; white-space: nowrap; } .ds-table .total th, .ds-table .total td { font-weight: 700; border-top-color: var(--border-strong, rgba(255,255,255,.13)); }"
+    },
+    {
+      "name": "Dialog",
+      "kind": "custom",
+      "refersTo": "dialog",
+      "description": "A surface card with the dialog shadow, the title in Name type, a lead line, the buttons at the right (Cancel, then the one primary).",
+      "html": "<div class=\"ds-dialog\" role=\"dialog\" aria-labelledby=\"ds-dlg-t\"><h2 id=\"ds-dlg-t\">Record a harvest</h2><p class=\"ds-dlg-lead\">Container 1 · Grey oyster · flush 2</p><label class=\"ds-dlg-label\" for=\"ds-dlg-kg\">Weight</label><span class=\"ds-dlg-box\"><input id=\"ds-dlg-kg\" value=\"2.40\" inputmode=\"decimal\"><span>kg</span></span><div class=\"ds-dlg-actions\"><button class=\"ds-dlg-btn\">Cancel</button><button class=\"ds-dlg-btn ds-dlg-primary\">Record</button></div></div>",
+      "css": ".ds-dialog { width: min(480px, 100%); padding: 24px; border: 1px solid var(--border, rgba(255,255,255,.075)); border-radius: 12px; background: var(--surface, #15181c); color: var(--ink, #e9ebee); box-shadow: 0 12px 40px var(--shadow, rgba(0,0,0,.55)); font: 400 14px/1.45 var(--font-body, Inter, system-ui, sans-serif); } .ds-dialog h2 { margin: 0 0 4px; font-size: 16px; font-weight: 600; } .ds-dlg-lead { margin: 0 0 12px; color: var(--ink-2, #b6bcc5); } .ds-dlg-label { display: block; margin-bottom: 4px; font-weight: 600; } .ds-dlg-box { position: relative; display: block; width: 14ch; margin-bottom: 16px; } .ds-dlg-box input { box-sizing: border-box; width: 100%; min-height: 40px; padding: 8px 36px 8px 10px; border: 1px solid var(--border-strong, rgba(255,255,255,.13)); border-radius: 8px; background: var(--surface, #15181c); color: var(--ink, #e9ebee); font: inherit; font-variant-numeric: tabular-nums; } .ds-dlg-box input:focus-visible { outline: 2px solid var(--accent, #336fe6); outline-offset: 2px; } .ds-dlg-box span { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); color: var(--muted, #8a919b); } .ds-dlg-actions { display: flex; justify-content: flex-end; gap: 8px; } .ds-dlg-btn { font: 500 14px/1.45 var(--font-body, Inter, system-ui, sans-serif); min-height: 36px; padding: 7px 14px; border: 1px solid var(--border-strong, rgba(255,255,255,.13)); border-radius: 8px; background: var(--raised, #1c2026); color: var(--ink, #e9ebee); cursor: pointer; } .ds-dlg-primary { background: var(--accent, #336fe6); border-color: var(--accent, #336fe6); color: var(--on-accent, #fff); } .ds-dlg-primary:hover { background: var(--accent-hover, #2f68dd); }"
+    },
+    {
+      "name": "Empty state",
+      "kind": "card",
+      "refersTo": "empty-state",
+      "description": "A part with nothing in it yet: a dashed card, what is missing and why, the one way forward.",
+      "html": "<div class=\"ds-empty\"><p>No crops in this room yet.</p><a class=\"ds-empty-btn\" href=\"#\">Give it crops on the Crop tab</a></div>",
+      "css": ".ds-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; padding: 20px; border: 1px dashed var(--border-strong, rgba(255,255,255,.13)); border-radius: 12px; background: transparent; font: 400 14px/1.45 var(--font-body, Inter, system-ui, sans-serif); } .ds-empty p { margin: 0; color: var(--ink-2, #b6bcc5); } .ds-empty-btn { display: inline-flex; align-items: center; min-height: 36px; padding: 7px 14px; border: 1px solid var(--border-strong, rgba(255,255,255,.13)); border-radius: 8px; background: var(--raised, #1c2026); color: var(--ink, #e9ebee); text-decoration: none; font-weight: 500; } .ds-empty-btn:focus-visible { outline: 2px solid var(--accent, #336fe6); outline-offset: 2px; }"
     }
   ],
   "narrative": {
     "northStar": "The Control Room, Played Straight",
-    "overview": "**Creative North Star: \"The Control Room, Played Straight\"**\n\nThe farm app is a climate-controller dashboard in the category standard: a neutral dark ground, one blue accent, status colour that means something, and numbers set like instruments. It sits beside Grafana, Home Assistant, Vercel/Linear and Ubiquiti UniFi, the four products the owner named as the craft bar, and it aims at their finish rather than at a look of its own. A room's state has to be legible in one glance, at a desk or on a phone at the room door, so decoration never stands in for state.\n\nDensity is moderate and calm: cards on a quiet page, hairlines rather than boxes, a tight type scale with tabular figures, plain English and metric units in every line. Colour is spent on state and, by a deliberate exception, on the identity of the three measured quantities. Dark is the default (the owner's choice); a light theme mirrors it token for token.\n\nScope: only the room page (`#/rooms/:id` with its Now, History, Crop, Simulations and Setup tabs) was rebuilt in this world. The Overview, the Rooms list, Settings and the simulation run pages already use these tokens (colours, type, radii, buttons, cards) but keep their older layouts; bring them into the layouts and rules below when they are next worked on.",
+    "overview": "The farm app is a climate-controller dashboard in the category standard: a neutral dark ground, one blue accent, status colour that means something, and numbers set like instruments. It sits beside Grafana, Home Assistant, Vercel/Linear and Ubiquiti UniFi, the four products the owner named as the craft bar, and it aims at their finish rather than at a look of its own. A room's state has to be legible in one glance, at a desk or on a phone at the room door, so decoration never stands in for state.\n\nDensity is moderate and calm: cards on a quiet page, hairlines rather than boxes, a tight type scale with tabular figures, plain English and metric units in every line. Colour is spent on state and, by a deliberate exception, on the identity of the three measured quantities. Dark is the default (the owner's choice); a light theme mirrors it token for token.\n\nScope: every page uses these tokens. The room page (`#/rooms/:id` and its tabs) was rebuilt in this world on 2026-10-28 and every page since (Today, Calendar, Harvest, the task grid) was built in it; the Rooms list is folded into the Overview. (2026-11-05, design-system audit) Some parts built before the components below were written down still differ from them in small ways: a few type sizes and corners off the scale, three chip styles where one is meant, section card titles a step large on some pages. They are listed in `docs/superpowers/plans/2026-11-05-design-system-css-pass.md`; until that pass, the words here are the target, not the stray CSS. A new page uses the components here as they are, before inventing one.",
     "keyCharacteristics": [
       "Neutral dark ground (`page` under `surface` cards), light theme mirroring it.",
       "One blue accent: selection, the primary action, and \"running\".",
@@ -891,12 +1129,12 @@
     "rules": [
       {
         "name": "The State-Only Colour Rule",
-        "body": "Everywhere outside the measured series, colour means state: blue is selection, primary action and running; green is in band; amber is warning; red is fault. Icons, headings, links in prose and target labels stay neutral (the Crop tab's target icons are `muted`).",
+        "body": "Everywhere outside the measured series, colour means state: blue is selection, primary action and running; green is in band; amber is warning; red is fault. Icons, headings, links in prose and target labels stay neutral (the Crop tab's target icons are `muted`). The pictures (below) are the one other exception: they draw things in the room drawing's own colours, never a state colour.",
         "section": "colors"
       },
       {
         "name": "The Series Identity Rule",
-        "body": "Temperature, humidity and CO₂ keep their own hues (`--s-t`, `--s-rh`, `--s-co2`) on the reading-card traces and the History charts. This deliberately adapts the category standard's \"nothing else coloured\": the hue carries a metric's identity from the Now tab to the History tab, which is a data job, not decoration. A series hue never marks state, never fills a button and never colours text other than a chart's own legend.",
+        "body": "(2026-10-28: energy and water have their own hues too.) Temperature, humidity and CO₂ keep their own hues (`--s-t`, `--s-rh`, `--s-co2`) on the reading-card traces and the History charts. This deliberately adapts the category standard's \"nothing else coloured\": the hue carries a metric's identity from the Now tab to the History tab, which is a data job, not decoration. A series hue never marks state, never fills a button and never colours text other than a chart's own legend. (2026-11-03, owner: \"icon\") Each reading also has a line icon in its hue beside its name, the same everywhere: a thermometer, a drop, CO₂ bubbles (`web/icons.js`) on the Now tab's reading cards, the Overview's room cards, the History charts' titles and the Outdoor card, where dew point (no chart) takes `ink-2`. (2026-11-04) Harvest kg has its own hue too, `--s-harvest`, a muted ochre (dark `#b8844e`, light `#a87a4c`): the bars of the Harvest page's chart and the Overview card's strip, never state, never text.",
         "section": "colors"
       },
       {
@@ -910,9 +1148,39 @@
         "section": "typography"
       },
       {
+        "name": "The Near-Edge Rule",
+        "body": "(2026-10-28, owner: amber on a reading the machines were holding taught people to ignore amber.) A temperature or humidity in band but within 15 % of the band's width of an edge is amber only when the machine that should act is not acting, or when the reading has stayed near that edge for 15 min (its trace tells); otherwise it shows the calm \"In band\". The machine that should act: humidity low, the humidifier; humidity high, a fitted dehumidifier (or the humidifier, which should have stopped); temperature high, the aircon cooling; temperature low, the aircon not cooling. (2026-10-29) A machine that has not reached its own switch point is acting as told: humidity near low counts as not acting only at or under the humidifier's on-point with the humidifier off, humidity near high only at the band's top (the dehumidifier's on-point) with the dehumidifier off, or at or over the humidifier's off-point with the humidifier still on. A machine the room does not have (or not known) never counts as not acting, so such a reading turns amber only after 15 min there. The words fit one line: \"Near low\", \"Near high\", with \"· falling\" or \"· rising\" when the trend runs toward that edge (web/band-math.js `nearChip`, the same on the Overview and the room page). Out of band is amber, a fault red. (2026-10-29, owner: \"OK\" beside an amber \"Near high\" read as a contradiction.) On the Overview a room with no alarm, nothing out of band and in Auto but with an amber near-edge reading takes an amber \"Watch\" pill, not \"OK\"; it does not count as needing attention, and the status line names it (\"3 rooms OK · Room 1 humidity near high\") or counts several (\"2 rooms to watch\") (web/overview-math.js `nearEdges`). (2026-10-29, owner: the Overview flapped and reordered as the machines cycled.) The room cards keep one order, by name, whatever their state. The pill and the status line say \"Out of band\" only once a reading has been out as long as its alarm waits (5 min; humidity over the band 15 min; CO₂ at the safety level 1 min) and \"Watch\" once it has been near an edge for 2 min; until then, and for 2 min after it is back, the room stays as it was. The reading's own words show at once, without the amber until then (`settleRooms`). On opening the page a reading out of band counts as held only when its last 30 min trace bucket was out of band too (an air exchange wets a room for a few minutes). The status line's polite live region speaks only when its words change.",
+        "section": "typography"
+      },
+      {
+        "name": "The Exchange Words Rule",
+        "body": "CO₂ has no band to stay in: its two numbers are where the air exchange starts and stops, so its status says what the exchange is doing (web/band-math.js `co2Status`, the same on the Overview, the reading card and the drawing). Below the stop point and \"Exchange off\" are green; \"Exchange running\" is neutral (`ink-2`), never amber; \"Over the start point\" with the exchange not running is amber; within 15 % of the gap from the start point to the safety level \"Near the safety level\" is amber; at the safety level red. On the Overview \"Exchange off\" carries its start point (\"Exchange off · starts at 1,400 ppm\"): a high reading with the exchange off is then not read as a contradiction.",
+        "section": "typography"
+      },
+      {
+        "name": "The Units Rule",
+        "body": "Every number on screen carries its unit, the controller's reasons included (\"CO₂ 744 ppm between 700 and 800 ppm\"), and the reasons compare in words, never in maths signs (\"RH 87.9 %, at or under its on-point 88 %\", \"CO₂ 1,450 ppm, at or over 1,400 ppm\"); thousands are grouped (1,000 ppm); a range of dates takes an en dash. A number never parts from its unit at a wrap and a '·' keeps to the words before it, so a wrap leaves it at a line's end and no line starts with '·' (a no-break space before it, a normal one after: web/text-math.js `keepLines`, `DOT`; 2026-10-29c, a line began \"· fresh air every 12 min.\"). An aircon is entered and shown in kW; its BTU/h class (the size shops sell) is a picker and a note in brackets, never the input's unit.",
+        "section": "typography"
+      },
+      {
+        "name": "The By-Hand Rule",
+        "body": "A value a person set that differs from the program (a band changed on Setup) is shown in the accent text colour with the program's own value under it (\"stage: 900 ppm\") and a way back (\"Back to stage values\"): a choice, not a warning. Three places say it: the Setup inputs, the Crop tab's current stage and, in a line under the Now tab's Control head, \"Bands changed by hand on Setup\" with its own Back to stage values (2026-10-29c) (web/crop-math.js `byHandValues`, `stageBody`); while they agree nothing shows.",
+        "section": "typography"
+      },
+      {
+        "name": "The Navigation Rule",
+        "body": "The top bar holds the farm's name, Live, the theme, Today (with its count), Calendar, Harvest, Overview and Settings, and a red alarm button only while there are alarms; on a phone the links are their icons and, with too little room for it (about 400 px wide since Calendar, 2026-11-03), the farm's name shows as its mark alone. (2026-11-04, Harvest: under 400 px the top links and the theme button are 40 px wide and 44 px tall, so six icons fit at 360 px with the mark; under 380 px, while the alarm button shows, the farm's mark is hidden, as there is no room for it.) (2026-11-05, the task grid audit: from 601 to 899 px the five worded links left the mark 22 px under \"Live\" and the page scrolling sideways at 700 px, so up to 899 px the links are their icons, 44 px wide, the Today count kept, as on a phone; from 900 px they carry their words. With the alarm button showing, 900 to about 1000 px keeps the 28 px mark without the farm's name.) The Overview holds every room (the Rooms list is folded into it) and Add room; a room is reached from its card or the room switch on its page.",
+        "section": "typography"
+      },
+      {
         "name": "The One Format Rule",
         "body": "A quantity has one formatter and every tab uses it: humidity and filter pressure to one decimal (91.2 % RH, 40.2 Pa), metric units with a space before them, ranges with an en dash (19–21 °C). If two tabs could disagree about a number, they share the formatter.",
         "section": "typography"
+      },
+      {
+        "name": "The 44 px Rule",
+        "body": "On a phone every control is at least 44 px tall (and an icon button 44 px wide, 40 px under 400 px): buttons, fields, selects, link chips, tabs, a fold's summary, a link that is a row's only way in, a checkbox's words. A desk keeps the compact heights (36 px buttons, 40 px fields, 32 px compact buttons). Where a target cannot grow without moving the layout, its padding grows and a negative margin of the same size keeps the spacing.",
+        "section": "layout"
       },
       {
         "name": "The Readings First Rule",
@@ -923,6 +1191,11 @@
         "name": "The One Card Level Rule",
         "body": "There is never a card inside a card. Parts that would nest become cards themselves (each Crop stage, the Stages list and the program row are sibling cards) or hairline-separated sections inside one card (the Control groups, the Machines rows, the Setup status footer as a 1 px top rule, not a box).",
         "section": "elevation"
+      },
+      {
+        "name": "The Picture Rule",
+        "body": "A picture says what a thing is, never how it is: no green, amber, red or accent blue in it, nothing in it changes with a reading or a machine's state (the pills and words keep the state), and it always sits beside words that say the same, so it is `aria-hidden`. A closed task's or an unfitted machine's picture fades with its words. A test checks that every crop, rule, machine and sensor has one and that no picture holds a fixed colour or a state token.",
+        "section": "components"
       }
     ],
     "dos": [
@@ -932,7 +1205,9 @@
       "Do make every part that would nest either a sibling card or a hairline-separated section.",
       "Do set every number in tabular figures, with one formatter per quantity (humidity and filter pressure to one decimal) and metric units.",
       "Do add every new colour to both theme blocks under one name.",
-      "Do write labels and states in plain English sentence case: name the machine, the number and the unit."
+      "Do write labels and states in plain English sentence case: name the machine, the number and the unit.",
+      "Do build a new page from the parts above (card, card head, rows, tiles, the data table, the segmented control, chips, folds, messages, empty states) before writing a new one; a module's CSS uses the tokens and these parts' classes and adds only what is its own.",
+      "Do set every size from the `--fs-*` steps and every corner from the six radius steps; every control 44 px on a phone."
     ],
     "donts": [
       "Don't put a card inside a card.",
@@ -941,7 +1216,11 @@
       "Don't fill an On switch with solid accent beside a Send or Save.",
       "Don't add shadows to dark-theme cards or depth effects beyond the vocabulary above.",
       "Don't add gradients, shadows or hatching to the room drawing, or change what it represents.",
-      "Don't show a quantity in two formats on two tabs, or any US unit."
+      "Don't colour a picture by state, or let a picture say something its words do not.",
+      "Don't show a quantity in two formats on two tabs, or any US unit.",
+      "Don't make a second version of a part that exists (another chip, another segmented control, another table style, another chevron); change the one part, for every page.",
+      "Don't set a size in `rem`, under 12 px, or a weight other than 400, 500, 600 and 700.",
+      "Don't title a section card at the Name size; Name is for a thing's own card."
     ]
   }
 }
