@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseRoute, isCanonical, ROOM_TABS, roomHash, suggestHash, canonicalHash, TODAY_HASH, HARVEST_HASH, sheetHash, tasksHash, taskSheetHash } from '../web/route.js';
+import { parseRoute, isCanonical, ROOM_TABS, roomHash, suggestHash, canonicalHash, TODAY_HASH, HARVEST_HASH, SALES_HASH, sheetHash, tasksHash, taskSheetHash } from '../web/route.js';
 
 test('empty and unknown hashes mean the Overview', () => {
   for (const h of ['', '#', '#/', '#/other', '#/rooms/abc', '#/rooms/0', '#/rooms/01', '#/rooms/1/x', '#/rooms/-1', undefined]) {
@@ -155,4 +155,16 @@ test("the month sheet of a room's daily tasks keeps its month in the query; a ba
   assert.equal(canonicalHash(parseRoute('#/rooms/7/tasks/sheet?month=nope')), '#/rooms/7/tasks/sheet');
   assert.ok(isCanonical('#/rooms/7/tasks/sheet?month=2026-11'));
   assert.ok(!isCanonical('#/rooms/7/tasks/sheet?month=2026-11&x=1'));
+});
+
+test('the Sales page (spec 2026-11-05-sales-design.md 6): #/business/sales with its period, 30 without one', () => {
+  assert.equal(SALES_HASH, '#/business/sales');
+  assert.deepEqual(parseRoute('#/business/sales'), { name: 'sales', days: 30 });
+  assert.deepEqual(parseRoute('#/business/sales?days=90'), { name: 'sales', days: 90 });
+  assert.deepEqual(parseRoute('#/business/sales?days=31'), { name: 'sales', days: 30 });
+  assert.equal(isCanonical('#/business/sales'), true);
+  assert.equal(isCanonical('#/business/sales?days=30'), false);
+  assert.equal(isCanonical('#/business/sales?days=7'), true);
+  assert.equal(isCanonical('#/business/sales/'), false);
+  assert.equal(canonicalHash({ name: 'sales', days: 365 }), '#/business/sales?days=365');
 });
