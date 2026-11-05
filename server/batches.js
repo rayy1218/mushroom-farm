@@ -10,14 +10,15 @@ import { goodOf, dryKgOf, runDryKg, blockCost, statusOf, runBlocksOf, movesOf } 
 import {
   BatchError, MAX_BLOCKS, MAX_NOTE, EARLIEST, bad, conflict, isPlain, intIn, numIn, isDate, grouped, textOf, weightOf,
 } from './batches-fields.js';
-import { checkRecipe } from './batches-making.js';
+import { checkRecipe, checkMade, checkMaterials, MIX_ITEMS } from './batches-making.js';
 
 export { BatchError, MAX_BLOCKS };
 export const CAUSES = ['green', 'black', 'bacterial', 'pests', 'other'];
-const STATUSES = ['waiting', 'placed', 'past'];
+const STATUSES = ['making', 'waiting', 'placed', 'past'];
 // Edited on any row of a delivery, written to all of them (spec 2.1); a part copies these and the making columns.
 const SHARED = ['crop', 'supplier', 'receivedAt', 'pricePerBlock', 'spawnBatch', 'strain', 'deliveryRef', 'inoculatedAt', 'blockKg', 'waterPct'];
-const COPIED = [...SHARED, 'kind', 'recipeId', 'mixedAt', 'incubation', 'incubatedFrom', 'incubatedTo'];
+const MAKING = ['recipeId', 'mixedAt', 'incubation', 'incubatedFrom', 'incubatedTo'];
+const COPIED = [...SHARED, 'kind', ...MAKING];
 const CSV_HEAD = ['received', 'crop', 'kind', 'supplier', 'strain', 'spawn batch', 'delivery note', 'blocks', 'lost', 'price per block', 'room',
   'run started', 'placed', 'block kg', 'water %', 'note'];
 const pick = (row, keys) => Object.fromEntries(keys.map((k) => [k, row[k]]));
@@ -73,12 +74,13 @@ function queryOf({ run = null, from = null, to = null, status = null } = {}) {
   if (from !== null && !isDate(from)) throw bad('from must be a date, YYYY-MM-DD', 'from');
   if (to !== null && !isDate(to)) throw bad('to must be a date, YYYY-MM-DD', 'to');
   if (from !== null && to !== null && from > to) throw bad('from must be on or before to', 'from');
-  if (status !== null && !STATUSES.includes(status)) throw bad('status must be waiting, placed or past', 'status');
+  if (status !== null && !STATUSES.includes(status)) throw bad('status must be making, waiting, placed or past', 'status');
   return { run: run === null ? null : Number(run), from, to, status };
 }
 
-// A store row as the API shows it (spec 6).
-function viewOf(b) {
+// A store row as the API shows it (spec 6); priceOf(stockItemId): an Inventory item's latest purchase price (the spawn's, for
+// the 4-2 sheet's price per unit).
+function viewOf(b, priceOf) {
   return {
     id: b.id, kind: b.kind, parentId: b.parentId, runId: b.runId, roomId: b.roomId, roomName: b.roomName, crop: b.crop,
     supplier: b.supplier, receivedAt: b.receivedAt, blocks: b.blocks, lost: b.lost, good: goodOf(b), pricePerBlock: b.pricePerBlock,
@@ -87,6 +89,10 @@ function viewOf(b) {
     usedBlocks: b.placedAt == null ? null : b.blocks - b.lostBefore, // the blocks that went into the room (the lost ones before it do not)
     runStartedAt: b.runStartedAt, runEndedAt: b.runEndedAt,
     runBlocks: runBlocksOf(b), note: b.note, status: statusOf(b), createdAt: b.createdAt,
+    // a made batch's making (spec 5): the steps' days, its last sterilising load and its spawn
+    mixedAt: b.mixedAt, recipeId: b.recipeId, incubation: b.incubation, incubatedFrom: b.incubatedFrom, incubatedTo: b.incubatedTo,
+    sterilisedAt: b.sterilisedAt,
+    spawn: b.spawnQty == null ? null : { qty: b.spawnQty, unit: b.spawnUnit, unitCost: b.spawnItemId == null ? null : priceOf(b.spawnItemId) },
   };
 }
 
@@ -95,6 +101,7 @@ export function createBatches({ db, now = Date.now, log = console.error }) {
   const store = db.batches;
   const listeners = new Set();
   const firstOf = (b) => b.parentId ?? b.id;
+  const view = (b) => viewOf(b, (itemId) => store.purchasePrice(itemId));
 
   // After a write: fn({ batchId, roomId, runId, harvestRooms }) — harvestRooms: the rooms of the placed rows it touched
   // (before or after), whose Harvest figures may change (3.2).
@@ -134,6 +141,19 @@ export function createBatches({ db, now = Date.now, log = console.error }) {
     for (const m of movesOf(family, (id) => store.checks(id))) store.insertMove({ itemId, ...m });
   }
 
+  // A made batch's material lines in body (spec 5), checked: the mix's (materials) and the spawn (spawn: one line, or null to
+  // clear it; it needs the day inoculated). An item picked is kept only with Inventory. → { mix?, spawn? } (absent: not sent).
+  function linesOf(body, inoculatedAt) {
+    const known = store.hasStock() ? (id) => store.stockItem(id) !== null : null;
+    const out = {};
+    if (Object.hasOwn(body, 'materials')) out.mix = checkMaterials(body.materials, MIX_ITEMS, known);
+    if (Object.hasOwn(body, 'spawn')) {
+      out.spawn = body.spawn === null ? [] : checkMaterials([{ ...(isPlain(body.spawn) ? body.spawn : {}), item: 'spawn' }], ['spawn'], known, 'spawn');
+      if (out.spawn.length && inoculatedAt == null) throw bad('Give the day inoculated with the spawn', 'inoculatedAt');
+    }
+    return out;
+  }
+
   // A check's fields (spec 3): at most `max` blocks lost; `was` (an edit): a field not given keeps its stored value.
   function checkOf(body, b, max, was = null) {
     if (!isPlain(body)) throw bad('Body must be a JSON object');
@@ -165,7 +185,7 @@ export function createBatches({ db, now = Date.now, log = console.error }) {
       const { run, from, to, status } = queryOf(query);
       const rows = store.all().filter((b) => (run === null || b.runId === run)
         && (from === null || localDate(b.receivedAt) >= from) && (to === null || localDate(b.receivedAt) <= to));
-      const batches = rows.map(viewOf).filter((b) => status === null || b.status === status);
+      const batches = rows.map(view).filter((b) => status === null || b.status === status);
       return { batches, blockCost: blockCost(batches) };
     },
 
@@ -174,10 +194,18 @@ export function createBatches({ db, now = Date.now, log = console.error }) {
       const b = batchOf(id);
       const sameRun = b.runId == null ? null : store.byRun(b.runId).filter((x) => x.crop === b.crop);
       return {
-        ...viewOf(b),
-        delivery: store.family(firstOf(b)).map(viewOf),
+        ...view(b),
+        delivery: store.family(firstOf(b)).map(view),
         checks: store.checks(b.id).toReversed(),
         batchBlocks: sameRun === null ? null : sameRun.reduce((s, x) => s + x.blocks, 0),
+        // part 2 (spec 6): a made batch's recipe, its material lines (with their Inventory item's name and latest purchase price)
+        // and its sterilising loads, all its first row's
+        recipe: b.recipeId == null ? null : store.recipe(b.recipeId),
+        materials: store.materials(firstOf(b)).map((m) => ({
+          ...m, itemName: m.stockItemId == null ? null : store.stockItem(m.stockItemId)?.name ?? null,
+          unitCost: m.stockItemId == null ? null : store.purchasePrice(m.stockItemId),
+        })),
+        loads: store.loads(firstOf(b)),
       };
     },
 
@@ -192,7 +220,24 @@ export function createBatches({ db, now = Date.now, log = console.error }) {
       });
       const b = store.get(id);
       tell([b]);
-      return viewOf(b);
+      return view(b);
+    },
+
+    // Make blocks (spec 5): a made batch from the Mix's fields and materials (and, given, the later steps'). → the view.
+    mix(body) {
+      const t = now();
+      const fields = checkMade(body, { now: t, recipeOf: (id) => store.recipe(id) });
+      const lines = linesOf(body, fields.inoculatedAt ?? null);
+      const id = store.tx(() => {
+        const made = store.insert({ kind: 'made', ...fields, createdAt: t });
+        if (lines.mix) store.setMaterials(made, MIX_ITEMS, lines.mix);
+        if (lines.spawn) store.setMaterials(made, ['spawn'], lines.spawn);
+        sync(made);
+        return made;
+      });
+      const b = store.get(id);
+      tell([b]);
+      return view(b);
     },
 
     // Edit (spec 3): shared fields to every row of the delivery; crop only while all of it waits; blocks only on a waiting
@@ -222,7 +267,7 @@ export function createBatches({ db, now = Date.now, log = console.error }) {
       });
       const after = store.get(id);
       tell([after, ...family]);
-      return viewOf(after);
+      return view(after);
     },
 
     // Delete (spec 3): a first row with parts is refused; a part's blocks are not given back.
@@ -269,7 +314,7 @@ export function createBatches({ db, now = Date.now, log = console.error }) {
       });
       const placed = store.get(placedId);
       tell([placed]);
-      return viewOf(placed);
+      return view(placed);
     },
 
     // Take a row out of its room while the run is open (spec 3): a part whose first row waits folds back into it; another
@@ -294,7 +339,7 @@ export function createBatches({ db, now = Date.now, log = console.error }) {
       });
       const waiting = store.get(waitingId);
       tell([b, waiting]);
-      return viewOf(waiting);
+      return view(waiting);
     },
 
     // A contamination check on a row (spec 3). → the check.

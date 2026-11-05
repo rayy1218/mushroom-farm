@@ -74,3 +74,60 @@ test('recipes: add, list by name, edit, archive; the parts add up to 100 %; a na
   assert.deepEqual(status(() => batches.editRecipe(r.id, { archived: false }))?.slice(0, 2), [400, 'name'], 'back in use, its name would be there twice');
   assert.equal(status(() => batches.editRecipe(999, {}))[0], 404);
 });
+
+test('make blocks: a made batch, making, mixed and received the same day, no supplier yet; the recipe gives the crop and the weight', (t) => {
+  const { batches, told } = setup(t);
+  const r = batches.addRecipe(RECIPE);
+  const b = batches.mix({ recipeId: r.id, blocks: 400, mixedAt: NOW - DAY, materials: [...MIX, { item: 'other', name: ' Cotton waste ', qty: 10, unit: 'kg' }], note: 'first mix' });
+  assert.deepEqual([b.kind, b.status, b.crop, b.blocks, b.supplier, b.receivedAt, b.mixedAt, b.recipeId, b.blockKg, b.waterPct, b.dryKg, b.pricePerBlock, b.note],
+    ['made', 'making', 'oyster', 400, null, NOW - DAY, NOW - DAY, r.id, 2.3, 60, 0.92, null, 'first mix']);
+  assert.deepEqual([b.incubation, b.sterilisedAt, b.spawn], [null, null, null]);
+  assert.deepEqual(told.at(-1), { batchId: b.id, roomId: null, runId: null, harvestRooms: [] });
+  const d = batches.detail(b.id);
+  assert.equal(d.recipe.name, 'Sawdust 78');
+  assert.deepEqual(d.materials.map((m) => [m.item, m.name, m.qty, m.unit, m.stockItemId, m.itemName, m.unitCost]), [
+    ['sawdust', null, 287, 'kg', null, null, null], ['bran', null, 73.6, 'kg', null, null, null], ['other', 'Cotton waste', 10, 'kg', null, null, null],
+  ]);
+  assert.deepEqual(d.loads, []);
+  const plain = batches.mix({ crop: 'pink', blocks: 10 });
+  assert.deepEqual([plain.mixedAt, plain.receivedAt, plain.blockKg, plain.recipeId], [NOW, NOW, null, null], 'today; no recipe, no weight');
+  assert.deepEqual(batches.detail(plain.id).materials, []);
+  assert.equal(batches.mix({ recipeId: r.id, crop: 'pink', blocks: 10, blockKg: 2, waterPct: 65 }).crop, 'pink', "a crop picked over the recipe's");
+  assert.deepEqual(batches.list({ status: 'making' }).batches.map((x) => x.id).slice(1), [plain.id, b.id], 'newest first');
+  assert.deepEqual(batches.list({ status: 'waiting' }).batches, []);
+});
+
+test('make blocks: each bad field is a 400 naming it', (t) => {
+  const { batches } = setup(t);
+  const old = batches.addRecipe({ ...RECIPE, name: 'Old' });
+  batches.editRecipe(old.id, { archived: true });
+  const cases = [
+    [{ crop: 'tomato' }, 'crop'],
+    [{ crop: null }, 'crop'],
+    [{ blocks: 0 }, 'blocks'],
+    [{ blocks: 2.5 }, 'blocks'],
+    [{ mixedAt: NOW + DAY }, 'mixedAt'],
+    [{ mixedAt: 9e15 }, 'mixedAt'],
+    [{ recipeId: 999 }, 'recipeId'],
+    [{ recipeId: old.id }, 'recipeId'],
+    [{ pricePerBlock: 1 }, 'pricePerBlock'],
+    [{ blockKg: 2.3 }, 'waterPct'],
+    [{ note: 'n'.repeat(501) }, 'note'],
+    [{ materials: 'sawdust' }, 'materials'],
+    [{ materials: [{ item: 'cement', qty: 1, unit: 'kg' }] }, 'materials'],
+    [{ materials: [{ item: 'sawdust', qty: 0, unit: 'kg' }] }, 'materials'],
+    [{ materials: [{ item: 'sawdust', qty: 100_001, unit: 'kg' }] }, 'materials'],
+    [{ materials: [{ item: 'sawdust', qty: 1, unit: 'pcs' }] }, 'materials'],
+    [{ materials: [{ item: 'bags', qty: 1, unit: 'kg' }] }, 'materials'],
+    [{ materials: [{ item: 'sawdust', qty: 1, unit: 'kg' }, { item: 'sawdust', qty: 2, unit: 'kg' }] }, 'materials'],
+    [{ materials: [{ item: 'other', qty: 1, unit: 'kg' }] }, 'materials'],
+    [{ materials: [{ item: 'spawn', qty: 1, unit: 'kg' }] }, 'materials'],
+    [{ materials: [{ item: 'sawdust', qty: 1, unit: 'kg', stockItemId: 'x' }] }, 'materials'],
+    [{ spawn: { qty: 1, unit: 'kg' } }, 'inoculatedAt'],
+  ];
+  for (const [change, field] of cases) {
+    assert.deepEqual(status(() => made(batches, change))?.slice(0, 2), [400, field], JSON.stringify(change));
+  }
+  assert.equal(status(() => batches.mix([]))[0], 400);
+  assert.deepEqual(batches.list().batches, [], 'nothing was kept');
+});
