@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { openDb } from '../server/db.js';
-import { openWithStock } from './batches-fixture.js';
+import { openWithStock, openWithInventory } from './batches-fixture.js';
 
 const ROOM = { name: 'Room 1', length: 6, width: 4, height: 2.5 };
 const BATCH = { kind: 'bought', crop: 'oyster', supplier: 'Agro Supplies', receivedAt: 1000, blocks: 1200, pricePerBlock: 2.3, createdAt: 1000 };
@@ -149,4 +149,74 @@ test('ids are never reused after a delete', (t) => {
   s.removeCheck(k1);
   const k2 = s.insertCheck({ batchId: a, at: 2000, lost: 1, cause: 'green', worker: null, note: null, createdAt: 2000 });
   assert.ok(k2 > k1);
+});
+
+const RECIPE = { name: 'Sawdust 78', crop: 'oyster', sawdustPct: 78, branPct: 20, limePct: 1, gypsumPct: 1, otherPct: 0, otherName: null, waterPct: 60, bagKg: 2.3, archived: 0, createdAt: 1000 };
+const LOAD = { method: 'steam', bags: 200, hotAt: 2000, holdH: 6, tempC: 98, worker: 'Ali', createdAt: 2000 };
+
+test('recipes: insert, read (archived as true or false), update, by name', (t) => {
+  const s = fresh(t).batches;
+  const r = s.insertRecipe(RECIPE);
+  const a = s.insertRecipe({ ...RECIPE, name: 'Bran 25' });
+  assert.deepEqual(s.recipe(r), { id: r, ...RECIPE, archived: false });
+  s.updateRecipe(r, { archived: 1 });
+  assert.equal(s.recipe(r).archived, true);
+  assert.deepEqual(s.recipes().map((x) => x.id), [a, r], 'by name');
+  assert.equal(s.recipe(999), null);
+});
+
+test("a made batch's materials (by item, the spawn last) and loads (by time); a part reads its first row's; they go with it", (t) => {
+  const s = fresh(t).batches;
+  const id = s.insert({ ...BATCH, kind: 'made', supplier: null, mixedAt: 1000 });
+  const part = s.insert({ ...BATCH, kind: 'made', supplier: null, mixedAt: 1000, parentId: id, blocks: 100 });
+  assert.deepEqual([s.get(id).sterilisedAt, s.get(id).spawnQty], [null, null]);
+  s.setMaterials(id, ['spawn'], [{ item: 'spawn', name: null, qty: 12, unit: 'kg', stockItemId: 9 }]);
+  s.setMaterials(id, ['sawdust', 'bran'], [
+    { item: 'bran', name: null, qty: 73.6, unit: 'kg', stockItemId: 4 },
+    { item: 'sawdust', name: null, qty: 287, unit: 'kg', stockItemId: null },
+  ]);
+  assert.deepEqual(s.materials(id).map((m) => [m.item, m.qty, m.unit, m.stockItemId]), [['sawdust', 287, 'kg', null], ['bran', 73.6, 'kg', 4], ['spawn', 12, 'kg', 9]]);
+  s.setMaterials(id, ['sawdust', 'bran'], []);
+  assert.deepEqual(s.materials(id).map((m) => m.item), ['spawn'], 'only the items named are replaced');
+  const l1 = s.insertLoad({ batchId: id, ...LOAD });
+  const l2 = s.insertLoad({ batchId: id, ...LOAD, hotAt: 1500 });
+  assert.deepEqual(s.loads(id).map((l) => l.id), [l2, l1], 'by the time they got hot');
+  assert.deepEqual({ ...s.load(l1), id: 0 }, { id: 0, batchId: id, ...LOAD });
+  s.updateLoad(l1, { bags: 150 });
+  assert.equal(s.load(l1).bags, 150);
+  for (const row of [s.get(id), s.get(part)]) {
+    assert.deepEqual([row.sterilisedAt, row.spawnQty, row.spawnUnit, row.spawnItemId], [2000, 12, 'kg', 9], `row ${row.id}`);
+  }
+  s.removeLoad(l2);
+  assert.deepEqual(s.loads(id).map((l) => l.id), [l1]);
+  s.remove(id);
+  assert.deepEqual([s.materials(id), s.loads(id)], [[], []]);
+});
+
+test("a load's id is never reused after a delete", (t) => {
+  const s = fresh(t).batches;
+  const id = s.insert({ ...BATCH, kind: 'made', supplier: null, mixedAt: 1000 });
+  const l1 = s.insertLoad({ batchId: id, ...LOAD });
+  s.removeLoad(l1);
+  assert.ok(s.insertLoad({ batchId: id, ...LOAD }) > l1);
+});
+
+test("Inventory's items for the materials: not the blocks items, with their latest purchase price; none without Inventory", (t) => {
+  const none = fresh(t).batches;
+  assert.deepEqual([none.stockItems(), none.stockItem(1), none.purchasePrice(1)], [[], null, null]);
+  const { db, item, buy } = openWithInventory(t);
+  const sawdust = item('Sawdust', 'other', 'kg');
+  const spawn = item('Grey oyster spawn', 'spawn', 'kg');
+  db.batches.blocksItem('Grey oyster blocks');
+  buy(sawdust, 0.3, 1000);
+  buy(sawdust, 0.35, 2000);
+  buy(sawdust, 0.4, 1500);
+  assert.deepEqual(db.batches.stockItems(), [
+    { id: spawn, name: 'Grey oyster spawn', kind: 'spawn', unit: 'kg', unitCost: null },
+    { id: sawdust, name: 'Sawdust', kind: 'other', unit: 'kg', unitCost: 0.35 },
+  ]);
+  assert.equal(db.batches.purchasePrice(sawdust), 0.35, 'the latest by time');
+  assert.equal(db.batches.purchasePrice(spawn), null);
+  assert.deepEqual(db.batches.stockItem(spawn), { id: spawn, name: 'Grey oyster spawn', kind: 'spawn', unit: 'kg' });
+  assert.equal(db.batches.stockItem(999), null);
 });

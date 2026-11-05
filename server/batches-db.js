@@ -71,7 +71,7 @@ CREATE TABLE IF NOT EXISTS batch_materials (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS batch_materials_by_batch ON batch_materials (batch_id);
 CREATE TABLE IF NOT EXISTS batch_loads (
-  id         INTEGER PRIMARY KEY,
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
   batch_id   INTEGER NOT NULL,
   method     TEXT    NOT NULL CHECK (method IN ('steam', 'pressure', 'pasteurise')),
   bags       INTEGER NOT NULL CHECK (bags BETWEEN 1 AND 100000),
@@ -93,12 +93,29 @@ const COLUMNS = {
 };
 const CHECK_COLUMNS = { batchId: 'batch_id', at: 'at', lost: 'lost', cause: 'cause', worker: 'worker', note: 'note', createdAt: 'created_at' };
 
-// Every batch with its lost blocks, its room's name and its run's times and crops.
+// Part 2 (spec 5): a recipe's, a material line's and a sterilising load's fields and their columns.
+const RECIPE_COLUMNS = {
+  name: 'name', crop: 'crop', sawdustPct: 'sawdust_pct', branPct: 'bran_pct', limePct: 'lime_pct', gypsumPct: 'gypsum_pct', otherPct: 'other_pct',
+  otherName: 'other_name', waterPct: 'water_pct', bagKg: 'bag_kg', archived: 'archived', createdAt: 'created_at',
+};
+const MATERIAL_COLUMNS = { batchId: 'batch_id', item: 'item', name: 'name', qty: 'qty', unit: 'unit', stockItemId: 'stock_item_id' };
+const LOAD_COLUMNS = { batchId: 'batch_id', method: 'method', bags: 'bags', hotAt: 'hot_at', holdH: 'hold_h', tempC: 'temp_c', worker: 'worker', createdAt: 'created_at' };
+
+// Every batch with its lost blocks, its room's name and its run's times and crops; a made batch's last sterilising load and
+// its spawn line (both its first row's: spec 2.1).
 const SELECT = `
 SELECT b.*, rm.name AS room_name, ru.started_at AS run_started_at, ru.ended_at AS run_ended_at, ru.crops AS run_crops,
        COALESCE((SELECT SUM(c.lost) FROM batch_checks c WHERE c.batch_id = b.id), 0) AS lost,
-       COALESCE((SELECT SUM(c.lost) FROM batch_checks c WHERE c.batch_id = b.id AND b.placed_at IS NOT NULL AND c.at <= b.placed_at), 0) AS lost_before
-FROM batches b LEFT JOIN rooms rm ON rm.id = b.room_id LEFT JOIN runs ru ON ru.id = b.run_id`;
+       COALESCE((SELECT SUM(c.lost) FROM batch_checks c WHERE c.batch_id = b.id AND b.placed_at IS NOT NULL AND c.at <= b.placed_at), 0) AS lost_before,
+       (SELECT MAX(l.hot_at) FROM batch_loads l WHERE l.batch_id = COALESCE(b.parent_id, b.id)) AS sterilised_at,
+       s.qty AS spawn_qty, s.unit AS spawn_unit, s.stock_item_id AS spawn_item_id
+FROM batches b LEFT JOIN rooms rm ON rm.id = b.room_id LEFT JOIN runs ru ON ru.id = b.run_id
+     LEFT JOIN batch_materials s ON s.batch_id = COALESCE(b.parent_id, b.id) AND s.item = 'spawn'`;
+// The latest purchase price of the stock item i (Inventory's 'purchase' moves; contract section 5).
+const LATEST_PRICE = `SELECT m.unit_cost FROM stock_moves m WHERE m.item_id = i.id AND m.ref_kind = 'purchase' AND m.unit_cost IS NOT NULL
+  ORDER BY m.at DESC, m.id DESC LIMIT 1`;
+const MATERIAL_ORDER = "CASE item WHEN 'sawdust' THEN 0 WHEN 'bran' THEN 1 WHEN 'lime' THEN 2 WHEN 'gypsum' THEN 3 WHEN 'other' THEN 4 WHEN 'bags' THEN 5 ELSE 6 END";
+
 
 function batchOf(r) {
   const out = {};
@@ -110,9 +127,19 @@ function batchOf(r) {
   out.runStartedAt = r.run_started_at;
   out.runEndedAt = r.run_ended_at;
   out.runCrops = r.run_crops === null ? null : JSON.parse(r.run_crops);
+  out.sterilisedAt = r.sterilised_at;
+  out.spawnQty = r.spawn_qty;
+  out.spawnUnit = r.spawn_unit;
+  out.spawnItemId = r.spawn_item_id;
   return out;
 }
 const checkOf = (r) => ({ id: r.id, batchId: r.batch_id, at: r.at, lost: r.lost, cause: r.cause, worker: r.worker, note: r.note, createdAt: r.created_at });
+const recipeOf = (r) => ({
+  id: r.id, name: r.name, crop: r.crop, sawdustPct: r.sawdust_pct, branPct: r.bran_pct, limePct: r.lime_pct, gypsumPct: r.gypsum_pct,
+  otherPct: r.other_pct, otherName: r.other_name, waterPct: r.water_pct, bagKg: r.bag_kg, archived: r.archived === 1, createdAt: r.created_at,
+});
+const materialOf = (r) => ({ id: r.id, batchId: r.batch_id, item: r.item, name: r.name, qty: r.qty, unit: r.unit, stockItemId: r.stock_item_id });
+const loadOf = (r) => ({ id: r.id, batchId: r.batch_id, method: r.method, bags: r.bags, hotAt: r.hot_at, holdH: r.hold_h, tempC: r.temp_c, worker: r.worker, createdAt: r.created_at });
 
 // The columns and values of the given fields of `map` (an unknown field throws: a typo is a bug, not a no-op).
 function columnsOf(fields, map) {
@@ -140,7 +167,14 @@ export function createBatchStore(db) {
     moveChecks: db.prepare('UPDATE batch_checks SET batch_id = ? WHERE batch_id = ?'),
     forgetRoom: db.prepare('UPDATE batches SET room_id = NULL, run_id = NULL WHERE room_id = ?'),
     hasStock: db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table' AND name IN ('stock_items', 'stock_moves')"),
+    recipes: db.prepare('SELECT * FROM batch_recipes ORDER BY name COLLATE NOCASE, id'),
+    recipe: db.prepare('SELECT * FROM batch_recipes WHERE id = ?'),
+    materials: db.prepare(`SELECT * FROM batch_materials WHERE batch_id = ? ORDER BY ${MATERIAL_ORDER}, id`),
+    loads: db.prepare('SELECT * FROM batch_loads WHERE batch_id = ? ORDER BY hot_at, id'),
+    load: db.prepare('SELECT * FROM batch_loads WHERE id = ?'),
+    removeLoad: db.prepare('DELETE FROM batch_loads WHERE id = ?'),
   };
+  const hasStock = () => q.hasStock.get().n === 2;
 
   function insertRow(table, fields, map) {
     const pairs = columnsOf(fields, map);
@@ -204,8 +238,52 @@ export function createBatchStore(db) {
     // A folded part's checks go to its first row.
     moveChecks: (fromId, toId) => q.moveChecks.run(toId, fromId),
 
+    // ---- making blocks (spec 5): recipes, a made batch's materials and its sterilising loads ----
+    // Every recipe (archived too), by name.
+    recipes: () => q.recipes.all().map(recipeOf),
+    recipe(id) {
+      const r = q.recipe.get(id);
+      return r ? recipeOf(r) : null;
+    },
+    insertRecipe: (fields) => insertRow('batch_recipes', fields, RECIPE_COLUMNS),
+    updateRecipe: (id, fields) => updateRow('batch_recipes', id, fields, RECIPE_COLUMNS),
+    // A batch's material lines: the mix's in the recipe's order, then the spawn.
+    materials: (batchId) => q.materials.all(batchId).map(materialOf),
+    // The lines of these items replaced by `lines` (the Mix sends its own, the Inoculate step the spawn).
+    setMaterials(batchId, items, lines) {
+      db.prepare(`DELETE FROM batch_materials WHERE batch_id = ? AND item IN (${items.map(() => '?').join(', ')})`).run(batchId, ...items);
+      for (const m of lines) insertRow('batch_materials', { batchId, ...m }, MATERIAL_COLUMNS);
+    },
+    // A batch's loads, by the time they got hot.
+    loads: (batchId) => q.loads.all(batchId).map(loadOf),
+    load(id) {
+      const r = q.load.get(id);
+      return r ? loadOf(r) : null;
+    },
+    insertLoad: (fields) => insertRow('batch_loads', fields, LOAD_COLUMNS),
+    updateLoad: (id, fields) => updateRow('batch_loads', id, fields, LOAD_COLUMNS),
+    removeLoad: (id) => q.removeLoad.run(id),
+
     // ---- Inventory's tables (contract section 7): only when they exist ----
-    hasStock: () => q.hasStock.get().n === 2,
+    hasStock,
+    // The items a made batch's materials may draw from (not the blocks items Batches makes), by name, with their latest
+    // purchase price (null: none yet); none without Inventory.
+    stockItems() {
+      if (!hasStock()) return [];
+      return db.prepare(`SELECT i.id, i.name, i.kind, i.unit, (${LATEST_PRICE}) AS unit_cost FROM stock_items i WHERE i.kind <> 'blocks' ORDER BY i.name COLLATE NOCASE, i.id`)
+        .all().map((r) => ({ id: r.id, name: r.name, kind: r.kind, unit: r.unit, unitCost: r.unit_cost }));
+    },
+    // A stock item, or null (and null without Inventory).
+    stockItem(id) {
+      if (!hasStock()) return null;
+      const r = db.prepare('SELECT id, name, kind, unit FROM stock_items WHERE id = ?').get(id);
+      return r ? { id: r.id, name: r.name, kind: r.kind, unit: r.unit } : null;
+    },
+    // A stock item's latest purchase price (RM per its unit), or null.
+    purchasePrice(itemId) {
+      if (!hasStock()) return null;
+      return db.prepare(`SELECT (${LATEST_PRICE}) AS unit_cost FROM (SELECT ? AS id) i`).get(itemId).unit_cost;
+    },
     // The stock item of kind 'blocks' with this name, made when missing. → its id.
     blocksItem(name) {
       const found = db.prepare("SELECT id FROM stock_items WHERE kind = 'blocks' AND name = ? ORDER BY id LIMIT 1").get(name);
