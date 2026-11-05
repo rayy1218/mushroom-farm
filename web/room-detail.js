@@ -9,7 +9,7 @@
 // Refreshes every reading interval (2–30 s; 5 s when the settings cannot be read) while shown.
 
 import { request, OFFLINE } from './api.js';
-import { ROOM_TABS, roomHash } from './route.js';
+import { ROOM_TABS, roomHash, tasksHash } from './route.js';
 import { createRoomEdit, createDeleteCard, createSaveQueue } from './room-edit.js';
 import { createEquipment } from './equipment.js';
 import { cardOf } from './equipment-cards.js';
@@ -169,7 +169,7 @@ function text(tag, className, content) {
 }
 
 
-export function mount(container, { id, tab = 'now' }) {
+export function mount(container, { id, tab = 'now', week = null }) {
   const me = ++mountSeq;
   container.innerHTML = TEMPLATE;
   const q = (sel) => container.querySelector(sel);
@@ -196,6 +196,13 @@ export function mount(container, { id, tab = 'now' }) {
     }
     tabBar.append(a);
   }
+  let tasksCard = null; // the Tasks card (made on the first render; setTab shows it, so declared before setTab's first call)
+  // The Tasks tab's week: its link carries it, so leaving the tab and coming back keeps the week (while on this room's page).
+  function setTasksWeek(w) {
+    week = w ?? null;
+    tasksLink.href = tasksHash(id, week);
+  }
+  setTasksWeek(week);
   // The Tasks tab's dot: the stage tasks open today and the upkeep due or overdue (amber with an overdue one).
   function paintTasksDot(counts) {
     const dot = tabDot(counts);
@@ -223,6 +230,7 @@ export function mount(container, { id, tab = 'now' }) {
       } else a.removeAttribute('aria-current');
     }
     for (const panel of container.querySelectorAll('[data-panel]')) panel.hidden = panel.dataset.panel !== tab;
+    if (tab === 'tasks') tasksCard?.show(); // the grid reads its week the first time the tab shows
     if (tab === 'now') { if (alarmsNode.parentNode !== nowSide) nowSide.prepend(alarmsNode); }
     else if (alarmsNode.parentNode !== main) main.prepend(alarmsNode);
     if (tab === 'setup' && pendingField) {
@@ -322,7 +330,6 @@ export function mount(container, { id, tab = 'now' }) {
   let usageCard = null; // the Energy and water card, made on the first render
   let cropCard = null; // the Crop and stage card
   let simulationsCard = null; // the Simulations card
-  let tasksCard = null; // the Tasks card
   let harvestCard = null; // the Harvest card
   let filterCard = null; // the Intake filter card
   let profileTab = null; // the Room profile tab's form
@@ -561,7 +568,12 @@ export function mount(container, { id, tab = 'now' }) {
     if (!cropCard) makeCrop(); // (again after a missing room came back)
     cropCard?.setLights(room?.lights === true); // lights fitted or taken out: the schedule shows or goes
     simulationsCard ??= createSimulationsCard(els.simulationsHost, { roomId: id, getRoom: () => room });
-    tasksCard ??= createTasksCard(els.tasksHost, { roomId: id, onCounts: (c) => { if (alive()) paintTasksDot(c); }, onGone: () => { if (alive()) load(); } });
+    // the grid's week in the address, in place (as the Calendar keeps its day): ‹ › add no history entry each (window's:
+    // history here is the History tab's)
+    tasksCard ??= createTasksCard(els.tasksHost, {
+      roomId: id, week, shown: tab === 'tasks', onWeek: (w) => { setTasksWeek(w); if (alive() && tab === 'tasks') window.history.replaceState(null, '', tasksHash(id, w)); },
+      onCounts: (c) => { if (alive()) paintTasksDot(c); }, onGone: () => { if (alive()) load(); },
+    });
     harvestCard ??= createHarvestCard(els.harvestHost, { roomId: id, getRoom: () => room, onGone: () => { if (alive()) load(); } });
     filterCard ??= createFilterCard(els.filterHost, { roomId: id, onChanged: () => { if (alive()) load(); } }); // the alarms clear
     filterCard.update(room, sensors.dp, intakeRunning(machineData ?? lastMachines));
@@ -837,5 +849,6 @@ export function mount(container, { id, tab = 'now' }) {
     container.replaceChildren();
   }
   unmount.setTab = setTab; // a tab change: the router shows another panel instead of mounting the page again
+  unmount.setWeek = (w) => { setTasksWeek(w); tasksCard?.setWeek(week); }; // the Tasks tab's week from the address
   return unmount;
 }

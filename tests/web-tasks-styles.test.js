@@ -50,13 +50,13 @@ test('the room tabs fade only at an edge that hides a tab (data-more, as the Set
   assert.ok(room.includes("container.querySelectorAll('.setup-nav, .room-tabs')"), 'the tab row gets its data-more too');
 });
 
-test('the Tasks tab from 1,100 px: Today, Upkeep and Long-term on the left, the Log alone on the right', () => {
+test('the Tasks tab from 1,100 px: the week grid across the top, Upkeep and Long-term side by side under it', () => {
   const desk = block.slice(block.indexOf('.tk-grid {'), block.indexOf('.tk-part .sim-card-head'));
-  assert.ok(desk.includes('.tk-grid { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); grid-template-rows: auto auto auto 1fr; }'));
-  assert.ok(desk.includes('.tk-grid > :not(.tk-log-card) { grid-column: 1; }'));
-  assert.ok(desk.includes('.tk-grid > .tk-log-card { grid-column: 2; grid-row: 1 / -1; }'));
+  assert.ok(desk.includes('.tk-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }'));
+  assert.ok(desk.includes('.tk-grid > .tk-today { grid-column: 1 / -1; }'));
+  assert.ok(!block.includes('tk-log'), 'the Log is gone, and its styles');
   const card = readFileSync(new URL('../web/tasks-card.js', import.meta.url), 'utf8');
-  assert.ok(card.includes("const logCard = el('section', 'card tk-part tk-log-card');"));
+  assert.ok(card.includes("const todayCard = el('section', 'card tk-part tk-today');"));
 });
 
 test('review minor: the dialog wraps its primary button on top; the Today room link is 44 px by its own margin; Live keeps its dot', () => {

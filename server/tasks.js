@@ -22,6 +22,8 @@ export class TaskError extends Error {
 const AMOUNT_LABEL = Object.fromEntries(DAILY_RULES.filter((r) => r.amount).map((r) => [r.key, r.amount.label]));
 
 const MAX_AMOUNT = 10_000;
+// A daily row done or skipped by mistake can be opened again for this long (ms, by the server's clock).
+const UNDO_WINDOW_MS = 60_000;
 const MAX_REASON = 200;
 // An upkeep rule's first row is due the day it appears up to this interval (days), one interval later above it.
 const FIRST_DUE_DAYS = 14;
@@ -250,8 +252,20 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
     return text;
   }
 
+  // Tells the harvest listeners (a Done's or an Undo's harvests changed); one that throws is logged, the rest still told.
+  function tellHarvests(roomId) {
+    for (const fn of [...harvestListeners]) {
+      try {
+        fn(roomId);
+      } catch (err) {
+        log(err);
+      }
+    }
+  }
+
   // Closes the open row; a row closed by someone else meanwhile is a 409 too, one deleted with its room a 404. An upkeep
   // row makes its next row with it; a harvest check's kg (amounts: { crop: kg }) make harvests with it.
+  // Tells the room's listeners, and the harvest listeners too when harvests changed.
   function close(row, fields, amounts = null) {
     const at = now();
     const next = row.kind === 'upkeep' ? nextUpkeep(row, localDate(at), at) : null;
@@ -262,15 +276,7 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
       throw new TaskError(409, closedText(after, localDate(at)));
     }
     tell(row.roomId);
-    if (harvests.length > 0) {
-      for (const fn of [...harvestListeners]) {
-        try {
-          fn(row.roomId);
-        } catch (err) {
-          log(err);
-        }
-      }
-    }
+    if (harvests.length > 0) tellHarvests(row.roomId);
     return view(db.getTask(row.id));
   }
 
@@ -379,6 +385,24 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
       return close(row, { status: 'skipped', worker: workerOf(worker), reason: reasonOf(reason) });
     },
 
+    // A daily row of today done or skipped at most UNDO_WINDOW_MS ago opens again, its harvests deleted (spec
+    // 2026-11-04-task-grid-design.md 3). A row of a day that has ended stays as it is, though within the minute.
+    undo(id) {
+      const row = db.getTask(id);
+      if (!row) throw new TaskError(404, 'Task not found');
+      if (row.kind !== 'daily') throw new TaskError(409, 'Only a daily task can be undone');
+      if (row.status !== 'done' && row.status !== 'skipped') throw new TaskError(409, `It is not done or skipped (it is ${row.status})`);
+      const late = () => new TaskError(409, `Too late to undo: it was ${row.status} at ${localTime(row.closedAt)}`);
+      const since = now() - UNDO_WINDOW_MS;
+      if (row.closedAt < since) throw late();
+      if (row.date !== today()) throw new TaskError(409, 'Too late to undo: its day has ended');
+      const went = db.undoTask(id, since);
+      if (went === null) throw late();
+      tell(row.roomId);
+      if (went > 0) tellHarvests(row.roomId);
+      return view(db.getTask(id));
+    },
+
     // { reason }; long-term rows only.
     cancel(id, body) {
       const { reason } = body ?? {};
@@ -455,6 +479,7 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
 
     // The calendar (spec 2026-11-03-calendar-design.md 2): { today, from, to, horizon, rooms: [{ id, name }], days: [{ date,
     // items }] } for every room or one (roomId); null when there is no such room. Today's rows are made first, as Today does.
+    // A stored row's item carries its id (a worked-out one has none).
     // Past days: the stored rows (a daily row left open on an earlier day counts as missed); today: its rows and the upkeep due
     // or overdue; later days: calendar.js projectRoom.
     calendarView({ from, to, roomId = null }) {
@@ -466,7 +491,7 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
       const at = now();
       const byDay = new Map();
       const put = (d, item) => { if (d >= from && d <= to) (byDay.get(d) ?? byDay.set(d, []).get(d)).push(item); };
-      const item = (row, status) => ({ roomId: row.roomId, kind: row.kind, status, ruleKey: row.ruleKey, text: row.text, note: row.note,
+      const item = (row, status) => ({ id: row.id, roomId: row.roomId, kind: row.kind, status, ruleKey: row.ruleKey, text: row.text, note: row.note,
         slot: row.slot, worker: row.worker, amount: row.amount, unit: row.unit, reason: row.reason, closedAt: row.closedAt,
         overdueDays: 0, routine: isRoutine(row.kind, row.ruleKey), about: false, stage: null, until: null, from: null });
       for (const room of rooms) {

@@ -98,6 +98,7 @@ test('the address: room and day kept; anything else dropped', () => {
   assert.deepEqual(parseCalendarQuery('room=2&day=2026-11-04'), { room: 2, day: '2026-11-04' });
   assert.deepEqual(parseCalendarQuery('room=x&day=2026-02-30&y=1'), { room: null, day: null });
   assert.deepEqual(parseCalendarQuery(''), { room: null, day: null });
+  assert.deepEqual(parseCalendarQuery('day=2026-13-01'), { room: null, day: null }, 'a month out of range is no day (it threw)');
 });
 
 test('dayTitle and dayLabel', () => {

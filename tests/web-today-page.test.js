@@ -29,7 +29,7 @@ test("the top bar's Today link, before Overview, with the count of tasks due (hi
 });
 
 test("on its way to #/today the top bar leaves the count to the page's own load, which hands its total to the top bar", () => {
-  assert.ok(app.includes("window.addEventListener('hashchange', () => { show(); refreshBadge(); if (mounted?.name !== 'today') refreshToday(); });"));
+  assert.ok(app.includes("window.addEventListener('hashchange', (e) => { show(e.oldURL ? new URL(e.oldURL).hash : ''); refreshBadge(); if (mounted?.name !== 'today') refreshToday(); });"));
   assert.ok(page.includes("window.dispatchEvent(new CustomEvent('farm:today-count', { detail: todayCount(view) }));"));
   assert.ok(page.indexOf("new CustomEvent('farm:today-count'") > page.indexOf('view = data;'), 'after each load');
   assert.ok(app.includes("window.addEventListener('farm:today-count', (event) => {"));

@@ -129,3 +129,24 @@ test('a closed server no longer publishes a Done that made harvests', async (t) 
   assert.deepEqual(got, []);
   assert.equal(taskHarvests(db, row.id).length, 1, 'the harvest was made all the same');
 });
+
+test('Undo publishes the room part tasks and the due count, and harvest when harvests went; a refused undo publishes nothing', async (t) => {
+  const { db, call, got, now } = await app(t);
+  const id = (await call('POST', '/api/rooms', ROOM)).body.id;
+  await call('PUT', `/api/rooms/${id}/crop`, { crops: [{ crop: 'oyster', blocks: 100 }] });
+  db.setProgram(id, { ...db.getProgram(id), stageSince: now });
+  const view = (await call('GET', `/api/rooms/${id}/tasks`)).body;
+  const am = byRule(view.today, 'harvestAm').id;
+  const foot = byRule(view.today, 'footbath').id;
+  await call('POST', `/api/tasks/${foot}/done`, { worker: 'Ali' });
+  got.length = 0;
+  assert.equal((await call('POST', `/api/tasks/${foot}/undo`)).status, 200);
+  assert.deepEqual(got, [['room', { id, part: 'tasks' }], ['tasks', { due: view.counts.due }]], 'no harvests, no harvest event');
+  await call('POST', `/api/tasks/${am}/done`, { worker: 'Ali', amount: 1 });
+  got.length = 0;
+  assert.equal((await call('POST', `/api/tasks/${am}/undo`)).status, 200);
+  assert.deepEqual(got, [['room', { id, part: 'tasks' }], ['tasks', { due: view.counts.due }], ['harvest', { roomId: id }]]);
+  got.length = 0;
+  assert.equal((await call('POST', `/api/tasks/${am}/undo`)).status, 409);
+  assert.deepEqual(got, []);
+});

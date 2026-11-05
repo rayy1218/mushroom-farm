@@ -264,9 +264,10 @@ html { scroll-padding-top: var(--topbar-h); }
 .brand-mark { width: 28px; height: 28px; border-radius: 8px; flex: none; background: var(--accent); position: relative; }
 .brand-mark::before { content: ""; position: absolute; left: 5px; right: 5px; top: 6px; height: 10px; border-radius: 10px 10px 3px 3px; background: var(--on-accent); }
 .brand-mark::after { content: ""; position: absolute; left: 11px; right: 11px; bottom: 5px; height: 7px; border-radius: 2px; background: var(--on-accent); }
-.brand-text { display: grid; line-height: 1.2; min-width: 0; }
+/* one column no wider than the brand's room (an auto track grew to the lines' width and ran under the alarm pill at 601 px) */
+.brand-text { display: grid; grid-template-columns: minmax(0, 1fr); line-height: 1.2; min-width: 0; }
 .brand-text strong { font-size: var(--fs-md); font-weight: 700; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.brand-text small { color: var(--muted); font-size: var(--fs-xs); white-space: nowrap; }
+.brand-text small { color: var(--muted); font-size: var(--fs-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .topbar { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 8px; min-height: var(--topbar-h);
   padding: 8px 14px; padding-top: calc(8px + env(safe-area-inset-top)); background: color-mix(in srgb, var(--surface) 88%, transparent);
@@ -283,6 +284,12 @@ html { scroll-padding-top: var(--topbar-h); }
   background: var(--critical); color: var(--on-critical); text-decoration: none; font-weight: 700; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
 .top-alarm:hover { opacity: .9; }
 @media (max-width: 600px) { .top-alarm { min-height: 44px; } .top-link span { display: none; } }
+/* a tablet too, 601 to 899 px (critique 2026-11-05 #1): five worded links left the brand 22 px under "Live" and the page
+   scrolling sideways at 700 px since Harvest; the links are their icons, the Today count kept, as on a phone */
+@media (max-width: 899px) {
+  .top-link > span:not(.top-count) { display: none; }
+  .top-link { min-width: 44px; padding: 4px 6px; justify-content: center; gap: 4px; }
+}
 .live-mark { display: inline-flex; align-items: center; gap: 6px; flex: none; font-size: 0.8125rem; font-weight: 600; color: var(--ink-2); }
 .live-dot { width: 8px; height: 8px; border-radius: 50%; border: 2px solid currentColor; box-sizing: border-box; }
 .live-mark[data-live="on"] { color: var(--ink); }
@@ -333,7 +340,7 @@ html { scroll-padding-top: var(--topbar-h); }
     color-scheme: light; --page: #fff; --surface: #fff; --ink: #000; --ink-2: #222; --muted: #444; --band: #eee;
     --border: #999; --border-strong: #555; background: #fff; color: #000;
   }
-  body.printing-sheet .skip, body.printing-sheet .hv-sheet-tools, body.printing-sheet .banner, body.printing-sheet .load-fail { display: none !important; }
+  body.printing-sheet .skip, body.printing-sheet .hv-sheet-tools, body.printing-sheet .ts-tools, body.printing-sheet .banner, body.printing-sheet .load-fail { display: none !important; }
   body.printing-sheet .app > main { padding: 0; }
   body.printing-sheet .hv-sheet-title { font-size: 14pt; max-width: none; }
   body.printing-sheet .hv-sheet-table { font-size: 9pt; min-width: 0; }
@@ -343,6 +350,34 @@ html { scroll-padding-top: var(--topbar-h); }
   body.printing-sheet .hv-sheet-table tr { break-inside: avoid; }
   body.printing-sheet .hv-sheet-table td { height: 9mm; }
   body.printing-sheet .hv-sheet-wrap { overflow: visible; }
+}
+/* Printing a room's month sheet of daily tasks (web/task-sheet.js): A4 portrait for 12 columns or fewer, landscape above
+   (task-grid-math sheetLayout) over two pages, the 1st to the 15th and the rest, so the rows stay 7 mm to write in; the same
+   light paper; marks in black, ✗ the heaviest, the shade printed, the pen's boxes square cells */
+.ts-sheet { page: ts-portrait; }
+.ts-sheet.ts-landscape { page: ts-landscape; }
+@page ts-portrait { size: A4 portrait; margin: 12mm; }
+@page ts-landscape { size: A4 landscape; margin: 12mm; }
+@media print {
+  body.printing-sheet .ts-head { margin-bottom: 3mm; gap: 1mm 8mm; }
+  body.printing-sheet .ts-title { font-size: 13pt; max-width: none; }
+  body.printing-sheet .ts-month { font-size: 11pt; }
+  body.printing-sheet .ts-wrap { overflow: visible; }
+  body.printing-sheet .ts-table { min-width: 0; font-size: 7.5pt; }
+  /* 6.6 mm a row: 31 days, the head and the foot on one A4 portrait page (7 mm ran the legend onto a second) */
+  body.printing-sheet .ts-table :is(th, td) { height: 6.6mm; padding: 0 0.8mm; border-color: #000; }
+  body.printing-sheet .ts-table thead th { height: auto; padding: 1mm; font-size: 7.5pt; }
+  body.printing-sheet .ts-table .ts-day { width: 12mm; position: static; box-shadow: none; } /* no sticky edge or today ring on paper */
+  body.printing-sheet .ts-table .ts-initials { width: 18mm; }
+  body.printing-sheet .ts-table tr.ts-week-end > * { border-bottom-width: 1.5pt; }
+  body.printing-sheet .ts-landscape .ts-table tr.ts-half { break-before: page; }
+  body.printing-sheet .ts-sideways .ts-task-name { height: 24mm; max-height: none; } /* the line length the names wrap at (max-height does not, sideways) */
+  body.printing-sheet .ts-shaded { background: #d4d4d4; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body.printing-sheet .ts-outlined::before { inset: 0.4mm; border: 0.75pt solid #000; border-radius: 0; }
+  body.printing-sheet :is(.ts-box, .ts-key-box)[data-kind="missed"] .ts-mark { color: #000; }
+  body.printing-sheet .ts-table tr { break-inside: avoid; }
+  body.printing-sheet .ts-foot { margin-top: 3mm; font-size: 9pt; }
+  body.printing-sheet .ts-legend { font-size: 8pt; }
 }
 
 /* ---- Rooms list ---- */
@@ -1484,12 +1519,12 @@ details.setup-part:not([open]) { padding-top: 8px; }
 .top-link .top-count { display: inline-block; min-width: 18px; padding: 0 4px; border-radius: 999px; background: var(--border-strong); color: var(--ink);
   font: 700 12px/18px var(--font-body); text-align: center; font-variant-numeric: tabular-nums; }
 
-/* the Tasks tab from 1,100 px: Today, Upkeep and Long-term on the left, the Log alone on the right */
+/* the Tasks tab from 900 px (critique 2026-11-05 #24: an empty Long-term took a full row): the week's grid across the top,
+   Upkeep and Long-term side by side under it */
 .tk-grid { display: grid; gap: 16px; align-items: start; }
-@media (min-width: 1100px) {
-  .tk-grid { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); grid-template-rows: auto auto auto 1fr; }
-  .tk-grid > :not(.tk-log-card) { grid-column: 1; }
-  .tk-grid > .tk-log-card { grid-column: 2; grid-row: 1 / -1; }
+@media (min-width: 900px) {
+  .tk-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .tk-grid > .tk-today { grid-column: 1 / -1; }
 }
 .tk-part .sim-card-head { flex-wrap: wrap; }
 .tk-sub { margin: 0 0 8px; font-size: var(--fs-sm); }
@@ -1538,14 +1573,6 @@ button.tk-tick:is(:hover, :focus-visible) .tk-mark { opacity: 1; }
 .tk-as > span { white-space: nowrap; }
 .tk-as select { font: inherit; color: var(--ink); min-width: 0; min-height: 36px; padding: 6px 8px; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--surface); }
 /* the Log */
-.tk-log { list-style: none; margin: 0 0 8px; padding: 0; }
-.tk-log li { padding: 8px 0; border-top: 1px solid var(--border); }
-.tk-log li:first-child { border-top: 0; }
-.tk-log-head { margin: 0; color: var(--ink-2); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
-.tk-log-status[data-tone="good"] { color: var(--good-text); font-weight: 600; }
-.tk-log-status[data-tone="amber"] { color: var(--warning-text); font-weight: 600; }
-.tk-log-task { margin: 2px 0 0; overflow-wrap: anywhere; }
-.tk-log-reason { margin: 2px 0 0; color: var(--muted); font-size: var(--fs-sm); overflow-wrap: anywhere; }
 
 /* the Today page: the rooms two by two from 1,100 px, then the long-term tasks */
 .td-picker { flex: none; }
@@ -1695,6 +1722,169 @@ button.tk-tick:is(:hover, :focus-visible) .tk-mark { opacity: 1; }
 .r-named { display: inline-flex; align-items: center; gap: 6px; }
 h2.r-named { display: flex; }
 .ov-value-label > .r-ico { align-self: center; margin-right: -2px; }
+
+/* ---- the Tasks tab's grid (spec 2026-11-04-task-grid-design.md 2): the week's daily tasks as the room's log sheet. Days
+   down and tasks across on a desk; turned where the columns do not fit the card (task-grid.js sets data-turn by the card's
+   width): a task's name over its row of 7 days. Colour is state only: amber for a missed ✗ (its box tinted), the accent for
+   today's ring (desk) or column (turned) and the focus; the rest neutral. ---- */
+.tg-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 4px 0 12px; }
+.tg-title { flex: 1 1 auto; margin: 0; font-size: var(--fs-md); font-weight: 600; font-variant-numeric: tabular-nums; }
+.tg-nav { display: flex; gap: 6px; margin-left: auto; } /* as the Calendar's: the dates first, ‹ This week › at the right */
+.tg-step { min-width: 36px; padding-inline: 0; font-size: var(--fs-lg); line-height: 1; }
+.tg-nav [aria-disabled="true"] { color: var(--muted); cursor: default; }
+.tg-scroll { overflow-x: auto; } /* a guard: the grid turns before its columns would need it */
+.tg { width: 100%; border-collapse: collapse; table-layout: fixed; font-variant-numeric: tabular-nums; }
+/* columns of one width: 92 px ("Contamination" whole; task-grid-math deskWidth) to 200 px, sharing the card's width as the
+   Calendar's days do, so a room of 6 tasks or more ends on the card's right edge at 1440 px with the head, the Undo line
+   and the legend; a room of few tasks keeps a compact grid at the left rather than boxes stretched into bars */
+.tg[data-turn="desk"] { min-width: calc(88px + var(--cols, 6) * 92px); max-width: calc(88px + var(--cols, 6) * 200px); }
+.tg th, .tg td { padding: 2px; font-weight: inherit; }
+.tg-corner { width: 88px; }
+.tg .tg-day { padding: 2px 10px; color: var(--ink-2); font-size: var(--fs-sm); font-weight: 500; text-align: left; white-space: nowrap; }
+/* the heads' pictures on one line at the top, their names two lines at most under them, the unit muted under the name */
+.tg-task { vertical-align: top; }
+.tg-task-name { display: flex; flex-direction: column; align-items: center; gap: 2px; width: 100%; min-height: 0; padding: 4px 2px;
+  border: 0; background: none; color: var(--ink-2); font-size: var(--fs-xs); font-weight: 600; line-height: 1.25; text-align: center; }
+.tg-task-name > .pic { margin-bottom: 2px; }
+.tg-name { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; } /* the last guard: a word wider than its column breaks rather than runs into the next head */
+.tg-unit { color: var(--muted); font-weight: 500; }
+.tg-task-name:hover { background: var(--band); border-color: transparent; color: var(--ink); }
+.tg-box { position: relative; display: grid; place-items: center; width: 100%; min-width: 52px; height: 40px; min-height: 0; padding: 0;
+  border: 1px solid var(--border-strong); border-radius: 6px; background: none; color: var(--ink); font-size: var(--fs-sm);
+  -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; touch-action: manipulation; }
+/* not due: a shade with some weight (about 1.35:1 on the card in both themes), still quieter than any mark */
+.tg-box:is([data-kind="none"], [data-kind="cancelled"]) { border-color: transparent; background: color-mix(in srgb, var(--ink) 9%, transparent); }
+.tg-box[data-kind="open"] { border: 2px solid var(--ink-2); }
+button.tg-box:hover { background: var(--band); }
+button.tg-box[data-kind="open"]:hover { border-color: var(--ink); }
+.tg-box[data-kind="planned"] { border: 1px dashed var(--border-strong); }
+.tg-box[aria-disabled="true"] { opacity: .55; cursor: progress; }
+.tg-look { display: flex; flex-direction: column; align-items: center; line-height: 1.15; pointer-events: none; }
+.tg-mark { display: inline-flex; align-items: center; gap: 2px; font-weight: 600; white-space: nowrap; }
+.tg-glyph { display: block; flex: none; }
+/* a missed day: the whole box tinted and an amber ✗, the grid's only amber */
+.tg-box[data-kind="missed"] { border-color: color-mix(in srgb, var(--warning) 45%, transparent); background: var(--warning-soft); }
+.tg-box[data-kind="missed"] .tg-mark { color: var(--warning-text); }
+.tg-box[data-kind="skipped"] .tg-mark { color: var(--muted); }
+.tg-who { color: var(--ink-2); font-size: var(--fs-xs); font-weight: 600; letter-spacing: .02em; }
+.tg-about { position: absolute; top: 1px; right: 4px; color: var(--muted); font-size: 11px; }
+td.tg-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* today: its row ringed in the accent (desk) */
+.tg[data-turn="desk"] tr.tg-today > * { box-shadow: inset 0 2px var(--accent), inset 0 -2px var(--accent); }
+.tg[data-turn="desk"] tr.tg-today > :first-child { box-shadow: inset 0 2px var(--accent), inset 0 -2px var(--accent), inset 2px 0 var(--accent); }
+.tg[data-turn="desk"] tr.tg-today > :last-child { box-shadow: inset 0 2px var(--accent), inset 0 -2px var(--accent), inset -2px 0 var(--accent); }
+.tg[data-turn="desk"] tr.tg-today .tg-day { color: var(--ink); font-weight: 600; }
+.tg[data-turn="phone"] { display: block; }
+.tg[data-turn="phone"] :is(thead, tbody) { display: block; }
+.tg[data-turn="phone"] tr { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.tg[data-turn="phone"] .tg-corner { display: none; }
+.tg[data-turn="phone"] .tg-task { grid-column: 1 / -1; padding-top: 8px; }
+.tg[data-turn="phone"] .tg-task-name { flex-direction: row; justify-content: flex-start; gap: 8px; min-height: 36px; padding: 2px 4px; font-size: var(--fs-sm); text-align: left; }
+.tg[data-turn="phone"] .tg-task-name > .pic { margin-bottom: 0; }
+.tg[data-turn="phone"] .tg-name { display: inline; }
+.tg[data-turn="phone"] .tg-day { padding: 6px 0; text-align: center; }
+.tg[data-turn="phone"] .tg-box { min-width: 0; height: 48px; overflow: hidden; }
+.tg[data-turn="phone"] .tg-mark:has(.tg-amount) { flex-direction: column; gap: 0; }
+.tg[data-turn="phone"] .tg-mark:has(.tg-amount) .tg-glyph { width: 14px; height: 14px; }
+.tg[data-turn="phone"] .tg-amount { font-size: var(--fs-xs); line-height: 1.1; }
+/* today (turned): its column tinted from its head to its last box, through the task names' rows (--today: its place, 0 to 6) */
+.tg[data-turn="phone"] .tg-today { background: var(--accent-soft); }
+.tg[data-turn="phone"] thead .tg-today { border-radius: 8px 8px 0 0; color: var(--ink); font-weight: 600; }
+.tg[data-turn="phone"] tbody tr:last-child .tg-today { border-radius: 0 0 8px 8px; }
+.tg[data-turn="phone"][data-today] .tg-task { background: linear-gradient(to right, transparent calc(100% / 7 * var(--today)),
+  var(--accent-soft) 0 calc(100% / 7 * (var(--today) + 1)), transparent 0); }
+/* the Undo line after a Done or Skip from the grid (a live region: empty, not hidden, when there is nothing to undo) */
+.tg-done-line { display: flex; flex-wrap: wrap; align-items: center; margin: 8px 0 0; font-size: var(--fs-sm); }
+.tg-done-line:empty { margin: 0; }
+.tg-undo { color: var(--ink); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+/* the legend: each box as it shows, small, with its words */
+.tg-legend { margin: 10px 0 0; font-size: var(--fs-sm); line-height: 1.9; }
+.tg-key { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; vertical-align: middle; }
+.tg-box.tg-key-box { width: 18px; min-width: 0; height: 18px; border-radius: 4px; font-size: 11px; line-height: 1; }
+.tg-key-box .tg-glyph { width: 12px; height: 12px; }
+.tg-key-about { color: var(--muted); }
+.tg-csv { margin: 8px 0 0; }
+.tg-host .tg-none { margin: 0; }
+/* the long press menu: Skip…, Undo, Details at the box; a pointer's menu takes the focus itself, the keys' its first item,
+   and the focus ring sits inside the item as a menu's highlight */
+.tg-menu { position: fixed; z-index: 60; display: flex; flex-direction: column; min-width: 168px; padding: 4px;
+  border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--surface); box-shadow: 0 8px 24px var(--shadow); }
+.tg-menu:focus { outline: none; }
+.tg-menu button { justify-content: flex-start; min-height: 40px; border: 0; background: none; text-align: left; }
+.tg-menu button:hover { background: var(--band); }
+.tg-menu button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; background: var(--band); }
+.tg-facts { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 12px 0 0; font-variant-numeric: tabular-nums; }
+.tg-facts dt { color: var(--muted); }
+.tg-facts dd { margin: 0; overflow-wrap: anywhere; white-space: pre-line; }
+@media (max-width: 600px) {
+  .tg-scroll { margin: 0 -12px; padding: 0 2px; } /* the card's padding to the boxes: 7 of them at 44 px or more from 360 px */
+  /* ‹ the week's dates › on one row; This week under them only while another week is on show */
+  .tg-head { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; gap: 4px 8px; }
+  .tg-nav { display: contents; }
+  .tg-prev { grid-area: 1 / 1; }
+  .tg-title { grid-area: 1 / 2; text-align: center; }
+  .tg-next { grid-area: 1 / 3; }
+  .tg-this { grid-area: 2 / 1 / 3 / -1; justify-self: center; }
+  .tg-this[aria-disabled="true"] { display: none; }
+  .tg-head button { min-height: 44px; }
+  .tg-step { min-width: 44px; }
+  .tg[data-turn="phone"] th, .tg[data-turn="phone"] td { padding: 1px; }
+  .tg-menu button { min-height: 44px; }
+  .tg-csv a { display: inline-block; padding: 12px 0; margin: -12px 0; } /* 44 px to tap */
+}
+
+/* ---- the month sheet of a room's daily tasks, #/rooms/:id/tasks/sheet (spec 2026-11-04-task-grid-design.md 4): the paper
+   log on screen, web/task-sheet.js. Marks in the ink, a missed ✗ the heaviest (amber on screen as the grid's; the ink on
+   paper), boxes not due shaded, the pen's boxes outlined (dashed on screen, as the grid's planned box; solid on paper), a
+   Sunday rules off the week; a phone scrolls it sideways. Print rules with the myGAP sheet's, near the top. ---- */
+.ts-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+.ts-tools .back { margin: 0; }
+.ts-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 24px; margin-bottom: 16px; }
+.ts-farm { flex-basis: 100%; margin: 0; color: var(--ink-2); }
+.ts-title { margin: 0; font-size: var(--fs-xl); }
+.ts-month { margin: 0; font-size: var(--fs-lg); font-weight: 600; }
+.ts-line { display: inline-block; min-width: 30ch; height: 1em; border-bottom: 1px solid var(--border-strong); vertical-align: baseline; } /* written in */
+.ts-line-short { min-width: 14ch; }
+.ts-sheet > .none { color: var(--muted); }
+.ts-wrap { position: relative; overflow-x: auto; } /* relative: the screen-reader words in its boxes scroll with them, not the page sideways */
+.ts-table { width: 100%; min-width: calc(7.5rem + var(--cols, 6) * 4.5rem); border-collapse: collapse; table-layout: fixed;
+  font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.ts-table th, .ts-table td { height: 2rem; padding: 2px 4px; border: 1px solid var(--border-strong); font-weight: inherit; text-align: center; }
+.ts-table .ts-day { width: 3rem; text-align: left; white-space: nowrap; }
+/* a phone scrolls the boxes, the days stay (their own rule: a collapsed border does not move with them) */
+.ts-table :is(thead, tbody) .ts-day { position: sticky; left: 0; z-index: 1; background: var(--page); box-shadow: inset -1px 0 var(--border-strong); }
+.ts-table tbody .ts-day { color: var(--ink-2); }
+.ts-weekday { color: var(--muted); }
+.ts-table .ts-initials { width: 4.5rem; }
+.ts-table thead th { color: var(--ink-2); font-size: var(--fs-xs); font-weight: 600; line-height: 1.2; vertical-align: bottom; }
+/* narrow columns (task-grid-math sheetLayout): the names read upwards, wrapping to a second line rather than growing tall */
+.ts-task-name { overflow-wrap: anywhere; } /* a long word in a column too narrow for it breaks rather than run into the next head */
+.ts-sideways .ts-task-name { display: inline-block; max-height: 7.5rem; writing-mode: vertical-rl; transform: rotate(180deg); text-align: left;
+  overflow-wrap: normal; }
+.ts-table .ts-box { font-weight: 600; white-space: nowrap; overflow: hidden; } /* the guard: a figure never runs into the next column */
+.ts-box .ts-who { font-weight: 600; }
+.ts-box.ts-two { line-height: 1.1; }
+.ts-box.ts-two .ts-who { display: block; font-size: .85em; } /* "✓ 19.59" over "AM" */
+.ts-box[data-kind="missed"] .ts-mark, .ts-key-box[data-kind="missed"] .ts-mark { color: var(--warning-text); font-size: 1.3em; font-weight: 800; line-height: 1; }
+.ts-table tr.ts-week-end > * { border-bottom-width: 2px; }
+.ts-shaded { background: var(--band); }
+.ts-outlined { position: relative; }
+.ts-outlined::before { content: ''; position: absolute; inset: 4px; border: 1px dashed var(--border-strong); border-radius: 3px; }
+.ts-table .ts-today .ts-day { box-shadow: inset 3px 0 var(--accent), inset -1px 0 var(--border-strong); } /* the screen's only: today */
+.ts-foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 32px; margin-top: 16px; }
+.ts-foot p { margin: 0; }
+.ts-legend { color: var(--ink-2); font-size: var(--fs-sm); line-height: 1.9; }
+.ts-key { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; vertical-align: middle; }
+.ts-key-box { position: relative; display: inline-grid; place-items: center; width: 18px; height: 18px; border: 1px solid var(--border-strong);
+  font-size: 12px; font-weight: 600; line-height: 1; }
+.ts-key-box.ts-outlined::before { inset: 3px; }
+@media screen and (max-width: 600px) {
+  .ts-tools .back { padding: 10px 0; }
+  .ts-line { min-width: 20ch; }
+  /* a phone's columns are narrow at any count: the names read upwards, as on a crowded sheet */
+  .ts-task-name { display: inline-block; max-height: 7.5rem; writing-mode: vertical-rl; transform: rotate(180deg); text-align: left;
+    overflow-wrap: normal; }
+}
 
 /* ---- the Calendar page (spec 2026-11-03-calendar-design.md 5): a month grid and the picked day's list ---- */
 .tk-sub .tk-cal { white-space: nowrap; }
