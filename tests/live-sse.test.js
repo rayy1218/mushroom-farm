@@ -84,15 +84,16 @@ test('a ping comment every interval', async (t) => {
 test('the 21st stream gets 503, and a closed stream is forgotten at once', async (t) => {
   const { events, port, base } = await start(t);
   const streams = [];
+  const others = events.listeners(); // the app's own subscriptions (Inventory listens for 'batches')
   for (let i = 0; i < 20; i++) streams.push(await stream(port));
   t.after(() => streams.forEach((s) => s.req.destroy()));
-  assert.equal(events.listeners(), 20);
+  assert.equal(events.listeners(), others + 20);
   const refused = await fetch(`${base}/api/events`);
   assert.equal(refused.status, 503);
   assert.deepEqual(await refused.json(), { error: 'Too many live connections' });
   streams[0].req.destroy();
-  for (let i = 0; i < 50 && events.listeners() === 20; i++) await new Promise((r) => setTimeout(r, 10));
-  assert.equal(events.listeners(), 19);
+  for (let i = 0; i < 50 && events.listeners() === others + 20; i++) await new Promise((r) => setTimeout(r, 10));
+  assert.equal(events.listeners(), others + 19);
   const again = await stream(port);
   t.after(() => again.req.destroy());
   assert.equal(again.res.statusCode, 200);
