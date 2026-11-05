@@ -49,6 +49,33 @@ export function createCosts({ db, now = Date.now, zone = localZone, log = consol
   }
 
   const stopping = new AbortController();
+  // The rooms whose usage days are being worked out (roomId → { count, more, done }): a view never works out a cold day in
+  // the request (a year of one-second readings takes seconds); it starts a warm, one at a time a room, that tells when done.
+  const warming = new Map();
+  function warm(roomId, count) {
+    if (stopping.signal.aborted) return;
+    const running = warming.get(roomId);
+    if (running) {
+      running.more = Math.max(running.more, count);
+      return;
+    }
+    const job = { count, more: 0 };
+    warming.set(roomId, job);
+    job.done = (async () => {
+      try {
+        while (job.count > 0) {
+          await warmRoom(db, roomId, { now: now(), zone, count: job.count, signal: stopping.signal });
+          job.count = job.more > job.count ? job.more : 0;
+        }
+        warming.delete(roomId);
+        if (!stopping.signal.aborted) tell();
+      } catch (err) {
+        warming.delete(roomId);
+        log(err);
+      }
+    })();
+  }
+
   const today = () => zone.label(now());
   const keptFrom = () => addDays(today(), -(USAGE_DAYS_KEPT - 1));
 
@@ -59,6 +86,56 @@ export function createCosts({ db, now = Date.now, zone = localZone, log = consol
       startDate: zone.label(r.startedAt), endDate: r.endedAt === null ? null : zone.label(r.endedAt),
       blocks: r.crops.reduce((s, c) => s + c.blocks, 0),
     })));
+  }
+
+  // Everything the figures read from `from` (a date) to today (costs-math's data, section 4 of the plan's Task 4).
+  function dataFor(from) {
+    const t = today();
+    const kept = keptFrom();
+    const count = daysBetween(from < kept ? kept : from, t) + 1;
+    const rooms = new Map();
+    const usage = new Map();
+    for (const room of db.listRooms()) {
+      rooms.set(room.id, room.name);
+      const days = roomDays(db, room, { now: now(), zone, count, cachedOnly: true });
+      if (days.some((d) => d.pending)) warm(room.id, count);
+      usage.set(room.id, new Map(days.map((d) => [d.date, d])));
+    }
+    // a day's margin each side: the zone's dates are worked out from the times below
+    const [fromMs, toMs] = [Date.parse(`${from}T00:00:00Z`) - DAY, now() + DAY];
+    const src = db.costSources(fromMs, toMs);
+    const dated = (list) => list.map((x) => ({ ...x, date: zone.label(x.at) }));
+    const { electricityPrice, waterPrice } = readSettings(db);
+    return {
+      today: t, keptFrom: kept, prices: { electricity: electricityPrice, water: waterPrice }, rooms, runs: runsOf(),
+      costs: db.listCosts(), usage, batches: dated(src.batches), purchases: dated(src.purchases), sales: dated(src.sales),
+      harvests: db.harvestsBetween(fromMs, toMs).map((h) => ({ roomId: h.roomId, runId: h.runId, date: zone.label(h.pickedAt), kg: h.kg, crop: h.crop })),
+      cropYield: readCropYield(db),
+    };
+  }
+
+  // The figures of a month (to today in this month), worked out once per view.
+  function monthsOf(data) {
+    const memo = new Map();
+    return (m) => {
+      if (!memo.has(m)) memo.set(m, figuresOf(firstDayOf(m), lastDayOf(m) < data.today ? lastDayOf(m) : data.today, data));
+      return memo.get(m);
+    };
+  }
+
+  // A run as the page shows it, with its whole figures.
+  const runView = (r, figs, t) => ({
+    id: r.id, roomId: r.roomId, roomName: r.roomName, startedAt: r.startedAt, endedAt: r.endedAt, crops: r.crops,
+    ...runTotals(r, figs, t),
+  });
+
+  // The month's charges of the costs entered by hand, newest first.
+  function entriesOf(month, data) {
+    return data.costs.flatMap((c) => chargesOf(c, firstDayOf(month), lastDayOf(month), data.today).map(({ date }) => ({
+      costId: c.id, date, category: c.category, label: CATEGORY_LABELS[c.category], worker: c.worker, note: c.note,
+      roomId: c.roomId, roomName: c.roomId === null ? null : data.rooms.get(c.roomId) ?? null, amount: c.amount,
+      repeat: c.repeat, utility: c.utility, periodFrom: c.periodFrom, periodTo: c.periodTo,
+    }))).sort((a, b) => (a.date === b.date ? b.costId - a.costId : a.date < b.date ? 1 : -1));
   }
 
   // Who was paid: the tasks' rule (an active worker when the farm has a list).
@@ -189,7 +266,58 @@ export function createCosts({ db, now = Date.now, zone = localZone, log = consol
       return row;
     },
 
-    warmed: () => Promise.resolve(),
+    // GET /api/costs/month (section 5): the month's tiles, notes, lines by category, entries, monthly items, runs (their whole
+    // figures) and the last 12 months' profit (none before the usage days kept). month: 'YYYY-MM', default this month.
+    monthView({ month = null } = {}) {
+      const t = today();
+      const current = monthOf(t);
+      const first = monthOf(keptFrom());
+      const m = month ?? current;
+      if (!isMonth(m) || m > current || m < first) throw new CostError(400, `Pick a month from ${monthName(first)} to ${monthName(current)}`, 'month');
+      const runs = runsOf().filter((r) => r.startDate <= lastDayOf(m) && runEnd(r, t) >= firstDayOf(m));
+      const earliest = [addMonths(m, -11), ...runs.map((r) => monthOf(r.startDate))].sort()[0];
+      const data = dataFor(addDays(firstDayOf(earliest), -MAX_BILL_DAYS));
+      const figs = monthsOf(data);
+      const f = figs(m);
+      const months = Array.from({ length: 12 }, (_, i) => addMonths(m, i - 11)).filter((x) => x >= first);
+      return {
+        month: m, today: t, first,
+        tiles: {
+          income: f.income, costs: f.costs, profit: f.profit, costPerKg: f.costPerKg, profitPerKg: f.profitPerKg,
+          kgHarvested: f.kgHarvested, kgSold: f.kgSold, unsold: f.unsold,
+        },
+        notes: f.notes, byCategory: f.byCategory, pending: f.pending,
+        entries: entriesOf(m, data),
+        repeating: data.costs.filter((c) => c.repeat === 'monthly' && monthOf(c.date) <= m && (c.repeatUntil === null || c.repeatUntil >= m))
+          .map((c) => ({ ...c, roomName: c.roomId === null ? null : data.rooms.get(c.roomId) ?? null })),
+        runs: runs.map((r) => runView(r, figs, t)),
+        last12: months.map((x) => {
+          const g = figs(x);
+          return { month: x, income: g.income, costs: g.costs, profit: g.profit, pending: g.pending };
+        }),
+      };
+    },
+
+    // GET /api/costs/summary (the contract's shape): over [from, to] (default this month to today), or a run's whole figures.
+    summary({ from = null, to = null, run = null } = {}) {
+      const t = today();
+      if (run !== null) {
+        const r = runsOf().find((x) => x.id === run);
+        if (!r) throw new CostError(404, 'Run not found');
+        const data = dataFor(addDays(r.startDate, -MAX_BILL_DAYS));
+        const v = runTotals(r, monthsOf(data), t);
+        return { total: v.costs, byCategory: v.byCategory, energy: v.parts.energy, water: v.parts.water, income: v.income, profit: v.profit, profitPerKg: v.profitPerKg };
+      }
+      const a = from ?? firstDayOf(monthOf(t));
+      const b = to ?? t;
+      if (!isDate(a) || a > t) throw new CostError(400, 'from must be a date up to today', 'from');
+      if (!isDate(b) || b < a || b > t) throw new CostError(400, 'to must be a date from `from` to today', 'to');
+      return summaryOf(figuresOf(a, b, dataFor(addDays(a, -MAX_BILL_DAYS))));
+    },
+
+    // A promise for the usage warms under way (tests).
+    warmed: () => Promise.all([...warming.values()].map((job) => job.done)),
+
 
     // fn() after any write here or a usage warm done (the figures can be worked out now); → a function that stops it.
     onChange(fn) {

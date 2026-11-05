@@ -118,3 +118,69 @@ test('edit, delete, change from a month and stop', (t) => {
   assert.equal(s.costs.stop(started.id, { after: '2026-11' }).repeatUntil, '2026-11');
   assert.ok(s.changes.length >= 6);
 });
+
+test('the month view: pending energy first, then the figures once the usage days are worked out', async (t) => {
+  const s = setup(t);
+  s.costs.add({ date: '2026-11-01', category: 'rent', amount: 300, repeat: 'monthly' });
+  s.costs.add({ date: '2026-11-03', category: 'repairs', amount: 40, roomId: s.one });
+  const first = s.costs.monthView({});
+  assert.equal(first.month, '2026-11');
+  assert.equal(first.pending, true, 'a cold room: worked out in the background');
+  assert.equal(first.tiles.profit, null);
+  await s.costs.warmed();
+  assert.ok(s.changes.length >= 3, 'the warm done tells');
+  const view = s.costs.monthView({ month: '2026-11' });
+  assert.equal(view.pending, false);
+  assert.equal(view.tiles.costs, 340, 'no readings: 0 kWh');
+  assert.equal(view.tiles.income, 0);
+  assert.equal(view.tiles.profit, -340);
+  assert.deepEqual(view.entries.map((e) => [e.date, e.category, e.roomName]), [['2026-11-03', 'repairs', 'Container 1'], ['2026-11-01', 'rent', null]]);
+  assert.deepEqual(view.repeating.map((c) => c.category), ['rent']);
+  assert.equal(view.runs.length, 1);
+  assert.equal(view.runs[0].roomName, 'Container 1');
+  assert.equal(view.runs[0].parts.own, 40);
+  assert.equal(view.runs[0].parts.shared, 300, 'Nov rent, all its: the only run');
+  assert.equal(view.last12.at(-1).month, '2026-11');
+  assert.ok(view.last12.every((m) => m.month >= view.first));
+  assert.ok(view.notes.some((n) => n.kind === 'no-sales'));
+});
+
+test('the month view reads Batches, Inventory and Sales when their tables exist', async (t) => {
+  const s = setup(t);
+  const raw = s.raw();
+  const at = (date) => Date.parse(`${date}T04:00:00Z`);
+  add(raw, {
+    batches: [{ id: 1, run_id: s.run.id, room_id: s.one, crop: 'oyster', received_at: at('2026-11-02'), blocks: 100, price_per_block: 2.5 }],
+    items: [{ id: 1, name: 'PP bags', kind: 'packaging', unit: 'count' }],
+    moves: [{ id: 1, item_id: 1, at: at('2026-11-04'), qty: 1000, unit_cost: 0.05, ref_kind: 'purchase' }],
+    sales: [{ id: 1, sold_at: at('2026-11-10'), crop: 'oyster', kg: 20, price_kg: 15, total: 300, buyer: 'Pasar', room_id: s.one, run_id: s.run.id }],
+  });
+  raw.close();
+  s.costs.monthView({});
+  await s.costs.warmed();
+  const view = s.costs.monthView({});
+  assert.equal(view.tiles.costs, 300, 'blocks 250 + bags 50');
+  assert.equal(view.tiles.income, 300);
+  assert.equal(view.tiles.profit, 0);
+  assert.deepEqual(view.byCategory.map((c) => [c.key, c.source, c.amount]), [['blocks-batches', 'batches', 250], ['inventory-packaging', 'inventory', 50]]);
+  assert.equal(view.runs[0].income, 300);
+  assert.equal(view.runs[0].profitPerKg, 0);
+});
+
+test('the month query and the summary', async (t) => {
+  const s = setup(t);
+  assert.throws(() => s.costs.monthView({ month: '2026-12' }), (e) => e.status === 400 && e.field === 'month' && e.message === 'Pick a month from Oct 2025 to Nov 2026');
+  assert.throws(() => s.costs.monthView({ month: '2025-09' }), (e) => e.status === 400);
+  assert.throws(() => s.costs.monthView({ month: 'nope' }), (e) => e.status === 400);
+  s.costs.add({ date: '2026-11-01', category: 'rent', amount: 300 });
+  s.costs.monthView({});
+  await s.costs.warmed();
+  assert.deepEqual(s.costs.summary({}), {
+    total: 300, byCategory: [{ category: 'rent', amount: 300 }], energy: 0, water: 0, income: 0, profit: -300, profitPerKg: null,
+  });
+  assert.equal(s.costs.summary({ from: '2026-11-02', to: '2026-11-15' }).total, 0);
+  assert.equal(s.costs.summary({ run: s.run.id }).total, 300);
+  assert.throws(() => s.costs.summary({ run: 999 }), (e) => e.status === 404 && e.message === 'Run not found');
+  assert.throws(() => s.costs.summary({ from: '2026-11-10', to: '2026-11-01' }), (e) => e.status === 400 && e.field === 'to');
+  assert.throws(() => s.costs.summary({ from: 'x' }), (e) => e.status === 400 && e.field === 'from');
+});
