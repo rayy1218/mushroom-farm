@@ -67,10 +67,10 @@ export const pricesNote = (cost) => (finite(cost?.costPerKg) ? 'The cost per kg 
 
 const names = (crops) => crops.map(cropName).join(', ');
 
-// The RM value tile: the priced crops' value, and the crops left out with their kg ("without Lion's mane (34.4 kg, no
+// The expected value tile: the priced crops' value, and the crops left out with their kg ("without Lion's mane (34.4 kg, no
 // price)"), or why there is none ("Lion's mane has no price"). kgOf(crop): the crop's kg in the same group.
 function valueTile(value, unpriced, kgOf) {
-  const label = 'RM value';
+  const label = 'Expected value';
   const out = Array.isArray(unpriced) ? unpriced : [];
   if (!out.length) return { label, value: rmText(value) };
   if (!finite(value)) return { label, value: DASH, line: `${names(out)} ${out.length === 1 ? 'has' : 'have'} no price` };
@@ -145,7 +145,7 @@ export function harvestLine(h, { mixed = false } = {}) {
 }
 
 // The Past runs table: a row per run, its dates first (the row's name, opening the run), then PAST_COLUMNS' figures.
-export const PAST_COLUMNS = ['Dates', 'Crops', 'kg', 'kg per block', 'BE', 'RM value', 'Cost per kg'];
+export const PAST_COLUMNS = ['Dates', 'Crops', 'kg', 'kg per block', 'BE', 'Expected value', 'Cost per kg'];
 
 // A past run: { title: its dates, cells: the crops and blocks, kg, kg per block, BE, RM, cost per kg (a dash when unknown) }.
 export function pastRow(run) {
@@ -191,7 +191,7 @@ export function flushRows(run) {
     kgText(f.kg), perBlockText(f.perBlock, { cell: true }), beText(f.be, { cell: true }),
   ]);
 }
-export const BY_CROP_COLUMNS = ['Crop', 'Blocks', 'kg', 'kg per block', 'BE', 'RM value'];
+export const BY_CROP_COLUMNS = ['Crop', 'Blocks', 'kg', 'kg per block', 'BE', 'Expected value'];
 
 // The By crop table of a mixed room, in BY_CROP_COLUMNS' order.
 export const byCropRows = (run) => (run.byCrop ?? []).map((c) => [
@@ -313,7 +313,7 @@ export function editBody(values, h, { run, now, shown }) {
 
 // ---- the farm: the Harvest page, the myGAP sheet and the Overview card (GET /api/harvest) ----
 
-// The Overview card beside Energy and water: { tiles: [{ label, value, line, note }], empty } (line: the 30 days' RM value;
+// The Overview card beside Energy and water: { tiles: [{ label, value, line, note }], empty } (line: the 30 days' expected value;
 // note: the crops it leaves out; empty: the words when nothing was picked in 30 days).
 export function overviewTiles(farm) {
   if (!(farm?.last30?.kg > 0)) return { tiles: [], empty: 'No harvests in the last 30 days.' };
@@ -323,7 +323,7 @@ export function overviewTiles(farm) {
       { label: 'Today', value: kgText(farm.today?.kg), line: null, note: null },
       { label: '7 days', value: kgText(farm.last7?.kg), line: null, note: null },
       {
-        label: '30 days', value: kgText(farm.last30.kg), line: finite(farm.last30.value) ? rmText(farm.last30.value) : null,
+        label: '30 days', value: kgText(farm.last30.kg), line: finite(farm.last30.value) ? `${rmText(farm.last30.value)} expected` : null,
         note: out.length ? `${names(out)} not priced` : null,
       },
     ],
@@ -331,7 +331,7 @@ export function overviewTiles(farm) {
   };
 }
 
-// The page's tiles over its range, as the room tab's: kg, RM value, cost per kg.
+// The page's tiles over its range, as the room tab's: kg, expected value, cost per kg.
 export function pageTiles(farm) {
   return [
     { label: 'kg', value: kgText(farm.totals?.kg) },
@@ -390,8 +390,8 @@ export const periodWords = (days) => PERIOD_WORDS[days] ?? `${days} days`;
 export const emptyText = (days) => `No harvests in the last ${periodWords(days)}.`;
 
 // By room: the rooms that picked in the range or have a run under way; kg and RM over the range, kg per block and BE the run's.
-export const ROOM_COLUMNS = ['Room', 'kg', 'RM value', 'kg per block', 'BE'];
-// without: under a room's RM value that leaves out a crop with no price ("without Lion's mane"), else null. run: the run's
+export const ROOM_COLUMNS = ['Room', 'kg', 'Expected value', 'kg per block', 'BE'];
+// without: under a room's expected value that leaves out a crop with no price ("without Lion's mane"), else null. run: the run's
 // figures in words for a phone, where the two run columns give way to a line under the room's name, or null without a run.
 function runWords(current) {
   if (!current) return null;
@@ -406,7 +406,7 @@ export const roomRows = (farm) => (farm.rooms ?? []).filter((r) => r.kg > 0 || r
 }));
 
 // By crop, most picked first (the server's order).
-export const CROP_COLUMNS = ['Crop', 'kg', 'RM value'];
+export const CROP_COLUMNS = ['Crop', 'kg', 'Expected value'];
 export const cropRows = (farm) => (farm.crops ?? []).map((c) => ({ crop: c.crop, name: cropName(c.crop), cells: [kgText(c.kg), rmText(c.value)] }));
 
 // The myGAP sheet (form 4-6): its title and columns; sheetRows above fills them.

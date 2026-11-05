@@ -86,7 +86,7 @@ test('the sheet: a blank line for the farm\'s name (the app has none), the kg to
   assert.match(css, /body\.printing-sheet \.hv-sheet-table tfoot \{ display: table-row-group; \}/, 'printed once, at the end');
 });
 
-test("the Overview's Harvest card names the crops its RM value leaves out", () => {
+test("the Overview's Harvest card names the crops its expected value leaves out", () => {
   assert.ok(overview.includes("if (t.note) tile.append(node('p', 'us-note', t.note));"));
 });
 

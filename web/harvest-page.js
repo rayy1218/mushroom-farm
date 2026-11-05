@@ -93,7 +93,7 @@ function table(caption, columns, rows, head, { groups = null, runFrom = Infinity
     if (r.run) th.append(el('span', 'hv-run-words', r.run)); // a phone: the run's columns as a line under the name
     row.append(th, ...r.cells.map((c, i) => {
       const td = el('td', i + 1 >= runFrom ? 'num hv-run-col' : 'num', c);
-      if (i === 1 && r.without) td.append(el('span', 'hv-without', r.without)); // the RM value leaves a crop out
+      if (i === 1 && r.without) td.append(el('span', 'hv-without', r.without)); // the expected value leaves a crop out
       return td;
     }));
     body.append(row);
