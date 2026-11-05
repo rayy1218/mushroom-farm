@@ -46,10 +46,10 @@ test('the top bar is not touched (contract 3)', () => {
   assert.ok(!html.includes('business'));
 });
 
-const block = css.slice(css.indexOf('/* ---- Sales ---- */'));
+const block = css.slice(css.indexOf('/* ---- Sales ---- */'), css.indexOf('/* ---- end Sales ---- */') + '/* ---- end Sales ---- */'.length); // a later module's block may follow once merged
 
-test('styles: the end marker closes the file; no colour literals; every token defined; every selector .sl-', () => {
-  assert.ok(block.trimEnd().endsWith('/* ---- end Sales ---- */'), 'the Sales block is last');
+test('styles: the end marker closes the block; no colour literals; every token defined; every selector .sl-', () => {
+  assert.ok(css.indexOf('/* ---- end Sales ---- */') > css.indexOf('/* ---- Sales ---- */'), 'the end marker closes the Sales block');
   assert.ok(!/#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(/i.test(block), 'no hex, rgb() or hsl()');
   for (const [, name] of block.matchAll(/var\((--[\w-]+)/g)) assert.ok(new RegExp(`${name}\\s*:`).test(css.slice(0, css.indexOf('/* ---- Sales ---- */'))), name);
   const bare = block.replace(/\/\*.*?\*\//gs, '').replace(/@media[^{]*\{/g, '');

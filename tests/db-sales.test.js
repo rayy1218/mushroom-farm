@@ -19,7 +19,7 @@ function fresh(t) {
 
 const line = (crop, kg, priceKg, roomId = null, runId = null) => ({ crop, kg, priceKg, total: Math.round(kg * priceKg * 100) / 100, roomId, runId });
 
-test('a version 20 file is upgraded to 23: buyers and sales made, nothing else changed', (t) => {
+test('a version 20 file is upgraded to 23 or later: buyers and sales made, nothing else changed', (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'farm-db-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const path = join(dir, 'v20.db');
@@ -36,7 +36,7 @@ test('a version 20 file is upgraded to 23: buyers and sales made, nothing else c
   assert.deepEqual(db.salesBetween(-8.64e15, 8.64e15), []);
   const check = new DatabaseSync(path);
   t.after(() => check.close());
-  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 23);
+  assert.ok(check.prepare('PRAGMA user_version').get().user_version >= 23); // 23 or a later module's version once merged
   const indexes = check.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'sales' ORDER BY name").all().map((r) => r.name);
   assert.deepEqual(indexes, ['sales_by_buyer', 'sales_by_delivery', 'sales_by_run', 'sales_by_time', 'sales_unpaid']);
   assert.deepEqual(check.prepare('PRAGMA table_info(sales)').all().map((c) => c.name), ['id', 'delivery_id', 'sold_at', 'crop', 'kg',
