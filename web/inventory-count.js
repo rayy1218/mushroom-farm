@@ -9,7 +9,8 @@ import { INVENTORY_HASH, INVENTORY_COUNT_HASH } from './route.js';
 import { live } from './live.js';
 import { createThrottle } from './live-math.js';
 import { loadWorkers, getWorker, setWorker, errorText } from './task-dialogs.js';
-import { groupItems, qtyText, countBody, doneText, keptCounts, leaveText, WHOLE_UNITS } from './inventory-math.js';
+import { groupItems, qtyText, countBody, countDiff, doneText, keptCounts, leaveText, WHOLE_UNITS } from './inventory-math.js';
+import { DOT } from './text-math.js';
 import { keepFlash } from './inventory-done.js';
 
 const COMMAND_TIMEOUT = 15000;
@@ -26,6 +27,7 @@ function writeKept(map) {
 }
 
 const TEMPLATE = `
+  <div class="iv-page">
   <div class="page-head">
     <div class="page-titles">
       <a class="back" data-back>Inventory</a>
@@ -58,7 +60,8 @@ const TEMPLATE = `
   <section class="card iv-empty" data-empty hidden>
     <p class="none">No stock items to count.</p>
     <a class="button" data-empty-back>Back to Inventory</a>
-  </section>`;
+  </section>
+  </div>`;
 
 function el(tag, className, content) {
   const node = document.createElement(tag);
@@ -126,6 +129,15 @@ export function mount(container) {
     } catch { /* the list stays as it was */ }
   }
   const inputMode = (unit) => (WHOLE_UNITS.includes(unit) ? 'numeric' : 'decimal');
+  // "By the records 1.50 kg", and with a figure typed its difference (audit #6): "· −0.25 kg", amber when over half.
+  function paintRecords(r) {
+    r.records.replaceChildren(`By the records ${qtyText(r.item.qty, r.item.unit)}`);
+    const diff = countDiff(r.input.value, r.item);
+    if (!diff) return;
+    const part = el('span', 'iv-count-diff', diff.text);
+    if (diff.warn) part.dataset.tone = 'amber';
+    r.records.append(DOT, part);
+  }
 
   function build(items) {
     rows.clear();
@@ -140,7 +152,7 @@ export function mount(container) {
         const row = el('div', 'field iv-count-row');
         const label = el('label', 'iv-count-name', item.name);
         label.htmlFor = id;
-        const records = el('p', 'c-hint iv-count-records', `By the records ${qtyText(item.qty, item.unit)}`);
+        const records = el('p', 'c-hint iv-count-records');
         records.id = `${id}-hint`;
         const box = el('span', 'tk-suffix-box');
         const input = el('input');
@@ -152,22 +164,27 @@ export function mount(container) {
         error.id = `${id}-error`;
         error.setAttribute('aria-live', 'polite');
         input.setAttribute('aria-describedby', `${records.id} ${error.id}`);
+        const r = { item, input, error, records, suffix, gone: null, row };
         input.addEventListener('input', () => {
           error.textContent = '';
           input.removeAttribute('aria-invalid');
+          paintRecords(r);
           countTyped();
           keep();
         });
         row.append(label, records, box, error);
         card.append(row);
-        rows.set(item.id, { item, input, error, records, suffix, gone: null, row });
+        rows.set(item.id, r);
+        paintRecords(r);
       }
       return card;
     }));
     const kept = keptCounts(readKept(), items);
     for (const [id, text] of Object.entries(kept)) {
       const r = rows.get(Number(id));
-      if (r) r.input.value = text;
+      if (!r) continue;
+      r.input.value = text;
+      paintRecords(r);
     }
     els.backLine.hidden = Object.keys(kept).length === 0;
     countTyped();
@@ -180,7 +197,7 @@ export function mount(container) {
       const item = byId.get(id);
       if (!item) {
         if (!r.gone) {
-          r.gone = el('p', 'muted iv-count-gone', 'Archived since you opened this page');
+          r.gone = el('p', 'muted iv-count-gone', 'No longer on the list since you opened this page'); // archived or deleted: one can't tell
           r.gone.id = `iv-count-${id}-gone`;
           r.input.disabled = true;
           r.input.setAttribute('aria-describedby', `${r.records.id} ${r.error.id} ${r.gone.id}`);
@@ -196,7 +213,7 @@ export function mount(container) {
         r.input.setAttribute('aria-describedby', `${r.records.id} ${r.error.id}`);
       }
       r.item = item;
-      r.records.textContent = `By the records ${qtyText(item.qty, item.unit)}`;
+      paintRecords(r);
       r.suffix.textContent = item.unit;
       r.input.inputMode = inputMode(item.unit);
     }

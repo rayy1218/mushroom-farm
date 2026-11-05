@@ -349,6 +349,16 @@ export function keptCounts(saved, items) {
   const open = new Set(items.filter((i) => !i.archived).map((i) => String(i.id)));
   return Object.fromEntries(Object.entries(saved).filter(([id, text]) => open.has(id) && typeof text === 'string' && text.trim() !== ''));
 }
+// A typed count against the records (audit #6): "−0.25 kg" (signed), "matches", warn (amber: a question, not a fault) when
+// the difference is over half of what the records say; null for an empty box or not a figure.
+export function countDiff(text, item) {
+  const n = String(text ?? '').trim() === '' ? null : numberIn(text, item.unit, { zero: true });
+  if (!n || n.error) return null;
+  const d = n.value - (item.qty ?? 0);
+  const shown = qtyText(d, item.unit, { signed: true });
+  if (/^[0.,]+\s/.test(shown)) return { text: 'matches', warn: false };
+  return { text: shown, warn: item.qty > 0 && Math.abs(d) > item.qty / 2 };
+}
 // The question before leaving Count stock with typed boxes.
 export const leaveText = (n) => `Leave Count stock? ${n} typed count${n === 1 ? ' is' : 's are'} not saved yet.`;
 

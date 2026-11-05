@@ -2226,6 +2226,8 @@ td.tg-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: -2p
 .iv-count-row .tk-suffix-box { grid-area: box; }
 .iv-count-row .field-error { grid-area: error; }
 .iv-count-gone { grid-area: gone; margin: 0; font-size: var(--fs-sm); }
+.iv-count-row input:disabled { opacity: .55; background: var(--band); cursor: not-allowed; } /* gone from the list (audit #8) */
+.iv-count-diff[data-tone="amber"] { color: var(--warning-text); font-weight: 600; } /* a question, as Record anyway, not a fault */
 .iv-count-lead { margin: 0; }
 .iv-count-send { display: flex; align-items: center; gap: 12px; }
 .iv-count-back { margin: 0; font-size: var(--fs-sm); }

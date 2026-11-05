@@ -120,7 +120,7 @@ test('review fixes: Count stock names line, worker reload, gone rows, retry, inp
   assert.ok(c.includes("No names yet: add the workers' names in ") && c.includes("'#/settings'"));
   assert.ok(c.includes("addEventListener('farm:worker', reloadNames)") && c.includes("removeEventListener('farm:worker', reloadNames)"));
   assert.ok(c.includes('reloadNames(); // renamed or removed'));
-  assert.ok(c.includes('Archived since you opened this page'));
+  assert.ok(c.includes('No longer on the list since you opened this page'));
   assert.ok(c.includes('Loading…'));
   assert.ok(c.includes("WHOLE_UNITS.includes(unit) ? 'numeric' : 'decimal'"));
   assert.ok(!c.includes('if (alive() && rows.size)'), 'a live refresh also retries an empty first load');
@@ -232,4 +232,13 @@ test('audit dialog fixes: unit by kind and Delete this item (#22), RM before the
   const css = src('styles.css');
   assert.ok(css.includes('.field .tk-suffix-box.iv-prefix-box input { padding-left: 40px;'));
   assert.ok(css.includes('@media (max-width: 420px) { .tk-dialog .tk-when.iv-when .tk-group-fields { grid-template-columns: 1fr; } }'));
+});
+
+test('audit Count stock fixes: the difference beside the records (#6), a gone row looks off (#8), the page capped', () => {
+  const c = src('inventory-count.js');
+  assert.ok(c.includes('const diff = countDiff(r.input.value, r.item);'));
+  assert.ok(c.includes("if (diff.warn) part.dataset.tone = 'amber';"));
+  assert.ok(c.includes('<div class="iv-page">'));
+  const css = src('styles.css');
+  assert.ok(css.includes('.iv-count-row input:disabled { opacity: .55; background: var(--band); cursor: not-allowed; }'));
 });

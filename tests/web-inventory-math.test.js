@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  UNIT_BY_KIND, dayNear, metaLine, needsLook, keptCounts, leaveText, doneText, undoLeft, UNDO_MS, itemGroups, stockHint, useByLine, qtyText, rmText, perUnitText, dayText, longDayText, daysBefore, pillOf, lotPill, countedText, attentionParts, groupItems, lotLabel,
+  countDiff, UNIT_BY_KIND, dayNear, metaLine, needsLook, keptCounts, leaveText, doneText, undoLeft, UNDO_MS, itemGroups, stockHint, useByLine, qtyText, rmText, perUnitText, dayText, longDayText, daysBefore, pillOf, lotPill, countedText, attentionParts, groupItems, lotLabel,
   moveLine, deleteTitle, deleteLead, throwOutTitle, throwOutLead, numberIn, itemBody, purchaseBody, useBody, purchaseEditBody,
   useEditBody, overStock, countBody, sheetCells, sheetRange, sheetEmpty, SHEET_COLUMNS, KIND_OPTIONS, UNIT_OPTIONS,
 } from '../web/inventory-math.js';
@@ -347,4 +347,15 @@ test("a day with its year only when it is not this year's (audit #16)", () => {
   const old = moveLine({ refKind: 'purchase', at: at('2025-10-03'), qty: 5, total: 25, supplier: null, useBy: '2027-04-10' }, item(), '2026-11-05');
   assert.equal(old.when, '3 Oct 2025');
   assert.equal(old.what.replace(/\u00a0/g, ' '), 'Bought · RM 25.00 · use by 10 Apr 2027');
+});
+
+test("a typed count beside the records (audit #6): the difference, amber when over half the records' figure", () => {
+  const lime = item({ unit: 'kg', qty: 1.5 });
+  assert.deepEqual({ ...countDiff('1.25', lime), text: plain(countDiff('1.25', lime).text) }, { text: '−0.25 kg', warn: false });
+  assert.deepEqual({ ...countDiff('125', lime), text: plain(countDiff('125', lime).text) }, { text: '+123.50 kg', warn: true });
+  assert.deepEqual({ ...countDiff('0', lime), text: plain(countDiff('0', lime).text) }, { text: '−1.50 kg', warn: true });
+  assert.deepEqual(countDiff('1.5', lime), { text: 'matches', warn: false });
+  assert.equal(countDiff('', lime), null);
+  assert.equal(countDiff('lots', lime), null, 'not a figure: its error says so at Save');
+  assert.equal(countDiff('3', item({ unit: 'pcs', qty: 0 })).warn, false, 'nothing on the records: no half to compare');
 });
