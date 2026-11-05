@@ -176,7 +176,7 @@ test("This run: the run's batches read with its harvests under the same token, a
   assert.equal((card.match(/batchLineFor/g) ?? []).length, 2, 'only in This run');
 });
 
-// ---- Costs ---- (the Business audit, 2026-11-05): the run's profit so far, a muted line to the Costs page
+// ---- Costs ---- (the Business audit, 2026-11-05): the run's profit so far, a muted line to the run page
 test("This run: the run's profit from Costs' summary, read with the harvests, a muted link to Costs; again on 'costs' and 'sales'", () => {
   assert.ok(card.includes("import { runProfitLine } from './costs-math.js';"));
   assert.ok(card.includes("return { runId: run.id, reply: await request('GET', `/api/costs/summary?run=${run.id}`) };"));
@@ -184,7 +184,7 @@ test("This run: the run's profit from Costs' summary, read with the harvests, a 
   assert.ok(card.includes("const profitLine = el('p', 'muted bz-blocks hv-profit');"), "the blocks line's look");
   assert.ok(card.includes('const money = runProfitLine(profit?.runId === run.id ? profit.reply : null);'));
   assert.ok(card.includes('profitLine.hidden = !money;'), 'hidden when Costs has nothing');
-  assert.ok(card.includes('a.href = COSTS_HASH;'));
+  assert.ok(card.includes('a.href = runHash(run.id); // ---- Runs ----'), 'the line opens the run page (2026-11-05, Runs fixes); its Costs card links on');
   assert.ok(card.includes("live.on('costs', () => reload.call()),") && card.includes("live.on('sales', () => reload.call()),"));
   assert.ok(EVENT_TYPES.includes('costs') && EVENT_TYPES.includes('sales'));
 });

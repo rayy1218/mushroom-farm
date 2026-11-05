@@ -1,5 +1,7 @@
 // Hash router: which page does a location hash mean? Anything unknown means the Overview.
 
+import { CROP_KEYS } from './crops.js'; // ---- Runs ----
+
 // The room page's tabs (redesign 2026-10-28: for the three jobs check, act and set up; Tasks 2026-10-30, spec
 // 2026-10-30-tasks-design.md 7.1); the first has no name in the address (#/rooms/7), the others do (#/rooms/7/history).
 export const ROOM_TABS = [
@@ -100,23 +102,38 @@ const INVENTORY_SHEET_DAYS = [30, 90, 365];
 export const inventorySheetHash = (days = 30) => `${INVENTORY_HASH}/sheet?days=${days}`;
 // ---- Sales (spec 2026-11-05-sales-design.md 6): the business page, its period as Harvest's ----
 export const SALES_HASH = '#/business/sales';
+// ---- Runs ---- (spec 2026-11-05-runs-design.md 6): the Runs tab (?crop= one crop's runs) and a run's page.
+export const RUNS_HASH = '#/business/runs';
+export const runsHash = (crop = null) => (crop ? `${RUNS_HASH}?crop=${crop}` : RUNS_HASH);
+export const runHash = (id) => `${RUNS_HASH}/${id}`;
+function parseRuns(hash) {
+  const one = new RegExp(`^#/business/runs/${ID}/?$`).exec(hash);
+  if (one) return { name: 'run', id: Number(one[1]) };
+  const list = /^#\/business\/runs\/?(?:\?(.*))?$/.exec(hash);
+  if (!list) return null;
+  const crop = new URLSearchParams(list[1] ?? '').get('crop');
+  return { name: 'runs', crop: CROP_KEYS.includes(crop) ? crop : null };
+}
+// ---- end Runs ----
 
 // ---- Business (the integration, 2026-11-05; DESIGN.md "Business") ----: the top bar's one Business entry opens #/business,
-// which goes to the tab last used in this browser (Batches the first time); the four pages share a strip of tabs, as a
+// which goes to the tab last used in this browser (Batches the first time); the five pages share a strip of tabs, as a
 // room's page does. businessTabOf(route): the tab a page belongs to (the top bar marks Business on every one of them);
-// businessStrip(route): the tab whose strip shows: only the four pages themselves (a batch, an item and Count stock keep their
-// back link; a sheet for print has no strip).
+// businessStrip(route): the tab whose strip shows: only the five pages themselves (a batch, an item, Count stock and a run
+// keep their back link; a sheet for print has no strip).
 export const BUSINESS_HASH = '#/business';
 export const BUSINESS_TABS = [
   { key: 'batches', label: 'Batches', hash: BATCHES_HASH },
   { key: 'inventory', label: 'Inventory', hash: INVENTORY_HASH },
   { key: 'sales', label: 'Sales', hash: SALES_HASH },
   { key: 'costs', label: 'Costs', hash: COSTS_HASH },
+  { key: 'runs', label: 'Runs', hash: RUNS_HASH }, // ---- Runs ----
 ];
 const BUSINESS_PAGES = new Map([
   ['batches', 'batches'], ['batch', 'batches'], ['batchSheet', 'batches'],
   ['inventory', 'inventory'], ['inventoryItem', 'inventory'], ['inventoryCount', 'inventory'], ['inventorySheet', 'inventory'],
   ['sales', 'sales'], ['costs', 'costs'],
+  ['runs', 'runs'], ['run', 'runs'], // ---- Runs ----
 ]);
 export const businessTabOf = (route) => BUSINESS_PAGES.get(route?.name) ?? null;
 export const businessStrip = (route) => (BUSINESS_TABS.some((t) => t.key === route?.name) ? route.name : null);
@@ -162,6 +179,8 @@ export function parseRoute(hash) {
   // #/rooms (the Rooms list until 2026-10-28) is the Overview now: it holds every room and Add room.
   const costs = /^#\/business\/costs\/?(?:\?(.*))?$/.exec(hash ?? ''); // ---- Costs ----
   if (costs) return { name: 'costs', month: monthOf(new URLSearchParams(costs[1] ?? '').get('month')) };
+  const runs = parseRuns(hash ?? ''); // ---- Runs ----
+  if (runs) return runs;
   if (/^#\/settings\/?$/.test(hash ?? '')) return { name: 'settings' };
   return { name: 'overview' };
 }
@@ -186,6 +205,8 @@ export function canonicalHash(route) {
   if (route.name === 'inventoryCount') return INVENTORY_COUNT_HASH;
   if (route.name === 'inventorySheet') return inventorySheetHash(route.days);
   if (route.name === 'costs') return costsHash(route.month); // ---- Costs ----
+  if (route.name === 'runs') return runsHash(route.crop); // ---- Runs ----
+  if (route.name === 'run') return runHash(route.id);
   return route.name === 'settings' ? '#/settings' : '#/overview';
 }
 

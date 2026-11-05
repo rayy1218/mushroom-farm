@@ -55,6 +55,7 @@ Built for this farm only, not for sale. It is shaped by the farm's strategy: few
 | Inventory | Stock items by kind with a unit each; purchases (RM, supplier, use-by), uses (room, reason, who), counts; lots used oldest first; Low and use-by on the page and once to Telegram; blocks from Batches; the purchases for Costs; the myGAP 4-5 sheet |
 | Sales | Deliveries to buyers with a line per crop (kg, RM per kg, optional room); the buyer's reference; buyers with usual prices; paid or unpaid and what is owed; sold against harvested kg and the price got against expected; CSV; the myGAP 4-6 sheet's sales columns |
 | Costs | Costs by hand (one-offs; rent and base wages as monthly items; a sales bonus as labour; electricity and water bills); Batches' bought block costs and Inventory's purchases read live; the measured energy and water, a bill adding only the part not measured; shared costs over runs by block-days; income from Sales; profit per month, per run and per kg on `#/business/costs` |
+| Runs | Every run of blocks with its yield and money on `#/business/runs`; a run's page with its profit so far, blocks, flushes and picks, sales and costs by kind, composed from the modules on each read (nothing stored) |
 | Simulation | Background runs of a room's program; Suggest machines lists the best five setups |
 | Stack | Node 22.13+, `node:http`, built-in `node:sqlite`, plain HTML, CSS and JS modules, no build step, no npm dependencies, `node --test` |
 | Units | Metric only: °C, %, ppm, m, m³, L, kWh, Pa, W |

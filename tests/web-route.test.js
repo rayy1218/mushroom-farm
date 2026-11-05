@@ -201,11 +201,11 @@ test('#/business: its own route, canonical as it is, a trailing slash tidied', a
   assert.deepEqual(parseRoute('#/businesses'), { name: 'overview' });
 });
 
-test('the Business tabs: Batches, Inventory, Sales, Costs, each its page', async () => {
-  const { BUSINESS_TABS, INVENTORY_HASH, COSTS_HASH } = await import('../web/route.js');
-  assert.deepEqual(BUSINESS_TABS.map((t) => t.key), ['batches', 'inventory', 'sales', 'costs']);
-  assert.deepEqual(BUSINESS_TABS.map((t) => t.label), ['Batches', 'Inventory', 'Sales', 'Costs']);
-  assert.deepEqual(BUSINESS_TABS.map((t) => t.hash), [BATCHES_HASH, INVENTORY_HASH, SALES_HASH, COSTS_HASH]);
+test('the Business tabs: Batches, Inventory, Sales, Costs, Runs, each its page', async () => {
+  const { BUSINESS_TABS, INVENTORY_HASH, COSTS_HASH, RUNS_HASH } = await import('../web/route.js');
+  assert.deepEqual(BUSINESS_TABS.map((t) => t.key), ['batches', 'inventory', 'sales', 'costs', 'runs']);
+  assert.deepEqual(BUSINESS_TABS.map((t) => t.label), ['Batches', 'Inventory', 'Sales', 'Costs', 'Runs']);
+  assert.deepEqual(BUSINESS_TABS.map((t) => t.hash), [BATCHES_HASH, INVENTORY_HASH, SALES_HASH, COSTS_HASH, RUNS_HASH]);
   for (const t of BUSINESS_TABS) assert.ok(isCanonical(t.hash), t.hash);
 });
 

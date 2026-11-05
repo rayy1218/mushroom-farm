@@ -374,6 +374,19 @@ export function createCosts({ db, now = Date.now, zone = localZone, log = consol
       return { name: `costs ${m}.csv`, text: `${csvRows(f, data).join('\r\n')}\r\n` };
     },
 
+    // ---- Runs ---- (spec 2026-11-05-runs-design.md 3): every run's whole figures from one read, as monthView's runs give
+    // them (the months worked out once for all the runs); run: that run's alone, [] when there is no such run.
+    runViews({ run = null } = {}) {
+      const t = today();
+      const all = runsOf();
+      const runs = run === null ? all : all.filter((r) => r.id === run);
+      if (!runs.length) return [];
+      const earliest = runs.map(runFirstMonth).sort()[0];
+      const figs = monthsOf(dataFor(addDays(firstDayOf(earliest), -MAX_BILL_DAYS), all));
+      return runs.map((r) => runView(r, figs, t));
+    },
+    // ---- end Runs ----
+
     // A promise for the usage warms under way (tests).
     warmed: () => Promise.all([...warming.values()].map((job) => job.done)),
 

@@ -13,6 +13,7 @@ import * as calendar from './calendar-page.js';
 import * as harvest from './harvest-page.js';
 import * as sales from './sales-page.js';
 import * as costs from './costs-page.js'; // ---- Costs ----
+import * as runs from './runs-page.js'; // ---- Runs ----
 import * as taskSheet from './task-sheet.js';
 import * as batches from './batches-page.js';
 import * as batchSheet from './batches-sheet.js';
@@ -81,7 +82,7 @@ function show(before = '') {
     console.error('Leaving the page failed:', err);
   }
   view.replaceChildren();
-  // ---- Business ---- the four pages under the strip of their tabs: the page mounts into its own box below it
+  // ---- Business ---- the five pages under the strip of their tabs: the page mounts into its own box below it
   const tab = businessTabOf(route);
   if (tab) keepBusiness(tab);
   // the look the four modules share (styles.css's .bz- block: card titles, head buttons) on every business page but a sheet
@@ -103,6 +104,8 @@ function show(before = '') {
     : route.name === 'sheet' ? harvest.mountSheet(view, { days: route.days })
     : route.name === 'sales' ? sales.mount(page, { days: route.days })
     : route.name === 'costs' ? costs.mount(page, { month: route.month })
+    : route.name === 'runs' ? runs.mount(page, { crop: route.crop }) // ---- Runs ----
+    : route.name === 'run' ? runs.mountRun(view, { id: route.id })
     : route.name === 'taskSheet' ? taskSheet.mountSheet(view, { roomId: route.id, month: route.month, from: parseRoute(before) })
     : route.name === 'batches' ? batches.mount(page, { run: route.run })
     : route.name === 'batch' ? batches.mountBatch(view, { id: route.id })

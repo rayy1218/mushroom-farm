@@ -2503,6 +2503,14 @@ export function openDb(path, { log = console.error } = {}) {
       return readSources(db, from, to);
     },
 
+    // ---- Runs ---- (spec 2026-11-05-runs-design.md 2): every run of blocks, newest started first, with its room's name
+    // (null when the room is gone: deleteRoom deletes a room's runs, so only a database edited by hand has one).
+    allRuns() {
+      return db.prepare(`SELECT r.*, m.name AS room_name FROM runs r LEFT JOIN rooms m ON m.id = r.room_id
+                         ORDER BY r.started_at DESC, r.id DESC`).all().map((r) => ({ ...runOf(r), roomName: r.room_name ?? null }));
+    },
+    // ---- end Runs ----
+
     close() {
       db.close();
     },
