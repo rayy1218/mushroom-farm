@@ -173,11 +173,14 @@ test('the month query and the summary', async (t) => {
   assert.throws(() => s.costs.monthView({ month: '2025-09' }), (e) => e.status === 400);
   assert.throws(() => s.costs.monthView({ month: 'nope' }), (e) => e.status === 400);
   s.costs.add({ date: '2026-11-01', category: 'rent', amount: 300 });
-  s.costs.monthView({});
+  const cold = s.costs.summary({ run: s.run.id });
+  assert.deepEqual([cold.total, cold.energy, cold.water], [null, null, null], 'the run pending: no partial figure');
   await s.costs.warmed();
   assert.deepEqual(s.costs.summary({}), {
-    total: 300, byCategory: [{ category: 'rent', amount: 300 }], energy: 0, water: 0, income: 0, profit: -300, profitPerKg: null,
-  });
+    total: 300, byCategory: [{ category: 'rent', amount: 300 }], energy: 0, water: null, income: 0, profit: -300, profitPerKg: null,
+  }, 'no water price: water null');
+  const ran = s.costs.summary({ run: s.run.id });
+  assert.deepEqual([ran.energy, ran.water], [0, null]);
   assert.equal(s.costs.summary({ from: '2026-11-02', to: '2026-11-15' }).total, 0);
   assert.equal(s.costs.summary({ run: s.run.id }).total, 300);
   assert.throws(() => s.costs.summary({ run: 999 }), (e) => e.status === 404 && e.message === 'Run not found');

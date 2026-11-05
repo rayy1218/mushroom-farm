@@ -301,7 +301,14 @@ export function createCosts({ db, now = Date.now, zone = localZone, log = consol
         if (!r) throw new CostError(404, 'Run not found');
         const data = dataFor(addDays(r.startDate, -MAX_BILL_DAYS));
         const v = runTotals(r, monthsOf(data), t);
-        return { total: v.costs, byCategory: v.byCategory, energy: v.parts.energy, water: v.parts.water, income: v.income, profit: v.profit, profitPerKg: v.profitPerKg };
+        // the contract's keys; byCategory adds 'shared' (the run's share of the farm's costs); energy and water null while
+        // pending, water null with no water price (never a partial or a false 0)
+        return {
+          total: v.costs, byCategory: v.byCategory,
+          energy: v.pending ? null : v.parts.energy,
+          water: v.pending || data.prices.water === null ? null : v.parts.water,
+          income: v.income, profit: v.profit, profitPerKg: v.profitPerKg,
+        };
       }
       const a = from ?? firstDayOf(monthOf(t));
       const b = to ?? t;
