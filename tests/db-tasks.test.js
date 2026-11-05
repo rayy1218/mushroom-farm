@@ -41,7 +41,7 @@ test('a version 18 file is upgraded to 19 with the task tables, keeping its room
   t.after(() => check.close());
   assert.deepEqual({ ...check.prepare('SELECT room_id, kind, address, at, t, rh FROM readings').get() },
     { room_id: id, kind: 'trh', address: 1, at: 2000, t: 18.5, rh: 88 });
-  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 20);
+  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 23);
   const names = check.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((r) => r.name);
   for (const table of TABLES) assert.ok(names.includes(table), table);
   // Opened again (the next start): still the current version, and the rows made on it are left as they are.
@@ -52,7 +52,7 @@ test('a version 18 file is upgraded to 19 with the task tables, keeping its room
   db.close();
   const again = openDb(path);
   t.after(() => again.close());
-  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 20);
+  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 23);
   assert.deepEqual(check.prepare('SELECT * FROM tasks ORDER BY id').all().map((r) => ({ ...r })), rows);
   assert.equal(again.getTask(rows[1].id).text, 'Seal the door gap');
 });
