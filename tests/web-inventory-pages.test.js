@@ -85,3 +85,14 @@ test('the 4-5 sheet: mounted; the period in its address; printing as the 4-6 she
   assert.ok(page.includes("history.replaceState(null, '', inventorySheetHash(n))"));
   assert.ok(page.includes('window.print()'));
 });
+
+test('the Settings card: one switch, saved at once; says so while Telegram is not set up', () => {
+  const settings = src('settings-page.js');
+  assert.ok(settings.includes("import { mountInventorySettings } from './inventory-settings.js';"));
+  assert.ok(settings.includes('<div data-inventory-settings></div>'));
+  assert.ok(settings.includes("mountInventorySettings(q('[data-inventory-settings]'))"));
+  const card = src('inventory-settings.js');
+  assert.ok(card.includes('Send low-stock and use-by messages to Telegram'));
+  assert.ok(card.includes("request('PUT', '/api/settings', { inventoryTelegram:"));
+  assert.ok(card.includes('Nothing is sent until Telegram is set up above.'));
+});

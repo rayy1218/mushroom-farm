@@ -5,6 +5,7 @@ import { request, OFFLINE } from './api.js';
 import { mountTelegram } from './telegram-card.js';
 import { mountTaskSettings } from './task-settings.js';
 import { mountYield } from './yield-card.js';
+import { mountInventorySettings } from './inventory-settings.js';
 import { parsePoll, POLL_MESSAGE, POLL_MIN, POLL_MAX, EXTRA_FIELDS, parseExtraSettings, liveHint } from './settings-math.js';
 
 const COMMAND_TIMEOUT = 15000;
@@ -58,6 +59,7 @@ const TEMPLATE = `
   </form>
   <div data-telegram></div>
   <div data-yield></div>
+  <div data-inventory-settings></div>
   <div class="tk-settings" data-task-settings></div>
   </div>`;
 
@@ -193,12 +195,14 @@ export function mount(container) {
   const unmountTelegram = mountTelegram(q('[data-telegram]'));
   const unmountYield = mountYield(q('[data-yield]'));
   const unmountTaskSettings = mountTaskSettings(q('[data-task-settings]'));
+  const unmountInventorySettings = mountInventorySettings(q('[data-inventory-settings]'));
 
   return function unmount() {
     mountSeq++;
     unmountTelegram();
     unmountYield();
     unmountTaskSettings();
+    unmountInventorySettings();
     document.title = 'Rooms · Mushroom farm';
     container.replaceChildren();
   };
