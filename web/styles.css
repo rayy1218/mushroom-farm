@@ -2260,4 +2260,5 @@ td.tg-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: -2p
   body.printing-sheet .iv-sheet-table td:nth-child(4) { min-width: 0; }
   body.printing-sheet .iv-sheet-foot { margin-top: 4mm; font-size: 9pt; break-inside: avoid; }
 }
+.iv-settings .s-hint { max-width: 60ch; } /* hints capped near 60 ch, as DESIGN.md has it (audit #25) */
 /* ---- end Inventory ---- */

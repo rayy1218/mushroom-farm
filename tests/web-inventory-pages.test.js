@@ -253,3 +253,7 @@ test('audit sheet fixes: the Farm line inside a phone (#23); print light margins
   assert.ok(css.includes('html:root:has(.iv-sheet) { color-scheme: light; background: Canvas; }'));
   assert.ok(css.includes('body.printing-sheet .iv-sheet-table { min-width: 0; font-size: 8pt; table-layout: fixed; }'));
 });
+
+test('audit #25: the Settings note keeps its lines short', () => {
+  assert.ok(src('styles.css').includes('.iv-settings .s-hint { max-width: 60ch; }'));
+});
