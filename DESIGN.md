@@ -391,6 +391,19 @@ The room's picture keeps its representation: the air path, the condenser outside
 | myGAP sheet | `#/harvest/sheet`, a print page in light colours with no top bar: the 4-6 form's columns, the sales cells blank to write in, a "Farm:" line left blank (the app does not know the farm's name) |
 | Overview card | Beside Energy: kg today, 7 days and 30 days, the 30-day value, a 48 px strip of the 30 days with no axis |
 
+### Task grid
+(2026-11-04, owner: the paper maintenance log; spec `docs/superpowers/specs/2026-11-04-task-grid-design.md`.) The room's Tasks tab shows the week's daily tasks as its log sheet, in the **Daily tasks** card (worker picker in its head, the day line under it, then ‹ This week ›, **Print month**, the grid, the legend, Export CSV). From 1100 px the card spans the top and Upkeep and Long-term sit side by side under it. Where each part lives:
+
+| Part | Design |
+|---|---|
+| Box | 40 px high on a desk (48 px on a phone), at least 52 px wide, a hairline `border`. **done**: ✓ in `ink` and the worker's initials (11 px, 600) under it; with an amount, "✓ 2.4" and the initials under it (a phone puts the amount under the ✓). **missed**: an amber ✗ (`warning-text`, 20 px, the grid's only colour). **skipped**: a `muted` —. **not due** and **cancelled**: no border, shaded `band`. **open** (today): a 2 px `ink-2` outline, darker on hover. **planned**: a 1 px dashed `border-strong`, not a button, and "≈" in the corner over an automatic stage change. A box being sent is dimmed to 55% and shows the progress cursor |
+| Today's ring | Desk: the row, a 2 px `accent` line above, below and at both ends. Phone: the column, the same line down both sides, from its head to its last box |
+| Heads | The task's picture (24 px) and short name in a quiet button (hover `band`); its tap shows the full text. The days read "Mon 2" on a desk and "M 2" on a phone, today's in `ink` at 600 |
+| The phone turn | At 600 px and under the grid turns: each task's name on its own line over a row of 7 day boxes, the day heads in one row at the top. The same boxes, so the focus, the menu and the repaint are one code path |
+| Acting | Tap an open box of today: Done (a kg or bags task opens its dialog). Long press (500 ms), right-click, Shift+F10 or the menu key: a small menu (`surface`, hairline, 40 px items) with Skip…, Undo and Details by the box's state. A past box's menu is Details only. Undo shows only within a minute of the Done or Skip; the server refuses later with 409 "Too late to undo: it was done at 08:12" |
+| Keyboard | One Tab stop; arrow keys move, Home and End to the row's ends (with Ctrl, the grid's); the focus returns to the box after a dialog or the menu. Every box has a name for a screen reader: "Footbath, Wednesday 4 November: done by Sara at 08:12" |
+| Month sheet | `#/rooms/7/tasks/sheet?month=2026-11`, a print page in light colours with no top bar, one A4 (portrait for 8 columns or fewer, landscape above): a "Farm:" line left blank and "Sheet reviewed by: ____ (Management) on ____" at the foot, the month's days down and the tasks across with their heads sideways when narrow, an Initials column for the pen. Days gone are filled from the app (✓ AL, ✗, —, shaded not due); days ahead are blank with the planned boxes outlined. On a phone the day column stays while the rest scrolls sideways |
+
 ## Do's and Don'ts
 
 ### Do:
