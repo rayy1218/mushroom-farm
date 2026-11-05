@@ -45,7 +45,7 @@ Batches' dry kg per block, and Harvest's usage warm publishes `harvest` there); 
 | Runs | `db.allRuns()` (list), `db.getRunById(id)` and `db.getRoom(roomId)` (view) | `id, roomId, roomName, crops, partial, startedAt, endedAt` | The list's order: the open runs first, then the ended ones, each newest started first |
 | Harvest | `harvests.roomView(roomId)`, once per room that has a run; its `current` and `past` views by run id | `kg, perBlock, be, byCrop, flushes, missing, harvests` (newest pick first) | No change to `server/harvests.js`: the room view already holds every run's figures (`runFigures`). A room the view does not find (gone between reads) gives no figures |
 | Batches | `batches.list({ run: id })` | `batches` (Batches' views), `blockCost` | View only. `blockCost` null when a batch has no price; 0 with no batches |
-| Sales | `sales.summary({ run: id })`; `db.salesBetween(-8.64e15, 8.64e15)` filtered by `runId` | `kg, total, byCrop`; the lines, newest first: `{ id, deliveryId, soldAt, buyer, invoiceNo, crop, kg, priceKg, total, paidAt }` | View only. Sales has no "lines of a run" function; the run's lines are its rows by `run_id`, as `summary({ run })` reads them. A line belongs to the run when the sale named the container: Sales sets `run_id` from the run open in that room at the sale (`runAt`) |
+| Sales | `sales.summary({ run: id })`; `db.salesBetween(-8.64e15, 8.64e15)` filtered by `runId` | `kg, total, byCrop`; the lines, newest delivery first, a delivery's lines in the order entered (fixes 2026-11-05): `{ id, deliveryId, soldAt, buyer, invoiceNo, crop, kg, priceKg, total, paidAt }` | View only. Sales has no "lines of a run" function; the run's lines are its rows by `run_id`, as `summary({ run })` reads them. A line belongs to the run when the sale named the container: Sales sets `run_id` from the run open in that room at the sale (`runAt`) |
 | Costs | `costs.runViews()` (list) and `costs.runViews({ run: id })` (view) | `income, costs, profit, profitPerKg, kgSold, pending, incomplete, parts, byCategory, notes` | The new marked block below |
 
 ### 3.1 Costs' Runs block (`server/costs.js`)
@@ -69,6 +69,7 @@ the whole read once per run. Each run's `costs`, `income`, `profit` and `profitP
 | `perBlock` | Harvest | kg over all the run's blocks (a mixed run's whole), 2 places; 0 with nothing picked; null without figures |
 | `income` | Costs | RM, 0 without figures |
 | `costs`, `profit` | Costs | RM; null while pending (never a partial figure) and without figures |
+| `profitPerKg` | Costs | Profit over kg sold; null while pending, with nothing sold and without figures (fixes 2026-11-05: on the row, for the list's Profit per kg) |
 | `pending` | Costs | True while a usage day the run needs is still worked out |
 | `incomplete` | Costs | True when a batch or a purchase with no price was left out |
 
@@ -76,17 +77,17 @@ the whole read once per run. Each run's `costs`, `income`, `profit` and `profitP
 
 | Field | From | Rule |
 |---|---|---|
-| `profitPerKg` | Costs | Profit over kg sold; null while pending or with nothing sold |
 | `kgSold` | Costs | kg of the run's sales |
 | `be` | Harvest | Null when a crop has no dry kg (no block weight, nothing in Settings → Yield) |
 | `byCrop` | Harvest | `[{ crop, blocks, kg, perBlock, be, value }]`, one per crop: a mixed run's yield per crop |
 | `flushes` | Harvest | `[{ flush, from, to, kg, byCrop, perBlock, be }]` |
 | `missing` | Harvest | `{ dryKg: [crop], price: [crop] }` |
-| `harvests` | Harvest | The latest `LATEST_HARVESTS` (8) picks, newest first |
+| `harvests` | Harvest | The latest `LATEST_HARVESTS` (3) picks, newest first (fixes 2026-11-05: 8 before) |
 | `harvestCount` | Harvest | Every pick of the run |
 | `batches`, `blockCost` | Batches | Section 3 |
 | `sales` | Sales | `{ kg, total, byCrop: [{ crop, kg, total }], lines }` |
 | `costsByKind` | Costs | `{ parts, byCategory, notes }`; null without Costs' view of the run |
+| `prices` | Settings | `{ electricity, water }` (`readSettings`, RM per kWh and per m³, null when not set): a 0 electricity or water with a price is "not recorded yet", without one "no price set" (fixes 2026-11-05) |
 
 `sales.total` equals `income` (both are the run's sale lines; a test holds it). Profit is Costs' (income less costs), never
 worked out again here.
@@ -115,8 +116,8 @@ harvests, batches })` after the Costs routes, the route call after Costs', and `
 | Part | Design |
 |---|---|
 | Head | "Runs", "Each run of blocks: what it picked, sold and cost.", a **Crop** select (All crops, then each crop by its short name; Calendar's `.field` select). A change replaces the address (`runsHash(crop)`) and reads again in place, the list dimmed (`aria-busy`) until the answer |
-| Table | One card. Columns: Container, Crops, Dates, kg, kg per block, Income, Costs, Profit. Crops: the main crop's 24 px picture (`aria-hidden`) before "600 Grey oyster" ("300 Grey oyster · 100 Lion's mane"). Dates ("since 4 Nov", "4 Nov – 20 Dec") is the row's `th` and its link to the run page, named "Container 1, since 4 Nov". A loss keeps its minus, only the figure in the loss tone, "Loss" under it; under Costs "working out" while pending, else "Some costs have no price" when incomplete. Under the table Costs' line "Shared costs (rent, wages, …) are split over the runs by block-days." |
-| Phone (≤ 600 px) | Each run a block of labelled figures, two a row, its dates first across the row as a 44 px tap (as Costs' runs and Batches' past) |
+| Table | One card. Columns: Run, Crops, kg, kg per block, Income, Costs, Profit, Profit per kg (fixes 2026-11-05). Run is the row's `th` and its link to the run page: the container and Costs' run days, "Container 1 · 24 Sep – now", "Container 1 · 24 Sep – 20 Dec" (`runRow`'s `dates`; "recorded 24 Sep – now" for a run under way at the upgrade; "A deleted room · …"). Crops: the main crop's 24 px picture (`aria-hidden`) before "600 Grey oyster" ("300 Grey oyster · 100 Lion's mane"). A loss keeps its minus, only the figure in the loss tone, "Loss" under Profit; under Costs "working out" while pending, else "Some costs have no price" when incomplete; a run without Costs' view (its room gone) a dash. Under the table Costs' line "Shared costs (rent, wages, …) are split over the runs by block-days." The table keeps ARIA roles (`table`, `row`, `rowheader`, `cell`) and its caption as its name; its box, where it scrolls (over 600 px), is a named region with a Tab stop. The paint key holds the crop, so the caption follows it |
+| Phone (≤ 600 px) | Each run a block of labelled figures (the label's alt text empty: read once, from its column): its container and days the heading (a 44 px tap) with Profit beside it, then Crops across, then three a row; no gap above the first run |
 | Empty | "No runs yet. A run starts when a container gets its blocks on its Crop tab."; with a crop, "No runs of Pink oyster." |
 
 ### 6.2 A run's page (`#/business/runs/<id>`)
@@ -125,26 +126,29 @@ harvests, batches })` after the Costs routes, the route call after Costs', and `
 
 | Part | Design |
 |---|---|
-| Head | "← Runs"; the title "600 Grey oyster blocks" ("300 Grey oyster and 100 Lion's mane blocks"; "1 Grey oyster block"); under it "Container 1 · since 4 Nov" ("· 4 Nov – 20 Dec" ended; "recorded since 4 Nov" for a run under way at the harvest upgrade), the container a link to its Harvest tab. The page's title is the run's |
-| Money and yield | A card of tiles (`us-tiles hv-tiles co-tiles`, Harvest's tiles in Costs' month-card look): **Profit so far** in display size ("Profit" once ended), Income ("40.0 kg sold" or "Nothing sold"), Costs ("Some costs have no price"), Picked, kg per block, BE (spelt out for a pointer). A loss: "−RM 1,140.00" in the loss tone with "Loss". Pending: Profit and Costs "—" with "working out". Under the tiles Harvest's Settings → Yield line when a figure is missing |
-| Blocks | Each batch a link to its page: "600 Grey oyster blocks", under it "Agro Supplies · received 28 Sep · RM 2.50 a block" ("made on the farm" for a made batch; "no price"). Then "Block cost RM 1,500.00" or "Some batches have no price". Head link **Batches** (the run's batches; Batches' page when none). Empty: "No batches in this run. Blocks come in and go into a container through Batches." |
-| Harvests | Harvest's Flushes table (a mixed run's per-crop columns and phone split lines as on the Harvest tab), By crop for a mixed run, then "Picks": the latest 8 (Harvest's rows without Edit), with "The latest 8 of 12 picks; the room's Harvest tab has them all." when there are more. Head link **Harvest tab** (none for a room that is gone). Empty: "Nothing picked in this run yet." |
-| Sales | A table: Day ("Fri 13 Nov"), Buyer (its reference under it), Sold ("Grey oyster 40.00 kg"), RM per kg, Total, Paid (Sales' "Unpaid" / "Paid 14 Nov" mark and look). "Sold 48.0 kg · RM 576.00" under it. Head link **Sales**. Empty: "No sales of this run. A sale line that names the container counts in the run open on its day." |
-| Costs | Costs' notes first ("Working out the energy cost…" while pending; a left-out price in the warning tone), then Costs' run breakdown as a list (Blocks a link to the run's batches, Electricity, Water, Own costs, Share of shared costs: the parts over 0) and Total (the Costs tile's figure, "—" while pending), then the shared-costs line. Head link **Costs** |
-| Layout | The money card across the top; from 900 px two columns (2 : 3) with Blocks and Harvests, then Sales and Costs; one column below |
-| Gone | A run that is not there (404 "Run not found"): "No such run. A container's runs go with it when it is deleted." and "Back to Runs"; the page stops asking |
+| Head | "← Runs" (hidden on the gone card, which has its own); the title "600 Grey oyster blocks" ("300 Grey oyster and 100 Lion's mane blocks"; "1 Grey oyster block"); under it "Container 1 · since 4 Nov" ("· 4 Nov – 20 Dec" ended; "recorded since 4 Nov" for a run under way at the harvest upgrade), the container a link to its Harvest tab. The page's title is the run's |
+| Money and yield | A card of seven tiles (`us-tiles hv-tiles co-tiles`, Harvest's tiles in Costs' month-card look): **Profit so far** in display size ("Profit" once ended) on its own row, then Income ("40.0 kg sold" or "Nothing sold"), Costs ("Some costs have no price"), Profit per kg (Costs' `perKgText`, "on 40.0 kg sold", the loss tone on a loss), Picked ("88.0 kg not sold" when some is not sold), kg per block, BE (spelt out for a pointer): three and three over 600 px, two a row on a phone, never one left alone. A loss: "−RM 1,140.00" in the loss tone with "Loss". Pending: Profit, Costs and Profit per kg "—" with "working out". Under the tiles one muted line, what the costs are made of (Costs' parts): "Blocks RM 3,040.00 · Own RM 480.00 · Shared RM 14,359.23 (80 % of costs) · Electricity and water not recorded yet" (the parts over 0, the biggest with its share when there are several, then electricity and water at 0: "not recorded yet" with a price, "No water price" without; none while pending), then Harvest's Settings → Yield line when a figure is missing (fixes 2026-11-05) |
+| Costs | Right after the money (fixes 2026-11-05). Costs' notes first ("Working out the energy cost…" while pending; a left-out price in the warning tone), then Costs' run breakdown as a list (Blocks a link to the run's batches, Electricity, Water, Own costs, Share of shared costs: the parts over 0, but Electricity and Water always, at 0 in muted words: "not recorded yet" with a price in Settings, "no price set" without, "working out" while pending) and Total (the Costs tile's figure, "—" while pending), then the shared-costs line. Its Blocks is the run's one block-cost figure. Head link **Costs** |
+| Blocks | Each batch a link to its page: "600 Grey oyster blocks", under it "Agro Supplies · received 28 Sep · RM 2.50 a block"; a made batch "made 20 Sep · RM 1.29 a block" and a second line "Its materials count in Costs as Inventory purchases"; "no price". No money total (fixes 2026-11-05: the Costs card holds it). Head link **Batches** (the run's batches; Batches' page when none). Empty: "No batches in this run. Blocks come in and go into a container through Batches." |
+| Harvests | Harvest's Flushes table (a mixed run's per-crop columns and phone split lines as on the Harvest tab), By crop for a mixed run, then "Picks": the latest 3 (Harvest's rows without Edit), "The latest 3 of 13." when there are more, then the link "All picks on the Harvest tab" (none for a room that is gone). Head link **Harvest tab** (none for a room that is gone). Empty: "Nothing picked in this run yet." |
+| Sales | A table: Day ("Fri 13 Nov"), Buyer (its reference under it), Sold ("Grey oyster 40.00 kg"), RM per kg, Total, Paid (Sales' "Unpaid" / "Paid 14 Nov" mark and look). "Sold 48.0 kg · RM 576.00" under it. On a phone each line a block of labelled figures: the day with its Total beside it, Buyer across, Sold and RM per kg, Paid a line of its own without a label. ARIA roles and the region as the Runs table. Head link **Sales**. Empty: "No sales of this run. A sale line that names the container counts in the run open on its day." |
+| Layout | One column; from 900 px a grid of two columns (3 : 2), areas Money · Costs, Harvests · Blocks, Sales across, each card its own height (`align-items: start`) |
+| Phone taps | Up to 600 px every `.co-link` on the page (card heads, the head's container, the parts list, the batches, All picks, the gone card) reaches 44 px with block padding over its line; the Runs rows' link is a 44 px inline-flex |
+| Focus | A repaint keeps the cursor: the focused link's address and words (or its focus key) are kept before the parts are replaced and the same one is focused after |
+| Gone | A run that is not there (404 "Run not found"): the title "Run", "No such run. A container's runs go with it when it is deleted." and "Back to Runs" (`.co-link`, the one way back: the head's back link hides); the page stops asking. A failed first read (no answer) also titles the page "Run", never "Loading…" |
 
 ### 6.3 Links in (small marked edits)
 
 | Where | Edit |
 |---|---|
-| Harvest tab, This run (`web/harvest-card.js`) | The head line ends "· Run page" (`runLine.replaceChildren(runHead(run), DOT, runPageLink(run.id))`) |
+| Harvest tab, This run (`web/harvest-card.js`) | The head line ends "· Run page" (`runLine.replaceChildren(runHead(run), DOT, runPageLink(run, getRoom()?.name))`); the "Profit so far … · Costs" line opens the run page (fixes 2026-11-05; the run page's Costs card links on to Costs) |
 | Harvest tab, Past runs | A past run's fold starts with a "Run page" line |
-| Costs' runs (`web/costs-page.js`) | The run's breakdown ends with a "Run page" line (`co-link`) |
+| Costs' runs (`web/costs-page.js`) | The run's breakdown ends with a "Run page" line (`co-link`), named for its run |
 | Batches' rooms (`web/batches-page.js`) | The room head's "run since 4 Nov" is a link to the run page |
 | Sales (`web/sales-page.js`) | No edit: Sales shows a delivery's rooms, never its run ("where shown" in the design) |
 
-The Harvest tab's links take `.rn-run-link` (the line's tone, an `axis` underline: the Business blocks line's look);
+Each "Run page" link is named for its run: "Run page, Container 1, since 24 Sep" (`runPageLabel`, `aria-label`; the
+visible words stay "Run page"). The Harvest tab's take `.co-link` (fixes 2026-11-05: `.rn-run-link` merged into it);
 Batches' room head already styles any link in it.
 
 ## 7. Numbers (the One Format Rule)
@@ -154,10 +158,12 @@ Batches' room head already styles any link in it.
 | RM, a loss with "−" | `moneyText` | `web/costs-math.js` |
 | kg ("80.0 kg"), a pick ("16.00 kg") | `kgText` | `web/harvest-math.js` |
 | kg per block, BE (cells) | `perBlockText`, `beText` (`{ cell: true }`) | `web/harvest-math.js` |
-| A run's days ("4 Nov – 20 Dec", "4–20 Nov") | `dayRange`, exported (one word, marked) | `web/harvest-math.js` |
+| A run's days on the page head and a link's name ("since 4 Nov", "4 Nov – 20 Dec", "4–20 Nov") | `dayRange`, exported (one word, marked) | `web/harvest-math.js` |
+| A run's days in the Runs list ("24 Sep – now", "24 Sep – 20 Dec"), its money cells | `runRow` (`dates`, `cells`, `loss`, `perKgLoss`) | `web/costs-math.js` |
+| Profit per kg | `perKgText` | `web/costs-math.js` |
 | A day with its year when not this one | `dateText` | `web/batches-math.js` |
 | Blocks ("600 Grey oyster blocks") | `countBlocks` | `web/batches-math.js` |
-| RM per block, block cost | `rmText` | `web/batches-math.js` (Harvest's) |
+| RM per block | `rmText` | `web/batches-math.js` (Harvest's) |
 | A sale line's day, buyer, sold, total, paid | `deliveryRow`, `priceText` | `web/sales-math.js` |
 | The costs breakdown and its notes | `runParts`, `monthNotes`, `SHARED_NOTE` | `web/costs-math.js` |
 | Flushes, By crop, a pick | `flushColumns`, `flushRows`, `flushPerCrop`, `flushSplits`, `byCropRows`, `harvestLine` | `web/harvest-math.js` |
@@ -185,12 +191,13 @@ rows.
 | An open run | "since 4 Nov"; "Profit so far"; Costs' figures to today |
 | An ended run | "4 Nov – 20 Dec"; "Profit"; sales and costs tied to it after its end still count (Costs' rule) |
 | A run under way at the harvest upgrade (`partial`) | "recorded since 4 Nov" / "recorded 4 Nov – 20 Dec" |
-| A deleted room | Its runs are deleted with it: they leave the list and their page reads "No such run" (404). A `runs` row whose room is missing (a database edited by hand): `roomName` null, "A deleted room" in words, no Harvest link, no Harvest figures (kg 0, kg per block "—") |
+| A deleted room | Its runs are deleted with it: they leave the list and their page reads "No such run" (404). A `runs` row whose room is missing (a database edited by hand): `roomName` null, "A deleted room" in words, no Harvest link, no Harvest figures (kg 0, kg per block "—"), no Costs view: its money "—", never "working out" (a test holds it) |
 | A mixed run | Its crops in the title and the Crops cell; By crop gives the yield per crop; the money is the whole run's |
 | A run with no batches, harvests, sales or costs | Each card says so (section 6.2); kg 0.0 kg, kg per block 0.00 kg, Income, Costs and Profit RM 0.00 |
 | Costs still working out the energy | `pending`: Profit and Costs "—" with "working out" on the tiles and the Runs tab, "Working out the energy cost…" first in the Costs card, Total "—"; the warm's `costs` event reloads the page |
-| A batch without a price | `blockCost` null: "Some batches have no price"; Costs' `incomplete`: "Some costs have no price" |
-| A run with more than 8 picks | The latest 8, "The latest 8 of N picks; the room's Harvest tab has them all." |
+| A batch without a price | Its row "no price"; Costs' Blocks "no price" or "…, some with no price"; Costs' `incomplete`: "Some costs have no price" |
+| A run with more than 3 picks | The latest 3, "The latest 3 of N.", then "All picks on the Harvest tab" |
+| No meter readings | Electricity (or water) 0 with a price in Settings: "not recorded yet" in the Costs card and the money's make-up line; no price: "no price set" / "No water price" |
 | An unknown crop in the address | Read as every crop (the address is tidied); the API refuses it (400 on `crop`) |
 | A run id reused | Section 2 |
 
@@ -218,7 +225,7 @@ rows.
 |---|---|
 | `tests/db-runs.test.js` | `allRuns`: none, the order, the shape, a deleted room's runs gone, a run without its room (`roomName` null) |
 | `tests/costs-runs.test.js` | `runViews`: pending then whole, equal to `monthView`'s runs and to `summary({ run })`, one run, none for an unknown run |
-| `tests/runs.test.js` | The real Harvest, Batches, Sales and Costs on one farm: the list's order and row shape, the crop filter and its 400, pending, an ended run's parts, a mixed run, a run with nothing, the latest 8 picks, the 404 and a deleted room |
+| `tests/runs.test.js` | The real Harvest, Batches, Sales and Costs on one farm: the list's order and row shape (an ended run started after an open one still after it), the crop filter and its 400, pending, an ended run's parts and prices, a mixed run, a run with nothing, the latest 3 picks, the sale lines' order within a delivery, a room-less run (no name, money a dash, never pending), the 404 and a deleted room |
 | `tests/api-runs.test.js` | The routes, the 400 and 404s, no other method, the `costs` event after a cold read |
 | `tests/web-runs-route.test.js` and `tests/web-route.test.js` | The addresses, the crop, the fifth tab, the strip on the list only |
 | `tests/web-runs-math.test.js` | The rows, days, title, tiles (pending, a loss, ended), Blocks, Sales and Costs rows |
@@ -244,3 +251,8 @@ Test files use throwaway databases under `/tmp/runs/` and servers on port 0.
 | Links in say "Run page"; Sales gets none | One name for the link; Sales never shows a run |
 | A link in Costs' breakdown, not in place of its toggle | The breakdown stays where it is; the run page is one tap from it |
 | The run page reads again on `room` crop and room events | A run ends or starts with the crops; the head names the room |
+| (Fixes 2026-11-05, the server review, the design review and the technical audit) The money's make-up under the tiles, Profit per kg, the kg not sold, Costs right after the money | The page said what the profit was but not why; the reader's next question is what the costs are made of |
+| No block cost in the Blocks card | It disagreed with Costs' Blocks (a made batch's materials count as Inventory purchases); one block-cost figure, the Costs card's |
+| Electricity and Water kept at 0 in words, from Settings' prices (`prices` on the view) | A 0 hidden read as "free"; a price with a 0 means nothing was recorded, no price means none can be worked out |
+| The list's first column is the container and Costs' run days | One link names the run; Costs' words ("24 Sep – now") are the list's, as Costs' runs table |
+| ARIA roles on the tables that become blocks on a phone; the labels' alt text empty | `display: block` drops a table's meaning; the label is read once, from its column |
