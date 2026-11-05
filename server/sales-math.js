@@ -27,12 +27,22 @@ const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
 const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
 const isId = (v) => Number.isSafeInteger(v) && v > 0;
 const cropOrder = (a, b) => CROP_KEYS.indexOf(a.crop) - CROP_KEYS.indexOf(b.crop);
+// Rows grouped by a key (a Map, first appearance first).
+const groupBy = (list, keyOf) => {
+  const by = new Map();
+  for (const x of list) {
+    const k = keyOf(x);
+    if (by.has(k)) by.get(k).push(x);
+    else by.set(k, [x]);
+  }
+  return by;
+};
 const sum = (list, key) => round(list.reduce((s, x) => s + x[key], 0), 2);
 
 // Optional text: empty or missing is null; otherwise trimmed and at most max characters.
-function textOf(v, max, field, words) {
+function textOf(v, max, field, words, what) {
   if (v === undefined || v === null) return null;
-  if (typeof v !== 'string') throw new SalesError(400, words, field);
+  if (typeof v !== 'string') throw new SalesError(400, `${what} must be text`, field);
   const t = v.trim();
   if (t.length > max) throw new SalesError(400, words, field);
   return t || null;
@@ -40,7 +50,8 @@ function textOf(v, max, field, words) {
 
 // A time: a whole number of ms from 1 Jan 2020 at the farm to now (a minute's grace).
 function timeOf(v, now, field, future) {
-  if (!Number.isSafeInteger(v) || v < FIRST_MS) throw new SalesError(400, 'Give the date', field);
+  if (!Number.isSafeInteger(v)) throw new SalesError(400, 'Give the date', field);
+  if (v < FIRST_MS) throw new SalesError(400, "The date can't be before 2020", field);
   if (v > now + GRACE_MS) throw new SalesError(400, future, field);
   return v;
 }
@@ -52,8 +63,8 @@ export function deliveryBody(body, { now }) {
   if (!isObject(body)) throw new SalesError(400, 'Body must be a JSON object');
   const soldAt = timeOf(body.soldAt, now, 'soldAt', "The sale can't be in the future");
   if (!isId(body.buyerId)) throw new SalesError(400, 'Pick a buyer', 'buyerId');
-  const invoiceNo = textOf(body.invoiceNo, 40, 'invoiceNo', 'The reference is at most 40 characters');
-  const note = textOf(body.note, 200, 'note', 'A note is at most 200 characters');
+  const invoiceNo = textOf(body.invoiceNo, 40, 'invoiceNo', 'The reference is at most 40 characters', 'The reference');
+  const note = textOf(body.note, 200, 'note', 'A note is at most 200 characters', 'A note');
   if (!Array.isArray(body.lines) || body.lines.length === 0) throw new SalesError(400, 'Add at least one crop', 'lines');
   if (body.lines.length > MAX_LINES) throw new SalesError(400, `At most ${MAX_LINES} crops in a sale`, 'lines');
   const seen = new Set();
@@ -64,7 +75,7 @@ export function deliveryBody(body, { now }) {
     seen.add(l.crop);
     const kg = isNumber(l.kg) ? round(l.kg, 2) : NaN;
     if (!(kg > 0 && kg <= MAX_KG)) throw new SalesError(400, 'kg must be a number over 0 up to 10,000', `${at}.kg`);
-    const priceKg = isNumber(l.priceKg) ? round(l.priceKg, 2) : NaN;
+    const priceKg = isNumber(l.priceKg) && l.priceKg >= 0 ? round(l.priceKg, 2) : NaN;
     if (!(priceKg >= 0 && priceKg <= MAX_PRICE)) throw new SalesError(400, 'RM per kg must be 0 to 1,000', `${at}.priceKg`);
     const roomId = l.roomId === undefined || l.roomId === null ? null : l.roomId;
     if (roomId !== null && !isId(roomId)) throw new SalesError(400, 'Pick a room or Mixed', `${at}.roomId`);
@@ -84,8 +95,8 @@ export function buyerBody(body, { partial = false } = {}) {
     if (name.length > 60) throw new SalesError(400, 'A name is at most 60 characters', 'name');
     out.name = name;
   }
-  if (!partial || 'phone' in body) out.phone = textOf(body.phone, 30, 'phone', 'A phone number is at most 30 characters');
-  if (!partial || 'note' in body) out.note = textOf(body.note, 200, 'note', 'A note is at most 200 characters');
+  if (!partial || 'phone' in body) out.phone = textOf(body.phone, 30, 'phone', 'A phone number is at most 30 characters', 'A phone number');
+  if (!partial || 'note' in body) out.note = textOf(body.note, 200, 'note', 'A note is at most 200 characters', 'A note');
   if (!partial || 'prices' in body) {
     const prices = body.prices ?? {};
     if (!isObject(prices)) throw new SalesError(400, 'Prices must be per crop', 'prices');
@@ -93,7 +104,7 @@ export function buyerBody(body, { partial = false } = {}) {
     for (const [crop, v] of Object.entries(prices)) {
       if (!CROP_KEYS.includes(crop)) throw new SalesError(400, 'Unknown crop', 'prices');
       if (v === null || v === '') continue;
-      const p = isNumber(v) ? round(v, 2) : NaN;
+      const p = isNumber(v) && v >= 0 ? round(v, 2) : NaN;
       if (!(p >= 0 && p <= MAX_PRICE)) throw new SalesError(400, 'RM per kg must be 0 to 1,000', `prices.${crop}`);
       out.prices[crop] = p;
     }
@@ -109,6 +120,7 @@ export function buyerBody(body, { partial = false } = {}) {
 export function paidBody(body, { soldAt, now }) {
   if (!isObject(body) || !('paidAt' in body)) throw new SalesError(400, 'Give the day it was paid', 'paidAt');
   if (body.paidAt === null) return null;
+  if (!isNumber(soldAt)) throw new SalesError(400, 'Sale not found');
   const paidAt = timeOf(body.paidAt, now, 'paidAt', "Paid can't be in the future");
   if (localDate(paidAt) < localDate(soldAt)) throw new SalesError(400, 'Paid before the sale', 'paidAt');
   return paidAt;
@@ -117,9 +129,7 @@ export function paidBody(body, { soldAt, now }) {
 // Deliveries from their lines (db rows), newest first. rooms: Map id → { name }; runs: Map id → { startedAt }; buyers: Map
 // id → { archived }. A delivery: { id, soldAt, buyerId, buyer, buyerArchived, invoiceNo, note, paidAt, kg, total, lines }.
 export function deliveriesOf(rows, { rooms = new Map(), runs = new Map(), buyers = new Map() } = {}) {
-  const groups = new Map();
-  for (const r of rows) groups.set(r.deliveryId, [...(groups.get(r.deliveryId) ?? []), r]);
-  return [...groups.entries()].map(([id, own]) => {
+  return [...groupBy(rows, (r) => r.deliveryId).entries()].map(([id, own]) => {
     const [h] = own;
     const lines = [...own].sort(cropOrder).map((l) => ({
       id: l.id, crop: l.crop, kg: l.kg, priceKg: l.priceKg, total: l.total, roomId: l.roomId,
@@ -136,10 +146,8 @@ export function deliveriesOf(rows, { rooms = new Map(), runs = new Map(), buyers
 // What is owed: the unpaid deliveries (any order) by buyer, most owed first, each buyer's deliveries oldest first. → { total,
 // count, oldestAt (null when none), buyers: [{ buyerId, buyer, total, count, oldestAt, deliveries }] }.
 export function owedOf(unpaid) {
-  const oldestFirst = [...unpaid].sort((a, b) => a.soldAt - b.soldAt || a.id - b.id);
-  const by = new Map();
-  for (const d of oldestFirst) by.set(d.buyerId, [...(by.get(d.buyerId) ?? []), d]);
-  const buyers = [...by.entries()].map(([buyerId, list]) => ({
+  const oldestFirst = unpaid.filter((d) => d.paidAt === null).sort((a, b) => a.soldAt - b.soldAt || a.id - b.id);
+  const buyers = [...groupBy(oldestFirst, (d) => d.buyerId).entries()].map(([buyerId, list]) => ({
     buyerId, buyer: list[list.length - 1].buyer, total: sum(list, 'total'), count: list.length, oldestAt: list[0].soldAt, deliveries: list,
   })).sort((a, b) => b.total - a.total || a.buyer.localeCompare(b.buyer));
   return { total: sum(oldestFirst, 'total'), count: oldestFirst.length, oldestAt: oldestFirst[0]?.soldAt ?? null, buyers };
@@ -163,9 +171,7 @@ export function byCropOf(rows, harvests, cropYield) {
 
 // Per buyer over a period's deliveries, with what each owes all time (owedOf). Most income first.
 export function byBuyerOf(deliveries, owed) {
-  const by = new Map();
-  for (const d of deliveries) by.set(d.buyerId, [...(by.get(d.buyerId) ?? []), d]);
-  return [...by.entries()].map(([buyerId, list]) => ({
+  return [...groupBy(deliveries, (d) => d.buyerId).entries()].map(([buyerId, list]) => ({
     buyerId, buyer: list[0].buyer, kg: sum(list, 'kg'), total: sum(list, 'total'),
     owed: owed.buyers.find((b) => b.buyerId === buyerId)?.total ?? 0,
   })).sort((a, b) => b.total - a.total || a.buyer.localeCompare(b.buyer));
@@ -174,13 +180,8 @@ export function byBuyerOf(deliveries, owed) {
 // The summary Costs reads (contract section 5): exactly { kg, total, byCrop: [{ crop, kg, total }], byRun: [{ runId, kg,
 // total }] }; a line with no run is in the totals and byCrop only.
 export function summaryOf(rows) {
-  const group = (list, keyOf) => {
-    const by = new Map();
-    for (const r of list) by.set(keyOf(r), [...(by.get(keyOf(r)) ?? []), r]);
-    return by;
-  };
-  const byCrop = [...group(rows, (r) => r.crop)].map(([crop, own]) => ({ crop, kg: sum(own, 'kg'), total: sum(own, 'total') })).sort(cropOrder);
-  const byRun = [...group(rows.filter((r) => r.runId !== null), (r) => r.runId)].map(([runId, own]) => ({ runId, kg: sum(own, 'kg'), total: sum(own, 'total') }))
+  const byCrop = [...groupBy(rows, (r) => r.crop)].map(([crop, own]) => ({ crop, kg: sum(own, 'kg'), total: sum(own, 'total') })).sort(cropOrder);
+  const byRun = [...groupBy(rows.filter((r) => r.runId !== null), (r) => r.runId)].map(([runId, own]) => ({ runId, kg: sum(own, 'kg'), total: sum(own, 'total') }))
     .sort((a, b) => a.runId - b.runId);
   return { kg: sum(rows, 'kg'), total: sum(rows, 'total'), byCrop, byRun };
 }

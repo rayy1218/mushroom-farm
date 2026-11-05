@@ -95,7 +95,7 @@ approved the data, API and pages below (2026-11-05).
 | Owed | Sum of the totals of every unpaid delivery, whatever its date; with the count of deliveries and the oldest's age in whole days. |
 | Harvested kg | The harvests' kg in the same period (`db` harvests by `picked_at`, as the Harvest page). |
 | Per crop | Sold kg, harvested kg, income, average RM per kg (income ÷ sold kg, 2 places; lines at RM 0 count), expected RM per kg (Settings → Yield, null when not set). The difference "RM 1.20 under expected" / "RM 0.80 over expected" / "as expected" (within RM 0.005); no colour verdict. |
-| Per buyer | kg, income, owed (all time), oldest unpaid day. |
+| Per buyer | kg, income, owed (all time); the oldest unpaid day is in `owed.buyers[].oldestAt`. |
 | Summary (Costs) | The contract's shape: `kg`, `total` over the lines in `from..to` (and the run, when `run` is given); `byCrop` and `byRun` (lines with a run only; `runId` null lines are left out of `byRun`). |
 | Periods | `from`/`to` are farm dates (YYYY-MM-DD, Asia/Kuala_Lumpur, UTC+8), both days included; as the Harvest page's ranges: 7 days, 30 days, 13 weeks (91 days), 12 months (365 days) ending today. |
 

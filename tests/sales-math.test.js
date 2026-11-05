@@ -112,3 +112,35 @@ test('the CSV: a line a row, oldest first, the formula guard', () => {
   assert.equal(CSV_HEADER, 'date,time,buyer,reference,crop,room,run started,kg,price per kg,total,paid on,note');
   assert.deepEqual(csvRows(list), [CSV_HEADER, "2026-11-04,09:00,'=HACK,R1,Grey oyster,Mixed,,2,10,20,2026-11-05,van"]);
 });
+
+test('review: server-side total, the minute of grace, inclusive bounds, trimmed length, negative zero', () => {
+  const one = (l, extra) => deliveryBody(ok([{ crop: 'oyster', kg: 12.004, priceKg: 10.499, ...l }], extra), { now: NOW });
+  assert.equal(one({ total: 999 }).lines[0].total, 126);
+  assert.equal(one({}, { soldAt: NOW + 60_000 }).soldAt, NOW + 60_000);
+  assert.deepEqual(one({ kg: 10_000, priceKg: 1000 }).lines[0], { crop: 'oyster', kg: 10_000, priceKg: 1000, total: 10_000_000, roomId: null });
+  assert.equal(one({}, { invoiceNo: ' ' + 'x'.repeat(40) }).invoiceNo, 'x'.repeat(40));
+  refused(() => one({ priceKg: -0.001 }), 'lines.0.priceKg');
+  refused(() => buyerBody({ name: 'A', prices: { oyster: -0.001 } }), 'prices.oyster');
+  refused(() => one({}, { invoiceNo: 5 }), 'invoiceNo');
+  assert.throws(() => one({}, { note: 5 }), /A note must be text/);
+  assert.throws(() => one({}, { invoiceNo: 5 }), /The reference must be text/);
+  assert.throws(() => buyerBody({ name: 'A', phone: 5 }), /A phone number must be text/);
+  assert.throws(() => one({}, { soldAt: Date.UTC(2019, 11, 31) }), /The date can't be before 2020/);
+  assert.throws(() => one({}, { soldAt: 1.5 }), /Give the date/);
+  assert.throws(() => paidBody({ paidAt: Date.UTC(2019, 11, 31) }, { soldAt: NOW - 1000, now: NOW }), /The date can't be before 2020/);
+  assert.throws(() => paidBody({ paidAt: NOW }, { soldAt: undefined, now: NOW }), (e) => e instanceof SalesError && e.status === 400 && e.message === 'Sale not found');
+});
+
+test('review: ties by id, owed ignores paid, a crop sold at RM 0, byRun sorted, CSV order and empty cells', () => {
+  const tie = deliveriesOf([row(1, 1, 'oyster', 1, 1, { soldAt: 5, buyerId: 1 }), row(2, 2, 'oyster', 1, 1, { soldAt: 5, buyerId: 1 })]);
+  assert.deepEqual(tie.map((d) => d.id), [2, 1]);
+  assert.deepEqual(owedOf(tie).buyers[0].deliveries.map((d) => d.id), [1, 2]);
+  const mixed = deliveriesOf([row(1, 1, 'oyster', 1, 10, { paidAt: 9 }), row(2, 2, 'oyster', 1, 10)]);
+  assert.deepEqual([owedOf(mixed).total, owedOf(mixed).count], [10, 1]);
+  assert.equal(byCropOf([row(1, 1, 'oyster', 2, 0)], [], {})[0].avgPriceKg, 0);
+  assert.deepEqual(summaryOf([row(1, 1, 'oyster', 1, 1, { runId: 9 }), row(2, 2, 'oyster', 1, 1, { runId: 4 })]).byRun.map((r) => r.runId), [4, 9]);
+  const d = (id, day, buyer) => deliveriesOf([row(id, id, 'oyster', 1, 1, { soldAt: Date.UTC(2026, 10, day, 1), buyer })])[0];
+  const lines = csvRows([d(2, 5, 'Ah, Seng'), d(1, 4, 'Bob')]);
+  assert.equal(lines[1], '2026-11-04,09:00,Bob,,Grey oyster,Mixed,,1,1,1,,');
+  assert.equal(lines[2], '2026-11-05,09:00,"Ah, Seng",,Grey oyster,Mixed,,1,1,1,,');
+});
