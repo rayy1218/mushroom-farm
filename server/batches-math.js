@@ -71,7 +71,7 @@ export function runBlocksOf(b) {
 export function movesOf(family, checksOf, materials = []) {
   const first = family.find((b) => b.parentId == null) ?? family[0]; // a first row is always there (it is never deleted with parts)
   const total = family.reduce((s, b) => s + b.blocks, 0);
-  const moves = [{ refId: first.id, at: first.receivedAt, qty: total, unitCost: first.pricePerBlock ?? null, note: null }];
+  const moves = [{ refId: first.id, at: first.mixedAt ?? first.receivedAt, qty: total, unitCost: first.pricePerBlock ?? null, note: null }];
   for (const b of family) {
     const checks = checksOf(b.id);
     const before = b.placedAt == null ? checks : checks.filter((c) => c.at <= b.placedAt);

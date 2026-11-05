@@ -93,3 +93,31 @@ test("the stock moves of a made batch: its blocks at the mix, each material with
   ]);
   assert.deepEqual(movesOf([{ ...first, inoculatedAt: null }], () => [], materials).map((m) => m.qty), [400, -287], 'no spawn move before the inoculation');
 });
+
+test("a made batch's receipt is at the day mixed; moves with parts, placements and losses; no day mixed; a spawn line with no item", () => {
+  const first = b({ id: 1, kind: 'made', blocks: 300, pricePerBlock: 1, receivedAt: 9000, mixedAt: 1000, inoculatedAt: 3000 });
+  const part = b({ id: 2, parentId: 1, kind: 'made', blocks: 100, pricePerBlock: 1, receivedAt: 9000, mixedAt: 1000, placedAt: 5000, runId: 3 });
+  const checks = { 1: [{ at: 2000, lost: 5 }], 2: [{ at: 4000, lost: 3 }, { at: 6000, lost: 2 }] };
+  const moves = movesOf([first, part], (id) => checks[id] ?? [], [{ item: 'spawn', qty: 12, stockItemId: null }]);
+  assert.deepEqual(moves.map((m) => [m.refId, m.at, m.qty, m.note]), [
+    [1, 1000, 400, null],
+    [1, 2000, -5, 'contaminated'],
+    [2, 4000, -3, 'contaminated'],
+    [2, 5000, -97, 'into a room'],
+  ], 'the receipt at mixedAt; the loss after the placement is not taken out twice; no move for a spawn line with no item');
+  const none = movesOf([{ ...first, mixedAt: null }], () => [], [{ item: 'sawdust', qty: 5, stockItemId: 4 }]);
+  assert.deepEqual(none.map((m) => [m.at, m.qty]), [[9000, 300], [9000, -5]], 'no day mixed: the day received');
+});
+
+test('statusOf: a made batch whose room was deleted is past; ready in an area, then put into a room', () => {
+  const made = (o) => b({ kind: 'made', incubation: 'area', incubatedFrom: 2000, incubatedTo: 3000, ...o });
+  assert.equal(statusOf(made({ placedAt: 4000 })), 'past', 'placed, its room deleted');
+  assert.equal(statusOf(made({})), 'waiting');
+  assert.equal(statusOf(made({ placedAt: 4000, runId: 3 })), 'placed');
+});
+
+test('madePrice: no blocks, and a price of 0 is known', () => {
+  assert.equal(madePrice([{ qty: 5, stockItemId: 1 }], () => 1, 0), null);
+  assert.equal(madePrice([{ qty: 5, stockItemId: 1 }], () => 1, null), null);
+  assert.equal(madePrice([{ qty: 5, stockItemId: 1 }], () => 0, 10), 0, 'a free material is a known price');
+});

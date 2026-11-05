@@ -29,7 +29,7 @@ function setup(t, { stock = false } = {}) {
     db.setProgram(id, { ...db.getProgram(id), crops }, { change: 'start', at: NOW - 5 * DAY });
     return id;
   }
-  return { db, batches, told, room, tick: (ms) => { clock += ms; }, item: inventory?.item, buy: inventory?.buy };
+  return { db, batches, told, room, tick: (ms) => { clock += ms; }, item: inventory?.item, buy: inventory?.buy, archive: inventory?.archive };
 }
 
 const status = (fn) => {
@@ -268,7 +268,7 @@ test("the made price per block and the stock moves, from Inventory's items and p
   assert.equal(p.pricePerBlock, 0.7119, "a part has the delivery's price: the blocks made, not the row's");
   assert.deepEqual(db.batches.moves([p.id]).map((m) => m.qty), [-100], 'into a room');
   assert.deepEqual(status(() => made(batches, { blocks: 1, materials: [{ item: 'sawdust', qty: 5000, unit: 'kg', stockItemId: bran }] })),
-    [400, 'materials', 'The materials come to over RM 1,000 a block: check the amounts']);
+    [400, 'materials', 'The materials come to RM 6,000 a block, over RM 1,000']);
   assert.deepEqual(status(() => made(batches, { materials: [{ item: 'sawdust', qty: 1, unit: 'kg', stockItemId: 999 }] }))?.slice(0, 2), [400, 'materials'], 'no such item');
   batches.remove(p.id);
   batches.remove(b.id);
@@ -294,4 +294,49 @@ test('the CSV ends with the day mixed and the recipe', (t) => {
   const lines = batches.csv().text.trimEnd().split('\r\n');
   assert.match(lines[0], /,note,mixed,recipe$/);
   assert.equal(lines[1], '2026-11-03,Grey oyster,made,,,,,400,0,,,,,2.3,60,,2026-11-03,Sawdust 78');
+});
+
+test("a material linked to an Inventory item is counted in the item's unit; archived items are not offered", (t) => {
+  const { batches, item, archive } = setup(t, { stock: true });
+  const sawdust = item('Sawdust', 'other', 'kg');
+  const bags = item('Autoclave bags', 'bags', 'pcs');
+  const spawn = item('Grey oyster spawn', 'spawn', 'kg');
+  const lbs = item('Bran by the sack', 'other', 'sack');
+  const cases = [
+    [{ materials: [{ item: 'sawdust', qty: 5, unit: 'kg', stockItemId: bags }] }, 'Sawdust is in kg; Inventory keeps Autoclave bags in pcs'],
+    [{ materials: [{ item: 'bran', qty: 5, unit: 'kg', stockItemId: lbs }] }, 'Bran is in kg; Inventory keeps Bran by the sack in sack'],
+    [{ materials: [{ item: 'bags', qty: 5, unit: 'pcs', stockItemId: sawdust }] }, 'Plastic bags is in pcs; Inventory keeps Sawdust in kg'],
+  ];
+  for (const [change, message] of cases) {
+    assert.deepEqual(status(() => made(batches, change)), [400, 'materials', message]);
+  }
+  assert.ok(made(batches, { materials: [{ item: 'sawdust', qty: 5, unit: 'kg', stockItemId: sawdust }, { item: 'bags', qty: 400, unit: 'pcs', stockItemId: bags }] }));
+  const b = made(batches);
+  assert.deepEqual(status(() => batches.edit(b.id, { inoculatedAt: NOW - DAY, spawn: { qty: 30, unit: 'bags', stockItemId: spawn } })),
+    [400, 'spawn', 'Spawn is in bags; Inventory keeps Grey oyster spawn in kg']);
+  assert.equal(batches.edit(b.id, { inoculatedAt: NOW - DAY, spawn: { qty: 12, unit: 'kg', stockItemId: spawn } }).spawn.qty, 12);
+  archive(lbs);
+  assert.ok(!batches.stockItems().items.some((i) => i.id === lbs));
+});
+
+test('the made price over RM 1,000 a block is refused on any write that works it out, not left to the column', (t) => {
+  const { batches, room, item, buy } = setup(t, { stock: true });
+  const gold = item('Gold dust');
+  buy(gold, 900);
+  const b = made(batches, { blocks: 1000, materials: [{ item: 'sawdust', qty: 1000, unit: 'kg', stockItemId: gold }] });
+  assert.equal(b.pricePerBlock, 900);
+  const over = [400, 'materials', 'The materials come to RM 1,800 a block, over RM 1,000'];
+  assert.deepEqual(status(() => batches.edit(b.id, { blocks: 500 })), over, 'fewer bags');
+  assert.deepEqual(status(() => batches.edit(b.id, { materials: [{ item: 'sawdust', qty: 2000, unit: 'kg', stockItemId: gold }] })),
+    [400, 'materials', 'The materials come to RM 1,800 a block, over RM 1,000']);
+  batches.edit(b.id, { inoculatedAt: NOW - DAY });
+  assert.deepEqual(status(() => batches.place(b.id, { roomId: room([{ crop: 'oyster', blocks: 1000 }]), blocks: 10 })), null, 'a part keeps the delivery price');
+  assert.equal(batches.detail(b.id).blocks, 990);
+});
+
+test('list ?status=making offers the making batches', (t) => {
+  const { batches } = setup(t);
+  const m = made(batches);
+  batches.receive({ crop: 'oyster', supplier: 'Agro Supplies', blocks: 10 });
+  assert.deepEqual(batches.list({ status: 'making' }).batches.map((x) => x.id), [m.id]);
 });

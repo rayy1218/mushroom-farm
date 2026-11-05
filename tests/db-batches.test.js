@@ -220,3 +220,60 @@ test("Inventory's items for the materials: not the blocks items, with their late
   assert.deepEqual(db.batches.stockItem(spawn), { id: spawn, name: 'Grey oyster spawn', kind: 'spawn', unit: 'kg' });
   assert.equal(db.batches.stockItem(999), null);
 });
+
+test('a batch has one line per material item: a second spawn line, or a line outside the items named, is refused', (t) => {
+  const s = fresh(t).batches;
+  const id = s.insert({ ...BATCH, kind: 'made', supplier: null, mixedAt: 1000 });
+  const spawn = { item: 'spawn', name: null, qty: 12, unit: 'kg', stockItemId: null };
+  s.setMaterials(id, ['spawn'], [spawn]);
+  assert.throws(() => s.setMaterials(id, ['sawdust'], [spawn]), /item/, 'not among the items named');
+  assert.throws(() => s.setMaterials(id, ['spawn'], [spawn, spawn]), /UNIQUE|twice|once/, 'two spawn lines');
+  assert.equal(s.materials(id).filter((m) => m.item === 'spawn').length, 1, 'the refused write left one');
+  assert.equal(s.all().filter((b) => b.id === id).length, 1, 'never a duplicate batch');
+  assert.equal(s.family(id).length, 1);
+});
+
+test('a recipe is written with archived true or false', (t) => {
+  const s = fresh(t).batches;
+  const r = s.insertRecipe({ ...RECIPE, archived: true });
+  assert.equal(s.recipe(r).archived, true);
+  s.updateRecipe(r, { archived: false });
+  assert.equal(s.recipe(r).archived, false);
+});
+
+test("Inventory's items: an archived item is not offered, but is still known by id", (t) => {
+  const { db, item, archive } = openWithInventory(t);
+  const sawdust = item('Sawdust');
+  const old = item('Old bran');
+  archive(old);
+  assert.deepEqual(db.batches.stockItems().map((i) => i.name), ['Sawdust']);
+  assert.equal(db.batches.stockItem(old).name, 'Old bran');
+  assert.ok(sawdust);
+});
+
+test('the blocks item: found by name whatever the case; a name another kind has gets "(batches)"', (t) => {
+  const { db, item } = openWithInventory(t);
+  const s = db.batches;
+  const mine = item('grey oyster BLOCKS', 'blocks', 'blocks');
+  assert.equal(s.blocksItem('Grey oyster blocks'), mine, 'NOCASE');
+  const taken = item('Pink oyster blocks', 'other');
+  const made = s.blocksItem('Pink oyster blocks');
+  assert.notEqual(made, taken);
+  assert.equal(s.stockItem(made).name, 'Pink oyster blocks (batches)');
+  assert.equal(s.blocksItem('Pink oyster blocks'), made, 'found the second time');
+});
+
+test('the latest purchase price: the later time, then the higher id; a purchase with no price and other moves are ignored', (t) => {
+  const { db, item, buy, move } = openWithInventory(t);
+  const a = item('Sawdust');
+  buy(a, 0.3, 1000);
+  buy(a, 0.4, 2000);
+  buy(a, 0.5, 2000);
+  assert.equal(db.batches.purchasePrice(a), 0.5, 'equal time: the higher id');
+  move(a, { at: 3000, unitCost: null, refKind: 'purchase' });
+  assert.equal(db.batches.purchasePrice(a), 0.5, 'a newer purchase with no price falls back');
+  move(a, { at: 4000, unitCost: 9, refKind: 'adjust' });
+  move(a, { at: 4000, unitCost: 9, refKind: 'batch' });
+  assert.equal(db.batches.purchasePrice(a), 0.5, 'adjust and batch moves are not purchases');
+  assert.equal(db.batches.stockItems()[0].unitCost, 0.5);
+});

@@ -43,8 +43,8 @@ export const UNITS = { sawdust: ['kg'], bran: ['kg'], lime: ['kg'], gypsum: ['kg
 const ITEM_NAMES = { sawdust: 'Sawdust', bran: 'Bran', lime: 'Lime', gypsum: 'Gypsum', other: 'The other ingredient', bags: 'Plastic bags', spawn: 'Spawn' };
 
 // lines: the material lines sent ([{ item, name?, qty, unit, stockItemId? }]), one per item of `items`; known(id): that
-// Inventory item exists (null without Inventory: no item is kept); field: the field a refusal names. → the lines to store.
-export function checkMaterials(lines, items, known, field = 'materials') {
+// Inventory item, or null (itemOf is null without Inventory: no item is kept); field: the field a refusal names. → the lines to store.
+export function checkMaterials(lines, items, itemOf, field = 'materials') {
   if (!Array.isArray(lines)) throw bad('Materials must be a list of lines', field);
   const seen = new Set();
   return lines.map((m) => {
@@ -58,8 +58,13 @@ export function checkMaterials(lines, items, known, field = 'materials') {
     if (m.item === 'other' && !name) throw bad('Name the other ingredient', field);
     const id = m.stockItemId ?? null;
     if (id !== null && !(Number.isInteger(id) && id > 0)) throw bad(`${label}: pick an Inventory item from the list`, field);
-    if (id !== null && known && !known(id)) throw bad(`${label}: that Inventory item is gone; pick another`, field);
-    return { item: m.item, name, qty: Math.round(m.qty * 1000) / 1000, unit: m.unit, stockItemId: known ? id : null };
+    const stock = id !== null && itemOf ? itemOf(id) : null;
+    if (id !== null && itemOf && !stock) throw bad(`${label}: that Inventory item is gone; pick another`, field);
+    // a line counted in kg draws on an item kept in kg; bags and pieces on one kept in pieces (Inventory's unit 'pcs')
+    if (stock && (m.unit === 'kg' ? 'kg' : 'pcs') !== stock.unit) {
+      throw bad(`${name ?? label} is in ${m.unit}; Inventory keeps ${stock.name} in ${stock.unit}`, field);
+    }
+    return { item: m.item, name, qty: Math.round(m.qty * 1000) / 1000, unit: m.unit, stockItemId: itemOf ? id : null };
   });
 }
 

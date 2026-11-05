@@ -70,6 +70,7 @@ CREATE TABLE IF NOT EXISTS batch_materials (
   stock_item_id INTEGER
 ) STRICT;
 CREATE INDEX IF NOT EXISTS batch_materials_by_batch ON batch_materials (batch_id);
+CREATE UNIQUE INDEX IF NOT EXISTS batch_materials_one ON batch_materials (batch_id, item);
 CREATE TABLE IF NOT EXISTS batch_loads (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   batch_id   INTEGER NOT NULL,
@@ -146,7 +147,7 @@ function columnsOf(fields, map) {
   return Object.entries(fields).map(([key, value]) => {
     if (!Object.hasOwn(map, key)) throw new Error(`No column for ${key}`);
     if (value === undefined) throw new Error(`No value for ${key}`);
-    return [map[key], value];
+    return [map[key], typeof value === 'boolean' ? Number(value) : value]; // true/false are stored as 1/0
   });
 }
 
@@ -251,6 +252,8 @@ export function createBatchStore(db) {
     materials: (batchId) => q.materials.all(batchId).map(materialOf),
     // The lines of these items replaced by `lines` (the Mix sends its own, the Inoculate step the spawn).
     setMaterials(batchId, items, lines) {
+      const stray = lines.find((m) => !items.includes(m.item));
+      if (stray) throw new Error(`A material line (${stray.item}) is not among the items replaced`);
       db.prepare(`DELETE FROM batch_materials WHERE batch_id = ? AND item IN (${items.map(() => '?').join(', ')})`).run(batchId, ...items);
       for (const m of lines) insertRow('batch_materials', { batchId, ...m }, MATERIAL_COLUMNS);
     },
@@ -270,7 +273,8 @@ export function createBatchStore(db) {
     // purchase price (null: none yet); none without Inventory.
     stockItems() {
       if (!hasStock()) return [];
-      return db.prepare(`SELECT i.id, i.name, i.kind, i.unit, (${LATEST_PRICE}) AS unit_cost FROM stock_items i WHERE i.kind <> 'blocks' ORDER BY i.name COLLATE NOCASE, i.id`)
+      const archived = db.prepare('PRAGMA table_info(stock_items)').all().some((c) => c.name === 'archived') ? ' AND i.archived = 0' : '';
+      return db.prepare(`SELECT i.id, i.name, i.kind, i.unit, (${LATEST_PRICE}) AS unit_cost FROM stock_items i WHERE i.kind <> 'blocks'${archived} ORDER BY i.name COLLATE NOCASE, i.id`)
         .all().map((r) => ({ id: r.id, name: r.name, kind: r.kind, unit: r.unit, unitCost: r.unit_cost }));
     },
     // A stock item, or null (and null without Inventory).
@@ -286,9 +290,13 @@ export function createBatchStore(db) {
     },
     // The stock item of kind 'blocks' with this name, made when missing. → its id.
     blocksItem(name) {
-      const found = db.prepare("SELECT id FROM stock_items WHERE kind = 'blocks' AND name = ? ORDER BY id LIMIT 1").get(name);
+      // Inventory keeps one item per name, whatever the kind: a name another kind has gets "(batches)" after it
+      const find = (n) => db.prepare("SELECT id FROM stock_items WHERE kind = 'blocks' AND name = ? COLLATE NOCASE ORDER BY id LIMIT 1").get(n);
+      const taken = (n) => db.prepare('SELECT 1 FROM stock_items WHERE name = ? COLLATE NOCASE').get(n) !== undefined;
+      const found = find(name) ?? find(`${name} (batches)`);
       if (found) return found.id;
-      return Number(db.prepare("INSERT INTO stock_items (name, kind, unit, reorder_at) VALUES (?, 'blocks', 'blocks', NULL)").run(name).lastInsertRowid);
+      const own = taken(name) ? `${name} (batches)` : name;
+      return Number(db.prepare("INSERT INTO stock_items (name, kind, unit, reorder_at) VALUES (?, 'blocks', 'blocks', NULL)").run(own).lastInsertRowid);
     },
     insertMove({ itemId, at, qty, unitCost, refId, note }) {
       db.prepare("INSERT INTO stock_moves (item_id, at, qty, unit_cost, ref_kind, ref_id, note) VALUES (?, ?, ?, ?, 'batch', ?, ?)")

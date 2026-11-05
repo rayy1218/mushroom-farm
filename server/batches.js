@@ -140,7 +140,9 @@ export function createBatches({ db, now = Date.now, log = console.error }) {
     const materials = first?.kind === 'made' ? store.materials(first.id) : [];
     if (first?.kind === 'made') {
       const price = madePrice(materials, (itemId) => store.purchasePrice(itemId), family.reduce((s, b) => s + b.blocks, 0));
-      if (price !== null && price > 1000) throw bad('The materials come to over RM 1,000 a block: check the amounts', 'materials');
+      if (price !== null && price > 1000) {
+        throw bad(`The materials come to RM ${price.toLocaleString('en-US', { maximumFractionDigits: 2 })} a block, over RM 1,000`, 'materials');
+      }
       if (family.some((b) => b.pricePerBlock !== price)) {
         for (const b of family) store.update(b.id, { pricePerBlock: price });
         family = store.family(firstId);
@@ -195,11 +197,11 @@ export function createBatches({ db, now = Date.now, log = console.error }) {
   // A made batch's material lines in body (spec 5), checked: the mix's (materials) and the spawn (spawn: one line, or null to
   // clear it; it needs the day inoculated). An item picked is kept only with Inventory. → { mix?, spawn? } (absent: not sent).
   function linesOf(body, inoculatedAt) {
-    const known = store.hasStock() ? (id) => store.stockItem(id) !== null : null;
+    const itemOf = store.hasStock() ? (id) => store.stockItem(id) : null;
     const out = {};
-    if (Object.hasOwn(body, 'materials')) out.mix = checkMaterials(body.materials, MIX_ITEMS, known);
+    if (Object.hasOwn(body, 'materials')) out.mix = checkMaterials(body.materials, MIX_ITEMS, itemOf);
     if (Object.hasOwn(body, 'spawn')) {
-      out.spawn = body.spawn === null ? [] : checkMaterials([{ ...(isPlain(body.spawn) ? body.spawn : {}), item: 'spawn' }], ['spawn'], known, 'spawn');
+      out.spawn = body.spawn === null ? [] : checkMaterials([{ ...(isPlain(body.spawn) ? body.spawn : {}), item: 'spawn' }], ['spawn'], itemOf, 'spawn');
       if (out.spawn.length && inoculatedAt == null) throw bad('Give the day inoculated with the spawn', 'inoculatedAt');
     }
     return out;
