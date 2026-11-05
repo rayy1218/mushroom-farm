@@ -259,3 +259,60 @@ test('throw out: what is left of a soon or expired lot, from that lot, with the 
   assert.equal(inv.throwOut(later.id, { worker: 'Ali' }).reason, 'Expired');
   assert.throws(() => inv.throwOut(999, { worker: 'Ali' }), refused(404));
 });
+
+test('a count: each typed figure against the records at that moment, a matching one too, in one go', (t) => {
+  const { inv, told } = setup(t);
+  const bleach = inv.addItem({ name: 'Bleach', kind: 'chemical', unit: 'L' });
+  const bags = inv.addItem({ name: 'Bags', kind: 'bags', unit: 'pcs' });
+  inv.purchase({ itemId: bleach.id, qty: 5, total: 25 });
+  const { moves } = inv.count({ worker: 'Ali', counts: [{ itemId: bleach.id, qty: 3.5 }, { itemId: bags.id, qty: 0 }] });
+  assert.deepEqual(moves.map((m) => [m.itemId, m.qty, m.counted, m.refKind, m.worker]), [[bleach.id, -1.5, 3.5, 'adjust', 'Ali'], [bags.id, 0, 0, 'adjust', 'Ali']]);
+  assert.equal(inv.item(bleach.id).qty, 3.5);
+  assert.equal(inv.item(bags.id).lastCountedAt, NOW);
+  assert.ok(told.includes(bleach.id) && told.includes(bags.id));
+});
+
+test('a count with one bad entry saves none', (t) => {
+  const { inv } = setup(t);
+  const bleach = inv.addItem({ name: 'Bleach', kind: 'chemical', unit: 'L' });
+  const old = inv.addItem({ name: 'Old', kind: 'other', unit: 'pcs' });
+  inv.editItem(old.id, { archived: true });
+  assert.throws(() => inv.count({ worker: 'Ali', counts: [{ itemId: bleach.id, qty: 1 }, { itemId: old.id, qty: 1 }] }), refused(400, 'counts.1'));
+  assert.throws(() => inv.count({ worker: 'Ali', counts: [{ itemId: bleach.id, qty: 1 }, { itemId: bleach.id, qty: 2 }] }), refused(400, 'counts.1'));
+  assert.throws(() => inv.count({ worker: 'Ali', counts: [{ itemId: bleach.id, qty: -1 }] }), refused(400, 'counts.0'));
+  assert.throws(() => inv.count({ worker: 'Ali', counts: [] }), refused(400, 'counts'));
+  assert.throws(() => inv.count({ counts: [{ itemId: bleach.id, qty: 1 }] }), refused(400, 'worker'));
+  assert.deepEqual(inv.item(bleach.id).moves, []);
+});
+
+test("the purchases for Costs: the farm's days from–to, oldest first, never a batch move", (t) => {
+  const { db, inv } = setup(t);
+  const spawn = inv.addItem({ name: 'Spawn', kind: 'spawn', unit: 'kg' });
+  const a = inv.purchase({ itemId: spawn.id, qty: 2, total: 20, day: '2026-11-01' });
+  const b = inv.purchase({ itemId: spawn.id, qty: 1, total: 12 });
+  db.insertStockMoves([{ itemId: spawn.id, at: NOW, qty: 500, refKind: 'batch', refId: 1, unitCost: 1.2 }]);
+  assert.deepEqual(inv.purchases('2026-11-01', '2026-11-05'), { purchases: [
+    { id: a.id, itemId: spawn.id, name: 'Spawn', kind: 'spawn', at: a.at, qty: 2, unitCost: 10, total: 20 },
+    { id: b.id, itemId: spawn.id, name: 'Spawn', kind: 'spawn', at: b.at, qty: 1, unitCost: 12, total: 12 },
+  ] });
+  assert.deepEqual(inv.purchases('2026-11-02', '2026-11-04').purchases, []);
+  assert.deepEqual(inv.purchases('2026-11-05', '2026-11-05').purchases.map((p) => p.id), [b.id], 'a one-day range');
+  assert.throws(() => inv.purchases('2026-11-05', '2026-11-01'), refused(400, 'from'));
+  assert.throws(() => inv.purchases(null, '2026-11-01'), refused(400, 'from'));
+  assert.throws(() => inv.purchases('2026-11-01', '5 Nov'), refused(400, 'to'));
+});
+
+test('the 4-5 sheet of the last 30, 90 or 365 days', (t) => {
+  const { db, inv } = setup(t);
+  const room = db.createRoom(ROOM, 1000);
+  const bleach = inv.addItem({ name: 'Bleach', kind: 'chemical', unit: 'L', lrmpNo: 'LRMP 9' });
+  inv.purchase({ itemId: bleach.id, qty: 5, total: 25, day: '2026-09-01' });
+  inv.use({ itemId: bleach.id, qty: 1, roomId: room.id, reason: 'Footbath', worker: 'Ali' });
+  const sheet = inv.sheet(30);
+  assert.equal(sheet.from, '2026-10-07');
+  assert.equal(sheet.to, '2026-11-05');
+  assert.equal(sheet.days, 30);
+  assert.deepEqual(sheet.rows.map((r) => [r.kind, r.location, r.lrmpNo]), [['use', 'Container 1', 'LRMP 9']]);
+  assert.equal(inv.sheet(90).rows.length, 2);
+  assert.throws(() => inv.sheet(7), refused(400, 'days'));
+});

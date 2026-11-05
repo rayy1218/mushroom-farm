@@ -354,8 +354,60 @@ export function createInventory({ db, now = Date.now, log = console.error }) {
     return move;
   }
 
+  // ---- counts, the purchases for Costs, the 4-5 sheet ----
+
+  // { worker, counts: [{ itemId, qty }] }: each a count against the records at this moment (qty: the difference, 0 when it
+  // matches; counted: the figure), all in one transaction; one bad entry (field counts.<index>) saves none. → { moves }.
+  function count(body) {
+    const b = bodyOf(body);
+    if (!Array.isArray(b.counts) || b.counts.length === 0 || b.counts.length > MAX_COUNTS) {
+      throw new InventoryError(400, 'Give at least one count', 'counts');
+    }
+    const worker = workerOf(b.worker);
+    const at = now();
+    const seen = new Set();
+    const list = b.counts.map((c, i) => {
+      const field = `counts.${i}`;
+      const it = c !== null && typeof c === 'object' && Number.isInteger(c.itemId) ? db.stockItem(c.itemId) : null;
+      if (!it || it.archived) throw new InventoryError(400, 'No such item', field);
+      if (seen.has(it.id)) throw new InventoryError(400, 'That item is counted twice', field);
+      seen.add(it.id);
+      const counted = qtyOf(c.qty, it.unit, field, { zero: true });
+      return { itemId: it.id, at, qty: round3(counted - stockOf(db.itemStockMoves(it.id))), refKind: 'adjust', counted, worker };
+    });
+    const moves = db.insertStockMoves(list);
+    for (const id of seen) tell(id);
+    return { moves };
+  }
+
+  // The contract's read for Costs: the purchases whose farm day is from–to ('YYYY-MM-DD', inclusive), oldest first.
+  function purchases(from, to) {
+    if (!isDay(from)) throw new InventoryError(400, 'from must be a date, YYYY-MM-DD', 'from');
+    if (!isDay(to)) throw new InventoryError(400, 'to must be a date, YYYY-MM-DD', 'to');
+    if (from > to) throw new InventoryError(400, 'from must not be after to', 'from');
+    const rows = db.stockPurchasesBetween(dayStart(from), dayStart(addDays(to, 1)) - 1);
+    return { purchases: rows.map((m) => ({ id: m.id, itemId: m.itemId, name: m.name, kind: m.kind, at: m.at, qty: m.qty, unitCost: m.unitCost, total: m.total })) };
+  }
+
+  // The myGAP 4-5 sheet of the last `days` farm days (today included): { from, to, days, rows } (inventory-math sheetRows).
+  function sheet(days) {
+    if (!SHEET_DAYS.includes(days)) throw new InventoryError(400, 'days must be 30, 90 or 365', 'days');
+    const to = today();
+    const from = addDays(to, -(days - 1));
+    const start = dayStart(from);
+    const end = dayStart(addDays(to, 1)) - 1;
+    const items = new Map(db.stockItems().map((i) => [i.id, i]));
+    const runs = new Map();
+    const runsOf = (roomId) => {
+      if (!runs.has(roomId)) runs.set(roomId, db.cropRuns(roomId));
+      return runs.get(roomId);
+    };
+    const moves = db.stockMoves().filter((m) => m.at >= start && m.at <= end);
+    return { from, to, days, rows: sheetRows(moves, { items, rooms: roomNames(), runsOf, cropName: cropShortName }) };
+  }
+
   return {
-    list, item, addItem, editItem, removeItem, purchase, use, editMove, removeMove, throwOut,
+    list, item, addItem, editItem, removeItem, purchase, use, editMove, removeMove, throwOut, count, purchases, sheet,
     onChange(fn) {
       listeners.add(fn);
       return () => listeners.delete(fn);
