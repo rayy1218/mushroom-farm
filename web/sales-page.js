@@ -65,10 +65,10 @@ function el(tag, className, content) {
 }
 
 // A card's table: the first column names the row (head(row) → nodes), the others are figures; a row's diff (by crop: the
-// average price against the expected one) goes under the Average figure, on a phone only (the Expected column is hidden there).
-function table(caption, columns, rows, head) {
+// average price against the expected one) goes under the Average figure, on a phone only (the Harvested and Expected columns are hidden there).
+function table(caption, columns, rows, head, extra = '') {
   const wrap = el('div', 'us-table-wrap');
-  const t = el('table', 'us-table sl-table');
+  const t = el('table', `us-table sl-table${extra}`);
   t.append(el('caption', 'sr-only', caption));
   const tr = el('tr');
   columns.forEach((c, i) => {
@@ -232,7 +232,7 @@ export function mount(container, { days = 30 } = {}) {
     els.crops.hidden = crops.length === 0;
     const h2 = (id, text) => { const h = el('h2', '', text); h.id = id; return h; };
     els.crops.replaceChildren(h2('sl-crops-title', 'By crop'),
-      table('By crop', CROP_COLUMNS, crops, (c) => [picture('crop', c.crop, { size: 24 }), el('span', '', c.name)]));
+      table('By crop', CROP_COLUMNS, crops, (c) => [picture('crop', c.crop, { size: 24 }), el('span', '', c.name)], ' sl-crop-table'));
     const buyers = buyerRows(sales);
     els.buyersTable.hidden = buyers.length === 0;
     els.buyersTable.replaceChildren(h2('sl-by-buyer-title', 'By buyer'), table('By buyer', BUYER_COLUMNS, buyers, (b) => [el('span', '', b.name)]));
