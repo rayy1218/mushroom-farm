@@ -2,6 +2,11 @@
 // price per unit, a farm day; the pills, the words and the dialogs' bodies (below). A number keeps its unit at a wrap (a
 // no-break space, as the Units Rule has it). server/inventory-alerts.js uses the formatter for its messages.
 
+import { DOT } from './text-math.js';
+import { farmDate, farmTime, daysFrom } from './tasks-math.js';
+import { whenMs } from './harvest-math.js';
+import { normaliseClock } from './light-math.js';
+
 const NB = ' ';
 const DASH = '—';
 const MINUS = '−';
@@ -48,3 +53,237 @@ export function longDayText(date) {
   const m = dateParts(date);
   return m && MONTHS[Number(m[2]) - 1] ? `${Number(m[3])} ${MONTHS[Number(m[2]) - 1]} ${m[1]}` : DASH;
 }
+
+// The farm day n days before `date` ('YYYY-MM-DD'): the date boxes' earliest day.
+export const daysBefore = (date, n) => new Date(Date.parse(`${date}T00:00:00Z`) - n * 86_400_000).toISOString().slice(0, 10);
+
+// ---- the pages (spec 5) ----
+
+export const KIND_NAMES = { blocks: 'Blocks', spawn: 'Spawn', bags: 'Bags', chemical: 'Chemicals', packaging: 'Packaging', other: 'Other' };
+const KIND_ORDER = Object.keys(KIND_NAMES);
+// The kinds an item is made with here (Batches makes the block items) and the units: [value, label].
+export const KIND_OPTIONS = [['spawn', 'Spawn'], ['bags', 'Bags'], ['chemical', 'Chemical'], ['packaging', 'Packaging'], ['other', 'Other']];
+export const KIND_ONE = Object.fromEntries([...KIND_OPTIONS, ['blocks', 'Blocks']]);
+export const UNIT_OPTIONS = [['pcs', 'pcs (a count)'], ['kg', 'kg'], ['g', 'g'], ['L', 'L'], ['mL', 'mL']];
+const MAX_QTY = 100_000;
+const MAX_TOTAL = 1_000_000;
+const MAX_TEXT = 60;
+
+// An item's one pill, the worst: Archived (grey), Expired (red), Low, Use by 12 Nov (amber); null when nothing to say.
+export function pillOf(item) {
+  if (item.archived) return { text: 'Archived', tone: 'none' };
+  if (item.useBy?.state === 'expired') return { text: 'Expired', tone: 'warn' };
+  if (item.low) return { text: 'Low', tone: 'amber' };
+  if (item.useBy?.state === 'soon') return { text: `Use by ${dayText(item.useBy.date)}`, tone: 'amber' };
+  return null;
+}
+export function lotPill(lot) {
+  if (lot.state === 'expired') return { text: 'Expired', tone: 'warn' };
+  if (lot.state === 'soon') return { text: `Use by ${dayText(lot.useBy)}`, tone: 'amber' };
+  return null;
+}
+
+// Last counted in words; stale (muted) over 7 days or never: a reminder, not a fault, so never amber.
+export function countedText(at, now) {
+  if (!finite(at)) return { text: 'never', stale: true };
+  const days = daysFrom(farmDate(at), farmDate(now));
+  if (days <= 0) return { text: 'today', stale: false };
+  if (days === 1) return { text: 'yesterday', stale: false };
+  if (days <= 7) return { text: `${days} days ago`, stale: false };
+  return { text: `not counted for ${days} days`, stale: true };
+}
+
+// The attention line's parts: "2 low" and "1 to use by 12 Nov" amber, "1 expired" red. items: the list (a lone soon item's day).
+export function attentionParts(attention, items = []) {
+  const parts = [];
+  if (attention?.low) parts.push({ text: `${attention.low} low`, tone: 'amber' });
+  if (attention?.soon) {
+    const dates = items.filter((i) => i.useBy?.state === 'soon').map((i) => i.useBy.date).sort();
+    parts.push({ text: attention.soon === 1 && dates.length ? `1 to use by ${dayText(dates[0])}` : `${attention.soon} to use within 7 days`, tone: 'amber' });
+  }
+  if (attention?.expired) parts.push({ text: `${attention.expired} expired`, tone: 'warn' });
+  return parts;
+}
+
+// The list's groups in the contract's order of kinds (an empty kind left out); in a group the items with a pill first,
+// each part in the order given (the server's: by name).
+export function groupItems(items) {
+  return KIND_ORDER.map((kind) => {
+    const list = items.filter((i) => i.kind === kind);
+    const first = list.filter((i) => !i.archived && pillOf(i));
+    return { kind, name: KIND_NAMES[kind], items: [...first, ...list.filter((i) => !first.includes(i))] };
+  }).filter((g) => g.items.length);
+}
+
+// A lot's name: "Bought 1 Nov", "Batch 14", "Count 3 Nov".
+export function lotLabel(lot) {
+  if (lot.refKind === 'batch') return `Batch ${lot.refId}`;
+  if (lot.refKind === 'adjust') return `Count ${dayText(farmDate(lot.at))}`;
+  return `Bought ${dayText(farmDate(lot.at))}`;
+}
+
+const joined = (...parts) => parts.filter(Boolean).join(DOT);
+
+// A history row: { when ("3 Nov" for a purchase, "3 Nov 08:12" else), what, qty (signed), edit: 'edit' (a purchase or a
+// use), 'delete' (a count: deleted, not edited) or null (a batch move: Batches') }.
+export function moveLine(m, item) {
+  const when = m.refKind === 'purchase' ? dayText(farmDate(m.at)) : `${dayText(farmDate(m.at))} ${farmTime(m.at)}`;
+  let what;
+  if (m.refKind === 'purchase') what = joined(m.supplier ? `Bought from ${m.supplier}` : 'Bought', rmText(m.total), m.useBy && `use by ${dayText(m.useBy)}`);
+  else if (m.refKind === 'adjust') what = joined(`Counted ${qtyText(m.counted, item.unit)}`, m.worker);
+  else if (m.refKind === 'batch') what = joined(`Batch ${m.refId}`, m.qty > 0 ? 'received' : item.kind === 'blocks' ? `into ${m.roomName ?? 'a room'}` : 'made');
+  else if (m.lotId !== null && m.lotId !== undefined) what = joined('Thrown out', m.reason === 'Expired' ? 'expired' : null, m.worker);
+  else what = joined(m.roomId === null || m.roomId === undefined ? 'Used' : `Used in ${m.roomName ?? 'a deleted room'}`, m.reason, m.worker);
+  const edit = m.refKind === 'batch' ? null : m.refKind === 'adjust' ? 'delete' : 'edit';
+  return { when, what, qty: qtyText(m.qty, item.unit, { signed: true }), edit };
+}
+
+// The Delete confirm: "Delete the purchase of 5.00 L of Bleach on 3 Nov?"; its lead (null for none).
+export function deleteTitle(m, item) {
+  const day = dayText(farmDate(m.at));
+  if (m.refKind === 'adjust') return `Delete the count of ${item.name} on ${day}?`;
+  const what = m.refKind === 'purchase' ? 'purchase' : m.lotId !== null && m.lotId !== undefined ? 'throw-out' : 'use';
+  return `Delete the ${what} of ${qtyText(Math.abs(m.qty), item.unit)} of ${item.name} on ${day}?`;
+}
+export function deleteLead(m, { throwOuts = false } = {}) {
+  if (m.refKind === 'adjust') return 'In stock goes back to what the records said without it.';
+  return m.refKind === 'purchase' && throwOuts ? 'The throw-outs taken from it go with it.' : null;
+}
+
+// The Throw out confirm.
+export const throwOutTitle = (lot, item) => `Throw out ${qtyText(lot.left, item.unit)} of ${item.name} bought ${dayText(farmDate(lot.at))}?`;
+export const throwOutLead = (lot) => `Its use-by ${lot.state === 'expired' ? 'was' : 'is'} ${dayText(lot.useBy)}.`;
+
+// ---- the dialogs' bodies: { …body } or { error, field } ----
+
+// A number typed for the unit: whole for pcs, g, mL and blocks; up to 2 decimals for kg and L; a point, never a comma.
+export function numberIn(text, unit, { zero = false, label = 'qty' } = {}) {
+  const s = String(text ?? '').trim();
+  if (s === '') return { error: `Give the ${label}` };
+  const whole = WHOLE_UNITS.includes(unit);
+  const n = (whole ? /^[0-9]{1,6}$/ : /^[0-9]{1,6}(\.[0-9]{1,2})?$/).test(s) ? Number(s) : NaN;
+  if ((zero ? n >= 0 : n > 0) && n <= MAX_QTY) return { value: n };
+  const from = zero ? 'from 0' : 'over 0';
+  return { error: whole ? `Give a whole number of ${unit} ${from} up to 100,000` : `Give the ${unit} as a number ${from} up to 100,000, at most 2 decimals` };
+}
+const textIn = (v) => {
+  const s = String(v ?? '').trim();
+  return s === '' ? null : s;
+};
+const tooLong = (s) => s !== null && s.length > MAX_TEXT;
+
+// Add or Edit item. A block item (Batches') sends its level only.
+export function itemBody(values, item = null) {
+  const blocks = item?.kind === 'blocks';
+  const unit = blocks ? item.unit : values.unit;
+  const body = {};
+  if (!blocks) {
+    const name = textIn(values.name);
+    if (!name) return { error: 'Give the name', field: 'name' };
+    if (tooLong(name)) return { error: `The name must be at most ${MAX_TEXT} characters`, field: 'name' };
+    Object.assign(body, { name, kind: values.kind, unit });
+    if (values.kind === 'chemical') {
+      for (const [field, label] of [['ingredient', 'active ingredient'], ['lrmpNo', 'LRMP No.']]) {
+        const s = textIn(values[field]);
+        if (tooLong(s)) return { error: `The ${label} must be at most ${MAX_TEXT} characters`, field };
+        body[field] = s;
+      }
+    }
+  }
+  if (textIn(values.reorderAt) === null) {
+    body.reorderAt = null;
+  } else {
+    const r = numberIn(values.reorderAt, unit, { zero: true, label: 'reorder level' });
+    if (r.error) return { error: r.error, field: 'reorderAt' };
+    body.reorderAt = r.value;
+  }
+  return body;
+}
+
+// Purchase: today is the farm's day (the latest a purchase may be).
+export function purchaseBody(values, item, today) {
+  const qty = numberIn(values.qty, item.unit);
+  if (qty.error) return { error: qty.error, field: 'qty' };
+  const t = String(values.total ?? '').trim();
+  const total = /^[0-9]{1,7}(\.[0-9]{1,2})?$/.test(t) ? Number(t) : NaN;
+  if (!(total >= 0 && total <= MAX_TOTAL)) return { error: 'Give the total paid in RM, from 0 to 1,000,000', field: 'total' };
+  const supplier = textIn(values.supplier);
+  if (tooLong(supplier)) return { error: `The supplier must be at most ${MAX_TEXT} characters`, field: 'supplier' };
+  const day = String(values.day ?? '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || day > today) return { error: 'Pick a day up to today', field: 'day' };
+  const useBy = String(values.useBy ?? '');
+  if (useBy && useBy < day) return { error: 'The use-by cannot be before the day it was bought', field: 'useBy' };
+  return { itemId: item.id, qty: qty.value, total, supplier, useBy: useBy || null, day };
+}
+
+// Record use. shown: the date and time boxes as they opened ({ date, time }); unchanged, the server takes now.
+export function useBody(values, item, { now, shown }) {
+  const qty = numberIn(values.qty, item.unit);
+  if (qty.error) return { error: qty.error, field: 'qty' };
+  const reason = textIn(values.reason);
+  if (tooLong(reason)) return { error: `The reason must be at most ${MAX_TEXT} characters`, field: 'reason' };
+  if (!values.worker) return { error: 'Pick who used it', field: 'worker' };
+  const body = { itemId: item.id, qty: qty.value, roomId: values.roomId ? Number(values.roomId) : null, reason, worker: values.worker };
+  const date = String(values.date ?? '');
+  const time = normaliseClock(values.time);
+  if (date === shown.date && time === shown.time) return body;
+  if (Number.isNaN(whenMs(date, '00:00'))) return { error: 'Pick a date', field: 'date' };
+  const at = whenMs(date, time);
+  if (Number.isNaN(at)) return { error: 'Give the time as 24 h, like 08:12', field: 'time' };
+  if (at > now + 60_000) return { error: 'Pick a time up to now', field: 'time' };
+  return { ...body, at };
+}
+
+// The Edit dialogs: only what changed (an empty body: nothing to send).
+export function purchaseEditBody(values, m, item, today) {
+  const full = purchaseBody(values, item, today);
+  if (full.error) return full;
+  const was = { qty: m.qty, total: m.total, supplier: m.supplier, useBy: m.useBy, day: farmDate(m.at) };
+  return Object.fromEntries(Object.keys(was).filter((k) => full[k] !== was[k]).map((k) => [k, full[k]]));
+}
+export function useEditBody(values, m, item, { now, shown }) {
+  const full = useBody(values, item, { now, shown });
+  if (full.error) return full;
+  const body = {};
+  if (full.qty !== -m.qty) body.qty = full.qty;
+  if (full.roomId !== m.roomId) body.roomId = full.roomId;
+  if (full.reason !== m.reason) body.reason = full.reason;
+  if (full.worker !== m.worker) body.worker = full.worker;
+  if ('at' in full) body.at = full.at;
+  return body;
+}
+
+// Record use asks once when the qty is over what is in stock (a check, not a fault): the words, or null.
+export function overStock(qty, item) {
+  const has = Math.max(item.qty ?? 0, 0);
+  return qty > has + 1e-9 ? `Only ${qtyText(has, item.unit)} in stock. Record ${qtyText(qty, item.unit)} anyway?` : null;
+}
+
+// Count stock: entries [{ itemId, unit, text }]; an empty box is skipped. field: 'worker', 'count-<itemId>' or null.
+export function countBody(entries, worker) {
+  if (!worker) return { error: 'Pick who counted', field: 'worker' };
+  const counts = [];
+  for (const e of entries) {
+    if (String(e.text ?? '').trim() === '') continue;
+    const n = numberIn(e.text, e.unit, { zero: true, label: 'count' });
+    if (n.error) return { error: n.error, field: `count-${e.itemId}` };
+    counts.push({ itemId: e.itemId, qty: n.value });
+  }
+  if (!counts.length) return { error: 'Type at least one count', field: null };
+  return { worker, counts };
+}
+
+// ---- the myGAP 4-5 sheet (spec 5.1) ----
+
+export const SHEET_TITLE = 'myGAP 4-5 · Purchase and use of pesticides / chemicals (Pembelian dan penggunaan racun perosak / bahan kimia)';
+export const SHEET_COLUMNS = ['Date', 'Crop', 'Location & area', 'Trade name & active ingredient', 'LRMP No.', 'Price', 'Qty bought / rate used',
+  'Reason for use', 'Equipment', 'Operator', 'PHI (days)', 'Re-entry period'];
+// The columns left blank to write in by hand.
+export const SHEET_WRITE = [8, 10, 11];
+export const SHEET_DAYS = [30, 90, 365];
+export const sheetCells = (r) => [
+  longDayText(r.date), r.crop, r.location, r.product, r.lrmpNo, r.price === null ? '' : rmText(r.price),
+  `${qtyText(r.qty, r.unit)} ${r.kind === 'purchase' ? 'bought' : 'used'}`, r.reason, '', r.operator, '', '',
+];
+export const sheetRange = ({ from, to }) => `${longDayText(from)} – ${longDayText(to)}`;
+export const sheetEmpty = (days) => `No chemical purchases or uses in the last ${days} days.`;
