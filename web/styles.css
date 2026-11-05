@@ -264,9 +264,10 @@ html { scroll-padding-top: var(--topbar-h); }
 .brand-mark { width: 28px; height: 28px; border-radius: 8px; flex: none; background: var(--accent); position: relative; }
 .brand-mark::before { content: ""; position: absolute; left: 5px; right: 5px; top: 6px; height: 10px; border-radius: 10px 10px 3px 3px; background: var(--on-accent); }
 .brand-mark::after { content: ""; position: absolute; left: 11px; right: 11px; bottom: 5px; height: 7px; border-radius: 2px; background: var(--on-accent); }
-.brand-text { display: grid; line-height: 1.2; min-width: 0; }
+/* one column no wider than the brand's room (an auto track grew to the lines' width and ran under the alarm pill at 601 px) */
+.brand-text { display: grid; grid-template-columns: minmax(0, 1fr); line-height: 1.2; min-width: 0; }
 .brand-text strong { font-size: var(--fs-md); font-weight: 700; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.brand-text small { color: var(--muted); font-size: var(--fs-xs); white-space: nowrap; }
+.brand-text small { color: var(--muted); font-size: var(--fs-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .topbar { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 8px; min-height: var(--topbar-h);
   padding: 8px 14px; padding-top: calc(8px + env(safe-area-inset-top)); background: color-mix(in srgb, var(--surface) 88%, transparent);
@@ -363,7 +364,8 @@ html { scroll-padding-top: var(--topbar-h); }
   body.printing-sheet .ts-month { font-size: 11pt; }
   body.printing-sheet .ts-wrap { overflow: visible; }
   body.printing-sheet .ts-table { min-width: 0; font-size: 7.5pt; }
-  body.printing-sheet .ts-table :is(th, td) { height: 7mm; padding: 0 0.8mm; border-color: #000; }
+  /* 6.6 mm a row: 31 days, the head and the foot on one A4 portrait page (7 mm ran the legend onto a second) */
+  body.printing-sheet .ts-table :is(th, td) { height: 6.6mm; padding: 0 0.8mm; border-color: #000; }
   body.printing-sheet .ts-table thead th { height: auto; padding: 1mm; font-size: 7.5pt; }
   body.printing-sheet .ts-table .ts-day { width: 12mm; position: static; box-shadow: none; } /* no sticky edge or today ring on paper */
   body.printing-sheet .ts-table .ts-initials { width: 18mm; }

@@ -66,7 +66,7 @@ test('print: A4 portrait or landscape by named pages, the tools hidden, the ligh
   assert.match(css, /body\.printing-sheet \.ts-shaded \{ background: #d4d4d4; -webkit-print-color-adjust: exact; print-color-adjust: exact; \}/);
   assert.match(css, /body\.printing-sheet \.ts-table tr \{ break-inside: avoid; \}/);
   assert.match(css, /\.ts-wrap \{ position: relative; overflow-x: auto; \}/, 'a phone scrolls it sideways, and only it');
-  assert.ok(css.includes('body.printing-sheet .ts-table :is(th, td) { height: 7mm;'), 'rows to write in (critique #3, #4)');
+  assert.ok(css.includes('body.printing-sheet .ts-table :is(th, td) { height: 6.6mm;'), 'rows to write in (critique #3, #4), 31 of them and the foot on one A4 page');
   assert.ok(css.includes('body.printing-sheet .ts-landscape .ts-table tr.ts-half { break-before: page; }'));
   assert.ok(css.includes('body.printing-sheet .ts-outlined::before { inset: 0.4mm; border: 0.75pt solid #000; border-radius: 0; }'), 'square cells, not buttons');
   assert.ok(css.includes('.ts-box[data-kind="missed"] .ts-mark, .ts-key-box[data-kind="missed"] .ts-mark { color: var(--warning-text); font-size: 1.3em; font-weight: 800;'));
