@@ -26,7 +26,7 @@ test('a new database is at version 19 with the usage tables and room columns', (
   const path = join(tempDir(t), 'new.db');
   openDb(path).close();
   const raw = new DatabaseSync(path);
-  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 20);
+  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 24);
   assert.ok(tableNames(raw).includes('outdoor_readings') && tableNames(raw).includes('meter_readings'));
   const columns = raw.prepare('PRAGMA table_info(rooms)').all().map((c) => c.name);
   for (const c of NEW_COLUMNS) assert.ok(columns.includes(c), c);
@@ -69,7 +69,7 @@ test('older versions end at 19 too (a version 0 file)', (t) => {
   assert.equal(db.getMeter(1).status, 'not-wired');
   db.close();
   const raw = new DatabaseSync(path);
-  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 20);
+  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 24);
   raw.close();
 });
 
