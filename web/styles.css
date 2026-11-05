@@ -2775,3 +2775,40 @@ button.bz-quiet:is(:disabled, [aria-disabled="true"]):hover { background: transp
 .bz-blocks a { color: inherit; text-decoration-color: var(--axis); text-decoration-thickness: 1px; text-underline-offset: 3px; }
 .bz-blocks a:hover { color: var(--ink); text-decoration-color: currentColor; }
 /* ---- end Business ---- */
+/* ---- Runs (spec 2026-11-05-runs-design.md 6) ---- */
+/* the Runs tab: Calendar's labelled select for the crop; the table as Costs' runs (the dates name the row and open the run) */
+.rn-crop { margin: 0; min-width: 200px; }
+.rn-table .rn-dates { white-space: nowrap; font-weight: 400; }
+.rn-table .rn-crops { color: var(--ink-2); }
+/* a run's page: the money and yield across the top, then Blocks and Harvests, Sales and Costs, two a row from 900 px */
+.rn-page { display: grid; gap: 16px; }
+@media (min-width: 900px) {
+  .rn-page { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); }
+  .rn-money { grid-column: 1 / -1; }
+}
+.rn-money .co-tiles > .us-tile { max-width: 220px; }
+.rn-batches { list-style: none; margin: 0; padding: 0; }
+.rn-batch { display: flex; flex-direction: column; gap: 2px; padding: 8px 0; border-top: 1px solid var(--border); }
+.rn-batch:first-child { border-top: 0; padding-top: 0; }
+.rn-line { font-size: var(--fs-sm); }
+.rn-foot { margin: 10px 0 0; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.rn-sub-title { margin: 16px 0 2px; font-size: var(--fs-sm); font-weight: 600; }
+.rn-harvests .us-table-wrap + .us-table-wrap { margin-top: 16px; } /* Flushes, then By crop */
+.rn-sales-table .rn-buyer .co-sub { display: block; }
+.rn-paid { white-space: nowrap; }
+.rn-note { margin: 0 0 8px; font-size: var(--fs-sm); }
+.rn-parts .rn-total dd { font-weight: 600; }
+@media (max-width: 600px) {
+  /* a run a block of labelled figures (Costs' runs, Batches' past): its dates first, the whole row */
+  .rn-table > thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .rn-table, .rn-table > tbody { display: block; }
+  .rn-run { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 12px; padding: 10px 0; border-top: 1px solid var(--border); }
+  .rn-table > tbody > .rn-run:first-child { border-top: 0; }
+  .rn-table .rn-run > :is(th, td, td.num) { display: block; padding: 0; border: 0; text-align: left; font-size: var(--fs-sm); }
+  .rn-run > th { grid-column: 1 / -1; order: -1; font-size: var(--fs-md); }
+  .rn-run > th a { display: inline-block; padding: 10px 0; } /* a finger's tap: 44 px with the line */
+  .rn-run > td.num { white-space: normal; }
+  .rn-run > td::before { content: attr(data-label); display: block; color: var(--muted); font-size: var(--fs-xs); }
+  .rn-crop { flex: 1 1 100%; }
+}
+/* ---- end Runs ---- */
