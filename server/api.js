@@ -84,9 +84,6 @@ export function createApi(db, machines = null, controller = null, poller = null,
     publishRoom(roomId, 'tasks');
     publishDue();
   }) : () => {};
-  // The harvests (spec 2026-11-04-harvest-design.md 6): a record, edit or delete here, or a Done that made harvests (the
-  // tasks module's onHarvest), tells the pages. An edit or delete of a check's harvest changes its row's amount too (the room's
-  // Tasks tab, and Today and Calendar, which hear 'tasks').
   // ---- Batches ---- (spec 2026-11-05-batches-design.md 3 and 6): every write tells the pages; the rooms of the placed
   // batches it touched hear 'harvest' too (their BE may change, 3.2).
   const batches = createBatches({ db });
@@ -95,6 +92,9 @@ export function createApi(db, machines = null, controller = null, poller = null,
     events?.publish('batches', { batchId, roomId, runId });
     for (const id of harvestRooms) events?.publish('harvest', { roomId: id });
   });
+  // The harvests (spec 2026-11-04-harvest-design.md 6): a record, edit or delete here, or a Done that made harvests (the
+  // tasks module's onHarvest), tells the pages. An edit or delete of a check's harvest changes its row's amount too (the room's
+  // Tasks tab, and Today and Calendar, which hear 'tasks').
   const harvests = createHarvests({ db, batchDryKg: batches.dryKgFor });
   const publishHarvest = (roomId) => events?.publish('harvest', { roomId });
   const harvestRoutes = createHarvestRoutes({ harvests, onTaskChange: (roomId) => { publishRoom(roomId, 'tasks'); publishDue(); } });
