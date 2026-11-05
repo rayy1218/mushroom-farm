@@ -2253,7 +2253,7 @@ td.tg-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: -2p
 .iv-sheet-line-short { min-width: 14ch; }
 @media (max-width: 600px) { .iv-sheet-line { min-width: 16ch; } .iv-sheet-line-short { min-width: 10ch; } }
 @media print {
-  /* the page's margins and the space under the table light too, whatever the theme (audit #24: the dark page printed black) */
+  /* the page's margins and the space under the table light too, whatever the theme (audit #24: the dark page printed dark margins) */
   html:root:has(.iv-sheet) { color-scheme: light; background: Canvas; } /* (0,2,1): over :root[data-theme="dark"] */
   body.printing-sheet .iv-sheet-table { min-width: 0; font-size: 8pt; table-layout: fixed; } /* the colgroup's mm widths */
   body.printing-sheet .iv-sheet-table td { height: 8mm; overflow-wrap: anywhere; } /* a long figure wraps in its cell, never over the next */
