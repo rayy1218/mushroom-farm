@@ -1,7 +1,8 @@
 // The shell: theme, hash router, and mounting pages into <main id="view">.
 // A page is { mount(container, params) → unmount() }.
 
-import { parseRoute, isCanonical, canonicalHash } from './route.js';
+import { parseRoute, isCanonical, canonicalHash, businessTabOf, businessStrip, businessLanding } from './route.js';
+import { businessTabs } from './business-tabs.js'; // ---- Business ----
 import * as detail from './room-detail.js';
 import * as simulation from './simulation-page.js';
 import * as suggest from './suggest-page.js';
@@ -31,9 +32,20 @@ const menuLinks = {
   today: document.querySelectorAll('[data-nav="today"]'),
   calendar: document.querySelectorAll('[data-nav="calendar"]'),
   harvest: document.querySelectorAll('[data-nav="harvest"]'),
+  business: document.querySelectorAll('[data-nav="business"]'),
   overview: document.querySelectorAll('[data-nav="overview"]'),
   settings: document.querySelectorAll('[data-nav="settings"]'),
 };
+
+// ---- Business ---- the tab last used in this browser: #/business opens it (Batches the first time).
+const BUSINESS_KEY = 'farm.business';
+function lastBusiness() {
+  try { return localStorage.getItem(BUSINESS_KEY); } catch { return null; }
+}
+function keepBusiness(tab) {
+  try { localStorage.setItem(BUSINESS_KEY, tab); } catch { /* not kept */ }
+}
+// ---- end Business ----
 
 let unmount = null;
 let mounted = null; // the route on show
@@ -47,6 +59,13 @@ function show(before = '') {
     history.replaceState(null, '', canonicalHash(route));
   }
   const route = parseRoute(location.hash);
+  // ---- Business ---- the entry stands for the tab last used: put its address in place of #/business, no history entry
+  if (route.name === 'business') {
+    history.replaceState(null, '', businessLanding(lastBusiness()));
+    show(before);
+    return;
+  }
+  // ---- end Business ----
   // Another tab of the same room: the page stays (its data, scroll and focus); only the panel changes.
   if (mounted?.name === 'detail' && route.name === 'detail' && mounted.id === route.id) {
     unmount.setTab?.(route.tab);
@@ -62,6 +81,16 @@ function show(before = '') {
     console.error('Leaving the page failed:', err);
   }
   view.replaceChildren();
+  // ---- Business ---- the four pages under the strip of their tabs: the page mounts into its own box below it
+  const tab = businessTabOf(route);
+  if (tab) keepBusiness(tab);
+  let page = view;
+  if (businessStrip(route)) {
+    page = document.createElement('div');
+    page.className = 'bz-page';
+    view.append(businessTabs(businessStrip(route)), page);
+  }
+  // ---- end Business ----
   unmount = route.name === 'simulation' ? simulation.mount(view, { id: route.id, runId: route.runId })
     : route.name === 'suggest' ? suggest.mount(view, { id: route.id })
     : route.name === 'detail' ? detail.mount(view, { id: route.id, tab: route.tab, week: route.week ?? null })
@@ -70,22 +99,23 @@ function show(before = '') {
     : route.name === 'calendar' ? calendar.mount(view, { room: route.room, day: route.day })
     : route.name === 'harvest' ? harvest.mount(view, { days: route.days })
     : route.name === 'sheet' ? harvest.mountSheet(view, { days: route.days })
-    : route.name === 'sales' ? sales.mount(view, { days: route.days })
-    : route.name === 'costs' ? costs.mount(view, { month: route.month })
+    : route.name === 'sales' ? sales.mount(page, { days: route.days })
+    : route.name === 'costs' ? costs.mount(page, { month: route.month })
     : route.name === 'taskSheet' ? taskSheet.mountSheet(view, { roomId: route.id, month: route.month, from: parseRoute(before) })
-    : route.name === 'batches' ? batches.mount(view, { run: route.run })
+    : route.name === 'batches' ? batches.mount(page, { run: route.run })
     : route.name === 'batch' ? batches.mountBatch(view, { id: route.id })
     : route.name === 'batchSheet' ? batchSheet.mountSheet(view, { from: route.from, to: route.to })
-    : route.name === 'inventory' ? inventory.mount(view, {})
+    : route.name === 'inventory' ? inventory.mount(page, {})
     : route.name === 'inventoryItem' ? inventoryItem.mount(view, { id: route.id })
     : route.name === 'inventoryCount' ? inventoryCount.mount(view, {})
     : route.name === 'inventorySheet' ? inventorySheet.mount(view, { days: route.days })
     : overview.mount(view, {});
-  // The Rooms entry stays current on a room's page and its tasks sheet; Harvest on its myGAP sheet.
+  // The Rooms entry stays current on a room's page and its tasks sheet; Harvest on its myGAP sheet; Business on every business page.
   const section = route.name === 'sheet' ? 'harvest' : ['settings', 'overview', 'today', 'calendar', 'harvest'].includes(route.name) ? route.name : null;
+  const current = tab ? 'business' : section; // ---- Business ----
   for (const [name, links] of Object.entries(menuLinks)) {
     for (const a of links) {
-      if (name === section) a.setAttribute('aria-current', 'page');
+      if (name === current) a.setAttribute('aria-current', 'page');
       else a.removeAttribute('aria-current');
     }
   }

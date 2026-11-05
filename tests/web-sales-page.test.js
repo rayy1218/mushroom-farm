@@ -42,8 +42,9 @@ test('styles: one Sales block at the end, .sl- classes, tokens only', () => {
   assert.ok(/\.sl-/.test(block));
 });
 
-test('the top bar is not touched (contract 3)', () => {
-  assert.ok(!html.includes('business'));
+test('the top bar: not touched by Sales (contract 3); one Business entry added at the merge (contract 6)', () => {
+  assert.equal((html.match(/href="#\/business/g) ?? []).length, 1);
+  assert.ok(html.includes('href="#/business" data-nav="business"'));
 });
 
 const block = css.slice(css.indexOf('/* ---- Sales ---- */'), css.indexOf('/* ---- end Sales ---- */') + '/* ---- end Sales ---- */'.length); // a later module's block may follow once merged

@@ -285,8 +285,10 @@ html { scroll-padding-top: var(--topbar-h); }
 .top-alarm:hover { opacity: .9; }
 @media (max-width: 600px) { .top-alarm { min-height: 44px; } .top-link span { display: none; } }
 /* a tablet too, 601 to 899 px (critique 2026-11-05 #1): five worded links left the brand 22 px under "Live" and the page
-   scrolling sideways at 700 px since Harvest; the links are their icons, the Today count kept, as on a phone */
-@media (max-width: 899px) {
+   scrolling sideways at 700 px since Harvest; the links are their icons, the Today count kept, as on a phone. To 1099 px
+   since Business (2026-11-05): six worded links, the alarm button, Live and the theme take 868 px, so at 900 px the bar ran 8 px past its
+   edge with the mark squeezed to nothing; from 1100 px the farm's name has its 116 px beside them */
+@media (max-width: 1099px) {
   .top-link > span:not(.top-count) { display: none; }
   .top-link { min-width: 44px; padding: 4px 6px; justify-content: center; gap: 4px; }
 }
@@ -1694,18 +1696,25 @@ button.tk-tick:is(:hover, :focus-visible) .tk-mark { opacity: 1; }
   .room-tabs a { padding: 10px 5px; gap: 4px; } /* six tabs and a count up to 99+ fit 390 px; 360 px scrolls with the fade */
   .sg-planned a { display: inline-block; min-height: 44px; line-height: 44px; white-space: nowrap; }
 }
-/* a small phone with the alarm button and the Today count (C8 review: the mark was squeezed at 360 px): tighter gaps, and
-   while the alarm button shows the Live mark is its dot alone, green when live (DESIGN.md); its words stay for a screen
-   reader and its title says them, so "Not live" fits too */
-@media (max-width: 400px) {
+/* a phone (C8 review: the mark was squeezed at 360 px with the alarm button and the Today count; since Business,
+   2026-11-05, seven icons, six links and the theme, and the bar ran 85 px past its edge at 412 px): the Live mark is its dot
+   alone, green when live, whether or not the alarm button shows (its words stay for a screen reader and its title says
+   them); while the alarm button shows, it stands in for the Overview link (both open the Overview) */
+@media (max-width: 600px) {
+  .topbar .live-mark [data-live-text] { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .topbar:has(> .top-alarm:not([hidden])) .top-link[data-nav="overview"] { display: none; }
+}
+@media (max-width: 430px) {
   .topbar { gap: 2px; }
   .top-alarm { padding: 4px 6px; gap: 4px; }
   .top-link { padding: 4px; }
-  .topbar:has(> .top-alarm:not([hidden])) .live-mark [data-live-text] { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-  /* six icons since Harvest (2026-11-04): 40 px wide (44 px tall) so the mark keeps its 28 px at 360 px */
-  .top-link { min-width: 40px; }
-  .topbar .theme-btn { width: 40px; min-width: 40px; }
+  /* six icons since Harvest (2026-11-04), under 400 px; seven since Business (2026-11-05), under 430 px: 38 px wide (44 px
+     tall) so the mark keeps its 28 px at 360 px, and two-figure counts fit at 401 to 430 px */
+  .top-link { min-width: 38px; }
+  .topbar .theme-btn { width: 38px; min-width: 38px; }
 }
+/* the mark only whole: when a long count leaves the brand less than its 28 px, it goes rather than be cut */
+@container (max-width: 27.98px) { .brand-top .brand-mark { display: none; } }
 /* the smallest phones with the alarm button too: no room for the mark; the alarm button and Overview lead where it does */
 @media (max-width: 379px) { .topbar:has(> .top-alarm:not([hidden])) .brand-top { display: none; } }
 
@@ -2721,3 +2730,8 @@ td.co-loss { color: var(--critical-text); }
   .co-parts-list { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; } /* the breakdown two a row */
 }
 /* ---- end Costs ---- */
+
+/* ---- Business (the integration, 2026-11-05; DESIGN.md "Business") ---- */
+/* the strip over the four pages is the room page's tabs (.room-tabs, web/business-tabs.js); the page mounts in .bz-page under it */
+.bz-page { min-width: 0; }
+/* ---- end Business ---- */

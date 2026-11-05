@@ -23,7 +23,7 @@ test('the dialogs: on the tasks openForm; the routes they send to; more than in 
 test('the list page: mounted by the router; reads the list on the inventory events; its buttons and links', () => {
   const app = src('app.js');
   assert.ok(app.includes("import * as inventory from './inventory-page.js';"));
-  assert.ok(app.includes(": route.name === 'inventory' ? inventory.mount(view, {})"));
+  assert.ok(app.includes(": route.name === 'inventory' ? inventory.mount(page, {})")); // under the Business strip (the merge)
   const page = src('inventory-page.js');
   assert.ok(page.includes("live.on('inventory', () => reload.call())"));
   assert.ok(page.includes("request('GET', archived ? '/api/inventory?archived=1' : '/api/inventory')"));

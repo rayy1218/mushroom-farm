@@ -92,7 +92,7 @@ function parseBatches(hash) {
   return { name: 'batches', run: /^[1-9][0-9]{0,14}$/.test(run ?? '') ? Number(run) : null };
 }
 // ---- Inventory (spec 2026-11-05-inventory-design.md 5): the list, an item, Count stock and the myGAP 4-5 sheet with its
-// period (30, 90 or 365 days; 30 without one). Reached by address until the Business entry is added at the merge. ----
+// period (30, 90 or 365 days; 30 without one). ----
 export const INVENTORY_HASH = '#/business/inventory';
 export const INVENTORY_COUNT_HASH = `${INVENTORY_HASH}/count`;
 export const inventoryItemHash = (id) => `${INVENTORY_HASH}/${id}`;
@@ -100,6 +100,27 @@ const INVENTORY_SHEET_DAYS = [30, 90, 365];
 export const inventorySheetHash = (days = 30) => `${INVENTORY_HASH}/sheet?days=${days}`;
 // ---- Sales (spec 2026-11-05-sales-design.md 6): the business page, its period as Harvest's ----
 export const SALES_HASH = '#/business/sales';
+
+// ---- Business (the integration, 2026-11-05; DESIGN.md "Business") ----: the top bar's one Business entry opens #/business,
+// which goes to the tab last used in this browser (Batches the first time); the four pages share a strip of tabs, as a
+// room's page does. businessTabOf(route): the tab a page belongs to (the top bar marks Business on every one of them);
+// businessStrip(route): the tab whose strip shows: only the four pages themselves (a batch, an item and Count stock keep their
+// back link; a sheet for print has no strip).
+export const BUSINESS_HASH = '#/business';
+export const BUSINESS_TABS = [
+  { key: 'batches', label: 'Batches', hash: BATCHES_HASH },
+  { key: 'inventory', label: 'Inventory', hash: INVENTORY_HASH },
+  { key: 'sales', label: 'Sales', hash: SALES_HASH },
+  { key: 'costs', label: 'Costs', hash: COSTS_HASH },
+];
+const BUSINESS_PAGES = new Map([
+  ['batches', 'batches'], ['batch', 'batches'], ['batchSheet', 'batches'],
+  ['inventory', 'inventory'], ['inventoryItem', 'inventory'], ['inventoryCount', 'inventory'], ['inventorySheet', 'inventory'],
+  ['sales', 'sales'], ['costs', 'costs'],
+]);
+export const businessTabOf = (route) => BUSINESS_PAGES.get(route?.name) ?? null;
+export const businessStrip = (route) => (BUSINESS_TABS.some((t) => t.key === route?.name) ? route.name : null);
+export const businessLanding = (last) => (BUSINESS_TABS.find((t) => t.key === last) ?? BUSINESS_TABS[0]).hash;
 
 export function parseRoute(hash) {
   const run = new RegExp(`^#/rooms/${ID}/simulations/${ID}/?$`).exec(hash ?? '');
@@ -116,6 +137,7 @@ export function parseRoute(hash) {
     return week ? { name: 'detail', id: Number(m[1]), tab, week } : { name: 'detail', id: Number(m[1]), tab };
   }
   if (/^#\/today\/?$/.test(hash ?? '')) return { name: 'today' };
+  if (/^#\/business\/?$/.test(hash ?? '')) return { name: 'business' }; // ---- Business ----
   // The Calendar (spec 2026-11-03-calendar-design.md 5): its room and day in the query.
   const calendar = /^#\/calendar\/?(?:\?(.*))?$/.exec(hash ?? '');
   if (calendar) return { name: 'calendar', ...parseCalendarQuery(calendar[1]) };
@@ -151,6 +173,7 @@ export function canonicalHash(route) {
   if (route.name === 'taskSheet') return taskSheetHash(route.id, route.month);
   if (route.name === 'detail') return route.tab === 'tasks' ? tasksHash(route.id, route.week) : roomHash(route.id, route.tab);
   if (route.name === 'today') return TODAY_HASH;
+  if (route.name === 'business') return BUSINESS_HASH; // ---- Business ----
   if (route.name === 'calendar') return calendarHash(route);
   if (route.name === 'sales') return route.days === 30 ? SALES_HASH : `${SALES_HASH}?days=${route.days}`;
   if (route.name === 'harvest') return route.days === 30 ? HARVEST_HASH : `${HARVEST_HASH}?days=${route.days}`;

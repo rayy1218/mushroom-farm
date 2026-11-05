@@ -65,7 +65,8 @@ test('review minor: the dialog wraps its primary button on top; the Today room l
   assert.ok(phone.includes('.td-room h2 a { display: inline-block; padding: 11px 4px; margin: -11px -4px; }'), 'an inline block: a long name wraps inside it');
   assert.ok(!phone.includes('.td-room h2 a, .td-long-list a'), 'the room name is not a flex box on a phone');
   assert.ok(!phone.includes('.td-room h2 { margin-top'));
-  assert.ok(phone.includes('.topbar:has(> .top-alarm:not([hidden])) .live-mark [data-live-text] {'), 'the word hides, the dot stays');
+  // (Business, 2026-11-05: under 400 px the word hides whether or not the alarm button shows)
+  assert.ok(phone.includes('.topbar .live-mark [data-live-text] {'), 'the word hides, the dot stays');
   assert.ok(!phone.includes('.live-dot { display: none; }'));
   assert.equal(block.split('.tk-add > button { margin-top').length, 2, 'one rule, not repeated on a phone');
 });

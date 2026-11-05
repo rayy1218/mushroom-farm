@@ -13,7 +13,7 @@ const costsCss = css.slice(css.indexOf('/* ---- Costs ---- */'), css.indexOf('/*
 
 test('the router mounts the page with its month', () => {
   assert.ok(app.includes("import * as costs from './costs-page.js';"));
-  assert.ok(app.includes(": route.name === 'costs' ? costs.mount(view, { month: route.month })"));
+  assert.ok(app.includes(": route.name === 'costs' ? costs.mount(page, { month: route.month })")); // under the Business strip (the merge)
 });
 
 test('the month in the address, in place; a bookmark out of the months kept goes to this month', () => {
