@@ -19,6 +19,7 @@ const REFRESH_MS = 60_000;
 const DAYS = [7, 30, 90, 365];
 const SHOWN = 20;
 const SHOWN_PHONE = 10;
+const PHONE = '(max-width: 600px)';
 
 const TEMPLATE = `
   <div class="page-head">
@@ -50,10 +51,10 @@ const TEMPLATE = `
       <h2 id="sl-sales-title">Sales</h2>
       <p class="none" data-empty hidden></p>
       <ul class="sl-list" data-list></ul>
-      <button type="button" class="link sl-more" data-more hidden></button>
+      <button type="button" class="tk-quiet sl-more" data-more hidden></button>
     </section>
-    <section class="card sl-by-crop" data-crops></section>
-    <section class="card sl-by-buyer" data-buyers-table></section>
+    <section class="card sl-by-crop" data-crops aria-labelledby="sl-crops-title"></section>
+    <section class="card sl-by-buyer" data-buyers-table aria-labelledby="sl-by-buyer-title"></section>
   </div>`;
 
 function el(tag, className, content) {
@@ -63,8 +64,8 @@ function el(tag, className, content) {
   return node;
 }
 
-// A card's table: the first column names the row (head(row) → nodes), the others are figures; under: an optional line
-// under the name (by crop: the price against expected, shown on a phone in place of the last two columns).
+// A card's table: the first column names the row (head(row) → nodes), the others are figures; a row's diff (by crop: the
+// average price against the expected one) goes under the Average figure, on a phone only (the Expected column is hidden there).
 function table(caption, columns, rows, head) {
   const wrap = el('div', 'us-table-wrap');
   const t = el('table', 'us-table sl-table');
@@ -85,8 +86,9 @@ function table(caption, columns, rows, head) {
     const name = el('span', 'sl-name');
     name.append(...head(r));
     th.append(name);
-    if (r.diff) th.append(el('span', 'sl-diff', r.diff));
-    row.append(th, ...r.cells.map((c) => el('td', 'num', c)));
+    const tds = r.cells.map((c) => el('td', 'num', c));
+    if (r.diff) tds[3].append(el('span', 'sl-diff', r.diff));
+    row.append(th, ...tds);
     body.append(row);
   }
   t.append(thead, body);
@@ -117,7 +119,7 @@ export function mount(container, { days = 30 } = {}) {
   let painted = '';
   let showAll = false;
   const open = new Set(); // the buyers whose unpaid sales are shown
-  const phone = () => window.matchMedia('(max-width: 600px)').matches;
+  const phone = () => window.matchMedia(PHONE).matches;
 
   const buttons = DAYS.map((n) => {
     const b = el('button', '', periodWords(n));
@@ -144,7 +146,7 @@ export function mount(container, { days = 30 } = {}) {
     load();
   }
 
-  const changed = () => load(); // after a dialog's write (the event comes too; the throttle joins them)
+  const changed = () => reload.call(); // after a dialog's write (the event comes too; the throttle joins them)
   const ctx = () => ({ onChanged: changed, onError: showError });
 
   function showError(text) {
@@ -152,60 +154,65 @@ export function mount(container, { days = 30 } = {}) {
     els.banner.hidden = false;
   }
 
-  // One delivery in the Sales list: day and buyer, the lines, the total, the paid mark, the reference; Edit opens it.
+  // One delivery in the Sales list, flat so the grid lays it as a block on a phone and as one row on a desk: day, buyer, the
+  // lines, the total, the paid mark, the reference; Edit opens it.
   function deliveryItem(d) {
     const r = deliveryRow(d);
     const li = el('li', 'sl-item');
-    const head = el('p', 'sl-item-head');
-    head.append(el('span', 'sl-day', r.day), el('span', 'sl-buyer', r.buyer));
-    const mark = el('span', `sl-mark${r.paid.unpaid ? ' sl-unpaid' : ''}`, r.paid.text);
-    const foot = el('p', 'sl-item-foot');
-    foot.append(el('span', 'sl-total num', r.total), mark);
-    if (r.reference) foot.append(el('span', 'muted sl-ref', r.reference));
-    const edit = el('button', 'link sl-edit', 'Edit');
+    const edit = el('button', 'tk-quiet sl-edit', 'Edit');
     edit.type = 'button';
+    edit.dataset.focusKey = `edit-${d.id}`;
     edit.setAttribute('aria-label', `Edit the sale of ${r.day} to ${r.buyer}`);
     edit.addEventListener('click', () => openSale({ ...ctx(), delivery: d }));
-    li.append(head, el('p', 'sl-lines', r.lines), foot, edit);
+    li.append(el('span', 'sl-day', r.day), el('span', 'sl-buyer', r.buyer), el('span', 'sl-lines', r.lines),
+      el('span', 'sl-total num', r.total), el('span', `sl-mark${r.paid.unpaid ? ' sl-unpaid' : ''}`, r.paid.text));
+    if (r.reference) li.append(el('span', 'muted sl-ref', r.reference));
+    li.append(edit);
     return li;
   }
 
-  // A buyer's row in Owed: the name (a button that opens their unpaid sales under it), RM owed, the oldest.
+  // A buyer's row in Owed: the name (a button that opens their unpaid sales under it, in place), RM owed, the oldest.
   function owedItem(b) {
     const li = el('li', 'sl-owed-item');
-    const toggle = el('button', 'link sl-owed-name', b.buyer);
+    const toggle = el('button', 'sl-owed-name', b.buyer);
     toggle.type = 'button';
-    toggle.setAttribute('aria-expanded', String(open.has(b.buyerId)));
-    toggle.addEventListener('click', () => {
-      if (open.has(b.buyerId)) open.delete(b.buyerId);
-      else open.add(b.buyerId);
-      painted = '';
-      paint();
-    });
+    toggle.dataset.focusKey = `owed-${b.buyerId}`;
     const row = el('p', 'sl-owed-row');
     row.append(toggle, el('span', 'num sl-owed-total', rmText(b.total)), el('span', 'muted', `oldest ${ageText(b.oldestAt, Date.now())}`));
-    li.append(row);
-    if (open.has(b.buyerId)) {
-      const ul = el('ul', 'sl-owed-sales');
-      for (const d of b.deliveries) {
-        const r = deliveryRow(d);
-        const item = el('li', 'sl-owed-sale');
-        const paid = el('button', '', 'Mark paid');
-        paid.type = 'button';
-        paid.addEventListener('click', () => openPaid({ ...ctx(), delivery: d }));
-        item.append(el('span', 'sl-day', r.day), el('span', 'sl-lines', linesShort(d.lines)), el('span', 'num', r.total),
-          el('span', 'muted sl-ref', r.reference), paid);
-        ul.append(item);
-      }
-      li.append(ul);
+    const ul = el('ul', 'sl-owed-sales');
+    for (const d of b.deliveries) {
+      const r = deliveryRow(d);
+      const item = el('li', 'sl-owed-sale');
+      const paid = el('button', '', 'Mark paid');
+      paid.type = 'button';
+      paid.dataset.focusKey = `paid-${d.id}`;
+      paid.setAttribute('aria-label', `Mark the sale of ${r.day} to ${r.buyer} paid`);
+      paid.addEventListener('click', () => openPaid({ ...ctx(), delivery: d }));
+      item.append(el('span', 'sl-day', r.day), el('span', 'sl-lines', linesShort(d.lines)), el('span', 'num', r.total));
+      if (r.reference) item.append(el('span', 'muted sl-ref', r.reference));
+      item.append(paid);
+      ul.append(item);
     }
+    const show = (on) => {
+      toggle.setAttribute('aria-expanded', String(on));
+      ul.hidden = !on;
+    };
+    show(open.has(b.buyerId));
+    toggle.addEventListener('click', () => {
+      const on = !open.has(b.buyerId);
+      if (on) open.add(b.buyerId); else open.delete(b.buyerId);
+      show(on);
+    });
+    li.append(row, ul);
     return li;
   }
 
   function paint() {
-    const key = JSON.stringify([sales, showAll, [...open]]);
+    const key = JSON.stringify([sales, showAll]);
     if (key === painted) return;
     painted = key;
+    // the cursor on an Edit, a Mark paid or an Owed name comes back to the same one after the repaint
+    const focusKey = container.contains(document.activeElement) ? document.activeElement.dataset?.focusKey : null;
     els.body.hidden = false;
     els.totalsTitle.textContent = rangeText(sales);
     els.tiles.replaceChildren(...tileNodes(pageTiles(sales, Date.now())));
@@ -223,11 +230,16 @@ export function mount(container, { days = 30 } = {}) {
 
     const crops = cropRows(sales);
     els.crops.hidden = crops.length === 0;
-    els.crops.replaceChildren(el('h2', '', 'By crop'),
+    const h2 = (id, text) => { const h = el('h2', '', text); h.id = id; return h; };
+    els.crops.replaceChildren(h2('sl-crops-title', 'By crop'),
       table('By crop', CROP_COLUMNS, crops, (c) => [picture('crop', c.crop, { size: 24 }), el('span', '', c.name)]));
     const buyers = buyerRows(sales);
     els.buyersTable.hidden = buyers.length === 0;
-    els.buyersTable.replaceChildren(el('h2', '', 'By buyer'), table('By buyer', BUYER_COLUMNS, buyers, (b) => [el('span', '', b.name)]));
+    els.buyersTable.replaceChildren(h2('sl-by-buyer-title', 'By buyer'), table('By buyer', BUYER_COLUMNS, buyers, (b) => [el('span', '', b.name)]));
+    if (focusKey) {
+      const node = container.querySelector(`[data-focus-key="${focusKey}"]`);
+      if (node && !node.closest('[hidden]')) node.focus();
+    }
   }
 
   async function load() {
@@ -263,7 +275,13 @@ export function mount(container, { days = 30 } = {}) {
 
   els.record.addEventListener('click', () => openSale({ ...ctx(), delivery: null }));
   els.buyers.addEventListener('click', () => openBuyers(ctx()));
-  els.more.addEventListener('click', () => { showAll = true; paint(); });
+  els.more.addEventListener('click', () => {
+    const at = els.list.children.length;
+    showAll = true;
+    paint();
+    const first = els.list.children[at];
+    if (first) { first.tabIndex = -1; first.focus(); }
+  });
   q('[data-retry]').addEventListener('click', () => load());
   showPeriod();
   load();

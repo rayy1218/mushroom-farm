@@ -45,3 +45,24 @@ test('styles: one Sales block at the end, .sl- classes, tokens only', () => {
 test('the top bar is not touched (contract 3)', () => {
   assert.ok(!html.includes('business'));
 });
+
+const block = css.slice(css.indexOf('/* ---- Sales ---- */'));
+
+test('styles: the end marker closes the file; no colour literals; every token defined; every selector .sl-', () => {
+  assert.ok(block.trimEnd().endsWith('/* ---- end Sales ---- */'), 'the Sales block is last');
+  assert.ok(!/#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(/i.test(block), 'no hex, rgb() or hsl()');
+  for (const [, name] of block.matchAll(/var\((--[\w-]+)/g)) assert.ok(new RegExp(`${name}\\s*:`).test(css.slice(0, css.indexOf('/* ---- Sales ---- */'))), name);
+  const bare = block.replace(/\/\*.*?\*\//gs, '').replace(/@media[^{]*\{/g, '');
+  for (const [, sel] of bare.matchAll(/(?:^|\})\s*([^{}]+)\{/g)) {
+    for (const one of sel.split(',')) assert.ok(one.trim().startsWith('.sl-'), one.trim());
+  }
+});
+
+test('buttons: names for a screen reader, the Owed toggle, focus keys, quiet Edit', () => {
+  assert.ok(page.includes('aria-label\', `Edit the sale of ${r.day} to ${r.buyer}`'));
+  assert.ok(page.includes('`Mark the sale of ${r.day} to ${r.buyer} paid`'));
+  assert.ok(page.includes("toggle.setAttribute('aria-expanded', String(on));"));
+  for (const k of ['`edit-${d.id}`', '`paid-${d.id}`', '`owed-${b.buyerId}`']) assert.ok(page.includes(k), k);
+  assert.ok(page.includes("'tk-quiet sl-edit'"));
+  assert.ok(page.includes('const changed = () => reload.call();'));
+});
