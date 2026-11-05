@@ -15,7 +15,7 @@ import {
   MIX_ITEMS, RECIPE_PARTS, MATERIAL_NAMES, METHOD_NAMES, numberOf, recipeLine, sumText, recipeValues, recipeBody, mixValues,
   recipeFill, mixBody, waterGuide, inoculateValues, inoculateBody, loadValues, loadBody, incubateValues, incubateBody, readyBody,
   makingSteps, loadLine, sterilisedNote, madePriceNote, priceOverNote, countBlocks, bagsText, fullDate, dateText, itemsFor, itemPicker,
-  timeProblem, lastSpawn, nextStep, withWeight,
+  timeProblem, lastSpawn, nextStep, withWeight, stockNote,
 } from './batches-math.js';
 
 const finite = (x) => typeof x === 'number' && Number.isFinite(x);
@@ -38,6 +38,27 @@ function action(label, key, name, onClick, className = '') {
   if (name) b.setAttribute('aria-label', name);
   b.addEventListener('click', onClick);
   return b;
+}
+
+// An amber note after `after` while a line's amount is more than its Inventory item has in stock (stockNote; joint audit C5):
+// told, never refused, as Inventory may be counted later. The amount box is described by it. → say(), to call after a
+// change made by code (a recipe filling the amounts).
+function stockWatch(qtyBox, pickBox, after, items, stored) {
+  const note = el('p', 'bt-stock-note');
+  note.id = `${qtyBox.id}-stock`;
+  note.setAttribute('aria-live', 'polite');
+  note.hidden = true;
+  after.after(note);
+  qtyBox.setAttribute('aria-describedby', [qtyBox.getAttribute('aria-describedby'), note.id].filter(Boolean).join(' '));
+  const say = () => {
+    const text = stockNote(qtyBox.value, pickBox.value, items, stored);
+    note.textContent = text ?? '';
+    note.hidden = !text;
+  };
+  qtyBox.addEventListener('input', say);
+  pickBox.addEventListener('change', say);
+  say();
+  return say;
 }
 
 function setOptions(select, options, value) {
@@ -89,8 +110,8 @@ export function createMakingDialogs({ send, closing, ask, remember, ticket, aliv
       words.append(el('p', 'bt-recipe-name', r.name), el('p', 'bt-line', recipeLine(r)));
       // Archive… (it asks first) at the row's far end, apart from Edit; after it the cursor goes to the next row's Edit, else Add
       const next = list[i + 1] ? `recipe-${list[i + 1].id}` : null;
-      row.append(words, action('Edit', `recipe-${r.id}`, `Edit ${r.name}`, () => recipe(r), 'bt-quiet'),
-        action('Archive…', `archive-${r.id}`, `Archive ${r.name}…`, () => archive(r, next), 'bt-quiet bt-archive'));
+      row.append(words, action('Edit', `recipe-${r.id}`, `Edit ${r.name}`, () => recipe(r), 'bt-quiet bz-quiet'),
+        action('Archive…', `archive-${r.id}`, `Archive ${r.name}…`, () => archive(r, next), 'bt-quiet bz-quiet bt-archive'));
       box.append(row);
     });
     const form = ask({
@@ -234,8 +255,13 @@ export function createMakingDialogs({ send, closing, ask, remember, ticket, aliv
   // out again (from the boxes' weight and water); the water guide follows. A line's Inventory item shows once it has an amount;
   // the other ingredient's line once it has one, or Add another material is pressed. fixedBags: the bags when their box is not
   // shown (an edit of a split batch).
-  function wireMix(form, list, water, fixedBags) {
+  function wireMix(form, list, water, fixedBags, items, stored) {
     const box = (name) => form.input(name);
+    // each line with an Inventory item: an amber note under it while its amount is more than the item has
+    const stockSays = MIX_ITEMS.filter((item) => box(`item-${item}`)).map((item) => {
+      const qty = box(`qty-${item}`);
+      return stockWatch(qty, box(`item-${item}`), item === 'other' ? qty.closest('.bt-other').lastElementChild : qty.closest('.bt-pair'), items, stored);
+    });
     const recipeNow = () => list.find((r) => String(r.id) === box('recipeId').value) ?? null;
     const weighed = () => { const r = recipeNow(); return r && withWeight(r, box('blockKg').value, box('waterPct').value); };
     const bags = () => (box('blocks') ? numberOf(box('blocks').value) : fixedBags);
@@ -252,6 +278,7 @@ export function createMakingDialogs({ send, closing, ask, remember, ticket, aliv
         if (pick) pick.closest('.field').hidden = !box(`qty-${item}`).value.trim();
       }
       if (box('qty-other').value.trim()) showOther(true);
+      for (const say of stockSays) say();
     };
     const say = () => {
       const r = weighed();
@@ -307,7 +334,7 @@ export function createMakingDialogs({ send, closing, ask, remember, ticket, aliv
       },
     });
     form.input('qty-sawdust').closest('.bt-materials').querySelector('.tk-group-hint').after(water);
-    wireMix(form, list, water, b ? madeBlocks(b) : null);
+    wireMix(form, list, water, b ? madeBlocks(b) : null, itemData.items ?? [], stored);
   }
 
   // ---- the steps ----
@@ -447,7 +474,8 @@ export function createMakingDialogs({ send, closing, ask, remember, ticket, aliv
       if (note) note.hidden = !note.textContent;
       pick.closest('.field').hidden = pick.options.length < 2 || !qty.value.trim();
     };
-    form.input('spawnUnit').addEventListener('change', follow);
+    const sayStock = stockWatch(qty, pick, pick.closest('.field'), spawnItems, stored ? [stored] : []);
+    form.input('spawnUnit').addEventListener('change', () => { follow(); sayStock(); });
     qty.addEventListener('input', follow);
     follow();
   }
@@ -516,7 +544,7 @@ export function createMakingDialogs({ send, closing, ask, remember, ticket, aliv
 export function makingNodes(b, dialogs, today, { onGone = () => {} } = {}) {
   const next = nextStep(b, today);
   const making = b.status === 'making';
-  const record = (key) => (key === next ? 'primary' : making ? '' : 'bt-quiet'); // a Record button's look
+  const record = (key) => (key === next ? 'primary' : making ? '' : 'bt-quiet bz-quiet'); // a Record button's look
   const nodes = makingSteps(b, today).map((s) => {
     const step = el('section', 'bt-step');
     const head = el('div', 'bt-step-head');
@@ -528,12 +556,12 @@ export function makingNodes(b, dialogs, today, { onGone = () => {} } = {}) {
     step.append(head, ...s.lines.map((text) => el('p', 'bt-line', text)));
     const loads = s.key === 'sterilise' ? b.loads ?? [] : [];
     let noted = false;
-    if (s.key === 'mix') tools.append(action('Edit', 'mix', 'Edit the mix', () => dialogs.mix(b, { onGone }), 'bt-quiet'));
+    if (s.key === 'mix') tools.append(action('Edit', 'mix', 'Edit the mix', () => dialogs.mix(b, { onGone }), 'bt-quiet bz-quiet'));
     if (s.key === 'sterilise') {
       for (const l of loads) {
         const row = el('div', 'bt-load');
         row.append(el('p', 'bt-line', loadLine(l, today)),
-          action('Edit', `load-${l.id}`, `Edit the load of ${fullDate(l.hotAt)} ${farmTime(l.hotAt)}`, () => dialogs.sterilise(b, l), 'bt-quiet'));
+          action('Edit', `load-${l.id}`, `Edit the load of ${fullDate(l.hotAt)} ${farmTime(l.hotAt)}`, () => dialogs.sterilise(b, l), 'bt-quiet bz-quiet'));
         step.append(row);
       }
       const note = sterilisedNote(b);
@@ -542,14 +570,14 @@ export function makingNodes(b, dialogs, today, { onGone = () => {} } = {}) {
       tools.append(action('Record a load', 'load', 'Record a load: sterilising', () => dialogs.sterilise(b), record('load')));
     }
     if (s.key === 'inoculate') {
-      tools.append(action(s.done ? 'Edit' : 'Record', 'inoculate', s.done ? 'Edit the inoculation' : 'Record the inoculation', () => dialogs.inoculate(b), s.done ? 'bt-quiet' : record('inoculate')));
+      tools.append(action(s.done ? 'Edit' : 'Record', 'inoculate', s.done ? 'Edit the inoculation' : 'Record the inoculation', () => dialogs.inoculate(b), s.done ? 'bt-quiet bz-quiet' : record('inoculate')));
     }
     let go = null;
     if (s.key === 'incubate') {
       if (b.incubation === 'area' && !finite(b.incubatedTo) && s.can) tools.append(action('Ready to fruit', 'ready', null, () => dialogs.ready(b), record('ready')));
       go = action(s.done ? 'Edit' : 'Record', 'incubate', s.done ? 'Edit the incubation' : 'Record the incubation', () => {
         if (go.getAttribute('aria-disabled') !== 'true') dialogs.incubate(b);
-      }, s.done ? 'bt-quiet' : record('incubate'));
+      }, s.done ? 'bt-quiet bz-quiet' : record('incubate'));
       if (!s.can) go.setAttribute('aria-disabled', 'true');
       tools.append(go);
     }

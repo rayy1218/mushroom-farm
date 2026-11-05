@@ -115,6 +115,7 @@ FROM batches b LEFT JOIN rooms rm ON rm.id = b.room_id LEFT JOIN runs ru ON ru.i
 // The latest purchase price of the stock item i (Inventory's 'purchase' moves; contract section 5).
 const LATEST_PRICE = `SELECT m.unit_cost FROM stock_moves m WHERE m.item_id = i.id AND m.ref_kind = 'purchase' AND m.unit_cost IS NOT NULL
   ORDER BY m.at DESC, m.id DESC LIMIT 1`;
+const STOCK_QTY = 'SELECT COALESCE(SUM(m.qty), 0) FROM stock_moves m WHERE m.item_id = i.id';
 const MATERIAL_ORDER = "CASE item WHEN 'sawdust' THEN 0 WHEN 'bran' THEN 1 WHEN 'lime' THEN 2 WHEN 'gypsum' THEN 3 WHEN 'other' THEN 4 WHEN 'bags' THEN 5 ELSE 6 END";
 
 
@@ -270,12 +271,14 @@ export function createBatchStore(db) {
     // ---- Inventory's tables (contract section 7): only when they exist ----
     hasStock,
     // The items a made batch's materials may draw from (not the blocks items Batches makes), by name, with their latest
-    // purchase price (null: none yet); none without Inventory.
+    // purchase price (null: none yet) and the stock now (qty: every move summed, as Inventory's stockOf; the Mix dialog's
+    // over-stock note); none without Inventory.
     stockItems() {
       if (!hasStock()) return [];
       const archived = db.prepare('PRAGMA table_info(stock_items)').all().some((c) => c.name === 'archived') ? ' AND i.archived = 0' : '';
-      return db.prepare(`SELECT i.id, i.name, i.kind, i.unit, (${LATEST_PRICE}) AS unit_cost FROM stock_items i WHERE i.kind <> 'blocks'${archived} ORDER BY i.name COLLATE NOCASE, i.id`)
-        .all().map((r) => ({ id: r.id, name: r.name, kind: r.kind, unit: r.unit, unitCost: r.unit_cost }));
+      return db.prepare(`SELECT i.id, i.name, i.kind, i.unit, (${LATEST_PRICE}) AS unit_cost, (${STOCK_QTY}) AS qty FROM stock_items i
+        WHERE i.kind <> 'blocks'${archived} ORDER BY i.name COLLATE NOCASE, i.id`)
+        .all().map((r) => ({ id: r.id, name: r.name, kind: r.kind, unit: r.unit, unitCost: r.unit_cost, qty: Math.round(r.qty * 1000) / 1000 }));
     },
     // A stock item, or null (and null without Inventory).
     stockItem(id) {

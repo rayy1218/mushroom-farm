@@ -282,7 +282,9 @@ test("Inventory's items for the pickers; without Inventory an item picked is not
   const sawdust = item('Sawdust');
   buy(sawdust, 0.35);
   batches.receive({ crop: 'oyster', supplier: 'Agro Supplies', blocks: 10 }); // makes the item "Grey oyster blocks"
-  assert.deepEqual(batches.stockItems(), { items: [{ id: sawdust, name: 'Sawdust', kind: 'other', unit: 'kg', unitCost: 0.35 }] });
+  assert.deepEqual(batches.stockItems(), { items: [{ id: sawdust, name: 'Sawdust', kind: 'other', unit: 'kg', unitCost: 0.35, qty: 100 }] });
+  made(batches, { materials: [{ item: 'sawdust', qty: 40.5, unit: 'kg', stockItemId: sawdust }] });
+  assert.equal(batches.stockItems().items[0].qty, 59.5, "a mix's line comes off the item's stock (C5: the over-stock note reads it)");
 });
 
 test('the CSV ends with the day mixed and the recipe', (t) => {

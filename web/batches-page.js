@@ -106,7 +106,7 @@ const ROW_DIALOGS = { put: 'place', load: 'sterilise', inoculate: 'inoculate', r
 function rowNode(b, dialogs, today) {
   const act = rowAction(b, today);
   if (!act) return b.good >= 1 ? null : el('span', 'bt-act bt-reason', 'Every block was lost');
-  const go = button(act.label, b.status === 'making' ? 'bt-quiet' : '');
+  const go = button(act.label, b.status === 'making' ? 'bt-quiet bz-quiet' : '');
   go.dataset.focusKey = `act-${b.id}`;
   go.setAttribute('aria-label', `${act.label}: ${countBlocks(act.key === 'put' || act.key === 'ready' ? b.good : b.blocks, b.crop)}`);
   go.addEventListener('click', () => dialogs[ROW_DIALOGS[act.key]](b));
@@ -259,7 +259,7 @@ export function mount(container, { run = null } = {}) {
     // an in-room row: Record a check, the phone's way to it (the batch's page has it too)
     const checkAction = (b) => {
       if (b.good < 1) return null;
-      const add = button('Record a check', 'bt-quiet');
+      const add = button('Record a check', 'bt-quiet bz-quiet');
       add.dataset.focusKey = `check-${b.id}`;
       add.setAttribute('aria-label', `Record a check: ${countBlocks(b.blocks, b.crop)}`);
       add.addEventListener('click', () => dialogs.check(b));
@@ -361,13 +361,13 @@ export function mountBatch(container, { id }) {
     if (!b || b.status === 'waiting' || !Number.isInteger(b.roomId) || !Number.isInteger(b.runId)) { els.runCard.hidden = true; return; }
     let facts = null;
     try {
-      const run = runOf(await request('GET', `/api/rooms/${b.roomId}/harvests`), b.runId);
-      facts = runYieldFacts(run, b);
-      if (facts?.reason) { // a dash BE: the run's batches say why
-        let list = null;
-        try { list = (await request('GET', `/api/batches?run=${b.runId}`))?.batches ?? null; } catch { list = null; }
-        facts = runYieldFacts(run, b, list);
-      }
+      // the run's batches (its block cost for the per-kg line, as Costs; why a BE is a dash) read with the harvests; without
+      // them the tiles still show, the cost line does not
+      const [harvests, runReply] = await Promise.all([
+        request('GET', `/api/rooms/${b.roomId}/harvests`),
+        request('GET', `/api/batches?run=${b.runId}`).catch(() => null),
+      ]);
+      facts = runYieldFacts(runOf(harvests, b.runId), b, runReply);
     } catch {
       facts = null; // a deleted room (404) or no answer: the card stays away rather than show a wrong figure
     }
@@ -476,7 +476,7 @@ export function mountBatch(container, { id }) {
       const row = el('div', 'bt-check');
       row.append(el('p', 'bt-line', checkLine(c, today)));
       if (c.note) row.append(el('p', 'muted bt-note', c.note));
-      const editCheck = button('Edit', 'bt-quiet');
+      const editCheck = button('Edit', 'bt-quiet bz-quiet');
       editCheck.dataset.focusKey = `edit-check-${c.id}`;
       editCheck.setAttribute('aria-label', `Edit the check of ${fullDate(c.at)}`);
       editCheck.addEventListener('click', () => dialogs.check(b, c));

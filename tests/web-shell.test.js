@@ -79,6 +79,37 @@ test('#/business opens the tab last used (farm.business), in place of its own ad
   assert.ok(tabs.includes("if (t.key === current) a.setAttribute('aria-current', 'page');"));
 });
 
+// the joint Business audit (2026-11-05), agent C: the top link's current state, and the one look the four modules share
+test('the Business top link is current as "true" (a section, not this page); the strip\'s tab keeps "page" (C3)', () => {
+  const app = readFileSync(new URL('../web/app.js', import.meta.url), 'utf8');
+  assert.ok(app.includes("if (name === current) a.setAttribute('aria-current', name === 'business' ? 'true' : 'page');"));
+  const tabs = readFileSync(new URL('../web/business-tabs.js', import.meta.url), 'utf8');
+  assert.ok(tabs.includes("a.setAttribute('aria-current', 'page')"));
+});
+
+test('every business page but a sheet marks the view .bz-view, for the shared look (C1)', () => {
+  const app = readFileSync(new URL('../web/app.js', import.meta.url), 'utf8');
+  assert.ok(app.includes("view.classList.toggle('bz-view', Boolean(tab) && !/Sheet$/.test(route.name));"));
+});
+
+test('the .bz- block: sticky dialog footers (bz-form and bt-form), the quiet row action, 14 px card titles, 36/44 px head buttons (C1)', () => {
+  const bz = css.slice(css.indexOf('/* ---- Business (the integration'), css.indexOf('/* ---- end Business ---- */'));
+  assert.ok(bz.includes('.tk-dialog:has(> form:is(.bz-form, .bt-form)) { padding-bottom: 0; }'));
+  assert.ok(bz.includes('.tk-dialog > form:is(.bz-form, .bt-form) > .actions { position: sticky; bottom: 0;'));
+  assert.ok(bz.includes('.tk-dialog > form:is(.bz-form, .bt-form) > .actions .tk-aside { grid-column: 1 / -1;'), 'a phone: Delete on its own row');
+  const quiet = bz.slice(bz.indexOf('button.bz-quiet, a.bz-quiet {'), bz.indexOf('}', bz.indexOf('button.bz-quiet, a.bz-quiet {')));
+  for (const rule of ['min-height: 36px;', 'border: 1px solid var(--border-strong);', 'background: transparent;', 'color: var(--ink-2);', 'font-size: var(--fs-md);']) assert.ok(quiet.includes(rule), rule);
+  assert.ok(/@media \(max-width: 600px\) \{[^]*?:is\(button, a\)\.bz-quiet \{ min-height: 44px;/.test(bz), '44 px on a phone');
+  assert.ok(bz.includes('.bz-view .card h2 { font-size: var(--fs-md); font-weight: 600; }'));
+  assert.ok(bz.includes('.bz-view .page-head :is(button, a.button):not(.range-bar button, .co-step) { min-height: 36px; }'));
+  assert.ok(!css.includes('.bt-form) > .actions { position: sticky') || bz.includes('bt-form'), 'one rule for both');
+  assert.ok(!/\.tk-dialog > form\.bt-form > \.actions \{/.test(css), "Batches' own footer rule folded into the shared one");
+});
+
+test("the range control's unselected words in ink-2: 4.5:1 or more on the light page's track (C2)", () => {
+  assert.ok(css.includes('.range-bar button { min-height: 30px; padding: 4px 12px; border: 0; border-radius: 7px; background: transparent; color: var(--ink-2);'));
+});
+
 test('a phone with seven icons: the Live dot alone, the alarm button for the Overview link, 38 px links under 430 px', () => {
   const phone = css.slice(css.indexOf('/* a phone (C8 review'), css.indexOf('/* the smallest phones with the alarm button too'));
   assert.ok(phone.includes('@media (max-width: 600px) {\n  .topbar .live-mark [data-live-text] { position: absolute;'));

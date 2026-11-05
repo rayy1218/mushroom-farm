@@ -210,9 +210,9 @@ test("Inventory's items for the materials: not the blocks items, with their late
   buy(sawdust, 0.35, 2000);
   buy(sawdust, 0.4, 1500);
   assert.deepEqual(db.batches.stockItems(), [
-    { id: spawn, name: 'Grey oyster spawn', kind: 'spawn', unit: 'kg', unitCost: null },
-    { id: sawdust, name: 'Sawdust', kind: 'other', unit: 'kg', unitCost: 0.35 },
-  ]);
+    { id: spawn, name: 'Grey oyster spawn', kind: 'spawn', unit: 'kg', unitCost: null, qty: 0 },
+    { id: sawdust, name: 'Sawdust', kind: 'other', unit: 'kg', unitCost: 0.35, qty: 300 },
+  ], 'qty: the stock now, every move summed (three purchases of 100)');
   assert.equal(db.batches.purchasePrice(sawdust), 0.35, 'the latest by time');
   assert.equal(db.batches.purchasePrice(spawn), null);
   assert.deepEqual(db.batches.stockItem(spawn), { id: spawn, name: 'Grey oyster spawn', kind: 'spawn', unit: 'kg' });
