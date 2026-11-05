@@ -320,7 +320,7 @@ export function figuresOf(from, to, data) {
   const profit = round(income - costs, 2);
   const unsold = unsoldOf(harvests, kgHarvested, kgSold, data.cropYield);
   if (unsold) {
-    const about = unsold.value === null ? '' : ` (about ${rm(unsold.value)} at your prices)`;
+    const about = unsold.value === null ? '' : ` (about ${rm(unsold.value)} at your expected prices)`;
     notes.unshift(note('unsold', `${unsold.kg.toFixed(1)} kg picked and not yet sold${about}`));
   }
   if (sales.length === 0) notes.push(note('no-sales', 'No sales recorded'));

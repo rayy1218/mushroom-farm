@@ -187,3 +187,13 @@ test('the month query and the summary', async (t) => {
   assert.throws(() => s.costs.summary({ from: '2026-11-10', to: '2026-11-01' }), (e) => e.status === 400 && e.field === 'to');
   assert.throws(() => s.costs.summary({ from: 'x' }), (e) => e.status === 400 && e.field === 'from');
 });
+
+test('the month view says incomplete when a batch has no price', async (t) => {
+  const s = setup(t);
+  const raw = s.raw();
+  add(raw, { batches: [{ id: 1, run_id: s.run.id, room_id: s.one, crop: 'oyster', received_at: Date.parse('2026-11-02T04:00:00Z'), blocks: 100, price_per_block: null }] });
+  raw.close();
+  s.costs.monthView({});
+  await s.costs.warmed();
+  assert.equal(s.costs.monthView({}).tiles.incomplete, true);
+});

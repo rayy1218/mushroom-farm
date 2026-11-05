@@ -279,7 +279,7 @@ export function createCosts({ db, now = Date.now, zone = localZone, log = consol
         month: m, today: t, first,
         tiles: {
           income: f.income, costs: f.costs, profit: f.profit, costPerKg: f.costPerKg, profitPerKg: f.profitPerKg,
-          kgHarvested: f.kgHarvested, kgSold: f.kgSold, unsold: f.unsold,
+          kgHarvested: f.kgHarvested, kgSold: f.kgSold, unsold: f.unsold, incomplete: f.incomplete,
         },
         notes: f.notes, byCategory: f.byCategory, pending: f.pending,
         entries: entriesOf(m, data),

@@ -90,3 +90,34 @@ test('a deleted room\'s costs become the farm\'s and lose their run', () => {
   assert.equal(after.runId, null);
   db.close();
 });
+
+test('deleting only a run drops the cost\'s run and keeps its room', () => {
+  const file = fileOf();
+  const db = openDb(file);
+  const room = db.createRoom(ROOM, Date.UTC(2026, 9, 1));
+  createCropApi({ db, now: () => Date.UTC(2026, 9, 1) }).put(room.id, { crops: [{ crop: 'oyster', blocks: 500 }] });
+  const run = db.openRun(room.id);
+  const cost = db.insertCost({ ...ONE, roomId: room.id, runId: run.id }, 1);
+  const other = new DatabaseSync(file);
+  other.exec('PRAGMA foreign_keys = OFF');
+  other.prepare('DELETE FROM runs WHERE id = ?').run(run.id);
+  other.close();
+  const after = db.getCost(cost.id);
+  assert.equal(after.runId, null);
+  assert.equal(after.roomId, room.id);
+  db.close();
+});
+
+test('a version 24 file re-opens unchanged with its rows', () => {
+  const file = fileOf();
+  const db = openDb(file);
+  const cost = db.insertCost(ONE, 1000);
+  db.close();
+  const again = openDb(file);
+  assert.deepEqual(again.getCost(cost.id), cost);
+  assert.equal(again.listCosts().length, 1);
+  again.close();
+  const raw = new DatabaseSync(file);
+  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 24);
+  raw.close();
+});

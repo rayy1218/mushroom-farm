@@ -51,3 +51,46 @@ test('the rows in the range, with their totals', () => {
   ], 'no blocks purchase, no use');
   assert.deepEqual(got.sales, [{ id: 1, at: 300, crop: 'oyster', kg: 12.5, total: 175, roomId: 1, runId: 7 }]);
 });
+
+test('a batch/purchase outside the range and a batch-receipt move are left out', () => {
+  const raw = new DatabaseSync(':memory:');
+  add(raw, {
+    items: [{ id: 1, name: 'PP bags 1 kg', kind: 'packaging', unit: 'count' }],
+    moves: [
+      { id: 1, item_id: 1, at: 100, qty: 500, unit_cost: 2.35, ref_kind: 'batch' },
+      { id: 2, item_id: 1, at: 9000, qty: 10, unit_cost: 1, ref_kind: 'purchase' },
+      { id: 3, item_id: 1, at: 500, qty: 10, unit_cost: 1, ref_kind: 'purchase' },
+    ],
+  });
+  assert.deepEqual(readSources(raw, 0, 1000).purchases.map((p) => p.id), [3], 'no batch receipt, none outside the range');
+});
+
+test('made batches (Batches\' optional kind column) are left out: their materials are purchases', () => {
+  const raw = new DatabaseSync(':memory:');
+  raw.exec(`CREATE TABLE batches (id INTEGER PRIMARY KEY, run_id INTEGER, room_id INTEGER, crop TEXT, supplier TEXT,
+    received_at INTEGER, blocks INTEGER, price_per_block REAL, spawn_batch TEXT, note TEXT, kind TEXT) STRICT;`);
+  add(raw, {
+    batches: [
+      { id: 1, run_id: 7, room_id: 1, crop: 'oyster', received_at: 100, blocks: 100, price_per_block: 2, kind: 'made' },
+      { id: 2, run_id: 7, room_id: 1, crop: 'oyster', received_at: 100, blocks: 100, price_per_block: 2, kind: 'bought' },
+      { id: 3, run_id: 7, room_id: 1, crop: 'oyster', received_at: 100, blocks: 50, price_per_block: 2, kind: null },
+    ],
+  });
+  assert.deepEqual(readSources(raw, 0, 1000).batches.map((b) => b.batchId), [2, 3]);
+});
+
+test('a purchase total as paid when Inventory has a total column', () => {
+  const raw = new DatabaseSync(':memory:');
+  raw.exec(`CREATE TABLE stock_moves (id INTEGER PRIMARY KEY, item_id INTEGER, at INTEGER, qty REAL, unit_cost REAL,
+    ref_kind TEXT, ref_id INTEGER, note TEXT, total REAL) STRICT;`);
+  add(raw, {
+    items: [{ id: 1, name: 'PP bags', kind: 'packaging', unit: 'count' }],
+    moves: [
+      { id: 1, item_id: 1, at: 10, qty: 3, unit_cost: 0.3333, total: 1, ref_kind: 'purchase' },
+      { id: 2, item_id: 1, at: 20, qty: 3, unit_cost: 0.5, total: null, ref_kind: 'purchase' },
+      { id: 3, item_id: 1, at: 30, qty: 3, unit_cost: null, total: null, ref_kind: 'purchase' },
+      { id: 4, item_id: 1, at: 40, qty: 3, unit_cost: null, total: 7.456, ref_kind: 'purchase' },
+    ],
+  });
+  assert.deepEqual(readSources(raw, 0, 1000).purchases.map((p) => p.total), [1, 1.5, null, 7.46]);
+});

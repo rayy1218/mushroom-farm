@@ -176,7 +176,7 @@ test('picked and not yet sold: a note, never income', () => {
   assert.equal(f.income, 56);
   assert.equal(f.kgHarvested, 10);
   assert.deepEqual(f.unsold, { kg: 6, value: 84 });
-  assert.equal(f.notes[0].text, '6.0 kg picked and not yet sold (about RM 84.00 at your prices)');
+  assert.equal(f.notes[0].text, '6.0 kg picked and not yet sold (about RM 84.00 at your expected prices)');
   assert.equal(f.runs.get(1).income, 56, 'a sale with a room and no run: the run open that day');
   assert.equal(f.runs.get(1).kgHarvested, 10);
 });
