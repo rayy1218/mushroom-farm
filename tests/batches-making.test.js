@@ -239,3 +239,59 @@ test('sterilising loads: record, by time, edit, delete; not before the mix; bags
   batches.remove(b.id);
   assert.equal(status(() => batches.editLoad(l1.id, { bags: 1 }))[0], 404, "a batch's loads go with it");
 });
+
+test("the made price per block and the stock moves, from Inventory's items and purchase prices", (t) => {
+  const { db, batches, room, item, buy } = setup(t, { stock: true });
+  const sawdust = item('Sawdust');
+  const bran = item('Rice bran');
+  const spawn = item('Grey oyster spawn', 'spawn');
+  buy(sawdust, 0.35);
+  buy(bran, 1.2);
+  const b = made(batches, { materials: [{ item: 'sawdust', qty: 287, unit: 'kg', stockItemId: sawdust }, { item: 'bran', qty: 73.6, unit: 'kg', stockItemId: bran }] });
+  assert.equal(b.pricePerBlock, 0.4719, '(287 × 0.35 + 73.6 × 1.2) ÷ 400 blocks made');
+  const blocks = db.batches.blocksItem('Grey oyster blocks');
+  const moves = () => db.batches.moves([b.id]).map((m) => [m.itemId, m.at, m.qty, m.unitCost, m.note]);
+  assert.deepEqual(moves(), [
+    [blocks, NOW - 2 * DAY, 400, 0.4719, null],
+    [sawdust, NOW - 2 * DAY, -287, null, 'mixed'],
+    [bran, NOW - 2 * DAY, -73.6, null, 'mixed'],
+  ]);
+  const i = batches.edit(b.id, { inoculatedAt: NOW - DAY, spawn: { qty: 12, unit: 'kg', stockItemId: spawn } });
+  assert.equal(i.pricePerBlock, null, 'the spawn has no purchase price yet');
+  assert.deepEqual(batches.detail(b.id).materials.map((m) => [m.itemName, m.unitCost]), [['Sawdust', 0.35], ['Rice bran', 1.2], ['Grey oyster spawn', null]]);
+  buy(spawn, 8);
+  assert.equal(batches.detail(b.id).pricePerBlock, null, 'a later purchase counts at the next write');
+  assert.equal(batches.edit(b.id, { note: 'spawn bought' }).pricePerBlock, 0.7119, '+ 12 × 8, ÷ 400');
+  assert.deepEqual(moves().at(-1), [spawn, NOW - DAY, -12, null, 'spawn'], 'the spawn out at the inoculation');
+  assert.deepEqual(batches.list().batches[0].spawn, { qty: 12, unit: 'kg', unitCost: 8 }, "the 4-2 sheet's price per unit");
+  const p = batches.place(b.id, { roomId: room(), blocks: 100 });
+  assert.equal(p.pricePerBlock, 0.7119, "a part has the delivery's price: the blocks made, not the row's");
+  assert.deepEqual(db.batches.moves([p.id]).map((m) => m.qty), [-100], 'into a room');
+  assert.deepEqual(status(() => made(batches, { blocks: 1, materials: [{ item: 'sawdust', qty: 5000, unit: 'kg', stockItemId: bran }] })),
+    [400, 'materials', 'The materials come to over RM 1,000 a block: check the amounts']);
+  assert.deepEqual(status(() => made(batches, { materials: [{ item: 'sawdust', qty: 1, unit: 'kg', stockItemId: 999 }] }))?.slice(0, 2), [400, 'materials'], 'no such item');
+  batches.remove(p.id);
+  batches.remove(b.id);
+  assert.deepEqual([db.batches.materials(b.id), db.batches.loads(b.id), db.batches.moves([b.id, p.id])], [[], [], []], 'its lines and moves go with it');
+});
+
+test("Inventory's items for the pickers; without Inventory an item picked is not kept and the price is unknown", (t) => {
+  const plain = setup(t);
+  assert.deepEqual(plain.batches.stockItems(), { items: [] });
+  const b = made(plain.batches, { materials: [{ item: 'sawdust', qty: 287, unit: 'kg', stockItemId: 5 }] });
+  assert.deepEqual([b.pricePerBlock, plain.batches.detail(b.id).materials[0].stockItemId], [null, null]);
+  const { batches, item, buy } = setup(t, { stock: true });
+  const sawdust = item('Sawdust');
+  buy(sawdust, 0.35);
+  batches.receive({ crop: 'oyster', supplier: 'Agro Supplies', blocks: 10 }); // makes the item "Grey oyster blocks"
+  assert.deepEqual(batches.stockItems(), { items: [{ id: sawdust, name: 'Sawdust', kind: 'other', unit: 'kg', unitCost: 0.35 }] });
+});
+
+test('the CSV ends with the day mixed and the recipe', (t) => {
+  const { batches } = setup(t);
+  const r = batches.addRecipe(RECIPE);
+  made(batches, { recipeId: r.id });
+  const lines = batches.csv().text.trimEnd().split('\r\n');
+  assert.match(lines[0], /,note,mixed,recipe$/);
+  assert.equal(lines[1], '2026-11-03,Grey oyster,made,,,,,400,0,,,,,2.3,60,,2026-11-03,Sawdust 78');
+});

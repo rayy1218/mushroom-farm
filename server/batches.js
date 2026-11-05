@@ -1,12 +1,13 @@
-// Batches (spec 2026-11-05-batches-design.md 3 and 6): receive bought blocks, put them into a room's open run (a part split
-// off when fewer go in) and take them out, contamination checks, the views, the CSV, and a run's dry kg for Harvest's BE
-// (3.2). Every write keeps Inventory's stock moves in step (3.1) when Inventory's tables exist. No HTTP.
+// Batches (spec 2026-11-05-batches-design.md 3, 5 and 6): receive bought blocks or make them (recipes, the mix, sterilising
+// loads, inoculation, incubation), put them into a room's open run (a part split off when fewer go in) and take them out,
+// contamination checks, the views, the CSV, and a run's dry kg for Harvest's BE (3.2). Every write keeps a made batch's price
+// per block and Inventory's stock moves in step (3.1, 4) when Inventory's tables exist. No HTTP.
 
 import { CROP_KEYS, cropShortName } from '../web/crops.js';
 import { localDate, addDays } from './task-rules.js';
 import { checkWorker, TaskError } from './tasks.js';
 import { cell } from './csv.js';
-import { goodOf, dryKgOf, runDryKg, blockCost, statusOf, runBlocksOf, movesOf } from './batches-math.js';
+import { goodOf, dryKgOf, runDryKg, blockCost, statusOf, runBlocksOf, movesOf, madePrice } from './batches-math.js';
 import {
   BatchError, MAX_BLOCKS, MAX_NOTE, EARLIEST, bad, conflict, isPlain, intIn, numIn, isDate, grouped, textOf, weightOf,
 } from './batches-fields.js';
@@ -20,7 +21,7 @@ const SHARED = ['crop', 'supplier', 'receivedAt', 'pricePerBlock', 'spawnBatch',
 const MAKING = ['recipeId', 'mixedAt', 'incubation', 'incubatedFrom', 'incubatedTo'];
 const COPIED = [...SHARED, 'kind', ...MAKING];
 const CSV_HEAD = ['received', 'crop', 'kind', 'supplier', 'strain', 'spawn batch', 'delivery note', 'blocks', 'lost', 'price per block', 'room',
-  'run started', 'placed', 'block kg', 'water %', 'note'];
+  'run started', 'placed', 'block kg', 'water %', 'note', 'mixed', 'recipe'];
 const pick = (row, keys) => Object.fromEntries(keys.map((k) => [k, row[k]]));
 
 // The receive fields of body, checked (spec 3). With `was` (an edit) only the fields given are checked and returned, the
@@ -130,15 +131,26 @@ export function createBatches({ db, now = Date.now, log = console.error }) {
     return b;
   }
 
-  // Inventory's moves of a delivery written again from its rows (3.1); `gone`: ids of rows just deleted. Inside the write's
-  // transaction; nothing without Inventory's tables.
+  // After a write to a delivery, inside its transaction (`gone`: ids of rows just deleted): a made batch's price per block worked
+  // out again from its materials at Inventory's latest purchase prices and the blocks made, on every row (spec 4; over RM 1,000
+  // a block is a slip in the amounts: refused); then Inventory's moves written again from the rows (3.1), when its tables exist.
   function sync(firstId, gone = []) {
+    let family = store.family(firstId);
+    const first = family.find((b) => b.parentId == null);
+    const materials = first?.kind === 'made' ? store.materials(first.id) : [];
+    if (first?.kind === 'made') {
+      const price = madePrice(materials, (itemId) => store.purchasePrice(itemId), family.reduce((s, b) => s + b.blocks, 0));
+      if (price !== null && price > 1000) throw bad('The materials come to over RM 1,000 a block: check the amounts', 'materials');
+      if (family.some((b) => b.pricePerBlock !== price)) {
+        for (const b of family) store.update(b.id, { pricePerBlock: price });
+        family = store.family(firstId);
+      }
+    }
     if (!store.hasStock()) return;
-    const family = store.family(firstId);
     store.deleteMoves([...family.map((b) => b.id), ...gone]);
     if (!family.length) return;
     const itemId = store.blocksItem(`${cropShortName(family[0].crop)} blocks`);
-    for (const m of movesOf(family, (id) => store.checks(id))) store.insertMove({ itemId, ...m });
+    for (const m of movesOf(family, (id) => store.checks(id), materials)) store.insertMove({ itemId, ...m });
   }
 
   // Edit a made batch (spec 5): the Mix's fields and materials, the Inoculate step's (the spawn supplier, strain, spawn batch,
@@ -442,6 +454,10 @@ export function createBatches({ db, now = Date.now, log = console.error }) {
       tell([b]);
     },
 
+    // { items: [{ id, name, kind, unit, unitCost }] }: Inventory's items a made batch's materials may draw from, with their
+    // latest purchase price (decision 4 of part 2); none without Inventory.
+    stockItems: () => ({ items: store.stockItems() }),
+
     // ---- sterilising loads (spec 5): a made batch's, on its first row ----
 
     // A load on a made batch. -> the load.
@@ -515,10 +531,11 @@ export function createBatches({ db, now = Date.now, log = console.error }) {
       const from = asked.from ?? addDays(today, -89);
       const to = asked.to ?? today;
       const rows = store.all().filter((b) => localDate(b.receivedAt) >= from && localDate(b.receivedAt) <= to).toReversed();
+      const recipes = new Map(store.recipes().map((r) => [r.id, r.name]));
       const lines = [CSV_HEAD, ...rows.map((b) => [
         localDate(b.receivedAt), cropShortName(b.crop), b.kind, b.supplier, b.strain, b.spawnBatch, b.deliveryRef, b.blocks, b.lost,
         b.pricePerBlock, b.roomName, b.runStartedAt == null ? null : localDate(b.runStartedAt), b.placedAt == null ? null : localDate(b.placedAt),
-        b.blockKg, b.waterPct, b.note,
+        b.blockKg, b.waterPct, b.note, b.mixedAt == null ? null : localDate(b.mixedAt), recipes.get(b.recipeId) ?? null,
       ])];
       return { name: `batches ${from}–${to}.csv`, text: `${lines.map((l) => l.map(cell).join(',')).join('\r\n')}\r\n` };
     },

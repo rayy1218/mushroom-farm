@@ -342,10 +342,10 @@ test('the CSV: the head, oldest first, the formula guard, the default 90 days', 
   const { name, text } = batches.csv();
   assert.equal(name, 'batches 2026-08-08–2026-11-05.csv');
   const lines = text.trimEnd().split('\r\n');
-  assert.equal(lines[0], 'received,crop,kind,supplier,strain,spawn batch,delivery note,blocks,lost,price per block,room,run started,placed,block kg,water %,note');
+  assert.equal(lines[0], 'received,crop,kind,supplier,strain,spawn batch,delivery note,blocks,lost,price per block,room,run started,placed,block kg,water %,note,mixed,recipe');
   assert.equal(lines.length, 3);
-  assert.equal(lines[1], "2026-11-02,Grey oyster,bought,'=cmd,,0912,,1200,0,2.3,Container 1,2026-10-31,2026-11-05,,,");
-  assert.match(lines[2], /,"a, b"$/);
+  assert.equal(lines[1], "2026-11-02,Grey oyster,bought,'=cmd,,0912,,1200,0,2.3,Container 1,2026-10-31,2026-11-05,,,,,");
+  assert.match(lines[2], /,"a, b",,$/);
   assert.equal(batches.csv({ from: '2026-11-04', to: '2026-11-04' }).text.trimEnd().split('\r\n').length, 2);
   assert.equal(status(() => batches.csv({ from: 'x' }))[0], 400);
 });
