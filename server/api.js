@@ -16,6 +16,7 @@ import { createTaskRoutes } from './tasks-api.js';
 import { createTasks } from './tasks.js';
 import { createHarvests } from './harvests.js';
 import { createHarvestRoutes } from './harvest-api.js';
+import { createSalesRoutes } from './sales-api.js';
 import { DEFAULT_GATEWAY, sameGateway } from './gateways.js';
 
 const MAX_BODY = 64 * 1024;
@@ -90,6 +91,7 @@ export function createApi(db, machines = null, controller = null, poller = null,
   const harvestRoutes = createHarvestRoutes({ harvests, onTaskChange: (roomId) => { publishRoom(roomId, 'tasks'); publishDue(); } });
   const stopTellingHarvests = [harvests.onChange(publishHarvest), taskStore.onHarvest(publishHarvest)];
   const stopTelling = () => { stopTellingTasks(); stopTellingHarvests.forEach((stop) => stop()); harvests.stop(); };
+  const salesRoutes = createSalesRoutes({ db, events }); // Sales (spec 2026-11-05-sales-design.md 5)
   // The room body; on the farm's gateway its addresses must differ from the outdoor sensor's (read through that gateway).
   // stored: the room as it is (an update): a filter setting or the gateway left out is its stored value, so the checks compare
   // what will be saved. The farm's own gateway is stored as null, its one spelling, so the address checks see it as the farm's.
@@ -121,6 +123,7 @@ export function createApi(db, machines = null, controller = null, poller = null,
     if (simulationRoutes && await simulationRoutes(req, res, path, { send, readJson, HttpError })) return;
     if (await taskRoutes(req, res, path, { send, readJson, HttpError, url })) return;
     if (await harvestRoutes(req, res, path, { send, readJson, HttpError, url })) return;
+    if (await salesRoutes(req, res, path, { send, readJson, HttpError, url })) return;
     if (path === '/api/settings') {
       if (req.method === 'GET') return send(res, 200, settingsReply());
       if (req.method !== 'PUT') throw notFound();
