@@ -10,6 +10,7 @@ import { goodOf, dryKgOf, runDryKg, blockCost, statusOf, runBlocksOf, movesOf } 
 import {
   BatchError, MAX_BLOCKS, MAX_NOTE, EARLIEST, bad, conflict, isPlain, intIn, numIn, isDate, grouped, textOf, weightOf,
 } from './batches-fields.js';
+import { checkRecipe } from './batches-making.js';
 
 export { BatchError, MAX_BLOCKS };
 export const CAUSES = ['green', 'black', 'bacterial', 'pests', 'other'];
@@ -112,6 +113,9 @@ export function createBatches({ db, now = Date.now, log = console.error }) {
       }
     }
   }
+
+  // name → an unarchived recipe other than exceptId has it, case aside (spec 2: a name is unique among those in use).
+  const nameTaken = (exceptId) => (name) => store.recipes().some((r) => !r.archived && r.id !== exceptId && r.name.toLowerCase() === name.toLowerCase());
 
   function batchOf(id) {
     const b = Number.isInteger(id) ? store.get(id) : null;
@@ -328,6 +332,31 @@ export function createBatches({ db, now = Date.now, log = console.error }) {
         sync(firstOf(b));
       });
       tell([b]);
+    },
+
+    // ---- recipes (spec 5) ----
+
+    // { recipes } by name: those in use, or with all every one (archived too).
+    recipes({ all = false } = {}) {
+      return { recipes: store.recipes().filter((r) => all || !r.archived) };
+    },
+
+    // A new recipe. → the recipe.
+    addRecipe(body) {
+      const fields = checkRecipe(body, { taken: nameTaken(null) });
+      const id = store.insertRecipe({ ...fields, createdAt: now() });
+      tell([]);
+      return store.recipe(id);
+    },
+
+    // A recipe's fields, or { archived: true } (never deleted: the batches made with it name it). A batch's materials were
+    // copied at its mix: they do not change. → the recipe.
+    editRecipe(id, body) {
+      const was = Number.isInteger(id) ? store.recipe(id) : null;
+      if (!was) throw new BatchError(404, 'Recipe not found');
+      store.updateRecipe(id, checkRecipe(body, { was, taken: nameTaken(id) }));
+      tell([]);
+      return store.recipe(id);
     },
 
     // { <crop>: dry kg per block } of a run's batches whose weights are all known (spec 3.2; harvests.js).
