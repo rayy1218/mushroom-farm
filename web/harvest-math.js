@@ -117,8 +117,9 @@ const dayOf = (ms) => dayMonth(farmDate(ms));
 const whenText = (ms) => `${dayOf(ms).replace(' ', NB)} ${farmTime(ms)}`; // "4 Nov" never parts at a wrap
 const andList = (words) => (words.length < 2 ? words.join('') : `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`);
 
-// The days from one farm time to another: "20 Oct", "21–27 Oct", "30 Oct – 4 Nov", "28 Dec 2025 – 30 Jan 2026".
-function dayRange(from, to) {
+// The days from one farm time to another: "20 Oct", "21–27 Oct", "30 Oct – 4 Nov", "28 Dec 2025 – 30 Jan 2026". (Exported
+// for the Run page's dates, spec 2026-11-05-runs-design.md 7: one formatter for a run's days.)
+export function dayRange(from, to) {
   const [a, b] = [farmDate(from), farmDate(to)];
   if (a === b) return dayMonth(a);
   if (a.slice(0, 4) !== b.slice(0, 4)) return `${longDate(a)} – ${longDate(b)}`;
