@@ -1,6 +1,6 @@
 // The Batches page, #/business/batches, and a batch's page, #/business/batches/<id> (spec 2026-11-05-batches-design.md 7):
-// the batches waiting, in the rooms' current runs and past (one run's with ?run=); a batch's details, its delivery and its
-// contamination checks, with its actions. Both read again on the batches events, a room's crop or name change (a run starts
+// the batches being made and waiting, in the rooms' current runs and past (one run's with ?run=); a batch's details, its
+// delivery, its contamination checks and, a made one's, its Making card, with its actions. Both read again on the batches events, a room's crop or name change (a run starts
 // or ends), when the stream comes back, and on a timer.
 
 import { request, OFFLINE, OUTDATED, routeMissing } from './api.js';
@@ -11,11 +11,12 @@ import { DOT } from './text-math.js';
 import { farmDate } from './tasks-math.js';
 import { BATCHES_HASH, batchHash, batchSheetHash, roomHash } from './route.js';
 import { createBatchDialogs } from './batches-dialogs.js';
+import { makingNodes } from './batches-making.js';
 import { closeTaskDialog } from './task-dialogs.js';
 import { tileNodes } from './harvest-card.js';
 import {
   pageGroups, pastIn, PAST_RANGES, PAST_COLUMNS, pastCells, waitingLine, placedLine, goodText, cropBlocks, detailFacts, overNote,
-  statusLine, checkLine, deliveryLine, fullDate, dateText, countBlocks, figureLine, waitingLong, runOf, runYieldFacts,
+  statusLine, checkLine, deliveryLine, fullDate, dateText, countBlocks, figureLine, waitingLong, runOf, runYieldFacts, statusText, placeable,
 } from './batches-math.js';
 
 const REFRESH_MS = 60_000;
@@ -139,6 +140,8 @@ const LIST = `
     </div>
     <div class="bt-tools">
       <button type="button" class="primary" data-receive>Receive blocks</button>
+      <button type="button" data-make>Make blocks</button>
+      <button type="button" data-recipes data-focus-key="recipes">Recipes</button>
       <a class="button" data-csv download>Export CSV</a>
       <a class="button" data-sheet>myGAP 4-2 sheet</a>
     </div>
@@ -176,6 +179,8 @@ export function mount(container, { run = null } = {}) {
     onChanged: () => { if (alive()) { refocus.wait(dialogs.openerKey()); read.load(); } }, onError: showError, alive,
   });
   q('[data-receive]').addEventListener('click', () => dialogs.receive());
+  q('[data-make]').addEventListener('click', () => dialogs.mix()); // on to the new batch's page: no focus key
+  q('[data-recipes]').addEventListener('click', () => dialogs.recipes());
   q('[data-retry]').addEventListener('click', () => read.load());
 
   const ranges = PAST_RANGES.map(([n, label]) => {
@@ -230,7 +235,10 @@ export function mount(container, { run = null } = {}) {
     for (const [n, b] of ranges) b.setAttribute('aria-pressed', String(n === days));
     const g = pageGroups(list);
     const now = Date.now();
-    els.waiting.replaceChildren(...(g.waiting.length ? g.waiting.map((b) => batchRow(b, waitingLine(b, now), putAction(b, dialogs, { focusKey: `put-${b.id}` })))
+    // the made batches still being made above the waiting ones, with their status line (spec 7); Put into a room once they can go in
+    const waiting = [...g.making, ...g.waiting];
+    els.waiting.replaceChildren(...(waiting.length ? waiting.map((b) => batchRow(b, b.kind === 'made' ? statusText(b, today) : waitingLine(b, now),
+      placeable(b) ? putAction(b, dialogs, { focusKey: `put-${b.id}` }) : null))
       : [el('p', 'none', 'No blocks waiting. Receive blocks when a delivery comes in.')]));
     // an in-room row: Record a check, the phone's way to it (the batch's page has it too)
     const checkAction = (b) => {
@@ -265,7 +273,9 @@ export function mount(container, { run = null } = {}) {
 // ---- a batch ----
 
 // The body: on a desk Details and Delivery at the left, Contamination and This run at the right; on a phone one column in this
-// order, Contamination first (the floor's job: record a check), then This run, Details and Delivery.
+// order, Contamination first (the floor's job: record a check), then This run, Details and Delivery. A made batch's Making card
+// goes at the top of the left column while the batch is being made, at its foot once it is made (moved in the DOM, so the
+// reading and tab order are the order seen).
 const ONE = `
   <a class="back" href="${BATCHES_HASH}">Batches</a>
   <div class="page-head">
@@ -292,6 +302,7 @@ const ONE = `
       </section>
     </div>
     <div class="bt-main">
+      <section class="card bt-card bt-making" aria-labelledby="bt-making-title" data-making-card hidden><h2 id="bt-making-title">Making</h2><div data-making></div></section>
       <section class="card bt-card" aria-labelledby="bt-details-title">
         <h2 id="bt-details-title">Details</h2>
         <p class="bt-over" data-over hidden></p>
@@ -312,6 +323,7 @@ export function mountBatch(container, { id }) {
     pic: q('[data-pic]'), actions: q('[data-actions]'), body: q('[data-body]'), over: q('[data-over]'), facts: q('[data-facts]'),
     deliveryCard: q('[data-delivery-card]'), delivery: q('[data-delivery]'), addCheck: q('[data-add-check]'), checks: q('[data-checks]'),
     gone: q('[data-gone]'), runCard: q('[data-run-card]'), runTitle: q('[data-run-title]'), run: q('[data-run]'),
+    makingCard: q('[data-making-card]'), making: q('[data-making]'), main: q('.bt-main'),
   };
   document.title = 'Batch · Mushroom farm';
   let painted = '';
@@ -368,23 +380,28 @@ export function mountBatch(container, { id }) {
     const key = JSON.stringify([b, today]);
     if (key === painted) return;
     painted = key;
-    document.title = `${countBlocks(b.blocks, b.crop)} · Mushroom farm`;
+    const made = b.kind === 'made';
+    const name = made ? `${countBlocks(b.blocks, b.crop)}${DOT}made` : countBlocks(b.blocks, b.crop);
+    document.title = `${name} · Mushroom farm`;
     els.gone.hidden = true;
     els.body.hidden = false;
     els.pic.replaceChildren(picture('crop', b.crop, { size: 40 }));
-    els.title.textContent = countBlocks(b.blocks, b.crop);
+    els.title.textContent = name;
     els.figures.textContent = figureLine(b);
-    // "Received 3 Nov · Agro Supplies · In Container 1", the room a link to its Harvest tab while the batch is in it
-    const status = statusLine(b);
+    // "Received 3 Nov · Agro Supplies · In Container 1", the room a link to its Harvest tab while the batch is in it; a made
+    // batch's: its status line ("Inoculated 4 Nov", "In Container 1")
+    const status = made ? statusText(b, today) : statusLine(b);
     let statusNode = status;
     if (b.status === 'placed' && Number.isInteger(b.roomId)) {
       statusNode = el('a', 'bt-room-link', status);
       statusNode.href = roomHash(b.roomId, 'harvest');
     }
-    els.sub.replaceChildren([`Received ${dateText(b.receivedAt, today).replace(/ /g, '\u00a0')}`, b.supplier].filter(Boolean).join(DOT) + DOT, statusNode);
+    if (made) els.sub.replaceChildren(statusNode);
+    else els.sub.replaceChildren([`Received ${dateText(b.receivedAt, today).replace(/ /g, '\u00a0')}`, b.supplier].filter(Boolean).join(DOT) + DOT, statusNode);
 
+    const onGone = () => { location.hash = BATCHES_HASH; };
     const actions = [];
-    if (b.status === 'waiting') {
+    if (placeable(b)) {
       actions.push(putAction(b, dialogs, { focusKey: 'put', primary: true }));
     } else if (b.status === 'placed') {
       const out = button('Take out');
@@ -392,10 +409,11 @@ export function mountBatch(container, { id }) {
       out.addEventListener('click', () => dialogs.takeOut(b));
       actions.push(out);
     }
-    // Delete is inside Edit, a quiet red button at its footer's start (as Harvest's)
+    // Delete is inside Edit, a quiet red button at its footer's start (as Harvest's); a made batch's Edit is Edit the mix
     const edit = button('Edit');
     edit.dataset.focusKey = 'edit';
-    edit.addEventListener('click', () => dialogs.edit(b, { onGone: () => { location.hash = BATCHES_HASH; } }));
+    if (made) edit.setAttribute('aria-label', 'Edit the mix');
+    edit.addEventListener('click', () => (made ? dialogs.mix(b, { onGone }) : dialogs.edit(b, { onGone })));
     els.actions.replaceChildren(...actions, edit);
 
     const over = overNote(b);
@@ -406,6 +424,12 @@ export function mountBatch(container, { id }) {
       row.append(el('dt', '', label), el('dd', '', value));
       return row;
     }));
+
+    els.makingCard.hidden = !made;
+    const top = made && b.status === 'making'; // moved only when its place changes: a move would drop the focus inside it
+    if (top && els.main.firstElementChild !== els.makingCard) els.main.prepend(els.makingCard);
+    if (!top && els.main.lastElementChild !== els.makingCard) els.main.append(els.makingCard);
+    els.making.replaceChildren(...(made ? makingNodes(b, dialogs, today, { onGone }) : []));
 
     els.deliveryCard.hidden = b.delivery.length < 2;
     els.delivery.replaceChildren(...b.delivery.map((x) => {

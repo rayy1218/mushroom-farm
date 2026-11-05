@@ -108,8 +108,8 @@ export function detailFacts(b) {
 }
 export const overNote = (b) => (b.status === 'placed' && finite(b.runBlocks) && finite(b.batchBlocks) && b.batchBlocks > b.runBlocks
   ? `Batches hold ${countBlocks(b.batchBlocks, b.crop)}; the run has ${grouped(b.runBlocks, 0)}.` : null);
-// "In Container 1" kept whole at a wrap (the Units Rule's no-break spaces).
-export const statusLine = (b) => (b.status === 'waiting' ? 'Waiting' : b.status === 'placed' ? `In ${b.roomName ?? 'a deleted room'}`.replace(/ /g, NB)
+// "In Container 1" kept whole at a wrap (the Units Rule's no-break spaces); a made batch's row still being made "Making".
+export const statusLine = (b) => (b.status === 'waiting' ? 'Waiting' : b.status === 'making' ? 'Making' : b.status === 'placed' ? `In ${b.roomName ?? 'a deleted room'}`.replace(/ /g, NB)
   : `Past${DOT}${b.roomName ?? 'a deleted room'}`);
 // The head's figures: "788 good · 12 lost" (the lost part only after a loss).
 export const figureLine = (b) => [`${grouped(b.good, 0)} good`, b.lost > 0 ? `${grouped(b.lost, 0)} lost` : null].filter(Boolean).join(DOT);
@@ -122,14 +122,15 @@ export const deliveryLine = (x) => `${blocksText(x.blocks)}${DOT}${statusLine(x)
 // Waiting this many days or more, a batch shows on the Today page: bought blocks should go into a room soon.
 export const BATCH_WAIT_DAYS = 3;
 // The waiting batches (with a good block) received BATCH_WAIT_DAYS or more days ago, oldest first. → [{ id, text, href }]:
-// "400 Grey oyster blocks waiting 40 days".
+// "400 Grey oyster blocks waiting 40 days". A made batch waits from the day it was ready to fruit, not from its mix.
+const waitsFrom = (b) => (b.kind === 'made' && finite(b.incubatedTo) ? b.incubatedTo : b.receivedAt);
 export function waitingLong(batches, nowMs) {
   const today = farmDate(nowMs);
   return (Array.isArray(batches) ? batches : [])
-    .filter((b) => b.status === 'waiting' && b.good > 0 && finite(b.receivedAt) && daysFrom(farmDate(b.receivedAt), today) >= BATCH_WAIT_DAYS)
-    .sort((a, b) => a.receivedAt - b.receivedAt || a.id - b.id)
+    .filter((b) => b.status === 'waiting' && b.good > 0 && finite(waitsFrom(b)) && daysFrom(farmDate(waitsFrom(b)), today) >= BATCH_WAIT_DAYS)
+    .sort((a, b) => waitsFrom(a) - waitsFrom(b) || a.id - b.id)
     .map((b) => {
-      const n = daysFrom(farmDate(b.receivedAt), today);
+      const n = daysFrom(farmDate(waitsFrom(b)), today);
       return { id: b.id, text: `${countBlocks(b.good, b.crop)} waiting ${n}${NB}${n === 1 ? 'day' : 'days'}`, href: batchHash(b.id) };
     });
 }
@@ -541,7 +542,7 @@ export const placeable = (b) => b.status === 'waiting' || (b.status === 'making'
 export const materialLine = (m) => [m.item === 'other' ? m.name ?? MATERIAL_NAMES.other : MATERIAL_NAMES[m.item] ?? m.item, qtyText(m.qty, m.unit),
   m.itemName ? `from ${m.itemName}` : null].filter(Boolean).join(DOT);
 // "4 Nov 08:12 · Atmospheric steam · 400 bags · 98 °C for 6 h · Ali": a sterilising load (hot_at: it reached the temperature).
-export const loadLine = (l, today) => [`${dateText(l.hotAt, today)} ${farmTime(l.hotAt)}`, METHOD_NAMES[l.method] ?? l.method, bagsText(l.bags),
+export const loadLine = (l, today) => [`${wholeDate(l.hotAt, today)}${NB}${farmTime(l.hotAt)}`, METHOD_NAMES[l.method] ?? l.method, bagsText(l.bags),
   `${grouped(l.tempC, 0, 1)}${NB}°C for ${grouped(l.holdH, 0, 1)}${NB}h`, l.worker].filter(Boolean).join(DOT);
 // The amber note when the loads hold fewer bags than were made: "300 of 400 bags sterilised"; null with no load or all done.
 export function sterilisedNote(b) {
@@ -549,6 +550,9 @@ export function sterilisedNote(b) {
   const total = madeBlocks(b);
   return done > 0 && done < total ? `${grouped(done, 0)} of ${grouped(total, 0)} bags sterilised` : null;
 }
+// The amber note when the materials at Inventory's purchase prices come to over RM 1,000 a block (the server's priceOver; the
+// price is then null), else null.
+export const priceOverNote = (b) => (b.priceOver === true ? "The materials' price comes to over RM 1,000 a block: check Inventory's purchase prices." : null);
 // How a made block's price comes about (decision 6 of part 2), or why there is none.
 export const madePriceNote = (b) => (finite(b.pricePerBlock)
   ? "The price per block is the materials at Inventory's latest purchase prices when the batch was last saved: a later purchase counts at its next change."
@@ -557,19 +561,19 @@ export const madePriceNote = (b) => (finite(b.pricePerBlock)
 function incubationLines(b, today) {
   if (b.incubation === 'room') return [finite(b.placedAt) && b.roomName ? `In a grow room${DOT}${b.roomName}` : 'In a grow room: put the blocks into a room'];
   if (b.incubation !== 'area') return [];
-  const since = `In an area since ${dateText(b.incubatedFrom, today)}`;
-  return [finite(b.incubatedTo) ? `${since}${DOT}ready to fruit ${dateText(b.incubatedTo, today)}` : `${since}${DOT}day ${daysFrom(farmDate(b.incubatedFrom), today) + 1}`];
+  const since = `In an area since ${wholeDate(b.incubatedFrom, today)}`;
+  return [finite(b.incubatedTo) ? `${since}${DOT}ready to fruit ${wholeDate(b.incubatedTo, today)}` : `${since}${DOT}day ${daysFrom(farmDate(b.incubatedFrom), today) + 1}`];
 }
 
-// The Making card's steps in order (spec 5), from a made batch's detail: [{ key, title, lines, done, can, why }]. Each step can
+// The Making card's steps in order (spec 5; their dates kept whole at a wrap, as the status line's), from a made batch's detail: [{ key, title, lines, done, can, why }]. Each step can
 // be recorded or edited at any time (can), except the incubation before the inoculation, or while blocks are in a room (where
 // they incubate is fixed then); why: the reason, for the button's title. The loads are the detail's, listed by the card.
 export function makingSteps(b, today) {
   const inoculated = finite(b.inoculatedAt);
   const placed = (b.delivery ?? [b]).some((x) => finite(x.placedAt));
   const spawn = (b.materials ?? []).find((m) => m.item === 'spawn');
-  const mixed = [`Mixed ${dateText(b.mixedAt ?? b.receivedAt, today)}`, b.recipe ? `recipe ${b.recipe.name}` : 'no recipe', bagsText(madeBlocks(b))].join(DOT);
-  const inoculation = [`Inoculated ${dateText(b.inoculatedAt, today)}`, b.supplier, b.strain, b.spawnBatch ? `batch ${b.spawnBatch}` : null,
+  const mixed = [`Mixed ${wholeDate(b.mixedAt ?? b.receivedAt, today)}`, b.recipe ? `recipe ${b.recipe.name}` : 'no recipe', bagsText(madeBlocks(b))].join(DOT);
+  const inoculation = [`Inoculated ${wholeDate(b.inoculatedAt, today)}`, b.supplier, b.strain, b.spawnBatch ? `batch${NB}${b.spawnBatch}` : null,
     spawn ? `${qtyText(spawn.qty, spawn.unit)} spawn` : null].filter(Boolean).join(DOT);
   return [
     { key: 'mix', title: 'Mix', done: true, can: true, why: null, lines: [mixed, ...(b.materials ?? []).filter((m) => m.item !== 'spawn').map(materialLine)] },

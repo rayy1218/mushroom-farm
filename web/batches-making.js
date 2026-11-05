@@ -1,8 +1,9 @@
 // Making blocks on the Batches pages (spec 2026-11-05-batches-design.md 5 and 7): the Recipes dialog (the list, Add, Edit,
 // Archive), Make blocks and Edit the mix, a sterilising load (Record, Edit, Delete), the inoculation, the incubation, Ready
-// to fruit. The dialogs use the tasks' dialog (openForm) through createBatchDialogs' tools, which wires them in: after a
+// to fruit; and the Making card of a made batch's page. The dialogs use the tasks' dialog (openForm) through createBatchDialogs' tools, which wires them in: after a
 // change, or a 404 or 409, the page reads again. An Inventory item is offered only on a line it can count: a line in kg an
-// item kept in kg, bags and pieces an item kept in pieces; with none, no picker.
+// item kept in kg, bags and pieces an item kept in pieces (Inventory's spawn items for the spawn, its others for the mix); with
+// none, no picker.
 
 import { request } from './api.js';
 import { CROP_KEYS, cropShortName } from './crops.js';
@@ -13,7 +14,7 @@ import { batchHash } from './route.js';
 import {
   MIX_ITEMS, RECIPE_PARTS, MATERIAL_NAMES, METHOD_NAMES, numberOf, recipeLine, sumText, recipeValues, recipeBody, mixValues,
   recipeFill, mixBody, waterGuide, inoculateValues, inoculateBody, loadValues, loadBody, incubateValues, incubateBody, readyBody,
-  countBlocks, bagsText, fullDate,
+  makingSteps, loadLine, sterilisedNote, madePriceNote, priceOverNote, countBlocks, bagsText, fullDate,
 } from './batches-math.js';
 
 const finite = (x) => typeof x === 'number' && Number.isFinite(x);
@@ -69,6 +70,8 @@ export function createMakingDialogs({ send, closing, ask, remember, alive, onErr
     }
   }
   const noDialog = () => !document.querySelector('dialog[open]');
+  // a pair of short boxes (amounts, parts): side by side on a phone too
+  const short = (...fields) => ({ ...pair(...fields), className: 'bt-pair bt-short' });
 
   // ---- recipes ----
 
@@ -124,14 +127,14 @@ export function createMakingDialogs({ send, closing, ask, remember, alive, onErr
         { name: 'crop', label: 'Crop', kind: 'select', value: v.crop, options: [['', 'Any crop'], ...CROP_OPTIONS] },
         {
           kind: 'group', legend: 'Parts of the dry weight', className: 'bt-group bt-parts', fields: [
-            pair(part('sawdustPct', 'Sawdust'), part('branPct', 'Bran')),
-            pair(part('limePct', 'Lime'), part('gypsumPct', 'Gypsum')),
+            short(part('sawdustPct', 'Sawdust'), part('branPct', 'Bran')),
+            short(part('limePct', 'Lime'), part('gypsumPct', 'Gypsum')),
             pair(part('otherPct', 'Other'), { name: 'otherName', label: 'Other: what', kind: 'text', value: v.otherName, maxLength: 80 }),
           ],
         },
         {
           kind: 'group', legend: 'A bag', className: 'bt-group', fields: [
-            pair(
+            short(
               { name: 'waterPct', label: 'Water', kind: 'number', value: v.waterPct, suffix: '%' },
               { name: 'bagKg', label: 'Wet weight', kind: 'number', value: v.bagKg, suffix: 'kg' },
             ),
@@ -182,7 +185,7 @@ export function createMakingDialogs({ send, closing, ask, remember, alive, onErr
   function mixFields(v, list, items, can, stored) {
     const picker = (item, unit) => {
       const kept = v[`item-${item}`];
-      const offered = itemsFor(items, unit);
+      const offered = itemsFor(items, unit).filter((s) => s.kind !== 'spawn'); // the spawn is the Inoculate step's line
       if (!offered.length && !kept) return null;
       const keptName = stored.find((m) => m.item === item)?.itemName;
       return { name: `item-${item}`, label: 'Inventory item', kind: 'select', value: kept, options: itemOptions(offered, kept, keptName) };
@@ -201,9 +204,9 @@ export function createMakingDialogs({ send, closing, ask, remember, alive, onErr
       });
     } else { // the amounts two to a row
       materials = [
-        pair(amount('sawdust'), amount('bran')), pair(amount('lime'), amount('gypsum')),
+        short(amount('sawdust'), amount('bran')), short(amount('lime'), amount('gypsum')),
         pair(amount('other'), { name: 'otherName', label: 'Other: what', kind: 'text', value: v.otherName, maxLength: 80 }),
-        pair(amount('bags')),
+        short(amount('bags')),
       ];
     }
     return [
@@ -226,7 +229,7 @@ export function createMakingDialogs({ send, closing, ask, remember, alive, onErr
       },
       {
         kind: 'group', legend: 'Weight', className: 'bt-group', hint: "A bag's wet weight and water, from the recipe. With them the Harvest tab's BE uses this batch's dry substrate.", fields: [
-          pair(
+          short(
             { name: 'blockKg', label: 'Bag weight', kind: 'number', value: v.blockKg, suffix: 'kg' },
             { name: 'waterPct', label: 'Water', kind: 'number', value: v.waterPct, suffix: '%' },
           ),
@@ -329,12 +332,12 @@ export function createMakingDialogs({ send, closing, ask, remember, alive, onErr
         ),
         {
           kind: 'group', className: 'tk-when', fields: [
-            { name: 'hotDate', label: 'Reached the temperature', kind: 'date', value: v.hotDate, min: farmDate(b.mixedAt ?? b.receivedAt), max: today(), hintOf: dateHint },
+            { name: 'hotDate', label: 'Up to temperature', kind: 'date', value: v.hotDate, min: farmDate(b.mixedAt ?? b.receivedAt), max: today(), hintOf: dateHint },
             { name: 'hotTime', label: 'At', kind: 'text', value: v.hotTime, placeholder: '08:12', inputMode: 'numeric', maxLength: 5, hint: '24 h, like 08:12 or 0812' },
           ],
         },
-        pair(
-          { name: 'tempC', label: 'Temperature reached', kind: 'number', value: v.tempC, suffix: '°C' },
+        short(
+          { name: 'tempC', label: 'Temperature', kind: 'number', value: v.tempC, suffix: '°C' },
           { name: 'holdH', label: 'Held for', kind: 'number', value: v.holdH, suffix: 'h' },
         ),
         who,
@@ -370,8 +373,9 @@ export function createMakingDialogs({ send, closing, ask, remember, alive, onErr
     const items = itemData.items ?? [];
     const v = inoculateValues(b, today());
     const stored = (b.materials ?? []).find((m) => m.item === 'spawn');
-    const picks = (unit) => itemOptions(itemsFor(items, unit), unit === v.spawnUnit ? v.spawnItem : '', stored?.itemName);
-    const withPicker = items.some((s) => s.unit === 'kg' || s.unit === 'pcs') || Boolean(v.spawnItem);
+    const spawnItems = items.filter((s) => s.kind === 'spawn'); // Inventory's spawn, in kg or in pieces (bags)
+    const picks = (unit) => itemOptions(itemsFor(spawnItems, unit), unit === v.spawnUnit ? v.spawnItem : '', stored?.itemName);
+    const withPicker = spawnItems.some((s) => s.unit === 'kg' || s.unit === 'pcs') || Boolean(v.spawnItem);
     const done = finite(b.inoculatedAt);
     const form = ask({
       title: done ? 'Edit the inoculation' : 'Record the inoculation',
@@ -462,4 +466,57 @@ export function createMakingDialogs({ send, closing, ask, remember, alive, onErr
   }
 
   return { recipes, mix, sterilise, inoculate, incubate, ready };
+}
+
+// The Making card of a made batch's page (spec 5): the steps in order, each a section under its head with what was recorded
+// and its button (Record a plain button, Edit a quiet one, as the Contamination card's); the loads each with a quiet Edit (Delete inside it) and the amber note while fewer bags were sterilised than
+// made; a step that cannot be done yet says why in words, its button disabled; then how the price per block comes about (in
+// amber when the materials come to over RM 1,000 a block).
+// b: the detail; dialogs: createBatchDialogs' (the making ones are in it; onGone: after the batch's Delete); today: the
+// farm's date. → the card's nodes.
+export function makingNodes(b, dialogs, today, { onGone = () => {} } = {}) {
+  const nodes = makingSteps(b, today).map((s) => {
+    const step = el('section', 'bt-step');
+    const head = el('div', 'bt-step-head');
+    const title = el('h3', 'bt-step-title', s.title);
+    title.id = `bt-step-${s.key}`;
+    step.setAttribute('aria-labelledby', title.id);
+    const tools = el('div', 'bt-step-tools');
+    head.append(title, tools);
+    step.append(head, ...s.lines.map((text) => el('p', 'bt-line', text)));
+    const loads = s.key === 'sterilise' ? b.loads ?? [] : [];
+    if (s.key === 'mix') tools.append(action('Edit', 'mix', 'Edit the mix', () => dialogs.mix(b, { onGone }), 'bt-quiet'));
+    if (s.key === 'sterilise') {
+      for (const l of loads) {
+        const row = el('div', 'bt-load');
+        row.append(el('p', 'bt-line', loadLine(l, today)),
+          action('Edit', `load-${l.id}`, `Edit the load of ${fullDate(l.hotAt)}`, () => dialogs.sterilise(b, l), 'bt-quiet'));
+        step.append(row);
+      }
+      const note = sterilisedNote(b);
+      if (note) step.append(el('p', 'bt-over', note));
+      tools.append(action('Record a load', 'load', 'Record a sterilising load', () => dialogs.sterilise(b)));
+    }
+    if (s.key === 'inoculate') {
+      tools.append(action(s.done ? 'Edit' : 'Record', 'inoculate', s.done ? 'Edit the inoculation' : 'Record the inoculation', () => dialogs.inoculate(b), s.done ? 'bt-quiet' : ''));
+    }
+    let go = null;
+    if (s.key === 'incubate') {
+      if (b.incubation === 'area' && !finite(b.incubatedTo) && s.can) tools.append(action('Ready to fruit', 'ready', null, () => dialogs.ready(b)));
+      go = action(s.done ? 'Edit' : 'Record', 'incubate', s.done ? 'Edit the incubation' : 'Record the incubation', () => dialogs.incubate(b), s.done ? 'bt-quiet' : '');
+      go.disabled = !s.can;
+      tools.append(go);
+    }
+    const empty = !s.lines.length && !loads.length;
+    if (empty || (go?.disabled && s.why)) { // "Not yet." and, when it cannot be done yet, why: the disabled button's description
+      const why = el('p', empty ? 'none' : 'bt-reason', [empty ? 'Not yet.' : null, go?.disabled && s.why ? `${s.why}.` : null].filter(Boolean).join(' '));
+      why.id = `bt-step-${s.key}-why`;
+      if (go?.disabled) go.setAttribute('aria-describedby', why.id);
+      step.append(why);
+    }
+    return step;
+  });
+  const over = priceOverNote(b); // the price refused: said in amber instead of how it comes about
+  nodes.push(over ? el('p', 'bt-over bt-making-note', over) : el('p', 'muted bt-making-note', madePriceNote(b)));
+  return nodes;
 }

@@ -9,6 +9,7 @@ import {
   inoculateValues, inoculateBody, loadValues, loadBody, incubateValues, incubateBody, readyBody, qtyText, bagsText, pctText,
   statusText, placeable, pageGroups, placedLine, detailFacts, makingSteps, loadLine, sterilisedNote, madePriceNote, sheetRows,
 } from '../web/batches-math.js';
+import { waitingLong, deliveryLine, priceOverNote } from '../web/batches-math.js';
 
 const nb = '\u00a0';
 const dot = `${nb}· `;
@@ -169,12 +170,12 @@ test('the Making card\'s steps: what each recorded, and what can be done next', 
   });
   const steps = makingSteps(mk, today);
   assert.deepEqual(steps.map((s) => [s.key, s.done, s.can]), [['mix', true, true], ['sterilise', false, true], ['inoculate', true, true], ['incubate', true, true]]);
-  assert.deepEqual(steps[0].lines, [`Mixed 3 Nov${dot}recipe Sawdust 78${dot}400${nb}bags`, `Sawdust${dot}287${nb}kg${dot}from Sawdust (Kilang Jaya)`, `Cotton waste${dot}10${nb}kg`]);
-  assert.deepEqual(steps[2].lines, [`Inoculated 4 Nov${dot}Spawn Co${dot}PL-27${dot}batch 0912${dot}12${nb}kg spawn`]);
-  assert.deepEqual(steps[3].lines, [`In an area since 4 Nov${dot}day 2`]);
-  assert.deepEqual(makingSteps({ ...mk, incubatedTo: NOW }, today)[3].lines, [`In an area since 4 Nov${dot}ready to fruit 5 Nov`]);
+  assert.deepEqual(steps[0].lines, [`Mixed 3${nb}Nov${dot}recipe Sawdust 78${dot}400${nb}bags`, `Sawdust${dot}287${nb}kg${dot}from Sawdust (Kilang Jaya)`, `Cotton waste${dot}10${nb}kg`]);
+  assert.deepEqual(steps[2].lines, [`Inoculated 4${nb}Nov${dot}Spawn Co${dot}PL-27${dot}batch${nb}0912${dot}12${nb}kg spawn`]);
+  assert.deepEqual(steps[3].lines, [`In an area since 4${nb}Nov${dot}day 2`]);
+  assert.deepEqual(makingSteps({ ...mk, incubatedTo: NOW }, today)[3].lines, [`In an area since 4${nb}Nov${dot}ready to fruit 5${nb}Nov`]);
   const fresh = makingSteps(b({}), today);
-  assert.deepEqual([fresh[0].lines[0], fresh[2].lines, fresh[3].can, fresh[3].why], [`Mixed 3 Nov${dot}no recipe${dot}400${nb}bags`, [], false, 'Record the inoculation first']);
+  assert.deepEqual([fresh[0].lines[0], fresh[2].lines, fresh[3].can, fresh[3].why], [`Mixed 3${nb}Nov${dot}no recipe${dot}400${nb}bags`, [], false, 'Record the inoculation first']);
   const inRoom = makingSteps(b({ inoculatedAt: NOW - DAY, incubation: 'room', placedAt: NOW, roomName: 'Container 1', status: 'placed' }), today)[3];
   assert.deepEqual([inRoom.lines, inRoom.can, inRoom.why], [[`In a grow room${dot}Container 1`], false, 'Some blocks are in a room']);
   assert.deepEqual(makingSteps(b({ inoculatedAt: NOW - DAY, incubation: 'room' }), today)[3].lines, ['In a grow room: put the blocks into a room']);
@@ -182,7 +183,7 @@ test('the Making card\'s steps: what each recorded, and what can be done next', 
 
 test('a load\'s line, the amber note of bags not yet sterilised, the price note', () => {
   assert.equal(loadLine({ hotAt: Date.UTC(2026, 10, 4, 0, 12), method: 'steam', bags: 400, tempC: 98, holdH: 6, worker: 'Ali' }, '2026-11-05'),
-    `4 Nov 08:12${dot}Atmospheric steam${dot}400${nb}bags${dot}98${nb}°C for 6${nb}h${dot}Ali`);
+    `4${nb}Nov${nb}08:12${dot}Atmospheric steam${dot}400${nb}bags${dot}98${nb}°C for 6${nb}h${dot}Ali`);
   assert.equal(sterilisedNote(b({ loads: [{ bags: 300 }] })), '300 of 400 bags sterilised');
   assert.equal(sterilisedNote(b({ loads: [{ bags: 300 }, { bags: 100 }] })), null);
   assert.equal(sterilisedNote(b({ loads: [] })), null);
@@ -204,4 +205,21 @@ test('the 4-2 sheet: a made batch\'s receipt is its spawn, its use "made into" t
   assert.deepEqual(sheetRows([{ ...first, inoculatedAt: null, spawn: null }], range), [], 'not inoculated yet: nothing to write');
   assert.equal(sheetRows([{ ...first, spawn: { qty: 30, unit: 'bags', unitCost: null } }], range)[0][3], '', 'no price: blank to write in');
   assert.equal(sheetRows([{ ...first, spawn: null }], range)[0][2], '', 'no spawn line: blank');
+});
+
+test("the Today page's Blocks waiting: a made batch waits from the day it was ready to fruit, not from its mix", () => {
+  const ready = b({ status: 'waiting', receivedAt: NOW - 30 * DAY, mixedAt: NOW - 30 * DAY, inoculatedAt: NOW - 29 * DAY, incubation: 'area',
+    incubatedFrom: NOW - 29 * DAY, incubatedTo: NOW - DAY });
+  assert.deepEqual(waitingLong([ready], NOW), []);
+  assert.deepEqual(waitingLong([{ ...ready, incubatedTo: NOW - 4 * DAY }], NOW).map((x) => x.text), [`400 Grey oyster blocks waiting 4${nb}days`]);
+});
+
+test("a delivery's row still being made says Making", () => {
+  assert.equal(deliveryLine(b({ blocks: 300 })), `300${nb}blocks${dot}Making`);
+});
+
+test('the amber note of a made price over RM 1,000 a block', () => {
+  assert.equal(priceOverNote(b({ priceOver: true })), "The materials' price comes to over RM 1,000 a block: check Inventory's purchase prices.");
+  assert.equal(priceOverNote(b({ pricePerBlock: 0.71 })), null);
+  assert.equal(priceOverNote(b({ priceOver: false })), null);
 });
