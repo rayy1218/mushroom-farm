@@ -6,7 +6,8 @@ import assert from 'node:assert/strict';
 import {
   moneyText, perKgText, monthTitle, monthTiles, categoryRows, categoryTotal, entryLine, repeatingLine, runRow, runParts, profitBars,
   monthsBetween, monthNotes, amountOf, bodyOf, clampMonth, runOn, landingText, billPeriod, checkCost, stopCharges, stopWords,
-  deleteWords, monthSpan, chartMonths, chartTitle, noFigures, AMOUNT_MESSAGE, WORKER_MESSAGE, amountBox,
+  deleteWords, monthSpan, chartMonths, chartTitle, noFigures, AMOUNT_MESSAGE, WORKER_MESSAGE, amountBox, chargeDayText, toComeNote,
+  chartWords, runProfitLine, SHARED_NOTE,
 } from '../web/costs-math.js';
 import { DOT } from '../web/text-math.js';
 
@@ -68,17 +69,17 @@ test('the Costs tile says when some costs have no price; a pending run shows das
 
 test('rows: categories with their source, entries, monthly items, runs', () => {
   assert.deepEqual(categoryRows([{ key: 'blocks-batches', label: 'Blocks', source: 'batches', amount: 250, share: 83 }]),
-    [{ label: 'Blocks', source: 'from Batches', amount: `RM${NB}250.00`, share: `83${NB}%` }]);
+    [{ label: 'Blocks', source: 'from Batches', href: '#/business/batches', amount: `RM${NB}250.00`, share: `83${NB}%` }]);
   assert.deepEqual(entryLine({ date: '2026-11-03', label: 'Labour', worker: 'Ali', note: 'Oct sales bonus', roomName: null, amount: 230, repeat: null }),
     { date: '3 Nov', what: `Labour${DOT}Ali${DOT}Oct sales bonus`, whom: 'The farm', amount: `RM${NB}230.00`, monthly: false, bill: false, topUp: null });
   assert.deepEqual(repeatingLine({ date: '2026-08-31', category: 'rent', note: 'Shop lot', worker: null, roomName: null, amount: 1500 }),
-    { what: `Rent${DOT}Shop lot`, whom: 'The farm', amount: `RM${NB}1,500.00 a${NB}month`, since: 'since Aug 2026' });
+    { what: `Rent${DOT}Shop lot`, whom: 'The farm', amount: `RM${NB}1,500.00 a${NB}month`, since: 'since Aug 2026', when: 'on the 31st' });
   const rent = { date: '2026-08-31', category: 'rent', note: '', roomName: null, amount: 1500 };
   assert.equal(repeatingLine({ ...rent, repeatUntil: '2026-10' }).since, 'since Aug 2026, until Oct 2026');
   assert.equal(repeatingLine({ ...rent, repeatUntil: '2026-08' }).since, 'Aug 2026 only');
   assert.equal(repeatingLine({ ...rent, repeatUntil: null }).since, 'since Aug 2026');
   const run = {
-    startedAt: Date.UTC(2026, 9, 2, 16), endedAt: null, roomName: 'Container 1', crops: [{ crop: 'oyster', blocks: 100 }],
+    id: 4, roomId: 7, startedAt: Date.UTC(2026, 9, 2, 16), endedAt: null, roomName: 'Container 1', crops: [{ crop: 'oyster', blocks: 100 }],
     income: 300, costs: 640, profit: -340, profitPerKg: -17, parts: { blocks: 250, energy: 40, water: 0, own: 50, shared: 300 },
   };
   assert.deepEqual(runRow(run).cells, [`RM${NB}300.00`, `RM${NB}640.00`, `−RM${NB}340.00`, `−RM${NB}17.00`]);
@@ -86,12 +87,15 @@ test('rows: categories with their source, entries, monthly items, runs', () => {
   assert.equal(runRow(run).crops, 'Grey oyster');
   assert.equal(runRow(run).crop, run.crops[0].crop, 'the main crop, for its picture');
   assert.equal(runRow({ ...run, crops: [] }).crop, null);
+  assert.equal(runRow(run).roomHref, '#/rooms/7/harvest', "the container links to its Harvest tab");
   assert.deepEqual(runParts(run).map(([label]) => label), ['Blocks', 'Electricity', 'Own costs', 'Share of shared costs', 'Income', 'Picked', 'Sold']);
+  assert.equal(runParts(run)[0][2], '#/business/batches?run=4', "the Blocks part links to the run's batches");
+  assert.deepEqual(runParts(run).slice(1).map((p) => p.length), [2, 2, 2, 2, 2, 2], 'only Blocks links');
 });
 
 test('a run: costs left out say so; a loss per kg in the loss tone; the breakdown names unpriced blocks and the kg', () => {
   const run = {
-    startedAt: Date.UTC(2026, 9, 2, 16), endedAt: null, roomName: 'Container 2', crops: [], income: 2800, costs: 4945.27, profit: -2145.27,
+    id: 2, roomId: 3, startedAt: Date.UTC(2026, 9, 2, 16), endedAt: null, roomName: 'Container 2', crops: [], income: 2800, costs: 4945.27, profit: -2145.27,
     profitPerKg: -12.26, kgHarvested: 210.5, kgSold: 175, incomplete: true,
     parts: { blocks: 0, energy: 40, water: 0, own: 0, shared: 300 }, notes: [{ kind: 'unpriced-batch', text: 'Container 2’s blocks of 12 Oct have no price', runId: 2 }],
   };
@@ -102,7 +106,7 @@ test('a run: costs left out say so; a loss per kg in the loss tone; the breakdow
   assert.equal(runRow({ ...run, incomplete: false, profit: 10, profitPerKg: 0.5 }).perKgLoss, false);
   assert.equal(runRow({ ...run, profitPerKg: -0.00001 }).perKgLoss, false, 'a loss rounding to zero is not one');
   assert.deepEqual(runParts(run), [
-    ['Blocks', 'no price'], ['Electricity', `RM${NB}40.00`], ['Share of shared costs', `RM${NB}300.00`], ['Income', `RM${NB}2,800.00`],
+    ['Blocks', 'no price', '#/business/batches?run=2'], ['Electricity', `RM${NB}40.00`], ['Share of shared costs', `RM${NB}300.00`], ['Income', `RM${NB}2,800.00`],
     ['Picked', `210.5${NB}kg`], ['Sold', `175.0${NB}kg`],
   ]);
   assert.equal(runParts({ ...run, parts: { ...run.parts, blocks: 250 } })[0][1], `RM${NB}250.00, some with no price`);
@@ -195,7 +199,7 @@ test('entry lines: a utility bill and a monthly repeat; category rows without a 
   assert.deepEqual(entryLine({ date: '2026-11-03', category: 'utilities', utility: 'electricity', roomName: 'Container 1', amount: 90, repeat: 'monthly' }),
     { date: '3 Nov', what: 'Electricity bill', whom: 'Container 1', amount: `RM${NB}90.00`, monthly: true, bill: true, topUp: null });
   assert.deepEqual(categoryRows([{ label: 'Other', source: 'mystery', amount: 10, share: null }]),
-    [{ label: 'Other', source: null, amount: `RM${NB}10.00`, share: '—' }]);
+    [{ label: 'Other', source: null, href: null, amount: `RM${NB}10.00`, share: '—' }]);
 });
 
 test('by category: an entered line says so beside the same name from another source; the total is the Costs tile', () => {
@@ -204,6 +208,7 @@ test('by category: an entered line says so beside the same name from another sou
     { label: 'Rent', source: 'manual', amount: 1500, share: 23 },
   ]);
   assert.deepEqual(rows.map((r) => r.source), ['from Inventory', 'entered', null]);
+  assert.deepEqual(rows.map((r) => r.href), ['#/business/inventory', null, null], 'a source in another module links to it');
   assert.equal(categoryTotal({ pending: false, tiles: { costs: 6560 } }), `RM${NB}6,560.00`);
   assert.equal(categoryTotal({ pending: true, tiles: { costs: null } }), '—');
 });
@@ -321,4 +326,63 @@ test('an amount box shows the amount grouped, as the page does; it reads back th
   assert.equal(amountBox(1800), '1,800.00');
   assert.equal(amountBox(12.5), '12.50');
   assert.equal(amountOf(amountBox(1234567.89)), 1234567.89);
+});
+
+// ---- the Business audit, 2026-11-05 ----
+
+test("a monthly item's line says its charge day and the next charge", () => {
+  const rent = { date: '2026-08-25', category: 'rent', note: '', roomName: null, amount: 1500, repeatUntil: null };
+  assert.equal(chargeDayText(rent, '2026-11-05'), `on the 25th${DOT}next 25 Nov`);
+  assert.equal(chargeDayText(rent, '2026-11-25'), `on the 25th${DOT}next 25 Dec`, 'charged today: the next is next month');
+  assert.equal(chargeDayText({ ...rent, date: '2026-08-31' }, '2026-11-05'), `on the 31st${DOT}next 30 Nov`, 'a shorter month: its last day');
+  assert.equal(chargeDayText({ ...rent, date: '2026-08-01' }, '2026-12-05'), `on the 1st${DOT}next 1 Jan`);
+  assert.equal(chargeDayText({ ...rent, date: '2026-08-02' }, '2026-11-05'), `on the 2nd${DOT}next 2 Dec`);
+  assert.equal(chargeDayText({ ...rent, date: '2026-08-23' }, '2026-11-05'), `on the 23rd${DOT}next 23 Nov`);
+  assert.equal(chargeDayText({ ...rent, date: '2026-08-12' }, '2026-11-05'), `on the 12th${DOT}next 12 Nov`, '11th to 13th take th');
+  assert.equal(chargeDayText({ ...rent, repeatUntil: '2026-10' }, '2026-11-05'), 'on the 25th', 'stopped: no next');
+  assert.equal(chargeDayText({ ...rent, repeatUntil: '2026-11' }, '2026-11-26'), 'on the 25th', 'its last charge gone by');
+  assert.equal(chargeDayText(rent, null), 'on the 25th');
+  assert.equal(repeatingLine(rent, '2026-11-05').when, `on the 25th${DOT}next 25 Nov`);
+});
+
+test('the month note of the monthly items still to charge this month (only on this month)', () => {
+  const item = (over) => ({ date: '2026-08-25', category: 'labour', note: '', worker: 'Ali', amount: 1700, repeat: 'monthly', repeatUntil: null, ...over });
+  const view = {
+    month: '2026-11', today: '2026-11-05', pending: false, notes: [],
+    repeating: [
+      item({ id: 1 }), item({ id: 2, worker: 'Siti', amount: 1700 }), item({ id: 3, category: 'utilities', utility: 'other', worker: null, note: 'Internet', amount: 129 }),
+      item({ id: 4, category: 'rent', worker: null, date: '2026-08-01', amount: 1500 }), // charged on the 1st
+      item({ id: 5, category: 'repairs', worker: null, date: '2026-11-04', amount: 90 }), // its first charge, gone by
+    ],
+  };
+  assert.deepEqual(toComeNote(view), { kind: 'to-come', text: `Still to come this month: RM${NB}3,529.00 (2 wages, internet)`, warn: false });
+  assert.equal(toComeNote({ ...view, month: '2026-10' }), null, 'a month gone by');
+  assert.equal(toComeNote({ ...view, today: '2026-11-25' }), null, 'all charged');
+  assert.equal(toComeNote({ ...view, repeating: [item({ category: 'rent', worker: null })] }).text, `Still to come this month: RM${NB}1,700.00 (rent)`);
+  assert.equal(monthNotes(view).at(-1).text, toComeNote(view).text, 'the notes end with it');
+  assert.equal(monthNotes({ pending: false, notes: [] }).length, 0, "a run's notes: none");
+});
+
+test('Runs say how shared costs are split', () => {
+  assert.equal(SHARED_NOTE, 'Shared costs (rent, wages, …) are split over the runs by block-days.');
+});
+
+test("the chart's words for a screen reader: the months in sum, the highest and the lowest", () => {
+  const months = [
+    { month: '2026-08', income: 0, costs: 0, profit: 0 },
+    { month: '2026-09', income: 100, costs: 4905, profit: -4805 },
+    { month: '2026-10', income: 4000, costs: 236, profit: 3764 },
+    { month: '2026-11', income: 0, costs: null, profit: null, pending: true },
+  ];
+  assert.equal(chartWords(months, 'Profit, last 4 months (RM)'),
+    `Profit, last 4 months (RM): 1 month with a profit, 1 with a loss, 1 with nothing recorded, 1 being worked out. Highest October 2026, profit RM${NB}3,764.00. Lowest September 2026, loss RM${NB}4,805.00.`);
+  assert.equal(chartWords(months.slice(2, 3), 'Profit, 1 month (RM)'), `Profit, 1 month (RM): 1 month with a profit. Highest October 2026, profit RM${NB}3,764.00.`);
+});
+
+test("the Harvest tab's profit line of the run (Costs' summary)", () => {
+  assert.equal(runProfitLine({ total: 640, income: 900, profit: 260 }), `Profit so far RM${NB}260.00${DOT}Costs`);
+  assert.equal(runProfitLine({ total: 640, income: 300, profit: -340 }), `Loss so far RM${NB}340.00${DOT}Costs`, 'a loss in words');
+  assert.equal(runProfitLine({ total: 0, income: 0, profit: 0 }), null, 'Costs has nothing');
+  assert.equal(runProfitLine({ total: null, income: 300, profit: null }), null, 'still worked out');
+  assert.equal(runProfitLine(null), null);
 });

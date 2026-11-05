@@ -100,7 +100,7 @@ test('a harvest line: when, what (the crop only in a mixed room), kg exact, who,
 
 test('a past run: a row of the Past runs table, its dates and the figures that are known', () => {
   const run = { ...oneCrop, endedAt: at(2026, 11, 2, 10) };
-  assert.deepEqual(PAST_COLUMNS, ['Dates', 'Crops', 'kg', 'kg per block', 'BE', 'Expected value', 'Cost per kg']);
+  assert.deepEqual(PAST_COLUMNS, ['Dates', 'Crops', 'kg', 'kg per block', 'BE', 'Expected value', 'Energy per kg']);
   assert.deepEqual(pastRow(run), {
     title: '3 Oct – 2 Nov',
     cells: [`Grey oyster 500${nb}blocks`, `18.4${nb}kg`, `0.04${nb}kg`, `34${nb}%`, `RM${nb}221.28`, `RM${nb}3.10`],
@@ -156,7 +156,7 @@ test('the tiles: kg, kg per block, BE, expected value, cost per kg with what it 
     { label: 'kg per block', value: `0.04${nb}kg` },
     { label: 'BE', title: 'Biological efficiency', value: `34${nb}%` },
     { label: 'Expected value', value: `RM${nb}221.28` },
-    { label: 'Cost per kg', value: `RM${nb}3.10`, line: `electricity and water${dot}46${nb}days` },
+    { label: 'Energy per kg', value: `RM${nb}3.10`, line: `electricity and water${dot}46${nb}days` },
   ]);
   assert.equal(runTiles({ ...oneCrop, cost: { ...oneCrop.cost, days: 1, water: false } })[4].line, `electricity${dot}1${nb}day`);
   const none = runTiles({ ...oneCrop, kg: 0, perBlock: 0, be: null, value: null, cost: { costPerKg: null, cost: 4, days: 2, water: false } });
@@ -168,17 +168,17 @@ test('the tiles: kg, kg per block, BE, expected value, cost per kg with what it 
 
 test('no energy recorded: the cost per kg is a dash that says so, never RM 0.00', () => {
   const t = runTiles({ ...oneCrop, cost: { costPerKg: null, cost: 0, days: 41, water: false, none: 'no-energy' } })[4];
-  assert.deepEqual(t, { label: 'Cost per kg', value: '—', line: 'No energy recorded yet' });
+  assert.deepEqual(t, { label: 'Energy per kg', value: '—', line: 'No energy recorded yet' });
   assert.deepEqual(pageTiles({ ...farm, totals: { ...farm.totals, cost: { costPerKg: null, cost: 0, days: 30, water: false, none: 'no-energy' } } })[2],
-    { label: 'Cost per kg', value: '—', line: 'No energy recorded yet' });
-  assert.equal(pricesNote(oneCrop.cost), 'The cost per kg is at today’s prices.');
+    { label: 'Energy per kg', value: '—', line: 'No energy recorded yet' });
+  assert.equal(pricesNote(oneCrop.cost), 'Energy per kg is at today’s prices.');
   assert.equal(pricesNote({ costPerKg: null, none: 'no-energy' }), null);
   assert.equal(pricesNote(null), null);
 });
 
 test('a cost still being worked out: a dash that says so, the room tab, the page and a past run alike', () => {
   const pending = { costPerKg: null, cost: null, days: 41, water: false, none: 'pending' };
-  const tile = { label: 'Cost per kg', value: '—', line: 'Working out the energy cost…' };
+  const tile = { label: 'Energy per kg', value: '—', line: 'Working out the energy cost…' };
   assert.deepEqual(runTiles({ ...oneCrop, cost: pending })[4], tile);
   assert.deepEqual(pageTiles({ ...farm, totals: { ...farm.totals, cost: { ...pending, days: 30 } } })[2], tile);
   assert.equal(pastRow({ ...oneCrop, endedAt: oneCrop.startedAt, cost: pending }).cells.at(-1), '—');
@@ -299,7 +299,7 @@ test("the page's tiles: kg, expected value, cost per kg with what it counts", ()
   assert.deepEqual(pageTiles(farm), [
     { label: 'kg', value: `64.5${nb}kg` },
     { label: 'Expected value', value: `RM${nb}774.00` },
-    { label: 'Cost per kg', value: `RM${nb}3.10`, line: `electricity and water${dot}30${nb}days` },
+    { label: 'Energy per kg', value: `RM${nb}3.10`, line: `electricity and water${dot}30${nb}days` },
   ]);
   assert.equal(pageTiles({ ...farm, totals: { ...farm.totals, value: 720, unpriced: ['pink'] } })[1].line, `without Pink oyster (4.5${nb}kg, no price)`, 'the kg from By crop');
   const none = pageTiles({ ...farm, totals: { kg: 0, value: null, cost: { costPerKg: null, cost: 0, days: 30, water: false } } });

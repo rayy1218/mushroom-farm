@@ -53,17 +53,18 @@ export function costText({ costPerKg, days, water } = {}) {
   return `${costKgText(costPerKg)} per${NB}kg${DOT}${water ? 'electricity and water' : 'electricity'}${over} at today’s prices`;
 }
 
-// The cost per kg tile: its figure and what it counts; a dash that says why when no energy was recorded (never RM 0.00) or
+// The energy per kg tile (2026-11-05, the Business audit: "Energy per kg", as it counts only the electricity and water; the
+// whole cost per kg is Costs'): its figure and what it counts; a dash that says why when no energy was recorded (never RM 0.00) or
 // while the server still works the room's energy out (its harvest event then reloads the page).
 const NONE_LINES = { 'no-energy': 'No energy recorded yet', pending: 'Working out the energy cost…' };
 function costTile(cost) {
-  const label = 'Cost per kg';
+  const label = 'Energy per kg';
   if (NONE_LINES[cost?.none]) return { label, value: DASH, line: NONE_LINES[cost.none] };
   return finite(cost?.costPerKg) ? { label, value: costKgText(cost.costPerKg), line: costBasis(cost) } : { label, value: DASH };
 }
 
-// The note under the tiles when a cost per kg shows: its prices are today's.
-export const pricesNote = (cost) => (finite(cost?.costPerKg) ? 'The cost per kg is at today’s prices.' : null);
+// The note under the tiles when an energy per kg shows: its prices are today's.
+export const pricesNote = (cost) => (finite(cost?.costPerKg) ? 'Energy per kg is at today’s prices.' : null);
 
 const names = (crops) => crops.map(cropName).join(', ');
 
@@ -142,7 +143,7 @@ export function harvestLine(h, { mixed = false } = {}) {
 }
 
 // The Past runs table: a row per run, its dates first (the row's name, opening the run), then PAST_COLUMNS' figures.
-export const PAST_COLUMNS = ['Dates', 'Crops', 'kg', 'kg per block', 'BE', 'Expected value', 'Cost per kg'];
+export const PAST_COLUMNS = ['Dates', 'Crops', 'kg', 'kg per block', 'BE', 'Expected value', 'Energy per kg'];
 
 // A past run: { title: its dates, cells: the crops and blocks, kg, kg per block, BE, RM, cost per kg (a dash when unknown) }.
 export function pastRow(run) {
@@ -328,7 +329,7 @@ export function overviewTiles(farm) {
   };
 }
 
-// The page's tiles over its range, as the room tab's: kg, expected value, cost per kg.
+// The page's tiles over its range, as the room tab's: kg, expected value, energy per kg.
 export function pageTiles(farm) {
   return [
     { label: 'kg', value: kgText(farm.totals?.kg) },

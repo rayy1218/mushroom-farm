@@ -163,15 +163,28 @@ test("This run: the run's batches read with its harvests under the same token, a
   assert.ok(card.includes("import { batchLineFor } from './batches-math.js';"));
   assert.ok(card.includes("return { runId: run.id, reply: await request('GET', `/api/batches?run=${run.id}`) };"));
   const load = card.slice(card.indexOf('async function refresh() {'), card.indexOf('// ---- Batches ---- the current run'));
-  assert.match(load, /const runBlocks = await readBlocks\(data\.current\);[^\n]*\n\s*if \(!alive \|\| me !== seq\) return;\n\s*view = data;\n\s*blocks = runBlocks;\n\s*paint\(\);/,
+  assert.match(load, /const \[runBlocks, runProfit\] = await Promise\.all\(\[readBlocks\(data\.current\), readProfit\(data\.current\)\]\);\n\s*if \(!alive \|\| me !== seq\) return;\n\s*view = data;\n\s*blocks = runBlocks;\n\s*profit = runProfit;\n\s*paint\(\);/,
     'a stale answer is dropped before anything changes');
   assert.ok(card.includes('return blocks?.runId === run.id ? blocks : null;'), 'a failed read keeps the same run\'s line');
-  assert.ok(card.includes('const key = JSON.stringify([view, showAll, [...allOf], blocks]);'), 'a new answer repaints');
-  assert.ok(card.includes("runCard.append(el('h2', '', 'This run'), runLine, blocksLine, tiles, runBody);"), 'under the run\'s head');
+  assert.ok(card.includes('const key = JSON.stringify([view, showAll, [...allOf], blocks, profit]);'), 'a new answer repaints');
+  assert.ok(card.includes("runCard.append(el('h2', '', 'This run'), runLine, blocksLine, profitLine, tiles, runBody);"), 'under the run\'s head');
   assert.ok(card.includes("const blocksLine = el('p', 'muted bz-blocks');"));
   assert.ok(card.includes('const line = batchLineFor(run, blocks?.runId === run.id ? blocks.reply : null);'));
   assert.ok(card.includes('blocksLine.hidden = !line;'));
   assert.ok(card.includes("live.on('batches', () => reload.call()),"));
   assert.ok(EVENT_TYPES.includes('batches'));
   assert.equal((card.match(/batchLineFor/g) ?? []).length, 2, 'only in This run');
+});
+
+// ---- Costs ---- (the Business audit, 2026-11-05): the run's profit so far, a muted line to the Costs page
+test("This run: the run's profit from Costs' summary, read with the harvests, a muted link to Costs; again on 'costs' and 'sales'", () => {
+  assert.ok(card.includes("import { runProfitLine } from './costs-math.js';"));
+  assert.ok(card.includes("return { runId: run.id, reply: await request('GET', `/api/costs/summary?run=${run.id}`) };"));
+  assert.ok(card.includes('return profit?.runId === run.id ? profit : null;'), "a failed read keeps the same run's line");
+  assert.ok(card.includes("const profitLine = el('p', 'muted bz-blocks hv-profit');"), "the blocks line's look");
+  assert.ok(card.includes('const money = runProfitLine(profit?.runId === run.id ? profit.reply : null);'));
+  assert.ok(card.includes('profitLine.hidden = !money;'), 'hidden when Costs has nothing');
+  assert.ok(card.includes('a.href = COSTS_HASH;'));
+  assert.ok(card.includes("live.on('costs', () => reload.call()),") && card.includes("live.on('sales', () => reload.call()),"));
+  assert.ok(EVENT_TYPES.includes('costs') && EVENT_TYPES.includes('sales'));
 });

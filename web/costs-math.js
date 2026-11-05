@@ -12,6 +12,7 @@ import { cropShortName } from './crops.js';
 import { mainCrop } from './room-card-math.js';
 import { DOT } from './text-math.js';
 import { niceScale } from './usage-math.js';
+import { roomHash, batchesRunHash, BATCHES_HASH, INVENTORY_HASH, SALES_HASH } from './route.js';
 
 const NB = ' ';
 const DASH = '—';
@@ -72,17 +73,23 @@ export function monthTiles({ pending, tiles: t }) {
 
 // The notes under the tiles: the one pending note first; an input left out of the costs (a batch or a purchase with no
 // price) in the warning tone. [{ kind, text, warn }].
+// This month's view ends them with the monthly items still to charge (toComeNote).
 const WARN_KINDS = ['unpriced-batch', 'no-unit-cost'];
-export const monthNotes = ({ pending, notes }) => [...(pending ? [{ kind: 'pending', text: PENDING }] : []), ...notes]
-  .map((n) => ({ kind: n.kind, text: n.text, warn: WARN_KINDS.includes(n.kind) }));
+export function monthNotes(view) {
+  const toCome = view.repeating ? toComeNote(view) : null;
+  return [...(view.pending ? [{ kind: 'pending', text: PENDING }] : []), ...view.notes, ...(toCome ? [toCome] : [])]
+    .map((n) => ({ kind: n.kind, text: n.text, warn: WARN_KINDS.includes(n.kind) }));
+}
 
 // Where a line comes from, in a muted line under its name (nothing for one entered here).
 // A line entered here says "entered" when the same name also comes from another source (Packaging from Inventory too).
+// A source in another module links to its page (2026-11-05, the Business audit).
 export const SOURCE_WORDS = { manual: null, batches: 'from Batches', inventory: 'from Inventory', measured: 'measured', bill: `bill${NB}−${NB}measured` };
+const SOURCE_HASH = { batches: BATCHES_HASH, inventory: INVENTORY_HASH, sales: SALES_HASH };
 export const categoryRows = (list) => list.map((c) => {
   const twin = c.source === 'manual' && list.some((o) => o !== c && o.label === c.label && o.source !== 'manual');
   return {
-    label: c.label, source: twin ? 'entered' : SOURCE_WORDS[c.source] ?? null, amount: moneyText(c.amount),
+    label: c.label, source: twin ? 'entered' : SOURCE_WORDS[c.source] ?? null, href: SOURCE_HASH[c.source] ?? null, amount: moneyText(c.amount),
     share: finite(c.share) ? `${c.share}${NB}%` : DASH,
   };
 });
@@ -113,36 +120,77 @@ export const entryLine = (e) => ({
   bill: isBill(e), topUp: isBill(e) && e.topUp ? topUpText(e.topUp, e.date) : null,
 });
 
-// A monthly item: { what, whom, amount, since } (since: "since Aug 2026", "since Aug 2026, until Oct 2026", "Aug 2026 only").
-export function repeatingLine(c) {
+// A monthly item: { what, whom, amount, since, when } (since: "since Aug 2026", "since Aug 2026, until Oct 2026", "Aug 2026
+// only"; when: chargeDayText's).
+export function repeatingLine(c, today = null) {
   const first = c.date.slice(0, 7);
   const until = c.repeatUntil ?? null;
   const since = !until ? `since ${monthShort(first)}` : until === first ? `${monthShort(first)} only` : `since ${monthShort(first)}, until ${monthShort(until)}`;
-  return { what: whatOf(c), whom: c.roomName ?? 'The farm', amount: `${moneyText(c.amount)} a${NB}month`, since };
+  return { what: whatOf(c), whom: c.roomName ?? 'The farm', amount: `${moneyText(c.amount)} a${NB}month`, since, when: chargeDayText(c, today) };
 }
+
+// ---- a monthly item's charge day (2026-11-05, the Business audit: mid-month, the month's costs are only those charged so
+// far) ----
+const ordinal = (n) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'}`;
+// Its charge in `month` (server/costs-math.js chargeDate): its day, the month's last when shorter; its first month, its date.
+const chargeIn = (c, month) => (month === c.date.slice(0, 7) ? c.date
+  : `${month}-${String(Math.min(Number(c.date.slice(8, 10)), daysIn(month))).padStart(2, '0')}`);
+// "on the 25th · next 25 Nov": its day, and its next charge after today (none when it stops before).
+export function chargeDayText(c, today) {
+  const day = `on the ${ordinal(Number(c.date.slice(8, 10)))}`;
+  if (!today) return day;
+  const month = today.slice(0, 7);
+  const next = [month, shiftMonth(month, 1)].map((m) => chargeIn(c, m)).find((d) => d > today && d >= c.date);
+  return next && !(c.repeatUntil && next.slice(0, 7) > c.repeatUntil) ? `${day}${DOT}next ${dayMonth(next)}` : day;
+}
+// A monthly item's short name in the note: a wage, the note of an "other" cost ("internet"), else its category.
+const itemName = (c) => {
+  const name = c.category === 'labour' ? 'wage' : (c.category === 'other' || c.category === 'utilities') && c.note ? c.note : nameOf(c);
+  return name.charAt(0).toLowerCase() + name.slice(1);
+};
+// This month's monthly items still to charge after today: { kind: 'to-come', text: "Still to come this month: RM 3,529.00
+// (2 wages, internet)", warn: false }, the biggest first; null in a month gone by or with none.
+export function toComeNote({ month, today, repeating = [] }) {
+  if (!today || month !== today.slice(0, 7)) return null;
+  const due = repeating.filter((c) => !(c.repeatUntil && c.repeatUntil < month) && chargeIn(c, month) > today);
+  if (!due.length) return null;
+  const groups = new Map();
+  for (const c of due) {
+    const name = itemName(c);
+    const g = groups.get(name) ?? { name, n: 0, amount: 0 };
+    g.n += 1;
+    g.amount += c.amount;
+    groups.set(name, g);
+  }
+  const names = [...groups.values()].sort((a, b) => b.amount - a.amount).map((g) => (g.n > 1 ? `${g.n} ${g.name}s` : g.name));
+  const sum = Math.round(due.reduce((s, c) => s + c.amount, 0) * 100) / 100;
+  return { kind: 'to-come', text: `Still to come this month: ${moneyText(sum)} (${names.join(', ')})`, warn: false };
+}
+// The muted line under Runs.
+export const SHARED_NOTE = 'Shared costs (rent, wages, …) are split over the runs by block-days.';
 
 export const RUN_COLUMNS = ['Dates', 'Container', 'Crops', 'Income', 'Costs', 'Profit', 'Profit per kg'];
 
-// A run's row: { dates, room, crops, crop (the main crop, for its picture; null without), cells (Income, Costs, Profit, Profit
-// per kg), loss (Profit), perKgLoss, incomplete (some of its costs have no price) }.
+// A run's row: { dates, room, roomHref (its Harvest tab), crops, crop (the main crop, for its picture; null without), cells
+// (Income, Costs, Profit, Profit per kg), loss (Profit), perKgLoss, incomplete (some of its costs have no price) }.
 export function runRow(run) {
   const to = run.endedAt === null ? 'now' : dayText(run.endedAt);
   const cells = [moneyText(run.income), moneyText(run.costs), moneyText(run.profit), perKgText(run.profitPerKg)];
   return {
-    dates: `${dayText(run.startedAt)}${NB}–${NB}${to}`, room: run.roomName,
+    dates: `${dayText(run.startedAt)}${NB}–${NB}${to}`, room: run.roomName, roomHref: roomHash(run.roomId, 'harvest'),
     crops: run.crops.map((c) => cropShortName(c.crop)).join(', '), crop: mainCrop(run.crops),
     cells, loss: isLoss(cells[2]), perKgLoss: isLoss(cells[3]), incomplete: run.incomplete === true,
   };
 }
 
-// A run's breakdown under its row: [[label, value]], the parts that are not 0 (Blocks also when a batch of the run has no
-// price: "no price"), then income and the kg picked and sold.
+// A run's breakdown under its row: [[label, value, href?]], the parts that are not 0 (Blocks also when a batch of the run has
+// no price: "no price"; Blocks only come from Batches, so it links to the run's batches), then income and the kg picked and sold.
 export function runParts(run) {
   const p = run.parts;
   const unpriced = (run.notes ?? []).some((n) => n.kind === 'unpriced-batch');
   const blocks = unpriced ? (p.blocks > 0 ? `${moneyText(p.blocks)}, some with no price` : 'no price') : p.blocks > 0 ? moneyText(p.blocks) : null;
   return [
-    ...(blocks ? [['Blocks', blocks]] : []),
+    ...(blocks ? [['Blocks', blocks, batchesRunHash(run.id)]] : []),
     ...[['Electricity', p.energy], ['Water', p.water], ['Own costs', p.own], ['Share of shared costs', p.shared]]
       .filter(([, v]) => v > 0).map(([label, v]) => [label, moneyText(v)]),
     ['Income', moneyText(run.income)], ['Picked', kgText(run.kgHarvested)], ['Sold', kgText(run.kgSold)],
@@ -161,6 +209,22 @@ function barWords(x) {
   const what = x.pending || x.profit === null ? 'working out' : emptyMonth(x) ? 'nothing recorded'
     : x.profit < 0 && isLoss(moneyText(x.profit)) ? `loss ${moneyText(-x.profit)}` : `profit ${moneyText(x.profit)}`;
   return `${monthTitle(x.month)}: ${what}`;
+}
+
+// The chart's words for a screen reader (its aria-label): the title, the months counted by kind, the highest and the lowest.
+export function chartWords(months, title) {
+  const kinds = [['with a profit', 0], ['with a loss', 0], ['with nothing recorded', 0], ['being worked out', 0]];
+  const valued = [];
+  for (const x of months) {
+    const at = x.pending || x.profit === null ? 3 : emptyMonth(x) ? 2 : isLoss(moneyText(x.profit)) ? 1 : 0;
+    kinds[at][1] += 1;
+    if (at < 2) valued.push(x);
+  }
+  const counted = kinds.filter(([, n]) => n > 0).map(([words, n], i) => (i === 0 ? `${n} ${n === 1 ? 'month' : 'months'} ${words}` : `${n} ${words}`));
+  const say = (x) => barWords(x).replace(': ', ', ');
+  const sorted = [...valued].sort((a, b) => b.profit - a.profit);
+  const ends = sorted.length ? [`Highest ${say(sorted[0])}.`, ...(sorted.length > 1 ? [`Lowest ${say(sorted.at(-1))}.`] : [])] : [];
+  return [`${title}: ${counted.join(', ')}.`, ...ends].join(' ');
 }
 
 // The months the chart draws: the last 12, or the last 6 when 12 would make a slot under 24 px.
@@ -211,6 +275,15 @@ export function profitBars(months, shown, width, height, m = BARS_M) {
   };
   const tickValues = [...side(up, 1).reverse(), 0, ...side(down, -1)];
   return { bars, zeroY: y(0), ticks: tickValues.map((v) => ({ y: y(v), label: bareRm(v) })) };
+}
+
+// ---- the Harvest tab's line (2026-11-05, the Business audit) ----
+// The run's profit from GET /api/costs/summary?run=: "Profit so far RM 260.00 · Costs" ("Loss so far RM 340.00" for a loss,
+// in words); null while it is worked out or when Costs has nothing for the run.
+export function runProfitLine(s) {
+  if (!s || !finite(s.profit) || !finite(s.total) || (s.total === 0 && !(s.income > 0))) return null;
+  const text = moneyText(s.profit);
+  return isLoss(text) ? `Loss so far ${text.slice(MINUS.length)}${DOT}Costs` : `Profit so far ${text}${DOT}Costs`;
 }
 
 // ---- the dialogs (web/costs-dialogs.js) ----

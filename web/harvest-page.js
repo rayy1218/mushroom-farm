@@ -1,5 +1,5 @@
 // The farm's Harvest page, #/harvest (spec 2026-11-04-harvest-design.md 7): what every room picked over 7, 30, 90 or 365
-// days, its value and cost per kg, a bar chart of kg per day, week or month, By room and By crop; Export CSV and the myGAP
+// days, its value and energy per kg, a bar chart of kg per day, week or month, By room and By crop; Export CSV and the myGAP
 // sheet, #/harvest/sheet, a print page of the production and sales record (mountSheet). Both ask for GET /api/harvest on
 // the harvest events and crop changes (New blocks starts a run), when the stream comes back, and on a timer (as Calendar).
 
@@ -24,7 +24,7 @@ const TEMPLATE = `
   <div class="page-head">
     <div class="page-titles">
       <h1 class="page-title" tabindex="-1">Harvest</h1>
-      <p class="page-sub">What the rooms picked, its value and its cost per kg.</p>
+      <p class="page-sub">What the rooms picked, its value and its energy per kg.</p>
     </div>
     <div class="hv-tools">
       <div class="range-bar" role="group" aria-label="Period" data-range></div>
