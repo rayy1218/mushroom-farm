@@ -111,3 +111,19 @@ test('review fixes: the item page paint key has the farm day; the row click igno
   assert.ok(css.includes('@media (hover: hover) {\n  .iv-row:hover'));
   assert.ok(css.includes('.iv-move-edit { min-width: 44px'));
 });
+
+test('review fixes: Count stock names line, worker reload, gone rows, retry, inputMode; the sheet hides a failed table; the settings box is not disabled', () => {
+  const c = src('inventory-count.js');
+  assert.ok(c.includes("No names yet: add the workers' names in ") && c.includes("'#/settings'"));
+  assert.ok(c.includes("addEventListener('farm:worker', reloadNames)") && c.includes("removeEventListener('farm:worker', reloadNames)"));
+  assert.ok(c.includes('reloadNames(); // renamed or removed'));
+  assert.ok(c.includes('Archived since you opened this page'));
+  assert.ok(c.includes('Loading…'));
+  assert.ok(c.includes("WHOLE_UNITS.includes(unit) ? 'numeric' : 'decimal'"));
+  assert.ok(!c.includes('if (alive() && rows.size)'), 'a live refresh also retries an empty first load');
+  const sheet = src('inventory-sheet.js');
+  assert.match(sheet, /catch \(err\) \{[\s\S]*els\.wrap\.hidden = true;/);
+  const set = src('inventory-settings.js');
+  assert.ok(!set.includes('box.disabled'));
+  assert.ok(set.includes('sending'));
+});

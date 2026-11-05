@@ -8,6 +8,7 @@ const NOTE = 'Uses the Telegram chat set above. One message when an item first f
 
 export function mountInventorySettings(container) {
   let alive = true;
+  let sending = null; // the value on its way to the server, or null
   container.innerHTML = `
   <div class="banner" role="alert" data-ivs-banner hidden>
     <span data-ivs-banner-text></span>
@@ -30,7 +31,6 @@ export function mountInventorySettings(container) {
   function paint(s) {
     const ready = Boolean(s.telegramTokenSet && s.telegramChatId);
     box.checked = s.inventoryTelegram !== false;
-    box.disabled = false;
     note.textContent = ready ? NOTE : `${NOTE} Nothing is sent until Telegram is set up above.`;
     card.hidden = false;
   }
@@ -48,9 +48,13 @@ export function mountInventorySettings(container) {
   }
 
   box.addEventListener('change', async () => {
+    if (sending !== null) {
+      box.checked = sending; // a change while one is on its way is ignored
+      return;
+    }
     saved.hidden = true;
     const want = box.checked;
-    box.disabled = true;
+    sending = want;
     try {
       const s = await request('PUT', '/api/settings', { inventoryTelegram: want });
       if (!alive) return;
@@ -60,9 +64,10 @@ export function mountInventorySettings(container) {
     } catch (err) {
       if (!alive) return;
       box.checked = !want;
-      box.disabled = false;
       bannerText.textContent = `Inventory: ${err.status === 0 ? OFFLINE : err.message}`;
       banner.hidden = false;
+    } finally {
+      sending = null;
     }
   });
   q('[data-ivs-retry]').addEventListener('click', () => load());

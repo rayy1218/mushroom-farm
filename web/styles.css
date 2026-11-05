@@ -2192,12 +2192,14 @@ td.tg-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: -2p
 .iv-count-group { margin: 0; min-width: 0; }
 .iv-count-group legend { float: left; width: 100%; padding: 0; margin-bottom: 4px; font-size: var(--fs-md); font-weight: 600; } /* a float keeps the legend inside the card's padding, not on its border */
 .iv-count-group legend + .iv-count-row { clear: both; border-top: 0; }
-.iv-count-row { display: grid; grid-template-columns: minmax(0, 1fr) 160px; grid-template-areas: "name box" "records box" "error error"; align-items: center; gap: 2px 16px; margin: 0; padding: 10px 0; border-top: 1px solid var(--border); }
+.iv-count-row { display: grid; grid-template-columns: minmax(0, 1fr) 160px; grid-template-areas: "name box" "records box" "gone gone" "error error"; align-items: center; gap: 2px 16px; margin: 0; padding: 10px 0; border-top: 1px solid var(--border); }
 .iv-count-row:first-of-type { border-top: 0; }
 .iv-count-name { grid-area: name; font-weight: 600; }
 .iv-count-records { grid-area: records; margin: 0; font-variant-numeric: tabular-nums; }
 .iv-count-row .tk-suffix-box { grid-area: box; }
 .iv-count-row .field-error { grid-area: error; }
+.iv-count-gone { grid-area: gone; margin: 0; font-size: var(--fs-sm); }
+.iv-count-lead { margin: 0; }
 .iv-count-send { display: flex; align-items: center; gap: 12px; }
 @media (max-width: 600px) {
   .iv-count-row { grid-template-columns: minmax(0, 1fr) 120px; }

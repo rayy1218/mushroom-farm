@@ -106,6 +106,8 @@ export function mount(container, { days = 30 } = {}) {
       els.bannerText.textContent = routeMissing(err) ? OUTDATED : err.status === 0 ? OFFLINE : err.message;
       els.banner.hidden = false;
       els.period.textContent = '—';
+      els.wrap.hidden = true;
+      els.empty.hidden = true;
     }
   }
 
