@@ -130,13 +130,49 @@ function measuredGroups(from, to, data) {
 const electricityOf = (g, prices) => round(round(g.kWh, 3) * prices.electricity, 2);
 const waterOf = (g, prices) => round((round(g.waterL, 3) / 1000) * prices.water, 2);
 
+// A bill's period: its own, or (an old row) its date's calendar month.
+const periodOf = (bill) => ({
+  from: bill.periodFrom ?? firstDayOf(monthOf(bill.date)), to: bill.periodTo ?? lastDayOf(monthOf(bill.date)),
+});
+// The day a bill's top-up lands on (owner 2026-11-05: the month its period ends): its period's last day, today while that is
+// still to come.
+const landingOf = (bill, today) => {
+  const { to } = periodOf(bill);
+  return to < today ? to : today;
+};
+
+// The measured cost of the bill's utility over its period, taken off the bill. Where another bill of the same utility covers
+// the same days, those days' measured cost is shared between the bills by their amounts, so it is taken off once. → the RM
+// amount, or null while a day of the period is not worked out yet.
+function measuredFor(bill, from, to, data) {
+  const costOf = bill.utility === 'electricity' ? electricityOf : waterOf;
+  // each room's and run's part rounded as its line is, so the month's lines and top-up sum to the bill to the sen
+  const over = (a, b) => {
+    const m = measuredGroups(a, b, data);
+    return m.pending ? null : round(m.groups.reduce((s, g) => s + costOf(g, data.prices), 0), 2);
+  };
+  const others = data.costs.filter((o) => o.id !== bill.id && isBill(o) && o.utility === bill.utility)
+    .map((o) => ({ amount: o.amount, ...periodOf(o) }))
+    .filter((o) => o.from <= to && o.to >= from && o.from >= data.keptFrom); // a bill counted in full takes no measured part
+  if (!others.length) return over(from, to);
+  // the period cut where the bills covering it change; each piece's measured cost × this bill's share of the covering amounts
+  const cuts = [...new Set([from, ...others.flatMap((o) => [o.from, addDays(o.to, 1)])])].filter((d) => d >= from && d <= to).sort();
+  let measured = 0;
+  for (const [i, a] of cuts.entries()) {
+    const b = i + 1 < cuts.length ? addDays(cuts[i + 1], -1) : to;
+    const part = over(a, b);
+    if (part === null) return null;
+    const covering = others.filter((o) => o.from <= a && o.to >= b).reduce((s, o) => s + o.amount, 0);
+    measured += (part * bill.amount) / (bill.amount + covering);
+  }
+  return round(measured, 2);
+}
+
 // A bill's top-up (section 4): the bill − the measured cost of that utility over its period, shared when over 0; a note when
 // the measured cost is higher, or when the bill counts in full (days not kept, no water price); nothing when they are equal.
-// A bill with no period (an old row): its date's calendar month.
 function topUp(bill, data) {
   const what = bill.utility;
-  const from = bill.periodFrom ?? firstDayOf(monthOf(bill.date));
-  const to = bill.periodTo ?? lastDayOf(monthOf(bill.date));
+  const { from, to } = periodOf(bill);
   const line = (amount) => ({
     key: `unmeasured-${bill.utility}`, category: 'utilities', label: `Unmeasured ${what}`, source: 'bill', amount,
     roomId: null, runId: null, shared: true, costId: bill.id,
@@ -148,16 +184,20 @@ function topUp(bill, data) {
   if (bill.utility === 'water' && data.prices.water === null) {
     return { line: line(bill.amount), note: note('no-water-price', 'No water price is set: the water bill counts in full') };
   }
-  const m = measuredGroups(from, to, data);
-  if (m.pending) return { pending: true };
-  // each room's and run's part rounded as its line is, so the month's lines and top-up sum to the bill to the sen
-  const costOf = bill.utility === 'electricity' ? electricityOf : waterOf;
-  const measured = round(m.groups.reduce((s, g) => s + costOf(g, data.prices), 0), 2);
+  const measured = measuredFor(bill, from, to, data);
+  if (measured === null) return { pending: true };
   const diff = round(bill.amount - measured, 2);
   if (diff > 0) return { line: line(diff) };
   if (diff === 0) return {};
   const text = `Measured ${rm(measured)} is above the ${what} bill of ${rm(bill.amount)}: the estimate runs high`;
   return { note: note('bill-below', text) };
+}
+
+// What an electricity or water bill adds, for its entry: { amount (its Unmeasured line; 0 when the measured cost covers it;
+// null while a day of its own period is not worked out), month (where it lands: the month its period ends) }.
+export function billTopUp(bill, data) {
+  const t = topUp(bill, data);
+  return { amount: t.pending ? null : t.line ? t.line.amount : 0, month: monthOf(landingOf(bill, data.today)) };
 }
 
 // Each room's measured electricity and water over [from, to], one line per room and run (null: no run that day).
@@ -187,14 +227,16 @@ export function linesOf(from, to, data) {
   let sharedPending = false;
   const roomOf = (id) => (id !== null && data.rooms.has(id) ? id : null);
   for (const c of data.costs) {
+    if (isBill(c)) { // its top-up on the day its period ends (today while to come), whatever the bill's date
+      const date = landingOf(c, data.today);
+      if (date < from || date > to) continue;
+      const t = topUp(c, data);
+      if (t.pending) pending = sharedPending = true;
+      if (t.line) lines.push({ ...t.line, date });
+      if (t.note) notes.push(t.note);
+      continue;
+    }
     for (const { date } of chargesOf(c, from, to, data.today)) {
-      if (isBill(c)) {
-        const t = topUp(c, data);
-        if (t.pending) pending = sharedPending = true;
-        if (t.line) lines.push({ ...t.line, date });
-        if (t.note) notes.push(t.note);
-        continue;
-      }
       const roomId = roomOf(c.roomId);
       // a monthly room item: the run open on each charge's date; a one-off: the run set on save
       const runId = roomId === null ? null
@@ -214,9 +256,10 @@ export function linesOf(from, to, data) {
       notes.push(note('unpriced-batch', text, b.runId));
       continue;
     }
+    // no run (waiting to go in, or its container deleted): the farm month's, not shared (owner 2026-11-05); placed: its run's
     lines.push({
       key: 'blocks-batches', category: 'blocks', label: 'Blocks', source: 'batches', amount: b.cost, date: b.date, roomId,
-      runId: b.runId, shared: roomId === null && b.runId === null,
+      runId: b.runId, shared: false,
     });
   }
   for (const p of data.purchases) {
@@ -339,8 +382,13 @@ export function figuresOf(from, to, data) {
   };
 }
 
-// A run's whole figures: its parts summed over every month from its start to today (sales and costs tied to it may come after
-// it ends). figs(month) → figuresOf's result for that month. → { parts, byCategory [{ category, amount }] ('shared' last),
+// Blocks are received before their run starts: a run's figures start this many days before it (before the start only the
+// run's own lines land on it: no block-days, so no share).
+export const RUN_LEAD_DAYS = 62;
+export const runFirstMonth = (run) => monthOf(addDays(run.startDate, -RUN_LEAD_DAYS));
+
+// A run's whole figures: its parts summed over every month from RUN_LEAD_DAYS before its start to today (its blocks are
+// received before it starts; sales and costs tied to it may come after it ends). figs(month) → figuresOf's result for that month. → { parts, byCategory [{ category, amount }] ('shared' last),
 // income, kgHarvested, kgSold, costs, profit, costPerKg, profitPerKg, notes, pending, incomplete }. Pending only when a day
 // not worked out falls on the run, or a month it had block-days in has a bill's top-up not known yet: another room's
 // pending day never hides a closed run's figures.
@@ -348,7 +396,7 @@ export function runTotals(run, figs, today) {
   const t = emptyPart();
   const notes = [];
   let pending = false;
-  for (let m = monthOf(run.startDate); m <= monthOf(today); m = addMonths(m, 1)) {
+  for (let m = runFirstMonth(run); m <= monthOf(today); m = addMonths(m, 1)) {
     const f = figs(m);
     const p = f.runs.get(run.id);
     pending ||= Boolean(p?.pending) || (f.sharedPending && blockDays(run, f.from, f.to, today) > 0);

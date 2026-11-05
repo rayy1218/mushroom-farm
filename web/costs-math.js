@@ -9,6 +9,7 @@ import { farmDate, dayMonth } from './tasks-math.js';
 import { shiftMonth, monthTitle } from './calendar-math.js';
 import { grouped } from './overview-math.js';
 import { cropShortName } from './crops.js';
+import { mainCrop } from './room-card-math.js';
 import { DOT } from './text-math.js';
 import { niceScale } from './usage-math.js';
 
@@ -65,7 +66,7 @@ export function monthTiles({ pending, tiles: t }) {
     { label: 'Income', value: moneyText(t.income), line: t.kgSold > 0 ? `${kgText(t.kgSold)} sold` : NOTHING_SOLD },
     pending ? waiting('Costs') : { label: 'Costs', value: moneyText(t.costs), ...(t.incomplete ? { line: 'Some costs have no price' } : {}) },
     pending ? waiting('Cost per kg') : { label: 'Cost per kg', value: perKgText(t.costPerKg), line: t.kgHarvested > 0 ? `${kgText(t.kgHarvested)} picked` : 'Nothing picked' },
-    pending ? waiting('Profit per kg') : { label: 'Profit per kg', value: perKg, line: t.kgSold > 0 ? 'per kg sold' : NOTHING_SOLD, ...(isLoss(perKg) ? { tone: 'loss' } : {}) },
+    pending ? waiting('Profit per kg') : { label: 'Profit per kg', value: perKg, line: t.kgSold > 0 ? `on ${kgText(t.kgSold)} sold` : NOTHING_SOLD, ...(isLoss(perKg) ? { tone: 'loss' } : {}) },
   ];
 }
 
@@ -97,14 +98,19 @@ const nameOf = (c) => c.label ?? LABELS[c.category]; // the server's label, else
 const whatOf = (c) => [c.utility ? UTILITY_WORDS[c.utility] ?? nameOf(c) : nameOf(c), c.worker, c.note].filter(Boolean).join(DOT);
 
 export const isBill = (v) => v.category === 'utilities' && (v.utility === 'electricity' || v.utility === 'water');
-// What a bill adds to the costs (the server's topUp: the unmeasured part; 0 when the measured cost covers it; null while the
-// energy is worked out).
-const topUpText = (v) => (v === null ? 'working out' : v > 0 ? `adds ${moneyText(v)} unmeasured` : 'adds nothing: measured is higher');
+// What a bill adds to the costs (the server's topUp { amount: the unmeasured part, 0 when the measured cost covers it, null
+// while the energy is worked out; month: where it lands, its period's end }), naming that month when not the entry's own:
+// "adds RM 580.00 unmeasured to October".
+function topUpText({ amount, month }, date) {
+  const there = month === date.slice(0, 7) ? '' : ` to ${month.slice(0, 4) === date.slice(0, 4) ? monthName(month) : monthTitle(month)}`;
+  if (amount === null) return 'working out';
+  return amount > 0 ? `adds ${moneyText(amount)} unmeasured${there}` : `adds nothing${there}: measured is higher`;
+}
 
 // An entry of the month: { date, what, whom, amount, monthly, bill, topUp (a bill's words, else null) }.
 export const entryLine = (e) => ({
   date: dayMonth(e.date), what: whatOf(e), whom: e.roomName ?? 'The farm', amount: moneyText(e.amount), monthly: e.repeat === 'monthly',
-  bill: isBill(e), topUp: isBill(e) && e.topUp !== undefined ? topUpText(e.topUp) : null,
+  bill: isBill(e), topUp: isBill(e) && e.topUp ? topUpText(e.topUp, e.date) : null,
 });
 
 // A monthly item: { what, whom, amount, since } (since: "since Aug 2026", "since Aug 2026, until Oct 2026", "Aug 2026 only").
@@ -117,14 +123,14 @@ export function repeatingLine(c) {
 
 export const RUN_COLUMNS = ['Dates', 'Container', 'Crops', 'Income', 'Costs', 'Profit', 'Profit per kg'];
 
-// A run's row: { dates, room, crops, cells (Income, Costs, Profit, Profit per kg), loss (Profit), perKgLoss, incomplete
-// (some of its costs have no price) }.
+// A run's row: { dates, room, crops, crop (the main crop, for its picture; null without), cells (Income, Costs, Profit, Profit
+// per kg), loss (Profit), perKgLoss, incomplete (some of its costs have no price) }.
 export function runRow(run) {
   const to = run.endedAt === null ? 'now' : dayText(run.endedAt);
   const cells = [moneyText(run.income), moneyText(run.costs), moneyText(run.profit), perKgText(run.profitPerKg)];
   return {
     dates: `${dayText(run.startedAt)}${NB}–${NB}${to}`, room: run.roomName,
-    crops: run.crops.map((c) => cropShortName(c.crop)).join(', '),
+    crops: run.crops.map((c) => cropShortName(c.crop)).join(', '), crop: mainCrop(run.crops),
     cells, loss: isLoss(cells[2]), perKgLoss: isLoss(cells[3]), incomplete: run.incomplete === true,
   };
 }
@@ -213,6 +219,9 @@ export const AMOUNT_MESSAGE = 'Enter an amount over RM 0, up to RM 1,000,000'; /
 export const WORKER_MESSAGE = 'Pick who was paid';
 const MAX_AMOUNT = 1_000_000;
 
+// An amount in its box, grouped as the page shows it: "1,800.00" (amountOf reads it back).
+export const amountBox = (v) => grouped(v, 2);
+
 // A typed amount as a number: grouping commas and spaces dropped; NaN for none or not a number.
 export function amountOf(text) {
   const t = String(text ?? '').replace(/[,\s]/g, '');
@@ -239,9 +248,30 @@ export function bodyOf(v) {
 export function checkCost(v, { workersFailed = false } = {}) {
   const amount = amountOf(v.amount);
   if (!(amount > 0 && amount <= MAX_AMOUNT)) return { field: 'amount', message: AMOUNT_MESSAGE };
+  const period = isBill(v) ? checkPeriod(v) : null;
+  if (period) return period;
   if (v.category === 'labour' && !String(v.worker ?? '').trim()) {
     return { field: 'worker', message: workersFailed ? 'The workers could not be read. Try again.' : WORKER_MESSAGE };
   }
+  return null;
+}
+
+// A bill's period near its date (server/costs.js): from up to 92 days before it, at most 62 days long, to up to 31 days after
+// it. Empty boxes are the server's to fill (the date's month).
+const BILL_DAYS = 62;
+const BILL_DAYS_BEFORE = 92;
+const BILL_DAYS_AFTER = 31;
+const DAY_MS = 86_400_000;
+const isDay = (d) => /^\d{4}-\d{2}-\d{2}$/.test(d ?? '');
+const dayMs = (d) => Date.parse(`${d}T00:00:00Z`);
+const shiftDay = (d, n) => new Date(dayMs(d) + n * DAY_MS).toISOString().slice(0, 10);
+function checkPeriod({ date, periodFrom: from, periodTo: to }) {
+  if (!isDay(date) || !isDay(from) || !isDay(to)) return null;
+  if (from < shiftDay(date, -BILL_DAYS_BEFORE)) return { field: 'periodFrom', message: `Pick a first day up to ${BILL_DAYS_BEFORE} days before the bill’s date` };
+  if (to < from || (dayMs(to) - dayMs(from)) / DAY_MS + 1 > BILL_DAYS) {
+    return { field: 'periodTo', message: `Pick the last day the bill covers, up to ${BILL_DAYS} days after the first` };
+  }
+  if (to > shiftDay(date, BILL_DAYS_AFTER)) return { field: 'periodTo', message: `Pick a last day up to ${BILL_DAYS_AFTER} days after the bill’s date` };
   return null;
 }
 
@@ -289,16 +319,17 @@ export function stopCharges(cost, after, today) {
 const total = (cost, n) => moneyText(Math.round(cost.amount * n * 100) / 100);
 const plural = (n, one) => `${n} ${one}${n === 1 ? '' : 's'}`;
 
-// Stop from the month `after`: the warning naming the charges it removes (none: null) and the button's words.
+// Stop from the month `after`: the warning naming the charges it removes (none: null), the button's words, and danger (it
+// removes charges: the button red).
 export function stopWords(cost, after, today) {
   const gone = stopCharges(cost, after, today);
   const n = gone.length;
-  if (n === 0) return { warning: null, button: 'Stop' };
+  if (n === 0) return { warning: null, button: 'Stop', danger: false };
   const name = (m) => (m.slice(0, 4) === today.slice(0, 4) ? monthName(m) : monthTitle(m));
   const warning = n === 1 ? `${name(gone[0].month)}’s charge of ${moneyText(cost.amount)} goes too.`
     : n === 2 ? `${name(gone[0].month)}’s and ${name(gone[1].month)}’s charges, ${total(cost, 2)}, go too.`
       : `${n} charges, ${total(cost, n)}, ${monthSpan(gone[0].month, gone.at(-1).month)}, go too.`;
-  return { warning, button: `Stop and remove ${plural(n, 'charge')}` };
+  return { warning, button: `Stop and remove ${plural(n, 'charge')}`, danger: true };
 }
 
 // What a monthly item's Delete removes: "5 charges, RM 7,500.00, Jul–Nov 2026"; null when it has not charged yet.

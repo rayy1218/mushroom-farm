@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import {
   moneyText, perKgText, monthTitle, monthTiles, categoryRows, categoryTotal, entryLine, repeatingLine, runRow, runParts, profitBars,
   monthsBetween, monthNotes, amountOf, bodyOf, clampMonth, runOn, landingText, billPeriod, checkCost, stopCharges, stopWords,
-  deleteWords, monthSpan, chartMonths, chartTitle, noFigures, AMOUNT_MESSAGE, WORKER_MESSAGE,
+  deleteWords, monthSpan, chartMonths, chartTitle, noFigures, AMOUNT_MESSAGE, WORKER_MESSAGE, amountBox,
 } from '../web/costs-math.js';
 import { DOT } from '../web/text-math.js';
 
@@ -33,7 +33,7 @@ test('the tiles: Profit first; a loss says so in words and takes the loss tone; 
     ['Income', `RM${NB}300.00`, `20.0${NB}kg sold`, null],
     ['Costs', `RM${NB}640.00`, null, null],
     ['Cost per kg', `RM${NB}32.00`, `20.0${NB}kg picked`, null],
-    ['Profit per kg', `−RM${NB}17.00`, 'per kg sold', 'loss'],
+    ['Profit per kg', `−RM${NB}17.00`, `on 20.0${NB}kg sold`, 'loss'],
   ]);
   const gain = monthTiles({ pending: false, tiles: { income: 900, costs: 640, profit: 260, costPerKg: 32, profitPerKg: 13, kgHarvested: 20, kgSold: 20 } });
   assert.deepEqual(gain.map((x) => x.tone ?? null), [null, null, null, null, null]);
@@ -84,6 +84,8 @@ test('rows: categories with their source, entries, monthly items, runs', () => {
   assert.deepEqual(runRow(run).cells, [`RM${NB}300.00`, `RM${NB}640.00`, `−RM${NB}340.00`, `−RM${NB}17.00`]);
   assert.equal(runRow(run).dates, `3 Oct${NB}–${NB}now`);
   assert.equal(runRow(run).crops, 'Grey oyster');
+  assert.equal(runRow(run).crop, run.crops[0].crop, 'the main crop, for its picture');
+  assert.equal(runRow({ ...run, crops: [] }).crop, null);
   assert.deepEqual(runParts(run).map(([label]) => label), ['Blocks', 'Electricity', 'Own costs', 'Share of shared costs', 'Income', 'Picked', 'Sold']);
 });
 
@@ -208,9 +210,14 @@ test('by category: an entered line says so beside the same name from another sou
 
 test('an electricity bill in Entries: tagged, with what it adds', () => {
   const bill = { date: '2026-10-31', category: 'utilities', utility: 'electricity', roomName: null, amount: 580, repeat: null };
-  assert.deepEqual([entryLine({ ...bill, topUp: 580 }).bill, entryLine({ ...bill, topUp: 580 }).topUp], [true, `adds RM${NB}580.00 unmeasured`]);
-  assert.equal(entryLine({ ...bill, topUp: 0 }).topUp, 'adds nothing: measured is higher');
-  assert.equal(entryLine({ ...bill, topUp: null }).topUp, 'working out');
+  const adds = (amount, month = '2026-10') => entryLine({ ...bill, topUp: { amount, month } });
+  assert.deepEqual([adds(580).bill, adds(580).topUp], [true, `adds RM${NB}580.00 unmeasured`]);
+  assert.equal(adds(0).topUp, 'adds nothing: measured is higher');
+  assert.equal(adds(null).topUp, 'working out');
+  const late = { ...bill, date: '2026-11-03' };
+  assert.equal(entryLine({ ...late, topUp: { amount: 580, month: '2026-10' } }).topUp, `adds RM${NB}580.00 unmeasured to October`, 'its period ended in October');
+  assert.equal(entryLine({ ...late, date: '2027-01-04', topUp: { amount: 580, month: '2026-12' } }).topUp, `adds RM${NB}580.00 unmeasured to December 2026`);
+  assert.equal(entryLine({ ...late, topUp: { amount: 0, month: '2026-10' } }).topUp, 'adds nothing to October: measured is higher');
   const other = entryLine({ ...bill, utility: 'other', topUp: undefined });
   assert.deepEqual([other.bill, other.topUp], [false, null]);
 });
@@ -236,6 +243,16 @@ test('the browser\'s checks before a send: the amount and who was paid', () => {
   assert.deepEqual(checkCost({ ...ok, category: 'labour' }), { field: 'worker', message: WORKER_MESSAGE });
   assert.deepEqual(checkCost({ ...ok, category: 'labour' }, { workersFailed: true }), { field: 'worker', message: 'The workers could not be read. Try again.' });
   assert.equal(checkCost({ ...ok, category: 'labour', worker: 'Ali' }), null);
+  const bill = { category: 'utilities', utility: 'electricity', amount: '80', date: '2026-11-03', periodFrom: '2026-10-01', periodTo: '2026-10-31' };
+  assert.equal(checkCost(bill), null);
+  assert.deepEqual(checkCost({ ...bill, periodFrom: '2026-08-02', periodTo: '2026-08-31' }), { field: 'periodFrom', message: 'Pick a first day up to 92 days before the bill’s date' });
+  assert.equal(checkCost({ ...bill, periodFrom: '2026-08-03', periodTo: '2026-09-02' }), null, '92 days before');
+  assert.deepEqual(checkCost({ ...bill, periodFrom: '2026-09-01', periodTo: '2026-11-03' }), { field: 'periodTo', message: 'Pick the last day the bill covers, up to 62 days after the first' });
+  assert.deepEqual(checkCost({ ...bill, periodFrom: '2026-11-03', periodTo: '2026-11-01' }), { field: 'periodTo', message: 'Pick the last day the bill covers, up to 62 days after the first' });
+  assert.deepEqual(checkCost({ ...bill, periodFrom: '2026-11-20', periodTo: '2026-12-05' }), { field: 'periodTo', message: 'Pick a last day up to 31 days after the bill’s date' });
+  assert.equal(checkCost({ ...bill, periodFrom: '2026-11-04', periodTo: '2026-12-04' }), null, '31 days after');
+  assert.equal(checkCost({ ...bill, periodFrom: '', periodTo: '' }), null, 'empty: the server takes the date\'s month');
+  assert.equal(checkCost({ ...bill, utility: 'other', periodFrom: '2020-01-01' }), null, 'not a bill: no period');
   assert.equal(AMOUNT_MESSAGE, 'Enter an amount over RM 0, up to RM 1,000,000');
   assert.equal(WORKER_MESSAGE, 'Pick who was paid');
 });
@@ -279,10 +296,10 @@ test('Stop: the charges a past month removes, said and on the button', () => {
   const today = '2026-11-05';
   assert.deepEqual(stopCharges(wage, '2026-11', today), []);
   assert.deepEqual(stopCharges(wage, '2026-10', today).map((c) => c.date), ['2026-11-01']);
-  assert.deepEqual(stopWords(wage, '2026-11', today), { warning: null, button: 'Stop' });
-  assert.deepEqual(stopWords(wage, '2026-10', today), { warning: `November’s charge of RM${NB}1,800.00 goes too.`, button: 'Stop and remove 1 charge' });
-  assert.deepEqual(stopWords(wage, '2026-09', today), { warning: `October’s and November’s charges, RM${NB}3,600.00, go too.`, button: 'Stop and remove 2 charges' });
-  assert.deepEqual(stopWords(wage, '2026-07', today), { warning: `4 charges, RM${NB}7,200.00, Aug–Nov 2026, go too.`, button: 'Stop and remove 4 charges' });
+  assert.deepEqual(stopWords(wage, '2026-11', today), { warning: null, button: 'Stop', danger: false });
+  assert.deepEqual(stopWords(wage, '2026-10', today), { warning: `November’s charge of RM${NB}1,800.00 goes too.`, button: 'Stop and remove 1 charge', danger: true });
+  assert.deepEqual(stopWords(wage, '2026-09', today), { warning: `October’s and November’s charges, RM${NB}3,600.00, go too.`, button: 'Stop and remove 2 charges', danger: true });
+  assert.deepEqual(stopWords(wage, '2026-07', today), { warning: `4 charges, RM${NB}7,200.00, Aug–Nov 2026, go too.`, button: 'Stop and remove 4 charges', danger: true });
   const late = { ...wage, date: '2026-07-31' };
   assert.deepEqual(stopCharges(late, '2026-10', today), [], 'November\'s charge on the 30th has not come yet');
   assert.deepEqual(stopCharges({ ...wage, repeatUntil: '2026-09' }, '2026-08', today).map((c) => c.month), ['2026-09'], 'only to its last month');
@@ -298,4 +315,10 @@ test('Delete of a monthly item names what goes', () => {
 test('profit bars: a single month does not fill the chart', () => {
   const r = profitBars([{ month: '2026-11', profit: 100 }], '2026-11', 1000, 200);
   assert.equal(r.bars[0].w, 48);
+});
+
+test('an amount box shows the amount grouped, as the page does; it reads back the same', () => {
+  assert.equal(amountBox(1800), '1,800.00');
+  assert.equal(amountBox(12.5), '12.50');
+  assert.equal(amountOf(amountBox(1234567.89)), 1234567.89);
 });

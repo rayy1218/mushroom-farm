@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   lastDayOf, addMonths, monthName, chargeDate, chargesOf, runOn, blockDays, split, firstDayOf, figuresOf, runTotals, summaryOf,
+  runFirstMonth, billTopUp,
 } from '../server/costs-math.js';
 
 export const cost = (over = {}) => ({
@@ -353,10 +354,27 @@ test('a monthly room item\'s charge lands on the run open on its charge date', (
   assert.deepEqual(line(figsOf(d)('2026-10'), 'labour').map((l) => l.runId), [2]);
 });
 
-test('a batch with no run and no room is shared', () => {
+test('a batch with no run (waiting, or its container deleted): on the month it was received, not shared (owner 2026-11-05)', () => {
   const f = figuresOf(...NOV, data({ runs: [run({ id: 1 })], batches: [{ batchId: 1, runId: null, roomId: null, date: '2026-11-02', cost: 50 }] }));
-  assert.deepEqual(line(f, 'blocks-batches').map((l) => l.shared), [true]);
-  assert.equal(f.runs.get(1).shared, 50);
+  assert.deepEqual(line(f, 'blocks-batches').map((l) => [l.shared, l.runId, l.amount]), [[false, null, 50]]);
+  assert.equal(f.costs, 50, 'on the farm month');
+  assert.equal(f.runs.get(1)?.shared ?? 0, 0, 'shared over no run');
+  assert.ok(!f.notes.some((n) => n.kind === 'not-shared'));
+});
+
+test('blocks received before their run starts count in the run (its first months reach 62 days back)', () => {
+  const d = data({
+    runs: [run({ id: 7, startDate: '2026-11-02', blocks: 1000 })],
+    batches: [{ batchId: 1, runId: 7, roomId: 1, date: '2026-10-28', cost: 2500 }, { batchId: 2, runId: 7, roomId: 1, date: '2026-09-20', cost: null }],
+    costs: [cost({ id: 1, date: '2026-10-05', amount: 300 })],
+  });
+  const r = runTotals(d.runs[0], figsOf(d), d.today);
+  assert.equal(r.parts.blocks, 2500, 'received 28 Oct, the run from 2 Nov');
+  assert.equal(r.parts.shared, 0, 'October\'s rent: no block-days of the run then');
+  assert.equal(r.costs, 2500);
+  assert.equal(r.incomplete, true, 'its unpriced batch of 20 Sep named');
+  assert.equal(runFirstMonth(d.runs[0]), '2026-09');
+  assert.equal(figsOf(d)('2026-10').costs, 2800, 'October\'s farm month has them too');
 });
 
 test('a sale with neither run nor room, or after its room\'s run ended: on the month only', () => {
@@ -369,4 +387,47 @@ test('a sale with neither run nor room, or after its room\'s run ended: on the m
   }));
   assert.equal(f.income, 86);
   assert.equal(f.runs.get(1)?.income ?? 0, 0);
+});
+
+test('a bill lands in the month its period ends (owner 2026-11-05), this month while that end is still to come', () => {
+  const usage = new Map([[1, days('2026-10-01', '2026-11-15', 10)]]);
+  const runs = [run({ id: 1, startDate: '2026-09-01' })];
+  const oct = bill({ date: '2026-11-03', periodFrom: '2026-10-01', periodTo: '2026-10-31', amount: 200 });
+  const d = data({ runs, usage, costs: [oct] });
+  assert.deepEqual(line(figsOf(d)('2026-10'), 'unmeasured-electricity').map((l) => [l.amount, l.date]), [[45, '2026-10-31']],
+    'RM 200 − 31 days × 10 kWh × RM 0.50, on 31 Oct');
+  assert.equal(line(figsOf(d)('2026-11'), 'unmeasured-electricity').length, 0, 'not in November, the month of its date');
+  assert.deepEqual(billTopUp(oct, d), { amount: 45, month: '2026-10' });
+  const ahead = bill({ date: '2026-11-10', periodFrom: '2026-11-01', periodTo: '2026-11-30', amount: 100 });
+  const d2 = data({ runs, usage, costs: [ahead] });
+  assert.deepEqual(line(figsOf(d2)('2026-11'), 'unmeasured-electricity').map((l) => [l.amount, l.date]), [[25, '2026-11-15']], 'today');
+  assert.deepEqual(billTopUp(ahead, d2), { amount: 25, month: '2026-11' });
+  const old = bill({ date: '2026-11-03', periodFrom: null, periodTo: null, amount: 100 });
+  assert.equal(billTopUp(old, data({ runs, usage, costs: [old] })).month, '2026-11', 'no period: its date\'s month');
+});
+
+test('a bill\'s top-up for its entry: its own pending only, 0 when measured covers it', () => {
+  const runs = [run({ id: 1, startDate: '2026-09-01' })];
+  const usage = new Map([[1, days('2026-10-01', '2026-11-15', 10)], [2, days('2026-11-10', '2026-11-10', 1, { pending: true })]]);
+  const oct = bill({ date: '2026-11-03', periodFrom: '2026-10-01', periodTo: '2026-10-31', amount: 200 });
+  const nov = bill({ id: 6, date: '2026-11-15', periodFrom: '2026-11-01', periodTo: '2026-11-15', amount: 50 });
+  const d = data({ runs, usage, costs: [oct, nov] });
+  assert.deepEqual(billTopUp(oct, d), { amount: 45, month: '2026-10' }, 'October\'s days all worked out');
+  assert.deepEqual(billTopUp(nov, d), { amount: null, month: '2026-11' }, 'a day of its own period pending');
+  const low = bill({ date: '2026-11-03', periodFrom: '2026-10-01', periodTo: '2026-10-31', amount: 100 });
+  assert.deepEqual(billTopUp(low, data({ runs, usage, costs: [low] })), { amount: 0, month: '2026-10' });
+});
+
+test('two bills of one utility over the same days share those days\' measured cost by their amounts: taken off once', () => {
+  const usage = new Map([[1, days('2026-10-01', '2026-11-15', 10)]]); // RM 5 a day measured
+  const a = bill({ id: 5, date: '2026-11-03', periodFrom: '2026-10-01', periodTo: '2026-10-31', amount: 300 });
+  const b = bill({ id: 6, date: '2026-11-04', periodFrom: '2026-10-22', periodTo: '2026-10-31', amount: 100 });
+  const d = data({ runs: [run({ id: 1, startDate: '2026-09-01' })], usage, costs: [a, b] });
+  // 21 days a alone: RM 105; 10 days both: RM 50, 3/4 to a (37.50), 1/4 to b (12.50)
+  assert.deepEqual(billTopUp(a, d), { amount: 157.5, month: '2026-10' }, '300 − 105 − 37.50');
+  assert.deepEqual(billTopUp(b, d), { amount: 87.5, month: '2026-10' }, '100 − 12.50');
+  const f = figsOf(d)('2026-10');
+  assert.equal(f.costs, 400, 'measured 155 + top-ups 245: the two bills, the overlap\'s measured part taken off once');
+  const water = bill({ id: 7, utility: 'water', date: '2026-11-04', periodFrom: '2026-10-22', periodTo: '2026-10-31', amount: 100 });
+  assert.deepEqual(billTopUp(a, data({ runs: d.runs, usage, costs: [a, water] })).amount, 145, 'another utility: no share');
 });

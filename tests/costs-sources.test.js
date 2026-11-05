@@ -21,7 +21,7 @@ test('the rows in the range, with their totals', () => {
   add(raw, {
     batches: [
       { id: 1, run_id: 7, room_id: 1, crop: 'oyster', received_at: 100, blocks: 500, price_per_block: 2.35 },
-      { id: 2, run_id: null, room_id: 2, crop: 'lionsmane', received_at: 200, blocks: 100, price_per_block: null },
+      { id: 2, run_id: null, room_id: null, crop: 'lionsmane', received_at: 200, blocks: 100, price_per_block: null },
       { id: 3, run_id: 8, room_id: 1, crop: 'oyster', received_at: 9000, blocks: 10, price_per_block: 1 },
     ],
     items: [
@@ -43,7 +43,7 @@ test('the rows in the range, with their totals', () => {
   const got = readSources(raw, 0, 1000);
   assert.deepEqual(got.batches, [
     { batchId: 1, runId: 7, roomId: 1, at: 100, blocks: 500, pricePerBlock: 2.35, cost: 1175 },
-    { batchId: 2, runId: null, roomId: 2, at: 200, blocks: 100, pricePerBlock: null, cost: null },
+    { batchId: 2, runId: null, roomId: null, at: 200, blocks: 100, pricePerBlock: null, cost: null },
   ]);
   assert.deepEqual(got.purchases, [
     { id: 2, itemId: 2, name: 'PP bags 1 kg', kind: 'packaging', at: 160, qty: 1000, unitCost: 0.045, total: 45 },

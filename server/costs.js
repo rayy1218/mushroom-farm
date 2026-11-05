@@ -8,12 +8,15 @@ import { roomDays, warmRoom, localZone, USAGE_DAYS_KEPT } from './usage.js';
 import { checkWorker, TaskError } from './tasks.js';
 import {
   CATEGORIES, BILLS, monthOf, firstDayOf, lastDayOf, addMonths, monthName, chargeDate, chargesOf, runOn, runEnd, figuresOf,
-  runTotals, summaryOf, CATEGORY_LABELS,
+  runTotals, summaryOf, CATEGORY_LABELS, billTopUp, runFirstMonth,
 } from './costs-math.js';
 
 export const MAX_AMOUNT = 1_000_000;
 export const MAX_NOTE = 200;
 export const MAX_BILL_DAYS = 62;
+// A bill's period near its date: from up to 92 days before it, to up to 31 days after it.
+export const BILL_DAYS_BEFORE = 92;
+export const BILL_DAYS_AFTER = 31;
 const AMOUNT_MESSAGE = 'Enter an amount over RM 0, up to RM 1,000,000'; // web/costs-math.js says the same
 const UTILITIES = ['electricity', 'water', 'other'];
 const DAY = 86_400_000;
@@ -131,20 +134,14 @@ export function createCosts({ db, now = Date.now, zone = localZone, log = consol
     ...runTotals(r, figs, t),
   });
 
-  // An electricity or water bill's top-up in the month's figures f (section 4): its "Unmeasured" line's amount; 0 when it adds
-  // nothing (the measured cost covers it); null while a bill's top-up is worked out.
-  function topUpOf(c, f) {
-    const line = f.lines.find((l) => l.source === 'bill' && l.costId === c.id);
-    return line ? line.amount : f.sharedPending ? null : 0;
-  }
-
-  // The month's charges of the costs entered by hand, newest first; a bill with its topUp. f: the month's figures.
-  function entriesOf(month, data, f) {
+  // The month's charges of the costs entered by hand, newest first; an electricity or water bill with its topUp { amount,
+  // month }: what it adds and the month it lands in (section 4), worked out from its own period.
+  function entriesOf(month, data) {
     return data.costs.flatMap((c) => chargesOf(c, firstDayOf(month), lastDayOf(month), data.today).map(({ date }) => ({
       costId: c.id, date, category: c.category, label: CATEGORY_LABELS[c.category], worker: c.worker, note: c.note,
       roomId: c.roomId, roomName: c.roomId === null ? null : data.rooms.get(c.roomId) ?? null, amount: c.amount,
       repeat: c.repeat, utility: c.utility, periodFrom: c.periodFrom, periodTo: c.periodTo,
-      ...(c.category === 'utilities' && BILLS.includes(c.utility) ? { topUp: topUpOf(c, f) } : {}),
+      ...(c.category === 'utilities' && BILLS.includes(c.utility) ? { topUp: billTopUp(c, data) } : {}),
     }))).sort((a, b) => (a.date === b.date ? b.costId - a.costId : a.date < b.date ? 1 : -1));
   }
 
@@ -205,8 +202,14 @@ export function createCosts({ db, now = Date.now, zone = localZone, log = consol
       periodFrom = pick('periodFrom') ?? firstDayOf(monthOf(date));
       periodTo = pick('periodTo') ?? lastDayOf(monthOf(date));
       if (!isDate(periodFrom)) throw new CostError(400, 'Pick the first day the bill covers', 'periodFrom');
+      if (periodFrom < addDays(date, -BILL_DAYS_BEFORE)) {
+        throw new CostError(400, `Pick a first day up to ${BILL_DAYS_BEFORE} days before the bill’s date`, 'periodFrom');
+      }
       if (!isDate(periodTo) || periodTo < periodFrom || daysBetween(periodFrom, periodTo) + 1 > MAX_BILL_DAYS) {
         throw new CostError(400, `Pick the last day the bill covers, up to ${MAX_BILL_DAYS} days after the first`, 'periodTo');
+      }
+      if (periodTo > addDays(date, BILL_DAYS_AFTER)) {
+        throw new CostError(400, `Pick a last day up to ${BILL_DAYS_AFTER} days after the bill’s date`, 'periodTo');
       }
     }
     // A one-off room cost: the run open in the room on its date. A monthly item finds each charge's run on read.
@@ -295,9 +298,10 @@ export function createCosts({ db, now = Date.now, zone = localZone, log = consol
       const all = runsOf();
       const inMonth = (r) => r.startDate <= lastDayOf(m) && runEnd(r, t) >= firstDayOf(m);
       const shown = all.filter(inMonth);
-      // Not capped at the kept months: a run's totals sum its sales, batches and harvests from its start, so the window reaches
-      // the oldest shown run's start (the work is linear in that run's age; only the usage days are capped, in dataFor).
-      const earliest = [addMonths(m, -11), ...shown.map((r) => monthOf(r.startDate))].sort()[0];
+      // Not capped at the kept months: a run's totals sum its sales, batches and harvests from before its start (its blocks
+      // come first: runFirstMonth), so the window reaches the oldest shown run's first month (the work is linear in that run's
+      // age; only the usage days are capped, in dataFor). The bills' periods reach MAX_BILL_DAYS before a month.
+      const earliest = [addMonths(m, -11), ...shown.map(runFirstMonth)].sort()[0];
       const data = dataFor(addDays(firstDayOf(earliest), -MAX_BILL_DAYS), all);
       const runs = data.runs.filter(inMonth);
       const figs = monthsOf(data);
@@ -310,7 +314,7 @@ export function createCosts({ db, now = Date.now, zone = localZone, log = consol
           kgHarvested: f.kgHarvested, kgSold: f.kgSold, unsold: f.unsold, incomplete: f.incomplete,
         },
         notes: f.notes, byCategory: f.byCategory, pending: f.pending,
-        entries: entriesOf(m, data, f),
+        entries: entriesOf(m, data),
         repeating: data.costs.filter((c) => c.repeat === 'monthly' && monthOf(c.date) <= m && (c.repeatUntil === null || c.repeatUntil >= m))
           .map((c) => ({ ...c, roomName: c.roomId === null ? null : data.rooms.get(c.roomId) ?? null })),
         runs: runs.map((r) => runView(r, figs, t)),
@@ -327,7 +331,7 @@ export function createCosts({ db, now = Date.now, zone = localZone, log = consol
       if (run !== null) {
         const r = runsOf().find((x) => x.id === run);
         if (!r) throw new CostError(404, 'Run not found');
-        const data = dataFor(addDays(r.startDate, -MAX_BILL_DAYS));
+        const data = dataFor(addDays(firstDayOf(runFirstMonth(r)), -MAX_BILL_DAYS));
         const v = runTotals(r, monthsOf(data), t);
         // the contract's keys; byCategory adds 'shared' (the run's share of the farm's costs); energy and water null while
         // pending, water null with no water price (never a partial or a false 0)
@@ -347,7 +351,6 @@ export function createCosts({ db, now = Date.now, zone = localZone, log = consol
 
     // A promise for the usage warms under way (tests).
     warmed: () => Promise.all([...warming.values()].map((job) => job.done)),
-
 
     // Stops the usage warms at their next day and starts no more (the server closing: the database goes next).
     stop() {

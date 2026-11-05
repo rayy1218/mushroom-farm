@@ -86,6 +86,10 @@ test('the checks', (t) => {
   refused(() => s.costs.add({ ...bill, repeat: 'monthly' }), 400, 'An electricity or water bill is entered each month', 'repeat');
   refused(() => s.costs.add({ ...bill, roomId: s.one }), 400, 'A bill is the whole farm’s', 'roomId');
   refused(() => s.costs.add({ ...bill, periodFrom: '2026-09-01', periodTo: '2026-11-03' }), 400, 'Pick the last day the bill covers, up to 62 days after the first', 'periodTo');
+  refused(() => s.costs.add({ ...bill, periodFrom: '2026-08-02', periodTo: '2026-08-31' }), 400, 'Pick a first day up to 92 days before the bill’s date', 'periodFrom');
+  refused(() => s.costs.add({ ...bill, periodFrom: '2026-11-20', periodTo: '2026-12-05' }), 400, 'Pick a last day up to 31 days after the bill’s date', 'periodTo');
+  assert.equal(s.costs.add({ ...bill, periodFrom: '2026-08-03', periodTo: '2026-09-02' }).periodFrom, '2026-08-03', '92 days before');
+  assert.equal(s.costs.add({ ...bill, periodFrom: '2026-11-04', periodTo: '2026-12-04' }).periodTo, '2026-12-04', '31 days after');
   const made = s.costs.add(bill);
   assert.deepEqual([made.periodFrom, made.periodTo], ['2026-11-01', '2026-11-30'], 'default: the bill date\'s month');
   const wage = s.costs.add({ ...ok, category: 'labour', worker: 'Ali', repeat: 'monthly' });
@@ -285,11 +289,40 @@ test('a bill in Entries carries what it adds: the unmeasured part, null while th
   const water = s.costs.add({ date: '2026-11-04', category: 'utilities', utility: 'water', amount: 50 });
   s.costs.add({ date: '2026-11-05', category: 'repairs', amount: 10 });
   const cold = s.costs.monthView({});
-  assert.equal(cold.entries.find((e) => e.costId === bill.id).topUp, null, 'pending: not known yet');
+  assert.deepEqual(cold.entries.find((e) => e.costId === bill.id).topUp, { amount: null, month: '2026-11' }, 'pending: not known yet');
   await s.costs.warmed();
   const view = s.costs.monthView({});
   const by = (id) => view.entries.find((e) => e.costId === id);
-  assert.equal(by(bill.id).topUp, 80, 'no readings: all of it unmeasured');
-  assert.equal(by(water.id).topUp, 50, 'no water price: the water bill counts in full');
+  assert.deepEqual(by(bill.id).topUp, { amount: 80, month: '2026-11' }, 'no readings: all of it unmeasured');
+  assert.deepEqual(by(water.id).topUp, { amount: 50, month: '2026-11' }, 'no water price: the water bill counts in full');
   assert.equal(view.entries.find((e) => e.category === 'repairs').topUp, undefined, 'only a bill');
+});
+
+test('a bill entered in November for October: listed in November, its top-up in October', async (t) => {
+  const s = setup(t);
+  const bill = s.costs.add({ date: '2026-11-03', category: 'utilities', utility: 'electricity', amount: 80, periodFrom: '2026-10-01', periodTo: '2026-10-31' });
+  s.costs.monthView({});
+  await s.costs.warmed();
+  const nov = s.costs.monthView({});
+  assert.deepEqual(nov.entries.find((e) => e.costId === bill.id).topUp, { amount: 80, month: '2026-10' });
+  assert.equal(nov.tiles.costs, 0, 'not in November');
+  const oct = s.costs.monthView({ month: '2026-10' });
+  assert.equal(oct.entries.length, 0, 'listed in the month of its date');
+  assert.equal(oct.tiles.costs, 80);
+});
+
+test('blocks received before their run starts count in the run: the month view and the summary', async (t) => {
+  const s = setup(t);
+  const raw = s.raw();
+  add(raw, { batches: [{ id: 1, run_id: s.run.id, room_id: s.one, crop: 'oyster', received_at: Date.parse('2026-09-20T04:00:00Z'), blocks: 100, price_per_block: 2.5 }] });
+  raw.close();
+  s.costs.monthView({});
+  s.costs.summary({ run: s.run.id });
+  await s.costs.warmed();
+  const view = s.costs.monthView({});
+  assert.equal(view.runs[0].parts.blocks, 250, 'received 20 Sep, the run from 1 Oct');
+  assert.equal(s.costs.monthView({ month: '2026-10' }).runs[0].parts.blocks, 250);
+  const sum = s.costs.summary({ run: s.run.id });
+  assert.deepEqual(sum.byCategory, [{ category: 'blocks', amount: 250 }]);
+  assert.equal(sum.total, 250);
 });

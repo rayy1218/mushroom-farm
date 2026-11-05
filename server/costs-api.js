@@ -2,10 +2,10 @@
 // /api/costs/summary?from=&to=&run=; POST /api/costs; PUT and DELETE /api/costs/:id; POST /api/costs/:id/change and /stop.
 // server/costs.js checks, writes and works out; this reads the query and the body and turns its errors into the API's.
 
+import { createCosts } from './costs.js';
+
 const ONE = /^\/api\/costs\/([1-9][0-9]{0,14})$/;
 const ACTION = /^\/api\/costs\/([1-9][0-9]{0,14})\/(change|stop)$/;
-
-import { createCosts } from './costs.js';
 
 // Makes the service from the database, tells the pages ('costs' on events) after a write or a usage warm done. → async (req,
 // res, path, { send, readJson, HttpError, url }) that answers true when the path is one of its routes; its close() stops
