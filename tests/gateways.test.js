@@ -43,7 +43,7 @@ test('upgrade 17 to 18: the rooms are kept and are on the farm\'s gateway (null)
   db.close();
   const check = new DatabaseSync(path, { readOnly: true });
   t.after(() => check.close());
-  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 21);
+  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 22);
 
   const again = new DatabaseSync(path); // a file that has the column but an older version
   again.exec('PRAGMA user_version = 17;');

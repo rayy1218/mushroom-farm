@@ -2270,3 +2270,163 @@ p.bt-making-note.bt-over { margin-top: 12px; }
   .bt-past-table .num { text-align: left; }
 }
 /* ---- end Batches ---- */
+
+/* ---- Inventory (spec 2026-11-05-inventory-design.md 5) ---- */
+.iv-page { max-width: 1040px; } /* audit #11: at 1440 px a name sat 600 to 900 px from its figures; the head, cards and lines keep one right edge */
+.iv-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-left: auto; }
+.iv-tools a.button { min-height: 36px; padding: 7px 14px; background: var(--raised); font-weight: 500; } /* Count stock looks like its neighbours (audit #10) */
+.iv-tools a.button:hover { background: color-mix(in srgb, var(--ink) 7%, var(--raised)); }
+.iv-sheet-link { color: var(--ink-2); font-size: var(--fs-sm); padding: 10px 4px; }
+.iv-attention { margin: 0 0 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.iv-attention .iv-att { min-height: 0; padding: 4px 0; border: 0; background: none; font: inherit; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 4px; }
+.iv-attention .iv-att:hover { background: none; text-decoration-style: solid; }
+.iv-attention .iv-att[aria-pressed="true"] { text-decoration-style: solid; text-decoration-thickness: 2px; }
+.iv-att[data-tone="amber"] { color: var(--warning-text); }
+.iv-att[data-tone="warn"] { color: var(--critical-text); }
+.iv-filter-line { margin: -8px 0 12px; font-size: var(--fs-sm); }
+.iv-filter-line .iv-link, .iv-archived .iv-link { color: var(--ink); }
+.iv-done-line { margin: -4px 0 12px; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; } /* after a record: what was saved, Undo */
+.iv-done-line:focus { outline: none; }
+.iv-done-line .iv-undo { padding: 6px 2px; color: var(--ink); }
+@media (max-width: 600px) { .iv-done-line .iv-undo { min-height: 44px; padding: 10px 4px; } }
+.iv-groups { display: grid; gap: 16px; }
+.iv-group h2 { margin: 0 0 8px; font-size: var(--fs-md); font-weight: 600; }
+.iv-table { width: 100%; }
+@media (min-width: 900px) { /* every kind's card lines up its columns */
+  .iv-table { table-layout: fixed; }
+  .iv-table th:nth-child(2), .iv-table th:nth-child(3) { width: 130px; }
+  .iv-table th:nth-child(4) { width: 150px; }
+}
+.iv-row { cursor: pointer; }
+@media (hover: hover) {
+  .iv-row:hover :is(th, td) { background: var(--raised); }
+}
+.iv-table .iv-name a { color: var(--ink); font-weight: 600; text-decoration: none; }
+.iv-table .iv-name a:hover { text-decoration: underline; }
+.iv-table .iv-name .pill { margin-left: 4px; vertical-align: 1px; }
+.iv-sub { display: block; color: var(--muted); font-size: var(--fs-sm); font-weight: 400; }
+.iv-meta { display: none; } /* the phone's line (the desk has its columns) */
+.iv-table .iv-qty { font-weight: 600; }
+.iv-counted { color: var(--ink-2); }
+.iv-stale { color: var(--muted); }
+.iv-table .iv-row-archived :is(th, td, a) { color: var(--muted); } /* archived rows read as set aside (audit #14) */
+.iv-table .iv-row-archived .iv-qty, .iv-table .iv-row-archived .iv-name a { font-weight: 500; }
+.iv-all-archived { margin: 0 0 8px; }
+.iv-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; background: transparent; border-style: dashed; border-color: var(--border-strong); }
+.iv-empty .none { margin: 0; }
+.iv-archived { margin: 12px 0 0; }
+.iv-archived .muted { display: block; font-size: var(--fs-sm); }
+.iv-link { background: none; border: 0; padding: 10px 0; color: var(--ink-2); text-decoration: underline; cursor: pointer; font: inherit; }
+@media (max-width: 600px) {
+  .iv-tools { flex: 1 1 100%; margin-left: 0; }
+  .iv-tools > :is(button, a.button) { flex: 1 1 calc(50% - 4px); justify-content: center; min-height: 44px; }
+  .iv-sheet-link { flex: 1 1 100%; display: flex; align-items: center; min-height: 44px; }
+  .iv-attention .iv-att { min-height: 44px; }
+  .iv-filter-line .iv-link { min-height: 44px; }
+  .iv-table { table-layout: auto; }
+  .iv-table thead { display: none; }
+  .iv-table tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 0 12px; padding: 6px 0; border-top: 1px solid var(--border); }
+  .iv-table :is(th, td) { border: 0; padding: 0; }
+  .iv-table .iv-name { grid-column: 1; }
+  .iv-table .iv-name a { display: inline-flex; align-items: center; min-height: 44px; }
+  .iv-table .iv-qty { grid-column: 2; grid-row: 1; display: flex; align-items: center; justify-content: flex-end; min-height: 44px; text-align: right; }
+  .iv-table :is(.iv-reorder, .iv-counted) { display: none; }
+  .iv-meta { display: block; color: var(--muted); font-size: var(--fs-sm); font-weight: 400; padding-bottom: 2px; }
+}
+.iv-item { display: grid; gap: 16px; }
+.iv-tiles { margin: 0; }
+.iv-tiles .us-basis { text-transform: none; font-size: var(--fs-sm); }
+.iv-useby-line[data-tone="warn"] { color: var(--critical-text); font-weight: 600; }
+.iv-useby-line[data-tone="amber"] { color: var(--warning-text); font-weight: 600; }
+.iv-lots h2, .iv-history h2 { margin: 0 0 8px; font-size: var(--fs-md); font-weight: 600; }
+.iv-archived-note { margin: 6px 0 0; color: var(--muted); font-size: var(--fs-sm); }
+.iv-archived-note .pill { margin-right: 6px; }
+.iv-history-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 16px; margin-bottom: 8px; }
+.iv-history-head h2 { margin: 0; }
+.iv-history-note { margin: 0; font-size: var(--fs-sm); }
+@media (min-width: 601px) {
+  .iv-lot-table { table-layout: fixed; } /* Qty, Left, Use by and the action are fixed; From takes the rest */
+  .iv-lot-table :is(th, td):is(:nth-child(2), :nth-child(3)) { width: 7rem; }
+  .iv-lot-table :is(th, td):nth-child(4) { width: 10rem; }
+  .iv-lot-table :is(th, td):nth-child(5) { width: 8rem; padding-right: 0; } /* Throw out ends at the card's edge, like History's Edit */
+  .iv-lot-action button { padding-right: 0; } /* the label ends at the edge, like History's Edit */
+}
+.iv-lot-table td.iv-lot-action { text-align: right; } /* over .us-table td's left (0,1,2) */
+.iv-moves { list-style: none; margin: 0; padding: 0; }
+/* one column template for every row, so the figures line up whatever follows them (audit #15) */
+.iv-move { display: grid; grid-template-columns: minmax(0, 1fr) 13ch 4.5rem; align-items: center; gap: 4px 16px; padding: 10px 0; border-top: 1px solid var(--border); }
+.iv-move :is(.iv-move-edit, .iv-move-edit-none) { justify-self: end; }
+.iv-move:first-child { border-top: 0; }
+.iv-move-text { display: flex; flex-direction: column; min-width: 0; }
+.iv-move-when { color: var(--muted); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.iv-move-qty { font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+@media (max-width: 600px) {
+  .iv-back { display: inline-flex; align-items: center; min-height: 44px; }
+  .iv-lot-table thead { display: none; }
+  .iv-lot-table tr { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 0 12px; padding: 4px 0; border-top: 1px solid var(--border); }
+  .iv-lot-table :is(th, td) { border: 0; padding: 0; }
+  .iv-lot-table .iv-lot-qty { display: none; }
+  .iv-lot-table .iv-lot-left::before { content: "Left "; color: var(--muted); font-weight: 400; }
+  .iv-lot-table .iv-lot-useby { grid-column: 1; }
+  .iv-lot-table .iv-lot-action { grid-column: 2; }
+  .iv-lot-action button { white-space: nowrap; min-height: 44px; }
+  .iv-lot-table .iv-lot-none { display: none; }
+  .iv-tiles { grid-template-columns: 1fr 1fr; }
+  .iv-tiles > :last-child:nth-child(odd) { grid-column: 1 / -1; } /* an odd last tile takes the row, as Harvest's (audit #19) */
+  .iv-move { grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
+  .iv-move-text { grid-row: 1 / span 2; }
+  .iv-move-qty { grid-column: 2; grid-row: 1; } /* on the first line, beside what it was */
+  .iv-move .iv-move-edit { grid-column: 2; grid-row: 2; padding-right: 0; text-align: right; }
+  .iv-move .iv-move-edit-none { display: none; }
+  .iv-move-edit { min-width: 44px; min-height: 44px; }
+}
+.iv-count { display: grid; gap: 16px; }
+.iv-count-who .field { max-width: 320px; margin: 0; }
+.iv-count-group { margin: 0; min-width: 0; }
+.iv-count-group legend { float: left; width: 100%; padding: 0; margin-bottom: 4px; font-size: var(--fs-md); font-weight: 600; } /* a float keeps the legend inside the card's padding, not on its border */
+.iv-count-group legend + .iv-count-row { clear: both; border-top: 0; }
+.iv-count-row { display: grid; grid-template-columns: minmax(0, 1fr) 160px; grid-template-areas: "name box" "records box" "gone gone" "error error"; align-items: center; gap: 2px 16px; margin: 0; padding: 10px 0; border-top: 1px solid var(--border); }
+.iv-count-row:first-of-type { border-top: 0; }
+.iv-count-name { grid-area: name; font-weight: 600; }
+.iv-count-records { grid-area: records; margin: 0; font-variant-numeric: tabular-nums; }
+.iv-count-row .tk-suffix-box { grid-area: box; }
+.iv-count-row .field-error { grid-area: error; }
+.iv-count-gone { grid-area: gone; margin: 0; font-size: var(--fs-sm); }
+.iv-count-row input:disabled { opacity: .55; background: var(--band); cursor: not-allowed; } /* gone from the list (audit #8) */
+.iv-count-diff[data-tone="amber"] { color: var(--warning-text); font-weight: 600; } /* a question, as Record anyway, not a fault */
+.iv-count-lead { margin: 0; }
+.iv-count-send { display: flex; align-items: center; gap: 12px; }
+.iv-count-back { margin: 0; font-size: var(--fs-sm); }
+.iv-count-back .iv-link { padding: 6px 2px; color: var(--ink); }
+@media (max-width: 600px) {
+  .iv-count-row { grid-template-columns: minmax(0, 1fr) 120px; }
+  /* Save within reach all along the shelves (audit #5): the bar stays at the foot of the screen */
+  .iv-count-send { position: sticky; bottom: 0; z-index: 1; margin: 0 -14px; padding: 8px 14px calc(8px + env(safe-area-inset-bottom)); background: var(--page); border-top: 1px solid var(--border); }
+  .iv-count-send button { flex: 1 1 auto; min-height: 44px; }
+  .iv-count-back .iv-link { min-height: 44px; padding: 10px 4px; }
+}
+/* the dialogs: RM before the figure (audit #20); Day bought and Use by stacked where two would cut the date */
+.tk-suffix-box.iv-prefix-box .tk-suffix { left: 10px; right: auto; }
+.field .tk-suffix-box.iv-prefix-box input { padding-left: 40px; padding-right: 10px; }
+@media (max-width: 420px) { .tk-dialog .tk-when.iv-when .tk-group-fields { grid-template-columns: 1fr; } }
+.iv-sheet .hv-sheet-tools .range-bar { margin: 0; }
+.iv-sheet .hv-sheet-facts .hv-write-line { min-width: min(40ch, 55vw); } /* a phone: the Farm line within the page (audit #23) */
+.iv-sheet-table { min-width: 1100px; } /* twelve columns: a phone scrolls the sheet sideways */
+.iv-sheet-table td:nth-child(4) { min-width: 12rem; }
+.iv-sheet-table td:is(:nth-child(5), :nth-child(6)) { white-space: nowrap; }
+.iv-sheet-foot { margin-top: 16px; }
+.iv-sheet-foot p { margin: 0; }
+.iv-sheet-line { display: inline-block; min-width: 30ch; height: 1em; border-bottom: 1px solid var(--border-strong); vertical-align: baseline; } /* written in */
+.iv-sheet-line-short { min-width: 14ch; }
+@media (max-width: 600px) { .iv-sheet-line { min-width: 16ch; } .iv-sheet-line-short { min-width: 10ch; } }
+@media print {
+  /* the page's margins and the space under the table light too, whatever the theme (audit #24: the dark page printed dark margins) */
+  html:root:has(.iv-sheet) { color-scheme: light; background: Canvas; } /* (0,2,1): over :root[data-theme="dark"] */
+  body.printing-sheet .iv-sheet-table { min-width: 0; font-size: 8pt; table-layout: fixed; } /* the colgroup's mm widths */
+  body.printing-sheet .iv-sheet-table td { height: 8mm; overflow-wrap: anywhere; } /* a long figure wraps in its cell, never over the next */
+  body.printing-sheet .iv-sheet-table td:nth-child(4) { min-width: 0; }
+  body.printing-sheet .iv-sheet-table td:is(:nth-child(5), :nth-child(6)) { overflow-wrap: normal; white-space: nowrap; } /* LRMP No. and Price stay whole on one line */
+  body.printing-sheet .iv-sheet-foot { margin-top: 4mm; font-size: 9pt; break-inside: avoid; }
+}
+.iv-settings .s-hint { max-width: 60ch; } /* hints capped near 60 ch, as DESIGN.md has it (audit #25) */
+/* ---- end Inventory ---- */

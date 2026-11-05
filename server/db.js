@@ -7,7 +7,7 @@ import { PROGRAM_DEFAULTS } from './program.js';
 import { FAMILY_OF, DAILY_RULES, HARVEST_RULES } from './task-rules.js';
 import { BATCHES_SCHEMA, createBatchStore } from './batches-db.js'; // ---- Batches ---- (spec 2026-11-05-batches-design.md 2)
 
-const VERSION = 21;
+const VERSION = 22;
 
 // Iteration 1 (version 0) had only the rooms table without the address columns.
 const ROOMS = `
@@ -287,6 +287,44 @@ CREATE INDEX IF NOT EXISTS harvests_by_room ON harvests (room_id, picked_at);
 CREATE INDEX IF NOT EXISTS harvests_by_run ON harvests (run_id, picked_at);
 CREATE INDEX IF NOT EXISTS harvests_by_time ON harvests (picked_at);
 CREATE INDEX IF NOT EXISTS harvests_by_task ON harvests (task_id) WHERE task_id IS NOT NULL;`;
+
+// ---- Inventory (spec 2026-11-05-inventory-design.md 2) ----
+// Stock items and their moves. Batches inserts block items and 'batch' moves naming only the contract's columns (contract
+// section 7), so every other column is nullable or has a default; the unit has no CHECK here ('blocks' is Batches').
+const INVENTORY = `
+CREATE TABLE IF NOT EXISTS stock_items (
+  id          INTEGER PRIMARY KEY,
+  name        TEXT    NOT NULL,
+  kind        TEXT    NOT NULL CHECK (kind IN ('blocks', 'spawn', 'bags', 'chemical', 'packaging', 'other')),
+  unit        TEXT    NOT NULL,
+  reorder_at  REAL,
+  ingredient  TEXT,
+  lrmp_no     TEXT,
+  archived    INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1)),
+  low_sent_at INTEGER
+) STRICT;
+CREATE UNIQUE INDEX IF NOT EXISTS stock_items_name ON stock_items (name COLLATE NOCASE);
+CREATE TABLE IF NOT EXISTS stock_moves (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  item_id        INTEGER NOT NULL REFERENCES stock_items (id),
+  at             INTEGER NOT NULL,
+  qty            REAL    NOT NULL,
+  unit_cost      REAL,
+  ref_kind       TEXT    NOT NULL CHECK (ref_kind IN ('purchase', 'use', 'batch', 'adjust')),
+  ref_id         INTEGER,
+  note           TEXT,
+  total          REAL,
+  supplier       TEXT,
+  use_by         TEXT,
+  room_id        INTEGER,
+  reason         TEXT,
+  worker         TEXT,
+  counted        REAL,
+  lot_id         INTEGER,
+  use_by_sent_at INTEGER
+) STRICT;
+CREATE INDEX IF NOT EXISTS stock_moves_by_item ON stock_moves (item_id, at);
+CREATE INDEX IF NOT EXISTS stock_moves_by_kind ON stock_moves (ref_kind, at);`;
 
 const ALARMS = `
 CREATE TABLE alarms (
@@ -629,6 +667,8 @@ function migrate(db) {
     }
     // ---- Batches ---- (spec 2026-11-05-batches-design.md 2): every table of both parts in one step.
     if (version < 21) db.exec(BATCHES_SCHEMA);
+    // ---- Inventory (spec 2026-11-05-inventory-design.md 2.3) ----
+    if (version < 22) db.exec(INVENTORY);
     db.exec(`PRAGMA user_version = ${VERSION}`);
     db.exec('COMMIT');
   } catch (err) {
@@ -655,6 +695,17 @@ const runOf = (r) => ({ id: r.id, roomId: r.room_id, startedAt: r.started_at, en
 const harvestOf = (r) => ({
   id: r.id, roomId: r.room_id, runId: r.run_id, crop: r.crop, stage: r.stage, flush: r.flush, blocks: r.blocks, kg: r.kg,
   pickedAt: r.picked_at, worker: r.worker, taskId: r.task_id, createdAt: r.created_at,
+});
+
+// ---- Inventory ---- A stock_items row and a stock_moves row as the inventory module shows them.
+const stockItemOf = (r) => ({
+  id: r.id, name: r.name, kind: r.kind, unit: r.unit, reorderAt: r.reorder_at, ingredient: r.ingredient, lrmpNo: r.lrmp_no,
+  archived: r.archived === 1, lowSentAt: r.low_sent_at,
+});
+const stockMoveOf = (r) => ({
+  id: r.id, itemId: r.item_id, at: r.at, qty: r.qty, unitCost: r.unit_cost, refKind: r.ref_kind, refId: r.ref_id, note: r.note,
+  total: r.total, supplier: r.supplier, useBy: r.use_by, roomId: r.room_id, reason: r.reason, worker: r.worker,
+  counted: r.counted, lotId: r.lot_id, useBySentAt: r.use_by_sent_at,
 });
 
 // A machine_log row as the API shows it.
@@ -957,6 +1008,28 @@ export function openDb(path, { log = console.error } = {}) {
     updateHarvest: db.prepare('UPDATE harvests SET kg = ?, picked_at = ? WHERE id = ?'),
     deleteHarvest: db.prepare('DELETE FROM harvests WHERE id = ?'),
     deleteHarvests: db.prepare('DELETE FROM harvests WHERE room_id = ?'),
+    // ---- Inventory (spec 2026-11-05-inventory-design.md 2) ----
+    stockItems: db.prepare('SELECT * FROM stock_items ORDER BY name COLLATE NOCASE, id'),
+    stockItem: db.prepare('SELECT * FROM stock_items WHERE id = ?'),
+    stockNameUsed: db.prepare('SELECT name FROM stock_items WHERE name = ? COLLATE NOCASE AND id IS NOT ?'),
+    insertStockItem: db.prepare('INSERT INTO stock_items (name, kind, unit, reorder_at, ingredient, lrmp_no) VALUES (?, ?, ?, ?, ?, ?)'),
+    updateStockItem: db.prepare('UPDATE stock_items SET name = ?, kind = ?, unit = ?, reorder_at = ?, ingredient = ?, lrmp_no = ?, archived = ? WHERE id = ?'),
+    deleteStockItem: db.prepare('DELETE FROM stock_items WHERE id = ?'),
+    setStockLowSent: db.prepare('UPDATE stock_items SET low_sent_at = ? WHERE id = ?'),
+    stockMoves: db.prepare('SELECT * FROM stock_moves ORDER BY at, id'),
+    itemStockMoves: db.prepare('SELECT * FROM stock_moves WHERE item_id = ? ORDER BY at, id'),
+    stockMove: db.prepare('SELECT * FROM stock_moves WHERE id = ?'),
+    insertStockMove: db.prepare(`INSERT INTO stock_moves (item_id, at, qty, unit_cost, ref_kind, ref_id, note, total, supplier, use_by,
+                                                          room_id, reason, worker, counted, lot_id)
+                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+    updateStockMove: db.prepare(`UPDATE stock_moves SET at = ?, qty = ?, unit_cost = ?, total = ?, supplier = ?, use_by = ?, room_id = ?,
+                                                        reason = ?, worker = ?, use_by_sent_at = ? WHERE id = ?`),
+    deleteStockMove: db.prepare('DELETE FROM stock_moves WHERE id = ?1 OR lot_id = ?1'),
+    setStockUseBySent: db.prepare('UPDATE stock_moves SET use_by_sent_at = ? WHERE id = ? AND use_by IS ?'),
+    stockPurchasesBetween: db.prepare(`SELECT m.*, i.name AS item_name, i.kind AS item_kind FROM stock_moves m
+                                       JOIN stock_items i ON i.id = m.item_id
+                                       WHERE m.ref_kind = 'purchase' AND m.at BETWEEN ? AND ? ORDER BY m.at, m.id`),
+    hasBatches: db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'batches'"),
   };
   const batchStore = createBatchStore(db); // ---- Batches ---- (spec 2026-11-05-batches-design.md 2)
 
@@ -1451,6 +1524,7 @@ export function openDb(path, { log = console.error } = {}) {
         q.deleteCropRuns.run(id);
         q.deleteTasks.run(id);
         batchStore.forgetRoom(id); // ---- Batches ---- the room's batches are kept without it (room and run ids are reused)
+        db.prepare('UPDATE stock_moves SET room_id = 0 WHERE room_id = ?').run(id); // Inventory: its uses read "A deleted room"
         // The owner's rules lose the room (its id is given to the next room made after the top one); a rule left with no
         // room is removed (its rows went with the room's tasks). A rooms value that is not a list is left alone.
         for (const r of q.customRules.all()) {
@@ -2015,6 +2089,110 @@ export function openDb(path, { log = console.error } = {}) {
 
     // ---- Batches ---- (spec 2026-11-05-batches-design.md): the store of server/batches-db.js.
     batches: batchStore,
+
+    // ---- Inventory (spec 2026-11-05-inventory-design.md 2). An item is { id, name, kind, unit, reorderAt, ingredient, lrmpNo,
+    //      archived, lowSentAt }; a move { id, itemId, at, qty, unitCost, refKind, refId, note, total, supplier, useBy, roomId,
+    //      reason, worker, counted, lotId, useBySentAt }. Batches writes its own 'batch' moves (contract section 7). ----
+
+    // Every item, by name.
+    stockItems() {
+      return q.stockItems.all().map(stockItemOf);
+    },
+
+    // An item, or null.
+    stockItem(id) {
+      const r = q.stockItem.get(id);
+      return r ? stockItemOf(r) : null;
+    },
+
+    // The stored name of another item called `name` (case aside), or null.
+    stockNameTaken(name, id = null) {
+      return q.stockNameUsed.get(name, id)?.name ?? null;
+    },
+
+    // A new item: { name, kind, unit, reorderAt?, ingredient?, lrmpNo? } → the item. Throws on a name used (the unique index).
+    insertStockItem({ name, kind, unit, reorderAt = null, ingredient = null, lrmpNo = null }) {
+      return this.stockItem(Number(q.insertStockItem.run(name, kind, unit, reorderAt, ingredient, lrmpNo).lastInsertRowid));
+    },
+
+    // The item's fields as given (all of them: name, kind, unit, reorderAt, ingredient, lrmpNo, archived). → the item.
+    updateStockItem(id, { name, kind, unit, reorderAt, ingredient, lrmpNo, archived }) {
+      q.updateStockItem.run(name, kind, unit, reorderAt, ingredient, lrmpNo, archived ? 1 : 0, id);
+      return this.stockItem(id);
+    },
+
+    // → true when an item went.
+    deleteStockItem(id) {
+      return q.deleteStockItem.run(id).changes > 0;
+    },
+
+    // When the item's Low message went (ms), or null once it is back over its level.
+    setStockLowSent(id, at) {
+      q.setStockLowSent.run(at, id);
+    },
+
+    // Every move, oldest first.
+    stockMoves() {
+      return q.stockMoves.all().map(stockMoveOf);
+    },
+
+    // The item's moves, oldest first.
+    itemStockMoves(itemId) {
+      return q.itemStockMoves.all(itemId).map(stockMoveOf);
+    },
+
+    // A move, or null.
+    stockMove(id) {
+      const r = q.stockMove.get(id);
+      return r ? stockMoveOf(r) : null;
+    },
+
+    // New moves in one transaction: [{ itemId, at, qty, refKind, unitCost?, refId?, note?, total?, supplier?, useBy?, roomId?,
+    // reason?, worker?, counted?, lotId? }] → the moves. One bad row writes none.
+    insertStockMoves(list) {
+      const ids = [];
+      inTransaction(() => {
+        for (const m of list) {
+          ids.push(Number(q.insertStockMove.run(m.itemId, m.at, m.qty, m.unitCost ?? null, m.refKind, m.refId ?? null, m.note ?? null,
+            m.total ?? null, m.supplier ?? null, m.useBy ?? null, m.roomId ?? null, m.reason ?? null, m.worker ?? null,
+            m.counted ?? null, m.lotId ?? null).lastInsertRowid));
+        }
+      });
+      return ids.map((id) => this.stockMove(id));
+    },
+
+    // A move's changeable fields as given (at, qty, unitCost, total, supplier, useBy, roomId, reason, worker, useBySentAt).
+    // → the move.
+    updateStockMove(id, m) {
+      q.updateStockMove.run(m.at, m.qty, m.unitCost ?? null, m.total ?? null, m.supplier ?? null, m.useBy ?? null, m.roomId ?? null,
+        m.reason ?? null, m.worker ?? null, m.useBySentAt ?? null, id);
+      return this.stockMove(id);
+    },
+
+    // Deletes a move and the throw-outs taken from it (lot_id). → how many rows went.
+    deleteStockMove(id) {
+      return Number(q.deleteStockMove.run(id).changes);
+    },
+
+    // When the purchase's use-by message went (ms), or null.
+    // Only while the purchase's use-by is still `useBy` (the one told); a clear (at null) passes the use-by it has.
+    setStockUseBySent(id, at, useBy) {
+      q.setStockUseBySent.run(at, id, useBy ?? null);
+    },
+
+    // The purchases made in [from, to] (ms), oldest first, each with its item's name and kind.
+    stockPurchasesBetween(from, to) {
+      return q.stockPurchasesBetween.all(from, to).map((r) => ({ ...stockMoveOf(r), name: r.item_name, kind: r.item_kind }));
+    },
+
+    // Batches' rooms: Map batch id → room id (null until its blocks go in), read from Batches' table when it is there.
+    batchRooms(ids) {
+      const out = new Map();
+      if (!ids.length || !q.hasBatches.get()) return out;
+      const rows = db.prepare(`SELECT id, room_id FROM batches WHERE id IN (${ids.map(() => '?').join(', ')})`).all(...ids);
+      for (const r of rows) out.set(r.id, r.room_id);
+      return out;
+    },
 
     close() {
       db.close();

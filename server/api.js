@@ -18,6 +18,7 @@ import { createHarvests } from './harvests.js';
 import { createHarvestRoutes } from './harvest-api.js';
 import { createBatches } from './batches.js';
 import { createBatchRoutes } from './batches-api.js';
+import { createInventoryApi } from './inventory-api.js'; // ---- Inventory ----
 import { DEFAULT_GATEWAY, sameGateway } from './gateways.js';
 
 const MAX_BODY = 64 * 1024;
@@ -100,6 +101,7 @@ export function createApi(db, machines = null, controller = null, poller = null,
   const harvestRoutes = createHarvestRoutes({ harvests, onTaskChange: (roomId) => { publishRoom(roomId, 'tasks'); publishDue(); } });
   const stopTellingHarvests = [harvests.onChange(publishHarvest), taskStore.onHarvest(publishHarvest)];
   const stopTelling = () => { stopTellingTasks(); stopTellingHarvests.forEach((stop) => stop()); stopTellingBatches(); harvests.stop(); };
+  const inventoryApi = createInventoryApi({ db, events }); // ---- Inventory (spec 2026-11-05-inventory-design.md 7) ----
   // The room body; on the farm's gateway its addresses must differ from the outdoor sensor's (read through that gateway).
   // stored: the room as it is (an update): a filter setting or the gateway left out is its stored value, so the checks compare
   // what will be saved. The farm's own gateway is stored as null, its one spelling, so the address checks see it as the farm's.
@@ -132,6 +134,7 @@ export function createApi(db, machines = null, controller = null, poller = null,
     if (await taskRoutes(req, res, path, { send, readJson, HttpError, url })) return;
     if (await harvestRoutes(req, res, path, { send, readJson, HttpError, url })) return;
     if (await batchRoutes(req, res, path, { send, readJson, HttpError, url })) return;
+    if (await inventoryApi.routes(req, res, path, { send, readJson, HttpError, url })) return;
     if (path === '/api/settings') {
       if (req.method === 'GET') return send(res, 200, settingsReply());
       if (req.method !== 'PUT') throw notFound();
@@ -354,6 +357,6 @@ export function createApi(db, machines = null, controller = null, poller = null,
       }
     }
   }
-  api.close = stopTelling;
+  api.close = () => { stopTelling(); inventoryApi.stop(); };
   return api;
 }

@@ -1,0 +1,178 @@
+# Inventory: what's in stock, what was bought and used, and what runs out (business module)
+
+Date: 2026-11-05 · Branch `feat/inventory` (worktree `.claude/worktrees/inventory`, from `v2` at `7a0713e`) · Database
+version **22** · One of four parallel business modules (`~/.claude/task-logs/business/CONTRACT.md`): merges after Batches,
+before Sales and Costs.
+
+The owner chose every row marked *owner* in the brainstorm (2026-11-05): the kinds of stock, a unit per item, use by hand
+with a stock count, Low on the page plus one Telegram message, blocks following Batches, a printable myGAP 4-5 sheet, a
+use-by per purchase, lots taken oldest purchase first, block items with no Purchase. The lead chose the rest (approach A:
+a ledger of moves, every figure worked out on read). The contract's section 7 (Batches, 2026-11-05) fixes how blocks and
+batch materials reach stock: **Batches writes those moves itself**; Inventory shows them and never writes or edits them.
+
+## 1. Scope
+
+| In | Out (later) |
+|---|---|
+| Items of the kinds blocks, spawn, bags, chemical, packaging and other *owner* | Fuel and water as stock |
+| A unit per item, picked when it is added: pcs, kg, g, L, mL (`blocks` on block items) *owner* | Packs that convert to units (a carton of 500) |
+| **Purchase**: qty, total paid (RM), supplier, an optional use-by date, the day | Suppliers as records of their own, purchase orders |
+| **Record use** by hand: qty, the room, the reason, who *owner* | Use taken off when a task is Done *owner* |
+| **Count stock**: one sheet for every item; each typed figure a count; the page shows when each item was last counted *owner* | A Today task to count *owner* |
+| A reorder level per item: **Low** on the page and one Telegram message *owner* | A Today task or an alarm for low stock *owner* |
+| A use-by per purchase: a warning 7 days ahead, **Expired**, **Throw out** *owner* | Lot numbers |
+| Lots taken **oldest purchase first** *owner* | Earliest use-by first |
+| Blocks and batch materials follow Batches (Batches writes their moves) *owner* | Purchases of blocks in Inventory *owner* |
+| `GET /api/inventory/purchases` for Costs (contract section 5) | |
+| A printable myGAP 4-5 sheet filled from the records; equipment, PHI and re-entry left blank *owner* | Those three columns in the app |
+| Edit or delete a wrong purchase, use or count | Editing a batch move (Batches owns it) |
+
+## 2. Data (database version 22)
+
+The tables' contract columns (section 5 of the contract) keep their names and meanings; the rest are Inventory's own. Every
+own column is nullable or has a default (contract section 7), since Batches inserts rows naming only the contract's columns.
+
+| Table | Columns | Rules |
+|---|---|---|
+| `stock_items` | Contract: `id`, `name`, `kind` (`'blocks'`, `'spawn'`, `'bags'`, `'chemical'`, `'packaging'`, `'other'`), `unit`, `reorder_at` (REAL, null = none). Own: `ingredient` (text, chemicals), `lrmp_no` (text, chemicals), `archived` (0/1, default 0), `low_sent_at` (ms, null) | STRICT. `kind` has a CHECK of the six; `unit` has none in the table (Batches writes `'blocks'`), the store checks it. A unique index on `name COLLATE NOCASE`. |
+| `stock_moves` | Contract: `id`, `item_id` (→ `stock_items.id`), `at` (ms), `qty` (REAL, + in / − out), `unit_cost` (RM per unit), `ref_kind` (`'purchase'`, `'use'`, `'batch'`, `'adjust'`), `ref_id`, `note`. Own: `total` (RM paid, a purchase), `supplier`, `use_by` (`YYYY-MM-DD`, a purchase), `room_id`, `reason`, `worker`, `counted` (REAL, a count: what was on the shelf), `lot_id` (the purchase a use was taken from, Throw out only), `use_by_sent_at` (ms) | STRICT. A CHECK on `ref_kind`. Index `(item_id, at)` and `(ref_kind, at)`. |
+
+### 2.1 What each move is
+
+| Move | Written by | `qty` | Other columns |
+|---|---|---|---|
+| Purchase | Inventory | over 0 | `ref_kind 'purchase'`, `total`, `unit_cost` = `total` ÷ `qty` (kept to 6 places), `supplier`, `use_by`, `at` |
+| Use | Inventory | under 0 | `ref_kind 'use'`, `room_id` (null: not in a room), `reason`, `worker`, `at`; `lot_id` for a Throw out |
+| Count | Inventory | the counted figure − the records' figure at that moment (0 allowed, only here) | `ref_kind 'adjust'`, `counted`, `worker`, `at` now |
+| Batch | **Batches** (contract section 7) | + blocks received, − blocks into a room, − materials used on a making day | `ref_kind 'batch'`, `ref_id` the batch id, `unit_cost` on a receipt |
+
+### 2.2 Units
+
+| Unit | Kinds offered | Entry | Shown |
+|---|---|---|---|
+| pcs | any but blocks | whole numbers | "120 pcs" |
+| kg, L | any but blocks | up to 2 decimals | 2 decimals, "3.50 L", "0.25 kg" |
+| g, mL | any but blocks | whole numbers | "250 g", "500 mL" |
+| blocks | block items only (Batches makes them, "<crop> blocks") | uses and counts only, whole numbers | "480 blocks" |
+
+A unit cannot change once the item has moves (the figures would change meaning); the Edit dialog says so.
+
+### 2.3 The upgrade (version 20 → 22 on this branch)
+
+| Step | Rule |
+|---|---|
+| `if (version < 22)` | Make `stock_items` and `stock_moves` and their indexes (`CREATE TABLE IF NOT EXISTS`), in the `// ---- Inventory ----` block of `server/db.js`. No rows. `VERSION = 22` on this branch; at merge the integrator keeps every step. |
+
+## 3. The figures (`server/inventory-math.js`, pure)
+
+| Figure | Rule |
+|---|---|
+| In stock | Σ `qty` of the item's moves. May go under 0 (a use recorded beyond the records): shown as "−2.00 L" so a count can put it right. |
+| Lots | Each in-move (a purchase, a batch receipt, a count that added) is a lot of its `qty`, in the order of `at` then `id`. First each Throw out (a use with `lot_id`) comes off its own lot (any part beyond what that lot holds joins the other outs); then the other outs together come off the lots **oldest first** *owner*, each lot to 0 before the next. A lot's **left** is what remains. A lot with nothing left is not listed. |
+| Use-by state | A lot with some left and a `use_by`: **soon** when the farm's today is within 7 days of it (the use-by day itself counts as usable), **expired** after it. The item's `useBy` is the earliest of its lots' (expired before soon), with `qty`, what is left in all its lots of that state (audit 2026-11-05 #4: 4.50 kg of 29.50 kg expired is not "all of it"). |
+| Low | `reorder_at` set and in stock at or under it. |
+| Last counted | The `at` of the item's latest count; null when never counted. Over 7 days: "9 days ago" (muted, not amber; the column head says Last counted). |
+| Attention | Over the items not archived: how many are low, have a soon lot, have an expired lot. |
+| The farm's day | Asia/Kuala_Lumpur, UTC+8 all year, as `server/task-rules.js` works it out. |
+
+## 4. Recording
+
+| Way | Rule |
+|---|---|
+| Add item | Name (1–60 characters, unique ignoring case: 400 "There is already an item called Bleach", the stored name, not the typed case), kind (blocks not offered: Batches makes block items), unit (it follows the kind until one is picked: chemical L, spawn kg, bags, packaging and other pcs; the dialog opens on Chemical, so on L), reorder at (optional, 0–100,000), and for a chemical the active ingredient and LRMP No. (optional, up to 60 characters). |
+| Edit item | The same fields; the unit only while the item has no moves. A block item: its reorder level only. An item with no moves has a quiet red "Delete this item" at the footer's start, with a confirm ("Delete Bleach? It has no records yet. It goes for good."); after it the page goes to the list, which says "Deleted Bleach". |
+| Archive | **Archive** on the item page: it leaves the list, the attention line and the messages; its records stay. "Show archived (3)" under the list; **Bring back** on its page. Delete only for an item with no moves (409 "Archive it instead"). A block item cannot be archived (Batches looks it up by name). |
+| Purchase | Item (block items not offered: 409 "Blocks come in from Batches"; see "The Item box" below), qty (the unit inside the box; 0 < qty ≤ 100,000), total paid (RM, 0–1,000,000; "RM" inside the box before the figure, as the app writes money), with "RM 8.33 per L" worked out under it, supplier (optional, up to 60 characters; the earlier suppliers suggested), use by (optional, not before the day bought; under 420 px it sits under Day bought, so neither date is cut), the day (default today; not in the future, not over 400 days back; `at` is now for today, else 12:00 of that day). |
+| Record use | Item (any not archived, block items included; see "The Item box" below), qty, room (the farm's rooms or "Not in a room"), reason (optional, up to 60 characters; the item's earlier reasons suggested, e.g. "Footbath"), who (the worker picker and check of Tasks, `checkWorker`), when (default now; not in the future, not over 400 days back). More than in stock: the first submit says under the qty "Only 2.00 L in stock. Record 5.00 L anyway?" and the button reads "Record anyway"; the same qty again sends it (Harvest's pick guard pattern). |
+| The Item box (Record use, Purchase) | Opened from an item's page: that item. From the list: the item this browser recorded last in that dialog (`localStorage` `farm.inventory.useItem` / `farm.inventory.purchaseItem`) while it is still on offer, else **Pick an item** (none picked; a submit says "Pick an item" on the box). The options are grouped by kind (`<optgroup>`), the name alone; "1.20 L in stock" is the box's hint (an option is cut on a phone). The qty box follows the item: its unit inside it, the keypad (numeric for pcs, g, mL and blocks), and the unit in words for a screen reader ("Qty used, in litres"). The Room box opens on "Not in a room" every time (audit 2026-11-05 #1: a remembered room would put a use in the wrong room as silently as the old first item did). |
+| Count stock | A page of its own, `#/business/inventory/count` (a worker walks the shelves with the phone; a dialog of every item would be too long): every item not archived, grouped by kind: name, "By the records 3.50 L", a box in the unit (≥ 0); a typed figure adds its difference, "· −0.25 kg" ("matches"), amber when over half the records' figure (a typo of 125 for 1.25 is seen before Save; audit 2026-11-05 #6). An item archived or deleted while the page is open: its box is disabled and dimmed, "No longer on the list since you opened this page" (#8). Who once at the top. A box left empty is skipped; a figure saves a count of that item (even when it matches: Last counted moves), all in one transaction, each against the records at that moment. Save sends only the typed ones; nothing typed: the button is off. The typed boxes are kept in this tab (`sessionStorage` `farm.inventory.count`, by item) until a save: a slip (the back link, a top-bar link, the phone's Back, a reload) costs nothing, and on the next opening they are back with "Your unsaved counts are back. Clear them". Leaving with typed boxes asks first, "Leave Count stock? 3 typed counts are not saved yet." (an app link: cancelled on Cancel; the phone's Back: the page shows again; a reload: the browser's own question). On a phone Save counts and "3 typed" sit in a bar stuck to the foot of the screen (audit 2026-11-05 #3 and #5). After a save the page goes back to the list, which says "Saved 3 counts by Sara · Undo" (see "After a record"). |
+| Throw out | On a soon or expired lot of the item page: a confirm "Throw out 3.00 kg of Grey oyster spawn bought 1 Nov?", who; a use of the lot's left with `reason` "Expired" (or "Thrown out" for a soon lot) and `lot_id`. |
+| Edit a move | A purchase: qty, total, supplier, use by, day (a changed use-by clears `use_by_sent_at`). A use: qty, room, reason, who, when. A count: not edited: delete it and count again. A batch move: no Edit; its row says "Change it in Batches" (409 on the API). |
+| Delete a move | With a confirm naming it ("Delete the purchase of 5.00 L of Bleach on 3 Nov?"). Deleting a purchase whose lot has Throw outs deletes them too (they would point at nothing), the confirm says so. |
+| After a record | (Audit 2026-11-05 #2.) The page that opened the dialog (the list or the item's page) says what was saved in a polite status line under the attention line or the head (`web/inventory-done.js`): "Used 1.00 L of Bleach in Container 1 by Sara", "Bought 10.00 L of Bleach 5%", "Threw out 4.50 kg of Hydrated lime by Ali", "Saved 3 counts by Sara" (Count stock hands it to the list through `sessionStorage` `farm.inventory.flash`). A new purchase, use, throw-out or count adds **Undo** for 60 s from the save: it deletes the new move(s) (`DELETE /api/inventory/moves/:id`; Undo of a purchase also removes the throw-outs taken from it within that minute; a count, each of its moves; one already gone is skipped) and the line says "Undone". An edit, a delete, Add item, Archive and Bring back say "Saved", "Deleted", "Added Bleach", "Archived", "Brought back" with no Undo, for 10 s. |
+| Events | Every write publishes `inventory` `{ itemId }`. The server also subscribes to `batches` (Batches publishes it): it runs the message check (section 6) and publishes `inventory` `{ itemId: null }`, so the pages reload without listening for `batches` themselves. |
+
+## 5. The pages
+
+| Part | Design |
+|---|---|
+| Inventory page | `#/business/inventory` (no top-bar link: the integrator adds the Business entry at merge). Head: "Inventory", **Record use** (primary: the floor's most common job), **Purchase**, **Count stock**, **Add item**, and the quiet link **myGAP 4-5 sheet**. |
+| Attention line | Only when something needs it: "2 low · 1 to use by 12 Nov · 1 expired" (amber words, red for expired; the State-Only Colour Rule), those items listed first in their groups. Each part is a filter (a toggle button, audit 2026-11-05 #13): tapped, the cards show only the items it counts, with "Showing only 2 low. Show all" under the line; tapped again or Show all, the whole list. |
+| The list | Groups by kind in the contract's order with their names (Blocks, Spawn, Bags, Chemicals, Packaging, Other); an empty group is not shown. The page is at most 1,040 px wide, head included (audit #11: at 1440 px a name sat 600 to 900 px from its figures). Columns: Item (its pill right after the name, the ingredient muted under a chemical's name), In stock, Reorder at, Last counted ("today", "3 days ago", "9 days ago", "never"); the pill: **Low** (amber), **Use by 12 Nov** (amber), **Expired** (red) when all the stock is in expired lots, else **4.50 kg expired** (red); at most one pill, the worst. The row opens the item page. On a phone each item is one row: the name and its pill on the first line, In stock to the right, then one muted line, "Reorder at 2.00 L · counted today" ("Counted 10 days ago" with no level). Show archived keeps the focus on the toggle and says beside it "2 archived items shown, at the end of their cards."; archived rows are muted. |
+| Empty | No items: a dashed empty card, "No stock items yet." and **Add item**, the page's one button (the head's Record use, Purchase, Count stock and Add item are hidden). "Loading…" until the first reply. |
+| Item page | `#/business/inventory/<id>`: the name, kind and unit; tiles In stock, Reorder at, Last counted; **Purchase** (not on a block item), **Record use**, **Edit**, **Archive**. An archived item says so under its name: the grey Archived pill and "It is left out of the list, the counts and the messages; Bring back puts it back." A gone item: "Item not found". **Lots** card (when any has some left): From (the day bought, or "Batch 14", or "Count 3 Nov"), qty, left, use by with its pill ("Expired 1 Nov", "Use by 9 Nov"), and **Throw out** on a soon or expired lot; a day of another year carries its year ("10 Apr 2027"), here and in the history. **History** card: the latest 20 moves newest first ("Show all N"): when, what ("Bought from Kedai Ali · RM 25.00", "Used in Container 2 · Footbath · Ali", "Counted 3.50 L · Ali", "Batch 14 · received", "Batch 14 · into Container 2", "Batch 16 · made"), the qty signed in its own column (one column template for every row, so the figures line up; on a phone the qty on the first line, beside what it was), one quiet **Edit** a row (none on a batch move; the card's head says once, muted, "Batch records change in Batches"). |
+| Dialogs | A typed figure takes one comma as its decimal point ("1,5" is 1.5; some phone keypads offer only a comma), and an error names the unit in words and says what to type: "Type the litres as a number over 0 up to 100,000, like 1.25", "Type a whole number of pieces, like 12" (audit 2026-11-05 #7). Section 4, with the Harvest dialogs' layout: the unit inside the qty box, the date's day in the farm's words under its box, the worker picker, a quiet red "Delete this …" at the footer's start of an Edit. |
+| myGAP 4-5 sheet | `#/business/inventory/sheet?days=30` (30, 90 or 365; the range a segmented control), a print page as the 4-6 sheet: title "myGAP 4-5 · Purchase and use of pesticides / chemicals (Pembelian dan penggunaan racun perosak / bahan kimia)", "Farm:" with a blank line, the dates; one row per purchase and use of the chemical items in the range, oldest first, then 6 empty rows to write in, and the task sheet's foot "Sheet reviewed by: ____ (Management) on ____". Columns below, each with its printed width (A4 landscape, fixed layout: Date 20 mm, Crop 24, Location 20, Trade name 34, LRMP 25, Price 21, Qty 20, Reason 24, Equipment 26, Operator 18, PHI 14, Re-entry 18), so the write-in columns are wide enough (audit 2026-11-05 #24). The page's margins print light whatever the theme. With no records the empty line shows over a blank form. **Print** (hidden in print); light colours and no top bar in print. No chemical records: "No chemical purchases or uses in the last 30 days." |
+| Settings | An **Inventory** card (`web/inventory-settings.js`): one switch, "Send low-stock and use-by messages to Telegram" (on by default), its note "Uses the Telegram chat set above. One message when an item first falls to its reorder level, and one per purchase 7 days before its use-by." While Telegram is not set up the note adds "Nothing is sent until Telegram is set up above." (the switch still saves). |
+| Numbers | One formatter (`web/inventory-math.js`): a qty with its unit (section 2.2, grouped thousands, "−" for under 0), RM to 2 places with grouping ("RM 1,240.50"), the per-unit price ("RM 8.33 per L"; under RM 0.10 two significant digits, as Harvest's cost per kg). |
+
+### 5.1 The 4-5 sheet's columns
+
+| Column | A purchase | A use |
+|---|---|---|
+| Date | The day | The day |
+| Crop | blank | The crops of the room's run at that moment (`runs`), short names joined with ", "; blank when not in a room or no run |
+| Location & area | blank | The room's name ("Not in a room" when none; "A deleted room" when gone) |
+
+Deleted-room rule (contract section 7): `deleteRoom` in `server/db.js` sets `stock_moves.room_id = 0` for that room inside its transaction. Room id 0 reads "A deleted room" in the history, the 4-5 sheet and the Edit-a-use picker; only null reads "Not in a room". `stock_moves.id` is AUTOINCREMENT so an Undo never gives a deleted id to a later move.
+| Trade name & active ingredient | The item's name, then its ingredient in brackets when set | as a purchase |
+| LRMP No. | The item's | The item's |
+| Price | "RM 25.00" (the total) | blank |
+| Qty bought / rate used | "5.00 L bought" | "1.00 L used" |
+| Reason for use | blank | The reason |
+| Equipment, PHI (days), Re-entry period | blank to write in | blank to write in |
+| Operator | blank | The worker |
+
+## 6. Telegram messages (`server/inventory-alerts.js`)
+
+| Rule | Detail |
+|---|---|
+| When it checks | After every Inventory write, on a `batches` event, at start and once an hour (a use-by window opens as days pass). |
+| Low | An item not archived, low, `low_sent_at` null: send "📦 Low stock · Bleach · 1.50 L left (reorder at 2.00 L)", then set `low_sent_at`. Back over the level (or the level cleared): `low_sent_at` back to null, so the next fall sends again. |
+| Use-by | A lot with some left, soon or expired, `use_by_sent_at` null: "📦 Use by 12 Nov · Grey oyster spawn · 3.00 kg left from the purchase of 1 Nov" (expired already when first seen: "📦 Expired 12 Nov · …"), then set `use_by_sent_at` on the purchase. |
+| Off | The setting `inventoryTelegram` false, or no token or chat (`readTelegram`): nothing is sent and nothing is marked, so turning it on sends what is due. Turning the switch on, or setting Telegram up, sends what is due at the next write or within the hour (the check runs at each write and hourly). |
+| Sending | `fetchTransport` from `server/telegram.js` (imported, the file not changed); one message at a time; a failure is logged (never the token) and the mark not set, so the next check tries again. Never breaks a write. |
+
+## 7. API (`server/inventory-api.js`, one line in `server/api.js`)
+
+| Route | Reply |
+|---|---|
+| `GET /api/inventory[?archived=1]` | `{ items: [{ id, name, kind, unit, reorderAt, ingredient, lrmpNo, archived, qty, low, lastCountedAt, useBy: { date, state: 'soon'\|'expired', qty } \| null }], attention: { low, soon, expired }, archivedCount, suppliers }` (suppliers: the earlier ones, for the Purchase dialog) |
+| `POST /api/inventory/items` | `{ name, kind, unit, reorderAt?, ingredient?, lrmpNo? }` → 201 the item. 400 with `field`. |
+| `PUT /api/inventory/items/:id` | Any of those, or `{ archived }` → the item. 404, 400, 409 (a unit change with moves; a block item's other fields). |
+| `DELETE /api/inventory/items/:id` | 204; 409 "Archive it instead" with moves. |
+| `GET /api/inventory/items/:id` | The item as in the list, plus `lots: [{ moveId, at, qty, left, useBy, state }]` and `moves: [{ id, at, qty, refKind, refId, total, unitCost, supplier, useBy, roomId, roomName, reason, worker, counted, lotId }]` newest first (`roomName`: a use's room; a batch move's, the batch's `room_id` read from `batches` when that table is there, else null), `suppliers` and `reasons` (the earlier ones, for the dialogs). 404. |
+| `POST /api/inventory/purchases` | `{ itemId, qty, total, supplier?, useBy?, day? }` → 201 the move. 400, 404, 409 (a block item; an archived item). |
+| `POST /api/inventory/uses` | `{ itemId, qty, roomId?, reason?, worker, at? }` (qty as a positive amount) → 201. 400, 404. |
+| `POST /api/inventory/counts` | `{ worker, counts: [{ itemId, qty }] }` → 201 `{ moves }`, one transaction; one bad entry rejects all (400 with `field` `counts.<index>`). |
+| `PUT /api/inventory/moves/:id` | Section 4's fields → the move. 404, 400, 409 (a batch move: "Change it in Batches"; a count). |
+| `DELETE /api/inventory/moves/:id` | 204. 404, 409 (a batch move). |
+| `POST /api/inventory/lots/:moveId/throw-out` | `{ worker }` → 201 the use. 404, 409 (nothing left, or neither soon nor expired). |
+| `GET /api/inventory/purchases?from=YYYY-MM-DD&to=YYYY-MM-DD` | **Contract shape**: `{ purchases: [{ id, itemId, name, kind, at, qty, unitCost, total }] }`, the `'purchase'` moves whose farm day is from–to inclusive, oldest first. Batch moves never (Costs gets blocks from Batches: no double count). 400 for a missing or bad date or from after to. |
+| `GET /api/inventory/sheet?days=30\|90\|365` | `{ from, to, rows: [section 5.1 as fields] }`. Default 30; another value 400. |
+| Settings | `inventoryTelegram` (boolean, default true) in `server/settings.js`'s own Inventory block, through `PUT /api/settings`. |
+
+## 8. Files
+
+| File | Job |
+|---|---|
+| `server/inventory-math.js` | Pure: in stock, lots, use-by states, Low, attention, the sheet rows, the farm's day |
+| `server/inventory.js` | The store: checks and writes, one transaction each; the views |
+| `server/inventory-api.js` | The routes; the `batches` subscription |
+| `server/inventory-alerts.js` | The Telegram checks and texts |
+| `web/inventory-math.js` | The formatter, the pill and line words, the dialogs' checks |
+| `web/inventory-page.js`, `web/inventory-item.js`, `web/inventory-dialogs.js`, `web/inventory-count.js`, `web/inventory-sheet.js`, `web/inventory-settings.js` | The list page, the item page, the dialogs, the Count stock page, the 4-5 sheet, the Settings card |
+| Shared (contract section 3) | `server/db.js` (the Inventory block and the version-22 step), `server/api.js` (one line), `web/route.js` and `web/app.js` (the four addresses: the list, an item, Count stock, the 4-5 sheet), `web/live.js` (`'inventory'` in `EVENT_TYPES`), `server/settings.js` (its block), the Settings page (one line mounting the card), `web/styles.css` (`.iv-`, at the end), `DESIGN.md` (an Inventory section), `README.md` and `PRODUCT.md` (a row each) |
+
+## 9. Testing
+
+| Test | Covers |
+|---|---|
+| `tests/inventory-math.test.js` (pure) | In stock; lots oldest first, a Throw out off its own lot, outs beyond the lots; soon and expired at the day's edges (farm time); Low; attention; the sheet rows (the crops from a run, a deleted room, not in a room) |
+| `tests/db-inventory.test.js` | The upgrade from 20 to 22; the defaults when a row names only the contract's columns (as Batches writes); the unique name ignoring case |
+| `tests/inventory.test.js` | Each write's checks and 400s; units and decimals; a purchase on a block item 409; a count against the records, a matching count; edit and delete of moves, a batch move refused; delete of a purchase with Throw outs; archive and delete of items |
+| `tests/api-inventory.test.js` | The routes; the purchases shape and its days (farm time, batch moves left out); the sheet's days; the `inventory` events; a `batches` event re-publishing |
+| `tests/inventory-alerts.test.js` | Low sent once, cleared when back over and sent again; use-by soon and expired once per lot; a changed use-by sent again; off or no Telegram sends nothing; a failure retried at the next check |
+| `tests/web-inventory-math.test.js` | The formatter, the pills, Last counted's words, the per-unit price |
+| `tests/settings.test.js` (added) | `inventoryTelegram` check and read-back |
+| Look | The UI/UX audit: 1440, 1024 and 390 px, both themes: the list (with and without attention), the item page, each dialog, Count stock, the 4-5 sheet, the Settings card; then the Impeccable finish review |
