@@ -113,7 +113,7 @@ test('gridColumns: the week\'s daily rules in the rules\' order, then own rules 
   });
   const cols = gridColumns(days);
   assert.deepEqual(cols.map((c) => c.key), ['contamWalk|morning', 'harvestAm|morning', 'footbath|morning', 'floorClean|afternoon', 'custom:3|morning', 'custom:12|morning']);
-  assert.deepEqual(cols[1], { key: 'harvestAm|morning', ruleKey: 'harvestAm', slot: 'morning', shortName: 'Harvest AM', text: 'Harvest check: pick the ready ones', unit: 'kg', picture: 'harvestAm' });
+  assert.deepEqual(cols[1], { key: 'harvestAm|morning', ruleKey: 'harvestAm', slot: 'morning', name: 'Harvest AM', shortName: 'Harvest AM', text: 'Harvest check: pick the ready ones', unit: 'kg', picture: 'harvestAm' });
   assert.equal(cols[4].shortName, 'Wipe the door handles');
   assert.equal(cols[4].picture, 'own');
   assert.equal(cols[0].unit, 'bags');
@@ -129,6 +129,14 @@ test('gridColumns: today\'s rows count; a rule in two slots is two columns; an o
   assert.deepEqual(cols.map((c) => c.key), ['clearOut|morning', 'custom:3|morning', 'custom:3|afternoon']);
   assert.equal(cols[1].text, 'New words');
   assert.equal(cols[1].shortName, 'New words');
+});
+
+test('gridColumns: the grid shows an own rule\'s whole text (name: the head wraps or clamps it); the sheet its 24-character cut', () => {
+  const long = 'Check the water tank level and top it up';
+  const cols = gridColumns(week({ '2026-11-03': [item({ ruleKey: 'custom:3', text: long, status: 'done' }), item({ ruleKey: 'floorClean', text: 'Sweep the floor: and mop it' })] }));
+  assert.deepEqual(cols.map((c) => [c.name, c.shortName]), [['Floor', 'Floor'], [long, 'Check the water tank…']], 'a built-in rule: its short name in both');
+  assert.equal(sheetHead(cols[1]), 'Check the water tank…');
+  assert.equal(boxWords(cols[1], '2026-11-03', { kind: 'none', row: null }), `${long}, Tuesday 3 November: not due`, 'a box says the name its head shows');
 });
 
 test('gridCells: every kind of box over a week, today\'s rows from the room tasks reply with their ids', () => {
@@ -327,7 +335,10 @@ test('doneSplit: a mixed Done\'s harvests by crop, for Details (critique #21)', 
   const hv = (over) => ({ id: 1, roomId: 7, crop: 'oyster', kg: 150, pickedAt: closedAt, taskId: 41, ...over });
   const list = [hv({}), hv({ id: 2, crop: 'lionsmane', kg: 4.2 }), hv({ id: 3, kg: 9, taskId: null }), hv({ id: 4, kg: 7, taskId: 40, pickedAt: closedAt - 1 })];
   assert.equal(doneSplit({ id: 41, closedAt }, list), 'Grey oyster 150.00 kg · Lion\'s mane 4.20 kg'.replace(' · ', DOT));
-  assert.equal(doneSplit({ closedAt }, list), doneSplit({ id: 41, closedAt }, list), 'a day gone has no id: the Done\'s time finds them');
+  assert.equal(doneSplit({ id: 41, closedAt: closedAt + 5 }, list), doneSplit({ id: 41, closedAt }, list), 'by its id, not its time');
+  assert.equal(doneSplit({ id: 40, closedAt: closedAt - 1 }, [...list, hv({ id: 5, crop: 'lionsmane', kg: 1, taskId: 41, pickedAt: closedAt - 1 })]), '',
+    'another Done at the same time is not this one\'s');
+  assert.equal(doneSplit({ closedAt }, list), '', 'no id: none');
   assert.equal(doneSplit({ id: 41, closedAt }, [hv({})]), '', 'one crop: the amount says it');
   assert.equal(doneSplit({ id: 41, closedAt }, null), '');
 });
@@ -337,15 +348,16 @@ test('undoWords: the line under the grid after a Done or Skip', () => {
   assert.equal(undoWords('Footbath', { status: 'skipped', worker: null }), 'Footbath skipped');
 });
 
-test('createUndoLine: shows when the tapped row comes back closed, for a minute; the next tap, an Undo or the row reopened hide it', () => {
-  let t = 0;
+test('createUndoLine: shows when a sent row comes back closed, for its minute; the next tap, an Undo or the row reopened hide it', () => {
+  let t = 1_000_000;
   const timers = [];
   const clock = { set: (fn, ms) => { timers.push({ fn, at: t + ms }); return timers.length - 1; }, clear: (id) => { timers[id] = null; } };
   const run = (ms) => { t += ms; for (const [i, x] of timers.entries()) if (x && x.at <= t) { timers[i] = null; x.fn(); } };
   const seen = [];
-  const line = createUndoLine({ onChange: (shown) => seen.push(shown && shown.text), timers: clock });
-  const floor = { id: 5, status: 'done', worker: 'Sara' };
+  const line = createUndoLine({ onChange: (shown) => seen.push(shown && shown.text), timers: clock, now: () => t });
+  const floor = { id: 5, status: 'done', worker: 'Sara', closedAt: t };
   line.expect(5, 'Floor');
+  line.sent(5);
   line.rows([{ id: 5, status: 'open' }]);
   assert.equal(line.current(), null, 'not yet closed in the reply');
   line.rows([floor]);
@@ -357,20 +369,75 @@ test('createUndoLine: shows when the tapped row comes back closed, for a minute;
   run(1);
   assert.equal(line.current(), null, 'a minute on: gone (the server has the last word)');
   line.expect(5, 'Floor');
-  line.rows([floor]);
+  line.sent(5);
+  line.rows([{ ...floor, closedAt: t }]);
   line.expect(6, 'Footbath');
   assert.equal(line.current(), null, 'the next tap hides it');
-  line.rows([{ id: 6, status: 'skipped', worker: 'Ali Lee' }]);
+  line.sent(6);
+  line.rows([{ id: 6, status: 'skipped', worker: 'Ali Lee', closedAt: t }]);
   assert.equal(line.current().text, 'Footbath skipped by Ali Lee');
   line.rows([{ id: 6, status: 'open' }]);
   assert.equal(line.current(), null, 'undone elsewhere: gone');
   line.expect(7, 'Floor');
-  line.rows([{ id: 7, status: 'done', worker: 'Sara' }]);
+  line.sent(7);
+  line.rows([{ id: 7, status: 'done', worker: 'Sara', closedAt: t }]);
   line.hide();
   assert.equal(line.current(), null, 'Undo pressed');
-  line.rows([{ id: 7, status: 'done', worker: 'Sara' }]);
+  line.rows([{ id: 7, status: 'done', worker: 'Sara', closedAt: t }]);
   assert.equal(line.current(), null, 'and it does not come back');
   assert.equal(seen.at(-1), null);
+});
+
+test('createUndoLine: only a send that worked shows it; its minute counts from the server\'s closedAt', () => {
+  let t = 1_000_000;
+  const timers = [];
+  const clock = { set: (fn, ms) => { timers.push({ fn, at: t + ms }); return timers.length - 1; }, clear: (id) => { timers[id] = null; } };
+  const run = (ms) => { t += ms; for (const [i, x] of timers.entries()) if (x && x.at <= t) { timers[i] = null; x.fn(); } };
+  const line = createUndoLine({ timers: clock, now: () => t });
+  // a 409: someone else closed it first; the next reply has it done by them
+  line.expect(5, 'Floor');
+  line.rows([{ id: 5, status: 'done', worker: 'Ali', closedAt: t }]);
+  assert.equal(line.current(), null, 'their Done is not offered to undo');
+  line.rows([{ id: 5, status: 'done', worker: 'Ali', closedAt: t }]);
+  assert.equal(line.current(), null);
+  // the reply first, then the send's answer: shown once both say so
+  line.expect(6, 'Footbath');
+  line.rows([{ id: 6, status: 'done', worker: 'Sara', closedAt: t }]);
+  assert.equal(line.current(), null);
+  line.sent(6);
+  assert.equal(line.current().text, 'Footbath done by Sara');
+  // another row's send (an upkeep Done) confirms nothing
+  line.expect(7, 'Floor');
+  line.sent(8);
+  line.rows([{ id: 7, status: 'done', worker: 'Sara', closedAt: t }]);
+  assert.equal(line.current(), null);
+  // a dialog closed without sending: nothing waits; a later close of that row (someone else's) never shows it
+  line.expect(9, 'Harvest');
+  line.drop(9);
+  line.sent(9);
+  line.rows([{ id: 9, status: 'done', worker: 'Ali', closedAt: t }]);
+  assert.equal(line.current(), null, 'a cancelled dialog leaves nothing pending');
+  // closed 20 s before the reply came: 40 s left
+  line.expect(10, 'Floor');
+  line.sent(10);
+  line.rows([{ id: 10, status: 'done', worker: 'Sara', closedAt: t - 20_000 }]);
+  assert.ok(line.current());
+  run(UNDO_MS - 20_000 - 1);
+  assert.ok(line.current());
+  run(1);
+  assert.equal(line.current(), null, 'gone at the server\'s minute');
+  // a clock ahead of the server's: never more than the minute; past it: not shown
+  line.expect(11, 'Floor');
+  line.sent(11);
+  line.rows([{ id: 11, status: 'done', worker: 'Sara', closedAt: t + 5_000 }]);
+  run(UNDO_MS - 1);
+  assert.ok(line.current());
+  run(1);
+  assert.equal(line.current(), null);
+  line.expect(12, 'Floor');
+  line.sent(12);
+  line.rows([{ id: 12, status: 'done', worker: 'Sara', closedAt: t - UNDO_MS - 1 }]);
+  assert.equal(line.current(), null, 'its minute over already');
 });
 
 test('monthTitle: "November 2026"', () => {

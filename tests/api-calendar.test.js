@@ -66,7 +66,10 @@ test('a row done today shows done with who; a daily row left open on an earlier 
   const done = on(r.body, today).find((i) => i.ruleKey === 'footbath');
   assert.equal(done.status, 'done');
   assert.equal(done.worker, 'Ali');
+  assert.equal(done.id, walk.id, 'a stored row carries its id (a mixed Done\'s harvests are found by it)');
   assert.equal(on(r.body, addDays(today, -2)).find((i) => i.ruleKey === 'floorClean').status, 'missed');
+  const later = await call('GET', `/api/calendar?from=${addDays(today, 1)}&to=${addDays(today, 1)}&room=${id}`);
+  assert.ok(on(later.body, addDays(today, 1)).every((i) => i.id === undefined), 'a worked-out day has no rows');
 });
 
 test('room keeps one room; the errors', async (t) => {

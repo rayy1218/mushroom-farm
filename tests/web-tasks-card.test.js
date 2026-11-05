@@ -48,7 +48,9 @@ test("a tap holds the row's buttons until the list repaints (a tap between the a
   const settle = list.slice(list.indexOf('Promise.resolve(action()).then(async (changed) => {'));
   assert.ok(settle.includes('if (!changed) { release(); return; }') && settle.includes('}, release);'), 'nothing changed or it failed: let go');
   // A change repaints the list even when the next view reads the same, so a held row always comes back.
-  assert.ok(card.includes("const onChanged = () => { if (alive) { error.hidden = true; painted = ''; reload.call(); } };"));
+  assert.ok(card.includes("    error.hidden = true;\n    painted = '';\n    reload.call();"));
+  // the closed row the server answered tells the grid's Undo line the tap was this browser's (I1; a 409's null never does)
+  assert.ok(card.includes('if (row?.id != null) grid.sent(row.id);'));
   assert.ok(card.includes('const actions = createTaskActions({ onChanged, onError });'));
 });
 
@@ -67,7 +69,7 @@ test('a closed row hands the focus on: the same button, else the next row, the p
 test('the card: no stray timer, its own changes through the throttle', () => {
   assert.ok(card.includes('async function refresh() {\n    if (!alive) return;'));
   assert.ok(card.includes('clearTimeout(timer);\n    timer = setTimeout(refresh, fallbackMs(REFRESH_MS, live.connected()));'));
-  assert.ok(card.includes('const grid = createTaskGrid(gridHost, { roomId, week, onWeek, actions, onChanged, onError });'));
+  assert.ok(card.includes('const grid = createTaskGrid(gridHost, { roomId, week, shown, onWeek, actions, onChanged: () => onChanged(null), onError });'));
   assert.ok(card.includes("for (const none of [upkeepNone, longNone]) { none.textContent = \"Couldn't load the tasks\"; none.hidden = false; }"));
   assert.ok(card.slice(card.indexOf('destroy() {')).includes('host.className = hostClass;'));
 });

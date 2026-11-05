@@ -10,10 +10,10 @@ import { createTasks, TaskError } from '../server/tasks.js';
 const NOW = Date.UTC(2026, 10, 4, 0, 12); // 4 Nov 2026 08:12 on the farm's clock
 const ROOM = { name: 'Room 1', length: 6, width: 4, height: 2.5, trhAddress: 1 };
 
-function setup(t) {
+function setup(t, start = NOW) {
   const db = openDb(':memory:');
   t.after(() => db.close());
-  let clock = NOW;
+  let clock = start;
   const tasks = createTasks({ db, now: () => clock, log: (e) => { throw e; } });
   const id = db.createRoom(ROOM, clock).id;
   createCropApi({ db, now: () => clock }).put(id, { crops: [{ crop: 'oyster', blocks: 100 }] }); // opens a run
@@ -69,6 +69,19 @@ test('exactly 60 s is still in time; 61 s is too late, with the farm time it was
   s.tasks.done(a.id, { worker: 'Ali' });
   s.later(61_000);
   refused(() => s.tasks.undo(a.id), 409, 'Too late to undo: it was done at 08:13');
+});
+
+test('a row of a day that has ended is refused, though within the minute: its harvests stay', (t) => {
+  const s = setup(t, Date.UTC(2026, 10, 4, 15, 59, 50)); // 4 Nov 23:59:50 on the farm's clock
+  const row = s.row('harvestPm');
+  s.tasks.done(row.id, { worker: 'Ali', amount: 2.4 });
+  s.later(30_000); // 5 Nov 00:00:20
+  s.changes.length = 0;
+  s.harvested.length = 0;
+  refused(() => s.tasks.undo(row.id), 409, 'Too late to undo: its day has ended');
+  assert.equal(s.db.getTask(row.id).status, 'done');
+  assert.equal(s.harvestsOf(row.id).length, 1);
+  assert.deepEqual([s.changes, s.harvested], [[], []]);
 });
 
 test('a skipped row undoes, its reason cleared', (t) => {

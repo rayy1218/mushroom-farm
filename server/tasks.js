@@ -385,7 +385,8 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
       return close(row, { status: 'skipped', worker: workerOf(worker), reason: reasonOf(reason) });
     },
 
-    // A daily row done or skipped at most UNDO_WINDOW_MS ago opens again, its harvests deleted (spec 2026-11-04-task-grid-design.md 3).
+    // A daily row of today done or skipped at most UNDO_WINDOW_MS ago opens again, its harvests deleted (spec
+    // 2026-11-04-task-grid-design.md 3). A row of a day that has ended stays as it is, though within the minute.
     undo(id) {
       const row = db.getTask(id);
       if (!row) throw new TaskError(404, 'Task not found');
@@ -394,6 +395,7 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
       const late = () => new TaskError(409, `Too late to undo: it was ${row.status} at ${localTime(row.closedAt)}`);
       const since = now() - UNDO_WINDOW_MS;
       if (row.closedAt < since) throw late();
+      if (row.date !== today()) throw new TaskError(409, 'Too late to undo: its day has ended');
       const went = db.undoTask(id, since);
       if (went === null) throw late();
       tell(row.roomId);
@@ -477,6 +479,7 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
 
     // The calendar (spec 2026-11-03-calendar-design.md 2): { today, from, to, horizon, rooms: [{ id, name }], days: [{ date,
     // items }] } for every room or one (roomId); null when there is no such room. Today's rows are made first, as Today does.
+    // A stored row's item carries its id (a worked-out one has none).
     // Past days: the stored rows (a daily row left open on an earlier day counts as missed); today: its rows and the upkeep due
     // or overdue; later days: calendar.js projectRoom.
     calendarView({ from, to, roomId = null }) {
@@ -488,7 +491,7 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
       const at = now();
       const byDay = new Map();
       const put = (d, item) => { if (d >= from && d <= to) (byDay.get(d) ?? byDay.set(d, []).get(d)).push(item); };
-      const item = (row, status) => ({ roomId: row.roomId, kind: row.kind, status, ruleKey: row.ruleKey, text: row.text, note: row.note,
+      const item = (row, status) => ({ id: row.id, roomId: row.roomId, kind: row.kind, status, ruleKey: row.ruleKey, text: row.text, note: row.note,
         slot: row.slot, worker: row.worker, amount: row.amount, unit: row.unit, reason: row.reason, closedAt: row.closedAt,
         overdueDays: 0, routine: isRoutine(row.kind, row.ruleKey), about: false, stage: null, until: null, from: null });
       for (const room of rooms) {

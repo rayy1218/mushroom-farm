@@ -196,6 +196,7 @@ export function mount(container, { id, tab = 'now', week = null }) {
     }
     tabBar.append(a);
   }
+  let tasksCard = null; // the Tasks card (made on the first render; setTab shows it, so declared before setTab's first call)
   // The Tasks tab's week: its link carries it, so leaving the tab and coming back keeps the week (while on this room's page).
   function setTasksWeek(w) {
     week = w ?? null;
@@ -229,6 +230,7 @@ export function mount(container, { id, tab = 'now', week = null }) {
       } else a.removeAttribute('aria-current');
     }
     for (const panel of container.querySelectorAll('[data-panel]')) panel.hidden = panel.dataset.panel !== tab;
+    if (tab === 'tasks') tasksCard?.show(); // the grid reads its week the first time the tab shows
     if (tab === 'now') { if (alarmsNode.parentNode !== nowSide) nowSide.prepend(alarmsNode); }
     else if (alarmsNode.parentNode !== main) main.prepend(alarmsNode);
     if (tab === 'setup' && pendingField) {
@@ -328,7 +330,6 @@ export function mount(container, { id, tab = 'now', week = null }) {
   let usageCard = null; // the Energy and water card, made on the first render
   let cropCard = null; // the Crop and stage card
   let simulationsCard = null; // the Simulations card
-  let tasksCard = null; // the Tasks card
   let harvestCard = null; // the Harvest card
   let filterCard = null; // the Intake filter card
   let profileTab = null; // the Room profile tab's form
@@ -570,7 +571,7 @@ export function mount(container, { id, tab = 'now', week = null }) {
     // the grid's week in the address, in place (as the Calendar keeps its day): ‹ › add no history entry each (window's:
     // history here is the History tab's)
     tasksCard ??= createTasksCard(els.tasksHost, {
-      roomId: id, week, onWeek: (w) => { setTasksWeek(w); if (alive() && tab === 'tasks') window.history.replaceState(null, '', tasksHash(id, w)); },
+      roomId: id, week, shown: tab === 'tasks', onWeek: (w) => { setTasksWeek(w); if (alive() && tab === 'tasks') window.history.replaceState(null, '', tasksHash(id, w)); },
       onCounts: (c) => { if (alive()) paintTasksDot(c); }, onGone: () => { if (alive()) load(); },
     });
     harvestCard ??= createHarvestCard(els.harvestHost, { roomId: id, getRoom: () => room, onGone: () => { if (alive()) load(); } });

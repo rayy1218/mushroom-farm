@@ -1,7 +1,9 @@
 // The room's Tasks tab (spec 2026-10-30-tasks-design.md 7.1; the grid 2026-11-04-task-grid-design.md): Daily tasks (the
 // week's grid, web/task-grid.js, in place of the day list and the Log; Export CSV under it), Upkeep (overdue first) and
-// Long-term (Plan this on Suggest machines, or Add). createTasksCard(host, { roomId, week, onWeek, onCounts, onGone }) →
-// { setWeek(week), destroy() }; onCounts(counts | null) gives the tab its dot; week, onWeek: the grid's week (the address).
+// Long-term (Plan this on Suggest machines, or Add). createTasksCard(host, { roomId, week, shown, onWeek, onCounts, onGone })
+// → { setWeek(week), show(), destroy() }; onCounts(counts | null) gives the tab its dot; week, onWeek: the grid's week (the
+// address); shown: the Tasks tab shows (else show() when it first does: the grid reads its week then, the dot needs only the
+// room reply).
 // The card asks for its own data: on the room's tasks events, when the stream comes back, and on a timer (30 s; 60 s while
 // the stream is up: the day turns over at midnight without an event). The grid asks for its week itself.
 
@@ -18,7 +20,7 @@ import { calendarHash } from './route.js';
 
 const REFRESH_MS = 30_000;
 
-export function createTasksCard(host, { roomId, week = null, onWeek, onCounts, onGone }) {
+export function createTasksCard(host, { roomId, week = null, shown = true, onWeek, onCounts, onGone }) {
   let alive = true;
   let seq = 0; // every load takes a token; an answer that finds it changed is dropped
   let timer = null;
@@ -82,11 +84,18 @@ export function createTasksCard(host, { roomId, week = null, onWeek, onCounts, o
 
   // A change repaints the parts even when the next answer reads the same: the row tapped holds its buttons until then. It
   // asks through the same throttle as the room's tasks events, which the server sends for the same change.
-  const onChanged = () => { if (alive) { error.hidden = true; painted = ''; reload.call(); } };
+  // row: the closed row the server answered (a 409's: null), the grid's Undo line's proof that the tap was this browser's.
+  const onChanged = (row) => {
+    if (!alive) return;
+    if (row?.id != null) grid.sent(row.id);
+    error.hidden = true;
+    painted = '';
+    reload.call();
+  };
   const onError = (text) => { if (alive) { error.textContent = text; error.hidden = false; } };
   const actions = createTaskActions({ onChanged, onError });
   // the grid's Undo says its failures and asks again the same way
-  const grid = createTaskGrid(gridHost, { roomId, week, onWeek, actions, onChanged, onError });
+  const grid = createTaskGrid(gridHost, { roomId, week, shown, onWeek, actions, onChanged: () => onChanged(null), onError });
   csvLine.append(grid.printLink, DOT, csv, `: every done, skipped, missed and cancelled task, for the myGAP records`);
 
   function paint() {
@@ -160,6 +169,7 @@ export function createTasksCard(host, { roomId, week = null, onWeek, onCounts, o
 
   return {
     setWeek: (w) => grid.setWeek(w),
+    show: () => grid.show(),
     destroy() {
       alive = false;
       seq++;

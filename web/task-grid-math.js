@@ -106,14 +106,21 @@ export function monthDays(month) {
 // whole word that fits ("Check the water tank…"; one long word is cut inside it); a rule this page does not know yet, the
 // name part of its text (tasks-math taskParts), cut the same way.
 export function shortName(ruleKey, text = '') {
-  if (Object.hasOwn(SHORT_NAMES, ruleKey ?? '')) return SHORT_NAMES[ruleKey];
-  const words = String(ruleKey ?? '').startsWith(OWN) ? String(text ?? '').trim() : taskParts(text).name;
+  const words = fullName(ruleKey, text);
+  if (Object.hasOwn(SHORT_NAMES, ruleKey ?? '')) return words;
   const c = chars(words);
   if (c.length <= MAX_NAME) return words;
   const cut = c.slice(0, MAX_NAME).join(''); // a space right after it: its last word is whole
   const end = c[MAX_NAME] === ' ' ? cut.length : cut.lastIndexOf(' ');
   const whole = end > 0 ? cut.slice(0, end).trimEnd() : '';
   return whole && chars(whole).length <= MAX_NAME - 1 ? `${whole}…` : `${c.slice(0, MAX_NAME - 1).join('').trimEnd()}…`;
+}
+
+// The same, uncut: the grid's heads show it (desk: two lines at most, by the CSS; turned: wrapped whole). Only the printed
+// sheet's heads take shortName's cut.
+export function fullName(ruleKey, text = '') {
+  if (Object.hasOwn(SHORT_NAMES, ruleKey ?? '')) return SHORT_NAMES[ruleKey];
+  return String(ruleKey ?? '').startsWith(OWN) ? String(text ?? '').trim() : taskParts(text).name;
 }
 
 // The workers' initials (spec 2): two words or more, the first letters of the first two ("Ali Lee" → "AL"); one word, its first
@@ -170,7 +177,8 @@ function byRule(a, b) {
 
 // The grid's columns (spec 2): every daily rule with a row or a planned item on one of the days (a rule in two slots, two
 // columns), in the rules' order. days: the calendar reply's [{ date, items }]; todayRows: today's rows of the room tasks reply.
-// Stage starts, upkeep and long-term items are not the grid's. → [{ key, ruleKey, slot, shortName, text, unit, picture }]
+// Stage starts, upkeep and long-term items are not the grid's. → [{ key, ruleKey, slot, name, shortName, text, unit, picture }]
+// (name: the grid's head, fullName; shortName: the printed sheet's)
 // (text and unit: the latest day's, as an own rule's words may have changed)
 export function gridColumns(days, todayRows = []) {
   const cols = new Map();
@@ -183,7 +191,7 @@ export function gridColumns(days, todayRows = []) {
   for (const r of todayRows ?? []) add(r); // made at midnight: a planned day's words (the rule's now) come after them
   for (const d of [...(days ?? [])].sort((a, b) => a.date.localeCompare(b.date))) for (const i of d.items ?? []) add(i);
   return [...cols.values()].sort(byRule).map((c) => ({
-    key: c.key, ruleKey: c.ruleKey, slot: c.slot, shortName: shortName(c.ruleKey, c.text), text: c.text, unit: c.unit,
+    key: c.key, ruleKey: c.ruleKey, slot: c.slot, name: fullName(c.ruleKey, c.text), shortName: shortName(c.ruleKey, c.text), text: c.text, unit: c.unit,
     picture: taskPicture({ kind: 'daily', ruleKey: c.ruleKey }),
   }));
 }
@@ -215,16 +223,16 @@ export function boxWords(column, date, cell, today = null) {
     case 'missed': case 'open': what = cell.kind; break;
     default: what = 'not due';
   }
-  return `${column.shortName}, ${dayTitle(date, today)}: ${what}`;
+  return `${column.name ?? column.shortName}, ${dayTitle(date, today)}: ${what}`;
 }
 
 // A mixed Done's harvests by crop, for its Details (critique #21): "Grey oyster 150.00 kg · Lion's mane 4.20 kg"; '' for one
 // crop or none (the amount says it). The box and the calendar keep the sum; the room's harvests (GET /api/rooms/:id/harvests)
-// hold the split: the Done's own (taskId, the row's id), or on a day gone (no id) the ones a Done made at its closed time;
-// in the order the Done made them.
+// hold the split: the Done's own (their taskId, the row's id: today's row and a calendar item both carry it), in the order the
+// Done made them.
 export function doneSplit(row, harvests) {
-  const mine = (harvests ?? []).filter((h) => h?.taskId != null && finite(h.kg)
-    && (finite(row?.id) ? h.taskId === row.id : finite(row?.closedAt) && h.pickedAt === row.closedAt));
+  if (!finite(row?.id)) return '';
+  const mine = (harvests ?? []).filter((h) => h?.taskId === row.id && finite(h.kg));
   if (mine.length < 2) return '';
   return mine.sort((a, b) => (a.id ?? 0) - (b.id ?? 0)).map((h) => `${cropShortName(h.crop)} ${h.kg.toFixed(2)} kg`).join(DOT);
 }
@@ -232,32 +240,41 @@ export function doneSplit(row, harvests) {
 // The line under the grid after a Done or Skip from it (critique #7): "Floor done by Sara", "Footbath skipped".
 export const undoWords = (name, row) => `${name} ${row.status}${row?.worker ? ` by ${row.worker}` : ''}`;
 
-// That line's state: a tapped row (expect) shows once the room reply has it done or skipped, for `ms` (Undo's minute, from
-// when it shows: the server has the last word); the next tap, an Undo (hide) or the row open again (undone elsewhere) hide
-// it. onChange(shown | null), shown: { id, text }. timers: { set(fn, ms), clear(id) } (a test's clock).
-export function createUndoLine({ onChange, ms = UNDO_MS, timers = { set: (fn, t) => setTimeout(fn, t), clear: (id) => clearTimeout(id) } }) {
-  let pending = null; // { id, name }: tapped, its row not yet closed in a reply
+// That line's state: a tapped row (expect) shows once its send worked (sent: the server answered with the closed row; a 409,
+// someone else's close, never does) and the room reply has it done or skipped, until Undo's minute from the server's closedAt
+// is over; the next tap, an Undo (hide) or the row open again (undone elsewhere) hide it, and a dialog closed without sending
+// (drop) leaves nothing waiting. onChange(shown | null), shown: { id, text }. timers: { set(fn, ms), clear(id) } and now() (a
+// test's clock).
+export function createUndoLine({ onChange, ms = UNDO_MS, timers = { set: (fn, t) => setTimeout(fn, t), clear: (id) => clearTimeout(id) }, now = () => Date.now() }) {
+  let pending = null; // { id, name, sent }: tapped, its row not yet closed in a reply
   let shown = null;
   let timer = null;
-  const set = (next) => {
+  let last = []; // the latest reply's rows: the send's answer may come after it
+  const set = (next, left = ms) => {
     if (timer !== null) timers.clear(timer);
     timer = null;
     const was = shown;
     shown = next;
-    if (next) timer = timers.set(() => { timer = null; set(null); }, ms);
+    if (next) timer = timers.set(() => { timer = null; set(null); }, left);
     if (was !== next) onChange?.(shown);
   };
+  const find = (id) => last.find((r) => r?.id === id);
+  const closed = (r) => r?.status === 'done' || r?.status === 'skipped';
+  function check() {
+    const row = pending?.sent ? find(pending.id) : null;
+    if (!closed(row)) return;
+    const left = Math.min(ms, ms - (finite(row.closedAt) ? now() - row.closedAt : 0));
+    if (left > 0) set({ id: pending.id, text: undoWords(pending.name, row) }, left);
+    pending = null;
+  }
   return {
-    expect(id, name) { pending = { id, name }; if (shown) set(null); },
+    expect(id, name) { pending = { id, name, sent: false }; if (shown) set(null); },
+    sent(id) { if (pending?.id === id) { pending.sent = true; check(); } },
+    drop(id) { if (pending?.id === id) pending = null; },
     rows(rows) {
-      const find = (id) => (rows ?? []).find((r) => r?.id === id);
-      const closed = (r) => r?.status === 'done' || r?.status === 'skipped';
+      last = rows ?? [];
       if (shown && !closed(find(shown.id))) set(null);
-      const row = pending && find(pending.id);
-      if (row && closed(row)) {
-        set({ id: pending.id, text: undoWords(pending.name, row) });
-        pending = null;
-      }
+      check();
     },
     hide() { pending = null; if (shown) set(null); },
     current: () => shown,

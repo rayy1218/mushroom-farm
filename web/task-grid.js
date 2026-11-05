@@ -2,11 +2,12 @@
 // days down and tasks across on a desk, the same boxes turned where the columns do not fit the card (a phone, a narrow
 // tablet: tasks down, days across). A box of today is ticked here: a tap is Done, with a line under the grid to Undo it for a
 // minute; a long press, right-click or the menu key opens Skip…, Undo and Details; a box of a day gone shows its Details. The
-// week comes from GET /api/calendar; today's rows (with their ids) from the room tasks reply the card already reads, handed
-// over by update().
-//   createTaskGrid(host, { roomId, week, onWeek(week | null), actions, onChanged(), onError(text) })
-//   → { update(view), setWeek(week | null), printLink, destroy() }  (week: a Monday 'YYYY-MM-DD'; null: this week;
-//   printLink: Print month, for the card's foot)
+// week comes from GET /api/calendar, read first when the Tasks tab first shows (show(); shown: it shows already); today's
+// rows (with their ids) from the room tasks reply the card already reads, handed over by update(); sent(id): a Done or Skip
+// the server took (createTaskActions' onChanged row), the only kind the Undo line offers to undo.
+//   createTaskGrid(host, { roomId, week, shown, onWeek(week | null), actions, onChanged(), onError(text) })
+//   → { update(view), sent(id), show(), setWeek(week | null), printLink, destroy() }  (week: a Monday 'YYYY-MM-DD'; null:
+//   this week; printLink: Print month, for the card's foot)
 
 import { request, OUTDATED, OFFLINE, routeMissing } from './api.js';
 import { live } from './live.js';
@@ -26,15 +27,16 @@ const MOVE_PX = 10; // a press that moves further is a scroll, not a long press
 const COMMAND_TIMEOUT = 15000;
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const STATUS = { done: 'Done', missed: 'Missed', skipped: 'Skipped', cancelled: 'Cancelled', open: 'Open', planned: 'Planned' };
-const MARKS = { done: '✓', missed: '✗', skipped: '—' };
 const SVG = 'http://www.w3.org/2000/svg';
-// the done tick drawn, not the font's ✓ (Inter has none; the fallback drew it 9 px): 18 px, a 2.2 px stroke in the ink
-function tick() {
+// The marks drawn, not the font's ✓ ✗ — (Inter has no ✓; the fallback drew it 9 px, and ✗ small): 18 px, a 2.6 stroke in
+// the box's colour (the ink; amber for missed, muted for skipped), round ends.
+const GLYPHS = { done: 'M5 12.5l4.5 4.5L19 7.5', missed: 'M6 6l12 12M18 6L6 18', skipped: 'M6 12h12' };
+function glyph(kind) {
   const svg = document.createElementNS(SVG, 'svg');
-  for (const [k, v] of Object.entries({ class: 'tg-tick', viewBox: '0 0 24 24', width: '18', height: '18', fill: 'none', stroke: 'currentColor',
+  for (const [k, v] of Object.entries({ class: 'tg-glyph', viewBox: '0 0 24 24', width: '18', height: '18', fill: 'none', stroke: 'currentColor',
     'stroke-width': '2.6', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true', focusable: 'false' })) svg.setAttribute(k, v);
   const path = document.createElementNS(SVG, 'path');
-  path.setAttribute('d', 'M5 12.5l4.5 4.5L19 7.5');
+  path.setAttribute('d', GLYPHS[kind]);
   svg.append(path);
   return svg;
 }
@@ -44,7 +46,7 @@ const weekday = (date) => new Date(`${date}T00:00:00Z`).getUTCDay();
 // a box that holds a row: Details, and its menu
 const hasRow = (c) => c && c.kind !== 'none' && c.kind !== 'planned';
 
-export function createTaskGrid(host, { roomId, week = null, onWeek, actions, onChanged, onError }) {
+export function createTaskGrid(host, { roomId, week = null, shown: started = true, onWeek, actions, onChanged, onError }) {
   let alive = true;
   let seq = 0; // every load takes a token; an answer that finds it changed is dropped (a late week never paints over a newer one)
   let cal = null; // GET /api/calendar of the week on show
@@ -91,8 +93,7 @@ export function createTaskGrid(host, { roomId, week = null, onWeek, actions, onC
     const sample = el('span', e.kind === 'about' ? 'tg-key-about' : 'tg-box tg-key-box', e.kind === 'about' ? e.mark : '');
     if (e.kind !== 'about') {
       sample.dataset.kind = e.kind;
-      if (e.kind === 'done') sample.append(tick());
-      else if (e.mark) sample.append(el('span', 'tg-mark', e.mark));
+      if (GLYPHS[e.kind]) { const mark = el('span', 'tg-mark'); mark.append(glyph(e.kind)); sample.append(mark); }
     }
     sample.setAttribute('aria-hidden', 'true');
     key.append(sample, e.words);
@@ -103,7 +104,7 @@ export function createTaskGrid(host, { roomId, week = null, onWeek, actions, onC
   // ---- data ----
 
   async function load() {
-    if (!alive) return;
+    if (!alive || !started) return; // the tab not shown yet: show() reads it
     const me = ++seq;
     const { from, to } = weekOf(week ?? cal?.today ?? localToday());
     print.href = taskSheetHash(roomId, sheetMonth({ from, to }, cal?.today ?? localToday())); // at once, not when the week comes
@@ -124,7 +125,8 @@ export function createTaskGrid(host, { roomId, week = null, onWeek, actions, onC
     table.removeAttribute('aria-busy');
     paint();
   }
-  loadWorkers().then((list) => { if (alive) { workers = list; paint(); } }, () => {}); // without them, a clash shows only among the week's
+  // without them, a clash shows only among the week's (read with the week's first read)
+  const readWorkers = () => loadWorkers().then((list) => { if (alive) { workers = list; paint(); } }, () => {});
 
   const shown = () => weekOf(week ?? cal?.today ?? localToday());
   function go(w) {
@@ -147,12 +149,13 @@ export function createTaskGrid(host, { roomId, week = null, onWeek, actions, onC
     return th;
   }
 
-  // A task's head: its picture, short name (two lines at most on a desk) and unit, a button that shows the full text.
+  // A task's head: its picture, name (an own rule's whole text: two lines at most on a desk, wrapped whole turned) and unit,
+  // a button that shows the full text.
   function taskHead(col) {
     const th = el('th', 'tg-task');
     th.setAttribute('role', turned ? 'rowheader' : 'columnheader');
     const b = button('', 'tg-task-name');
-    b.append(picture('task', col.picture, { size: 24 }), el('span', 'tg-name', col.shortName));
+    b.append(picture('task', col.picture, { size: 24 }), el('span', 'tg-name', col.name));
     if (unitHead(col)) b.append(el('span', 'tg-unit', unitHead(col))); // the boxes' amounts are bare
     b.title = col.text;
     b.dataset.at = `task|${col.key}`;
@@ -170,9 +173,9 @@ export function createTaskGrid(host, { roomId, week = null, onWeek, actions, onC
     if (c.about) target.dataset.about = '';
     const look = el('span', 'tg-look');
     look.setAttribute('aria-hidden', 'true');
-    if (MARKS[c.kind]) {
-      const mark = el('span', 'tg-mark', c.kind === 'done' ? '' : MARKS[c.kind]);
-      if (c.kind === 'done') mark.append(tick());
+    if (GLYPHS[c.kind]) {
+      const mark = el('span', 'tg-mark');
+      mark.append(glyph(c.kind));
       if (c.amountText) mark.append(el('span', 'tg-amount', c.amountText)); // a phone's narrow box puts it under the ✓
       look.append(mark);
     }
@@ -183,6 +186,10 @@ export function createTaskGrid(host, { roomId, week = null, onWeek, actions, onC
     focus.setAttribute('aria-label', c.words);
     focus.dataset.at = `${date}|${col.key}`;
     focus.dataset.box = '';
+    if (hasRow(c)) { // its menu: a long press, right-click, Shift+F10 or the menu key
+      focus.setAttribute('aria-haspopup', 'menu');
+      focus.setAttribute('aria-keyshortcuts', 'Shift+F10');
+    }
     if (c.taskId != null && held.has(c.taskId)) target.setAttribute('aria-disabled', 'true');
     info.set(focus, { c, col, date });
     td.append(target);
@@ -267,7 +274,8 @@ export function createTaskGrid(host, { roomId, week = null, onWeek, actions, onC
 
   // Done (a row with an amount opens its dialog; createTaskActions decides) and Skip: the box waits for its row's change in
   // the room reply (update) once something changed, and lets go at once when nothing did.
-  // The Undo line waits for the row's change too, and shows once the reply has it done or skipped.
+  // The Undo line waits for the server's answer (sent) and the row's change, and shows once both say it was this tap's;
+  // nothing sent (a dialog closed, a failure) leaves nothing waiting.
   function act(action, c, at, col) {
     const id = c.taskId;
     if (held.has(id)) return;
@@ -277,7 +285,7 @@ export function createTaskGrid(host, { roomId, week = null, onWeek, actions, onC
     paint();
     const after = (changed) => {
       if (!alive) return;
-      if (!changed && held.letGo(id)) paint();
+      if (!changed) { undoLine.drop(id); if (held.letGo(id)) paint(); }
       refocus(at);
     };
     Promise.resolve(action(c.row)).then(after, () => after(false));
@@ -304,7 +312,7 @@ export function createTaskGrid(host, { roomId, week = null, onWeek, actions, onC
       if (alive) onChanged?.();
     } catch (err) {
       if (!alive) return;
-      if (err.status === 409 || err.status === 404) onChanged?.(); // done meanwhile, or too late: the boxes as they are now
+      if (err.status === 409 || err.status === 404) { onChanged?.(); load(); } // done meanwhile, or too late: the week again, as it is now
       onError?.(errorText(err));
     }
   }
@@ -476,20 +484,24 @@ export function createTaskGrid(host, { roomId, week = null, onWeek, actions, onC
 
   // ---- refresh ----
 
-  // The room's tasks or harvests moved, or the stream came back: the week again, at most once in 2 s.
+  // The room's tasks, crop (its stage or crops: the days planned) or harvests moved, or the stream came back: the week
+  // again, at most once in 2 s.
   const reload = createThrottle(() => { if (alive) load(); });
   const offLive = [
-    live.on('room', (d) => { if (d.id === roomId && d.part === 'tasks') reload.call(); }),
+    live.on('room', (d) => { if (d.id === roomId && (d.part === 'tasks' || d.part === 'crop')) reload.call(); }),
     live.on('harvest', (d) => { if (d.roomId == null || d.roomId === roomId) reload.call(); }),
     live.onStatus((up) => { if (up) reload.call(); }),
   ];
-  // the card's width: a repaint when it crosses the desk layout's width (draw keeps the boxes when the turn is the same)
+  // the card's width: a repaint when it crosses the desk layout's width (draw keeps the boxes when the turn is the same), at
+  // the next frame: a repaint inside the observer's callback that changes the size again is a "ResizeObserver loop"
+  let frame = 0;
   const sized = typeof ResizeObserver === 'function' ? new ResizeObserver(([entry]) => {
     const w = Math.round(entry.contentRect.width);
-    if (w !== width) { width = w; paint(); }
+    cancelAnimationFrame(frame);
+    frame = requestAnimationFrame(() => { if (alive && w !== width) { width = w; paint(); } });
   }) : null;
   sized?.observe(host);
-  load();
+  if (started) { load(); readWorkers(); }
 
   return {
     // the room tasks reply (today's rows with their ids); a new day: the week again
@@ -499,6 +511,13 @@ export function createTaskGrid(host, { roomId, week = null, onWeek, actions, onC
       undoLine.rows(next?.today); // and the Undo line shows it, or goes when the row opened again
       if (cal && next?.date && next.date !== cal.today) load();
       else paint();
+    },
+    sent: (id) => undoLine.sent(id),
+    show() {
+      if (started) return;
+      started = true;
+      load();
+      readWorkers();
     },
     printLink: print,
     setWeek(w) {
@@ -514,6 +533,7 @@ export function createTaskGrid(host, { roomId, week = null, onWeek, actions, onC
       reload.cancel();
       for (const off of offLive) off();
       sized?.disconnect();
+      cancelAnimationFrame(frame);
       undoLine.hide();
       host.replaceChildren();
     },

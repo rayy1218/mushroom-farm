@@ -45,7 +45,8 @@ test('the week from GET /api/calendar; a late reply never paints over a newer we
   assert.ok(grid.includes("request('GET', `/api/calendar?room=${roomId}&from=${from}&to=${to}`)"));
   assert.ok(grid.includes('const me = ++seq;') && grid.includes('if (!alive || me !== seq) return;'));
   assert.ok(grid.includes('const reload = createThrottle(() => { if (alive) load(); });'));
-  assert.ok(grid.includes("live.on('room', (d) => { if (d.id === roomId && d.part === 'tasks') reload.call(); })"));
+  // the crop's part too: a crop saved or a stage changed moves the days planned (M4)
+  assert.ok(grid.includes("live.on('room', (d) => { if (d.id === roomId && (d.part === 'tasks' || d.part === 'crop')) reload.call(); })"));
   assert.ok(grid.includes("live.on('harvest', (d) => { if (d.roomId == null || d.roomId === roomId) reload.call(); })"));
   assert.ok(grid.includes('live.onStatus((up) => { if (up) reload.call(); })'));
   assert.ok(grid.includes("failed = routeMissing(err) ? OUTDATED : err.status === 0 ? OFFLINE : \"Couldn't load the week\";"));
@@ -58,10 +59,14 @@ test('one renderer for both layouts: days down on a desk, turned where the colum
   // by the card's width against the desk layout's (critique #6: a 700 px tablet broke "Contaminat / ion"), not the screen's
   assert.ok(!grid.includes('matchMedia'));
   assert.ok(grid.includes('turned = width > 0 && width < deskWidth(columns.length);'));
-  assert.ok(grid.includes('sized?.observe(host);') && grid.includes('if (w !== width) { width = w; paint(); }'));
+  assert.ok(grid.includes('sized?.observe(host);'));
+  // the repaint at the next frame, not in the observer's callback (M7: no "ResizeObserver loop")
+  assert.ok(grid.includes('frame = requestAnimationFrame(() => { if (alive && w !== width) { width = w; paint(); } });'));
+  assert.ok(grid.slice(grid.indexOf('destroy() {')).includes('cancelAnimationFrame(frame);'));
   assert.ok(grid.includes('const heads = turned ? rows.map((r) => dayHead(r.date, cal.today)) : columns.map(taskHead);'));
   assert.equal(grid.split('box(c, col, date)').length, 3, 'one box renderer (its definition and its one call)');
-  assert.ok(grid.includes("b.append(picture('task', col.picture, { size: 24 }), el('span', 'tg-name', col.shortName));"));
+  // the head: the name uncut (an own rule's whole text; the CSS clamps a desk's to two lines, turned it wraps), F1
+  assert.ok(grid.includes("b.append(picture('task', col.picture, { size: 24 }), el('span', 'tg-name', col.name));"));
   assert.ok(grid.includes("if (unitHead(col)) b.append(el('span', 'tg-unit', unitHead(col)));"), 'the unit once, in the head (critique #2)');
   assert.ok(grid.includes("if (week === mine) { week = null; onWeek?.(null); } // this week has no query"));
   assert.ok(grid.includes('print.href = taskSheetHash(roomId,'));
@@ -98,12 +103,12 @@ test("a tap: today's open box is Done (the one tap, or its dialog), any other ro
   assert.ok(grid.includes("else if (x.c.kind === 'open' && x.c.taskId != null) act(actions.done, x.c, at, x.col);"));
   assert.ok(grid.includes('else if (hasRow(x.c)) details(x, at);'));
   assert.ok(grid.includes("await request('POST', `/api/tasks/${c.taskId}/undo`, undefined, COMMAND_TIMEOUT);"));
-  assert.ok(grid.includes('if (err.status === 409 || err.status === 404) onChanged?.();'));
+  assert.ok(grid.includes('if (err.status === 409 || err.status === 404) { onChanged?.(); load(); }'), 'the week read again too (M8)');
   assert.ok(grid.includes('onError?.(errorText(err));'));
   // the box waits for the repaint once something changed (a second tap would send again), and lets go when nothing did
   assert.ok(grid.includes("if (c.taskId != null && held.has(c.taskId)) target.setAttribute('aria-disabled', 'true');"));
   // ...and lets go only when the room reply shows its row changed (createHeld; a calendar reload does not)
-  assert.ok(grid.includes('held.hold(id, view?.today);') && grid.includes('if (!changed && held.letGo(id)) paint();'));
+  assert.ok(grid.includes('held.hold(id, view?.today);') && grid.includes('if (!changed) { undoLine.drop(id); if (held.letGo(id)) paint(); }'));
   const update = grid.slice(grid.indexOf('update(next) {'), grid.indexOf('setWeek(w) {'));
   assert.ok(update.includes('held.changed(next?.today);'));
   assert.equal(grid.split('held.changed(').length, 2, 'only update() lets a box go on a change');
@@ -138,7 +143,11 @@ test('the look: amber only for a missed day, the accent on today, a planned box 
   assert.ok(grid.includes("table.style.setProperty('--today', String(Math.max(0, todayAt)));"));
   assert.ok(block.includes('.tg-box:is([data-kind="none"], [data-kind="cancelled"]) { border-color: transparent; background: color-mix(in srgb, var(--ink) 9%, transparent); }'), 'not due: a shade with weight (#12)');
   assert.ok(block.includes('.tg-who { color: var(--ink-2); font-size: var(--fs-xs);'), 'the initials at the type scale (#8)');
-  assert.ok(grid.includes("if (c.kind === 'done') mark.append(tick());"), 'the tick drawn (#8)');
+  // the marks drawn, the tick (#8), the cross and the dash (F2), in the boxes and the legend's samples
+  assert.ok(grid.includes("const GLYPHS = { done: 'M5 12.5l4.5 4.5L19 7.5', missed: 'M6 6l12 12M18 6L6 18', skipped: 'M6 12h12' };"));
+  assert.ok(grid.includes("'stroke-width': '2.6', 'stroke-linecap': 'round'"));
+  assert.equal(grid.split('.append(glyph(').length, 3, 'a box and a legend sample');
+  assert.doesNotMatch(grid, /'[✓✗—]'/, 'no font glyph for a mark');
   assert.ok(block.includes('.tg-menu button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; background: var(--band); }'), 'the ring inside the item (#19)');
   assert.ok(grid.includes('(byKey ? menu.firstChild : menu).focus({ preventScroll: true });'), "a pointer's menu takes the focus itself");
   assert.ok(block.includes('.tg-box[data-kind="planned"] { border: 1px dashed var(--border-strong); }'));
@@ -162,9 +171,9 @@ test('the menu holds the repaint and closes on a scroll; a dialog gives the focu
   assert.ok(load.includes('print.href = taskSheetHash(roomId, sheetMonth({ from, to }, cal?.today ?? localToday()));'), 'Print month has an address while the week loads');
 });
 
-test('a desk: columns of 92 to 150 px; the head, Undo line and legend stop at the grid\'s width; Print month in the foot', () => {
-  assert.ok(css.includes('.tg[data-turn="desk"] { min-width: calc(88px + var(--cols, 6) * 92px); max-width: calc(88px + var(--cols, 6) * 150px); }'));
-  assert.ok(css.includes('.tg-host[data-turn="desk"] > * { max-width: calc(88px + var(--cols, 6) * 150px); }'), 'critique #18');
+test('a desk: columns of 92 px or more sharing the card; the head, grid, Undo line and legend end on the card\'s edge; Print month in the foot', () => {
+  assert.ok(css.includes('.tg[data-turn="desk"] { min-width: calc(88px + var(--cols, 6) * 92px); }'));
+  assert.doesNotMatch(css, /\.tg-host\[data-turn[^\]]*\] > \* \{ max-width/, 'no cap: one right edge with the card\'s title (F3), desk or turned');
   assert.ok(grid.includes("host.style.setProperty('--cols', String(columns.length));"));
   assert.ok(css.includes('.tg-task { vertical-align: top; }'), 'the pictures on one line (#15)');
   assert.ok(css.includes('-webkit-line-clamp: 2;'), 'a head two lines at most (#14)');
@@ -173,4 +182,18 @@ test('a desk: columns of 92 to 150 px; the head, Undo line and legend stop at th
   assert.ok(css.includes('.tg-this[aria-disabled="true"] { display: none; }'));
   assert.ok(card.includes('csvLine.append(grid.printLink, DOT, csv,'), 'Print month beside Export CSV');
   assert.ok(css.includes('@media (min-width: 900px) {\n  .tk-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }'), 'Upkeep and Long-term side by side from 900 px (#24)');
+});
+
+test('final review: the week read when the Tasks tab first shows (M6); a box with a row says it has a menu (M10)', () => {
+  assert.ok(grid.includes('if (!alive || !started) return; // the tab not shown yet: show() reads it'));
+  assert.ok(grid.includes('if (started) { load(); readWorkers(); }'));
+  const show = grid.slice(grid.indexOf('show() {'), grid.indexOf('printLink: print,'));
+  assert.ok(show.includes('started = true;') && show.includes('load();'));
+  assert.ok(card.includes('show: () => grid.show(),'));
+  const room = src('room-detail.js');
+  assert.ok(room.includes("if (tab === 'tasks') tasksCard?.show();") && room.includes("shown: tab === 'tasks',"));
+  assert.ok(room.indexOf('let tasksCard = null;') < room.indexOf('function setTab('), 'declared before setTab first runs');
+  assert.ok(card.includes('onCounts?.(view.counts ?? null);'), 'the dot from the room reply, read at once');
+  assert.ok(grid.includes("focus.setAttribute('aria-haspopup', 'menu');") && grid.includes("focus.setAttribute('aria-keyshortcuts', 'Shift+F10');"));
+  assert.ok(grid.includes('sent: (id) => undoLine.sent(id),'));
 });

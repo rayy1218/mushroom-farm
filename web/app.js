@@ -219,7 +219,8 @@ live.onStatus((up) => {
 window.addEventListener('farm:alarms-changed', refreshBadge); // after an Acknowledge
 
 // On the Today page the page asks for its own data; the tasks event keeps the count current.
-window.addEventListener('hashchange', (e) => { show(new URL(e.oldURL).hash); refreshBadge(); if (mounted?.name !== 'today') refreshToday(); });
+// (a hashchange made by a script may have no oldURL)
+window.addEventListener('hashchange', (e) => { show(e.oldURL ? new URL(e.oldURL).hash : ''); refreshBadge(); if (mounted?.name !== 'today') refreshToday(); });
 show();
 refreshBadge();
 refreshToday();

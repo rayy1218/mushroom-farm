@@ -13,7 +13,7 @@ const css = src('styles.css');
 test('the router mounts the sheet with the route shown before (for Back); no top link is current, as on the room page', () => {
   assert.ok(app.includes("import * as taskSheet from './task-sheet.js';"));
   assert.ok(app.includes(": route.name === 'taskSheet' ? taskSheet.mountSheet(view, { roomId: route.id, month: route.month, from: parseRoute(before) })"));
-  assert.ok(app.includes("window.addEventListener('hashchange', (e) => { show(new URL(e.oldURL).hash);"));
+  assert.ok(app.includes("window.addEventListener('hashchange', (e) => { show(e.oldURL ? new URL(e.oldURL).hash : '');"));
   assert.match(app, /const section = route\.name === 'sheet' \? 'harvest' : \['settings', 'overview', 'today', 'calendar', 'harvest'\]\.includes\(route\.name\)/);
 });
 

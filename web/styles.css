@@ -1730,14 +1730,11 @@ h2.r-named { display: flex; }
 .tg-nav { display: flex; gap: 6px; margin-left: auto; } /* as the Calendar's: the dates first, ‹ This week › at the right */
 .tg-step { min-width: 36px; padding-inline: 0; font-size: var(--fs-lg); line-height: 1; }
 .tg-nav [aria-disabled="true"] { color: var(--muted); cursor: default; }
-/* the head, the grid, the Undo line and the legend stop at the grid's own width (a few tasks on a wide desk) */
-.tg-host[data-turn="desk"] > * { max-width: calc(88px + var(--cols, 6) * 150px); }
-.tg-host[data-turn="phone"] > * { max-width: 720px; }
 .tg-scroll { overflow-x: auto; } /* a guard: the grid turns before its columns would need it */
 .tg { width: 100%; border-collapse: collapse; table-layout: fixed; font-variant-numeric: tabular-nums; }
-/* columns of one width: 92 px or more ("Contamination" whole; task-grid-math deskWidth), at most 150 px, so a week of few
-   tasks does not stretch its boxes into bars */
-.tg[data-turn="desk"] { min-width: calc(88px + var(--cols, 6) * 92px); max-width: calc(88px + var(--cols, 6) * 150px); }
+/* columns of one width: 92 px or more ("Contamination" whole; task-grid-math deskWidth), sharing the card's width as the
+   Calendar's days do, so the head, the grid, the Undo line and the legend end on the card's one right edge */
+.tg[data-turn="desk"] { min-width: calc(88px + var(--cols, 6) * 92px); }
 .tg th, .tg td { padding: 2px; font-weight: inherit; }
 .tg-corner { width: 88px; }
 .tg .tg-day { padding: 2px 10px; color: var(--ink-2); font-size: var(--fs-sm); font-weight: 500; text-align: left; white-space: nowrap; }
@@ -1761,10 +1758,10 @@ button.tg-box[data-kind="open"]:hover { border-color: var(--ink); }
 .tg-box[aria-disabled="true"] { opacity: .55; cursor: progress; }
 .tg-look { display: flex; flex-direction: column; align-items: center; line-height: 1.15; pointer-events: none; }
 .tg-mark { display: inline-flex; align-items: center; gap: 2px; font-weight: 600; white-space: nowrap; }
-.tg-tick { display: block; flex: none; }
+.tg-glyph { display: block; flex: none; }
 /* a missed day: the whole box tinted and an amber ✗, the grid's only amber */
 .tg-box[data-kind="missed"] { border-color: color-mix(in srgb, var(--warning) 45%, transparent); background: var(--warning-soft); }
-.tg-box[data-kind="missed"] .tg-mark { color: var(--warning-text); font-size: 20px; font-weight: 700; line-height: 1; } /* the font draws ✗ small */
+.tg-box[data-kind="missed"] .tg-mark { color: var(--warning-text); }
 .tg-box[data-kind="skipped"] .tg-mark { color: var(--muted); }
 .tg-who { color: var(--ink-2); font-size: var(--fs-xs); font-weight: 600; letter-spacing: .02em; }
 .tg-about { position: absolute; top: 1px; right: 4px; color: var(--muted); font-size: 11px; }
@@ -1785,7 +1782,7 @@ td.tg-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: -2p
 .tg[data-turn="phone"] .tg-day { padding: 6px 0; text-align: center; }
 .tg[data-turn="phone"] .tg-box { min-width: 0; height: 48px; overflow: hidden; }
 .tg[data-turn="phone"] .tg-mark:has(.tg-amount) { flex-direction: column; gap: 0; }
-.tg[data-turn="phone"] .tg-mark:has(.tg-amount) .tg-tick { width: 14px; height: 14px; }
+.tg[data-turn="phone"] .tg-mark:has(.tg-amount) .tg-glyph { width: 14px; height: 14px; }
 .tg[data-turn="phone"] .tg-amount { font-size: var(--fs-xs); line-height: 1.1; }
 /* today (turned): its column tinted from its head to its last box, through the task names' rows (--today: its place, 0 to 6) */
 .tg[data-turn="phone"] .tg-today { background: var(--accent-soft); }
@@ -1801,8 +1798,7 @@ td.tg-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: -2p
 .tg-legend { margin: 10px 0 0; font-size: var(--fs-sm); line-height: 1.9; }
 .tg-key { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; vertical-align: middle; }
 .tg-box.tg-key-box { width: 18px; min-width: 0; height: 18px; border-radius: 4px; font-size: 11px; line-height: 1; }
-.tg-key-box .tg-tick { width: 12px; height: 12px; }
-.tg-box.tg-key-box[data-kind="missed"] .tg-mark { font-size: 13px; }
+.tg-key-box .tg-glyph { width: 12px; height: 12px; }
 .tg-key-about { color: var(--muted); }
 .tg-csv { margin: 8px 0 0; }
 .tg-host .tg-none { margin: 0; }
@@ -1819,7 +1815,6 @@ td.tg-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: -2p
 .tg-facts dd { margin: 0; overflow-wrap: anywhere; white-space: pre-line; }
 @media (max-width: 600px) {
   .tg-scroll { margin: 0 -12px; padding: 0 2px; } /* the card's padding to the boxes: 7 of them at 44 px or more from 360 px */
-  .tg-host[data-turn] > .tg-scroll { max-width: none; }
   /* ‹ the week's dates › on one row; This week under them only while another week is on show */
   .tg-head { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; gap: 4px 8px; }
   .tg-nav { display: contents; }
