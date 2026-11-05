@@ -84,7 +84,7 @@ approved the data, API and pages below (2026-11-05).
 | Edit | A delivery's row on the Sales page opens "Edit sale" with every field as Record; the footer has a quiet red "Delete this sale" at its start, which opens the confirm. |
 | Delete | Confirm: title "Delete the sale of 5 Nov to Kedai Ah Seng?", lead "RM 214.50 · Grey oyster 12.00 kg, Pink oyster 4.50 kg." Buttons "Delete sale" and "Cancel". |
 | Mark paid | On an unpaid delivery (the Owed card and the Edit dialog): a small dialog "Mark paid" with **Paid on** (default today) → `PUT …/paid`. A paid delivery's Edit dialog shows "Paid 9 Nov" and a quiet **Mark unpaid**. |
-| Events | Every sales or buyers write publishes `sales` `{}`; `'sales'` is added to `EVENT_TYPES` in `web/live.js` (contract §5). A Settings save of `cropYield` also publishes `sales` `{}` (the expected prices). The Sales page and the myGAP sheet read again on `sales`, on `harvest` (harvested kg) and when the stream comes back. |
+| Events | Every sales or buyers write publishes `sales` `{}`; `'sales'` is added to `EVENT_TYPES` in `web/live.js` (contract §5). The Sales page and the myGAP sheet read again on `sales`, on `harvest` (harvested kg; a Settings save of `cropYield`, the expected prices, already publishes `harvest` `{ roomId: null }`), on a room's `room` part (a room renamed or deleted) and when the stream comes back. |
 
 ## 4. The figures (`server/sales-math.js`, pure)
 
@@ -103,7 +103,7 @@ approved the data, API and pages below (2026-11-05).
 
 | Route | Reply |
 |---|---|
-| `GET /api/sales?days=7\|30\|90\|365` | `{ from, to, days, deliveries: [delivery], totals: { kg, total, harvestedKg, count }, owed: { total, count, oldestAt, buyers: [{ buyerId, buyer, total, count, oldestAt, deliveries: [delivery] }] }, byCrop: [{ crop, kg, harvestedKg, total, avgPriceKg, expectedPriceKg }], byBuyer: [{ buyerId, buyer, kg, total, owed }] }`. Deliveries newest first. `owed` is all time. Default 30; another value 400. |
+| `GET /api/sales?days=7\|30\|90\|365` | `{ from, to, days, deliveries: [delivery], totals: { kg, total, harvestedKg, count }, owed: { total, count, oldestAt, buyers: [{ buyerId, buyer, total, count, oldestAt, deliveries: [delivery] }] }, byCrop: [{ crop, kg, harvestedKg, total, avgPriceKg, expectedPriceKg }], byBuyer: [{ buyerId, buyer, kg, total, owed }], buyerCount }` (`buyerCount`: the active buyers; 0: the page's empty words ask for the first). Deliveries newest first. `owed` is all time. Default 30; another value 400. |
 | A delivery | `{ id, soldAt, buyerId, buyer, buyerArchived, invoiceNo, note, paidAt, kg, total, lines: [{ id, crop, kg, priceKg, total, roomId, roomName, runId, runStartedAt }] }`, lines in the crop list's order. |
 | `GET /api/sales/range?from=YYYY-MM-DD&to=YYYY-MM-DD` | `{ from, to, lines: [{ date, soldAt, crop, roomName, runStartedAt, kg, priceKg, total, invoiceNo, buyer }] }`, oldest first (the myGAP sheet). Bad dates or `from` after `to`: 400; more than 400 days: 400. |
 | `POST /api/sales` | `{ soldAt, buyerId, invoiceNo?, note?, lines: [{ crop, kg, priceKg, roomId? }] }` → 201 the delivery. 400 with `field` (`soldAt`, `buyerId`, `lines`, `lines.1.kg`, …) and the error's words. An archived buyer: 400 `buyerId` "This buyer is archived". |
@@ -160,7 +160,7 @@ approved the data, API and pages below (2026-11-05).
 | `tests/sales-math.test.js` (pure) | Body validation and its `field`s, totals and rounding, owed and oldest days, per crop with harvested kg and expected price, per buyer, the summary's `byRun` leaving out null runs, the CSV rows |
 | `tests/db-sales.test.js` | The upgrade to 23 from 20 (tables, indexes, `user_version`), a delivery's shared fields written together, `runAt` (open, ended, before any run), the room delete clearing `room_id`/`run_id`, a buyer rename rewriting `buyer` |
 | `tests/sales.test.js` | Record, edit (lines added, changed, removed; paid kept), delete, paid and unpaid with their limits, an archived buyer refused, the period views, `owed` all time |
-| `tests/api-sales.test.js` | The routes and their 400/404/409s, `days` checked, the summary's exact shape for Costs, the CSV, the `sales` events (writes and a Settings `cropYield` save) |
+| `tests/api-sales.test.js` | The routes and their 400/404/409s, `days` checked, the summary's exact shape for Costs, the CSV, the `sales` events on every write |
 | `tests/web-sales-math.test.js` | The formatter, delivery rows, line totals, the pre-fill order (buyer's price, expected, empty) and the "expected" mark, the unlikely-value check, the sheet's merged rows and Total |
 | `tests/web-harvest-math.test.js` (changed) | The "Expected value" labels; `sheetRows` with sale lines |
 | Look | The UI/UX audit (Impeccable critique and audit) at 1440, 1024 and 390 px, both themes: the Sales page with and without sales, Owed open, the Record dialog with three lines and the unlikely-value warning, Buyers, the sheet; fixes before the finish review |
