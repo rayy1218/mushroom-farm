@@ -68,6 +68,27 @@ const daysOf = (query) => {
 };
 export const sheetHash = (days) => `#/harvest/sheet?days=${days}`;
 
+// ---- Batches ---- (spec 2026-11-05-batches-design.md 7): the page (?run= one run's batches), a batch, and the myGAP 4-2
+// sheet with its dates in the query (the page puts the last 90 days there when they are missing or not dates).
+export const BATCHES_HASH = '#/business/batches';
+export const batchHash = (id) => `${BATCHES_HASH}/${id}`;
+export const batchesRunHash = (runId) => `${BATCHES_HASH}?run=${runId}`;
+export const batchSheetHash = (from, to) => `${BATCHES_HASH}/sheet?from=${from}&to=${to}`;
+function parseBatches(hash) {
+  const sheet = /^#\/business\/batches\/sheet\/?(?:\?(.*))?$/.exec(hash);
+  if (sheet) {
+    const p = new URLSearchParams(sheet[1] ?? '');
+    const [from, to] = [p.get('from'), p.get('to')].map((d) => (isDate(d) ? d : null));
+    return { name: 'batchSheet', from: from && to ? from : null, to: from && to ? to : null };
+  }
+  const one = new RegExp(`^#/business/batches/${ID}/?$`).exec(hash);
+  if (one) return { name: 'batch', id: Number(one[1]) };
+  const list = /^#\/business\/batches\/?(?:\?(.*))?$/.exec(hash);
+  if (!list) return null;
+  const run = new URLSearchParams(list[1] ?? '').get('run');
+  return { name: 'batches', run: /^[1-9][0-9]{0,14}$/.test(run ?? '') ? Number(run) : null };
+}
+
 export function parseRoute(hash) {
   const run = new RegExp(`^#/rooms/${ID}/simulations/${ID}/?$`).exec(hash ?? '');
   if (run) return { name: 'simulation', id: Number(run[1]), runId: Number(run[2]) };
@@ -90,6 +111,8 @@ export function parseRoute(hash) {
   if (sheet) return { name: 'sheet', days: daysOf(sheet[1]) };
   const harvest = /^#\/harvest\/?(?:\?(.*))?$/.exec(hash ?? '');
   if (harvest) return { name: 'harvest', days: daysOf(harvest[1]) };
+  const batches = parseBatches(hash ?? '');
+  if (batches) return batches;
   // #/rooms (the Rooms list until 2026-10-28) is the Overview now: it holds every room and Add room.
   if (/^#\/settings\/?$/.test(hash ?? '')) return { name: 'settings' };
   return { name: 'overview' };
@@ -105,6 +128,9 @@ export function canonicalHash(route) {
   if (route.name === 'calendar') return calendarHash(route);
   if (route.name === 'harvest') return route.days === 30 ? HARVEST_HASH : `${HARVEST_HASH}?days=${route.days}`;
   if (route.name === 'sheet') return sheetHash(route.days);
+  if (route.name === 'batches') return route.run ? batchesRunHash(route.run) : BATCHES_HASH;
+  if (route.name === 'batch') return batchHash(route.id);
+  if (route.name === 'batchSheet') return route.from && route.to ? batchSheetHash(route.from, route.to) : `${BATCHES_HASH}/sheet`;
   return route.name === 'settings' ? '#/settings' : '#/overview';
 }
 
