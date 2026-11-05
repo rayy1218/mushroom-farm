@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  lastDayOf, addMonths, monthName, chargeDate, chargesOf, runOn, blockDays, split,
+  lastDayOf, addMonths, monthName, chargeDate, chargesOf, runOn, blockDays, split, firstDayOf, figuresOf, runTotals, summaryOf,
 } from '../server/costs-math.js';
 
 export const cost = (over = {}) => ({
@@ -63,4 +63,151 @@ test('split: shares to 2 places, the last taking the remainder', () => {
   assert.deepEqual(split(100, [1, 2]), [33.33, 66.67]);
   assert.deepEqual(split(10, [1, 1, 1]), [3.33, 3.33, 3.34]);
   assert.deepEqual(split(300, [1500, 2000]), [128.57, 171.43]);
+});
+// A farm's data on 15 Nov 2026: electricity RM 0.50 a kWh, no water price; Container 1 and 2.
+const data = (over = {}) => ({
+  today: '2026-11-15', keptFrom: '2025-10-12', prices: { electricity: 0.5, water: null },
+  rooms: new Map([[1, 'Container 1'], [2, 'Container 2']]), runs: [], costs: [], usage: new Map(), batches: [], purchases: [],
+  sales: [], harvests: [], cropYield: {}, ...over,
+});
+// A room's usage days from `from` to `to`, `kWh` each.
+const days = (from, to, kWh, extra = {}) => {
+  const out = new Map();
+  for (let d = from; d <= to; d = new Date(Date.parse(`${d}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10)) out.set(d, { kWh, waterL: 0, ...extra });
+  return out;
+};
+const NOV = ['2026-11-01', '2026-11-15'];
+const line = (f, key) => f.lines.filter((l) => l.key === key);
+
+test('shared costs go to the runs by block-days; a room\'s cost to its run', () => {
+  const f = figuresOf(...NOV, data({
+    runs: [run({ id: 1, roomId: 1, blocks: 100 }), run({ id: 2, roomId: 2, startDate: '2026-11-06', blocks: 200 })],
+    costs: [cost({ id: 1, amount: 300 }), cost({ id: 2, category: 'repairs', amount: 40, roomId: 2, runId: 2, date: '2026-11-07' })],
+    sales: [{ id: 1, date: '2026-11-10', kg: 20, total: 500, roomId: 1, runId: 1 }],
+  }));
+  assert.equal(f.costs, 340);
+  assert.equal(f.income, 500);
+  assert.equal(f.profit, 160);
+  assert.equal(f.kgSold, 20);
+  assert.equal(f.profitPerKg, 8);
+  assert.equal(f.runs.get(1).shared, 128.57, '1,500 of 3,500 block-days');
+  assert.equal(f.runs.get(2).shared, 171.43);
+  assert.equal(f.runs.get(2).own, 40);
+  assert.equal(f.runs.get(1).income, 500);
+  assert.deepEqual(f.byCategory.map((c) => [c.key, c.amount, c.share]), [['rent', 300, 88], ['repairs', 40, 12]]);
+});
+
+test('measured electricity goes to the room\'s run; a room with no run keeps it on the month', () => {
+  const f = figuresOf(...NOV, data({
+    runs: [run({ id: 1, roomId: 1 })],
+    usage: new Map([[1, days(...NOV, 10)], [2, days(...NOV, 2)]]),
+  }));
+  assert.deepEqual(line(f, 'electricity').map((l) => [l.roomId, l.runId, l.amount, l.shared]), [[1, 1, 75, false], [2, null, 15, false]]);
+  assert.equal(f.runs.get(1).energy, 75);
+  assert.equal(f.costs, 90);
+  assert.ok(f.notes.some((n) => n.kind === 'no-water-price'));
+});
+
+test('a bill tops up what was not measured, never counts twice', () => {
+  const usage = new Map([[1, days(...NOV, 10)]]);
+  const runs = [run({ id: 1 })];
+  const bill = (amount) => cost({ id: 5, category: 'utilities', utility: 'electricity', amount, date: '2026-11-15', periodFrom: NOV[0], periodTo: NOV[1] });
+  const over = figuresOf(...NOV, data({ runs, usage, costs: [bill(100)] }));
+  assert.deepEqual(line(over, 'unmeasured-electricity').map((l) => [l.amount, l.shared]), [[25, true]], 'the bill RM 100 − measured RM 75');
+  assert.equal(over.costs, 100, 'measured 75 + top-up 25');
+  const under = figuresOf(...NOV, data({ runs, usage, costs: [bill(60)] }));
+  assert.equal(line(under, 'unmeasured-electricity').length, 0);
+  assert.equal(under.costs, 75);
+  assert.equal(under.notes.find((n) => n.kind === 'bill-below').text, 'Measured RM 75.00 is above the electricity bill of RM 60.00: the estimate runs high');
+  const water = figuresOf(...NOV, data({ runs, usage, costs: [cost({ id: 6, category: 'utilities', utility: 'water', amount: 30, date: '2026-11-10', periodFrom: NOV[0], periodTo: NOV[1] })] }));
+  assert.equal(line(water, 'unmeasured-water')[0].amount, 30, 'no water price: the whole water bill');
+});
+
+test('a day not worked out yet: costs and profit unknown, never partial', () => {
+  const f = figuresOf(...NOV, data({ runs: [run()], usage: new Map([[1, days(...NOV, 10, { pending: true })]]), costs: [cost()] }));
+  assert.equal(f.pending, true);
+  assert.equal(f.costs, null);
+  assert.equal(f.profit, null);
+  assert.equal(f.costPerKg, null);
+});
+
+test('Batches\' block cost on its run; a batch without a price named, left out', () => {
+  const f = figuresOf(...NOV, data({
+    runs: [run({ id: 1 })],
+    batches: [
+      { batchId: 1, runId: 1, roomId: 1, date: '2026-11-02', cost: 1175 },
+      { batchId: 2, runId: 1, roomId: 1, date: '2026-11-03', cost: null },
+    ],
+  }));
+  assert.equal(f.runs.get(1).blocks, 1175);
+  assert.deepEqual(line(f, 'blocks-batches').map((l) => [l.source, l.amount]), [['batches', 1175]]);
+  const note = f.notes.find((n) => n.kind === 'unpriced-batch');
+  assert.equal(note.text, 'Container 1’s blocks of 3 Nov have no price');
+  assert.equal(note.runId, 1);
+});
+
+test('Inventory\'s purchases are shared; one without a unit cost named', () => {
+  const f = figuresOf(...NOV, data({
+    runs: [run({ id: 1 })],
+    purchases: [
+      { id: 1, name: 'PP bags 1 kg', kind: 'packaging', date: '2026-11-04', total: 45 },
+      { id: 2, name: 'Alcohol 75 %', kind: 'chemical', date: '2026-11-05', total: null },
+    ],
+  }));
+  assert.deepEqual(line(f, 'inventory-packaging').map((l) => [l.category, l.label, l.source, l.shared]), [['packaging', 'Packaging', 'inventory', true]]);
+  assert.equal(f.runs.get(1).shared, 45);
+  assert.equal(f.notes.find((n) => n.kind === 'no-unit-cost').text, 'Alcohol 75 % bought 5 Nov has no unit cost');
+});
+
+test('no blocks in: shared costs stay with the farm', () => {
+  const f = figuresOf(...NOV, data({ costs: [cost({ amount: 300 })] }));
+  assert.equal(f.costs, 300);
+  assert.equal(f.runs.size, 0);
+  assert.equal(f.notes.find((n) => n.kind === 'not-shared').text, 'RM 300.00 of shared costs not shared: no blocks in');
+});
+
+test('picked and not yet sold: a note, never income', () => {
+  const f = figuresOf(...NOV, data({
+    runs: [run({ id: 1 })],
+    harvests: [{ roomId: 1, runId: 1, date: '2026-11-05', kg: 10, crop: 'oyster' }],
+    sales: [{ id: 1, date: '2026-11-06', kg: 4, total: 56, roomId: 1, runId: null }],
+    cropYield: { oyster: { dryKg: 0.9, priceKg: 14 } },
+  }));
+  assert.equal(f.income, 56);
+  assert.equal(f.kgHarvested, 10);
+  assert.deepEqual(f.unsold, { kg: 6, value: 84 });
+  assert.equal(f.notes[0].text, '6.0 kg picked and not yet sold (about RM 84.00 at your prices)');
+  assert.equal(f.runs.get(1).income, 56, 'a sale with a room and no run: the run open that day');
+  assert.equal(f.runs.get(1).kgHarvested, 10);
+});
+
+test('a run\'s whole figures sum the months it spans, sales after it ends included', () => {
+  const d = data({
+    runs: [run({ id: 1, startDate: '2026-10-25', endDate: '2026-11-05' })],
+    costs: [cost({ id: 1, date: '2026-10-31', amount: 100, repeat: 'monthly' }), cost({ id: 2, category: 'labour', worker: 'Ali', amount: 50, roomId: 1, runId: 1, date: '2026-10-26' })],
+    sales: [{ id: 1, date: '2026-11-10', kg: 10, total: 400, roomId: 1, runId: 1 }],
+    harvests: [{ roomId: 1, runId: 1, date: '2026-11-01', kg: 12, crop: 'oyster' }],
+  });
+  const figs = (m) => figuresOf(firstDayOf(m), m === '2026-11' ? '2026-11-15' : lastDayOf(m), d);
+  const r = runTotals(d.runs[0], figs, d.today);
+  assert.deepEqual(r.parts, { blocks: 0, energy: 0, water: 0, own: 50, shared: 100 }, 'Oct rent 100, all its; Nov rent on 30 Nov: after today');
+  assert.equal(r.costs, 150);
+  assert.equal(r.income, 400);
+  assert.equal(r.profit, 250);
+  assert.equal(r.kgSold, 10);
+  assert.equal(r.profitPerKg, 25);
+  assert.equal(r.costPerKg, 12.5);
+  assert.deepEqual(r.byCategory, [{ category: 'labour', amount: 50 }, { category: 'shared', amount: 100 }]);
+});
+
+test('the contract\'s summary shape', () => {
+  const f = figuresOf(...NOV, data({
+    runs: [run({ id: 1 })], usage: new Map([[1, days(...NOV, 10)]]),
+    costs: [cost({ amount: 300 })], purchases: [{ id: 1, name: 'PP bags', kind: 'packaging', date: '2026-11-04', total: 45 }],
+    sales: [{ id: 1, date: '2026-11-06', kg: 10, total: 500, roomId: 1, runId: 1 }],
+  }));
+  assert.deepEqual(summaryOf(f), {
+    total: 420, byCategory: [{ category: 'rent', amount: 300 }, { category: 'packaging', amount: 45 }], energy: 75, water: 0,
+    income: 500, profit: 80, profitPerKg: 8,
+  });
 });
