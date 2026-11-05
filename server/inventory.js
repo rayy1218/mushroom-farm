@@ -94,7 +94,7 @@ function distinct(list) {
   return out;
 }
 
-// db: the farm database; now injectable. onChange(fn(itemId)) hears every write (itemId of the item it was about).
+// db: the farm database; now injectable. onChange(fn(itemId)) hears every write (itemId of the item it was about; null for a write about several items).
 export function createInventory({ db, now = Date.now, log = console.error }) {
   const listeners = new Set();
   function tell(itemId) {
@@ -321,7 +321,7 @@ export function createInventory({ db, now = Date.now, log = console.error }) {
       next = {
         ...m, qty: given(b.qty) ? -qtyOf(b.qty, it.unit) : m.qty, roomId: given(b.roomId) ? roomOf(b.roomId) : m.roomId,
         reason: given(b.reason) ? reasonOf(b.reason) : m.reason, worker: given(b.worker) ? workerOf(b.worker) : m.worker,
-        at: given(b.at) && b.at !== m.at ? atOf(b.at) : m.at,
+        at: given(b.at) && b.at !== null && b.at !== m.at ? atOf(b.at) : m.at,
       };
     }
     const saved = db.updateStockMove(m.id, next);
@@ -376,7 +376,7 @@ export function createInventory({ db, now = Date.now, log = console.error }) {
       return { itemId: it.id, at, qty: round3(counted - stockOf(db.itemStockMoves(it.id))), refKind: 'adjust', counted, worker };
     });
     const moves = db.insertStockMoves(list);
-    for (const id of seen) tell(id);
+    tell(null);
     return { moves };
   }
 

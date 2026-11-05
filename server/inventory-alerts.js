@@ -62,6 +62,7 @@ export function createInventoryAlerts({
         db.setStockLowSent(item.id, now());
       }
       for (const lot of v.lots) {
+        if (stopped) return;
         if (!on || !lot.state || lot.refKind !== 'purchase') continue;
         if (moves.find((m) => m.id === lot.moveId)?.useBySentAt !== null) continue;
         if (await send(useByText(v, lot), s)) {
@@ -84,7 +85,13 @@ export function createInventoryAlerts({
         again = false;
         await once();
       } while (again && !stopped);
-    })().catch((err) => safeLog(`Inventory messages: ${err?.message ?? err}`)).finally(() => { running = null; });
+    })().catch((err) => safeLog(`Inventory messages: ${err?.message ?? err}`)).finally(() => {
+      running = null;
+      // A check asked for after the loop's last test (in the microtasks before this) set `again`: run it, and let the
+      // promise they were given cover it.
+      if (again && !stopped) return check();
+      return undefined;
+    });
     return running;
   }
 

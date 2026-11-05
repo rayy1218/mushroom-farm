@@ -10,7 +10,7 @@ import { createInventoryAlerts, lowText, useByText } from '../server/inventory-a
 
 const NOW = Date.parse('2026-11-05T09:00:00+08:00');
 const TOKEN = '123456:ABCDEFGHIJKLMNOP';
-const plain = (s) => s.replace(/\u00a0/g, " ");
+const plain = (s) => s.replace(/\u00a0/g, ' ');
 
 function setup(t) {
   const db = openDb(':memory:');
@@ -125,4 +125,42 @@ test('start checks at once and then on its timer; stop ends both', async (t) => 
   alerts.stop();
   assert.equal(cleared, 1);
   await alerts.check(); // after stop: nothing, no throw
+});
+
+test('a check asked for in the gap after the last loop test still sees a later write', async (t) => {
+  const { inv, alerts, sent } = setup(t);
+  const bleach = inv.addItem({ name: 'Bleach', kind: 'chemical', unit: 'L', reorderAt: 2 });
+  inv.purchase({ itemId: bleach.id, qty: 5, total: 25 });
+  const first = alerts.check();
+  await Promise.resolve();
+  inv.use({ itemId: bleach.id, qty: 4, worker: 'Ali' });
+  await alerts.check();
+  await first;
+  assert.deepEqual(sent.map((s) => s.text), ['📦 Low stock · Bleach · 1.00 L left (reorder at 2.00 L)']);
+});
+
+test('a check asked for at every microtask step after a quiet one never loses the write', async (t) => {
+  for (let gap = 0; gap < 12; gap += 1) {
+    const { inv, alerts, sent } = setup(t);
+    const bleach = inv.addItem({ name: 'Bleach', kind: 'chemical', unit: 'L', reorderAt: 2 });
+    inv.purchase({ itemId: bleach.id, qty: 5, total: 25 });
+    const first = alerts.check();
+    for (let i = 0; i < gap; i += 1) await Promise.resolve();
+    inv.use({ itemId: bleach.id, qty: 4, worker: 'Ali' });
+    await alerts.check();
+    assert.equal(sent.length, 1, `gap ${gap}`);
+    await first;
+  }
+});
+
+test('stop ends the sends in the middle of a pass', async (t) => {
+  const { inv, alerts, sent } = setup(t);
+  inv.addItem({ name: 'A', kind: 'other', unit: 'pcs', reorderAt: 5 });
+  const spawn = inv.addItem({ name: 'Spawn', kind: 'spawn', unit: 'kg' });
+  inv.purchase({ itemId: spawn.id, qty: 1, total: 1, useBy: '2026-11-06', day: '2026-11-01' });
+  inv.purchase({ itemId: spawn.id, qty: 1, total: 1, useBy: '2026-11-07', day: '2026-11-01' });
+  const p = alerts.check();
+  alerts.stop();
+  await p;
+  assert.ok(sent.length <= 1, `sent ${sent.length}`);
 });

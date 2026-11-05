@@ -205,7 +205,7 @@ test('who: one of the active workers when the farm has a list, as the list spell
 });
 
 test('edit a purchase or a use; a changed use-by may be told again; a count and a batch move are not edited', (t) => {
-  const { db, inv } = setup(t);
+  const { db, inv, setNow } = setup(t);
   const bleach = inv.addItem({ name: 'Bleach', kind: 'chemical', unit: 'L' });
   const buy = inv.purchase({ itemId: bleach.id, qty: 3, total: 25, useBy: '2026-11-10' });
   db.setStockUseBySent(buy.id, NOW);
@@ -218,6 +218,8 @@ test('edit a purchase or a use; a changed use-by may be told again; a count and 
   assert.equal(moved.at, Date.parse('2026-11-02T12:00:00+08:00'));
   assert.throws(() => inv.editMove(buy.id, { useBy: '2026-11-01' }), refused(400, 'useBy'));
   const used = inv.use({ itemId: bleach.id, qty: 1, worker: 'Ali', reason: 'Footbath' });
+  setNow(NOW + 60_000);
+  assert.equal(inv.editMove(used.id, { at: null }).at, used.at, 'at: null counts as not given');
   const edited = inv.editMove(used.id, { qty: 2, reason: 'Cleaning', roomId: null });
   assert.equal(edited.qty, -2);
   assert.equal(edited.reason, 'Cleaning');
@@ -266,11 +268,14 @@ test('a count: each typed figure against the records at that moment, a matching 
   const bleach = inv.addItem({ name: 'Bleach', kind: 'chemical', unit: 'L' });
   const bags = inv.addItem({ name: 'Bags', kind: 'bags', unit: 'pcs' });
   inv.purchase({ itemId: bleach.id, qty: 5, total: 25 });
+  const before = told.length;
   const { moves } = inv.count({ worker: 'Ali', counts: [{ itemId: bleach.id, qty: 3.5 }, { itemId: bags.id, qty: 0 }] });
   assert.deepEqual(moves.map((m) => [m.itemId, m.qty, m.counted, m.refKind, m.worker]), [[bleach.id, -1.5, 3.5, 'adjust', 'Ali'], [bags.id, 0, 0, 'adjust', 'Ali']]);
   assert.equal(inv.item(bleach.id).qty, 3.5);
   assert.equal(inv.item(bags.id).lastCountedAt, NOW);
-  assert.ok(told.includes(bleach.id) && told.includes(bags.id));
+  assert.equal(told.at(-1), null, 'one write about several items');
+  assert.equal(told.filter((x) => x === null).length, 1, 'told once');
+  assert.equal(told.length, before + 1);
 });
 
 test('a count with one bad entry saves none', (t) => {

@@ -118,3 +118,16 @@ test('an unknown inventory path is a 404', async (t) => {
   assert.equal((await call('GET', '/api/inventory/nothing')).status, 404);
   assert.equal((await call('POST', '/api/inventory', {})).status, 404);
 });
+
+test('a throw-out of a lot near its use-by; unknown move and unknown item are 404', async (t) => {
+  const { call } = await app(t);
+  const made = await call('POST', '/api/inventory/items', { name: 'Spawn', kind: 'spawn', unit: 'kg' });
+  const farmDay = (plus) => new Date(Date.now() + 8 * 3_600_000 + plus * 86_400_000).toISOString().slice(0, 10);
+  const buy = await call('POST', '/api/inventory/purchases', { itemId: made.body.id, qty: 3, total: 30, useBy: farmDay(3) });
+  assert.equal(buy.status, 201, JSON.stringify(buy.body));
+  const out = await call('POST', `/api/inventory/lots/${buy.body.id}/throw-out`, { worker: 'Ali' });
+  assert.equal(out.status, 201, JSON.stringify(out.body));
+  assert.equal(out.body.qty, -3);
+  assert.equal((await call('PUT', '/api/inventory/moves/99999', { qty: 1 })).status, 404);
+  assert.equal((await call('POST', '/api/inventory/uses', { itemId: 99999, qty: 1, worker: 'Ali' })).status, 404);
+});
