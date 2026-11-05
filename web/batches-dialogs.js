@@ -1,6 +1,6 @@
 // The Batches dialogs (spec 2026-11-05-batches-design.md 7): Receive blocks and Edit, Put into a room, Take out, Delete, and
-// Record or Edit a contamination check (with its Delete). They use the tasks' dialog (openForm) and worker picker; after a
-// change, or a 404 or 409 (gone, or changed meanwhile), the page reads again.
+// Record or Edit a contamination check (with its Delete); the making ones (web/batches-making.js) come with them. They use the
+// tasks' dialog (openForm) and worker picker; after a change, or a 404 or 409 (gone, or changed meanwhile), the page reads again.
 
 import { request } from './api.js';
 import { CROP_KEYS, cropShortName } from './crops.js';
@@ -8,13 +8,18 @@ import { openForm, loadWorkers, workerField, errorText, setWorker } from './task
 import { dateHint, whenBoxes } from './harvest-math.js';
 import { farmDate } from './tasks-math.js';
 import { batchHash } from './route.js';
+import { createMakingDialogs } from './batches-making.js';
 import {
   receiveBody, receiveValues, placeBody, roomChoices, checkBody, CAUSE_NAMES, blocksText, countBlocks, fullDate,
 } from './batches-math.js';
 
 const COMMAND_TIMEOUT = 15000;
-// The server's field → the dialog's box (a time is typed in date and time boxes).
-const BOXES = { receivedAt: 'receivedDate', inoculatedAt: 'inoculatedDate', at: 'checkDate' };
+// The server's field → the dialog's box (a time is typed in date and time boxes). A field with no box in the open dialog
+// (materials) shows as the dialog's own error line.
+const BOXES = {
+  receivedAt: 'receivedDate', inoculatedAt: 'inoculatedDate', at: 'checkDate', mixedAt: 'mixedDate', hotAt: 'hotDate', incubatedFrom: 'fromDate',
+  incubatedTo: 'toDate', spawn: 'spawnQty',
+};
 
 function el(tag, className, content) {
   const node = document.createElement(tag);
@@ -143,7 +148,7 @@ export function createBatchDialogs({ onChanged, onError, alive = () => true }) {
     }
     if (!alive()) return;
     const { ok, off } = roomChoices(Array.isArray(rooms) ? rooms : [], b.crop, placed);
-    const lead = [`${countBlocks(b.good, b.crop)} to put in${b.supplier ? `, from ${b.supplier}` : ''}.`];
+    const lead = [`${countBlocks(b.good, b.crop)} to put in${b.kind === 'made' ? '' : b.supplier ? `, from ${b.supplier}` : ''}.`]; // a made batch's supplier is its spawn's
     if (!ok.length) lead.push(`No room has ${cropShortName(b.crop)} in its run: give a room its crops on the Crop tab first.`);
     ask({
       title: 'Put into a room',
@@ -187,9 +192,10 @@ export function createBatchDialogs({ onChanged, onError, alive = () => true }) {
     const lead = [];
     // a placed or past batch: its run's figures change
     if (b.status === 'placed' || b.status === 'past') lead.push(`${b.roomName ? `${b.roomName}'s run` : 'Its run'} loses this batch: its block cost and BE change.`);
-    lead.push(`Received ${fullDate(b.receivedAt)}. Its contamination checks go with it.`);
+    const made = b.kind === 'made';
+    lead.push(made ? 'Its materials, sterilising loads and contamination checks go with it.' : `Received ${fullDate(b.receivedAt)}. Its contamination checks go with it.`);
     ask({
-      title: `Delete ${countBlocks(b.blocks, b.crop)}${b.supplier ? ` from ${b.supplier}` : ''}?`,
+      title: `Delete ${countBlocks(b.blocks, b.crop)}${made ? ` made ${fullDate(b.mixedAt ?? b.receivedAt)}` : b.supplier ? ` from ${b.supplier}` : ''}?`,
       lead,
       buttons: [{ value: 'delete', label: 'Delete', danger: true }],
       submit: async () => {
@@ -266,5 +272,6 @@ export function createBatchDialogs({ onChanged, onError, alive = () => true }) {
     });
   }
 
-  return { receive, edit, place, takeOut, remove, check, openerKey: () => opener };
+  const making = createMakingDialogs({ send, closing, ask, remember, alive, onError, today, pair, remove });
+  return { receive, edit, place, takeOut, remove, check, ...making, openerKey: () => opener };
 }
