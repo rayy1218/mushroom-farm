@@ -283,3 +283,64 @@ test('a batch whose blocks are all lost cannot be put into a room', (t) => {
   batches.addCheck(a.id, { lost: 3, cause: 'bacterial', worker: 'Ali' });
   assert.deepEqual(status(() => batches.place(a.id, { roomId })), [409, null, 'Every block of this batch was lost']);
 });
+
+const movesOf = (db, ids) => db.batches.moves(ids).map((m) => [m.refId, m.qty, m.unitCost, m.note]);
+
+test('stock moves: receipt, a part in, a loss while waiting, a fold, an edit, a delete', (t) => {
+  const { db, batches, room, tick } = setup(t, { stock: true });
+  const roomId = room();
+  const a = batches.receive(GOOD);
+  const item = db.batches.blocksItem('Grey oyster blocks');
+  assert.deepEqual(db.batches.moves([a.id]).map((m) => m.itemId), [item], 'on the crop\'s blocks item');
+  assert.deepEqual(movesOf(db, [a.id]), [[a.id, 1200, 2.3, null]]);
+  tick(60_000);
+  const part = batches.place(a.id, { roomId, blocks: 800 });
+  assert.deepEqual(movesOf(db, [a.id, part.id]), [[a.id, 1200, 2.3, null], [part.id, -800, null, 'into a room']]);
+  tick(60_000);
+  batches.addCheck(a.id, { lost: 10, cause: 'green', worker: 'Ali' });
+  assert.deepEqual(movesOf(db, [a.id, part.id]).at(-1), [a.id, -10, null, 'contaminated']);
+  batches.unplace(part.id);
+  assert.deepEqual(movesOf(db, [a.id, part.id]), [[a.id, 1200, 2.3, null], [a.id, -10, null, 'contaminated']], 'the fold: the part\'s moves gone');
+  batches.edit(a.id, { pricePerBlock: 2.4 });
+  assert.equal(db.batches.moves([a.id])[0].unitCost, 2.4);
+  batches.edit(a.id, { crop: 'pink' });
+  assert.deepEqual(db.batches.moves([a.id]).map((m) => m.itemId), [db.batches.blocksItem('Pink oyster blocks'), db.batches.blocksItem('Pink oyster blocks')]);
+  batches.remove(a.id);
+  assert.deepEqual(movesOf(db, [a.id, part.id]), []);
+});
+
+test('stock moves: a placed row\'s later losses are in a room, not stock; deleting a part lowers the receipt', (t) => {
+  const { db, batches, room, tick } = setup(t, { stock: true });
+  const roomId = room();
+  const a = batches.receive(GOOD);
+  const part = batches.place(a.id, { roomId, blocks: 200 });
+  tick(60_000);
+  batches.addCheck(part.id, { lost: 7, cause: 'pests', worker: 'Ali' });
+  assert.deepEqual(movesOf(db, [part.id]), [[part.id, -200, null, 'into a room']]);
+  batches.remove(part.id);
+  assert.deepEqual(movesOf(db, [a.id, part.id]), [[a.id, 1000, 2.3, null]]);
+});
+
+test('without Inventory\'s tables nothing is written and nothing fails', (t) => {
+  const { db, batches, room } = setup(t);
+  const a = batches.receive(GOOD);
+  batches.place(a.id, { roomId: room(), blocks: 100 });
+  assert.equal(db.batches.hasStock(), false);
+});
+
+test('the CSV: the head, oldest first, the formula guard, the default 90 days', (t) => {
+  const { batches, room } = setup(t);
+  batches.receive({ ...GOOD, receivedAt: NOW - 100 * 86_400_000, supplier: 'Too old' });
+  const a = batches.receive({ ...GOOD, receivedAt: NOW - 3 * 86_400_000, supplier: '=cmd' });
+  batches.receive({ ...GOOD, receivedAt: NOW - 86_400_000, supplier: 'Later', note: 'a, b' });
+  batches.place(a.id, { roomId: room() });
+  const { name, text } = batches.csv();
+  assert.equal(name, 'batches 2026-08-08–2026-11-05.csv');
+  const lines = text.trimEnd().split('\r\n');
+  assert.equal(lines[0], 'received,crop,kind,supplier,strain,spawn batch,delivery note,blocks,lost,price per block,room,run started,placed,block kg,water %,note');
+  assert.equal(lines.length, 3);
+  assert.equal(lines[1], "2026-11-02,Grey oyster,bought,'=cmd,,0912,,1200,0,2.3,Container 1,2026-10-31,2026-11-05,,,");
+  assert.match(lines[2], /,"a, b"$/);
+  assert.equal(batches.csv({ from: '2026-11-04', to: '2026-11-04' }).text.trimEnd().split('\r\n').length, 2);
+  assert.equal(status(() => batches.csv({ from: 'x' }))[0], 400);
+});
