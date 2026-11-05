@@ -521,3 +521,20 @@ test('the CSV: a note with a line break is quoted; no BOM', (t) => {
   assert.ok(text.includes('"line one\nline two"'));
   assert.notEqual(text.charCodeAt(0), 0xfeff);
 });
+
+test('usedBlocks: the blocks that went into the room, without the ones lost before it', (t) => {
+  const { batches, room, tick } = setup(t);
+  const roomId = room();
+  const a = batches.receive({ ...GOOD, blocks: 100 });
+  assert.equal(batches.detail(a.id).usedBlocks, null, 'waiting: none');
+  tick(60_000);
+  batches.addCheck(a.id, { lost: 5, cause: 'green', worker: 'Ali' });
+  tick(60_000);
+  const p = batches.place(a.id, { roomId });
+  assert.equal(p.usedBlocks, 95);
+  tick(60_000);
+  batches.addCheck(p.id, { lost: 3, cause: 'pests', worker: 'Ali' });
+  const after = batches.detail(p.id);
+  assert.deepEqual([after.lost, after.good, after.usedBlocks], [8, 92, 95], 'a loss after the placement leaves it');
+  assert.equal(batches.list().batches.find((x) => x.id === p.id).usedBlocks, 95);
+});

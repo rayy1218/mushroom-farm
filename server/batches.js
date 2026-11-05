@@ -118,7 +118,9 @@ function viewOf(b) {
     id: b.id, kind: b.kind, parentId: b.parentId, runId: b.runId, roomId: b.roomId, roomName: b.roomName, crop: b.crop,
     supplier: b.supplier, receivedAt: b.receivedAt, blocks: b.blocks, lost: b.lost, good: goodOf(b), pricePerBlock: b.pricePerBlock,
     spawnBatch: b.spawnBatch, strain: b.strain, deliveryRef: b.deliveryRef, inoculatedAt: b.inoculatedAt, blockKg: b.blockKg,
-    waterPct: b.waterPct, dryKg: dryKgOf(b), placedAt: b.placedAt, runStartedAt: b.runStartedAt, runEndedAt: b.runEndedAt,
+    waterPct: b.waterPct, dryKg: dryKgOf(b), placedAt: b.placedAt,
+    usedBlocks: b.placedAt == null ? null : b.blocks - b.lostBefore, // the blocks that went into the room (the lost ones before it do not)
+    runStartedAt: b.runStartedAt, runEndedAt: b.runEndedAt,
     runBlocks: runBlocksOf(b), note: b.note, status: statusOf(b), createdAt: b.createdAt,
   };
 }

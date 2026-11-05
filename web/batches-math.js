@@ -6,7 +6,7 @@
 import { cropShortName } from './crops.js';
 import { DOT } from './text-math.js';
 import { farmDate, farmTime, dayMonth, daysFrom } from './tasks-math.js';
-import { whenMs } from './harvest-math.js';
+import { whenMs, rmText } from './harvest-math.js';
 import { batchHash, batchesRunHash } from './route.js';
 
 const NB = '\u00a0';
@@ -17,9 +17,10 @@ const grouped = (n, min, max = min) => n.toLocaleString('en-US', { minimumFracti
 
 // ---- the formatter ----
 
-export const rmText = (v) => (finite(v) ? `RM${NB}${grouped(v, 2)}` : DASH);
+export { rmText }; // the one Format Rule (harvest-math's)
 export const blocksText = (n) => (finite(n) ? `${grouped(n, 0)}${NB}${n === 1 ? 'block' : 'blocks'}` : DASH);
-export const kgText = (v) => (finite(v) ? `${grouped(v, 2)}${NB}kg` : DASH);
+// A block's weight, to 2 decimals.
+export const blockKgText = (v) => (finite(v) ? `${grouped(v, 2)}${NB}kg` : DASH);
 export const waterText = (v) => (finite(v) ? `${grouped(v, 0)}${NB}%` : DASH);
 // "3 Nov", with the year when it is not this one (today: the farm's date).
 export function dateText(ms, today) {
@@ -38,10 +39,10 @@ export const cropBlocks = (crop) => `${cropShortName(crop)} blocks`;
 export const countBlocks = (n, crop) => `${grouped(n, 0)} ${cropShortName(crop)} ${n === 1 ? 'block' : 'blocks'}`;
 export function weightText(b) {
   if (!finite(b.blockKg)) return null;
-  return [kgText(b.blockKg), `${waterText(b.waterPct)} water`, `${kgText(b.dryKg)} dry`].join(DOT);
+  return [blockKgText(b.blockKg), `${waterText(b.waterPct)} water`, `${blockKgText(b.dryKg)} dry`].join(DOT);
 }
 export const CAUSE_NAMES = { green: 'Green mould', black: 'Black mould', bacterial: 'Bacterial / wet spot', pests: 'Pests', other: 'Other' };
-export const roomRunText = (b) => (b.roomName && finite(b.runStartedAt) ? `${b.roomName}${DOT}run of ${dayMonth(farmDate(b.runStartedAt))}`
+export const roomRunText = (b, today) => (b.roomName && finite(b.runStartedAt) ? `${b.roomName}${DOT}run of ${dateText(b.runStartedAt, today)}`
   : finite(b.placedAt) ? 'a deleted room' : DASH);
 
 // ---- the Batches page ----
@@ -80,9 +81,9 @@ export function pastIn(past, days, nowMs) {
   const from = farmDate(nowMs - (days - 1) * DAY_MS);
   return past.filter((b) => farmDate(b.receivedAt) >= from);
 }
-export const PAST_COLUMNS = ['Received', 'Crop', 'Supplier', 'Spawn batch', 'Blocks', 'Lost', 'RM per block', 'Room · run'];
+export const PAST_COLUMNS = ['Received', 'Crop', 'Supplier', 'Spawn batch', 'Blocks', 'Lost', 'RM per block', `Room${DOT}run`];
 export const pastCells = (b, today) => [dateText(b.receivedAt, today), cropShortName(b.crop), b.supplier ?? DASH, b.spawnBatch ?? DASH,
-  grouped(b.blocks, 0), grouped(b.lost, 0), rmText(b.pricePerBlock), roomRunText(b)];
+  grouped(b.blocks, 0), grouped(b.lost, 0), rmText(b.pricePerBlock), roomRunText(b, today)];
 
 // ---- a batch ----
 
@@ -121,14 +122,14 @@ export function batchLineFor(run, reply) {
 
 // ---- the myGAP 4-2 sheet ----
 
-export const SHEET_TITLE = 'myGAP 4-2 · Purchase, use and treatment of planting material (Pembelian, penggunaan dan rawatan bahan tanaman)';
+export const SHEET_TITLE = `myGAP 4-2${DOT}Purchase, use and treatment of planting material (Pembelian, penggunaan dan rawatan bahan tanaman)`;
 export const SHEET_COLUMNS = ['Date', 'Variety / material (+ batch No.)', 'Qty bought', 'Price / unit', 'Qty used', 'Block / area',
   'Treatment: why', 'Treatment: material', 'Treatment: rate', 'Supplier / operator'];
 export const materialText = (b) => [cropBlocks(b.crop), b.strain, b.spawnBatch ? `batch ${b.spawnBatch}` : null].filter(Boolean).join(DOT);
 
 // The sheet's rows from every batch (GET /api/batches): a receipt row per delivery received in [from, to] (its blocks, the
 // first row's and its parts') and a use row per row put into a room in [from, to], by date (a receipt before its uses).
-export function sheetRows(batches, { from, to }) {
+export function sheetRows(batches, { from, to, today = farmDate(Date.now()) }) {
   const families = new Map();
   for (const b of batches) families.set(b.parentId ?? b.id, [...(families.get(b.parentId ?? b.id) ?? []), b]);
   const rows = [];
@@ -144,7 +145,7 @@ export function sheetRows(batches, { from, to }) {
     for (const b of family) {
       if (!finite(b.placedAt) || !inRange(farmDate(b.placedAt))) continue;
       rows.push({ date: farmDate(b.placedAt), order: 1, id: b.id,
-        cells: [fullDate(b.placedAt), materialText(first), '', '', blocksText(b.blocks), roomRunText(b), '', '', '', ''] });
+        cells: [fullDate(b.placedAt), materialText(first), '', '', blocksText(finite(b.usedBlocks) ? b.usedBlocks : b.blocks), roomRunText(b, today), '', '', '', ''] });
     }
   }
   return rows.sort((a, b) => a.date.localeCompare(b.date) || a.order - b.order || a.id - b.id).map((r) => r.cells);
@@ -152,11 +153,12 @@ export function sheetRows(batches, { from, to }) {
 
 // ---- the dialogs' bodies (the boxes' own checks; the server checks again) ----
 
-// A typed number: '' is null, a plain decimal its value (thousands commas allowed), anything else NaN.
+// A typed number: '' is null, a plain decimal its value (commas only as thousands groups), anything else NaN.
 export function numberOf(text) {
-  const s = String(text ?? '').trim().replace(/,/g, '');
+  const s = String(text ?? '').trim();
   if (s === '') return null;
-  return /^[0-9]+(\.[0-9]+)?$/.test(s) ? Number(s) : NaN;
+  // commas only as thousands groups ("1,200"); "2,30" is not a number
+  return /^\d{1,3}(,\d{3})+(\.\d+)?$|^\d+(\.\d+)?$|^\.\d+$/.test(s) ? Number(s.replace(/,/g, '')) : NaN;
 }
 const dayMs = (date) => whenMs(date, '00:00'); // the farm's midnight of a date box's day
 

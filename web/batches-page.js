@@ -14,7 +14,7 @@ import { createBatchDialogs } from './batches-dialogs.js';
 import { closeTaskDialog } from './task-dialogs.js';
 import {
   pageGroups, pastIn, PAST_RANGES, PAST_COLUMNS, pastCells, waitingLine, placedLine, goodText, cropBlocks, detailFacts, overNote,
-  statusLine, checkLine, deliveryLine, fullDate, dateText,
+  statusLine, checkLine, deliveryLine, fullDate, dateText, countBlocks,
 } from './batches-math.js';
 
 const REFRESH_MS = 60_000;
@@ -93,6 +93,21 @@ function batchRow(b, line, action = null) {
   return row;
 }
 
+// After a dialog changed the data: the cursor goes back to the button that opened it (by its data-focus-key) once the page has
+// painted, else to the page's title (that button is gone: the row moved, the batch folded). → { wait(key), settle() }.
+function focusAfterChange(container) {
+  let waiting = false;
+  let key = null;
+  function settle(tries = 20) {
+    if (!waiting) return;
+    if (document.querySelector('dialog[open]') && tries > 0) { setTimeout(() => settle(tries - 1), 50); return; } // the dialog is still closing
+    waiting = false;
+    const node = key ? container.querySelector(`[data-focus-key="${key}"]`) : null;
+    (node && !node.disabled ? node : container.querySelector('h1'))?.focus();
+  }
+  return { wait(k) { waiting = true; key = k; }, settle: () => settle() };
+}
+
 let mountSeq = 0; // every mount gets a token; an answer that finds the token changed is dropped
 
 // ---- the Batches page ----
@@ -129,16 +144,18 @@ export function mount(container, { run = null } = {}) {
   };
   document.title = 'Batches · Mushroom farm';
   q('[data-filter]').hidden = run === null;
-  const today = farmDate(Date.now());
   q('[data-csv]').href = '/api/batches.csv';
-  q('[data-sheet]').href = batchSheetHash(farmDate(Date.now() - 89 * 86_400_000), today);
+  q('[data-sheet]').href = batchSheetHash(farmDate(Date.now() - 89 * 86_400_000), farmDate(Date.now()));
 
   let list = null;
-  let days = 90;
+  let days = run === null ? 90 : null; // one run's batches: all the past ones of it
+  const refocus = focusAfterChange(container);
   let painted = '';
   const showError = (text) => { els.bannerText.textContent = text; els.banner.hidden = false; };
-  const read = reader(() => (run === null ? '/api/batches' : `/api/batches?run=${run}`), (data) => { list = data?.batches ?? []; paint(); }, els, alive);
-  const dialogs = createBatchDialogs({ onChanged: () => { if (alive()) read.load(); }, onError: showError });
+  const read = reader(() => (run === null ? '/api/batches' : `/api/batches?run=${run}`), (data) => { list = data?.batches ?? []; paint(); refocus.settle(); }, els, alive);
+  const dialogs = createBatchDialogs({
+    onChanged: () => { if (alive()) { refocus.wait(dialogs.openerKey()); read.load(); } }, onError: showError, alive,
+  });
   q('[data-receive]').addEventListener('click', () => dialogs.receive());
   q('[data-retry]').addEventListener('click', () => read.load());
 
@@ -149,7 +166,7 @@ export function mount(container, { run = null } = {}) {
     return [n, b];
   });
 
-  function pastTable(rows) {
+  function pastTable(rows, today) {
     const wrap = el('div', 'us-table-wrap');
     const t = el('table', 'us-table bt-past-table');
     t.append(el('caption', 'sr-only', 'Past batches'));
@@ -186,7 +203,8 @@ export function mount(container, { run = null } = {}) {
 
   function paint() {
     if (!list) return;
-    const key = JSON.stringify([list, days]);
+    const today = farmDate(Date.now()); // read at each paint: past midnight the dates and the past filter move on
+    const key = JSON.stringify([list, days, today]);
     if (key === painted) return;
     painted = key;
     for (const [n, b] of ranges) b.setAttribute('aria-pressed', String(n === days));
@@ -194,7 +212,10 @@ export function mount(container, { run = null } = {}) {
     const now = Date.now();
     els.waiting.replaceChildren(...(g.waiting.length ? g.waiting.map((b) => {
       const put = button('Put into a room');
+      put.dataset.focusKey = `put-${b.id}`;
+      put.setAttribute('aria-label', `Put ${countBlocks(b.good, b.crop)} into a room`);
       put.disabled = b.good < 1;
+      if (put.disabled) put.title = 'Every block was lost';
       put.addEventListener('click', () => dialogs.place(b));
       return batchRow(b, waitingLine(b, now), put);
     }) : [el('p', 'none', 'No blocks waiting.')]));
@@ -208,7 +229,7 @@ export function mount(container, { run = null } = {}) {
       return group;
     }) : [el('p', 'none', "No batches in a room's current run.")]));
     const past = pastIn(g.past, days, now);
-    els.past.replaceChildren(past.length ? pastTable(past) : el('p', 'none', days === null ? 'No past batches.' : `No past batches received in the last ${PAST_RANGES.find(([n]) => n === days)[1]}.`));
+    els.past.replaceChildren(past.length ? pastTable(past, today) : el('p', 'none', days === null ? 'No past batches.' : `No past batches received in the last ${PAST_RANGES.find(([n]) => n === days)[1]}.`));
   }
 
   read.load();
@@ -257,13 +278,17 @@ export function mountBatch(container, { id }) {
   };
   document.title = 'Batch · Mushroom farm';
   let painted = '';
+  const refocus = focusAfterChange(container);
   const showError = (text) => { els.bannerText.textContent = text; els.banner.hidden = false; };
-  const read = reader(() => `/api/batches/${id}`, paint, els, alive);
-  const dialogs = createBatchDialogs({ onChanged: () => { if (alive()) read.load(); }, onError: showError });
+  const read = reader(() => `/api/batches/${id}`, (b) => { paint(b); refocus.settle(); }, els, alive);
+  const dialogs = createBatchDialogs({
+    onChanged: () => { if (alive()) { refocus.wait(dialogs.openerKey()); read.load(); } }, onError: showError, alive,
+  });
   q('[data-retry]').addEventListener('click', () => read.load());
 
   function paint(b) {
     if (!b) {
+      els.banner.hidden = true;
       els.body.hidden = true;
       els.actions.replaceChildren();
       els.title.textContent = 'Batch';
@@ -271,10 +296,10 @@ export function mountBatch(container, { id }) {
       els.gone.hidden = false;
       return;
     }
-    const key = JSON.stringify(b);
+    const today = farmDate(Date.now());
+    const key = JSON.stringify([b, today]);
     if (key === painted) return;
     painted = key;
-    const today = farmDate(Date.now());
     document.title = `${cropBlocks(b.crop)} · Mushroom farm`;
     els.gone.hidden = true;
     els.body.hidden = false;
@@ -285,15 +310,19 @@ export function mountBatch(container, { id }) {
     const actions = [];
     if (b.status === 'waiting') {
       const put = button('Put into a room', 'primary');
+      put.dataset.focusKey = 'put';
       put.disabled = b.good < 1;
+      if (put.disabled) put.title = 'Every block was lost';
       put.addEventListener('click', () => dialogs.place(b));
       actions.push(put);
     } else if (b.status === 'placed') {
       const out = button('Take out');
+      out.dataset.focusKey = 'take-out';
       out.addEventListener('click', () => dialogs.takeOut(b));
       actions.push(out);
     }
     const edit = button('Edit');
+    edit.dataset.focusKey = 'edit';
     edit.addEventListener('click', () => dialogs.edit(b));
     const del = button('Delete', 'danger-text');
     del.addEventListener('click', () => dialogs.remove(b, () => { location.hash = BATCHES_HASH; }));
@@ -322,6 +351,7 @@ export function mountBatch(container, { id }) {
     }));
 
     const add = button('Record a check');
+    add.dataset.focusKey = 'check';
     add.disabled = b.good < 1;
     add.addEventListener('click', () => dialogs.check(b));
     els.addCheck.replaceChildren(add);
@@ -330,6 +360,7 @@ export function mountBatch(container, { id }) {
       row.append(el('p', 'bt-line', checkLine(c, today)));
       if (c.note) row.append(el('p', 'muted bt-note', c.note));
       const editCheck = button('Edit', 'bt-quiet');
+      editCheck.dataset.focusKey = `edit-check-${c.id}`;
       editCheck.setAttribute('aria-label', `Edit the check of ${fullDate(c.at)}`);
       editCheck.addEventListener('click', () => dialogs.check(b, c));
       row.append(editCheck);

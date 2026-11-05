@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  rmText, blocksText, kgText, waterText, dateText, agoText, goodText, countBlocks, weightText, pageGroups, pastIn, pastCells,
+  rmText, blocksText, blockKgText, numberOf, overNotes, deliveryLine, waterText, dateText, agoText, goodText, countBlocks, weightText, pageGroups, pastIn, pastCells,
   detailFacts, overNote, batchLineFor, sheetRows, SHEET_COLUMNS, receiveBody, receiveValues, placeBody, roomChoices, checkBody,
   checkLine, statusLine, roomRunText,
 } from '../web/batches-math.js';
@@ -22,7 +22,7 @@ test('the formatter', () => {
   assert.equal(rmText(null), '—');
   assert.equal(blocksText(1200), `1,200${nb}blocks`);
   assert.equal(blocksText(1), `1${nb}block`);
-  assert.equal(kgText(2.3), `2.30${nb}kg`);
+  assert.equal(blockKgText(2.3), `2.30${nb}kg`);
   assert.equal(waterText(60), `60${nb}%`);
   assert.equal(dateText(NOW, '2026-11-05'), '5 Nov');
   assert.equal(dateText(Date.UTC(2025, 0, 3, 4), '2026-11-05'), '3 Jan 2025');
@@ -86,12 +86,12 @@ test('the myGAP 4-2 sheet: a receipt row per delivery and a use row per placemen
   const first = b({ id: 1, blocks: 400, strain: 'PL-27', receivedAt: Date.UTC(2026, 10, 2, 4) });
   const part = b({ id: 2, parentId: 1, blocks: 800, placedAt: Date.UTC(2026, 10, 3, 4), runId: 4, roomName: 'Container 1', runStartedAt: Date.UTC(2026, 9, 3, 4) });
   const old = b({ id: 3, receivedAt: Date.UTC(2026, 6, 1, 4), pricePerBlock: null, supplier: 'Old' });
-  const rows = sheetRows([part, first, old], { from: '2026-11-01', to: '2026-11-30' });
+  const rows = sheetRows([part, first, old], { from: '2026-11-01', to: '2026-11-30', today: '2026-11-05' });
   assert.deepEqual(rows, [
     ['2 Nov 2026', `Grey oyster blocks${dot}PL-27${dot}batch 0912`, `1,200${nb}blocks`, `RM${nb}2.30`, '', '', '', '', '', 'Agro Supplies'],
     ['3 Nov 2026', `Grey oyster blocks${dot}PL-27${dot}batch 0912`, '', '', `800${nb}blocks`, `Container 1${dot}run of 3 Oct`, '', '', '', ''],
   ]);
-  assert.equal(sheetRows([old], { from: '2026-07-01', to: '2026-07-01' })[0][3], '', 'an unknown price: blank to write in');
+  assert.equal(sheetRows([old], { from: '2026-07-01', to: '2026-07-01', today: '2026-11-05' })[0][3], '', 'an unknown price: blank to write in');
 });
 
 test('the dialogs\' bodies', () => {
@@ -124,9 +124,96 @@ test('the dialogs\' bodies', () => {
 
 test('a batch whose room was deleted keeps its placement: "a deleted room"', () => {
   const gone = b({ placedAt: NOW - DAY, status: 'past' });
-  assert.equal(roomRunText(gone), 'a deleted room');
-  assert.equal(roomRunText(b({})), '—');
+  assert.equal(roomRunText(gone, '2026-11-05'), 'a deleted room');
+  assert.equal(roomRunText(b({}), '2026-11-05'), '—');
   assert.equal(pastCells(gone, '2026-11-05')[7], 'a deleted room');
   assert.equal(statusLine(gone), `Past${dot}a deleted room`);
-  assert.equal(sheetRows([gone], { from: '2026-11-04', to: '2026-11-04' })[0][5], 'a deleted room');
+  assert.equal(sheetRows([gone], { from: '2026-11-04', to: '2026-11-04', today: '2026-11-05' })[0][5], 'a deleted room');
+});
+
+test('the run of a past year says its year; the sheet counts the blocks that went in', () => {
+  const run = { roomName: 'Container 1', runStartedAt: Date.UTC(2025, 9, 3, 4) };
+  assert.equal(roomRunText(b(run), '2026-11-05'), `Container 1${dot}run of 3 Oct 2025`);
+  assert.equal(roomRunText(b({ ...run, runStartedAt: Date.UTC(2026, 9, 3, 4) }), '2026-11-05'), `Container 1${dot}run of 3 Oct`);
+  const placed = b({ ...run, blocks: 600, usedBlocks: 590, placedAt: Date.UTC(2026, 10, 3, 4), status: 'placed' });
+  const rows = sheetRows([placed], { from: '2026-11-03', to: '2026-11-03', today: '2026-11-05' });
+  assert.equal(rows[1][4], `590${nb}blocks`, 'after the receipt of the same day');
+  assert.equal(rows[1][5], `Container 1${dot}run of 3 Oct 2025`);
+  assert.equal(sheetRows([{ ...placed, usedBlocks: undefined }], { from: '2026-11-03', to: '2026-11-03', today: '2026-11-05' })[1][4], `600${nb}blocks`, 'an older server: the blocks');
+});
+
+test('typed numbers: commas only as thousands groups', () => {
+  assert.equal(numberOf('1,200'), 1200);
+  assert.equal(numberOf('1,200,000.5'), 1200000.5);
+  assert.equal(numberOf('2,30'), NaN);
+  assert.equal(numberOf('12,34'), NaN);
+  assert.equal(numberOf(',200'), NaN);
+  assert.equal(numberOf('1,2000'), NaN);
+  assert.equal(numberOf('.5'), 0.5);
+  assert.equal(numberOf('5.'), NaN);
+  assert.equal(numberOf('-3'), NaN);
+  assert.equal(numberOf('  7 '), 7);
+  assert.equal(numberOf(''), null);
+  assert.equal(numberOf(undefined), null);
+  assert.equal(numberOf('1e3'), NaN);
+});
+
+test('farm time near midnight (UTC+8): 00:30 farm is the previous day 16:30 UTC', () => {
+  const late = Date.UTC(2026, 10, 4, 15, 30); // 4 Nov 23:30 farm
+  const early = Date.UTC(2026, 10, 4, 16, 30); // 5 Nov 00:30 farm
+  assert.equal(dateText(late, '2026-11-05'), '4 Nov');
+  assert.equal(dateText(early, '2026-11-05'), '5 Nov');
+  assert.equal(agoText(late, early), 'yesterday', '23:30 to 00:30 is across midnight');
+  assert.equal(agoText(early, early + 23 * 3_600_000), 'today');
+  assert.equal(agoText(late, late + 60_000), 'today');
+  // 90 days: the first day is 89 farm days back (8 Aug), whatever the hour
+  const nowEarly = early;
+  const nowLate = Date.UTC(2026, 10, 5, 15, 30); // 5 Nov 23:30 farm
+  const edge = (ms) => [b({ receivedAt: ms })];
+  assert.equal(pastIn(edge(Date.UTC(2026, 7, 7, 16, 30)), 90, nowEarly).length, 1, '8 Aug 00:30 farm is in, at 00:30');
+  assert.equal(pastIn(edge(Date.UTC(2026, 7, 7, 15, 30)), 90, nowEarly).length, 0, '7 Aug 23:30 farm is out, at 00:30');
+  assert.equal(pastIn(edge(Date.UTC(2026, 7, 7, 16, 30)), 90, nowLate).length, 1, '8 Aug 00:30 farm is in, at 23:30');
+  assert.equal(pastIn(edge(Date.UTC(2026, 7, 7, 15, 30)), 90, nowLate).length, 0, '7 Aug 23:30 farm is out, at 23:30');
+});
+
+test('a receipt and a use on the same day: the receipt first', () => {
+  const day = Date.UTC(2026, 10, 3, 1); // 3 Nov 09:00 farm
+  const first = b({ id: 9, receivedAt: day, blocks: 500, placedAt: day + 3_600_000, usedBlocks: 500, roomName: 'Container 1', runStartedAt: day - DAY, status: 'placed' });
+  const other = b({ id: 2, receivedAt: day - 5 * DAY, blocks: 100 });
+  const rows = sheetRows([first, other], { from: '2026-11-03', to: '2026-11-03', today: '2026-11-05' });
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0][2], `500${nb}blocks`, 'the receipt');
+  assert.equal(rows[0][4], '');
+  assert.equal(rows[1][2], '');
+  assert.equal(rows[1][4], `500${nb}blocks`, 'the use');
+});
+
+test('overNotes with two crops: one note per crop that holds more than the run', () => {
+  const list = [
+    b({ id: 1, crop: 'oyster', blocks: 800, runBlocks: 950 }), b({ id: 2, crop: 'oyster', blocks: 400, runBlocks: 950 }),
+    b({ id: 3, crop: 'pink', blocks: 300, runBlocks: 600 }), b({ id: 4, crop: 'king', blocks: 70, runBlocks: 50 }),
+  ];
+  const notes = overNotes(list);
+  assert.equal(notes.length, 2);
+  assert.ok(notes.includes('Batches hold 1,200 Grey oyster blocks; the run has 950.'));
+  assert.ok(notes.some((n) => n.startsWith('Batches hold 70 ') && n.endsWith('the run has 50.')));
+  assert.deepEqual(overNotes([b({ blocks: 5, runBlocks: null })]), []);
+});
+
+test('receiveBody: a weight with no water is null; checkBody: an empty date', () => {
+  const v = { crop: 'oyster', supplier: '', receivedDate: '2026-11-03', blocks: '10', pricePerBlock: '', spawnBatch: '', strain: '',
+    deliveryRef: '', inoculatedDate: '', blockKg: '2.3', waterPct: '', note: '' };
+  const r = receiveBody(v);
+  assert.equal(r.body.blockKg, 2.3);
+  assert.equal(r.body.waterPct, null, 'the server then refuses the weight without water: the box says nothing is sent for water');
+  assert.equal(checkBody({ checkDate: '', checkTime: '08:00', lost: '1', cause: 'green', worker: 'Ali' }).field, 'checkDate');
+  assert.equal(checkBody({ checkDate: undefined, checkTime: '08:00', lost: '1', cause: 'green', worker: 'Ali' }).field, 'checkDate');
+});
+
+test('a deleted room in a delivery line and a status line', () => {
+  const gone = b({ id: 2, parentId: 1, blocks: 300, placedAt: NOW - DAY, status: 'past' });
+  assert.equal(deliveryLine(gone), `300${nb}blocks${dot}a deleted room`);
+  assert.equal(deliveryLine(b({ blocks: 300 })), `300${nb}blocks${dot}Waiting`);
+  assert.equal(statusLine(gone), `Past${dot}a deleted room`);
+  assert.equal(statusLine({ ...gone, roomName: null, status: 'past' }), `Past${dot}a deleted room`);
 });

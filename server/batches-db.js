@@ -96,7 +96,8 @@ const CHECK_COLUMNS = { batchId: 'batch_id', at: 'at', lost: 'lost', cause: 'cau
 // Every batch with its lost blocks, its room's name and its run's times and crops.
 const SELECT = `
 SELECT b.*, rm.name AS room_name, ru.started_at AS run_started_at, ru.ended_at AS run_ended_at, ru.crops AS run_crops,
-       COALESCE((SELECT SUM(c.lost) FROM batch_checks c WHERE c.batch_id = b.id), 0) AS lost
+       COALESCE((SELECT SUM(c.lost) FROM batch_checks c WHERE c.batch_id = b.id), 0) AS lost,
+       COALESCE((SELECT SUM(c.lost) FROM batch_checks c WHERE c.batch_id = b.id AND b.placed_at IS NOT NULL AND c.at <= b.placed_at), 0) AS lost_before
 FROM batches b LEFT JOIN rooms rm ON rm.id = b.room_id LEFT JOIN runs ru ON ru.id = b.run_id`;
 
 function batchOf(r) {
@@ -104,6 +105,7 @@ function batchOf(r) {
   for (const [key, column] of Object.entries(COLUMNS)) out[key] = r[column];
   out.id = r.id;
   out.lost = r.lost;
+  out.lostBefore = r.lost_before;
   out.roomName = r.room_name;
   out.runStartedAt = r.run_started_at;
   out.runEndedAt = r.run_ended_at;
