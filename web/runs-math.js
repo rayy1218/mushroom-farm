@@ -6,15 +6,18 @@
 import { CROP_KEYS, cropShortName } from './crops.js';
 import { DOT } from './text-math.js';
 import { kgText, perBlockText, beText, dayRange } from './harvest-math.js';
-import { moneyText, monthNotes, runParts } from './costs-math.js';
-import { dateText, countBlocks, rmText, MADE_HERE } from './batches-math.js';
+import { moneyText, perKgText, monthNotes, runParts, runRow } from './costs-math.js';
+import { dateText, countBlocks, rmText } from './batches-math.js';
 import { deliveryRow, priceText } from './sales-math.js';
 import { mainCrop } from './room-card-math.js';
+import { farmDate } from './tasks-math.js';
 import { roomHash, runHash, batchHash } from './route.js';
 
+const NB = '\u00a0';
 const DASH = '—';
 const MINUS = '−';
 const WORKING = 'working out';
+const NOTHING_SOLD = 'Nothing sold';
 const isLoss = (text) => text.startsWith(MINUS); // from the shown figure, as Costs': a loss under half a sen is none
 const grouped = (n) => n.toLocaleString('en-US', { maximumFractionDigits: 0 });
 const andList = (words) => (words.length < 2 ? words.join('') : `${words.slice(0, -1).join(', ')} and ${words.at(-1)}`);
@@ -22,7 +25,7 @@ const cropsOf = (run) => (Array.isArray(run?.crops) ? run.crops : []);
 
 // ---- the Runs tab ----
 
-export const LIST_COLUMNS = ['Container', 'Crops', 'Dates', 'kg', 'kg per block', 'Income', 'Costs', 'Profit'];
+export const LIST_COLUMNS = ['Run', 'Crops', 'kg', 'kg per block', 'Income', 'Costs', 'Profit', 'Profit per kg'];
 
 // The crop filter's choices: every crop, then each crop by its name.
 export const cropChoices = () => [{ value: '', label: 'All crops' }, ...CROP_KEYS.map((k) => ({ value: k, label: cropShortName(k) }))];
@@ -42,20 +45,23 @@ const roomOf = (run) => (run.roomName
   ? { room: run.roomName, roomHref: roomHash(run.roomId, 'harvest') }
   : { room: 'A deleted room', roomHref: null });
 
-// A run's row on the Runs tab: { href (the run page), label (the link's name), room, roomHref, crops, crop (the main crop, for
-// its picture), dates, cells (kg, kg per block, Income, Costs, Profit), costsLine (under Costs: "working out" or "Some costs
-// have no price"), loss (Profit: its figure in the loss tone and "Loss" under it) }.
-export function listRow(run, today) {
-  const { room, roomHref } = roomOf(run);
-  const dates = runDates(run, today);
-  const profit = moneyText(run.profit);
+// A run's row on the Runs tab: { href (the run page), name (the row's name and link: "Container 1 · 24 Sep – now", Costs' run
+// days), crops, crop (the main crop, for its picture), cells (kg, kg per block, then Costs' Income, Costs, Profit, Profit per
+// kg), costsLine (under Costs: "working out" or "Some costs have no price"), loss and perKgLoss (the figure in the loss tone,
+// "Loss" under Profit) }. A run without Costs' view (its room gone) shows a dash, never "working out".
+export function listRow(run) {
+  const c = runRow({ ...run, crops: cropsOf(run) }); // Costs' own row: its run days and money cells
   return {
-    href: runHash(run.id), label: `${room}, ${dates}`, room, roomHref, crops: cropsText(run), crop: mainCrop(run.crops), dates,
-    cells: [kgText(run.kg), perBlockText(run.perBlock, { cell: true }), moneyText(run.income), moneyText(run.costs), profit],
+    href: runHash(run.id), name: `${roomOf(run).room}${DOT}${run.partial ? 'recorded ' : ''}${c.dates}`, crops: cropsText(run),
+    crop: mainCrop(run.crops), cells: [kgText(run.kg), perBlockText(run.perBlock, { cell: true }), ...c.cells],
     costsLine: run.pending ? WORKING : run.incomplete ? 'Some costs have no price' : null,
-    loss: isLoss(profit),
+    loss: c.loss, perKgLoss: c.perKgLoss,
   };
 }
+
+// A "Run page" link's name (Harvest's This run and past runs, Costs' runs): "Run page, Container 1, since 24 Sep"; the room
+// left out when not known. today: the farm's date (now by default).
+export const runPageLabel = (run, today = farmDate(Date.now())) => ['Run page', run.roomName, runDates(run, today)].filter(Boolean).join(', ');
 
 // The list's words when it is empty.
 export const emptyText = (crop) => (crop ? `No runs of ${cropShortName(crop)}.` : 'No runs yet. A run starts when a container gets its blocks on its Crop tab.');
@@ -72,35 +78,62 @@ export function runTitle(run) {
 export const runSub = (run, today) => ({ ...roomOf(run), dates: runDates(run, today) });
 
 // The tiles (harvest-card.js's tileNodes), Profit first (the page leads with it): "Profit so far" while the run is open,
-// "Profit" once it ended; then Income, Costs, Picked, kg per block, BE. While Costs works the energy out, Profit and Costs
-// are a dash with "working out" (never a partial figure). tone 'loss' on a loss (its word says it too).
+// "Profit" once it ended; then Income, Costs, Profit per kg (Costs' month card's), Picked (with the kg not sold), kg per
+// block, BE. While Costs works the energy out, its figures are a dash with "working out" (never a partial figure). tone
+// 'loss' on a loss (Profit's word says it too).
 export function pageTiles(v) {
   const waiting = (label) => ({ label, value: DASH, line: WORKING });
   const profitLabel = v.endedAt === null ? 'Profit so far' : 'Profit';
   const profit = moneyText(v.profit);
+  const perKg = perKgText(v.profitPerKg);
+  const unsold = Math.round((v.kg - (v.kgSold ?? 0)) * 10) / 10;
   return [
     v.pending ? waiting(profitLabel) : { label: profitLabel, value: profit, ...(isLoss(profit) ? { line: 'Loss', tone: 'loss' } : {}) },
-    { label: 'Income', value: moneyText(v.income), line: v.kgSold > 0 ? `${kgText(v.kgSold)} sold` : 'Nothing sold' },
+    { label: 'Income', value: moneyText(v.income), line: v.kgSold > 0 ? `${kgText(v.kgSold)} sold` : NOTHING_SOLD },
     v.pending ? waiting('Costs') : { label: 'Costs', value: moneyText(v.costs), ...(v.incomplete ? { line: 'Some costs have no price' } : {}) },
-    { label: 'Picked', value: kgText(v.kg) },
+    v.pending ? waiting('Profit per kg') : {
+      label: 'Profit per kg', value: perKg, line: v.kgSold > 0 ? `on ${kgText(v.kgSold)} sold` : NOTHING_SOLD, ...(isLoss(perKg) ? { tone: 'loss' } : {}),
+    },
+    { label: 'Picked', value: kgText(v.kg), ...(unsold > 0 ? { line: `${kgText(unsold)} not sold` } : {}) },
     { label: 'kg per block', value: perBlockText(v.perBlock, { cell: true }) },
     { label: 'BE', title: 'Biological efficiency', value: beText(v.be, { cell: true }) },
   ];
 }
 
-// The Blocks card's rows: { href (the batch), title ("600 Grey oyster blocks"), line (supplier, the day received, the price a
-// block) }.
-export const batchRows = (batches, today) => (batches ?? []).map((b) => ({
-  href: batchHash(b.id), title: countBlocks(b.blocks, b.crop),
-  line: [b.supplier ?? (b.kind === 'made' ? MADE_HERE : null), `received ${dateText(b.receivedAt, today)}`,
-    b.pricePerBlock === null || b.pricePerBlock === undefined ? 'no price' : `${rmText(b.pricePerBlock)} a block`].filter(Boolean).join(DOT),
-}));
+// Electricity or water at 0, in words: "working out" while pending, "no price set" without a price in Settings, else "not
+// recorded yet" (with a price, a 0 means the room recorded nothing to price).
+const PARTS = [['blocks', 'Blocks'], ['energy', 'Electricity'], ['water', 'Water'], ['own', 'Own'], ['shared', 'Shared']];
+const PRICE_OF = { energy: 'electricity', water: 'water' };
+const unpricedWord = (v, key) => (v.pending ? WORKING : v.prices?.[PRICE_OF[key]] > 0 ? 'not recorded yet' : 'no price set');
 
-// Under the Blocks card's rows: "Block cost RM 1,500.00"; a batch without a price leaves the sum unknown; none without batches.
-export function blockCostText(v) {
-  if (!(v.batches ?? []).length) return null;
-  return v.blockCost === null || v.blockCost === undefined ? 'Some batches have no price' : `Block cost ${rmText(v.blockCost)}`;
+// The money's make-up under the tiles, from Costs' parts: "Blocks RM 3,040.00 · Own RM 480.00 · Shared RM 14,359.23 (80 % of
+// costs) · Electricity not recorded yet · No water price": the parts over 0, the biggest with its share of the costs when
+// there are several, then electricity and water at 0. None while pending or without Costs' view.
+export function costsMix(v) {
+  const p = v.costsByKind?.parts;
+  if (!p || v.pending || !(v.costs >= 0)) return null;
+  const over = PARTS.filter(([k]) => p[k] > 0);
+  const top = over.length > 1 && v.costs > 0 ? over.reduce((a, b) => (p[b[0]] > p[a[0]] ? b : a))[0] : null;
+  const words = over.map(([k, label]) => `${label} ${moneyText(p[k])}${k === top ? ` (${Math.round((p[k] / v.costs) * 100)}${NB}% of costs)` : ''}`);
+  const zero = ['energy', 'water'].filter((k) => !(p[k] > 0));
+  const unrecorded = zero.filter((k) => unpricedWord(v, k) === 'not recorded yet').map((k) => (k === 'energy' ? 'electricity' : 'water'));
+  if (unrecorded.length) words.push(`${unrecorded.join(' and ').replace(/^./, (c) => c.toUpperCase())} not recorded yet`);
+  for (const k of zero.filter((x) => unpricedWord(v, x) === 'no price set')) words.push(`No ${PRICE_OF[k]} price`);
+  return words.length ? words.join(DOT) : null;
 }
+
+// A made batch's note: its blocks' cost is in Costs already, as the Inventory it was made from.
+export const MADE_NOTE = 'Its materials count in Costs as Inventory purchases';
+const wholeDate = (ms, today) => dateText(ms, today).replace(/ /g, NB); // "28 Sep" kept whole at a wrap (Batches' way)
+// The Blocks card's rows: { href (the batch), title ("600 Grey oyster blocks"), line (a bought batch's supplier and day
+// received, a made one's day made; the price a block), note (MADE_NOTE for a made batch, else null) }. No money total: the
+// Costs card's Blocks is the run's one block cost.
+export const batchRows = (batches, today) => (batches ?? []).map((b) => {
+  const made = b.kind === 'made';
+  const price = b.pricePerBlock === null || b.pricePerBlock === undefined ? 'no price' : `${rmText(b.pricePerBlock)} a block`;
+  const from = made ? [`made ${wholeDate(b.mixedAt ?? b.receivedAt, today)}`] : [b.supplier, `received ${wholeDate(b.receivedAt, today)}`];
+  return { href: batchHash(b.id), title: countBlocks(b.blocks, b.crop), line: [...from, price].filter(Boolean).join(DOT), note: made ? MADE_NOTE : null };
+});
 
 export const SALE_COLUMNS = ['Day', 'Buyer', 'Sold', 'RM per kg', 'Total', 'Paid'];
 // The Sales card's rows, newest first: a sale line as Sales' page shows a delivery ({ day, buyer, reference, sold, price,
@@ -114,11 +147,14 @@ export const salesTotal = (sales) => `${kgText(sales.kg)}${DOT}${rmText(sales.to
 
 const NOT_COSTS = new Set(['Income', 'Picked', 'Sold']); // runParts' last rows: the tiles say them
 // The Costs card's rows: Costs' run breakdown (its runParts: Blocks a link to the run's batches, Electricity, Water, Own costs,
-// Share of shared costs; the parts that are not 0), [[label, value, href?]]; none before Costs answers.
+// Share of shared costs; the parts that are not 0), Electricity and Water kept at 0 in words (unpricedWord), [[label, value,
+// href?, quiet?]] (quiet: words, not a figure); none before Costs answers.
 export function costRows(v) {
   if (!v.costsByKind) return [];
   const run = { id: v.id, parts: v.costsByKind.parts, notes: v.costsByKind.notes, income: v.income, kgHarvested: v.kg, kgSold: v.kgSold };
-  return runParts(run).filter(([label]) => !NOT_COSTS.has(label));
+  const rows = new Map(runParts(run).filter(([label]) => !NOT_COSTS.has(label)).map((r) => [r[0], r]));
+  for (const [key, label] of [['energy', 'Electricity'], ['water', 'Water']]) if (!rows.has(label)) rows.set(label, [label, unpricedWord(v, key), null, true]);
+  return ['Blocks', 'Electricity', 'Water', 'Own costs', 'Share of shared costs'].map((l) => rows.get(l)).filter(Boolean);
 }
 // The Costs card's Total: the Costs tile's figure.
 export const costsTotal = (v) => (v.pending ? DASH : moneyText(v.costs));

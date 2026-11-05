@@ -19,8 +19,8 @@ import {
 } from './harvest-math.js';
 import { batchLineFor } from './batches-math.js'; // ---- Batches ----
 import { runProfitLine } from './costs-math.js'; // ---- Costs ----
-import { COSTS_HASH } from './route.js';
 import { runHash } from './route.js'; // ---- Runs ----
+import { runPageLabel } from './runs-math.js'; // ---- Runs ----
 
 const REFRESH_MS = 60_000;
 const COMMAND_TIMEOUT = 15000;
@@ -30,10 +30,12 @@ const PHONE = '(max-width: 600px)';
 const SHOWN_PAST = 8; // an opened past run's latest harvests
 const YIELD = 'Settings → Yield';
 
-// ---- Runs ---- (spec 2026-11-05-runs-design.md 6): a run's page, linked from This run's head and each past run.
-function runPageLink(id) {
-  const a = el('a', 'rn-run-link', 'Run page');
-  a.href = runHash(id);
+// ---- Runs ---- (spec 2026-11-05-runs-design.md 6): a run's page, linked from This run's head and each past run, in the
+// Business link look (.co-link); its name says which run ("Run page, Container 1, since 24 Sep").
+function runPageLink(run, roomName) {
+  const a = el('a', 'co-link', 'Run page');
+  a.href = runHash(run.id);
+  a.setAttribute('aria-label', runPageLabel({ ...run, roomName }));
   return a;
 }
 // ---- end Runs ----
@@ -236,7 +238,7 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
   }
 
   function paintRun(run) {
-    runLine.replaceChildren(runHead(run), DOT, runPageLink(run.id)); // ---- Runs ---- the run's page after its head
+    runLine.replaceChildren(runHead(run), DOT, runPageLink(run, getRoom()?.name)); // ---- Runs ---- the run's page after its head
     // ---- Batches ----
     const line = batchLineFor(run, blocks?.runId === run.id ? blocks.reply : null);
     blocksLine.hidden = !line;
@@ -251,7 +253,7 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
     profitLine.hidden = !money;
     if (money) {
       const a = el('a', '', money);
-      a.href = COSTS_HASH;
+      a.href = runHash(run.id); // ---- Runs ---- the run's page (its Costs card links on to Costs)
       profitLine.replaceChildren(a);
     }
     tiles.replaceChildren(...tileNodes(runTiles(run)));
@@ -291,7 +293,7 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
     const body = el('div', 'hv-run-body');
     const harvests = run.harvests ?? [];
     const page = el('p', 'muted hv-missing'); // ---- Runs ---- the run's page first in its fold
-    page.append(runPageLink(run.id));
+    page.append(runPageLink(run, getRoom()?.name));
     body.append(page);
     const note = missingLine(run.missing);
     if (note) body.append(note);

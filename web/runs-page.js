@@ -16,12 +16,13 @@ import {
 } from './harvest-math.js';
 import { SHARED_NOTE } from './costs-math.js';
 import {
-  LIST_COLUMNS, cropChoices, listRow, emptyText, runTitle, runSub, pageTiles, batchRows, blockCostText, SALE_COLUMNS, saleRows,
+  LIST_COLUMNS, cropChoices, listRow, emptyText, runTitle, runSub, pageTiles, costsMix, batchRows, SALE_COLUMNS, saleRows,
   salesTotal, costRows, costsTotal, costNotes,
 } from './runs-math.js';
 
 const REFRESH_MS = 60_000;
 const LISTEN = ['harvest', 'batches', 'sales', 'costs'].filter((type) => EVENT_TYPES.includes(type));
+const PHONE = '(max-width: 600px)';
 const BANNER = '<div class="banner" role="alert" hidden><span data-banner-text></span><button type="button" data-retry>Retry</button></div>';
 
 function el(tag, className, content) {
@@ -56,6 +57,40 @@ function table(caption, heads, rows, className, numFrom = 1) {
   wrap.append(t);
   return wrap;
 }
+// A table laid out as blocks on a phone (display: block drops a table's meaning): its parts say what they are (ARIA roles),
+// so a screen reader still reads a figure with its column. The table named by its caption.
+function keepTable(wrap, caption) {
+  const t = wrap.querySelector('table');
+  t.setAttribute('role', 'table');
+  t.setAttribute('aria-label', caption);
+  for (const g of t.querySelectorAll('thead, tbody')) g.setAttribute('role', 'rowgroup');
+  for (const r of t.querySelectorAll('tr')) r.setAttribute('role', 'row');
+  for (const th of t.querySelectorAll('th')) th.setAttribute('role', th.scope === 'col' ? 'columnheader' : 'rowheader');
+  for (const td of t.querySelectorAll('td')) td.setAttribute('role', 'cell');
+  // where it still scrolls sideways (wider than a phone), its box is a named stop for the keys (setRegions)
+  wrap.setAttribute('role', 'region');
+  wrap.setAttribute('aria-label', caption);
+  wrap.dataset.region = '';
+  wrap.dataset.focusKey = `region-${caption}`;
+  return wrap;
+}
+// The boxes that scroll take a Tab stop; on a phone, where the tables are blocks that never scroll, none.
+function setRegions(container, phone) {
+  for (const w of container.querySelectorAll('[data-region]')) {
+    if (phone) w.removeAttribute('tabindex');
+    else w.tabIndex = 0;
+  }
+}
+// After a repaint the cursor goes back to the same link or box (its href and words, or its focus key), as Batches' focus keys.
+const keyOf = (node) => node?.dataset?.focusKey ?? (node?.getAttribute?.('href') ? `${node.getAttribute('href')}|${node.textContent}` : null);
+function keepFocus(container, repaint) {
+  const before = container.contains(document.activeElement) ? keyOf(document.activeElement) : null;
+  repaint();
+  if (!before || container.contains(document.activeElement)) return;
+  const again = [...container.querySelectorAll('a[href], [data-focus-key]')].find((n) => keyOf(n) === before);
+  again?.focus({ preventScroll: true });
+}
+
 // A row of plain cells: the first names the row.
 function plainRow(cells, numFrom = 1) {
   const tr = el('tr');
@@ -68,8 +103,9 @@ function plainRow(cells, numFrom = 1) {
 }
 
 // Reads a path now, again on the events, the stream's return and a timer; paint(reply) gets each new answer, fail(err) a
-// failure (the last answer stays on show). → { load, stop } (stop: no more reads, also from inside fail).
-function reader(path, { paint, fail, alive }) {
+// failure (the last answer stays on show); each paint keeps the cursor where it was (keepFocus) and the scrolling tables' Tab
+// stops to the width. → { load, stop } (stop: no more reads, also from inside fail).
+function reader(path, { paint, fail, alive, container }) {
   let seq = 0;
   let timer = null;
   let outdated = false;
@@ -81,7 +117,8 @@ function reader(path, { paint, fail, alive }) {
     try {
       const reply = await request('GET', path());
       if (!alive() || mine !== seq) return;
-      paint(reply);
+      keepFocus(container(), () => paint(reply));
+      setRegions(container(), window.matchMedia?.(PHONE).matches ?? false);
     } catch (err) {
       if (!alive() || mine !== seq) return;
       outdated = routeMissing(err);
@@ -97,9 +134,14 @@ function reader(path, { paint, fail, alive }) {
     live.on('room', (d) => { if (d.part === 'crop' || d.part === 'room') reload.call(); }), // a run starts or ends; a room's name
     live.onStatus((up) => { if (up) reload.call(); }),
   ];
+  // a phone and a desk: the scrolling boxes' Tab stops follow the width
+  const phone = window.matchMedia?.(PHONE);
+  const onWidth = () => setRegions(container(), phone.matches);
+  phone?.addEventListener('change', onWidth);
   return {
     load,
     stop() {
+      phone?.removeEventListener('change', onWidth);
       stopped = true;
       reload.cancel();
       clearTimeout(timer);
@@ -160,7 +202,7 @@ export function mount(container, { crop = null } = {}) {
     els.body.hidden = false;
     els.body.removeAttribute('aria-busy');
     const today = farmDate(Date.now()); // read at each paint: past midnight "since" moves on
-    const key = JSON.stringify([reply, today]);
+    const key = JSON.stringify([reply, today, shown]); // the crop too: its caption changes with it
     if (key === painted) return;
     painted = key;
     if (!reply.runs.length) {
@@ -168,43 +210,40 @@ export function mount(container, { crop = null } = {}) {
       return;
     }
     const rows = reply.runs.map((run) => {
-      const r = listRow(run, today);
+      const r = listRow(run);
       const tr = el('tr', 'rn-run');
-      const room = el('td', 'rn-room', r.room);
-      room.dataset.label = LIST_COLUMNS[0];
+      // the container and Costs' run days name the row and open the run's page
+      const name = el('th', 'rn-name');
+      name.scope = 'row';
+      name.append(link(r.name, r.href));
       const crops = el('td', 'rn-crops');
       crops.dataset.label = LIST_COLUMNS[1];
-      const name = el('span', 'co-crop');
-      if (r.crop) name.append(picture('crop', r.crop, { size: 24 }));
-      name.append(el('span', '', r.crops));
-      crops.append(name);
-      // the dates name the row and open the run's page
-      const dates = el('th', 'rn-dates');
-      dates.scope = 'row';
-      const a = link(r.dates, r.href);
-      a.setAttribute('aria-label', r.label);
-      dates.append(a);
+      const what = el('span', 'co-crop');
+      if (r.crop) what.append(picture('crop', r.crop, { size: 24 }));
+      what.append(el('span', '', r.crops));
+      crops.append(what);
       const figures = r.cells.map((c, i) => {
-        const loss = i === 4 && r.loss;
-        const td = el('td', 'num', loss ? null : c);
-        td.dataset.label = LIST_COLUMNS[i + 3];
-        // a loss keeps its minus; only the figure takes the loss tone, "Loss" under it in words (Costs' runs)
-        if (loss) td.append(el('span', 'co-loss', c), el('span', 'co-sub', 'Loss'));
+        const loss = (i === 4 && r.loss) || (i === 5 && r.perKgLoss);
+        const td = el('td', i === 4 ? 'num rn-profit' : 'num', loss ? null : c);
+        td.dataset.label = LIST_COLUMNS[i + 2];
+        // a loss keeps its minus; only the figure takes the loss tone, "Loss" under Profit in words (Costs' runs)
+        if (loss) td.append(el('span', 'co-loss', c));
+        if (i === 4 && r.loss) td.append(el('span', 'co-sub', 'Loss'));
         if (i === 3 && r.costsLine) td.append(el('span', 'co-sub', r.costsLine));
         return td;
       });
-      tr.append(room, crops, dates, ...figures);
+      tr.append(name, crops, ...figures);
       return tr;
     });
-    els.list.replaceChildren(table(shown ? `Runs of ${els.crop.selectedOptions[0]?.textContent}` : 'Runs', LIST_COLUMNS, rows, 'rn-table', 3),
-      el('p', 'muted co-runs-note', SHARED_NOTE));
+    const caption = shown ? `Runs of ${els.crop.selectedOptions[0]?.textContent}` : 'Runs';
+    els.list.replaceChildren(keepTable(table(caption, LIST_COLUMNS, rows, 'rn-table', 2), caption), el('p', 'muted co-runs-note', SHARED_NOTE));
   }
   function fail(err) {
     els.body.removeAttribute('aria-busy');
     els.bannerText.textContent = failText(err);
     els.banner.hidden = false;
   }
-  const read = reader(() => `/api/runs${shown ? `?crop=${shown}` : ''}`, { paint, fail, alive });
+  const read = reader(() => `/api/runs${shown ? `?crop=${shown}` : ''}`, { paint, fail, alive, container: () => container });
   q('[data-retry]').addEventListener('click', () => read.load());
   read.load();
 
@@ -217,11 +256,11 @@ export function mount(container, { crop = null } = {}) {
 // ---- a run's page ----
 
 const ONE = `
-  <a class="back" href="${RUNS_HASH}">Runs</a>
+  <a class="back" href="${RUNS_HASH}" data-back>Runs</a>
   <div class="page-head">
     <div class="page-titles">
       <h1 class="page-title" tabindex="-1" data-title>Loading…</h1>
-      <p class="page-sub" data-sub></p>
+      <p class="page-sub rn-sub" data-sub></p>
     </div>
   </div>
   ${BANNER}
@@ -230,6 +269,10 @@ const ONE = `
       <h2 id="rn-money-title">Money and yield</h2>
       <div class="us-tiles hv-tiles co-tiles" data-tiles></div>
       <div data-notes></div>
+    </section>
+    <section class="card rn-costs" aria-labelledby="rn-costs-title">
+      <div class="card-head"><h2 id="rn-costs-title">Costs</h2><span data-costs-link></span></div>
+      <div data-costs></div>
     </section>
     <section class="card rn-blocks" aria-labelledby="rn-blocks-title">
       <div class="card-head"><h2 id="rn-blocks-title">Blocks</h2><span data-blocks-link></span></div>
@@ -243,12 +286,8 @@ const ONE = `
       <div class="card-head"><h2 id="rn-sales-title">Sales</h2><span data-sales-link></span></div>
       <div data-sales></div>
     </section>
-    <section class="card rn-costs" aria-labelledby="rn-costs-title">
-      <div class="card-head"><h2 id="rn-costs-title">Costs</h2><span data-costs-link></span></div>
-      <div data-costs></div>
-    </section>
   </div>
-  <section class="card" data-gone hidden><p class="none">No such run. A container's runs go with it when it is deleted.</p><a href="${RUNS_HASH}">Back to Runs</a></section>`;
+  <section class="card rn-gone" data-gone hidden><p class="none">No such run. A container's runs go with it when it is deleted.</p><a class="co-link" href="${RUNS_HASH}">Back to Runs</a></section>`;
 
 export function mountRun(container, { id }) {
   const me = ++mountSeq;
@@ -256,7 +295,7 @@ export function mountRun(container, { id }) {
   container.innerHTML = ONE;
   const q = (sel) => container.querySelector(sel);
   const els = {
-    title: q('[data-title]'), sub: q('[data-sub]'), banner: q('.banner'), bannerText: q('[data-banner-text]'), body: q('[data-body]'),
+    back: q('[data-back]'), title: q('[data-title]'), sub: q('[data-sub]'), banner: q('.banner'), bannerText: q('[data-banner-text]'), body: q('[data-body]'),
     gone: q('[data-gone]'), tiles: q('[data-tiles]'), notes: q('[data-notes]'), blocks: q('[data-blocks]'), blocksLink: q('[data-blocks-link]'),
     harvests: q('[data-harvests]'), harvestsLink: q('[data-harvests-link]'), sales: q('[data-sales]'), salesLink: q('[data-sales-link]'),
     costs: q('[data-costs]'), costsLink: q('[data-costs-link]'),
@@ -280,8 +319,10 @@ export function mountRun(container, { id }) {
     els.tiles.replaceChildren(...nodes);
     // a phone: one long figure sets the others a size down (Costs' month card; Profit has its own row)
     els.tiles.toggleAttribute('data-long', nodes.slice(1).some((n) => n.querySelector('.us-kwh').hasAttribute('data-long')));
+    // what the costs are made of: the why of the profit (Costs' parts), then Harvest's Settings → Yield line
+    const mix = costsMix(v);
     const missing = missingLine(v.missing);
-    els.notes.replaceChildren(...(missing ? [missing] : []));
+    els.notes.replaceChildren(...(mix ? [el('p', 'muted rn-mix', mix)] : []), ...(missing ? [missing] : []));
   }
 
   function paintBlocks(v, today) {
@@ -293,11 +334,11 @@ export function mountRun(container, { id }) {
     const list = el('ul', 'rn-batches');
     for (const b of batchRows(v.batches, today)) {
       const li = el('li', 'rn-batch');
-      li.append(link(b.title, b.href), el('span', 'rn-line muted', b.line));
+      li.append(link(b.title, b.href), el('span', 'rn-line muted', b.line), ...(b.note ? [el('span', 'rn-line muted', b.note)] : []));
       list.append(li);
     }
-    const cost = blockCostText(v);
-    els.blocks.replaceChildren(list, ...(cost ? [el('p', 'rn-foot', cost)] : []));
+    // no money here: the Costs card's Blocks is the run's one block cost
+    els.blocks.replaceChildren(list);
   }
 
   function paintHarvests(v) {
@@ -341,8 +382,11 @@ export function mountRun(container, { id }) {
       li.append(picture('task', 'harvestDaily', { crop: h.crop, size: 32 }), text);
       list.append(li);
     }
-    const more = v.harvestCount > v.harvests.length ? `The latest ${v.harvests.length} of ${v.harvestCount} picks; the room's Harvest tab has them all.` : 'The latest picks.';
-    parts.push(el('h3', 'rn-sub-title', 'Picks'), el('p', 'muted tk-sub', more), list);
+    // the latest few; every pick (and its Edit) is on the room's Harvest tab
+    const more = v.harvestCount > v.harvests.length ? [el('p', 'muted tk-sub', `The latest ${v.harvests.length} of ${v.harvestCount}.`)] : [];
+    const all = v.roomName ? [el('p', 'rn-foot')] : [];
+    all[0]?.append(link('All picks on the Harvest tab', roomHash(v.roomId, 'harvest')));
+    parts.push(el('h3', 'rn-sub-title', 'Picks'), ...more, list, ...all);
     els.harvests.replaceChildren(...parts);
   }
 
@@ -352,18 +396,24 @@ export function mountRun(container, { id }) {
       els.sales.replaceChildren(el('p', 'none', 'No sales of this run. A sale line that names the container counts in the run open on its day.'));
       return;
     }
+    const cell = (text, className, column) => {
+      const td = el('td', className, text);
+      td.dataset.label = SALE_COLUMNS[column];
+      return td;
+    };
     const rows = saleRows(v.sales.lines).map((s) => {
-      const tr = el('tr');
+      const tr = el('tr', 'rn-sale');
       const day = el('th', '', s.day);
       day.scope = 'row';
-      const buyer = el('td', 'rn-buyer', s.buyer);
+      const buyer = cell(s.buyer, 'rn-buyer', 1);
       if (s.reference) buyer.append(el('span', 'co-sub', s.reference));
-      const paid = el('td', 'rn-paid');
+      const paid = cell(null, 'num rn-paid', 5); // a phone: a line of its own under the figures, its mark its own words
       paid.append(el('span', `sl-mark${s.paid.unpaid ? ' sl-unpaid' : ''}`, s.paid.text)); // Sales' paid mark, its look too
-      tr.append(day, buyer, el('td', '', s.sold), el('td', 'num', s.price), el('td', 'num', s.total), paid);
+      tr.append(day, buyer, cell(s.sold, '', 2), cell(s.price, 'num', 3), cell(s.total, 'num rn-total-cell', 4), paid);
       return tr;
     });
-    els.sales.replaceChildren(table('Sales of this run', SALE_COLUMNS, rows, 'rn-sales-table', 3), el('p', 'rn-foot', `Sold ${salesTotal(v.sales)}`));
+    const caption = 'Sales of this run';
+    els.sales.replaceChildren(keepTable(table(caption, SALE_COLUMNS, rows, 'rn-sales-table', 3), caption), el('p', 'rn-foot', `Sold ${salesTotal(v.sales)}`));
   }
 
   function paintCosts(v) {
@@ -375,11 +425,11 @@ export function mountRun(container, { id }) {
     });
     const rows = costRows(v);
     const dl = el('dl', 'co-parts-list rn-parts');
-    for (const [label, value, href] of rows) {
+    for (const [label, value, href, quiet] of rows) {
       const pair = el('div');
       const dt = el('dt', '', href ? null : label);
       if (href) dt.append(link(label, href)); // Blocks: the run's batches
-      pair.append(dt, el('dd', '', value));
+      pair.append(dt, el('dd', quiet ? 'muted' : '', value)); // electricity or water at 0 in words: muted
       dl.append(pair);
     }
     const total = el('div', 'rn-total');
@@ -396,26 +446,29 @@ export function mountRun(container, { id }) {
     if (key === painted) return;
     painted = key;
     els.body.hidden = false;
+    els.back.hidden = false;
     paintHead(v, today);
     paintMoney(v);
+    paintCosts(v);
     paintBlocks(v, today);
     paintHarvests(v);
     paintSales(v);
-    paintCosts(v);
   }
   function fail(err) {
     if (err.status === 404 && !routeMissing(err)) { // no such run (or its container deleted): say so, and stop asking
       els.title.textContent = 'Run';
       els.sub.replaceChildren();
       els.body.hidden = true;
+      els.back.hidden = true; // one way back: the card's own
       els.gone.hidden = false;
       read.stop();
       return;
     }
+    if (!painted) els.title.textContent = 'Run'; // never "Loading…" under a failed first read
     els.bannerText.textContent = failText(err);
     els.banner.hidden = false;
   }
-  const read = reader(() => `/api/runs/${id}`, { paint, fail, alive });
+  const read = reader(() => `/api/runs/${id}`, { paint, fail, alive, container: () => container });
   q('[data-retry]').addEventListener('click', () => read.load());
   read.load();
 

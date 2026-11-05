@@ -4,8 +4,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  LIST_COLUMNS, cropChoices, cropsText, runDates, listRow, emptyText, runTitle, runSub, pageTiles, batchRows, blockCostText,
-  SALE_COLUMNS, saleRows, salesTotal, costRows, costsTotal, costNotes,
+  LIST_COLUMNS, cropChoices, cropsText, runDates, listRow, emptyText, runTitle, runSub, runPageLabel, pageTiles, costsMix, batchRows,
+  MADE_NOTE, SALE_COLUMNS, saleRows, salesTotal, costRows, costsTotal, costNotes,
 } from '../web/runs-math.js';
 
 const NB = ' ';
@@ -13,11 +13,12 @@ const at = (d, h = 12) => Date.UTC(Number(d.slice(0, 4)), Number(d.slice(5, 7)) 
 const TODAY = '2026-11-15';
 const RUN = {
   id: 7, roomId: 1, roomName: 'Container 1', crops: [{ crop: 'oyster', blocks: 600 }], partial: false,
-  startedAt: at('2026-11-04', 9), endedAt: null, kg: 80, perBlock: 0.13, income: 480, costs: 1620, profit: -1140, pending: false, incomplete: false,
+  startedAt: at('2026-11-04', 9), endedAt: null, kg: 80, perBlock: 0.13, income: 480, costs: 1620, profit: -1140, profitPerKg: -28.5,
+  pending: false, incomplete: false,
 };
 
 test('the columns, the crop choices and the empty words', () => {
-  assert.deepEqual(LIST_COLUMNS, ['Container', 'Crops', 'Dates', 'kg', 'kg per block', 'Income', 'Costs', 'Profit']);
+  assert.deepEqual(LIST_COLUMNS, ['Run', 'Crops', 'kg', 'kg per block', 'Income', 'Costs', 'Profit', 'Profit per kg']);
   const choices = cropChoices();
   assert.deepEqual(choices[0], { value: '', label: 'All crops' });
   assert.ok(choices.some((c) => c.value === 'lionsmane' && c.label === "Lion's mane"), 'the draft crop without "(draft)"');
@@ -33,23 +34,31 @@ test('a run\'s days: since its start while open, its range once ended, "recorded
   assert.equal(runDates({ ...RUN, partial: true }, TODAY), 'recorded since 4 Nov');
 });
 
-test('a row: its figures by Harvest\'s and Costs\' formatters, a loss with its minus, the run page its link', () => {
-  const r = listRow(RUN, TODAY);
+test('a row: named by its container and Costs\' run days, its figures by Harvest\'s and Costs\' formatters, a loss with its minus', () => {
+  const r = listRow(RUN);
   assert.deepEqual(r, {
-    href: '#/business/runs/7', label: 'Container 1, since 4 Nov', room: 'Container 1', roomHref: '#/rooms/1/harvest',
-    crops: '600 Grey oyster', crop: 'oyster', dates: 'since 4 Nov',
-    cells: [`80.0${NB}kg`, `0.13${NB}kg`, `RM${NB}480.00`, `RM${NB}1,620.00`, `−RM${NB}1,140.00`],
-    costsLine: null, loss: true,
+    href: '#/business/runs/7', name: `Container 1${NB}· 4 Nov${NB}–${NB}now`, crops: '600 Grey oyster', crop: 'oyster',
+    cells: [`80.0${NB}kg`, `0.13${NB}kg`, `RM${NB}480.00`, `RM${NB}1,620.00`, `−RM${NB}1,140.00`, `−RM${NB}28.50`],
+    costsLine: null, loss: true, perKgLoss: true,
   });
-  const mixed = listRow({ ...RUN, crops: [{ crop: 'oyster', blocks: 300 }, { crop: 'lionsmane', blocks: 1000 }], profit: 20 }, TODAY);
+  assert.equal(listRow({ ...RUN, endedAt: at('2026-12-20') }).name, `Container 1${NB}· 4 Nov${NB}–${NB}20 Dec`, 'Costs\' words for an ended run');
+  assert.equal(listRow({ ...RUN, partial: true }).name, `Container 1${NB}· recorded 4 Nov${NB}–${NB}now`);
+  const mixed = listRow({ ...RUN, crops: [{ crop: 'oyster', blocks: 300 }, { crop: 'lionsmane', blocks: 1000 }], profit: 20, profitPerKg: 0.5 });
   assert.equal(mixed.crops, `300 Grey oyster${NB}· 1,000 Lion's mane`);
   assert.equal(mixed.crop, 'lionsmane', 'the main crop: the most blocks');
-  assert.equal(mixed.loss, false);
-  const pending = listRow({ ...RUN, costs: null, profit: null, pending: true }, TODAY);
-  assert.deepEqual([pending.cells[3], pending.cells[4], pending.costsLine, pending.loss], ['—', '—', 'working out', false]);
-  assert.equal(listRow({ ...RUN, incomplete: true }, TODAY).costsLine, 'Some costs have no price');
-  const gone = listRow({ ...RUN, roomName: null }, TODAY);
-  assert.deepEqual([gone.room, gone.roomHref], ['A deleted room', null]);
+  assert.deepEqual([mixed.loss, mixed.perKgLoss], [false, false]);
+  const pending = listRow({ ...RUN, costs: null, profit: null, profitPerKg: null, pending: true });
+  assert.deepEqual([pending.cells[3], pending.cells[4], pending.cells[5], pending.costsLine, pending.loss], ['—', '—', '—', 'working out', false]);
+  assert.equal(listRow({ ...RUN, incomplete: true }).costsLine, 'Some costs have no price');
+  const gone = listRow({ ...RUN, roomName: null, costs: null, profit: null, profitPerKg: null });
+  assert.equal(gone.name, `A deleted room${NB}· 4 Nov${NB}–${NB}now`);
+  assert.deepEqual([gone.cells[3], gone.cells[4], gone.costsLine], ['—', '—', null], 'a room-less run: a dash, never "working out"');
+});
+
+test('a "Run page" link\'s name: the container and the run\'s days', () => {
+  assert.equal(runPageLabel(RUN, TODAY), 'Run page, Container 1, since 4 Nov');
+  assert.equal(runPageLabel({ ...RUN, endedAt: at('2026-12-20') }, TODAY), 'Run page, Container 1, 4 Nov – 20 Dec');
+  assert.equal(runPageLabel({ ...RUN, roomName: undefined }, TODAY), 'Run page, since 4 Nov');
 });
 
 test('the head: the blocks, the container and the days', () => {
@@ -62,37 +71,55 @@ test('the head: the blocks, the container and the days', () => {
   assert.deepEqual(runSub(RUN, TODAY), { room: 'Container 1', roomHref: '#/rooms/1/harvest', dates: 'since 4 Nov' });
 });
 
-test('the tiles: Profit so far first, a loss in words; Profit once ended; a dash while the energy is worked out', () => {
+test('the tiles: Profit so far first, a loss in words; Profit per kg; the kg not sold; Profit once ended; a dash while the energy is worked out', () => {
   const v = { ...RUN, kgSold: 40, be: 34 };
   assert.deepEqual(pageTiles(v), [
     { label: 'Profit so far', value: `−RM${NB}1,140.00`, line: 'Loss', tone: 'loss' },
     { label: 'Income', value: `RM${NB}480.00`, line: `40.0${NB}kg sold` },
     { label: 'Costs', value: `RM${NB}1,620.00` },
-    { label: 'Picked', value: `80.0${NB}kg` },
+    { label: 'Profit per kg', value: `−RM${NB}28.50`, line: `on 40.0${NB}kg sold`, tone: 'loss' },
+    { label: 'Picked', value: `80.0${NB}kg`, line: `40.0${NB}kg not sold` },
     { label: 'kg per block', value: `0.13${NB}kg` },
     { label: 'BE', title: 'Biological efficiency', value: `34${NB}%` },
   ]);
-  const ended = pageTiles({ ...v, endedAt: at('2026-11-14'), profit: 260, kgSold: 0, incomplete: true });
+  const ended = pageTiles({ ...v, endedAt: at('2026-11-14'), profit: 260, profitPerKg: null, kgSold: 0, incomplete: true });
   assert.deepEqual(ended[0], { label: 'Profit', value: `RM${NB}260.00` });
   assert.equal(ended[1].line, 'Nothing sold');
   assert.equal(ended[2].line, 'Some costs have no price');
-  const waiting = pageTiles({ ...v, pending: true, costs: null, profit: null });
-  assert.deepEqual([waiting[0], waiting[2]], [{ label: 'Profit so far', value: '—', line: 'working out' }, { label: 'Costs', value: '—', line: 'working out' }]);
-  assert.equal(pageTiles({ ...v, be: null })[5].value, '—');
+  assert.deepEqual(ended[3], { label: 'Profit per kg', value: '—', line: 'Nothing sold' });
+  assert.deepEqual(pageTiles({ ...v, kgSold: 80 })[4], { label: 'Picked', value: `80.0${NB}kg` }, 'all sold: no line');
+  const waiting = pageTiles({ ...v, pending: true, costs: null, profit: null, profitPerKg: null });
+  assert.deepEqual([waiting[0], waiting[2], waiting[3]], [{ label: 'Profit so far', value: '—', line: 'working out' },
+    { label: 'Costs', value: '—', line: 'working out' }, { label: 'Profit per kg', value: '—', line: 'working out' }]);
+  assert.equal(pageTiles({ ...v, be: null })[6].value, '—');
+  const gone = pageTiles({ ...v, roomName: null, costs: null, profit: null, profitPerKg: null, pending: false });
+  assert.deepEqual([gone[0].value, gone[0].line, gone[2].value, gone[2].line], ['—', undefined, '—', undefined], 'a room-less run: a dash, never "working out"');
 });
 
-test('the Blocks card: each batch, its supplier, day and price; the block cost, or why it is not known', () => {
+const PRICES = { electricity: 0.55, water: null };
+test('the money\'s make-up under the tiles: the parts over 0, the biggest\'s share, the energy not recorded', () => {
+  const v = { ...RUN, costs: 17879.23, prices: PRICES, costsByKind: { parts: { blocks: 3040, energy: 0, water: 0, own: 480, shared: 14359.23 }, notes: [] } };
+  assert.equal(costsMix(v), `Blocks RM${NB}3,040.00${NB}· Own RM${NB}480.00${NB}· Shared RM${NB}14,359.23 (80${NB}% of costs)${NB}· Electricity not recorded yet${NB}· No water price`);
+  const metered = { ...v, costs: 3532.5, prices: { electricity: 0.55, water: 0.01 }, costsByKind: { parts: { blocks: 3040, energy: 12.5, water: 0, own: 480, shared: 0 }, notes: [] } };
+  assert.equal(costsMix(metered), `Blocks RM${NB}3,040.00 (86${NB}% of costs)${NB}· Electricity RM${NB}12.50${NB}· Own RM${NB}480.00${NB}· Water not recorded yet`);
+  const one = { ...v, costs: 3040, prices: { electricity: 0.55, water: 0.01 }, costsByKind: { parts: { blocks: 3040, energy: 0, water: 0, own: 0, shared: 0 }, notes: [] } };
+  assert.equal(costsMix(one), `Blocks RM${NB}3,040.00${NB}· Electricity and water not recorded yet`, 'one part: no share');
+  assert.equal(costsMix({ ...v, pending: true, costs: null }), null, 'none while the energy is worked out');
+  assert.equal(costsMix({ ...v, costsByKind: null, costs: null }), null, 'none without Costs\' view');
+});
+
+test('the Blocks card: each batch, its supplier and day received (a made one its day made and a note), its price a block; no money total', () => {
   const batches = [
     { id: 3, crop: 'oyster', blocks: 600, supplier: 'Agro Supplies', kind: 'bought', receivedAt: at('2026-09-28'), pricePerBlock: 2.5 },
-    { id: 4, crop: 'oyster', blocks: 1, supplier: null, kind: 'made', receivedAt: at('2025-12-30'), pricePerBlock: null },
+    { id: 4, crop: 'oyster', blocks: 1, supplier: 'Spawn Co', kind: 'made', receivedAt: at('2025-12-30'), mixedAt: at('2025-12-20'), pricePerBlock: null },
+    { id: 5, crop: 'oyster', blocks: 20, supplier: null, kind: 'made', receivedAt: at('2026-09-20'), mixedAt: null, pricePerBlock: 1.1 },
   ];
   assert.deepEqual(batchRows(batches, TODAY), [
-    { href: '#/business/batches/3', title: '600 Grey oyster blocks', line: `Agro Supplies${NB}· received 28 Sep${NB}· RM${NB}2.50 a block` },
-    { href: '#/business/batches/4', title: '1 Grey oyster block', line: `made on the farm${NB}· received 30 Dec 2025${NB}· no price` },
+    { href: '#/business/batches/3', title: '600 Grey oyster blocks', line: `Agro Supplies${NB}· received 28${NB}Sep${NB}· RM${NB}2.50 a block`, note: null },
+    { href: '#/business/batches/4', title: '1 Grey oyster block', line: `made 20${NB}Dec${NB}2025${NB}· no price`, note: MADE_NOTE },
+    { href: '#/business/batches/5', title: '20 Grey oyster blocks', line: `made 20${NB}Sep${NB}· RM${NB}1.10 a block`, note: MADE_NOTE },
   ]);
-  assert.equal(blockCostText({ batches, blockCost: 1500 }), `Block cost RM${NB}1,500.00`);
-  assert.equal(blockCostText({ batches, blockCost: null }), 'Some batches have no price');
-  assert.equal(blockCostText({ batches: [], blockCost: 0 }), null);
+  assert.equal(MADE_NOTE, 'Its materials count in Costs as Inventory purchases');
 });
 
 test('the Sales card: a line as Sales shows a delivery; the total', () => {
@@ -106,14 +133,19 @@ test('the Sales card: a line as Sales shows a delivery; the total', () => {
   assert.equal(salesTotal({ kg: 48, total: 576 }), `48.0${NB}kg${NB}· RM${NB}576.00`);
 });
 
-test('the Costs card: Costs\' breakdown without the income rows, its total and notes', () => {
+test('the Costs card: Costs\' breakdown without the income rows, Electricity and Water kept at 0 in words, its total and notes', () => {
   const v = {
-    ...RUN, kgSold: 40, costsByKind: { parts: { blocks: 1500, energy: 12.5, water: 0, own: 120, shared: 30 }, notes: [{ kind: 'unpriced-batch', text: 'A batch has no price' }] },
+    ...RUN, kgSold: 40, prices: PRICES,
+    costsByKind: { parts: { blocks: 1500, energy: 12.5, water: 0, own: 120, shared: 30 }, notes: [{ kind: 'unpriced-batch', text: 'A batch has no price' }] },
   };
   assert.deepEqual(costRows(v), [
     ['Blocks', `RM${NB}1,500.00, some with no price`, '#/business/batches?run=7'],
-    ['Electricity', `RM${NB}12.50`], ['Own costs', `RM${NB}120.00`], ['Share of shared costs', `RM${NB}30.00`],
+    ['Electricity', `RM${NB}12.50`], ['Water', 'no price set', null, true], ['Own costs', `RM${NB}120.00`], ['Share of shared costs', `RM${NB}30.00`],
   ]);
+  const none = { ...v, costsByKind: { parts: { blocks: 0, energy: 0, water: 0, own: 0, shared: 0 }, notes: [] }, prices: { electricity: 0.55, water: 0.01 } };
+  assert.deepEqual(costRows(none), [['Electricity', 'not recorded yet', null, true], ['Water', 'not recorded yet', null, true]]);
+  assert.deepEqual(costRows({ ...none, pending: true }), [['Electricity', 'working out', null, true], ['Water', 'working out', null, true]]);
+  assert.deepEqual(costRows({ ...none, prices: { electricity: 0, water: 0.01 } })[0], ['Electricity', 'no price set', null, true]);
   assert.deepEqual(costRows({ ...v, costsByKind: null }), []);
   assert.equal(costsTotal(v), `RM${NB}1,620.00`);
   assert.equal(costsTotal({ ...v, pending: true }), '—');

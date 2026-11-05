@@ -7,6 +7,7 @@
 
 import { request, OFFLINE, OUTDATED, routeMissing } from './api.js';
 import { costsHash, runHash } from './route.js'; // runHash: ---- Runs ----
+import { runPageLabel } from './runs-math.js'; // ---- Runs ----
 import { live, EVENT_TYPES } from './live.js';
 import { fallbackMs, createThrottle } from './live-math.js';
 import { tileNodes } from './harvest-card.js';
@@ -486,7 +487,9 @@ export function mount(container, { month = null } = {}) {
           dl.append(pair);
         }
         const page = el('p', 'co-run-note'); // ---- Runs ---- the run's page (spec 2026-11-05-runs-design.md 6)
-        page.append(link('Run page', runHash(run.id)));
+        const toRun = link('Run page', runHash(run.id));
+        toRun.setAttribute('aria-label', runPageLabel(run)); // ---- Runs ---- which run: "Run page, Container 1, since 24 Sep"
+        page.append(toRun);
         body.append(dl, ...monthNotes({ pending: false, notes: run.notes }).map((n) => noteNode('p', 'co-run-note', n)), page);
         td.append(body);
         more.append(td);
