@@ -483,6 +483,20 @@ The room's picture keeps its representation: the air path, the condenser outside
 | myGAP sheet | The 4-6 sheet adds a row for each sale line, after its day's harvest rows: Date, Crop, Block / location ("Room 1 · run of 3 Oct" or "Mixed"), Sold (kg), Price / kg (RM), Total (RM), Invoice No. (the buyer's reference) and Buyer. The harvest rows' sales cells stay blank. The Total row adds sold kg and RM. If the sales cannot be read, the harvest rows stay and a line above the table says "Sales could not be read: the sales columns are blank." |
 | Words | RM "RM 1,240.50", kg to 1 decimal in totals and 2 in a line, a price "RM 12.00", days "12 days", "1 day", "today". Harvest's figure is **Expected value** (not "RM value"); Sales' is **Income**: one name for each figure |
 
+### Costs
+(2026-11-05; spec `docs/superpowers/specs/2026-11-05-costs-design.md`.) `#/business/costs`, reached through the Business entry the integrator adds. Where each part lives:
+
+| Part | Design |
+|---|---|
+| Head | "Costs", a month stepper (‹ November 2026 ›, 44 px buttons, the next one off at this month; stepping keeps the page and its focus) and **Add a cost** |
+| Month card | Profit first, in display size (32 px, 28 px on a phone, its own row there); then Income, Costs, Cost per kg, Profit per kg. A loss is "−RM 340.00" in the critical text token with the word "Loss" under it, never colour alone; a negative profit per kg takes the same tone. "Nothing sold" under Income and Profit per kg when nothing sold, else "683.0 kg sold" and "on 683.0 kg sold". While the energy is worked out the four figures it feeds read "—" with "working out" under them, and one note "Working out the energy cost…" leads the notes. On a phone one long figure sets the four a size down. Notes under the tiles: missing prices in the warning text token, the rest muted |
+| Months chart | Its title follows the months kept and shown: "Profit, last 12 months (RM)", "last 11 months" when only 11 are kept, "last 6 months" on a phone. Bars up from one zero line for a profit (`--good`), down for a loss (`--critical`), one scale both sides, bare tick numbers; the shown month outlined; every bar's value printed when its slot is 60 px or more (else the shown month's only); a pending month a hatched stub with a dashed edge; "No figures yet." when nothing is recorded. One Tab stop, ← → Home End move; a phone shows 6 months when 12 would be under 24 px a bar |
+| By category | Category, RM, share; the source in a muted line (from Batches, from Inventory, measured, bill − measured, entered); a Total row equal to the Costs tile |
+| Entries, Monthly items | Rows on a desk (date, what, for whom, RM, a quiet Edit; a "monthly" or "bill" tag; a bill's "adds RM 580.00 unmeasured" line, "… unmeasured to October" when its period ended in another month); blocks on a phone or in a column under 560 px. Monthly items line up on a subgrid with Change and Stop, the names taking the room (for whom fits its words up to 9em) |
+| Runs | Dates (a toggle that opens the run's breakdown under it, no side stripe; two columns on a phone), Container, Crops (the main crop's 24 px picture before the names, as Harvest's By crop), Income, Costs (with "Some costs have no price" when so), Profit, Profit per kg; labelled blocks on a phone |
+| Dialogs | The tasks' dialog: the boxes follow the category (worker for labour; for utilities Kind, Bill from, Bill to, then Amount with the bill's line under it, the period filled from the date's month); amounts in their boxes grouped ("1,800.00"); a room cost says where it lands; a bill says only the unmeasured part is added. Stop defaults to this month and names the charges a past month removes; a Stop that removes charges is a Danger button ("Stop and remove 1 charge"), blue again when nothing goes. A monthly item's Change dialog: Stop quiet, only "Delete this item" red |
+| Layout | Two columns from 900 px (Entries and Monthly items, By category); one column below |
+
 ## Do's and Don'ts
 
 ### Do:

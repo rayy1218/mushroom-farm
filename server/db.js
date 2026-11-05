@@ -6,8 +6,9 @@ import { RATINGS, FILTER } from './rooms.js';
 import { PROGRAM_DEFAULTS } from './program.js';
 import { FAMILY_OF, DAILY_RULES, HARVEST_RULES } from './task-rules.js';
 import { BATCHES_SCHEMA, createBatchStore } from './batches-db.js'; // ---- Batches ---- (spec 2026-11-05-batches-design.md 2)
+import { readSources } from './costs-sources.js'; // ---- Costs ----
 
-const VERSION = 23;
+const VERSION = 24;
 
 // Iteration 1 (version 0) had only the rooms table without the address columns.
 const ROOMS = `
@@ -405,6 +406,36 @@ const buyerOf = (r) => {
   return { id: r.id, name: r.name, phone: r.phone, note: r.note, prices, archived: r.archived === 1, createdAt: r.created_at };
 };
 // ---- end Sales ----
+// ---- Costs ---- (spec 2026-11-05-costs-design.md 2): what the farm spends, entered by hand; Batches, Inventory and Sales
+// are read live, never copied (source_kind stays 'manual'). This file has no foreign keys (deleteRoom deletes by hand), so
+// two triggers keep a deleted room's costs as the farm's and drop a deleted run from its costs.
+const COSTS = `
+CREATE TABLE IF NOT EXISTS costs (
+  id           INTEGER PRIMARY KEY,
+  date         TEXT    NOT NULL,
+  category     TEXT    NOT NULL CHECK (category IN ('blocks', 'spawn', 'labour', 'rent', 'repairs', 'transport', 'packaging', 'utilities', 'other')),
+  amount       REAL    NOT NULL CHECK (amount > 0 AND amount <= 1000000),
+  room_id      INTEGER,
+  run_id       INTEGER,
+  note         TEXT    NOT NULL DEFAULT '',
+  source_kind  TEXT    NOT NULL DEFAULT 'manual' CHECK (source_kind IN ('manual', 'batch', 'purchase')),
+  source_id    INTEGER,
+  repeat       TEXT    CHECK (repeat IN ('monthly')),
+  repeat_until TEXT,
+  worker       TEXT,
+  utility      TEXT    CHECK (utility IN ('electricity', 'water', 'other')),
+  period_from  TEXT,
+  period_to    TEXT,
+  created_at   INTEGER NOT NULL
+) STRICT;
+CREATE INDEX IF NOT EXISTS costs_by_date ON costs (date);
+CREATE INDEX IF NOT EXISTS costs_by_room ON costs (room_id);
+CREATE TRIGGER IF NOT EXISTS costs_room_gone AFTER DELETE ON rooms BEGIN
+  UPDATE costs SET room_id = NULL, run_id = NULL WHERE room_id = OLD.id;
+END;
+CREATE TRIGGER IF NOT EXISTS costs_run_gone AFTER DELETE ON runs BEGIN
+  UPDATE costs SET run_id = NULL WHERE run_id = OLD.id;
+END;`;
 
 const ALARMS = `
 CREATE TABLE alarms (
@@ -751,6 +782,8 @@ function migrate(db) {
     if (version < 22) db.exec(INVENTORY);
     // ---- Sales (spec 2026-11-05-sales-design.md 2.4): buyers and sales; nothing to copy (the farm kept no sales). ----
     if (version < 23) db.exec(SALES);
+    // ---- Costs ---- (spec 2026-11-05-costs-design.md 2)
+    if (version < 24) db.exec(COSTS);
     db.exec(`PRAGMA user_version = ${VERSION}`);
     db.exec('COMMIT');
   } catch (err) {
@@ -789,6 +822,14 @@ const stockMoveOf = (r) => ({
   total: r.total, supplier: r.supplier, useBy: r.use_by, roomId: r.room_id, reason: r.reason, worker: r.worker,
   counted: r.counted, lotId: r.lot_id, useBySentAt: r.use_by_sent_at,
 });
+// ---- Costs ---- A costs row as the costs module shows it, and a cost's fields in the insert's and update's column order.
+const costOf = (r) => ({
+  id: r.id, date: r.date, category: r.category, amount: r.amount, roomId: r.room_id, runId: r.run_id, note: r.note,
+  sourceKind: r.source_kind, sourceId: r.source_id, repeat: r.repeat, repeatUntil: r.repeat_until, worker: r.worker,
+  utility: r.utility, periodFrom: r.period_from, periodTo: r.period_to, createdAt: r.created_at,
+});
+const costValues = (f) => [f.date, f.category, f.amount, f.roomId ?? null, f.runId ?? null, f.note ?? '', f.repeat ?? null,
+  f.repeatUntil ?? null, f.worker ?? null, f.utility ?? null, f.periodFrom ?? null, f.periodTo ?? null];
 
 // A machine_log row as the API shows it.
 const logRow = (r) => ({ at: r.at, on: r.on_ === 1, setpoint: r.setpoint, mode: r.mode, fan: r.fan, source: r.source });
@@ -1139,6 +1180,18 @@ export function openDb(path, { log = console.error } = {}) {
       else insert(x);
     }
   }
+
+  // ---- Costs ---- (spec 2026-11-05-costs-design.md 2): the costs table's statements.
+  const costQ = {
+    insert: db.prepare(`INSERT INTO costs (date, category, amount, room_id, run_id, note, repeat, repeat_until, worker, utility,
+                                           period_from, period_to, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+    get: db.prepare('SELECT * FROM costs WHERE id = ?'),
+    list: db.prepare('SELECT * FROM costs ORDER BY date, id'),
+    update: db.prepare(`UPDATE costs SET date = ?, category = ?, amount = ?, room_id = ?, run_id = ?, note = ?, repeat = ?,
+                               repeat_until = ?, worker = ?, utility = ?, period_from = ?, period_to = ? WHERE id = ?`),
+    until: db.prepare('UPDATE costs SET repeat_until = ? WHERE id = ?'),
+    delete: db.prepare('DELETE FROM costs WHERE id = ?'),
+  };
 
   // Runs fn in one transaction: all of its writes or none.
   function inTransaction(fn) {
@@ -2388,6 +2441,56 @@ export function openDb(path, { log = console.error } = {}) {
       return new Map(salesQ(db).buyerSalesAll.all().map((r) => [r.buyer_id, r.n]));
     },
     // ---- end Sales ----
+
+    // ---- Costs (spec 2026-11-05-costs-design.md 2 and 3). A cost is costOf's object; its fields { date, category, amount,
+    //      roomId, runId, note, repeat, repeatUntil, worker, utility, periodFrom, periodTo } are checked by server/costs.js. ----
+
+    // A new cost made at `at` (ms). → the cost.
+    insertCost(fields, at) {
+      return this.getCost(Number(costQ.insert.run(...costValues(fields), at).lastInsertRowid));
+    },
+
+    // A cost, or null.
+    getCost(id) {
+      const r = costQ.get.get(id);
+      return r ? costOf(r) : null;
+    },
+
+    // Every cost, oldest date first.
+    listCosts() {
+      return costQ.list.all().map(costOf);
+    },
+
+    // → the cost with its new fields, or null when there is no such cost.
+    updateCost(id, fields) {
+      return costQ.update.run(...costValues(fields), id).changes > 0 ? this.getCost(id) : null;
+    },
+
+    // A monthly item's last month ('YYYY-MM'). → the cost, or null.
+    stopCost(id, until) {
+      return costQ.until.run(until, id).changes > 0 ? this.getCost(id) : null;
+    },
+
+    // A monthly item changed from a month: it ends at `until` and `fields` start a new one, in one transaction.
+    // → { ended, started }, or null when there is no such cost (nothing changes then).
+    changeCost(id, until, fields, at) {
+      let started = null;
+      inTransaction(() => {
+        if (costQ.until.run(until, id).changes === 0) return;
+        started = Number(costQ.insert.run(...costValues(fields), at).lastInsertRowid);
+      });
+      return started === null ? null : { ended: this.getCost(id), started: this.getCost(started) };
+    },
+
+    // → true when a cost went.
+    deleteCost(id) {
+      return costQ.delete.run(id).changes > 0;
+    },
+
+    // The other modules' rows Costs reads, from ms to ms (server/costs-sources.js): their tables may not exist yet.
+    costSources(from, to) {
+      return readSources(db, from, to);
+    },
 
     close() {
       db.close();

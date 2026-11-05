@@ -67,6 +67,9 @@ const daysOf = (query) => {
   return HARVEST_DAYS.includes(n) ? n : 30;
 };
 export const sheetHash = (days) => `#/harvest/sheet?days=${days}`;
+// ---- Costs ---- (spec 2026-11-05-costs-design.md 6): its month in the query; this month has none.
+export const COSTS_HASH = '#/business/costs';
+export const costsHash = (month = null) => (month ? `${COSTS_HASH}?month=${month}` : COSTS_HASH);
 
 // ---- Batches ---- (spec 2026-11-05-batches-design.md 7): the page (?run= one run's batches), a batch, and the myGAP 4-2
 // sheet with its dates in the query (the page puts the last 90 days there when they are missing or not dates).
@@ -135,6 +138,8 @@ export function parseRoute(hash) {
     return inventory[1] ? { name: 'inventoryItem', id: Number(inventory[1]) } : { name: 'inventory' };
   }
   // #/rooms (the Rooms list until 2026-10-28) is the Overview now: it holds every room and Add room.
+  const costs = /^#\/business\/costs\/?(?:\?(.*))?$/.exec(hash ?? ''); // ---- Costs ----
+  if (costs) return { name: 'costs', month: monthOf(new URLSearchParams(costs[1] ?? '').get('month')) };
   if (/^#\/settings\/?$/.test(hash ?? '')) return { name: 'settings' };
   return { name: 'overview' };
 }
@@ -157,6 +162,7 @@ export function canonicalHash(route) {
   if (route.name === 'inventoryItem') return inventoryItemHash(route.id);
   if (route.name === 'inventoryCount') return INVENTORY_COUNT_HASH;
   if (route.name === 'inventorySheet') return inventorySheetHash(route.days);
+  if (route.name === 'costs') return costsHash(route.month); // ---- Costs ----
   return route.name === 'settings' ? '#/settings' : '#/overview';
 }
 
