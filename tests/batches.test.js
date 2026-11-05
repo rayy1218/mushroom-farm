@@ -23,7 +23,7 @@ function setup(t, { stock = false } = {}) {
   function room(crops = [{ crop: 'oyster', blocks: 950 }]) {
     n += 1;
     const id = db.createRoom({ ...ROOM, name: `Container ${n}` }, 1000).id;
-    db.setProgram(id, { ...db.getProgram(id), crops }, { change: 'start', at: NOW - 5 * DAY });
+    if (crops) db.setProgram(id, { ...db.getProgram(id), crops }, { change: 'start', at: NOW - 5 * DAY });
     return id;
   }
   return { db, batches, told, room, tick: (ms) => { clock += ms; }, now: () => clock };
@@ -125,4 +125,110 @@ test('delete: a batch goes; 404 after', (t) => {
   assert.equal(status(() => batches.detail(a.id))[0], 404);
   assert.equal(told.at(-1).batchId, a.id);
   assert.equal(status(() => batches.remove(a.id))[0], 404);
+});
+
+test('place all the good blocks: the row itself goes in, its room and run shown', (t) => {
+  const { batches, room, told } = setup(t);
+  const roomId = room();
+  const a = batches.receive(GOOD);
+  const p = batches.place(a.id, { roomId });
+  assert.equal(p.id, a.id);
+  assert.equal(p.status, 'placed');
+  assert.equal(p.roomName, 'Container 1');
+  assert.equal(p.placedAt, NOW);
+  assert.equal(p.runBlocks, 950);
+  assert.deepEqual(told.at(-1).harvestRooms, [roomId]);
+  const d = batches.detail(a.id);
+  assert.equal(d.batchBlocks, 1200, 'more than the run\'s 950: allowed, the page says so');
+  assert.deepEqual(batches.list({ run: String(p.runId) }).batches.map((x) => x.id), [a.id]);
+});
+
+test('place fewer: a part splits off with the shared fields; the first row keeps the rest', (t) => {
+  const { batches, room } = setup(t);
+  const one = room();
+  const two = room();
+  const a = batches.receive({ ...GOOD, strain: 'PL-27', blockKg: 2.3, waterPct: 60, note: 'first only' });
+  const part = batches.place(a.id, { roomId: one, blocks: 800 });
+  assert.notEqual(part.id, a.id);
+  assert.equal(part.parentId, a.id);
+  assert.deepEqual([part.blocks, part.supplier, part.strain, part.blockKg, part.pricePerBlock, part.note], [800, 'Agro Supplies', 'PL-27', 2.3, 2.3, null]);
+  assert.equal(batches.detail(a.id).blocks, 400);
+  assert.deepEqual(batches.detail(a.id).delivery.map((x) => x.id), [a.id, part.id]);
+  const rest = batches.place(a.id, { roomId: two });
+  assert.equal(rest.id, a.id, 'the rest: the first row itself');
+  assert.equal(rest.roomName, 'Container 2');
+});
+
+test('a waiting part splits from the first row\'s family, never from itself', (t) => {
+  const { batches, room } = setup(t);
+  const one = room();
+  const two = room();
+  const a = batches.receive(GOOD);
+  const p1 = batches.place(a.id, { roomId: one, blocks: 800 });
+  batches.place(a.id, { roomId: two }); // the first row goes in too
+  const back = batches.unplace(p1.id); // the first row is placed: the part waits on its own
+  assert.equal(back.id, p1.id);
+  assert.equal(back.status, 'waiting');
+  const p2 = batches.place(p1.id, { roomId: two, blocks: 300 });
+  assert.equal(p2.parentId, a.id);
+  assert.equal(batches.detail(p1.id).blocks, 500);
+});
+
+test('take out: a part folds back into its waiting first row with its checks; otherwise the row waits', (t) => {
+  const { batches, room } = setup(t);
+  const roomId = room();
+  const a = batches.receive(GOOD);
+  const part = batches.place(a.id, { roomId, blocks: 800 });
+  batches.addCheck(part.id, { lost: 4, cause: 'green', worker: 'Ali' });
+  const back = batches.unplace(part.id);
+  assert.equal(back.id, a.id);
+  assert.equal(back.blocks, 1200);
+  assert.equal(back.lost, 4, 'the part\'s check moved to the first row');
+  assert.equal(batches.detail(a.id).delivery.length, 1);
+  const whole = batches.place(a.id, { roomId });
+  assert.equal(batches.unplace(whole.id).status, 'waiting');
+});
+
+test('place and take out: the refusals', (t) => {
+  const { db, batches, room, tick } = setup(t);
+  const oyster = room();
+  const pink = room([{ crop: 'pink', blocks: 300 }]);
+  const empty = room(null);
+  const a = batches.receive(GOOD);
+  assert.deepEqual(status(() => batches.place(a.id, { roomId: 999 })).slice(0, 2), [400, 'roomId']);
+  assert.deepEqual(status(() => batches.place(a.id, { roomId: oyster, blocks: 1201 })).slice(0, 2), [400, 'blocks']);
+  assert.deepEqual(status(() => batches.place(a.id, { roomId: oyster, blocks: 0 })).slice(0, 2), [400, 'blocks']);
+  assert.deepEqual(status(() => batches.place(a.id, { roomId: empty })), [409, null, 'Give Container 3 its crops on the Crop tab first']);
+  assert.deepEqual(status(() => batches.place(a.id, { roomId: pink })), [409, null, "Container 2's run has no Grey oyster"]);
+  assert.equal(status(() => batches.unplace(a.id))[0], 409, 'not in a room');
+  batches.place(a.id, { roomId: oyster });
+  assert.equal(status(() => batches.place(a.id, { roomId: oyster }))[0], 409, 'in a room already');
+  tick(DAY);
+  db.setProgram(oyster, { ...db.getProgram(oyster), crops: [] }, { change: 'end', at: NOW + DAY });
+  assert.deepEqual(status(() => batches.unplace(a.id)), [409, null, "Container 1's run has ended"]);
+  assert.equal(batches.detail(a.id).status, 'past');
+  assert.equal(status(() => batches.edit(a.id, { crop: 'pink' }))[0], 409, 'crop of a placed delivery');
+  assert.equal(status(() => batches.edit(a.id, { blocks: 1000 }))[0], 409, 'blocks of a placed row');
+});
+
+test('delete: a first row with parts is refused; a part is deleted without giving its blocks back', (t) => {
+  const { batches, room } = setup(t);
+  const roomId = room();
+  const a = batches.receive(GOOD);
+  const part = batches.place(a.id, { roomId, blocks: 200 });
+  assert.deepEqual(status(() => batches.remove(a.id)), [409, null, 'Take its parts out of the rooms first']);
+  batches.remove(part.id);
+  assert.equal(batches.detail(a.id).blocks, 1000);
+  batches.remove(a.id);
+  assert.deepEqual(batches.list().batches, []);
+});
+
+test('shared fields edited on a part are written to the whole delivery; a note stays the row\'s own', (t) => {
+  const { batches, room } = setup(t);
+  const roomId = room();
+  const a = batches.receive(GOOD);
+  const part = batches.place(a.id, { roomId, blocks: 200 });
+  batches.edit(part.id, { pricePerBlock: 2.5, spawnBatch: '0913', note: 'part note' });
+  assert.deepEqual([batches.detail(a.id).pricePerBlock, batches.detail(a.id).spawnBatch, batches.detail(a.id).note], [2.5, '0913', null]);
+  assert.equal(batches.detail(part.id).note, 'part note');
 });
