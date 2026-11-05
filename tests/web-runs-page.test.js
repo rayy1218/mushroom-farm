@@ -57,3 +57,13 @@ test('the styles: one .rn- block, tokens only', () => {
     assert.match(selector, /\.rn-/, selector);
   }
 });
+
+test('the links in: Harvest\'s This run and past runs, Costs\' run breakdown, Batches\' room heads open the run page', () => {
+  const card = src('harvest-card.js');
+  assert.ok(card.includes("runLine.replaceChildren(runHead(run), DOT, runPageLink(run.id)); // ---- Runs ----"));
+  assert.ok(card.includes('page.append(runPageLink(run.id));'));
+  const costs = src('costs-page.js');
+  assert.ok(costs.includes("page.append(link('Run page', runHash(run.id)));"));
+  const batches = src('batches-page.js');
+  assert.ok(batches.includes('run.href = runHash(r.runId);'));
+});

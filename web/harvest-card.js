@@ -20,6 +20,7 @@ import {
 import { batchLineFor } from './batches-math.js'; // ---- Batches ----
 import { runProfitLine } from './costs-math.js'; // ---- Costs ----
 import { COSTS_HASH } from './route.js';
+import { runHash } from './route.js'; // ---- Runs ----
 
 const REFRESH_MS = 60_000;
 const COMMAND_TIMEOUT = 15000;
@@ -28,6 +29,14 @@ const SHOWN_PHONE = 5;
 const PHONE = '(max-width: 600px)';
 const SHOWN_PAST = 8; // an opened past run's latest harvests
 const YIELD = 'Settings → Yield';
+
+// ---- Runs ---- (spec 2026-11-05-runs-design.md 6): a run's page, linked from This run's head and each past run.
+function runPageLink(id) {
+  const a = el('a', 'rn-run-link', 'Run page');
+  a.href = runHash(id);
+  return a;
+}
+// ---- end Runs ----
 
 function el(tag, className, content) {
   const node = document.createElement(tag);
@@ -227,7 +236,7 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
   }
 
   function paintRun(run) {
-    runLine.textContent = runHead(run);
+    runLine.replaceChildren(runHead(run), DOT, runPageLink(run.id)); // ---- Runs ---- the run's page after its head
     // ---- Batches ----
     const line = batchLineFor(run, blocks?.runId === run.id ? blocks.reply : null);
     blocksLine.hidden = !line;
@@ -281,6 +290,9 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
     cell.colSpan = PAST_COLUMNS.length;
     const body = el('div', 'hv-run-body');
     const harvests = run.harvests ?? [];
+    const page = el('p', 'muted hv-missing'); // ---- Runs ---- the run's page first in its fold
+    page.append(runPageLink(run.id));
+    body.append(page);
     const note = missingLine(run.missing);
     if (note) body.append(note);
     if ((run.flushes ?? []).length) body.append(flushTable(run));

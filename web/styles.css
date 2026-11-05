@@ -2811,4 +2811,7 @@ button.bz-quiet:is(:disabled, [aria-disabled="true"]):hover { background: transp
   .rn-run > td::before { content: attr(data-label); display: block; color: var(--muted); font-size: var(--fs-xs); }
   .rn-crop { flex: 1 1 100%; }
 }
+/* the links in: the Harvest tab's "Run page" in its muted lines, in the line's tone (the Business blocks line's look) */
+.rn-run-link { color: inherit; text-decoration-color: var(--axis); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+.rn-run-link:hover { color: var(--ink); text-decoration-color: currentColor; }
 /* ---- end Runs ---- */

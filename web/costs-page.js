@@ -6,7 +6,7 @@
 // scroll and the focus stay.
 
 import { request, OFFLINE, OUTDATED, routeMissing } from './api.js';
-import { costsHash } from './route.js';
+import { costsHash, runHash } from './route.js'; // runHash: ---- Runs ----
 import { live, EVENT_TYPES } from './live.js';
 import { fallbackMs, createThrottle } from './live-math.js';
 import { tileNodes } from './harvest-card.js';
@@ -485,7 +485,9 @@ export function mount(container, { month = null } = {}) {
           pair.append(dt, el('dd', '', value));
           dl.append(pair);
         }
-        body.append(dl, ...monthNotes({ pending: false, notes: run.notes }).map((n) => noteNode('p', 'co-run-note', n)));
+        const page = el('p', 'co-run-note'); // ---- Runs ---- the run's page (spec 2026-11-05-runs-design.md 6)
+        page.append(link('Run page', runHash(run.id)));
+        body.append(dl, ...monthNotes({ pending: false, notes: run.notes }).map((n) => noteNode('p', 'co-run-note', n)), page);
         td.append(body);
         more.append(td);
         rows.push(more);

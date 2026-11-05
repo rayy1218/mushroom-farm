@@ -10,6 +10,7 @@ import { picture } from './pictures.js';
 import { DOT } from './text-math.js';
 import { farmDate } from './tasks-math.js';
 import { BATCHES_HASH, batchHash, batchSheetHash, roomHash } from './route.js';
+import { runHash } from './route.js'; // ---- Runs ----
 import { createBatchDialogs } from './batches-dialogs.js';
 import { makingNodes } from './batches-making.js';
 import { closeTaskDialog } from './task-dialogs.js';
@@ -270,7 +271,9 @@ export function mount(container, { run = null } = {}) {
       const h = el('h3', 'bt-room-head');
       const a = el('a', '', r.roomName);
       a.href = roomHash(r.roomId, 'harvest');
-      h.append(a, `${DOT}run since ${dateText(r.runStartedAt, today)}`);
+      const run = el('a', '', `run since ${dateText(r.runStartedAt, today)}`); // ---- Runs ---- the run's page
+      run.href = runHash(r.runId);
+      h.append(a, DOT, run);
       group.append(h, ...r.batches.map((b) => batchRow(b, placedLine(b, today), checkAction(b))), ...r.over.map((t) => el('p', 'bt-over', t)));
       return group;
     }) : [el('p', 'none', "No batches in a room's current run.")]));
