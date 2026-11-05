@@ -164,3 +164,15 @@ test('stop ends the sends in the middle of a pass', async (t) => {
   await p;
   assert.ok(sent.length <= 1, `sent ${sent.length}`);
 });
+
+test('stop ends the tries after a failed send', async (t) => {
+  const { inv, alerts, logs, state } = setup(t);
+  const spawn = inv.addItem({ name: 'Spawn', kind: 'spawn', unit: 'kg' });
+  inv.purchase({ itemId: spawn.id, qty: 1, total: 1, useBy: '2026-11-06', day: '2026-11-01' });
+  inv.purchase({ itemId: spawn.id, qty: 1, total: 1, useBy: '2026-11-07', day: '2026-11-01' });
+  state.fail = true;
+  const p = alerts.check();
+  alerts.stop();
+  await p;
+  assert.equal(logs.filter((l) => l.includes('not sent')).length, 1);
+});

@@ -83,6 +83,8 @@ test('the attention line: low and soon amber, expired red; one soon item names i
   ]);
   assert.deepEqual(attentionParts({ low: 0, soon: 2, expired: 0 }, [soon, soon]), [{ text: '2 to use within 7 days', tone: 'amber' }]);
   assert.deepEqual(attentionParts({ low: 0, soon: 0, expired: 0 }, []), []);
+  const old = item({ archived: true, useBy: { date: '2026-11-08', state: 'soon' } });
+  assert.equal(attentionParts({ low: 0, soon: 1, expired: 0 }, [old, soon])[0].text, '1 to use by 12 Nov');
 });
 
 test('the groups: by kind in order, empty kinds left out, the items that need a look first', () => {
@@ -165,6 +167,9 @@ test("Purchase's body", () => {
   assert.equal(purchaseBody({ qty: '3', total: 'free', day: '2026-11-05' }, bleach, '2026-11-05').field, 'total');
   assert.equal(purchaseBody({ qty: '3', total: '1', day: '2026-11-06' }, bleach, '2026-11-05').field, 'day');
   assert.equal(purchaseBody({ qty: '3', total: '1', day: '2026-11-05', useBy: '2026-11-01' }, bleach, '2026-11-05').field, 'useBy');
+  assert.equal(purchaseBody({ qty: '3', total: '1', day: '2025-09-30' }, bleach, '2026-11-05').field, 'day');
+  assert.equal(purchaseBody({ qty: '3', total: '1', day: '2025-09-30' }, bleach, '2026-11-05').error, 'Pick a day from the last 400 days up to today');
+  assert.equal(purchaseBody({ qty: '3', total: '1', day: '2025-10-01' }, bleach, '2026-11-05').error, undefined);
 });
 
 test("Record use's body: the time only when changed, not in the future", () => {
@@ -178,6 +183,9 @@ test("Record use's body: the time only when changed, not in the future", () => {
   assert.equal(useBody({ ...v, worker: '' }, bleach, { now, shown }).field, 'worker');
   assert.equal(useBody({ ...v, time: '10:30' }, bleach, { now, shown }).field, 'time');
   assert.equal(useBody({ ...v, time: 'soon' }, bleach, { now, shown }).field, 'time');
+  const old = useBody({ ...v, date: '2025-09-30' }, bleach, { now, shown });
+  assert.deepEqual(old, { error: 'Pick a date from the last 400 days', field: 'date' });
+  assert.equal(useBody({ ...v, date: '2025-10-01' }, bleach, { now, shown }).error, undefined);
 });
 
 test('the edit bodies carry only what changed', () => {

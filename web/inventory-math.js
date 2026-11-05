@@ -98,7 +98,7 @@ export function attentionParts(attention, items = []) {
   const parts = [];
   if (attention?.low) parts.push({ text: `${attention.low} low`, tone: 'amber' });
   if (attention?.soon) {
-    const dates = items.filter((i) => i.useBy?.state === 'soon').map((i) => i.useBy.date).sort();
+    const dates = items.filter((i) => !i.archived && i.useBy?.state === 'soon').map((i) => i.useBy.date).sort();
     parts.push({ text: attention.soon === 1 && dates.length ? `1 to use by ${dayText(dates[0])}` : `${attention.soon} to use within 7 days`, tone: 'amber' });
   }
   if (attention?.expired) parts.push({ text: `${attention.expired} expired`, tone: 'warn' });
@@ -211,6 +211,7 @@ export function purchaseBody(values, item, today) {
   if (tooLong(supplier)) return { error: `The supplier must be at most ${MAX_TEXT} characters`, field: 'supplier' };
   const day = String(values.day ?? '');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || day > today) return { error: 'Pick a day up to today', field: 'day' };
+  if (day < daysBefore(today, 400)) return { error: 'Pick a day from the last 400 days up to today', field: 'day' };
   const useBy = String(values.useBy ?? '');
   if (useBy && useBy < day) return { error: 'The use-by cannot be before the day it was bought', field: 'useBy' };
   return { itemId: item.id, qty: qty.value, total, supplier, useBy: useBy || null, day };
@@ -228,6 +229,7 @@ export function useBody(values, item, { now, shown }) {
   const time = normaliseClock(values.time);
   if (date === shown.date && time === shown.time) return body;
   if (Number.isNaN(whenMs(date, '00:00'))) return { error: 'Pick a date', field: 'date' };
+  if (date < daysBefore(farmDate(now), 400)) return { error: 'Pick a date from the last 400 days', field: 'date' };
   const at = whenMs(date, time);
   if (Number.isNaN(at)) return { error: 'Give the time as 24 h, like 08:12', field: 'time' };
   if (at > now + 60_000) return { error: 'Pick a time up to now', field: 'time' };

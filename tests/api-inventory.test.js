@@ -128,6 +128,10 @@ test('a throw-out of a lot near its use-by; unknown move and unknown item are 40
   const out = await call('POST', `/api/inventory/lots/${buy.body.id}/throw-out`, { worker: 'Ali' });
   assert.equal(out.status, 201, JSON.stringify(out.body));
   assert.equal(out.body.qty, -3);
-  assert.equal((await call('PUT', '/api/inventory/moves/99999', { qty: 1 })).status, 404);
-  assert.equal((await call('POST', '/api/inventory/uses', { itemId: 99999, qty: 1, worker: 'Ali' })).status, 404);
+  const noMove = await call('PUT', '/api/inventory/moves/99999', { qty: 1 });
+  assert.equal(noMove.status, 404);
+  assert.equal(noMove.body.error, 'No such record');
+  const noItem = await call('POST', '/api/inventory/uses', { itemId: 99999, qty: 1, worker: 'Ali' });
+  assert.equal(noItem.status, 404);
+  assert.equal(noItem.body.error, 'No such item');
 });
