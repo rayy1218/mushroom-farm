@@ -32,7 +32,7 @@
 | `web/styles.css` | Changed | The `.bt-` block at the end |
 | `DESIGN.md`, `README.md`, `PRODUCT.md` | Changed | A Batches section or row |
 | `tests/db-batches.test.js`, `tests/batches-math.test.js`, `tests/batches.test.js`, `tests/api-batches.test.js`, `tests/web-batches-math.test.js` | New | Tests |
-| `tests/db-machines.test.js:86`, `tests/controller-fresh-air.test.js:171`, `tests/web-route.test.js` | Changed | `user_version` 21; the new routes |
+| `tests/db-machines.test.js:86`, `tests/controller-fresh-air.test.js:171` and 13 more migration tests (`db-*`, `dehumidifier-review`, `gateways`, `lights`, `manual-since`, `db.test.js`), `tests/web-route.test.js` | Changed | `user_version` 21; the new routes |
 
 ---
 
@@ -58,7 +58,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { openDb } from '../server/db.js';
-import { STOCK } from './batches-fixture.js';
+import { openWithStock } from './batches-fixture.js';
 
 const ROOM = { name: 'Room 1', length: 6, width: 4, height: 2.5 };
 const BATCH = { kind: 'bought', crop: 'oyster', supplier: 'Agro Supplies', receivedAt: 1000, blocks: 1200, pricePerBlock: 2.3, createdAt: 1000 };
@@ -226,7 +226,7 @@ CREATE TABLE IF NOT EXISTS batches (
   incubated_to    INTEGER,
   note            TEXT,
   created_at      INTEGER NOT NULL,
-  CHECK ((run_id IS NULL) = (room_id IS NULL) AND (run_id IS NULL) = (placed_at IS NULL)),
+  CHECK ((run_id IS NULL) = (room_id IS NULL) AND (run_id IS NULL OR placed_at IS NOT NULL)),
   CHECK ((block_kg IS NULL) = (water_pct IS NULL))
 ) STRICT;
 CREATE INDEX IF NOT EXISTS batches_by_run ON batches (run_id);
@@ -527,6 +527,7 @@ test("status and the run's blocks of the crop", () => {
   assert.equal(statusOf(b({})), 'waiting');
   assert.equal(statusOf(b({ runId: 3 })), 'placed');
   assert.equal(statusOf(b({ runId: 3, runEndedAt: 5000 })), 'past');
+  assert.equal(statusOf(b({ placedAt: 3000 })), 'past', 'its room was deleted');
   assert.equal(runBlocksOf(b({})), null);
   assert.equal(runBlocksOf(b({ runId: 3, runCrops: [{ crop: 'pink', blocks: 300 }, { crop: 'oyster', blocks: 950 }] })), 950);
   assert.equal(runBlocksOf(b({ runId: 3, runCrops: [{ crop: 'pink', blocks: 300 }] })), 0);
@@ -587,8 +588,9 @@ export function blockCost(rows) {
   return round(rows.reduce((s, b) => s + b.blocks * b.pricePerBlock, 0), 2);
 }
 
-// 'waiting' (no room), 'placed' (in a room's open run) or 'past' (its run ended).
-export const statusOf = (b) => (b.runId == null ? 'waiting' : b.runEndedAt == null ? 'placed' : 'past');
+// 'waiting' (not yet in a room), 'placed' (in a room's open run) or 'past' (its run ended, or its room was deleted: a placed
+// time with no room).
+export const statusOf = (b) => (b.runId == null ? (b.placedAt == null ? 'waiting' : 'past') : b.runEndedAt == null ? 'placed' : 'past');
 
 // The run's blocks of the batch's crop (the Crop tab's count); null for a waiting batch.
 export function runBlocksOf(b) {
@@ -647,7 +649,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDb } from '../server/db.js';
 import { createBatches } from '../server/batches.js';
-import { STOCK } from './batches-fixture.js';
+import { openWithStock } from './batches-fixture.js';
 
 const ROOM = { name: 'Container 1', length: 6, width: 4, height: 2.5 };
 const DAY = 86_400_000;
@@ -655,9 +657,8 @@ const NOW = Date.UTC(2026, 10, 5, 4); // 5 Nov 2026 12:00 farm time
 const GOOD = { crop: 'oyster', supplier: 'Agro Supplies', receivedAt: NOW - 2 * DAY, blocks: 1200, pricePerBlock: 2.3, spawnBatch: '0912' };
 
 function setup(t, { stock = false } = {}) {
-  const db = openDb(':memory:');
-  t.after(() => db.close());
-  if (stock) db.batches.exec(STOCK);
+  const db = stock ? openWithStock(t) : openDb(':memory:');
+  if (!stock) t.after(() => db.close());
   let clock = NOW;
   const batches = createBatches({ db, now: () => clock });
   const told = [];
@@ -1007,11 +1008,11 @@ export function createBatches({ db, now = Date.now }) {
       const b = batchOf(id);
       const fields = checkFields(body, now(), b);
       const family = store.family(firstOf(b));
-      if ('crop' in fields && fields.crop !== b.crop && family.some((x) => x.runId != null)) {
+      if ('crop' in fields && fields.crop !== b.crop && family.some((x) => x.placedAt != null)) {
         throw conflict('Take the blocks out of the rooms to change the crop', 'crop');
       }
       if ('blocks' in fields && fields.blocks !== b.blocks) {
-        if (b.parentId != null || family.length > 1 || b.runId != null) throw conflict('Blocks change only on a waiting batch with no parts', 'blocks');
+        if (b.parentId != null || family.length > 1 || b.placedAt != null) throw conflict('Blocks change only on a waiting batch with no parts', 'blocks');
         if (fields.blocks < b.lost) throw bad(`Blocks can't be fewer than the ${grouped(b.lost)} lost`, 'blocks');
       }
       const shared = Object.fromEntries(Object.entries(fields).filter(([k]) => SHARED.includes(k)));
@@ -1042,7 +1043,7 @@ export function createBatches({ db, now = Date.now }) {
     place(id, body) {
       if (!isPlain(body)) throw bad('Body must be a JSON object');
       const b = batchOf(id);
-      if (b.runId != null) throw conflict(`These blocks are in ${b.roomName} already`);
+      if (b.placedAt != null) throw conflict(b.runId != null ? `These blocks are in ${b.roomName} already` : 'These blocks went into a room that was deleted');
       const room = Number.isInteger(body.roomId) ? db.getRoom(body.roomId) : null;
       if (!room) throw bad('Pick a room', 'roomId');
       const good = goodOf(b);
@@ -1078,7 +1079,7 @@ export function createBatches({ db, now = Date.now }) {
       if (b.runEndedAt != null) throw conflict(`${b.roomName}'s run has ended`);
       const first = b.parentId == null ? null : store.get(b.parentId);
       const waitingId = store.tx(() => {
-        if (first && first.runId == null) {
+        if (first && first.placedAt == null) {
           store.update(first.id, { blocks: first.blocks + b.blocks });
           store.moveChecks(b.id, first.id);
           store.remove(b.id);
@@ -2120,7 +2121,8 @@ export function weightText(b) {
   return [kgText(b.blockKg), `${waterText(b.waterPct)} water`, `${kgText(b.dryKg)} dry`].join(DOT);
 }
 export const CAUSE_NAMES = { green: 'Green mould', black: 'Black mould', bacterial: 'Bacterial / wet spot', pests: 'Pests', other: 'Other' };
-export const roomRunText = (b) => (b.roomName && finite(b.runStartedAt) ? `${b.roomName}${DOT}run of ${dayMonth(farmDate(b.runStartedAt))}` : DASH);
+export const roomRunText = (b) => (b.roomName && finite(b.runStartedAt) ? `${b.roomName}${DOT}run of ${dayMonth(farmDate(b.runStartedAt))}`
+  : finite(b.placedAt) ? 'a deleted room' : DASH);
 
 // ---- the Batches page ----
 
@@ -2427,8 +2429,8 @@ export function createBatchDialogs({ onChanged, onError }) {
   // b: the batch's detail (GET /api/batches/:id).
   function edit(b) {
     const can = {
-      cropEditable: b.delivery.every((x) => x.runId === null),
-      blocksEditable: b.parentId === null && b.delivery.length === 1 && b.runId === null,
+      cropEditable: b.delivery.every((x) => x.placedAt === null),
+      blocksEditable: b.parentId === null && b.delivery.length === 1 && b.placedAt === null,
     };
     const lead = [];
     if (b.delivery.length > 1) lead.push('The supplier, spawn, price and weight change on every part of this delivery.');
@@ -2477,7 +2479,7 @@ export function createBatchDialogs({ onChanged, onError }) {
   // b: a placed batch's detail.
   function takeOut(b) {
     const first = b.delivery.find((x) => x.parentId === null);
-    const folds = b.parentId !== null && first?.runId === null;
+    const folds = b.parentId !== null && first?.placedAt === null;
     ask({
       title: `Take ${countBlocks(b.blocks, b.crop)} out of ${b.roomName}?`,
       lead: [folds ? "They go back to the delivery's waiting blocks." : 'The batch waits again, to be put into a room.'],
