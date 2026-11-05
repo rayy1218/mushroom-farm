@@ -209,7 +209,7 @@ export function placeBody(v, good) {
   return { body: { roomId: Number(v.roomId), blocks: n ?? good } };
 }
 
-// The rooms (GET /api/rooms) a batch of `crop` can go into (their run has the crop) and why the others cannot.
+// The rooms (GET /api/overview's, with their crop summary) a batch of `crop` can go into (their run has the crop) and why the others cannot.
 export function roomChoices(rooms, crop) {
   const ok = [];
   const off = [];

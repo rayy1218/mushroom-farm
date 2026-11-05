@@ -110,7 +110,7 @@ export function createBatchDialogs({ onChanged, onError }) {
   async function place(b) {
     let rooms;
     try {
-      rooms = await request('GET', '/api/rooms');
+      rooms = (await request('GET', '/api/overview'))?.rooms; // each with its crop summary (/api/rooms has no crops)
     } catch (err) {
       onError(errorText(err));
       return;
