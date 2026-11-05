@@ -55,6 +55,8 @@ export function longDayText(date) {
   const m = dateParts(date);
   return m && MONTHS[Number(m[2]) - 1] ? `${Number(m[3])} ${MONTHS[Number(m[2]) - 1]} ${m[1]}` : DASH;
 }
+// "12 Nov" this year, "10 Apr 2027" another (today: the farm's 'YYYY-MM-DD'; none: the short form).
+export const dayNear = (date, today = null) => (today && String(date).slice(0, 4) !== today.slice(0, 4) ? longDayText(date) : dayText(date));
 
 // The farm day n days before `date` ('YYYY-MM-DD'): the date boxes' earliest day.
 export const daysBefore = (date, n) => new Date(Date.parse(`${date}T00:00:00Z`) - n * 86_400_000).toISOString().slice(0, 10);
@@ -93,9 +95,9 @@ export function useByLine(item) {
   if (!finite(u.qty)) return { text: `${expired ? 'Expired' : 'Use by'} ${day}`, tone: expired ? 'warn' : 'amber' };
   return { text: `${qtyText(u.qty, item.unit)} ${expired ? 'expired' : 'use by'} ${day}`, tone: expired ? 'warn' : 'amber' };
 }
-export function lotPill(lot) {
-  if (lot.state === 'expired') return { text: 'Expired', tone: 'warn' };
-  if (lot.state === 'soon') return { text: `Use by ${dayText(lot.useBy)}`, tone: 'amber' };
+export function lotPill(lot, today = null) {
+  if (lot.state === 'expired') return { text: `Expired ${dayNear(lot.useBy, today)}`, tone: 'warn' };
+  if (lot.state === 'soon') return { text: `Use by ${dayNear(lot.useBy, today)}`, tone: 'amber' };
   return null;
 }
 
@@ -170,21 +172,22 @@ export function doneText({ kind, qty, unit, name, room = null, worker = null, co
 // What is left of Undo's minute for a record saved at `at` (ms), at `now`; 0 when over or unknown.
 export const undoLeft = (at, now) => (finite(at) ? Math.max(0, Math.min(UNDO_MS, UNDO_MS - (now - at))) : 0);
 
-// A lot's name: "Bought 1 Nov", "Batch 14", "Count 3 Nov".
-export function lotLabel(lot) {
+// A lot's name under the head From: "1 Nov" (bought), "Batch 14", "Count 3 Nov"; another year's day with its year.
+export function lotLabel(lot, today = null) {
   if (lot.refKind === 'batch') return `Batch ${lot.refId}`;
-  if (lot.refKind === 'adjust') return `Count ${dayText(farmDate(lot.at))}`;
-  return `Bought ${dayText(farmDate(lot.at))}`;
+  if (lot.refKind === 'adjust') return `Count ${dayNear(farmDate(lot.at), today)}`;
+  return dayNear(farmDate(lot.at), today);
 }
 
 const joined = (...parts) => parts.filter(Boolean).join(DOT);
 
 // A history row: { when ("3 Nov" for a purchase, "3 Nov 08:12" else), what, qty (signed), edit: 'edit' (a purchase or a
 // use), 'delete' (a count: deleted, not edited) or null (a batch move: Batches') }.
-export function moveLine(m, item) {
-  const when = m.refKind === 'purchase' ? dayText(farmDate(m.at)) : `${dayText(farmDate(m.at))} ${farmTime(m.at)}`;
+export function moveLine(m, item, today = null) {
+  const day = dayNear(farmDate(m.at), today); // another year's with its year
+  const when = m.refKind === 'purchase' ? day : `${day} ${farmTime(m.at)}`;
   let what;
-  if (m.refKind === 'purchase') what = joined(m.supplier ? `Bought from ${m.supplier}` : 'Bought', rmText(m.total), m.useBy && `use by ${dayText(m.useBy)}`);
+  if (m.refKind === 'purchase') what = joined(m.supplier ? `Bought from ${m.supplier}` : 'Bought', rmText(m.total), m.useBy && `use by ${dayNear(m.useBy, today)}`);
   else if (m.refKind === 'adjust') what = joined(`Counted ${qtyText(m.counted, item.unit)}`, m.worker);
   else if (m.refKind === 'batch') what = joined(`Batch ${m.refId}`, m.qty > 0 ? 'received' : item.kind === 'blocks' ? `into ${m.roomName ?? 'a room'}` : 'made');
   else if (m.lotId !== null && m.lotId !== undefined) what = joined('Thrown out', m.reason === 'Expired' ? 'expired' : null, m.worker);

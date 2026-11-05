@@ -13,17 +13,19 @@ import {
 import { farmDate } from './tasks-math.js';
 import { pillNode } from './inventory-page.js';
 import { createDoneLine } from './inventory-done.js';
-import { qtyText, countedText, lotLabel, lotPill, moveLine, dayText, useByLine, KIND_ONE } from './inventory-math.js';
+import { qtyText, countedText, lotLabel, lotPill, moveLine, dayNear, useByLine, KIND_ONE } from './inventory-math.js';
 
 const REFRESH_MS = 60_000;
 const HISTORY_SHOWN = 20;
 
 const TEMPLATE = `
+  <div class="iv-page">
   <div class="page-head">
     <div class="page-titles">
       <a class="back iv-back" data-back>Inventory</a>
       <h1 class="page-title" tabindex="-1" data-title>Loading…</h1>
       <p class="page-sub" data-sub></p>
+      <p class="iv-archived-note" data-archived-note hidden><span class="pill" data-tone="none">Archived</span> It is left out of the list, the counts and the messages; Bring back puts it back.</p>
     </div>
     <div class="iv-tools" data-tools hidden>
       <button type="button" class="primary" data-use>Record use</button>
@@ -45,12 +47,15 @@ const TEMPLATE = `
       <h2 id="iv-lots-title">Lots</h2>
       <div class="us-table-wrap"><table class="us-table iv-lot-table">
         <caption class="sr-only">Lots</caption>
-        <thead><tr><th scope="col">Bought</th><th scope="col" class="num">Qty</th><th scope="col" class="num">Left</th><th scope="col">Use by</th><th scope="col"><span class="sr-only">Action</span></th></tr></thead>
+        <thead><tr><th scope="col">From</th><th scope="col" class="num">Qty</th><th scope="col" class="num">Left</th><th scope="col">Use by</th><th scope="col"><span class="sr-only">Action</span></th></tr></thead>
         <tbody data-lots></tbody>
       </table></div>
     </section>
     <section class="card iv-history" aria-labelledby="iv-history-title">
-      <h2 id="iv-history-title" tabindex="-1" data-history-title>History</h2>
+      <div class="iv-history-head">
+        <h2 id="iv-history-title" tabindex="-1" data-history-title>History</h2>
+        <p class="muted iv-history-note" data-batch-note hidden>Batch records change in Batches</p>
+      </div>
       <p class="none" data-no-history hidden>Nothing recorded yet.</p>
       <ul class="iv-moves" data-moves></ul>
       <button type="button" class="iv-link" data-all hidden></button>
@@ -59,7 +64,8 @@ const TEMPLATE = `
   <section class="card iv-empty" data-gone hidden>
     <p class="none">That item no longer exists.</p>
     <a class="button" data-gone-back>Back to Inventory</a>
-  </section>`;
+  </section>
+  </div>`;
 
 function el(tag, className, content) {
   const node = document.createElement(tag);
@@ -86,7 +92,7 @@ export function mount(container, { id }) {
     title: q('[data-title]'), sub: q('[data-sub]'), tools: q('[data-tools]'), use: q('[data-use]'), purchase: q('[data-purchase]'),
     edit: q('[data-edit]'), archive: q('[data-archive]'), banner: q('.banner'), bannerText: q('[data-banner-text]'), body: q('[data-body]'),
     tiles: q('[data-tiles]'), lotsCard: q('[data-lots-card]'), lots: q('[data-lots]'), moves: q('[data-moves]'), noHistory: q('[data-no-history]'),
-    all: q('[data-all]'), gone: q('[data-gone]'),
+    all: q('[data-all]'), gone: q('[data-gone]'), archivedNote: q('[data-archived-note]'), batchNote: q('[data-batch-note]'),
   };
   q('[data-back]').href = INVENTORY_HASH;
   q('[data-gone-back]').href = INVENTORY_HASH;
@@ -123,6 +129,8 @@ export function mount(container, { id }) {
     els.use.hidden = it.archived;
     els.archive.hidden = blocks;
     els.archive.textContent = it.archived ? 'Bring back' : 'Archive';
+    els.archivedNote.hidden = !it.archived; // why Record use and Purchase are gone (audit #18)
+    const today = farmDate(Date.now());
     els.body.hidden = false;
 
     const counted = countedText(it.lastCountedAt, Date.now());
@@ -145,12 +153,12 @@ export function mount(container, { id }) {
     els.lotsCard.hidden = it.lots.length === 0;
     els.lots.replaceChildren(...it.lots.map((lot) => {
       const tr = el('tr');
-      const head = el('th', '', lotLabel(lot));
+      const head = el('th', '', lotLabel(lot, today));
       head.scope = 'row';
-      const useBy = el('td', 'iv-lot-useby');
-      const lp = lotPill(lot);
+      const useBy = el('td', lot.useBy ? 'iv-lot-useby' : 'iv-lot-useby iv-lot-none'); // a lone "—" is not shown on a phone
+      const lp = lotPill(lot, today);
       if (lp) useBy.append(pillNode(lp));
-      else useBy.textContent = lot.useBy ? dayText(lot.useBy) : '—';
+      else useBy.textContent = lot.useBy ? dayNear(lot.useBy, today) : '—';
       const action = el('td', 'iv-lot-action');
       if (lot.state) {
         const b = el('button', 'danger-text', 'Throw out');
@@ -164,14 +172,15 @@ export function mount(container, { id }) {
 
     const moves = showAll ? it.moves : it.moves.slice(0, HISTORY_SHOWN);
     els.noHistory.hidden = it.moves.length > 0;
+    els.batchNote.hidden = !it.moves.some((m) => m.refKind === 'batch'); // once, not on every row (audit #17)
     els.moves.replaceChildren(...moves.map((m) => {
-      const line = moveLine(m, it);
+      const line = moveLine(m, it, today);
       const li = el('li', 'iv-move');
       const text = el('div', 'iv-move-text');
       text.append(el('span', 'iv-move-what', line.what), el('span', 'iv-move-when', line.when));
       li.append(text, el('span', 'iv-move-qty', line.qty));
       if (line.edit === null) {
-        li.append(el('span', 'iv-move-note', 'Change it in Batches'));
+        li.append(el('span', 'iv-move-edit-none')); // a batch move: Batches' (said once, in the card's head)
       } else {
         const b = el('button', 'iv-link iv-move-edit', line.edit === 'edit' ? 'Edit' : 'Delete');
         b.type = 'button';
@@ -203,7 +212,7 @@ export function mount(container, { id }) {
         els.body.hidden = true;
         els.tools.hidden = true;
         els.gone.hidden = false;
-        els.title.textContent = 'Item';
+        els.title.textContent = 'Item not found';
         els.banner.hidden = true;
         document.title = 'Inventory · Mushroom farm';
         return;

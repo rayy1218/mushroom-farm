@@ -57,7 +57,7 @@ test("the item page: mounted; its tiles, lots and history; batch moves not edite
   assert.ok(app.includes(": route.name === 'inventoryItem' ? inventoryItem.mount(view, { id: route.id })"));
   const page = src('inventory-item.js');
   assert.ok(page.includes('request(\'GET\', `/api/inventory/items/${id}`)'));
-  for (const words of ['In stock', 'Reorder at', 'Last counted', 'Lots', 'History', 'Change it in Batches', 'Throw out', 'Bring back', 'That item no longer exists.']) {
+  for (const words of ['In stock', 'Reorder at', 'Last counted', 'Lots', 'History', 'Batch records change in Batches', 'Throw out', 'Bring back', 'That item no longer exists.']) {
     assert.ok(page.includes(words), words);
   }
   assert.ok(page.includes('HISTORY_SHOWN = 20'));
@@ -202,4 +202,19 @@ test('audit list fixes: empty farm (#9), Count stock button (#10), pill by the n
   assert.ok(css.includes('.iv-page { max-width: 1040px; }'));
   assert.ok(css.includes('.iv-tools a.button { min-height: 36px; padding: 7px 14px; background: var(--raised);'));
   assert.ok(css.includes('.iv-table .iv-row-archived :is(th, td, a) { color: var(--muted); }'));
+});
+
+test('audit item page fixes: history columns (#15), lots From and years (#16), Batches said once (#17), archived says so (#18), phone tiles (#19)', () => {
+  const page = src('inventory-item.js');
+  assert.ok(page.includes('<div class="iv-page">'));
+  assert.ok(page.includes('<th scope="col">From</th>'));
+  assert.ok(page.includes('lotLabel(lot, today)') && page.includes('lotPill(lot, today)') && page.includes('moveLine(m, it, today)'));
+  assert.ok(page.includes("'iv-lot-useby iv-lot-none'"));
+  assert.ok(page.includes("els.batchNote.hidden = !it.moves.some((m) => m.refKind === 'batch');"));
+  assert.ok(!page.includes("'Change it in Batches'"));
+  assert.ok(page.includes('els.archivedNote.hidden = !it.archived;'));
+  assert.ok(page.includes("els.title.textContent = 'Item not found';"));
+  const css = src('styles.css');
+  assert.ok(css.includes('.iv-move { display: grid; grid-template-columns: minmax(0, 1fr) 13ch 4.5rem;'));
+  assert.ok(css.includes('.iv-tiles > :last-child:nth-child(odd) { grid-column: 1 / -1; }'));
 });

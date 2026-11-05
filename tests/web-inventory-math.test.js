@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  metaLine, needsLook, keptCounts, leaveText, doneText, undoLeft, UNDO_MS, itemGroups, stockHint, useByLine, qtyText, rmText, perUnitText, dayText, longDayText, daysBefore, pillOf, lotPill, countedText, attentionParts, groupItems, lotLabel,
+  dayNear, metaLine, needsLook, keptCounts, leaveText, doneText, undoLeft, UNDO_MS, itemGroups, stockHint, useByLine, qtyText, rmText, perUnitText, dayText, longDayText, daysBefore, pillOf, lotPill, countedText, attentionParts, groupItems, lotLabel,
   moveLine, deleteTitle, deleteLead, throwOutTitle, throwOutLead, numberIn, itemBody, purchaseBody, useBody, purchaseEditBody,
   useEditBody, overStock, countBody, sheetCells, sheetRange, sheetEmpty, SHEET_COLUMNS, KIND_OPTIONS, UNIT_OPTIONS,
 } from '../web/inventory-math.js';
@@ -63,7 +63,7 @@ test('the pills: archived, then expired (red), Low, a use-by (amber); none for a
   assert.deepEqual(pillOf(item({ useBy: { date: '2026-11-12', state: 'soon' } })), { text: 'Use by 12 Nov', tone: 'amber' });
   assert.equal(pillOf(item()), null);
   assert.deepEqual(lotPill({ state: 'soon', useBy: '2026-11-12' }), { text: 'Use by 12 Nov', tone: 'amber' });
-  assert.deepEqual(lotPill({ state: 'expired', useBy: '2026-11-04' }), { text: 'Expired', tone: 'warn' });
+  assert.deepEqual(lotPill({ state: 'expired', useBy: '2026-11-04' }), { text: 'Expired 4 Nov', tone: 'warn' }, 'its day (audit #16)');
   assert.equal(lotPill({ state: null, useBy: '2027-01-01' }), null);
 });
 
@@ -113,7 +113,8 @@ test('the groups: by kind in order, empty kinds left out, the items that need a 
 });
 
 test("a lot's name and a move's line", () => {
-  assert.equal(lotLabel({ refKind: 'purchase', at: at('2026-11-01') }), 'Bought 1 Nov');
+  assert.equal(lotLabel({ refKind: 'purchase', at: at('2026-11-01') }), '1 Nov', 'the head says From (audit #16)');
+  assert.equal(lotLabel({ refKind: 'purchase', at: at('2025-12-30') }, '2026-11-05'), '30 Dec 2025', 'another year: its year');
   assert.equal(lotLabel({ refKind: 'batch', refId: 14, at: 0 }), 'Batch 14');
   assert.equal(lotLabel({ refKind: 'adjust', at: at('2026-11-03') }), 'Count 3 Nov');
   const bleach = item();
@@ -324,4 +325,14 @@ test("the attention line's parts filter the list (audit #13): the items each par
   assert.deepEqual(all.filter((i) => needsLook(i, 'soon')).map((i) => i.id), [2]);
   assert.deepEqual(all.filter((i) => needsLook(i, 'expired')).map((i) => i.id), [3]);
   assert.equal(needsLook(low, null), true, 'no filter: every item');
+});
+
+test("a day with its year only when it is not this year's (audit #16)", () => {
+  assert.equal(dayNear('2026-11-12', '2026-11-05'), '12 Nov');
+  assert.equal(dayNear('2027-04-10', '2026-11-05'), '10 Apr 2027');
+  assert.equal(dayNear('2027-04-10'), '10 Apr', 'no today: the short form');
+  assert.deepEqual(lotPill({ state: 'soon', useBy: '2027-01-02' }, '2026-12-30'), { text: 'Use by 2 Jan 2027', tone: 'amber' });
+  const old = moveLine({ refKind: 'purchase', at: at('2025-10-03'), qty: 5, total: 25, supplier: null, useBy: '2027-04-10' }, item(), '2026-11-05');
+  assert.equal(old.when, '3 Oct 2025');
+  assert.equal(old.what.replace(/\u00a0/g, ' '), 'Bought · RM 25.00 · use by 10 Apr 2027');
 });
