@@ -379,7 +379,7 @@ export const SHEET_WRITE = [8, 10, 11];
 // Each column's printed width (A4 landscape, 273 mm inside the margins; audit #24: Equipment, PHI and Re-entry were 15 to
 // 20 mm and Crop wrapped over three lines): Date, Crop, Location, Trade name, LRMP, Price, Qty, Reason, Equipment,
 // Operator, PHI, Re-entry.
-export const SHEET_WIDTHS_MM = [20, 24, 20, 34, 25, 21, 20, 24, 26, 18, 14, 18];
+export const SHEET_WIDTHS_MM = [20, 24, 20, 34, 30, 25, 20, 24, 26, 18, 14, 18];
 // Empty rows after the records, for entries by hand.
 export const SHEET_BLANK_ROWS = 6;
 export const SHEET_DAYS = [30, 90, 365];
