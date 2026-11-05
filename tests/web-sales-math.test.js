@@ -6,7 +6,10 @@ import assert from 'node:assert/strict';
 import {
   priceText, ageText, linesShort, lineParts, paidMark, pageTiles, deliveryRow, cropRows, buyerRows, CROP_COLUMNS, BUYER_COLUMNS,
   lineTotal, footText, prefill, unlikely, saleBody, sheetWithSales, sheetTotals, emptyText, deleteTitle, deleteLead, num,
+  round2, money,
 } from '../web/sales-math.js';
+import { rmText } from '../web/harvest-math.js';
+import { deliveryBody } from '../server/sales-math.js';
 
 const nb = '\u00a0';
 const NOW = Date.UTC(2026, 10, 5, 2); // Thu 5 Nov 2026 10:00 at the farm
@@ -166,4 +169,27 @@ test('saleBody refuses what the server refuses: kg over 0 up to 10,000, RM per k
   assert.deepEqual(body('1', '1000.5'), { error: 'RM per kg must be 0 to 1,000', field: 'lines.1.priceKg' });
   assert.equal(body('1', '1000').lines[1].priceKg, 1000);
   assert.equal(body('1', '0').lines[1].priceKg, 0, 'a free sample');
+});
+
+test('money rounding: the dialog\'s total is the total recorded (kg and RM per kg to 2 places first, float-safe)', () => {
+  const cases = [
+    ['12.345', '10', 12.35, 10, 'RM 123.50', '12.35 kg'],
+    ['1.5', '2.675', 1.5, 2.68, 'RM 4.02', '1.50 kg'],
+    ['1.005', '3.335', 1.01, 3.34, 'RM 3.37', '1.01 kg'],
+  ];
+  for (const [kg, priceKg, k, p, rm, kgWords] of cases) {
+    const body = saleBody({ date: '2026-11-05', buyerId: '3', lines: [{ crop: 'oyster', kg, priceKg, roomId: '' }] }, { now: NOW });
+    assert.equal(body.lines[0].kg, k, `${kg} kg sent`);
+    assert.equal(body.lines[0].priceKg, p, `${priceKg} RM per kg sent`);
+    const recorded = deliveryBody({ ...body, soldAt: NOW - 60_000 }, { now: NOW }).lines[0].total;
+    assert.equal(lineTotal(kg, priceKg), rmText(recorded), `${kg} × ${priceKg}: the line's total`);
+    assert.equal(lineTotal(kg, priceKg), rm.replace(' ', nb));
+    assert.equal(footText([{ kg, priceKg }]), `${kgWords.replace(' ', nb)}${dot}${rm.replace(' ', nb)}`);
+  }
+  assert.equal(round2(1.005), 1.01);
+  assert.equal(round2(-1.005), -1.01);
+  assert.equal(round2(1e-7), 0);
+  assert.equal(round2(1e21), 1e21);
+  assert.equal(round2(0.1 + 0.2), 0.3);
+  assert.equal(money(1.01, 3.34), 3.37);
 });

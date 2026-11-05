@@ -166,3 +166,10 @@ test('audit: Buyers: Restore and Archive come back to the buyer with a status li
   assert.ok(dialogs.includes('backToList'));
   assert.ok(dialogs.includes('lead: [`${deliveryRow(delivery).day}${DOT}${delivery.buyer}${DOT}${rmText(delivery.total)}`]'), 'Mark paid names the day');
 });
+
+test('the page repaints when the phone query changes (the row limit in the painted key); the listener goes on unmount', () => {
+  assert.ok(page.includes('const media = window.matchMedia(PHONE);'));
+  assert.ok(page.includes("media.addEventListener('change', onMedia);"));
+  assert.ok(page.includes("media.removeEventListener('change', onMedia);"));
+  assert.ok(page.includes('const key = JSON.stringify([sales, showAll, limit]);'));
+});

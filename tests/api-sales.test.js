@@ -81,6 +81,9 @@ test('the summary for Costs: the contract\'s exact shape; the range and the CSV'
   const s = await call('GET', '/api/sales/summary');
   assert.deepEqual(s.body, { kg: 2, total: 20, byCrop: [{ crop: 'oyster', kg: 2, total: 20 }], byRun: [] });
   assert.equal((await call('GET', '/api/sales/summary?from=2026-13-01')).status, 400);
+  const backwards = await call('GET', '/api/sales/summary?from=2026-11-05&to=2026-11-04');
+  assert.equal(backwards.status, 400);
+  assert.deepEqual(backwards.body, { error: 'from must be on or before to', field: 'from' });
   assert.equal((await call('GET', '/api/sales/summary?run=x')).status, 400);
   assert.equal((await call('GET', '/api/sales/summary?run=3')).body.kg, 0);
   assert.equal((await call('GET', '/api/sales/range?from=2026-11-01&to=2026-11-05')).status, 200);

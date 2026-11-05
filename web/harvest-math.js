@@ -109,9 +109,6 @@ export function sheetRows(records) {
   });
 }
 
-// The sheet's Total row: the period's kg to 2 decimals (the column's head has the unit), '' when unknown.
-export const sheetTotal = (farm) => (finite(farm?.totals?.kg) ? grouped(farm.totals.kg, 2) : '');
-
 // ---- the room's Harvest tab ----
 
 const blocksText = (n) => `${grouped(n, 0)}${NB}${n === 1 ? 'block' : 'blocks'}`;

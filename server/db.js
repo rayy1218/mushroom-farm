@@ -289,7 +289,8 @@ CREATE INDEX IF NOT EXISTS harvests_by_task ON harvests (task_id) WHERE task_id 
 
 // ---- Sales (spec 2026-11-05-sales-design.md 2) ----
 // A sale is one crop line of a delivery to a buyer; the lines of a delivery share delivery_id (its first line's id when
-// recorded; ids are never reused, AUTOINCREMENT) and are written together. buyer: the buyer's name at the sale (a rename rewrites it). room_id and run_id null: mixed, not tied.
+// recorded; ids are never reused, AUTOINCREMENT) and are written together. buyer: the buyer's name at the sale (a rename
+// rewrites it). room_id and run_id null: mixed, not tied.
 const SALES = `
 CREATE TABLE IF NOT EXISTS buyers (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -331,7 +332,8 @@ function salesQ(db) {
   s = {
     runAt: db.prepare(`SELECT id FROM runs WHERE room_id = ? AND started_at <= ? AND (ended_at IS NULL OR ended_at > ?)
                        ORDER BY started_at DESC, id DESC LIMIT 1`),
-    insertSale: db.prepare(`INSERT INTO sales (delivery_id, sold_at, crop, kg, price_kg, total, buyer, buyer_id, invoice_no, room_id, run_id, note, paid_at, created_at)
+    insertSale: db.prepare(`INSERT INTO sales (delivery_id, sold_at, crop, kg, price_kg, total, buyer, buyer_id, invoice_no,
+                                               room_id, run_id, note, paid_at, created_at)
                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
     setDeliveryId: db.prepare('UPDATE sales SET delivery_id = ? WHERE id = ?'),
     deliveryLines: db.prepare('SELECT * FROM sales WHERE delivery_id = ? ORDER BY id'),
@@ -2101,7 +2103,7 @@ export function openDb(path, { log = console.error } = {}) {
 
     // Writes a delivery: { id (null: new), soldAt, buyerId, buyer, invoiceNo, note, lines: [{ crop, kg, priceKg, total,
     // roomId, runId }] } at `at`. An edit replaces the lines and keeps the id and the paid time. → the delivery's id, or null
-    // when id names no delivery.
+    // when id names no delivery. Throws when there are no lines.
     saveDelivery({ id = null, soldAt, buyerId, buyer, invoiceNo, note, lines }, at) {
       const s = salesQ(db);
       if (!lines.length) throw new Error('A delivery needs lines');

@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   SalesError, deliveryBody, buyerBody, paidBody, deliveriesOf, owedOf, byCropOf, byBuyerOf, summaryOf, csvRows, CSV_HEADER,
+  round2, money,
 } from '../server/sales-math.js';
 
 const NOW = Date.UTC(2026, 10, 5, 2); // 5 Nov 2026 10:00 at the farm
@@ -143,4 +144,18 @@ test('review: ties by id, owed ignores paid, a crop sold at RM 0, byRun sorted, 
   const lines = csvRows([d(2, 5, 'Ah, Seng'), d(1, 4, 'Bob')]);
   assert.equal(lines[1], '2026-11-04,09:00,Bob,,Grey oyster,Mixed,,1,1,1,,');
   assert.equal(lines[2], '2026-11-05,09:00,"Ah, Seng",,Grey oyster,Mixed,,1,1,1,,');
+});
+
+test('money rounding: kg and RM per kg to 2 places float-safe, the total from them', () => {
+  const line = (kg, priceKg) => deliveryBody(ok([{ crop: 'oyster', kg, priceKg }]), { now: NOW }).lines[0];
+  assert.deepEqual(line(12.345, 10), { crop: 'oyster', kg: 12.35, priceKg: 10, total: 123.5, roomId: null });
+  assert.deepEqual(line(1.5, 2.675), { crop: 'oyster', kg: 1.5, priceKg: 2.68, total: 4.02, roomId: null });
+  assert.deepEqual(line(1.005, 3.335), { crop: 'oyster', kg: 1.01, priceKg: 3.34, total: 3.37, roomId: null });
+  assert.equal(buyerBody({ name: 'A', prices: { oyster: 1.005 } }).prices.oyster, 1.01);
+  assert.equal(round2(1.005), 1.01);
+  assert.equal(round2(-1.005), -1.01);
+  assert.equal(round2(2.675), 2.68);
+  assert.equal(round2(1e-7), 0);
+  assert.equal(money(1.5, 2.68), 4.02);
+  assert.equal(summaryOf([{ crop: 'oyster', kg: 0.1, total: 0.1, runId: null }, { crop: 'oyster', kg: 0.2, total: 0.2, runId: null }]).total, 0.3);
 });

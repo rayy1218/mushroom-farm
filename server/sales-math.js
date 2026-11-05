@@ -4,7 +4,6 @@
 
 import { CROP_KEYS, cropShortName } from '../web/crops.js';
 import { localDate, localTime } from './task-rules.js';
-import { round } from './harvest-math.js';
 import { cell } from './csv.js';
 
 export const MAX_KG = 10_000;
@@ -37,7 +36,17 @@ const groupBy = (list, keyOf) => {
   }
   return by;
 };
-const sum = (list, key) => round(list.reduce((s, x) => s + x[key], 0), 2);
+// n to 2 places, half away from zero, on its decimal text (1.005 → 1.01, where Math.round(n * 100) / 100 gives 1.00): the
+// money and kg Sales keeps. Keep in step with web/sales-math.js.
+export function round2(n) {
+  if (!Number.isFinite(n) || Math.abs(n) >= 1e15) return n; // past a sen's precision
+  const [m, e = '0'] = String(Math.abs(n)).split('e');
+  const r = Math.round(Number(`${m}e${Number(e) + 2}`)) / 100;
+  return n < 0 && r !== 0 ? -r : r;
+}
+// A line's total from kg and RM per kg already to 2 places, in whole sen (no float error at a half sen).
+export const money = (kg, priceKg) => round2((Math.round(kg * 100) * Math.round(priceKg * 100)) / 10_000);
+const sum = (list, key) => round2(list.reduce((s, x) => s + x[key], 0));
 
 // Optional text: empty or missing is null; otherwise trimmed and at most max characters.
 function textOf(v, max, field, words, what) {
@@ -73,13 +82,13 @@ export function deliveryBody(body, { now }) {
     if (!isObject(l) || !CROP_KEYS.includes(l.crop)) throw new SalesError(400, 'Pick a crop', `${at}.crop`);
     if (seen.has(l.crop)) throw new SalesError(400, 'This crop is on another line', `${at}.crop`);
     seen.add(l.crop);
-    const kg = isNumber(l.kg) ? round(l.kg, 2) : NaN;
+    const kg = isNumber(l.kg) ? round2(l.kg) : NaN;
     if (!(kg > 0 && kg <= MAX_KG)) throw new SalesError(400, 'kg must be a number over 0 up to 10,000', `${at}.kg`);
-    const priceKg = isNumber(l.priceKg) && l.priceKg >= 0 ? round(l.priceKg, 2) : NaN;
+    const priceKg = isNumber(l.priceKg) && l.priceKg >= 0 ? round2(l.priceKg) : NaN;
     if (!(priceKg >= 0 && priceKg <= MAX_PRICE)) throw new SalesError(400, 'RM per kg must be 0 to 1,000', `${at}.priceKg`);
     const roomId = l.roomId === undefined || l.roomId === null ? null : l.roomId;
     if (roomId !== null && !isId(roomId)) throw new SalesError(400, 'Pick a room or Mixed', `${at}.roomId`);
-    return { crop: l.crop, kg, priceKg, total: round(kg * priceKg, 2), roomId };
+    return { crop: l.crop, kg, priceKg, total: money(kg, priceKg), roomId };
   });
   return { soldAt, buyerId: body.buyerId, invoiceNo, note, lines };
 }
@@ -104,7 +113,7 @@ export function buyerBody(body, { partial = false } = {}) {
     for (const [crop, v] of Object.entries(prices)) {
       if (!CROP_KEYS.includes(crop)) throw new SalesError(400, 'Unknown crop', 'prices');
       if (v === null || v === '') continue;
-      const p = isNumber(v) && v >= 0 ? round(v, 2) : NaN;
+      const p = isNumber(v) && v >= 0 ? round2(v) : NaN;
       if (!(p >= 0 && p <= MAX_PRICE)) throw new SalesError(400, 'RM per kg must be 0 to 1,000', `prices.${crop}`);
       out.prices[crop] = p;
     }
@@ -164,7 +173,7 @@ export function byCropOf(rows, harvests, cropYield) {
     const expected = cropYield?.[crop]?.priceKg;
     return {
       crop, kg, harvestedKg: sum(harvests.filter((h) => h.crop === crop), 'kg'), total,
-      avgPriceKg: kg > 0 ? round(total / kg, 2) : null, expectedPriceKg: isNumber(expected) ? expected : null,
+      avgPriceKg: kg > 0 ? round2(total / kg) : null, expectedPriceKg: isNumber(expected) ? expected : null,
     };
   });
 }
@@ -181,7 +190,8 @@ export function byBuyerOf(deliveries, owed) {
 // total }] }; a line with no run is in the totals and byCrop only.
 export function summaryOf(rows) {
   const byCrop = [...groupBy(rows, (r) => r.crop)].map(([crop, own]) => ({ crop, kg: sum(own, 'kg'), total: sum(own, 'total') })).sort(cropOrder);
-  const byRun = [...groupBy(rows.filter((r) => r.runId !== null), (r) => r.runId)].map(([runId, own]) => ({ runId, kg: sum(own, 'kg'), total: sum(own, 'total') }))
+  const byRun = [...groupBy(rows.filter((r) => r.runId !== null), (r) => r.runId)]
+    .map(([runId, own]) => ({ runId, kg: sum(own, 'kg'), total: sum(own, 'total') }))
     .sort((a, b) => a.runId - b.runId);
   return { kg: sum(rows, 'kg'), total: sum(rows, 'total'), byCrop, byRun };
 }

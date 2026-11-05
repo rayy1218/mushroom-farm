@@ -134,7 +134,11 @@ export function mount(container, { days = 30 } = {}) {
   let painted = '';
   let showAll = false;
   const open = new Set(); // the buyers whose unpaid sales are shown
-  const phone = () => window.matchMedia(PHONE).matches;
+  const media = window.matchMedia(PHONE);
+  const phone = () => media.matches;
+  // a phone shows fewer sales: crossing the width repaints (the limit is in the painted key)
+  const onMedia = () => { if (alive() && sales) paint(); };
+  media.addEventListener('change', onMedia);
 
   const buttons = DAYS.map((n) => {
     const b = el('button', '', periodWords(n));
@@ -223,7 +227,9 @@ export function mount(container, { days = 30 } = {}) {
   }
 
   function paint() {
-    const key = JSON.stringify([sales, showAll]);
+    const list = sales.deliveries;
+    const limit = showAll ? list.length : phone() ? SHOWN_PHONE : SHOWN;
+    const key = JSON.stringify([sales, showAll, limit]);
     if (key === painted) return;
     painted = key;
     // the cursor on an Edit, a Mark paid or an Owed name comes back to the same one after the repaint
@@ -235,8 +241,6 @@ export function mount(container, { days = 30 } = {}) {
     els.owed.hidden = sales.owed.count === 0;
     els.owedList.replaceChildren(...sales.owed.buyers.map(owedItem));
 
-    const list = sales.deliveries;
-    const limit = showAll ? list.length : phone() ? SHOWN_PHONE : SHOWN;
     els.empty.hidden = list.length > 0;
     els.empty.textContent = sales.buyerCount === 0 ? 'No buyers yet. Record a sale to add the first.' : emptyText(period);
     els.emptyRecord.hidden = list.length > 0 || sales.buyerCount !== 0;
@@ -308,5 +312,6 @@ export function mount(container, { days = 30 } = {}) {
     clearTimeout(timer);
     reload.cancel();
     for (const off of offLive) off();
+    media.removeEventListener('change', onMedia);
   };
 }

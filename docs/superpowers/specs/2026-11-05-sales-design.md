@@ -44,7 +44,7 @@ approved the data, API and pages below (2026-11-05).
 | Lines | 1 to 9 lines; a crop at most once in a delivery; `crop` one of `CROP_KEYS`. |
 | `kg` | Over 0 up to 10,000, stored to 2 decimals. |
 | `price_kg` | 0 to 1,000, stored to 2 decimals (0 allowed: a free sample to a buyer). |
-| `total` | Worked out by the server: round(kg × price_kg, 2). A body's total is ignored. |
+| `total` | Worked out by the server: round(kg × price_kg, 2) from the kg and price already to 2 places, in whole sen. A body's total is ignored. Every Sales rounding to 2 places is half away from zero on the number's decimal text (`round2`: 1.005 → 1.01, where `Math.round(n * 100) / 100` gives 1.00); the dialog sends kg and RM per kg rounded the same way and shows the total that will be recorded. |
 | `invoice_no` | Optional, up to 40 characters after trimming; empty is null. |
 | `note` | Optional, up to 200 characters. |
 | `sold_at` | A date and time; not in the future (a minute's grace for clocks); not before 2020-01-01. |
@@ -139,7 +139,7 @@ approved the data, API and pages below (2026-11-05).
 
 | File | What |
 |---|---|
-| `server/db.js` | The `// ---- Sales ----` block: tables, the version 23 step, `saveDelivery`, `deleteDelivery`, `setDeliveryPaid`, `salesBetween`, `unpaidDeliveries`, buyers' methods, `runAt(roomId, ms)`; the room delete's one statement |
+| `server/db.js` | The `// ---- Sales ----` block: tables, the version 23 step, `saveDelivery`, `deleteDelivery`, `setDeliveryPaid`, `salesBetween`, `unpaidSales`, buyers' methods, `runAt(roomId, ms)`; the room delete's one statement |
 | `server/sales-math.js` | Pure: validation of a body, totals, owed, per crop, per buyer, the summary, the CSV rows |
 | `server/sales.js` | The store: reads Settings' `cropYield` and the harvests for harvested kg, writes through `db`, `onChange` |
 | `server/sales-api.js` | The routes of section 5 |

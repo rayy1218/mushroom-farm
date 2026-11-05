@@ -3,9 +3,9 @@
 
 import { readCropYield } from './settings.js';
 import { localDate, dayStart, addDays, daysBetween } from './task-rules.js';
-import { buckets, round } from './harvest-math.js';
+import { buckets } from './harvest-math.js';
 import {
-  SalesError, deliveryBody, buyerBody, paidBody, deliveriesOf, owedOf, byCropOf, byBuyerOf, summaryOf, csvRows,
+  SalesError, deliveryBody, buyerBody, paidBody, deliveriesOf, owedOf, byCropOf, byBuyerOf, summaryOf, csvRows, round2,
 } from './sales-math.js';
 
 export const RANGES = [7, 30, 90, 365];
@@ -137,8 +137,8 @@ export function createSales({ db, now = Date.now, log = console.error }) {
       return {
         from, to, days, deliveries: list,
         totals: {
-          kg: round(rows.reduce((s, r) => s + r.kg, 0), 2), total: round(rows.reduce((s, r) => s + r.total, 0), 2),
-          harvestedKg: round(harvests.reduce((s, h) => s + h.kg, 0), 2), count: list.length,
+          kg: round2(rows.reduce((s, r) => s + r.kg, 0)), total: round2(rows.reduce((s, r) => s + r.total, 0)),
+          harvestedKg: round2(harvests.reduce((s, h) => s + h.kg, 0)), count: list.length,
         },
         owed, byCrop: byCropOf(rows, harvests, readCropYield(db)), byBuyer: byBuyerOf(list, owed),
         buyerCount: buyerList.filter((b) => !b.archived).length, // none: the page says to add the first
@@ -164,6 +164,7 @@ export function createSales({ db, now = Date.now, log = console.error }) {
       to = to === '' ? null : to;
       const start = from === null ? ALL[0] : dayStart(dateOf(from, 'from'));
       const end = to === null ? ALL[1] : dayStart(addDays(dateOf(to, 'to'), 1)) - 1;
+      if (from !== null && to !== null && from > to) throw new SalesError(400, 'from must be on or before to', 'from');
       const rows = db.salesBetween(start, end).filter((r) => run === null || r.runId === run);
       return summaryOf(rows);
     },
@@ -190,13 +191,14 @@ export function createSales({ db, now = Date.now, log = console.error }) {
       return buyerView(b, 0, 0);
     },
 
-    // Change a buyer's fields (a new name is written on its sales too). → the buyer.
+    // Change a buyer's fields (a new name is written on its sales too; no fields: no write). → the buyer.
     editBuyer(id, body) {
       if (!db.getBuyer(id)) throw new SalesError(404, 'Buyer not found');
       const fields = buyerBody(body, { partial: true });
       if (fields.name !== undefined) nameFree(fields.name, id);
-      const b = db.updateBuyer(id, fields);
-      tell();
+      const changed = Object.keys(fields).length > 0; // {}: nothing to write, no one told
+      const b = changed ? db.updateBuyer(id, fields) : db.getBuyer(id);
+      if (changed) tell();
       const owed = owedOf(deliveries(db.unpaidSales().filter((r) => r.buyerId === id))).total;
       return buyerView(b, db.buyerSaleCount(id), owed);
     },

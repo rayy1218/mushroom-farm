@@ -13,15 +13,26 @@ const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 export const UNLIKELY_TIMES = 3;
 // A line over this many kg is asked about once (a slipped decimal point).
 export const UNLIKELY_KG = 500;
-// The server's bounds (server/sales-math.js): a line's kg over 0 up to this, RM per kg 0 up to MAX_PRICE.
+// The server's bounds: a line's kg over 0 up to this, RM per kg 0 up to MAX_PRICE. Keep in step with server/sales-math.js.
 const MAX_KG = 10_000;
 const MAX_PRICE = 1_000;
 // A real number, not NaN or a string.
 const finite = (x) => typeof x === 'number' && Number.isFinite(x);
 // A box's value: 2 places, no thousands comma.
-const two = (n) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: false }); // a box's value
-// The sheet's figure: 2 places, grouped.
-const sheet2 = (n) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); // the sheet's figures, grouped as Harvest's
+const two = (n) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: false });
+// The sheet's figure: 2 places, grouped as Harvest's.
+const sheet2 = (n) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// n to 2 places, half away from zero, on its decimal text (1.005 → 1.01, where Math.round(n * 100) / 100 gives 1.00): the
+// kg and RM per kg sent, so the dialog's totals are the ones recorded. Keep in step with server/sales-math.js.
+export function round2(n) {
+  if (!Number.isFinite(n) || Math.abs(n) >= 1e15) return n; // past a sen's precision
+  const [m, e = '0'] = String(Math.abs(n)).split('e');
+  const r = Math.round(Number(`${m}e${Number(e) + 2}`)) / 100;
+  return n < 0 && r !== 0 ? -r : r;
+}
+// A line's total from kg and RM per kg already to 2 places, in whole sen (the server's total). Keep in step with
+// server/sales-math.js.
+export const money = (kg, priceKg) => round2((Math.round(kg * 100) * Math.round(priceKg * 100)) / 10_000);
 // A box's text as a number: a decimal comma is read ('4,5'), a grouped '1,234' is refused as ambiguous, NaN when it is no number.
 export const num = (text) => {
   const s = String(text ?? '').trim();
@@ -72,7 +83,9 @@ export function pageTiles(sales, now) {
     : `${before ? `all time${DOT}` : ''}${owed.count} ${owed.count === 1 ? 'sale' : 'sales'}${DOT}oldest ${ageText(owed.oldestAt, now)}`;
   return [
     // no "of 0.0 kg harvested" when nothing was harvested in the period
-    totals.harvestedKg > 0 ? { label: 'Sold', value: kgText(totals.kg), line: `of ${kgText(totals.harvestedKg)} harvested` } : { label: 'Sold', value: kgText(totals.kg) },
+    totals.harvestedKg > 0
+      ? { label: 'Sold', value: kgText(totals.kg), line: `of ${kgText(totals.harvestedKg)} harvested` }
+      : { label: 'Sold', value: kgText(totals.kg) },
     { label: 'Income', value: rmText(totals.total) },
     { label: 'Owed', value: rmText(owed.total), line: owedLine },
   ];
@@ -84,7 +97,7 @@ export const BUYER_COLUMNS = ['Buyer', 'kg', 'Income', 'Owed'];
 // The average price against the expected one, in words (no colour verdict); null when either is missing.
 function diffText(avg, expected) {
   if (!finite(avg) || !finite(expected)) return null;
-  const d = Math.round((avg - expected) * 100) / 100;
+  const d = round2(avg - expected);
   if (Math.abs(d) < 0.005) return 'as expected';
   return `${rmText(Math.abs(d))} ${d < 0 ? 'under' : 'over'} expected`;
 }
@@ -99,22 +112,28 @@ export const cropRows = (sales) => (sales.byCrop ?? []).map((c) => ({
 }));
 
 // The by-buyer table's rows: name, the cells, and the kg as the name's sub-line (a phone, where the kg column is left out).
-export const buyerRows = (sales) => (sales.byBuyer ?? []).map((b) => ({ name: b.buyer, cells: [kgText(b.kg), rmText(b.total), rmText(b.owed)], sub: kgText(b.kg) }));
+export const buyerRows = (sales) => (sales.byBuyer ?? []).map((b) => ({
+  name: b.buyer, cells: [kgText(b.kg), rmText(b.total), rmText(b.owed)], sub: kgText(b.kg),
+}));
 
 // The empty page's words for the period.
 export const emptyText = (days) => `No sales in the last ${periodWords(days)}.`;
 
-// A line's total as typed ('' until both boxes read as numbers).
+// A box as the number sent: to 2 places (NaN when it is no number).
+const box2 = (text) => round2(num(text));
+
+// A line's total as it will be recorded: kg and RM per kg to 2 places first ('' until both boxes read as numbers).
 export function lineTotal(kg, priceKg) {
-  const [k, p] = [num(kg), num(priceKg)];
-  return Number.isNaN(k) || Number.isNaN(p) ? '' : rmText(Math.round(k * p * 100) / 100);
+  const [k, p] = [box2(kg), box2(priceKg)];
+  return Number.isNaN(k) || Number.isNaN(p) ? '' : rmText(money(k, p));
 }
 
-// The dialog's foot: the lines' kg and total ("16.50 kg · RM 214.50"), the lines that read as numbers.
+// The dialog's foot: the lines' kg and total as they will be recorded ("16.50 kg · RM 214.50"), the lines that read as
+// numbers.
 export function footText(lines) {
-  const ok = lines.map((l) => [num(l.kg), num(l.priceKg)]).filter(([k, p]) => !Number.isNaN(k) && !Number.isNaN(p));
-  const kg = ok.reduce((s, [k]) => s + k, 0);
-  const total = ok.reduce((s, [k, p]) => s + Math.round(k * p * 100) / 100, 0);
+  const ok = lines.map((l) => [box2(l.kg), box2(l.priceKg)]).filter(([k, p]) => !Number.isNaN(k) && !Number.isNaN(p));
+  const kg = round2(ok.reduce((s, [k]) => s + k, 0));
+  const total = round2(ok.reduce((s, [k, p]) => s + money(k, p), 0));
   return `${kgText(kg, { exact: true })}${DOT}${rmText(total)}`;
 }
 
@@ -134,16 +153,20 @@ export function unlikely(lines, cropYield) {
     const expected = cropYield?.[l.crop]?.priceKg;
     if (finite(expected) && expected > 0 && l.priceKg > UNLIKELY_TIMES * expected) {
       const times = (Math.round((l.priceKg / expected) * 10) / 10).toFixed(1);
-      out.push({ field: `lines.${i}.priceKg`, message: `That's ${times === '3.0' ? 'over 3' : times} times the expected ${rmText(expected)} per kg. Is ${rmText(l.priceKg)} right?` });
+      const many = times === '3.0' ? 'over 3' : times;
+      const message = `That's ${many} times the expected ${rmText(expected)} per kg. Is ${rmText(l.priceKg)} right?`;
+      out.push({ field: `lines.${i}.priceKg`, message });
     }
     if (l.kg > UNLIKELY_KG) out.push({ field: `lines.${i}.kg`, message: `Is ${kgText(l.kg, { exact: true })} right?` });
     return out;
   });
 }
 
-// The POST/PUT body from the dialog's boxes (an edit passes the sale's soldAt: its time stays while its date does): { date, buyerId, invoiceNo, note, lines: [{ crop, kg, priceKg, roomId }] } (all
-// text). Today's date is now; another day is 12:00 at the farm. The server's bounds are checked here too (kg, RM per kg) so
-// the unlikely-value question is never asked about a value that would be refused. → the body, or { error, field }.
+// The POST/PUT body from the dialog's boxes: { date, buyerId, invoiceNo, note, lines: [{ crop, kg, priceKg, roomId }] } (all
+// text). An edit passes the sale's soldAt: its time stays while its date does. Today's date is now; another day is 12:00 at
+// the farm. kg and RM per kg are sent to 2 places (round2), as the server keeps them. The server's bounds are checked here
+// too (kg, RM per kg) so the unlikely-value question is never asked about a value that would be refused. → the body, or
+// { error, field }.
 export function saleBody(v, { now, soldAt: was = null }) {
   const noon = whenMs(v.date, '12:00');
   if (Number.isNaN(noon) || farmDate(noon) !== v.date) return { error: 'Give the date', field: 'date' };
@@ -151,10 +174,10 @@ export function saleBody(v, { now, soldAt: was = null }) {
   const soldAt = was !== null && v.date === farmDate(was) ? was : v.date === farmDate(now) ? now : noon;
   const lines = [];
   for (const [i, l] of (v.lines ?? []).entries()) {
-    const kg = num(l.kg);
+    const kg = box2(l.kg);
     if (Number.isNaN(kg)) return { error: 'Give the kg as a number', field: `lines.${i}.kg` };
     if (!(kg > 0 && kg <= MAX_KG)) return { error: 'kg must be over 0 up to 10,000', field: `lines.${i}.kg` };
-    const priceKg = num(l.priceKg);
+    const priceKg = box2(l.priceKg);
     if (Number.isNaN(priceKg)) return { error: 'Give RM per kg as a number', field: `lines.${i}.priceKg` };
     if (priceKg > MAX_PRICE) return { error: 'RM per kg must be 0 to 1,000', field: `lines.${i}.priceKg` };
     lines.push({ crop: l.crop, kg, priceKg, roomId: l.roomId ? Number(l.roomId) : null });
@@ -177,9 +200,12 @@ export function sheetWithSales(records, lines) {
   const sales = (Array.isArray(lines) ? lines : []).map((l, i) => {
     const [base] = sheetRows([{ date: l.date, roomName: l.roomName ?? '', crop: l.crop, runStartedAt: l.runStartedAt, kg: null }]);
     const where = !l.roomName ? 'Mixed' : l.runStartedAt === null || l.runStartedAt === undefined ? l.roomName : base[2];
-    return { date: l.date, kind: 1, at: l.soldAt, index: i, cells: [base[0], base[1], where, '', sheet2(l.kg), sheet2(l.priceKg), sheet2(l.total), l.invoiceNo ?? '', l.buyer] };
+    const cells = [base[0], base[1], where, '', sheet2(l.kg), sheet2(l.priceKg), sheet2(l.total), l.invoiceNo ?? '', l.buyer];
+    return { date: l.date, kind: 1, at: l.soldAt, index: i, cells };
   });
-  return [...harvest, ...sales].sort((a, b) => a.date.localeCompare(b.date) || a.kind - b.kind || a.at - b.at || a.index - b.index).map((r) => r.cells);
+  return [...harvest, ...sales]
+    .sort((a, b) => a.date.localeCompare(b.date) || a.kind - b.kind || a.at - b.at || a.index - b.index)
+    .map((r) => r.cells);
 }
 
 // The sheet's Total row: harvested kg, sold kg and the RM total ('' when the sales could not be read: lines null).
@@ -188,5 +214,5 @@ export function sheetTotals(farm, lines) {
   if (!Array.isArray(lines)) return { harvested, sold: '', total: '' };
   const sold = lines.reduce((s, l) => s + l.kg, 0);
   const total = lines.reduce((s, l) => s + l.total, 0);
-  return { harvested, sold: sheet2(Math.round(sold * 100) / 100), total: sheet2(Math.round(total * 100) / 100) };
+  return { harvested, sold: sheet2(round2(sold)), total: sheet2(round2(total)) };
 }

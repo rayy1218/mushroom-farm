@@ -7,12 +7,12 @@ import { request } from './api.js';
 import { openForm, errorText } from './task-dialogs.js';
 import { CROP_KEYS, cropShortName } from './crops.js';
 import { farmDate, dayTitle } from './tasks-math.js';
-import { rmText } from './harvest-math.js';
+import { rmText, whenMs } from './harvest-math.js';
 import { lineTotal, footText, prefill, unlikely, saleBody, deleteTitle, deleteLead, priceText, paidMark, num, deliveryRow } from './sales-math.js';
 import { DOT } from './text-math.js';
 
 const TIMEOUT = 15000;
-const MAX_LINES = 9;
+const MAX_LINES = 9; // keep in step with server/sales-math.js
 const NEW = 'new';
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -139,7 +139,9 @@ export async function openSale({ delivery, onChanged, onError, opener = document
   let rooms;
   let cropYield;
   try {
-    [{ buyers }, rooms, { cropYield }] = await Promise.all([request('GET', '/api/buyers'), request('GET', '/api/rooms'), request('GET', '/api/settings')]);
+    [{ buyers }, rooms, { cropYield }] = await Promise.all([
+      request('GET', '/api/buyers'), request('GET', '/api/rooms'), request('GET', '/api/settings'),
+    ]);
   } catch (err) {
     if (me === saleSeq) onError(errorText(err));
     return;
@@ -236,7 +238,9 @@ export async function openSale({ delivery, onChanged, onError, opener = document
   const showNew = () => { newBox.hidden = buyer.input.value !== NEW; };
   showNew();
 
-  const ref = field({ id: 'sl-ref', label: "Buyer's reference (optional)", value: delivery?.invoiceNo ?? '', hint: 'Their invoice or receipt number', maxLength: 40 });
+  const ref = field({
+    id: 'sl-ref', label: "Buyer's reference (optional)", value: delivery?.invoiceNo ?? '', hint: 'Their invoice or receipt number', maxLength: 40,
+  });
   const note = field({ id: 'sl-note', label: 'Note (optional)', value: delivery?.note ?? '', maxLength: 200 });
   // from 900 px two columns: Date | Buyer, Reference | Note (the note next to the reference, so the order is the same read or tabbed)
   date.wrap.classList.add('sl-f-date');
@@ -306,7 +310,8 @@ export async function openSale({ delivery, onChanged, onError, opener = document
   function addLine(value = null) {
     const n = ++lineSeq;
     const free = CROP_KEYS.find((k) => !used(null).has(k)) ?? CROP_KEYS[0];
-    const crop = field({ id: `sl-crop-${n}`, label: 'Crop', kind: 'select', options: CROP_KEYS.map((k) => [k, cropShortName(k)]), value: value?.crop ?? free });
+    const options = CROP_KEYS.map((k) => [k, cropShortName(k)]);
+    const crop = field({ id: `sl-crop-${n}`, label: 'Crop', kind: 'select', options, value: value?.crop ?? free });
     const kg = field({ id: `sl-kg-${n}`, label: 'kg', value: value ? String(value.kg) : '', suffix: 'kg' });
     const price = field({ id: `sl-price-${n}`, label: 'RM per kg', value: value ? value.priceKg.toFixed(2) : '', prefix: 'RM' });
     const room = field({ id: `sl-room-${n}`, label: 'Room', kind: 'select', options: roomOptions, value: value?.roomId ? String(value.roomId) : '' });
@@ -432,7 +437,8 @@ export async function openSale({ delivery, onChanged, onError, opener = document
         const o = el('option', '', made.name);
         o.value = String(made.id);
         // in A–Z order among the others, before "New buyer…"
-        const next = [...buyer.input.options].find((x) => x.value !== NEW && x.textContent.localeCompare(made.name, undefined, { sensitivity: 'base' }) > 0);
+        const after = (x) => x.textContent.localeCompare(made.name, undefined, { sensitivity: 'base' }) > 0;
+        const next = [...buyer.input.options].find((x) => x.value !== NEW && after(x));
         buyer.input.insertBefore(o, next ?? buyer.input.lastElementChild);
         buyer.input.value = String(made.id);
         showNew();
@@ -487,13 +493,16 @@ export function openPaid({ delivery, onChanged, onError, opener = document.activ
   openForm({
     title: 'Mark paid',
     lead: [`${deliveryRow(delivery).day}${DOT}${delivery.buyer}${DOT}${rmText(delivery.total)}`],
-    fields: [{ name: 'paidOn', label: 'Paid on', kind: 'date', value: today, min: farmDate(delivery.soldAt), max: today, hintOf: (v) => (DAY.test(v) ? dayTitle(v) : '') }],
+    fields: [{
+      name: 'paidOn', label: 'Paid on', kind: 'date', value: today, min: farmDate(delivery.soldAt), max: today,
+      hintOf: (v) => (DAY.test(v) ? dayTitle(v) : ''),
+    }],
     buttons: [{ value: 'paid', label: 'Mark paid', primary: true }],
     submit: async (v, _which, form) => {
       const now = Date.now(); // today as at this submit (a dialog left open over midnight)
       form.input('paidOn').max = farmDate(now);
       if (!DAY.test(v.paidOn)) return { field: 'paidOn', message: 'Give the day it was paid' };
-      const paidAt = v.paidOn === farmDate(now) ? now : Date.parse(`${v.paidOn}T12:00:00Z`) - 8 * 3_600_000; // 12:00 at the farm
+      const paidAt = v.paidOn === farmDate(now) ? now : whenMs(v.paidOn, '12:00'); // another day: 12:00 at the farm
       try {
         await request('PUT', `/api/sales/deliveries/${delivery.id}/paid`, { paidAt }, TIMEOUT);
         onChanged();
@@ -574,8 +583,11 @@ export async function openBuyers({ onChanged, onError, opener = document.activeE
     { name: 'phone', label: 'Phone (optional)', kind: 'text', value: b?.phone ?? '', maxLength: 30 },
     { name: 'note', label: 'Note (optional)', kind: 'text', value: b?.note ?? '', maxLength: 200 },
     {
-      kind: 'group', legend: 'Usual price (RM per kg)', hint: 'Fills a sale\'s price. Leave a crop empty for the expected price.', className: 'sl-price-group',
-      fields: CROP_KEYS.map((c) => ({ name: `prices-${c}`, label: cropShortName(c), kind: 'number', value: b?.prices?.[c] === undefined ? '' : b.prices[c].toFixed(2) })),
+      kind: 'group', legend: 'Usual price (RM per kg)', hint: 'Fills a sale\'s price. Leave a crop empty for the expected price.',
+      className: 'sl-price-group',
+      fields: CROP_KEYS.map((c) => ({
+        name: `prices-${c}`, label: cropShortName(c), kind: 'number', value: b?.prices?.[c] === undefined ? '' : b.prices[c].toFixed(2),
+      })),
     },
   ];
   const bodyOf = (v) => {
@@ -652,7 +664,9 @@ export async function openBuyers({ onChanged, onError, opener = document.activeE
             again(made?.id ?? null);
             return true;
           } catch (err) {
-            return err.status === 400 || err.status === 409 ? { field: err.field?.replace('.', '-'), message: err.message } : { message: errorText(err) };
+            return err.status === 400 || err.status === 409
+              ? { field: err.field?.replace('.', '-'), message: err.message }
+              : { message: errorText(err) };
           }
         },
         onLost: onError,

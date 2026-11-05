@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { kgText, perBlockText, beText, rmText, costKgText, costText, summaryLine, flushColumns, sheetRows, sheetTotal } from '../web/harvest-math.js';
+import { kgText, perBlockText, beText, rmText, costKgText, costText, summaryLine, flushColumns, sheetRows } from '../web/harvest-math.js';
 
 const nb = ' ';
 const dot = `${nb}· `;
@@ -55,8 +55,6 @@ test('sheet rows: the myGAP columns, the sales cells blank', () => {
   assert.deepEqual(rows[0], ['3 Nov 2026', 'Grey oyster', `Room 1${dot}run of 3 Oct`, '3.50', '', '', '', '', '']);
   const [big] = sheetRows([{ date: '2026-11-03', roomName: 'Room 3', crop: 'lionsmane', runStartedAt: null, kg: 1234.5 }]);
   assert.deepEqual(big.slice(1, 4), ["Lion's mane", `Room 3${dot}run of —`, '1,234.50'], 'no (draft) on the form; the kg to 2 decimals, grouped');
-  assert.equal(sheetTotal({ totals: { kg: 1240.456 } }), '1,240.46');
-  assert.equal(sheetTotal({ totals: {} }), '');
 });
 
 // ---- Task 9: the Harvest room tab ----
@@ -152,7 +150,7 @@ test('the By crop table of a mixed room', () => {
   ]);
 });
 
-test('the tiles: kg, kg per block, BE, RM value, cost per kg with what it counts (the tables\' words)', () => {
+test('the tiles: kg, kg per block, BE, expected value, cost per kg with what it counts (the tables\' words)', () => {
   assert.deepEqual(runTiles(oneCrop), [
     { label: 'kg', value: `18.4${nb}kg` },
     { label: 'kg per block', value: `0.04${nb}kg` },
@@ -187,7 +185,7 @@ test('a cost still being worked out: a dash that says so, the room tab, the page
   assert.equal(pricesNote(pending), null);
 });
 
-test('the RM value of the priced crops, the crops left out named with their kg', () => {
+test('the expected value of the priced crops, the crops left out named with their kg', () => {
   const part = { ...mixed, value: 120, unpriced: ['lionsmane'] };
   assert.deepEqual(runTiles(part)[3], { label: 'Expected value', value: `RM${nb}120.00`, line: `without Lion's mane (8.4${nb}kg, no price)` });
   const two = { ...part, byCrop: [...part.byCrop, { crop: 'pink', kg: 2, value: null }], unpriced: ['lionsmane', 'pink'] };
@@ -297,7 +295,7 @@ test('the Overview card: today, 7 and 30 days, the 30-day value when known; noth
     { tiles: [], empty: 'No harvests in the last 30 days.' });
 });
 
-test("the page's tiles: kg, RM value, cost per kg with what it counts", () => {
+test("the page's tiles: kg, expected value, cost per kg with what it counts", () => {
   assert.deepEqual(pageTiles(farm), [
     { label: 'kg', value: `64.5${nb}kg` },
     { label: 'Expected value', value: `RM${nb}774.00` },

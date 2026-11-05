@@ -194,6 +194,9 @@ test('summary: to excludes later sales and includes its own day, empty strings a
   assert.equal(sales.summary({ from: '', to: '' }).kg, 4);
   refused(() => sales.summary({ from: 'nope' }), 400, 'from');
   refused(() => sales.summary({ to: '2026-02-30' }), 400, 'to');
+  assert.throws(() => sales.summary({ from: '2026-11-05', to: '2026-11-04' }),
+    (e) => e instanceof SalesError && e.status === 400 && e.field === 'from' && e.message === 'from must be on or before to');
+  assert.equal(sales.summary({ from: '2026-11-04', to: '2026-11-04' }).kg, 2, 'one day');
   assert.deepEqual(sales.summary({}).byRun.map((r) => r.runId), [runId]);
 });
 
@@ -233,4 +236,16 @@ test('buyers: renaming to its own name in another case is allowed; an unknown id
   assert.deepEqual([e.sales, e.owed], [2, 40]);
   assert.deepEqual(sales.buyers().map((b) => [b.name, b.sales, b.owed]), [['Borong Lim', 0, 0], ['KEDAI AH SENG', 2, 40]]);
   assert.equal(other.sales, 0);
+});
+
+test('editBuyer with no fields: nothing written, no one told, the buyer back', (t) => {
+  const { db, sales, changes, buyer } = setup(t);
+  const n = changes.length;
+  let writes = 0;
+  const update = db.updateBuyer;
+  db.updateBuyer = (...args) => { writes++; return update.apply(db, args); };
+  const b = sales.editBuyer(buyer.id, {});
+  assert.deepEqual([writes, changes.length - n], [0, 0]);
+  assert.deepEqual([b.id, b.name, b.sales, b.owed], [buyer.id, 'Kedai Ah Seng', 0, 0]);
+  refused(() => sales.editBuyer(999, {}), 404, undefined);
 });
