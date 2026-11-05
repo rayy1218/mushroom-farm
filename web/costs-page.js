@@ -11,6 +11,7 @@ import { live, EVENT_TYPES } from './live.js';
 import { fallbackMs, createThrottle } from './live-math.js';
 import { tileNodes } from './harvest-card.js';
 import { closeTaskDialog } from './task-dialogs.js';
+import { picture } from './pictures.js';
 import {
   monthTitle, addMonths, monthTiles, monthNotes, categoryRows, categoryTotal, entryLine, repeatingLine, RUN_COLUMNS, runRow, runParts,
   profitBars, BARS_M, chartMonths, chartTitle, noFigures,
@@ -437,8 +438,14 @@ export function mount(container, { month = null } = {}) {
       });
       th.append(toggle);
       const cells = [r.room, r.crops, ...r.cells].map((c, i) => {
-        const td = el('td', i < 2 ? `co-run-${i ? 'crops' : 'room'}` : 'num', c);
+        const td = el('td', i < 2 ? `co-run-${i ? 'crops' : 'room'}` : 'num', i === 1 ? null : c);
         td.dataset.label = RUN_COLUMNS[i + 1];
+        if (i === 1) { // the main crop's picture before the crops' names (Harvest's By crop)
+          const name = el('span', 'co-crop');
+          if (r.crop) name.append(picture('crop', r.crop, { size: 24 }));
+          name.append(el('span', '', c));
+          td.append(name);
+        }
         if ((i === 4 && r.loss) || (i === 5 && r.perKgLoss)) td.classList.add('co-loss');
         if (i === 3 && r.incomplete) td.append(el('span', 'co-sub', 'Some costs have no price'));
         return td;

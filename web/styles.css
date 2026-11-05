@@ -2175,7 +2175,7 @@ td.co-loss { color: var(--critical-text); }
 .co-entry { display: grid; grid-template-columns: 4.5em minmax(0, 1fr) minmax(0, 11em) 9em auto; gap: 4px 12px; align-items: center; padding: 6px 0; border-top: 1px solid var(--border); }
 .co-entry:first-child { border-top: 0; }
 /* the monthly items' columns line up: one grid for the list, each item its subgrid */
-.co-repeats { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 9em) max-content max-content auto; column-gap: 12px; }
+.co-repeats { display: grid; grid-template-columns: minmax(0, 1fr) fit-content(9em) max-content max-content auto; column-gap: 12px; }
 .co-repeats > .co-repeat { grid-column: 1 / -1; grid-template-columns: subgrid; }
 .co-what { overflow-wrap: anywhere; }
 .co-sub { display: block; color: var(--muted); font-size: var(--fs-xs); font-weight: 400; white-space: normal; }
@@ -2206,13 +2206,16 @@ td.co-loss { color: var(--critical-text); }
 .co-runs-pending { margin: 0 0 8px; font-size: var(--fs-sm); }
 .co-runs-table .co-dates { white-space: nowrap; }
 .co-runs-table .co-run-crops { color: var(--ink-2); }
+.co-crop { display: inline-flex; align-items: center; gap: 8px; }
+.co-crop > .pic { flex: none; }
 .co-parts > td { border-top: 0; padding: 0 0 12px; }
-.co-parts-body { padding-left: 12px; border-left: 2px solid var(--border); }
+.co-parts-body { padding: 8px 0 0 12px; border-top: 1px solid var(--border); }
 .co-parts-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px 24px; margin: 4px 0 0; }
 .co-parts-list dt { color: var(--muted); font-size: var(--fs-xs); }
 .co-parts-list dd { margin: 0; font-variant-numeric: tabular-nums; }
 .co-run-note { margin: 8px 0 0; font-size: var(--fs-sm); }
 .tk-dialog .co-lands { margin-top: 2px; }
+.tk-dialog .actions .co-aside-quiet { min-height: 36px; font-size: inherit; margin-right: 0; } /* Change's Stop: quiet, the footer's size; Delete keeps the push */
 .tk-dialog .co-warn { margin-top: 4px; color: var(--warning-text); } /* a Stop from a month gone by removes charges */
 @media (max-width: 600px), (pointer: coarse) {
   .co-quiet { min-height: 44px; min-width: 44px; } /* a finger's tap */

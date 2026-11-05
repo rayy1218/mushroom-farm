@@ -13,7 +13,7 @@ import { request } from './api.js';
 import { openForm, loadWorkers, workerField, errorText } from './task-dialogs.js';
 import {
   moneyText, monthTitle, monthsBetween, entryLine, repeatingLine, isBill, bodyOf, clampMonth, landingText, billPeriod, checkCost,
-  stopWords, deleteWords,
+  stopWords, deleteWords, amountBox,
 } from './costs-math.js';
 import { DOT } from './text-math.js';
 
@@ -122,18 +122,19 @@ function workerBox(workers, c) {
   return { ...f, value: c?.worker ?? '' };
 }
 
-// The shared boxes of Add and Edit. c: the cost (Edit) or null.
+// The shared boxes of Add and Edit. c: the cost (Edit) or null. Utilities: what kind and the bill's period come before its
+// amount (the line under Amount says what a bill adds).
 function costFields(c, { rooms, workers, today, first }) {
   const period = billPeriod(c?.date ?? today);
   return [
     { name: 'date', label: 'Date', kind: 'date', value: c?.date ?? today, max: today, ...(first ? { min: `${first}-01` } : {}) },
     { name: 'category', label: 'Category', kind: 'select', value: c?.category ?? 'labour', options: CATEGORY_OPTIONS },
-    { name: 'amount', label: 'Amount', kind: 'number', value: c ? String(c.amount) : '', suffix: 'RM' },
+    { name: 'utility', label: 'Kind', kind: 'select', value: c?.utility ?? 'electricity', options: UTILITY_OPTIONS },
+    { name: 'periodFrom', label: 'Bill from', kind: 'date', value: c?.periodFrom ?? period.from, hint: 'Up to 92 days before the date' },
+    { name: 'periodTo', label: 'Bill to', kind: 'date', value: c?.periodTo ?? period.to, hint: 'Up to 62 days after Bill from' },
+    { name: 'amount', label: 'Amount', kind: 'number', value: c ? amountBox(c.amount) : '', suffix: 'RM' },
     { name: 'roomId', label: 'For', kind: 'select', value: c?.roomId ? String(c.roomId) : '', options: [['', 'The farm (shared)'], ...rooms.map((r) => [String(r.id), r.name])] },
     workerBox(workers, c),
-    { name: 'utility', label: 'Kind', kind: 'select', value: c?.utility ?? 'electricity', options: UTILITY_OPTIONS },
-    { name: 'periodFrom', label: 'Bill from', kind: 'date', value: c?.periodFrom ?? period.from },
-    { name: 'periodTo', label: 'Bill to', kind: 'date', value: c?.periodTo ?? period.to, hint: 'Up to 62 days from the first' },
     { name: 'note', label: 'Note', kind: 'text', value: c?.note ?? '', maxLength: MAX_NOTE, placeholder: 'What it was for' },
   ];
 }
@@ -213,12 +214,12 @@ function monthsOf(cost, today) {
 export function openChangeDialog({ cost, month, today, onDone, onLost }) {
   const months = monthsOf(cost, today);
   const { what } = entryLine(cost);
-  openForm({
+  const form = openForm({
     title: `Change ${what}`,
     lead: [`${repeatingLine(cost).amount} since ${monthTitle(cost.date.slice(0, 7))}. The months before the one you pick keep what they were.`],
     fields: [
       { name: 'from', label: 'From', kind: 'select', value: clampMonth(month, months), options: months.map((m) => [m, monthTitle(m)]) },
-      { name: 'amount', label: 'Amount a month', kind: 'number', value: String(cost.amount), suffix: 'RM' },
+      { name: 'amount', label: 'Amount a month', kind: 'number', value: amountBox(cost.amount), suffix: 'RM' },
       { name: 'note', label: 'Note', kind: 'text', value: cost.note, maxLength: MAX_NOTE },
     ],
     buttons: [
@@ -232,6 +233,10 @@ export function openChangeDialog({ cost, month, today, onDone, onLost }) {
       (v) => checkCost({ amount: v.amount }),
     ),
   });
+  // Stop is no harm by itself (its own dialog says what it removes): a quiet button; only Delete is red
+  const stop = [...form.input('from').form.querySelectorAll('.actions .tk-aside')].find((b) => b.textContent === 'Stop');
+  stop?.classList.replace('danger-text', 'tk-quiet');
+  stop?.classList.add('co-aside-quiet');
 }
 
 // A monthly item's last month, this month first. A month gone by removes the charges after it: a warning names them and
@@ -250,7 +255,10 @@ export function openStopDialog({ cost, today, onDone, onLost }) {
   const sync = () => {
     const w = stopWords(cost, form.input('after').value, today);
     say(warning, w.warning);
-    form.button('stop').textContent = w.button;
+    const b = form.button('stop');
+    b.textContent = w.button;
+    b.classList.toggle('danger', w.danger); // removing charges: red, as Delete; blue again when nothing goes
+    b.classList.toggle('primary', !w.danger);
   };
   form.input('after').addEventListener('change', sync);
   sync();
