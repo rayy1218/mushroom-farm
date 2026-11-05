@@ -8,6 +8,7 @@ import { live } from './live.js';
 import { fallbackMs, createThrottle } from './live-math.js';
 import { DOT } from './text-math.js';
 import { openItemDialog, openPurchaseDialog, openUseDialog } from './inventory-dialogs.js';
+import { farmDate } from './tasks-math.js';
 import { groupItems, pillOf, attentionParts, countedText, qtyText } from './inventory-math.js';
 
 const REFRESH_MS = 60_000;
@@ -19,8 +20,8 @@ const TEMPLATE = `
       <p class="page-sub">What is in stock, what was bought and used, and what runs out.</p>
     </div>
     <div class="iv-tools">
-      <button type="button" class="primary" data-use>Record use</button>
-      <button type="button" data-purchase>Purchase</button>
+      <button type="button" class="primary" data-use disabled>Record use</button>
+      <button type="button" data-purchase disabled>Purchase</button>
       <a class="button" data-count>Count stock</a>
       <button type="button" data-add>Add item</button>
       <a class="iv-sheet-link" data-sheet>myGAP 4-5 sheet</a>
@@ -32,6 +33,7 @@ const TEMPLATE = `
   </div>
   <p class="iv-attention" data-attention hidden></p>
   <div class="iv-groups" data-groups></div>
+  <p class="none iv-all-archived" data-all-archived hidden>Every item is archived.</p>
   <section class="card iv-empty" data-empty hidden>
     <p class="none">No stock items yet.</p>
     <button type="button" class="primary" data-add-empty>Add item</button>
@@ -74,6 +76,7 @@ function groupCard(group, now) {
   for (const item of group.items) {
     const tr = el('tr');
     tr.dataset.id = String(item.id);
+    tr.className = 'iv-row'; // the whole row opens the item; the name stays the real link
     const name = el('th', 'iv-name');
     name.scope = 'row';
     const a = el('a', '', item.name);
@@ -106,14 +109,15 @@ export function mount(container) {
   const els = {
     use: q('[data-use]'), purchase: q('[data-purchase]'), count: q('[data-count]'), add: q('[data-add]'), sheet: q('[data-sheet]'),
     banner: q('.banner'), bannerText: q('[data-banner-text]'), attention: q('[data-attention]'), groups: q('[data-groups]'),
-    empty: q('[data-empty]'), archivedLine: q('[data-archived-line]'), archived: q('[data-archived]'),
+    empty: q('[data-empty]'), allArchived: q('[data-all-archived]'), archivedLine: q('[data-archived-line]'), archived: q('[data-archived]'),
   };
   document.title = 'Inventory · Mushroom farm';
   els.count.href = INVENTORY_COUNT_HASH;
   els.sheet.href = inventorySheetHash(30);
 
   let data = null; // GET /api/inventory
-  let archived = false; // archived items shown
+  let archived = false; // archived items asked for
+  let loadedArchived = false; // and what the last answer was for
   let seq = 0;
   let timer = null;
   let outdated = false;
@@ -125,7 +129,7 @@ export function mount(container) {
   };
 
   function paint() {
-    const key = JSON.stringify([data, archived]);
+    const key = JSON.stringify([data, archived, farmDate(Date.now())]);
     if (key === painted) return;
     painted = key;
     const items = data.items ?? [];
@@ -137,6 +141,7 @@ export function mount(container) {
       return i ? [DOT, s] : [s];
     }));
     els.empty.hidden = items.length > 0 || data.archivedCount > 0;
+    els.allArchived.hidden = !(items.length === 0 && data.archivedCount > 0 && !archived);
     els.groups.replaceChildren(...groupItems(items).map((g) => groupCard(g, Date.now())));
     els.archivedLine.hidden = data.archivedCount === 0;
     els.archived.textContent = archived ? 'Hide archived' : `Show archived (${data.archivedCount})`;
@@ -153,11 +158,17 @@ export function mount(container) {
       const reply = await request('GET', archived ? '/api/inventory?archived=1' : '/api/inventory');
       if (!alive() || mine !== seq) return;
       data = reply;
+      loadedArchived = archived;
       els.banner.hidden = true;
       paint();
     } catch (err) {
       if (!alive() || mine !== seq) return;
       showError(routeMissing(err) ? OUTDATED : err.status === 0 ? OFFLINE : err.message);
+      if (archived !== loadedArchived) { // a failed toggle: the button goes back to what is shown
+        archived = loadedArchived;
+        painted = '';
+        if (data) paint();
+      }
       if (routeMissing(err)) { outdated = true; return; }
     }
     if (!alive()) return;
@@ -169,11 +180,16 @@ export function mount(container) {
   const add = () => openItemDialog({ onDone: done, onLost: showError });
   els.add.addEventListener('click', add);
   q('[data-add-empty]').addEventListener('click', add);
-  els.use.addEventListener('click', () => { if (data) openUseDialog({ items: data.items, onDone: done, onLost: showError }); });
+  els.use.addEventListener('click', () => { if (data) openUseDialog({ items: data.items, alive, onDone: done, onLost: showError }); });
   els.purchase.addEventListener('click', () => { if (data) openPurchaseDialog({ items: data.items, suppliers: data.suppliers, onDone: done, onLost: showError }); });
   els.archived.addEventListener('click', () => {
     archived = !archived;
     load();
+  });
+  els.groups.addEventListener('click', (e) => {
+    const row = e.target.closest?.('tr.iv-row');
+    if (!row || e.target.closest('a, button')) return;
+    row.querySelector('.iv-name a')?.click();
   });
   q('[data-retry]').addEventListener('click', () => load());
 

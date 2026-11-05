@@ -2120,10 +2120,15 @@ td.tg-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: -2p
 .iv-att[data-tone="warn"] { color: var(--critical-text); }
 .iv-groups { display: grid; gap: 16px; }
 .iv-group h2 { margin: 0 0 8px; font-size: var(--fs-md); font-weight: 600; }
-.iv-table { table-layout: fixed; width: 100%; } /* every kind's card lines up its columns */
-.iv-table th:nth-child(2), .iv-table th:nth-child(3) { width: 130px; }
-.iv-table th:nth-child(4) { width: 150px; }
-.iv-table th:nth-child(5) { width: 90px; }
+.iv-table { width: 100%; }
+@media (min-width: 900px) { /* every kind's card lines up its columns */
+  .iv-table { table-layout: fixed; }
+  .iv-table th:nth-child(2), .iv-table th:nth-child(3) { width: 130px; }
+  .iv-table th:nth-child(4) { width: 150px; }
+  .iv-table th:nth-child(5) { width: 120px; }
+}
+.iv-row { cursor: pointer; }
+.iv-row:hover :is(th, td) { background: var(--raised); }
 .iv-table .iv-name a { color: var(--ink); font-weight: 600; text-decoration: none; }
 .iv-table .iv-name a:hover { text-decoration: underline; }
 .iv-sub { display: block; color: var(--muted); font-size: var(--fs-sm); font-weight: 400; }
@@ -2131,6 +2136,7 @@ td.tg-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: -2p
 .iv-counted { color: var(--ink-2); }
 .iv-stale { color: var(--muted); }
 .iv-state-col, .iv-state { white-space: nowrap; text-align: right; }
+.iv-all-archived { margin: 0 0 8px; }
 .iv-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; background: transparent; border-style: dashed; border-color: var(--border-strong); }
 .iv-empty .none { margin: 0; }
 .iv-archived { margin: 12px 0 0; }
@@ -2138,15 +2144,18 @@ td.tg-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: -2p
 @media (max-width: 600px) {
   .iv-tools { flex: 1 1 100%; margin-left: 0; }
   .iv-tools > :is(button, a.button) { flex: 1 1 calc(50% - 4px); justify-content: center; min-height: 44px; }
+  .iv-sheet-link { flex: 1 1 100%; display: flex; align-items: center; min-height: 44px; }
   .iv-table { table-layout: auto; }
   .iv-table thead { display: none; }
-  .iv-table tr { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 10px 0; border-top: 1px solid var(--border); }
+  .iv-table tr { display: grid; grid-template-columns: minmax(0, auto) auto 1fr; align-items: center; gap: 0 12px; padding: 4px 0; border-top: 1px solid var(--border); }
   .iv-table :is(th, td) { border: 0; padding: 0; }
-  .iv-table .iv-name { grid-column: 1; }
-  .iv-table .iv-name a { display: inline-block; padding: 4px 0; }
-  .iv-table .iv-qty { grid-column: 2; grid-row: 1; }
-  .iv-table .iv-state { grid-column: 1 / -1; text-align: left; }
-  .iv-table :is(.iv-reorder, .iv-counted) { grid-column: 1 / -1; text-align: left; color: var(--muted); font-size: var(--fs-sm); }
+  .iv-table .iv-name { grid-column: 1; grid-row: 1; }
+  .iv-table .iv-name a { display: inline-flex; align-items: center; min-height: 44px; }
+  .iv-table .iv-state { grid-column: 2; grid-row: 1; text-align: left; }
+  .iv-table .iv-qty { grid-column: 3; grid-row: 1; text-align: right; }
+  .iv-table :is(.iv-state, .iv-qty) { align-self: start; min-height: 44px; display: flex; align-items: center; }
+  .iv-table .iv-qty { justify-content: flex-end; }
+  .iv-table :is(.iv-reorder, .iv-counted) { grid-column: 1 / -1; text-align: left; color: var(--muted); font-size: var(--fs-sm); padding-bottom: 2px; }
   .iv-table :is(.iv-reorder, .iv-counted)::before { content: attr(data-label) ": "; }
 }
 /* ---- end Inventory ---- */

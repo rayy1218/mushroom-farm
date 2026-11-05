@@ -39,3 +39,14 @@ test('the styles: one Inventory block at the end, .iv- classes, tokens only', ()
   assert.doesNotMatch(block, /#[0-9a-fA-F]{3,8}\b/, 'no fixed colours: tokens only');
   for (const sel of block.match(/^[^@\s/}][^{]*\{/gm) ?? []) assert.match(sel, /\.iv-/, sel);
 });
+
+test('the list page review fixes: the farm day in the paint key, all-archived line, alive to Record use, buttons off until loaded, fixed table from 900 px', () => {
+  const page = src('inventory-page.js');
+  assert.ok(page.includes('farmDate(Date.now())'));
+  assert.ok(page.includes('Every item is archived.'));
+  assert.ok(page.includes('openUseDialog({ items: data.items, alive,'));
+  assert.ok(page.includes('data-use disabled') && page.includes('data-purchase disabled'));
+  assert.ok(page.includes('loadedArchived'));
+  const css = src('styles.css');
+  assert.match(css, /@media \(min-width: 900px\)[^}]*\n\s+\.iv-table \{ table-layout: fixed; \}/);
+});
