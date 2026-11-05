@@ -47,8 +47,11 @@ const shortDay = (ms) => {
 // One line in words: "Grey oyster 12.00 kg".
 const lineWords = (l) => `${cropShortName(l.crop)} ${kgText(l.kg, { exact: true })}`;
 
+// A line each in words, the parts the page keeps whole (no break inside a crop's name): ["Grey oyster 12.00 kg", …].
+export const lineParts = (lines) => lines.map(lineWords);
+
 // "Grey oyster 12.00 kg · Pink oyster 4.50 kg"
-export const linesShort = (lines) => lines.map(lineWords).join(DOT);
+export const linesShort = (lines) => lineParts(lines).join(DOT);
 
 // The paid mark as text ("Unpaid" or "Paid 9 Nov"), with a flag so the unpaid one is styled by more than colour.
 export const paidMark = (d) => (d.paidAt === null || d.paidAt === undefined
@@ -64,10 +67,12 @@ export const deliveryRow = (d) => ({
 export function pageTiles(sales, now) {
   const { totals, owed } = sales;
   const before = owed.oldestAt !== null && farmDate(owed.oldestAt) < sales.from;
-  const owedLine = owed.count === 0 ? 'All paid'
+  // nothing owed: "Nothing owed" when the period has no sales either, else "All paid"
+  const owedLine = owed.count === 0 ? (totals.count === 0 ? 'Nothing owed' : 'All paid')
     : `${before ? `all time${DOT}` : ''}${owed.count} ${owed.count === 1 ? 'sale' : 'sales'}${DOT}oldest ${ageText(owed.oldestAt, now)}`;
   return [
-    { label: 'Sold', value: kgText(totals.kg), line: `of ${kgText(totals.harvestedKg)} harvested` },
+    // no "of 0.0 kg harvested" when nothing was harvested in the period
+    totals.harvestedKg > 0 ? { label: 'Sold', value: kgText(totals.kg), line: `of ${kgText(totals.harvestedKg)} harvested` } : { label: 'Sold', value: kgText(totals.kg) },
     { label: 'Income', value: rmText(totals.total) },
     { label: 'Owed', value: rmText(owed.total), line: owedLine },
   ];
@@ -84,15 +89,17 @@ function diffText(avg, expected) {
   return `${rmText(Math.abs(d))} ${d < 0 ? 'under' : 'over'} expected`;
 }
 
-// The by-crop table's rows: the cells and the average price against the expected one in words.
+// The by-crop table's rows: the cells, the average price against the expected one in words, and the sold kg as the
+// name's sub-line (a phone, where the Sold column is left out).
 export const cropRows = (sales) => (sales.byCrop ?? []).map((c) => ({
   crop: c.crop, name: cropShortName(c.crop),
   cells: [kgText(c.kg), kgText(c.harvestedKg), rmText(c.total), rmText(c.avgPriceKg), rmText(c.expectedPriceKg)],
   diff: diffText(c.avgPriceKg, c.expectedPriceKg),
+  sub: `${kgText(c.kg)} sold`,
 }));
 
-// The by-buyer table's rows: name and the cells.
-export const buyerRows = (sales) => (sales.byBuyer ?? []).map((b) => ({ name: b.buyer, cells: [kgText(b.kg), rmText(b.total), rmText(b.owed)] }));
+// The by-buyer table's rows: name, the cells, and the kg as the name's sub-line (a phone, where the kg column is left out).
+export const buyerRows = (sales) => (sales.byBuyer ?? []).map((b) => ({ name: b.buyer, cells: [kgText(b.kg), rmText(b.total), rmText(b.owed)], sub: kgText(b.kg) }));
 
 // The empty page's words for the period.
 export const emptyText = (days) => `No sales in the last ${periodWords(days)}.`;

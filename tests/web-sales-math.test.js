@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  priceText, ageText, linesShort, paidMark, pageTiles, deliveryRow, cropRows, buyerRows, CROP_COLUMNS, BUYER_COLUMNS,
+  priceText, ageText, linesShort, lineParts, paidMark, pageTiles, deliveryRow, cropRows, buyerRows, CROP_COLUMNS, BUYER_COLUMNS,
   lineTotal, footText, prefill, unlikely, saleBody, sheetWithSales, sheetTotals, emptyText, deleteTitle, deleteLead, num,
 } from '../web/sales-math.js';
 
@@ -28,6 +28,7 @@ const delivery = {
 
 test('a delivery\'s row: day, buyer, lines in short, total, the paid mark, the reference', () => {
   assert.equal(linesShort(delivery.lines), `Grey oyster 12.00${nb}kg${dot}Pink oyster 4.50${nb}kg`);
+  assert.deepEqual(lineParts(delivery.lines), [`Grey oyster 12.00${nb}kg`, `Pink oyster 4.50${nb}kg`], 'a line part each, kept whole on the page');
   assert.deepEqual(paidMark(delivery), { text: 'Unpaid', unpaid: true });
   assert.deepEqual(paidMark({ ...delivery, paidAt: Date.UTC(2026, 10, 9, 2) }), { text: `Paid 9${nb}Nov`, unpaid: false });
   assert.deepEqual(deliveryRow(delivery), { day: 'Wed 4 Nov', buyer: 'Kedai Ah Seng', lines: linesShort(delivery.lines), total: `RM${nb}214.50`, paid: paidMark(delivery), reference: 'R-1' });
@@ -48,15 +49,27 @@ test('the tiles: sold of harvested, income, owed all time', () => {
   assert.equal(pageTiles({ ...sales, owed: { total: 0, count: 0, oldestAt: null } }, NOW)[2].line, 'All paid');
 });
 
+test('the tiles with nothing: no "of 0.0 kg harvested", "Nothing owed" when the period has no sales and nothing is owed', () => {
+  const none = { days: 30, from: '2026-10-07', totals: { kg: 0, total: 0, harvestedKg: 0, count: 0 }, owed: { total: 0, count: 0, oldestAt: null } };
+  assert.deepEqual(pageTiles(none, NOW), [
+    { label: 'Sold', value: `0.0${nb}kg` },
+    { label: 'Income', value: `RM${nb}0.00` },
+    { label: 'Owed', value: `RM${nb}0.00`, line: 'Nothing owed' },
+  ]);
+  assert.equal(pageTiles({ ...none, totals: { ...none.totals, harvestedKg: 5 } }, NOW)[0].line, `of 5.0${nb}kg harvested`, 'harvested, none sold');
+  assert.equal(pageTiles({ ...none, totals: { kg: 2, total: 20, harvestedKg: 0, count: 1 } }, NOW)[2].line, 'All paid', 'sales in the period, all paid');
+  assert.equal(pageTiles({ ...none, owed: { total: 10, count: 1, oldestAt: NOW - 40 * DAY } }, NOW)[2].line, `all time${dot}1 sale${dot}oldest 40 days`, 'owed from before');
+});
+
 test('the tables: by crop with the price against expected, by buyer', () => {
   assert.deepEqual(CROP_COLUMNS, ['Crop', 'Sold', 'Harvested', 'Income', 'Average RM per kg', 'Expected RM per kg']);
   const [row] = cropRows({ byCrop: [{ crop: 'oyster', kg: 15, harvestedKg: 20, total: 165, avgPriceKg: 11, expectedPriceKg: 12 }] });
-  assert.deepEqual(row, { crop: 'oyster', name: 'Grey oyster', cells: [`15.0${nb}kg`, `20.0${nb}kg`, `RM${nb}165.00`, `RM${nb}11.00`, `RM${nb}12.00`], diff: `RM${nb}1.00 under expected` });
+  assert.deepEqual(row, { crop: 'oyster', name: 'Grey oyster', cells: [`15.0${nb}kg`, `20.0${nb}kg`, `RM${nb}165.00`, `RM${nb}11.00`, `RM${nb}12.00`], diff: `RM${nb}1.00 under expected`, sub: `15.0${nb}kg sold` });
   assert.equal(cropRows({ byCrop: [{ crop: 'oyster', kg: 1, harvestedKg: 0, total: 12.8, avgPriceKg: 12.8, expectedPriceKg: 12 }] })[0].diff, `RM${nb}0.80 over expected`);
   assert.equal(cropRows({ byCrop: [{ crop: 'oyster', kg: 1, harvestedKg: 0, total: 12, avgPriceKg: 12, expectedPriceKg: 12 }] })[0].diff, 'as expected');
   assert.equal(cropRows({ byCrop: [{ crop: 'oyster', kg: 0, harvestedKg: 3, total: 0, avgPriceKg: null, expectedPriceKg: null }] })[0].diff, null);
   assert.deepEqual(BUYER_COLUMNS, ['Buyer', 'kg', 'Income', 'Owed']);
-  assert.deepEqual(buyerRows({ byBuyer: [{ buyerId: 1, buyer: 'Borong Lim', kg: 10, total: 100, owed: 0 }] }), [{ name: 'Borong Lim', cells: [`10.0${nb}kg`, `RM${nb}100.00`, `RM${nb}0.00`] }]);
+  assert.deepEqual(buyerRows({ byBuyer: [{ buyerId: 1, buyer: 'Borong Lim', kg: 10, total: 100, owed: 0 }] }), [{ name: 'Borong Lim', cells: [`10.0${nb}kg`, `RM${nb}100.00`, `RM${nb}0.00`], sub: `10.0${nb}kg` }]);
   assert.equal(emptyText(30), 'No sales in the last 30 days.');
   assert.equal(emptyText(90), 'No sales in the last 13 weeks.');
 });

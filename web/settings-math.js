@@ -187,7 +187,7 @@ export function idAfter(ids, id) {
 
 export const YIELD_DRY = [0.05, 20];
 export const YIELD_PRICE = [0, 1000];
-export const YIELD_NOTE = "Biological efficiency is fresh kg over the dry substrate's kg. A 2.27 kg block at 60 % water holds about 0.9 kg dry. A change here changes the figures of past runs too. Sales records the prices you get.";
+export const YIELD_NOTE = "Biological efficiency is fresh kg over the dry substrate's kg. A 2.27 kg block at 60 % water holds about 0.9 kg dry. A change here changes the figures of past runs too. The prices you get are recorded in Sales.";
 
 const YIELD_NUMBER = /^[0-9]+(\.[0-9]+)?$/;
 
