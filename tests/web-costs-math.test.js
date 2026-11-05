@@ -78,3 +78,40 @@ test('profit bars: above and below one zero line, the shown month marked', () =>
   assert.equal(bars[2].pending, true);
   assert.ok(ticks.some((x) => x.label === `RM${NB}0`));
 });
+
+test('signs come from the rounded value', () => {
+  assert.equal(moneyText(-0.004), `RM${NB}0.00`);
+  assert.equal(moneyText(-0), `RM${NB}0.00`);
+  assert.equal(moneyText(-0.005), `−RM${NB}0.01`);
+  assert.equal(perKgText(-0), `RM${NB}0.00`);
+  assert.equal(perKgText(0), `RM${NB}0.00`);
+  assert.equal(perKgText(-0.00001), `RM${NB}0.00`);
+  assert.equal(perKgText(0.00001), `under${NB}RM${NB}0.0001`);
+  assert.equal(perKgText(-0.004), `−RM${NB}0.004`);
+});
+
+test('money: a large grouped value and its loss', () => {
+  assert.equal(moneyText(1234567.89), `RM${NB}1,234,567.89`);
+  assert.equal(moneyText(-1234567.89), `−RM${NB}1,234,567.89`);
+});
+
+test('monthsBetween across a year end', () => {
+  assert.deepEqual(monthsBetween('2026-11', '2027-02'), ['2026-11', '2026-12', '2027-01', '2027-02']);
+});
+
+test('a closed run ending after farm midnight reads the farm day', () => {
+  const run = { startedAt: Date.UTC(2026, 9, 2, 16), endedAt: Date.UTC(2026, 9, 31, 17), roomName: 'Container 1', crops: [], income: 0, costs: 0, profit: 0, profitPerKg: null };
+  assert.equal(runRow(run).dates, `3 Oct${NB}–${NB}1 Nov`);
+});
+
+test('entry lines: a utility bill and a monthly repeat; category rows without a share or source', () => {
+  assert.deepEqual(entryLine({ date: '2026-11-03', category: 'utilities', utility: 'electricity', roomName: 'Container 1', amount: 90, repeat: 'monthly' }),
+    { date: '3 Nov', what: 'Electricity bill', whom: 'Container 1', amount: `RM${NB}90.00`, monthly: true });
+  assert.deepEqual(categoryRows([{ label: 'Other', source: 'mystery', amount: 10, share: null }]),
+    [{ label: 'Other', source: null, amount: `RM${NB}10.00`, share: '—' }]);
+});
+
+test('profit bars: a single month does not fill the chart', () => {
+  const r = profitBars([{ month: '2026-11', profit: 100 }], '2026-11', 1000, 200);
+  assert.equal(r.bars[0].w, 48);
+});

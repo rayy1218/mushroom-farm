@@ -3,7 +3,10 @@
 // breakdown and the 12 months' profit bars. Every formatter shows a dash for a missing figure. A number keeps its unit at a
 // wrap (a no-break space, the Units Rule); kg and cost per kg come from Harvest's formatter.
 
-import { kgText, costKgText } from './harvest-math.js';
+import { kgText, costKgText, rmText } from './harvest-math.js';
+import { farmDate, dayMonth } from './tasks-math.js';
+import { shiftMonth, monthTitle } from './calendar-math.js';
+import { grouped } from './overview-math.js';
 import { cropShortName } from './crops.js';
 import { DOT } from './text-math.js';
 import { niceScale } from './usage-math.js';
@@ -11,34 +14,30 @@ import { niceScale } from './usage-math.js';
 const NB = ' ';
 const DASH = '—';
 const MINUS = '−';
-const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-const FARM_OFFSET_MS = 8 * 3_600_000; // the farm's time is UTC+8 all year
 const finite = (x) => typeof x === 'number' && Number.isFinite(x);
-const grouped = (n, places) => n.toLocaleString('en-US', { minimumFractionDigits: places, maximumFractionDigits: places });
 
-// "RM 1,240.50", "−RM 1,240.50".
+// "RM 1,240.50", "−RM 1,240.50"; the sign comes from the rounded value (a loss under half a sen reads "RM 0.00").
 export function moneyText(v) {
   if (!finite(v)) return DASH;
-  const t = `RM${NB}${grouped(Math.abs(v), 2)}`;
-  return v < 0 ? `${MINUS}${t}` : t;
+  if (Math.round(Math.abs(v) * 100) === 0) return rmText(0);
+  return v < 0 ? `${MINUS}${rmText(-v)}` : rmText(v);
 }
-// A cost or profit per kg: Harvest's rule (never a false RM 0.00), a loss with a "−".
-export const perKgText = (v) => (!finite(v) ? DASH : v < 0 ? `${MINUS}${costKgText(-v)}` : costKgText(v));
+// A cost or profit per kg: Harvest's rule (never a false RM 0.00), a loss with a "−"; a loss under RM 0.0001 is zero.
+export function perKgText(v) {
+  if (!finite(v)) return DASH;
+  if (Math.abs(v) < 0.0001 && v <= 0) return rmText(0);
+  return v < 0 ? `${MINUS}${costKgText(-v)}` : costKgText(v);
+}
 const axisMoney = (v) => `${v < 0 ? MINUS : ''}RM${NB}${grouped(Math.abs(v), 0)}`;
 
-export const monthTitle = (month) => `${MONTHS[Number(month.slice(5)) - 1]} ${month.slice(0, 4)}`; // "November 2026"
-const monthShort = (month) => `${MONTHS[Number(month.slice(5)) - 1].slice(0, 3)} ${month.slice(0, 4)}`; // "Nov 2026"
-export function addMonths(month, n) {
-  const [y, m] = month.split('-').map(Number);
-  return new Date(Date.UTC(y, m - 1 + n, 1)).toISOString().slice(0, 7);
-}
+export { monthTitle, shiftMonth as addMonths }; // "November 2026"; one month on or back, 'YYYY-MM'
+const monthShort = (month) => `${monthTitle(month).slice(0, 3)} ${month.slice(0, 4)}`; // "Nov 2026"
 export function monthsBetween(a, b) {
   const out = [];
-  for (let m = a; m <= b; m = addMonths(m, 1)) out.push(m);
+  for (let m = a; m <= b; m = shiftMonth(m, 1)) out.push(m);
   return out;
 }
-const dayText = (date) => `${Number(date.slice(8))} ${MONTHS[Number(date.slice(5, 7)) - 1].slice(0, 3)}`; // "3 Nov"
-const farmDay = (ms) => new Date(ms + FARM_OFFSET_MS).toISOString().slice(0, 10);
+const dayText = (ms) => dayMonth(farmDate(ms)); // "3 Nov" on the farm's clock
 
 const PENDING = 'Working out the energy cost…';
 
@@ -70,7 +69,7 @@ const whatOf = (c) => [c.utility ? UTILITY_WORDS[c.utility] ?? nameOf(c) : nameO
 
 // An entry of the month: { date, what, whom, amount, monthly }.
 export const entryLine = (e) => ({
-  date: dayText(e.date), what: whatOf(e), whom: e.roomName ?? 'The farm', amount: moneyText(e.amount), monthly: e.repeat === 'monthly',
+  date: dayMonth(e.date), what: whatOf(e), whom: e.roomName ?? 'The farm', amount: moneyText(e.amount), monthly: e.repeat === 'monthly',
 });
 
 // A monthly item: { what, whom, amount, since }.
@@ -82,9 +81,9 @@ export const RUN_COLUMNS = ['Dates', 'Container', 'Crops', 'Income', 'Costs', 'P
 
 // A run's row: { dates, room, crops, cells (Income, Costs, Profit, Profit per kg), loss }.
 export function runRow(run) {
-  const to = run.endedAt === null ? 'now' : dayText(farmDay(run.endedAt));
+  const to = run.endedAt === null ? 'now' : dayText(run.endedAt);
   return {
-    dates: `${dayText(farmDay(run.startedAt))}${NB}–${NB}${to}`, room: run.roomName,
+    dates: `${dayText(run.startedAt)}${NB}–${NB}${to}`, room: run.roomName,
     crops: run.crops.map((c) => cropShortName(c.crop)).join(', '),
     cells: [moneyText(run.income), moneyText(run.costs), moneyText(run.profit), perKgText(run.profitPerKg)],
     loss: finite(run.profit) && run.profit < 0,
@@ -99,6 +98,7 @@ export function runParts(run) {
   ].filter(([, v]) => v > 0).map(([label, v]) => [label, moneyText(v)]).concat([['Income', moneyText(run.income)]]);
 }
 
+const MAX_BAR_W = 48;
 export const BARS_M = { left: 72, right: 8, top: 10, bottom: 22 };
 
 // The 12 months' profit bars in a width × height box: { bars: [{ month, label, x, y, w, h, loss, pending, shown }], zeroY,
@@ -107,6 +107,7 @@ export function profitBars(months, shown, width, height, m = BARS_M) {
   const values = months.map((x) => (finite(x.profit) ? x.profit : 0));
   const hi = Math.max(0, ...values);
   const lo = Math.min(0, ...values);
+  // Each side of the zero line is scaled on its own (niceScale per side).
   const up = hi > 0 ? niceScale(hi, 4) : null;
   const down = lo < 0 ? niceScale(-lo, 4) : null;
   const top = up?.max ?? (down ? 0 : 1);
@@ -114,15 +115,15 @@ export function profitBars(months, shown, width, height, m = BARS_M) {
   const plotH = height - m.top - m.bottom;
   const y = (v) => m.top + ((top - v) / (top + bottom)) * plotH;
   const slot = (width - m.left - m.right) / Math.max(1, months.length);
-  const w = Math.max(2, slot * 0.64);
+  const w = Math.min(MAX_BAR_W, Math.max(2, slot * 0.64)); // one month never fills the chart
   const bars = months.map((x, i) => {
     const v = values[i];
     const [y0, y1] = [y(0), y(v)];
     return {
-      month: x.month, label: MONTHS[Number(x.month.slice(5)) - 1].slice(0, 3), x: m.left + i * slot + (slot - w) / 2,
+      month: x.month, label: monthTitle(x.month).slice(0, 3), x: m.left + i * slot + (slot - w) / 2,
       y: Math.min(y0, y1), w, h: Math.max(1, Math.abs(y1 - y0)), loss: v < 0, pending: x.profit === null, shown: x.month === shown,
     };
   });
-  const values2 = [...(up?.ticks ?? [0]), ...(down?.ticks.slice(1).map((v) => -v) ?? [])];
-  return { bars, zeroY: y(0), ticks: values2.map((v) => ({ y: y(v), label: axisMoney(v) })) };
+  const tickValues = [...(up?.ticks ?? [0]), ...(down?.ticks.slice(1).map((v) => -v) ?? [])];
+  return { bars, zeroY: y(0), ticks: tickValues.map((v) => ({ y: y(v), label: axisMoney(v) })) };
 }

@@ -168,7 +168,7 @@ export function createCosts({ db, now = Date.now, zone = localZone, log = consol
     if (!CATEGORIES.includes(category)) throw new CostError(400, 'Pick a category', 'category');
     const given = pick('amount');
     const amount = typeof given === 'number' && Number.isFinite(given) ? Math.round(given * 100) / 100 : NaN;
-    if (!(amount > 0 && amount <= MAX_AMOUNT)) throw new CostError(400, 'RM must be a number over 0 up to 1,000,000', 'amount');
+    if (!(amount > 0 && amount <= MAX_AMOUNT)) throw new CostError(400, 'The amount must be a number over 0 up to RM 1,000,000', 'amount');
     const roomId = pick('roomId') ?? null;
     if (roomId !== null && !(Number.isInteger(roomId) && db.getRoom(roomId))) throw new CostError(400, 'That container no longer exists', 'roomId');
     const text = pick('note') ?? '';
@@ -254,7 +254,7 @@ export function createCosts({ db, now = Date.now, zone = localZone, log = consol
       const c = monthlyOf(id);
       const b = bodyOf(body);
       const from = monthIn(b.from, c, 'from');
-      if (b.amount === undefined) throw new CostError(400, 'RM must be a number over 0 up to 1,000,000', 'amount');
+      if (b.amount === undefined) throw new CostError(400, 'The amount must be a number over 0 up to RM 1,000,000', 'amount');
       const fields = fieldsOf({ amount: b.amount, note: b.note ?? c.note }, c);
       if (from === monthOf(c.date)) {
         const started = db.updateCost(id, fields);
