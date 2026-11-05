@@ -3,7 +3,7 @@
 // The browser reconnects by itself; a closed stream is opened again after RETRY_MS. Pages ask for their data when an event
 // comes (and when the stream is back, in case they missed some); their own timers are the fallback.
 
-export const EVENT_TYPES = ['room', 'alarms', 'outdoor', 'simulation', 'sizing', 'tasks', 'harvest'];
+export const EVENT_TYPES = ['room', 'alarms', 'outdoor', 'simulation', 'sizing', 'tasks', 'harvest', 'inventory'];
 export const RETRY_MS = 5000;
 const CLOSED = 2; // EventSource.CLOSED
 

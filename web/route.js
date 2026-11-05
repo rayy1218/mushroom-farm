@@ -68,6 +68,14 @@ const daysOf = (query) => {
 };
 export const sheetHash = (days) => `#/harvest/sheet?days=${days}`;
 
+// ---- Inventory (spec 2026-11-05-inventory-design.md 5): the list, an item, Count stock and the myGAP 4-5 sheet with its
+// period (30, 90 or 365 days; 30 without one). Reached by address until the Business entry is added at the merge. ----
+export const INVENTORY_HASH = '#/business/inventory';
+export const INVENTORY_COUNT_HASH = `${INVENTORY_HASH}/count`;
+export const inventoryItemHash = (id) => `${INVENTORY_HASH}/${id}`;
+const INVENTORY_SHEET_DAYS = [30, 90, 365];
+export const inventorySheetHash = (days = 30) => `${INVENTORY_HASH}/sheet?days=${days}`;
+
 export function parseRoute(hash) {
   const run = new RegExp(`^#/rooms/${ID}/simulations/${ID}/?$`).exec(hash ?? '');
   if (run) return { name: 'simulation', id: Number(run[1]), runId: Number(run[2]) };
@@ -90,6 +98,16 @@ export function parseRoute(hash) {
   if (sheet) return { name: 'sheet', days: daysOf(sheet[1]) };
   const harvest = /^#\/harvest\/?(?:\?(.*))?$/.exec(hash ?? '');
   if (harvest) return { name: 'harvest', days: daysOf(harvest[1]) };
+  // ---- Inventory ----
+  const inventory = /^#\/business\/inventory(?:\/(count|sheet|[1-9][0-9]{0,14}))?\/?(?:\?(.*))?$/.exec(hash ?? '');
+  if (inventory) {
+    if (inventory[1] === 'count') return { name: 'inventoryCount' };
+    if (inventory[1] === 'sheet') {
+      const n = Number(new URLSearchParams(inventory[2] ?? '').get('days'));
+      return { name: 'inventorySheet', days: INVENTORY_SHEET_DAYS.includes(n) ? n : 30 };
+    }
+    return inventory[1] ? { name: 'inventoryItem', id: Number(inventory[1]) } : { name: 'inventory' };
+  }
   // #/rooms (the Rooms list until 2026-10-28) is the Overview now: it holds every room and Add room.
   if (/^#\/settings\/?$/.test(hash ?? '')) return { name: 'settings' };
   return { name: 'overview' };
@@ -105,6 +123,10 @@ export function canonicalHash(route) {
   if (route.name === 'calendar') return calendarHash(route);
   if (route.name === 'harvest') return route.days === 30 ? HARVEST_HASH : `${HARVEST_HASH}?days=${route.days}`;
   if (route.name === 'sheet') return sheetHash(route.days);
+  if (route.name === 'inventory') return INVENTORY_HASH; // ---- Inventory ----
+  if (route.name === 'inventoryItem') return inventoryItemHash(route.id);
+  if (route.name === 'inventoryCount') return INVENTORY_COUNT_HASH;
+  if (route.name === 'inventorySheet') return inventorySheetHash(route.days);
   return route.name === 'settings' ? '#/settings' : '#/overview';
 }
 
