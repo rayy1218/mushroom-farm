@@ -3,50 +3,23 @@
 // (3.2). Every write keeps Inventory's stock moves in step (3.1) when Inventory's tables exist. No HTTP.
 
 import { CROP_KEYS, cropShortName } from '../web/crops.js';
-import { localDate, dayStart, addDays } from './task-rules.js';
+import { localDate, addDays } from './task-rules.js';
 import { checkWorker, TaskError } from './tasks.js';
 import { cell } from './csv.js';
 import { goodOf, dryKgOf, runDryKg, blockCost, statusOf, runBlocksOf, movesOf } from './batches-math.js';
+import {
+  BatchError, MAX_BLOCKS, MAX_NOTE, EARLIEST, bad, conflict, isPlain, intIn, numIn, isDate, grouped, textOf, weightOf,
+} from './batches-fields.js';
 
-export const MAX_BLOCKS = 100_000;
+export { BatchError, MAX_BLOCKS };
 export const CAUSES = ['green', 'black', 'bacterial', 'pests', 'other'];
 const STATUSES = ['waiting', 'placed', 'past'];
-const MAX_TEXT = 80;
-const MAX_NOTE = 500;
-const EARLIEST = Date.UTC(2000, 0, 1);
 // Edited on any row of a delivery, written to all of them (spec 2.1); a part copies these and the making columns.
 const SHARED = ['crop', 'supplier', 'receivedAt', 'pricePerBlock', 'spawnBatch', 'strain', 'deliveryRef', 'inoculatedAt', 'blockKg', 'waterPct'];
 const COPIED = [...SHARED, 'kind', 'recipeId', 'mixedAt', 'incubation', 'incubatedFrom', 'incubatedTo'];
 const CSV_HEAD = ['received', 'crop', 'kind', 'supplier', 'strain', 'spawn batch', 'delivery note', 'blocks', 'lost', 'price per block', 'room',
   'run started', 'placed', 'block kg', 'water %', 'note'];
-
-export class BatchError extends Error {
-  constructor(status, message, field = undefined) {
-    super(message);
-    this.name = 'BatchError';
-    this.status = status;
-    this.field = field;
-  }
-}
-
-const bad = (message, field) => new BatchError(400, message, field);
-const conflict = (message, field) => new BatchError(409, message, field);
-const isPlain = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
-const intIn = (v, min, max) => Number.isInteger(v) && v >= min && v <= max;
-const numIn = (v, min, max) => typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max;
-const isDate = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && Number.isFinite(dayStart(s)) && localDate(dayStart(s)) === s;
-const grouped = (n) => n.toLocaleString('en-US');
 const pick = (row, keys) => Object.fromEntries(keys.map((k) => [k, row[k]]));
-
-// A text field: trimmed, at most max characters, no control characters (a note may hold line breaks); empty is null.
-function textOf(v, field, label, max = MAX_TEXT) {
-  if (v === undefined || v === null) return null;
-  const control = field === 'note' ? /[\u0000-\u0009\u000b-\u001f\u007f]/ : /[\u0000-\u001f\u007f]/;
-  if (typeof v !== 'string' || control.test(v)) throw bad(`${label} must be plain text`, field);
-  const s = v.trim();
-  if (s.length > max) throw bad(`${label} must be at most ${max} characters`, field);
-  return s || null;
-}
 
 // The receive fields of body, checked (spec 3). With `was` (an edit) only the fields given are checked and returned, the
 // cross checks (inoculated by received, weight with water) made against the stored row. → camelCase fields.
@@ -86,16 +59,7 @@ function checkFields(body, now, was = null) {
     if (v !== null && !(Number.isInteger(v) && v >= EARLIEST && v <= now)) throw bad('Pick the day inoculated', 'inoculatedAt');
     out.inoculatedAt = v;
   }
-  if (asked('blockKg') || asked('waterPct')) {
-    const kg = has('blockKg') ? body.blockKg ?? null : was?.blockKg ?? null;
-    const water = has('waterPct') ? body.waterPct ?? null : was?.waterPct ?? null;
-    if (kg !== null && !numIn(kg, 0.2, 10)) throw bad('Block weight must be 0.2–10 kg, or empty', 'blockKg');
-    if (water !== null && !numIn(water, 30, 80)) throw bad('Water must be 30–80 %, or empty', 'waterPct');
-    if (kg === null && water !== null) throw bad('Give the block weight with the water %', 'blockKg');
-    if (kg !== null && water === null) throw bad('Give the water % with the block weight', 'waterPct');
-    out.blockKg = kg;
-    out.waterPct = water;
-  }
+  if (asked('blockKg') || asked('waterPct')) Object.assign(out, weightOf(body, was));
   const received = out.receivedAt ?? was?.receivedAt;
   const inoculated = 'inoculatedAt' in out ? out.inoculatedAt : was?.inoculatedAt ?? null;
   if (inoculated !== null && localDate(inoculated) > localDate(received)) throw bad('Inoculated must be on or before the day received', 'inoculatedAt');
