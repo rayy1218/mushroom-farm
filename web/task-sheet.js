@@ -1,14 +1,15 @@
 // A room's month sheet of daily tasks (spec 2026-11-04-task-grid-design.md 4), #/rooms/:id/tasks/sheet?month=YYYY-MM: the
-// paper log the owner showed, filled from the app (✓ and initials, ✗, —, shaded not due), blank for the pen on the days still
-// to come with the planned boxes outlined, and the Farm and Reviewed-by lines. A print page as the myGAP sheet: Print and
-// Back, hidden in print; one A4, portrait for 8 columns or fewer, landscape above (styles.css). It asks for GET /api/calendar
-// for the month on the room's tasks and harvest events, when the stream comes back, and on a timer.
+// paper log the owner showed, filled from the app (✓ and initials, ✗ the heaviest mark, —, shaded not due), blank for the pen
+// on the days still to come with the planned boxes outlined, and the Farm and Reviewed-by lines. A print page as the myGAP
+// sheet: Print and Back, hidden in print; A4 portrait for 12 columns or fewer, landscape above (two pages: the 1st to the
+// 15th, then the rest, so the rows stay tall enough to write in; styles.css). It asks for GET /api/calendar for the month on
+// the room's tasks and harvest events, when the stream comes back, and on a timer.
 
 import { request, OFFLINE, OUTDATED, routeMissing } from './api.js';
 import { taskSheetHash, tasksHash } from './route.js';
 import { live } from './live.js';
 import { fallbackMs, createThrottle } from './live-math.js';
-import { monthDays, monthTitle, sheetRows, sheetLayout, weekOf, LEGEND } from './task-grid-math.js';
+import { monthDays, monthTitle, sheetRows, sheetLayout, sheetHead, weekOf, legendFor } from './task-grid-math.js';
 import { farmDate } from './tasks-math.js';
 import { loadWorkers } from './task-dialogs.js';
 import { el } from './task-list.js';
@@ -43,7 +44,7 @@ const TEMPLATE = `
     </div>
     <div class="ts-foot">
       <p class="ts-review">Sheet reviewed by: <span class="ts-line"></span> (Management) on <span class="ts-line ts-line-short"></span></p>
-      <p class="ts-legend">${LEGEND}${DOT}outlined: due</p>
+      <p class="ts-legend" data-legend></p>
     </div>
   </div>`;
 
@@ -59,8 +60,19 @@ export function mountSheet(container, { roomId, month = null, from = null } = {}
   const els = {
     sheet: q('.ts-sheet'), back: q('[data-back]'), title: q('.ts-title'), month: q('[data-month]'), banner: q('.banner'),
     bannerText: q('[data-banner-text]'), none: q('[data-none]'), wrap: q('[data-wrap]'), caption: q('[data-caption]'),
-    head: q('[data-head]'), rows: q('[data-rows]'), table: q('.ts-table'),
+    head: q('[data-head]'), rows: q('[data-rows]'), table: q('.ts-table'), legend: q('[data-legend]'),
   };
+  // the legend: each box as the sheet draws it, with its words (the grid's list, less what only a screen shows)
+  const KEY_CLASS = { open: ' ts-outlined', none: ' ts-shaded' };
+  legendFor('sheet').forEach((e, i) => {
+    const key = el('span', 'ts-key');
+    const sample = el('span', `ts-key-box${KEY_CLASS[e.kind] ?? ''}`);
+    sample.dataset.kind = e.kind;
+    if (e.mark) sample.append(el('span', 'ts-mark', e.mark));
+    sample.setAttribute('aria-hidden', 'true');
+    key.append(sample, e.words);
+    els.legend.append(...(i ? [DOT, key] : [key]));
+  });
   document.title = 'Daily tasks sheet · Mushroom farm';
   document.body.classList.add('printing-sheet'); // print: no top bar, no buttons, light colours (styles.css)
   const cameFrom = from?.name === 'detail' && from.id === roomId && from.tab === 'tasks' ? from : null;
@@ -102,28 +114,38 @@ export function mountSheet(container, { roomId, month = null, from = null } = {}
     els.table.style.setProperty('--cols', String(sheet.columns.length)); // a phone scrolls a wide month sideways
     const corner = el('th', 'ts-day', 'Day');
     corner.scope = 'col';
+    // Initials: for the pen while a day of the month is still to come (a month gone by has none: it could never be used)
     const initials = el('th', 'ts-initials', 'Initials');
     initials.scope = 'col';
     els.head.replaceChildren(corner, ...sheet.columns.map((c) => {
       const th = el('th', 'ts-task');
       th.scope = 'col';
       th.title = c.text;
-      th.append(el('span', 'ts-task-name', c.shortName));
+      th.append(el('span', 'ts-task-name', sheetHead(c))); // "Harvest AM (kg)": the boxes' amounts are bare
       return th;
-    }), initials);
+    }), ...(sheet.initials ? [initials] : []));
     els.rows.replaceChildren(...sheet.rows.map((r) => {
       const tr = el('tr');
-      if (r.date === cal.today) tr.className = 'ts-today';
+      if (r.date === cal.today) tr.classList.add('ts-today');
+      if (r.weekEnd) tr.classList.add('ts-week-end'); // a Sunday rules off the week
+      if (layout.landscape && r.day === 16) tr.classList.add('ts-half'); // landscape: the second page
       const th = el('th', 'ts-day');
       th.scope = 'row';
       th.append(el('span', 'ts-date', String(r.day)), ' ', el('span', 'ts-weekday', r.weekday));
       tr.append(th, ...r.cells.map((c) => {
-        const td = el('td', `ts-box${c.outlined ? ' ts-outlined' : ''}${c.shaded ? ' ts-shaded' : ''}`, c.text);
-        if (!c.text && BLANK[c.kind] && (c.shaded || c.outlined)) td.append(el('span', 'sr-only', BLANK[c.kind]));
+        // the mark and amount on top, the initials under them when there is an amount (a narrow column keeps it whole)
+        const two = Boolean(c.amount && c.who);
+        const td = el('td', `ts-box${c.outlined ? ' ts-outlined' : ''}${c.shaded ? ' ts-shaded' : ''}${two ? ' ts-two' : ''}`);
+        td.dataset.kind = c.kind;
+        if (c.mark) {
+          const top = el('span', 'ts-top');
+          top.append(el('span', 'ts-mark', c.mark), ...(c.amount ? [' ', c.amount] : []));
+          td.append(top, ...(c.who ? [two ? '' : ' ', el('span', 'ts-who', c.who)] : []));
+        } else if (BLANK[c.kind] && (c.shaded || c.outlined)) td.append(el('span', 'sr-only', BLANK[c.kind]));
         return td;
       }));
       // the pen's initials on the days still to come (today's too: its open boxes are for the pen); a day gone has the app's
-      tr.append(el('td', `ts-write${r.date < cal.today ? ' ts-shaded' : ''}`));
+      if (sheet.initials) tr.append(el('td', `ts-write${r.date < cal.today ? ' ts-shaded' : ''}`));
       return tr;
     }));
   }

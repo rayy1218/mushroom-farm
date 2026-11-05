@@ -24,7 +24,7 @@ test("the page: the month's calendar for the room, the head, the table with Init
   assert.ok(page.includes('els.month.textContent = monthTitle(shown);'));
   assert.ok(page.includes("const initials = el('th', 'ts-initials', 'Initials');"));
   assert.ok(page.includes('Sheet reviewed by: <span class="ts-line"></span> (Management) on <span class="ts-line ts-line-short"></span>'));
-  assert.ok(page.includes('${LEGEND}${DOT}outlined: due'));
+  assert.ok(page.includes("legendFor('sheet').forEach((e, i) => {"), 'the grid\'s legend list, each box drawn (critique #13)');
   assert.ok(page.includes("q('[data-print]').addEventListener('click', () => window.print());"));
   assert.ok(page.includes('els.back.href = tasksHash(roomId, week);'));
   assert.ok(page.includes("const cameFrom = from?.name === 'detail' && from.id === roomId && from.tab === 'tasks' ? from : null;"), 'Back: the week it came from');
@@ -34,8 +34,13 @@ test('the sheet\'s rows and page: sheetRows, portrait or landscape and the sidew
   assert.ok(page.includes('const sheet = sheetRows({ month: shown, days: cal.days, today: cal.today, workers });'));
   assert.ok(page.includes("els.sheet.classList.toggle('ts-landscape', layout.landscape);"));
   assert.ok(page.includes("els.sheet.classList.toggle('ts-sideways', layout.sideways);"));
-  assert.ok(page.includes("el('td', `ts-box${c.outlined ? ' ts-outlined' : ''}${c.shaded ? ' ts-shaded' : ''}`, c.text)"));
-  assert.ok(page.includes("tr.append(el('td', `ts-write${r.date < cal.today ? ' ts-shaded' : ''}`));"), 'Initials: blank for the pen from today on');
+  assert.ok(page.includes("const td = el('td', `ts-box${c.outlined ? ' ts-outlined' : ''}${c.shaded ? ' ts-shaded' : ''}${two ? ' ts-two' : ''}`);"));
+  assert.ok(page.includes('td.dataset.kind = c.kind;'), 'a missed ✗ styled the heaviest (critique #5)');
+  assert.ok(page.includes("td.append(top, ...(c.who ? [two ? '' : ' ', el('span', 'ts-who', c.who)] : []));"), 'initials under an amount (#3)');
+  assert.ok(page.includes("th.append(el('span', 'ts-task-name', sheetHead(c)));"), 'the unit in the head (#2)');
+  assert.ok(page.includes("if (r.weekEnd) tr.classList.add('ts-week-end');"), 'a Sunday rules off the week (#22)');
+  assert.ok(page.includes("if (sheet.initials) tr.append(el('td', `ts-write${r.date < cal.today ? ' ts-shaded' : ''}`));"), 'Initials: blank for the pen from today on; none in a month gone by (#23)');
+  assert.ok(page.includes("if (layout.landscape && r.day === 16) tr.classList.add('ts-half');"), 'landscape: the 16th starts the second page');
 });
 
 test('no month in the address: this month by the server, put in the address without a history entry', () => {
@@ -60,7 +65,13 @@ test('print: A4 portrait or landscape by named pages, the tools hidden, the ligh
   assert.match(css, /@media print \{\n  body\.printing-sheet \{\s*color-scheme: light; --page: #fff;/, 'the light tokens the page shares');
   assert.match(css, /body\.printing-sheet \.ts-shaded \{ background: #d4d4d4; -webkit-print-color-adjust: exact; print-color-adjust: exact; \}/);
   assert.match(css, /body\.printing-sheet \.ts-table tr \{ break-inside: avoid; \}/);
-  assert.match(css, /\.ts-wrap \{ overflow-x: auto; \}/, 'a phone scrolls it sideways');
+  assert.match(css, /\.ts-wrap \{ position: relative; overflow-x: auto; \}/, 'a phone scrolls it sideways, and only it');
+  assert.ok(css.includes('body.printing-sheet .ts-table :is(th, td) { height: 7mm;'), 'rows to write in (critique #3, #4)');
+  assert.ok(css.includes('body.printing-sheet .ts-landscape .ts-table tr.ts-half { break-before: page; }'));
+  assert.ok(css.includes('body.printing-sheet .ts-outlined::before { inset: 0.4mm; border: 0.75pt solid #000; border-radius: 0; }'), 'square cells, not buttons');
+  assert.ok(css.includes('.ts-box[data-kind="missed"] .ts-mark, .ts-key-box[data-kind="missed"] .ts-mark { color: var(--warning-text); font-size: 1.3em; font-weight: 800;'));
+  assert.ok(css.includes('body.printing-sheet :is(.ts-box, .ts-key-box)[data-kind="missed"] .ts-mark { color: #000; }'), 'black on paper');
+  assert.ok(css.includes('.ts-outlined::before { content: \'\'; position: absolute; inset: 4px; border: 1px dashed var(--border-strong);'), 'dashed on screen (#23)');
   assert.match(css, /\.ts-sideways \.ts-task-name \{[^}]*writing-mode: vertical-rl; transform: rotate\(180deg\);/);
 });
 

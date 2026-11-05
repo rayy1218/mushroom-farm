@@ -350,8 +350,9 @@ html { scroll-padding-top: var(--topbar-h); }
   body.printing-sheet .hv-sheet-table td { height: 9mm; }
   body.printing-sheet .hv-sheet-wrap { overflow: visible; }
 }
-/* Printing a room's month sheet of daily tasks (web/task-sheet.js): one A4, portrait for 8 columns or fewer, landscape above
-   (task-grid-math sheetLayout), the same light paper; marks in black, the shade printed */
+/* Printing a room's month sheet of daily tasks (web/task-sheet.js): A4 portrait for 12 columns or fewer, landscape above
+   (task-grid-math sheetLayout) over two pages, the 1st to the 15th and the rest, so the rows stay 7 mm to write in; the same
+   light paper; marks in black, ✗ the heaviest, the shade printed, the pen's boxes square cells */
 .ts-sheet { page: ts-portrait; }
 .ts-sheet.ts-landscape { page: ts-landscape; }
 @page ts-portrait { size: A4 portrait; margin: 12mm; }
@@ -361,15 +362,17 @@ html { scroll-padding-top: var(--topbar-h); }
   body.printing-sheet .ts-title { font-size: 13pt; max-width: none; }
   body.printing-sheet .ts-month { font-size: 11pt; }
   body.printing-sheet .ts-wrap { overflow: visible; }
-  body.printing-sheet .ts-table { min-width: 0; font-size: 8pt; }
-  body.printing-sheet .ts-table :is(th, td) { height: 6.4mm; padding: 0 1mm; border-color: #000; }
+  body.printing-sheet .ts-table { min-width: 0; font-size: 7.5pt; }
+  body.printing-sheet .ts-table :is(th, td) { height: 7mm; padding: 0 0.8mm; border-color: #000; }
   body.printing-sheet .ts-table thead th { height: auto; padding: 1mm; font-size: 7.5pt; }
   body.printing-sheet .ts-table .ts-day { width: 12mm; position: static; box-shadow: none; } /* no sticky edge or today ring on paper */
   body.printing-sheet .ts-table .ts-initials { width: 18mm; }
-  body.printing-sheet .ts-landscape .ts-table :is(tbody th, td) { height: 4.3mm; font-size: 7.5pt; } /* 31 days on the short side */
-  body.printing-sheet .ts-sideways .ts-task-name { max-height: 22mm; }
+  body.printing-sheet .ts-table tr.ts-week-end > * { border-bottom-width: 1.5pt; }
+  body.printing-sheet .ts-landscape .ts-table tr.ts-half { break-before: page; }
+  body.printing-sheet .ts-sideways .ts-task-name { height: 24mm; max-height: none; } /* the line length the names wrap at (max-height does not, sideways) */
   body.printing-sheet .ts-shaded { background: #d4d4d4; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  body.printing-sheet .ts-outlined::before { inset: 0.6mm 1.2mm; border-color: #000; }
+  body.printing-sheet .ts-outlined::before { inset: 0.4mm; border: 0.75pt solid #000; border-radius: 0; }
+  body.printing-sheet :is(.ts-box, .ts-key-box)[data-kind="missed"] .ts-mark { color: #000; }
   body.printing-sheet .ts-table tr { break-inside: avoid; }
   body.printing-sheet .ts-foot { margin-top: 3mm; font-size: 9pt; }
   body.printing-sheet .ts-legend { font-size: 8pt; }
@@ -1833,8 +1836,9 @@ td.tg-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: -2p
 }
 
 /* ---- the month sheet of a room's daily tasks, #/rooms/:id/tasks/sheet (spec 2026-11-04-task-grid-design.md 4): the paper
-   log on screen, web/task-sheet.js. Marks in the ink (no amber: the paper has one ink), boxes not due shaded, the pen's boxes
-   outlined; a phone scrolls it sideways. Print rules with the myGAP sheet's, near the top. ---- */
+   log on screen, web/task-sheet.js. Marks in the ink, a missed ✗ the heaviest (amber on screen as the grid's; the ink on
+   paper), boxes not due shaded, the pen's boxes outlined (dashed on screen, as the grid's planned box; solid on paper), a
+   Sunday rules off the week; a phone scrolls it sideways. Print rules with the myGAP sheet's, near the top. ---- */
 .ts-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
 .ts-tools .back { margin: 0; }
 .ts-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 24px; margin-bottom: 16px; }
@@ -1844,7 +1848,7 @@ td.tg-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: -2p
 .ts-line { display: inline-block; min-width: 30ch; height: 1em; border-bottom: 1px solid var(--border-strong); vertical-align: baseline; } /* written in */
 .ts-line-short { min-width: 14ch; }
 .ts-sheet > .none { color: var(--muted); }
-.ts-wrap { overflow-x: auto; }
+.ts-wrap { position: relative; overflow-x: auto; } /* relative: the screen-reader words in its boxes scroll with them, not the page sideways */
 .ts-table { width: 100%; min-width: calc(7.5rem + var(--cols, 6) * 4.5rem); border-collapse: collapse; table-layout: fixed;
   font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
 .ts-table th, .ts-table td { height: 2rem; padding: 2px 4px; border: 1px solid var(--border-strong); font-weight: inherit; text-align: center; }
@@ -1859,14 +1863,23 @@ td.tg-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: -2p
 .ts-task-name { overflow-wrap: anywhere; } /* a long word in a column too narrow for it breaks rather than run into the next head */
 .ts-sideways .ts-task-name { display: inline-block; max-height: 7.5rem; writing-mode: vertical-rl; transform: rotate(180deg); text-align: left;
   overflow-wrap: normal; }
-.ts-box { font-weight: 600; white-space: nowrap; }
+.ts-table .ts-box { font-weight: 600; white-space: nowrap; overflow: hidden; } /* the guard: a figure never runs into the next column */
+.ts-box .ts-who { font-weight: 600; }
+.ts-box.ts-two { line-height: 1.1; }
+.ts-box.ts-two .ts-who { display: block; font-size: .85em; } /* "✓ 19.59" over "AM" */
+.ts-box[data-kind="missed"] .ts-mark, .ts-key-box[data-kind="missed"] .ts-mark { color: var(--warning-text); font-size: 1.3em; font-weight: 800; line-height: 1; }
+.ts-table tr.ts-week-end > * { border-bottom-width: 2px; }
 .ts-shaded { background: var(--band); }
 .ts-outlined { position: relative; }
-.ts-outlined::before { content: ''; position: absolute; inset: 4px; border: 1px solid var(--ink-2); border-radius: 3px; }
+.ts-outlined::before { content: ''; position: absolute; inset: 4px; border: 1px dashed var(--border-strong); border-radius: 3px; }
 .ts-table .ts-today .ts-day { box-shadow: inset 3px 0 var(--accent), inset -1px 0 var(--border-strong); } /* the screen's only: today */
 .ts-foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 32px; margin-top: 16px; }
 .ts-foot p { margin: 0; }
-.ts-legend { color: var(--ink-2); font-size: var(--fs-sm); }
+.ts-legend { color: var(--ink-2); font-size: var(--fs-sm); line-height: 1.9; }
+.ts-key { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; vertical-align: middle; }
+.ts-key-box { position: relative; display: inline-grid; place-items: center; width: 18px; height: 18px; border: 1px solid var(--border-strong);
+  font-size: 12px; font-weight: 600; line-height: 1; }
+.ts-key-box.ts-outlined::before { inset: 3px; }
 @media screen and (max-width: 600px) {
   .ts-tools .back { padding: 10px 0; }
   .ts-line { min-width: 20ch; }
