@@ -30,6 +30,7 @@ test('RM to 2 places with grouping', () => {
 test('the price per unit: 2 places from RM 0.10, two significant digits below, never a false 0', () => {
   assert.equal(plain(perUnitText(25, 3, 'L')), 'RM 8.33 per L');
   assert.equal(plain(perUnitText(4, 100, 'pcs')), 'RM 0.04 per piece');
+  assert.equal(perUnitText(-1, 3, 'L'), '');
   assert.equal(plain(perUnitText(3.5, 1000, 'mL')), 'RM 0.0035 per mL');
   assert.equal(plain(perUnitText(0.01, 1000, 'g')), 'under RM 0.0001 per g');
   assert.equal(plain(perUnitText(0, 5, 'kg')), 'RM 0.00 per kg');

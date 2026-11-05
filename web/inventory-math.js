@@ -30,7 +30,7 @@ export const rmText = (v) => (finite(v) ? `RM${NB}${grouped(v, 2)}` : DASH);
 // What one unit cost: "RM 8.33 per L"; under RM 0.10 its first two significant digits up to 4 decimals ("RM 0.0035 per
 // mL"), under RM 0.0001 "under RM 0.0001 per g", as Harvest's cost per kg. '' without a qty.
 export function perUnitText(total, qty, unit) {
-  if (!finite(total) || !finite(qty) || qty <= 0) return '';
+  if (!finite(total) || !finite(qty) || qty <= 0 || total < 0) return '';
   const p = total / qty;
   const per = `per${NB}${ONE[unit] ?? unit}`;
   if (p > 0 && p < 0.0001) return `under${NB}RM${NB}0.0001 ${per}`;

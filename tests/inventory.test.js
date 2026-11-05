@@ -123,3 +123,16 @@ test("a name Batches keeps for its block items is refused, on add and on rename,
   assert.throws(() => inv.editItem(spawn.id, { name: 'GREY OYSTER BLOCKS' }), refused(400, 'name'));
   assert.equal(inv.editItem(spawn.id, { name: 'Grey oyster spawn 2' }).name, 'Grey oyster spawn 2');
 });
+
+test('the reorder level is checked again on a unit change; qty-like levels; a block level; a kind stays', (t) => {
+  const { db, inv } = setup(t);
+  const spawn = inv.addItem({ name: 'Spawn', kind: 'spawn', unit: 'kg', reorderAt: 1.5 });
+  assert.throws(() => inv.editItem(spawn.id, { unit: 'g' }), refused(400, 'reorderAt'));
+  assert.equal(inv.editItem(spawn.id, { unit: 'g', reorderAt: 500 }).reorderAt, 500);
+  const kg = inv.addItem({ name: 'Substrate', kind: 'other', unit: 'kg', reorderAt: 0.29 });
+  assert.equal(kg.reorderAt, 0.29);
+  assert.throws(() => inv.addItem({ name: 'Sawdust', kind: 'other', unit: 'kg', reorderAt: 1.005 }), refused(400, 'reorderAt'));
+  const blocks = db.insertStockItem({ name: 'Grey oyster blocks', kind: 'blocks', unit: 'blocks' });
+  assert.throws(() => inv.editItem(blocks.id, { reorderAt: 1.5 }), refused(400, 'reorderAt'));
+  assert.throws(() => inv.editItem(spawn.id, { kind: 'blocks' }), refused(400, 'kind'));
+});
