@@ -66,3 +66,36 @@ test('buttons: names for a screen reader, the Owed toggle, focus keys, quiet Edi
   assert.ok(page.includes("'tk-quiet sl-edit'"));
   assert.ok(page.includes('const changed = () => reload.call();'));
 });
+
+const dialogs = src('sales-dialogs.js');
+
+test('Record / Edit sale: its own dialog, lines added and removed, the buyer picker with New buyer, the foot, Delete', () => {
+  assert.ok(dialogs.includes("'Record a sale'") && dialogs.includes("'Edit sale'"));
+  assert.ok(dialogs.includes("'Add a crop'"));
+  assert.ok(dialogs.includes("'New buyer…'"));
+  assert.ok(dialogs.includes("'Their invoice or receipt number'"));
+  assert.ok(dialogs.includes("'Delete this sale'"));
+  assert.ok(dialogs.includes('footText('));
+  assert.ok(dialogs.includes('prefill('));
+  assert.ok(dialogs.includes('unlikely('));
+  assert.ok(dialogs.includes("request('POST', '/api/sales'"));
+  assert.ok(dialogs.includes('request(\'PUT\', `/api/sales/deliveries/${'));
+  assert.ok(dialogs.includes("request('GET', '/api/settings')"), 'the expected prices');
+  assert.ok(dialogs.includes("mark.unpaid ? 'Mark paid' : 'Mark unpaid'"), "an Edit's paid line");
+});
+
+test('Mark paid, Delete and Buyers use openForm', () => {
+  assert.ok(dialogs.includes("import { openForm, errorText } from './task-dialogs.js';"));
+  assert.ok(dialogs.includes("title: 'Mark paid'"));
+  assert.ok(dialogs.includes("label: 'Paid on'"));
+  assert.ok(dialogs.includes("label: 'Delete sale'"));
+  assert.ok(dialogs.includes("'Add a buyer'"));
+  assert.ok(dialogs.includes("'Archive'") && dialogs.includes("'Restore'") && dialogs.includes("'Delete buyer'"));
+});
+
+test('the dialogs give the cursor back to the button that opened them (or the page title) when they close', () => {
+  assert.ok(dialogs.includes('opener = document.activeElement'));
+  assert.ok(dialogs.includes("document.querySelector('dialog[open]')"));
+  assert.ok(dialogs.includes('.closed.then(() => giveBack(opener))'));
+  assert.ok(dialogs.includes("document.querySelector('h1.page-title')"));
+});
