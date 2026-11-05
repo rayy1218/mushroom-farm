@@ -171,8 +171,9 @@ test('the menu holds the repaint and closes on a scroll; a dialog gives the focu
   assert.ok(load.includes('print.href = taskSheetHash(roomId, sheetMonth({ from, to }, cal?.today ?? localToday()));'), 'Print month has an address while the week loads');
 });
 
-test('a desk: columns of 92 px or more sharing the card; the head, grid, Undo line and legend end on the card\'s edge; Print month in the foot', () => {
-  assert.ok(css.includes('.tg[data-turn="desk"] { min-width: calc(88px + var(--cols, 6) * 92px); }'));
+test('a desk: columns of 92 to 200 px sharing the card; the head, grid, Undo line and legend end on the card\'s edge; Print month in the foot', () => {
+  assert.ok(css.includes('.tg[data-turn="desk"] { min-width: calc(88px + var(--cols, 6) * 92px); max-width: calc(88px + var(--cols, 6) * 200px); }'),
+    'a room of few tasks: a compact grid, not 600 px bars');
   assert.doesNotMatch(css, /\.tg-host\[data-turn[^\]]*\] > \* \{ max-width/, 'no cap: one right edge with the card\'s title (F3), desk or turned');
   assert.ok(grid.includes("host.style.setProperty('--cols', String(columns.length));"));
   assert.ok(css.includes('.tg-task { vertical-align: top; }'), 'the pictures on one line (#15)');

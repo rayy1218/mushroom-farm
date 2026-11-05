@@ -38,12 +38,12 @@ for the Tasks tab to read like it: "it is very clear to see". They chose every r
 
 | Part | Rule |
 |---|---|
-| The card | Titled **Daily tasks**. In its head, the worker picker ("Doing the rounds as"). Under it the day line ("Today, Thursday 5 November · 3 tasks due · Open in the calendar"). Then the grid's own head as the Calendar's (the week's dates, then ‹ This week › at the right), the grid, the Undo line, the legend and the foot (Print month · Export CSV). The title row, day line, week head, grid and legend end on the card's one right edge, desk or turned. |
+| The card | Titled **Daily tasks**. In its head, the worker picker ("Doing the rounds as"). Under it the day line ("Today, Thursday 5 November · 3 tasks due · Open in the calendar"). Then the grid's own head as the Calendar's (the week's dates, then ‹ This week › at the right), the grid, the Undo line, the legend and the foot (Print month · Export CSV). The title row, day line, week head and legend end on the card's right edge; the grid too when turned, or on a desk when its columns reach the card (6 tasks or more at 1440 px); a room of few tasks keeps a compact grid at the left. |
 | Loading | The card reads the room's tasks at once (the Tasks tab's dot needs them); the grid reads its week from the calendar the first time the Tasks tab shows, not while another tab is on show. |
 | Phone head | ‹ the week's dates › on one row; **This week** under them only while another week is on show. |
 | Under 900 px | One column of cards: Daily tasks, Upkeep, Long-term. |
 | From 900 px | Daily tasks across the top; **Upkeep** and **Long-term** side by side under it. |
-| Desk grid | Days down, tasks across; the day's name in the first column (88 px). Columns of one width, 92 px ("Contamination" whole) or more, sharing the card's width as the Calendar's days do (a room of two tasks has two wide columns). |
+| Desk grid | Days down, tasks across; the day's name in the first column (88 px). Columns of one width, 92 px ("Contamination" whole) to 200 px, sharing the card's width as the Calendar's days do; at 200 px they stop, so a room of two tasks has two 200 px columns at the left, not bars across the card. |
 | The turn | By the card, not the screen: when the card is narrower than the desk grid's least width (88 + 92 px a task), the grid turns (a `ResizeObserver` on the card), so a phone, a 700 px tablet or a desk with many tasks gets it: each task's **name on its own line** (picture, name wrapped whole, unit) over its **7 day boxes**, one row of seven under it, as wide as the card. The day heads (M 2, T 3 …) stay in a row at the top; today's column is tinted. |
 
 ### 2.1 Short names
