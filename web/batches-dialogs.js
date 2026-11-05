@@ -10,7 +10,7 @@ import { farmDate } from './tasks-math.js';
 import { batchHash } from './route.js';
 import { createMakingDialogs } from './batches-making.js';
 import {
-  receiveBody, receiveValues, placeBody, roomChoices, checkBody, CAUSE_NAMES, blocksText, countBlocks, fullDate,
+  receiveBody, receiveValues, placeBody, roomChoices, checkBody, CAUSE_NAMES, blocksText, countBlocks, fullDate, dateText,
 } from './batches-math.js';
 
 const COMMAND_TIMEOUT = 15000;
@@ -33,10 +33,20 @@ function el(tag, className, content) {
 // openerKey(): the data-focus-key of the button that opened the last dialog, for the page to focus again after a change.
 export function createBatchDialogs({ onChanged, onError, alive = () => true }) {
   let opener = null;
-  const remember = () => {
+  let asks = 0;
+  // A dialog that reads before it opens: still() is false once a later dialog was asked for, the page left, or (unless it
+  // replaces the open one) a dialog opened meanwhile. → still({ replacing }).
+  const ticket = () => {
+    const mine = ++asks;
+    return ({ replacing = false } = {}) => mine === asks && alive() && (replacing || !document.querySelector('dialog[open]'));
+  };
+  // The opener's focus key, for the page to focus again after a change (then(key): the key to come back to instead, when the
+  // opener goes away with the change: Ready to fruit's button). → still (ticket's).
+  const remember = (then = (key) => key) => {
     const node = document.activeElement;
-    if (node?.dataset?.focusKey) opener = node.dataset.focusKey;
+    if (node?.dataset?.focusKey) opener = then(node.dataset.focusKey);
     else if (!node?.closest?.('dialog')) opener = null; // a dialog's own button (Delete this check) keeps the opener of the dialog
+    return ticket();
   };
   // A command. → { ok: true, data } (the reply), or the problem for the dialog to show (on its box when the server named one it has).
   async function send(method, path, body) {
@@ -52,7 +62,12 @@ export function createBatchDialogs({ onChanged, onError, alive = () => true }) {
   }
   // submit's answer: true closes the dialog, a problem stays in it.
   const closing = (r) => (r.ok ? true : r);
-  const ask = (options) => openForm({ ...options, onLost: onError });
+  // The Batches dialogs' form carries bt-form: their footer sticks at the dialog's foot and Delete gets its own row on a phone.
+  const ask = (options) => {
+    const handle = openForm({ ...options, onLost: onError });
+    document.querySelector('dialog.tk-dialog[open] > form')?.classList.add('bt-form');
+    return handle;
+  };
   const today = () => farmDate(Date.now());
 
   // Receive's and Edit's boxes, in four groups under section heads; from 600 px a pair side by side (a group without a legend).
@@ -133,7 +148,7 @@ export function createBatchDialogs({ onChanged, onError, alive = () => true }) {
 
   // b: a waiting batch (a list row or the detail).
   async function place(b) {
-    remember();
+    const still = remember();
     let rooms;
     let placed;
     try {
@@ -143,10 +158,10 @@ export function createBatchDialogs({ onChanged, onError, alive = () => true }) {
         request('GET', '/api/batches?status=placed').then((r) => r?.batches),
       ]);
     } catch (err) {
-      if (alive()) onError(errorText(err));
+      if (still({ replacing: true })) onError(errorText(err));
       return;
     }
-    if (!alive()) return;
+    if (!still()) return;
     const { ok, off } = roomChoices(Array.isArray(rooms) ? rooms : [], b.crop, placed);
     const lead = [`${countBlocks(b.good, b.crop)} to put in${b.kind === 'made' ? '' : b.supplier ? `, from ${b.supplier}` : ''}.`]; // a made batch's supplier is its spawn's
     if (!ok.length) lead.push(`No room has ${cropShortName(b.crop)} in its run: give a room its crops on the Crop tab first.`);
@@ -180,7 +195,7 @@ export function createBatchDialogs({ onChanged, onError, alive = () => true }) {
       submit: async () => {
         const r = await send('POST', `/api/batches/${b.id}/unplace`);
         // a part folds back into its delivery's first row: this batch is gone, the page goes to the row it became
-        if (r.ok && Number.isInteger(r.data?.id) && r.data.id !== b.id) location.hash = batchHash(r.data.id);
+        if (r.ok && alive() && Number.isInteger(r.data?.id) && r.data.id !== b.id) location.hash = batchHash(r.data.id);
         return closing(r);
       },
     });
@@ -193,9 +208,11 @@ export function createBatchDialogs({ onChanged, onError, alive = () => true }) {
     // a placed or past batch: its run's figures change
     if (b.status === 'placed' || b.status === 'past') lead.push(`${b.roomName ? `${b.roomName}'s run` : 'Its run'} loses this batch: its block cost and BE change.`);
     const made = b.kind === 'made';
-    lead.push(made ? 'Its materials, sterilising loads and contamination checks go with it.' : `Received ${fullDate(b.receivedAt)}. Its contamination checks go with it.`);
+    // a made delivery's part: the mix stays with the first row, over fewer blocks
+    if (made && b.parentId !== null) lead.push("Its contamination checks go with it. The mix's materials and loads stay with the rest, and the price per block rises.");
+    else lead.push(made ? 'Its materials, sterilising loads and contamination checks go with it.' : `Received ${dateText(b.receivedAt, today())}. Its contamination checks go with it.`);
     ask({
-      title: `Delete ${countBlocks(b.blocks, b.crop)}${made ? ` made ${fullDate(b.mixedAt ?? b.receivedAt)}` : b.supplier ? ` from ${b.supplier}` : ''}?`,
+      title: `Delete ${countBlocks(b.blocks, b.crop)}${made ? ` made ${dateText(b.mixedAt ?? b.receivedAt, today())}` : b.supplier ? ` from ${b.supplier}` : ''}?`,
       lead,
       buttons: [{ value: 'delete', label: 'Delete', danger: true }],
       submit: async () => {
@@ -213,15 +230,15 @@ export function createBatchDialogs({ onChanged, onError, alive = () => true }) {
 
   // Record a check on b (c null) or edit c.
   async function check(b, c = null) {
-    remember();
+    const still = remember();
     let names;
     try {
       names = await loadWorkers();
     } catch (err) {
-      if (alive()) onError(errorText(err));
+      if (still({ replacing: true })) onError(errorText(err));
       return;
     }
-    if (!alive()) return;
+    if (!still()) return;
     const shown = whenBoxes(c?.at ?? Date.now());
     const max = b.good + (c?.lost ?? 0);
     const lead = [`${countBlocks(b.blocks, b.crop)}${b.roomName ? ` in ${b.roomName}` : ''}: ${blocksText(b.good)} good now.`];
@@ -272,6 +289,6 @@ export function createBatchDialogs({ onChanged, onError, alive = () => true }) {
     });
   }
 
-  const making = createMakingDialogs({ send, closing, ask, remember, alive, onError, today, pair, remove });
+  const making = createMakingDialogs({ send, closing, ask, remember, ticket, alive, onError, today, pair, remove });
   return { receive, edit, place, takeOut, remove, check, ...making, openerKey: () => opener };
 }

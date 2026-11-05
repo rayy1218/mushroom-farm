@@ -17,6 +17,7 @@ import { tileNodes } from './harvest-card.js';
 import {
   pageGroups, pastIn, PAST_RANGES, PAST_COLUMNS, pastCells, waitingLine, placedLine, goodText, cropBlocks, detailFacts, overNote,
   statusLine, checkLine, deliveryLine, fullDate, dateText, countBlocks, figureLine, waitingLong, runOf, runYieldFacts, statusText, placeable,
+  nextStep, rowAction,
 } from './batches-math.js';
 
 const REFRESH_MS = 60_000;
@@ -81,21 +82,35 @@ function reader(path, paint, els, alive) {
   return { load, stop: () => { clearTimeout(timer); stopLive(); } };
 }
 
-// Put into a room for a waiting batch (its accessible name starts with its words); with no good block, disabled with its
-// reason in words beside it. → the node for the row or the head.
+// Put into a room for a batch's head (its accessible name starts with its words); with no good block, aria-disabled (Tab
+// still reaches it) with its reason in words under it. → the node.
 function putAction(b, dialogs, { focusKey, primary = false }) {
   const put = button('Put into a room', primary ? 'primary' : '');
   put.dataset.focusKey = focusKey;
   put.setAttribute('aria-label', `Put into a room: ${countBlocks(b.good, b.crop)}`);
-  put.addEventListener('click', () => dialogs.place(b));
+  put.addEventListener('click', () => { if (put.getAttribute('aria-disabled') !== 'true') dialogs.place(b); });
   if (b.good >= 1) return put;
-  put.disabled = true;
+  put.setAttribute('aria-disabled', 'true');
   const wrap = el('span', 'bt-act');
   const why = el('span', 'bt-reason', 'Every block was lost');
   why.id = `bt-why-${b.id}`;
   put.setAttribute('aria-describedby', why.id);
   wrap.append(put, why);
   return wrap;
+}
+
+// The Waiting card's row action (rowAction): a waiting batch's Put into a room; a making one's next step as a quiet button
+// (as In rooms' Record a check), named with its blocks ("Record a load: 400 Grey oyster blocks"); with no good block the
+// words "Every block was lost" alone. One focus key a row, so the cursor comes back to its next action after a change.
+const ROW_DIALOGS = { put: 'place', load: 'sterilise', inoculate: 'inoculate', ready: 'ready' };
+function rowNode(b, dialogs, today) {
+  const act = rowAction(b, today);
+  if (!act) return b.good >= 1 ? null : el('span', 'bt-act bt-reason', 'Every block was lost');
+  const go = button(act.label, b.status === 'making' ? 'bt-quiet' : '');
+  go.dataset.focusKey = `act-${b.id}`;
+  go.setAttribute('aria-label', `${act.label}: ${countBlocks(act.key === 'put' || act.key === 'ready' ? b.good : b.blocks, b.crop)}`);
+  go.addEventListener('click', () => dialogs[ROW_DIALOGS[act.key]](b));
+  return go;
 }
 
 const BANNER = `<div class="banner" role="alert" hidden><span data-banner-text></span><button type="button" data-retry>Retry</button></div>`;
@@ -136,7 +151,7 @@ const LIST = `
   <div class="page-head">
     <div class="page-titles">
       <h1 class="page-title" tabindex="-1">Batches</h1>
-      <p class="page-sub">Where each run's blocks come from: the supplier, the spawn batch, the blocks and their price.</p>
+      <p class="page-sub">Where each run's blocks come from: bought or made on the farm, their spawn, blocks and price.</p>
     </div>
     <div class="bt-tools">
       <button type="button" class="primary" data-receive>Receive blocks</button>
@@ -235,10 +250,10 @@ export function mount(container, { run = null } = {}) {
     for (const [n, b] of ranges) b.setAttribute('aria-pressed', String(n === days));
     const g = pageGroups(list);
     const now = Date.now();
-    // the made batches still being made above the waiting ones, with their status line (spec 7); Put into a room once they can go in
+    // the made batches still being made above the waiting ones, with their status line and their next step (spec 7)
     const waiting = [...g.making, ...g.waiting];
     els.waiting.replaceChildren(...(waiting.length ? waiting.map((b) => batchRow(b, b.kind === 'made' ? statusText(b, today) : waitingLine(b, now),
-      placeable(b) ? putAction(b, dialogs, { focusKey: `put-${b.id}` }) : null))
+      rowNode(b, dialogs, today)))
       : [el('p', 'none', 'No blocks waiting. Receive blocks when a delivery comes in.')]));
     // an in-room row: Record a check, the phone's way to it (the batch's page has it too)
     const checkAction = (b) => {
@@ -399,27 +414,28 @@ export function mountBatch(container, { id }) {
     if (made) els.sub.replaceChildren(statusNode);
     else els.sub.replaceChildren([`Received ${dateText(b.receivedAt, today).replace(/ /g, '\u00a0')}`, b.supplier].filter(Boolean).join(DOT) + DOT, statusNode);
 
-    const onGone = () => { location.hash = BATCHES_HASH; };
+    const onGone = () => { if (alive()) location.hash = BATCHES_HASH; };
     const actions = [];
-    if (placeable(b)) {
-      actions.push(putAction(b, dialogs, { focusKey: 'put', primary: true }));
+    if (placeable(b)) { // while making, the primary is the Making card's next step, Put into a room only once it is next
+      actions.push(putAction(b, dialogs, { focusKey: 'put', primary: b.status !== 'making' || nextStep(b, today) === 'put' }));
     } else if (b.status === 'placed') {
       const out = button('Take out');
       out.dataset.focusKey = 'take-out';
       out.addEventListener('click', () => dialogs.takeOut(b));
       actions.push(out);
     }
-    // Delete is inside Edit, a quiet red button at its footer's start (as Harvest's); a made batch's Edit is Edit the mix
+    // Delete is inside Edit, a quiet red button at its footer's start (as Harvest's); a made batch's Edit opens Edit the mix
+    // (the Making card's Mix step names it so: this one is "Edit this batch")
     const edit = button('Edit');
     edit.dataset.focusKey = 'edit';
-    if (made) edit.setAttribute('aria-label', 'Edit the mix');
+    if (made) edit.setAttribute('aria-label', 'Edit this batch');
     edit.addEventListener('click', () => (made ? dialogs.mix(b, { onGone }) : dialogs.edit(b, { onGone })));
     els.actions.replaceChildren(...actions, edit);
 
     const over = overNote(b);
     els.over.hidden = !over;
     els.over.textContent = over ?? '';
-    els.facts.replaceChildren(...detailFacts(b).map(([label, value]) => {
+    els.facts.replaceChildren(...detailFacts(b, today).map(([label, value]) => {
       const row = el('div');
       row.append(el('dt', '', label), el('dd', '', value));
       return row;
