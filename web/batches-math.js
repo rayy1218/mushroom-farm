@@ -1,12 +1,12 @@
 // The Batches pages' pure parts (spec 2026-11-05-batches-design.md 7): the one formatter (RM, blocks, kg, water, dates),
 // the page's groups and rows, a batch's facts and lines, batchLineFor (the Harvest tab's line, wired by the integrator), the
 // myGAP 4-2 sheet's rows, and the dialogs' bodies. A missing figure is a dash; a number keeps its unit at a wrap (a
-// no-break space, as the Units Rule has it) and a '·' joins with DOT.
+// no-break space, as the Units Rule has it) and a '·' joins with DOT. Making blocks (spec 4 and 5): a recipe's amounts, the steps, their bodies.
 
 import { cropShortName } from './crops.js';
 import { DOT } from './text-math.js';
 import { farmDate, farmTime, dayMonth, daysFrom } from './tasks-math.js';
-import { whenMs, rmText, kgText, perBlockText, beText, costKgText } from './harvest-math.js';
+import { whenMs, whenBoxes, rmText, kgText, perBlockText, beText, costKgText } from './harvest-math.js';
 import { batchHash, batchesRunHash } from './route.js';
 
 const NB = '\u00a0';
@@ -292,4 +292,211 @@ export function checkBody(v, { edit = false } = {}) {
   const body = { at, lost, cause: v.cause, note: v.note ?? '' };
   if (v.worker || !edit) body.worker = v.worker ?? '';
   return { body };
+}
+
+// ---- making blocks (spec 4 and 5) ----
+
+export const MIX_ITEMS = ['sawdust', 'bran', 'lime', 'gypsum', 'other', 'bags'];
+export const RECIPE_PARTS = ['sawdustPct', 'branPct', 'limePct', 'gypsumPct', 'otherPct'];
+const PART_ITEMS = { sawdustPct: 'sawdust', branPct: 'bran', limePct: 'lime', gypsumPct: 'gypsum', otherPct: 'other' };
+export const MATERIAL_NAMES = { sawdust: 'Sawdust', bran: 'Bran', lime: 'Lime', gypsum: 'Gypsum', other: 'Other', bags: 'Plastic bags', spawn: 'Spawn' };
+export const METHOD_NAMES = { steam: 'Atmospheric steam', pressure: 'Pressure', pasteurise: 'Pasteurise' };
+const round1 = (v) => Math.round(v * 10) / 10;
+const boxText = (v) => (v === null || v === undefined ? '' : String(v));
+
+export const bagsText = (n) => (finite(n) ? `${grouped(n, 0, 2)}${NB}${n === 1 ? 'bag' : 'bags'}` : DASH);
+export const pctText = (v) => (finite(v) ? `${grouped(v, 0, 1)}${NB}%` : DASH);
+// A material's amount in its unit: kg to 2 decimals at most, bags, pieces.
+export function qtyText(qty, unit) {
+  if (!finite(qty)) return DASH;
+  if (unit === 'pcs') return `${grouped(qty, 0)}${NB}pcs`;
+  if (unit === 'bags') return bagsText(qty);
+  return `${grouped(qty, 0, 2)}${NB}kg`;
+}
+
+// A recipe's amounts for `bags` bags (spec 4): the dry kg a bag, each ingredient's kg to 0.1 kg (the parts at 0 % left out),
+// the plastic bags, and the water guide in L. → { dryKgPerBag, lines: [{ item, name, qty, unit }], waterL }.
+export function recipeAmounts(recipe, bags) {
+  const dryKgPerBag = recipe.bagKg * (1 - recipe.waterPct / 100);
+  const lines = RECIPE_PARTS.filter((k) => recipe[k] > 0).map((k) => ({
+    item: PART_ITEMS[k], name: k === 'otherPct' ? recipe.otherName : null, qty: round1((bags * dryKgPerBag * recipe[k]) / 100), unit: 'kg',
+  }));
+  lines.push({ item: 'bags', name: null, qty: bags, unit: 'pcs' });
+  return { dryKgPerBag: Math.round(dryKgPerBag * 1000) / 1000, lines, waterL: round1((bags * recipe.bagKg * recipe.waterPct) / 100) };
+}
+export const waterGuide = (recipe, bags) => `Water: about ${grouped(recipeAmounts(recipe, bags).waterL, 0)}${NB}L for ${bagsText(bags)}, less the water the dry ingredients already hold.`;
+
+// "Grey oyster · Sawdust 78 % · Bran 20 % · Lime 1 % · Gypsum 1 % · 60 % water · 2.30 kg a bag".
+export function recipeLine(r) {
+  const parts = RECIPE_PARTS.filter((k) => r[k] > 0).map((k) => `${k === 'otherPct' ? r.otherName : MATERIAL_NAMES[PART_ITEMS[k]]} ${pctText(r[k])}`);
+  return [r.crop ? cropShortName(r.crop) : 'Any crop', ...parts, `${pctText(r.waterPct)} water`, `${blockKgText(r.bagKg)} a bag`].join(DOT);
+}
+
+// The five parts typed (an empty box is 0) → their sum to 0.1, or NaN when one is not a number.
+export function recipeSum(v) {
+  let sum = 0;
+  for (const k of RECIPE_PARTS) {
+    const n = numberOf(v[k]);
+    if (Number.isNaN(n)) return NaN;
+    sum += n ?? 0;
+  }
+  return round1(sum);
+}
+// The Recipe dialog's live sum under the parts (no warning before a part is typed).
+export function sumText(v) {
+  const sum = recipeSum(v);
+  if (Number.isNaN(sum)) return `Sum ${DASH}`;
+  return Math.round(sum * 10) === 1000 || sum === 0 ? `Sum ${pctText(sum)}` : `Sum ${pctText(sum)}: the parts must add up to 100${NB}%`;
+}
+
+// A recipe's boxes for Edit; null: Add's (water 60 %).
+export function recipeValues(r = null) {
+  if (!r) return { name: '', crop: '', sawdustPct: '', branPct: '', limePct: '', gypsumPct: '', otherPct: '', otherName: '', waterPct: '60', bagKg: '' };
+  return {
+    name: r.name, crop: r.crop ?? '', ...Object.fromEntries(RECIPE_PARTS.map((k) => [k, k === 'otherPct' && !r[k] ? '' : boxText(r[k])])),
+    otherName: boxText(r.otherName), waterPct: boxText(r.waterPct), bagKg: boxText(r.bagKg),
+  };
+}
+
+// The Recipe dialog's boxes → { body } or { field, message }; an empty part is 0.
+export function recipeBody(v) {
+  const body = { name: v.name ?? '', crop: v.crop || null };
+  for (const k of RECIPE_PARTS) {
+    const n = numberOf(v[k]);
+    if (Number.isNaN(n)) return { field: k, message: 'Give the part as a number, like 78, or leave it empty' };
+    body[k] = n ?? 0;
+  }
+  body.otherName = body.otherPct > 0 ? v.otherName ?? '' : null;
+  body.waterPct = numberOf(v.waterPct);
+  if (!finite(body.waterPct)) return { field: 'waterPct', message: 'Give the water as a number, like 60' };
+  body.bagKg = numberOf(v.bagKg);
+  if (!finite(body.bagKg)) return { field: 'bagKg', message: "Give a bag's weight as a number, like 2.3" };
+  return { body };
+}
+
+// The Mix dialog's boxes: a new mix's (b null: mixed today) or a made batch's (its detail: its mix lines, not the spawn).
+// A material's boxes are qty-<item> and item-<item> (its Inventory item).
+export function mixValues(b = null, today = farmDate(Date.now())) {
+  const v = { mixedDate: today, recipeId: '', crop: '', blocks: '', otherName: '', blockKg: '', waterPct: '', note: '' };
+  for (const item of MIX_ITEMS) {
+    v[`qty-${item}`] = '';
+    v[`item-${item}`] = '';
+  }
+  if (!b) return v;
+  Object.assign(v, {
+    mixedDate: farmDate(b.mixedAt ?? b.receivedAt), recipeId: boxText(b.recipeId), crop: b.crop, blocks: String(b.blocks),
+    blockKg: boxText(b.blockKg), waterPct: boxText(b.waterPct), note: boxText(b.note),
+  });
+  for (const m of b.materials ?? []) {
+    if (!MIX_ITEMS.includes(m.item)) continue;
+    v[`qty-${m.item}`] = String(m.qty);
+    v[`item-${m.item}`] = boxText(m.stockItemId);
+    if (m.item === 'other') v.otherName = boxText(m.name);
+  }
+  return v;
+}
+
+// The boxes a recipe fills for `bags` bags: the weight and water, the other ingredient's name and, with a whole number of
+// bags, every material's amount (empty for a part at 0 %).
+export function recipeFill(recipe, bags) {
+  const out = { blockKg: String(recipe.bagKg), waterPct: String(recipe.waterPct), otherName: recipe.otherPct > 0 ? boxText(recipe.otherName) : '' };
+  if (!(Number.isInteger(bags) && bags > 0)) return out;
+  for (const item of MIX_ITEMS) out[`qty-${item}`] = '';
+  for (const m of recipeAmounts(recipe, bags).lines) out[`qty-${m.item}`] = String(m.qty);
+  return out;
+}
+
+// The Mix dialog's boxes → { body } or { field, message }: an empty amount leaves its material out; the water % counts only
+// with a weight. edit: { cropEditable, blocksEditable } (those boxes not shown otherwise, and not sent); an empty crop is left
+// to the recipe's.
+export function mixBody(v, { edit = null } = {}) {
+  const body = { mixedAt: dayMs(v.mixedDate) };
+  if (!finite(body.mixedAt)) return { field: 'mixedDate', message: 'Pick the day mixed' };
+  body.recipeId = v.recipeId ? Number(v.recipeId) : null;
+  if ((!edit || edit.cropEditable) && v.crop) body.crop = v.crop;
+  if (!edit || edit.blocksEditable) {
+    const n = numberOf(v.blocks);
+    if (!Number.isInteger(n)) return { field: 'blocks', message: 'Give the bags as a whole number' };
+    body.blocks = n;
+  }
+  body.materials = [];
+  for (const item of MIX_ITEMS) {
+    const qty = numberOf(v[`qty-${item}`]);
+    if (Number.isNaN(qty)) return { field: `qty-${item}`, message: 'Give the amount as a number, or leave it empty' };
+    if (qty === null) continue;
+    const stock = v[`item-${item}`] ? Number(v[`item-${item}`]) : null;
+    body.materials.push({ item, name: item === 'other' ? v.otherName ?? '' : null, qty, unit: item === 'bags' ? 'pcs' : 'kg', stockItemId: stock });
+  }
+  const kg = numberOf(v.blockKg);
+  if (Number.isNaN(kg)) return { field: 'blockKg', message: 'Give the weight as a number, like 2.3, or leave it empty' };
+  const water = kg === null ? null : numberOf(v.waterPct);
+  if (Number.isNaN(water)) return { field: 'waterPct', message: 'Give the water as a number, like 60' };
+  body.blockKg = kg;
+  body.waterPct = water;
+  body.note = v.note ?? '';
+  return { body };
+}
+
+// The Inoculate dialog's boxes (b: the detail; today the day by default) and back → { body } or { field, message }: an empty
+// spawn amount clears the spawn line.
+export function inoculateValues(b, today) {
+  const spawn = (b.materials ?? []).find((m) => m.item === 'spawn');
+  return {
+    inoculatedDate: finite(b.inoculatedAt) ? farmDate(b.inoculatedAt) : today, supplier: boxText(b.supplier), strain: boxText(b.strain),
+    spawnBatch: boxText(b.spawnBatch), spawnQty: spawn ? String(spawn.qty) : '', spawnUnit: spawn?.unit ?? 'kg', spawnItem: boxText(spawn?.stockItemId),
+  };
+}
+export function inoculateBody(v) {
+  const inoculatedAt = dayMs(v.inoculatedDate);
+  if (!finite(inoculatedAt)) return { field: 'inoculatedDate', message: 'Pick the day inoculated' };
+  const qty = numberOf(v.spawnQty);
+  if (Number.isNaN(qty)) return { field: 'spawnQty', message: 'Give the spawn as a number, or leave it empty' };
+  const spawn = qty === null ? null : { qty, unit: v.spawnUnit === 'bags' ? 'bags' : 'kg', stockItemId: v.spawnItem ? Number(v.spawnItem) : null };
+  return { body: { inoculatedAt, supplier: v.supplier ?? '', strain: v.strain ?? '', spawnBatch: v.spawnBatch ?? '', spawn } };
+}
+
+// The blocks made: the delivery's (the first row's and its parts').
+const madeBlocks = (b) => (b.delivery ?? [b]).reduce((s, x) => s + x.blocks, 0);
+
+// A sterilising load's boxes: load's for Edit; a new one's the bags not yet sterilised (all of them again once every bag
+// was) and now. nowMs: the time shown.
+export function loadValues(load, b, nowMs) {
+  const shown = whenBoxes(load?.hotAt ?? nowMs);
+  if (load) return { method: load.method, bags: String(load.bags), hotDate: shown.date, hotTime: shown.time, holdH: String(load.holdH), tempC: String(load.tempC) };
+  const rest = madeBlocks(b) - (b.loads ?? []).reduce((s, l) => s + l.bags, 0);
+  return { method: 'steam', bags: String(rest > 0 ? rest : madeBlocks(b)), hotDate: shown.date, hotTime: shown.time, holdH: '', tempC: '' };
+}
+// → { body } or { field, message }; an Edit with no name picked keeps the stored one.
+export function loadBody(v, { edit = false } = {}) {
+  const hotAt = whenMs(v.hotDate, v.hotTime);
+  if (!finite(hotAt)) return /^\d{4}-\d{2}-\d{2}$/.test(String(v.hotDate ?? '')) ? { field: 'hotTime', message: 'Give the time as 24 h, like 08:12' } : { field: 'hotDate', message: 'Pick the day' };
+  const bags = numberOf(v.bags);
+  if (!Number.isInteger(bags)) return { field: 'bags', message: 'Give the bags as a whole number' };
+  const holdH = numberOf(v.holdH);
+  if (!finite(holdH)) return { field: 'holdH', message: 'Give the hold in hours, like 6' };
+  const tempC = numberOf(v.tempC);
+  if (!finite(tempC)) return { field: 'tempC', message: 'Give the temperature as a number, like 98' };
+  const body = { method: v.method, bags, hotAt, holdH, tempC };
+  if (v.worker || !edit) body.worker = v.worker ?? '';
+  return { body };
+}
+
+// The Incubate dialog's boxes (the area's From is the inoculation day by default) and back → { body } or { field, message }:
+// '' (not yet) clears the incubation; a grow room has no dates.
+export function incubateValues(b) {
+  const from = finite(b.incubatedFrom) ? b.incubatedFrom : b.inoculatedAt;
+  return { incubation: b.incubation ?? '', fromDate: finite(from) ? farmDate(from) : '', toDate: finite(b.incubatedTo) ? farmDate(b.incubatedTo) : '' };
+}
+export function incubateBody(v) {
+  if (v.incubation !== 'area') return { body: { incubation: v.incubation === 'room' ? 'room' : null, incubatedFrom: null, incubatedTo: null } };
+  const from = dayMs(v.fromDate);
+  if (!finite(from)) return { field: 'fromDate', message: 'Pick the day the incubation began' };
+  const to = v.toDate ? dayMs(v.toDate) : null;
+  if (Number.isNaN(to)) return { field: 'toDate', message: 'Pick the day they were ready, or leave it empty' };
+  return { body: { incubation: 'area', incubatedFrom: from, incubatedTo: to } };
+}
+// Ready to fruit's day → { body } or { field, message }.
+export function readyBody(v) {
+  const at = dayMs(v.readyDate);
+  return finite(at) ? { body: { incubatedTo: at } } : { field: 'readyDate', message: 'Pick the day they were ready' };
 }
