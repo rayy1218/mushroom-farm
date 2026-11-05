@@ -10,6 +10,7 @@ import * as overview from './overview.js';
 import * as today from './today-page.js';
 import * as calendar from './calendar-page.js';
 import * as harvest from './harvest-page.js';
+import * as sales from './sales-page.js';
 import * as taskSheet from './task-sheet.js';
 import * as batches from './batches-page.js';
 import * as batchSheet from './batches-sheet.js';
@@ -68,6 +69,7 @@ function show(before = '') {
     : route.name === 'calendar' ? calendar.mount(view, { room: route.room, day: route.day })
     : route.name === 'harvest' ? harvest.mount(view, { days: route.days })
     : route.name === 'sheet' ? harvest.mountSheet(view, { days: route.days })
+    : route.name === 'sales' ? sales.mount(view, { days: route.days })
     : route.name === 'taskSheet' ? taskSheet.mountSheet(view, { roomId: route.id, month: route.month, from: parseRoute(before) })
     : route.name === 'batches' ? batches.mount(view, { run: route.run })
     : route.name === 'batch' ? batches.mountBatch(view, { id: route.id })

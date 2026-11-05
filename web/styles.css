@@ -2430,3 +2430,170 @@ p.bt-making-note.bt-over { margin-top: 12px; }
 }
 .iv-settings .s-hint { max-width: 60ch; } /* hints capped near 60 ch, as DESIGN.md has it (audit #25) */
 /* ---- end Inventory ---- */
+
+/* ---- Sales ---- */
+/* The Sales page (spec 2026-11-05-sales-design.md 6). */
+.sl-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.sl-page { display: grid; gap: 16px; }
+.sl-list, .sl-owed-list, .sl-owed-sales { list-style: none; margin: 0; padding: 0; }
+/* the Sales list: the columns on the list, each delivery a subgrid of them, so the day, the totals and the paid marks line
+   up from row to row. A phone: a block (day and buyer, the lines, total and mark, the reference; Edit at the right) with
+   the day and total's track fixed so the mark does not float */
+.sl-list { display: grid; grid-template-columns: minmax(6.5rem, max-content) minmax(0, 1fr) auto; column-gap: 12px; }
+.sl-item { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; row-gap: 2px; align-items: baseline; padding: 10px 0; border-top: 1px solid var(--border); }
+.sl-item:first-child { border-top: 0; }
+.sl-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.sl-day { grid-column: 1; grid-row: 1; white-space: nowrap; font-weight: 600; }
+.sl-buyer { grid-column: 2; grid-row: 1; min-width: 0; overflow-wrap: anywhere; font-weight: 600; }
+.sl-lines { grid-column: 1 / 3; grid-row: 2; min-width: 0; }
+.sl-line-part { white-space: nowrap; }
+.sl-total { grid-column: 1; grid-row: 3; white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 600; }
+.sl-mark { grid-column: 2; grid-row: 3; font-size: var(--fs-md); }
+.sl-ref { grid-column: 1 / 3; grid-row: 4; min-width: 0; overflow-wrap: anywhere; }
+.sl-item > .sl-ref:empty { display: none; }
+.sl-edit { grid-column: 3; grid-row: 1 / 5; align-self: center; }
+.sl-unpaid { color: var(--warning-text); font-weight: 600; }
+.sl-more { margin-top: 8px; }
+.sl-empty-record { margin: 8px 0 0; }
+/* Owed: a buyer a row (the name, RM owed, the oldest), a hairline between buyers; the open sales as columns */
+.sl-owed-item + .sl-owed-item { border-top: 1px solid var(--border); }
+.sl-owed-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name total" "name age"; gap: 0 12px; align-items: center; margin: 0; padding: 6px 0; }
+.sl-owed-name { grid-area: name; justify-self: start; min-height: 44px; padding: 0; border: 0; background: none; color: var(--ink); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; text-align: left; overflow-wrap: anywhere; }
+.sl-owed-name:hover { background: none; border-color: transparent; text-decoration-thickness: 2px; }
+.sl-owed-total { grid-area: total; text-align: right; font-variant-numeric: tabular-nums; }
+.sl-owed-age { grid-area: age; text-align: right; font-size: var(--fs-sm); }
+.sl-owed-sales { padding: 0 0 8px 16px; }
+.sl-owed-sale { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "day amount" "lines lines" "ref paid"; gap: 2px 12px; align-items: center; padding: 6px 0; }
+.sl-owed-sale + .sl-owed-sale { border-top: 1px solid var(--border); }
+.sl-owed-sale > .sl-day { grid-area: day; font-weight: 600; }
+.sl-owed-sale > .sl-lines { grid-area: lines; }
+.sl-owed-amount { grid-area: amount; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.sl-owed-sale > .sl-ref { grid-area: ref; }
+.sl-owed-sale > button { grid-area: paid; justify-self: end; }
+.sl-name { display: inline-flex; gap: 8px; align-items: center; min-width: 0; }
+.sl-sub { display: none; font-size: var(--fs-sm); color: var(--muted); font-weight: 400; white-space: nowrap; }
+.sl-diff { display: block; font-size: var(--fs-sm); color: var(--muted); font-weight: 400; }
+.sl-table th:nth-child(1) { overflow-wrap: break-word; }
+.sl-nowrap { white-space: nowrap; }
+@media (max-width: 600px) {
+  .sl-tools { width: 100%; }
+  .sl-tools > .range-bar { flex: 1 1 100%; }
+  .sl-tools > button, .sl-tools > a.button { flex: 1 1 0; justify-content: center; padding-left: 8px; padding-right: 8px; white-space: nowrap; }
+  /* a phone's tables: by crop Crop (the sold kg under it), Income, Average; by buyer Buyer (the kg under it), Income, Owed */
+  .sl-crop-table th:nth-child(2), .sl-crop-table td:nth-child(2), .sl-crop-table th:nth-child(3), .sl-crop-table td:nth-child(3),
+  .sl-crop-table th:nth-child(6), .sl-crop-table td:nth-child(6), .sl-buyer-table th:nth-child(2), .sl-buyer-table td:nth-child(2) { display: none; }
+  .sl-sub { display: block; margin-top: 2px; }
+  .sl-crop-table .sl-sub { padding-left: 22px; }
+  .sl-table th, .sl-table td, .sl-table th.num { white-space: normal; overflow-wrap: break-word; vertical-align: top; }
+  .sl-table td.num { white-space: nowrap; }
+  .sl-table td.num .sl-diff { white-space: normal; }
+  .sl-table td.num, .sl-table th.num { padding-left: 5px; padding-right: 5px; }
+  .sl-table th.num:last-child, .sl-table td.num:last-child { padding-right: 0; }
+  .sl-table th:first-child { padding-right: 5px; }
+  .sl-name { gap: 4px; }
+  .sl-name > .pic { width: 18px; height: 18px; flex: none; }
+}
+@media (min-width: 601px) {
+  .sl-diff { display: none; }
+  .sl-tools > a.button { min-height: 36px; padding: 7px 14px; } /* as tall as the buttons beside it */
+}
+@media (min-width: 900px) {
+  /* a delivery one row of the list's columns: day, buyer, lines, total (right), mark, reference, Edit */
+  .sl-list { grid-template-columns: auto minmax(8rem, 14rem) minmax(14rem, 1fr) auto auto minmax(0, 8rem) auto; }
+  .sl-item { padding: 8px 0; }
+  .sl-day, .sl-buyer, .sl-lines, .sl-total, .sl-mark, .sl-ref, .sl-edit { grid-row: 1; }
+  .sl-item > .sl-day { padding-right: 10px; } /* the day and the buyer, both bold, kept apart (22 px) */
+  .sl-lines { grid-column: 3; }
+  .sl-total { grid-column: 4; text-align: right; }
+  .sl-mark { grid-column: 5; white-space: nowrap; }
+  .sl-ref { grid-column: 6; }
+  .sl-item > .sl-ref:empty { display: block; }
+  .sl-edit { grid-column: 7; align-self: baseline; }
+  /* Owed: name | RM owed | the oldest in a measure; the open sales day | lines | RM | reference | Mark paid, the RM
+     owed and the sales' RM on one right edge */
+  .sl-owed-list { max-width: 52rem; }
+  .sl-owed-row { grid-template-columns: minmax(0, 1fr) 6.5rem calc(16rem + 12px); grid-template-areas: "name total age"; }
+  .sl-owed-age { text-align: left; font-size: inherit; }
+  .sl-owed-sale { grid-template-columns: 6.5rem minmax(0, 1fr) 6.5rem 9rem 7rem; grid-template-areas: "day lines amount ref paid"; }
+}
+/* The Record / Edit sale dialog (spec 3): a line is two boxes a row (crop and kg, RM per kg and room, its total and
+   Remove) from 601 to 899 px; a phone gives the crop its own row (kg and RM per kg, the amber note, room and the total
+   with Remove); one row from 900 px in a wider dialog, the labels said once above the first line */
+.sl-dialog-title:focus { outline: none; } /* it takes the focus on an Edit's opening: no box round it (as Harvest's) */
+.sl-paid-line { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; margin: 0 0 12px; }
+.sl-new-buyer { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 12px; }
+.sl-dialog .sl-lines-box { min-width: 0; margin: 4px 0 0; padding: 0; border: 0; }
+.sl-dialog .sl-lines-box legend { padding: 0; margin-bottom: 4px; font-size: 0.9rem; font-weight: 600; }
+.sl-line { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 12px; align-items: start; padding: 10px 0 0; border-top: 1px solid var(--border); }
+.sl-line:first-child { padding-top: 4px; border-top: 0; }
+.sl-line > .field { min-width: 0; margin-bottom: 10px; }
+.sl-line-total { align-self: center; margin-bottom: 10px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.sl-remove { justify-self: end; align-self: center; margin-bottom: 10px; }
+.sl-line-end { display: contents; }
+/* an unlikely kg or price asked about: a note the width of the line, under it (the box keeps its amber mark) */
+.sl-line-check { grid-column: 1 / -1; margin: 0; font-size: 0.85rem; color: var(--warning-text); }
+.sl-line-check > span { display: block; }
+.sl-line-check:not(:empty) { margin: 0 0 10px; }
+.sl-add { justify-self: start; margin-top: 4px; }
+/* RM before the price (the unit box's mark moved to the left end); "expected" at its right end while shown */
+.sl-dialog .sl-prefixed .sl-prefix { right: auto; left: 10px; }
+.sl-dialog .sl-prefixed input { padding-left: 38px; padding-right: 10px; }
+.sl-dialog .sl-prefixed .sl-expected { right: 8px; font-size: var(--fs-sm); }
+.sl-dialog .sl-prefixed:has(.sl-expected:not([hidden])) input { padding-right: 66px; }
+.sl-foot { margin: 8px 0 12px; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+/* the Buyers dialog: a buyer a row, Edit (Restore) at its end; the usual prices two boxes a row */
+.sl-status { margin: 0; color: var(--ink-2); }
+.sl-status:not(:empty) { margin: 0 0 8px; }
+.sl-buyer-list { list-style: none; margin: 0 0 12px; padding: 0; }
+.sl-buyer-item { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 8px 0; border-top: 1px solid var(--border); }
+.sl-buyer-item:first-child { border-top: 0; }
+.sl-buyer-text { display: grid; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.sl-buyer-more { color: var(--ink-2); font-size: var(--fs-sm); }
+.sl-buyer-item.muted .sl-buyer-more { color: var(--muted); }
+.sl-buyer-edit { flex: none; }
+.sl-archived-title { margin: 16px 0 4px; font-size: 0.9rem; }
+.sl-price-group .tk-group-fields { grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); }
+@media (max-width: 600px) {
+  .sl-new-buyer { grid-template-columns: minmax(0, 1fr); }
+  /* a line: Crop | kg, RM per kg | the amber note | Room, the total and Remove. Three tracks so RM per kg is wide enough
+     for "expected" in its box (kg the narrower) and Room for "Container 1" */
+  .sl-line { grid-template-columns: minmax(0, 5fr) minmax(0, 1fr) minmax(0, 6fr); }
+  .sl-line > .field:nth-child(1) { grid-column: 1 / -1; grid-row: 1; }
+  .sl-line > .field:nth-child(2) { grid-column: 1; grid-row: 2; }
+  .sl-line > .field:nth-child(3) { grid-column: 2 / 4; grid-row: 2; }
+  .sl-line > .sl-line-check { grid-row: 3; }
+  .sl-line > .field:nth-child(4) { grid-column: 1 / 3; grid-row: 4; }
+  .sl-line-end { grid-column: 3; grid-row: 4; align-self: end; display: flex; flex-wrap: wrap; justify-content: space-between;
+    align-items: center; gap: 4px 8px; min-height: 44px; margin-bottom: 10px; }
+  .sl-line-end > .sl-line-total, .sl-line-end > .sl-remove { margin: 0; }
+}
+@media (min-width: 900px) {
+  .sl-dialog { width: min(880px, calc(100% - 32px)); }
+  /* the form two columns: Date | Buyer, Reference | Note; the rest the width of both */
+  .sl-dialog .sl-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 16px; }
+  .sl-new-buyer { column-gap: 16px; } /* on the form's columns */
+  .sl-form > * { grid-column: 1 / -1; }
+  .sl-form > .sl-f-date, .sl-form > .sl-f-ref { grid-column: 1; }
+  .sl-form > .sl-f-buyer, .sl-form > .sl-f-note { grid-column: 2; }
+  /* the boxes' labels, boxes and errors on three shared rows, so a line's boxes stay level whatever is under one */
+  /* RM per kg wide enough for "expected" in its box with RM 1000.00, Room for "Container 1" */
+  .sl-line { grid-template-columns: minmax(13.5rem, 1.7fr) minmax(5.5rem, 0.75fr) minmax(10.5rem, 1.1fr) minmax(7.75rem, 1.2fr)
+    minmax(6rem, auto) auto; grid-template-rows: repeat(3, auto); gap: 4px 8px; padding: 4px 0; border-top: 0; }
+  .sl-line > .field { display: grid; grid-row: span 3; grid-template-rows: subgrid; margin: 0; }
+  .sl-line > .field > label { grid-row: 1; }
+  .sl-line > .field > select { grid-row: 2; }
+  .sl-line > .field > .tk-suffix-box { grid-row: 2; }
+  .sl-line > .field > .field-error { grid-row: 3; }
+  .sl-line > .field:nth-child(1) { grid-column: 1; }
+  .sl-line > .field:nth-child(2) { grid-column: 2; }
+  .sl-line > .field:nth-child(3) { grid-column: 3; }
+  .sl-line > .field:nth-child(4) { grid-column: 4; }
+  .sl-line-total, .sl-remove { grid-row: 2; margin: 0; }
+  .sl-line-total { grid-column: 5; text-align: right; }
+  .sl-remove { grid-column: 6; }
+  .sl-line-check { grid-row: 4; }
+  .sl-line-check:not(:empty) { margin: 0 0 6px; }
+  /* the labels once, above the first line (still each box's name for a screen reader) */
+  .sl-line + .sl-line > .field > label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
+/* ---- end Sales ---- */

@@ -348,7 +348,7 @@ export function mount(container) {
       const tile = node('div', 'us-tile');
       tile.append(node('p', 'us-label', t.label), node('p', 'us-kwh', t.value));
       if (t.line) tile.append(node('p', 'us-line', t.line));
-      if (t.note) tile.append(node('p', 'us-note', t.note)); // the crops the RM value leaves out
+      if (t.note) tile.append(node('p', 'us-note', t.note)); // the crops the expected value leaves out
       return tile;
     }));
     card.append(row);

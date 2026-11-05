@@ -55,7 +55,7 @@ test('Settings → Yield: the inputs styled as the app\'s, 44 px on a phone, the
   assert.ok(css.includes('button, .ctl, .field input, .field select, .yd-table input, select,'));
   assert.ok(css.includes('.yd-table { width: 100%; max-width: 640px;'));
   const yd = src('yield-card.js');
-  assert.ok(yd.includes("short: 'Dry kg per block'") && yd.includes("short: 'RM per kg'"));
+  assert.ok(yd.includes("short: 'Dry kg per block'") && yd.includes("short: 'Expected RM per kg'"));
   assert.ok(yd.includes('td.dataset.label = c.short;'));
   // a text box, so "1,5" is an error yieldBody names rather than a number box's silent empty
   assert.ok(yd.includes("type: 'text', inputMode: 'decimal', autocomplete: 'off', placeholder: 'not set'"));

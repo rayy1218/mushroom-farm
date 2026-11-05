@@ -149,3 +149,8 @@ test('yieldBody: a bad input is named by field and crop, with the range', () => 
   }
   assert.equal(yieldBody([{ crop: 'oyster', dryKg: '1', priceKg: '' }, { crop: 'pink', dryKg: '99', priceKg: 'x' }]).field, 'dryKg:pink');
 });
+
+test('the Settings price is the expected price (Sales, spec 2026-11-05 6)', async () => {
+  const { YIELD_NOTE } = await import('../web/settings-math.js');
+  assert.ok(YIELD_NOTE.endsWith('The prices you get are recorded in Sales.'));
+});

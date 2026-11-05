@@ -8,7 +8,7 @@ import { yieldBody, YIELD_NOTE, YIELD_DRY, YIELD_PRICE } from './settings-math.j
 const COMMAND_TIMEOUT = 15000;
 const COLUMNS = [
   { key: 'dryKg', label: 'Dry substrate per block (kg)', short: 'Dry kg per block', range: YIELD_DRY },
-  { key: 'priceKg', label: 'Price (RM per kg)', short: 'RM per kg', range: YIELD_PRICE },
+  { key: 'priceKg', label: 'Expected price (RM per kg)', short: 'Expected RM per kg', range: YIELD_PRICE },
 ];
 
 const el = (tag, cls, text) => {

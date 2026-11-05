@@ -95,6 +95,8 @@ export const INVENTORY_COUNT_HASH = `${INVENTORY_HASH}/count`;
 export const inventoryItemHash = (id) => `${INVENTORY_HASH}/${id}`;
 const INVENTORY_SHEET_DAYS = [30, 90, 365];
 export const inventorySheetHash = (days = 30) => `${INVENTORY_HASH}/sheet?days=${days}`;
+// ---- Sales (spec 2026-11-05-sales-design.md 6): the business page, its period as Harvest's ----
+export const SALES_HASH = '#/business/sales';
 
 export function parseRoute(hash) {
   const run = new RegExp(`^#/rooms/${ID}/simulations/${ID}/?$`).exec(hash ?? '');
@@ -114,6 +116,8 @@ export function parseRoute(hash) {
   // The Calendar (spec 2026-11-03-calendar-design.md 5): its room and day in the query.
   const calendar = /^#\/calendar\/?(?:\?(.*))?$/.exec(hash ?? '');
   if (calendar) return { name: 'calendar', ...parseCalendarQuery(calendar[1]) };
+  const sales = /^#\/business\/sales\/?(?:\?(.*))?$/.exec(hash ?? '');
+  if (sales) return { name: 'sales', days: daysOf(sales[1]) };
   const sheet = /^#\/harvest\/sheet\/?(?:\?(.*))?$/.exec(hash ?? '');
   if (sheet) return { name: 'sheet', days: daysOf(sheet[1]) };
   const harvest = /^#\/harvest\/?(?:\?(.*))?$/.exec(hash ?? '');
@@ -143,6 +147,7 @@ export function canonicalHash(route) {
   if (route.name === 'detail') return route.tab === 'tasks' ? tasksHash(route.id, route.week) : roomHash(route.id, route.tab);
   if (route.name === 'today') return TODAY_HASH;
   if (route.name === 'calendar') return calendarHash(route);
+  if (route.name === 'sales') return route.days === 30 ? SALES_HASH : `${SALES_HASH}?days=${route.days}`;
   if (route.name === 'harvest') return route.days === 30 ? HARVEST_HASH : `${HARVEST_HASH}?days=${route.days}`;
   if (route.name === 'sheet') return sheetHash(route.days);
   if (route.name === 'batches') return route.run ? batchesRunHash(route.run) : BATCHES_HASH;

@@ -7,7 +7,7 @@ import { PROGRAM_DEFAULTS } from './program.js';
 import { FAMILY_OF, DAILY_RULES, HARVEST_RULES } from './task-rules.js';
 import { BATCHES_SCHEMA, createBatchStore } from './batches-db.js'; // ---- Batches ---- (spec 2026-11-05-batches-design.md 2)
 
-const VERSION = 22;
+const VERSION = 23;
 
 // Iteration 1 (version 0) had only the rooms table without the address columns.
 const ROOMS = `
@@ -325,6 +325,86 @@ CREATE TABLE IF NOT EXISTS stock_moves (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS stock_moves_by_item ON stock_moves (item_id, at);
 CREATE INDEX IF NOT EXISTS stock_moves_by_kind ON stock_moves (ref_kind, at);`;
+// ---- Sales (spec 2026-11-05-sales-design.md 2) ----
+// A sale is one crop line of a delivery to a buyer; the lines of a delivery share delivery_id (its first line's id when
+// recorded; ids are never reused, AUTOINCREMENT) and are written together. buyer: the buyer's name at the sale (a rename
+// rewrites it). room_id and run_id null: mixed, not tied.
+const SALES = `
+CREATE TABLE IF NOT EXISTS buyers (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  name       TEXT    NOT NULL UNIQUE COLLATE NOCASE,
+  phone      TEXT,
+  note       TEXT,
+  prices     TEXT    NOT NULL DEFAULT '{}',
+  archived   INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1)),
+  created_at INTEGER NOT NULL
+) STRICT;
+CREATE TABLE IF NOT EXISTS sales (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  delivery_id INTEGER NOT NULL,
+  sold_at     INTEGER NOT NULL,
+  crop        TEXT    NOT NULL,
+  kg          REAL    NOT NULL CHECK (kg > 0 AND kg <= 10000),
+  price_kg    REAL    NOT NULL CHECK (price_kg >= 0 AND price_kg <= 1000),
+  total       REAL    NOT NULL CHECK (total >= 0),
+  buyer       TEXT    NOT NULL,
+  buyer_id    INTEGER NOT NULL,
+  invoice_no  TEXT,
+  room_id     INTEGER,
+  run_id      INTEGER,
+  note        TEXT,
+  paid_at     INTEGER,
+  created_at  INTEGER NOT NULL
+) STRICT;
+CREATE INDEX IF NOT EXISTS sales_by_time ON sales (sold_at);
+CREATE INDEX IF NOT EXISTS sales_by_delivery ON sales (delivery_id);
+CREATE INDEX IF NOT EXISTS sales_by_buyer ON sales (buyer_id);
+CREATE INDEX IF NOT EXISTS sales_by_run ON sales (run_id) WHERE run_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS sales_unpaid ON sales (sold_at) WHERE paid_at IS NULL;`;
+
+// The Sales statements of a database, prepared on first use (after migrate) and kept per connection.
+const salesStatements = new WeakMap();
+function salesQ(db) {
+  let s = salesStatements.get(db);
+  if (s) return s;
+  s = {
+    runAt: db.prepare(`SELECT id FROM runs WHERE room_id = ? AND started_at <= ? AND (ended_at IS NULL OR ended_at > ?)
+                       ORDER BY started_at DESC, id DESC LIMIT 1`),
+    insertSale: db.prepare(`INSERT INTO sales (delivery_id, sold_at, crop, kg, price_kg, total, buyer, buyer_id, invoice_no,
+                                               room_id, run_id, note, paid_at, created_at)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+    setDeliveryId: db.prepare('UPDATE sales SET delivery_id = ? WHERE id = ?'),
+    deliveryLines: db.prepare('SELECT * FROM sales WHERE delivery_id = ? ORDER BY id'),
+    deleteDelivery: db.prepare('DELETE FROM sales WHERE delivery_id = ?'),
+    setPaid: db.prepare('UPDATE sales SET paid_at = ? WHERE delivery_id = ?'),
+    between: db.prepare('SELECT * FROM sales WHERE sold_at BETWEEN ? AND ? ORDER BY sold_at, id'),
+    unpaid: db.prepare('SELECT * FROM sales WHERE paid_at IS NULL ORDER BY sold_at, id'),
+    clearRoom: db.prepare('UPDATE sales SET room_id = NULL, run_id = NULL WHERE room_id = ?'),
+    buyers: db.prepare('SELECT * FROM buyers ORDER BY name COLLATE NOCASE, id'),
+    buyer: db.prepare('SELECT * FROM buyers WHERE id = ?'),
+    insertBuyer: db.prepare('INSERT INTO buyers (name, phone, note, prices, archived, created_at) VALUES (?, ?, ?, ?, 0, ?)'),
+    updateBuyer: db.prepare('UPDATE buyers SET name = ?, phone = ?, note = ?, prices = ?, archived = ? WHERE id = ?'),
+    renameSales: db.prepare('UPDATE sales SET buyer = ? WHERE buyer_id = ?'),
+    deleteBuyer: db.prepare('DELETE FROM buyers WHERE id = ?'),
+    buyerSales: db.prepare('SELECT COUNT(DISTINCT delivery_id) AS n FROM sales WHERE buyer_id = ?'),
+    buyerSalesAll: db.prepare('SELECT buyer_id, COUNT(DISTINCT delivery_id) AS n FROM sales GROUP BY buyer_id'),
+  };
+  salesStatements.set(db, s);
+  return s;
+}
+
+const saleOf = (r) => ({
+  id: r.id, deliveryId: r.delivery_id, soldAt: r.sold_at, crop: r.crop, kg: r.kg, priceKg: r.price_kg, total: r.total,
+  buyer: r.buyer, buyerId: r.buyer_id, invoiceNo: r.invoice_no, roomId: r.room_id, runId: r.run_id, note: r.note,
+  paidAt: r.paid_at, createdAt: r.created_at,
+});
+
+const buyerOf = (r) => {
+  let prices = {};
+  try { prices = JSON.parse(r.prices) ?? {}; } catch { /* a bad value reads as none */ }
+  return { id: r.id, name: r.name, phone: r.phone, note: r.note, prices, archived: r.archived === 1, createdAt: r.created_at };
+};
+// ---- end Sales ----
 
 const ALARMS = `
 CREATE TABLE alarms (
@@ -669,6 +749,8 @@ function migrate(db) {
     if (version < 21) db.exec(BATCHES_SCHEMA);
     // ---- Inventory (spec 2026-11-05-inventory-design.md 2.3) ----
     if (version < 22) db.exec(INVENTORY);
+    // ---- Sales (spec 2026-11-05-sales-design.md 2.4): buyers and sales; nothing to copy (the farm kept no sales). ----
+    if (version < 23) db.exec(SALES);
     db.exec(`PRAGMA user_version = ${VERSION}`);
     db.exec('COMMIT');
   } catch (err) {
@@ -1521,6 +1603,7 @@ export function openDb(path, { log = console.error } = {}) {
         q.deleteProgram.run(id);
         q.deleteRuns.run(id);
         q.deleteHarvests.run(id);
+        salesQ(db).clearRoom.run(id); // Sales: the room's sales keep their money, the room and run cleared (ids are reused)
         q.deleteCropRuns.run(id);
         q.deleteTasks.run(id);
         batchStore.forgetRoom(id); // ---- Batches ---- the room's batches are kept without it (room and run ids are reused)
@@ -2193,6 +2276,118 @@ export function openDb(path, { log = console.error } = {}) {
       for (const r of rows) out.set(r.id, r.room_id);
       return out;
     },
+
+    // ---- Sales (spec 2026-11-05-sales-design.md 2). A sale line is { id, deliveryId, soldAt, crop, kg, priceKg, total,
+    //      buyer, buyerId, invoiceNo, roomId, runId, note, paidAt, createdAt }; a buyer { id, name, phone, note, prices,
+    //      archived, createdAt }. The store (server/sales.js) checks every value first. ----
+
+    // The id of the room's run open at ms (started at or before it, not ended by it), or null.
+    runAt(roomId, ms) {
+      return salesQ(db).runAt.get(roomId, ms, ms)?.id ?? null;
+    },
+
+    // Writes a delivery: { id (null: new), soldAt, buyerId, buyer, invoiceNo, note, lines: [{ crop, kg, priceKg, total,
+    // roomId, runId }] } at `at`. An edit replaces the lines and keeps the id and the paid time. → the delivery's id, or null
+    // when id names no delivery. Throws when there are no lines.
+    saveDelivery({ id = null, soldAt, buyerId, buyer, invoiceNo, note, lines }, at) {
+      const s = salesQ(db);
+      if (!lines.length) throw new Error('A delivery needs lines');
+      let deliveryId = id;
+      inTransaction(() => {
+        let paidAt = null;
+        let createdAt = at;
+        if (id !== null) {
+          const old = s.deliveryLines.all(id);
+          if (!old.length) {
+            deliveryId = null;
+            return;
+          }
+          paidAt = old[0].paid_at;
+          createdAt = old[0].created_at;
+          s.deleteDelivery.run(id);
+        }
+        for (const l of lines) {
+          const rowId = Number(s.insertSale.run(deliveryId ?? 0, soldAt, l.crop, l.kg, l.priceKg, l.total, buyer, buyerId,
+            invoiceNo, l.roomId, l.runId, note, paidAt, createdAt).lastInsertRowid);
+          if (deliveryId === null) {
+            deliveryId = rowId;
+            s.setDeliveryId.run(rowId, rowId);
+          }
+        }
+      });
+      return deliveryId;
+    },
+
+    // A delivery's lines in the order written ([] for none).
+    deliveryLines(id) {
+      return salesQ(db).deliveryLines.all(id).map(saleOf);
+    },
+
+    // → true when a delivery went.
+    deleteDelivery(id) {
+      return salesQ(db).deleteDelivery.run(id).changes > 0;
+    },
+
+    // Paid at ms, or unpaid (null), on every line. → true when the delivery exists.
+    setDeliveryPaid(id, paidAt) {
+      return salesQ(db).setPaid.run(paidAt, id).changes > 0;
+    },
+
+    // The sale lines sold in [from, to] (ms), oldest first.
+    salesBetween(from, to) {
+      return salesQ(db).between.all(from, to).map(saleOf);
+    },
+
+    // Every unpaid sale line, oldest first.
+    unpaidSales() {
+      return salesQ(db).unpaid.all().map(saleOf);
+    },
+
+    // The buyers A–Z (without regard to case).
+    listBuyers() {
+      return salesQ(db).buyers.all().map(buyerOf);
+    },
+
+    // A buyer, or null.
+    getBuyer(id) {
+      const r = salesQ(db).buyer.get(id);
+      return r ? buyerOf(r) : null;
+    },
+
+    // A new buyer: { name, phone, note, prices }. Throws on a name taken (UNIQUE, without regard to case). → the buyer.
+    insertBuyer({ name, phone, note, prices }, at) {
+      const id = Number(salesQ(db).insertBuyer.run(name, phone, note, JSON.stringify(prices ?? {}), at).lastInsertRowid);
+      return this.getBuyer(id);
+    },
+
+    // Changes the given fields of a buyer; a new name is written on their sales too, in one transaction. → the buyer, or null.
+    updateBuyer(id, fields) {
+      const s = salesQ(db);
+      const old = this.getBuyer(id);
+      if (!old) return null;
+      const b = { ...old, ...Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== undefined)) };
+      inTransaction(() => {
+        s.updateBuyer.run(b.name, b.phone, b.note, JSON.stringify(b.prices ?? {}), b.archived ? 1 : 0, id);
+        if (b.name !== old.name) s.renameSales.run(b.name, id);
+      });
+      return this.getBuyer(id);
+    },
+
+    // → true when a buyer went. (The store refuses a buyer with sales.)
+    deleteBuyer(id) {
+      return salesQ(db).deleteBuyer.run(id).changes > 0;
+    },
+
+    // How many deliveries the buyer has.
+    buyerSaleCount(id) {
+      return salesQ(db).buyerSales.get(id).n;
+    },
+
+    // Every buyer's delivery count: Map buyerId → n (buyers with none are absent).
+    buyerSaleCounts() {
+      return new Map(salesQ(db).buyerSalesAll.all().map((r) => [r.buyer_id, r.n]));
+    },
+    // ---- end Sales ----
 
     close() {
       db.close();

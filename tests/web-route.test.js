@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseRoute, isCanonical, ROOM_TABS, roomHash, suggestHash, canonicalHash, TODAY_HASH, HARVEST_HASH, sheetHash, tasksHash, taskSheetHash, BATCHES_HASH, batchHash, batchesRunHash, batchSheetHash } from '../web/route.js';
+import { parseRoute, isCanonical, ROOM_TABS, roomHash, suggestHash, canonicalHash, TODAY_HASH, HARVEST_HASH, SALES_HASH, sheetHash, tasksHash, taskSheetHash, BATCHES_HASH, batchHash, batchesRunHash, batchSheetHash } from '../web/route.js';
 
 test('empty and unknown hashes mean the Overview', () => {
   for (const h of ['', '#', '#/', '#/other', '#/rooms/abc', '#/rooms/0', '#/rooms/01', '#/rooms/1/x', '#/rooms/-1', undefined]) {
@@ -174,4 +174,16 @@ test('the Batches pages: the list (one run\'s with ?run=), a batch, the myGAP 4-
     assert.equal(isCanonical(h), true, h);
   }
   assert.deepEqual(parseRoute('#/business/batches/0'), { name: 'overview' });
+});
+
+test('the Sales page (spec 2026-11-05-sales-design.md 6): #/business/sales with its period, 30 without one', () => {
+  assert.equal(SALES_HASH, '#/business/sales');
+  assert.deepEqual(parseRoute('#/business/sales'), { name: 'sales', days: 30 });
+  assert.deepEqual(parseRoute('#/business/sales?days=90'), { name: 'sales', days: 90 });
+  assert.deepEqual(parseRoute('#/business/sales?days=31'), { name: 'sales', days: 30 });
+  assert.equal(isCanonical('#/business/sales'), true);
+  assert.equal(isCanonical('#/business/sales?days=30'), false);
+  assert.equal(isCanonical('#/business/sales?days=7'), true);
+  assert.equal(isCanonical('#/business/sales/'), false);
+  assert.equal(canonicalHash({ name: 'sales', days: 365 }), '#/business/sales?days=365');
 });

@@ -10,10 +10,11 @@ import { fallbackMs, createThrottle } from './live-math.js';
 import { drawTimeBars } from './bar-chart.js';
 import { missingLine, tileNodes, figureName } from './harvest-card.js';
 import { mainCrop } from './room-card-math.js';
+import { sheetWithSales, sheetTotals } from './sales-math.js'; // Sales: the sheet's sale rows (spec 2026-11-05-sales-design.md 6)
 import { picture, emptyPicture } from './pictures.js';
 import {
   pageTiles, pricesNote, harvestBars, barTip, harvestTicks, rangeText, emptyText, periodWords, roomRows, ROOM_COLUMNS, cropRows,
-  CROP_COLUMNS, chartTitle, chartLabel, sheetRows, sheetTotal, SHEET_TITLE, SHEET_COLUMNS,
+  CROP_COLUMNS, chartTitle, chartLabel, SHEET_TITLE, SHEET_COLUMNS,
 } from './harvest-math.js';
 
 const REFRESH_MS = 60_000;
@@ -92,7 +93,7 @@ function table(caption, columns, rows, head, { groups = null, runFrom = Infinity
     if (r.run) th.append(el('span', 'hv-run-words', r.run)); // a phone: the run's columns as a line under the name
     row.append(th, ...r.cells.map((c, i) => {
       const td = el('td', i + 1 >= runFrom ? 'num hv-run-col' : 'num', c);
-      if (i === 1 && r.without) td.append(el('span', 'hv-without', r.without)); // the RM value leaves a crop out
+      if (i === 1 && r.without) td.append(el('span', 'hv-without', r.without)); // the expected value leaves a crop out
       return td;
     }));
     body.append(row);
@@ -104,11 +105,12 @@ function table(caption, columns, rows, head, { groups = null, runFrom = Infinity
 
 // How the page and the sheet stay current: the harvest events, a room's crops (a run starts or ends), a room added, renamed
 // or deleted (By room and the sheet name it), the stream back, and the timer. load() is the page's; returns stop().
-function keepCurrent(load, timerOf) {
+function keepCurrent(load, timerOf, { sales = false } = {}) {
   const reload = createThrottle(load);
   const offLive = [
     live.on('harvest', () => reload.call()),
     live.on('room', (d) => { if (d.part === 'crop' || d.part === 'room') reload.call(); }), // room: added, renamed or deleted
+    ...(sales ? [live.on('sales', () => reload.call())] : []), // Sales: the sheet's sale rows
     live.onStatus((up) => { if (up) reload.call(); else timerOf(REFRESH_MS); }),
   ];
   return () => {
@@ -259,12 +261,13 @@ const SHEET_TEMPLATE = `
       <span data-banner-text></span>
       <button type="button" data-retry>Retry</button>
     </div>
+    <p class="muted hv-sales-note" data-sales-note hidden>Sales could not be read: the sales columns are blank.</p>
     <p class="none" data-empty hidden></p>
     <div class="hv-sheet-wrap" data-wrap hidden>
       <table class="hv-sheet-table">
         <thead><tr data-head></tr></thead>
         <tbody data-rows></tbody>
-        <tfoot><tr><th scope="row" colspan="3">Total</th><td class="num" data-total></td><td class="hv-write" colspan="5"></td></tr></tfoot>
+        <tfoot><tr><th scope="row" colspan="3">Total</th><td class="num" data-total></td><td class="num" data-sold></td><td class="hv-write"></td><td class="num" data-income></td><td class="hv-write" colspan="2"></td></tr></tfoot>
       </table>
     </div>
   </div>`;
@@ -277,6 +280,7 @@ export function mountSheet(container, { days = 30 } = {}) {
   const els = {
     period: q('[data-period]'), banner: q('.banner'), bannerText: q('[data-banner-text]'), empty: q('[data-empty]'), wrap: q('[data-wrap]'),
     rows: q('[data-rows]'), total: q('[data-total]'),
+    salesNote: q('[data-sales-note]'), sold: q('[data-sold]'), income: q('[data-income]'),
   };
   document.title = 'myGAP sheet · Mushroom farm';
   document.body.classList.add('printing-sheet'); // print: no top bar, no buttons, light colours (styles.css)
@@ -294,18 +298,22 @@ export function mountSheet(container, { days = 30 } = {}) {
   let outdated = false;
   let painted = '';
 
-  function paint(farm) {
-    const key = JSON.stringify([farm.from, farm.to, farm.records, farm.totals?.kg]);
+  function paint(farm, lines) {
+    const key = JSON.stringify([farm.from, farm.to, farm.records, farm.totals?.kg, lines]);
     if (key === painted) return;
     painted = key;
     els.period.textContent = rangeText(farm);
-    const rows = sheetRows(farm.records);
+    const rows = sheetWithSales(farm.records, lines);
     els.empty.hidden = rows.length > 0;
     els.wrap.hidden = rows.length === 0;
-    els.total.textContent = sheetTotal(farm);
+    els.salesNote.hidden = lines !== null;
+    const t = sheetTotals(farm, lines);
+    els.total.textContent = t.harvested;
+    els.sold.textContent = t.sold;
+    els.income.textContent = t.total;
     els.rows.replaceChildren(...rows.map((cells) => {
       const tr = el('tr');
-      tr.append(...cells.map((c, i) => el('td', `${i >= 3 && i <= 6 ? 'num' : ''}${i >= 4 ? ' hv-write' : ''}`.trim(), c)));
+      tr.append(...cells.map((c, i) => el('td', `${i >= 3 && i <= 6 ? 'num' : ''}${i >= 4 && c === '' ? ' hv-write' : ''}`.trim(), c)));
       return tr;
     }));
   }
@@ -317,8 +325,13 @@ export function mountSheet(container, { days = 30 } = {}) {
     try {
       const data = await request('GET', `/api/harvest?days=${days}`);
       if (!alive() || mine !== seq) return;
+      let lines = null; // Sales: the same days' sale lines; a failure leaves the harvest rows (the note says so)
+      try {
+        lines = (await request('GET', `/api/sales/range?from=${data.from}&to=${data.to}`)).lines;
+      } catch { /* the note */ }
+      if (!alive() || mine !== seq) return;
       els.banner.hidden = true;
-      paint(data);
+      paint(data, lines);
     } catch (err) {
       if (!alive() || mine !== seq) return;
       els.bannerText.textContent = routeMissing(err) ? OUTDATED : err.status === 0 ? OFFLINE : err.message;
@@ -337,7 +350,7 @@ export function mountSheet(container, { days = 30 } = {}) {
     if (outdated) return;
     clearTimeout(timer);
     timer = setTimeout(load, ms);
-  });
+  }, { sales: true });
   load();
 
   return function unmount() {

@@ -82,11 +82,11 @@ test('the sheet: a blank line for the farm\'s name (the app has none), the kg to
   assert.ok(page.includes('<div><dt>Farm</dt><dd class="hv-write-line"></dd></div>'));
   assert.ok(!page.includes('brand-text'), "not the app's name");
   assert.ok(page.includes('<tfoot><tr><th scope="row" colspan="3">Total</th><td class="num" data-total></td>'));
-  assert.ok(page.includes('els.total.textContent = sheetTotal(farm);'));
+  assert.ok(page.includes('els.total.textContent = t.harvested;'), 'the kg total, now from sheetTotals (Sales 9)');
   assert.match(css, /body\.printing-sheet \.hv-sheet-table tfoot \{ display: table-row-group; \}/, 'printed once, at the end');
 });
 
-test("the Overview's Harvest card names the crops its RM value leaves out", () => {
+test("the Overview's Harvest card names the crops its expected value leaves out", () => {
   assert.ok(overview.includes("if (t.note) tile.append(node('p', 'us-note', t.note));"));
 });
 
@@ -119,4 +119,13 @@ test("the Overview's Harvest card: a 30-day strip in the harvest hue and the roo
   assert.match(css, /\.ov-strip \{[^}]*height: 48px;[^}]*fill: var\(--s-harvest\);/);
   assert.ok(css.includes('.ov-harvest-rooms { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));'));
   assert.ok(css.includes('.ov-harvest h2 a { display: inline-block; padding: 11px 4px; margin: -11px -4px; }'));
+});
+
+test('the myGAP sheet: the sales of the same days as their own rows, the Total with sold kg and RM (Sales, spec 2026-11-05 6)', () => {
+  assert.ok(page.includes("import { sheetWithSales, sheetTotals } from './sales-math.js';"));
+  assert.ok(page.includes('request(\'GET\', `/api/sales/range?from=${data.from}&to=${data.to}`)'));
+  assert.ok(page.includes('sheetWithSales(farm.records, lines)'));
+  assert.ok(page.includes('Sales could not be read: the sales columns are blank.'));
+  assert.ok(page.includes('data-sold') && page.includes('data-income'));
+  assert.ok(page.includes("live.on('sales', () => reload.call())"));
 });
