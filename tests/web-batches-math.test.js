@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import {
   rmText, blocksText, blockKgText, numberOf, overNotes, deliveryLine, waterText, dateText, agoText, goodText, countBlocks, weightText, pageGroups, pastIn, pastCells,
   detailFacts, overNote, batchLineFor, sheetRows, SHEET_COLUMNS, receiveBody, receiveValues, placeBody, roomChoices, checkBody,
-  checkLine, statusLine, roomRunText,
+  checkLine, statusLine, roomRunText, figureLine, waitingLong, waitingLine, placedLine, BATCH_WAIT_DAYS, runOf, runYieldFacts,
 } from '../web/batches-math.js';
 
 const nb = '\u00a0';
@@ -28,7 +28,7 @@ test('the formatter', () => {
   assert.equal(dateText(Date.UTC(2025, 0, 3, 4), '2026-11-05'), '3 Jan 2025');
   assert.equal(agoText(NOW, NOW), 'today');
   assert.equal(agoText(NOW - DAY, NOW), 'yesterday');
-  assert.equal(agoText(NOW - 12 * DAY, NOW), '12 days ago');
+  assert.equal(agoText(NOW - 12 * DAY, NOW), `12${nb}days${nb}ago`, 'kept whole at a wrap');
   assert.equal(goodText(b({})), `1,200${nb}blocks`);
   assert.equal(goodText(b({ lost: 20, good: 1180 })), '1,180 of 1,200 good');
   assert.equal(countBlocks(1200, 'oyster'), '1,200 Grey oyster blocks');
@@ -55,18 +55,19 @@ test('the page\'s groups: waiting, in rooms by run with the over-count note, pas
   assert.equal(pastIn([b({ receivedAt: NOW - 400 * DAY })], null, NOW).length, 1);
   assert.deepEqual(pastCells(b({ ...run, lost: 3 }), '2026-11-05'),
     ['3 Nov', 'Grey oyster', 'Agro Supplies', '0912', '1,200', '3', `RM${nb}2.30`, `Container 1${dot}run of 31 Oct`]);
+  assert.equal(pastCells(b({ ...run }), '2026-11-05')[5], '—', 'none lost: a dash');
 });
 
 test('a batch: its facts, the over-count note, its status line, a check\'s line', () => {
   const one = b({ strain: 'PL-27', blockKg: 2.3, waterPct: 60, dryKg: 0.92, delivery: [b({ blocks: 800 }), b({ id: 2, parentId: 1, blocks: 400 })] });
   assert.deepEqual(detailFacts(one), [
     ['Spawn batch', '0912'], ['Strain', 'PL-27'], ['Block weight', `2.30${nb}kg${dot}60${nb}% water${dot}0.92${nb}kg dry`],
-    ['Price per block', `RM${nb}2.30`], ['Delivery', `1,200${nb}blocks${dot}RM${nb}2,760.00`],
+    ['Price per block', `RM${nb}2.30`], ['Whole delivery', `1,200${nb}blocks${dot}RM${nb}2,760.00`],
   ]);
   assert.equal(overNote(b({ status: 'placed', runBlocks: 950, batchBlocks: 1200 })), 'Batches hold 1,200 Grey oyster blocks; the run has 950.');
   assert.equal(overNote(b({ status: 'placed', runBlocks: 950, batchBlocks: 950 })), null);
   assert.equal(statusLine(b({})), 'Waiting');
-  assert.equal(statusLine(b({ status: 'placed', roomName: 'Container 1' })), 'In Container 1');
+  assert.equal(statusLine(b({ status: 'placed', roomName: 'Container 1' })), `In${nb}Container${nb}1`, 'kept whole at a wrap');
   assert.equal(statusLine(b({ status: 'past', roomName: 'Container 1' })), `Past${dot}Container 1`);
   assert.equal(checkLine({ at: NOW, lost: 20, cause: 'green', worker: 'Ali' }, '2026-11-05'), `5 Nov 12:00${dot}20${nb}blocks lost${dot}Green mould${dot}Ali`);
 });
@@ -116,6 +117,11 @@ test('the dialogs\' bodies', () => {
     { id: 3, name: 'Container 2', crop: { crops: [{ crop: 'pink', blocks: 600 }] } },
   ];
   assert.deepEqual(roomChoices(rooms, 'oyster'), { ok: [[2, 'Container 1']], off: ['Room 1 (no crops)', 'Container 2 (no Grey oyster)'] });
+  // with the batches in the rooms' current runs (GET /api/batches?status=placed): each offered room says its blocks of the crop
+  const placed = [b({ id: 7, status: 'placed', roomId: 2, blocks: 500 }), b({ id: 8, status: 'placed', roomId: 2, blocks: 300 }),
+    b({ id: 9, status: 'placed', roomId: 2, crop: 'pink', blocks: 99 }), b({ id: 10, status: 'past', roomId: 2, blocks: 50 })];
+  assert.deepEqual(roomChoices(rooms, 'oyster', placed).ok, [[2, `Container 1${dot}800${nb}blocks in batches`]]);
+  assert.deepEqual(roomChoices([...rooms, { id: 4, name: 'Container 3', crop: { crops: [{ crop: 'oyster', blocks: 10 }] } }], 'oyster', placed).ok[1], [4, 'Container 3']);
   const c = checkBody({ checkDate: '2026-11-05', checkTime: '8:12', lost: '20', cause: 'green', worker: 'Ali', note: '' });
   assert.deepEqual(c.body, { at: Date.UTC(2026, 10, 5, 0, 12), lost: 20, cause: 'green', worker: 'Ali', note: '' });
   assert.equal(checkBody({ checkDate: '2026-11-05', checkTime: '25:00', lost: '1', cause: 'green', worker: 'Ali' }).field, 'checkTime');
@@ -212,8 +218,78 @@ test('receiveBody: a weight with no water is null; checkBody: an empty date', ()
 
 test('a deleted room in a delivery line and a status line', () => {
   const gone = b({ id: 2, parentId: 1, blocks: 300, placedAt: NOW - DAY, status: 'past' });
-  assert.equal(deliveryLine(gone), `300${nb}blocks${dot}a deleted room`);
+  assert.equal(deliveryLine(gone), `300${nb}blocks${dot}Past${dot}a deleted room`);
   assert.equal(deliveryLine(b({ blocks: 300 })), `300${nb}blocks${dot}Waiting`);
   assert.equal(statusLine(gone), `Past${dot}a deleted room`);
   assert.equal(statusLine({ ...gone, roomName: null, status: 'past' }), `Past${dot}a deleted room`);
+});
+
+test('the Delivery card marks each part: Waiting, In the room, Past · the room', () => {
+  assert.equal(deliveryLine(b({ blocks: 300, status: 'placed', roomName: 'Container 1' })), `300${nb}blocks${dot}In${nb}Container${nb}1`);
+  assert.equal(deliveryLine(b({ blocks: 300, status: 'past', roomName: 'Container 2' })), `300${nb}blocks${dot}Past${dot}Container 2`);
+});
+
+test("a batch's figure line: the good blocks, the lost ones only after a loss", () => {
+  assert.equal(figureLine(b({ blocks: 800, lost: 12, good: 788 })), `788 good${dot}12 lost`);
+  assert.equal(figureLine(b({ blocks: 1200 })), '1,200 good');
+});
+
+test('waitingLong: the waiting batches received BATCH_WAIT_DAYS or more ago, oldest first, with their line', () => {
+  assert.equal(BATCH_WAIT_DAYS, 3);
+  const list = [
+    b({ id: 1, receivedAt: NOW - 2 * DAY, good: 100 }),
+    b({ id: 2, receivedAt: NOW - 3 * DAY, blocks: 600, good: 600, crop: 'pink' }),
+    b({ id: 3, receivedAt: NOW - 40 * DAY, blocks: 400, good: 400 }),
+    b({ id: 4, receivedAt: NOW - 50 * DAY, status: 'placed' }),
+    b({ id: 5, receivedAt: NOW - 50 * DAY, blocks: 10, lost: 10, good: 0 }),
+    b({ id: 6, receivedAt: NOW - 20 * DAY, blocks: 1, good: 1 }),
+  ];
+  assert.deepEqual(waitingLong(list, NOW), [
+    { id: 3, text: `400 Grey oyster blocks waiting 40${nb}days`, href: '#/business/batches/3' },
+    { id: 6, text: `1 Grey oyster block waiting 20${nb}days`, href: '#/business/batches/6' },
+    { id: 2, text: `600 Pink oyster blocks waiting 3${nb}days`, href: '#/business/batches/2' },
+  ]);
+  assert.deepEqual(waitingLong([], NOW), []);
+  assert.deepEqual(waitingLong(null, NOW), []);
+});
+
+test("runOf and runYieldFacts: the batch's run in the room's harvests, its yield and the blocks' cost per kg picked", () => {
+  const current = { id: 1, endedAt: null, crops: [{ crop: 'oyster', blocks: 950 }], kg: 190, perBlock: 0.2, be: 21.7, harvests: [{ id: 1 }],
+    byCrop: [{ crop: 'oyster', blocks: 950, kg: 190, perBlock: 0.2, be: 21.7 }] };
+  const past = { id: 2, endedAt: NOW - DAY, crops: [{ crop: 'oyster', blocks: 600 }], kg: 0, perBlock: 0, be: 0, harvests: [] };
+  const reply = { current, past: [past] };
+  assert.equal(runOf(reply, 1), current);
+  assert.equal(runOf(reply, 2), past);
+  assert.equal(runOf(reply, 9), null);
+  assert.equal(runOf(null, 1), null);
+  assert.equal(runYieldFacts(null, b({})), null, 'no run (a deleted room): nothing shown');
+  assert.deepEqual(runYieldFacts(current, b({ pricePerBlock: 2.3 })), {
+    title: 'This run', empty: null,
+    tiles: [
+      { label: 'kg so far', value: `190.0${nb}kg` },
+      { label: 'kg per block', value: `0.20${nb}kg` },
+      { label: 'BE', title: 'Biological efficiency', value: `22${nb}%` },
+    ],
+    cost: `Blocks cost RM${nb}11.50 per${nb}kg picked`,
+  });
+  const noPrice = runYieldFacts(current, b({ pricePerBlock: null }));
+  assert.equal(noPrice.cost, null, 'no price: no cost line');
+  assert.deepEqual(runYieldFacts(past, b({})), { title: 'This run', empty: 'No harvests in this run.', tiles: [], cost: null }, 'an ended run: no "yet"');
+  assert.equal(runYieldFacts({ ...current, kg: 0, byCrop: [] }, b({})).empty, 'No harvests in this run yet.');
+  const ended = runYieldFacts({ ...current, endedAt: NOW - DAY }, b({}));
+  assert.equal(ended.tiles[0].label, 'kg', 'an ended run: its kg, not "so far"');
+  assert.equal(ended.cost, `Blocks cost RM${nb}11.50 per${nb}kg picked`, 'b() has RM 2.30 a block');
+  // a mixed run: the batch's crop's own figures
+  const mixed = { ...current, crops: [{ crop: 'oyster', blocks: 500 }, { crop: 'pink', blocks: 450 }], kg: 300, perBlock: 0.32,
+    byCrop: [{ crop: 'oyster', blocks: 500, kg: 125, perBlock: 0.25, be: 27 }, { crop: 'pink', blocks: 450, kg: 175, perBlock: 0.39, be: 40 }] };
+  const m = runYieldFacts(mixed, b({ pricePerBlock: 2.5 }));
+  assert.equal(m.title, "This run's Grey oyster");
+  assert.deepEqual(m.tiles.map((t) => t.value), [`125.0${nb}kg`, `0.25${nb}kg`, `27${nb}%`]);
+  assert.equal(m.cost, `Blocks cost RM${nb}10.00 per${nb}kg picked`);
+  assert.equal(runYieldFacts({ ...current, be: null, byCrop: [] }, b({})).tiles[2].value, '—', 'no BE: a dash');
+});
+
+test('the rows\' lines keep a date and "40 days ago" whole at a wrap', () => {
+  assert.equal(waitingLine(b({ receivedAt: NOW - 40 * DAY }), NOW), `Agro Supplies${dot}Received 26${nb}Sep${dot}40${nb}days${nb}ago`);
+  assert.equal(placedLine(b({ receivedAt: NOW - 3 * DAY }), '2026-11-05'), `Agro Supplies${dot}spawn batch 0912${dot}received 2${nb}Nov`);
 });

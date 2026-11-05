@@ -6,7 +6,7 @@
 import { cropShortName } from './crops.js';
 import { DOT } from './text-math.js';
 import { farmDate, farmTime, dayMonth, daysFrom } from './tasks-math.js';
-import { whenMs, rmText } from './harvest-math.js';
+import { whenMs, rmText, kgText, perBlockText, beText, costKgText } from './harvest-math.js';
 import { batchHash, batchesRunHash } from './route.js';
 
 const NB = '\u00a0';
@@ -31,7 +31,7 @@ export function dateText(ms, today) {
 export const fullDate = (ms) => (finite(ms) ? `${dayMonth(farmDate(ms))} ${farmDate(ms).slice(0, 4)}` : DASH);
 export function agoText(ms, nowMs) {
   const n = daysFrom(farmDate(ms), farmDate(nowMs));
-  return n <= 0 ? 'today' : n === 1 ? 'yesterday' : `${n} days ago`;
+  return n <= 0 ? 'today' : n === 1 ? 'yesterday' : `${n}${NB}days${NB}ago`; // whole at a wrap
 }
 export const goodText = (b) => (b.lost > 0 ? `${grouped(b.good, 0)} of ${grouped(b.blocks, 0)} good` : blocksText(b.blocks));
 export const cropBlocks = (crop) => `${cropShortName(crop)} blocks`;
@@ -48,8 +48,10 @@ export const roomRunText = (b, today) => (b.roomName && finite(b.runStartedAt) ?
 // ---- the Batches page ----
 
 // The words under a waiting batch's name and a placed one's.
-export const waitingLine = (b, nowMs) => [b.supplier, `Received ${dateText(b.receivedAt, farmDate(nowMs))}${DOT}${agoText(b.receivedAt, nowMs)}`].filter(Boolean).join(DOT);
-export const placedLine = (b, today) => [b.supplier, b.spawnBatch ? `spawn batch ${b.spawnBatch}` : null, `received ${dateText(b.receivedAt, today)}`].filter(Boolean).join(DOT);
+// A date kept whole at a wrap ("26 Sep", not "26 / Sep").
+const wholeDate = (ms, today) => dateText(ms, today).replace(/ /g, NB);
+export const waitingLine = (b, nowMs) => [b.supplier, `Received ${wholeDate(b.receivedAt, farmDate(nowMs))}${DOT}${agoText(b.receivedAt, nowMs)}`].filter(Boolean).join(DOT);
+export const placedLine = (b, today) => [b.supplier, b.spawnBatch ? `spawn batch ${b.spawnBatch}` : null, `received ${wholeDate(b.receivedAt, today)}`].filter(Boolean).join(DOT);
 
 // The notes of a run whose batches of a crop hold more blocks than the run has (spec 3: allowed, said in amber).
 export function overNotes(list) {
@@ -83,7 +85,7 @@ export function pastIn(past, days, nowMs) {
 }
 export const PAST_COLUMNS = ['Received', 'Crop', 'Supplier', 'Spawn batch', 'Blocks', 'Lost', 'RM per block', `Room${DOT}run`];
 export const pastCells = (b, today) => [dateText(b.receivedAt, today), cropShortName(b.crop), b.supplier ?? DASH, b.spawnBatch ?? DASH,
-  grouped(b.blocks, 0), grouped(b.lost, 0), rmText(b.pricePerBlock), roomRunText(b, today)];
+  grouped(b.blocks, 0), b.lost > 0 ? grouped(b.lost, 0) : DASH, rmText(b.pricePerBlock), roomRunText(b, today)];
 
 // ---- a batch ----
 
@@ -94,16 +96,68 @@ export function detailFacts(b) {
     ['Spawn batch', b.spawnBatch], ['Strain', b.strain], ['Delivery note', b.deliveryRef],
     ['Inoculated', finite(b.inoculatedAt) ? fullDate(b.inoculatedAt) : null], ['Block weight', weightText(b)],
     ['Price per block', finite(b.pricePerBlock) ? rmText(b.pricePerBlock) : null],
-    ['Delivery', finite(b.pricePerBlock) ? `${blocksText(total)}${DOT}${rmText(total * b.pricePerBlock)}` : blocksText(total)],
+    ['Whole delivery', finite(b.pricePerBlock) ? `${blocksText(total)}${DOT}${rmText(total * b.pricePerBlock)}` : blocksText(total)],
     ['Note', b.note],
   ].filter(([, v]) => v !== null && v !== undefined && v !== '');
 }
 export const overNote = (b) => (b.status === 'placed' && finite(b.runBlocks) && finite(b.batchBlocks) && b.batchBlocks > b.runBlocks
   ? `Batches hold ${countBlocks(b.batchBlocks, b.crop)}; the run has ${grouped(b.runBlocks, 0)}.` : null);
-export const statusLine = (b) => (b.status === 'waiting' ? 'Waiting' : b.status === 'placed' ? `In ${b.roomName}` : `Past${DOT}${b.roomName ?? 'a deleted room'}`);
+// "In Container 1" kept whole at a wrap (the Units Rule's no-break spaces).
+export const statusLine = (b) => (b.status === 'waiting' ? 'Waiting' : b.status === 'placed' ? `In ${b.roomName ?? 'a deleted room'}`.replace(/ /g, NB)
+  : `Past${DOT}${b.roomName ?? 'a deleted room'}`);
+// The head's figures: "788 good · 12 lost" (the lost part only after a loss).
+export const figureLine = (b) => [`${grouped(b.good, 0)} good`, b.lost > 0 ? `${grouped(b.lost, 0)} lost` : null].filter(Boolean).join(DOT);
 export const checkLine = (c, today) => [`${dateText(c.at, today)} ${farmTime(c.at)}`, `${blocksText(c.lost)} lost`, CAUSE_NAMES[c.cause] ?? c.cause, c.worker]
   .filter(Boolean).join(DOT);
-export const deliveryLine = (x) => `${blocksText(x.blocks)}${DOT}${x.status === 'waiting' ? 'Waiting' : x.roomName ?? 'a deleted room'}`;
+export const deliveryLine = (x) => `${blocksText(x.blocks)}${DOT}${statusLine(x)}`;
+
+// ---- the Today page's "Blocks waiting" (contract 2026-11-05) ----
+
+// Waiting this many days or more, a batch shows on the Today page: bought blocks should go into a room soon.
+export const BATCH_WAIT_DAYS = 3;
+// The waiting batches (with a good block) received BATCH_WAIT_DAYS or more days ago, oldest first. → [{ id, text, href }]:
+// "400 Grey oyster blocks waiting 40 days".
+export function waitingLong(batches, nowMs) {
+  const today = farmDate(nowMs);
+  return (Array.isArray(batches) ? batches : [])
+    .filter((b) => b.status === 'waiting' && b.good > 0 && finite(b.receivedAt) && daysFrom(farmDate(b.receivedAt), today) >= BATCH_WAIT_DAYS)
+    .sort((a, b) => a.receivedAt - b.receivedAt || a.id - b.id)
+    .map((b) => {
+      const n = daysFrom(farmDate(b.receivedAt), today);
+      return { id: b.id, text: `${countBlocks(b.good, b.crop)} waiting ${n}${NB}${n === 1 ? 'day' : 'days'}`, href: batchHash(b.id) };
+    });
+}
+
+// ---- a batch's run: its yield (GET /api/rooms/:id/harvests, read only; contract 2026-11-05) ----
+
+// The run of id runId in the room's harvests reply (its current run or a past one), or null.
+export function runOf(reply, runId) {
+  if (!reply || !Number.isInteger(runId)) return null;
+  if (reply.current?.id === runId) return reply.current;
+  return (Array.isArray(reply.past) ? reply.past : []).find((r) => r.id === runId) ?? null;
+}
+
+// The "This run" card of a placed or past batch: { title, tiles [{ label, title?, value }], cost, empty }, or null without a run
+// (a deleted room). A mixed run gives the batch's crop's own figures. cost: "Blocks cost RM 11.50 per kg picked" (the price per
+// block over the kg per block), only when both are known.
+export function runYieldFacts(run, batch) {
+  if (!run) return null;
+  const mixed = (run.crops?.length ?? 0) > 1;
+  const own = mixed ? (run.byCrop ?? []).find((c) => c.crop === batch.crop) : null;
+  const src = own ?? run;
+  const title = own ? `This run's ${cropShortName(batch.crop)}` : 'This run';
+  const ended = finite(run.endedAt);
+  if (!(src.kg > 0)) return { title, empty: ended ? 'No harvests in this run.' : 'No harvests in this run yet.', tiles: [], cost: null };
+  return {
+    title, empty: null,
+    tiles: [
+      { label: ended ? 'kg' : 'kg so far', value: kgText(src.kg) },
+      { label: 'kg per block', value: perBlockText(src.perBlock, { cell: true }) },
+      { label: 'BE', title: 'Biological efficiency', value: beText(src.be, { cell: true }) },
+    ],
+    cost: finite(batch.pricePerBlock) && src.perBlock > 0 ? `Blocks cost ${costKgText(batch.pricePerBlock / src.perBlock)} per${NB}kg picked` : null,
+  };
+}
 
 // ---- the Harvest tab's line (contract section 4; the integrator wires it into harvest-card.js) ----
 
@@ -212,12 +266,18 @@ export function placeBody(v, good) {
 }
 
 // The rooms (GET /api/overview's, with their crop summary) a batch of `crop` can go into (their run has the crop) and why the others cannot.
-export function roomChoices(rooms, crop) {
+// placed: the batches in the rooms' current runs (GET /api/batches?status=placed): an offered room says its blocks of the
+// crop in batches ("Container 1 · 800 blocks in batches").
+export function roomChoices(rooms, crop, placed = []) {
   const ok = [];
   const off = [];
+  const held = new Map();
+  for (const b of Array.isArray(placed) ? placed : []) {
+    if (b.status === 'placed' && b.crop === crop) held.set(b.roomId, (held.get(b.roomId) ?? 0) + b.blocks);
+  }
   for (const r of rooms) {
     const crops = Array.isArray(r.crop?.crops) ? r.crop.crops : [];
-    if (crops.some((c) => c.crop === crop)) ok.push([r.id, r.name]);
+    if (crops.some((c) => c.crop === crop)) ok.push([r.id, held.get(r.id) ? `${r.name}${DOT}${blocksText(held.get(r.id))} in batches` : r.name]);
     else off.push(`${r.name} (${crops.length ? `no ${cropShortName(crop)}` : 'no crops'})`);
   }
   return { ok, off };
