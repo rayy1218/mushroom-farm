@@ -2111,3 +2111,55 @@ td.tg-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: -2p
 .hv-sheet-table td.hv-write { min-width: 5rem; }
 .hv-sheet-table td:first-child { white-space: nowrap; }
 @media (max-width: 600px) { .hv-sheet-tools .back { padding: 10px 0; } }
+
+/* ---- Batches ---- (spec 2026-11-05-batches-design.md 7): the Batches page, a batch, the 4-2 sheet's date boxes. Tokens only. */
+.bt-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.bt-filter { margin: 0 0 12px; color: var(--ink-2); font-size: var(--fs-sm); }
+.bt-card { margin-bottom: 16px; }
+.bt-card > h2 { margin-bottom: 12px; }
+.bt-row { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto auto; align-items: center; gap: 4px 12px; padding: 10px 0; border-top: 1px solid var(--border); }
+.bt-row:first-child { border-top: 0; padding-top: 0; }
+.bt-words { min-width: 0; }
+.bt-name { color: var(--ink); font-weight: 600; text-decoration: underline; text-decoration-color: var(--axis); text-underline-offset: 3px; }
+.bt-name:hover, .bt-name:focus-visible { text-decoration-color: currentColor; }
+.bt-line { margin: 2px 0 0; color: var(--ink-2); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.bt-count { font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right; }
+.bt-group-room + .bt-group-room { margin-top: 18px; }
+.bt-room-head { margin: 0 0 8px; font-size: var(--fs-md); font-weight: 600; font-variant-numeric: tabular-nums; }
+.bt-room-head a { color: var(--ink); }
+.bt-over { margin: 8px 0 0; padding: 8px 12px; border-radius: 8px; background: var(--warning-soft); color: var(--warning-text); font-size: var(--fs-sm); }
+.bt-range { margin: 0; }
+.bt-past-table th a { color: var(--ink); }
+.bt-titles { display: flex; align-items: center; gap: 12px; }
+.bt-pic { flex: none; display: inline-flex; }
+.bt-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 24px; margin: 0; }
+.bt-facts div { display: contents; }
+.bt-facts dt { color: var(--ink-2); }
+.bt-facts dd { margin: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.bt-delivery-row { margin: 6px 0 0; font-variant-numeric: tabular-nums; }
+.bt-check { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 2px 12px; padding: 8px 0; border-top: 1px solid var(--border); }
+.bt-check:first-child { border-top: 0; padding-top: 0; }
+.bt-check .bt-line { margin: 0; color: var(--ink); }
+.bt-check .bt-note { grid-column: 1; margin: 0; font-size: var(--fs-sm); }
+.bt-check button { grid-column: 2; grid-row: 1; }
+.bt-quiet { min-height: 36px; padding: 4px 10px; background: transparent; border-color: transparent; color: var(--ink-2); }
+.bt-quiet:hover { border-color: var(--border); color: var(--ink); }
+.bt-sheet-dates { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.bt-sheet-dates label { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); font-size: var(--fs-sm); }
+@media (max-width: 600px) {
+  .bt-row { grid-template-columns: 32px minmax(0, 1fr); }
+  .bt-row .bt-count { grid-column: 2; text-align: left; }
+  .bt-row > button { grid-column: 1 / -1; min-height: 44px; }
+  .bt-tools > * { min-height: 44px; }
+  .bt-facts { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .bt-facts dd { margin-bottom: 8px; }
+  /* Past: each batch a block of labelled figures (as Harvest's Past runs) */
+  .bt-past-table thead { display: none; }
+  .bt-past-table, .bt-past-table tbody, .bt-past-table tr { display: block; }
+  .bt-past-table tr { padding: 10px 0; border-top: 1px solid var(--border); }
+  .bt-past-table tr:first-child { border-top: 0; }
+  .bt-past-table th, .bt-past-table td { display: grid; grid-template-columns: 9.5em minmax(0, 1fr); gap: 8px; padding: 2px 0; border: 0; text-align: left; }
+  .bt-past-table :is(th, td)::before { content: attr(data-label); color: var(--ink-2); font-weight: 400; }
+  .bt-past-table .num { text-align: left; }
+}
+/* ---- end Batches ---- */
