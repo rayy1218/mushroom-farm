@@ -91,5 +91,24 @@ test('the summary for Costs: the contract\'s exact shape; the range and the CSV'
   assert.match(csv.headers.get('content-disposition'), /sales /);
   // fetch's text() drops a leading BOM, so read the bytes and keep it
   const sheet = new TextDecoder('utf-8', { ignoreBOM: true }).decode(await csv.arrayBuffer());
-  assert.ok(sheet.startsWith('﻿date,time,buyer'));
+  assert.ok(sheet.startsWith('\ufeffdate,time,buyer'));
+});
+
+test('review: an empty run, run=0, days=7.0, unknown methods, event payloads, the CSV name', async (t) => {
+  const { call, raw, salesEvents } = await app(t);
+  assert.equal((await call('GET', '/api/sales/summary?from=&to=&run=')).status, 200);
+  const zero = await call('GET', '/api/sales/summary?run=0');
+  assert.deepEqual([zero.status, zero.body.field], [400, 'run']);
+  const seven = await call('GET', '/api/sales?days=7.0');
+  assert.deepEqual([seven.status, seven.body.field], [400, 'days']);
+  for (const [method, path] of [['PATCH', '/api/sales'], ['GET', '/api/sales/deliveries/1'], ['DELETE', '/api/sales/deliveries/1/paid'], ['POST', '/api/buyers/1'], ['GET', '/api/sales/']]) {
+    assert.equal((await call(method, path, method === 'GET' || method === 'DELETE' ? undefined : {})).status, 404, `${method} ${path}`);
+  }
+  assert.equal(salesEvents().length, 0);
+  const buyer = (await call('POST', '/api/buyers', { name: 'Lim' })).body;
+  await call('POST', '/api/sales', { soldAt: Date.now() - 3_600_000, buyerId: buyer.id, lines: [{ crop: 'oyster', kg: 1, priceKg: 1 }] });
+  assert.ok(salesEvents().length >= 2);
+  for (const [, data] of salesEvents()) assert.deepEqual(data, {});
+  const csv = await raw('GET', '/api/sales.csv?days=7');
+  assert.match(csv.headers.get('content-disposition'), /^attachment; filename="sales \d{4}-\d{2}-\d{2}_\d{4}-\d{2}-\d{2}\.csv"; filename\*=UTF-8''/);
 });

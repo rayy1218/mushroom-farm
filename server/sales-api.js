@@ -7,12 +7,13 @@ import { createSales } from './sales.js';
 
 const DELIVERY = /^\/api\/sales\/deliveries\/([1-9][0-9]{0,14})(\/paid)?$/;
 const BUYER = /^\/api\/buyers\/([1-9][0-9]{0,14})$/;
-const BOM = '﻿'; // Excel on Windows reads the CSV as UTF-8
+const BOM = '\ufeff'; // Excel on Windows reads the CSV as UTF-8
 
 // db: the farm database; events: the bus (null in some tests). → async (req, res, path, { send, readJson, HttpError, url })
 // answering true when the path is one of its routes.
 export function createSalesRoutes({ db, events = null, now = Date.now }) {
   const sales = createSales({ db, now });
+  // These routes' store is the only writer of sales; another writer must share this store or publish 'sales' itself.
   sales.onChange(() => events?.publish('sales', {}));
 
   async function route(req, res, path, { send, readJson, HttpError, url }) {
@@ -39,7 +40,7 @@ export function createSalesRoutes({ db, events = null, now = Date.now }) {
     }
     if (path === '/api/sales/summary') {
       if (req.method !== 'GET') throw notFound();
-      const run = q('run');
+      const run = q('run') || null;
       if (run !== null && !/^[1-9][0-9]{0,14}$/.test(run)) throw new HttpError(400, 'run must be a run id', 'run');
       send(res, 200, sales.summary({ from: q('from'), to: q('to'), run: run === null ? null : Number(run) }));
       return true;
