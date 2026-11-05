@@ -2244,10 +2244,20 @@ td.tg-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: -2p
 .field .tk-suffix-box.iv-prefix-box input { padding-left: 40px; padding-right: 10px; }
 @media (max-width: 420px) { .tk-dialog .tk-when.iv-when .tk-group-fields { grid-template-columns: 1fr; } }
 .iv-sheet .hv-sheet-tools .range-bar { margin: 0; }
+.iv-sheet .hv-sheet-facts .hv-write-line { min-width: min(40ch, 55vw); } /* a phone: the Farm line within the page (audit #23) */
 .iv-sheet-table { min-width: 1100px; } /* twelve columns: a phone scrolls the sheet sideways */
 .iv-sheet-table td:nth-child(4) { min-width: 12rem; }
+.iv-sheet-foot { margin-top: 16px; }
+.iv-sheet-foot p { margin: 0; }
+.iv-sheet-line { display: inline-block; min-width: 30ch; height: 1em; border-bottom: 1px solid var(--border-strong); vertical-align: baseline; } /* written in */
+.iv-sheet-line-short { min-width: 14ch; }
+@media (max-width: 600px) { .iv-sheet-line { min-width: 16ch; } .iv-sheet-line-short { min-width: 10ch; } }
 @media print {
-  body.printing-sheet .iv-sheet-table { min-width: 0; font-size: 8pt; }
-  body.printing-sheet .iv-sheet-table td { height: 8mm; }
+  /* the page's margins and the space under the table light too, whatever the theme (audit #24: the dark page printed black) */
+  html:root:has(.iv-sheet) { color-scheme: light; background: Canvas; } /* (0,2,1): over :root[data-theme="dark"] */
+  body.printing-sheet .iv-sheet-table { min-width: 0; font-size: 8pt; table-layout: fixed; } /* the colgroup's mm widths */
+  body.printing-sheet .iv-sheet-table td { height: 8mm; overflow-wrap: anywhere; } /* a long figure wraps in its cell, never over the next */
+  body.printing-sheet .iv-sheet-table td:nth-child(4) { min-width: 0; }
+  body.printing-sheet .iv-sheet-foot { margin-top: 4mm; font-size: 9pt; break-inside: avoid; }
 }
 /* ---- end Inventory ---- */

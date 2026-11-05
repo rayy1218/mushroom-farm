@@ -242,3 +242,14 @@ test('audit Count stock fixes: the difference beside the records (#6), a gone ro
   const css = src('styles.css');
   assert.ok(css.includes('.iv-count-row input:disabled { opacity: .55; background: var(--band); cursor: not-allowed; }'));
 });
+
+test('audit sheet fixes: the Farm line inside a phone (#23); print light margins, fixed widths, blank rows and the review foot (#24)', () => {
+  const sheet = src('inventory-sheet.js');
+  assert.ok(sheet.includes("col.style.width = `${mm}mm`;"));
+  assert.ok(sheet.includes('Array.from({ length: SHEET_BLANK_ROWS }'));
+  assert.ok(sheet.includes('Sheet reviewed by: <span class="iv-sheet-line"></span> (Management) on <span class="iv-sheet-line iv-sheet-line-short"></span>'));
+  const css = src('styles.css');
+  assert.ok(css.includes('.iv-sheet .hv-sheet-facts .hv-write-line { min-width: min(40ch, 55vw); }'));
+  assert.ok(css.includes('html:root:has(.iv-sheet) { color-scheme: light; background: Canvas; }'));
+  assert.ok(css.includes('body.printing-sheet .iv-sheet-table { min-width: 0; font-size: 8pt; table-layout: fixed; }'));
+});

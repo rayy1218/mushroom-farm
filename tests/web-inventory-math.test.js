@@ -4,9 +4,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  countDiff, UNIT_BY_KIND, dayNear, metaLine, needsLook, keptCounts, leaveText, doneText, undoLeft, UNDO_MS, itemGroups, stockHint, useByLine, qtyText, rmText, perUnitText, dayText, longDayText, daysBefore, pillOf, lotPill, countedText, attentionParts, groupItems, lotLabel,
+  SHEET_WIDTHS_MM, SHEET_BLANK_ROWS, countDiff, UNIT_BY_KIND, dayNear, metaLine, needsLook, keptCounts, leaveText, doneText, undoLeft, UNDO_MS, itemGroups, stockHint, useByLine, qtyText, rmText, perUnitText, dayText, longDayText, daysBefore, pillOf, lotPill, countedText, attentionParts, groupItems, lotLabel,
   moveLine, deleteTitle, deleteLead, throwOutTitle, throwOutLead, numberIn, itemBody, purchaseBody, useBody, purchaseEditBody,
-  useEditBody, overStock, countBody, sheetCells, sheetRange, sheetEmpty, SHEET_COLUMNS, KIND_OPTIONS, UNIT_OPTIONS,
+  useEditBody, overStock, countBody, sheetCells, sheetRange, sheetEmpty, SHEET_COLUMNS, SHEET_WRITE, KIND_OPTIONS, UNIT_OPTIONS,
 } from '../web/inventory-math.js';
 
 const plain = (s) => s.replace(/ /g, ' ');
@@ -358,4 +358,11 @@ test("a typed count beside the records (audit #6): the difference, amber when ov
   assert.equal(countDiff('', lime), null);
   assert.equal(countDiff('lots', lime), null, 'not a figure: its error says so at Save');
   assert.equal(countDiff('3', item({ unit: 'pcs', qty: 0 })).warn, false, 'nothing on the records: no half to compare');
+});
+
+test("the 4-5 sheet's printed widths (audit #24): a width each, the write-in columns wide enough, inside A4 landscape", () => {
+  assert.equal(SHEET_WIDTHS_MM.length, SHEET_COLUMNS.length);
+  assert.ok(SHEET_WIDTHS_MM.reduce((a, b) => a + b, 0) <= 273, '297 mm less the 12 mm margins');
+  for (const i of SHEET_WRITE) assert.ok(SHEET_WIDTHS_MM[i] >= 14, SHEET_COLUMNS[i]);
+  assert.equal(SHEET_BLANK_ROWS, 6);
 });

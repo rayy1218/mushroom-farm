@@ -6,7 +6,7 @@ import { request, OFFLINE, OUTDATED, routeMissing } from './api.js';
 import { INVENTORY_HASH, inventorySheetHash } from './route.js';
 import { live } from './live.js';
 import { createThrottle } from './live-math.js';
-import { SHEET_TITLE, SHEET_COLUMNS, SHEET_WRITE, SHEET_DAYS, sheetCells, sheetRange, sheetEmpty } from './inventory-math.js';
+import { SHEET_TITLE, SHEET_COLUMNS, SHEET_WRITE, SHEET_WIDTHS_MM, SHEET_BLANK_ROWS, SHEET_DAYS, sheetCells, sheetRange, sheetEmpty } from './inventory-math.js';
 
 const TEMPLATE = `
   <div class="hv-sheet iv-sheet">
@@ -27,9 +27,13 @@ const TEMPLATE = `
     <p class="none" data-empty hidden></p>
     <div class="hv-sheet-wrap" data-wrap hidden>
       <table class="hv-sheet-table iv-sheet-table">
+        <colgroup data-cols></colgroup>
         <thead><tr data-head></tr></thead>
         <tbody data-rows></tbody>
       </table>
+    </div>
+    <div class="iv-sheet-foot" data-foot hidden>
+      <p>Sheet reviewed by: <span class="iv-sheet-line"></span> (Management) on <span class="iv-sheet-line iv-sheet-line-short"></span></p>
     </div>
   </div>`;
 
@@ -49,12 +53,18 @@ export function mount(container, { days = 30 } = {}) {
   const q = (sel) => container.querySelector(sel);
   const els = {
     period: q('[data-period]'), banner: q('.banner'), bannerText: q('[data-banner-text]'), empty: q('[data-empty]'), wrap: q('[data-wrap]'),
-    rows: q('[data-rows]'), range: q('[data-range]'),
+    rows: q('[data-rows]'), range: q('[data-range]'), foot: q('[data-foot]'),
   };
   document.title = 'myGAP 4-5 sheet · Mushroom farm';
   document.body.classList.add('printing-sheet'); // print: no top bar, no buttons, light colours (styles.css)
   q('[data-back]').href = INVENTORY_HASH;
   q('.hv-sheet-title').textContent = SHEET_TITLE;
+  // The printed widths (a fixed layout in print: styles.css), so the write-in columns are wide enough to write in.
+  q('[data-cols]').append(...SHEET_WIDTHS_MM.map((mm) => {
+    const col = el('col');
+    col.style.width = `${mm}mm`;
+    return col;
+  }));
   q('[data-head]').append(...SHEET_COLUMNS.map((c) => {
     const th = el('th', '', c);
     th.scope = 'col';
@@ -82,15 +92,23 @@ export function mount(container, { days = 30 } = {}) {
     load();
   }
 
+  // The records, then SHEET_BLANK_ROWS empty rows for entries by hand (audit #24): with no records the sheet still prints
+  // as a blank form, under its empty line.
   function paint(sheet) {
     els.period.textContent = sheetRange(sheet);
     els.empty.hidden = sheet.rows.length > 0;
-    els.wrap.hidden = sheet.rows.length === 0;
+    els.wrap.hidden = false;
+    els.foot.hidden = false;
+    const blank = Array.from({ length: SHEET_BLANK_ROWS }, () => {
+      const tr = el('tr', 'iv-sheet-blank');
+      tr.append(...SHEET_COLUMNS.map(() => el('td', 'hv-write')));
+      return tr;
+    });
     els.rows.replaceChildren(...sheet.rows.map((r) => {
       const tr = el('tr');
       tr.append(...sheetCells(r).map((c, i) => el('td', SHEET_WRITE.includes(i) ? 'hv-write' : '', c)));
       return tr;
-    }));
+    }), ...blank);
   }
 
   async function load() {
@@ -107,6 +125,7 @@ export function mount(container, { days = 30 } = {}) {
       els.banner.hidden = false;
       els.period.textContent = '—';
       els.wrap.hidden = true;
+      els.foot.hidden = true;
       els.empty.hidden = true;
     }
   }
