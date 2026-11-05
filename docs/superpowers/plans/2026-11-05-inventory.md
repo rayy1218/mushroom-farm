@@ -1778,7 +1778,7 @@ import { createInventoryAlerts, lowText, useByText } from '../server/inventory-a
 
 const NOW = Date.parse('2026-11-05T09:00:00+08:00');
 const TOKEN = '123456:ABCDEFGHIJKLMNOP';
-const plain = (s) => s.replace(/ /g, ' ');
+const plain = (s) => s.replace(/\u00a0/g, ' ');
 
 function setup(t) {
   const db = openDb(':memory:');
@@ -2400,7 +2400,7 @@ test("a lot's name and a move's line", () => {
   const bleach = item();
   const line = (m) => {
     const l = moveLine({ roomId: null, roomName: null, reason: null, worker: null, lotId: null, supplier: null, useBy: null, ...m }, bleach);
-    return { ...l, what: l.what.replace(/ /g, ' '), qty: l.qty.replace(/ /g, ' ') };
+    return { ...l, what: l.what.replace(/\u00a0/g, ' '), qty: l.qty.replace(/\u00a0/g, ' ') };
   };
   assert.deepEqual(line({ refKind: 'purchase', at: at('2026-11-03'), qty: 5, total: 25, supplier: 'Kedai Ali', useBy: '2026-12-01' }), {
     when: '3 Nov', what: 'Bought from Kedai Ali · RM 25.00 · use by 1 Dec', qty: '+5.00 L', edit: 'edit',
@@ -2416,13 +2416,13 @@ test("a lot's name and a move's line", () => {
   const batch = line({ refKind: 'batch', refId: 14, at: 0, qty: 500 });
   assert.equal(batch.what, 'Batch 14 · received');
   assert.equal(batch.edit, null);
-  assert.equal(moveLine({ refKind: 'batch', refId: 14, at: 0, qty: -500, roomName: 'Container 2' }, item({ kind: 'blocks', unit: 'blocks' })).what.replace(/ /g, ' '), 'Batch 14 · into Container 2');
-  assert.equal(moveLine({ refKind: 'batch', refId: 16, at: 0, qty: -2, roomName: null }, item({ kind: 'spawn', unit: 'kg' })).what.replace(/ /g, ' '), 'Batch 16 · made');
+  assert.equal(moveLine({ refKind: 'batch', refId: 14, at: 0, qty: -500, roomName: 'Container 2' }, item({ kind: 'blocks', unit: 'blocks' })).what.replace(/\u00a0/g, ' '), 'Batch 14 · into Container 2');
+  assert.equal(moveLine({ refKind: 'batch', refId: 16, at: 0, qty: -2, roomName: null }, item({ kind: 'spawn', unit: 'kg' })).what.replace(/\u00a0/g, ' '), 'Batch 16 · made');
 });
 
 test('the confirms: delete and throw out', () => {
   const bleach = item();
-  const plain = (s) => s.replace(/ /g, ' ');
+  const plain = (s) => s.replace(/\u00a0/g, ' ');
   assert.equal(plain(deleteTitle({ refKind: 'purchase', qty: 5, at: at('2026-11-03') }, bleach)), 'Delete the purchase of 5.00 L of Bleach on 3 Nov?');
   assert.equal(plain(deleteTitle({ refKind: 'use', qty: -1, at: at('2026-11-03'), lotId: null }, bleach)), 'Delete the use of 1.00 L of Bleach on 3 Nov?');
   assert.equal(plain(deleteTitle({ refKind: 'use', qty: -1, at: at('2026-11-03'), lotId: 4 }, bleach)), 'Delete the throw-out of 1.00 L of Bleach on 3 Nov?');
@@ -2490,9 +2490,9 @@ test('the edit bodies carry only what changed', () => {
 });
 
 test('more than in stock asks', () => {
-  assert.equal(overStock(5, item({ qty: 2 })).replace(/ /g, ' '), 'Only 2.00 L in stock. Record 5.00 L anyway?');
+  assert.equal(overStock(5, item({ qty: 2 })).replace(/\u00a0/g, ' '), 'Only 2.00 L in stock. Record 5.00 L anyway?');
   assert.equal(overStock(2, item({ qty: 2 })), null);
-  assert.equal(overStock(1, item({ qty: -3 })).replace(/ /g, ' '), 'Only 0.00 L in stock. Record 1.00 L anyway?');
+  assert.equal(overStock(1, item({ qty: -3 })).replace(/\u00a0/g, ' '), 'Only 0.00 L in stock. Record 1.00 L anyway?');
 });
 
 test("Count stock's body: typed boxes only, each checked; who once", () => {
@@ -2506,9 +2506,9 @@ test("Count stock's body: typed boxes only, each checked; who once", () => {
 test('the 4-5 sheet: twelve columns; a row in the farm words; the range; the empty line', () => {
   assert.equal(SHEET_COLUMNS.length, 12);
   const row = { date: '2026-11-03', kind: 'use', crop: 'Grey oyster', location: 'Container 1', product: 'Bleach (Sodium hypochlorite)', lrmpNo: '', price: null, qty: 1, unit: 'L', reason: 'Footbath', operator: 'Ali' };
-  assert.deepEqual(sheetCells(row).map((c) => c.replace(/ /g, ' ')), ['3 Nov 2026', 'Grey oyster', 'Container 1', 'Bleach (Sodium hypochlorite)', '', '', '1.00 L used', 'Footbath', '', 'Ali', '', '']);
-  assert.equal(sheetCells({ ...row, kind: 'purchase', price: 25, qty: 5 })[5].replace(/ /g, ' '), 'RM 25.00');
-  assert.equal(sheetCells({ ...row, kind: 'purchase', price: 25, qty: 5 })[6].replace(/ /g, ' '), '5.00 L bought');
+  assert.deepEqual(sheetCells(row).map((c) => c.replace(/\u00a0/g, ' ')), ['3 Nov 2026', 'Grey oyster', 'Container 1', 'Bleach (Sodium hypochlorite)', '', '', '1.00 L used', 'Footbath', '', 'Ali', '', '']);
+  assert.equal(sheetCells({ ...row, kind: 'purchase', price: 25, qty: 5 })[5].replace(/\u00a0/g, ' '), 'RM 25.00');
+  assert.equal(sheetCells({ ...row, kind: 'purchase', price: 25, qty: 5 })[6].replace(/\u00a0/g, ' '), '5.00 L bought');
   assert.equal(sheetRange({ from: '2026-10-07', to: '2026-11-05' }), '7 Oct 2026 – 5 Nov 2026');
   assert.equal(sheetEmpty(90), 'No chemical purchases or uses in the last 90 days.');
 });
