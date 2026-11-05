@@ -48,3 +48,18 @@ export function openWithInventory(t) {
 
 // A farm database that already has Inventory's tables (openWithInventory's, without its helpers).
 export const openWithStock = (t) => openWithInventory(t).db;
+
+// A farm database without Inventory's tables, whether or not this checkout's openDb makes them (Inventory merges after Batches
+// and makes stock_items and stock_moves in every database): a file database opened, its stock tables dropped, opened again
+// (Inventory's step is version-gated, so the tables stay away). Removed after the test.
+export function withoutStock(t) {
+  const dir = mkdtempSync(join(tmpdir(), 'farm-nostock-'));
+  const path = join(dir, 'plain.db');
+  openDb(path).close();
+  const raw = new DatabaseSync(path);
+  raw.exec('DROP TABLE IF EXISTS stock_moves; DROP TABLE IF EXISTS stock_items;');
+  raw.close();
+  const db = openDb(path);
+  t.after(() => { try { db.close(); } catch { /* the test closed it */ } rmSync(dir, { recursive: true, force: true }); });
+  return db;
+}

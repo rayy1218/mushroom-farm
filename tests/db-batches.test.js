@@ -7,16 +7,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { openDb } from '../server/db.js';
-import { openWithStock, openWithInventory } from './batches-fixture.js';
+import { openWithStock, openWithInventory, withoutStock } from './batches-fixture.js';
 
 const ROOM = { name: 'Room 1', length: 6, width: 4, height: 2.5 };
 const BATCH = { kind: 'bought', crop: 'oyster', supplier: 'Agro Supplies', receivedAt: 1000, blocks: 1200, pricePerBlock: 2.3, createdAt: 1000 };
 const TABLES = ['batches', 'batch_checks', 'batch_recipes', 'batch_materials', 'batch_loads'];
 
 function fresh(t) {
-  const db = openDb(':memory:');
-  t.after(() => db.close());
-  return db;
+  return withoutStock(t);
 }
 
 test('a new file has every Batches table, STRICT, at version 21', (t) => {
@@ -26,7 +24,7 @@ test('a new file has every Batches table, STRICT, at version 21', (t) => {
   openDb(path).close();
   const raw = new DatabaseSync(path);
   t.after(() => raw.close());
-  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 21);
+  assert.ok(raw.prepare("PRAGMA user_version").get().user_version >= 21);
   for (const name of TABLES) {
     const sql = raw.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?").get(name)?.sql;
     assert.ok(sql, name);

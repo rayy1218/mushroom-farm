@@ -284,8 +284,9 @@ export function createBatches({ db, now = Date.now, log = console.error }) {
     // { batches: [view], blockCost } (spec 6), newest received first.
     list(query = {}) {
       const { run, from, to, status } = queryOf(query);
-      const rows = store.all().filter((b) => (run === null || b.runId === run)
-        && (from === null || localDate(b.receivedAt) >= from) && (to === null || localDate(b.receivedAt) <= to));
+      // a run's rows come from its own query (byRun is by id), newest received first as all() is
+      const source = run === null ? store.all() : store.byRun(run).toSorted((a, b) => b.receivedAt - a.receivedAt || b.id - a.id);
+      const rows = source.filter((b) => (from === null || localDate(b.receivedAt) >= from) && (to === null || localDate(b.receivedAt) <= to));
       const batches = rows.map(view).filter((b) => status === null || b.status === status);
       return { batches, blockCost: blockCost(batches) };
     },

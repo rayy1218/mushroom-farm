@@ -16,7 +16,7 @@ import { closeTaskDialog } from './task-dialogs.js';
 import { tileNodes } from './harvest-card.js';
 import {
   pageGroups, pastIn, PAST_RANGES, PAST_COLUMNS, pastCells, waitingLine, placedLine, goodText, cropBlocks, detailFacts, overNote,
-  statusLine, checkLine, deliveryLine, fullDate, dateText, countBlocks, figureLine, waitingLong, runOf, runYieldFacts, statusText, placeable,
+  statusLine, checkLine, deliveryLine, fullDate, dateText, countBlocks, figureLine, waitingLong, runOf, runYieldFacts, statusText, placeable, csvHref,
   nextStep, rowAction,
 } from './batches-math.js';
 
@@ -181,7 +181,8 @@ export function mount(container, { run = null } = {}) {
   };
   document.title = 'Batches · Mushroom farm';
   q('[data-filter]').hidden = run === null;
-  q('[data-csv]').href = '/api/batches.csv';
+  const csvLink = q('[data-csv]');
+  csvLink.href = '/api/batches.csv';
   q('[data-sheet]').href = batchSheetHash(farmDate(Date.now() - 89 * 86_400_000), farmDate(Date.now()));
 
   let list = null;
@@ -200,7 +201,7 @@ export function mount(container, { run = null } = {}) {
 
   const ranges = PAST_RANGES.map(([n, label]) => {
     const b = button(label);
-    b.addEventListener('click', () => { days = n; painted = ''; paint(); });
+    b.addEventListener('click', () => { days = n; painted = ''; csvLink.href = csvHref(n, farmDate(Date.now())); paint(); });
     els.range.append(b);
     return [n, b];
   });
@@ -360,7 +361,13 @@ export function mountBatch(container, { id }) {
     if (!b || b.status === 'waiting' || !Number.isInteger(b.roomId) || !Number.isInteger(b.runId)) { els.runCard.hidden = true; return; }
     let facts = null;
     try {
-      facts = runYieldFacts(runOf(await request('GET', `/api/rooms/${b.roomId}/harvests`), b.runId), b);
+      const run = runOf(await request('GET', `/api/rooms/${b.roomId}/harvests`), b.runId);
+      facts = runYieldFacts(run, b);
+      if (facts?.reason) { // a dash BE: the run's batches say why
+        let list = null;
+        try { list = (await request('GET', `/api/batches?run=${b.runId}`))?.batches ?? null; } catch { list = null; }
+        facts = runYieldFacts(run, b, list);
+      }
     } catch {
       facts = null; // a deleted room (404) or no answer: the card stays away rather than show a wrong figure
     }
@@ -374,7 +381,7 @@ export function mountBatch(container, { id }) {
     if (facts.empty) { els.run.replaceChildren(el('p', 'none', facts.empty)); return; }
     const tiles = el('div', 'us-tiles hv-tiles bt-run-tiles');
     tiles.append(...tileNodes(facts.tiles));
-    els.run.replaceChildren(tiles, ...(facts.cost ? [el('p', 'bt-run-cost', facts.cost)] : []));
+    els.run.replaceChildren(tiles, ...(facts.reason ? [el('p', 'bt-run-cost bt-run-reason', facts.reason)] : []), ...(facts.cost ? [el('p', 'bt-run-cost', facts.cost)] : []));
   }
   const reloadRun = createThrottle(() => { if (alive()) loadRun(); });
   const offHarvest = live.on('harvest', (d) => { if (d.roomId === null || d.roomId === batch?.roomId) reloadRun.call(); });

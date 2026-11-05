@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import {
   rmText, blocksText, blockKgText, numberOf, overNotes, deliveryLine, waterText, dateText, agoText, goodText, countBlocks, weightText, pageGroups, pastIn, pastCells,
   detailFacts, overNote, batchLineFor, sheetRows, SHEET_COLUMNS, receiveBody, receiveValues, placeBody, roomChoices, checkBody,
-  checkLine, statusLine, roomRunText, figureLine, waitingLong, waitingLine, placedLine, BATCH_WAIT_DAYS, runOf, runYieldFacts,
+  checkLine, statusLine, roomRunText, figureLine, waitingLong, waitingLine, placedLine, BATCH_WAIT_DAYS, runOf, runYieldFacts, csvHref,
 } from '../web/batches-math.js';
 
 const nb = '\u00a0';
@@ -264,7 +264,7 @@ test("runOf and runYieldFacts: the batch's run in the room's harvests, its yield
   assert.equal(runOf(null, 1), null);
   assert.equal(runYieldFacts(null, b({})), null, 'no run (a deleted room): nothing shown');
   assert.deepEqual(runYieldFacts(current, b({ pricePerBlock: 2.3 })), {
-    title: 'This run', empty: null,
+    title: 'This run', empty: null, reason: null,
     tiles: [
       { label: 'kg so far', value: `190.0${nb}kg` },
       { label: 'kg per block', value: `0.20${nb}kg` },
@@ -286,10 +286,25 @@ test("runOf and runYieldFacts: the batch's run in the room's harvests, its yield
   assert.equal(m.title, "This run's Grey oyster");
   assert.deepEqual(m.tiles.map((t) => t.value), [`125.0${nb}kg`, `0.25${nb}kg`, `27${nb}%`]);
   assert.equal(m.cost, `Blocks cost RM${nb}10.00 per${nb}kg picked`);
-  assert.equal(runYieldFacts({ ...current, be: null, byCrop: [] }, b({})).tiles[2].value, '—', 'no BE: a dash');
+  const noBe = runYieldFacts({ ...current, be: null, byCrop: [] }, b({}));
+  assert.equal(noBe.tiles[2].value, '—', 'no BE: a dash');
+  assert.equal(noBe.reason, 'Some batches in this run have no weight', 'batches not read: the general reason');
+  const noBeRun = { ...current, be: null, byCrop: [] };
+  const w = (blocks, blockKg) => ({ crop: 'oyster', blocks, blockKg });
+  assert.equal(runYieldFacts(noBeRun, b({}), [w(200, null), w(300, 2.3)]).reason, "200 blocks in this run have no weight", 'some unweighted: their blocks');
+  assert.equal(runYieldFacts(noBeRun, b({}), [w(1, null), w(300, 2.3)]).reason, '1 block in this run has no weight');
+  assert.equal(runYieldFacts(noBeRun, b({}), [w(200, null), { crop: 'pink', blocks: 5, blockKg: 2 }]).reason,
+    'Set the dry substrate per block of Grey oyster in Settings → Yield.', 'none weighted: Settings → Yield is the source');
+  assert.equal(runYieldFacts(current, b({}), [w(200, null)]).reason, null, 'a BE: no reason');
 });
 
 test('the rows\' lines keep a date and "40 days ago" whole at a wrap', () => {
   assert.equal(waitingLine(b({ receivedAt: NOW - 40 * DAY }), NOW), `Agro Supplies${dot}Received 26${nb}Sep${dot}40${nb}days${nb}ago`);
   assert.equal(placedLine(b({ receivedAt: NOW - 3 * DAY }), '2026-11-05'), `Agro Supplies${dot}spawn batch 0912${dot}received 2${nb}Nov`);
+});
+
+test("csvHref: Export CSV follows the Past card's range", () => {
+  assert.equal(csvHref(90, '2026-11-05'), '/api/batches.csv', '90 days: the default');
+  assert.equal(csvHref(365, '2026-11-05'), '/api/batches.csv?from=2025-11-06', '12 months: today less 364 days');
+  assert.equal(csvHref(null, '2026-11-05'), '/api/batches.csv?from=2000-01-01');
 });

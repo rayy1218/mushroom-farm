@@ -82,6 +82,13 @@ export function pageGroups(batches) {
 }
 
 export const PAST_RANGES = [[90, '90 days'], [365, '12 months'], [null, 'All']];
+// The Export CSV link for the Past card's range: 90 days is the server's default, 12 months from a year back (today less 364
+// days), All from 2000-01-01.
+export function csvHref(days, today) {
+  if (days === 365) return `/api/batches.csv?from=${new Date(Date.parse(`${today}T00:00:00Z`) - 364 * 86400000).toISOString().slice(0, 10)}`;
+  if (days === null) return '/api/batches.csv?from=2000-01-01';
+  return '/api/batches.csv';
+}
 // The past batches received in the last `days` days (null: all).
 export function pastIn(past, days, nowMs) {
   if (days === null) return past;
@@ -144,10 +151,21 @@ export function runOf(reply, runId) {
   return (Array.isArray(reply.past) ? reply.past : []).find((r) => r.id === runId) ?? null;
 }
 
+// The muted line under a dash BE: Harvest's own words when no batch of the crop has a weight (Settings → Yield is then the source);
+// else how many of the crop's blocks in the run have none (BE reads batch weights only when every batch of the crop has one).
+export function beReason(crop, runBatches) {
+  if (!Array.isArray(runBatches)) return 'Some batches in this run have no weight';
+  const mine = runBatches.filter((x) => x.crop === crop);
+  const unweighted = mine.filter((x) => !finite(x.blockKg));
+  if (unweighted.length === mine.length) return `Set the dry substrate per block of ${cropShortName(crop)} in Settings → Yield.`;
+  const n = unweighted.reduce((s, x) => s + x.blocks, 0);
+  return `${grouped(n, 0)} ${n === 1 ? 'block' : 'blocks'} in this run ${n === 1 ? 'has' : 'have'} no weight`;
+}
 // The "This run" card of a placed or past batch: { title, tiles [{ label, title?, value }], cost, empty }, or null without a run
 // (a deleted room). A mixed run gives the batch's crop's own figures. cost: "Blocks cost RM 11.50 per kg picked" (the price per
-// block over the kg per block), only when both are known.
-export function runYieldFacts(run, batch) {
+// block over the kg per block), only when both are known. reason: why the BE tile is a dash, under the tiles; runBatches: the
+// run's batches (GET /api/batches?run=), null when not read (then the reason is the general one).
+export function runYieldFacts(run, batch, runBatches = null) {
   if (!run) return null;
   const mixed = (run.crops?.length ?? 0) > 1;
   const own = mixed ? (run.byCrop ?? []).find((c) => c.crop === batch.crop) : null;
@@ -156,7 +174,7 @@ export function runYieldFacts(run, batch) {
   const ended = finite(run.endedAt);
   if (!(src.kg > 0)) return { title, empty: ended ? 'No harvests in this run.' : 'No harvests in this run yet.', tiles: [], cost: null };
   return {
-    title, empty: null,
+    title, empty: null, reason: finite(src.be) ? null : beReason(batch.crop, runBatches),
     tiles: [
       { label: ended ? 'kg' : 'kg so far', value: kgText(src.kg) },
       { label: 'kg per block', value: perBlockText(src.perBlock, { cell: true }) },

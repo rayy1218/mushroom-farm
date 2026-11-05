@@ -3,10 +3,9 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { openDb } from '../server/db.js';
 import { createBatches } from '../server/batches.js';
 import { createHarvests } from '../server/harvests.js';
-import { openWithStock } from './batches-fixture.js';
+import { openWithStock, withoutStock } from './batches-fixture.js';
 
 const ROOM = { name: 'Container 1', length: 6, width: 4, height: 2.5 };
 const DAY = 86_400_000;
@@ -14,8 +13,7 @@ const NOW = Date.UTC(2026, 10, 5, 4); // 5 Nov 2026 12:00 farm time
 const GOOD = { crop: 'oyster', supplier: 'Agro Supplies', receivedAt: NOW - 2 * DAY, blocks: 1200, pricePerBlock: 2.3, spawnBatch: '0912' };
 
 function setup(t, { stock = false } = {}) {
-  const db = stock ? openWithStock(t) : openDb(':memory:');
-  if (!stock) t.after(() => db.close());
+  const db = stock ? openWithStock(t) : withoutStock(t);
   let clock = NOW;
   const batches = createBatches({ db, now: () => clock });
   const told = [];

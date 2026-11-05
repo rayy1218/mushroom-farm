@@ -3,9 +3,8 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { openDb } from '../server/db.js';
 import { createBatches } from '../server/batches.js';
-import { openWithInventory } from './batches-fixture.js';
+import { openWithInventory, withoutStock } from './batches-fixture.js';
 
 const ROOM = { name: 'Container 1', length: 6, width: 4, height: 2.5 };
 const DAY = 86_400_000;
@@ -16,8 +15,7 @@ const LOAD = { method: 'steam', bags: 200, hotAt: NOW - DAY, holdH: 6, tempC: 98
 
 function setup(t, { stock = false } = {}) {
   const inventory = stock ? openWithInventory(t) : null;
-  const db = inventory ? inventory.db : openDb(':memory:');
-  if (!inventory) t.after(() => db.close());
+  const db = inventory ? inventory.db : withoutStock(t);
   let clock = NOW;
   const batches = createBatches({ db, now: () => clock });
   const told = [];

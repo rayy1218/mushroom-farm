@@ -407,7 +407,7 @@ export function createMakingDialogs({ send, closing, ask, remember, ticket, aliv
       fields: [
         { name: 'inoculatedDate', label: 'Inoculated', kind: 'date', value: v.inoculatedDate, min: farmDate(b.mixedAt ?? b.receivedAt), max: today(), hintOf: dateHint },
         {
-          kind: 'group', legend: 'Spawn', className: 'bt-group', fields: [
+          kind: 'group', legend: 'Spawn', className: 'bt-group bt-group-sep', fields: [
             { name: 'supplier', label: 'Spawn supplier', kind: 'text', value: v.supplier, maxLength: 80 },
             pair(
               { name: 'spawnBatch', label: 'Spawn batch No.', kind: 'text', value: v.spawnBatch, maxLength: 80 },

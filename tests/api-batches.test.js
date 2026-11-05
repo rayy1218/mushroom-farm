@@ -3,23 +3,22 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { openDb } from '../server/db.js';
 import { createApp } from '../server/app.js';
 import { createTasks } from '../server/tasks.js';
 import { createEvents } from '../server/events.js';
-import { openWithInventory } from './batches-fixture.js';
+import { openWithInventory, withoutStock } from './batches-fixture.js';
 
 const ROOM = { name: 'Container 1', length: 6, width: 4, height: 2.5 };
 const GOOD = { crop: 'oyster', supplier: 'Agro Supplies', blocks: 1200, pricePerBlock: 2.3 };
 
 async function app(t) {
-  const db = openDb(':memory:');
+  const db = withoutStock(t);
   const events = createEvents();
   const seen = [];
   events.subscribe((type, data) => seen.push([type, data]));
   const server = createApp(db, { tasks: createTasks({ db }), events });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
-  t.after(async () => { await new Promise((r) => server.close(r)); db.close(); });
+  t.after(async () => { await new Promise((r) => server.close(r)); });
   const base = `http://127.0.0.1:${server.address().port}`;
   const raw = (method, path, body) => fetch(base + path, { method, headers: body ? { 'content-type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
   const call = async (method, path, body) => {
