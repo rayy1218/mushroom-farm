@@ -26,8 +26,8 @@ const TEMPLATE = `
     <div class="hv-sheet-tools">
       <a class="back" href="${BATCHES_HASH}">Back to Batches</a>
       <div class="bt-sheet-dates">
-        <label>From <input type="date" data-from></label>
-        <label>To <input type="date" data-to></label>
+        <label>From <input type="date" name="from" data-from></label>
+        <label>To <input type="date" name="to" data-to></label>
       </div>
       <button type="button" class="primary" data-print>Print</button>
     </div>
@@ -41,6 +41,7 @@ const TEMPLATE = `
     <p class="none" data-empty hidden>No planting material bought or used in these dates.</p>
     <div class="hv-sheet-wrap" data-wrap hidden>
       <table class="hv-sheet-table bt-sheet-table">
+        <caption class="sr-only">Planting material bought and used</caption>
         <thead><tr data-head></tr></thead>
         <tbody data-rows></tbody>
       </table>
@@ -114,7 +115,11 @@ export function mountSheet(container, { from = null, to = null } = {}) {
     els.wrap.hidden = rows.length === 0;
     els.rows.replaceChildren(...rows.map((cells) => {
       const tr = el('tr');
-      tr.append(...cells.map((c, i) => el('td', i >= 6 && i <= 8 ? 'hv-write' : '', c)));
+      tr.append(...cells.map((c, i) => {
+        const cell = el(i === 0 ? 'th' : 'td', i >= 6 && i <= 8 ? 'hv-write' : '', c); // the date heads its row
+        if (i === 0) cell.scope = 'row';
+        return cell;
+      }));
       return tr;
     }));
   }

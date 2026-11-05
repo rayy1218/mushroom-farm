@@ -50,29 +50,36 @@ export function createBatchDialogs({ onChanged, onError, alive = () => true }) {
   const ask = (options) => openForm({ ...options, onLost: onError });
   const today = () => farmDate(Date.now());
 
-  // Receive's and Edit's boxes, in four groups.
+  // Receive's and Edit's boxes, in four groups under section heads; from 600 px a pair side by side (a group without a legend).
+  const pair = (...fields) => ({ kind: 'group', className: 'bt-pair', fields });
   function receiveFields(v, { cropEditable = true, blocksEditable = true } = {}) {
     return [
       {
         kind: 'group', legend: 'The blocks', className: 'bt-group', fields: [
           ...(cropEditable ? [{ name: 'crop', label: 'Crop', kind: 'select', value: v.crop, options: [['', 'Pick a crop'], ...CROP_KEYS.map((k) => [k, cropShortName(k)])] }] : []),
           { name: 'supplier', label: 'Supplier', kind: 'text', value: v.supplier, maxLength: 80 },
-          { name: 'receivedDate', label: 'Received', kind: 'date', value: v.receivedDate, max: today(), hintOf: dateHint },
-          ...(blocksEditable ? [{ name: 'blocks', label: 'Blocks', kind: 'number', value: v.blocks, inputMode: 'numeric', suffix: 'blocks' }] : []),
+          pair(
+            { name: 'receivedDate', label: 'Received', kind: 'date', value: v.receivedDate, max: today(), hintOf: dateHint },
+            ...(blocksEditable ? [{ name: 'blocks', label: 'Blocks', kind: 'number', value: v.blocks, inputMode: 'numeric', suffix: 'blocks' }] : []),
+          ),
           { name: 'pricePerBlock', label: 'Price per block (RM)', kind: 'number', value: v.pricePerBlock, hint: 'Leave it empty if the bill has not come.' },
         ],
       },
       {
         kind: 'group', legend: 'Spawn', className: 'bt-group', fields: [
-          { name: 'spawnBatch', label: 'Spawn batch No.', kind: 'text', value: v.spawnBatch, maxLength: 80 },
-          { name: 'strain', label: 'Strain', kind: 'text', value: v.strain, maxLength: 80 },
+          pair(
+            { name: 'spawnBatch', label: 'Spawn batch No.', kind: 'text', value: v.spawnBatch, maxLength: 80 },
+            { name: 'strain', label: 'Strain', kind: 'text', value: v.strain, maxLength: 80 },
+          ),
           { name: 'inoculatedDate', label: 'Inoculated', kind: 'date', value: v.inoculatedDate, max: today(), hintOf: dateHint },
         ],
       },
       {
-        kind: 'group', legend: 'Weight', className: 'bt-group', hint: "With a weight, the Harvest tab's BE uses this batch's dry substrate.", fields: [
-          { name: 'blockKg', label: 'Block weight', kind: 'number', value: v.blockKg, suffix: 'kg' },
-          { name: 'waterPct', label: 'Water', kind: 'number', value: v.waterPct, suffix: '%' },
+        kind: 'group', legend: 'Weight', className: 'bt-group', hint: "With a weight, the Harvest tab's biological efficiency (BE) uses this batch's dry substrate.", fields: [
+          pair(
+            { name: 'blockKg', label: 'Block weight', kind: 'number', value: v.blockKg, suffix: 'kg' },
+            { name: 'waterPct', label: 'Water', kind: 'number', value: v.waterPct, suffix: '%' },
+          ),
         ],
       },
       {
@@ -98,8 +105,8 @@ export function createBatchDialogs({ onChanged, onError, alive = () => true }) {
     });
   }
 
-  // b: the batch's detail (GET /api/batches/:id).
-  function edit(b) {
+  // b: the batch's detail (GET /api/batches/:id). onGone(): after its Delete (the page goes back to the list).
+  function edit(b, { onGone = () => {} } = {}) {
     const can = {
       cropEditable: b.delivery.every((x) => x.placedAt === null),
       blocksEditable: b.parentId === null && b.delivery.length === 1 && b.placedAt === null,
@@ -111,7 +118,7 @@ export function createBatchDialogs({ onChanged, onError, alive = () => true }) {
       title: `Edit ${countBlocks(b.blocks, b.crop)}`,
       lead,
       fields: receiveFields(receiveValues(b), can),
-      buttons: [{ value: 'save', label: 'Save', primary: true }],
+      buttons: [{ label: 'Delete this batch', action: () => remove(b, onGone) }, { value: 'save', label: 'Save', primary: true }],
       submit: async (v) => {
         const r = receiveBody(v, { edit: can });
         return r.body ? closing(await send('PUT', `/api/batches/${b.id}`, r.body)) : r;
@@ -123,14 +130,19 @@ export function createBatchDialogs({ onChanged, onError, alive = () => true }) {
   async function place(b) {
     remember();
     let rooms;
+    let placed;
     try {
-      rooms = (await request('GET', '/api/overview'))?.rooms; // each with its crop summary (/api/rooms has no crops)
+      // the rooms, each with its crop summary (/api/rooms has no crops), and the batches in their current runs
+      [rooms, placed] = await Promise.all([
+        request('GET', '/api/overview').then((r) => r?.rooms),
+        request('GET', '/api/batches?status=placed').then((r) => r?.batches),
+      ]);
     } catch (err) {
       if (alive()) onError(errorText(err));
       return;
     }
     if (!alive()) return;
-    const { ok, off } = roomChoices(Array.isArray(rooms) ? rooms : [], b.crop);
+    const { ok, off } = roomChoices(Array.isArray(rooms) ? rooms : [], b.crop, placed);
     const lead = [`${countBlocks(b.good, b.crop)} to put in${b.supplier ? `, from ${b.supplier}` : ''}.`];
     if (!ok.length) lead.push(`No room has ${cropShortName(b.crop)} in its run: give a room its crops on the Crop tab first.`);
     ask({
@@ -172,9 +184,13 @@ export function createBatchDialogs({ onChanged, onError, alive = () => true }) {
   // onGone(): after the delete (the page goes back to the list).
   function remove(b, onGone) {
     remember();
+    const lead = [];
+    // a placed or past batch: its run's figures change
+    if (b.status === 'placed' || b.status === 'past') lead.push(`${b.roomName ? `${b.roomName}'s run` : 'Its run'} loses this batch: its block cost and BE change.`);
+    lead.push(`Received ${fullDate(b.receivedAt)}. Its contamination checks go with it.`);
     ask({
       title: `Delete ${countBlocks(b.blocks, b.crop)}${b.supplier ? ` from ${b.supplier}` : ''}?`,
-      lead: [`Received ${fullDate(b.receivedAt)}. Its contamination checks go with it.`],
+      lead,
       buttons: [{ value: 'delete', label: 'Delete', danger: true }],
       submit: async () => {
         try {
@@ -212,14 +228,14 @@ export function createBatchDialogs({ onChanged, onError, alive = () => true }) {
     }
     const who = workerField(names, 'Who checked');
     if (c) who.value = names.includes(c.worker) ? c.worker : '';
-    ask({
+    const form = ask({
       title: c ? 'Edit the check' : 'Record a check',
       lead,
       fields: [
         {
           kind: 'group', className: 'tk-when', fields: [
             { name: 'checkDate', label: 'Date', kind: 'date', value: shown.date, min: farmDate(b.receivedAt), max: today(), hintOf: dateHint },
-            { name: 'checkTime', label: 'Time', kind: 'text', value: shown.time, placeholder: '08:12', inputMode: 'decimal', maxLength: 5, hint: '24 h, like 08:12' },
+            { name: 'checkTime', label: 'Time', kind: 'text', value: shown.time, placeholder: '08:12', inputMode: 'numeric', maxLength: 5, hint: '24 h, like 08:12 or 0812' },
           ],
         },
         { name: 'lost', label: 'Blocks lost', kind: 'number', value: c ? String(c.lost) : '', inputMode: 'numeric', suffix: 'blocks', hint: `Up to ${blocksText(max)}` },
@@ -238,6 +254,7 @@ export function createBatchDialogs({ onChanged, onError, alive = () => true }) {
         return closing(await (c ? send('PUT', `/api/batch-checks/${c.id}`, r.body) : send('POST', `/api/batches/${b.id}/checks`, r.body)));
       },
     });
+    if (!c) form.input('lost')?.focus(); // a new check: the date and time are now's, the blocks lost is what to type
   }
 
   function removeCheck(c) {

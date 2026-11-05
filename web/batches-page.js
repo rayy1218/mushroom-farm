@@ -12,9 +12,10 @@ import { farmDate } from './tasks-math.js';
 import { BATCHES_HASH, batchHash, batchSheetHash, roomHash } from './route.js';
 import { createBatchDialogs } from './batches-dialogs.js';
 import { closeTaskDialog } from './task-dialogs.js';
+import { tileNodes } from './harvest-card.js';
 import {
   pageGroups, pastIn, PAST_RANGES, PAST_COLUMNS, pastCells, waitingLine, placedLine, goodText, cropBlocks, detailFacts, overNote,
-  statusLine, checkLine, deliveryLine, fullDate, dateText, countBlocks,
+  statusLine, checkLine, deliveryLine, fullDate, dateText, countBlocks, figureLine, waitingLong, runOf, runYieldFacts,
 } from './batches-math.js';
 
 const REFRESH_MS = 60_000;
@@ -79,9 +80,27 @@ function reader(path, paint, els, alive) {
   return { load, stop: () => { clearTimeout(timer); stopLive(); } };
 }
 
+// Put into a room for a waiting batch (its accessible name starts with its words); with no good block, disabled with its
+// reason in words beside it. → the node for the row or the head.
+function putAction(b, dialogs, { focusKey, primary = false }) {
+  const put = button('Put into a room', primary ? 'primary' : '');
+  put.dataset.focusKey = focusKey;
+  put.setAttribute('aria-label', `Put into a room: ${countBlocks(b.good, b.crop)}`);
+  put.addEventListener('click', () => dialogs.place(b));
+  if (b.good >= 1) return put;
+  put.disabled = true;
+  const wrap = el('span', 'bt-act');
+  const why = el('span', 'bt-reason', 'Every block was lost');
+  why.id = `bt-why-${b.id}`;
+  put.setAttribute('aria-describedby', why.id);
+  wrap.append(put, why);
+  return wrap;
+}
+
 const BANNER = `<div class="banner" role="alert" hidden><span data-banner-text></span><button type="button" data-retry>Retry</button></div>`;
 
-// A batch's row: its picture, its name (a link to it), a line of words, its blocks, and an optional action.
+// A batch's row: its picture, its name (a link to it, its hit area the whole row), a line of words, its blocks, and an
+// optional action (above the link).
 function batchRow(b, line, action = null) {
   const row = el('div', 'bt-row');
   const words = el('div', 'bt-words');
@@ -126,11 +145,11 @@ const LIST = `
   </div>
   ${BANNER}
   <p class="bt-filter" data-filter hidden>Batches of one run. <a href="${BATCHES_HASH}">All batches</a></p>
-  <section class="card bt-card" aria-labelledby="bt-waiting-title"><h2 id="bt-waiting-title">Waiting</h2><div data-waiting><p class="none">Loading…</p></div></section>
-  <section class="card bt-card" aria-labelledby="bt-rooms-title"><h2 id="bt-rooms-title">In rooms</h2><div data-rooms></div></section>
+  <section class="card bt-card" aria-labelledby="bt-waiting-title"><h2 id="bt-waiting-title">Waiting</h2><div class="bt-rows" data-waiting><p class="none">Loading…</p></div></section>
+  <section class="card bt-card" aria-labelledby="bt-rooms-title"><h2 id="bt-rooms-title">In rooms</h2><div class="bt-rows" data-rooms><p class="none">Loading…</p></div></section>
   <section class="card bt-card" aria-labelledby="bt-past-title">
     <div class="card-head"><h2 id="bt-past-title">Past</h2><div class="range-bar bt-range" role="group" aria-label="Received in" data-range></div></div>
-    <div data-past></div>
+    <div data-past><p class="none">Loading…</p></div>
   </section>`;
 
 export function mount(container, { run = null } = {}) {
@@ -186,8 +205,9 @@ export function mount(container, { run = null } = {}) {
         cellEl.dataset.label = PAST_COLUMNS[i]; // a phone shows each figure under its name
         if (i === 0) {
           cellEl.scope = 'row';
-          const a = el('a', '', text);
+          const a = el('a', 'bt-past-link', text); // its hit area the whole row
           a.href = batchHash(b.id);
+          a.setAttribute('aria-label', `${cropBlocks(b.crop)} received ${text}`);
           cellEl.append(a);
         } else {
           cellEl.textContent = text;
@@ -210,22 +230,24 @@ export function mount(container, { run = null } = {}) {
     for (const [n, b] of ranges) b.setAttribute('aria-pressed', String(n === days));
     const g = pageGroups(list);
     const now = Date.now();
-    els.waiting.replaceChildren(...(g.waiting.length ? g.waiting.map((b) => {
-      const put = button('Put into a room');
-      put.dataset.focusKey = `put-${b.id}`;
-      put.setAttribute('aria-label', `Put ${countBlocks(b.good, b.crop)} into a room`);
-      put.disabled = b.good < 1;
-      if (put.disabled) put.title = 'Every block was lost';
-      put.addEventListener('click', () => dialogs.place(b));
-      return batchRow(b, waitingLine(b, now), put);
-    }) : [el('p', 'none', 'No blocks waiting.')]));
+    els.waiting.replaceChildren(...(g.waiting.length ? g.waiting.map((b) => batchRow(b, waitingLine(b, now), putAction(b, dialogs, { focusKey: `put-${b.id}` })))
+      : [el('p', 'none', 'No blocks waiting. Receive blocks when a delivery comes in.')]));
+    // an in-room row: Record a check, the phone's way to it (the batch's page has it too)
+    const checkAction = (b) => {
+      if (b.good < 1) return null;
+      const add = button('Record a check', 'bt-quiet');
+      add.dataset.focusKey = `check-${b.id}`;
+      add.setAttribute('aria-label', `Record a check: ${countBlocks(b.blocks, b.crop)}`);
+      add.addEventListener('click', () => dialogs.check(b));
+      return add;
+    };
     els.rooms.replaceChildren(...(g.rooms.length ? g.rooms.map((r) => {
       const group = el('div', 'bt-group-room');
       const h = el('h3', 'bt-room-head');
       const a = el('a', '', r.roomName);
       a.href = roomHash(r.roomId, 'harvest');
       h.append(a, `${DOT}run since ${dateText(r.runStartedAt, today)}`);
-      group.append(h, ...r.batches.map((b) => batchRow(b, placedLine(b, today))), ...r.over.map((t) => el('p', 'bt-over', t)));
+      group.append(h, ...r.batches.map((b) => batchRow(b, placedLine(b, today), checkAction(b))), ...r.over.map((t) => el('p', 'bt-over', t)));
       return group;
     }) : [el('p', 'none', "No batches in a room's current run.")]));
     const past = pastIn(g.past, days, now);
@@ -242,6 +264,8 @@ export function mount(container, { run = null } = {}) {
 
 // ---- a batch ----
 
+// The body: on a desk Details and Delivery at the left, Contamination and This run at the right; on a phone one column in this
+// order, Contamination first (the floor's job: record a check), then This run, Details and Delivery.
 const ONE = `
   <a class="back" href="${BATCHES_HASH}">Batches</a>
   <div class="page-head">
@@ -249,20 +273,32 @@ const ONE = `
       <span class="bt-pic" data-pic></span>
       <div>
         <h1 class="page-title" tabindex="-1" data-title>Loading…</h1>
+        <p class="bt-figures" data-figures></p>
         <p class="page-sub" data-sub></p>
       </div>
     </div>
     <div class="bt-tools" data-actions></div>
   </div>
   ${BANNER}
-  <div data-body hidden>
-    <p class="bt-over" data-over hidden></p>
-    <section class="card bt-card" aria-labelledby="bt-details-title"><h2 id="bt-details-title">Details</h2><dl class="bt-facts" data-facts></dl></section>
-    <section class="card bt-card" aria-labelledby="bt-delivery-title" data-delivery-card hidden><h2 id="bt-delivery-title">Delivery</h2><div data-delivery></div></section>
-    <section class="card bt-card" aria-labelledby="bt-checks-title">
-      <div class="card-head"><h2 id="bt-checks-title">Contamination</h2><span data-add-check></span></div>
-      <div data-checks></div>
-    </section>
+  <div class="bt-batch" data-body hidden>
+    <div class="bt-side">
+      <section class="card bt-card" aria-labelledby="bt-checks-title">
+        <div class="card-head"><h2 id="bt-checks-title">Contamination</h2><span data-add-check></span></div>
+        <div data-checks></div>
+      </section>
+      <section class="card bt-card" aria-labelledby="bt-run-title" data-run-card hidden>
+        <h2 id="bt-run-title" data-run-title>This run</h2>
+        <div data-run></div>
+      </section>
+    </div>
+    <div class="bt-main">
+      <section class="card bt-card" aria-labelledby="bt-details-title">
+        <h2 id="bt-details-title">Details</h2>
+        <p class="bt-over" data-over hidden></p>
+        <dl class="bt-facts" data-facts></dl>
+      </section>
+      <section class="card bt-card" aria-labelledby="bt-delivery-title" data-delivery-card hidden><h2 id="bt-delivery-title">Delivery</h2><div data-delivery></div></section>
+    </div>
   </div>
   <section class="card bt-card" data-gone hidden><p class="none">No such batch.</p><a href="${BATCHES_HASH}">Back to Batches</a></section>`;
 
@@ -272,26 +308,58 @@ export function mountBatch(container, { id }) {
   container.innerHTML = ONE;
   const q = (sel) => container.querySelector(sel);
   const els = {
-    banner: q('.banner'), bannerText: q('[data-banner-text]'), title: q('[data-title]'), sub: q('[data-sub]'), pic: q('[data-pic]'),
-    actions: q('[data-actions]'), body: q('[data-body]'), over: q('[data-over]'), facts: q('[data-facts]'), deliveryCard: q('[data-delivery-card]'),
-    delivery: q('[data-delivery]'), addCheck: q('[data-add-check]'), checks: q('[data-checks]'), gone: q('[data-gone]'),
+    banner: q('.banner'), bannerText: q('[data-banner-text]'), title: q('[data-title]'), figures: q('[data-figures]'), sub: q('[data-sub]'),
+    pic: q('[data-pic]'), actions: q('[data-actions]'), body: q('[data-body]'), over: q('[data-over]'), facts: q('[data-facts]'),
+    deliveryCard: q('[data-delivery-card]'), delivery: q('[data-delivery]'), addCheck: q('[data-add-check]'), checks: q('[data-checks]'),
+    gone: q('[data-gone]'), runCard: q('[data-run-card]'), runTitle: q('[data-run-title]'), run: q('[data-run]'),
   };
   document.title = 'Batch · Mushroom farm';
   let painted = '';
+  let batch = null; // the last read
   const refocus = focusAfterChange(container);
   const showError = (text) => { els.bannerText.textContent = text; els.banner.hidden = false; };
-  const read = reader(() => `/api/batches/${id}`, (b) => { paint(b); refocus.settle(); }, els, alive);
+  const read = reader(() => `/api/batches/${id}`, (b) => { paint(b); refocus.settle(); loadRun(); }, els, alive);
   const dialogs = createBatchDialogs({
     onChanged: () => { if (alive()) { refocus.wait(dialogs.openerKey()); read.load(); } }, onError: showError, alive,
   });
   q('[data-retry]').addEventListener('click', () => read.load());
 
+  // This run (a placed or past batch whose room is still there): the room's harvests, read only; again on its harvest events.
+  let runSeq = 0;
+  let runPainted = '';
+  async function loadRun() {
+    const b = batch;
+    const mine = ++runSeq;
+    if (!b || b.status === 'waiting' || !Number.isInteger(b.roomId) || !Number.isInteger(b.runId)) { els.runCard.hidden = true; return; }
+    let facts = null;
+    try {
+      facts = runYieldFacts(runOf(await request('GET', `/api/rooms/${b.roomId}/harvests`), b.runId), b);
+    } catch {
+      facts = null; // a deleted room (404) or no answer: the card stays away rather than show a wrong figure
+    }
+    if (!alive() || mine !== runSeq) return;
+    const key = JSON.stringify(facts);
+    if (key === runPainted) return;
+    runPainted = key;
+    els.runCard.hidden = !facts;
+    if (!facts) return;
+    els.runTitle.textContent = facts.title;
+    if (facts.empty) { els.run.replaceChildren(el('p', 'none', facts.empty)); return; }
+    const tiles = el('div', 'us-tiles hv-tiles bt-run-tiles');
+    tiles.append(...tileNodes(facts.tiles));
+    els.run.replaceChildren(tiles, ...(facts.cost ? [el('p', 'bt-run-cost', facts.cost)] : []));
+  }
+  const reloadRun = createThrottle(() => { if (alive()) loadRun(); });
+  const offHarvest = live.on('harvest', (d) => { if (d.roomId === null || d.roomId === batch?.roomId) reloadRun.call(); });
+
   function paint(b) {
+    batch = b;
     if (!b) {
       els.banner.hidden = true;
       els.body.hidden = true;
       els.actions.replaceChildren();
       els.title.textContent = 'Batch';
+      els.figures.textContent = '';
       els.sub.textContent = '';
       els.gone.hidden = false;
       return;
@@ -300,33 +368,35 @@ export function mountBatch(container, { id }) {
     const key = JSON.stringify([b, today]);
     if (key === painted) return;
     painted = key;
-    document.title = `${cropBlocks(b.crop)} · Mushroom farm`;
+    document.title = `${countBlocks(b.blocks, b.crop)} · Mushroom farm`;
     els.gone.hidden = true;
     els.body.hidden = false;
     els.pic.replaceChildren(picture('crop', b.crop, { size: 40 }));
-    els.title.textContent = cropBlocks(b.crop);
-    els.sub.textContent = [`Received ${fullDate(b.receivedAt)}`, b.supplier, statusLine(b)].filter(Boolean).join(DOT);
+    els.title.textContent = countBlocks(b.blocks, b.crop);
+    els.figures.textContent = figureLine(b);
+    // "Received 3 Nov · Agro Supplies · In Container 1", the room a link to its Harvest tab while the batch is in it
+    const status = statusLine(b);
+    let statusNode = status;
+    if (b.status === 'placed' && Number.isInteger(b.roomId)) {
+      statusNode = el('a', 'bt-room-link', status);
+      statusNode.href = roomHash(b.roomId, 'harvest');
+    }
+    els.sub.replaceChildren([`Received ${dateText(b.receivedAt, today).replace(/ /g, '\u00a0')}`, b.supplier].filter(Boolean).join(DOT) + DOT, statusNode);
 
     const actions = [];
     if (b.status === 'waiting') {
-      const put = button('Put into a room', 'primary');
-      put.dataset.focusKey = 'put';
-      put.disabled = b.good < 1;
-      if (put.disabled) put.title = 'Every block was lost';
-      put.addEventListener('click', () => dialogs.place(b));
-      actions.push(put);
+      actions.push(putAction(b, dialogs, { focusKey: 'put', primary: true }));
     } else if (b.status === 'placed') {
       const out = button('Take out');
       out.dataset.focusKey = 'take-out';
       out.addEventListener('click', () => dialogs.takeOut(b));
       actions.push(out);
     }
+    // Delete is inside Edit, a quiet red button at its footer's start (as Harvest's)
     const edit = button('Edit');
     edit.dataset.focusKey = 'edit';
-    edit.addEventListener('click', () => dialogs.edit(b));
-    const del = button('Delete', 'danger-text');
-    del.addEventListener('click', () => dialogs.remove(b, () => { location.hash = BATCHES_HASH; }));
-    els.actions.replaceChildren(...actions, edit, del);
+    edit.addEventListener('click', () => dialogs.edit(b, { onGone: () => { location.hash = BATCHES_HASH; } }));
+    els.actions.replaceChildren(...actions, edit);
 
     const over = overNote(b);
     els.over.hidden = !over;
@@ -372,6 +442,65 @@ export function mountBatch(container, { id }) {
   return function unmount() {
     mountSeq++;
     read.stop();
+    reloadRun.cancel();
+    offHarvest();
     closeTaskDialog(); // a dialog of this page closes with it
+  };
+}
+
+// ---- the Today page's "Blocks waiting" (contract 2026-11-05; web/today-page.js mounts it in its Batches block) ----
+
+// host: the Today page's container. A card after its groups, as its Long-term card: the waiting batches received
+// BATCH_WAIT_DAYS or more days ago, each a link to its batch; hidden while there are none. Read from GET
+// /api/batches?status=waiting, again on the batches events, when the stream comes back and on a timer (the days move on).
+// → stop().
+export function todayWaiting(host) {
+  let on = true;
+  let seq = 0;
+  let timer = null;
+  const card = el('section', 'card td-long bt-today');
+  card.hidden = true;
+  card.setAttribute('aria-labelledby', 'bt-today-title');
+  const title = el('h2', '', 'Blocks waiting');
+  title.id = 'bt-today-title';
+  const list = el('ul', 'td-long-list');
+  card.append(title, list);
+  host.append(card);
+  let painted = '';
+  async function load() {
+    if (!on) return;
+    clearTimeout(timer);
+    const mine = ++seq;
+    try {
+      const lines = waitingLong((await request('GET', '/api/batches?status=waiting'))?.batches, Date.now());
+      if (!on || mine !== seq) return;
+      const key = JSON.stringify(lines);
+      if (key !== painted) {
+        painted = key;
+        card.hidden = lines.length === 0;
+        list.replaceChildren(...lines.map((x) => {
+          const li = el('li');
+          const a = el('a', '', x.text);
+          a.href = x.href;
+          li.append(a);
+          return li;
+        }));
+      }
+    } catch {
+      // the Today page's own banner says the server is away; this card keeps what it showed
+    }
+    if (!on) return;
+    clearTimeout(timer);
+    timer = setTimeout(load, fallbackMs(REFRESH_MS, live.connected()));
+  }
+  const reload = createThrottle(() => load());
+  const offs = [live.on('batches', () => reload.call()), live.onStatus((up) => { if (up) reload.call(); })];
+  load();
+  return () => {
+    on = false;
+    clearTimeout(timer);
+    reload.cancel();
+    for (const off of offs) off();
+    card.remove();
   };
 }

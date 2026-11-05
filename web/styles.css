@@ -2112,31 +2112,58 @@ td.tg-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: -2p
 .hv-sheet-table td:first-child { white-space: nowrap; }
 @media (max-width: 600px) { .hv-sheet-tools .back { padding: 10px 0; } }
 
-/* ---- Batches ---- (spec 2026-11-05-batches-design.md 7): the Batches page, a batch, the 4-2 sheet's date boxes. Tokens only. */
+/* ---- Batches ---- (spec 2026-11-05-batches-design.md 7): the Batches page, a batch, the dialogs' groups, the 4-2 sheet's date
+   boxes, the Today page's Blocks waiting card. Tokens only. */
 .bt-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.bt-tools > button, .bt-tools > a.button, .bt-tools .bt-act > button { min-height: 40px; } /* one height: buttons and links */
 .bt-filter { margin: 0 0 12px; color: var(--ink-2); font-size: var(--fs-sm); }
 .bt-card { margin-bottom: 16px; }
-.bt-card > h2 { margin-bottom: 12px; }
-.bt-row { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto auto; align-items: center; gap: 4px 12px; padding: 10px 0; border-top: 1px solid var(--border); }
+.bt-card > h2, .bt-card .card-head h2 { font-size: var(--fs-md); font-weight: 600; } /* one card-title size, as .card-head h2 */
+.bt-card > h2 { margin: 0 0 12px; }
+.bt-card .none { margin: 0; color: var(--muted); }
+/* neutral links with a quiet underline (3:1 or more), the full ink on hover */
+.bt-name, .bt-room-head a, .bt-filter a, .bt-delivery-row a, .bt-room-link, .bt-past-table th a {
+  color: var(--ink); text-decoration: underline; text-decoration-color: var(--muted); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+:is(.bt-name, .bt-room-head a, .bt-filter a, .bt-delivery-row a, .bt-room-link, .bt-past-table th a):is(:hover, :focus-visible) { text-decoration-color: currentColor; }
+/* a batch's row: the name's link covers the row (a stretched ::after); the action sits above it. The count and action columns
+   are the same width in Waiting and In rooms, so the counts line up from card to card. */
+.bt-row { position: relative; display: grid; grid-template-columns: 32px minmax(0, 1fr) auto var(--bt-act-w, 10rem); align-items: center;
+  gap: 4px 12px; min-height: 44px; padding: 10px 0; border-top: 1px solid var(--border); }
 .bt-row:first-child { border-top: 0; padding-top: 0; }
+.bt-name { font-weight: 600; }
+.bt-name::after { content: ''; position: absolute; inset: 0; }
+.bt-row:hover .bt-name { text-decoration-color: currentColor; }
+.bt-row > button, .bt-row > .bt-act { position: relative; z-index: 1; grid-column: 4; justify-self: end; }
+.bt-act { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.bt-reason { color: var(--ink-2); font-size: var(--fs-sm); }
 .bt-words { min-width: 0; }
-.bt-name { color: var(--ink); font-weight: 600; text-decoration: underline; text-decoration-color: var(--axis); text-underline-offset: 3px; }
-.bt-name:hover, .bt-name:focus-visible { text-decoration-color: currentColor; }
 .bt-line { margin: 2px 0 0; color: var(--ink-2); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-.bt-count { font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right; }
-.bt-group-room + .bt-group-room { margin-top: 18px; }
+.bt-count { grid-column: 3; font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right; }
+.bt-group-room + .bt-group-room { margin-top: 20px; }
 .bt-room-head { margin: 0 0 8px; font-size: var(--fs-md); font-weight: 600; font-variant-numeric: tabular-nums; }
-.bt-room-head a { color: var(--ink); }
 .bt-over { margin: 8px 0 0; padding: 8px 12px; border-radius: var(--radius); background: var(--warning-soft); color: var(--warning-text); font-size: var(--fs-sm); }
+.bt-card > .bt-over { margin: 0 0 12px; } /* a batch's: on the Details card's surface, at its top */
 .bt-range { margin: 0; }
-.bt-past-table th a { color: var(--ink); }
+.bt-past-table tbody tr { position: relative; } /* the received date's link covers the row */
+.bt-past-link::after { content: ''; position: absolute; inset: 0; }
+.bt-past-table tbody tr:hover { background: var(--band); }
+.bt-past-table tbody tr:hover .bt-past-link { text-decoration-color: currentColor; }
+/* a batch */
 .bt-titles { display: flex; align-items: center; gap: 12px; }
 .bt-pic { flex: none; display: inline-flex; }
+.bt-figures { margin: 2px 0 2px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.bt-batch { display: grid; gap: 0 16px; align-items: start; }
+@media (min-width: 900px) {
+  .bt-batch { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .bt-main { grid-column: 1; grid-row: 1; }
+  .bt-side { grid-column: 2; grid-row: 1; }
+}
 .bt-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 24px; margin: 0; }
 .bt-facts div { display: contents; }
 .bt-facts dt { color: var(--ink-2); }
 .bt-facts dd { margin: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .bt-delivery-row { margin: 6px 0 0; font-variant-numeric: tabular-nums; }
+.bt-delivery-row:first-child { margin-top: 0; }
 .bt-check { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 2px 12px; padding: 8px 0; border-top: 1px solid var(--border); }
 .bt-check:first-child { border-top: 0; padding-top: 0; }
 .bt-check .bt-line { margin: 0; color: var(--ink); }
@@ -2144,18 +2171,40 @@ td.tg-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: -2p
 .bt-check button { grid-column: 2; grid-row: 1; }
 .bt-quiet { min-height: 36px; padding: 4px 10px; background: transparent; border-color: transparent; color: var(--ink-2); }
 .bt-quiet:hover { border-color: var(--border); color: var(--ink); }
+.bt-run-tiles { margin: 0; }
+.bt-run-cost { margin: 10px 0 0; color: var(--ink-2); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+/* the Receive and Edit dialog: each group a section under a head (a hairline above it), pairs side by side from 600 px */
+.tk-dialog .bt-group { margin: 0 0 4px; }
+.tk-dialog .bt-group + .bt-group { margin-top: 12px; padding-top: 16px; border-top: 1px solid var(--border); }
+.tk-dialog .bt-group > legend { float: left; width: 100%; margin: 0 0 10px; color: var(--ink-2); font-size: var(--fs-sm); font-weight: 600; }
+.tk-dialog .bt-group > legend + * { clear: both; }
+.tk-dialog .bt-group > .tk-group-hint { margin: 0 0 10px; }
+.tk-dialog .bt-pair { margin: 0; }
+@media (min-width: 600px) { .tk-dialog .bt-pair > .tk-group-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* the 4-2 sheet: its date boxes as the app's boxes; the Farm line no wider than a phone */
+.bt-sheet .hv-write-line { min-width: 0; flex: 1 1 auto; } /* its div gives it its 40ch, or less on a phone */
+.bt-sheet .hv-sheet-facts > div:first-child { flex: 0 1 calc(40ch + 5em); max-width: 100%; } /* the Farm line: 40ch, or a phone's whole row */
 .bt-sheet-dates { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.bt-sheet-dates label { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); font-size: var(--fs-sm); }
+.bt-sheet-dates input { font: inherit; color: var(--ink); min-height: 40px; padding: 6px 10px; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--surface); }
+.bt-sheet-table tbody th { font-weight: 400; white-space: nowrap; }
 .bt-sheet-note { margin: 4px 0 0; color: var(--warning-text); font-size: var(--fs-sm); }
 @media print { .bt-sheet-note { display: none; } }
-.bt-sheet-dates label { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); font-size: var(--fs-sm); }
 @media (max-width: 600px) {
   .bt-quiet { min-height: 44px; }
   .bt-row { grid-template-columns: 32px minmax(0, 1fr); }
   .bt-row .bt-count { grid-column: 2; text-align: left; }
-  .bt-row > button { grid-column: 1 / -1; min-height: 44px; }
-  .bt-tools > * { min-height: 44px; }
+  .bt-row > button, .bt-row > .bt-act { grid-column: 1 / -1; justify-self: stretch; }
+  .bt-row > button { min-height: 44px; }
+  .bt-row > .bt-act { align-items: stretch; }
+  .bt-row > button.bt-quiet { justify-self: start; margin-left: 34px; padding-inline: 10px; } /* its words under the row's words */
+  .bt-tools > button, .bt-tools > a.button, .bt-tools .bt-act > button { min-height: 44px; }
+  .bt-range button { min-width: 44px; }
+  .bt-sheet-dates input { min-height: 44px; }
   .bt-facts { grid-template-columns: minmax(0, 1fr); gap: 2px; }
   .bt-facts dd { margin-bottom: 8px; }
+  .bt-card { margin-bottom: 12px; }
+  .bt-room-link { display: inline-block; padding: 6px 0; } /* a finger's room */
   /* Past: each batch a block of labelled figures (as Harvest's Past runs) */
   .bt-past-table thead { display: none; }
   .bt-past-table, .bt-past-table tbody, .bt-past-table tr { display: block; }
