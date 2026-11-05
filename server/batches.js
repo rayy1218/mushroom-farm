@@ -141,6 +141,45 @@ export function createBatches({ db, now = Date.now, log = console.error }) {
     for (const m of movesOf(family, (id) => store.checks(id))) store.insertMove({ itemId, ...m });
   }
 
+  // Edit a made batch (spec 5): the Mix's fields and materials, the Inoculate step's (the spawn supplier, strain, spawn batch,
+  // the spawn line), the Incubate step's; the shared and making fields to every row of the delivery, the materials on its first
+  // row. Crop and bags as a bought batch's (2.1); the day mixed not after a load or a check (nor the inoculation, which comes
+  // before any placement); where the blocks incubate fixed while some are in a room. → the view.
+  function editMade(b, body) {
+    const firstId = firstOf(b);
+    const first = store.get(firstId);
+    const fields = checkMade(body, { was: first, now: now(), recipeOf: (id) => store.recipe(id) });
+    const lines = linesOf(body, 'inoculatedAt' in fields ? fields.inoculatedAt : first.inoculatedAt);
+    const family = store.family(firstId);
+    const placed = family.some((x) => x.placedAt != null);
+    if ('crop' in fields && fields.crop !== first.crop && placed) throw conflict('Take the blocks out of the rooms to change the crop', 'crop');
+    if ('blocks' in fields && fields.blocks !== b.blocks) {
+      if (b.parentId != null || family.length > 1 || b.placedAt != null) throw conflict('Bags change only on a waiting batch with no parts', 'blocks');
+      if (fields.blocks < b.lost) throw bad(`Bags can't be fewer than the ${grouped(b.lost)} lost`, 'blocks');
+      if (store.loads(firstId).some((l) => l.bags > fields.blocks)) throw bad('A sterilising load has more bags than that', 'blocks');
+    }
+    if (placed && ['incubation', 'incubatedFrom', 'incubatedTo'].some((k) => k in fields && fields[k] !== first[k])) {
+      throw conflict('Take the blocks out of the rooms to change their incubation', 'incubation');
+    }
+    if ('mixedAt' in fields && fields.mixedAt !== first.mixedAt) {
+      const day = localDate(fields.mixedAt);
+      if (store.loads(firstId).some((l) => localDate(l.hotAt) < day)) throw bad('Some sterilising loads are before that day', 'mixedAt');
+      if (family.some((x) => store.checks(x.id).some((c) => localDate(c.at) < day))) throw bad('Some contamination checks are before that day', 'mixedAt');
+    }
+    const shared = Object.fromEntries(Object.entries(fields).filter(([k]) => SHARED.includes(k) || MAKING.includes(k)));
+    const own = Object.fromEntries(Object.entries(fields).filter(([k]) => !SHARED.includes(k) && !MAKING.includes(k)));
+    store.tx(() => {
+      if (Object.keys(shared).length) for (const x of family) store.update(x.id, shared);
+      if (Object.keys(own).length) store.update(b.id, own);
+      if (lines.mix) store.setMaterials(firstId, MIX_ITEMS, lines.mix);
+      if (lines.spawn) store.setMaterials(firstId, ['spawn'], lines.spawn);
+      sync(firstId);
+    });
+    const after = store.get(b.id);
+    tell([after, ...family]);
+    return view(after);
+  }
+
   // A made batch's material lines in body (spec 5), checked: the mix's (materials) and the spawn (spawn: one line, or null to
   // clear it; it needs the day inoculated). An item picked is kept only with Inventory. → { mix?, spawn? } (absent: not sent).
   function linesOf(body, inoculatedAt) {
@@ -244,6 +283,7 @@ export function createBatches({ db, now = Date.now, log = console.error }) {
     // first row with no parts, not below its lost blocks. → the view.
     edit(id, body) {
       const b = batchOf(id);
+      if (b.kind === 'made') return editMade(b, body);
       const fields = checkFields(body, now(), b);
       const family = store.family(firstOf(b));
       if ('crop' in fields && fields.crop !== b.crop && family.some((x) => x.placedAt != null)) {
@@ -282,7 +322,8 @@ export function createBatches({ db, now = Date.now, log = console.error }) {
     },
 
     // Put `blocks` of a waiting row into the room's open run (spec 3): all its good blocks move the row itself; fewer split a
-    // part off (2.1). → the view of the row put in.
+    // part off (2.1). Made blocks once inoculated, or, incubating in an area, once ready to fruit (spec 5). → the view of the
+    // row put in.
     place(id, body) {
       if (!isPlain(body)) throw bad('Body must be a JSON object');
       const b = batchOf(id);
@@ -290,6 +331,8 @@ export function createBatches({ db, now = Date.now, log = console.error }) {
         if (b.runId == null) throw conflict('These blocks went into a room that was deleted');
         throw conflict(b.runEndedAt != null ? `${b.roomName}'s run has ended` : `These blocks are in ${b.roomName} already`);
       }
+      if (b.kind === 'made' && b.inoculatedAt == null) throw conflict('Record the inoculation before these blocks go into a room');
+      if (b.kind === 'made' && b.incubation === 'area' && b.incubatedTo == null) throw conflict('These blocks incubate in an area: mark them ready to fruit first');
       const room = Number.isInteger(body.roomId) ? db.getRoom(body.roomId) : null;
       if (!room) throw bad('Pick a room', 'roomId');
       const good = goodOf(b);
@@ -301,6 +344,8 @@ export function createBatches({ db, now = Date.now, log = console.error }) {
       if (!run.crops.some((c) => c.crop === b.crop)) throw conflict(`${room.name}'s run has no ${cropShortName(b.crop)}`);
       const t = now();
       const placedId = store.tx(() => {
+        // made blocks put in before any incubation was recorded incubate in that grow room (spec 5)
+        if (b.kind === 'made' && b.incubation == null) for (const x of store.family(firstOf(b))) store.update(x.id, { incubation: 'room' });
         let rowId = id;
         if (n === good) {
           store.update(id, { runId: run.id, roomId: room.id, placedAt: t });

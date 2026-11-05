@@ -131,3 +131,72 @@ test('make blocks: each bad field is a 400 naming it', (t) => {
   assert.equal(status(() => batches.mix([]))[0], 400);
   assert.deepEqual(batches.list().batches, [], 'nothing was kept');
 });
+
+test('the steps: inoculated not before the mix; the incubation needs the inoculation; in an area until ready to fruit', (t) => {
+  const { batches } = setup(t);
+  const b = made(batches, { mixedAt: NOW - 3 * DAY });
+  assert.deepEqual(status(() => batches.edit(b.id, { inoculatedAt: NOW - 4 * DAY })), [400, 'inoculatedAt', 'Inoculated must be on or after the day mixed']);
+  assert.deepEqual(status(() => batches.edit(b.id, { incubation: 'area' })), [400, 'incubation', 'Record the inoculation first']);
+  assert.deepEqual(status(() => batches.edit(b.id, { pricePerBlock: 1 }))?.slice(0, 2), [400, 'pricePerBlock']);
+  const i = batches.edit(b.id, { inoculatedAt: NOW - 2 * DAY, supplier: 'Spawn Co', strain: 'PL-27', spawnBatch: '0912', spawn: { qty: 12, unit: 'kg', stockItemId: null } });
+  assert.deepEqual([i.status, i.supplier, i.strain, i.spawnBatch, i.spawn], ['making', 'Spawn Co', 'PL-27', '0912', { qty: 12, unit: 'kg', unitCost: null }]);
+  assert.deepEqual(status(() => batches.edit(b.id, { incubation: 'area', incubatedFrom: NOW - 3 * DAY }))?.slice(0, 2), [400, 'incubatedFrom']);
+  const area = batches.edit(b.id, { incubation: 'area' });
+  assert.deepEqual([area.incubation, area.incubatedFrom, area.incubatedTo, area.status], ['area', NOW - 2 * DAY, null, 'making'], 'from the inoculation by default');
+  assert.deepEqual(status(() => batches.edit(b.id, { incubatedTo: NOW - 3 * DAY }))?.slice(0, 2), [400, 'incubatedTo']);
+  assert.deepEqual(status(() => batches.edit(b.id, { incubatedTo: NOW + DAY }))?.slice(0, 2), [400, 'incubatedTo']);
+  assert.equal(batches.edit(b.id, { incubatedTo: NOW }).status, 'waiting', 'ready to fruit');
+  assert.deepEqual(status(() => batches.edit(b.id, { incubation: 'room', incubatedTo: NOW }))?.slice(0, 2), [400, 'incubation'], 'only an area has dates');
+  const room = batches.edit(b.id, { incubation: 'room' });
+  assert.deepEqual([room.incubation, room.incubatedFrom, room.incubatedTo, room.status], ['room', null, null, 'making'], "the area's dates go");
+  assert.deepEqual(status(() => batches.edit(b.id, { inoculatedAt: null })), [400, 'inoculatedAt', 'Clear the incubation before the inoculation']);
+  assert.deepEqual(status(() => batches.edit(b.id, { spawn: { qty: 0, unit: 'kg' } }))?.slice(0, 2), [400, 'spawn']);
+  assert.deepEqual(status(() => batches.edit(b.id, { spawn: { qty: 2, unit: 'pcs' } }))?.slice(0, 2), [400, 'spawn']);
+  assert.equal(batches.edit(b.id, { spawn: { qty: 30, unit: 'bags' } }).spawn.unit, 'bags');
+  assert.equal(batches.edit(b.id, { spawn: null }).spawn, null, 'the spawn line cleared');
+  assert.deepEqual(status(() => batches.edit(b.id, { mixedAt: NOW - DAY })), [400, 'mixedAt', 'Inoculated must be on or after the day mixed']);
+  assert.equal(batches.edit(b.id, { incubation: null, inoculatedAt: null }).inoculatedAt, null, 'both cleared at once');
+});
+
+test('edit the mix: the day moves the received day, not after a load; the mix lines replaced, the spawn kept; a recipe edit changes no batch', (t) => {
+  const { batches } = setup(t);
+  const r = batches.addRecipe(RECIPE);
+  const b = made(batches, { recipeId: r.id, mixedAt: NOW - 3 * DAY });
+  batches.edit(b.id, { inoculatedAt: NOW - DAY, spawn: { qty: 12, unit: 'kg' } });
+  const e = batches.edit(b.id, { mixedAt: NOW - 2 * DAY, materials: [{ item: 'sawdust', qty: 300, unit: 'kg' }] });
+  assert.deepEqual([e.mixedAt, e.receivedAt], [NOW - 2 * DAY, NOW - 2 * DAY]);
+  assert.deepEqual(batches.detail(b.id).materials.map((m) => [m.item, m.qty]), [['sawdust', 300], ['spawn', 12]]);
+  batches.addCheck(b.id, { lost: 1, cause: 'green', worker: 'Ali', at: NOW - 2 * DAY });
+  assert.deepEqual(status(() => batches.edit(b.id, { mixedAt: NOW - DAY })), [400, 'mixedAt', 'Some contamination checks are before that day']);
+  assert.equal(batches.edit(b.id, { blocks: 380 }).blocks, 380);
+  assert.deepEqual(status(() => batches.edit(b.id, { blocks: 0 }))?.slice(0, 2), [400, 'blocks']);
+  batches.editRecipe(r.id, { sawdustPct: 80, branPct: 18 });
+  assert.equal(batches.detail(b.id).materials[0].qty, 300, 'copied at the mix, not linked');
+  batches.editRecipe(r.id, { archived: true });
+  assert.equal(batches.edit(b.id, { recipeId: r.id, note: 'kept' }).recipeId, r.id, 'its own archived recipe stays');
+  assert.equal(batches.detail(b.id).recipe.archived, true);
+});
+
+test('put made blocks into a room: once inoculated (they incubate in that grow room) or, in an area, once ready to fruit', (t) => {
+  const { batches, room } = setup(t);
+  const roomId = room();
+  const b = made(batches);
+  assert.deepEqual(status(() => batches.place(b.id, { roomId })), [409, null, 'Record the inoculation before these blocks go into a room']);
+  batches.edit(b.id, { inoculatedAt: NOW - DAY });
+  const p = batches.place(b.id, { roomId, blocks: 100 });
+  assert.deepEqual([p.status, p.parentId, p.kind, p.incubation, p.mixedAt], ['placed', b.id, 'made', 'room', NOW - 2 * DAY], 'a part copies the making');
+  assert.equal(batches.detail(b.id).incubation, 'room', 'the whole delivery incubates in a grow room');
+  assert.deepEqual(status(() => batches.edit(b.id, { incubation: 'area' }))?.slice(0, 2), [409, 'incubation']);
+  assert.deepEqual(status(() => batches.edit(b.id, { crop: 'pink' }))?.slice(0, 2), [409, 'crop']);
+  assert.deepEqual(status(() => batches.edit(b.id, { blocks: 200 }))?.slice(0, 2), [409, 'blocks']);
+  assert.equal(batches.edit(p.id, { strain: 'PL-27' }).strain, 'PL-27');
+  assert.equal(batches.detail(b.id).strain, 'PL-27', 'shared: edited on a part, written to the delivery');
+  assert.equal(batches.unplace(p.id).id, b.id, 'folded back');
+  assert.equal(batches.detail(b.id).status, 'making', 'out of the room it still incubates');
+  const area = made(batches);
+  batches.edit(area.id, { inoculatedAt: NOW - DAY, incubation: 'area' });
+  assert.deepEqual(status(() => batches.place(area.id, { roomId })), [409, null, 'These blocks incubate in an area: mark them ready to fruit first']);
+  batches.edit(area.id, { incubatedTo: NOW });
+  const whole = batches.place(area.id, { roomId });
+  assert.deepEqual([whole.status, whole.incubation, whole.incubatedTo], ['placed', 'area', NOW]);
+});
