@@ -7,6 +7,7 @@ import { openDb } from '../server/db.js';
 import { createApp } from '../server/app.js';
 import { createTasks } from '../server/tasks.js';
 import { createEvents } from '../server/events.js';
+import { openWithInventory } from './batches-fixture.js';
 
 const ROOM = { name: 'Container 1', length: 6, width: 4, height: 2.5 };
 const GOOD = { crop: 'oyster', supplier: 'Agro Supplies', blocks: 1200, pricePerBlock: 2.3 };
@@ -137,4 +138,19 @@ test('making blocks: recipes, Make blocks, the steps through PUT, loads, the sto
   assert.equal((await call('POST', '/api/batches/stock-items')).status, 404);
   const bought = await call('POST', '/api/batches', GOOD);
   assert.equal((await call('POST', `/api/batches/${bought.body.id}/loads`, { method: 'steam' })).status, 409);
+});
+
+test('GET /api/batches/stock-items with Inventory lists its items with their latest price, without the archived and the blocks', async (t) => {
+  const inv = openWithInventory(t);
+  const server = createApp(inv.db, { tasks: createTasks({ db: inv.db }), events: createEvents() });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  t.after(() => new Promise((r) => server.close(r)));
+  const sawdust = inv.item('Sawdust');
+  const old = inv.item('Old bran');
+  inv.item('Grey oyster blocks', 'blocks', 'blocks');
+  inv.buy(sawdust, 0.35);
+  inv.archive(old);
+  const res = await fetch(`http://127.0.0.1:${server.address().port}/api/batches/stock-items`);
+  assert.equal(res.status, 200);
+  assert.deepEqual(await res.json(), { items: [{ id: sawdust, name: 'Sawdust', kind: 'other', unit: 'kg', unitCost: 0.35 }] });
 });

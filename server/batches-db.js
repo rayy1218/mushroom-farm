@@ -290,13 +290,16 @@ export function createBatchStore(db) {
     },
     // The stock item of kind 'blocks' with this name, made when missing. → its id.
     blocksItem(name) {
-      // Inventory keeps one item per name, whatever the kind: a name another kind has gets "(batches)" after it
+      // Inventory keeps one item per name, whatever the kind: a name another kind has gets "(batches)" after it, and when that
+      // is taken too "(batches 2)", "(batches 3)"…
       const find = (n) => db.prepare("SELECT id FROM stock_items WHERE kind = 'blocks' AND name = ? COLLATE NOCASE ORDER BY id LIMIT 1").get(n);
       const taken = (n) => db.prepare('SELECT 1 FROM stock_items WHERE name = ? COLLATE NOCASE').get(n) !== undefined;
-      const found = find(name) ?? find(`${name} (batches)`);
-      if (found) return found.id;
-      const own = taken(name) ? `${name} (batches)` : name;
-      return Number(db.prepare("INSERT INTO stock_items (name, kind, unit, reorder_at) VALUES (?, 'blocks', 'blocks', NULL)").run(own).lastInsertRowid);
+      for (let n = 0; ; n += 1) {
+        const own = n === 0 ? name : n === 1 ? `${name} (batches)` : `${name} (batches ${n})`;
+        const found = find(own);
+        if (found) return found.id;
+        if (!taken(own)) return Number(db.prepare("INSERT INTO stock_items (name, kind, unit, reorder_at) VALUES (?, 'blocks', 'blocks', NULL)").run(own).lastInsertRowid);
+      }
     },
     insertMove({ itemId, at, qty, unitCost, refId, note }) {
       db.prepare("INSERT INTO stock_moves (item_id, at, qty, unit_cost, ref_kind, ref_id, note) VALUES (?, ?, ?, ?, 'batch', ?, ?)")

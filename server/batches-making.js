@@ -163,7 +163,8 @@ export function checkLoad(body, { mixedAt, blocks, now, was = null }) {
   const method = v('method');
   if (!METHODS.includes(method)) throw bad('Pick a method', 'method');
   const bags = v('bags');
-  if (!intIn(bags, 1, blocks)) throw bad(`Bags must be a whole number from 1 to ${grouped(blocks)}`, 'bags');
+  // the bags against the blocks made only when sent: a load kept as it was stays (a part deleted since may have lowered them)
+  if (!intIn(bags, 1, !was || Object.hasOwn(body, 'bags') ? blocks : MAX_BLOCKS)) throw bad(`Bags must be a whole number from 1 to ${grouped(blocks)}`, 'bags');
   const hotAt = v('hotAt');
   if (!isTime(hotAt, now) || localDate(hotAt) < localDate(mixedAt)) throw bad('Pick a time from the day mixed to now', 'hotAt');
   const holdH = v('holdH');

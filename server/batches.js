@@ -102,7 +102,19 @@ export function createBatches({ db, now = Date.now, log = console.error }) {
   const store = db.batches;
   const listeners = new Set();
   const firstOf = (b) => b.parentId ?? b.id;
-  const view = (b) => viewOf(b, (itemId) => store.purchasePrice(itemId));
+  // A made batch's material lines as they price: a line whose Inventory item is gone has no item (no move, an unknown price).
+  const liveMaterials = (firstId) => {
+    const stock = store.hasStock();
+    return store.materials(firstId).map((m) => (stock && m.stockItemId != null && !store.stockItem(m.stockItemId) ? { ...m, stockItemId: null } : m));
+  };
+  const priceOf = (itemId) => store.purchasePrice(itemId);
+  // priceOver: the price came to over RM 1,000 a block at today's purchase prices, so it is stored unknown (additive to the row).
+  const over = (b) => {
+    if (b.kind !== 'made' || b.pricePerBlock != null) return false;
+    const price = madePrice(liveMaterials(firstOf(b)), priceOf, store.family(firstOf(b)).reduce((s, x) => s + x.blocks, 0));
+    return price !== null && price > 1000;
+  };
+  const view = (b) => ({ ...viewOf(b, priceOf), priceOver: over(b) });
 
   // After a write: fn({ batchId, roomId, runId, harvestRooms }) — harvestRooms: the rooms of the placed rows it touched
   // (before or after), whose Harvest figures may change (3.2).
@@ -131,24 +143,34 @@ export function createBatches({ db, now = Date.now, log = console.error }) {
     return b;
   }
 
+  // A made price over RM 1,000 a block, said as the refusal does: 4 decimals when 2 would show RM 1,000.
+  const overMessage = (price) => {
+    const places = Math.round(price * 100) / 100 <= 1000 ? 4 : 2;
+    return `The materials come to RM ${price.toLocaleString('en-US', { minimumFractionDigits: places === 4 ? 4 : 0, maximumFractionDigits: places })} a block, over RM 1,000`;
+  };
+
   // After a write to a delivery, inside its transaction (`gone`: ids of rows just deleted): a made batch's price per block worked
-  // out again from its materials at Inventory's latest purchase prices and the blocks made, on every row (spec 4; over RM 1,000
-  // a block is a slip in the amounts: refused); then Inventory's moves written again from the rows (3.1), when its tables exist.
-  function sync(firstId, gone = []) {
+  // out again from its materials at Inventory's latest purchase prices and the blocks made, on every row (spec 4); over RM 1,000
+  // a block is a slip in the amounts: refused when the write sent them (`capped`), otherwise stored unknown (a later purchase
+  // price made it so: the view says why); then Inventory's moves written again from the rows (3.1), when its tables exist.
+  // A line whose Inventory item is gone gives no move and an unknown price.
+  function sync(firstId, gone = [], capped = false) {
     let family = store.family(firstId);
     const first = family.find((b) => b.parentId == null);
-    const materials = first?.kind === 'made' ? store.materials(first.id) : [];
+    const stock = store.hasStock();
+    const materials = first?.kind === 'made' ? liveMaterials(first.id) : [];
     if (first?.kind === 'made') {
-      const price = madePrice(materials, (itemId) => store.purchasePrice(itemId), family.reduce((s, b) => s + b.blocks, 0));
+      let price = madePrice(materials, priceOf, family.reduce((s, b) => s + b.blocks, 0));
       if (price !== null && price > 1000) {
-        throw bad(`The materials come to RM ${price.toLocaleString('en-US', { maximumFractionDigits: 2 })} a block, over RM 1,000`, 'materials');
+        if (capped) throw bad(overMessage(price), 'materials');
+        price = null;
       }
       if (family.some((b) => b.pricePerBlock !== price)) {
         for (const b of family) store.update(b.id, { pricePerBlock: price });
         family = store.family(firstId);
       }
     }
-    if (!store.hasStock()) return;
+    if (!stock) return;
     store.deleteMoves([...family.map((b) => b.id), ...gone]);
     if (!family.length) return;
     const itemId = store.blocksItem(`${cropShortName(family[0].crop)} blocks`);
@@ -195,7 +217,7 @@ export function createBatches({ db, now = Date.now, log = console.error }) {
       if (Object.keys(own).length) store.update(b.id, own);
       if (lines.mix) store.setMaterials(firstId, MIX_ITEMS, lines.mix);
       if (lines.spawn) store.setMaterials(firstId, ['spawn'], lines.spawn);
-      sync(firstId);
+      sync(firstId, [], ['materials', 'spawn', 'blocks'].some((k) => Object.hasOwn(body, k)));
     });
     const after = store.get(b.id);
     tell([after, ...family]);
@@ -311,7 +333,7 @@ export function createBatches({ db, now = Date.now, log = console.error }) {
         const made = store.insert({ kind: 'made', ...fields, createdAt: t });
         if (lines.mix) store.setMaterials(made, MIX_ITEMS, lines.mix);
         if (lines.spawn) store.setMaterials(made, ['spawn'], lines.spawn);
-        sync(made);
+        sync(made, [], true);
         return made;
       });
       const b = store.get(id);
