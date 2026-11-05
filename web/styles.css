@@ -2237,6 +2237,10 @@ td.tg-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: -2p
   .iv-count-send button { flex: 1 1 auto; min-height: 44px; }
   .iv-count-back .iv-link { min-height: 44px; padding: 10px 4px; }
 }
+/* the dialogs: RM before the figure (audit #20); Day bought and Use by stacked where two would cut the date */
+.tk-suffix-box.iv-prefix-box .tk-suffix { left: 10px; right: auto; }
+.field .tk-suffix-box.iv-prefix-box input { padding-left: 40px; padding-right: 10px; }
+@media (max-width: 420px) { .tk-dialog .tk-when.iv-when .tk-group-fields { grid-template-columns: 1fr; } }
 .iv-sheet .hv-sheet-tools .range-bar { margin: 0; }
 .iv-sheet-table { min-width: 1100px; } /* twelve columns: a phone scrolls the sheet sideways */
 .iv-sheet-table td:nth-child(4) { min-width: 12rem; }

@@ -9,7 +9,7 @@ import { openForm, loadWorkers, setWorker, workerField, errorText } from './task
 import { whenBoxes, dateHint } from './harvest-math.js';
 import { farmDate } from './tasks-math.js';
 import {
-  doneText, KIND_OPTIONS, UNIT_OPTIONS, UNIT_WORDS, WHOLE_UNITS, itemGroups, stockHint, qtyText, perUnitText, daysBefore, itemBody, purchaseBody, useBody, purchaseEditBody, useEditBody,
+  doneText, KIND_OPTIONS, UNIT_OPTIONS, UNIT_BY_KIND, UNIT_WORDS, WHOLE_UNITS, itemGroups, stockHint, qtyText, perUnitText, daysBefore, itemBody, purchaseBody, useBody, purchaseEditBody, useEditBody,
   overStock, deleteTitle, deleteLead, throwOutTitle, throwOutLead,
 } from './inventory-math.js';
 
@@ -76,6 +76,19 @@ function setUnit(form, name, unit) {
   spoken.textContent = unit ? `, in ${UNIT_WORDS[unit] ?? unit}` : '';
 }
 const NBSP = '\u00a0';
+
+// The total box reads "RM 85.00" as the app writes money (audit #20): openForm puts a unit after the figure, so its
+// suffix is moved before the input and styled as a prefix (.iv-prefix-box), and the label says it to a screen reader.
+function rmPrefix(form, name) {
+  const input = form.input(name);
+  const box = input?.parentElement;
+  const unit = box?.querySelector('.tk-suffix');
+  if (!unit) return;
+  box.classList.add('iv-prefix-box');
+  box.prepend(unit);
+  const label = input.closest('.field')?.querySelector(`label[for="${input.id}"]`);
+  if (label) label.insertAdjacentHTML('beforeend', '<span class="sr-only">, in RM</span>');
+}
 
 // The item picked last in this browser, per dialog (audit #1): the next opening from the list starts on it while it is
 // still on offer; else on "Pick an item", so a figure is never recorded against an item nobody chose.
@@ -169,7 +182,7 @@ const whenFields = (shown) => [{
 // Add (item null) or Edit an item. hasMoves: the unit is shown but cannot change. A block item: its level only.
 export function openItemDialog({ item = null, hasMoves = false, onDone, onLost }) {
   const blocks = item?.kind === 'blocks';
-  const unit = item?.unit ?? 'pcs';
+  const unit = item?.unit ?? UNIT_BY_KIND.chemical; // Add opens on Chemical: L (audit #22)
   const fields = blocks ? [] : [
     { name: 'name', label: 'Name', kind: 'text', value: item?.name ?? '', maxLength: 60, placeholder: 'Bleach' },
     { name: 'kind', label: 'Kind', kind: 'select', value: item?.kind ?? 'chemical', options: KIND_OPTIONS },
@@ -189,7 +202,11 @@ export function openItemDialog({ item = null, hasMoves = false, onDone, onLost }
     title: item ? `Edit ${item.name}` : 'Add an item',
     lead: blocks ? ['Its name and unit come from Batches.'] : [],
     fields,
-    buttons: [{ value: 'save', label: item ? 'Save' : 'Add', primary: true }],
+    // An item with no records can still be deleted (one made by mistake); else Archive (audit #22).
+    buttons: [
+      ...(item && !blocks && !hasMoves ? [{ label: 'Delete this item', action: () => openDeleteItemDialog({ item, onDone, onLost }) }] : []),
+      { value: 'save', label: item ? 'Save' : 'Add', primary: true },
+    ],
     onLost,
     submit: async (v) => {
       const body = itemBody(v, item);
@@ -205,12 +222,35 @@ export function openItemDialog({ item = null, hasMoves = false, onDone, onLost }
     const chemical = () => {
       for (const name of ['ingredient', 'lrmpNo']) form.input(name).closest('.field').hidden = kind.value !== 'chemical';
     };
-    kind.addEventListener('change', chemical);
-    unitBox.addEventListener('change', () => setUnit(form, 'reorderAt', unitBox.value));
+    let unitPicked = Boolean(item); // Add: the unit follows the kind until one is picked
+    kind.addEventListener('change', () => {
+      chemical();
+      if (unitPicked || hasMoves || !UNIT_BY_KIND[kind.value]) return;
+      unitBox.value = UNIT_BY_KIND[kind.value];
+      setUnit(form, 'reorderAt', unitBox.value);
+    });
+    unitBox.addEventListener('change', () => {
+      unitPicked = true;
+      setUnit(form, 'reorderAt', unitBox.value);
+    });
     unitBox.disabled = hasMoves;
     chemical();
   }
   return form;
+}
+
+// Delete an item with no records (the API refuses one with records: 409 "Archive it instead"). onDone({ gone: true }): the
+// page leaves for the list, which says it.
+export function openDeleteItemDialog({ item, onDone, onLost }) {
+  return openForm({
+    title: `Delete ${item.name}?`,
+    lead: ['It has no records yet. It goes for good.'],
+    buttons: [{ value: 'delete', label: 'Delete', primary: true, danger: true }],
+    closeLabel: 'Keep it',
+    onLost,
+    submit: async () => finish(await send('DELETE', `/api/inventory/items/${item.id}`), onDone,
+      () => ({ text: doneText({ kind: 'deleted', name: item.name }), gone: true })),
+  });
 }
 
 // Archive with a confirm; Bring back has none.
@@ -244,7 +284,7 @@ export function openPurchaseDialog({ items, itemId = null, suppliers = [], onDon
       { name: 'total', label: 'Total paid', kind: 'number', value: '', suffix: 'RM', hintOf: priceHint },
       { name: 'supplier', label: 'Supplier', kind: 'text', value: '', maxLength: 60, hint: 'Optional.' },
       {
-        kind: 'group', className: 'tk-when',
+        kind: 'group', className: 'tk-when iv-when',
         fields: [
           { name: 'day', label: 'Day bought', kind: 'date', value: today, min: daysBefore(today, BACK_DAYS), max: today, hintOf: dateHint },
           { name: 'useBy', label: 'Use by', kind: 'date', value: '', hintOf: (d) => (d ? dateHint(d) : 'Optional.') },
@@ -266,6 +306,7 @@ export function openPurchaseDialog({ items, itemId = null, suppliers = [], onDon
     if (h) h.textContent = priceHint();
   };
   form.input('qty').addEventListener('input', hint);
+  rmPrefix(form, 'total');
   groupOptions(form.input('itemId'), list, item);
   setUnit(form, 'qty', item?.unit ?? null);
   form.input('itemId').addEventListener('change', () => {
@@ -343,7 +384,7 @@ export async function openMoveDialog({ move, item, suppliers = [], reasons = [],
         { name: 'total', label: 'Total paid', kind: 'number', value: String(move.total ?? ''), suffix: 'RM' },
         { name: 'supplier', label: 'Supplier', kind: 'text', value: move.supplier ?? '', maxLength: 60, hint: 'Optional.' },
         {
-          kind: 'group', className: 'tk-when',
+          kind: 'group', className: 'tk-when iv-when',
           fields: [
             { name: 'day', label: 'Day bought', kind: 'date', value: farmDate(move.at), ...(farmDate(move.at) >= oldest ? { min: oldest } : {}), max: farmDate(Date.now()), hintOf: dateHint },
             { name: 'useBy', label: 'Use by', kind: 'date', value: move.useBy ?? '', hintOf: (d) => (d ? dateHint(d) : 'Optional.') },
@@ -360,6 +401,7 @@ export async function openMoveDialog({ move, item, suppliers = [], reasons = [],
       },
     });
     setUnit(form, 'qty', item.unit);
+    rmPrefix(form, 'total');
     suggest(form, 'supplier', suppliers);
     return form;
   }

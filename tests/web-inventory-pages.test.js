@@ -218,3 +218,18 @@ test('audit item page fixes: history columns (#15), lots From and years (#16), B
   assert.ok(css.includes('.iv-move { display: grid; grid-template-columns: minmax(0, 1fr) 13ch 4.5rem;'));
   assert.ok(css.includes('.iv-tiles > :last-child:nth-child(odd) { grid-column: 1 / -1; }'));
 });
+
+test('audit dialog fixes: unit by kind and Delete this item (#22), RM before the figure and stacked dates (#20)', () => {
+  const d = src('inventory-dialogs.js');
+  assert.ok(d.includes('const unit = item?.unit ?? UNIT_BY_KIND.chemical;'));
+  assert.ok(d.includes('unitBox.value = UNIT_BY_KIND[kind.value];'));
+  assert.ok(d.includes("[{ label: 'Delete this item', action: () => openDeleteItemDialog({ item, onDone, onLost }) }]"));
+  assert.ok(d.includes("send('DELETE', `/api/inventory/items/${item.id}`)"));
+  assert.ok(d.includes("rmPrefix(form, 'total');"));
+  assert.ok(d.includes("className: 'tk-when iv-when'"));
+  const item = src('inventory-item.js');
+  assert.ok(item.includes('if (result?.gone) {') && item.includes('keepFlash(result);'));
+  const css = src('styles.css');
+  assert.ok(css.includes('.field .tk-suffix-box.iv-prefix-box input { padding-left: 40px;'));
+  assert.ok(css.includes('@media (max-width: 420px) { .tk-dialog .tk-when.iv-when .tk-group-fields { grid-template-columns: 1fr; } }'));
+});

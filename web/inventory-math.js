@@ -68,6 +68,8 @@ const KIND_ORDER = Object.keys(KIND_NAMES);
 // The kinds an item is made with here (Batches makes the block items) and the units: [value, label].
 export const KIND_OPTIONS = [['spawn', 'Spawn'], ['bags', 'Bags'], ['chemical', 'Chemical'], ['packaging', 'Packaging'], ['other', 'Other']];
 export const KIND_ONE = Object.fromEntries([...KIND_OPTIONS, ['blocks', 'Blocks']]);
+// Add item's unit by kind, until one is picked (audit #22: a chemical opened on pcs).
+export const UNIT_BY_KIND = { spawn: 'kg', bags: 'pcs', chemical: 'L', packaging: 'pcs', other: 'pcs' };
 export const UNIT_OPTIONS = [['pcs', 'pcs (a count)'], ['kg', 'kg'], ['g', 'g'], ['L', 'L'], ['mL', 'mL']];
 const MAX_QTY = 100_000;
 const MAX_TOTAL = 1_000_000;
@@ -214,15 +216,20 @@ export const throwOutLead = (lot) => `Its use-by ${lot.state === 'expired' ? 'wa
 
 // ---- the dialogs' bodies: { …body } or { error, field } ----
 
-// A number typed for the unit: whole for pcs, g, mL and blocks; up to 2 decimals for kg and L; a point, never a comma.
+// A number typed for the unit: whole for pcs, g, mL and blocks; up to 2 decimals for kg and L. One comma before 1 or 2
+// digits is a decimal point (some phone keypads offer only a comma, audit #7); a comma of thousands is refused. The error
+// names the unit in words and says what to type.
 export function numberIn(text, unit, { zero = false, label = 'qty' } = {}) {
-  const s = String(text ?? '').trim();
+  const s = String(text ?? '').trim().replace(/^([0-9]+),([0-9]{1,2})$/, '$1.$2');
   if (s === '') return { error: `Give the ${label}` };
   const whole = WHOLE_UNITS.includes(unit);
   const n = (whole ? /^[0-9]{1,6}$/ : /^[0-9]{1,6}(\.[0-9]{1,2})?$/).test(s) ? Number(s) : NaN;
   if ((zero ? n >= 0 : n > 0) && n <= MAX_QTY) return { value: n };
+  const words = UNIT_WORDS[unit] ?? unit;
   const from = zero ? 'from 0' : 'over 0';
-  return { error: whole ? `Give a whole number of ${unit} ${from} up to 100,000` : `Give the ${unit} as a number ${from} up to 100,000, at most 2 decimals` };
+  if (whole) return { error: /^[0-9]*[.,][0-9]+$/.test(s) ? `Type a whole number of ${words}, like 12` : `Type a whole number of ${words}, ${from} up to 100,000` };
+  if (/^[0-9]+\.[0-9]{3,}$/.test(s)) return { error: `Type the ${words} with at most 2 decimals, like 1.25` };
+  return { error: `Type the ${words} as a number ${from} up to 100,000, like 1.25` };
 }
 const textIn = (v) => {
   const s = String(v ?? '').trim();

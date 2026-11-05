@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  dayNear, metaLine, needsLook, keptCounts, leaveText, doneText, undoLeft, UNDO_MS, itemGroups, stockHint, useByLine, qtyText, rmText, perUnitText, dayText, longDayText, daysBefore, pillOf, lotPill, countedText, attentionParts, groupItems, lotLabel,
+  UNIT_BY_KIND, dayNear, metaLine, needsLook, keptCounts, leaveText, doneText, undoLeft, UNDO_MS, itemGroups, stockHint, useByLine, qtyText, rmText, perUnitText, dayText, longDayText, daysBefore, pillOf, lotPill, countedText, attentionParts, groupItems, lotLabel,
   moveLine, deleteTitle, deleteLead, throwOutTitle, throwOutLead, numberIn, itemBody, purchaseBody, useBody, purchaseEditBody,
   useEditBody, overStock, countBody, sheetCells, sheetRange, sheetEmpty, SHEET_COLUMNS, KIND_OPTIONS, UNIT_OPTIONS,
 } from '../web/inventory-math.js';
@@ -159,12 +159,19 @@ test('the confirms: delete and throw out', () => {
 test('a number typed for a unit', () => {
   assert.deepEqual(numberIn('3.5', 'L'), { value: 3.5 });
   assert.deepEqual(numberIn('12', 'pcs'), { value: 12 });
-  assert.equal(numberIn('1.5', 'pcs').error, 'Give a whole number of pcs over 0 up to 100,000');
-  assert.equal(numberIn('1.234', 'kg').error, 'Give the kg as a number over 0 up to 100,000, at most 2 decimals');
-  assert.equal(numberIn('0', 'kg').error, 'Give the kg as a number over 0 up to 100,000, at most 2 decimals');
+  // the errors in the unit's words, saying what to type (audit #7)
+  assert.equal(numberIn('1.5', 'pcs').error, 'Type a whole number of pieces, like 12');
+  assert.equal(numberIn('0', 'pcs').error, 'Type a whole number of pieces, over 0 up to 100,000');
+  assert.equal(numberIn('1.234', 'kg').error, 'Type the kilograms with at most 2 decimals, like 1.25');
+  assert.equal(numberIn('0', 'kg').error, 'Type the kilograms as a number over 0 up to 100,000, like 1.25');
+  assert.equal(numberIn('lots', 'L').error, 'Type the litres as a number over 0 up to 100,000, like 1.25');
   assert.deepEqual(numberIn('0', 'kg', { zero: true }), { value: 0 });
   assert.equal(numberIn('', 'kg').error, 'Give the qty');
-  assert.equal(numberIn('1,5', 'kg').error, 'Give the kg as a number over 0 up to 100,000, at most 2 decimals');
+  // a keypad's comma as the decimal point; a comma of thousands is still refused
+  assert.deepEqual(numberIn('1,5', 'kg'), { value: 1.5 });
+  assert.deepEqual(numberIn('12,25', 'L'), { value: 12.25 });
+  assert.equal(numberIn('1,500', 'L').error, 'Type the litres as a number over 0 up to 100,000, like 1.25');
+  assert.equal(numberIn('1,5', 'pcs').error, 'Type a whole number of pieces, like 12');
 });
 
 test("the item dialog's body: a chemical's fields; a block item's level only", () => {
@@ -260,7 +267,8 @@ test("Count stock's body: typed boxes only, each checked; who once", () => {
   const entries = [{ itemId: 1, unit: 'L', text: '3.5' }, { itemId: 2, unit: 'pcs', text: '' }, { itemId: 3, unit: 'pcs', text: '0' }];
   assert.deepEqual(countBody(entries, 'Ali'), { worker: 'Ali', counts: [{ itemId: 1, qty: 3.5 }, { itemId: 3, qty: 0 }] });
   assert.deepEqual(countBody(entries, ''), { error: 'Pick who counted', field: 'worker' });
-  assert.deepEqual(countBody([{ itemId: 2, unit: 'pcs', text: '1.5' }], 'Ali'), { error: 'Give a whole number of pcs from 0 up to 100,000', field: 'count-2' });
+  assert.deepEqual(countBody([{ itemId: 2, unit: 'pcs', text: '1.5' }], 'Ali'), { error: 'Type a whole number of pieces, like 12', field: 'count-2' });
+  assert.deepEqual(countBody([{ itemId: 2, unit: 'pcs', text: '-1' }], 'Ali'), { error: 'Type a whole number of pieces, from 0 up to 100,000', field: 'count-2' });
   assert.deepEqual(countBody([{ itemId: 2, unit: 'pcs', text: '' }], 'Ali'), { error: 'Type at least one count', field: null });
 });
 
@@ -272,6 +280,10 @@ test('the 4-5 sheet: twelve columns; a row in the farm words; the range; the emp
   assert.equal(sheetCells({ ...row, kind: 'purchase', price: 25, qty: 5 })[6].replace(/\u00a0/g, ' '), '5.00 L bought');
   assert.equal(sheetRange({ from: '2026-10-07', to: '2026-11-05' }), '7 Oct 2026 – 5 Nov 2026');
   assert.equal(sheetEmpty(90), 'No chemical purchases or uses in the last 90 days.');
+});
+
+test("Add item's unit follows the kind until one is picked (audit #22)", () => {
+  assert.deepEqual(UNIT_BY_KIND, { spawn: 'kg', bags: 'pcs', chemical: 'L', packaging: 'pcs', other: 'pcs' });
 });
 
 test("the pickers' options", () => {

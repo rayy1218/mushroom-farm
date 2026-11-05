@@ -12,7 +12,7 @@ import {
 } from './inventory-dialogs.js';
 import { farmDate } from './tasks-math.js';
 import { pillNode } from './inventory-page.js';
-import { createDoneLine } from './inventory-done.js';
+import { createDoneLine, keepFlash } from './inventory-done.js';
 import { qtyText, countedText, lotLabel, lotPill, moveLine, dayNear, useByLine, KIND_ONE } from './inventory-math.js';
 
 const REFRESH_MS = 60_000;
@@ -111,6 +111,11 @@ export function mount(container, { id }) {
   };
   const doneLine = createDoneLine(q('[data-done]'), { onUndone: () => load(), onError: showError });
   const done = (result) => {
+    if (result?.gone) { // the item deleted (it had no records): the list says so
+      keepFlash(result);
+      location.hash = INVENTORY_HASH;
+      return;
+    }
     load();
     if (result) doneLine.show(result);
   };

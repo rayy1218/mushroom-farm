@@ -36,6 +36,7 @@ test('an item is added with its checks; a chemical keeps its ingredient and LRMP
   assert.equal(bags.ingredient, null);
   assert.equal(bags.reorderAt, null);
   assert.throws(() => inv.addItem({ name: 'bleach', kind: 'chemical', unit: 'L' }), refused(400, 'name'));
+  assert.throws(() => inv.addItem({ name: 'bleach', kind: 'chemical', unit: 'L' }), { message: 'There is already an item called Bleach' }, 'the stored name, not the typed case (audit #22)');
   assert.throws(() => inv.addItem({ name: '', kind: 'chemical', unit: 'L' }), refused(400, 'name'));
   assert.throws(() => inv.addItem({ name: 'x'.repeat(61), kind: 'other', unit: 'L' }), refused(400, 'name'));
   assert.throws(() => inv.addItem({ name: 'Blocks', kind: 'blocks', unit: 'blocks' }), refused(400, 'kind'));

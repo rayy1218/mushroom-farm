@@ -1008,7 +1008,7 @@ export function openDb(path, { log = console.error } = {}) {
     // ---- Inventory (spec 2026-11-05-inventory-design.md 2) ----
     stockItems: db.prepare('SELECT * FROM stock_items ORDER BY name COLLATE NOCASE, id'),
     stockItem: db.prepare('SELECT * FROM stock_items WHERE id = ?'),
-    stockNameUsed: db.prepare('SELECT 1 FROM stock_items WHERE name = ? COLLATE NOCASE AND id IS NOT ?'),
+    stockNameUsed: db.prepare('SELECT name FROM stock_items WHERE name = ? COLLATE NOCASE AND id IS NOT ?'),
     insertStockItem: db.prepare('INSERT INTO stock_items (name, kind, unit, reorder_at, ingredient, lrmp_no) VALUES (?, ?, ?, ?, ?, ?)'),
     updateStockItem: db.prepare('UPDATE stock_items SET name = ?, kind = ?, unit = ?, reorder_at = ?, ingredient = ?, lrmp_no = ?, archived = ? WHERE id = ?'),
     deleteStockItem: db.prepare('DELETE FROM stock_items WHERE id = ?'),
@@ -2099,6 +2099,10 @@ export function openDb(path, { log = console.error } = {}) {
     // Whether another item (not `id`) has the name, case aside.
     stockNameUsed(name, id = null) {
       return Boolean(q.stockNameUsed.get(name, id));
+    },
+    // The stored name of another item called `name` (case aside), or null.
+    stockNameTaken(name, id = null) {
+      return q.stockNameUsed.get(name, id)?.name ?? null;
     },
 
     // A new item: { name, kind, unit, reorderAt?, ingredient?, lrmpNo? } → the item. Throws on a name used (the unique index).

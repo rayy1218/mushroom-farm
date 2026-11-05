@@ -65,6 +65,8 @@ test('item names are unique ignoring case; items and moves are written, changed 
   assert.equal(bleach.ingredient, 'Sodium hypochlorite');
   assert.equal(db.stockNameUsed('bleach'), true);
   assert.equal(db.stockNameUsed('BLEACH', bleach.id), false);
+  assert.equal(db.stockNameTaken('bLEACH'), 'Bleach');
+  assert.equal(db.stockNameTaken('bleach', bleach.id), null);
   assert.throws(() => db.insertStockItem({ name: 'BLEACH', kind: 'chemical', unit: 'L' }));
   const changed = db.updateStockItem(bleach.id, { ...bleach, kind: 'other', reorderAt: 3, archived: true });
   assert.equal(changed.kind, 'other');

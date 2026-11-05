@@ -167,7 +167,8 @@ export function createInventory({ db, now = Date.now, log = console.error }) {
     const name = textOf(v, 'name', 'name', true);
     // A block item (Batches') keeps its own name on rename (editItem refuses block items before it gets here).
     if (BLOCK_NAMES.has(name.toLowerCase())) throw new InventoryError(400, 'That name is kept for the block item Batches makes', 'name');
-    if (db.stockNameUsed(name, id)) throw new InventoryError(400, `There is already an item called ${name}`, 'name');
+    const taken = db.stockNameTaken(name, id);
+    if (taken) throw new InventoryError(400, `There is already an item called ${taken}`, 'name'); // its own name, not the typed case
     return name;
   }
   function kindOf(v) {
