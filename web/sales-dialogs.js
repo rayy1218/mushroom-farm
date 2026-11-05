@@ -315,12 +315,16 @@ export async function openSale({ delivery, onChanged, onError, opener = document
     const kg = field({ id: `sl-kg-${n}`, label: 'kg', value: value ? String(value.kg) : '', suffix: 'kg' });
     const price = field({ id: `sl-price-${n}`, label: 'RM per kg', value: value ? value.priceKg.toFixed(2) : '', prefix: 'RM' });
     const room = field({ id: `sl-room-${n}`, label: 'Room', kind: 'select', options: roomOptions, value: value?.roomId ? String(value.roomId) : '' });
-    const expected = el('span', 'muted sl-expected', 'expected');
+    // "expected" inside the RM box at its right end, as kg's unit (read with the box while shown)
+    const expected = el('span', 'tk-suffix sl-expected', 'expected');
     expected.id = `${price.input.id}-expected`;
     expected.hidden = true;
-    price.error.before(expected);
+    price.input.after(expected);
     const total = el('span', 'num sl-line-total');
     const remove = button('Remove', 'tk-quiet sl-remove');
+    // the total and Remove: one cell beside Room on a phone, the line's own columns wider (display: contents)
+    const end = el('span', 'sl-line-end');
+    end.append(total, remove);
     // the amber question (an unlikely kg or price): a note the width of the line, under it, read with its box
     const check = el('p', 'sl-line-check');
     check.id = `sl-check-${n}`;
@@ -328,7 +332,7 @@ export async function openSale({ delivery, onChanged, onError, opener = document
     kg.input.setAttribute('aria-describedby', `${kg.input.getAttribute('aria-describedby')} ${check.id}`);
     const row = el('div', 'sl-line');
     row.setAttribute('role', 'group');
-    row.append(crop.wrap, kg.wrap, price.wrap, room.wrap, total, remove, check);
+    row.append(crop.wrap, kg.wrap, price.wrap, room.wrap, end, check);
     const l = { crop, kg, price, room, total, expected, check, row, remove, typed: Boolean(value) };
     showExpected(l, false);
     crop.input.addEventListener('change', () => { fillPrice(l); refresh(); });

@@ -85,7 +85,10 @@ function table(caption, columns, rows, head, extra = '') {
   t.append(el('caption', 'sr-only', caption));
   const tr = el('tr');
   columns.forEach((c, i) => {
-    const th = el('th', i ? 'num' : '', c);
+    // "RM per kg" kept whole: a narrow head breaks "Average / RM per kg", not "Average RM per / kg"
+    const [words, unit] = c.endsWith(' RM per kg') ? [c.slice(0, -9), 'RM per kg'] : [c, null];
+    const th = el('th', i ? 'num' : '', words);
+    if (unit) th.append(el('span', 'sl-nowrap', unit));
     th.scope = 'col';
     tr.append(th);
   });

@@ -173,3 +173,14 @@ test('the page repaints when the phone query changes (the row limit in the paint
   assert.ok(page.includes("media.removeEventListener('change', onMedia);"));
   assert.ok(page.includes('const key = JSON.stringify([sales, showAll, limit]);'));
 });
+
+test('finish review: "RM per kg" kept whole in a head; "expected" inside the RM box; a phone line gives Crop its own row', () => {
+  assert.ok(page.includes("[c.slice(0, -9), 'RM per kg']") && page.includes("el('span', 'sl-nowrap', unit)"));
+  assert.ok(dialogs.includes("el('span', 'tk-suffix sl-expected', 'expected')") && dialogs.includes('price.input.after(expected);'));
+  const sales = css.slice(css.indexOf('/* ---- Sales ---- */'));
+  assert.ok(sales.includes('.sl-line > .field:nth-child(1) { grid-column: 1 / -1; grid-row: 1; }'));
+  assert.ok(sales.includes('.sl-line > .sl-line-check { grid-row: 3; }'));
+  assert.ok(sales.includes('.sl-new-buyer { column-gap: 16px; }'));
+  assert.ok(sales.includes('.sl-item > .sl-day { padding-right: 10px; }'));
+  assert.ok(!sales.includes('.sl-expected { grid-row'));
+});
