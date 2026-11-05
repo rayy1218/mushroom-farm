@@ -2281,9 +2281,17 @@ p.bt-making-note.bt-over { margin-top: 12px; }
 /* ---- end Batches ---- */
 
 /* ---- Inventory (spec 2026-11-05-inventory-design.md 5) ---- */
-.iv-page { max-width: 1040px; } /* audit #11: at 1440 px a name sat 600 to 900 px from its figures; the head, cards and lines keep one right edge */
+/* The list is full width as the other Business pages (joint audit); audit #11 (at 1440 px a name sat 600 to 900 px from its
+   figures) is kept by the Item column's fixed width below, not by a cap. An item's page and Count stock (pages of their own,
+   a back link and no strip) stay within 1,040 px, head and cards on one right edge. */
+.iv-page { min-width: 0; }
+.iv-page.iv-detail { max-width: 1040px; }
+/* a link in a line's words (a history row's batch and room, the Batches notes): neutral ink with a muted underline, as Batches' names */
+.iv-ref { color: var(--ink); text-decoration: underline; text-decoration-color: var(--muted); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+.iv-ref:is(:hover, :focus-visible) { text-decoration-color: currentColor; }
+.iv-history-note .iv-ref { color: inherit; }
 .iv-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-left: auto; }
-.iv-tools a.button { min-height: 36px; padding: 7px 14px; background: var(--raised); font-weight: 500; } /* Count stock looks like its neighbours (audit #10) */
+.iv-tools a.button { background: var(--raised); font-weight: 500; } /* Count stock looks like its neighbours (audit #10); its height is the Business head buttons' (.bz-view .page-head) */
 .iv-tools a.button:hover { background: color-mix(in srgb, var(--ink) 7%, var(--raised)); }
 .iv-sheet-link { color: var(--ink-2); font-size: var(--fs-sm); padding: 10px 4px; }
 .iv-attention { margin: 0 0 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -2301,10 +2309,10 @@ p.bt-making-note.bt-over { margin-top: 12px; }
 .iv-groups { display: grid; gap: 16px; }
 .iv-group h2 { margin: 0 0 8px; font-size: var(--fs-md); font-weight: 600; }
 .iv-table { width: 100%; }
-@media (min-width: 900px) { /* every kind's card lines up its columns */
+@media (min-width: 900px) { /* every kind's card lines up its columns; the figures right after the name, Last counted takes the rest */
   .iv-table { table-layout: fixed; }
+  .iv-table th:nth-child(1) { width: min(26rem, 40%); }
   .iv-table th:nth-child(2), .iv-table th:nth-child(3) { width: 130px; }
-  .iv-table th:nth-child(4) { width: 150px; }
 }
 .iv-row { cursor: pointer; }
 @media (hover: hover) {
@@ -2328,9 +2336,9 @@ p.bt-making-note.bt-over { margin-top: 12px; }
 .iv-link { background: none; border: 0; padding: 10px 0; color: var(--ink-2); text-decoration: underline; cursor: pointer; font: inherit; }
 @media (max-width: 600px) {
   .iv-tools { flex: 1 1 100%; margin-left: 0; }
-  .iv-tools > :is(button, a.button) { flex: 1 1 calc(50% - 4px); justify-content: center; min-height: 44px; }
+  .iv-tools > :is(button, a.button) { flex: 1 1 calc(50% - 4px); justify-content: center; }
   .iv-sheet-link { flex: 1 1 100%; display: flex; align-items: center; min-height: 44px; }
-  .iv-attention .iv-att { min-height: 44px; }
+  .iv-attention .iv-att { min-height: 44px; min-width: 44px; } /* "1 low" is narrower than a thumb */
   .iv-filter-line .iv-link { min-height: 44px; }
   .iv-table { table-layout: auto; }
   .iv-table thead { display: none; }
@@ -2348,7 +2356,7 @@ p.bt-making-note.bt-over { margin-top: 12px; }
 .iv-useby-line[data-tone="warn"] { color: var(--critical-text); font-weight: 600; }
 .iv-useby-line[data-tone="amber"] { color: var(--warning-text); font-weight: 600; }
 .iv-lots h2, .iv-history h2 { margin: 0 0 8px; font-size: var(--fs-md); font-weight: 600; }
-.iv-archived-note { margin: 6px 0 0; color: var(--muted); font-size: var(--fs-sm); }
+.iv-archived-note, .iv-blocks-note { margin: 6px 0 0; color: var(--muted); font-size: var(--fs-sm); }
 .iv-archived-note .pill { margin-right: 6px; }
 .iv-history-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 16px; margin-bottom: 8px; }
 .iv-history-head h2 { margin: 0; }
@@ -2385,9 +2393,8 @@ p.bt-making-note.bt-over { margin-top: 12px; }
   .iv-move { grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
   .iv-move-text { grid-row: 1 / span 2; }
   .iv-move-qty { grid-column: 2; grid-row: 1; } /* on the first line, beside what it was */
-  .iv-move .iv-move-edit { grid-column: 2; grid-row: 2; padding-right: 0; text-align: right; }
+  .iv-move .iv-move-edit { grid-column: 2; grid-row: 2; } /* its look is .bz-quiet's (44 px on a phone) */
   .iv-move .iv-move-edit-none { display: none; }
-  .iv-move-edit { min-width: 44px; min-height: 44px; }
 }
 .iv-count { display: grid; gap: 16px; }
 .iv-count-who .field { max-width: 320px; margin: 0; }

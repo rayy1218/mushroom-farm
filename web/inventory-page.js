@@ -10,7 +10,7 @@ import { DOT } from './text-math.js';
 import { openItemDialog, openPurchaseDialog, openUseDialog } from './inventory-dialogs.js';
 import { createDoneLine, takeFlash } from './inventory-done.js';
 import { farmDate } from './tasks-math.js';
-import { groupItems, pillOf, attentionParts, countedText, metaLine, needsLook, qtyText } from './inventory-math.js';
+import { groupItems, pillOf, attentionParts, countedText, metaLine, needsLook, qtyText, useItems } from './inventory-math.js';
 
 const REFRESH_MS = 60_000;
 
@@ -178,7 +178,7 @@ export function mount(container) {
     els.purchase.hidden = nothing;
     els.count.hidden = nothing;
     els.add.hidden = nothing;
-    els.use.disabled = open.length === 0;
+    els.use.disabled = useItems(items).length === 0; // block items are Batches' (joint audit B1)
     els.purchase.disabled = !open.some((i) => i.kind !== 'blocks');
   }
   function setFilter(key) {

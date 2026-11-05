@@ -1,9 +1,10 @@
 // An item's page, #/business/inventory/<id> (spec 2026-11-05-inventory-design.md 5): its tiles (In stock, Reorder at, Last
 // counted), its lots with their use-by and Throw out, and its history newest first (20, then Show all) with one quiet Edit a
-// row (a count: Delete; a batch move: Batches'). Purchase (not on a block item), Record use, Edit and Archive or Bring back.
+// row (a count: Delete; a batch move: Batches', its batch and room links). Purchase and Record use (neither on a block item:
+// blocks go through Batches), Edit and Archive or Bring back.
 
 import { request, OFFLINE, OUTDATED, routeMissing } from './api.js';
-import { INVENTORY_HASH } from './route.js';
+import { INVENTORY_HASH, BATCHES_HASH } from './route.js';
 import { live } from './live.js';
 import { fallbackMs, createThrottle } from './live-math.js';
 import { DOT } from './text-math.js';
@@ -13,18 +14,19 @@ import {
 import { farmDate } from './tasks-math.js';
 import { pillNode } from './inventory-page.js';
 import { createDoneLine, keepFlash } from './inventory-done.js';
-import { qtyText, countedText, lotLabel, lotPill, moveLine, dayNear, useByLine, KIND_ONE } from './inventory-math.js';
+import { qtyText, countedText, lotLabel, lotHref, lotPill, moveLine, dayNear, useByLine, KIND_ONE } from './inventory-math.js';
 
 const REFRESH_MS = 60_000;
 const HISTORY_SHOWN = 20;
 
 const TEMPLATE = `
-  <div class="iv-page">
+  <div class="iv-page iv-detail">
   <div class="page-head">
     <div class="page-titles">
       <a class="back iv-back" data-back>Inventory</a>
       <h1 class="page-title" tabindex="-1" data-title>Loading…</h1>
       <p class="page-sub" data-sub></p>
+      <p class="iv-blocks-note" data-blocks-note hidden>Blocks come in and go into rooms through <a class="iv-ref" data-batches-link>Batches</a>.</p>
       <p class="iv-archived-note" data-archived-note hidden><span class="pill" data-tone="none">Archived</span> It is left out of the list, the counts and the messages; Bring back puts it back.</p>
     </div>
     <div class="iv-tools" data-tools hidden>
@@ -54,7 +56,7 @@ const TEMPLATE = `
     <section class="card iv-history" aria-labelledby="iv-history-title">
       <div class="iv-history-head">
         <h2 id="iv-history-title" tabindex="-1" data-history-title>History</h2>
-        <p class="muted iv-history-note" data-batch-note hidden>Batch records change in Batches</p>
+        <p class="muted iv-history-note" data-batch-note hidden>Batch records change in <a class="iv-ref" data-batches-link>Batches</a></p>
       </div>
       <p class="none" data-no-history hidden>Nothing recorded yet.</p>
       <ul class="iv-moves" data-moves></ul>
@@ -72,6 +74,14 @@ function el(tag, className, content) {
   if (className) node.className = className;
   if (content !== undefined) node.textContent = content;
   return node;
+}
+
+// A link in the line's words (.iv-ref: ink with a muted underline, as Batches' names), or the words alone.
+function linkOr(text, href) {
+  if (!href) return document.createTextNode(text);
+  const a = el('a', 'iv-ref', text);
+  a.href = href;
+  return a;
 }
 
 function tile(label, value, line = null) {
@@ -93,7 +103,9 @@ export function mount(container, { id }) {
     edit: q('[data-edit]'), archive: q('[data-archive]'), banner: q('.banner'), bannerText: q('[data-banner-text]'), body: q('[data-body]'),
     tiles: q('[data-tiles]'), lotsCard: q('[data-lots-card]'), lots: q('[data-lots]'), moves: q('[data-moves]'), noHistory: q('[data-no-history]'),
     all: q('[data-all]'), gone: q('[data-gone]'), archivedNote: q('[data-archived-note]'), batchNote: q('[data-batch-note]'),
+    blocksNote: q('[data-blocks-note]'),
   };
+  for (const a of container.querySelectorAll('[data-batches-link]')) a.href = BATCHES_HASH;
   q('[data-back]').href = INVENTORY_HASH;
   q('[data-gone-back]').href = INVENTORY_HASH;
   document.title = 'Inventory · Mushroom farm';
@@ -131,7 +143,8 @@ export function mount(container, { id }) {
     els.sub.textContent = [KIND_ONE[it.kind] ?? it.kind, `counted in ${it.unit}`, it.ingredient, it.lrmpNo && `LRMP No. ${it.lrmpNo}`].filter(Boolean).join(DOT);
     els.tools.hidden = false;
     els.purchase.hidden = blocks || it.archived;
-    els.use.hidden = it.archived;
+    els.use.hidden = it.archived || blocks; // blocks go into a room from Batches (joint audit B1)
+    els.blocksNote.hidden = !blocks;
     els.archive.hidden = blocks;
     els.archive.textContent = it.archived ? 'Bring back' : 'Archive';
     els.archivedNote.hidden = !it.archived; // why Record use and Purchase are gone (audit #18)
@@ -158,8 +171,9 @@ export function mount(container, { id }) {
     els.lotsCard.hidden = it.lots.length === 0;
     els.lots.replaceChildren(...it.lots.map((lot) => {
       const tr = el('tr');
-      const head = el('th', '', lotLabel(lot, today));
+      const head = el('th');
       head.scope = 'row';
+      head.append(linkOr(lotLabel(lot, today), lotHref(lot))); // a batch's lot: its batch, as Batches names it
       const useBy = el('td', lot.useBy ? 'iv-lot-useby' : 'iv-lot-useby iv-lot-none'); // a lone "—" is not shown on a phone
       const lp = lotPill(lot, today);
       if (lp) useBy.append(pillNode(lp));
@@ -182,12 +196,14 @@ export function mount(container, { id }) {
       const line = moveLine(m, it, today);
       const li = el('li', 'iv-move');
       const text = el('div', 'iv-move-text');
-      text.append(el('span', 'iv-move-what', line.what), el('span', 'iv-move-when', line.when));
+      const what = el('span', 'iv-move-what');
+      what.append(...line.parts.map((p) => linkOr(p.text, p.href))); // its batch and its room as links (joint audit B2)
+      text.append(what, el('span', 'iv-move-when', line.when));
       li.append(text, el('span', 'iv-move-qty', line.qty));
       if (line.edit === null) {
         li.append(el('span', 'iv-move-edit-none')); // a batch move: Batches' (said once, in the card's head)
       } else {
-        const b = el('button', 'iv-link iv-move-edit', line.edit === 'edit' ? 'Edit' : 'Delete');
+        const b = el('button', 'iv-link bz-quiet iv-move-edit', line.edit === 'edit' ? 'Edit' : 'Delete');
         b.type = 'button';
         const throwOuts = it.moves.some((x) => x.lotId === m.id);
         b.addEventListener('click', () => (line.edit === 'edit'

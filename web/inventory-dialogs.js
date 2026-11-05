@@ -5,13 +5,21 @@
 // when the record was gone or changed) and onLost(text) (a failure that came back after the dialog closed).
 
 import { request, routeMissing, OUTDATED } from './api.js';
-import { openForm, loadWorkers, setWorker, workerField, errorText } from './task-dialogs.js';
+import { openForm as openTaskForm, loadWorkers, setWorker, workerField, errorText } from './task-dialogs.js';
 import { whenBoxes, dateHint } from './harvest-math.js';
 import { farmDate } from './tasks-math.js';
 import {
   doneText, KIND_OPTIONS, UNIT_OPTIONS, UNIT_BY_KIND, UNIT_WORDS, WHOLE_UNITS, itemGroups, decimalComma, stockHint, qtyText, perUnitText, daysBefore, itemBody, purchaseBody, useBody, purchaseEditBody, useEditBody,
-  overStock, deleteTitle, deleteLead, throwOutTitle, throwOutLead,
+  overStock, deleteTitle, deleteLead, throwOutTitle, throwOutLead, useItems,
 } from './inventory-math.js';
+
+// The tasks' openForm with the Business dialogs' form class (bz-form: the footer sticks at the dialog's foot on a phone, a
+// Delete on its own row; DESIGN.md "Business").
+function openForm(options) {
+  const handle = openTaskForm(options);
+  document.querySelector('dialog.tk-dialog[open] > form')?.classList.add('bz-form');
+  return handle;
+}
 
 const COMMAND_TIMEOUT = 15000;
 const BACK_DAYS = 400;
@@ -318,9 +326,10 @@ export function openPurchaseDialog({ items, itemId = null, suppliers = [], onDon
   return form;
 }
 
-// items: the list's items (archived ones left out; block items take uses); reasons: the item's earlier ones.
+// items: the list's items (archived and block items left out: blocks go into a room from Batches, joint audit B1);
+// reasons: the item's earlier ones.
 export async function openUseDialog({ items, itemId = null, reasons = [], onDone, onLost, alive = () => true }) {
-  const list = items.filter((i) => !i.archived);
+  const list = useItems(items);
   if (!list.length) return null;
   let names;
   let rooms;

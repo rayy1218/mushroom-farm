@@ -6,6 +6,7 @@ import { localDate, dayStart, addDays } from './task-rules.js';
 import { checkWorker } from './tasks.js';
 import { CROPS, CROP_KEYS, cropShortName } from '../web/crops.js';
 import { KINDS, ITEM_UNITS, WHOLE_UNITS, itemView, attentionOf, sheetRows, stockOf, round3 } from './inventory-math.js';
+import { batchTitle } from '../web/inventory-math.js';
 
 // The names Batches gives its block items ("<crop> blocks", by the crop's short name or its full name), lower case. Batches
 // finds or makes that item with `WHERE kind = 'blocks' AND name = ?`; a worker's own item of such a name (any case) would
@@ -142,20 +143,28 @@ export function createInventory({ db, now = Date.now, log = console.error }) {
   }
 
   // An item's page: its view with its lots, its moves newest first (roomName: a use's room; a batch move's, its batch's room
-  // when Batches' table is there; null for none or a deleted room), the earlier suppliers and the item's earlier reasons.
+  // when Batches' table is there; null for none or a deleted room), the earlier suppliers and the item's earlier reasons. A
+  // batch move and a batch's lot carry batchTitle, the batch as Batches names it (null when the batch is gone), and a batch
+  // move its batch's roomId and batchKind ('bought' or 'made'; joint audit B2).
   function item(id) {
     const it = itemOf(id);
     const moves = db.itemStockMoves(it.id);
     const rooms = roomNames();
     const batchIds = [...new Set(moves.filter((m) => m.refKind === 'batch' && m.refId !== null).map((m) => m.refId))];
-    const batchRooms = db.batchRooms(batchIds);
-    const roomName = (m) => {
-      const roomId = m.refKind === 'batch' ? batchRooms.get(m.refId) ?? null : m.roomId;
-      return roomId === null ? null : rooms.get(roomId) ?? null;
-    };
+    const batches = db.batchRows(batchIds);
+    const day = today();
+    // A receipt (an in-move) is the whole delivery: its blocks are the move's, not what is left on the first row after a split.
+    const titleOf = (refId, inQty) => (batches.has(refId) ? batchTitle({ ...batches.get(refId), ...(inQty > 0 ? { blocks: inQty } : {}) }, day) : null);
+    const roomIdOf = (m) => (m.refKind === 'batch' ? batches.get(m.refId)?.roomId ?? null : m.roomId);
+    const view = itemView(it, moves, now());
     return {
-      ...itemView(it, moves, now()),
-      moves: moves.slice().reverse().map((m) => ({ ...Object.fromEntries(MOVE_FIELDS.map((f) => [f, m[f]])), roomName: roomName(m) })),
+      ...view,
+      lots: view.lots.map((l) => (l.refKind === 'batch' ? { ...l, batchTitle: titleOf(l.refId, l.qty) } : l)),
+      moves: moves.slice().reverse().map((m) => {
+        const roomId = roomIdOf(m);
+        const out = { ...Object.fromEntries(MOVE_FIELDS.map((f) => [f, m[f]])), roomId, roomName: roomId === null ? null : rooms.get(roomId) ?? null };
+        return m.refKind === 'batch' ? { ...out, batchTitle: titleOf(m.refId, m.qty), batchKind: batches.get(m.refId)?.kind ?? null } : out;
+      }),
       suppliers: suppliers(),
       reasons: distinct(moves.filter((m) => m.refKind === 'use' && m.lotId === null).reverse().map((m) => m.reason)),
     };
@@ -289,10 +298,12 @@ export function createInventory({ db, now = Date.now, log = console.error }) {
     return move;
   }
 
-  // { itemId, qty (the amount used, over 0), roomId?, reason?, worker, at? } → the move (its qty under 0).
+  // { itemId, qty (the amount used, over 0), roomId?, reason?, worker, at? } → the move (its qty under 0). Not a block item:
+  // blocks go into a room through Batches (joint audit B1); Count stock still adjusts them.
   function use(body) {
     const b = bodyOf(body);
     const it = openItem(b.itemId);
+    if (it.kind === 'blocks') throw new InventoryError(409, 'Blocks go into a room from Batches: Put into a room');
     const qty = qtyOf(b.qty, it.unit);
     const fields = { roomId: roomOf(b.roomId), reason: reasonOf(b.reason), worker: workerOf(b.worker), at: atOf(b.at) };
     const [move] = db.insertStockMoves([{ itemId: it.id, qty: -qty, refKind: 'use', ...fields }]);

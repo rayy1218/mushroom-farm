@@ -57,7 +57,7 @@ test("the item page: mounted; its tiles, lots and history; batch moves not edite
   assert.ok(app.includes(": route.name === 'inventoryItem' ? inventoryItem.mount(view, { id: route.id })"));
   const page = src('inventory-item.js');
   assert.ok(page.includes('request(\'GET\', `/api/inventory/items/${id}`)'));
-  for (const words of ['In stock', 'Reorder at', 'Last counted', 'Lots', 'History', 'Batch records change in Batches', 'Throw out', 'Bring back', 'That item no longer exists.']) {
+  for (const words of ['In stock', 'Reorder at', 'Last counted', 'Lots', 'History', 'Batch records change in <a class="iv-ref" data-batches-link>Batches</a>', 'Throw out', 'Bring back', 'That item no longer exists.']) {
     assert.ok(page.includes(words), words);
   }
   assert.ok(page.includes('HISTORY_SHOWN = 20'));
@@ -112,7 +112,7 @@ test('review fixes: the item page paint key has the farm day; the row click igno
   assert.ok(page.includes('e.button !== 0 || e.defaultPrevented || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey || window.getSelection()?.toString()'));
   const css = src('styles.css');
   assert.ok(css.includes('@media (hover: hover) {\n  .iv-row:hover'));
-  assert.ok(css.includes('.iv-move-edit { min-width: 44px'));
+  assert.ok(item.includes("'iv-link bz-quiet iv-move-edit'"), 'the Business quiet row action: 44 px on a phone (joint audit B6)');
 });
 
 test('review fixes: Count stock names line, worker reload, gone rows, retry, inputMode; the sheet hides a failed table; the settings box is not disabled', () => {
@@ -199,14 +199,15 @@ test('audit list fixes: empty farm (#9), Count stock button (#10), pill by the n
   assert.ok(page.includes("'iv-row iv-row-archived'"));
   assert.ok(page.includes('askedArchived = true;'));
   const css = src('styles.css');
-  assert.ok(css.includes('.iv-page { max-width: 1040px; }'));
-  assert.ok(css.includes('.iv-tools a.button { min-height: 36px; padding: 7px 14px; background: var(--raised);'));
+  assert.ok(css.includes('.iv-page.iv-detail { max-width: 1040px; }'), 'the list full width (joint audit); an item and Count stock capped');
+  assert.ok(css.includes('.iv-table th:nth-child(1) { width: min(26rem, 40%); }'), "the figures right after the name (audit #11)");
+  assert.ok(css.includes('.iv-tools a.button { background: var(--raised); font-weight: 500; }'), 'its height the Business head buttons\' (joint audit)');
   assert.ok(css.includes('.iv-table .iv-row-archived :is(th, td, a) { color: var(--muted); }'));
 });
 
 test('audit item page fixes: history columns (#15), lots From and years (#16), Batches said once (#17), archived says so (#18), phone tiles (#19)', () => {
   const page = src('inventory-item.js');
-  assert.ok(page.includes('<div class="iv-page">'));
+  assert.ok(page.includes('<div class="iv-page iv-detail">'));
   assert.ok(page.includes('<th scope="col">From</th>'));
   assert.ok(page.includes('lotLabel(lot, today)') && page.includes('lotPill(lot, today)') && page.includes('moveLine(m, it, today)'));
   assert.ok(page.includes("'iv-lot-useby iv-lot-none'"));
@@ -238,7 +239,7 @@ test('audit Count stock fixes: the difference beside the records (#6), a gone ro
   const c = src('inventory-count.js');
   assert.ok(c.includes('const diff = countDiff(r.input.value, r.item);'));
   assert.ok(c.includes("if (diff.warn) part.dataset.tone = 'amber';"));
-  assert.ok(c.includes('<div class="iv-page">'));
+  assert.ok(c.includes('<div class="iv-page iv-detail">'));
   const css = src('styles.css');
   assert.ok(css.includes('.iv-count-row input:disabled { opacity: .55; background: var(--band); cursor: not-allowed; }'));
 });
@@ -257,4 +258,22 @@ test('audit sheet fixes: the Farm line inside a phone (#23); print light margins
 test('audit #25: the Settings note keeps its lines short', () => {
   assert.ok(src('styles.css').includes('.iv-settings .s-hint { max-width: 60ch; }'));
   assert.ok(src('inventory-settings.js').includes('<input type="checkbox" name="inventoryTelegram" data-ivs-telegram>'), 'a named field (Chrome issue)');
+});
+
+test('joint audit: blocks only through Batches (B1); batches and rooms as links (B2); the sheet caption, iv-att width (B5); bz-form (B6)', () => {
+  const item = src('inventory-item.js');
+  assert.ok(item.includes('Blocks come in and go into rooms through <a class="iv-ref" data-batches-link>Batches</a>.'));
+  assert.ok(item.includes('els.use.hidden = it.archived || blocks;'));
+  assert.ok(item.includes('what.append(...line.parts.map((p) => linkOr(p.text, p.href)));'));
+  assert.ok(item.includes('head.append(linkOr(lotLabel(lot, today), lotHref(lot)));'));
+  const list = src('inventory-page.js');
+  assert.ok(list.includes('els.use.disabled = useItems(items).length === 0;'));
+  const d = src('inventory-dialogs.js');
+  assert.ok(d.includes('const list = useItems(items);'));
+  assert.ok(d.includes("document.querySelector('dialog.tk-dialog[open] > form')?.classList.add('bz-form');"));
+  const sheet = src('inventory-sheet.js');
+  assert.ok(sheet.includes('<caption class="sr-only">Chemicals bought and used</caption>'));
+  assert.ok(!sheet.includes('Loading…'), 'the Period at once, as the Batches sheet');
+  const css = src('styles.css');
+  assert.ok(css.includes('.iv-attention .iv-att { min-height: 44px; min-width: 44px; }'));
 });
