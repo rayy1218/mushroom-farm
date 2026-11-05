@@ -234,8 +234,128 @@ export function createInventory({ db, now = Date.now, log = console.error }) {
     tell(it.id);
   }
 
+  // ---- moves ----
+
+  function roomOf(v) {
+    if (v === null || v === undefined) return null;
+    if (!Number.isInteger(v) || !db.listRooms().some((r) => r.id === v)) throw new InventoryError(400, 'Pick a room', 'roomId');
+    return v;
+  }
+  // When a use happened: now when not given; not in the future (a minute's grace for a clock), not over BACK_DAYS ago.
+  function atOf(v) {
+    const t = now();
+    if (v === undefined || v === null) return t;
+    if (!Number.isInteger(v) || v > t + 60_000 || v < t - BACK_DAYS * DAY_MS) {
+      throw new InventoryError(400, 'Pick a time from the last 400 days up to now', 'at');
+    }
+    return v;
+  }
+  // A purchase's day: today (the time now) or an earlier day of the last BACK_DAYS (12:00 of it).
+  function dayAt(v) {
+    const d = today();
+    if (v === undefined || v === null || v === d) return now();
+    if (!isDay(v) || v > d || v < addDays(d, -BACK_DAYS)) throw new InventoryError(400, 'Pick a day from the last 400 days up to today', 'day');
+    return dayStart(v) + NOON_MS;
+  }
+  // A use-by: none, or a date not before the day bought (`at`).
+  function useByOf(v, at) {
+    if (v === undefined || v === null || v === '') return null;
+    if (!isDay(v)) throw new InventoryError(400, 'Give the use-by as a date', 'useBy');
+    if (v < localDate(at)) throw new InventoryError(400, 'The use-by cannot be before the day it was bought', 'useBy');
+    return v;
+  }
+  const workerOf = (v) => checkWorker(db, v); // the tasks' rule (400, field 'worker')
+  const supplierOf = (v) => textOf(v, 'supplier', 'supplier');
+  const reasonOf = (v) => textOf(v, 'reason', 'reason');
+  function openItem(id) {
+    const it = itemOf(id);
+    if (it.archived) throw new InventoryError(409, 'Bring the item back first: it is archived');
+    return it;
+  }
+
+  // { itemId, qty, total, supplier?, useBy?, day? } → the move. Not a block item: Batches brings blocks in.
+  function purchase(body) {
+    const b = bodyOf(body);
+    const it = openItem(b.itemId);
+    if (it.kind === 'blocks') throw new InventoryError(409, 'Blocks come in from Batches');
+    const qty = qtyOf(b.qty, it.unit);
+    const total = totalOf(b.total);
+    const at = dayAt(b.day);
+    const [move] = db.insertStockMoves([{
+      itemId: it.id, at, qty, refKind: 'purchase', total, unitCost: unitCost(total, qty), supplier: supplierOf(b.supplier), useBy: useByOf(b.useBy, at),
+    }]);
+    tell(it.id);
+    return move;
+  }
+
+  // { itemId, qty (the amount used, over 0), roomId?, reason?, worker, at? } → the move (its qty under 0).
+  function use(body) {
+    const b = bodyOf(body);
+    const it = openItem(b.itemId);
+    const qty = qtyOf(b.qty, it.unit);
+    const fields = { roomId: roomOf(b.roomId), reason: reasonOf(b.reason), worker: workerOf(b.worker), at: atOf(b.at) };
+    const [move] = db.insertStockMoves([{ itemId: it.id, qty: -qty, refKind: 'use', ...fields }]);
+    tell(it.id);
+    return move;
+  }
+
+  // A purchase's qty, total, supplier, useBy, day; a use's qty, roomId, reason, worker, at. A count is deleted and counted
+  // again; a batch move is Batches'. → the move.
+  function editMove(id, body) {
+    const m = moveOf(id);
+    const b = bodyOf(body);
+    if (m.refKind === 'batch') throw new InventoryError(409, 'Change it in Batches');
+    if (m.refKind === 'adjust') throw new InventoryError(409, 'A count is not edited: delete it and count again');
+    const it = db.stockItem(m.itemId);
+    let next;
+    if (m.refKind === 'purchase') {
+      const qty = given(b.qty) ? qtyOf(b.qty, it.unit) : m.qty;
+      const total = given(b.total) ? totalOf(b.total) : m.total;
+      const at = given(b.day) && b.day !== localDate(m.at) ? dayAt(b.day) : m.at;
+      const useBy = useByOf(given(b.useBy) ? b.useBy : m.useBy, at);
+      next = {
+        ...m, qty, total, unitCost: total === null ? m.unitCost : unitCost(total, qty), at,
+        supplier: given(b.supplier) ? supplierOf(b.supplier) : m.supplier, useBy, useBySentAt: useBy === m.useBy ? m.useBySentAt : null,
+      };
+    } else {
+      next = {
+        ...m, qty: given(b.qty) ? -qtyOf(b.qty, it.unit) : m.qty, roomId: given(b.roomId) ? roomOf(b.roomId) : m.roomId,
+        reason: given(b.reason) ? reasonOf(b.reason) : m.reason, worker: given(b.worker) ? workerOf(b.worker) : m.worker,
+        at: given(b.at) ? atOf(b.at) : m.at,
+      };
+    }
+    const saved = db.updateStockMove(m.id, next);
+    tell(m.itemId);
+    return saved;
+  }
+
+  // A purchase (with the throw-outs taken from it), a use or a count; never a batch move.
+  function removeMove(id) {
+    const m = moveOf(id);
+    if (m.refKind === 'batch') throw new InventoryError(409, 'Change it in Batches');
+    db.deleteStockMove(m.id);
+    tell(m.itemId);
+  }
+
+  // What is left of a soon or expired lot, taken from that lot: a use with the reason "Expired" (or "Thrown out" before its
+  // day) and lotId. { worker } → the move.
+  function throwOut(moveId, body) {
+    const b = bodyOf(body);
+    const m = moveOf(moveId);
+    const it = db.stockItem(m.itemId);
+    const lot = itemView(it, db.itemStockMoves(it.id), now()).lots.find((l) => l.moveId === m.id);
+    if (!lot) throw new InventoryError(409, 'Nothing is left of it');
+    if (!lot.state) throw new InventoryError(409, 'It is not near its use-by');
+    const worker = workerOf(b.worker);
+    const [move] = db.insertStockMoves([{
+      itemId: it.id, at: now(), qty: -lot.left, refKind: 'use', reason: lot.state === 'expired' ? 'Expired' : 'Thrown out', worker, lotId: m.id,
+    }]);
+    tell(it.id);
+    return move;
+  }
+
   return {
-    list, item, addItem, editItem, removeItem,
+    list, item, addItem, editItem, removeItem, purchase, use, editMove, removeMove, throwOut,
     onChange(fn) {
       listeners.add(fn);
       return () => listeners.delete(fn);

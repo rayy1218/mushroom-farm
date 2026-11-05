@@ -136,3 +136,126 @@ test('the reorder level is checked again on a unit change; qty-like levels; a bl
   assert.throws(() => inv.editItem(blocks.id, { reorderAt: 1.5 }), refused(400, 'reorderAt'));
   assert.throws(() => inv.editItem(spawn.id, { kind: 'blocks' }), refused(400, 'kind'));
 });
+
+test('a purchase: qty in the unit, the total, the price per unit, the supplier, a use-by, the day', (t) => {
+  const { inv, told } = setup(t);
+  const bleach = inv.addItem({ name: 'Bleach', kind: 'chemical', unit: 'L' });
+  const today = inv.purchase({ itemId: bleach.id, qty: 3, total: 25, supplier: ' Kedai Ali ', useBy: '2026-12-01' });
+  assert.equal(today.at, NOW);
+  assert.equal(today.qty, 3);
+  assert.equal(today.unitCost, 8.333333);
+  assert.equal(today.supplier, 'Kedai Ali');
+  assert.equal(today.refKind, 'purchase');
+  assert.equal(told.at(-1), bleach.id);
+  const back = inv.purchase({ itemId: bleach.id, qty: 1.25, total: 0, day: '2026-11-01' });
+  assert.equal(back.at, Date.parse('2026-11-01T12:00:00+08:00'));
+  assert.equal(back.unitCost, 0);
+  assert.equal(back.useBy, null);
+  for (const [body, field] of [
+    [{ qty: 0, total: 1 }, 'qty'], [{ qty: 1.234, total: 1 }, 'qty'], [{ qty: 100_001, total: 1 }, 'qty'], [{ qty: '3', total: 1 }, 'qty'],
+    [{ qty: 1, total: -1 }, 'total'], [{ qty: 1, total: 1.005 }, 'total'], [{ qty: 1, total: null }, 'total'],
+    [{ qty: 1, total: 1, day: '2026-11-06' }, 'day'], [{ qty: 1, total: 1, day: '2025-09-30' }, 'day'], [{ qty: 1, total: 1, day: '2026-02-30' }, 'day'],
+    [{ qty: 1, total: 1, day: '2026-11-03', useBy: '2026-11-02' }, 'useBy'], [{ qty: 1, total: 1, useBy: 'soon' }, 'useBy'],
+    [{ qty: 1, total: 1, supplier: 'x'.repeat(61) }, 'supplier'],
+  ]) assert.throws(() => inv.purchase({ itemId: bleach.id, ...body }), refused(400, field), JSON.stringify(body));
+  assert.throws(() => inv.purchase({ itemId: 999, qty: 1, total: 1 }), refused(404));
+  const bags = inv.addItem({ name: 'Bags', kind: 'bags', unit: 'pcs' });
+  assert.throws(() => inv.purchase({ itemId: bags.id, qty: 1.5, total: 1 }), refused(400, 'qty'));
+});
+
+test('no purchase of a block item (Batches brings blocks in); nothing new on an archived item', (t) => {
+  const { db, inv } = setup(t);
+  const blocks = db.insertStockItem({ name: 'Grey oyster blocks', kind: 'blocks', unit: 'blocks' });
+  assert.throws(() => inv.purchase({ itemId: blocks.id, qty: 10, total: 10 }), refused(409));
+  const old = inv.addItem({ name: 'Old', kind: 'other', unit: 'pcs' });
+  inv.editItem(old.id, { archived: true });
+  assert.throws(() => inv.purchase({ itemId: old.id, qty: 1, total: 1 }), refused(409));
+  assert.throws(() => inv.use({ itemId: old.id, qty: 1, worker: 'Ali' }), refused(409));
+});
+
+test('a use: taken off, with the room, the reason and who; more than in stock is allowed', (t) => {
+  const { db, inv } = setup(t);
+  const room = db.createRoom(ROOM, 1000);
+  const bleach = inv.addItem({ name: 'Bleach', kind: 'chemical', unit: 'L' });
+  const used = inv.use({ itemId: bleach.id, qty: 2, roomId: room.id, reason: 'Footbath', worker: 'Ali' });
+  assert.equal(used.qty, -2);
+  assert.equal(used.roomId, room.id);
+  assert.equal(used.reason, 'Footbath');
+  assert.equal(used.worker, 'Ali');
+  assert.equal(used.at, NOW);
+  assert.equal(inv.item(bleach.id).qty, -2);
+  const back = inv.use({ itemId: bleach.id, qty: 1, worker: 'Ali', at: NOW - 3_600_000 });
+  assert.equal(back.at, NOW - 3_600_000);
+  assert.equal(back.roomId, null);
+  const blocks = db.insertStockItem({ name: 'Grey oyster blocks', kind: 'blocks', unit: 'blocks' });
+  assert.equal(inv.use({ itemId: blocks.id, qty: 12, reason: 'Contaminated', worker: 'Ali' }).qty, -12, 'block items take uses');
+  assert.throws(() => inv.use({ itemId: bleach.id, qty: 1, roomId: 999, worker: 'Ali' }), refused(400, 'roomId'));
+  assert.throws(() => inv.use({ itemId: bleach.id, qty: 1 }), refused(400, 'worker'));
+  assert.throws(() => inv.use({ itemId: bleach.id, qty: 1, worker: 'Ali', at: NOW + 120_000 }), refused(400, 'at'));
+  assert.throws(() => inv.use({ itemId: bleach.id, qty: 1, worker: 'Ali', at: NOW - 401 * 86_400_000 }), refused(400, 'at'));
+});
+
+test('who: one of the active workers when the farm has a list, as the list spells it', (t) => {
+  const { db, inv } = setup(t);
+  db.setWorkers([{ name: 'Ali', active: true }]);
+  const bleach = inv.addItem({ name: 'Bleach', kind: 'chemical', unit: 'L' });
+  assert.equal(inv.use({ itemId: bleach.id, qty: 1, worker: 'ali' }).worker, 'Ali');
+  assert.throws(() => inv.use({ itemId: bleach.id, qty: 1, worker: 'Siti' }), refused(400, 'worker'));
+});
+
+test('edit a purchase or a use; a changed use-by may be told again; a count and a batch move are not edited', (t) => {
+  const { db, inv } = setup(t);
+  const bleach = inv.addItem({ name: 'Bleach', kind: 'chemical', unit: 'L' });
+  const buy = inv.purchase({ itemId: bleach.id, qty: 3, total: 25, useBy: '2026-11-10' });
+  db.setStockUseBySent(buy.id, NOW);
+  const same = inv.editMove(buy.id, { total: 30, supplier: 'Kedai Ali' });
+  assert.equal(same.unitCost, 10);
+  assert.equal(same.supplier, 'Kedai Ali');
+  assert.equal(same.useBySentAt, NOW, 'the same use-by: not told again');
+  const moved = inv.editMove(buy.id, { useBy: '2026-11-20', day: '2026-11-02' });
+  assert.equal(moved.useBySentAt, null);
+  assert.equal(moved.at, Date.parse('2026-11-02T12:00:00+08:00'));
+  assert.throws(() => inv.editMove(buy.id, { useBy: '2026-11-01' }), refused(400, 'useBy'));
+  const used = inv.use({ itemId: bleach.id, qty: 1, worker: 'Ali', reason: 'Footbath' });
+  const edited = inv.editMove(used.id, { qty: 2, reason: 'Cleaning', roomId: null });
+  assert.equal(edited.qty, -2);
+  assert.equal(edited.reason, 'Cleaning');
+  assert.equal(edited.worker, 'Ali');
+  const [count] = db.insertStockMoves([{ itemId: bleach.id, at: NOW, qty: 0, refKind: 'adjust', counted: 1 }]);
+  assert.throws(() => inv.editMove(count.id, { qty: 1 }), refused(409));
+  const [batch] = db.insertStockMoves([{ itemId: bleach.id, at: NOW, qty: -1, refKind: 'batch', refId: 3 }]);
+  assert.throws(() => inv.editMove(batch.id, { qty: 1 }), refused(409));
+  assert.throws(() => inv.removeMove(batch.id), refused(409));
+  assert.throws(() => inv.editMove(999, { qty: 1 }), refused(404));
+});
+
+test('delete a record; a purchase takes its throw-outs with it', (t) => {
+  const { inv, told } = setup(t);
+  const spawn = inv.addItem({ name: 'Spawn', kind: 'spawn', unit: 'kg' });
+  const buy = inv.purchase({ itemId: spawn.id, qty: 3, total: 30, useBy: '2026-11-08' });
+  assert.equal(inv.throwOut(buy.id, { worker: 'Ali' }).lotId, buy.id);
+  inv.removeMove(buy.id);
+  assert.deepEqual(inv.item(spawn.id).moves, []);
+  assert.equal(told.at(-1), spawn.id);
+  assert.throws(() => inv.removeMove(buy.id), refused(404));
+});
+
+test('throw out: what is left of a soon or expired lot, from that lot, with the words for it', (t) => {
+  const { inv, setNow } = setup(t);
+  const spawn = inv.addItem({ name: 'Spawn', kind: 'spawn', unit: 'kg' });
+  const old = inv.purchase({ itemId: spawn.id, qty: 2, total: 20, day: '2026-10-20' });
+  const soon = inv.purchase({ itemId: spawn.id, qty: 3, total: 30, useBy: '2026-11-08' });
+  const later = inv.purchase({ itemId: spawn.id, qty: 1, total: 10, useBy: '2026-12-30' });
+  inv.use({ itemId: spawn.id, qty: 1, worker: 'Ali' });
+  const thrown = inv.throwOut(soon.id, { worker: 'Ali' });
+  assert.equal(thrown.qty, -3);
+  assert.equal(thrown.reason, 'Thrown out');
+  assert.equal(thrown.refKind, 'use');
+  assert.deepEqual(inv.item(spawn.id).lots.map((l) => [l.moveId, l.left]), [[old.id, 1], [later.id, 1]]);
+  assert.throws(() => inv.throwOut(soon.id, { worker: 'Ali' }), refused(409), 'nothing left');
+  assert.throws(() => inv.throwOut(later.id, { worker: 'Ali' }), refused(409), 'not near its use-by');
+  setNow(Date.parse('2026-12-31T09:00:00+08:00'));
+  assert.throws(() => inv.throwOut(later.id, {}), refused(400, 'worker'));
+  assert.equal(inv.throwOut(later.id, { worker: 'Ali' }).reason, 'Expired');
+  assert.throws(() => inv.throwOut(999, { worker: 'Ali' }), refused(404));
+});
