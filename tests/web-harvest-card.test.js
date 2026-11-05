@@ -176,7 +176,7 @@ test("This run: the run's batches read with its harvests under the same token, a
   assert.equal((card.match(/batchLineFor/g) ?? []).length, 2, 'only in This run');
 });
 
-// ---- Costs ---- (the Business audit, 2026-11-05): the run's profit so far, a muted line to the Costs page
+// ---- Costs ---- (the Business audit, 2026-11-05): the run's profit so far, a muted line to the run page
 test("This run: the run's profit from Costs' summary, read with the harvests, a muted link to Costs; again on 'costs' and 'sales'", () => {
   assert.ok(card.includes("import { runProfitLine } from './costs-math.js';"));
   assert.ok(card.includes("return { runId: run.id, reply: await request('GET', `/api/costs/summary?run=${run.id}`) };"));

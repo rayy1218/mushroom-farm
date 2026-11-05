@@ -380,8 +380,8 @@ test("the chart's words for a screen reader: the months in sum, the highest and 
 });
 
 test("the Harvest tab's profit line of the run (Costs' summary)", () => {
-  assert.equal(runProfitLine({ total: 640, income: 900, profit: 260 }), `Profit so far RM${NB}260.00${DOT}Costs`);
-  assert.equal(runProfitLine({ total: 640, income: 300, profit: -340 }), `Loss so far RM${NB}340.00${DOT}Costs`, 'a loss in words');
+  assert.equal(runProfitLine({ total: 640, income: 900, profit: 260 }), `Profit so far RM${NB}260.00${DOT}Run page`);
+  assert.equal(runProfitLine({ total: 640, income: 300, profit: -340 }), `Loss so far RM${NB}340.00${DOT}Run page`, 'a loss in words');
   assert.equal(runProfitLine({ total: 0, income: 0, profit: 0 }), null, 'Costs has nothing');
   assert.equal(runProfitLine({ total: null, income: 300, profit: null }), null, 'still worked out');
   assert.equal(runProfitLine(null), null);

@@ -278,12 +278,12 @@ export function profitBars(months, shown, width, height, m = BARS_M) {
 }
 
 // ---- the Harvest tab's line (2026-11-05, the Business audit) ----
-// The run's profit from GET /api/costs/summary?run=: "Profit so far RM 260.00 · Costs" ("Loss so far RM 340.00" for a loss,
+// The run's profit from GET /api/costs/summary?run=: "Profit so far RM 260.00 · Run page" ("Loss so far RM 340.00" for a loss,
 // in words); null while it is worked out or when Costs has nothing for the run.
 export function runProfitLine(s) {
   if (!s || !finite(s.profit) || !finite(s.total) || (s.total === 0 && !(s.income > 0))) return null;
   const text = moneyText(s.profit);
-  return isLoss(text) ? `Loss so far ${text.slice(MINUS.length)}${DOT}Costs` : `Profit so far ${text}${DOT}Costs`;
+  return isLoss(text) ? `Loss so far ${text.slice(MINUS.length)}${DOT}Run page` : `Profit so far ${text}${DOT}Run page`;
 }
 
 // ---- the dialogs (web/costs-dialogs.js) ----
