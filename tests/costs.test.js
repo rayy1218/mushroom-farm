@@ -74,12 +74,13 @@ test('the checks', (t) => {
   refused(() => s.costs.add({ ...ok, date: '2026-11-16' }), 400, 'Pick a date up to today', 'date');
   refused(() => s.costs.add({ ...ok, date: '2026-02-30' }), 400, 'Pick a date up to today', 'date');
   refused(() => s.costs.add({ ...ok, category: 'equipment' }), 400, 'Pick a category', 'category');
-  refused(() => s.costs.add({ ...ok, amount: 0 }), 400, 'The amount must be a number over 0 up to RM 1,000,000', 'amount');
-  refused(() => s.costs.add({ ...ok, amount: '10' }), 400, 'The amount must be a number over 0 up to RM 1,000,000', 'amount');
+  refused(() => s.costs.add({ ...ok, amount: 0 }), 400, 'Enter an amount over RM 0, up to RM 1,000,000', 'amount');
+  refused(() => s.costs.add({ ...ok, amount: '10' }), 400, 'Enter an amount over RM 0, up to RM 1,000,000', 'amount');
   refused(() => s.costs.add({ ...ok, roomId: 999 }), 400, 'That container no longer exists', 'roomId');
   refused(() => s.costs.add({ ...ok, note: 'x'.repeat(201) }), 400, 'The note must be at most 200 characters', 'note');
   refused(() => s.costs.add({ ...ok, repeat: 'weekly' }), 400, 'Repeat must be monthly or none', 'repeat');
-  refused(() => s.costs.add({ ...ok, category: 'labour' }), 400, 'Pick who did it', 'worker');
+  refused(() => s.costs.add({ ...ok, category: 'labour' }), 400, 'Pick who was paid', 'worker');
+  refused(() => s.costs.add({ ...ok, category: 'labour', worker: '  ' }), 400, 'Pick who was paid', 'worker');
   refused(() => s.costs.add({ ...ok, category: 'utilities' }), 400, 'Pick electricity, water or other', 'utility');
   const bill = { ...ok, category: 'utilities', utility: 'electricity' };
   refused(() => s.costs.add({ ...bill, repeat: 'monthly' }), 400, 'An electricity or water bill is entered each month', 'repeat');
@@ -233,7 +234,7 @@ test('the worker is checked only when it changes or the cost becomes labour', (t
 test('the checks of a Change, an edit and the date\'s lower bound', (t) => {
   const s = setup(t);
   const rent = s.costs.add({ date: '2026-08-31', category: 'rent', amount: 1500, repeat: 'monthly' });
-  refused(() => s.costs.change(rent.id, { from: '2026-10' }), 400, 'The amount must be a number over 0 up to RM 1,000,000', 'amount');
+  refused(() => s.costs.change(rent.id, { from: '2026-10' }), 400, 'Enter an amount over RM 0, up to RM 1,000,000', 'amount');
   refused(() => s.costs.edit(rent.id, { repeat: null }), 400, 'Repeat changes through Change or Stop', 'repeat');
   const plain = s.costs.add({ date: '2026-11-03', category: 'repairs', amount: 10 });
   refused(() => s.costs.edit(plain.id, { repeat: 'monthly' }), 400, 'Repeat changes through Change or Stop', 'repeat');
@@ -276,4 +277,19 @@ test('a sale at 23:30 farm time on a range\'s first day counts; an explicit past
   assert.deepEqual(oct.entries.map((e) => e.date), ['2026-10-05']);
   assert.equal(oct.last12.at(-1).month, '2026-10');
   assert.equal(oct.runs.length, 1, 'the run open through October');
+});
+
+test('a bill in Entries carries what it adds: the unmeasured part, null while the energy is worked out', async (t) => {
+  const s = setup(t);
+  const bill = s.costs.add({ date: '2026-11-03', category: 'utilities', utility: 'electricity', amount: 80 });
+  const water = s.costs.add({ date: '2026-11-04', category: 'utilities', utility: 'water', amount: 50 });
+  s.costs.add({ date: '2026-11-05', category: 'repairs', amount: 10 });
+  const cold = s.costs.monthView({});
+  assert.equal(cold.entries.find((e) => e.costId === bill.id).topUp, null, 'pending: not known yet');
+  await s.costs.warmed();
+  const view = s.costs.monthView({});
+  const by = (id) => view.entries.find((e) => e.costId === id);
+  assert.equal(by(bill.id).topUp, 80, 'no readings: all of it unmeasured');
+  assert.equal(by(water.id).topUp, 50, 'no water price: the water bill counts in full');
+  assert.equal(view.entries.find((e) => e.category === 'repairs').topUp, undefined, 'only a bill');
 });

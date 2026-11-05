@@ -14,6 +14,7 @@ import {
 export const MAX_AMOUNT = 1_000_000;
 export const MAX_NOTE = 200;
 export const MAX_BILL_DAYS = 62;
+const AMOUNT_MESSAGE = 'Enter an amount over RM 0, up to RM 1,000,000'; // web/costs-math.js says the same
 const UTILITIES = ['electricity', 'water', 'other'];
 const DAY = 86_400_000;
 
@@ -130,21 +131,29 @@ export function createCosts({ db, now = Date.now, zone = localZone, log = consol
     ...runTotals(r, figs, t),
   });
 
-  // The month's charges of the costs entered by hand, newest first.
-  function entriesOf(month, data) {
+  // An electricity or water bill's top-up in the month's figures f (section 4): its "Unmeasured" line's amount; 0 when it adds
+  // nothing (the measured cost covers it); null while a bill's top-up is worked out.
+  function topUpOf(c, f) {
+    const line = f.lines.find((l) => l.source === 'bill' && l.costId === c.id);
+    return line ? line.amount : f.sharedPending ? null : 0;
+  }
+
+  // The month's charges of the costs entered by hand, newest first; a bill with its topUp. f: the month's figures.
+  function entriesOf(month, data, f) {
     return data.costs.flatMap((c) => chargesOf(c, firstDayOf(month), lastDayOf(month), data.today).map(({ date }) => ({
       costId: c.id, date, category: c.category, label: CATEGORY_LABELS[c.category], worker: c.worker, note: c.note,
       roomId: c.roomId, roomName: c.roomId === null ? null : data.rooms.get(c.roomId) ?? null, amount: c.amount,
       repeat: c.repeat, utility: c.utility, periodFrom: c.periodFrom, periodTo: c.periodTo,
+      ...(c.category === 'utilities' && BILLS.includes(c.utility) ? { topUp: topUpOf(c, f) } : {}),
     }))).sort((a, b) => (a.date === b.date ? b.costId - a.costId : a.date < b.date ? 1 : -1));
   }
 
-  // Who was paid: the tasks' rule (an active worker when the farm has a list).
+  // Who was paid: the tasks' rule (an active worker when the farm has a list); no name is "Pick who was paid" here.
   function workerOf(worker) {
     try {
       return checkWorker(db, worker);
     } catch (err) {
-      if (err instanceof TaskError) throw new CostError(err.status, err.message, 'worker');
+      if (err instanceof TaskError) throw new CostError(err.status, err.message === 'Pick who did it' ? 'Pick who was paid' : err.message, 'worker');
       throw err;
     }
   }
@@ -168,7 +177,7 @@ export function createCosts({ db, now = Date.now, zone = localZone, log = consol
     if (!CATEGORIES.includes(category)) throw new CostError(400, 'Pick a category', 'category');
     const given = pick('amount');
     const amount = typeof given === 'number' && Number.isFinite(given) ? Math.round(given * 100) / 100 : NaN;
-    if (!(amount > 0 && amount <= MAX_AMOUNT)) throw new CostError(400, 'The amount must be a number over 0 up to RM 1,000,000', 'amount');
+    if (!(amount > 0 && amount <= MAX_AMOUNT)) throw new CostError(400, AMOUNT_MESSAGE, 'amount');
     const roomId = pick('roomId') ?? null;
     if (roomId !== null && !(Number.isInteger(roomId) && db.getRoom(roomId))) throw new CostError(400, 'That container no longer exists', 'roomId');
     const text = pick('note') ?? '';
@@ -254,7 +263,7 @@ export function createCosts({ db, now = Date.now, zone = localZone, log = consol
       const c = monthlyOf(id);
       const b = bodyOf(body);
       const from = monthIn(b.from, c, 'from');
-      if (b.amount === undefined) throw new CostError(400, 'The amount must be a number over 0 up to RM 1,000,000', 'amount');
+      if (b.amount === undefined) throw new CostError(400, AMOUNT_MESSAGE, 'amount');
       const fields = fieldsOf({ amount: b.amount, note: b.note ?? c.note }, c);
       if (from === monthOf(c.date)) {
         const started = db.updateCost(id, fields);
@@ -301,7 +310,7 @@ export function createCosts({ db, now = Date.now, zone = localZone, log = consol
           kgHarvested: f.kgHarvested, kgSold: f.kgSold, unsold: f.unsold, incomplete: f.incomplete,
         },
         notes: f.notes, byCategory: f.byCategory, pending: f.pending,
-        entries: entriesOf(m, data),
+        entries: entriesOf(m, data, f),
         repeating: data.costs.filter((c) => c.repeat === 'monthly' && monthOf(c.date) <= m && (c.repeatUntil === null || c.repeatUntil >= m))
           .map((c) => ({ ...c, roomName: c.roomId === null ? null : data.rooms.get(c.roomId) ?? null })),
         runs: runs.map((r) => runView(r, figs, t)),
