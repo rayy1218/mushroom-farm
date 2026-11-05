@@ -112,7 +112,7 @@ export function createHarvests({ db, now = Date.now, zone = localZone, log = con
   // 2026-11-05-batches-design.md 3.2); its price, and every other crop, as Settings → Yield.
   function yieldOf(cropYield, runId) {
     const out = { ...cropYield };
-    for (const [crop, dryKg] of Object.entries(batchDryKg(runId))) out[crop] = { priceKg: cropYield[crop]?.priceKg ?? null, dryKg };
+    for (const [crop, dryKg] of Object.entries(batchDryKg(runId))) out[crop] = { priceKg: null, ...cropYield[crop], dryKg };
     return out;
   }
 
