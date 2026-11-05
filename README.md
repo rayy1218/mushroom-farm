@@ -68,6 +68,20 @@ Machines work the same way: add a relay module and an aircon gateway on the devi
 
 **Harvest and yield.** Each room has a **Harvest** tab (between Tasks and Simulations; `#/rooms/<id>/harvest`) and the top bar has **Harvest** (`#/harvest`, between Calendar and Overview). A harvest comes from a harvest check's **Done** (one kg box per crop in a mixed room) or from **Record a harvest** on the tab; each is stamped with the room's run, crop, stage, flush and blocks. A run starts with a room's crops and ends with New blocks or when the crops are cleared, so past runs keep their figures. The tab shows kg, kg per block, biological efficiency (BE), RM value and cost per kg (electricity and water over the run's days) for the run, its flushes and its harvests (Edit changes the kg and time; Delete is inside the dialog). The Harvest page shows the farm's kg for 7 days, 30 days, 13 weeks or 12 months, by room and by crop, with **Export CSV**, and **myGAP sheet** (`#/harvest/sheet`), a printable myGAP 4-6 production and sales record with the sales columns left blank. Settings → **Yield** takes each crop's dry substrate per block (kg) and price (RM per kg); the Overview has a Harvest card. Routes: `GET` and `POST /api/rooms/:id/harvests`, `PUT` and `DELETE /api/harvests/:id`, `GET /api/harvest?days=7|30|90|365`, `GET /api/harvest.csv?days=` and `POST /api/tasks/:id/done` with `{ worker, amounts: { <crop>: kg } }` for a mixed room. The harvest needs database 20: the farm app moves the database up on its first start (copy `data/v2.db` first, for instance to `data/v2-before-harvest.db`). Spec: `docs/superpowers/specs/2026-11-04-harvest-design.md`.
 
+**Sales.** The Sales page (`#/business/sales`, with `?days=7|30|90|365`) records what the farm sells: a delivery to one buyer on a date, with a line per crop (kg, RM per kg and, if you want, the room), the buyer's own reference (their invoice or receipt number) and a note. **Record a sale** pre-fills the price from the buyer's usual price, else Settings → Yield's expected price, and asks once about an unlikely price or weight. Buyers are a kept list (name, phone, note, a usual price per crop); a buyer with sales is archived, not deleted. Each delivery is paid or unpaid: **Mark paid** takes the date, and the page shows what each buyer owes (all time), sold kg against harvested kg, and the average price got against the expected price, by crop. The myGAP 4-6 sheet gets a row for each sale line. Harvest's "RM value" is now called "Expected value". The sales need database 23: the farm app moves the database up on its first start (copy `data/v2.db` first, for instance to `data/v2-before-sales.db`). Spec: `docs/superpowers/specs/2026-11-05-sales-design.md`.
+
+| Route | What |
+|---|---|
+| `GET /api/sales?days=7\|30\|90\|365` | The page: deliveries, totals, owed, by crop, by buyer |
+| `GET /api/sales/range?from=&to=` | The sale lines for the myGAP sheet (400 days at most) |
+| `GET /api/sales/summary?from=&to=&run=` | kg and RM in total, by crop and by run (for Costs) |
+| `GET /api/sales.csv?days=` | One row per sale line |
+| `POST /api/sales` | Record a delivery: `{ soldAt, buyerId, invoiceNo?, note?, lines: [{ crop, kg, priceKg, roomId? }] }` |
+| `PUT` and `DELETE /api/sales/deliveries/:id` | Replace a delivery's lines; delete it |
+| `PUT /api/sales/deliveries/:id/paid` | `{ paidAt: ms }` marks paid, `{ paidAt: null }` unpaid |
+| `GET` and `POST /api/buyers` | List the buyers with their sales count and owed; add one |
+| `PUT` and `DELETE /api/buyers/:id` | Edit, archive or restore; delete (409 when the buyer has sales) |
+
 The farm app polls every wired sensor and machine every reading interval (5 s by default; change it on the Settings page, 1–300 s). A sensor is **online** when the latest poll answered, **timeout** after 1–2 failed polls in a row, **offline** after 3 or more. Stop the device app to see what a dead gateway looks like.
 
 ### Farm app settings

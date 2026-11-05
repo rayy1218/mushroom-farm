@@ -386,7 +386,7 @@ The room's picture keeps its representation: the air path, the condenser outside
 
 | Part | Design |
 |---|---|
-| Run card (room tab) | **This run**: start, crops and blocks, tiles (kg, kg per block, BE, RM value, cost per kg; two a row on a phone, an odd last tile the whole row), the notes right under the tiles, the flushes table, then the harvest rows with one Edit each (Delete sits inside the Edit dialog, a quiet red button at its start). Past runs are a table, each run opening its flushes and harvests |
+| Run card (room tab) | **This run**: start, crops and blocks, tiles (kg, kg per block, BE, Expected value, cost per kg; two a row on a phone, an odd last tile the whole row), the notes right under the tiles, the flushes table, then the harvest rows with one Edit each (Delete sits inside the Edit dialog, a quiet red button at its start). Past runs are a table, each run opening its flushes and harvests |
 | Farm page | Segments 7 days, 30 days, 13 weeks, 12 months over a bar chart in `--s-harvest` (day, week or month bars); tiles; By room and By crop; Export CSV and myGAP sheet |
 | myGAP sheet | `#/harvest/sheet`, a print page in light colours with no top bar: the 4-6 form's columns, the sales cells blank to write in, a "Farm:" line left blank (the app does not know the farm's name) |
 | Overview card | Beside Energy: kg today, 7 days and 30 days, the 30-day value, a 48 px strip of the 30 days with no axis |
@@ -407,6 +407,41 @@ The room's picture keeps its representation: the air path, the condenser outside
 | Legend | Each box as it shows, 18 px, with its words: to do · done, initials · missed · skipped · not due · planned · ≈ date estimated. One list for the grid and the sheet |
 | Keyboard | One Tab stop; arrow keys move, Home and End to the row's ends (with Ctrl, the grid's); the focus returns to the box after a dialog or the menu. Every box has a name for a screen reader: "Footbath, Wednesday 4 November: done by Sara at 08:12" |
 | Month sheet | `#/rooms/7/tasks/sheet?month=2026-11`, a print page in light colours with no top bar: A4 portrait for 12 columns or fewer, landscape above over two pages (1st to 15th, then the rest); every row 6.6 mm to write in, so a 31-day month keeps its foot on one portrait page. A "Farm:" line left blank and "Sheet reviewed by: ____ (Management) on ____" at the foot, the month's days down ("1 Su", each Sunday ruled off) and the tasks across with the unit in brackets ("Harvest AM (kg)") and their heads sideways when narrow, an Initials column for the pen (none in a month gone by). Days gone are filled from the app: "✓ AL"; "✓ 19.59" over the initials; ✗ the heaviest mark (1.3 em, 800; amber on screen, black on paper); —; shaded not due. Days ahead are blank with the planned boxes outlined (dashed on screen, square solid cells on paper). On a phone the day column stays while the rest scrolls sideways |
+
+### Sales
+(2026-11-05, owner: what the farm sells, to whom, and what is owed; spec `docs/superpowers/specs/2026-11-05-sales-design.md`.) `#/business/sales` (`?days=7|30|90|365`, 30 without one), a page of the Business group: no top-bar entry of its own until the integrator adds "Business". Where each part lives:
+
+| Part | Design |
+|---|---|
+| Head | "Sales", the line "What was sold, to whom, and what is owed.", the period as Harvest's segmented control (7 days, 30 days, 13 weeks, 12 months), then **Record a sale** (primary), **Buyers** and **Export CSV**. On a phone the buttons take the full width |
+| Totals card | Titled with the period's dates ("6 Oct – 4 Nov 2026"). Three tiles: **Sold** (kg, "of 64.5 kg harvested"), **Income** (RM) and **Owed**. Owed is all time: its line reads "3 sales · oldest 12 days", starts with "all time" when the period is shorter than the oldest unpaid day, and reads "RM 0.00" with "All paid" when nothing is owed |
+| Owed card | Only when something is owed. One row per buyer, most owed first: the name (a quiet underlined button, 44 px), the RM owed at the right, the oldest in days. The name opens that buyer's unpaid sales under it: date, the lines in short, total, reference and **Mark paid** |
+| Sales list | The period's deliveries, newest first. From 900 px a row of columns: date ("Thu 5 Nov"), buyer, the lines in short ("Grey oyster 12.00 kg · Pink oyster 4.50 kg"), total RM (right-aligned, tabular figures), the paid mark, the reference (muted) and one quiet **Edit**. Below 900 px a block: date and buyer, the lines, then total, mark and reference, **Edit** at the right. The latest 20 (10 on a phone), then **Show all N**. Long buyer names and references wrap, they do not push the row wider |
+| Paid mark | Text: "Paid 9 Nov" in the ink, "Unpaid" in `warning-text` at 600. Never colour alone |
+| By crop | A table: crop (picture and name), Sold, Harvested, Income, Average RM per kg, Expected RM per kg. The price got against the expected is said in words under the average ("RM 1.20 under expected", "RM 0.80 over expected", "as expected"), with no colour verdict: a muted `fs-sm` line on a phone, hidden from 601 px where the two price columns sit side by side. On a phone Harvested and Expected are left out so the table fits 390 px with no inner scroll |
+| By buyer | A table: buyer, kg, Income, Owed (all time). Hidden when the period has no sales |
+| Empty | No sales in the period: the totals stay (Sold "0.0 kg", Income "RM 0.00"), the list says "No sales in the last 30 days." (the segment's words), By buyer hides and By crop shows only the crops harvested in the period. No buyers at all: "No buyers yet. Record a sale to add the first." |
+| Focus | A repaint (a live event, a save, Show all, opening an Owed row) keeps the focus on the same control: Edit, Mark paid and the Owed name carry a `data-focus-key` and the page refocuses it after drawing. A dialog gives the focus back to the button that opened it |
+
+| Dialog | Design |
+|---|---|
+| Record a sale / Edit sale | Its own dialog (`.sl-dialog`, 820 px wide from 900 px), not Harvest's. Fields: **Date** (today by default, the day in words under it), **Buyer** (the active buyers A to Z, then "New buyer…"), **Buyer's reference** (optional), the lines, **Note** (optional). With no buyers it opens on "New buyer…" |
+| New buyer in place | "New buyer…" opens two boxes under the picker, name and phone; the buyer is made with the sale. Two a row, one a row on a phone |
+| A line | **Crop** (the crop list in its order, a crop used on another line left out), **kg**, **RM per kg** (the "RM" mark at the left of the box), **Room** (a room by name, or "Mixed"), the line's total at its end and **Remove** (with two lines or more). **Add a crop** under the lines (off at 9 lines or when every crop is used). Up to 899 px a line is two boxes a row; from 900 px one row, with the labels said once above the first line and the boxes on shared rows so they stay level |
+| The "expected" mark | A price filled from Settings → Yield shows the muted word "expected" beside its box until the box is changed. A buyer's usual price fills with no mark. A typed price is never overwritten |
+| Amber question | An unlikely value (RM per kg over 3 times the crop's expected price, or kg over 500) is asked once, under the box in amber ("That's 3.4 times the expected RM 12.00 per kg. Is RM 41.00 right?"), and the primary button reads "Record anyway" ("Save anyway"). The same values sent again go through; a changed value is asked again. The label goes back to plain after a send and on any change to a line |
+| Foot | The delivery's kg and total ("16.50 kg · RM 214.50"), right-aligned, above the buttons |
+| Edit | The same dialog with a quiet red **Delete this sale** at the start of the footer (it opens a confirm). An edit keeps the sale's time unless its date changes (then 12:00). A paid sale shows "Paid 9 Nov" and a quiet **Mark unpaid** |
+| Mark paid | A small dialog with **Paid on** (today by default); opened from the Owed card and from the Edit dialog |
+| Buyers | **Buyers**: a list, each row with name, phone, the usual prices in short and the owed sum, and **Edit**; archived buyers under an "Archived" heading, muted, with **Restore**; **Add a buyer**. Edit: name, phone, note and a usual-price box per crop (two or more a row); at its foot a quiet **Archive**, or **Delete buyer** when the buyer has no sales (it asks first). A buyer with sales cannot be deleted: archive instead |
+| Held while sending | Cancel, Delete this sale, Archive and Restore are held while a request is out. A late answer from a closed dialog goes to the page, not to the dialog |
+
+| Other | Design |
+|---|---|
+| Classes | One `/* ---- Sales ---- */ ... /* ---- end Sales ---- */` block at the end of `web/styles.css`, classes `.sl-`, tokens only. It reuses `.field`, `.tk-suffix-box`, `.tk-group-fields`, the cards, tiles and tables of Harvest |
+| Sizes | 390, 768, 1024 and 1440 px, both themes. Phone targets 44 px. Breakpoints 600 px (phone tables, one-column new buyer) and 900 px (the list as columns, the dialog's line in one row) |
+| myGAP sheet | The 4-6 sheet adds a row for each sale line, after its day's harvest rows: Date, Crop, Block / location ("Room 1 · run of 3 Oct" or "Mixed"), Sold (kg), Price / kg (RM), Total (RM), Invoice No. (the buyer's reference) and Buyer. The harvest rows' sales cells stay blank. The Total row adds sold kg and RM. If the sales cannot be read, the harvest rows stay and a line above the table says "Sales could not be read: the sales columns are blank." |
+| Words | RM "RM 1,240.50", kg to 1 decimal in totals and 2 in a line, a price "RM 12.00", days "12 days", "1 day", "today". Harvest's figure is **Expected value** (not "RM value"); Sales' is **Income**: one name for each figure |
 
 ## Do's and Don'ts
 
