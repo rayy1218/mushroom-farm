@@ -347,6 +347,7 @@ function salesQ(db) {
     renameSales: db.prepare('UPDATE sales SET buyer = ? WHERE buyer_id = ?'),
     deleteBuyer: db.prepare('DELETE FROM buyers WHERE id = ?'),
     buyerSales: db.prepare('SELECT COUNT(DISTINCT delivery_id) AS n FROM sales WHERE buyer_id = ?'),
+    buyerSalesAll: db.prepare('SELECT buyer_id, COUNT(DISTINCT delivery_id) AS n FROM sales GROUP BY buyer_id'),
   };
   salesStatements.set(db, s);
   return s;
@@ -2193,6 +2194,11 @@ export function openDb(path, { log = console.error } = {}) {
     // How many deliveries the buyer has.
     buyerSaleCount(id) {
       return salesQ(db).buyerSales.get(id).n;
+    },
+
+    // Every buyer's delivery count: Map buyerId → n (buyers with none are absent).
+    buyerSaleCounts() {
+      return new Map(salesQ(db).buyerSalesAll.all().map((r) => [r.buyer_id, r.n]));
     },
     // ---- end Sales ----
 

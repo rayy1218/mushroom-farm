@@ -24,6 +24,7 @@ function dateOf(v, field) {
 export function createSales({ db, now = Date.now, log = console.error }) {
   const listeners = new Set();
 
+  // Calls every listener; one that throws is logged and the rest still run.
   function tell() {
     for (const fn of [...listeners]) {
       try {
@@ -34,20 +35,21 @@ export function createSales({ db, now = Date.now, log = console.error }) {
     }
   }
 
-  // The rows' deliveries with their rooms', runs' and buyers' words.
-  function deliveries(rows) {
-    const rooms = new Map(db.listRooms().map((r) => [r.id, r]));
+  // The rows' deliveries with their rooms', runs' and buyers' words (rooms and buyers may be passed when already read).
+  function deliveries(rows, rooms = new Map(db.listRooms().map((r) => [r.id, r])), buyerList = db.listBuyers()) {
     const runs = new Map();
     for (const r of rows) if (r.runId !== null && !runs.has(r.runId)) runs.set(r.runId, db.getRunById(r.runId));
-    const buyers = new Map(db.listBuyers().map((b) => [b.id, b]));
+    const buyers = new Map(buyerList.map((b) => [b.id, b]));
     return deliveriesOf(rows, { rooms, runs, buyers });
   }
 
+  // One delivery by its id, or null.
   function delivery(id) {
     const rows = db.deliveryLines(id);
     return rows.length ? deliveries(rows)[0] : null;
   }
 
+  // The delivery's first row, else a 404.
   function existing(id) {
     const rows = db.deliveryLines(id);
     if (!rows.length) throw new SalesError(404, 'Sale not found');
@@ -81,10 +83,12 @@ export function createSales({ db, now = Date.now, log = console.error }) {
     return { from, to };
   }
 
+  // The sale rows from one farm day to another, inclusive.
   const rowsBetween = (from, to) => db.salesBetween(dayStart(from), dayStart(addDays(to, 1)) - 1);
 
-  function buyerView(b, owed) {
-    return { ...b, sales: db.buyerSaleCount(b.id), owed: owed.buyers.find((o) => o.buyerId === b.id)?.total ?? 0 };
+  // A buyer with its deliveries' count and what it owes.
+  function buyerView(b, sales, owed) {
+    return { ...b, sales, owed };
   }
 
   return {
@@ -105,6 +109,7 @@ export function createSales({ db, now = Date.now, log = console.error }) {
       return delivery(id);
     },
 
+    // Delete a delivery and its lines.
     remove(id) {
       existing(id);
       db.deleteDelivery(id);
@@ -124,9 +129,11 @@ export function createSales({ db, now = Date.now, log = console.error }) {
     view({ days = 30 } = {}) {
       const { from, to } = period(days);
       const rows = rowsBetween(from, to);
-      const list = deliveries(rows);
+      const rooms = new Map(db.listRooms().map((r) => [r.id, r]));
+      const buyerList = db.listBuyers();
+      const list = deliveries(rows, rooms, buyerList);
       const harvests = db.harvestsBetween(dayStart(from), dayStart(addDays(to, 1)) - 1);
-      const owed = owedOf(deliveries(db.unpaidSales()));
+      const owed = owedOf(deliveries(db.unpaidSales(), rooms, buyerList));
       return {
         from, to, days, deliveries: list,
         totals: {
@@ -134,7 +141,7 @@ export function createSales({ db, now = Date.now, log = console.error }) {
           harvestedKg: round(harvests.reduce((s, h) => s + h.kg, 0), 2), count: list.length,
         },
         owed, byCrop: byCropOf(rows, harvests, readCropYield(db)), byBuyer: byBuyerOf(list, owed),
-        buyerCount: db.listBuyers().filter((b) => !b.archived).length, // none: the page says to add the first
+        buyerCount: buyerList.filter((b) => !b.archived).length, // none: the page says to add the first
       };
     },
 
@@ -153,6 +160,8 @@ export function createSales({ db, now = Date.now, log = console.error }) {
 
     // Costs' summary (contract 5): from and to optional farm days (none: all time), run optional.
     summary({ from = null, to = null, run = null } = {}) {
+      from = from === '' ? null : from;
+      to = to === '' ? null : to;
       const start = from === null ? ALL[0] : dayStart(dateOf(from, 'from'));
       const end = to === null ? ALL[1] : dayStart(addDays(dateOf(to, 'to'), 1)) - 1;
       const rows = db.salesBetween(start, end).filter((r) => run === null || r.runId === run);
@@ -167,27 +176,32 @@ export function createSales({ db, now = Date.now, log = console.error }) {
 
     // The buyers A–Z with their deliveries' count and what they owe.
     buyers() {
-      const owed = owedOf(deliveries(db.unpaidSales()));
-      return db.listBuyers().map((b) => buyerView(b, owed));
+      const owed = new Map(owedOf(deliveries(db.unpaidSales())).buyers.map((o) => [o.buyerId, o.total]));
+      const counts = db.buyerSaleCounts();
+      return db.listBuyers().map((b) => buyerView(b, counts.get(b.id) ?? 0, owed.get(b.id) ?? 0));
     },
 
+    // Add a buyer: { name, phone?, note?, prices? }. → the buyer.
     addBuyer(body) {
       const fields = buyerBody(body);
       nameFree(fields.name);
       const b = db.insertBuyer(fields, now());
       tell();
-      return buyerView(b, owedOf([]));
+      return buyerView(b, 0, 0);
     },
 
+    // Change a buyer's fields (a new name is written on its sales too). → the buyer.
     editBuyer(id, body) {
       if (!db.getBuyer(id)) throw new SalesError(404, 'Buyer not found');
       const fields = buyerBody(body, { partial: true });
       if (fields.name !== undefined) nameFree(fields.name, id);
-      db.updateBuyer(id, fields);
+      const b = db.updateBuyer(id, fields);
       tell();
-      return this.buyers().find((b) => b.id === id);
+      const owed = owedOf(deliveries(db.unpaidSales().filter((r) => r.buyerId === id))).total;
+      return buyerView(b, db.buyerSaleCount(id), owed);
     },
 
+    // Delete a buyer without sales (one with sales is archived instead).
     removeBuyer(id) {
       if (!db.getBuyer(id)) throw new SalesError(404, 'Buyer not found');
       if (db.buyerSaleCount(id) > 0) throw new SalesError(409, 'Archive this buyer instead: it has sales');
