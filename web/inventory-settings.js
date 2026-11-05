@@ -16,7 +16,7 @@ export function mountInventorySettings(container) {
   </div>
   <section class="card settings iv-settings" id="inventory" aria-labelledby="iv-settings-title" data-ivs-card hidden>
     <h2 id="iv-settings-title">Inventory</h2>
-    <label class="tg-check"><input type="checkbox" data-ivs-telegram> Send low-stock and use-by messages to Telegram</label>
+    <label class="tg-check"><input type="checkbox" name="inventoryTelegram" data-ivs-telegram> Send low-stock and use-by messages to Telegram</label>
     <p class="muted s-hint" data-ivs-note></p>
     <p class="s-saved" data-ivs-saved role="status" hidden></p>
   </section>`;

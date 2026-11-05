@@ -256,4 +256,5 @@ test('audit sheet fixes: the Farm line inside a phone (#23); print light margins
 
 test('audit #25: the Settings note keeps its lines short', () => {
   assert.ok(src('styles.css').includes('.iv-settings .s-hint { max-width: 60ch; }'));
+  assert.ok(src('inventory-settings.js').includes('<input type="checkbox" name="inventoryTelegram" data-ivs-telegram>'), 'a named field (Chrome issue)');
 });
