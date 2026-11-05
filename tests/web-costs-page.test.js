@@ -46,7 +46,7 @@ test('the where-it-lands cache forgets a refused month', () => {
 
 test('the loss tone from the tile\'s tone, not its place; the month arrows are buttons that hand the focus over', () => {
   assert.ok(page.includes("list.forEach((t, i) => { if (t.tone === 'loss') nodes[i].querySelector('.us-kwh').dataset.tone = 'warn'; });"));
-  assert.ok(page.includes('<button type="button" class="co-step" data-prev aria-label="Previous month">'));
+  assert.ok(page.includes('<button type="button" class="co-step" data-prev aria-label="Previous month" disabled>'), 'off until the first answer');
   assert.ok(page.includes('if (focused === els.prev && els.prev.disabled && !els.next.disabled) els.next.focus();'));
   assert.match(costsCss, /button\.co-step \{[^}]*min-width: 44px; min-height: 44px;/);
 });
@@ -86,4 +86,42 @@ test('styles: Profit in Display, the two columns from 900 px, the lists by their
   assert.match(costsCss, /\.co-date \{[^}]*tabular-nums/);
   assert.match(costsCss, /\.co-amount \{[^}]*tabular-nums/);
   assert.ok(!/#[0-9a-f]{3,6}\b/i.test(costsCss), 'tokens only');
+});
+
+// ---- the Business audit, 2026-11-05 ----
+test('the head: Loading… until the first answer (not a blank), and Export CSV of the month on show', () => {
+  assert.ok(page.includes('<span class="co-month-name" data-month aria-live="polite">Loading…</span>'));
+  assert.ok(page.includes('<a class="button" data-csv href="/api/costs.csv" download>Export CSV</a>'));
+  assert.ok(page.includes('els.csv.href = `/api/costs.csv?month=${m}`;'));
+  assert.ok(!/\.co-tools > \.primary \{/.test(costsCss), "the head buttons' height is the Business pages' (bz), not the module's");
+});
+
+test('links to the other pages: the container, the run\'s blocks, a category\'s source; the link look', () => {
+  assert.ok(page.includes('if (i === 0) td.append(link(c, r.roomHref));'));
+  assert.ok(page.includes('if (href) dt.append(link(label, href));'));
+  assert.ok(page.includes('if (c.href) source.append(link(c.source, c.href));'));
+  assert.match(costsCss, /\.co-link \{[^}]*color: var\(--ink\); text-decoration: underline; text-decoration-color: var\(--muted\);/);
+});
+
+test('a loss in Runs: only the figure in the loss tone, Profit says Loss in words', () => {
+  assert.ok(page.includes("if (loss) td.append(el('span', 'co-loss', c), ...(i === 4 ? [el('span', 'co-sub', 'Loss')] : []));"));
+  assert.ok(!costsCss.includes('td.co-loss'), 'not the whole cell');
+  assert.match(costsCss, /\.co-loss \{ color: var\(--critical-text\); \}/);
+});
+
+test('mid-month: each monthly item its charge day, the month note of what is still to come, the line under Runs', () => {
+  assert.ok(page.includes('const x = repeatingLine(c, view.today);'));
+  assert.ok(page.includes("what.append(el('span', 'co-sub', x.when));"));
+  assert.ok(page.includes('const notes = monthNotes(view);'), 'the whole view: its monthly items and today');
+  assert.ok(page.includes("el('p', 'muted co-runs-note', SHARED_NOTE)"));
+});
+
+test("the chart's svg names the months in sum", () => {
+  assert.ok(page.includes("'aria-label': chartWords(months, chartTitle(months.length))"));
+});
+
+test('the Business conventions: quiet row actions bz-quiet, the dialogs\' form bz-form', () => {
+  assert.ok(page.includes("el('button', 'tk-quiet co-quiet bz-quiet', label)"));
+  assert.ok(dialogs.includes("document.querySelector('dialog.tk-dialog[open] > form')?.classList.add('bz-form');"));
+  assert.ok(!/openForm\(\{/.test(dialogs.replace('const form = openForm(options);', '')), 'every dialog through the bz-form wrapper');
 });

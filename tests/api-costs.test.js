@@ -22,7 +22,7 @@ async function app(t) {
     return { status: res.status, body: text ? JSON.parse(text) : null };
   };
   const costEvents = () => seen.filter(([type]) => type === 'costs');
-  return { call, costEvents };
+  return { call, costEvents, raw: (path, method = 'GET') => fetch(base + path, { method }) };
 }
 
 const today = () => {
@@ -111,4 +111,25 @@ test('change and stop each publish one costs event; a refused write none', async
   assert.equal((await call('POST', '/api/costs', { category: 'nope' })).status, 400);
   assert.equal((await call('DELETE', '/api/costs/9999')).status, 404);
   assert.equal(costEvents().length, 3, 'refused writes publish nothing');
+});
+
+test("GET /api/costs.csv: the month's costs and income with the BOM, its name the month; a month not kept 400", async (t) => {
+  const { call, raw } = await app(t);
+  const month = today().slice(0, 7);
+  await call('POST', '/api/costs', { date: today(), category: 'repairs', amount: 12.5, note: '=cmd|calc' });
+  const res = await raw(`/api/costs.csv?month=${month}`);
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('content-type'), /^text\/csv; charset=utf-8/);
+  assert.equal(res.headers.get('content-disposition'), `attachment; filename="costs ${month}.csv"`);
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  assert.deepEqual([...bytes.slice(0, 3)], [0xef, 0xbb, 0xbf], 'the BOM, so Excel reads UTF-8');
+  const lines = new TextDecoder('utf-8', { ignoreBOM: true }).decode(bytes).slice(1).split('\r\n');
+  assert.equal(lines[0], 'date,type,category,what,room,run started,source,amount');
+  assert.ok(lines.includes(`${today()},cost,Repairs,'=cmd|calc,The farm,,entered,12.50`), lines.join('\n'));
+  assert.equal(lines.at(-1), '', 'a closing line break');
+  assert.equal((await raw('/api/costs.csv')).status, 200, 'this month by default');
+  const bad = await raw('/api/costs.csv?month=1999-01');
+  assert.equal(bad.status, 400);
+  assert.equal((await bad.json()).field, 'month');
+  assert.equal((await raw('/api/costs.csv', 'POST')).status, 404);
 });

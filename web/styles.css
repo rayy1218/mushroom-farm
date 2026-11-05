@@ -2107,7 +2107,8 @@ td.tg-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: -2p
 .hv-sheet-facts div { display: flex; gap: 8px; }
 .hv-sheet-facts dt { color: var(--ink-2); }
 .hv-sheet-facts dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
-.hv-sheet-facts .hv-write-line { min-width: 40ch; border-bottom: 1px solid var(--border-strong); } /* the farm's name, written in */
+.hv-sheet-facts .hv-write-line { min-width: 0; flex: 1 1 auto; border-bottom: 1px solid var(--border-strong); } /* the farm's name, written in */
+.hv-sheet-facts > div:first-child { flex: 0 1 calc(40ch + 5em); max-width: 100%; } /* the Farm line: its div gives the write-in line its 40ch, or a phone's whole row (no sideways scroll at 390 px) */
 .hv-sheet-table tfoot th { text-align: right; font-weight: 600; }
 .hv-sheet-table tfoot td { font-weight: 600; }
 .hv-sheet > .none { color: var(--muted); }
@@ -2602,7 +2603,6 @@ p.bt-making-note.bt-over { margin-top: 12px; }
 button.co-step { display: inline-flex; align-items: center; min-width: 44px; min-height: 44px; justify-content: center; padding: 0; font-size: var(--fs-lg); line-height: 1; } /* 44 px on a desk too */
 button.co-step:disabled { opacity: .4; }
 .co-month-name { min-width: 9.5em; text-align: center; font-weight: 600; font-variant-numeric: tabular-nums; }
-.co-tools > .primary { min-height: 44px; }
 .co-page { display: grid; gap: 16px; align-items: start; transition: opacity .15s; }
 .co-page[aria-busy="true"] { opacity: .55; } /* another month asked for: these figures are the last one's */
 @media (min-width: 900px) {
@@ -2650,7 +2650,10 @@ button.co-step:disabled { opacity: .4; }
 .co-name { display: block; }
 .co-source { display: block; color: var(--muted); font-size: var(--fs-xs); font-weight: 400; }
 .co-cat-table tbody th { font-weight: 500; }
-td.co-loss { color: var(--critical-text); }
+.co-loss { color: var(--critical-text); } /* a loss: the figure only, its word beside it in the line's tone */
+/* a link to another page (the container's Harvest tab, the run's batches, Batches, Inventory): neutral ink, a quiet underline */
+.co-link { color: var(--ink); text-decoration: underline; text-decoration-color: var(--muted); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+.co-link:is(:hover, :focus-visible) { text-decoration-color: currentColor; }
 /* Entries and Monthly items: one row each on a wide card (date, what, for whom, RM, the quiet buttons); a block each on a
    narrow one (a phone, or the left column at 1024 px), by the list's own width */
 .co-list-box { container-type: inline-size; }
@@ -2687,6 +2690,7 @@ td.co-loss { color: var(--critical-text); }
 }
 /* Runs: the dates open the run's breakdown in the row under it (Harvest's past runs) */
 .co-runs-pending { margin: 0 0 8px; font-size: var(--fs-sm); }
+.co-runs-note { margin: 8px 0 0; font-size: var(--fs-sm); } /* how shared costs reach the runs */
 .co-runs-table .co-dates { white-space: nowrap; }
 .co-runs-table .co-run-crops { color: var(--ink-2); }
 .co-crop { display: inline-flex; align-items: center; gap: 8px; }

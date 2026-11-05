@@ -14,7 +14,7 @@ import { closeTaskDialog } from './task-dialogs.js';
 import { picture } from './pictures.js';
 import {
   monthTitle, addMonths, monthTiles, monthNotes, categoryRows, categoryTotal, entryLine, repeatingLine, RUN_COLUMNS, runRow, runParts,
-  profitBars, BARS_M, chartMonths, chartTitle, noFigures,
+  profitBars, BARS_M, chartMonths, chartTitle, noFigures, chartWords, SHARED_NOTE,
 } from './costs-math.js';
 import { openAddDialog, openEditDialog, openChangeDialog, openStopDialog } from './costs-dialogs.js';
 
@@ -34,11 +34,12 @@ const TEMPLATE = `
     </div>
     <div class="co-tools">
       <nav class="co-month" aria-label="Month">
-        <button type="button" class="co-step" data-prev aria-label="Previous month"><span aria-hidden="true">‹</span></button>
-        <span class="co-month-name" data-month aria-live="polite"></span>
-        <button type="button" class="co-step" data-next aria-label="Next month"><span aria-hidden="true">›</span></button>
+        <button type="button" class="co-step" data-prev aria-label="Previous month" disabled><span aria-hidden="true">‹</span></button>
+        <span class="co-month-name" data-month aria-live="polite">Loading…</span>
+        <button type="button" class="co-step" data-next aria-label="Next month" disabled><span aria-hidden="true">›</span></button>
       </nav>
       <button type="button" class="primary" data-add>Add a cost</button>
+      <a class="button" data-csv href="/api/costs.csv" download>Export CSV</a>
     </div>
   </div>
   <div class="banner" role="alert" hidden><span data-banner-text></span><button type="button" data-retry>Retry</button></div>
@@ -68,14 +69,21 @@ function svg(name, attrs = {}, text) {
   if (text !== undefined) node.textContent = text;
   return node;
 }
-// A quiet button (Harvest's Edit); key: where the focus goes back to after a repaint.
+// A quiet button (Harvest's Edit; bz-quiet: the Business pages' one quiet row action); key: where the focus goes back to after
+// a repaint.
 const quietButton = (label, key, onClick, name = null) => {
-  const b = el('button', 'tk-quiet co-quiet', label);
+  const b = el('button', 'tk-quiet co-quiet bz-quiet', label);
   b.type = 'button';
   b.dataset.focusKey = key;
   if (name) b.setAttribute('aria-label', name);
   b.addEventListener('click', onClick);
   return b;
+};
+// A link to another page, in the Business pages' link look (neutral ink, a muted underline).
+const link = (text, href) => {
+  const a = el('a', 'co-link', text);
+  a.href = href;
+  return a;
 };
 // A plain click (not one opening a new tab) on a month link.
 const plainClick = (event) => event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
@@ -94,7 +102,7 @@ export function mount(container, { month = null } = {}) {
   container.innerHTML = TEMPLATE;
   const q = (sel) => container.querySelector(sel);
   const els = {
-    prev: q('[data-prev]'), next: q('[data-next]'), month: q('[data-month]'), add: q('[data-add]'), banner: q('.banner'),
+    prev: q('[data-prev]'), next: q('[data-next]'), month: q('[data-month]'), add: q('[data-add]'), csv: q('[data-csv]'), banner: q('.banner'),
     bannerText: q('[data-banner-text]'), retry: q('[data-retry]'), body: q('[data-body]'), title: q('[data-title]'),
     tiles: q('[data-tiles]'), notes: q('[data-notes]'), chartTitle: q('[data-chart-title]'), chart: q('[data-chart]'),
     categories: q('[data-categories]'), entries: q('[data-entries]'), repeating: q('[data-repeating]'), runs: q('[data-runs]'),
@@ -217,6 +225,7 @@ export function mount(container, { month = null } = {}) {
   // The head's month and its arrows: an arrow off at the ends; one that had the focus hands it to the other.
   function paintHead(m) {
     els.month.textContent = monthTitle(m);
+    els.csv.href = `/api/costs.csv?month=${m}`;
     const focused = document.activeElement;
     const step = (b, to, on) => {
       b.disabled = !on;
@@ -254,7 +263,8 @@ export function mount(container, { month = null } = {}) {
       return;
     }
     const { bars, zeroY, ticks } = profitBars(months, view.month, width, CHART_H);
-    const root = svg('svg', { width, height: CHART_H, role: 'group', 'aria-labelledby': 'co-chart-title' });
+    // its name sums the months up (the bars name one each)
+    const root = svg('svg', { width, height: CHART_H, role: 'group', 'aria-label': chartWords(months, chartTitle(months.length)) });
     const hatch = svg('pattern', { id: 'co-hatch', width: 6, height: 6, patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(45)' });
     hatch.append(svg('line', { x1: 0, y1: 0, x2: 0, y2: 6, class: 'co-hatch-line' }));
     const defs = svg('defs');
@@ -349,7 +359,11 @@ export function mount(container, { month = null } = {}) {
       const th = el('th');
       th.scope = 'row';
       th.append(el('span', 'co-name', c.label));
-      if (c.source) th.append(el('span', 'co-source', c.source));
+      if (c.source) {
+        const source = el('span', 'co-source', c.href ? null : c.source);
+        if (c.href) source.append(link(c.source, c.href)); // from Batches, from Inventory: their page
+        th.append(source);
+      }
       tr.append(th, el('td', 'num', c.amount), el('td', 'num', c.share));
       return tr;
     });
@@ -400,7 +414,7 @@ export function mount(container, { month = null } = {}) {
     }
     const list = el('ul', 'co-entries co-repeats');
     for (const c of view.repeating) {
-      const x = repeatingLine(c);
+      const x = repeatingLine(c, view.today);
       const li = el('li', 'co-entry co-repeat');
       const acts = el('span', 'co-acts');
       const row = () => costOr(c.id);
@@ -408,7 +422,9 @@ export function mount(container, { month = null } = {}) {
         quietButton('Change', `change-${c.id}`, () => { const r = row(); if (r) openChangeDialog({ cost: r, ...dialogOpts() }); }, `Change ${x.what}`),
         quietButton('Stop', `stop-${c.id}`, () => { const r = row(); if (r) openStopDialog({ cost: r, ...dialogOpts() }); }, `Stop ${x.what}`),
       );
-      li.append(el('span', 'co-what', x.what), el('span', 'co-whom', x.whom), el('span', 'co-amount', x.amount), el('span', 'co-date', x.since), acts);
+      const what = el('span', 'co-what', x.what);
+      what.append(el('span', 'co-sub', x.when)); // its charge day: mid-month, the costs are those charged so far
+      li.append(what, el('span', 'co-whom', x.whom), el('span', 'co-amount', x.amount), el('span', 'co-date', x.since), acts);
       list.append(li);
     }
     els.repeating.replaceChildren(list);
@@ -438,7 +454,8 @@ export function mount(container, { month = null } = {}) {
       });
       th.append(toggle);
       const cells = [r.room, r.crops, ...r.cells].map((c, i) => {
-        const td = el('td', i < 2 ? `co-run-${i ? 'crops' : 'room'}` : 'num', i === 1 ? null : c);
+        const loss = (i === 4 && r.loss) || (i === 5 && r.perKgLoss);
+        const td = el('td', i < 2 ? `co-run-${i ? 'crops' : 'room'}` : 'num', i <= 1 || loss ? null : c);
         td.dataset.label = RUN_COLUMNS[i + 1];
         if (i === 1) { // the main crop's picture before the crops' names (Harvest's By crop)
           const name = el('span', 'co-crop');
@@ -446,7 +463,9 @@ export function mount(container, { month = null } = {}) {
           name.append(el('span', '', c));
           td.append(name);
         }
-        if ((i === 4 && r.loss) || (i === 5 && r.perKgLoss)) td.classList.add('co-loss');
+        if (i === 0) td.append(link(c, r.roomHref)); // the container's Harvest tab
+        // a loss: only the figure in the loss tone, and Profit says "Loss" in words (the month card's way)
+        if (loss) td.append(el('span', 'co-loss', c), ...(i === 4 ? [el('span', 'co-sub', 'Loss')] : []));
         if (i === 3 && r.incomplete) td.append(el('span', 'co-sub', 'Some costs have no price'));
         return td;
       });
@@ -459,9 +478,11 @@ export function mount(container, { month = null } = {}) {
         td.colSpan = RUN_COLUMNS.length;
         const body = el('div', 'co-parts-body');
         const dl = el('dl', 'co-parts-list');
-        for (const [label, value] of runParts(run)) {
+        for (const [label, value, href] of runParts(run)) {
           const pair = el('div');
-          pair.append(el('dt', '', label), el('dd', '', value));
+          const dt = el('dt', '', href ? null : label);
+          if (href) dt.append(link(label, href)); // Blocks: the run's batches
+          pair.append(dt, el('dd', '', value));
           dl.append(pair);
         }
         body.append(dl, ...monthNotes({ pending: false, notes: run.notes }).map((n) => noteNode('p', 'co-run-note', n)));
@@ -471,7 +492,7 @@ export function mount(container, { month = null } = {}) {
       }
     }
     const waiting = view.runs.some((x) => x.pending) ? [el('p', 'muted co-runs-pending', 'Working out the energy cost of some runs…')] : [];
-    els.runs.replaceChildren(...waiting, table(`Runs in ${monthTitle(view.month)}`, RUN_COLUMNS, rows, 'co-runs-table', 3));
+    els.runs.replaceChildren(...waiting, table(`Runs in ${monthTitle(view.month)}`, RUN_COLUMNS, rows, 'co-runs-table', 3), el('p', 'muted co-runs-note', SHARED_NOTE));
   }
 
   function paint() {

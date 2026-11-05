@@ -28,6 +28,14 @@ const NO_NAMES = 'The workers could not be read. Try again.';
 const BILL_HINT = 'The measured electricity already counts; only the part not measured (bill − measured) is added.';
 const WATER_HINT = 'The measured water already counts; only the part not measured (bill − measured) is added.';
 
+// openForm with the Business pages' form class: bz-form (its footer sticks at the dialog's foot on a phone, a destructive
+// aside on its own row; the Business audit, 2026-11-05).
+function ask(options) {
+  const form = openForm(options);
+  document.querySelector('dialog.tk-dialog[open] > form')?.classList.add('bz-form');
+  return form;
+}
+
 // A refused send's words on its box, or the dialog's line.
 const problem = (err) => (err.field ? { field: err.field, message: err.message } : { message: errorText(err) });
 
@@ -168,7 +176,7 @@ function follow(form, { rooms, today, runsIn, workers, kept }) {
 export async function openAddDialog({ rooms, today, first, runsIn, onDone, onLost, alive = () => true }) {
   const workers = await loadWorkers().catch(() => null);
   if (!alive()) return; // the page went while the names were read
-  const form = openForm({
+  const form = ask({
     title: 'Add a cost',
     fields: [
       ...costFields(null, { rooms, workers, today, first }),
@@ -190,7 +198,7 @@ export async function openEditDialog({ cost, rooms, today, first, runsIn, onDone
   if (!alive()) return;
   const p = billPeriod(cost.date);
   const kept = Boolean(cost.periodFrom || cost.periodTo) && !(cost.periodFrom === p?.from && cost.periodTo === p?.to);
-  const form = openForm({
+  const form = ask({
     title: 'Edit a cost',
     fields: costFields(cost, { rooms, workers, today, first }),
     buttons: [
@@ -214,7 +222,7 @@ function monthsOf(cost, today) {
 export function openChangeDialog({ cost, month, today, onDone, onLost }) {
   const months = monthsOf(cost, today);
   const { what } = entryLine(cost);
-  const form = openForm({
+  const form = ask({
     title: `Change ${what}`,
     lead: [`${repeatingLine(cost).amount} since ${monthTitle(cost.date.slice(0, 7))}. The months before the one you pick keep what they were.`],
     fields: [
@@ -243,7 +251,7 @@ export function openChangeDialog({ cost, month, today, onDone, onLost }) {
 // the button says how many.
 export function openStopDialog({ cost, today, onDone, onLost }) {
   const months = monthsOf(cost, today);
-  const form = openForm({
+  const form = ask({
     title: `Stop ${entryLine(cost).what}`,
     lead: ['It charges up to and including the month you pick; the months before keep their charges.'],
     fields: [{ name: 'after', label: 'Last month', kind: 'select', value: clampMonth(today.slice(0, 7), months), options: months.map((m) => [m, monthTitle(m)]) }],
@@ -271,7 +279,7 @@ export function openDeleteDialog({ cost, today, onDone, onLost }) {
   const { what } = entryLine(cost);
   const amount = monthly ? repeatingLine(cost).amount : moneyText(cost.amount);
   const gone = monthly ? deleteWords(cost, today) : null;
-  openForm({
+  ask({
     title: monthly ? 'Delete this monthly item?' : 'Delete this cost?',
     lead: [
       `${what}${DOT}${amount}`,

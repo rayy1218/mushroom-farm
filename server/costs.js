@@ -8,7 +8,7 @@ import { roomDays, warmRoom, localZone, USAGE_DAYS_KEPT } from './usage.js';
 import { checkWorker, TaskError } from './tasks.js';
 import {
   CATEGORIES, BILLS, monthOf, firstDayOf, lastDayOf, addMonths, monthName, chargeDate, chargesOf, runOn, runEnd, figuresOf,
-  runTotals, summaryOf, CATEGORY_LABELS, billTopUp, runFirstMonth,
+  runTotals, summaryOf, CATEGORY_LABELS, billTopUp, runFirstMonth, csvRows,
 } from './costs-math.js';
 
 export const MAX_AMOUNT = 1_000_000;
@@ -237,6 +237,15 @@ export function createCosts({ db, now = Date.now, zone = localZone, log = consol
     return value;
   }
 
+  // A month asked for ('YYYY-MM', default this month) among the months kept, else a 400 on 'month'.
+  function monthAsked(month) {
+    const current = monthOf(today());
+    const first = monthOf(keptFrom());
+    const m = month ?? current;
+    if (!isMonth(m) || m > current || m < first) throw new CostError(400, `Pick a month from ${monthName(first)} to ${monthName(current)}`, 'month');
+    return m;
+  }
+
   return {
     // Every cost (the edit dialogs).
     list() {
@@ -291,10 +300,8 @@ export function createCosts({ db, now = Date.now, zone = localZone, log = consol
     // figures) and the last 12 months' profit (none before the usage days kept). month: 'YYYY-MM', default this month.
     monthView({ month = null } = {}) {
       const t = today();
-      const current = monthOf(t);
       const first = monthOf(keptFrom());
-      const m = month ?? current;
-      if (!isMonth(m) || m > current || m < first) throw new CostError(400, `Pick a month from ${monthName(first)} to ${monthName(current)}`, 'month');
+      const m = monthAsked(month);
       const all = runsOf();
       const inMonth = (r) => r.startDate <= lastDayOf(m) && runEnd(r, t) >= firstDayOf(m);
       const shown = all.filter(inMonth);
@@ -347,6 +354,24 @@ export function createCosts({ db, now = Date.now, zone = localZone, log = consol
       if (!isDate(a) || a > t) throw new CostError(400, 'from must be a date up to today', 'from');
       if (!isDate(b) || b < a || b > t) throw new CostError(400, 'to must be a date from the start date to today', 'to');
       return summaryOf(figuresOf(a, b, dataFor(addDays(a, -MAX_BILL_DAYS))));
+    },
+
+    // GET /api/costs.csv (2026-11-05, the Business audit): the month's costs and income to today, as monthView counts them.
+    // A day not worked out yet is waited for once (the warm it starts), so the measured lines come whole when they can.
+    // → { name: 'costs YYYY-MM.csv', text } (the route adds the BOM).
+    async csv({ month = null } = {}) {
+      const m = monthAsked(month);
+      const figures = () => {
+        const t = today();
+        const data = dataFor(addDays(firstDayOf(m), -MAX_BILL_DAYS));
+        return { data, f: figuresOf(firstDayOf(m), lastDayOf(m) < t ? lastDayOf(m) : t, data) };
+      };
+      let { data, f } = figures();
+      if (f.pending) {
+        await Promise.all([...warming.values()].map((job) => job.done));
+        ({ data, f } = figures());
+      }
+      return { name: `costs ${m}.csv`, text: `${csvRows(f, data).join('\r\n')}\r\n` };
     },
 
     // A promise for the usage warms under way (tests).

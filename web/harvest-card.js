@@ -18,6 +18,8 @@ import {
   deleteTitle, deleteLead, whenBoxes, recordBody, editBody, recordPicks, editPicks,
 } from './harvest-math.js';
 import { batchLineFor } from './batches-math.js'; // ---- Batches ----
+import { runProfitLine } from './costs-math.js'; // ---- Costs ----
+import { COSTS_HASH } from './route.js';
 
 const REFRESH_MS = 60_000;
 const COMMAND_TIMEOUT = 15000;
@@ -163,7 +165,12 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
   blocksLine.hidden = true;
   let blocks = null; // { runId, reply }: GET /api/batches?run= for the current run, read with the harvests
   // ---- end Batches ----
-  runCard.append(el('h2', '', 'This run'), runLine, blocksLine, tiles, runBody);
+  // ---- Costs ---- the run's profit so far (the Business audit, 2026-11-05): a muted line to the Costs page, as the blocks line
+  const profitLine = el('p', 'muted bz-blocks hv-profit');
+  profitLine.hidden = true;
+  let profit = null; // { runId, reply }: GET /api/costs/summary?run= for the current run, read with the harvests
+  // ---- end Costs ----
+  runCard.append(el('h2', '', 'This run'), runLine, blocksLine, profitLine, tiles, runBody);
 
   // Harvests
   const listCard = el('section', 'card hv-part hv-list-card');
@@ -230,6 +237,14 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
       blocksLine.replaceChildren(a);
     }
     // ---- end Batches ----
+    // ---- Costs ---- hidden while Costs has nothing for the run, or works its energy out
+    const money = runProfitLine(profit?.runId === run.id ? profit.reply : null);
+    profitLine.hidden = !money;
+    if (money) {
+      const a = el('a', '', money);
+      a.href = COSTS_HASH;
+      profitLine.replaceChildren(a);
+    }
     tiles.replaceChildren(...tileNodes(runTiles(run)));
     // under the tiles, what they leave out: the prices the cost is at, a figure missing in Settings → Yield
     const prices = pricesNote(run.cost);
@@ -311,7 +326,7 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
   }
 
   function paint() {
-    const key = JSON.stringify([view, showAll, [...allOf], blocks]);
+    const key = JSON.stringify([view, showAll, [...allOf], blocks, profit]);
     if (key === painted) return;
     painted = key;
     // the cursor on a row's button or a run's fold comes back to the same one after the repaint
@@ -348,10 +363,12 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
     try {
       const data = await request('GET', `/api/rooms/${roomId}/harvests`);
       if (!alive || me !== seq) return;
-      const runBlocks = await readBlocks(data.current); // ---- Batches ----
+      // ---- Batches, Costs ---- the run's blocks and profit, together
+      const [runBlocks, runProfit] = await Promise.all([readBlocks(data.current), readProfit(data.current)]);
       if (!alive || me !== seq) return;
       view = data;
       blocks = runBlocks;
+      profit = runProfit;
       paint();
     } catch (err) {
       if (!alive || me !== seq) return;
@@ -379,6 +396,17 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
     }
   }
   // ---- end Batches ----
+  // ---- Costs ---- the current run's profit (GET /api/costs/summary?run=), as readBlocks: a failed read keeps the same run's
+  // last answer (a farm app without Costs: none, so no line).
+  async function readProfit(run) {
+    if (!run) return null;
+    try {
+      return { runId: run.id, reply: await request('GET', `/api/costs/summary?run=${run.id}`) };
+    } catch {
+      return profit?.runId === run.id ? profit : null;
+    }
+  }
+  // ---- end Costs ----
 
   // A change (here or elsewhere) asks again at most once in 2 s.
   const reload = createThrottle(() => { if (alive) refresh(); });
@@ -519,6 +547,8 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
     live.on('harvest', (d) => { if (d.roomId === null || d.roomId === roomId) reload.call(); }), // null: every room (Settings → Yield)
     live.on('room', (d) => { if (d.id === roomId && d.part === 'crop') reload.call(); }),
     live.on('batches', () => reload.call()), // ---- Batches ---- a batch put in, taken out or edited: its line
+    live.on('costs', () => reload.call()), // ---- Costs ---- a cost added or a usage warm done: the profit line
+    live.on('sales', () => reload.call()), // a sale: the profit line
 
     live.onStatus((up) => {
       if (up) reload.call();
