@@ -113,9 +113,9 @@ test('edit, delete, change from a month and stop', (t) => {
   refused(() => s.costs.change(one.id + 1000, { from: '2026-10', amount: 1 }), 404, 'Cost not found', undefined);
   const plain = s.costs.add({ date: '2026-11-03', category: 'repairs', amount: 10 });
   refused(() => s.costs.change(plain.id, { from: '2026-11', amount: 1 }), 400, 'This cost is not a monthly item', undefined);
-  refused(() => s.costs.stop(plain.id, { after: '2026-11' }), 400, 'This cost is not a monthly item', undefined);
-  refused(() => s.costs.stop(started.id, { after: '2026-09' }), 400, 'Pick a month from Oct 2026 to Nov 2026', 'after');
-  assert.equal(s.costs.stop(started.id, { after: '2026-11' }).repeatUntil, '2026-11');
+  refused(() => s.costs.stopItem(plain.id, { after: '2026-11' }), 400, 'This cost is not a monthly item', undefined);
+  refused(() => s.costs.stopItem(started.id, { after: '2026-09' }), 400, 'Pick a month from Oct 2026 to Nov 2026', 'after');
+  assert.equal(s.costs.stopItem(started.id, { after: '2026-11' }).repeatUntil, '2026-11');
   assert.ok(s.changes.length >= 6);
 });
 

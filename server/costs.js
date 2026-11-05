@@ -253,12 +253,7 @@ export function createCosts({ db, now = Date.now, zone = localZone, log = consol
     },
 
     // A monthly item's last month (section 2.1). → the item.
-    // Called with no arguments it instead stops the usage warms (the server closing; the plan's two `stop`s share the name).
-    stop(id, body) {
-      if (id === undefined) {
-        stopping.abort();
-        return undefined;
-      }
+    stopItem(id, body) {
       const c = monthlyOf(id);
       const after = monthIn(bodyOf(body).after, c, 'after');
       const row = db.stopCost(id, after);
@@ -318,6 +313,11 @@ export function createCosts({ db, now = Date.now, zone = localZone, log = consol
     // A promise for the usage warms under way (tests).
     warmed: () => Promise.all([...warming.values()].map((job) => job.done)),
 
+
+    // Stops the usage warms at their next day and starts no more (the server closing: the database goes next).
+    stop() {
+      stopping.abort();
+    },
 
     // fn() after any write here or a usage warm done (the figures can be worked out now); → a function that stops it.
     onChange(fn) {
