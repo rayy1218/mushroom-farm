@@ -2111,3 +2111,103 @@ td.tg-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: -2p
 .hv-sheet-table td.hv-write { min-width: 5rem; }
 .hv-sheet-table td:first-child { white-space: nowrap; }
 @media (max-width: 600px) { .hv-sheet-tools .back { padding: 10px 0; } }
+
+/* ---- Costs ---- */
+/* spec 2026-11-05-costs-design.md 6 (web/costs-page.js, web/costs-dialogs.js): tokens only */
+.co-tools { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; }
+.co-month { display: inline-flex; align-items: center; gap: 4px; }
+.co-step { min-width: 44px; min-height: 44px; justify-content: center; padding: 0; font-size: var(--fs-lg); line-height: 1; }
+.co-step[aria-disabled="true"] { opacity: .4; cursor: default; }
+.co-month-name { min-width: 9.5em; text-align: center; font-weight: 600; font-variant-numeric: tabular-nums; }
+.co-tools > .primary { min-height: 44px; }
+.co-page { display: grid; gap: 16px; align-items: start; transition: opacity .15s; }
+.co-page[aria-busy="true"] { opacity: .55; } /* another month asked for: these figures are the last one's */
+@media (min-width: 1100px) {
+  .co-page { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); grid-template-areas: "month month" "entries cats" "repeat cats" "runs runs"; }
+  .co-month-card { grid-area: month; }
+  .co-entries-card { grid-area: entries; }
+  .co-cat-card { grid-area: cats; }
+  .co-repeat-card { grid-area: repeat; }
+  .co-runs-card { grid-area: runs; }
+}
+.co-page .card > h2 { margin-bottom: 8px; }
+.co-page .none { margin: 0; color: var(--muted); }
+/* the month's tiles: Harvest's (two a row on a phone, an odd last one the whole row), held to a width on a desk */
+.co-tiles > .us-tile { flex: 1 1 150px; max-width: 240px; }
+@media (max-width: 600px) { .co-tiles > .us-tile { flex: 1 0 calc(50% - 6px); max-width: none; } }
+.co-notes { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 4px; font-size: var(--fs-sm); }
+.co-chart-title { margin: 12px 0 6px; font-size: var(--fs-sm); font-weight: 600; color: var(--ink-2); }
+.co-chart { width: 100%; min-height: 168px; }
+.co-chart svg { display: block; overflow: visible; }
+.co-grid { stroke: var(--grid); stroke-width: 1; }
+.co-zero { stroke: var(--axis); stroke-width: 1.5; }
+.co-axis { fill: var(--muted); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
+.co-axis-shown { fill: var(--ink); font-weight: 600; }
+.co-bar-hit { fill: transparent; }
+.co-bar { fill: var(--good); }
+.co-bar-loss { fill: var(--critical); }
+.co-bar-pending { fill: url(#co-hatch); stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; }
+.co-hatch-line { stroke: var(--muted); stroke-width: 1.5; }
+.co-bar-shown { stroke: var(--ink); stroke-width: 2; }
+.co-bar-link:hover .co-bar-hit { fill: var(--band); }
+.co-bar-link:focus { outline: none; }
+.co-bar-link:focus-visible .co-bar-hit { stroke: var(--accent); stroke-width: 2; }
+/* By category: the source in a muted line under the name */
+.co-name { display: block; }
+.co-source { display: block; color: var(--muted); font-size: var(--fs-xs); font-weight: 400; }
+.co-cat-table tbody th { font-weight: 500; }
+td.co-loss { color: var(--critical-text); }
+/* Entries and Monthly items: one row each on a desk (date, what, for whom, RM, the quiet buttons) */
+.co-entries { list-style: none; margin: 0; padding: 0; }
+.co-entry { display: grid; grid-template-columns: 4.5em minmax(0, 1fr) minmax(0, 11em) 9em auto; gap: 4px 12px; align-items: center; padding: 6px 0; border-top: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+.co-entry:first-child { border-top: 0; }
+.co-repeat { grid-template-columns: minmax(0, 1fr) minmax(0, 11em) max-content max-content auto; }
+.co-what { overflow-wrap: anywhere; }
+.co-whom { color: var(--ink-2); overflow-wrap: anywhere; }
+.co-date { color: var(--muted); white-space: nowrap; }
+.co-amount { text-align: right; white-space: nowrap; font-weight: 600; }
+.co-acts { display: flex; justify-content: flex-end; gap: 4px; }
+.co-tag { display: inline-block; padding: 1px 8px; border-radius: 999px; background: var(--band); color: var(--ink-2); font-size: var(--fs-xs); font-weight: 600; vertical-align: 1px; }
+.co-empty { display: flex; align-items: center; gap: 12px 16px; flex-wrap: wrap; }
+/* Runs: the dates open the run's breakdown in the row under it (Harvest's past runs) */
+.co-runs-table .co-dates { white-space: nowrap; }
+.co-runs-table .co-run-crops { color: var(--ink-2); }
+.co-parts > td { border-top: 0; padding: 0 0 12px; }
+.co-parts-body { padding-left: 12px; border-left: 2px solid var(--border); }
+.co-parts-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px 24px; margin: 4px 0 0; }
+.co-parts-list dt { color: var(--muted); font-size: var(--fs-xs); }
+.co-parts-list dd { margin: 0; font-variant-numeric: tabular-nums; }
+.co-run-note { margin: 8px 0 0; font-size: var(--fs-sm); }
+.tk-dialog .co-lands { margin-top: 2px; }
+@media (max-width: 600px), (pointer: coarse) {
+  .co-quiet { min-height: 44px; min-width: 44px; } /* a finger's tap */
+}
+@media (max-width: 600px) {
+  .co-month-name { min-width: 0; flex: 1; }
+  .co-tools { flex: 1 1 100%; }
+  .co-month { flex: 1; }
+  /* an entry a block: what and RM, then the date and for whom with Edit */
+  .co-entry { grid-template-columns: auto minmax(0, 1fr) auto; gap: 0 10px; padding: 8px 0; }
+  .co-entry .co-what { grid-column: 1 / 3; grid-row: 1; }
+  .co-entry .co-amount { grid-column: 3; grid-row: 1; }
+  .co-entry .co-date { grid-column: 1; grid-row: 2; font-size: var(--fs-sm); }
+  .co-entry .co-whom { grid-column: 2; grid-row: 2; font-size: var(--fs-sm); color: var(--muted); }
+  .co-entry .co-acts { grid-column: 3; grid-row: 2; }
+  /* a monthly item: what and RM a month, then for whom and since, Change and Stop beside them */
+  .co-repeat { grid-template-columns: minmax(0, 1fr) auto; }
+  .co-repeat .co-what { grid-column: 1; }
+  .co-repeat .co-amount { grid-column: 2; }
+  .co-repeat .co-whom { grid-column: 1; grid-row: 2; }
+  .co-repeat .co-date { grid-column: 1; grid-row: 3; font-size: var(--fs-sm); }
+  .co-repeat .co-acts { grid-column: 2; grid-row: 2 / 4; }
+  /* a run a block of labelled figures rather than a table wider than the screen */
+  .co-runs-table > thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .co-runs-table, .co-runs-table > tbody, .co-parts, .co-parts > td { display: block; }
+  .co-run { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 12px; padding: 10px 0; border-top: 1px solid var(--border); }
+  .co-runs-table > tbody > .co-run:first-child { border-top: 0; }
+  .co-runs-table .co-run > :is(th, td, td.num) { display: block; padding: 0; border: 0; text-align: left; font-size: var(--fs-sm); }
+  .co-run > th { grid-column: 1 / -1; }
+  .co-run > td.num { white-space: normal; }
+  .co-run > td::before { content: attr(data-label); display: block; color: var(--muted); font-size: var(--fs-xs); }
+}
+/* ---- end Costs ---- */
