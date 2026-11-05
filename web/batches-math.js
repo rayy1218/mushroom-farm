@@ -553,10 +553,13 @@ export function sterilisedNote(b) {
 // The amber note when the materials at Inventory's purchase prices come to over RM 1,000 a block (the server's priceOver; the
 // price is then null), else null.
 export const priceOverNote = (b) => (b.priceOver === true ? "The materials' price comes to over RM 1,000 a block: check Inventory's purchase prices." : null);
-// How a made block's price comes about (decision 6 of part 2), or why there is none.
+// How a made block's price comes about (decision 6 of part 2), or why there is none; the farm without Inventory (the detail's
+// `inventory` false) is told what the price waits for.
 export const madePriceNote = (b) => (finite(b.pricePerBlock)
   ? "The price per block is the materials at Inventory's latest purchase prices when the batch was last saved: a later purchase counts at its next change."
-  : 'No price per block yet: every material needs an Inventory item with a purchase price.');
+  : b.inventory === false
+    ? 'The price per block is worked out once Inventory has the materials and their purchase prices.'
+    : 'No price per block yet: every material needs an Inventory item with a purchase price.');
 
 function incubationLines(b, today) {
   if (b.incubation === 'room') return [finite(b.placedAt) && b.roomName ? `In a grow room${DOT}${b.roomName}` : 'In a grow room: put the blocks into a room'];

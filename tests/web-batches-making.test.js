@@ -189,6 +189,8 @@ test('a load\'s line, the amber note of bags not yet sterilised, the price note'
   assert.equal(sterilisedNote(b({ loads: [] })), null);
   assert.match(madePriceNote(b({ pricePerBlock: 0.71 })), /^The price per block is the materials/);
   assert.match(madePriceNote(b({})), /^No price per block yet/);
+  assert.match(madePriceNote(b({ inventory: true })), /^No price per block yet/);
+  assert.equal(madePriceNote(b({ inventory: false })), 'The price per block is worked out once Inventory has the materials and their purchase prices.');
 });
 
 test('the 4-2 sheet: a made batch\'s receipt is its spawn, its use "made into" the blocks, then its placements', () => {

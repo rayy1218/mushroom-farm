@@ -123,6 +123,27 @@ with the steps in order, each with its own Record or Edit.
 | Fields | Name, crop (or Any), sawdust, bran, lime, gypsum and other % of dry weight, each to one decimal place (other with its name), water %, wet kg per bag; the sum shown live ("Sum 100 %") |
 | Archive | Never delete: past batches name their recipe. An archived recipe is not offered for a new mix. |
 
+### 5.1 Settled in the build (part 2, 2026-11-05)
+
+| Point | Rule |
+|---|---|
+| Decisions | The lead's twelve decisions for part 2 (`/tmp/batches/part2-decisions.md`, owner: "proceed without me in loop") |
+| Loads' ids | `batch_loads.id` is AUTOINCREMENT (ids never reused, as the other routed ids), in the version-21 step |
+| Status | `making` until ready: an area's blocks marked ready to fruit, or put into a room. "Incubating since 4 Nov · day 12" counts the first day as day 1; a ready batch that waits says "Ready to fruit" |
+| Put into a room | Offered once inoculated (unless it incubates in an area: then once ready). With no incubation recorded it sets `incubation 'room'` on the whole delivery |
+| Incubation | Fixed while some blocks are in a room (409). Clearing the inoculation needs the incubation cleared first. A grow room's run stage is not checked (the dialog names the Spawn stage) |
+| Materials | Ingredients in kg, the plastic bags ("Plastic bags") in pcs, the spawn in kg or bags; one line per item (a unique index on batch and item); an Inventory item kept only with Inventory; the item's unit shown in the picker, not converted |
+| Item units | A line linked to an Inventory item must match its unit: kg with kg, bags or pcs with pcs, else 400 on `materials`. The picker offers only items of the line's unit; the spawn line only spawn-kind items. Archived items and the blocks items are not offered |
+| Made price | Over RM 1,000 a block is refused (400 on `materials`) only on a write that sends `materials`, `spawn` or `blocks`. Worked out again on every write to the batch, loads and checks too; there a price over the cap is stored unknown with `priceOver` |
+| Edits that would break history | A change to the mix or inoculation day to after a placement is refused ("Some blocks went into a room before that day"). Clearing the inoculation with a spawn line needs `spawn: null` in the same write. An amount under 0.001 is refused. Recipe parts take one decimal place each |
+| The 4-2 sheet | The made use row: Qty used the spawn amount, Block / area "made into 400 blocks". Nothing before the inoculation |
+| Files | The making checks in `server/batches-making.js`, the shared field rules in `server/batches-fields.js`; the making dialogs and the Making card in `web/batches-making.js` |
+| Making card | One card with a section per step under hairlines, in the left column: at the top while the batch is making, at the bottom once it is done (the DOM order). A step that cannot be recorded yet has its button disabled and keeps its reason in words under it ("Record the inoculation first") |
+| Page order | Made batches still making are listed above the waiting ones in the Waiting card |
+| Made title | "400 Grey oyster blocks · made" |
+| Delete | Inside Edit the mix, at its footer's start |
+| Price notes | Amber on `--warning-soft` when the price came to over RM 1,000 a block (`priceOver`). Otherwise a muted line on how the price comes about. Without a price: "No price per block yet: every material needs an Inventory item with a purchase price."; without Inventory (the detail's `inventory` false): "The price per block is worked out once Inventory has the materials and their purchase prices." |
+
 ## 6. API
 
 | Route | Reply |
@@ -136,8 +157,8 @@ with the steps in order, each with its own Record or Edit.
 | `POST /api/batches/:id/unplace` | → the row that now waits. 404, 409 (run ended, or not placed). |
 | `POST /api/batches/:id/checks` | `{ at?, lost, cause, worker, note? }` → 201 the check. |
 | `PUT /api/batch-checks/:id`, `DELETE /api/batch-checks/:id` | The check / 204. 400, 404. |
-| `GET /api/batches.csv?from=&to=` | `received,crop,kind,supplier,strain,spawn batch,delivery note,blocks,lost,price per block,room,run started,placed,block kg,water %,note`, oldest first, the BOM and the formula guard of the tasks CSV; file name `batches <from>–<to>.csv` |
-| Part 2 | `GET /api/batch-recipes` (`?all=1` with the archived), `POST /api/batch-recipes`, `PUT /api/batch-recipes/:id` (fields, or `{ archived: true }`); loads `POST /api/batches/:id/loads`, `PUT/DELETE /api/batch-loads/:id`; materials sent whole with the Mix and Inoculate steps in `PUT /api/batches/:id`; a row also carries `mixedAt, recipeId, incubation, incubatedFrom, incubatedTo, sterilisedAt`, `spawn { qty, unit, unitCost }` (`unitCost` the live latest purchase price, while `pricePerBlock` is stored at the batch's last write: they can differ until the next write) and `priceOver` (true when the price worked out to over RM 1,000 a block and is stored unknown) |
+| `GET /api/batches.csv?from=&to=` | `received,crop,kind,supplier,strain,spawn batch,delivery note,blocks,lost,price per block,room,run started,placed,block kg,water %,note,mixed,recipe`, oldest first, the BOM and the formula guard of the tasks CSV; file name `batches <from>–<to>.csv` |
+| Part 2 | `GET /api/batch-recipes` (`?all=1` with the archived), `POST /api/batch-recipes`, `PUT /api/batch-recipes/:id` (fields, or `{ archived: true }`; no delete); `POST /api/batches` with `kind: 'made'` and the Mix's fields (`mixedAt`, `recipeId`, `crop`, `blocks`, `blockKg`, `waterPct`, `note`, `materials`); `PUT /api/batches/:id` on a made batch takes the steps' fields (`materials` the mix's lines whole, `inoculatedAt`, `supplier`, `strain`, `spawnBatch`, `spawn` one line or null, `incubation`, `incubatedFrom`, `incubatedTo`; `pricePerBlock` is a 400); loads `POST /api/batches/:id/loads`, `PUT/DELETE /api/batch-loads/:id`; `GET /api/batches/stock-items` → `{ items: [{ id, name, kind, unit, unitCost }] }` (Inventory's items but its blocks ones and the archived, the latest purchase price; empty without Inventory). A row also carries `mixedAt, recipeId, incubation, incubatedFrom, incubatedTo, sterilisedAt` and `spawn` (`{ qty, unit, unitCost }` or null; `unitCost` the live latest purchase price, while `pricePerBlock` is stored at the batch's last write: they can differ until the next write) and `priceOver` (true when the price worked out to over RM 1,000 a block and is stored unknown); the detail's `materials` carry `itemName` and `unitCost`, and `inventory` (true or false) says whether the farm has Inventory, for the Making card's price note |
 
 The routes live in `server/batches-api.js`, wired by one line in `server/api.js`; the logic in `server/batches.js`
 (`createBatches({ db, now })`), no HTTP in it.

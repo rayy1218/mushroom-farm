@@ -307,6 +307,7 @@ export function createBatches({ db, now = Date.now, log = console.error }) {
           unitCost: m.stockItemId == null ? null : store.purchasePrice(m.stockItemId),
         })),
         loads: store.loads(firstOf(b)),
+        inventory: store.hasStock(), // whether the farm has Inventory: the Making card's price note says which
       };
     },
 

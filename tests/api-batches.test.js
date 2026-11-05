@@ -136,6 +136,7 @@ test('making blocks: recipes, Make blocks, the steps through PUT, loads, the sto
   assert.deepEqual((await call('GET', '/api/batches?status=making')).body.batches.map((b) => b.id), [made.body.id]);
   assert.deepEqual((await call('GET', '/api/batches/stock-items')).body, { items: [] });
   assert.equal((await call('POST', '/api/batches/stock-items')).status, 404);
+  assert.equal(one.body.inventory, false, 'the detail says the farm has no Inventory');
   const bought = await call('POST', '/api/batches', GOOD);
   assert.equal((await call('POST', `/api/batches/${bought.body.id}/loads`, { method: 'steam' })).status, 409);
 });
@@ -153,4 +154,7 @@ test('GET /api/batches/stock-items with Inventory lists its items with their lat
   const res = await fetch(`http://127.0.0.1:${server.address().port}/api/batches/stock-items`);
   assert.equal(res.status, 200);
   assert.deepEqual(await res.json(), { items: [{ id: sawdust, name: 'Sawdust', kind: 'other', unit: 'kg', unitCost: 0.35 }] });
+  const url = `http://127.0.0.1:${server.address().port}/api/batches`;
+  const made = await (await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'made', crop: 'oyster', blocks: 100 }) })).json();
+  assert.equal((await (await fetch(`${url}/${made.id}`)).json()).inventory, true, 'the detail says the farm has Inventory');
 });
