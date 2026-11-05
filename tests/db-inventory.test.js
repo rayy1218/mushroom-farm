@@ -119,8 +119,10 @@ test("a batch's room is read from the batches table when it is there; without th
   const path = file(t, 'rooms.db');
   const db = openDb(path);
   t.after(() => db.close());
-  assert.deepEqual([...db.batchRooms([4])], []);
+  // Batches (merged before Inventory) makes its own batches table in every database: drop it to see the case without it.
   const raw = new DatabaseSync(path);
+  raw.exec('PRAGMA foreign_keys = OFF; DROP TABLE IF EXISTS batches;');
+  assert.deepEqual([...db.batchRooms([4])], []);
   raw.exec('CREATE TABLE batches (id INTEGER PRIMARY KEY, room_id INTEGER) STRICT; INSERT INTO batches VALUES (4, 2), (5, NULL);');
   raw.close();
   assert.deepEqual([...db.batchRooms([4, 5, 6])], [[4, 2], [5, null]]);

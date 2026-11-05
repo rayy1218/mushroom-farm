@@ -98,7 +98,7 @@ test('a placed batch shows its room and run; run, room and placed are set togeth
 });
 
 test('deleting a room keeps its batches and their placed time, without the room or run (ids are reused)', (t) => {
-  const db = fresh(t);
+  const db = openWithStock(t); // deleteRoom also clears Inventory's stock_moves.room_id, so the merged farm's tables are there
   const roomId = db.createRoom(ROOM, 1000).id;
   db.setProgram(roomId, { ...db.getProgram(roomId), crops: [{ crop: 'oyster', blocks: 950 }] }, { change: 'start', at: 1500 });
   const id = db.batches.insert(BATCH);
