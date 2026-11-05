@@ -2111,3 +2111,32 @@ td.tg-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: -2p
 .hv-sheet-table td.hv-write { min-width: 5rem; }
 .hv-sheet-table td:first-child { white-space: nowrap; }
 @media (max-width: 600px) { .hv-sheet-tools .back { padding: 10px 0; } }
+
+/* ---- Sales ---- */
+/* The Sales page (spec 2026-11-05-sales-design.md 6). */
+.sl-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.sl-page { display: grid; gap: 16px; }
+.sl-list, .sl-owed-list, .sl-owed-sales { list-style: none; margin: 0; padding: 0; }
+.sl-item { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 10px 0; border-top: 1px solid var(--border); }
+.sl-item:first-child { border-top: 0; }
+.sl-item-head, .sl-item-foot, .sl-lines { margin: 0; grid-column: 1; }
+.sl-item-head { display: flex; gap: 12px; font-weight: 600; }
+.sl-item-foot { display: flex; gap: 12px; align-items: baseline; }
+.sl-page .link { background: transparent; border: 0; padding: 4px 8px; color: var(--accent-text); text-decoration: underline; cursor: pointer; }
+.sl-edit { grid-column: 2; grid-row: 1 / span 3; align-self: center; min-height: 44px; }
+.sl-total { font-variant-numeric: tabular-nums; font-weight: 600; }
+.sl-mark { font-size: 0.875rem; }
+.sl-unpaid { color: var(--warning-text); font-weight: 600; }
+.sl-owed-row { display: flex; gap: 12px; align-items: baseline; margin: 0; padding: 8px 0; }
+.sl-owed-name { min-height: 44px; font-weight: 600; }
+.sl-owed-total { margin-left: auto; font-variant-numeric: tabular-nums; }
+.sl-owed-sales { padding-left: 16px; }
+.sl-owed-sale { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; padding: 6px 0; }
+.sl-name { display: inline-flex; gap: 8px; align-items: center; white-space: nowrap; }
+.sl-diff { display: block; font-size: 0.8125rem; color: var(--muted); font-weight: 400; }
+@media (max-width: 600px) {
+  .sl-tools { width: 100%; }
+  .sl-table th:nth-child(n+5), .sl-table td:nth-child(n+5) { display: none; }
+}
+@media (min-width: 601px) { .sl-diff { display: none; } }
+/* ---- end Sales ---- */
