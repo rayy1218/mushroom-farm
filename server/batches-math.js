@@ -1,5 +1,5 @@
 // The Batches figures (spec 2026-11-05-batches-design.md 3.1, 3.2 and 4), pure: a batch here is a store row (camelCase,
-// with lost, runEndedAt and runCrops).
+// with lost, runEndedAt and runCrops) or its API view (blockCost needs only blocks and pricePerBlock).
 
 export const round = (v, places) => {
   const f = 10 ** places;
@@ -16,7 +16,10 @@ export const dryKgOf = (b) => (b.blockKg == null || b.waterPct == null ? null : 
 // (spec 3.2: Harvest's BE then uses it instead of Settings → Yield).
 export function runDryKg(rows) {
   const byCrop = new Map();
-  for (const b of rows) byCrop.set(b.crop, [...(byCrop.get(b.crop) ?? []), b]);
+  for (const b of rows) {
+    if (!byCrop.has(b.crop)) byCrop.set(b.crop, []);
+    byCrop.get(b.crop).push(b);
+  }
   const out = {};
   for (const [crop, list] of byCrop) {
     if (list.some((b) => dryKgOf(b) === null)) continue;
@@ -36,7 +39,8 @@ export function blockCost(rows) {
 // time with no room).
 export const statusOf = (b) => (b.runId == null ? (b.placedAt == null ? 'waiting' : 'past') : b.runEndedAt == null ? 'placed' : 'past');
 
-// The run's blocks of the batch's crop (the Crop tab's count); null for a waiting batch.
+// The run's blocks of the batch's crop (the Crop tab's count; 0 when the run's crops no longer have it); null without a run
+// (waiting, or its room deleted).
 export function runBlocksOf(b) {
   if (b.runId == null || !Array.isArray(b.runCrops)) return null;
   return b.runCrops.find((c) => c.crop === b.crop)?.blocks ?? 0;
@@ -45,8 +49,9 @@ export function runBlocksOf(b) {
 // The stock moves a delivery should have (spec 3.1), from its rows (the first row and its parts) and checksOf(id) (a row's
 // checks, oldest first): + the delivery's blocks on the first row at its receipt; a waiting row's losses out; a placed row's
 // losses before it went in out, then the rest of its blocks out when it went in (a loss after that is in a room, not stock).
+// A row whose room was deleted keeps its placed time, so its move out stays. family: not empty.
 export function movesOf(family, checksOf) {
-  const first = family.find((b) => b.parentId == null) ?? family[0];
+  const first = family.find((b) => b.parentId == null) ?? family[0]; // a first row is always there (it is never deleted with parts)
   const total = family.reduce((s, b) => s + b.blocks, 0);
   const moves = [{ refId: first.id, at: first.receivedAt, qty: total, unitCost: first.pricePerBlock ?? null, note: null }];
   for (const b of family) {

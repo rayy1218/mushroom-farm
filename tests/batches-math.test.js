@@ -51,3 +51,10 @@ test('the stock moves of a delivery: its receipt, a placed row out (less what wa
     { refId: 2, at: 3000, qty: -495, unitCost: null, note: 'into a room' },
   ]);
 });
+
+test('the stock moves: a deleted room\'s row keeps its move out; a row all lost before it went in has none', () => {
+  const gone = b({ id: 1, blocks: 100, placedAt: 3000, runId: null, receivedAt: 1000 });
+  assert.deepEqual(movesOf([gone], () => []).map((m) => m.qty), [100, -100]);
+  const lost = b({ id: 1, blocks: 10, placedAt: 3000, runId: 9, receivedAt: 1000 });
+  assert.deepEqual(movesOf([lost], () => [{ at: 2000, lost: 10 }]).map((m) => [m.qty, m.note]), [[10, null], [-10, 'contaminated']]);
+});
