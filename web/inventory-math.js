@@ -16,6 +16,8 @@ const grouped = (n, min, max = min) => n.toLocaleString('en-US', { minimumFracti
 
 // The units counted in whole numbers (kg and L take 2 decimals): as server/inventory-math.js WHOLE_UNITS.
 export const WHOLE_UNITS = ['pcs', 'g', 'mL', 'blocks'];
+// A unit in words, for a screen reader ("Qty used, in litres") and the errors.
+export const UNIT_WORDS = { pcs: 'pieces', kg: 'kilograms', g: 'grams', L: 'litres', mL: 'millilitres', blocks: 'blocks' };
 // "per piece", "per block"; the others by their symbol.
 const ONE = { pcs: 'piece', blocks: 'block' };
 
@@ -129,6 +131,14 @@ export function groupItems(items) {
   }).filter((g) => g.items.length);
 }
 
+// The Item picker's groups (an <optgroup> each): the kinds in the list's order, the items in the order given (the server's:
+// by name). → [{ kind, label, items }]
+export const itemGroups = (items) => KIND_ORDER.map((kind) => ({ kind, label: KIND_NAMES[kind], items: items.filter((i) => i.kind === kind) }))
+  .filter((g) => g.items.length);
+
+// Under the Item box: "1.20 L in stock" ('' with no item picked). In the hint, not the option, so a phone never cuts it.
+export const stockHint = (item) => (item ? `${qtyText(item.qty, item.unit)} in stock` : '');
+
 // A lot's name: "Bought 1 Nov", "Batch 14", "Count 3 Nov".
 export function lotLabel(lot) {
   if (lot.refKind === 'batch') return `Batch ${lot.refId}`;
@@ -216,6 +226,7 @@ export function itemBody(values, item = null) {
 
 // Purchase: today is the farm's day (the latest a purchase may be). limitBack false: an Edit leaving the day as stored.
 export function purchaseBody(values, item, today, { limitBack = true } = {}) {
+  if (!item) return { error: 'Pick an item', field: 'itemId' };
   const qty = numberIn(values.qty, item.unit);
   if (qty.error) return { error: qty.error, field: 'qty' };
   const t = String(values.total ?? '').trim();
@@ -233,6 +244,7 @@ export function purchaseBody(values, item, today, { limitBack = true } = {}) {
 
 // Record use. shown: the date and time boxes as they opened ({ date, time }); unchanged, the server takes now.
 export function useBody(values, item, { now, shown }) {
+  if (!item) return { error: 'Pick an item', field: 'itemId' };
   const qty = numberIn(values.qty, item.unit);
   if (qty.error) return { error: qty.error, field: 'qty' };
   const reason = textIn(values.reason);

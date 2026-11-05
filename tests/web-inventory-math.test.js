@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  useByLine, qtyText, rmText, perUnitText, dayText, longDayText, daysBefore, pillOf, lotPill, countedText, attentionParts, groupItems, lotLabel,
+  itemGroups, stockHint, useByLine, qtyText, rmText, perUnitText, dayText, longDayText, daysBefore, pillOf, lotPill, countedText, attentionParts, groupItems, lotLabel,
   moveLine, deleteTitle, deleteLead, throwOutTitle, throwOutLead, numberIn, itemBody, purchaseBody, useBody, purchaseEditBody,
   useEditBody, overStock, countBody, sheetCells, sheetRange, sheetEmpty, SHEET_COLUMNS, KIND_OPTIONS, UNIT_OPTIONS,
 } from '../web/inventory-math.js';
@@ -174,6 +174,23 @@ test("the item dialog's body: a chemical's fields; a block item's level only", (
   assert.deepEqual(itemBody({ name: '', kind: 'bags', unit: 'pcs' }), { error: 'Give the name', field: 'name' });
   assert.equal(itemBody({ name: 'Bags', kind: 'bags', unit: 'pcs', reorderAt: '2.5' }).field, 'reorderAt');
   assert.deepEqual(itemBody({ reorderAt: '200' }, item({ kind: 'blocks', unit: 'blocks' })), { reorderAt: 200 });
+});
+
+test('Record use and Purchase start on no item (audit #1): the body asks for one on the Item box', () => {
+  const now = at('2026-11-05', '09:00');
+  const shown = { date: '2026-11-05', time: '09:00' };
+  assert.deepEqual(useBody({ qty: '1', worker: 'Ali', date: '2026-11-05', time: '09:00' }, null, { now, shown }), { error: 'Pick an item', field: 'itemId' });
+  assert.deepEqual(purchaseBody({ qty: '1', total: '5', day: '2026-11-05' }, null, '2026-11-05'), { error: 'Pick an item', field: 'itemId' });
+});
+
+test("the Item picker's groups by kind, in the list's order of kinds; the stock under the box, never cut in an option", () => {
+  const groups = itemGroups([
+    item({ id: 4, name: 'Grey oyster blocks', kind: 'blocks', unit: 'blocks' }), item({ id: 1, name: 'Alcohol', kind: 'chemical' }),
+    item({ id: 3, name: 'Punnets', kind: 'packaging', unit: 'pcs' }), item({ id: 2, name: 'Bleach', kind: 'chemical' }),
+  ]);
+  assert.deepEqual(groups.map((g) => [g.label, g.items.map((i) => i.id)]), [['Blocks', [4]], ['Chemicals', [1, 2]], ['Packaging', [3]]]);
+  assert.equal(plain(stockHint(item({ qty: 1.2 }))), '1.20 L in stock');
+  assert.equal(stockHint(null), '');
 });
 
 test("Purchase's body", () => {

@@ -8,7 +8,7 @@ import { openForm, loadWorkers, setWorker, workerField, errorText } from './task
 import { whenBoxes, dateHint } from './harvest-math.js';
 import { farmDate } from './tasks-math.js';
 import {
-  KIND_OPTIONS, UNIT_OPTIONS, qtyText, perUnitText, daysBefore, itemBody, purchaseBody, useBody, purchaseEditBody, useEditBody,
+  KIND_OPTIONS, UNIT_OPTIONS, UNIT_WORDS, WHOLE_UNITS, itemGroups, stockHint, qtyText, perUnitText, daysBefore, itemBody, purchaseBody, useBody, purchaseEditBody, useEditBody,
   overStock, deleteTitle, deleteLead, throwOutTitle, throwOutLead,
 } from './inventory-math.js';
 
@@ -48,11 +48,59 @@ function suggest(form, name, list) {
   input.setAttribute('list', options.id);
 }
 
-// The unit inside a qty box (the suffix openForm put there).
-function setSuffix(form, name, unit) {
-  const s = form.input(name)?.parentElement?.querySelector('.tk-suffix');
-  if (s) s.textContent = unit;
+// A qty box's unit (audit #21): the suffix openForm put inside it, the keypad (whole units numeric, kg and L decimal) and,
+// for a screen reader (the suffix is aria-hidden), ", in litres" at the end of its label. unit null: none picked yet.
+function setUnit(form, name, unit) {
+  const input = form.input(name);
+  if (!input) return;
+  const s = input.parentElement?.querySelector('.tk-suffix');
+  if (s) s.textContent = unit ?? NBSP;
+  input.inputMode = unit && WHOLE_UNITS.includes(unit) ? 'numeric' : 'decimal';
+  const label = input.closest('.field')?.querySelector(`label[for="${input.id}"]`);
+  if (!label) return;
+  let spoken = label.querySelector('.iv-unit-words');
+  if (!spoken) {
+    spoken = document.createElement('span');
+    spoken.className = 'sr-only iv-unit-words';
+    label.append(spoken);
+  }
+  spoken.textContent = unit ? `, in ${UNIT_WORDS[unit] ?? unit}` : '';
 }
+const NBSP = '\u00a0';
+
+// The item picked last in this browser, per dialog (audit #1): the next opening from the list starts on it while it is
+// still on offer; else on "Pick an item", so a figure is never recorded against an item nobody chose.
+const LAST_KEY = { use: 'farm.inventory.useItem', purchase: 'farm.inventory.purchaseItem' };
+function lastItem(which) {
+  try { return Number(localStorage.getItem(LAST_KEY[which])) || null; } catch { return null; }
+}
+function keepItem(which, id) {
+  try { localStorage.setItem(LAST_KEY[which], String(id)); } catch { /* not kept: the next opening asks */ }
+}
+// The item the dialog opens on: the one asked for (an item page), else the last one kept, else none.
+const startItem = (list, itemId, which) => list.find((i) => i.id === itemId) ?? list.find((i) => i.id === lastItem(which)) ?? null;
+
+// The Item select rebuilt with an <optgroup> a kind (openForm's options are flat); "Pick an item" first while none is picked.
+function groupOptions(select, list, picked) {
+  const option = (value, text) => {
+    const o = document.createElement('option');
+    o.value = value;
+    o.textContent = text;
+    return o;
+  };
+  const groups = itemGroups(list).map((g) => {
+    const box = document.createElement('optgroup');
+    box.label = g.label;
+    box.append(...g.items.map((i) => option(String(i.id), i.name)));
+    return box;
+  });
+  select.replaceChildren(...(picked ? [] : [option('', 'Pick an item')]), ...(list.length > 1 ? groups : groups.flatMap((g) => [...g.children])));
+  select.value = picked ? String(picked.id) : '';
+}
+const itemField = (list, item) => ({
+  name: 'itemId', label: 'Item', kind: 'select', value: item ? String(item.id) : '', options: [['', 'Pick an item'], ...list.map((i) => [String(i.id), i.name])],
+  hintOf: (v) => stockHint(list.find((i) => String(i.id) === v) ?? null),
+});
 
 // No workers on the list yet: say where to add them (as Record a harvest does).
 function namesLead(names) {
@@ -140,6 +188,7 @@ export function openItemDialog({ item = null, hasMoves = false, onDone, onLost }
       return finish(await send(item ? 'PUT' : 'POST', item ? `/api/inventory/items/${item.id}` : '/api/inventory/items', body), onDone);
     },
   });
+  setUnit(form, 'reorderAt', unit);
   if (!blocks) {
     const kind = form.input('kind');
     const unitBox = form.input('unit');
@@ -147,7 +196,7 @@ export function openItemDialog({ item = null, hasMoves = false, onDone, onLost }
       for (const name of ['ingredient', 'lrmpNo']) form.input(name).closest('.field').hidden = kind.value !== 'chemical';
     };
     kind.addEventListener('change', chemical);
-    unitBox.addEventListener('change', () => setSuffix(form, 'reorderAt', unitBox.value));
+    unitBox.addEventListener('change', () => setUnit(form, 'reorderAt', unitBox.value));
     unitBox.disabled = hasMoves;
     chemical();
   }
@@ -174,14 +223,14 @@ export function openPurchaseDialog({ items, itemId = null, suppliers = [], onDon
   const list = items.filter((i) => i.kind !== 'blocks' && !i.archived);
   if (!list.length) return null;
   const today = farmDate(Date.now());
-  let item = list.find((i) => i.id === itemId) ?? list[0];
+  let item = startItem(list, itemId, 'purchase');
   let form = null;
-  const priceHint = () => (form ? perUnitText(Number(form.input('total').value), Number(form.input('qty').value), item.unit) : '');
+  const priceHint = () => (form && item ? perUnitText(Number(form.input('total').value), Number(form.input('qty').value), item.unit) : '');
   form = openForm({
     title: 'Purchase',
     fields: [
-      { name: 'itemId', label: 'Item', kind: 'select', value: String(item.id), options: list.map((i) => [String(i.id), i.name]) },
-      { name: 'qty', label: 'Qty bought', kind: 'number', value: '', suffix: item.unit },
+      itemField(list, item),
+      { name: 'qty', label: 'Qty bought', kind: 'number', value: '', suffix: item?.unit ?? NBSP },
       { name: 'total', label: 'Total paid', kind: 'number', value: '', suffix: 'RM', hintOf: priceHint },
       { name: 'supplier', label: 'Supplier', kind: 'text', value: '', maxLength: 60, hint: 'Optional.' },
       {
@@ -197,7 +246,9 @@ export function openPurchaseDialog({ items, itemId = null, suppliers = [], onDon
     submit: async (v) => {
       const body = purchaseBody(v, item, farmDate(Date.now()));
       if (body.error) return { field: body.field, message: body.error };
-      return finish(await send('POST', '/api/inventory/purchases', body), onDone);
+      const sent = await send('POST', '/api/inventory/purchases', body);
+      if (sent === true) keepItem('purchase', body.itemId);
+      return finish(sent, onDone);
     },
   });
   const hint = () => {
@@ -205,9 +256,11 @@ export function openPurchaseDialog({ items, itemId = null, suppliers = [], onDon
     if (h) h.textContent = priceHint();
   };
   form.input('qty').addEventListener('input', hint);
+  groupOptions(form.input('itemId'), list, item);
+  setUnit(form, 'qty', item?.unit ?? null);
   form.input('itemId').addEventListener('change', () => {
-    item = list.find((i) => String(i.id) === form.input('itemId').value) ?? item;
-    setSuffix(form, 'qty', item.unit);
+    item = list.find((i) => String(i.id) === form.input('itemId').value) ?? null;
+    setUnit(form, 'qty', item?.unit ?? null);
     hint();
   });
   suggest(form, 'supplier', suppliers);
@@ -227,7 +280,7 @@ export async function openUseDialog({ items, itemId = null, reasons = [], onDone
     return null;
   }
   if (!alive()) return null;
-  let item = list.find((i) => i.id === itemId) ?? list[0];
+  let item = startItem(list, itemId, 'use');
   const shown = whenBoxes(Date.now());
   const guard = createOverGuard();
   let form = null;
@@ -235,8 +288,8 @@ export async function openUseDialog({ items, itemId = null, reasons = [], onDone
     title: 'Record use',
     lead: namesLead(names),
     fields: [
-      { name: 'itemId', label: 'Item', kind: 'select', value: String(item.id), options: list.map((i) => [String(i.id), `${i.name} (${qtyText(i.qty, i.unit)} in stock)`]) },
-      { name: 'qty', label: 'Qty used', kind: 'number', value: '', suffix: item.unit },
+      itemField(list, item),
+      { name: 'qty', label: 'Qty used', kind: 'number', value: '', suffix: item?.unit ?? NBSP },
       { name: 'roomId', label: 'Room', kind: 'select', value: '', options: [['', 'Not in a room'], ...rooms.map((r) => [String(r.id), r.name])] },
       { name: 'reason', label: 'Reason', kind: 'text', value: '', maxLength: 60, placeholder: 'Footbath', hint: 'Optional.' },
       workerField(names, 'Who used it'),
@@ -250,12 +303,16 @@ export async function openUseDialog({ items, itemId = null, reasons = [], onDone
       const asked = guard(form, item, body.qty);
       if (asked) return asked;
       setWorker(body.worker); // kept for the next time, as the Done dialog does
-      return finish(await send('POST', '/api/inventory/uses', body), onDone);
+      const sent = await send('POST', '/api/inventory/uses', body);
+      if (sent === true) keepItem('use', body.itemId);
+      return finish(sent, onDone);
     },
   });
+  groupOptions(form.input('itemId'), list, item);
+  setUnit(form, 'qty', item?.unit ?? null);
   form.input('itemId').addEventListener('change', () => {
-    item = list.find((i) => String(i.id) === form.input('itemId').value) ?? item;
-    setSuffix(form, 'qty', item.unit);
+    item = list.find((i) => String(i.id) === form.input('itemId').value) ?? null;
+    setUnit(form, 'qty', item?.unit ?? null);
   });
   suggest(form, 'reason', reasons);
   return form;
@@ -291,6 +348,7 @@ export async function openMoveDialog({ move, item, suppliers = [], reasons = [],
         return finish(await send('PUT', `/api/inventory/moves/${move.id}`, body), onDone);
       },
     });
+    setUnit(form, 'qty', item.unit);
     suggest(form, 'supplier', suppliers);
     return form;
   }
@@ -325,6 +383,7 @@ export async function openMoveDialog({ move, item, suppliers = [], reasons = [],
       return finish(await send('PUT', `/api/inventory/moves/${move.id}`, body), onDone);
     },
   });
+  setUnit(form, 'qty', item.unit);
   suggest(form, 'reason', reasons);
   return form;
 }

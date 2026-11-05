@@ -130,3 +130,23 @@ test('review fixes: Count stock names line, worker reload, gone rows, retry, inp
   assert.ok(!set.includes('box.disabled'));
   assert.ok(set.includes('sending'));
 });
+
+test('audit #1: Record use and Purchase start on "Pick an item" unless asked for one or kept from the last time; grouped by kind; the stock in the hint', () => {
+  const d = src('inventory-dialogs.js');
+  assert.ok(d.includes("[['', 'Pick an item'], ...list.map((i) => [String(i.id), i.name])]"), 'the options carry the name only');
+  assert.ok(!d.includes('in stock)`'), 'no stock cut off inside an option');
+  assert.ok(d.includes("hintOf: (v) => stockHint("));
+  assert.ok(d.includes("document.createElement('optgroup')"));
+  assert.ok(d.includes("startItem(list, itemId, 'use')") && d.includes("startItem(list, itemId, 'purchase')"));
+  assert.ok(d.includes("use: 'farm.inventory.useItem', purchase: 'farm.inventory.purchaseItem'"));
+  assert.ok(d.includes("if (sent === true) keepItem('use', body.itemId);") && d.includes("if (sent === true) keepItem('purchase', body.itemId);"));
+  assert.ok(!d.includes('?? list[0]'), 'never the first item by default');
+});
+
+test('audit #21: a qty box follows its unit: suffix, keypad and the unit spoken in its label', () => {
+  const d = src('inventory-dialogs.js');
+  assert.ok(d.includes("input.inputMode = unit && WHOLE_UNITS.includes(unit) ? 'numeric' : 'decimal';"));
+  assert.ok(d.includes("spoken.className = 'sr-only iv-unit-words';"));
+  assert.ok(d.includes('`, in ${UNIT_WORDS[unit] ?? unit}`'));
+  for (const call of ["setUnit(form, 'reorderAt', unit);", "setUnit(form, 'qty', item.unit);", "setUnit(form, 'qty', item?.unit ?? null);"]) assert.ok(d.includes(call), call);
+});
