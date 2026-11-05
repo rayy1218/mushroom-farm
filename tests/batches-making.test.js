@@ -200,3 +200,42 @@ test('put made blocks into a room: once inoculated (they incubate in that grow r
   const whole = batches.place(area.id, { roomId });
   assert.deepEqual([whole.status, whole.incubation, whole.incubatedTo], ['placed', 'area', NOW]);
 });
+
+test('sterilising loads: record, by time, edit, delete; not before the mix; bags up to the blocks made; only on a made batch', (t) => {
+  const { batches, told } = setup(t);
+  const b = made(batches);
+  const l1 = batches.addLoad(b.id, LOAD);
+  assert.deepEqual({ ...l1, id: 0 }, { id: 0, batchId: b.id, ...LOAD, createdAt: NOW });
+  assert.equal(told.at(-1).batchId, b.id);
+  const l2 = batches.addLoad(b.id, { ...LOAD, hotAt: NOW - DAY - 3_600_000, bags: 100 });
+  const d = batches.detail(b.id);
+  assert.deepEqual(d.loads.map((l) => l.id), [l2.id, l1.id], 'by the time they got hot');
+  assert.equal(d.sterilisedAt, NOW - DAY, 'the last load');
+  assert.equal(batches.list().batches[0].sterilisedAt, NOW - DAY);
+  const e = batches.editLoad(l1.id, { bags: 300, holdH: 6.25 });
+  assert.deepEqual([e.bags, e.holdH, e.method, e.worker], [300, 6.3, 'steam', 'Ali'], 'to 0.1 h; not given: kept');
+  batches.removeLoad(l2.id);
+  assert.deepEqual(batches.detail(b.id).loads.map((l) => l.id), [l1.id]);
+  assert.equal(status(() => batches.removeLoad(l2.id))[0], 404);
+  assert.equal(status(() => batches.editLoad(999, { bags: 1 }))[0], 404);
+  const cases = [
+    [{ method: 'boil' }, 'method'],
+    [{ bags: 0 }, 'bags'],
+    [{ bags: 401 }, 'bags'],
+    [{ hotAt: NOW - 3 * DAY }, 'hotAt'],
+    [{ hotAt: NOW + 60_000 }, 'hotAt'],
+    [{ holdH: 0.25 }, 'holdH'],
+    [{ tempC: 140 }, 'tempC'],
+    [{ worker: '' }, 'worker'],
+  ];
+  for (const [change, field] of cases) {
+    assert.deepEqual(status(() => batches.addLoad(b.id, { ...LOAD, ...change }))?.slice(0, 2), [400, field], JSON.stringify(change));
+  }
+  assert.equal(status(() => batches.addLoad(b.id, { ...LOAD, bags: 401 }))[2], 'Bags must be a whole number from 1 to 400');
+  const bought = batches.receive({ crop: 'oyster', supplier: 'Agro Supplies', blocks: 10 });
+  assert.deepEqual(status(() => batches.addLoad(bought.id, LOAD)), [409, null, 'Only blocks made on the farm have sterilising loads']);
+  assert.deepEqual(status(() => batches.edit(b.id, { blocks: 250 })), [400, 'blocks', 'A sterilising load has more bags than that']);
+  assert.deepEqual(status(() => batches.edit(b.id, { mixedAt: NOW })), [400, 'mixedAt', 'Some sterilising loads are before that day']);
+  batches.remove(b.id);
+  assert.equal(status(() => batches.editLoad(l1.id, { bags: 1 }))[0], 404, "a batch's loads go with it");
+});

@@ -3,7 +3,7 @@
 
 import { CROP_KEYS } from '../web/crops.js';
 import { localDate } from './task-rules.js';
-import { bad, isPlain, intIn, numIn, isTime, textOf, weightOf, MAX_BLOCKS, MAX_NOTE } from './batches-fields.js';
+import { bad, isPlain, intIn, numIn, isTime, grouped, textOf, weightOf, MAX_BLOCKS, MAX_NOTE } from './batches-fields.js';
 
 // A recipe's five parts of the dry weight (spec 2), each 0–100, together 100 (to 0.1).
 export const PARTS = ['sawdustPct', 'branPct', 'limePct', 'gypsumPct', 'otherPct'];
@@ -140,4 +140,26 @@ export function checkMade(body, { was = null, now, recipeOf }) {
     if (was?.incubatedFrom != null || was?.incubatedTo != null) Object.assign(out, { incubatedFrom: null, incubatedTo: null });
   }
   return out;
+}
+
+// A sterilising load's methods (spec 5): atmospheric steam, pressure, pasteurise.
+export const METHODS = ['steam', 'pressure', 'pasteurise'];
+
+// A sterilising load's fields (spec 2 and 5), without its worker (server/batches.js checks the name). mixedAt: the batch's day
+// mixed (no load before it); blocks: the blocks made (a load holds at most those); was: the stored load (an edit: a field not
+// given keeps its value). -> { method, bags, hotAt, holdH, tempC }.
+export function checkLoad(body, { mixedAt, blocks, now, was = null }) {
+  if (!isPlain(body)) throw bad('Body must be a JSON object');
+  const v = (k) => (Object.hasOwn(body, k) ? body[k] : was?.[k]);
+  const method = v('method');
+  if (!METHODS.includes(method)) throw bad('Pick a method', 'method');
+  const bags = v('bags');
+  if (!intIn(bags, 1, blocks)) throw bad(`Bags must be a whole number from 1 to ${grouped(blocks)}`, 'bags');
+  const hotAt = v('hotAt');
+  if (!isTime(hotAt, now) || localDate(hotAt) < localDate(mixedAt)) throw bad('Pick a time from the day mixed to now', 'hotAt');
+  const holdH = v('holdH');
+  if (!numIn(holdH, 0.5, 24)) throw bad('Hold must be 0.5–24 h', 'holdH');
+  const tempC = v('tempC');
+  if (!numIn(tempC, 60, 130)) throw bad('Temperature must be 60–130 °C', 'tempC');
+  return { method, bags, hotAt, holdH: Math.round(holdH * 10) / 10, tempC: Math.round(tempC * 10) / 10 };
 }

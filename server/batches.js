@@ -10,7 +10,7 @@ import { goodOf, dryKgOf, runDryKg, blockCost, statusOf, runBlocksOf, movesOf } 
 import {
   BatchError, MAX_BLOCKS, MAX_NOTE, EARLIEST, bad, conflict, isPlain, intIn, numIn, isDate, grouped, textOf, weightOf,
 } from './batches-fields.js';
-import { checkRecipe, checkMade, checkMaterials, MIX_ITEMS } from './batches-making.js';
+import { checkRecipe, checkMade, checkMaterials, checkLoad, MIX_ITEMS } from './batches-making.js';
 
 export { BatchError, MAX_BLOCKS };
 export const CAUSES = ['green', 'black', 'bacterial', 'pests', 'other'];
@@ -205,17 +205,35 @@ export function createBatches({ db, now = Date.now, log = console.error }) {
     if (!intIn(lost, 1, max)) throw bad(`Blocks lost must be a whole number from 1 to ${grouped(max)}`, 'lost');
     const cause = given('cause') ? body.cause : was?.cause;
     if (!CAUSES.includes(cause)) throw bad('Pick a cause', 'cause');
-    let worker = was?.worker ?? null;
-    if (!was || given('worker')) {
-      try {
-        worker = checkWorker(db, body.worker);
-      } catch (err) {
-        if (err instanceof TaskError) throw new BatchError(err.status, err.message, err.field);
-        throw err;
-      }
-    }
+    const worker = workerOf(body, was);
     const note = given('note') || !was ? textOf(body.note, 'note', 'Note', MAX_NOTE) : was.note;
     return { at, lost, cause, worker, note };
+  }
+
+  // Who did a check or a load: a name as Tasks' (checkWorker); `was` (an edit): kept when not given.
+  function workerOf(body, was) {
+    if (was && !Object.hasOwn(body, 'worker')) return was.worker;
+    try {
+      return checkWorker(db, body.worker);
+    } catch (err) {
+      if (err instanceof TaskError) throw new BatchError(err.status, err.message, err.field);
+      throw err;
+    }
+  }
+
+  // A sterilising load's fields on a made batch's first row (spec 5): bags up to the blocks made; `was` (an edit): a field not
+  // given keeps its stored value.
+  function loadOf(body, first, was = null) {
+    const blocks = store.family(first.id).reduce((s, x) => s + x.blocks, 0);
+    const fields = checkLoad(body, { mixedAt: first.mixedAt, blocks, now: now(), was });
+    return { ...fields, worker: workerOf(body, was) };
+  }
+
+  // A load by id, with its batch's first row. -> { load, first }.
+  function loadById(loadId) {
+    const load = Number.isInteger(loadId) ? store.load(loadId) : null;
+    if (!load) throw new BatchError(404, 'Load not found');
+    return { load, first: store.get(load.batchId) };
   }
 
   return {
@@ -422,6 +440,43 @@ export function createBatches({ db, now = Date.now, log = console.error }) {
         sync(firstOf(b));
       });
       tell([b]);
+    },
+
+    // ---- sterilising loads (spec 5): a made batch's, on its first row ----
+
+    // A load on a made batch. -> the load.
+    addLoad(id, body) {
+      const b = batchOf(id);
+      const first = store.get(firstOf(b));
+      if (first.kind !== 'made') throw conflict('Only blocks made on the farm have sterilising loads');
+      const fields = loadOf(body, first);
+      const loadId = store.tx(() => {
+        const made = store.insertLoad({ batchId: first.id, ...fields, createdAt: now() });
+        sync(first.id);
+        return made;
+      });
+      tell([b]);
+      return store.load(loadId);
+    },
+
+    editLoad(loadId, body) {
+      const { load, first } = loadById(loadId);
+      const fields = loadOf(body, first, load);
+      store.tx(() => {
+        store.updateLoad(loadId, fields);
+        sync(first.id);
+      });
+      tell([first]);
+      return store.load(loadId);
+    },
+
+    removeLoad(loadId) {
+      const { first } = loadById(loadId);
+      store.tx(() => {
+        store.removeLoad(loadId);
+        sync(first.id);
+      });
+      tell([first]);
     },
 
     // ---- recipes (spec 5) ----
